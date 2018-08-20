@@ -7,3 +7,5 @@ email = berlysia@gmail.com
 [core]
 excludesfile = /Users/berlysia/.gitignore_global
 editor = emacs
+[credential]
+	helper = osxkeychain
