@@ -1,0 +1,128 @@
+
+# tap repositories and their packages
+
+tap homebrew/core
+brew aria2
+brew autoconf
+brew cairo
+brew cmake
+brew convmv
+brew docker
+brew docker-compose
+brew docker-machine
+brew emacs
+brew fdk-aac
+brew ffmpeg --with-fdk-aac
+brew fish
+brew fontconfig
+brew freetype
+brew gcc
+brew gdbm
+brew gettext
+brew ghq
+brew gibo
+brew giflib
+brew git
+brew glib
+brew gmp
+brew gnutls
+brew go
+brew gradle
+brew imagemagick
+brew isl
+brew jpeg
+brew jq
+brew lame
+brew libev
+brew libevent
+brew libffi
+brew libidn2
+brew libmpc
+brew libpng
+brew libtasn1
+brew libtiff
+brew libtool
+brew libunistring
+brew libuv
+brew libwebsockets
+brew libyaml
+brew mas
+brew mkcert
+brew mpfr
+brew nasm
+brew nettle
+brew nkf
+brew nodebrew
+brew nspr
+brew nss
+brew oniguruma
+brew openssl
+brew openssl@1.1
+brew p11-kit
+brew pcre
+brew pcre2
+brew peco
+brew pixman
+brew pkg-config
+brew python@2
+brew rbenv
+brew readline
+brew ruby-build
+brew sbt
+brew sqlite
+brew texi2html
+brew valgrind
+brew wget
+brew x264
+brew xvid
+brew xz
+brew zsh
+
+tap homebrew/cask-fonts
+cask font-myrica
+
+tap homebrew/cask-versions
+cask google-chrome-canary
+
+tap homebrew/services
+
+tap homebrew/cask
+cask 1password
+cask coteditor
+cask docker
+cask firefox
+cask intellij-idea-ce
+cask night-owl
+cask sublime-text
+cask visual-studio-code
+cask xld
+
+tap itchyny/fillin
+brew fillin
+
+tap rcmdnk/file
+brew brew-file
+
+tap shogogg/cask-atok
+cask atok-passport
+
+# Other Cask applications
+cask cyberduck
+cask dropbox
+cask google-chrome
+cask java
+cask skype
+cask virtualbox
+cask vlc
+
+# App Store applications
+appstore 405843582 Alfred (1.2)
+appstore 1024640650 CotEditor (3.5.0)
+appstore 426410278 Flexiglass (1.6.2)
+appstore 409183694 Keynote (8.1)
+appstore 411213048 LadioCast (000012004)
+appstore 539883307 LINE (5.9.2)
+appstore 634148309 Logic Pro X (10.4.1)
+appstore 409201541 Pages (7.1)
+appstore 407963104 Pixelmator (3.7.3)
+appstore 425424353 The Unarchiver (4.0.0)

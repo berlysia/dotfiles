@@ -1,0 +1,9 @@
+# This is Git's per-user configuration file.
+[user]
+# Please adapt and uncomment the following lines:
+name = berlysia
+email = berlysia@gmail.com
+
+[core]
+excludesfile = /Users/berlysia/.gitignore_global
+editor = emacs
