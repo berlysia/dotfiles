@@ -28,6 +28,8 @@ brew gmp
 brew gnutls
 brew go
 brew gradle
+brew id3lib
+brew id3v2
 brew imagemagick
 brew isl
 brew jpeg
