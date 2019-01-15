@@ -1,5 +1,5 @@
 path=(
-  $HOME/bin
   $NODEBREW_ROOT/current/bin
-  $PATH
+  $HOME/.deno/bin
+  $path
 )

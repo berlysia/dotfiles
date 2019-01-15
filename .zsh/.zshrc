@@ -42,3 +42,5 @@ source $ZDOTDIR/alias.zsh
 if [ $+commands[brew] -a -f $(brew --prefix)/etc/brew-wrap ]; then
   source $(brew --prefix)/etc/brew-wrap
 fi
+
+source $ZDOTDIR/path.zsh
