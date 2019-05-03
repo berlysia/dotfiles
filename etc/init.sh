@@ -5,5 +5,5 @@ cd `dirname $0`
 
 for file in `ls ./setup`
 do
-  sh ./setup/$file
+  (sh ./setup/$file)
 done

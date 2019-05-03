@@ -1,6 +1,10 @@
 #!/bin/sh
 set -eu
 
+if type brew; then
+  exit
+fi
+
 case ${OSTYPE} in
   darwin*)
   echo "[start] install Homebrew"

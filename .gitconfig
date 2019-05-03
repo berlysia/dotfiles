@@ -9,3 +9,5 @@ excludesfile = /Users/berlysia/.gitignore_global
 editor = emacs
 [credential]
 	helper = osxkeychain
+[rebase]
+	autosquash = true

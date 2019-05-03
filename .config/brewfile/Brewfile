@@ -7,6 +7,7 @@ brew autoconf
 brew cairo
 brew cmake
 brew convmv
+brew direnv
 brew docker
 brew docker-compose
 brew docker-machine
@@ -28,18 +29,25 @@ brew gmp
 brew gnutls
 brew go
 brew gradle
+brew httpie
+brew icu4c
 brew id3lib
 brew id3v2
+brew ilmbase
 brew imagemagick
 brew isl
 brew jpeg
 brew jq
 brew lame
+brew libde265
 brew libev
 brew libevent
 brew libffi
+brew libheif
+brew libidn
 brew libidn2
 brew libmpc
+brew libomp
 brew libpng
 brew libtasn1
 brew libtiff
@@ -48,6 +56,7 @@ brew libunistring
 brew libuv
 brew libwebsockets
 brew libyaml
+brew little-cms2
 brew mas
 brew mkcert
 brew mpfr
@@ -58,6 +67,8 @@ brew nodebrew
 brew nspr
 brew nss
 brew oniguruma
+brew openexr
+brew openjpeg
 brew openssl
 brew openssl@1.1
 brew p11-kit
@@ -66,16 +77,22 @@ brew pcre2
 brew peco
 brew pixman
 brew pkg-config
+brew postgresql
+brew protobuf
+brew python
 brew python@2
 brew rbenv
 brew readline
 brew ruby-build
 brew sbt
+brew shared-mime-info
 brew sqlite
 brew texi2html
 brew valgrind
+brew webp
 brew wget
 brew x264
+brew x265
 brew xvid
 brew xz
 brew zsh
@@ -96,11 +113,10 @@ cask firefox
 cask intellij-idea-ce
 cask night-owl
 cask sublime-text
-cask visual-studio-code
-cask xld
+cask virtualbox
+cask vlc
 
 tap itchyny/fillin
-brew fillin
 
 tap rcmdnk/file
 brew brew-file
@@ -108,23 +124,26 @@ brew brew-file
 tap shogogg/cask-atok
 cask atok-passport
 
+# Other Homebrew packages
+brew fillin
+
 # Other Cask applications
 cask cyberduck
 cask dropbox
 cask google-chrome
 cask java
 cask skype
-cask virtualbox
-cask vlc
+cask vagrant
+cask visual-studio-code
+cask xld
 
 # App Store applications
 appstore 405843582 Alfred (1.2)
 appstore 1024640650 CotEditor (3.5.0)
-appstore 426410278 Flexiglass (1.6.2)
 appstore 409183694 Keynote (8.1)
 appstore 411213048 LadioCast (000012004)
 appstore 539883307 LINE (5.9.2)
 appstore 634148309 Logic Pro X (10.4.1)
 appstore 409201541 Pages (7.1)
 appstore 407963104 Pixelmator (3.7.3)
-appstore 425424353 The Unarchiver (4.0.0)
+appstore 425424351 The Unarchiver (4.0.0)

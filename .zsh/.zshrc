@@ -44,3 +44,14 @@ if [ $+commands[brew] -a -f $(brew --prefix)/etc/brew-wrap ]; then
 fi
 
 source $ZDOTDIR/path.zsh
+
+if type rbenv &> /dev/null; then
+  eval "$(rbenv init -)"
+fi
+
+if type direnv &> /dev/null; then
+  if type emacs &> /dev/null; then
+    export EDITOR=emacs
+  fi
+  eval "$(direnv hook zsh)"
+fi
