@@ -49,6 +49,10 @@ if type rbenv &> /dev/null; then
   eval "$(rbenv init -)"
 fi
 
+if type nodenv &> /dev/null; then
+  eval "$(nodenv init -)"
+fi
+
 if type direnv &> /dev/null; then
   if type emacs &> /dev/null; then
     export EDITOR=emacs

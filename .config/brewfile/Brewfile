@@ -63,7 +63,8 @@ brew mpfr
 brew nasm
 brew nettle
 brew nkf
-brew nodebrew
+brew nodenv
+brew node-build
 brew nspr
 brew nss
 brew oniguruma
