@@ -1,13 +1,15 @@
-# This is Git's per-user configuration file.
-[user]
-# Please adapt and uncomment the following lines:
-name = berlysia
-email = berlysia@gmail.com
+[include]
+	path = ./.gitconfig_local
 
 [core]
-excludesfile = /Users/berlysia/.gitignore_global
-editor = emacs
+	excludesfile = ./.gitignore_global
+	editor = emacs
 [credential]
 	helper = osxkeychain
 [rebase]
 	autosquash = true
+[merge]
+	conflictstyle = diff3
+	ff = false
+[pull]
+	ff = only

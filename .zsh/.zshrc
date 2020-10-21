@@ -39,8 +39,12 @@ source $ZDOTDIR/path.zsh
 
 source $HOME/.asdf/asdf.sh
 
-if type nodenv &> /dev/null; then
-  eval "$(nodenv init -)"
+if [ $+commands[brew] -a -f $(brew --prefix)/etc/brew-wrap ]; then
+  source $(brew --prefix)/etc/brew-wrap
+fi
+
+if [ -e $HOME/.zshrc.local ]; then
+    source $HOME/.zshrc.local
 fi
 
 if type direnv &> /dev/null; then
