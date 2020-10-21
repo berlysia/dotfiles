@@ -27,27 +27,17 @@ SAVEHIST=10000
 
 source $ZDOTDIR/prompt.zsh
 
-case ${OSTYPE} in
-    darwin*)
-        source $ZDOTDIR/.zshrc.darwin
-        ;;
-    linux*)
-        source $ZDOTDIR/.zshrc.linux
-        ;;
-esac
+if [ "`uname`" = "Darwin" ]; then
+  source $ZDOTDIR/.zshrc.darwin
+elif [ "`uname`" = "Linux" ]; then
+  source $ZDOTDIR/.zshrc.linux
+fi
 
 source $ZDOTDIR/zplug.zsh
 source $ZDOTDIR/alias.zsh
-
-if [ $+commands[brew] -a -f $(brew --prefix)/etc/brew-wrap ]; then
-  source $(brew --prefix)/etc/brew-wrap
-fi
-
 source $ZDOTDIR/path.zsh
 
-if type rbenv &> /dev/null; then
-  eval "$(rbenv init -)"
-fi
+source $HOME/.asdf/asdf.sh
 
 if type nodenv &> /dev/null; then
   eval "$(nodenv init -)"

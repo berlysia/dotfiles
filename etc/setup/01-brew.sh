@@ -1,12 +1,11 @@
-#!/bin/sh
+#!/bin/bash
 set -eu
 
 if type brew; then
   exit
 fi
 
-case ${OSTYPE} in
-  darwin*)
+if [ "`uname`" = "Darwin" ]; then
   echo "[start] install Homebrew"
 
   # https://brew.sh/index_ja.html
@@ -15,9 +14,6 @@ case ${OSTYPE} in
   # https://github.com/rcmdnk/homebrew-file
   brew install rcmdnk/file/brew-file || :
   brew file install
-  ;;
-
-  *)
-
+else
   echo "[skip] install Homebrew"
-esac
+fi
