@@ -2,8 +2,12 @@
 # tap repositories and their packages
 
 tap homebrew/core
+brew adns
 brew aria2
 brew autoconf
+brew bandwhich
+brew bat
+brew bdw-gc
 brew cairo
 brew cmake
 brew convmv
@@ -11,7 +15,10 @@ brew direnv
 brew docker
 brew docker-compose
 brew docker-machine
+brew dust
 brew emacs
+brew exa
+brew fd
 brew fdk-aac
 brew ffmpeg --with-fdk-aac
 brew fish
@@ -29,7 +36,10 @@ brew gmp
 brew gnutls
 brew go
 brew gradle
+brew grex
+brew guile
 brew httpie
+brew hyperfine
 brew icu4c
 brew id3lib
 brew id3v2
@@ -39,13 +49,17 @@ brew isl
 brew jpeg
 brew jq
 brew lame
+brew libassuan
 brew libde265
 brew libev
 brew libevent
 brew libffi
+brew libgcrypt
+brew libgpg-error
 brew libheif
 brew libidn
 brew libidn2
+brew libksba
 brew libmpc
 brew libomp
 brew libpng
@@ -53,6 +67,7 @@ brew libtasn1
 brew libtiff
 brew libtool
 brew libunistring
+brew libusb
 brew libuv
 brew libwebsockets
 brew libyaml
@@ -63,32 +78,36 @@ brew mpfr
 brew nasm
 brew nettle
 brew nkf
-brew nodenv
 brew node-build
+brew nodenv
+brew npth
 brew nspr
 brew nss
 brew oniguruma
 brew openexr
 brew openjpeg
-brew openssl
 brew openssl@1.1
 brew p11-kit
 brew pcre
 brew pcre2
 brew peco
+brew pinentry
 brew pixman
 brew pkg-config
 brew postgresql
+brew procs
 brew protobuf
-brew python
-brew python@2
 brew rbenv
 brew readline
+brew ripgrep
 brew ruby-build
 brew sbt
+brew sd
 brew shared-mime-info
 brew sqlite
 brew texi2html
+brew tokei
+brew unbound
 brew valgrind
 brew webp
 brew wget
@@ -109,13 +128,20 @@ tap homebrew/services
 tap homebrew/cask
 cask 1password
 cask coteditor
+cask cyberduck
 cask docker
+cask dropbox
 cask firefox
+cask google-chrome
 cask intellij-idea-ce
 cask night-owl
+cask skype
 cask sublime-text
+cask vagrant
 cask virtualbox
+cask visual-studio-code
 cask vlc
+cask xld
 
 tap itchyny/fillin
 
@@ -127,16 +153,13 @@ cask atok-passport
 
 # Other Homebrew packages
 brew fillin
+brew gpg2
+brew openssl
+brew python
+brew python@2
 
 # Other Cask applications
-cask cyberduck
-cask dropbox
-cask google-chrome
 cask java
-cask skype
-cask vagrant
-cask visual-studio-code
-cask xld
 
 # App Store applications
 appstore 405843582 Alfred (1.2)

@@ -51,5 +51,11 @@ if type direnv &> /dev/null; then
   if type emacs &> /dev/null; then
     export EDITOR=emacs
   fi
-  eval "$(direnv hook zsh)"
+
+  # Hook direnv into your shell.
+  eval "$(asdf exec direnv hook zsh)"
+
+  # A shortcut for asdf managed direnv.
+  direnv() { asdf exec direnv "$@"; }
 fi
+

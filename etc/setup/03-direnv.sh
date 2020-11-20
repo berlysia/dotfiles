@@ -5,4 +5,6 @@ if type direnv; then
   exit
 fi
 
-curl -sfL https://direnv.net/install.sh | bash
+asdf plugin-add direnv
+asdf install direnv latest
+asdf global  direnv latest
