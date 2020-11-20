@@ -13,3 +13,6 @@
 	ff = false
 [pull]
 	ff = only
+[user]
+	name = berlysia
+	email = berlysia@gmail.com
