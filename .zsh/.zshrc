@@ -59,3 +59,6 @@ if type direnv &> /dev/null; then
   direnv() { asdf exec direnv "$@"; }
 fi
 
+if type opam &> /dev/null; then
+  eval `opam env`
+fi
