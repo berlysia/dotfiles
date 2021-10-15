@@ -20,7 +20,7 @@ brew emacs
 brew exa
 brew fd
 brew fdk-aac
-brew ffmpeg --with-fdk-aac
+brew ffmpeg
 brew fish
 brew fontconfig
 brew freetype
@@ -158,16 +158,5 @@ brew openssl
 brew python
 brew python@2
 
-# Other Cask applications
-cask java
-
 # App Store applications
 appstore 405843582 Alfred (1.2)
-appstore 1024640650 CotEditor (3.5.0)
-appstore 409183694 Keynote (8.1)
-appstore 411213048 LadioCast (000012004)
-appstore 539883307 LINE (5.9.2)
-appstore 634148309 Logic Pro X (10.4.1)
-appstore 409201541 Pages (7.1)
-appstore 407963104 Pixelmator (3.7.3)
-appstore 425424351 The Unarchiver (4.0.0)
