@@ -49,7 +49,7 @@ if [ -e $HOME/.zshrc.local ]; then
     source $HOME/.zshrc.local
 fi
 
-if type direnv &> /dev/null; then
+if type asdf &> /dev/null && asdf plugin list | grep direnv > /dev/null; then
   if type emacs &> /dev/null; then
     export EDITOR=emacs
   fi
