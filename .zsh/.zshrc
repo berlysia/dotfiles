@@ -37,6 +37,18 @@ source $ZDOTDIR/path.zsh
 
 source $HOME/.asdf/asdf.sh
 
+if type fzf &> /dev/null; then
+  function fzf-history-selection() {
+    local selected=`history -E 1 | fzf | cut -b 26-`
+    BUFFER=`[ ${#selected} -gt 0 ] && echo $selected || echo $BUFFER`
+    CURSOR=$#BUFFER
+    zle reset-prompt
+  }
+
+  zle -N fzf-history-selection
+  bindkey '^R' fzf-history-selection
+fi
+
 if [ -e $HOME/.zshrc.local ]; then
     source $HOME/.zshrc.local
 fi
@@ -56,3 +68,5 @@ fi
 if type opam &> /dev/null; then
   eval `opam env`
 fi
+
+[ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
