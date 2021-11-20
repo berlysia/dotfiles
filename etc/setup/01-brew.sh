@@ -1,9 +1,7 @@
 #!/bin/bash
 set -eu
 
-if type brew; then
-  exit
-fi
+if ! type brew; then
 
 if [ "`uname`" = "Darwin" ]; then
   echo "install Homebrew..."
@@ -16,4 +14,6 @@ if [ "`uname`" = "Darwin" ]; then
   brew file install
 else
   echo "Homebrew install -> skip"
+fi
+
 fi
