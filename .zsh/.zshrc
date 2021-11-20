@@ -38,12 +38,6 @@ source $ZDOTDIR/path.zsh
 
 source $HOME/.asdf/asdf.sh
 
-if type brew &> /dev/null; then
-  if [ -f $(brew --prefix)/etc/brew-wrap ]; then
-    source $(brew --prefix)/etc/brew-wrap
-  fi
-fi
-
 if [ -e $HOME/.zshrc.local ]; then
     source $HOME/.zshrc.local
 fi

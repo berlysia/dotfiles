@@ -1,4 +1,5 @@
-if [ $+commands[brew] -a -f $(brew --prefix)/etc/brew-wrap ]; then
-  source $(brew --prefix)/etc/brew-wrap
+if type brew &> /dev/null; then
+  if [ -f $(brew --prefix)/etc/brew-wrap ]; then
+    source $(brew --prefix)/etc/brew-wrap
+  fi
 fi
-
