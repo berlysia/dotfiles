@@ -10,8 +10,8 @@ bindkey -e
 
 bindkey "^[[3~" delete-char
 bindkey "^?" backward-delete-char
-bindkey "[D" backward-word
-bindkey "[C" forward-word
+bindkey ";5D" backward-word
+bindkey ";5C" forward-word
 
 autoload -Uz select-word-style
 select-word-style default
