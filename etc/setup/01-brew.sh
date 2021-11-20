@@ -6,7 +6,7 @@ if type brew; then
 fi
 
 if [ "`uname`" = "Darwin" ]; then
-  echo "[start] install Homebrew"
+  echo "install Homebrew..."
 
   # https://brew.sh/index_ja.html
   /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
@@ -15,5 +15,5 @@ if [ "`uname`" = "Darwin" ]; then
   brew install rcmdnk/file/brew-file || :
   brew file install
 else
-  echo "[skip] install Homebrew"
+  echo "Homebrew install -> skip"
 fi
