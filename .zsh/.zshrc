@@ -33,7 +33,6 @@ elif [ "`uname`" = "Linux" ]; then
   source $ZDOTDIR/.zshrc.linux
 fi
 
-source $ZDOTDIR/zplug.zsh
 source $ZDOTDIR/path.zsh
 
 source $HOME/.asdf/asdf.sh
