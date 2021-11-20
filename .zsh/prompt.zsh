@@ -48,53 +48,59 @@ function __vcs_git_indicator () {
 
 add-zsh-hook precmd __vcs_git_indicator
 
-local env_js_indicator
+local env_js_indicator env_js_indicator_cached env_js_lastpwd
 function __env_js_indicator() {
-  typeset -a js_indicator
+  typeset -a js_indicator js_package_version
   local package_version
   package_version=$(grep -oP '(?<="version": ")(.+?)(?=")' ./package.json 2> /dev/null)
   (( $? == 0 )) && {
-    js_indicator+=("${emoji[node_package]} %F{214}v$package_version%f")
+    js_package_version+=("${emoji[node_package]} %F{214}v$package_version%f")
 
-    {
+    if [ "$env_js_lastpwd" != "$PWD" ]; then
       local node_version
-      if type asdf > /dev/null; then
-        local res=(`asdf current nodejs 2> /dev/null`)
-        (( ${#res[@]} > 0 )) && {
-          node_version=${res[2]}
-        }
-      fi
+      ## 回数減らすならそのまま叩いてよさそう
+      # if type asdf > /dev/null; then
+      #   local res=(`asdf current nodejs 2> /dev/null`)
+      #   (( ${#res[@]} > 0 )) && {
+      #     node_version=${res[2]}
+      #   }
+      # fi
 
-      if (( ${#node_version} == 0 )); then
+      if  [ -z "$node_version" ]; then
         node_version=$(node -v 2> /dev/null)
       fi
 
-      if [ -n "$node_version"]; then
+      if [ -n "$node_version" ]; then
         js_indicator+=("via %F{green}nodejs $node_version%f")
       fi
-    }
 
-    ## super slow
-    # if [ -e package-lock.json ]; then
-    #   npm_version=$(npm -v 2> /dev/null)
-    #   (( $? == 0 )) && {
-    #     js_indicator+=("with %F{green}npm v$npm_version%f")
-    #   }
-    # fi
+      # super slow
+      if [ -e package-lock.json ]; then
+        npm_version=$(npm -v 2> /dev/null)
+        (( $? == 0 )) && {
+          js_indicator+=("with %F{green}npm v$npm_version%f")
+        }
+      fi
 
-    ## super slow
-    # if [ -e yarn.lock ]; then
-    #   yarn_version=$(yarn -v 2> /dev/null)
-    #   (( $? == 0 )) && {
-    #     js_indicator+=("with %F{green}yarn v$yarn_version%f")
-    #   }
-    # fi
+      # super slow
+      if [ -e yarn.lock ]; then
+        yarn_version=$(yarn -v 2> /dev/null)
+        (( $? == 0 )) && {
+          js_indicator+=("with %F{green}yarn v$yarn_version%f")
+        }
+      fi
+
+      env_js_indicator_cached="$js_indicator"
+    fi
   }
 
-  env_js_indicator="$js_indicator"
-  if [ -n "$js_indicator" ]; then
-    env_js_indicator+=$rawbr
+  if (( ${#js_package_version} > 0 )); then
+    env_js_indicator="$js_package_version $env_js_indicator_cached$rawbr"
+  else
+    env_js_indicator=""
   fi
+
+  env_js_lastpwd=$PWD
 }
 
 add-zsh-hook precmd __env_js_indicator
