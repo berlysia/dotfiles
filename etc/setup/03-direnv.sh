@@ -7,4 +7,4 @@ fi
 
 asdf plugin-add direnv
 asdf install direnv latest
-asdf global  direnv latest
+asdf global  direnv $(asdf list-all direnv | tail -n 1)
