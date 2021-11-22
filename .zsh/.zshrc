@@ -49,6 +49,19 @@ if type fzf &> /dev/null; then
   bindkey '^R' fzf-history-selection
 fi
 
+
+if type fzf &> /dev/null && type rg &> /dev/null; then
+  function fzgrep() {
+    local MYCAT=$(type bat &> /dev/null && echo "bat" || echo "cat")
+    local INITIAL_QUERY=""
+    local RG_PREFIX="rg --column --line-number --no-heading --color=always --smart-case "
+    FZF_DEFAULT_COMMAND="$RG_PREFIX '$INITIAL_QUERY'" \
+      fzf --bind "change:reload:$RG_PREFIX {q} || true" \
+          --ansi --phony --query "$INITIAL_QUERY" \
+          --preview "$MYCAT `echo {} | cut -f 1 --delim \":\"`"
+  }
+fi
+
 if [ -e $HOME/.zshrc.local ]; then
     source $HOME/.zshrc.local
 fi
