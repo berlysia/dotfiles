@@ -82,4 +82,9 @@ if type opam &> /dev/null; then
   eval `opam env`
 fi
 
+# fzf completion & key-bindings (when installed fzf via brew or git)
 [ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
+
+# fzf completion & key-bindings (when installed fzf via apt)
+[ -f /usr/share/doc/fzf/examples/key-bindings.zsh ] && source /usr/share/doc/fzf/examples/key-bindings.zsh
+[ -f /usr/share/doc/fzf/examples/completion.zsh ] && source /usr/share/doc/fzf/examples/completion.zsh
