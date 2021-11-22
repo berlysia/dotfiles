@@ -37,7 +37,7 @@ function __vcs_git_indicator () {
     (( ${git_info[clean]}     )) && git_indicator+=("${emoji[git_clean]}")
     (( ${git_info[staged]}    )) && git_indicator+=("${emoji[git_staged]} %{%F{green}%}${git_info[staged]} staged%{%f%}")
     (( ${git_info[changed]}   )) && git_indicator+=("${emoji[git_changed]} %{%F{yellow}%}${git_info[changed]} unstaged%{%f%}")
-    (( ${git_info[untracked]} )) && git_indicator+=("${emoji[git_untracked]} %{%F{red}%}${git_info[untracked]} / ${git_info[changed]} untracked%{%f%}")
+    (( ${git_info[untracked]} )) && git_indicator+=("${emoji[git_untracked]} %{%F{red}%}${git_info[untracked]} untracked%{%f%}")
   }
 
   vcs_git_indicator="$git_indicator"
