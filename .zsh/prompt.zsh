@@ -52,7 +52,7 @@ local env_js_indicator env_js_indicator_cached env_js_lastpwd
 function __env_js_indicator() {
   typeset -a js_indicator js_package_version
   local package_version
-  package_version=$(grep -E '"version":\s"\d+\.\d+\.\d+(.*?)"' ./package.json 2> /dev/null | awk -F \" '{ print $4 }')
+  package_version=$(grep -E '"version":\s"[0-9]+\.[0-9]+\.[0-9]+(.*?)"' ./package.json 2> /dev/null | awk -F \" '{ print $4 }')
   (( ${#package_version} != 0 )) && {
     js_package_version+=("${emoji[node_package]} %F{214}v$package_version%f")
 
