@@ -68,5 +68,3 @@ fi
 if type opam &> /dev/null; then
   eval `opam env`
 fi
-
-[ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
