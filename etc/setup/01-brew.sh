@@ -13,7 +13,7 @@ if [ "`uname`" = "Darwin" ]; then
   brew install rcmdnk/file/brew-file || :
   brew file install
 else
-  echo "Homebrew install -> skip"
+  echo "homebrew installation skipped..."
 fi
 
 fi
