@@ -123,8 +123,6 @@ cask font-myrica
 tap homebrew/cask-versions
 cask google-chrome-canary
 
-tap homebrew/services
-
 tap homebrew/cask
 cask 1password
 cask coteditor
@@ -143,11 +141,6 @@ cask visual-studio-code
 cask vlc
 cask xld
 
-tap itchyny/fillin
-
-tap rcmdnk/file
-brew brew-file
-
 tap shogogg/cask-atok
 cask atok-passport
 
@@ -157,6 +150,9 @@ brew gpg2
 brew openssl
 brew python
 brew python@2
+
+# Other Cask applications
+cask java
 
 # App Store applications
 appstore 405843582 Alfred (1.2)
