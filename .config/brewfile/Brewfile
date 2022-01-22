@@ -130,7 +130,6 @@ cask vlc
 cask xld
 
 # Other Homebrew packages
-brew fillin
 brew gpg2
 brew openssl
 brew python
