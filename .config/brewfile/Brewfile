@@ -133,7 +133,6 @@ cask xld
 brew gpg2
 brew openssl
 brew python
-brew python@2
 
 # App Store applications
 appstore 405843582 Alfred (1.2)
