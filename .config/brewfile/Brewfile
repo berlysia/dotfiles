@@ -21,7 +21,6 @@ brew exa
 brew fd
 brew fdk-aac
 brew ffmpeg
-brew fish
 brew fontconfig
 brew freetype
 brew gcc
@@ -78,8 +77,6 @@ brew mpfr
 brew nasm
 brew nettle
 brew nkf
-brew node-build
-brew nodenv
 brew npth
 brew nspr
 brew nss
@@ -97,7 +94,6 @@ brew pkg-config
 brew postgresql
 brew procs
 brew protobuf
-brew rbenv
 brew readline
 brew ripgrep
 brew ruby-build
@@ -126,23 +122,14 @@ cask google-chrome-canary
 tap homebrew/cask
 cask 1password
 cask coteditor
-cask cyberduck
 cask docker
 cask dropbox
 cask firefox
 cask google-chrome
-cask intellij-idea-ce
-cask night-owl
-cask skype
-cask sublime-text
-cask vagrant
 cask virtualbox
 cask visual-studio-code
 cask vlc
 cask xld
-
-tap shogogg/cask-atok
-cask atok-passport
 
 # Other Homebrew packages
 brew fillin
@@ -150,9 +137,6 @@ brew gpg2
 brew openssl
 brew python
 brew python@2
-
-# Other Cask applications
-cask java
 
 # App Store applications
 appstore 405843582 Alfred (1.2)
