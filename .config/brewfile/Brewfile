@@ -23,6 +23,7 @@ brew fdk-aac
 brew ffmpeg
 brew fontconfig
 brew freetype
+brew fzf
 brew gcc
 brew gdbm
 brew gettext
