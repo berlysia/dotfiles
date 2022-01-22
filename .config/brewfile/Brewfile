@@ -103,8 +103,6 @@ brew shared-mime-info
 brew sqlite
 brew texi2html
 brew tokei
-brew unbound
-brew valgrind
 brew webp
 brew wget
 brew x264
