@@ -16,3 +16,5 @@
 [user]
 	name = berlysia
 	email = berlysia@gmail.com
+[init]
+	defaultBranch = master
