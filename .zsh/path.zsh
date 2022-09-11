@@ -6,6 +6,7 @@ path=(
   $HOME/.bin
 
   $HOME/.deno/bin
+  $HOME/google-cloud-sdk/bin
   $HOME/workspace/depot_tools
   $path
 )

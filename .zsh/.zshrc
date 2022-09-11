@@ -89,4 +89,8 @@ fi
 [ -f /usr/share/doc/fzf/examples/key-bindings.zsh ] && source /usr/share/doc/fzf/examples/key-bindings.zsh
 [ -f /usr/share/doc/fzf/examples/completion.zsh ] && source /usr/share/doc/fzf/examples/completion.zsh
 
+if type asdf &> /dev/null && asdf plugin list | grep python > /dev/null && type gcloud &> /dev/null; then
+  export CLOUDSDK_PYTHON=`asdf which python`
+fi
+
 :
