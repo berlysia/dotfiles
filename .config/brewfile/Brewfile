@@ -129,6 +129,7 @@ cask virtualbox
 cask visual-studio-code
 cask vlc
 cask xld
+cask raycast
 
 # Other Homebrew packages
 brew gpg2
@@ -136,4 +137,4 @@ brew openssl
 brew python
 
 # App Store applications
-appstore 405843582 Alfred (1.2)
+# appstore 405843582 Alfred (1.2)
