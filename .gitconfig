@@ -1,8 +1,8 @@
 [include]
-	path = ./.gitconfig_local
+	path = ~/.gitconfig_local
 
 [core]
-	excludesfile = ./.gitignore_global
+	excludesfile = ~/.gitignore_global
 	editor = code --wait
 [credential]
 	helper = osxkeychain
@@ -13,6 +13,7 @@
 	ff = false
 [pull]
 	ff = only
+	rebase = merges
 [user]
 	name = berlysia
 	email = berlysia@gmail.com
