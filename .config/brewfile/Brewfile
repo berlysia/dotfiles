@@ -38,6 +38,7 @@ brew go
 brew gradle
 brew grex
 brew guile
+brew htop
 brew httpie
 brew hyperfine
 brew icu4c
@@ -76,6 +77,7 @@ brew mas
 brew mkcert
 brew mpfr
 brew nasm
+brew ncurses
 brew nettle
 brew nkf
 brew npth
@@ -92,7 +94,6 @@ brew peco
 brew pinentry
 brew pixman
 brew pkg-config
-brew postgresql
 brew procs
 brew protobuf
 brew readline
@@ -125,16 +126,14 @@ cask docker
 cask dropbox
 cask firefox
 cask google-chrome
+cask raycast
 cask virtualbox
 cask visual-studio-code
 cask vlc
 cask xld
-cask raycast
 
 # Other Homebrew packages
 brew gpg2
 brew openssl
+brew postgresql
 brew python
-
-# App Store applications
-# appstore 405843582 Alfred (1.2)
