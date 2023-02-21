@@ -27,6 +27,7 @@ brew fzf
 brew gcc
 brew gdbm
 brew gettext
+brew gh
 brew ghq
 brew gibo
 brew giflib
