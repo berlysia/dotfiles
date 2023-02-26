@@ -7,7 +7,8 @@ if [ "`uname`" = "Darwin" ]; then
   echo "install Homebrew..."
 
   # https://brew.sh/index_ja.html
-  /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  eval "$(/opt/homebrew/bin/brew shellenv)"
 
   # https://github.com/rcmdnk/homebrew-file
   brew install rcmdnk/file/brew-file || :
