@@ -27,14 +27,21 @@ SAVEHIST=10000
 
 source $ZDOTDIR/prompt.zsh
 
-if [ "`uname`" = "Darwin" ]; then
-  source $ZDOTDIR/.zshrc.darwin
-elif [ "`uname`" = "Linux" ]; then
-  source $ZDOTDIR/.zshrc.linux
-fi
+{{ if eq .chezmoi.os "darwin" -}}
+  eval "$(/opt/homebrew/bin/brew shellenv)"
 
+  if type brew &> /dev/null; then
+    if [ -f $(brew --prefix)/etc/brew-wrap ]; then
+      source $(brew --prefix)/etc/brew-wrap
+    fi
+  fi
+{{ else if eq .chezmoi.os "linux" -}}
+  source $ZDOTDIR/.zshrc.linux
+{{ end -}}
+
+# WSLで実行されているときは、WSL2のSSHエージェントを起動する。他の方法だとコンテナでも誤認してしまう。
 if [ -n "$(which wslpath)" ]; then
-  source $ZDOTDIR/.zshrc.wsl
+  eval $($HOME/.local/bin/wsl2-ssh-agent)
 fi
 
 source $ZDOTDIR/path.zsh

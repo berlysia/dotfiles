@@ -1,0 +1,36 @@
+[include]
+	path = ~/.gitconfig_local
+
+[core]
+	excludesfile = ~/.gitignore_global
+	editor = code --wait
+	ignorecase = false
+	quotepath = false
+	pager = "less -R -F -X"
+{{ if eq .chezmoi.os "windows" -}}
+	sshCommand = "C:/Windows/System32/OpenSSH/ssh.exe"
+{{ end -}}
+
+[init]
+	defaultBranch = master
+
+[diff]
+	tool = "code --wait --diff $LOCAL $REMOTE"
+[rebase]
+	autosquash = true
+	autostash = true
+[merge]
+	conflictstyle = diff3
+	ff = false
+[push]
+	autoSetupRemote = true
+[pull]
+	ff = only
+	rebase = merges
+[user]
+	name = berlysia
+	email = berlysia@gmail.com
+[fetch]
+	prune = true
+[rerere]
+	enabled = true

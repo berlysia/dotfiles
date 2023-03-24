@@ -1,0 +1,59 @@
+#!/bin/bash
+
+{{ if eq .chezmoi.os "linux" -}}
+
+sudo apt-get update
+sudo apt-get install -y wget curl emacs git build-essential fzf bat ripgrep jq
+
+mkdir -p ~/.local/bin
+ln -s /usr/bin/batcat ~/.local/bin/bat
+
+{{ end -}}
+
+{{ if eq .chezmoi.os "darwin" -}}
+
+xcode-select --install || :
+
+if brew --version; then
+  echo "brew already installed"
+else
+  # https://brew.sh/index_ja.html
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  eval "$(/opt/homebrew/bin/brew shellenv)"
+
+  # https://github.com/rcmdnk/homebrew-file
+  brew install rcmdnk/file/brew-file || :
+  brew file install
+
+  $(brew --prefix)/opt/fzf/install
+fi
+
+{{ end -}}
+
+if asdf --version; then
+  echo "asdf already installed"
+else
+  # https://asdf-vm.com/
+  git clone https://github.com/asdf-vm/asdf.git ~/.asdf
+  cd ~/.asdf
+  git checkout "$(git describe --abbrev=0 --tags)"
+  source $HOME/.asdf/asdf.sh
+fi
+
+if direnv --version; then
+  echo "direnv already installed"
+else
+  asdf plugin-add direnv || :
+  asdf install direnv latest
+  asdf global  direnv $(asdf list-all direnv | tail -n 1)
+fi
+
+{{ if and (eq .chezmoi.os "linux") (.chezmoi.kernel.osrelease | lower | contains "microsoft") -}}
+if type wsl2-ssh-agent; then
+  echo "wsl2-ssh-agent already installed"
+else
+  curl -L https://github.com/mame/wsl2-ssh-agent/releases/latest/download/wsl2-ssh-agent -o $HOME/.local/bin/wsl2-ssh-agent
+  chmod 755 $HOME/.local/bin/wsl2-ssh-agent
+  echo "see: https://github.com/mame/wsl2-ssh-agent"
+fi
+{{ end -}}
