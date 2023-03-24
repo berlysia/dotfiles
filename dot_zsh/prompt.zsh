@@ -52,7 +52,7 @@ local env_js_indicator env_js_indicator_cached env_js_lastpwd
 function __env_js_indicator() {
   typeset -a js_indicator js_package_version
   local package_version
-  package_version=$(grep -E '"version":\s"[0-9]+\.[0-9]+\.[0-9]+(.*?)"' ./package.json 2> /dev/null | awk -F \" '{ print $4 }')
+  package_version=$(jq -r ".version" ./package.json 2> /dev/null)
   (( ${#package_version} != 0 )) && {
     js_package_version+=("${emoji[node_package]} %F{214}v$package_version%f")
 
@@ -74,20 +74,21 @@ function __env_js_indicator() {
         js_indicator+=("via %F{green}nodejs $node_version%f")
       fi
 
-      # super slow
-      if [ -e package-lock.json ]; then
+      local npm_version yarn_version
+      if [ -z "$npm_version" -a -e package-lock.json ]; then
         npm_version=$(npm -v 2> /dev/null)
-        (( $? == 0 )) && {
-          js_indicator+=("with %F{green}npm v$npm_version%f")
-        }
       fi
 
-      # super slow
-      if [ -e yarn.lock ]; then
+      if [ -n "$npm_version" ]; then
+        js_indicator+=("with %F{green}npm v$npm_version%f")
+      fi
+
+      if [ -z "$yarn_version" -a -e yarn.lock ]; then
         yarn_version=$(yarn -v 2> /dev/null)
-        (( $? == 0 )) && {
-          js_indicator+=("with %F{green}yarn v$yarn_version%f")
-        }
+      fi
+
+      if [ -n "$yarn_version" ]; then
+        js_indicator+=("with %F{green}yarn v$yarn_version%f")
       fi
 
       env_js_indicator_cached="$js_indicator"
