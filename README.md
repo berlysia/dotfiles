@@ -20,5 +20,6 @@ depends on [chezmoi](https://github.com/twpayne/chezmoi)
 - fzf
 - ripgrep
 - bat
+- WSL2 ssh-agent (only WSL)
 
 - my custom zsh prompt
