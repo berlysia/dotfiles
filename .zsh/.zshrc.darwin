@@ -1,7 +1,0 @@
-eval "$(/opt/homebrew/bin/brew shellenv)"
-
-if type brew &> /dev/null; then
-  if [ -f $(brew --prefix)/etc/brew-wrap ]; then
-    source $(brew --prefix)/etc/brew-wrap
-  fi
-fi
