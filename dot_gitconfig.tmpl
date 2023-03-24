@@ -1,15 +1,12 @@
-[include]
-	path = ~/.gitconfig_local
-
 [core]
 	excludesfile = ~/.gitignore_global
 	editor = code --wait
 	ignorecase = false
 	quotepath = false
 	pager = "less -R -F -X"
-{{ if eq .chezmoi.os "windows" -}}
+{{- if eq .chezmoi.os "windows" }}
 	sshCommand = "C:/Windows/System32/OpenSSH/ssh.exe"
-{{ end -}}
+{{- end }}
 
 [init]
 	defaultBranch = master
@@ -34,3 +31,6 @@
 	prune = true
 [rerere]
 	enabled = true
+
+[include]
+	path = ~/.gitconfig_local

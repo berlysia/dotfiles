@@ -4,8 +4,9 @@ depends on [chezmoi](https://github.com/twpayne/chezmoi)
 
 ## How to use(for me)
 
-1. setup chezmoi
-1. `chezmoi init git@github.com:berlysia/dotfiles.git`
+1. [install chezmoi](https://www.chezmoi.io/install/)
+1. if you are in PowerShell, `Set-ExecutionPolicy -ExecutionPolicy ByPass -Scope Process`
+1. `chezmoi init --apply berlysia`
 
 ## note
 
