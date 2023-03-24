@@ -33,6 +33,10 @@ elif [ "`uname`" = "Linux" ]; then
   source $ZDOTDIR/.zshrc.linux
 fi
 
+if [ -n "$(which wslpath)" ]; then
+  source $ZDOTDIR/.zshrc.wsl
+fi
+
 source $ZDOTDIR/path.zsh
 
 source $HOME/.asdf/asdf.sh
