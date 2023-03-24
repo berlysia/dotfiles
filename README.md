@@ -1,8 +1,11 @@
 # dotfiles
 
-```sh
-make
-```
+depends on [chezmoi](https://github.com/twpayne/chezmoi)
+
+## How to use(for me)
+
+1. setup chezmoi
+1. `chezmoi init git@github.com:berlysia/dotfiles.git`
 
 ## note
 
