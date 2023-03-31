@@ -104,4 +104,6 @@ if type asdf &> /dev/null && asdf plugin list | grep python > /dev/null && type 
   export CLOUDSDK_PYTHON=`asdf which python`
 fi
 
+[ -f "$ZDOTDIR/ni.zsh" ] && source $ZDOTDIR/ni.zsh
+
 :

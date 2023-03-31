@@ -1,0 +1,4 @@
+[".zsh/ni.zsh"]
+  type = "file"
+  url = "https://raw.githubusercontent.com/azu/ni.zsh/main/ni.zsh"
+  refreshPeriod = "168h"
