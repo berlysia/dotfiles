@@ -49,14 +49,4 @@ else
   asdf global  direnv $(asdf list-all direnv | tail -n 1)
 fi
 
-{{ if and (eq .chezmoi.os "linux") (.chezmoi.kernel.osrelease | lower | contains "microsoft") -}}
-if type wsl2-ssh-agent; then
-  echo "wsl2-ssh-agent already installed"
-else
-  curl -L https://github.com/mame/wsl2-ssh-agent/releases/latest/download/wsl2-ssh-agent -o $HOME/.local/bin/wsl2-ssh-agent
-  chmod 755 $HOME/.local/bin/wsl2-ssh-agent
-  echo "see: https://github.com/mame/wsl2-ssh-agent"
-fi
-{{ end -}}
-
 {{ end }}
