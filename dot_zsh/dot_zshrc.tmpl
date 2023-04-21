@@ -40,8 +40,8 @@ source $ZDOTDIR/prompt.zsh
 {{ end -}}
 
 # WSLで実行されているときは、WSL2のSSHエージェントを起動する。他の方法だとコンテナでも誤認してしまう。
-if [ -e wslpath ]; then
-  eval $($HOME/.local/bin/wsl2-ssh-agent)
+if (( ${+commands[wslpath]} )); then
+  eval "$($HOME/.local/bin/wsl2-ssh-agent)"
 fi
 
 source $ZDOTDIR/path.zsh
