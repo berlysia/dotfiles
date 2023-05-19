@@ -45,8 +45,7 @@ if direnv --version; then
   echo "direnv already installed"
 else
   asdf plugin-add direnv || :
-  asdf install direnv latest
-  asdf global  direnv $(asdf list-all direnv | tail -n 1)
+  asdf direnv setup --shell zsh --version latest
 fi
 
 {{ end }}
