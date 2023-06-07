@@ -106,4 +106,9 @@ fi
 
 [ -f "$ZDOTDIR/ni.zsh" ] && source $ZDOTDIR/ni.zsh
 
+echo -ne "\033]0;$(basename $PWD)\007"
+function chpwd() {
+  echo -ne "\033]0;$(basename $PWD)\007"
+}
+
 :
