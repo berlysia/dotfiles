@@ -27,6 +27,8 @@ else
   brew file install
 
   $(brew --prefix)/opt/fzf/install
+
+  ln -s $(brew --prefix)/opt/curl/bin/curl ~/.local/bin/curl
 fi
 
 {{ end -}}
