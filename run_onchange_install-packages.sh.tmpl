@@ -20,7 +20,7 @@ if brew --version; then
 else
   # https://brew.sh/index_ja.html
   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-  eval "$(/opt/homebrew/bin/brew shellenv)"
+  eval "$($(brew --prefix)/bin/brew shellenv)"
 
   # https://github.com/rcmdnk/homebrew-file
   brew install rcmdnk/file/brew-file || :
