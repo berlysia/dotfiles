@@ -8,7 +8,7 @@ path=(
   $HOME/.local/bin
 
   # dotfilesで管理する実行ファイルの置き場所
-  $HOME/.bin
+  $HOME/.local/.bin
 
   $HOME/.deno/bin
   $HOME/google-cloud-sdk/bin
