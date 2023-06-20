@@ -5,6 +5,7 @@ depends on [chezmoi](https://github.com/twpayne/chezmoi)
 ## How to use(for me)
 
 1. [install chezmoi](https://www.chezmoi.io/install/)
+   - `sh -c "$(curl -fsLS get.chezmoi.io)" -- -b $HOME/.local/bin`
 1. if you are in PowerShell, `Set-ExecutionPolicy -ExecutionPolicy ByPass -Scope Process`
 1. `chezmoi init --apply berlysia`
 
