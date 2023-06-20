@@ -30,7 +30,7 @@ source $ZDOTDIR/path.zsh
 source $ZDOTDIR/prompt.zsh
 
 {{ if eq .chezmoi.os "darwin" -}}
-  eval "$($(brew --prefix)/bin/brew shellenv)"
+  eval "$(/opt/homebrew/bin/brew shellenv)"
 
   if type brew &> /dev/null; then
     if [ -f $(brew --prefix)/etc/brew-wrap ]; then
