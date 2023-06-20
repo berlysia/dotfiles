@@ -12,7 +12,7 @@ depends on [chezmoi](https://github.com/twpayne/chezmoi)
 ## note
 
 - `~/.local/bin` will be added to `$PATH`
-- `~/.bin` will be added to `$PATH` , and overwrite this directory with symlink
+- `~/.local/.bin` will be added to `$PATH` , and overwrite this directory with symlink
 
 ## list of something will be set up
 
