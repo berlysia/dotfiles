@@ -1,9 +1,9 @@
 [".zsh/ni.zsh"]
-  type = "file"
-  url = "https://raw.githubusercontent.com/azu/ni.zsh/main/ni.zsh"
-  refreshPeriod = "168h"
+type = "file"
+url = "https://raw.githubusercontent.com/azu/ni.zsh/main/ni.zsh"
+refreshPeriod = "24h"
 [".local/bin/wsl2-ssh-agent"]
-  type = "file"
-  url = "https://github.com/mame/wsl2-ssh-agent/releases/latest/download/wsl2-ssh-agent"
-  refreshPeriod = "168h"
-  executable = true
+type = "file"
+url = "https://github.com/mame/wsl2-ssh-agent/releases/latest/download/wsl2-ssh-agent"
+refreshPeriod = "24h"
+executable = true
