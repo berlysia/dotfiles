@@ -42,7 +42,9 @@ source $ZDOTDIR/prompt.zsh
     fi
   fi
 {{ else if eq .chezmoi.os "linux" -}}
-  source $ZDOTDIR/.zshrc.linux
+  if [ -e $ZDOTDIR/.zshrc.linux ]; then
+    source $ZDOTDIR/.zshrc.linux
+  fi
 {{ end -}}
 
 # WSLで実行されているときは、WSL2のSSHエージェントを起動する。他の方法だとコンテナでも誤認してしまう。
