@@ -84,8 +84,8 @@ if [ -e $HOME/.zshrc.local ]; then
 fi
 
 if type asdf &> /dev/null && asdf plugin list | grep direnv > /dev/null; then
-  if type emacs &> /dev/null; then
-    export EDITOR=emacs
+  if type code &> /dev/null; then
+    export EDITOR="code --wait"
   fi
 
   # Hook direnv into your shell.
