@@ -28,7 +28,7 @@ else
   fi
 
   # https://github.com/rcmdnk/homebrew-file
-  brew install rcmdnk/file/brew-file || :
+  brew install rcmdnk/rcmdnkpac/homebrew-file || :
   brew file install
 
   $(brew --prefix)/opt/fzf/install
@@ -60,18 +60,18 @@ if bun --version; then
   echo "bun already installed"
 else
   asdf plugin add bun || :
-  local BUN_VERSION=`asdf latest bun`
+  local BUN_VERSION=`asdf latest bun 2&>1 /dev/null`
   asdf install bun $BUN_VERSION
-  asdf global run $BUN_VERSION
+  asdf global bun $BUN_VERSION
 fi
 
 if node --version; then
   echo "node already installed"
 else
   asdf plugin add nodejs || :
-  local NODE_VERSION=`asdf latest nodejs`
+  local NODE_VERSION=`asdf latest nodejs 2&>1 /dev/null`
   asdf install nodejs $NODE_VERSION
-  asdf global run $NODE_VERSION
+  asdf global nodejs $NODE_VERSION
 fi
 
 {{ end }}
