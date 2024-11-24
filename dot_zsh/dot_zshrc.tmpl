@@ -52,7 +52,7 @@ if (( ${+commands[wslpath]} )); then
   eval "$($HOME/.local/bin/wsl2-ssh-agent)"
 fi
 
-source $HOME/.asdf/asdf.sh
+eval "$(~/.local/bin/mise activate zsh)"
 
 if type fzf &> /dev/null; then
   function fzf-history-selection() {
@@ -89,15 +89,6 @@ elif type emacs &> /dev/null; then
   export EDITOR=emacs
 fi
 
-if type asdf &> /dev/null && asdf plugin list | grep direnv > /dev/null; then
-
-  # Hook direnv into your shell.
-  eval "$(asdf exec direnv hook zsh)"
-
-  # A shortcut for asdf managed direnv.
-  direnv() { asdf exec direnv "$@"; }
-fi
-
 if type opam &> /dev/null; then
   eval `opam env`
 fi
@@ -109,8 +100,8 @@ fi
 [ -f /usr/share/doc/fzf/examples/key-bindings.zsh ] && source /usr/share/doc/fzf/examples/key-bindings.zsh
 [ -f /usr/share/doc/fzf/examples/completion.zsh ] && source /usr/share/doc/fzf/examples/completion.zsh
 
-if type asdf &> /dev/null && asdf plugin list | grep python > /dev/null && type gcloud &> /dev/null; then
-  export CLOUDSDK_PYTHON=`asdf which python`
+if type mise &> /dev/null && mise list | grep python > /dev/null && type gcloud &> /dev/null; then
+  export CLOUDSDK_PYTHON=`mise which python`
 fi
 
 [ -f "$ZDOTDIR/ni.zsh" ] && source $ZDOTDIR/ni.zsh

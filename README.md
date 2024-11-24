@@ -17,7 +17,7 @@ depends on [chezmoi](https://github.com/twpayne/chezmoi)
 ## list of something will be set up
 
 - homebrew (only mac)
-- asdf
+- [mise](https://github.com/jdx/mise)
 - direnv (via asdf)
 - fzf
 - ripgrep

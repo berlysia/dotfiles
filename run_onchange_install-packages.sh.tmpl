@@ -13,6 +13,8 @@ ln -s /usr/bin/batcat ~/.local/bin/bat
 
 {{ if eq .chezmoi.os "darwin" -}}
 
+mkdir -p ~/.local/bin
+
 xcode-select --install || :
 
 if brew --version; then
@@ -38,40 +40,27 @@ fi
 
 {{ end -}}
 
-if asdf --version; then
-  echo "asdf already installed"
+if mise --version; then
+  echo "mise already installed"
 else
-  # https://asdf-vm.com/
-  git clone https://github.com/asdf-vm/asdf.git ~/.asdf
-  cd ~/.asdf
-  git checkout "$(git describe --abbrev=0 --tags)"
-  source $HOME/.asdf/asdf.sh
-fi
-
-if direnv --version; then
-  echo "direnv already installed"
-else
-  asdf plugin add direnv || :
-  asdf direnv setup --shell zsh --version latest
-  asdf global direnv latest
+  # https://mise.jdx.dev/
+  curl https://mise.run | MISE_INSTALL_PATH=~/.local/bin/mise sh
 fi
 
 if bun --version; then
   echo "bun already installed"
 else
-  asdf plugin add bun || :
-  local BUN_VERSION=`asdf latest bun 2&>1 /dev/null`
-  asdf install bun $BUN_VERSION
-  asdf global bun $BUN_VERSION
+  local BUN_VERSION=`mise latest bun 2&>1 /dev/null`
+  mise install bun $BUN_VERSION
+  mise use bun@$BUN_VERSION
 fi
 
 if node --version; then
   echo "node already installed"
 else
-  asdf plugin add nodejs || :
-  local NODE_VERSION=`asdf latest nodejs 2&>1 /dev/null`
-  asdf install nodejs $NODE_VERSION
-  asdf global nodejs $NODE_VERSION
+  local NODE_VERSION=`mise latest node 2&>1 /dev/null`
+  mise install node $NODE_VERSION
+  mise use node@$NODE_VERSION
 fi
 
 {{ end }}
