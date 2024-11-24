@@ -96,3 +96,5 @@ _.msm
 \*.lnk
 
 # End of https://www.toptal.com/developers/gitignore/api/macos,linux,windows
+
+mise.local.toml

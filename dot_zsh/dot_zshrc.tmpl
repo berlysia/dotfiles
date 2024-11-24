@@ -30,20 +30,12 @@ source $ZDOTDIR/path.zsh
 source $ZDOTDIR/prompt.zsh
 
 {{ if eq .chezmoi.os "darwin" -}}
-  if [ -f /opt/homebrew/bin/brew ]; then
-    eval "$(/opt/homebrew/bin/brew shellenv)"
-  elif [ -f /usr/local/bin/brew ]; then
-    eval "$(/usr/local/bin/brew shellenv)"
-  fi
-
-  if type brew &> /dev/null; then
-    if [ -f $(brew --prefix)/etc/brew-wrap ]; then
-      source $(brew --prefix)/etc/brew-wrap
-    fi
+  if [ -e $ZDOTDIR/darwin.zsh ]; then
+    source $ZDOTDIR/darwin.zsh
   fi
 {{ else if eq .chezmoi.os "linux" -}}
-  if [ -e $ZDOTDIR/.zshrc.linux ]; then
-    source $ZDOTDIR/.zshrc.linux
+  if [ -e $ZDOTDIR/linux.zsh ]; then
+    source $ZDOTDIR/linux.zsh
   fi
 {{ end -}}
 
@@ -79,10 +71,6 @@ if type fzf &> /dev/null && type rg &> /dev/null; then
   }
 fi
 
-if [ -e $HOME/.zshrc.local ]; then
-    source $HOME/.zshrc.local
-fi
-
 if type code &> /dev/null; then
   export EDITOR="code --wait"
 elif type emacs &> /dev/null; then
@@ -93,12 +81,9 @@ if type opam &> /dev/null; then
   eval `opam env`
 fi
 
-# fzf completion & key-bindings (when installed fzf via brew or git)
-[ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
-
-# fzf completion & key-bindings (when installed fzf via apt)
-[ -f /usr/share/doc/fzf/examples/key-bindings.zsh ] && source /usr/share/doc/fzf/examples/key-bindings.zsh
-[ -f /usr/share/doc/fzf/examples/completion.zsh ] && source /usr/share/doc/fzf/examples/completion.zsh
+if type fzf &> /dev/null; then
+  source <(fzf --zsh)
+fi
 
 if type mise &> /dev/null && mise list | grep python > /dev/null && type gcloud &> /dev/null; then
   export CLOUDSDK_PYTHON=`mise which python`
@@ -110,5 +95,9 @@ echo -ne "\033]0;$(basename $PWD)\007"
 function chpwd() {
   echo -ne "\033]0;$(basename $PWD)\007"
 }
+
+if [ -e $HOME/.zshrc.local ]; then
+    source $HOME/.zshrc.local
+fi
 
 :

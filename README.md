@@ -18,7 +18,7 @@ depends on [chezmoi](https://github.com/twpayne/chezmoi)
 
 - homebrew (only mac)
 - [mise](https://github.com/jdx/mise)
-- direnv (via asdf)
+- direnv
 - fzf
 - ripgrep
 - bat

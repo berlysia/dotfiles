@@ -1,7 +1,3 @@
-if [ -x /usr/libexec/path_helper ]; then
-	PATH=""
-	eval `/usr/libexec/path_helper -s`
-fi
 
 path=(
   # 環境ごとの実行ファイルやsymlinkの置き場所
