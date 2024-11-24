@@ -58,13 +58,6 @@ function __env_js_indicator() {
 
     if [ "$env_js_lastpwd" != "$PWD" ]; then
       local node_version
-      ## 回数減らすならそのまま叩いてよさそう
-      # if type asdf > /dev/null; then
-      #   local res=(`asdf current nodejs 2> /dev/null`)
-      #   (( ${#res[@]} > 0 )) && {
-      #     node_version=${res[2]}
-      #   }
-      # fi
 
       if  [ -z "$node_version" ]; then
         node_version=$(node -v 2> /dev/null)
