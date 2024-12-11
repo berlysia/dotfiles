@@ -46,6 +46,8 @@ fi
 
 eval "$(~/.local/bin/mise activate zsh)"
 
+export FZF_DEFAULT_OPTS="--height=50% --layout=reverse --info=inline --border --padding=1"
+
 if type fzf &> /dev/null; then
   source <(fzf --zsh)
 fi
