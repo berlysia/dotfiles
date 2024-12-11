@@ -18,9 +18,14 @@ executable = true
     command = "tar"
     args = ["--extract", "--file", "/dev/stdin", "--gzip", "--to-stdout", "fzf"]
 
-[".local/share/zsh-completions/_fzf"]
+[".zsh/completions/_fzf"]
 type = "archive"
 url = "https://github.com/junegunn/fzf/archive/master.tar.gz"
 refreshPeriod = "168h"
 stripComponents = 2
 include = ["*/shell/*.zsh"]
+
+[".zsh/functions/fzf-tab-completion.zsh"]
+  type = "file"
+  url = "https://raw.githubusercontent.com/lincheney/fzf-tab-completion/master/zsh/fzf-zsh-completion.sh"
+  refreshPeriod = "168h"

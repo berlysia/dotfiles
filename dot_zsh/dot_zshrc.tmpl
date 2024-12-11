@@ -62,6 +62,10 @@ if type fzf &> /dev/null; then
   bindkey '^R' fzf-history-selection
 fi
 
+if type fzf &> /dev/null && [ -f ~/.zsh/functions/fzf-tab-completion.zsh ]; then
+  source ~/.zsh/functions/fzf-tab-completion.zsh
+  bindkey '^I' fzf_completion
+fi
 
 if type fzf &> /dev/null && type rg &> /dev/null; then
   function fzgrep() {

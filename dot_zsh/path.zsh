@@ -13,6 +13,6 @@ path=(
 )
 
 fpath=(
-  $HOME/.local/share/zsh-completions
+  $HOME/.zsh/completions
   $fpath
 )

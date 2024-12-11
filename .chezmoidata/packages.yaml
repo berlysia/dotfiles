@@ -27,6 +27,10 @@ packages:
     - 'xz'
     - 'zsh'
     - 'openssl'
+    - 'gawk'
+    - 'grep'
+    - 'gnu-sed'
+    - 'coreutils'
     casks:
     - '1password'
     - 'coteditor'
