@@ -11,3 +11,8 @@ path=(
   $HOME/workspace/depot_tools
   $path
 )
+
+fpath=(
+  $HOME/.local/share/zsh-completions
+  $fpath
+)

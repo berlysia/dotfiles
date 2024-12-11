@@ -2,8 +2,25 @@
 type = "file"
 url = "https://raw.githubusercontent.com/azu/ni.zsh/main/ni.zsh"
 refreshPeriod = "24h"
+
 [".local/bin/wsl2-ssh-agent"]
 type = "file"
 url = "https://github.com/mame/wsl2-ssh-agent/releases/latest/download/wsl2-ssh-agent"
 refreshPeriod = "24h"
 executable = true
+
+[".local/bin/fzf"]
+  type = "file"
+  url = "https://github.com/junegunn/fzf/releases/download/{{ (gitHubLatestRelease "junegunn/fzf").TagName }}/fzf-{{ trimPrefix "v" (gitHubLatestRelease "junegunn/fzf").TagName }}-{{ .chezmoi.os }}_{{ .chezmoi.arch }}.tar.gz"
+  executable = true
+  refreshPeriod = "168h"
+  [".local/bin/fzf".filter]
+    command = "tar"
+    args = ["--extract", "--file", "/dev/stdin", "--gzip", "--to-stdout", "fzf"]
+
+[".local/share/zsh-completions/_fzf"]
+type = "archive"
+url = "https://github.com/junegunn/fzf/archive/master.tar.gz"
+refreshPeriod = "168h"
+stripComponents = 2
+include = ["*/shell/*.zsh"]

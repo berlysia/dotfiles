@@ -47,6 +47,10 @@ fi
 eval "$(~/.local/bin/mise activate zsh)"
 
 if type fzf &> /dev/null; then
+  source <(fzf --zsh)
+fi
+
+if type fzf &> /dev/null; then
   function fzf-history-selection() {
     local selected=`history -E 1 | fzf | cut -b 26-`
     BUFFER=`[ ${#selected} -gt 0 ] && echo $selected || echo $BUFFER`
@@ -79,10 +83,6 @@ fi
 
 if type opam &> /dev/null; then
   eval `opam env`
-fi
-
-if type fzf &> /dev/null; then
-  source <(fzf --zsh)
 fi
 
 if type mise &> /dev/null && mise list | grep python > /dev/null && type gcloud &> /dev/null; then
