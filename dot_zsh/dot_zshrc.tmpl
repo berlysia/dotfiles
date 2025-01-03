@@ -22,8 +22,8 @@ setopt share_history
 setopt histignorealldups
 
 HISTFILE=$ZDOTDIR/.zsh_history
-HISTSIZE=10000
-SAVEHIST=10000
+HISTSIZE=2000
+SAVEHIST=2000
 
 source $ZDOTDIR/path.zsh
 
@@ -54,7 +54,9 @@ fi
 
 if type fzf &> /dev/null; then
   function fzf-history-selection() {
-    local selected=`history -E 1 | fzf | cut -b 26-`
+    [ -z $BUFFER ] && return
+
+    local selected=`history 0 | fzf --query $LBUFFER | awk '{ $1=""; sub(/^[ \t]+/, ""); print }'`
     BUFFER=`[ ${#selected} -gt 0 ] && echo $selected || echo $BUFFER`
     CURSOR=$#BUFFER
     zle reset-prompt
