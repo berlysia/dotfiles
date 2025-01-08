@@ -54,9 +54,14 @@ fi
 
 if type fzf &> /dev/null; then
   function fzf-history-selection() {
-    [ -z $BUFFER ] && return
+    local selected=""
 
-    local selected=`history 0 | fzf --query $LBUFFER | awk '{ $1=""; sub(/^[ \t]+/, ""); print }'`
+    if [[ -n "$LBUFFER" ]]; then
+      selected=`history 0 | fzf --query $LBUFFER | awk '{ $1=""; sub(/^[ \t]+/, ""); print }'`
+    else
+      selected=`history 0 | fzf | awk '{ $1=""; sub(/^[ \t]+/, ""); print }'`
+    fi
+
     BUFFER=`[ ${#selected} -gt 0 ] && echo $selected || echo $BUFFER`
     CURSOR=$#BUFFER
     zle reset-prompt
