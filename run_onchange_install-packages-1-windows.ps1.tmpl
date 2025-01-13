@@ -1,16 +1,21 @@
 {{ if eq .chezmoi.os "windows" }}
 
-# self-elevate if not already elevated
-if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
-  if ([int](Get-CimInstance -Class Win32_OperatingSystem | Select-Object -ExpandProperty BuildNumber) -ge 6000) {
-    $CommandLine = "-ExecutionPolicy ByPass -Scope Process -NoExit -File `"" + $MyInvocation.MyCommand.Path + "`" " + $MyInvocation.UnboundArguments
-    Start-Process -Wait -FilePath PowerShell.exe -Verb Runas -ArgumentList $CommandLine
-    Exit
-  }
-}
+# detect chocolatey is installed
+if (-Not (Test-Path 'C:\ProgramData\chocolatey\choco.exe')) {
+  Write-Host "Chocolatey is not installed. Installing Chocolatey..."
 
-# install chocolatey
-[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+  # self-elevate if not already elevated
+  if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
+    if ([int](Get-CimInstance -Class Win32_OperatingSystem | Select-Object -ExpandProperty BuildNumber) -ge 6000) {
+      $CommandLine = "-ExecutionPolicy ByPass -Scope Process -NoExit -File `"" + $MyInvocation.MyCommand.Path + "`" " + $MyInvocation.UnboundArguments
+      Start-Process -Wait -FilePath PowerShell.exe -Verb Runas -ArgumentList $CommandLine
+      Exit
+    }
+  }
+
+  # install chocolatey
+  [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+  iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+}
 
 {{ end }}
