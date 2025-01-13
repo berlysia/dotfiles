@@ -47,6 +47,7 @@ source $ZDOTDIR/prompt.zsh
   fi
   {{ if (.chezmoi.kernel.osrelease | lower | contains "microsoft") -}}
     eval "$($HOME/.local/bin/wsl2-ssh-agent)"
+    export BROWSER=wslview
   {{ end -}}
 {{ else if eq .chezmoi.os "windows" -}}
   if [ -e $ZDOTDIR/windows.zsh ]; then
