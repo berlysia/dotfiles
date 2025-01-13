@@ -1,3 +1,11 @@
+if [ "$ZSHRC_PROFILE" != "" ]; then
+  zmodload zsh/zprof && zprof > /dev/null
+fi
+
+function zsh-profiler() {
+  ZSHRC_PROFILE=1 zsh -i -c zprof
+}
+
 setopt IGNOREEOF
 
 autoload -Uz colors
