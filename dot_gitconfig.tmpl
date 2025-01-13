@@ -1,10 +1,10 @@
 [core]
-	editor = code --wait
-	ignorecase = false
-	quotepath = false
-	pager = "less -R -F -X"
+  editor = code --wait
+  ignorecase = false
+  quotepath = false
+  pager = "less -R -F -X"
 {{- if eq .chezmoi.os "windows" }}
-	sshCommand = "C:/Windows/System32/OpenSSH/ssh.exe"
+  sshCommand = "C:/Windows/System32/OpenSSH/ssh.exe"
 {{- else }}
   sshCommand = "ssh"
 {{- end }}
@@ -30,31 +30,31 @@
   gpgsign = true
 
 [init]
-	defaultBranch = master
+  defaultBranch = master
 
 [diff]
-	tool = "code --wait --diff $LOCAL $REMOTE"
+  tool = "code --wait --diff $LOCAL $REMOTE"
 [rebase]
-	autosquash = true
-	autostash = true
+  autosquash = true
+  autostash = true
 [merge]
-	conflictstyle = diff3
-	ff = false
+  conflictstyle = diff3
+  ff = false
 [push]
-	autoSetupRemote = true
+  autoSetupRemote = true
 [pull]
-	ff = only
-	rebase = merges
+  ff = only
+  rebase = merges
 [user]
-	name = {{ .user.name }}
-	email = {{ .user.email }}
+  name = {{ .user.name }}
+  email = {{ .user.email }}
 [fetch]
-	prune = true
+  prune = true
 [rerere]
-	enabled = true
+  enabled = true
 
 [include]
-	path = ~/.gitconfig_local
+  path = ~/.gitconfig_local
 
 [url "git://"]
     insteadOf = https://
