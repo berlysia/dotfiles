@@ -45,9 +45,9 @@ source $ZDOTDIR/prompt.zsh
   if [ -e $ZDOTDIR/linux.zsh ]; then
     source $ZDOTDIR/linux.zsh
   fi
-  {{   if (.chezmoi.kernel.osrelease | lower | contains "microsoft") }}
+  {{ if (.chezmoi.kernel.osrelease | lower | contains "microsoft") -}}
     eval "$($HOME/.local/bin/wsl2-ssh-agent)"
-  {{   end }}
+  {{ end -}}
 {{ else if eq .chezmoi.os "windows" -}}
   if [ -e $ZDOTDIR/windows.zsh ]; then
     source $ZDOTDIR/windows.zsh
