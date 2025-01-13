@@ -51,10 +51,11 @@ add-zsh-hook precmd __vcs_git_indicator
 local env_js_indicator env_js_indicator_cached env_js_lastpwd
 function __env_js_indicator() {
   typeset -a js_indicator js_package_version
-  local package_version
+  local package_version package_name
   package_version=$(jq -r ".version" ./package.json 2> /dev/null)
+  package_name=$(jq -r ".name" ./package.json 2> /dev/null)
   (( ${#package_version} != 0 )) && {
-    js_package_version+=("${emoji[node_package]} %F{214}v$package_version%f")
+    js_package_version+=("${emoji[node_package]} %F{214}$package_name@v$package_version%f")
 
     if [ "$env_js_lastpwd" != "$PWD" ]; then
       local node_version
@@ -67,7 +68,7 @@ function __env_js_indicator() {
         js_indicator+=("via %F{green}nodejs $node_version%f")
       fi
 
-      local npm_version yarn_version
+      local npm_version yarn_version pnpm_version
       if [ -z "$npm_version" -a -e package-lock.json ]; then
         npm_version=$(npm -v 2> /dev/null)
       fi
@@ -82,6 +83,14 @@ function __env_js_indicator() {
 
       if [ -n "$yarn_version" ]; then
         js_indicator+=("with %F{green}yarn v$yarn_version%f")
+      fi
+
+      if [ -z "$pnpm_version" -a -e pnpm-lock.yaml ]; then
+        pnpm_version=$(pnpm -v 2> /dev/null)
+      fi
+
+      if [ -n "$pnpm_version" ]; then
+        js_indicator+=("with %F{green}pnpm v$pnpm_version%f")
       fi
 
       env_js_indicator_cached="$js_indicator"
