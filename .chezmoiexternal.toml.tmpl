@@ -1,3 +1,4 @@
+{{ if ne .chezmoi.os "windows" }}
 [".zsh/ni.zsh"]
 type = "file"
 url = "https://raw.githubusercontent.com/azu/ni.zsh/main/ni.zsh"
@@ -29,3 +30,4 @@ include = ["*/shell/*.zsh"]
   type = "file"
   url = "https://raw.githubusercontent.com/lincheney/fzf-tab-completion/master/zsh/fzf-zsh-completion.sh"
   refreshPeriod = "168h"
+{{ end }}
