@@ -6,7 +6,7 @@ depends on [chezmoi](https://github.com/twpayne/chezmoi)
 
 1. [install chezmoi](https://www.chezmoi.io/install/)
    - `sh -c "$(curl -fsLS get.chezmoi.io)" -- -b $HOME/.local/bin`
-   - `(irm -useb https://get.chezmoi.io/ps1) | powershell -c -`
+   - `winget install twpayne.chezmoi`
 1. if you are in PowerShell, `Set-ExecutionPolicy -ExecutionPolicy ByPass -Scope Process`
 1. `chezmoi init --apply berlysia`
 
