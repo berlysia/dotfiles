@@ -1,0 +1,6 @@
+[user]
+name = "berlysia"
+email = "berlysia@gmail.com"
+
+[user.git]
+signingkey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEoFIrtpYQ3XcZVry0H0k3BQKKSaPDubaplEDpL6nRWs"
