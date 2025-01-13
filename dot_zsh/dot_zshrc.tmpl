@@ -45,12 +45,14 @@ source $ZDOTDIR/prompt.zsh
   if [ -e $ZDOTDIR/linux.zsh ]; then
     source $ZDOTDIR/linux.zsh
   fi
+  {{   if (.chezmoi.kernel.osrelease | lower | contains "microsoft") }}
+    eval "$($HOME/.local/bin/wsl2-ssh-agent)"
+  {{   end }}
+{{ else if eq .chezmoi.os "windows" -}}
+  if [ -e $ZDOTDIR/windows.zsh ]; then
+    source $ZDOTDIR/windows.zsh
+  fi
 {{ end -}}
-
-# WSLで実行されているときは、WSL2のSSHエージェントを起動する。他の方法だとコンテナでも誤認してしまう。
-if (( ${+commands[wslpath]} )); then
-  eval "$($HOME/.local/bin/wsl2-ssh-agent)"
-fi
 
 eval "$(~/.local/bin/mise activate zsh)"
 
