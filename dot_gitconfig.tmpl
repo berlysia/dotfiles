@@ -28,17 +28,22 @@
 
 [commit]
   gpgsign = true
+  verbose = true
 
 [init]
   defaultBranch = master
 
 [diff]
   tool = "code --wait --diff $LOCAL $REMOTE"
+  colorMoved = true
+  algorithm = histogram
+[grep]
+  patternType = perl
 [rebase]
   autosquash = true
   autostash = true
 [merge]
-  conflictstyle = diff3
+  conflictstyle = zdiff3
   ff = false
 [push]
   autoSetupRemote = true
@@ -52,6 +57,11 @@
   prune = true
 [rerere]
   enabled = true
+[branch]
+  sort = committerdate
+
+[feature]
+  experimental = true
 
 [include]
   path = ~/.gitconfig_local
