@@ -5,14 +5,16 @@
 format = """
 $directory\
 $username\
+[@](yellow)\
 $hostname\
 $status\
-$cmd_duration\
 $time\
+$cmd_duration\
 $line_break\
 $nodejs\
 $package\
 $git_branch\
+$git_state\
 $git_status\
 $line_break\
 $character
@@ -53,7 +55,8 @@ disabled = false
 [cmd_duration]
 format = "took [$duration]($style) "
 style = "yellow"
-min_time = 1000                      # 1秒以上かかったコマンドのみ表示
+# 1秒以上かかったコマンドのみ表示
+min_time = 1000
 
 # 現在時刻表示設定
 [time]
@@ -76,25 +79,32 @@ style = "214"
 
 # Gitブランチ表示設定
 [git_branch]
-format = "$symbol[$branch]($style) "
-symbol = "🔄 "
-style = "bold blue"
+always_show_remote = true
+format = '[$symbol$branch(...$remote_name/$remote_branch)]($style) '
+style = "bold cyan"
+
+[git_commit]
+format = '[$symbol$commit]($style) '
+only_detached = false
+tag_disabled = false
+
+[git_state]
 
 # Gitステータス表示設定
 [git_status]
-format = '([\[$all_status$ahead_behind\]]($style) )'
-style = "bold blue"
+format = '([(\[$ahead_behind\])]($style) $all_status)'
+style = "bold cyan"
 conflicted = "🏳"
 ahead = "⇡${count}"
 behind = "⇣${count}"
 diverged = "⇕⇡${ahead_count}⇣${behind_count}"
-untracked = "❗ ${count}"
-stashed = "📦"
-modified = "💬 ${count}"
-staged = "📝 ${count}"
-renamed = "👅 ${count}"
-deleted = "🗑 ${count}"
 up_to_date = "✨"
+untracked = "❗[${count} untracked](red)"
+stashed = "📦"
+modified = "✏️ [${count} modified](yellow)"
+staged = " 📝[${count} staged](bright-green)"
+renamed = " 📛[${count} renamed](cyan)"
+deleted = "🗑️ [${count} deleted](red)"
 
 # プロンプト文字設定
 [character]
