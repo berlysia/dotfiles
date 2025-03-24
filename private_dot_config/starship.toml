@@ -25,7 +25,8 @@ $character
 add_newline = true
 
 [shell]
-bash_indicator = "bash"
+format = '[$indicator]($style)'
+bash_indicator = "bash "
 zsh_indicator = ""
 disabled = false
 
