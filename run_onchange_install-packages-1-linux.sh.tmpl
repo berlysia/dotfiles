@@ -4,4 +4,11 @@
 sudo apt-get update
 sudo apt-get install -y {{ range .packages.linux.apt }} {{.}}{{ end }}
 
+if command -v starship >/dev/null 2>&1; then
+  echo "starship is already installed"
+else
+  echo "install starship"
+  curl -sS https://starship.rs/install.sh | sh -s -- --yes --bin-dir ~/.local/bin
+fi
+
 {{ end -}}

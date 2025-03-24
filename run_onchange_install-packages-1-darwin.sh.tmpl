@@ -25,4 +25,11 @@ cask {{ . | quote }}
 {{ end -}}
 EOF
 
+if command -v starship >/dev/null 2>&1; then
+  echo "starship is already installed"
+else
+  echo "install starship"
+  curl -sS https://starship.rs/install.sh | sh -s -- --yes --bin-dir ~/.local/bin
+fi
+
 {{ end -}}
