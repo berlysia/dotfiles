@@ -16,7 +16,7 @@ else
   fi
 fi
 
-brew bundle --no-lock --file=/dev/stdin <<EOF
+brew bundle --file=- <<EOF
 {{ range .packages.darwin.brews -}}
 brew {{ . | quote }}
 {{ end -}}
