@@ -33,35 +33,14 @@ HISTFILE=$ZDOTDIR/.zsh_history
 HISTSIZE=2000
 SAVEHIST=2000
 
-source $ZDOTDIR/path.zsh
-
-source $ZDOTDIR/prompt.zsh
-
-{{ if eq .chezmoi.os "darwin" -}}
-  if [ -e $ZDOTDIR/darwin.zsh ]; then
-    source $ZDOTDIR/darwin.zsh
-  fi
-{{ else if eq .chezmoi.os "linux" -}}
-  if [ -e $ZDOTDIR/linux.zsh ]; then
-    source $ZDOTDIR/linux.zsh
-  fi
-  {{ if (.chezmoi.kernel.osrelease | lower | contains "microsoft") -}}
-    eval "$($HOME/.local/bin/wsl2-ssh-agent)"
-    export BROWSER=wslview
-  {{ end -}}
-{{ else if eq .chezmoi.os "windows" -}}
-  if [ -e $ZDOTDIR/windows.zsh ]; then
-    source $ZDOTDIR/windows.zsh
-  fi
-{{ end -}}
-
-eval "$(~/.local/bin/mise activate zsh)"
-
-export FZF_DEFAULT_OPTS="--height=50% --layout=reverse --info=inline --border --padding=1"
-
-if type fzf &> /dev/null; then
-  source <(fzf --zsh)
+# Load common settings
+if [ -z "$SHELL_COMMON" ]; then
+  SHELL_COMMON="$HOME/.shell_common"
 fi
+[ -f "$SHELL_COMMON/init.sh" ] && source "$SHELL_COMMON/init.sh"
+
+# Load zsh-specific prompt
+source $ZDOTDIR/prompt.zsh
 
 if type fzf &> /dev/null; then
   function fzf-history-selection() {
@@ -82,23 +61,10 @@ if type fzf &> /dev/null; then
   bindkey '^R' fzf-history-selection
 fi
 
+# zsh-specific FZF tab completion
 if type fzf &> /dev/null && [ -f ~/.zsh/functions/fzf-tab-completion.zsh ]; then
   source ~/.zsh/functions/fzf-tab-completion.zsh
   bindkey '^I' fzf_completion
-fi
-
-if type code &> /dev/null; then
-  export EDITOR="code --wait"
-elif type emacs &> /dev/null; then
-  export EDITOR=emacs
-fi
-
-if type opam &> /dev/null; then
-  eval `opam env`
-fi
-
-if type mise &> /dev/null && mise list | grep python > /dev/null && type gcloud &> /dev/null; then
-  export CLOUDSDK_PYTHON=`mise which python`
 fi
 
 [ -f "$ZDOTDIR/ni.zsh" ] && source $ZDOTDIR/ni.zsh

@@ -23,82 +23,21 @@ if [ -f /etc/bash_completion ] && ! shopt -oq posix; then
     . /etc/bash_completion
 fi
 
-# Source path configuration
-if [ -f "$BASH_DIR/path.bash" ]; then
-    . "$BASH_DIR/path.bash"
+# Load common settings
+if [ -z "$SHELL_COMMON" ]; then
+  SHELL_COMMON="$HOME/.shell_common"
 fi
+[ -f "$SHELL_COMMON/init.sh" ] && source "$SHELL_COMMON/init.sh"
 
-# Source prompt configuration
+# Load bash-specific prompt
 if [ -f "$BASH_DIR/prompt.bash" ]; then
     . "$BASH_DIR/prompt.bash"
 fi
 
-# Source OS-specific configuration
-case "$(uname -s)" in
-    Darwin*)
-        # macOS
-        if [ -f "$BASH_DIR/darwin.bash" ]; then
-            . "$BASH_DIR/darwin.bash"
-        fi
-        ;;
-    Linux*)
-        # Linux
-        if [ -f "$BASH_DIR/linux.bash" ]; then
-            . "$BASH_DIR/linux.bash"
-        fi
-        # Check for WSL
-        if grep -q microsoft /proc/version 2>/dev/null; then
-            if [ -f "$HOME/.local/bin/wsl2-ssh-agent" ]; then
-                eval "$($HOME/.local/bin/wsl2-ssh-agent)"
-            fi
-            export BROWSER=wslview
-        fi
-        ;;
-    MINGW*|MSYS*|CYGWIN*)
-        # Windows
-        if [ -f "$BASH_DIR/windows.bash" ]; then
-            . "$BASH_DIR/windows.bash"
-        fi
-        ;;
-esac
-
-# mise activation (equivalent to zsh version)
-if [ -f "$HOME/.local/bin/mise" ]; then
-    eval "$($HOME/.local/bin/mise activate bash)"
+# Terminal title (if not already set by common init)
+if [[ "$PROMPT_COMMAND" != *"echo -ne"* ]]; then
+  PROMPT_COMMAND='echo -ne "\033]0;$(basename "$PWD")\007"'
 fi
-
-# FZF configuration
-export FZF_DEFAULT_OPTS="--height=50% --layout=reverse --info=inline --border --padding=1"
-
-# FZF integration
-if type fzf &>/dev/null; then
-    # Source fzf bash completion and key bindings if available
-    if [ -f ~/.fzf.bash ]; then
-        source ~/.fzf.bash
-    elif [ -f /usr/share/doc/fzf/examples/key-bindings.bash ]; then
-        source /usr/share/doc/fzf/examples/key-bindings.bash
-    fi
-fi
-
-# Editor configuration
-if type code &>/dev/null; then
-    export EDITOR="code --wait"
-elif type emacs &>/dev/null; then
-    export EDITOR=emacs
-fi
-
-# opam configuration
-if type opam &>/dev/null; then
-    eval "$(opam env)"
-fi
-
-# gcloud configuration with mise python
-if type mise &>/dev/null && mise list | grep python >/dev/null && type gcloud &>/dev/null; then
-    export CLOUDSDK_PYTHON="$(mise which python)"
-fi
-
-# Set terminal title to current directory
-PROMPT_COMMAND='echo -ne "\033]0;$(basename "$PWD")\007"'
 
 # Source local configuration if it exists
 if [ -f "$HOME/.bashrc.local" ]; then

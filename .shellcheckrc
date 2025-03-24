@@ -1,0 +1,21 @@
+# POSIX互換性をチェック
+shell=sh
+
+# 特定の警告を無視（必要な場合）
+# SC2039: POSIX互換でない場合でも許可する特定の構文
+# disable=SC2039
+
+# 外部ソースの指定
+source-path=SCRIPTDIR
+source-path=dot_shell_common
+source-path=dot_bash
+source-path=dot_zsh
+
+# シェルスクリプトの拡張子を持たないファイルもチェック
+enable=all
+
+# 厳格なチェック
+enable=avoid-nullary-conditions
+enable=check-unassigned-uppercase
+enable=quote-safe-variables
+enable=require-variable-braces
