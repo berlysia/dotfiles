@@ -3,6 +3,7 @@
 
 # 全体的なフォーマット設定
 format = """
+$shell\
 $directory\
 $username\
 [@](yellow)\
@@ -22,6 +23,11 @@ $character
 
 # プロンプト間に空行を挿入
 add_newline = true
+
+[shell]
+bash_indicator = "bash"
+zsh_indicator = ""
+disabled = false
 
 # ディレクトリ表示設定
 [directory]
@@ -99,12 +105,12 @@ ahead = "⇡${count}"
 behind = "⇣${count}"
 diverged = "⇕⇡${ahead_count}⇣${behind_count}"
 up_to_date = "✨"
-untracked = "❗[${count} untracked](red)"
-stashed = "📦"
-modified = "✏️ [${count} modified](yellow)"
-staged = " 📝[${count} staged](bright-green)"
-renamed = " 📛[${count} renamed](cyan)"
-deleted = "🗑️ [${count} deleted](red)"
+untracked = "?[${count} untracked](red)"
+stashed = "$"
+modified = "![${count} modified](yellow)"
+staged = "+[${count} staged](bright-green)"
+renamed = "»[${count} renamed](cyan)"
+deleted = "✘[${count} deleted](red)"
 
 # プロンプト文字設定
 [character]
