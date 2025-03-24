@@ -106,12 +106,12 @@ ahead = "⇡${count}"
 behind = "⇣${count}"
 diverged = "⇕⇡${ahead_count}⇣${behind_count}"
 up_to_date = "✨"
-untracked = "?[${count} untracked](red)"
+untracked = "[?${count} untracked](red)"
 stashed = "$"
-modified = "![${count} modified](yellow)"
-staged = "+[${count} staged](bright-green)"
-renamed = "»[${count} renamed](cyan)"
-deleted = "✘[${count} deleted](red)"
+modified = "[!${count} modified](yellow)"
+staged = "[+${count} staged](bright-green)"
+renamed = "[»${count} renamed](cyan)"
+deleted = "[✘${count} deleted](red)"
 
 # プロンプト文字設定
 [character]
