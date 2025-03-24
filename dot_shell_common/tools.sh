@@ -13,6 +13,11 @@ if type opam &>/dev/null; then
   export HAS_OPAM=1
 fi
 
+# Starship prompt integration
+if type starship &>/dev/null; then
+  export HAS_STARSHIP=1
+fi
+
 # gcloud configuration with mise python
 if type mise &>/dev/null && mise list | grep python >/dev/null && type gcloud &>/dev/null; then
   export CLOUDSDK_PYTHON="$(mise which python)"

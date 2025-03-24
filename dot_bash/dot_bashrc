@@ -29,9 +29,11 @@ if [ -z "$SHELL_COMMON" ]; then
 fi
 [ -f "$SHELL_COMMON/init.sh" ] && source "$SHELL_COMMON/init.sh"
 
-# Load bash-specific prompt
-if [ -f "$BASH_DIR/prompt.bash" ]; then
-    . "$BASH_DIR/prompt.bash"
+# Load bash-specific prompt (fallback if Starship is not available)
+if [ "$HAS_STARSHIP" = "1" ]; then
+  eval "$(starship init bash)"
+elif [ -f "$BASH_DIR/prompt.bash" ]; then
+  . "$BASH_DIR/prompt.bash"
 fi
 
 # Terminal title (if not already set by common init)
