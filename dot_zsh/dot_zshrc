@@ -78,6 +78,12 @@ if [ -e $HOME/.zshrc.local ]; then
     source $HOME/.zshrc.local
 fi
 
-[[ "$TERM_PROGRAM" == "vscode" ]] && . "$(code --locate-shell-integration-path zsh)"
+if [[ "$TERM_PROGRAM" == "vscode" ]]; then
+  if [[ "$TERM_PROGRAM_VERSION" == *"-insider" ]]; then
+    . "$(code-insiders --locate-shell-integration-path zsh)"
+  else
+    . "$(code --locate-shell-integration-path zsh)"
+  fi
+fi
 
 :

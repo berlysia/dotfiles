@@ -46,5 +46,9 @@ fi
 
 # VSCode shell integration
 if [ "$TERM_PROGRAM" = "vscode" ]; then
+  if [[ "$TERM_PROGRAM_VERSION" == *-insider ]]; then
+    . "$(code-insiders --locate-shell-integration-path bash)"
+  else
     . "$(code --locate-shell-integration-path bash)"
+  fi
 fi
