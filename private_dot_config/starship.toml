@@ -1,5 +1,102 @@
 # Get editor completions based on the config schema
 "$schema" = 'https://starship.rs/config-schema.json'
 
-# Inserts a blank line between shell prompts
+# 全体的なフォーマット設定
+format = """
+$directory\
+$username\
+$hostname\
+$status\
+$cmd_duration\
+$time\
+$line_break\
+$nodejs\
+$package\
+$git_branch\
+$git_status\
+$line_break\
+$character
+"""
+
+# プロンプト間に空行を挿入
 add_newline = true
+
+# ディレクトリ表示設定
+[directory]
+style = "bold green"
+truncation_length = 100
+truncate_to_repo = false
+
+# ユーザー名表示設定
+[username]
+format = "[$user]($style)"
+style_root = "bold red"
+style_user = "bold cyan"
+show_always = true
+
+# ホスト名表示設定
+[hostname]
+format = "($style)[$hostname]($style)"
+style = "bold blue"
+ssh_only = false
+ssh_symbol = "🔄 "
+
+# 終了ステータス表示設定
+[status]
+format = '[$symbol $status]($style) '
+symbol = "❌"
+success_symbol = "✅"
+style = "red"
+disabled = false
+
+# コマンド実行時間表示設定
+[cmd_duration]
+format = "took [$duration]($style) "
+style = "yellow"
+min_time = 1000                      # 1秒以上かかったコマンドのみ表示
+
+# 現在時刻表示設定
+[time]
+format = "at [$time]($style) "
+style = "blue"
+time_format = "%Y-%m-%d %H:%M:%S"
+disabled = false
+
+# Node.js環境表示設定
+[nodejs]
+format = "$symbol[$version]($style) "
+symbol = "📦 "
+style = "green"
+
+# パッケージ情報表示設定
+[package]
+format = "[$symbol$name@v$version]($style) "
+symbol = "📦 "
+style = "214"
+
+# Gitブランチ表示設定
+[git_branch]
+format = "$symbol[$branch]($style) "
+symbol = "🔄 "
+style = "bold blue"
+
+# Gitステータス表示設定
+[git_status]
+format = '([\[$all_status$ahead_behind\]]($style) )'
+style = "bold blue"
+conflicted = "🏳"
+ahead = "⇡${count}"
+behind = "⇣${count}"
+diverged = "⇕⇡${ahead_count}⇣${behind_count}"
+untracked = "❗ ${count}"
+stashed = "📦"
+modified = "💬 ${count}"
+staged = "📝 ${count}"
+renamed = "👅 ${count}"
+deleted = "🗑 ${count}"
+up_to_date = "✨"
+
+# プロンプト文字設定
+[character]
+success_symbol = "[>](bold green)"
+error_symbol = "[>](bold red)"
