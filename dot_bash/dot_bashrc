@@ -37,8 +37,6 @@ fi
 # Load bash-specific prompt (fallback if Starship is not available)
 if [ "$HAS_STARSHIP" = "1" ]; then
   eval "$(starship init bash)"
-elif [ -f "$BASH_DIR/prompt.bash" ]; then
-  . "$BASH_DIR/prompt.bash"
 fi
 
 # Source local configuration if it exists
