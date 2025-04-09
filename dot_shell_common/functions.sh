@@ -27,3 +27,17 @@ extract() {
     echo "'$1' is not a valid file"
   fi
 }
+
+opr () {
+	who=$(op whoami)
+	if [[ $? != 0 ]]
+	then
+		eval $(op signin)
+	fi
+	if [[ -f "$PWD/.env" ]]
+	then
+		op run --env-file=$PWD/.env -- $@
+	else
+		op run --env-file=$HOME/.env.1password -- $@
+	fi
+}
