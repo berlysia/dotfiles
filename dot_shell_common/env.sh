@@ -12,4 +12,4 @@ fi
 export FZF_DEFAULT_OPTS="--height=50% --layout=reverse --info=inline --border --padding=1"
 
 # Locale settings
-export LANG=ja_JP.UTF-8
+export LANG=C.UTF-8
