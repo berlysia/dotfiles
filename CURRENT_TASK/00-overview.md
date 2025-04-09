@@ -9,14 +9,12 @@
 ├── dot_zsh/                    # .zsh/ - zsh設定ディレクトリ
 │   ├── dot_zshrc.tmpl          # .zshrc - メイン設定ファイル（テンプレート）
 │   ├── path.zsh                # パス設定
-│   ├── prompt.zsh              # プロンプト設定
 │   ├── darwin.zsh              # macOS固有設定
 │   └── windows.zsh             # Windows固有設定
 ├── dot_bash_profile            # .bash_profile - ログインシェル用
 ├── dot_bash/                   # .bash/ - bash設定ディレクトリ
 │   ├── dot_bashrc              # .bashrc - メイン設定ファイル
 │   ├── path.bash               # パス設定
-│   ├── prompt.bash             # プロンプト設定
 │   ├── darwin.bash             # macOS固有設定
 │   └── windows.bash            # Windows固有設定
 └── (その他のファイル)
@@ -57,10 +55,8 @@
 │   └── windows.sh              # Windows向け共通設定
 ├── dot_zsh/                    # zsh固有設定ディレクトリ
 │   ├── dot_zshrc.tmpl          # .zshrc - 共通設定を読み込み、zsh固有設定を適用
-│   └── prompt.zsh              # zsh固有のプロンプト設定
 └── dot_bash/                   # bash固有設定ディレクトリ
     ├── dot_bashrc              # .bashrc - 共通設定を読み込み、bash固有設定を適用
-    └── prompt.bash             # bash固有のプロンプト設定
 ```
 
 ## 実装アプローチ
