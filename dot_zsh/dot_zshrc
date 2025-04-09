@@ -39,11 +39,8 @@ if [ -z "$SHELL_COMMON" ]; then
 fi
 [ -f "$SHELL_COMMON/init.sh" ] && source "$SHELL_COMMON/init.sh"
 
-# Load zsh-specific prompt (fallback if Starship is not available)
 if [ "$HAS_STARSHIP" = "1" ]; then
   eval "$(starship init zsh)"
-else
-  source $ZDOTDIR/prompt.zsh
 fi
 
 if type fzf &> /dev/null; then
