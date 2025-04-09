@@ -4,7 +4,7 @@
 [ -z "$PS1" ] && return
 
 # Set BASH_DIR to the location of bash configuration files
-BASH_DIR="$HOME/.bash"
+# BASH_DIR="$HOME/.bash"
 
 # History settings
 HISTCONTROL=ignoreboth:erasedups  # Equivalent to zsh's histignorealldups
@@ -18,10 +18,6 @@ shopt -s checkwinsize
 # Make less more friendly for non-text input files
 [ -x /usr/bin/lesspipe ] && eval "$(SHELL=/bin/sh lesspipe)"
 
-# Enable programmable completion features
-if [ -f /etc/bash_completion ] && ! shopt -oq posix; then
-    . /etc/bash_completion
-fi
 
 # Load common settings
 if [ -z "$SHELL_COMMON" ]; then
@@ -52,3 +48,16 @@ if [ "$TERM_PROGRAM" = "vscode" ]; then
     . "$(code --locate-shell-integration-path bash)"
   fi
 fi
+
+# enable programmable completion features (you don't need to enable
+# this, if it's already enabled in /etc/bash.bashrc and /etc/profile
+# sources /etc/bash.bashrc).
+if ! shopt -oq posix; then
+  if [ -f /usr/share/bash-completion/bash_completion ]; then
+    . /usr/share/bash-completion/bash_completion
+  elif [ -f /etc/bash_completion ]; then
+    . /etc/bash_completion
+  fi
+fi
+source "${XDG_CONFIG_HOME:-$HOME/.config}/asdf-direnv/bashrc"
+

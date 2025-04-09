@@ -31,6 +31,7 @@ packages:
       - "grep"
       - "gnu-sed"
       - "coreutils"
+      - "terminal-notifier"
     casks:
       - "1password"
       - "coteditor"
@@ -54,3 +55,4 @@ packages:
       - "jq"
       - "zsh"
       - "unzip"
+      - "notify-send"

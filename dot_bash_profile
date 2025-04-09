@@ -1,6 +1,6 @@
 # .bash_profile - Executed for login shells
 
 # Source .bashrc if it exists
-if [ -f "$HOME/.bash/.bashrc" ]; then
-    . "$HOME/.bash/.bashrc"
+if [ -f "$HOME/.bashrc" ]; then
+    . "$HOME/.bashrc"
 fi
