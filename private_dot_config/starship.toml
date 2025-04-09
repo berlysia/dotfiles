@@ -12,12 +12,13 @@ $status\
 $time\
 $cmd_duration\
 $line_break\
-$nodejs\
-$package\
-$git_branch\
+($nodejs\
+$package
+)\
+($git_branch\
 $git_state\
-$git_status\
-$line_break\
+$git_status
+)\
 $character
 """
 
