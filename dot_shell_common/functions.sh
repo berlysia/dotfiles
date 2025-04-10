@@ -34,10 +34,32 @@ opr () {
 	then
 		eval $(op signin)
 	fi
-	if [[ -f "$PWD/.env" ]]
-	then
+	if [[ -f "$PWD/.env" ]]; then
 		op run --env-file=$PWD/.env -- $@
-	else
+  elif [[ -f "$HOME/.env.1password" ]]; then
 		op run --env-file=$HOME/.env.1password -- $@
 	fi
+}
+
+export OP_COMMAND_PATHS=$OP_COMMAND_PATHS # Preserve existing values
+
+opl () {
+  who=$(op whoami)
+  if [[ $? != 0 ]]
+  then
+    eval $(op signin)
+  fi
+
+  if [[ -f "$PWD/.env" ]]; then
+    echo -e '⏳ Setting secrets in environment...'
+    source <(cat $PWD/.env | op inject)
+    # append to OP_COMMAND_PATHS
+    OP_COMMAND_PATHS=$OP_COMMAND_PATHS:"$PWD"
+    echo -e '☑️ Done!'
+  elif [[ -f "$HOME/.env.1password" ]]; then
+    echo -e '⏳ Setting secrets in environment...'
+    source <(cat $HOME/.env.1password | op inject)
+    OP_COMMAND_PATHS=$OP_COMMAND_PATHS:"$HOME"
+    echo -e '☑️ Done!'
+  fi
 }

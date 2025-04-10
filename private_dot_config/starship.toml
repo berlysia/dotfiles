@@ -5,6 +5,7 @@
 format = """
 $shell\
 $directory\
+${custom.envfile}\
 $username\
 [@](yellow)\
 $hostname\
@@ -118,3 +119,17 @@ deleted = "[✘${count} deleted](red)"
 [character]
 success_symbol = "[>](bold green)"
 error_symbol = "[>](bold red)"
+
+[custom.envfile]
+shell = ["zsh"]
+detect_files = [ ".env" ]
+command = '''
+if echo ":$OP_COMMAND_PATHS:" | grep -q ":$PWD:"; then
+  echo "🔓"
+else
+  echo "🔒"
+fi
+'''
+when = 'true'
+format = '[$output]($style) '
+style = 'bold yellow'
