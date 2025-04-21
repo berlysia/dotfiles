@@ -23,7 +23,7 @@ shopt -s checkwinsize
 if [ -z "$SHELL_COMMON" ]; then
   SHELL_COMMON="$HOME/.shell_common"
 fi
-[ -f "$SHELL_COMMON/init.sh" ] && source "$SHELL_COMMON/init.sh"
+[ -f "$SHELL_COMMON/interactive.sh" ] && source "$SHELL_COMMON/interactive.sh"
 
 # Terminal title (if not already set by common init)
 if [[ "$PROMPT_COMMAND" != *"echo -ne"* ]]; then

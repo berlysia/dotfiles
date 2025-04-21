@@ -1,1 +1,4 @@
 export ZDOTDIR=$HOME/.zsh
+
+# Load common settings
+[ -f "$ZDOTDIR/.zshenv" ] && source "$ZDOTDIR/.zshenv"
