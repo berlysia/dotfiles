@@ -37,7 +37,7 @@ SAVEHIST=2000
 if [ -z "$SHELL_COMMON" ]; then
   SHELL_COMMON="$HOME/.shell_common"
 fi
-[ -f "$SHELL_COMMON/init.sh" ] && source "$SHELL_COMMON/init.sh"
+[ -f "$SHELL_COMMON/interactive.sh" ] && source "$SHELL_COMMON/interactive.sh"
 
 if [ "$HAS_STARSHIP" = "1" ]; then
   eval "$(starship init zsh)"

@@ -1,12 +1,8 @@
-# .bash_profile - Executed for login shells
+# this file does not automatically load
+# load this file from ~/.zshenv
 
 # Load common settings
 if [ -z "$SHELL_COMMON" ]; then
   SHELL_COMMON="$HOME/.shell_common"
 fi
 [ -f "$SHELL_COMMON/init.sh" ] && source "$SHELL_COMMON/init.sh"
-
-# Source .bashrc if it exists
-if [ -f "$HOME/.bashrc" ]; then
-    . "$HOME/.bashrc"
-fi
