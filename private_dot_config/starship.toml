@@ -82,7 +82,7 @@ style = "green"
 
 # パッケージ情報表示設定
 [package]
-format = "[$symbol$name@v$version]($style) "
+format = "[$symbol$name@$version]($style) "
 symbol = "📦 "
 style = "214"
 
@@ -122,7 +122,7 @@ error_symbol = "[>](bold red)"
 
 [custom.envfile]
 shell = ["zsh"]
-detect_files = [ ".env" ]
+detect_files = [".env"]
 command = '''
 if echo ":$OP_COMMAND_PATHS:" | grep -q ":$PWD:"; then
   echo "🔓"
