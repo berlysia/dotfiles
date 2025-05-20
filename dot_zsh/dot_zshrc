@@ -28,6 +28,7 @@ zstyle ':zle:*' word-style unspecified
 
 setopt share_history
 setopt histignorealldups
+setopt hist_ignore_space
 
 HISTFILE=$ZDOTDIR/.zsh_history
 HISTSIZE=2000
