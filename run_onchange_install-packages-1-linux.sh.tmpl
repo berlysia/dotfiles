@@ -4,6 +4,13 @@
 sudo apt-get update
 sudo apt-get install -y {{ range .packages.linux.apt }} {{.}}{{ end }}
 
+# symlink batcat to bat
+if command -v bat >/dev/null 2>&1; then
+  echo "bat is already installed"
+else
+  sudo ln -s $(command -v batcat) ~/.local/bin/bat
+fi
+
 if command -v starship >/dev/null 2>&1; then
   echo "starship is already installed"
 else
