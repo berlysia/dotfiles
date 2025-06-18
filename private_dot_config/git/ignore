@@ -99,3 +99,5 @@ _.msm
 
 mise.local.toml
 .env
+
+**/.claude/settings.local.json
