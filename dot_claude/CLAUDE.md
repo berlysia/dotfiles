@@ -78,6 +78,7 @@ This file defines global settings for Claude Code. It establishes development st
   - Utilize optional chaining and nullish coalescing
   - Prefer async/await over Promise chains
   - Use tsgo for fast type checking and builds
+  - Prefer functions and data over classes
 - **Testing**: Vitest, node:test (for CLI tools), or follow existing project configuration
 - **Documentation**: Document only complex logic and algorithms in detail with JSDoc
 
