@@ -1,4 +1,3 @@
-#!/bin/sh
 # Common shell initialization script for both zsh and bash
 
 # Detect current shell
@@ -17,7 +16,8 @@ if [ -z "$SHELL_COMMON" ]; then
 fi
 
 # Load common environment variables
-[ -f "$SHELL_COMMON/env.sh" ] && source "$SHELL_COMMON/env.sh"
+[ -f "$SHELL_COMMON/env.sh" ] && . "$SHELL_COMMON/env.sh"
+
 
 # Load common path settings
 if [ -f "$SHELL_COMMON/path.sh" ]; then
