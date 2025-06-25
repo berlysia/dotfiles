@@ -5,4 +5,5 @@
 if [ -z "$SHELL_COMMON" ]; then
   SHELL_COMMON="$HOME/.shell_common"
 fi
-[ -f "$SHELL_COMMON/init.sh" ] && source "$SHELL_COMMON/init.sh"
+
+[ -f "$SHELL_COMMON/init.sh" ] && . "$SHELL_COMMON/init.sh"
