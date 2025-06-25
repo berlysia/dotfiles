@@ -1,41 +1,24 @@
-# Claude Code Global Config
+# Config
 
-## Language
+## Lang: 日本語/English code
 
-Use Japanese for user conversations, and English for code.
+## Workflow: Explore→Plan→Code→Commit
 
-## Workflow: Explore-Plan-Code-Commit
+## Dev Rules
+- Format, clear names, idioms, "why" comments
+- Dev time priority, patterns, scripts
+- Error handling, parallelization
+- Minimal libs, reflect arch, ADRs
+- Actions, TDD (t-wada)
 
-1. **Explore** - Analyze structure, patterns, deps
-2. **Plan** - TodoWrite, break tasks, set priorities
-3. **Code** - Follow patterns, use idioms, handle errors
-4. **Commit** - lint/typecheck, tests pass, clear messages
-
-## Dev Principles
-
-- **Style**: Formatters, clear naming, idioms, "why" comments
-- **Efficiency**: Prioritize dev time, abstract patterns, script repetition
-- **Quality**: Preempt bottlenecks, robust error handling, parallelization
-- **Libs**: Minimal optimal selection
-- **Arch**: Reflect patterns, ADRs, refactor plans
-- **Automation**: GitHub Actions, custom scripts/lints
-- **TDD**: t-wada methodology: Red-Green-Refactor TDD
-
-## TypeScript
-
-- **Tools**: pnpm, tsgo, biome, oxlint
-- **Rules**: Type safety, no `any`, async/await, functions>classes
-- **Test**: Vitest/node:test
-- **Docs**: JSDoc for complex logic only
+## TypeScript: pnpm, biome, oxlint, no `any`, async/await, Vitest
 
 ## Security
+- **Never**: hardcode secrets, unvalidated input, suppress errors
+- **Must**: validate, env vars, logging, lint/test
 
-**NEVER**: Hardcode secrets, unvalidated input, suppress errors, ignore types, untested changes
-**MUST**: Validate input, env vars for secrets, proper logging, lint/typecheck, test features
+## Pre-commit: test/lint pass, clear messages
 
-## Pre-commit: tests, lint, no secrets, clear message, note breaking changes
+## Tools: similarity-ts, tsg
 
-## Tools
-
-- `similarity-ts`: Code similarity detection
-- `tsg`: Dependency visualization
+## Memory: .claude/memory記録
