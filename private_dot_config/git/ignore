@@ -4,11 +4,11 @@
 
 ### Linux
 
-\*~
+*~
 
 # temporary files which can be created if a process still has a handle open of a deleted file
 
-.fuse_hidden\*
+.fuse_hidden*
 
 # KDE directory preferences
 
@@ -16,11 +16,11 @@
 
 # Linux trash folder which might appear on any partition or disk
 
-.Trash-\*
+.Trash-*
 
 # .nfs files are created when an open file is removed but is still being accessed
 
-.nfs\*
+.nfs*
 
 ### macOS
 
@@ -36,7 +36,7 @@
 
 # Thumbnails
 
-.\_\*
+.\_*
 
 # Files that might appear in the root of a volume
 
@@ -60,7 +60,7 @@ Temporary Items
 
 # iCloud generated files
 
-\*.icloud
+*.icloud
 
 ### Windows
 
@@ -73,7 +73,7 @@ ehthumbs_vista.db
 
 # Dump file
 
-\*.stackdump
+*.stackdump
 
 # Folder config file
 
@@ -89,11 +89,11 @@ _.cab
 _.msi
 _.msix
 _.msm
-\*.msp
+*.msp
 
 # Windows shortcuts
 
-\*.lnk
+*.lnk
 
 # End of https://www.toptal.com/developers/gitignore/api/macos,linux,windows
 
@@ -101,3 +101,5 @@ mise.local.toml
 .env
 
 **/.claude/settings.local.json
+
+**/.worktrees
