@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+echo "🔍 Checking git worktrees..."
+
+# Get main branch (usually main or master)
+main_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo "main")
+
+# Get list of worktrees
+worktrees=$(git worktree list --porcelain | grep "^worktree " | cut -d' ' -f2-)
+
+# Track if any worktrees were deleted
+deleted_any=false
+
+for worktree in $worktrees; do
+    # Skip main worktree
+    if [[ "$worktree" == "$(git rev-parse --show-toplevel)" ]]; then
+        continue
+    fi
+    
+    # Check if directory exists
+    if [[ ! -d "$worktree" ]]; then
+        echo -e "${YELLOW}⚠️  Worktree directory not found: $worktree${NC}"
+        continue
+    fi
+    
+    echo -e "\n📁 Checking worktree: $worktree"
+    
+    # Enter worktree directory
+    cd "$worktree" || continue
+    
+    # Get current branch
+    branch=$(git branch --show-current)
+    
+    # Check for uncommitted changes
+    if [[ -n $(git status --porcelain) ]]; then
+        echo -e "${RED}✗ Has uncommitted changes - skipping${NC}"
+        continue
+    fi
+    
+    # Check if branch exists on remote
+    if ! git ls-remote --exit-code --heads origin "$branch" &>/dev/null; then
+        echo -e "${GREEN}✓ Branch not on remote${NC}"
+    else
+        # Check if local branch is behind or ahead of remote
+        ahead=$(git rev-list --count "origin/$branch".."$branch" 2>/dev/null || echo "0")
+        behind=$(git rev-list --count "$branch".."origin/$branch" 2>/dev/null || echo "0")
+        
+        if [[ "$ahead" -gt 0 ]]; then
+            echo -e "${RED}✗ Local branch is ahead of remote by $ahead commits - skipping${NC}"
+            continue
+        fi
+        
+        if [[ "$behind" -gt 0 ]]; then
+            echo -e "${YELLOW}⚠️  Local branch is behind remote by $behind commits${NC}"
+        fi
+        
+        # Check if branch is merged into main
+        if git merge-base --is-ancestor "$branch" "origin/$main_branch" 2>/dev/null; then
+            echo -e "${GREEN}✓ Branch is merged into $main_branch${NC}"
+        else
+            echo -e "${YELLOW}⚠️  Branch is not merged into $main_branch${NC}"
+            read -p "Delete anyway? (y/N) " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                continue
+            fi
+        fi
+    fi
+    
+    # Check for stashes
+    stash_count=$(git stash list | wc -l)
+    if [[ "$stash_count" -gt 0 ]]; then
+        echo -e "${YELLOW}⚠️  Has $stash_count stashes${NC}"
+        read -p "Delete anyway? (y/N) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            continue
+        fi
+    fi
+    
+    # Return to original directory before deletion
+    cd - >/dev/null
+    
+    # Delete worktree
+    echo -e "${GREEN}✓ Removing worktree: $worktree${NC}"
+    git worktree remove "$worktree" --force
+    deleted_any=true
+done
+
+# Prune worktree list if any were deleted
+if [[ "$deleted_any" == true ]]; then
+    echo -e "\n🧹 Pruning worktree list..."
+    git worktree prune
+    echo -e "${GREEN}✓ Done!${NC}"
+else
+    echo -e "\n${YELLOW}No worktrees were deleted.${NC}"
+fi
