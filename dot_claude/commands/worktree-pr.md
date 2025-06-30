@@ -29,9 +29,9 @@ Creates a new branch with worktree, executes the given task, and creates a PR.
    - Get current branch
 
 2. **Worktree Setup**
-   - Create `.worktrees` directory (if not exists)
+   - Create `.git/worktree` directory (if not exists)
    - Create new branch from current branch
-   - Create new worktree under `.worktrees`
+   - Create new worktree under `.git/worktree`
 
 3. **Task Execution**
    - Move to worktree directory
@@ -53,7 +53,7 @@ Branch names are auto-generated in the format:
 
 ```
 <repo-root>/
-├── .worktrees/
+├── .git/worktree/
 │   ├── feature-dark-mode-settings-20240626/
 │   ├── feature-fix-memory-leak-20240627/
 │   └── ...
@@ -70,7 +70,7 @@ Branch names are auto-generated in the format:
 
 Manual worktree cleanup after completion:
 ```bash
-git worktree remove .worktrees/<branch-name>
+git worktree remove .git/worktree/<branch-name>
 git branch -d <branch-name>
 ```
 

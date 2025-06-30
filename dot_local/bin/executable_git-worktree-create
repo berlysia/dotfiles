@@ -19,11 +19,11 @@ branch_name="$1"
 
 # Get repository root
 repo_root=$(git rev-parse --show-toplevel)
-worktrees_dir="$repo_root/.worktrees"
+worktrees_dir="$repo_root/.git/worktree"
 
-# Create .worktrees directory if it doesn't exist
+# Create .git/worktree directory if it doesn't exist
 if [[ ! -d "$worktrees_dir" ]]; then
-    echo -e "${BLUE}📁 Creating .worktrees directory...${NC}"
+    echo -e "${BLUE}📁 Creating .git/worktree directory...${NC}"
     mkdir -p "$worktrees_dir"
 fi
 
