@@ -23,7 +23,7 @@
 
 ## Git Workflow
 - **Create worktree**: Use `git-worktree-create <branch-name>`
-  - Creates worktrees in `.worktrees/` directory at repository root
+  - Creates worktrees in `.git/worktree/` directory at repository root
   - Auto-creates branch if it doesn't exist (from current branch)
   - Uses existing local/remote branches when available
 - **Cleanup worktrees**: Use `git-worktree-cleanup`
