@@ -8,6 +8,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_FILE="${SCRIPT_DIR}/sync-config.json"
 LOG_FILE="${HOME}/.cache/chezmoi/sync-from-home.log"
 BACKUP_DIR="${HOME}/.cache/chezmoi/backups"
+LOCK_FILE="${HOME}/.cache/chezmoi/sync-from-home.lock"
+LOCK_TIMEOUT=30
 
 # ログ関数
 log() {
@@ -32,6 +34,47 @@ notify() {
             ;;
     esac
 }
+
+# ロック取得
+acquire_lock() {
+    local timeout=${LOCK_TIMEOUT}
+    local count=0
+    
+    while [ ${count} -lt ${timeout} ]; do
+        if (set -C; echo $$ > "${LOCK_FILE}") 2>/dev/null; then
+            log "ロックを取得しました: ${LOCK_FILE}"
+            return 0
+        fi
+        
+        # 既存のロックファイルをチェック
+        if [ -f "${LOCK_FILE}" ]; then
+            local lock_pid
+            lock_pid=$(cat "${LOCK_FILE}" 2>/dev/null || echo "")
+            
+            # プロセスが存在するかチェック
+            if [ -n "${lock_pid}" ] && ! kill -0 "${lock_pid}" 2>/dev/null; then
+                log "無効なロックファイルを削除: ${LOCK_FILE}"
+                rm -f "${LOCK_FILE}"
+                continue
+            fi
+        fi
+        
+        sleep 1
+        ((count++))
+    done
+    
+    log "Error: ロックの取得がタイムアウトしました"
+    return 1
+}
+
+# ロック解放
+release_lock() {
+    if [ -f "${LOCK_FILE}" ]; then
+        rm -f "${LOCK_FILE}"
+        log "ロックを解放しました: ${LOCK_FILE}"
+    fi
+}
+
 
 # バックアップクリーンアップ
 cleanup_backups() {
@@ -124,7 +167,7 @@ import_file() {
     fi
     
     # re-addで取り込み
-    if chezmoi re-add "${file}"; then
+    if chezmoi re-add "${file}" 2>/dev/null; then
         log "取り込み成功: ${file}"
         notify "取り込み成功: ${file}" "success"
         return 0
@@ -158,7 +201,7 @@ interactive_mode() {
     while read -r file; do
         echo "ファイル: ${file}"
         echo "差分:"
-        chezmoi diff "${file}" || true
+        chezmoi diff "${file}" 2>/dev/null || true
         echo
         
         read -p "このファイルを取り込みますか？ (y/n/q): " -n 1 -r
@@ -233,6 +276,24 @@ should_watch_file() {
 
 # メイン処理
 main() {
+    # hookから呼び出されている場合はロックを取得しない
+    local skip_lock=false
+    if [ -n "${CHEZMOI_COMMAND:-}" ]; then
+        skip_lock=true
+        log "Hook経由での実行を検出: ${CHEZMOI_COMMAND}"
+    fi
+    
+    # ロック取得
+    if [ "${skip_lock}" = "false" ]; then
+        if ! acquire_lock; then
+            log "Error: 他のプロセスが実行中です"
+            exit 1
+        fi
+        
+        # 終了時にロックを解放
+        trap release_lock EXIT
+    fi
+    
     init
     load_config
     cleanup_backups
