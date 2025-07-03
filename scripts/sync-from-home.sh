@@ -146,6 +146,48 @@ load_config() {
     NOTIFY_COMMAND=$(jq -r '.notification.notify_command // "notify-send"' "${CONFIG_FILE}" 2>/dev/null || echo "notify-send")
 }
 
+# マージ処理
+merge_file() {
+    local file="$1"
+    local source_path
+    
+    # chezmoiソースパスを取得
+    source_path=$(chezmoi source-path "${file}" 2>/dev/null || echo "")
+    
+    if [ -z "${source_path}" ]; then
+        log "ファイルが管理対象外: ${file}"
+        return 1
+    fi
+    
+    # 一時ファイルを作成
+    local temp_merged="${BACKUP_DIR}/merged_$(basename "${source_path}").$(date +%Y%m%d_%H%M%S)"
+    
+    # 3-way mergeを実行
+    if command -v git >/dev/null 2>&1; then
+        # gitのmerge-fileを使用
+        if git merge-file -p "${source_path}" "${source_path}" "${file}" > "${temp_merged}" 2>/dev/null; then
+            log "自動マージ成功: ${file}"
+            mv "${temp_merged}" "${source_path}"
+            return 0
+        else
+            log "マージ競合が発生: ${file}"
+            # 競合ファイルを保存
+            git merge-file "${source_path}" "${source_path}" "${file}" 2>/dev/null || true
+            return 2
+        fi
+    else
+        # gitが使えない場合はdiffを使用
+        if diff -u "${source_path}" "${file}" > "${temp_merged}.diff" 2>/dev/null; then
+            log "ファイルに変更なし: ${file}"
+            rm -f "${temp_merged}.diff"
+            return 0
+        else
+            log "差分あり（手動確認が必要）: ${file}"
+            return 2
+        fi
+    fi
+}
+
 # ファイル単位での取り込み
 import_file() {
     local file="$1"
@@ -200,12 +242,40 @@ interactive_mode() {
         chezmoi diff "${file}" 2>/dev/null || true
         echo
         
-        read -p "このファイルを取り込みますか？ (y/n/q): " -n 1 -r
+        read -p "このファイルをどうしますか？ (i:取り込み/m:マージ/e:エディタで統合/s:スキップ/q:終了): " -n 1 -r
         echo
         
         case "${REPLY}" in
-            y|Y)
+            i|I)
                 import_file "${file}"
+                ;;
+            m|M)
+                merge_file "${file}"
+                local merge_result=$?
+                if [ ${merge_result} -eq 2 ]; then
+                    echo "競合が発生しました。手動で解決が必要です。"
+                    read -p "エディタで編集しますか？ (y/n): " -n 1 -r
+                    echo
+                    if [[ "${REPLY}" =~ ^[Yy]$ ]]; then
+                        local source_path
+                        source_path=$(chezmoi source-path "${file}" 2>/dev/null)
+                        "${EDITOR:-vim}" "${source_path}"
+                    fi
+                fi
+                ;;
+            e|E)
+                local source_path
+                source_path=$(chezmoi source-path "${file}" 2>/dev/null)
+                if [ -n "${source_path}" ]; then
+                    echo "エディタで統合します: ${source_path}"
+                    echo "実ファイル: ${file}"
+                    "${EDITOR:-vim}" -d "${source_path}" "${file}"
+                    read -p "統合が完了しましたか？ (y/n): " -n 1 -r
+                    echo
+                    if [[ "${REPLY}" =~ ^[Yy]$ ]]; then
+                        log "手動統合完了: ${file}"
+                    fi
+                fi
                 ;;
             q|Q)
                 log "処理を中断しました"
