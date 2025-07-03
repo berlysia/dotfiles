@@ -5,6 +5,9 @@ packages:
     - "pnpm"
     - "bun"
     - "direnv"
+    - "rust"
+  cargo:
+    - "similarity-ts"
   darwin:
     brews:
       - "aria2"

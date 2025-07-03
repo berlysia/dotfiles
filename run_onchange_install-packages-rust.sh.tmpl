@@ -1,0 +1,20 @@
+{{ if ne .chezmoi.os "windows" -}}
+#!/bin/bash
+
+# Rust tools installation via cargo
+if ! command -v cargo &> /dev/null; then
+    echo "cargo not found. Please install Rust first."
+    exit 1
+fi
+
+{{ range .packages.cargo }}
+CRATE={{ . | quote }}
+if ! command -v $CRATE &> /dev/null; then
+    echo "Installing $CRATE..."
+    cargo install $CRATE
+else
+    echo "$CRATE already installed"
+fi
+{{ end }}
+
+{{ end }}
