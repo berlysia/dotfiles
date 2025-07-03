@@ -1,0 +1,27 @@
+#!/bin/bash
+
+# ~/.claude.json の mcpServers フィールドだけをマージ更新するスクリプト
+# 既存の ~/.claude.json の内容を保持しつつ、mcpServers フィールドだけを更新
+
+set -euo pipefail
+
+# 作業用一時ファイル
+TEMP_FILE=$(mktemp)
+
+# エラー時のクリーンアップ
+cleanup() {
+    rm -f "$TEMP_FILE"
+}
+trap cleanup EXIT
+
+# 標準入力から既存のファイル内容を読み込み
+cat > "$TEMP_FILE"
+
+# chezmoi管理の mcpServers 設定を読み込み
+CHEZMOI_MCP_SERVERS='{{ includeTemplate "private_claude_mcp_servers.json" . }}'
+
+# 既存の ~/.claude.json の mcpServers と chezmoi管理の mcpServers をマージ
+# chezmoi管理の設定が優先される (既存の設定に上書き)
+jq --argjson chezmoi_mcp_servers "$CHEZMOI_MCP_SERVERS" \
+   '.mcpServers = (.mcpServers // {}) + $chezmoi_mcp_servers' \
+   "$TEMP_FILE"
