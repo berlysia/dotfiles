@@ -365,7 +365,14 @@ main() {
     load_config
     cleanup_backups
     
-    case "${1:-auto}" in
+    # Hook経由での実行をチェック
+    local default_mode="auto"
+    if [ -t 0 ] && [ -t 1 ] && [ -z "${CHEZMOI_COMMAND:-}" ]; then
+        # 標準入出力がttyで、hook経由でない場合はinteractiveを推奨
+        default_mode="interactive"
+    fi
+    
+    case "${1:-$default_mode}" in
         interactive|i)
             interactive_mode
             ;;
@@ -377,8 +384,8 @@ main() {
             ;;
         *)
             echo "使用法: $0 [auto|interactive|detect]"
-            echo "  auto: 自動取り込み（デフォルト）"
-            echo "  interactive: インタラクティブ取り込み"
+            echo "  auto: 自動取り込み"
+            echo "  interactive: インタラクティブ取り込み（手動実行時のデフォルト）"
             echo "  detect: 変更検出のみ"
             exit 1
             ;;
