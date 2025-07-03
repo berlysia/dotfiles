@@ -183,11 +183,7 @@ interactive_mode() {
     log "インタラクティブモードを開始"
     
     local changed_files
-    changed_files=$(chezmoi managed | while read -r file; do
-        if ! chezmoi verify "${file}" 2>/dev/null; then
-            echo "${file}"
-        fi
-    done)
+    changed_files=$(chezmoi status | grep -v '^$' | cut -c 4-)
     
     if [ -z "${changed_files}" ]; then
         log "変更されたファイルはありません"
@@ -227,26 +223,27 @@ auto_mode() {
     log "自動モードを開始"
     
     local changed_files
-    changed_files=$(chezmoi managed | while read -r file; do
-        if ! chezmoi verify "${file}" 2>/dev/null; then
-            echo "${file}"
-        fi
-    done)
+    changed_files=$(chezmoi status | grep -v '^$' | cut -c 4-)
 
-    log "変更されたファイル数: $(echo "${changed_files}" | wc -l)"
-    
-    if [ -z "${changed_files}" ]; then
-        log "変更されたファイルはありません"
-        return 0
-    fi
-    
     while read -r file; do
         # 監視対象かチェック
-        if should_watch_file "${file}"; then
-            import_file "${file}"
-        else
-            log "監視対象外: ${file}"
-        fi
+        should_watch_file "${file}"
+        local watch_result=$?
+        
+        case ${watch_result} in
+            0)
+                # 監視対象
+                import_file "${file}"
+                ;;
+            1)
+                # 監視パターンに一致しない
+                log "監視対象外（パターン不一致）: ${file}"
+                ;;
+            2)
+                # 無視パターンに一致
+                log "監視対象外（無視リスト）: ${file}"
+                ;;
+        esac
     done <<< "${changed_files}"
 }
 
@@ -257,7 +254,7 @@ should_watch_file() {
     # 無視パターンチェック
     for pattern in ${IGNORE_PATTERNS}; do
         if [[ "${file}" =~ ${pattern} ]]; then
-            return 1
+            return 2
         fi
     done
     
