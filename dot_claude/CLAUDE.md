@@ -80,3 +80,23 @@
 
 ## Knowledge Management
 - Record learnings in `.claude/memory/<timestamp>-<summary>.md`
+
+## MCP (Model Context Protocol) Tools
+
+### Available MCP Servers
+- **readability**: Web content extraction
+  - `mcp__readability__read_url_content_as_markdown` - Extract content from URLs as Markdown
+  - Useful for reading documentation and blog articles
+
+- **playwright**: Browser automation
+  - Web page manipulation and screenshot capture
+  - Visual verification of CSS implementation results
+
+- **context7**: Context management
+  - Up-to-date documentation for any library
+
+### MCP Best Practices
+1. **Web Information Gathering**: Prefer readability MCP tool over WebFetch
+2. **Browser Operations**: Use playwright for dynamic content instead of simple HTTP requests
+3. **Resource Discovery**: Check available resources with `ListMcpResourcesTool`
+4. **Error Handling**: Consider fallback strategies when MCP tools fail
