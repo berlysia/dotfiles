@@ -1,43 +1,82 @@
-# Config
+# Development Guidelines
 
-## Lang: 日本語/English code
+## Language
+- Japanese for discussion, English for code
 
-## Workflow: Explore→Plan→Code→Commit
+## Workflow
+1. **Explore** - Understand codebase and requirements
+2. **Plan** - Design solution with clear steps
+3. **Code** - Implement following best practices
+4. **Commit** - Clean, meaningful commits
 
-## Dev Rules
-- Format, clear names, idioms, "why" comments
-- Dev time priority, patterns, scripts
-- Error handling, parallelization
-- Minimal libs, reflect arch, ADRs
-- TDD (t-wada)
+## Development Principles
 
-## TypeScript: pnpm, biome, oxlint, no `any`, async/await, Vitest
+### Code Quality
+- Clean formatting, descriptive names, idiomatic patterns
+- Comments explain why code exists (its purpose), not what changed
+- Comprehensive error handling and parallelization
 
-## Security
-- **Never**: hardcode secrets, unvalidated input, suppress errors
-- **Must**: validate, env vars, logging, lint/test
+### Developer Experience
+- Minimize developer friction
+- Thorough planning before implementation
+- Root cause analysis for bug fixes
+- Create scripts for repetitive tasks
 
-## Pre-commit: test/lint pass, clear messages
+### Architecture
+- **Libraries**: Minimal dependencies, prefer built-ins
+- **Design**: Respect existing architecture, maintain unidirectional dependency graph
+- **Documentation**: Record significant decisions in ADRs (Architecture Decision Records)
+- **Patterns**: Abstract repeated patterns, use tools like `similarity-ts` for detection
 
-## Commands
-- **mapfile**: Read lines from stdin into array
-  - `mapfile -t array < <(command)` - Read command output into array
-  - `mapfile -t files < <(find . -name "*.js")` - Store file list in array
-- **tee**: Write output to both file and stdout
-  - `command | tee file.txt` - Save output to file while displaying
-  - `command | tee -a file.txt` - Append to file while displaying
-- **similarity-ts**: TypeScript code similarity analysis
-  - `similarity-ts src/` - Analyze similarity in TypeScript files
-  - `similarity-ts --threshold 0.8 src/` - Custom similarity threshold
+### Testing
+- Follow t-wada's TDD style
+- Strict Red-Green-Refactor cycle
+- Tests must pass before commits
+
+## TypeScript Standards
+- Package manager: `pnpm`
+- Linting: `biome`
+- Testing for browser: `Vitest`
+- Testing for CLI: `node:test`
+- No `any` types
+- Prefer `async/await`
+
+## Security Requirements
+- **Prohibited**: Hardcoded secrets, unvalidated inputs, suppressed errors
+- **Required**: Input validation, environment variables, comprehensive logging, passing lint/test
 
 ## Git Workflow
-- **Create worktree**: Use `git-worktree-create <branch-name>`
-  - Creates worktrees in `.git/worktree/` directory at repository root
-  - Auto-creates branch if it doesn't exist (from current branch)
-  - Uses existing local/remote branches when available
-- **Cleanup worktrees**: Use `git-worktree-cleanup`
-  - Safely removes finished worktrees with safety checks
-  - Skips worktrees with uncommitted changes, unpushed commits, or stashes
-  - Automatically prunes after deletion
 
-## Memory: .claude/memory記録
+### Worktree Management
+- **Create**: `git-worktree-create <branch-name>`
+  - Location: `.git/worktree/` directory
+  - Auto-creates branch from current if needed
+  - Uses existing local/remote branches when available
+  
+- **Cleanup**: `git-worktree-cleanup`
+  - Safely removes completed worktrees
+  - Preserves worktrees with uncommitted changes or unpushed commits
+  - Auto-prunes after deletion
+
+### Commit Standards
+- All tests and lints must pass
+- Clear, descriptive commit messages
+
+## Useful Commands
+
+### File Processing
+- **mapfile**: Read lines into array
+  - `mapfile -t array < <(command)`
+  - `mapfile -t files < <(find . -name "*.js")`
+
+- **tee**: Output to file and stdout
+  - `command | tee file.txt`
+  - `command | tee -a file.txt` (append)
+
+### Code Analysis
+- **similarity-ts**: Detect code duplication
+  - `similarity-ts src/`
+  - `similarity-ts --threshold 0.8 src/`
+
+## Knowledge Management
+- Record learnings in `.claude/memory/<timestamp>-<summary>.md`
