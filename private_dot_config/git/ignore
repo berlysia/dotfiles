@@ -101,4 +101,5 @@ mise.local.toml
 .env
 
 **/.claude/settings.local.json
+**/.claude/review-result/*
 
