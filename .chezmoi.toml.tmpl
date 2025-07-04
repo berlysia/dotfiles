@@ -5,10 +5,5 @@
 {{- end }}
 {{- end }}
 
-encryption = "age"
-[age]
-identity = "~/.config/chezmoi/key.txt"
-recipient = "{{ onepasswordRead "op://Personal/chezmoi-age-key/PUBLICKEY" }}"
-
 [onepassword]
 prompt = false
