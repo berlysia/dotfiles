@@ -9,7 +9,7 @@
 - Dev time priority, patterns, scripts
 - Error handling, parallelization
 - Minimal libs, reflect arch, ADRs
-- Actions, TDD (t-wada)
+- TDD (t-wada)
 
 ## TypeScript: pnpm, biome, oxlint, no `any`, async/await, Vitest
 
@@ -19,7 +19,16 @@
 
 ## Pre-commit: test/lint pass, clear messages
 
-## Tools: similarity-ts, tsg
+## Commands
+- **mapfile**: Read lines from stdin into array
+  - `mapfile -t array < <(command)` - Read command output into array
+  - `mapfile -t files < <(find . -name "*.js")` - Store file list in array
+- **tee**: Write output to both file and stdout
+  - `command | tee file.txt` - Save output to file while displaying
+  - `command | tee -a file.txt` - Append to file while displaying
+- **similarity-ts**: TypeScript code similarity analysis
+  - `similarity-ts src/` - Analyze similarity in TypeScript files
+  - `similarity-ts --threshold 0.8 src/` - Custom similarity threshold
 
 ## Git Workflow
 - **Create worktree**: Use `git-worktree-create <branch-name>`
