@@ -10,3 +10,7 @@ export EDITOR
 
 # FZF configuration
 export FZF_DEFAULT_OPTS="--height=50% --layout=reverse --info=inline --border --padding=1"
+
+if [ -f ~/local.env.sh ]; then
+  . ~/local.env.sh
+fi
