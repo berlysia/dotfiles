@@ -1,0 +1,10 @@
+# Ignore unencrypted sound files
+*.wav
+*.mp3
+*.ogg
+*.aiff
+
+# But track encrypted files
+!*.age
+!.gitkeep
+!README.md

@@ -1,0 +1,24 @@
+{
+  "Notification": [
+    {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "command",
+          "command": {{ printf "powershell.exe -c '(New-Object Media.SoundPlayer \"%s\\.claude\\hooks\\sounds\\ClaudeNotification.wav\").PlaySync()' || echo 'Sound file not found'" (.chezmoi.homeDir | replace "/" "\\") | quote }}
+        }
+      ]
+    }
+  ],
+  "Stop": [
+    {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "command",
+          "command": {{ printf "powershell.exe -c '(New-Object Media.SoundPlayer \"%s\\.claude\\hooks\\sounds\\ClaudeStop.wav\").PlaySync()' || echo 'Sound file not found'" (.chezmoi.homeDir | replace "/" "\\") | quote }}
+        }
+      ]
+    }
+  ]
+}

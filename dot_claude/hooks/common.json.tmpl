@@ -1,0 +1,22 @@
+{
+  "PreToolUse": [
+    {
+      "matcher": "(WebFetch|Fetch).*github\\.com",
+      "hooks": [
+        {
+          "type": "block",
+          "message": "Use 'gh' CLI for GitHub requests instead of Fetch/WebFetch. Example: gh api repos/owner/repo"
+        }
+      ]
+    },
+    {
+      "matcher": "(WebFetch|Fetch).*https?://",
+      "hooks": [
+        {
+          "type": "warning",
+          "message": "Consider using 'mcp__readability__read_url_content_as_markdown' for better web content extraction. If MCP is unavailable, you can proceed with WebFetch."
+        }
+      ]
+    }
+  ]
+}

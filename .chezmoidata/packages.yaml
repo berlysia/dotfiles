@@ -10,6 +10,7 @@ packages:
     - "similarity-ts"
   darwin:
     brews:
+      - "age"
       - "aria2"
       - "bat"
       - "emacs"
@@ -48,6 +49,7 @@ packages:
       - "iterm2"
   linux:
     apt:
+      - "age"
       - "wget"
       - "curl"
       - "emacs"
@@ -59,3 +61,6 @@ packages:
       - "zsh"
       - "unzip"
       - "notify-send"
+  windows:
+    choco:
+      - "age"

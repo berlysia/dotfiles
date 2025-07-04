@@ -1,0 +1,24 @@
+{
+  "Notification": [
+    {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "afplay '{{ .chezmoi.homeDir }}/.claude/hooks/sounds/ClaudeNotification.wav' || echo 'Sound file not found'"
+        }
+      ]
+    }
+  ],
+  "Stop": [
+    {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "afplay '{{ .chezmoi.homeDir }}/.claude/hooks/sounds/ClaudeStop.wav' || echo 'Sound file not found'"
+        }
+      ]
+    }
+  ]
+}
