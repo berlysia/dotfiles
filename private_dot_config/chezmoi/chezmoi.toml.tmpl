@@ -1,0 +1,14 @@
+{{- if stat "/proc/version" }}
+{{- $procVersion := include "/proc/version" | lower }}
+{{- if contains "microsoft" $procVersion }}
+# WSL environment
+{{- end }}
+{{- end }}
+
+encryption = "age"
+[age]
+identity = "~/.config/chezmoi/key.txt"
+recipient = "{{ onepasswordRead "op://Personal/chezmoi-age-key/PUBLICKEY" }}"
+
+[onepassword]
+prompt = false

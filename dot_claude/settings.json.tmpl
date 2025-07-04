@@ -1,29 +1,33 @@
+{{- $osHooks := dict -}}
+{{- $isWSL := false -}}
+{{- if and (eq .chezmoi.os "linux") (.chezmoi.kernel.osrelease | lower | contains "microsoft") -}}
+  {{- $isWSL = true -}}
+{{- end -}}
+{{- if eq .chezmoi.os "windows" -}}
+  {{- $osHooks = includeTemplate "dot_claude/hooks/windows.json.tmpl" . | fromJson -}}
+{{- else if $isWSL -}}
+  {{- $osHooks = includeTemplate "dot_claude/hooks/wsl.json.tmpl" . | fromJson -}}
+{{- else if eq .chezmoi.os "linux" -}}
+  {{- $osHooks = includeTemplate "dot_claude/hooks/linux.json.tmpl" . | fromJson -}}
+{{- else if eq .chezmoi.os "darwin" -}}
+  {{- $osHooks = includeTemplate "dot_claude/hooks/darwin.json.tmpl" . | fromJson -}}
+{{- end -}}
+{{- $commonHooks := includeTemplate "dot_claude/hooks/common.json.tmpl" . | fromJson -}}
+{{- $mergedHooks := dict -}}
+{{- range $key, $value := $commonHooks -}}
+  {{- $_ := set $mergedHooks $key $value -}}
+{{- end -}}
+{{- range $key, $value := $osHooks -}}
+  {{- if hasKey $mergedHooks $key -}}
+    {{- $merged := concat (index $mergedHooks $key) $value -}}
+    {{- $_ := set $mergedHooks $key $merged -}}
+  {{- else -}}
+    {{- $_ := set $mergedHooks $key $value -}}
+  {{- end -}}
+{{- end -}}
 {
-  "hooks": {
-    "Notification": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "powershell.exe -c '(New-Object Media.SoundPlayer \"C:\\Users\\berlysia\\Documents\\Voices\\ClaudeNotification.wav\").PlaySync()'"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "powershell.exe -c '(New-Object Media.SoundPlayer \"C:\\Users\\berlysia\\Documents\\Voices\\ClaudeStop.wav\").PlaySync()'"
-          }
-        ]
-      }
-    ]
-  },
-    "permissions": {
+  "hooks": {{ toJson $mergedHooks }},
+  "permissions": {
     "allow": [
       "Bash(npm:*)",
       "Bash(yarn:*)",
