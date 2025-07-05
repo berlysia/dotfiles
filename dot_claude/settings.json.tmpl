@@ -3,9 +3,7 @@
 {{- if and (eq .chezmoi.os "linux") (.chezmoi.kernel.osrelease | lower | contains "microsoft") -}}
   {{- $isWSL = true -}}
 {{- end -}}
-{{- if eq .chezmoi.os "windows" -}}
-  {{- $osHooks = includeTemplate "dot_claude/hooks/windows.json.tmpl" . | fromJson -}}
-{{- else if $isWSL -}}
+{{- if $isWSL -}}
   {{- $osHooks = includeTemplate "dot_claude/hooks/wsl.json.tmpl" . | fromJson -}}
 {{- else if eq .chezmoi.os "linux" -}}
   {{- $osHooks = includeTemplate "dot_claude/hooks/linux.json.tmpl" . | fromJson -}}

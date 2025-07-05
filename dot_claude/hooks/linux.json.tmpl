@@ -5,7 +5,7 @@
       "hooks": [
         {
           "type": "command",
-          "command": "paplay '{{ .chezmoi.homeDir }}/.claude/hooks/sounds/ClaudeNotification.wav' || echo 'Sound file not found'"
+          "command": "paplay '{{ .chezmoi.homeDir }}/.claude/hooks/sounds/ClaudeNotification.wav' || echo 'Sound file not found: {{ .chezmoi.homeDir }}/.claude/hooks/sounds/ClaudeNotification.wav'"
         }
       ]
     }
@@ -16,7 +16,7 @@
       "hooks": [
         {
           "type": "command", 
-          "command": "paplay '{{ .chezmoi.homeDir }}/.claude/hooks/sounds/ClaudeStop.wav' || echo 'Sound file not found'"
+          "command": "paplay '{{ .chezmoi.homeDir }}/.claude/hooks/sounds/ClaudeStop.wav' || echo 'Sound file not found: {{ .chezmoi.homeDir }}/.claude/hooks/sounds/ClaudeStop.wav'"
         }
       ]
     }
