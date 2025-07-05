@@ -1,31 +1,35 @@
 {
-  "PreToolUse": [
-    {
-      "matcher": "(WebFetch|Fetch).*github\\.com",
-      "hooks": [
-        {
-          "type": "block",
-          "message": "Use 'gh' CLI for GitHub requests instead of Fetch/WebFetch. Example: gh api repos/owner/repo"
-        }
-      ]
-    },
-    {
-      "matcher": "(WebFetch|Fetch).*https?://",
-      "hooks": [
-        {
-          "type": "warning",
-          "message": "Consider using 'mcp__readability__read_url_content_as_markdown' for better web content extraction. If MCP is unavailable, you can proceed with WebFetch."
-        }
-      ]
-    },
-    {
-      "matcher": "Bash",
-      "hooks": [
-        {
-          "type": "command",
-          "command": "{{ .chezmoi.homeDir }}/.claude/hooks/scripts/block-tsx-tsnode.ts"
-        }
-      ]
-    }
-  ]
-}
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ~/.claude/hooks/scripts/block-tsx-tsnode.ts"
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/scripts/deny-check.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "(WebFetch|Fetch).*github\\.com",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'Use \"gh\" CLI for GitHub requests instead of Fetch/WebFetch. Example: gh api repos/owner/repo'; exit 2"
+          }
+        ]
+      },
+      {
+        "matcher": "(WebFetch|Fetch).*https?://",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'Consider using \"mcp__readability__read_url_content_as_markdown\" for better web content extraction. If MCP is unavailable, you can proceed with WebFetch.'; exit 2"
+          }
+        ]
+      }
+    ]
+  }
