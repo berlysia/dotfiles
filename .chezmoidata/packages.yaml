@@ -61,6 +61,7 @@ packages:
       - "zsh"
       - "unzip"
       - "notify-send"
+      - "pulseaudio-utils"
   windows:
     choco:
       - "age"
