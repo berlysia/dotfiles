@@ -38,6 +38,10 @@ This command analyzes recent changes or a specific pull request and provides com
 - Design patterns and architecture
 - Maintainability and readability
 - Code reusability and modularity
+- Code duplication detection using `similarity-ts` and deduplication necessity assessment
+- Circular dependency identification using `dpdm` and `madge`, with resolution strategies
+- Dependency structure verification and organization using `tsg`
+- Bundle analysis and optimization using `sonda`
 
 ### Quality Engineer Review
 - Test coverage and effectiveness
