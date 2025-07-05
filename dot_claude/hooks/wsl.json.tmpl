@@ -5,7 +5,7 @@
       "hooks": [
         {
           "type": "command",
-          "command": "powershell.exe -c '$wslPath = wsl wslpath -w \"{{ .chezmoi.homeDir }}/.claude/hooks/sounds/ClaudeNotification.wav\"; (New-Object Media.SoundPlayer $wslPath).PlaySync()' || echo 'Sound file not found'"
+          "command": "powershell.exe -c '$wslPath = wsl wslpath -w \"{{ .chezmoi.homeDir }}/.claude/hooks/sounds/ClaudeNotification.wav\"; (New-Object Media.SoundPlayer $wslPath).PlaySync()' || echo 'Sound file not found: {{ .chezmoi.homeDir }}/.claude/hooks/sounds/ClaudeNotification.wav'"
         }
       ]
     }
@@ -16,7 +16,7 @@
       "hooks": [
         {
           "type": "command",
-          "command": "powershell.exe -c '$wslPath = wsl wslpath -w \"{{ .chezmoi.homeDir }}/.claude/hooks/sounds/ClaudeStop.wav\"; (New-Object Media.SoundPlayer $wslPath).PlaySync()' || echo 'Sound file not found'"
+          "command": "powershell.exe -c '$wslPath = wsl wslpath -w \"{{ .chezmoi.homeDir }}/.claude/hooks/sounds/ClaudeStop.wav\"; (New-Object Media.SoundPlayer $wslPath).PlaySync()' || echo 'Sound file not found: {{ .chezmoi.homeDir }}/.claude/hooks/sounds/ClaudeStop.wav'"
         }
       ]
     }
