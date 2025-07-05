@@ -17,6 +17,15 @@
           "message": "Consider using 'mcp__readability__read_url_content_as_markdown' for better web content extraction. If MCP is unavailable, you can proceed with WebFetch."
         }
       ]
+    },
+    {
+      "matcher": "Bash",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "{{ .chezmoi.homeDir }}/.claude/hooks/scripts/block-tsx-tsnode.ts"
+        }
+      ]
     }
   ]
 }
