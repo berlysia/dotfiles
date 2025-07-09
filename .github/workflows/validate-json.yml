@@ -1,0 +1,104 @@
+name: Validate JSON Templates
+
+on:
+  push:
+    paths:
+      - '**/*.json.tmpl'
+      - '**/*.json'
+      - '.github/workflows/validate-json.yml'
+  pull_request:
+    paths:
+      - '**/*.json.tmpl'
+      - '**/*.json'
+      - '.github/workflows/validate-json.yml'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y jq
+    
+    - name: Install chezmoi
+      run: |
+        sh -c "$(curl -fsLS get.chezmoi.io)" -- -b /usr/local/bin
+    
+    - name: Validate JSON templates
+      run: |
+        echo "🔍 Validating JSON templates..."
+        
+        # Function to check template
+        check_template() {
+            local template="$1"
+            local name="$(basename "$template")"
+            
+            echo -n "Checking $name... "
+            
+            # Create minimal chezmoi data for template execution
+            cat > /tmp/chezmoi-data.json << 'EOF'
+        {
+          "chezmoi": {
+            "os": "linux",
+            "kernel": {
+              "osrelease": "5.15.0-generic"
+            }
+          },
+          "user": {
+            "windows": {
+              "username": "testuser"
+            }
+          }
+        }
+        EOF
+            
+            # Try to render and validate
+            if chezmoi execute-template --init --source-path . < "$template" 2>/dev/null | jq empty 2>/dev/null; then
+                echo "✅"
+                return 0
+            else
+                echo "❌"
+                echo "Error details:"
+                chezmoi execute-template --init --source-path . < "$template" 2>&1 | jq empty 2>&1 || true
+                return 1
+            fi
+        }
+        
+        # Check all JSON templates
+        ERRORS=0
+        for template in $(find . -name "*.json.tmpl" -type f); do
+            if ! check_template "$template"; then
+                ((ERRORS++))
+            fi
+        done
+        
+        if [ $ERRORS -gt 0 ]; then
+            echo "❌ Found $ERRORS invalid template(s)"
+            exit 1
+        else
+            echo "✅ All JSON templates are valid"
+        fi
+    
+    - name: Check for trailing commas
+      run: |
+        echo "🔍 Checking for trailing commas in templates..."
+        
+        FOUND=0
+        for template in $(find . -name "*.json.tmpl" -type f); do
+            if grep -n ',\s*[}\]]' "$template" > /dev/null; then
+                echo "⚠️  Found trailing comma in $template:"
+                grep -n ',\s*[}\]]' "$template" | head -5
+                ((FOUND++))
+            fi
+        done
+        
+        if [ $FOUND -gt 0 ]; then
+            echo "❌ Found trailing commas in $FOUND file(s)"
+            exit 1
+        else
+            echo "✅ No trailing commas found"
+        fi
