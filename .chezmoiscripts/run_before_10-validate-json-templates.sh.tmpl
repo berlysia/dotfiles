@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# Validate JSON templates before applying
+# This script runs before chezmoi apply to catch JSON syntax errors early
+
+set -euo pipefail
+
+echo "🔍 Pre-apply JSON template validation..."
+
+# Create temporary directory for validation
+TEMP_DIR=$(mktemp -d)
+trap "rm -rf $TEMP_DIR" EXIT
+
+# Function to check if template should generate a JSON file
+should_validate_as_json() {
+    local template="$1"
+    local basename="$(basename "$template")"
+    
+    # Skip modify_ prefixed templates (they generate scripts)
+    if [[ "$basename" =~ ^modify_ ]]; then
+        return 1
+    fi
+    
+    # Skip executable_ prefixed templates (they generate scripts)
+    if [[ "$basename" =~ ^executable_ ]]; then
+        return 1
+    fi
+    
+    # Skip run_ prefixed templates (they generate scripts)
+    if [[ "$basename" =~ ^run_ ]]; then
+        return 1
+    fi
+    
+    # Check first line for shebang
+    local first_line=$(head -n 1 "$template" 2>/dev/null || true)
+    if [[ "$first_line" =~ ^#! ]]; then
+        return 1
+    fi
+    
+    return 0
+}
+
+# Function to validate a template by rendering it
+validate_template() {
+    local template="$1"
+    local output_name="$(basename "$template" .tmpl)"
+    local temp_output="$TEMP_DIR/$output_name"
+    
+    # Skip non-JSON templates
+    if ! should_validate_as_json "$template"; then
+        return 0
+    fi
+    
+    echo -n "  Checking $output_name... "
+    
+    # Try to render the template
+    if chezmoi execute-template < "$template" > "$temp_output" 2>/dev/null; then
+        # Check if it's valid JSON
+        if jq empty "$temp_output" 2>/dev/null; then
+            echo "✅"
+            return 0
+        else
+            echo "❌ Invalid JSON"
+            echo "    Error details:"
+            jq empty "$temp_output" 2>&1 | sed 's/^/    /'
+            
+            # Check for trailing commas
+            if grep -q ',\s*[}\]]' "$temp_output"; then
+                echo "    ⚠️  Trailing comma detected:"
+                grep -n ',\s*[}\]]' "$temp_output" | head -3 | sed 's/^/    Line /'
+            fi
+            return 1
+        fi
+    else
+        echo "❌ Template error"
+        chezmoi execute-template < "$template" 2>&1 | sed 's/^/    /'
+        return 1
+    fi
+}
+
+# Find all JSON templates dynamically
+ERRORS=0
+while IFS= read -r template; do
+    if ! validate_template "$template"; then
+        ((ERRORS++))
+    fi
+done < <(find "{{ .chezmoi.sourceDir }}" -name "*.json.tmpl" -type f)
+
+if [ $ERRORS -gt 0 ]; then
+    echo -e "\n❌ Found $ERRORS template error(s)"
+    echo "   Please fix the errors before applying"
+    exit 1
+else
+    echo -e "\n✅ All JSON templates are valid"
+fi
