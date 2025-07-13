@@ -15,3 +15,11 @@ alias gp='git push'
 # Other useful aliases
 alias h='history'
 alias c='clear'
+
+# Claude command
+if [ -x "$HOME/.claude/local/claude" ]; then
+    alias claude='$HOME/.claude/local/claude'
+else
+    # Use claude from PATH if local version not available
+    alias claude='claude'
+fi
