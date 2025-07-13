@@ -1,9 +1,15 @@
 #!/bin/bash
 
-# ~/.claude.json の mcpServers フィールドだけをマージ更新するスクリプト
-# 既存の ~/.claude.json の内容を保持しつつ、mcpServers フィールドだけを更新
+# ~/.claude.json の設定をマージ更新するスクリプト
+# 既存の ~/.claude.json の内容を保持しつつ、chezmoi管理の設定で上書き
 
 set -euo pipefail
+
+# マージモード設定
+# AUTO: 自動マージ
+# INTERACTIVE: 衝突時に確認
+# FORCE: chezmoi設定で強制上書き
+MERGE_MODE="${MERGE_MODE:-INTERACTIVE}"
 
 # 作業用一時ファイル
 TEMP_FILE=$(mktemp)
@@ -17,11 +23,96 @@ trap cleanup EXIT
 # 標準入力から既存のファイル内容を読み込み
 cat > "$TEMP_FILE"
 
-# chezmoi管理の mcpServers 設定を読み込み
-CHEZMOI_MCP_SERVERS='{{ includeTemplate "private_claude_mcp_servers.json" . }}'
+# chezmoi管理の設定を読み込み
+CHEZMOI_CONFIG='{{ includeTemplate "private_claude_config.json" . }}'
 
-# 既存の ~/.claude.json の mcpServers と chezmoi管理の mcpServers をマージ
-# chezmoi管理の設定が優先される (既存の設定に上書き)
-jq --argjson chezmoi_mcp_servers "$CHEZMOI_MCP_SERVERS" \
-   '.mcpServers = (.mcpServers // {}) + $chezmoi_mcp_servers' \
-   "$TEMP_FILE"
+# 衝突検出関数
+detect_conflicts() {
+    local existing_file="$1"
+    local chezmoi_config="$2"
+    
+    # 両方に存在するキーで値が異なるものを検出
+    jq -n --argjson existing "$(cat "$existing_file")" \
+          --argjson chezmoi "$chezmoi_config" '
+        def conflicts($existing; $chezmoi; $path):
+            if ($existing | type) == "object" and ($chezmoi | type) == "object" then
+                reduce ($existing | keys_unsorted[]) as $key ([];
+                    if $chezmoi | has($key) then
+                        if ($existing[$key] | type) == "object" and ($chezmoi[$key] | type) == "object" then
+                            . + conflicts($existing[$key]; $chezmoi[$key]; $path + [$key])
+                        elif $existing[$key] != $chezmoi[$key] then
+                            . + [{"path": $path + [$key], "existing": $existing[$key], "chezmoi": $chezmoi[$key]}]
+                        else
+                            .
+                        end
+                    else
+                        .
+                    end
+                )
+            else
+                []
+            end;
+        conflicts($existing; $chezmoi; [])
+    '
+}
+
+# マージ処理関数
+perform_merge() {
+    local existing_file="$1"
+    local chezmoi_config="$2"
+    local merge_mode="$3"
+    
+    case "$merge_mode" in
+        "FORCE")
+            # chezmoi設定で完全上書き
+            jq --argjson chezmoi "$chezmoi_config" \
+               '. * $chezmoi' \
+               "$existing_file"
+            ;;
+        "INTERACTIVE"|"AUTO")
+            # 深いマージ（オブジェクトは再帰的にマージ、配列と基本型はchezmoi優先）
+            jq --argjson chezmoi "$chezmoi_config" '
+                def deep_merge($a; $b):
+                    if ($a | type) == "object" and ($b | type) == "object" then
+                        reduce ($a | keys_unsorted[]) as $key ($b;
+                            if $a | has($key) then
+                                .[$key] = deep_merge($a[$key]; .[$key])
+                            else
+                                .[$key] = $a[$key]
+                            end
+                        )
+                    else
+                        $b
+                    end;
+                deep_merge(.; $chezmoi)
+            ' "$existing_file"
+            ;;
+    esac
+}
+
+# 衝突検出
+CONFLICTS=$(detect_conflicts "$TEMP_FILE" "$CHEZMOI_CONFIG")
+
+# 衝突がある場合の処理
+if [ "$CONFLICTS" != "[]" ] && [ "$MERGE_MODE" = "INTERACTIVE" ]; then
+    echo "⚠️  設定の衝突が検出されました:" >&2
+    echo "$CONFLICTS" | jq -r '.[] | "  \(.path | join("."): 既存=\(.existing) → chezmoi=\(.chezmoi)"' >&2
+    echo "" >&2
+    echo "マージを続行しますか？ (y/N)" >&2
+    read -r response
+    case "$response" in
+        [yY]|[yY][eE][sS])
+            echo "マージを続行します..." >&2
+            ;;
+        *)
+            echo "マージを中止しました" >&2
+            exit 1
+            ;;
+    esac
+elif [ "$CONFLICTS" != "[]" ] && [ "$MERGE_MODE" = "AUTO" ]; then
+    echo "ℹ️  設定の衝突が検出されましたが、自動マージします:" >&2
+    echo "$CONFLICTS" | jq -r '.[] | "  \(.path | join("."): 既存=\(.existing) → chezmoi=\(.chezmoi)"' >&2
+fi
+
+# マージ実行
+perform_merge "$TEMP_FILE" "$CHEZMOI_CONFIG" "$MERGE_MODE"
