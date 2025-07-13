@@ -1,6 +1,9 @@
 #!/bin/sh
 # Common shell initialization script for both zsh and bash interactive sessions
 
+# Load common aliases
+[ -f "$SHELL_COMMON/aliases.sh" ] && source "$SHELL_COMMON/aliases.sh"
+
 # FZF integration based on shell type
 if type fzf &>/dev/null; then
   if [ "$CURRENT_SHELL" = "zsh" ]; then
