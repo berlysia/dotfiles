@@ -1,180 +1,139 @@
 #!/bin/bash
 
-# ~/.claude/CLAUDE.md の設定をマージ更新するスクリプト
-# 既存の ~/.claude/CLAUDE.md の内容を保持しつつ、chezmoi管理のセクションで上書き
+# ~/.claude/CLAUDE.md のシンプルパッチベースマージスクリプト
+# diffとpatchコマンドを直接使用した軽量実装
 
 set -euo pipefail
 
 # マージモード設定
-# AUTO: 自動マージ
-# INTERACTIVE: 衝突時に確認
-# FORCE: chezmoi設定で強制上書き
-MERGE_MODE="${MERGE_MODE:-INTERACTIVE}"
+MERGE_MODE="${MERGE_MODE:-AUTO}"
 
 # 作業用一時ファイル
-TEMP_FILE=$(mktemp)
-CHEZMOI_TEMP=$(mktemp)
+TEMP_DIR=$(mktemp -d)
+EXISTING_FILE="$TEMP_DIR/existing.md"
+CHEZMOI_FILE="$TEMP_DIR/chezmoi.md"
 
 # エラー時のクリーンアップ
 cleanup() {
-    rm -f "$TEMP_FILE" "$CHEZMOI_TEMP"
+    rm -rf "$TEMP_DIR"
 }
 trap cleanup EXIT
 
 # 標準入力から既存のファイル内容を読み込み
-cat > "$TEMP_FILE"
+cat > "$EXISTING_FILE"
 
 # chezmoi管理のCLAUDE.md設定を読み込み
-cat > "$CHEZMOI_TEMP" << 'EOF'
-{{ includeTemplate "dot_claude/private_CLAUDE.md" . }}
+cat > "$CHEZMOI_FILE" << 'EOF'
+{{ includeTemplate "dot_claude/.CLAUDE.md" . }}
 EOF
 
-# Markdownセクション解析関数
-parse_markdown_sections() {
-    local file="$1"
-    awk '
-        /^#+ / {
-            if (section != "") {
-                print section "|" content
-            }
-            section = $0
-            content = ""
-            next
-        }
-        {
-            if (content == "") {
-                content = $0
-            } else {
-                content = content "\n" $0
-            }
-        }
-        END {
-            if (section != "") {
-                print section "|" content
-            }
-        }
-    ' "$file"
+# パッチ生成
+generate_patch() {
+    # unified diff形式でパッチを生成
+    if diff -u "$EXISTING_FILE" "$CHEZMOI_FILE" > /dev/null 2>/dev/null; then
+        echo "✅ No changes detected between files" >&2
+        cat "$EXISTING_FILE"
+        return 1
+    else
+        return 0
+    fi
 }
 
-# セクション衝突検出関数
-detect_section_conflicts() {
-    local existing_file="$1"
-    local chezmoi_file="$2"
-    
-    # 既存ファイルのセクション解析
-    declare -A existing_sections
-    while IFS='|' read -r header content; do
-        existing_sections["$header"]="$content"
-    done < <(parse_markdown_sections "$existing_file")
-    
-    # chezmoiファイルのセクション解析と衝突検出
-    local conflicts=()
-    while IFS='|' read -r header content; do
-        if [[ -n "${existing_sections[$header]:-}" ]]; then
-            # セクションが両方に存在する場合、内容を比較
-            if [[ "${existing_sections[$header]}" != "$content" ]]; then
-                conflicts+=("$header")
-            fi
-        fi
-    done < <(parse_markdown_sections "$chezmoi_file")
-    
-    printf '%s\n' "${conflicts[@]}"
-}
-
-# セクション単位マージ関数
-perform_section_merge() {
-    local existing_file="$1"
-    local chezmoi_file="$2"
-    local merge_mode="$3"
-    
-    # 既存ファイルのセクション解析
-    declare -A existing_sections
-    declare -a existing_order
-    while IFS='|' read -r header content; do
-        existing_sections["$header"]="$content"
-        existing_order+=("$header")
-    done < <(parse_markdown_sections "$existing_file")
-    
-    # chezmoiファイルのセクション解析
-    declare -A chezmoi_sections
-    declare -a chezmoi_order
-    while IFS='|' read -r header content; do
-        chezmoi_sections["$header"]="$content"
-        chezmoi_order+=("$header")
-    done < <(parse_markdown_sections "$chezmoi_file")
-    
-    # マージ結果の構築
-    declare -A merged_sections
-    declare -a final_order
-    
-    case "$merge_mode" in
+# インタラクティブ適用
+apply_patch() {
+    case "$MERGE_MODE" in
+        "INTERACTIVE")
+            echo "Choose action:" >&2
+            echo "1) Apply patch (update to chezmoi version)" >&2
+            echo "2) Open merge tool" >&2
+            echo "3) Keep existing version" >&2
+            echo "4) Manual edit" >&2
+            echo "" >&2
+            
+            while true; do
+                read -p "Enter choice [1-5]: " choice
+                case $choice in
+                    1)
+                        echo "📥 Applying patch..." >&2
+                        cp "$CHEZMOI_FILE" "$EXISTING_FILE"
+                        cat "$EXISTING_FILE"
+                        return 0
+                        ;;
+                    2)
+                        open_merge_tool
+                        return 0
+                        ;;
+                    3)
+                        echo "📄 Keeping existing version" >&2
+                        cat "$EXISTING_FILE"
+                        return 0
+                        ;;
+                    4)
+                        manual_edit
+                        return 0
+                        ;;
+                    *)
+                        echo "Invalid choice. Please enter 1-4." >&2
+                        ;;
+                esac
+            done
+            ;;
+        "AUTO")
+            echo "🤖 Auto-applying chezmoi version..." >&2
+            cp "$CHEZMOI_FILE" "$EXISTING_FILE"
+            cat "$EXISTING_FILE"
+            ;;
         "FORCE")
-            # chezmoi設定で完全上書き
-            for header in "${chezmoi_order[@]}"; do
-                merged_sections["$header"]="${chezmoi_sections[$header]}"
-                final_order+=("$header")
-            done
-            ;;
-        "INTERACTIVE"|"AUTO")
-            # 既存セクションを保持しつつ、chezmoiセクションで更新/追加
-            
-            # 既存セクションをベースに構築
-            for header in "${existing_order[@]}"; do
-                if [[ -n "${chezmoi_sections[$header]:-}" ]]; then
-                    # chezmoiにも存在する場合はchezmoi版を使用
-                    merged_sections["$header"]="${chezmoi_sections[$header]}"
-                else
-                    # chezmoiにない場合は既存版を保持
-                    merged_sections["$header"]="${existing_sections[$header]}"
-                fi
-                final_order+=("$header")
-            done
-            
-            # chezmoiにのみ存在する新規セクションを追加
-            for header in "${chezmoi_order[@]}"; do
-                if [[ -z "${existing_sections[$header]:-}" ]]; then
-                    merged_sections["$header"]="${chezmoi_sections[$header]}"
-                    final_order+=("$header")
-                fi
-            done
+            echo "💪 Force-applying chezmoi version..." >&2
+            cp "$CHEZMOI_FILE" "$EXISTING_FILE"
+            cat "$EXISTING_FILE"
             ;;
     esac
-    
-    # 結果出力
-    for header in "${final_order[@]}"; do
-        echo "$header"
-        echo "${merged_sections[$header]}"
-        echo
-    done
 }
 
-# 衝突検出
-SECTION_CONFLICTS=($(detect_section_conflicts "$TEMP_FILE" "$CHEZMOI_TEMP"))
+# マージツールを開く
+open_merge_tool() {
+    if command -v code >/dev/null 2>&1; then
+        echo "🛠️  Opening VS Code merge editor..." >&2
+        # 3ファイル比較: existing, chezmoi, (output will be existing)
+        code --diff "$EXISTING_FILE" "$CHEZMOI_FILE" --wait
+        cat "$EXISTING_FILE"
+    elif command -v vimdiff >/dev/null 2>&1; then
+        echo "🛠️  Opening vimdiff..." >&2
+        vimdiff "$EXISTING_FILE" "$CHEZMOI_FILE"
+        cat "$EXISTING_FILE"
+    elif command -v meld >/dev/null 2>&1; then
+        echo "🛠️  Opening Meld..." >&2
+        meld "$EXISTING_FILE" "$CHEZMOI_FILE"
+        cat "$EXISTING_FILE"
+    else
+        echo "❌ No suitable merge tool found" >&2
+        echo "Available files for manual editing:" >&2
+        echo "  Existing: $EXISTING_FILE" >&2
+        echo "  Chezmoi:  $CHEZMOI_FILE" >&2
+        read -p "Press Enter after manual editing..."
+        cat "$EXISTING_FILE"
+    fi
+}
 
-# 衝突がある場合の処理
-if [ ${#SECTION_CONFLICTS[@]} -gt 0 ] && [ "$MERGE_MODE" = "INTERACTIVE" ]; then
-    echo "⚠️  Markdownセクションの衝突が検出されました:" >&2
-    for section in "${SECTION_CONFLICTS[@]}"; do
-        echo "  $section" >&2
-    done
+# 手動編集
+manual_edit() {
+    local editor="${EDITOR:-nano}"
+    echo "✏️  Opening editor ($editor)..." >&2
+    echo "Files available:" >&2
+    echo "  Current: $EXISTING_FILE" >&2
+    echo "  Target:  $CHEZMOI_FILE" >&2
     echo "" >&2
-    echo "マージを続行しますか？ (y/N)" >&2
-    read -r response
-    case "$response" in
-        [yY]|[yY][eE][sS])
-            echo "マージを続行します..." >&2
-            ;;
-        *)
-            echo "マージを中止しました" >&2
-            exit 1
-            ;;
-    esac
-elif [ ${#SECTION_CONFLICTS[@]} -gt 0 ] && [ "$MERGE_MODE" = "AUTO" ]; then
-    echo "ℹ️  Markdownセクションの衝突が検出されましたが、自動マージします:" >&2
-    for section in "${SECTION_CONFLICTS[@]}"; do
-        echo "  $section" >&2
-    done
-fi
+    
+    $editor "$EXISTING_FILE"
+    cat "$EXISTING_FILE"
+}
 
-# マージ実行
-perform_section_merge "$TEMP_FILE" "$CHEZMOI_TEMP" "$MERGE_MODE"
+# メイン処理
+main() {
+    if generate_patch; then
+        apply_patch
+    fi
+}
+
+main
