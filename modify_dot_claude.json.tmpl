@@ -154,8 +154,7 @@ apply_patch() {
             ;;
         "AUTO")
             echo "🤖 Auto-applying chezmoi configuration..." >&2
-            cp "$CHEZMOI_FILE" "$EXISTING_FILE"
-            validate_and_output
+            smart_merge
             ;;
         "FORCE")
             echo "💪 Force-applying chezmoi configuration..." >&2
@@ -175,17 +174,17 @@ smart_merge() {
     echo "🧠 Performing smart JSON merge..." >&2
     
     jq -s '
-        def deep_merge($a; $b):
-            if ($a | type) == "object" and ($b | type) == "object" then
-                reduce ($a | keys_unsorted[]) as $key ($b;
-                    if $a | has($key) then
-                        .[$key] = deep_merge($a[$key]; .[$key])
+        def deep_merge($existing; $new):
+            if ($existing | type) == "object" and ($new | type) == "object" then
+                $existing + reduce ($new | keys_unsorted[]) as $key ($existing;
+                    if $existing | has($key) then
+                        .[$key] = deep_merge($existing[$key]; $new[$key])
                     else
-                        .[$key] = $a[$key]
+                        .[$key] = $new[$key]
                     end
                 )
             else
-                $b
+                $new
             end;
         
         deep_merge(.[0]; .[1])
