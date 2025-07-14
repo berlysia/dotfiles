@@ -1,15 +1,29 @@
 {
     "PreToolUse": [
       {
+        "matcher": "(Read|Write|Edit|MultiEdit|NotebookRead|NotebookEdit|LS|Glob|Grep|Bash)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/scripts/deny-repository-outside-access.sh"
+          }
+        ]
+      },
+      {
         "matcher": "Bash",
         "hooks": [
           {
             "type": "command",
             "command": "node ~/.claude/hooks/scripts/block-tsx-tsnode.ts"
-          },
+          }
+        ]
+      },
+      {
+        "matcher": "(Write|Edit|MultiEdit|NotebookEdit)",
+        "hooks": [
           {
             "type": "command",
-            "command": "bash ~/.claude/hooks/scripts/deny-check.sh"
+            "command": "bash ~/.claude/hooks/scripts/deny-node-modules-write.sh"
           }
         ]
       },
@@ -39,6 +53,15 @@
           {
             "type": "command",
             "command": "bash ~/.claude/hooks/scripts/auto-format.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo \"[$(date)] $USER: $(jq -r '.tool_input.command')\" >> ~/.claude/command_history.log"
           }
         ]
       }
