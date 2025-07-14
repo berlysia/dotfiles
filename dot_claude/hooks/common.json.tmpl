@@ -31,5 +31,16 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "(Edit|MultiEdit|Write)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/scripts/auto-format.sh"
+          }
+        ]
+      }
     ]
   }
