@@ -4,26 +4,20 @@ Create a git commit following project conventions with comprehensive pre-commit 
 
 ## Workflow
 
-1. **Pre-commit checks**: Run lint, format, and typecheck (if not handled by pre-commit hooks)
+1. **Pre-commit checks**: Run lint, format, and typecheck
 2. **Staging strategy**: Use staged files if any exist, otherwise stage all unstaged changes
 3. **Commit message**: Follow Angular-style prefixes with project-specific conventions
-4. **Hook compliance**: Respect pre-commit and commit-msg hooks
-5. **Post-commit verification**: Confirm commit success and check for additional changes
+4. **Post-commit verification**: Confirm commit success and check for additional changes
 
 ## Implementation Steps
 
-### 1. Check for pre-commit hooks
-- Look for `.pre-commit-config.yaml`, `.husky/`, or `.git/hooks/pre-commit`
-- If hooks exist, rely on them for lint/format/typecheck
-- If no hooks, run manual checks
-
-### 2. Manual checks (when no pre-commit hooks)
+### 1. Manual checks
 - **Lint**: Run project linter (biome, eslint, oxlint, etc.)
 - **Format**: Apply code formatting (biome, prettier, etc.)
 - **Typecheck**: Verify TypeScript compilation
 - Fail fast if any check fails
 
-### 3. Staging strategy
+### 2. Staging strategy
 ```bash
 # Check if any files are staged
 git diff --cached --name-only
@@ -32,14 +26,14 @@ git add .
 # If staged files exist, ask user for confirmation
 ```
 
-### 4. Commit message generation
+### 3. Commit message generation
 - **Prefix**: Use Angular-style (feat:, fix:, docs:, refactor:, test:, chore:)
 - **Language**: English primary, follow project conventions
 - **Tense**: Present tense imperative ("add feature" not "added feature")
 - **Format**: `type(scope): description`
 - **Footer**: Add Claude attribution
 
-### 5. Post-commit verification
+### 4. Post-commit verification
 ```bash
 # Verify commit succeeded
 git log --oneline -1
