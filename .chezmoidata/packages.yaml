@@ -62,6 +62,7 @@ packages:
       - "unzip"
       - "notify-send"
       - "pulseaudio-utils"
+      - "dunst"
   windows:
     choco:
       - "age"

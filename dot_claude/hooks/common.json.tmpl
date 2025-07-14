@@ -1,4 +1,34 @@
 {
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/play-notification-sound.sh' Notification"
+          },
+          {
+            "type": "command",
+            "command": "bash '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/send-notification.sh' Notification"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/play-notification-sound.sh' Stop"
+          },
+          {
+            "type": "command",
+            "command": "bash '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/send-notification.sh' Stop"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "(Read|Write|Edit|MultiEdit|NotebookRead|NotebookEdit|LS|Glob|Grep|Bash)",
