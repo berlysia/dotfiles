@@ -32,10 +32,25 @@ play_sound() {
             ;;
     esac
     
-    # Play sound
+    # Check if sound command is available
     if [[ "$platform" == "wsl" ]]; then
+        # WSL uses PowerShell which is always available
         eval "$sound_cmd" || echo "Sound file not found: $sound_file"
     else
+        # Check if sound command exists for macOS and Linux
+        if ! command -v "$sound_cmd" &> /dev/null; then
+            echo "Error: $sound_cmd is not installed. Please install it to play notification sounds."
+            case "$platform" in
+                "darwin")
+                    echo "afplay should be pre-installed on macOS"
+                    ;;
+                "linux")
+                    echo "Install with: sudo apt-get install pulseaudio-utils"
+                    ;;
+            esac
+            return 1
+        fi
+        
         $sound_cmd "$sound_file" || echo "Sound file not found: $sound_file"
     fi
 }
