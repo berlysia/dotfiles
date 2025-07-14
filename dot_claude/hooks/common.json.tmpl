@@ -91,7 +91,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo \"[$(date)] $USER: $(jq -r '.tool_input.command')\" >> ~/.claude/command_history.log"
+            "command": "echo \"[$(date)] $USER [$(pwd)]: $(jq -r '.tool_input.command' | sed 's/$/\\\\n/' | tr -d '\\n')\" >> ~/.claude/command_history.log"
           }
         ]
       }
