@@ -57,6 +57,9 @@
   path = ~/.gitconfig_local
   path = ~/.gitconfig_gpg_ssh
 
+[includeIf "gitdir:~/.local/share/mise/"]
+  path = ~/.gitconfig-auto
+
 [url "git://"]
     insteadOf = https://
 [url "git@github.com:"]
