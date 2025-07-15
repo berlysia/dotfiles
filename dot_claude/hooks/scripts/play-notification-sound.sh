@@ -3,6 +3,51 @@
 # Claude Notification Sound Player
 # Auto-detects platform and plays notification sounds
 
+# Parse JSON input and extract message
+parse_notification_message() {
+    local json_input=""
+    
+    # Read JSON from stdin if available
+    if [[ ! -t 0 ]]; then
+        # Read from stdin
+        json_input=$(cat)
+        if [[ -n "$json_input" ]] && command -v jq &> /dev/null; then
+            # Extract message from JSON
+            echo "$json_input" | jq -r '.message // ""' 2>/dev/null || echo ""
+        else
+            echo ""
+        fi
+    else
+        echo ""
+    fi
+}
+
+# Determine sound type based on message content
+determine_sound_type() {
+    local message="$1"
+    local event_type="$2"
+    
+    # If no message, use default event type
+    if [[ -z "$message" ]]; then
+        echo "$event_type"
+        return
+    fi
+    
+    # Pattern matching based on documented Claude Code notification messages
+    case "$message" in
+        *"needs your permission"*|*"permission to use"*)
+            echo "Permission"
+            ;;
+        *"waiting for your input"*|*"has been idle"*)
+            echo "Waiting"
+            ;;
+        *)
+            # Default to event type for any other messages
+            echo "$event_type"
+            ;;
+    esac
+}
+
 play_sound() {
     local sound_type="$1"
     local platform=""
@@ -20,14 +65,26 @@ play_sound() {
     case "$platform" in
         "darwin")
             sound_file="$HOME/.claude/hooks/sounds/Claude${sound_type}.wav"
+            # Fallback to generic notification if specific sound doesn't exist
+            if [[ ! -f "$sound_file" ]]; then
+                sound_file="$HOME/.claude/hooks/sounds/ClaudeNotification.wav"
+            fi
             sound_cmd="afplay"
             ;;
         "wsl")
             sound_file="C:\\Users\\$USER\\.claude\\sounds\\Claude${sound_type}.wav"
+            # Fallback to generic notification if specific sound doesn't exist (check via powershell)
+            if ! powershell.exe -c "Test-Path '$sound_file'" 2>/dev/null | grep -q True; then
+                sound_file="C:\\Users\\$USER\\.claude\\sounds\\ClaudeNotification.wav"
+            fi
             sound_cmd="powershell.exe -c \"(New-Object Media.SoundPlayer \\\"$sound_file\\\").PlaySync()\""
             ;;
         "linux")
             sound_file="$HOME/.claude/hooks/sounds/Claude${sound_type}.wav"
+            # Fallback to generic notification if specific sound doesn't exist
+            if [[ ! -f "$sound_file" ]]; then
+                sound_file="$HOME/.claude/hooks/sounds/ClaudeNotification.wav"
+            fi
             sound_cmd="paplay"
             ;;
     esac
@@ -58,7 +115,10 @@ play_sound() {
 # Main execution
 case "$1" in
     "Notification")
-        play_sound "Notification"
+        # Try to parse message from JSON input to determine appropriate sound
+        notification_message=$(parse_notification_message)
+        sound_type=$(determine_sound_type "$notification_message" "Notification")
+        play_sound "$sound_type"
         ;;
     "Stop")
         play_sound "Stop"
