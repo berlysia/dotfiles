@@ -84,12 +84,18 @@ determine_sound_type() {
         return
     fi
     
-    # Pattern matching based on documented Claude Code notification messages
+    # Pattern matching based on actual notification messages from logs
     case "$message" in
-        *"needs your permission"*|*"permission to use"*)
+        *"needs your permission to use"*)
+            # Permission requests for tools: Bash, Read, Write, Update, etc.
             echo "Permission"
             ;;
-        *"waiting for your input"*|*"has been idle"*)
+        *"is waiting for your input"*)
+            # Claude is waiting for user response
+            echo "Waiting"
+            ;;
+        *"has been idle"*)
+            # Idle timeout notification (not seen in logs yet but documented)
             echo "Waiting"
             ;;
         *)
