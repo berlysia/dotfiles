@@ -47,17 +47,14 @@ check_bash_command() {
 # Read JSON input from stdin
 input=$(cat)
 
-# Extract tool_name and command using basic parsing
-tool_name=$(echo "$input" | grep -o '"tool_name":"[^"]*"' | cut -d'"' -f4)
+# Extract tool_name and command using jq
+tool_name=$(echo "$input" | jq -r '.tool_name // empty')
 
 # Only process Bash commands
 [[ $tool_name != "Bash" ]] && exit 0
 
 # Extract command
-command=$(echo "$input" | grep -o '"command":"[^"]*"' | cut -d'"' -f4)
-
-# Decode escaped characters (basic handling)
-command=$(echo "$command" | sed 's/\\"/"/g' | sed 's/\\n/\n/g')
+command=$(echo "$input" | jq -r '.command // empty')
 
 [[ -z $command ]] && exit 0
 
