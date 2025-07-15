@@ -5,11 +5,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/play-notification-sound.sh' Notification"
+            "command": "cat | bash '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/play-notification-sound.sh' Notification"
           },
           {
             "type": "command",
-            "command": "bash '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/send-notification.sh' Notification"
+            "command": "cat | bash '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/send-notification.sh' Notification"
           }
         ]
       }
