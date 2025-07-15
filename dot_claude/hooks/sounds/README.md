@@ -2,15 +2,32 @@
 
 This directory contains sound files for Claude Code notifications.
 
-## Sound Files
+## Current Sound Files
 
-- `ClaudeNotification.wav` - Notification sound
+- `ClaudeNotification.wav` - Default notification sound (fallback)
 - `ClaudeStop.wav` - Stop sound
 
-## Setup
+## Expected Sound Files
 
-Place your sound files here:
-- `ClaudeNotification.wav`
-- `ClaudeStop.wav`
+The notification script dynamically selects sounds based on message content:
 
-The hook script will use these files for notifications.
+### Required Files
+- `ClaudeNotification.wav` - Default notification sound (used as fallback)
+- `ClaudeStop.wav` - Stop sound
+
+### Optional Files (enhance user experience)
+- `ClaudePermission.wav` - Permission request notifications
+  - Triggered by messages containing "needs your permission" or "permission to use"
+- `ClaudeWaiting.wav` - Input waiting notifications  
+  - Triggered by messages containing "waiting for your input" or "has been idle"
+
+## Fallback Behavior
+
+If specific sound files don't exist, the script falls back to `ClaudeNotification.wav`.
+All permission and waiting notifications currently use the default notification sound.
+
+## Platform Support
+
+- **macOS**: Uses `afplay` command
+- **Linux**: Uses `paplay` command (install with `sudo apt-get install pulseaudio-utils`)
+- **WSL**: Uses PowerShell Media.SoundPlayer
