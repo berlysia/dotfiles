@@ -86,12 +86,38 @@ get_repo_info() {
     echo "$info"
 }
 
+# Parse JSON input and extract message
+parse_notification_message() {
+    local json_input=""
+    
+    # Read JSON from stdin if available
+    if [[ ! -t 0 ]]; then
+        # Read from stdin
+        json_input=$(cat)
+        if [[ -n "$json_input" ]] && command -v jq &> /dev/null; then
+            # Extract message from JSON
+            echo "$json_input" | jq -r '.message // ""' 2>/dev/null || echo ""
+        else
+            echo ""
+        fi
+    else
+        echo ""
+    fi
+}
+
 # Main execution
 case "$1" in
     "Notification")
         repo_info=$(get_repo_info)
-        send_notification "Claude Code - Notification" "💬 操作の確認が必要です
+        # Try to parse message from JSON input
+        notification_message=$(parse_notification_message)
+        if [[ -n "$notification_message" ]]; then
+            send_notification "Claude Code - Notification" "$notification_message
 📁 $repo_info"
+        else
+            send_notification "Claude Code - Notification" "💬 操作の確認が必要です
+📁 $repo_info"
+        fi
         ;;
     "Stop")
         repo_info=$(get_repo_info)
