@@ -59,11 +59,10 @@ resolve_conflict() {
     echo "Choose an option:"
     echo "1) Overwrite target with source (lose target changes)"
     echo "2) Keep target (ignore source changes)"
-    echo "3) Open merge tool (requires manual resolution)"
-    echo "4) Abort operation"
+    echo "3) Abort operation"
     
     while true; do
-        printf "Enter choice [1-4]: "
+        printf "Enter choice [1-3]: "
         read -r choice
         case $choice in
             1)
@@ -76,32 +75,11 @@ resolve_conflict() {
                 return 1
                 ;;
             3)
-                if command -v code >/dev/null 2>&1; then
-                    echo "Opening VS Code for manual merge..."
-                    code --diff "$TARGET_FILE" "$SOURCE_FILE"
-                    echo "Please resolve conflicts manually and save the target file."
-                    echo "Press Enter when you've finished editing..."
-                    read -r
-                    return 0
-                elif command -v vimdiff >/dev/null 2>&1; then
-                    echo "Opening vimdiff for manual merge..."
-                    vimdiff "$TARGET_FILE" "$SOURCE_FILE"
-                    return 0
-                else
-                    echo "No merge tool available. Please edit manually:"
-                    echo "Target: $TARGET_FILE"
-                    echo "Source: $SOURCE_FILE"
-                    echo "Press Enter when you've finished editing..."
-                    read -r
-                    return 0
-                fi
-                ;;
-            4)
                 echo "Operation aborted."
                 exit 1
                 ;;
             *)
-                echo "Invalid choice. Please enter 1-4."
+                echo "Invalid choice. Please enter 1-3."
                 ;;
         esac
     done
