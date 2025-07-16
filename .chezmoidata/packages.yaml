@@ -5,8 +5,11 @@ packages:
     - "bun"
     - "direnv"
     - "rust"
+    - "go"
   cargo:
     - "similarity-ts"
+  go:
+    - "github.com/syou6162/git-sequential-stage@latest"
   darwin:
     brews:
       - "age"
@@ -35,6 +38,7 @@ packages:
       - "gnu-sed"
       - "coreutils"
       - "terminal-notifier"
+      - "patchutils"
     casks:
       - "1password"
       - "coteditor"
@@ -62,6 +66,7 @@ packages:
       - "notify-send"
       - "pulseaudio-utils"
       - "dunst"
+      - "patchutils"
   windows:
     choco:
       - "age"
