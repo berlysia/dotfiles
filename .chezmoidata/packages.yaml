@@ -39,6 +39,7 @@ packages:
       - "coreutils"
       - "terminal-notifier"
       - "patchutils"
+      - "sox"
     casks:
       - "1password"
       - "coteditor"
@@ -67,6 +68,7 @@ packages:
       - "pulseaudio-utils"
       - "dunst"
       - "patchutils"
+      - "sox"
   windows:
     choco:
       - "age"
