@@ -29,5 +29,6 @@
       "env": {}
     }
   },
-  "preferredNotifChannel": "terminal_bell"
+  "preferredNotifChannel": "terminal_bell",
+  "defaultMode": "allowEdits"
 }
