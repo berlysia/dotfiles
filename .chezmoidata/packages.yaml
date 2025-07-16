@@ -1,7 +1,6 @@
 packages:
   mise:
     - "node"
-    - "yarn"
     - "pnpm"
     - "bun"
     - "direnv"
