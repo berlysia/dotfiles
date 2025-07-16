@@ -118,9 +118,10 @@ play_sound() {
         platform="linux"
     fi
     
-    # Set sound file path and command based on platform
+    # Set sound file paths and command based on platform
     case "$platform" in
         "darwin")
+            prefix_file="$HOME/.claude/hooks/sounds/Prefix.wav"
             sound_file="$HOME/.claude/hooks/sounds/Claude${sound_type}.wav"
             # Fallback to generic notification if specific sound doesn't exist
             if [[ ! -f "$sound_file" ]]; then
@@ -129,27 +130,38 @@ play_sound() {
             sound_cmd="afplay"
             ;;
         "wsl")
+            prefix_file="C:\\Users\\$USER\\.claude\\sounds\\Prefix.wav"
             sound_file="C:\\Users\\$USER\\.claude\\sounds\\Claude${sound_type}.wav"
             # Fallback to generic notification if specific sound doesn't exist (check via powershell)
             if ! powershell.exe -c "Test-Path '$sound_file'" 2>/dev/null | grep -q True; then
                 sound_file="C:\\Users\\$USER\\.claude\\sounds\\ClaudeNotification.wav"
             fi
-            sound_cmd="powershell.exe -c \"(New-Object Media.SoundPlayer \\\"$sound_file\\\").PlaySync()\""
+            sound_cmd="powershell.exe -c \"(New-Object Media.SoundPlayer \\\"#FILE#\\\").PlaySync()\""
             ;;
         "linux")
+            prefix_file="$HOME/.claude/hooks/sounds/Prefix.wav"
             sound_file="$HOME/.claude/hooks/sounds/Claude${sound_type}.wav"
             # Fallback to generic notification if specific sound doesn't exist
             if [[ ! -f "$sound_file" ]]; then
                 sound_file="$HOME/.claude/hooks/sounds/ClaudeNotification.wav"
             fi
-            sound_cmd="paplay"
+            sound_cmd="paplay --wait"
             ;;
     esac
     
     # Check if sound command is available
     if [[ "$platform" == "wsl" ]]; then
         # WSL uses PowerShell which is always available
-        eval "$sound_cmd" || echo "Sound file not found: $sound_file"
+        
+        # Play prefix sound first if it exists
+        if powershell.exe -c "Test-Path '$prefix_file'" 2>/dev/null | grep -q True; then
+            local prefix_cmd="${sound_cmd//#FILE#/$prefix_file}"
+            eval "$prefix_cmd" 2>/dev/null || echo "Prefix sound file not found: $prefix_file"
+        fi
+        
+        # Then play main sound
+        local main_cmd="${sound_cmd//#FILE#/$sound_file}"
+        eval "$main_cmd" || echo "Sound file not found: $sound_file"
     else
         # Check if sound command exists for macOS and Linux
         if ! command -v "$sound_cmd" &> /dev/null; then
@@ -165,6 +177,12 @@ play_sound() {
             return 1
         fi
         
+        # Play prefix sound first if it exists
+        if [[ -f "$prefix_file" ]]; then
+            $sound_cmd "$prefix_file" 2>/dev/null || echo "Prefix sound file not found: $prefix_file"
+        fi
+        
+        # Then play main sound
         $sound_cmd "$sound_file" || echo "Sound file not found: $sound_file"
     fi
 }
