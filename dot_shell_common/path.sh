@@ -8,6 +8,7 @@ _common_paths=(
   "$HOME/.deno/bin"
   "$HOME/google-cloud-sdk/bin"
   "$HOME/workspace/depot_tools"
+  "${GOPATH:-$HOME/go}/bin"
 )
 
 # Function to add paths to PATH without duplication
