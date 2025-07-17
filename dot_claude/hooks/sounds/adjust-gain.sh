@@ -25,27 +25,36 @@ show_help() {
     FILES       対象ファイル（省略時は*.wav）
 
 ゲイン値の形式:
-    【dB形式】
+    【dB形式（単位付き）】
+    -10dB       かなり小さく（約0.32倍）
+    -6dB        半分の音量
+    -3dB        少し小さく（約0.7倍）
     0dB         変更なし（等倍）
     +3dB        少し大きく（約1.4倍）
     +6dB        2倍の音量
-    -3dB        少し小さく（約0.7倍）
-    -6dB        半分の音量
-    -10dB       かなり小さく（約0.32倍）
 
-    【倍率形式】
-    1.0         変更なし（等倍）
-    2.0         2倍の音量（+6dB相当）
-    1.4         少し大きく（+3dB相当）
-    0.7         少し小さく（-3dB相当）
-    0.5         半分の音量（-6dB相当）
+    【dB形式（単位なし）】※soxのデフォルト形式
+    -10         かなり小さく（-10dB相当）
+    -6          半分の音量（-6dB相当）
+    -3          少し小さく（-3dB相当）
+    0           変更なし（0dB相当）
+    +3          少し大きく（+3dB相当）
+    +6          2倍の音量（+6dB相当）
+
+    【倍率形式】※1.0を基準とした倍率
     0.1         1/10の音量（-20dB相当）
+    0.5         半分の音量（-6dB相当）
+    0.7         少し小さく（-3dB相当）
+    1.0         変更なし（等倍）
+    1.4         少し大きく（+3dB相当）
+    2.0         2倍の音量（+6dB相当）
 
 例:
-    $0 -10dB ClaudeNotification.wav    # 10dB下げる
+    $0 -10dB ClaudeNotification.wav    # 10dB下げる（単位付き）
+    $0 -10 ClaudeNotification.wav      # 10dB下げる（単位なし）
     $0 +5dB *.wav                      # 全ファイルを5dB上げる
-    $0 0.5 ClaudePermission.wav        # 半分の音量にする
-    $0 1.5 ClaudeStop.wav              # 1.5倍の音量にする
+    $0 0.5 ClaudePermission.wav        # 半分の音量にする（倍率形式）
+    $0 1.5 ClaudeStop.wav              # 1.5倍の音量にする（倍率形式）
     $0 --backup-restore                # バックアップから復元
 
 依存関係:
@@ -94,10 +103,16 @@ adjust_gain() {
     
     echo "ゲイン調整: $file (gain: $gain)"
     
-    # 一時ファイルを使用してゲイン調整
-    local temp_file="${file}.tmp"
+    # 一時ファイルを使用してゲイン調整（元の拡張子を保持）
+    local temp_file="${file%.wav}_tmp.wav"
     
-    if sox "$file" "$temp_file" gain "$gain" 2>/dev/null; then
+    # dB単位を削除して数値のみにする
+    local gain_value="$gain"
+    if [[ "$gain" =~ ^([+-]?[0-9.]+)dB$ ]]; then
+        gain_value="${BASH_REMATCH[1]}"
+    fi
+    
+    if sox "$file" "$temp_file" gain "$gain_value"; then
         mv "$temp_file" "$file"
         echo "完了: $file"
     else
@@ -116,7 +131,7 @@ restore_from_backup() {
             local original="${backup%.bak.wav}.wav"
             echo "復元: $backup -> $original"
             cp "$backup" "$original"
-            ((restored++))
+            ((restored++)) || true
         fi
     done
     
@@ -175,7 +190,7 @@ main() {
     
     for file in "${files[@]}"; do
         if adjust_gain "$gain" "$file"; then
-            ((success++))
+            ((success++)) || true
         fi
     done
     
