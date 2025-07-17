@@ -20,6 +20,10 @@
         "hooks": [
           {
             "type": "command",
+            "command": "cat | bash '{{ .chezmoi.homeDir }}/.local/share/chezmoi/dot_claude/hooks/scripts/command-logger.sh' Stop"
+          },
+          {
+            "type": "command",
             "command": "bash '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/play-notification-sound.sh' Stop"
           },
           {
@@ -35,7 +39,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cat | bash '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/record-command-timing.sh' PreToolUse"
+            "command": "cat | bash '{{ .chezmoi.homeDir }}/.local/share/chezmoi/dot_claude/hooks/scripts/command-logger.sh' PreToolUse"
           }
         ]
       },
@@ -100,7 +104,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cat | bash '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/record-command-timing.sh' PostToolUse"
+            "command": "cat | bash '{{ .chezmoi.homeDir }}/.local/share/chezmoi/dot_claude/hooks/scripts/command-logger.sh' PostToolUse"
           }
         ]
       },
