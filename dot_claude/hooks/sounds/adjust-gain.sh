@@ -158,22 +158,26 @@ main() {
         exit 0
     fi
     
+    # 引数がない場合はヘルプを表示
+    if [[ $# -eq 0 ]]; then
+        show_help
+        exit 0
+    fi
+    
     check_sox
     
     # 引数解析
-    local gain="$DEFAULT_GAIN"
+    local gain="$1"
+    shift
     local files=()
-    
-    if [[ $# -gt 0 ]]; then
-        gain="$1"
-        shift
-    fi
     
     if [[ $# -gt 0 ]]; then
         files=("$@")
     else
-        # デフォルトで全ての .wav ファイルを対象とする
-        mapfile -t files < <(find . -name "*.wav" -not -name "*.bak.wav" -printf "%f\n")
+        echo "エラー: 対象ファイルを指定してください"
+        echo
+        show_help
+        exit 1
     fi
     
     if [[ ${#files[@]} -eq 0 ]]; then
