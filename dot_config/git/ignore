@@ -103,5 +103,6 @@ mise.local.toml
 **/.claude/settings.local.json
 **/.claude/review-result/*
 **/.claude/tmp/*
+**/.claude/log/*
 **/.claude/tasks/*
 

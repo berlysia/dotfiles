@@ -31,6 +31,15 @@
     ],
     "PreToolUse": [
       {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cat | bash '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/record-command-timing.sh' PreToolUse"
+          }
+        ]
+      },
+      {
         "matcher": "(Read|Write|Edit|MultiEdit|NotebookRead|NotebookEdit|LS|Glob|Grep|Bash)",
         "hooks": [
           {
@@ -86,6 +95,15 @@
       }
     ],
     "PostToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cat | bash '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/record-command-timing.sh' PostToolUse"
+          }
+        ]
+      },
       {
         "matcher": "(Edit|MultiEdit|Write)",
         "hooks": [
