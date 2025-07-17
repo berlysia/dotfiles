@@ -44,6 +44,15 @@
         ]
       },
       {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cat | bash '{{ .chezmoi.homeDir }}/.local/share/chezmoi/dot_claude/hooks/scripts/auto-approve-filtered-commands.sh'"
+          }
+        ]
+      },
+      {
         "matcher": "(Read|Write|Edit|MultiEdit|NotebookRead|NotebookEdit|LS|Glob|Grep|Bash)",
         "hooks": [
           {
