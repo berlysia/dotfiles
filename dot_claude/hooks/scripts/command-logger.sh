@@ -83,8 +83,18 @@ generate_statistics() {
 if [ "$HOOK_TYPE" = "PreToolUse" ]; then
   # Store command info for PostToolUse hook matching (using timestamp for uniqueness)
   PENDING_FILE="${TIMING_DIR}/.pending_${COMMAND_ID}_${TIMESTAMP_NS}"
-  # Use a safer delimiter that won't conflict with command content
-  echo "${COMMAND_ID}♦${TOOL_COMMAND}♦${TOOL_DESCRIPTION}♦${TIMESTAMP_NS}" > "$PENDING_FILE"
+  # Use JSON format for robust parsing with jq
+  jq -n \
+    --arg command_id "$COMMAND_ID" \
+    --arg command "$TOOL_COMMAND" \
+    --arg description "$TOOL_DESCRIPTION" \
+    --arg timestamp_ns "$TIMESTAMP_NS" \
+    '{
+      command_id: $command_id,
+      command: $command,
+      description: $description,
+      timestamp_ns: ($timestamp_ns | tonumber)
+    }' > "$PENDING_FILE"
   
 elif [ "$HOOK_TYPE" = "PostToolUse" ]; then
   # Find matching PreToolUse command and calculate execution time
@@ -95,14 +105,14 @@ elif [ "$HOOK_TYPE" = "PostToolUse" ]; then
   PENDING_FILES=$(find "${TIMING_DIR}" -name ".pending_${COMMAND_ID}_*" -type f 2>/dev/null | sort -r)
   
   for pending_file in $PENDING_FILES; do
-    PENDING_DATA=$(cat "$pending_file" 2>/dev/null)
-    if [ -n "$PENDING_DATA" ]; then
-      START_TIME_NS=$(echo "$PENDING_DATA" | cut -d'♦' -f4)
+    if [ -f "$pending_file" ]; then
+      # Parse JSON data with jq for robust handling
+      START_TIME_NS=$(jq -r '.timestamp_ns // 0' "$pending_file" 2>/dev/null || echo 0)
       # Check if within timeout range
       if [ "$START_TIME_NS" -gt "$CUTOFF_TIME_NS" ]; then
-        # Parse pending command data
-        LOGGED_COMMAND=$(echo "$PENDING_DATA" | cut -d'♦' -f2)
-        LOGGED_DESCRIPTION=$(echo "$PENDING_DATA" | cut -d'♦' -f3)
+        # Parse pending command data using jq
+        LOGGED_COMMAND=$(jq -r '.command // ""' "$pending_file" 2>/dev/null || echo "")
+        LOGGED_DESCRIPTION=$(jq -r '.description // ""' "$pending_file" 2>/dev/null || echo "")
         
         # Calculate Claude Code total time (PreToolUse to PostToolUse)
         TOTAL_DURATION_MS=$(( (TIMESTAMP_NS - START_TIME_NS) / 1000000 ))
@@ -142,9 +152,9 @@ elif [ "$HOOK_TYPE" = "Stop" ]; then
   echo "Found $TOTAL_FILES pending files to check" >> "${LOG_DIR}/stop_hook.log"
   
   for pending_file in $PENDING_FILES; do
-    PENDING_DATA=$(cat "$pending_file" 2>/dev/null)
-    if [ -n "$PENDING_DATA" ]; then
-      START_TIME_NS=$(echo "$PENDING_DATA" | cut -d'♦' -f4)
+    if [ -f "$pending_file" ]; then
+      # Parse JSON data with jq for robust handling
+      START_TIME_NS=$(jq -r '.timestamp_ns // 0' "$pending_file" 2>/dev/null || echo 0)
       if [ "$START_TIME_NS" -le "$CUTOFF_TIME_NS" ]; then
         rm -f "$pending_file"
         CLEANUP_COUNT=$((CLEANUP_COUNT + 1))
