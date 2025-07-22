@@ -74,9 +74,8 @@ for settings_file in "${SETTINGS_FILES[@]}"; do
     fi
 done
 
-# If no allow or deny list, exit
+# If no allow or deny list, exit without decision
 if [ -z "$ALLOW_LIST" ] && [ -z "$DENY_LIST" ]; then
-    echo '{"decision": "undefined"}'
     exit 0
 fi
 
@@ -151,8 +150,8 @@ check_pattern() {
 if [ -n "$DENY_LIST" ]; then
     while IFS= read -r pattern; do
         if [ -n "$pattern" ] && check_pattern "$pattern" "$TOOL_NAME" "$TOOL_INPUT"; then
-            # Match found in deny list - explicitly deny
-            echo '{"decision": "deny"}'
+            # Match found in deny list - explicitly block
+            echo '{"decision": "block"}'
             exit 0
         fi
     done <<< "$DENY_LIST"
@@ -170,5 +169,4 @@ if [ -n "$ALLOW_LIST" ]; then
 fi
 
 # No match found in either list - let other hooks handle it
-echo '{"decision": "undefined"}'
 exit 0
