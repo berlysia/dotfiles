@@ -5,8 +5,12 @@
 # Compliant with Claude Code hooks specification
 # Output: One line per command with execution time
 
+# Source common libraries
+SCRIPT_DIR="$(dirname "$0")"
+source "${SCRIPT_DIR}/lib/hook-common.sh"
+
 # Configuration
-WORKSPACE_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+WORKSPACE_ROOT=$(get_workspace_root "$(pwd)")
 LOG_DIR="${WORKSPACE_ROOT}/.claude/log"
 COMMAND_LOG="${LOG_DIR}/command_execution.log"
 TIMING_DIR="${LOG_DIR}/cmd_timing"
@@ -15,22 +19,18 @@ TIMING_DIR="${LOG_DIR}/cmd_timing"
 mkdir -p "${LOG_DIR}" "${TIMING_DIR}"
 
 # Read hook input and extract hook type
-INPUT=$(cat)
-
-# Validate JSON input according to Claude Code hooks specification
-if ! echo "$INPUT" | jq empty 2>/dev/null; then
-    echo "Error: Invalid JSON input" >&2
-    exit 1
-fi
+INPUT=$(read_hook_input)
 
 HOOK_TYPE="${1:-unknown}"
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
 TIMESTAMP_NS=$(date +%s%N)
 
 # Extract fields from hook input using official Claude Code hooks structure
-TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null || echo "unknown")
-TOOL_COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // ""' 2>/dev/null || echo "")
-TOOL_DESCRIPTION=$(echo "$INPUT" | jq -r '.tool_input.description // ""' 2>/dev/null || echo "")
+TOOL_INFO=$(extract_tool_info "$INPUT")
+TOOL_NAME=$(echo "$TOOL_INFO" | cut -d'|' -f1)
+TOOL_INPUT_DATA=$(echo "$TOOL_INFO" | cut -d'|' -f2-)
+TOOL_COMMAND=$(echo "$TOOL_INPUT_DATA" | jq -r '.command // ""' 2>/dev/null || echo "")
+TOOL_DESCRIPTION=$(echo "$TOOL_INPUT_DATA" | jq -r '.description // ""' 2>/dev/null || echo "")
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // ""' 2>/dev/null || echo "")
 TOOL_RESPONSE=$(echo "$INPUT" | jq -r '.tool_response // ""' 2>/dev/null || echo "")
 
@@ -41,7 +41,7 @@ if [ "$TOOL_NAME" != "Bash" ]; then
 fi
 
 # Generate stable command ID with session isolation
-TOOL_PARAMS=$(echo "$INPUT" | jq -r '.tool_input // {}' 2>/dev/null | jq -c 'to_entries | sort_by(.key) | from_entries' 2>/dev/null || echo '{}')
+TOOL_PARAMS=$(echo "$TOOL_INPUT_DATA" | jq -c 'to_entries | sort_by(.key) | from_entries' 2>/dev/null || echo '{}')
 PARAMS_HASH=$(echo "$TOOL_PARAMS" | sha256sum | cut -d' ' -f1 | head -c 8)
 
 # Use official session_id from Claude Code hooks if available

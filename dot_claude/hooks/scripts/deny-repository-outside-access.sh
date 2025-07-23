@@ -1,21 +1,19 @@
 #!/bin/bash
 
+# Source common libraries
+SCRIPT_DIR="$(dirname "$0")"
+source "${SCRIPT_DIR}/lib/hook-common.sh"
+
+# Read and parse hook input
+TOOL_DATA=$(read_hook_input)
+TOOL_INFO=$(extract_tool_info "$TOOL_DATA")
+TOOL_INPUT_DATA=$(echo "$TOOL_INFO" | cut -d'|' -f2-)
+
 # Extract file paths from tool input
-FILES=$(echo "$CLAUDE_TOOL_INPUT" | jq -r '
-  if .file_path then
-    .file_path
-  elif .edits then
-    .file_path
-  elif .notebook_path then
-    .notebook_path
-  elif .path then
-    .path
-  elif .command then
-    .command
-  else
-    empty
-  end
-' 2>/dev/null)
+FILES=$(extract_file_paths "$TOOL_INPUT_DATA")
+
+# Also extract command for bash tool analysis
+COMMAND=$(echo "$TOOL_INPUT_DATA" | jq -r '.command // empty' 2>/dev/null)
 
 # Exit if no files to check
 if [ -z "$FILES" ]; then
@@ -23,7 +21,7 @@ if [ -z "$FILES" ]; then
 fi
 
 # Get repository root
-REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+REPO_ROOT=$(get_workspace_root)
 if [ -z "$REPO_ROOT" ]; then
   # Not in a git repository, allow access
   exit 0
@@ -58,8 +56,7 @@ is_outside_repo() {
 }
 
 # Check for bash commands that might access files outside repo
-if echo "$CLAUDE_TOOL_INPUT" | jq -e '.command' >/dev/null 2>&1; then
-  COMMAND=$(echo "$CLAUDE_TOOL_INPUT" | jq -r '.command')
+if [ -n "$COMMAND" ]; then
   
   # Check for dangerous patterns in bash commands
   if echo "$COMMAND" | grep -qE "(cd\s+/|cd\s+\.\./|cd\s+~(?!/\.claude)|cp\s+[^[:space:]]*\s+/|mv\s+[^[:space:]]*\s+/|rm\s+[^[:space:]]*\s+/|touch\s+/|mkdir\s+/|ln\s+[^[:space:]]*\s+/)"; then
