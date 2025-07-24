@@ -16,6 +16,32 @@ _match_gitignore_pattern() {
         fi
     fi
     
+    # Handle ** patterns first (match any number of directories)
+    if [[ "$pattern" == "**" ]]; then
+        # ** matches everything
+        return 0
+    elif [[ "$pattern" == */** ]]; then
+        # Pattern ends with /** - match everything under prefix
+        local prefix="${pattern%/**}"
+        if [[ "$prefix" == /* ]]; then
+            # Anchored pattern - match from beginning
+            if [[ "$file_path" == "$prefix"/* || "$file_path" == "$prefix" ]]; then
+                return 0
+            fi
+        else
+            # Not anchored - can match anywhere
+            if [[ "$file_path" == *"$prefix"/* || "$file_path" == *"$prefix" ]]; then
+                return 0
+            fi
+        fi
+    elif [[ "$pattern" == */**/* ]]; then
+        local prefix="${pattern%%/**/*}"
+        local suffix="${pattern##*/**/}"
+        if [[ "$file_path" == "$prefix"/*/"$suffix" ]] || [[ "$file_path" == "$prefix"*/"$suffix" ]]; then
+            return 0
+        fi
+    fi
+    
     # Handle patterns starting with /
     if [[ "$pattern" == /* ]]; then
         pattern="${pattern#/}"
@@ -25,32 +51,27 @@ _match_gitignore_pattern() {
         fi
     else
         # Not anchored - can match anywhere in path
-        local dir_path="$file_path"
-        while [[ "$dir_path" == */* ]]; do
-            local basename="${dir_path##*/}"
+        # For patterns like *.js, we only want to match the filename, not any directory
+        if [[ "$pattern" == *.* ]]; then
+            local basename="${file_path##*/}"
             if [[ "$basename" == $pattern ]]; then
                 return 0
             fi
-            dir_path="${dir_path%/*}"
-        done
-        # Check root level
-        if [[ "$dir_path" == $pattern ]]; then
-            return 0
+        else
+            # For patterns without extension, check each directory level
+            local dir_path="$file_path"
+            while [[ "$dir_path" == */* ]]; do
+                local basename="${dir_path##*/}"
+                if [[ "$basename" == $pattern ]]; then
+                    return 0
+                fi
+                dir_path="${dir_path%/*}"
+            done
+            # Check root level
+            if [[ "$dir_path" == $pattern ]]; then
+                return 0
+            fi
         fi
-    fi
-    
-    # Handle ** patterns (match any number of directories)
-    if [[ "$pattern" == */**/* ]]; then
-        local prefix="${pattern%%/**/*}"
-        local suffix="${pattern##*/**/}"
-        if [[ "$file_path" == "$prefix"/*/"$suffix" ]] || [[ "$file_path" == "$prefix"*/"$suffix" ]]; then
-            return 0
-        fi
-    fi
-    
-    # Standard glob matching
-    if [[ "$file_path" == $pattern ]]; then
-        return 0
     fi
     
     return 1
@@ -112,7 +133,7 @@ check_pattern() {
             file_path=$(echo "$tool_input" | jq -r '.file_path // .path // .pattern // empty')
             
             # GitIgnore-style pattern matching
-            if [[ "$path_pattern" == "**" || "$path_pattern" == "*" ]]; then
+            if [[ "$path_pattern" == "**" ]]; then
                 return 0
             elif [[ "$path_pattern" == \!* ]]; then
                 # Negation pattern - should not match
@@ -120,8 +141,9 @@ check_pattern() {
                 neg_pattern=$(echo "$path_pattern" | sed 's/^!//')
                 if _match_gitignore_pattern "$file_path" "$neg_pattern"; then
                     return 1
+                else
+                    return 0
                 fi
-                return 0
             elif _match_gitignore_pattern "$file_path" "$path_pattern"; then
                 return 0
             fi
