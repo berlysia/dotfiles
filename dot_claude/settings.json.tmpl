@@ -108,6 +108,8 @@
       "Bash(history)",
       "Bash(alias:*)",
       "Bash(git rev-parse --show-toplevel)",
+      "Bash(cd \"$(git rev-parse --show-toplevel)\" && pwd)",
+      "Bash(git diff HEAD --name-only | xargs -I {} sh -c 'printf \"%s: \" \"{}\"; git diff HEAD {} | grep -c \"^@@\" || echo \"0\"')",
       "Read(**)",
       "Edit(~/workspace/**)",
       "Edit(./**)",
