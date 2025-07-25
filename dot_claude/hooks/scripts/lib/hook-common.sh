@@ -16,7 +16,8 @@ read_hook_input() {
 extract_tool_info() {
     local input="$1"
     local tool_name=$(echo "$input" | jq -r '.tool_name // empty')
-    local tool_input=$(echo "$input" | jq -r '.tool_input // empty')
+    # Keep tool_input as JSON object, not stringified
+    local tool_input=$(echo "$input" | jq -c '.tool_input // empty')
     echo "$tool_name|$tool_input"
 }
 
