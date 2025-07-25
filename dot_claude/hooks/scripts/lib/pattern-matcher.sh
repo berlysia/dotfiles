@@ -103,6 +103,28 @@ _extract_commands_from_compound() {
                     commands_array+=("$child_command")
                 fi
             fi
+            
+            # Extract commands from subshells $(...) and `...`
+            local subshell_commands
+            subshell_commands=$(echo "$part" | grep -oE '\$\([^)]+\)|`[^`]+`' || true)
+            if [ -n "$subshell_commands" ]; then
+                while IFS= read -r subshell; do
+                    if [ -n "$subshell" ]; then
+                        # Remove $( ) or ` ` wrapping
+                        local inner_cmd=""
+                        if [[ "$subshell" =~ ^\$\((.+)\)$ ]]; then
+                            inner_cmd="${BASH_REMATCH[1]}"
+                        elif [[ "$subshell" =~ ^`(.+)`$ ]]; then
+                            inner_cmd="${BASH_REMATCH[1]}"
+                        fi
+                        
+                        if [ -n "$inner_cmd" ]; then
+                            # Add the inner command directly instead of recursive call
+                            commands_array+=("$inner_cmd")
+                        fi
+                    fi
+                done <<< "$subshell_commands"
+            fi
         fi
     done
 }
@@ -119,7 +141,8 @@ _check_individual_command() {
     while IFS= read -r pattern; do
         if [ -n "$pattern" ]; then
             # Create a mock tool input for individual command check
-            local mock_input="{\"command\":\"$cmd\"}"
+            local mock_input
+            mock_input=$(jq -nc --arg cmd "$cmd" '{command: $cmd}')
             if check_pattern "$pattern" "Bash" "$mock_input"; then
                 return 0
             fi
@@ -142,7 +165,8 @@ _check_individual_command_with_pattern() {
     while IFS= read -r pattern; do
         if [ -n "$pattern" ]; then
             # Create a mock tool input for individual command check
-            local mock_input="{\"command\":\"$cmd\"}"
+            local mock_input
+            mock_input=$(jq -nc --arg cmd "$cmd" '{command: $cmd}')
             if check_pattern "$pattern" "Bash" "$mock_input"; then
                 matched_pattern_ref="$pattern"
                 return 0
@@ -165,7 +189,8 @@ _check_individual_command_deny() {
     while IFS= read -r pattern; do
         if [ -n "$pattern" ]; then
             # Create a mock tool input for individual command check
-            local mock_input="{\"command\":\"$cmd\"}"
+            local mock_input
+            mock_input=$(jq -nc --arg cmd "$cmd" '{command: $cmd}')
             if check_pattern "$pattern" "Bash" "$mock_input"; then
                 return 0
             fi
@@ -188,7 +213,8 @@ _check_individual_command_deny_with_pattern() {
     while IFS= read -r pattern; do
         if [ -n "$pattern" ]; then
             # Create a mock tool input for individual command check
-            local mock_input="{\"command\":\"$cmd\"}"
+            local mock_input
+            mock_input=$(jq -nc --arg cmd "$cmd" '{command: $cmd}')
             if check_pattern "$pattern" "Bash" "$mock_input"; then
                 matched_pattern_ref="$pattern"
                 return 0
