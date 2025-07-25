@@ -44,7 +44,7 @@ echo
 
 # Run core functionality tests
 echo -e "${YELLOW}Running core functionality tests...${NC}"
-if "${SCRIPT_DIR}/test_auto_approve.sh"; then
+if "${SCRIPT_DIR}/tests/unit/test_auto_approve.sh"; then
     CORE_RESULT=0
     echo -e "${GREEN}✓ Core tests completed${NC}"
 else
@@ -55,7 +55,7 @@ echo
 
 # Run edge case tests
 echo -e "${YELLOW}Running edge case tests...${NC}"
-if "${SCRIPT_DIR}/test_edge_cases.sh"; then
+if "${SCRIPT_DIR}/tests/unit/test_edge_cases.sh"; then
     EDGE_RESULT=0
     echo -e "${GREEN}✓ Edge case tests completed${NC}"
 else
