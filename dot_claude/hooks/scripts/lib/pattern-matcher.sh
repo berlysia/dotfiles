@@ -129,10 +129,86 @@ _extract_commands_from_compound() {
     done
 }
 
+# Check if a command is safe to auto-approve (built-in safe commands)
+_is_safe_builtin_command() {
+    local cmd="$1"
+    
+    # Extract the first word (command name)
+    local cmd_name
+    cmd_name=$(echo "$cmd" | awk '{print $1}')
+    
+    case "$cmd_name" in
+        "sleep")
+            # Sleep is generally safe
+            return 0
+            ;;
+        "find")
+            # Check if find command is safe
+            _is_safe_find_command "$cmd"
+            return $?
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+# Check if a find command is safe to auto-approve
+_is_safe_find_command() {
+    local cmd="$1"
+    
+    # Dangerous patterns to reject
+    if [[ "$cmd" =~ -exec[[:space:]]+rm ]] || \
+       [[ "$cmd" =~ -exec[[:space:]]+rmdir ]] || \
+       [[ "$cmd" =~ -exec[[:space:]]+mv ]] || \
+       [[ "$cmd" =~ -exec[[:space:]]+cp ]] && [[ "$cmd" =~ /dev/ ]] || \
+       [[ "$cmd" =~ -delete ]] || \
+       [[ "$cmd" =~ -execdir ]] || \
+       [[ "$cmd" =~ /etc/ ]] || \
+       [[ "$cmd" =~ /proc/ ]] || \
+       [[ "$cmd" =~ /sys/ ]] || \
+       [[ "$cmd" =~ /dev/ ]] || \
+       [[ "$cmd" =~ /var/log ]] || \
+       [[ "$cmd" =~ /usr/bin ]] || \
+       [[ "$cmd" =~ /usr/sbin ]] || \
+       [[ "$cmd" =~ /bin/ ]] || \
+       [[ "$cmd" =~ /sbin/ ]]; then
+        return 1
+    fi
+    
+    # Only allow safe starting paths (current dir, workspace, home subpaths)
+    local start_path
+    start_path=$(echo "$cmd" | sed -n 's/find[[:space:]]\+\([^[:space:]]\+\).*/\1/p')
+    
+    # If no path specified or starts with ., allow it
+    if [[ -z "$start_path" ]] || [[ "$start_path" == "." ]] || [[ "$start_path" == "./"* ]]; then
+        return 0
+    fi
+    
+    # Allow relative paths that don't go up directories excessively
+    if [[ "$start_path" =~ ^[^/] ]] && [[ ! "$start_path" =~ \.\./\.\./\.\. ]]; then
+        return 0
+    fi
+    
+    # Allow specific safe absolute paths
+    if [[ "$start_path" =~ ^/home/$USER ]] || \
+       [[ "$start_path" =~ ^/tmp ]] || \
+       [[ "$start_path" =~ ^/var/tmp ]]; then
+        return 0
+    fi
+    
+    return 1
+}
+
 # Check if individual command matches any allow pattern
 _check_individual_command() {
     local cmd="$1"
     local allow_list="$2"
+    
+    # Check built-in safe commands first
+    if _is_safe_builtin_command "$cmd"; then
+        return 0
+    fi
     
     if [ -z "$allow_list" ]; then
         return 1
@@ -157,6 +233,12 @@ _check_individual_command_with_pattern() {
     local cmd="$1"
     local allow_list="$2"
     local -n matched_pattern_ref="$3"
+    
+    # Check built-in safe commands first
+    if _is_safe_builtin_command "$cmd"; then
+        matched_pattern_ref="Built-in safe command"
+        return 0
+    fi
     
     if [ -z "$allow_list" ]; then
         return 1
