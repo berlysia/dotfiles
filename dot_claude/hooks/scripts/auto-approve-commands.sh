@@ -196,4 +196,4 @@ case "$DECISION" in
         echo '{}'
         ;;
 esac
-# test change for pre-commit hook - force test
+# test change for pre-commit hook - should trigger tests
