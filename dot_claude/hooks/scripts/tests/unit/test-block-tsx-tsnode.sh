@@ -2,7 +2,7 @@
 
 # Test script for block-tsx-tsnode.sh
 
-script_path="$(dirname "$0")/block-tsx-tsnode.sh"
+script_path="$(dirname "$0")/../../block-tsx-tsnode.sh"
 test_count=0
 pass_count=0
 
@@ -15,7 +15,7 @@ run_test() {
     ((test_count++))
     
     # Create test JSON input
-    local json_input="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$command\"}}"
+    local json_input="{\"tool_name\":\"Bash\",\"command\":\"$command\"}"
     
     # Run the script
     local output
@@ -70,6 +70,9 @@ run_test "Block node --loader tsx" "node --loader tsx app.js" 2 "Using tsx/ts-no
 
 # Test 9: Node loader usage - should block
 run_test "Block node --require ts-node" "node --require ts-node/register app.js" 2 "Using tsx/ts-node as a loader is prohibited"
+
+# Test 9.5: Node loader usage with esm path - should block
+run_test "Block node --loader ts-node/esm" "node --loader ts-node/esm foo.ts" 2 "Using tsx/ts-node as a loader is prohibited"
 
 # Test 10: Direct execution - should block
 run_test "Block tsx script.ts" "tsx script.ts" 2 "Direct execution of TypeScript files with tsx/ts-node is prohibited"

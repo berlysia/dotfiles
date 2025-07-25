@@ -26,7 +26,7 @@ check_bash_command() {
     fi
     
     # Pattern 2: Node.js loader usage
-    if [[ $command =~ (--loader|--require|--experimental-loader)[[:space:]]+(tsx|ts-node) ]]; then
+    if [[ $command =~ (--loader|--require|--experimental-loader)[[:space:]]+(tsx|ts-node)(/[^[:space:]]*)?([[:space:]]|$) ]]; then
         echo "Using tsx/ts-node as a loader is prohibited. Use the existing TypeScript toolchain in the project." >&2
         exit 2
     fi
