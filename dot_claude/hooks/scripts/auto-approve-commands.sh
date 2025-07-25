@@ -21,13 +21,20 @@ TOOL_INPUT=$(echo "$TOOL_INFO" | cut -d'|' -f2-)
 # Exit if no tool name
 [ -z "$TOOL_NAME" ] && exit 0
 
-# Get settings files
-WORKSPACE_ROOT=$(get_workspace_root)
-readarray -t SETTINGS_FILES < <(get_settings_files "$WORKSPACE_ROOT")
+# Check for test mode
+if [ "${CLAUDE_TEST_MODE:-}" = "1" ]; then
+    # Use test environment variables for permissions
+    ALLOW_LIST=$(echo "${CLAUDE_TEST_ALLOW:-[]}" | jq -r '.[]?' 2>/dev/null | grep "^${TOOL_NAME}(" || true)
+    DENY_LIST=$(echo "${CLAUDE_TEST_DENY:-[]}" | jq -r '.[]?' 2>/dev/null | grep "^${TOOL_NAME}(" || true)
+else
+    # Get settings files
+    WORKSPACE_ROOT=$(get_workspace_root)
+    readarray -t SETTINGS_FILES < <(get_settings_files "$WORKSPACE_ROOT")
 
-# Extract permission lists
-ALLOW_LIST=$(extract_permission_list "allow" "${SETTINGS_FILES[@]}")
-DENY_LIST=$(extract_permission_list "deny" "${SETTINGS_FILES[@]}")
+    # Extract permission lists
+    ALLOW_LIST=$(extract_permission_list "allow" "${SETTINGS_FILES[@]}")
+    DENY_LIST=$(extract_permission_list "deny" "${SETTINGS_FILES[@]}")
+fi
 
 # Handle no-list case - exit silently
 if [ -z "$ALLOW_LIST" ] && [ -z "$DENY_LIST" ]; then
