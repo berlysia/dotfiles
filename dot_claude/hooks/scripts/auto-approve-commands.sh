@@ -34,41 +34,165 @@ if [ -z "$ALLOW_LIST" ] && [ -z "$DENY_LIST" ]; then
     exit 0
 fi
 
-# Check deny patterns first
-if [ -n "$DENY_LIST" ]; then
-    while IFS= read -r pattern; do
-        if [ -n "$pattern" ] && check_pattern "$pattern" "$TOOL_NAME" "$TOOL_INPUT"; then
-            echo '{"decision": "block"}'
-            exit 0
-        fi
-    done <<< "$DENY_LIST"
-fi
+# Analyze patterns with individual command validation
+DENY_MATCHES=()
+ALLOW_MATCHES=()
+ALL_PATTERNS_CHECKED=()
+INDIVIDUAL_COMMAND_RESULTS=()
 
-# Check allow patterns
-if [ -n "$ALLOW_LIST" ]; then
-    while IFS= read -r pattern; do
-        if [ -n "$pattern" ] && check_pattern "$pattern" "$TOOL_NAME" "$TOOL_INPUT"; then
-            # Log the approved command
-            {
-                echo "[$(date '+%Y-%m-%d %H:%M:%S')]"
-                echo "Tool: $TOOL_NAME"
-                echo "Pattern: $pattern"
-                if [ "$TOOL_NAME" = "Bash" ]; then
-                    # For Bash tool, extract the actual command from tool_input JSON
-                    bash_command=$(echo "$TOOL_INPUT" | jq -r '.command // empty')
-                    echo "Command: $bash_command"
-                else
-                    # For other tools, show the tool input JSON
-                    echo "Input: $TOOL_INPUT"
+# For Bash tool, extract and validate individual commands
+if [ "$TOOL_NAME" = "Bash" ]; then
+    bash_command=$(echo "$TOOL_INPUT" | jq -r '.command // empty')
+    extracted_commands=()
+    _extract_commands_from_compound "$bash_command" extracted_commands
+    
+    # Check each individual command
+    for cmd in "${extracted_commands[@]}"; do
+        cmd=$(echo "$cmd" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+        if [ -n "$cmd" ]; then
+            # Check deny patterns for this command
+            if [ -n "$DENY_LIST" ]; then
+                matched_deny_pattern=""
+                if _check_individual_command_deny_with_pattern "$cmd" "$DENY_LIST" matched_deny_pattern; then
+                    INDIVIDUAL_COMMAND_RESULTS+=("DENY: '$cmd' (matched: $matched_deny_pattern)")
+                    DENY_MATCHES+=("Individual command blocked: $cmd")
+                    continue
                 fi
-                echo "---"
-            } >> "$LOG_FILE"
+            fi
             
-            echo '{"decision": "approve"}'
-            exit 0
+            # Check allow patterns for this command
+            if [ -n "$ALLOW_LIST" ]; then
+                matched_allow_pattern=""
+                if _check_individual_command_with_pattern "$cmd" "$ALLOW_LIST" matched_allow_pattern; then
+                    INDIVIDUAL_COMMAND_RESULTS+=("ALLOW: '$cmd' (matched: $matched_allow_pattern)")
+                else
+                    INDIVIDUAL_COMMAND_RESULTS+=("NO_MATCH: '$cmd' (no allow pattern matched)")
+                fi
+            else
+                INDIVIDUAL_COMMAND_RESULTS+=("NO_MATCH: '$cmd' (no allow patterns defined)")
+            fi
         fi
-    done <<< "$ALLOW_LIST"
+    done
+    
+    # Determine decision based on individual command results
+    DECISION=""
+    DECISION_REASON=""
+    
+    # If any command is denied, block the entire operation
+    if [ ${#DENY_MATCHES[@]} -gt 0 ]; then
+        DECISION="block"
+        DECISION_REASON="One or more commands blocked: ${DENY_MATCHES[*]}"
+    else
+        # Check if ALL commands are explicitly allowed
+        all_allowed=true
+        for result in "${INDIVIDUAL_COMMAND_RESULTS[@]}"; do
+            if [[ "$result" != ALLOW:* ]]; then
+                all_allowed=false
+                break
+            fi
+        done
+        
+        if [ "$all_allowed" = true ] && [ ${#INDIVIDUAL_COMMAND_RESULTS[@]} -gt 0 ]; then
+            DECISION="approve"
+            DECISION_REASON="All individual commands explicitly allowed"
+        else
+            DECISION="no_match"
+            DECISION_REASON="Not all commands explicitly allowed"
+        fi
+    fi
+else
+    # For non-Bash tools, use original logic
+    # Check deny patterns first
+    if [ -n "$DENY_LIST" ]; then
+        while IFS= read -r pattern; do
+            if [ -n "$pattern" ]; then
+                ALL_PATTERNS_CHECKED+=("DENY: $pattern")
+                if check_pattern "$pattern" "$TOOL_NAME" "$TOOL_INPUT"; then
+                    DENY_MATCHES+=("$pattern")
+                fi
+            fi
+        done <<< "$DENY_LIST"
+    fi
+
+    # Check allow patterns
+    if [ -n "$ALLOW_LIST" ]; then
+        while IFS= read -r pattern; do
+            if [ -n "$pattern" ]; then
+                ALL_PATTERNS_CHECKED+=("ALLOW: $pattern")
+                if check_pattern "$pattern" "$TOOL_NAME" "$TOOL_INPUT"; then
+                    ALLOW_MATCHES+=("$pattern")
+                fi
+            fi
+        done <<< "$ALLOW_LIST"
+    fi
+
+    # Determine final decision
+    DECISION=""
+    DECISION_REASON=""
+
+    if [ ${#DENY_MATCHES[@]} -gt 0 ]; then
+        DECISION="block"
+        DECISION_REASON="Matched deny patterns: ${DENY_MATCHES[*]}"
+    elif [ ${#ALLOW_MATCHES[@]} -gt 0 ]; then
+        DECISION="approve"
+        DECISION_REASON="Matched allow patterns: ${ALLOW_MATCHES[*]}"
+    else
+        DECISION="no_match"
+        DECISION_REASON="No patterns matched"
+    fi
 fi
 
-# Handle no-match case - output empty object
-echo '{}'
+# Log comprehensive analysis
+{
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] PATTERN ANALYSIS"
+    echo "Tool: $TOOL_NAME"
+    
+    if [ "$TOOL_NAME" = "Bash" ]; then
+        bash_command=$(echo "$TOOL_INPUT" | jq -r '.command // empty')
+        echo "Command: $bash_command"
+        
+        # Show individual command analysis
+        echo "Individual command analysis:"
+        for result in "${INDIVIDUAL_COMMAND_RESULTS[@]}"; do
+            echo "  $result"
+        done
+        
+        if [ ${#INDIVIDUAL_COMMAND_RESULTS[@]} -eq 0 ]; then
+            echo "  No commands extracted"
+        fi
+    else
+        echo "Input: $TOOL_INPUT"
+    fi
+    
+    echo "Decision: $DECISION"
+    echo "Reason: $DECISION_REASON"
+    
+    if [ ${#DENY_MATCHES[@]} -gt 0 ]; then
+        echo "Deny matches:"
+        for match in "${DENY_MATCHES[@]}"; do
+            echo "  - $match"
+        done
+    fi
+    
+    if [ ${#ALLOW_MATCHES[@]} -gt 0 ]; then
+        echo "Allow matches:"
+        for match in "${ALLOW_MATCHES[@]}"; do
+            echo "  - $match"
+        done
+    fi
+    
+    echo "---"
+} >> "$LOG_FILE"
+
+# Output decision
+case "$DECISION" in
+    "block")
+        echo '{"decision": "block"}'
+        ;;
+    "approve")
+        echo '{"decision": "approve"}'
+        ;;
+    *)
+        echo '{}'
+        ;;
+esac # test change
