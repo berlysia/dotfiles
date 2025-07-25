@@ -1,3 +1,7 @@
 .vscode
 *.md
 scripts
+dot_claude/hooks/scripts/test_*.sh
+dot_claude/hooks/scripts/*all_tests*
+dot_claude/hooks/scripts/ci_test.sh
+dot_claude/hooks/scripts/README_TESTING.md
