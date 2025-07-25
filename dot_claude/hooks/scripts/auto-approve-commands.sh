@@ -195,4 +195,5 @@ case "$DECISION" in
     *)
         echo '{}'
         ;;
-esac # test change
+esac
+# test change for pre-commit hook
