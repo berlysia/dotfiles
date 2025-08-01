@@ -64,6 +64,17 @@ else
 fi
 echo
 
+# Run dangerous command protection tests
+echo -e "${YELLOW}Running dangerous command protection tests...${NC}"
+if "${SCRIPT_DIR}/tests/unit/test_dangerous_command_protection.sh"; then
+    DANGEROUS_RESULT=0
+    echo -e "${GREEN}✓ Dangerous command protection tests completed${NC}"
+else
+    DANGEROUS_RESULT=1
+    echo -e "${RED}✗ Dangerous command protection tests failed${NC}"
+fi
+echo
+
 # Performance test
 echo -e "${YELLOW}Running performance test...${NC}"
 PERF_START=$(date +%s%N)
@@ -132,7 +143,7 @@ echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}           FINAL TEST RESULTS           ${NC}"
 echo -e "${BLUE}========================================${NC}"
 
-TOTAL_RESULT=$((CORE_RESULT + EDGE_RESULT + PERF_RESULT + MEMORY_RESULT + INTEGRATION_RESULT))
+TOTAL_RESULT=$((CORE_RESULT + EDGE_RESULT + DANGEROUS_RESULT + PERF_RESULT + MEMORY_RESULT + INTEGRATION_RESULT))
 
 if [ $CORE_RESULT -eq 0 ]; then
     echo -e "Core Functionality: ${GREEN}PASS${NC}"
@@ -144,6 +155,12 @@ if [ $EDGE_RESULT -eq 0 ]; then
     echo -e "Edge Cases: ${GREEN}PASS${NC}"
 else
     echo -e "Edge Cases: ${RED}FAIL${NC}"
+fi
+
+if [ $DANGEROUS_RESULT -eq 0 ]; then
+    echo -e "Dangerous Command Protection: ${GREEN}PASS${NC}"
+else
+    echo -e "Dangerous Command Protection: ${RED}FAIL${NC}"
 fi
 
 if [ $PERF_RESULT -eq 0 ]; then
