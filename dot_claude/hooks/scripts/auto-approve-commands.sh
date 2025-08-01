@@ -57,6 +57,32 @@ if [ "$TOOL_NAME" = "Bash" ]; then
     for cmd in "${extracted_commands[@]}"; do
         cmd=$(echo "$cmd" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
         if [ -n "$cmd" ]; then
+            # Special check for dangerous git push commands
+            if [[ "$cmd" =~ ^git[[:space:]]+push && ( "$cmd" =~ [[:space:]]-f([[:space:]]|$) || "$cmd" =~ [[:space:]]--force([[:space:]]|$) || "$cmd" =~ [[:space:]]--force-with-lease([[:space:]]|$) ) ]]; then
+                INDIVIDUAL_COMMAND_RESULTS+=("DENY: '$cmd' (blocked: force push detected)")
+                DENY_MATCHES+=("Force push blocked: $cmd")
+                continue
+            fi
+            
+            # Special check for dangerous rm commands
+            if [[ "$cmd" =~ ^rm[[:space:]] && ( "$cmd" =~ [[:space:]]-[rfRi]*f[rfRi]*([[:space:]]|$) || "$cmd" =~ [[:space:]]--force([[:space:]]|$) ) ]]; then
+                INDIVIDUAL_COMMAND_RESULTS+=("DENY: '$cmd' (blocked: force rm detected)")
+                DENY_MATCHES+=("Force rm blocked: $cmd")
+                continue
+            fi
+            
+            # Special check for operations on .git directory
+            if [[ "$cmd" =~ ^(rm|mv|rmdir)[[:space:]] ]]; then
+                # Check if command targets .git directory or important subdirectories
+                # Handle quoted and unquoted paths, with various path prefixes
+                if [[ "$cmd" =~ (^|[[:space:]]|[\"\']|/)\.git(/|[[:space:]]|[\"\']|$|\*) ]] || \
+                   [[ "$cmd" =~ (^|[[:space:]]|[\"\']|/)\.git/(objects|refs|hooks|info|logs|HEAD|config|index)(/|[[:space:]]|[\"\']|$|\*) ]]; then
+                    INDIVIDUAL_COMMAND_RESULTS+=("DENY: '$cmd' (blocked: .git directory protection)")
+                    DENY_MATCHES+=("Git directory protected: $cmd")
+                    continue
+                fi
+            fi
+            
             # Check deny patterns for this command
             if [ -n "$DENY_LIST" ]; then
                 matched_deny_pattern=""
