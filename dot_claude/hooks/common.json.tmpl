@@ -57,7 +57,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/.claude/hooks/scripts/deny-repository-outside-access.sh"
+            "command": "bash '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/deny-repository-outside-access.sh'"
           }
         ]
       },
@@ -66,7 +66,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/.claude/hooks/scripts/block-tsx-tsnode.sh"
+            "command": "bash '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/block-tsx-tsnode.sh'"
           }
         ]
       },
@@ -75,7 +75,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/.claude/hooks/scripts/deny-node-modules-write.sh"
+            "command": "bash '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/deny-node-modules-write.sh'"
           }
         ]
       },
@@ -84,7 +84,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/.claude/hooks/scripts/block-tsx-package-json.sh"
+            "command": "bash '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/block-tsx-package-json.sh'"
           }
         ]
       },
@@ -122,7 +122,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/.claude/hooks/scripts/auto-format.sh"
+            "command": "bash '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/auto-format.sh'"
           }
         ]
       },
