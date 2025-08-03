@@ -33,7 +33,8 @@ resolve_path() {
   if [[ "$path" =~ ^/ ]]; then
     echo "$path"
   else
-    echo "$(pwd)/$path"
+    # Use realpath to properly resolve relative paths and symlinks
+    realpath "$path" 2>/dev/null || echo "$(pwd)/$path"
   fi
 }
 
@@ -65,9 +66,16 @@ if [ -n "$COMMAND" ]; then
     
     while IFS= read -r path; do
       if [ -n "$path" ] && is_outside_repo "$path"; then
-        echo "ERROR: Access to files outside repository root is prohibited: $path"
-        echo "Only ~/.claude directory is allowed as exception."
-        exit 1
+        cat << EOF
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "permissionDecision": "ask",
+    "permissionDecisionReason": "Bash command attempting to access path outside repository root: $path. Only ~/.claude directory is normally allowed as exception."
+  }
+}
+EOF
+        exit 0
       fi
     done <<< "$POTENTIAL_PATHS"
   fi
@@ -76,9 +84,22 @@ fi
 # Check file paths directly
 while IFS= read -r file; do
   if [ -n "$file" ] && is_outside_repo "$file"; then
-    echo "ERROR: Access to files outside repository root is prohibited: $file"
-    echo "Only ~/.claude directory is allowed as exception."
-    exit 1
+    cat << EOF
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "permissionDecision": "ask",
+    "permissionDecisionReason": "Attempting to access file outside repository root: $file. Only ~/.claude directory is normally allowed as exception."
+  }
+}
+EOF
+    exit 0
+  fi
+done <<< "$FILES"
+
+exit 0
+        ;;
+    esac
   fi
 done <<< "$FILES"
 
