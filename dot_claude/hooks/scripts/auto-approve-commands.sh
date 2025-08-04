@@ -1,232 +1,199 @@
 #!/bin/bash
 
 # Auto-approve commands based on permissions.allow/deny lists
-# Unified script that handles both allow and deny patterns
+# Refactored version with modular structure
 
 # Source common libraries
 SCRIPT_DIR="$(dirname "$0")"
 source "${SCRIPT_DIR}/lib/hook-common.sh"
 source "${SCRIPT_DIR}/lib/pattern-matcher.sh"
+source "${SCRIPT_DIR}/lib/dangerous-commands.sh"
+source "${SCRIPT_DIR}/lib/decision-maker.sh"
+source "${SCRIPT_DIR}/lib/logging.sh"
 
 # Log file for auto-approved commands
 LOG_FILE="${HOME}/.claude/auto_approve_commands.log"
 
+# Process individual Bash command
+process_bash_command() {
+    local cmd="$1"
+    local deny_list="$2"
+    local allow_list="$3"
+    local -n result_ref="$4"
+    local -n deny_match_ref="$5"
+    local -n exit_early_ref="$6"
+    
+    # Check for dangerous commands first
+    local danger_reason=""
+    if check_dangerous_command "$cmd" danger_reason; then
+        # Special handling for commands that need manual review
+        if [[ "$danger_reason" == *"Manual review required"* ]]; then
+            exit_early_ref="ask|$danger_reason"
+            return
+        else
+            result_ref="DENY: '$cmd' (blocked: $danger_reason)"
+            deny_match_ref="$danger_reason"
+            return
+        fi
+    fi
+    
+    # Check deny patterns
+    if [ -n "$deny_list" ]; then
+        local matched_deny_pattern=""
+        if _check_individual_command_deny_with_pattern "$cmd" "$deny_list" matched_deny_pattern; then
+            result_ref="DENY: '$cmd' (matched: $matched_deny_pattern)"
+            deny_match_ref="Individual command blocked: $cmd"
+            return
+        fi
+    fi
+    
+    # Check allow patterns
+    if [ -n "$allow_list" ]; then
+        local matched_allow_pattern=""
+        if _check_individual_command_with_pattern "$cmd" "$allow_list" matched_allow_pattern; then
+            result_ref="ALLOW: '$cmd' (matched: $matched_allow_pattern)"
+        else
+            result_ref="NO_MATCH: '$cmd' (no allow pattern matched)"
+        fi
+    else
+        result_ref="NO_MATCH: '$cmd' (no allow patterns defined)"
+    fi
+}
 
-# Read and validate input
-TOOL_DATA=$(read_hook_input)
-TOOL_INFO=$(extract_tool_info "$TOOL_DATA")
-TOOL_NAME=$(echo "$TOOL_INFO" | cut -d'|' -f1)
-TOOL_INPUT=$(echo "$TOOL_INFO" | cut -d'|' -f2-)
-
-# Exit if no tool name
-[ -z "$TOOL_NAME" ] && exit 0
-
-# Check for test mode
-if [ "${CLAUDE_TEST_MODE:-}" = "1" ]; then
-    # Use test environment variables for permissions
-    ALLOW_LIST=$(echo "${CLAUDE_TEST_ALLOW:-[]}" | jq -r '.[]?' 2>/dev/null | grep "^${TOOL_NAME}(" || true)
-    DENY_LIST=$(echo "${CLAUDE_TEST_DENY:-[]}" | jq -r '.[]?' 2>/dev/null | grep "^${TOOL_NAME}(" || true)
-else
-    # Get settings files
-    WORKSPACE_ROOT=$(get_workspace_root)
-    readarray -t SETTINGS_FILES < <(get_settings_files "$WORKSPACE_ROOT")
-
-    # Extract permission lists
-    ALLOW_LIST=$(extract_permission_list "allow" "${SETTINGS_FILES[@]}")
-    DENY_LIST=$(extract_permission_list "deny" "${SETTINGS_FILES[@]}")
-fi
-
-# Handle no-list case - exit silently
-if [ -z "$ALLOW_LIST" ] && [ -z "$DENY_LIST" ]; then
-    exit 0
-fi
-
-# Analyze patterns with individual command validation
-DENY_MATCHES=()
-ALLOW_MATCHES=()
-ALL_PATTERNS_CHECKED=()
-INDIVIDUAL_COMMAND_RESULTS=()
-
-# For Bash tool, extract and validate individual commands
-if [ "$TOOL_NAME" = "Bash" ]; then
-    bash_command=$(echo "$TOOL_INPUT" | jq -r '.command // empty')
-    extracted_commands=()
+# Process Bash tool commands
+process_bash_tool() {
+    local tool_input="$1"
+    local deny_list="$2"
+    local allow_list="$3"
+    local -n individual_results_ref="$4"
+    local -n deny_matches_ref="$5"
+    local -n early_exit_ref="$6"
+    
+    local bash_command
+    bash_command=$(echo "$tool_input" | jq -r '.command // empty')
+    
+    local extracted_commands=()
     _extract_commands_from_compound "$bash_command" extracted_commands
     
-    # Check each individual command
+    # Process each individual command
     for cmd in "${extracted_commands[@]}"; do
         cmd=$(echo "$cmd" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
         if [ -n "$cmd" ]; then
-            # Special check for dangerous git push commands
-            if [[ "$cmd" =~ ^git[[:space:]]+push && ( "$cmd" =~ [[:space:]]-f([[:space:]]|$) || "$cmd" =~ [[:space:]]--force([[:space:]]|$) || "$cmd" =~ [[:space:]]--force-with-lease([[:space:]]|$) ) ]]; then
-                INDIVIDUAL_COMMAND_RESULTS+=("DENY: '$cmd' (blocked: force push detected)")
-                DENY_MATCHES+=("Force push blocked: $cmd")
-                continue
+            local cmd_result=""
+            local cmd_deny_match=""
+            local exit_early=""
+            process_bash_command "$cmd" "$deny_list" "$allow_list" cmd_result cmd_deny_match exit_early
+            
+            # Check for early exit conditions
+            if [ -n "$exit_early" ]; then
+                early_exit_ref="$exit_early"
+                return
             fi
             
-            # Special check for dangerous rm commands
-            if [[ "$cmd" =~ ^rm[[:space:]] && ( "$cmd" =~ [[:space:]]-[rfRi]*f[rfRi]*([[:space:]]|$) || "$cmd" =~ [[:space:]]--force([[:space:]]|$) ) ]]; then
-                INDIVIDUAL_COMMAND_RESULTS+=("DENY: '$cmd' (blocked: force rm detected)")
-                DENY_MATCHES+=("Force rm blocked: $cmd")
-                continue
+            if [ -n "$cmd_result" ]; then
+                individual_results_ref+=("$cmd_result")
             fi
             
-            # Special check for operations on .git directory
-            if [[ "$cmd" =~ ^(rm|mv|rmdir)[[:space:]] ]]; then
-                # Check if command targets .git directory or important subdirectories
-                # Handle quoted and unquoted paths, with various path prefixes
-                if [[ "$cmd" =~ (^|[[:space:]]|[\"\']|/)\.git(/|[[:space:]]|[\"\']|$|\*) ]] || \
-                   [[ "$cmd" =~ (^|[[:space:]]|[\"\']|/)\.git/(objects|refs|hooks|info|logs|HEAD|config|index)(/|[[:space:]]|[\"\']|$|\*) ]]; then
-                    INDIVIDUAL_COMMAND_RESULTS+=("DENY: '$cmd' (blocked: .git directory protection)")
-                    DENY_MATCHES+=("Git directory protected: $cmd")
-                    continue
-                fi
-            fi
-            
-            # Check deny patterns for this command
-            if [ -n "$DENY_LIST" ]; then
-                matched_deny_pattern=""
-                if _check_individual_command_deny_with_pattern "$cmd" "$DENY_LIST" matched_deny_pattern; then
-                    INDIVIDUAL_COMMAND_RESULTS+=("DENY: '$cmd' (matched: $matched_deny_pattern)")
-                    DENY_MATCHES+=("Individual command blocked: $cmd")
-                    continue
-                fi
-            fi
-            
-            # Check allow patterns for this command
-            if [ -n "$ALLOW_LIST" ]; then
-                matched_allow_pattern=""
-                if _check_individual_command_with_pattern "$cmd" "$ALLOW_LIST" matched_allow_pattern; then
-                    INDIVIDUAL_COMMAND_RESULTS+=("ALLOW: '$cmd' (matched: $matched_allow_pattern)")
-                else
-                    INDIVIDUAL_COMMAND_RESULTS+=("NO_MATCH: '$cmd' (no allow pattern matched)")
-                fi
-            else
-                INDIVIDUAL_COMMAND_RESULTS+=("NO_MATCH: '$cmd' (no allow patterns defined)")
+            if [ -n "$cmd_deny_match" ]; then
+                deny_matches_ref+=("$cmd_deny_match")
             fi
         fi
     done
+}
+
+# Process non-Bash tools
+process_other_tool() {
+    local tool_name="$1"
+    local tool_input="$2"
+    local deny_list="$3"
+    local allow_list="$4"
+    local -n deny_matches_ref="$5"
+    local -n allow_matches_ref="$6"
     
-    # Determine decision based on individual command results
-    DECISION=""
-    DECISION_REASON=""
-    
-    # If any command is denied, block the entire operation
-    if [ ${#DENY_MATCHES[@]} -gt 0 ]; then
-        DECISION="block"
-        DECISION_REASON="One or more commands blocked: ${DENY_MATCHES[*]}"
-    else
-        # Check if ALL commands are explicitly allowed
-        all_allowed=true
-        for result in "${INDIVIDUAL_COMMAND_RESULTS[@]}"; do
-            if [[ "$result" != ALLOW:* ]]; then
-                all_allowed=false
-                break
-            fi
-        done
-        
-        if [ "$all_allowed" = true ] && [ ${#INDIVIDUAL_COMMAND_RESULTS[@]} -gt 0 ]; then
-            DECISION="approve"
-            DECISION_REASON="All individual commands explicitly allowed"
-        else
-            DECISION="no_match"
-            DECISION_REASON="Not all commands explicitly allowed"
-        fi
-    fi
-else
-    # For non-Bash tools, use original logic
     # Check deny patterns first
-    if [ -n "$DENY_LIST" ]; then
+    if [ -n "$deny_list" ]; then
         while IFS= read -r pattern; do
-            if [ -n "$pattern" ]; then
-                ALL_PATTERNS_CHECKED+=("DENY: $pattern")
-                if check_pattern "$pattern" "$TOOL_NAME" "$TOOL_INPUT"; then
-                    DENY_MATCHES+=("$pattern")
-                fi
+            if [ -n "$pattern" ] && check_pattern "$pattern" "$tool_name" "$tool_input"; then
+                deny_matches_ref+=("$pattern")
             fi
-        done <<< "$DENY_LIST"
+        done <<< "$deny_list"
     fi
-
+    
     # Check allow patterns
-    if [ -n "$ALLOW_LIST" ]; then
+    if [ -n "$allow_list" ]; then
         while IFS= read -r pattern; do
-            if [ -n "$pattern" ]; then
-                ALL_PATTERNS_CHECKED+=("ALLOW: $pattern")
-                if check_pattern "$pattern" "$TOOL_NAME" "$TOOL_INPUT"; then
-                    ALLOW_MATCHES+=("$pattern")
-                fi
+            if [ -n "$pattern" ] && check_pattern "$pattern" "$tool_name" "$tool_input"; then
+                allow_matches_ref+=("$pattern")
             fi
-        done <<< "$ALLOW_LIST"
+        done <<< "$allow_list"
     fi
+}
 
-    # Determine final decision
-    DECISION=""
-    DECISION_REASON=""
-
-    if [ ${#DENY_MATCHES[@]} -gt 0 ]; then
-        DECISION="block"
-        DECISION_REASON="Matched deny patterns: ${DENY_MATCHES[*]}"
-    elif [ ${#ALLOW_MATCHES[@]} -gt 0 ]; then
-        DECISION="approve"
-        DECISION_REASON="Matched allow patterns: ${ALLOW_MATCHES[*]}"
-    else
-        DECISION="no_match"
-        DECISION_REASON="No patterns matched"
-    fi
-fi
-
-# Log comprehensive analysis
-{
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] PATTERN ANALYSIS"
-    echo "Tool: $TOOL_NAME"
+# Main execution
+main() {
+    # Read and validate input
+    local tool_data tool_info tool_name tool_input
+    tool_data=$(read_hook_input)
+    tool_info=$(extract_tool_info "$tool_data")
+    tool_name=$(echo "$tool_info" | cut -d'|' -f1)
+    tool_input=$(echo "$tool_info" | cut -d'|' -f2-)
     
-    if [ "$TOOL_NAME" = "Bash" ]; then
-        bash_command=$(echo "$TOOL_INPUT" | jq -r '.command // empty')
-        echo "Command: $bash_command"
+    # Exit if no tool name
+    [ -z "$tool_name" ] && exit 0
+    
+    # Get permission lists
+    local allow_list deny_list
+    if [ "${CLAUDE_TEST_MODE:-}" = "1" ]; then
+        # Test mode
+        allow_list=$(echo "${CLAUDE_TEST_ALLOW:-[]}" | jq -r '.[]?' 2>/dev/null | grep "^${tool_name}(" || true)
+        deny_list=$(echo "${CLAUDE_TEST_DENY:-[]}" | jq -r '.[]?' 2>/dev/null | grep "^${tool_name}(" || true)
+    else
+        # Normal mode
+        local workspace_root settings_files
+        workspace_root=$(get_workspace_root)
+        readarray -t settings_files < <(get_settings_files "$workspace_root")
+        allow_list=$(extract_permission_list "allow" "${settings_files[@]}")
+        deny_list=$(extract_permission_list "deny" "${settings_files[@]}")
+    fi
+    
+    # Exit if no lists defined
+    if [ -z "$allow_list" ] && [ -z "$deny_list" ]; then
+        exit 0
+    fi
+    
+    # Process based on tool type
+    local deny_matches=() allow_matches=() individual_command_results=()
+    local decision="" decision_reason="" early_exit=""
+    
+    if [ "$tool_name" = "Bash" ]; then
+        process_bash_tool "$tool_input" "$deny_list" "$allow_list" \
+            individual_command_results deny_matches early_exit
         
-        # Show individual command analysis
-        echo "Individual command analysis:"
-        for result in "${INDIVIDUAL_COMMAND_RESULTS[@]}"; do
-            echo "  $result"
-        done
-        
-        if [ ${#INDIVIDUAL_COMMAND_RESULTS[@]} -eq 0 ]; then
-            echo "  No commands extracted"
+        # Handle early exit conditions
+        if [ -n "$early_exit" ]; then
+            local exit_type="${early_exit%%|*}"
+            local exit_reason="${early_exit#*|}"
+            output_decision "$exit_type" "$exit_reason"
+            exit 0
         fi
+        
+        analyze_bash_command_results individual_command_results deny_matches \
+            decision decision_reason
     else
-        echo "Input: $TOOL_INPUT"
+        process_other_tool "$tool_name" "$tool_input" "$deny_list" "$allow_list" \
+            deny_matches allow_matches
+        analyze_pattern_matches allow_matches deny_matches \
+            decision decision_reason
     fi
     
-    echo "Decision: $DECISION"
-    echo "Reason: $DECISION_REASON"
+    # Log the analysis
+    log_pattern_analysis "$LOG_FILE" "$tool_name" "$tool_input" \
+        "$decision" "$decision_reason" \
+        individual_command_results deny_matches allow_matches
     
-    if [ ${#DENY_MATCHES[@]} -gt 0 ]; then
-        echo "Deny matches:"
-        for match in "${DENY_MATCHES[@]}"; do
-            echo "  - $match"
-        done
-    fi
-    
-    if [ ${#ALLOW_MATCHES[@]} -gt 0 ]; then
-        echo "Allow matches:"
-        for match in "${ALLOW_MATCHES[@]}"; do
-            echo "  - $match"
-        done
-    fi
-    
-    echo "---"
-} >> "$LOG_FILE"
+    # Output the decision
+    output_decision "$decision" "$decision_reason"
+}
 
-# Output decision
-case "$DECISION" in
-    "block")
-        echo '{"decision": "block"}'
-        ;;
-    "approve")
-        echo '{"decision": "approve"}'
-        ;;
-    *)
-        echo '{}'
-        ;;
-esac
-# test change for pre-commit hook - should trigger tests
+# Run main
+main
