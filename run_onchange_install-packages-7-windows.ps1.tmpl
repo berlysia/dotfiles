@@ -22,59 +22,15 @@ if (Get-Command mise -ErrorAction SilentlyContinue) {
             Write-Log "mise is available (type: $commandType)"
             $miseAvailable = $true
         }
+
+        # For first time setup, we can also try to initialize the environment
+        $miseEnv = & mise env --shell pwsh 2>$null
+        if ($LASTEXITCODE -eq 0 -and $miseEnv) {
+            Invoke-Expression $miseEnv
+        }
     } catch {
         Write-Log "Failed to execute mise --version: $($_.Exception.Message)" "DEBUG"
         # Continue to manual search
-    }
-}
-
-# If not found via Get-Command, search common installation locations
-if (-not $miseAvailable) {
-    $misePaths = @(
-        "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\jdx.mise_Microsoft.Winget.Source_*\mise.exe",
-        "$env:USERPROFILE\.local\bin\mise.exe",
-        "$env:ProgramFiles\mise\mise.exe"
-    )
-
-    foreach ($misePath in $misePaths) {
-        try {
-            # Expand wildcards for WinGet path
-            if ($misePath -like "*`**") {
-                $baseDir = $misePath -replace '\*.*$', ''
-                if (Test-Path $baseDir) {
-                    $expandedPaths = Get-ChildItem -Path $baseDir -Filter "mise.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
-                    foreach ($expandedPath in $expandedPaths) {
-                        if (Test-Path $expandedPath) {
-                            $null = & $expandedPath --version 2>$null
-                            if ($LASTEXITCODE -eq 0) {
-                                Write-Log "mise found at: $expandedPath"
-                                # Add directory to PATH for this session
-                                $miseDir = Split-Path $expandedPath
-                                $env:PATH = "$miseDir;$env:PATH"
-                                $miseAvailable = $true
-                                break
-                            }
-                        }
-                    }
-                }
-            } else {
-                if (Test-Path $misePath) {
-                    $null = & $misePath --version 2>$null
-                    if ($LASTEXITCODE -eq 0) {
-                        Write-Log "mise found at: $misePath"
-                        # Add directory to PATH for this session
-                        $miseDir = Split-Path $misePath
-                        $env:PATH = "$miseDir;$env:PATH"
-                        $miseAvailable = $true
-                        break
-                    }
-                }
-            }
-            if ($miseAvailable) { break }
-        } catch {
-            # Continue to next path
-            continue
-        }
     }
 }
 
