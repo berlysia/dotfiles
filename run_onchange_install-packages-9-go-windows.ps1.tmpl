@@ -49,7 +49,7 @@ $tools = @(
 )
 
 foreach ($tool in $tools) {
-    $toolName = ($tool -split '/')[-1] -split '@')[0]
+    $toolName = (($tool -split '/')[-1] -split '@')[0]
     
     # Check if tool is already installed
     try {
