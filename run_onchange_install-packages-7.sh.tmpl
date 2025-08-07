@@ -17,6 +17,10 @@ fi
 
 log "mise is available"
 
+# Disable GPG verification for automated installation
+export MISE_NODE_VERIFY=false
+export MISE_PYTHON_VERIFY=false
+
 # Install mise packages
 packages=(
 {{- range $index, $package := .packages.mise }}
