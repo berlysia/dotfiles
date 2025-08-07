@@ -1,0 +1,42 @@
+{{ if eq .chezmoi.os "windows" -}}
+# PowerShell Profile for Windows
+
+# Initialize mise environment if available
+if (Get-Command mise -ErrorAction SilentlyContinue) {
+    try {
+        $miseEnv = & mise env --shell powershell 2>$null
+        if ($LASTEXITCODE -eq 0 -and $miseEnv) {
+            Invoke-Expression $miseEnv
+        }
+    } catch {
+        # Silently continue if mise env fails
+    }
+}
+
+# Add user local bin to PATH if not already present
+$localBin = "$env:USERPROFILE\.local\bin"
+if (Test-Path $localBin) {
+    $currentPath = $env:PATH
+    if ($currentPath -notlike "*$localBin*") {
+        $env:PATH = "$localBin;$currentPath"
+    }
+}
+
+# Set up Go environment variables
+if (Get-Command go -ErrorAction SilentlyContinue) {
+    if (-not $env:GOPATH) {
+        $env:GOPATH = "$env:USERPROFILE\go"
+    }
+    $goBin = "$env:GOPATH\bin"
+    if ((Test-Path $goBin) -and ($env:PATH -notlike "*$goBin*")) {
+        $env:PATH = "$goBin;$env:PATH"
+    }
+}
+
+# Set up Rust environment
+$cargoEnv = "$env:USERPROFILE\.cargo\env.ps1"
+if (Test-Path $cargoEnv) {
+    & $cargoEnv
+}
+
+{{ end -}}
