@@ -35,8 +35,12 @@ function Install-WingetPackage {
             return $true
         }
         
-        # Install package
-        winget install --id $PackageId --exact --silent --accept-source-agreements --accept-package-agreements
+        # Install package with appropriate flags
+        if ($isAdmin) {
+            winget install --id $PackageId --exact --silent --accept-source-agreements --accept-package-agreements --scope machine
+        } else {
+            winget install --id $PackageId --exact --silent --accept-source-agreements --accept-package-agreements --scope user
+        }
         if ($LASTEXITCODE -eq 0) {
             Write-Log "Successfully installed $PackageId" "SUCCESS"
             return $true
@@ -50,8 +54,17 @@ function Install-WingetPackage {
     }
 }
 
+# Check if running as administrator
+$isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")
+
 # Main installation process
 Write-Log "Starting winget package installation..."
+if ($isAdmin) {
+    Write-Log "Running with administrator privileges - installing system-wide"
+} else {
+    Write-Log "Running without administrator privileges - installing to user profile"
+    Write-Log "Note: Some packages may require administrator privileges and will be skipped"
+}
 
 if (-Not (Test-WingetAvailable)) {
     Write-Log "winget is not available. Please install App Installer from Microsoft Store or update Windows." "ERROR"
