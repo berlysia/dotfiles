@@ -94,26 +94,49 @@ foreach ($package in $packages) {
             Write-Log "${package}@${version} already installed"
             # Ensure it's set as global even if already installed
             & mise use --global "${package}@${version}"
-            continue
+        } else {
+            # Install package
+            Write-Log "Installing ${package}@${version}..."
+            & mise install $package $version
+            if ($LASTEXITCODE -eq 0) {
+                # Set as global version
+                & mise use --global "${package}@${version}"
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Log "Successfully installed and activated ${package}@${version}" "SUCCESS"
+                } else {
+                    Write-Log "Installed ${package}@${version} but failed to set as global" "WARNING"
+                }
+            } else {
+                Write-Log "Failed to install ${package}@${version}" "ERROR"
+                continue
+            }
         }
         
-        # Install package
-        Write-Log "Installing ${package}@${version}..."
-        & mise install $package $version
-        if ($LASTEXITCODE -eq 0) {
-            # Set as global version
-            & mise use --global "${package}@${version}"
-            if ($LASTEXITCODE -eq 0) {
-                Write-Log "Successfully installed and activated ${package}@${version}" "SUCCESS"
-            } else {
-                Write-Log "Installed ${package}@${version} but failed to set as global" "WARNING"
+        # Reload mise environment to make newly installed tools available
+        try {
+            $miseEnv = & mise env --shell powershell 2>$null
+            if ($LASTEXITCODE -eq 0 -and $miseEnv) {
+                Invoke-Expression $miseEnv
+                Write-Log "Reloaded mise environment for ${package}" "DEBUG"
             }
-        } else {
-            Write-Log "Failed to install ${package}@${version}" "ERROR"
+        } catch {
+            Write-Log "Failed to reload mise environment for ${package}" "WARNING"
         }
     } catch {
         Write-Log "Error processing $package`: $($_.Exception.Message)" "ERROR"
     }
+}
+
+# Final environment reload to ensure all tools are available for subsequent scripts
+try {
+    Write-Log "Reloading mise environment..."
+    $miseEnv = & mise env --shell powershell 2>$null
+    if ($LASTEXITCODE -eq 0 -and $miseEnv) {
+        Invoke-Expression $miseEnv
+        Write-Log "mise environment reloaded successfully"
+    }
+} catch {
+    Write-Log "Failed to reload final mise environment" "WARNING"
 }
 
 Write-Log "mise package installation completed"
