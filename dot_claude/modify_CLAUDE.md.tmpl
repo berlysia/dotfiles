@@ -1,5 +1,0 @@
-{{ if eq .chezmoi.os "windows" -}}
-{{ includeTemplate "dot_claude/.modify_CLAUDE_md_impl.ps1" . }}
-{{ else -}}
-{{ includeTemplate "dot_claude/.modify_CLAUDE_md_impl.sh" . }}
-{{ end -}}
