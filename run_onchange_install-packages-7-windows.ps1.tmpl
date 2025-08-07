@@ -106,7 +106,7 @@ if (Test-Path $localBin) {
 
 # Initialize mise environment
 try {
-    $miseEnv = & mise env --shell powershell 2>$null
+    $miseEnv = & mise env --shell pwsh 2>$null
     if ($LASTEXITCODE -eq 0 -and $miseEnv) {
         Invoke-Expression $miseEnv
         Write-Log "Initialized mise environment for current session"
