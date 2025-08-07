@@ -4,7 +4,7 @@
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "🔍 Pre-apply JSON template validation..."
+Write-Host "Pre-apply JSON template validation..."
 
 # Create temporary directory for validation
 $TempDir = New-Item -ItemType Directory -Path ([System.IO.Path]::GetTempPath()) -Name ([System.Guid]::NewGuid().ToString())
@@ -55,17 +55,17 @@ try {
                 # Check if it's valid JSON
                 try {
                     $null = Get-Content $tempOutput -Raw | ConvertFrom-Json
-                    Write-Host "✅"
+                    Write-Host "OK"
                     return $true
                 } catch {
-                    Write-Host "❌ Invalid JSON"
+                    Write-Host "ERROR: Invalid JSON"
                     Write-Host "    Error details:"
                     Write-Host "    $($_.Exception.Message)"
                     
                     # Check for trailing commas
                     $tempContent = Get-Content $tempOutput -Raw
                     if ($tempContent -match ',\s*[}\]]') {
-                        Write-Host "    ⚠️  Trailing comma detected"
+                        Write-Host "    WARNING: Trailing comma detected"
                         $tempContent -split "`n" | Select-String -Pattern ',\s*[}\]]' | Select-Object -First 3 | ForEach-Object {
                             Write-Host "    Line $($_.LineNumber): $($_.Line.Trim())"
                         }
@@ -73,12 +73,12 @@ try {
                     return $false
                 }
             } else {
-                Write-Host "❌ Template error"
+                Write-Host "ERROR: Template error"
                 Write-Host "    $result"
                 return $false
             }
         } catch {
-            Write-Host "❌ Template error"
+            Write-Host "ERROR: Template error"
             Write-Host "    $($_.Exception.Message)"
             return $false
         }
@@ -97,12 +97,12 @@ try {
 
     if ($errors -gt 0) {
         Write-Host ""
-        Write-Host "❌ Found $errors template error(s)"
+        Write-Host "ERROR: Found $errors template error(s)"
         Write-Host "   Please fix the errors before applying"
         exit 1
     } else {
         Write-Host ""
-        Write-Host "✅ All JSON templates are valid"
+        Write-Host "SUCCESS: All JSON templates are valid"
     }
 } finally {
     # Cleanup
