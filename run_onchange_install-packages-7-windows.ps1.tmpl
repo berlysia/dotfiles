@@ -111,33 +111,11 @@ foreach ($package in $packages) {
                 continue
             }
         }
-        
-        # Reload mise environment to make newly installed tools available
-        try {
-            $miseEnv = & mise env --shell powershell 2>$null
-            if ($LASTEXITCODE -eq 0 -and $miseEnv) {
-                Invoke-Expression $miseEnv
-                Write-Log "Reloaded mise environment for ${package}" "DEBUG"
-            }
-        } catch {
-            Write-Log "Failed to reload mise environment for ${package}" "WARNING"
-        }
     } catch {
         Write-Log "Error processing $package`: $($_.Exception.Message)" "ERROR"
     }
 }
 
-# Final environment reload to ensure all tools are available for subsequent scripts
-try {
-    Write-Log "Reloading mise environment..."
-    $miseEnv = & mise env --shell powershell 2>$null
-    if ($LASTEXITCODE -eq 0 -and $miseEnv) {
-        Invoke-Expression $miseEnv
-        Write-Log "mise environment reloaded successfully"
-    }
-} catch {
-    Write-Log "Failed to reload final mise environment" "WARNING"
-}
-
 Write-Log "mise package installation completed"
+Write-Log "Note: Please restart PowerShell to use newly installed tools"
 {{ end -}}
