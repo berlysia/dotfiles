@@ -47,9 +47,9 @@ try {
         Write-Host -NoNewline "  Checking $outputName... "
         
         try {
-            # Try to render the template using stdin redirect like bash version
+            # Try to render the template using stdin like bash version
             $templateContent = Get-Content $TemplatePath -Raw
-            $result = $templateContent | & chezmoi execute-template --template-string - 2>&1
+            $result = $templateContent | & chezmoi execute-template 2>&1
             if ($LASTEXITCODE -eq 0) {
                 $result | Out-File -FilePath $tempOutput -Encoding UTF8 -NoNewline
                 
