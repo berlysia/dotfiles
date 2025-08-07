@@ -9,39 +9,50 @@ function Write-Log {
     Write-Host "[$timestamp] [$Level] $Message"
 }
 
-# Check if mise is available
-$miseFound = $false
-$misePaths = @(
-    "mise",
-    "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\jdx.mise_Microsoft.Winget.Source_*\mise.exe",
-    "$env:USERPROFILE\.local\bin\mise.exe",
-    "$env:ProgramFiles\mise\mise.exe"
-)
+# Check if mise is available (handle both command and function)
+$miseAvailable = $false
 
-foreach ($misePath in $misePaths) {
+# Check if mise is available as a command or function
+if (Get-Command mise -ErrorAction SilentlyContinue) {
     try {
-        if ($misePath -eq "mise") {
-            # Try system PATH first
-            $null = & mise --version 2>$null
-            if ($LASTEXITCODE -eq 0) {
-                Write-Log "mise found in PATH"
-                $miseFound = $true
-                break
-            }
-        } else {
+        # Try to get version - works for both function and executable
+        $versionOutput = mise --version 2>$null
+        if ($LASTEXITCODE -eq 0 -or $versionOutput) {
+            $commandType = (Get-Command mise).CommandType
+            Write-Log "mise is available (type: $commandType)"
+            $miseAvailable = $true
+        }
+    } catch {
+        # Continue to manual search
+    }
+}
+
+# If not found via Get-Command, search common installation locations
+if (-not $miseAvailable) {
+    $misePaths = @(
+        "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\jdx.mise_Microsoft.Winget.Source_*\mise.exe",
+        "$env:USERPROFILE\.local\bin\mise.exe",
+        "$env:ProgramFiles\mise\mise.exe"
+    )
+
+    foreach ($misePath in $misePaths) {
+        try {
             # Expand wildcards for WinGet path
             if ($misePath -like "*`**") {
-                $expandedPaths = Get-ChildItem -Path ($misePath -replace '\*.*$', '') -Filter "mise.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
-                foreach ($expandedPath in $expandedPaths) {
-                    if (Test-Path $expandedPath) {
-                        $null = & $expandedPath --version 2>$null
-                        if ($LASTEXITCODE -eq 0) {
-                            Write-Log "mise found at: $expandedPath"
-                            # Add directory to PATH for this session
-                            $miseDir = Split-Path $expandedPath
-                            $env:PATH = "$miseDir;$env:PATH"
-                            $miseFound = $true
-                            break
+                $baseDir = $misePath -replace '\*.*$', ''
+                if (Test-Path $baseDir) {
+                    $expandedPaths = Get-ChildItem -Path $baseDir -Filter "mise.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
+                    foreach ($expandedPath in $expandedPaths) {
+                        if (Test-Path $expandedPath) {
+                            $null = & $expandedPath --version 2>$null
+                            if ($LASTEXITCODE -eq 0) {
+                                Write-Log "mise found at: $expandedPath"
+                                # Add directory to PATH for this session
+                                $miseDir = Split-Path $expandedPath
+                                $env:PATH = "$miseDir;$env:PATH"
+                                $miseAvailable = $true
+                                break
+                            }
                         }
                     }
                 }
@@ -53,22 +64,21 @@ foreach ($misePath in $misePaths) {
                         # Add directory to PATH for this session
                         $miseDir = Split-Path $misePath
                         $env:PATH = "$miseDir;$env:PATH"
-                        $miseFound = $true
+                        $miseAvailable = $true
                         break
                     }
                 }
             }
+            if ($miseAvailable) { break }
+        } catch {
+            # Continue to next path
+            continue
         }
-        if ($miseFound) { break }
-    } catch {
-        # Continue to next path
-        continue
     }
 }
 
-if (-not $miseFound) {
-    Write-Log "mise not found in any expected locations. Please ensure winget packages are installed and mise is in PATH." "ERROR"
-    Write-Log "Searched locations: $($misePaths -join ', ')" "ERROR"
+if (-not $miseAvailable) {
+    Write-Log "mise not found. Please ensure winget packages are installed and mise is available." "ERROR"
     exit 1
 }
 
