@@ -1,21 +1,95 @@
 {{ if eq .chezmoi.os "windows" }}
 
-# detect chocolatey is installed
-if (-Not (Test-Path 'C:\ProgramData\chocolatey\choco.exe')) {
-  Write-Host "Chocolatey is not installed. Installing Chocolatey..."
+# winget package list for development environment
+$wingetPackages = @(
+    "Git.Git",
+    "Microsoft.VisualStudioCode",
+    "Microsoft.PowerShell",
+    "Microsoft.WindowsTerminal",
+    "7zip.7zip",
+    "JesseDuffield.Lazygit",
+    "BurntSushi.ripgrep.GNU",
+    "sharkdp.bat",
+    "junegunn.fzf",
+    "jqlang.jq",
+    "GitHub.cli",
+    "Microsoft.PowerToys",
+    "jdx.mise"
+)
 
-  # self-elevate if not already elevated
-  if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
-    if ([int](Get-CimInstance -Class Win32_OperatingSystem | Select-Object -ExpandProperty BuildNumber) -ge 6000) {
-      $CommandLine = "-ExecutionPolicy ByPass -Scope Process -NoExit -File `"" + $MyInvocation.MyCommand.Path + "`" " + $MyInvocation.UnboundArguments
-      Start-Process -Wait -FilePath PowerShell.exe -Verb Runas -ArgumentList $CommandLine
-      Exit
+function Write-Log {
+    param([string]$Message, [string]$Level = "INFO")
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    Write-Host "[$timestamp] [$Level] $Message"
+}
+
+function Test-WingetAvailable {
+    try {
+        $null = Get-Command winget -ErrorAction Stop
+        return $true
+    } catch {
+        return $false
     }
-  }
+}
 
-  # install chocolatey
-  [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-  iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+function Install-WingetPackage {
+    param([string]$PackageId)
+    
+    Write-Log "Installing $PackageId..."
+    
+    try {
+        # Check if package is already installed
+        $installed = winget list --id $PackageId --exact --accept-source-agreements 2>$null
+        if ($LASTEXITCODE -eq 0 -and $installed -match $PackageId) {
+            Write-Log "$PackageId is already installed" "INFO"
+            return $true
+        }
+        
+        # Install package
+        winget install --id $PackageId --exact --silent --accept-source-agreements --accept-package-agreements
+        if ($LASTEXITCODE -eq 0) {
+            Write-Log "Successfully installed $PackageId" "SUCCESS"
+            return $true
+        } else {
+            Write-Log "Failed to install $PackageId (exit code: $LASTEXITCODE)" "ERROR"
+            return $false
+        }
+    } catch {
+        Write-Log "Error installing $PackageId`: $($_.Exception.Message)" "ERROR"
+        return $false
+    }
+}
+
+# Main installation process
+Write-Log "Starting winget package installation..."
+
+if (-Not (Test-WingetAvailable)) {
+    Write-Log "winget is not available. Please install App Installer from Microsoft Store or update Windows." "ERROR"
+    exit 1
+}
+
+# Update winget sources
+Write-Log "Updating winget sources..."
+winget source update
+
+$successCount = 0
+$failedPackages = @()
+
+foreach ($package in $wingetPackages) {
+    if (Install-WingetPackage -PackageId $package) {
+        $successCount++
+    } else {
+        $failedPackages += $package
+    }
+}
+
+Write-Log "Installation completed. Success: $successCount/$($wingetPackages.Length)"
+
+if ($failedPackages.Length -gt 0) {
+    Write-Log "Failed packages:" "ERROR"
+    foreach ($pkg in $failedPackages) {
+        Write-Log "  - $pkg" "ERROR"
+    }
 }
 
 {{ end }}
