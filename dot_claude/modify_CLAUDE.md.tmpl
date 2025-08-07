@@ -1,4 +1,8 @@
+{{ if eq .chezmoi.os "windows" -}}
+#!/usr/bin/env wsl bash
+{{ else -}}
 #!/bin/bash
+{{ end -}}
 
 # ~/.claude/CLAUDE.md のシンプルパッチベースマージスクリプト
 # diffとpatchコマンドを直接使用した軽量実装
