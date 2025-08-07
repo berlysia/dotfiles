@@ -89,46 +89,31 @@ winget source update
 Write-Log "Checking installed packages..."
 $installedPackages = @{}
 
-try {
-    # Get winget list as PowerShell objects
-    $packages = winget list --accept-source-agreements 2>$null
-    if ($LASTEXITCODE -eq 0 -and $packages) {
-        foreach ($package in $packages) {
-            if ($package.Id) {
-                $installedPackages[$package.Id] = $true
-                Write-Log "Cached installed package: $($package.Id)" "DEBUG"
-            } elseif ($package.PackageIdentifier) {
-                $installedPackages[$package.PackageIdentifier] = $true
-                Write-Log "Cached installed package: $($package.PackageIdentifier)" "DEBUG"
-            }
-        }
-    }
-} catch {
-    Write-Log "Failed to get packages as objects, falling back to text parsing: $($_.Exception.Message)" "WARNING"
+# winget list returns text output, not objects - parse as text
+$installedList = winget list --accept-source-agreements 2>$null | Out-String
+if ($LASTEXITCODE -eq 0 -and $installedList) {
+    $lines = $installedList -split "`n"
+    $headerPassed = $false
     
-    # Fallback to text parsing
-    $installedList = winget list --accept-source-agreements 2>$null | Out-String
-    if ($LASTEXITCODE -eq 0 -and $installedList) {
-        $lines = $installedList -split "`n"
-        $headerPassed = $false
+    foreach ($line in $lines) {
+        # Skip until we pass the header line
+        if ($line -match '^Name\s+Id\s+Version') {
+            $headerPassed = $true
+            continue
+        }
+        if ($line -match '^-+\s+-+\s+-+') {
+            continue
+        }
+        if (-not $headerPassed) {
+            continue
+        }
         
-        foreach ($line in $lines) {
-            if ($line -match '^Name\s+Id\s+Version') {
-                $headerPassed = $true
-                continue
-            }
-            if ($line -match '^-+\s+-+\s+-+') {
-                continue
-            }
-            if (-not $headerPassed) {
-                continue
-            }
-            
-            if ($line -match '^\s*(.+?)\s+([A-Za-z0-9][\w\.-]*\.[A-Za-z0-9][\w\.-]*)\s+(.+)$') {
-                $packageId = $matches[2].Trim()
-                $installedPackages[$packageId] = $true
-                Write-Log "Cached installed package: $packageId" "DEBUG"
-            }
+        # Parse the ID column from the output
+        # Format: Name    Id    Version    Available    Source
+        if ($line -match '^\s*(.+?)\s+([A-Za-z0-9][\w\.-]*\.[A-Za-z0-9][\w\.-]*)\s+(.+)$') {
+            $packageId = $matches[2].Trim()
+            $installedPackages[$packageId] = $true
+            Write-Log "Cached installed package: $packageId" "DEBUG"
         }
     }
 }
