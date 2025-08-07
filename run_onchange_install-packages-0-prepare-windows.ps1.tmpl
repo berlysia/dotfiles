@@ -1,0 +1,22 @@
+{{ if eq .chezmoi.os "windows" -}}
+# Prepare directories for Windows environment
+
+$ErrorActionPreference = "Stop"
+
+$directories = @(
+    "$env:USERPROFILE\.local\bin",
+    "$env:USERPROFILE\.local\share\powershell-completions",
+    "$env:USERPROFILE\.local\share\powershell-functions"
+)
+
+foreach ($dir in $directories) {
+    if (!(Test-Path $dir)) {
+        Write-Host "Creating directory: $dir"
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    } else {
+        Write-Host "Directory already exists: $dir"
+    }
+}
+
+Write-Host "Directory preparation completed"
+{{ end -}}
