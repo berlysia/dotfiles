@@ -1,0 +1,111 @@
+{{ if eq .chezmoi.os "windows" }}
+# Validate JSON templates before applying
+# This script runs before chezmoi apply to catch JSON syntax errors early
+
+$ErrorActionPreference = "Stop"
+
+Write-Host "🔍 Pre-apply JSON template validation..."
+
+# Create temporary directory for validation
+$TempDir = New-Item -ItemType Directory -Path ([System.IO.Path]::GetTempPath()) -Name ([System.Guid]::NewGuid().ToString())
+
+try {
+    # Function to check if template should generate a JSON file
+    function Test-ShouldValidateAsJson {
+        param([string]$TemplatePath)
+        
+        $basename = Split-Path $TemplatePath -Leaf
+        
+        # Skip modify_ prefixed templates (they generate scripts)
+        if ($basename -match "^modify_") { return $false }
+        
+        # Skip executable_ prefixed templates (they generate scripts)
+        if ($basename -match "^executable_") { return $false }
+        
+        # Skip run_ prefixed templates (they generate scripts)
+        if ($basename -match "^run_") { return $false }
+        
+        # Check first line for shebang
+        $firstLine = Get-Content $TemplatePath -First 1 -ErrorAction SilentlyContinue
+        if ($firstLine -and $firstLine.StartsWith("#!")) { return $false }
+        
+        return $true
+    }
+
+    # Function to validate a template by rendering it
+    function Test-Template {
+        param([string]$TemplatePath)
+        
+        $outputName = [System.IO.Path]::GetFileNameWithoutExtension($TemplatePath)
+        $tempOutput = Join-Path $TempDir "$outputName.json"
+        
+        # Skip non-JSON templates
+        if (!(Test-ShouldValidateAsJson $TemplatePath)) {
+            return $true
+        }
+        
+        Write-Host -NoNewline "  Checking $outputName... "
+        
+        try {
+            # Try to render the template
+            $result = & chezmoi execute-template $TemplatePath 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                $result | Out-File -FilePath $tempOutput -Encoding UTF8
+                
+                # Check if it's valid JSON
+                try {
+                    $null = Get-Content $tempOutput -Raw | ConvertFrom-Json
+                    Write-Host "✅"
+                    return $true
+                } catch {
+                    Write-Host "❌ Invalid JSON"
+                    Write-Host "    Error details:"
+                    Write-Host "    $($_.Exception.Message)"
+                    
+                    # Check for trailing commas
+                    $tempContent = Get-Content $tempOutput -Raw
+                    if ($tempContent -match ',\s*[}\]]') {
+                        Write-Host "    ⚠️  Trailing comma detected"
+                        $tempContent -split "`n" | Select-String -Pattern ',\s*[}\]]' | Select-Object -First 3 | ForEach-Object {
+                            Write-Host "    Line $($_.LineNumber): $($_.Line.Trim())"
+                        }
+                    }
+                    return $false
+                }
+            } else {
+                Write-Host "❌ Template error"
+                Write-Host "    $result"
+                return $false
+            }
+        } catch {
+            Write-Host "❌ Template error"
+            Write-Host "    $($_.Exception.Message)"
+            return $false
+        }
+    }
+
+    # Find all JSON templates dynamically
+    $sourceDir = "{{ .chezmoi.sourceDir }}"
+    $errors = 0
+    $templates = Get-ChildItem -Path $sourceDir -Filter "*.json.tmpl" -Recurse -File
+    
+    foreach ($template in $templates) {
+        if (!(Test-Template $template.FullName)) {
+            $errors++
+        }
+    }
+
+    if ($errors -gt 0) {
+        Write-Host ""
+        Write-Host "❌ Found $errors template error(s)"
+        Write-Host "   Please fix the errors before applying"
+        exit 1
+    } else {
+        Write-Host ""
+        Write-Host "✅ All JSON templates are valid"
+    }
+} finally {
+    # Cleanup
+    Remove-Item -Path $TempDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+{{ end }}
