@@ -79,6 +79,11 @@ if [ "$HAS_MISE" = "1" ] && [ -f "$HOME/.local/bin/mise" ]; then
   fi
 fi
 
+# Load Rust/Cargo environment
+if [ -f "$HOME/.cargo/env" ]; then
+  . "$HOME/.cargo/env"
+fi
+
 if [ "$HAS_OPAM" = "1" ] && type opam &>/dev/null; then
   eval "$(opam env)"
 fi
