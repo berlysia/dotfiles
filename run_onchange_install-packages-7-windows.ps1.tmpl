@@ -18,6 +18,10 @@ try {
     exit 1
 }
 
+# Disable GPG verification for automated installation
+$env:MISE_NODE_VERIFY = "false"
+$env:MISE_PYTHON_VERIFY = "false"
+
 # Install mise packages
 $packages = @(
 {{- range $index, $package := .packages.mise }}
