@@ -16,7 +16,7 @@ $miseAvailable = $false
 if (Get-Command mise -ErrorAction SilentlyContinue) {
     try {
         # Just check if mise --version runs successfully (exit code 0)
-        mise --version >$null 2>$null
+        mise --version
         if ($LASTEXITCODE -eq 0) {
             $commandType = (Get-Command mise).CommandType
             Write-Log "mise is available (type: $commandType)"
