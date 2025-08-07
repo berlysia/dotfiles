@@ -117,5 +117,50 @@ foreach ($package in $packages) {
 }
 
 Write-Log "mise package installation completed"
-Write-Log "Note: Please restart PowerShell to use newly installed tools"
+
+# Setup environment in current session for immediate use
+Write-Log "Setting up environment in current session..."
+
+# Add user local bin to PATH if not already present
+$localBin = "$env:USERPROFILE\.local\bin"
+if (Test-Path $localBin) {
+    $currentPath = $env:PATH
+    if ($currentPath -notlike "*$localBin*") {
+        $env:PATH = "$localBin;$currentPath"
+        Write-Log "Added $localBin to PATH"
+    }
+}
+
+# Initialize mise environment
+try {
+    $miseEnv = & mise env --shell powershell 2>$null
+    if ($LASTEXITCODE -eq 0 -and $miseEnv) {
+        Invoke-Expression $miseEnv
+        Write-Log "Initialized mise environment for current session"
+    }
+} catch {
+    Write-Log "Failed to initialize mise environment" "WARNING"
+}
+
+# Set up Go environment variables
+if (Get-Command go -ErrorAction SilentlyContinue) {
+    if (-not $env:GOPATH) {
+        $env:GOPATH = "$env:USERPROFILE\go"
+        Write-Log "Set GOPATH to $env:GOPATH"
+    }
+    $goBin = "$env:GOPATH\bin"
+    if ((Test-Path $goBin) -and ($env:PATH -notlike "*$goBin*")) {
+        $env:PATH = "$goBin;$env:PATH"
+        Write-Log "Added $goBin to PATH"
+    }
+}
+
+# Set up Rust environment
+$cargoEnv = "$env:USERPROFILE\.cargo\env.ps1"
+if (Test-Path $cargoEnv) {
+    & $cargoEnv
+    Write-Log "Loaded Rust/Cargo environment"
+}
+
+Write-Log "Environment setup completed - tools are now available in current session"
 {{ end -}}
