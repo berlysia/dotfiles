@@ -23,23 +23,16 @@ function Test-WingetAvailable {
 }
 
 function Install-WingetPackage {
-    param([string]$PackageId, [hashtable]$InstalledPackages)
+    param([string]$PackageId)
     
     Write-Log "Installing $PackageId..."
     
     try {
-        # Check if package is already installed using cached list
-        if ($InstalledPackages.ContainsKey($PackageId)) {
-            Write-Log "$PackageId is already installed (cached)" "INFO"
-            return $true
-        }
-        
-        # Fallback: Double-check with individual winget list command
-        Write-Log "Verifying installation status for $PackageId..." "DEBUG"
-        $individualCheck = winget list --id $PackageId --exact --accept-source-agreements 2>$null
-        if ($LASTEXITCODE -eq 0 -and $individualCheck -match $PackageId) {
-            Write-Log "$PackageId is already installed (verified)" "INFO"
-            $InstalledPackages[$PackageId] = $true
+        # Check if package is already installed using winget list query
+        Write-Log "Checking if $PackageId is already installed..." "DEBUG"
+        $checkResult = winget list --id $PackageId --exact --accept-source-agreements 2>$null
+        if ($LASTEXITCODE -eq 0 -and $checkResult -match $PackageId) {
+            Write-Log "$PackageId is already installed" "INFO"
             return $true
         }
         
@@ -52,7 +45,6 @@ function Install-WingetPackage {
         }
         if ($LASTEXITCODE -eq 0) {
             Write-Log "Successfully installed $PackageId" "SUCCESS"
-            $InstalledPackages[$PackageId] = $true
             return $true
         } else {
             Write-Log "Failed to install $PackageId (exit code: $LASTEXITCODE)" "ERROR"
@@ -85,53 +77,11 @@ if (-Not (Test-WingetAvailable)) {
 Write-Log "Updating winget sources..."
 winget source update
 
-# Get list of installed packages once at the start
-Write-Log "Checking installed packages..."
-$installedPackages = @{}
-
-# winget list returns text output, not objects - parse as text
-$installedList = winget list --accept-source-agreements 2>$null | Out-String
-if ($LASTEXITCODE -eq 0 -and $installedList) {
-    $lines = $installedList -split "`n"
-    $headerPassed = $false
-    
-    foreach ($line in $lines) {
-        # Skip until we pass the header line
-        if ($line -match '^Name\s+Id\s+Version') {
-            $headerPassed = $true
-            continue
-        }
-        if ($line -match '^-+\s+-+\s+-+') {
-            continue
-        }
-        if (-not $headerPassed) {
-            continue
-        }
-        
-        # Parse the ID column from the output
-        # Format: Name    Id    Version    Available    Source
-        if ($line -match '^\s*(.+?)\s+([A-Za-z0-9][\w\.-]*\.[A-Za-z0-9][\w\.-]*)\s+(.+)$') {
-            $packageId = $matches[2].Trim()
-            $installedPackages[$packageId] = $true
-            Write-Log "Cached installed package: $packageId" "DEBUG"
-        }
-    }
-}
-
-Write-Log "Found $($installedPackages.Count) installed packages"
-
-# Debug: Show which packages we're looking for
-Write-Log "Target packages:" "DEBUG"
-foreach ($pkg in $wingetPackages) {
-    $isInstalled = $installedPackages.ContainsKey($pkg)
-    Write-Log "  $pkg`: $(if ($isInstalled) { 'INSTALLED' } else { 'NOT FOUND' })" "DEBUG"
-}
-
 $successCount = 0
 $failedPackages = @()
 
 foreach ($package in $wingetPackages) {
-    if (Install-WingetPackage -PackageId $package -InstalledPackages $installedPackages) {
+    if (Install-WingetPackage -PackageId $package) {
         $successCount++
     } else {
         $failedPackages += $package
