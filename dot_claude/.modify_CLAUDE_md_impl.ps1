@@ -26,8 +26,13 @@ function Cleanup {
 
 try {
     # 標準入力から既存のファイル内容を読み込み
-    $inputContent = [System.Console]::In.ReadToEnd()
-    $inputContent | Out-File -FilePath $ExistingFile -Encoding UTF8 -NoNewline
+    $inputContent = $input -join "`n"
+    if ($inputContent) {
+        $inputContent | Out-File -FilePath $ExistingFile -Encoding UTF8 -NoNewline
+    } else {
+        # 空ファイルの場合
+        "" | Out-File -FilePath $ExistingFile -Encoding UTF8 -NoNewline
+    }
 
     # chezmoi管理のCLAUDE.md設定を読み込み
     @'
