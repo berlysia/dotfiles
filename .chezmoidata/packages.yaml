@@ -71,5 +71,17 @@ packages:
       - "patchutils"
       - "sox"
   windows:
-    choco:
-      - "age"
+    winget:
+      - "Git.Git"
+      - "Microsoft.VisualStudioCode"
+      - "Microsoft.PowerShell"
+      - "Microsoft.WindowsTerminal"
+      - "7zip.7zip"
+      - "JesseDuffield.Lazygit"
+      - "BurntSushi.ripgrep.GNU"
+      - "sharkdp.bat"
+      - "junegunn.fzf"
+      - "jqlang.jq"
+      - "GitHub.cli"
+      - "Microsoft.PowerToys"
+      - "jdx.mise"
