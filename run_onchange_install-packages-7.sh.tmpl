@@ -1,18 +1,99 @@
 {{ if ne .chezmoi.os "windows" -}}
 #!/bin/bash
+# Install mise packages on Unix-like systems (Linux/macOS)
 
-if mise --version; then
-  echo "mise already installed"
-else
-  # https://mise.jdx.dev/
-  curl https://mise.run | MISE_INSTALL_PATH=~/.local/bin/mise sh
+set -euo pipefail
+
+log() {
+    local level="${2:-INFO}"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $1"
+}
+
+# Check if mise is available
+if ! command -v mise &> /dev/null; then
+    log "mise not found. Please ensure package manager packages are installed first." "ERROR"
+    exit 1
 fi
 
-{{ range .packages.mise }}
-  CMD={{ . | quote  }}
-  CMD_VERSION=`mise latest $CMD 2> /dev/null`
-  mise install $CMD $CMD_VERSION
-  mise use --global ${CMD}@${CMD_VERSION}
-{{ end }}
+log "mise is available"
 
-{{ end }}
+# Install mise packages
+packages=(
+{{- range $index, $package := .packages.mise }}
+    "{{ $package }}"
+{{- end }}
+)
+
+for package in "${packages[@]}"; do
+    log "Processing package: $package"
+    
+    # Get latest version
+    if ! version=$(mise latest "$package" 2>/dev/null); then
+        log "Could not get latest version for $package" "WARNING"
+        continue
+    fi
+    
+    # Check if already installed
+    if mise ls "$package" 2>/dev/null | grep -q "$version"; then
+        log "${package}@${version} already installed"
+        # Ensure it's set as global even if already installed
+        mise use --global "${package}@${version}" || log "Failed to set ${package} as global" "WARNING"
+    else
+        # Install package
+        log "Installing ${package}@${version}..."
+        if mise install "$package" "$version"; then
+            # Set as global version
+            if mise use --global "${package}@${version}"; then
+                log "Successfully installed and activated ${package}@${version}" "SUCCESS"
+            else
+                log "Installed ${package}@${version} but failed to set as global" "WARNING"
+            fi
+        else
+            log "Failed to install ${package}@${version}" "ERROR"
+        fi
+    fi
+done
+
+log "mise package installation completed"
+
+# Setup environment in current session for immediate use
+log "Setting up environment in current session..."
+
+# Add user local bin to PATH if not already present
+local_bin="$HOME/.local/bin"
+if [[ -d "$local_bin" && ":$PATH:" != *":$local_bin:"* ]]; then
+    export PATH="$local_bin:$PATH"
+    log "Added $local_bin to PATH"
+fi
+
+# Initialize mise environment
+if mise_env=$(mise env --shell bash 2>/dev/null); then
+    eval "$mise_env"
+    log "Initialized mise environment for current session"
+else
+    log "Failed to initialize mise environment" "WARNING"
+fi
+
+# Set up Go environment variables
+if command -v go &> /dev/null; then
+    if [[ -z "${GOPATH:-}" ]]; then
+        export GOPATH="$HOME/go"
+        log "Set GOPATH to $GOPATH"
+    fi
+    go_bin="$GOPATH/bin"
+    if [[ -d "$go_bin" && ":$PATH:" != *":$go_bin:"* ]]; then
+        export PATH="$go_bin:$PATH"
+        log "Added $go_bin to PATH"
+    fi
+fi
+
+# Set up Rust environment
+cargo_env="$HOME/.cargo/env"
+if [[ -f "$cargo_env" ]]; then
+    # shellcheck source=/dev/null
+    source "$cargo_env"
+    log "Loaded Rust/Cargo environment"
+fi
+
+log "Environment setup completed - tools are now available in current session"
+{{ end -}}
