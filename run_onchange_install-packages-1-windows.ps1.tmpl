@@ -30,11 +30,21 @@ function Install-WingetPackage {
     try {
         # Check if package is already installed using cached list
         if ($InstalledPackages.ContainsKey($PackageId)) {
-            Write-Log "$PackageId is already installed" "INFO"
+            Write-Log "$PackageId is already installed (cached)" "INFO"
+            return $true
+        }
+        
+        # Fallback: Double-check with individual winget list command
+        Write-Log "Verifying installation status for $PackageId..." "DEBUG"
+        $individualCheck = winget list --id $PackageId --exact --accept-source-agreements 2>$null
+        if ($LASTEXITCODE -eq 0 -and $individualCheck -match $PackageId) {
+            Write-Log "$PackageId is already installed (verified)" "INFO"
+            $InstalledPackages[$PackageId] = $true
             return $true
         }
         
         # Install package with appropriate flags
+        Write-Log "Proceeding with installation of $PackageId"
         if ($isAdmin) {
             winget install --id $PackageId --exact --silent --accept-source-agreements --accept-package-agreements --scope machine
         } else {
@@ -77,20 +87,59 @@ winget source update
 
 # Get list of installed packages once at the start
 Write-Log "Checking installed packages..."
-$installedList = winget list --accept-source-agreements 2>$null
 $installedPackages = @{}
 
-if ($LASTEXITCODE -eq 0 -and $installedList) {
-    # Parse installed packages and cache them
-    $lines = $installedList -split "`n"
-    foreach ($line in $lines) {
-        # Match package ID pattern (skip header and separator lines)
-        if ($line -match '^\s*(\S+\.\S+)\s+') {
-            $packageId = $matches[1]
-            $installedPackages[$packageId] = $true
+try {
+    # Get winget list as PowerShell objects
+    $packages = winget list --accept-source-agreements 2>$null
+    if ($LASTEXITCODE -eq 0 -and $packages) {
+        foreach ($package in $packages) {
+            if ($package.Id) {
+                $installedPackages[$package.Id] = $true
+                Write-Log "Cached installed package: $($package.Id)" "DEBUG"
+            } elseif ($package.PackageIdentifier) {
+                $installedPackages[$package.PackageIdentifier] = $true
+                Write-Log "Cached installed package: $($package.PackageIdentifier)" "DEBUG"
+            }
         }
     }
-    Write-Log "Found $($installedPackages.Count) installed packages"
+} catch {
+    Write-Log "Failed to get packages as objects, falling back to text parsing: $($_.Exception.Message)" "WARNING"
+    
+    # Fallback to text parsing
+    $installedList = winget list --accept-source-agreements 2>$null | Out-String
+    if ($LASTEXITCODE -eq 0 -and $installedList) {
+        $lines = $installedList -split "`n"
+        $headerPassed = $false
+        
+        foreach ($line in $lines) {
+            if ($line -match '^Name\s+Id\s+Version') {
+                $headerPassed = $true
+                continue
+            }
+            if ($line -match '^-+\s+-+\s+-+') {
+                continue
+            }
+            if (-not $headerPassed) {
+                continue
+            }
+            
+            if ($line -match '^\s*(.+?)\s+([A-Za-z0-9][\w\.-]*\.[A-Za-z0-9][\w\.-]*)\s+(.+)$') {
+                $packageId = $matches[2].Trim()
+                $installedPackages[$packageId] = $true
+                Write-Log "Cached installed package: $packageId" "DEBUG"
+            }
+        }
+    }
+}
+
+Write-Log "Found $($installedPackages.Count) installed packages"
+
+# Debug: Show which packages we're looking for
+Write-Log "Target packages:" "DEBUG"
+foreach ($pkg in $wingetPackages) {
+    $isInstalled = $installedPackages.ContainsKey($pkg)
+    Write-Log "  $pkg`: $(if ($isInstalled) { 'INSTALLED' } else { 'NOT FOUND' })" "DEBUG"
 }
 
 $successCount = 0
