@@ -15,8 +15,8 @@ $miseAvailable = $false
 # Check if mise is available as a command or function
 if (Get-Command mise -ErrorAction SilentlyContinue) {
     try {
-        # Try to get version - use try/catch for proper error handling
-        $versionOutput = mise --version
+        # Try to get version - use & operator for both executable and function
+        $versionOutput = & mise --version
         if ($versionOutput) {
             $commandType = (Get-Command mise).CommandType
             Write-Log "mise is available (type: $commandType)"
