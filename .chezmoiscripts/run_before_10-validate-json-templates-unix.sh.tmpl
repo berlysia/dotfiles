@@ -1,11 +1,11 @@
-{{ if ne .chezmoi.os "windows" }}
+{{ if ne .chezmoi.os "windows" -}}
 #!/usr/bin/env bash
 # Validate JSON templates before applying
 # This script runs before chezmoi apply to catch JSON syntax errors early
 
 set -euo pipefail
 
-echo "🔍 Pre-apply JSON template validation..."
+echo "Pre-apply JSON template validation..."
 
 # Create temporary directory for validation
 TEMP_DIR=$(mktemp -d)
