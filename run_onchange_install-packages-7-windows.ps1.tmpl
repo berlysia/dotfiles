@@ -10,11 +10,65 @@ function Write-Log {
 }
 
 # Check if mise is available
-try {
-    $null = & mise --version 2>$null
-    Write-Log "mise is available"
-} catch {
-    Write-Log "mise not found. Please ensure winget packages are installed first." "ERROR"
+$miseFound = $false
+$misePaths = @(
+    "mise",
+    "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\jdx.mise_Microsoft.Winget.Source_*\mise.exe",
+    "$env:USERPROFILE\.local\bin\mise.exe",
+    "$env:ProgramFiles\mise\mise.exe"
+)
+
+foreach ($misePath in $misePaths) {
+    try {
+        if ($misePath -eq "mise") {
+            # Try system PATH first
+            $null = & mise --version 2>$null
+            if ($LASTEXITCODE -eq 0) {
+                Write-Log "mise found in PATH"
+                $miseFound = $true
+                break
+            }
+        } else {
+            # Expand wildcards for WinGet path
+            if ($misePath -like "*`**") {
+                $expandedPaths = Get-ChildItem -Path ($misePath -replace '\*.*$', '') -Filter "mise.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
+                foreach ($expandedPath in $expandedPaths) {
+                    if (Test-Path $expandedPath) {
+                        $null = & $expandedPath --version 2>$null
+                        if ($LASTEXITCODE -eq 0) {
+                            Write-Log "mise found at: $expandedPath"
+                            # Add directory to PATH for this session
+                            $miseDir = Split-Path $expandedPath
+                            $env:PATH = "$miseDir;$env:PATH"
+                            $miseFound = $true
+                            break
+                        }
+                    }
+                }
+            } else {
+                if (Test-Path $misePath) {
+                    $null = & $misePath --version 2>$null
+                    if ($LASTEXITCODE -eq 0) {
+                        Write-Log "mise found at: $misePath"
+                        # Add directory to PATH for this session
+                        $miseDir = Split-Path $misePath
+                        $env:PATH = "$miseDir;$env:PATH"
+                        $miseFound = $true
+                        break
+                    }
+                }
+            }
+        }
+        if ($miseFound) { break }
+    } catch {
+        # Continue to next path
+        continue
+    }
+}
+
+if (-not $miseFound) {
+    Write-Log "mise not found in any expected locations. Please ensure winget packages are installed and mise is in PATH." "ERROR"
+    Write-Log "Searched locations: $($misePaths -join ', ')" "ERROR"
     exit 1
 }
 
