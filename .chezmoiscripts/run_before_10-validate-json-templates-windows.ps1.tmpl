@@ -47,14 +47,18 @@ try {
         Write-Host -NoNewline "  Checking $outputName... "
         
         try {
-            # Try to render the template
-            $result = & chezmoi execute-template $TemplatePath 2>&1
+            # Try to render the template using stdin redirect like bash version
+            $templateContent = Get-Content $TemplatePath -Raw
+            $result = $templateContent | & chezmoi execute-template --template-string - 2>&1
             if ($LASTEXITCODE -eq 0) {
-                $result | Out-File -FilePath $tempOutput -Encoding UTF8
+                $result | Out-File -FilePath $tempOutput -Encoding UTF8 -NoNewline
                 
                 # Check if it's valid JSON
                 try {
-                    $null = Get-Content $tempOutput -Raw | ConvertFrom-Json
+                    $jsonContent = Get-Content $tempOutput -Raw
+                    if ($jsonContent.Trim()) {
+                        $null = $jsonContent | ConvertFrom-Json
+                    }
                     Write-Host "OK"
                     return $true
                 } catch {
