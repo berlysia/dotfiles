@@ -12,13 +12,11 @@ function Write-Log {
 # Activate mise environment to make Go available
 if (Get-Command mise -ErrorAction SilentlyContinue) {
     try {
-        $miseEnv = & mise env --shell powershell 2>$null
-        if ($LASTEXITCODE -eq 0 -and $miseEnv) {
-            Invoke-Expression $miseEnv
-            Write-Log "Activated mise environment"
-        }
+        # Use the correct PowerShell activation method
+        (& mise activate pwsh) | Out-String | Invoke-Expression
+        Write-Log "Activated mise environment"
     } catch {
-        Write-Log "Failed to activate mise environment" "WARNING"
+        Write-Log "Failed to activate mise environment: $($_.Exception.Message)" "WARNING"
     }
 }
 
