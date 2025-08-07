@@ -112,7 +112,7 @@ try {
         Write-Log "Initialized mise environment for current session"
     }
 } catch {
-    Write-Log "Failed to initialize mise environment" "WARNING"
+    Write-Log "Failed to initialize mise environment: $($_.Exception.Message)" "WARNING"
 }
 
 # Set up Go environment variables
