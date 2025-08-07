@@ -9,6 +9,19 @@ function Write-Log {
     Write-Host "[$timestamp] [$Level] $Message"
 }
 
+# Activate mise environment to make Rust available
+if (Get-Command mise -ErrorAction SilentlyContinue) {
+    try {
+        $miseEnv = & mise env --shell powershell 2>$null
+        if ($LASTEXITCODE -eq 0 -and $miseEnv) {
+            Invoke-Expression $miseEnv
+            Write-Log "Activated mise environment"
+        }
+    } catch {
+        Write-Log "Failed to activate mise environment" "WARNING"
+    }
+}
+
 # Check if Cargo is installed
 try {
     $null = & cargo --version 2>$null
