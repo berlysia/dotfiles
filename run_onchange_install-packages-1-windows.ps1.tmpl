@@ -23,14 +23,13 @@ function Test-WingetAvailable {
 }
 
 function Install-WingetPackage {
-    param([string]$PackageId)
+    param([string]$PackageId, [hashtable]$InstalledPackages)
     
     Write-Log "Installing $PackageId..."
     
     try {
-        # Check if package is already installed
-        $installed = winget list --id $PackageId --exact --accept-source-agreements 2>$null
-        if ($LASTEXITCODE -eq 0 -and $installed -match $PackageId) {
+        # Check if package is already installed using cached list
+        if ($InstalledPackages.ContainsKey($PackageId)) {
             Write-Log "$PackageId is already installed" "INFO"
             return $true
         }
@@ -43,6 +42,7 @@ function Install-WingetPackage {
         }
         if ($LASTEXITCODE -eq 0) {
             Write-Log "Successfully installed $PackageId" "SUCCESS"
+            $InstalledPackages[$PackageId] = $true
             return $true
         } else {
             Write-Log "Failed to install $PackageId (exit code: $LASTEXITCODE)" "ERROR"
@@ -75,12 +75,29 @@ if (-Not (Test-WingetAvailable)) {
 Write-Log "Updating winget sources..."
 winget source update
 
+# Get list of installed packages once at the start
+Write-Log "Checking installed packages..."
+$installedList = winget list --accept-source-agreements 2>$null
+$installedPackages = @{}
+
+if ($LASTEXITCODE -eq 0 -and $installedList) {
+    # Parse installed packages and cache them
+    $lines = $installedList -split "`n"
+    foreach ($line in $lines) {
+        # Match package ID pattern (skip header and separator lines)
+        if ($line -match '^\s*(\S+\.\S+)\s+') {
+            $packageId = $matches[1]
+            $installedPackages[$packageId] = $true
+        }
+    }
+    Write-Log "Found $($installedPackages.Count) installed packages"
+}
+
 $successCount = 0
 $failedPackages = @()
 
 foreach ($package in $wingetPackages) {
-    # FIXME: すべての依存が実行されるたびにインストールを試すので時間がかかりすぎる。
-    if (Install-WingetPackage -PackageId $package) {
+    if (Install-WingetPackage -PackageId $package -InstalledPackages $installedPackages) {
         $successCount++
     } else {
         $failedPackages += $package
