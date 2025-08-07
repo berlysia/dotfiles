@@ -249,12 +249,21 @@ play_audio_and_cleanup() {
     CURRENT_WAV_FILE=""
 }
 
-# Function to play fallback static notification
-play_fallback_notification() {
+# Function to execute complete fallback sequence
+execute_fallback_notification() {
     local event_type="$1"
-    local fallback_file="$SOUND_DIR/Claude${event_type}.wav"
+    local reason="${2:-Unknown reason}"
     
-    # Try to play fallback file
+    log_message "$reason, falling back to static WAV files"
+    
+    # Step 1: Play Prefix.wav if available
+    if [[ -f "$PREFIX_FILE" ]]; then
+        play_static_wav "$PREFIX_FILE"
+        log_message "Playing fallback prefix: $PREFIX_FILE"
+    fi
+    
+    # Step 2: Play event-specific fallback file
+    local fallback_file="$SOUND_DIR/Claude${event_type}.wav"
     if [[ -f "$fallback_file" ]]; then
         log_message "Using fallback static WAV: $fallback_file"
         play_static_wav "$fallback_file"
@@ -272,14 +281,7 @@ speak_notification() {
     
     # Check if AivisSpeech is available for dynamic synthesis
     if ! check_aivisspeech; then
-        log_message "AivisSpeech unavailable, using fallback"
-        # Step 1: Play Prefix.wav if available
-        if [[ -f "$PREFIX_FILE" ]]; then
-            play_static_wav "$PREFIX_FILE"
-            log_message "Playing prefix: $PREFIX_FILE"
-        fi
-        # Fallback to static WAV files
-        play_fallback_notification "$event_type"
+        execute_fallback_notification "$event_type" "AivisSpeech unavailable"
         return $?
     fi
     
@@ -295,12 +297,14 @@ speak_notification() {
     # Generate audio query for unified message
     local query=$(generate_audio_query "$unified_text")
     if [ $? -ne 0 ]; then
-        return 1
+        execute_fallback_notification "$event_type" "Audio query generation failed"
+        return $?
     fi
     
     # Synthesize unified speech
     if ! synthesize_speech "$query" "$DEFAULT_SPEAKER_ID" "$audio_file"; then
-        return 1
+        execute_fallback_notification "$event_type" "Speech synthesis failed"
+        return $?
     fi
     
     # Play unified audio
