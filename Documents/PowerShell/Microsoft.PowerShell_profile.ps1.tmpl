@@ -4,7 +4,7 @@
 # Initialize mise environment if available
 if (Get-Command mise -ErrorAction SilentlyContinue) {
     try {
-        $miseEnv = & mise.exe env --shell powershell 2>$null
+        $miseEnv = & mise.exe env --shell pwsh 2>$null
         if ($LASTEXITCODE -eq 0 -and $miseEnv) {
             Invoke-Expression $miseEnv
         }
