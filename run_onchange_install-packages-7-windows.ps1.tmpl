@@ -9,65 +9,13 @@ function Write-Log {
     Write-Host "[$timestamp] [$Level] $Message"
 }
 
-# Check if mise is installed
+# Check if mise is available
 try {
     $null = & mise --version 2>$null
-    Write-Log "mise already installed"
+    Write-Log "mise is available"
 } catch {
-    Write-Log "Installing mise..."
-    
-    # Download and install mise for Windows
-    $miseUrl = "https://github.com/jdx/mise/releases/latest/download/mise-v*-win64.zip"
-    $tempDir = [System.IO.Path]::GetTempPath()
-    $zipFile = Join-Path $tempDir "mise.zip"
-    $extractDir = Join-Path $tempDir "mise"
-    
-    try {
-        # Get latest release URL
-        $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/jdx/mise/releases/latest"
-        $downloadUrl = $releases.assets | Where-Object { $_.name -like "*win64.zip" } | Select-Object -ExpandProperty browser_download_url
-        
-        if (-not $downloadUrl) {
-            throw "Could not find Windows release"
-        }
-        
-        Write-Log "Downloading mise from $downloadUrl"
-        Invoke-WebRequest -Uri $downloadUrl -OutFile $zipFile
-        
-        # Extract
-        Expand-Archive -Path $zipFile -DestinationPath $extractDir -Force
-        
-        # Find mise.exe and copy to a location in PATH
-        $miseExe = Get-ChildItem -Path $extractDir -Name "mise.exe" -Recurse | Select-Object -First 1
-        if ($miseExe) {
-            $installDir = "$env:USERPROFILE\.local\bin"
-            if (!(Test-Path $installDir)) {
-                New-Item -ItemType Directory -Path $installDir -Force | Out-Null
-            }
-            
-            Copy-Item -Path $miseExe.FullName -Destination "$installDir\mise.exe" -Force
-            
-            # Add to PATH if not already there
-            $userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
-            if ($userPath -notlike "*$installDir*") {
-                $newPath = "$userPath;$installDir"
-                [Environment]::SetEnvironmentVariable("PATH", $newPath, "User")
-                $env:PATH = "$env:PATH;$installDir"
-            }
-            
-            Write-Log "mise installed successfully to $installDir"
-        } else {
-            throw "Could not find mise.exe in downloaded archive"
-        }
-        
-    } catch {
-        Write-Log "Failed to install mise: $($_.Exception.Message)" "ERROR"
-        exit 1
-    } finally {
-        # Cleanup
-        Remove-Item $zipFile -ErrorAction SilentlyContinue
-        Remove-Item $extractDir -Recurse -ErrorAction SilentlyContinue
-    }
+    Write-Log "mise not found. Please ensure winget packages are installed first." "ERROR"
+    exit 1
 }
 
 # Install mise packages
