@@ -22,12 +22,6 @@ if (Get-Command mise -ErrorAction SilentlyContinue) {
             Write-Log "mise is available (type: $commandType)"
             $miseAvailable = $true
         }
-
-        # For first time setup, we can also try to initialize the environment
-        $miseEnv = & mise env --shell pwsh 2>$null
-        if ($LASTEXITCODE -eq 0 -and $miseEnv) {
-            Invoke-Expression $miseEnv
-        }
     } catch {
         Write-Log "Failed to execute mise --version: $($_.Exception.Message)" "DEBUG"
         # Continue to manual search
@@ -108,7 +102,9 @@ if (Test-Path $localBin) {
 try {
     $miseEnv = & mise env --shell pwsh 2>$null
     if ($LASTEXITCODE -eq 0 -and $miseEnv) {
-        Invoke-Expression $miseEnv
+        # Convert array to string if necessary
+        $envScript = if ($miseEnv -is [Array]) { $miseEnv -join "`n" } else { $miseEnv }
+        Invoke-Expression $envScript
         Write-Log "Initialized mise environment for current session"
     }
 } catch {
