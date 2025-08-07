@@ -1,8 +1,5 @@
-{{ if eq .chezmoi.os "windows" -}}
-#!C:\Program Files\Git\bin\bash.exe
-{{ else -}}
+{{ if ne .chezmoi.os "windows" }}
 #!/usr/bin/env bash
-{{ end -}}
 # Validate JSON templates before applying
 # This script runs before chezmoi apply to catch JSON syntax errors early
 
@@ -96,3 +93,5 @@ if [ $ERRORS -gt 0 ]; then
 else
     echo -e "\n✅ All JSON templates are valid"
 fi
+
+{{ end }}
