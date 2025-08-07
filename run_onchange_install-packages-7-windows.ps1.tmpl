@@ -88,12 +88,26 @@ foreach ($package in $packages) {
             continue
         }
         
+        # Check if already installed
+        $installed = & mise ls $package 2>$null
+        if ($LASTEXITCODE -eq 0 -and $installed -match $version) {
+            Write-Log "${package}@${version} already installed"
+            # Ensure it's set as global even if already installed
+            & mise use --global "${package}@${version}"
+            continue
+        }
+        
         # Install package
         Write-Log "Installing ${package}@${version}..."
         & mise install $package $version
         if ($LASTEXITCODE -eq 0) {
+            # Set as global version
             & mise use --global "${package}@${version}"
-            Write-Log "Successfully installed ${package}@${version}" "SUCCESS"
+            if ($LASTEXITCODE -eq 0) {
+                Write-Log "Successfully installed and activated ${package}@${version}" "SUCCESS"
+            } else {
+                Write-Log "Installed ${package}@${version} but failed to set as global" "WARNING"
+            }
         } else {
             Write-Log "Failed to install ${package}@${version}" "ERROR"
         }
