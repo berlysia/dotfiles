@@ -1,3 +1,6 @@
+@set args=%*
+@powershell "iex((@('')*3+(cat '%~f0'|select -skip 3))-join[char]10)"
+@exit /b %ERRORLEVEL%
 # ~/.claude/CLAUDE.md のシンプルパッチベースマージスクリプト (PowerShell版)
 # diffとpatchコマンドを直接使用した軽量実装
 
