@@ -1,6 +1,7 @@
 packages:
   mise:
     - "node"
+    - "deno"
     - "pnpm"
     - "bun"
     - "direnv"
