@@ -1,0 +1,106 @@
+{{ if eq .chezmoi.os "windows" -}}
+# Install mise and packages on Windows
+
+$ErrorActionPreference = "Stop"
+
+function Write-Log {
+    param([string]$Message, [string]$Level = "INFO")
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    Write-Host "[$timestamp] [$Level] $Message"
+}
+
+# Check if mise is installed
+try {
+    $null = & mise --version 2>$null
+    Write-Log "mise already installed"
+} catch {
+    Write-Log "Installing mise..."
+    
+    # Download and install mise for Windows
+    $miseUrl = "https://github.com/jdx/mise/releases/latest/download/mise-v*-win64.zip"
+    $tempDir = [System.IO.Path]::GetTempPath()
+    $zipFile = Join-Path $tempDir "mise.zip"
+    $extractDir = Join-Path $tempDir "mise"
+    
+    try {
+        # Get latest release URL
+        $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/jdx/mise/releases/latest"
+        $downloadUrl = $releases.assets | Where-Object { $_.name -like "*win64.zip" } | Select-Object -ExpandProperty browser_download_url
+        
+        if (-not $downloadUrl) {
+            throw "Could not find Windows release"
+        }
+        
+        Write-Log "Downloading mise from $downloadUrl"
+        Invoke-WebRequest -Uri $downloadUrl -OutFile $zipFile
+        
+        # Extract
+        Expand-Archive -Path $zipFile -DestinationPath $extractDir -Force
+        
+        # Find mise.exe and copy to a location in PATH
+        $miseExe = Get-ChildItem -Path $extractDir -Name "mise.exe" -Recurse | Select-Object -First 1
+        if ($miseExe) {
+            $installDir = "$env:USERPROFILE\.local\bin"
+            if (!(Test-Path $installDir)) {
+                New-Item -ItemType Directory -Path $installDir -Force | Out-Null
+            }
+            
+            Copy-Item -Path $miseExe.FullName -Destination "$installDir\mise.exe" -Force
+            
+            # Add to PATH if not already there
+            $userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
+            if ($userPath -notlike "*$installDir*") {
+                $newPath = "$userPath;$installDir"
+                [Environment]::SetEnvironmentVariable("PATH", $newPath, "User")
+                $env:PATH = "$env:PATH;$installDir"
+            }
+            
+            Write-Log "mise installed successfully to $installDir"
+        } else {
+            throw "Could not find mise.exe in downloaded archive"
+        }
+        
+    } catch {
+        Write-Log "Failed to install mise: $($_.Exception.Message)" "ERROR"
+        exit 1
+    } finally {
+        # Cleanup
+        Remove-Item $zipFile -ErrorAction SilentlyContinue
+        Remove-Item $extractDir -Recurse -ErrorAction SilentlyContinue
+    }
+}
+
+# Install mise packages
+$packages = @(
+{{- range $index, $package := .packages.mise }}
+    "{{ $package }}"{{ if ne $index (sub (len $.packages.mise) 1) }},{{ end }}
+{{- end }}
+)
+
+foreach ($package in $packages) {
+    Write-Log "Processing package: $package"
+    
+    try {
+        # Get latest version
+        $version = & mise latest $package 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Log "Could not get latest version for $package" "WARNING"
+            continue
+        }
+        
+        # Install package
+        Write-Log "Installing ${package}@${version}..."
+        & mise install $package $version
+        if ($LASTEXITCODE -eq 0) {
+            & mise use --global "${package}@${version}"
+            Write-Log "Successfully installed ${package}@${version}" "SUCCESS"
+        } else {
+            Write-Log "Failed to install ${package}@${version}" "ERROR"
+        }
+    } catch {
+        Write-Log "Error processing $package`: $($_.Exception.Message)" "ERROR"
+    }
+}
+
+Write-Log "mise package installation completed"
+{{ end -}}
