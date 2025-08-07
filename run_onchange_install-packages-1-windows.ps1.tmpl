@@ -2,8 +2,8 @@
 
 # winget package list from packages.yaml
 $wingetPackages = @(
-{{- range .packages.windows.winget }}
-    "{{ . }}",
+{{- range $index, $package := .packages.windows.winget }}
+    "{{ $package }}"{{ if ne $index (sub (len $.packages.windows.winget) 1) }},{{ end }}
 {{- end }}
 )
 
