@@ -47,7 +47,7 @@ set_report_level() {
 
 # Print colored status message
 print_status() {
-    local status="$1"
+    local print_status_arg="$1"
     local message="$2"
     local details="$3"
     local min_level="${4:-$REPORT_NORMAL}"
@@ -55,7 +55,7 @@ print_status() {
     # Check if we should print based on verbosity level
     [ $REPORT_LEVEL -lt $min_level ] && return
     
-    case "$status" in
+    case "$print_status_arg" in
         PASS)
             [ $REPORT_LEVEL -ge $REPORT_NORMAL ] && printf "${GREEN}${ICON_PASS}${NC} %s\n" "$message"
             [ $REPORT_LEVEL -ge $REPORT_VERBOSE ] && [ -n "$details" ] && printf "   ${GRAY}%s${NC}\n" "$details"
@@ -120,7 +120,7 @@ print_test_results() {
     local current_category=""
     
     # Parse and display results by category
-    echo "$results" | while IFS='|' read -r category name status details; do
+    echo "$results" | while IFS='|' read -r category name test_status details; do
         if [ "$category" != "$current_category" ]; then
             case "$category" in
                 core)
@@ -139,7 +139,7 @@ print_test_results() {
             current_category="$category"
         fi
         
-        print_status "$status" "$name" "$details"
+        print_status "$test_status" "$name" "$details"
     done
 }
 

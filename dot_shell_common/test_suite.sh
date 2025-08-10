@@ -153,18 +153,16 @@ validate_categories() {
     fi
     
     for cat in $categories; do
-        local found=0
-        for valid in $valid_categories; do
-            if [ "$cat" = "$valid" ]; then
-                found=1
-                break
-            fi
-        done
-        if [ $found -eq 0 ]; then
-            echo "Error: Invalid category '$cat'" >&2
-            echo "Valid categories: $valid_categories" >&2
-            return 1
-        fi
+        case " $valid_categories " in
+            *" $cat "*)
+                # Valid category found
+                ;;
+            *)
+                echo "Error: Invalid category '$cat'" >&2
+                echo "Valid categories: $valid_categories" >&2
+                return 1
+                ;;
+        esac
     done
     return 0
 }
@@ -217,6 +215,7 @@ main() {
             exit 1
         fi
     fi
+    # Note: if test_categories is empty, run_all_tests will use default categories
     
     # Run the test suite
     run_all_tests "$adapter" "$test_categories"

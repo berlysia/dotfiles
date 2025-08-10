@@ -73,8 +73,8 @@ validate_readiness_for_apply() {
     local warnings=0
     
     # Parse results and count critical issues
-    echo "$results" | while IFS='|' read -r category name status details; do
-        case "$status" in
+    echo "$results" | while IFS='|' read -r category name result_status details; do
+        case "$result_status" in
             FAIL)
                 case "$category" in
                     core)
@@ -187,8 +187,8 @@ analyze_test_patterns() {
     local config_failures=0
     local integration_failures=0
     
-    echo "$results" | while IFS='|' read -r category name status details; do
-        if [ "$status" = "FAIL" ]; then
+    echo "$results" | while IFS='|' read -r category name result_status details; do
+        if [ "$result_status" = "FAIL" ]; then
             case "$category" in
                 core) core_failures=$((core_failures + 1)) ;;
                 shell) shell_failures=$((shell_failures + 1)) ;;
