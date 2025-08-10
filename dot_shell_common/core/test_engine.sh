@@ -9,11 +9,22 @@ PASSED_TESTS=0
 FAILED_TESTS=0
 SKIPPED_TESTS=0
 
+# Weight system for scoring
+WEIGHT_REQUIRED=10
+WEIGHT_RECOMMENDED=5
+WEIGHT_OPTIONAL=1
+TOTAL_WEIGHT=0
+ACHIEVED_WEIGHT=0
+
 # Test categories
 TEST_CATEGORY_CORE="core"
 TEST_CATEGORY_SHELL="shell"
 TEST_CATEGORY_CONFIG="config"
 TEST_CATEGORY_INTEGRATION="integration"
+TEST_CATEGORY_TOOLS="tools"
+TEST_CATEGORY_LANGUAGES="languages"
+TEST_CATEGORY_DEVELOPMENT="development"
+TEST_CATEGORY_SECURITY="security"
 
 # Initialize test engine
 init_test_engine() {
@@ -22,31 +33,73 @@ init_test_engine() {
     PASSED_TESTS=0
     FAILED_TESTS=0
     SKIPPED_TESTS=0
+    TOTAL_WEIGHT=0
+    ACHIEVED_WEIGHT=0
 }
 
-# Add test result
+# Add weight for scoring
+add_weight() {
+    local weight="$1"
+    local achieved="$2"
+    
+    TOTAL_WEIGHT=$((TOTAL_WEIGHT + weight))
+    if [ "$achieved" = "1" ]; then
+        ACHIEVED_WEIGHT=$((ACHIEVED_WEIGHT + weight))
+    fi
+}
+
+# Add test result with weight support
 add_test_result() {
     local category="$1"
     local name="$2"
     local status="$3"  # PASS, FAIL, SKIP
     local details="$4"
+    local priority="$5"  # required, recommended, optional (optional parameter)
+    local install_hint="$6"  # install hint (optional parameter)
     
     TOTAL_TESTS=$((TOTAL_TESTS + 1))
+    
+    # Calculate weight if priority is provided
+    local weight=0
+    local achieved=0
+    if [ -n "$priority" ]; then
+        case "$priority" in
+            "required") weight=$WEIGHT_REQUIRED;;
+            "recommended") weight=$WEIGHT_RECOMMENDED;;
+            "optional") weight=$WEIGHT_OPTIONAL;;
+        esac
+    fi
     
     case "$status" in
         PASS)
             PASSED_TESTS=$((PASSED_TESTS + 1))
+            achieved=1
             ;;
         FAIL)
             FAILED_TESTS=$((FAILED_TESTS + 1))
+            achieved=0
             ;;
         SKIP)
             SKIPPED_TESTS=$((SKIPPED_TESTS + 1))
+            # Don't add weight for skipped tests
+            weight=0
             ;;
     esac
     
-    # Store result for reporting
+    # Add weight if applicable
+    if [ $weight -gt 0 ]; then
+        add_weight $weight $achieved
+    fi
+    
+    # Store result for reporting (include priority and install hint if provided)
     local result_line="$category|$name|$status|$details"
+    if [ -n "$priority" ]; then
+        result_line="$result_line|$priority"
+        if [ -n "$install_hint" ]; then
+            result_line="$result_line|$install_hint"
+        fi
+    fi
+    
     if [ -z "$TEST_RESULTS" ]; then
         TEST_RESULTS="$result_line"
     else
@@ -55,27 +108,98 @@ $result_line"
     fi
 }
 
+# Check command with dependency support
+check_command_with_deps() {
+    local cmd="$1"
+    local priority="$2"  # "required", "recommended", or "optional"
+    local description="$3"
+    local install_hint="$4"
+    local depends_on="$5"  # Optional dependency
+    local category="$6"    # Test category (defaults to "tools")
+    
+    # Default category
+    if [ -z "$category" ]; then
+        category="tools"
+    fi
+    
+    # Check dependency first
+    if [ -n "$depends_on" ] && ! command -v "$depends_on" >/dev/null 2>&1; then
+        add_test_result "$category" "Command: $cmd - $description" "SKIP" "Dependency $depends_on not found" "$priority" "$install_hint"
+        return
+    fi
+    
+    if command -v "$cmd" >/dev/null 2>&1; then
+        local version=""
+        case "$cmd" in
+            git)
+                version=$(git --version 2>/dev/null | head -1)
+                ;;
+            node|npm|pnpm|bun|deno)
+                # Check if managed by mise
+                if command -v mise >/dev/null 2>&1 && mise ls 2>/dev/null | grep -q "$cmd"; then
+                    local mise_version=$(mise current $cmd 2>/dev/null)
+                    if [ -n "$mise_version" ]; then
+                        version="$cmd $mise_version (managed by mise)"
+                    else
+                        version=$($cmd --version 2>/dev/null | head -1)
+                    fi
+                else
+                    version=$($cmd --version 2>/dev/null | head -1)
+                fi
+                ;;
+            *)
+                version=$($cmd --version 2>/dev/null | head -1 || echo "installed")
+                ;;
+        esac
+        add_test_result "$category" "Command: $cmd - $description" "PASS" "$version" "$priority" "$install_hint"
+    else
+        add_test_result "$category" "Command: $cmd - $description" "FAIL" "Command not found" "$priority" "$install_hint"
+    fi
+}
+
+# Check command (simplified version)
+check_command() {
+    check_command_with_deps "$1" "$2" "$3" "$4" "" "$5"
+}
+
+# Check path (file or directory)
+check_path() {
+    local path="$1"
+    local description="$2"
+    local type="$3"  # "file" or "directory"
+    local priority="$4"  # "required", "recommended", or "optional"
+    local category="$5"  # Test category (defaults to "config")
+    
+    # Default category
+    if [ -z "$category" ]; then
+        category="config"
+    fi
+    
+    if [ "$type" = "file" ]; then
+        if [ -f "$path" ]; then
+            add_test_result "$category" "$description" "PASS" "$path exists" "$priority"
+        else
+            add_test_result "$category" "$description" "FAIL" "$path not found" "$priority"
+        fi
+    elif [ "$type" = "directory" ]; then
+        if [ -d "$path" ]; then
+            add_test_result "$category" "$description" "PASS" "$path exists" "$priority"
+        else
+            add_test_result "$category" "$description" "FAIL" "$path not found" "$priority"
+        fi
+    fi
+}
+
 # Core requirement tests (environment-independent)
 test_core_requirements() {
     local adapter="$1"
     
-    # Test required commands
-    for cmd in sh bash git curl; do
-        if command -v "$cmd" >/dev/null 2>&1; then
-            local version=$(command -v "$cmd" >/dev/null 2>&1 && "$cmd" --version 2>/dev/null | head -1 || echo "unknown")
-            add_test_result "$TEST_CATEGORY_CORE" "Command: $cmd" "PASS" "$version"
-        else
-            add_test_result "$TEST_CATEGORY_CORE" "Command: $cmd" "FAIL" "Command not found"
-        fi
-    done
-    
-    # Test chezmoi
-    if command -v chezmoi >/dev/null 2>&1; then
-        local version=$(chezmoi --version 2>/dev/null | head -1)
-        add_test_result "$TEST_CATEGORY_CORE" "Command: chezmoi" "PASS" "$version"
-    else
-        add_test_result "$TEST_CATEGORY_CORE" "Command: chezmoi" "FAIL" "Chezmoi not found"
-    fi
+    # Test required commands using the new check_command function
+    check_command "sh" "required" "POSIX shell" "Should be pre-installed" "$TEST_CATEGORY_CORE"
+    check_command "bash" "required" "Bash shell" "apt install bash / brew install bash" "$TEST_CATEGORY_CORE"
+    check_command "git" "required" "Version control" "apt install git / brew install git" "$TEST_CATEGORY_CORE"
+    check_command "curl" "required" "HTTP client" "apt install curl / brew install curl" "$TEST_CATEGORY_CORE"
+    check_command "chezmoi" "required" "Dotfiles manager" "sh -c \"\$(curl -fsLS get.chezmoi.io)\"" "$TEST_CATEGORY_CORE"
 }
 
 # Shell compatibility tests (uses adapter)
@@ -213,13 +337,87 @@ test_integration() {
     fi
 }
 
+# Version management and language tools tests
+test_development_tools() {
+    local adapter="$1"
+    
+    # Version Management
+    check_command "mise" "recommended" "Version manager" "curl https://mise.run | sh" "$TEST_CATEGORY_TOOLS"
+    
+    # Development Tools
+    check_command "starship" "recommended" "Cross-shell prompt" "curl -sS https://starship.rs/install.sh | sh" "$TEST_CATEGORY_DEVELOPMENT"
+    check_command "gh" "optional" "GitHub CLI" "apt install gh / brew install gh" "$TEST_CATEGORY_DEVELOPMENT"
+    check_command "ghq" "optional" "Git repository manager" "go install github.com/x-motemen/ghq@latest" "$TEST_CATEGORY_DEVELOPMENT"
+    check_command "rg" "recommended" "Ripgrep search" "apt install ripgrep / brew install ripgrep" "$TEST_CATEGORY_TOOLS"
+    check_command "fd" "optional" "Find alternative" "apt install fd-find / brew install fd" "$TEST_CATEGORY_TOOLS"
+    check_command "fzf" "optional" "Fuzzy finder" "apt install fzf / brew install fzf" "$TEST_CATEGORY_TOOLS"
+    check_command "bat" "optional" "Cat with wings" "apt install bat / brew install bat" "$TEST_CATEGORY_TOOLS"
+    check_command "jq" "optional" "JSON processor" "apt install jq / brew install jq" "$TEST_CATEGORY_TOOLS"
+    check_command "age" "optional" "Encryption tool" "apt install age / brew install age" "$TEST_CATEGORY_SECURITY"
+    
+    # Text Editors
+    check_command "vim" "optional" "Vi improved" "apt install vim / brew install vim" "$TEST_CATEGORY_DEVELOPMENT"
+    check_command "code" "recommended" "VS Code" "https://code.visualstudio.com" "$TEST_CATEGORY_DEVELOPMENT"
+    
+    # Security & Authentication
+    check_command "op" "optional" "1Password CLI" "https://1password.com/downloads/command-line" "$TEST_CATEGORY_SECURITY"
+}
+
+# Languages and runtime tests
+test_language_tools() {
+    local adapter="$1"
+    
+    # Languages & Runtimes (managed by mise)
+    check_command_with_deps "node" "recommended" "Node.js runtime" "mise use node@latest" "" "$TEST_CATEGORY_LANGUAGES"
+    check_command_with_deps "pnpm" "optional" "Fast package manager" "mise use pnpm@latest" "" "$TEST_CATEGORY_LANGUAGES"
+    check_command_with_deps "bun" "optional" "JavaScript runtime" "mise use bun@latest" "" "$TEST_CATEGORY_LANGUAGES"
+    check_command_with_deps "deno" "optional" "Secure JS/TS runtime" "mise use deno@latest" "" "$TEST_CATEGORY_LANGUAGES"
+    check_command_with_deps "go" "optional" "Go programming language" "mise use go@latest" "" "$TEST_CATEGORY_LANGUAGES"
+    check_command_with_deps "rustc" "optional" "Rust compiler" "mise use rust@latest" "" "$TEST_CATEGORY_LANGUAGES"
+    check_command_with_deps "direnv" "optional" "Environment switcher" "mise use direnv@latest" "" "$TEST_CATEGORY_TOOLS"
+    
+    # Package Managers
+    check_command_with_deps "npm" "optional" "Node package manager" "Comes with Node.js" "node" "$TEST_CATEGORY_LANGUAGES"
+    check_command_with_deps "cargo" "optional" "Rust package manager" "Comes with Rust" "rustc" "$TEST_CATEGORY_LANGUAGES"
+    
+    # Specialized tools
+    check_command_with_deps "similarity-ts" "optional" "Code similarity detector" "cargo install similarity-ts" "cargo" "$TEST_CATEGORY_DEVELOPMENT"
+    check_command_with_deps "git-sequential-stage" "optional" "Git staging helper" "go install github.com/syou6162/git-sequential-stage@latest" "go" "$TEST_CATEGORY_DEVELOPMENT"
+    
+    # Language-specific tools (runtime dependent)
+    if command -v go >/dev/null 2>&1; then
+        check_command "gofmt" "optional" "Go formatter" "Comes with Go installation" "$TEST_CATEGORY_LANGUAGES"
+    fi
+    
+    if command -v rustc >/dev/null 2>&1; then
+        check_command "rustfmt" "optional" "Rust formatter" "Comes with Rust installation" "$TEST_CATEGORY_LANGUAGES"
+        check_command "clippy-driver" "optional" "Rust linter" "rustup component add clippy" "$TEST_CATEGORY_LANGUAGES"
+    fi
+    
+    if command -v node >/dev/null 2>&1; then
+        check_command "npx" "optional" "Node package executor" "Comes with Node.js/npm" "$TEST_CATEGORY_LANGUAGES"
+    fi
+}
+
+# Directory structure tests
+test_directory_structure() {
+    local adapter="$1"
+    
+    # Essential directories
+    check_path "$HOME/.local/bin" "User binaries directory" "directory" "recommended" "$TEST_CATEGORY_CONFIG"
+    check_path "$HOME/.local/share/zsh-completions" "Zsh completions" "directory" "optional" "$TEST_CATEGORY_CONFIG"
+    check_path "$HOME/.local/share/zsh-functions" "Zsh functions" "directory" "optional" "$TEST_CATEGORY_CONFIG"
+    check_path "$HOME/.config" "User configuration directory" "directory" "recommended" "$TEST_CATEGORY_CONFIG"
+    check_path "$HOME/.claude" "Claude configuration directory" "directory" "optional" "$TEST_CATEGORY_CONFIG"
+}
+
 # Run all tests with specified adapter
 run_all_tests() {
     local adapter="$1"
     local categories="$2"  # Optional: specific categories to run
     
     if [ -z "$categories" ]; then
-        categories="$TEST_CATEGORY_CORE $TEST_CATEGORY_SHELL $TEST_CATEGORY_CONFIG $TEST_CATEGORY_INTEGRATION"
+        categories="$TEST_CATEGORY_CORE $TEST_CATEGORY_SHELL $TEST_CATEGORY_CONFIG $TEST_CATEGORY_TOOLS $TEST_CATEGORY_LANGUAGES $TEST_CATEGORY_DEVELOPMENT $TEST_CATEGORY_SECURITY $TEST_CATEGORY_INTEGRATION"
     fi
     
     init_test_engine
@@ -235,6 +433,13 @@ run_all_tests() {
             "$TEST_CATEGORY_CONFIG")
                 test_configuration_files "$adapter"
                 test_path_configuration "$adapter"
+                test_directory_structure "$adapter"
+                ;;
+            "$TEST_CATEGORY_TOOLS"|"$TEST_CATEGORY_DEVELOPMENT"|"$TEST_CATEGORY_SECURITY")
+                test_development_tools "$adapter"
+                ;;
+            "$TEST_CATEGORY_LANGUAGES")
+                test_language_tools "$adapter"
                 ;;
             "$TEST_CATEGORY_INTEGRATION")
                 test_integration "$adapter"
@@ -245,12 +450,19 @@ run_all_tests() {
 
 # Get test results summary
 get_test_summary() {
+    local health_score=0
+    if [ $TOTAL_WEIGHT -gt 0 ]; then
+        health_score=$((ACHIEVED_WEIGHT * 100 / TOTAL_WEIGHT))
+    fi
+    
     cat << EOF
 Test Summary:
   Total Tests: $TOTAL_TESTS
   Passed: $PASSED_TESTS
   Failed: $FAILED_TESTS
   Skipped: $SKIPPED_TESTS
+  
+Health Score: ${health_score}% (${ACHIEVED_WEIGHT}/${TOTAL_WEIGHT})
 EOF
 }
 

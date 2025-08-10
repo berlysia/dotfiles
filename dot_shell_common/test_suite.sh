@@ -47,6 +47,10 @@ Test Categories:
     core         - Essential commands (git, curl, chezmoi, shells)
     shell        - Shell compatibility (bash/zsh loading)
     config       - Configuration files (bashrc, zshrc, shell_common)
+    tools        - Development tools (rg, fzf, bat, jq, etc.)
+    languages    - Programming languages and runtimes
+    development  - Development environment (starship, gh, vim, vscode)
+    security     - Security tools (age, 1password-cli, etc.)
     integration  - Functions, aliases, and advanced features
 
 Exit Codes:
@@ -142,7 +146,7 @@ parse_categories() {
 # Validate categories
 validate_categories() {
     local categories="$1"
-    local valid_categories="core shell config integration"
+    local valid_categories="core shell config tools languages development security integration"
     
     if [ -z "$categories" ]; then
         return 0  # Empty is valid (means all)
