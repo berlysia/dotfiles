@@ -52,7 +52,7 @@ add_weight() {
 add_test_result() {
     local category="$1"
     local name="$2"
-    local status="$3"  # PASS, FAIL, SKIP
+    local test_status="$3"  # PASS, FAIL, SKIP
     local details="$4"
     local priority="$5"  # required, recommended, optional (optional parameter)
     local install_hint="$6"  # install hint (optional parameter)
@@ -70,7 +70,7 @@ add_test_result() {
         esac
     fi
     
-    case "$status" in
+    case "$test_status" in
         PASS)
             PASSED_TESTS=$((PASSED_TESTS + 1))
             achieved=1
@@ -92,7 +92,7 @@ add_test_result() {
     fi
     
     # Store result for reporting (include priority and install hint if provided)
-    local result_line="$category|$name|$status|$details"
+    local result_line="$category|$name|$test_status|$details"
     if [ -n "$priority" ]; then
         result_line="$result_line|$priority"
         if [ -n "$install_hint" ]; then
@@ -411,6 +411,170 @@ test_directory_structure() {
     check_path "$HOME/.claude" "Claude configuration directory" "directory" "optional" "$TEST_CATEGORY_CONFIG"
 }
 
+# OS-specific package manager tests
+test_package_managers() {
+    local adapter="$1"
+    
+    # Detect OS type
+    local os_type="unknown"
+    if [ "$(uname)" = "Linux" ]; then
+        os_type="linux"
+    elif [ "$(uname)" = "Darwin" ]; then
+        os_type="darwin"
+    elif uname -s | grep -qi "mingw\|msys\|cygwin"; then
+        os_type="windows"
+    fi
+    
+    case "$os_type" in
+        linux)
+            if command -v apt >/dev/null 2>&1; then
+                check_command "apt" "APT package manager" "System package manager" "recommended" "$TEST_CATEGORY_TOOLS"
+            elif command -v yum >/dev/null 2>&1; then
+                check_command "yum" "YUM package manager" "System package manager" "recommended" "$TEST_CATEGORY_TOOLS"
+            elif command -v pacman >/dev/null 2>&1; then
+                check_command "pacman" "Pacman package manager" "System package manager" "recommended" "$TEST_CATEGORY_TOOLS"
+            fi
+            check_command "notify-send" "Desktop notifications" "apt install libnotify-bin" "optional" "$TEST_CATEGORY_TOOLS"
+            check_command "paplay" "Audio playback" "apt install pulseaudio-utils" "optional" "$TEST_CATEGORY_TOOLS"
+            ;;
+        darwin)
+            check_command "brew" "Homebrew package manager" "https://brew.sh" "recommended" "$TEST_CATEGORY_TOOLS"
+            check_command "terminal-notifier" "Desktop notifications" "brew install terminal-notifier" "optional" "$TEST_CATEGORY_TOOLS"
+            ;;
+        windows)
+            check_command "winget" "Windows Package Manager" "Microsoft Store: App Installer" "recommended" "$TEST_CATEGORY_TOOLS"
+            check_command "pwsh" "PowerShell Core" "winget install Microsoft.PowerShell" "recommended" "$TEST_CATEGORY_TOOLS"
+            ;;
+    esac
+}
+
+# Git configuration tests
+test_git_configuration() {
+    local adapter="$1"
+    
+    if command -v git >/dev/null 2>&1; then
+        # Check user configuration
+        local user_name=$(git config --global user.name 2>/dev/null)
+        local user_email=$(git config --global user.email 2>/dev/null)
+        
+        if [ -n "$user_name" ] && [ -n "$user_email" ]; then
+            add_test_result "$TEST_CATEGORY_CONFIG" "Git user configuration" "PASS" "$user_name <$user_email>" "required" ""
+        else
+            add_test_result "$TEST_CATEGORY_CONFIG" "Git user configuration" "FAIL" "user.name or user.email not set" "required" "git config --global user.name 'Your Name' && git config --global user.email 'you@example.com'"
+        fi
+        
+        # Check GPG signing configuration
+        local gpg_sign=$(git config --global commit.gpgsign 2>/dev/null)
+        if [ "$gpg_sign" = "true" ]; then
+            local signing_key=$(git config --global user.signingkey 2>/dev/null)
+            if [ -n "$signing_key" ]; then
+                add_test_result "$TEST_CATEGORY_CONFIG" "Git GPG signing" "PASS" "enabled with key $signing_key" "recommended" ""
+            else
+                add_test_result "$TEST_CATEGORY_CONFIG" "Git GPG signing" "FAIL" "enabled but no signing key configured" "recommended" "git config --global user.signingkey <key-id>"
+            fi
+        else
+            add_test_result "$TEST_CATEGORY_CONFIG" "Git GPG signing" "SKIP" "not enabled" "optional" "git config --global commit.gpgsign true"
+        fi
+        
+        # Check for chezmoi repository health
+        if command -v chezmoi >/dev/null 2>&1; then
+            local chezmoi_source=$(chezmoi source-path 2>/dev/null)
+            if [ -d "$chezmoi_source" ] && [ -d "$chezmoi_source/.git" ]; then
+                # Check if repository is clean (save current directory)
+                local current_dir="$PWD"
+                cd "$chezmoi_source"
+                if [ -z "$(git status --porcelain 2>/dev/null)" ]; then
+                    add_test_result "$TEST_CATEGORY_CONFIG" "Chezmoi repository status" "PASS" "clean working directory" "recommended" ""
+                else
+                    add_test_result "$TEST_CATEGORY_CONFIG" "Chezmoi repository status" "WARN" "uncommitted changes" "recommended" "cd $(chezmoi source-path) && git add -A && git commit -m 'Update dotfiles'"
+                fi
+                cd "$current_dir"
+            else
+                add_test_result "$TEST_CATEGORY_CONFIG" "Chezmoi repository status" "FAIL" "not initialized or not a git repository" "required" "chezmoi init --apply <your-dotfiles-repo>"
+            fi
+        fi
+    else
+        add_test_result "$TEST_CATEGORY_CONFIG" "Git configuration" "FAIL" "git command not found" "required" "apt install git / brew install git"
+    fi
+}
+
+# Advanced shell configuration validation
+test_shell_functions() {
+    local adapter="$1"
+    
+    # Get shell common path using adapter
+    local shell_common_dir
+    if [ -n "$adapter" ]; then
+        shell_common_dir=$("${adapter}_get_shell_common_dir")
+    else
+        shell_common_dir="$HOME/.shell_common"
+    fi
+    
+    local functions_file="$shell_common_dir/functions.sh"
+    
+    if [ -f "$functions_file" ]; then
+        # Check for key functions
+        if grep -q "^extract[[:space:]]*(" "$functions_file" 2>/dev/null; then
+            add_test_result "$TEST_CATEGORY_INTEGRATION" "Function: extract" "PASS" "archive extraction utility" "optional" ""
+        else
+            add_test_result "$TEST_CATEGORY_INTEGRATION" "Function: extract" "FAIL" "not found" "optional" "Define extract function in $functions_file"
+        fi
+        
+        if grep -q "^opr[[:space:]]*(" "$functions_file" 2>/dev/null; then
+            add_test_result "$TEST_CATEGORY_INTEGRATION" "Function: opr" "PASS" "1Password run utility" "optional" ""
+        else
+            add_test_result "$TEST_CATEGORY_INTEGRATION" "Function: opr" "SKIP" "not found" "optional" "Define opr function for 1Password CLI"
+        fi
+        
+        if grep -q "^opl[[:space:]]*(" "$functions_file" 2>/dev/null; then
+            add_test_result "$TEST_CATEGORY_INTEGRATION" "Function: opl" "PASS" "1Password load utility" "optional" ""
+        else
+            add_test_result "$TEST_CATEGORY_INTEGRATION" "Function: opl" "SKIP" "not found" "optional" "Define opl function for 1Password CLI"
+        fi
+    else
+        add_test_result "$TEST_CATEGORY_INTEGRATION" "Shell functions file" "FAIL" "functions.sh not found" "recommended" "Create $functions_file"
+    fi
+}
+
+# Advanced alias validation
+test_shell_aliases() {
+    local adapter="$1"
+    
+    # Get shell common path using adapter
+    local shell_common_dir
+    if [ -n "$adapter" ]; then
+        shell_common_dir=$("${adapter}_get_shell_common_dir")
+    else
+        shell_common_dir="$HOME/.shell_common"
+    fi
+    
+    local aliases_file="$shell_common_dir/aliases.sh"
+    
+    if [ -f "$aliases_file" ]; then
+        # Check for key aliases
+        if grep -q "^alias claude=" "$aliases_file" 2>/dev/null; then
+            add_test_result "$TEST_CATEGORY_INTEGRATION" "Alias: claude" "PASS" "Claude CLI shortcut" "optional" ""
+        else
+            add_test_result "$TEST_CATEGORY_INTEGRATION" "Alias: claude" "SKIP" "not found" "optional" "Define claude alias in $aliases_file"
+        fi
+        
+        # Check for common development aliases
+        if grep -q "^alias ll=" "$aliases_file" 2>/dev/null; then
+            add_test_result "$TEST_CATEGORY_INTEGRATION" "Alias: ll" "PASS" "detailed listing" "optional" ""
+        else
+            add_test_result "$TEST_CATEGORY_INTEGRATION" "Alias: ll" "SKIP" "not found" "optional" "Define ll='ls -la' in $aliases_file"
+        fi
+        
+        if grep -q "^alias la=" "$aliases_file" 2>/dev/null; then
+            add_test_result "$TEST_CATEGORY_INTEGRATION" "Alias: la" "PASS" "show all files" "optional" ""
+        else
+            add_test_result "$TEST_CATEGORY_INTEGRATION" "Alias: la" "SKIP" "not found" "optional" "Define la='ls -A' in $aliases_file"
+        fi
+    else
+        add_test_result "$TEST_CATEGORY_INTEGRATION" "Shell aliases file" "FAIL" "aliases.sh not found" "recommended" "Create $aliases_file"
+    fi
+}
+
 # Run all tests with specified adapter
 run_all_tests() {
     local adapter="$1"
@@ -421,6 +585,12 @@ run_all_tests() {
     fi
     
     init_test_engine
+    
+    # POSIX-compatible category iteration with zsh compatibility
+    if [ -n "$ZSH_VERSION" ]; then
+        # Enable word splitting in zsh
+        setopt SH_WORD_SPLIT 2>/dev/null || true
+    fi
     
     for category in $categories; do
         case "$category" in
@@ -434,8 +604,16 @@ run_all_tests() {
                 test_configuration_files "$adapter"
                 test_path_configuration "$adapter"
                 test_directory_structure "$adapter"
+                test_git_configuration "$adapter"
                 ;;
-            "$TEST_CATEGORY_TOOLS"|"$TEST_CATEGORY_DEVELOPMENT"|"$TEST_CATEGORY_SECURITY")
+            "$TEST_CATEGORY_TOOLS")
+                test_development_tools "$adapter"
+                test_package_managers "$adapter"
+                ;;
+            "$TEST_CATEGORY_DEVELOPMENT")
+                test_development_tools "$adapter"
+                ;;
+            "$TEST_CATEGORY_SECURITY")
                 test_development_tools "$adapter"
                 ;;
             "$TEST_CATEGORY_LANGUAGES")
@@ -443,6 +621,8 @@ run_all_tests() {
                 ;;
             "$TEST_CATEGORY_INTEGRATION")
                 test_integration "$adapter"
+                test_shell_functions "$adapter"
+                test_shell_aliases "$adapter"
                 ;;
         esac
     done
