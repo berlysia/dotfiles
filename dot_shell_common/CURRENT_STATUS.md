@@ -90,6 +90,19 @@ head -n 213 dotfiles_doctor.sh | tail -n +102
 **作業内容**: dotfiles_doctor.shの`check_command()`と`check_command_with_deps()`関数をcore/test_engine.shに統合し、重要度・重み付けシステムを実装する。
 
 ---
-*Last Updated: 2025-08-11 02:30 JST*  
-*Git Status: Clean (commit 98da13f)*  
+*Last Updated: 2025-08-11 02:35 JST*  
+*Git Status: Clean (commit b1fb7a5)*  
 *Ready for Phase 2.1 implementation*
+
+## 🤖 Claude用: 新しいセッションで作業再開する場合
+
+**「続けて」と言われたら、以下の手順で即座に開発を継続：**
+
+1. **START_HERE.mdを読んで状況把握**
+2. **Phase 2.1を開始** - dotfiles_doctor.shのcheck_command統合  
+3. **TodoWriteツールで進捗管理**を開始
+
+```bash
+cd /home/berlysia/.local/share/chezmoi/dot_shell_common
+cat START_HERE.md
+```
