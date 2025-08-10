@@ -59,12 +59,37 @@ opl () {
   fi
 }
 
-# Dotfiles health check function
+# Enhanced dotfiles health check function - now using unified test suite
 dotfiles_doctor() {
-  if [ -f "$SHELL_COMMON/dotfiles_doctor.sh" ]; then
+  local script_path="$SHELL_COMMON/test_suite.sh"
+  
+  # Check if new unified test suite exists
+  if [ -f "$script_path" ]; then
+    # Show upgrade notice for interactive sessions (not in quiet mode)
+    local show_notice=1
+    for arg in "$@"; do
+      case "$arg" in
+        -q|--quiet) show_notice=0 ;;
+      esac
+    done
+    
+    if [ $show_notice -eq 1 ] && [ -t 1 ]; then
+      echo "🚀 dotfiles_doctor() upgraded with enhanced features:" >&2
+      echo "   • Weighted health scoring" >&2
+      echo "   • Actionable recommendations" >&2
+      echo "   • Chezmoi apply readiness status" >&2
+      echo "" >&2
+    fi
+    
+    # Execute new test suite with all arguments
+    "$SHELL" "$script_path" "$@"
+  elif [ -f "$SHELL_COMMON/dotfiles_doctor.sh" ]; then
+    # Fallback to legacy if new suite not found
+    echo "⚠️  Using legacy dotfiles_doctor.sh (consider upgrading)" >&2
     "$SHELL" "$SHELL_COMMON/dotfiles_doctor.sh" "$@"
   else
-    echo "dotfiles_doctor.sh not found at $SHELL_COMMON/dotfiles_doctor.sh"
+    echo "❌ Neither test_suite.sh nor dotfiles_doctor.sh found at $SHELL_COMMON/" >&2
+    echo "   Please ensure dotfiles are properly installed." >&2
     return 1
   fi
 }
