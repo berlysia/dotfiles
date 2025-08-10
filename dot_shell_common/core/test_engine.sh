@@ -493,6 +493,69 @@ test_git_configuration() {
                 add_test_result "$TEST_CATEGORY_CONFIG" "Chezmoi repository status" "FAIL" "not initialized or not a git repository" "required" "chezmoi init --apply <your-dotfiles-repo>"
             fi
         fi
+        
+        # Advanced Git workflow checks
+        test_advanced_git_workflow
+    fi
+}
+
+# Advanced Git workflow checks
+test_advanced_git_workflow() {
+    if command -v git >/dev/null 2>&1; then
+        # Check if we're in a git repository
+        if git rev-parse --git-dir >/dev/null 2>&1; then
+            # Check current branch status
+            local current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+            if [ -n "$current_branch" ] && [ "$current_branch" != "HEAD" ]; then
+                add_test_result "$TEST_CATEGORY_CONFIG" "Git branch status" "PASS" "on branch $current_branch" "optional" ""
+                
+                # Check if branch has remote tracking
+                local remote_branch=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null)
+                if [ -n "$remote_branch" ]; then
+                    # Check if local is ahead/behind remote
+                    local ahead_behind=$(git rev-list --left-right --count HEAD...@{u} 2>/dev/null)
+                    if [ -n "$ahead_behind" ]; then
+                        local ahead=$(echo "$ahead_behind" | cut -f1)
+                        local behind=$(echo "$ahead_behind" | cut -f2)
+                        if [ "$ahead" = "0" ] && [ "$behind" = "0" ]; then
+                            add_test_result "$TEST_CATEGORY_CONFIG" "Git remote sync" "PASS" "up to date with $remote_branch" "optional" ""
+                        else
+                            add_test_result "$TEST_CATEGORY_CONFIG" "Git remote sync" "WARN" "$ahead commits ahead, $behind behind $remote_branch" "optional" "git pull / git push"
+                        fi
+                    fi
+                else
+                    add_test_result "$TEST_CATEGORY_CONFIG" "Git remote tracking" "WARN" "no remote tracking branch" "optional" "git push -u origin $current_branch"
+                fi
+            else
+                add_test_result "$TEST_CATEGORY_CONFIG" "Git branch status" "WARN" "detached HEAD state" "optional" "git checkout <branch-name>"
+            fi
+            
+            # Check for uncommitted changes
+            if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+                local staged=$(git diff --cached --name-only 2>/dev/null | wc -l)
+                local unstaged=$(git diff --name-only 2>/dev/null | wc -l)
+                local untracked=$(git ls-files --others --exclude-standard 2>/dev/null | wc -l)
+                add_test_result "$TEST_CATEGORY_CONFIG" "Git working directory" "WARN" "$staged staged, $unstaged modified, $untracked untracked" "optional" "git add -A && git commit"
+            else
+                add_test_result "$TEST_CATEGORY_CONFIG" "Git working directory" "PASS" "clean" "optional" ""
+            fi
+            
+            # Check recent commit signature (if GPG signing is enabled)
+            local gpg_sign=$(git config commit.gpgsign 2>/dev/null)
+            if [ "$gpg_sign" = "true" ]; then
+                local last_commit_signed=$(git log -1 --format="%G?" 2>/dev/null)
+                case "$last_commit_signed" in
+                    "G") add_test_result "$TEST_CATEGORY_CONFIG" "Git commit signature" "PASS" "last commit properly signed" "optional" "" ;;
+                    "B") add_test_result "$TEST_CATEGORY_CONFIG" "Git commit signature" "WARN" "last commit bad signature" "optional" "Check GPG key configuration" ;;
+                    "U") add_test_result "$TEST_CATEGORY_CONFIG" "Git commit signature" "WARN" "last commit untrusted signature" "optional" "Trust the signing key" ;;
+                    "X") add_test_result "$TEST_CATEGORY_CONFIG" "Git commit signature" "WARN" "last commit signature expired" "optional" "Renew GPG key" ;;
+                    "Y") add_test_result "$TEST_CATEGORY_CONFIG" "Git commit signature" "WARN" "last commit signature from expired key" "optional" "Update signing key" ;;
+                    "R") add_test_result "$TEST_CATEGORY_CONFIG" "Git commit signature" "WARN" "last commit signature revoked" "optional" "Update signing key" ;;
+                    "E") add_test_result "$TEST_CATEGORY_CONFIG" "Git commit signature" "FAIL" "last commit signature error" "optional" "Check GPG configuration" ;;
+                    *) add_test_result "$TEST_CATEGORY_CONFIG" "Git commit signature" "FAIL" "last commit not signed" "optional" "Enable GPG signing" ;;
+                esac
+            fi
+        fi
     else
         add_test_result "$TEST_CATEGORY_CONFIG" "Git configuration" "FAIL" "git command not found" "required" "apt install git / brew install git"
     fi
