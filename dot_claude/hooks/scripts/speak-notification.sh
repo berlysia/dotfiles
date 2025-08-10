@@ -23,8 +23,14 @@ SESSION_DIR="${TEMP_DIR}/sessions/${SESSION_ID}"
 CURRENT_WAV_FILE=""
 
 # Ensure directories exist
-mkdir -p "$SESSION_DIR"
-mkdir -p "$(dirname "$LOG_FILE")"
+mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
+mkdir -p "$TEMP_DIR" 2>/dev/null || true
+mkdir -p "$SESSION_DIR" 2>/dev/null || true
+
+# Function to log messages
+log_message() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE"
+}
 
 # Cleanup function for trap
 cleanup_on_exit() {
@@ -41,14 +47,12 @@ trap cleanup_on_exit EXIT INT TERM
 
 # Clean up old files on startup (files older than 24 hours)
 cleanup_old_files() {
-    find "$TEMP_DIR" -type f -name "*.wav" -mmin +1440 -delete 2>/dev/null || true
-    find "$TEMP_DIR/sessions" -type d -empty -delete 2>/dev/null || true
-    log_message "Cleaned up old WAV files (>24 hours)"
-}
-
-# Function to log messages
-log_message() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE"
+    # Only clean if directory exists
+    if [ -d "$TEMP_DIR" ]; then
+        find "$TEMP_DIR" -type f -name "*.wav" -mmin +1440 -delete 2>/dev/null || true
+        find "$TEMP_DIR/sessions" -type d -empty -delete 2>/dev/null || true
+        log_message "Cleaned up old WAV files (>24 hours)"
+    fi
 }
 
 # Function to check if AivisSpeech is available
@@ -66,7 +70,7 @@ generate_audio_query() {
     local speaker_id="${2:-$DEFAULT_SPEAKER_ID}"
     
     local response=$(curl -s -X POST \
-        "${AIVISSPEECH_HOST}/audio_query?text=$(jq -rn --arg text "$text" '$text|@uri')&speaker=${speaker_id}" \
+        "${AIVISSPEECH_HOST}/audio_query?text=$(echo -n "$text" | jq -rRs '@uri')&speaker=${speaker_id}" \
         -H "Content-Type: application/json" 2>/dev/null)
     
     if [ $? -ne 0 ] || [ -z "$response" ]; then
@@ -285,6 +289,15 @@ speak_notification() {
         return $?
     fi
     
+    # Ensure session directory exists (in case it was cleaned up)
+    if [ ! -d "$SESSION_DIR" ]; then
+        mkdir -p "$SESSION_DIR" 2>/dev/null || {
+            log_message "ERROR: Cannot create session directory: $SESSION_DIR"
+            execute_fallback_notification "$event_type" "Session directory creation failed"
+            return 1
+        }
+    fi
+    
     # Generate unique filename in session directory
     local timestamp=$(date +%s%N)
     local audio_file="${SESSION_DIR}/notification_${event_type}_${timestamp}.wav"
@@ -332,14 +345,11 @@ get_repo_info() {
     echo "$repo_name"
 }
 
-# Clean up old files on Notification event (first event usually)
-if [ "$1" = "Notification" ]; then
-    cleanup_old_files
-fi
-
 # Main execution
 case "$1" in
     "Notification")
+        # Clean up old files on Notification event (first event usually)
+        cleanup_old_files
         repo_name=$(get_repo_info)
         message="$repo_name リポジトリで操作の確認が必要です"
         speak_notification "$message" "Notification"
