@@ -1,0 +1,11 @@
+#!/bin/sh
+# executable_doctor
+# Legacy wrapper - redirects to unified test suite
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+echo "Note: 'doctor' command now uses the unified test suite."
+echo "Running: test_suite.sh --post-apply --verbose"
+echo ""
+
+exec "$SCRIPT_DIR/test_suite.sh" --post-apply --verbose "$@"

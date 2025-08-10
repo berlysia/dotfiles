@@ -1,11 +1,6 @@
 #!/bin/sh
 # Common functions for all shells
 
-# Create a directory and cd into it
-mkcd() {
-  mkdir -p "$1" && cd "$1"
-}
-
 # Extract various archive formats
 extract() {
   if [ -f "$1" ]; then
@@ -61,5 +56,15 @@ opl () {
     source <(cat $HOME/.env.1password | op inject)
     OP_COMMAND_PATHS=$OP_COMMAND_PATHS:"$HOME"
     echo -e '☑️ Done!'
+  fi
+}
+
+# Dotfiles health check function
+dotfiles_doctor() {
+  if [ -f "$SHELL_COMMON/dotfiles_doctor.sh" ]; then
+    "$SHELL" "$SHELL_COMMON/dotfiles_doctor.sh" "$@"
+  else
+    echo "dotfiles_doctor.sh not found at $SHELL_COMMON/dotfiles_doctor.sh"
+    return 1
   fi
 }

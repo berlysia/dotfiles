@@ -1,0 +1,55 @@
+name: Shell Compatibility Test
+
+on:
+  push:
+    branches: [ master, main ]
+    paths:
+      - 'dot_shell_common/**'
+      - 'dot_bashrc'
+      - 'dot_bash_profile'
+      - 'dot_zsh/**'
+      - 'dot_zshenv'
+      - 'run_onchange_test-shell-compatibility.sh'
+      - '.github/workflows/test-shell-compatibility.yml'
+  pull_request:
+    branches: [ master, main ]
+    paths:
+      - 'dot_shell_common/**'
+      - 'dot_bashrc'
+      - 'dot_bash_profile'
+      - 'dot_zsh/**'
+      - 'dot_zshenv'
+      - 'run_onchange_test-shell-compatibility.sh'
+      - '.github/workflows/test-shell-compatibility.yml'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Install shells on Ubuntu
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y zsh bash
+    
+    - name: Install shells on macOS
+      if: runner.os == 'macOS'
+      run: |
+        # bash and zsh are already installed on macOS
+        echo "bash version: $(bash --version | head -1)"
+        echo "zsh version: $(zsh --version)"
+    
+    - name: Run shell compatibility tests
+      run: |
+        chmod +x dot_shell_common/test_suite.sh
+        ./dot_shell_common/test_suite.sh --pre-apply -v
+      env:
+        GITHUB_WORKSPACE: ${{ github.workspace }}
