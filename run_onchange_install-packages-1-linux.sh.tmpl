@@ -14,6 +14,13 @@ else
   ln -s $(command -v batcat) ~/.local/bin/bat
 fi
 
+if command -v fd >/dev/null 2>&1; then
+  echo "fd-find is already installed"
+else
+  echo "create symlink for fd"
+  ln -s $(command -v fdfind) ~/.local/bin/fd
+fi
+
 if command -v starship >/dev/null 2>&1; then
   echo "starship is already installed"
 else
