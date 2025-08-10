@@ -177,7 +177,7 @@ play_sound() {
             return 1
         fi
         
-        # Play prefix sound first if it exists
+        # Play prefix sound first if it exists and wait for completion
         if [[ -f "$prefix_file" ]]; then
             $sound_cmd "$prefix_file" 2>/dev/null || echo "Prefix sound file not found: $prefix_file"
         fi
@@ -222,15 +222,15 @@ case "$1" in
         # Log the notification
         log_notification "Notification" "$notification_message" "$sound_type"
         
-        # Play the sound
-        play_sound "$sound_type"
+        # Play the sound in background to avoid blocking
+        play_sound "$sound_type" &
         ;;
     "Stop")
         # Log the stop event
         log_notification "Stop" "" "Stop"
         
-        # Play the sound
-        play_sound "Stop"
+        # Play the sound in background to avoid blocking
+        play_sound "Stop" &
         ;;
     "stats")
         show_stats
