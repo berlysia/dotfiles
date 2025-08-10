@@ -13,7 +13,7 @@ Complete integration of `dotfiles_doctor.sh` functionality into the unified `tes
   - [x] Legacy compatibility maintained
   - **Commit**: `4db618c` - Foundation complete with project CLAUDE.md
 
-## Phase 2: Core Integration 🚧
+## Phase 2: Core Integration ✅🚧
 **Objective**: Merge dotfiles_doctor.sh's 120+ comprehensive checks into test_suite.sh
 
 ### Analysis Complete ✅
@@ -23,34 +23,37 @@ Complete integration of `dotfiles_doctor.sh` functionality into the unified `tes
   - 20% environment-dependent (file paths, configurations)
   - Superior UX: priority classification, weighted scoring, install hints
 
-### Tasks Remaining
-- [ ] **2.1: Extract Core Functions**
-  - [ ] `check_command()` with priority/weight system
-  - [ ] `check_command_with_deps()` for dependency chains
-  - [ ] `check_path()` with adapter-aware path resolution
-  - [ ] `check_env()` for environment variables
-  - [ ] Priority system: required/recommended/optional
-  - [ ] Weight system: WEIGHT_REQUIRED=10, WEIGHT_RECOMMENDED=5, WEIGHT_OPTIONAL=1
+### Phase 2.1: Extract Core Functions ✅ COMPLETE
+- [x] **`check_command()` with priority/weight system**
+- [x] **`check_command_with_deps()` for dependency chains**
+- [x] **`check_path()` with adapter-aware path resolution**
+- [x] **Priority system: required/recommended/optional**
+- [x] **Weight system: WEIGHT_REQUIRED=10, WEIGHT_RECOMMENDED=5, WEIGHT_OPTIONAL=1**
+- [x] **Health score calculation with percentage display**
+- [x] **Install hints with OS-specific commands**
+- [x] **8 test categories: core, tools, languages, development, security, config, shell, integration**
+- [x] **120+ comprehensive health checks integrated**
+- [x] **Mise integration and version detection**
+- [x] **Dependency checking for conditional tools**
+- **Commit**: `07341f1` - Phase 2.1 core integration complete
 
-- [ ] **2.2: Integrate Advanced Features**
-  - [ ] OS-specific package management checks (apt/brew/winget)
-  - [ ] Version managers (mise, asdf, direnv)
-  - [ ] Programming languages & runtimes (node, go, rust, python)
-  - [ ] Development tools (starship, gh, ghq, ripgrep, fzf, bat, jq)
-  - [ ] Text editors (vim, vscode)
-  - [ ] Security tools (1password, age, gpg)
+### Phase 2.2: Advanced Features Integration 🚧 IN PROGRESS
+- [ ] **OS-specific package management checks (apt/brew/winget)**
+- [ ] **Git configuration validation (user.name, user.email, GPG signing)**
+- [ ] **Chezmoi status and repository health checks**
+- [ ] **Enhanced shell function and alias validation**
+- [ ] **Directory structure validation improvements**
 
-- [ ] **2.3: Enhanced Validation**
-  - [ ] Git configuration validation (user.name, user.email, GPG signing)
-  - [ ] Chezmoi status and repository health
-  - [ ] Shell function and alias validation
-  - [ ] Directory structure validation ($HOME/.local/bin, .config, etc.)
+### Phase 2.3: Enhanced Validation (Pending)
+- [ ] **Advanced Git workflow checks**
+- [ ] **Environment-specific optimizations**
+- [ ] **Cross-platform compatibility improvements**
 
-- [ ] **2.4: Comprehensive Reporting**
-  - [ ] Weighted health scoring system
-  - [ ] Detailed install hints with OS-specific commands
-  - [ ] Actionable recommendations based on missing components
-  - [ ] Summary with ready/not-ready status for chezmoi apply
+### Phase 2.4: Comprehensive Reporting (Pending)
+- [x] **Weighted health scoring system** ✅ (completed in 2.1)
+- [x] **Detailed install hints with OS-specific commands** ✅ (completed in 2.1)
+- [ ] **Actionable recommendations based on missing components**
+- [ ] **Enhanced summary with ready/not-ready status for chezmoi apply**
 
 ## Phase 3: Adapter Enhancement 🔄
 **Objective**: Improve adapter pattern to handle all environment variations
