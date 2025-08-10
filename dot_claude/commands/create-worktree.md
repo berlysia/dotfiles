@@ -32,8 +32,7 @@ Creates a new branch with worktree, executes the given task, and optionally crea
    - Get current branch
 
 2. **Worktree Setup**
-   - Create `.git/worktree` directory (if not exists)
-   - Create new branch from current branch
+   - Use `git-worktree-create <branch-name>` command
    - Create new worktree under `.git/worktree`
 
 3. **Task Execution**
@@ -74,6 +73,11 @@ Branch names are auto-generated in the format:
 
 Manual worktree cleanup after completion:
 ```bash
+git-worktree-cleanup
+```
+
+Or manually:
+```bash
 git worktree remove .git/worktree/<branch-name>
 git branch -d <branch-name>
 ```
@@ -81,5 +85,7 @@ git branch -d <branch-name>
 ## Requirements
 
 - git worktree support
+- git-worktree-create command (available via dotfiles)
+- git-worktree-cleanup command (available via dotfiles)
 - gh CLI installed and authenticated (only if using `--pr` flag)
 - Write permissions to repository
