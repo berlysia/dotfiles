@@ -1,11 +1,27 @@
 #!/bin/sh
 # executable_doctor
-# Legacy wrapper - redirects to unified test suite
+# Enhanced wrapper - redirects to unified test suite with smart defaults
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-echo "Note: 'doctor' command now uses the unified test suite."
-echo "Running: test_suite.sh --post-apply --verbose"
-echo ""
+# Only show migration notice if not quiet mode
+show_notice=1
+for arg in "$@"; do
+    case "$arg" in
+        -q|--quiet) show_notice=0 ;;
+    esac
+done
 
-exec "$SCRIPT_DIR/test_suite.sh" --post-apply --verbose "$@"
+if [ $show_notice -eq 1 ] && [ -t 1 ]; then
+    echo "🚀 'doctor' command upgraded with enhanced features" >&2
+    echo "" >&2
+fi
+
+# If no arguments provided, use intelligent defaults
+if [ $# -eq 0 ]; then
+    # Auto-detect mode and run with appropriate verbosity
+    exec "$SCRIPT_DIR/test_suite.sh" --verbose
+else
+    # Pass through all user arguments
+    exec "$SCRIPT_DIR/test_suite.sh" "$@"
+fi
