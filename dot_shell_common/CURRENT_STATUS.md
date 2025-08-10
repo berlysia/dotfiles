@@ -74,13 +74,20 @@ dot_shell_common/
 ```
 
 ## 🚀 Ready to Resume
-**Next command to run**:
+**明日の作業開始コマンド**:
 ```bash
-# Start Phase 2.1 - Extract check_command functions
+# Navigate to work directory
 cd /home/berlysia/.local/share/chezmoi/dot_shell_common
-# Review dotfiles_doctor.sh check_command implementation
+
+# Check current status
+cat CURRENT_STATUS.md
+
+# Start Phase 2.1 - Extract check_command functions from dotfiles_doctor.sh
+# Lines 102-213 contain the core check functions we need to integrate
 head -n 213 dotfiles_doctor.sh | tail -n +102
 ```
+
+**作業内容**: dotfiles_doctor.shの`check_command()`と`check_command_with_deps()`関数をcore/test_engine.shに統合し、重要度・重み付けシステムを実装する。
 
 ---
 *Last Updated: 2025-08-11 02:30 JST*  
