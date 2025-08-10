@@ -493,8 +493,455 @@ test_git_configuration() {
                 add_test_result "$TEST_CATEGORY_CONFIG" "Chezmoi repository status" "FAIL" "not initialized or not a git repository" "required" "chezmoi init --apply <your-dotfiles-repo>"
             fi
         fi
+        
+        # Advanced Git workflow checks
+        test_advanced_git_workflow
+    fi
+}
+
+# Advanced Git workflow checks
+test_advanced_git_workflow() {
+    if command -v git >/dev/null 2>&1; then
+        # Check if we're in a git repository
+        if git rev-parse --git-dir >/dev/null 2>&1; then
+            # Check current branch status
+            local current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+            if [ -n "$current_branch" ] && [ "$current_branch" != "HEAD" ]; then
+                add_test_result "$TEST_CATEGORY_CONFIG" "Git branch status" "PASS" "on branch $current_branch" "optional" ""
+                
+                # Check if branch has remote tracking
+                local remote_branch=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null)
+                if [ -n "$remote_branch" ]; then
+                    # Check if local is ahead/behind remote
+                    local ahead_behind=$(git rev-list --left-right --count HEAD...@{u} 2>/dev/null)
+                    if [ -n "$ahead_behind" ]; then
+                        local ahead=$(echo "$ahead_behind" | cut -f1)
+                        local behind=$(echo "$ahead_behind" | cut -f2)
+                        if [ "$ahead" = "0" ] && [ "$behind" = "0" ]; then
+                            add_test_result "$TEST_CATEGORY_CONFIG" "Git remote sync" "PASS" "up to date with $remote_branch" "optional" ""
+                        else
+                            add_test_result "$TEST_CATEGORY_CONFIG" "Git remote sync" "WARN" "$ahead commits ahead, $behind behind $remote_branch" "optional" "git pull / git push"
+                        fi
+                    fi
+                else
+                    add_test_result "$TEST_CATEGORY_CONFIG" "Git remote tracking" "WARN" "no remote tracking branch" "optional" "git push -u origin $current_branch"
+                fi
+            else
+                add_test_result "$TEST_CATEGORY_CONFIG" "Git branch status" "WARN" "detached HEAD state" "optional" "git checkout <branch-name>"
+            fi
+            
+            # Check for uncommitted changes
+            if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+                local staged=$(git diff --cached --name-only 2>/dev/null | wc -l)
+                local unstaged=$(git diff --name-only 2>/dev/null | wc -l)
+                local untracked=$(git ls-files --others --exclude-standard 2>/dev/null | wc -l)
+                add_test_result "$TEST_CATEGORY_CONFIG" "Git working directory" "WARN" "$staged staged, $unstaged modified, $untracked untracked" "optional" "git add -A && git commit"
+            else
+                add_test_result "$TEST_CATEGORY_CONFIG" "Git working directory" "PASS" "clean" "optional" ""
+            fi
+            
+            # Check recent commit signature (if GPG signing is enabled)
+            local gpg_sign=$(git config commit.gpgsign 2>/dev/null)
+            if [ "$gpg_sign" = "true" ]; then
+                local last_commit_signed=$(git log -1 --format="%G?" 2>/dev/null)
+                case "$last_commit_signed" in
+                    "G") add_test_result "$TEST_CATEGORY_CONFIG" "Git commit signature" "PASS" "last commit properly signed" "optional" "" ;;
+                    "B") add_test_result "$TEST_CATEGORY_CONFIG" "Git commit signature" "WARN" "last commit bad signature" "optional" "Check GPG key configuration" ;;
+                    "U") add_test_result "$TEST_CATEGORY_CONFIG" "Git commit signature" "WARN" "last commit untrusted signature" "optional" "Trust the signing key" ;;
+                    "X") add_test_result "$TEST_CATEGORY_CONFIG" "Git commit signature" "WARN" "last commit signature expired" "optional" "Renew GPG key" ;;
+                    "Y") add_test_result "$TEST_CATEGORY_CONFIG" "Git commit signature" "WARN" "last commit signature from expired key" "optional" "Update signing key" ;;
+                    "R") add_test_result "$TEST_CATEGORY_CONFIG" "Git commit signature" "WARN" "last commit signature revoked" "optional" "Update signing key" ;;
+                    "E") add_test_result "$TEST_CATEGORY_CONFIG" "Git commit signature" "FAIL" "last commit signature error" "optional" "Check GPG configuration" ;;
+                    *) add_test_result "$TEST_CATEGORY_CONFIG" "Git commit signature" "FAIL" "last commit not signed" "optional" "Enable GPG signing" ;;
+                esac
+            fi
+        fi
     else
         add_test_result "$TEST_CATEGORY_CONFIG" "Git configuration" "FAIL" "git command not found" "required" "apt install git / brew install git"
+    fi
+}
+
+# Advanced Git workflow checks (Phase 2.3)
+test_advanced_git_workflow() {
+    local adapter="$1"
+    
+    if ! command -v git >/dev/null 2>&1; then
+        add_test_result "$TEST_CATEGORY_CONFIG" "Advanced Git workflow" "SKIP" "git not available" "optional" ""
+        return
+    fi
+    
+    # Check current repository status
+    if git rev-parse --git-dir >/dev/null 2>&1; then
+        # Check branch status
+        local current_branch=$(git branch --show-current 2>/dev/null)
+        if [ -n "$current_branch" ]; then
+            add_test_result "$TEST_CATEGORY_CONFIG" "Git current branch" "PASS" "$current_branch" "optional" ""
+            
+            # Check if branch has upstream
+            local upstream=$(git rev-parse --abbrev-ref @{upstream} 2>/dev/null)
+            if [ -n "$upstream" ]; then
+                add_test_result "$TEST_CATEGORY_CONFIG" "Git upstream tracking" "PASS" "tracking $upstream" "recommended" ""
+                
+                # Check if branch is up to date with upstream
+                local local_sha=$(git rev-parse HEAD 2>/dev/null)
+                local upstream_sha=$(git rev-parse @{upstream} 2>/dev/null)
+                if [ "$local_sha" = "$upstream_sha" ]; then
+                    add_test_result "$TEST_CATEGORY_CONFIG" "Git branch sync" "PASS" "up to date with upstream" "optional" ""
+                elif git merge-base --is-ancestor @{upstream} HEAD 2>/dev/null; then
+                    local ahead_count=$(git rev-list --count @{upstream}..HEAD 2>/dev/null)
+                    add_test_result "$TEST_CATEGORY_CONFIG" "Git branch sync" "WARN" "$ahead_count commits ahead" "optional" "git push to sync"
+                else
+                    local behind_count=$(git rev-list --count HEAD..@{upstream} 2>/dev/null)
+                    local ahead_count=$(git rev-list --count @{upstream}..HEAD 2>/dev/null)
+                    if [ "$ahead_count" -gt 0 ] && [ "$behind_count" -gt 0 ]; then
+                        add_test_result "$TEST_CATEGORY_CONFIG" "Git branch sync" "WARN" "$ahead_count ahead, $behind_count behind" "optional" "git pull --rebase or git merge"
+                    elif [ "$behind_count" -gt 0 ]; then
+                        add_test_result "$TEST_CATEGORY_CONFIG" "Git branch sync" "WARN" "$behind_count commits behind" "optional" "git pull to sync"
+                    fi
+                fi
+            else
+                add_test_result "$TEST_CATEGORY_CONFIG" "Git upstream tracking" "WARN" "no upstream branch" "recommended" "git push -u origin $current_branch"
+            fi
+        else
+            add_test_result "$TEST_CATEGORY_CONFIG" "Git current branch" "WARN" "detached HEAD state" "optional" ""
+        fi
+        
+        # Check working directory status
+        if [ -z "$(git status --porcelain 2>/dev/null)" ]; then
+            add_test_result "$TEST_CATEGORY_CONFIG" "Git working directory" "PASS" "clean" "optional" ""
+        else
+            local staged_count=$(git diff --cached --name-only 2>/dev/null | wc -l)
+            local unstaged_count=$(git diff --name-only 2>/dev/null | wc -l)
+            local untracked_count=$(git ls-files --others --exclude-standard 2>/dev/null | wc -l)
+            local status_msg=""
+            if [ "$staged_count" -gt 0 ]; then
+                status_msg="$staged_count staged"
+            fi
+            if [ "$unstaged_count" -gt 0 ]; then
+                [ -n "$status_msg" ] && status_msg="$status_msg, "
+                status_msg="${status_msg}$unstaged_count modified"
+            fi
+            if [ "$untracked_count" -gt 0 ]; then
+                [ -n "$status_msg" ] && status_msg="$status_msg, "
+                status_msg="${status_msg}$untracked_count untracked"
+            fi
+            add_test_result "$TEST_CATEGORY_CONFIG" "Git working directory" "WARN" "$status_msg files" "optional" "git add/commit or git stash changes"
+        fi
+        
+        # Check recent commit signing (last 5 commits)
+        local signed_commits=0
+        local total_commits=0
+        for sha in $(git rev-list -5 HEAD 2>/dev/null); do
+            total_commits=$((total_commits + 1))
+            if git verify-commit "$sha" >/dev/null 2>&1 || git log --format="%G?" -1 "$sha" 2>/dev/null | grep -q "^[GU]"; then
+                signed_commits=$((signed_commits + 1))
+            fi
+        done
+        
+        if [ "$total_commits" -gt 0 ]; then
+            if [ "$signed_commits" -eq "$total_commits" ]; then
+                add_test_result "$TEST_CATEGORY_CONFIG" "Git commit signing" "PASS" "all recent commits signed" "recommended" ""
+            elif [ "$signed_commits" -gt 0 ]; then
+                add_test_result "$TEST_CATEGORY_CONFIG" "Git commit signing" "WARN" "$signed_commits/$total_commits recent commits signed" "recommended" "git config --global commit.gpgsign true"
+            else
+                add_test_result "$TEST_CATEGORY_CONFIG" "Git commit signing" "WARN" "no signed commits found" "recommended" "git config --global commit.gpgsign true"
+            fi
+        fi
+    else
+        add_test_result "$TEST_CATEGORY_CONFIG" "Advanced Git workflow" "SKIP" "not in a git repository" "optional" ""
+    fi
+}
+
+# Environment-specific optimizations (Phase 2.3)
+test_environment_detection() {
+    local adapter="$1"
+    
+    # Detect CI environment
+    local ci_detected=""
+    if [ -n "${CI:-}" ]; then
+        ci_detected="CI environment detected"
+        if [ -n "${GITHUB_ACTIONS:-}" ]; then
+            ci_detected="$ci_detected (GitHub Actions)"
+        elif [ -n "${GITLAB_CI:-}" ]; then
+            ci_detected="$ci_detected (GitLab CI)"
+        elif [ -n "${JENKINS_URL:-}" ]; then
+            ci_detected="$ci_detected (Jenkins)"
+        elif [ -n "${CIRCLECI:-}" ]; then
+            ci_detected="$ci_detected (CircleCI)"
+        elif [ -n "${TRAVIS:-}" ]; then
+            ci_detected="$ci_detected (Travis CI)"
+        fi
+        add_test_result "$TEST_CATEGORY_CONFIG" "CI Environment" "PASS" "$ci_detected" "optional" ""
+    else
+        add_test_result "$TEST_CATEGORY_CONFIG" "CI Environment" "SKIP" "not in CI" "optional" ""
+    fi
+    
+    # Detect container environment
+    local container_detected=""
+    if [ -f /.dockerenv ]; then
+        container_detected="Docker container"
+    elif [ -n "${container:-}" ]; then
+        container_detected="Container environment"
+    elif grep -q "/docker/" /proc/1/cgroup 2>/dev/null; then
+        container_detected="Docker container (cgroup)"
+    elif grep -q "lxc" /proc/1/cgroup 2>/dev/null; then
+        container_detected="LXC container"
+    fi
+    
+    if [ -n "$container_detected" ]; then
+        add_test_result "$TEST_CATEGORY_CONFIG" "Container Environment" "PASS" "$container_detected" "optional" ""
+    else
+        add_test_result "$TEST_CATEGORY_CONFIG" "Container Environment" "SKIP" "not in container" "optional" ""
+    fi
+    
+    # Detect remote development environment
+    local remote_env=""
+    if [ -n "${CODESPACES:-}" ]; then
+        remote_env="GitHub Codespaces"
+    elif [ -n "${VSCODE_REMOTE_CONTAINERS_SESSION:-}" ]; then
+        remote_env="VS Code Remote Containers"
+    elif [ -n "${REMOTE_CONTAINERS:-}" ]; then
+        remote_env="Remote Containers"
+    elif [ -n "${SSH_CONNECTION:-}" ]; then
+        remote_env="SSH session"
+    fi
+    
+    if [ -n "$remote_env" ]; then
+        add_test_result "$TEST_CATEGORY_CONFIG" "Remote Development" "PASS" "$remote_env" "optional" ""
+    else
+        add_test_result "$TEST_CATEGORY_CONFIG" "Remote Development" "SKIP" "local environment" "optional" ""
+    fi
+    
+    # Check system resources for environment optimization
+    if command -v nproc >/dev/null 2>&1; then
+        local cpu_count=$(nproc)
+        if [ "$cpu_count" -ge 4 ]; then
+            add_test_result "$TEST_CATEGORY_CONFIG" "System Resources" "PASS" "$cpu_count CPU cores available" "optional" ""
+        elif [ "$cpu_count" -ge 2 ]; then
+            add_test_result "$TEST_CATEGORY_CONFIG" "System Resources" "WARN" "only $cpu_count CPU cores" "optional" "Consider resource optimization"
+        else
+            add_test_result "$TEST_CATEGORY_CONFIG" "System Resources" "WARN" "limited CPU resources ($cpu_count core)" "optional" "Performance may be impacted"
+        fi
+    fi
+    
+    # Check memory availability
+    if command -v free >/dev/null 2>&1; then
+        local mem_gb=$(free -g | awk '/^Mem:/{print $2}')
+        if [ "$mem_gb" -ge 8 ]; then
+            add_test_result "$TEST_CATEGORY_CONFIG" "Memory Resources" "PASS" "${mem_gb}GB RAM available" "optional" ""
+        elif [ "$mem_gb" -ge 4 ]; then
+            add_test_result "$TEST_CATEGORY_CONFIG" "Memory Resources" "WARN" "limited RAM (${mem_gb}GB)" "optional" "Consider memory optimization"
+        else
+            add_test_result "$TEST_CATEGORY_CONFIG" "Memory Resources" "WARN" "low RAM (${mem_gb}GB)" "optional" "Performance may be impacted"
+        fi
+    fi
+    
+    # Check disk space for development
+    local home_space=$(df -h "$HOME" 2>/dev/null | awk 'NR==2 {print $4}')
+    if [ -n "$home_space" ]; then
+        # Extract numeric value (remove G, M suffixes for comparison)
+        local space_num=$(echo "$home_space" | sed 's/[GM].*//')
+        local space_unit=$(echo "$home_space" | sed 's/[0-9.]*//')
+        
+        if [ "$space_unit" = "G" ] && [ "$space_num" -ge 10 ]; then
+            add_test_result "$TEST_CATEGORY_CONFIG" "Disk Space" "PASS" "$home_space available in home" "optional" ""
+        else
+            add_test_result "$TEST_CATEGORY_CONFIG" "Disk Space" "WARN" "low disk space ($home_space)" "optional" "Free up space for development"
+        fi
+    fi
+}
+
+# Enhanced adapter functionality testing (Phase 3)
+test_enhanced_adapter_functionality() {
+    local adapter="$1"
+    
+    # Test enhanced path resolution
+    local config_home=$(get_config_directory config_home 2>/dev/null)
+    if [ -n "$config_home" ]; then
+        add_test_result "$TEST_CATEGORY_CONFIG" "XDG Config Directory" "PASS" "$config_home" "optional" ""
+    else
+        add_test_result "$TEST_CATEGORY_CONFIG" "XDG Config Directory" "WARN" "not detected" "optional" "Set XDG_CONFIG_HOME environment variable"
+    fi
+    
+    # Test ZDOTDIR awareness
+    local zsh_dir=$(get_config_directory zsh_dir 2>/dev/null)
+    if [ -n "$zsh_dir" ]; then
+        add_test_result "$TEST_CATEGORY_CONFIG" "Zsh Configuration Directory" "PASS" "$zsh_dir" "optional" ""
+    else
+        add_test_result "$TEST_CATEGORY_CONFIG" "Zsh Configuration Directory" "SKIP" "zsh not configured" "optional" ""
+    fi
+    
+    # Test CI platform detection
+    local ci_platform=$(get_ci_platform 2>/dev/null)
+    if [ "$ci_platform" != "none" ]; then
+        add_test_result "$TEST_CATEGORY_CONFIG" "CI Platform Detection" "PASS" "$ci_platform" "optional" ""
+    else
+        add_test_result "$TEST_CATEGORY_CONFIG" "CI Platform Detection" "SKIP" "not in CI" "optional" ""
+    fi
+    
+    # Test remote development detection
+    local remote_platform=$(get_remote_dev_platform 2>/dev/null)
+    if [ "$remote_platform" != "none" ]; then
+        add_test_result "$TEST_CATEGORY_CONFIG" "Remote Development Platform" "PASS" "$remote_platform" "optional" ""
+    else
+        add_test_result "$TEST_CATEGORY_CONFIG" "Remote Development Platform" "SKIP" "local environment" "optional" ""
+    fi
+    
+    # Test enhanced adapter selection
+    local enhanced_adapter=$(select_enhanced_adapter 2>/dev/null)
+    if [ -n "$enhanced_adapter" ]; then
+        add_test_result "$TEST_CATEGORY_CONFIG" "Enhanced Adapter Selection" "PASS" "$enhanced_adapter" "optional" ""
+    else
+        add_test_result "$TEST_CATEGORY_CONFIG" "Enhanced Adapter Selection" "FAIL" "function not available" "optional" "Upgrade adapter selector"
+    fi
+    
+    # Test platform tool paths
+    local tool_paths=$(get_platform_tool_paths 2>/dev/null)
+    if [ -n "$tool_paths" ]; then
+        add_test_result "$TEST_CATEGORY_CONFIG" "Platform Tool Paths" "PASS" "$tool_paths" "optional" ""
+    else
+        add_test_result "$TEST_CATEGORY_CONFIG" "Platform Tool Paths" "WARN" "not detected" "optional" "Check platform detection"
+    fi
+}
+
+# Cross-platform compatibility improvements (Phase 2.3)
+test_platform_compatibility() {
+    local adapter="$1"
+    
+    # Detect operating system and architecture
+    local os_name=$(uname -s 2>/dev/null)
+    local arch_name=$(uname -m 2>/dev/null)
+    
+    case "$os_name" in
+        Linux)
+            # Linux distribution detection
+            local distro=""
+            if [ -f /etc/os-release ]; then
+                distro=$(grep '^NAME=' /etc/os-release | cut -d'"' -f2)
+            elif [ -f /etc/lsb-release ]; then
+                distro=$(grep '^DISTRIB_DESCRIPTION=' /etc/lsb-release | cut -d'"' -f2)
+            elif command -v lsb_release >/dev/null 2>&1; then
+                distro=$(lsb_release -d | cut -f2)
+            else
+                distro="Unknown Linux"
+            fi
+            add_test_result "$TEST_CATEGORY_CONFIG" "Operating System" "PASS" "$distro ($arch_name)" "optional" ""
+            
+            # Check for WSL (Windows Subsystem for Linux)
+            if grep -qi microsoft /proc/version 2>/dev/null; then
+                add_test_result "$TEST_CATEGORY_CONFIG" "WSL Environment" "PASS" "Windows Subsystem for Linux detected" "optional" ""
+            fi
+            
+            # Linux-specific package manager optimization
+            if command -v apt >/dev/null 2>&1; then
+                add_test_result "$TEST_CATEGORY_CONFIG" "Package Manager" "PASS" "apt (Debian/Ubuntu)" "optional" ""
+            elif command -v yum >/dev/null 2>&1; then
+                add_test_result "$TEST_CATEGORY_CONFIG" "Package Manager" "PASS" "yum (RHEL/CentOS)" "optional" ""
+            elif command -v dnf >/dev/null 2>&1; then
+                add_test_result "$TEST_CATEGORY_CONFIG" "Package Manager" "PASS" "dnf (Fedora)" "optional" ""
+            elif command -v pacman >/dev/null 2>&1; then
+                add_test_result "$TEST_CATEGORY_CONFIG" "Package Manager" "PASS" "pacman (Arch)" "optional" ""
+            elif command -v zypper >/dev/null 2>&1; then
+                add_test_result "$TEST_CATEGORY_CONFIG" "Package Manager" "PASS" "zypper (openSUSE)" "optional" ""
+            elif command -v apk >/dev/null 2>&1; then
+                add_test_result "$TEST_CATEGORY_CONFIG" "Package Manager" "PASS" "apk (Alpine)" "optional" ""
+            else
+                add_test_result "$TEST_CATEGORY_CONFIG" "Package Manager" "WARN" "no common package manager found" "optional" ""
+            fi
+            ;;
+            
+        Darwin)
+            local macos_version=$(sw_vers -productVersion 2>/dev/null)
+            add_test_result "$TEST_CATEGORY_CONFIG" "Operating System" "PASS" "macOS $macos_version ($arch_name)" "optional" ""
+            
+            # macOS-specific checks
+            if [ "$arch_name" = "arm64" ]; then
+                add_test_result "$TEST_CATEGORY_CONFIG" "Apple Silicon" "PASS" "ARM64 architecture (Apple Silicon)" "optional" ""
+                
+                # Rosetta 2 detection for Intel compatibility
+                if pkgutil --pkgs=com.apple.pkg.RosettaUpdateAuto >/dev/null 2>&1; then
+                    add_test_result "$TEST_CATEGORY_CONFIG" "Rosetta 2" "PASS" "installed for Intel compatibility" "optional" ""
+                else
+                    add_test_result "$TEST_CATEGORY_CONFIG" "Rosetta 2" "WARN" "not installed" "optional" "/usr/sbin/softwareupdate --install-rosetta"
+                fi
+            fi
+            
+            # Check for Homebrew paths
+            if [ -x "/opt/homebrew/bin/brew" ] || [ -x "/usr/local/bin/brew" ]; then
+                add_test_result "$TEST_CATEGORY_CONFIG" "Package Manager" "PASS" "Homebrew" "optional" ""
+            else
+                add_test_result "$TEST_CATEGORY_CONFIG" "Package Manager" "WARN" "Homebrew not found" "optional" '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+            fi
+            
+            # macOS command line tools
+            if xcode-select -p >/dev/null 2>&1; then
+                add_test_result "$TEST_CATEGORY_CONFIG" "Xcode Command Line Tools" "PASS" "installed" "recommended" ""
+            else
+                add_test_result "$TEST_CATEGORY_CONFIG" "Xcode Command Line Tools" "FAIL" "not installed" "recommended" "xcode-select --install"
+            fi
+            ;;
+            
+        CYGWIN*|MINGW*|MSYS*)
+            add_test_result "$TEST_CATEGORY_CONFIG" "Operating System" "PASS" "Windows with $os_name ($arch_name)" "optional" ""
+            
+            # Windows-specific compatibility
+            if command -v winget >/dev/null 2>&1; then
+                add_test_result "$TEST_CATEGORY_CONFIG" "Package Manager" "PASS" "winget (Windows Package Manager)" "optional" ""
+            elif command -v choco >/dev/null 2>&1; then
+                add_test_result "$TEST_CATEGORY_CONFIG" "Package Manager" "PASS" "Chocolatey" "optional" ""
+            elif command -v scoop >/dev/null 2>&1; then
+                add_test_result "$TEST_CATEGORY_CONFIG" "Package Manager" "PASS" "Scoop" "optional" ""
+            else
+                add_test_result "$TEST_CATEGORY_CONFIG" "Package Manager" "WARN" "no Windows package manager found" "optional" "Install winget, Chocolatey, or Scoop"
+            fi
+            
+            # PowerShell availability
+            if command -v pwsh >/dev/null 2>&1; then
+                local pwsh_version=$(pwsh --version 2>/dev/null | head -1)
+                add_test_result "$TEST_CATEGORY_CONFIG" "PowerShell Core" "PASS" "$pwsh_version" "recommended" ""
+            elif command -v powershell.exe >/dev/null 2>&1; then
+                add_test_result "$TEST_CATEGORY_CONFIG" "Windows PowerShell" "PASS" "Windows PowerShell available" "optional" ""
+            else
+                add_test_result "$TEST_CATEGORY_CONFIG" "PowerShell" "WARN" "not available" "recommended" "Install PowerShell Core"
+            fi
+            ;;
+            
+        *)
+            add_test_result "$TEST_CATEGORY_CONFIG" "Operating System" "WARN" "Unknown OS: $os_name ($arch_name)" "optional" ""
+            ;;
+    esac
+    
+    # Shell compatibility across platforms
+    local shells_found=""
+    for shell in bash zsh fish; do
+        if command -v "$shell" >/dev/null 2>&1; then
+            local shell_version=$("$shell" --version 2>/dev/null | head -1)
+            shells_found="$shells_found $shell"
+            add_test_result "$TEST_CATEGORY_CONFIG" "Shell: $shell" "PASS" "$shell_version" "optional" ""
+        fi
+    done
+    
+    if [ -z "$shells_found" ]; then
+        add_test_result "$TEST_CATEGORY_CONFIG" "Shell Availability" "WARN" "no common shells found" "required" "Install bash or zsh"
+    else
+        add_test_result "$TEST_CATEGORY_CONFIG" "Shell Availability" "PASS" "shells available:$shells_found" "required" ""
+    fi
+    
+    # Terminal capability detection
+    if [ -n "$TERM" ]; then
+        case "$TERM" in
+            *-256color|*-256)
+                add_test_result "$TEST_CATEGORY_CONFIG" "Terminal Colors" "PASS" "256-color support ($TERM)" "optional" ""
+                ;;
+            *color*)
+                add_test_result "$TEST_CATEGORY_CONFIG" "Terminal Colors" "PASS" "color support ($TERM)" "optional" ""
+                ;;
+            *)
+                add_test_result "$TEST_CATEGORY_CONFIG" "Terminal Colors" "WARN" "limited color support ($TERM)" "optional" "Use a modern terminal with 256-color support"
+                ;;
+        esac
+    else
+        add_test_result "$TEST_CATEGORY_CONFIG" "Terminal Colors" "WARN" "TERM not set" "optional" "Set TERM environment variable"
     fi
 }
 
@@ -605,6 +1052,10 @@ run_all_tests() {
                 test_path_configuration "$adapter"
                 test_directory_structure "$adapter"
                 test_git_configuration "$adapter"
+                test_advanced_git_workflow "$adapter"
+                test_environment_detection "$adapter"
+                test_platform_compatibility "$adapter"
+                test_enhanced_adapter_functionality "$adapter"
                 ;;
             "$TEST_CATEGORY_TOOLS")
                 test_development_tools "$adapter"
