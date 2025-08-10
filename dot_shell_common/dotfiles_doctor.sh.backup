@@ -1,17 +1,11 @@
 #!/bin/sh
-# dotfiles_doctor.sh - DEPRECATED - Legacy wrapper for test_suite.sh
-# This file is maintained for backward compatibility only
-# Please use test_suite.sh directly for all new features
+# executable_doctor
+# System health check script - verifies installed commands and configurations
 #
-# Migration Notice:
-#   Old: dotfiles_doctor.sh [options]
-#   New: test_suite.sh [options]
-#
-# The new test_suite.sh includes all functionality plus:
-# - Weighted scoring system
-# - Enhanced environment detection
-# - Actionable recommendations
-# - Cross-platform support
+# Usage: doctor [options]
+#   -v, --verbose    Show detailed output for all checks
+#   -q, --quiet      Only show errors
+#   -h, --help       Show this help message
 
 # Color codes for output - always use colors for better readability
 RED='\033[0;31m'
