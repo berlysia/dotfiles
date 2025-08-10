@@ -751,6 +751,59 @@ test_environment_detection() {
     fi
 }
 
+# Enhanced adapter functionality testing (Phase 3)
+test_enhanced_adapter_functionality() {
+    local adapter="$1"
+    
+    # Test enhanced path resolution
+    local config_home=$(get_config_directory config_home 2>/dev/null)
+    if [ -n "$config_home" ]; then
+        add_test_result "$TEST_CATEGORY_CONFIG" "XDG Config Directory" "PASS" "$config_home" "optional" ""
+    else
+        add_test_result "$TEST_CATEGORY_CONFIG" "XDG Config Directory" "WARN" "not detected" "optional" "Set XDG_CONFIG_HOME environment variable"
+    fi
+    
+    # Test ZDOTDIR awareness
+    local zsh_dir=$(get_config_directory zsh_dir 2>/dev/null)
+    if [ -n "$zsh_dir" ]; then
+        add_test_result "$TEST_CATEGORY_CONFIG" "Zsh Configuration Directory" "PASS" "$zsh_dir" "optional" ""
+    else
+        add_test_result "$TEST_CATEGORY_CONFIG" "Zsh Configuration Directory" "SKIP" "zsh not configured" "optional" ""
+    fi
+    
+    # Test CI platform detection
+    local ci_platform=$(get_ci_platform 2>/dev/null)
+    if [ "$ci_platform" != "none" ]; then
+        add_test_result "$TEST_CATEGORY_CONFIG" "CI Platform Detection" "PASS" "$ci_platform" "optional" ""
+    else
+        add_test_result "$TEST_CATEGORY_CONFIG" "CI Platform Detection" "SKIP" "not in CI" "optional" ""
+    fi
+    
+    # Test remote development detection
+    local remote_platform=$(get_remote_dev_platform 2>/dev/null)
+    if [ "$remote_platform" != "none" ]; then
+        add_test_result "$TEST_CATEGORY_CONFIG" "Remote Development Platform" "PASS" "$remote_platform" "optional" ""
+    else
+        add_test_result "$TEST_CATEGORY_CONFIG" "Remote Development Platform" "SKIP" "local environment" "optional" ""
+    fi
+    
+    # Test enhanced adapter selection
+    local enhanced_adapter=$(select_enhanced_adapter 2>/dev/null)
+    if [ -n "$enhanced_adapter" ]; then
+        add_test_result "$TEST_CATEGORY_CONFIG" "Enhanced Adapter Selection" "PASS" "$enhanced_adapter" "optional" ""
+    else
+        add_test_result "$TEST_CATEGORY_CONFIG" "Enhanced Adapter Selection" "FAIL" "function not available" "optional" "Upgrade adapter selector"
+    fi
+    
+    # Test platform tool paths
+    local tool_paths=$(get_platform_tool_paths 2>/dev/null)
+    if [ -n "$tool_paths" ]; then
+        add_test_result "$TEST_CATEGORY_CONFIG" "Platform Tool Paths" "PASS" "$tool_paths" "optional" ""
+    else
+        add_test_result "$TEST_CATEGORY_CONFIG" "Platform Tool Paths" "WARN" "not detected" "optional" "Check platform detection"
+    fi
+}
+
 # Cross-platform compatibility improvements (Phase 2.3)
 test_platform_compatibility() {
     local adapter="$1"
@@ -1002,6 +1055,7 @@ run_all_tests() {
                 test_advanced_git_workflow "$adapter"
                 test_environment_detection "$adapter"
                 test_platform_compatibility "$adapter"
+                test_enhanced_adapter_functionality "$adapter"
                 ;;
             "$TEST_CATEGORY_TOOLS")
                 test_development_tools "$adapter"
