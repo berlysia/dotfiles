@@ -63,6 +63,7 @@ packages:
       - "build-essential"
       - "bat"
       - "ripgrep"
+      - "fd-find"
       - "jq"
       - "mise"
       - "zsh"
