@@ -53,11 +53,11 @@ Complete integration of `dotfiles_doctor.sh` functionality into the unified `tes
 - [ ] **Environment-specific optimizations**
 - [ ] **Cross-platform compatibility improvements**
 
-### Phase 2.4: Comprehensive Reporting ✅ COMPLETE
+### Phase 2.4: Comprehensive Reporting (Pending)
 - [x] **Weighted health scoring system** ✅ (completed in 2.1)
 - [x] **Detailed install hints with OS-specific commands** ✅ (completed in 2.1)
-- [x] **Actionable recommendations based on missing components** ✅ (completed in 2.2)
-- [x] **Enhanced summary with ready/not-ready status for chezmoi apply** ✅ (completed in 2.2)
+- [ ] **Actionable recommendations based on missing components**
+- [ ] **Enhanced summary with ready/not-ready status for chezmoi apply**
 
 ## Phase 3: Adapter Enhancement 🔄
 **Objective**: Improve adapter pattern to handle all environment variations
@@ -114,11 +114,15 @@ Complete integration of `dotfiles_doctor.sh` functionality into the unified `tes
 - [x] **Maintainability**: Clean modular architecture - **Adapter pattern complete**
 - [x] **Extensibility**: Easy addition of new test categories - **8 categories implemented**
 
-### User Experience Requirements ✅ Phase 2 Complete
+### User Experience Requirements 🚧 Partially Complete
 - [x] **Intuitive**: Clear status and actionable feedback - **Color-coded output with hints**
 - [x] **Comprehensive**: No manual checks needed - **85 automated checks**
 - [x] **Flexible**: Support for targeted test categories - **--categories flag support**
 - [x] **Informative**: Detailed verbose mode for debugging - **-v flag with detailed output**
+
+### Outstanding Requirements (Phase 2.4)
+- [ ] **Enhanced Recommendations**: Context-aware actionable recommendations
+- [ ] **Apply Readiness**: Clear ready/not-ready status for `chezmoi apply`
 
 ## Risk Mitigation
 - **Backup Strategy**: Keep original files until full validation
@@ -133,11 +137,11 @@ Complete integration of `dotfiles_doctor.sh` functionality into the unified `tes
 
 ## Current Status Summary
 - **Phase 1**: Foundation Architecture ✅ COMPLETE
-- **Phase 2**: Core Integration ✅ COMPLETE
+- **Phase 2**: Core Integration 🚧 IN PROGRESS
   - **Phase 2.1**: Extract Core Functions ✅ COMPLETE
   - **Phase 2.2**: Advanced Features Integration ✅ COMPLETE
   - **Phase 2.3**: Enhanced Validation 🔄 NEXT
-  - **Phase 2.4**: Comprehensive Reporting ✅ COMPLETE
+  - **Phase 2.4**: Comprehensive Reporting 🔄 PENDING
 - **Phase 3**: Adapter Enhancement 🔄 FUTURE
 - **Phase 4**: Legacy Cleanup 🔄 FUTURE
 
