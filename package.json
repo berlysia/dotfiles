@@ -6,7 +6,12 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "pnpm --filter @claude/hook-scripts test",
+    "test:hooks": "pnpm --filter @claude/hook-scripts test",
+    "test:hooks:types": "pnpm --filter @claude/hook-scripts test:types",
+    "test:hooks:functional": "pnpm --filter @claude/hook-scripts test:functional",
+    "lint:hooks": "pnpm --filter @claude/hook-scripts lint",
+    "check:hooks": "pnpm --filter @claude/hook-scripts check"
   },
   "keywords": [],
   "author": "",
