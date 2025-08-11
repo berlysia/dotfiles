@@ -12,7 +12,7 @@ import { readdir, stat } from "fs/promises";
 import { join, dirname } from "path";
 import { execSync } from "child_process";
 import { readHookInput, readStopHookInput, getWorkspaceRoot } from "./lib/hook-common.js";
-import type { HookInput, StopHookInput, LogEntry, PendingCommand } from "./types/hooks-types.js";
+import type { HookInput, StopHookInput, PendingCommand } from "./types/hooks-types.js";
 
 // Configuration
 const WORKSPACE_ROOT = getWorkspaceRoot(process.cwd());
@@ -166,7 +166,7 @@ function handlePreToolUse(input: HookInput, commandId: string, timestampNs: numb
 /**
  * Handle PostToolUse hook - calculate execution time and log
  */
-async function handlePostToolUse(input: HookInput, commandId: string, timestampNs: number): Promise<void> {
+async function handlePostToolUse(_input: HookInput, commandId: string, timestampNs: number): Promise<void> {
   const timeoutSeconds = 300; // 5 minutes timeout
   const cutoffTimeNs = timestampNs - (timeoutSeconds * 1000000000);
 
@@ -190,15 +190,7 @@ async function handlePostToolUse(input: HookInput, commandId: string, timestampN
           // Calculate execution time
           const totalDurationMs = Math.round((timestampNs - pendingData.timestamp_ns) / 1000000);
 
-          // Create log entry
-          const logEntry: LogEntry = {
-            timestamp,
-            command_id: commandId,
-            duration_ms: totalDurationMs,
-            command: pendingData.command,
-            description: pendingData.description
-          };
-
+          // Create log line for appending to file
           const logLine = `${timestamp}|${commandId}|${totalDurationMs}ms|${pendingData.command}|${pendingData.description}`;
           
           // Append to command execution log
@@ -229,7 +221,7 @@ async function handlePostToolUse(input: HookInput, commandId: string, timestampN
 /**
  * Handle Stop hook - cleanup and generate statistics
  */
-async function handleStop(timestampNs: number): Promise<void> {
+async function handleStop(_timestampNs: number): Promise<void> {
   const stopLogFile = join(LOG_DIR, "stop_hook.log");
   const stopMessage = `🛑 Stop hook executed at ${timestamp}`;
   
