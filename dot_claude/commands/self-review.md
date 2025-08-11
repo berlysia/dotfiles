@@ -1,9 +1,9 @@
 # /self-review
 
-Reviews recent changes or pull requests from multiple stakeholder perspectives.
+Reviews recent changes or pull requests from multiple stakeholder perspectives using specialized agents.
 
 ## Description
-This command analyzes recent changes or a specific pull request and provides comprehensive code reviews from six different stakeholder perspectives. Results are saved to `.claude/review-result` directory.
+This command orchestrates comprehensive code reviews by coordinating multiple specialized agents to provide stakeholder-specific analysis. Results are saved to `.claude/review-result` directory.
 
 ## Core Principle
 **"The future is now"** - All potential improvements must be addressed immediately. No deferral of enhancements or fixes.
@@ -13,7 +13,7 @@ This command analyzes recent changes or a specific pull request and provides com
    - If PR number provided: Fetch PR using `gh pr view` and checkout PR branch locally
    - Otherwise: Analyze recent git changes (staged and unstaged) with dependency analysis
 
-2. **Perform multi-perspective review** from six stakeholder perspectives
+2. **Orchestrate multi-agent review** using `code-review-orchestrator` agent
 
 3. **Generate comprehensive report** with:
    - Root-relative paths for file references
@@ -25,53 +25,59 @@ This command analyzes recent changes or a specific pull request and provides com
 
 ## Review Perspectives
 
-### Product Manager Review
+The `code-review-orchestrator` agent coordinates the following specialized agents for comprehensive review:
+
+### Product Manager Review (`product-value-evaluator`)
 - Business value and strategic alignment
 - User experience and feature completeness
 - Product roadmap consistency
 - Market positioning and competitive advantage
-- **Module Dependencies Impact**: Maintainability cost, refactoring risks, team productivity
+- ROI assessment and resource allocation impact
 
-### Developer Review
-- Code quality and best practices
-- Performance and scalability
-- Design patterns and architecture
-- Maintainability and readability
-- Code reusability and modularity
-- **Internal Dependencies**: Import/export patterns, coupling analysis, circular dependencies
-- **Architecture Compliance**: Layer violations, dependency direction, module boundaries
-- **Code Analysis**: Duplication detection, bundle impact, import structure optimization
+### Developer Review (`architecture-integration-orchestrator`)
+- Code quality and architectural patterns
+- Performance and scalability considerations
+- Design patterns and maintainability
+- Coupling/cohesion analysis
+- Technical debt assessment
 
-### Quality Engineer Review
+### Quality Engineer Review (`test-quality-evaluator`)
 - Test coverage and effectiveness
 - Edge cases and error handling
-- Regression risks
-- Integration points
-- Data integrity and validation
-- **Testability**: Module isolation, dependency injection, mock complexity
+- Regression risks and prevention
+- Integration points validation
+- Quality gate compliance
 
-### Security Engineer Review
-- Security vulnerabilities
+### Security Engineer Review (`security-vulnerability-analyzer`)
+- Security vulnerabilities and threats
 - Data protection and encryption
 - Access control and authentication
-- Compliance requirements
+- Compliance requirements (OWASP, GDPR, etc.)
 - Audit trails and logging
 
-### DevOps Review
-- CI/CD pipeline integration
-- Infrastructure requirements
-- Monitoring and alerting
-- Deployment strategies
-- Performance metrics
-- **Build Performance**: Bundle size impact, build time, hot reload performance
+### DevOps Review (`deployment-readiness-evaluator`)
+- CI/CD pipeline integration and optimization
+- Infrastructure requirements and capacity
+- Monitoring and alerting coverage
+- Deployment strategies and safety
+- Performance metrics and scalability
 
-### UI/UX Designer Review
-- Visual consistency
-- Usability and user flow
-- Accessibility standards
-- Responsive design
-- Interactive elements
-- **Component Architecture**: Design system consistency, component reusability, shared UI patterns
+### UI/UX Designer Review (`ui-ux-consistency-reviewer`)
+- Visual consistency and design system adherence
+- Usability and user experience patterns
+- Accessibility standards (WCAG compliance)
+- Responsive design and cross-device experience
+- Component architecture and reusability
+
+## Agent Orchestration
+
+The command delegates comprehensive review coordination to the `code-review-orchestrator` agent, which:
+
+1. **Coordinates Multiple Agents**: Manages parallel execution of specialized review agents
+2. **Integrates Results**: Synthesizes findings from all perspectives into unified assessment
+3. **Resolves Conflicts**: Identifies and resolves contradictions between agent recommendations
+4. **Prioritizes Actions**: Consolidates priorities across stakeholder perspectives
+5. **Generates Reports**: Creates stakeholder-specific and integrated review reports
 
 ## Usage
 ```
@@ -80,10 +86,10 @@ This command analyzes recent changes or a specific pull request and provides com
 
 ### Examples
 ```
-# Review recent local changes
+# Review recent local changes with agent orchestration
 /self-review
 
-# Review specific pull request
+# Review specific pull request using orchestrated agents
 /self-review 123
 ```
 
@@ -93,24 +99,23 @@ This command analyzes recent changes or a specific pull request and provides com
 When PR number is provided:
 1. Fetch PR metadata using `gh pr view <pr-number>`
 2. Checkout PR branch locally using `gh pr checkout <pr-number>`
-3. Analyze all changes in the PR
+3. **Delegate to `code-review-orchestrator`** for multi-agent analysis
 4. Include PR context (title, description, comments) in review
-5. Generate comprehensive review covering all changed files
+5. Generate comprehensive orchestrated review covering all changed files
 
 ### Local Changes Review
 When no PR number is provided:
 1. **Code Analysis**: Recent git changes (staged and unstaged)
-2. **Dependency Analysis**: 
-   - Import pattern analysis (deep relative imports 3+ levels)
-   - Module coupling assessment and decoupling suggestions
-   - Architecture layer validation and circular dependency detection
-   - Path alias opportunities and barrel export recommendations
-   - Bundle impact analysis
-3. **Tool Integration**: Uses `similarity-ts`, `dpdm`, `madge`, `tsg`, `sonda` for analysis
+2. **Agent Orchestration**: `code-review-orchestrator` coordinates:
+   - Dependency analysis via specialized agents
+   - Multi-perspective quality assessment
+   - Integrated priority recommendations
+3. **Tool Integration**: Agents use `similarity-ts`, `dpdm`, `madge` for analysis
 
 ## Output
-- Detailed multi-stakeholder review report
+- Orchestrated multi-stakeholder review report
 - Save results to `.claude/review-result` directory with appropriate naming
-- Immediate actionable improvements for each perspective
-- Comprehensive dependency analysis and architectural recommendations
-- Ensures no issues are deferred for future consideration
+- Prioritized actionable improvements across all perspectives
+- Cross-perspective analysis and conflict resolution
+- Integrated improvement roadmap with clear priorities
+- Ensures comprehensive coverage with no issues deferred
