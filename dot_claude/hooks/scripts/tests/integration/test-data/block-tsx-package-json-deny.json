@@ -1,0 +1,7 @@
+{
+  "tool_name": "Edit",
+  "tool_input": {
+    "file_path": "package.json",
+    "new_string": "{\"scripts\":{\"dev\":\"tsx src/index.ts\"},\"dependencies\":{\"react\":\"^18.0.0\"}}"
+  }
+}

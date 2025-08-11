@@ -20,7 +20,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cat | bash '{{ .chezmoi.homeDir }}/.local/share/chezmoi/dot_claude/hooks/scripts/command-logger.sh' Stop"
+            "command": "cat | bun '{{ .chezmoi.homeDir }}/.local/share/chezmoi/dot_claude/hooks/scripts/command-logger.ts' Stop"
           },
           {
             "type": "command",
@@ -39,7 +39,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cat | bash '{{ .chezmoi.homeDir }}/.local/share/chezmoi/dot_claude/hooks/scripts/command-logger.sh' PreToolUse"
+            "command": "cat | bun '{{ .chezmoi.homeDir }}/.local/share/chezmoi/dot_claude/hooks/scripts/command-logger.ts' PreToolUse"
           }
         ]
       },
@@ -48,7 +48,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cat | bash '{{ .chezmoi.homeDir }}/.local/share/chezmoi/dot_claude/hooks/scripts/auto-approve-commands.sh'"
+            "command": "cat | bun '{{ .chezmoi.homeDir }}/.local/share/chezmoi/dot_claude/hooks/scripts/auto-approve-commands.ts'"
           }
         ]
       },
@@ -57,7 +57,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/deny-repository-outside-access.sh'"
+            "command": "bun '{{ .chezmoi.homeDir }}/.local/share/chezmoi/dot_claude/hooks/scripts/deny-repository-outside-access.ts'"
           }
         ]
       },
@@ -66,7 +66,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/block-tsx-tsnode.sh'"
+            "command": "cat | bun '{{ .chezmoi.homeDir }}/.local/share/chezmoi/dot_claude/hooks/scripts/block-tsx-tsnode.ts'"
           }
         ]
       },
@@ -75,7 +75,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/deny-node-modules-write.sh'"
+            "command": "cat | bun '{{ .chezmoi.homeDir }}/.local/share/chezmoi/dot_claude/hooks/scripts/deny-node-modules-write.ts'"
           }
         ]
       },
@@ -84,7 +84,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/block-tsx-package-json.sh'"
+            "command": "cat | bun '{{ .chezmoi.homeDir }}/.local/share/chezmoi/dot_claude/hooks/scripts/block-tsx-package-json.ts'"
           }
         ]
       },
@@ -113,7 +113,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cat | bash '{{ .chezmoi.homeDir }}/.local/share/chezmoi/dot_claude/hooks/scripts/command-logger.sh' PostToolUse"
+            "command": "cat | bun '{{ .chezmoi.homeDir }}/.local/share/chezmoi/dot_claude/hooks/scripts/command-logger.ts' PostToolUse"
           }
         ]
       },
