@@ -11,8 +11,8 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from "fs";
 import { readdir, stat } from "fs/promises";
 import { join, dirname } from "path";
 import { execSync } from "child_process";
-import { readHookInput, getWorkspaceRoot } from "./lib/hook-common.js";
-import type { HookInput, LogEntry, PendingCommand } from "./types/hooks-types.js";
+import { readHookInput, readStopHookInput, getWorkspaceRoot } from "./lib/hook-common.js";
+import type { HookInput, StopHookInput, LogEntry, PendingCommand } from "./types/hooks-types.js";
 
 // Configuration
 const WORKSPACE_ROOT = getWorkspaceRoot(process.cwd());
@@ -166,7 +166,7 @@ function handlePreToolUse(input: HookInput, commandId: string, timestampNs: numb
 /**
  * Handle PostToolUse hook - calculate execution time and log
  */
-async function handlePostToolUse(commandId: string, timestampNs: number): Promise<void> {
+async function handlePostToolUse(input: HookInput, commandId: string, timestampNs: number): Promise<void> {
   const timeoutSeconds = 300; // 5 minutes timeout
   const cutoffTimeNs = timestampNs - (timeoutSeconds * 1000000000);
 
@@ -286,33 +286,44 @@ async function cleanupStaleFiles(timeoutMs: number): Promise<void> {
 
 // Main execution
 try {
-  const input = readHookInput();
-  
-  // Only process Bash tool commands
-  if (input.tool_name !== "Bash") {
-    console.log(JSON.stringify(input));
-    process.exit(0);
-  }
-
-  const sessionId = getSessionId(input);
-  const commandId = generateCommandId(input.tool_input, sessionId);
-
   switch (hookType) {
     case "PreToolUse":
-      handlePreToolUse(input, commandId, timestampNs);
-      break;
+    case "PostToolUse": {
+      const input = readHookInput();
       
-    case "PostToolUse":
-      await handlePostToolUse(commandId, timestampNs);
-      break;
-      
-    case "Stop":
-      await handleStop(timestampNs);
-      break;
-  }
+      // Only process Bash tool commands
+      if (input.tool_name !== "Bash") {
+        console.log(JSON.stringify(input));
+        process.exit(0);
+      }
 
-  // Pass through input unchanged (required by Claude Code hooks specification)
-  console.log(JSON.stringify(input));
+      const sessionId = getSessionId(input);
+      const commandId = generateCommandId(input.tool_input, sessionId);
+
+      if (hookType === "PreToolUse") {
+        handlePreToolUse(input, commandId, timestampNs);
+      } else {
+        await handlePostToolUse(input, commandId, timestampNs);
+      }
+      
+      // Pass through input unchanged (required by Claude Code hooks specification)
+      console.log(JSON.stringify(input));
+      break;
+    }
+      
+    case "Stop": {
+      const stopInput = readStopHookInput();
+      await handleStop(timestampNs);
+      
+      // Pass through input unchanged (required by Claude Code hooks specification)
+      console.log(JSON.stringify(stopInput));
+      break;
+    }
+
+    default:
+      console.error(`Unknown hook type: ${hookType}`);
+      process.exit(1);
+  }
 } catch (error) {
   console.error("Command logger error:", error);
   process.exit(1);

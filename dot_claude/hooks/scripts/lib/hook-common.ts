@@ -9,26 +9,32 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type {
   HookInput,
+  StopHookInput,
   ToolInput,
   SettingsFile,
   ProcessingContext,
 } from "../types/hooks-types.js";
 
 /**
- * Read and parse hook input from stdin
+ * Read raw JSON input from stdin
  */
-export function readHookInput(): HookInput {
-  let input: string;
+function readRawInput(): string {
   try {
-    // Read from stdin synchronously
-    input = readFileSync(0, "utf-8").trim();
+    const input = readFileSync(0, "utf-8").trim();
+    if (!input) {
+      throw new Error("No input provided");
+    }
+    return input;
   } catch (error) {
     throw new Error(`Failed to read input: ${error}`);
   }
+}
 
-  if (!input) {
-    throw new Error("No input provided");
-  }
+/**
+ * Read and parse tool hook input from stdin (PreToolUse, PostToolUse)
+ */
+export function readHookInput(): HookInput {
+  const input = readRawInput();
 
   try {
     const parsed = JSON.parse(input) as HookInput;
@@ -40,6 +46,33 @@ export function readHookInput(): HookInput {
     
     if (!parsed.tool_input) {
       throw new Error("Missing tool_input in input");
+    }
+
+    return parsed;
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      throw new Error(`Invalid JSON input: ${error.message}`);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Read and parse Stop/SubagentStop hook input from stdin
+ */
+export function readStopHookInput(): StopHookInput {
+  const input = readRawInput();
+
+  try {
+    const parsed = JSON.parse(input) as StopHookInput;
+    
+    // Validate required fields
+    if (!parsed.hook_event_name) {
+      throw new Error("Missing hook_event_name in input");
+    }
+    
+    if (!parsed.session_id) {
+      throw new Error("Missing session_id in input");
     }
 
     return parsed;
