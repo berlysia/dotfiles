@@ -96,7 +96,7 @@ export interface PatternMatchConfig {
  */
 export interface ProcessingContext {
   /** Current workspace root directory */
-  workspaceRoot?: string;
+  workspaceRoot?: string | undefined;
   /** Available settings files */
   settingsFiles: string[];
   /** Allow patterns from settings */
