@@ -24,3 +24,8 @@ Thumbs.db
 
 # Local environment files (if any)
 .env.local
+
+node_modules
+
+# lsmcp cache
+.lsmcp/cache

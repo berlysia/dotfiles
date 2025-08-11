@@ -7,3 +7,8 @@ dot_claude/hooks/scripts/ci_test.sh
 dot_claude/hooks/scripts/README_TESTING.md
 # Zsh completion cache files
 dot_zsh/.zcompdump*
+
+package.json
+node_modules
+pnpm-lock.yaml
+tsconfig.json
