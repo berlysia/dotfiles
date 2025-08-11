@@ -14,3 +14,4 @@ node_modules
 pnpm-lock.yaml
 tsconfig.json
 .lsmcp
+pnpm-workspace.yaml
