@@ -16,7 +16,7 @@ Claude Codeのhook scriptsを型安全性向上のためにTypeScriptに変換�
 **目標**: 基盤となる型定義とJSONインターフェースの確立
 
 #### 1.1 Type Definitions
-- [ ] **hooks-types.ts** - 共通型定義ファイル作成
+- [x] **hooks-types.ts** - 共通型定義ファイル作成
   ```typescript
   interface HookInput {
     tool_name: string;
@@ -126,19 +126,21 @@ dot_claude/hooks/scripts/
 ## 📅 Current Status
 
 **Active Phase**: Phase 1 - Foundation & Core Types
-**Next Task**: Create hooks-types.ts with fundamental type definitions
+**Next Task**: Convert hook-common.sh to hook-common.ts
 
 ### Completed
 - ✅ Complexity analysis and prioritization
 - ✅ Type safety value assessment
 - ✅ Project planning and task breakdown
+- ✅ TypeScript infrastructure setup
+- ✅ Core type definitions (hooks-types.ts)
 
 ### In Progress
-- 🔄 Setting up TypeScript infrastructure
+- 🔄 hook-common.ts conversion
 
 ### Upcoming
-- ⏳ Core type definitions creation
-- ⏳ hook-common.ts conversion
+- ⏳ decision-maker.ts conversion
+- ⏳ pattern-matcher.ts conversion
 
 ## 🎯 Success Metrics
 
