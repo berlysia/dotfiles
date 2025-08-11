@@ -15,6 +15,8 @@ export interface HookInput {
   tool_name: string;
   /** Tool-specific parameters and arguments */
   tool_input: ToolInput;
+  /** Session identifier for command correlation */
+  session_id?: string;
 }
 
 /**
@@ -148,4 +150,20 @@ export interface PathValidationResult {
   reason?: string;
   /** Resolved absolute path */
   resolvedPath?: string;
+}
+
+// Command logging interfaces
+export interface LogEntry {
+  timestamp: string;
+  command_id: string;
+  duration_ms: number;
+  command: string;
+  description: string;
+}
+
+export interface PendingCommand {
+  command_id: string;
+  command: string;
+  description: string;
+  timestamp_ns: number;
 }
