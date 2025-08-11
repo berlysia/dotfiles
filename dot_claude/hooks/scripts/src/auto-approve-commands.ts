@@ -1,4 +1,4 @@
-#!/usr/bin/env tsx
+#!/usr/bin/env bun
 
 /**
  * Auto-approve commands based on permissions.allow/deny lists
@@ -245,10 +245,7 @@ function main(): void {
     // Get permission lists
     const { allowList, denyList } = getPermissionLists(toolName);
 
-    // Exit if no lists defined
-    if (allowList.length === 0 && denyList.length === 0) {
-      process.exit(0);
-    }
+    // Still process dangerous command detection even if no patterns are defined
 
     // Process based on tool type
     let decision = "";
@@ -303,6 +300,12 @@ function main(): void {
       denyMatches,
       allowMatches
     );
+
+    // Handle case where no patterns are defined and no dangerous commands detected
+    if (!decision && allowList.length === 0 && denyList.length === 0) {
+      decision = "ask";
+      decisionReason = "No permission patterns configured";
+    }
 
     // Output the decision
     outputDecision(decision as "allow" | "deny" | "ask", decisionReason);
