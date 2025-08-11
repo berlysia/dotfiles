@@ -28,9 +28,7 @@ import {
 } from "./lib/decision-maker.js";
 import { logPatternAnalysis } from "./lib/logging.js";
 import type {
-  HookInput,
   ToolInput,
-  CommandAnalysisResult,
 } from "./types/hooks-types.js";
 
 // Log file for auto-approved commands
@@ -41,7 +39,7 @@ const LOG_FILE = join(homedir(), ".claude", "auto_approve_commands.log");
  */
 interface BashCommandResult {
   result?: string;
-  denyMatch?: string;
+  denyMatch?: string | undefined;
   earlyExit?: string;
 }
 
@@ -260,7 +258,7 @@ function main(): void {
       // Handle early exit conditions
       if (bashResult.earlyExit) {
         const [exitType, exitReason] = bashResult.earlyExit.split("|", 2);
-        outputDecision(exitType as "ask" | "allow" | "deny", exitReason);
+        outputDecision(exitType as "ask" | "allow" | "deny", exitReason || "Unknown error");
         process.exit(0);
       }
 
