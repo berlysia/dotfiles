@@ -20,6 +20,20 @@ export interface HookInput {
 }
 
 /**
+ * Input structure for Stop/SubagentStop hooks
+ */
+export interface StopHookInput {
+  /** Session identifier */
+  session_id: string;
+  /** Path to transcript file */
+  transcript_path: string;
+  /** Hook event name */
+  hook_event_name: "Stop" | "SubagentStop";
+  /** Whether stop hook is already active */
+  stop_hook_active: boolean;
+}
+
+/**
  * Tool input parameters - varies by tool type
  */
 export interface ToolInput {
