@@ -97,6 +97,8 @@ export function extractToolInfo(input: HookInput): { toolName: string; toolInput
 /**
  * Get workspace root with fallback
  */
+export function getWorkspaceRoot(): string | undefined;
+export function getWorkspaceRoot(fallback: string): string;
 export function getWorkspaceRoot(fallback?: string): string | undefined {
   try {
     const output = execSync("git rev-parse --show-toplevel", {

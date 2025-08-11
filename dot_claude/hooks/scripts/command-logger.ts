@@ -108,7 +108,7 @@ function getSessionId(input: HookInput): string {
  */
 function generateStatistics(): void {
   const statsFile = join(LOG_DIR, "command_stats.txt");
-  const statsScript = join(dirname(import.meta.path), "generate_stats.sh");
+  const statsScript = join(dirname(import.meta.url.replace('file://', '')), "generate_stats.sh");
 
   if (!existsSync(COMMAND_LOG)) {
     return;
