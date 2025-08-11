@@ -1,12 +1,12 @@
 {
-  "name": "@claude/hook-scripts",
+  "name": "@berlysia-dotfiles/hook-scripts",
   "version": "1.0.0",
   "description": "TypeScript-based hook scripts for Claude Code",
   "type": "module",
   "scripts": {
-    "test": "./test-with-types.sh",
+    "test": ".scripts/test-with-types.sh",
     "test:types": "npx tsgo --noEmit --target esnext --module esnext **/*.ts",
-    "test:functional": "./tests/integration/run-ts-hook-tests.sh",
+    "test:functional": "./scripts/tests/integration/run-ts-hook-tests.sh",
     "lint": "npx tsgo --noEmit --strict **/*.ts",
     "check": "npm run lint && npm run test"
   },
@@ -16,17 +16,10 @@
     "typescript",
     "automation"
   ],
-  "author": "Claude Code Hooks",
-  "license": "MIT",
   "devDependencies": {
-    "@types/node": "^20.0.0"
+    "@types/node": "^24.2.1"
   },
-  "engines": {
-    "node": ">=18.0.0"
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/anthropics/claude-code.git",
-    "directory": "dotfiles/hooks/scripts"
+  "dependencies": {
+    "ccusage": "^15.9.3"
   }
 }

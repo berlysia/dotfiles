@@ -21,11 +21,15 @@ importers:
         specifier: ^5.9.2
         version: 5.9.2
 
-  dot_claude/hooks/scripts:
+  dot_claude:
+    dependencies:
+      ccusage:
+        specifier: ^15.9.3
+        version: 15.9.3
     devDependencies:
       '@types/node':
-        specifier: ^20.0.0
-        version: 20.19.10
+        specifier: ^24.2.1
+        version: 24.2.1
 
 packages:
 
@@ -59,9 +63,6 @@ packages:
 
   '@types/micromatch@4.0.9':
     resolution: {integrity: sha512-7V+8ncr22h4UoYRLnLXSpTxjQrNUXtWHGeMPRJt1nULXI57G9bIcpyrHlmrQ7QK24EyyuXvYcSSWAM8GA9nqCg==}
-
-  '@types/node@20.19.10':
-    resolution: {integrity: sha512-iAFpG6DokED3roLSP0K+ybeDdIX6Bc0Vd3mLW5uDqThPWtNos3E+EqOM11mPQHKzfWHqEBuLjIlsBQQ8CsISmQ==}
 
   '@types/node@24.2.1':
     resolution: {integrity: sha512-DRh5K+ka5eJic8CjH7td8QpYEV6Zo10gfRkjHCO3weqZHWDtAaSTFtl4+VMqOJ4N5jcuhZ9/l+yy8rVgw7BQeQ==}
@@ -138,6 +139,11 @@ packages:
   braces@3.0.3:
     resolution: {integrity: sha512-yQbXgO/OSZVD2IsiLlro+7Hf6Q18EJrKSEsdoMzKePKXct3gvD8oLcOQdIzGupr5Fj+EDe8gO/lxc1BzfMpxvA==}
     engines: {node: '>=8'}
+
+  ccusage@15.9.3:
+    resolution: {integrity: sha512-sNioHFlNUlwKgw79JSU4pFpIwLrUSx4Ot7mju+KDZuseD7o++2URoqeqQ0HIa3+8BErTtVJBLEGf9436Qrf+tw==}
+    engines: {node: '>=20.19.4'}
+    hasBin: true
 
   color-convert@2.0.1:
     resolution: {integrity: sha512-RRECPsj7iu/xb5oKYcsFHSppFNnsj/52OVTRKb4zP5onXwVF3zVmmToNcOfGC+CRDpfK/U584fMg38ZHCaElKQ==}
@@ -274,9 +280,6 @@ packages:
     engines: {node: '>=14.17'}
     hasBin: true
 
-  undici-types@6.21.0:
-    resolution: {integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==}
-
   undici-types@7.10.0:
     resolution: {integrity: sha512-t5Fy/nfn+14LuOc2KNYg75vZqClpAiqscVvMygNnlsHBFpSXdJaYtXMcdNLpl/Qvc3P2cB3s6lOV51nqsFq4ag==}
 
@@ -338,10 +341,6 @@ snapshots:
     dependencies:
       '@types/braces': 3.0.5
 
-  '@types/node@20.19.10':
-    dependencies:
-      undici-types: 6.21.0
-
   '@types/node@24.2.1':
     dependencies:
       undici-types: 7.10.0
@@ -396,6 +395,8 @@ snapshots:
   braces@3.0.3:
     dependencies:
       fill-range: 7.1.1
+
+  ccusage@15.9.3: {}
 
   color-convert@2.0.1:
     dependencies:
@@ -522,8 +523,6 @@ snapshots:
       typescript: 5.9.2
 
   typescript@5.9.2: {}
-
-  undici-types@6.21.0: {}
 
   undici-types@7.10.0: {}
 

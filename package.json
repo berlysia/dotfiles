@@ -1,5 +1,5 @@
 {
-  "name": "dotfiles",
+  "name": "@berlysia-dotfiles/root",
   "private": true,
   "version": "1.0.0",
   "description": "",
@@ -15,7 +15,6 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
   "packageManager": "pnpm@10.14.0",
   "devDependencies": {
     "@mizchi/lsmcp": "^0.9.4",
