@@ -17,7 +17,7 @@ const CRITICAL_THRESHOLD = MAX_SESSION_TOKENS * 0.9;
 interface StatusLineData {
   session_id?: string;
   transcript_path?: string;
-  workspace?: { 
+  workspace?: {
     current_dir?: string;
     project_dir?: string;
   };
@@ -75,7 +75,7 @@ async function getAllUsageData() {
 async function calculateCurrentContextTokens(transcriptPath: string): Promise<number> {
   try {
     if (!transcriptPath) return 0;
-    
+
     const content = await fs.readFile(transcriptPath, 'utf8');
     const lines = content.trim().split('\n');
     let totalTokens = 0;
@@ -83,8 +83,10 @@ async function calculateCurrentContextTokens(transcriptPath: string): Promise<nu
     for (const line of lines) {
       try {
         const entry = JSON.parse(line);
-        if (entry.usage) {
-          totalTokens += (entry.usage.input_tokens || 0) + (entry.usage.output_tokens || 0);
+        // Check for usage information in Claude Code transcript format
+        if (entry.message && entry.message.usage) {
+          const usage = entry.message.usage;
+          totalTokens += (usage.input_tokens || 0) + (usage.output_tokens || 0);
         }
       } catch (e) {
         // Skip invalid JSON lines
@@ -98,14 +100,14 @@ async function calculateCurrentContextTokens(transcriptPath: string): Promise<nu
   }
 }
 
-function calcSumOfTokens(tokens: { 
-  inputTokens: number; 
-  outputTokens: number; 
-  cacheCreationTokens?: number; 
-  cacheReadTokens?: number; 
+function calcSumOfTokens(tokens: {
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens?: number;
+  cacheReadTokens?: number;
 }) {
-  return (tokens.inputTokens || 0) + (tokens.outputTokens || 0) + 
-         (tokens.cacheCreationTokens || 0) + (tokens.cacheReadTokens || 0);
+  return (tokens.inputTokens || 0) + (tokens.outputTokens || 0) +
+    (tokens.cacheCreationTokens || 0) + (tokens.cacheReadTokens || 0);
 }
 
 function getDailyUsageFromData(dailyData: DailyData): string {
@@ -141,8 +143,7 @@ const MINUTE = 60 * 1000; // 1 minute in milliseconds
 function formatDuration(milliseconds: number) {
   const hours = Math.floor(milliseconds / HOUR);
   const minutes = Math.floor((milliseconds % HOUR) / MINUTE);
-  const seconds = Math.floor((milliseconds % MINUTE) / 1000);
-  return `${hours}:${minutes.toFixed().padStart(2, "0")}:${seconds.toFixed().padStart(2, "0")}`;
+  return `${hours}:${minutes.toFixed().padStart(2, "0")}`;
 }
 
 function getBlockUsageFromData(blockData: BlockData): string {
@@ -151,8 +152,14 @@ function getBlockUsageFromData(blockData: BlockData): string {
       const activeBlock = blockData.find(b => b.isActive);
       if (activeBlock) {
         const tokens = calcSumOfTokens(activeBlock.tokenCounts);
-        const remaining = Math.round((activeBlock.endTime.getTime() - Date.now()));
-        return `Block ${formatCost(activeBlock.costUSD || 0)}|${formatTokens(tokens)}|${formatDuration(remaining)}`;
+        const now = new Date();
+        const remaining = Math.round((activeBlock.endTime.getTime() - now.getTime()));
+        const currentTime = now.toLocaleTimeString('ja-JP', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false
+        });
+        return `Block ${formatCost(activeBlock.costUSD || 0)}|${formatTokens(tokens)}| ${currentTime} (${formatDuration(remaining)} remains)`;
       }
     }
   } catch (error) {
@@ -190,7 +197,7 @@ function getSessionUsageColor(tokens: number): string {
 }
 
 async function generateStatusline(data: StatusLineData): Promise<string> {
-  
+
   const currentDirPath = data.workspace?.current_dir || data.cwd || '.';
   const currentDir = path.basename(currentDirPath);
   const branch = getCurrentBranch(currentDirPath);
@@ -199,10 +206,10 @@ async function generateStatusline(data: StatusLineData): Promise<string> {
   const { dailyData, weeklyData, blockData } = await getAllUsageData();
 
   // Calculate current context tokens from transcript (compaction progress)
-  const displayTokens = data.transcript_path 
+  const displayTokens = data.transcript_path
     ? await calculateCurrentContextTokens(data.transcript_path)
     : 0;
-  
+
   const usageStatusline = generateUsageStatusline(dailyData, weeklyData, blockData);
   const sessionPercentage = Math.min(100, Math.round((displayTokens / MAX_SESSION_TOKENS) * 100));
 
@@ -216,7 +223,7 @@ async function generateStatusline(data: StatusLineData): Promise<string> {
   const parts = [
     `📁 ${dirDisplay}`,
     usageStatusline,
-    `${sessionDisplay}`,
+    sessionDisplay,
     percentageDisplay
   ].filter(Boolean);
 
