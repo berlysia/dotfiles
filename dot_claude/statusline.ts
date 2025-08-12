@@ -50,6 +50,19 @@ function getCurrentBranch(dirPath: string): string | null {
   }
 }
 
+function getGitRootDir(dirPath: string): string | null {
+  try {
+    const gitRoot = execSync('git rev-parse --show-toplevel', {
+      cwd: dirPath,
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'ignore']
+    }).trim();
+    return gitRoot;
+  } catch {
+    return null;
+  }
+}
+
 function formatTokens(tokens: number): string {
   if (tokens >= 1000000) return `${(tokens / 1000000).toFixed(1)}M`;
   if (tokens >= 1000) return `${(tokens / 1000).toFixed(1)}K`;
@@ -198,9 +211,17 @@ function getSessionUsageColor(tokens: number): string {
 
 async function generateStatusline(data: StatusLineData): Promise<string> {
 
-  const currentDirPath = data.workspace?.current_dir || data.cwd || '.';
-  const currentDir = path.basename(currentDirPath);
-  const branch = getCurrentBranch(currentDirPath);
+  // Determine the best directory to use, prioritizing project_dir > current_dir > git root > cwd
+  let projectPath = data.workspace?.project_dir;
+  
+  if (!projectPath) {
+    const workingDir = data.workspace?.current_dir || data.cwd || '.';
+    const gitRoot = getGitRootDir(workingDir);
+    projectPath = gitRoot || workingDir;
+  }
+  
+  const currentDir = path.basename(projectPath);
+  const branch = getCurrentBranch(projectPath);
 
   // Get all usage data in single parallel call
   const { dailyData, weeklyData, blockData } = await getAllUsageData();
