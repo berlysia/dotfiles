@@ -10,6 +10,10 @@
           {
             "type": "command",
             "command": "cat | bash '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/speak-notification.sh' Notification"
+          },
+          {
+            "type": "command",
+            "command": "cat >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'"
           }
         ]
       }
@@ -29,6 +33,10 @@
           {
             "type": "command",
             "command": "bash '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/speak-notification.sh' Stop"
+          },
+          {
+            "type": "command",
+            "command": "cat >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'"
           }
         ]
       }
@@ -40,15 +48,14 @@
           {
             "type": "command",
             "command": "cat | bun '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/command-logger.ts' PreToolUse"
-          }
-        ]
-      },
-      {
-        "matcher": "",
-        "hooks": [
+          },
           {
             "type": "command",
             "command": "cat | bun '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/auto-approve-commands.ts'"
+          },
+          {
+            "type": "command",
+            "command": "cat >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'"
           }
         ]
       },
@@ -114,6 +121,10 @@
           {
             "type": "command",
             "command": "cat | bun '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/command-logger.ts' PostToolUse"
+          },
+          {
+            "type": "command",
+            "command": "cat >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'"
           }
         ]
       },
@@ -132,6 +143,28 @@
           {
             "type": "command",
             "command": "echo \"[$(date '+%F %H:%M:%S')] $USER [$(pwd)]: $(jq -r '.tool_input.command' | sed 's/$/\\\\n/' | tr -d '\\n')\" >> ~/.claude/command_history.log"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cat >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cat >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'"
           }
         ]
       }
