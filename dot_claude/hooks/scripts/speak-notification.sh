@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# 一時的にスキップ
+exit 0
+
 # Claude Hybrid Voice Notification
 # Combines static WAV files (Prefix.wav) with AivisSpeech dynamic synthesis
 # Provides immediate audio feedback with detailed voice notifications
