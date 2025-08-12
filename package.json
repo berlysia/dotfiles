@@ -6,12 +6,12 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "test": "pnpm --filter @claude/hook-scripts test",
-    "test:hooks": "pnpm --filter @claude/hook-scripts test",
-    "test:hooks:types": "pnpm --filter @claude/hook-scripts test:types",
-    "test:hooks:functional": "pnpm --filter @claude/hook-scripts test:functional",
-    "lint:hooks": "pnpm --filter @claude/hook-scripts lint",
-    "check:hooks": "pnpm --filter @claude/hook-scripts check"
+    "test": "pnpm --filter @berlysia-dotfiles/hook-scripts test",
+    "test:hooks": "pnpm --filter @berlysia-dotfiles/hook-scripts test",
+    "test:hooks:types": "pnpm --filter @berlysia-dotfiles/hook-scripts test:types",
+    "test:hooks:functional": "pnpm --filter @berlysia-dotfiles/hook-scripts test:functional",
+    "lint:hooks": "pnpm --filter @berlysia-dotfiles/hook-scripts lint",
+    "check:hooks": "pnpm --filter @berlysia-dotfiles/hook-scripts check"
   },
   "keywords": [],
   "author": "",
