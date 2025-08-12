@@ -2,12 +2,12 @@
 
 import path from 'node:path';
 import { execSync } from 'node:child_process';
-import { loadDailyUsageData, loadWeeklyUsageData, loadSessionBlockData, loadSessionData } from "ccusage/data-loader";
+import { promises as fs } from 'node:fs';
+import { loadDailyUsageData, loadWeeklyUsageData, loadSessionBlockData } from "ccusage/data-loader";
 
 type DailyData = Awaited<ReturnType<typeof loadDailyUsageData>>;
 type WeeklyData = Awaited<ReturnType<typeof loadWeeklyUsageData>>;
 type BlockData = Awaited<ReturnType<typeof loadSessionBlockData>>;
-type SessionData = Awaited<ReturnType<typeof loadSessionData>>;
 
 // Configuration
 const MAX_SESSION_TOKENS = 200000;
@@ -16,8 +16,17 @@ const CRITICAL_THRESHOLD = MAX_SESSION_TOKENS * 0.9;
 
 interface StatusLineData {
   session_id?: string;
-  workspace?: { current_dir?: string };
+  transcript_path?: string;
+  workspace?: { 
+    current_dir?: string;
+    project_dir?: string;
+  };
   cwd?: string;
+  model?: {
+    id?: string;
+    display_name?: string;
+  };
+  version?: string;
 }
 
 async function readStdinAsJson(): Promise<StatusLineData> {
@@ -51,48 +60,52 @@ function formatCost(cost: number): string {
   return cost >= 0.01 ? `$${cost.toFixed(2)}` : `$${(cost * 100).toFixed(1)}c`;
 }
 
-async function getAllUsageData(sessionId: string) {
+async function getAllUsageData() {
   const todayStr = new Date().toISOString().split('T')[0]?.replace(/-/g, '') ?? ''; // Convert to YYYYMMDD format
 
-  const [sessionData, dailyData, weeklyData, blockData] = await Promise.all([
-    loadSessionData({ offline: true }),
+  const [dailyData, weeklyData, blockData] = await Promise.all([
     loadDailyUsageData({ offline: true, since: todayStr, until: todayStr }),
     loadWeeklyUsageData({ offline: true, startOfWeek: "monday" }),
     loadSessionBlockData({ offline: true })
   ]);
 
-  return { sessionData, dailyData, weeklyData, blockData };
+  return { dailyData, weeklyData, blockData };
 }
 
-function calcSumOfTokens(tokens: { inputTokens: number; outputTokens: number; }) {
-  return tokens.inputTokens || 0 + (tokens.outputTokens || 0);
-}
-
-function getSessionTokensFromData(sessionData: SessionData, sessionId: string): number {
+async function calculateCurrentContextTokens(transcriptPath: string): Promise<number> {
   try {
-    if (sessionData && Array.isArray(sessionData)) {
-      let session = null;
+    if (!transcriptPath) return 0;
+    
+    const content = await fs.readFile(transcriptPath, 'utf8');
+    const lines = content.trim().split('\n');
+    let totalTokens = 0;
 
-      // Try with provided session ID first
-      if (sessionId) {
-        session = sessionData.find(s => s.sessionId === sessionId);
-      }
-
-      // If no session ID provided or not found, use the most recently active session
-      if (!session && sessionData.length > 0) {
-        // Sessions are typically ordered by activity, so take the first one
-        session = sessionData[0];
-      }
-
-      if (session) {
-        const tokens = calcSumOfTokens(session);
-        return tokens;
+    for (const line of lines) {
+      try {
+        const entry = JSON.parse(line);
+        if (entry.usage) {
+          totalTokens += (entry.usage.input_tokens || 0) + (entry.usage.output_tokens || 0);
+        }
+      } catch (e) {
+        // Skip invalid JSON lines
+        continue;
       }
     }
+
+    return totalTokens;
   } catch (error) {
-    console.error('Failed to process session data:', error);
+    return 0;
   }
-  return 0;
+}
+
+function calcSumOfTokens(tokens: { 
+  inputTokens: number; 
+  outputTokens: number; 
+  cacheCreationTokens?: number; 
+  cacheReadTokens?: number; 
+}) {
+  return (tokens.inputTokens || 0) + (tokens.outputTokens || 0) + 
+         (tokens.cacheCreationTokens || 0) + (tokens.cacheReadTokens || 0);
 }
 
 function getDailyUsageFromData(dailyData: DailyData): string {
@@ -177,23 +190,26 @@ function getSessionUsageColor(tokens: number): string {
 }
 
 async function generateStatusline(data: StatusLineData): Promise<string> {
+  
   const currentDirPath = data.workspace?.current_dir || data.cwd || '.';
   const currentDir = path.basename(currentDirPath);
   const branch = getCurrentBranch(currentDirPath);
-  const sessionId = data.session_id;
 
   // Get all usage data in single parallel call
-  const { sessionData, dailyData, weeklyData, blockData } = await getAllUsageData(sessionId || '');
+  const { dailyData, weeklyData, blockData } = await getAllUsageData();
 
-  // Process all data synchronously
-  const sessionTokens = getSessionTokensFromData(sessionData, sessionId || '');
+  // Calculate current context tokens from transcript (compaction progress)
+  const displayTokens = data.transcript_path 
+    ? await calculateCurrentContextTokens(data.transcript_path)
+    : 0;
+  
   const usageStatusline = generateUsageStatusline(dailyData, weeklyData, blockData);
-  const sessionPercentage = Math.min(100, Math.round((sessionTokens / MAX_SESSION_TOKENS) * 100));
+  const sessionPercentage = Math.min(100, Math.round((displayTokens / MAX_SESSION_TOKENS) * 100));
 
   // Build status line components
   const dirDisplay = branch ? `${currentDir}[${branch}]` : currentDir;
-  const sessionDisplay = `🪙 ${formatTokens(sessionTokens)}/${formatTokens(MAX_SESSION_TOKENS)}`;
-  const usageColor = getSessionUsageColor(sessionTokens);
+  const sessionDisplay = `🪙 ${formatTokens(displayTokens)}/${formatTokens(MAX_SESSION_TOKENS)}`;
+  const usageColor = getSessionUsageColor(displayTokens);
   const percentageDisplay = `${usageColor}${sessionPercentage}%\x1b[0m`;
 
   // Combine all parts
