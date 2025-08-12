@@ -2,12 +2,12 @@
 
 import path from 'node:path';
 import { execSync } from 'node:child_process';
-import { loadDailyUsageData, loadWeeklyUsageData, loadSessionBlockData, loadSessionUsageById } from "ccusage/data-loader";
+import { loadDailyUsageData, loadWeeklyUsageData, loadSessionBlockData, loadSessionData } from "ccusage/data-loader";
 
 type DailyData = Awaited<ReturnType<typeof loadDailyUsageData>>;
 type WeeklyData = Awaited<ReturnType<typeof loadWeeklyUsageData>>;
 type BlockData = Awaited<ReturnType<typeof loadSessionBlockData>>;
-type SessionData = Awaited<ReturnType<typeof loadSessionUsageById>>;
+type SessionData = Awaited<ReturnType<typeof loadSessionData>>;
 
 // Configuration
 const MAX_SESSION_TOKENS = 200000;
@@ -55,7 +55,7 @@ async function getAllUsageData(sessionId: string) {
   const todayStr = new Date().toISOString().split('T')[0]?.replace(/-/g, '') ?? ''; // Convert to YYYYMMDD format
 
   const [sessionData, dailyData, weeklyData, blockData] = await Promise.all([
-    loadSessionUsageById(sessionId, { offline: true }),
+    loadSessionData({ offline: true }),
     loadDailyUsageData({ offline: true, since: todayStr, until: todayStr }),
     loadWeeklyUsageData({ offline: true, startOfWeek: "monday" }),
     loadSessionBlockData({ offline: true })
@@ -64,24 +64,28 @@ async function getAllUsageData(sessionId: string) {
   return { sessionData, dailyData, weeklyData, blockData };
 }
 
-function calcSumOfTokens(tokens: { inputTokens: number; outputTokens: number; cacheCreationTokens: number; cacheReadTokens: number }): number {
-  return (tokens.inputTokens || 0) + (tokens.outputTokens || 0) +
-    (tokens.cacheCreationTokens || 0) + (tokens.cacheReadTokens || 0);
+function calcSumOfTokens(tokens: { inputTokens: number; outputTokens: number; }) {
+  return tokens.inputTokens || 0 + (tokens.outputTokens || 0);
 }
 
 function getSessionTokensFromData(sessionData: SessionData, sessionId: string): number {
   try {
-    // Debug logging
-    console.error(`DEBUG: sessionId="${sessionId}", sessionData.length=${sessionData?.length || 'null'}`);
-    if (sessionData && Array.isArray(sessionData) && sessionData.length > 0) {
-      console.error(`DEBUG: Available sessionIds=[${sessionData.map(s => s.sessionId).join(', ')}]`);
-    }
-    
     if (sessionData && Array.isArray(sessionData)) {
-      const session = sessionData.find(s => s.sessionId === sessionId);
+      let session = null;
+
+      // Try with provided session ID first
+      if (sessionId) {
+        session = sessionData.find(s => s.sessionId === sessionId);
+      }
+
+      // If no session ID provided or not found, use the most recently active session
+      if (!session && sessionData.length > 0) {
+        // Sessions are typically ordered by activity, so take the first one
+        session = sessionData[0];
+      }
+
       if (session) {
         const tokens = calcSumOfTokens(session);
-        console.error(`DEBUG: Found session, tokens=${tokens}`);
         return tokens;
       }
     }
@@ -125,7 +129,7 @@ function formatDuration(milliseconds: number) {
   const hours = Math.floor(milliseconds / HOUR);
   const minutes = Math.floor((milliseconds % HOUR) / MINUTE);
   const seconds = Math.floor((milliseconds % MINUTE) / 1000);
-  return `${hours}:${minutes}:${seconds}`;
+  return `${hours}:${minutes.toFixed().padStart(2, "0")}:${seconds.toFixed().padStart(2, "0")}`;
 }
 
 function getBlockUsageFromData(blockData: BlockData): string {
@@ -133,8 +137,7 @@ function getBlockUsageFromData(blockData: BlockData): string {
     if (blockData && Array.isArray(blockData) && blockData.length > 0) {
       const activeBlock = blockData.find(b => b.isActive);
       if (activeBlock) {
-        const tokens = (activeBlock.tokenCounts.inputTokens || 0) + (activeBlock.tokenCounts.outputTokens || 0) +
-          (activeBlock.tokenCounts.cacheCreationInputTokens || 0) + (activeBlock.tokenCounts.cacheReadInputTokens || 0);
+        const tokens = calcSumOfTokens(activeBlock.tokenCounts);
         const remaining = Math.round((activeBlock.endTime.getTime() - Date.now()));
         return `Block ${formatCost(activeBlock.costUSD || 0)}|${formatTokens(tokens)}|${formatDuration(remaining)}`;
       }
