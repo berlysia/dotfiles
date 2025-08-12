@@ -3,10 +3,9 @@
 import path from 'node:path';
 import { execSync } from 'node:child_process';
 import { promises as fs } from 'node:fs';
-import { loadDailyUsageData, loadWeeklyUsageData, loadSessionBlockData } from "ccusage/data-loader";
+import { loadDailyUsageData, loadSessionBlockData } from "ccusage/data-loader";
 
 type DailyData = Awaited<ReturnType<typeof loadDailyUsageData>>;
-type WeeklyData = Awaited<ReturnType<typeof loadWeeklyUsageData>>;
 type BlockData = Awaited<ReturnType<typeof loadSessionBlockData>>;
 
 // Configuration
@@ -76,13 +75,12 @@ function formatCost(cost: number): string {
 async function getAllUsageData() {
   const todayStr = new Date().toISOString().split('T')[0]?.replace(/-/g, '') ?? ''; // Convert to YYYYMMDD format
 
-  const [dailyData, weeklyData, blockData] = await Promise.all([
+  const [dailyData, blockData] = await Promise.all([
     loadDailyUsageData({ offline: true, since: todayStr, until: todayStr }),
-    loadWeeklyUsageData({ offline: true, startOfWeek: "monday" }),
     loadSessionBlockData({ offline: true })
   ]);
 
-  return { dailyData, weeklyData, blockData };
+  return { dailyData, blockData };
 }
 
 async function calculateCurrentContextTokens(transcriptPath: string): Promise<number> {
@@ -137,20 +135,6 @@ function getDailyUsageFromData(dailyData: DailyData): string {
   return "";
 }
 
-function getWeeklyUsageFromData(weeklyData: WeeklyData): string {
-  try {
-    if (weeklyData && Array.isArray(weeklyData) && weeklyData.length > 0) {
-      const thisWeek = weeklyData[weeklyData.length - 1];
-      if (thisWeek) {
-        return `Weekly ${formatCost(thisWeek.totalCost || 0)}|${formatTokens(calcSumOfTokens(thisWeek))}`;
-      }
-    }
-  } catch (error) {
-    console.error('Failed to process weekly usage:', error);
-  }
-  return "";
-}
-
 const HOUR = 60 * 60 * 1000; // 1 hour in milliseconds
 const MINUTE = 60 * 1000; // 1 minute in milliseconds
 function formatDuration(milliseconds: number) {
@@ -181,19 +165,14 @@ function getBlockUsageFromData(blockData: BlockData): string {
   return "";
 }
 
-function generateUsageStatusline(dailyData: DailyData, weeklyData: WeeklyData, blockData: BlockData): string | null {
+function generateUsageStatusline(dailyData: DailyData, blockData: BlockData): string | null {
   const daily = getDailyUsageFromData(dailyData);
-  const weekly = getWeeklyUsageFromData(weeklyData);
   const block = getBlockUsageFromData(blockData);
 
   const parts: string[] = [];
 
   if (daily) {
     parts.push(daily);
-  }
-
-  if (weekly) {
-    parts.push(weekly);
   }
 
   if (block) {
@@ -225,14 +204,14 @@ async function generateStatusline(data: StatusLineData): Promise<string> {
   const branch = getCurrentBranch(projectPath);
 
   // Get all usage data in single parallel call
-  const { dailyData, weeklyData, blockData } = await getAllUsageData();
+  const { dailyData, blockData } = await getAllUsageData();
 
   // Calculate current context tokens from transcript (compaction progress)
   const displayTokens = data.transcript_path
     ? await calculateCurrentContextTokens(data.transcript_path)
     : 0;
 
-  const usageStatusline = generateUsageStatusline(dailyData, weeklyData, blockData);
+  const usageStatusline = generateUsageStatusline(dailyData, blockData);
   const sessionPercentage = Math.min(100, Math.round((displayTokens / MAX_SESSION_TOKENS) * 100));
 
   // Build status line components
