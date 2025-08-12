@@ -71,10 +71,18 @@ function calcSumOfTokens(tokens: { inputTokens: number; outputTokens: number; ca
 
 function getSessionTokensFromData(sessionData: SessionData, sessionId: string): number {
   try {
+    // Debug logging
+    console.error(`DEBUG: sessionId="${sessionId}", sessionData.length=${sessionData?.length || 'null'}`);
+    if (sessionData && Array.isArray(sessionData) && sessionData.length > 0) {
+      console.error(`DEBUG: Available sessionIds=[${sessionData.map(s => s.sessionId).join(', ')}]`);
+    }
+    
     if (sessionData && Array.isArray(sessionData)) {
       const session = sessionData.find(s => s.sessionId === sessionId);
       if (session) {
-        return calcSumOfTokens(session);
+        const tokens = calcSumOfTokens(session);
+        console.error(`DEBUG: Found session, tokens=${tokens}`);
+        return tokens;
       }
     }
   } catch (error) {

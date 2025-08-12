@@ -126,7 +126,7 @@ function generateStatistics(): void {
       // Fallback simple statistics
       const commandCount = readFileSync(COMMAND_LOG, "utf8").split("\n").length - 1;
       const sessionId = process.env.CLAUDE_SESSION_ID || "unknown";
-      
+
       const stats = [
         `# Command Statistics (Generated: ${timestamp})`,
         `Total commands: ${commandCount}`,
@@ -147,7 +147,7 @@ function generateStatistics(): void {
  */
 function handlePreToolUse(input: HookInput, commandId: string, timestampNs: number): void {
   const { command, description } = extractCommandInfo(input.tool_input);
-  
+
   const pendingFile = join(TIMING_DIR, `.pending_${commandId}_${timestampNs}`);
   const pendingData: PendingCommand = {
     command_id: commandId,
@@ -184,7 +184,7 @@ async function handlePostToolUse(_input: HookInput, commandId: string, timestamp
         if (!existsSync(pendingFile)) continue;
 
         const pendingData: PendingCommand = JSON.parse(readFileSync(pendingFile, "utf8"));
-        
+
         // Check if within timeout range
         if (pendingData.timestamp_ns > cutoffTimeNs) {
           // Calculate execution time
@@ -192,7 +192,7 @@ async function handlePostToolUse(_input: HookInput, commandId: string, timestamp
 
           // Create log line for appending to file
           const logLine = `${timestamp}|${commandId}|${totalDurationMs}ms|${pendingData.command}|${pendingData.description}`;
-          
+
           // Append to command execution log
           writeFileSync(COMMAND_LOG, logLine + "\n", { flag: "a" });
 
@@ -206,10 +206,10 @@ async function handlePostToolUse(_input: HookInput, commandId: string, timestamp
     }
 
     // Periodic cleanup of stale files (every 100th command)
-    const commandCount = existsSync(COMMAND_LOG) 
+    const commandCount = existsSync(COMMAND_LOG)
       ? readFileSync(COMMAND_LOG, "utf8").split("\n").length - 1
       : 0;
-      
+
     if (commandCount % 100 === 0 && commandCount > 0) {
       await cleanupStaleFiles(60 * 60 * 1000); // 60 minutes
     }
@@ -224,14 +224,14 @@ async function handlePostToolUse(_input: HookInput, commandId: string, timestamp
 async function handleStop(_timestampNs: number): Promise<void> {
   const stopLogFile = join(LOG_DIR, "stop_hook.log");
   const stopMessage = `🛑 Stop hook executed at ${timestamp}`;
-  
+
   console.log(stopMessage);
   writeFileSync(stopLogFile, stopMessage + "\n", { flag: "a" });
 
   try {
     const timeoutSeconds = 300; // 5 minutes
     await cleanupStaleFiles(timeoutSeconds * 1000);
-    
+
     console.log("📊 Generating command statistics...");
     generateStatistics();
   } catch (error) {
@@ -267,7 +267,7 @@ async function cleanupStaleFiles(timeoutMs: number): Promise<void> {
     if (cleanupCount > 0) {
       const cleanupMessage = `Cleaned up ${cleanupCount} timed-out pending files`;
       const cleanupLog = join(LOG_DIR, "cleanup.log");
-      
+
       writeFileSync(cleanupLog, `${timestamp}: ${cleanupMessage}\n`, { flag: "a" });
       console.log(cleanupMessage);
     }
@@ -282,7 +282,7 @@ try {
     case "PreToolUse":
     case "PostToolUse": {
       const input = readHookInput();
-      
+
       // Only process Bash tool commands
       if (input.tool_name !== "Bash") {
         console.log(JSON.stringify(input));
@@ -297,16 +297,16 @@ try {
       } else {
         await handlePostToolUse(input, commandId, timestampNs);
       }
-      
+
       // Pass through input unchanged (required by Claude Code hooks specification)
       console.log(JSON.stringify(input));
       break;
     }
-      
+
     case "Stop": {
       const stopInput = readStopHookInput();
       await handleStop(timestampNs);
-      
+
       // Pass through input unchanged (required by Claude Code hooks specification)
       console.log(JSON.stringify(stopInput));
       break;
