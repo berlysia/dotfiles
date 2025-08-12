@@ -210,16 +210,17 @@ function getSessionUsageColor(tokens: number): string {
 }
 
 async function generateStatusline(data: StatusLineData): Promise<string> {
+  const model = data.model?.display_name || 'Unknown';
 
   // Determine the best directory to use, prioritizing project_dir > current_dir > git root > cwd
   let projectPath = data.workspace?.project_dir;
-  
+
   if (!projectPath) {
     const workingDir = data.workspace?.current_dir || data.cwd || '.';
     const gitRoot = getGitRootDir(workingDir);
     projectPath = gitRoot || workingDir;
   }
-  
+
   const currentDir = path.basename(projectPath);
   const branch = getCurrentBranch(projectPath);
 
@@ -242,6 +243,7 @@ async function generateStatusline(data: StatusLineData): Promise<string> {
 
   // Combine all parts
   const parts = [
+    `[${model}]`,
     `📁 ${dirDisplay}`,
     usageStatusline,
     sessionDisplay,
