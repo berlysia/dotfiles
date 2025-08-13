@@ -1,8 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input": {
-    "command": "echo 'Hello World'",
-    "description": "Test command for logger"
-  },
-  "session_id": "test_session_123"
-}

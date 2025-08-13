@@ -94,7 +94,6 @@ echo "=========================="
 # Type check all TypeScript files
 run_type_check "types/hooks-types.ts" "Hook type definitions"
 run_type_check "lib/hook-common.ts" "Common hook utilities" 
-run_type_check "command-logger.ts" "Command logger script"
 run_type_check "auto-approve-commands.ts" "Auto-approve commands script"
 run_type_check "block-tsx-package-json.ts" "Block tsx package.json script"
 run_type_check "block-tsx-tsnode.ts" "Block tsx/tsnode script"
@@ -104,25 +103,6 @@ run_type_check "deny-repository-outside-access.ts" "Deny outside access script"
 echo ""
 echo -e "${YELLOW}🚀 Phase 2: Functional Testing${NC}"
 echo "==============================="
-
-# Test command-logger with different hook types
-run_functional_test "command-logger-stop" \
-    "bun ${HOOKS_DIR}/command-logger.ts Stop" \
-    '{"session_id": "test123", "transcript_path": "/tmp/test.jsonl", "hook_event_name": "Stop", "stop_hook_active": false}' \
-    0 \
-    "Command logger Stop hook"
-
-run_functional_test "command-logger-pretooluse" \
-    "bun ${HOOKS_DIR}/command-logger.ts PreToolUse" \
-    '{"tool_name": "Bash", "tool_input": {"command": "echo test", "description": "Test command"}, "session_id": "test123"}' \
-    0 \
-    "Command logger PreToolUse hook"
-
-run_functional_test "command-logger-posttooluse" \
-    "bun ${HOOKS_DIR}/command-logger.ts PostToolUse" \
-    '{"tool_name": "Bash", "tool_input": {"command": "echo test", "description": "Test command"}, "session_id": "test123"}' \
-    0 \
-    "Command logger PostToolUse hook"
 
 # Test basic functionality of other hooks
 run_functional_test "auto-approve-safe" \

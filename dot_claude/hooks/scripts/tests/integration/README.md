@@ -14,7 +14,6 @@ tests/integration/
 │   ├── block-tsx-package-json-allow.json
 │   ├── block-tsx-tsnode-deny.json
 │   ├── block-tsx-tsnode-allow.json
-│   ├── command-logger-pretooluse.json
 │   ├── deny-node-modules-deny.json
 │   └── deny-node-modules-allow.json
 ├── run-ts-hook-tests.sh # Main test runner script
@@ -31,7 +30,6 @@ cd dot_claude/hooks/scripts
 ## Test Coverage
 
 ### ✅ Tested TypeScript Scripts
-- `command-logger.ts` - Command timing and session management
 - `auto-approve-commands.ts` - Permission decision making
 - `block-tsx-package-json.ts` - Package.json tsx/ts-node blocking
 - `block-tsx-tsnode.ts` - Command-line tsx/ts-node blocking

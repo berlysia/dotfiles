@@ -52,14 +52,6 @@ run_test() {
 }
 
 echo ""
-echo "📝 Testing command-logger.ts..."
-run_test "command-logger-pretooluse" \
-    "bun ${HOOKS_DIR}/command-logger.ts PreToolUse" \
-    "${TEST_DATA_DIR}/command-logger-pretooluse.json" \
-    0 \
-    "Command logger PreToolUse hook"
-
-echo ""
 echo "✅ Testing auto-approve-commands.ts..."
 run_test "auto-approve-allow" \
     "bun ${HOOKS_DIR}/auto-approve-commands.ts" \

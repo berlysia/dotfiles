@@ -24,10 +24,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cat | bun '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/command-logger.ts' Stop"
-          },
-          {
-            "type": "command",
             "command": "bash '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/send-notification.sh' Stop"
           },
           {
@@ -45,10 +41,6 @@
       {
         "matcher": "",
         "hooks": [
-          {
-            "type": "command",
-            "command": "cat | bun '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/command-logger.ts' PreToolUse"
-          },
           {
             "type": "command",
             "command": "cat | bun '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/auto-approve-commands.ts'"
@@ -118,10 +110,6 @@
       {
         "matcher": "",
         "hooks": [
-          {
-            "type": "command",
-            "command": "cat | bun '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/command-logger.ts' PostToolUse"
-          },
           {
             "type": "command",
             "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'"
