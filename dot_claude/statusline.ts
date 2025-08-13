@@ -124,6 +124,8 @@ interface AssistantTranscriptEntry extends BaseTranscriptEntry {
     usage: {
       input_tokens: number;
       output_tokens: number;
+      cache_creation_input_tokens?: number;
+      cache_read_input_tokens?: number;
     };
   };
   requestId?: string;
@@ -141,7 +143,7 @@ interface SystemTranscriptEntry extends BaseTranscriptEntry {
 
 type TranscriptEntry = UserTranscriptEntry | AssistantTranscriptEntry | SystemTranscriptEntry;
 
-async function calculateCurrentContextTokens(transcriptPath: string): Promise<number> {
+async function calculateCurrentContextTokens(sessionId: string, transcriptPath: string): Promise<number> {
   try {
     if (!transcriptPath) return 0;
 
@@ -151,20 +153,18 @@ async function calculateCurrentContextTokens(transcriptPath: string): Promise<nu
       crlfDelay: Infinity // Handle \r\n properly
     });
 
-    let totalTokens = 0;
+    let lastUsage = null;
 
     for await (const line of rl) {
       if (!line.trim()) continue; // Skip empty lines
 
       try {
         const entry = JSON.parse(line) as TranscriptEntry;
+        if (entry.sessionId !== sessionId) continue; // Filter by session ID
+
         // Check for usage information in Claude Code transcript format
-        if (entry.type === "user" && entry.isCompactSummary === true) {
-          totalTokens = 0;
-        }
         if (entry.type === "assistant" && entry.message.usage) {
-          const usage = entry.message.usage;
-          totalTokens += (usage.input_tokens || 0) + (usage.output_tokens || 0);
+          lastUsage = entry.message.usage;
         }
       } catch (e) {
         // Skip invalid JSON lines
@@ -172,7 +172,14 @@ async function calculateCurrentContextTokens(transcriptPath: string): Promise<nu
       }
     }
 
-    return totalTokens;
+    if (lastUsage) {
+      return (lastUsage.input_tokens || 0) + 
+             (lastUsage.output_tokens || 0) + 
+             (lastUsage.cache_creation_input_tokens || 0) + 
+             (lastUsage.cache_read_input_tokens || 0);
+    }
+
+    return 0;
   } catch (error) {
     return 0;
   }
@@ -274,8 +281,8 @@ async function generateStatusline(data: StatusLineData): Promise<string> {
   const { dailyData, blockData } = await getAllUsageData();
 
   // Calculate current context tokens from transcript (compaction progress)
-  const displayTokens = data.transcript_path
-    ? await calculateCurrentContextTokens(data.transcript_path)
+  const displayTokens = data.session_id && data.transcript_path
+    ? await calculateCurrentContextTokens(data.session_id, data.transcript_path)
     : 0;
 
   const usageStatusline = generateUsageStatusline(dailyData, blockData);
@@ -302,7 +309,7 @@ async function generateStatusline(data: StatusLineData): Promise<string> {
 async function main(): Promise<void> {
   try {
     const data = await readStdinAsJson();
-    // await writeFile(resolve(homedir(), ".claude/latestStatusLineSeed.json"), JSON.stringify(data, null, 2));
+    await writeFile(resolve(homedir(), ".claude/latestStatusLineSeed.json"), JSON.stringify(data, null, 2));
     const statusLine = await generateStatusline(data);
     console.log(statusLine);
   } catch (error) {
