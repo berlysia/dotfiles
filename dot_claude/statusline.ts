@@ -1,9 +1,12 @@
 #!/usr/bin/env bun
 
-import path from 'node:path';
+import path, { resolve } from 'node:path';
 import { execSync } from 'node:child_process';
-import { promises as fs } from 'node:fs';
+import { createReadStream } from 'node:fs';
+import { createInterface } from 'node:readline';
 import { loadDailyUsageData, loadSessionBlockData } from "ccusage/data-loader";
+import { writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
 
 type DailyData = Awaited<ReturnType<typeof loadDailyUsageData>>;
 type BlockData = Awaited<ReturnType<typeof loadSessionBlockData>>;
@@ -83,19 +86,83 @@ async function getAllUsageData() {
   return { dailyData, blockData };
 }
 
+// Claude Code transcript JSONL format type definitions
+
+interface BaseTranscriptEntry {
+  parentUuid: string | null;
+  isSidechain: boolean;
+  cwd: string;
+  sessionId: string;
+  gitBranch: string;
+  timestamp: string;
+  type: "user" | "assistant" | "system";
+}
+
+interface UserTranscriptEntry extends BaseTranscriptEntry {
+  type: "user";
+  isMeta?: boolean;
+  message: {
+    role: "user";
+    content: string;
+  };
+  isCompactSummary?: boolean;
+  userType?: "external";
+  version?: string;
+  uuid?: string;
+}
+
+interface AssistantTranscriptEntry extends BaseTranscriptEntry {
+  type: "assistant";
+  message: {
+    id: string;
+    role: "assistant";
+    content: string;
+    model: string;
+    type: string;
+    stop_reason: string;
+    stop_sequence: string | null;
+    usage: {
+      input_tokens: number;
+      output_tokens: number;
+    };
+  };
+  requestId?: string;
+  userType?: string;
+  uuid: string;
+  version?: string;
+}
+
+interface SystemTranscriptEntry extends BaseTranscriptEntry {
+  type: "system";
+  content: string;
+  level: string;
+  isMeta?: boolean;
+}
+
+type TranscriptEntry = UserTranscriptEntry | AssistantTranscriptEntry | SystemTranscriptEntry;
+
 async function calculateCurrentContextTokens(transcriptPath: string): Promise<number> {
   try {
     if (!transcriptPath) return 0;
 
-    const content = await fs.readFile(transcriptPath, 'utf8');
-    const lines = content.trim().split('\n');
+    const fileStream = createReadStream(transcriptPath, { encoding: 'utf8' });
+    const rl = createInterface({
+      input: fileStream,
+      crlfDelay: Infinity // Handle \r\n properly
+    });
+
     let totalTokens = 0;
 
-    for (const line of lines) {
+    for await (const line of rl) {
+      if (!line.trim()) continue; // Skip empty lines
+
       try {
-        const entry = JSON.parse(line);
+        const entry = JSON.parse(line) as TranscriptEntry;
         // Check for usage information in Claude Code transcript format
-        if (entry.message && entry.message.usage) {
+        if (entry.type === "user" && entry.isCompactSummary === true) {
+          totalTokens = 0;
+        }
+        if (entry.type === "assistant" && entry.message.usage) {
           const usage = entry.message.usage;
           totalTokens += (usage.input_tokens || 0) + (usage.output_tokens || 0);
         }
@@ -235,10 +302,11 @@ async function generateStatusline(data: StatusLineData): Promise<string> {
 async function main(): Promise<void> {
   try {
     const data = await readStdinAsJson();
+    // await writeFile(resolve(homedir(), ".claude/latestStatusLineSeed.json"), JSON.stringify(data, null, 2));
     const statusLine = await generateStatusline(data);
     console.log(statusLine);
   } catch (error) {
-    console.log('[Error] 📁 . | 🪙 0 | 0%');
+    console.log('[Error] Failed to generate status line:', (error as Error).message);
   }
 }
 
