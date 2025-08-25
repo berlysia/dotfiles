@@ -23,40 +23,71 @@ extract() {
   fi
 }
 
-opr () {
+# 1Password helper functions
+_op_auth_check() {
 	who=$(op whoami)
-	if [[ $? != 0 ]]
-	then
+	if [[ $? != 0 ]]; then
 		eval $(op signin)
 	fi
+}
+
+_op_update_paths() {
+	local path="$1"
+	if [[ ! ":$OP_COMMAND_PATHS:" == *":$path:"* ]]; then
+		export OP_COMMAND_PATHS="${OP_COMMAND_PATHS:+$OP_COMMAND_PATHS:}$path"
+	fi
+}
+
+# Global 1Password commands (always use ~/.env.1password)
+oprg() {
+	_op_auth_check
+	if [[ -f "$HOME/.env.1password" ]]; then
+		op run --env-file=$HOME/.env.1password -- $@
+	else
+		echo "❌ ~/.env.1password not found"
+		return 1
+	fi
+}
+
+oplg() {
+	_op_auth_check
+	if [[ -f "$HOME/.env.1password" ]]; then
+		echo -e '⏳ Setting global secrets in environment...'
+		source <(cat $HOME/.env.1password | op inject)
+		_op_update_paths "$HOME"
+		echo -e '☑️ Done!'
+	else
+		echo "❌ ~/.env.1password not found"
+		return 1
+	fi
+}
+
+# Local 1Password commands (only use .env in current directory)
+opr () {
+	_op_auth_check
 	if [[ -f "$PWD/.env" ]]; then
 		op run --env-file=$PWD/.env -- $@
-  elif [[ -f "$HOME/.env.1password" ]]; then
-		op run --env-file=$HOME/.env.1password -- $@
+	else
+		echo "❌ .env not found in current directory ($PWD)"
+		echo "   Use 'oprg' to run with global ~/.env.1password"
+		return 1
 	fi
 }
 
 export OP_COMMAND_PATHS=$OP_COMMAND_PATHS # Preserve existing values
 
 opl () {
-  who=$(op whoami)
-  if [[ $? != 0 ]]
-  then
-    eval $(op signin)
-  fi
-
-  if [[ -f "$PWD/.env" ]]; then
-    echo -e '⏳ Setting secrets in environment...'
-    source <(cat $PWD/.env | op inject)
-    # append to OP_COMMAND_PATHS
-    OP_COMMAND_PATHS=$OP_COMMAND_PATHS:"$PWD"
-    echo -e '☑️ Done!'
-  elif [[ -f "$HOME/.env.1password" ]]; then
-    echo -e '⏳ Setting secrets in environment...'
-    source <(cat $HOME/.env.1password | op inject)
-    OP_COMMAND_PATHS=$OP_COMMAND_PATHS:"$HOME"
-    echo -e '☑️ Done!'
-  fi
+	_op_auth_check
+	if [[ -f "$PWD/.env" ]]; then
+		echo -e '⏳ Setting local secrets in environment...'
+		source <(cat $PWD/.env | op inject)
+		_op_update_paths "$PWD"
+		echo -e '☑️ Done!'
+	else
+		echo "❌ .env not found in current directory ($PWD)"
+		echo "   Use 'oplg' to load global ~/.env.1password"
+		return 1
+	fi
 }
 
 # Enhanced dotfiles health check function - now using unified test suite
