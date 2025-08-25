@@ -1,0 +1,84 @@
+{{ if ne .chezmoi.os "windows" -}}
+#!/bin/bash
+# Update ~/.claude.json by merging chezmoi template changes
+# Hash: {{ include ".claude.json" | sha256sum }}
+
+set -euo pipefail
+
+TARGET_FILE="$HOME/.claude.json"
+TEMP_FILE=$(mktemp)
+BACKUP_FILE="${TARGET_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
+
+# Generate new content from chezmoi template
+TEMPLATE_CONTENT=$(cat << 'EOF'
+{{ include ".claude.json" | trim }}
+EOF
+)
+
+# Check if target file exists
+if [[ ! -f "$TARGET_FILE" ]]; then
+    echo "Creating new ~/.claude.json..."
+    echo "$TEMPLATE_CONTENT" | jq '.' > "$TARGET_FILE"
+    echo "~/.claude.json created successfully"
+    exit 0
+fi
+
+# Validate existing file is valid JSON
+if ! jq empty "$TARGET_FILE" 2>/dev/null; then
+    echo "Warning: Existing ~/.claude.json is not valid JSON"
+    echo "Creating backup at $BACKUP_FILE"
+    cp "$TARGET_FILE" "$BACKUP_FILE"
+    echo "Replacing with template content..."
+    echo "$TEMPLATE_CONTENT" | jq '.' > "$TARGET_FILE"
+    echo "~/.claude.json replaced successfully"
+    exit 0
+fi
+
+# Validate template content is valid JSON
+if ! echo "$TEMPLATE_CONTENT" | jq empty 2>/dev/null; then
+    echo "Error: Template content is not valid JSON"
+    exit 1
+fi
+
+# Create backup
+cp "$TARGET_FILE" "$BACKUP_FILE"
+
+# Merge JSONs using jq
+# Strategy:
+# - mcpServers: merge objects (template values take precedence for existing keys)
+# - preferredNotifChannel: use template value
+# - defaultMode: use template value
+# - All other fields: preserve existing values
+jq --slurpfile template <(echo "$TEMPLATE_CONTENT") '
+    . * $template[0] | 
+    .mcpServers = ((.mcpServers // {}) + ($template[0].mcpServers // {})) |
+    .preferredNotifChannel = $template[0].preferredNotifChannel |
+    .defaultMode = $template[0].defaultMode
+' "$TARGET_FILE" > "$TEMP_FILE"
+
+# Check if there are actual changes
+if diff -q "$TARGET_FILE" "$TEMP_FILE" >/dev/null 2>&1; then
+    echo "No changes to ~/.claude.json"
+    rm "$TEMP_FILE"
+    rm "$BACKUP_FILE"
+    exit 0
+fi
+
+# Show what's changing (for mcpServers only to keep output concise)
+echo "Updating ~/.claude.json..."
+echo "MCP Servers changes:"
+diff <(jq '.mcpServers // {}' "$TARGET_FILE" 2>/dev/null || echo '{}') \
+     <(jq '.mcpServers // {}' "$TEMP_FILE") || true
+
+# Update file
+mv "$TEMP_FILE" "$TARGET_FILE"
+
+# Cleanup old backup if update successful
+if [[ -f "$TARGET_FILE" ]] && jq empty "$TARGET_FILE" 2>/dev/null; then
+    rm "$BACKUP_FILE"
+    echo "~/.claude.json updated successfully"
+else
+    echo "Error: Update may have failed. Backup preserved at $BACKUP_FILE"
+    exit 1
+fi
+{{ end -}}
