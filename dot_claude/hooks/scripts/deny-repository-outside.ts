@@ -5,117 +5,7 @@ import { resolve } from "node:path";
 import { homedir } from "node:os";
 import { existsSync, realpathSync } from "node:fs";
 import { execSync } from "node:child_process";
-
-// Custom tool definitions for file/path operations
-declare module "cc-hooks-ts" {
-  interface ToolSchema {
-    Read: {
-      input: {
-        file_path: string;
-        limit?: number;
-        offset?: number;
-      };
-      response: {
-        content: string;
-      };
-    };
-    Write: {
-      input: {
-        file_path: string;
-        content: string;
-      };
-      response: {
-        success: boolean;
-      };
-    };
-    Edit: {
-      input: {
-        file_path: string;
-        old_string: string;
-        new_string: string;
-        replace_all?: boolean;
-      };
-      response: {
-        success: boolean;
-      };
-    };
-    MultiEdit: {
-      input: {
-        file_path: string;
-        edits: Array<{
-          old_string: string;
-          new_string: string;
-          replace_all?: boolean;
-        }>;
-      };
-      response: {
-        success: boolean;
-      };
-    };
-    LS: {
-      input: {
-        path: string;
-        ignore?: string[];
-      };
-      response: {
-        files: string[];
-      };
-    };
-    Glob: {
-      input: {
-        pattern: string;
-        path?: string;
-      };
-      response: {
-        files: string[];
-      };
-    };
-    Grep: {
-      input: {
-        pattern: string;
-        path?: string;
-        glob?: string;
-        output_mode?: "content" | "files_with_matches" | "count";
-      };
-      response: {
-        matches: string[];
-      };
-    };
-    NotebookRead: {
-      input: {
-        notebook_path: string;
-      };
-      response: {
-        content: string;
-      };
-    };
-    NotebookEdit: {
-      input: {
-        notebook_path: string;
-        new_source: string;
-        cell_id?: string;
-        cell_type?: "code" | "markdown";
-        edit_mode?: "replace" | "insert" | "delete";
-      };
-      response: {
-        success: boolean;
-      };
-    };
-    Bash: {
-      input: {
-        command: string;
-        description?: string;
-        run_in_background?: boolean;
-        timeout?: number;
-      };
-      response: {
-        stdout: string;
-        stderr: string;
-        exit_code: number;
-      };
-    };
-  }
-}
+import "./types/tool-schemas.ts";
 
 /**
  * Deny access to files outside repository root
@@ -124,11 +14,11 @@ declare module "cc-hooks-ts" {
 export default defineHook({
   trigger: { PreToolUse: true },
   run: (context) => {
-    const { toolName, toolInput } = context.event;
+    const { tool_name, tool_input } = context.input;
 
     // Only process file/path-related tools
     const fileTools = ["Read", "Write", "Edit", "MultiEdit", "NotebookRead", "NotebookEdit", "LS", "Glob", "Grep", "Bash"];
-    if (!fileTools.includes(toolName)) {
+    if (!fileTools.includes(tool_name)) {
       return context.success({});
     }
 
@@ -141,8 +31,8 @@ export default defineHook({
       }
 
       // Extract file paths from tool input
-      const filePaths = extractFilePaths(toolName, toolInput);
-      
+      const filePaths = extractFilePaths(tool_name, tool_input);
+
       // Check each path
       for (const filePath of filePaths) {
         const validation = validatePath(filePath, repoRoot);
@@ -169,9 +59,9 @@ interface PathValidationResult {
 
 function getRepositoryRoot(): string | undefined {
   try {
-    const result = execSync("git rev-parse --show-toplevel", { 
+    const result = execSync("git rev-parse --show-toplevel", {
       encoding: "utf-8",
-      stdio: ["ignore", "pipe", "ignore"] 
+      stdio: ["ignore", "pipe", "ignore"]
     });
     return result.trim();
   } catch {
@@ -179,52 +69,52 @@ function getRepositoryRoot(): string | undefined {
   }
 }
 
-function extractFilePaths(toolName: string, toolInput: any): string[] {
+function extractFilePaths(tool_name: string, tool_input: any): string[] {
   const paths: string[] = [];
 
-  switch (toolName) {
+  switch (tool_name) {
     case "Read":
     case "NotebookRead":
-      if (toolInput.file_path || toolInput.notebook_path) {
-        paths.push(toolInput.file_path || toolInput.notebook_path);
+      if (tool_input.file_path || tool_input.notebook_path) {
+        paths.push(tool_input.file_path || tool_input.notebook_path);
       }
       break;
-      
+
     case "Write":
-      if (toolInput.file_path) {
-        paths.push(toolInput.file_path);
+      if (tool_input.file_path) {
+        paths.push(tool_input.file_path);
       }
       break;
-      
+
     case "Edit":
     case "MultiEdit":
     case "NotebookEdit":
-      if (toolInput.file_path || toolInput.notebook_path) {
-        paths.push(toolInput.file_path || toolInput.notebook_path);
+      if (tool_input.file_path || tool_input.notebook_path) {
+        paths.push(tool_input.file_path || tool_input.notebook_path);
       }
       break;
-      
+
     case "LS":
-      if (toolInput.path) {
-        paths.push(toolInput.path);
+      if (tool_input.path) {
+        paths.push(tool_input.path);
       }
       break;
-      
+
     case "Glob":
-      if (toolInput.path) {
-        paths.push(toolInput.path);
+      if (tool_input.path) {
+        paths.push(tool_input.path);
       }
       break;
-      
+
     case "Grep":
-      if (toolInput.path) {
-        paths.push(toolInput.path);
+      if (tool_input.path) {
+        paths.push(tool_input.path);
       }
       break;
-      
+
     case "Bash":
       // For Bash commands, try to extract file paths from the command
-      const command = toolInput.command || "";
+      const command = tool_input.command || "";
       const extractedPaths = extractPathsFromBashCommand(command);
       paths.push(...extractedPaths);
       break;
@@ -235,10 +125,10 @@ function extractFilePaths(toolName: string, toolInput: any): string[] {
 
 function extractPathsFromBashCommand(command: string): string[] {
   const paths: string[] = [];
-  
+
   // Simple heuristics to extract file paths from bash commands
   // This is a simplified version - could be enhanced
-  
+
   // Look for file path patterns in common commands
   const patterns = [
     // cat, head, tail, less, more
@@ -256,8 +146,9 @@ function extractPathsFromBashCommand(command: string): string[] {
     while ((match = pattern.exec(command)) !== null) {
       // Add all captured groups (excluding the full match)
       for (let i = 1; i < match.length; i++) {
-        if (match[i]) {
-          paths.push(match[i]);
+        const capturedGroup = match[i];
+        if (capturedGroup && typeof capturedGroup === 'string') {
+          paths.push(capturedGroup);
         }
       }
     }
@@ -266,9 +157,9 @@ function extractPathsFromBashCommand(command: string): string[] {
   return paths.filter(path => {
     // Filter out obvious non-paths
     return !path.startsWith("-") && // Not flags
-           path !== "." && 
-           path !== ".." &&
-           path.length > 0;
+      path !== "." &&
+      path !== ".." &&
+      path.length > 0;
   });
 }
 
@@ -276,7 +167,7 @@ function resolvePath(path: string): string {
   if (path.startsWith("/")) {
     return path;
   }
-  
+
   try {
     // Use realpathSync to properly resolve relative paths and symlinks
     return realpathSync(path);
@@ -289,7 +180,7 @@ function resolvePath(path: string): string {
 function validatePath(path: string, repoRoot: string): PathValidationResult {
   const absPath = resolvePath(path);
   const homeDir = homedir();
-  
+
   // Check if path starts with repository root
   if (absPath.startsWith(repoRoot)) {
     return {
@@ -297,7 +188,7 @@ function validatePath(path: string, repoRoot: string): PathValidationResult {
       resolvedPath: absPath,
     };
   }
-  
+
   // Allow access to home directory configuration files
   const allowedHomePaths = [
     join(homeDir, ".claude"),
@@ -310,7 +201,7 @@ function validatePath(path: string, repoRoot: string): PathValidationResult {
     join(homeDir, ".ssh/config"),
     join(homeDir, ".ssh/known_hosts"),
   ];
-  
+
   for (const allowedPath of allowedHomePaths) {
     if (absPath.startsWith(allowedPath)) {
       return {
@@ -319,7 +210,7 @@ function validatePath(path: string, repoRoot: string): PathValidationResult {
       };
     }
   }
-  
+
   // Allow temporary directories
   if (absPath.startsWith("/tmp/") || absPath.startsWith("/var/tmp/")) {
     return {
@@ -327,7 +218,7 @@ function validatePath(path: string, repoRoot: string): PathValidationResult {
       resolvedPath: absPath,
     };
   }
-  
+
   // Deny access to system directories
   const systemPaths = ["/etc", "/usr", "/var", "/opt", "/bin", "/sbin", "/lib", "/lib64", "/boot", "/proc", "/sys", "/dev"];
   for (const systemPath of systemPaths) {
@@ -339,7 +230,7 @@ function validatePath(path: string, repoRoot: string): PathValidationResult {
       };
     }
   }
-  
+
   // Default: deny access outside repository
   return {
     isAllowed: false,

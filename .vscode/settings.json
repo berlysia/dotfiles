@@ -6,5 +6,6 @@
     "*.toml.tmpl": "toml",
     "dot_gitconfig.tmpl": "ini",
     "dot_zshrc.tmpl": "shellscript",
-  }
+  },
+  "typescript.experimental.useTsgo": true
 }

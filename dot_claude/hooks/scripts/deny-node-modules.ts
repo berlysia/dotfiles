@@ -10,17 +10,17 @@ import { resolve } from "node:path";
 export default defineHook({
   trigger: { PreToolUse: true },
   run: (context) => {
-    const { toolName, toolInput } = context.event;
+    const { tool_name, tool_input } = context.input;
 
     // Only process file writing tools
     const writeTools = ["Write", "Edit", "MultiEdit", "NotebookEdit"];
-    if (!writeTools.includes(toolName)) {
+    if (!writeTools.includes(tool_name)) {
       return context.success({});
     }
 
     try {
       // Extract file path from tool input
-      const filePath = extractFilePath(toolName, toolInput);
+      const filePath = extractFilePath(tool_name, tool_input);
       if (!filePath) {
         return context.success({});
       }
@@ -47,17 +47,17 @@ interface NodeModulesValidationResult {
   reason?: string;
 }
 
-function extractFilePath(toolName: string, toolInput: any): string | null {
-  switch (toolName) {
+function extractFilePath(tool_name: string, tool_input: any): string | null {
+  switch (tool_name) {
     case "Write":
-      return toolInput.file_path || null;
+      return tool_input.file_path || null;
       
     case "Edit":
     case "MultiEdit":
-      return toolInput.file_path || null;
+      return tool_input.file_path || null;
       
     case "NotebookEdit":
-      return toolInput.notebook_path || null;
+      return tool_input.notebook_path || null;
       
     default:
       return null;

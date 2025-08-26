@@ -9,14 +9,16 @@ import { defineHook } from "cc-hooks-ts";
 export default defineHook({
   trigger: { PreToolUse: true },
   run: (context) => {
-    const { toolName, toolInput } = context.event;
+    const { tool_name, tool_input } = context.input;
 
     // Only process Bash commands
-    if (toolName !== "Bash") {
+    if (tool_name !== "Bash") {
       return context.success({});
     }
 
-    const command = toolInput.command || "";
+    // Type assertion for tool_input
+    const input = tool_input as { command?: string };
+    const command = input.command || "";
 
     try {
       // Check for tsx/ts-node usage patterns

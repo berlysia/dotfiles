@@ -20,6 +20,7 @@
     "@types/node": "^24.2.1"
   },
   "dependencies": {
-    "ccusage": "^15.9.3"
+    "ccusage": "^15.9.3",
+    "cc-hooks-ts": "^0.0.5"
   }
 }

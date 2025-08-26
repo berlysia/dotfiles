@@ -23,6 +23,9 @@ importers:
 
   dot_claude:
     dependencies:
+      cc-hooks-ts:
+        specifier: ^0.0.5
+        version: 0.0.5(typescript@5.9.2)
       ccusage:
         specifier: ^15.9.3
         version: 15.9.3
@@ -139,6 +142,10 @@ packages:
   braces@3.0.3:
     resolution: {integrity: sha512-yQbXgO/OSZVD2IsiLlro+7Hf6Q18EJrKSEsdoMzKePKXct3gvD8oLcOQdIzGupr5Fj+EDe8gO/lxc1BzfMpxvA==}
     engines: {node: '>=8'}
+
+  cc-hooks-ts@0.0.5:
+    resolution: {integrity: sha512-y/V/XbhxLoFMeYJhrQvbLP/QZ4nUcdMldOrQjMIkqByycQX+gvNwrkasgbE9inasrPgdBTTk4+zWHbTzNlcisw==}
+    engines: {node: ^20.12.0 || ^22.0.0 || >=24.0.0}
 
   ccusage@15.9.3:
     resolution: {integrity: sha512-sNioHFlNUlwKgw79JSU4pFpIwLrUSx4Ot7mju+KDZuseD7o++2URoqeqQ0HIa3+8BErTtVJBLEGf9436Qrf+tw==}
@@ -283,6 +290,14 @@ packages:
   undici-types@7.10.0:
     resolution: {integrity: sha512-t5Fy/nfn+14LuOc2KNYg75vZqClpAiqscVvMygNnlsHBFpSXdJaYtXMcdNLpl/Qvc3P2cB3s6lOV51nqsFq4ag==}
 
+  valibot@1.1.0:
+    resolution: {integrity: sha512-Nk8lX30Qhu+9txPYTwM0cFlWLdPFsFr6LblzqIySfbZph9+BFsAHsNvHOymEviUepeIW6KFHzpX8TKhbptBXXw==}
+    peerDependencies:
+      typescript: '>=5'
+    peerDependenciesMeta:
+      typescript:
+        optional: true
+
   which@2.0.2:
     resolution: {integrity: sha512-BLI3Tl1TW3Pvl70l3yq3Y64i+awpwXqsGBYWkkqMtnbXgrMD+yj7rhW0kuEDxzJaYXGjEW5ogapKNMEKNMjibA==}
     engines: {node: '>= 8'}
@@ -395,6 +410,12 @@ snapshots:
   braces@3.0.3:
     dependencies:
       fill-range: 7.1.1
+
+  cc-hooks-ts@0.0.5(typescript@5.9.2):
+    dependencies:
+      valibot: 1.1.0(typescript@5.9.2)
+    transitivePeerDependencies:
+      - typescript
 
   ccusage@15.9.3: {}
 
@@ -525,6 +546,10 @@ snapshots:
   typescript@5.9.2: {}
 
   undici-types@7.10.0: {}
+
+  valibot@1.1.0(typescript@5.9.2):
+    optionalDependencies:
+      typescript: 5.9.2
 
   which@2.0.2:
     dependencies:

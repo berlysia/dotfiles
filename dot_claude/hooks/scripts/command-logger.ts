@@ -4,25 +4,7 @@ import { defineHook } from "cc-hooks-ts";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { appendFileSync, readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
-
-// Custom tool definitions
-declare module "cc-hooks-ts" {
-  interface ToolSchema {
-    Bash: {
-      input: {
-        command: string;
-        description?: string;
-        run_in_background?: boolean;
-        timeout?: number;
-      };
-      response: {
-        stdout: string;
-        stderr: string;
-        exit_code: number;
-      };
-    };
-  }
-}
+import "./types/tool-schemas.ts";
 
 /**
  * Command logger for tracking tool usage
@@ -31,7 +13,7 @@ declare module "cc-hooks-ts" {
 export default defineHook({
   trigger: { PostToolUse: true },
   run: (context) => {
-    const { toolName, toolInput, session_id } = context.event;
+    const { tool_name, tool_input, session_id } = context.input;
 
     try {
       // Initialize logging
@@ -41,13 +23,13 @@ export default defineHook({
       }
 
       // Only log Bash commands for now (can be extended)
-      if (toolName === "Bash") {
-        logBashCommand(toolInput, session_id);
+      if (tool_name === "Bash") {
+        logBashCommand(tool_input, session_id);
       }
 
       // Log auto-format events for Edit/Write tools
-      if (["Edit", "MultiEdit", "Write"].includes(toolName)) {
-        logAutoFormatEvent(toolName, toolInput, session_id);
+      if (["Edit", "MultiEdit", "Write"].includes(tool_name)) {
+        logAutoFormatEvent(tool_name, tool_input, session_id);
       }
 
       return context.success({});
@@ -72,24 +54,24 @@ interface LogEntry {
   file_path?: string;
 }
 
-function logBashCommand(toolInput: any, sessionId?: string): void {
-  const command = toolInput.command || "";
-  const description = toolInput.description || "";
-  
+function logBashCommand(tool_input: any, sessionId?: string): void {
+  const command = tool_input.command || "";
+  const description = tool_input.description || "";
+
   const logEntry: LogEntry = {
     timestamp: new Date().toISOString(),
     user: process.env.USER || "unknown",
     cwd: process.cwd(),
-    session_id: sessionId,
     tool_name: "Bash",
     command: command.replace(/\n/g, "\\n"), // Escape newlines
     description,
+    ...(sessionId && { session_id: sessionId }),
   };
 
   // Write to command history log (compatible with existing format)
   const commandHistoryLog = join(homedir(), ".claude", "command_history.log");
   const logLine = `[${new Date().toLocaleString()}] ${logEntry.user} [${logEntry.cwd}]: ${logEntry.command}\n`;
-  
+
   try {
     appendFileSync(commandHistoryLog, logLine);
   } catch (error) {
@@ -100,17 +82,17 @@ function logBashCommand(toolInput: any, sessionId?: string): void {
   writeStructuredLog(logEntry);
 }
 
-function logAutoFormatEvent(toolName: string, toolInput: any, sessionId?: string): void {
-  const filePath = toolInput.file_path || "";
-  
+function logAutoFormatEvent(tool_name: string, tool_input: any, sessionId?: string): void {
+  const filePath = tool_input.file_path || "";
+
   const logEntry: LogEntry = {
     timestamp: new Date().toISOString(),
     user: process.env.USER || "unknown",
     cwd: process.cwd(),
-    session_id: sessionId,
-    tool_name: toolName,
+    tool_name: tool_name,
     file_path: filePath,
     description: "Auto-format triggered",
+    ...(sessionId && { session_id: sessionId }),
   };
 
   writeStructuredLog(logEntry);
@@ -119,7 +101,7 @@ function logAutoFormatEvent(toolName: string, toolInput: any, sessionId?: string
 function writeStructuredLog(logEntry: LogEntry): void {
   const structuredLogFile = join(homedir(), ".claude", "tool_usage.jsonl");
   const logLine = JSON.stringify(logEntry) + "\n";
-  
+
   try {
     appendFileSync(structuredLogFile, logLine);
   } catch (error) {

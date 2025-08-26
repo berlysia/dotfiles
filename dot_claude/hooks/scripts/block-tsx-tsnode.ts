@@ -36,7 +36,7 @@ function checkBashCommand(command: string): void {
   const installPattern = /^[\s]*(npm|yarn|pnpm|bun)[\s]+(install|add|i)[\s]+(.+)$/;
   const installMatch = command.match(installPattern);
   
-  if (installMatch) {
+  if (installMatch && installMatch[3]) {
     const packagesString = installMatch[3];
     const packageNames = extractPackageNames(packagesString);
     

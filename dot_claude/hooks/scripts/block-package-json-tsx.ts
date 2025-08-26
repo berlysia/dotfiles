@@ -9,17 +9,20 @@ import { defineHook } from "cc-hooks-ts";
 export default defineHook({
   trigger: { PreToolUse: true },
   run: (context) => {
-    const { toolName, toolInput } = context.event;
+    const { tool_name, tool_input } = context.input;
 
     // Only process file writing/editing tools
     const editTools = ["Write", "Edit", "MultiEdit"];
-    if (!editTools.includes(toolName)) {
+    if (!editTools.includes(tool_name)) {
       return context.success({});
     }
 
     try {
+      // Type assertion for tool_input
+      const input = tool_input as { file_path?: string; content?: string; old_string?: string; new_string?: string; edits?: any[] };
+      
       // Extract file path
-      const filePath = toolInput.file_path || "";
+      const filePath = input.file_path || "";
       
       // Only check package.json files
       if (!filePath.endsWith("/package.json") && !filePath.endsWith("package.json")) {
@@ -29,13 +32,13 @@ export default defineHook({
       // Get content to check
       let contentToCheck = "";
       
-      if (toolName === "Write") {
-        contentToCheck = toolInput.content || "";
-      } else if (toolName === "Edit") {
-        contentToCheck = toolInput.new_string || "";
-      } else if (toolName === "MultiEdit") {
+      if (tool_name === "Write") {
+        contentToCheck = input.content || "";
+      } else if (tool_name === "Edit") {
+        contentToCheck = input.new_string || "";
+      } else if (tool_name === "MultiEdit") {
         // Check all edits
-        const edits = toolInput.edits || [];
+        const edits = input.edits || [];
         for (const edit of edits) {
           contentToCheck += (edit.new_string || "") + "\n";
         }

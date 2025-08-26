@@ -48,7 +48,8 @@ function extractChildCommand(command: string): ChildCommandResult {
     if (words.length > 1) {
       // Find the first word that doesn't start with -
       for (let i = 1; i < words.length; i++) {
-        if (!words[i].startsWith("-")) {
+        const word = words[i];
+        if (word && typeof word === 'string' && !word.startsWith("-")) {
           const remaining = words.slice(i).join(" ");
           return { found: true, command: remaining };
         }
@@ -59,7 +60,7 @@ function extractChildCommand(command: string): ChildCommandResult {
   // Handle find -exec command
   else if (command.includes("-exec ")) {
     const execMatch = command.match(/-exec\s+(.+?)\s+[\\;+]/);
-    if (execMatch) {
+    if (execMatch && execMatch[1]) {
       return { found: true, command: execMatch[1].trim() };
     }
   }
@@ -110,13 +111,13 @@ export function extractCommandsFromCompound(commandString: string): string[] {
         
         // Remove $( ) wrapping
         const dollarMatch = subshell.match(/^\$\((.+)\)$/);
-        if (dollarMatch) {
+        if (dollarMatch && dollarMatch[1]) {
           innerCmd = dollarMatch[1];
         }
         
         // Remove ` ` wrapping
         const backtickMatch = subshell.match(/^`(.+)`$/);
-        if (backtickMatch) {
+        if (backtickMatch && backtickMatch[1]) {
           innerCmd = backtickMatch[1];
         }
         
@@ -315,7 +316,10 @@ export function checkIndividualCommandWithMatchedPattern(
   allowList: string[]
 ): { matches: boolean; matchedPattern?: string } {
   const result = checkIndividualCommandWithPattern(cmd, allowList);
-  return { matches: result.matches, matchedPattern: result.pattern };
+  return { 
+    matches: result.matches, 
+    ...(result.pattern && { matchedPattern: result.pattern })
+  };
 }
 
 /**
@@ -334,7 +338,10 @@ export function checkIndividualCommandDenyWithPattern(
   denyList: string[]
 ): { matches: boolean; matchedPattern?: string } {
   const result = checkIndividualCommandWithPattern(cmd, denyList);
-  return { matches: result.matches, matchedPattern: result.pattern };
+  return { 
+    matches: result.matches, 
+    ...(result.pattern && { matchedPattern: result.pattern })
+  };
 }
 
 /**
@@ -356,6 +363,7 @@ export function checkPattern(pattern: string, toolName: string, toolInput: ToolI
     // Check if command matches the pattern
     if (cmdPattern.includes(":")) {
       const cmdPrefix = cmdPattern.split(":")[0];
+      if (!cmdPrefix) return false;
       
       // Handle compound commands (&&, ||, ;)
       const commands = extractCommandsFromCompound(actualCommand);
