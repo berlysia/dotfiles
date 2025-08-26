@@ -6,12 +6,11 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "test": "pnpm --filter @berlysia-dotfiles/hook-scripts test",
-    "test:hooks": "pnpm --filter @berlysia-dotfiles/hook-scripts test",
-    "test:hooks:types": "pnpm --filter @berlysia-dotfiles/hook-scripts test:types",
-    "test:hooks:functional": "pnpm --filter @berlysia-dotfiles/hook-scripts test:functional",
-    "lint:hooks": "pnpm --filter @berlysia-dotfiles/hook-scripts lint",
-    "check:hooks": "pnpm --filter @berlysia-dotfiles/hook-scripts check"
+    "test": ".scripts/test-with-types.sh",
+    "test:types": "npx tsgo --noEmit --target esnext --module esnext **/*.ts",
+    "test:functional": "./scripts/tests/integration/run-ts-hook-tests.sh",
+    "lint": "npx tsgo --noEmit --strict **/*.ts",
+    "check": "npm run lint && npm run test"
   },
   "keywords": [],
   "author": "",
@@ -21,5 +20,10 @@
     "@types/node": "^24.2.1",
     "@typescript/native-preview": "7.0.0-dev.20250811.1",
     "typescript": "^5.9.2"
+  },
+  "dependencies": {
+    "@mizchi/readability": "^0.7.7",
+    "ccusage": "^15.9.3",
+    "cc-hooks-ts": "^0.0.5"
   }
 }
