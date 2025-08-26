@@ -4,6 +4,7 @@ import { defineHook } from "cc-hooks-ts";
 import { existsSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { extname } from "node:path";
+import "./types/tool-schemas.ts";
 
 /**
  * Auto-format files after Edit/MultiEdit/Write operations
@@ -12,17 +13,17 @@ import { extname } from "node:path";
 export default defineHook({
   trigger: { PostToolUse: true },
   run: (context) => {
-    const { toolName, toolInput } = context.event;
+    const { tool_name, tool_input } = context.input;
 
     // Only process file writing/editing tools
     const formatableTools = ["Edit", "MultiEdit", "Write"];
-    if (!formatableTools.includes(toolName)) {
+    if (!formatableTools.includes(tool_name)) {
       return context.success({});
     }
 
     try {
       // Extract file path from tool input
-      const filePath = extractFilePath(toolName, toolInput);
+      const filePath = extractFilePath(tool_name, tool_input);
       if (!filePath) {
         return context.success({});
       }
@@ -39,7 +40,7 @@ export default defineHook({
 
       // Attempt to format the file
       const formatResult = attemptFormat(filePath);
-      
+
       if (formatResult.success) {
         console.log(`✅ Formatted ${filePath} with ${formatResult.formatter}`);
       }
@@ -64,15 +65,15 @@ interface FormatResult {
 /**
  * Extract file path from tool input
  */
-function extractFilePath(toolName: string, toolInput: any): string | null {
-  switch (toolName) {
+function extractFilePath(tool_name: string, tool_input: any): string | null {
+  switch (tool_name) {
     case "Write":
-      return toolInput.file_path || null;
-      
+      return tool_input.file_path || null;
+
     case "Edit":
     case "MultiEdit":
-      return toolInput.file_path || null;
-      
+      return tool_input.file_path || null;
+
     default:
       return null;
   }
@@ -83,13 +84,13 @@ function extractFilePath(toolName: string, toolInput: any): string | null {
  */
 function isFormattableFile(filePath: string): boolean {
   const ext = extname(filePath).slice(1); // Remove leading dot
-  
+
   const formattableExtensions = [
     'js', 'jsx', 'ts', 'tsx', 'json', 'jsonc',
     'css', 'scss', 'html', 'md', 'mdx',
     'yml', 'yaml', 'toml', 'rs', 'go', 'py'
   ];
-  
+
   return formattableExtensions.includes(ext);
 }
 
@@ -117,7 +118,7 @@ function localBinaryExists(path: string): boolean {
  */
 function execFormatter(command: string, filePath: string): boolean {
   try {
-    execSync(command.replace('$FILE', `"${filePath}"`), { 
+    execSync(command.replace('$FILE', `"${filePath}"`), {
       stdio: 'ignore',
       timeout: 10000 // 10 second timeout
     });
@@ -139,20 +140,20 @@ function attemptFormat(filePath: string): FormatResult {
         return { success: true, formatter: "biome (global)" };
       }
     }
-    
+
     // Local biome
     if (localBinaryExists("node_modules/.bin/biome")) {
       if (execFormatter("./node_modules/.bin/biome format --write $FILE", filePath)) {
         return { success: true, formatter: "biome (local)" };
       }
     }
-    
+
     // NPX biome
     if (commandExists("npx") && existsSync("package.json")) {
       try {
         const packageJson = require(process.cwd() + "/package.json");
-        if (packageJson.dependencies?.["@biomejs/biome"] || 
-            packageJson.devDependencies?.["@biomejs/biome"]) {
+        if (packageJson.dependencies?.["@biomejs/biome"] ||
+          packageJson.devDependencies?.["@biomejs/biome"]) {
           if (execFormatter("npx biome format --write $FILE", filePath)) {
             return { success: true, formatter: "biome (npx)" };
           }
@@ -177,7 +178,7 @@ function attemptFormat(filePath: string): FormatResult {
     ".prettierrc", ".prettierrc.json", ".prettierrc.js",
     ".prettierrc.yml", ".prettierrc.yaml", "prettier.config.js"
   ];
-  
+
   if (prettierConfigs.some(config => existsSync(config))) {
     // Global prettier
     if (commandExists("prettier")) {
@@ -185,20 +186,20 @@ function attemptFormat(filePath: string): FormatResult {
         return { success: true, formatter: "prettier (global)" };
       }
     }
-    
+
     // Local prettier
     if (localBinaryExists("node_modules/.bin/prettier")) {
       if (execFormatter("./node_modules/.bin/prettier --write $FILE", filePath)) {
         return { success: true, formatter: "prettier (local)" };
       }
     }
-    
+
     // NPX prettier
     if (commandExists("npx") && existsSync("package.json")) {
       try {
         const packageJson = require(process.cwd() + "/package.json");
-        if (packageJson.dependencies?.["prettier"] || 
-            packageJson.devDependencies?.["prettier"]) {
+        if (packageJson.dependencies?.["prettier"] ||
+          packageJson.devDependencies?.["prettier"]) {
           if (execFormatter("npx prettier --write $FILE", filePath)) {
             return { success: true, formatter: "prettier (npx)" };
           }

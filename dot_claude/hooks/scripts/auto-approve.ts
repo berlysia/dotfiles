@@ -5,25 +5,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
-
-// Custom tool definitions
-declare module "cc-hooks-ts" {
-  interface ToolSchema {
-    Bash: {
-      input: {
-        command: string;
-        description?: string;
-        run_in_background?: boolean;
-        timeout?: number;
-      };
-      response: {
-        stdout: string;
-        stderr: string;
-        exit_code: number;
-      };
-    };
-  }
-}
+import "./types/tool-schemas.ts";
 
 /**
  * Auto-approve commands based on permissions.allow/deny lists
@@ -32,21 +14,21 @@ declare module "cc-hooks-ts" {
 export default defineHook({
   trigger: { PreToolUse: true },
   run: (context) => {
-    const { toolName, toolInput } = context.event;
+    const { tool_name, tool_input } = context.input;
 
     // Exit early if no tool name
-    if (!toolName) {
+    if (!tool_name) {
       return context.success({});
     }
 
     // Get permission lists
-    const { allowList, denyList } = getPermissionLists(toolName);
-    
+    const { allowList, denyList } = getPermissionLists(tool_name);
+
     try {
       // Process based on tool type
-      if (toolName === "Bash") {
-        const bashResult = processBashTool(toolInput, denyList, allowList);
-        
+      if (tool_name === "Bash") {
+        const bashResult = processBashTool(tool_input, denyList, allowList);
+
         // Handle early exit conditions (dangerous commands requiring manual review)
         if (bashResult.earlyExit) {
           const [exitType, exitReason] = bashResult.earlyExit.split("|", 2);
@@ -56,37 +38,37 @@ export default defineHook({
         }
 
         const decision = analyzeBashCommands(bashResult.individualResults, bashResult.denyMatches);
-        
+
         // Log the decision
-        logDecision(toolName, toolInput, decision.decision, decision.reason);
-        
+        logDecision(tool_name, tool_input, decision.decision, decision.reason);
+
         if (decision.decision === "deny") {
           return context.blockingError(decision.reason);
         } else if (decision.decision === "ask") {
           return context.blockingError(decision.reason);
         }
-        
+
         // Allow by default
         return context.success({});
-        
+
       } else {
         // Handle other tools
-        const otherResult = processOtherTool(toolName, toolInput, denyList, allowList);
+        const otherResult = processOtherTool(tool_name, tool_input, denyList, allowList);
         const decision = analyzePatternMatches(otherResult.allowMatches, otherResult.denyMatches);
-        
+
         // Log the decision
-        logDecision(toolName, toolInput, decision.decision, decision.reason);
-        
+        logDecision(tool_name, tool_input, decision.decision, decision.reason);
+
         if (decision.decision === "deny") {
           return context.blockingError(decision.reason);
         } else if (decision.decision === "ask") {
           return context.blockingError(decision.reason);
         }
-        
+
         // Allow by default
         return context.success({});
       }
-      
+
     } catch (error) {
       return context.blockingError(`Error in auto-approve: ${error}`);
     }
@@ -112,18 +94,18 @@ interface OtherToolResult {
   allowMatches: string[];
 }
 
-function getPermissionLists(toolName: string): { allowList: string[]; denyList: string[] } {
+function getPermissionLists(tool_name: string): { allowList: string[]; denyList: string[] } {
   if (process.env.CLAUDE_TEST_MODE === "1") {
     // Test mode
     try {
       const allowJson = JSON.parse(process.env.CLAUDE_TEST_ALLOW || "[]");
       const denyJson = JSON.parse(process.env.CLAUDE_TEST_DENY || "[]");
 
-      const allowList = Array.isArray(allowJson) 
-        ? allowJson.filter((pattern: string) => pattern.startsWith(`${toolName}(`))
+      const allowList = Array.isArray(allowJson)
+        ? allowJson.filter((pattern: string) => pattern.startsWith(`${tool_name}(`))
         : [];
       const denyList = Array.isArray(denyJson)
-        ? denyJson.filter((pattern: string) => pattern.startsWith(`${toolName}(`))
+        ? denyJson.filter((pattern: string) => pattern.startsWith(`${tool_name}(`))
         : [];
 
       return { allowList, denyList };
@@ -143,9 +125,9 @@ function getPermissionLists(toolName: string): { allowList: string[]; denyList: 
 
 function getWorkspaceRoot(): string | undefined {
   try {
-    const result = execSync("git rev-parse --show-toplevel", { 
+    const result = execSync("git rev-parse --show-toplevel", {
       encoding: "utf-8",
-      stdio: ["ignore", "pipe", "ignore"] 
+      stdio: ["ignore", "pipe", "ignore"]
     });
     return result.trim();
   } catch {
@@ -162,7 +144,7 @@ interface SettingsFile {
 
 function getSettingsFiles(workspaceRoot?: string): SettingsFile[] {
   const settingsFiles: SettingsFile[] = [];
-  
+
   // Global settings
   const globalSettingsPath = join(homedir(), ".claude", "settings.json");
   if (existsSync(globalSettingsPath)) {
@@ -173,7 +155,7 @@ function getSettingsFiles(workspaceRoot?: string): SettingsFile[] {
       // Ignore parse errors
     }
   }
-  
+
   // Workspace settings
   if (workspaceRoot) {
     const workspaceSettingsPath = join(workspaceRoot, ".claude", "settings.json");
@@ -186,25 +168,25 @@ function getSettingsFiles(workspaceRoot?: string): SettingsFile[] {
       }
     }
   }
-  
+
   return settingsFiles;
 }
 
 function extractPermissionList(type: "allow" | "deny", settingsFiles: SettingsFile[]): string[] {
   const patterns: string[] = [];
-  
+
   for (const file of settingsFiles) {
     const list = file.permissions?.[type];
     if (Array.isArray(list)) {
       patterns.push(...list);
     }
   }
-  
+
   return patterns;
 }
 
-function processBashTool(toolInput: any, denyList: string[], allowList: string[]): BashToolResult {
-  const bashCommand = toolInput.command || "";
+function processBashTool(tool_input: any, denyList: string[], allowList: string[]): BashToolResult {
+  const bashCommand = tool_input.command || "";
   const extractedCommands = extractCommandsFromCompound(bashCommand);
 
   const individualResults: string[] = [];
@@ -285,20 +267,20 @@ function processBashCommand(cmd: string, denyList: string[], allowList: string[]
   }
 }
 
-function processOtherTool(toolName: string, toolInput: any, denyList: string[], allowList: string[]): OtherToolResult {
+function processOtherTool(tool_name: string, tool_input: any, denyList: string[], allowList: string[]): OtherToolResult {
   const denyMatches: string[] = [];
   const allowMatches: string[] = [];
 
   // Check deny patterns first
   for (const pattern of denyList) {
-    if (pattern.trim() && checkPattern(pattern, toolName, toolInput)) {
+    if (pattern.trim() && checkPattern(pattern, tool_name, tool_input)) {
       denyMatches.push(pattern);
     }
   }
 
   // Check allow patterns
   for (const pattern of allowList) {
-    if (pattern.trim() && checkPattern(pattern, toolName, toolInput)) {
+    if (pattern.trim() && checkPattern(pattern, tool_name, tool_input)) {
       allowMatches.push(pattern);
     }
   }
@@ -356,21 +338,22 @@ function checkCommandPattern(pattern: string, cmd: string): boolean {
   // Extract command from Bash(command:*) format
   const match = pattern.match(/^Bash\(([^)]+)\)$/);
   if (!match) return false;
-  
+
   const cmdPattern = match[1];
-  
+  if (!cmdPattern) return false;
+
   // Simple wildcard matching - can be enhanced
   if (cmdPattern.endsWith(":*")) {
     const prefix = cmdPattern.slice(0, -2);
     return cmd.startsWith(prefix);
   }
-  
+
   return cmd === cmdPattern;
 }
 
-function checkPattern(pattern: string, toolName: string, toolInput: any): boolean {
+function checkPattern(pattern: string, tool_name: string, tool_input: any): boolean {
   // Check if pattern matches the tool name
-  if (pattern.startsWith(`${toolName}(`)) {
+  if (pattern.startsWith(`${tool_name}(`)) {
     // For now, simple matching logic
     return true;
   }
@@ -429,11 +412,11 @@ function analyzePatternMatches(allowMatches: string[], denyMatches: string[]): {
   };
 }
 
-function logDecision(toolName: string, toolInput: any, decision: string, reason: string): void {
+function logDecision(tool_name: string, tool_input: any, decision: string, reason: string): void {
   const logFile = join(homedir(), ".claude", "auto_approve_commands.log");
   const timestamp = new Date().toISOString();
-  const logEntry = `[${timestamp}] ${toolName}: ${decision} - ${reason}\n`;
-  
+  const logEntry = `[${timestamp}] ${tool_name}: ${decision} - ${reason}\n`;
+
   try {
     // Simple append to log file
     const fs = require("node:fs");

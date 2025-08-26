@@ -2,7 +2,7 @@
 
 import { defineHook } from "cc-hooks-ts";
 import { execSync } from "node:child_process";
-import { appendFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -16,11 +16,11 @@ export default defineHook({
     Notification: true 
   },
   run: (context) => {
-    const eventType = context.event.hook_event_name || "Unknown";
+    const eventType = context.input.hook_event_name || "Unknown";
     
     try {
       // Log the event
-      logEvent(eventType, context.event.session_id);
+      logEvent(eventType, context.input.session_id);
       
       // Play notification sound and send notification
       handleNotifications(eventType);
@@ -49,7 +49,7 @@ function logEvent(eventType: string, sessionId?: string): void {
   try {
     // Ensure directory exists
     const logDir = join(homedir(), ".config", "claude-companion", "logs");
-    require("node:fs").mkdirSync(logDir, { recursive: true });
+    mkdirSync(logDir, { recursive: true });
     
     appendFileSync(logFile, logLine);
   } catch (error) {
@@ -69,7 +69,7 @@ function handleNotifications(eventType: string): void {
       soundFile = join(soundsDir, "ClaudeNotification.wav");
     }
     
-    if (soundFile && require("node:fs").existsSync(soundFile)) {
+    if (soundFile && existsSync(soundFile)) {
       // Try to play sound (Linux-specific, could be enhanced for other platforms)
       try {
         execSync(`paplay "${soundFile}"`, { stdio: "ignore" });

@@ -6,18 +6,18 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 /**
- * Session management hooks
- * Handles SessionStart events with logging
+ * User prompt submission logger
+ * Logs UserPromptSubmit events for analytics
  */
 export default defineHook({
-  trigger: { SessionStart: true },
+  trigger: { UserPromptSubmit: true },
   run: (context) => {
     try {
-      // Log session start
+      // Log user prompt submission
       const logEntry = {
         timestamp: new Date().toISOString(),
-        event: "SessionStart",
-        session_id: context.event.session_id,
+        event: "UserPromptSubmit",
+        session_id: context.input.session_id,
         user: process.env.USER || "unknown",
         cwd: process.cwd(),
       };
@@ -31,12 +31,10 @@ export default defineHook({
       
       appendFileSync(logFile, logLine);
 
-      return context.success({
-        messageForUser: "🚀 Claude Code session started. Ready for development!"
-      });
+      return context.success({});
 
     } catch (error) {
-      console.error(`Session start error: ${error}`);
+      console.error(`User prompt logger error: ${error}`);
       return context.success({});
     }
   }
