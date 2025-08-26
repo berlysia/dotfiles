@@ -1,105 +1,55 @@
 #!/usr/bin/env bun
 
 import { defineHook } from "cc-hooks-ts";
-import { execSync } from "node:child_process";
-import { appendFileSync, mkdirSync, existsSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { notifyWithContext, notify, cleanupOldFiles } from "./lib/voicevox-audio.ts";
+import { logEvent } from "./lib/notification-logging.ts";
 
 /**
  * Notification and Stop event handlers
- * Handles Stop and Notification events with sound/visual notifications
+ * Handles Stop and Notification events with VoiceVox-compatible audio synthesis
  */
 export default defineHook({
   trigger: { 
     Stop: true,
-    Notification: true 
+    Notification: true,
+    Error: true 
   },
-  run: (context) => {
+  run: async (context) => {
     const eventType = context.input.hook_event_name || "Unknown";
+    const sessionId = context.input.session_id;
     
     try {
-      // Log the event
-      logEvent(eventType, context.input.session_id);
+      // 並列実行で高速化
+      await Promise.allSettled([
+        // 互換性のあるログ記録（既存と同じ構造）
+        logEvent(eventType, sessionId),
+        
+        // VoiceVox音声通知
+        handleAudioNotification(eventType),
+        
+        // 古いファイルのクリーンアップ（Notificationイベント時のみ）
+        eventType === "Notification" ? cleanupOldFiles() : Promise.resolve()
+      ]);
       
-      // Play notification sound and send notification
-      handleNotifications(eventType);
-
       return context.success({});
-
     } catch (error) {
+      // エラーでも成功を返す（既存の動作と同じ）
       console.error(`Notification error: ${error}`);
       return context.success({});
     }
   }
 });
 
-function logEvent(eventType: string, sessionId?: string): void {
-  const logEntry = {
-    timestamp: new Date().toISOString(),
-    event: eventType,
-    session_id: sessionId,
-    user: process.env.USER || "unknown",
-    cwd: process.cwd(),
-  };
-
-  const logFile = join(homedir(), ".config", "claude-companion", "logs", "hooks.jsonl");
-  const logLine = JSON.stringify(logEntry) + "\n";
-  
-  try {
-    // Ensure directory exists
-    const logDir = join(homedir(), ".config", "claude-companion", "logs");
-    mkdirSync(logDir, { recursive: true });
-    
-    appendFileSync(logFile, logLine);
-  } catch (error) {
-    console.error(`Failed to log event: ${error}`);
-  }
-}
-
-function handleNotifications(eventType: string): void {
-  const soundsDir = join(homedir(), ".claude", "hooks", "sounds");
-  
-  try {
-    // Play notification sound
-    let soundFile = "";
-    if (eventType === "Stop") {
-      soundFile = join(soundsDir, "ClaudeStop.wav");
-    } else if (eventType === "Notification") {
-      soundFile = join(soundsDir, "ClaudeNotification.wav");
-    }
-    
-    if (soundFile && existsSync(soundFile)) {
-      // Try to play sound (Linux-specific, could be enhanced for other platforms)
-      try {
-        execSync(`paplay "${soundFile}"`, { stdio: "ignore" });
-      } catch {
-        // Fallback to aplay
-        try {
-          execSync(`aplay "${soundFile}"`, { stdio: "ignore" });
-        } catch {
-          // Sound playback failed, continue silently
-        }
-      }
-    }
-    
-    // Send desktop notification (Linux-specific)
-    try {
-      const message = eventType === "Stop" ? "Claude Code session ended" : "Claude Code notification";
-      execSync(`notify-send "Claude Code" "${message}"`, { stdio: "ignore" });
-    } catch {
-      // Notification failed, continue silently
-    }
-    
-    // Text-to-speech notification (optional, Linux-specific)
-    try {
-      const message = eventType === "Stop" ? "Claude session ended" : "Claude notification";
-      execSync(`espeak "${message}"`, { stdio: "ignore" });
-    } catch {
-      // TTS failed, continue silently
-    }
-    
-  } catch (error) {
-    console.error(`Notification handling error: ${error}`);
+async function handleAudioNotification(eventType: string): Promise<void> {
+  switch (eventType) {
+    case 'Stop':
+    case 'Notification':
+      await notifyWithContext(eventType as 'Stop' | 'Notification');
+      break;
+    case 'Error':
+      await notify("エラーが発生しました", 'notification');
+      break;
+    default:
+      await notify("Claude Codeイベントが発生しました", 'notification');
   }
 }
