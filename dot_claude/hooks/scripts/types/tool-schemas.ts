@@ -122,5 +122,28 @@ declare module "cc-hooks-ts" {
         success: boolean;
       };
     };
+    
+    // Web operations
+    WebFetch: {
+      input: {
+        url: string;
+        prompt: string;
+      };
+      response: string; // Web content as text
+    };
+    
+    Fetch: {
+      input: {
+        url: string;
+        method?: string;
+        headers?: Record<string, string>;
+        body?: string;
+      };
+      response: {
+        status: number;
+        headers: Record<string, string>;
+        body: string;
+      };
+    };
   }
 }

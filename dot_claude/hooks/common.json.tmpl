@@ -14,7 +14,7 @@
       ]
     },
     {
-      "matcher": "(Read|Write|Edit|MultiEdit|NotebookRead|NotebookEdit|LS|Glob|Grep|Bash)",
+      "matcher": "",
       "hooks": [
         {
           "type": "command",
@@ -32,7 +32,7 @@
       ]
     },
     {
-      "matcher": "(Write|Edit|MultiEdit|NotebookEdit)",
+      "matcher": "",
       "hooks": [
         {
           "type": "command",
@@ -41,7 +41,7 @@
       ]
     },
     {
-      "matcher": "(Write|Edit|MultiEdit)",
+      "matcher": "",
       "hooks": [
         {
           "type": "command",
@@ -50,20 +50,11 @@
       ]
     },
     {
-      "matcher": "(WebFetch|Fetch).*github\\.com",
+      "matcher": "",
       "hooks": [
         {
           "type": "command",
-          "command": "echo 'Use \"gh\" CLI for GitHub requests instead of Fetch/WebFetch. Example: gh api repos/owner/repo'; exit 2"
-        }
-      ]
-    },
-    {
-      "matcher": "(WebFetch|Fetch).*https?://",
-      "hooks": [
-        {
-          "type": "command",
-          "command": "echo 'Consider using \"mcp__readability__read_url_content_as_markdown\" for better web content extraction. If MCP is unavailable, you can proceed with WebFetch.'; exit 2"
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/scripts/web-fetch-guardian.ts"
         }
       ]
     }
