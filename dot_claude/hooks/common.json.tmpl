@@ -83,11 +83,11 @@
       ]
     },
     {
-      "matcher": "(Edit|MultiEdit|Write)",
+      "matcher": "",
       "hooks": [
         {
           "type": "command",
-          "command": "bash '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/auto-format.sh'"
+          "command": "bun {{ .chezmoi.sourceDir }}/dot_claude/hooks/scripts/hooks/auto-format.hook.ts"
         }
       ]
     }
@@ -109,7 +109,7 @@
       "hooks": [
         {
           "type": "command",
-          "command": "bun {{ .chezmoi.sourceDir }}/dot_claude/hooks/scripts/hooks/notification.hook.ts"
+          "command": "bun {{ .chezmoi.sourceDir }}/dot_claude/hooks/scripts/hooks/enhanced-notification.hook.ts"
         }
       ]
     }
@@ -120,7 +120,7 @@
       "hooks": [
         {
           "type": "command",
-          "command": "bun {{ .chezmoi.sourceDir }}/dot_claude/hooks/scripts/hooks/notification.hook.ts"
+          "command": "bun {{ .chezmoi.sourceDir }}/dot_claude/hooks/scripts/hooks/enhanced-notification.hook.ts"
         }
       ]
     }
