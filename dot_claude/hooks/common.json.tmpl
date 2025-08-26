@@ -1,3 +1,143 @@
+{{- /* Detect current git branch to determine which hook implementation to use */ -}}
+{{- $gitBranch := "" -}}
+{{- if stat (joinPath .chezmoi.sourceDir ".git") -}}
+  {{- $gitBranch = output "git" "-C" .chezmoi.sourceDir "rev-parse" "--abbrev-ref" "HEAD" | trim -}}
+{{- end -}}
+
+{{- /* Use cc-hooks-ts implementation on migrate-to-cc-hooks-ts branch */ -}}
+{{- if eq $gitBranch "migrate-to-cc-hooks-ts" -}}
+{
+  "PreToolUse": [
+    {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.sourceDir }}/dot_claude/hooks/scripts/hooks/auto-approve.hook.ts"
+        }
+      ]
+    },
+    {
+      "matcher": "(Read|Write|Edit|MultiEdit|NotebookRead|NotebookEdit|LS|Glob|Grep|Bash)",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.sourceDir }}/dot_claude/hooks/scripts/hooks/deny-repository-outside.hook.ts"
+        }
+      ]
+    },
+    {
+      "matcher": "Bash",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.sourceDir }}/dot_claude/hooks/scripts/hooks/block-tsx.hook.ts"
+        }
+      ]
+    },
+    {
+      "matcher": "(Write|Edit|MultiEdit|NotebookEdit)",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.sourceDir }}/dot_claude/hooks/scripts/hooks/deny-node-modules.hook.ts"
+        }
+      ]
+    },
+    {
+      "matcher": "(Write|Edit|MultiEdit)",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.sourceDir }}/dot_claude/hooks/scripts/hooks/block-package-json-tsx.hook.ts"
+        }
+      ]
+    },
+    {
+      "matcher": "(WebFetch|Fetch).*github\\.com",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "echo 'Use \"gh\" CLI for GitHub requests instead of Fetch/WebFetch. Example: gh api repos/owner/repo'; exit 2"
+        }
+      ]
+    },
+    {
+      "matcher": "(WebFetch|Fetch).*https?://",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "echo 'Consider using \"mcp__readability__read_url_content_as_markdown\" for better web content extraction. If MCP is unavailable, you can proceed with WebFetch.'; exit 2"
+        }
+      ]
+    }
+  ],
+  "PostToolUse": [
+    {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.sourceDir }}/dot_claude/hooks/scripts/hooks/command-logger.hook.ts"
+        }
+      ]
+    },
+    {
+      "matcher": "(Edit|MultiEdit|Write)",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bash '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/auto-format.sh'"
+        }
+      ]
+    }
+  ],
+  "SessionStart": [
+    {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.sourceDir }}/dot_claude/hooks/scripts/hooks/session.hook.ts"
+        }
+      ]
+    }
+  ],
+  "Stop": [
+    {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.sourceDir }}/dot_claude/hooks/scripts/hooks/notification.hook.ts"
+        }
+      ]
+    }
+  ],
+  "Notification": [
+    {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.sourceDir }}/dot_claude/hooks/scripts/hooks/notification.hook.ts"
+        }
+      ]
+    }
+  ],
+  "UserPromptSubmit": [
+    {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.sourceDir }}/dot_claude/hooks/scripts/hooks/user-prompt-logger.hook.ts"
+        }
+      ]
+    }
+  ]
+}
+{{- else -}}
 {
     "Notification": [
       {
@@ -158,3 +298,4 @@
       }
     ]
   }
+{{- end -}}
