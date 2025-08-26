@@ -7,6 +7,16 @@ settings:
 importers:
 
   .:
+    dependencies:
+      '@mizchi/readability':
+        specifier: ^0.7.7
+        version: 0.7.7
+      cc-hooks-ts:
+        specifier: ^0.0.5
+        version: 0.0.5(typescript@5.9.2)
+      ccusage:
+        specifier: ^15.9.3
+        version: 15.9.3
     devDependencies:
       '@mizchi/lsmcp':
         specifier: ^0.9.4
@@ -20,25 +30,6 @@ importers:
       typescript:
         specifier: ^5.9.2
         version: 5.9.2
-
-  dot_claude:
-    dependencies:
-      cc-hooks-ts:
-        specifier: ^0.0.5
-        version: 0.0.5(typescript@5.9.2)
-      ccusage:
-        specifier: ^15.9.3
-        version: 15.9.3
-    devDependencies:
-      '@types/node':
-        specifier: ^24.2.1
-        version: 24.2.1
-
-  dot_claude/hooks/scripts:
-    dependencies:
-      '@mizchi/readability':
-        specifier: ^0.7.7
-        version: 0.7.7
 
 packages:
 
