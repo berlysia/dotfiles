@@ -1,11 +1,3 @@
-{{- /* Detect current git branch to determine which hook implementation to use */ -}}
-{{- $gitBranch := "" -}}
-{{- if stat (joinPath .chezmoi.sourceDir ".git") -}}
-  {{- $gitBranch = output "git" "-C" .chezmoi.sourceDir "rev-parse" "--abbrev-ref" "HEAD" | trim -}}
-{{- end -}}
-
-{{- /* Use cc-hooks-ts implementation on migrate-to-cc-hooks-ts branch */ -}}
-{{- if eq $gitBranch "migrate-to-cc-hooks-ts" -}}
 {
   "PreToolUse": [
     {
@@ -14,6 +6,10 @@
         {
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/scripts/auto-approve.ts"
+        },
+        {
+          "type": "command",
+          "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'"
         }
       ]
     },
@@ -79,15 +75,28 @@
         {
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/scripts/command-logger.ts"
+        },
+        {
+          "type": "command",
+          "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'"
         }
       ]
     },
     {
-      "matcher": "",
+      "matcher": "(Edit|MultiEdit|Write)",
       "hooks": [
         {
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/scripts/auto-format.ts"
+        }
+      ]
+    },
+    {
+      "matcher": "Bash",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "echo \"[$(date '+%F %H:%M:%S')] $USER [$(pwd)]: $(jq -r '.tool_input.command' | sed 's/$/\\\\n/' | tr -d '\\n')\" >> ~/.claude/command_history.log"
         }
       ]
     }
@@ -99,6 +108,10 @@
         {
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/scripts/session.ts"
+        },
+        {
+          "type": "command",
+          "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'"
         }
       ]
     }
@@ -110,6 +123,14 @@
         {
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/scripts/notification.ts"
+        },
+        {
+          "type": "command",
+          "command": "bash '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/speak-notification.sh' Stop"
+        },
+        {
+          "type": "command",
+          "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'"
         }
       ]
     }
@@ -121,6 +142,14 @@
         {
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/scripts/notification.ts"
+        },
+        {
+          "type": "command",
+          "command": "bash '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/speak-notification.sh' Notification"
+        },
+        {
+          "type": "command",
+          "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'"
         }
       ]
     }
@@ -132,170 +161,12 @@
         {
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/scripts/user-prompt-logger.ts"
+        },
+        {
+          "type": "command",
+          "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'"
         }
       ]
     }
   ]
 }
-{{- else -}}
-{
-    "Notification": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "cat | bash '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/send-notification.sh' Notification"
-          },
-          {
-            "type": "command",
-            "command": "cat | bash '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/speak-notification.sh' Notification"
-          },
-          {
-            "type": "command",
-            "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/send-notification.sh' Stop"
-          },
-          {
-            "type": "command",
-            "command": "bash '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/speak-notification.sh' Stop"
-          },
-          {
-            "type": "command",
-            "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'"
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "cat | bun '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/auto-approve-commands.ts'"
-          },
-          {
-            "type": "command",
-            "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'"
-          }
-        ]
-      },
-      {
-        "matcher": "(Read|Write|Edit|MultiEdit|NotebookRead|NotebookEdit|LS|Glob|Grep|Bash)",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bun '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/deny-repository-outside-access.ts'"
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "cat | bun '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/block-tsx-tsnode.ts'"
-          }
-        ]
-      },
-      {
-        "matcher": "(Write|Edit|MultiEdit|NotebookEdit)",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "cat | bun '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/deny-node-modules-write.ts'"
-          }
-        ]
-      },
-      {
-        "matcher": "(Write|Edit|MultiEdit)",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "cat | bun '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/block-tsx-package-json.ts'"
-          }
-        ]
-      },
-      {
-        "matcher": "(WebFetch|Fetch).*github\\.com",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "echo 'Use \"gh\" CLI for GitHub requests instead of Fetch/WebFetch. Example: gh api repos/owner/repo'; exit 2"
-          }
-        ]
-      },
-      {
-        "matcher": "(WebFetch|Fetch).*https?://",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "echo 'Consider using \"mcp__readability__read_url_content_as_markdown\" for better web content extraction. If MCP is unavailable, you can proceed with WebFetch.'; exit 2"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'"
-          }
-        ]
-      },
-      {
-        "matcher": "(Edit|MultiEdit|Write)",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash '{{ .chezmoi.homeDir }}/.claude/hooks/scripts/auto-format.sh'"
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "echo \"[$(date '+%F %H:%M:%S')] $USER [$(pwd)]: $(jq -r '.tool_input.command' | sed 's/$/\\\\n/' | tr -d '\\n')\" >> ~/.claude/command_history.log"
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'"
-          }
-        ]
-      }
-    ],
-    "SessionStart": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'"
-          }
-        ]
-      }
-    ]
-  }
-{{- end -}}
