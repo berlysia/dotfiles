@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 
+// Workaround for cc-hooks-ts exports configuration issue with verbatimModuleSyntax
 import { defineHook } from "cc-hooks-ts";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -7,13 +8,22 @@ import { existsSync, readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import "./types/tool-schemas.ts";
 
+interface HookContext {
+  input: {
+    tool_name: string;
+    tool_input: unknown;
+  };
+  success: (arg?: any) => any;
+  blockingError: (msg: string) => any;
+}
+
 /**
  * Auto-approve commands based on permissions.allow/deny lists
  * Converted from auto-approve-commands.ts using cc-hooks-ts
  */
 export default defineHook({
-  trigger: { PreToolUse: true },
-  run: (context) => {
+  trigger: { PreToolUse: true } as const,
+  run: (context: HookContext) => {
     const { tool_name, tool_input } = context.input;
 
     // Exit early if no tool name

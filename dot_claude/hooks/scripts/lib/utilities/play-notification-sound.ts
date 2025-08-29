@@ -460,4 +460,5 @@ if (require.main === module) {
     });
 }
 
-export { NotificationSoundPlayer, NotificationLogEntry, EventType, SoundType, Platform };
+export { NotificationSoundPlayer };
+export type { NotificationLogEntry, EventType, SoundType, Platform };

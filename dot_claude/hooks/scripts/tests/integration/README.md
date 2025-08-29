@@ -30,10 +30,10 @@ cd dot_claude/hooks/scripts
 ## Test Coverage
 
 ### ✅ Tested TypeScript Scripts
-- `auto-approve-commands.ts` - Permission decision making
-- `block-tsx-package-json.ts` - Package.json tsx/ts-node blocking
-- `block-tsx-tsnode.ts` - Command-line tsx/ts-node blocking
-- `deny-node-modules-write.ts` - Node modules write protection
+- `auto-approve.ts` - Permission decision making (cc-hooks-ts)
+- `block-package-json-tsx.ts` - Package.json tsx/ts-node blocking (cc-hooks-ts)
+- `block-tsx.ts` - Command-line tsx/ts-node blocking (cc-hooks-ts)
+- `deny-node-modules.ts` - Node modules write protection (cc-hooks-ts)
 
 ### Test Scenarios
 - **Allow scenarios**: Commands/operations that should succeed (exit code 0)

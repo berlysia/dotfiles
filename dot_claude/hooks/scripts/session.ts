@@ -5,13 +5,21 @@ import { appendFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+interface HookContext {
+  input: {
+    session_id: string;
+  };
+  success: (arg?: any) => any;
+  blockingError?: (msg: string) => any;
+}
+
 /**
  * Session management hooks
  * Handles SessionStart events with logging
  */
 export default defineHook({
   trigger: { SessionStart: true },
-  run: (context) => {
+  run: (context: HookContext) => {
     try {
       // Log session start
       const logEntry = {

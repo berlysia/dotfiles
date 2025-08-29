@@ -5,13 +5,21 @@ import { appendFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+interface HookContext {
+  input: {
+    session_id: string;
+  };
+  success: (arg?: any) => any;
+  blockingError?: (msg: string) => any;
+}
+
 /**
  * User prompt submission logger
  * Logs UserPromptSubmit events for analytics
  */
 export default defineHook({
   trigger: { UserPromptSubmit: true },
-  run: (context) => {
+  run: (context: HookContext) => {
     try {
       // Log user prompt submission
       const logEntry = {

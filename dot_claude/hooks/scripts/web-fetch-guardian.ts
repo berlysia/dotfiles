@@ -26,9 +26,9 @@ export default defineHook({
       }
 
       // Check for GitHub access
-      const githubCheck = checkGitHubAccess(url);
+      const githubCheck = checkGitHubAccess(url, tool_name);
       if (githubCheck.shouldBlock) {
-        return context.blockingError(githubCheck.message);
+        return context.blockingError(githubCheck.message || "Access blocked");
       }
 
       // For HTTP/HTTPS URLs, use readability to get markdown content
@@ -37,7 +37,7 @@ export default defineHook({
         
         // Return the markdown content instead of allowing original WebFetch
         return context.success({ 
-          replacement_result: markdownContent 
+          messageForUser: `Fetched content as markdown from: ${url}\n\n${markdownContent}`
         });
       }
 
@@ -118,7 +118,7 @@ async function fetchAsMarkdown(url: string): Promise<string> {
 /**
  * Check if URL is trying to access GitHub and recommend gh CLI instead
  */
-function checkGitHubAccess(url: string): CheckResult {
+function checkGitHubAccess(url: string, tool_name: string): CheckResult {
   try {
     const urlObj = new URL(url);
     

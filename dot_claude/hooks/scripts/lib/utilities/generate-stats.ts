@@ -80,7 +80,7 @@ class CommandStatsGenerator {
      */
     parseTimingMs(timingStr: string): number {
         const match = timingStr.match(/(\d+)ms/);
-        return match ? parseInt(match[1], 10) : 0;
+        return match && match[1] ? parseInt(match[1], 10) : 0;
     }
 
     /**
@@ -202,4 +202,5 @@ if (require.main === module) {
     main();
 }
 
-export { CommandStatsGenerator, LogEntry, CommandStats, CommandFrequency };
+export { CommandStatsGenerator };
+export type { LogEntry, CommandStats, CommandFrequency };

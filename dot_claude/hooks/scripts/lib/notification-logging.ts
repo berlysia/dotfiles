@@ -32,7 +32,7 @@ export async function logEvent(
   const entry: HookLogEntry = {
     timestamp: new Date().toISOString(),
     event: eventType,
-    session_id: sessionId,
+    ...(sessionId ? { session_id: sessionId } : {}),
     user: process.env.USER || "unknown",
     cwd: process.cwd(),
     ...additionalData
