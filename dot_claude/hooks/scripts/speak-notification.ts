@@ -92,7 +92,8 @@ class AivisSpeechNotification {
   private async getHostname(): Promise<string> {
     try {
       const result = await $`hostname`.text();
-      return result.trim().split('.')[0];
+      const parts = result.trim().split('.');
+      return parts[0] || 'Claude';
     } catch {
       return 'Claude';
     }
@@ -212,7 +213,7 @@ class AivisSpeechNotification {
         throw new Error(`HTTP ${response.status}`);
       }
 
-      return await response.json();
+      return await response.json() as AudioQuery;
     } catch (error) {
       this.logMessage('ERROR: Failed to generate audio query');
       return null;
@@ -441,30 +442,90 @@ class AivisSpeechNotification {
     }
   }
 
-  private async getRepoInfo(): Promise<string> {
+  private async getRepoInfo(): Promise<{ name: string; isRepository: boolean }> {
     try {
       let repoName = '';
+      let isRepository = false;
+      let hasRemote = false;
       
-      const isGitRepo = await $`git rev-parse --is-inside-work-tree`.quiet().noThrow();
-      if (isGitRepo.code === 0) {
-        // Try to get repo name from remote origin
-        const remoteUrl = await $`git remote get-url origin`.text().catch(() => '');
-        if (remoteUrl) {
-          const match = remoteUrl.match(/\/([^/]+)\.git$/);
-          repoName = match ? match[1] : '';
+      // First, try to get working directory name as fallback
+      let dirName = 'unknown';
+      try {
+        const pwdResult = await $`pwd`.text();
+        if (pwdResult) {
+          const pathParts = pwdResult.trim().split('/');
+          dirName = pathParts[pathParts.length - 1] || 'unknown';
         }
-        
-        // Fallback to current directory name
-        if (!repoName) {
-          repoName = await $`basename $(pwd)`.text();
-        }
-      } else {
-        repoName = await $`basename $(pwd)`.text();
+      } catch (error) {
+        this.logMessage(`Warning: Failed to get pwd: ${error}`);
       }
       
-      return repoName.trim();
-    } catch {
-      return 'unknown';
+      // Check if we're in a git repository
+      const isGitRepo = await $`git rev-parse --is-inside-work-tree`.quiet().noThrow();
+      if (isGitRepo.code === 0) {
+        this.logMessage('Detected git repository');
+        isRepository = true;
+        
+        // Try to get repo name from remote origin
+        try {
+          const remoteUrl = await $`git remote get-url origin`.text();
+          if (remoteUrl && remoteUrl.trim()) {
+            hasRemote = true;
+            // Match various remote URL patterns
+            const patterns = [
+              /\/([^/]+)\.git$/,           // Standard: .../repo.git
+              /\/([^/]+)$/,               // No .git suffix
+              /:([^/]+)\.git$/,           // SSH: git@host:repo.git
+              /:([^/]+)$/,                // SSH without .git
+            ];
+            
+            for (const pattern of patterns) {
+              const match = remoteUrl.match(pattern);
+              if (match && match[1]) {
+                repoName = match[1];
+                this.logMessage(`Extracted repo name from remote: ${repoName}`);
+                break;
+              }
+            }
+          }
+        } catch (error) {
+          this.logMessage(`No remote origin found: ${error}`);
+          hasRemote = false;
+        }
+        
+        // If no remote or extraction failed, try git config
+        if (!repoName) {
+          try {
+            const gitRootName = await $`git rev-parse --show-toplevel`.text();
+            if (gitRootName && gitRootName.trim()) {
+              const pathParts = gitRootName.trim().split('/');
+              repoName = pathParts[pathParts.length - 1] || '';
+              this.logMessage(`Extracted repo name from git root: ${repoName}`);
+            }
+          } catch (error) {
+            this.logMessage(`Failed to get git root: ${error}`);
+          }
+        }
+      }
+      
+      // Final fallback to directory name
+      if (!repoName || repoName.trim() === '') {
+        repoName = dirName;
+        this.logMessage(`Using directory name as fallback: ${repoName}`);
+      }
+      
+      const result = repoName.trim() || 'unknown';
+      
+      // Determine if this should be called a repository or directory
+      // It's a repository if it's a git repo AND has a remote
+      const finalIsRepository = isRepository && hasRemote;
+      
+      this.logMessage(`Final name: ${result}, isRepository: ${finalIsRepository}`);
+      return { name: result, isRepository: finalIsRepository };
+      
+    } catch (error) {
+      this.logMessage(`Error in getRepoInfo: ${error}`);
+      return { name: 'unknown', isRepository: false };
     }
   }
 
@@ -518,14 +579,16 @@ class AivisSpeechNotification {
     // Clean up old files on Notification event (first event usually)
     await this.cleanupOldFiles();
     
-    const repoName = await this.getRepoInfo();
-    const message = `${repoName} リポジトリで操作の確認が必要です`;
+    const repoInfo = await this.getRepoInfo();
+    const containerType = repoInfo.isRepository ? 'リポジトリ' : 'ディレクトリ';
+    const message = `${repoInfo.name} ${containerType}で操作の確認が必要です`;
     await this.speakNotification(message, 'Notification');
   }
 
   async handleStop(): Promise<void> {
-    const repoName = await this.getRepoInfo();
-    const message = `${repoName} リポジトリで処理が完了しました`;
+    const repoInfo = await this.getRepoInfo();
+    const containerType = repoInfo.isRepository ? 'リポジトリ' : 'ディレクトリ';
+    const message = `${repoInfo.name} ${containerType}で処理が完了しました`;
     await this.speakNotification(message, 'Stop');
 
     // Clean up entire session directory on Stop
@@ -540,8 +603,9 @@ class AivisSpeechNotification {
   }
 
   async handleError(): Promise<void> {
-    const repoName = await this.getRepoInfo();
-    const message = `${repoName} リポジトリでエラーが発生しました`;
+    const repoInfo = await this.getRepoInfo();
+    const containerType = repoInfo.isRepository ? 'リポジトリ' : 'ディレクトリ';
+    const message = `${repoInfo.name} ${containerType}でエラーが発生しました`;
     await this.speakNotification(message, 'Error');
   }
 
@@ -569,7 +633,7 @@ async function main() {
       break;
     default:
       // Custom message support
-      if (args.length === 2) {
+      if (args.length === 2 && eventType && args[1]) {
         await notification.handleCustom(eventType, args[1]);
       } else {
         console.log('Usage: speak-notification.ts {Notification|Stop|Error} [custom_message]');
@@ -580,7 +644,7 @@ async function main() {
 }
 
 // Execute if run directly (check if this file is the main module)
-if (process.argv[1] === __filename || process.argv[1].endsWith('speak-notification.ts')) {
+if (process.argv[1] && (process.argv[1] === __filename || process.argv[1].endsWith('speak-notification.ts'))) {
   main().catch(error => {
     console.error('Error:', error);
     process.exit(1);
