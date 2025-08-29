@@ -139,7 +139,7 @@ export default defineHook({
       // Use precise script value checking logic from legacy implementation
       if (hasTsxUsage(contentToCheck)) {
         return context.blockingError(
-          `Use 'bun' instead of 'tsx' or 'ts-node' in package.json scripts\n\nSuggestion: Replace tsx/ts-node commands with 'bun' equivalents\n\nFile: ${filePath}`
+          `Use TypeScript-compatible runtime instead of 'tsx' or 'ts-node' in package.json scripts\n\nSuggestion: Replace tsx/ts-node commands with a TypeScript-compatible runtime (e.g., node, deno, bun)\n\nFile: ${filePath}`
         );
       }
 

@@ -25,53 +25,53 @@ export default defineHook({
       const blockingPatterns = [
         {
           pattern: /\btsx\s+(?!--version|--help)/,
-          reason: "Use 'bun' instead of 'tsx' for TypeScript execution",
-          suggestion: "Replace 'tsx script.ts' with 'bun script.ts'"
+          reason: "Use TypeScript-compatible runtime instead of 'tsx' for TypeScript execution",
+          suggestion: "Replace 'tsx script.ts' with a TypeScript-compatible runtime (e.g., 'node script.ts', 'deno run script.ts', 'bun script.ts')"
         },
         {
           pattern: /\bts-node\s+(?!--version|--help)/,
-          reason: "Use 'bun' or 'deno' instead of 'ts-node' for TypeScript execution",
-          suggestion: "Replace 'ts-node script.ts' with 'bun script.ts' or 'deno run script.ts'"
+          reason: "Use TypeScript-compatible runtime instead of 'ts-node' for TypeScript execution",
+          suggestion: "Replace 'ts-node script.ts' with a TypeScript-compatible runtime (e.g., 'node script.ts', 'deno run script.ts', 'bun script.ts')"
         },
         {
           pattern: /\bnpx\s+tsx\s+(?!--version|--help)/,
-          reason: "Use 'bun' instead of 'npx tsx' for TypeScript execution",
-          suggestion: "Replace 'npx tsx script.ts' with 'bun script.ts'"
+          reason: "Use TypeScript-compatible runtime instead of 'npx tsx' for TypeScript execution",
+          suggestion: "Replace 'npx tsx script.ts' with a TypeScript-compatible runtime (e.g., 'node script.ts', 'deno run script.ts', 'bun script.ts')"
         },
         {
           pattern: /\bnpx\s+ts-node\s+(?!--version|--help)/,
-          reason: "Use 'bun' or 'deno' instead of 'npx ts-node' for TypeScript execution",
-          suggestion: "Replace 'npx ts-node script.ts' with 'bun script.ts'"
+          reason: "Use TypeScript-compatible runtime instead of 'npx ts-node' for TypeScript execution",
+          suggestion: "Replace 'npx ts-node script.ts' with a TypeScript-compatible runtime (e.g., 'node script.ts', 'deno run script.ts', 'bun script.ts')"
         },
         {
           pattern: /\bnpm\s+(?:install|i|add)\s+.*\btsx\b/,
-          reason: "Installing 'tsx' is discouraged. Use 'bun' for TypeScript execution",
-          suggestion: "Remove tsx installation. Bun provides built-in TypeScript support"
+          reason: "Installing 'tsx' is discouraged. Use TypeScript-compatible runtime for TypeScript execution",
+          suggestion: "Remove tsx installation. Use a TypeScript-compatible runtime (node, deno, bun) with built-in TypeScript support"
         },
         {
           pattern: /\bnpm\s+(?:install|i|add)\s+.*\bts-node\b/,
-          reason: "Installing 'ts-node' is discouraged. Use 'bun' or 'deno' for TypeScript execution",
-          suggestion: "Remove ts-node installation. Use bun or deno for native TypeScript support"
+          reason: "Installing 'ts-node' is discouraged. Use TypeScript-compatible runtime for TypeScript execution",
+          suggestion: "Remove ts-node installation. Use a TypeScript-compatible runtime (node, deno, bun) with native TypeScript support"
         },
         {
           pattern: /\bpnpm\s+(?:install|i|add)\s+.*\btsx\b/,
-          reason: "Installing 'tsx' is discouraged. Use 'bun' for TypeScript execution",
-          suggestion: "Remove tsx installation. Bun provides built-in TypeScript support"
+          reason: "Installing 'tsx' is discouraged. Use TypeScript-compatible runtime for TypeScript execution",
+          suggestion: "Remove tsx installation. Use a TypeScript-compatible runtime (node, deno, bun) with built-in TypeScript support"
         },
         {
           pattern: /\bpnpm\s+(?:install|i|add)\s+.*\bts-node\b/,
-          reason: "Installing 'ts-node' is discouraged. Use 'bun' or 'deno' for TypeScript execution",
-          suggestion: "Remove ts-node installation. Use bun or deno for native TypeScript support"
+          reason: "Installing 'ts-node' is discouraged. Use TypeScript-compatible runtime for TypeScript execution",
+          suggestion: "Remove ts-node installation. Use a TypeScript-compatible runtime (node, deno, bun) with native TypeScript support"
         },
         {
           pattern: /\byarn\s+add\s+.*\btsx\b/,
-          reason: "Installing 'tsx' is discouraged. Use 'bun' for TypeScript execution",
-          suggestion: "Remove tsx installation. Bun provides built-in TypeScript support"
+          reason: "Installing 'tsx' is discouraged. Use TypeScript-compatible runtime for TypeScript execution",
+          suggestion: "Remove tsx installation. Use a TypeScript-compatible runtime (node, deno, bun) with built-in TypeScript support"
         },
         {
           pattern: /\byarn\s+add\s+.*\bts-node\b/,
-          reason: "Installing 'ts-node' is discouraged. Use 'bun' or 'deno' for TypeScript execution",
-          suggestion: "Remove ts-node installation. Use bun or deno for native TypeScript support"
+          reason: "Installing 'ts-node' is discouraged. Use TypeScript-compatible runtime for TypeScript execution",
+          suggestion: "Remove ts-node installation. Use a TypeScript-compatible runtime (node, deno, bun) with native TypeScript support"
         },
       ];
 
