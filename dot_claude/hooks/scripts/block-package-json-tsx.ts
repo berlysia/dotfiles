@@ -3,8 +3,100 @@
 import { defineHook } from "cc-hooks-ts";
 
 /**
+ * Check for tsx/ts-node patterns in script values using precise regex
+ */
+function checkScriptValue(scriptValue: string): boolean {
+  // Pattern 1: Direct command usage (tsx, ts-node at start or after separators)
+  const directCommandPattern = /(^|[\s|&;])\s*(tsx|ts-node)([\s]|$)/;
+  if (!directCommandPattern.test(scriptValue)) {
+    return false; // No tsx/ts-node command found
+  }
+
+  // Allow common cases where tsx is file extension or safe option value
+  // Check if it's in a context where tsx/ts-node is used as a command
+  
+  // Allow: --ext tsx, --extension tsx (file extension/option value)
+  const optionValuePattern = /--[a-zA-Z-]*\s+(tsx|ts-node)/;
+  if (optionValuePattern.test(scriptValue)) {
+    return false;
+  }
+
+  // Allow: webpack src/App.tsx (file path)
+  const webpackFilePattern = /webpack[^|&;]*\.(tsx|ts)([\s]|$)/;
+  if (webpackFilePattern.test(scriptValue)) {
+    return false;
+  }
+
+  // Block command execution patterns
+  const commandExecutionPattern = /(^|[\s|&;])\s*(tsx|ts-node)([\s].*\.(ts|tsx|js|mjs)([\s]|$)|[\s]|$)/;
+  if (commandExecutionPattern.test(scriptValue)) {
+    return true;
+  }
+
+  // Block loader patterns
+  const loaderPattern = /node[^|&;]*--[a-zA-Z-]*(loader|require)[^|&;]*(tsx|ts-node)/;
+  if (loaderPattern.test(scriptValue)) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Check for tsx/ts-node usage in package.json content with enhanced precision
+ */
+function hasTsxUsage(content: string): boolean {
+  try {
+    // Try JSON parsing first for precise checking
+    const parsed = JSON.parse(content);
+    
+    // Check scripts section
+    if (parsed.scripts) {
+      for (const [, scriptValue] of Object.entries(parsed.scripts)) {
+        if (typeof scriptValue === 'string' && checkScriptValue(scriptValue)) {
+          return true;
+        }
+      }
+    }
+
+    // Check dependencies sections
+    const depSections = ['dependencies', 'devDependencies', 'peerDependencies'];
+    for (const section of depSections) {
+      if (parsed[section]) {
+        const deps = Object.keys(parsed[section]);
+        if (deps.includes('tsx') || deps.includes('ts-node') || deps.includes('@types/tsx') || deps.includes('@types/ts-node')) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  } catch {
+    // Fallback to regex if JSON parsing fails
+    if (/\"scripts\"/.test(content)) {
+      const scriptSectionMatch = content.match(/"scripts"\s*:\s*\{([^}]*)\}/);
+      if (scriptSectionMatch && scriptSectionMatch[1]) {
+        const scriptContent = scriptSectionMatch[1];
+        const scriptValuePattern = /"[^"]*":\s*"([^"]*)"/g;
+        let match;
+        while ((match = scriptValuePattern.exec(scriptContent)) !== null) {
+          const scriptValue = match[1];
+          if (scriptValue && checkScriptValue(scriptValue)) {
+            return true;
+          }
+        }
+      }
+    }
+
+    // Check dependencies with regex fallback
+    const depPattern = /"(tsx|ts-node|@types\/tsx|@types\/ts-node)"\s*:\s*"[^"]*"/;
+    return depPattern.test(content);
+  }
+}
+
+/**
  * Block tsx/ts-node usage in package.json modifications
- * Converted from block-tsx-package-json.ts using cc-hooks-ts
+ * Enhanced with precise detection logic from legacy implementation
  */
 export default defineHook({
   trigger: { PreToolUse: true },
@@ -44,58 +136,11 @@ export default defineHook({
         }
       }
 
-      // Check for tsx/ts-node usage patterns
-      const blockingPatterns = [
-        {
-          pattern: /["']\s*tsx\s+/,
-          reason: "Use 'bun' instead of 'tsx' in package.json scripts",
-          suggestion: "Replace 'tsx script.ts' with 'bun script.ts'"
-        },
-        {
-          pattern: /["']\s*ts-node\s+/,
-          reason: "Use 'bun' instead of 'ts-node' in package.json scripts",
-          suggestion: "Replace 'ts-node script.ts' with 'bun script.ts'"
-        },
-        {
-          pattern: /["']\s*npx\s+tsx\s+/,
-          reason: "Use 'bun' instead of 'npx tsx' in package.json scripts",
-          suggestion: "Replace 'npx tsx script.ts' with 'bun script.ts'"
-        },
-        {
-          pattern: /["']\s*npx\s+ts-node\s+/,
-          reason: "Use 'bun' instead of 'npx ts-node' in package.json scripts",
-          suggestion: "Replace 'npx ts-node script.ts' with 'bun script.ts'"
-        },
-        {
-          pattern: /"tsx":\s*["']/,
-          reason: "Adding 'tsx' as dependency is discouraged. Use 'bun' for TypeScript execution",
-          suggestion: "Remove tsx dependency. Bun provides built-in TypeScript support"
-        },
-        {
-          pattern: /"ts-node":\s*["']/,
-          reason: "Adding 'ts-node' as dependency is discouraged. Use 'bun' for TypeScript execution",
-          suggestion: "Remove ts-node dependency. Bun provides built-in TypeScript support"
-        },
-        {
-          pattern: /"@types\/tsx":\s*["']/,
-          reason: "Types for 'tsx' are not needed when using 'bun'",
-          suggestion: "Remove @types/tsx dependency"
-        },
-        {
-          pattern: /"@types\/ts-node":\s*["']/,
-          reason: "Types for 'ts-node' are not needed when using 'bun'",
-          suggestion: "Remove @types/ts-node dependency"
-        },
-      ];
-
-      // Check each pattern
-      for (const { pattern, reason, suggestion } of blockingPatterns) {
-        if (pattern.test(contentToCheck)) {
-          const matchedContent = contentToCheck.match(pattern)?.[0] || "unknown";
-          return context.blockingError(
-            `${reason}\n\nSuggestion: ${suggestion}\n\nMatched content: ${matchedContent}\nFile: ${filePath}`
-          );
-        }
+      // Use precise script value checking logic from legacy implementation
+      if (hasTsxUsage(contentToCheck)) {
+        return context.blockingError(
+          `Use 'bun' instead of 'tsx' or 'ts-node' in package.json scripts\n\nSuggestion: Replace tsx/ts-node commands with 'bun' equivalents\n\nFile: ${filePath}`
+        );
       }
 
       // Allow if no problematic patterns found

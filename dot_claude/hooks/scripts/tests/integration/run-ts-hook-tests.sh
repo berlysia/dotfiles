@@ -52,51 +52,51 @@ run_test() {
 }
 
 echo ""
-echo "✅ Testing auto-approve-commands.ts..."
+echo "✅ Testing auto-approve.ts..."
 run_test "auto-approve-allow" \
-    "bun ${HOOKS_DIR}/auto-approve-commands.ts" \
+    "bun ${HOOKS_DIR}/auto-approve.ts" \
     "${TEST_DATA_DIR}/auto-approve-allow.json" \
     0 \
     "Auto-approve safe command"
 
 echo ""
-echo "📦 Testing block-tsx-package-json.ts..."
+echo "📦 Testing block-package-json-tsx.ts..."
 run_test "block-tsx-package-json-deny" \
-    "bun ${HOOKS_DIR}/block-tsx-package-json.ts" \
+    "bun ${HOOKS_DIR}/block-package-json-tsx.ts" \
     "${TEST_DATA_DIR}/block-tsx-package-json-deny.json" \
     2 \
     "Block tsx in package.json (should deny)"
 
 run_test "block-tsx-package-json-allow" \
-    "bun ${HOOKS_DIR}/block-tsx-package-json.ts" \
+    "bun ${HOOKS_DIR}/block-package-json-tsx.ts" \
     "${TEST_DATA_DIR}/block-tsx-package-json-allow.json" \
     0 \
     "Allow safe tsx usage in package.json"
 
 echo ""
-echo "🚫 Testing block-tsx-tsnode.ts..."
+echo "🚫 Testing block-tsx.ts..."
 run_test "block-tsx-tsnode-deny" \
-    "bun ${HOOKS_DIR}/block-tsx-tsnode.ts" \
+    "bun ${HOOKS_DIR}/block-tsx.ts" \
     "${TEST_DATA_DIR}/block-tsx-tsnode-deny.json" \
     2 \
     "Block npx tsx command (should deny)"
 
 run_test "block-tsx-tsnode-allow" \
-    "bun ${HOOKS_DIR}/block-tsx-tsnode.ts" \
+    "bun ${HOOKS_DIR}/block-tsx.ts" \
     "${TEST_DATA_DIR}/block-tsx-tsnode-allow.json" \
     0 \
     "Allow safe bun command"
 
 echo ""
-echo "🔒 Testing deny-node-modules-write.ts..."
+echo "🔒 Testing deny-node-modules.ts..."
 run_test "deny-node-modules-deny" \
-    "bun ${HOOKS_DIR}/deny-node-modules-write.ts" \
+    "bun ${HOOKS_DIR}/deny-node-modules.ts" \
     "${TEST_DATA_DIR}/deny-node-modules-deny.json" \
     1 \
     "Deny node_modules write (should deny)"
 
 run_test "deny-node-modules-allow" \
-    "bun ${HOOKS_DIR}/deny-node-modules-write.ts" \
+    "bun ${HOOKS_DIR}/deny-node-modules.ts" \
     "${TEST_DATA_DIR}/deny-node-modules-allow.json" \
     0 \
     "Allow safe file write"

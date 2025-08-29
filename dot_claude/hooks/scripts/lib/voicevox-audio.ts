@@ -29,15 +29,21 @@ export function detectPlatform(): Platform {
 // 設定取得（環境変数サポート）
 export function getAudioConfig(): AudioConfig {
   const homeDir = homedir();
+  const endpoint = process.env.VOICEVOX_ENDPOINT || process.env.AIVISSPEECH_HOST;
   
-  return {
+  const config: AudioConfig = {
     soundsDir: path.join(homeDir, '.claude/hooks/sounds'),
-    tempDir: '/tmp/claude-voicevox',
-    voicevox: process.env.VOICEVOX_ENDPOINT || process.env.AIVISSPEECH_HOST ? {
-      endpoint: process.env.VOICEVOX_ENDPOINT || process.env.AIVISSPEECH_HOST,
-      speakerId: process.env.VOICEVOX_SPEAKER_ID || process.env.AIVISSPEECH_SPEAKER_ID || '888753760'
-    } : undefined
+    tempDir: '/tmp/claude-voicevox'
   };
+  
+  if (endpoint) {
+    config.voicevox = {
+      endpoint,
+      speakerId: process.env.VOICEVOX_SPEAKER_ID || process.env.AIVISSPEECH_SPEAKER_ID || '888753760'
+    };
+  }
+  
+  return config;
 }
 
 // コマンドの存在確認
@@ -213,7 +219,7 @@ export async function notify(message: string, type: SoundType = 'notification'):
   // 3. システム通知（Linux限定）
   if (detectPlatform() === 'linux') {
     tasks.push(
-      $`notify-send "Claude Code" ${message}`.quiet().then(() => {}).catch(() => {})
+      Promise.try(() => $`notify-send "Claude Code" ${message}`.quiet())
     );
   }
   
@@ -229,7 +235,7 @@ export async function getRepoInfo(): Promise<string> {
       const remoteUrl = await $`git remote get-url origin`.text().catch(() => '');
       if (remoteUrl) {
         const match = remoteUrl.match(/\/([^/]+)\.git$/);
-        if (match) return match[1];
+        if (match && match[1]) return match[1];
       }
       return await $`basename $(pwd)`.text().then(s => s.trim());
     }
@@ -261,7 +267,7 @@ export async function cleanupOldFiles(): Promise<void> {
     }
     
     // 24時間以上古いWAVファイルを削除
-    await $`find ${config.tempDir} -type f -name "*.wav" -mmin +1440 -delete`.quiet().then(() => {}).catch(() => {});
+    await $`find ${config.tempDir} -type f -name "*.wav" -mmin +1440 -delete`.quiet();
   } catch {
     // クリーンアップの失敗は無視
   }

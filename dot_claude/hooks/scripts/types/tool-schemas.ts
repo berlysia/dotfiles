@@ -126,10 +126,10 @@ declare module "cc-hooks-ts" {
     // Web operations
     WebFetch: {
       input: {
-        url: string;
         prompt: string;
+        url: string;
       };
-      response: string; // Web content as text
+      response: unknown; // Web content
     };
     
     Fetch: {
