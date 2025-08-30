@@ -29,7 +29,7 @@ export function detectPlatform(): Platform {
 // 設定取得（環境変数サポート）
 export function getAudioConfig(): AudioConfig {
   const homeDir = homedir();
-  const endpoint = process.env.VOICEVOX_ENDPOINT || process.env.AIVISSPEECH_HOST;
+  const endpoint = process.env.VOICEVOX_ENDPOINT;
   
   const config: AudioConfig = {
     soundsDir: path.join(homeDir, '.claude/hooks/sounds'),
@@ -39,7 +39,7 @@ export function getAudioConfig(): AudioConfig {
   if (endpoint) {
     config.voicevox = {
       endpoint,
-      speakerId: process.env.VOICEVOX_SPEAKER_ID || process.env.AIVISSPEECH_SPEAKER_ID || '888753760'
+      speakerId: process.env.VOICEVOX_SPEAKER_ID || '888753760'
     };
   }
   
