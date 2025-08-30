@@ -11,7 +11,18 @@ import { join, dirname } from 'path';
 import { existsSync, mkdirSync, writeFileSync, readFileSync, statSync, readdirSync, unlinkSync, rmSync } from 'fs';
 import { homedir } from 'os';
 
-// Configuration interfaces
+// Import shared libraries
+import { getGitContext, createContextMessage } from '../lib/git-context.ts';
+import { detectPlatform, playSound, commandExists, cleanupOldFiles } from '../lib/voicevox-audio.ts';
+import type { 
+  Platform, 
+  EventType, 
+  AudioQuery,
+  VoiceSynthesisConfig,
+  NotificationLogEntry
+} from '../lib/sound-types.ts';
+
+// Configuration interfaces (keeping legacy compatibility)
 interface AivisSpeechConfig {
   host: string;
   defaultSpeakerId: string;
@@ -27,22 +38,6 @@ interface SessionInfo {
   sessionDir: string;
   currentWavFile: string | null;
 }
-
-interface AudioQuery {
-  accent_phrases: any[];
-  speedScale: number;
-  pitchScale: number;
-  intonationScale: number;
-  volumeScale: number;
-  prePhonemeLength: number;
-  postPhonemeLength: number;
-  outputSamplingRate: number;
-  outputStereo: boolean;
-  kana: string;
-}
-
-type Platform = 'darwin' | 'wsl' | 'linux';
-type EventType = 'Notification' | 'Stop' | 'Error';
 
 class AivisSpeechNotification {
   private config: AivisSpeechConfig;
@@ -152,37 +147,7 @@ class AivisSpeechNotification {
     }
   }
 
-  private async cleanupOldFiles(): Promise<void> {
-    try {
-      if (!existsSync(this.config.tempDir)) {
-        return;
-      }
 
-      // Remove WAV files older than 24 hours (1440 minutes)
-      await $`find ${this.config.tempDir} -type f -name "*.wav" -mmin +1440 -delete`.quiet();
-      
-      // Remove empty session directories
-      await $`find ${this.config.tempDir}/sessions -type d -empty -delete`.quiet();
-      
-      this.logMessage('Cleaned up old WAV files (>24 hours)');
-    } catch {
-      // Ignore cleanup failures
-    }
-  }
-
-  private detectPlatform(): Platform {
-    const osType = process.env.OSTYPE || '';
-    
-    if (osType.startsWith('darwin')) {
-      return 'darwin';
-    }
-    
-    if (process.env.WSL_DISTRO_NAME || osType === 'msys') {
-      return 'wsl';
-    }
-    
-    return 'linux';
-  }
 
   private async checkAivisSpeech(): Promise<boolean> {
     try {
@@ -256,119 +221,34 @@ class AivisSpeechNotification {
       return false;
     }
 
-    const platform = this.detectPlatform();
-
     try {
-      switch (platform) {
-        case 'darwin':
-          if (await $`which afplay`.quiet().noThrow()) {
-            await $`afplay ${wavFile}`.spawn();
-            this.logMessage(`Playing static WAV (macOS): ${wavFile}`);
-            return true;
-          }
-          this.logMessage('WARNING: afplay not found on macOS');
-          return false;
-
-        case 'wsl':
-          await this.playWSLStaticWav(wavFile);
-          return true;
-
-        case 'linux':
-          if (await $`which paplay`.quiet().noThrow()) {
-            await $`paplay ${wavFile}`.spawn();
-            this.logMessage(`Playing static WAV (Linux): ${wavFile}`);
-            return true;
-          } else if (await $`which aplay`.quiet().noThrow()) {
-            await $`aplay -q ${wavFile}`.spawn();
-            this.logMessage(`Playing static WAV (Linux): ${wavFile}`);
-            return true;
-          }
-          this.logMessage('WARNING: No audio player found (paplay/aplay)');
-          return false;
-
-        default:
-          return false;
+      const success = await playSound(wavFile);
+      if (success) {
+        this.logMessage(`Playing static WAV: ${wavFile}`);
+      } else {
+        this.logMessage(`Failed to play static WAV: ${wavFile}`);
       }
+      return success;
     } catch (error) {
       this.logMessage(`Error playing static WAV: ${error}`);
       return false;
     }
   }
 
-  private async playWSLStaticWav(wavFile: string): Promise<void> {
-    try {
-      // Convert WSL path to Windows path
-      const winPath = await $`wslpath -w ${wavFile}`.text();
-      this.logMessage(`Playing static WAV (WSL): ${winPath.trim()}`);
-
-      // PowerShell script with proper UTF-8 encoding setup and escaping
-      const script = `
-        try {
-          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-          
-          # Copy WAV to Windows temp
-          \$winTempPath = 'C:\\temp\\claude_prefix_temp.wav'
-          New-Item -Path 'C:\\temp' -ItemType Directory -Force | Out-Null
-          Copy-Item '${winPath.trim()}' \$winTempPath -Force
-          
-          # Play from Windows filesystem (synchronous for reliable playback)
-          \$player = New-Object System.Media.SoundPlayer
-          \$player.SoundLocation = \$winTempPath
-          \$player.Load()
-          \$player.PlaySync()
-          Write-Host 'SoundPlayer: Static WAV completed'
-          
-          # Clean up Windows temp file
-          Remove-Item \$winTempPath -Force -ErrorAction SilentlyContinue
-        } catch {
-          Write-Host "Error playing static WAV: \$(\$_.Exception.Message)"
-        }
-      `;
-
-      const output = await $`powershell.exe -c ${script}`.text();
-      
-      output.split('\n').forEach(line => {
-        if (line.trim()) {
-          this.logMessage(`Static: ${line.trim()}`);
-        }
-      });
-    } catch (error) {
-      this.logMessage(`Error in WSL static WAV playback: ${error}`);
-    }
-  }
 
   private async playAudioAndCleanup(audioFile: string): Promise<void> {
-    const platform = this.detectPlatform();
-
     try {
-      switch (platform) {
-        case 'darwin':
-          if (await $`which afplay`.quiet().noThrow()) {
-            await $`afplay ${audioFile}`;
-            unlinkSync(audioFile);
-          } else {
-            this.logMessage('WARNING: afplay not found on macOS');
-          }
-          break;
-
-        case 'linux':
-          if (await $`which paplay`.quiet().noThrow()) {
-            await $`paplay ${audioFile}`;
-            unlinkSync(audioFile);
-          } else if (await $`which aplay`.quiet().noThrow()) {
-            await $`aplay -q ${audioFile}`;
-            unlinkSync(audioFile);
-          } else {
-            this.logMessage('WARNING: No audio player found (paplay/aplay)');
-            unlinkSync(audioFile);
-          }
-          break;
-
-        case 'wsl':
-          await this.playWSLAudio(audioFile);
-          unlinkSync(audioFile);
-          this.logMessage(`Removed audio file: ${audioFile}`);
-          break;
+      const success = await playSound(audioFile);
+      if (success) {
+        this.logMessage(`Successfully played audio: ${audioFile}`);
+      } else {
+        this.logMessage(`Failed to play audio: ${audioFile}`);
+      }
+      
+      // Clean up the file
+      if (existsSync(audioFile)) {
+        unlinkSync(audioFile);
+        this.logMessage(`Removed audio file: ${audioFile}`);
       }
     } catch (error) {
       this.logMessage(`Failed to play audio: ${error}`);
@@ -381,47 +261,6 @@ class AivisSpeechNotification {
     this.session.currentWavFile = null;
   }
 
-  private async playWSLAudio(audioFile: string): Promise<void> {
-    try {
-      // Convert to Windows path for PowerShell
-      const winPath = await $`wslpath -w ${audioFile}`.text();
-      this.logMessage(`Playing audio file: ${winPath.trim()}`);
-
-      // PowerShell script with proper UTF-8 encoding setup
-      const script = `
-        try {
-          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-          
-          # Copy WAV to Windows temp
-          \$winTempPath = 'C:\\temp\\claude_dynamic_temp.wav'
-          New-Item -Path 'C:\\temp' -ItemType Directory -Force | Out-Null
-          Copy-Item '${winPath.trim()}' \$winTempPath -Force
-          
-          # Play from Windows filesystem
-          \$player = New-Object System.Media.SoundPlayer
-          \$player.SoundLocation = \$winTempPath
-          \$player.Load()
-          \$player.PlaySync()
-          Write-Host 'SoundPlayer: Audio played successfully'
-          
-          # Clean up Windows temp file
-          Remove-Item \$winTempPath -Force -ErrorAction SilentlyContinue
-        } catch {
-          Write-Host "Error playing audio: \$(\$_.Exception.Message)"
-        }
-      `;
-
-      const output = await $`powershell.exe -c ${script}`.text();
-      
-      output.split('\n').forEach(line => {
-        if (line.trim()) {
-          this.logMessage(`Audio: ${line.trim()}`);
-        }
-      });
-    } catch (error) {
-      this.logMessage(`Error in WSL audio playback: ${error}`);
-    }
-  }
 
   private async executeFallbackNotification(eventType: EventType, reason: string): Promise<void> {
     this.logMessage(`${reason}, falling back to static WAV files`);
@@ -444,85 +283,12 @@ class AivisSpeechNotification {
 
   private async getRepoInfo(): Promise<{ name: string; isRepository: boolean }> {
     try {
-      let repoName = '';
-      let isRepository = false;
-      let hasRemote = false;
-      
-      // First, try to get working directory name as fallback
-      let dirName = 'unknown';
-      try {
-        const pwdResult = await $`pwd`.text();
-        if (pwdResult) {
-          const pathParts = pwdResult.trim().split('/');
-          dirName = pathParts[pathParts.length - 1] || 'unknown';
-        }
-      } catch (error) {
-        this.logMessage(`Warning: Failed to get pwd: ${error}`);
-      }
-      
-      // Check if we're in a git repository
-      const isGitRepo = await $`git rev-parse --is-inside-work-tree`.quiet().noThrow();
-      if (isGitRepo.code === 0) {
-        this.logMessage('Detected git repository');
-        isRepository = true;
-        
-        // Try to get repo name from remote origin
-        try {
-          const remoteUrl = await $`git remote get-url origin`.text();
-          if (remoteUrl && remoteUrl.trim()) {
-            hasRemote = true;
-            // Match various remote URL patterns
-            const patterns = [
-              /\/([^/]+)\.git$/,           // Standard: .../repo.git
-              /\/([^/]+)$/,               // No .git suffix
-              /:([^/]+)\.git$/,           // SSH: git@host:repo.git
-              /:([^/]+)$/,                // SSH without .git
-            ];
-            
-            for (const pattern of patterns) {
-              const match = remoteUrl.match(pattern);
-              if (match && match[1]) {
-                repoName = match[1];
-                this.logMessage(`Extracted repo name from remote: ${repoName}`);
-                break;
-              }
-            }
-          }
-        } catch (error) {
-          this.logMessage(`No remote origin found: ${error}`);
-          hasRemote = false;
-        }
-        
-        // If no remote or extraction failed, try git config
-        if (!repoName) {
-          try {
-            const gitRootName = await $`git rev-parse --show-toplevel`.text();
-            if (gitRootName && gitRootName.trim()) {
-              const pathParts = gitRootName.trim().split('/');
-              repoName = pathParts[pathParts.length - 1] || '';
-              this.logMessage(`Extracted repo name from git root: ${repoName}`);
-            }
-          } catch (error) {
-            this.logMessage(`Failed to get git root: ${error}`);
-          }
-        }
-      }
-      
-      // Final fallback to directory name
-      if (!repoName || repoName.trim() === '') {
-        repoName = dirName;
-        this.logMessage(`Using directory name as fallback: ${repoName}`);
-      }
-      
-      const result = repoName.trim() || 'unknown';
-      
-      // Determine if this should be called a repository or directory
-      // It's a repository if it's a git repo AND has a remote
-      const finalIsRepository = isRepository && hasRemote;
-      
-      this.logMessage(`Final name: ${result}, isRepository: ${finalIsRepository}`);
-      return { name: result, isRepository: finalIsRepository };
-      
+      const context = await getGitContext();
+      this.logMessage(`Git context: ${context.name}, ${context.containerType}`);
+      return { 
+        name: context.name, 
+        isRepository: context.isRepository && context.hasRemote 
+      };
     } catch (error) {
       this.logMessage(`Error in getRepoInfo: ${error}`);
       return { name: 'unknown', isRepository: false };
@@ -577,18 +343,16 @@ class AivisSpeechNotification {
 
   async handleNotification(): Promise<void> {
     // Clean up old files on Notification event (first event usually)
-    await this.cleanupOldFiles();
+    await cleanupOldFiles();
     
-    const repoInfo = await this.getRepoInfo();
-    const containerType = repoInfo.isRepository ? 'リポジトリ' : 'ディレクトリ';
-    const message = `${repoInfo.name} ${containerType}で操作の確認が必要です`;
+    const context = await getGitContext();
+    const message = createContextMessage(context, 'confirm');
     await this.speakNotification(message, 'Notification');
   }
 
   async handleStop(): Promise<void> {
-    const repoInfo = await this.getRepoInfo();
-    const containerType = repoInfo.isRepository ? 'リポジトリ' : 'ディレクトリ';
-    const message = `${repoInfo.name} ${containerType}で処理が完了しました`;
+    const context = await getGitContext();
+    const message = createContextMessage(context, 'complete');
     await this.speakNotification(message, 'Stop');
 
     // Clean up entire session directory on Stop
@@ -603,9 +367,8 @@ class AivisSpeechNotification {
   }
 
   async handleError(): Promise<void> {
-    const repoInfo = await this.getRepoInfo();
-    const containerType = repoInfo.isRepository ? 'リポジトリ' : 'ディレクトリ';
-    const message = `${repoInfo.name} ${containerType}でエラーが発生しました`;
+    const context = await getGitContext();
+    const message = createContextMessage(context, 'error');
     await this.speakNotification(message, 'Error');
   }
 

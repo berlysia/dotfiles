@@ -19,17 +19,18 @@ hooks/
 │   ├── notification.ts          # 通知処理
 │   ├── speak-notification.ts    # 音声通知
 │   └── user-prompt-logger.ts    # プロンプトログ
-├── lib/                         # 共通ライブラリ（TypeScript）
+├── lib/                         # 共有ライブラリ（TypeScript）
 │   ├── hook-common.ts           # フック共通機能
 │   ├── pattern-matcher.ts       # パターンマッチング
 │   ├── dangerous-commands.ts    # 危険なコマンドの検出
 │   ├── decision-maker.ts        # 判定ロジック
 │   ├── logging.ts               # ロギング機能
 │   ├── notification-logging.ts  # 通知ログ機能
-│   └── voicevox-audio.ts        # VoiceVox音声合成
+│   ├── voicevox-audio.ts        # VoiceVox音声合成・音声再生
+│   ├── git-context.ts           # Git リポジトリ情報管理
+│   └── sound-types.ts           # 音声通知型定義
 ├── utilities/                   # スタンドアロンツール
-│   ├── generate-stats.ts        # 統計レポート生成
-│   └── play-notification-sound.ts  # 通知音再生
+│   └── generate-stats.ts        # 統計レポート生成
 ├── types/                       # 型定義
 │   ├── hooks-types.ts           # Hook型定義
 │   └── tool-schemas.ts          # ツールスキーマ
@@ -163,8 +164,6 @@ export default defineHook({
 ### generate-stats.ts
 コマンド実行統計の生成とレポート出力
 
-### play-notification-sound.ts
-プラットフォーム別通知音再生（macOS, Linux, WSL対応）
 
 ## トラブルシューティング
 
