@@ -39,6 +39,14 @@
         "OPENAI_MODEL": "gpt-5",
         "OPENAI_API_KEY": "${USER_OPENAI_API_KEY_FOR_MCP}"
       }
+    },
+    "vibe_kanban": {
+      "args": [
+        "-y",
+        "vibe-kanban",
+        "--mcp"
+      ],
+      "command": "npx"
     }
   },
   "preferredNotifChannel": "terminal_bell",
