@@ -4,7 +4,7 @@ import { defineHook } from "cc-hooks-ts";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { appendFileSync, readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
-import "./types/tool-schemas.ts";
+import "../types/tool-schemas.ts";
 
 /**
  * Command logger for tracking tool usage

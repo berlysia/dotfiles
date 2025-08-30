@@ -4,16 +4,7 @@ import { defineHook } from "cc-hooks-ts";
 import { existsSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { extname } from "node:path";
-import "./types/tool-schemas.ts";
-
-interface HookContext<T = any> {
-  input: {
-    tool_name: string;
-    tool_input: unknown;
-  };
-  success: (arg?: any) => any;
-  blockingError?: (msg: string) => any;
-}
+import "../types/tool-schemas.ts";
 
 /**
  * Auto-format files after Edit/MultiEdit/Write operations
@@ -21,7 +12,7 @@ interface HookContext<T = any> {
  */
 export default defineHook({
   trigger: { PostToolUse: true },
-  run: (context: HookContext<{ PostToolUse: true }>) => {
+  run: (context) => {
     const { tool_name, tool_input } = context.input;
 
     // Only process file writing/editing tools

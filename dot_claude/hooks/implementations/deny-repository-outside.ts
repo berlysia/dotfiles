@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { homedir } from "node:os";
 import { existsSync, realpathSync } from "node:fs";
 import { execSync } from "node:child_process";
-import "./types/tool-schemas.ts";
+import "../types/tool-schemas.ts";
 
 /**
  * Deny access to files outside repository root

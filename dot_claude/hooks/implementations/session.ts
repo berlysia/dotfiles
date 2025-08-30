@@ -5,26 +5,18 @@ import { appendFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-interface HookContext {
-  input: {
-    session_id: string;
-  };
-  success: (arg?: any) => any;
-  blockingError?: (msg: string) => any;
-}
-
 /**
- * User prompt submission logger
- * Logs UserPromptSubmit events for analytics
+ * Session management hooks
+ * Handles SessionStart events with logging
  */
 export default defineHook({
-  trigger: { UserPromptSubmit: true },
-  run: (context: HookContext) => {
+  trigger: { SessionStart: true },
+  run: (context) => {
     try {
-      // Log user prompt submission
+      // Log session start
       const logEntry = {
         timestamp: new Date().toISOString(),
-        event: "UserPromptSubmit",
+        event: "SessionStart",
         session_id: context.input.session_id,
         user: process.env.USER || "unknown",
         cwd: process.cwd(),
@@ -39,10 +31,12 @@ export default defineHook({
       
       appendFileSync(logFile, logLine);
 
-      return context.success({});
+      return context.success({
+        messageForUser: "🚀 Claude Code session started. Ready for development!"
+      });
 
     } catch (error) {
-      console.error(`User prompt logger error: ${error}`);
+      console.error(`Session start error: ${error}`);
       return context.success({});
     }
   }
