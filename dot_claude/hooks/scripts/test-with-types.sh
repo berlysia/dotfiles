@@ -6,7 +6,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(dirname "$0")"
-HOOKS_DIR="$SCRIPT_DIR"
+HOOKS_DIR="$SCRIPT_DIR/../implementations"
 
 # Colors for output
 RED='\033[0;31m'
@@ -92,13 +92,13 @@ echo -e "${YELLOW}🔍 Phase 1: Type Checking${NC}"
 echo "=========================="
 
 # Type check all TypeScript files
-run_type_check "types/hooks-types.ts" "Hook type definitions"
-run_type_check "lib/hook-common.ts" "Common hook utilities" 
-run_type_check "auto-approve-commands.ts" "Auto-approve commands script"
-run_type_check "block-tsx-package-json.ts" "Block tsx package.json script"
-run_type_check "block-tsx-tsnode.ts" "Block tsx/tsnode script"
-run_type_check "deny-node-modules-write.ts" "Deny node modules write script"
-run_type_check "deny-repository-outside-access.ts" "Deny outside access script"
+run_type_check "../types/hooks-types.ts" "Hook type definitions"
+run_type_check "../lib/hook-common.ts" "Common hook utilities" 
+run_type_check "$HOOKS_DIR/auto-approve.ts" "Auto-approve commands script"
+run_type_check "$HOOKS_DIR/block-package-json-tsx.ts" "Block tsx package.json script"
+run_type_check "$HOOKS_DIR/block-tsx.ts" "Block tsx/tsnode script"
+run_type_check "$HOOKS_DIR/deny-node-modules.ts" "Deny node modules write script"
+run_type_check "$HOOKS_DIR/deny-repository-outside.ts" "Deny outside access script"
 
 echo ""
 echo -e "${YELLOW}🚀 Phase 2: Functional Testing${NC}"
@@ -106,7 +106,7 @@ echo "==============================="
 
 # Test basic functionality of other hooks
 run_functional_test "auto-approve-safe" \
-    "bun ${HOOKS_DIR}/auto-approve-commands.ts" \
+    "bun ${HOOKS_DIR}/auto-approve.ts" \
     '{"tool_name": "Bash", "tool_input": {"command": "git status"}, "session_id": "test123"}' \
     0 \
     "Auto-approve safe git command"

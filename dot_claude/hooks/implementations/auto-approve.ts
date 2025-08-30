@@ -6,16 +6,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
-import "./types/tool-schemas.ts";
-
-interface HookContext {
-  input: {
-    tool_name: string;
-    tool_input: unknown;
-  };
-  success: (arg?: any) => any;
-  blockingError: (msg: string) => any;
-}
+import "../types/tool-schemas.ts";
 
 /**
  * Auto-approve commands based on permissions.allow/deny lists
@@ -23,7 +14,7 @@ interface HookContext {
  */
 export default defineHook({
   trigger: { PreToolUse: true } as const,
-  run: (context: HookContext) => {
+  run: (context) => {
     const { tool_name, tool_input } = context.input;
 
     // Exit early if no tool name

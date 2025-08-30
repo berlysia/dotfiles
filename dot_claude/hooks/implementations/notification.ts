@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 
 import { defineHook } from "cc-hooks-ts";
-import { notifyWithContext, notify, cleanupOldFiles } from "./lib/voicevox-audio.ts";
-import { logEvent } from "./lib/notification-logging.ts";
+import { notifyWithContext, notify, cleanupOldFiles } from "../lib/voicevox-audio.ts";
+import { logEvent } from "../lib/notification-logging.ts";
 
 /**
  * Notification and Stop event handlers

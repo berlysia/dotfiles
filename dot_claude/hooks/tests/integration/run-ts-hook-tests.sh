@@ -7,7 +7,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(dirname "$0")"
 TEST_DATA_DIR="${SCRIPT_DIR}/test-data"
-HOOKS_DIR="$(dirname "$SCRIPT_DIR")/../"
+HOOKS_DIR="$(dirname "$SCRIPT_DIR")/../implementations"
 
 # Colors for output
 RED='\033[0;31m'

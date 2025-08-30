@@ -2,7 +2,7 @@
 
 import { defineHook } from "cc-hooks-ts";
 import { extract, toMarkdown } from "@mizchi/readability";
-import "./types/tool-schemas.ts";
+import "../types/tool-schemas.ts";
 
 /**
  * Web fetch guardian: Enhanced WebFetch with readability markdown conversion
