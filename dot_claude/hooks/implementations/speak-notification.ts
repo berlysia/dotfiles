@@ -2,7 +2,7 @@
 
 /**
  * Claude Hybrid Voice Notification - TypeScript Version
- * Combines static WAV files with AivisSpeech dynamic synthesis
+ * Combines static WAV files with VoiceVox-compatible engine synthesis
  * Provides immediate audio feedback with detailed voice notifications
  */
 
@@ -22,8 +22,8 @@ import type {
   NotificationLogEntry
 } from '../lib/sound-types.ts';
 
-// Configuration interfaces (keeping legacy compatibility)
-interface AivisSpeechConfig {
+// Configuration interfaces
+interface VoiceSynthesisEngineConfig {
   host: string;
   defaultSpeakerId: string;
   tempDir: string;
@@ -39,8 +39,8 @@ interface SessionInfo {
   currentWavFile: string | null;
 }
 
-class AivisSpeechNotification {
-  private config: AivisSpeechConfig;
+class VoiceNotification {
+  private config: VoiceSynthesisEngineConfig;
   private session: SessionInfo;
 
   constructor() {
@@ -59,14 +59,14 @@ class AivisSpeechNotification {
     });
   }
 
-  private initializeConfig(): AivisSpeechConfig {
+  private initializeConfig(): VoiceSynthesisEngineConfig {
     const homeDir = homedir();
     
     return {
-      host: process.env.AIVISSPEECH_HOST || 'http://localhost:10101',
-      defaultSpeakerId: process.env.AIVISSPEECH_SPEAKER_ID || '888753760', // Anneli ノーマル
-      tempDir: '/tmp/claude-aivisspeech',
-      logFile: join(homeDir, '.claude', 'log', 'aivisspeech.log'),
+      host: process.env.VOICEVOX_ENDPOINT || 'http://localhost:10101',
+      defaultSpeakerId: process.env.VOICEVOX_SPEAKER_ID || '888753760', // VoiceVox互換デフォルトスピーカー
+      tempDir: '/tmp/claude-voice-synthesis',
+      logFile: join(homeDir, '.claude', 'log', 'voice-synthesis.log'),
       computerName: process.env.CLAUDE_COMPUTER_NAME || 'Claude', // Simplified for now
       soundDir: join(homeDir, '.claude', 'hooks', 'sounds'),
       prefixFile: join(homeDir, '.claude', 'hooks', 'sounds', 'Prefix.wav')
@@ -149,7 +149,7 @@ class AivisSpeechNotification {
 
 
 
-  private async checkAivisSpeech(): Promise<boolean> {
+  private async checkSynthesisEngine(): Promise<boolean> {
     try {
       const response = await fetch(`${this.config.host}/version`, {
         method: 'GET',
@@ -157,7 +157,7 @@ class AivisSpeechNotification {
       });
       return response.ok;
     } catch (error) {
-      this.logMessage(`ERROR: AivisSpeech Engine not available at ${this.config.host}`);
+      this.logMessage(`ERROR: VoiceVox-compatible engine not available at ${this.config.host}`);
       return false;
     }
   }
@@ -296,9 +296,9 @@ class AivisSpeechNotification {
   }
 
   async speakNotification(text: string, eventType: EventType): Promise<void> {
-    // Check if AivisSpeech is available for dynamic synthesis
-    if (!await this.checkAivisSpeech()) {
-      await this.executeFallbackNotification(eventType, 'AivisSpeech unavailable');
+    // Check if VoiceVox-compatible engine is available for dynamic synthesis
+    if (!await this.checkSynthesisEngine()) {
+      await this.executeFallbackNotification(eventType, 'Voice synthesis engine unavailable');
       return;
     }
 
@@ -382,7 +382,7 @@ async function main() {
   const args = process.argv.slice(2);
   const eventType = args[0];
   
-  const notification = new AivisSpeechNotification();
+  const notification = new VoiceNotification();
 
   switch (eventType) {
     case 'Notification':

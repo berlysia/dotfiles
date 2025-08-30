@@ -70,7 +70,7 @@ export interface AudioSystemConfig {
   platforms: Record<Platform, PlatformAudioConfig>;
 }
 
-// Voice synthesis interfaces (VoiceVox/AivisSpeech compatible)
+// Voice synthesis interfaces (VoiceVox-compatible engines)
 export interface VoiceSynthesisConfig {
   endpoint: string;
   speakerId: string;
