@@ -35,7 +35,7 @@ describe("deny-node-modules.ts hook behavior", () => {
   });
   
   describe("node_modules detection", () => {
-    it("should block Read operations on node_modules files", async () => {
+    it("should allow Read operations on node_modules files", async () => {
       const hook = createDenyNodeModulesHook();
       
       const context = createPreToolUseContext("Read", {
@@ -43,8 +43,7 @@ describe("deny-node-modules.ts hook behavior", () => {
       });
       const result = await hook.execute(context.input);
       
-      context.assertDeny();
-      ok(context.failCalls[0].includes("node_modules"));
+      context.assertSuccess({});
     });
     
     it("should block Write operations to node_modules", async () => {
@@ -97,7 +96,7 @@ describe("deny-node-modules.ts hook behavior", () => {
       ok(context.failCalls[0].includes("node_modules"));
     });
     
-    it("should block ls commands in node_modules", async () => {
+    it("should allow ls commands in node_modules", async () => {
       const hook = createDenyNodeModulesHook();
       
       const context = createPreToolUseContext("Bash", {
@@ -105,7 +104,62 @@ describe("deny-node-modules.ts hook behavior", () => {
       });
       const result = await hook.execute(context.input);
       
-      context.assertDeny();
+      context.assertSuccess({});
+    });
+    
+    it("should allow read-only commands (cat, grep, find)", async () => {
+      const hook = createDenyNodeModulesHook();
+      
+      const readOnlyCommands = [
+        "cat node_modules/package/package.json",
+        "grep version node_modules/*/package.json",
+        "find node_modules -name '*.js'",
+        "cd node_modules && pwd"
+      ];
+      
+      for (const command of readOnlyCommands) {
+        const context = createPreToolUseContext("Bash", { command });
+        const result = await hook.execute(context.input);
+        
+        context.assertSuccess({});
+        context.reset();
+      }
+    });
+    
+    it("should ask for unknown operations", async () => {
+      const hook = createDenyNodeModulesHook();
+      
+      const context = createPreToolUseContext("Bash", {
+        command: "custom-tool node_modules/file"
+      });
+      const result = await hook.execute(context.input);
+      
+      // Should return ask response
+      strictEqual(context.jsonCalls.length, 1);
+      ok(context.jsonCalls[0].payload.includes("Unknown node_modules operation"));
+    });
+    
+    it("should handle compound commands correctly", async () => {
+      const hook = createDenyNodeModulesHook();
+      
+      // Should deny if any part is destructive
+      const destructiveContext = createPreToolUseContext("Bash", {
+        command: "cd /tmp && rm -rf node_modules"
+      });
+      const destructiveResult = await hook.execute(destructiveContext.input);
+      
+      strictEqual(destructiveContext.jsonCalls.length, 1);
+      ok(destructiveContext.jsonCalls[0].payload.includes("Destructive operation detected"));
+      
+      destructiveContext.reset();
+      
+      // Should allow if all parts are safe
+      const safeContext = createPreToolUseContext("Bash", {
+        command: "cd node_modules && ls && pwd"
+      });
+      const safeResult = await hook.execute(safeContext.input);
+      
+      safeContext.assertSuccess({});
     });
   });
   
