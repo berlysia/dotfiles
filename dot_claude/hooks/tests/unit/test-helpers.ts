@@ -5,9 +5,10 @@
 import { strictEqual, deepStrictEqual } from "node:assert";
 import { 
   defineHook as originalDefineHook,
-  type ExtractAllHookInputsForEvent 
+  type ExtractAllHookInputsForEvent,
+  type ToolSchema
 } from "cc-hooks-ts";
-import type { BuiltinToolName } from "../../types/project-types.ts";
+import type { BuiltinToolName, PreToolUseHookInput, PostToolUseHookInput } from "../../types/project-types.ts";
 
 // Extract types from defineHook function
 type HookDefinition = Parameters<typeof originalDefineHook>[0];
@@ -250,27 +251,38 @@ export class EnvironmentHelper {
 /**
  * Helper functions for creating properly typed test contexts
  */
-export const createPreToolUseContext = (tool_name: BuiltinToolName, tool_input: any) => {
-  return new MockHookContext<{ PreToolUse: true }>({
-    hook_event_name: "PreToolUse",
+export const createPreToolUseContext = <Name extends keyof ToolSchema>(
+  tool_name: Name, 
+  tool_input: ToolSchema[Name]["input"]
+) => {
+  const input = {
+    hook_event_name: "PreToolUse" as const,
     cwd: "/test",
     session_id: "test-session",
     transcript_path: "/test/transcript",
     tool_name,
     tool_input
-  });
+  } as ExtractAllHookInputsForEvent<"PreToolUse">;
+  
+  return new MockHookContext<{ PreToolUse: true }>(input);
 };
 
-export const createPostToolUseContext = <Name extends BuiltinToolName>(tool_name: Name, tool_input: any, tool_response: any = {}) => {
-  return new MockHookContext<{ PostToolUse: true }>({
-    hook_event_name: "PostToolUse",
+export const createPostToolUseContext = <Name extends keyof ToolSchema>(
+  tool_name: Name, 
+  tool_input: ToolSchema[Name]["input"], 
+  tool_response: ToolSchema[Name]["response"]
+) => {
+  const input = {
+    hook_event_name: "PostToolUse" as const,
     cwd: "/test",
     session_id: "test-session", 
     transcript_path: "/test/transcript",
     tool_name,
     tool_input,
     tool_response
-  });
+  } as ExtractAllHookInputsForEvent<"PostToolUse">;
+  
+  return new MockHookContext<{ PostToolUse: true }>(input);
 };
 
 export const createNotificationContext = (message?: string) => {
