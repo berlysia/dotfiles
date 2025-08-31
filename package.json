@@ -6,8 +6,8 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "test": ".scripts/test-with-types.sh",
-    "test:functional": "./scripts/tests/integration/run-ts-hook-tests.sh",
+    "test": "./dot_claude/hooks/scripts/test-with-types.sh",
+    "test:functional": "./dot_claude/hooks/scripts/tests/integration/run-ts-hook-tests.sh",
     "test:unit": "./dot_claude/hooks/tests/unit/run-tests.sh",
     "typecheck": "npx tsgo --noEmit",
     "check": "npm run lint && npm run typecheck"
