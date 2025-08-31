@@ -26,7 +26,7 @@ describe("web-fetch-guardian.ts hook behavior", () => {
     it("should be configured for PreToolUse trigger", () => {
       const hook = defineHook({
         trigger: { PreToolUse: true },
-        run: (context) => context.success({})
+        run: (context: any) => context.success({})
       });
       
       deepStrictEqual(hook.trigger, { PreToolUse: true });
@@ -382,7 +382,7 @@ describe("web-fetch-guardian.ts hook behavior", () => {
 function createWebFetchGuardianHook() {
   return defineHook({
     trigger: { PreToolUse: true },
-    run: async (context) => {
+    run: async (context: any) => {
       const { tool_name, tool_input } = context.input;
       
       // Only intercept WebFetch

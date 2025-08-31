@@ -30,7 +30,7 @@ describe("deny-repository-outside.ts hook behavior", () => {
     it("should be configured for PreToolUse trigger", () => {
       const hook = defineHook({
         trigger: { PreToolUse: true },
-        run: (context) => context.success({})
+        run: (context: any) => context.success({})
       });
       
       deepStrictEqual(hook.trigger, { PreToolUse: true });
@@ -367,7 +367,7 @@ describe("deny-repository-outside.ts hook behavior", () => {
 function createDenyRepositoryOutsideHook(repoRoot: string | undefined) {
   return defineHook({
     trigger: { PreToolUse: true },
-    run: (context) => {
+    run: (context: any) => {
       const { tool_name, tool_input } = context.input;
       
       // Only check file/path tools
@@ -429,7 +429,9 @@ function extractPaths(toolName: string, toolInput: any): string[] {
       for (const pattern of filePatterns) {
         let match;
         while ((match = pattern.exec(command)) !== null) {
-          paths.push(match[1]);
+          if (match[1]) {
+            paths.push(match[1]);
+          }
         }
       }
       break;
