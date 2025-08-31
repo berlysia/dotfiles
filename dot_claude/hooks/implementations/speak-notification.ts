@@ -1,11 +1,12 @@
 #!/usr/bin/env -S bun run --silent
 
 /**
- * Claude Hybrid Voice Notification - TypeScript Version
+ * Claude Hybrid Voice Notification - cc-hooks-ts Version
  * Combines static WAV files with VoiceVox-compatible engine synthesis
  * Provides immediate audio feedback with detailed voice notifications
  */
 
+import { defineHook } from "cc-hooks-ts";
 import { $ } from 'dax-sh';
 import { join, dirname } from 'path';
 import { existsSync, mkdirSync, writeFileSync, readFileSync, statSync, readdirSync, unlinkSync, rmSync } from 'fs';
@@ -377,7 +378,46 @@ class VoiceNotification {
   }
 }
 
-// Main execution
+// Hook implementation for cc-hooks-ts
+const hook = defineHook({
+  trigger: {
+    Notification: true,
+    Stop: true,
+    Error: true
+  },
+  run: async (context) => {
+    const eventType = context.input.hook_event_name as 'Notification' | 'Stop' | 'Error';
+    
+    try {
+      const notification = new VoiceNotification();
+      
+      switch (eventType) {
+        case 'Notification':
+          await notification.handleNotification();
+          break;
+        case 'Stop':
+          await notification.handleStop();
+          break;
+        case 'Error':
+          await notification.handleError();
+          break;
+        default:
+          // Fallback for unknown event types
+          await notification.handleNotification();
+          break;
+      }
+      
+      return context.success({
+        messageForUser: `Voice notification played for ${eventType} event`
+      });
+    } catch (error) {
+      console.error(`Voice notification error: ${error}`);
+      return context.success({}); // Don't block on notification failures
+    }
+  }
+});
+
+// Legacy CLI support - Main execution function
 async function main() {
   const args = process.argv.slice(2);
   const eventType = args[0];
@@ -406,10 +446,19 @@ async function main() {
   }
 }
 
-// Execute if run directly
+export default hook;
+
+// Execute if run directly (CLI mode)
 if (import.meta.main) {
-  main().catch(error => {
-    console.error('Error:', error);
-    process.exit(1);
-  });
+  if (process.argv.length > 2) {
+    // CLI mode - use original main function
+    main().catch(error => {
+      console.error('Error:', error);
+      process.exit(1);
+    });
+  } else {
+    // Hook mode - run as cc-hooks-ts hook
+    const { runHook } = await import("cc-hooks-ts");
+    await runHook(hook);
+  }
 }
