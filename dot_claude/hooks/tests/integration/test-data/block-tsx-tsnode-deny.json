@@ -1,6 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input": {
-    "command": "npx tsx src/index.ts"
-  }
-}

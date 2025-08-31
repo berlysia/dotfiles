@@ -1,7 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input": {
-    "command": "echo test",
-    "description": "Test command"
-  }
-}
