@@ -30,8 +30,11 @@ export class MockHookContext<TTrigger extends HookTrigger> {
   public failCalls: any[] = [];
   public jsonCalls: any[] = [];
   public nonBlockingErrorCalls: any[] = [];
-  
-  constructor(public input: ExtractHookInput<TTrigger>) {}
+  public input: ExtractHookInput<TTrigger>;
+
+  constructor(input: ExtractHookInput<TTrigger>) {
+    this.input = input;
+  }
   
   success = (result: any = {}) => {
     this.successCalls.push(result);
