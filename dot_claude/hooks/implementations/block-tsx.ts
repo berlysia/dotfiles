@@ -1,6 +1,7 @@
 #!/usr/bin/env -S bun run --silent
 
 import { defineHook } from "cc-hooks-ts";
+import { createDenyResponse } from "../lib/context-helpers.ts";
 
 /**
  * Block tsx/ts-node usage in favor of bun/deno
@@ -30,53 +31,53 @@ const hook = defineHook({
       const timePattern = /\btime\s+(?:npx\s+)?(?:tsx|ts-node)\b/;
       
       if (findExecPattern.test(command)) {
-        return context.blockingError(
+        return context.json(createDenyResponse(
           `Using tsx/ts-node with 'find -exec' is not allowed\n\n` +
           `Suggestion: Use a TypeScript-compatible runtime instead:\n` +
           `• find . -type f -name "*.ts" -exec node {} \\;\n` +
           `• find . -type f -name "*.ts" -exec bun {} \\;\n\n` +
           `Command: ${command}`
-        );
+        ));
       }
       
       if (xargsPattern.test(command)) {
-        return context.blockingError(
+        return context.json(createDenyResponse(
           `Using tsx/ts-node with 'xargs' is not allowed\n\n` +
           `Suggestion: Use a TypeScript-compatible runtime instead:\n` +
           `• ls *.ts | xargs -I {} node {}\n` +
           `• ls *.ts | xargs -I {} bun {}\n\n` +
           `Command: ${command}`
-        );
+        ));
       }
       
       if (parallelPattern.test(command)) {
-        return context.blockingError(
+        return context.json(createDenyResponse(
           `Using tsx/ts-node with 'parallel' is not allowed\n\n` +
           `Suggestion: Use a TypeScript-compatible runtime instead:\n` +
           `• parallel node ::: *.ts\n` +
           `• parallel bun ::: *.ts\n\n` +
           `Command: ${command}`
-        );
+        ));
       }
       
       if (timeoutPattern.test(command)) {
-        return context.blockingError(
+        return context.json(createDenyResponse(
           `Using tsx/ts-node with 'timeout' is not allowed\n\n` +
           `Suggestion: Use a TypeScript-compatible runtime instead:\n` +
           `• timeout 10s node script.js\n` +
           `• timeout 10s bun script.ts\n\n` +
           `Command: ${command}`
-        );
+        ));
       }
       
       if (timePattern.test(command)) {
-        return context.blockingError(
+        return context.json(createDenyResponse(
           `Using tsx/ts-node with 'time' is not allowed\n\n` +
           `Suggestion: Use a TypeScript-compatible runtime instead:\n` +
           `• time node script.js\n` +
           `• time bun script.ts\n\n` +
           `Command: ${command}`
-        );
+        ));
       }
 
       // Special handling for commands that execute other commands as arguments
@@ -227,9 +228,9 @@ const hook = defineHook({
       // Check patterns against both original command and extracted command
       for (const { pattern, reason, suggestion } of blockingPatterns) {
         if (pattern.test(commandToCheck) || pattern.test(command)) {
-          return context.blockingError(
+          return context.json(createDenyResponse(
             `${reason}\n\nSuggestion: ${suggestion}\n\nCommand: ${command}`
-          );
+          ));
         }
       }
 
@@ -245,7 +246,7 @@ const hook = defineHook({
           // Check if tsx/ts-node appears in a command position
           const commandPositionPattern = /(?:^|[;&|]\s*|\s+)(?:tsx|ts-node)(?:\s|$)/;
           if (commandPositionPattern.test(commandToCheck)) {
-            return context.blockingError(
+            return context.json(createDenyResponse(
               `TypeScript execution tools (tsx/ts-node) are not allowed\n\n` +
               `Use TypeScript-compatible runtimes instead:\n` +
               `• node --test <file.ts> - for Node.js testing\n` +
@@ -253,7 +254,7 @@ const hook = defineHook({
               `• bun run <file.ts> - for Bun runtime\n` +
               `• deno run <file.ts> - for Deno runtime\n\n` +
               `Command: ${command}`
-            );
+            ));
           }
         }
       }
@@ -262,7 +263,7 @@ const hook = defineHook({
       return context.success({});
 
     } catch (error) {
-      return context.blockingError(`Error in tsx/ts-node check: ${error}`);
+      return context.json(createDenyResponse(`Error in tsx/ts-node check: ${error}`));
     }
   }
 });

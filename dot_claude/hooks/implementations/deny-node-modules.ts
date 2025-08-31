@@ -2,6 +2,7 @@
 
 import { defineHook } from "cc-hooks-ts";
 import { resolve } from "node:path";
+import { createDenyResponse } from "../lib/context-helpers.ts";
 
 /**
  * Deny writing to node_modules directories
@@ -28,15 +29,15 @@ const hook = defineHook({
       // Check if path is in node_modules
       const validation = validateNodeModulesAccess(filePath);
       if (!validation.isAllowed) {
-        return context.blockingError(
+        return context.json(createDenyResponse(
           `Write access denied: ${validation.reason}\nPath: ${validation.resolvedPath}`
-        );
+        ));
       }
 
       return context.success({});
 
     } catch (error) {
-      return context.blockingError(`Error in node_modules access check: ${error}`);
+      return context.json(createDenyResponse(`Error in node_modules access check: ${error}`));
     }
   }
 });

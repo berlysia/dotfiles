@@ -13,7 +13,7 @@ import type {
   ToolInput,
   SettingsFile,
   ProcessingContext,
-} from "../types/hooks-types.js";
+} from "../types/hooks-types.ts";
 
 /**
  * Read raw JSON input from stdin

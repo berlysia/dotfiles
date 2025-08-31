@@ -1,6 +1,7 @@
 #!/usr/bin/env -S bun run --silent
 
 import { defineHook } from "cc-hooks-ts";
+import { createDenyResponse } from "../lib/context-helpers.ts";
 
 /**
  * Check for tsx/ts-node patterns in script values using precise regex
@@ -138,16 +139,16 @@ const hook = defineHook({
 
       // Use precise script value checking logic from legacy implementation
       if (hasTsxUsage(contentToCheck)) {
-        return context.blockingError(
+        return context.json(createDenyResponse(
           `Use TypeScript-compatible runtime instead of 'tsx' or 'ts-node' in package.json scripts\n\nSuggestion: Replace tsx/ts-node commands with a TypeScript-compatible runtime (e.g., node, deno, bun)\n\nFile: ${filePath}`
-        );
+        ));
       }
 
       // Allow if no problematic patterns found
       return context.success({});
 
     } catch (error) {
-      return context.blockingError(`Error in package.json tsx check: ${error}`);
+      return context.json(createDenyResponse(`Error in package.json tsx check: ${error}`));
     }
   }
 });
