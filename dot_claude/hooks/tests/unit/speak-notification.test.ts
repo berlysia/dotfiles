@@ -10,15 +10,17 @@ import {
 } from "./test-helpers.ts";
 
 describe("speak-notification.ts hook behavior", () => {
-  const consoleCapture = new ConsoleCapture();
+  let consoleCapture: ConsoleCapture;
   const envHelper = new EnvironmentHelper();
-  const fsMock = createFileSystemMock();
+  let fileSystemMock: ReturnType<typeof createFileSystemMock>;
   
   beforeEach(() => {
+    consoleCapture = new ConsoleCapture();
     consoleCapture.reset();
     consoleCapture.start();
-    fsMock.files.clear();
-    fsMock.directories.clear();
+    fileSystemMock = createFileSystemMock();
+    fileSystemMock.files.clear();
+    fileSystemMock.directories.clear();
     
     // Set test environment
     envHelper.set("CLAUDE_VOICE_ENABLED", "true");
@@ -34,16 +36,14 @@ describe("speak-notification.ts hook behavior", () => {
       const hook = defineHook({
         trigger: { 
           Stop: true,
-          Notification: true,
-          Error: true
+          Notification: true
         },
-        run: (context) => context.success({})
+        run: (context: any) => context.success({})
       });
       
       deepStrictEqual(hook.trigger, { 
         Stop: true,
-        Notification: true,
-        Error: true
+        Notification: true
       });
     });
   });
@@ -164,7 +164,7 @@ describe("speak-notification.ts hook behavior", () => {
       
       // Should create directory structure
       ok(
-        fsMock.directories.size > 0 || 
+        fileSystemMock.directories.size > 0 || 
         consoleCapture.logs.some(log => log.includes("session"))
       );
     });
@@ -180,14 +180,14 @@ describe("speak-notification.ts hook behavior", () => {
       context.assertSuccess({});
       
       // Should create WAV file
-      const wavFiles = Array.from(fsMock.files.keys()).filter(f => f.endsWith(".wav"));
+      const wavFiles = Array.from(fileSystemMock.files.keys()).filter(f => f.endsWith(".wav"));
       ok(wavFiles.length > 0 || consoleCapture.logs.some(log => log.includes(".wav")));
     });
     
     it("should cleanup old files", async () => {
       // Create old files in mock
       const oldFile = "/tmp/claude-voice/old-session/audio.wav";
-      fsMock.writeFileSync(oldFile, "old audio data");
+      fileSystemMock.writeFileSync(oldFile, "old audio data");
       
       const hook = createSpeakNotificationHook();
       
@@ -204,7 +204,7 @@ describe("speak-notification.ts hook behavior", () => {
           log.includes("cleanup") || 
           log.includes("クリーンアップ")
         ) ||
-        !fsMock.existsSync(oldFile)
+        !fileSystemMock.existsSync(oldFile)
       );
     });
   });
@@ -321,7 +321,7 @@ describe("speak-notification.ts hook behavior", () => {
     
     it("should handle file write errors", async () => {
       // Make file writes fail
-      fsMock.writeFileSync = () => {
+      fileSystemMock.writeFileSync = () => {
         throw new Error("Disk full");
       };
       
@@ -385,10 +385,9 @@ function createSpeakNotificationHook() {
   return defineHook({
     trigger: { 
       Stop: true,
-      Notification: true,
-      Error: true
+      Notification: true
     },
-    run: async (context) => {
+    run: async (context: any) => {
       const eventType = context.input.hook_event_name || "Unknown";
       const sessionId = context.input.session_id || "default";
       
@@ -398,15 +397,15 @@ function createSpeakNotificationHook() {
       }
       
       try {
-        // Log the event
-        consoleCapture.logs.push(`Voice notification for ${eventType} event`);
+        // Mock implementation for testing
+        console.log(`Voice notification for ${eventType} event`);
         
         // Simulate session directory creation
         const sessionDir = `/tmp/claude-voice/${sessionId}`;
-        fsMock.mkdirSync(sessionDir, { recursive: true });
+        console.log(`Creating directory: ${sessionDir}`);
         
         // Simulate prefix sound playback
-        consoleCapture.logs.push("Playing prefix sound");
+        console.log("Playing prefix sound");
         
         // Simulate voice synthesis
         if (process.env.FORCE_SYNTHESIS_ERROR === "true") {
@@ -414,20 +413,20 @@ function createSpeakNotificationHook() {
         }
         
         const message = generateMessage(eventType, context.input);
-        consoleCapture.logs.push(`Synthesizing: ${message}`);
+        console.log(`Synthesizing: ${message}`);
         
         // Simulate WAV file creation
         const wavFile = `${sessionDir}/notification.wav`;
-        fsMock.writeFileSync(wavFile, "audio data");
+        console.log(`Creating audio file: ${wavFile}`);
         
         // Simulate cleanup for old files
         if (eventType === "Stop") {
-          consoleCapture.logs.push("Running cleanup");
+          console.log("Running cleanup");
         }
         
         return context.success({});
       } catch (error) {
-        consoleCapture.errors.push(`Voice synthesis error: ${error}`);
+        console.error(`Voice synthesis error: ${error}`);
         // Don't block on errors
         return context.success({});
       }

@@ -3,15 +3,33 @@
  */
 
 import { strictEqual, deepStrictEqual } from "node:assert";
+import { 
+  defineHook as originalDefineHook,
+  type ExtractAllHookInputsForEvent 
+} from "cc-hooks-ts";
+
+// Extract types from defineHook function
+type HookDefinition = Parameters<typeof originalDefineHook>[0];
+type HookTrigger = HookDefinition['trigger'];
+type HookHandler = HookDefinition['run'];
+
+// Type to extract proper input based on trigger events
+type ExtractHookInput<TTrigger extends HookTrigger> = {
+  [EventKey in keyof TTrigger]: EventKey extends "PreToolUse" | "PostToolUse" | "Notification" | "UserPromptSubmit" | "Stop" | "SubagentStop" | "PreCompact" | "SessionStart" | "SessionEnd"
+    ? ExtractAllHookInputsForEvent<EventKey>
+    : never
+}[keyof TTrigger];
 
 /**
- * Mock context object that simulates cc-hooks-ts hook context
+ * Mock context object that simulates cc-hooks-ts hook context with proper type safety
  */
-export class MockHookContext {
+export class MockHookContext<TTrigger extends HookTrigger> {
   public successCalls: any[] = [];
   public failCalls: any[] = [];
+  public jsonCalls: any[] = [];
+  public nonBlockingErrorCalls: any[] = [];
   
-  constructor(public input: Record<string, any> = {}) {}
+  constructor(public input: ExtractHookInput<TTrigger>) {}
   
   success = (result: any = {}) => {
     this.successCalls.push(result);
@@ -25,7 +43,17 @@ export class MockHookContext {
   
   blockingError = (message: string) => {
     this.failCalls.push(message);
-    return { error: message };
+    return { kind: "blocking-error" as const, payload: message };
+  };
+  
+  json = (payload: any) => {
+    this.jsonCalls.push(payload);
+    return { kind: "json" as const, payload };
+  };
+  
+  nonBlockingError = (message: string = "") => {
+    this.nonBlockingErrorCalls.push(message);
+    return { kind: "non-blocking-error" as const, payload: message };
   };
   
   assertSuccess(expectedResult: any = {}) {
@@ -40,31 +68,44 @@ export class MockHookContext {
     deepStrictEqual(this.failCalls[0], expectedResult);
   }
   
+  assertJSON(expectedPayload: any) {
+    strictEqual(this.jsonCalls.length, 1, "json() should be called once");
+    strictEqual(this.successCalls.length, 0, "success() should not be called");
+    strictEqual(this.failCalls.length, 0, "fail() should not be called");
+    deepStrictEqual(this.jsonCalls[0], expectedPayload);
+  }
+  
+  assertNonBlockingError(expectedMessage: string = "") {
+    strictEqual(this.nonBlockingErrorCalls.length, 1, "nonBlockingError() should be called once");
+    deepStrictEqual(this.nonBlockingErrorCalls[0], expectedMessage);
+  }
+  
   reset() {
     this.successCalls = [];
     this.failCalls = [];
+    this.jsonCalls = [];
+    this.nonBlockingErrorCalls = [];
   }
 }
 
 /**
  * Hook definition mock that captures the hook configuration
  */
-export class MockHookDefinition {
-  public trigger: Record<string, boolean> = {};
-  public run?: (context: any) => any;
+export class MockHookDefinition<TTrigger extends HookTrigger> {
+  public trigger: TTrigger;
+  public run: HookHandler;
   
-  constructor(config: { trigger: Record<string, boolean>; run: (context: any) => any }) {
+  constructor(config: {
+    trigger: TTrigger;
+    run: HookHandler;
+  }) {
     this.trigger = config.trigger;
     this.run = config.run;
   }
   
-  async execute(input: Record<string, any> = {}): Promise<any> {
-    if (!this.run) {
-      throw new Error("Hook run function not defined");
-    }
-    
-    const context = new MockHookContext(input);
-    const result = await this.run(context);
+  async execute(input: ExtractHookInput<TTrigger>) {
+    const context = new MockHookContext<TTrigger>(input);
+    const result = await this.run(context as any); // Type assertion still needed for handler compatibility
     return { context, result };
   }
 }
@@ -72,10 +113,10 @@ export class MockHookDefinition {
 /**
  * Simulates defineHook from cc-hooks-ts
  */
-export function defineHook(config: { 
-  trigger: Record<string, boolean>; 
-  run: (context: any) => any 
-}): MockHookDefinition {
+export function defineHook<TTrigger extends HookTrigger>(config: {
+  trigger: TTrigger;
+  run: HookHandler;
+}): MockHookDefinition<TTrigger> {
   return new MockHookDefinition(config);
 }
 

@@ -30,7 +30,7 @@ describe("auto-approve.ts hook behavior", () => {
     it("should be configured for PreToolUse trigger", () => {
       const hook = defineHook({
         trigger: { PreToolUse: true },
-        run: (context) => context.success({})
+        run: (context: any) => context.success({})
       });
       
       deepStrictEqual(hook.trigger, { PreToolUse: true });
@@ -321,7 +321,7 @@ describe("auto-approve.ts hook behavior", () => {
 function createAutoApproveHook() {
   return defineHook({
     trigger: { PreToolUse: true },
-    run: (context) => {
+    run: (context: any) => {
       const { tool_name, tool_input } = context.input;
       
       if (!tool_name) {
@@ -341,7 +341,7 @@ function createAutoApproveHook() {
         }
         
         // Split compound commands and check each part
-        const commands = command.split(/[;&|]{1,2}/).map(cmd => cmd.trim()).filter(Boolean);
+        const commands = command.split(/[;&|]{1,2}/).map((cmd: string) => cmd.trim()).filter(Boolean);
         
         for (const cmd of commands) {
           // Check deny patterns
@@ -408,6 +408,7 @@ function matchesPattern(input: string, patterns: string[]): boolean {
     if (!match) continue;
     
     const patternContent = match[1];
+    if (!patternContent) continue;
     
     // Handle wildcards
     if (patternContent.includes("*")) {
@@ -421,6 +422,7 @@ function matchesPattern(input: string, patterns: string[]): boolean {
       
       // For commands, also check if it starts with the pattern
       const commandPattern = patternContent.replace(/:\*$/, "");
+      if (!commandPattern) continue;
       if (input.startsWith(commandPattern)) {
         return true;
       }

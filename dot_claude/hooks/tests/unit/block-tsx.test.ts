@@ -27,7 +27,7 @@ describe("block-tsx.ts hook behavior", () => {
     it("should be configured for PreToolUse trigger", () => {
       const hook = defineHook({
         trigger: { PreToolUse: true },
-        run: (context) => context.success({})
+        run: (context: any) => context.success({})
       });
       
       deepStrictEqual(hook.trigger, { PreToolUse: true });
@@ -344,7 +344,13 @@ function createBlockTsxHook() {
         },
         blockingError: function(message: string) {
           this.failCalls.push(message);
-          return { error: message };
+          return { kind: "blocking-error" as const, payload: message };
+        },
+        json: function(payload: any) {
+          return { kind: "json" as const, payload };
+        },
+        nonBlockingError: function(message: string = "") {
+          return { kind: "non-blocking-error" as const, payload: message };
         },
         assertSuccess: function(expected: any = {}) {
           if (this.failCalls.length > 0) {

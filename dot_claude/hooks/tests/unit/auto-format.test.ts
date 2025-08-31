@@ -30,7 +30,7 @@ describe("auto-format.ts hook behavior", () => {
     it("should be configured for PostToolUse trigger", () => {
       const hook = defineHook({
         trigger: { PostToolUse: true },
-        run: (context) => context.success({})
+        run: (context: any) => context.success({})
       });
       
       deepStrictEqual(hook.trigger, { PostToolUse: true });
@@ -220,7 +220,7 @@ describe("auto-format.ts hook behavior", () => {
     it("should continue on formatting errors", async () => {
       const hook = defineHook({
         trigger: { PostToolUse: true },
-        run: (context) => {
+        run: (context: any) => {
           const { tool_name, tool_input } = context.input;
           
           if (["Edit", "MultiEdit", "Write"].includes(tool_name)) {
@@ -322,7 +322,7 @@ function createAutoFormatHook(consoleCapture?: ConsoleCapture, fsMock?: ReturnTy
   
   return defineHook({
     trigger: { PostToolUse: true },
-    run: (context) => {
+    run: (context: any) => {
       const { tool_name, tool_input } = context.input;
       
       // Only process file writing/editing tools
