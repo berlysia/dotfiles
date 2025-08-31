@@ -1,7 +1,8 @@
 #!/usr/bin/env -S bun run --silent
 
 /**
- * Claude Hybrid Voice Notification - cc-hooks-ts Version
+ * Claude Hybrid Voice Notification Hook
+ * cc-hooks-ts hook for Notification and Stop events
  * Combines static WAV files with VoiceVox-compatible engine synthesis
  * Provides immediate audio feedback with detailed voice notifications
  */
@@ -12,7 +13,6 @@ import { join, dirname } from 'path';
 import { existsSync, mkdirSync, writeFileSync, readFileSync, statSync, readdirSync, unlinkSync, rmSync } from 'fs';
 import { homedir } from 'os';
 
-// Import shared libraries
 import { getGitContext, createContextMessage } from '../lib/git-context.ts';
 import { detectPlatform, playSound, commandExists, cleanupOldFiles } from '../lib/voicevox-audio.ts';
 import type { 
@@ -22,8 +22,6 @@ import type {
   VoiceSynthesisConfig,
   NotificationLogEntry
 } from '../lib/sound-types.ts';
-
-// Configuration interfaces
 interface VoiceSynthesisEngineConfig {
   host: string;
   defaultSpeakerId: string;
@@ -385,8 +383,8 @@ const hook = defineHook({
     Stop: true
   },
   run: async (context) => {
-    const eventType = context.input.hook_event_name as 'Notification' | 'Stop';
-    
+    const eventType = context.input.hook_event_name;
+
     try {
       const notification = new VoiceNotification();
       
@@ -413,48 +411,9 @@ const hook = defineHook({
   }
 });
 
-// Legacy CLI support - Main execution function
-async function main() {
-  const args = process.argv.slice(2);
-  const eventType = args[0];
-  
-  const notification = new VoiceNotification();
-
-  switch (eventType) {
-    case 'Notification':
-      await notification.handleNotification();
-      break;
-    case 'Stop':
-      await notification.handleStop();
-      break;
-    case 'Error':
-      await notification.handleError();
-      break;
-    default:
-      // Custom message support
-      if (args.length === 2 && eventType && args[1]) {
-        await notification.handleCustom(eventType, args[1]);
-      } else {
-        console.log('Usage: speak-notification.ts {Notification|Stop|Error} [custom_message]');
-        process.exit(1);
-      }
-      break;
-  }
-}
-
 export default hook;
 
-// Execute if run directly (CLI mode)
 if (import.meta.main) {
-  if (process.argv.length > 2) {
-    // CLI mode - use original main function
-    main().catch(error => {
-      console.error('Error:', error);
-      process.exit(1);
-    });
-  } else {
-    // Hook mode - run as cc-hooks-ts hook
-    const { runHook } = await import("cc-hooks-ts");
-    await runHook(hook);
-  }
+  const { runHook } = await import("cc-hooks-ts");
+  await runHook(hook);
 }
