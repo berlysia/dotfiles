@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env -S bun run --silent
 
 import { defineHook } from "cc-hooks-ts";
 
@@ -267,31 +267,9 @@ const hook = defineHook({
   }
 });
 
-// Run the hook if this file is executed directly
-if (import.meta.main) {
-  // Read input from stdin
-  const decoder = new TextDecoder();
-  const input = JSON.parse(decoder.decode(await Bun.stdin.bytes()));
-  
-  // Create context
-  const context = {
-    input,
-    success: (result = {}) => {
-      console.log(JSON.stringify(result));
-      process.exit(0);
-    },
-    blockingError: (message) => {
-      console.log(JSON.stringify({ error: message }));
-      process.exit(1);
-    },
-    fail: (result) => {
-      console.log(JSON.stringify(result));
-      process.exit(1);
-    }
-  };
-  
-  // Run the hook
-  hook.run(context);
-}
-
 export default hook;
+
+if (import.meta.main) {
+  const { runHook } = await import("cc-hooks-ts");
+  await runHook(hook);
+}

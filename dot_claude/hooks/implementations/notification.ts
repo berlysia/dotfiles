@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env -S bun run --silent
 
 import { defineHook } from "cc-hooks-ts";
 import { notifyWithContext, notify, cleanupOldFiles } from "../lib/voicevox-audio.ts";
@@ -8,7 +8,7 @@ import { logEvent } from "../lib/notification-logging.ts";
  * Notification and Stop event handlers
  * Handles Stop and Notification events with VoiceVox-compatible audio synthesis
  */
-export default defineHook({
+const hook = defineHook({
   trigger: { 
     Stop: true,
     Notification: true,
@@ -52,4 +52,11 @@ async function handleAudioNotification(eventType: string): Promise<void> {
     default:
       await notify("Claude Codeイベントが発生しました", 'notification');
   }
+});
+
+export default hook;
+
+if (import.meta.main) {
+  const { runHook } = await import("cc-hooks-ts");
+  await runHook(hook);
 }

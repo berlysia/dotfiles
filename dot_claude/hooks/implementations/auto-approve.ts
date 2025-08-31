@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env -S bun run --silent
 
 // Workaround for cc-hooks-ts exports configuration issue with verbatimModuleSyntax
 import { defineHook } from "cc-hooks-ts";
@@ -12,7 +12,7 @@ import "../types/tool-schemas.ts";
  * Auto-approve commands based on permissions.allow/deny lists
  * Converted from auto-approve-commands.ts using cc-hooks-ts
  */
-export default defineHook({
+const hook = defineHook({
   trigger: { PreToolUse: true } as const,
   run: (context) => {
     const { tool_name, tool_input } = context.input;
@@ -425,4 +425,11 @@ function logDecision(tool_name: string, tool_input: any, decision: string, reaso
   } catch {
     // Ignore logging errors
   }
+});
+
+export default hook;
+
+if (import.meta.main) {
+  const { runHook } = await import("cc-hooks-ts");
+  await runHook(hook);
 }

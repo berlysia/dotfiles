@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env -S bun run --silent
 
 import { defineHook } from "cc-hooks-ts";
 
@@ -98,7 +98,7 @@ function hasTsxUsage(content: string): boolean {
  * Block tsx/ts-node usage in package.json modifications
  * Enhanced with precise detection logic from legacy implementation
  */
-export default defineHook({
+const hook = defineHook({
   trigger: { PreToolUse: true },
   run: (context) => {
     const { tool_name, tool_input } = context.input;
@@ -151,3 +151,10 @@ export default defineHook({
     }
   }
 });
+
+export default hook;
+
+if (import.meta.main) {
+  const { runHook } = await import("cc-hooks-ts");
+  await runHook(hook);
+}

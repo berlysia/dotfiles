@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env -S bun run --silent
 
 import { defineHook } from "cc-hooks-ts";
 import { extract, toMarkdown } from "@mizchi/readability";
@@ -8,7 +8,7 @@ import "../types/tool-schemas.ts";
  * Web fetch guardian: Enhanced WebFetch with readability markdown conversion
  * Replaces WebFetch with @mizchi/readability for better content extraction
  */
-export default defineHook({
+const hook = defineHook({
   trigger: { PreToolUse: true },
   run: async (context) => {
     const { tool_name, tool_input } = context.input;
@@ -141,3 +141,11 @@ function checkGitHubAccess(url: string, tool_name: string): CheckResult {
   }
 }
 
+});
+
+export default hook;
+
+if (import.meta.main) {
+  const { runHook } = await import("cc-hooks-ts");
+  await runHook(hook);
+}
