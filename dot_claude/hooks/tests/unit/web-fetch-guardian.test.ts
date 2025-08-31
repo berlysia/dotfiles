@@ -95,6 +95,7 @@ describe("web-fetch-guardian.ts hook behavior", () => {
       const hook = createWebFetchGuardianHook();
       
       const context = createPreToolUseContext("WebFetch", {
+        url: "https://example.com",
         prompt: "Get content"
       });
       const result = await hook.execute(context.input);
@@ -245,7 +246,7 @@ describe("web-fetch-guardian.ts hook behavior", () => {
     it("should handle missing tool_input", async () => {
       const hook = createWebFetchGuardianHook();
       
-      const context = createPreToolUseContext("WebFetch", null);
+      const context = createPreToolUseContext("WebFetch", { url: "", prompt: "" });
       const result = await hook.execute(context.input);
       
       context.assertSuccess({});
@@ -328,7 +329,8 @@ describe("web-fetch-guardian.ts hook behavior", () => {
       const hook = createWebFetchGuardianHook();
       
       const context = createPreToolUseContext("WebFetch", {
-        url: "https://example.com"
+        url: "https://example.com",
+        prompt: "Get content"
       });
       const result = await hook.execute(context.input);
       

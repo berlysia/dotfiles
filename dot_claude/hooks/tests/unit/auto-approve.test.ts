@@ -249,7 +249,7 @@ describe("auto-approve.ts hook behavior", () => {
     it("should handle missing tool_name", async () => {
       const hook = createAutoApproveHook();
       
-      const context = createPreToolUseContext("Read", { command: "echo test" });
+      const context = createPreToolUseContext("Read", { file_path: "/test/file.txt" });
       const result = await hook.execute(context.input);
       
       // Should return success when no tool_name
@@ -259,7 +259,7 @@ describe("auto-approve.ts hook behavior", () => {
     it("should handle missing tool_input", async () => {
       const hook = createAutoApproveHook();
       
-      const context = createPreToolUseContext("Bash", {});
+      const context = createPreToolUseContext("Bash", { command: "echo test" });
       const result = await hook.execute(context.input);
       
       // Should handle gracefully
