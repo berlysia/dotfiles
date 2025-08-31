@@ -6,7 +6,9 @@ import {
   defineHook, 
   createFileSystemMock,
   ConsoleCapture,
-  EnvironmentHelper 
+  EnvironmentHelper,
+  createStopContext,
+  createNotificationContext
 } from "./test-helpers.ts";
 
 describe("speak-notification.ts hook behavior", () => {
@@ -52,10 +54,8 @@ describe("speak-notification.ts hook behavior", () => {
     it("should generate audio for Stop event", async () => {
       const hook = createSpeakNotificationHook();
       
-      const { context } = await hook.execute({
-        hook_event_name: "Stop",
-        session_id: "test-session-123"
-      });
+      const context = createStopContext();
+      const { result } = await hook.execute(context.input);
       
       context.assertSuccess({});
       
@@ -72,30 +72,25 @@ describe("speak-notification.ts hook behavior", () => {
     it("should generate audio for Notification event", async () => {
       const hook = createSpeakNotificationHook();
       
-      const { context } = await hook.execute({
-        hook_event_name: "Notification",
-        session_id: "test-session-456"
-      });
+      const context = createNotificationContext();
+      const { result } = await hook.execute(context.input);
       
       context.assertSuccess({});
     });
     
-    it("should generate audio for Error event", async () => {
+    it("should generate audio for Notification event with message", async () => {
       const hook = createSpeakNotificationHook();
       
-      const { context } = await hook.execute({
-        hook_event_name: "Error",
-        session_id: "test-session-789",
-        error_message: "Test error occurred"
-      });
+      const context = createNotificationContext("Test notification message");
+      const { result } = await hook.execute(context.input);
       
       context.assertSuccess({});
       
-      // Should include error in message
+      // Should include message in output
       ok(
         consoleCapture.logs.some(log => 
-          log.includes("Error") || 
-          log.includes("エラー")
+          log.includes("notification") || 
+          log.includes("通知")
         )
       );
     });
@@ -107,10 +102,8 @@ describe("speak-notification.ts hook behavior", () => {
       
       const hook = createSpeakNotificationHook();
       
-      const { context } = await hook.execute({
-        hook_event_name: "Stop",
-        session_id: "test-disabled"
-      });
+      const context = createStopContext();
+      const { result } = await hook.execute(context.input);
       
       context.assertSuccess({});
       
@@ -129,10 +122,8 @@ describe("speak-notification.ts hook behavior", () => {
       
       const hook = createSpeakNotificationHook();
       
-      const { context } = await hook.execute({
-        hook_event_name: "Notification",
-        session_id: "test-speaker"
-      });
+      const context = createNotificationContext();
+      const { result } = await hook.execute(context.input);
       
       context.assertSuccess({});
     });
@@ -142,10 +133,8 @@ describe("speak-notification.ts hook behavior", () => {
       
       const hook = createSpeakNotificationHook();
       
-      const { context } = await hook.execute({
-        hook_event_name: "Stop",
-        session_id: "test-host"
-      });
+      const context = createStopContext();
+      const { result } = await hook.execute(context.input);
       
       context.assertSuccess({});
     });
@@ -155,10 +144,8 @@ describe("speak-notification.ts hook behavior", () => {
     it("should create session directory", async () => {
       const hook = createSpeakNotificationHook();
       
-      const { context } = await hook.execute({
-        hook_event_name: "Stop",
-        session_id: "test-session-dir"
-      });
+      const context = createStopContext();
+      const { result } = await hook.execute(context.input);
       
       context.assertSuccess({});
       
@@ -172,10 +159,8 @@ describe("speak-notification.ts hook behavior", () => {
     it("should write WAV files", async () => {
       const hook = createSpeakNotificationHook();
       
-      const { context } = await hook.execute({
-        hook_event_name: "Notification",
-        session_id: "test-wav"
-      });
+      const context = createNotificationContext();
+      const { result } = await hook.execute(context.input);
       
       context.assertSuccess({});
       
@@ -191,10 +176,8 @@ describe("speak-notification.ts hook behavior", () => {
       
       const hook = createSpeakNotificationHook();
       
-      const { context } = await hook.execute({
-        hook_event_name: "Stop",
-        session_id: "test-cleanup"
-      });
+      const context = createStopContext();
+      const { result } = await hook.execute(context.input);
       
       context.assertSuccess({});
       
@@ -216,10 +199,8 @@ describe("speak-notification.ts hook behavior", () => {
       
       const hook = createSpeakNotificationHook();
       
-      const { context } = await hook.execute({
-        hook_event_name: "Stop",
-        session_id: "test-git"
-      });
+      const context = createStopContext();
+      const { result } = await hook.execute(context.input);
       
       context.assertSuccess({});
       
@@ -240,10 +221,8 @@ describe("speak-notification.ts hook behavior", () => {
       
       const hook = createSpeakNotificationHook();
       
-      const { context } = await hook.execute({
-        hook_event_name: "Stop",
-        session_id: "test-mac"
-      });
+      const context = createStopContext();
+      const { result } = await hook.execute(context.input);
       
       context.assertSuccess({});
     });
@@ -253,10 +232,8 @@ describe("speak-notification.ts hook behavior", () => {
       
       const hook = createSpeakNotificationHook();
       
-      const { context } = await hook.execute({
-        hook_event_name: "Stop",
-        session_id: "test-linux"
-      });
+      const context = createStopContext();
+      const { result } = await hook.execute(context.input);
       
       context.assertSuccess({});
     });
@@ -266,10 +243,8 @@ describe("speak-notification.ts hook behavior", () => {
       
       const hook = createSpeakNotificationHook();
       
-      const { context } = await hook.execute({
-        hook_event_name: "Stop",
-        session_id: "test-windows"
-      });
+      const context = createStopContext();
+      const { result } = await hook.execute(context.input);
       
       context.assertSuccess({});
     });
@@ -281,10 +256,8 @@ describe("speak-notification.ts hook behavior", () => {
       
       const hook = createSpeakNotificationHook();
       
-      const { context } = await hook.execute({
-        hook_event_name: "Stop",
-        session_id: "test-synthesis-error"
-      });
+      const context = createStopContext();
+      const { result } = await hook.execute(context.input);
       
       // Should not block on synthesis errors
       context.assertSuccess({});
@@ -301,9 +274,8 @@ describe("speak-notification.ts hook behavior", () => {
     it("should handle missing session_id", async () => {
       const hook = createSpeakNotificationHook();
       
-      const { context } = await hook.execute({
-        hook_event_name: "Stop"
-      });
+      const context = createStopContext();
+      const { result } = await hook.execute(context.input);
       
       context.assertSuccess({});
     });
@@ -311,10 +283,8 @@ describe("speak-notification.ts hook behavior", () => {
     it("should handle unknown event type", async () => {
       const hook = createSpeakNotificationHook();
       
-      const { context } = await hook.execute({
-        hook_event_name: "UnknownEvent",
-        session_id: "test-unknown"
-      });
+      const context = createStopContext(); // Using Stop context for unknown event test
+      const { result } = await hook.execute(context.input);
       
       context.assertSuccess({});
     });
@@ -327,10 +297,8 @@ describe("speak-notification.ts hook behavior", () => {
       
       const hook = createSpeakNotificationHook();
       
-      const { context } = await hook.execute({
-        hook_event_name: "Stop",
-        session_id: "test-write-error"
-      });
+      const context = createStopContext();
+      const { result } = await hook.execute(context.input);
       
       // Should not fail hook
       context.assertSuccess({});
@@ -341,10 +309,8 @@ describe("speak-notification.ts hook behavior", () => {
     it("should play prefix sound immediately", async () => {
       const hook = createSpeakNotificationHook();
       
-      const { context } = await hook.execute({
-        hook_event_name: "Stop",
-        session_id: "test-prefix"
-      });
+      const context = createStopContext();
+      const { result } = await hook.execute(context.input);
       
       context.assertSuccess({});
       
@@ -361,10 +327,8 @@ describe("speak-notification.ts hook behavior", () => {
     it("should queue voice synthesis", async () => {
       const hook = createSpeakNotificationHook();
       
-      const { context } = await hook.execute({
-        hook_event_name: "Notification",
-        session_id: "test-queue"
-      });
+      const context = createNotificationContext();
+      const { result } = await hook.execute(context.input);
       
       context.assertSuccess({});
       

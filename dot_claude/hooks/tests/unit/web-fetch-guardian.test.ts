@@ -5,7 +5,8 @@ import { strictEqual, deepStrictEqual, ok } from "node:assert";
 import { 
   defineHook, 
   ConsoleCapture,
-  EnvironmentHelper 
+  EnvironmentHelper,
+  createPreToolUseContext
 } from "./test-helpers.ts";
 
 describe("web-fetch-guardian.ts hook behavior", () => {
@@ -37,27 +38,25 @@ describe("web-fetch-guardian.ts hook behavior", () => {
     it("should intercept WebFetch tool", async () => {
       const hook = createWebFetchGuardianHook();
       
-      const { context } = await hook.execute({
-        tool_name: "WebFetch",
-        tool_input: {
-          url: "https://example.com",
-          prompt: "Extract main content"
-        }
+      const context = createPreToolUseContext("WebFetch", {
+        url: "https://example.com",
+        prompt: "Extract main content"
       });
+      const result = await hook.execute(context.input);
       
       // Should intercept and return markdown
       ok(context.successCalls.length > 0);
-      const result = context.successCalls[0];
-      ok(result.messageForUser?.includes("markdown") || result.messageForUser?.includes("example.com"));
+      const successResult = context.successCalls[0];
+      ok(successResult.messageForUser?.includes("markdown") || successResult.messageForUser?.includes("example.com"));
     });
     
     it("should ignore non-WebFetch tools", async () => {
       const hook = createWebFetchGuardianHook();
       
-      const { context } = await hook.execute({
-        tool_name: "Read",
-        tool_input: { file_path: "/test.txt" }
+      const context = createPreToolUseContext("Read", {
+        file_path: "/test.txt"
       });
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
       // Should not have messageForUser (pass through)
@@ -69,13 +68,11 @@ describe("web-fetch-guardian.ts hook behavior", () => {
     it("should process HTTP URLs", async () => {
       const hook = createWebFetchGuardianHook();
       
-      const { context } = await hook.execute({
-        tool_name: "WebFetch",
-        tool_input: {
-          url: "http://example.com/page",
-          prompt: "Get content"
-        }
+      const context = createPreToolUseContext("WebFetch", {
+        url: "http://example.com/page",
+        prompt: "Get content"
       });
+      const result = await hook.execute(context.input);
       
       ok(context.successCalls.length > 0);
       ok(context.successCalls[0].messageForUser?.includes("example.com"));
@@ -84,13 +81,11 @@ describe("web-fetch-guardian.ts hook behavior", () => {
     it("should process HTTPS URLs", async () => {
       const hook = createWebFetchGuardianHook();
       
-      const { context } = await hook.execute({
-        tool_name: "WebFetch",
-        tool_input: {
-          url: "https://docs.example.com/api",
-          prompt: "Get API docs"
-        }
+      const context = createPreToolUseContext("WebFetch", {
+        url: "https://docs.example.com/api",
+        prompt: "Get API docs"
       });
+      const result = await hook.execute(context.input);
       
       ok(context.successCalls.length > 0);
       ok(context.successCalls[0].messageForUser?.includes("docs.example.com"));
@@ -99,12 +94,10 @@ describe("web-fetch-guardian.ts hook behavior", () => {
     it("should handle missing URL", async () => {
       const hook = createWebFetchGuardianHook();
       
-      const { context } = await hook.execute({
-        tool_name: "WebFetch",
-        tool_input: {
-          prompt: "Get content"
-        }
+      const context = createPreToolUseContext("WebFetch", {
+        prompt: "Get content"
       });
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
     });
@@ -112,13 +105,11 @@ describe("web-fetch-guardian.ts hook behavior", () => {
     it("should handle invalid URLs gracefully", async () => {
       const hook = createWebFetchGuardianHook();
       
-      const { context } = await hook.execute({
-        tool_name: "WebFetch",
-        tool_input: {
-          url: "not-a-valid-url",
-          prompt: "Get content"
-        }
+      const context = createPreToolUseContext("WebFetch", {
+        url: "not-a-valid-url",
+        prompt: "Get content"
       });
+      const result = await hook.execute(context.input);
       
       // Should handle gracefully
       ok(context.successCalls.length > 0 || context.failCalls.length > 0);
@@ -129,13 +120,11 @@ describe("web-fetch-guardian.ts hook behavior", () => {
     it("should block GitHub private repo access", async () => {
       const hook = createWebFetchGuardianHook();
       
-      const { context } = await hook.execute({
-        tool_name: "WebFetch",
-        tool_input: {
-          url: "https://github.com/private-org/private-repo",
-          prompt: "Get private code"
-        }
+      const context = createPreToolUseContext("WebFetch", {
+        url: "https://github.com/private-org/private-repo",
+        prompt: "Get private code"
       });
+      const result = await hook.execute(context.input);
       
       // Should check GitHub access (implementation dependent)
       ok(context.successCalls.length > 0 || context.failCalls.length > 0);
@@ -144,13 +133,11 @@ describe("web-fetch-guardian.ts hook behavior", () => {
     it("should allow GitHub public content", async () => {
       const hook = createWebFetchGuardianHook();
       
-      const { context } = await hook.execute({
-        tool_name: "WebFetch",
-        tool_input: {
-          url: "https://github.com/public/repo",
-          prompt: "Get public readme"
-        }
+      const context = createPreToolUseContext("WebFetch", {
+        url: "https://github.com/public/repo",
+        prompt: "Get public readme"
       });
+      const result = await hook.execute(context.input);
       
       // Should allow public GitHub
       ok(context.successCalls.length > 0);
@@ -159,13 +146,11 @@ describe("web-fetch-guardian.ts hook behavior", () => {
     it("should block raw GitHub URLs", async () => {
       const hook = createWebFetchGuardianHook();
       
-      const { context } = await hook.execute({
-        tool_name: "WebFetch",
-        tool_input: {
-          url: "https://raw.githubusercontent.com/org/repo/main/secret.key",
-          prompt: "Get file"
-        }
+      const context = createPreToolUseContext("WebFetch", {
+        url: "https://raw.githubusercontent.com/org/repo/main/secret.key",
+        prompt: "Get file"
       });
+      const result = await hook.execute(context.input);
       
       // Should check raw GitHub access
       ok(context.successCalls.length > 0 || context.failCalls.length > 0);
@@ -174,13 +159,11 @@ describe("web-fetch-guardian.ts hook behavior", () => {
     it("should block GitHub API URLs", async () => {
       const hook = createWebFetchGuardianHook();
       
-      const { context } = await hook.execute({
-        tool_name: "WebFetch",
-        tool_input: {
-          url: "https://api.github.com/repos/org/repo/contents",
-          prompt: "Get contents"
-        }
+      const context = createPreToolUseContext("WebFetch", {
+        url: "https://api.github.com/repos/org/repo/contents",
+        prompt: "Get contents"
       });
+      const result = await hook.execute(context.input);
       
       // Should check API access
       ok(context.successCalls.length > 0 || context.failCalls.length > 0);
@@ -191,29 +174,25 @@ describe("web-fetch-guardian.ts hook behavior", () => {
     it("should extract markdown from HTML pages", async () => {
       const hook = createWebFetchGuardianHook();
       
-      const { context } = await hook.execute({
-        tool_name: "WebFetch",
-        tool_input: {
-          url: "https://blog.example.com/article",
-          prompt: "Extract article content"
-        }
+      const context = createPreToolUseContext("WebFetch", {
+        url: "https://blog.example.com/article",
+        prompt: "Extract article content"
       });
+      const result = await hook.execute(context.input);
       
       ok(context.successCalls.length > 0);
-      const result = context.successCalls[0];
-      ok(result.messageForUser?.includes("Fetched content") || result.messageForUser?.includes("markdown"));
+      const successResult = context.successCalls[0];
+      ok(successResult.messageForUser?.includes("Fetched content") || successResult.messageForUser?.includes("markdown"));
     });
     
     it("should handle documentation sites", async () => {
       const hook = createWebFetchGuardianHook();
       
-      const { context } = await hook.execute({
-        tool_name: "WebFetch",
-        tool_input: {
-          url: "https://docs.example.com/guide",
-          prompt: "Get documentation"
-        }
+      const context = createPreToolUseContext("WebFetch", {
+        url: "https://docs.example.com/guide",
+        prompt: "Get documentation"
       });
+      const result = await hook.execute(context.input);
       
       ok(context.successCalls.length > 0);
     });
@@ -221,13 +200,11 @@ describe("web-fetch-guardian.ts hook behavior", () => {
     it("should handle API documentation", async () => {
       const hook = createWebFetchGuardianHook();
       
-      const { context } = await hook.execute({
-        tool_name: "WebFetch",
-        tool_input: {
-          url: "https://api.example.com/docs",
-          prompt: "Get API reference"
-        }
+      const context = createPreToolUseContext("WebFetch", {
+        url: "https://api.example.com/docs",
+        prompt: "Get API reference"
       });
+      const result = await hook.execute(context.input);
       
       ok(context.successCalls.length > 0);
     });
@@ -239,13 +216,11 @@ describe("web-fetch-guardian.ts hook behavior", () => {
       
       envHelper.set("FORCE_FETCH_ERROR", "true");
       
-      const { context } = await hook.execute({
-        tool_name: "WebFetch",
-        tool_input: {
-          url: "https://unreachable.example.com",
-          prompt: "Get content"
-        }
+      const context = createPreToolUseContext("WebFetch", {
+        url: "https://unreachable.example.com",
+        prompt: "Get content"
       });
+      const result = await hook.execute(context.input);
       
       // Should handle error
       ok(context.failCalls.length > 0);
@@ -257,13 +232,11 @@ describe("web-fetch-guardian.ts hook behavior", () => {
       
       envHelper.set("FORCE_EXTRACTION_ERROR", "true");
       
-      const { context } = await hook.execute({
-        tool_name: "WebFetch",
-        tool_input: {
-          url: "https://example.com/bad-html",
-          prompt: "Extract content"
-        }
+      const context = createPreToolUseContext("WebFetch", {
+        url: "https://example.com/bad-html",
+        prompt: "Extract content"
       });
+      const result = await hook.execute(context.input);
       
       // Should handle extraction error
       ok(context.failCalls.length > 0 || context.successCalls.length > 0);
@@ -272,10 +245,8 @@ describe("web-fetch-guardian.ts hook behavior", () => {
     it("should handle missing tool_input", async () => {
       const hook = createWebFetchGuardianHook();
       
-      const { context } = await hook.execute({
-        tool_name: "WebFetch",
-        tool_input: null
-      });
+      const context = createPreToolUseContext("WebFetch", null);
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
     });
@@ -285,13 +256,11 @@ describe("web-fetch-guardian.ts hook behavior", () => {
       
       envHelper.set("SIMULATE_TIMEOUT", "true");
       
-      const { context } = await hook.execute({
-        tool_name: "WebFetch",
-        tool_input: {
-          url: "https://slow.example.com",
-          prompt: "Get slow content"
-        }
+      const context = createPreToolUseContext("WebFetch", {
+        url: "https://slow.example.com",
+        prompt: "Get slow content"
       });
+      const result = await hook.execute(context.input);
       
       // Should handle timeout
       ok(context.failCalls.length > 0 || context.successCalls.length > 0);
@@ -302,13 +271,11 @@ describe("web-fetch-guardian.ts hook behavior", () => {
     it("should handle localhost URLs", async () => {
       const hook = createWebFetchGuardianHook();
       
-      const { context } = await hook.execute({
-        tool_name: "WebFetch",
-        tool_input: {
-          url: "http://localhost:3000/api",
-          prompt: "Get local API"
-        }
+      const context = createPreToolUseContext("WebFetch", {
+        url: "http://localhost:3000/api",
+        prompt: "Get local API"
       });
+      const result = await hook.execute(context.input);
       
       // Should process localhost
       ok(context.successCalls.length > 0);
@@ -317,13 +284,11 @@ describe("web-fetch-guardian.ts hook behavior", () => {
     it("should handle IP addresses", async () => {
       const hook = createWebFetchGuardianHook();
       
-      const { context } = await hook.execute({
-        tool_name: "WebFetch",
-        tool_input: {
-          url: "http://192.168.1.1/status",
-          prompt: "Get status"
-        }
+      const context = createPreToolUseContext("WebFetch", {
+        url: "http://192.168.1.1/status",
+        prompt: "Get status"
       });
+      const result = await hook.execute(context.input);
       
       // Should process IP addresses
       ok(context.successCalls.length > 0);
@@ -332,13 +297,11 @@ describe("web-fetch-guardian.ts hook behavior", () => {
     it("should handle non-HTTP protocols", async () => {
       const hook = createWebFetchGuardianHook();
       
-      const { context } = await hook.execute({
-        tool_name: "WebFetch",
-        tool_input: {
-          url: "ftp://example.com/file.txt",
-          prompt: "Get FTP file"
-        }
+      const context = createPreToolUseContext("WebFetch", {
+        url: "ftp://example.com/file.txt",
+        prompt: "Get FTP file"
       });
+      const result = await hook.execute(context.input);
       
       // Should pass through non-HTTP
       context.assertSuccess({});
@@ -351,13 +314,11 @@ describe("web-fetch-guardian.ts hook behavior", () => {
       const hook = createWebFetchGuardianHook();
       
       const prompt = "Extract only the main navigation menu";
-      const { context } = await hook.execute({
-        tool_name: "WebFetch",
-        tool_input: {
-          url: "https://example.com",
-          prompt: prompt
-        }
+      const context = createPreToolUseContext("WebFetch", {
+        url: "https://example.com",
+        prompt: prompt
       });
+      const result = await hook.execute(context.input);
       
       ok(context.successCalls.length > 0);
       // Should preserve prompt intent
@@ -366,12 +327,10 @@ describe("web-fetch-guardian.ts hook behavior", () => {
     it("should handle missing prompt", async () => {
       const hook = createWebFetchGuardianHook();
       
-      const { context } = await hook.execute({
-        tool_name: "WebFetch",
-        tool_input: {
-          url: "https://example.com"
-        }
+      const context = createPreToolUseContext("WebFetch", {
+        url: "https://example.com"
       });
+      const result = await hook.execute(context.input);
       
       ok(context.successCalls.length > 0);
     });

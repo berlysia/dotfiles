@@ -6,7 +6,8 @@ import {
   defineHook, 
   createFileSystemMock, 
   ConsoleCapture,
-  EnvironmentHelper 
+  EnvironmentHelper,
+  createPreToolUseContext
 } from "./test-helpers.ts";
 
 describe("auto-approve.ts hook behavior", () => {
@@ -44,10 +45,8 @@ describe("auto-approve.ts hook behavior", () => {
       
       const hook = createAutoApproveHook();
       
-      const { context } = await hook.execute({
-        tool_name: "Bash",
-        tool_input: { command: "echo hello" }
-      });
+      const context = createPreToolUseContext("Bash", { command: "echo hello" });
+      const result = await hook.execute(context.input);
       
       // Should allow the command
       context.assertSuccess({});
@@ -60,10 +59,8 @@ describe("auto-approve.ts hook behavior", () => {
       
       const hook = createAutoApproveHook();
       
-      const { context } = await hook.execute({
-        tool_name: "Bash",
-        tool_input: { command: "rm dangerous.txt" }
-      });
+      const context = createPreToolUseContext("Bash", { command: "rm dangerous.txt" });
+      const result = await hook.execute(context.input);
       
       // Should block the command
       ok(context.failCalls.length > 0, "Should block command");
@@ -76,10 +73,8 @@ describe("auto-approve.ts hook behavior", () => {
       
       const hook = createAutoApproveHook();
       
-      const { context } = await hook.execute({
-        tool_name: "Bash",
-        tool_input: { command: "unknown_command" }
-      });
+      const context = createPreToolUseContext("Bash", { command: "unknown_command" });
+      const result = await hook.execute(context.input);
       
       // Should ask for approval
       ok(context.failCalls.length > 0, "Should ask for approval");
@@ -91,10 +86,8 @@ describe("auto-approve.ts hook behavior", () => {
       
       const hook = createAutoApproveHook();
       
-      const { context } = await hook.execute({
-        tool_name: "Bash",
-        tool_input: { command: "echo hello && echo world" }
-      });
+      const context = createPreToolUseContext("Bash", { command: "echo hello && echo world" });
+      const result = await hook.execute(context.input);
       
       // Should allow the compound command
       context.assertSuccess({});
@@ -106,10 +99,8 @@ describe("auto-approve.ts hook behavior", () => {
       
       const hook = createAutoApproveHook();
       
-      const { context } = await hook.execute({
-        tool_name: "Bash",
-        tool_input: { command: "echo hello && rm file.txt" }
-      });
+      const context = createPreToolUseContext("Bash", { command: "echo hello && rm file.txt" });
+      const result = await hook.execute(context.input);
       
       // Should block the compound command
       ok(context.failCalls.length > 0, "Should block compound command");
@@ -120,10 +111,8 @@ describe("auto-approve.ts hook behavior", () => {
       
       const hook = createAutoApproveHook();
       
-      const { context } = await hook.execute({
-        tool_name: "Bash",
-        tool_input: { command: "echo 'hello \"world\"'" }
-      });
+      const context = createPreToolUseContext("Bash", { command: "echo 'hello \"world\"'" });
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
     });
@@ -133,10 +122,8 @@ describe("auto-approve.ts hook behavior", () => {
       
       const hook = createAutoApproveHook();
       
-      const { context } = await hook.execute({
-        tool_name: "Bash",
-        tool_input: { command: "ls -la | grep test" }
-      });
+      const context = createPreToolUseContext("Bash", { command: "ls -la | grep test" });
+      const result = await hook.execute(context.input);
       
       // Both commands in the pipe should be allowed
       context.assertSuccess({});
@@ -149,14 +136,12 @@ describe("auto-approve.ts hook behavior", () => {
       
       const hook = createAutoApproveHook();
       
-      const { context } = await hook.execute({
-        tool_name: "Edit",
-        tool_input: { 
-          file_path: "/path/to/file.ts",
-          old_string: "old",
-          new_string: "new"
-        }
+      const context = createPreToolUseContext("Edit", { 
+        file_path: "/path/to/file.ts",
+        old_string: "old",
+        new_string: "new"
       });
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
     });
@@ -166,13 +151,11 @@ describe("auto-approve.ts hook behavior", () => {
       
       const hook = createAutoApproveHook();
       
-      const { context } = await hook.execute({
-        tool_name: "Write",
-        tool_input: {
-          file_path: "/path/to/.env",
-          content: "SECRET=value"
-        }
+      const context = createPreToolUseContext("Write", {
+        file_path: "/path/to/.env",
+        content: "SECRET=value"
       });
+      const result = await hook.execute(context.input);
       
       ok(context.failCalls.length > 0, "Should block Write to .env");
     });
@@ -182,10 +165,8 @@ describe("auto-approve.ts hook behavior", () => {
       
       const hook = createAutoApproveHook();
       
-      const { context } = await hook.execute({
-        tool_name: "Read",
-        tool_input: { file_path: "/path/to/README.md" }
-      });
+      const context = createPreToolUseContext("Read", { file_path: "/path/to/README.md" });
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
     });
@@ -195,10 +176,8 @@ describe("auto-approve.ts hook behavior", () => {
     it("should block rm -rf commands", async () => {
       const hook = createAutoApproveHook();
       
-      const { context } = await hook.execute({
-        tool_name: "Bash",
-        tool_input: { command: "rm -rf /" }
-      });
+      const context = createPreToolUseContext("Bash", { command: "rm -rf /" });
+      const result = await hook.execute(context.input);
       
       ok(context.failCalls.length > 0, "Should block dangerous rm -rf");
       ok(context.failCalls[0].includes("dangerous") || context.failCalls[0].includes("Manual review"));
@@ -207,10 +186,8 @@ describe("auto-approve.ts hook behavior", () => {
     it("should block dd commands", async () => {
       const hook = createAutoApproveHook();
       
-      const { context } = await hook.execute({
-        tool_name: "Bash",
-        tool_input: { command: "dd if=/dev/zero of=/dev/sda" }
-      });
+      const context = createPreToolUseContext("Bash", { command: "dd if=/dev/zero of=/dev/sda" });
+      const result = await hook.execute(context.input);
       
       ok(context.failCalls.length > 0, "Should block dangerous dd command");
     });
@@ -218,10 +195,8 @@ describe("auto-approve.ts hook behavior", () => {
     it("should block chmod 777 on root", async () => {
       const hook = createAutoApproveHook();
       
-      const { context } = await hook.execute({
-        tool_name: "Bash",
-        tool_input: { command: "chmod -R 777 /" }
-      });
+      const context = createPreToolUseContext("Bash", { command: "chmod -R 777 /" });
+      const result = await hook.execute(context.input);
       
       ok(context.failCalls.length > 0, "Should block dangerous chmod");
     });
@@ -233,10 +208,8 @@ describe("auto-approve.ts hook behavior", () => {
       
       const hook = createAutoApproveHook();
       
-      const { context } = await hook.execute({
-        tool_name: "Bash",
-        tool_input: { command: "npm install express" }
-      });
+      const context = createPreToolUseContext("Bash", { command: "npm install express" });
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
     });
@@ -246,18 +219,14 @@ describe("auto-approve.ts hook behavior", () => {
       
       const hook = createAutoApproveHook();
       
-      const { context: context1 } = await hook.execute({
-        tool_name: "Bash",
-        tool_input: { command: "ls" }
-      });
+      const context1 = createPreToolUseContext("Bash", { command: "ls" });
+      const result1 = await hook.execute(context1.input);
       
       context1.assertSuccess({});
       
       // Should not match with arguments
-      const { context: context2 } = await hook.execute({
-        tool_name: "Bash",
-        tool_input: { command: "ls -la" }
-      });
+      const context2 = createPreToolUseContext("Bash", { command: "ls -la" });
+      const result2 = await hook.execute(context2.input);
       
       ok(context2.failCalls.length > 0, "Should not match ls with arguments");
     });
@@ -268,10 +237,8 @@ describe("auto-approve.ts hook behavior", () => {
       
       const hook = createAutoApproveHook();
       
-      const { context } = await hook.execute({
-        tool_name: "Bash",
-        tool_input: { command: "rm file.txt" }
-      });
+      const context = createPreToolUseContext("Bash", { command: "rm file.txt" });
+      const result = await hook.execute(context.input);
       
       // Deny should take precedence
       ok(context.failCalls.length > 0, "Deny should override allow");
@@ -282,9 +249,8 @@ describe("auto-approve.ts hook behavior", () => {
     it("should handle missing tool_name", async () => {
       const hook = createAutoApproveHook();
       
-      const { context } = await hook.execute({
-        tool_input: { command: "echo test" }
-      });
+      const context = createPreToolUseContext("Read", { command: "echo test" });
+      const result = await hook.execute(context.input);
       
       // Should return success when no tool_name
       context.assertSuccess({});
@@ -293,9 +259,8 @@ describe("auto-approve.ts hook behavior", () => {
     it("should handle missing tool_input", async () => {
       const hook = createAutoApproveHook();
       
-      const { context } = await hook.execute({
-        tool_name: "Bash"
-      });
+      const context = createPreToolUseContext("Bash", {});
+      const result = await hook.execute(context.input);
       
       // Should handle gracefully
       ok(context.successCalls.length > 0 || context.failCalls.length > 0);
@@ -306,10 +271,8 @@ describe("auto-approve.ts hook behavior", () => {
       
       const hook = createAutoApproveHook();
       
-      const { context } = await hook.execute({
-        tool_name: "Bash",
-        tool_input: { command: "echo test" }
-      });
+      const context = createPreToolUseContext("Bash", { command: "echo test" });
+      const result = await hook.execute(context.input);
       
       // Should handle parse error gracefully
       ok(context.successCalls.length > 0 || context.failCalls.length > 0);

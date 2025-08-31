@@ -5,6 +5,7 @@ import { strictEqual, deepStrictEqual, ok, match } from "node:assert";
 import { mkdirSync, rmSync, readFileSync, existsSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir, homedir } from "node:os";
+import { createSessionStartContext } from "./test-helpers.ts";
 
 describe("session.ts hook behavior", () => {
   let testDir: string;
@@ -152,20 +153,15 @@ describe("session.ts hook behavior", () => {
   
   describe("hook context simulation", () => {
     it("should simulate successful hook execution", () => {
-      // Simulate the context object that would be passed to the hook
-      const mockContext = {
-        input: {
-          session_id: "test-session-123",
-          hook_event_name: "SessionStart"
-        },
-        success: (result: any) => result
-      };
+      // Create properly typed context using test helper
+      const mockContext = createSessionStartContext("cli");
       
       // Simulate hook behavior
       const logEntry = {
         timestamp: new Date().toISOString(),
         event: "SessionStart",
         session_id: mockContext.input.session_id,
+        source: mockContext.input.source,
         user: process.env.USER || "unknown",
         cwd: process.cwd(),
       };
@@ -188,12 +184,7 @@ describe("session.ts hook behavior", () => {
     });
     
     it("should handle error and still return success", () => {
-      const mockContext = {
-        input: {
-          session_id: "test-session-error"
-        },
-        success: (result: any) => result
-      };
+      const mockContext = createSessionStartContext("api");
       
       // Simulate error handling
       let errorOccurred = false;

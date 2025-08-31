@@ -6,7 +6,8 @@ import {
   defineHook, 
   createFileSystemMock, 
   ConsoleCapture,
-  EnvironmentHelper 
+  EnvironmentHelper,
+  createPostToolUseContext
 } from "./test-helpers.ts";
 
 describe("auto-format.ts hook behavior", () => {
@@ -44,14 +45,12 @@ describe("auto-format.ts hook behavior", () => {
       // Create a test file
       fsMock.writeFileSync("/test/file.ts", "const x=1");
       
-      const { context } = await hook.execute({
-        tool_name: "Edit",
-        tool_input: { 
-          file_path: "/test/file.ts",
-          old_string: "const x=1",
-          new_string: "const x = 1"
-        }
-      });
+      const context = createPostToolUseContext("Edit", { 
+        file_path: "/test/file.ts",
+        old_string: "const x=1",
+        new_string: "const x = 1"
+      }, {});
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
       // Should log formatting attempt
@@ -63,13 +62,11 @@ describe("auto-format.ts hook behavior", () => {
       
       fsMock.writeFileSync("/test/file.js", "let y=2");
       
-      const { context } = await hook.execute({
-        tool_name: "MultiEdit",
-        tool_input: {
-          file_path: "/test/file.js",
-          edits: []
-        }
-      });
+      const context = createPostToolUseContext("MultiEdit", {
+        file_path: "/test/file.js",
+        edits: []
+      }, {});
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
       ok(consoleCapture.logs.some(log => log.includes("file.js")));
@@ -80,13 +77,11 @@ describe("auto-format.ts hook behavior", () => {
       
       fsMock.writeFileSync("/test/new.ts", "const z=3");
       
-      const { context } = await hook.execute({
-        tool_name: "Write",
-        tool_input: {
-          file_path: "/test/new.ts",
-          content: "const z=3"
-        }
-      });
+      const context = createPostToolUseContext("Write", {
+        file_path: "/test/new.ts",
+        content: "const z=3"
+      }, {});
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
       ok(consoleCapture.logs.some(log => log.includes("new.ts")));
@@ -95,10 +90,8 @@ describe("auto-format.ts hook behavior", () => {
     it("should ignore Read tool", async () => {
       const hook = createAutoFormatHook(consoleCapture, fsMock);
       
-      const { context } = await hook.execute({
-        tool_name: "Read",
-        tool_input: { file_path: "/test/file.ts" }
-      });
+      const context = createPostToolUseContext("Read", { file_path: "/test/file.ts" }, {});
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
       // Should not attempt formatting
@@ -108,10 +101,8 @@ describe("auto-format.ts hook behavior", () => {
     it("should ignore Bash tool", async () => {
       const hook = createAutoFormatHook(consoleCapture, fsMock);
       
-      const { context } = await hook.execute({
-        tool_name: "Bash",
-        tool_input: { command: "ls" }
-      });
+      const context = createPostToolUseContext("Bash", { command: "ls" }, {});
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
       strictEqual(consoleCapture.logs.length, 0);
@@ -124,10 +115,8 @@ describe("auto-format.ts hook behavior", () => {
       
       fsMock.writeFileSync("/test/app.ts", "const a=1");
       
-      const { context } = await hook.execute({
-        tool_name: "Write",
-        tool_input: { file_path: "/test/app.ts", content: "const a=1" }
-      });
+      const context = createPostToolUseContext("Write", { file_path: "/test/app.ts", content: "const a=1" }, {});
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
       ok(consoleCapture.logs.some(log => log.includes("app.ts")));
@@ -138,10 +127,8 @@ describe("auto-format.ts hook behavior", () => {
       
       fsMock.writeFileSync("/test/script.js", "var b=2");
       
-      const { context } = await hook.execute({
-        tool_name: "Write",
-        tool_input: { file_path: "/test/script.js", content: "var b=2" }
-      });
+      const context = createPostToolUseContext("Write", { file_path: "/test/script.js", content: "var b=2" }, {});
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
       ok(consoleCapture.logs.some(log => log.includes("script.js")));
@@ -152,10 +139,8 @@ describe("auto-format.ts hook behavior", () => {
       
       fsMock.writeFileSync("/test/config.json", '{"key":"value"}');
       
-      const { context } = await hook.execute({
-        tool_name: "Write",
-        tool_input: { file_path: "/test/config.json", content: '{"key":"value"}' }
-      });
+      const context = createPostToolUseContext("Write", { file_path: "/test/config.json", content: '{"key":"value"}' }, {});
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
       ok(consoleCapture.logs.some(log => log.includes("config.json")));
@@ -166,10 +151,8 @@ describe("auto-format.ts hook behavior", () => {
       
       fsMock.writeFileSync("/test/data.txt", "plain text");
       
-      const { context } = await hook.execute({
-        tool_name: "Write",
-        tool_input: { file_path: "/test/data.txt", content: "plain text" }
-      });
+      const context = createPostToolUseContext("Write", { file_path: "/test/data.txt", content: "plain text" }, {});
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
       // Should not attempt to format .txt files
@@ -181,10 +164,8 @@ describe("auto-format.ts hook behavior", () => {
       
       fsMock.writeFileSync("/test/image.png", "fake binary data");
       
-      const { context } = await hook.execute({
-        tool_name: "Write",
-        tool_input: { file_path: "/test/image.png", content: "fake binary data" }
-      });
+      const context = createPostToolUseContext("Write", { file_path: "/test/image.png", content: "fake binary data" }, {});
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
       strictEqual(consoleCapture.logs.filter(log => log.includes("Formatted")).length, 0);
@@ -195,10 +176,8 @@ describe("auto-format.ts hook behavior", () => {
     it("should handle missing file_path gracefully", async () => {
       const hook = createAutoFormatHook(consoleCapture, fsMock);
       
-      const { context } = await hook.execute({
-        tool_name: "Write",
-        tool_input: { content: "some content" }
-      });
+      const context = createPostToolUseContext("Write", { content: "some content" }, {});
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
       // Should not crash
@@ -207,10 +186,8 @@ describe("auto-format.ts hook behavior", () => {
     it("should handle non-existent files", async () => {
       const hook = createAutoFormatHook(consoleCapture, fsMock);
       
-      const { context } = await hook.execute({
-        tool_name: "Edit",
-        tool_input: { file_path: "/nonexistent/file.ts" }
-      });
+      const context = createPostToolUseContext("Edit", { file_path: "/nonexistent/file.ts" }, {});
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
       // Should skip non-existent files
@@ -237,10 +214,8 @@ describe("auto-format.ts hook behavior", () => {
         }
       });
       
-      const { context } = await hook.execute({
-        tool_name: "Write",
-        tool_input: { file_path: "/test/file.ts" }
-      });
+      const context = createPostToolUseContext("Write", { file_path: "/test/file.ts" }, {});
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
       ok(consoleCapture.errors.some(e => e.includes("Formatter crashed")));
@@ -249,10 +224,8 @@ describe("auto-format.ts hook behavior", () => {
     it("should handle invalid tool_input", async () => {
       const hook = createAutoFormatHook(consoleCapture, fsMock);
       
-      const { context } = await hook.execute({
-        tool_name: "Write",
-        tool_input: null
-      });
+      const context = createPostToolUseContext("Write", null, {});
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
       // Should not crash
@@ -265,13 +238,11 @@ describe("auto-format.ts hook behavior", () => {
       
       fsMock.writeFileSync("/test/component.tsx", "const Component=()=><div/>");
       
-      const { context } = await hook.execute({
-        tool_name: "Write",
-        tool_input: { 
-          file_path: "/test/component.tsx",
-          content: "const Component=()=><div/>"
-        }
-      });
+      const context = createPostToolUseContext("Write", { 
+        file_path: "/test/component.tsx",
+        content: "const Component=()=><div/>"
+      }, {});
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
       // Should attempt to format TSX files
@@ -283,13 +254,11 @@ describe("auto-format.ts hook behavior", () => {
       
       fsMock.writeFileSync("/test/styles.css", "body{margin:0}");
       
-      const { context } = await hook.execute({
-        tool_name: "Write",
-        tool_input: {
-          file_path: "/test/styles.css",
-          content: "body{margin:0}"
-        }
-      });
+      const context = createPostToolUseContext("Write", {
+        file_path: "/test/styles.css",
+        content: "body{margin:0}"
+      }, {});
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
       ok(consoleCapture.logs.some(log => log.includes("styles.css")));
@@ -300,13 +269,11 @@ describe("auto-format.ts hook behavior", () => {
       
       fsMock.writeFileSync("/test/script.py", "def func():pass");
       
-      const { context } = await hook.execute({
-        tool_name: "Write",
-        tool_input: {
-          file_path: "/test/script.py",
-          content: "def func():pass"
-        }
-      });
+      const context = createPostToolUseContext("Write", {
+        file_path: "/test/script.py",
+        content: "def func():pass"
+      }, {});
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
       ok(consoleCapture.logs.some(log => log.includes("script.py")));
