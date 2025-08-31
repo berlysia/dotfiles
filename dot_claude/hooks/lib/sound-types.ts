@@ -135,7 +135,7 @@ export interface IGitContextProvider {
   /**
    * Get repository context information
    */
-  getContext(): Promise<import('./git-context').GitContextInfo>;
+  getContext(): Promise<import('./git-context.ts').GitContextInfo>;
   
   /**
    * Create localized message with context

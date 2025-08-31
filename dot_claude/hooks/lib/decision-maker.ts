@@ -4,10 +4,10 @@
  */
 
 import type {
-  HookOutput,
   PermissionDecision,
   CommandAnalysisResult,
-} from "../types/hooks-types.ts";
+  PreToolUseHookOutput,
+} from "../types/project-types.ts";
 
 /**
  * Create hook output JSON with decision
@@ -15,7 +15,7 @@ import type {
 export function createHookOutput(
   decision: PermissionDecision,
   reason: string
-): HookOutput {
+): PreToolUseHookOutput {
   return {
     hookSpecificOutput: {
       hookEventName: "PreToolUse",

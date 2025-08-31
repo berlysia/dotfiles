@@ -3,7 +3,7 @@
  * Based on cc-hooks-ts library type definitions
  */
 
-import type { PreToolUseHookOutput, PermissionDecision } from "../types/hooks-types.ts";
+import type { PermissionDecision, PreToolUseHookOutput } from "../types/project-types.ts";
 
 /**
  * Type for cc-hooks-ts JSON response format

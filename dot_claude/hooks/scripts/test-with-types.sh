@@ -92,7 +92,7 @@ echo -e "${YELLOW}🔍 Phase 1: Type Checking${NC}"
 echo "=========================="
 
 # Type check all TypeScript files
-run_type_check "../types/hooks-types.ts" "Hook type definitions"
+run_type_check "../types/project-types.ts" "Hook type definitions"
 run_type_check "../lib/hook-common.ts" "Common hook utilities" 
 run_type_check "$HOOKS_DIR/auto-approve.ts" "Auto-approve commands script"
 run_type_check "$HOOKS_DIR/block-package-json-tsx.ts" "Block tsx package.json script"
