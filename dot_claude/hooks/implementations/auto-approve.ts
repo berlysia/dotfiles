@@ -354,11 +354,41 @@ function checkCommandPattern(pattern: string, cmd: string): boolean {
 
 function checkPattern(pattern: string, tool_name: string, tool_input: any): boolean {
   // Check if pattern matches the tool name
-  if (pattern.startsWith(`${tool_name}(`)) {
-    // For now, simple matching logic
-    return true;
+  if (!pattern.startsWith(`${tool_name}(`)) {
+    return false;
   }
-  return false;
+
+  // Extract the pattern content from Tool(pattern) format
+  const match = pattern.match(new RegExp(`^${tool_name}\\(([^)]+)\\)$`));
+  if (!match) return false;
+
+  const pathPattern = match[1];
+  if (!pathPattern) return false;
+
+  // Get the file path from tool input based on tool type
+  let filePath: string | undefined;
+  if (tool_name === "Write" || tool_name === "Edit" || tool_name === "MultiEdit") {
+    filePath = tool_input.file_path;
+  } else if (tool_name === "Read") {
+    filePath = tool_input.file_path;
+  } else if (tool_name === "NotebookEdit" || tool_name === "NotebookRead") {
+    filePath = tool_input.notebook_path;
+  }
+
+  if (!filePath) return false;
+
+  // Handle different pattern types
+  if (pathPattern === "**") {
+    // Match all paths
+    return true;
+  } else if (pathPattern.startsWith("!")) {
+    // Negation pattern - this is an allow pattern, not a deny
+    const negatedPattern = pathPattern.slice(1);
+    return !matchesPathPattern(filePath, negatedPattern);
+  } else {
+    // Regular pattern matching
+    return matchesPathPattern(filePath, pathPattern);
+  }
 }
 
 function analyzeBashCommands(individualResults: string[], denyMatches: string[]): { decision: string; reason: string } {
@@ -411,6 +441,45 @@ function analyzePatternMatches(allowMatches: string[], denyMatches: string[]): {
     decision: "ask",
     reason: "No matching patterns found"
   };
+}
+
+function matchesPathPattern(filePath: string, pattern: string): boolean {
+  // Convert relative paths to absolute for consistent matching
+  let absoluteFilePath = filePath;
+  if (!filePath.startsWith("/")) {
+    // For relative paths, use the current working directory
+    absoluteFilePath = join(process.cwd(), filePath);
+  }
+
+  // Handle tilde expansion
+  let absolutePattern = pattern;
+  if (pattern.startsWith("~/")) {
+    absolutePattern = join(homedir(), pattern.slice(2));
+  }
+
+  // Handle wildcard patterns
+  if (absolutePattern.endsWith("/**")) {
+    let prefix = absolutePattern.slice(0, -3);
+    // Handle relative patterns like ./**
+    if (prefix === ".") {
+      prefix = process.cwd();
+    } else if (prefix.startsWith("./")) {
+      prefix = join(process.cwd(), prefix.slice(2));
+    }
+    return absoluteFilePath.startsWith(prefix);
+  } else if (absolutePattern.endsWith("/*")) {
+    const prefix = absolutePattern.slice(0, -2);
+    const dirPath = absoluteFilePath.substring(0, absoluteFilePath.lastIndexOf("/"));
+    return dirPath === prefix;
+  } else if (absolutePattern.includes("*")) {
+    // Convert glob pattern to regex
+    const regexPattern = absolutePattern.replace(/\*\*/g, ".*").replace(/\*/g, "[^/]*");
+    const regex = new RegExp(`^${regexPattern}$`);
+    return regex.test(absoluteFilePath);
+  } else {
+    // Exact match
+    return absoluteFilePath === absolutePattern;
+  }
 }
 
 function logDecision(tool_name: string, tool_input: any, decision: string, reason: string): void {
