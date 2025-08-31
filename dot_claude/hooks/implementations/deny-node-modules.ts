@@ -13,9 +13,9 @@ const hook = defineHook({
   run: (context) => {
     const { tool_name, tool_input } = context.input;
 
-    // Only process file writing tools
-    const writeTools = ["Write", "Edit", "MultiEdit", "NotebookEdit"];
-    if (!writeTools.includes(tool_name)) {
+    // Process all file access tools and bash commands
+    const fileAccessTools = ["Write", "Edit", "MultiEdit", "NotebookEdit", "Read", "Bash"];
+    if (!fileAccessTools.includes(tool_name)) {
       return context.success({});
     }
 
@@ -51,6 +51,7 @@ interface NodeModulesValidationResult {
 function extractFilePath(tool_name: string, tool_input: any): string | null {
   switch (tool_name) {
     case "Write":
+    case "Read":
       return tool_input.file_path || null;
       
     case "Edit":
@@ -59,6 +60,9 @@ function extractFilePath(tool_name: string, tool_input: any): string | null {
       
     case "NotebookEdit":
       return tool_input.notebook_path || null;
+      
+    case "Bash":
+      return extractPathFromBashCommand(tool_input.command || "");
       
     default:
       return null;
@@ -92,6 +96,14 @@ function validateNodeModulesAccess(filePath: string): NodeModulesValidationResul
     isAllowed: true,
     resolvedPath
   };
+}
+
+function extractPathFromBashCommand(command: string): string | null {
+  // Check for node_modules in bash commands
+  if (command.includes("node_modules")) {
+    return "node_modules"; // Return a dummy path to trigger validation
+  }
+  return null;
 }
 
 export default hook;
