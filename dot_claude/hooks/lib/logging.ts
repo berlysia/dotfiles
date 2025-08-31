@@ -4,7 +4,7 @@
  */
 
 import { appendFileSync } from "node:fs";
-import type { ToolInput, CommandLogEntry } from "../types/hooks-types.ts";
+import type { ToolInput, CommandLogEntry } from "../types/project-types.ts";
 
 /**
  * Log pattern analysis results

@@ -3,7 +3,7 @@
  * TypeScript conversion of pattern-matcher.sh
  */
 
-import type { ToolInput } from "../types/hooks-types.ts";
+import type { ToolInput } from "../types/project-types.ts";
 
 /**
  * Result of child command extraction
@@ -358,7 +358,7 @@ export function checkPattern(pattern: string, toolName: string, toolInput: ToolI
     const cmdPattern = pattern.slice(5, -1); // Remove "Bash(" and ")"
     
     // Get the actual command
-    const actualCommand = toolInput.command || "";
+    const actualCommand = (toolInput as { command?: string }).command || "";
     
     // Check if command matches the pattern
     if (cmdPattern.includes(":")) {

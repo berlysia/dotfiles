@@ -1,6 +1,5 @@
 #!/usr/bin/env -S bun run --silent
 
-// Workaround for cc-hooks-ts exports configuration issue with verbatimModuleSyntax
 import { defineHook } from "cc-hooks-ts";
 import { homedir } from "node:os";
 import { join } from "node:path";

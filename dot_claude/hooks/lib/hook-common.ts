@@ -8,12 +8,12 @@ import { readFileSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type {
-  HookInput,
-  StopHookInput,
   ToolInput,
   SettingsFile,
   ProcessingContext,
-} from "../types/hooks-types.ts";
+  HookInput,
+  StopHookInput,
+} from "../types/project-types.ts";
 
 /**
  * Read raw JSON input from stdin
@@ -90,7 +90,7 @@ export function readStopHookInput(): StopHookInput {
 export function extractToolInfo(input: HookInput): { toolName: string; toolInput: ToolInput } {
   return {
     toolName: input.tool_name,
-    toolInput: input.tool_input,
+    toolInput: input.tool_input as ToolInput,
   };
 }
 

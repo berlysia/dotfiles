@@ -32,7 +32,7 @@ hooks/
 ├── utilities/                   # スタンドアロンツール
 │   └── generate-stats.ts        # 統計レポート生成
 ├── types/                       # 型定義
-│   ├── hooks-types.ts           # Hook型定義
+│   ├── project-types.ts           # Hook型定義
 │   └── tool-schemas.ts          # ツールスキーマ
 ├── tests/                       # テストスイート
 │   ├── integration/             # 統合テスト
