@@ -142,7 +142,6 @@ function checkGitHubAccess(url: string, tool_name: string): CheckResult {
   }
 }
 
-});
 
 export default hook;
 

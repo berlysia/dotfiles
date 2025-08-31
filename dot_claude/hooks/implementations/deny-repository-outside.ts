@@ -242,7 +242,7 @@ function validatePath(path: string, repoRoot: string): PathValidationResult {
 
 function join(...paths: string[]): string {
   return paths.join("/").replace(/\/+/g, "/");
-});
+}
 
 export default hook;
 

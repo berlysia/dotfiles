@@ -212,7 +212,7 @@ function attemptFormat(filePath: string): FormatResult {
 
   // No formatter found or all failed
   return { success: false, error: "No suitable formatter found" };
-});
+}
 
 export default hook;
 
