@@ -33,8 +33,8 @@ const hook = defineHook({
         return context.blockingError(
           `Using tsx/ts-node with 'find -exec' is not allowed\n\n` +
           `Suggestion: Use a TypeScript-compatible runtime instead:\n` +
-          `• find . -type f -name "*.ts" -exec bun {} \\;\n` +
-          `• find . -type f -name "*.ts" -exec node {} \\;\n\n` +
+          `• find . -type f -name "*.ts" -exec node {} \\;\n` +
+          `• find . -type f -name "*.ts" -exec bun {} \\;\n\n` +
           `Command: ${command}`
         );
       }
@@ -43,8 +43,8 @@ const hook = defineHook({
         return context.blockingError(
           `Using tsx/ts-node with 'xargs' is not allowed\n\n` +
           `Suggestion: Use a TypeScript-compatible runtime instead:\n` +
-          `• ls *.ts | xargs -I {} bun {}\n` +
-          `• ls *.ts | xargs -I {} node {}\n\n` +
+          `• ls *.ts | xargs -I {} node {}\n` +
+          `• ls *.ts | xargs -I {} bun {}\n\n` +
           `Command: ${command}`
         );
       }
@@ -53,8 +53,8 @@ const hook = defineHook({
         return context.blockingError(
           `Using tsx/ts-node with 'parallel' is not allowed\n\n` +
           `Suggestion: Use a TypeScript-compatible runtime instead:\n` +
-          `• parallel bun ::: *.ts\n` +
-          `• parallel node ::: *.ts\n\n` +
+          `• parallel node ::: *.ts\n` +
+          `• parallel bun ::: *.ts\n\n` +
           `Command: ${command}`
         );
       }
@@ -63,8 +63,8 @@ const hook = defineHook({
         return context.blockingError(
           `Using tsx/ts-node with 'timeout' is not allowed\n\n` +
           `Suggestion: Use a TypeScript-compatible runtime instead:\n` +
-          `• timeout 10s bun script.ts\n` +
-          `• timeout 10s node script.js\n\n` +
+          `• timeout 10s node script.js\n` +
+          `• timeout 10s bun script.ts\n\n` +
           `Command: ${command}`
         );
       }
@@ -73,8 +73,8 @@ const hook = defineHook({
         return context.blockingError(
           `Using tsx/ts-node with 'time' is not allowed\n\n` +
           `Suggestion: Use a TypeScript-compatible runtime instead:\n` +
-          `• time bun script.ts\n` +
-          `• time node script.js\n\n` +
+          `• time node script.js\n` +
+          `• time bun script.ts\n\n` +
           `Command: ${command}`
         );
       }
@@ -112,35 +112,83 @@ const hook = defineHook({
           // Block direct tsx command execution (except .tsx files)
           pattern: /(?:^|[;&|]\s*)tsx(?:\s+|$)(?!.*\.tsx(?:\s|$))/,
           reason: "Use TypeScript-compatible runtime instead of 'tsx' for TypeScript execution",
-          suggestion: "Replace 'tsx' with 'node --test' for testing or 'bun run' for execution"
+          suggestion: "Replace 'tsx' with 'node --test' for testing or 'node' for execution"
         },
         {
           // Block direct ts-node command execution
           pattern: /(?:^|[;&|]\s*)ts-node(?:\s+|$)/,
           reason: "Use TypeScript-compatible runtime instead of 'ts-node' for TypeScript execution",
-          suggestion: "Replace 'ts-node' with 'node' for execution or 'bun run' for TypeScript files"
+          suggestion: "Replace 'ts-node' with 'node' for execution or 'bun' for TypeScript files"
         },
         {
           // Block npx tsx
           pattern: /\bnpx\s+tsx(?:\s+|$)/,
           reason: "Use TypeScript-compatible runtime instead of 'npx tsx' for TypeScript execution",
-          suggestion: "Replace 'npx tsx' with 'node --test' for testing or 'bun run' for execution"
+          suggestion: "Replace 'npx tsx' with 'node --test' for testing or 'node' for execution"
         },
         {
           // Block npx ts-node
           pattern: /\bnpx\s+ts-node(?:\s+|$)/,
           reason: "Use TypeScript-compatible runtime instead of 'npx ts-node' for TypeScript execution",
-          suggestion: "Replace 'npx ts-node' with 'node' for execution or 'bun run' for TypeScript files"
+          suggestion: "Replace 'npx ts-node' with 'node' for execution or 'bun' for TypeScript files"
+        },
+        {
+          // Block yarn dlx tsx
+          pattern: /\byarn\s+dlx\s+tsx(?:\s+|$)/,
+          reason: "Use TypeScript-compatible runtime instead of 'yarn dlx tsx' for TypeScript execution",
+          suggestion: "Replace 'yarn dlx tsx' with 'node --test' for testing or 'node' for execution"
+        },
+        {
+          // Block yarn dlx ts-node
+          pattern: /\byarn\s+dlx\s+ts-node(?:\s+|$)/,
+          reason: "Use TypeScript-compatible runtime instead of 'yarn dlx ts-node' for TypeScript execution",
+          suggestion: "Replace 'yarn dlx ts-node' with 'node' for execution or 'bun' for TypeScript files"
+        },
+        {
+          // Block pnpx tsx
+          pattern: /\bpnpx\s+tsx(?:\s+|$)/,
+          reason: "Use TypeScript-compatible runtime instead of 'pnpx tsx' for TypeScript execution",
+          suggestion: "Replace 'pnpx tsx' with 'node --test' for testing or 'node' for execution"
+        },
+        {
+          // Block pnpx ts-node
+          pattern: /\bpnpx\s+ts-node(?:\s+|$)/,
+          reason: "Use TypeScript-compatible runtime instead of 'pnpx ts-node' for TypeScript execution",
+          suggestion: "Replace 'pnpx ts-node' with 'node' for execution or 'bun' for TypeScript files"
+        },
+        {
+          // Block bunx tsx
+          pattern: /\bbunx\s+tsx(?:\s+|$)/,
+          reason: "Use TypeScript-compatible runtime instead of 'bunx tsx' for TypeScript execution",
+          suggestion: "Replace 'bunx tsx' with 'node --test' for testing or 'bun run' for execution"
+        },
+        {
+          // Block bunx ts-node
+          pattern: /\bbunx\s+ts-node(?:\s+|$)/,
+          reason: "Use TypeScript-compatible runtime instead of 'bunx ts-node' for TypeScript execution",
+          suggestion: "Replace 'bunx ts-node' with 'node' for execution or 'bun' for TypeScript files"
+        },
+        {
+          // Block deno run npm:tsx
+          pattern: /\bdeno\s+run\s+npm:tsx(?:\s+|$)/,
+          reason: "Use TypeScript-compatible runtime instead of 'deno run npm:tsx' for TypeScript execution",
+          suggestion: "Replace 'deno run npm:tsx' with 'deno run' for direct TypeScript execution"
+        },
+        {
+          // Block deno run npm:ts-node
+          pattern: /\bdeno\s+run\s+npm:ts-node(?:\s+|$)/,
+          reason: "Use TypeScript-compatible runtime instead of 'deno run npm:ts-node' for TypeScript execution",
+          suggestion: "Replace 'deno run npm:ts-node' with 'deno run' for direct TypeScript execution"
         },
         {
           pattern: /\bnpm\s+(?:install|i|add)\s+.*\btsx\b/,
           reason: "Installing 'tsx' is discouraged. Use TypeScript-compatible runtime for TypeScript execution",
-          suggestion: "Remove tsx installation. Use a TypeScript-compatible runtime (node, deno, bun) with built-in TypeScript support"
+          suggestion: "Remove tsx installation. Use a TypeScript-compatible runtime (node, bun, deno) with built-in TypeScript support"
         },
         {
           pattern: /\bnpm\s+(?:install|i|add)\s+.*\bts-node\b/,
           reason: "Installing 'ts-node' is discouraged. Use TypeScript-compatible runtime for TypeScript execution",
-          suggestion: "Remove ts-node installation. Use a TypeScript-compatible runtime (node, deno, bun) with native TypeScript support"
+          suggestion: "Remove ts-node installation. Use a TypeScript-compatible runtime (node, bun, deno) with native TypeScript support"
         },
         {
           pattern: /\bpnpm\s+(?:install|i|add)\s+.*\btsx\b/,
@@ -200,8 +248,9 @@ const hook = defineHook({
             return context.blockingError(
               `TypeScript execution tools (tsx/ts-node) are not allowed\n\n` +
               `Use TypeScript-compatible runtimes instead:\n` +
-              `• bun run <file.ts> - for Bun runtime\n` +
               `• node --test <file.ts> - for Node.js testing\n` +
+              `• node <file.js> - for Node.js execution\n` +
+              `• bun run <file.ts> - for Bun runtime\n` +
               `• deno run <file.ts> - for Deno runtime\n\n` +
               `Command: ${command}`
             );
