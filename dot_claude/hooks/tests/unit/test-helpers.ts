@@ -82,6 +82,34 @@ export class MockHookContext<TTrigger extends HookTrigger> {
     deepStrictEqual(this.nonBlockingErrorCalls[0], expectedMessage);
   }
   
+  assertDeny(expectedReason?: string) {
+    strictEqual(this.jsonCalls.length, 1, "json() should be called once for deny response");
+    strictEqual(this.successCalls.length, 0, "success() should not be called");
+    strictEqual(this.failCalls.length, 0, "fail() should not be called");
+    
+    const response = this.jsonCalls[0];
+    strictEqual(response.hookSpecificOutput.hookEventName, "PreToolUse");
+    strictEqual(response.hookSpecificOutput.permissionDecision, "deny");
+    
+    if (expectedReason !== undefined) {
+      strictEqual(response.hookSpecificOutput.permissionDecisionReason, expectedReason);
+    }
+  }
+  
+  assertAllow(expectedReason?: string) {
+    strictEqual(this.jsonCalls.length, 1, "json() should be called once for allow response");
+    strictEqual(this.successCalls.length, 0, "success() should not be called");
+    strictEqual(this.failCalls.length, 0, "fail() should not be called");
+    
+    const response = this.jsonCalls[0];
+    strictEqual(response.hookSpecificOutput.hookEventName, "PreToolUse");
+    strictEqual(response.hookSpecificOutput.permissionDecision, "allow");
+    
+    if (expectedReason !== undefined) {
+      strictEqual(response.hookSpecificOutput.permissionDecisionReason, expectedReason);
+    }
+  }
+  
   reset() {
     this.successCalls = [];
     this.failCalls = [];

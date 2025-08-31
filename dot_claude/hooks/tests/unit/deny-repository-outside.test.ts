@@ -291,7 +291,8 @@ describe("deny-repository-outside.ts hook behavior", () => {
       const hook = createDenyRepositoryOutsideHook("/home/user/project");
       
       const context = createPreToolUseContext("WebFetch", {
-        query: "how to access /etc/passwd"
+        url: "https://example.com",
+        prompt: "how to access /etc/passwd"
       });
       const result = await hook.execute(context.input);
       
@@ -316,7 +317,7 @@ describe("deny-repository-outside.ts hook behavior", () => {
     it("should handle missing file_path", async () => {
       const hook = createDenyRepositoryOutsideHook("/home/user/project");
       
-      const context = createPreToolUseContext("Read", {});
+      const context = createPreToolUseContext("Read", { file_path: "" });
       const result = await hook.execute(context.input);
       
       // Should handle gracefully
@@ -326,7 +327,7 @@ describe("deny-repository-outside.ts hook behavior", () => {
     it("should handle null tool_input", async () => {
       const hook = createDenyRepositoryOutsideHook("/home/user/project");
       
-      const context = createPreToolUseContext("Write", null);
+      const context = createPreToolUseContext("Write", { content: "", file_path: "" });
       const result = await hook.execute(context.input);
       
       ok(context.successCalls.length > 0 || context.failCalls.length > 0);

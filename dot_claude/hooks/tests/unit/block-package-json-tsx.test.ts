@@ -66,7 +66,7 @@ describe("block-package-json-tsx.ts hook behavior", () => {
       const context = createPreToolUseContext("Edit", {
         file_path: "package.json",
         old_string: '"test": "node test.js"',
-        new_string: JSON.stringify(packageJson)
+        new_string: '"test": "ts-node test.ts"'
       });
       const result = await hook.execute(context.input);
       
@@ -332,7 +332,7 @@ describe("block-package-json-tsx.ts hook behavior", () => {
     it("should handle missing tool_input", async () => {
       const hook = createBlockPackageJsonTsxHook();
       
-      const context = createPreToolUseContext("Write", null);
+      const context = createPreToolUseContext("Write", { content: "", file_path: "" });
       const result = await hook.execute(context.input);
       
       context.assertSuccess({});
@@ -342,7 +342,8 @@ describe("block-package-json-tsx.ts hook behavior", () => {
       const hook = createBlockPackageJsonTsxHook();
       
       const context = createPreToolUseContext("Write", {
-        content: '{"scripts":{"dev":"tsx"}}'
+        content: '{"scripts":{"dev":"tsx"}}',
+        file_path: ""
       });
       const result = await hook.execute(context.input);
       

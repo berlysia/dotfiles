@@ -43,7 +43,7 @@ describe("deny-node-modules.ts hook behavior", () => {
       });
       const result = await hook.execute(context.input);
       
-      ok(context.failCalls.length > 0, "Should block read");
+      context.assertDeny();
       ok(context.failCalls[0].includes("node_modules"));
     });
     
@@ -56,7 +56,7 @@ describe("deny-node-modules.ts hook behavior", () => {
       });
       const result = await hook.execute(context.input);
       
-      ok(context.failCalls.length > 0, "Should block write");
+      context.assertDeny();
       ok(context.failCalls[0].includes("node_modules"));
     });
     
@@ -70,7 +70,7 @@ describe("deny-node-modules.ts hook behavior", () => {
       });
       const result = await hook.execute(context.input);
       
-      ok(context.failCalls.length > 0, "Should block edit");
+      context.assertDeny();
     });
     
     it("should block MultiEdit in node_modules", async () => {
@@ -82,7 +82,7 @@ describe("deny-node-modules.ts hook behavior", () => {
       });
       const result = await hook.execute(context.input);
       
-      ok(context.failCalls.length > 0, "Should block multi-edit");
+      context.assertDeny();
     });
     
     it("should block Bash commands operating on node_modules", async () => {
@@ -93,7 +93,7 @@ describe("deny-node-modules.ts hook behavior", () => {
       });
       const result = await hook.execute(context.input);
       
-      ok(context.failCalls.length > 0, "Should block bash command");
+      context.assertDeny();
       ok(context.failCalls[0].includes("node_modules"));
     });
     
@@ -105,7 +105,7 @@ describe("deny-node-modules.ts hook behavior", () => {
       });
       const result = await hook.execute(context.input);
       
-      ok(context.failCalls.length > 0, "Should block ls in node_modules");
+      context.assertDeny();
     });
   });
   
@@ -127,7 +127,7 @@ describe("deny-node-modules.ts hook behavior", () => {
         });
         const result = await hook.execute(context.input);
         
-        ok(context.failCalls.length > 0, `Should block path: ${path}`);
+        context.assertDeny();
       }
     });
     
@@ -174,7 +174,7 @@ describe("deny-node-modules.ts hook behavior", () => {
         });
         const result = await hook.execute(context.input);
         
-        ok(context.failCalls.length > 0, `Should block command: ${command}`);
+        context.assertDeny();
       }
     });
     
@@ -207,7 +207,8 @@ describe("deny-node-modules.ts hook behavior", () => {
       const hook = createDenyNodeModulesHook();
       
       const context = createPreToolUseContext("WebFetch", {
-        query: "node_modules documentation"
+        url: "https://example.com",
+        prompt: "node_modules documentation"
       });
       const result = await hook.execute(context.input);
       
@@ -217,7 +218,7 @@ describe("deny-node-modules.ts hook behavior", () => {
     it("should handle missing tool_input gracefully", async () => {
       const hook = createDenyNodeModulesHook();
       
-      const context = createPreToolUseContext("Read", null);
+      const context = createPreToolUseContext("Read", { file_path: "" });
       const result = await hook.execute(context.input);
       
       context.assertSuccess({});
@@ -226,7 +227,7 @@ describe("deny-node-modules.ts hook behavior", () => {
     it("should handle missing file_path gracefully", async () => {
       const hook = createDenyNodeModulesHook();
       
-      const context = createPreToolUseContext("Read", {});
+      const context = createPreToolUseContext("Read", { file_path: "" });
       const result = await hook.execute(context.input);
       
       context.assertSuccess({});
@@ -242,7 +243,7 @@ describe("deny-node-modules.ts hook behavior", () => {
       });
       const result = await hook.execute(context.input);
       
-      ok(context.failCalls.length > 0);
+      context.assertDeny();
       const errorMsg = context.failCalls[0];
       ok(errorMsg.includes("node_modules") || errorMsg.includes("denied") || errorMsg.includes("blocked"));
     });
@@ -256,7 +257,7 @@ describe("deny-node-modules.ts hook behavior", () => {
       });
       const result = await hook.execute(context.input);
       
-      ok(context.failCalls.length > 0);
+      context.assertDeny();
       const errorMsg = context.failCalls[0];
       ok(errorMsg.toLowerCase().includes("security") || errorMsg.includes("protected"));
     });
