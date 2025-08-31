@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env -S bun run --silent
 
 /**
  * Claude Hybrid Voice Notification - TypeScript Version
@@ -406,8 +406,8 @@ async function main() {
   }
 }
 
-// Execute if run directly (check if this file is the main module)
-if (process.argv[1] && (process.argv[1] === __filename || process.argv[1].endsWith('speak-notification.ts'))) {
+// Execute if run directly
+if (import.meta.main) {
   main().catch(error => {
     console.error('Error:', error);
     process.exit(1);

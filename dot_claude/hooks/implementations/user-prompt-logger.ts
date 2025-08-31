@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env -S bun run --silent
 
 import { defineHook } from "cc-hooks-ts";
 import { appendFileSync } from "node:fs";
@@ -9,7 +9,7 @@ import { join } from "node:path";
  * User prompt submission logger
  * Logs UserPromptSubmit events for analytics
  */
-export default defineHook({
+const hook = defineHook({
   trigger: { UserPromptSubmit: true },
   run: (context) => {
     try {
@@ -39,3 +39,10 @@ export default defineHook({
     }
   }
 });
+
+export default hook;
+
+if (import.meta.main) {
+  const { runHook } = await import("cc-hooks-ts");
+  await runHook(hook);
+}

@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env -S bun run --silent
 
 import { defineHook } from "cc-hooks-ts";
 import { resolve } from "node:path";
@@ -11,7 +11,7 @@ import "../types/tool-schemas.ts";
  * Deny access to files outside repository root
  * Converted from deny-repository-outside-access.ts using cc-hooks-ts
  */
-export default defineHook({
+const hook = defineHook({
   trigger: { PreToolUse: true },
   run: (context) => {
     const { tool_name, tool_input } = context.input;
@@ -241,4 +241,11 @@ function validatePath(path: string, repoRoot: string): PathValidationResult {
 
 function join(...paths: string[]): string {
   return paths.join("/").replace(/\/+/g, "/");
+});
+
+export default hook;
+
+if (import.meta.main) {
+  const { runHook } = await import("cc-hooks-ts");
+  await runHook(hook);
 }

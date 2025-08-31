@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env -S bun run --silent
 
 import { defineHook } from "cc-hooks-ts";
 import { homedir } from "node:os";
@@ -10,7 +10,7 @@ import "../types/tool-schemas.ts";
  * Command logger for tracking tool usage
  * Converted from original command-logger.ts using cc-hooks-ts
  */
-export default defineHook({
+const hook = defineHook({
   trigger: { PostToolUse: true },
   run: (context) => {
     const { tool_name, tool_input, session_id } = context.input;
@@ -107,4 +107,11 @@ function writeStructuredLog(logEntry: LogEntry): void {
   } catch (error) {
     console.error(`Failed to write structured log: ${error}`);
   }
+});
+
+export default hook;
+
+if (import.meta.main) {
+  const { runHook } = await import("cc-hooks-ts");
+  await runHook(hook);
 }

@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env -S bun run --silent
 
 import { defineHook } from "cc-hooks-ts";
 import { resolve } from "node:path";
@@ -7,7 +7,7 @@ import { resolve } from "node:path";
  * Deny writing to node_modules directories
  * Converted from deny-node-modules-write.ts using cc-hooks-ts
  */
-export default defineHook({
+const hook = defineHook({
   trigger: { PreToolUse: true },
   run: (context) => {
     const { tool_name, tool_input } = context.input;
@@ -91,4 +91,11 @@ function validateNodeModulesAccess(filePath: string): NodeModulesValidationResul
     isAllowed: true,
     resolvedPath
   };
+});
+
+export default hook;
+
+if (import.meta.main) {
+  const { runHook } = await import("cc-hooks-ts");
+  await runHook(hook);
 }

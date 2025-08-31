@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env -S bun run --silent
 
 import { defineHook } from "cc-hooks-ts";
 import { appendFileSync } from "node:fs";
@@ -9,7 +9,7 @@ import { join } from "node:path";
  * Session management hooks
  * Handles SessionStart events with logging
  */
-export default defineHook({
+const hook = defineHook({
   trigger: { SessionStart: true },
   run: (context) => {
     try {
@@ -41,3 +41,10 @@ export default defineHook({
     }
   }
 });
+
+export default hook;
+
+if (import.meta.main) {
+  const { runHook } = await import("cc-hooks-ts");
+  await runHook(hook);
+}

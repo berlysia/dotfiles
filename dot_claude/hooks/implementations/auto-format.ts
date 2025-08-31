@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env -S bun run --silent
 
 import { defineHook } from "cc-hooks-ts";
 import { existsSync } from "node:fs";
@@ -10,7 +10,7 @@ import "../types/tool-schemas.ts";
  * Auto-format files after Edit/MultiEdit/Write operations
  * Converted from auto-format.sh using cc-hooks-ts
  */
-export default defineHook({
+const hook = defineHook({
   trigger: { PostToolUse: true },
   run: (context) => {
     const { tool_name, tool_input } = context.input;
@@ -212,4 +212,11 @@ function attemptFormat(filePath: string): FormatResult {
 
   // No formatter found or all failed
   return { success: false, error: "No suitable formatter found" };
+});
+
+export default hook;
+
+if (import.meta.main) {
+  const { runHook } = await import("cc-hooks-ts");
+  await runHook(hook);
 }
