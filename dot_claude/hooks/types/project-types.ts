@@ -168,3 +168,22 @@ export interface PendingCommand {
   description: string;
   timestamp_ns: number;
 }
+
+// ツール入力の型定義（中央ログマネージャー用）
+export interface BashToolInput {
+  command?: string;
+  description?: string;
+}
+
+export interface FileToolInput {
+  file_path?: string;
+}
+
+// 型ガード関数
+export function isBashToolInput(tool_name: string, tool_input: unknown): tool_input is BashToolInput {
+  return tool_name === "Bash" && typeof tool_input === "object" && tool_input !== null;
+}
+
+export function isFileToolInput(tool_name: string, tool_input: unknown): tool_input is FileToolInput {
+  return ["Edit", "MultiEdit", "Write"].includes(tool_name) && typeof tool_input === "object" && tool_input !== null;
+}

@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { createAskResponse, createDenyResponse } from "../lib/context-helpers.ts";
+import { logDecision } from "../lib/centralized-logging.ts";
+import { isBashToolInput, type PermissionDecision } from "../types/project-types.ts";
 import "../types/tool-schemas.ts";
 
 /**
@@ -40,8 +42,9 @@ const hook = defineHook({
 
         const decision = analyzeBashCommands(bashResult.individualResults, bashResult.denyMatches);
 
-        // Log the decision
-        logDecision(tool_name, tool_input, decision.decision, decision.reason);
+        // Log the decision using centralized logger  
+        const command = isBashToolInput(tool_name, tool_input) ? tool_input.command : undefined;
+        logDecision(tool_name, decision.decision as PermissionDecision, decision.reason, context.input.session_id, command, tool_input);
 
         if (decision.decision === "deny") {
           return context.json(createDenyResponse(decision.reason));
@@ -57,8 +60,8 @@ const hook = defineHook({
         const otherResult = processOtherTool(tool_name, tool_input, denyList, allowList);
         const decision = analyzePatternMatches(otherResult.allowMatches, otherResult.denyMatches);
 
-        // Log the decision
-        logDecision(tool_name, tool_input, decision.decision, decision.reason);
+        // Log the decision using centralized logger
+        logDecision(tool_name, decision.decision as PermissionDecision, decision.reason, context.input.session_id, undefined, tool_input);
 
         if (decision.decision === "deny") {
           return context.json(createDenyResponse(decision.reason));
@@ -482,19 +485,6 @@ function matchesPathPattern(filePath: string, pattern: string): boolean {
   }
 }
 
-function logDecision(tool_name: string, tool_input: any, decision: string, reason: string): void {
-  const logFile = join(homedir(), ".claude", "auto_approve_commands.log");
-  const timestamp = new Date().toISOString();
-  const logEntry = `[${timestamp}] ${tool_name}: ${decision} - ${reason}\n`;
-
-  try {
-    // Simple append to log file
-    const fs = require("node:fs");
-    fs.appendFileSync(logFile, logEntry);
-  } catch {
-    // Ignore logging errors
-  }
-}
 
 export default hook;
 

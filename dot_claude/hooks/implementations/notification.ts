@@ -2,7 +2,7 @@
 
 import { defineHook } from "cc-hooks-ts";
 import { notifyWithContext, notify, cleanupOldFiles } from "../lib/voicevox-audio.ts";
-import { logEvent } from "../lib/notification-logging.ts";
+import { logEvent } from "../lib/centralized-logging.ts";
 
 /**
  * Notification and Stop event handlers
@@ -21,7 +21,7 @@ const hook = defineHook({
       // 並列実行で高速化
       await Promise.allSettled([
         // 互換性のあるログ記録（既存と同じ構造）
-        logEvent(eventType, sessionId),
+        logEvent(eventType as 'Stop' | 'Notification', sessionId),
         
         // VoiceVox音声通知
         handleAudioNotification(eventType),
