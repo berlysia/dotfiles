@@ -48,8 +48,8 @@ for TEST_FILE in $TEST_FILES; do
     TEST_NAME=$(basename "$TEST_FILE" .test.ts)
     echo -e "\n${YELLOW}Testing: $TEST_NAME${NC}"
     
-    # Run the test and capture output
-    if OUTPUT=$(npx tsx --test "$TEST_FILE" 2>&1); then
+    # Run the test and capture output using bun test
+    if OUTPUT=$(bun test "$TEST_FILE" 2>&1); then
         echo -e "${GREEN}✓ All tests passed${NC}"
         
         # Parse test counts from output if available

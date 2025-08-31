@@ -7,6 +7,7 @@ import {
   ConsoleCapture,
   EnvironmentHelper 
 } from "./test-helpers.ts";
+import blockTsxHookImpl from "../../implementations/block-tsx.ts";
 
 describe("block-tsx.ts hook behavior", () => {
   const consoleCapture = new ConsoleCapture();
@@ -57,7 +58,7 @@ describe("block-tsx.ts hook behavior", () => {
       ok(context.failCalls.length > 0, "Should block npx tsx");
     });
     
-    it("should allow tsx --version", async () => {
+    it("should block tsx --version", async () => {
       const hook = createBlockTsxHook();
       
       const { context } = await hook.execute({
@@ -65,11 +66,10 @@ describe("block-tsx.ts hook behavior", () => {
         tool_input: { command: "tsx --version" }
       });
       
-      context.assertSuccess({});
-      strictEqual(context.failCalls.length, 0, "Should allow --version check");
+      ok(context.failCalls.length > 0, "Should block tsx --version due to strict policy");
     });
     
-    it("should allow tsx --help", async () => {
+    it("should block tsx --help", async () => {
       const hook = createBlockTsxHook();
       
       const { context } = await hook.execute({
@@ -77,8 +77,7 @@ describe("block-tsx.ts hook behavior", () => {
         tool_input: { command: "tsx --help" }
       });
       
-      context.assertSuccess({});
-      strictEqual(context.failCalls.length, 0, "Should allow --help");
+      ok(context.failCalls.length > 0, "Should block tsx --help due to strict policy");
     });
   });
   
@@ -106,7 +105,7 @@ describe("block-tsx.ts hook behavior", () => {
       ok(context.failCalls.length > 0, "Should block npx ts-node");
     });
     
-    it("should allow ts-node --version", async () => {
+    it("should block ts-node --version", async () => {
       const hook = createBlockTsxHook();
       
       const { context } = await hook.execute({
@@ -114,7 +113,7 @@ describe("block-tsx.ts hook behavior", () => {
         tool_input: { command: "ts-node --version" }
       });
       
-      context.assertSuccess({});
+      ok(context.failCalls.length > 0, "Should block ts-node --version");
     });
   });
   
@@ -326,58 +325,41 @@ describe("block-tsx.ts hook behavior", () => {
   });
 });
 
-// Helper function to create block-tsx hook
+// Use the actual implementation from block-tsx.ts
 function createBlockTsxHook() {
-  return defineHook({
-    trigger: { PreToolUse: true },
-    run: (context) => {
-      const { tool_name, tool_input } = context.input;
-      
-      // Only check Bash commands
-      if (tool_name !== "Bash") {
-        return context.success({});
-      }
-      
-      const command = tool_input?.command || "";
-      
-      // Check for blocked patterns
-      const blockingPatterns = [
-        {
-          pattern: /\btsx\s+(?!--version|--help)/,
-          reason: "tsx is not allowed",
-          suggestion: "Use bun, deno, or node instead"
+  // Wrap the actual implementation to match test interface
+  return {
+    execute: async (input: any) => {
+      const context = {
+        input,
+        successCalls: [] as any[],
+        failCalls: [] as any[],
+        success: function(result: any = {}) {
+          this.successCalls.push(result);
+          return result;
         },
-        {
-          pattern: /\bts-node\s+(?!--version|--help)/,
-          reason: "ts-node is not allowed",
-          suggestion: "Use bun, deno, or node instead"
+        fail: function(result: any = {}) {
+          this.failCalls.push(result);
+          return result;
         },
-        {
-          pattern: /\bnpx\s+tsx\s+(?!--version|--help)/,
-          reason: "npx tsx is not allowed",
-          suggestion: "Use TypeScript-compatible runtime"
+        blockingError: function(message: string) {
+          this.failCalls.push(message);
+          return { error: message };
         },
-        {
-          pattern: /\bnpx\s+ts-node\s+(?!--version|--help)/,
-          reason: "npx ts-node is not allowed",
-          suggestion: "Use TypeScript-compatible runtime"
-        },
-        {
-          pattern: /\b(?:npm|yarn|pnpm)\s+(?:install|i|add)\s+.*\b(?:tsx|ts-node)\b/,
-          reason: "Installing tsx/ts-node is not allowed",
-          suggestion: "Use TypeScript-compatible runtime with built-in support"
+        assertSuccess: function(expected: any = {}) {
+          if (this.failCalls.length > 0) {
+            throw new Error(`Expected success but got failure: ${this.failCalls[0]}`);
+          }
+          if (this.successCalls.length === 0) {
+            throw new Error("Expected success but no success call was made");
+          }
         }
-      ];
+      };
       
-      for (const { pattern, reason, suggestion } of blockingPatterns) {
-        if (pattern.test(command)) {
-          return context.fail(
-            `🚫 ${reason}. ${suggestion}`
-          );
-        }
-      }
+      // Run the actual hook
+      blockTsxHookImpl.run(context);
       
-      return context.success({});
+      return { context };
     }
-  });
+  };
 }

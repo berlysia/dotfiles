@@ -23,6 +23,11 @@ export class MockHookContext {
     return result;
   };
   
+  blockingError = (message: string) => {
+    this.failCalls.push(message);
+    return { error: message };
+  };
+  
   assertSuccess(expectedResult: any = {}) {
     strictEqual(this.successCalls.length, 1, "success() should be called once");
     strictEqual(this.failCalls.length, 0, "fail() should not be called");
