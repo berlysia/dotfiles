@@ -107,7 +107,7 @@ function writeStructuredLog(logEntry: LogEntry): void {
   } catch (error) {
     console.error(`Failed to write structured log: ${error}`);
   }
-});
+}
 
 export default hook;
 

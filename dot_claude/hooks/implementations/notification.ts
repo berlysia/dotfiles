@@ -12,7 +12,6 @@ const hook = defineHook({
   trigger: { 
     Stop: true,
     Notification: true,
-    Error: true 
   },
   run: async (context) => {
     const eventType = context.input.hook_event_name || "Unknown";
@@ -46,13 +45,10 @@ async function handleAudioNotification(eventType: string): Promise<void> {
     case 'Notification':
       await notifyWithContext(eventType as 'Stop' | 'Notification');
       break;
-    case 'Error':
-      await notify("エラーが発生しました", 'notification');
-      break;
     default:
       await notify("Claude Codeイベントが発生しました", 'notification');
   }
-});
+}
 
 export default hook;
 

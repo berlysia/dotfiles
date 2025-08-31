@@ -92,7 +92,7 @@ function validateNodeModulesAccess(filePath: string): NodeModulesValidationResul
     isAllowed: true,
     resolvedPath
   };
-});
+}
 
 export default hook;
 
