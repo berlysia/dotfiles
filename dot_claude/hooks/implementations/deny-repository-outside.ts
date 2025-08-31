@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { homedir } from "node:os";
 import { existsSync, realpathSync } from "node:fs";
 import { execSync } from "node:child_process";
+import { createDenyResponse } from "../lib/context-helpers.ts";
 import "../types/tool-schemas.ts";
 
 /**
@@ -37,16 +38,16 @@ const hook = defineHook({
       for (const filePath of filePaths) {
         const validation = validatePath(filePath, repoRoot);
         if (!validation.isAllowed) {
-          return context.blockingError(
+          return context.json(createDenyResponse(
             `Access denied: ${validation.reason}\nPath: ${validation.resolvedPath || filePath}\nRepository: ${repoRoot}`
-          );
+          ));
         }
       }
 
       return context.success({});
 
     } catch (error) {
-      return context.blockingError(`Error in repository access check: ${error}`);
+      return context.json(createDenyResponse(`Error in repository access check: ${error}`));
     }
   }
 });

@@ -3,7 +3,7 @@
  * TypeScript conversion of pattern-matcher.sh
  */
 
-import type { ToolInput } from "../types/hooks-types.js";
+import type { ToolInput } from "../types/hooks-types.ts";
 
 /**
  * Result of child command extraction

@@ -6,6 +6,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
+import { createAskResponse, createDenyResponse } from "../lib/context-helpers.ts";
 import "../types/tool-schemas.ts";
 
 /**
@@ -34,7 +35,7 @@ const hook = defineHook({
         if (bashResult.earlyExit) {
           const [exitType, exitReason] = bashResult.earlyExit.split("|", 2);
           if (exitType === "ask") {
-            return context.blockingError(exitReason || "Manual review required");
+            return context.json(createAskResponse(exitReason || "Manual review required"));
           }
         }
 
@@ -44,9 +45,9 @@ const hook = defineHook({
         logDecision(tool_name, tool_input, decision.decision, decision.reason);
 
         if (decision.decision === "deny") {
-          return context.blockingError(decision.reason);
+          return context.json(createDenyResponse(decision.reason));
         } else if (decision.decision === "ask") {
-          return context.blockingError(decision.reason);
+          return context.json(createAskResponse(decision.reason));
         }
 
         // Allow by default
@@ -61,9 +62,9 @@ const hook = defineHook({
         logDecision(tool_name, tool_input, decision.decision, decision.reason);
 
         if (decision.decision === "deny") {
-          return context.blockingError(decision.reason);
+          return context.json(createDenyResponse(decision.reason));
         } else if (decision.decision === "ask") {
-          return context.blockingError(decision.reason);
+          return context.json(createAskResponse(decision.reason));
         }
 
         // Allow by default
@@ -71,7 +72,7 @@ const hook = defineHook({
       }
 
     } catch (error) {
-      return context.blockingError(`Error in auto-approve: ${error}`);
+      return context.json(createDenyResponse(`Error in auto-approve: ${error}`));
     }
   }
 });
@@ -425,7 +426,7 @@ function logDecision(tool_name: string, tool_input: any, decision: string, reaso
   } catch {
     // Ignore logging errors
   }
-});
+}
 
 export default hook;
 

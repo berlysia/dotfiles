@@ -1,6 +1,7 @@
 #!/usr/bin/env -S bun run --silent
 
 import { defineHook } from "cc-hooks-ts";
+import { createDenyResponse } from "../lib/context-helpers.ts";
 import { extract, toMarkdown } from "@mizchi/readability";
 import "../types/tool-schemas.ts";
 
@@ -28,7 +29,7 @@ const hook = defineHook({
       // Check for GitHub access
       const githubCheck = checkGitHubAccess(url, tool_name);
       if (githubCheck.shouldBlock) {
-        return context.blockingError(githubCheck.message || "Access blocked");
+        return context.json(createDenyResponse(githubCheck.message || "Access blocked"));
       }
 
       // For HTTP/HTTPS URLs, use readability to get markdown content
@@ -45,7 +46,7 @@ const hook = defineHook({
       return context.success({});
 
     } catch (error) {
-      return context.blockingError(`Error in web fetch guardian: ${error}`);
+      return context.json(createDenyResponse(`Error in web fetch guardian: ${error}`));
     }
   }
 });

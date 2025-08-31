@@ -3,7 +3,7 @@
  * TypeScript conversion of dangerous-commands.sh
  */
 
-import type { DangerousCommandResult } from "../types/hooks-types.js";
+import type { DangerousCommandResult } from "../types/hooks-types.ts";
 
 /**
  * Check for dangerous git push commands

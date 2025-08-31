@@ -7,7 +7,7 @@ import type {
   HookOutput,
   PermissionDecision,
   CommandAnalysisResult,
-} from "../types/hooks-types.js";
+} from "../types/hooks-types.ts";
 
 /**
  * Create hook output JSON with decision
