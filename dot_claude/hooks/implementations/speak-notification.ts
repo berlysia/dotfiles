@@ -382,11 +382,10 @@ class VoiceNotification {
 const hook = defineHook({
   trigger: {
     Notification: true,
-    Stop: true,
-    Error: true
+    Stop: true
   },
   run: async (context) => {
-    const eventType = context.input.hook_event_name as 'Notification' | 'Stop' | 'Error';
+    const eventType = context.input.hook_event_name as 'Notification' | 'Stop';
     
     try {
       const notification = new VoiceNotification();
@@ -397,9 +396,6 @@ const hook = defineHook({
           break;
         case 'Stop':
           await notification.handleStop();
-          break;
-        case 'Error':
-          await notification.handleError();
           break;
         default:
           // Fallback for unknown event types
