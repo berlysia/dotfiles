@@ -8,12 +8,30 @@
  */
 
 // Re-export types from cc-hooks-ts for convenience
-import type { ExtractAllHookInputsForEvent, ExtractSpecificHookInputForEvent } from "cc-hooks-ts";
+import type { ExtractAllHookInputsForEvent, ExtractSpecificHookInputForEvent, ToolSchema } from "cc-hooks-ts";
 export type { ExtractAllHookInputsForEvent, ExtractSpecificHookInputForEvent };
 
 // Type aliases for commonly used cc-hooks-ts types
 export type PermissionDecision = "allow" | "deny" | "ask";
+export type BuiltinToolName = ExtractAllHookInputsForEvent<"PreToolUse">["tool_name"];
+export type MCPToolName = `mcp__${string}__${string}`;
+export type ToolName = BuiltinToolName | MCPToolName;
 export type ToolInput = Record<string, unknown>;
+
+export type PreToolUseHookInput = {
+  [K in keyof ToolSchema]: {
+    tool_name: K;
+    tool_input: ToolSchema[K]["input"];
+  }
+};
+
+export type PostToolUseHookInput = {
+  [K in keyof ToolSchema]: {
+    tool_name: K;
+    tool_input: ToolSchema[K]["input"];
+    tool_response: ToolSchema[K]["response"];
+  }
+};
 
 // Define PreToolUseHookOutput locally since it's not exported from cc-hooks-ts
 export interface PreToolUseHookOutput {

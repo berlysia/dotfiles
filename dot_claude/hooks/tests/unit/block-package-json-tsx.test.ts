@@ -5,7 +5,8 @@ import { strictEqual, deepStrictEqual, ok } from "node:assert";
 import { 
   defineHook, 
   ConsoleCapture,
-  EnvironmentHelper 
+  EnvironmentHelper,
+  createPreToolUseContext
 } from "./test-helpers.ts";
 
 describe("block-package-json-tsx.ts hook behavior", () => {
@@ -43,13 +44,11 @@ describe("block-package-json-tsx.ts hook behavior", () => {
         }
       };
       
-      const { context } = await hook.execute({
-        tool_name: "Write",
-        tool_input: {
-          file_path: "/project/package.json",
-          content: JSON.stringify(packageJson, null, 2)
-        }
+      const context = createPreToolUseContext("Write", {
+        file_path: "/project/package.json",
+        content: JSON.stringify(packageJson, null, 2)
       });
+      const result = await hook.execute(context.input);
       
       ok(context.failCalls.length > 0, "Should block tsx command");
       ok(context.failCalls[0].includes("tsx") || context.failCalls[0].includes("TypeScript"));
@@ -64,14 +63,12 @@ describe("block-package-json-tsx.ts hook behavior", () => {
         }
       };
       
-      const { context } = await hook.execute({
-        tool_name: "Edit",
-        tool_input: {
-          file_path: "package.json",
-          old_string: '"test": "node test.js"',
-          new_string: JSON.stringify(packageJson)
-        }
+      const context = createPreToolUseContext("Edit", {
+        file_path: "package.json",
+        old_string: '"test": "node test.js"',
+        new_string: JSON.stringify(packageJson)
       });
+      const result = await hook.execute(context.input);
       
       ok(context.failCalls.length > 0, "Should block ts-node");
     });
@@ -85,13 +82,11 @@ describe("block-package-json-tsx.ts hook behavior", () => {
         }
       };
       
-      const { context } = await hook.execute({
-        tool_name: "Write",
-        tool_input: {
-          file_path: "package.json",
-          content: JSON.stringify(packageJson, null, 2)
-        }
+      const context = createPreToolUseContext("Write", {
+        file_path: "package.json",
+        content: JSON.stringify(packageJson, null, 2)
       });
+      const result = await hook.execute(context.input);
       
       ok(context.failCalls.length > 0, "Should block tsx in compound command");
     });
@@ -105,13 +100,11 @@ describe("block-package-json-tsx.ts hook behavior", () => {
         }
       };
       
-      const { context } = await hook.execute({
-        tool_name: "Write",
-        tool_input: {
-          file_path: "package.json",
-          content: JSON.stringify(packageJson)
-        }
+      const context = createPreToolUseContext("Write", {
+        file_path: "package.json",
+        content: JSON.stringify(packageJson)
       });
+      const result = await hook.execute(context.input);
       
       ok(context.failCalls.length > 0, "Should block loader pattern");
     });
@@ -125,13 +118,11 @@ describe("block-package-json-tsx.ts hook behavior", () => {
         }
       };
       
-      const { context } = await hook.execute({
-        tool_name: "Write",
-        tool_input: {
-          file_path: "package.json",
-          content: JSON.stringify(packageJson)
-        }
+      const context = createPreToolUseContext("Write", {
+        file_path: "package.json",
+        content: JSON.stringify(packageJson)
       });
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
       strictEqual(context.failCalls.length, 0, "Should allow .tsx file extension");
@@ -146,13 +137,11 @@ describe("block-package-json-tsx.ts hook behavior", () => {
         }
       };
       
-      const { context } = await hook.execute({
-        tool_name: "Write",
-        tool_input: {
-          file_path: "package.json",
-          content: JSON.stringify(packageJson)
-        }
+      const context = createPreToolUseContext("Write", {
+        file_path: "package.json",
+        content: JSON.stringify(packageJson)
       });
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
       strictEqual(context.failCalls.length, 0, "Should allow --ext tsx option");
@@ -169,13 +158,11 @@ describe("block-package-json-tsx.ts hook behavior", () => {
         }
       };
       
-      const { context } = await hook.execute({
-        tool_name: "Write",
-        tool_input: {
-          file_path: "package.json",
-          content: JSON.stringify(packageJson)
-        }
+      const context = createPreToolUseContext("Write", {
+        file_path: "package.json",
+        content: JSON.stringify(packageJson)
       });
+      const result = await hook.execute(context.input);
       
       ok(context.failCalls.length > 0, "Should block tsx in dependencies");
     });
@@ -189,13 +176,11 @@ describe("block-package-json-tsx.ts hook behavior", () => {
         }
       };
       
-      const { context } = await hook.execute({
-        tool_name: "Write",
-        tool_input: {
-          file_path: "package.json",
-          content: JSON.stringify(packageJson)
-        }
+      const context = createPreToolUseContext("Write", {
+        file_path: "package.json",
+        content: JSON.stringify(packageJson)
       });
+      const result = await hook.execute(context.input);
       
       ok(context.failCalls.length > 0, "Should block ts-node in devDependencies");
     });
@@ -209,13 +194,11 @@ describe("block-package-json-tsx.ts hook behavior", () => {
         }
       };
       
-      const { context } = await hook.execute({
-        tool_name: "Write",
-        tool_input: {
-          file_path: "package.json",
-          content: JSON.stringify(packageJson)
-        }
+      const context = createPreToolUseContext("Write", {
+        file_path: "package.json",
+        content: JSON.stringify(packageJson)
       });
+      const result = await hook.execute(context.input);
       
       ok(context.failCalls.length > 0, "Should block @swc-node/register");
     });
@@ -234,13 +217,11 @@ describe("block-package-json-tsx.ts hook behavior", () => {
         }
       };
       
-      const { context } = await hook.execute({
-        tool_name: "Write",
-        tool_input: {
-          file_path: "package.json",
-          content: JSON.stringify(packageJson)
-        }
+      const context = createPreToolUseContext("Write", {
+        file_path: "package.json",
+        content: JSON.stringify(packageJson)
       });
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
     });
@@ -250,13 +231,11 @@ describe("block-package-json-tsx.ts hook behavior", () => {
     it("should only check package.json files", async () => {
       const hook = createBlockPackageJsonTsxHook();
       
-      const { context } = await hook.execute({
-        tool_name: "Write",
-        tool_input: {
-          file_path: "config.json",
-          content: '{"scripts": {"dev": "tsx index.ts"}}'
-        }
+      const context = createPreToolUseContext("Write", {
+        file_path: "config.json",
+        content: '{"scripts": {"dev": "tsx index.ts"}}'
       });
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
       strictEqual(context.failCalls.length, 0, "Should ignore non-package.json files");
@@ -271,13 +250,11 @@ describe("block-package-json-tsx.ts hook behavior", () => {
         }
       };
       
-      const { context } = await hook.execute({
-        tool_name: "Write",
-        tool_input: {
-          file_path: "packages/backend/package.json",
-          content: JSON.stringify(packageJson)
-        }
+      const context = createPreToolUseContext("Write", {
+        file_path: "packages/backend/package.json",
+        content: JSON.stringify(packageJson)
       });
+      const result = await hook.execute(context.input);
       
       ok(context.failCalls.length > 0, "Should check nested package.json");
     });
@@ -287,13 +264,11 @@ describe("block-package-json-tsx.ts hook behavior", () => {
     it("should check Write tool", async () => {
       const hook = createBlockPackageJsonTsxHook();
       
-      const { context } = await hook.execute({
-        tool_name: "Write",
-        tool_input: {
-          file_path: "package.json",
-          content: '{"scripts":{"dev":"tsx index.ts"}}'
-        }
+      const context = createPreToolUseContext("Write", {
+        file_path: "package.json",
+        content: '{"scripts":{"dev":"tsx index.ts"}}'
       });
+      const result = await hook.execute(context.input);
       
       ok(context.failCalls.length > 0);
     });
@@ -301,14 +276,12 @@ describe("block-package-json-tsx.ts hook behavior", () => {
     it("should check Edit tool", async () => {
       const hook = createBlockPackageJsonTsxHook();
       
-      const { context } = await hook.execute({
-        tool_name: "Edit",
-        tool_input: {
-          file_path: "package.json",
-          old_string: '"dev": "node index.js"',
-          new_string: '"dev": "tsx index.ts"'
-        }
+      const context = createPreToolUseContext("Edit", {
+        file_path: "package.json",
+        old_string: '"dev": "node index.js"',
+        new_string: '"dev": "tsx index.ts"'
       });
+      const result = await hook.execute(context.input);
       
       ok(context.failCalls.length > 0);
     });
@@ -316,18 +289,16 @@ describe("block-package-json-tsx.ts hook behavior", () => {
     it("should check MultiEdit tool", async () => {
       const hook = createBlockPackageJsonTsxHook();
       
-      const { context } = await hook.execute({
-        tool_name: "MultiEdit",
-        tool_input: {
-          file_path: "package.json",
-          edits: [
-            {
-              old_string: '"test": "jest"',
-              new_string: '"test": "tsx test.ts"'
-            }
-          ]
-        }
+      const context = createPreToolUseContext("MultiEdit", {
+        file_path: "package.json",
+        edits: [
+          {
+            old_string: '"test": "jest"',
+            new_string: '"test": "tsx test.ts"'
+          }
+        ]
       });
+      const result = await hook.execute(context.input);
       
       ok(context.failCalls.length > 0);
     });
@@ -335,12 +306,10 @@ describe("block-package-json-tsx.ts hook behavior", () => {
     it("should ignore Read tool", async () => {
       const hook = createBlockPackageJsonTsxHook();
       
-      const { context } = await hook.execute({
-        tool_name: "Read",
-        tool_input: {
-          file_path: "package.json"
-        }
+      const context = createPreToolUseContext("Read", {
+        file_path: "package.json"
       });
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
     });
@@ -350,13 +319,11 @@ describe("block-package-json-tsx.ts hook behavior", () => {
     it("should handle invalid JSON gracefully", async () => {
       const hook = createBlockPackageJsonTsxHook();
       
-      const { context } = await hook.execute({
-        tool_name: "Write",
-        tool_input: {
-          file_path: "package.json",
-          content: "not valid json { tsx"
-        }
+      const context = createPreToolUseContext("Write", {
+        file_path: "package.json",
+        content: "not valid json { tsx"
       });
+      const result = await hook.execute(context.input);
       
       // Should still check for tsx patterns even in invalid JSON
       ok(context.failCalls.length > 0 || context.successCalls.length > 0);
@@ -365,10 +332,8 @@ describe("block-package-json-tsx.ts hook behavior", () => {
     it("should handle missing tool_input", async () => {
       const hook = createBlockPackageJsonTsxHook();
       
-      const { context } = await hook.execute({
-        tool_name: "Write",
-        tool_input: null
-      });
+      const context = createPreToolUseContext("Write", null);
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
     });
@@ -376,12 +341,10 @@ describe("block-package-json-tsx.ts hook behavior", () => {
     it("should handle missing file_path", async () => {
       const hook = createBlockPackageJsonTsxHook();
       
-      const { context } = await hook.execute({
-        tool_name: "Write",
-        tool_input: {
-          content: '{"scripts":{"dev":"tsx"}}'
-        }
+      const context = createPreToolUseContext("Write", {
+        content: '{"scripts":{"dev":"tsx"}}'
       });
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
     });

@@ -7,6 +7,7 @@ import {
   defineHook as originalDefineHook,
   type ExtractAllHookInputsForEvent 
 } from "cc-hooks-ts";
+import type { BuiltinToolName } from "../../types/project-types.ts";
 
 // Extract types from defineHook function
 type HookDefinition = Parameters<typeof originalDefineHook>[0];
@@ -245,3 +246,69 @@ export class EnvironmentHelper {
     this.originalEnv = {};
   }
 }
+
+/**
+ * Helper functions for creating properly typed test contexts
+ */
+export const createPreToolUseContext = (tool_name: BuiltinToolName, tool_input: any) => {
+  return new MockHookContext<{ PreToolUse: true }>({
+    hook_event_name: "PreToolUse",
+    cwd: "/test",
+    session_id: "test-session",
+    transcript_path: "/test/transcript",
+    tool_name,
+    tool_input
+  });
+};
+
+export const createPostToolUseContext = <Name extends BuiltinToolName>(tool_name: Name, tool_input: any, tool_response: any = {}) => {
+  return new MockHookContext<{ PostToolUse: true }>({
+    hook_event_name: "PostToolUse",
+    cwd: "/test",
+    session_id: "test-session", 
+    transcript_path: "/test/transcript",
+    tool_name,
+    tool_input,
+    tool_response
+  });
+};
+
+export const createNotificationContext = (message?: string) => {
+  return new MockHookContext<{ Notification: true }>({
+    hook_event_name: "Notification",
+    cwd: "/test",
+    session_id: "test-session",
+    transcript_path: "/test/transcript",
+    message
+  });
+};
+
+export const createStopContext = (stop_hook_active?: boolean) => {
+  return new MockHookContext<{ Stop: true }>({
+    hook_event_name: "Stop",
+    cwd: "/test",
+    session_id: "test-session",
+    transcript_path: "/test/transcript",
+    stop_hook_active
+  });
+};
+
+export const createSessionStartContext = (source: string) => {
+  return new MockHookContext<{ SessionStart: true }>({
+    hook_event_name: "SessionStart",
+    cwd: "/test",
+    session_id: "test-session",
+    transcript_path: "/test/transcript",
+    source
+  });
+};
+
+export const createUserPromptSubmitContext = (prompt: string) => {
+  return new MockHookContext<{ UserPromptSubmit: true }>({
+    hook_event_name: "UserPromptSubmit",
+    cwd: "/test", 
+    session_id: "test-session",
+    transcript_path: "/test/transcript",
+    prompt
+  });
+};

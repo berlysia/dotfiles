@@ -6,7 +6,8 @@ import {
   defineHook, 
   createFileSystemMock, 
   ConsoleCapture,
-  EnvironmentHelper 
+  EnvironmentHelper,
+  createPreToolUseContext
 } from "./test-helpers.ts";
 
 describe("deny-node-modules.ts hook behavior", () => {
@@ -37,10 +38,10 @@ describe("deny-node-modules.ts hook behavior", () => {
     it("should block Read operations on node_modules files", async () => {
       const hook = createDenyNodeModulesHook();
       
-      const { context } = await hook.execute({
-        tool_name: "Read",
-        tool_input: { file_path: "/project/node_modules/express/index.js" }
+      const context = createPreToolUseContext("Read", {
+        file_path: "/project/node_modules/express/index.js"
       });
+      const result = await hook.execute(context.input);
       
       ok(context.failCalls.length > 0, "Should block read");
       ok(context.failCalls[0].includes("node_modules"));
@@ -49,13 +50,11 @@ describe("deny-node-modules.ts hook behavior", () => {
     it("should block Write operations to node_modules", async () => {
       const hook = createDenyNodeModulesHook();
       
-      const { context } = await hook.execute({
-        tool_name: "Write",
-        tool_input: { 
-          file_path: "/project/node_modules/package/file.js",
-          content: "malicious code"
-        }
+      const context = createPreToolUseContext("Write", {
+        file_path: "/project/node_modules/package/file.js",
+        content: "malicious code"
       });
+      const result = await hook.execute(context.input);
       
       ok(context.failCalls.length > 0, "Should block write");
       ok(context.failCalls[0].includes("node_modules"));
@@ -64,14 +63,12 @@ describe("deny-node-modules.ts hook behavior", () => {
     it("should block Edit operations in node_modules", async () => {
       const hook = createDenyNodeModulesHook();
       
-      const { context } = await hook.execute({
-        tool_name: "Edit",
-        tool_input: {
-          file_path: "./node_modules/lodash/index.js",
-          old_string: "original",
-          new_string: "modified"
-        }
+      const context = createPreToolUseContext("Edit", {
+        file_path: "./node_modules/lodash/index.js",
+        old_string: "original",
+        new_string: "modified"
       });
+      const result = await hook.execute(context.input);
       
       ok(context.failCalls.length > 0, "Should block edit");
     });
@@ -79,13 +76,11 @@ describe("deny-node-modules.ts hook behavior", () => {
     it("should block MultiEdit in node_modules", async () => {
       const hook = createDenyNodeModulesHook();
       
-      const { context } = await hook.execute({
-        tool_name: "MultiEdit",
-        tool_input: {
-          file_path: "node_modules/react/lib/React.js",
-          edits: []
-        }
+      const context = createPreToolUseContext("MultiEdit", {
+        file_path: "node_modules/react/lib/React.js",
+        edits: []
       });
+      const result = await hook.execute(context.input);
       
       ok(context.failCalls.length > 0, "Should block multi-edit");
     });
@@ -93,10 +88,10 @@ describe("deny-node-modules.ts hook behavior", () => {
     it("should block Bash commands operating on node_modules", async () => {
       const hook = createDenyNodeModulesHook();
       
-      const { context } = await hook.execute({
-        tool_name: "Bash",
-        tool_input: { command: "rm -rf node_modules/some-package" }
+      const context = createPreToolUseContext("Bash", {
+        command: "rm -rf node_modules/some-package"
       });
+      const result = await hook.execute(context.input);
       
       ok(context.failCalls.length > 0, "Should block bash command");
       ok(context.failCalls[0].includes("node_modules"));
@@ -105,10 +100,10 @@ describe("deny-node-modules.ts hook behavior", () => {
     it("should block ls commands in node_modules", async () => {
       const hook = createDenyNodeModulesHook();
       
-      const { context } = await hook.execute({
-        tool_name: "Bash",
-        tool_input: { command: "ls node_modules/" }
+      const context = createPreToolUseContext("Bash", {
+        command: "ls node_modules/"
       });
+      const result = await hook.execute(context.input);
       
       ok(context.failCalls.length > 0, "Should block ls in node_modules");
     });
@@ -127,10 +122,10 @@ describe("deny-node-modules.ts hook behavior", () => {
       ];
       
       for (const path of pathVariations) {
-        const { context } = await hook.execute({
-          tool_name: "Read",
-          tool_input: { file_path: path }
+        const context = createPreToolUseContext("Read", {
+          file_path: path
         });
+        const result = await hook.execute(context.input);
         
         ok(context.failCalls.length > 0, `Should block path: ${path}`);
       }
@@ -149,10 +144,10 @@ describe("deny-node-modules.ts hook behavior", () => {
       ];
       
       for (const path of allowedPaths) {
-        const { context } = await hook.execute({
-          tool_name: "Read",
-          tool_input: { file_path: path }
+        const context = createPreToolUseContext("Read", {
+          file_path: path
         });
+        const result = await hook.execute(context.input);
         
         context.assertSuccess({});
         strictEqual(context.failCalls.length, 0, `Should allow path: ${path}`);
@@ -174,10 +169,10 @@ describe("deny-node-modules.ts hook behavior", () => {
       ];
       
       for (const command of blockedCommands) {
-        const { context } = await hook.execute({
-          tool_name: "Bash",
-          tool_input: { command }
+        const context = createPreToolUseContext("Bash", {
+          command
         });
+        const result = await hook.execute(context.input);
         
         ok(context.failCalls.length > 0, `Should block command: ${command}`);
       }
@@ -196,10 +191,10 @@ describe("deny-node-modules.ts hook behavior", () => {
       ];
       
       for (const command of allowedCommands) {
-        const { context } = await hook.execute({
-          tool_name: "Bash",
-          tool_input: { command }
+        const context = createPreToolUseContext("Bash", {
+          command
         });
+        const result = await hook.execute(context.input);
         
         context.assertSuccess({});
         strictEqual(context.failCalls.length, 0, `Should allow command: ${command}`);
@@ -211,10 +206,10 @@ describe("deny-node-modules.ts hook behavior", () => {
     it("should ignore non-file tools", async () => {
       const hook = createDenyNodeModulesHook();
       
-      const { context } = await hook.execute({
-        tool_name: "WebSearch",
-        tool_input: { query: "node_modules documentation" }
+      const context = createPreToolUseContext("WebFetch", {
+        query: "node_modules documentation"
       });
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
     });
@@ -222,10 +217,8 @@ describe("deny-node-modules.ts hook behavior", () => {
     it("should handle missing tool_input gracefully", async () => {
       const hook = createDenyNodeModulesHook();
       
-      const { context } = await hook.execute({
-        tool_name: "Read",
-        tool_input: null
-      });
+      const context = createPreToolUseContext("Read", null);
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
     });
@@ -233,10 +226,8 @@ describe("deny-node-modules.ts hook behavior", () => {
     it("should handle missing file_path gracefully", async () => {
       const hook = createDenyNodeModulesHook();
       
-      const { context } = await hook.execute({
-        tool_name: "Read",
-        tool_input: {}
-      });
+      const context = createPreToolUseContext("Read", {});
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
     });
@@ -246,10 +237,10 @@ describe("deny-node-modules.ts hook behavior", () => {
     it("should provide clear error message for blocked operations", async () => {
       const hook = createDenyNodeModulesHook();
       
-      const { context } = await hook.execute({
-        tool_name: "Read",
-        tool_input: { file_path: "node_modules/package/secret.key" }
+      const context = createPreToolUseContext("Read", {
+        file_path: "node_modules/package/secret.key"
       });
+      const result = await hook.execute(context.input);
       
       ok(context.failCalls.length > 0);
       const errorMsg = context.failCalls[0];
@@ -259,13 +250,11 @@ describe("deny-node-modules.ts hook behavior", () => {
     it("should mention security in error message", async () => {
       const hook = createDenyNodeModulesHook();
       
-      const { context } = await hook.execute({
-        tool_name: "Write",
-        tool_input: {
-          file_path: "node_modules/malicious/payload.js",
-          content: "evil code"
-        }
+      const context = createPreToolUseContext("Write", {
+        file_path: "node_modules/malicious/payload.js",
+        content: "evil code"
       });
+      const result = await hook.execute(context.input);
       
       ok(context.failCalls.length > 0);
       const errorMsg = context.failCalls[0];

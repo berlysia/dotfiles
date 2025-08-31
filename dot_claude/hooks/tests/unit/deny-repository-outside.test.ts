@@ -6,7 +6,8 @@ import {
   defineHook, 
   createFileSystemMock,
   ConsoleCapture,
-  EnvironmentHelper 
+  EnvironmentHelper,
+  createPreToolUseContext
 } from "./test-helpers.ts";
 
 describe("deny-repository-outside.ts hook behavior", () => {
@@ -41,10 +42,10 @@ describe("deny-repository-outside.ts hook behavior", () => {
     it("should block Read access outside repository", async () => {
       const hook = createDenyRepositoryOutsideHook("/home/user/project");
       
-      const { context } = await hook.execute({
-        tool_name: "Read",
-        tool_input: { file_path: "/etc/passwd" }
+      const context = createPreToolUseContext("Read", {
+        file_path: "/etc/passwd"
       });
+      const result = await hook.execute(context.input);
       
       ok(context.failCalls.length > 0, "Should block outside access");
       ok(context.failCalls[0].includes("denied") || context.failCalls[0].includes("outside"));
@@ -53,10 +54,10 @@ describe("deny-repository-outside.ts hook behavior", () => {
     it("should allow Read access within repository", async () => {
       const hook = createDenyRepositoryOutsideHook("/home/user/project");
       
-      const { context } = await hook.execute({
-        tool_name: "Read",
-        tool_input: { file_path: "/home/user/project/src/index.ts" }
+      const context = createPreToolUseContext("Read", {
+        file_path: "/home/user/project/src/index.ts"
       });
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
     });
@@ -64,13 +65,11 @@ describe("deny-repository-outside.ts hook behavior", () => {
     it("should block Write access outside repository", async () => {
       const hook = createDenyRepositoryOutsideHook("/home/user/project");
       
-      const { context } = await hook.execute({
-        tool_name: "Write",
-        tool_input: {
-          file_path: "/tmp/malicious.sh",
-          content: "evil code"
-        }
+      const context = createPreToolUseContext("Write", {
+        file_path: "/tmp/malicious.sh",
+        content: "evil code"
       });
+      const result = await hook.execute(context.input);
       
       ok(context.failCalls.length > 0, "Should block write outside");
     });
@@ -78,13 +77,11 @@ describe("deny-repository-outside.ts hook behavior", () => {
     it("should allow Write access within repository", async () => {
       const hook = createDenyRepositoryOutsideHook("/home/user/project");
       
-      const { context } = await hook.execute({
-        tool_name: "Write",
-        tool_input: {
-          file_path: "/home/user/project/README.md",
-          content: "# Project"
-        }
+      const context = createPreToolUseContext("Write", {
+        file_path: "/home/user/project/README.md",
+        content: "# Project"
       });
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
     });
@@ -92,14 +89,12 @@ describe("deny-repository-outside.ts hook behavior", () => {
     it("should block Edit outside repository", async () => {
       const hook = createDenyRepositoryOutsideHook("/home/user/project");
       
-      const { context } = await hook.execute({
-        tool_name: "Edit",
-        tool_input: {
-          file_path: "/home/user/.bashrc",
-          old_string: "old",
-          new_string: "new"
-        }
+      const context = createPreToolUseContext("Edit", {
+        file_path: "/home/user/.bashrc",
+        old_string: "old",
+        new_string: "new"
       });
+      const result = await hook.execute(context.input);
       
       ok(context.failCalls.length > 0);
     });
@@ -107,13 +102,11 @@ describe("deny-repository-outside.ts hook behavior", () => {
     it("should block MultiEdit outside repository", async () => {
       const hook = createDenyRepositoryOutsideHook("/home/user/project");
       
-      const { context } = await hook.execute({
-        tool_name: "MultiEdit",
-        tool_input: {
-          file_path: "/etc/hosts",
-          edits: []
-        }
+      const context = createPreToolUseContext("MultiEdit", {
+        file_path: "/etc/hosts",
+        edits: []
       });
+      const result = await hook.execute(context.input);
       
       ok(context.failCalls.length > 0);
     });
@@ -123,10 +116,10 @@ describe("deny-repository-outside.ts hook behavior", () => {
     it("should handle relative paths", async () => {
       const hook = createDenyRepositoryOutsideHook("/home/user/project");
       
-      const { context } = await hook.execute({
-        tool_name: "Read",
-        tool_input: { file_path: "./src/index.ts" }
+      const context = createPreToolUseContext("Read", {
+        file_path: "./src/index.ts"
       });
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
     });
@@ -134,10 +127,10 @@ describe("deny-repository-outside.ts hook behavior", () => {
     it("should block parent directory traversal", async () => {
       const hook = createDenyRepositoryOutsideHook("/home/user/project");
       
-      const { context } = await hook.execute({
-        tool_name: "Read",
-        tool_input: { file_path: "../../../etc/passwd" }
+      const context = createPreToolUseContext("Read", {
+        file_path: "../../../etc/passwd"
       });
+      const result = await hook.execute(context.input);
       
       ok(context.failCalls.length > 0, "Should block traversal");
     });
@@ -146,10 +139,10 @@ describe("deny-repository-outside.ts hook behavior", () => {
       const hook = createDenyRepositoryOutsideHook("/home/user/project");
       
       // Simulate a symlink that points outside
-      const { context } = await hook.execute({
-        tool_name: "Read",
-        tool_input: { file_path: "/home/user/project/link-to-outside" }
+      const context = createPreToolUseContext("Read", {
+        file_path: "/home/user/project/link-to-outside"
       });
+      const result = await hook.execute(context.input);
       
       // Should be handled by the implementation
       ok(context.successCalls.length > 0 || context.failCalls.length > 0);
@@ -158,10 +151,10 @@ describe("deny-repository-outside.ts hook behavior", () => {
     it("should handle home directory paths", async () => {
       const hook = createDenyRepositoryOutsideHook("/home/user/project");
       
-      const { context } = await hook.execute({
-        tool_name: "Read",
-        tool_input: { file_path: "~/project/file.ts" }
+      const context = createPreToolUseContext("Read", {
+        file_path: "~/project/file.ts"
       });
+      const result = await hook.execute(context.input);
       
       // Should expand ~ and check
       ok(context.successCalls.length > 0 || context.failCalls.length > 0);
@@ -172,10 +165,10 @@ describe("deny-repository-outside.ts hook behavior", () => {
     it("should block Bash commands accessing outside files", async () => {
       const hook = createDenyRepositoryOutsideHook("/home/user/project");
       
-      const { context } = await hook.execute({
-        tool_name: "Bash",
-        tool_input: { command: "cat /etc/passwd" }
+      const context = createPreToolUseContext("Bash", {
+        command: "cat /etc/passwd"
       });
+      const result = await hook.execute(context.input);
       
       ok(context.failCalls.length > 0, "Should block cat outside");
     });
@@ -183,10 +176,10 @@ describe("deny-repository-outside.ts hook behavior", () => {
     it("should allow Bash commands within repository", async () => {
       const hook = createDenyRepositoryOutsideHook("/home/user/project");
       
-      const { context } = await hook.execute({
-        tool_name: "Bash",
-        tool_input: { command: "ls ./src" }
+      const context = createPreToolUseContext("Bash", {
+        command: "ls ./src"
       });
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
     });
@@ -194,10 +187,10 @@ describe("deny-repository-outside.ts hook behavior", () => {
     it("should block rm commands outside repository", async () => {
       const hook = createDenyRepositoryOutsideHook("/home/user/project");
       
-      const { context } = await hook.execute({
-        tool_name: "Bash",
-        tool_input: { command: "rm -rf /tmp/important" }
+      const context = createPreToolUseContext("Bash", {
+        command: "rm -rf /tmp/important"
       });
+      const result = await hook.execute(context.input);
       
       ok(context.failCalls.length > 0);
     });
@@ -205,10 +198,10 @@ describe("deny-repository-outside.ts hook behavior", () => {
     it("should allow package manager commands", async () => {
       const hook = createDenyRepositoryOutsideHook("/home/user/project");
       
-      const { context } = await hook.execute({
-        tool_name: "Bash",
-        tool_input: { command: "npm install" }
+      const context = createPreToolUseContext("Bash", {
+        command: "npm install"
       });
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
     });
@@ -218,10 +211,10 @@ describe("deny-repository-outside.ts hook behavior", () => {
     it("should allow access to node_modules within repo", async () => {
       const hook = createDenyRepositoryOutsideHook("/home/user/project");
       
-      const { context } = await hook.execute({
-        tool_name: "Read",
-        tool_input: { file_path: "/home/user/project/node_modules/package/index.js" }
+      const context = createPreToolUseContext("Read", {
+        file_path: "/home/user/project/node_modules/package/index.js"
       });
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
     });
@@ -229,10 +222,10 @@ describe("deny-repository-outside.ts hook behavior", () => {
     it("should allow access to .git within repo", async () => {
       const hook = createDenyRepositoryOutsideHook("/home/user/project");
       
-      const { context } = await hook.execute({
-        tool_name: "Read",
-        tool_input: { file_path: "/home/user/project/.git/config" }
+      const context = createPreToolUseContext("Read", {
+        file_path: "/home/user/project/.git/config"
       });
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
     });
@@ -248,10 +241,10 @@ describe("deny-repository-outside.ts hook behavior", () => {
       ];
       
       for (const path of systemPaths) {
-        const { context } = await hook.execute({
-          tool_name: "Read",
-          tool_input: { file_path: path }
+        const context = createPreToolUseContext("Read", {
+          file_path: path
         });
+        const result = await hook.execute(context.input);
         
         ok(context.failCalls.length > 0, `Should block ${path}`);
       }
@@ -262,10 +255,10 @@ describe("deny-repository-outside.ts hook behavior", () => {
     it("should check LS tool", async () => {
       const hook = createDenyRepositoryOutsideHook("/home/user/project");
       
-      const { context } = await hook.execute({
-        tool_name: "LS",
-        tool_input: { path: "/etc" }
+      const context = createPreToolUseContext("LS", {
+        path: "/etc"
       });
+      const result = await hook.execute(context.input);
       
       ok(context.failCalls.length > 0);
     });
@@ -273,13 +266,11 @@ describe("deny-repository-outside.ts hook behavior", () => {
     it("should check Glob tool", async () => {
       const hook = createDenyRepositoryOutsideHook("/home/user/project");
       
-      const { context } = await hook.execute({
-        tool_name: "Glob",
-        tool_input: { 
-          path: "/var/log",
-          pattern: "*.log"
-        }
+      const context = createPreToolUseContext("Glob", {
+        path: "/var/log",
+        pattern: "*.log"
       });
+      const result = await hook.execute(context.input);
       
       ok(context.failCalls.length > 0);
     });
@@ -287,13 +278,11 @@ describe("deny-repository-outside.ts hook behavior", () => {
     it("should check Grep tool", async () => {
       const hook = createDenyRepositoryOutsideHook("/home/user/project");
       
-      const { context } = await hook.execute({
-        tool_name: "Grep",
-        tool_input: {
-          path: "/etc",
-          pattern: "password"
-        }
+      const context = createPreToolUseContext("Grep", {
+        path: "/etc",
+        pattern: "password"
       });
+      const result = await hook.execute(context.input);
       
       ok(context.failCalls.length > 0);
     });
@@ -301,10 +290,10 @@ describe("deny-repository-outside.ts hook behavior", () => {
     it("should ignore non-file tools", async () => {
       const hook = createDenyRepositoryOutsideHook("/home/user/project");
       
-      const { context } = await hook.execute({
-        tool_name: "WebSearch",
-        tool_input: { query: "how to access /etc/passwd" }
+      const context = createPreToolUseContext("WebFetch", {
+        query: "how to access /etc/passwd"
       });
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
     });
@@ -314,10 +303,10 @@ describe("deny-repository-outside.ts hook behavior", () => {
     it("should allow operations when not in a repository", async () => {
       const hook = createDenyRepositoryOutsideHook(undefined);
       
-      const { context } = await hook.execute({
-        tool_name: "Read",
-        tool_input: { file_path: "/tmp/test.txt" }
+      const context = createPreToolUseContext("Read", {
+        file_path: "/tmp/test.txt"
       });
+      const result = await hook.execute(context.input);
       
       context.assertSuccess({});
     });
@@ -327,10 +316,8 @@ describe("deny-repository-outside.ts hook behavior", () => {
     it("should handle missing file_path", async () => {
       const hook = createDenyRepositoryOutsideHook("/home/user/project");
       
-      const { context } = await hook.execute({
-        tool_name: "Read",
-        tool_input: {}
-      });
+      const context = createPreToolUseContext("Read", {});
+      const result = await hook.execute(context.input);
       
       // Should handle gracefully
       ok(context.successCalls.length > 0 || context.failCalls.length > 0);
@@ -339,10 +326,8 @@ describe("deny-repository-outside.ts hook behavior", () => {
     it("should handle null tool_input", async () => {
       const hook = createDenyRepositoryOutsideHook("/home/user/project");
       
-      const { context } = await hook.execute({
-        tool_name: "Write",
-        tool_input: null
-      });
+      const context = createPreToolUseContext("Write", null);
+      const result = await hook.execute(context.input);
       
       ok(context.successCalls.length > 0 || context.failCalls.length > 0);
     });
@@ -350,10 +335,10 @@ describe("deny-repository-outside.ts hook behavior", () => {
     it("should provide clear error messages", async () => {
       const hook = createDenyRepositoryOutsideHook("/home/user/project");
       
-      const { context } = await hook.execute({
-        tool_name: "Read",
-        tool_input: { file_path: "/etc/passwd" }
+      const context = createPreToolUseContext("Read", {
+        file_path: "/etc/passwd"
       });
+      const result = await hook.execute(context.input);
       
       ok(context.failCalls.length > 0);
       const errorMsg = context.failCalls[0];

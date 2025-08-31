@@ -5,6 +5,7 @@ import { strictEqual, deepStrictEqual, ok } from "node:assert";
 import { mkdirSync, rmSync, readFileSync, existsSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { createUserPromptSubmitContext } from "./test-helpers.ts";
 
 describe("user-prompt-logger.ts hook behavior", () => {
   let testDir: string;
@@ -246,19 +247,14 @@ describe("user-prompt-logger.ts hook behavior", () => {
   
   describe("hook context simulation", () => {
     it("should simulate successful user prompt logging", () => {
-      const mockContext = {
-        input: {
-          session_id: "test-session-prompt",
-          hook_event_name: "UserPromptSubmit"
-        },
-        success: (result: any) => result
-      };
+      const mockContext = createUserPromptSubmitContext("Test user prompt");
       
       // Simulate hook behavior
       const logEntry = {
         timestamp: new Date().toISOString(),
         event: "UserPromptSubmit",
         session_id: mockContext.input.session_id,
+        prompt: mockContext.input.prompt,
         user: process.env.USER || "unknown",
         cwd: process.cwd(),
       };
@@ -277,12 +273,7 @@ describe("user-prompt-logger.ts hook behavior", () => {
     });
     
     it("should handle error and still return success", () => {
-      const mockContext = {
-        input: {
-          session_id: "test-session-error"
-        },
-        success: (result: any) => result
-      };
+      const mockContext = createUserPromptSubmitContext("Error test prompt");
       
       // Simulate error handling
       let errorOccurred = false;
