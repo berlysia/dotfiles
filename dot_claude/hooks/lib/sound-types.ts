@@ -170,16 +170,26 @@ export interface AudioNotifierFactory {
 
 // Error types
 export class AudioSystemError extends Error {
-  constructor(message: string, public platform: Platform, public cause?: Error) {
+  public readonly platform: Platform;
+  public readonly cause: Error | undefined;
+  
+  constructor(message: string, platform: Platform, cause?: Error) {
     super(`[${platform}] ${message}`);
     this.name = 'AudioSystemError';
+    this.platform = platform;
+    this.cause = cause;
   }
 }
 
 export class VoiceSynthesisError extends Error {
-  constructor(message: string, public endpoint?: string, public cause?: Error) {
+  public readonly endpoint: string | undefined;
+  public readonly cause: Error | undefined;
+  
+  constructor(message: string, endpoint?: string, cause?: Error) {
     super(`Voice synthesis failed: ${message}`);
     this.name = 'VoiceSynthesisError';
+    this.endpoint = endpoint;
+    this.cause = cause;
   }
 }
 
