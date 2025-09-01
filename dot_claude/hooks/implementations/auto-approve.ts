@@ -15,7 +15,7 @@ import "../types/tool-schemas.ts";
  * Converted from auto-approve-commands.ts using cc-hooks-ts
  */
 const hook = defineHook({
-  trigger: { PreToolUse: true } as const,
+  trigger: { PreToolUse: true },
   run: (context) => {
     const { tool_name, tool_input } = context.input;
 
