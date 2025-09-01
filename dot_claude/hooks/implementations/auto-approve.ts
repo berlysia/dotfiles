@@ -44,7 +44,7 @@ const hook = defineHook({
 
         // Log the decision using centralized logger  
         const command = isBashToolInput(tool_name, tool_input) ? tool_input.command : undefined;
-        logDecision(tool_name, decision.decision as PermissionDecision, decision.reason, context.input.session_id, command, tool_input);
+        logDecision(tool_name, decision.decision, decision.reason, context.input.session_id, command, tool_input);
 
         if (decision.decision === "deny") {
           return context.json(createDenyResponse(decision.reason));
@@ -61,7 +61,7 @@ const hook = defineHook({
         const decision = analyzePatternMatches(otherResult.allowMatches, otherResult.denyMatches);
 
         // Log the decision using centralized logger
-        logDecision(tool_name, decision.decision as PermissionDecision, decision.reason, context.input.session_id, undefined, tool_input);
+        logDecision(tool_name, decision.decision, decision.reason, context.input.session_id, undefined, tool_input);
 
         if (decision.decision === "deny") {
           return context.json(createDenyResponse(decision.reason));
@@ -410,7 +410,7 @@ function checkPattern(pattern: string, tool_name: string, tool_input: any): bool
   }
 }
 
-function analyzeBashCommands(individualResults: string[], denyMatches: string[]): { decision: string; reason: string } {
+function analyzeBashCommands(individualResults: string[], denyMatches: string[]): { decision: PermissionDecision; reason: string } {
   if (denyMatches.length > 0) {
     return {
       decision: "deny",
@@ -441,7 +441,7 @@ function analyzeBashCommands(individualResults: string[], denyMatches: string[])
   };
 }
 
-function analyzePatternMatches(allowMatches: string[], denyMatches: string[]): { decision: string; reason: string } {
+function analyzePatternMatches(allowMatches: string[], denyMatches: string[]): { decision: PermissionDecision; reason: string } {
   if (denyMatches.length > 0) {
     return {
       decision: "deny",
