@@ -355,7 +355,23 @@ function checkCommandPattern(pattern: string, cmd: string): boolean {
   return cmd === cmdPattern;
 }
 
+const NO_PAREN_TOOL_NAMES = [
+  "TodoRead",
+  "TodoWrite",
+  "Task",
+  "BashOutput",
+  "KillBash",
+  "ListMcpResourcesTool",
+  "ReadMcpResourceTool",
+]
+
 function checkPattern(pattern: string, tool_name: string, tool_input: any): boolean {
+  if (NO_PAREN_TOOL_NAMES.includes(tool_name) || tool_name.startsWith("mcp__")) {
+    // For tools without parentheses, match the pattern directly
+    // For MCP tools, match the pattern with the tool name
+    return pattern === tool_name;
+  }
+
   // Check if pattern matches the tool name
   if (!pattern.startsWith(`${tool_name}(`)) {
     return false;
