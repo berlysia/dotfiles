@@ -24,6 +24,7 @@ import "../types/tool-schemas.ts";
  * Converted from auto-approve-commands.ts using cc-hooks-ts
  */
 const hook = defineHook({
+  // Use broad PreToolUse trigger to include unknown/MCP tools as well
   trigger: { PreToolUse: true },
   run: (context) => {
     const { tool_name, tool_input } = context.input;
