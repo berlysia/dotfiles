@@ -245,6 +245,192 @@ describe("auto-approve.ts hook behavior", () => {
     });
   });
   
+  describe("Meta Command Extraction", () => {
+    it("should handle xargs with sh -c", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(git:*)", "Bash(echo:*)", "Bash(wc:*)"]));
+      
+      const hook = createAutoApproveHook();
+      
+      const context = createPreToolUseContext("Bash", { 
+        command: 'git diff --name-only | xargs -I {} sh -c "echo {}; wc -l {}"'
+      });
+      const result = await hook.execute(context.input);
+      
+      // Should allow all extracted commands
+      context.assertSuccess({});
+    });
+    
+    it("should handle timeout with nested bash -c", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(find:*)", "Bash(head:*)"]));
+      
+      const hook = createAutoApproveHook();
+      
+      const context = createPreToolUseContext("Bash", { 
+        command: 'timeout 30 bash -c "find . -name *.ts | head -5"'
+      });
+      const result = await hook.execute(context.input);
+      
+      context.assertSuccess({});
+    });
+    
+    it("should block dangerous commands in meta commands", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(echo:*)"]));
+      
+      const hook = createAutoApproveHook();
+      
+      const context = createPreToolUseContext("Bash", { 
+        command: 'xargs -I {} sh -c "echo {}; rm -rf {}"'
+      });
+      const result = await hook.execute(context.input);
+      
+      // Should block due to rm -rf in nested command
+      ok(context.failCalls.length > 0, "Should block dangerous nested command");
+    });
+    
+    it("should handle deeply nested meta commands", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(echo:*)"]));
+      
+      const hook = createAutoApproveHook();
+      
+      const context = createPreToolUseContext("Bash", { 
+        command: 'timeout 60 bash -c "xargs -I {} sh -c \'echo {}\'"'
+      });
+      const result = await hook.execute(context.input);
+      
+      context.assertSuccess({});
+    });
+  });
+  
+  describe("Control Structure Handling", () => {
+    it("should handle for loops transparently", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(echo:*)", "Bash(wc:*)"]));
+      
+      const hook = createAutoApproveHook();
+      
+      const context = createPreToolUseContext("Bash", { 
+        command: 'for f in *.ts; do echo $f; wc -l $f; done'
+      });
+      const result = await hook.execute(context.input);
+      
+      // Should allow based on inner commands (echo, wc)
+      context.assertSuccess({});
+    });
+    
+    it("should block dangerous commands in for loops", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(echo:*)"]));
+      
+      const hook = createAutoApproveHook();
+      
+      const context = createPreToolUseContext("Bash", { 
+        command: 'for f in *; do echo $f; rm -rf $f; done'
+      });
+      const result = await hook.execute(context.input);
+      
+      // Should block due to rm -rf in loop body
+      ok(context.failCalls.length > 0, "Should block dangerous command in loop");
+    });
+    
+    it("should skip control keywords", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify([]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+      
+      const hook = createAutoApproveHook();
+      
+      // Control keywords should be transparent
+      const keywords = ['for', 'do', 'done', 'if', 'then', 'else', 'fi', 'while'];
+      
+      for (const keyword of keywords) {
+        const context = createPreToolUseContext("Bash", { command: keyword });
+        const result = await hook.execute(context.input);
+        
+        // Should not trigger ask/deny for control keywords
+        context.assertSuccess({});
+      }
+    });
+  });
+  
+  describe("NO_PAREN_TOOL_NAMES Support", () => {
+    it("should handle TodoWrite without parentheses", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["TodoWrite"]));
+      
+      const hook = createAutoApproveHook();
+      
+      const context = createPreToolUseContext("TodoWrite", { 
+        todos: [{ content: "test", status: "pending", activeForm: "testing" }]
+      });
+      const result = await hook.execute(context.input);
+      
+      context.assertSuccess({});
+    });
+    
+    it("should handle Glob without parentheses", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Glob"]));
+      
+      const hook = createAutoApproveHook();
+      
+      const context = createPreToolUseContext("Glob", { pattern: "*.ts" });
+      const result = await hook.execute(context.input);
+      
+      context.assertSuccess({});
+    });
+    
+    it("should handle MCP tools", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["mcp__context7__resolve-library-id"]));
+      
+      const hook = createAutoApproveHook();
+      
+      const context = createPreToolUseContext("mcp__context7__resolve-library-id", { 
+        libraryName: "react"
+      });
+      const result = await hook.execute(context.input);
+      
+      context.assertSuccess({});
+    });
+  });
+  
+  describe("Security Edge Cases", () => {
+    it("should handle quote escaping attacks", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(echo:*)"]));
+      
+      const hook = createAutoApproveHook();
+      
+      const maliciousCmds = [
+        'xargs -I {} sh -c "echo {}; rm -rf /; echo safe"',
+        'bash -c "echo safe && rm -rf / && echo safe"',
+        'xargs -I {} sh -c "echo `rm -rf {}`"'
+      ];
+      
+      for (const cmd of maliciousCmds) {
+        const context = createPreToolUseContext("Bash", { command: cmd });
+        const result = await hook.execute(context.input);
+        
+        // Should block due to dangerous nested commands
+        ok(context.failCalls.length > 0, `Should block malicious command: ${cmd}`);
+      }
+    });
+    
+    it("should handle mixed quotes correctly", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(echo:*)"]));
+      
+      const hook = createAutoApproveHook();
+      
+      const quoteCases = [
+        'xargs -I {} sh -c "echo \'{}\'"',
+        'xargs -I {} sh -c \'echo "{}"\'',
+        'bash -c \'echo "safe content"\''
+      ];
+      
+      for (const cmd of quoteCases) {
+        const context = createPreToolUseContext("Bash", { command: cmd });
+        const result = await hook.execute(context.input);
+        
+        // Should handle quote parsing without errors
+        ok(context.successCalls.length > 0 || context.failCalls.length > 0, 
+           `Should handle quote case: ${cmd}`);
+      }
+    });
+  });
+
   describe("Error handling", () => {
     it("should handle missing tool_name", async () => {
       const hook = createAutoApproveHook();
