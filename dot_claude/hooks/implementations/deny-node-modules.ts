@@ -3,6 +3,8 @@
 import { defineHook } from "cc-hooks-ts";
 import { resolve } from "node:path";
 import { createAskResponse, createDenyResponse } from "../lib/context-helpers.ts";
+import { getCommandFromToolInput } from "../lib/command-parsing.ts";
+import { isWriteInput, isEditInput, isMultiEditInput, isNotebookEditInput } from "../types/project-types.ts";
 
 /**
  * Control access to node_modules directories with 3-stage analysis
@@ -26,7 +28,7 @@ const hook = defineHook({
     try {
       // Special handling for Bash commands with 3-stage analysis
       if (tool_name === "Bash") {
-        const cmd = typeof (tool_input as { command?: unknown }).command === 'string' ? (tool_input as { command: string }).command : "";
+        const cmd = getCommandFromToolInput("Bash", tool_input) || "";
         const bashResult = analyzeBashCommand(cmd);
         
         switch (bashResult.decision) {
@@ -81,24 +83,24 @@ interface BashAnalysisResult {
   operation?: string;
 }
 
-function extractFilePath(tool_name: string, tool_input: any): string | null {
-  switch (tool_name) {
-    case "Write":
-      return tool_input.file_path || null;
-      
-    case "Edit":
-    case "MultiEdit":
-      return tool_input.file_path || null;
-      
-    case "NotebookEdit":
-      return tool_input.notebook_path || null;
-      
-    case "Bash":
-      return extractPathFromBashCommand(tool_input.command || "");
-      
-    default:
-      return null;
+function extractFilePath(tool_name: string, tool_input: unknown): string | null {
+  if (isWriteInput(tool_name, tool_input)) {
+    return tool_input.file_path || null;
   }
+  if (isEditInput(tool_name, tool_input)) {
+    return tool_input.file_path || null;
+  }
+  if (isMultiEditInput(tool_name, tool_input)) {
+    return tool_input.file_path || null;
+  }
+  if (isNotebookEditInput(tool_name, tool_input)) {
+    return tool_input.notebook_path || null;
+  }
+  if (tool_name === "Bash") {
+    const cmd = getCommandFromToolInput("Bash", tool_input) || "";
+    return extractPathFromBashCommand(cmd);
+  }
+  return null;
 }
 
 function validateNodeModulesAccess(filePath: string): NodeModulesValidationResult {
