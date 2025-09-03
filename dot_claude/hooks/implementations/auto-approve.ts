@@ -13,6 +13,7 @@ import {
   checkDangerousCommand,
   checkCommandPattern,
   getFilePathFromToolInput,
+  getCommandFromToolInput,
   NO_PAREN_TOOL_NAMES,
   CONTROL_STRUCTURE_KEYWORDS
 } from "../lib/command-parsing.ts";
@@ -201,12 +202,8 @@ function extractPermissionList(type: "allow" | "deny", settingsFiles: SettingsFi
   return patterns;
 }
 
-function hasCommand(input: unknown): input is { command?: string } {
-  return typeof input === "object" && input !== null && "command" in input;
-}
-
 function processBashTool(tool_input: unknown, denyList: string[], allowList: string[]): BashToolResult {
-  const bashCommand = hasCommand(tool_input) ? (tool_input.command || "") : "";
+  const bashCommand = getCommandFromToolInput("Bash", tool_input) || "";
   const extractedCommands = extractCommandsFromCompound(bashCommand);
 
   const individualResults: string[] = [];

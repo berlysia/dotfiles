@@ -187,3 +187,46 @@ export function isBashToolInput(tool_name: string, tool_input: unknown): tool_in
 export function isFileToolInput(tool_name: string, tool_input: unknown): tool_input is FileToolInput {
   return ["Edit", "MultiEdit", "Write"].includes(tool_name) && typeof tool_input === "object" && tool_input !== null;
 }
+
+// More precise tool-specific input guards (ToolSchema-based)
+export function isWriteInput(
+  tool_name: string,
+  tool_input: unknown
+): tool_input is import("cc-hooks-ts").ToolSchema["Write"]["input"] {
+  return tool_name === "Write" && typeof tool_input === "object" && tool_input !== null && "file_path" in tool_input;
+}
+
+export function isEditInput(
+  tool_name: string,
+  tool_input: unknown
+): tool_input is import("cc-hooks-ts").ToolSchema["Edit"]["input"] {
+  return tool_name === "Edit" && typeof tool_input === "object" && tool_input !== null && "file_path" in tool_input;
+}
+
+export function isMultiEditInput(
+  tool_name: string,
+  tool_input: unknown
+): tool_input is import("cc-hooks-ts").ToolSchema["MultiEdit"]["input"] {
+  return tool_name === "MultiEdit" && typeof tool_input === "object" && tool_input !== null && "file_path" in tool_input;
+}
+
+export function isReadInput(
+  tool_name: string,
+  tool_input: unknown
+): tool_input is import("cc-hooks-ts").ToolSchema["Read"]["input"] {
+  return tool_name === "Read" && typeof tool_input === "object" && tool_input !== null && "file_path" in tool_input;
+}
+
+export function isNotebookEditInput(
+  tool_name: string,
+  tool_input: unknown
+): tool_input is import("cc-hooks-ts").ToolSchema["NotebookEdit"]["input"] {
+  return tool_name === "NotebookEdit" && typeof tool_input === "object" && tool_input !== null && "notebook_path" in tool_input;
+}
+
+export function isGrepInput(
+  tool_name: string,
+  tool_input: unknown
+): tool_input is import("cc-hooks-ts").ToolSchema["Grep"]["input"] {
+  return tool_name === "Grep" && typeof tool_input === "object" && tool_input !== null && "pattern" in tool_input;
+}
