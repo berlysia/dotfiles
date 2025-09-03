@@ -308,10 +308,15 @@ const META_COMMANDS = {
   'sh': [/-c\s+['"](.+?)['"]/, /(.+)/],
   'bash': [/-c\s+['"](.+?)['"]/, /(.+)/],
   'zsh': [/-c\s+['"](.+?)['"]/, /(.+)/],
+  'bun': [/-e\s+['"](.+?)['"]/, /(.+)/], // Handle bun -e "script" patterns
+  'node': [/-e\s+['"](.+?)['"]/, /(.+)/], // Handle node -e "script" patterns
   'xargs': [/sh\s+-c\s+['"](.+?)['"]/, /-I\s+\S+\s+(.+)/, /(.+)/],
   'timeout': [/\d+\s+(.+)/],
   'time': [/(.+)/],
-  'env': [/(?:\w+=\w+\s+)*(.+)/]
+  'env': [/(?:\w+=\w+\s+)*(.+)/],
+  'cat': [/(.+)/], // Handle cat commands in pipelines
+  'head': [/(-\d+\s+)?(.+)/], // Handle head -n file patterns  
+  'tail': [/(-\d+\s+)?(.+)/]  // Handle tail -n file patterns
 };
 
 // Control structure keywords that should be processed transparently
@@ -430,21 +435,22 @@ function checkCommandPattern(pattern: string, cmd: string): boolean {
 
 const NO_PAREN_TOOL_NAMES = [
   "TodoRead",
-  "TodoWrite",
+  "TodoWrite", 
   "Task",
   "BashOutput",
   "KillBash",
   "Glob",
   "ExitPlanMode",
+  "WebSearch",
   "ListMcpResourcesTool",
   "ReadMcpResourceTool",
 ]
 
 function checkPattern(pattern: string, tool_name: string, tool_input: any): boolean {
   if (NO_PAREN_TOOL_NAMES.includes(tool_name) || tool_name.startsWith("mcp__")) {
-    // For tools without parentheses, match the pattern directly
-    // For MCP tools, match the pattern with the tool name
-    return pattern === tool_name;
+    // For tools without parentheses, match the pattern directly or with wildcard
+    // Support both "ToolName" and "ToolName(**)" patterns
+    return pattern === tool_name || pattern === `${tool_name}(**)`;
   }
 
   // Check if pattern matches the tool name
@@ -467,6 +473,9 @@ function checkPattern(pattern: string, tool_name: string, tool_input: any): bool
     filePath = tool_input.file_path;
   } else if (tool_name === "NotebookEdit" || tool_name === "NotebookRead") {
     filePath = tool_input.notebook_path;
+  } else if (tool_name === "Grep") {
+    // Grep can work with optional path parameter or no path (current directory)
+    filePath = tool_input.path || "**"; // Default to ** wildcard if no path
   }
 
   if (!filePath) return false;
@@ -504,9 +513,15 @@ function analyzeBashCommands(individualResults: string[], denyMatches: string[])
   }
 
   if (noMatchCount > 0) {
+    // Extract unmatched commands for detailed logging
+    const unmatchedCommands = individualResults
+      .filter(r => r.startsWith("NO_MATCH:"))
+      .map(r => r.replace(/^NO_MATCH:\s*'([^']+)'.*/, "$1"))
+      .filter(Boolean);
+    
     return {
       decision: "ask",
-      reason: `Some commands did not match allow patterns (${noMatchCount} commands)`
+      reason: `Some commands did not match allow patterns (${noMatchCount} commands): ${unmatchedCommands.join(", ")}`
     };
   }
 
