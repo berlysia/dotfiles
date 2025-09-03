@@ -2,6 +2,7 @@
  * Command parsing utilities for auto-approve hook
  * Shared between implementation and tests
  */
+import type { ToolSchema } from "cc-hooks-ts";
 
 // Meta commands that can execute other commands
 const META_COMMANDS = {
@@ -129,6 +130,12 @@ export function checkCommandPattern(pattern: string, cmd: string): boolean {
 /**
  * Get file path from tool input based on tool type
  */
+// Overloads to support ToolSchema-based inference when tool is known
+export function getFilePathFromToolInput<Name extends keyof ToolSchema>(
+  tool_name: Name,
+  tool_input: ToolSchema[Name]["input"]
+): string | undefined;
+export function getFilePathFromToolInput(tool_name: string, tool_input: unknown): string | undefined;
 export function getFilePathFromToolInput(tool_name: string, tool_input: unknown): string | undefined {
   const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
 
@@ -152,6 +159,19 @@ export function getFilePathFromToolInput(tool_name: string, tool_input: unknown)
     return (('path' in tool_input && typeof tool_input.path === 'string') ? tool_input.path : undefined) || "**";
   }
   return undefined;
+}
+
+// Overloads to get command from tool input (Bash only) with ToolSchema inference
+export function getCommandFromToolInput<Name extends keyof ToolSchema>(
+  tool_name: Name,
+  tool_input: ToolSchema[Name]["input"]
+): string | undefined;
+export function getCommandFromToolInput(tool_name: string, tool_input: unknown): string | undefined;
+export function getCommandFromToolInput(tool_name: string, tool_input: unknown): string | undefined {
+  if (tool_name !== "Bash") return undefined;
+  if (typeof tool_input !== "object" || tool_input === null) return undefined;
+  const cmd = (tool_input as { command?: unknown }).command;
+  return typeof cmd === "string" ? cmd : undefined;
 }
 
 /**
