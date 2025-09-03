@@ -226,6 +226,13 @@ function processBashTool(tool_input: any, denyList: string[], allowList: string[
 }
 
 function processBashCommand(cmd: string, denyList: string[], allowList: string[]): BashCommandResult {
+  const trimmedCmd = cmd.trim();
+  
+  // Skip evaluation for control structure keywords - they are transparent
+  if (CONTROL_KEYWORDS.includes(trimmedCmd)) {
+    return { result: `SKIP: Control structure keyword '${trimmedCmd}'` };
+  }
+  
   // Check for dangerous commands first
   const dangerResult = checkDangerousCommand(cmd);
   if (dangerResult.isDangerous) {
@@ -296,9 +303,75 @@ function processOtherTool(tool_name: string, tool_input: any, denyList: string[]
 }
 
 // Simplified pattern matching functions (core logic from original implementation)
-function extractCommandsFromCompound(command: string): string[] {
-  // Simple split on ; && || for now - can be enhanced
-  return command.split(/[;&|]{1,2}/).map(cmd => cmd.trim()).filter(Boolean);
+// Meta commands that can execute other commands
+const META_COMMANDS = {
+  'sh': [/-c\s+['"](.+?)['"]/, /(.+)/],
+  'bash': [/-c\s+['"](.+?)['"]/, /(.+)/],
+  'zsh': [/-c\s+['"](.+?)['"]/, /(.+)/],
+  'xargs': [/sh\s+-c\s+['"](.+?)['"]/, /-I\s+\S+\s+(.+)/, /(.+)/],
+  'timeout': [/\d+\s+(.+)/],
+  'time': [/(.+)/],
+  'env': [/(?:\w+=\w+\s+)*(.+)/]
+};
+
+// Control structure keywords that should be processed transparently
+const CONTROL_KEYWORDS = ['for', 'do', 'done', 'if', 'then', 'else', 'fi', 'while'];
+
+export function extractCommandsFromCompound(command: string): string[] {
+  const commands: string[] = [];
+  const processed = new Set<string>();
+
+  // Extract commands from meta commands
+  extractMetaCommands(command, commands, processed);
+  
+  // Extract from control structures (for loops, etc.)
+  extractFromControlStructures(command, commands, processed);
+  
+  // Traditional split on ; && ||
+  const basicCommands = command.split(/[;&|]{1,2}/)
+    .map(cmd => cmd.trim())
+    .filter(Boolean)
+    .filter(cmd => !processed.has(cmd))
+    .filter(cmd => !CONTROL_KEYWORDS.includes(cmd)); // Filter out control keywords
+  
+  commands.push(...basicCommands);
+  
+  return [...new Set(commands)]; // Remove duplicates
+}
+
+function extractMetaCommands(command: string, commands: string[], processed: Set<string>) {
+  for (const [metaCmd, patterns] of Object.entries(META_COMMANDS)) {
+    if (command.includes(metaCmd)) {
+      for (const pattern of patterns) {
+        const regex = new RegExp(`${metaCmd}\\s+${pattern.source}`, 'g');
+        let match;
+        while ((match = regex.exec(command)) !== null) {
+          if (match[1]) {
+            processed.add(command);
+            // Recursively extract nested commands
+            const nestedCommands = extractCommandsFromCompound(match[1]);
+            commands.push(...nestedCommands);
+          }
+        }
+      }
+    }
+  }
+}
+
+function extractFromControlStructures(command: string, commands: string[], processed: Set<string>) {
+  // Handle for loops: "for x in ...; do ...; done"
+  const forLoopMatch = command.match(/for\s+\w+\s+in\s+[^;]+;\s*do\s+(.*?);\s*done/s);
+  if (forLoopMatch && forLoopMatch[1]) {
+    processed.add(command);
+    const loopBody = forLoopMatch[1];
+    // Split loop body commands and recursively extract
+    const bodyCommands = loopBody.split(/\s*;\s*/)
+      .map(cmd => cmd.trim())
+      .filter(Boolean)
+      .filter(cmd => !CONTROL_KEYWORDS.includes(cmd));
+    
+    commands.push(...bodyCommands);
+  }
 }
 
 function checkDangerousCommand(cmd: string): { isDangerous: boolean; requiresManualReview: boolean; reason: string } {
@@ -361,6 +434,8 @@ const NO_PAREN_TOOL_NAMES = [
   "Task",
   "BashOutput",
   "KillBash",
+  "Glob",
+  "ExitPlanMode",
   "ListMcpResourcesTool",
   "ReadMcpResourceTool",
 ]
