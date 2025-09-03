@@ -3,17 +3,29 @@
  */
 
 import { strictEqual, deepStrictEqual } from "node:assert";
-import { 
-  defineHook as originalDefineHook,
-  type ExtractAllHookInputsForEvent,
-  type ToolSchema
+import type { 
+  ExtractAllHookInputsForEvent,
+  ToolSchema,
+  HookTrigger,
+  HookContext,
+  HookResponseSuccess,
+  HookResponseJSON,
+  HookResponseNonBlockingError,
+  HookResponseBlockingError,
+  HookResultJSON,
+  ExtractTriggeredHookInput,
+  HookDefinition as CCHookDefinition,
+  HookHandler as CCHookHandler,
 } from "cc-hooks-ts";
 import type { BuiltinToolName, PreToolUseHookInput, PostToolUseHookInput } from "../../types/project-types.ts";
+import { createAskResponse, createDenyResponse, createAllowResponse } from "../../lib/context-helpers.ts";
+
+// Re-export for use in tests
+export { createAskResponse, createDenyResponse, createAllowResponse };
 
 // Extract types from defineHook function
-type HookDefinition = Parameters<typeof originalDefineHook>[0];
-type HookTrigger = HookDefinition['trigger'];
-type HookHandler = HookDefinition['run'];
+type HookDefinition = CCHookDefinition;
+type HookHandler = CCHookHandler<any>;
 
 // Type to extract proper input based on trigger events
 type ExtractHookInput<TTrigger extends HookTrigger> = {
@@ -25,18 +37,18 @@ type ExtractHookInput<TTrigger extends HookTrigger> = {
 /**
  * Mock context object that simulates cc-hooks-ts hook context with proper type safety
  */
-export class MockHookContext<TTrigger extends HookTrigger> {
+export class MockHookContext<TTrigger extends HookTrigger> implements HookContext<TTrigger> {
   public successCalls: any[] = [];
   public failCalls: any[] = [];
   public jsonCalls: any[] = [];
   public nonBlockingErrorCalls: any[] = [];
-  public input: ExtractHookInput<TTrigger>;
+  public input: ExtractTriggeredHookInput<TTrigger>;
 
-  constructor(input: ExtractHookInput<TTrigger>) {
+  constructor(input: ExtractTriggeredHookInput<TTrigger>) {
     this.input = input;
   }
   
-  success = (result: any = {}) => {
+  success = (result: any = {}): HookResponseSuccess => {
     this.successCalls.push(result);
     return result;
   };
@@ -46,17 +58,20 @@ export class MockHookContext<TTrigger extends HookTrigger> {
     return result;
   };
   
-  blockingError = (message: string) => {
+  blockingError = (message: string): HookResponseBlockingError => {
     this.failCalls.push(message);
     return { kind: "blocking-error" as const, payload: message };
   };
   
-  json = (payload: any) => {
-    this.jsonCalls.push(payload);
+  json = (payload: HookResultJSON<TTrigger>): HookResponseJSON<TTrigger> => {
+    // cc-hooks-ts typically wraps outputs as { event, output }
+    type WithOutput = { output: unknown };
+    const stored = (payload as WithOutput).output;
+    this.jsonCalls.push(stored);
     return { kind: "json" as const, payload };
   };
   
-  nonBlockingError = (message: string = "") => {
+  nonBlockingError = (message: string = ""): HookResponseNonBlockingError => {
     this.nonBlockingErrorCalls.push(message);
     return { kind: "non-blocking-error" as const, payload: message };
   };
@@ -113,6 +128,20 @@ export class MockHookContext<TTrigger extends HookTrigger> {
     }
   }
   
+  assertAsk(expectedReason?: string) {
+    strictEqual(this.jsonCalls.length, 1, "json() should be called once for ask response");
+    strictEqual(this.successCalls.length, 0, "success() should not be called");
+    strictEqual(this.failCalls.length, 0, "fail() should not be called");
+    
+    const response = this.jsonCalls[0];
+    strictEqual(response.hookSpecificOutput.hookEventName, "PreToolUse");
+    strictEqual(response.hookSpecificOutput.permissionDecision, "ask");
+    
+    if (expectedReason !== undefined) {
+      strictEqual(response.hookSpecificOutput.permissionDecisionReason, expectedReason);
+    }
+  }
+  
   reset() {
     this.successCalls = [];
     this.failCalls = [];
@@ -136,9 +165,9 @@ export class MockHookDefinition<TTrigger extends HookTrigger> {
     this.run = config.run;
   }
   
-  async execute(input: ExtractHookInput<TTrigger>) {
+  async execute(input: ExtractTriggeredHookInput<TTrigger>) {
     const context = new MockHookContext<TTrigger>(input);
-    const result = await this.run(context as any); // Type assertion still needed for handler compatibility
+    const result = await this.run(context as unknown as HookContext<TTrigger>);
     return { context, result };
   }
 }
@@ -148,7 +177,7 @@ export class MockHookDefinition<TTrigger extends HookTrigger> {
  */
 export function defineHook<TTrigger extends HookTrigger>(config: {
   trigger: TTrigger;
-  run: HookHandler;
+  run: (context: HookContext<TTrigger>) => unknown;
 }): MockHookDefinition<TTrigger> {
   return new MockHookDefinition(config);
 }
@@ -297,6 +326,11 @@ export const createPreToolUseContext = <Name extends keyof ToolSchema>(
   
   return new MockHookContext<{ PreToolUse: true }>(input);
 };
+
+/**
+ * Safely run a hook with a MockHookContext without sprinkling casts in tests.
+ */
+// Note: No run wrapper needed; tests should call hook.run(context) directly.
 
 export const createPostToolUseContext = <Name extends keyof ToolSchema>(
   tool_name: Name, 

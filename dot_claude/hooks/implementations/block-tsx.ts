@@ -2,6 +2,7 @@
 
 import { defineHook } from "cc-hooks-ts";
 import { createDenyResponse } from "../lib/context-helpers.ts";
+import { isBashToolInput } from "../types/project-types.ts";
 
 /**
  * Block tsx/ts-node usage in favor of bun/deno
@@ -17,9 +18,11 @@ const hook = defineHook({
       return context.success({});
     }
 
-    // Type assertion for tool_input with null check
-    const input = tool_input as { command?: string } | null | undefined;
-    const command = input?.command || "";
+    // Safely read command using type guard
+    if (!isBashToolInput(tool_name, tool_input)) {
+      return context.success({});
+    }
+    const command = tool_input.command || "";
 
     try {
       // First, check for find -exec and xargs patterns

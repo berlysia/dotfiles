@@ -110,31 +110,30 @@ const hook = defineHook({
       return context.success({});
     }
 
-    try {
-      // Type assertion for tool_input
-      const input = tool_input as { file_path?: string; content?: string; old_string?: string; new_string?: string; edits?: any[] };
-      
-      // Extract file path
-      const filePath = input.file_path || "";
+  try {
+      // Narrow by discriminant tool_name for proper types
+      let filePath = "";
+      let contentToCheck = "";
+
+      if (tool_name === "Write") {
+        filePath = tool_input.file_path;
+        contentToCheck = tool_input.content || "";
+      } else if (tool_name === "Edit") {
+        filePath = tool_input.file_path;
+        contentToCheck = tool_input.new_string || "";
+      } else if (tool_name === "MultiEdit") {
+        filePath = tool_input.file_path;
+        const edits = tool_input.edits || [];
+        for (const edit of edits) {
+          contentToCheck += (edit.new_string || "") + "\n";
+        }
+      } else {
+        return context.success({});
+      }
       
       // Only check package.json files
       if (!filePath.endsWith("/package.json") && !filePath.endsWith("package.json")) {
         return context.success({});
-      }
-
-      // Get content to check
-      let contentToCheck = "";
-      
-      if (tool_name === "Write") {
-        contentToCheck = input.content || "";
-      } else if (tool_name === "Edit") {
-        contentToCheck = input.new_string || "";
-      } else if (tool_name === "MultiEdit") {
-        // Check all edits
-        const edits = input.edits || [];
-        for (const edit of edits) {
-          contentToCheck += (edit.new_string || "") + "\n";
-        }
       }
 
       // Use precise script value checking logic from legacy implementation

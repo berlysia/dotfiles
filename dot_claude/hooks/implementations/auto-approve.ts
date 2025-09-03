@@ -8,6 +8,14 @@ import { execSync } from "node:child_process";
 import { createAskResponse, createDenyResponse } from "../lib/context-helpers.ts";
 import { logDecision } from "../lib/centralized-logging.ts";
 import { isBashToolInput, type PermissionDecision } from "../types/project-types.ts";
+import { 
+  extractCommandsFromCompound,
+  checkDangerousCommand,
+  checkCommandPattern,
+  getFilePathFromToolInput,
+  NO_PAREN_TOOL_NAMES,
+  CONTROL_STRUCTURE_KEYWORDS
+} from "../lib/command-parsing.ts";
 import "../types/tool-schemas.ts";
 
 /**
@@ -106,10 +114,14 @@ function getPermissionLists(tool_name: string): { allowList: string[]; denyList:
       const denyJson = JSON.parse(process.env.CLAUDE_TEST_DENY || "[]");
 
       const allowList = Array.isArray(allowJson)
-        ? allowJson.filter((pattern: string) => pattern.startsWith(`${tool_name}(`))
+        ? allowJson.filter((pattern: string) =>
+            pattern === tool_name || pattern.startsWith(`${tool_name}(`)
+          )
         : [];
       const denyList = Array.isArray(denyJson)
-        ? denyJson.filter((pattern: string) => pattern.startsWith(`${tool_name}(`))
+        ? denyJson.filter((pattern: string) =>
+            pattern === tool_name || pattern.startsWith(`${tool_name}(`)
+          )
         : [];
 
       return { allowList, denyList };
@@ -189,8 +201,12 @@ function extractPermissionList(type: "allow" | "deny", settingsFiles: SettingsFi
   return patterns;
 }
 
-function processBashTool(tool_input: any, denyList: string[], allowList: string[]): BashToolResult {
-  const bashCommand = tool_input.command || "";
+function hasCommand(input: unknown): input is { command?: string } {
+  return typeof input === "object" && input !== null && "command" in input;
+}
+
+function processBashTool(tool_input: unknown, denyList: string[], allowList: string[]): BashToolResult {
+  const bashCommand = hasCommand(tool_input) ? (tool_input.command || "") : "";
   const extractedCommands = extractCommandsFromCompound(bashCommand);
 
   const individualResults: string[] = [];
@@ -229,7 +245,7 @@ function processBashCommand(cmd: string, denyList: string[], allowList: string[]
   const trimmedCmd = cmd.trim();
   
   // Skip evaluation for control structure keywords - they are transparent
-  if (CONTROL_KEYWORDS.includes(trimmedCmd)) {
+  if (CONTROL_STRUCTURE_KEYWORDS.includes(trimmedCmd)) {
     return { result: `SKIP: Control structure keyword '${trimmedCmd}'` };
   }
   
@@ -278,7 +294,7 @@ function processBashCommand(cmd: string, denyList: string[], allowList: string[]
   }
 }
 
-function processOtherTool(tool_name: string, tool_input: any, denyList: string[], allowList: string[]): OtherToolResult {
+function processOtherTool(tool_name: string, tool_input: unknown, denyList: string[], allowList: string[]): OtherToolResult {
   const denyMatches: string[] = [];
   const allowMatches: string[] = [];
 
@@ -302,101 +318,7 @@ function processOtherTool(tool_name: string, tool_input: any, denyList: string[]
   };
 }
 
-// Simplified pattern matching functions (core logic from original implementation)
-// Meta commands that can execute other commands
-const META_COMMANDS = {
-  'sh': [/-c\s+['"](.+?)['"]/, /(.+)/],
-  'bash': [/-c\s+['"](.+?)['"]/, /(.+)/],
-  'zsh': [/-c\s+['"](.+?)['"]/, /(.+)/],
-  'bun': [/-e\s+['"](.+?)['"]/, /(.+)/], // Handle bun -e "script" patterns
-  'node': [/-e\s+['"](.+?)['"]/, /(.+)/], // Handle node -e "script" patterns
-  'xargs': [/sh\s+-c\s+['"](.+?)['"]/, /-I\s+\S+\s+(.+)/, /(.+)/],
-  'timeout': [/\d+\s+(.+)/],
-  'time': [/(.+)/],
-  'env': [/(?:\w+=\w+\s+)*(.+)/],
-  'cat': [/(.+)/], // Handle cat commands in pipelines
-  'head': [/(-\d+\s+)?(.+)/], // Handle head -n file patterns  
-  'tail': [/(-\d+\s+)?(.+)/]  // Handle tail -n file patterns
-};
-
-// Control structure keywords that should be processed transparently
-const CONTROL_KEYWORDS = ['for', 'do', 'done', 'if', 'then', 'else', 'fi', 'while'];
-
-export function extractCommandsFromCompound(command: string): string[] {
-  const commands: string[] = [];
-  const processed = new Set<string>();
-
-  // Extract commands from meta commands
-  extractMetaCommands(command, commands, processed);
-  
-  // Extract from control structures (for loops, etc.)
-  extractFromControlStructures(command, commands, processed);
-  
-  // Traditional split on ; && ||
-  const basicCommands = command.split(/[;&|]{1,2}/)
-    .map(cmd => cmd.trim())
-    .filter(Boolean)
-    .filter(cmd => !processed.has(cmd))
-    .filter(cmd => !CONTROL_KEYWORDS.includes(cmd)); // Filter out control keywords
-  
-  commands.push(...basicCommands);
-  
-  return [...new Set(commands)]; // Remove duplicates
-}
-
-function extractMetaCommands(command: string, commands: string[], processed: Set<string>) {
-  for (const [metaCmd, patterns] of Object.entries(META_COMMANDS)) {
-    if (command.includes(metaCmd)) {
-      for (const pattern of patterns) {
-        const regex = new RegExp(`${metaCmd}\\s+${pattern.source}`, 'g');
-        let match;
-        while ((match = regex.exec(command)) !== null) {
-          if (match[1]) {
-            processed.add(command);
-            // Recursively extract nested commands
-            const nestedCommands = extractCommandsFromCompound(match[1]);
-            commands.push(...nestedCommands);
-          }
-        }
-      }
-    }
-  }
-}
-
-function extractFromControlStructures(command: string, commands: string[], processed: Set<string>) {
-  // Handle for loops: "for x in ...; do ...; done"
-  const forLoopMatch = command.match(/for\s+\w+\s+in\s+[^;]+;\s*do\s+(.*?);\s*done/s);
-  if (forLoopMatch && forLoopMatch[1]) {
-    processed.add(command);
-    const loopBody = forLoopMatch[1];
-    // Split loop body commands and recursively extract
-    const bodyCommands = loopBody.split(/\s*;\s*/)
-      .map(cmd => cmd.trim())
-      .filter(Boolean)
-      .filter(cmd => !CONTROL_KEYWORDS.includes(cmd));
-    
-    commands.push(...bodyCommands);
-  }
-}
-
-function checkDangerousCommand(cmd: string): { isDangerous: boolean; requiresManualReview: boolean; reason: string } {
-  const dangerousPatterns = [
-    { pattern: /rm\s+-rf\s+\//, reason: "Dangerous system deletion", requiresReview: false },
-    { pattern: /sudo\s+rm/, reason: "Sudo deletion command", requiresReview: false },
-    { pattern: /dd\s+.*\/dev\//, reason: "Disk operation", requiresReview: false },
-    { pattern: /mkfs/, reason: "Filesystem creation", requiresReview: false },
-    { pattern: /curl.*\|\s*sh/, reason: "Piped shell execution", requiresReview: true },
-    { pattern: /wget.*\|\s*sh/, reason: "Piped shell execution", requiresReview: true },
-  ];
-
-  for (const { pattern, reason, requiresReview } of dangerousPatterns) {
-    if (pattern.test(cmd)) {
-      return { isDangerous: true, requiresManualReview: requiresReview, reason };
-    }
-  }
-
-  return { isDangerous: false, requiresManualReview: false, reason: "" };
-}
+// Pattern matching functions using shared library
 
 function checkIndividualCommandWithMatchedPattern(cmd: string, patterns: string[]): { matches: boolean; matchedPattern?: string } {
   for (const pattern of patterns) {
@@ -416,37 +338,8 @@ function checkIndividualCommandDenyWithPattern(cmd: string, patterns: string[]):
   return { matches: false };
 }
 
-function checkCommandPattern(pattern: string, cmd: string): boolean {
-  // Extract command from Bash(command:*) format
-  const match = pattern.match(/^Bash\(([^)]+)\)$/);
-  if (!match) return false;
 
-  const cmdPattern = match[1];
-  if (!cmdPattern) return false;
-
-  // Simple wildcard matching - can be enhanced
-  if (cmdPattern.endsWith(":*")) {
-    const prefix = cmdPattern.slice(0, -2);
-    return cmd.startsWith(prefix);
-  }
-
-  return cmd === cmdPattern;
-}
-
-const NO_PAREN_TOOL_NAMES = [
-  "TodoRead",
-  "TodoWrite", 
-  "Task",
-  "BashOutput",
-  "KillBash",
-  "Glob",
-  "ExitPlanMode",
-  "WebSearch",
-  "ListMcpResourcesTool",
-  "ReadMcpResourceTool",
-]
-
-function checkPattern(pattern: string, tool_name: string, tool_input: any): boolean {
+function checkPattern(pattern: string, tool_name: string, tool_input: unknown): boolean {
   if (NO_PAREN_TOOL_NAMES.includes(tool_name) || tool_name.startsWith("mcp__")) {
     // For tools without parentheses, match the pattern directly or with wildcard
     // Support both "ToolName" and "ToolName(**)" patterns
@@ -465,18 +358,8 @@ function checkPattern(pattern: string, tool_name: string, tool_input: any): bool
   const pathPattern = match[1];
   if (!pathPattern) return false;
 
-  // Get the file path from tool input based on tool type
-  let filePath: string | undefined;
-  if (tool_name === "Write" || tool_name === "Edit" || tool_name === "MultiEdit") {
-    filePath = tool_input.file_path;
-  } else if (tool_name === "Read") {
-    filePath = tool_input.file_path;
-  } else if (tool_name === "NotebookEdit" || tool_name === "NotebookRead") {
-    filePath = tool_input.notebook_path;
-  } else if (tool_name === "Grep") {
-    // Grep can work with optional path parameter or no path (current directory)
-    filePath = tool_input.path || "**"; // Default to ** wildcard if no path
-  }
+  // Get the file path from tool input using shared library function
+  const filePath = getFilePathFromToolInput(tool_name, tool_input);
 
   if (!filePath) return false;
 

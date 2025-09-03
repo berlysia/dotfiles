@@ -23,6 +23,8 @@
     "@mizchi/readability": "^0.7.7",
     "cc-hooks-ts": "^0.0.6",
     "ccusage": "^16.2.0",
-    "dax-sh": "^0.42.0"
+    "dax-sh": "^0.42.0",
+    "tree-sitter-bash": "^0.25.0",
+    "web-tree-sitter": "^0.25.8"
   }
 }
