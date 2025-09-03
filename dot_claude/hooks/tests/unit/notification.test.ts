@@ -97,7 +97,9 @@ describe("notification.ts hook behavior", () => {
         success: (result: any) => result
       };
       
-      const eventType = (mockContext.input as any).hook_event_name || "Unknown";
+      const eventType = typeof (mockContext.input as { hook_event_name?: unknown }).hook_event_name === 'string'
+        ? (mockContext.input as { hook_event_name: string }).hook_event_name
+        : "Unknown";
       strictEqual(eventType, "Unknown", "Should default to Unknown");
       
       // Verify success response

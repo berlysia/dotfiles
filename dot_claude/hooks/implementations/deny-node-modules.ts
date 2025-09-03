@@ -26,7 +26,8 @@ const hook = defineHook({
     try {
       // Special handling for Bash commands with 3-stage analysis
       if (tool_name === "Bash") {
-        const bashResult = analyzeBashCommand((tool_input as any).command || "");
+        const cmd = typeof (tool_input as { command?: unknown }).command === 'string' ? (tool_input as { command: string }).command : "";
+        const bashResult = analyzeBashCommand(cmd);
         
         switch (bashResult.decision) {
           case 'deny':

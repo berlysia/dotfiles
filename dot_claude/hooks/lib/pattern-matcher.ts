@@ -4,6 +4,8 @@
  */
 
 import type { ToolInput } from "../types/project-types.ts";
+import { isBashToolInput } from "../types/project-types.ts";
+import { getFilePathFromToolInput } from "./command-parsing.ts";
 
 /**
  * Result of child command extraction
@@ -357,8 +359,8 @@ export function checkPattern(pattern: string, toolName: string, toolInput: ToolI
     // Extract the command pattern from Bash(command:*)
     const cmdPattern = pattern.slice(5, -1); // Remove "Bash(" and ")"
     
-    // Get the actual command
-    const actualCommand = (toolInput as { command?: string }).command || "";
+    // Get the actual command using type guard
+    const actualCommand = isBashToolInput(toolName, toolInput) ? (toolInput.command || "") : "";
     
     // Check if command matches the pattern
     if (cmdPattern.includes(":")) {
@@ -395,11 +397,8 @@ export function checkPattern(pattern: string, toolName: string, toolInput: ToolI
     // Extract the path pattern
     const pathPattern = pattern.slice(toolName.length + 1, -1); // Remove "ToolName(" and ")"
     
-    // Get the file path from tool input
-    const filePath = (toolInput.file_path || 
-                     toolInput.path || 
-                     (toolInput as any).pattern ||
-                     "") as string;
+    // Get the file path from tool input using helper
+    const filePath = getFilePathFromToolInput(toolName, toolInput) || "";
     
     // GitIgnore-style pattern matching
     if (pathPattern === "**") {
