@@ -4,6 +4,7 @@ import { defineHook } from "cc-hooks-ts";
 import { resolve } from "node:path";
 import { createAskResponse, createDenyResponse } from "../lib/context-helpers.ts";
 import { getCommandFromToolInput } from "../lib/command-parsing.ts";
+import { extractCommandsFromCompound } from "../lib/bash-parser.ts";
 import { isWriteInput, isEditInput, isMultiEditInput, isNotebookEditInput } from "../types/project-types.ts";
 
 /**
@@ -15,7 +16,7 @@ import { isWriteInput, isEditInput, isMultiEditInput, isNotebookEditInput } from
  */
 const hook = defineHook({
   trigger: { PreToolUse: true },
-  run: (context) => {
+  run: async (context) => {
     const { tool_name, tool_input } = context.input;
 
     // Process destructive file tools and bash commands
@@ -29,7 +30,7 @@ const hook = defineHook({
       // Special handling for Bash commands with 3-stage analysis
       if (tool_name === "Bash") {
         const cmd = getCommandFromToolInput("Bash", tool_input) || "";
-        const bashResult = analyzeBashCommand(cmd);
+        const bashResult = await analyzeBashCommand(cmd);
         
         switch (bashResult.decision) {
           case 'deny':
@@ -132,14 +133,10 @@ function validateNodeModulesAccess(filePath: string): NodeModulesValidationResul
   };
 }
 
-function extractCommandsFromCompound(command: string): string[] {
-  // Split on ; && || for compound commands - enhanced from auto-approve.ts
-  return command.split(/[;&|]{1,2}/).map(cmd => cmd.trim()).filter(Boolean);
-}
 
-function analyzeBashCommand(command: string): BashAnalysisResult {
-  // Split compound commands and analyze each individually
-  const commands = extractCommandsFromCompound(command);
+async function analyzeBashCommand(command: string): Promise<BashAnalysisResult> {
+  // Split compound commands and analyze each individually using bash-parser
+  const commands = await extractCommandsFromCompound(command);
   
   let hasUnknown = false;
   let unknownCmd = '';
