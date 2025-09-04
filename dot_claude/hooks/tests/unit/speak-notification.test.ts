@@ -8,7 +8,8 @@ import {
   ConsoleCapture,
   EnvironmentHelper,
   createStopContext,
-  createNotificationContext
+  createNotificationContext,
+  invokeRun
 } from "./test-helpers.ts";
 
 describe("speak-notification.ts hook behavior", () => {
@@ -55,7 +56,7 @@ describe("speak-notification.ts hook behavior", () => {
       const hook = createSpeakNotificationHook();
       
       const context = createStopContext();
-      const { result } = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       context.assertSuccess({});
       
@@ -73,7 +74,7 @@ describe("speak-notification.ts hook behavior", () => {
       const hook = createSpeakNotificationHook();
       
       const context = createNotificationContext();
-      const { result } = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       context.assertSuccess({});
     });
@@ -82,7 +83,7 @@ describe("speak-notification.ts hook behavior", () => {
       const hook = createSpeakNotificationHook();
       
       const context = createNotificationContext("Test notification message");
-      const { result } = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       context.assertSuccess({});
       
@@ -103,7 +104,7 @@ describe("speak-notification.ts hook behavior", () => {
       const hook = createSpeakNotificationHook();
       
       const context = createStopContext();
-      const { result } = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       context.assertSuccess({});
       
@@ -123,7 +124,7 @@ describe("speak-notification.ts hook behavior", () => {
       const hook = createSpeakNotificationHook();
       
       const context = createNotificationContext();
-      const { result } = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       context.assertSuccess({});
     });
@@ -134,7 +135,7 @@ describe("speak-notification.ts hook behavior", () => {
       const hook = createSpeakNotificationHook();
       
       const context = createStopContext();
-      const { result } = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       context.assertSuccess({});
     });
@@ -145,7 +146,7 @@ describe("speak-notification.ts hook behavior", () => {
       const hook = createSpeakNotificationHook();
       
       const context = createStopContext();
-      const { result } = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       context.assertSuccess({});
       
@@ -160,7 +161,7 @@ describe("speak-notification.ts hook behavior", () => {
       const hook = createSpeakNotificationHook();
       
       const context = createNotificationContext();
-      const { result } = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       context.assertSuccess({});
       
@@ -177,7 +178,7 @@ describe("speak-notification.ts hook behavior", () => {
       const hook = createSpeakNotificationHook();
       
       const context = createStopContext();
-      const { result } = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       context.assertSuccess({});
       
@@ -200,7 +201,7 @@ describe("speak-notification.ts hook behavior", () => {
       const hook = createSpeakNotificationHook();
       
       const context = createStopContext();
-      const { result } = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       context.assertSuccess({});
       
@@ -222,7 +223,7 @@ describe("speak-notification.ts hook behavior", () => {
       const hook = createSpeakNotificationHook();
       
       const context = createStopContext();
-      const { result } = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       context.assertSuccess({});
     });
@@ -233,7 +234,7 @@ describe("speak-notification.ts hook behavior", () => {
       const hook = createSpeakNotificationHook();
       
       const context = createStopContext();
-      const { result } = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       context.assertSuccess({});
     });
@@ -244,7 +245,7 @@ describe("speak-notification.ts hook behavior", () => {
       const hook = createSpeakNotificationHook();
       
       const context = createStopContext();
-      const { result } = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       context.assertSuccess({});
     });
@@ -257,7 +258,7 @@ describe("speak-notification.ts hook behavior", () => {
       const hook = createSpeakNotificationHook();
       
       const context = createStopContext();
-      const { result } = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       // Should not block on synthesis errors
       context.assertSuccess({});
@@ -275,7 +276,7 @@ describe("speak-notification.ts hook behavior", () => {
       const hook = createSpeakNotificationHook();
       
       const context = createStopContext();
-      const { result } = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       context.assertSuccess({});
     });
@@ -284,7 +285,7 @@ describe("speak-notification.ts hook behavior", () => {
       const hook = createSpeakNotificationHook();
       
       const context = createStopContext(); // Using Stop context for unknown event test
-      const { result } = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       context.assertSuccess({});
     });
@@ -298,7 +299,7 @@ describe("speak-notification.ts hook behavior", () => {
       const hook = createSpeakNotificationHook();
       
       const context = createStopContext();
-      const { result } = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       // Should not fail hook
       context.assertSuccess({});
@@ -310,7 +311,7 @@ describe("speak-notification.ts hook behavior", () => {
       const hook = createSpeakNotificationHook();
       
       const context = createStopContext();
-      const { result } = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       context.assertSuccess({});
       
@@ -328,7 +329,7 @@ describe("speak-notification.ts hook behavior", () => {
       const hook = createSpeakNotificationHook();
       
       const context = createNotificationContext();
-      const { result } = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       context.assertSuccess({});
       
@@ -354,6 +355,8 @@ function createSpeakNotificationHook() {
     run: async (context: any) => {
       const eventType = context.input.hook_event_name || "Unknown";
       const sessionId = context.input.session_id || "default";
+      const gitBranch = process.env.GIT_BRANCH;
+      const gitRepo = process.env.GIT_REPO;
       
       // Check if voice is enabled
       if (process.env.CLAUDE_VOICE_ENABLED === "false") {
@@ -364,12 +367,21 @@ function createSpeakNotificationHook() {
         // Mock implementation for testing
         console.log(`Voice notification for ${eventType} event`);
         
+        // Log git context if available (for testing)
+        if (gitBranch || gitRepo) {
+          console.log(`git context: branch=${gitBranch || ''} repo=${gitRepo || ''}`);
+        }
+
         // Simulate session directory creation
         const sessionDir = `/tmp/claude-voice/${sessionId}`;
         console.log(`Creating directory: ${sessionDir}`);
         
         // Simulate prefix sound playback
         console.log("Playing prefix sound");
+        // For notifications, simulate queuing synthesis
+        if (eventType === "Notification") {
+          console.log("queue synthesis");
+        }
         
         // Simulate voice synthesis
         if (process.env.FORCE_SYNTHESIS_ERROR === "true") {

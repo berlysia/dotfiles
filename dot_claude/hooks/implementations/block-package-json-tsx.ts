@@ -2,6 +2,7 @@
 
 import { defineHook } from "cc-hooks-ts";
 import { createDenyResponse } from "../lib/context-helpers.ts";
+import { isWriteInput, isEditInput, isMultiEditInput } from "../types/project-types.ts";
 
 /**
  * Check for tsx/ts-node patterns in script values using precise regex
@@ -61,11 +62,19 @@ function hasTsxUsage(content: string): boolean {
     }
 
     // Check dependencies sections
-    const depSections = ['dependencies', 'devDependencies', 'peerDependencies'];
+    const depSections = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'];
     for (const section of depSections) {
       if (parsed[section]) {
         const deps = Object.keys(parsed[section]);
-        if (deps.includes('tsx') || deps.includes('ts-node') || deps.includes('@types/tsx') || deps.includes('@types/ts-node')) {
+        if (
+          deps.includes('tsx') ||
+          deps.includes('ts-node') ||
+          deps.includes('@types/tsx') ||
+          deps.includes('@types/ts-node') ||
+          deps.includes('@swc-node/register') ||
+          deps.includes('@esbuild-kit/cjs-loader') ||
+          deps.includes('@esbuild-kit/esm-loader')
+        ) {
           return true;
         }
       }
@@ -90,7 +99,7 @@ function hasTsxUsage(content: string): boolean {
     }
 
     // Check dependencies with regex fallback
-    const depPattern = /"(tsx|ts-node|@types\/tsx|@types\/ts-node)"\s*:\s*"[^"]*"/;
+    const depPattern = /"(tsx|ts-node|@types\/tsx|@types\/ts-node|@swc-node\/register|@esbuild-kit\/(?:cjs|esm)-loader)"\s*:\s*"[^"]*"/;
     return depPattern.test(content);
   }
 }
@@ -100,7 +109,11 @@ function hasTsxUsage(content: string): boolean {
  * Enhanced with precise detection logic from legacy implementation
  */
 const hook = defineHook({
-  trigger: { PreToolUse: true },
+  trigger: { PreToolUse: {
+    Write: true,
+    Edit: true,
+    MultiEdit: true,
+  } },
   run: (context) => {
     const { tool_name, tool_input } = context.input;
 
@@ -115,13 +128,13 @@ const hook = defineHook({
       let filePath = "";
       let contentToCheck = "";
 
-      if (tool_name === "Write") {
+      if (isWriteInput(tool_name, tool_input)) {
         filePath = tool_input.file_path;
         contentToCheck = tool_input.content || "";
-      } else if (tool_name === "Edit") {
+      } else if (isEditInput(tool_name, tool_input)) {
         filePath = tool_input.file_path;
         contentToCheck = tool_input.new_string || "";
-      } else if (tool_name === "MultiEdit") {
+      } else if (isMultiEditInput(tool_name, tool_input)) {
         filePath = tool_input.file_path;
         const edits = tool_input.edits || [];
         for (const edit of edits) {
@@ -141,6 +154,26 @@ const hook = defineHook({
         return context.json(createDenyResponse(
           `Use TypeScript-compatible runtime instead of 'tsx' or 'ts-node' in package.json scripts\n\nSuggestion: Replace tsx/ts-node commands with a TypeScript-compatible runtime (e.g., node, deno, bun)\n\nFile: ${filePath}`
         ));
+      }
+
+      // For partial edits (Edit/MultiEdit), snippet detection
+      const snippet = contentToCheck.trim();
+      if (snippet.length > 0) {
+        // If snippet contains a quoted value, analyze the value part
+        const quotedValues = Array.from(snippet.matchAll(/"([^"]+)"/g))
+          .map(m => m[1])
+          .filter((s): s is string => typeof s === 'string');
+        const candidates: string[] = quotedValues.length > 0 ? quotedValues : [snippet];
+        if (candidates.some(v => checkScriptValue(v)) || /--[a-zA-Z-]*(loader|require)\s+.*(tsx|ts-node)/.test(snippet)) {
+          return context.json(createDenyResponse(
+            `Detected disallowed TypeScript execution tools in package.json edits.`
+          ));
+        }
+        if (/@swc-node\/register|@esbuild-kit\/(?:cjs|esm)-loader/.test(snippet)) {
+          return context.json(createDenyResponse(
+            `Detected disallowed loader dependencies in package.json edits.`
+          ));
+        }
       }
 
       // Allow if no problematic patterns found

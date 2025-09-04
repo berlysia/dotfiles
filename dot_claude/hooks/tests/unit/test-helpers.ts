@@ -3,20 +3,7 @@
  */
 
 import { strictEqual, deepStrictEqual } from "node:assert";
-import type { 
-  ExtractAllHookInputsForEvent,
-  ToolSchema,
-  HookTrigger,
-  HookContext,
-  HookResponseSuccess,
-  HookResponseJSON,
-  HookResponseNonBlockingError,
-  HookResponseBlockingError,
-  HookResultJSON,
-  ExtractTriggeredHookInput,
-  HookDefinition as CCHookDefinition,
-  HookHandler as CCHookHandler,
-} from "cc-hooks-ts";
+import { defineHook as originalDefineHook, type ExtractAllHookInputsForEvent, type ToolSchema } from "cc-hooks-ts";
 import type { BuiltinToolName, PreToolUseHookInput, PostToolUseHookInput } from "../../types/project-types.ts";
 import { createAskResponse, createDenyResponse, createAllowResponse } from "../../lib/context-helpers.ts";
 
@@ -24,8 +11,9 @@ import { createAskResponse, createDenyResponse, createAllowResponse } from "../.
 export { createAskResponse, createDenyResponse, createAllowResponse };
 
 // Extract types from defineHook function
-type HookDefinition = CCHookDefinition;
-type HookHandler = CCHookHandler<any>;
+type HookDefinition = Parameters<typeof originalDefineHook>[0];
+type HookTrigger = HookDefinition['trigger'];
+type HookHandler = HookDefinition['run'];
 
 // Type to extract proper input based on trigger events
 type ExtractHookInput<TTrigger extends HookTrigger> = {
@@ -34,21 +22,25 @@ type ExtractHookInput<TTrigger extends HookTrigger> = {
     : never
 }[keyof TTrigger];
 
+function hasOutput(x: unknown): x is { output: unknown } {
+  return typeof x === "object" && x !== null && "output" in x;
+}
+
 /**
  * Mock context object that simulates cc-hooks-ts hook context with proper type safety
  */
-export class MockHookContext<TTrigger extends HookTrigger> implements HookContext<TTrigger> {
+export class MockHookContext<TTrigger extends HookTrigger> {
   public successCalls: any[] = [];
   public failCalls: any[] = [];
   public jsonCalls: any[] = [];
   public nonBlockingErrorCalls: any[] = [];
-  public input: ExtractTriggeredHookInput<TTrigger>;
+  public input: ExtractHookInput<TTrigger>;
 
-  constructor(input: ExtractTriggeredHookInput<TTrigger>) {
+  constructor(input: ExtractHookInput<TTrigger>) {
     this.input = input;
   }
   
-  success = (result: any = {}): HookResponseSuccess => {
+  success = (result: any = {}) => {
     this.successCalls.push(result);
     return result;
   };
@@ -58,20 +50,19 @@ export class MockHookContext<TTrigger extends HookTrigger> implements HookContex
     return result;
   };
   
-  blockingError = (message: string): HookResponseBlockingError => {
+  blockingError = (message: string) => {
     this.failCalls.push(message);
     return { kind: "blocking-error" as const, payload: message };
   };
   
-  json = (payload: HookResultJSON<TTrigger>): HookResponseJSON<TTrigger> => {
+  json = <P>(payload: P) => {
     // cc-hooks-ts typically wraps outputs as { event, output }
-    type WithOutput = { output: unknown };
-    const stored = (payload as WithOutput).output;
+    const stored = hasOutput(payload) ? payload.output : (payload as unknown);
     this.jsonCalls.push(stored);
     return { kind: "json" as const, payload };
   };
   
-  nonBlockingError = (message: string = ""): HookResponseNonBlockingError => {
+  nonBlockingError = (message: string = "") => {
     this.nonBlockingErrorCalls.push(message);
     return { kind: "non-blocking-error" as const, payload: message };
   };
@@ -153,21 +144,21 @@ export class MockHookContext<TTrigger extends HookTrigger> implements HookContex
 /**
  * Hook definition mock that captures the hook configuration
  */
-export class MockHookDefinition<TTrigger extends HookTrigger> {
+export class MockHookDefinition<TTrigger extends HookTrigger, R = unknown> {
   public trigger: TTrigger;
-  public run: HookHandler;
+  public run: (ctx: MockHookContext<TTrigger>) => Promise<R> | R;
   
   constructor(config: {
     trigger: TTrigger;
-    run: HookHandler;
+    run: (ctx: MockHookContext<TTrigger>) => Promise<R> | R;
   }) {
     this.trigger = config.trigger;
     this.run = config.run;
   }
   
-  async execute(input: ExtractTriggeredHookInput<TTrigger>) {
+  async execute(input: ExtractHookInput<TTrigger>) {
     const context = new MockHookContext<TTrigger>(input);
-    const result = await this.run(context as unknown as HookContext<TTrigger>);
+    const result = await this.run(context);
     return { context, result };
   }
 }
@@ -175,11 +166,64 @@ export class MockHookDefinition<TTrigger extends HookTrigger> {
 /**
  * Simulates defineHook from cc-hooks-ts
  */
-export function defineHook<TTrigger extends HookTrigger>(config: {
+export function defineHook<TTrigger extends HookTrigger, R = unknown>(config: {
   trigger: TTrigger;
-  run: (context: HookContext<TTrigger>) => unknown;
-}): MockHookDefinition<TTrigger> {
-  return new MockHookDefinition(config);
+  run: (ctx: MockHookContext<TTrigger>) => Promise<R> | R;
+}) {
+  return new MockHookDefinition<TTrigger, R>(config);
+}
+
+/**
+ * Invoke a hook's run function with a context, using the hook's parameter type.
+ * Centralizes the minimal cast to avoid sprinkling `as any` across tests.
+ */
+export async function invokeRun<H extends { run: (...args: any[]) => any }>(hook: H, context: unknown) {
+  type Ctx = Parameters<H["run"]>[0];
+  const run = hook.run as (ctx: Ctx) => unknown;
+  return await run(context as Ctx);
+}
+
+/**
+ * Create a PreToolUse context object that matches the hook's expected run parameter type.
+ * This avoids scattering casts in tests by centralizing a single, typed construction.
+ */
+export function createPreToolUseContextFor<H extends { run: (ctx: any) => any }, Name extends string, Input>(
+  hook: H,
+  tool_name: Name,
+  tool_input: Input
+) : Parameters<H["run"]>[0] & MockHookContext<{ PreToolUse: true }> {
+  type Ctx = Parameters<H["run"]>[0];
+  const baseInput: ExtractAllHookInputsForEvent<"PreToolUse"> = {
+    hook_event_name: "PreToolUse" as const,
+    cwd: "/test",
+    session_id: "test-session",
+    transcript_path: "/test/transcript",
+    tool_name,
+    tool_input
+  };
+  // Reuse MockHookContext behavior for capturing calls
+  const ctx = new MockHookContext<{ PreToolUse: true }>(baseInput);
+  return ctx as unknown as (Ctx & MockHookContext<{ PreToolUse: true }>);
+}
+
+export function createPostToolUseContextFor<H extends { run: (ctx: any) => any }, Name extends string, Input, Response>(
+  hook: H,
+  tool_name: Name,
+  tool_input: Input,
+  tool_response: Response
+): Parameters<H["run"]>[0] & MockHookContext<{ PostToolUse: true }> {
+  type Ctx = Parameters<H["run"]>[0];
+  const baseInput: ExtractAllHookInputsForEvent<"PostToolUse"> = {
+    hook_event_name: "PostToolUse" as const,
+    cwd: "/test",
+    session_id: "test-session",
+    transcript_path: "/test/transcript",
+    tool_name,
+    tool_input,
+    tool_response
+  };
+  const ctx = new MockHookContext<{ PostToolUse: true }>(baseInput);
+  return ctx as unknown as (Ctx & MockHookContext<{ PostToolUse: true }>);
 }
 
 /**
@@ -311,18 +355,18 @@ export class EnvironmentHelper {
 /**
  * Helper functions for creating properly typed test contexts
  */
-export const createPreToolUseContext = <Name extends keyof ToolSchema>(
+export const createPreToolUseContext = <Name extends string>(
   tool_name: Name, 
-  tool_input: ToolSchema[Name]["input"]
+  tool_input: any
 ) => {
-  const input = {
+  const input: ExtractAllHookInputsForEvent<"PreToolUse"> = {
     hook_event_name: "PreToolUse" as const,
     cwd: "/test",
     session_id: "test-session",
     transcript_path: "/test/transcript",
     tool_name,
     tool_input
-  } as ExtractAllHookInputsForEvent<"PreToolUse">;
+  };
   
   return new MockHookContext<{ PreToolUse: true }>(input);
 };
@@ -337,7 +381,7 @@ export const createPostToolUseContext = <Name extends keyof ToolSchema>(
   tool_input: ToolSchema[Name]["input"], 
   tool_response: ToolSchema[Name]["response"]
 ) => {
-  const input = {
+  const input: ExtractAllHookInputsForEvent<"PostToolUse"> = {
     hook_event_name: "PostToolUse" as const,
     cwd: "/test",
     session_id: "test-session", 
@@ -345,7 +389,7 @@ export const createPostToolUseContext = <Name extends keyof ToolSchema>(
     tool_name,
     tool_input,
     tool_response
-  } as ExtractAllHookInputsForEvent<"PostToolUse">;
+  };
   
   return new MockHookContext<{ PostToolUse: true }>(input);
 };
