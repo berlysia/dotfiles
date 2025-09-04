@@ -226,9 +226,20 @@ class AutoApproveUpdater {
     });
 
     // 低リスク（スコア1-3）かつ高信頼度（80%以上）のallow候補を自動承認
-    const safeAllowCandidates = result.allowCandidates.filter(
+    let safeAllowCandidates = result.allowCandidates.filter(
       candidate => candidate.riskScore <= 3 && candidate.confidence >= 80
     );
+
+    // npx系はホワイトリストのパッケージのみ自動承認
+    const npxWhitelist = new Set<string>([
+      'vitest','jest','biome','dpdm','madge','tailwindcss','unocss','playwright','tsx','tsc','tsgo'
+    ]);
+    safeAllowCandidates = safeAllowCandidates.filter(c => {
+      const m = c.pattern.match(/^Bash\(npx\s+(\S+):\*\)$/);
+      if (!m) return true;
+      const pkg = m[1];
+      return npxWhitelist.has(pkg);
+    });
 
     // 高リスク（スコア8-10）のdeny候補の自動承認は、以下を満たす場合のみ
     // - 信頼度80%以上、頻度3回以上
