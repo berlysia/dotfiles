@@ -526,9 +526,6 @@ export class PermissionAnalyzer {
       'Bash(xargs:*)',
       'Bash(timeout:*)',
       
-      // テスト・デバッグ用途
-      'Bash(echo test)',
-      
       // 一時的な探索・分析コマンド（unknown_commandなど）
       'Bash(unknown_command)'
     ];
