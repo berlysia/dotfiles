@@ -60,8 +60,8 @@ export class PermissionAnalyzer {
     /^Bash\((git|npm|pnpm|yarn|bun)(\s+[\w-]+)?:\*\)$/,
     /^Bash\((ls|cat|head|tail|grep|find|echo|printf|pwd|whoami|date|mkdir|touch|cd):\*\)$/,
     /^Bash\((git status)\)$/,
-    // npx はメタ実行のため safe 扱いしない
-    /^Bash\((tsc|tsx):\*\)$/,
+    // npx/tsx はメタ実行のため safe 扱いしない
+    /^Bash\((tsc):\*\)$/,
     
     // ファイルツールパターン（非システムディレクトリ）
     /^(Read|Glob|Grep)\(/,
