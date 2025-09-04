@@ -93,6 +93,7 @@
     "Bash(cat:*)",
     "Bash(bat:*)",
     "Bash(grep:*)",
+    "Bash(printf:*)",
     "Bash(rg:*)",
     "Bash(fd:*)",
     "Bash(fzf:*)",
