@@ -354,24 +354,34 @@ function extractMetaCommands(command: string, processed: Set<string>): string[] 
 // Extract commands from backtick command substitutions
 function extractCommandSubstitutions(command: string): string[] {
   const commands: string[] = [];
-  const backtickRegex = /`([^`]+)`/g;
   let match;
-  
-  // Extract all backtick substitutions
+
+  // Backtick substitutions: `...`
+  const backtickRegex = /`([^`]+)`/g;
   while ((match = backtickRegex.exec(command)) !== null) {
     const substitutedCommand = match[1];
     if (substitutedCommand && substitutedCommand.trim()) {
-      // Recursively extract commands from substituted command
       const subCommands = extractCommandsFromCompoundFallback(substitutedCommand);
       commands.push(...subCommands);
     }
   }
-  
+
+  // Command substitutions: $(...)
+  // Single-level only (non-nested) to keep it simple
+  const dollarParenRegex = /\$\(([^()]+)\)/g;
+  while ((match = dollarParenRegex.exec(command)) !== null) {
+    const substitutedCommand = match[1];
+    if (substitutedCommand && substitutedCommand.trim()) {
+      const subCommands = extractCommandsFromCompoundFallback(substitutedCommand);
+      commands.push(...subCommands);
+    }
+  }
+
   // If no substitutions found, return the original command
   if (commands.length === 0) {
     commands.push(command);
   }
-  
+
   return commands;
 }
 

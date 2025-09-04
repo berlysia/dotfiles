@@ -193,7 +193,18 @@ export class PermissionAnalyzer {
     // 既存のbash-parserを信頼して使用（内部でフォールバック処理済み）
     const { extractCommandsFromCompound } = await import("./bash-parser.js");
     const commands = await extractCommandsFromCompound(command);
-    
+
+    // sh -c / bash -c / zsh -c / xargs sh -c の場合は安全性を判定して分岐
+    const hasShellC = /(\bsh|\bbash|\bzsh)\s+-c\b/.test(command) || /\bxargs\b[\s\S]*?\bsh\s+-c\b/.test(command);
+    if (hasShellC) {
+      const analysis = this.analyzeShInvocationSafety(command, commands);
+      if (analysis.safe && analysis.firstSafe) {
+        return this.generalizeCommand(analysis.firstSafe);
+      }
+      // 安全でない/判定不能なら pass/review 寄りのパターンにする
+      return 'sh -c:*';
+    }
+
     // 最初のコマンドを取得して一般化
     const firstCommand = commands[0];
     if (!firstCommand) return null;
@@ -552,6 +563,10 @@ export class PermissionAnalyzer {
       // 複雑なパイプライン操作（:* 構文のみ）
       'Bash(xargs:*)',
       'Bash(timeout:*)',
+      // メタ実行（詳細解析が必要なためセッション限定推奨）
+      'Bash(sh -c:*)',
+      'Bash(bash -c:*)',
+      'Bash(zsh -c:*)',
       
       // 一時的な探索・分析コマンド（unknown_commandなど）
       'Bash(unknown_command)'
@@ -564,5 +579,40 @@ export class PermissionAnalyzer {
     }
 
     return passThroughPatterns.includes(pattern);
+  }
+  
+  /**
+   * sh -c / bash -c の安全性を簡易判定
+   * - commands: ネスト抽出された個々のコマンドテキスト（単純分割ベース）
+   */
+  private analyzeShInvocationSafety(original: string, commands: string[]): { safe: boolean; firstSafe?: string } {
+    if (commands.length === 0) return { safe: false };
+
+    // 危険なシグネチャ（粗め、誤許可を防ぐため保守的）
+    const dangerous = [
+      /\brm\b/, /\bmv\b/, /\bchmod\b/, /\bchown\b/, /\bsudo\b/, /\bdd\b/, /\bmkfs\b/, /\bfdisk\b/,
+      /\btee\b/, /\bmount\b/, /\bumount\b/, /\bshutdown\b/, /\breboot\b/,
+      /find\s+[^\n]*?-delete/, /find\s+[^\n]*?-exec\s+[^\n]*?\brm\b/,
+      /sed\s+[^\n]*?-i\b/
+    ];
+
+    // 書き込み系リダイレクト（/dev/null 以外）
+    const writeRedirect = /(^|\s)\d*>>?\s*(?!\/dev\/null)\S/;
+
+    // 許容する安全ユーティリティ
+    const safeUtils = /^(ls|cat|head|tail|grep|echo|printf|pwd|which|whoami|date|cut|uniq|tr|column|paste|realpath|readlink|stat|du|df|wc|sort|awk)$/;
+
+    const allSafe = commands.every(cmdText => {
+      const text = (cmdText || '').trim();
+      if (!text) return true;
+      if (dangerous.some(r => r.test(text))) return false;
+      if (writeRedirect.test(text)) return false;
+      // 先頭コマンド名のみを見る（簡易）
+      const first = text.split(/\s+/)[0] || '';
+      return safeUtils.test(first);
+    });
+
+    if (!allSafe) return { safe: false };
+    return { safe: true, firstSafe: commands[0] };
   }
 }
