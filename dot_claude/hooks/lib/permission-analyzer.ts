@@ -60,7 +60,7 @@ export class PermissionAnalyzer {
     /^Bash\((git|npm|pnpm|yarn|bun)(\s+[\w-]+)?:\*\)$/,
     /^Bash\((ls|cat|head|tail|grep|find|echo|printf|pwd|whoami|date|mkdir|touch|cd):\*\)$/,
     /^Bash\((git status)\)$/,
-    /^Bash\((tsc|tsx|node|npx):\*\)$/,
+    /^Bash\((tsc|tsx|npx):\*\)$/,
     
     // ファイルツールパターン（非システムディレクトリ）
     /^(Read|Glob|Grep)\(/,
