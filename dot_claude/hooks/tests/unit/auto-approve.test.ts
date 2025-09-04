@@ -8,6 +8,7 @@ import {
   ConsoleCapture,
   EnvironmentHelper,
   createPreToolUseContext,
+  createPreToolUseContextFor,
   createAskResponse,
   createDenyResponse
 } from "./test-helpers.ts";
@@ -20,6 +21,7 @@ import {
   CONTROL_STRUCTURE_KEYWORDS
 } from "../../lib/command-parsing.ts";
 import autoApproveHook from "../../implementations/auto-approve.ts";
+import { invokeRun } from "./test-helpers.ts";
 
 describe("auto-approve.ts hook behavior", () => {
   const consoleCapture = new ConsoleCapture();
@@ -56,8 +58,8 @@ describe("auto-approve.ts hook behavior", () => {
       
       const hook = autoApproveHook;
       
-      const context = createPreToolUseContext("Bash", { command: "echo hello" });
-      await hook.run(context);
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", { command: "echo hello" });
+      await invokeRun(autoApproveHook, context);
       
       // Should allow the command
       context.assertSuccess({});
@@ -69,8 +71,8 @@ describe("auto-approve.ts hook behavior", () => {
       
       const hook = autoApproveHook;
       
-      const context = createPreToolUseContext("Bash", { command: "rm dangerous.txt" });
-      await hook.run(context);
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", { command: "rm dangerous.txt" });
+      await invokeRun(autoApproveHook, context);
       
       // Should block the command
       context.assertDeny();
@@ -82,8 +84,8 @@ describe("auto-approve.ts hook behavior", () => {
       
       const hook = autoApproveHook;
       
-      const context = createPreToolUseContext("Bash", { command: "unknown_command" });
-      await hook.run(context);
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", { command: "unknown_command" });
+      await invokeRun(autoApproveHook, context);
       
       // Should ask for approval
       context.assertAsk();
@@ -95,8 +97,8 @@ describe("auto-approve.ts hook behavior", () => {
       
       const hook = autoApproveHook;
       
-      const context = createPreToolUseContext("Bash", { command: "echo hello && echo world" });
-      await hook.run(context);
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", { command: "echo hello && echo world" });
+      await invokeRun(autoApproveHook, context);
       
       // Should allow the compound command
       context.assertSuccess({});
@@ -108,8 +110,8 @@ describe("auto-approve.ts hook behavior", () => {
       
       const hook = autoApproveHook;
       
-      const context = createPreToolUseContext("Bash", { command: "echo hello && rm file.txt" });
-      await hook.run(context);
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", { command: "echo hello && rm file.txt" });
+      await invokeRun(autoApproveHook, context);
       
       // Should block the compound command
       context.assertDeny();
@@ -120,7 +122,7 @@ describe("auto-approve.ts hook behavior", () => {
       
       const hook = autoApproveHook;
       
-      const context = createPreToolUseContext("Bash", { command: "echo 'hello \"world\"'" });
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", { command: "echo 'hello \"world\"'" });
       await hook.run(context);
       
       context.assertSuccess({});
@@ -131,7 +133,7 @@ describe("auto-approve.ts hook behavior", () => {
       
       const hook = autoApproveHook;
       
-      const context = createPreToolUseContext("Bash", { command: "ls -la | grep test" });
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", { command: "ls -la | grep test" });
       await hook.run(context);
       
       // Both commands in the pipe should be allowed
@@ -145,7 +147,7 @@ describe("auto-approve.ts hook behavior", () => {
       
       const hook = autoApproveHook;
       
-      const context = createPreToolUseContext("Edit", { 
+      const context = createPreToolUseContextFor(autoApproveHook, "Edit", { 
         file_path: "/path/to/file.ts",
         old_string: "old",
         new_string: "new"
@@ -162,7 +164,7 @@ describe("auto-approve.ts hook behavior", () => {
       
       const hook = autoApproveHook;
       
-      const context = createPreToolUseContext("Write", {
+      const context = createPreToolUseContextFor(autoApproveHook, "Write", {
         file_path: "/path/to/.env",
         content: "SECRET=value"
       });
@@ -176,7 +178,7 @@ describe("auto-approve.ts hook behavior", () => {
       
       const hook = autoApproveHook;
       
-      const context = createPreToolUseContext("Read", { file_path: "/path/to/README.md" });
+      const context = createPreToolUseContextFor(autoApproveHook, "Read", { file_path: "/path/to/README.md" });
       await hook.run(context);
       
       context.assertSuccess({});
@@ -187,8 +189,8 @@ describe("auto-approve.ts hook behavior", () => {
     it("should block rm -rf commands", async () => {
       const hook = autoApproveHook;
       
-      const context = createPreToolUseContext("Bash", { command: "rm -rf /" });
-      await hook.run(context as any);
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", { command: "rm -rf /" });
+      await invokeRun(autoApproveHook, context);
       
       context.assertDeny();
     });
@@ -196,8 +198,8 @@ describe("auto-approve.ts hook behavior", () => {
     it("should block dd commands", async () => {
       const hook = autoApproveHook;
       
-      const context = createPreToolUseContext("Bash", { command: "dd if=/dev/zero of=/dev/sda" });
-      await hook.run(context as any);
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", { command: "dd if=/dev/zero of=/dev/sda" });
+      await invokeRun(autoApproveHook, context);
       
       context.assertDeny();
     });
@@ -205,8 +207,8 @@ describe("auto-approve.ts hook behavior", () => {
     it("should block chmod 777 on root", async () => {
       const hook = autoApproveHook;
       
-      const context = createPreToolUseContext("Bash", { command: "chmod -R 777 /" });
-      await hook.run(context as any);
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", { command: "chmod -R 777 /" });
+      await invokeRun(autoApproveHook, context);
       
       // Not explicitly in dangerous patterns; should ask for review
       context.assertAsk();
@@ -219,8 +221,8 @@ describe("auto-approve.ts hook behavior", () => {
       
       const hook = autoApproveHook;
       
-      const context = createPreToolUseContext("Bash", { command: "npm install express" });
-      await hook.run(context as any);
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", { command: "npm install express" });
+      await invokeRun(autoApproveHook, context);
       
       context.assertSuccess({});
     });
@@ -230,13 +232,13 @@ describe("auto-approve.ts hook behavior", () => {
       
       const hook = autoApproveHook;
       
-      const context1 = createPreToolUseContext("Bash", { command: "ls" });
+      const context1 = createPreToolUseContextFor(autoApproveHook, "Bash", { command: "ls" });
       await hook.run(context1);
       
       context1.assertSuccess({});
       
       // Should not match with arguments
-      const context2 = createPreToolUseContext("Bash", { command: "ls -la" });
+      const context2 = createPreToolUseContextFor(autoApproveHook, "Bash", { command: "ls -la" });
       await hook.run(context2);
       
       // With exact match only, arguments should cause ask
@@ -263,7 +265,7 @@ describe("auto-approve.ts hook behavior", () => {
       
       const hook = autoApproveHook;
       
-      const context = createPreToolUseContext("Bash", { 
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", { 
         command: 'git diff --name-only | xargs -I {} sh -c "echo {}; wc -l {}"'
       });
       await hook.run(context);
@@ -277,7 +279,7 @@ describe("auto-approve.ts hook behavior", () => {
       
       const hook = autoApproveHook;
       
-      const context = createPreToolUseContext("Bash", { 
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", { 
         command: 'timeout 30 bash -c "find . -name *.ts | head -5"'
       });
       await hook.run(context);
@@ -290,7 +292,7 @@ describe("auto-approve.ts hook behavior", () => {
       
       const hook = autoApproveHook;
       
-      const context = createPreToolUseContext("Bash", { 
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", { 
         command: 'xargs -I {} sh -c "echo {}; rm -rf {}"'
       });
       await hook.run(context);
@@ -304,7 +306,7 @@ describe("auto-approve.ts hook behavior", () => {
       
       const hook = autoApproveHook;
       
-      const context = createPreToolUseContext("Bash", { 
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", { 
         command: 'timeout 60 bash -c "xargs -I {} sh -c \'echo {}\'"'
       });
       await hook.run(context);
@@ -319,10 +321,10 @@ describe("auto-approve.ts hook behavior", () => {
       
       const hook = autoApproveHook;
       
-      const context = createPreToolUseContext("Bash", { 
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", { 
         command: 'for f in *.ts; do echo $f; wc -l $f; done'
       });
-      await hook.run(context as any);
+      await invokeRun(autoApproveHook, context);
       
       // Should allow or ask based on inner commands (echo, wc)
       ok(context.successCalls.length > 0 || context.jsonCalls.length > 0);
@@ -333,10 +335,10 @@ describe("auto-approve.ts hook behavior", () => {
       
       const hook = autoApproveHook;
       
-      const context = createPreToolUseContext("Bash", { 
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", { 
         command: 'for f in *; do echo $f; rm -rf $f; done'
       });
-      await hook.run(context as any);
+      await invokeRun(autoApproveHook, context);
       
       // Not explicit root deletion; should ask for review
       context.assertAsk();
@@ -352,7 +354,7 @@ describe("auto-approve.ts hook behavior", () => {
       const keywords = ['for', 'do', 'done', 'if', 'then', 'else', 'fi', 'while'];
       
       for (const keyword of keywords) {
-        const context = createPreToolUseContext("Bash", { command: keyword });
+        const context = createPreToolUseContextFor(autoApproveHook, "Bash", { command: keyword });
         await hook.run(context);
         
         // Control keywords are transparent; with no allow/deny they result in ask
@@ -367,7 +369,7 @@ describe("auto-approve.ts hook behavior", () => {
       
       const hook = autoApproveHook;
       
-      const context = createPreToolUseContext("TodoWrite", { 
+      const context = createPreToolUseContextFor(autoApproveHook, "TodoWrite", { 
         todos: [{ content: "test", status: "pending", activeForm: "testing" }]
       });
       await hook.run(context);
@@ -380,7 +382,7 @@ describe("auto-approve.ts hook behavior", () => {
       
       const hook = autoApproveHook;
       
-      const context = createPreToolUseContext("Glob", { pattern: "*.ts" });
+      const context = createPreToolUseContextFor(autoApproveHook, "Glob", { pattern: "*.ts" });
       await hook.run(context);
       
       context.assertSuccess({});
@@ -391,7 +393,7 @@ describe("auto-approve.ts hook behavior", () => {
       
       const hook = autoApproveHook;
       
-      const context = createPreToolUseContext("mcp__context7__resolve-library-id", { 
+      const context = createPreToolUseContextFor(autoApproveHook, "mcp__context7__resolve-library-id", { 
         libraryName: "react"
       });
       await hook.run(context);
@@ -413,8 +415,8 @@ describe("auto-approve.ts hook behavior", () => {
       ];
       
       for (const cmd of maliciousCmds) {
-        const context = createPreToolUseContext("Bash", { command: cmd });
-        await hook.run(context as any);
+        const context = createPreToolUseContextFor(autoApproveHook, "Bash", { command: cmd });
+        await invokeRun(autoApproveHook, context);
         
         if (cmd.includes("rm -rf /")) {
           context.assertDeny();
@@ -437,8 +439,8 @@ describe("auto-approve.ts hook behavior", () => {
       ];
       
       for (const cmd of quoteCases) {
-        const context = createPreToolUseContext("Bash", { command: cmd });
-        await hook.run(context as any);
+        const context = createPreToolUseContextFor(autoApproveHook, "Bash", { command: cmd });
+        await invokeRun(autoApproveHook, context);
         
         // Should handle quote parsing without errors
         ok(context.successCalls.length > 0 || context.failCalls.length > 0 || context.jsonCalls.length > 0, 
@@ -451,7 +453,7 @@ describe("auto-approve.ts hook behavior", () => {
     it("should handle missing tool_name", async () => {
       const hook = autoApproveHook;
       
-      const context = createPreToolUseContext("Read", { file_path: "/test/file.txt" });
+      const context = createPreToolUseContextFor(autoApproveHook, "Read", { file_path: "/test/file.txt" });
       await hook.run(context);
       
       // With no patterns configured for non-Bash tools, expect ask
@@ -461,7 +463,7 @@ describe("auto-approve.ts hook behavior", () => {
     it("should handle missing tool_input", async () => {
       const hook = autoApproveHook;
       
-      const context = createPreToolUseContext("Bash", { command: "echo test" });
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", { command: "echo test" });
       await hook.run(context);
       
       // Should handle gracefully
@@ -473,8 +475,8 @@ describe("auto-approve.ts hook behavior", () => {
       
       const hook = autoApproveHook;
       
-      const context = createPreToolUseContext("Bash", { command: "echo test" });
-      await hook.run(context as any);
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", { command: "echo test" });
+      await invokeRun(autoApproveHook, context);
       
       // Should handle parse error gracefully
       ok(context.successCalls.length > 0 || context.jsonCalls.length > 0);

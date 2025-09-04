@@ -59,6 +59,9 @@ interface PathValidationResult {
 }
 
 function getRepositoryRoot(): string | undefined {
+  if (process.env.CLAUDE_TEST_REPO_ROOT) {
+    return process.env.CLAUDE_TEST_REPO_ROOT;
+  }
   try {
     const result = execSync("git rev-parse --show-toplevel", {
       encoding: "utf-8",
@@ -134,6 +137,8 @@ function extractPathsFromBashCommand(command: string): string[] {
   const patterns = [
     // cat, head, tail, less, more
     /(?:cat|head|tail|less|more)\s+(?:["']?)([^\s"']+)(?:["']?)/g,
+    // rm command (capture one or more path arguments, ignoring flags)
+    /(?:^|\s)rm\s+(?:-[^\s]+\s+)*([\w\./~][^\s"';|&]*)/g,
     // cp, mv (source and destination)
     /(?:cp|mv)\s+(?:["']?)([^\s"']+)(?:["']?)\s+(?:["']?)([^\s"']+)(?:["']?)/g,
     // chmod, chown
@@ -174,7 +179,8 @@ function resolvePath(path: string): string {
     return realpathSync(path);
   } catch {
     // Fallback if path doesn't exist yet
-    return resolve(process.cwd(), path);
+    const cwd = process.env.CLAUDE_TEST_CWD || process.cwd();
+    return resolve(cwd, path);
   }
 }
 

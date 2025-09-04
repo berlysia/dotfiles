@@ -10,6 +10,7 @@ import {
   createPreToolUseContext
 } from "./test-helpers.ts";
 import denyNodeModulesHook from "../../implementations/deny-node-modules.ts";
+import { invokeRun } from "./test-helpers.ts";
 
 describe("deny-node-modules.ts hook behavior", () => {
   const consoleCapture = new ConsoleCapture();
@@ -42,7 +43,7 @@ describe("deny-node-modules.ts hook behavior", () => {
       const context = createPreToolUseContext("Read", {
         file_path: "/project/node_modules/express/index.js"
       });
-      await hook.run(context);
+      await invokeRun(hook, context);
       
       context.assertSuccess({});
     });
@@ -54,7 +55,7 @@ describe("deny-node-modules.ts hook behavior", () => {
         file_path: "/project/node_modules/package/file.js",
         content: "malicious code"
       });
-      await hook.run(context);
+      await invokeRun(hook, context);
       
       context.assertDeny();
       const reason = context.jsonCalls[0].hookSpecificOutput?.permissionDecisionReason || "";
@@ -69,7 +70,7 @@ describe("deny-node-modules.ts hook behavior", () => {
         old_string: "original",
         new_string: "modified"
       });
-      await hook.run(context);
+      await invokeRun(hook, context);
       
       context.assertDeny();
     });
@@ -81,7 +82,7 @@ describe("deny-node-modules.ts hook behavior", () => {
         file_path: "node_modules/react/lib/React.js",
         edits: []
       });
-      await hook.run(context);
+      await invokeRun(hook, context);
       
       context.assertDeny();
     });
@@ -92,7 +93,7 @@ describe("deny-node-modules.ts hook behavior", () => {
       const context = createPreToolUseContext("Bash", {
         command: "rm -rf node_modules/some-package"
       });
-      await hook.run(context);
+      await invokeRun(hook, context);
       
       context.assertDeny();
       const reason2 = context.jsonCalls[0].hookSpecificOutput?.permissionDecisionReason || "";

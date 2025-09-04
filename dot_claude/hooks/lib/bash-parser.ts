@@ -58,7 +58,7 @@ function parseWithFallback(command: string): BashParsingResult {
     const extractedCommands = extractCommandsFromCompoundFallback(command);
     
     for (let i = 0; i < extractedCommands.length; i++) {
-      const cmdText = extractedCommands[i];
+      const cmdText = extractedCommands[i] ?? "";
       const cmd = parseSimpleCommandFallback(cmdText, i, command);
       if (cmd) {
         commands.push(cmd);
@@ -137,7 +137,7 @@ function parseSimpleCommandFallback(cmdText: string, index: number, originalComm
   if (!trimmed) return null;
 
   // Simple parsing - split on whitespace and identify basic components
-  const parts = trimmed.split(/\s+/);
+  const parts: string[] = trimmed.split(/\s+/);
   const assignments: string[] = [];
   const redirections: string[] = [];
   const args: string[] = [];
@@ -145,26 +145,32 @@ function parseSimpleCommandFallback(cmdText: string, index: number, originalComm
 
   let i = 0;
   // Handle variable assignments at the beginning
-  while (i < parts.length && parts[i].includes('=') && !parts[i].startsWith('=')) {
-    assignments.push(parts[i]);
-    i++;
+  while (i < parts.length) {
+    const p = parts[i] ?? "";
+    if (p.includes('=') && !p.startsWith('=')) {
+      assignments.push(p);
+      i++;
+      continue;
+    }
+    break;
   }
 
   // Get command name
   if (i < parts.length) {
-    commandName = parts[i];
+    commandName = parts[i] ?? null;
     i++;
   }
 
   // Process remaining arguments and redirections
   while (i < parts.length) {
-    const part = parts[i];
+    const part = parts[i] ?? "";
     if (part.startsWith('>') || part.startsWith('<') || part.startsWith('2>')) {
       // Handle redirection
       if (part.length > 1) {
         redirections.push(part);
       } else if (i + 1 < parts.length) {
-        redirections.push(part + parts[i + 1]);
+        const next = parts[i + 1] ?? "";
+        redirections.push(part + next);
         i++;
       }
     } else {
@@ -173,7 +179,7 @@ function parseSimpleCommandFallback(cmdText: string, index: number, originalComm
     i++;
   }
 
-  const startIndex = originalCommand.indexOf(trimmed);
+  const startIndex = Math.max(0, originalCommand.indexOf(trimmed));
   const endIndex = startIndex + trimmed.length;
 
   return {
@@ -182,7 +188,7 @@ function parseSimpleCommandFallback(cmdText: string, index: number, originalComm
     assignments,
     redirections,
     path: [`fallback#${index}`],
-    range: { start: startIndex >= 0 ? startIndex : 0, end: endIndex },
+    range: { start: startIndex, end: endIndex },
     text: trimmed
   };
 }
@@ -200,4 +206,3 @@ export async function extractCommandsFromCompound(command: string): Promise<stri
       .filter(Boolean);
   }
 }
-

@@ -6,7 +6,8 @@ import {
   defineHook, 
   ConsoleCapture,
   EnvironmentHelper,
-  createPreToolUseContext
+  createPreToolUseContext,
+  invokeRun
 } from "./test-helpers.ts";
 
 describe("web-fetch-guardian.ts hook behavior", () => {
@@ -42,7 +43,7 @@ describe("web-fetch-guardian.ts hook behavior", () => {
         url: "https://example.com",
         prompt: "Extract main content"
       });
-      const result = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       // Should intercept and return markdown
       ok(context.successCalls.length > 0);
@@ -56,7 +57,7 @@ describe("web-fetch-guardian.ts hook behavior", () => {
       const context = createPreToolUseContext("Read", {
         file_path: "/test.txt"
       });
-      const result = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       context.assertSuccess({});
       // Should not have messageForUser (pass through)
@@ -72,7 +73,7 @@ describe("web-fetch-guardian.ts hook behavior", () => {
         url: "http://example.com/page",
         prompt: "Get content"
       });
-      const result = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       ok(context.successCalls.length > 0);
       ok(context.successCalls[0].messageForUser?.includes("example.com"));
@@ -85,7 +86,7 @@ describe("web-fetch-guardian.ts hook behavior", () => {
         url: "https://docs.example.com/api",
         prompt: "Get API docs"
       });
-      const result = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       ok(context.successCalls.length > 0);
       ok(context.successCalls[0].messageForUser?.includes("docs.example.com"));
@@ -95,10 +96,10 @@ describe("web-fetch-guardian.ts hook behavior", () => {
       const hook = createWebFetchGuardianHook();
       
       const context = createPreToolUseContext("WebFetch", {
-        url: "https://example.com",
+        url: "",
         prompt: "Get content"
       });
-      const result = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       context.assertSuccess({});
     });
@@ -110,7 +111,7 @@ describe("web-fetch-guardian.ts hook behavior", () => {
         url: "not-a-valid-url",
         prompt: "Get content"
       });
-      const result = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       // Should handle gracefully
       ok(context.successCalls.length > 0 || context.failCalls.length > 0);
@@ -125,7 +126,7 @@ describe("web-fetch-guardian.ts hook behavior", () => {
         url: "https://github.com/private-org/private-repo",
         prompt: "Get private code"
       });
-      const result = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       // Should check GitHub access (implementation dependent)
       ok(context.successCalls.length > 0 || context.failCalls.length > 0);
@@ -138,7 +139,7 @@ describe("web-fetch-guardian.ts hook behavior", () => {
         url: "https://github.com/public/repo",
         prompt: "Get public readme"
       });
-      const result = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       // Should allow public GitHub
       ok(context.successCalls.length > 0);
@@ -151,7 +152,7 @@ describe("web-fetch-guardian.ts hook behavior", () => {
         url: "https://raw.githubusercontent.com/org/repo/main/secret.key",
         prompt: "Get file"
       });
-      const result = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       // Should check raw GitHub access
       ok(context.successCalls.length > 0 || context.failCalls.length > 0);
@@ -164,7 +165,7 @@ describe("web-fetch-guardian.ts hook behavior", () => {
         url: "https://api.github.com/repos/org/repo/contents",
         prompt: "Get contents"
       });
-      const result = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       // Should check API access
       ok(context.successCalls.length > 0 || context.failCalls.length > 0);
@@ -179,7 +180,7 @@ describe("web-fetch-guardian.ts hook behavior", () => {
         url: "https://blog.example.com/article",
         prompt: "Extract article content"
       });
-      const result = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       ok(context.successCalls.length > 0);
       const successResult = context.successCalls[0];
@@ -193,7 +194,7 @@ describe("web-fetch-guardian.ts hook behavior", () => {
         url: "https://docs.example.com/guide",
         prompt: "Get documentation"
       });
-      const result = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       ok(context.successCalls.length > 0);
     });
@@ -205,7 +206,7 @@ describe("web-fetch-guardian.ts hook behavior", () => {
         url: "https://api.example.com/docs",
         prompt: "Get API reference"
       });
-      const result = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       ok(context.successCalls.length > 0);
     });
@@ -221,7 +222,7 @@ describe("web-fetch-guardian.ts hook behavior", () => {
         url: "https://unreachable.example.com",
         prompt: "Get content"
       });
-      const result = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       // Should handle error
       ok(context.failCalls.length > 0);
@@ -237,7 +238,7 @@ describe("web-fetch-guardian.ts hook behavior", () => {
         url: "https://example.com/bad-html",
         prompt: "Extract content"
       });
-      const result = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       // Should handle extraction error
       ok(context.failCalls.length > 0 || context.successCalls.length > 0);
@@ -247,7 +248,7 @@ describe("web-fetch-guardian.ts hook behavior", () => {
       const hook = createWebFetchGuardianHook();
       
       const context = createPreToolUseContext("WebFetch", { url: "", prompt: "" });
-      const result = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       context.assertSuccess({});
     });
@@ -261,7 +262,7 @@ describe("web-fetch-guardian.ts hook behavior", () => {
         url: "https://slow.example.com",
         prompt: "Get slow content"
       });
-      const result = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       // Should handle timeout
       ok(context.failCalls.length > 0 || context.successCalls.length > 0);
@@ -276,7 +277,7 @@ describe("web-fetch-guardian.ts hook behavior", () => {
         url: "http://localhost:3000/api",
         prompt: "Get local API"
       });
-      const result = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       // Should process localhost
       ok(context.successCalls.length > 0);
@@ -289,7 +290,7 @@ describe("web-fetch-guardian.ts hook behavior", () => {
         url: "http://192.168.1.1/status",
         prompt: "Get status"
       });
-      const result = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       // Should process IP addresses
       ok(context.successCalls.length > 0);
@@ -302,7 +303,7 @@ describe("web-fetch-guardian.ts hook behavior", () => {
         url: "ftp://example.com/file.txt",
         prompt: "Get FTP file"
       });
-      const result = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       // Should pass through non-HTTP
       context.assertSuccess({});
@@ -319,7 +320,7 @@ describe("web-fetch-guardian.ts hook behavior", () => {
         url: "https://example.com",
         prompt: prompt
       });
-      const result = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       ok(context.successCalls.length > 0);
       // Should preserve prompt intent
@@ -332,7 +333,7 @@ describe("web-fetch-guardian.ts hook behavior", () => {
         url: "https://example.com",
         prompt: "Get content"
       });
-      const result = await hook.execute(context.input);
+      await invokeRun(hook, context);
       
       ok(context.successCalls.length > 0);
     });

@@ -349,7 +349,7 @@ export function checkIndividualCommandDenyWithPattern(
 /**
  * Check if a pattern matches the tool usage
  */
-export function checkPattern(pattern: string, toolName: string, toolInput: ToolInput): boolean {
+export function checkPattern(pattern: string, toolName: string, toolInput: unknown): boolean {
   // Handle Bash tool specifically
   if (pattern.startsWith("Bash(") && pattern.endsWith(")")) {
     if (toolName !== "Bash") {
@@ -368,7 +368,7 @@ export function checkPattern(pattern: string, toolName: string, toolInput: ToolI
       if (!cmdPrefix) return false;
       
       // Handle compound commands (&&, ||, ;)
-      const commands = extractCommandsFromCompound(actualCommand);
+      const commands = extractCommandsFromCompound(actualCommand || "");
       
       for (let cmd of commands) {
         // Trim whitespace and remove leading & characters
