@@ -9,7 +9,6 @@ import { createAskResponse, createDenyResponse } from "../lib/context-helpers.ts
 import { logDecision } from "../lib/centralized-logging.ts";
 import { isBashToolInput, type PermissionDecision } from "../types/project-types.ts";
 import { 
-  extractCommandsFromCompound,
   checkDangerousCommand,
   checkCommandPattern,
   getFilePathFromToolInput,
@@ -17,6 +16,14 @@ import {
   NO_PAREN_TOOL_NAMES,
   CONTROL_STRUCTURE_KEYWORDS
 } from "../lib/command-parsing.ts";
+import { extractCommandsFromCompound } from "../lib/bash-parser.ts";
+import { 
+  checkIndividualCommandWithMatchedPattern as patternMatcherCheckAllow,
+  checkIndividualCommandDenyWithPattern as patternMatcherCheckDeny,
+  checkPattern as patternMatcherCheckPattern,
+  matchGitignorePattern
+} from "../lib/pattern-matcher.ts";
+import { analyzePatternMatches } from "../lib/decision-maker.ts";
 import "../types/tool-schemas.ts";
 
 /**
@@ -26,7 +33,7 @@ import "../types/tool-schemas.ts";
 const hook = defineHook({
   // Use broad PreToolUse trigger to include unknown/MCP tools as well
   trigger: { PreToolUse: true },
-  run: (context) => {
+  run: async (context) => {
     const { tool_name, tool_input } = context.input;
 
     // Exit early if no tool name
@@ -40,7 +47,7 @@ const hook = defineHook({
     try {
       // Process based on tool type
       if (tool_name === "Bash") {
-        const bashResult = processBashTool(tool_input, denyList, allowList);
+        const bashResult = await processBashTool(tool_input, denyList, allowList);
 
         // Handle early exit conditions (dangerous commands requiring manual review)
         if (bashResult.earlyExit) {
@@ -203,9 +210,9 @@ function extractPermissionList(type: "allow" | "deny", settingsFiles: SettingsFi
   return patterns;
 }
 
-function processBashTool(tool_input: unknown, denyList: string[], allowList: string[]): BashToolResult {
+async function processBashTool(tool_input: unknown, denyList: string[], allowList: string[]): Promise<BashToolResult> {
   const bashCommand = getCommandFromToolInput("Bash", tool_input) || "";
-  const extractedCommands = extractCommandsFromCompound(bashCommand);
+  const extractedCommands = await extractCommandsFromCompound(bashCommand);
 
   const individualResults: string[] = [];
   const denyMatches: string[] = [];
@@ -214,7 +221,7 @@ function processBashTool(tool_input: unknown, denyList: string[], allowList: str
     const trimmedCmd = cmd.trim();
     if (!trimmedCmd) continue;
 
-    const result = processBashCommand(trimmedCmd, denyList, allowList);
+    const result = await processBashCommand(trimmedCmd, denyList, allowList);
 
     if (result.earlyExit) {
       return {
@@ -239,7 +246,7 @@ function processBashTool(tool_input: unknown, denyList: string[], allowList: str
   };
 }
 
-function processBashCommand(cmd: string, denyList: string[], allowList: string[]): BashCommandResult {
+async function processBashCommand(cmd: string, denyList: string[], allowList: string[]): Promise<BashCommandResult> {
   const trimmedCmd = cmd.trim();
   
   // Skip evaluation for control structure keywords - they are transparent
@@ -264,7 +271,7 @@ function processBashCommand(cmd: string, denyList: string[], allowList: string[]
 
   // Check deny patterns
   if (denyList.length > 0) {
-    const denyResult = checkIndividualCommandDenyWithPattern(cmd, denyList);
+    const denyResult = await patternMatcherCheckDeny(cmd, denyList);
     if (denyResult.matches && denyResult.matchedPattern) {
       return {
         result: `DENY: '${cmd}' (matched: ${denyResult.matchedPattern})`,
@@ -275,7 +282,7 @@ function processBashCommand(cmd: string, denyList: string[], allowList: string[]
 
   // Check allow patterns
   if (allowList.length > 0) {
-    const allowResult = checkIndividualCommandWithMatchedPattern(cmd, allowList);
+    const allowResult = await patternMatcherCheckAllow(cmd, allowList);
     if (allowResult.matches && allowResult.matchedPattern) {
       return {
         result: `ALLOW: '${cmd}' (matched: ${allowResult.matchedPattern})`,
@@ -412,65 +419,30 @@ function analyzeBashCommands(individualResults: string[], denyMatches: string[])
   };
 }
 
-function analyzePatternMatches(allowMatches: string[], denyMatches: string[]): { decision: PermissionDecision; reason: string } {
-  if (denyMatches.length > 0) {
-    return {
-      decision: "deny",
-      reason: `Matched deny patterns: ${denyMatches.join(", ")}`
-    };
-  }
+// analyzePatternMatches function now imported from decision-maker.ts to eliminate duplication
 
-  if (allowMatches.length > 0) {
-    return {
-      decision: "allow",
-      reason: `Matched allow patterns: ${allowMatches.join(", ")}`
-    };
-  }
-
-  return {
-    decision: "ask",
-    reason: "No matching patterns found"
-  };
-}
-
+// matchesPathPattern functionality consolidated into pattern-matcher.ts matchGitignorePattern
+// This wrapper handles path normalization and delegates to shared implementation
 function matchesPathPattern(filePath: string, pattern: string): boolean {
   // Convert relative paths to absolute for consistent matching
-  let absoluteFilePath = filePath;
+  let normalizedPath = filePath;
   if (!filePath.startsWith("/")) {
-    // For relative paths, use the current working directory
-    absoluteFilePath = join(process.cwd(), filePath);
+    normalizedPath = join(process.cwd(), filePath);
   }
 
-  // Handle tilde expansion
-  let absolutePattern = pattern;
+  // Handle tilde expansion in pattern
+  let normalizedPattern = pattern;
   if (pattern.startsWith("~/")) {
-    absolutePattern = join(homedir(), pattern.slice(2));
+    normalizedPattern = join(homedir(), pattern.slice(2));
+  } else if (pattern.startsWith("./")) {
+    normalizedPattern = join(process.cwd(), pattern.slice(2));
   }
 
-  // Handle wildcard patterns
-  if (absolutePattern.endsWith("/**")) {
-    let prefix = absolutePattern.slice(0, -3);
-    // Handle relative patterns like ./**
-    if (prefix === ".") {
-      prefix = process.cwd();
-    } else if (prefix.startsWith("./")) {
-      prefix = join(process.cwd(), prefix.slice(2));
-    }
-    return absoluteFilePath.startsWith(prefix);
-  } else if (absolutePattern.endsWith("/*")) {
-    const prefix = absolutePattern.slice(0, -2);
-    const dirPath = absoluteFilePath.substring(0, absoluteFilePath.lastIndexOf("/"));
-    return dirPath === prefix;
-  } else if (absolutePattern.includes("*")) {
-    // Convert glob pattern to regex
-    const regexPattern = absolutePattern.replace(/\*\*/g, ".*").replace(/\*/g, "[^/]*");
-    const regex = new RegExp(`^${regexPattern}$`);
-    return regex.test(absoluteFilePath);
-  } else {
-    // Exact match
-    return absoluteFilePath === absolutePattern;
-  }
+  // Use shared gitignore-style pattern matching from pattern-matcher.ts
+  return matchGitignorePattern(normalizedPath, normalizedPattern);
 }
+
+// matchGitignorePattern is now imported from pattern-matcher.ts to eliminate duplication
 
 
 export default hook;

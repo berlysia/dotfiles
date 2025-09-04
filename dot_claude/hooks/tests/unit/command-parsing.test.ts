@@ -14,18 +14,18 @@ import {
 describe("Command Parsing Library", () => {
   
   describe("extractCommandsFromCompound", () => {
-    it("should extract simple compound commands", () => {
-      const result = extractCommandsFromCompound("echo hello && echo world");
+    it("should extract simple compound commands", async () => {
+      const result = await extractCommandsFromCompound("echo hello && echo world");
       deepStrictEqual(result, ["echo hello", "echo world"]);
     });
     
-    it("should extract commands separated by semicolons", () => {
-      const result = extractCommandsFromCompound("echo hello; echo world; ls -la");
+    it("should extract commands separated by semicolons", async () => {
+      const result = await extractCommandsFromCompound("echo hello; echo world; ls -la");
       deepStrictEqual(result, ["echo hello", "echo world", "ls -la"]);
     });
     
-    it("should extract commands from pipes", () => {
-      const result = extractCommandsFromCompound("ls -la | grep test");
+    it("should extract commands from pipes", async () => {
+      const result = await extractCommandsFromCompound("ls -la | grep test");
       deepStrictEqual(result, ["ls -la", "grep test"]);
     });
     

@@ -72,65 +72,12 @@ function extractChildCommand(command: string): ChildCommandResult {
 
 /**
  * Extract all individual commands from compound command strings
+ * @deprecated Use extractCommandsFromCompound from bash-parser.ts instead
  */
-export function extractCommandsFromCompound(commandString: string): string[] {
-  const commands: string[] = [];
-  
-  // Replace operators with unique delimiters
-  let tempCommand = commandString
-    .replace(/&&/g, "█AND█")
-    .replace(/\|\|/g, "█OR█")
-    .replace(/;/g, "█SEMI█")
-    .replace(/\|/g, "█PIPE█");
-  
-  // Split on the unique delimiters
-  const parts = tempCommand.split("█");
-  
-  for (const part of parts) {
-    // Skip operator parts
-    if (["AND", "OR", "SEMI", "PIPE"].includes(part)) {
-      continue;
-    }
-    
-    // Clean up whitespace
-    const cleanPart = part.trim();
-    if (!cleanPart) continue;
-    
-    // Add the main command
-    commands.push(cleanPart);
-    
-    // Extract and add child commands from wrapper commands
-    const childResult = extractChildCommand(cleanPart);
-    if (childResult.found && childResult.command) {
-      commands.push(childResult.command);
-    }
-    
-    // Extract commands from subshells $(...) and `...`
-    const subshellMatches = cleanPart.match(/\$\([^)]+\)|`[^`]+`/g);
-    if (subshellMatches) {
-      for (const subshell of subshellMatches) {
-        let innerCmd = "";
-        
-        // Remove $( ) wrapping
-        const dollarMatch = subshell.match(/^\$\((.+)\)$/);
-        if (dollarMatch && dollarMatch[1]) {
-          innerCmd = dollarMatch[1];
-        }
-        
-        // Remove ` ` wrapping
-        const backtickMatch = subshell.match(/^`(.+)`$/);
-        if (backtickMatch && backtickMatch[1]) {
-          innerCmd = backtickMatch[1];
-        }
-        
-        if (innerCmd.trim()) {
-          commands.push(innerCmd.trim());
-        }
-      }
-    }
-  }
-  
-  return commands;
+export async function extractCommandsFromCompound(commandString: string): Promise<string[]> {
+  // Import bash-parser extractCommandsFromCompound function
+  const { extractCommandsFromCompound: bashParserExtract } = await import("../lib/bash-parser.ts");
+  return await bashParserExtract(commandString);
 }
 
 /**
@@ -218,7 +165,7 @@ function isSafeBuiltinCommand(cmd: string): boolean {
 /**
  * GitIgnore-style pattern matching
  */
-function matchGitignorePattern(filePath: string, pattern: string): boolean {
+export function matchGitignorePattern(filePath: string, pattern: string): boolean {
   // Handle directory patterns ending with /
   if (pattern.endsWith("/")) {
     const dirPattern = pattern.slice(0, -1);
@@ -279,10 +226,10 @@ function matchGitignorePattern(filePath: string, pattern: string): boolean {
 /**
  * Check if individual command matches any pattern
  */
-function checkIndividualCommandWithPattern(
+async function checkIndividualCommandWithPattern(
   cmd: string,
   patterns: string[]
-): { matches: boolean; pattern?: string } {
+): Promise<{ matches: boolean; pattern?: string }> {
   // Check built-in safe commands first
   if (isSafeBuiltinCommand(cmd)) {
     return { matches: true, pattern: "Built-in safe command" };
@@ -294,7 +241,7 @@ function checkIndividualCommandWithPattern(
     // Create a mock tool input for individual command check
     const mockInput: ToolInput = { command: cmd };
     
-    if (checkPattern(pattern, "Bash", mockInput)) {
+    if (await checkPattern(pattern, "Bash", mockInput)) {
       return { matches: true, pattern };
     }
   }
@@ -305,19 +252,19 @@ function checkIndividualCommandWithPattern(
 /**
  * Check individual command matches allow patterns
  */
-export function checkIndividualCommand(cmd: string, allowList: string[]): boolean {
-  const result = checkIndividualCommandWithPattern(cmd, allowList);
+export async function checkIndividualCommand(cmd: string, allowList: string[]): Promise<boolean> {
+  const result = await checkIndividualCommandWithPattern(cmd, allowList);
   return result.matches;
 }
 
 /**
  * Check individual command and return matching pattern
  */
-export function checkIndividualCommandWithMatchedPattern(
+export async function checkIndividualCommandWithMatchedPattern(
   cmd: string,
   allowList: string[]
-): { matches: boolean; matchedPattern?: string } {
-  const result = checkIndividualCommandWithPattern(cmd, allowList);
+): Promise<{ matches: boolean; matchedPattern?: string }> {
+  const result = await checkIndividualCommandWithPattern(cmd, allowList);
   return { 
     matches: result.matches, 
     ...(result.pattern && { matchedPattern: result.pattern })
@@ -327,19 +274,19 @@ export function checkIndividualCommandWithMatchedPattern(
 /**
  * Check individual command matches deny patterns
  */
-export function checkIndividualCommandDeny(cmd: string, denyList: string[]): boolean {
-  const result = checkIndividualCommandWithPattern(cmd, denyList);
+export async function checkIndividualCommandDeny(cmd: string, denyList: string[]): Promise<boolean> {
+  const result = await checkIndividualCommandWithPattern(cmd, denyList);
   return result.matches;
 }
 
 /**
  * Check individual command deny and return matching pattern
  */
-export function checkIndividualCommandDenyWithPattern(
+export async function checkIndividualCommandDenyWithPattern(
   cmd: string,
   denyList: string[]
-): { matches: boolean; matchedPattern?: string } {
-  const result = checkIndividualCommandWithPattern(cmd, denyList);
+): Promise<{ matches: boolean; matchedPattern?: string }> {
+  const result = await checkIndividualCommandWithPattern(cmd, denyList);
   return { 
     matches: result.matches, 
     ...(result.pattern && { matchedPattern: result.pattern })
@@ -349,7 +296,7 @@ export function checkIndividualCommandDenyWithPattern(
 /**
  * Check if a pattern matches the tool usage
  */
-export function checkPattern(pattern: string, toolName: string, toolInput: unknown): boolean {
+export async function checkPattern(pattern: string, toolName: string, toolInput: unknown): Promise<boolean> {
   // Handle Bash tool specifically
   if (pattern.startsWith("Bash(") && pattern.endsWith(")")) {
     if (toolName !== "Bash") {
@@ -367,8 +314,8 @@ export function checkPattern(pattern: string, toolName: string, toolInput: unkno
       const cmdPrefix = cmdPattern.split(":")[0];
       if (!cmdPrefix) return false;
       
-      // Handle compound commands (&&, ||, ;)
-      const commands = extractCommandsFromCompound(actualCommand || "");
+      // Handle compound commands (&&, ||, ;) - now async
+      const commands = await extractCommandsFromCompound(actualCommand || "");
       
       for (let cmd of commands) {
         // Trim whitespace and remove leading & characters
