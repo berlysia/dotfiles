@@ -76,6 +76,7 @@ export interface AudioQuery {
 
 export interface NotificationResult {
   success: boolean;
-  method: 'voicevox' | 'static' | 'none';
+  method: 'voicevox' | 'static' | 'none' | 'delegated';
   error?: string;
+  message?: string;
 }
