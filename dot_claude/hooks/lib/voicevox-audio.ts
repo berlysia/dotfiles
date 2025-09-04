@@ -195,36 +195,36 @@ async function fileExists(filePath: string): Promise<boolean> {
   }
 }
 
-// 統合通知関数（フォールバック機構付き）
+// 統合通知関数（優先度付きフォールバック機構）
 export async function notify(message: string, type: SoundType = 'notification'): Promise<void> {
-  const tasks: Promise<any>[] = [];
+  let voicePlayedSuccessfully = false;
   
-  // 1. VoiceVox音声合成を試みる
+  // 1. VoiceVox音声合成を優先的に試みる
   if (await isVoiceVoxAvailable()) {
     const voiceFile = await synthesizeVoiceVoxSpeech(message);
     if (voiceFile) {
-      tasks.push(
-        playSound(voiceFile)
-          .finally(() => fs.unlink(voiceFile).catch(() => {}))
-      );
+      try {
+        if (await playSound(voiceFile)) {
+          voicePlayedSuccessfully = true;
+        }
+      } finally {
+        await fs.unlink(voiceFile).catch(() => {});
+      }
     }
   }
   
-  // 2. 静的WAVファイルも並列で再生（フォールバック）
-  const staticSound = getStaticSoundPath(type);
-  if (await fileExists(staticSound)) {
-    tasks.push(playSound(staticSound));
+  // 2. VoiceVoxが失敗した場合のみ静的WAVファイルを再生（フォールバック）
+  if (!voicePlayedSuccessfully) {
+    const staticSound = getStaticSoundPath(type);
+    if (await fileExists(staticSound)) {
+      await playSound(staticSound);
+    }
   }
   
-  // 3. システム通知（Linux限定）
+  // 3. システム通知（Linux限定、音声と並列実行）
   if (detectPlatform() === 'linux') {
-    tasks.push(
-      Promise.try(() => $`notify-send "Claude Code" ${message}`.quiet())
-    );
+    await $`notify-send "Claude Code" ${message}`.quiet().catch(() => {});
   }
-  
-  // すべての通知方法を並列実行
-  await Promise.allSettled(tasks);
 }
 
 // リポジトリ情報取得
