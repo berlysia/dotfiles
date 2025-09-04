@@ -1,5 +1,5 @@
 {{- $commonHooks := includeTemplate "dot_claude/hooks/common.json.tmpl" . | fromJson -}}
-{{- $commonHooks := includeTemplate "dot_claude/permissions.json" . | fromJson -}}
+{{- $permissions := includeTemplate "dot_claude/permissions.json" . | fromJson -}}
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {{ toJson $permissions }},
