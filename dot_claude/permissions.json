@@ -104,7 +104,6 @@
     "Bash(stat:*)",
     "Bash(du:*)",
     "Bash(df:*)",
-    "Bash(echo test)",
     "Bash(fd:*)",
     "Bash(fzf:*)",
     "Bash(mkdir:*)",
