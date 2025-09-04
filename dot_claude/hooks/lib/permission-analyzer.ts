@@ -60,7 +60,8 @@ export class PermissionAnalyzer {
     /^Bash\((git|npm|pnpm|yarn|bun)(\s+[\w-]+)?:\*\)$/,
     /^Bash\((ls|cat|head|tail|grep|find|echo|printf|pwd|whoami|date|mkdir|touch|cd):\*\)$/,
     /^Bash\((git status)\)$/,
-    /^Bash\((tsc|tsx|npx):\*\)$/,
+    // npx はメタ実行のため safe 扱いしない
+    /^Bash\((tsc|tsx):\*\)$/,
     
     // ファイルツールパターン（非システムディレクトリ）
     /^(Read|Glob|Grep)\(/,
@@ -223,10 +224,36 @@ export class PermissionAnalyzer {
       return subCommand ? `git ${subCommand}:*` : 'git:*';
     }
 
-    // npx系コマンドの特別処理
+    // npx / bunx / pnpm dlx / yarn dlx を同等扱いし、パッケージ名ベースに正規化
+    const normalizeNpxPackage = (arr: string[], startIndex: number) => {
+      for (let i = startIndex; i < arr.length; i++) {
+        const tok = arr[i];
+        if (!tok || tok.startsWith('-')) continue; // フラグは飛ばす
+        // パッケージ@version の場合はパッケージ名のみ抽出
+        const pkg = tok.split('@')[0];
+        return pkg;
+      }
+      return '';
+    };
+
     if (cmd === 'npx') {
-      const subCommand = parts[1];
-      return subCommand ? `npx ${subCommand}:*` : 'npx:*';
+      const pkg = normalizeNpxPackage(parts, 1);
+      return pkg ? `npx ${pkg}:*` : 'npx:*';
+    }
+
+    if (cmd === 'bunx') {
+      const pkg = normalizeNpxPackage(parts, 1);
+      return pkg ? `npx ${pkg}:*` : 'npx:*';
+    }
+
+    if (cmd === 'pnpm' && parts[1] === 'dlx') {
+      const pkg = normalizeNpxPackage(parts, 2);
+      return pkg ? `npx ${pkg}:*` : 'npx:*';
+    }
+
+    if (cmd === 'yarn' && parts[1] === 'dlx') {
+      const pkg = normalizeNpxPackage(parts, 2);
+      return pkg ? `npx ${pkg}:*` : 'npx:*';
     }
 
     // 基本コマンドの場合
