@@ -519,3 +519,9 @@ export async function extractCommandsFromCompound(command: string): Promise<stri
       .filter(Boolean);
   }
 }
+
+// Return structured commands (SimpleCommand) using the best available parser
+export async function extractCommandsDetailed(command: string): Promise<SimpleCommand[]> {
+  const result = await parseBashCommand(command, true);
+  return result.commands;
+}

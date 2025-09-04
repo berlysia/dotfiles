@@ -191,13 +191,13 @@ export class PermissionAnalyzer {
    */
   private async extractBaseCommand(command: string, entryCwd?: string): Promise<string | null> {
     // 既存のbash-parserを信頼して使用（内部でフォールバック処理済み）
-    const { extractCommandsFromCompound } = await import("./bash-parser.js");
+    const { extractCommandsFromCompound, extractCommandsDetailed } = await import("./bash-parser.js");
     const commands = await extractCommandsFromCompound(command);
 
     // sh -c / bash -c / zsh -c / xargs sh -c の場合は安全性を判定して分岐
     const hasShellC = /(\bsh|\bbash|\bzsh)\s+-c\b/.test(command) || /\bxargs\b[\s\S]*?\bsh\s+-c\b/.test(command);
     if (hasShellC) {
-      const analysis = this.analyzeShInvocationSafety(command, commands, entryCwd);
+      const analysis = await this.analyzeShInvocationSafety(command, commands, entryCwd, extractCommandsDetailed);
       if (analysis.safe && analysis.firstSafe) {
         return this.generalizeCommand(analysis.firstSafe);
       }
@@ -585,7 +585,12 @@ export class PermissionAnalyzer {
    * sh -c / bash -c の安全性を簡易判定
    * - commands: ネスト抽出された個々のコマンドテキスト（単純分割ベース）
    */
-  private analyzeShInvocationSafety(original: string, commands: string[], entryCwd?: string): { safe: boolean; firstSafe?: string } {
+  private async analyzeShInvocationSafety(
+    original: string,
+    commands: string[],
+    entryCwd: string | undefined,
+    parseDetailed: (cmd: string) => Promise<import('./bash-parser.js').SimpleCommand[]>
+  ): Promise<{ safe: boolean; firstSafe?: string }> {
     if (commands.length === 0) return { safe: false };
 
     // 危険なシグネチャ（粗め、誤許可を防ぐため保守的）
@@ -653,22 +658,48 @@ export class PermissionAnalyzer {
     // 許容する安全ユーティリティ
     const safeUtils = /^(ls|cat|head|tail|grep|echo|printf|pwd|which|whoami|date|cut|uniq|tr|column|paste|realpath|readlink|stat|du|df|wc|sort|awk)$/;
 
-    const allSafe = commands.every(cmdText => {
+    for (const cmdText of commands) {
       const text = (cmdText || '').trim();
-      if (!text) return true;
-      if (dangerous.some(r => r.test(text))) return false;
-      // 書き込みリダイレクトの各ターゲットを検査
-      let m: RegExpExecArray | null;
-      while ((m = redirRegex.exec(text)) !== null) {
-        const target = m[3] || '';
-        if (!isSafeWorkspaceTarget(target)) return false;
-      }
-      // 先頭コマンド名のみを見る（簡易）
-      const first = text.split(/\s+/)[0] || '';
-      return safeUtils.test(first);
-    });
+      if (!text) continue;
 
-    if (!allSafe) return { safe: false };
+      // まず簡易テキストチェック（早期不許可）
+      if (dangerous.some(r => r.test(text))) return { safe: false };
+
+      // 詳細解析（AST）
+      const details = await parseDetailed(text);
+      const first = details[0];
+      const name = (first?.name || '').trim();
+      if (!name) return { safe: false };
+
+      // 安全ユーティリティ以外は不許可
+      if (!safeUtils.test(name)) return { safe: false };
+
+      // コマンド固有の危険フラグ
+      if (name === 'find') {
+        const argline = (first.args || []).join(' ');
+        if (/\s-delete(\s|$)/.test(argline)) return { safe: false };
+        if (/\s-exec\s+[^;]*\brm\b/.test(argline)) return { safe: false };
+      }
+      if (name === 'sed') {
+        const argline = (first.args || []).join(' ');
+        if (/(^|\s)-i(\b|\s|=)/.test(argline) || /--in-place\b/.test(argline)) return { safe: false };
+      }
+      if (name === 'tee') {
+        // tee は書込み系。/tmp や安全ワークスペースのみ許容も検討できるが一旦不許可
+        return { safe: false };
+      }
+
+      // リダイレクト先の検査（ASTで取得したトークン文字列に対して適用）
+      const redirs = first.redirections || [];
+      for (const r of redirs) {
+        let m: RegExpExecArray | null;
+        while ((m = redirRegex.exec(r)) !== null) {
+          const target = m[3] || '';
+          if (!isSafeWorkspaceTarget(target)) return { safe: false };
+        }
+      }
+    }
+
     return { safe: true, firstSafe: commands[0] };
   }
 }
