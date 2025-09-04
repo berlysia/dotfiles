@@ -10,8 +10,10 @@ import {
   createAudioEngine,
   handleNotification, 
   handleStop,
-  cleanupSession
+  cleanupSession,
+  cleanupOldFiles
 } from '../../lib/unified-audio-engine.ts';
+import { logEvent } from "../lib/centralized-logging.ts";
 const hook = defineHook({
   trigger: {
     Notification: true,
@@ -19,6 +21,7 @@ const hook = defineHook({
   },
   run: async (context) => {
     const eventType = context.input.hook_event_name as 'Notification' | 'Stop';
+    const sessionId = context.input.session_id;
 
     try {
       const { config, session } = await createAudioEngine();
@@ -29,25 +32,31 @@ const hook = defineHook({
       process.on('SIGINT', cleanup);
       process.on('SIGTERM', cleanup);
       
-      let result;
-      switch (eventType) {
-        case 'Notification':
-          result = await handleNotification(config, session);
-          break;
-        case 'Stop':
-          result = await handleStop(config, session);
-          break;
-        default:
-          result = await handleNotification(config, session);
-          break;
-      }
-      
-      const statusMessage = result.success 
-        ? `Voice notification played via ${result.method} for ${eventType} event`
-        : `Voice notification failed for ${eventType} event: ${result.error || 'Unknown error'}`;
+      // 並列実行で高速化
+      await Promise.allSettled([
+        // ログ記録
+        logEvent(eventType, sessionId),
+        
+        // 音声通知
+        (async () => {
+          switch (eventType) {
+            case 'Notification':
+              await handleNotification(config, session);
+              // Notificationイベント時のみクリーンアップ
+              await cleanupOldFiles(config);
+              break;
+            case 'Stop':
+              await handleStop(config, session);
+              break;
+            default:
+              await handleNotification(config, session);
+              break;
+          }
+        })()
+      ]);
       
       return context.success({
-        messageForUser: statusMessage
+        messageForUser: `Voice notification completed for ${eventType} event`
       });
     } catch (error) {
       console.error(`Voice notification error: ${error}`);
