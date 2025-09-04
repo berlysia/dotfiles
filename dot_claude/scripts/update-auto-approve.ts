@@ -232,7 +232,7 @@ class AutoApproveUpdater {
 
     // npx系はホワイトリストのパッケージのみ自動承認
     const npxWhitelist = new Set<string>([
-      'vitest','jest','biome','dpdm','madge','tailwindcss','unocss','playwright','tsx','tsc','tsgo'
+      'vitest','jest','biome','dpdm','madge','tailwindcss','unocss','playwright','eslint','tsc','tsgo'
     ]);
     safeAllowCandidates = safeAllowCandidates.filter(c => {
       const m = c.pattern.match(/^Bash\(npx\s+(\S+):\*\)$/);
