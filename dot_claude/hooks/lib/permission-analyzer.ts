@@ -685,8 +685,15 @@ export class PermissionAnalyzer {
         if (/(^|\s)-i(\b|\s|=)/.test(argline) || /--in-place\b/.test(argline)) return { safe: false };
       }
       if (name === 'tee') {
-        // tee は書込み系。/tmp や安全ワークスペースのみ許容も検討できるが一旦不許可
-        return { safe: false };
+        const files = (first.args || []).filter(a => !a.startsWith('-')).map(a => a.replace(/^['"]|['"]$/g, ''));
+        if (files.length === 0) {
+          // stdout のみなら安全
+          // ただし後続のリダイレクトで書込みがないかは別途チェック済み
+        } else {
+          for (const f of files) {
+            if (!isSafeWorkspaceTarget(f)) return { safe: false };
+          }
+        }
       }
 
       // リダイレクト先の検査（ASTで取得したトークン文字列に対して適用）
