@@ -3,7 +3,7 @@
  * 決定ログを分析して許可/拒否パターンの候補を自動抽出
  */
 
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, realpathSync, lstatSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve, relative } from "node:path";
 import type { DecisionLogEntry } from "../types/logging-types.ts";
@@ -167,7 +167,7 @@ export class PermissionAnalyzer {
 
     if (tool_name === 'Bash' && command) {
       // Bashコマンドの場合、実行可能部分を抽出
-      const baseCommand = await this.extractBaseCommand(command);
+      const baseCommand = await this.extractBaseCommand(command, (entry as any).cwd);
       return baseCommand ? `Bash(${baseCommand})` : null;
     }
 
@@ -189,7 +189,7 @@ export class PermissionAnalyzer {
   /**
    * Bashコマンドから基本コマンドを抽出（既存パーサーを使用）
    */
-  private async extractBaseCommand(command: string): Promise<string | null> {
+  private async extractBaseCommand(command: string, entryCwd?: string): Promise<string | null> {
     // 既存のbash-parserを信頼して使用（内部でフォールバック処理済み）
     const { extractCommandsFromCompound } = await import("./bash-parser.js");
     const commands = await extractCommandsFromCompound(command);
@@ -197,7 +197,7 @@ export class PermissionAnalyzer {
     // sh -c / bash -c / zsh -c / xargs sh -c の場合は安全性を判定して分岐
     const hasShellC = /(\bsh|\bbash|\bzsh)\s+-c\b/.test(command) || /\bxargs\b[\s\S]*?\bsh\s+-c\b/.test(command);
     if (hasShellC) {
-      const analysis = this.analyzeShInvocationSafety(command, commands);
+      const analysis = this.analyzeShInvocationSafety(command, commands, entryCwd);
       if (analysis.safe && analysis.firstSafe) {
         return this.generalizeCommand(analysis.firstSafe);
       }
@@ -585,7 +585,7 @@ export class PermissionAnalyzer {
    * sh -c / bash -c の安全性を簡易判定
    * - commands: ネスト抽出された個々のコマンドテキスト（単純分割ベース）
    */
-  private analyzeShInvocationSafety(original: string, commands: string[]): { safe: boolean; firstSafe?: string } {
+  private analyzeShInvocationSafety(original: string, commands: string[], entryCwd?: string): { safe: boolean; firstSafe?: string } {
     if (commands.length === 0) return { safe: false };
 
     // 危険なシグネチャ（粗め、誤許可を防ぐため保守的）
@@ -608,7 +608,10 @@ export class PermissionAnalyzer {
       // /tmp 配下は許容
       if (target === '/tmp' || target.startsWith('/tmp/')) return true;
 
-      const cwd = process.cwd();
+      // 変数展開やコマンド置換が含まれる場合は保守的に不許可
+      if (/[`$]/.test(target)) return false;
+
+      const cwd = (typeof entryCwd === 'string' && entryCwd) ? entryCwd : process.cwd();
       // 絶対パスはCWD配下のみ許容
       let abs: string;
       if (target.startsWith('/')) {
@@ -628,6 +631,21 @@ export class PermissionAnalyzer {
       if (rel === '' || rel === '.') return false; // CWD直書きは許容するか？ 明示的に可とする
       for (const b of banned) {
         if (rel.startsWith(b)) return false;
+      }
+
+      // 親ディレクトリがシンボリックリンクでワークスペース外を指す場合を拒否
+      try {
+        const parent = abs.replace(/\/[^/]*$/, '') || cwd;
+        if (existsSync(parent)) {
+          const realParent = realpathSync(parent);
+          const realCwd = realpathSync(cwd);
+          if (!realParent.startsWith(realCwd + '/') && realParent !== realCwd) {
+            return false;
+          }
+        }
+      } catch {
+        // realpath取得に失敗した場合は保守的に不許可
+        return false;
       }
       return true;
     };
