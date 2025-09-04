@@ -7,14 +7,13 @@
  */
 
 import { 
-  createVoiceConfig, 
-  createVoiceSession, 
+  createAudioEngine,
   handleNotification, 
   handleStop, 
-  handleError, 
-  handleCustom,
+  handleError,
+  speakNotification,
   cleanupSession
-} from '../lib/voice-notification.ts';
+} from '../lib/unified-audio-engine.ts';
 
 async function main() {
   const args = process.argv.slice(2);
@@ -25,8 +24,7 @@ async function main() {
     process.exit(1);
   }
 
-  const config = createVoiceConfig();
-  const session = createVoiceSession(config);
+  const { config, session } = await createAudioEngine();
   
   // Setup cleanup on exit
   const cleanup = () => cleanupSession(session, config);
@@ -52,7 +50,7 @@ async function main() {
       break;
     default:
       if (args.length === 2 && args[1]) {
-        await handleCustom(eventType, args[1], config, session);
+        await speakNotification(args[1], eventType, config, session);
       } else {
         console.log('Usage: speak-notification.ts {Notification|Stop|Error} [custom_message]');
         process.exit(1);
