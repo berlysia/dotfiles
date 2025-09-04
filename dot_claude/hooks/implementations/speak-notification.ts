@@ -7,12 +7,11 @@
 
 import { defineHook } from "cc-hooks-ts";
 import { 
-  createVoiceConfig, 
-  createVoiceSession, 
+  createAudioEngine,
   handleNotification, 
   handleStop,
   cleanupSession
-} from '../../lib/voice-notification.ts';
+} from '../../lib/unified-audio-engine.ts';
 const hook = defineHook({
   trigger: {
     Notification: true,
@@ -22,8 +21,7 @@ const hook = defineHook({
     const eventType = context.input.hook_event_name as 'Notification' | 'Stop';
 
     try {
-      const config = createVoiceConfig();
-      const session = createVoiceSession(config);
+      const { config, session } = await createAudioEngine();
       
       // Setup cleanup on exit
       const cleanup = () => cleanupSession(session, config);
@@ -31,20 +29,25 @@ const hook = defineHook({
       process.on('SIGINT', cleanup);
       process.on('SIGTERM', cleanup);
       
+      let result;
       switch (eventType) {
         case 'Notification':
-          await handleNotification(config, session);
+          result = await handleNotification(config, session);
           break;
         case 'Stop':
-          await handleStop(config, session);
+          result = await handleStop(config, session);
           break;
         default:
-          await handleNotification(config, session);
+          result = await handleNotification(config, session);
           break;
       }
       
+      const statusMessage = result.success 
+        ? `Voice notification played via ${result.method} for ${eventType} event`
+        : `Voice notification failed for ${eventType} event: ${result.error || 'Unknown error'}`;
+      
       return context.success({
-        messageForUser: `Voice notification played for ${eventType} event`
+        messageForUser: statusMessage
       });
     } catch (error) {
       console.error(`Voice notification error: ${error}`);
