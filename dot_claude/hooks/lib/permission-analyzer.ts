@@ -605,6 +605,9 @@ export class PermissionAnalyzer {
       if (target.startsWith('/dev/') && target !== '/dev/null') return false;
       if (target.startsWith('>&') || target.startsWith('&>')) return false;
 
+      // /tmp 配下は許容
+      if (target === '/tmp' || target.startsWith('/tmp/')) return true;
+
       const cwd = process.cwd();
       // 絶対パスはCWD配下のみ許容
       let abs: string;
