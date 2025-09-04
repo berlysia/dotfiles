@@ -230,10 +230,26 @@ class AutoApproveUpdater {
       candidate => candidate.riskScore <= 3 && candidate.confidence >= 80
     );
 
-    // 高リスク（スコア8-10）のdeny候補を自動承認
-    const dangerousDenyCandidates = result.denyCandidates.filter(
-      candidate => candidate.riskScore >= 8
-    );
+    // 高リスク（スコア8-10）のdeny候補の自動承認は、以下を満たす場合のみ
+    // - 信頼度80%以上、頻度3回以上
+    // - 基本ユーティリティコマンドではない（例: find/grep/awkなど）
+    // - パターンが広い既存Allowと衝突しない（単純チェック）
+    const basicUtility = /^Bash\((ls|cat|head|tail|grep|find|printf|echo|awk|sed|cut|sort|uniq|xargs|tr):\*\)$/;
+    const existingAllow = new Set<string>([]);
+    // 既存許可（広範囲）を読み込んで衝突除外
+    try {
+      const projectPermissions = this.loadPermissions(this.projectPermissionsPath);
+      (projectPermissions.allow || []).forEach(p => existingAllow.add(p));
+    } catch {}
+
+    const dangerousDenyCandidates = result.denyCandidates.filter(candidate => {
+      const meetsRisk = candidate.riskScore >= 8;
+      const meetsConfidence = candidate.confidence >= 80;
+      const meetsFrequency = (candidate as any).frequency ? (candidate as any).frequency >= 3 : true; // frequencyありなら3以上
+      const notBasicUtility = !basicUtility.test(candidate.pattern);
+      const conflictsWithAllow = existingAllow.has(candidate.pattern);
+      return meetsRisk && meetsConfidence && meetsFrequency && notBasicUtility && !conflictsWithAllow;
+    });
 
     approved.allowPatterns = safeAllowCandidates.map(c => c.pattern);
     approved.denyPatterns = dangerousDenyCandidates.map(c => c.pattern);

@@ -58,7 +58,7 @@ export class PermissionAnalyzer {
   private readonly safePatterns = [
     // Bashコマンドパターン
     /^Bash\((git|npm|pnpm|yarn|bun)(\s+[\w-]+)?:\*\)$/,
-    /^Bash\((ls|cat|head|tail|grep|find|echo|pwd|whoami|date|mkdir|touch|cd):\*\)$/,
+    /^Bash\((ls|cat|head|tail|grep|find|echo|printf|pwd|whoami|date|mkdir|touch|cd):\*\)$/,
     /^Bash\((git status)\)$/,
     /^Bash\((tsc|tsx|node|npx):\*\)$/,
     
@@ -230,7 +230,23 @@ export class PermissionAnalyzer {
     }
 
     // 基本コマンドの場合
-    if (cmd.match(/^(ls|cat|head|tail|grep|find|echo|pwd|mkdir|touch|cd)$/)) {
+    // Treat common utilities as basic, but preserve dangerous variants when possible
+    if (cmd === 'find') {
+      // Highlight destructive variants for deny analysis
+      if (parts.includes('-delete')) {
+        return 'find -delete:*';
+      }
+      const execIndex = parts.indexOf('-exec');
+      if (execIndex !== -1) {
+        const next = parts.slice(execIndex + 1).join(' ');
+        if (/\brm\b/.test(next)) {
+          return 'find -exec rm:*';
+        }
+      }
+      return 'find:*';
+    }
+
+    if (cmd.match(/^(ls|cat|head|tail|grep|echo|printf|pwd|mkdir|touch|cd)$/)) {
       return `${cmd}:*`;
     }
 
@@ -313,10 +329,15 @@ export class PermissionAnalyzer {
       recommendedAction = 'deny';
       reasoning = 'Potentially dangerous system operation';
     }
-    // 明確に拒否されているパターン
-    else if (denyCount > 0 && denyCount >= allowCount) {
+    // 明確に拒否されているパターン（十分な頻度と比率、かつ基本ユーティリティ除外）
+    else if (
+      denyCount >= 2 &&
+      denyCount >= allowCount &&
+      (denyCount / entries.length) >= 0.6 &&
+      !this.isBasicUtilityPattern(pattern)
+    ) {
       recommendedAction = 'deny';
-      reasoning = `Frequently denied (${denyCount} times)`;
+      reasoning = `Frequently denied (${denyCount}/${entries.length}) with high ratio`;
     }
     // プロジェクト依存パターン（テストファイル等）の検出
     else if (this.isProjectDependentPattern(pattern)) {
@@ -431,6 +452,14 @@ export class PermissionAnalyzer {
    */
   private isSafePattern(pattern: string): boolean {
     return this.safePatterns.some(regex => regex.test(pattern));
+  }
+
+  /**
+   * 基本ユーティリティコマンドの判定（過剰なdeny提案を避ける）
+   */
+  private isBasicUtilityPattern(pattern: string): boolean {
+    const basicUtility = [/^Bash\((ls|cat|head|tail|grep|find|printf|echo|awk|sed|cut|sort|uniq|xargs|tr):\*\)$/];
+    return basicUtility.some(r => r.test(pattern));
   }
 
   /**
