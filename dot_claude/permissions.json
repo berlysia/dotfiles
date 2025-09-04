@@ -164,6 +164,7 @@
     "Bash(npx unocss:*)",
     "Bash(npx playwright:*)",
     "Bash(npx eslint:*)",
+    "Bash(npx prettier:*)",
     "Bash(git rev-parse --show-toplevel)",
     "Bash(cd \"$(git rev-parse --show-toplevel)\" && pwd)",
     "Bash(git diff HEAD --name-only | xargs -I {} sh -c 'printf \"%s: \" \"{}\"; git diff HEAD {} | grep -c \"^@@\" || echo \"0\"')",
