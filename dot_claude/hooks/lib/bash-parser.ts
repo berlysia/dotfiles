@@ -36,6 +36,7 @@ const CONTROL_KEYWORDS = ['for', 'do', 'done', 'if', 'then', 'else', 'fi', 'whil
 // Tree-sitter state
 let treeSitterInitialized = false;
 let bashParser: any = null;
+let TreeSitter: any = null;
 
 // Simple command line splitter that respects quoted strings and redirections
 function splitCommandLine(command: string): string[] {
@@ -182,8 +183,8 @@ function extractCommandsFromTreeSitter(tree: any, sourceText: string): SimpleCom
 
 // Parse a simple command from tree-sitter node
 function parseSimpleCommandFromNode(node: any, sourceText: string, index: number): SimpleCommand | null {
-  const startByte = node.startPosition.column;
-  const endByte = node.endPosition.column;
+  const startByte = node.startIndex ?? 0;
+  const endByte = node.endIndex ?? sourceText.length;
   const text = sourceText.slice(startByte, endByte).trim();
   
   if (!text) return null;
@@ -197,16 +198,17 @@ function parseSimpleCommandFromNode(node: any, sourceText: string, index: number
   for (const child of node.children || []) {
     switch (child.type) {
       case 'variable_assignment':
-        assignments.push(sourceText.slice(child.startByte, child.endByte));
+        assignments.push(sourceText.slice(child.startIndex ?? 0, child.endIndex ?? 0));
         break;
         
       case 'file_redirect':
       case 'heredoc_redirect':
-        redirections.push(sourceText.slice(child.startByte, child.endByte));
+      case 'redirection':
+        redirections.push(sourceText.slice(child.startIndex ?? 0, child.endIndex ?? 0));
         break;
         
       case 'word':
-        const wordText = sourceText.slice(child.startByte, child.endByte);
+        const wordText = sourceText.slice(child.startIndex ?? 0, child.endIndex ?? 0);
         if (!commandName) {
           commandName = wordText;
         } else {
@@ -240,10 +242,44 @@ export async function parseBashCommand(command: string, silent = false): Promise
 }
 
 async function parseWithTreeSitter(command: string): Promise<BashParsingResult> {
-  // Tree-sitter integration is complex and requires proper WASM initialization
-  // For now, we'll implement this step by step. Starting with fallback until 
-  // we solve the initialization and API issues
-  throw new Error("Tree-sitter parsing not yet fully implemented");
+  if (!treeSitterInitialized) {
+    // Lazy init web-tree-sitter and bash language
+    // Defer to runtime resolution to avoid bundler issues
+    const ParserMod: any = await import('web-tree-sitter');
+    const Parser = ParserMod.Parser || ParserMod;
+    if (typeof Parser.init === 'function') {
+      await Parser.init();
+    }
+
+    // Resolve WASM path from installed package
+    const wasmPath = `${process.cwd()}/node_modules/tree-sitter-bash/tree-sitter-bash.wasm`;
+    const Language = (ParserMod.Language || Parser.Language);
+    const BashLang = await Language.load(wasmPath);
+    bashParser = new Parser();
+    bashParser.setLanguage(BashLang);
+    treeSitterInitialized = true;
+  }
+
+  try {
+    // If meta-execution is present (sh -c, xargs sh -c, etc.), prefer the existing
+    // meta extractor to pull out nested commands for safety analysis
+    const metaOnly = extractMetaCommands(command, new Set<string>());
+    if (metaOnly.length > 0) {
+      const mapped = metaOnly.map((t, i) => parseSimpleCommandFallback(t, i, command)).filter(Boolean) as SimpleCommand[];
+      return { commands: mapped, errors: [], parsingMethod: 'tree-sitter' };
+    }
+
+    const tree = bashParser.parse(command);
+    const cmds = extractCommandsFromTreeSitter(tree, command);
+    return {
+      commands: cmds,
+      errors: [],
+      parsingMethod: 'tree-sitter'
+    };
+  } catch (e) {
+    // Surface to caller to trigger fallback
+    throw e;
+  }
 }
 
 function parseWithFallback(command: string): BashParsingResult {
