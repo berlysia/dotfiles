@@ -271,6 +271,19 @@ async function parseWithTreeSitter(command: string): Promise<BashParsingResult> 
 
     const tree = bashParser.parse(command);
     const cmds = extractCommandsFromTreeSitter(tree, command);
+    // Also include commands from command substitutions ($(...) and backticks)
+    const subs = extractCommandSubstitutions(command);
+    const extra = subs
+      .map((t, i) => parseSimpleCommandFallback(t, i + cmds.length, command))
+      .filter(Boolean) as SimpleCommand[];
+    // Deduplicate by text
+    const seen = new Set(cmds.map(c => c.text));
+    for (const e of extra) {
+      if (!seen.has(e.text)) {
+        cmds.push(e);
+        seen.add(e.text);
+      }
+    }
     return {
       commands: cmds,
       errors: [],
