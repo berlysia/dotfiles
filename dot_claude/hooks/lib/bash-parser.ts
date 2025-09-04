@@ -21,13 +21,13 @@ const META_COMMANDS = {
   'sh': [/-c\s+['"](.+?)['"]/, /(.+)/],
   'bash': [/-c\s+['"](.+?)['"]/, /(.+)/],
   'zsh': [/-c\s+['"](.+?)['"]/, /(.+)/],
-  'bun': [/-e\s+['"](.+?)['"]/, /(.+)/],
   'node': [/-e\s+['"](.+?)['"]/, /(.+)/],
   'xargs': [/sh\s+-c\s+['"](.+?)['"]/, /-I\s+\S+\s+(.+)/, /(.+)/],
   'timeout': [/\d+\s+(.+)/],
   'time': [/(.+)/],
   'env': [/(?:\w+=\w+\s+)*(.+)/]
   // Removed 'cat', 'head', 'tail' - these are file reading commands, not meta commands
+  // Removed 'bun' - bun run/test/install are direct commands, not meta commands
 };
 
 // Control structure keywords that should be processed transparently
@@ -228,11 +228,13 @@ function parseSimpleCommandFromNode(node: any, sourceText: string, index: number
 }
 
 // Try tree-sitter parsing first, fallback to regex-based parsing
-export async function parseBashCommand(command: string): Promise<BashParsingResult> {
+export async function parseBashCommand(command: string, silent = false): Promise<BashParsingResult> {
   try {
     return await parseWithTreeSitter(command);
   } catch (error) {
-    console.warn(`Tree-sitter parsing failed, using fallback: ${error}`);
+    if (!silent) {
+      console.warn(`Tree-sitter parsing failed, using fallback: ${error}`);
+    }
     return parseWithFallback(command);
   }
 }
@@ -461,7 +463,7 @@ function parseSimpleCommandFallback(cmdText: string, index: number, originalComm
 // Legacy compatibility function - replaces extractCommandsFromCompound
 export async function extractCommandsFromCompound(command: string): Promise<string[]> {
   try {
-    const result = await parseBashCommand(command);
+    const result = await parseBashCommand(command, true); // Silent mode
     return result.commands.map(cmd => cmd.text);
   } catch (error) {
     // Fallback to simple splitting if parsing fails
