@@ -5,7 +5,7 @@
 
 import { readFileSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve, relative } from "node:path";
 import type { DecisionLogEntry } from "../types/logging-types.ts";
 
 export interface PatternAnalysis {
@@ -596,8 +596,38 @@ export class PermissionAnalyzer {
       /sed\s+[^\n]*?-i\b/
     ];
 
-    // 書き込み系リダイレクト（/dev/null 以外）
-    const writeRedirect = /(^|\s)\d*>>?\s*(?!\/dev\/null)\S/;
+    // 書き込み系リダイレクトの抽出（/dev/null 以外は原則unsafe。ただしワークスペース配下の安全パスは許容）
+    const redirRegex = /(\s|^)\d*>>?\s*(["']?)([^\s"'&|;]+)\2/g;
+
+    const isSafeWorkspaceTarget = (target: string): boolean => {
+      if (!target || target === '/dev/null') return true;
+      // 明らかなFDや特殊ターゲットは不許可
+      if (target.startsWith('/dev/') && target !== '/dev/null') return false;
+      if (target.startsWith('>&') || target.startsWith('&>')) return false;
+
+      const cwd = process.cwd();
+      // 絶対パスはCWD配下のみ許容
+      let abs: string;
+      if (target.startsWith('/')) {
+        abs = target;
+        if (!abs.startsWith(cwd + '/') && abs !== cwd) return false;
+      } else if (target.startsWith('~')) {
+        // ホーム直下は対象外（安全側）
+        return false;
+      } else {
+        // 相対パスはCWD基準
+        abs = resolve(cwd, target);
+      }
+
+      // CWDに対する相対パスで禁止ディレクトリを判定
+      const rel = relative(cwd, abs).replace(/\\/g, '/');
+      const banned = ['.git/', 'node_modules/', 'dist/', 'build/', 'target/', 'coverage/', '.next/'];
+      if (rel === '' || rel === '.') return false; // CWD直書きは許容するか？ 明示的に可とする
+      for (const b of banned) {
+        if (rel.startsWith(b)) return false;
+      }
+      return true;
+    };
 
     // 許容する安全ユーティリティ
     const safeUtils = /^(ls|cat|head|tail|grep|echo|printf|pwd|which|whoami|date|cut|uniq|tr|column|paste|realpath|readlink|stat|du|df|wc|sort|awk)$/;
@@ -606,7 +636,12 @@ export class PermissionAnalyzer {
       const text = (cmdText || '').trim();
       if (!text) return true;
       if (dangerous.some(r => r.test(text))) return false;
-      if (writeRedirect.test(text)) return false;
+      // 書き込みリダイレクトの各ターゲットを検査
+      let m: RegExpExecArray | null;
+      while ((m = redirRegex.exec(text)) !== null) {
+        const target = m[3] || '';
+        if (!isSafeWorkspaceTarget(target)) return false;
+      }
       // 先頭コマンド名のみを見る（簡易）
       const first = text.split(/\s+/)[0] || '';
       return safeUtils.test(first);
