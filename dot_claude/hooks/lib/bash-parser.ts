@@ -147,6 +147,14 @@ function extractCommandsFromTreeSitter(tree: any, sourceText: string): SimpleCom
           }
         }
         break;
+
+      case 'command_substitution':
+      case 'subshell':
+      case 'parenthesized_list':
+        for (const child of node.children || []) {
+          currentIndex = traverse(child, currentIndex);
+        }
+        break;
         
       case 'command':
       case 'simple_command':
@@ -183,6 +191,11 @@ function extractCommandsFromTreeSitter(tree: any, sourceText: string): SimpleCom
 
 // Parse a simple command from tree-sitter node
 function parseSimpleCommandFromNode(node: any, sourceText: string, index: number): SimpleCommand | null {
+  // If this is a wrapper 'command' node, descend to its simple_command if present
+  if (node.type === 'command') {
+    const simple = (node.children || []).find((c: any) => c.type === 'simple_command');
+    if (simple) return parseSimpleCommandFromNode(simple, sourceText, index);
+  }
   const startByte = node.startIndex ?? 0;
   const endByte = node.endIndex ?? sourceText.length;
   const text = sourceText.slice(startByte, endByte).trim();
