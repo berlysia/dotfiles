@@ -57,7 +57,7 @@ function splitCommandLine(command: string): string[] {
       inQuotes = false;
       quoteChar = '';
       current += char;
-    } else if (!inQuotes && /\s/.test(char)) {
+    } else if (!inQuotes && char && /\s/.test(char)) {
       if (current) {
         parts.push(current);
         current = '';
@@ -356,7 +356,10 @@ function extractCommandsFromCompoundFallback(command: string): string[] {
   const basicCommands = splitPipelineAndOperators(command)
     .map(cmd => cmd.trim())
     .filter(Boolean)
-    .filter(cmd => !CONTROL_KEYWORDS.includes(cmd.split(/\s+/)[0])); // Check only first word
+    .filter(cmd => {
+      const firstWord = cmd.split(/\s+/)[0];
+      return firstWord && !CONTROL_KEYWORDS.includes(firstWord);
+    }); // Check only first word
   
   return basicCommands;
 }
@@ -459,7 +462,10 @@ function extractFromControlStructures(command: string, processed: Set<string>): 
     const bodyCommands = loopBody.split(/\s*;\s*/)
       .map(cmd => cmd.trim())
       .filter(Boolean)
-      .filter(cmd => !CONTROL_KEYWORDS.includes(cmd.split(/\s+/)[0])); // Check only first word
+      .filter(cmd => {
+        const firstWord = cmd.split(/\s+/)[0];
+        return firstWord && !CONTROL_KEYWORDS.includes(firstWord);
+      }); // Check only first word
     
     commands.push(...bodyCommands);
   }

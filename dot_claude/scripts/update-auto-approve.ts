@@ -236,7 +236,7 @@ class AutoApproveUpdater {
     ]);
     safeAllowCandidates = safeAllowCandidates.filter(c => {
       const m = c.pattern.match(/^Bash\(npx\s+(\S+):\*\)$/);
-      if (!m) return true;
+      if (!m || !m[1]) return true;
       const pkg = m[1];
       return npxWhitelist.has(pkg);
     });

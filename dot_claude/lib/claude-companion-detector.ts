@@ -75,7 +75,7 @@ export async function checkHealthEndpoint(port: number): Promise<boolean> {
     }
     
     const data = await response.json();
-    return data.status === 'ok';
+    return (data as { status?: string })?.status === 'ok';
   } catch {
     return false;
   }

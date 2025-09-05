@@ -669,7 +669,7 @@ export class PermissionAnalyzer {
       const details = await parseDetailed(text);
       const first = details[0];
       const name = (first?.name || '').trim();
-      if (!name) return { safe: false };
+      if (!name || !first) return { safe: false };
 
       // 安全ユーティリティ以外は不許可
       if (!safeUtils.test(name)) return { safe: false };
@@ -707,6 +707,7 @@ export class PermissionAnalyzer {
       }
     }
 
-    return { safe: true, firstSafe: commands[0] };
+    const firstCommand = commands[0];
+    return firstCommand ? { safe: true, firstSafe: firstCommand } : { safe: true };
   }
 }

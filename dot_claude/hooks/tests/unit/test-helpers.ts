@@ -187,33 +187,33 @@ export async function invokeRun<H extends { run: (...args: any[]) => any }>(hook
  * Create a PreToolUse context object that matches the hook's expected run parameter type.
  * This avoids scattering casts in tests by centralizing a single, typed construction.
  */
-export function createPreToolUseContextFor<H extends { run: (ctx: any) => any }, Name extends string, Input>(
+export function createPreToolUseContextFor<H extends { run: (ctx: any) => any }, Name extends keyof ToolSchema, Input>(
   hook: H,
   tool_name: Name,
   tool_input: Input
 ) : Parameters<H["run"]>[0] & MockHookContext<{ PreToolUse: true }> {
   type Ctx = Parameters<H["run"]>[0];
-  const baseInput: ExtractAllHookInputsForEvent<"PreToolUse"> = {
+  const baseInput = {
     hook_event_name: "PreToolUse" as const,
     cwd: "/test",
     session_id: "test-session",
     transcript_path: "/test/transcript",
     tool_name,
     tool_input
-  };
+  } as ExtractAllHookInputsForEvent<"PreToolUse">;
   // Reuse MockHookContext behavior for capturing calls
   const ctx = new MockHookContext<{ PreToolUse: true }>(baseInput);
   return ctx as unknown as (Ctx & MockHookContext<{ PreToolUse: true }>);
 }
 
-export function createPostToolUseContextFor<H extends { run: (ctx: any) => any }, Name extends string, Input, Response>(
+export function createPostToolUseContextFor<H extends { run: (ctx: any) => any }, Name extends keyof ToolSchema, Input, Response>(
   hook: H,
   tool_name: Name,
   tool_input: Input,
   tool_response: Response
 ): Parameters<H["run"]>[0] & MockHookContext<{ PostToolUse: true }> {
   type Ctx = Parameters<H["run"]>[0];
-  const baseInput: ExtractAllHookInputsForEvent<"PostToolUse"> = {
+  const baseInput = {
     hook_event_name: "PostToolUse" as const,
     cwd: "/test",
     session_id: "test-session",
@@ -221,7 +221,7 @@ export function createPostToolUseContextFor<H extends { run: (ctx: any) => any }
     tool_name,
     tool_input,
     tool_response
-  };
+  } as ExtractAllHookInputsForEvent<"PostToolUse">;
   const ctx = new MockHookContext<{ PostToolUse: true }>(baseInput);
   return ctx as unknown as (Ctx & MockHookContext<{ PostToolUse: true }>);
 }
@@ -355,7 +355,7 @@ export class EnvironmentHelper {
 /**
  * Helper functions for creating properly typed test contexts
  */
-export const createPreToolUseContext = <Name extends string>(
+export const createPreToolUseContext = <Name extends keyof ToolSchema>(
   tool_name: Name, 
   tool_input: any
 ) => {
@@ -381,7 +381,7 @@ export const createPostToolUseContext = <Name extends keyof ToolSchema>(
   tool_input: ToolSchema[Name]["input"], 
   tool_response: ToolSchema[Name]["response"]
 ) => {
-  const input: ExtractAllHookInputsForEvent<"PostToolUse"> = {
+  const input = {
     hook_event_name: "PostToolUse" as const,
     cwd: "/test",
     session_id: "test-session", 
@@ -389,7 +389,7 @@ export const createPostToolUseContext = <Name extends keyof ToolSchema>(
     tool_name,
     tool_input,
     tool_response
-  };
+  } as ExtractAllHookInputsForEvent<"PostToolUse">;
   
   return new MockHookContext<{ PostToolUse: true }>(input);
 };

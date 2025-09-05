@@ -43,7 +43,7 @@ const hook = defineHook({
       }
       
       // For other tools, extract file path and validate
-      const filePath = extractFilePath(tool_name, tool_input);
+      const filePath = await extractFilePath(tool_name, tool_input);
       if (!filePath) {
         return context.success({});
       }
@@ -84,7 +84,7 @@ interface BashAnalysisResult {
   operation?: string;
 }
 
-function extractFilePath(tool_name: string, tool_input: unknown): string | null {
+async function extractFilePath(tool_name: string, tool_input: unknown): Promise<string | null> {
   if (isWriteInput(tool_name, tool_input)) {
     return tool_input.file_path || null;
   }
@@ -99,7 +99,7 @@ function extractFilePath(tool_name: string, tool_input: unknown): string | null 
   }
   if (tool_name === "Bash") {
     const cmd = getCommandFromToolInput("Bash", tool_input) || "";
-    return extractPathFromBashCommand(cmd);
+    return await extractPathFromBashCommand(cmd);
   }
   return null;
 }
@@ -234,9 +234,9 @@ function analyzeIndividualCommand(cmd: string): AnalysisResult {
   };
 }
 
-function extractPathFromBashCommand(command: string): string | null {
+async function extractPathFromBashCommand(command: string): Promise<string | null> {
   // Use the new analysis system to determine if command affects node_modules
-  const result = analyzeBashCommand(command);
+  const result = await analyzeBashCommand(command);
   
   // If the command involves node_modules in any way, return dummy path to trigger processing
   if (result.decision !== 'allow' || command.includes('node_modules')) {
