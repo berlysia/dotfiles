@@ -223,7 +223,11 @@ export async function notify(message: string, type: SoundType = 'notification'):
   
   // 3. システム通知（Linux限定、音声と並列実行）
   if (detectPlatform() === 'linux') {
-    await $`notify-send "Claude Code" ${message}`.quiet().catch(() => {});
+    try {
+      await $`notify-send "Claude Code" ${message}`.quiet();
+    } catch {
+      // notify-send がない場合は無視
+    }
   }
 }
 

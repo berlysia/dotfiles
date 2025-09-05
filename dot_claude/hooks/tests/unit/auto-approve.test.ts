@@ -12,6 +12,7 @@ import {
   createAskResponse,
   createDenyResponse
 } from "./test-helpers.ts";
+import type { ToolSchema } from "cc-hooks-ts";
 import {
   extractCommandsFromCompound,
   checkDangerousCommand,
@@ -393,7 +394,7 @@ describe("auto-approve.ts hook behavior", () => {
       
       const hook = autoApproveHook;
       
-      const context = createPreToolUseContextFor(autoApproveHook, "mcp__context7__resolve-library-id", { 
+      const context = createPreToolUseContextFor(autoApproveHook, "mcp__context7__resolve-library-id" as keyof ToolSchema, { 
         libraryName: "react"
       });
       await hook.run(context);

@@ -1,6 +1,34 @@
 #!/usr/bin/env -S bun test
 
-import { describe, it, test, expect } from "bun:test";
+import { describe, it, test } from "node:test";
+import { strictEqual, deepStrictEqual, ok } from "node:assert";
+
+// expect関数のヘルパー（node:assertのラッパー）
+const expect = (value: any) => ({
+  toBe: (expected: any) => strictEqual(value, expected),
+  toEqual: (expected: any) => deepStrictEqual(value, expected),
+  toBeTruthy: () => ok(value),
+  toBeFalsy: () => ok(!value),
+  toBeDefined: () => ok(value !== undefined),
+  toHaveLength: (expected: number) => strictEqual(value.length, expected),
+  toBeGreaterThanOrEqual: (expected: number) => ok(value >= expected),
+  toBeLessThanOrEqual: (expected: number) => ok(value <= expected),
+  toContain: (expected: any) => ok(value.includes(expected)),
+  not: {
+    toBe: (expected: any) => ok(value !== expected),
+    toEqual: (expected: any) => {
+      try {
+        deepStrictEqual(value, expected);
+        ok(false); // Should not reach here
+      } catch {
+        // Expected to fail
+      }
+    },
+    toBeTruthy: () => ok(!value),
+    toBeFalsy: () => ok(!!value),
+    toContain: (expected: any) => ok(!value.includes(expected))
+  }
+});
 import { 
   parseBashCommand, 
   extractCommandsFromCompound,
@@ -204,10 +232,13 @@ describe("bash-parser", () => {
     it("should include range information", async () => {
       const result = await parseBashCommand("echo hello");
       const cmd = result.commands[0];
-      expect(cmd?.range).toBeDefined();
-      expect(typeof cmd?.range.start).toBe("number");
-      expect(typeof cmd?.range.end).toBe("number");
-      expect(cmd?.range.start).toBeLessThanOrEqual(cmd?.range.end);
+      if (cmd?.range.start === undefined || cmd?.range.end === undefined) {
+        throw new Error('Range start or end is undefined');
+      }
+      expect(cmd.range).toBeDefined();
+      expect(typeof cmd.range.start).toBe("number");
+      expect(typeof cmd.range.end).toBe("number");
+      expect(cmd.range.start).toBeLessThanOrEqual(cmd.range.end);
     });
 
     it("should include path information", async () => {
