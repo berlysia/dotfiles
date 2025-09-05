@@ -20,3 +20,7 @@
 
 ## Project Structure Context
 このプロジェクトはchezmoi管理のdotfiles設定です。
+
+## Testing Tool
+常に node:test, node:assert を好みます。Bunの組み込みメソッドの利用は禁じられます。
+テストの実行時は bun test ${testfile} で実行します。
