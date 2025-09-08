@@ -78,11 +78,11 @@ const hook = defineHook({
         logDecision(tool_name, decision.decision, decision.reason, context.input.session_id, undefined, tool_input);
 
         if (decision.decision === "deny") {
-          return context.json(createDenyResponse(decision.reason) as any);
+          return context.json(createDenyResponse(decision.reason));
         } else if (decision.decision === "ask") {
-          return context.json(createAskResponse(decision.reason) as any);
+          return context.json(createAskResponse(decision.reason));
         } else if (decision.decision === "allow") {
-          return context.json(createAllowResponse(decision.reason) as any);
+          return context.json(createAllowResponse(decision.reason));
         }
 
         // Pass by default (let Claude Code decide)
@@ -90,7 +90,7 @@ const hook = defineHook({
       }
 
     } catch (error) {
-      return context.json(createDenyResponse(`Error in auto-approve: ${error}`) as any);
+      return context.json(createDenyResponse(`Error in auto-approve: ${error}`));
     }
   }
 });
