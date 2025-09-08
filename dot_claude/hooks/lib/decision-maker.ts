@@ -11,9 +11,10 @@ import type {
 
 /**
  * Create hook output JSON with decision
+ * Note: Only for explicit decisions that require JSON responses (excludes "pass")
  */
 export function createHookOutput(
-  decision: PermissionDecision,
+  decision: "allow" | "ask" | "deny",
   reason: string
 ): PreToolUseHookOutput {
   return {
@@ -27,8 +28,9 @@ export function createHookOutput(
 
 /**
  * Output JSON decision to stdout
+ * Note: Only for explicit decisions that require JSON responses (excludes "pass")
  */
-export function outputDecision(decision: PermissionDecision, reason: string): void {
+export function outputDecision(decision: "allow" | "ask" | "deny", reason: string): void {
   const output = createHookOutput(decision, reason);
   console.log(JSON.stringify(output, null, 2));
 }
@@ -113,7 +115,11 @@ export function makeDecision(
 
 /**
  * Create final output for a decision
+ * Note: "pass" decisions don't create JSON output (handled at hook level)
  */
 export function finalizeDecision(result: CommandAnalysisResult): void {
-  outputDecision(result.decision, result.reason);
+  if (result.decision !== "pass") {
+    outputDecision(result.decision, result.reason);
+  }
+  // For "pass" decisions, no JSON output is needed - hook should call context.success()
 }
