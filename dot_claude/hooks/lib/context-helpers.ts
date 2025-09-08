@@ -3,7 +3,7 @@
  * Based on cc-hooks-ts library type definitions
  */
 
-import type { PermissionDecision, PreToolUseHookOutput } from "../types/project-types.ts";
+import type { PreToolUseHookOutput } from "../types/project-types.ts";
 
 /**
  * Type for cc-hooks-ts JSON response format
@@ -14,10 +14,16 @@ type HookJSONResponse = {
 };
 
 /**
+ * Type for explicit permission decisions (excludes "pass" since it doesn't use JSON responses)
+ */
+type ExplicitPermissionDecision = "allow" | "deny" | "ask";
+
+/**
  * Create a properly formatted PreToolUse response for cc-hooks-ts
+ * Note: "pass" decisions should use context.success() directly, not JSON responses
  */
 export function createPreToolUseResponse(
-  decision: PermissionDecision,
+  decision: ExplicitPermissionDecision,
   reason: string
 ): HookJSONResponse {
   return {

@@ -12,7 +12,7 @@ import type { ExtractAllHookInputsForEvent, ExtractSpecificHookInputForEvent, To
 export type { ExtractAllHookInputsForEvent, ExtractSpecificHookInputForEvent };
 
 // Type aliases for commonly used cc-hooks-ts types
-export type PermissionDecision = "allow" | "deny" | "ask";
+export type PermissionDecision = "allow" | "deny" | "ask" | "pass";
 export type BuiltinToolName = ExtractAllHookInputsForEvent<"PreToolUse">["tool_name"];
 export type MCPToolName = `mcp__${string}__${string}`;
 export type ToolName = BuiltinToolName | MCPToolName;
@@ -34,6 +34,7 @@ export type PostToolUseHookInput = {
 };
 
 // Define PreToolUseHookOutput locally since it's not exported from cc-hooks-ts
+// Note: permissionDecision is restricted to cc-hooks-ts supported values (excludes "pass")
 export interface PreToolUseHookOutput {
   continue?: boolean;
   stopReason?: string;
@@ -41,7 +42,7 @@ export interface PreToolUseHookOutput {
   systemMessage?: string;
   hookSpecificOutput?: {
     hookEventName: "PreToolUse";
-    permissionDecision: PermissionDecision;
+    permissionDecision: "allow" | "ask" | "deny";
     permissionDecisionReason: string;
   };
 }

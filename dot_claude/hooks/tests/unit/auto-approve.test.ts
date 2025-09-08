@@ -63,7 +63,7 @@ describe("auto-approve.ts hook behavior", () => {
       await invokeRun(autoApproveHook, context);
       
       // Should allow the command
-      context.assertSuccess({});
+      context.assertAllow();
     });
     
     it("should deny single command with deny pattern", async () => {
@@ -88,8 +88,8 @@ describe("auto-approve.ts hook behavior", () => {
       const context = createPreToolUseContextFor(autoApproveHook, "Bash", { command: "unknown_command" });
       await invokeRun(autoApproveHook, context);
       
-      // Should ask for approval
-      context.assertAsk();
+      // Should pass through to Claude Code when no patterns are configured
+      context.assertSuccess();
     });
     
     it("should approve compound command when all parts are allowed", async () => {
@@ -102,7 +102,7 @@ describe("auto-approve.ts hook behavior", () => {
       await invokeRun(autoApproveHook, context);
       
       // Should allow the compound command
-      context.assertSuccess({});
+      context.assertAllow();
     });
     
     it("should deny compound command when one part is denied", async () => {
@@ -126,7 +126,7 @@ describe("auto-approve.ts hook behavior", () => {
       const context = createPreToolUseContextFor(autoApproveHook, "Bash", { command: "echo 'hello \"world\"'" });
       await hook.run(context);
       
-      context.assertSuccess({});
+      context.assertAllow();
     });
     
     it("should handle piped commands", async () => {
@@ -138,7 +138,7 @@ describe("auto-approve.ts hook behavior", () => {
       await hook.run(context);
       
       // Both commands in the pipe should be allowed
-      context.assertSuccess({});
+      context.assertAllow();
     });
   });
   
@@ -155,7 +155,7 @@ describe("auto-approve.ts hook behavior", () => {
       });
       await hook.run(context);
       
-      context.assertSuccess({});
+      context.assertAllow();
     });
     
     it("should deny Write tool with deny pattern", async () => {
@@ -182,7 +182,7 @@ describe("auto-approve.ts hook behavior", () => {
       const context = createPreToolUseContextFor(autoApproveHook, "Read", { file_path: "/path/to/README.md" });
       await hook.run(context);
       
-      context.assertSuccess({});
+      context.assertAllow();
     });
   });
   
@@ -211,8 +211,8 @@ describe("auto-approve.ts hook behavior", () => {
       const context = createPreToolUseContextFor(autoApproveHook, "Bash", { command: "chmod -R 777 /" });
       await invokeRun(autoApproveHook, context);
       
-      // Not explicitly in dangerous patterns; should ask for review
-      context.assertAsk();
+      // Not explicitly in dangerous patterns; passes through to Claude Code
+      context.assertSuccess();
     });
   });
   
@@ -225,7 +225,7 @@ describe("auto-approve.ts hook behavior", () => {
       const context = createPreToolUseContextFor(autoApproveHook, "Bash", { command: "npm install express" });
       await invokeRun(autoApproveHook, context);
       
-      context.assertSuccess({});
+      context.assertAllow();
     });
     
     it("should handle exact match patterns", async () => {
@@ -236,14 +236,14 @@ describe("auto-approve.ts hook behavior", () => {
       const context1 = createPreToolUseContextFor(autoApproveHook, "Bash", { command: "ls" });
       await hook.run(context1);
       
-      context1.assertSuccess({});
+      context1.assertAllow();
       
       // Should not match with arguments
       const context2 = createPreToolUseContextFor(autoApproveHook, "Bash", { command: "ls -la" });
       await hook.run(context2);
       
-      // With exact match only, arguments should cause ask
-      context2.assertAsk();
+      // With exact match only, arguments don't match and pass through
+      context2.assertSuccess();
     });
     
     it("should prioritize deny over allow", async () => {
@@ -375,7 +375,7 @@ describe("auto-approve.ts hook behavior", () => {
       });
       await hook.run(context);
       
-      context.assertSuccess({});
+      context.assertAllow();
     });
     
     it("should handle Glob without parentheses", async () => {
@@ -386,7 +386,7 @@ describe("auto-approve.ts hook behavior", () => {
       const context = createPreToolUseContextFor(autoApproveHook, "Glob", { pattern: "*.ts" });
       await hook.run(context);
       
-      context.assertSuccess({});
+      context.assertAllow();
     });
     
     it("should handle MCP tools", async () => {
@@ -399,7 +399,7 @@ describe("auto-approve.ts hook behavior", () => {
       });
       await hook.run(context);
       
-      context.assertSuccess({});
+      context.assertAllow();
     });
   });
   
@@ -481,6 +481,46 @@ describe("auto-approve.ts hook behavior", () => {
       
       // Should handle parse error gracefully
       ok(context.successCalls.length > 0 || context.jsonCalls.length > 0);
+    });
+  });
+
+  describe("Type Safety Verification", () => {
+    it("should provide structured result types for debugging", async () => {
+      // This test verifies the type safety improvements
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(echo:*)"]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify(["Bash(rm:*)"]));
+      
+      const hook = autoApproveHook;
+      
+      // Test allow pattern
+      const allowContext = createPreToolUseContextFor(autoApproveHook, "Bash", { command: "echo hello" });
+      await invokeRun(autoApproveHook, allowContext);
+      allowContext.assertAllow();
+      
+      // Test deny pattern  
+      const denyContext = createPreToolUseContextFor(autoApproveHook, "Bash", { command: "rm dangerous.txt" });
+      await invokeRun(autoApproveHook, denyContext);
+      denyContext.assertDeny();
+      
+      // Test no match pattern
+      const noMatchContext = createPreToolUseContextFor(autoApproveHook, "Bash", { command: "unknown_command" });
+      await invokeRun(autoApproveHook, noMatchContext);
+      noMatchContext.assertSuccess();
+    });
+    
+    it("should handle mixed command types correctly", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(echo:*)"]));
+      
+      const hook = autoApproveHook;
+      
+      // Commands with mix of allowed and not-allowed should result in ask
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", { 
+        command: "echo hello && unknown_command && echo world" 
+      });
+      await invokeRun(autoApproveHook, context);
+      
+      // Should pass mixed commands to Claude Code for evaluation
+      context.assertSuccess();
     });
   });
 });

@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
-import { createAskResponse, createDenyResponse } from "../lib/context-helpers.ts";
+import { createAskResponse, createDenyResponse, createAllowResponse } from "../lib/context-helpers.ts";
 import { logDecision } from "../lib/centralized-logging.ts";
 import { isBashToolInput, type PermissionDecision } from "../types/project-types.ts";
 import { 
@@ -47,17 +47,9 @@ const hook = defineHook({
     try {
       // Process based on tool type
       if (tool_name === "Bash") {
+        // Use improved structured processing
         const bashResult = await processBashTool(tool_input, denyList, allowList);
-
-        // Handle early exit conditions (dangerous commands requiring manual review)
-        if (bashResult.earlyExit) {
-          const [exitType, exitReason] = bashResult.earlyExit.split("|", 2);
-          if (exitType === "ask") {
-            return context.json(createAskResponse(exitReason || "Manual review required"));
-          }
-        }
-
-        const decision = analyzeBashCommands(bashResult.individualResults, bashResult.denyMatches);
+        const decision = analyzeBashCommands(bashResult.commands, bashResult.hasAskRequired, bashResult.hasPassRequired);
 
         // Log the decision using centralized logger  
         const command = isBashToolInput(tool_name, tool_input) ? tool_input.command : undefined;
@@ -67,9 +59,14 @@ const hook = defineHook({
           return context.json(createDenyResponse(decision.reason));
         } else if (decision.decision === "ask") {
           return context.json(createAskResponse(decision.reason));
+        } else if (decision.decision === "allow") {
+          return context.json(createAllowResponse(decision.reason));
+        } else if (decision.decision === "pass") {
+          // Pass through to Claude Code - no hook intervention
+          return context.success({});
         }
 
-        // Allow by default
+        // Fallback: pass by default
         return context.success({});
 
       } else {
@@ -81,33 +78,43 @@ const hook = defineHook({
         logDecision(tool_name, decision.decision, decision.reason, context.input.session_id, undefined, tool_input);
 
         if (decision.decision === "deny") {
-          return context.json(createDenyResponse(decision.reason));
+          return context.json(createDenyResponse(decision.reason) as any);
         } else if (decision.decision === "ask") {
-          return context.json(createAskResponse(decision.reason));
+          return context.json(createAskResponse(decision.reason) as any);
+        } else if (decision.decision === "allow") {
+          return context.json(createAllowResponse(decision.reason) as any);
         }
 
-        // Allow by default
+        // Pass by default (let Claude Code decide)
         return context.success({});
       }
 
     } catch (error) {
-      return context.json(createDenyResponse(`Error in auto-approve: ${error}`));
+      return context.json(createDenyResponse(`Error in auto-approve: ${error}`) as any);
     }
   }
 });
 
 // Helper functions (adapted from original implementation)
 
-interface BashCommandResult {
-  result?: string;
-  denyMatch?: string;
-  earlyExit?: string;
-}
+/**
+ * Structured result type for bash command processing using Tagged Union pattern
+ * This provides better type safety and eliminates string parsing
+ */
+type BashCommandResult = 
+  | { type: 'allow'; command: string; pattern: string }
+  | { type: 'deny'; command: string; reason: string; pattern?: string }
+  | { type: 'pass'; command: string }
+  | { type: 'skip'; command: string; reason: string }
+  | { type: 'ask'; reason: string };
 
+/**
+ * Improved BashToolResult with structured command results
+ */
 interface BashToolResult {
-  individualResults: string[];
-  denyMatches: string[];
-  earlyExit?: string;
+  commands: BashCommandResult[];
+  hasAskRequired: boolean;
+  hasPassRequired: boolean;
 }
 
 interface OtherToolResult {
@@ -210,48 +217,59 @@ function extractPermissionList(type: "allow" | "deny", settingsFiles: SettingsFi
   return patterns;
 }
 
+/**
+ * Improved bash tool processing with structured return types
+ * Uses Tagged Union pattern for better type safety
+ */
 async function processBashTool(tool_input: unknown, denyList: string[], allowList: string[]): Promise<BashToolResult> {
   const bashCommand = getCommandFromToolInput("Bash", tool_input) || "";
   const extractedCommands = await extractCommandsFromCompound(bashCommand);
 
-  const individualResults: string[] = [];
-  const denyMatches: string[] = [];
+  const commands: BashCommandResult[] = [];
+  let hasAskRequired = false;
+  let hasPassRequired = false;
 
   for (const cmd of extractedCommands) {
     const trimmedCmd = cmd.trim();
     if (!trimmedCmd) continue;
 
     const result = await processBashCommand(trimmedCmd, denyList, allowList);
+    commands.push(result);
 
-    if (result.earlyExit) {
-      return {
-        individualResults,
-        denyMatches,
-        earlyExit: result.earlyExit,
-      };
+    // Check if ask is required (early exit condition)
+    if (result.type === 'ask') {
+      hasAskRequired = true;
+      break; // Early exit when ask is needed
     }
 
-    if (result.result) {
-      individualResults.push(result.result);
-    }
-
-    if (result.denyMatch) {
-      denyMatches.push(result.denyMatch);
+    // Track if any command requires pass-through
+    if (result.type === 'pass') {
+      hasPassRequired = true;
     }
   }
 
   return {
-    individualResults,
-    denyMatches,
+    commands,
+    hasAskRequired,
+    hasPassRequired,
   };
 }
 
+
+/**
+ * Improved bash command processing with structured return types
+ * Uses Tagged Union pattern for better type safety and eliminates string parsing
+ */
 async function processBashCommand(cmd: string, denyList: string[], allowList: string[]): Promise<BashCommandResult> {
   const trimmedCmd = cmd.trim();
   
   // Skip evaluation for control structure keywords - they are transparent
   if (CONTROL_STRUCTURE_KEYWORDS.includes(trimmedCmd)) {
-    return { result: `SKIP: Control structure keyword '${trimmedCmd}'` };
+    return { 
+      type: 'skip', 
+      command: trimmedCmd, 
+      reason: `Control structure keyword '${trimmedCmd}'` 
+    };
   }
   
   // Check for dangerous commands first
@@ -259,12 +277,14 @@ async function processBashCommand(cmd: string, denyList: string[], allowList: st
   if (dangerResult.isDangerous) {
     if (dangerResult.requiresManualReview) {
       return {
-        earlyExit: `ask|${dangerResult.reason}`,
+        type: 'ask',
+        reason: dangerResult.reason,
       };
     } else {
       return {
-        result: `DENY: '${cmd}' (blocked: ${dangerResult.reason})`,
-        denyMatch: dangerResult.reason,
+        type: 'deny',
+        command: cmd,
+        reason: dangerResult.reason,
       };
     }
   }
@@ -274,8 +294,10 @@ async function processBashCommand(cmd: string, denyList: string[], allowList: st
     const denyResult = await patternMatcherCheckDeny(cmd, denyList);
     if (denyResult.matches && denyResult.matchedPattern) {
       return {
-        result: `DENY: '${cmd}' (matched: ${denyResult.matchedPattern})`,
-        denyMatch: `Individual command blocked: ${cmd}`,
+        type: 'deny',
+        command: cmd,
+        reason: `Individual command blocked: ${cmd}`,
+        pattern: denyResult.matchedPattern,
       };
     }
   }
@@ -285,16 +307,20 @@ async function processBashCommand(cmd: string, denyList: string[], allowList: st
     const allowResult = await patternMatcherCheckAllow(cmd, allowList);
     if (allowResult.matches && allowResult.matchedPattern) {
       return {
-        result: `ALLOW: '${cmd}' (matched: ${allowResult.matchedPattern})`,
+        type: 'allow',
+        command: cmd,
+        pattern: allowResult.matchedPattern,
       };
     } else {
       return {
-        result: `NO_MATCH: '${cmd}' (no allow pattern matched)`,
+        type: 'pass',
+        command: cmd,
       };
     }
   } else {
     return {
-      result: `NO_MATCH: '${cmd}' (no allow patterns defined)`,
+      type: 'pass',
+      command: cmd,
     };
   }
 }
@@ -382,34 +408,58 @@ function checkPattern(pattern: string, tool_name: string, tool_input: unknown): 
   }
 }
 
-function analyzeBashCommands(individualResults: string[], denyMatches: string[]): { decision: PermissionDecision; reason: string } {
-  if (denyMatches.length > 0) {
-    return {
-      decision: "deny",
-      reason: `Blocked by security rules: ${denyMatches.join(", ")}`
-    };
-  }
 
-  const allowCount = individualResults.filter(r => r.startsWith("ALLOW:")).length;
-  const noMatchCount = individualResults.filter(r => r.startsWith("NO_MATCH:")).length;
-
-  if (allowCount > 0 && noMatchCount === 0) {
-    return {
-      decision: "allow",
-      reason: `All commands matched allow patterns (${allowCount} commands)`
-    };
-  }
-
-  if (noMatchCount > 0) {
-    // Extract unmatched commands for detailed logging
-    const unmatchedCommands = individualResults
-      .filter(r => r.startsWith("NO_MATCH:"))
-      .map(r => r.replace(/^NO_MATCH:\s*'([^']+)'.*/, "$1"))
-      .filter(Boolean);
-    
+/**
+ * Analyze structured bash command results using Tagged Union pattern
+ * Provides better type safety than string parsing approach
+ */
+function analyzeBashCommands(commands: BashCommandResult[], hasAskRequired: boolean, hasPassRequired: boolean): { decision: PermissionDecision; reason: string } {
+  // Ask takes precedence
+  if (hasAskRequired) {
+    const askCommand = commands.find(cmd => cmd.type === 'ask');
     return {
       decision: "ask",
-      reason: `Some commands did not match allow patterns (${noMatchCount} commands): ${unmatchedCommands.join(", ")}`
+      reason: askCommand?.reason || "Manual review required for dangerous command"
+    };
+  }
+
+  // Check for denied commands
+  const deniedCommands = commands.filter(cmd => cmd.type === 'deny');
+  if (deniedCommands.length > 0) {
+    const reasons = deniedCommands.map(cmd => cmd.reason).join(", ");
+    return {
+      decision: "deny",
+      reason: `Blocked by security rules: ${reasons}`
+    };
+  }
+
+  // Check if all non-skipped commands are explicitly allowed
+  const nonSkippedCommands = commands.filter(cmd => cmd.type !== 'skip');
+  const allowedCommands = commands.filter(cmd => cmd.type === 'allow');
+  const passCommands = commands.filter(cmd => cmd.type === 'pass');
+
+  if (nonSkippedCommands.length === 0) {
+    // Only control structure keywords are present
+    // According to test expectations, this should ask for approval when no allow patterns are configured
+    return {
+      decision: "ask",
+      reason: "Only control structure keywords present, no allow patterns defined"
+    };
+  }
+
+  if (allowedCommands.length > 0 && passCommands.length === 0) {
+    return {
+      decision: "allow",
+      reason: `All commands matched allow patterns (${allowedCommands.length} commands)`
+    };
+  }
+
+  // Pass commands through to Claude Code (no hook intervention)
+  if (passCommands.length > 0) {
+    const passedCommands = passCommands.map(cmd => cmd.command);
+    return {
+      decision: "pass",
+      reason: `Commands passed through to Claude Code for evaluation (${passCommands.length} commands): ${passedCommands.join(", ")}`
     };
   }
 
