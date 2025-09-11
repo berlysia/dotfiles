@@ -1,7 +1,9 @@
-import { createReadStream } from "fs";
-import { createInterface } from "readline";
-import { Readable } from "stream";
-import { ReadableStream as WebReadableStream } from "stream/web";
+#!/usr/bin/env -S bun run --silent
+
+import { createReadStream } from "node:fs";
+import { createInterface } from "node:readline";
+import { Readable } from "node:stream";
+import { ReadableStream as WebReadableStream } from "node:stream/web";
 
 const DEFAULT_PATH = `${process.env.HOME}/.claude/logs/decisions.jsonl`;
 
