@@ -306,6 +306,12 @@ export async function checkPattern(pattern: string, toolName: string, toolInput:
     // Extract the command pattern from Bash(command:*)
     const cmdPattern = pattern.slice(5, -1); // Remove "Bash(" and ")"
     
+    // Reject ** pattern for Bash tool - it's not a valid Bash pattern
+    // Bash tool uses command prefixes like "npm:*" not file patterns like "**"
+    if (cmdPattern === "**") {
+      return false;
+    }
+    
     // Get the actual command using type guard
     const actualCommand = isBashToolInput(toolName, toolInput) ? (toolInput.command || "") : "";
     

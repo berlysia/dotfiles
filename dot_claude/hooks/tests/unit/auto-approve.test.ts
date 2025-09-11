@@ -523,6 +523,58 @@ describe("auto-approve.ts hook behavior", () => {
       context.assertSuccess();
     });
   });
+
+  describe("Invalid pattern handling", () => {
+    it("should reject Bash(**) pattern", async () => {
+      // Set up invalid Bash(**) pattern in allow list
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(**)"]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+      
+      const hook = autoApproveHook;
+      
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", { 
+        command: "echo hello" 
+      });
+      await hook.run(context);
+      
+      // Should pass through to Claude Code since Bash(**) pattern is invalid
+      context.assertSuccess();
+    });
+    
+    it("should accept Read(**) pattern", async () => {
+      // Verify that Read(**) pattern still works correctly
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Read(**)"]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+      
+      const hook = autoApproveHook;
+      
+      const context = createPreToolUseContextFor(autoApproveHook, "Read", { 
+        file_path: "/path/to/file.txt" 
+      });
+      await hook.run(context);
+      
+      // Should allow all Read operations
+      context.assertAllow();
+    });
+    
+    it("should accept Edit(**) pattern", async () => {
+      // Verify that Edit(**) pattern still works correctly
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Edit(**)"]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+      
+      const hook = autoApproveHook;
+      
+      const context = createPreToolUseContextFor(autoApproveHook, "Edit", { 
+        file_path: "/path/to/file.txt",
+        old_string: "old",
+        new_string: "new"
+      });
+      await hook.run(context);
+      
+      // Should allow all Edit operations
+      context.assertAllow();
+    });
+  });
 });
 
 // Helper function to create auto-approve hook with test logic  
