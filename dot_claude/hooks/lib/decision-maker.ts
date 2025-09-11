@@ -15,7 +15,7 @@ import type {
  */
 export function createHookOutput(
   decision: "allow" | "ask" | "deny",
-  reason: string
+  reason: string,
 ): PreToolUseHookOutput {
   return {
     hookSpecificOutput: {
@@ -30,18 +30,20 @@ export function createHookOutput(
  * Output JSON decision to stdout
  * Note: Only for explicit decisions that require JSON responses (excludes "pass")
  */
-export function outputDecision(decision: "allow" | "ask" | "deny", reason: string): void {
+export function outputDecision(
+  decision: "allow" | "ask" | "deny",
+  reason: string,
+): void {
   const output = createHookOutput(decision, reason);
   console.log(JSON.stringify(output, null, 2));
 }
-
 
 /**
  * Analyze individual command results for Bash tool
  */
 export function analyzeBashCommandResults(
   results: string[],
-  denyMatches: string[]
+  denyMatches: string[],
 ): CommandAnalysisResult {
   // If any command is denied, block the entire operation
   if (denyMatches.length > 0) {
@@ -52,9 +54,9 @@ export function analyzeBashCommandResults(
   }
 
   // Check if ALL commands are explicitly allowed
-  const allAllowed = results.length > 0 && results.every((result) =>
-    result.startsWith("ALLOW:")
-  );
+  const allAllowed =
+    results.length > 0 &&
+    results.every((result) => result.startsWith("ALLOW:"));
 
   if (allAllowed) {
     return {
@@ -74,7 +76,7 @@ export function analyzeBashCommandResults(
  */
 export function analyzePatternMatches(
   allowMatches: string[],
-  denyMatches: string[]
+  denyMatches: string[],
 ): CommandAnalysisResult {
   if (denyMatches.length > 0) {
     return {
@@ -102,7 +104,7 @@ export function analyzePatternMatches(
 export function makeDecision(
   allowMatches: string[] = [],
   denyMatches: string[] = [],
-  commandResults?: string[]
+  commandResults?: string[],
 ): CommandAnalysisResult {
   // For Bash tools with command results
   if (commandResults && commandResults.length > 0) {

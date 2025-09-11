@@ -1,6 +1,6 @@
 /**
  * Type definitions index for Claude Code hook scripts
- * 
+ *
  * This file provides a single entry point for importing both
  * cc-hooks-ts library types and project-specific types.
  */
@@ -9,7 +9,7 @@
 export type {
   ExtractAllHookInputsForEvent,
   ExtractSpecificHookInputForEvent,
-  ToolSchema
+  ToolSchema,
 } from "cc-hooks-ts";
 
 // Re-export project-specific types
@@ -25,5 +25,5 @@ export type {
   FileOperation,
   PathValidationResult,
   LogEntry,
-  PendingCommand
+  PendingCommand,
 } from "./project-types.ts";

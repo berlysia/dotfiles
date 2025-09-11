@@ -38,12 +38,12 @@ export function readHookInput(): HookInput {
 
   try {
     const parsed = JSON.parse(input) as HookInput;
-    
+
     // Validate required fields
     if (!parsed.tool_name) {
       throw new Error("Missing tool_name in input");
     }
-    
+
     if (!parsed.tool_input) {
       throw new Error("Missing tool_input in input");
     }
@@ -65,12 +65,12 @@ export function readStopHookInput(): StopHookInput {
 
   try {
     const parsed = JSON.parse(input) as StopHookInput;
-    
+
     // Validate required fields
     if (!parsed.hook_event_name) {
       throw new Error("Missing hook_event_name in input");
     }
-    
+
     if (!parsed.session_id) {
       throw new Error("Missing session_id in input");
     }
@@ -87,7 +87,10 @@ export function readStopHookInput(): StopHookInput {
 /**
  * Extract tool information from hook input
  */
-export function extractToolInfo(input: HookInput): { toolName: string; toolInput: ToolInput } {
+export function extractToolInfo(input: HookInput): {
+  toolName: string;
+  toolInput: ToolInput;
+} {
   return {
     toolName: input.tool_name,
     toolInput: input.tool_input as ToolInput,
@@ -116,14 +119,14 @@ export function getWorkspaceRoot(fallback?: string): string | undefined {
  */
 export function getSettingsFiles(workspaceRoot?: string): string[] {
   const files: string[] = [];
-  
+
   if (workspaceRoot) {
     files.push(join(workspaceRoot, ".claude", "settings.local.json"));
     files.push(join(workspaceRoot, ".claude", "settings.json"));
   }
-  
+
   files.push(join(homedir(), ".claude", "settings.json"));
-  
+
   return files;
 }
 
@@ -139,7 +142,9 @@ function loadSettingsFile(filePath: string): SettingsFile | undefined {
     const content = readFileSync(filePath, "utf-8");
     return JSON.parse(content) as SettingsFile;
   } catch (error) {
-    console.warn(`Warning: Failed to parse settings file ${filePath}: ${error}`);
+    console.warn(
+      `Warning: Failed to parse settings file ${filePath}: ${error}`,
+    );
     return undefined;
   }
 }
@@ -149,7 +154,7 @@ function loadSettingsFile(filePath: string): SettingsFile | undefined {
  */
 export function extractPermissionList(
   listType: "allow" | "deny",
-  settingsFiles: string[]
+  settingsFiles: string[],
 ): string[] {
   const result: string[] = [];
 
@@ -207,10 +212,10 @@ export function extractFilePaths(toolInput: ToolInput): string[] {
  */
 export function buildProcessingContext(
   workspaceRoot?: string,
-  settingsFiles?: string[]
+  settingsFiles?: string[],
 ): ProcessingContext {
   const files = settingsFiles || getSettingsFiles(workspaceRoot);
-  
+
   return {
     workspaceRoot,
     settingsFiles: files,

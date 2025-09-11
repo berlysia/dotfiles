@@ -3,8 +3,8 @@
  * claude-companionの実行状態を検出するユーティリティ
  */
 
-import { existsSync, readFileSync } from 'fs';
-import { $ } from 'dax-sh';
+import { existsSync, readFileSync } from "fs";
+import { $ } from "dax-sh";
 
 export interface ClaudeCompanionStatus {
   isRunning: boolean;
@@ -34,13 +34,13 @@ export function getDaemonPidFilePath(): string {
  */
 export function parseDaemonPidFile(): DaemonPidFile | null {
   const pidFilePath = getDaemonPidFilePath();
-  
+
   if (!existsSync(pidFilePath)) {
     return null;
   }
 
   try {
-    const content = readFileSync(pidFilePath, 'utf-8').trim();
+    const content = readFileSync(pidFilePath, "utf-8").trim();
     return JSON.parse(content) as DaemonPidFile;
   } catch {
     return null;
@@ -66,16 +66,16 @@ export async function isProcessRunning(pid: number): Promise<boolean> {
 export async function checkHealthEndpoint(port: number): Promise<boolean> {
   try {
     const response = await fetch(`http://localhost:${port}/api/health`, {
-      method: 'GET',
-      signal: AbortSignal.timeout(3000) // 3秒タイムアウト
+      method: "GET",
+      signal: AbortSignal.timeout(3000), // 3秒タイムアウト
     });
-    
+
     if (!response.ok) {
       return false;
     }
-    
+
     const data = await response.json();
-    return (data as { status?: string })?.status === 'ok';
+    return (data as { status?: string })?.status === "ok";
   } catch {
     return false;
   }
@@ -91,7 +91,7 @@ export async function checkClaudeCompanionStatus(): Promise<ClaudeCompanionStatu
     if (!pidData) {
       return {
         isRunning: false,
-        error: 'daemon.pid file not found'
+        error: "daemon.pid file not found",
       };
     }
 
@@ -104,7 +104,7 @@ export async function checkClaudeCompanionStatus(): Promise<ClaudeCompanionStatu
         port: pidData.port,
         startTime: pidData.startTime,
         webUIEnabled: pidData.webUIEnabled,
-        error: `Process ${pidData.pid} not running`
+        error: `Process ${pidData.pid} not running`,
       };
     }
 
@@ -117,7 +117,7 @@ export async function checkClaudeCompanionStatus(): Promise<ClaudeCompanionStatu
         port: pidData.port,
         startTime: pidData.startTime,
         webUIEnabled: pidData.webUIEnabled,
-        error: `Health check failed on port ${pidData.port}`
+        error: `Health check failed on port ${pidData.port}`,
       };
     }
 
@@ -127,13 +127,12 @@ export async function checkClaudeCompanionStatus(): Promise<ClaudeCompanionStatu
       pid: pidData.pid,
       port: pidData.port,
       startTime: pidData.startTime,
-      webUIEnabled: pidData.webUIEnabled
+      webUIEnabled: pidData.webUIEnabled,
     };
-
   } catch (error) {
     return {
       isRunning: false,
-      error: `Unexpected error: ${error}`
+      error: `Unexpected error: ${error}`,
     };
   }
 }

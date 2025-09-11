@@ -1,19 +1,24 @@
 /**
  * Project-specific type definitions for Claude Code hook scripts
- * 
+ *
  * This file contains types that are specific to this project's hook implementations.
  * Basic Hook API types are now imported from cc-hooks-ts library.
- * 
+ *
  * @see https://docs.anthropic.com/en/docs/claude-code/hooks
  */
 
 // Re-export types from cc-hooks-ts for convenience
-import type { ExtractAllHookInputsForEvent, ExtractSpecificHookInputForEvent, ToolSchema } from "cc-hooks-ts";
+import type {
+  ExtractAllHookInputsForEvent,
+  ExtractSpecificHookInputForEvent,
+  ToolSchema,
+} from "cc-hooks-ts";
 export type { ExtractAllHookInputsForEvent, ExtractSpecificHookInputForEvent };
 
 // Type aliases for commonly used cc-hooks-ts types
 export type PermissionDecision = "allow" | "deny" | "ask" | "pass";
-export type BuiltinToolName = ExtractAllHookInputsForEvent<"PreToolUse">["tool_name"];
+export type BuiltinToolName =
+  ExtractAllHookInputsForEvent<"PreToolUse">["tool_name"];
 export type MCPToolName = `mcp__${string}__${string}`;
 export type ToolName = BuiltinToolName | MCPToolName;
 export type ToolInput = Record<string, unknown>;
@@ -22,7 +27,7 @@ export type PreToolUseHookInput = {
   [K in keyof ToolSchema]: {
     tool_name: K;
     tool_input: ToolSchema[K]["input"];
-  }
+  };
 };
 
 export type PostToolUseHookInput = {
@@ -30,7 +35,7 @@ export type PostToolUseHookInput = {
     tool_name: K;
     tool_input: ToolSchema[K]["input"];
     tool_response: ToolSchema[K]["response"];
-  }
+  };
 };
 
 // Define PreToolUseHookOutput locally since it's not exported from cc-hooks-ts
@@ -48,11 +53,13 @@ export interface PreToolUseHookOutput {
 }
 
 // Union types for hook inputs (for backward compatibility)
-export type HookInput = 
+export type HookInput =
   | ExtractAllHookInputsForEvent<"PreToolUse">
   | ExtractAllHookInputsForEvent<"PostToolUse">;
 
-export type StopHookInput = ExtractAllHookInputsForEvent<"Stop"> | ExtractAllHookInputsForEvent<"SubagentStop">;
+export type StopHookInput =
+  | ExtractAllHookInputsForEvent<"Stop">
+  | ExtractAllHookInputsForEvent<"SubagentStop">;
 
 /**
  * Structure of Claude settings files (.claude/settings.json)
@@ -181,53 +188,97 @@ export interface FileToolInput {
 }
 
 // 型ガード関数
-export function isBashToolInput(tool_name: string, tool_input: unknown): tool_input is BashToolInput {
-  return tool_name === "Bash" && typeof tool_input === "object" && tool_input !== null;
+export function isBashToolInput(
+  tool_name: string,
+  tool_input: unknown,
+): tool_input is BashToolInput {
+  return (
+    tool_name === "Bash" &&
+    typeof tool_input === "object" &&
+    tool_input !== null
+  );
 }
 
-export function isFileToolInput(tool_name: string, tool_input: unknown): tool_input is FileToolInput {
-  return ["Edit", "MultiEdit", "Write"].includes(tool_name) && typeof tool_input === "object" && tool_input !== null;
+export function isFileToolInput(
+  tool_name: string,
+  tool_input: unknown,
+): tool_input is FileToolInput {
+  return (
+    ["Edit", "MultiEdit", "Write"].includes(tool_name) &&
+    typeof tool_input === "object" &&
+    tool_input !== null
+  );
 }
 
 // More precise tool-specific input guards (ToolSchema-based)
 export function isWriteInput(
   tool_name: string,
-  tool_input: unknown
+  tool_input: unknown,
 ): tool_input is import("cc-hooks-ts").ToolSchema["Write"]["input"] {
-  return tool_name === "Write" && typeof tool_input === "object" && tool_input !== null && "file_path" in tool_input;
+  return (
+    tool_name === "Write" &&
+    typeof tool_input === "object" &&
+    tool_input !== null &&
+    "file_path" in tool_input
+  );
 }
 
 export function isEditInput(
   tool_name: string,
-  tool_input: unknown
+  tool_input: unknown,
 ): tool_input is import("cc-hooks-ts").ToolSchema["Edit"]["input"] {
-  return tool_name === "Edit" && typeof tool_input === "object" && tool_input !== null && "file_path" in tool_input;
+  return (
+    tool_name === "Edit" &&
+    typeof tool_input === "object" &&
+    tool_input !== null &&
+    "file_path" in tool_input
+  );
 }
 
 export function isMultiEditInput(
   tool_name: string,
-  tool_input: unknown
+  tool_input: unknown,
 ): tool_input is import("cc-hooks-ts").ToolSchema["MultiEdit"]["input"] {
-  return tool_name === "MultiEdit" && typeof tool_input === "object" && tool_input !== null && "file_path" in tool_input;
+  return (
+    tool_name === "MultiEdit" &&
+    typeof tool_input === "object" &&
+    tool_input !== null &&
+    "file_path" in tool_input
+  );
 }
 
 export function isReadInput(
   tool_name: string,
-  tool_input: unknown
+  tool_input: unknown,
 ): tool_input is import("cc-hooks-ts").ToolSchema["Read"]["input"] {
-  return tool_name === "Read" && typeof tool_input === "object" && tool_input !== null && "file_path" in tool_input;
+  return (
+    tool_name === "Read" &&
+    typeof tool_input === "object" &&
+    tool_input !== null &&
+    "file_path" in tool_input
+  );
 }
 
 export function isNotebookEditInput(
   tool_name: string,
-  tool_input: unknown
+  tool_input: unknown,
 ): tool_input is import("cc-hooks-ts").ToolSchema["NotebookEdit"]["input"] {
-  return tool_name === "NotebookEdit" && typeof tool_input === "object" && tool_input !== null && "notebook_path" in tool_input;
+  return (
+    tool_name === "NotebookEdit" &&
+    typeof tool_input === "object" &&
+    tool_input !== null &&
+    "notebook_path" in tool_input
+  );
 }
 
 export function isGrepInput(
   tool_name: string,
-  tool_input: unknown
+  tool_input: unknown,
 ): tool_input is import("cc-hooks-ts").ToolSchema["Grep"]["input"] {
-  return tool_name === "Grep" && typeof tool_input === "object" && tool_input !== null && "pattern" in tool_input;
+  return (
+    tool_name === "Grep" &&
+    typeof tool_input === "object" &&
+    tool_input !== null &&
+    "pattern" in tool_input
+  );
 }

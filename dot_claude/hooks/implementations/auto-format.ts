@@ -47,13 +47,12 @@ const hook = defineHook({
 
       // Always return success - formatting failures should not block operations
       return context.success({});
-
     } catch (error) {
       console.error(`Auto-format error: ${error}`);
       // Don't block on formatting errors
       return context.success({});
     }
-  }
+  },
 });
 
 interface FormatResult {
@@ -86,9 +85,23 @@ function isFormattableFile(filePath: string): boolean {
   const ext = extname(filePath).slice(1); // Remove leading dot
 
   const formattableExtensions = [
-    'js', 'jsx', 'ts', 'tsx', 'json', 'jsonc',
-    'css', 'scss', 'html', 'md', 'mdx',
-    'yml', 'yaml', 'toml', 'rs', 'go', 'py'
+    "js",
+    "jsx",
+    "ts",
+    "tsx",
+    "json",
+    "jsonc",
+    "css",
+    "scss",
+    "html",
+    "md",
+    "mdx",
+    "yml",
+    "yaml",
+    "toml",
+    "rs",
+    "go",
+    "py",
   ];
 
   return formattableExtensions.includes(ext);
@@ -99,7 +112,7 @@ function isFormattableFile(filePath: string): boolean {
  */
 function commandExists(command: string): boolean {
   try {
-    execSync(`command -v ${command}`, { stdio: 'ignore' });
+    execSync(`command -v ${command}`, { stdio: "ignore" });
     return true;
   } catch {
     return false;
@@ -118,9 +131,9 @@ function localBinaryExists(path: string): boolean {
  */
 function execFormatter(command: string, filePath: string): boolean {
   try {
-    execSync(command.replace('$FILE', `"${filePath}"`), {
-      stdio: 'ignore',
-      timeout: 10000 // 10 second timeout
+    execSync(command.replace("$FILE", `"${filePath}"`), {
+      stdio: "ignore",
+      timeout: 10000, // 10 second timeout
     });
     return true;
   } catch {
@@ -143,7 +156,12 @@ function attemptFormat(filePath: string): FormatResult {
 
     // Local biome
     if (localBinaryExists("node_modules/.bin/biome")) {
-      if (execFormatter("./node_modules/.bin/biome format --write $FILE", filePath)) {
+      if (
+        execFormatter(
+          "./node_modules/.bin/biome format --write $FILE",
+          filePath,
+        )
+      ) {
         return { success: true, formatter: "biome (local)" };
       }
     }
@@ -152,8 +170,10 @@ function attemptFormat(filePath: string): FormatResult {
     if (commandExists("npx") && existsSync("package.json")) {
       try {
         const packageJson = require(process.cwd() + "/package.json");
-        if (packageJson.dependencies?.["@biomejs/biome"] ||
-          packageJson.devDependencies?.["@biomejs/biome"]) {
+        if (
+          packageJson.dependencies?.["@biomejs/biome"] ||
+          packageJson.devDependencies?.["@biomejs/biome"]
+        ) {
           if (execFormatter("npx biome format --write $FILE", filePath)) {
             return { success: true, formatter: "biome (npx)" };
           }
@@ -175,11 +195,15 @@ function attemptFormat(filePath: string): FormatResult {
 
   // Try Prettier
   const prettierConfigs = [
-    ".prettierrc", ".prettierrc.json", ".prettierrc.js",
-    ".prettierrc.yml", ".prettierrc.yaml", "prettier.config.js"
+    ".prettierrc",
+    ".prettierrc.json",
+    ".prettierrc.js",
+    ".prettierrc.yml",
+    ".prettierrc.yaml",
+    "prettier.config.js",
   ];
 
-  if (prettierConfigs.some(config => existsSync(config))) {
+  if (prettierConfigs.some((config) => existsSync(config))) {
     // Global prettier
     if (commandExists("prettier")) {
       if (execFormatter("prettier --write $FILE", filePath)) {
@@ -189,7 +213,9 @@ function attemptFormat(filePath: string): FormatResult {
 
     // Local prettier
     if (localBinaryExists("node_modules/.bin/prettier")) {
-      if (execFormatter("./node_modules/.bin/prettier --write $FILE", filePath)) {
+      if (
+        execFormatter("./node_modules/.bin/prettier --write $FILE", filePath)
+      ) {
         return { success: true, formatter: "prettier (local)" };
       }
     }
@@ -198,8 +224,10 @@ function attemptFormat(filePath: string): FormatResult {
     if (commandExists("npx") && existsSync("package.json")) {
       try {
         const packageJson = require(process.cwd() + "/package.json");
-        if (packageJson.dependencies?.["prettier"] ||
-          packageJson.devDependencies?.["prettier"]) {
+        if (
+          packageJson.dependencies?.["prettier"] ||
+          packageJson.devDependencies?.["prettier"]
+        ) {
           if (execFormatter("npx prettier --write $FILE", filePath)) {
             return { success: true, formatter: "prettier (npx)" };
           }

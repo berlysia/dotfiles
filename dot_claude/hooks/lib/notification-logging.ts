@@ -1,6 +1,6 @@
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
-import { homedir } from 'node:os';
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
+import { homedir } from "node:os";
 
 export interface HookLogEntry {
   timestamp: string;
@@ -13,7 +13,7 @@ export interface HookLogEntry {
 
 // ログファイルパス
 export function getLogFilePath(): string {
-  return path.join(homedir(), '.config/claude-companion/logs/hooks.jsonl');
+  return path.join(homedir(), ".config/claude-companion/logs/hooks.jsonl");
 }
 
 // ログディレクトリの作成
@@ -27,7 +27,7 @@ export async function ensureLogDir(): Promise<void> {
 export async function logEvent(
   eventType: string,
   sessionId?: string,
-  additionalData?: Record<string, any>
+  additionalData?: Record<string, any>,
 ): Promise<void> {
   const entry: HookLogEntry = {
     timestamp: new Date().toISOString(),
@@ -35,13 +35,13 @@ export async function logEvent(
     ...(sessionId ? { session_id: sessionId } : {}),
     user: process.env.USER || "unknown",
     cwd: process.cwd(),
-    ...additionalData
+    ...additionalData,
   };
-  
+
   try {
     await ensureLogDir();
     const logFile = getLogFilePath();
-    await fs.appendFile(logFile, JSON.stringify(entry) + '\n');
+    await fs.appendFile(logFile, JSON.stringify(entry) + "\n");
   } catch (error) {
     // エラーは握りつぶす（既存の動作と同じ）
     console.error(`Failed to log event: ${error}`);
@@ -52,11 +52,11 @@ export async function logEvent(
 export async function getEventStats(): Promise<Record<string, number>> {
   try {
     const logFile = getLogFilePath();
-    const content = await fs.readFile(logFile, 'utf-8');
-    const lines = content.trim().split('\n').filter(Boolean);
-    
+    const content = await fs.readFile(logFile, "utf-8");
+    const lines = content.trim().split("\n").filter(Boolean);
+
     const stats: Record<string, number> = {};
-    
+
     for (const line of lines) {
       try {
         const entry = JSON.parse(line) as HookLogEntry;
@@ -65,7 +65,7 @@ export async function getEventStats(): Promise<Record<string, number>> {
         // 不正なJSONは無視
       }
     }
-    
+
     return stats;
   } catch {
     return {};
@@ -76,11 +76,11 @@ export async function getEventStats(): Promise<Record<string, number>> {
 export async function getRecentEvents(limit = 10): Promise<HookLogEntry[]> {
   try {
     const logFile = getLogFilePath();
-    const content = await fs.readFile(logFile, 'utf-8');
-    const lines = content.trim().split('\n').filter(Boolean);
-    
+    const content = await fs.readFile(logFile, "utf-8");
+    const lines = content.trim().split("\n").filter(Boolean);
+
     const events: HookLogEntry[] = [];
-    
+
     // 最後のN件を取得
     for (const line of lines.slice(-limit)) {
       try {
@@ -89,7 +89,7 @@ export async function getRecentEvents(limit = 10): Promise<HookLogEntry[]> {
         // 不正なJSONは無視
       }
     }
-    
+
     return events;
   } catch {
     return [];
@@ -100,16 +100,19 @@ export async function getRecentEvents(limit = 10): Promise<HookLogEntry[]> {
 export async function rotateLogIfNeeded(maxLines = 1000): Promise<void> {
   try {
     const logFile = getLogFilePath();
-    const content = await fs.readFile(logFile, 'utf-8');
-    const lines = content.split('\n').filter(Boolean);
-    
+    const content = await fs.readFile(logFile, "utf-8");
+    const lines = content.split("\n").filter(Boolean);
+
     if (lines.length > maxLines) {
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const timestamp = new Date()
+        .toISOString()
+        .replace(/[:.]/g, "-")
+        .slice(0, 19);
       const backupFile = `${logFile}.${timestamp}`;
-      
+
       // バックアップを作成
       await fs.rename(logFile, backupFile);
-      
+
       // 古いバックアップファイルのクリーンアップ（最新5つまで保持）
       await cleanOldBackups();
     }
@@ -124,16 +127,16 @@ export async function cleanOldBackups(): Promise<void> {
     const logFile = getLogFilePath();
     const logDir = path.dirname(logFile);
     const baseName = path.basename(logFile);
-    
+
     const files = await fs.readdir(logDir);
     const backupFiles = files
-      .filter(file => file.startsWith(`${baseName}.`))
-      .map(file => ({
+      .filter((file) => file.startsWith(`${baseName}.`))
+      .map((file) => ({
         name: file,
         path: path.join(logDir, file),
-        mtime: 0 // statで取得
+        mtime: 0, // statで取得
       }));
-    
+
     // 各ファイルのmtimeを取得
     for (const file of backupFiles) {
       try {
@@ -144,12 +147,12 @@ export async function cleanOldBackups(): Promise<void> {
         file.mtime = 0;
       }
     }
-    
+
     // 新しい順にソートして、5つを超える古いファイルを削除
     backupFiles
       .sort((a, b) => b.mtime - a.mtime)
       .slice(5)
-      .forEach(file => {
+      .forEach((file) => {
         fs.unlink(file.path).catch(() => {});
       });
   } catch {

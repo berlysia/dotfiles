@@ -1,12 +1,12 @@
 #!/usr/bin/env bun
 
-import path, { resolve } from 'node:path';
-import { execSync } from 'node:child_process';
-import { createReadStream } from 'node:fs';
-import { createInterface } from 'node:readline';
+import path, { resolve } from "node:path";
+import { execSync } from "node:child_process";
+import { createReadStream } from "node:fs";
+import { createInterface } from "node:readline";
 import { loadDailyUsageData, loadSessionBlockData } from "ccusage/data-loader";
-import { writeFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
+import { writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 
 type DailyData = Awaited<ReturnType<typeof loadDailyUsageData>>;
 type BlockData = Awaited<ReturnType<typeof loadSessionBlockData>>;
@@ -32,7 +32,7 @@ interface StatusLineData {
 }
 
 async function readStdinAsJson(): Promise<StatusLineData> {
-  let input = '';
+  let input = "";
   for await (const chunk of process.stdin) {
     input += chunk;
   }
@@ -41,10 +41,10 @@ async function readStdinAsJson(): Promise<StatusLineData> {
 
 function getCurrentBranch(dirPath: string): string | null {
   try {
-    const branch = execSync('git rev-parse --abbrev-ref HEAD', {
+    const branch = execSync("git rev-parse --abbrev-ref HEAD", {
       cwd: dirPath,
-      encoding: 'utf8',
-      stdio: ['pipe', 'pipe', 'ignore']
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "ignore"],
     }).trim();
     return branch;
   } catch {
@@ -54,10 +54,10 @@ function getCurrentBranch(dirPath: string): string | null {
 
 function getGitRootDir(dirPath: string): string | null {
   try {
-    const gitRoot = execSync('git rev-parse --show-toplevel', {
+    const gitRoot = execSync("git rev-parse --show-toplevel", {
       cwd: dirPath,
-      encoding: 'utf8',
-      stdio: ['pipe', 'pipe', 'ignore']
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "ignore"],
     }).trim();
     return gitRoot;
   } catch {
@@ -76,11 +76,12 @@ function formatCost(cost: number): string {
 }
 
 async function getAllUsageData() {
-  const todayStr = new Date().toISOString().split('T')[0]?.replace(/-/g, '') ?? ''; // Convert to YYYYMMDD format
+  const todayStr =
+    new Date().toISOString().split("T")[0]?.replace(/-/g, "") ?? ""; // Convert to YYYYMMDD format
 
   const [dailyData, blockData] = await Promise.all([
     loadDailyUsageData({ offline: true, since: todayStr, until: todayStr }),
-    loadSessionBlockData({ offline: true })
+    loadSessionBlockData({ offline: true }),
   ]);
 
   return { dailyData, blockData };
@@ -141,16 +142,22 @@ interface SystemTranscriptEntry extends BaseTranscriptEntry {
   isMeta?: boolean;
 }
 
-type TranscriptEntry = UserTranscriptEntry | AssistantTranscriptEntry | SystemTranscriptEntry;
+type TranscriptEntry =
+  | UserTranscriptEntry
+  | AssistantTranscriptEntry
+  | SystemTranscriptEntry;
 
-async function calculateCurrentContextTokens(sessionId: string, transcriptPath: string): Promise<number> {
+async function calculateCurrentContextTokens(
+  sessionId: string,
+  transcriptPath: string,
+): Promise<number> {
   try {
     if (!transcriptPath) return 0;
 
-    const fileStream = createReadStream(transcriptPath, { encoding: 'utf8' });
+    const fileStream = createReadStream(transcriptPath, { encoding: "utf8" });
     const rl = createInterface({
       input: fileStream,
-      crlfDelay: Infinity // Handle \r\n properly
+      crlfDelay: Infinity, // Handle \r\n properly
     });
 
     let lastUsage = null;
@@ -173,10 +180,12 @@ async function calculateCurrentContextTokens(sessionId: string, transcriptPath: 
     }
 
     if (lastUsage) {
-      return (lastUsage.input_tokens || 0) + 
-             (lastUsage.output_tokens || 0) + 
-             (lastUsage.cache_creation_input_tokens || 0) + 
-             (lastUsage.cache_read_input_tokens || 0);
+      return (
+        (lastUsage.input_tokens || 0) +
+        (lastUsage.output_tokens || 0) +
+        (lastUsage.cache_creation_input_tokens || 0) +
+        (lastUsage.cache_read_input_tokens || 0)
+      );
     }
 
     return 0;
@@ -191,8 +200,12 @@ function calcSumOfTokens(tokens: {
   cacheCreationTokens?: number;
   cacheReadTokens?: number;
 }) {
-  return (tokens.inputTokens || 0) + (tokens.outputTokens || 0) +
-    (tokens.cacheCreationTokens || 0) + (tokens.cacheReadTokens || 0);
+  return (
+    (tokens.inputTokens || 0) +
+    (tokens.outputTokens || 0) +
+    (tokens.cacheCreationTokens || 0) +
+    (tokens.cacheReadTokens || 0)
+  );
 }
 
 function getDailyUsageFromData(dailyData: DailyData): string {
@@ -204,7 +217,7 @@ function getDailyUsageFromData(dailyData: DailyData): string {
       }
     }
   } catch (error) {
-    console.error('Failed to process daily usage:', error);
+    console.error("Failed to process daily usage:", error);
   }
   return "";
 }
@@ -220,26 +233,31 @@ function formatDuration(milliseconds: number) {
 function getBlockUsageFromData(blockData: BlockData): string {
   try {
     if (blockData && Array.isArray(blockData) && blockData.length > 0) {
-      const activeBlock = blockData.find(b => b.isActive);
+      const activeBlock = blockData.find((b) => b.isActive);
       if (activeBlock) {
         const tokens = calcSumOfTokens(activeBlock.tokenCounts);
         const now = new Date();
-        const remaining = Math.round((activeBlock.endTime.getTime() - now.getTime()));
-        const currentTime = now.toLocaleTimeString('ja-JP', {
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: false
+        const remaining = Math.round(
+          activeBlock.endTime.getTime() - now.getTime(),
+        );
+        const currentTime = now.toLocaleTimeString("ja-JP", {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
         });
         return `Block ${formatCost(activeBlock.costUSD || 0)}|${formatTokens(tokens)}| ${currentTime} (${formatDuration(remaining)} remains)`;
       }
     }
   } catch (error) {
-    console.error('Failed to process block usage:', error);
+    console.error("Failed to process block usage:", error);
   }
   return "";
 }
 
-function generateUsageStatusline(dailyData: DailyData, blockData: BlockData): string | null {
+function generateUsageStatusline(
+  dailyData: DailyData,
+  blockData: BlockData,
+): string | null {
   const daily = getDailyUsageFromData(dailyData);
   const block = getBlockUsageFromData(blockData);
 
@@ -253,23 +271,23 @@ function generateUsageStatusline(dailyData: DailyData, blockData: BlockData): st
     parts.push(block);
   }
 
-  return parts.length > 0 ? parts.join(' | ') : null;
+  return parts.length > 0 ? parts.join(" | ") : null;
 }
 
 function getSessionUsageColor(tokens: number): string {
-  if (tokens >= CRITICAL_THRESHOLD) return '\x1b[31m'; // Red
-  if (tokens >= WARNING_THRESHOLD) return '\x1b[33m'; // Yellow
-  return '\x1b[32m'; // Green
+  if (tokens >= CRITICAL_THRESHOLD) return "\x1b[31m"; // Red
+  if (tokens >= WARNING_THRESHOLD) return "\x1b[33m"; // Yellow
+  return "\x1b[32m"; // Green
 }
 
 async function generateStatusline(data: StatusLineData): Promise<string> {
-  const model = data.model?.display_name || 'Unknown';
+  const model = data.model?.display_name || "Unknown";
 
   // Determine the best directory to use, prioritizing project_dir > current_dir > git root > cwd
   let projectPath = data.workspace?.project_dir;
 
   if (!projectPath) {
-    const workingDir = data.workspace?.current_dir || data.cwd || '.';
+    const workingDir = data.workspace?.current_dir || data.cwd || ".";
     const gitRoot = getGitRootDir(workingDir);
     projectPath = gitRoot || workingDir;
   }
@@ -281,12 +299,19 @@ async function generateStatusline(data: StatusLineData): Promise<string> {
   const { dailyData, blockData } = await getAllUsageData();
 
   // Calculate current context tokens from transcript (compaction progress)
-  const displayTokens = data.session_id && data.transcript_path
-    ? await calculateCurrentContextTokens(data.session_id, data.transcript_path)
-    : 0;
+  const displayTokens =
+    data.session_id && data.transcript_path
+      ? await calculateCurrentContextTokens(
+          data.session_id,
+          data.transcript_path,
+        )
+      : 0;
 
   const usageStatusline = generateUsageStatusline(dailyData, blockData);
-  const sessionPercentage = Math.min(100, Math.round((displayTokens / MAX_SESSION_TOKENS) * 100));
+  const sessionPercentage = Math.min(
+    100,
+    Math.round((displayTokens / MAX_SESSION_TOKENS) * 100),
+  );
 
   // Build status line components
   const dirDisplay = branch ? `${currentDir}[${branch}]` : currentDir;
@@ -300,20 +325,26 @@ async function generateStatusline(data: StatusLineData): Promise<string> {
     `📁 ${dirDisplay}`,
     usageStatusline,
     sessionDisplay,
-    percentageDisplay
+    percentageDisplay,
   ].filter(Boolean);
 
-  return parts.join(' | ');
+  return parts.join(" | ");
 }
 
 async function main(): Promise<void> {
   try {
     const data = await readStdinAsJson();
-    await writeFile(resolve(homedir(), ".claude/latestStatusLineSeed.json"), JSON.stringify(data, null, 2));
+    await writeFile(
+      resolve(homedir(), ".claude/latestStatusLineSeed.json"),
+      JSON.stringify(data, null, 2),
+    );
     const statusLine = await generateStatusline(data);
     console.log(statusLine);
   } catch (error) {
-    console.log('[Error] Failed to generate status line:', (error as Error).message);
+    console.log(
+      "[Error] Failed to generate status line:",
+      (error as Error).message,
+    );
   }
 }
 

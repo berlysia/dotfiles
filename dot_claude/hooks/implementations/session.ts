@@ -15,14 +15,14 @@ const hook = defineHook({
       logEvent("SessionStart", context.input.session_id);
 
       return context.success({
-        messageForUser: "🚀 Claude Code session started. Ready for development!"
+        messageForUser:
+          "🚀 Claude Code session started. Ready for development!",
       });
-
     } catch (error) {
       console.error(`Session start error: ${error}`);
       return context.success({});
     }
-  }
+  },
 });
 
 export default hook;
