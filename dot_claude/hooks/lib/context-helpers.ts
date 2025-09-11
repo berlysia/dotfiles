@@ -24,7 +24,7 @@ type ExplicitPermissionDecision = "allow" | "deny" | "ask";
  */
 export function createPreToolUseResponse(
   decision: ExplicitPermissionDecision,
-  reason: string
+  reason: string,
 ): HookJSONResponse {
   return {
     event: "PreToolUse",
@@ -61,4 +61,3 @@ export function createDenyResponse(reason: string): HookJSONResponse {
 export function createAllowResponse(reason: string): HookJSONResponse {
   return createPreToolUseResponse("allow", reason);
 }
-

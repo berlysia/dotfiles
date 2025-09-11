@@ -1,21 +1,21 @@
 /**
  * Sound Types - Unified Type Definitions for Audio Notifications
- * 
+ *
  * Provides centralized type definitions for the notification sound system,
  * ensuring consistency across all audio-related components.
  */
 
 // Platform types
-export type Platform = 'darwin' | 'linux' | 'wsl';
+export type Platform = "darwin" | "linux" | "wsl";
 
 // Base sound types for static WAV files
-export type BaseSoundType = 'notification' | 'stop' | 'permission' | 'waiting';
+export type BaseSoundType = "notification" | "stop" | "permission" | "waiting";
 
 // Extended event types for dynamic synthesis
-export type EventType = 'Notification' | 'Stop' | 'Error';
+export type EventType = "Notification" | "Stop" | "Error";
 
 // Unified sound type that covers both static and dynamic scenarios
-export type UnifiedSoundType = BaseSoundType | 'error';
+export type UnifiedSoundType = BaseSoundType | "error";
 
 // Audio player interfaces
 export interface AudioPlayerCapabilities {
@@ -97,17 +97,17 @@ export interface IAudioPlayer {
    * Play static WAV file based on sound type
    */
   playStaticSound(options: StaticSoundOptions): Promise<boolean>;
-  
+
   /**
    * Play synthesized speech
    */
   playSynthesizedSpeech(options: DynamicSpeechOptions): Promise<boolean>;
-  
+
   /**
    * Get platform capabilities
    */
   getCapabilities(): AudioPlayerCapabilities;
-  
+
   /**
    * Test audio system availability
    */
@@ -119,12 +119,12 @@ export interface IVoiceSynthesizer {
    * Check if synthesis service is available
    */
   isAvailable(): Promise<boolean>;
-  
+
   /**
    * Synthesize speech to temporary file
    */
   synthesize(text: string, speakerId?: string): Promise<string | null>;
-  
+
   /**
    * Get available speakers
    */
@@ -135,12 +135,12 @@ export interface IGitContextProvider {
   /**
    * Get repository context information
    */
-  getContext(): Promise<import('./git-context.ts').GitContextInfo>;
-  
+  getContext(): Promise<import("./git-context.ts").GitContextInfo>;
+
   /**
    * Create localized message with context
    */
-  createMessage(action: 'confirm' | 'complete' | 'error'): Promise<string>;
+  createMessage(action: "confirm" | "complete" | "error"): Promise<string>;
 }
 
 export interface INotificationLogger {
@@ -148,12 +148,16 @@ export interface INotificationLogger {
    * Log notification event
    */
   log(entry: NotificationLogEntry): void;
-  
+
   /**
    * Get notification statistics
    */
-  getStats(): Promise<{ total: number; byType: Record<string, number>; recent: NotificationLogEntry[] }>;
-  
+  getStats(): Promise<{
+    total: number;
+    byType: Record<string, number>;
+    recent: NotificationLogEntry[];
+  }>;
+
   /**
    * Clean up old log entries
    */
@@ -165,17 +169,17 @@ export interface AudioNotifierFactory {
   /**
    * Create audio notifier with specified capabilities
    */
-  create(type: 'static' | 'dynamic' | 'hybrid'): IAudioPlayer;
+  create(type: "static" | "dynamic" | "hybrid"): IAudioPlayer;
 }
 
 // Error types
 export class AudioSystemError extends Error {
   public readonly platform: Platform;
   public readonly cause: Error | undefined;
-  
+
   constructor(message: string, platform: Platform, cause?: Error) {
     super(`[${platform}] ${message}`);
-    this.name = 'AudioSystemError';
+    this.name = "AudioSystemError";
     this.platform = platform;
     this.cause = cause;
   }
@@ -184,10 +188,10 @@ export class AudioSystemError extends Error {
 export class VoiceSynthesisError extends Error {
   public readonly endpoint: string | undefined;
   public readonly cause: Error | undefined;
-  
+
   constructor(message: string, endpoint?: string, cause?: Error) {
     super(`Voice synthesis failed: ${message}`);
-    this.name = 'VoiceSynthesisError';
+    this.name = "VoiceSynthesisError";
     this.endpoint = endpoint;
     this.cause = cause;
   }
@@ -195,70 +199,72 @@ export class VoiceSynthesisError extends Error {
 
 // Type guards
 export function isBaseSoundType(value: string): value is BaseSoundType {
-  return ['notification', 'stop', 'permission', 'waiting'].includes(value);
+  return ["notification", "stop", "permission", "waiting"].includes(value);
 }
 
 export function isEventType(value: string): value is EventType {
-  return ['Notification', 'Stop', 'Error'].includes(value);
+  return ["Notification", "Stop", "Error"].includes(value);
 }
 
 export function isPlatform(value: string): value is Platform {
-  return ['darwin', 'linux', 'wsl'].includes(value);
+  return ["darwin", "linux", "wsl"].includes(value);
 }
 
 // Type conversion utilities
 export function eventTypeToSoundType(eventType: EventType): UnifiedSoundType {
   const mapping: Record<EventType, UnifiedSoundType> = {
-    'Notification': 'notification',
-    'Stop': 'stop',
-    'Error': 'error'
+    Notification: "notification",
+    Stop: "stop",
+    Error: "error",
   };
   return mapping[eventType];
 }
 
-export function soundTypeToEventType(soundType: UnifiedSoundType): EventType | null {
+export function soundTypeToEventType(
+  soundType: UnifiedSoundType,
+): EventType | null {
   const mapping: Record<UnifiedSoundType, EventType | null> = {
-    'notification': 'Notification',
-    'stop': 'Stop',
-    'error': 'Error',
-    'permission': null,
-    'waiting': null
+    notification: "Notification",
+    stop: "Stop",
+    error: "Error",
+    permission: null,
+    waiting: null,
   };
   return mapping[soundType];
 }
 
 // Default configurations
 export const DEFAULT_AUDIO_CONFIG: AudioSystemConfig = {
-  soundsDirectory: '~/.claude/hooks/sounds',
-  tempDirectory: '/tmp/claude-audio',
+  soundsDirectory: "~/.claude/hooks/sounds",
+  tempDirectory: "/tmp/claude-audio",
   maxLogEntries: 1000,
   cleanupIntervalHours: 24,
   platforms: {
     darwin: {
-      platform: 'darwin',
-      primaryCommand: 'afplay',
-      fileExtensions: ['.wav', '.mp3', '.aiff'],
-      supportsAsync: true
+      platform: "darwin",
+      primaryCommand: "afplay",
+      fileExtensions: [".wav", ".mp3", ".aiff"],
+      supportsAsync: true,
     },
     linux: {
-      platform: 'linux',
-      primaryCommand: 'paplay',
-      fallbackCommand: 'aplay -q',
-      fileExtensions: ['.wav'],
-      supportsAsync: true
+      platform: "linux",
+      primaryCommand: "paplay",
+      fallbackCommand: "aplay -q",
+      fileExtensions: [".wav"],
+      supportsAsync: true,
     },
     wsl: {
-      platform: 'wsl',
-      primaryCommand: 'powershell.exe',
-      fileExtensions: ['.wav'],
-      supportsAsync: false
-    }
-  }
+      platform: "wsl",
+      primaryCommand: "powershell.exe",
+      fileExtensions: [".wav"],
+      supportsAsync: false,
+    },
+  },
 };
 
 export const DEFAULT_VOICE_SYNTHESIS_CONFIG: VoiceSynthesisConfig = {
-  endpoint: 'http://localhost:10101',
-  speakerId: '888753760', // Anneli ノーマル
+  endpoint: "http://localhost:10101",
+  speakerId: "888753760", // Anneli ノーマル
   timeout: 5000,
-  retryCount: 2
+  retryCount: 2,
 };

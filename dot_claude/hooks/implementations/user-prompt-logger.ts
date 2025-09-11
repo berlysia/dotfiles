@@ -15,12 +15,11 @@ const hook = defineHook({
       logEvent("UserPromptSubmit", context.input.session_id);
 
       return context.success({});
-
     } catch (error) {
       console.error(`User prompt logger error: ${error}`);
       return context.success({});
     }
-  }
+  },
 });
 
 export default hook;

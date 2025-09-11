@@ -9,7 +9,11 @@ import { existsSync, readFileSync, writeFileSync, copyFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { execSync } from "node:child_process";
-import { PermissionAnalyzer, type AnalysisResult, type PatternAnalysis } from "../hooks/lib/permission-analyzer.ts";
+import {
+  PermissionAnalyzer,
+  type AnalysisResult,
+  type PatternAnalysis,
+} from "../hooks/lib/permission-analyzer.ts";
 
 interface PermissionsConfig {
   allow?: string[];
@@ -30,7 +34,11 @@ class AutoApproveUpdater {
 
   constructor(options: CommandOptions = {}) {
     this.analyzer = new PermissionAnalyzer();
-    this.projectPermissionsPath = join(process.cwd(), "dot_claude", "permissions.json");
+    this.projectPermissionsPath = join(
+      process.cwd(),
+      "dot_claude",
+      "permissions.json",
+    );
     this.options = options;
   }
 
@@ -40,26 +48,33 @@ class AutoApproveUpdater {
     try {
       // 分析実行
       const analysisOptions: any = {
-        includeTestMode: false
+        includeTestMode: false,
       };
-      
+
       if (this.options.since) {
         analysisOptions.sinceDate = this.parseSinceDate(this.options.since);
       }
 
       const result = await this.analyzer.analyze(analysisOptions);
-      
+
       if (this.options.verbose) {
         this.printAnalysisSummary(result);
       }
 
-      if (result.allowCandidates.length === 0 && result.denyCandidates.length === 0) {
-        console.log("✅ No new permission patterns to update. Current settings appear optimal.\n");
+      if (
+        result.allowCandidates.length === 0 &&
+        result.denyCandidates.length === 0
+      ) {
+        console.log(
+          "✅ No new permission patterns to update. Current settings appear optimal.\n",
+        );
         return;
       }
 
       // 既存設定の読み込み
-      const projectPermissions = this.loadPermissions(this.projectPermissionsPath);
+      const projectPermissions = this.loadPermissions(
+        this.projectPermissionsPath,
+      );
 
       // 重複チェックと候補フィルタリング
       const filteredResult = this.filterDuplicates(result, projectPermissions);
@@ -76,19 +91,23 @@ class AutoApproveUpdater {
       }
 
       // インタラクティブレビューまたは自動承認
-      const approved = this.options.autoApproveSafe 
+      const approved = this.options.autoApproveSafe
         ? this.autoApproveSafePatterns(filteredResult)
         : await this.interactiveReview(filteredResult);
 
-      if (approved.allowPatterns.length > 0 || approved.denyPatterns.length > 0) {
+      if (
+        approved.allowPatterns.length > 0 ||
+        approved.denyPatterns.length > 0
+      ) {
         await this.updatePermissions(approved, projectPermissions);
         console.log("\n✅ Permission settings updated successfully!");
       } else {
         console.log("\n✅ No changes made to permission settings.");
       }
-
     } catch (error) {
-      console.error(`❌ Error: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(
+        `❌ Error: ${error instanceof Error ? error.message : String(error)}`,
+      );
       process.exit(1);
     }
   }
@@ -102,63 +121,86 @@ class AutoApproveUpdater {
   }
 
   private filterDuplicates(
-    result: AnalysisResult, 
-    projectPermissions: PermissionsConfig
+    result: AnalysisResult,
+    projectPermissions: PermissionsConfig,
   ): AnalysisResult {
     const existingAllow = new Set(projectPermissions.allow || []);
     const existingDeny = new Set(projectPermissions.deny || []);
 
     const allowCandidates = result.allowCandidates.filter(
-      candidate => !existingAllow.has(candidate.pattern)
+      (candidate) => !existingAllow.has(candidate.pattern),
     );
 
     const denyCandidates = result.denyCandidates.filter(
-      candidate => !existingDeny.has(candidate.pattern)
+      (candidate) => !existingDeny.has(candidate.pattern),
     );
 
     return {
       ...result,
       allowCandidates,
-      denyCandidates
+      denyCandidates,
     };
   }
 
-  private async interactiveReview(result: AnalysisResult): Promise<{ allowPatterns: string[], denyPatterns: string[] }> {
-    const approved = { allowPatterns: [] as string[], denyPatterns: [] as string[] };
-    
+  private async interactiveReview(
+    result: AnalysisResult,
+  ): Promise<{ allowPatterns: string[]; denyPatterns: string[] }> {
+    const approved = {
+      allowPatterns: [] as string[],
+      denyPatterns: [] as string[],
+    };
+
     console.log("━━━ Interactive Permission Review ━━━\n");
 
     // Allow候補のレビュー
     if (result.allowCandidates.length > 0) {
-      console.log(`📝 Reviewing ${result.allowCandidates.length} allow candidates:\n`);
-      
+      console.log(
+        `📝 Reviewing ${result.allowCandidates.length} allow candidates:\n`,
+      );
+
       for (let i = 0; i < result.allowCandidates.length; i++) {
         const candidate = result.allowCandidates[i];
         if (!candidate) continue;
-        
-        const reviewResult = await this.reviewCandidate(candidate, i + 1, result.allowCandidates.length, 'allow');
-        
-        if (reviewResult.action === 'approve') {
-          approved.allowPatterns.push(reviewResult.updatedPattern || candidate.pattern);
-        } else if (reviewResult.action === 'quit') {
+
+        const reviewResult = await this.reviewCandidate(
+          candidate,
+          i + 1,
+          result.allowCandidates.length,
+          "allow",
+        );
+
+        if (reviewResult.action === "approve") {
+          approved.allowPatterns.push(
+            reviewResult.updatedPattern || candidate.pattern,
+          );
+        } else if (reviewResult.action === "quit") {
           break;
         }
       }
     }
 
-    // Deny候補のレビュー  
+    // Deny候補のレビュー
     if (result.denyCandidates.length > 0) {
-      console.log(`\n🚫 Reviewing ${result.denyCandidates.length} deny candidates:\n`);
-      
+      console.log(
+        `\n🚫 Reviewing ${result.denyCandidates.length} deny candidates:\n`,
+      );
+
       for (let i = 0; i < result.denyCandidates.length; i++) {
         const candidate = result.denyCandidates[i];
         if (!candidate) continue;
-        
-        const reviewResult = await this.reviewCandidate(candidate, i + 1, result.denyCandidates.length, 'deny');
-        
-        if (reviewResult.action === 'approve') {
-          approved.denyPatterns.push(reviewResult.updatedPattern || candidate.pattern);
-        } else if (reviewResult.action === 'quit') {
+
+        const reviewResult = await this.reviewCandidate(
+          candidate,
+          i + 1,
+          result.denyCandidates.length,
+          "deny",
+        );
+
+        if (reviewResult.action === "approve") {
+          approved.denyPatterns.push(
+            reviewResult.updatedPattern || candidate.pattern,
+          );
+        } else if (reviewResult.action === "quit") {
           break;
         }
       }
@@ -168,73 +210,96 @@ class AutoApproveUpdater {
   }
 
   private async reviewCandidate(
-    candidate: PatternAnalysis, 
-    current: number, 
-    total: number, 
-    type: 'allow' | 'deny'
-  ): Promise<{ action: 'approve' | 'skip' | 'quit'; updatedPattern?: string }> {
-    const emoji = type === 'allow' ? '✅' : '🚫';
-    const action = type === 'allow' ? 'Allow' : 'Deny';
-    
-    console.log(`[${current}/${total}] ${emoji} ${action} Candidate: ${candidate.pattern}`);
+    candidate: PatternAnalysis,
+    current: number,
+    total: number,
+    type: "allow" | "deny",
+  ): Promise<{ action: "approve" | "skip" | "quit"; updatedPattern?: string }> {
+    const emoji = type === "allow" ? "✅" : "🚫";
+    const action = type === "allow" ? "Allow" : "Deny";
+
+    console.log(
+      `[${current}/${total}] ${emoji} ${action} Candidate: ${candidate.pattern}`,
+    );
     console.log(`┌─ Frequency: ${candidate.frequency} times`);
-    console.log(`├─ Risk Score: ${candidate.riskScore}/10 (${this.getRiskLevel(candidate.riskScore)})`);
+    console.log(
+      `├─ Risk Score: ${candidate.riskScore}/10 (${this.getRiskLevel(candidate.riskScore)})`,
+    );
     console.log(`├─ Confidence: ${candidate.confidence}%`);
     console.log(`├─ Reasoning: ${candidate.reasoning}`);
-    
+
     if (candidate.examples.length > 0 && candidate.examples[0]) {
-      console.log(`├─ Example: ${candidate.examples[0].command || 'N/A'}`);
+      console.log(`├─ Example: ${candidate.examples[0].command || "N/A"}`);
     }
-    
+
     console.log(`└─ Action: [A]pprove / [S]kip / [E]dit / [Q]uit`);
-    
+
     const choice = await this.prompt("Your choice: ");
     console.log();
-    
+
     switch (choice.toLowerCase()) {
-      case 'a':
-      case 'approve':
-        return { action: 'approve' };
-      case 's':
-      case 'skip':
-        return { action: 'skip' };
-      case 'e':
-      case 'edit':
+      case "a":
+      case "approve":
+        return { action: "approve" };
+      case "s":
+      case "skip":
+        return { action: "skip" };
+      case "e":
+      case "edit":
         const editResult = await this.editPattern(candidate);
         if (editResult) {
-          return { action: 'approve', updatedPattern: editResult };
+          return { action: "approve", updatedPattern: editResult };
         } else {
-          return { action: 'skip' };
+          return { action: "skip" };
         }
-      case 'q':
-      case 'quit':
-        return { action: 'quit' };
+      case "q":
+      case "quit":
+        return { action: "quit" };
       default:
         console.log("Invalid choice. Skipping...\n");
-        return { action: 'skip' };
+        return { action: "skip" };
     }
   }
 
-  private autoApproveSafePatterns(result: AnalysisResult): { allowPatterns: string[], denyPatterns: string[] } {
-    const approved = { allowPatterns: [] as string[], denyPatterns: [] as string[] };
+  private autoApproveSafePatterns(result: AnalysisResult): {
+    allowPatterns: string[];
+    denyPatterns: string[];
+  } {
+    const approved = {
+      allowPatterns: [] as string[],
+      denyPatterns: [] as string[],
+    };
 
     console.log("🔍 Auto-approval analysis:");
-    result.allowCandidates.forEach(candidate => {
+    result.allowCandidates.forEach((candidate) => {
       const isLowRisk = candidate.riskScore <= 3;
       const isHighConfidence = candidate.confidence >= 80;
-      console.log(`  • ${candidate.pattern}: risk=${candidate.riskScore}/10, confidence=${candidate.confidence}%, eligible=${isLowRisk && isHighConfidence ? 'YES' : 'NO'}`);
+      console.log(
+        `  • ${candidate.pattern}: risk=${candidate.riskScore}/10, confidence=${candidate.confidence}%, eligible=${isLowRisk && isHighConfidence ? "YES" : "NO"}`,
+      );
     });
 
     // 低リスク（スコア1-3）かつ高信頼度（80%以上）のallow候補を自動承認
     let safeAllowCandidates = result.allowCandidates.filter(
-      candidate => candidate.riskScore <= 3 && candidate.confidence >= 80
+      (candidate) => candidate.riskScore <= 3 && candidate.confidence >= 80,
     );
 
     // npx系はホワイトリストのパッケージのみ自動承認
     const npxWhitelist = new Set<string>([
-      'vitest','jest','biome','dpdm','madge','tailwindcss','unocss','playwright','eslint','prettier','tsc','tsgo'
+      "vitest",
+      "jest",
+      "biome",
+      "dpdm",
+      "madge",
+      "tailwindcss",
+      "unocss",
+      "playwright",
+      "eslint",
+      "prettier",
+      "tsc",
+      "tsgo",
     ]);
-    safeAllowCandidates = safeAllowCandidates.filter(c => {
+    safeAllowCandidates = safeAllowCandidates.filter((c) => {
       const m = c.pattern.match(/^Bash\(npx\s+(\S+):\*\)$/);
       if (!m || !m[1]) return true;
       const pkg = m[1];
@@ -245,30 +310,43 @@ class AutoApproveUpdater {
     // - 信頼度80%以上、頻度3回以上
     // - 基本ユーティリティコマンドではない（例: find/grep/awkなど）
     // - パターンが広い既存Allowと衝突しない（単純チェック）
-    const basicUtility = /^Bash\((ls|cat|head|tail|grep|find|printf|echo|awk|sed|cut|sort|uniq|xargs|tr):\*\)$/;
+    const basicUtility =
+      /^Bash\((ls|cat|head|tail|grep|find|printf|echo|awk|sed|cut|sort|uniq|xargs|tr):\*\)$/;
     const existingAllow = new Set<string>([]);
     // 既存許可（広範囲）を読み込んで衝突除外
     try {
-      const projectPermissions = this.loadPermissions(this.projectPermissionsPath);
-      (projectPermissions.allow || []).forEach(p => existingAllow.add(p));
+      const projectPermissions = this.loadPermissions(
+        this.projectPermissionsPath,
+      );
+      (projectPermissions.allow || []).forEach((p) => existingAllow.add(p));
     } catch {}
 
-    const dangerousDenyCandidates = result.denyCandidates.filter(candidate => {
-      const meetsRisk = candidate.riskScore >= 8;
-      const meetsConfidence = candidate.confidence >= 80;
-      const meetsFrequency = (candidate as any).frequency ? (candidate as any).frequency >= 3 : true; // frequencyありなら3以上
-      const notBasicUtility = !basicUtility.test(candidate.pattern);
-      const conflictsWithAllow = existingAllow.has(candidate.pattern);
-      return meetsRisk && meetsConfidence && meetsFrequency && notBasicUtility && !conflictsWithAllow;
-    });
+    const dangerousDenyCandidates = result.denyCandidates.filter(
+      (candidate) => {
+        const meetsRisk = candidate.riskScore >= 8;
+        const meetsConfidence = candidate.confidence >= 80;
+        const meetsFrequency = (candidate as any).frequency
+          ? (candidate as any).frequency >= 3
+          : true; // frequencyありなら3以上
+        const notBasicUtility = !basicUtility.test(candidate.pattern);
+        const conflictsWithAllow = existingAllow.has(candidate.pattern);
+        return (
+          meetsRisk &&
+          meetsConfidence &&
+          meetsFrequency &&
+          notBasicUtility &&
+          !conflictsWithAllow
+        );
+      },
+    );
 
-    approved.allowPatterns = safeAllowCandidates.map(c => c.pattern);
-    approved.denyPatterns = dangerousDenyCandidates.map(c => c.pattern);
+    approved.allowPatterns = safeAllowCandidates.map((c) => c.pattern);
+    approved.denyPatterns = dangerousDenyCandidates.map((c) => c.pattern);
 
     if (approved.allowPatterns.length > 0 || approved.denyPatterns.length > 0) {
       console.log("🤖 Auto-approved safe patterns:");
-      approved.allowPatterns.forEach(p => console.log(`  ✅ Allow: ${p}`));
-      approved.denyPatterns.forEach(p => console.log(`  🚫 Deny: ${p}`));
+      approved.allowPatterns.forEach((p) => console.log(`  ✅ Allow: ${p}`));
+      approved.denyPatterns.forEach((p) => console.log(`  🚫 Deny: ${p}`));
       console.log();
     } else {
       console.log("🤖 No patterns met auto-approval criteria.");
@@ -279,32 +357,34 @@ class AutoApproveUpdater {
   }
 
   private async updatePermissions(
-    approved: { allowPatterns: string[], denyPatterns: string[] },
-    projectPermissions: PermissionsConfig
+    approved: { allowPatterns: string[]; denyPatterns: string[] },
+    projectPermissions: PermissionsConfig,
   ): Promise<void> {
     // バックアップの作成
     this.createBackup(this.projectPermissionsPath);
 
     // プロジェクト設定の更新
     const updatedPermissions = { ...projectPermissions };
-    
+
     if (approved.allowPatterns.length > 0) {
       updatedPermissions.allow = [
         ...(updatedPermissions.allow || []),
-        ...approved.allowPatterns
+        ...approved.allowPatterns,
       ];
     }
-    
+
     if (approved.denyPatterns.length > 0) {
       updatedPermissions.deny = [
         ...(updatedPermissions.deny || []),
-        ...approved.denyPatterns
+        ...approved.denyPatterns,
       ];
     }
 
     this.savePermissions(this.projectPermissionsPath, updatedPermissions);
-    
-    console.log(`📝 Updated project permissions: ${this.projectPermissionsPath}`);
+
+    console.log(
+      `📝 Updated project permissions: ${this.projectPermissionsPath}`,
+    );
     if (approved.allowPatterns.length > 0) {
       console.log(`  ➕ Added ${approved.allowPatterns.length} allow patterns`);
     }
@@ -319,10 +399,12 @@ class AutoApproveUpdater {
     }
 
     try {
-      const content = readFileSync(path, 'utf-8');
+      const content = readFileSync(path, "utf-8");
       return JSON.parse(content);
     } catch (error) {
-      console.warn(`Warning: Failed to parse permissions file ${path}: ${error}`);
+      console.warn(
+        `Warning: Failed to parse permissions file ${path}: ${error}`,
+      );
       return {};
     }
   }
@@ -330,7 +412,7 @@ class AutoApproveUpdater {
   private savePermissions(path: string, permissions: PermissionsConfig): void {
     try {
       const content = JSON.stringify(permissions, null, 2);
-      writeFileSync(path, content, 'utf-8');
+      writeFileSync(path, content, "utf-8");
     } catch (error) {
       throw new Error(`Failed to save permissions to ${path}: ${error}`);
     }
@@ -341,32 +423,41 @@ class AutoApproveUpdater {
 
     if (result.allowCandidates.length > 0) {
       console.log("✅ Allow candidates:");
-      result.allowCandidates.forEach(candidate => {
-        console.log(`  • ${candidate.pattern} (frequency: ${candidate.frequency}, risk: ${candidate.riskScore}/10)`);
+      result.allowCandidates.forEach((candidate) => {
+        console.log(
+          `  • ${candidate.pattern} (frequency: ${candidate.frequency}, risk: ${candidate.riskScore}/10)`,
+        );
       });
       console.log();
     }
 
     if (result.denyCandidates.length > 0) {
       console.log("🚫 Deny candidates:");
-      result.denyCandidates.forEach(candidate => {
-        console.log(`  • ${candidate.pattern} (frequency: ${candidate.frequency}, risk: ${candidate.riskScore}/10)`);
+      result.denyCandidates.forEach((candidate) => {
+        console.log(
+          `  • ${candidate.pattern} (frequency: ${candidate.frequency}, risk: ${candidate.riskScore}/10)`,
+        );
       });
       console.log();
     }
 
-    if (result.allowCandidates.length === 0 && result.denyCandidates.length === 0) {
+    if (
+      result.allowCandidates.length === 0 &&
+      result.denyCandidates.length === 0
+    ) {
       console.log("No actionable patterns found.\n");
     }
   }
 
-
   private createBackup(path: string): void {
     if (!existsSync(path)) return;
 
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const timestamp = new Date()
+      .toISOString()
+      .replace(/[:.]/g, "-")
+      .slice(0, 19);
     const backupPath = `${path}.backup-${timestamp}`;
-    
+
     try {
       copyFileSync(path, backupPath);
       console.log(`💾 Backup created: ${backupPath}`);
@@ -377,9 +468,9 @@ class AutoApproveUpdater {
 
   private getWorkspaceRoot(): string | null {
     try {
-      const result = execSync('git rev-parse --show-toplevel', {
-        encoding: 'utf-8',
-        stdio: ['ignore', 'pipe', 'ignore']
+      const result = execSync("git rev-parse --show-toplevel", {
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "ignore"],
       });
       return result.trim();
     } catch {
@@ -389,15 +480,15 @@ class AutoApproveUpdater {
 
   private parseSinceDate(since: string): Date {
     const now = new Date();
-    
-    if (since.endsWith('d')) {
+
+    if (since.endsWith("d")) {
       const days = parseInt(since.slice(0, -1));
-      return new Date(now.getTime() - (days * 24 * 60 * 60 * 1000));
+      return new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
     }
-    
-    if (since.endsWith('h')) {
+
+    if (since.endsWith("h")) {
       const hours = parseInt(since.slice(0, -1));
-      return new Date(now.getTime() - (hours * 60 * 60 * 1000));
+      return new Date(now.getTime() - hours * 60 * 60 * 1000);
     }
 
     // ISO日付として解析を試行
@@ -405,53 +496,62 @@ class AutoApproveUpdater {
   }
 
   private getRiskLevel(score: number): string {
-    if (score <= 3) return 'Low';
-    if (score <= 6) return 'Medium';
-    return 'High';
+    if (score <= 3) return "Low";
+    if (score <= 6) return "Medium";
+    return "High";
   }
 
-  private async editPattern(candidate: PatternAnalysis): Promise<string | null> {
+  private async editPattern(
+    candidate: PatternAnalysis,
+  ): Promise<string | null> {
     console.log(`\n━━━ Edit Pattern ━━━`);
     console.log(`Current: ${candidate.pattern}`);
-    console.log(`Type: ${candidate.riskScore <= 5 ? 'Allow' : 'Deny'} pattern`);
+    console.log(`Type: ${candidate.riskScore <= 5 ? "Allow" : "Deny"} pattern`);
     console.log();
-    
+
     while (true) {
-      console.log('📝 Enter new pattern (or press Enter to cancel):');
-      const newPattern = await this.prompt('New pattern: ');
-      
+      console.log("📝 Enter new pattern (or press Enter to cancel):");
+      const newPattern = await this.prompt("New pattern: ");
+
       if (!newPattern.trim()) {
-        console.log('✅ Edit cancelled.\n');
+        console.log("✅ Edit cancelled.\n");
         return null;
       }
-      
+
       // バリデーション
       const validationResult = this.validatePattern(newPattern.trim());
       if (!validationResult.isValid) {
         console.log(`❌ Invalid pattern: ${validationResult.reason}`);
-        console.log('Please try again or press Enter to cancel.\n');
+        console.log("Please try again or press Enter to cancel.\n");
         continue;
       }
-      
+
       if (validationResult.hasWarning) {
         console.log(`⚠️  Warning: ${validationResult.warning}`);
-        const confirm = await this.prompt('Continue with this pattern? [y/N]: ');
-        if (confirm.toLowerCase() !== 'y' && confirm.toLowerCase() !== 'yes') {
+        const confirm = await this.prompt(
+          "Continue with this pattern? [y/N]: ",
+        );
+        if (confirm.toLowerCase() !== "y" && confirm.toLowerCase() !== "yes") {
           continue;
         }
       }
-      
+
       console.log(`✅ Pattern updated: ${newPattern.trim()}\n`);
       return newPattern.trim();
     }
   }
 
-  private validatePattern(pattern: string): { isValid: boolean; reason?: string; hasWarning?: boolean; warning?: string } {
+  private validatePattern(pattern: string): {
+    isValid: boolean;
+    reason?: string;
+    hasWarning?: boolean;
+    warning?: string;
+  } {
     // 空文字チェック
     if (!pattern || pattern.trim().length === 0) {
-      return { isValid: false, reason: 'Pattern cannot be empty' };
+      return { isValid: false, reason: "Pattern cannot be empty" };
     }
-    
+
     // 危険なパターンの検出
     const dangerousPatterns = [
       /^rm\s+.*-rf/i,
@@ -462,76 +562,78 @@ class AutoApproveUpdater {
       /\/\*$/,
       /^\*/,
     ];
-    
+
     for (const dangerous of dangerousPatterns) {
       if (dangerous.test(pattern)) {
-        return { 
-          isValid: true, 
-          hasWarning: true, 
-          warning: 'This pattern may grant access to potentially dangerous commands' 
+        return {
+          isValid: true,
+          hasWarning: true,
+          warning:
+            "This pattern may grant access to potentially dangerous commands",
         };
       }
     }
-    
+
     // 過度に広範囲なパターンの警告
-    if (pattern === '*' || pattern === '**' || pattern === '*:*') {
-      return { 
-        isValid: true, 
-        hasWarning: true, 
-        warning: 'This pattern is very broad and may grant excessive permissions' 
+    if (pattern === "*" || pattern === "**" || pattern === "*:*") {
+      return {
+        isValid: true,
+        hasWarning: true,
+        warning:
+          "This pattern is very broad and may grant excessive permissions",
       };
     }
-    
+
     // 基本的な構文チェック
     try {
       // パターンがglob風の場合の簡易チェック
-      if (pattern.includes('[') && !pattern.includes(']')) {
-        return { isValid: false, reason: 'Unclosed bracket in pattern' };
+      if (pattern.includes("[") && !pattern.includes("]")) {
+        return { isValid: false, reason: "Unclosed bracket in pattern" };
       }
-      if (pattern.includes('{') && !pattern.includes('}')) {
-        return { isValid: false, reason: 'Unclosed brace in pattern' };
+      if (pattern.includes("{") && !pattern.includes("}")) {
+        return { isValid: false, reason: "Unclosed brace in pattern" };
       }
     } catch (error) {
-      return { isValid: false, reason: 'Invalid pattern syntax' };
+      return { isValid: false, reason: "Invalid pattern syntax" };
     }
-    
+
     return { isValid: true };
   }
 
   private async prompt(question: string): Promise<string> {
     process.stdout.write(question);
-    
+
     return new Promise((resolve) => {
       const stdin = process.stdin;
       stdin.setRawMode(true);
       stdin.resume();
-      stdin.setEncoding('utf8');
-      
-      let input = '';
-      
+      stdin.setEncoding("utf8");
+
+      let input = "";
+
       const onData = (chunk: string) => {
-        if (chunk === '\r' || chunk === '\n') {
-          stdin.removeListener('data', onData);
+        if (chunk === "\r" || chunk === "\n") {
+          stdin.removeListener("data", onData);
           stdin.setRawMode(false);
           stdin.pause();
-          process.stdout.write('\n');
+          process.stdout.write("\n");
           resolve(input.trim());
-        } else if (chunk === '\u0003') {
+        } else if (chunk === "\u0003") {
           // Ctrl+C
           process.exit(0);
-        } else if (chunk === '\u007f') {
+        } else if (chunk === "\u007f") {
           // Backspace
           if (input.length > 0) {
             input = input.slice(0, -1);
-            process.stdout.write('\b \b');
+            process.stdout.write("\b \b");
           }
         } else {
           input += chunk;
           process.stdout.write(chunk);
         }
       };
-      
-      stdin.on('data', onData);
+
+      stdin.on("data", onData);
     });
   }
 }
@@ -543,24 +645,24 @@ function parseArgs(): CommandOptions {
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-    
+
     switch (arg) {
-      case '--dry-run':
+      case "--dry-run":
         options.dryRun = true;
         break;
-      case '--since':
+      case "--since":
         i++;
         if (i < args.length && args[i]) {
           options.since = args[i]!;
         }
         break;
-      case '--auto-approve-safe':
+      case "--auto-approve-safe":
         options.autoApproveSafe = true;
         break;
-      case '--verbose':
+      case "--verbose":
         options.verbose = true;
         break;
-      case '--help':
+      case "--help":
         printHelp();
         process.exit(0);
       default:

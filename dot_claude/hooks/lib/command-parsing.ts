@@ -6,52 +6,93 @@ import type { ToolSchema } from "cc-hooks-ts";
 
 // Meta commands that can execute other commands
 const META_COMMANDS = {
-  'sh': [/-c\s+['"](.+?)['"]/, /(.+)/],
-  'bash': [/-c\s+['"](.+?)['"]/, /(.+)/],
-  'zsh': [/-c\s+['"](.+?)['"]/, /(.+)/],
-  'bun': [/-e\s+['"](.+?)['"]/, /(.+)/], // Handle bun -e "script" patterns
-  'node': [/-e\s+['"](.+?)['"]/, /(.+)/], // Handle node -e "script" patterns
-  'xargs': [/sh\s+-c\s+['"](.+?)['"]/, /-I\s+\S+\s+(.+)/, /(.+)/],
-  'timeout': [/\d+\s+(.+)/],
-  'time': [/(.+)/],
-  'env': [/(?:\w+=\w+\s+)*(.+)/],
-  'cat': [/(.+)/], // Handle cat commands in pipelines
-  'head': [/(-\d+\s+)?(.+)/], // Handle head -n file patterns  
-  'tail': [/(-\d+\s+)?(.+)/]  // Handle tail -n file patterns
+  sh: [/-c\s+['"](.+?)['"]/, /(.+)/],
+  bash: [/-c\s+['"](.+?)['"]/, /(.+)/],
+  zsh: [/-c\s+['"](.+?)['"]/, /(.+)/],
+  bun: [/-e\s+['"](.+?)['"]/, /(.+)/], // Handle bun -e "script" patterns
+  node: [/-e\s+['"](.+?)['"]/, /(.+)/], // Handle node -e "script" patterns
+  xargs: [/sh\s+-c\s+['"](.+?)['"]/, /-I\s+\S+\s+(.+)/, /(.+)/],
+  timeout: [/\d+\s+(.+)/],
+  time: [/(.+)/],
+  env: [/(?:\w+=\w+\s+)*(.+)/],
+  cat: [/(.+)/], // Handle cat commands in pipelines
+  head: [/(-\d+\s+)?(.+)/], // Handle head -n file patterns
+  tail: [/(-\d+\s+)?(.+)/], // Handle tail -n file patterns
 };
 
 // Control structure keywords that should be processed transparently
-const CONTROL_KEYWORDS = ['for', 'do', 'done', 'if', 'then', 'else', 'fi', 'while'];
+const CONTROL_KEYWORDS = [
+  "for",
+  "do",
+  "done",
+  "if",
+  "then",
+  "else",
+  "fi",
+  "while",
+];
 
 /**
- * Extract individual commands from compound commands, meta commands, and control structures
- * @deprecated Use extractCommandsFromCompound from bash-parser.ts instead for better parsing
+ * Modern structured command extraction with clear separation of individual vs original commands
  */
-export async function extractCommandsFromCompound(command: string): Promise<string[]> {
-  // Import and delegate to bash-parser for better parsing
-  const { extractCommandsFromCompound: bashParserExtract } = await import("./bash-parser.ts");
-  return await bashParserExtract(command);
+export async function extractCommandsStructured(command: string) {
+  const { extractCommandsStructured } = await import("./bash-parser.ts");
+  return await extractCommandsStructured(command);
 }
+
+// Deprecated function removed - use extractCommandsStructured() instead
 
 // Legacy helper functions removed - functionality moved to bash-parser.ts
 
 /**
  * Check if a command is potentially dangerous and requires review
  */
-export function checkDangerousCommand(cmd: string): { isDangerous: boolean; requiresManualReview: boolean; reason: string } {
+export function checkDangerousCommand(cmd: string): {
+  isDangerous: boolean;
+  requiresManualReview: boolean;
+  reason: string;
+} {
   const dangerousPatterns = [
-    { pattern: /rm\s+-rf\s+\//, reason: "Dangerous system deletion", requiresReview: false },
-    { pattern: /sudo\s+rm/, reason: "Sudo deletion command", requiresReview: false },
-    { pattern: /dd\s+.*\/dev\//, reason: "Disk operation", requiresReview: false },
+    {
+      pattern: /rm\s+-rf\s+\//,
+      reason: "Dangerous system deletion",
+      requiresReview: false,
+    },
+    {
+      pattern: /sudo\s+rm/,
+      reason: "Sudo deletion command",
+      requiresReview: false,
+    },
+    {
+      pattern: /dd\s+.*\/dev\//,
+      reason: "Disk operation",
+      requiresReview: false,
+    },
     { pattern: /mkfs/, reason: "Filesystem creation", requiresReview: false },
-    { pattern: /curl.*\|\s*sh/, reason: "Piped shell execution", requiresReview: true },
-    { pattern: /wget.*\|\s*sh/, reason: "Piped shell execution", requiresReview: true },
-    { pattern: /rm\s+-rf\s+[{\$]/, reason: "rm -rf with variable substitution requires review", requiresReview: true },
+    {
+      pattern: /curl.*\|\s*sh/,
+      reason: "Piped shell execution",
+      requiresReview: true,
+    },
+    {
+      pattern: /wget.*\|\s*sh/,
+      reason: "Piped shell execution",
+      requiresReview: true,
+    },
+    {
+      pattern: /rm\s+-rf\s+[{\$]/,
+      reason: "rm -rf with variable substitution requires review",
+      requiresReview: true,
+    },
   ];
 
   for (const { pattern, reason, requiresReview } of dangerousPatterns) {
     if (pattern.test(cmd)) {
-      return { isDangerous: true, requiresManualReview: requiresReview, reason };
+      return {
+        isDangerous: true,
+        requiresManualReview: requiresReview,
+        reason,
+      };
     }
   }
 
@@ -84,22 +125,39 @@ export function checkCommandPattern(pattern: string, cmd: string): boolean {
 // Overloads to support ToolSchema-based inference when tool is known
 export function getFilePathFromToolInput<Name extends keyof ToolSchema>(
   tool_name: Name,
-  tool_input: ToolSchema[Name]["input"]
+  tool_input: ToolSchema[Name]["input"],
 ): string | undefined;
-export function getFilePathFromToolInput(tool_name: string, tool_input: unknown): string | undefined;
-export function getFilePathFromToolInput(tool_name: string, tool_input: unknown): string | undefined {
-  const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
+export function getFilePathFromToolInput(
+  tool_name: string,
+  tool_input: unknown,
+): string | undefined;
+export function getFilePathFromToolInput(
+  tool_name: string,
+  tool_input: unknown,
+): string | undefined {
+  const isObj = (v: unknown): v is Record<string, unknown> =>
+    typeof v === "object" && v !== null;
 
   if (!isObj(tool_input)) return undefined;
 
   const filePath = ((): string | undefined => {
-    if ('file_path' in tool_input && typeof tool_input.file_path === 'string') return tool_input.file_path;
-    if ('path' in tool_input && typeof tool_input.path === 'string') return tool_input.path;
-    if ('notebook_path' in tool_input && typeof tool_input.notebook_path === 'string') return tool_input.notebook_path;
+    if ("file_path" in tool_input && typeof tool_input.file_path === "string")
+      return tool_input.file_path;
+    if ("path" in tool_input && typeof tool_input.path === "string")
+      return tool_input.path;
+    if (
+      "notebook_path" in tool_input &&
+      typeof tool_input.notebook_path === "string"
+    )
+      return tool_input.notebook_path;
     return undefined;
   })();
 
-  if (tool_name === "Write" || tool_name === "Edit" || tool_name === "MultiEdit") {
+  if (
+    tool_name === "Write" ||
+    tool_name === "Edit" ||
+    tool_name === "MultiEdit"
+  ) {
     return filePath;
   } else if (tool_name === "Read") {
     return filePath;
@@ -107,7 +165,11 @@ export function getFilePathFromToolInput(tool_name: string, tool_input: unknown)
     return filePath;
   } else if (tool_name === "Grep") {
     // Grep can work with optional path parameter or no path (current directory)
-    return (('path' in tool_input && typeof tool_input.path === 'string') ? tool_input.path : undefined) || "**";
+    return (
+      ("path" in tool_input && typeof tool_input.path === "string"
+        ? tool_input.path
+        : undefined) || "**"
+    );
   }
   return undefined;
 }
@@ -115,10 +177,16 @@ export function getFilePathFromToolInput(tool_name: string, tool_input: unknown)
 // Overloads to get command from tool input (Bash only) with ToolSchema inference
 export function getCommandFromToolInput<Name extends keyof ToolSchema>(
   tool_name: Name,
-  tool_input: ToolSchema[Name]["input"]
+  tool_input: ToolSchema[Name]["input"],
 ): string | undefined;
-export function getCommandFromToolInput(tool_name: string, tool_input: unknown): string | undefined;
-export function getCommandFromToolInput(tool_name: string, tool_input: unknown): string | undefined {
+export function getCommandFromToolInput(
+  tool_name: string,
+  tool_input: unknown,
+): string | undefined;
+export function getCommandFromToolInput(
+  tool_name: string,
+  tool_input: unknown,
+): string | undefined {
   if (tool_name !== "Bash") return undefined;
   if (typeof tool_input !== "object" || tool_input === null) return undefined;
   const cmd = (tool_input as { command?: unknown }).command;
@@ -130,7 +198,7 @@ export function getCommandFromToolInput(tool_name: string, tool_input: unknown):
  */
 export const NO_PAREN_TOOL_NAMES = [
   "TodoRead",
-  "TodoWrite", 
+  "TodoWrite",
   "Task",
   "BashOutput",
   "KillBash",

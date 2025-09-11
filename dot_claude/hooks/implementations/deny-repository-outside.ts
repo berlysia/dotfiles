@@ -18,7 +18,18 @@ const hook = defineHook({
     const { tool_name, tool_input } = context.input;
 
     // Only process file/path-related tools
-    const fileTools = ["Read", "Write", "Edit", "MultiEdit", "NotebookRead", "NotebookEdit", "LS", "Glob", "Grep", "Bash"];
+    const fileTools = [
+      "Read",
+      "Write",
+      "Edit",
+      "MultiEdit",
+      "NotebookRead",
+      "NotebookEdit",
+      "LS",
+      "Glob",
+      "Grep",
+      "Bash",
+    ];
     if (!fileTools.includes(tool_name)) {
       return context.success({});
     }
@@ -38,18 +49,21 @@ const hook = defineHook({
       for (const filePath of filePaths) {
         const validation = validatePath(filePath, repoRoot);
         if (!validation.isAllowed) {
-          return context.json(createDenyResponse(
-            `Access denied: ${validation.reason}\nPath: ${validation.resolvedPath || filePath}\nRepository: ${repoRoot}`
-          ));
+          return context.json(
+            createDenyResponse(
+              `Access denied: ${validation.reason}\nPath: ${validation.resolvedPath || filePath}\nRepository: ${repoRoot}`,
+            ),
+          );
         }
       }
 
       return context.success({});
-
     } catch (error) {
-      return context.json(createDenyResponse(`Error in repository access check: ${error}`));
+      return context.json(
+        createDenyResponse(`Error in repository access check: ${error}`),
+      );
     }
-  }
+  },
 });
 
 interface PathValidationResult {
@@ -65,7 +79,7 @@ function getRepositoryRoot(): string | undefined {
   try {
     const result = execSync("git rev-parse --show-toplevel", {
       encoding: "utf-8",
-      stdio: ["ignore", "pipe", "ignore"]
+      stdio: ["ignore", "pipe", "ignore"],
     });
     return result.trim();
   } catch {
@@ -153,19 +167,21 @@ function extractPathsFromBashCommand(command: string): string[] {
       // Add all captured groups (excluding the full match)
       for (let i = 1; i < match.length; i++) {
         const capturedGroup = match[i];
-        if (capturedGroup && typeof capturedGroup === 'string') {
+        if (capturedGroup && typeof capturedGroup === "string") {
           paths.push(capturedGroup);
         }
       }
     }
   }
 
-  return paths.filter(path => {
+  return paths.filter((path) => {
     // Filter out obvious non-paths
-    return !path.startsWith("-") && // Not flags
+    return (
+      !path.startsWith("-") && // Not flags
       path !== "." &&
       path !== ".." &&
-      path.length > 0;
+      path.length > 0
+    );
   });
 }
 
@@ -227,13 +243,26 @@ function validatePath(path: string, repoRoot: string): PathValidationResult {
   }
 
   // Deny access to system directories
-  const systemPaths = ["/etc", "/usr", "/var", "/opt", "/bin", "/sbin", "/lib", "/lib64", "/boot", "/proc", "/sys", "/dev"];
+  const systemPaths = [
+    "/etc",
+    "/usr",
+    "/var",
+    "/opt",
+    "/bin",
+    "/sbin",
+    "/lib",
+    "/lib64",
+    "/boot",
+    "/proc",
+    "/sys",
+    "/dev",
+  ];
   for (const systemPath of systemPaths) {
     if (absPath.startsWith(systemPath + "/")) {
       return {
         isAllowed: false,
         resolvedPath: absPath,
-        reason: `Access to system directory '${systemPath}' is not allowed`
+        reason: `Access to system directory '${systemPath}' is not allowed`,
       };
     }
   }
@@ -242,7 +271,7 @@ function validatePath(path: string, repoRoot: string): PathValidationResult {
   return {
     isAllowed: false,
     resolvedPath: absPath,
-    reason: `File is outside repository root`
+    reason: `File is outside repository root`,
   };
 }
 

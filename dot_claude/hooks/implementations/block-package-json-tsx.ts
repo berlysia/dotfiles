@@ -2,7 +2,11 @@
 
 import { defineHook } from "cc-hooks-ts";
 import { createDenyResponse } from "../lib/context-helpers.ts";
-import { isWriteInput, isEditInput, isMultiEditInput } from "../types/project-types.ts";
+import {
+  isWriteInput,
+  isEditInput,
+  isMultiEditInput,
+} from "../types/project-types.ts";
 
 /**
  * Check for tsx/ts-node patterns in script values using precise regex
@@ -16,7 +20,7 @@ function checkScriptValue(scriptValue: string): boolean {
 
   // Allow common cases where tsx is file extension or safe option value
   // Check if it's in a context where tsx/ts-node is used as a command
-  
+
   // Allow: --ext tsx, --extension tsx (file extension/option value)
   const optionValuePattern = /--[a-zA-Z-]*\s+(tsx|ts-node)/;
   if (optionValuePattern.test(scriptValue)) {
@@ -30,13 +34,15 @@ function checkScriptValue(scriptValue: string): boolean {
   }
 
   // Block command execution patterns
-  const commandExecutionPattern = /(^|[\s|&;])\s*(tsx|ts-node)([\s].*\.(ts|tsx|js|mjs)([\s]|$)|[\s]|$)/;
+  const commandExecutionPattern =
+    /(^|[\s|&;])\s*(tsx|ts-node)([\s].*\.(ts|tsx|js|mjs)([\s]|$)|[\s]|$)/;
   if (commandExecutionPattern.test(scriptValue)) {
     return true;
   }
 
   // Block loader patterns
-  const loaderPattern = /node[^|&;]*--[a-zA-Z-]*(loader|require)[^|&;]*(tsx|ts-node)/;
+  const loaderPattern =
+    /node[^|&;]*--[a-zA-Z-]*(loader|require)[^|&;]*(tsx|ts-node)/;
   if (loaderPattern.test(scriptValue)) {
     return true;
   }
@@ -51,29 +57,34 @@ function hasTsxUsage(content: string): boolean {
   try {
     // Try JSON parsing first for precise checking
     const parsed = JSON.parse(content);
-    
+
     // Check scripts section
     if (parsed.scripts) {
       for (const [, scriptValue] of Object.entries(parsed.scripts)) {
-        if (typeof scriptValue === 'string' && checkScriptValue(scriptValue)) {
+        if (typeof scriptValue === "string" && checkScriptValue(scriptValue)) {
           return true;
         }
       }
     }
 
     // Check dependencies sections
-    const depSections = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'];
+    const depSections = [
+      "dependencies",
+      "devDependencies",
+      "peerDependencies",
+      "optionalDependencies",
+    ];
     for (const section of depSections) {
       if (parsed[section]) {
         const deps = Object.keys(parsed[section]);
         if (
-          deps.includes('tsx') ||
-          deps.includes('ts-node') ||
-          deps.includes('@types/tsx') ||
-          deps.includes('@types/ts-node') ||
-          deps.includes('@swc-node/register') ||
-          deps.includes('@esbuild-kit/cjs-loader') ||
-          deps.includes('@esbuild-kit/esm-loader')
+          deps.includes("tsx") ||
+          deps.includes("ts-node") ||
+          deps.includes("@types/tsx") ||
+          deps.includes("@types/ts-node") ||
+          deps.includes("@swc-node/register") ||
+          deps.includes("@esbuild-kit/cjs-loader") ||
+          deps.includes("@esbuild-kit/esm-loader")
         ) {
           return true;
         }
@@ -99,7 +110,8 @@ function hasTsxUsage(content: string): boolean {
     }
 
     // Check dependencies with regex fallback
-    const depPattern = /"(tsx|ts-node|@types\/tsx|@types\/ts-node|@swc-node\/register|@esbuild-kit\/(?:cjs|esm)-loader)"\s*:\s*"[^"]*"/;
+    const depPattern =
+      /"(tsx|ts-node|@types\/tsx|@types\/ts-node|@swc-node\/register|@esbuild-kit\/(?:cjs|esm)-loader)"\s*:\s*"[^"]*"/;
     return depPattern.test(content);
   }
 }
@@ -109,11 +121,13 @@ function hasTsxUsage(content: string): boolean {
  * Enhanced with precise detection logic from legacy implementation
  */
 const hook = defineHook({
-  trigger: { PreToolUse: {
-    Write: true,
-    Edit: true,
-    MultiEdit: true,
-  } },
+  trigger: {
+    PreToolUse: {
+      Write: true,
+      Edit: true,
+      MultiEdit: true,
+    },
+  },
   run: (context) => {
     const { tool_name, tool_input } = context.input;
 
@@ -123,7 +137,7 @@ const hook = defineHook({
       return context.success({});
     }
 
-  try {
+    try {
       // Narrow by discriminant tool_name for proper types
       let filePath = "";
       let contentToCheck = "";
@@ -143,17 +157,22 @@ const hook = defineHook({
       } else {
         return context.success({});
       }
-      
+
       // Only check package.json files
-      if (!filePath.endsWith("/package.json") && !filePath.endsWith("package.json")) {
+      if (
+        !filePath.endsWith("/package.json") &&
+        !filePath.endsWith("package.json")
+      ) {
         return context.success({});
       }
 
       // Use precise script value checking logic from legacy implementation
       if (hasTsxUsage(contentToCheck)) {
-        return context.json(createDenyResponse(
-          `Use TypeScript-compatible runtime instead of 'tsx' or 'ts-node' in package.json scripts\n\nSuggestion: Replace tsx/ts-node commands with a TypeScript-compatible runtime (e.g., node, deno, bun)\n\nFile: ${filePath}`
-        ));
+        return context.json(
+          createDenyResponse(
+            `Use TypeScript-compatible runtime instead of 'tsx' or 'ts-node' in package.json scripts\n\nSuggestion: Replace tsx/ts-node commands with a TypeScript-compatible runtime (e.g., node, deno, bun)\n\nFile: ${filePath}`,
+          ),
+        );
       }
 
       // For partial edits (Edit/MultiEdit), snippet detection
@@ -161,28 +180,39 @@ const hook = defineHook({
       if (snippet.length > 0) {
         // If snippet contains a quoted value, analyze the value part
         const quotedValues = Array.from(snippet.matchAll(/"([^"]+)"/g))
-          .map(m => m[1])
-          .filter((s): s is string => typeof s === 'string');
-        const candidates: string[] = quotedValues.length > 0 ? quotedValues : [snippet];
-        if (candidates.some(v => checkScriptValue(v)) || /--[a-zA-Z-]*(loader|require)\s+.*(tsx|ts-node)/.test(snippet)) {
-          return context.json(createDenyResponse(
-            `Detected disallowed TypeScript execution tools in package.json edits.`
-          ));
+          .map((m) => m[1])
+          .filter((s): s is string => typeof s === "string");
+        const candidates: string[] =
+          quotedValues.length > 0 ? quotedValues : [snippet];
+        if (
+          candidates.some((v) => checkScriptValue(v)) ||
+          /--[a-zA-Z-]*(loader|require)\s+.*(tsx|ts-node)/.test(snippet)
+        ) {
+          return context.json(
+            createDenyResponse(
+              `Detected disallowed TypeScript execution tools in package.json edits.`,
+            ),
+          );
         }
-        if (/@swc-node\/register|@esbuild-kit\/(?:cjs|esm)-loader/.test(snippet)) {
-          return context.json(createDenyResponse(
-            `Detected disallowed loader dependencies in package.json edits.`
-          ));
+        if (
+          /@swc-node\/register|@esbuild-kit\/(?:cjs|esm)-loader/.test(snippet)
+        ) {
+          return context.json(
+            createDenyResponse(
+              `Detected disallowed loader dependencies in package.json edits.`,
+            ),
+          );
         }
       }
 
       // Allow if no problematic patterns found
       return context.success({});
-
     } catch (error) {
-      return context.json(createDenyResponse(`Error in package.json tsx check: ${error}`));
+      return context.json(
+        createDenyResponse(`Error in package.json tsx check: ${error}`),
+      );
     }
-  }
+  },
 });
 
 export default hook;

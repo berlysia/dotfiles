@@ -19,7 +19,7 @@ const hook = defineHook({
       if (isBashToolInput(tool_name, tool_input)) {
         const command = tool_input.command || "";
         const description = tool_input.description || "";
-        
+
         // Use centralized logging
         logCommand(command, session_id, description);
       }
@@ -31,15 +31,13 @@ const hook = defineHook({
       }
 
       return context.success({});
-
     } catch (error) {
       // Don't block on logging errors, but log the error
       console.error(`Command logger error: ${error}`);
       return context.success({});
     }
-  }
+  },
 });
-
 
 export default hook;
 

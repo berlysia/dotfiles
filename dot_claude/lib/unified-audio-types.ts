@@ -3,9 +3,9 @@
  * 音声通知システムの統一型定義
  */
 
-export type Platform = 'darwin' | 'linux' | 'wsl';
-export type SoundType = 'notification' | 'stop' | 'permission' | 'waiting';
-export type EventType = 'Notification' | 'Stop' | 'Error' | string;
+export type Platform = "darwin" | "linux" | "wsl";
+export type SoundType = "notification" | "stop" | "permission" | "waiting";
+export type EventType = "Notification" | "Stop" | "Error" | string;
 
 export interface UnifiedVoiceConfig {
   // VoiceVox互換エンジン設定
@@ -14,7 +14,7 @@ export interface UnifiedVoiceConfig {
     speakerId: string;
     timeout: number;
   };
-  
+
   // ファイルシステム設定
   paths: {
     soundsDir: string;
@@ -22,13 +22,13 @@ export interface UnifiedVoiceConfig {
     logFile: string;
     prefixFile: string;
   };
-  
+
   // システム設定
   system: {
     computerName: string;
     platform: Platform;
   };
-  
+
   // 動作設定
   behavior: {
     fallbackToStatic: boolean;
@@ -76,7 +76,7 @@ export interface AudioQuery {
 
 export interface NotificationResult {
   success: boolean;
-  method: 'voicevox' | 'static' | 'none' | 'delegated';
+  method: "voicevox" | "static" | "none" | "delegated";
   error?: string;
   message?: string;
 }

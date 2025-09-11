@@ -7,14 +7,16 @@ import { createPreToolUseContext, invokeRun } from "./test-helpers.ts";
 
 describe("block-tsx.ts extended patterns", () => {
   // Helper to create a test context with proper typing
-  const createContext = (command: string) => createPreToolUseContext("Bash", { command });
+  const createContext = (command: string) =>
+    createPreToolUseContext("Bash", { command });
 
   describe("find -exec patterns", () => {
     it("should block find with -exec tsx", async () => {
       const context = createContext("find . -type f -exec tsx {} \\;");
       await invokeRun(blockTsxHook, context);
       context.assertDeny();
-      const reason = context.jsonCalls[0].hookSpecificOutput?.permissionDecisionReason || "";
+      const reason =
+        context.jsonCalls[0].hookSpecificOutput?.permissionDecisionReason || "";
       ok(reason.includes("find -exec"), "Reason should mention find -exec");
     });
 
@@ -43,7 +45,8 @@ describe("block-tsx.ts extended patterns", () => {
       const context = createContext("ls *.ts | xargs tsx");
       await invokeRun(blockTsxHook, context);
       context.assertDeny();
-      const reason = context.jsonCalls[0].hookSpecificOutput?.permissionDecisionReason || "";
+      const reason =
+        context.jsonCalls[0].hookSpecificOutput?.permissionDecisionReason || "";
       ok(reason.includes("xargs"), "Reason should mention xargs");
     });
 
@@ -78,7 +81,8 @@ describe("block-tsx.ts extended patterns", () => {
       const context = createContext("timeout 10s tsx script.ts");
       await invokeRun(blockTsxHook, context);
       context.assertDeny();
-      const reason = context.jsonCalls[0].hookSpecificOutput?.permissionDecisionReason || "";
+      const reason =
+        context.jsonCalls[0].hookSpecificOutput?.permissionDecisionReason || "";
       ok(reason.includes("timeout"), "Reason should mention timeout");
     });
 
@@ -107,7 +111,8 @@ describe("block-tsx.ts extended patterns", () => {
       const context = createContext("time tsx benchmark.ts");
       await invokeRun(blockTsxHook, context);
       context.assertDeny();
-      const reason = context.jsonCalls[0].hookSpecificOutput?.permissionDecisionReason || "";
+      const reason =
+        context.jsonCalls[0].hookSpecificOutput?.permissionDecisionReason || "";
       ok(reason.includes("time"), "Reason should mention time");
     });
 
@@ -136,7 +141,8 @@ describe("block-tsx.ts extended patterns", () => {
       const context = createContext("parallel tsx ::: *.ts");
       await invokeRun(blockTsxHook, context);
       context.assertDeny();
-      const reason = context.jsonCalls[0].hookSpecificOutput?.permissionDecisionReason || "";
+      const reason =
+        context.jsonCalls[0].hookSpecificOutput?.permissionDecisionReason || "";
       ok(reason.includes("parallel"), "Reason should mention parallel");
     });
 
@@ -170,7 +176,9 @@ describe("block-tsx.ts extended patterns", () => {
     });
 
     it("should block complex command chains", async () => {
-      const context = createContext("cd src && find . -type f -name '*.ts' -exec tsx {} \\;");
+      const context = createContext(
+        "cd src && find . -type f -name '*.ts' -exec tsx {} \\;",
+      );
       await invokeRun(blockTsxHook, context);
       context.assertDeny();
     });

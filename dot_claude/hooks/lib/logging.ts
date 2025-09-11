@@ -17,17 +17,17 @@ export function logPatternAnalysis(
   decisionReason: string,
   individualResults: string[] = [],
   denyMatches: string[] = [],
-  allowMatches: string[] = []
+  allowMatches: string[] = [],
 ): void {
-  const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
-  
+  const timestamp = new Date().toISOString().replace("T", " ").slice(0, 19);
+
   let logContent = `[${timestamp}] PATTERN ANALYSIS\n`;
   logContent += `Tool: ${toolName}\n`;
-  
+
   if (toolName === "Bash") {
     const bashCommand = toolInput.command || "";
     logContent += `Command: ${bashCommand}\n`;
-    
+
     // Show individual command analysis
     logContent += "Individual command analysis:\n";
     if (individualResults.length > 0) {
@@ -40,26 +40,26 @@ export function logPatternAnalysis(
   } else {
     logContent += `Input: ${JSON.stringify(toolInput)}\n`;
   }
-  
+
   logContent += `Decision: ${decision}\n`;
   logContent += `Reason: ${decisionReason}\n`;
-  
+
   if (denyMatches.length > 0) {
     logContent += "Deny matches:\n";
     for (const match of denyMatches) {
       logContent += `  - ${match}\n`;
     }
   }
-  
+
   if (allowMatches.length > 0) {
     logContent += "Allow matches:\n";
     for (const match of allowMatches) {
       logContent += `  - ${match}\n`;
     }
   }
-  
+
   logContent += "---\n";
-  
+
   try {
     appendFileSync(logFile, logContent);
   } catch (error) {
@@ -74,7 +74,7 @@ export function createLogEntry(
   command: string,
   decision: string,
   reason: string,
-  toolName: string
+  toolName: string,
 ): CommandLogEntry {
   return {
     timestamp: new Date().toISOString(),
@@ -90,13 +90,15 @@ export function createLogEntry(
  */
 export function logCommandDecision(
   logFile: string,
-  entry: CommandLogEntry
+  entry: CommandLogEntry,
 ): void {
   const logLine = JSON.stringify(entry) + "\n";
-  
+
   try {
     appendFileSync(logFile, logLine);
   } catch (error) {
-    console.warn(`Warning: Failed to write to structured log file ${logFile}: ${error}`);
+    console.warn(
+      `Warning: Failed to write to structured log file ${logFile}: ${error}`,
+    );
   }
 }

@@ -8,12 +8,8 @@
     // See also https://aka.ms/tsconfig/module
     "module": "nodenext",
     "target": "esnext",
-    "lib": [
-      "esnext"
-    ],
-    "types": [
-      "node"
-    ],
+    "lib": ["esnext", "DOM.Iterable", "DOM.AsyncIterable"],
+    "types": ["node"],
     // Other Outputs
     "sourceMap": false,
     "declaration": false,

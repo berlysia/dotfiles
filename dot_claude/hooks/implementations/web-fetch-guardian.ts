@@ -29,26 +29,29 @@ const hook = defineHook({
       // Check for GitHub access
       const githubCheck = checkGitHubAccess(url, tool_name);
       if (githubCheck.shouldBlock) {
-        return context.json(createDenyResponse(githubCheck.message || "Access blocked"));
+        return context.json(
+          createDenyResponse(githubCheck.message || "Access blocked"),
+        );
       }
 
       // For HTTP/HTTPS URLs, use readability to get markdown content
       if (isHttpUrl(url)) {
         const markdownContent = await fetchAsMarkdown(url);
-        
+
         // Return the markdown content instead of allowing original WebFetch
-        return context.success({ 
-          messageForUser: `Fetched content as markdown from: ${url}\n\n${markdownContent}`
+        return context.success({
+          messageForUser: `Fetched content as markdown from: ${url}\n\n${markdownContent}`,
         });
       }
 
       // Allow non-HTTP URLs to proceed normally
       return context.success({});
-
     } catch (error) {
-      return context.json(createDenyResponse(`Error in web fetch guardian: ${error}`));
+      return context.json(
+        createDenyResponse(`Error in web fetch guardian: ${error}`),
+      );
     }
-  }
+  },
 });
 
 interface CheckResult {
@@ -88,15 +91,15 @@ async function fetchAsMarkdown(url: string): Promise<string> {
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
-    
+
     const html = await response.text();
-    
+
     // Extract readable content
     const result = extract(html, { url });
-    
+
     // Convert to markdown
     const contentMarkdown = toMarkdown(result.root);
-    
+
     // Format with metadata header
     const title = result.metadata?.title || "Web Content";
     const metadata = [
@@ -107,9 +110,9 @@ async function fetchAsMarkdown(url: string): Promise<string> {
       "",
       "---",
       "",
-      contentMarkdown
+      contentMarkdown,
     ].join("\n");
-    
+
     return metadata;
   } catch (error) {
     throw new Error(`Failed to fetch content from ${url}: ${error}`);
@@ -122,26 +125,31 @@ async function fetchAsMarkdown(url: string): Promise<string> {
 function checkGitHubAccess(url: string, tool_name: string): CheckResult {
   try {
     const urlObj = new URL(url);
-    
+
     // Check if hostname is github.com or api.github.com
-    const githubHosts = ["github.com", "api.github.com", "raw.githubusercontent.com"];
-    const isGitHub = githubHosts.some(host => urlObj.hostname === host || urlObj.hostname.endsWith(`.${host}`));
-    
+    const githubHosts = [
+      "github.com",
+      "api.github.com",
+      "raw.githubusercontent.com",
+    ];
+    const isGitHub = githubHosts.some(
+      (host) =>
+        urlObj.hostname === host || urlObj.hostname.endsWith(`.${host}`),
+    );
+
     if (isGitHub) {
       return {
         shouldBlock: true,
-        message: `Use "gh" CLI for GitHub requests instead of ${tool_name}.\n\nExample: gh api repos/owner/repo\n\nRequested URL: ${url}`
+        message: `Use "gh" CLI for GitHub requests instead of ${tool_name}.\n\nExample: gh api repos/owner/repo\n\nRequested URL: ${url}`,
       };
     }
 
     return { shouldBlock: false };
-
   } catch (error) {
     // If URL parsing fails, allow the request
     return { shouldBlock: false };
   }
 }
-
 
 export default hook;
 
