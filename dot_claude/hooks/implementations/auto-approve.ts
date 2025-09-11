@@ -106,7 +106,7 @@ type BashCommandResult =
   | { type: 'deny'; command: string; reason: string; pattern?: string }
   | { type: 'pass'; command: string }
   | { type: 'skip'; command: string; reason: string }
-  | { type: 'ask'; reason: string };
+  | { type: 'ask'; command: string; reason: string };
 
 /**
  * Improved BashToolResult with structured command results
@@ -278,6 +278,7 @@ async function processBashCommand(cmd: string, denyList: string[], allowList: st
     if (dangerResult.requiresManualReview) {
       return {
         type: 'ask',
+        command: cmd,
         reason: dangerResult.reason,
       };
     } else {
@@ -419,7 +420,9 @@ function analyzeBashCommands(commands: BashCommandResult[], hasAskRequired: bool
     const askCommand = commands.find(cmd => cmd.type === 'ask');
     return {
       decision: "ask",
-      reason: askCommand?.reason || "Manual review required for dangerous command"
+      reason: askCommand?.reason 
+        ? `Command '${askCommand.command}': ${askCommand.reason}`
+        : "Manual review required for dangerous command"
     };
   }
 
