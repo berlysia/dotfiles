@@ -677,6 +677,117 @@ describe("auto-approve.ts hook behavior", () => {
       context.assertAllow();
     });
   });
+
+  describe("Detailed breakdown messages", () => {
+    it("should provide detailed allow breakdown with pattern matches", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(git:*)", "Bash(ls:*)"]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+      
+      const hook = autoApproveHook;
+      
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", { 
+        command: "git status; ls -la" 
+      });
+      await invokeRun(autoApproveHook, context);
+      
+      context.assertAllow();
+      
+      // Check that the reason includes detailed breakdown
+      const reason = context.jsonCalls[0]?.hookSpecificOutput?.permissionDecisionReason;
+      ok(reason?.includes('git status'), "Should mention git status command");
+      ok(reason?.includes('ls -la'), "Should mention ls -la command");
+      ok(reason?.includes('Bash(git:*)'), "Should mention git pattern");
+      ok(reason?.includes('Bash(ls:*)'), "Should mention ls pattern");
+      ok(reason?.includes('→'), "Should use arrow format");
+    });
+    
+    it("should provide detailed deny breakdown with pattern matches", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify([]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify(["Bash(rm:*)", "Bash(chmod:*)"]));
+      
+      const hook = autoApproveHook;
+      
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", { 
+        command: "rm dangerous.txt; chmod 777 file.txt" 
+      });
+      await invokeRun(autoApproveHook, context);
+      
+      context.assertDeny();
+      
+      // Check that the reason includes detailed breakdown
+      const reason = context.jsonCalls[0]?.hookSpecificOutput?.permissionDecisionReason;
+      ok(reason?.includes('rm dangerous.txt'), "Should mention rm command");
+      ok(reason?.includes('chmod 777 file.txt'), "Should mention chmod command");
+      ok(reason?.includes('blocked by Bash(rm:*)'), "Should mention rm pattern");
+      ok(reason?.includes('blocked by Bash(chmod:*)'), "Should mention chmod pattern");
+      ok(reason?.includes('→'), "Should use arrow format");
+      ok(reason?.includes('(2 commands)'), "Should show command count");
+    });
+    
+    it("should show mixed allow and deny details in deny response", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(echo:*)"]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify(["Bash(rm:*)"]));
+      
+      const hook = autoApproveHook;
+      
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", { 
+        command: "echo hello; rm file.txt; echo world" 
+      });
+      await invokeRun(autoApproveHook, context);
+      
+      context.assertDeny();
+      
+      // Should focus on denied command in the reason
+      const reason = context.jsonCalls[0]?.hookSpecificOutput?.permissionDecisionReason;
+      ok(reason?.includes('rm file.txt'), "Should mention denied rm command");
+      ok(reason?.includes('blocked by Bash(rm:*)'), "Should mention rm pattern");
+      ok(reason?.includes('→'), "Should use arrow format");
+    });
+    
+    it("should show dangerous command breakdown without patterns", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify([]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+      
+      const hook = autoApproveHook;
+      
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", { 
+        command: "rm -rf /" 
+      });
+      await invokeRun(autoApproveHook, context);
+      
+      context.assertDeny();
+      
+      // Should show dangerous command details without pattern
+      const reason = context.jsonCalls[0]?.hookSpecificOutput?.permissionDecisionReason;
+      ok(reason?.includes('rm -rf /'), "Should mention dangerous command");
+      ok(reason?.includes('→'), "Should use arrow format");
+      ok(!reason?.includes('blocked by Bash'), "Should not mention pattern for dangerous commands");
+    });
+    
+    it("should show detailed allow breakdown for multiple matching patterns", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(git:*)", "Bash(npm:*)", "Bash(echo:*)"]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+      
+      const hook = autoApproveHook;
+      
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", { 
+        command: "git add .; npm install; echo done" 
+      });
+      await invokeRun(autoApproveHook, context);
+      
+      context.assertAllow();
+      
+      // Check that all three commands and patterns are mentioned
+      const reason = context.jsonCalls[0]?.hookSpecificOutput?.permissionDecisionReason;
+      ok(reason?.includes('git add .'), "Should mention git command");
+      ok(reason?.includes('npm install'), "Should mention npm command"); 
+      ok(reason?.includes('echo done'), "Should mention echo command");
+      ok(reason?.includes('Bash(git:*)'), "Should mention git pattern");
+      ok(reason?.includes('Bash(npm:*)'), "Should mention npm pattern");
+      ok(reason?.includes('Bash(echo:*)'), "Should mention echo pattern");
+      ok(reason?.includes('(3 commands)'), "Should show correct command count");
+    });
+  });
 });
 
 // Helper function to create auto-approve hook with test logic
