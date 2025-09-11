@@ -23,9 +23,9 @@ bun run dot_claude/scripts/update-auto-approve.ts --since 7d
 このスクリプトは以下を行います：
 
 1. **決定ログ分析**: `~/.claude/logs/decisions.jsonl`を解析
-2. **パターン抽出**: 頻繁に出現する許可/拒否候補を識別
+2. **パターン抽出**: 頻繁に出現する ask 候補を識別
 3. **インタラクティブレビュー**: 各候補の安全性とリスクスコアを提示
-4. **設定更新**: 承認されたパターンを`~/.claude/settings.json`に追加
+4. **設定更新**: 承認されたパターンを`~/.claude/settings.json`に追加したり、 `dot_claude/implemetations/auto-approve.ts` を更新したりします
 
 ## 私の分析サポート
 
