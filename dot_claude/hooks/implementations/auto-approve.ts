@@ -71,7 +71,7 @@ const hook = defineHook({
 
       } else {
         // Handle other tools
-        const otherResult = processOtherTool(tool_name, tool_input, denyList, allowList);
+        const otherResult = await processOtherTool(tool_name, tool_input, denyList, allowList);
         const decision = analyzePatternMatches(otherResult.allowMatches, otherResult.denyMatches);
 
         // Log the decision using centralized logger
@@ -326,20 +326,20 @@ async function processBashCommand(cmd: string, denyList: string[], allowList: st
   }
 }
 
-function processOtherTool(tool_name: string, tool_input: unknown, denyList: string[], allowList: string[]): OtherToolResult {
+async function processOtherTool(tool_name: string, tool_input: unknown, denyList: string[], allowList: string[]): Promise<OtherToolResult> {
   const denyMatches: string[] = [];
   const allowMatches: string[] = [];
 
   // Check deny patterns first
   for (const pattern of denyList) {
-    if (pattern.trim() && checkPattern(pattern, tool_name, tool_input)) {
+    if (pattern.trim() && await checkPattern(pattern, tool_name, tool_input)) {
       denyMatches.push(pattern);
     }
   }
 
   // Check allow patterns
   for (const pattern of allowList) {
-    if (pattern.trim() && checkPattern(pattern, tool_name, tool_input)) {
+    if (pattern.trim() && await checkPattern(pattern, tool_name, tool_input)) {
       allowMatches.push(pattern);
     }
   }
@@ -350,63 +350,24 @@ function processOtherTool(tool_name: string, tool_input: unknown, denyList: stri
   };
 }
 
-// Pattern matching functions using shared library
+// Pattern matching functions now use shared library imports
 
-function checkIndividualCommandWithMatchedPattern(cmd: string, patterns: string[]): { matches: boolean; matchedPattern?: string } {
-  for (const pattern of patterns) {
-    if (checkCommandPattern(pattern, cmd)) {
-      return { matches: true, matchedPattern: pattern };
-    }
+
+async function checkPattern(pattern: string, tool_name: string, tool_input: unknown): Promise<boolean> {
+  // Check for invalid Bash(**) pattern and log warning
+  if (pattern === "Bash(**)" && tool_name === "Bash") {
+    console.warn(`Invalid pattern 'Bash(**)' detected. Bash tool uses command prefixes like 'Bash(npm:*)' not file patterns.`);
+    return false;
   }
-  return { matches: false };
-}
 
-function checkIndividualCommandDenyWithPattern(cmd: string, patterns: string[]): { matches: boolean; matchedPattern?: string } {
-  for (const pattern of patterns) {
-    if (checkCommandPattern(pattern, cmd)) {
-      return { matches: true, matchedPattern: pattern };
-    }
-  }
-  return { matches: false };
-}
-
-
-function checkPattern(pattern: string, tool_name: string, tool_input: unknown): boolean {
   if (NO_PAREN_TOOL_NAMES.includes(tool_name) || tool_name.startsWith("mcp__")) {
     // For tools without parentheses, match the pattern directly or with wildcard
     // Support both "ToolName" and "ToolName(**)" patterns
     return pattern === tool_name || pattern === `${tool_name}(**)`;
   }
 
-  // Check if pattern matches the tool name
-  if (!pattern.startsWith(`${tool_name}(`)) {
-    return false;
-  }
-
-  // Extract the pattern content from Tool(pattern) format
-  const match = pattern.match(new RegExp(`^${tool_name}\\(([^)]+)\\)$`));
-  if (!match) return false;
-
-  const pathPattern = match[1];
-  if (!pathPattern) return false;
-
-  // Get the file path from tool input using shared library function
-  const filePath = getFilePathFromToolInput(tool_name, tool_input);
-
-  if (!filePath) return false;
-
-  // Handle different pattern types
-  if (pathPattern === "**") {
-    // Match all paths
-    return true;
-  } else if (pathPattern.startsWith("!")) {
-    // Negation pattern - this is an allow pattern, not a deny
-    const negatedPattern = pathPattern.slice(1);
-    return !matchesPathPattern(filePath, negatedPattern);
-  } else {
-    // Regular pattern matching
-    return matchesPathPattern(filePath, pathPattern);
-  }
+  // Use shared pattern checking from pattern-matcher.ts
+  return await patternMatcherCheckPattern(pattern, tool_name, tool_input);
 }
 
 
