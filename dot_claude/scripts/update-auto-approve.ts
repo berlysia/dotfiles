@@ -152,58 +152,82 @@ class AutoApproveUpdater {
 
     console.log("━━━ Interactive Permission Review ━━━\n");
 
-    // Allow候補のレビュー
-    if (result.allowCandidates.length > 0) {
+    // レビューが必要なパターンを分類
+    const allPatterns = [
+      ...result.allowCandidates,
+      ...result.denyCandidates, 
+      ...result.passCandidates,
+      ...result.reviewCandidates
+    ];
+
+    const userDecisionPatterns = allPatterns.filter(candidate => {
+      const decisions = (candidate as any).decisions || { allow: 0, deny: 0, ask: 0, pass: 0 };
+      return decisions.ask > 0 || decisions.pass > 0;
+    });
+
+    const overAllowedPatterns = allPatterns.filter(candidate => {
+      const decisions = (candidate as any).decisions || { allow: 0, deny: 0, ask: 0, pass: 0 };
+      return decisions.allow >= 10 && decisions.deny === 0 && decisions.ask === 0;
+    });
+
+    const overDeniedPatterns = allPatterns.filter(candidate => {
+      const decisions = (candidate as any).decisions || { allow: 0, deny: 0, ask: 0, pass: 0 };
+      return decisions.deny >= 5 && decisions.allow === 0;
+    });
+
+    const allReviewPatterns = [...userDecisionPatterns, ...overAllowedPatterns, ...overDeniedPatterns];
+
+    if (allReviewPatterns.length > 0) {
       console.log(
-        `📝 Reviewing ${result.allowCandidates.length} allow candidates:\n`,
+        `📝 Reviewing ${allReviewPatterns.length} patterns requiring attention:\n`,
       );
 
-      for (let i = 0; i < result.allowCandidates.length; i++) {
-        const candidate = result.allowCandidates[i];
+      for (let i = 0; i < allReviewPatterns.length; i++) {
+        const candidate = allReviewPatterns[i];
         if (!candidate) continue;
 
+        const decisions = (candidate as any).decisions || { allow: 0, deny: 0, ask: 0, pass: 0 };
+        
+        // パターンのタイプを判定
+        let patternType = "";
+        if (decisions.ask > 0 || decisions.pass > 0) {
+          patternType = "🤔 User decision pattern";
+        } else if (decisions.allow >= 10 && decisions.deny === 0 && decisions.ask === 0) {
+          patternType = "⚠️  Over-permissive pattern";
+        } else if (decisions.deny >= 5 && decisions.allow === 0) {
+          patternType = "🚫 Over-restrictive pattern";
+        }
+        
+        let action: "allow" | "deny";
+        const recAction = candidate.recommendedAction as string;
+        if (recAction === "add_to_allow") {
+          action = "allow";
+        } else {
+          action = "deny"; // デフォルトでdeny候補として扱う
+        }
+
+        console.log(`\n${patternType}: ${candidate.pattern}`);
         const reviewResult = await this.reviewCandidate(
           candidate,
           i + 1,
-          result.allowCandidates.length,
-          "allow",
+          allReviewPatterns.length,
+          action,
         );
 
         if (reviewResult.action === "approve") {
-          approved.allowPatterns.push(
-            reviewResult.updatedPattern || candidate.pattern,
-          );
+          const pattern = reviewResult.updatedPattern || candidate.pattern;
+          if (action === "allow") {
+            approved.allowPatterns.push(pattern);
+          } else if (action === "deny") {
+            approved.denyPatterns.push(pattern);
+          }
         } else if (reviewResult.action === "quit") {
           break;
         }
       }
-    }
-
-    // Deny候補のレビュー
-    if (result.denyCandidates.length > 0) {
-      console.log(
-        `\n🚫 Reviewing ${result.denyCandidates.length} deny candidates:\n`,
-      );
-
-      for (let i = 0; i < result.denyCandidates.length; i++) {
-        const candidate = result.denyCandidates[i];
-        if (!candidate) continue;
-
-        const reviewResult = await this.reviewCandidate(
-          candidate,
-          i + 1,
-          result.denyCandidates.length,
-          "deny",
-        );
-
-        if (reviewResult.action === "approve") {
-          approved.denyPatterns.push(
-            reviewResult.updatedPattern || candidate.pattern,
-          );
-        } else if (reviewResult.action === "quit") {
-          break;
-        }
-      }
+    } else {
+      console.log("✅ No patterns requiring review found.\n");
+      console.log("Current hook configuration appears balanced.\n");
     }
 
     return approved;
@@ -222,10 +246,8 @@ class AutoApproveUpdater {
       `[${current}/${total}] ${emoji} ${action} Candidate: ${candidate.pattern}`,
     );
     console.log(`┌─ Frequency: ${candidate.frequency} times`);
-    console.log(
-      `├─ Risk Score: ${candidate.riskScore}/10 (${this.getRiskLevel(candidate.riskScore)})`,
-    );
-    console.log(`├─ Confidence: ${candidate.confidence}%`);
+    const decisions = (candidate as any).decisions || { allow: 0, deny: 0, ask: 0, pass: 0 };
+    console.log(`├─ Hook decisions: Allow=${decisions.allow}, Deny=${decisions.deny}, Ask=${decisions.ask}, Pass=${decisions.pass}`);
     console.log(`├─ Reasoning: ${candidate.reasoning}`);
 
     if (candidate.examples.length > 0 && candidate.examples[0]) {
@@ -272,16 +294,28 @@ class AutoApproveUpdater {
 
     console.log("🔍 Auto-approval analysis:");
     result.allowCandidates.forEach((candidate) => {
-      const isLowRisk = candidate.riskScore <= 3;
-      const isHighConfidence = candidate.confidence >= 80;
+      const allowCount = (candidate as any).decisions?.allow || 0;
+      const denyCount = (candidate as any).decisions?.deny || 0;
+      const allowRatio = allowCount / candidate.frequency;
+      const hasHighAllowRatio = allowRatio >= 0.8;
+      const hasLowDenyRatio = denyCount / candidate.frequency <= 0.1;
+      const isEligible = hasHighAllowRatio && hasLowDenyRatio && candidate.frequency >= 3;
+      const passCount = (candidate as any).decisions?.pass || 0;
+      const askCount = candidate.frequency - allowCount - denyCount - passCount;
       console.log(
-        `  • ${candidate.pattern}: risk=${candidate.riskScore}/10, confidence=${candidate.confidence}%, eligible=${isLowRisk && isHighConfidence ? "YES" : "NO"}`,
+        `  • ${candidate.pattern}: hook auto-allow=${allowCount}/${candidate.frequency} (${Math.round(allowRatio * 100)}%), deny=${denyCount}, ask=${askCount}, pass=${passCount}, eligible=${isEligible ? "YES" : "NO"}`,
       );
     });
 
-    // 低リスク（スコア1-3）かつ高信頼度（80%以上）のallow候補を自動承認
+    // 高許可率（80%以上）かつ低拒否率（10%以下）かつ頻度3回以上のallow候補を自動承認
     let safeAllowCandidates = result.allowCandidates.filter(
-      (candidate) => candidate.riskScore <= 3 && candidate.confidence >= 80,
+      (candidate) => {
+        const allowCount = (candidate as any).decisions?.allow || 0;
+        const denyCount = (candidate as any).decisions?.deny || 0;
+        const allowRatio = allowCount / candidate.frequency;
+        const denyRatio = denyCount / candidate.frequency;
+        return allowRatio >= 0.8 && denyRatio <= 0.1 && candidate.frequency >= 3;
+      },
     );
 
     // npx系はホワイトリストのパッケージのみ自動承認
@@ -306,8 +340,8 @@ class AutoApproveUpdater {
       return npxWhitelist.has(pkg);
     });
 
-    // 高リスク（スコア8-10）のdeny候補の自動承認は、以下を満たす場合のみ
-    // - 信頼度80%以上、頻度3回以上
+    // 高拒否率のdeny候補の自動承認は、以下を満たす場合のみ
+    // - 拒否率70%以上、頻度3回以上
     // - 基本ユーティリティコマンドではない（例: find/grep/awkなど）
     // - パターンが広い既存Allowと衝突しない（単純チェック）
     const basicUtility =
@@ -323,16 +357,14 @@ class AutoApproveUpdater {
 
     const dangerousDenyCandidates = result.denyCandidates.filter(
       (candidate) => {
-        const meetsRisk = candidate.riskScore >= 8;
-        const meetsConfidence = candidate.confidence >= 80;
-        const meetsFrequency = (candidate as any).frequency
-          ? (candidate as any).frequency >= 3
-          : true; // frequencyありなら3以上
+        const denyCount = (candidate as any).decisions?.deny || 0;
+        const denyRatio = denyCount / candidate.frequency;
+        const meetsRatio = denyRatio >= 0.7;
+        const meetsFrequency = candidate.frequency >= 3;
         const notBasicUtility = !basicUtility.test(candidate.pattern);
         const conflictsWithAllow = existingAllow.has(candidate.pattern);
         return (
-          meetsRisk &&
-          meetsConfidence &&
+          meetsRatio &&
           meetsFrequency &&
           notBasicUtility &&
           !conflictsWithAllow
@@ -421,31 +453,72 @@ class AutoApproveUpdater {
   private printDryRunResults(result: AnalysisResult): void {
     console.log("🔍 Dry Run Results - No changes will be made:\n");
 
-    if (result.allowCandidates.length > 0) {
-      console.log("✅ Allow candidates:");
-      result.allowCandidates.forEach((candidate) => {
-        console.log(
-          `  • ${candidate.pattern} (frequency: ${candidate.frequency}, risk: ${candidate.riskScore}/10)`,
-        );
+    // 意味のあるパターンを抽出
+    const allPatterns = [
+      ...result.allowCandidates,
+      ...result.denyCandidates, 
+      ...result.passCandidates,
+      ...result.reviewCandidates
+    ];
+
+    // 1. ask/passがあるパターン（ユーザー判断が関わった）
+    const userDecisionPatterns = allPatterns.filter(candidate => {
+      const decisions = (candidate as any).decisions || { allow: 0, deny: 0, ask: 0, pass: 0 };
+      return decisions.ask > 0 || decisions.pass > 0;
+    });
+
+    // 2. 過剰にauto-allowされているパターン（見直し候補）
+    const overAllowedPatterns = allPatterns.filter(candidate => {
+      const decisions = (candidate as any).decisions || { allow: 0, deny: 0, ask: 0, pass: 0 };
+      return decisions.allow >= 10 && decisions.deny === 0 && decisions.ask === 0;
+    });
+
+    // 3. 過剰にauto-denyされているパターン（緩和候補）
+    const overDeniedPatterns = allPatterns.filter(candidate => {
+      const decisions = (candidate as any).decisions || { allow: 0, deny: 0, ask: 0, pass: 0 };
+      return decisions.deny >= 5 && decisions.allow === 0;
+    });
+
+    // ユーザー判断が関わったパターン
+    if (userDecisionPatterns.length > 0) {
+      console.log("🤔 Patterns requiring attention (had ask/pass decisions):");
+      userDecisionPatterns.forEach((candidate) => {
+        const decisions = (candidate as any).decisions || { allow: 0, deny: 0, ask: 0, pass: 0 };
+        const status = decisions.ask > 0 ? "❓ User decisions needed" : "🔄 Delegated to Claude Code";
+        console.log(`  • ${candidate.pattern}`);
+        console.log(`    ${status} - ask=${decisions.ask}, pass=${decisions.pass}, auto-allow=${decisions.allow}, auto-deny=${decisions.deny}`);
+        console.log(`    Recommendation: ${candidate.recommendedAction} - ${candidate.reasoning}`);
+        console.log();
       });
-      console.log();
     }
 
-    if (result.denyCandidates.length > 0) {
-      console.log("🚫 Deny candidates:");
-      result.denyCandidates.forEach((candidate) => {
-        console.log(
-          `  • ${candidate.pattern} (frequency: ${candidate.frequency}, risk: ${candidate.riskScore}/10)`,
-        );
+    // 過剰にallowされているパターン
+    if (overAllowedPatterns.length > 0) {
+      console.log("⚠️  Potentially over-permissive patterns (frequent auto-allow, no user involvement):");
+      overAllowedPatterns.forEach((candidate) => {
+        const decisions = (candidate as any).decisions || { allow: 0, deny: 0, ask: 0, pass: 0 };
+        console.log(`  • ${candidate.pattern}`);
+        console.log(`    🤖 Auto-allowed ${decisions.allow} times with no user input or denies`);
+        console.log(`    💡 Consider: Is this pattern too broad? Should it be more specific?`);
+        console.log();
       });
-      console.log();
     }
 
-    if (
-      result.allowCandidates.length === 0 &&
-      result.denyCandidates.length === 0
-    ) {
-      console.log("No actionable patterns found.\n");
+    // 過剰にdenyされているパターン
+    if (overDeniedPatterns.length > 0) {
+      console.log("🚫 Potentially over-restrictive patterns (frequent auto-deny):");
+      overDeniedPatterns.forEach((candidate) => {
+        const decisions = (candidate as any).decisions || { allow: 0, deny: 0, ask: 0, pass: 0 };
+        console.log(`  • ${candidate.pattern}`);
+        console.log(`    🛑 Auto-denied ${decisions.deny} times with no allows`);
+        console.log(`    💡 Consider: Is this pattern blocking legitimate use? Should it be relaxed?`);
+        console.log();
+      });
+    }
+
+    if (userDecisionPatterns.length === 0 && overAllowedPatterns.length === 0 && overDeniedPatterns.length === 0) {
+      console.log("✅ No patterns requiring attention found.\n");
+      console.log("Current hook configuration appears balanced.\n");
     }
   }
 
@@ -495,18 +568,14 @@ class AutoApproveUpdater {
     return new Date(since);
   }
 
-  private getRiskLevel(score: number): string {
-    if (score <= 3) return "Low";
-    if (score <= 6) return "Medium";
-    return "High";
-  }
 
   private async editPattern(
     candidate: PatternAnalysis,
   ): Promise<string | null> {
     console.log(`\n━━━ Edit Pattern ━━━`);
     console.log(`Current: ${candidate.pattern}`);
-    console.log(`Type: ${candidate.riskScore <= 5 ? "Allow" : "Deny"} pattern`);
+    const decisions = (candidate as any).decisions || { allow: 0, deny: 0, ask: 0, pass: 0 };
+    console.log(`Stats: Allow=${decisions.allow}, Deny=${decisions.deny}, Ask=${decisions.ask}, Pass=${decisions.pass}`);
     console.log();
 
     while (true) {
