@@ -1,11 +1,21 @@
 /**
  * Permission Pattern Analyzer
  * 決定ログを分析して許可/拒否パターンの候補を自動抽出
+ * 
+ * 現在の制限:
+ * - フックの自動判定結果のみを分析（ユーザーの実際の判断は未記録）
+ * - askされたコマンドでユーザーがどう選択したかは不明
+ * - passされたコマンドをClaude Codeがどう処理したかは不明
+ * 
+ * 将来の改善案:
+ * - ユーザー決定ログ（user-decisions.jsonl）の追加
+ * - Claude Code処理結果ログの追加
+ * - 実際のユーザー行動に基づく真の統計分析
  */
 
-import { readFileSync, existsSync, realpathSync, lstatSync } from "node:fs";
+import { readFileSync, existsSync, realpathSync, lstatSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve, relative } from "node:path";
+import { join, resolve, relative, dirname, basename } from "node:path";
 import type { DecisionLogEntry } from "../types/logging-types.ts";
 
 export interface PatternAnalysis {
@@ -13,11 +23,15 @@ export interface PatternAnalysis {
   frequency: number;
   lastSeen: Date;
   firstSeen: Date;
-  riskScore: number;
-  recommendedAction: "allow" | "deny" | "pass" | "review";
+  decisions: {
+    allow: number;
+    deny: number;
+    ask: number;
+    pass: number;
+  };
+  recommendedAction: "add_to_allow" | "add_to_deny" | "remove_unused" | "needs_pattern" | "keep_as_is";
   reasoning: string;
   examples: DecisionLogEntry[];
-  confidence: number; // 0-100
 }
 
 export interface AnalysisResult {
@@ -92,11 +106,11 @@ export class PermissionAnalyzer {
     const analyzed = this.analyzePatterns(patterns, minFrequency);
 
     return {
-      allowCandidates: analyzed.filter((p) => p.recommendedAction === "allow"),
-      denyCandidates: analyzed.filter((p) => p.recommendedAction === "deny"),
-      passCandidates: analyzed.filter((p) => p.recommendedAction === "pass"),
+      allowCandidates: analyzed.filter((p) => p.recommendedAction === "add_to_allow"),
+      denyCandidates: analyzed.filter((p) => p.recommendedAction === "add_to_deny"),
+      passCandidates: analyzed.filter((p) => p.recommendedAction === "needs_pattern"),
       reviewCandidates: analyzed.filter(
-        (p) => p.recommendedAction === "review",
+        (p) => p.recommendedAction === "keep_as_is" || p.recommendedAction === "remove_unused",
       ),
       totalAnalyzed: entries.length,
       analysisDate: new Date(),
@@ -104,47 +118,114 @@ export class PermissionAnalyzer {
   }
 
   /**
-   * ログファイルからエントリを読み込み
+   * ログファイルからエントリを読み込み（ローテートされたファイルも含む）
    */
   private loadLogEntries(
     maxEntries: number,
     sinceDate?: Date,
     includeTestMode = false,
   ): DecisionLogEntry[] {
-    if (!existsSync(this.logPath)) {
-      throw new Error(`Log file not found: ${this.logPath}`);
+    const logFiles = this.getLogFiles();
+    if (logFiles.length === 0) {
+      throw new Error(`No log files found at ${this.logPath}`);
     }
 
-    const content = readFileSync(this.logPath, "utf-8");
-    const lines = content.trim().split("\n").filter(Boolean);
+    // 全ログファイルからエントリを読み込み、時系列順でソート
+    const allEntries: DecisionLogEntry[] = [];
 
-    // 最新のエントリから取得
-    const recentLines = lines.slice(-maxEntries);
+    for (const logFile of logFiles) {
+      if (!existsSync(logFile.path)) {
+        console.warn(`Log file not found, skipping: ${logFile.path}`);
+        continue;
+      }
 
-    const entries: DecisionLogEntry[] = [];
-    for (const line of recentLines) {
       try {
-        const entry = JSON.parse(line) as DecisionLogEntry;
+        const content = readFileSync(logFile.path, "utf-8");
+        const lines = content.trim().split("\n").filter(Boolean);
 
-        // フィルタリング条件をチェック
-        if (!includeTestMode && entry.session_id?.includes("test")) {
-          continue;
-        }
+        for (const line of lines) {
+          try {
+            const entry = JSON.parse(line) as DecisionLogEntry;
 
-        if (sinceDate && new Date(entry.timestamp) < sinceDate) {
-          continue;
-        }
+            // テストセッションを除外（デフォルト）
+            if (!includeTestMode && entry.session_id?.includes("test")) {
+              continue;
+            }
 
-        // 決定ログエントリのみを対象とする
-        if ("decision" in entry && "tool_name" in entry) {
-          entries.push(entry);
+            if (sinceDate && new Date(entry.timestamp) < sinceDate) {
+              continue;
+            }
+
+            // 決定ログエントリのみを対象とする
+            if ("decision" in entry && "tool_name" in entry) {
+              allEntries.push(entry);
+            }
+          } catch (error) {
+            console.warn(`Failed to parse log line from ${logFile.path}: ${error}`);
+          }
         }
       } catch (error) {
-        console.warn(`Failed to parse log line: ${error}`);
+        console.warn(`Failed to read log file ${logFile.path}: ${error}`);
       }
     }
 
-    return entries.reverse(); // 時系列順にソート
+    // 時系列順でソート（最新が最後）
+    allEntries.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+    // maxEntriesの制限を適用（最新のエントリを優先）
+    const limitedEntries = allEntries.slice(-maxEntries);
+
+    return limitedEntries;
+  }
+
+  /**
+   * ログファイルの一覧を取得（メインファイル + ローテートされたファイル）
+   * 新しいファイルから順番に並べる
+   */
+  private getLogFiles(): Array<{ path: string; timestamp: Date }> {
+    const baseDir = dirname(this.logPath);
+    const baseFileName = basename(this.logPath);
+
+    const logFiles: Array<{ path: string; timestamp: Date }> = [];
+
+    // メインログファイルを追加
+    if (existsSync(this.logPath)) {
+      const stats = lstatSync(this.logPath);
+      logFiles.push({
+        path: this.logPath,
+        timestamp: stats.mtime,
+      });
+    }
+
+    // ローテートされたログファイルを検索
+    if (existsSync(baseDir)) {
+      try {
+        const files = readdirSync(baseDir);
+        const rotatedPattern = new RegExp(`^${baseFileName}\\.\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}$`);
+
+        for (const file of files) {
+          if (rotatedPattern.test(file)) {
+            const filePath = join(baseDir, file);
+            try {
+              const stats = lstatSync(filePath);
+              logFiles.push({
+                path: filePath,
+                timestamp: stats.mtime,
+              });
+            } catch (error) {
+              console.warn(`Failed to stat rotated log file ${filePath}: ${error}`);
+            }
+          }
+        }
+      } catch (error) {
+        console.warn(`Failed to read log directory ${baseDir}: ${error}`);
+      }
+    }
+
+    // ファイルの更新時刻でソート（古いものから新しいものへ）
+    logFiles.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+
+    return logFiles;
   }
 
   /**
@@ -376,12 +457,12 @@ export class PermissionAnalyzer {
       results.push(analysis);
     }
 
-    // 信頼度でソート
-    return results.sort((a, b) => b.confidence - a.confidence);
+    // 頻度でソート（高頻度なものほど重要）
+    return results.sort((a, b) => b.frequency - a.frequency);
   }
 
   /**
-   * 単一パターンの分析
+   * 単一パターンの分析（統計ベース）
    */
   private analyzePattern(
     pattern: string,
@@ -393,158 +474,84 @@ export class PermissionAnalyzer {
     const allowCount = decisions.filter((d) => d === "allow").length;
     const denyCount = decisions.filter((d) => d === "deny").length;
     const askCount = decisions.filter((d) => d === "ask").length;
+    const passCount = decisions.filter((d) => d === "pass").length;
 
-    const riskScore = this.calculateRiskScore(pattern, entries);
-    const confidence = this.calculateConfidence(entries.length, decisions);
-
-    let recommendedAction: "allow" | "deny" | "pass" | "review";
+    let recommendedAction: "add_to_allow" | "add_to_deny" | "remove_unused" | "needs_pattern" | "keep_as_is";
     let reasoning: string;
 
-    // 危険パターンの検出
-    if (this.isDangerousPattern(pattern)) {
-      recommendedAction = "deny";
-      reasoning = "Potentially dangerous system operation";
+    const totalCount = entries.length;
+    const allowRatio = allowCount / totalCount;
+    const denyRatio = denyCount / totalCount;
+    const askRatio = askCount / totalCount;
+
+    // 統計ベースの推奨ロジック
+    // 注意: 現在の統計はフックの自動判定結果であり、ユーザーの実際の判断ではない
+    // - allow: フックが自動許可
+    // - deny: フックが自動拒否  
+    // - ask: フックがユーザーに判断を委ねた（ユーザーがどう選択したかは未記録）
+    // - pass: フックが判断せずClaude Codeに委ねた（結果は未記録）
+    
+    // 1. 頻繁に拒否されているパターン（フック自動判定ベース）
+    if (denyCount >= 2 && denyRatio >= 0.7) {
+      recommendedAction = "add_to_deny";
+      reasoning = `Frequently auto-denied by hook (${denyCount}/${totalCount}, ${Math.round(denyRatio * 100)}% deny ratio)`;
     }
-    // 明確に拒否されているパターン（十分な頻度と比率、かつ基本ユーティリティ除外）
-    else if (
-      denyCount >= 2 &&
-      denyCount >= allowCount &&
-      denyCount / entries.length >= 0.6 &&
-      !this.isBasicUtilityPattern(pattern)
-    ) {
-      recommendedAction = "deny";
-      reasoning = `Frequently denied (${denyCount}/${entries.length}) with high ratio`;
+    // 2. 頻繁に自動許可されているパターン（askが少ない）
+    else if (allowCount >= 3 && allowRatio >= 0.8 && askRatio <= 0.2) {
+      recommendedAction = "add_to_allow";
+      reasoning = `Frequently auto-allowed by hook (${allowCount}/${totalCount}, ${Math.round(allowRatio * 100)}% allow ratio)`;
     }
-    // プロジェクト依存パターン（テストファイル等）の検出
+    // 3. askが多いパターン（ユーザー判断が必要だったが未記録）
+    else if (askCount >= 5 && askRatio >= 0.7 && denyCount === 0) {
+      recommendedAction = "keep_as_is";
+      reasoning = `Frequently required user decision (${askCount} asks, 0 auto-denies) - actual user choices unknown`;
+    }
+    // 5. プロジェクト依存パターンは keep_as_is または needs_pattern
     else if (this.isProjectDependentPattern(pattern)) {
-      recommendedAction = "pass";
-      reasoning = `Project-dependent pattern - should be managed per-project/session`;
+      recommendedAction = "keep_as_is";
+      reasoning = `Project-dependent pattern - manage per-project`;
     }
-    // Pass-through パターン（セッション限定許可）の検出
+    // 6. Pass-through パターンは needs_pattern
     else if (this.isPassThroughPattern(pattern, entries)) {
-      recommendedAction = "pass";
-      reasoning = `Session-only approval recommended - temporary or complex pipeline command`;
+      recommendedAction = "needs_pattern";
+      reasoning = `Complex pattern requiring session-by-session evaluation`;
     }
-    // 制御構造は安全なので allow
+    // 7. 制御構造は安全なので allow
     else if (this.isControlStructurePattern(pattern)) {
-      recommendedAction = "allow";
+      recommendedAction = "add_to_allow";
       reasoning = `Safe control structure keyword`;
     }
-    // 安全で頻繁に許可されているパターン
-    else if (this.isSafePattern(pattern) && allowCount > askCount * 2) {
-      recommendedAction = "allow";
-      reasoning = `Safe operation frequently approved (${allowCount}/${entries.length})`;
+    // 8. 削除: 固定的な安全判定は行わない（目視判断に委ねる）
+    // 9. データが少ない場合は様子見
+    else if (totalCount < 3) {
+      recommendedAction = "keep_as_is";
+      reasoning = `Insufficient data (${totalCount} occurrences) - need more samples`;
     }
-    // 頻繁にaskになっているが安全そうなパターン
-    else if (
-      askCount > 2 &&
-      riskScore <= 3 &&
-      denyCount === 0 &&
-      !this.isProjectDependentPattern(pattern)
-    ) {
-      recommendedAction = "allow";
-      reasoning = `Low-risk pattern frequently requiring manual approval (${askCount} times)`;
-    }
-    // その他はレビュー必要
+    // 10. その他はレビュー必要
     else {
-      recommendedAction = "review";
-      reasoning = `Inconsistent pattern or insufficient data`;
+      recommendedAction = "keep_as_is";
+      reasoning = `Mixed results (${allowCount} allows, ${denyCount} denies, ${askCount} asks) - manual review needed`;
     }
 
     return {
       pattern,
-      frequency: entries.length,
+      frequency: totalCount,
       lastSeen: new Date(Math.max(...timestamps.map((t) => t.getTime()))),
       firstSeen: new Date(Math.min(...timestamps.map((t) => t.getTime()))),
-      riskScore,
+      decisions: {
+        allow: allowCount,
+        deny: denyCount,
+        ask: askCount,
+        pass: passCount,
+      },
       recommendedAction,
       reasoning,
       examples: entries.slice(0, 3), // 最初の3つの例
-      confidence,
     };
   }
 
-  /**
-   * リスクスコアの計算（1-10）
-   */
-  private calculateRiskScore(
-    pattern: string,
-    entries: DecisionLogEntry[],
-  ): number {
-    let score = 5; // 中央値から開始
 
-    // 危険パターンのチェック
-    if (this.isDangerousPattern(pattern)) {
-      score = Math.max(score, 8);
-    }
 
-    // 安全パターンのチェック
-    if (this.isSafePattern(pattern)) {
-      score = Math.min(score, 3);
-    }
-
-    // システムディレクトリへのアクセス
-    if (
-      pattern.includes("/etc/") ||
-      pattern.includes("/usr/") ||
-      pattern.includes("/var/")
-    ) {
-      score = Math.max(score, 7);
-    }
-
-    // 設定ファイルの操作
-    if (
-      pattern.includes(".ssh/") ||
-      pattern.includes("id_rsa") ||
-      pattern.includes("password")
-    ) {
-      score = Math.max(score, 9);
-    }
-
-    // 拒否された回数に基づく調整
-    const denyCount = entries.filter((e) => e.decision === "deny").length;
-    if (denyCount > 0) {
-      score = Math.max(score, 6 + denyCount);
-    }
-
-    return Math.min(10, Math.max(1, score));
-  }
-
-  /**
-   * 信頼度の計算（0-100）
-   */
-  private calculateConfidence(frequency: number, decisions: string[]): number {
-    const uniqueDecisions = new Set(decisions).size;
-
-    // 基本信頼度：頻度ベース
-    let confidence = Math.min(90, frequency * 10);
-
-    // 一貫性ボーナス：同じ決定が多い場合
-    if (uniqueDecisions === 1) {
-      confidence += 10;
-    }
-
-    // 低頻度パターンの調整（3回未満は10ポイント減点に軽減）
-    if (frequency < 3) {
-      confidence = Math.max(50, confidence - 10); // 最低50%は保証
-    }
-
-    return Math.min(100, Math.max(0, confidence));
-  }
-
-  /**
-   * 危険パターンの判定
-   */
-  private isDangerousPattern(pattern: string): boolean {
-    return this.dangerousPatterns.some((regex) => regex.test(pattern));
-  }
-
-  /**
-   * 安全パターンの判定
-   */
-  private isSafePattern(pattern: string): boolean {
-    return this.safePatterns.some((regex) => regex.test(pattern));
-  }
 
   /**
    * 基本ユーティリティコマンドの判定（過剰なdeny提案を避ける）
@@ -804,4 +811,5 @@ export class PermissionAnalyzer {
       ? { safe: true, firstSafe: firstCommand }
       : { safe: true };
   }
+
 }
