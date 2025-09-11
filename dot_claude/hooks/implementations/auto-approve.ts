@@ -93,7 +93,54 @@ const hook = defineHook({
         // Fallback: pass by default
         return context.success({});
       } else {
-        // Handle other tools
+        // Handle other tools with special logic for certain tools
+        const smartPassTools = ["ExitPlanMode", "WebFetch", "WebSearch"];
+        
+        if (smartPassTools.includes(tool_name)) {
+          // For these tools, check explicit patterns first, then pass if no matches
+          const otherResult = await processOtherTool(
+            tool_name,
+            tool_input,
+            denyList,
+            allowList,
+          );
+          
+          // If there are explicit deny or allow matches, respect them
+          if (otherResult.denyMatches.length > 0 || otherResult.allowMatches.length > 0) {
+            const decision = analyzePatternMatches(
+              otherResult.allowMatches,
+              otherResult.denyMatches,
+            );
+            
+            logDecision(
+              tool_name,
+              decision.decision,
+              decision.reason,
+              context.input.session_id,
+              undefined,
+              tool_input,
+            );
+            
+            if (decision.decision === "deny") {
+              return context.json(createDenyResponse(decision.reason));
+            } else if (decision.decision === "allow") {
+              return context.json(createAllowResponse(decision.reason));
+            }
+          }
+          
+          // No explicit patterns matched, pass to Claude Code
+          logDecision(
+            tool_name,
+            "pass",
+            `Tool '${tool_name}' has no explicit patterns, delegating to Claude Code`,
+            context.input.session_id,
+            undefined,
+            tool_input,
+          );
+          return context.success({});
+        }
+
+        // Handle other tools normally
         const otherResult = await processOtherTool(
           tool_name,
           tool_input,
