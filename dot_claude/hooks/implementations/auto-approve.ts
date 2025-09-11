@@ -471,10 +471,18 @@ function analyzeBashCommands(
   // Check for denied commands
   const deniedCommands = commands.filter((cmd) => cmd.type === "deny");
   if (deniedCommands.length > 0) {
-    const reasons = deniedCommands.map((cmd) => cmd.reason).join(", ");
+    // Create detailed breakdown of which commands were denied and why
+    const denyDetails = deniedCommands.map(cmd => {
+      if (cmd.pattern) {
+        return `"${cmd.command}" → blocked by ${cmd.pattern}`;
+      } else {
+        return `"${cmd.command}" → ${cmd.reason}`;
+      }
+    }).join(", ");
+    
     return {
       decision: "deny",
-      reason: `Blocked by security rules: ${reasons}`,
+      reason: `Blocked by security rules (${deniedCommands.length} commands): ${denyDetails}`,
     };
   }
 
@@ -485,33 +493,38 @@ function analyzeBashCommands(
 
   if (nonSkippedCommands.length === 0) {
     // Only control structure keywords are present
-    // According to test expectations, this should ask for approval when no allow patterns are configured
+    const skippedCommands = commands.filter(cmd => cmd.type === 'skip');
+    const skippedDetails = skippedCommands.map(cmd => `"${cmd.command}"`).join(", ");
     return {
       decision: "ask",
-      reason:
-        "Only control structure keywords present, no allow patterns defined",
+      reason: `Only control structure keywords present (${skippedCommands.length} keywords): ${skippedDetails}, no allow patterns defined`,
     };
   }
 
   if (allowedCommands.length > 0 && passCommands.length === 0) {
+    // Create detailed breakdown of which commands matched which patterns
+    const matchDetails = allowedCommands.map(cmd => `"${cmd.command}" → ${cmd.pattern}`).join(", ");
     return {
       decision: "allow",
-      reason: `All commands matched allow patterns (${allowedCommands.length} commands)`,
+      reason: `All commands matched allow patterns (${allowedCommands.length} commands): ${matchDetails}`,
     };
   }
 
   // Pass commands through to Claude Code (no hook intervention)
   if (passCommands.length > 0) {
-    const passedCommands = passCommands.map((cmd) => cmd.command);
+    // Create detailed breakdown of which commands are passed through
+    const passDetails = passCommands.map(cmd => `"${cmd.command}"`).join(", ");
     return {
       decision: "pass",
-      reason: `Commands passed through to Claude Code for evaluation (${passCommands.length} commands): ${passedCommands.join(", ")}`,
+      reason: `Commands passed through to Claude Code for evaluation (${passCommands.length} commands): ${passDetails}`,
     };
   }
 
+  // Fallback ask case - provide details about what commands need review
+  const allCommands = nonSkippedCommands.map(cmd => `"${cmd.command}"`).join(", ");
   return {
     decision: "ask",
-    reason: "No permission patterns configured",
+    reason: `Manual review required for commands (${nonSkippedCommands.length} commands): ${allCommands} - no permission patterns configured`,
   };
 }
 
