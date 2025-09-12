@@ -54,7 +54,14 @@ export function checkDangerousCommand(cmd: string): {
 } {
   const dangerousPatterns = [
     {
-      pattern: /rm\s+-rf\s+\//,
+      // Match rm with recursive and force flags, variable substitution (immediate deny - unpredictable)
+      pattern: /rm\s+(?=.*(?:-[fr]*r|--recursive))(?=.*(?:-[rf]*f|--force)).*\s+[{\$]/,
+      reason: "rm -rf with variable substitution is too dangerous",
+      requiresReview: false,
+    },
+    {
+      // Match rm with recursive and force flags, targeting system directories (immediate deny)
+      pattern: /rm\s+(?=.*(?:-[fr]*r|--recursive))(?=.*(?:-[rf]*f|--force)).*\s+\//,
       reason: "Dangerous system deletion",
       requiresReview: false,
     },
@@ -77,11 +84,6 @@ export function checkDangerousCommand(cmd: string): {
     {
       pattern: /wget.*\|\s*sh/,
       reason: "Piped shell execution",
-      requiresReview: true,
-    },
-    {
-      pattern: /rm\s+-rf\s+[{\$]/,
-      reason: "rm -rf with variable substitution requires review",
       requiresReview: true,
     },
     {
