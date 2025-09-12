@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "additionalDirectories": [
+    "../shared-lib",
+    "~/workspace/related-project"
+  ],
+  "permissions": {
+    "allow": [
+      "Edit(../shared-lib/**)",
+      "Write(../shared-lib/**)",
+      "Read(~/.config/myapp/**)",
+      "Edit(~/.config/myapp/**)"
+    ]
+  }
+}

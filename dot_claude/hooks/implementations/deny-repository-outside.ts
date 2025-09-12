@@ -3,9 +3,10 @@
 import { defineHook } from "cc-hooks-ts";
 import { resolve } from "node:path";
 import { homedir } from "node:os";
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, realpathSync, readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { createDenyResponse } from "../lib/context-helpers.ts";
+import { matchGitignorePattern } from "../lib/pattern-matcher.ts";
 import "../types/tool-schemas.ts";
 
 /**
@@ -35,19 +36,23 @@ const hook = defineHook({
     }
 
     try {
-      // Get repository root
+      // Get repository root and settings
       const repoRoot = getRepositoryRoot();
       if (!repoRoot) {
         // If not in a repository, allow all operations
         return context.success({});
       }
 
+      const settingsFiles = getSettingsFiles(repoRoot);
+      const additionalDirs = getAdditionalDirectories(settingsFiles);
+      const allowPatterns = getAllowPatterns(settingsFiles, tool_name);
+
       // Extract file paths from tool input
       const filePaths = extractFilePaths(tool_name, tool_input);
 
       // Check each path
       for (const filePath of filePaths) {
-        const validation = validatePath(filePath, repoRoot);
+        const validation = validatePath(filePath, repoRoot, tool_name, additionalDirs, allowPatterns);
         if (!validation.isAllowed) {
           return context.json(
             createDenyResponse(
@@ -72,6 +77,14 @@ interface PathValidationResult {
   reason?: string;
 }
 
+interface SettingsFile {
+  additionalDirectories?: string[];
+  permissions?: {
+    allow?: string[];
+    deny?: string[];
+  };
+}
+
 function getRepositoryRoot(): string | undefined {
   if (process.env.CLAUDE_TEST_REPO_ROOT) {
     return process.env.CLAUDE_TEST_REPO_ROOT;
@@ -85,6 +98,78 @@ function getRepositoryRoot(): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+function getSettingsFiles(workspaceRoot?: string): SettingsFile[] {
+  const settingsFiles: SettingsFile[] = [];
+  const homeDir = homedir();
+
+  // Global settings
+  const globalSettingsPath = resolve(homeDir, ".claude", "settings.json");
+  if (existsSync(globalSettingsPath)) {
+    try {
+      const content = readFileSync(globalSettingsPath, "utf-8");
+      settingsFiles.push(JSON.parse(content) as SettingsFile);
+    } catch {
+      // Ignore parse errors
+    }
+  }
+
+  // Global permissions (chezmoi managed)
+  const globalPermissionsPath = resolve(homeDir, ".claude", "permissions.json");
+  if (existsSync(globalPermissionsPath)) {
+    try {
+      const content = readFileSync(globalPermissionsPath, "utf-8");
+      const permissions = JSON.parse(content);
+      settingsFiles.push({ permissions } as SettingsFile);
+    } catch {
+      // Ignore parse errors
+    }
+  }
+
+  // Workspace settings
+  if (workspaceRoot) {
+    const workspaceSettingsPath = resolve(workspaceRoot, ".claude", "settings.json");
+    if (existsSync(workspaceSettingsPath)) {
+      try {
+        const content = readFileSync(workspaceSettingsPath, "utf-8");
+        settingsFiles.push(JSON.parse(content) as SettingsFile);
+      } catch {
+        // Ignore parse errors
+      }
+    }
+  }
+
+  return settingsFiles;
+}
+
+function getAdditionalDirectories(settingsFiles: SettingsFile[]): string[] {
+  const directories: string[] = [];
+  
+  for (const file of settingsFiles) {
+    if (Array.isArray(file.additionalDirectories)) {
+      directories.push(...file.additionalDirectories);
+    }
+  }
+  
+  return directories;
+}
+
+function getAllowPatterns(settingsFiles: SettingsFile[], toolName: string): string[] {
+  const patterns: string[] = [];
+  
+  for (const file of settingsFiles) {
+    const allowList = file.permissions?.allow;
+    if (Array.isArray(allowList)) {
+      // Filter patterns for this tool
+      const toolPatterns = allowList.filter(pattern => 
+        pattern === toolName || pattern.startsWith(`${toolName}(`)
+      );
+      patterns.push(...toolPatterns);
+    }
+  }
+  
+  return patterns;
 }
 
 function extractFilePaths(tool_name: string, tool_input: any): string[] {
@@ -200,11 +285,17 @@ function resolvePath(path: string): string {
   }
 }
 
-function validatePath(path: string, repoRoot: string): PathValidationResult {
+function validatePath(
+  path: string, 
+  repoRoot: string, 
+  toolName: string,
+  additionalDirs: string[],
+  allowPatterns: string[]
+): PathValidationResult {
   const absPath = resolvePath(path);
   const homeDir = homedir();
 
-  // Check if path starts with repository root
+  // 1. Repository内 → 常に許可
   if (absPath.startsWith(repoRoot)) {
     return {
       isAllowed: true,
@@ -212,21 +303,26 @@ function validatePath(path: string, repoRoot: string): PathValidationResult {
     };
   }
 
-  // Allow access to home directory configuration files
-  const allowedHomePaths = [
-    join(homeDir, ".claude"),
-    join(homeDir, ".gitconfig"),
-    join(homeDir, ".gitignore_global"),
-    join(homeDir, ".zshrc"),
-    join(homeDir, ".bashrc"),
-    join(homeDir, ".config"),
-    join(homeDir, ".local"),
-    join(homeDir, ".ssh/config"),
-    join(homeDir, ".ssh/known_hosts"),
-  ];
+  // 2. システムディレクトリ → 常に拒否（permissions.allowでも上書き不可）
+  const systemPaths = ["/etc", "/usr", "/var", "/opt", "/bin", "/sbin", "/lib", "/lib64", "/boot", "/proc", "/sys", "/dev"];
+  for (const systemPath of systemPaths) {
+    if (absPath.startsWith(systemPath + "/")) {
+      return {
+        isAllowed: false,
+        resolvedPath: absPath,
+        reason: `Access to system directory '${systemPath}' is always denied for security`,
+      };
+    }
+  }
 
-  for (const allowedPath of allowedHomePaths) {
-    if (absPath.startsWith(allowedPath)) {
+  // 3. 常に許可する安全なパス
+  const alwaysSafePaths = [
+    join(homeDir, ".claude"),
+    "/tmp",
+    "/var/tmp"
+  ];
+  for (const safePath of alwaysSafePaths) {
+    if (absPath.startsWith(safePath + "/") || absPath === safePath) {
       return {
         isAllowed: true,
         resolvedPath: absPath,
@@ -234,45 +330,64 @@ function validatePath(path: string, repoRoot: string): PathValidationResult {
     }
   }
 
-  // Allow temporary directories
-  if (absPath.startsWith("/tmp/") || absPath.startsWith("/var/tmp/")) {
+  // 4. additionalDirectoriesのチェック
+  for (const addDir of additionalDirs) {
+    const resolvedAddDir = resolvePath(addDir);
+    if (absPath.startsWith(resolvedAddDir)) {
+      // Read/LSは自動許可、Edit/Writeは要permissions
+      if (toolName === "Read" || toolName === "LS") {
+        return {
+          isAllowed: true,
+          resolvedPath: absPath,
+        };
+      }
+      if (toolName === "Edit" || toolName === "Write" || toolName === "MultiEdit") {
+        // permissions.allowをチェック
+        if (checkAllowPatterns(absPath, allowPatterns)) {
+          return {
+            isAllowed: true,
+            resolvedPath: absPath,
+          };
+        }
+      }
+    }
+  }
+
+  // 5. permissions.allowの明示的マッチ
+  if (checkAllowPatterns(absPath, allowPatterns)) {
     return {
       isAllowed: true,
       resolvedPath: absPath,
     };
   }
 
-  // Deny access to system directories
-  const systemPaths = [
-    "/etc",
-    "/usr",
-    "/var",
-    "/opt",
-    "/bin",
-    "/sbin",
-    "/lib",
-    "/lib64",
-    "/boot",
-    "/proc",
-    "/sys",
-    "/dev",
-  ];
-  for (const systemPath of systemPaths) {
-    if (absPath.startsWith(systemPath + "/")) {
-      return {
-        isAllowed: false,
-        resolvedPath: absPath,
-        reason: `Access to system directory '${systemPath}' is not allowed`,
-      };
-    }
-  }
-
   // Default: deny access outside repository
   return {
     isAllowed: false,
     resolvedPath: absPath,
-    reason: `File is outside repository root`,
+    reason: `File is outside repository root and not explicitly allowed`,
   };
+}
+
+function checkAllowPatterns(filePath: string, allowPatterns: string[]): boolean {
+  for (const pattern of allowPatterns) {
+    // Extract path pattern from tool pattern like "Read(path/pattern)"
+    const match = pattern.match(/^[^(]+\((.+)\)$/);
+    if (match) {
+      const pathPattern = match[1];
+      if (matchGitignorePattern(filePath, expandTilde(pathPattern))) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function expandTilde(path: string): string {
+  if (path.startsWith("~/")) {
+    return join(homedir(), path.slice(2));
+  }
+  return path;
 }
 
 function join(...paths: string[]): string {
