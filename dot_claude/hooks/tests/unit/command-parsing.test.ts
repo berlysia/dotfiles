@@ -61,6 +61,41 @@ describe("Command Parsing Library", () => {
       strictEqual(result.reason, "Dangerous system deletion");
     });
 
+    it("should detect rm -fr commands as dangerous", () => {
+      const result = checkDangerousCommand("rm -fr /tmp");
+      strictEqual(result.isDangerous, true);
+      strictEqual(result.requiresManualReview, false);
+      strictEqual(result.reason, "Dangerous system deletion");
+    });
+
+    it("should detect rm with longhand options as dangerous", () => {
+      const result = checkDangerousCommand("rm --recursive --force /var");
+      strictEqual(result.isDangerous, true);
+      strictEqual(result.requiresManualReview, false);
+      strictEqual(result.reason, "Dangerous system deletion");
+    });
+
+    it("should detect mixed short/long rm options as dangerous", () => {
+      const result = checkDangerousCommand("rm -r --force /usr");
+      strictEqual(result.isDangerous, true);
+      strictEqual(result.requiresManualReview, false);
+      strictEqual(result.reason, "Dangerous system deletion");
+    });
+
+    it("should detect rm with variable substitution as immediately dangerous", () => {
+      const result = checkDangerousCommand("rm -rf ${HOME}");
+      strictEqual(result.isDangerous, true);
+      strictEqual(result.requiresManualReview, false);
+      strictEqual(result.reason, "rm -rf with variable substitution is too dangerous");
+    });
+
+    it("should detect rm --recursive --force with variable substitution as dangerous", () => {
+      const result = checkDangerousCommand("rm --recursive --force ${DIR}");
+      strictEqual(result.isDangerous, true);
+      strictEqual(result.requiresManualReview, false);
+      strictEqual(result.reason, "rm -rf with variable substitution is too dangerous");
+    });
+
     it("should detect dd commands as dangerous", () => {
       const result = checkDangerousCommand("dd if=/dev/zero of=/dev/sda");
       strictEqual(result.isDangerous, true);
