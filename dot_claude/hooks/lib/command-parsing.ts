@@ -84,6 +84,11 @@ export function checkDangerousCommand(cmd: string): {
       reason: "rm -rf with variable substitution requires review",
       requiresReview: true,
     },
+    {
+      pattern: /git\s+.*--no-verify/,
+      reason: "Git command with --no-verify bypasses hooks and safety checks",
+      requiresReview: true,
+    },
   ];
 
   for (const { pattern, reason, requiresReview } of dangerousPatterns) {

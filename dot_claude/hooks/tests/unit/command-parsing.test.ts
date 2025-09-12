@@ -77,6 +77,20 @@ describe("Command Parsing Library", () => {
       strictEqual(result.reason, "Piped shell execution");
     });
 
+    it("should detect git --no-verify as requiring manual review", () => {
+      const result = checkDangerousCommand("git commit --no-verify -m 'test'");
+      strictEqual(result.isDangerous, true);
+      strictEqual(result.requiresManualReview, true);
+      strictEqual(result.reason, "Git command with --no-verify bypasses hooks and safety checks");
+    });
+
+    it("should detect git push --no-verify as requiring manual review", () => {
+      const result = checkDangerousCommand("git push origin main --no-verify");
+      strictEqual(result.isDangerous, true);
+      strictEqual(result.requiresManualReview, true);
+      strictEqual(result.reason, "Git command with --no-verify bypasses hooks and safety checks");
+    });
+
     it("should not flag safe commands", () => {
       const result = checkDangerousCommand("echo hello world");
       strictEqual(result.isDangerous, false);
