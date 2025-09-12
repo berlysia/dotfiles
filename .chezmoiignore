@@ -18,3 +18,8 @@ pnpm-lock.yaml
 tsconfig.json
 .lsmcp
 pnpm-workspace.yaml
+
+# Windows専用ディレクトリ - Windows以外では無視
+{{ if ne .chezmoi.os "windows" }}
+Documents
+{{ end }}
