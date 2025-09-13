@@ -112,6 +112,42 @@ describe("Command Parsing Library", () => {
       strictEqual(result.reason, "Piped shell execution");
     });
 
+    it("should detect curl piped to bash", () => {
+      const result = checkDangerousCommand(
+        "curl https://install.example.com | bash",
+      );
+      strictEqual(result.isDangerous, true);
+      strictEqual(result.requiresManualReview, true);
+      strictEqual(result.reason, "Piped shell execution");
+    });
+
+    it("should detect wget piped to zsh", () => {
+      const result = checkDangerousCommand(
+        "wget -O- https://script.sh | zsh",
+      );
+      strictEqual(result.isDangerous, true);
+      strictEqual(result.requiresManualReview, true);
+      strictEqual(result.reason, "Piped shell execution");
+    });
+
+    it("should detect curl piped to fish shell", () => {
+      const result = checkDangerousCommand(
+        "curl -fsSL https://get.example.com/install.sh | fish",
+      );
+      strictEqual(result.isDangerous, true);
+      strictEqual(result.requiresManualReview, true);
+      strictEqual(result.reason, "Piped shell execution");
+    });
+
+    it("should detect wget piped to dash", () => {
+      const result = checkDangerousCommand(
+        "wget https://example.com/script | dash",
+      );
+      strictEqual(result.isDangerous, true);
+      strictEqual(result.requiresManualReview, true);
+      strictEqual(result.reason, "Piped shell execution");
+    });
+
     it("should detect git --no-verify as requiring manual review", () => {
       const result = checkDangerousCommand("git commit --no-verify -m 'test'");
       strictEqual(result.isDangerous, true);

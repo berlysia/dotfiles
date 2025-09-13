@@ -77,12 +77,7 @@ export function checkDangerousCommand(cmd: string): {
     },
     { pattern: /mkfs/, reason: "Filesystem creation", requiresReview: false },
     {
-      pattern: /curl.*\|\s*sh/,
-      reason: "Piped shell execution",
-      requiresReview: true,
-    },
-    {
-      pattern: /wget.*\|\s*sh/,
+      pattern: /(curl|wget).*\|\s*(sh|bash|zsh|fish|dash)/,
       reason: "Piped shell execution",
       requiresReview: true,
     },
