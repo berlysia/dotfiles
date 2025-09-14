@@ -187,6 +187,8 @@
     "Edit(~/.config/**)",
     "Grep(./**)",
     "Grep(~/workspace/**)",
+    "Search(./**)",
+    "Search(~/workspace/**)",
     "Glob(./**)",
     "LS(./**)",
     "WebFetch(domain:*)",

@@ -228,6 +228,19 @@ describe("Command Parsing Library", () => {
       strictEqual(result, "./**");
     });
 
+    it("should return undefined for Search without path (security requirement)", () => {
+      const result = getFilePathFromToolInput("Search", { pattern: "src/scenarios/**/*.ts" });
+      strictEqual(result, undefined);
+    });
+
+    it("should return path for Search with path", () => {
+      const result = getFilePathFromToolInput("Search", {
+        pattern: "function",
+        path: "~/workspace/**"
+      });
+      strictEqual(result, "~/workspace/**");
+    });
+
     it("should return undefined for unknown tools", () => {
       const result = getFilePathFromToolInput("UnknownTool", {});
       strictEqual(result, undefined);
