@@ -140,11 +140,11 @@ const hook = defineHook({
           return context.success({});
         }
 
-        // Special handling for Grep tool path requirement
-        if (tool_name === "Grep") {
+        // Special handling for Search and Grep tools path requirement
+        if (tool_name === "Grep" || tool_name === "Search") {
           const filePath = getFilePathFromToolInput(tool_name, tool_input);
           if (!filePath) {
-            const reason = "Grep tool requires explicit 'path' parameter for security. Please specify the path to search in (e.g., './**', '~/workspace/**')";
+            const reason = `${tool_name} tool requires explicit 'path' parameter for security. Please specify the path to search in (e.g., './**', '~/workspace/**')`;
             logDecision(
               tool_name,
               "deny",
@@ -187,7 +187,15 @@ const hook = defineHook({
           return context.json(createAllowResponse(decision.reason));
         }
 
-        // Pass by default (let Claude Code decide)
+        // Pass by default (let Claude Code decide) - log the decision
+        logDecision(
+          tool_name,
+          "pass",
+          `Tool '${tool_name}' has no matching patterns, delegating to Claude Code`,
+          context.input.session_id,
+          undefined,
+          tool_input,
+        );
         return context.success({});
       }
     } catch (error) {

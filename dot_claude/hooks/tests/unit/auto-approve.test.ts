@@ -857,6 +857,58 @@ describe("auto-approve.ts hook behavior", () => {
       context.assertAsk();
     });
   });
+
+  describe("Search tool path requirement", () => {
+    it("should deny Search without path parameter", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Search(./**)", "Search(~/workspace/**)"]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+
+      const context = createPreToolUseContextFor(autoApproveHook, "Search", {
+        pattern: "src/scenarios/**/*.ts"
+        // Note: no path parameter
+      });
+      await invokeRun(autoApproveHook, context);
+
+      context.assertDeny();
+
+      const reason = context.jsonCalls[0]?.hookSpecificOutput?.permissionDecisionReason;
+      ok(reason?.includes("requires explicit 'path' parameter"), "Should mention path requirement");
+      ok(reason?.includes("security"), "Should mention security reason");
+      ok(reason?.includes("./**"), "Should suggest valid path examples");
+    });
+
+    it("should allow Search with project path", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Search(./**)", "Search(~/workspace/**)"]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+
+      const context = createPreToolUseContextFor(autoApproveHook, "Search", {
+        pattern: "function",
+        path: "./**"
+      });
+      await invokeRun(autoApproveHook, context);
+
+      context.assertAllow();
+
+      const reason = context.jsonCalls[0]?.hookSpecificOutput?.permissionDecisionReason;
+      ok(reason?.includes("Search(./**)"), "Should mention matched pattern");
+    });
+
+    it("should allow Search with workspace path", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Search(./**)", "Search(~/workspace/**)"]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+
+      const context = createPreToolUseContextFor(autoApproveHook, "Search", {
+        pattern: "interface",
+        path: "~/workspace/project"
+      });
+      await invokeRun(autoApproveHook, context);
+
+      context.assertAllow();
+
+      const reason = context.jsonCalls[0]?.hookSpecificOutput?.permissionDecisionReason;
+      ok(reason?.includes("Search(~/workspace/**)"), "Should mention matched workspace pattern");
+    });
+  });
 });
 
 // Helper function to create auto-approve hook with test logic

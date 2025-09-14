@@ -165,8 +165,8 @@ export function getFilePathFromToolInput(
     return filePath;
   } else if (tool_name === "NotebookEdit" || tool_name === "NotebookRead") {
     return filePath;
-  } else if (tool_name === "Grep") {
-    // Grep requires explicit path parameter for security
+  } else if (tool_name === "Grep" || tool_name === "Search") {
+    // Grep and Search require explicit path parameter for security
     return ("path" in tool_input && typeof tool_input.path === "string"
       ? tool_input.path
       : undefined);
