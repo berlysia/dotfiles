@@ -140,6 +140,23 @@ const hook = defineHook({
           return context.success({});
         }
 
+        // Special handling for Grep tool path requirement
+        if (tool_name === "Grep") {
+          const filePath = getFilePathFromToolInput(tool_name, tool_input);
+          if (!filePath) {
+            const reason = "Grep tool requires explicit 'path' parameter for security. Please specify the path to search in (e.g., './**', '~/workspace/**')";
+            logDecision(
+              tool_name,
+              "deny",
+              reason,
+              context.input.session_id,
+              undefined,
+              tool_input,
+            );
+            return context.json(createDenyResponse(reason));
+          }
+        }
+
         // Handle other tools normally
         const otherResult = await processOtherTool(
           tool_name,

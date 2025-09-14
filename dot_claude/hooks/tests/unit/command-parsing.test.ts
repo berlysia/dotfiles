@@ -215,9 +215,17 @@ describe("Command Parsing Library", () => {
       strictEqual(result, "/test/notebook.ipynb");
     });
 
-    it("should return default for Grep without path", () => {
+    it("should return undefined for Grep without path (security requirement)", () => {
       const result = getFilePathFromToolInput("Grep", { pattern: "test" });
-      strictEqual(result, "**");
+      strictEqual(result, undefined);
+    });
+
+    it("should return path for Grep with path", () => {
+      const result = getFilePathFromToolInput("Grep", {
+        pattern: "test",
+        path: "./**"
+      });
+      strictEqual(result, "./**");
     });
 
     it("should return undefined for unknown tools", () => {

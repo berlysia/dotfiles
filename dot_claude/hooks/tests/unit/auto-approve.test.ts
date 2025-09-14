@@ -788,6 +788,75 @@ describe("auto-approve.ts hook behavior", () => {
       ok(reason?.includes('(3 commands)'), "Should show correct command count");
     });
   });
+
+  describe("Grep tool path requirement", () => {
+    it("should deny Grep without path parameter", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Grep(./**)", "Grep(~/workspace/**)"]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+
+      const context = createPreToolUseContextFor(autoApproveHook, "Grep", {
+        pattern: "test",
+        output_mode: "content"
+        // Note: no path parameter
+      });
+      await invokeRun(autoApproveHook, context);
+
+      context.assertDeny();
+
+      const reason = context.jsonCalls[0]?.hookSpecificOutput?.permissionDecisionReason;
+      ok(reason?.includes("requires explicit 'path' parameter"), "Should mention path requirement");
+      ok(reason?.includes("security"), "Should mention security reason");
+      ok(reason?.includes("./**"), "Should suggest valid path examples");
+    });
+
+    it("should allow Grep with project path", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Grep(./**)", "Grep(~/workspace/**)"]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+
+      const context = createPreToolUseContextFor(autoApproveHook, "Grep", {
+        pattern: "test",
+        path: "./**",
+        output_mode: "content"
+      });
+      await invokeRun(autoApproveHook, context);
+
+      context.assertAllow();
+
+      const reason = context.jsonCalls[0]?.hookSpecificOutput?.permissionDecisionReason;
+      ok(reason?.includes("Grep(./**)"), "Should mention matched pattern");
+    });
+
+    it("should allow Grep with workspace path", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Grep(./**)", "Grep(~/workspace/**)"]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+
+      const context = createPreToolUseContextFor(autoApproveHook, "Grep", {
+        pattern: "function",
+        path: "~/workspace/project",
+        output_mode: "files_with_matches"
+      });
+      await invokeRun(autoApproveHook, context);
+
+      context.assertAllow();
+
+      const reason = context.jsonCalls[0]?.hookSpecificOutput?.permissionDecisionReason;
+      ok(reason?.includes("Grep(~/workspace/**)"), "Should mention matched workspace pattern");
+    });
+
+    it("should ask for Grep with unmatched path", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Grep(./**)", "Grep(~/workspace/**)"]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+
+      const context = createPreToolUseContextFor(autoApproveHook, "Grep", {
+        pattern: "secret",
+        path: "/etc/passwd",
+        output_mode: "content"
+      });
+      await invokeRun(autoApproveHook, context);
+
+      context.assertAsk();
+    });
+  });
 });
 
 // Helper function to create auto-approve hook with test logic

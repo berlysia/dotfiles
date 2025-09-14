@@ -166,12 +166,10 @@ export function getFilePathFromToolInput(
   } else if (tool_name === "NotebookEdit" || tool_name === "NotebookRead") {
     return filePath;
   } else if (tool_name === "Grep") {
-    // Grep can work with optional path parameter or no path (current directory)
-    return (
-      ("path" in tool_input && typeof tool_input.path === "string"
-        ? tool_input.path
-        : undefined) || "**"
-    );
+    // Grep requires explicit path parameter for security
+    return ("path" in tool_input && typeof tool_input.path === "string"
+      ? tool_input.path
+      : undefined);
   }
   return undefined;
 }
