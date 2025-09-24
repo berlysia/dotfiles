@@ -29,3 +29,10 @@ node_modules
 
 # lsmcp cache
 .lsmcp/cache
+
+# TypeScript compiled output
+dot_claude/**/*.js
+!dot_claude/**/.*config*.js
+
+# Backup files
+*.backup-*
