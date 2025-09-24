@@ -170,6 +170,11 @@ export function getFilePathFromToolInput(
     return ("path" in tool_input && typeof tool_input.path === "string"
       ? tool_input.path
       : undefined);
+  } else if (tool_name === "Glob") {
+    // Glob uses pattern parameter as the path for pattern matching
+    return ("pattern" in tool_input && typeof tool_input.pattern === "string"
+      ? tool_input.pattern
+      : undefined);
   }
   return undefined;
 }

@@ -241,6 +241,18 @@ describe("Command Parsing Library", () => {
       strictEqual(result, "~/workspace/**");
     });
 
+    it("should return pattern for Glob tool", () => {
+      const result = getFilePathFromToolInput("Glob", {
+        pattern: "src/scenarios/**/*.ts"
+      });
+      strictEqual(result, "src/scenarios/**/*.ts");
+    });
+
+    it("should return undefined for Glob without pattern", () => {
+      const result = getFilePathFromToolInput("Glob", {});
+      strictEqual(result, undefined);
+    });
+
     it("should return undefined for unknown tools", () => {
       const result = getFilePathFromToolInput("UnknownTool", {});
       strictEqual(result, undefined);

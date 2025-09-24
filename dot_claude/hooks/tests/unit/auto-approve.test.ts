@@ -909,6 +909,32 @@ describe("auto-approve.ts hook behavior", () => {
       ok(reason?.includes("Search(~/workspace/**)"), "Should mention matched workspace pattern");
     });
   });
+
+  describe("Glob tool smart pass behavior", () => {
+    it("should pass Glob tool by default (no explicit patterns)", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify([]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+
+      const context = createPreToolUseContextFor(autoApproveHook, "Glob", {
+        pattern: "src/scenarios/**/*.ts"
+      });
+      await invokeRun(autoApproveHook, context);
+
+      context.assertPass();
+    });
+
+    it("should pass Glob even with complex patterns", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify([]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+
+      const context = createPreToolUseContextFor(autoApproveHook, "Glob", {
+        pattern: "deeply/nested/directory/structure/**/*.ts"
+      });
+      await invokeRun(autoApproveHook, context);
+
+      context.assertPass();
+    });
+  });
 });
 
 // Helper function to create auto-approve hook with test logic
