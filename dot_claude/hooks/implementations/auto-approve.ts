@@ -94,7 +94,7 @@ const hook = defineHook({
         return context.success({});
       } else {
         // Handle other tools with special logic for certain tools
-        const smartPassTools = ["ExitPlanMode", "WebFetch", "WebSearch"];
+        const smartPassTools = ["ExitPlanMode", "WebFetch", "WebSearch", "Glob"];
         
         if (smartPassTools.includes(tool_name)) {
           // For these tools, check explicit patterns first, then pass if no matches

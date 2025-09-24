@@ -249,7 +249,18 @@
     "mcp__readability__read_url_content_as_markdown",
     "mcp__ide__getDiagnostics",
     "mcp__typescript__*",
-    "mcp__lsmcp__*"
+    "mcp__lsmcp__*",
+    "Read(~/workspace/**)",
+    "Read(~/.local/**)",
+    "Edit(~/.local/**)",
+    "Edit(**/*.test.*)",
+    "Bash(bun test:*)",
+    "Bash(pnpm type-check:*)",
+    "Bash(pnpm quality-check:*)",
+    "Bash(pnpm build:*)",
+    "Read(**/*.test.*)",
+    "Bash(pnpm lint:fix:*)",
+    "Bash(pnpm lint:*)"
   ],
   "deny": [
     "Bash(rm -rf /)",

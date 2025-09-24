@@ -179,6 +179,12 @@ export class MockHookContext<TTrigger extends HookTrigger> {
     }
   }
 
+  assertPass() {
+    strictEqual(this.successCalls.length, 1, "success() should be called once for pass");
+    strictEqual(this.jsonCalls.length, 0, "json() should not be called for pass");
+    strictEqual(this.failCalls.length, 0, "fail() should not be called");
+  }
+
   reset() {
     this.successCalls = [];
     this.failCalls = [];
