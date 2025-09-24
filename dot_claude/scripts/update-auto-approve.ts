@@ -14,6 +14,14 @@ import {
   type AnalysisResult,
   type PatternAnalysis,
 } from "../hooks/lib/permission-analyzer.ts";
+import {
+  evaluateScopeRisk,
+  evaluateOperationRisk,
+  evaluateTargetRisk,
+  combineRiskLevels,
+  shouldAutoApprove,
+  type RiskLevel,
+} from "../hooks/lib/risk-assessment.ts";
 
 interface PermissionsConfig {
   allow?: string[];
@@ -292,62 +300,33 @@ class AutoApproveUpdater {
       denyPatterns: [] as string[],
     };
 
-    console.log("🔍 Auto-approval analysis:");
-    result.allowCandidates.forEach((candidate) => {
+    console.log("🔍 Risk-based auto-approval analysis:");
+
+    const safeAllowCandidates = result.allowCandidates.filter((candidate) => {
+      const scopeRisk = evaluateScopeRisk(candidate.pattern);
+      const operationRisk = evaluateOperationRisk(candidate.pattern);
+      const targetRisk = evaluateTargetRisk(candidate.pattern);
+      const combinedRisk = combineRiskLevels(
+        scopeRisk.level,
+        operationRisk.level,
+        targetRisk.level
+      );
+
+      const isSafe = shouldAutoApprove(combinedRisk);
       const allowCount = (candidate as any).decisions?.allow || 0;
       const denyCount = (candidate as any).decisions?.deny || 0;
-      const allowRatio = allowCount / candidate.frequency;
-      const hasHighAllowRatio = allowRatio >= 0.8;
-      const hasLowDenyRatio = denyCount / candidate.frequency <= 0.1;
-      const isEligible = hasHighAllowRatio && hasLowDenyRatio && candidate.frequency >= 3;
-      const passCount = (candidate as any).decisions?.pass || 0;
-      const askCount = candidate.frequency - allowCount - denyCount - passCount;
+
       console.log(
-        `  • ${candidate.pattern}: hook auto-allow=${allowCount}/${candidate.frequency} (${Math.round(allowRatio * 100)}%), deny=${denyCount}, ask=${askCount}, pass=${passCount}, eligible=${isEligible ? "YES" : "NO"}`,
+        `  • ${candidate.pattern}:`,
+        `\n    Risk: ${combinedRisk} (scope=${scopeRisk.level}, op=${operationRisk.level}, target=${targetRisk.level})`,
+        `\n    Usage: allow=${allowCount}, deny=${denyCount}, freq=${candidate.frequency}`,
+        `\n    Decision: ${isSafe ? "✅ AUTO-APPROVE" : "❌ NEEDS REVIEW"}`
       );
+
+      return isSafe && candidate.frequency >= 2;
     });
 
-    // 高許可率（80%以上）かつ低拒否率（10%以下）かつ頻度3回以上のallow候補を自動承認
-    let safeAllowCandidates = result.allowCandidates.filter(
-      (candidate) => {
-        const allowCount = (candidate as any).decisions?.allow || 0;
-        const denyCount = (candidate as any).decisions?.deny || 0;
-        const allowRatio = allowCount / candidate.frequency;
-        const denyRatio = denyCount / candidate.frequency;
-        return allowRatio >= 0.8 && denyRatio <= 0.1 && candidate.frequency >= 3;
-      },
-    );
-
-    // npx系はホワイトリストのパッケージのみ自動承認
-    const npxWhitelist = new Set<string>([
-      "vitest",
-      "jest",
-      "biome",
-      "dpdm",
-      "madge",
-      "tailwindcss",
-      "unocss",
-      "playwright",
-      "eslint",
-      "prettier",
-      "tsc",
-      "tsgo",
-    ]);
-    safeAllowCandidates = safeAllowCandidates.filter((c) => {
-      const m = c.pattern.match(/^Bash\(npx\s+(\S+):\*\)$/);
-      if (!m || !m[1]) return true;
-      const pkg = m[1];
-      return npxWhitelist.has(pkg);
-    });
-
-    // 高拒否率のdeny候補の自動承認は、以下を満たす場合のみ
-    // - 拒否率70%以上、頻度3回以上
-    // - 基本ユーティリティコマンドではない（例: find/grep/awkなど）
-    // - パターンが広い既存Allowと衝突しない（単純チェック）
-    const basicUtility =
-      /^Bash\((ls|cat|head|tail|grep|find|printf|echo|awk|sed|cut|sort|uniq|xargs|tr):\*\)$/;
     const existingAllow = new Set<string>([]);
-    // 既存許可（広範囲）を読み込んで衝突除外
     try {
       const projectPermissions = this.loadPermissions(
         this.projectPermissionsPath,
@@ -357,18 +336,28 @@ class AutoApproveUpdater {
 
     const dangerousDenyCandidates = result.denyCandidates.filter(
       (candidate) => {
-        const denyCount = (candidate as any).decisions?.deny || 0;
-        const denyRatio = denyCount / candidate.frequency;
-        const meetsRatio = denyRatio >= 0.7;
-        const meetsFrequency = candidate.frequency >= 3;
-        const notBasicUtility = !basicUtility.test(candidate.pattern);
-        const conflictsWithAllow = existingAllow.has(candidate.pattern);
-        return (
-          meetsRatio &&
-          meetsFrequency &&
-          notBasicUtility &&
-          !conflictsWithAllow
+        const scopeRisk = evaluateScopeRisk(candidate.pattern);
+        const operationRisk = evaluateOperationRisk(candidate.pattern);
+        const targetRisk = evaluateTargetRisk(candidate.pattern);
+        const combinedRisk = combineRiskLevels(
+          scopeRisk.level,
+          operationRisk.level,
+          targetRisk.level
         );
+
+        const isHighRisk = combinedRisk === 'high' || combinedRisk === 'critical';
+        const denyCount = (candidate as any).decisions?.deny || 0;
+        const meetsFrequency = candidate.frequency >= 2;
+        const conflictsWithAllow = existingAllow.has(candidate.pattern);
+
+        console.log(
+          `  🚫 ${candidate.pattern}:`,
+          `\n    Risk: ${combinedRisk} (scope=${scopeRisk.level}, op=${operationRisk.level}, target=${targetRisk.level})`,
+          `\n    Usage: deny=${denyCount}, freq=${candidate.frequency}`,
+          `\n    Decision: ${isHighRisk && meetsFrequency && !conflictsWithAllow ? "✅ AUTO-DENY" : "❌ SKIP"}`
+        );
+
+        return isHighRisk && meetsFrequency && !conflictsWithAllow;
       },
     );
 
@@ -376,12 +365,12 @@ class AutoApproveUpdater {
     approved.denyPatterns = dangerousDenyCandidates.map((c) => c.pattern);
 
     if (approved.allowPatterns.length > 0 || approved.denyPatterns.length > 0) {
-      console.log("🤖 Auto-approved safe patterns:");
+      console.log("\n🤖 Auto-approved patterns based on intrinsic risk:");
       approved.allowPatterns.forEach((p) => console.log(`  ✅ Allow: ${p}`));
       approved.denyPatterns.forEach((p) => console.log(`  🚫 Deny: ${p}`));
       console.log();
     } else {
-      console.log("🤖 No patterns met auto-approval criteria.");
+      console.log("\n🤖 No patterns met auto-approval criteria.");
       console.log();
     }
 
