@@ -185,8 +185,7 @@
     "Edit(~/.zshrc)",
     "Edit(~/.bashrc)",
     "Edit(~/.config/**)",
-    "Grep(./**)",
-    "Grep(~/workspace/**)",
+    "Grep",
     "Search(./**)",
     "Search(~/workspace/**)",
     "Glob(./**)",
@@ -260,7 +259,11 @@
     "Bash(pnpm build:*)",
     "Read(**/*.test.*)",
     "Bash(pnpm lint:fix:*)",
-    "Bash(pnpm lint:*)"
+    "Bash(pnpm lint:*)",
+    "Bash(pnpm test:ci:*)",
+    "Bash(npm view:*)",
+    "Bash(git status:*)",
+    "Read(dot_claude/hooks/**)"
   ],
   "deny": [
     "Bash(rm -rf /)",
