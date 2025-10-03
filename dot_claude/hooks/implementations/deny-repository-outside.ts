@@ -115,17 +115,8 @@ function getSettingsFiles(workspaceRoot?: string): SettingsFile[] {
     }
   }
 
-  // Global permissions (chezmoi managed)
-  const globalPermissionsPath = resolve(homeDir, ".claude", "permissions.json");
-  if (existsSync(globalPermissionsPath)) {
-    try {
-      const content = readFileSync(globalPermissionsPath, "utf-8");
-      const permissions = JSON.parse(content);
-      settingsFiles.push({ permissions } as SettingsFile);
-    } catch {
-      // Ignore parse errors
-    }
-  }
+  // Note: permissions are now integrated in settings.json
+  // No need to read a separate permissions.json file
 
   // Workspace settings
   if (workspaceRoot) {
@@ -373,7 +364,7 @@ function checkAllowPatterns(filePath: string, allowPatterns: string[]): boolean 
   for (const pattern of allowPatterns) {
     // Extract path pattern from tool pattern like "Read(path/pattern)"
     const match = pattern.match(/^[^(]+\((.+)\)$/);
-    if (match) {
+    if (match?.[1]) {
       const pathPattern = match[1];
       if (matchGitignorePattern(filePath, expandTilde(pathPattern))) {
         return true;

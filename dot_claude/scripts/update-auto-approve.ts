@@ -45,7 +45,7 @@ class AutoApproveUpdater {
     this.projectPermissionsPath = join(
       process.cwd(),
       "dot_claude",
-      "permissions.json",
+      ".settings.permissions.json",
     );
     this.options = options;
   }
