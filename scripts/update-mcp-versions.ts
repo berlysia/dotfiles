@@ -1,12 +1,8 @@
 #!/usr/bin/env bun
 
 import { readFileSync, writeFileSync } from "node:fs";
-import { exec } from "node:child_process";
-import { promisify } from "node:util";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-
-const execAsync = promisify(exec);
 
 // Get current file directory (Node.js standard way)
 const __filename = fileURLToPath(import.meta.url);
@@ -20,6 +16,10 @@ const MCP_PACKAGES = [
   "@upstash/context7-mcp",
   "o3-search-mcp",
 ] as const;
+
+interface PackageJson {
+  devDependencies?: Record<string, string>;
+}
 
 interface ClaudeConfig {
   mcpServers: Record<
@@ -36,21 +36,29 @@ interface ClaudeConfig {
 }
 
 /**
- * Get the latest version of an npm package
+ * Clean version string by removing range specifiers (^, ~, etc.)
  */
-async function getLatestVersion(packageName: string): Promise<string> {
-  try {
-    const { stdout } = await execAsync(`npm view ${packageName} version`);
-    return stdout.trim();
-  } catch (error) {
-    throw new Error(
-      `Failed to get version for ${packageName}: ${error instanceof Error ? error.message : String(error)}`
-    );
+function cleanVersion(version: string): string {
+  return version.replace(/^[\^~>=<]/, "").trim();
+}
+
+/**
+ * Get version from package.json devDependencies
+ */
+function getVersionFromPackageJson(
+  packageJson: PackageJson,
+  packageName: string
+): string | null {
+  const version = packageJson.devDependencies?.[packageName];
+  if (!version) {
+    return null;
   }
+  return cleanVersion(version);
 }
 
 /**
  * Update package version in args array
+ * Handles both @latest format and existing pinned versions
  */
 function updatePackageVersion(
   args: string[],
@@ -59,9 +67,13 @@ function updatePackageVersion(
 ): { updated: boolean; args: string[] } {
   let updated = false;
   const newArgs = args.map((arg) => {
-    if (arg.endsWith("@latest") && arg.startsWith(packageName)) {
-      updated = true;
-      return `${packageName}@${version}`;
+    // Match package@version or package@latest
+    if (arg.startsWith(packageName) && arg.includes("@")) {
+      const currentVersion = arg.split("@").pop();
+      if (currentVersion !== version) {
+        updated = true;
+        return `${packageName}@${version}`;
+      }
     }
     return arg;
   });
@@ -69,27 +81,32 @@ function updatePackageVersion(
 }
 
 async function main() {
+  const packageJsonPath = resolve(__dirname, "../package.json");
   const configPath = resolve(__dirname, "../.claude.json");
+
+  console.log("Reading package.json...");
+  const packageJsonContent = readFileSync(packageJsonPath, "utf-8");
+  const packageJson: PackageJson = JSON.parse(packageJsonContent);
 
   console.log("Reading .claude.json...");
   const configContent = readFileSync(configPath, "utf-8");
   const config: ClaudeConfig = JSON.parse(configContent);
 
-  console.log("\nFetching latest versions for MCP packages...\n");
+  console.log("\nSyncing MCP package versions from package.json...\n");
 
   const updates: Array<{ package: string; version: string }> = [];
   let hasChanges = false;
 
-  // Fetch latest versions in parallel
-  const versionPromises = MCP_PACKAGES.map(async (packageName) => {
-    const version = await getLatestVersion(packageName);
-    return { packageName, version };
-  });
+  // Get versions from package.json
+  for (const packageName of MCP_PACKAGES) {
+    const version = getVersionFromPackageJson(packageJson, packageName);
 
-  const versions = await Promise.all(versionPromises);
+    if (!version) {
+      console.warn(`⚠ Warning: ${packageName} not found in package.json devDependencies`);
+      continue;
+    }
 
-  // Update config with new versions
-  for (const { packageName, version } of versions) {
+    // Update config with versions from package.json
     for (const [serverName, serverConfig] of Object.entries(
       config.mcpServers
     )) {
@@ -108,7 +125,7 @@ async function main() {
   }
 
   if (!hasChanges) {
-    console.log("\n✓ No updates needed. All packages are already pinned.");
+    console.log("\n✓ No updates needed. All packages are already in sync.");
     process.exit(0);
   }
 
@@ -123,7 +140,7 @@ async function main() {
   });
 
   console.log(
-    '\nNext steps:\n  1. Review changes: git diff .claude.json\n  2. Commit: git add .claude.json && git commit -m "chore: update MCP package versions"'
+    '\n💡 .claude.json has been synced with package.json versions'
   );
 }
 

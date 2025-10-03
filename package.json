@@ -16,8 +16,13 @@
   "packageManager": "pnpm@10.14.0",
   "devDependencies": {
     "@mizchi/lsmcp": "^0.9.4",
+    "@mizchi/readability": "0.7.7",
+    "@playwright/mcp": "0.0.41",
     "@types/node": "^24.2.1",
     "@typescript/native-preview": "7.0.0-dev.20250811.1",
+    "@upstash/context7-mcp": "1.0.20",
+    "chrome-devtools-mcp": "0.6.0",
+    "o3-search-mcp": "0.0.9",
     "typescript": "^5.9.2"
   },
   "dependencies": {

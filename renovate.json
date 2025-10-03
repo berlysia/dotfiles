@@ -1,0 +1,28 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "packageRules": [
+    {
+      "description": "MCP packages - auto-sync .claude.json",
+      "matchPackageNames": [
+        "@mizchi/readability",
+        "chrome-devtools-mcp",
+        "@playwright/mcp",
+        "@upstash/context7-mcp",
+        "o3-search-mcp"
+      ],
+      "postUpgradeTasks": {
+        "commands": [
+          "pnpm update-mcp"
+        ],
+        "fileFilters": [
+          ".claude.json"
+        ],
+        "executionMode": "branch"
+      },
+      "commitMessageExtra": "and sync .claude.json"
+    }
+  ]
+}
