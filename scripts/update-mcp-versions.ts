@@ -3,9 +3,14 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
-import { resolve } from "node:path";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const execAsync = promisify(exec);
+
+// Get current file directory (Node.js standard way)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // MCP packages that need version management
 const MCP_PACKAGES = [
@@ -64,7 +69,7 @@ function updatePackageVersion(
 }
 
 async function main() {
-  const configPath = resolve(import.meta.dir, "../.claude.json");
+  const configPath = resolve(__dirname, "../.claude.json");
 
   console.log("Reading .claude.json...");
   const configContent = readFileSync(configPath, "utf-8");
