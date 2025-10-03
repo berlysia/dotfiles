@@ -22,13 +22,15 @@ function resolvePatternPath(pattern: string, cwd: string): string {
   return resolve(cwd, pathWithoutGlob);
 }
 
-export enum RiskLevel {
-  MINIMAL = 'minimal',
-  LOW = 'low',
-  MEDIUM = 'medium',
-  HIGH = 'high',
-  CRITICAL = 'critical'
-}
+export const RiskLevel = {
+  MINIMAL: 'minimal',
+  LOW: 'low',
+  MEDIUM: 'medium',
+  HIGH: 'high',
+  CRITICAL: 'critical'
+} as const;
+
+export type RiskLevel = typeof RiskLevel[keyof typeof RiskLevel];
 
 export interface RiskAssessment {
   level: RiskLevel;

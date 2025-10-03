@@ -19,6 +19,14 @@ import {
   createAllowResponse,
 } from "../../lib/context-helpers.ts";
 
+// Extend ToolSchema to include Search tool (not yet in cc-hooks-ts)
+interface ExtendedToolSchema extends ToolSchema {
+  Search: {
+    pattern: string;
+    path?: string;
+  };
+}
+
 // Re-export for use in tests
 export { createAskResponse, createDenyResponse, createAllowResponse };
 
@@ -244,7 +252,7 @@ export async function invokeRun<H extends { run: (...args: any[]) => any }>(
  */
 export function createPreToolUseContextFor<
   H extends { run: (ctx: any) => any },
-  Name extends keyof ToolSchema,
+  Name extends keyof ExtendedToolSchema,
   Input,
 >(
   hook: H,
