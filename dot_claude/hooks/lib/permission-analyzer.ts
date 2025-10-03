@@ -295,7 +295,7 @@ export class PermissionAnalyzer {
   ): Promise<string | null> {
     // 既存のbash-parserを信頼して使用（内部でフォールバック処理済み）
     const { extractCommandsStructured, extractCommandsDetailed } = await import(
-      "./bash-parser.js"
+      "./bash-parser.ts"
     );
     const { individualCommands } = await extractCommandsStructured(command);
     const commands = individualCommands;
@@ -663,7 +663,7 @@ export class PermissionAnalyzer {
     entryCwd: string | undefined,
     parseDetailed: (
       cmd: string,
-    ) => Promise<import("./bash-parser.js").SimpleCommand[]>,
+    ) => Promise<import("./bash-parser.ts").SimpleCommand[]>,
   ): Promise<{ safe: boolean; firstSafe?: string }> {
     if (commands.length === 0) return { safe: false };
 
