@@ -30,13 +30,35 @@ packages=(
 
 for package in "${packages[@]}"; do
     log "Processing package: $package"
-    
-    # Get latest version
-    if ! version=$(mise latest "$package" 2>/dev/null); then
-        log "Could not get latest version for $package" "WARNING"
-        continue
+
+    # Special handling for pnpm: read version from package.json if available
+    if [[ "$package" == "pnpm" ]]; then
+        package_json="{{ .chezmoi.sourceDir }}/package.json"
+        if [[ -f "$package_json" ]] && command -v jq &> /dev/null; then
+            if package_manager=$(jq -r '.packageManager // empty' "$package_json" 2>/dev/null); then
+                if [[ "$package_manager" =~ ^pnpm@([0-9.]+)$ ]]; then
+                    version="${BASH_REMATCH[1]}"
+                    log "Using pnpm version from package.json: $version"
+                else
+                    log "Could not parse pnpm version from packageManager field, using latest" "WARNING"
+                    version=$(mise latest "$package" 2>/dev/null) || continue
+                fi
+            else
+                log "No packageManager field in package.json, using latest pnpm" "WARNING"
+                version=$(mise latest "$package" 2>/dev/null) || continue
+            fi
+        else
+            log "package.json not found or jq unavailable, using latest pnpm" "WARNING"
+            version=$(mise latest "$package" 2>/dev/null) || continue
+        fi
+    else
+        # Get latest version for other packages
+        if ! version=$(mise latest "$package" 2>/dev/null); then
+            log "Could not get latest version for $package" "WARNING"
+            continue
+        fi
     fi
-    
+
     # Check if already installed
     if mise ls "$package" 2>/dev/null | grep -q "$version"; then
         log "${package}@${version} already installed"
