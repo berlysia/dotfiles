@@ -13,7 +13,7 @@
   },
   "keywords": [],
   "author": "",
-  "packageManager": "pnpm@10.14.0",
+  "packageManager": "pnpm@10.17.1",
   "devDependencies": {
     "@mizchi/lsmcp": "0.9.4",
     "@mizchi/readability": "0.7.7",

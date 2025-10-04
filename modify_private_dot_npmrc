@@ -1,0 +1,17 @@
+#!/bin/bash
+# NPM/PNPM Security Configuration with existing token preservation
+# See: https://zenn.dev/azu/articles/ad168118524135
+
+# Security settings
+cat <<'EOF'
+# Prevent automatic execution of lifecycle scripts (postinstall, etc.)
+# This blocks supply chain attacks via malicious scripts
+ignore-scripts=true
+
+# Minimum release age before installing packages (requires pnpm >= 10.16)
+minimum-release-age=1d
+
+EOF
+
+# Preserve existing authToken lines
+grep "_authToken" | head -1 || true
