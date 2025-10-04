@@ -4,6 +4,7 @@ packages:
     - "deno"
     - "pnpm"
     - "bun"
+    - "yarn"
     - "direnv"
     - "rust"
     - "go"
