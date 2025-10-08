@@ -3,6 +3,8 @@
  * TypeScript conversion of pattern-matcher.sh
  */
 
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { ToolInput } from "../types/project-types.ts";
 import { isBashToolInput } from "../types/project-types.ts";
 import { getFilePathFromToolInput } from "./command-parsing.ts";
@@ -169,6 +171,10 @@ export function matchGitignorePattern(
 
   // Handle ** patterns first (match any number of directories)
   if (pattern === "**") {
+    // Security: reject parent directory traversal even for ** pattern
+    if (filePath.startsWith("../") || filePath.includes("/../")) {
+      return false;
+    }
     return true;
   }
 
@@ -177,6 +183,13 @@ export function matchGitignorePattern(
     if (prefix.startsWith("/")) {
       // Anchored pattern - match from beginning
       return filePath.startsWith(`${prefix}/`) || filePath === prefix;
+    } else if (prefix === "." || prefix === "") {
+      // Special case for ./** or ** - matches any path within current directory
+      // Security: reject parent directory traversal
+      if (filePath.startsWith("../") || filePath.includes("/../")) {
+        return false;
+      }
+      return true;
     } else {
       // Not anchored - can match anywhere
       return filePath.includes(`${prefix}/`) || filePath.includes(prefix);
@@ -368,17 +381,36 @@ export async function checkPattern(
     const pathPattern = pattern.slice(toolName.length + 1, -1); // Remove "ToolName(" and ")"
 
     // Get the file path from tool input using helper
-    const filePath = getFilePathFromToolInput(toolName, toolInput) || "";
+    let filePath = getFilePathFromToolInput(toolName, toolInput) || "";
+    let normalizedPattern = pathPattern;
+
+    // Normalize paths for consistent matching
+    // Convert relative paths to absolute if pattern is absolute
+    if (filePath && !filePath.startsWith("/") && !filePath.startsWith("~")) {
+      // Only normalize if we have an absolute pattern to compare against
+      if (pathPattern.startsWith("/") || pathPattern.startsWith("~/")) {
+        filePath = join(process.cwd(), filePath);
+      }
+    }
+
+    // Handle tilde expansion in pattern (but not ./**)
+    if (pathPattern.startsWith("~/")) {
+      normalizedPattern = join(homedir(), pathPattern.slice(2));
+    } else if (pathPattern.startsWith("./") && pathPattern !== "./**") {
+      // Don't expand ./** as it's a gitignore-style pattern, not a file path
+      normalizedPattern = join(process.cwd(), pathPattern.slice(2));
+    }
 
     // GitIgnore-style pattern matching
     if (pathPattern === "**") {
-      return true;
+      // Use matchGitignorePattern to ensure security checks are applied
+      return matchGitignorePattern(filePath, "**");
     } else if (pathPattern.startsWith("!")) {
       // Negation pattern - should not match
       const negPattern = pathPattern.slice(1);
       return !matchGitignorePattern(filePath, negPattern);
     } else {
-      return matchGitignorePattern(filePath, pathPattern);
+      return matchGitignorePattern(filePath, normalizedPattern);
     }
   } else if (pattern === toolName) {
     return true;
