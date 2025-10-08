@@ -162,6 +162,20 @@ describe("Command Parsing Library", () => {
       strictEqual(result.reason, "Git command with --no-verify bypasses hooks and safety checks");
     });
 
+    it("should detect git --no-gpg-sign as requiring manual review", () => {
+      const result = checkDangerousCommand("git commit --no-gpg-sign -m 'test'");
+      strictEqual(result.isDangerous, true);
+      strictEqual(result.requiresManualReview, true);
+      strictEqual(result.reason, "Git command with --no-gpg-sign bypasses GPG signature verification");
+    });
+
+    it("should detect git --no-gpg-sign with env vars as requiring manual review", () => {
+      const result = checkDangerousCommand('GIT_AUTHOR_NAME="test" git commit --no-gpg-sign -m "test"');
+      strictEqual(result.isDangerous, true);
+      strictEqual(result.requiresManualReview, true);
+      strictEqual(result.reason, "Git command with --no-gpg-sign bypasses GPG signature verification");
+    });
+
     it("should not flag safe commands", () => {
       const result = checkDangerousCommand("echo hello world");
       strictEqual(result.isDangerous, false);

@@ -86,6 +86,11 @@ export function checkDangerousCommand(cmd: string): {
       reason: "Git command with --no-verify bypasses hooks and safety checks",
       requiresReview: true,
     },
+    {
+      pattern: /git\s+.*--no-gpg-sign/,
+      reason: "Git command with --no-gpg-sign bypasses GPG signature verification",
+      requiresReview: true,
+    },
   ];
 
   for (const { pattern, reason, requiresReview } of dangerousPatterns) {
