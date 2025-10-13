@@ -171,8 +171,13 @@ export function matchGitignorePattern(
 
   // Handle ** patterns first (match any number of directories)
   if (pattern === "**") {
-    // Security: reject parent directory traversal even for ** pattern
+    // Security checks:
+    // 1. Reject parent directory traversal
     if (filePath.startsWith("../") || filePath.includes("/../")) {
+      return false;
+    }
+    // 2. Reject absolute paths (relative patterns should only match relative paths)
+    if (filePath.startsWith("/")) {
       return false;
     }
     return true;
@@ -185,8 +190,13 @@ export function matchGitignorePattern(
       return filePath.startsWith(`${prefix}/`) || filePath === prefix;
     } else if (prefix === "." || prefix === "") {
       // Special case for ./** or ** - matches any path within current directory
-      // Security: reject parent directory traversal
+      // Security checks:
+      // 1. Reject parent directory traversal
       if (filePath.startsWith("../") || filePath.includes("/../")) {
+        return false;
+      }
+      // 2. Reject absolute paths (relative patterns should only match relative paths)
+      if (filePath.startsWith("/")) {
         return false;
       }
       return true;
@@ -390,6 +400,21 @@ export async function checkPattern(
       // Only normalize if we have an absolute pattern to compare against
       if (pathPattern.startsWith("/") || pathPattern.startsWith("~/")) {
         filePath = join(process.cwd(), filePath);
+      }
+    }
+
+    // Convert absolute paths to relative if pattern is relative
+    // This allows ./** patterns to match absolute paths from cwd
+    if (
+      filePath.startsWith("/") &&
+      !pathPattern.startsWith("/") &&
+      !pathPattern.startsWith("~/")
+    ) {
+      const cwd = process.cwd();
+      if (filePath.startsWith(`${cwd}/`)) {
+        filePath = `./${filePath.slice(cwd.length + 1)}`;
+      } else if (filePath === cwd) {
+        filePath = ".";
       }
     }
 
