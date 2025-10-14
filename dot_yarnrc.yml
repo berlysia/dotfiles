@@ -1,0 +1,9 @@
+# Always install exact versions to avoid unintended updates
+defaultSemverRangePrefix: ""
+
+# Prevent automatic execution of lifecycle scripts (postinstall, etc.)
+# This blocks supply chain attacks via malicious scripts
+enableScripts: false
+
+# Minimum release age before installing packages
+npmMinimalAgeGate: 10080

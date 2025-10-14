@@ -1,5 +1,8 @@
 # Common environment variables for all shells
 
+# XDG Base Directory specification
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+
 # Default editor
 if type code &>/dev/null; then
   EDITOR="code --wait"
