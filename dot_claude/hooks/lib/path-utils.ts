@@ -3,10 +3,64 @@
  *
  * These utilities provide standardized path transformations to avoid code duplication
  * and ensure consistent behavior across different parts of the codebase.
+ *
+ * This module uses Branded Types (Opaque Types) to ensure type safety at compile time.
+ * The branded types distinguish between:
+ * - Raw string paths vs normalized paths
+ * - File paths vs pattern strings
+ * This prevents common errors like mixing up paths and patterns or double-normalization.
  */
 
 import { homedir } from "node:os";
 import { join } from "node:path";
+
+/**
+ * Branded type utility for creating opaque types
+ *
+ * This creates a nominal type that is incompatible with its base type,
+ * preventing accidental mixing of different path states.
+ */
+type Brand<K, T> = K & { readonly __brand: T };
+
+/**
+ * Normalized file path - guaranteed to be processed by normalization functions
+ *
+ * Use this type for paths that have been through expandTilde/expandRelativePath/normalizePath.
+ * This prevents accidental double-normalization and ensures paths are in expected format.
+ */
+export type NormalizedPath = Brand<string, "NormalizedPath">;
+
+/**
+ * Normalized pattern string - guaranteed to be processed by normalizePattern
+ *
+ * Use this type for pattern strings used in gitignore-style matching.
+ * This prevents mixing up file paths and pattern strings.
+ */
+export type NormalizedPattern = Brand<string, "NormalizedPattern">;
+
+/**
+ * Convert a string to NormalizedPath
+ *
+ * This is a type-level cast that should only be used internally by normalization functions.
+ * External code should use normalizePath() instead.
+ *
+ * @internal
+ */
+function toNormalizedPath(s: string): NormalizedPath {
+  return s as NormalizedPath;
+}
+
+/**
+ * Convert a string to NormalizedPattern
+ *
+ * This is a type-level cast that should only be used internally by normalizePattern().
+ * External code should use normalizePattern() instead.
+ *
+ * @internal
+ */
+function toNormalizedPattern(s: string): NormalizedPattern {
+  return s as NormalizedPattern;
+}
 
 /**
  * Expand tilde (~/) to absolute home directory path
@@ -60,13 +114,15 @@ export function expandRelativePath(path: string, base: string = process.cwd()): 
 /**
  * Comprehensive path normalization with configurable options
  *
+ * Returns a NormalizedPath branded type to ensure type safety and prevent double-normalization.
+ *
  * @param path - Path to normalize
  * @param options - Normalization options
- * @returns Normalized path
+ * @returns Normalized path with branded type
  *
  * @example
- * normalizePath("~/workspace/./file.ts")  // → "/home/user/workspace/file.ts"
- * normalizePath("./file.ts", { makeAbsolute: true }) // → "/cwd/file.ts"
+ * normalizePath("~/workspace/./file.ts")  // → NormalizedPath("/home/user/workspace/file.ts")
+ * normalizePath("./file.ts", { makeAbsolute: true }) // → NormalizedPath("/cwd/file.ts")
  */
 export function normalizePath(
   path: string,
@@ -75,7 +131,7 @@ export function normalizePath(
     expandRelative?: boolean;
     makeAbsolute?: boolean;
   } = {}
-): string {
+): NormalizedPath {
   const {
     expandTilde: shouldExpandTilde = true,
     expandRelative: shouldExpandRelative = true,
@@ -94,7 +150,7 @@ export function normalizePath(
     result = expandRelativePath(result);
   }
 
-  return result;
+  return toNormalizedPath(result);
 }
 
 /**
@@ -131,23 +187,25 @@ export function makeRelativeToCwd(path: string): string | null {
  * of permission checking (allow/deny lists). It handles special cases like ./** which
  * should remain as a gitignore-style pattern rather than being expanded.
  *
+ * Returns a NormalizedPath branded type to ensure type safety when used with matchGitignorePattern.
+ *
  * @param path - File path to normalize
  * @param pattern - Pattern being matched against (used to determine normalization strategy)
  * @param options - Additional options
- * @returns Normalized path suitable for matching
+ * @returns Normalized path with branded type suitable for matching
  *
  * @example
  * // Standard normalization
  * normalizePathForMatching("~/workspace/file.ts", "~/workspace/**")
- * // → "/home/user/workspace/file.ts"
+ * // → NormalizedPath("/home/user/workspace/file.ts")
  *
  * // Avoids expanding ./** pattern
  * normalizePathForMatching("./src/file.ts", "./**")
- * // → "./src/file.ts" (not expanded because pattern is a gitignore-style ./**)
+ * // → NormalizedPath("./src/file.ts") (not expanded because pattern is a gitignore-style ./**)
  *
  * // Relative to absolute when pattern is absolute
  * normalizePathForMatching("src/file.ts", "/absolute/path/**")
- * // → "/cwd/src/file.ts"
+ * // → NormalizedPath("/cwd/src/file.ts")
  */
 export function normalizePathForMatching(
   path: string,
@@ -155,7 +213,7 @@ export function normalizePathForMatching(
   options: {
     avoidGitignorePatterns?: boolean;
   } = {}
-): string {
+): NormalizedPath {
   const { avoidGitignorePatterns = true } = options;
 
   let result = path;
@@ -179,7 +237,7 @@ export function normalizePathForMatching(
     // Special handling: ./** is a gitignore pattern, not a file path
     if (avoidGitignorePatterns && pattern === "./**") {
       // Don't convert to relative for ./** pattern - it's a special gitignore pattern
-      return result;
+      return toNormalizedPath(result);
     }
 
     const relativePath = makeRelativeToCwd(result);
@@ -188,47 +246,50 @@ export function normalizePathForMatching(
     }
   }
 
-  return result;
+  return toNormalizedPath(result);
 }
 
 /**
  * Normalize a pattern string (for comparing against file paths)
  *
+ * Returns a NormalizedPattern branded type to ensure type safety and prevent
+ * mixing up file paths and pattern strings.
+ *
  * @param pattern - Pattern string that may contain tilde or relative paths
  * @param options - Additional options
- * @returns Normalized pattern
+ * @returns Normalized pattern with branded type
  *
  * @example
- * normalizePattern("~/workspace/**")  // → "/home/user/workspace/**"
- * normalizePattern("./src/**")        // → "/cwd/src/**"
- * normalizePattern("./**")            // → "./**" (preserved as gitignore pattern)
+ * normalizePattern("~/workspace/**")  // → NormalizedPattern("/home/user/workspace/**")
+ * normalizePattern("./src/**")        // → NormalizedPattern("/cwd/src/**")
+ * normalizePattern("./**")            // → NormalizedPattern("./**") (preserved as gitignore pattern)
  */
 export function normalizePattern(
   pattern: string,
   options: {
     preserveGitignorePatterns?: boolean;
   } = {}
-): string {
+): NormalizedPattern {
   const { preserveGitignorePatterns = true } = options;
 
   // Preserve special gitignore-style patterns
   if (preserveGitignorePatterns && pattern === "./**") {
-    return pattern;
+    return toNormalizedPattern(pattern);
   }
 
   // Expand tilde
   if (pattern.startsWith("~/")) {
-    return join(homedir(), pattern.slice(2));
+    return toNormalizedPattern(join(homedir(), pattern.slice(2)));
   }
 
   // Expand relative paths
   if (pattern.startsWith("./")) {
     // Skip ./** only if preserveGitignorePatterns is true
     if (pattern === "./**" && preserveGitignorePatterns) {
-      return pattern;
+      return toNormalizedPattern(pattern);
     }
-    return join(process.cwd(), pattern.slice(2));
+    return toNormalizedPattern(join(process.cwd(), pattern.slice(2)));
   }
 
-  return pattern;
+  return toNormalizedPattern(pattern);
 }

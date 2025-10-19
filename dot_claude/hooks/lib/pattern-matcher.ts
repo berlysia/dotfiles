@@ -9,6 +9,8 @@ import { getFilePathFromToolInput } from "./command-parsing.ts";
 import {
   normalizePathForMatching,
   normalizePattern,
+  type NormalizedPath,
+  type NormalizedPattern,
 } from "./path-utils.ts";
 
 /**
@@ -161,9 +163,33 @@ function isSafeBuiltinCommand(cmd: string): boolean {
 /**
  * GitIgnore-style pattern matching
  */
+/**
+ * Match a normalized file path against a normalized pattern (type-safe overload)
+ *
+ * This overload requires branded types to ensure type safety and prevent
+ * accidental mixing of file paths and patterns.
+ */
+export function matchGitignorePattern(
+  filePath: NormalizedPath,
+  pattern: NormalizedPattern,
+): boolean;
+
+/**
+ * Match a file path against a pattern (backward compatibility overload)
+ *
+ * This overload accepts plain strings for backward compatibility during migration.
+ * New code should use the branded type overload.
+ *
+ * @deprecated Prefer using the overload with NormalizedPath and NormalizedPattern
+ */
 export function matchGitignorePattern(
   filePath: string,
   pattern: string,
+): boolean;
+
+export function matchGitignorePattern(
+  filePath: string | NormalizedPath,
+  pattern: string | NormalizedPattern,
 ): boolean {
   // Handle directory patterns ending with /
   if (pattern.endsWith("/")) {
@@ -409,11 +435,12 @@ export async function checkPattern(
     // GitIgnore-style pattern matching
     if (pathPattern === "**") {
       // Use matchGitignorePattern to ensure security checks are applied
-      return matchGitignorePattern(filePath, "**");
+      return matchGitignorePattern(filePath, normalizePattern("**"));
     } else if (pathPattern.startsWith("!")) {
       // Negation pattern - should not match
       const negPattern = pathPattern.slice(1);
-      return !matchGitignorePattern(filePath, negPattern);
+      const normalizedNegPattern = normalizePattern(negPattern);
+      return !matchGitignorePattern(filePath, normalizedNegPattern);
     } else {
       return matchGitignorePattern(filePath, normalizedPattern);
     }
