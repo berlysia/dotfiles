@@ -79,41 +79,57 @@ if (pattern === "**") {
 ❌ 0 fail
 ```
 
-### auto-approve.test.ts
+### auto-approve.test.ts (最終)
 ```
-✅ 49 pass (前回48)
-❌ 2 fail (前回3 - 改善)
-⚠️ 5 errors (既存)
+✅ 51 pass (すべて解決！)
+❌ 0 fail
+⚠️ 5 errors (既存、別問題)
 ```
 
-残りの2件の失敗は reason文字列生成の問題で、パターンマッチング自体は正常動作。
+## 追加修正: チルダ展開の不整合 (2025-10-20) ✅
 
-## 残存する問題 (今回の修正対象外)
+### 問題
 
-### auto-approve.test.ts の残り2件の失敗
+当初の修正後も2件のテストが失敗していた：
+1. "should allow Grep with workspace path" (line 843)
+2. "should allow Search with workspace path" (line 909)
 
-#### 1. "should allow Grep with workspace path" (line 843)
-- **期待**: reason文字列に`Grep(~/workspace/**)`が含まれる
-- **実際**: パターンマッチは成功しallowを返すが、reasonにパターン名が含まれない
-- **原因**: チルダ展開されたパスとパターンの比較でreason生成が不完全
-- **影響**: 機能は正常動作、reason文字列の情報量のみ不足
+### 根本原因
 
-#### 2. "should allow Search with workspace path" (line 909)
-- **期待**: reason文字列に`Search(~/workspace/**)`が含まれる
-- **実際**: パターンマッチは成功しallowを返すが、reasonにパターン名が含まれない
-- **原因**: 同上
-- **影響**: 機能は正常動作、reason文字列の情報量のみ不足
+`checkPattern`関数内で、**filePathとnormalizedPatternのチルダ展開タイミングが不整合**：
+
+- `getFilePathFromToolInput`: `~/workspace/project` をそのまま返す
+- `checkPattern` (line 429-430): パターン`~/workspace/**`のみを`/home/user/workspace/**`に展開
+- 結果: `matchGitignorePattern(filePath="~/workspace/project", normalizedPattern="/home/user/workspace/**")` → マッチ失敗
+
+### 解決策
+
+`checkPattern`関数（pattern-matcher.ts:404-407）で、**filePathもパターン展開前にチルダ展開**：
+
+```typescript
+// Expand tilde in filePath first for consistent comparison
+if (filePath.startsWith("~/")) {
+  filePath = join(homedir(), filePath.slice(2));
+}
+```
+
+これにより、filePathとnormalizedPatternが同じ形式（絶対パス）で比較されるようになった。
+
+### 結果
+
+- ✅ Grep/Searchのworkspaceパステストが両方pass
+- ✅ auto-approve.test.ts: 49 pass → 51 pass (+2)
+- ✅ すべての機能テストが完全に解決
 
 ### 既存の5つのエラー
 
 これらは以前から存在する別の問題:
 - 一部のテストでassertAsk()が期待するが、denyまたはallowが返される
-- これらは今回の`**`パターン修正とは無関係
+- これらは今回の修正とは無関係
 
 ### 結論
 
-今回の修正対象だった**パターンマッチング自体の問題は完全に解決**。
-残存する問題は別タスクとして対応が必要。
+**すべてのパターンマッチングテストが完全に解決**。残存する5つのエラーは別タスクとして対応が必要。
 
 ## 変更ファイル
 

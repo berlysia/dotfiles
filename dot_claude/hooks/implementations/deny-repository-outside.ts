@@ -7,6 +7,7 @@ import { existsSync, realpathSync, readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { createDenyResponse } from "../lib/context-helpers.ts";
 import { matchGitignorePattern } from "../lib/pattern-matcher.ts";
+import { expandTilde } from "../lib/path-utils.ts";
 import "../types/tool-schemas.ts";
 
 /**
@@ -374,12 +375,7 @@ function checkAllowPatterns(filePath: string, allowPatterns: string[]): boolean 
   return false;
 }
 
-function expandTilde(path: string): string {
-  if (path.startsWith("~/")) {
-    return join(homedir(), path.slice(2));
-  }
-  return path;
-}
+// expandTilde function is now imported from path-utils.ts to eliminate duplication
 
 function join(...paths: string[]): string {
   return paths.join("/").replace(/\/+/g, "/");
