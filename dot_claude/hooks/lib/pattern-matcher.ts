@@ -303,6 +303,11 @@ export async function checkIndividualCommandDeny(
   cmd: string,
   denyList: string[],
 ): Promise<boolean> {
+  // Skip built-in safe commands - they should never be denied
+  if (isSafeBuiltinCommand(cmd)) {
+    return false;
+  }
+
   const result = await checkIndividualCommandWithPattern(cmd, denyList);
   return result.matches;
 }
@@ -314,6 +319,12 @@ export async function checkIndividualCommandDenyWithPattern(
   cmd: string,
   denyList: string[],
 ): Promise<{ matches: boolean; matchedPattern?: string }> {
+  // Skip built-in safe commands - they should never be denied
+  // This prevents the logic error where isSafeBuiltinCommand=true causes denial
+  if (isSafeBuiltinCommand(cmd)) {
+    return { matches: false };
+  }
+
   const result = await checkIndividualCommandWithPattern(cmd, denyList);
   return {
     matches: result.matches,
