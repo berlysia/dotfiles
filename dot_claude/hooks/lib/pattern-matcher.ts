@@ -171,13 +171,9 @@ export function matchGitignorePattern(
 
   // Handle ** patterns first (match any number of directories)
   if (pattern === "**") {
-    // Security checks:
-    // 1. Reject parent directory traversal
+    // Security check: Reject parent directory traversal
+    // Absolute paths are safe as long as they don't contain directory traversal
     if (filePath.startsWith("../") || filePath.includes("/../")) {
-      return false;
-    }
-    // 2. Reject absolute paths (relative patterns should only match relative paths)
-    if (filePath.startsWith("/")) {
       return false;
     }
     return true;
@@ -189,14 +185,14 @@ export function matchGitignorePattern(
       // Anchored pattern - match from beginning
       return filePath.startsWith(`${prefix}/`) || filePath === prefix;
     } else if (prefix === "." || prefix === "") {
-      // Special case for ./** or ** - matches any path within current directory
-      // Security checks:
-      // 1. Reject parent directory traversal
+      // Special case for ./** - matches paths within current directory
+      // Security check: Reject parent directory traversal
       if (filePath.startsWith("../") || filePath.includes("/../")) {
         return false;
       }
-      // 2. Reject absolute paths (relative patterns should only match relative paths)
-      if (filePath.startsWith("/")) {
+      // For ./** pattern, only match relative paths (converted from cwd-relative absolute paths)
+      // Absolute paths outside cwd should not match ./**
+      if (pattern.startsWith("./**") && filePath.startsWith("/")) {
         return false;
       }
       return true;
