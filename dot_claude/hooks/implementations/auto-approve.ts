@@ -31,6 +31,7 @@ import {
   matchGitignorePattern,
 } from "../lib/pattern-matcher.ts";
 import { analyzePatternMatches } from "../lib/decision-maker.ts";
+import { normalizePath, normalizePattern } from "../lib/path-utils.ts";
 import "../types/tool-schemas.ts";
 
 /**
@@ -605,22 +606,12 @@ function analyzeBashCommands(
 // matchesPathPattern functionality consolidated into pattern-matcher.ts matchGitignorePattern
 // This wrapper handles path normalization and delegates to shared implementation
 function matchesPathPattern(filePath: string, pattern: string): boolean {
-  // Convert relative paths to absolute for consistent matching
-  let normalizedPath = filePath;
-  if (!filePath.startsWith("/")) {
-    normalizedPath = join(process.cwd(), filePath);
-  }
-
-  // Handle tilde expansion in pattern
-  let normalizedPattern = pattern;
-  if (pattern.startsWith("~/")) {
-    normalizedPattern = join(homedir(), pattern.slice(2));
-  } else if (pattern.startsWith("./")) {
-    normalizedPattern = join(process.cwd(), pattern.slice(2));
-  }
+  // Normalize file path and pattern using utility functions from path-utils.ts
+  const normalizedPath = normalizePath(filePath, { makeAbsolute: true });
+  const normalizedPatternStr = normalizePattern(pattern);
 
   // Use shared gitignore-style pattern matching from pattern-matcher.ts
-  return matchGitignorePattern(normalizedPath, normalizedPattern);
+  return matchGitignorePattern(normalizedPath, normalizedPatternStr);
 }
 
 // matchGitignorePattern is now imported from pattern-matcher.ts to eliminate duplication

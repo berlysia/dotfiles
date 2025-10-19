@@ -3,11 +3,13 @@
  * TypeScript conversion of pattern-matcher.sh
  */
 
-import { homedir } from "node:os";
-import { join } from "node:path";
 import type { ToolInput } from "../types/project-types.ts";
 import { isBashToolInput } from "../types/project-types.ts";
 import { getFilePathFromToolInput } from "./command-parsing.ts";
+import {
+  normalizePathForMatching,
+  normalizePattern,
+} from "./path-utils.ts";
 
 /**
  * Result of child command extraction
@@ -398,40 +400,11 @@ export async function checkPattern(
     const pathPattern = pattern.slice(toolName.length + 1, -1); // Remove "ToolName(" and ")"
 
     // Get the file path from tool input using helper
-    let filePath = getFilePathFromToolInput(toolName, toolInput) || "";
-    let normalizedPattern = pathPattern;
+    const rawFilePath = getFilePathFromToolInput(toolName, toolInput) || "";
 
-    // Normalize paths for consistent matching
-    // Convert relative paths to absolute if pattern is absolute
-    if (filePath && !filePath.startsWith("/") && !filePath.startsWith("~")) {
-      // Only normalize if we have an absolute pattern to compare against
-      if (pathPattern.startsWith("/") || pathPattern.startsWith("~/")) {
-        filePath = join(process.cwd(), filePath);
-      }
-    }
-
-    // Convert absolute paths to relative if pattern is relative
-    // This allows ./** patterns to match absolute paths from cwd
-    if (
-      filePath.startsWith("/") &&
-      !pathPattern.startsWith("/") &&
-      !pathPattern.startsWith("~/")
-    ) {
-      const cwd = process.cwd();
-      if (filePath.startsWith(`${cwd}/`)) {
-        filePath = `./${filePath.slice(cwd.length + 1)}`;
-      } else if (filePath === cwd) {
-        filePath = ".";
-      }
-    }
-
-    // Handle tilde expansion in pattern (but not ./**)
-    if (pathPattern.startsWith("~/")) {
-      normalizedPattern = join(homedir(), pathPattern.slice(2));
-    } else if (pathPattern.startsWith("./") && pathPattern !== "./**") {
-      // Don't expand ./** as it's a gitignore-style pattern, not a file path
-      normalizedPattern = join(process.cwd(), pathPattern.slice(2));
-    }
+    // Normalize path and pattern using utility functions
+    const filePath = normalizePathForMatching(rawFilePath, pathPattern);
+    const normalizedPattern = normalizePattern(pathPattern);
 
     // GitIgnore-style pattern matching
     if (pathPattern === "**") {
