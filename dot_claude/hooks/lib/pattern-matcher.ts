@@ -428,6 +428,12 @@ export async function checkPattern(
     // Get the file path from tool input using helper
     const rawFilePath = getFilePathFromToolInput(toolName, toolInput) || "";
 
+    // If no path is provided and the pattern expects a path, don't match
+    // This allows tools without paths to be handled by smartPassTools logic
+    if (!rawFilePath) {
+      return false;
+    }
+
     // Normalize path and pattern using utility functions
     const filePath = normalizePathForMatching(rawFilePath, pathPattern);
     const normalizedPattern = normalizePattern(pathPattern);

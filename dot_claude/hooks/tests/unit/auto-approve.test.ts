@@ -790,7 +790,7 @@ describe("auto-approve.ts hook behavior", () => {
   });
 
   describe("Grep tool path requirement", () => {
-    it("should deny Grep without path parameter", async () => {
+    it("should pass Grep without path parameter to Claude Code", async () => {
       envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Grep(./**)", "Grep(~/workspace/**)"]));
       envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
 
@@ -801,12 +801,8 @@ describe("auto-approve.ts hook behavior", () => {
       });
       await invokeRun(autoApproveHook, context);
 
-      context.assertDeny();
-
-      const reason = context.jsonCalls[0]?.hookSpecificOutput?.permissionDecisionReason;
-      ok(reason?.includes("requires explicit 'path' parameter"), "Should mention path requirement");
-      ok(reason?.includes("security"), "Should mention security reason");
-      ok(reason?.includes("./**"), "Should suggest valid path examples");
+      // New behavior: Grep is a smartPassTool, so it passes to Claude Code when no patterns match
+      context.assertPass();
     });
 
     it("should allow Grep with project path", async () => {
@@ -843,7 +839,7 @@ describe("auto-approve.ts hook behavior", () => {
       ok(reason?.includes("Grep(~/workspace/**)"), "Should mention matched workspace pattern");
     });
 
-    it("should ask for Grep with unmatched path", async () => {
+    it("should pass Grep with unmatched path to Claude Code", async () => {
       envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Grep(./**)", "Grep(~/workspace/**)"]));
       envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
 
@@ -854,12 +850,13 @@ describe("auto-approve.ts hook behavior", () => {
       });
       await invokeRun(autoApproveHook, context);
 
-      context.assertAsk();
+      // New behavior: Grep is a smartPassTool, so it passes to Claude Code when no patterns match
+      context.assertPass();
     });
   });
 
   describe("Search tool path requirement", () => {
-    it("should deny Search without path parameter", async () => {
+    it("should pass Search without path parameter to Claude Code", async () => {
       envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Search(./**)", "Search(~/workspace/**)"]));
       envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
 
@@ -869,12 +866,8 @@ describe("auto-approve.ts hook behavior", () => {
       });
       await invokeRun(autoApproveHook, context);
 
-      context.assertDeny();
-
-      const reason = context.jsonCalls[0]?.hookSpecificOutput?.permissionDecisionReason;
-      ok(reason?.includes("requires explicit 'path' parameter"), "Should mention path requirement");
-      ok(reason?.includes("security"), "Should mention security reason");
-      ok(reason?.includes("./**"), "Should suggest valid path examples");
+      // New behavior: Search is a smartPassTool, so it passes to Claude Code when no patterns match
+      context.assertPass();
     });
 
     it("should allow Search with project path", async () => {
