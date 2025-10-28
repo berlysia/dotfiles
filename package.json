@@ -6,7 +6,7 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "test": "bun test dot_claude/hooks/tests/**/*.test.ts",
+    "test": "node --test dot_claude/hooks/tests/**/*.test.ts",
     "typecheck": "npx tsgo --noEmit",
     "check": "npm run test && npm run typecheck",
     "update-mcp": "bun run scripts/update-mcp-versions.ts"
