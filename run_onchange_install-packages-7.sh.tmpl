@@ -1,6 +1,7 @@
 {{ if ne .chezmoi.os "windows" -}}
 #!/bin/bash
 # Install mise packages on Unix-like systems (Linux/macOS)
+# Version management is done via config.toml, this script only ensures installation
 
 set -euo pipefail
 
@@ -17,66 +18,13 @@ fi
 
 log "mise is available"
 
-# DO NOT Disable GPG verification for automated installation
-
-# Install mise packages
-packages=(
-{{- range $index, $package := .packages.mise }}
-    "{{ $package }}"
-{{- end }}
-)
-
-for package in "${packages[@]}"; do
-    log "Processing package: $package"
-
-    # Special handling for pnpm: read version from package.json if available
-    if [[ "$package" == "pnpm" ]]; then
-        package_json="{{ .chezmoi.sourceDir }}/package.json"
-        if [[ -f "$package_json" ]] && command -v jq &> /dev/null; then
-            if package_manager=$(jq -r '.packageManager // empty' "$package_json" 2>/dev/null); then
-                if [[ "$package_manager" =~ ^pnpm@([0-9.]+)$ ]]; then
-                    version="${BASH_REMATCH[1]}"
-                    log "Using pnpm version from package.json: $version"
-                else
-                    log "Could not parse pnpm version from packageManager field, using latest" "WARNING"
-                    version=$(mise latest "$package" 2>/dev/null) || continue
-                fi
-            else
-                log "No packageManager field in package.json, using latest pnpm" "WARNING"
-                version=$(mise latest "$package" 2>/dev/null) || continue
-            fi
-        else
-            log "package.json not found or jq unavailable, using latest pnpm" "WARNING"
-            version=$(mise latest "$package" 2>/dev/null) || continue
-        fi
-    else
-        # Get latest version for other packages
-        if ! version=$(mise latest "$package" 2>/dev/null); then
-            log "Could not get latest version for $package" "WARNING"
-            continue
-        fi
-    fi
-
-    # Check if already installed
-    if mise ls "$package" 2>/dev/null | grep -q "$version"; then
-        log "${package}@${version} already installed"
-        # Ensure it's set as global even if already installed
-        mise use --global "${package}@${version}" || log "Failed to set ${package} as global" "WARNING"
-    else
-        # Install package
-        log "Installing ${package}@${version}..."
-        if mise install "$package" "$version"; then
-            # Set as global version
-            if mise use --global "${package}@${version}"; then
-                log "Successfully installed and activated ${package}@${version}" "SUCCESS"
-            else
-                log "Installed ${package}@${version} but failed to set as global" "WARNING"
-            fi
-        else
-            log "Failed to install ${package}@${version}" "ERROR"
-        fi
-    fi
-done
+# Install all packages defined in config.toml
+log "Installing packages from config.toml..."
+if mise install; then
+    log "Successfully installed all mise packages" "SUCCESS"
+else
+    log "Some packages failed to install, but continuing..." "WARNING"
+fi
 
 log "mise package installation completed"
 

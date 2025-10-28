@@ -1,13 +1,4 @@
 packages:
-  mise:
-    - "node"
-    - "deno"
-    - "pnpm"
-    - "bun"
-    - "yarn"
-    - "direnv"
-    - "rust"
-    - "go"
   cargo:
     - "similarity-ts"
   go:
