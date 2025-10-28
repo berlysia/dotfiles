@@ -95,7 +95,7 @@ const hook = defineHook({
         return context.success({});
       } else {
         // Handle other tools with special logic for certain tools
-        const smartPassTools = ["ExitPlanMode", "WebFetch", "WebSearch", "Glob"];
+        const smartPassTools = ["ExitPlanMode", "WebFetch", "WebSearch", "Glob", "Search", "Grep"];
         
         if (smartPassTools.includes(tool_name)) {
           // For these tools, check explicit patterns first, then pass if no matches
@@ -139,23 +139,6 @@ const hook = defineHook({
             tool_input,
           );
           return context.success({});
-        }
-
-        // Special handling for Search and Grep tools path requirement
-        if (tool_name === "Grep" || tool_name === "Search") {
-          const filePath = getFilePathFromToolInput(tool_name, tool_input);
-          if (!filePath) {
-            const reason = `${tool_name} tool requires explicit 'path' parameter for security. Please specify the path to search in (e.g., './**', '~/workspace/**')`;
-            logDecision(
-              tool_name,
-              "deny",
-              reason,
-              context.input.session_id,
-              undefined,
-              tool_input,
-            );
-            return context.json(createDenyResponse(reason));
-          }
         }
 
         // Handle other tools normally
