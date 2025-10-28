@@ -347,8 +347,8 @@ describe("auto-approve.ts hook behavior", () => {
       });
       await hook.run(context);
 
-      // Not explicit root deletion; should ask for review
-      context.assertAsk();
+      // Variable-based rm -rf is dangerous and should be denied
+      context.assertDeny();
     });
 
     it("should handle deeply nested meta commands", async () => {
@@ -401,8 +401,8 @@ describe("auto-approve.ts hook behavior", () => {
       });
       await invokeRun(autoApproveHook, context);
 
-      // Not explicit root deletion; should ask for review
-      context.assertAsk();
+      // Variable-based rm -rf is dangerous and should be denied
+      context.assertDeny();
     });
 
     it("should skip control keywords", async () => {
@@ -501,12 +501,8 @@ describe("auto-approve.ts hook behavior", () => {
         });
         await invokeRun(autoApproveHook, context);
 
-        if (cmd.includes("rm -rf /")) {
-          context.assertDeny();
-        } else {
-          // Should require manual review for nested rm -rf (non-root)
-          context.assertAsk();
-        }
+        // All rm -rf patterns (including variable-based) should be denied
+        context.assertDeny();
       }
     });
 
