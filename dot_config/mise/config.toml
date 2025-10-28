@@ -1,0 +1,12 @@
+[settings]
+idiomatic_version_file_enable_tools = ["node"]
+
+[tools]
+bun = "1.2.23"
+deno = "2.5.3"
+direnv = "2.37.1"
+go = "1.25.1"
+node = "24.9.0"
+pnpm = "10.17.1"
+rust = "1.90.0"
+yarn = "4.10.3"

@@ -1,5 +1,6 @@
 {{ if eq .chezmoi.os "windows" -}}
 # Install mise and packages on Windows
+# Version management is done via config.toml, this script only ensures installation
 
 $ErrorActionPreference = "Stop"
 
@@ -33,54 +34,17 @@ if (-not $miseAvailable) {
     exit 1
 }
 
-# Disable GPG verification for automated installation
-$env:MISE_NODE_VERIFY = "false"
-$env:MISE_PYTHON_VERIFY = "false"
-
-# Install mise packages
-$packages = @(
-{{- range $index, $package := .packages.mise }}
-    "{{ $package }}"{{ if ne $index (sub (len $.packages.mise) 1) }},{{ end }}
-{{- end }}
-)
-
-foreach ($package in $packages) {
-    Write-Log "Processing package: $package"
-    
-    try {
-        # Get latest version
-        $version = & mise latest $package 2>$null
-        if ($LASTEXITCODE -ne 0) {
-            Write-Log "Could not get latest version for $package" "WARNING"
-            continue
-        }
-        
-        # Check if already installed
-        $installed = & mise ls $package 2>$null
-        if ($LASTEXITCODE -eq 0 -and $installed -match $version) {
-            Write-Log "${package}@${version} already installed"
-            # Ensure it's set as global even if already installed
-            & mise use --global "${package}@${version}"
-        } else {
-            # Install package
-            Write-Log "Installing ${package}@${version}..."
-            & mise install $package $version
-            if ($LASTEXITCODE -eq 0) {
-                # Set as global version
-                & mise use --global "${package}@${version}"
-                if ($LASTEXITCODE -eq 0) {
-                    Write-Log "Successfully installed and activated ${package}@${version}" "SUCCESS"
-                } else {
-                    Write-Log "Installed ${package}@${version} but failed to set as global" "WARNING"
-                }
-            } else {
-                Write-Log "Failed to install ${package}@${version}" "ERROR"
-                continue
-            }
-        }
-    } catch {
-        Write-Log "Error processing $package`: $($_.Exception.Message)" "ERROR"
+# Install all packages defined in config.toml
+Write-Log "Installing packages from config.toml..."
+try {
+    & mise install
+    if ($LASTEXITCODE -eq 0) {
+        Write-Log "Successfully installed all mise packages" "SUCCESS"
+    } else {
+        Write-Log "Some packages failed to install, but continuing..." "WARNING"
     }
+} catch {
+    Write-Log "Error during mise install: $($_.Exception.Message)" "WARNING"
 }
 
 Write-Log "mise package installation completed"
