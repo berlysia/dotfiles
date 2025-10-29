@@ -1,6 +1,18 @@
 {
   "permissions": {
-    "allow": [],
+    "allow": [
+      "Bash(bun test:*)",
+      "Bash(pnpm build:*)",
+      "Bash(pnpm lint:*)",
+      "Bash(pnpm lint:fix:*)",
+      "Bash(pnpm quality-check:*)",
+      "Bash(pnpm test:ci:*)",
+      "Bash(pnpm type-check:*)",
+      "Edit(**/*.test.*)",
+      "Read(**/*.test.*)",
+      "Read(dot_claude/hooks/**)",
+      "Read(~/.local/share/chezmoi/**)"
+    ],
     "deny": [
       "Edit(~/.claude/**)",
       "Write(~/.claude/**)",
