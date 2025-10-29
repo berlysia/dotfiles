@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [],
+    "deny": [
+      "Edit(~/.claude/**)",
+      "Write(~/.claude/**)",
+      "MultiEdit(~/.claude/**)"
+    ]
+  },
+  "outputStyle": "Explanatory"
+}

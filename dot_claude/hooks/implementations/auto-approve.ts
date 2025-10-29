@@ -303,6 +303,21 @@ function getSettingsFiles(workspaceRoot?: string): SettingsFile[] {
         // Ignore parse errors
       }
     }
+
+    // Workspace local settings (overrides workspace settings)
+    const workspaceLocalSettingsPath = join(
+      workspaceRoot,
+      ".claude",
+      "settings.local.json",
+    );
+    if (existsSync(workspaceLocalSettingsPath)) {
+      try {
+        const content = readFileSync(workspaceLocalSettingsPath, "utf-8");
+        settingsFiles.push(JSON.parse(content) as SettingsFile);
+      } catch {
+        // Ignore parse errors
+      }
+    }
   }
 
   return settingsFiles;
