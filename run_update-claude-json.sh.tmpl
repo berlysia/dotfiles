@@ -1,17 +1,77 @@
 {{ if ne .chezmoi.os "windows" -}}
 #!/bin/bash
 # Update ~/.claude.json by merging chezmoi template changes
-# Hash: {{ include ".claude.json" | sha256sum }}
+# Hash: {{ include "package.json" | sha256sum }}
 
 set -euo pipefail
 
 TARGET_FILE="$HOME/.claude.json"
 TEMP_FILE=$(mktemp)
 BACKUP_FILE="${TARGET_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
+PACKAGE_JSON="{{ .chezmoi.sourceDir }}/package.json"
 
-# Generate new content from chezmoi template
-TEMPLATE_CONTENT=$(cat << 'EOF'
-{{ include ".claude.json" | trim }}
+# Read versions from package.json
+READABILITY_VER=$(jq -r '.devDependencies["@mizchi/readability"] // empty' "$PACKAGE_JSON")
+CHROME_DEVTOOLS_VER=$(jq -r '.devDependencies["chrome-devtools-mcp"] // empty' "$PACKAGE_JSON")
+PLAYWRIGHT_VER=$(jq -r '.devDependencies["@playwright/mcp"] // empty' "$PACKAGE_JSON")
+CONTEXT7_VER=$(jq -r '.devDependencies["@upstash/context7-mcp"] // empty' "$PACKAGE_JSON")
+O3_SEARCH_VER=$(jq -r '.devDependencies["o3-search-mcp"] // empty' "$PACKAGE_JSON")
+
+# Generate new content from versions
+TEMPLATE_CONTENT=$(cat << EOF
+{
+  "mcpServers": {
+    "readability": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@mizchi/readability@${READABILITY_VER}",
+        "--mcp"
+      ],
+      "env": {}
+    },
+    "chrome-devtools": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "chrome-devtools-mcp@${CHROME_DEVTOOLS_VER}"
+      ]
+    },
+    "playwright": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@${PLAYWRIGHT_VER}"
+      ],
+      "env": {}
+    },
+    "context7": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp@${CONTEXT7_VER}"
+      ],
+      "env": {}
+    },
+    "o3-search-mcp": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "o3-search-mcp@${O3_SEARCH_VER}"
+      ],
+      "env": {
+        "OPENAI_MODEL": "gpt-5",
+        "OPENAI_API_KEY": "\${USER_OPENAI_API_KEY_FOR_MCP}"
+      }
+    }
+  },
+  "preferredNotifChannel": "terminal_bell",
+  "defaultMode": "allowEdits"
+}
 EOF
 )
 
