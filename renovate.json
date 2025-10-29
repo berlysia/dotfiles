@@ -4,7 +4,7 @@
     "github>berlysia/renovate-config"
   ],
   "mise": {
-    "fileMatch": ["^dot_config/mise/config\\.toml$"]
+    "managerFilePatterns": ["^dot_config/mise/config\\.toml$"]
   },
   "packageRules": [
     {
