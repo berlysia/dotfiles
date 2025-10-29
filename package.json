@@ -8,8 +8,7 @@
   "scripts": {
     "test": "node --test dot_claude/hooks/tests/**/*.test.ts",
     "typecheck": "npx tsgo --noEmit",
-    "check": "npm run test && npm run typecheck",
-    "update-mcp": "bun run scripts/update-mcp-versions.ts"
+    "check": "npm run test && npm run typecheck"
   },
   "keywords": [],
   "author": "",
