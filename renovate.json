@@ -3,6 +3,9 @@
   "extends": [
     "github>berlysia/renovate-config"
   ],
+  "mise": {
+    "fileMatch": ["^dot_config/mise/config\\.toml$"]
+  },
   "packageRules": [
     {
       "description": "MCP packages - auto-sync .claude.json",
