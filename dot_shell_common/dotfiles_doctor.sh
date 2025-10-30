@@ -660,7 +660,7 @@ fi
 
 # Node.js tools
 if command -v node >/dev/null 2>&1; then
-    check_command "npx" "optional" "Node package executor" "Comes with Node.js/npm"
+    check_command "pnpx" "optional" "Node package executor" "Comes with pnpm"
 fi
 
 # Environment Variables
