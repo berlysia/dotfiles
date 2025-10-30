@@ -348,7 +348,7 @@ export class PermissionAnalyzer {
       return subCommand ? `git ${subCommand}:*` : "git:*";
     }
 
-    // npx / bunx / pnpm dlx / yarn dlx を同等扱いし、パッケージ名ベースに正規化
+    // npx / pnpx / bunx / pnpm dlx / yarn dlx を同等扱いし、パッケージ名ベースに正規化
     const normalizeNpxPackage = (arr: string[], startIndex: number) => {
       for (let i = startIndex; i < arr.length; i++) {
         const tok = arr[i];
@@ -361,6 +361,11 @@ export class PermissionAnalyzer {
     };
 
     if (cmd === "npx") {
+      const pkg = normalizeNpxPackage(parts, 1);
+      return pkg ? `npx ${pkg}:*` : "npx:*";
+    }
+
+    if (cmd === "pnpx") {
       const pkg = normalizeNpxPackage(parts, 1);
       return pkg ? `npx ${pkg}:*` : "npx:*";
     }

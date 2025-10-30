@@ -28,12 +28,12 @@ const hook = defineHook({
       // First, check for find -exec and xargs patterns
       // These are special cases that need immediate blocking
       const findExecPattern =
-        /find\s+.*\s+-exec\s+(?:npx\s+)?(?:tsx|ts-node)\b/;
+        /find\s+.*\s+-exec\s+(?:(?:npx|pnpx|bunx|(?:pnpm|yarn)\s+dlx)\s+)?(?:tsx|ts-node)\b/;
       const xargsPattern =
-        /\|\s*xargs\s+(?:-[In]\s+\S+\s+)?(?:npx\s+)?(?:tsx|ts-node)\b/;
-      const parallelPattern = /parallel\s+(?:npx\s+)?(?:tsx|ts-node)\b/;
-      const timeoutPattern = /timeout\s+\S+\s+(?:npx\s+)?(?:tsx|ts-node)\b/;
-      const timePattern = /\btime\s+(?:npx\s+)?(?:tsx|ts-node)\b/;
+        /\|\s*xargs\s+(?:-[In]\s+\S+\s+)?(?:(?:npx|pnpx|bunx|(?:pnpm|yarn)\s+dlx)\s+)?(?:tsx|ts-node)\b/;
+      const parallelPattern = /parallel\s+(?:(?:npx|pnpx|bunx|(?:pnpm|yarn)\s+dlx)\s+)?(?:tsx|ts-node)\b/;
+      const timeoutPattern = /timeout\s+\S+\s+(?:(?:npx|pnpx|bunx|(?:pnpm|yarn)\s+dlx)\s+)?(?:tsx|ts-node)\b/;
+      const timePattern = /\btime\s+(?:(?:npx|pnpx|bunx|(?:pnpm|yarn)\s+dlx)\s+)?(?:tsx|ts-node)\b/;
 
       if (findExecPattern.test(command)) {
         return context.json(
@@ -103,7 +103,7 @@ const hook = defineHook({
         /^yarn\s+(?:run|exec)\s+["']?/,
         /^pnpm\s+(?:run|exec)\s+["']?/,
         /^bun\s+(?:run|exec)\s+["']?/,
-        /^npx\s+--\s+/,
+        /^(?:npx|pnpx|bunx)\s+--\s+/,
         /^exec\s+/,
         /^eval\s+["']?/,
       ];
@@ -156,6 +156,22 @@ const hook = defineHook({
             "Replace 'npx ts-node' with 'node' for execution or 'bun' for TypeScript files",
         },
         {
+          // Block pnpx tsx
+          pattern: /\bpnpx\s+tsx(?:\s+|$)/,
+          reason:
+            "Use TypeScript-compatible runtime instead of 'pnpx tsx' for TypeScript execution",
+          suggestion:
+            "Replace 'pnpx tsx' with 'node --test' for testing or 'node' for execution",
+        },
+        {
+          // Block pnpx ts-node
+          pattern: /\bpnpx\s+ts-node(?:\s+|$)/,
+          reason:
+            "Use TypeScript-compatible runtime instead of 'pnpx ts-node' for TypeScript execution",
+          suggestion:
+            "Replace 'pnpx ts-node' with 'node' for execution or 'bun' for TypeScript files",
+        },
+        {
           // Block yarn dlx tsx
           pattern: /\byarn\s+dlx\s+tsx(?:\s+|$)/,
           reason:
@@ -172,20 +188,20 @@ const hook = defineHook({
             "Replace 'yarn dlx ts-node' with 'node' for execution or 'bun' for TypeScript files",
         },
         {
-          // Block pnpx tsx
-          pattern: /\bpnpx\s+tsx(?:\s+|$)/,
+          // Block pnpm dlx tsx
+          pattern: /\bpnpm\s+dlx\s+tsx(?:\s+|$)/,
           reason:
-            "Use TypeScript-compatible runtime instead of 'pnpx tsx' for TypeScript execution",
+            "Use TypeScript-compatible runtime instead of 'pnpm dlx tsx' for TypeScript execution",
           suggestion:
-            "Replace 'pnpx tsx' with 'node --test' for testing or 'node' for execution",
+            "Replace 'pnpm dlx tsx' with 'node --test' for testing or 'node' for execution",
         },
         {
-          // Block pnpx ts-node
-          pattern: /\bpnpx\s+ts-node(?:\s+|$)/,
+          // Block pnpm dlx ts-node
+          pattern: /\bpnpm\s+dlx\s+ts-node(?:\s+|$)/,
           reason:
-            "Use TypeScript-compatible runtime instead of 'pnpx ts-node' for TypeScript execution",
+            "Use TypeScript-compatible runtime instead of 'pnpm dlx ts-node' for TypeScript execution",
           suggestion:
-            "Replace 'pnpx ts-node' with 'node' for execution or 'bun' for TypeScript files",
+            "Replace 'pnpm dlx ts-node' with 'node' for execution or 'bun' for TypeScript files",
         },
         {
           // Block bunx tsx
