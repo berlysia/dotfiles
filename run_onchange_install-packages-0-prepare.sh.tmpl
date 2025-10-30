@@ -1,6 +1,8 @@
 {{ if ne .chezmoi.os "windows" -}}
 #!/bin/bash
 
+# No external dependencies - runs only when script content changes
+
 mkdir -p ~/.local/bin
 mkdir -p ~/.local/share/zsh-completions
 mkdir -p ~/.local/share/zsh-functions

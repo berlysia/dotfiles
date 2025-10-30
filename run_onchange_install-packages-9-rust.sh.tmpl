@@ -1,6 +1,8 @@
 {{ if ne .chezmoi.os "windows" -}}
 #!/bin/bash
 
+# packages.yaml hash: {{ .packages.cargo | toJson | sha256sum }}
+
 # Rust tools installation via cargo
 if ! command -v cargo &> /dev/null; then
     echo "cargo not found. Please install Rust first."

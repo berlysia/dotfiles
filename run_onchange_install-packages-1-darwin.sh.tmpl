@@ -1,6 +1,9 @@
 {{ if eq .chezmoi.os "darwin" -}}
 #!/bin/bash
 
+# packages.yaml brews hash: {{ .packages.darwin.brews | toJson | sha256sum }}
+# packages.yaml casks hash: {{ .packages.darwin.casks | toJson | sha256sum }}
+
 xcode-select --install || :
 
 if brew --version; then
