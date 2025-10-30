@@ -7,7 +7,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test dot_claude/hooks/tests/**/*.test.ts",
-    "typecheck": "npx tsgo --noEmit",
+    "typecheck": "pnpx tsgo --noEmit",
     "check": "npm run test && npm run typecheck"
   },
   "keywords": [],
