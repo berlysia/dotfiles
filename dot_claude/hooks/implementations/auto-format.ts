@@ -166,16 +166,16 @@ function attemptFormat(filePath: string): FormatResult {
       }
     }
 
-    // NPX biome
-    if (commandExists("npx") && existsSync("package.json")) {
+    // PNPX biome
+    if (commandExists("pnpx") && existsSync("package.json")) {
       try {
         const packageJson = require(process.cwd() + "/package.json");
         if (
           packageJson.dependencies?.["@biomejs/biome"] ||
           packageJson.devDependencies?.["@biomejs/biome"]
         ) {
-          if (execFormatter("npx biome format --write $FILE", filePath)) {
-            return { success: true, formatter: "biome (npx)" };
+          if (execFormatter("pnpx biome format --write $FILE", filePath)) {
+            return { success: true, formatter: "biome (pnpx)" };
           }
         }
       } catch {
@@ -220,16 +220,16 @@ function attemptFormat(filePath: string): FormatResult {
       }
     }
 
-    // NPX prettier
-    if (commandExists("npx") && existsSync("package.json")) {
+    // PNPX prettier
+    if (commandExists("pnpx") && existsSync("package.json")) {
       try {
         const packageJson = require(process.cwd() + "/package.json");
         if (
           packageJson.dependencies?.["prettier"] ||
           packageJson.devDependencies?.["prettier"]
         ) {
-          if (execFormatter("npx prettier --write $FILE", filePath)) {
-            return { success: true, formatter: "prettier (npx)" };
+          if (execFormatter("pnpx prettier --write $FILE", filePath)) {
+            return { success: true, formatter: "prettier (pnpx)" };
           }
         }
       } catch {
