@@ -6,13 +6,13 @@ network_access = true
 web_search = true
 
 [mcp_servers.context7]
-command = "npx"
+command = "pnpx"
 args = ["-y", "@upstash/context7-mcp@latest"]
 
 [mcp_servers.readability]
-command = "npx"
+command = "pnpx"
 args = ["-y", "@mizchi/readability@latest", "--mcp"]
 
 [mcp_servers.playwright]
-command = "npx"
+command = "pnpx"
 args = ["-y", "@playwright/mcp@latest"]

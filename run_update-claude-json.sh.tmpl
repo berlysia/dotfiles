@@ -23,7 +23,7 @@ TEMPLATE_CONTENT=$(cat << EOF
   "mcpServers": {
     "readability": {
       "type": "stdio",
-      "command": "npx",
+      "command": "pnpx",
       "args": [
         "-y",
         "@mizchi/readability@${READABILITY_VER}",
@@ -32,7 +32,7 @@ TEMPLATE_CONTENT=$(cat << EOF
       "env": {}
     },
     "chrome-devtools": {
-      "command": "npx",
+      "command": "pnpx",
       "args": [
         "-y",
         "chrome-devtools-mcp@${CHROME_DEVTOOLS_VER}"
@@ -40,7 +40,7 @@ TEMPLATE_CONTENT=$(cat << EOF
     },
     "playwright": {
       "type": "stdio",
-      "command": "npx",
+      "command": "pnpx",
       "args": [
         "-y",
         "@playwright/mcp@${PLAYWRIGHT_VER}"
@@ -49,7 +49,7 @@ TEMPLATE_CONTENT=$(cat << EOF
     },
     "context7": {
       "type": "stdio",
-      "command": "npx",
+      "command": "pnpx",
       "args": [
         "-y",
         "@upstash/context7-mcp@${CONTEXT7_VER}"
@@ -58,7 +58,7 @@ TEMPLATE_CONTENT=$(cat << EOF
     },
     "o3-search-mcp": {
       "type": "stdio",
-      "command": "npx",
+      "command": "pnpx",
       "args": [
         "-y",
         "o3-search-mcp@${O3_SEARCH_VER}"
