@@ -1,6 +1,8 @@
 {{ if ne .chezmoi.os "windows" -}}
 #!/bin/bash
 
+# packages.yaml hash: {{ .packages.go | toJson | sha256sum }}
+
 # Go tools installation via go install
 if ! command -v go &> /dev/null; then
     echo "go not found. Please install Go first."

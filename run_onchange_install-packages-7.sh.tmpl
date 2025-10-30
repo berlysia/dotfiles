@@ -3,6 +3,8 @@
 # Install mise packages on Unix-like systems (Linux/macOS)
 # Version management is done via config.toml, this script only ensures installation
 
+# mise config hash: {{ include "dot_config/mise/config.toml" | sha256sum }}
+
 set -euo pipefail
 
 log() {
