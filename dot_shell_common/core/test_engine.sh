@@ -394,7 +394,7 @@ test_language_tools() {
     fi
     
     if command -v node >/dev/null 2>&1; then
-        check_command "npx" "optional" "Node package executor" "Comes with Node.js/npm" "$TEST_CATEGORY_LANGUAGES"
+        check_command "pnpx" "optional" "Node package executor" "Comes with pnpm" "$TEST_CATEGORY_LANGUAGES"
     fi
 }
 
