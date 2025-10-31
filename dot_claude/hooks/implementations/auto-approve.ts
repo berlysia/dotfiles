@@ -433,6 +433,46 @@ async function processBashCommand(
     }
   }
 
+  // sed -i コマンドの権限推論チェック
+  // Edit/MultiEditが許可されているディレクトリ内のファイルへのsed -iを自動承認
+  if (cmd.includes("sed") && cmd.includes("-i")) {
+    const { parseSedInPlace } = await import("../lib/sed-parser.ts");
+    const sedResult = parseSedInPlace(cmd);
+
+    // sed -i コマンドで、グロブを含まず、パースに成功した場合のみ推論を試みる
+    if (
+      sedResult.isSedInPlace &&
+      !sedResult.containsGlob &&
+      !sedResult.parseError &&
+      sedResult.targetFiles.length > 0
+    ) {
+      // Edit/MultiEditパターンを取得（Bashツールの許可リストとは別）
+      const editPermissions = getPermissionLists("Edit");
+      const multiEditPermissions = getPermissionLists("MultiEdit");
+      const editAllowList = [
+        ...editPermissions.allowList,
+        ...multiEditPermissions.allowList,
+      ];
+
+      const { checkFilePermissions } = await import(
+        "../lib/file-permission-inference.ts"
+      );
+      const permResult = checkFilePermissions(
+        sedResult.targetFiles,
+        editAllowList,
+      );
+
+      if (permResult.allFilesPermitted) {
+        // 全ファイルがEdit許可パターンにマッチする場合、自動承認
+        return {
+          type: "allow",
+          command: cmd,
+          pattern: `sed -i inferred from Edit permissions (files: ${sedResult.targetFiles.join(", ")})`,
+        };
+      }
+    }
+  }
+
   // Check allow patterns
   if (allowList.length > 0) {
     const allowResult = await patternMatcherCheckAllow(cmd, allowList);

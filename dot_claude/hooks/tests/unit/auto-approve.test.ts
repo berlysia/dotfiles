@@ -924,6 +924,137 @@ describe("auto-approve.ts hook behavior", () => {
       context.assertPass();
     });
   });
+
+  describe("sed -i command inference from Edit permissions", () => {
+    it("should allow sed -i when target file matches Edit pattern", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Edit(src/**)"]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", {
+        command: "sed -i 's/foo/bar/' src/utils.ts",
+      });
+      await invokeRun(autoApproveHook, context);
+
+      context.assertAllow();
+
+      const reason = context.jsonCalls[0]?.hookSpecificOutput?.permissionDecisionReason;
+      ok(reason?.includes("inferred from Edit permissions"), "Should mention inference");
+    });
+
+    it("should allow sed -i when all target files match Edit pattern", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Edit(src/**)"]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", {
+        command: "sed -i 's/foo/bar/' src/file1.ts src/file2.ts",
+      });
+      await invokeRun(autoApproveHook, context);
+
+      context.assertAllow();
+    });
+
+    it("should pass sed -i when target file does not match Edit pattern", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Edit(src/**)"]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", {
+        command: "sed -i 's/foo/bar/' config/settings.json",
+      });
+      await invokeRun(autoApproveHook, context);
+
+      // Should not auto-approve, let Claude Code decide
+      context.assertSuccess();
+    });
+
+    it("should pass sed -i when one of multiple files does not match", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Edit(src/**)"]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", {
+        command: "sed -i 's/foo/bar/' src/file.ts config.json",
+      });
+      await invokeRun(autoApproveHook, context);
+
+      // Mixed files - should not auto-approve
+      context.assertSuccess();
+    });
+
+    it("should pass sed -i with glob pattern", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Edit(src/**)"]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", {
+        command: "sed -i 's/foo/bar/' src/*.ts",
+      });
+      await invokeRun(autoApproveHook, context);
+
+      // Glob patterns should not be auto-approved via inference
+      context.assertSuccess();
+    });
+
+    it("should allow sed -i with backup extension", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Edit(src/**)"]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", {
+        command: "sed -i.bak 's/foo/bar/' src/utils.ts",
+      });
+      await invokeRun(autoApproveHook, context);
+
+      context.assertAllow();
+    });
+
+    it("should not interfere with regular sed (without -i)", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Edit(src/**)"]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", {
+        command: "sed 's/foo/bar/' src/utils.ts",
+      });
+      await invokeRun(autoApproveHook, context);
+
+      // Regular sed should not trigger inference logic
+      context.assertSuccess();
+    });
+
+    it("should respect explicit Bash allow patterns over inference", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(sed:*)", "Edit(src/**)"]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", {
+        command: "sed -i 's/foo/bar/' config.json",
+      });
+      await invokeRun(autoApproveHook, context);
+
+      // Explicit Bash pattern should match regardless of Edit permissions
+      context.assertAllow();
+    });
+
+    it("should respect deny patterns before inference", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Edit(src/**)"]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify(["Bash(sed:*)"]));
+
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", {
+        command: "sed -i 's/foo/bar/' src/utils.ts",
+      });
+      await invokeRun(autoApproveHook, context);
+
+      // Deny pattern should take precedence
+      context.assertDeny();
+    });
+
+    it("should work with MultiEdit patterns", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["MultiEdit(src/**)"]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", {
+        command: "sed -i 's/foo/bar/' src/utils.ts",
+      });
+      await invokeRun(autoApproveHook, context);
+
+      context.assertAllow();
+    });
+  });
 });
 
 // Helper function to create auto-approve hook with test logic
