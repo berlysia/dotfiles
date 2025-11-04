@@ -44,7 +44,17 @@ jobs:
         # bash and zsh are already installed on macOS
         echo "bash version: $(bash --version | head -1)"
         echo "zsh version: $(zsh --version)"
-    
+
+    - name: Install chezmoi
+      run: |
+        sh -c "$(curl -fsLS https://get.chezmoi.io)" -- -b "$HOME/.local/bin"
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+    - name: Configure git
+      run: |
+        git config --global user.name "GitHub Actions"
+        git config --global user.email "actions@github.com"
+
     - name: Run shell compatibility tests
       run: |
         chmod +x dot_shell_common/test_suite.sh
