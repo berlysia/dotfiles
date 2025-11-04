@@ -1,0 +1,14 @@
+{
+  "chezmoi": {
+    "homeDir": "/home/runner",
+    "os": "linux",
+    "kernel": {
+      "osrelease": "5.15.0-generic"
+    }
+  },
+  "user": {
+    "windows": {
+      "username": "testuser"
+    }
+  }
+}
