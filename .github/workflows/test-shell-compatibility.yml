@@ -9,7 +9,6 @@ on:
       - 'dot_bash_profile'
       - 'dot_zsh/**'
       - 'dot_zshenv'
-      - 'run_onchange_test-shell-compatibility.sh'
       - '.github/workflows/test-shell-compatibility.yml'
   pull_request:
     branches: [ master, main ]
@@ -19,7 +18,6 @@ on:
       - 'dot_bash_profile'
       - 'dot_zsh/**'
       - 'dot_zshenv'
-      - 'run_onchange_test-shell-compatibility.sh'
       - '.github/workflows/test-shell-compatibility.yml'
   workflow_dispatch:  # Allow manual trigger
 
