@@ -432,15 +432,37 @@ generate_report() {
     local score=$?
     print_chezmoi_readiness_status "$adapter" "$failed" "$score"
     print_recommendations "$failed" "$adapter"
-    
-    # Return exit code based on results
-    if [ $failed -gt 0 ]; then
+
+    # Return exit code based on critical failures only (using validator logic)
+    # Count critical failures by parsing results
+    local critical_count=0
+    while IFS='|' read -r category name result_status details; do
+        if [ "$result_status" = "FAIL" ]; then
+            case "$category" in
+                core)
+                    critical_count=$((critical_count + 1))
+                    ;;
+                shell|config)
+                    case "$name" in
+                        *"bashrc"*|*"zshrc"*|*"Shell common"*)
+                            critical_count=$((critical_count + 1))
+                            ;;
+                    esac
+                    ;;
+            esac
+        fi
+    done <<EOF
+$results
+EOF
+
+    # Return exit code aligned with readiness status
+    if [ $critical_count -gt 0 ]; then
         if [ $score -lt 50 ]; then
-            return 2  # Critical failures
+            return 2  # Critical failures with low score
         else
-            return 1  # Some failures
+            return 1  # Some critical failures
         fi
     else
-        return 0  # All tests passed or skipped
+        return 0  # No critical failures (warnings are acceptable)
     fi
 }
