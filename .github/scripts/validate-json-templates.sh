@@ -20,13 +20,14 @@ check_template() {
     echo -n "Checking $name... "
 
     # Try to render and validate
-    if chezmoi execute-template --init --config-format json --config "$DATA_FILE" < "$template" 2>/dev/null | jq empty 2>/dev/null; then
+    # Use -S/--source to specify the repository root as chezmoi source directory
+    if chezmoi execute-template --init --source . --config-format json --config "$DATA_FILE" < "$template" 2>/dev/null | jq empty 2>/dev/null; then
         echo "✅"
         return 0
     else
         echo "❌"
         echo "Error details:"
-        chezmoi execute-template --init --config-format json --config "$DATA_FILE" < "$template" 2>&1 | head -20
+        chezmoi execute-template --init --source . --config-format json --config "$DATA_FILE" < "$template" 2>&1 | head -20
         return 1
     fi
 }
