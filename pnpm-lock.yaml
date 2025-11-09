@@ -31,14 +31,14 @@ importers:
         specifier: 0.10.0
         version: 0.10.0
       '@playwright/mcp':
-        specifier: 0.0.44
-        version: 0.0.44
+        specifier: 0.0.45
+        version: 0.0.45
       '@types/node':
         specifier: 24.9.2
         version: 24.9.2
       '@typescript/native-preview':
-        specifier: 7.0.0-dev.20251027.1
-        version: 7.0.0-dev.20251027.1
+        specifier: 7.0.0-dev.20251102.1
+        version: 7.0.0-dev.20251102.1
       '@upstash/context7-mcp':
         specifier: 1.0.26
         version: 1.0.26
@@ -95,51 +95,51 @@ packages:
     resolution: {integrity: sha512-+1VkjdD0QBLPodGrJUeqarH8VAIvQODIbwh9XpP5Syisf7YoQgsJKPNFoqqLQlu+VQ/tVSshMR6loPMn8U+dPg==}
     engines: {node: '>=14'}
 
-  '@playwright/mcp@0.0.44':
-    resolution: {integrity: sha512-QkJd/qUxbw9MY5Vy5TMC6EmK2VSTBJ0+NOx/wTat5W7ycj8s19tweYRJI+33Ix8SMdf6aaG9pIaY0AZGfnK0oA==}
+  '@playwright/mcp@0.0.45':
+    resolution: {integrity: sha512-bnndS9etl3ZHu2r3IHEeokk/+7XJ5JfV1KR4bapkwmxLY8nYrt7ETCuyagpQhjzKZq69il50YTorH7UeFSlbUQ==}
     engines: {node: '>=18'}
     hasBin: true
 
   '@types/node@24.9.2':
     resolution: {integrity: sha512-uWN8YqxXxqFMX2RqGOrumsKeti4LlmIMIyV0lgut4jx7KQBcBiW6vkDtIBvHnHIquwNfJhk8v2OtmO8zXWHfPA==}
 
-  '@typescript/native-preview-darwin-arm64@7.0.0-dev.20251027.1':
-    resolution: {integrity: sha512-4Nysrmep6Z4C722nQF07XkEk22qyI2/vCfvfPSlhOxpJJcIFAroxSkSH7Qy8EDZWhNer9D4CMTYX9q5I8B75lQ==}
+  '@typescript/native-preview-darwin-arm64@7.0.0-dev.20251102.1':
+    resolution: {integrity: sha512-AO2U9EWVO766Y9HTd3emULxpfe2QDdHjResXGQfNlgyFKUdfcKWZowBQllHOAT6J7Ll4qYcIt1Sw9wtQq+n2mQ==}
     cpu: [arm64]
     os: [darwin]
 
-  '@typescript/native-preview-darwin-x64@7.0.0-dev.20251027.1':
-    resolution: {integrity: sha512-WvHLb6Mry214ZTuhfvv6fP1FLgYZ4oTw55+B2hTAo/O6qq9KX3OW90dvFYSMJKPhgvWR5B9tIEcMkIXGjxfv1w==}
+  '@typescript/native-preview-darwin-x64@7.0.0-dev.20251102.1':
+    resolution: {integrity: sha512-8DACSF3+1Kq022ofqEdFXUj5A/OJdQI3845tOfdeJHZFJTxiD0X4Q0wcZlDgLubuNJCN8lPO2RGjmWpbmIqxZg==}
     cpu: [x64]
     os: [darwin]
 
-  '@typescript/native-preview-linux-arm64@7.0.0-dev.20251027.1':
-    resolution: {integrity: sha512-CNbTvppx8wsoRS3g4RcpDapRp4tNYp1eu+94HmtKT7ch3RJOliKIhAa/8odXIrkqnT+kc0wrQCzFiICMW4YieQ==}
+  '@typescript/native-preview-linux-arm64@7.0.0-dev.20251102.1':
+    resolution: {integrity: sha512-99b3L81QnTGEqU4KrV2/siiK8vK1swo8P+MEprn2CoO9Y5PHAf5pbOCAXp5Wq2e0lyKWl0NGW/cqvWk7FBndfQ==}
     cpu: [arm64]
     os: [linux]
 
-  '@typescript/native-preview-linux-arm@7.0.0-dev.20251027.1':
-    resolution: {integrity: sha512-epAynE0qbU9nuPwaOgr9N6WANoYAdwhyteNB+PG2qRWYoFDYPXSgParjO1FAkY0uMt88QaS6vQ6ZglInHsxvXQ==}
+  '@typescript/native-preview-linux-arm@7.0.0-dev.20251102.1':
+    resolution: {integrity: sha512-bzOrxNpvI4mJEyR56A2XAqvImtwhR0v52HCDHxGDar6WXfyjDoISw9SD9mPNWUNbqBuU7i6Z2jKMwXt+33Mozw==}
     cpu: [arm]
     os: [linux]
 
-  '@typescript/native-preview-linux-x64@7.0.0-dev.20251027.1':
-    resolution: {integrity: sha512-lzSUTdWYfKvsQJPQF/BtYil1Xmzn0f3jpgk8/4uVg4NQeDtzW0J3ceWl2lw1TuGnhISq2dwyupjKJfLQhe4AVQ==}
+  '@typescript/native-preview-linux-x64@7.0.0-dev.20251102.1':
+    resolution: {integrity: sha512-1yz7uhuEFeoG9r2w5CZqFSvFmqr0ptzv/ZpOxFMu+95YxDvk1NVKUkZXEneOWa+mK/7GymrwbB41bVdl8HtaEw==}
     cpu: [x64]
     os: [linux]
 
-  '@typescript/native-preview-win32-arm64@7.0.0-dev.20251027.1':
-    resolution: {integrity: sha512-K9K8t3HW/35ejgVJALPW9Fqo0PHOxh1/ir01C8r5qbhIdPQqwGlBHAGwLzrfH0ZF1R2nR2X4T+z+gB8tLULsow==}
+  '@typescript/native-preview-win32-arm64@7.0.0-dev.20251102.1':
+    resolution: {integrity: sha512-U0ay+amC8ZmmnNEitccixJfLKra8MaKgbGdNQBSZP1jelGCgNgCLl5DEpla5ElVxTcfcVYkAVWpjjiGaaNuZTQ==}
     cpu: [arm64]
     os: [win32]
 
-  '@typescript/native-preview-win32-x64@7.0.0-dev.20251027.1':
-    resolution: {integrity: sha512-n7hb7ZjAEgoNBWYSt87+eMtSK2h6Xl9NWUd2ocw3Znz/tw8lwpUaG35FVd/Aj72kT1/5kiCBlM+7MxA214KGiw==}
+  '@typescript/native-preview-win32-x64@7.0.0-dev.20251102.1':
+    resolution: {integrity: sha512-4Y4K70O7w34P81o/SD0tcpC2daVJcXCn3t/efjq64BMO9XTyEXLpiVVJ+BGGQTFmvgkGYGR6vHbCZTm2WizcVg==}
     cpu: [x64]
     os: [win32]
 
-  '@typescript/native-preview@7.0.0-dev.20251027.1':
-    resolution: {integrity: sha512-djbOSIm8Or967wMuO209ydMp2nq34hEulah1EhjUsLSqLplsbOk8RSOyVJJphU+CMP33rULDcnDAzvylU8Tq9Q==}
+  '@typescript/native-preview@7.0.0-dev.20251102.1':
+    resolution: {integrity: sha512-PwWO+XO8yFZaDYiOW/lXYLDqeCaSkm+Ku/yvnGB19sdZ62514JeCtC3xSChVH8Cr1FLGgdSpsnn1ACp3Y48FqA==}
     hasBin: true
 
   '@upstash/context7-mcp@1.0.26':
@@ -544,13 +544,13 @@ packages:
     resolution: {integrity: sha512-ueGLflrrnvwB3xuo/uGob5pd5FN7l0MsLf0Z87o/UQmRtwjvfylfc9MurIxRAWywCYTgrvpXBcqjV4OfCYGCIQ==}
     engines: {node: '>=16.20.0'}
 
-  playwright-core@1.57.0-alpha-2025-10-24:
-    resolution: {integrity: sha512-OXTMR6QjnUleUYLmEsZcKEvTaxik+6WEJgr6JXNxrD8DleV5U8+Hv5A1EDUfq3SpvUKstBnJEJwX7lyLHUKD2Q==}
+  playwright-core@1.57.0-alpha-1761929702000:
+    resolution: {integrity: sha512-8wL65hCHIBKPRUMj7sycaAqhLqgXBIfGITSefv0Tgrm/qIUbbbGzKAxPABR2bxOCMcCGEufaL8nnm/ePG+X9Qw==}
     engines: {node: '>=18'}
     hasBin: true
 
-  playwright@1.57.0-alpha-2025-10-24:
-    resolution: {integrity: sha512-h7BK38U0t7ylKUftTHaL8erydzhwSstQco24OuEtoYS0xX67QHwc9fEQW2x6Rmnd8vT0RuD9ePuP3lDl2AmPDQ==}
+  playwright@1.57.0-alpha-1761929702000:
+    resolution: {integrity: sha512-kWIfN7hC15Izvkz4ySUhnobOH/CFVK2+ixhPgBCPWu6THIAHLFIL0WKnf06lGhTXX46ptDBWHa7bSMHBesmVLg==}
     engines: {node: '>=18'}
     hasBin: true
 
@@ -797,45 +797,45 @@ snapshots:
   '@pkgjs/parseargs@0.11.0':
     optional: true
 
-  '@playwright/mcp@0.0.44':
+  '@playwright/mcp@0.0.45':
     dependencies:
-      playwright: 1.57.0-alpha-2025-10-24
-      playwright-core: 1.57.0-alpha-2025-10-24
+      playwright: 1.57.0-alpha-1761929702000
+      playwright-core: 1.57.0-alpha-1761929702000
 
   '@types/node@24.9.2':
     dependencies:
       undici-types: 7.16.0
 
-  '@typescript/native-preview-darwin-arm64@7.0.0-dev.20251027.1':
+  '@typescript/native-preview-darwin-arm64@7.0.0-dev.20251102.1':
     optional: true
 
-  '@typescript/native-preview-darwin-x64@7.0.0-dev.20251027.1':
+  '@typescript/native-preview-darwin-x64@7.0.0-dev.20251102.1':
     optional: true
 
-  '@typescript/native-preview-linux-arm64@7.0.0-dev.20251027.1':
+  '@typescript/native-preview-linux-arm64@7.0.0-dev.20251102.1':
     optional: true
 
-  '@typescript/native-preview-linux-arm@7.0.0-dev.20251027.1':
+  '@typescript/native-preview-linux-arm@7.0.0-dev.20251102.1':
     optional: true
 
-  '@typescript/native-preview-linux-x64@7.0.0-dev.20251027.1':
+  '@typescript/native-preview-linux-x64@7.0.0-dev.20251102.1':
     optional: true
 
-  '@typescript/native-preview-win32-arm64@7.0.0-dev.20251027.1':
+  '@typescript/native-preview-win32-arm64@7.0.0-dev.20251102.1':
     optional: true
 
-  '@typescript/native-preview-win32-x64@7.0.0-dev.20251027.1':
+  '@typescript/native-preview-win32-x64@7.0.0-dev.20251102.1':
     optional: true
 
-  '@typescript/native-preview@7.0.0-dev.20251027.1':
+  '@typescript/native-preview@7.0.0-dev.20251102.1':
     optionalDependencies:
-      '@typescript/native-preview-darwin-arm64': 7.0.0-dev.20251027.1
-      '@typescript/native-preview-darwin-x64': 7.0.0-dev.20251027.1
-      '@typescript/native-preview-linux-arm': 7.0.0-dev.20251027.1
-      '@typescript/native-preview-linux-arm64': 7.0.0-dev.20251027.1
-      '@typescript/native-preview-linux-x64': 7.0.0-dev.20251027.1
-      '@typescript/native-preview-win32-arm64': 7.0.0-dev.20251027.1
-      '@typescript/native-preview-win32-x64': 7.0.0-dev.20251027.1
+      '@typescript/native-preview-darwin-arm64': 7.0.0-dev.20251102.1
+      '@typescript/native-preview-darwin-x64': 7.0.0-dev.20251102.1
+      '@typescript/native-preview-linux-arm': 7.0.0-dev.20251102.1
+      '@typescript/native-preview-linux-arm64': 7.0.0-dev.20251102.1
+      '@typescript/native-preview-linux-x64': 7.0.0-dev.20251102.1
+      '@typescript/native-preview-win32-arm64': 7.0.0-dev.20251102.1
+      '@typescript/native-preview-win32-x64': 7.0.0-dev.20251102.1
 
   '@upstash/context7-mcp@1.0.26':
     dependencies:
@@ -1231,11 +1231,11 @@ snapshots:
 
   pkce-challenge@5.0.0: {}
 
-  playwright-core@1.57.0-alpha-2025-10-24: {}
+  playwright-core@1.57.0-alpha-1761929702000: {}
 
-  playwright@1.57.0-alpha-2025-10-24:
+  playwright@1.57.0-alpha-1761929702000:
     dependencies:
-      playwright-core: 1.57.0-alpha-2025-10-24
+      playwright-core: 1.57.0-alpha-1761929702000
     optionalDependencies:
       fsevents: 2.3.2
 

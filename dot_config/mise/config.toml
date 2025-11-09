@@ -2,10 +2,10 @@
 idiomatic_version_file_enable_tools = ["node"]
 
 [tools]
-bun = "1.3.1"
+bun = "1.3.2"
 deno = "2.5.6"
 direnv = "2.37.1"
-go = "1.25.3"
+go = "1.25.4"
 node = "24.11.0"
 pnpm = "10.20.0"
 rust = "1.91.0"

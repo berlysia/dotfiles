@@ -16,9 +16,9 @@
   "devDependencies": {
     "@mizchi/lsmcp": "0.10.0",
     "@mizchi/readability": "0.7.7",
-    "@playwright/mcp": "0.0.44",
+    "@playwright/mcp": "0.0.45",
     "@types/node": "24.9.2",
-    "@typescript/native-preview": "7.0.0-dev.20251027.1",
+    "@typescript/native-preview": "7.0.0-dev.20251102.1",
     "@upstash/context7-mcp": "1.0.26",
     "chrome-devtools-mcp": "0.9.0",
     "o3-search-mcp": "0.0.9",
