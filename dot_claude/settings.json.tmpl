@@ -1,5 +1,0 @@
-{{- $commonHooks := includeTemplate "dot_claude/.settings.hooks.json.tmpl" . | fromJson -}}
-{{- $permissions := includeTemplate "dot_claude/.settings.permissions.json" . | fromJson -}}
-{{- $base := includeTemplate "dot_claude/.settings.base.json" . | fromJson -}}
-{{- $settings := merge $base (dict "permissions" $permissions "hooks" $commonHooks) -}}
-{{ $settings | toPrettyJson "  " }}

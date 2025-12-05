@@ -1,0 +1,107 @@
+{{ if ne .chezmoi.os "windows" -}}
+#!/bin/bash
+# Update ~/.claude/settings.json by merging chezmoi template changes
+# Merge strategy for enabledPlugins: existing values take precedence, new plugins from dotfiles are added
+# Hash: {{ include "dot_claude/.settings.base.json" | sha256sum }}{{ include "dot_claude/.settings.permissions.json" | sha256sum }}{{ include "dot_claude/.settings.hooks.json.tmpl" | sha256sum }}{{ include "dot_claude/.settings.plugins.json" | sha256sum }}
+
+set -euo pipefail
+
+TARGET_FILE="$HOME/.claude/settings.json"
+TEMP_FILE=$(mktemp)
+BACKUP_FILE="${TARGET_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
+SOURCE_DIR="{{ .chezmoi.sourceDir }}"
+
+# Read component files
+BASE_CONTENT=$(cat "${SOURCE_DIR}/dot_claude/.settings.base.json")
+PERMISSIONS_CONTENT=$(cat "${SOURCE_DIR}/dot_claude/.settings.permissions.json")
+DOTFILES_PLUGINS=$(cat "${SOURCE_DIR}/dot_claude/.settings.plugins.json")
+
+# Process hooks template with chezmoi
+HOOKS_CONTENT=$(chezmoi execute-template < "${SOURCE_DIR}/dot_claude/.settings.hooks.json.tmpl")
+
+# Merge all components into template
+TEMPLATE_CONTENT=$(jq -n \
+    --argjson base "$BASE_CONTENT" \
+    --argjson permissions "$PERMISSIONS_CONTENT" \
+    --argjson hooks "$HOOKS_CONTENT" \
+    '$base + {"permissions": $permissions, "hooks": $hooks}')
+
+# Check if target file exists
+if [[ ! -f "$TARGET_FILE" ]]; then
+    echo "Creating new ~/.claude/settings.json..."
+    mkdir -p "$(dirname "$TARGET_FILE")"
+    # Use dotfiles plugins for new installation
+    jq --argjson template "$TEMPLATE_CONTENT" --argjson plugins "$DOTFILES_PLUGINS" \
+        '$template + {"enabledPlugins": $plugins}' <<< '{}' > "$TARGET_FILE"
+    echo "~/.claude/settings.json created successfully"
+    exit 0
+fi
+
+# Validate existing file is valid JSON
+if ! jq empty "$TARGET_FILE" 2>/dev/null; then
+    echo "Warning: Existing ~/.claude/settings.json is not valid JSON"
+    echo "Creating backup at $BACKUP_FILE"
+    cp "$TARGET_FILE" "$BACKUP_FILE"
+    echo "Replacing with template content..."
+    echo "$TEMPLATE_CONTENT" | jq '.' > "$TARGET_FILE"
+    echo "~/.claude/settings.json replaced successfully"
+    exit 0
+fi
+
+# Validate template content is valid JSON
+if ! echo "$TEMPLATE_CONTENT" | jq empty 2>/dev/null; then
+    echo "Error: Template content is not valid JSON"
+    exit 1
+fi
+
+# Create backup
+cp "$TARGET_FILE" "$BACKUP_FILE"
+
+# Extract enabledPlugins from existing file
+EXISTING_PLUGINS=$(jq '.enabledPlugins // {}' "$TARGET_FILE")
+
+# Merge enabledPlugins: dotfiles as base, existing values take precedence
+# This allows:
+# - New plugins from dotfiles to be added with their default values
+# - Existing plugin states (enabled/disabled by Claude Code) to be preserved
+MERGED_PLUGINS=$(jq -n --argjson dotfiles "$DOTFILES_PLUGINS" --argjson existing "$EXISTING_PLUGINS" \
+    '$dotfiles + $existing')
+
+# Merge JSONs using jq
+# Strategy:
+# - permissions: use template value (dotfiles managed)
+# - hooks: use template value (dotfiles managed)
+# - statusLine: use template value (dotfiles managed)
+# - alwaysThinkingEnabled: use template value (dotfiles managed)
+# - enabledPlugins: merge (dotfiles base + existing overrides)
+# - All other fields in base: use template value
+jq --argjson template "$TEMPLATE_CONTENT" --argjson plugins "$MERGED_PLUGINS" '
+    $template + {"enabledPlugins": $plugins}
+' "$TARGET_FILE" > "$TEMP_FILE"
+
+# Check if there are actual changes
+if diff -q "$TARGET_FILE" "$TEMP_FILE" >/dev/null 2>&1; then
+    echo "No changes to ~/.claude/settings.json"
+    rm "$TEMP_FILE"
+    rm "$BACKUP_FILE"
+    exit 0
+fi
+
+# Show what's changing
+echo "Updating ~/.claude/settings.json..."
+echo "Changes:"
+diff <(jq -S '.' "$TARGET_FILE" 2>/dev/null) \
+     <(jq -S '.' "$TEMP_FILE") | head -50 || true
+
+# Update file
+mv "$TEMP_FILE" "$TARGET_FILE"
+
+# Cleanup old backup if update successful
+if [[ -f "$TARGET_FILE" ]] && jq empty "$TARGET_FILE" 2>/dev/null; then
+    rm "$BACKUP_FILE"
+    echo "~/.claude/settings.json updated successfully"
+else
+    echo "Error: Update may have failed. Backup preserved at $BACKUP_FILE"
+    exit 1
+fi
+{{ end -}}
