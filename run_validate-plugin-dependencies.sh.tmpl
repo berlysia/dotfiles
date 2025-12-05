@@ -1,5 +1,0 @@
-#!/bin/bash
-# Validates Claude Code plugin dependencies
-# Hash: {{ include "dot_claude/plugin-dependencies.json" | sha256sum }}
-
-cd ~/.claude && bun scripts/validate-plugin-dependencies.ts
