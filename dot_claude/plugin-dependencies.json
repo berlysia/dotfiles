@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Claude Code plugin dependencies for this dotfiles",
+  "plugins": [
+    {
+      "name": "agent-sdk-dev",
+      "marketplace": "claude-code-plugins",
+      "purpose": "Agent SDK開発支援"
+    },
+    {
+      "name": "claude-opus-4-5-migration",
+      "marketplace": "claude-code-plugins",
+      "purpose": "Opus 4.5移行支援"
+    },
+    {
+      "name": "code-review",
+      "marketplace": "claude-code-plugins",
+      "purpose": "コードレビュー"
+    },
+    {
+      "name": "commit-commands",
+      "marketplace": "claude-code-plugins",
+      "purpose": "コミットワークフロー"
+    },
+    {
+      "name": "explanatory-output-style",
+      "marketplace": "claude-code-plugins",
+      "purpose": "説明的出力スタイル"
+    },
+    {
+      "name": "feature-dev",
+      "marketplace": "claude-code-plugins",
+      "purpose": "機能開発支援"
+    },
+    {
+      "name": "frontend-design",
+      "marketplace": "claude-code-plugins",
+      "purpose": "フロントエンドUI設計"
+    },
+    {
+      "name": "hookify",
+      "marketplace": "claude-code-plugins",
+      "purpose": "ルールベースフック作成"
+    },
+    {
+      "name": "learning-output-style",
+      "marketplace": "claude-code-plugins",
+      "purpose": "学習的出力スタイル"
+    },
+    {
+      "name": "plugin-dev",
+      "marketplace": "claude-code-plugins",
+      "purpose": "プラグイン開発支援"
+    },
+    {
+      "name": "pr-review-toolkit",
+      "marketplace": "claude-code-plugins",
+      "purpose": "PRレビュー"
+    },
+    {
+      "name": "ralph-wiggum",
+      "marketplace": "claude-code-plugins",
+      "purpose": "ループ実行"
+    },
+    {
+      "name": "security-guidance",
+      "marketplace": "claude-code-plugins",
+      "purpose": "セキュリティガイダンス"
+    }
+  ]
+}

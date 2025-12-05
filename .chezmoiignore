@@ -1,6 +1,9 @@
 .vscode
 *.md
+!dot_claude/skills/**/SKILL.md
 scripts
+# Test files - exclude from deployment
+**/*.test.ts
 dot_claude/hooks/scripts/test_*
 dot_claude/hooks/scripts/tests/**/*
 dot_claude/hooks/scripts/*all_tests*
