@@ -5,6 +5,7 @@
 _common_paths=(
   "$HOME/.local/bin"
   "$HOME/.local/.bin"
+  "$HOME/.claude/local"
   "$HOME/.deno/bin"
   "$HOME/google-cloud-sdk/bin"
   "$HOME/workspace/depot_tools"
