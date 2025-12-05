@@ -42,31 +42,60 @@ _op_update_paths() {
 oprg() {
 	_op_auth_check
 	local env_files=()
-	
+
 	if [[ -f "$HOME/.env.1password" ]]; then
 		env_files+=("$HOME/.env.1password")
 	fi
-	
+
 	if [[ -f "$HOME/.env.1password.local" ]]; then
 		env_files+=("$HOME/.env.1password.local")
 	fi
-	
+
 	if [[ ${#env_files[@]} -eq 0 ]]; then
 		echo "❌ Neither ~/.env.1password nor ~/.env.1password.local found"
 		return 1
 	fi
-	
-	# Create temporary combined env file for op run
-	local temp_env=$(mktemp)
+
+	# Build env file options (op run supports multiple --env-file flags)
+	local env_opts=()
 	for env_file in "${env_files[@]}"; do
-		cat "$env_file" >> "$temp_env"
-		echo "" >> "$temp_env"  # Add newline between files
+		env_opts+=("--env-file=$env_file")
 	done
-	
-	op run --env-file="$temp_env" -- "$@"
-	local result=$?
-	rm -f "$temp_env"
-	return $result
+
+	op run "${env_opts[@]}" -- "$@"
+}
+
+# Interactive version of oprg (uses PTY to support interactive commands like claude)
+oprgi() {
+	_op_auth_check
+	local env_files=()
+
+	if [[ -f "$HOME/.env.1password" ]]; then
+		env_files+=("$HOME/.env.1password")
+	fi
+
+	if [[ -f "$HOME/.env.1password.local" ]]; then
+		env_files+=("$HOME/.env.1password.local")
+	fi
+
+	if [[ ${#env_files[@]} -eq 0 ]]; then
+		echo "❌ Neither ~/.env.1password nor ~/.env.1password.local found"
+		return 1
+	fi
+
+	# Build env file options (op run supports multiple --env-file flags)
+	local env_opts=()
+	for env_file in "${env_files[@]}"; do
+		env_opts+=("--env-file=$env_file")
+	done
+
+	# Build properly escaped command string for script -c
+	local cmd_quoted=""
+	for arg in "$@"; do
+		cmd_quoted+="$(printf '%q ' "$arg")"
+	done
+
+	op run "${env_opts[@]}" -- script -q /dev/null -c "$cmd_quoted"
 }
 
 oplg() {
@@ -102,32 +131,62 @@ oplg() {
 opr () {
 	_op_auth_check
 	local env_files=()
-	
+
 	if [[ -f "$PWD/.env" ]]; then
 		env_files+=("$PWD/.env")
 	fi
-	
+
 	if [[ -f "$PWD/.env.local" ]]; then
 		env_files+=("$PWD/.env.local")
 	fi
-	
+
 	if [[ ${#env_files[@]} -eq 0 ]]; then
 		echo "❌ Neither .env nor .env.local found in current directory ($PWD)"
 		echo "   Use 'oprg' to run with global env files (~/.env.1password or ~/.env.1password.local)"
 		return 1
 	fi
-	
-	# Create temporary combined env file for op run
-	local temp_env=$(mktemp)
+
+	# Build env file options (op run supports multiple --env-file flags)
+	local env_opts=()
 	for env_file in "${env_files[@]}"; do
-		cat "$env_file" >> "$temp_env"
-		echo "" >> "$temp_env"  # Add newline between files
+		env_opts+=("--env-file=$env_file")
 	done
-	
-	op run --env-file="$temp_env" -- "$@"
-	local result=$?
-	rm -f "$temp_env"
-	return $result
+
+	op run "${env_opts[@]}" -- "$@"
+}
+
+# Interactive version of opr (uses PTY to support interactive commands like claude)
+opri () {
+	_op_auth_check
+	local env_files=()
+
+	if [[ -f "$PWD/.env" ]]; then
+		env_files+=("$PWD/.env")
+	fi
+
+	if [[ -f "$PWD/.env.local" ]]; then
+		env_files+=("$PWD/.env.local")
+	fi
+
+	if [[ ${#env_files[@]} -eq 0 ]]; then
+		echo "❌ Neither .env nor .env.local found in current directory ($PWD)"
+		echo "   Use 'oprgi' to run with global env files (~/.env.1password or ~/.env.1password.local)"
+		return 1
+	fi
+
+	# Build env file options (op run supports multiple --env-file flags)
+	local env_opts=()
+	for env_file in "${env_files[@]}"; do
+		env_opts+=("--env-file=$env_file")
+	done
+
+	# Build properly escaped command string for script -c
+	local cmd_quoted=""
+	for arg in "$@"; do
+		cmd_quoted+="$(printf '%q ' "$arg")"
+	done
+
+	op run "${env_opts[@]}" -- script -q /dev/null -c "$cmd_quoted"
 }
 
 export OP_COMMAND_PATHS=$OP_COMMAND_PATHS # Preserve existing values
