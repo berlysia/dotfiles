@@ -58,7 +58,7 @@ for plugin in "${MISSING[@]}"; do
     if ! echo "$REGISTERED_MARKETPLACES" | grep -qxF "$marketplace"; then
         # Check if already in MARKETPLACES array
         already_added=false
-        for m in "${MARKETPLACES[@]}"; do
+        for m in "${MARKETPLACES[@]+"${MARKETPLACES[@]}"}"; do
             if [[ "$m" == "$marketplace" ]]; then
                 already_added=true
                 break
