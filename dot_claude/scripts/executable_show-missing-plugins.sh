@@ -50,13 +50,23 @@ if [[ -f "$KNOWN_MARKETPLACES_FILE" ]]; then
     REGISTERED_MARKETPLACES=$(jq -r 'keys[]' "$KNOWN_MARKETPLACES_FILE" 2>/dev/null || echo "")
 fi
 
-# Collect unique marketplaces needed for missing plugins
-declare -A MARKETPLACES
+# Collect unique marketplaces needed for missing plugins (using regular array)
+MARKETPLACES=()
 for plugin in "${MISSING[@]}"; do
     marketplace="${plugin##*@}"
-    # Only add if not already registered
+    # Only add if not already registered and not already in list
     if ! echo "$REGISTERED_MARKETPLACES" | grep -qxF "$marketplace"; then
-        MARKETPLACES["$marketplace"]=1
+        # Check if already in MARKETPLACES array
+        already_added=false
+        for m in "${MARKETPLACES[@]}"; do
+            if [[ "$m" == "$marketplace" ]]; then
+                already_added=true
+                break
+            fi
+        done
+        if [[ "$already_added" == "false" ]]; then
+            MARKETPLACES+=("$marketplace")
+        fi
     fi
 done
 
@@ -72,15 +82,15 @@ echo ""
 INSTALLER_SCRIPT="$HOME/.claude/scripts/install-missing-plugins.sh"
 TOTAL=${#MISSING[@]}
 
-# Collect marketplace repo names
-declare -A MARKETPLACE_REPOS
-for marketplace in "${!MARKETPLACES[@]}"; do
+# Helper function to get repo name from marketplace
+get_repo_name() {
+    local marketplace="$1"
     if [[ "$marketplace" == "claude-code-plugins" ]]; then
-        MARKETPLACE_REPOS["$marketplace"]="anthropics/claude-code"
+        echo "anthropics/claude-code"
     else
-        MARKETPLACE_REPOS["$marketplace"]="$marketplace"
+        echo "$marketplace"
     fi
-done
+}
 
 cat > "$INSTALLER_SCRIPT" << 'HEADER'
 #!/bin/bash
@@ -107,15 +117,14 @@ HEADER
 
 # Only add MARKETPLACES array if there are unregistered marketplaces
 HAS_UNREGISTERED_MARKETPLACES=false
-for _ in "${!MARKETPLACE_REPOS[@]}"; do
+if [[ ${#MARKETPLACES[@]} -gt 0 ]]; then
     HAS_UNREGISTERED_MARKETPLACES=true
-    break
-done
+fi
 
 if [[ "$HAS_UNREGISTERED_MARKETPLACES" == "true" ]]; then
     echo "MARKETPLACES=(" >> "$INSTALLER_SCRIPT"
-    for marketplace in "${!MARKETPLACE_REPOS[@]}"; do
-        echo "    '${MARKETPLACE_REPOS[$marketplace]}'" >> "$INSTALLER_SCRIPT"
+    for marketplace in "${MARKETPLACES[@]}"; do
+        echo "    '$(get_repo_name "$marketplace")'" >> "$INSTALLER_SCRIPT"
     done
     echo ")" >> "$INSTALLER_SCRIPT"
 else
