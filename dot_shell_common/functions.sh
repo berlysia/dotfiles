@@ -137,12 +137,19 @@ ope() {
 		done
 
 		if $interactive; then
-			# Build properly escaped command string for script -c
+			# Build properly escaped command string for script
 			local cmd_quoted=""
 			for arg in "$@"; do
 				cmd_quoted+="$(printf '%q ' "$arg")"
 			done
-			op run "${env_opts[@]}" -- script -q /dev/null -c "$cmd_quoted"
+			# script command syntax differs between Linux and macOS
+			if [[ "$(uname)" == "Darwin" ]]; then
+				# macOS: script [-q] file command
+				op run "${env_opts[@]}" -- script -q /dev/null bash -c "$cmd_quoted"
+			else
+				# Linux: script [-q] -c command file
+				op run "${env_opts[@]}" -- script -q /dev/null -c "$cmd_quoted"
+			fi
 		else
 			op run "${env_opts[@]}" -- "$@"
 		fi
