@@ -21,3 +21,6 @@ fi
 
 # chezmoi更新チェック
 [ -f "$SHELL_COMMON/chezmoi_check.sh" ] && source "$SHELL_COMMON/chezmoi_check.sh"
+
+# mise更新チェック
+[ -f "$SHELL_COMMON/mise_check.sh" ] && source "$SHELL_COMMON/mise_check.sh"
