@@ -158,7 +158,7 @@ if [[ ${#MARKETPLACES[@]} -gt 0 ]]; then
 
     for mp in "${MARKETPLACES[@]}"; do
         echo "Registering $mp..."
-        if "$CLAUDE_CMD" -p "/plugin marketplace add $mp" 2>&1; then
+        if "$CLAUDE_CMD" -p "/plugin marketplace add $mp"; then
             echo "    ✅ Done"
         else
             echo "    ⚠️  May already be registered"
@@ -173,21 +173,29 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 
 TOTAL=${#PLUGINS[@]}
+FAILED=0
 i=1
 for p in "${PLUGINS[@]}"; do
     echo "[$i/$TOTAL] Installing $p..."
-    if "$CLAUDE_CMD" -p "/plugin install $p" 2>&1; then
+    if "$CLAUDE_CMD" -p "/plugin install $p"; then
         echo "    ✅ Success"
     else
         echo "    ❌ Failed"
+        ((FAILED++))
     fi
     ((i++))
     echo ""
 done
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "✅ Done! Restart Claude Code to load the plugins."
+if [[ $FAILED -eq 0 ]]; then
+    echo "✅ All plugins installed successfully! Restart Claude Code to load them."
+else
+    echo "⚠️  Done with $FAILED failure(s). Restart Claude Code to load installed plugins."
+fi
 echo ""
+
+exit $FAILED
 FOOTER
 
 chmod +x "$INSTALLER_SCRIPT"
