@@ -1,7 +1,13 @@
 .vscode
 *.md
 !dot_claude/skills/**/SKILL.md
+
+# Repository tooling (not for home directory)
+.github
 scripts
+.gitleaks.toml
+.gitleaksignore
+
 # Test files - exclude from deployment
 **/*.test.ts
 dot_claude/hooks/scripts/test_*

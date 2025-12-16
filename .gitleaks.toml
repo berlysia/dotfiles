@@ -1,0 +1,33 @@
+# gitleaks configuration for chezmoi-managed dotfiles
+# https://github.com/gitleaks/gitleaks
+
+title = "chezmoi dotfiles gitleaks config"
+
+[extend]
+useDefault = true
+
+# Global allowlist for chezmoi template patterns
+[allowlist]
+description = "Chezmoi template variables and syntax"
+regexTarget = "line"
+regexes = [
+  # Chezmoi variable references: {{ .variable }} or {{- .variable -}}
+  '''\{\{-?\s*\.[\w.]+\s*-?\}\}''',
+  # Chezmoi conditionals and control flow
+  '''\{\{-?\s*(?:if|else|end|range|with|define|template|block)\b.*?-?\}\}''',
+  # Chezmoi functions and operators
+  '''\{\{-?\s*(?:include|includeTemplate|output|secret|onepasswordRead|bitwarden|eq|ne|and|or|not|default|env|joinPath|lookPath|stat|glob)\b.*?-?\}\}''',
+]
+paths = [
+  # Chezmoi template files
+  '''\.tmpl$''',
+  # Chezmoi data files
+  '''\.chezmoidata\.(json|toml|yaml)$''',
+  # CI data for chezmoi tests
+  '''ci-chezmoi-data\.json$''',
+  # Lock files (high entropy but safe)
+  '''pnpm-lock\.yaml$''',
+  '''package-lock\.json$''',
+  # Node modules
+  '''node_modules/''',
+]
