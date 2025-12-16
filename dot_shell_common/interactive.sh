@@ -19,8 +19,7 @@ if type fzf &>/dev/null; then
   fi
 fi
 
-# chezmoi更新チェック
-[ -f "$SHELL_COMMON/chezmoi_check.sh" ] && source "$SHELL_COMMON/chezmoi_check.sh"
-
-# mise更新チェック
-[ -f "$SHELL_COMMON/mise_check.sh" ] && source "$SHELL_COMMON/mise_check.sh"
+# Update checkers (tools and dotfiles)
+[ -f "$SHELL_COMMON/updates/chezmoi.sh" ] && source "$SHELL_COMMON/updates/chezmoi.sh"
+[ -f "$SHELL_COMMON/updates/mise.sh" ] && source "$SHELL_COMMON/updates/mise.sh"
+[ -f "$SHELL_COMMON/updates/dotfiles.sh" ] && source "$SHELL_COMMON/updates/dotfiles.sh"
