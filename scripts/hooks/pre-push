@@ -1,0 +1,31 @@
+#!/bin/bash
+# Git pre-push hook
+# - Secret detection with gitleaks (full repository scan)
+
+set -euo pipefail
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+if [ "${SKIP_HOOKS:-}" = "1" ]; then
+    echo -e "${YELLOW}⚠ Hooks skipped (SKIP_HOOKS=1)${NC}"
+    exit 0
+fi
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+
+echo -e "${BLUE}🔍 Scanning repository for secrets before push...${NC}"
+if command -v gitleaks &> /dev/null; then
+    if ! gitleaks detect --config "${REPO_ROOT}/.gitleaks.toml" --verbose; then
+        echo -e "${RED}❌ Secrets detected in repository history!${NC}"
+        echo -e "${YELLOW}   Use 'git rebase -i' to fix commits with secrets.${NC}"
+        exit 1
+    else
+        echo -e "${GREEN}✓ No secrets found${NC}"
+    fi
+else
+    echo -e "${YELLOW}⚠ gitleaks not installed, skipping secret detection${NC}"
+fi

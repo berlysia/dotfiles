@@ -1,0 +1,15 @@
+# gitleaks ignore file for false positives
+# https://github.com/gitleaks/gitleaks#gitleaksignore
+#
+# Format:
+#   fingerprint (hash from gitleaks output)
+#   commit:file:line
+#
+# Rules:
+#   - Add specific entries only, no wildcards
+#   - Include comment explaining why each entry is safe
+#   - Never add real secrets - rotate them instead
+#
+# Example:
+#   # Safe: Example API key in documentation
+#   abc123def456:docs/example.md:42
