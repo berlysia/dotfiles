@@ -18,3 +18,6 @@ if type fzf &>/dev/null; then
     fi
   fi
 fi
+
+# chezmoi更新チェック
+[ -f "$SHELL_COMMON/chezmoi_check.sh" ] && source "$SHELL_COMMON/chezmoi_check.sh"
