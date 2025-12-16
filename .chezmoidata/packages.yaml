@@ -1,8 +1,4 @@
 packages:
-  cargo:
-    - "similarity-ts"
-  go:
-    - "github.com/syou6162/git-sequential-stage@latest"
   darwin:
     brews:
       - "age"
