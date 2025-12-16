@@ -8,7 +8,6 @@
   "code-review@claude-code-plugins": true,
   "explanatory-output-style@claude-code-plugins": true,
   "feature-dev@claude-code-plugins": true,
-  "hookify@claude-code-plugins": true,
   "learning-output-style@claude-code-plugins": true,
   "plugin-dev@claude-code-plugins": true,
   "security-guidance@claude-code-plugins": true
