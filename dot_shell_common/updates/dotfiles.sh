@@ -31,9 +31,9 @@ dotfiles_check_updates() {
   trap - INT
 
   # Check for pending changes
-  local status
-  status=$(chezmoi status 2>/dev/null)
-  if [ -n "$status" ]; then
+  local changes
+  changes=$(chezmoi status 2>/dev/null)
+  if [ -n "$changes" ]; then
     echo "💡 dotfiles: Updates available (run 'chezmoi apply' to apply)"
   fi
 }

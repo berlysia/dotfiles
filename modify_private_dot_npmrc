@@ -8,9 +8,6 @@ cat <<'EOF'
 # This blocks supply chain attacks via malicious scripts
 ignore-scripts=true
 
-# Minimum release age before installing packages (requires pnpm >= 10.16)
-minimum-release-age=10080
-
 # Always install exact versions to avoid unintended updates
 save-exact=true
 
