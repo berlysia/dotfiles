@@ -1,6 +1,6 @@
 #!/bin/sh
 # dotfiles repository update check - notify when remote changes are available
-# Checks every hour by pulling from remote and comparing status
+# Checks every hour by fetching from remote and comparing commits
 
 _DOTFILES_CHECK_INTERVAL=3600  # 1 hour in seconds
 _DOTFILES_LAST_CHECK="${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles_last_check"
@@ -23,18 +23,18 @@ dotfiles_check_updates() {
   # Restore timestamp on interrupt (auth prompt may cause user to cancel)
   trap 'echo "$last_check" > "$_DOTFILES_LAST_CHECK"; trap - INT; return' INT
 
-  # Pull from remote (may prompt for authentication)
-  echo "dotfiles: Checking for updates..."
-  chezmoi git pull -- --quiet 2>/dev/null || true
+  # Fetch from remote (faster than pull - no merge operation)
+  chezmoi git fetch -- --quiet 2>/dev/null || true
 
   # Clear trap
   trap - INT
 
-  # Check for pending changes
-  local changes
-  changes=$(chezmoi status 2>/dev/null)
-  if [ -n "$changes" ]; then
-    echo "💡 dotfiles: Updates available (run 'chezmoi apply' to apply)"
+  # Check if remote has new commits
+  local behind
+  behind=$(chezmoi git rev-list -- --count HEAD..@{u} 2>/dev/null) || behind=0
+
+  if [ -n "$behind" ] && [ "$behind" -gt 0 ]; then
+    echo "💡 dotfiles: $behind commit(s) behind remote (run 'chezmoi update' to update)"
   fi
 }
 
