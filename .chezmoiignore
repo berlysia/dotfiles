@@ -29,7 +29,8 @@ tsconfig.json
 pnpm-workspace.yaml
 renovate.json
 
-# Windows専用ディレクトリ - Windows以外では無視
+# Windows専用ファイル - Windows以外では無視
 {{ if ne .chezmoi.os "windows" }}
 Documents
+install-packages-*-windows.ps1
 {{ end }}
