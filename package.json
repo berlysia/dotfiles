@@ -17,6 +17,7 @@
   "devDependencies": {
     "@mizchi/lsmcp": "0.10.0",
     "@mizchi/readability": "0.7.7",
+    "@openai/codex": "0.73.0",
     "@playwright/mcp": "0.0.45",
     "@types/node": "24.10.0",
     "@typescript/native-preview": "7.0.0-dev.20251102.1",

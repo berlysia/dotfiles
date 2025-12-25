@@ -15,7 +15,7 @@ READABILITY_VER=$(jq -r '.devDependencies["@mizchi/readability"] // empty' "$PAC
 CHROME_DEVTOOLS_VER=$(jq -r '.devDependencies["chrome-devtools-mcp"] // empty' "$PACKAGE_JSON")
 PLAYWRIGHT_VER=$(jq -r '.devDependencies["@playwright/mcp"] // empty' "$PACKAGE_JSON")
 CONTEXT7_VER=$(jq -r '.devDependencies["@upstash/context7-mcp"] // empty' "$PACKAGE_JSON")
-O3_SEARCH_VER=$(jq -r '.devDependencies["o3-search-mcp"] // empty' "$PACKAGE_JSON")
+CODEX_VER=$(jq -r '.devDependencies["@openai/codex"] // empty' "$PACKAGE_JSON")
 
 # Generate new content from versions
 TEMPLATE_CONTENT=$(cat << EOF
@@ -25,7 +25,6 @@ TEMPLATE_CONTENT=$(cat << EOF
       "type": "stdio",
       "command": "pnpx",
       "args": [
-        "-y",
         "@mizchi/readability@${READABILITY_VER}",
         "--mcp"
       ],
@@ -34,7 +33,6 @@ TEMPLATE_CONTENT=$(cat << EOF
     "chrome-devtools": {
       "command": "pnpx",
       "args": [
-        "-y",
         "chrome-devtools-mcp@${CHROME_DEVTOOLS_VER}"
       ]
     },
@@ -42,7 +40,6 @@ TEMPLATE_CONTENT=$(cat << EOF
       "type": "stdio",
       "command": "pnpx",
       "args": [
-        "-y",
         "@playwright/mcp@${PLAYWRIGHT_VER}"
       ],
       "env": {}
@@ -51,22 +48,17 @@ TEMPLATE_CONTENT=$(cat << EOF
       "type": "stdio",
       "command": "pnpx",
       "args": [
-        "-y",
         "@upstash/context7-mcp@${CONTEXT7_VER}"
       ],
       "env": {}
     },
-    "o3-search-mcp": {
+    "codex": {
       "type": "stdio",
       "command": "pnpx",
       "args": [
-        "-y",
-        "o3-search-mcp@${O3_SEARCH_VER}"
-      ],
-      "env": {
-        "OPENAI_MODEL": "gpt-5",
-        "OPENAI_API_KEY": "\${USER_OPENAI_API_KEY_FOR_MCP}"
-      }
+        "@openai/codex@${CODEX_VER}",
+        "mcp-server"
+      ]
     }
   },
   "preferredNotifChannel": "terminal_bell",
