@@ -7,12 +7,12 @@ web_search = true
 
 [mcp_servers.context7]
 command = "pnpx"
-args = ["-y", "@upstash/context7-mcp@latest"]
+args = ["@upstash/context7-mcp@latest"]
 
 [mcp_servers.readability]
 command = "pnpx"
-args = ["-y", "@mizchi/readability@latest", "--mcp"]
+args = ["@mizchi/readability@latest", "--mcp"]
 
 [mcp_servers.playwright]
 command = "pnpx"
-args = ["-y", "@playwright/mcp@latest"]
+args = ["@playwright/mcp@latest"]

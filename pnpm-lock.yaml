@@ -30,6 +30,9 @@ importers:
       '@mizchi/lsmcp':
         specifier: 0.10.0
         version: 0.10.0
+      '@openai/codex':
+        specifier: 0.73.0
+        version: 0.73.0
       '@playwright/mcp':
         specifier: 0.0.45
         version: 0.0.45
@@ -97,6 +100,11 @@ packages:
     peerDependenciesMeta:
       '@cfworker/json-schema':
         optional: true
+
+  '@openai/codex@0.73.0':
+    resolution: {integrity: sha512-QeArR/mZ7/9rlf+wRoID0w46na86fzdRh77yB3tCXZfPwypn3Qv1eZrIjZDYtfRE9hiZ6AcrShGYfsmVRt1hzg==}
+    engines: {node: '>=16'}
+    hasBin: true
 
   '@pkgjs/parseargs@0.11.0':
     resolution: {integrity: sha512-+1VkjdD0QBLPodGrJUeqarH8VAIvQODIbwh9XpP5Syisf7YoQgsJKPNFoqqLQlu+VQ/tVSshMR6loPMn8U+dPg==}
@@ -808,6 +816,8 @@ snapshots:
     transitivePeerDependencies:
       - hono
       - supports-color
+
+  '@openai/codex@0.73.0': {}
 
   '@pkgjs/parseargs@0.11.0':
     optional: true
