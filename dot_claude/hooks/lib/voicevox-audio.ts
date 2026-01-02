@@ -1,4 +1,4 @@
-import { $ } from "dax-sh";
+import { $ } from "dax";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { homedir } from "node:os";
@@ -139,7 +139,7 @@ export async function isVoiceVoxAvailable(): Promise<boolean> {
 // VoiceVox互換音声合成
 export async function synthesizeVoiceVoxSpeech(
   text: string,
-  speakerId?: string,
+  speakerId?: string
 ): Promise<string | null> {
   const config = getAudioConfig();
   if (!config.voicevox?.endpoint) return null;
@@ -149,8 +149,10 @@ export async function synthesizeVoiceVoxSpeech(
   try {
     // 音声クエリ生成
     const queryResponse = await fetch(
-      `${config.voicevox.endpoint}/audio_query?text=${encodeURIComponent(text)}&speaker=${speaker}`,
-      { method: "POST" },
+      `${config.voicevox.endpoint}/audio_query?text=${encodeURIComponent(
+        text
+      )}&speaker=${speaker}`,
+      { method: "POST" }
     );
 
     if (!queryResponse.ok) return null;
@@ -163,7 +165,7 @@ export async function synthesizeVoiceVoxSpeech(
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(query),
-      },
+      }
     );
 
     if (!synthesisResponse.ok) return null;
@@ -201,7 +203,7 @@ async function fileExists(filePath: string): Promise<boolean> {
 // 統合通知関数（優先度付きフォールバック機構）
 export async function notify(
   message: string,
-  type: SoundType = "notification",
+  type: SoundType = "notification"
 ): Promise<void> {
   let voicePlayedSuccessfully = false;
 
@@ -261,7 +263,7 @@ export async function getRepoInfo(): Promise<string> {
 
 // リポジトリコンテキスト付き通知
 export async function notifyWithContext(
-  eventType: "Notification" | "Stop",
+  eventType: "Notification" | "Stop"
 ): Promise<void> {
   const repo = await getRepoInfo();
   const computerName = process.env.CLAUDE_COMPUTER_NAME || "Claude";

@@ -1,4 +1,4 @@
-import { $ } from "dax-sh";
+import { $ } from "dax";
 
 /**
  * Git Context Service - Repository Information Management
@@ -188,7 +188,7 @@ export async function getRepoName(): Promise<string> {
  */
 export function createContextMessage(
   context: GitContextInfo,
-  action: "confirm" | "complete" | "error",
+  action: "confirm" | "complete" | "error"
 ): string {
   const actionMessages = {
     confirm: "操作の確認が必要です",

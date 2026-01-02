@@ -3,7 +3,7 @@
  * 統一音声通知エンジン - VoiceVox互換エンジンと静的音声ファイルの統合管理
  */
 
-import { $ } from "dax-sh";
+import { $ } from "dax";
 import {
   existsSync,
   mkdirSync,
@@ -84,7 +84,7 @@ async function playWSLSound(soundFile: string): Promise<boolean> {
 
 export async function playSound(
   soundFile: string,
-  platform: Platform,
+  platform: Platform
 ): Promise<boolean> {
   if (!existsSync(soundFile)) return false;
 
@@ -121,7 +121,7 @@ export async function playSound(
 
 export function ensureDirectories(
   config: UnifiedVoiceConfig,
-  session: VoiceSession,
+  session: VoiceSession
 ): void {
   try {
     const logDir = dirname(config.paths.logFile);
@@ -157,7 +157,7 @@ export function logMessage(message: string, config: UnifiedVoiceConfig): void {
 }
 
 export async function cleanupOldFiles(
-  config: UnifiedVoiceConfig,
+  config: UnifiedVoiceConfig
 ): Promise<void> {
   try {
     if (!existsSync(config.paths.tempDir)) return;
@@ -171,7 +171,7 @@ export async function cleanupOldFiles(
 
 export function cleanupSession(
   session: VoiceSession,
-  config: UnifiedVoiceConfig,
+  config: UnifiedVoiceConfig
 ): void {
   if (session.currentWavFile && existsSync(session.currentWavFile)) {
     try {
@@ -199,7 +199,7 @@ export function cleanupSession(
 // =========================================================================
 
 export async function checkVoiceVoxEngine(
-  config: UnifiedVoiceConfig,
+  config: UnifiedVoiceConfig
 ): Promise<boolean> {
   try {
     const response = await fetch(`${config.voicevox.endpoint}/version`, {
@@ -210,7 +210,7 @@ export async function checkVoiceVoxEngine(
   } catch {
     logMessage(
       `ERROR: VoiceVox-compatible engine not available at ${config.voicevox.endpoint}`,
-      config,
+      config
     );
     return false;
   }
@@ -218,7 +218,7 @@ export async function checkVoiceVoxEngine(
 
 export async function generateAudioQuery(
   text: string,
-  config: UnifiedVoiceConfig,
+  config: UnifiedVoiceConfig
 ): Promise<AudioQuery | null> {
   try {
     const encodedText = encodeURIComponent(text);
@@ -230,7 +230,7 @@ export async function generateAudioQuery(
         headers: {
           "Content-Type": "application/json",
         },
-      },
+      }
     );
 
     if (!response.ok) {
@@ -247,7 +247,7 @@ export async function generateAudioQuery(
 export async function synthesizeSpeech(
   query: AudioQuery,
   outputFile: string,
-  config: UnifiedVoiceConfig,
+  config: UnifiedVoiceConfig
 ): Promise<boolean> {
   try {
     const response = await fetch(
@@ -259,7 +259,7 @@ export async function synthesizeSpeech(
           Accept: "audio/wav",
         },
         body: JSON.stringify(query),
-      },
+      }
     );
 
     if (!response.ok) {
@@ -287,7 +287,7 @@ export async function synthesizeSpeech(
 
 export function getStaticSoundPath(
   type: SoundType,
-  config: UnifiedVoiceConfig,
+  config: UnifiedVoiceConfig
 ): string {
   const fileName = `Claude${type.charAt(0).toUpperCase() + type.slice(1)}.wav`;
   return join(config.paths.soundsDir, fileName);
@@ -295,7 +295,7 @@ export function getStaticSoundPath(
 
 export async function playStaticWav(
   wavFile: string,
-  config: UnifiedVoiceConfig,
+  config: UnifiedVoiceConfig
 ): Promise<boolean> {
   if (!existsSync(wavFile)) {
     logMessage(`WARNING: Static WAV file not found: ${wavFile}`, config);
@@ -324,7 +324,7 @@ export async function playStaticWav(
  * claude-companionが起動している場合の処理をスキップ
  */
 export async function checkAndDelegateToClaude(
-  config: UnifiedVoiceConfig,
+  config: UnifiedVoiceConfig
 ): Promise<NotificationResult | null> {
   const companionStatus = await checkClaudeCompanionStatus();
 
@@ -353,7 +353,7 @@ export async function checkAndDelegateToClaude(
 export async function executeFallbackNotification(
   eventType: EventType,
   reason: string,
-  config: UnifiedVoiceConfig,
+  config: UnifiedVoiceConfig
 ): Promise<NotificationResult> {
   logMessage(`${reason}, falling back to static WAV files`, config);
 
@@ -385,7 +385,7 @@ export async function speakNotification(
   text: string,
   eventType: EventType,
   config: UnifiedVoiceConfig,
-  session: VoiceSession,
+  session: VoiceSession
 ): Promise<NotificationResult> {
   // Check if claude-companion is running and delegate if so
   const delegationResult = await checkAndDelegateToClaude(config);
@@ -401,7 +401,7 @@ export async function speakNotification(
     return await executeFallbackNotification(
       eventType,
       "Voice synthesis engine unavailable",
-      config,
+      config
     );
   }
 
@@ -409,7 +409,7 @@ export async function speakNotification(
   const timestamp = Date.now() * 1000 + Math.floor(Math.random() * 1000);
   const audioFile = join(
     session.sessionDir,
-    `notification_${eventType}_${timestamp}.wav`,
+    `notification_${eventType}_${timestamp}.wav`
   );
   session.currentWavFile = audioFile;
 
@@ -422,7 +422,7 @@ export async function speakNotification(
     return await executeFallbackNotification(
       eventType,
       "Audio query generation failed",
-      config,
+      config
     );
   }
 
@@ -431,7 +431,7 @@ export async function speakNotification(
     return await executeFallbackNotification(
       eventType,
       "Speech synthesis failed",
-      config,
+      config
     );
   }
 
@@ -445,7 +445,7 @@ export async function speakNotification(
       return await executeFallbackNotification(
         eventType,
         "Audio playback failed",
-        config,
+        config
       );
     }
 
@@ -458,7 +458,7 @@ export async function speakNotification(
     session.currentWavFile = null;
     logMessage(
       `SUCCESS: Played VoiceVox notification for ${eventType}: ${text}`,
-      config,
+      config
     );
 
     return { success: true, method: "voicevox" };
@@ -467,7 +467,7 @@ export async function speakNotification(
     return await executeFallbackNotification(
       eventType,
       "Audio playback error",
-      config,
+      config
     );
   }
 }
@@ -478,7 +478,7 @@ export async function speakNotification(
 
 export async function handleNotification(
   config: UnifiedVoiceConfig,
-  session: VoiceSession,
+  session: VoiceSession
 ): Promise<NotificationResult> {
   await cleanupOldFiles(config);
 
@@ -489,7 +489,7 @@ export async function handleNotification(
 
 export async function handleStop(
   config: UnifiedVoiceConfig,
-  session: VoiceSession,
+  session: VoiceSession
 ): Promise<NotificationResult> {
   const context = await getGitContext();
   const message = createContextMessage(context, "complete");
@@ -510,7 +510,7 @@ export async function handleStop(
 
 export async function handleError(
   config: UnifiedVoiceConfig,
-  session: VoiceSession,
+  session: VoiceSession
 ): Promise<NotificationResult> {
   const context = await getGitContext();
   const message = createContextMessage(context, "error");
@@ -523,7 +523,7 @@ export async function handleError(
 
 export async function sendSystemNotification(
   message: string,
-  config: UnifiedVoiceConfig,
+  config: UnifiedVoiceConfig
 ): Promise<void> {
   if (!config.behavior.systemNotifications) return;
 
