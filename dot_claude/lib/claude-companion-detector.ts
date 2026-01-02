@@ -4,7 +4,7 @@
  */
 
 import { existsSync, readFileSync } from "fs";
-import { $ } from "dax-sh";
+import { $ } from "dax";
 
 export interface ClaudeCompanionStatus {
   isRunning: boolean;
