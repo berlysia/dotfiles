@@ -15,4 +15,4 @@ yarn = "4.10.3"
 
 # CLI tools (migrated from go install / cargo install)
 "go:github.com/syou6162/git-sequential-stage" = "latest"
-"cargo:similarity-ts" = "0.4.1"
+"cargo:similarity-ts" = "=0.4.1"
