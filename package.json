@@ -19,7 +19,7 @@
     "@mizchi/readability": "0.7.7",
     "@openai/codex": "0.73.0",
     "@playwright/mcp": "0.0.45",
-    "@types/node": "24.10.0",
+    "@types/node": "24.10.4",
     "@typescript/native-preview": "7.0.0-dev.20251102.1",
     "@upstash/context7-mcp": "1.0.26",
     "chrome-devtools-mcp": "0.9.0",
