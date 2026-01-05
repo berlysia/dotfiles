@@ -108,16 +108,28 @@ async function extractFilePath(
   tool_input: unknown,
 ): Promise<string | null> {
   if (isWriteInput(tool_name, tool_input)) {
-    return tool_input.file_path || null;
+    return (
+      (tool_input as import("cc-hooks-ts").ToolSchema["Write"]["input"])
+        .file_path || null
+    );
   }
   if (isEditInput(tool_name, tool_input)) {
-    return tool_input.file_path || null;
+    return (
+      (tool_input as import("cc-hooks-ts").ToolSchema["Edit"]["input"])
+        .file_path || null
+    );
   }
   if (isMultiEditInput(tool_name, tool_input)) {
-    return tool_input.file_path || null;
+    return (
+      (tool_input as import("cc-hooks-ts").ToolSchema["MultiEdit"]["input"])
+        .file_path || null
+    );
   }
   if (isNotebookEditInput(tool_name, tool_input)) {
-    return tool_input.notebook_path || null;
+    return (
+      (tool_input as import("cc-hooks-ts").ToolSchema["NotebookEdit"]["input"])
+        .notebook_path || null
+    );
   }
   if (tool_name === "Bash") {
     const cmd = getCommandFromToolInput("Bash", tool_input) || "";
