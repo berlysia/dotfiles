@@ -31,9 +31,8 @@ const hook = defineHook({
     }
 
     try {
-      // Check if we're in a dotfiles repository (contains chezmoi config)
       const repoRoot = getRepositoryRoot();
-      if (!repoRoot || !isDotfilesRepository(repoRoot)) {
+      if (!repoRoot) {
         return context.success({});
       }
 
@@ -88,23 +87,6 @@ function getRepositoryRoot(): string | undefined {
   } catch {
     return undefined;
   }
-}
-
-/**
- * Check if the repository is a dotfiles repository managed by chezmoi.
- * We detect this by checking for chezmoi-specific files/directories.
- */
-function isDotfilesRepository(repoRoot: string): boolean {
-  const chezmoiIndicators = [
-    ".chezmoi.toml.tmpl",
-    ".chezmoiignore",
-    ".chezmoiscripts",
-    ".chezmoidata",
-  ];
-
-  return chezmoiIndicators.some((indicator) =>
-    existsSync(join(repoRoot, indicator)),
-  );
 }
 
 function extractFilePath(tool_name: string, tool_input: any): string | undefined {
@@ -244,7 +226,6 @@ export default hook;
 export {
   getChezmoiRedirectPath,
   generateChezmoiPathVariations,
-  isDotfilesRepository,
 };
 
 if (import.meta.main) {
