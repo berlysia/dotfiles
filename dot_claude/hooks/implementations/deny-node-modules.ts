@@ -14,6 +14,8 @@ import {
   isMultiEditInput,
   isNotebookEditInput,
 } from "../types/project-types.ts";
+// Import module augmentation for MultiEdit type
+import "../types/tool-schemas.ts";
 
 /**
  * Control access to node_modules directories with 3-stage analysis
