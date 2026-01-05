@@ -5,8 +5,22 @@ import { resolve, basename, dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { existsSync, readdirSync } from "node:fs";
 import { execSync } from "node:child_process";
-import { createDenyResponse } from "../lib/context-helpers.ts";
-import "../types/tool-schemas.ts";
+
+/**
+ * Create a deny response for PreToolUse hook
+ */
+function createDenyResponse(reason: string) {
+  return {
+    event: "PreToolUse" as const,
+    output: {
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse" as const,
+        permissionDecision: "deny" as const,
+        permissionDecisionReason: reason,
+      },
+    },
+  };
+}
 
 /**
  * Chezmoi Redirect Hook for Dotfiles Repository
