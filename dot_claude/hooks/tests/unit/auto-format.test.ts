@@ -1,14 +1,13 @@
 #!/usr/bin/env node --test
 
-import { describe, it, beforeEach, afterEach } from "node:test";
-import { strictEqual, deepStrictEqual, ok } from "node:assert";
+import { deepStrictEqual, ok, strictEqual } from "node:assert";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import {
-  defineHook,
-  createFileSystemMock,
   ConsoleCapture,
-  EnvironmentHelper,
-  createPostToolUseContext,
+  createFileSystemMock,
   createPostToolUseContextFor,
+  defineHook,
+  EnvironmentHelper,
   invokeRun,
 } from "./test-helpers.ts";
 
@@ -33,7 +32,8 @@ describe("auto-format.ts hook behavior", () => {
     it("should be configured for PostToolUse trigger", () => {
       const hook = defineHook({
         trigger: { PostToolUse: true },
-        run: (context: any) => context.success({}),
+        run: (context: unknown) =>
+          (context as { success: (arg: object) => void }).success({}),
       });
 
       deepStrictEqual(hook.trigger, { PostToolUse: true });

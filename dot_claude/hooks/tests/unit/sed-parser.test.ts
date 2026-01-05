@@ -1,7 +1,7 @@
 #!/usr/bin/env -S bun test
 
+import { deepStrictEqual, ok, strictEqual } from "node:assert";
 import { describe, it } from "node:test";
-import { strictEqual, deepStrictEqual, ok } from "node:assert";
 
 // expectヘルパー（node:assertのラッパー）
 const expect = (value: any) => ({
@@ -93,7 +93,7 @@ describe("sed-parser", () => {
     });
 
     it("should detect glob even in originally quoted strings", () => {
-      const result = parseSedInPlace('sed -i \'s/foo/bar/\' "*.txt"');
+      const result = parseSedInPlace("sed -i 's/foo/bar/' \"*.txt\"");
 
       expect(result.isSedInPlace).toBeTruthy();
       // クォートは removeQuotes() で除去され、その後グロブパターンとして検出される
@@ -141,18 +141,14 @@ describe("sed-parser", () => {
     });
 
     it("should handle absolute paths", () => {
-      const result = parseSedInPlace(
-        "sed -i 's/foo/bar/' /home/user/file.txt",
-      );
+      const result = parseSedInPlace("sed -i 's/foo/bar/' /home/user/file.txt");
 
       expect(result.isSedInPlace).toBeTruthy();
       expect(result.targetFiles).toEqual(["/home/user/file.txt"]);
     });
 
     it("should handle quoted file paths with spaces", () => {
-      const result = parseSedInPlace(
-        'sed -i \'s/foo/bar/\' "my file.txt"',
-      );
+      const result = parseSedInPlace("sed -i 's/foo/bar/' \"my file.txt\"");
 
       expect(result.isSedInPlace).toBeTruthy();
       // クォートは removeQuotes() で除去される

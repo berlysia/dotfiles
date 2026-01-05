@@ -1,12 +1,12 @@
 #!/usr/bin/env bun
 
-import path, { resolve } from "node:path";
 import { execSync } from "node:child_process";
 import { createReadStream } from "node:fs";
-import { createInterface } from "node:readline";
-import { loadDailyUsageData, loadSessionBlockData } from "ccusage/data-loader";
 import { writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
+import path, { resolve } from "node:path";
+import { createInterface } from "node:readline";
+import { loadDailyUsageData, loadSessionBlockData } from "ccusage/data-loader";
 
 type DailyData = Awaited<ReturnType<typeof loadDailyUsageData>>;
 type BlockData = Awaited<ReturnType<typeof loadSessionBlockData>>;
@@ -173,10 +173,7 @@ async function calculateCurrentContextTokens(
         if (entry.type === "assistant" && entry.message.usage) {
           lastUsage = entry.message.usage;
         }
-      } catch (e) {
-        // Skip invalid JSON lines
-        continue;
-      }
+      } catch (_e) {}
     }
 
     if (lastUsage) {
@@ -189,7 +186,7 @@ async function calculateCurrentContextTokens(
     }
 
     return 0;
-  } catch (error) {
+  } catch (_error) {
     return 0;
   }
 }

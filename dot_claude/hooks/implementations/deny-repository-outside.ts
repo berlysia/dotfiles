@@ -1,13 +1,13 @@
 #!/usr/bin/env -S bun run --silent
 
-import { defineHook } from "cc-hooks-ts";
-import { resolve } from "node:path";
-import { homedir } from "node:os";
-import { existsSync, realpathSync, readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { homedir } from "node:os";
+import { resolve } from "node:path";
+import { defineHook } from "cc-hooks-ts";
 import { createDenyResponse } from "../lib/context-helpers.ts";
-import { matchGitignorePattern } from "../lib/pattern-matcher.ts";
 import { expandTilde } from "../lib/path-utils.ts";
+import { matchGitignorePattern } from "../lib/pattern-matcher.ts";
 import "../types/tool-schemas.ts";
 
 /**
@@ -53,7 +53,13 @@ const hook = defineHook({
 
       // Check each path
       for (const filePath of filePaths) {
-        const validation = validatePath(filePath, repoRoot, tool_name, additionalDirs, allowPatterns);
+        const validation = validatePath(
+          filePath,
+          repoRoot,
+          tool_name,
+          additionalDirs,
+          allowPatterns,
+        );
         if (!validation.isAllowed) {
           return context.json(
             createDenyResponse(
@@ -121,7 +127,11 @@ function getSettingsFiles(workspaceRoot?: string): SettingsFile[] {
 
   // Workspace settings
   if (workspaceRoot) {
-    const workspaceSettingsPath = resolve(workspaceRoot, ".claude", "settings.json");
+    const workspaceSettingsPath = resolve(
+      workspaceRoot,
+      ".claude",
+      "settings.json",
+    );
     if (existsSync(workspaceSettingsPath)) {
       try {
         const content = readFileSync(workspaceSettingsPath, "utf-8");
@@ -137,47 +147,56 @@ function getSettingsFiles(workspaceRoot?: string): SettingsFile[] {
 
 function getAdditionalDirectories(settingsFiles: SettingsFile[]): string[] {
   const directories: string[] = [];
-  
+
   for (const file of settingsFiles) {
     if (Array.isArray(file.additionalDirectories)) {
       directories.push(...file.additionalDirectories);
     }
   }
-  
+
   return directories;
 }
 
-function getAllowPatterns(settingsFiles: SettingsFile[], toolName: string): string[] {
+function getAllowPatterns(
+  settingsFiles: SettingsFile[],
+  toolName: string,
+): string[] {
   const patterns: string[] = [];
-  
+
   for (const file of settingsFiles) {
     const allowList = file.permissions?.allow;
     if (Array.isArray(allowList)) {
       // Filter patterns for this tool
-      const toolPatterns = allowList.filter(pattern => 
-        pattern === toolName || pattern.startsWith(`${toolName}(`)
+      const toolPatterns = allowList.filter(
+        (pattern) => pattern === toolName || pattern.startsWith(`${toolName}(`),
       );
       patterns.push(...toolPatterns);
     }
   }
-  
+
   return patterns;
 }
 
-function extractFilePaths(tool_name: string, tool_input: any): string[] {
+function extractFilePaths(
+  tool_name: string,
+  tool_input: Record<string, unknown>,
+): string[] {
   const paths: string[] = [];
 
   switch (tool_name) {
     case "Read":
     case "NotebookRead":
       if (tool_input.file_path || tool_input.notebook_path) {
-        paths.push(tool_input.file_path || tool_input.notebook_path);
+        paths.push(
+          (tool_input.file_path as string) ||
+            (tool_input.notebook_path as string),
+        );
       }
       break;
 
     case "Write":
       if (tool_input.file_path) {
-        paths.push(tool_input.file_path);
+        paths.push(tool_input.file_path as string);
       }
       break;
 
@@ -185,34 +204,38 @@ function extractFilePaths(tool_name: string, tool_input: any): string[] {
     case "MultiEdit":
     case "NotebookEdit":
       if (tool_input.file_path || tool_input.notebook_path) {
-        paths.push(tool_input.file_path || tool_input.notebook_path);
+        paths.push(
+          (tool_input.file_path as string) ||
+            (tool_input.notebook_path as string),
+        );
       }
       break;
 
     case "LS":
       if (tool_input.path) {
-        paths.push(tool_input.path);
+        paths.push(tool_input.path as string);
       }
       break;
 
     case "Glob":
       if (tool_input.path) {
-        paths.push(tool_input.path);
+        paths.push(tool_input.path as string);
       }
       break;
 
     case "Grep":
       if (tool_input.path) {
-        paths.push(tool_input.path);
+        paths.push(tool_input.path as string);
       }
       break;
 
-    case "Bash":
+    case "Bash": {
       // For Bash commands, try to extract file paths from the command
-      const command = tool_input.command || "";
+      const command = (tool_input.command as string) || "";
       const extractedPaths = extractPathsFromBashCommand(command);
       paths.push(...extractedPaths);
       break;
+    }
   }
 
   return paths.filter(Boolean);
@@ -229,7 +252,7 @@ function extractPathsFromBashCommand(command: string): string[] {
     // cat, head, tail, less, more
     /(?:cat|head|tail|less|more)\s+(?:["']?)([^\s"']+)(?:["']?)/g,
     // rm command (capture one or more path arguments, ignoring flags)
-    /(?:^|\s)rm\s+(?:-[^\s]+\s+)*([\w\./~][^\s"';|&]*)/g,
+    /(?:^|\s)rm\s+(?:-[^\s]+\s+)*([\w./~][^\s"';|&]*)/g,
     // cp, mv (source and destination)
     /(?:cp|mv)\s+(?:["']?)([^\s"']+)(?:["']?)\s+(?:["']?)([^\s"']+)(?:["']?)/g,
     // chmod, chown
@@ -278,11 +301,11 @@ function resolvePath(path: string): string {
 }
 
 function validatePath(
-  path: string, 
-  repoRoot: string, 
+  path: string,
+  repoRoot: string,
   toolName: string,
   additionalDirs: string[],
-  allowPatterns: string[]
+  allowPatterns: string[],
 ): PathValidationResult {
   const absPath = resolvePath(path);
   const homeDir = homedir();
@@ -296,9 +319,22 @@ function validatePath(
   }
 
   // 2. システムディレクトリ → 常に拒否（permissions.allowでも上書き不可）
-  const systemPaths = ["/etc", "/usr", "/var", "/opt", "/bin", "/sbin", "/lib", "/lib64", "/boot", "/proc", "/sys", "/dev"];
+  const systemPaths = [
+    "/etc",
+    "/usr",
+    "/var",
+    "/opt",
+    "/bin",
+    "/sbin",
+    "/lib",
+    "/lib64",
+    "/boot",
+    "/proc",
+    "/sys",
+    "/dev",
+  ];
   for (const systemPath of systemPaths) {
-    if (absPath.startsWith(systemPath + "/")) {
+    if (absPath.startsWith(`${systemPath}/`)) {
       return {
         isAllowed: false,
         resolvedPath: absPath,
@@ -308,13 +344,9 @@ function validatePath(
   }
 
   // 3. 常に許可する安全なパス
-  const alwaysSafePaths = [
-    join(homeDir, ".claude"),
-    "/tmp",
-    "/var/tmp"
-  ];
+  const alwaysSafePaths = [join(homeDir, ".claude"), "/tmp", "/var/tmp"];
   for (const safePath of alwaysSafePaths) {
-    if (absPath.startsWith(safePath + "/") || absPath === safePath) {
+    if (absPath.startsWith(`${safePath}/`) || absPath === safePath) {
       return {
         isAllowed: true,
         resolvedPath: absPath,
@@ -333,7 +365,11 @@ function validatePath(
           resolvedPath: absPath,
         };
       }
-      if (toolName === "Edit" || toolName === "Write" || toolName === "MultiEdit") {
+      if (
+        toolName === "Edit" ||
+        toolName === "Write" ||
+        toolName === "MultiEdit"
+      ) {
         // permissions.allowをチェック
         if (checkAllowPatterns(absPath, allowPatterns)) {
           return {
@@ -361,7 +397,10 @@ function validatePath(
   };
 }
 
-function checkAllowPatterns(filePath: string, allowPatterns: string[]): boolean {
+function checkAllowPatterns(
+  filePath: string,
+  allowPatterns: string[],
+): boolean {
   for (const pattern of allowPatterns) {
     // Extract path pattern from tool pattern like "Read(path/pattern)"
     const match = pattern.match(/^[^(]+\((.+)\)$/);

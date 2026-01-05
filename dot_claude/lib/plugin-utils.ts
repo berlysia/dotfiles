@@ -3,8 +3,8 @@
  * Manages plugin dependencies and tracks installed plugins
  */
 
-import { existsSync, readFileSync } from "fs";
-import { join } from "path";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
 // File paths for plugin management
 export const PLUGIN_DEPENDENCIES_PATH = join(

@@ -5,8 +5,7 @@
  * Processes command execution logs and generates usage statistics
  */
 
-import * as fs from "fs";
-import * as path from "path";
+import * as fs from "node:fs";
 
 interface LogEntry {
   timestamp: string;
@@ -80,7 +79,7 @@ class CommandStatsGenerator {
    */
   parseTimingMs(timingStr: string): number {
     const match = timingStr.match(/(\d+)ms/);
-    return match && match[1] ? parseInt(match[1], 10) : 0;
+    return match?.[1] ? parseInt(match[1], 10) : 0;
   }
 
   /**

@@ -1,9 +1,9 @@
 #!/usr/bin/env -S bun run --silent
 
-import { defineHook } from "cc-hooks-ts";
-import { existsSync } from "node:fs";
 import { execSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { extname } from "node:path";
+import { defineHook } from "cc-hooks-ts";
 import "../types/tool-schemas.ts";
 
 /**
@@ -64,14 +64,17 @@ interface FormatResult {
 /**
  * Extract file path from tool input
  */
-function extractFilePath(tool_name: string, tool_input: any): string | null {
+function extractFilePath(
+  tool_name: string,
+  tool_input: Record<string, unknown>,
+): string | null {
   switch (tool_name) {
     case "Write":
-      return tool_input.file_path || null;
+      return (tool_input.file_path as string) || null;
 
     case "Edit":
     case "MultiEdit":
-      return tool_input.file_path || null;
+      return (tool_input.file_path as string) || null;
 
     default:
       return null;
@@ -169,7 +172,7 @@ function attemptFormat(filePath: string): FormatResult {
     // PNPX biome
     if (commandExists("pnpx") && existsSync("package.json")) {
       try {
-        const packageJson = require(process.cwd() + "/package.json");
+        const packageJson = require(`${process.cwd()}/package.json`);
         if (
           packageJson.dependencies?.["@biomejs/biome"] ||
           packageJson.devDependencies?.["@biomejs/biome"]
@@ -223,10 +226,10 @@ function attemptFormat(filePath: string): FormatResult {
     // PNPX prettier
     if (commandExists("pnpx") && existsSync("package.json")) {
       try {
-        const packageJson = require(process.cwd() + "/package.json");
+        const packageJson = require(`${process.cwd()}/package.json`);
         if (
-          packageJson.dependencies?.["prettier"] ||
-          packageJson.devDependencies?.["prettier"]
+          packageJson.dependencies?.prettier ||
+          packageJson.devDependencies?.prettier
         ) {
           if (execFormatter("pnpx prettier --write $FILE", filePath)) {
             return { success: true, formatter: "prettier (pnpx)" };

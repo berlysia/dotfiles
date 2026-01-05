@@ -5,7 +5,7 @@
 import type { ToolSchema } from "cc-hooks-ts";
 
 // Meta commands that can execute other commands
-const META_COMMANDS = {
+const _META_COMMANDS = {
   sh: [/-c\s+['"](.+?)['"]/, /(.+)/],
   bash: [/-c\s+['"](.+?)['"]/, /(.+)/],
   zsh: [/-c\s+['"](.+?)['"]/, /(.+)/],
@@ -55,13 +55,15 @@ export function checkDangerousCommand(cmd: string): {
   const dangerousPatterns = [
     {
       // Match rm with recursive and force flags, variable substitution (immediate deny - unpredictable)
-      pattern: /rm\s+(?=.*(?:-[fr]*r|--recursive))(?=.*(?:-[rf]*f|--force)).*\s+[{\$]/,
+      pattern:
+        /rm\s+(?=.*(?:-[fr]*r|--recursive))(?=.*(?:-[rf]*f|--force)).*\s+[{$]/,
       reason: "rm -rf with variable substitution is too dangerous",
       requiresReview: false,
     },
     {
       // Match rm with recursive and force flags, targeting system directories (immediate deny)
-      pattern: /rm\s+(?=.*(?:-[fr]*r|--recursive))(?=.*(?:-[rf]*f|--force)).*\s+\//,
+      pattern:
+        /rm\s+(?=.*(?:-[fr]*r|--recursive))(?=.*(?:-[rf]*f|--force)).*\s+\//,
       reason: "Dangerous system deletion",
       requiresReview: false,
     },
@@ -88,7 +90,8 @@ export function checkDangerousCommand(cmd: string): {
     },
     {
       pattern: /git\s+.*--no-gpg-sign/,
-      reason: "Git command with --no-gpg-sign bypasses GPG signature verification",
+      reason:
+        "Git command with --no-gpg-sign bypasses GPG signature verification",
       requiresReview: true,
     },
   ];
@@ -172,14 +175,14 @@ export function getFilePathFromToolInput(
     return filePath;
   } else if (tool_name === "Grep" || tool_name === "Search") {
     // Grep and Search require explicit path parameter for security
-    return ("path" in tool_input && typeof tool_input.path === "string"
+    return "path" in tool_input && typeof tool_input.path === "string"
       ? tool_input.path
-      : undefined);
+      : undefined;
   } else if (tool_name === "Glob") {
     // Glob uses pattern parameter as the path for pattern matching
-    return ("pattern" in tool_input && typeof tool_input.pattern === "string"
+    return "pattern" in tool_input && typeof tool_input.pattern === "string"
       ? tool_input.pattern
-      : undefined);
+      : undefined;
   }
   return undefined;
 }

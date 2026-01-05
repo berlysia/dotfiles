@@ -3,7 +3,7 @@
  * claude-companionの実行状態を検出するユーティリティ
  */
 
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync } from "node:fs";
 import { $ } from "dax";
 
 export interface ClaudeCompanionStatus {

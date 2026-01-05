@@ -1,16 +1,15 @@
 #!/usr/bin/env node --test
 
-import { describe, it, beforeEach, afterEach } from "node:test";
-import { strictEqual, deepStrictEqual, ok } from "node:assert";
-import {
-  defineHook,
-  createFileSystemMock,
-  ConsoleCapture,
-  EnvironmentHelper,
-  createPreToolUseContext,
-} from "./test-helpers.ts";
+import { deepStrictEqual, ok, strictEqual } from "node:assert";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import denyNodeModulesHook from "../../implementations/deny-node-modules.ts";
-import { invokeRun } from "./test-helpers.ts";
+import {
+  ConsoleCapture,
+  createPreToolUseContext,
+  defineHook,
+  EnvironmentHelper,
+  invokeRun,
+} from "./test-helpers.ts";
 
 describe("deny-node-modules.ts hook behavior", () => {
   const consoleCapture = new ConsoleCapture();

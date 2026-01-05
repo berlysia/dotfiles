@@ -1,7 +1,7 @@
 #!/usr/bin/env node --test
 
-import { describe, it, beforeEach } from "node:test";
-import { strictEqual, deepStrictEqual, ok } from "node:assert";
+import { deepStrictEqual, ok, strictEqual } from "node:assert";
+import { describe, it } from "node:test";
 
 describe("notification.ts hook behavior", () => {
   describe("hook configuration", () => {
@@ -182,7 +182,7 @@ describe("notification.ts hook behavior", () => {
       await Promise.allSettled(operations);
 
       // Verify all operations started before any ended
-      const firstEndIndex = executionOrder.findIndex((op) =>
+      const _firstEndIndex = executionOrder.findIndex((op) =>
         op.includes("-end"),
       );
       const allStarts = executionOrder.slice(0, 3);
@@ -229,28 +229,28 @@ describe("notification.ts hook behavior", () => {
 
       // Verify Stop event message
       strictEqual(
-        typeof eventMessages["Stop"],
+        typeof eventMessages.Stop,
         "string",
         "Should have Stop message",
       );
 
       // Verify Notification event message
       strictEqual(
-        typeof eventMessages["Notification"],
+        typeof eventMessages.Notification,
         "string",
         "Should have Notification message",
       );
 
       // Verify Error event message
       strictEqual(
-        eventMessages["Error"],
+        eventMessages.Error,
         "エラーが発生しました",
         "Should have Error message in Japanese",
       );
 
       // Verify default message
       strictEqual(
-        eventMessages["Unknown"],
+        eventMessages.Unknown,
         "Claude Codeイベントが発生しました",
         "Should have default message in Japanese",
       );

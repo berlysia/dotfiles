@@ -2,21 +2,16 @@
  * Common test helpers and mocks for cc-hooks-ts hook testing
  */
 
-import { strictEqual, deepStrictEqual } from "node:assert";
-import {
-  defineHook as originalDefineHook,
-  type ExtractAllHookInputsForEvent,
-  type ToolSchema,
-} from "cc-hooks-ts";
+import { deepStrictEqual, strictEqual } from "node:assert";
 import type {
-  BuiltinToolName,
-  PreToolUseHookInput,
-  PostToolUseHookInput,
-} from "../../types/project-types.ts";
+  ExtractAllHookInputsForEvent,
+  defineHook as originalDefineHook,
+  ToolSchema,
+} from "cc-hooks-ts";
 import {
+  createAllowResponse,
   createAskResponse,
   createDenyResponse,
-  createAllowResponse,
 } from "../../lib/context-helpers.ts";
 
 // Extend ToolSchema to include Search tool (not yet in cc-hooks-ts)
@@ -197,8 +192,16 @@ export class MockHookContext<TTrigger extends HookTrigger> {
   }
 
   assertPass() {
-    strictEqual(this.successCalls.length, 1, "success() should be called once for pass");
-    strictEqual(this.jsonCalls.length, 0, "json() should not be called for pass");
+    strictEqual(
+      this.successCalls.length,
+      1,
+      "success() should be called once for pass",
+    );
+    strictEqual(
+      this.jsonCalls.length,
+      0,
+      "json() should not be called for pass",
+    );
     strictEqual(this.failCalls.length, 0, "fail() should not be called");
   }
 
@@ -264,7 +267,7 @@ export function createPreToolUseContextFor<
   Name extends keyof ExtendedToolSchema,
   Input,
 >(
-  hook: H,
+  _hook: H,
   tool_name: Name,
   tool_input: Input,
 ): Parameters<H["run"]>[0] & MockHookContext<{ PreToolUse: true }> {
@@ -288,7 +291,7 @@ export function createPostToolUseContextFor<
   Input,
   Response,
 >(
-  hook: H,
+  _hook: H,
   tool_name: Name,
   tool_input: Input,
   tool_response: Response,
@@ -334,7 +337,7 @@ export function createFileSystemMock(): FileSystemMock {
       files.set(path, existing + content);
     },
 
-    readFileSync(path: string, encoding?: string): string {
+    readFileSync(path: string, _encoding?: string): string {
       if (!files.has(path)) {
         const error: any = new Error(
           `ENOENT: no such file or directory, open '${path}'`,

@@ -92,7 +92,10 @@ export function expandTilde(path: string): string {
  * expandRelativePath("/absolute/path")        // → "/absolute/path"
  * expandRelativePath("src/file.ts", "/base") // → "/base/src/file.ts"
  */
-export function expandRelativePath(path: string, base: string = process.cwd()): string {
+export function expandRelativePath(
+  path: string,
+  base: string = process.cwd(),
+): string {
   // Already absolute or tilde path
   if (path.startsWith("/") || path.startsWith("~/")) {
     return path;
@@ -130,7 +133,7 @@ export function normalizePath(
     expandTilde?: boolean;
     expandRelative?: boolean;
     makeAbsolute?: boolean;
-  } = {}
+  } = {},
 ): NormalizedPath {
   const {
     expandTilde: shouldExpandTilde = true,
@@ -212,7 +215,7 @@ export function normalizePathForMatching(
   pattern: string,
   options: {
     avoidGitignorePatterns?: boolean;
-  } = {}
+  } = {},
 ): NormalizedPath {
   const { avoidGitignorePatterns = true } = options;
 
@@ -268,7 +271,7 @@ export function normalizePattern(
   pattern: string,
   options: {
     preserveGitignorePatterns?: boolean;
-  } = {}
+  } = {},
 ): NormalizedPattern {
   const { preserveGitignorePatterns = true } = options;
 

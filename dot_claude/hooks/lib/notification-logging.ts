@@ -1,6 +1,6 @@
 import * as fs from "node:fs/promises";
-import * as path from "node:path";
 import { homedir } from "node:os";
+import * as path from "node:path";
 
 export interface HookLogEntry {
   timestamp: string;
@@ -8,7 +8,7 @@ export interface HookLogEntry {
   session_id?: string;
   user: string;
   cwd: string;
-  [key: string]: any; // 追加フィールドも許可
+  [key: string]: unknown; // 追加フィールドも許可
 }
 
 // ログファイルパス
@@ -27,7 +27,7 @@ export async function ensureLogDir(): Promise<void> {
 export async function logEvent(
   eventType: string,
   sessionId?: string,
-  additionalData?: Record<string, any>,
+  additionalData?: Record<string, unknown>,
 ): Promise<void> {
   const entry: HookLogEntry = {
     timestamp: new Date().toISOString(),
@@ -41,7 +41,7 @@ export async function logEvent(
   try {
     await ensureLogDir();
     const logFile = getLogFilePath();
-    await fs.appendFile(logFile, JSON.stringify(entry) + "\n");
+    await fs.appendFile(logFile, `${JSON.stringify(entry)}\n`);
   } catch (error) {
     // エラーは握りつぶす（既存の動作と同じ）
     console.error(`Failed to log event: ${error}`);

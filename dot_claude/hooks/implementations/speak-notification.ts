@@ -7,13 +7,14 @@
 
 import { defineHook } from "cc-hooks-ts";
 import {
+  cleanupOldFiles,
+  cleanupSession,
   createAudioEngine,
   handleNotification,
   handleStop,
-  cleanupSession,
-  cleanupOldFiles,
 } from "../../lib/unified-audio-engine.ts";
 import { logEvent } from "../lib/centralized-logging.ts";
+
 const hook = defineHook({
   trigger: {
     Notification: true,

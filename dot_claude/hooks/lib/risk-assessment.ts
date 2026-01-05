@@ -3,19 +3,19 @@
  * Enum-based risk evaluation for permission patterns
  */
 
-import { resolve } from 'node:path';
-import { homedir } from 'node:os';
+import { homedir } from "node:os";
+import { resolve } from "node:path";
 
 function resolvePatternPath(pattern: string, cwd: string): string {
-  const path = pattern.match(/[^(]+\(([^)]+)\)/)?.[1] || '';
+  const path = pattern.match(/[^(]+\(([^)]+)\)/)?.[1] || "";
 
-  const pathWithoutGlob = path.replace(/\/?\*+.*$/, '');
+  const pathWithoutGlob = path.replace(/\/?\*+.*$/, "");
 
-  if (pathWithoutGlob.startsWith('~/')) {
+  if (pathWithoutGlob.startsWith("~/")) {
     return resolve(homedir(), pathWithoutGlob.slice(2));
   }
 
-  if (pathWithoutGlob.startsWith('/')) {
+  if (pathWithoutGlob.startsWith("/")) {
     return pathWithoutGlob;
   }
 
@@ -23,14 +23,14 @@ function resolvePatternPath(pattern: string, cwd: string): string {
 }
 
 export const RiskLevel = {
-  MINIMAL: 'minimal',
-  LOW: 'low',
-  MEDIUM: 'medium',
-  HIGH: 'high',
-  CRITICAL: 'critical'
+  MINIMAL: "minimal",
+  LOW: "low",
+  MEDIUM: "medium",
+  HIGH: "high",
+  CRITICAL: "critical",
 } as const;
 
-export type RiskLevel = typeof RiskLevel[keyof typeof RiskLevel];
+export type RiskLevel = (typeof RiskLevel)[keyof typeof RiskLevel];
 
 export interface RiskAssessment {
   level: RiskLevel;
@@ -40,59 +40,70 @@ export interface RiskAssessment {
 }
 
 export function evaluateTargetRisk(pattern: string): RiskAssessment {
-  const path = pattern.match(/[^(]+\(([^)]+)\)/)?.[1] || '';
+  const path = pattern.match(/[^(]+\(([^)]+)\)/)?.[1] || "";
 
-  if (path.includes('/.ssh/') || path.endsWith('/id_rsa') || path.endsWith('/id_dsa') || path.endsWith('/id_ecdsa') || path.endsWith('/id_ed25519')) {
+  if (
+    path.includes("/.ssh/") ||
+    path.endsWith("/id_rsa") ||
+    path.endsWith("/id_dsa") ||
+    path.endsWith("/id_ecdsa") ||
+    path.endsWith("/id_ed25519")
+  ) {
     return {
       level: RiskLevel.CRITICAL,
       category: "target",
       reason: "SSH秘密鍵ファイルへのアクセス",
-      mitigationPossible: false
+      mitigationPossible: false,
     };
   }
 
-  if (path.includes('/.aws/credentials') || path.includes('/.aws/config')) {
+  if (path.includes("/.aws/credentials") || path.includes("/.aws/config")) {
     return {
       level: RiskLevel.CRITICAL,
       category: "target",
       reason: "AWS認証情報ファイルへのアクセス",
-      mitigationPossible: false
+      mitigationPossible: false,
     };
   }
 
-  if (path.includes('/.gnupg/')) {
+  if (path.includes("/.gnupg/")) {
     return {
       level: RiskLevel.CRITICAL,
       category: "target",
       reason: "GPG秘密鍵ディレクトリへのアクセス",
-      mitigationPossible: false
+      mitigationPossible: false,
     };
   }
 
-  if (path === '/etc/shadow' || path === '/etc/passwd') {
+  if (path === "/etc/shadow" || path === "/etc/passwd") {
     return {
       level: RiskLevel.CRITICAL,
       category: "target",
       reason: "システムパスワードファイルへのアクセス",
-      mitigationPossible: false
+      mitigationPossible: false,
     };
   }
 
-  if (path.endsWith('.key') || path.endsWith('.pem') || path.endsWith('.pfx') || path.endsWith('.p12')) {
+  if (
+    path.endsWith(".key") ||
+    path.endsWith(".pem") ||
+    path.endsWith(".pfx") ||
+    path.endsWith(".p12")
+  ) {
     return {
       level: RiskLevel.CRITICAL,
       category: "target",
       reason: "秘密鍵ファイル拡張子",
-      mitigationPossible: false
+      mitigationPossible: false,
     };
   }
 
-  if (path.endsWith('.env') || path.includes('/.env.')) {
+  if (path.endsWith(".env") || path.includes("/.env.")) {
     return {
       level: RiskLevel.HIGH,
       category: "target",
       reason: "環境変数ファイルへのアクセス",
-      mitigationPossible: true
+      mitigationPossible: true,
     };
   }
 
@@ -100,66 +111,78 @@ export function evaluateTargetRisk(pattern: string): RiskAssessment {
     level: RiskLevel.MINIMAL,
     category: "target",
     reason: "通常ファイル",
-    mitigationPossible: false
+    mitigationPossible: false,
   };
 }
 
-export function evaluateScopeRisk(pattern: string, cwd = process.cwd()): RiskAssessment {
+export function evaluateScopeRisk(
+  pattern: string,
+  cwd = process.cwd(),
+): RiskAssessment {
   const resolvedPath = resolvePatternPath(pattern, cwd);
   const homeDir = homedir();
 
-  if (resolvedPath.startsWith('/etc/') || resolvedPath.startsWith('/usr/') || resolvedPath === '/etc' || resolvedPath === '/usr') {
+  if (
+    resolvedPath.startsWith("/etc/") ||
+    resolvedPath.startsWith("/usr/") ||
+    resolvedPath === "/etc" ||
+    resolvedPath === "/usr"
+  ) {
     return {
       level: RiskLevel.CRITICAL,
       category: "scope",
       reason: "システムディレクトリへのアクセス",
-      mitigationPossible: false
+      mitigationPossible: false,
     };
   }
 
-  if (resolvedPath === homeDir || pattern.includes('~/**')) {
+  if (resolvedPath === homeDir || pattern.includes("~/**")) {
     return {
       level: RiskLevel.CRITICAL,
       category: "scope",
       reason: "ホームディレクトリ全体への無制限アクセス",
-      mitigationPossible: false
+      mitigationPossible: false,
     };
   }
 
-  const workspacePath = homeDir + '/workspace';
-  if ((resolvedPath === workspacePath || resolvedPath.startsWith(workspacePath + '/')) && pattern.includes('**')) {
+  const workspacePath = `${homeDir}/workspace`;
+  if (
+    (resolvedPath === workspacePath ||
+      resolvedPath.startsWith(`${workspacePath}/`)) &&
+    pattern.includes("**")
+  ) {
     if (resolvedPath === workspacePath) {
       return {
         level: RiskLevel.HIGH,
         category: "scope",
         reason: "全ワークスペースへのアクセス",
-        mitigationPossible: true
+        mitigationPossible: true,
       };
     } else {
       return {
         level: RiskLevel.MEDIUM,
         category: "scope",
         reason: "特定プロジェクト全体へのアクセス",
-        mitigationPossible: true
+        mitigationPossible: true,
       };
     }
   }
 
-  if (resolvedPath.startsWith(cwd + '/') || resolvedPath === cwd) {
+  if (resolvedPath.startsWith(`${cwd}/`) || resolvedPath === cwd) {
     return {
       level: RiskLevel.LOW,
       category: "scope",
       reason: "プロジェクト内の相対パス",
-      mitigationPossible: false
+      mitigationPossible: false,
     };
   }
 
-  if (!pattern.includes('*')) {
+  if (!pattern.includes("*")) {
     return {
       level: RiskLevel.MINIMAL,
       category: "scope",
       reason: "特定ファイルのみ",
-      mitigationPossible: false
+      mitigationPossible: false,
     };
   }
 
@@ -167,46 +190,51 @@ export function evaluateScopeRisk(pattern: string, cwd = process.cwd()): RiskAss
     level: RiskLevel.LOW,
     category: "scope",
     reason: "限定的なスコープ",
-    mitigationPossible: false
+    mitigationPossible: false,
   };
 }
 
 export function evaluateOperationRisk(pattern: string): RiskAssessment {
-  const toolName = pattern.match(/^([^(]+)/)?.[1] || '';
+  const toolName = pattern.match(/^([^(]+)/)?.[1] || "";
 
   // 読み取り専用操作
-  if (toolName === 'Read' || toolName === 'Glob' || toolName === 'LS' || toolName === 'Grep') {
+  if (
+    toolName === "Read" ||
+    toolName === "Glob" ||
+    toolName === "LS" ||
+    toolName === "Grep"
+  ) {
     return {
       level: RiskLevel.MINIMAL,
       category: "operation",
       reason: "読み取り専用操作",
-      mitigationPossible: false
+      mitigationPossible: false,
     };
   }
 
   // 編集操作
-  if (toolName === 'Edit' || toolName === 'MultiEdit') {
+  if (toolName === "Edit" || toolName === "MultiEdit") {
     return {
       level: RiskLevel.MEDIUM,
       category: "operation",
       reason: "ファイル編集操作",
-      mitigationPossible: true
+      mitigationPossible: true,
     };
   }
 
   // 書き込み操作
-  if (toolName === 'Write') {
+  if (toolName === "Write") {
     return {
       level: RiskLevel.HIGH,
       category: "operation",
       reason: "ファイル作成/上書き操作",
-      mitigationPossible: true
+      mitigationPossible: true,
     };
   }
 
   // Bashコマンド
-  if (toolName === 'Bash') {
-    const command = pattern.match(/Bash\(([^)]+)\)/)?.[1] || '';
+  if (toolName === "Bash") {
+    const command = pattern.match(/Bash\(([^)]+)\)/)?.[1] || "";
 
     // 破壊的コマンド
     if (command.match(/^(rm -rf|sudo|dd|mkfs)/)) {
@@ -214,7 +242,7 @@ export function evaluateOperationRisk(pattern: string): RiskAssessment {
         level: RiskLevel.CRITICAL,
         category: "operation",
         reason: "破壊的コマンド実行",
-        mitigationPossible: false
+        mitigationPossible: false,
       };
     }
 
@@ -224,7 +252,7 @@ export function evaluateOperationRisk(pattern: string): RiskAssessment {
         level: RiskLevel.LOW,
         category: "operation",
         reason: "安全な読み取りコマンド",
-        mitigationPossible: false
+        mitigationPossible: false,
       };
     }
 
@@ -234,7 +262,7 @@ export function evaluateOperationRisk(pattern: string): RiskAssessment {
         level: RiskLevel.LOW,
         category: "operation",
         reason: "Git読み取り専用コマンド",
-        mitigationPossible: false
+        mitigationPossible: false,
       };
     }
 
@@ -244,7 +272,7 @@ export function evaluateOperationRisk(pattern: string): RiskAssessment {
         level: RiskLevel.LOW,
         category: "operation",
         reason: "パッケージ情報取得コマンド",
-        mitigationPossible: false
+        mitigationPossible: false,
       };
     }
 
@@ -254,7 +282,7 @@ export function evaluateOperationRisk(pattern: string): RiskAssessment {
         level: RiskLevel.LOW,
         category: "operation",
         reason: "テスト実行コマンド",
-        mitigationPossible: false
+        mitigationPossible: false,
       };
     }
 
@@ -264,17 +292,21 @@ export function evaluateOperationRisk(pattern: string): RiskAssessment {
         level: RiskLevel.MEDIUM,
         category: "operation",
         reason: "ビルド・スクリプト実行コマンド",
-        mitigationPossible: true
+        mitigationPossible: true,
       };
     }
 
     // パッケージ管理コマンド（変更を伴うが制御可能）
-    if (command.match(/^(pnpm (add|remove|install|update)|npm (install|uninstall)):/)) {
+    if (
+      command.match(
+        /^(pnpm (add|remove|install|update)|npm (install|uninstall)):/,
+      )
+    ) {
       return {
         level: RiskLevel.MEDIUM,
         category: "operation",
         reason: "パッケージ管理コマンド",
-        mitigationPossible: true
+        mitigationPossible: true,
       };
     }
 
@@ -283,7 +315,7 @@ export function evaluateOperationRisk(pattern: string): RiskAssessment {
       level: RiskLevel.HIGH,
       category: "operation",
       reason: "一般的なシェルコマンド実行",
-      mitigationPossible: true
+      mitigationPossible: true,
     };
   }
 
@@ -292,11 +324,15 @@ export function evaluateOperationRisk(pattern: string): RiskAssessment {
     level: RiskLevel.MEDIUM,
     category: "operation",
     reason: "未分類の操作",
-    mitigationPossible: false
+    mitigationPossible: false,
   };
 }
 
-export function combineRiskLevels(scope: RiskLevel, operation: RiskLevel, target: RiskLevel): RiskLevel {
+export function combineRiskLevels(
+  scope: RiskLevel,
+  operation: RiskLevel,
+  target: RiskLevel,
+): RiskLevel {
   const levels = [scope, operation, target];
 
   // いずれかがCRITICALなら全体もCRITICAL
@@ -305,7 +341,7 @@ export function combineRiskLevels(scope: RiskLevel, operation: RiskLevel, target
   }
 
   // HIGHが2つ以上ならCRITICAL
-  if (levels.filter(l => l === RiskLevel.HIGH).length >= 2) {
+  if (levels.filter((l) => l === RiskLevel.HIGH).length >= 2) {
     return RiskLevel.CRITICAL;
   }
 
@@ -315,7 +351,7 @@ export function combineRiskLevels(scope: RiskLevel, operation: RiskLevel, target
   }
 
   // MEDIUMが2つ以上ならHIGH
-  if (levels.filter(l => l === RiskLevel.MEDIUM).length >= 2) {
+  if (levels.filter((l) => l === RiskLevel.MEDIUM).length >= 2) {
     return RiskLevel.HIGH;
   }
 

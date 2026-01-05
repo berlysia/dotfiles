@@ -6,15 +6,15 @@
  * Usage: speak-notification.ts {Notification|Stop|Error} [custom_message]
  */
 
+import { checkClaudeCompanionStatus } from "../lib/claude-companion-detector.ts";
 import {
+  cleanupSession,
   createAudioEngine,
+  handleError,
   handleNotification,
   handleStop,
-  handleError,
   speakNotification,
-  cleanupSession,
 } from "../lib/unified-audio-engine.ts";
-import { checkClaudeCompanionStatus } from "../lib/claude-companion-detector.ts";
 
 async function main() {
   const args = process.argv.slice(2);

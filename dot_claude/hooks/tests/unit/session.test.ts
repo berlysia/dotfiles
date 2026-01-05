@@ -1,16 +1,16 @@
 #!/usr/bin/env node --test
 
-import { describe, it, beforeEach, afterEach } from "node:test";
-import { strictEqual, deepStrictEqual, ok, match } from "node:assert";
+import { deepStrictEqual, ok, strictEqual } from "node:assert";
 import {
-  mkdirSync,
-  rmSync,
-  readFileSync,
-  existsSync,
   appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { tmpdir, homedir } from "node:os";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import { createSessionStartContext } from "./test-helpers.ts";
 
 describe("session.ts hook behavior", () => {
@@ -44,7 +44,7 @@ describe("session.ts hook behavior", () => {
         cwd: process.cwd(),
       };
 
-      const logLine = JSON.stringify(logEntry) + "\n";
+      const logLine = `${JSON.stringify(logEntry)}\n`;
 
       // Write to test file
       appendFileSync(logFile, logLine);
@@ -72,7 +72,7 @@ describe("session.ts hook behavior", () => {
           user: "testuser",
           cwd: "/test/dir",
         };
-        appendFileSync(logFile, JSON.stringify(logEntry) + "\n");
+        appendFileSync(logFile, `${JSON.stringify(logEntry)}\n`);
       }
 
       // Read and verify
@@ -96,7 +96,7 @@ describe("session.ts hook behavior", () => {
         cwd: "/path/with\\backslash",
       };
 
-      const logLine = JSON.stringify(logEntry) + "\n";
+      const logLine = `${JSON.stringify(logEntry)}\n`;
       appendFileSync(logFile, logLine);
 
       // Read and parse back
@@ -179,7 +179,7 @@ describe("session.ts hook behavior", () => {
       };
 
       // Would normally write to log
-      appendFileSync(logFile, JSON.stringify(logEntry) + "\n");
+      appendFileSync(logFile, `${JSON.stringify(logEntry)}\n`);
 
       // Simulate success response
       const result = mockContext.success({

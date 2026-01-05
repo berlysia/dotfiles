@@ -1,16 +1,16 @@
 #!/usr/bin/env node --test
 
-import { describe, it, beforeEach, afterEach } from "node:test";
-import { strictEqual, deepStrictEqual, ok } from "node:assert";
+import { deepStrictEqual, ok, strictEqual } from "node:assert";
 import {
-  mkdirSync,
-  rmSync,
-  readFileSync,
-  existsSync,
   appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
 } from "node:fs";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, it } from "node:test";
 
 describe("command-logger.ts hook behavior", () => {
   let testDir: string;
@@ -60,7 +60,7 @@ describe("command-logger.ts hook behavior", () => {
         description: mockInput.tool_input.description,
         session_id: mockInput.session_id,
       };
-      appendFileSync(toolUsageFile, JSON.stringify(structuredEntry) + "\n");
+      appendFileSync(toolUsageFile, `${JSON.stringify(structuredEntry)}\n`);
 
       // Verify command history log
       const commandHistory = readFileSync(commandHistoryFile, "utf-8");
@@ -92,7 +92,7 @@ describe("command-logger.ts hook behavior", () => {
         description: "Multi-line command",
       };
 
-      appendFileSync(toolUsageFile, JSON.stringify(structuredEntry) + "\n");
+      appendFileSync(toolUsageFile, `${JSON.stringify(structuredEntry)}\n`);
 
       const content = readFileSync(toolUsageFile, "utf-8");
       const parsed = JSON.parse(content.trim());
@@ -109,7 +109,7 @@ describe("command-logger.ts hook behavior", () => {
         description: "",
       };
 
-      appendFileSync(toolUsageFile, JSON.stringify(structuredEntry) + "\n");
+      appendFileSync(toolUsageFile, `${JSON.stringify(structuredEntry)}\n`);
 
       const content = readFileSync(toolUsageFile, "utf-8");
       const parsed = JSON.parse(content.trim());
@@ -129,7 +129,7 @@ describe("command-logger.ts hook behavior", () => {
         session_id: "test-session-789",
       };
 
-      appendFileSync(toolUsageFile, JSON.stringify(structuredEntry) + "\n");
+      appendFileSync(toolUsageFile, `${JSON.stringify(structuredEntry)}\n`);
 
       const content = readFileSync(toolUsageFile, "utf-8");
       const parsed = JSON.parse(content.trim());
@@ -148,7 +148,7 @@ describe("command-logger.ts hook behavior", () => {
         description: "Auto-format triggered",
       };
 
-      appendFileSync(toolUsageFile, JSON.stringify(structuredEntry) + "\n");
+      appendFileSync(toolUsageFile, `${JSON.stringify(structuredEntry)}\n`);
 
       const content = readFileSync(toolUsageFile, "utf-8");
       const parsed = JSON.parse(content.trim());
@@ -166,7 +166,7 @@ describe("command-logger.ts hook behavior", () => {
         description: "Auto-format triggered",
       };
 
-      appendFileSync(toolUsageFile, JSON.stringify(structuredEntry) + "\n");
+      appendFileSync(toolUsageFile, `${JSON.stringify(structuredEntry)}\n`);
 
       const content = readFileSync(toolUsageFile, "utf-8");
       const parsed = JSON.parse(content.trim());
@@ -187,7 +187,7 @@ describe("command-logger.ts hook behavior", () => {
           command: `command-${i}`,
           description: `Description ${i}`,
         };
-        appendFileSync(toolUsageFile, JSON.stringify(entry) + "\n");
+        appendFileSync(toolUsageFile, `${JSON.stringify(entry)}\n`);
       }
 
       // Read and verify each line is valid JSON
@@ -288,7 +288,7 @@ describe("command-logger.ts hook behavior", () => {
           description: mockContext.input.tool_input.description,
           session_id: mockContext.input.session_id,
         };
-        appendFileSync(toolUsageFile, JSON.stringify(structuredEntry) + "\n");
+        appendFileSync(toolUsageFile, `${JSON.stringify(structuredEntry)}\n`);
       }
 
       // Verify success

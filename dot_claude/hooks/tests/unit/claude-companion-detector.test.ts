@@ -5,17 +5,21 @@
  * claude-companion検出機能のユニットテスト
  */
 
-import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert";
-import { existsSync, writeFileSync, unlinkSync, mkdirSync, rmSync } from "fs";
-import { dirname } from "path";
-import type { ClaudeCompanionStatus } from "../../../lib/claude-companion-detector.ts";
 import {
-  getDaemonPidFilePath,
-  parseDaemonPidFile,
-  isProcessRunning,
-  checkHealthEndpoint,
+  existsSync,
+  mkdirSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname } from "node:path";
+import { afterEach, beforeEach, describe, it } from "node:test";
+import {
   checkClaudeCompanionStatus,
+  getDaemonPidFilePath,
+  isProcessRunning,
+  parseDaemonPidFile,
 } from "../../../lib/claude-companion-detector.ts";
 
 describe("Claude Companion Detector", () => {

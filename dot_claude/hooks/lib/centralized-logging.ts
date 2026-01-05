@@ -7,23 +7,23 @@ import {
   appendFileSync,
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   renameSync,
-  readdirSync,
   statSync,
   unlinkSync,
 } from "node:fs";
-import { join, dirname, basename } from "node:path";
 import { homedir } from "node:os";
+import { basename, dirname, join } from "node:path";
 import type {
-  LogEntry,
-  LogCategory,
-  LogManagerConfig,
-  EventLogEntry,
-  CommandLogEntry,
-  ToolLogEntry,
-  DecisionLogEntry,
   BaseLogEntry,
+  CommandLogEntry,
+  DecisionLogEntry,
+  EventLogEntry,
+  LogCategory,
+  LogEntry,
+  LogManagerConfig,
+  ToolLogEntry,
 } from "../types/logging-types.ts";
 
 const DEFAULT_CONFIG: LogManagerConfig = {
@@ -60,7 +60,7 @@ class CentralizedLogger {
 
   private writeLog(category: LogCategory, entry: LogEntry): void {
     const logFile = this.getLogFilePath(category);
-    const logLine = JSON.stringify(entry) + "\n";
+    const logLine = `${JSON.stringify(entry)}\n`;
 
     try {
       appendFileSync(logFile, logLine);
@@ -78,7 +78,7 @@ class CentralizedLogger {
       "logs",
       "hooks.jsonl",
     );
-    const logLine = JSON.stringify(entry) + "\n";
+    const logLine = `${JSON.stringify(entry)}\n`;
 
     try {
       // Ensure directory exists
@@ -214,16 +214,16 @@ class CentralizedLogger {
     reason: string,
     sessionId?: string,
     command?: string,
-    input?: any,
+    input?: unknown,
   ): void {
     const entry: DecisionLogEntry = {
       ...this.createBaseEntry(),
       tool_name: toolName,
       decision,
       reason,
-      ...(sessionId && { session_id: sessionId }),
-      ...(command && { command }),
-      ...(input && { input }),
+      ...(sessionId ? { session_id: sessionId } : {}),
+      ...(command ? { command } : {}),
+      ...(input !== undefined ? { input } : {}),
     };
 
     this.writeLog("decisions", entry);
@@ -289,7 +289,7 @@ export function logDecision(
   reason: string,
   sessionId?: string,
   command?: string,
-  input?: any,
+  input?: unknown,
 ): void {
   getLogger().logDecision(
     toolName,

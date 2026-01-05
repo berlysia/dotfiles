@@ -3,9 +3,9 @@
 import { defineHook } from "cc-hooks-ts";
 import { createDenyResponse } from "../lib/context-helpers.ts";
 import {
-  isWriteInput,
   isEditInput,
   isMultiEditInput,
+  isWriteInput,
 } from "../types/project-types.ts";
 
 /**
@@ -94,9 +94,9 @@ function hasTsxUsage(content: string): boolean {
     return false;
   } catch {
     // Fallback to regex if JSON parsing fails
-    if (/\"scripts\"/.test(content)) {
+    if (/"scripts"/.test(content)) {
       const scriptSectionMatch = content.match(/"scripts"\s*:\s*\{([^}]*)\}/);
-      if (scriptSectionMatch && scriptSectionMatch[1]) {
+      if (scriptSectionMatch?.[1]) {
         const scriptContent = scriptSectionMatch[1];
         const scriptValuePattern = /"[^"]*":\s*"([^"]*)"/g;
         let match;
@@ -152,7 +152,7 @@ const hook = defineHook({
         filePath = tool_input.file_path;
         const edits = tool_input.edits || [];
         for (const edit of edits) {
-          contentToCheck += (edit.new_string || "") + "\n";
+          contentToCheck += `${edit.new_string || ""}\n`;
         }
       } else {
         return context.success({});

@@ -35,7 +35,7 @@ function extractRepoNameFromRemoteUrl(remoteUrl: string): string | null {
 
   for (const pattern of patterns) {
     const match = remoteUrl.match(pattern);
-    if (match && match[1]) {
+    if (match?.[1]) {
       return match[1];
     }
   }
@@ -87,7 +87,7 @@ async function getRemoteInfo(): Promise<GitRemoteInfo | null> {
 async function getRepoNameFromGitRoot(): Promise<string | null> {
   try {
     const gitRootPath = await $`git rev-parse --show-toplevel`.text();
-    if (gitRootPath && gitRootPath.trim()) {
+    if (gitRootPath?.trim()) {
       const pathParts = gitRootPath.trim().split("/");
       return pathParts[pathParts.length - 1] || null;
     }
@@ -132,7 +132,7 @@ export async function getGitContext(): Promise<GitContextInfo> {
     if (isRepository) {
       // Try to get repository name from remote origin
       const remoteInfo = await getRemoteInfo();
-      if (remoteInfo && remoteInfo.name) {
+      if (remoteInfo?.name) {
         repoName = remoteInfo.name;
         hasRemote = true;
       } else {
@@ -163,7 +163,7 @@ export async function getGitContext(): Promise<GitContextInfo> {
       hasRemote,
       containerType,
     };
-  } catch (error) {
+  } catch (_error) {
     // Ultimate fallback
     return {
       name: "unknown",
@@ -188,7 +188,7 @@ export async function getRepoName(): Promise<string> {
  */
 export function createContextMessage(
   context: GitContextInfo,
-  action: "confirm" | "complete" | "error"
+  action: "confirm" | "complete" | "error",
 ): string {
   const actionMessages = {
     confirm: "操作の確認が必要です",

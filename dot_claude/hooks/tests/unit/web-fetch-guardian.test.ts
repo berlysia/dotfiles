@@ -1,12 +1,12 @@
 #!/usr/bin/env node --test
 
-import { describe, it, beforeEach, afterEach } from "node:test";
-import { strictEqual, deepStrictEqual, ok } from "node:assert";
+import { deepStrictEqual, ok } from "node:assert";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import {
-  defineHook,
   ConsoleCapture,
-  EnvironmentHelper,
   createPreToolUseContext,
+  defineHook,
+  EnvironmentHelper,
   invokeRun,
 } from "./test-helpers.ts";
 

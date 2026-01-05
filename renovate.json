@@ -1,8 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": [
-    "github>berlysia/renovate-config"
-  ],
+  "extends": ["github>berlysia/renovate-config"],
   "mise": {
     "managerFilePatterns": ["^dot_config/mise/config\\.toml$"]
   }

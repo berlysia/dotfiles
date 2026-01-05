@@ -4,15 +4,15 @@
  */
 
 import { execSync } from "node:child_process";
-import { readFileSync, existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type {
-  ToolInput,
-  SettingsFile,
-  ProcessingContext,
   HookInput,
+  ProcessingContext,
+  SettingsFile,
   StopHookInput,
+  ToolInput,
 } from "../types/project-types.ts";
 
 /**
