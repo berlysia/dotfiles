@@ -1,0 +1,52 @@
+name: Lint GitHub Actions
+
+on:
+  push:
+    branches:
+      - master
+      - main
+    paths:
+      - '.github/workflows/**'
+      - '.github/actions/**'
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+      - '.github/actions/**'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
+        with:
+          persist-credentials: false
+
+      - name: Run actionlint
+        uses: reviewdog/action-actionlint@83e4ed25b168066ad8f62f5afbb29ebd8641d982 # v1.69.1
+        with:
+          reporter: github-pr-review
+          fail_level: error
+
+  zizmor:
+    name: zizmor
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
+        with:
+          persist-credentials: false
+
+      - name: Run zizmor
+        uses: zizmorcore/zizmor-action@e639db99335bc9038abc0e066dfcd72e23d26fb4 # v0.3.0
