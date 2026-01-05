@@ -15,6 +15,7 @@
   "author": "",
   "packageManager": "pnpm@10.26.2",
   "devDependencies": {
+    "@biomejs/biome": "2.2.4",
     "@mizchi/lsmcp": "0.10.0",
     "@mizchi/readability": "0.7.7",
     "@openai/codex": "0.77.0",
