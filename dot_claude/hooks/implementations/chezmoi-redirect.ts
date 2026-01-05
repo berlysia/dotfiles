@@ -226,7 +226,8 @@ function generateChezmoiPathVariations(basePath: string, segments: string[], rep
 
   // 6. Handle dot_ prefix for filenames (not just directories)
   // e.g., ~/.bashrc → dot_bashrc (when first segment doesn't start with .)
-  if (segments.length === 1 && !segments[0].startsWith("dot_")) {
+  const firstSegment = segments[0];
+  if (segments.length === 1 && firstSegment && !firstSegment.startsWith("dot_")) {
     const dotFileName = "dot_" + fileName;
     variations.push(join(repoRoot, dotFileName));
     variations.push(join(repoRoot, dotFileName + ".tmpl"));
