@@ -3,7 +3,7 @@
 import { defineHook } from "cc-hooks-ts";
 import { resolve, basename, dirname, join } from "node:path";
 import { homedir } from "node:os";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { createDenyResponse } from "../lib/context-helpers.ts";
 import "../types/tool-schemas.ts";
@@ -124,13 +124,8 @@ function resolvePath(path: string): string {
 /**
  * Convert a home directory path to its chezmoi-managed equivalent in the repository.
  *
- * Chezmoi naming conventions:
- * - ~/.config/foo → dot_config/foo
- * - ~/.foo → dot_foo
- * - ~/.local/share/foo → dot_local/share/foo
- * - Templates: file.txt → file.txt.tmpl
- * - Private files: file → private_file
- * - Executable files: file → executable_file
+ * Instead of generating all possible prefix/suffix combinations,
+ * we search the directory for files that match the target filename.
  */
 function getChezmoiRedirectPath(absPath: string, repoRoot: string): string | undefined {
   const homeDir = homedir();
@@ -142,82 +137,128 @@ function getChezmoiRedirectPath(absPath: string, repoRoot: string): string | und
 
   // Get the relative path from home directory
   const relativePath = absPath.slice(homeDir.length + 1);
-
-  // Convert to chezmoi naming convention
   const segments = relativePath.split("/");
-  const chezmoiSegments = segments.map((segment, index) => {
+  const targetFileName = segments[segments.length - 1];
+
+  // Convert directory path to chezmoi naming (dot_ prefix for first segment)
+  const chezmoiDirSegments = segments.slice(0, -1).map((segment, index) => {
     if (index === 0 && segment.startsWith(".")) {
-      // First segment: .config → dot_config, .local → dot_local, .zsh → dot_zsh
       return "dot_" + segment.slice(1);
     }
     return segment;
   });
 
-  const basePath = join(repoRoot, ...chezmoiSegments);
-
-  // Try multiple chezmoi path variations
-  const pathVariations = generateChezmoiPathVariations(basePath, chezmoiSegments, repoRoot);
-
-  for (const candidatePath of pathVariations) {
-    if (existsSync(candidatePath)) {
-      return candidatePath;
-    }
+  // Handle files directly in home directory (e.g., ~/.bashrc → dot_bashrc)
+  if (segments.length === 1) {
+    const searchName = targetFileName.startsWith(".")
+      ? targetFileName.slice(1)  // .bashrc → bashrc
+      : targetFileName;
+    return findChezmoiFile(repoRoot, searchName);
   }
 
-  // Check if parent directory exists in chezmoi structure (for new files)
-  const baseDir = dirname(basePath);
-  if (existsSync(baseDir)) {
-    // Parent exists, so this path would be valid for creating a new file
-    return basePath;
+  // Build the chezmoi directory path
+  const chezmoiDir = join(repoRoot, ...chezmoiDirSegments);
+
+  // Search for the file in the chezmoi directory
+  const found = findChezmoiFile(chezmoiDir, targetFileName);
+  if (found) {
+    return found;
+  }
+
+  // Check if parent directory exists (for suggesting where to create new files)
+  if (existsSync(chezmoiDir)) {
+    return join(chezmoiDir, targetFileName);
   }
 
   return undefined;
 }
 
 /**
- * Generate possible chezmoi path variations for a given path.
- *
- * Chezmoi uses various prefixes and suffixes:
- * - dot_ : for dotfiles/directories
- * - private_ : for files with restricted permissions
- * - executable_ : for executable scripts
- * - .tmpl : for template files
+ * Find a chezmoi-managed file by searching the directory for files
+ * that match the target filename (ignoring chezmoi prefixes/suffixes).
  */
-function generateChezmoiPathVariations(basePath: string, segments: string[], repoRoot: string): string[] {
-  const variations: string[] = [];
-  const fileName = basename(basePath);
-  const dirPath = dirname(basePath);
-
-  // 1. Basic path (already converted dot_ prefix for first segment)
-  variations.push(basePath);
-
-  // 2. Template variation (.tmpl suffix)
-  variations.push(basePath + ".tmpl");
-
-  // 3. Private file variation (private_ prefix on filename)
-  variations.push(join(dirPath, "private_" + fileName));
-  variations.push(join(dirPath, "private_" + fileName + ".tmpl"));
-
-  // 4. Executable file variation (executable_ prefix on filename)
-  variations.push(join(dirPath, "executable_" + fileName));
-  variations.push(join(dirPath, "executable_" + fileName + ".tmpl"));
-
-  // 5. Private executable variation
-  variations.push(join(dirPath, "private_executable_" + fileName));
-  variations.push(join(dirPath, "private_executable_" + fileName + ".tmpl"));
-
-  // 6. Handle dot_ prefix for filenames (not just directories)
-  // e.g., ~/.bashrc → dot_bashrc (when first segment doesn't start with .)
-  const firstSegment = segments[0];
-  if (segments.length === 1 && firstSegment && !firstSegment.startsWith("dot_")) {
-    const dotFileName = "dot_" + fileName;
-    variations.push(join(repoRoot, dotFileName));
-    variations.push(join(repoRoot, dotFileName + ".tmpl"));
-    variations.push(join(repoRoot, "private_" + dotFileName));
-    variations.push(join(repoRoot, "private_" + dotFileName + ".tmpl"));
+function findChezmoiFile(dirPath: string, targetFileName: string): string | undefined {
+  if (!existsSync(dirPath)) {
+    return undefined;
   }
 
-  return variations;
+  try {
+    const files = readdirSync(dirPath);
+
+    for (const file of files) {
+      const stripped = stripChezmoiAttributes(file);
+      if (stripped === targetFileName) {
+        return join(dirPath, file);
+      }
+    }
+  } catch {
+    // Directory read error - ignore
+  }
+
+  return undefined;
+}
+
+/**
+ * Strip chezmoi prefixes and suffixes from a filename to get the target filename.
+ *
+ * Chezmoi attributes (in order):
+ * - Prefixes: private_, empty_, readonly_, encrypted_, executable_, create_, modify_, remove_, run_, once_, onchange_, before_, after_, literal_, dot_
+ * - Suffixes: .tmpl, .age, .asc, .literal
+ */
+function stripChezmoiAttributes(fileName: string): string {
+  let name = fileName;
+
+  // Strip suffixes first
+  const suffixes = [".tmpl", ".age", ".asc", ".literal"];
+  for (const suffix of suffixes) {
+    if (name.endsWith(suffix)) {
+      name = name.slice(0, -suffix.length);
+      break; // Only strip one suffix
+    }
+  }
+
+  // Strip prefixes (order matters, but we just need to strip any of them)
+  const prefixes = [
+    "private_",
+    "empty_",
+    "readonly_",
+    "encrypted_",
+    "executable_",
+    "create_",
+    "modify_",
+    "remove_",
+    "run_once_",
+    "run_onchange_",
+    "run_before_",
+    "run_after_",
+    "run_",
+    "once_",
+    "onchange_",
+    "before_",
+    "after_",
+    "symlink_",
+    "literal_",
+  ];
+
+  // Keep stripping prefixes until none match
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const prefix of prefixes) {
+      if (name.startsWith(prefix)) {
+        name = name.slice(prefix.length);
+        changed = true;
+        break;
+      }
+    }
+  }
+
+  // Convert dot_ to leading dot
+  if (name.startsWith("dot_")) {
+    name = "." + name.slice(4);
+  }
+
+  return name;
 }
 
 export default hook;
@@ -225,7 +266,8 @@ export default hook;
 // Export for testing
 export {
   getChezmoiRedirectPath,
-  generateChezmoiPathVariations,
+  findChezmoiFile,
+  stripChezmoiAttributes,
 };
 
 if (import.meta.main) {
