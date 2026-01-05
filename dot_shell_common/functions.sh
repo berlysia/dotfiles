@@ -29,21 +29,22 @@ _ope_auth_check() {
 }
 
 _ope_update_paths() {
-	local path="$1"
-	if [[ ! ":$OP_COMMAND_PATHS:" == *":$path:"* ]]; then
-		export OP_COMMAND_PATHS="${OP_COMMAND_PATHS:+$OP_COMMAND_PATHS:}$path"
-	fi
+	path="$1"
+	case ":${OP_COMMAND_PATHS}:" in
+		*":${path}:"*) ;;  # Already in path
+		*) export OP_COMMAND_PATHS="${OP_COMMAND_PATHS:+$OP_COMMAND_PATHS:}$path" ;;
+	esac
 }
 
 # Get env files based on scope (outputs file paths, one per line)
 _ope_get_env_files() {
-	local scope="$1"
-	if [[ "$scope" == "global" ]]; then
-		[[ -f "$HOME/.env.1password" ]] && echo "$HOME/.env.1password"
-		[[ -f "$HOME/.env.1password.local" ]] && echo "$HOME/.env.1password.local"
+	scope="$1"
+	if [ "$scope" = "global" ]; then
+		[ -f "$HOME/.env.1password" ] && echo "$HOME/.env.1password"
+		[ -f "$HOME/.env.1password.local" ] && echo "$HOME/.env.1password.local"
 	else
-		[[ -f "$PWD/.env" ]] && echo "$PWD/.env"
-		[[ -f "$PWD/.env.local" ]] && echo "$PWD/.env.local"
+		[ -f "$PWD/.env" ] && echo "$PWD/.env"
+		[ -f "$PWD/.env.local" ] && echo "$PWD/.env.local"
 	fi
 }
 
@@ -54,10 +55,12 @@ _ope_get_env_files() {
 #   -l, --load         Load/inject secrets into current shell
 #   -h, --help         Show help
 ope() {
-	local global=false interactive=false load=false
+	global=false
+	interactive=false
+	load=false
 
 	# Parse flags
-	while [[ $# -gt 0 ]]; do
+	while [ $# -gt 0 ]; do
 		case "$1" in
 			-g|--global)  global=true; shift ;;
 			-i|--interactive)  interactive=true; shift ;;
@@ -93,17 +96,14 @@ ope() {
 	_ope_auth_check
 
 	# Determine scope
-	local scope="local"
+	scope="local"
 	$global && scope="global"
 
-	# Get env files
-	local env_files=()
-	while IFS= read -r file; do
-		[[ -n "$file" ]] && env_files+=("$file")
-	done < <(_ope_get_env_files "$scope")
+	# Get env files (newline-separated string instead of array)
+	env_files=$(_ope_get_env_files "$scope")
 
 	# Check if env files exist
-	if [[ ${#env_files[@]} -eq 0 ]]; then
+	if [ -z "$env_files" ]; then
 		if $global; then
 			echo "❌ Neither ~/.env.1password nor ~/.env.1password.local found"
 		else
@@ -115,43 +115,56 @@ ope() {
 
 	# Execute based on mode
 	if $load; then
-		local scope_label="local"
-		local update_path="$PWD"
+		scope_label="local"
+		update_path="$PWD"
 		if $global; then
 			scope_label="global"
 			update_path="$HOME"
 		fi
 
 		echo "⏳ Setting $scope_label secrets in environment..."
-		for env_file in "${env_files[@]}"; do
+		echo "$env_files" | while IFS= read -r env_file; do
+			[ -n "$env_file" ] || continue
 			echo "📁 Loading $(basename "$env_file")"
-			source <(cat "$env_file" | op inject)
+			# shellcheck disable=SC1090
+			. /dev/stdin <<EOF
+$(cat "$env_file" | op inject)
+EOF
 		done
 		_ope_update_paths "$update_path"
 		echo "☑️ Done!"
 	else
-		# Build --env-file options
-		local env_opts=()
-		for env_file in "${env_files[@]}"; do
-			env_opts+=("--env-file=$env_file")
+		# Build --env-file options string (avoiding subshell to preserve variable)
+		env_opts=""
+		# Use parameter expansion to iterate over newline-separated files
+		old_ifs="$IFS"
+		IFS='
+'
+		for env_file in $env_files; do
+			[ -n "$env_file" ] || continue
+			env_opts="$env_opts --env-file=$env_file"
 		done
+		IFS="$old_ifs"
 
 		if $interactive; then
 			# Build properly escaped command string for script
-			local cmd_quoted=""
+			cmd_quoted=""
 			for arg in "$@"; do
-				cmd_quoted+="$(printf '%q ' "$arg")"
+				cmd_quoted="$cmd_quoted$(printf '%s ' "$arg" | sed "s/'/'\\\\''/g;s/^/'/;s/\$/'/")"
 			done
 			# script command syntax differs between Linux and macOS
-			if [[ "$(uname)" == "Darwin" ]]; then
+			if [ "$(uname)" = "Darwin" ]; then
 				# macOS: script [-q] file command
-				op run "${env_opts[@]}" -- script -q /dev/null bash -c "$cmd_quoted"
+				# shellcheck disable=SC2086
+				op run $env_opts -- script -q /dev/null sh -c "$cmd_quoted"
 			else
 				# Linux: script [-q] -c command file
-				op run "${env_opts[@]}" -- script -q /dev/null -c "$cmd_quoted"
+				# shellcheck disable=SC2086
+				op run $env_opts -- script -q /dev/null -c "$cmd_quoted"
 			fi
 		else
-			op run "${env_opts[@]}" -- "$@"
+			# shellcheck disable=SC2086
+			op run $env_opts -- "$@"
 		fi
 	fi
 }
