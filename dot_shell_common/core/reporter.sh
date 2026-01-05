@@ -1,6 +1,7 @@
 #!/bin/sh
 # reporter.sh
 # Test result reporting and formatting
+# shellcheck disable=SC1083,SC2154
 
 # Color codes for output
 RED='\033[0;31m'

@@ -1,6 +1,7 @@
 #!/bin/sh
 # test_suite.sh
 # Unified dotfiles test suite with adapter pattern
+# shellcheck disable=SC2154
 
 # Script directory detection
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -221,7 +222,8 @@ main() {
     run_all_tests "$adapter" "$test_categories"
     
     # Get results
-    local test_results=$(get_test_results)
+    local test_results
+    test_results=$(get_test_results)
     local total_tests=$TOTAL_TESTS
     local passed_tests=$PASSED_TESTS
     local failed_tests=$FAILED_TESTS

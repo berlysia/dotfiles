@@ -27,32 +27,38 @@ pre_apply_get_base_dir() {
 
 # Path resolution functions for chezmoi source structure
 pre_apply_get_bashrc_path() {
-    local base_dir=$(pre_apply_get_base_dir)
+    local base_dir
+    base_dir=$(pre_apply_get_base_dir)
     echo "$base_dir/dot_bashrc"
 }
 
 pre_apply_get_zshrc_path() {
-    local base_dir=$(pre_apply_get_base_dir)
+    local base_dir
+    base_dir=$(pre_apply_get_base_dir)
     echo "$base_dir/dot_zsh/dot_zshrc"
 }
 
 pre_apply_get_shell_common_dir() {
-    local base_dir=$(pre_apply_get_base_dir)
+    local base_dir
+    base_dir=$(pre_apply_get_base_dir)
     echo "$base_dir/dot_shell_common"
 }
 
 pre_apply_get_functions_path() {
-    local shell_common_dir=$(pre_apply_get_shell_common_dir)
+    local shell_common_dir
+    shell_common_dir=$(pre_apply_get_shell_common_dir)
     echo "$shell_common_dir/functions.sh"
 }
 
 pre_apply_get_aliases_path() {
-    local shell_common_dir=$(pre_apply_get_shell_common_dir)
+    local shell_common_dir
+    shell_common_dir=$(pre_apply_get_shell_common_dir)
     echo "$shell_common_dir/aliases.sh"
 }
 
 pre_apply_get_init_path() {
-    local shell_common_dir=$(pre_apply_get_shell_common_dir)
+    local shell_common_dir
+    shell_common_dir=$(pre_apply_get_shell_common_dir)
     echo "$shell_common_dir/init.sh"
 }
 
@@ -69,15 +75,18 @@ pre_apply_dir_exists() {
 
 # Shell execution functions for testing configuration loading
 pre_apply_test_bash_loading() {
-    local bashrc_path=$(pre_apply_get_bashrc_path)
-    local shell_common_dir=$(pre_apply_get_shell_common_dir)
+    local bashrc_path
+    bashrc_path=$(pre_apply_get_bashrc_path)
+    local shell_common_dir
+    shell_common_dir=$(pre_apply_get_shell_common_dir)
     
     if [ -f "$bashrc_path" ]; then
         # Test by sourcing bashrc and checking SHELL_COMMON
         bash -c "source '$bashrc_path' && [ -n \"\$SHELL_COMMON\" ] && echo 'SUCCESS' || echo 'FAILED'" 2>/dev/null
     else
         # Direct test by setting up SHELL_COMMON and sourcing init
-        local init_path=$(pre_apply_get_init_path)
+        local init_path
+        init_path=$(pre_apply_get_init_path)
         if [ -f "$init_path" ]; then
             bash -c "export SHELL_COMMON='$shell_common_dir' && source '$init_path' && echo 'SUCCESS' || echo 'FAILED'"
         else
@@ -87,8 +96,10 @@ pre_apply_test_bash_loading() {
 }
 
 pre_apply_test_zsh_loading() {
-    local zshrc_path=$(pre_apply_get_zshrc_path)
-    local shell_common_dir=$(pre_apply_get_shell_common_dir)
+    local zshrc_path
+    zshrc_path=$(pre_apply_get_zshrc_path)
+    local shell_common_dir
+    shell_common_dir=$(pre_apply_get_shell_common_dir)
     
     if [ -f "$zshrc_path" ]; then
         # For CI environment, set ZDOTDIR
@@ -101,7 +112,8 @@ pre_apply_test_zsh_loading() {
         fi
     else
         # Direct test by setting up SHELL_COMMON and sourcing init
-        local init_path=$(pre_apply_get_init_path)
+        local init_path
+        init_path=$(pre_apply_get_init_path)
         if [ -f "$init_path" ]; then
             zsh -c "export SHELL_COMMON='$shell_common_dir' && source '$init_path' && echo 'SUCCESS' || echo 'FAILED'"
         else
@@ -113,8 +125,10 @@ pre_apply_test_zsh_loading() {
 # Test PATH configuration
 pre_apply_test_path_setup() {
     local shell="$1"
-    local shell_common_dir=$(pre_apply_get_shell_common_dir)
-    local init_path=$(pre_apply_get_init_path)
+    local shell_common_dir
+    shell_common_dir=$(pre_apply_get_shell_common_dir)
+    local init_path
+    init_path=$(pre_apply_get_init_path)
     
     if [ -f "$init_path" ]; then
         "$shell" -c "export SHELL_COMMON='$shell_common_dir' && source '$init_path' && echo \$PATH" | grep -q "\.local/bin"
@@ -128,7 +142,8 @@ pre_apply_test_path_setup() {
 pre_apply_test_function_exists() {
     local function_name="$1"
     local shell="$2"
-    local functions_path=$(pre_apply_get_functions_path)
+    local functions_path
+    functions_path=$(pre_apply_get_functions_path)
     
     if [ -f "$functions_path" ]; then
         "$shell" -c "source '$functions_path' && type $function_name >/dev/null 2>&1"
@@ -141,7 +156,8 @@ pre_apply_test_function_exists() {
 # Test alias availability
 pre_apply_test_alias_exists() {
     local alias_name="$1"
-    local aliases_path=$(pre_apply_get_aliases_path)
+    local aliases_path
+    aliases_path=$(pre_apply_get_aliases_path)
     
     if [ -f "$aliases_path" ]; then
         grep -q "^alias $alias_name=" "$aliases_path"
@@ -153,10 +169,14 @@ pre_apply_test_alias_exists() {
 
 # Get configuration summary for this adapter
 pre_apply_get_config_summary() {
-    local base_dir=$(pre_apply_get_base_dir)
-    local bashrc_path=$(pre_apply_get_bashrc_path)
-    local zshrc_path=$(pre_apply_get_zshrc_path)
-    local shell_common_dir=$(pre_apply_get_shell_common_dir)
+    local base_dir
+    base_dir=$(pre_apply_get_base_dir)
+    local bashrc_path
+    bashrc_path=$(pre_apply_get_bashrc_path)
+    local zshrc_path
+    zshrc_path=$(pre_apply_get_zshrc_path)
+    local shell_common_dir
+    shell_common_dir=$(pre_apply_get_shell_common_dir)
     
     cat << EOF
 Pre-Apply Configuration:

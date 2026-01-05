@@ -135,7 +135,8 @@ check_command_with_deps() {
             node|npm|pnpm|bun|deno)
                 # Check if managed by mise
                 if command -v mise >/dev/null 2>&1 && mise ls 2>/dev/null | grep -q "$cmd"; then
-                    local mise_version=$(mise current $cmd 2>/dev/null)
+                    local mise_version
+                    mise_version=$(mise current $cmd 2>/dev/null)
                     if [ -n "$mise_version" ]; then
                         version="mise: $mise_version"
                     else
@@ -159,7 +160,8 @@ check_command_with_deps() {
                 ;;
             go)
                 if command -v mise >/dev/null 2>&1 && mise ls 2>/dev/null | grep -q "go"; then
-                    local mise_version=$(mise current go 2>/dev/null)
+                    local mise_version
+                    mise_version=$(mise current go 2>/dev/null)
                     if [ -n "$mise_version" ]; then
                         version="mise: $mise_version"
                     else
@@ -171,7 +173,8 @@ check_command_with_deps() {
                 ;;
             rustc|cargo)
                 if command -v mise >/dev/null 2>&1 && mise ls 2>/dev/null | grep -q "rust"; then
-                    local mise_version=$(mise current rust 2>/dev/null)
+                    local mise_version
+                    mise_version=$(mise current rust 2>/dev/null)
                     if [ -n "$mise_version" ]; then
                         version="mise: $mise_version"
                     else
@@ -299,7 +302,8 @@ check_function() {
     local shell="$3"
     
     # Try to check if function exists in the shell config
-    local shell_rc=$(get_shell_config_path "$shell")
+    local shell_rc
+    shell_rc=$(get_shell_config_path "$shell")
     
     if [ -n "$shell_rc" ] && [ -f "$shell_rc" ]; then
         # Check if function is defined in shell config or common files
@@ -394,8 +398,10 @@ check_shell_config() {
     local priority="$2"  # "required", "recommended", or "optional"
     
     # Get configuration file path and display name
-    local config_file=$(get_shell_config_path "$shell_name")
-    local display_name=$(format_shell_display_name "$shell_name" "$config_file")
+    local config_file
+    config_file=$(get_shell_config_path "$shell_name")
+    local display_name
+    display_name=$(format_shell_display_name "$shell_name" "$config_file")
     
     # Determine weight based on priority
     local weight=$WEIGHT_OPTIONAL
@@ -427,8 +433,10 @@ check_shell_config() {
 # Function to check Git configuration
 check_git_config() {
     if command -v git >/dev/null 2>&1; then
-        local user_name=$(git config --global user.name 2>/dev/null)
-        local user_email=$(git config --global user.email 2>/dev/null)
+        local user_name
+        user_name=$(git config --global user.name 2>/dev/null)
+        local user_email
+        user_email=$(git config --global user.email 2>/dev/null)
         
         if [ -n "$user_name" ] && [ -n "$user_email" ]; then
             print_status "success" "Git user configuration" "$user_name <$user_email>"
@@ -439,9 +447,11 @@ check_git_config() {
         fi
         
         # Check for GPG signing
-        local gpg_sign=$(git config --global commit.gpgsign 2>/dev/null)
+        local gpg_sign
+        gpg_sign=$(git config --global commit.gpgsign 2>/dev/null)
         if [ "$gpg_sign" = "true" ]; then
-            local signing_key=$(git config --global user.signingkey 2>/dev/null)
+            local signing_key
+            signing_key=$(git config --global user.signingkey 2>/dev/null)
             if [ -n "$signing_key" ]; then
                 print_status "success" "Git GPG signing" "enabled with key"
                 add_weight $WEIGHT_RECOMMENDED 1
@@ -458,19 +468,22 @@ check_git_config() {
 # Function to check chezmoi status
 check_chezmoi() {
     if command -v chezmoi >/dev/null 2>&1; then
-        local source_dir=$(chezmoi source-path 2>/dev/null)
+        local source_dir
+        source_dir=$(chezmoi source-path 2>/dev/null)
         if [ -n "$source_dir" ] && [ -d "$source_dir" ]; then
             print_status "success" "Chezmoi source directory" "$source_dir"
             add_weight $WEIGHT_REQUIRED 1
             
             # Check for uncommitted changes
             if [ -d "$source_dir/.git" ]; then
-                local git_status=$(cd "$source_dir" && git status --porcelain 2>/dev/null)
+                local git_status
+                git_status=$(cd "$source_dir" && git status --porcelain 2>/dev/null)
                 if [ -z "$git_status" ]; then
                     print_status "success" "Chezmoi repository" "clean"
                     add_weight $WEIGHT_RECOMMENDED 1
                 else
-                    local changed_count=$(echo "$git_status" | wc -l)
+                    local changed_count
+                    changed_count=$(echo "$git_status" | wc -l)
                     print_status "warning" "Chezmoi repository" "$changed_count uncommitted changes"
                     add_weight $WEIGHT_RECOMMENDED 0
                 fi

@@ -15,7 +15,7 @@ if [ -S "$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock" ]
 fi
 
 # 1Password SSH LaunchAgent setup (run once)
-if [[ -d "$HOME/Library/Group Containers/2BUA8C4S2C.com.1password" ]] && [[ ! -f ~/Library/LaunchAgents/com.1password.SSH_AUTH_SOCK.plist ]]; then
+if [ -d "$HOME/Library/Group Containers/2BUA8C4S2C.com.1password" ] && [ ! -f ~/Library/LaunchAgents/com.1password.SSH_AUTH_SOCK.plist ]; then
   mkdir -p ~/Library/LaunchAgents
   cat << 'EOF' > ~/Library/LaunchAgents/com.1password.SSH_AUTH_SOCK.plist
 <?xml version="1.0" encoding="UTF-8"?>

@@ -29,6 +29,7 @@ packages:
       - "coreutils"
       - "terminal-notifier"
       - "patchutils"
+      - "shellcheck"
       - "sox"
     casks:
       - "1password"
@@ -60,6 +61,7 @@ packages:
       - "pulseaudio-utils"
       - "dunst"
       - "patchutils"
+      - "shellcheck"
       - "sox"
   windows:
     winget:

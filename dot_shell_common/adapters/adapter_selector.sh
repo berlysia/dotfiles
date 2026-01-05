@@ -128,7 +128,8 @@ get_config_directory() {
 
 # Platform-specific profile paths
 get_platform_profile_paths() {
-    local os_name=$(uname -s 2>/dev/null)
+    local os_name
+    os_name=$(uname -s 2>/dev/null)
     
     case "$os_name" in
         "Darwin")
@@ -156,8 +157,10 @@ get_platform_profile_paths() {
 
 # Enhanced tool detection with platform awareness
 get_platform_tool_paths() {
-    local os_name=$(uname -s 2>/dev/null)
-    local arch_name=$(uname -m 2>/dev/null)
+    local os_name
+    os_name=$(uname -s 2>/dev/null)
+    local arch_name
+    arch_name=$(uname -m 2>/dev/null)
     
     case "$os_name" in
         "Darwin")
@@ -219,9 +222,12 @@ select_adapter() {
 
 # Load the selected adapter functions
 load_adapter() {
-    local adapter_name=$(select_adapter)
-    local script_dir="$(cd "$(dirname "$0")" && pwd)"
-    local adapter_file="$script_dir/${adapter_name}_adapter.sh"
+    local adapter_name
+    adapter_name=$(select_adapter)
+    local script_dir
+    script_dir="$(cd "$(dirname "$0")" && pwd)"
+    local adapter_file
+    adapter_file="$script_dir/${adapter_name}_adapter.sh"
     
     if [ -f "$adapter_file" ]; then
         . "$adapter_file"
@@ -234,12 +240,14 @@ load_adapter() {
 
 # Cross-platform adapter selection with enhanced detection
 select_enhanced_adapter() {
-    local base_adapter=$(select_adapter)
+    local base_adapter
+    base_adapter=$(select_adapter)
     local platform_suffix=""
     local env_suffix=""
     
     # Add platform suffix
-    local os_name=$(uname -s 2>/dev/null)
+    local os_name
+    os_name=$(uname -s 2>/dev/null)
     case "$os_name" in
         "Darwin") platform_suffix="_macos" ;;
         "Linux") platform_suffix="_linux" ;;
@@ -266,7 +274,8 @@ is_powershell_available() {
 
 # macOS architecture detection
 get_macos_architecture() {
-    local arch_name=$(uname -m 2>/dev/null)
+    local arch_name
+    arch_name=$(uname -m 2>/dev/null)
     case "$arch_name" in
         "arm64") echo "apple-silicon" ;;
         "x86_64") echo "intel" ;;
@@ -289,11 +298,16 @@ get_linux_distribution() {
 
 # Get comprehensive environment info for debugging
 get_environment_info() {
-    local adapter=$(select_adapter)
-    local enhanced_adapter=$(select_enhanced_adapter)
-    local base_dir=$(get_base_directory)
-    local os_name=$(uname -s 2>/dev/null)
-    local arch_name=$(uname -m 2>/dev/null)
+    local adapter
+    adapter=$(select_adapter)
+    local enhanced_adapter
+    enhanced_adapter=$(select_enhanced_adapter)
+    local base_dir
+    base_dir=$(get_base_directory)
+    local os_name
+    os_name=$(uname -s 2>/dev/null)
+    local arch_name
+    arch_name=$(uname -m 2>/dev/null)
     
     # Environment flags
     local flags=""

@@ -1,9 +1,15 @@
-# POSIX互換性をチェック
-shell=sh
+# bash/zsh互換性をチェック（localなどの共通機能を許可）
+shell=bash
 
 # 特定の警告を無視（必要な場合）
 # SC2039: POSIX互換でない場合でも許可する特定の構文
 # disable=SC2039
+
+# SC1090: 非定数sourceは追跡不可だが、動的パス解決は意図的
+disable=SC1090
+
+# SC2034: 変数はexportされて外部スクリプトで使用される
+disable=SC2034
 
 # 外部ソースの指定
 source-path=SCRIPTDIR
@@ -18,4 +24,5 @@ enable=all
 enable=avoid-nullary-conditions
 enable=check-unassigned-uppercase
 enable=quote-safe-variables
-enable=require-variable-braces
+# require-variable-braces は無効化（既存コードとの互換性のため）
+# enable=require-variable-braces

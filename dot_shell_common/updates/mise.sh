@@ -10,6 +10,7 @@ mise_check_updates() {
   [ -f "$HOME/.local/bin/mise" ] || return
 
   # Load common functions
+  # shellcheck disable=SC2154
   . "$SHELL_COMMON/updates/_common.sh"
 
   # Check if interval has passed

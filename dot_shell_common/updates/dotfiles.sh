@@ -10,6 +10,7 @@ dotfiles_check_updates() {
   type chezmoi >/dev/null 2>&1 || return
 
   # Load common functions
+  # shellcheck disable=SC2154
   . "$SHELL_COMMON/updates/_common.sh"
 
   # Check if interval has passed
@@ -31,6 +32,7 @@ dotfiles_check_updates() {
 
   # Check if remote has new commits
   local behind
+  # shellcheck disable=SC1083
   behind=$(chezmoi git rev-list -- --count HEAD..@{u} 2>/dev/null) || behind=0
 
   if [ -n "$behind" ] && [ "$behind" -gt 0 ]; then
