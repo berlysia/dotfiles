@@ -1,6 +1,7 @@
 #!/bin/sh
 # Common functions for all shells
 
+# shellcheck disable=SC2154,SC2046
 # Extract various archive formats
 extract() {
   if [ -f "$1" ]; then

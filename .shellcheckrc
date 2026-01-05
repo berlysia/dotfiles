@@ -5,6 +5,12 @@ shell=bash
 # SC2039: POSIX互換でない場合でも許可する特定の構文
 # disable=SC2039
 
+# SC1090: 非定数sourceは追跡不可だが、動的パス解決は意図的
+disable=SC1090
+
+# SC2034: 変数はexportされて外部スクリプトで使用される
+disable=SC2034
+
 # 外部ソースの指定
 source-path=SCRIPTDIR
 source-path=dot_shell_common

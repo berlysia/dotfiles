@@ -1,6 +1,7 @@
 #!/bin/sh
 # test_engine.sh
 # Environment-independent test execution engine
+# shellcheck disable=SC1083,SC2043,SC2164
 
 # Test execution context
 TEST_RESULTS=""

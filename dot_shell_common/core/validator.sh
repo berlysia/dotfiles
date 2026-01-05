@@ -1,6 +1,7 @@
 #!/bin/sh
 # validator.sh
 # Result validation and analysis utilities
+# shellcheck disable=SC2154
 
 # Validate shell test result
 validate_shell_result() {

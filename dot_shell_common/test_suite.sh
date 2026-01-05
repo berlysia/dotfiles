@@ -1,6 +1,7 @@
 #!/bin/sh
 # test_suite.sh
 # Unified dotfiles test suite with adapter pattern
+# shellcheck disable=SC2154
 
 # Script directory detection
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

@@ -1,6 +1,7 @@
 # Common shell initialization script for both zsh and bash
 
 # Detect current shell
+# shellcheck disable=SC2206
 if [ -n "$ZSH_VERSION" ]; then
   CURRENT_SHELL="zsh"
 elif [ -n "$BASH_VERSION" ]; then
