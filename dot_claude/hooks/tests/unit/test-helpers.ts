@@ -96,6 +96,15 @@ export class MockHookContext<TTrigger extends HookTrigger> {
     return { kind: "non-blocking-error" as const, payload: message };
   };
 
+  /**
+   * Mock defer method for async hook operations
+   * In real cc-hooks-ts, defer allows running async operations with a timeout
+   * Note: Type uses 'any' to avoid exactOptionalPropertyTypes compatibility issues
+   */
+  defer = (handler: () => any, _options?: any): any => {
+    return handler();
+  };
+
   assertSuccess(expectedResult: any = {}) {
     strictEqual(this.successCalls.length, 1, "success() should be called once");
     strictEqual(this.failCalls.length, 0, "fail() should not be called");

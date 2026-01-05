@@ -16,7 +16,7 @@ export interface FilePermissionCheckResult {
   fileResults: FileCheckDetail[];
 
   /** 最初に許可されなかったファイル（allFilesPermitted=falseの場合） */
-  firstDeniedFile?: string;
+  firstDeniedFile?: string | undefined;
 }
 
 export interface FileCheckDetail {
