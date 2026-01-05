@@ -10,6 +10,7 @@ chezmoi_check_updates() {
   type chezmoi >/dev/null 2>&1 || return
 
   # Load common functions
+  # shellcheck disable=SC2154
   . "$SHELL_COMMON/updates/_common.sh"
 
   # Check if interval has passed

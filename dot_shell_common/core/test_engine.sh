@@ -137,7 +137,8 @@ check_command_with_deps() {
             node|npm|pnpm|bun|deno)
                 # Check if managed by mise
                 if command -v mise >/dev/null 2>&1 && mise ls 2>/dev/null | grep -q "$cmd"; then
-                    local mise_version=$(mise current $cmd 2>/dev/null)
+                    local mise_version
+                    mise_version=$(mise current $cmd 2>/dev/null)
                     if [ -n "$mise_version" ]; then
                         version="$cmd $mise_version (managed by mise)"
                     else
@@ -208,7 +209,8 @@ test_shell_compatibility() {
     
     # Test bash loading
     if command -v bash >/dev/null 2>&1; then
-        local bash_result=$(${adapter}_test_bash_loading)
+        local bash_result
+        bash_result=$(${adapter}_test_bash_loading)
         case "$bash_result" in
             SUCCESS)
                 add_test_result "$TEST_CATEGORY_SHELL" "Bash loading" "PASS" "Configuration loaded successfully"
@@ -226,7 +228,8 @@ test_shell_compatibility() {
     
     # Test zsh loading
     if command -v zsh >/dev/null 2>&1; then
-        local zsh_result=$(${adapter}_test_zsh_loading)
+        local zsh_result
+        zsh_result=$(${adapter}_test_zsh_loading)
         case "$zsh_result" in
             SUCCESS)
                 add_test_result "$TEST_CATEGORY_SHELL" "Zsh loading" "PASS" "Configuration loaded successfully"
@@ -248,33 +251,38 @@ test_configuration_files() {
     local adapter="$1"
     
     # Test essential files
-    local bashrc_path=$(${adapter}_get_bashrc_path)
+    local bashrc_path
+    bashrc_path=$(${adapter}_get_bashrc_path)
     if ${adapter}_file_exists "$bashrc_path"; then
         add_test_result "$TEST_CATEGORY_CONFIG" "Bashrc file" "PASS" "$bashrc_path"
     else
         add_test_result "$TEST_CATEGORY_CONFIG" "Bashrc file" "FAIL" "Missing: $bashrc_path"
     fi
     
-    local zshrc_path=$(${adapter}_get_zshrc_path)
+    local zshrc_path
+    zshrc_path=$(${adapter}_get_zshrc_path)
     if ${adapter}_file_exists "$zshrc_path"; then
         add_test_result "$TEST_CATEGORY_CONFIG" "Zshrc file" "PASS" "$zshrc_path"
     else
         add_test_result "$TEST_CATEGORY_CONFIG" "Zshrc file" "FAIL" "Missing: $zshrc_path"
     fi
     
-    local shell_common_dir=$(${adapter}_get_shell_common_dir)
+    local shell_common_dir
+    shell_common_dir=$(${adapter}_get_shell_common_dir)
     if ${adapter}_dir_exists "$shell_common_dir"; then
         add_test_result "$TEST_CATEGORY_CONFIG" "Shell common directory" "PASS" "$shell_common_dir"
         
         # Test individual files within shell_common
-        local functions_path=$(${adapter}_get_functions_path)
+        local functions_path
+        functions_path=$(${adapter}_get_functions_path)
         if ${adapter}_file_exists "$functions_path"; then
             add_test_result "$TEST_CATEGORY_CONFIG" "Functions file" "PASS" "$functions_path"
         else
             add_test_result "$TEST_CATEGORY_CONFIG" "Functions file" "FAIL" "Missing: $functions_path"
         fi
         
-        local aliases_path=$(${adapter}_get_aliases_path)
+        local aliases_path
+        aliases_path=$(${adapter}_get_aliases_path)
         if ${adapter}_file_exists "$aliases_path"; then
             add_test_result "$TEST_CATEGORY_CONFIG" "Aliases file" "PASS" "$aliases_path"
         else
@@ -453,8 +461,10 @@ test_git_configuration() {
     
     if command -v git >/dev/null 2>&1; then
         # Check user configuration
-        local user_name=$(git config --global user.name 2>/dev/null)
-        local user_email=$(git config --global user.email 2>/dev/null)
+        local user_name
+        user_name=$(git config --global user.name 2>/dev/null)
+        local user_email
+        user_email=$(git config --global user.email 2>/dev/null)
         
         if [ -n "$user_name" ] && [ -n "$user_email" ]; then
             add_test_result "$TEST_CATEGORY_CONFIG" "Git user configuration" "PASS" "$user_name <$user_email>" "required" ""
@@ -463,9 +473,11 @@ test_git_configuration() {
         fi
         
         # Check GPG signing configuration
-        local gpg_sign=$(git config --global commit.gpgsign 2>/dev/null)
+        local gpg_sign
+        gpg_sign=$(git config --global commit.gpgsign 2>/dev/null)
         if [ "$gpg_sign" = "true" ]; then
-            local signing_key=$(git config --global user.signingkey 2>/dev/null)
+            local signing_key
+            signing_key=$(git config --global user.signingkey 2>/dev/null)
             if [ -n "$signing_key" ]; then
                 add_test_result "$TEST_CATEGORY_CONFIG" "Git GPG signing" "PASS" "enabled with key $signing_key" "recommended" ""
             else
@@ -477,7 +489,8 @@ test_git_configuration() {
         
         # Check for chezmoi repository health
         if command -v chezmoi >/dev/null 2>&1; then
-            local chezmoi_source=$(chezmoi source-path 2>/dev/null)
+            local chezmoi_source
+            chezmoi_source=$(chezmoi source-path 2>/dev/null)
             if [ -d "$chezmoi_source" ] && [ -d "$chezmoi_source/.git" ]; then
                 # Check if repository is clean (save current directory)
                 local current_dir="$PWD"
@@ -504,18 +517,24 @@ test_advanced_git_workflow() {
         # Check if we're in a git repository
         if git rev-parse --git-dir >/dev/null 2>&1; then
             # Check current branch status
-            local current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+            local current_branch
+            current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
             if [ -n "$current_branch" ] && [ "$current_branch" != "HEAD" ]; then
                 add_test_result "$TEST_CATEGORY_CONFIG" "Git branch status" "PASS" "on branch $current_branch" "optional" ""
                 
                 # Check if branch has remote tracking
-                local remote_branch=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null)
+                local remote_branch
+                # shellcheck disable=SC1083
+                remote_branch=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null)
                 if [ -n "$remote_branch" ]; then
                     # Check if local is ahead/behind remote
-                    local ahead_behind=$(git rev-list --left-right --count HEAD...@{u} 2>/dev/null)
+                    local ahead_behind
+                    ahead_behind=$(git rev-list --left-right --count HEAD...@{u} 2>/dev/null)
                     if [ -n "$ahead_behind" ]; then
-                        local ahead=$(echo "$ahead_behind" | cut -f1)
-                        local behind=$(echo "$ahead_behind" | cut -f2)
+                        local ahead
+                        ahead=$(echo "$ahead_behind" | cut -f1)
+                        local behind
+                        behind=$(echo "$ahead_behind" | cut -f2)
                         if [ "$ahead" = "0" ] && [ "$behind" = "0" ]; then
                             add_test_result "$TEST_CATEGORY_CONFIG" "Git remote sync" "PASS" "up to date with $remote_branch" "optional" ""
                         else
@@ -531,18 +550,23 @@ test_advanced_git_workflow() {
             
             # Check for uncommitted changes
             if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
-                local staged=$(git diff --cached --name-only 2>/dev/null | wc -l)
-                local unstaged=$(git diff --name-only 2>/dev/null | wc -l)
-                local untracked=$(git ls-files --others --exclude-standard 2>/dev/null | wc -l)
+                local staged
+                staged=$(git diff --cached --name-only 2>/dev/null | wc -l)
+                local unstaged
+                unstaged=$(git diff --name-only 2>/dev/null | wc -l)
+                local untracked
+                untracked=$(git ls-files --others --exclude-standard 2>/dev/null | wc -l)
                 add_test_result "$TEST_CATEGORY_CONFIG" "Git working directory" "WARN" "$staged staged, $unstaged modified, $untracked untracked" "optional" "git add -A && git commit"
             else
                 add_test_result "$TEST_CATEGORY_CONFIG" "Git working directory" "PASS" "clean" "optional" ""
             fi
             
             # Check recent commit signature (if GPG signing is enabled)
-            local gpg_sign=$(git config commit.gpgsign 2>/dev/null)
+            local gpg_sign
+            gpg_sign=$(git config commit.gpgsign 2>/dev/null)
             if [ "$gpg_sign" = "true" ]; then
-                local last_commit_signed=$(git log -1 --format="%G?" 2>/dev/null)
+                local last_commit_signed
+                last_commit_signed=$(git log -1 --format="%G?" 2>/dev/null)
                 case "$last_commit_signed" in
                     "G") add_test_result "$TEST_CATEGORY_CONFIG" "Git commit signature" "PASS" "last commit properly signed" "optional" "" ;;
                     "B") add_test_result "$TEST_CATEGORY_CONFIG" "Git commit signature" "WARN" "last commit bad signature" "optional" "Check GPG key configuration" ;;
@@ -572,26 +596,33 @@ test_advanced_git_workflow() {
     # Check current repository status
     if git rev-parse --git-dir >/dev/null 2>&1; then
         # Check branch status
-        local current_branch=$(git branch --show-current 2>/dev/null)
+        local current_branch
+        current_branch=$(git branch --show-current 2>/dev/null)
         if [ -n "$current_branch" ]; then
             add_test_result "$TEST_CATEGORY_CONFIG" "Git current branch" "PASS" "$current_branch" "optional" ""
             
             # Check if branch has upstream
-            local upstream=$(git rev-parse --abbrev-ref @{upstream} 2>/dev/null)
+            local upstream
+            upstream=$(git rev-parse --abbrev-ref @{upstream} 2>/dev/null)
             if [ -n "$upstream" ]; then
                 add_test_result "$TEST_CATEGORY_CONFIG" "Git upstream tracking" "PASS" "tracking $upstream" "recommended" ""
                 
                 # Check if branch is up to date with upstream
-                local local_sha=$(git rev-parse HEAD 2>/dev/null)
-                local upstream_sha=$(git rev-parse @{upstream} 2>/dev/null)
+                local local_sha
+                local_sha=$(git rev-parse HEAD 2>/dev/null)
+                local upstream_sha
+                upstream_sha=$(git rev-parse @{upstream} 2>/dev/null)
                 if [ "$local_sha" = "$upstream_sha" ]; then
                     add_test_result "$TEST_CATEGORY_CONFIG" "Git branch sync" "PASS" "up to date with upstream" "optional" ""
                 elif git merge-base --is-ancestor @{upstream} HEAD 2>/dev/null; then
-                    local ahead_count=$(git rev-list --count @{upstream}..HEAD 2>/dev/null)
+                    local ahead_count
+                    ahead_count=$(git rev-list --count @{upstream}..HEAD 2>/dev/null)
                     add_test_result "$TEST_CATEGORY_CONFIG" "Git branch sync" "WARN" "$ahead_count commits ahead" "optional" "git push to sync"
                 else
-                    local behind_count=$(git rev-list --count HEAD..@{upstream} 2>/dev/null)
-                    local ahead_count=$(git rev-list --count @{upstream}..HEAD 2>/dev/null)
+                    local behind_count
+                    behind_count=$(git rev-list --count HEAD..@{upstream} 2>/dev/null)
+                    local ahead_count
+                    ahead_count=$(git rev-list --count @{upstream}..HEAD 2>/dev/null)
                     if [ "$ahead_count" -gt 0 ] && [ "$behind_count" -gt 0 ]; then
                         add_test_result "$TEST_CATEGORY_CONFIG" "Git branch sync" "WARN" "$ahead_count ahead, $behind_count behind" "optional" "git pull --rebase or git merge"
                     elif [ "$behind_count" -gt 0 ]; then
@@ -609,9 +640,12 @@ test_advanced_git_workflow() {
         if [ -z "$(git status --porcelain 2>/dev/null)" ]; then
             add_test_result "$TEST_CATEGORY_CONFIG" "Git working directory" "PASS" "clean" "optional" ""
         else
-            local staged_count=$(git diff --cached --name-only 2>/dev/null | wc -l)
-            local unstaged_count=$(git diff --name-only 2>/dev/null | wc -l)
-            local untracked_count=$(git ls-files --others --exclude-standard 2>/dev/null | wc -l)
+            local staged_count
+            staged_count=$(git diff --cached --name-only 2>/dev/null | wc -l)
+            local unstaged_count
+            unstaged_count=$(git diff --name-only 2>/dev/null | wc -l)
+            local untracked_count
+            untracked_count=$(git ls-files --others --exclude-standard 2>/dev/null | wc -l)
             local status_msg=""
             if [ "$staged_count" -gt 0 ]; then
                 status_msg="$staged_count staged"
@@ -713,7 +747,8 @@ test_environment_detection() {
     
     # Check system resources for environment optimization
     if command -v nproc >/dev/null 2>&1; then
-        local cpu_count=$(nproc)
+        local cpu_count
+        cpu_count=$(nproc)
         if [ "$cpu_count" -ge 4 ]; then
             add_test_result "$TEST_CATEGORY_CONFIG" "System Resources" "PASS" "$cpu_count CPU cores available" "optional" ""
         elif [ "$cpu_count" -ge 2 ]; then
@@ -725,7 +760,8 @@ test_environment_detection() {
     
     # Check memory availability
     if command -v free >/dev/null 2>&1; then
-        local mem_gb=$(free -g | awk '/^Mem:/{print $2}')
+        local mem_gb
+        mem_gb=$(free -g | awk '/^Mem:/{print $2}')
         if [ "$mem_gb" -ge 8 ]; then
             add_test_result "$TEST_CATEGORY_CONFIG" "Memory Resources" "PASS" "${mem_gb}GB RAM available" "optional" ""
         elif [ "$mem_gb" -ge 4 ]; then
@@ -736,11 +772,14 @@ test_environment_detection() {
     fi
     
     # Check disk space for development
-    local home_space=$(df -h "$HOME" 2>/dev/null | awk 'NR==2 {print $4}')
+    local home_space
+    home_space=$(df -h "$HOME" 2>/dev/null | awk 'NR==2 {print $4}')
     if [ -n "$home_space" ]; then
         # Extract numeric value (remove G, M suffixes for comparison)
-        local space_num=$(echo "$home_space" | sed 's/[GM].*//')
-        local space_unit=$(echo "$home_space" | sed 's/[0-9.]*//')
+        local space_num
+        space_num=$(echo "$home_space" | sed 's/[GM].*//')
+        local space_unit
+        space_unit=$(echo "$home_space" | sed 's/[0-9.]*//')
         
         if [ "$space_unit" = "G" ] && [ "$space_num" -ge 10 ]; then
             add_test_result "$TEST_CATEGORY_CONFIG" "Disk Space" "PASS" "$home_space available in home" "optional" ""
@@ -755,7 +794,8 @@ test_enhanced_adapter_functionality() {
     local adapter="$1"
     
     # Test enhanced path resolution
-    local config_home=$(get_config_directory config_home 2>/dev/null)
+    local config_home
+    config_home=$(get_config_directory config_home 2>/dev/null)
     if [ -n "$config_home" ]; then
         add_test_result "$TEST_CATEGORY_CONFIG" "XDG Config Directory" "PASS" "$config_home" "optional" ""
     else
@@ -763,7 +803,8 @@ test_enhanced_adapter_functionality() {
     fi
     
     # Test ZDOTDIR awareness
-    local zsh_dir=$(get_config_directory zsh_dir 2>/dev/null)
+    local zsh_dir
+    zsh_dir=$(get_config_directory zsh_dir 2>/dev/null)
     if [ -n "$zsh_dir" ]; then
         add_test_result "$TEST_CATEGORY_CONFIG" "Zsh Configuration Directory" "PASS" "$zsh_dir" "optional" ""
     else
@@ -771,7 +812,8 @@ test_enhanced_adapter_functionality() {
     fi
     
     # Test CI platform detection
-    local ci_platform=$(get_ci_platform 2>/dev/null)
+    local ci_platform
+    ci_platform=$(get_ci_platform 2>/dev/null)
     if [ "$ci_platform" != "none" ]; then
         add_test_result "$TEST_CATEGORY_CONFIG" "CI Platform Detection" "PASS" "$ci_platform" "optional" ""
     else
@@ -779,7 +821,8 @@ test_enhanced_adapter_functionality() {
     fi
     
     # Test remote development detection
-    local remote_platform=$(get_remote_dev_platform 2>/dev/null)
+    local remote_platform
+    remote_platform=$(get_remote_dev_platform 2>/dev/null)
     if [ "$remote_platform" != "none" ]; then
         add_test_result "$TEST_CATEGORY_CONFIG" "Remote Development Platform" "PASS" "$remote_platform" "optional" ""
     else
@@ -787,7 +830,8 @@ test_enhanced_adapter_functionality() {
     fi
     
     # Test enhanced adapter selection
-    local enhanced_adapter=$(select_enhanced_adapter 2>/dev/null)
+    local enhanced_adapter
+    enhanced_adapter=$(select_enhanced_adapter 2>/dev/null)
     if [ -n "$enhanced_adapter" ]; then
         add_test_result "$TEST_CATEGORY_CONFIG" "Enhanced Adapter Selection" "PASS" "$enhanced_adapter" "optional" ""
     else
@@ -795,7 +839,8 @@ test_enhanced_adapter_functionality() {
     fi
     
     # Test platform tool paths
-    local tool_paths=$(get_platform_tool_paths 2>/dev/null)
+    local tool_paths
+    tool_paths=$(get_platform_tool_paths 2>/dev/null)
     if [ -n "$tool_paths" ]; then
         add_test_result "$TEST_CATEGORY_CONFIG" "Platform Tool Paths" "PASS" "$tool_paths" "optional" ""
     else
@@ -808,8 +853,10 @@ test_platform_compatibility() {
     local adapter="$1"
     
     # Detect operating system and architecture
-    local os_name=$(uname -s 2>/dev/null)
-    local arch_name=$(uname -m 2>/dev/null)
+    local os_name
+    os_name=$(uname -s 2>/dev/null)
+    local arch_name
+    arch_name=$(uname -m 2>/dev/null)
     
     case "$os_name" in
         Linux)
@@ -850,7 +897,8 @@ test_platform_compatibility() {
             ;;
             
         Darwin)
-            local macos_version=$(sw_vers -productVersion 2>/dev/null)
+            local macos_version
+            macos_version=$(sw_vers -productVersion 2>/dev/null)
             add_test_result "$TEST_CATEGORY_CONFIG" "Operating System" "PASS" "macOS $macos_version ($arch_name)" "optional" ""
             
             # macOS-specific checks
@@ -896,7 +944,8 @@ test_platform_compatibility() {
             
             # PowerShell availability
             if command -v pwsh >/dev/null 2>&1; then
-                local pwsh_version=$(pwsh --version 2>/dev/null | head -1)
+                local pwsh_version
+                pwsh_version=$(pwsh --version 2>/dev/null | head -1)
                 add_test_result "$TEST_CATEGORY_CONFIG" "PowerShell Core" "PASS" "$pwsh_version" "recommended" ""
             elif command -v powershell.exe >/dev/null 2>&1; then
                 add_test_result "$TEST_CATEGORY_CONFIG" "Windows PowerShell" "PASS" "Windows PowerShell available" "optional" ""
@@ -914,7 +963,8 @@ test_platform_compatibility() {
     local shells_found=""
     for shell in bash zsh fish; do
         if command -v "$shell" >/dev/null 2>&1; then
-            local shell_version=$("$shell" --version 2>/dev/null | head -1)
+            local shell_version
+            shell_version=$("$shell" --version 2>/dev/null | head -1)
             shells_found="$shells_found $shell"
             add_test_result "$TEST_CATEGORY_CONFIG" "Shell: $shell" "PASS" "$shell_version" "optional" ""
         fi

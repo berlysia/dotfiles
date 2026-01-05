@@ -1,5 +1,5 @@
-# POSIX互換性をチェック
-shell=sh
+# bash/zsh互換性をチェック（localなどの共通機能を許可）
+shell=bash
 
 # 特定の警告を無視（必要な場合）
 # SC2039: POSIX互換でない場合でも許可する特定の構文

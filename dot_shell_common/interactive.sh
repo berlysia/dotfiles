@@ -2,6 +2,7 @@
 # Common shell initialization script for both zsh and bash interactive sessions
 
 # Load common aliases
+# shellcheck disable=SC2154
 [ -f "$SHELL_COMMON/aliases.sh" ] && . "$SHELL_COMMON/aliases.sh"
 
 # FZF integration based on shell type

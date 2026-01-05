@@ -28,12 +28,14 @@ if [ -f "$SHELL_COMMON/path.sh" ]; then
   # shellcheck disable=SC3054
   if [ "$CURRENT_SHELL" = "zsh" ]; then
     # zsh-specific path handling
+    # shellcheck disable=SC2154
     for p in "${COMMON_PATHS[@]}"; do
       # shellcheck disable=SC2128,SC2034,SC3030
       path=($p $path)
     done
   else
     # bash-specific path handling
+    # shellcheck disable=SC2154
     for p in "${COMMON_PATHS[@]}"; do
       add_to_path "$p"
     done
@@ -74,6 +76,7 @@ esac
 [ -f "$SHELL_COMMON/tools.sh" ] && . "$SHELL_COMMON/tools.sh"
 
 # Shell-specific tool activations
+# shellcheck disable=SC2154
 if [ "$HAS_MISE" = "1" ] && [ -f "$HOME/.local/bin/mise" ]; then
   if [ "$CURRENT_SHELL" = "zsh" ]; then
     eval "$($HOME/.local/bin/mise activate zsh)"
@@ -87,6 +90,7 @@ if [ -f "$HOME/.cargo/env" ]; then
   . "$HOME/.cargo/env"
 fi
 
+# shellcheck disable=SC2154
 if [ "$HAS_OPAM" = "1" ] && type opam >/dev/null 2>&1; then
   eval "$(opam env)"
 fi

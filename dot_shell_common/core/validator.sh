@@ -119,7 +119,8 @@ validate_system_health() {
     
     # Calculate health percentage
     local health_percentage=0
-    local counted_tests=$((total_tests - skipped_tests))
+    local counted_tests
+    counted_tests=$((total_tests - skipped_tests))
     
     if [ $counted_tests -gt 0 ]; then
         health_percentage=$((passed_tests * 100 / counted_tests))
@@ -146,29 +147,34 @@ check_configuration_issues() {
     local issues=""
     
     # Check shell common directory
-    local shell_common_dir=$(${adapter}_get_shell_common_dir)
+    local shell_common_dir
+    shell_common_dir=$(${adapter}_get_shell_common_dir)
     if ! ${adapter}_dir_exists "$shell_common_dir"; then
         issues="${issues}MISSING_SHELL_COMMON "
     fi
     
     # Check essential files
-    local functions_path=$(${adapter}_get_functions_path)
+    local functions_path
+    functions_path=$(${adapter}_get_functions_path)
     if ! ${adapter}_file_exists "$functions_path"; then
         issues="${issues}MISSING_FUNCTIONS "
     fi
     
-    local aliases_path=$(${adapter}_get_aliases_path)
+    local aliases_path
+    aliases_path=$(${adapter}_get_aliases_path)
     if ! ${adapter}_file_exists "$aliases_path"; then
         issues="${issues}MISSING_ALIASES "
     fi
     
     # Check shell configurations
-    local bashrc_path=$(${adapter}_get_bashrc_path)
+    local bashrc_path
+    bashrc_path=$(${adapter}_get_bashrc_path)
     if ! ${adapter}_file_exists "$bashrc_path"; then
         issues="${issues}MISSING_BASHRC "
     fi
     
-    local zshrc_path=$(${adapter}_get_zshrc_path)
+    local zshrc_path
+    zshrc_path=$(${adapter}_get_zshrc_path)
     if ! ${adapter}_file_exists "$zshrc_path"; then
         issues="${issues}MISSING_ZSHRC "
     fi

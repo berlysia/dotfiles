@@ -20,5 +20,6 @@ fi
 
 # gcloud configuration with mise python
 if type mise >/dev/null 2>&1 && mise list | grep python >/dev/null && type gcloud >/dev/null 2>&1; then
+  # shellcheck disable=SC2155
   export CLOUDSDK_PYTHON="$(mise which python)"
 fi
