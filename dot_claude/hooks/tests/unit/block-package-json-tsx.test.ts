@@ -1,15 +1,15 @@
 #!/usr/bin/env node --test
 
-import { describe, it, beforeEach, afterEach } from "node:test";
-import { strictEqual, deepStrictEqual, ok } from "node:assert";
-import {
-  defineHook,
-  ConsoleCapture,
-  EnvironmentHelper,
-  createPreToolUseContext,
-} from "./test-helpers.ts";
+import { deepStrictEqual, ok } from "node:assert";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import blockPkgHook from "../../implementations/block-package-json-tsx.ts";
-import { invokeRun } from "./test-helpers.ts";
+import {
+  ConsoleCapture,
+  createPreToolUseContext,
+  defineHook,
+  EnvironmentHelper,
+  invokeRun,
+} from "./test-helpers.ts";
 
 describe("block-package-json-tsx.ts hook behavior", () => {
   const consoleCapture = new ConsoleCapture();
@@ -60,7 +60,7 @@ describe("block-package-json-tsx.ts hook behavior", () => {
     it("should block ts-node command in scripts", async () => {
       const hook = blockPkgHook;
 
-      const packageJson = {
+      const _packageJson = {
         scripts: {
           test: "ts-node test.ts",
         },

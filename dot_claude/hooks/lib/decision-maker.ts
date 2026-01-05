@@ -4,7 +4,6 @@
  */
 
 import type {
-  PermissionDecision,
   CommandAnalysisResult,
   PreToolUseHookOutput,
 } from "../types/project-types.ts";

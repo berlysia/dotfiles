@@ -14,16 +14,16 @@ export type {
 
 // Re-export project-specific types
 export type {
-  PermissionDecision,
-  ToolInput,
-  SettingsFile,
   CommandAnalysisResult,
-  PatternMatchConfig,
-  ProcessingContext,
-  DangerousCommandResult,
   CommandLogEntry,
+  DangerousCommandResult,
   FileOperation,
-  PathValidationResult,
   LogEntry,
+  PathValidationResult,
+  PatternMatchConfig,
   PendingCommand,
+  PermissionDecision,
+  ProcessingContext,
+  SettingsFile,
+  ToolInput,
 } from "./project-types.ts";

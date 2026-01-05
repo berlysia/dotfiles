@@ -27,16 +27,50 @@
       "recommended": true,
       "style": {
         "useNodejsImportProtocol": "warn",
-        "useTemplate": "warn"
+        "useTemplate": "warn",
+        "noNonNullAssertion": "warn"
       },
       "complexity": {
         "noUselessEscapeInRegex": "warn"
       },
       "correctness": {
-        "useExhaustiveDependencies": "off"
+        "useExhaustiveDependencies": "off",
+        "noUnusedVariables": "warn"
+      },
+      "suspicious": {
+        "noAssignInExpressions": "off",
+        "noImplicitAnyLet": "warn",
+        "noTemplateCurlyInString": "warn",
+        "noFallthroughSwitchClause": "warn",
+        "useIterableCallbackReturn": "warn"
       }
     }
   },
+  "overrides": [
+    {
+      "includes": ["**/*.test.ts", "**/tests/**/*.ts"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noExplicitAny": "off"
+          },
+          "correctness": {
+            "noUnusedVariables": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["**/scripts/**/*.ts"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noExplicitAny": "warn"
+          }
+        }
+      }
+    }
+  ],
   "javascript": {
     "formatter": {
       "quoteStyle": "double",

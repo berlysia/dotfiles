@@ -1,7 +1,7 @@
 #!/usr/bin/env -S bun test
 
+import { deepStrictEqual, ok, strictEqual } from "node:assert";
 import { describe, it } from "node:test";
-import { strictEqual, deepStrictEqual, ok } from "node:assert";
 
 // expectヘルパー（node:assertのラッパー）
 const expect = (value: any) => ({
@@ -29,8 +29,8 @@ const expect = (value: any) => ({
 });
 
 import {
-  checkFilePermissions,
   canApproveSedTargets,
+  checkFilePermissions,
 } from "../../lib/file-permission-inference.ts";
 
 describe("file-permission-inference", () => {
@@ -105,10 +105,7 @@ describe("file-permission-inference", () => {
     });
 
     it("should handle relative paths starting with ./", () => {
-      const result = checkFilePermissions(
-        ["./src/utils.ts"],
-        ["Edit(./**)"],
-      );
+      const result = checkFilePermissions(["./src/utils.ts"], ["Edit(./**)"]);
 
       expect(result.allFilesPermitted).toBeTruthy();
     });
@@ -160,7 +157,7 @@ describe("file-permission-inference", () => {
     });
 
     it("should handle empty file list", () => {
-      const result = checkFilePermissions([], ["Edit(./**)"], );
+      const result = checkFilePermissions([], ["Edit(./**)"]);
 
       expect(result.allFilesPermitted).toBeTruthy();
       expect(result.fileResults).toHaveLength(0);
@@ -177,10 +174,7 @@ describe("file-permission-inference", () => {
     });
 
     it("should handle files in current directory", () => {
-      const result = checkFilePermissions(
-        ["README.md"],
-        ["Edit(./**)"],
-      );
+      const result = checkFilePermissions(["README.md"], ["Edit(./**)"]);
 
       expect(result.allFilesPermitted).toBeTruthy();
     });
@@ -206,10 +200,7 @@ describe("file-permission-inference", () => {
     });
 
     it("should return false when no Edit patterns", () => {
-      const result = canApproveSedTargets(
-        ["file.txt"],
-        ["Bash(git:*)"],
-      );
+      const result = canApproveSedTargets(["file.txt"], ["Bash(git:*)"]);
 
       expect(result).toBeFalsy();
     });

@@ -36,7 +36,7 @@ function splitCommandLine(command: string): string[] {
   for (let i = 0; i < command.length; i++) {
     const char = command[i];
     const prevChar = i > 0 ? command[i - 1] : "";
-    const nextChar = i < command.length - 1 ? command[i + 1] : "";
+    const _nextChar = i < command.length - 1 ? command[i + 1] : "";
 
     // エスケープされた文字はそのまま追加
     if (prevChar === "\\" && (char === "'" || char === '"' || char === " ")) {

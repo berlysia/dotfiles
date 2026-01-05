@@ -1,16 +1,16 @@
 #!/usr/bin/env node --test
 
-import { describe, it, beforeEach, afterEach } from "node:test";
-import { strictEqual, deepStrictEqual, ok } from "node:assert";
+import { deepStrictEqual, ok, strictEqual } from "node:assert";
 import {
-  mkdirSync,
-  rmSync,
-  readFileSync,
-  existsSync,
   appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
 } from "node:fs";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import { createUserPromptSubmitContext } from "./test-helpers.ts";
 
 describe("user-prompt-logger.ts hook behavior", () => {
@@ -54,7 +54,7 @@ describe("user-prompt-logger.ts hook behavior", () => {
         cwd: process.cwd(),
       };
 
-      const logLine = JSON.stringify(logEntry) + "\n";
+      const logLine = `${JSON.stringify(logEntry)}\n`;
 
       // Write to test file
       appendFileSync(logFile, logLine);
@@ -91,7 +91,7 @@ describe("user-prompt-logger.ts hook behavior", () => {
           "Should use 'unknown' for missing USER",
         );
 
-        appendFileSync(logFile, JSON.stringify(logEntry) + "\n");
+        appendFileSync(logFile, `${JSON.stringify(logEntry)}\n`);
 
         const content = readFileSync(logFile, "utf-8");
         const parsed = JSON.parse(content.trim());
@@ -112,7 +112,7 @@ describe("user-prompt-logger.ts hook behavior", () => {
         cwd: "/test/dir",
       };
 
-      appendFileSync(logFile, JSON.stringify(logEntry) + "\n");
+      appendFileSync(logFile, `${JSON.stringify(logEntry)}\n`);
 
       const content = readFileSync(logFile, "utf-8");
       const parsed = JSON.parse(content.trim());
@@ -132,7 +132,7 @@ describe("user-prompt-logger.ts hook behavior", () => {
         cwd: "/test/dir",
       };
 
-      const logLine = JSON.stringify(logEntry) + "\n";
+      const logLine = `${JSON.stringify(logEntry)}\n`;
       appendFileSync(logFile, logLine);
 
       const content = readFileSync(logFile, "utf-8");
@@ -157,7 +157,7 @@ describe("user-prompt-logger.ts hook behavior", () => {
           user: "testuser",
           cwd: "/test/dir",
         };
-        appendFileSync(logFile, JSON.stringify(logEntry) + "\n");
+        appendFileSync(logFile, `${JSON.stringify(logEntry)}\n`);
       }
 
       const content = readFileSync(logFile, "utf-8");
@@ -182,7 +182,7 @@ describe("user-prompt-logger.ts hook behavior", () => {
         cwd: originalCwd,
       };
 
-      appendFileSync(logFile, JSON.stringify(logEntry) + "\n");
+      appendFileSync(logFile, `${JSON.stringify(logEntry)}\n`);
 
       const content = readFileSync(logFile, "utf-8");
       const parsed = JSON.parse(content.trim());
@@ -202,14 +202,14 @@ describe("user-prompt-logger.ts hook behavior", () => {
         cwd: "/test/dir",
       };
 
-      appendFileSync(logFile, JSON.stringify(logEntry) + "\n");
+      appendFileSync(logFile, `${JSON.stringify(logEntry)}\n`);
 
       const content = readFileSync(logFile, "utf-8");
       const parsed = JSON.parse(content.trim());
 
       // Verify timestamp is valid ISO string
       const timestamp = new Date(parsed.timestamp);
-      ok(!isNaN(timestamp.getTime()), "Timestamp should be valid");
+      ok(!Number.isNaN(timestamp.getTime()), "Timestamp should be valid");
       ok(
         parsed.timestamp.includes("T"),
         "Should be ISO format with T separator",
@@ -294,7 +294,7 @@ describe("user-prompt-logger.ts hook behavior", () => {
       };
 
       // Would normally write to log
-      appendFileSync(logFile, JSON.stringify(logEntry) + "\n");
+      appendFileSync(logFile, `${JSON.stringify(logEntry)}\n`);
 
       // Simulate success response
       const result = mockContext.success({});
@@ -344,7 +344,7 @@ describe("user-prompt-logger.ts hook behavior", () => {
           };
 
           setTimeout(() => {
-            appendFileSync(logFile, JSON.stringify(logEntry) + "\n");
+            appendFileSync(logFile, `${JSON.stringify(logEntry)}\n`);
             resolve();
           }, Math.random() * 10);
         });

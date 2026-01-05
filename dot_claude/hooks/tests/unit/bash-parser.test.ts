@@ -1,22 +1,24 @@
 #!/usr/bin/env -S bun test
 
-import { describe, it, test } from "node:test";
-import { strictEqual, deepStrictEqual, ok } from "node:assert";
+import { deepStrictEqual, ok, strictEqual } from "node:assert";
+import { describe, it } from "node:test";
 
 // expect関数のヘルパー（node:assertのラッパー）
-const expect = (value: any) => ({
-  toBe: (expected: any) => strictEqual(value, expected),
-  toEqual: (expected: any) => deepStrictEqual(value, expected),
+const expect = (value: unknown) => ({
+  toBe: (expected: unknown) => strictEqual(value, expected),
+  toEqual: (expected: unknown) => deepStrictEqual(value, expected),
   toBeTruthy: () => ok(value),
   toBeFalsy: () => ok(!value),
   toBeDefined: () => ok(value !== undefined),
-  toHaveLength: (expected: number) => strictEqual(value.length, expected),
-  toBeGreaterThanOrEqual: (expected: number) => ok(value >= expected),
-  toBeLessThanOrEqual: (expected: number) => ok(value <= expected),
-  toContain: (expected: any) => ok(value.includes(expected)),
+  toHaveLength: (expected: number) =>
+    strictEqual((value as { length: number }).length, expected),
+  toBeGreaterThanOrEqual: (expected: number) =>
+    ok((value as number) >= expected),
+  toBeLessThanOrEqual: (expected: number) => ok((value as number) <= expected),
+  toContain: (expected: unknown) => ok((value as unknown[]).includes(expected)),
   not: {
-    toBe: (expected: any) => ok(value !== expected),
-    toEqual: (expected: any) => {
+    toBe: (expected: unknown) => ok(value !== expected),
+    toEqual: (expected: unknown) => {
       try {
         deepStrictEqual(value, expected);
         ok(false); // Should not reach here
@@ -29,12 +31,10 @@ const expect = (value: any) => ({
     toContain: (expected: any) => ok(!value.includes(expected)),
   },
 });
+
 import {
-  parseBashCommand,
   extractCommandsStructured,
-  type BashParsingResult,
-  type SimpleCommand,
-  type ExtractedCommands,
+  parseBashCommand,
 } from "../../lib/bash-parser.ts";
 
 describe("bash-parser", () => {

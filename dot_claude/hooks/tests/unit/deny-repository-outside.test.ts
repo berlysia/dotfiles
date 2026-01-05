@@ -1,17 +1,16 @@
 #!/usr/bin/env node --test
 
-import { describe, it, beforeEach, afterEach } from "node:test";
-import { strictEqual, deepStrictEqual, ok } from "node:assert";
+import { deepStrictEqual, ok } from "node:assert";
+import { afterEach, beforeEach, describe, it } from "node:test";
+import denyRepoHook from "../../implementations/deny-repository-outside.ts";
 import {
-  defineHook,
-  createFileSystemMock,
   ConsoleCapture,
-  EnvironmentHelper,
-  createPreToolUseContext,
+  createFileSystemMock,
   createPreToolUseContextFor,
+  defineHook,
+  EnvironmentHelper,
   invokeRun,
 } from "./test-helpers.ts";
-import denyRepoHook from "../../implementations/deny-repository-outside.ts";
 
 describe("deny-repository-outside.ts hook behavior", () => {
   const consoleCapture = new ConsoleCapture();
@@ -366,7 +365,7 @@ describe("deny-repository-outside.ts hook behavior", () => {
 });
 
 // Helper function to create deny-repository-outside hook
-function createDenyRepositoryOutsideHook(repoRoot: string | undefined) {
+function _createDenyRepositoryOutsideHook(repoRoot: string | undefined) {
   return defineHook({
     trigger: { PreToolUse: true },
     run: (context: any) => {
@@ -429,7 +428,7 @@ function extractPaths(toolName: string, toolInput: any): string[] {
     case "Grep":
       if (toolInput.path) paths.push(toolInput.path);
       break;
-    case "Bash":
+    case "Bash": {
       // Extract file paths from bash commands
       const command = toolInput.command || "";
       const filePatterns = [
@@ -446,6 +445,7 @@ function extractPaths(toolName: string, toolInput: any): string[] {
         }
       }
       break;
+    }
   }
 
   return paths;

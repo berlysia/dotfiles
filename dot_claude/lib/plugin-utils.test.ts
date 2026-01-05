@@ -3,14 +3,14 @@
  * Run: node --test dot_claude/lib/plugin-utils.test.ts
  */
 
-import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { describe, it } from "node:test";
 import {
-  parsePluginKey,
-  makePluginKey,
   findMissingPlugins,
   findUntrackedPlugins,
+  makePluginKey,
   type PluginDependency,
+  parsePluginKey,
 } from "./plugin-utils.ts";
 
 describe("parsePluginKey", () => {

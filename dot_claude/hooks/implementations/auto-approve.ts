@@ -1,37 +1,35 @@
 #!/usr/bin/env -S bun run --silent
 
-import { defineHook } from "cc-hooks-ts";
+import { execSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { existsSync, readFileSync } from "node:fs";
-import { execSync } from "node:child_process";
+import { defineHook } from "cc-hooks-ts";
+import { extractCommandsStructured } from "../lib/bash-parser.ts";
+import { logDecision } from "../lib/centralized-logging.ts";
 import {
+  CONTROL_STRUCTURE_KEYWORDS,
+  checkDangerousCommand,
+  getCommandFromToolInput,
+  NO_PAREN_TOOL_NAMES,
+} from "../lib/command-parsing.ts";
+import {
+  createAllowResponse,
   createAskResponse,
   createDenyResponse,
-  createAllowResponse,
 } from "../lib/context-helpers.ts";
-import { logDecision } from "../lib/centralized-logging.ts";
+import { analyzePatternMatches } from "../lib/decision-maker.ts";
+import { normalizePath, normalizePattern } from "../lib/path-utils.ts";
+import {
+  matchGitignorePattern,
+  checkIndividualCommandWithMatchedPattern as patternMatcherCheckAllow,
+  checkIndividualCommandDenyWithPattern as patternMatcherCheckDeny,
+  checkPattern as patternMatcherCheckPattern,
+} from "../lib/pattern-matcher.ts";
 import {
   isBashToolInput,
   type PermissionDecision,
 } from "../types/project-types.ts";
-import {
-  checkDangerousCommand,
-  checkCommandPattern,
-  getFilePathFromToolInput,
-  getCommandFromToolInput,
-  NO_PAREN_TOOL_NAMES,
-  CONTROL_STRUCTURE_KEYWORDS,
-} from "../lib/command-parsing.ts";
-import { extractCommandsStructured } from "../lib/bash-parser.ts";
-import {
-  checkIndividualCommandWithMatchedPattern as patternMatcherCheckAllow,
-  checkIndividualCommandDenyWithPattern as patternMatcherCheckDeny,
-  checkPattern as patternMatcherCheckPattern,
-  matchGitignorePattern,
-} from "../lib/pattern-matcher.ts";
-import { analyzePatternMatches } from "../lib/decision-maker.ts";
-import { normalizePath, normalizePattern } from "../lib/path-utils.ts";
 import "../types/tool-schemas.ts";
 
 /**
@@ -95,8 +93,15 @@ const hook = defineHook({
         return context.success({});
       } else {
         // Handle other tools with special logic for certain tools
-        const smartPassTools = ["ExitPlanMode", "WebFetch", "WebSearch", "Glob", "Search", "Grep"];
-        
+        const smartPassTools = [
+          "ExitPlanMode",
+          "WebFetch",
+          "WebSearch",
+          "Glob",
+          "Search",
+          "Grep",
+        ];
+
         if (smartPassTools.includes(tool_name)) {
           // For these tools, check explicit patterns first, then pass if no matches
           const otherResult = await processOtherTool(
@@ -105,14 +110,17 @@ const hook = defineHook({
             denyList,
             allowList,
           );
-          
+
           // If there are explicit deny or allow matches, respect them
-          if (otherResult.denyMatches.length > 0 || otherResult.allowMatches.length > 0) {
+          if (
+            otherResult.denyMatches.length > 0 ||
+            otherResult.allowMatches.length > 0
+          ) {
             const decision = analyzePatternMatches(
               otherResult.allowMatches,
               otherResult.denyMatches,
             );
-            
+
             logDecision(
               tool_name,
               decision.decision,
@@ -121,14 +129,14 @@ const hook = defineHook({
               undefined,
               tool_input,
             );
-            
+
             if (decision.decision === "deny") {
               return context.json(createDenyResponse(decision.reason));
             } else if (decision.decision === "allow") {
               return context.json(createAllowResponse(decision.reason));
             }
           }
-          
+
           // No explicit patterns matched, pass to Claude Code
           logDecision(
             tool_name,
@@ -566,7 +574,7 @@ async function checkPattern(
 function analyzeBashCommands(
   commands: BashCommandResult[],
   hasAskRequired: boolean,
-  hasPassRequired: boolean,
+  _hasPassRequired: boolean,
 ): { decision: PermissionDecision; reason: string } {
   // Ask takes precedence
   if (hasAskRequired) {
@@ -583,14 +591,16 @@ function analyzeBashCommands(
   const deniedCommands = commands.filter((cmd) => cmd.type === "deny");
   if (deniedCommands.length > 0) {
     // Create detailed breakdown of which commands were denied and why
-    const denyDetails = deniedCommands.map(cmd => {
-      if (cmd.pattern) {
-        return `"${cmd.command}" → blocked by ${cmd.pattern}`;
-      } else {
-        return `"${cmd.command}" → ${cmd.reason}`;
-      }
-    }).join(", ");
-    
+    const denyDetails = deniedCommands
+      .map((cmd) => {
+        if (cmd.pattern) {
+          return `"${cmd.command}" → blocked by ${cmd.pattern}`;
+        } else {
+          return `"${cmd.command}" → ${cmd.reason}`;
+        }
+      })
+      .join(", ");
+
     return {
       decision: "deny",
       reason: `Blocked by security rules (${deniedCommands.length} commands): ${denyDetails}`,
@@ -604,8 +614,10 @@ function analyzeBashCommands(
 
   if (nonSkippedCommands.length === 0) {
     // Only control structure keywords are present
-    const skippedCommands = commands.filter(cmd => cmd.type === 'skip');
-    const skippedDetails = skippedCommands.map(cmd => `"${cmd.command}"`).join(", ");
+    const skippedCommands = commands.filter((cmd) => cmd.type === "skip");
+    const skippedDetails = skippedCommands
+      .map((cmd) => `"${cmd.command}"`)
+      .join(", ");
     return {
       decision: "ask",
       reason: `Only control structure keywords present (${skippedCommands.length} keywords): ${skippedDetails}, no allow patterns defined`,
@@ -614,7 +626,9 @@ function analyzeBashCommands(
 
   if (allowedCommands.length > 0 && passCommands.length === 0) {
     // Create detailed breakdown of which commands matched which patterns
-    const matchDetails = allowedCommands.map(cmd => `"${cmd.command}" → ${cmd.pattern}`).join(", ");
+    const matchDetails = allowedCommands
+      .map((cmd) => `"${cmd.command}" → ${cmd.pattern}`)
+      .join(", ");
     return {
       decision: "allow",
       reason: `All commands matched allow patterns (${allowedCommands.length} commands): ${matchDetails}`,
@@ -624,7 +638,9 @@ function analyzeBashCommands(
   // Pass commands through to Claude Code (no hook intervention)
   if (passCommands.length > 0) {
     // Create detailed breakdown of which commands are passed through
-    const passDetails = passCommands.map(cmd => `"${cmd.command}"`).join(", ");
+    const passDetails = passCommands
+      .map((cmd) => `"${cmd.command}"`)
+      .join(", ");
     return {
       decision: "pass",
       reason: `Commands passed through to Claude Code for evaluation (${passCommands.length} commands): ${passDetails}`,
@@ -632,7 +648,9 @@ function analyzeBashCommands(
   }
 
   // Fallback ask case - provide details about what commands need review
-  const allCommands = nonSkippedCommands.map(cmd => `"${cmd.command}"`).join(", ");
+  const allCommands = nonSkippedCommands
+    .map((cmd) => `"${cmd.command}"`)
+    .join(", ");
   return {
     decision: "ask",
     reason: `Manual review required for commands (${nonSkippedCommands.length} commands): ${allCommands} - no permission patterns configured`,
@@ -643,7 +661,7 @@ function analyzeBashCommands(
 
 // matchesPathPattern functionality consolidated into pattern-matcher.ts matchGitignorePattern
 // This wrapper handles path normalization and delegates to shared implementation
-function matchesPathPattern(filePath: string, pattern: string): boolean {
+function _matchesPathPattern(filePath: string, pattern: string): boolean {
   // Normalize file path and pattern using utility functions from path-utils.ts
   const normalizedPath = normalizePath(filePath, { makeAbsolute: true });
   const normalizedPatternStr = normalizePattern(pattern);

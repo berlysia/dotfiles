@@ -79,7 +79,7 @@ export interface VoiceSynthesisConfig {
 }
 
 export interface AudioQuery {
-  accent_phrases: any[];
+  accent_phrases: unknown[];
   speedScale: number;
   pitchScale: number;
   intonationScale: number;
