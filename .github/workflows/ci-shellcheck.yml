@@ -1,0 +1,42 @@
+name: Shell Lint (shellcheck)
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - '**/*.sh'
+      - '.shellcheckrc'
+      - '.github/workflows/ci-shellcheck.yml'
+  pull_request:
+    branches: [master, main]
+    paths:
+      - '**/*.sh'
+      - '.shellcheckrc'
+      - '.github/workflows/ci-shellcheck.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  shellcheck:
+    name: Shellcheck
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
+
+      - name: Run shellcheck
+        uses: ludeeus/action-shellcheck@00b27aa7cb85167568cb48a3838b75f4265f2b64 # v2.0.0
+        with:
+          scandir: '.'
+          ignore_paths: >-
+            node_modules
+            .git
+            .tmp
+          severity: warning
