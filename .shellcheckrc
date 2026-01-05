@@ -18,4 +18,5 @@ enable=all
 enable=avoid-nullary-conditions
 enable=check-unassigned-uppercase
 enable=quote-safe-variables
-enable=require-variable-braces
+# require-variable-braces は無効化（既存コードとの互換性のため）
+# enable=require-variable-braces
