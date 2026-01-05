@@ -13,7 +13,7 @@ if [ -z "$SSH_AUTH_SOCK" ]; then
   if [ -f "/proc/version" ] && grep -q "Microsoft" /proc/version; then
     # WSL-specific SSH agent handling
     if [ -f "$HOME/.local/bin/wsl2-ssh-agent" ]; then
-      eval "$($HOME/.local/bin/wsl2-ssh-agent)"
+      eval "$($HOME/.local/bin/wsl2-ssh-agent -powershell-path pwsh.exe)"
     fi
   else
     # MSYS/MINGW/Cygwin SSH agent handling

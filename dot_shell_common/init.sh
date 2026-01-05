@@ -62,7 +62,7 @@ case "$(uname -s)" in
     # WSL detection
     if grep -q microsoft /proc/version 2>/dev/null; then
       if [ -f "$HOME/.local/bin/wsl2-ssh-agent" ]; then
-        eval "$($HOME/.local/bin/wsl2-ssh-agent)"
+        eval "$($HOME/.local/bin/wsl2-ssh-agent -powershell-path pwsh.exe)"
       fi
       export BROWSER=wslview
     fi
