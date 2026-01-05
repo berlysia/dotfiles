@@ -17,17 +17,20 @@ post_apply_get_shell_common_dir() {
 }
 
 post_apply_get_functions_path() {
-    local shell_common_dir=$(post_apply_get_shell_common_dir)
+    local shell_common_dir
+    shell_common_dir=$(post_apply_get_shell_common_dir)
     echo "$shell_common_dir/functions.sh"
 }
 
 post_apply_get_aliases_path() {
-    local shell_common_dir=$(post_apply_get_shell_common_dir)
+    local shell_common_dir
+    shell_common_dir=$(post_apply_get_shell_common_dir)
     echo "$shell_common_dir/aliases.sh"
 }
 
 post_apply_get_init_path() {
-    local shell_common_dir=$(post_apply_get_shell_common_dir)
+    local shell_common_dir
+    shell_common_dir=$(post_apply_get_shell_common_dir)
     echo "$shell_common_dir/init.sh"
 }
 
@@ -44,7 +47,8 @@ post_apply_dir_exists() {
 
 # Shell execution functions for testing installed configuration
 post_apply_test_bash_loading() {
-    local bashrc_path=$(post_apply_get_bashrc_path)
+    local bashrc_path
+    bashrc_path=$(post_apply_get_bashrc_path)
     
     if [ -f "$bashrc_path" ]; then
         # Test by sourcing bashrc which should set up SHELL_COMMON
@@ -55,7 +59,8 @@ post_apply_test_bash_loading() {
 }
 
 post_apply_test_zsh_loading() {
-    local zshrc_path=$(post_apply_get_zshrc_path)
+    local zshrc_path
+    zshrc_path=$(post_apply_get_zshrc_path)
     
     if [ -f "$zshrc_path" ]; then
         # Test by sourcing zshrc which should set up SHELL_COMMON
@@ -98,14 +103,16 @@ post_apply_test_function_exists() {
     # Test by loading the user's shell configuration
     case "$shell" in
         bash)
-            local config_path=$(post_apply_get_bashrc_path)
+            local config_path
+            config_path=$(post_apply_get_bashrc_path)
             if [ -f "$config_path" ]; then
                 bash -c "source '$config_path' && type $function_name >/dev/null 2>&1"
                 return $?
             fi
             ;;
         zsh)
-            local config_path=$(post_apply_get_zshrc_path)
+            local config_path
+            config_path=$(post_apply_get_zshrc_path)
             if [ -f "$config_path" ]; then
                 zsh -c "source '$config_path' && type $function_name >/dev/null 2>&1"
                 return $?
@@ -119,7 +126,8 @@ post_apply_test_function_exists() {
 # Test alias availability in current environment
 post_apply_test_alias_exists() {
     local alias_name="$1"
-    local aliases_path=$(post_apply_get_aliases_path)
+    local aliases_path
+    aliases_path=$(post_apply_get_aliases_path)
     
     if [ -f "$aliases_path" ]; then
         grep -q "^alias $alias_name=" "$aliases_path"
@@ -132,7 +140,8 @@ post_apply_test_alias_exists() {
 # Test if chezmoi is properly configured
 post_apply_test_chezmoi_status() {
     if command -v chezmoi >/dev/null 2>&1; then
-        local source_dir=$(chezmoi source-path 2>/dev/null)
+        local source_dir
+        source_dir=$(chezmoi source-path 2>/dev/null)
         if [ -n "$source_dir" ] && [ -d "$source_dir" ]; then
             echo "CONFIGURED"
             return 0
@@ -149,8 +158,10 @@ post_apply_test_chezmoi_status() {
 # Test git configuration
 post_apply_test_git_config() {
     if command -v git >/dev/null 2>&1; then
-        local user_name=$(git config --global user.name 2>/dev/null)
-        local user_email=$(git config --global user.email 2>/dev/null)
+        local user_name
+        user_name=$(git config --global user.name 2>/dev/null)
+        local user_email
+        user_email=$(git config --global user.email 2>/dev/null)
         
         if [ -n "$user_name" ] && [ -n "$user_email" ]; then
             echo "CONFIGURED"
@@ -178,7 +189,8 @@ post_apply_test_env_var() {
     fi
     
     if [ -f "$config_path" ]; then
-        local shell_name=$(basename "$SHELL")
+        local shell_name
+        shell_name=$(basename "$SHELL")
         "$shell_name" -c "source '$config_path' && eval echo \\\$$var_name" 2>/dev/null
     else
         eval echo \$$var_name
@@ -187,9 +199,12 @@ post_apply_test_env_var() {
 
 # Get configuration summary for this adapter
 post_apply_get_config_summary() {
-    local bashrc_path=$(post_apply_get_bashrc_path)
-    local zshrc_path=$(post_apply_get_zshrc_path)
-    local shell_common_dir=$(post_apply_get_shell_common_dir)
+    local bashrc_path
+    bashrc_path=$(post_apply_get_bashrc_path)
+    local zshrc_path
+    zshrc_path=$(post_apply_get_zshrc_path)
+    local shell_common_dir
+    shell_common_dir=$(post_apply_get_shell_common_dir)
     
     cat << EOF
 Post-Apply Configuration:

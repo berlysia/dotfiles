@@ -4,9 +4,9 @@
 export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 
 # Default editor
-if type code &>/dev/null; then
+if type code >/dev/null 2>&1; then
   EDITOR="code --wait"
-elif type emacs &>/dev/null; then
+elif type emacs >/dev/null 2>&1; then
   EDITOR=emacs
 fi
 export EDITOR
