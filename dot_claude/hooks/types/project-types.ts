@@ -189,34 +189,8 @@ export interface FileToolInput {
   file_path?: string;
 }
 
-// Local type definitions for tool inputs (to avoid module augmentation issues)
-export interface WriteInput {
-  file_path: string;
-  content: string;
-}
-
-export interface EditInput {
-  file_path: string;
-  old_string: string;
-  new_string: string;
-  replace_all?: boolean;
-}
-
-export interface MultiEditInput {
-  file_path: string;
-  edits: Array<{
-    old_string: string;
-    new_string: string;
-  }>;
-}
-
-export interface NotebookEditInput {
-  notebook_path: string;
-  new_source: string;
-  cell_id?: string;
-  cell_type?: "code" | "markdown";
-  edit_mode?: "replace" | "insert" | "delete";
-}
+// Note: Tool input types are now imported from cc-hooks-ts ToolSchema
+// Use ToolSchema["ToolName"]["input"] for type-safe tool inputs
 
 // 型ガード関数
 export function isBashToolInput(
@@ -241,11 +215,11 @@ export function isFileToolInput(
   );
 }
 
-// More precise tool-specific input guards (using local types)
+// More precise tool-specific input guards (using ToolSchema types)
 export function isWriteInput(
   tool_name: string,
   tool_input: unknown,
-): tool_input is WriteInput {
+): tool_input is import("cc-hooks-ts").ToolSchema["Write"]["input"] {
   return (
     tool_name === "Write" &&
     typeof tool_input === "object" &&
@@ -257,7 +231,7 @@ export function isWriteInput(
 export function isEditInput(
   tool_name: string,
   tool_input: unknown,
-): tool_input is EditInput {
+): tool_input is import("cc-hooks-ts").ToolSchema["Edit"]["input"] {
   return (
     tool_name === "Edit" &&
     typeof tool_input === "object" &&
@@ -269,7 +243,7 @@ export function isEditInput(
 export function isMultiEditInput(
   tool_name: string,
   tool_input: unknown,
-): tool_input is MultiEditInput {
+): tool_input is import("cc-hooks-ts").ToolSchema["MultiEdit"]["input"] {
   return (
     tool_name === "MultiEdit" &&
     typeof tool_input === "object" &&
@@ -293,7 +267,7 @@ export function isReadInput(
 export function isNotebookEditInput(
   tool_name: string,
   tool_input: unknown,
-): tool_input is NotebookEditInput {
+): tool_input is import("cc-hooks-ts").ToolSchema["NotebookEdit"]["input"] {
   return (
     tool_name === "NotebookEdit" &&
     typeof tool_input === "object" &&
