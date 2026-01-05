@@ -1,0 +1,52 @@
+name: Claude Dependency Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  claude-deps-review:
+    # Only run for dependency bot PRs
+    if: |
+      github.event.pull_request.user.login == 'renovate[bot]' ||
+      github.event.pull_request.user.login == 'dependabot[bot]'
+
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      - name: Run Claude Dependency Review
+        id: claude-deps
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          use_bedrock: false
+          use_vertex: false
+          timeout_minutes: "60"
+          prompt: |
+            This is an automated dependency update PR from ${{ github.event.pull_request.user.login }}.
+
+            PR: ${{ github.event.pull_request.html_url }}
+            Title: ${{ github.event.pull_request.title }}
+
+            Please:
+            1. Review the dependency changes for any breaking changes or security concerns
+            2. If there are lockfile conflicts or issues, resolve them
+            3. Run any relevant tests to verify the update works
+            4. If everything looks good, approve and merge the PR
+
+            Use `gh pr view`, `gh pr diff`, `gh pr merge` commands as needed.
+            If tests fail or there are issues, leave a comment explaining the problem.
+
+          claude_args: '--allowed-tools "Bash(gh:*),Bash(git:*),Bash(pnpm:*),Bash(npm:*),Read,Write,Edit,Glob,Grep"'
