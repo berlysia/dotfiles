@@ -3,11 +3,11 @@
  * 統一音声設定の生成と管理
  */
 
-import { homedir } from "os";
-import { join } from "path";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type {
-  UnifiedVoiceConfig,
   Platform,
+  UnifiedVoiceConfig,
   VoiceSession,
 } from "./unified-audio-types.ts";
 

@@ -7,10 +7,10 @@ import type { ToolInput } from "../types/project-types.ts";
 import { isBashToolInput } from "../types/project-types.ts";
 import { getFilePathFromToolInput } from "./command-parsing.ts";
 import {
-  normalizePathForMatching,
-  normalizePattern,
   type NormalizedPath,
   type NormalizedPattern,
+  normalizePathForMatching,
+  normalizePattern,
 } from "./path-utils.ts";
 
 /**
@@ -24,7 +24,7 @@ interface ChildCommandResult {
 /**
  * Extract wrapper command's child command
  */
-function extractChildCommand(command: string): ChildCommandResult {
+function _extractChildCommand(command: string): ChildCommandResult {
   const words = command.split(/\s+/);
 
   // Handle timeout command
@@ -68,7 +68,7 @@ function extractChildCommand(command: string): ChildCommandResult {
   // Handle find -exec command
   else if (command.includes("-exec ")) {
     const execMatch = command.match(/-exec\s+(.+?)\s+[\\;+]/);
-    if (execMatch && execMatch[1]) {
+    if (execMatch?.[1]) {
       return { found: true, command: execMatch[1].trim() };
     }
   }

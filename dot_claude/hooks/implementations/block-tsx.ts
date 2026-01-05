@@ -31,9 +31,12 @@ const hook = defineHook({
         /find\s+.*\s+-exec\s+(?:(?:npx|pnpx|bunx|(?:pnpm|yarn)\s+dlx)\s+)?(?:tsx|ts-node)\b/;
       const xargsPattern =
         /\|\s*xargs\s+(?:-[In]\s+\S+\s+)?(?:(?:npx|pnpx|bunx|(?:pnpm|yarn)\s+dlx)\s+)?(?:tsx|ts-node)\b/;
-      const parallelPattern = /parallel\s+(?:(?:npx|pnpx|bunx|(?:pnpm|yarn)\s+dlx)\s+)?(?:tsx|ts-node)\b/;
-      const timeoutPattern = /timeout\s+\S+\s+(?:(?:npx|pnpx|bunx|(?:pnpm|yarn)\s+dlx)\s+)?(?:tsx|ts-node)\b/;
-      const timePattern = /\btime\s+(?:(?:npx|pnpx|bunx|(?:pnpm|yarn)\s+dlx)\s+)?(?:tsx|ts-node)\b/;
+      const parallelPattern =
+        /parallel\s+(?:(?:npx|pnpx|bunx|(?:pnpm|yarn)\s+dlx)\s+)?(?:tsx|ts-node)\b/;
+      const timeoutPattern =
+        /timeout\s+\S+\s+(?:(?:npx|pnpx|bunx|(?:pnpm|yarn)\s+dlx)\s+)?(?:tsx|ts-node)\b/;
+      const timePattern =
+        /\btime\s+(?:(?:npx|pnpx|bunx|(?:pnpm|yarn)\s+dlx)\s+)?(?:tsx|ts-node)\b/;
 
       if (findExecPattern.test(command)) {
         return context.json(

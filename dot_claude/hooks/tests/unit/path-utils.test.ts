@@ -2,15 +2,15 @@
  * Tests for path-utils.ts
  */
 
-import { describe, it, mock } from "node:test";
 import { strictEqual } from "node:assert";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { describe, it } from "node:test";
 import {
-  expandTilde,
   expandRelativePath,
-  normalizePath,
+  expandTilde,
   makeRelativeToCwd,
+  normalizePath,
   normalizePathForMatching,
   normalizePattern,
 } from "../../lib/path-utils.ts";
@@ -146,7 +146,7 @@ describe("path-utils", () => {
     it("should expand tilde in path", () => {
       const result = normalizePathForMatching(
         "~/workspace/file.ts",
-        "~/workspace/**"
+        "~/workspace/**",
       );
       strictEqual(result, join(homedir(), "workspace/file.ts"));
     });
@@ -158,10 +158,7 @@ describe("path-utils", () => {
 
     it("should convert absolute to relative when pattern is ./ ", () => {
       const cwd = process.cwd();
-      const result = normalizePathForMatching(
-        `${cwd}/src/file.ts`,
-        "./src/**"
-      );
+      const result = normalizePathForMatching(`${cwd}/src/file.ts`, "./src/**");
       strictEqual(result, "./src/file.ts");
     });
 
@@ -173,14 +170,17 @@ describe("path-utils", () => {
     });
 
     it("should not convert path outside cwd to relative", () => {
-      const result = normalizePathForMatching("/other/path/file.ts", "./src/**");
+      const result = normalizePathForMatching(
+        "/other/path/file.ts",
+        "./src/**",
+      );
       strictEqual(result, "/other/path/file.ts");
     });
 
     it("should handle tilde in both path and pattern", () => {
       const result = normalizePathForMatching(
         "~/workspace/file.ts",
-        "~/workspace/**"
+        "~/workspace/**",
       );
       const expected = join(homedir(), "workspace/file.ts");
       strictEqual(result, expected);

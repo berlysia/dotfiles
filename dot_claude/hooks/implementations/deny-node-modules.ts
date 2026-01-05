@@ -1,18 +1,18 @@
 #!/usr/bin/env -S bun run --silent
 
-import { defineHook } from "cc-hooks-ts";
 import { resolve } from "node:path";
+import { defineHook } from "cc-hooks-ts";
+import { extractCommandsStructured } from "../lib/bash-parser.ts";
+import { getCommandFromToolInput } from "../lib/command-parsing.ts";
 import {
   createAskResponse,
   createDenyResponse,
 } from "../lib/context-helpers.ts";
-import { getCommandFromToolInput } from "../lib/command-parsing.ts";
-import { extractCommandsStructured } from "../lib/bash-parser.ts";
 import {
-  isWriteInput,
   isEditInput,
   isMultiEditInput,
   isNotebookEditInput,
+  isWriteInput,
 } from "../types/project-types.ts";
 // Import module augmentation for MultiEdit type
 import "../types/tool-schemas.ts";

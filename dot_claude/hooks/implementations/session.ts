@@ -1,15 +1,15 @@
 #!/usr/bin/env -S bun run --silent
 
+import { existsSync } from "node:fs";
 import { defineHook } from "cc-hooks-ts";
-import { logEvent } from "../lib/centralized-logging.ts";
-import { existsSync } from "fs";
 import {
-  PLUGIN_DEPENDENCIES_PATH,
+  findUntrackedPlugins,
   INSTALLED_PLUGINS_PATH,
   loadDependencies,
   loadInstalledPlugins,
-  findUntrackedPlugins,
+  PLUGIN_DEPENDENCIES_PATH,
 } from "../../lib/plugin-utils.ts";
+import { logEvent } from "../lib/centralized-logging.ts";
 
 function checkPluginSync(): string | null {
   if (

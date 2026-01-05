@@ -1,21 +1,27 @@
 /**
  * Permission Pattern Analyzer
  * 決定ログを分析して許可/拒否パターンの候補を自動抽出
- * 
+ *
  * 現在の制限:
  * - フックの自動判定結果のみを分析（ユーザーの実際の判断は未記録）
  * - askされたコマンドでユーザーがどう選択したかは不明
  * - passされたコマンドをClaude Codeがどう処理したかは不明
- * 
+ *
  * 将来の改善案:
  * - ユーザー決定ログ（user-decisions.jsonl）の追加
  * - Claude Code処理結果ログの追加
  * - 実際のユーザー行動に基づく真の統計分析
  */
 
-import { readFileSync, existsSync, realpathSync, lstatSync, readdirSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+} from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve, relative, dirname, basename } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import type { DecisionLogEntry } from "../types/logging-types.ts";
 
 export interface PatternAnalysis {
@@ -29,7 +35,12 @@ export interface PatternAnalysis {
     ask: number;
     pass: number;
   };
-  recommendedAction: "add_to_allow" | "add_to_deny" | "remove_unused" | "needs_pattern" | "keep_as_is";
+  recommendedAction:
+    | "add_to_allow"
+    | "add_to_deny"
+    | "remove_unused"
+    | "needs_pattern"
+    | "keep_as_is";
   reasoning: string;
   examples: DecisionLogEntry[];
 }
@@ -55,35 +66,6 @@ export interface AnalysisOptions {
  */
 export class PermissionAnalyzer {
   private readonly logPath: string;
-  private readonly dangerousPatterns = [
-    /rm\s+-rf?\s+[\/~]/,
-    /sudo\s+/,
-    /dd\s+/,
-    /mkfs/,
-    /fdisk/,
-    /chmod\s+777/,
-    /chown\s+root/,
-    />\s*\/dev\//,
-    /\/etc\/passwd/,
-    /\/etc\/shadow/,
-    /\.ssh\/id_/,
-  ];
-
-  private readonly safePatterns = [
-    // Bashコマンドパターン
-    /^Bash\((git|npm|pnpm|yarn|bun)(\s+[\w-]+)?:\*\)$/,
-    /^Bash\((ls|cat|head|tail|grep|find|echo|printf|pwd|whoami|date|mkdir|touch|cd):\*\)$/,
-    /^Bash\((git status)\)$/,
-    // npx/tsx はメタ実行のため safe 扱いしない
-    /^Bash\((tsc):\*\)$/,
-
-    // ファイルツールパターン（非システムディレクトリ）
-    /^(Read|Glob|Grep)\(/,
-    /^Edit\(~\/workspace\/\*\*\)$/,
-    /^Edit\(\.\*\*\)$/,
-    /^Write\(~\/workspace\/\*\*\)$/,
-    /^Write\(\.\*\*\)$/,
-  ];
 
   constructor(logPath?: string) {
     this.logPath =
@@ -106,11 +88,19 @@ export class PermissionAnalyzer {
     const analyzed = this.analyzePatterns(patterns, minFrequency);
 
     return {
-      allowCandidates: analyzed.filter((p) => p.recommendedAction === "add_to_allow"),
-      denyCandidates: analyzed.filter((p) => p.recommendedAction === "add_to_deny"),
-      passCandidates: analyzed.filter((p) => p.recommendedAction === "needs_pattern"),
+      allowCandidates: analyzed.filter(
+        (p) => p.recommendedAction === "add_to_allow",
+      ),
+      denyCandidates: analyzed.filter(
+        (p) => p.recommendedAction === "add_to_deny",
+      ),
+      passCandidates: analyzed.filter(
+        (p) => p.recommendedAction === "needs_pattern",
+      ),
       reviewCandidates: analyzed.filter(
-        (p) => p.recommendedAction === "keep_as_is" || p.recommendedAction === "remove_unused",
+        (p) =>
+          p.recommendedAction === "keep_as_is" ||
+          p.recommendedAction === "remove_unused",
       ),
       totalAnalyzed: entries.length,
       analysisDate: new Date(),
@@ -161,7 +151,9 @@ export class PermissionAnalyzer {
               allEntries.push(entry);
             }
           } catch (error) {
-            console.warn(`Failed to parse log line from ${logFile.path}: ${error}`);
+            console.warn(
+              `Failed to parse log line from ${logFile.path}: ${error}`,
+            );
           }
         }
       } catch (error) {
@@ -170,7 +162,10 @@ export class PermissionAnalyzer {
     }
 
     // 時系列順でソート（最新が最後）
-    allEntries.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    allEntries.sort(
+      (a, b) =>
+        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+    );
 
     // maxEntriesの制限を適用（最新のエントリを優先）
     const limitedEntries = allEntries.slice(-maxEntries);
@@ -201,7 +196,9 @@ export class PermissionAnalyzer {
     if (existsSync(baseDir)) {
       try {
         const files = readdirSync(baseDir);
-        const rotatedPattern = new RegExp(`^${baseFileName}\\.\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}$`);
+        const rotatedPattern = new RegExp(
+          `^${baseFileName}\\.\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}$`,
+        );
 
         for (const file of files) {
           if (rotatedPattern.test(file)) {
@@ -213,7 +210,9 @@ export class PermissionAnalyzer {
                 timestamp: stats.mtime,
               });
             } catch (error) {
-              console.warn(`Failed to stat rotated log file ${filePath}: ${error}`);
+              console.warn(
+                `Failed to stat rotated log file ${filePath}: ${error}`,
+              );
             }
           }
         }
@@ -242,7 +241,7 @@ export class PermissionAnalyzer {
         if (!patterns.has(pattern)) {
           patterns.set(pattern, []);
         }
-        patterns.get(pattern)!.push(entry);
+        patterns.get(pattern)?.push(entry);
       }
     }
 
@@ -438,7 +437,7 @@ export class PermissionAnalyzer {
     // ディレクトリパターンの抽出
     const parts = normalized.split("/");
     if (parts.length > 2) {
-      return parts.slice(0, 2).join("/") + "/**";
+      return `${parts.slice(0, 2).join("/")}/**`;
     }
 
     return normalized;
@@ -481,7 +480,12 @@ export class PermissionAnalyzer {
     const askCount = decisions.filter((d) => d === "ask").length;
     const passCount = decisions.filter((d) => d === "pass").length;
 
-    let recommendedAction: "add_to_allow" | "add_to_deny" | "remove_unused" | "needs_pattern" | "keep_as_is";
+    let recommendedAction:
+      | "add_to_allow"
+      | "add_to_deny"
+      | "remove_unused"
+      | "needs_pattern"
+      | "keep_as_is";
     let reasoning: string;
 
     const totalCount = entries.length;
@@ -492,10 +496,10 @@ export class PermissionAnalyzer {
     // 統計ベースの推奨ロジック
     // 注意: 現在の統計はフックの自動判定結果であり、ユーザーの実際の判断ではない
     // - allow: フックが自動許可
-    // - deny: フックが自動拒否  
+    // - deny: フックが自動拒否
     // - ask: フックがユーザーに判断を委ねた（ユーザーがどう選択したかは未記録）
     // - pass: フックが判断せずClaude Codeに委ねた（結果は未記録）
-    
+
     // 1. 頻繁に拒否されているパターン（フック自動判定ベース）
     if (denyCount >= 2 && denyRatio >= 0.7) {
       recommendedAction = "add_to_deny";
@@ -553,19 +557,6 @@ export class PermissionAnalyzer {
       reasoning,
       examples: entries.slice(0, 3), // 最初の3つの例
     };
-  }
-
-
-
-
-  /**
-   * 基本ユーティリティコマンドの判定（過剰なdeny提案を避ける）
-   */
-  private isBasicUtilityPattern(pattern: string): boolean {
-    const basicUtility = [
-      /^Bash\((ls|cat|head|tail|grep|find|printf|echo|awk|sed|cut|sort|uniq|xargs|tr):\*\)$/,
-    ];
-    return basicUtility.some((r) => r.test(pattern));
   }
 
   /**
@@ -663,7 +654,7 @@ export class PermissionAnalyzer {
    * - commands: ネスト抽出された個々のコマンドテキスト（単純分割ベース）
    */
   private async analyzeShInvocationSafety(
-    original: string,
+    _original: string,
     commands: string[],
     entryCwd: string | undefined,
     parseDetailed: (
@@ -713,7 +704,7 @@ export class PermissionAnalyzer {
       let abs: string;
       if (target.startsWith("/")) {
         abs = target;
-        if (!abs.startsWith(cwd + "/") && abs !== cwd) return false;
+        if (!abs.startsWith(`${cwd}/`) && abs !== cwd) return false;
       } else if (target.startsWith("~")) {
         // ホーム直下は対象外（安全側）
         return false;
@@ -744,7 +735,7 @@ export class PermissionAnalyzer {
         if (existsSync(parent)) {
           const realParent = realpathSync(parent);
           const realCwd = realpathSync(cwd);
-          if (!realParent.startsWith(realCwd + "/") && realParent !== realCwd) {
+          if (!realParent.startsWith(`${realCwd}/`) && realParent !== realCwd) {
             return false;
           }
         }
@@ -816,5 +807,4 @@ export class PermissionAnalyzer {
       ? { safe: true, firstSafe: firstCommand }
       : { safe: true };
   }
-
 }

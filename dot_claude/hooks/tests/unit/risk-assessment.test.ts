@@ -1,25 +1,25 @@
 #!/usr/bin/env -S bun test
 
-import { test, describe } from "node:test";
 import { strict as assert } from "node:assert";
+import { describe, test } from "node:test";
 import {
-  RiskLevel,
-  evaluateScopeRisk,
-  evaluateOperationRisk,
-  evaluateTargetRisk,
   combineRiskLevels,
-  shouldAutoApprove
+  evaluateOperationRisk,
+  evaluateScopeRisk,
+  evaluateTargetRisk,
+  RiskLevel,
+  shouldAutoApprove,
 } from "../../lib/risk-assessment.ts";
 
 // ==== テスト群 ====
 
 describe("RiskLevel enum", () => {
   test("should have all expected risk levels", () => {
-    assert.equal(RiskLevel.MINIMAL, 'minimal');
-    assert.equal(RiskLevel.LOW, 'low');
-    assert.equal(RiskLevel.MEDIUM, 'medium');
-    assert.equal(RiskLevel.HIGH, 'high');
-    assert.equal(RiskLevel.CRITICAL, 'critical');
+    assert.equal(RiskLevel.MINIMAL, "minimal");
+    assert.equal(RiskLevel.LOW, "low");
+    assert.equal(RiskLevel.MEDIUM, "medium");
+    assert.equal(RiskLevel.HIGH, "high");
+    assert.equal(RiskLevel.CRITICAL, "critical");
   });
 });
 
@@ -32,7 +32,10 @@ describe("Scope Risk Assessment", () => {
   });
 
   test("should evaluate safe relative path traversal as LOW", () => {
-    const result = evaluateScopeRisk("Read(src/../lib/utils.ts)", "/home/user/project");
+    const result = evaluateScopeRisk(
+      "Read(src/../lib/utils.ts)",
+      "/home/user/project",
+    );
 
     assert.equal(result.level, RiskLevel.LOW);
     assert(result.reason.includes("プロジェクト内"));
@@ -94,7 +97,10 @@ describe("Scope Risk Assessment", () => {
 
   test("should evaluate specific file as MINIMAL", () => {
     const cwd = "/home/user/project";
-    const result = evaluateScopeRisk("Read(~/workspace/project/README.md)", cwd);
+    const result = evaluateScopeRisk(
+      "Read(~/workspace/project/README.md)",
+      cwd,
+    );
 
     assert.equal(result.level, RiskLevel.MINIMAL);
     assert.equal(result.category, "scope");
@@ -255,9 +261,9 @@ describe("Operation Risk Assessment", () => {
 describe("Combined Risk Assessment", () => {
   test("should return CRITICAL when any component is CRITICAL", () => {
     const result = combineRiskLevels(
-      RiskLevel.CRITICAL,  // scope
-      RiskLevel.LOW,       // operation
-      RiskLevel.MINIMAL    // target
+      RiskLevel.CRITICAL, // scope
+      RiskLevel.LOW, // operation
+      RiskLevel.MINIMAL, // target
     );
 
     assert.equal(result, RiskLevel.CRITICAL);
@@ -265,9 +271,9 @@ describe("Combined Risk Assessment", () => {
 
   test("should return CRITICAL when two components are HIGH", () => {
     const result = combineRiskLevels(
-      RiskLevel.HIGH,    // scope
-      RiskLevel.HIGH,    // operation
-      RiskLevel.LOW      // target
+      RiskLevel.HIGH, // scope
+      RiskLevel.HIGH, // operation
+      RiskLevel.LOW, // target
     );
 
     assert.equal(result, RiskLevel.CRITICAL);
@@ -275,9 +281,9 @@ describe("Combined Risk Assessment", () => {
 
   test("should return HIGH when one component is HIGH", () => {
     const result = combineRiskLevels(
-      RiskLevel.HIGH,    // scope
-      RiskLevel.LOW,     // operation
-      RiskLevel.MINIMAL  // target
+      RiskLevel.HIGH, // scope
+      RiskLevel.LOW, // operation
+      RiskLevel.MINIMAL, // target
     );
 
     assert.equal(result, RiskLevel.HIGH);
@@ -285,9 +291,9 @@ describe("Combined Risk Assessment", () => {
 
   test("should return HIGH when two components are MEDIUM", () => {
     const result = combineRiskLevels(
-      RiskLevel.MEDIUM,  // scope
-      RiskLevel.MEDIUM,  // operation
-      RiskLevel.LOW      // target
+      RiskLevel.MEDIUM, // scope
+      RiskLevel.MEDIUM, // operation
+      RiskLevel.LOW, // target
     );
 
     assert.equal(result, RiskLevel.HIGH);
@@ -295,9 +301,9 @@ describe("Combined Risk Assessment", () => {
 
   test("should return MEDIUM when one component is MEDIUM", () => {
     const result = combineRiskLevels(
-      RiskLevel.MEDIUM,  // scope
-      RiskLevel.LOW,     // operation
-      RiskLevel.MINIMAL  // target
+      RiskLevel.MEDIUM, // scope
+      RiskLevel.LOW, // operation
+      RiskLevel.MINIMAL, // target
     );
 
     assert.equal(result, RiskLevel.MEDIUM);
@@ -305,9 +311,9 @@ describe("Combined Risk Assessment", () => {
 
   test("should return LOW for all low-risk components", () => {
     const result = combineRiskLevels(
-      RiskLevel.LOW,     // scope
+      RiskLevel.LOW, // scope
       RiskLevel.MINIMAL, // operation
-      RiskLevel.LOW      // target
+      RiskLevel.LOW, // target
     );
 
     assert.equal(result, RiskLevel.LOW);

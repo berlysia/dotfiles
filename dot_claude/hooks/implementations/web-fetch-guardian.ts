@@ -1,8 +1,8 @@
 #!/usr/bin/env -S bun run --silent
 
+import { extract, toMarkdown } from "@mizchi/readability";
 import { defineHook } from "cc-hooks-ts";
 import { createDenyResponse } from "../lib/context-helpers.ts";
-import { extract, toMarkdown } from "@mizchi/readability";
 import "../types/tool-schemas.ts";
 
 /**
@@ -62,9 +62,12 @@ interface CheckResult {
 /**
  * Extract URL from tool input
  */
-function extractUrl(tool_name: string, tool_input: any): string | null {
+function extractUrl(
+  tool_name: string,
+  tool_input: Record<string, unknown>,
+): string | null {
   if (tool_name === "WebFetch") {
-    return tool_input.url || null;
+    return (tool_input.url as string) || null;
   }
   return null;
 }
@@ -145,7 +148,7 @@ function checkGitHubAccess(url: string, tool_name: string): CheckResult {
     }
 
     return { shouldBlock: false };
-  } catch (error) {
+  } catch (_error) {
     // If URL parsing fails, allow the request
     return { shouldBlock: false };
   }

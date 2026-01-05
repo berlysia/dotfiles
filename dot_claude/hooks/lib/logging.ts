@@ -4,7 +4,7 @@
  */
 
 import { appendFileSync } from "node:fs";
-import type { ToolInput, CommandLogEntry } from "../types/project-types.ts";
+import type { CommandLogEntry, ToolInput } from "../types/project-types.ts";
 
 /**
  * Log pattern analysis results
@@ -92,7 +92,7 @@ export function logCommandDecision(
   logFile: string,
   entry: CommandLogEntry,
 ): void {
-  const logLine = JSON.stringify(entry) + "\n";
+  const logLine = `${JSON.stringify(entry)}\n`;
 
   try {
     appendFileSync(logFile, logLine);

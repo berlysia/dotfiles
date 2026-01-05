@@ -1,5 +1,22 @@
 #!/usr/bin/env -S bun run --silent
 
+// Tree-sitter node type definition
+interface TreeSitterNode {
+  type: string;
+  children?: TreeSitterNode[];
+  startIndex?: number;
+  endIndex?: number;
+}
+
+interface ParseTree {
+  rootNode: TreeSitterNode;
+}
+
+interface TreeSitterParser {
+  parse(input: string): ParseTree;
+  setLanguage(language: unknown): void;
+}
+
 export interface SimpleCommand {
   name: string | null;
   args: string[];
@@ -53,8 +70,7 @@ const CONTROL_KEYWORDS = [
 
 // Tree-sitter state
 let treeSitterInitialized = false;
-let bashParser: any = null;
-let TreeSitter: any = null;
+let bashParser: TreeSitterParser | null = null;
 
 // Simple command line splitter that respects quoted strings and redirections
 function splitCommandLine(command: string): string[] {
@@ -65,7 +81,7 @@ function splitCommandLine(command: string): string[] {
 
   for (let i = 0; i < command.length; i++) {
     const char = command[i];
-    const nextChar = command[i + 1] ?? "";
+    const _nextChar = command[i + 1] ?? "";
 
     if (!inQuotes && (char === '"' || char === "'")) {
       inQuotes = true;
@@ -152,25 +168,25 @@ function isRedirection(token: string): boolean {
 
 // Extract commands from tree-sitter AST
 function extractCommandsFromTreeSitter(
-  tree: any,
+  tree: ParseTree,
   sourceText: string,
 ): SimpleCommand[] {
   const commands: SimpleCommand[] = [];
 
-  function traverse(node: any, commandIndex: number = 0): number {
+  function traverse(node: TreeSitterNode, commandIndex: number = 0): number {
     let currentIndex = commandIndex;
 
     // Handle different node types
     switch (node.type) {
       case "program":
       case "list":
-        for (const child of node.children) {
+        for (const child of node.children || []) {
           currentIndex = traverse(child, currentIndex);
         }
         break;
 
       case "pipeline":
-        for (const child of node.children) {
+        for (const child of node.children || []) {
           if (child.type === "command") {
             currentIndex = traverse(child, currentIndex);
           }
@@ -186,17 +202,18 @@ function extractCommandsFromTreeSitter(
         break;
 
       case "command":
-      case "simple_command":
+      case "simple_command": {
         const cmd = parseSimpleCommandFromNode(node, sourceText, currentIndex);
         if (cmd) {
           commands.push(cmd);
           currentIndex++;
         }
         break;
+      }
 
       case "redirected_statement":
         // Handle redirected statements (commands with redirections)
-        for (const child of node.children) {
+        for (const child of node.children || []) {
           if (child.type === "simple_command") {
             const redirectedCmd = parseSimpleCommandFromNode(
               child,
@@ -206,7 +223,7 @@ function extractCommandsFromTreeSitter(
             if (redirectedCmd) {
               // Extract redirections from the parent node
               const redirections: string[] = [];
-              for (const sibling of node.children) {
+              for (const sibling of node.children || []) {
                 if (
                   sibling.type === "file_redirect" ||
                   sibling.type === "io_redirect"
@@ -234,7 +251,7 @@ function extractCommandsFromTreeSitter(
       case "while_statement":
       case "if_statement":
         // Process body of control structures
-        for (const child of node.children) {
+        for (const child of node.children || []) {
           currentIndex = traverse(child, currentIndex);
         }
         break;
@@ -256,14 +273,14 @@ function extractCommandsFromTreeSitter(
 
 // Parse a simple command from tree-sitter node
 function parseSimpleCommandFromNode(
-  node: any,
+  node: TreeSitterNode,
   sourceText: string,
   index: number,
 ): SimpleCommand | null {
   // If this is a wrapper 'command' node, descend to its simple_command if present
   if (node.type === "command") {
     const simple = (node.children || []).find(
-      (c: any) => c.type === "simple_command",
+      (c: TreeSitterNode) => c.type === "simple_command",
     );
     if (simple) return parseSimpleCommandFromNode(simple, sourceText, index);
   }
@@ -298,7 +315,7 @@ function parseSimpleCommandFromNode(
         break;
 
       case "word":
-      case "command_name":
+      case "command_name": {
         const wordText = sourceText.slice(
           child.startIndex ?? 0,
           child.endIndex ?? 0,
@@ -309,10 +326,11 @@ function parseSimpleCommandFromNode(
           args.push(wordText);
         }
         break;
+      }
 
       case "string":
       case "quoted_string":
-      case "raw_string":
+      case "raw_string": {
         // Handle quoted strings as arguments
         const stringText = sourceText.slice(
           child.startIndex ?? 0,
@@ -324,6 +342,7 @@ function parseSimpleCommandFromNode(
           args.push(stringText);
         }
         break;
+      }
     }
   }
 
@@ -373,6 +392,7 @@ async function parseWithTreeSitter(
   if (!treeSitterInitialized) {
     // Lazy init web-tree-sitter and bash language
     // Defer to runtime resolution to avoid bundler issues
+    // biome-ignore lint/suspicious/noExplicitAny: dynamic import from web-tree-sitter requires any
     const ParserMod: any = await import("web-tree-sitter");
     const Parser = ParserMod.Parser || ParserMod;
     if (typeof Parser.init === "function") {
@@ -383,65 +403,55 @@ async function parseWithTreeSitter(
     const wasmPath = `${process.cwd()}/node_modules/tree-sitter-bash/tree-sitter-bash.wasm`;
     const Language = ParserMod.Language || Parser.Language;
     const BashLang = await Language.load(wasmPath);
-    bashParser = new Parser();
+    bashParser = new Parser() as TreeSitterParser;
     bashParser.setLanguage(BashLang);
     treeSitterInitialized = true;
   }
-
-  try {
-    // If meta-execution is present (sh -c, xargs sh -c, etc.), prefer the existing
-    // meta extractor to pull out nested commands for safety analysis
-    const metaOnly = extractMetaCommands(command, new Set<string>());
-    if (metaOnly.length > 0) {
-      const mapped = metaOnly
-        .map((t, i) => parseSimpleCommandFallback(t, i, command))
-        .filter(Boolean) as SimpleCommand[];
-      return { commands: mapped, errors: [], parsingMethod: "tree-sitter" };
-    }
-
-    const tree = bashParser.parse(command);
-    const cmds = extractCommandsFromTreeSitter(tree, command);
-
-    // Also include commands from command substitutions ($(...) and backticks)
-    const subs = extractCommandSubstitutions(command);
-    const extra = subs
-      .map((t, i) => parseSimpleCommandFallback(t, i + cmds.length, command))
+  // If meta-execution is present (sh -c, xargs sh -c, etc.), prefer the existing
+  // meta extractor to pull out nested commands for safety analysis
+  const metaOnly = extractMetaCommands(command, new Set<string>());
+  if (metaOnly.length > 0) {
+    const mapped = metaOnly
+      .map((t, i) => parseSimpleCommandFallback(t, i, command))
       .filter(Boolean) as SimpleCommand[];
-
-    // Deduplicate by text
-    const seen = new Set(cmds.map((c) => c.text));
-    for (const e of extra) {
-      if (!seen.has(e.text)) {
-        cmds.push(e);
-        seen.add(e.text);
-      }
-    }
-
-    // Add the original command if it's different from parsed commands
-    if (cmds.length > 0 && !seen.has(command.trim())) {
-      const originalCmd = parseSimpleCommandFallback(
-        command.trim(),
-        cmds.length,
-        command,
-      );
-      if (
-        originalCmd &&
-        originalCmd.name &&
-        !CONTROL_KEYWORDS.includes(originalCmd.name)
-      ) {
-        cmds.push(originalCmd);
-      }
-    }
-
-    return {
-      commands: cmds,
-      errors: [],
-      parsingMethod: "tree-sitter",
-    };
-  } catch (e) {
-    // Surface to caller to trigger fallback
-    throw e;
+    return { commands: mapped, errors: [], parsingMethod: "tree-sitter" };
   }
+
+  const tree = bashParser!.parse(command);
+  const cmds = extractCommandsFromTreeSitter(tree, command);
+
+  // Also include commands from command substitutions ($(...) and backticks)
+  const subs = extractCommandSubstitutions(command);
+  const extra = subs
+    .map((t, i) => parseSimpleCommandFallback(t, i + cmds.length, command))
+    .filter(Boolean) as SimpleCommand[];
+
+  // Deduplicate by text
+  const seen = new Set(cmds.map((c) => c.text));
+  for (const e of extra) {
+    if (!seen.has(e.text)) {
+      cmds.push(e);
+      seen.add(e.text);
+    }
+  }
+
+  // Add the original command if it's different from parsed commands
+  if (cmds.length > 0 && !seen.has(command.trim())) {
+    const originalCmd = parseSimpleCommandFallback(
+      command.trim(),
+      cmds.length,
+      command,
+    );
+    if (originalCmd?.name && !CONTROL_KEYWORDS.includes(originalCmd.name)) {
+      cmds.push(originalCmd);
+    }
+  }
+
+  return {
+    commands: cmds,
+    errors: [],
+    parsingMethod: "tree-sitter",
+  };
 }
 
 function parseWithFallback(command: string): BashParsingResult {
@@ -476,7 +486,7 @@ function parseWithFallback(command: string): BashParsingResult {
 }
 
 function extractCommandsInternal(command: string): string[] {
-  const commands: string[] = [];
+  const _commands: string[] = [];
   const processed = new Set<string>();
 
   // Extract commands from meta commands first
@@ -523,7 +533,7 @@ function extractMetaCommands(
           let match;
           while ((match = regex.exec(part)) !== null) {
             const extractedCommand = match[1] || match[2] || match[3]; // Handle multiple capture groups
-            if (extractedCommand && extractedCommand.trim()) {
+            if (extractedCommand?.trim()) {
               processed.add(command);
 
               // Extract commands from the nested command, including backticks
@@ -537,7 +547,7 @@ function extractMetaCommands(
               // Add pipeline parts before the meta command
               for (let i = 0; i < partIndex; i++) {
                 const prevPart = pipelineParts[i];
-                if (prevPart && prevPart.trim()) commands.push(prevPart);
+                if (prevPart?.trim()) commands.push(prevPart);
               }
 
               // Add nested commands
@@ -546,7 +556,7 @@ function extractMetaCommands(
               // Add pipeline parts after the meta command
               for (let i = partIndex + 1; i < pipelineParts.length; i++) {
                 const nextPart = pipelineParts[i];
-                if (nextPart && nextPart.trim()) commands.push(nextPart);
+                if (nextPart?.trim()) commands.push(nextPart);
               }
 
               return commands;
@@ -569,7 +579,7 @@ function extractCommandSubstitutions(command: string): string[] {
   const backtickRegex = /`([^`]+)`/g;
   while ((match = backtickRegex.exec(command)) !== null) {
     const substitutedCommand = match[1];
-    if (substitutedCommand && substitutedCommand.trim()) {
+    if (substitutedCommand?.trim()) {
       const subCommands = extractCommandsInternal(substitutedCommand);
       commands.push(...subCommands);
     }
@@ -580,7 +590,7 @@ function extractCommandSubstitutions(command: string): string[] {
   const dollarParenRegex = /\$\(([^()]+)\)/g;
   while ((match = dollarParenRegex.exec(command)) !== null) {
     const substitutedCommand = match[1];
-    if (substitutedCommand && substitutedCommand.trim()) {
+    if (substitutedCommand?.trim()) {
       const subCommands = extractCommandsInternal(substitutedCommand);
       commands.push(...subCommands);
     }
@@ -604,7 +614,7 @@ function extractFromControlStructures(
   const forLoopMatch = command.match(
     /for\s+\w+\s+in\s+[^;]+;\s*do\s+(.*?);\s*done/s,
   );
-  if (forLoopMatch && forLoopMatch[1]) {
+  if (forLoopMatch?.[1]) {
     processed.add(command);
     const loopBody = forLoopMatch[1];
     // Split loop body commands

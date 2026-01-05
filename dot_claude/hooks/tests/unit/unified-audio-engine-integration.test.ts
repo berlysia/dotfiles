@@ -5,21 +5,26 @@
  * claude-companion連携機能の統合テスト
  */
 
-import { describe, it, beforeEach, afterEach, skip } from "node:test";
 import assert from "node:assert";
-import { existsSync, writeFileSync, unlinkSync, mkdirSync, rmSync } from "fs";
-import { dirname } from "path";
 import {
-  checkAndDelegateToClaude,
-  speakNotification,
-} from "../../../lib/unified-audio-engine.ts";
+  existsSync,
+  mkdirSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { afterEach, beforeEach, describe, it, skip } from "node:test";
 import {
   createUnifiedVoiceConfig,
   createVoiceSession,
 } from "../../../lib/unified-audio-config.ts";
+import {
+  checkAndDelegateToClaude,
+  speakNotification,
+} from "../../../lib/unified-audio-engine.ts";
 
 // モック用の簡単なcheckClaudeCompanionStatus実装
-const originalCheckClaudeCompanionStatus = await import(
+const _originalCheckClaudeCompanionStatus = await import(
   "../../../lib/claude-companion-detector.ts"
 ).then((m) => m.checkClaudeCompanionStatus);
 
