@@ -5,7 +5,7 @@
       "hooks": [
         {
           "type": "command",
-          "command": "bun ~/.claude/hooks/implementations/chezmoi-redirect.ts"
+          "command": "bun .claude/hooks/implementations/chezmoi-redirect.ts"
         }
       ]
     }
