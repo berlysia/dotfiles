@@ -394,16 +394,38 @@ function validatePath(
     };
   }
 
-  // 6. Chezmoi redirect: dotfilesリポジトリの場合、対応するソースファイルを案内
-  // ホームディレクトリ配下のファイルにアクセスしようとした場合、
-  // リポジトリ内のchezmoiソースファイルへのリダイレクトを提案
+  // 6. Chezmoi handling for dotfiles repository
+  // ホームディレクトリ配下のファイルに対する特別処理
   if (absPath.startsWith(homeDir + "/") && isDotfilesRepository(repoRoot)) {
     const chezmoiSourcePath = getChezmoiSourcePath(absPath, repoRoot);
-    if (chezmoiSourcePath) {
+
+    // 6a. 編集操作（Edit/Write/MultiEdit）→ chezmoi管理ファイルならリダイレクト案内
+    const isWriteOperation =
+      toolName === "Edit" ||
+      toolName === "Write" ||
+      toolName === "MultiEdit" ||
+      toolName === "NotebookEdit";
+
+    if (isWriteOperation && chezmoiSourcePath) {
       return {
         isAllowed: false,
         resolvedPath: absPath,
         reason: formatChezmoiRedirectMessage(absPath, chezmoiSourcePath),
+      };
+    }
+
+    // 6b. 読み取り操作（Read/Glob/Grep/LS）→ 許可（chezmoiを意識させない）
+    const isReadOperation =
+      toolName === "Read" ||
+      toolName === "Glob" ||
+      toolName === "Grep" ||
+      toolName === "LS" ||
+      toolName === "NotebookRead";
+
+    if (isReadOperation) {
+      return {
+        isAllowed: true,
+        resolvedPath: absPath,
       };
     }
   }
