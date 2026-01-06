@@ -8,7 +8,12 @@
   "scripts": {
     "test": "node --test dot_claude/hooks/tests/**/*.test.ts",
     "typecheck": "tsgo --noEmit",
-    "check": "npm run test && npm run typecheck",
+    "lint:biome": "biome check .",
+    "lint:shell": "./scripts/lint-shell.sh",
+    "lint:actions": "./scripts/lint-actions.sh",
+    "lint:codex": "./scripts/check-codex-config.sh",
+    "lint": "npm run lint:biome && npm run lint:shell && npm run lint:actions && npm run lint:codex",
+    "check": "npm run test && npm run typecheck && npm run lint",
     "prepare": "./scripts/install-hooks.sh"
   },
   "keywords": [],
