@@ -10,25 +10,6 @@ url = "https://github.com/mame/wsl2-ssh-agent/releases/latest/download/wsl2-ssh-
 refreshPeriod = "24h"
 executable = true
 
-[".local/bin/fzf"]
-  type = "file"
-  url = "https://github.com/junegunn/fzf/releases/download/{{ (gitHubLatestRelease "junegunn/fzf").TagName }}/fzf-{{ trimPrefix "v" (gitHubLatestRelease "junegunn/fzf").TagName }}-{{ .chezmoi.os }}_{{ .chezmoi.arch }}.tar.gz"
-  executable = true
-  refreshPeriod = "168h"
-  [".local/bin/fzf".filter]
-    command = "tar"
-    args = ["--extract", "--file", "/dev/stdin", "--gzip", "--to-stdout", "fzf"]
-
-[".zsh/completions/_fzf"]
-type = "archive"
-url = "https://github.com/junegunn/fzf/archive/master.tar.gz"
-refreshPeriod = "168h"
-stripComponents = 2
-include = ["*/shell/*.zsh"]
-
-[".zsh/functions/fzf-tab-completion.zsh"]
-  type = "file"
-  url = "https://raw.githubusercontent.com/lincheney/fzf-tab-completion/master/zsh/fzf-zsh-completion.sh"
-  refreshPeriod = "168h"
+# fzf is now managed by mise - see ~/.config/mise/config.toml
 {{ end }}
 
