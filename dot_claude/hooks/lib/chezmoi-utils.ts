@@ -78,7 +78,7 @@ export function getChezmoiSourcePath(
   const homeDir = homedir();
 
   // Only process paths under home directory
-  if (!absPath.startsWith(homeDir + "/")) {
+  if (!absPath.startsWith(`${homeDir}/`)) {
     return undefined;
   }
 
@@ -95,7 +95,7 @@ export function getChezmoiSourcePath(
   // Convert directory path to chezmoi naming (dot_ prefix for dotfiles)
   const chezmoiDirSegments = segments.slice(0, -1).map((segment, index) => {
     if (index === 0 && segment.startsWith(".")) {
-      return "dot_" + segment.slice(1);
+      return `dot_${segment.slice(1)}`;
     }
     return segment;
   });
@@ -223,7 +223,7 @@ export function stripChezmoiAttributes(fileName: string): string {
 
   // Convert dot_ to leading dot
   if (name.startsWith("dot_")) {
-    name = "." + name.slice(4);
+    name = `.${name.slice(4)}`;
   }
 
   return name;

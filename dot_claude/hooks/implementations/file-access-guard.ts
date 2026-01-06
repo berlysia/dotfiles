@@ -272,7 +272,7 @@ function extractPathsFromBashCommand(command: string): string[] {
   ];
 
   for (const pattern of patterns) {
-    let match;
+    let match: RegExpExecArray | null;
     while ((match = pattern.exec(command)) !== null) {
       // Add all captured groups (excluding the full match)
       for (let i = 1; i < match.length; i++) {
@@ -401,7 +401,7 @@ function validatePath(
 
   // 6. Chezmoi handling for dotfiles repository
   // ホームディレクトリ配下のファイルに対する特別処理
-  if (absPath.startsWith(homeDir + "/") && isDotfilesRepository(repoRoot)) {
+  if (absPath.startsWith(`${homeDir}/`) && isDotfilesRepository(repoRoot)) {
     const chezmoiSourcePath = getChezmoiSourcePath(absPath, repoRoot);
 
     // 6a. 編集操作（Edit/Write/MultiEdit）→ chezmoi管理ファイルならリダイレクト案内
