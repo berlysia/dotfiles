@@ -15,7 +15,7 @@
 必須設定:
   - 1Password SSH Agent: 有効
   - Windows OpenSSH ssh-agent: 停止・無効化
-  - wsl2-ssh-agent: 使わない
+  - wsl2-ssh-agent: 使う（必須）
 ```
 
 ```powershell
@@ -33,6 +33,7 @@ Set-Service ssh-agent -StartupType Disabled
 必須設定:
   - 1Password SSH Agent: 完全に OFF
   - OpenSSH ssh-agent: 有効
+  - wsl2-ssh-agent: 使う（必須）
 ```
 
 ### 併用が必要な場合
