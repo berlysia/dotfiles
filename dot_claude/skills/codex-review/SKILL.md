@@ -11,7 +11,7 @@ version: 0.1.0
 ## 使用タイミング
 
 ### 自動的に使用すべき場面
-1. **Planモード完了時**: ExitPlanMode実行前に計画の妥当性を検証
+1. **Planモード完了時**: ExitPlanMode実行前に、`logic-validator`での論理検証後、必要に応じて外部視点のレビューを取得
 2. **行き詰まり時**: 問題解決の糸口が見つからないとき
 3. **アーキテクチャ決定**: 複数の選択肢で迷っているとき
 4. **デバッグ困難時**: 根本原因の特定が難しいとき
@@ -108,8 +108,12 @@ mcp__codex__codex-reply ツールを使用:
 
 ```
 1. Planモードで計画を作成
-2. ExitPlanMode前に /codex-review で計画をレビュー
-3. Codexのフィードバックを元に計画を改善
+2. ExitPlanMode前に:
+   a. logic-validatorで論理的整合性を検証（必須）
+   b. /codex-review で外部視点のレビュー（必要に応じて）
+3. フィードバックを元に計画を改善
 4. 改善後の計画でExitPlanModeを実行
 5. ユーザーに最終承認を求める
 ```
+
+**Note**: ExitPlanModeのPreToolUse hookにより、この手順は自動的にプロンプトされます。
