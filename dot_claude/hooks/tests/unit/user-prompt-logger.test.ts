@@ -64,7 +64,9 @@ describe("user-prompt-logger.ts hook behavior", () => {
       const lines = content.trim().split("\n");
       strictEqual(lines.length, 1, "Should have one log line");
 
-      const parsed = JSON.parse(lines[0]!);
+      const firstLine = lines[0];
+      ok(firstLine, "Should have first line");
+      const parsed = JSON.parse(firstLine);
       strictEqual(parsed.event, "UserPromptSubmit");
       strictEqual(parsed.session_id, "test-session-123");
       ok(parsed.timestamp, "Should have timestamp");
@@ -165,8 +167,12 @@ describe("user-prompt-logger.ts hook behavior", () => {
       strictEqual(lines.length, 2, "Should have two log lines");
 
       // Parse both lines to verify they're valid
-      const entry1 = JSON.parse(lines[0]!);
-      const entry2 = JSON.parse(lines[1]!);
+      const firstLine = lines[0];
+      const secondLine = lines[1];
+      ok(firstLine, "Should have first line");
+      ok(secondLine, "Should have second line");
+      const entry1 = JSON.parse(firstLine);
+      const entry2 = JSON.parse(secondLine);
       strictEqual(entry1.session_id, "session-0");
       strictEqual(entry2.session_id, "session-1");
     });
@@ -271,7 +277,9 @@ describe("user-prompt-logger.ts hook behavior", () => {
       const lines = content.trim().split("\n");
 
       try {
-        JSON.parse(lines[0]!);
+        const firstLine = lines[0];
+        ok(firstLine, "Should have first line");
+        JSON.parse(firstLine);
         ok(false, "Should have thrown error");
       } catch (error) {
         ok(error instanceof SyntaxError, "Should get JSON parse error");

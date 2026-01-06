@@ -338,14 +338,15 @@ export function createFileSystemMock(): FileSystemMock {
     },
 
     readFileSync(path: string, _encoding?: string): string {
-      if (!files.has(path)) {
+      const content = files.get(path);
+      if (content === undefined) {
         const error: any = new Error(
           `ENOENT: no such file or directory, open '${path}'`,
         );
         error.code = "ENOENT";
         throw error;
       }
-      return files.get(path)!;
+      return content;
     },
 
     writeFileSync(path: string, content: string) {

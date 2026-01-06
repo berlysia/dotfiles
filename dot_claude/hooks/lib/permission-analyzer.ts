@@ -258,10 +258,7 @@ export class PermissionAnalyzer {
 
     if (tool_name === "Bash" && command) {
       // Bashコマンドの場合、実行可能部分を抽出
-      const baseCommand = await this.extractBaseCommand(
-        command,
-        (entry as any).cwd,
-      );
+      const baseCommand = await this.extractBaseCommand(command, entry.cwd);
       return baseCommand ? `Bash(${baseCommand})` : null;
     }
 

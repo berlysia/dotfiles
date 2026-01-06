@@ -54,7 +54,9 @@ describe("session.ts hook behavior", () => {
       const lines = content.trim().split("\n");
       strictEqual(lines.length, 1, "Should have one log line");
 
-      const parsed = JSON.parse(lines[0]!);
+      const firstLine = lines[0];
+      ok(firstLine, "Should have first line");
+      const parsed = JSON.parse(firstLine);
       strictEqual(parsed.event, "SessionStart");
       strictEqual(parsed.session_id, "test-session-123");
       ok(parsed.timestamp, "Should have timestamp");
@@ -155,7 +157,9 @@ describe("session.ts hook behavior", () => {
       const lines = content.trim().split("\n");
 
       try {
-        JSON.parse(lines[0]!);
+        const firstLine = lines[0];
+        ok(firstLine, "Should have first line");
+        JSON.parse(firstLine);
         ok(false, "Should have thrown error");
       } catch (error) {
         ok(error instanceof SyntaxError, "Should get JSON parse error");
