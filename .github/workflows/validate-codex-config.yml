@@ -34,12 +34,6 @@ jobs:
         experimental: true
         reshim: true
 
-    - name: Install dasel and jq
-      run: |
-        mise use -g dasel@latest
-        sudo apt-get update
-        sudo apt-get install -y jq
-
     - name: Make scripts executable
       run: |
         chmod +x scripts/*.sh
