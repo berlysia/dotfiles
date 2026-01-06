@@ -1,9 +1,9 @@
-import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { describe, it } from "node:test";
 
 import {
-  stripChezmoiAttributes,
   formatChezmoiRedirectMessage,
+  stripChezmoiAttributes,
 } from "../../lib/chezmoi-utils.ts";
 
 describe("chezmoi-utils", () => {
@@ -42,7 +42,10 @@ describe("chezmoi-utils", () => {
         "update.sh",
       );
       assert.equal(stripChezmoiAttributes("run_before_init.sh"), "init.sh");
-      assert.equal(stripChezmoiAttributes("run_after_cleanup.sh"), "cleanup.sh");
+      assert.equal(
+        stripChezmoiAttributes("run_after_cleanup.sh"),
+        "cleanup.sh",
+      );
     });
 
     it("should strip .age suffix for encrypted files", () => {
@@ -106,7 +109,9 @@ describe("chezmoi-utils", () => {
 
       assert.ok(message.includes("Chezmoi Redirect Required"));
       assert.ok(message.includes("❌ Requested: /home/user/.bashrc"));
-      assert.ok(message.includes("✅ Use this:  /home/user/dotfiles/dot_bashrc"));
+      assert.ok(
+        message.includes("✅ Use this:  /home/user/dotfiles/dot_bashrc"),
+      );
       assert.ok(message.includes("chezmoi apply"));
     });
 

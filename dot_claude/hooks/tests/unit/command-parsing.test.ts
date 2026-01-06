@@ -83,7 +83,7 @@ describe("Command Parsing Library", () => {
     });
 
     it("should detect rm with variable substitution as immediately dangerous", () => {
-      const result = checkDangerousCommand("rm -rf ${HOME}");
+      const result = checkDangerousCommand(`rm -rf \${HOME}`);
       strictEqual(result.isDangerous, true);
       strictEqual(result.requiresManualReview, false);
       strictEqual(
@@ -93,7 +93,7 @@ describe("Command Parsing Library", () => {
     });
 
     it("should detect rm --recursive --force with variable substitution as dangerous", () => {
-      const result = checkDangerousCommand("rm --recursive --force ${DIR}");
+      const result = checkDangerousCommand(`rm --recursive --force \${DIR}`);
       strictEqual(result.isDangerous, true);
       strictEqual(result.requiresManualReview, false);
       strictEqual(
