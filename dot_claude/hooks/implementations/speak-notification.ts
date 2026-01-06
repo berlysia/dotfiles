@@ -56,6 +56,11 @@ const hook = defineHook({
         })(),
       ]);
 
+      // Stop/SubagentStop events should not return messageForUser to avoid duplicate messages
+      // (prompt hook will also generate a response)
+      if (eventType === "Stop") {
+        return context.success({});
+      }
       return context.success({
         messageForUser: `Voice notification completed for ${eventType} event`,
       });
