@@ -5,6 +5,11 @@ import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { defineHook } from "cc-hooks-ts";
+import {
+  formatChezmoiRedirectMessage,
+  getChezmoiSourcePath,
+  isDotfilesRepository,
+} from "../lib/chezmoi-utils.ts";
 import { createDenyResponse } from "../lib/context-helpers.ts";
 import { expandTilde } from "../lib/path-utils.ts";
 import { matchGitignorePattern } from "../lib/pattern-matcher.ts";
@@ -387,6 +392,20 @@ function validatePath(
       isAllowed: true,
       resolvedPath: absPath,
     };
+  }
+
+  // 6. Chezmoi redirect: dotfilesリポジトリの場合、対応するソースファイルを案内
+  // ホームディレクトリ配下のファイルにアクセスしようとした場合、
+  // リポジトリ内のchezmoiソースファイルへのリダイレクトを提案
+  if (absPath.startsWith(homeDir + "/") && isDotfilesRepository(repoRoot)) {
+    const chezmoiSourcePath = getChezmoiSourcePath(absPath, repoRoot);
+    if (chezmoiSourcePath) {
+      return {
+        isAllowed: false,
+        resolvedPath: absPath,
+        reason: formatChezmoiRedirectMessage(absPath, chezmoiSourcePath),
+      };
+    }
   }
 
   // Default: deny access outside repository
