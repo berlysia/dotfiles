@@ -34,7 +34,9 @@ jobs:
         experimental: true
 
     - name: Install dasel
-      run: mise install dasel
+      run: |
+        mise install dasel
+        mise reshim
 
     - name: Make scripts executable
       run: |
