@@ -34,7 +34,7 @@ fi
 echo "📝 Formatting $CONFIG_FILE..."
 TEMP_FILE=$(mktemp)
 TEMP_JSON=$(mktemp)
-trap "rm -f $TEMP_FILE $TEMP_JSON" EXIT
+trap 'rm -f "$TEMP_FILE" "$TEMP_JSON"' EXIT
 
 # Check if file has content
 if [[ ! -s "$CONFIG_FILE" ]]; then

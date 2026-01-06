@@ -16,16 +16,46 @@ if [ "${SKIP_HOOKS:-}" = "1" ]; then
 fi
 
 REPO_ROOT=$(git rev-parse --show-toplevel)
+EXIT_CODE=0
 
+#
+# 1. GitHub Actions Security Check (zizmor)
+#
+if [ -d "${REPO_ROOT}/.github/workflows" ]; then
+    WORKFLOW_COUNT=$(find "${REPO_ROOT}/.github/workflows" -type f \( -name "*.yml" -o -name "*.yaml" \) | wc -l)
+
+    if [ "$WORKFLOW_COUNT" -gt 0 ]; then
+        echo -e "${BLUE}⚡ Checking GitHub Actions workflows with zizmor...${NC}"
+        if command -v zizmor &> /dev/null; then
+            if zizmor "${REPO_ROOT}/.github/workflows"; then
+                echo -e "${GREEN}✓ All workflows passed zizmor security checks${NC}"
+            else
+                echo -e "${RED}❌ zizmor found security issues in workflows${NC}"
+                EXIT_CODE=1
+            fi
+        else
+            echo -e "${YELLOW}⚠ zizmor not installed, skipping workflow security check${NC}"
+            echo -e "${YELLOW}  Install: mise install cargo-zizmor${NC}"
+        fi
+    fi
+fi
+
+echo
+
+#
+# 2. Secret Detection (gitleaks)
+#
 echo -e "${BLUE}🔍 Scanning repository for secrets before push...${NC}"
 if command -v gitleaks &> /dev/null; then
     if ! gitleaks detect --config "${REPO_ROOT}/.gitleaks.toml" --verbose; then
         echo -e "${RED}❌ Secrets detected in repository history!${NC}"
         echo -e "${YELLOW}   Use 'git rebase -i' to fix commits with secrets.${NC}"
-        exit 1
+        EXIT_CODE=1
     else
         echo -e "${GREEN}✓ No secrets found${NC}"
     fi
 else
     echo -e "${YELLOW}⚠ gitleaks not installed, skipping secret detection${NC}"
 fi
+
+exit $EXIT_CODE
