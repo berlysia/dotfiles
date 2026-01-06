@@ -176,7 +176,7 @@ export function findChezmoiFile(
 export function stripChezmoiAttributes(fileName: string): string {
   let name = fileName;
 
-  // Strip suffixes first
+  // Strip suffixes first (these are a closed set that rarely changes)
   const suffixes = [".tmpl", ".age", ".asc", ".literal"];
   for (const suffix of suffixes) {
     if (name.endsWith(suffix)) {
@@ -185,40 +185,19 @@ export function stripChezmoiAttributes(fileName: string): string {
     }
   }
 
-  // Strip prefixes (order matters for some combinations)
-  const prefixes = [
-    "private_",
-    "empty_",
-    "readonly_",
-    "encrypted_",
-    "executable_",
-    "create_",
-    "modify_",
-    "remove_",
-    "run_once_",
-    "run_onchange_",
-    "run_before_",
-    "run_after_",
-    "run_",
-    "once_",
-    "onchange_",
-    "before_",
-    "after_",
-    "symlink_",
-    "literal_",
-  ];
+  // Strip prefixes using pattern matching instead of enumeration.
+  // Chezmoi prefixes follow the pattern: lowercase letters followed by underscore.
+  // We intentionally avoid enumerating all prefixes because:
+  // 1. Chezmoi may add new prefixes in future versions
+  // 2. The pattern is consistent and well-defined
+  // 3. Enumeration is error-prone and requires maintenance
+  //
+  // Note: "dot_" is handled separately as it transforms to a leading dot.
+  const prefixPattern = /^[a-z]+_/;
 
-  // Keep stripping prefixes until none match
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const prefix of prefixes) {
-      if (name.startsWith(prefix)) {
-        name = name.slice(prefix.length);
-        changed = true;
-        break;
-      }
-    }
+  // Keep stripping prefixes until none match (except dot_)
+  while (prefixPattern.test(name) && !name.startsWith("dot_")) {
+    name = name.replace(prefixPattern, "");
   }
 
   // Convert dot_ to leading dot
