@@ -33,7 +33,7 @@ export interface DecisionLogEntry extends BaseLogEntry {
   decision: PermissionDecision;
   reason: string;
   command?: string;
-  input?: Record<string, unknown>;
+  input?: Record<string, unknown> | null;
 }
 
 export type LogEntry =
