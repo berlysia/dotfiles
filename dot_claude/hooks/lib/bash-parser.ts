@@ -417,7 +417,10 @@ async function parseWithTreeSitter(
     return { commands: mapped, errors: [], parsingMethod: "tree-sitter" };
   }
 
-  const tree = bashParser!.parse(command);
+  const tree = bashParser?.parse(command);
+  if (!tree) {
+    return { commands: [], errors: [{ message: "bashParser not initialized" }], parsingMethod: "tree-sitter" };
+  }
   const cmds = extractCommandsFromTreeSitter(tree, command);
 
   // Also include commands from command substitutions ($(...) and backticks)
@@ -530,7 +533,7 @@ function extractMetaCommands(
       if (part.includes(metaCmd)) {
         for (const pattern of patterns) {
           const regex = new RegExp(`\\b${metaCmd}\\s+${pattern.source}`, "g");
-          let match;
+          let match: RegExpExecArray | null;
           while ((match = regex.exec(part)) !== null) {
             const extractedCommand = match[1] || match[2] || match[3]; // Handle multiple capture groups
             if (extractedCommand?.trim()) {
@@ -573,7 +576,7 @@ function extractMetaCommands(
 // Extract commands from backtick command substitutions
 function extractCommandSubstitutions(command: string): string[] {
   const commands: string[] = [];
-  let match;
+  let match: RegExpExecArray | null;
 
   // Backtick substitutions: `...`
   const backtickRegex = /`([^`]+)`/g;

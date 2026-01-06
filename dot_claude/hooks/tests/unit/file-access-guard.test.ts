@@ -437,7 +437,7 @@ function extractPaths(toolName: string, toolInput: any): string[] {
       ];
 
       for (const pattern of filePatterns) {
-        let match;
+        let match: RegExpExecArray | null;
         while ((match = pattern.exec(command)) !== null) {
           if (match[1]) {
             paths.push(match[1]);
