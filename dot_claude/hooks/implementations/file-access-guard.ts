@@ -5,14 +5,24 @@ import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { defineHook } from "cc-hooks-ts";
+import {
+  formatChezmoiRedirectMessage,
+  getChezmoiSourcePath,
+  isDotfilesRepository,
+} from "../lib/chezmoi-utils.ts";
 import { createDenyResponse } from "../lib/context-helpers.ts";
 import { expandTilde } from "../lib/path-utils.ts";
 import { matchGitignorePattern } from "../lib/pattern-matcher.ts";
 import "../types/tool-schemas.ts";
 
 /**
- * Deny access to files outside repository root
- * Converted from deny-repository-outside-access.ts using cc-hooks-ts
+ * File Access Guard
+ *
+ * Controls file access based on repository boundaries and context:
+ * - Allows access within repository root
+ * - Blocks system directories for security
+ * - Supports additionalDirectories and permissions.allow patterns
+ * - Special handling for dotfiles repositories (chezmoi integration)
  */
 const hook = defineHook({
   trigger: { PreToolUse: true },
@@ -262,7 +272,7 @@ function extractPathsFromBashCommand(command: string): string[] {
   ];
 
   for (const pattern of patterns) {
-    let match;
+    let match: RegExpExecArray | null;
     while ((match = pattern.exec(command)) !== null) {
       // Add all captured groups (excluding the full match)
       for (let i = 1; i < match.length; i++) {
@@ -387,6 +397,42 @@ function validatePath(
       isAllowed: true,
       resolvedPath: absPath,
     };
+  }
+
+  // 6. Chezmoi handling for dotfiles repository
+  // ホームディレクトリ配下のファイルに対する特別処理
+  if (absPath.startsWith(`${homeDir}/`) && isDotfilesRepository(repoRoot)) {
+    const chezmoiSourcePath = getChezmoiSourcePath(absPath, repoRoot);
+
+    // 6a. 編集操作（Edit/Write/MultiEdit）→ chezmoi管理ファイルならリダイレクト案内
+    const isWriteOperation =
+      toolName === "Edit" ||
+      toolName === "Write" ||
+      toolName === "MultiEdit" ||
+      toolName === "NotebookEdit";
+
+    if (isWriteOperation && chezmoiSourcePath) {
+      return {
+        isAllowed: false,
+        resolvedPath: absPath,
+        reason: formatChezmoiRedirectMessage(absPath, chezmoiSourcePath),
+      };
+    }
+
+    // 6b. 読み取り操作（Read/Glob/Grep/LS）→ 許可（chezmoiを意識させない）
+    const isReadOperation =
+      toolName === "Read" ||
+      toolName === "Glob" ||
+      toolName === "Grep" ||
+      toolName === "LS" ||
+      toolName === "NotebookRead";
+
+    if (isReadOperation) {
+      return {
+        isAllowed: true,
+        resolvedPath: absPath,
+      };
+    }
   }
 
   // Default: deny access outside repository

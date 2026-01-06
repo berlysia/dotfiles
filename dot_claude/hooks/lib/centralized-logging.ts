@@ -223,7 +223,9 @@ class CentralizedLogger {
       reason,
       ...(sessionId ? { session_id: sessionId } : {}),
       ...(command ? { command } : {}),
-      ...(input !== undefined ? { input } : {}),
+      ...(input !== undefined
+        ? { input: input as Record<string, unknown> | null }
+        : {}),
     };
 
     this.writeLog("decisions", entry);

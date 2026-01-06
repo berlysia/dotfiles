@@ -99,7 +99,7 @@ function hasTsxUsage(content: string): boolean {
       if (scriptSectionMatch?.[1]) {
         const scriptContent = scriptSectionMatch[1];
         const scriptValuePattern = /"[^"]*":\s*"([^"]*)"/g;
-        let match;
+        let match: RegExpExecArray | null;
         while ((match = scriptValuePattern.exec(scriptContent)) !== null) {
           const scriptValue = match[1];
           if (scriptValue && checkScriptValue(scriptValue)) {

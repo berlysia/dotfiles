@@ -8,6 +8,7 @@
 import { copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+  type AnalysisOptions,
   type AnalysisResult,
   type PatternAnalysis,
   PermissionAnalyzer,
@@ -52,7 +53,7 @@ class AutoApproveUpdater {
 
     try {
       // 分析実行
-      const analysisOptions: any = {
+      const analysisOptions: AnalysisOptions = {
         includeTestMode: false,
       };
 
@@ -166,7 +167,7 @@ class AutoApproveUpdater {
     ];
 
     const userDecisionPatterns = allPatterns.filter((candidate) => {
-      const decisions = (candidate as any).decisions || {
+      const decisions = candidate.decisions || {
         allow: 0,
         deny: 0,
         ask: 0,
@@ -176,7 +177,7 @@ class AutoApproveUpdater {
     });
 
     const overAllowedPatterns = allPatterns.filter((candidate) => {
-      const decisions = (candidate as any).decisions || {
+      const decisions = candidate.decisions || {
         allow: 0,
         deny: 0,
         ask: 0,
@@ -188,7 +189,7 @@ class AutoApproveUpdater {
     });
 
     const overDeniedPatterns = allPatterns.filter((candidate) => {
-      const decisions = (candidate as any).decisions || {
+      const decisions = candidate.decisions || {
         allow: 0,
         deny: 0,
         ask: 0,
@@ -212,7 +213,7 @@ class AutoApproveUpdater {
         const candidate = allReviewPatterns[i];
         if (!candidate) continue;
 
-        const decisions = (candidate as any).decisions || {
+        const decisions = candidate.decisions || {
           allow: 0,
           deny: 0,
           ask: 0,
@@ -281,7 +282,7 @@ class AutoApproveUpdater {
       `[${current}/${total}] ${emoji} ${action} Candidate: ${candidate.pattern}`,
     );
     console.log(`┌─ Frequency: ${candidate.frequency} times`);
-    const decisions = (candidate as any).decisions || {
+    const decisions = candidate.decisions || {
       allow: 0,
       deny: 0,
       ask: 0,
@@ -348,8 +349,8 @@ class AutoApproveUpdater {
       );
 
       const isSafe = shouldAutoApprove(combinedRisk);
-      const allowCount = (candidate as any).decisions?.allow || 0;
-      const denyCount = (candidate as any).decisions?.deny || 0;
+      const allowCount = candidate.decisions?.allow || 0;
+      const denyCount = candidate.decisions?.deny || 0;
 
       console.log(
         `  • ${candidate.pattern}:`,
@@ -366,7 +367,9 @@ class AutoApproveUpdater {
       const projectPermissions = this.loadPermissions(
         this.projectPermissionsPath,
       );
-      (projectPermissions.allow || []).forEach((p) => existingAllow.add(p));
+      for (const p of projectPermissions.allow || []) {
+        existingAllow.add(p);
+      }
     } catch {}
 
     const dangerousDenyCandidates = result.denyCandidates.filter(
@@ -382,7 +385,7 @@ class AutoApproveUpdater {
 
         const isHighRisk =
           combinedRisk === "high" || combinedRisk === "critical";
-        const denyCount = (candidate as any).decisions?.deny || 0;
+        const denyCount = candidate.decisions?.deny || 0;
         const meetsFrequency = candidate.frequency >= 2;
         const conflictsWithAllow = existingAllow.has(candidate.pattern);
 
@@ -402,8 +405,12 @@ class AutoApproveUpdater {
 
     if (approved.allowPatterns.length > 0 || approved.denyPatterns.length > 0) {
       console.log("\n🤖 Auto-approved patterns based on intrinsic risk:");
-      approved.allowPatterns.forEach((p) => console.log(`  ✅ Allow: ${p}`));
-      approved.denyPatterns.forEach((p) => console.log(`  🚫 Deny: ${p}`));
+      for (const p of approved.allowPatterns) {
+        console.log(`  ✅ Allow: ${p}`);
+      }
+      for (const p of approved.denyPatterns) {
+        console.log(`  🚫 Deny: ${p}`);
+      }
       console.log();
     } else {
       console.log("\n🤖 No patterns met auto-approval criteria.");
@@ -488,7 +495,7 @@ class AutoApproveUpdater {
 
     // 1. ask/passがあるパターン（ユーザー判断が関わった）
     const userDecisionPatterns = allPatterns.filter((candidate) => {
-      const decisions = (candidate as any).decisions || {
+      const decisions = candidate.decisions || {
         allow: 0,
         deny: 0,
         ask: 0,
@@ -499,7 +506,7 @@ class AutoApproveUpdater {
 
     // 2. 過剰にauto-allowされているパターン（見直し候補）
     const overAllowedPatterns = allPatterns.filter((candidate) => {
-      const decisions = (candidate as any).decisions || {
+      const decisions = candidate.decisions || {
         allow: 0,
         deny: 0,
         ask: 0,
@@ -512,7 +519,7 @@ class AutoApproveUpdater {
 
     // 3. 過剰にauto-denyされているパターン（緩和候補）
     const overDeniedPatterns = allPatterns.filter((candidate) => {
-      const decisions = (candidate as any).decisions || {
+      const decisions = candidate.decisions || {
         allow: 0,
         deny: 0,
         ask: 0,
@@ -525,7 +532,7 @@ class AutoApproveUpdater {
     if (userDecisionPatterns.length > 0) {
       console.log("🤔 Patterns requiring attention (had ask/pass decisions):");
       userDecisionPatterns.forEach((candidate) => {
-        const decisions = (candidate as any).decisions || {
+        const decisions = candidate.decisions || {
           allow: 0,
           deny: 0,
           ask: 0,
@@ -552,7 +559,7 @@ class AutoApproveUpdater {
         "⚠️  Potentially over-permissive patterns (frequent auto-allow, no user involvement):",
       );
       overAllowedPatterns.forEach((candidate) => {
-        const decisions = (candidate as any).decisions || {
+        const decisions = candidate.decisions || {
           allow: 0,
           deny: 0,
           ask: 0,
@@ -575,7 +582,7 @@ class AutoApproveUpdater {
         "🚫 Potentially over-restrictive patterns (frequent auto-deny):",
       );
       overDeniedPatterns.forEach((candidate) => {
-        const decisions = (candidate as any).decisions || {
+        const decisions = candidate.decisions || {
           allow: 0,
           deny: 0,
           ask: 0,
@@ -641,7 +648,7 @@ class AutoApproveUpdater {
   ): Promise<string | null> {
     console.log(`\n━━━ Edit Pattern ━━━`);
     console.log(`Current: ${candidate.pattern}`);
-    const decisions = (candidate as any).decisions || {
+    const decisions = candidate.decisions || {
       allow: 0,
       deny: 0,
       ask: 0,
@@ -793,12 +800,14 @@ function parseArgs(): CommandOptions {
       case "--dry-run":
         options.dryRun = true;
         break;
-      case "--since":
+      case "--since": {
         i++;
-        if (i < args.length && args[i]) {
-          options.since = args[i]!;
+        const sinceValue = args[i];
+        if (i < args.length && sinceValue) {
+          options.since = sinceValue;
         }
         break;
+      }
       case "--auto-approve-safe":
         options.autoApproveSafe = true;
         break;
@@ -808,6 +817,7 @@ function parseArgs(): CommandOptions {
       case "--help":
         printHelp();
         process.exit(0);
+        break; // unreachable but satisfies linter
       default:
         console.error(`Unknown option: ${arg}`);
         process.exit(1);

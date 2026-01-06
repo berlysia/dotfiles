@@ -2,7 +2,7 @@
 
 import { deepStrictEqual, ok } from "node:assert";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import denyRepoHook from "../../implementations/deny-repository-outside.ts";
+import fileAccessGuardHook from "../../implementations/file-access-guard.ts";
 import {
   ConsoleCapture,
   createFileSystemMock,
@@ -12,7 +12,7 @@ import {
   invokeRun,
 } from "./test-helpers.ts";
 
-describe("deny-repository-outside.ts hook behavior", () => {
+describe("file-access-guard.ts hook behavior", () => {
   const consoleCapture = new ConsoleCapture();
   const envHelper = new EnvironmentHelper();
   const fsMock = createFileSystemMock();
@@ -44,7 +44,7 @@ describe("deny-repository-outside.ts hook behavior", () => {
     it("should block Read access outside repository", async () => {
       process.env.CLAUDE_TEST_REPO_ROOT = "/home/user/project";
       process.env.CLAUDE_TEST_CWD = "/home/user/project";
-      const hook = denyRepoHook;
+      const hook = fileAccessGuardHook;
 
       const context = createPreToolUseContextFor(hook, "Read", {
         file_path: "/etc/passwd",
@@ -56,7 +56,7 @@ describe("deny-repository-outside.ts hook behavior", () => {
     it("should allow Read access within repository", async () => {
       process.env.CLAUDE_TEST_REPO_ROOT = "/home/user/project";
       process.env.CLAUDE_TEST_CWD = "/home/user/project";
-      const hook = denyRepoHook;
+      const hook = fileAccessGuardHook;
 
       const context = createPreToolUseContextFor(hook, "Read", {
         file_path: "/home/user/project/src/index.ts",
@@ -67,7 +67,7 @@ describe("deny-repository-outside.ts hook behavior", () => {
 
     it("should allow Write access in temp directories", async () => {
       process.env.CLAUDE_TEST_REPO_ROOT = "/home/user/project";
-      const hook = denyRepoHook;
+      const hook = fileAccessGuardHook;
 
       const context = createPreToolUseContextFor(hook, "Write", {
         file_path: "/tmp/malicious.sh",
@@ -79,7 +79,7 @@ describe("deny-repository-outside.ts hook behavior", () => {
 
     it("should allow Write access within repository", async () => {
       process.env.CLAUDE_TEST_REPO_ROOT = "/home/user/project";
-      const hook = denyRepoHook;
+      const hook = fileAccessGuardHook;
 
       const context = createPreToolUseContextFor(hook, "Write", {
         file_path: "/home/user/project/README.md",
@@ -91,7 +91,7 @@ describe("deny-repository-outside.ts hook behavior", () => {
 
     it("should block Edit outside repository", async () => {
       process.env.CLAUDE_TEST_REPO_ROOT = "/home/user/project";
-      const hook = denyRepoHook;
+      const hook = fileAccessGuardHook;
 
       const context = createPreToolUseContextFor(hook, "Edit", {
         file_path: "/home/user/other-project/.env",
@@ -104,7 +104,7 @@ describe("deny-repository-outside.ts hook behavior", () => {
 
     it("should block MultiEdit outside repository", async () => {
       process.env.CLAUDE_TEST_REPO_ROOT = "/home/user/project";
-      const hook = denyRepoHook;
+      const hook = fileAccessGuardHook;
 
       const context = createPreToolUseContextFor(hook, "MultiEdit", {
         file_path: "/etc/hosts",
@@ -119,7 +119,7 @@ describe("deny-repository-outside.ts hook behavior", () => {
     it("should handle relative paths", async () => {
       process.env.CLAUDE_TEST_REPO_ROOT = "/home/user/project";
       process.env.CLAUDE_TEST_CWD = "/home/user/project";
-      const hook = denyRepoHook;
+      const hook = fileAccessGuardHook;
 
       const context = createPreToolUseContextFor(hook, "Read", {
         file_path: "./src/index.ts",
@@ -131,7 +131,7 @@ describe("deny-repository-outside.ts hook behavior", () => {
     it("should block parent directory traversal", async () => {
       process.env.CLAUDE_TEST_REPO_ROOT = "/home/user/project";
       process.env.CLAUDE_TEST_CWD = "/home/user/project";
-      const hook = denyRepoHook;
+      const hook = fileAccessGuardHook;
 
       const context = createPreToolUseContextFor(hook, "Read", {
         file_path: "../../../etc/passwd",
@@ -142,7 +142,7 @@ describe("deny-repository-outside.ts hook behavior", () => {
 
     it("should handle symlinks trying to escape", async () => {
       process.env.CLAUDE_TEST_REPO_ROOT = "/home/user/project";
-      const hook = denyRepoHook;
+      const hook = fileAccessGuardHook;
 
       // Simulate a symlink that points outside
       const context = createPreToolUseContextFor(hook, "Read", {
@@ -156,7 +156,7 @@ describe("deny-repository-outside.ts hook behavior", () => {
 
     it("should handle home directory paths", async () => {
       process.env.CLAUDE_TEST_REPO_ROOT = "/home/user/project";
-      const hook = denyRepoHook;
+      const hook = fileAccessGuardHook;
 
       const context = createPreToolUseContextFor(hook, "Read", {
         file_path: "~/project/file.ts",
@@ -171,7 +171,7 @@ describe("deny-repository-outside.ts hook behavior", () => {
   describe("Bash command filtering", () => {
     it("should block Bash commands accessing outside files", async () => {
       process.env.CLAUDE_TEST_REPO_ROOT = "/home/user/project";
-      const hook = denyRepoHook;
+      const hook = fileAccessGuardHook;
 
       const context = createPreToolUseContextFor(hook, "Bash", {
         command: "cat /etc/passwd",
@@ -183,7 +183,7 @@ describe("deny-repository-outside.ts hook behavior", () => {
     it("should allow Bash commands within repository", async () => {
       process.env.CLAUDE_TEST_REPO_ROOT = "/home/user/project";
       process.env.CLAUDE_TEST_CWD = "/home/user/project";
-      const hook = denyRepoHook;
+      const hook = fileAccessGuardHook;
 
       const context = createPreToolUseContextFor(hook, "Bash", {
         command: "ls ./src",
@@ -195,7 +195,7 @@ describe("deny-repository-outside.ts hook behavior", () => {
 
     it("should block rm commands outside repository", async () => {
       process.env.CLAUDE_TEST_REPO_ROOT = "/home/user/project";
-      const hook = denyRepoHook;
+      const hook = fileAccessGuardHook;
 
       const context = createPreToolUseContextFor(hook, "Bash", {
         command: "rm -rf /etc/important",
@@ -205,7 +205,7 @@ describe("deny-repository-outside.ts hook behavior", () => {
     });
 
     it("should allow package manager commands", async () => {
-      const hook = denyRepoHook;
+      const hook = fileAccessGuardHook;
 
       const context = createPreToolUseContextFor(hook, "Bash", {
         command: "npm install",
@@ -219,7 +219,7 @@ describe("deny-repository-outside.ts hook behavior", () => {
   describe("special directories", () => {
     it("should allow access to node_modules within repo", async () => {
       process.env.CLAUDE_TEST_REPO_ROOT = "/home/user/project";
-      const hook = denyRepoHook;
+      const hook = fileAccessGuardHook;
 
       const context = createPreToolUseContextFor(hook, "Read", {
         file_path: "/home/user/project/node_modules/package/index.js",
@@ -231,7 +231,7 @@ describe("deny-repository-outside.ts hook behavior", () => {
 
     it("should allow access to .git within repo", async () => {
       process.env.CLAUDE_TEST_REPO_ROOT = "/home/user/project";
-      const hook = denyRepoHook;
+      const hook = fileAccessGuardHook;
 
       const context = createPreToolUseContextFor(hook, "Read", {
         file_path: "/home/user/project/.git/config",
@@ -243,7 +243,7 @@ describe("deny-repository-outside.ts hook behavior", () => {
 
     it("should block access to system directories", async () => {
       process.env.CLAUDE_TEST_REPO_ROOT = "/home/user/project";
-      const hook = denyRepoHook;
+      const hook = fileAccessGuardHook;
 
       const systemPaths = [
         "/etc/shadow",
@@ -264,7 +264,7 @@ describe("deny-repository-outside.ts hook behavior", () => {
 
   describe("tool filtering", () => {
     it("should check LS tool", async () => {
-      const hook = denyRepoHook;
+      const hook = fileAccessGuardHook;
 
       const context = createPreToolUseContextFor(hook, "LS", { path: "/etc" });
       await invokeRun(hook, context);
@@ -272,7 +272,7 @@ describe("deny-repository-outside.ts hook behavior", () => {
     });
 
     it("should check Glob tool", async () => {
-      const hook = denyRepoHook;
+      const hook = fileAccessGuardHook;
 
       const context = createPreToolUseContextFor(hook, "Glob", {
         path: "/var/log",
@@ -283,7 +283,7 @@ describe("deny-repository-outside.ts hook behavior", () => {
     });
 
     it("should check Grep tool", async () => {
-      const hook = denyRepoHook;
+      const hook = fileAccessGuardHook;
 
       const context = createPreToolUseContextFor(hook, "Grep", {
         path: "/etc",
@@ -294,7 +294,7 @@ describe("deny-repository-outside.ts hook behavior", () => {
     });
 
     it("should ignore non-file tools", async () => {
-      const hook = denyRepoHook;
+      const hook = fileAccessGuardHook;
 
       const context = createPreToolUseContextFor(hook, "WebFetch", {
         url: "https://example.com",
@@ -308,7 +308,7 @@ describe("deny-repository-outside.ts hook behavior", () => {
   describe("no repository scenario", () => {
     it("should allow operations when not in a repository", async () => {
       process.env.CLAUDE_TEST_REPO_ROOT = "";
-      const hook = denyRepoHook;
+      const hook = fileAccessGuardHook;
 
       const context = createPreToolUseContextFor(hook, "Read", {
         file_path: "/tmp/test.txt",
@@ -322,7 +322,7 @@ describe("deny-repository-outside.ts hook behavior", () => {
   describe("error handling", () => {
     it("should handle missing file_path", async () => {
       process.env.CLAUDE_TEST_REPO_ROOT = "/home/user/project";
-      const hook = denyRepoHook;
+      const hook = fileAccessGuardHook;
 
       const context = createPreToolUseContextFor(hook, "Read", {
         file_path: "",
@@ -334,7 +334,7 @@ describe("deny-repository-outside.ts hook behavior", () => {
     });
 
     it("should handle null tool_input", async () => {
-      const hook = denyRepoHook;
+      const hook = fileAccessGuardHook;
 
       const context = createPreToolUseContextFor(hook, "Write", {
         content: "",
@@ -347,7 +347,7 @@ describe("deny-repository-outside.ts hook behavior", () => {
 
     it("should provide clear error messages", async () => {
       process.env.CLAUDE_TEST_REPO_ROOT = "/home/user/project";
-      const hook = denyRepoHook;
+      const hook = fileAccessGuardHook;
 
       const context = createPreToolUseContextFor(hook, "Read", {
         file_path: "/etc/passwd",
@@ -437,7 +437,7 @@ function extractPaths(toolName: string, toolInput: any): string[] {
       ];
 
       for (const pattern of filePatterns) {
-        let match;
+        let match: RegExpExecArray | null;
         while ((match = pattern.exec(command)) !== null) {
           if (match[1]) {
             paths.push(match[1]);
