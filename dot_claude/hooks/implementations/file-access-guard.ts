@@ -16,8 +16,13 @@ import { matchGitignorePattern } from "../lib/pattern-matcher.ts";
 import "../types/tool-schemas.ts";
 
 /**
- * Deny access to files outside repository root
- * Converted from deny-repository-outside-access.ts using cc-hooks-ts
+ * File Access Guard
+ *
+ * Controls file access based on repository boundaries and context:
+ * - Allows access within repository root
+ * - Blocks system directories for security
+ * - Supports additionalDirectories and permissions.allow patterns
+ * - Special handling for dotfiles repositories (chezmoi integration)
  */
 const hook = defineHook({
   trigger: { PreToolUse: true },
