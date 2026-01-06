@@ -16,10 +16,14 @@ runs:
   steps:
     - name: Install chezmoi
       shell: bash
+      env:
+        INSTALL_DIR: ${{ inputs.install-dir }}
       run: |
-        sh -c "$(curl -fsLS https://get.chezmoi.io)" -- -b "${{ inputs.install-dir }}"
+        sh -c "$(curl -fsLS https://get.chezmoi.io)" -- -b "${INSTALL_DIR}"
 
     - name: Add to PATH
       if: inputs.add-to-path == 'true'
       shell: bash
-      run: echo "${{ inputs.install-dir }}" >> "$GITHUB_PATH"
+      env:
+        INSTALL_DIR: ${{ inputs.install-dir }}
+      run: echo "${INSTALL_DIR}" >> "$GITHUB_PATH"
