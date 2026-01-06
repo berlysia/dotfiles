@@ -40,7 +40,93 @@ fi
 echo
 
 #
-# 2. Hook Tests (existing functionality)
+# 2. TypeScript/JavaScript Linting (biome)
+#
+STAGED_TS_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(ts|tsx|js|jsx|json)$' || true)
+if [ -n "$STAGED_TS_FILES" ]; then
+    echo -e "${BLUE}🦋 Checking TypeScript/JavaScript with biome...${NC}"
+    if command -v biome &> /dev/null; then
+        if biome check --staged --files-ignore-unknown=true; then
+            echo -e "${GREEN}✓ All staged files passed biome checks${NC}"
+        else
+            echo -e "${RED}❌ biome found issues in staged files${NC}"
+            echo -e "${YELLOW}  Run: biome check --write .${NC}"
+            EXIT_CODE=1
+        fi
+    else
+        echo -e "${YELLOW}⚠ biome not installed, skipping${NC}"
+        echo -e "${YELLOW}  Install: pnpm install${NC}"
+    fi
+else
+    echo -e "${GREEN}✓ No TypeScript/JavaScript files staged${NC}"
+fi
+
+echo
+
+#
+# 3. Shell Script Linting (shellcheck)
+#
+STAGED_SH_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.sh$' || true)
+if [ -n "$STAGED_SH_FILES" ]; then
+    echo -e "${BLUE}🐚 Checking shell scripts with shellcheck...${NC}"
+    if command -v shellcheck &> /dev/null; then
+        SHELLCHECK_FAILED=false
+        for file in $STAGED_SH_FILES; do
+            if [ -f "$file" ]; then
+                echo "  Checking: $file"
+                if ! shellcheck --severity=warning "$file"; then
+                    SHELLCHECK_FAILED=true
+                fi
+            fi
+        done
+
+        if [ "$SHELLCHECK_FAILED" = true ]; then
+            echo -e "${RED}❌ shellcheck found issues in staged files${NC}"
+            EXIT_CODE=1
+        else
+            echo -e "${GREEN}✓ All staged shell scripts passed shellcheck${NC}"
+        fi
+    else
+        echo -e "${YELLOW}⚠ shellcheck not installed, skipping${NC}"
+        echo -e "${YELLOW}  Install: apt install shellcheck${NC}"
+    fi
+else
+    echo -e "${GREEN}✓ No shell scripts staged${NC}"
+fi
+
+echo
+
+#
+# 4. Codex Config Format Check
+#
+STAGED_CODEX_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E 'dot_codex/config\.toml|scripts/(check|format)-codex-config\.sh' || true)
+if [ -n "$STAGED_CODEX_FILES" ]; then
+    echo -e "${BLUE}⚙️  Checking Codex config format...${NC}"
+    CHECK_SCRIPT="${REPO_ROOT}/scripts/check-codex-config.sh"
+
+    if [ -f "$CHECK_SCRIPT" ]; then
+        if [ -f "${REPO_ROOT}/dot_codex/config.toml" ]; then
+            if "$CHECK_SCRIPT"; then
+                echo -e "${GREEN}✓ Codex config is properly formatted${NC}"
+            else
+                echo -e "${RED}❌ Codex config needs formatting${NC}"
+                echo -e "${YELLOW}  Run: ./scripts/format-codex-config.sh${NC}"
+                EXIT_CODE=1
+            fi
+        else
+            echo -e "${YELLOW}⚠ dot_codex/config.toml not found, skipping${NC}"
+        fi
+    else
+        echo -e "${YELLOW}⚠ Check script not found, skipping${NC}"
+    fi
+else
+    echo -e "${GREEN}✓ No Codex config files staged${NC}"
+fi
+
+echo
+
+#
+# 5. Hook Tests (existing functionality)
 #
 HOOKS_SCRIPTS_DIR="${REPO_ROOT}/dot_claude/hooks/scripts"
 STAGED_FILES=$(git diff --cached --name-only)

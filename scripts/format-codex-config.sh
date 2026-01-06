@@ -11,16 +11,20 @@ CONFIG_FILE="${CODEX_CONFIG_FILE:-$PROJECT_ROOT/dot_codex/config.toml}"
 # Dependency check
 if ! command -v mise &>/dev/null; then
     echo "❌ Error: mise is not installed" >&2
+    echo "   Install: https://mise.jdx.dev/" >&2
     exit 1
 fi
 
-if ! mise list dasel &>/dev/null; then
-    echo "❌ Error: dasel is not installed. Run 'mise install dasel'" >&2
+# Check if dasel is actually executable (not just listed)
+if ! mise x -- dasel version &>/dev/null; then
+    echo "❌ Error: dasel is not properly installed" >&2
+    echo "   Install: mise install dasel -f" >&2
     exit 1
 fi
 
 if ! command -v jq &>/dev/null; then
     echo "❌ Error: jq is not installed" >&2
+    echo "   Install: sudo apt-get install jq" >&2
     exit 1
 fi
 
@@ -34,7 +38,7 @@ fi
 echo "📝 Formatting $CONFIG_FILE..."
 TEMP_FILE=$(mktemp)
 TEMP_JSON=$(mktemp)
-trap "rm -f $TEMP_FILE $TEMP_JSON" EXIT
+trap 'rm -f "$TEMP_FILE" "$TEMP_JSON"' EXIT
 
 # Check if file has content
 if [[ ! -s "$CONFIG_FILE" ]]; then
