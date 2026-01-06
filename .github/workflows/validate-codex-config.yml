@@ -1,0 +1,47 @@
+name: Validate Codex Config
+
+on:
+  push:
+    branches:
+      - master
+      - main
+    paths:
+      - 'dot_codex/config.toml'
+      - 'scripts/check-codex-config.sh'
+      - 'scripts/format-codex-config.sh'
+      - '.github/workflows/validate-codex-config.yml'
+  pull_request:
+    paths:
+      - 'dot_codex/config.toml'
+      - 'scripts/check-codex-config.sh'
+      - 'scripts/format-codex-config.sh'
+      - '.github/workflows/validate-codex-config.yml'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+    - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
+      with:
+        persist-credentials: false
+
+    - name: Install mise
+      uses: jdx/mise-action@v2
+      with:
+        experimental: true
+        reshim: true
+
+    - name: Install dasel
+      run: mise use -g dasel@latest
+
+    - name: Make scripts executable
+      run: |
+        chmod +x scripts/*.sh
+
+    - name: Validate Codex config formatting
+      run: ./scripts/check-codex-config.sh
+      env:
+        CODEX_CONFIG_FILE: dot_codex/config.toml

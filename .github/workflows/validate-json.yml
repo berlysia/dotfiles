@@ -12,6 +12,7 @@ on:
       - '.github/scripts/validate-json-templates.sh'
       - '.github/scripts/check-trailing-commas.sh'
       - '.github/ci-chezmoi-data.json'
+      - '.github/actions/install-chezmoi/**'
   pull_request:
     paths:
       - '**/*.json.tmpl'
@@ -20,6 +21,7 @@ on:
       - '.github/scripts/validate-json-templates.sh'
       - '.github/scripts/check-trailing-commas.sh'
       - '.github/ci-chezmoi-data.json'
+      - '.github/actions/install-chezmoi/**'
 
 jobs:
   validate:
@@ -32,14 +34,8 @@ jobs:
       with:
         persist-credentials: false
 
-    - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y jq
-
     - name: Install chezmoi
-      run: |
-        sh -c "$(curl -fsLS get.chezmoi.io)" -- -b /usr/local/bin
+      uses: ./.github/actions/install-chezmoi
 
     - name: Make scripts executable
       run: |

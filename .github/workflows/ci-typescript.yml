@@ -10,6 +10,7 @@ on:
       - 'tsconfig.json'
       - 'biome.json'
       - '.github/workflows/ci-typescript.yml'
+      - '.github/actions/setup-node-pnpm/**'
   pull_request:
     branches: [master, main]
     paths:
@@ -19,6 +20,7 @@ on:
       - 'tsconfig.json'
       - 'biome.json'
       - '.github/workflows/ci-typescript.yml'
+      - '.github/actions/setup-node-pnpm/**'
   workflow_dispatch:
 
 concurrency:
@@ -39,19 +41,8 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@fe02b34f77f8bc703788d5817da081398fad5dd2 # v4.0.0
-        with:
-          version: 10.26.2
-
-      - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: '22'
-          cache: 'pnpm'
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Setup Node.js with pnpm
+        uses: ./.github/actions/setup-node-pnpm
 
       - name: Type check
         run: pnpm run typecheck

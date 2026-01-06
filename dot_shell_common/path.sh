@@ -7,6 +7,7 @@ _common_paths=(
   "$HOME/.local/.bin"
   "$HOME/.claude/local"
   "$HOME/.deno/bin"
+  "$HOME/.moon/bin"
   "$HOME/google-cloud-sdk/bin"
   "$HOME/workspace/depot_tools"
   "${GOPATH:-$HOME/go}/bin"
