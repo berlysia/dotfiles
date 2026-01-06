@@ -34,9 +34,7 @@ jobs:
         experimental: true
 
     - name: Install dasel
-      run: |
-        mise install dasel
-        mise reshim
+      run: mise use -g dasel@latest
 
     - name: Make scripts executable
       run: |
