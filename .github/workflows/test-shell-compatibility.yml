@@ -10,6 +10,7 @@ on:
       - 'dot_zsh/**'
       - 'dot_zshenv'
       - '.github/workflows/test-shell-compatibility.yml'
+      - '.github/actions/install-chezmoi/**'
   pull_request:
     branches: [ master, main ]
     paths:
@@ -19,6 +20,7 @@ on:
       - 'dot_zsh/**'
       - 'dot_zshenv'
       - '.github/workflows/test-shell-compatibility.yml'
+      - '.github/actions/install-chezmoi/**'
   workflow_dispatch:  # Allow manual trigger
 
 jobs:
@@ -50,9 +52,10 @@ jobs:
         echo "zsh version: $(zsh --version)"
 
     - name: Install chezmoi
-      run: |
-        sh -c "$(curl -fsLS https://get.chezmoi.io)" -- -b "$HOME/.local/bin"
-        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      uses: ./.github/actions/install-chezmoi
+      with:
+        install-dir: '$HOME/.local/bin'
+        add-to-path: 'true'
 
     - name: Configure git
       run: |

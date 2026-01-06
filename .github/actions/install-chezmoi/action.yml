@@ -1,0 +1,25 @@
+name: Install chezmoi
+description: Install chezmoi binary
+
+inputs:
+  install-dir:
+    description: 'Installation directory'
+    required: false
+    default: '/usr/local/bin'
+  add-to-path:
+    description: 'Add installation directory to PATH'
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Install chezmoi
+      shell: bash
+      run: |
+        sh -c "$(curl -fsLS https://get.chezmoi.io)" -- -b "${{ inputs.install-dir }}"
+
+    - name: Add to PATH
+      if: inputs.add-to-path == 'true'
+      shell: bash
+      run: echo "${{ inputs.install-dir }}" >> "$GITHUB_PATH"
