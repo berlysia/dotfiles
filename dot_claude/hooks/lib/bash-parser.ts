@@ -419,7 +419,11 @@ async function parseWithTreeSitter(
 
   const tree = bashParser?.parse(command);
   if (!tree) {
-    return { commands: [], errors: [{ message: "bashParser not initialized" }], parsingMethod: "tree-sitter" };
+    return {
+      commands: [],
+      errors: [{ message: "bashParser not initialized" }],
+      parsingMethod: "tree-sitter",
+    };
   }
   const cmds = extractCommandsFromTreeSitter(tree, command);
 
