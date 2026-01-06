@@ -85,7 +85,12 @@ export function getChezmoiSourcePath(
   // Get the relative path from home directory
   const relativePath = absPath.slice(homeDir.length + 1);
   const segments = relativePath.split("/");
-  const targetFileName = segments[segments.length - 1];
+  const targetFileName = segments.at(-1);
+
+  // Guard: ensure we have a valid filename
+  if (!targetFileName) {
+    return undefined;
+  }
 
   // Convert directory path to chezmoi naming (dot_ prefix for dotfiles)
   const chezmoiDirSegments = segments.slice(0, -1).map((segment, index) => {
