@@ -14,7 +14,6 @@ hooks/
 │   ├── block-package-json-tsx.ts   # package.json tsx制限
 │   ├── web-fetch-guardian.ts    # WebFetch制限
 │   ├── command-logger.ts        # コマンド実行ログ
-│   ├── auto-format.ts           # ファイル自動フォーマット
 │   ├── session.ts               # セッション管理
 │   ├── notification.ts          # 通知処理
 │   ├── speak-notification.ts    # 音声通知
