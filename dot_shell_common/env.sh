@@ -17,6 +17,10 @@ export FZF_DEFAULT_OPTS="--height=50% --layout=reverse --info=inline --border --
 # Go configuration
 export GOPATH="${GOPATH:-$HOME/go}"
 
+# Prevent installation of mise-managed tools via Homebrew
+# These tools are managed by mise and should not be installed via Homebrew
+export HOMEBREW_FORBIDDEN_FORMULAE="actionlint bun dasel deno direnv fzf gitleaks go node pnpm rust uv yarn"
+
 if [ -f ~/local.env.sh ]; then
   . ~/local.env.sh
 fi
