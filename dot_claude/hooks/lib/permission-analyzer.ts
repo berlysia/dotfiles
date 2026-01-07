@@ -308,7 +308,8 @@ export class PermissionAnalyzer {
         extractCommandsDetailed,
       );
       if (analysis.safe && analysis.firstSafe) {
-        return this.generalizeCommand(analysis.firstSafe);
+        const generalized = this.generalizeCommand(analysis.firstSafe);
+        return generalized || null;
       }
       // 安全でない/判定不能なら pass/review 寄りのパターンにする
       return "sh -c:*";
@@ -318,7 +319,8 @@ export class PermissionAnalyzer {
     const firstCommand = commands[0];
     if (!firstCommand) return null;
 
-    return this.generalizeCommand(firstCommand);
+    const generalized = this.generalizeCommand(firstCommand);
+    return generalized || null;
   }
 
   /**
@@ -329,6 +331,23 @@ export class PermissionAnalyzer {
     const cmd = parts[0];
 
     if (!cmd) return command;
+
+    // リダイレクト構文やプログラミング言語キーワードなどの無効なパターンを除外
+    const invalidPatterns = [
+      // リダイレクト構文
+      /^(\d*>+&?\d*|&?>+\d*|\d*<+|<<-?)$/,
+      // プログラミング言語のキーワード（JavaScript, Python, etc.）
+      /^(const|let|var|function|class|if|else|elif|return|import|export|from|async|await|def|lambda)$/,
+      // 数字のみ
+      /^\d+$/,
+      // パイプやその他のシェル制御文字
+      /^(\||&&|\|\||;|&)$/,
+    ];
+
+    if (invalidPatterns.some((pattern) => pattern.test(cmd))) {
+      // 無効なパターンは空文字列を返してフィルタリング対象にする
+      return "";
+    }
 
     // よくあるパターンに基づいて一般化
     if (cmd.match(/^(npm|pnpm|yarn|bun)$/)) {
