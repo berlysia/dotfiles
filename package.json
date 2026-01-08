@@ -18,7 +18,7 @@
   },
   "keywords": [],
   "author": "",
-  "packageManager": "pnpm@10.26.2",
+  "packageManager": "pnpm@10.27.0",
   "devDependencies": {
     "@biomejs/biome": "2.2.4",
     "@mizchi/lsmcp": "0.10.0",
