@@ -3,13 +3,15 @@
 type = "file"
 url = "https://raw.githubusercontent.com/azu/ni.zsh/main/ni.zsh"
 refreshPeriod = "24h"
+# fzf is now managed by mise - see ~/.config/mise/config.toml
+{{ end }}
 
+{{/* wsl2-ssh-agent is only needed in WSL2 environment */}}
+{{ if and (eq .chezmoi.os "linux") (.chezmoi.kernel.osrelease | lower | contains "microsoft") }}
 [".local/bin/wsl2-ssh-agent"]
 type = "file"
 url = "https://github.com/mame/wsl2-ssh-agent/releases/latest/download/wsl2-ssh-agent"
 refreshPeriod = "24h"
 executable = true
-
-# fzf is now managed by mise - see ~/.config/mise/config.toml
 {{ end }}
 
