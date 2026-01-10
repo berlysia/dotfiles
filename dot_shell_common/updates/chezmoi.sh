@@ -1,6 +1,6 @@
 #!/bin/sh
 # chezmoi tool update check - notify when new version is available
-# Checks every 24 hours using chezmoi upgrade --dry-run
+# Checks every 24 hours using GitHub API (not chezmoi upgrade --dry-run which has side effects)
 
 _CHEZMOI_CHECK_INTERVAL=86400  # 24 hours in seconds
 _CHEZMOI_LAST_CHECK="${XDG_CACHE_HOME:-$HOME/.cache}/chezmoi_version_last_check"
@@ -21,13 +21,22 @@ chezmoi_check_updates() {
   # Update timestamp first to prevent duplicate checks
   _update_write_timestamp "$_CHEZMOI_LAST_CHECK" "$(_update_now)"
 
-  # Get current and latest versions
-  local current_version latest_version
+  # Get current version
+  local current_version
   current_version=$(chezmoi --version 2>/dev/null | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1)
-  latest_version=$(chezmoi upgrade --dry-run 2>/dev/null | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+  [ -n "$current_version" ] || return
+
+  # Get latest version from GitHub API (curl required)
+  type curl >/dev/null 2>&1 || return
+  local latest_version
+  latest_version=$(curl -fsSL --max-time 5 \
+    "https://api.github.com/repos/twpayne/chezmoi/releases/latest" 2>/dev/null \
+    | grep -oE '"tag_name"[[:space:]]*:[[:space:]]*"v[0-9]+\.[0-9]+\.[0-9]+"' \
+    | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' \
+    | head -1)
 
   # Notify if new version available
-  if [ -n "$current_version" ] && [ -n "$latest_version" ] && [ "$current_version" != "$latest_version" ]; then
+  if [ -n "$latest_version" ] && [ "$current_version" != "$latest_version" ]; then
     echo "💡 chezmoi: New version $latest_version available (current: $current_version, run 'chezmoi upgrade' to update)"
   fi
 }
