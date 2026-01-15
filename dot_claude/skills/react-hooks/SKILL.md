@@ -1,5 +1,5 @@
 ---
-name: React Hooks Best Practices
+name: react-hooks
 description: This skill should be used when the user asks to "review React hooks", "check useEffect usage", "optimize hooks performance", "design custom hooks", "refactor to use hooks", "remove unnecessary useEffect", "simplify useMemo usage", or discusses React hooks patterns. Provides guidance on writing minimal, effective React hooks code.
 context: fork
 ---

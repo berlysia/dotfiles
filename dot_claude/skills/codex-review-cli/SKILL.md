@@ -1,12 +1,12 @@
 ---
-name: Codex Review CLI
+name: codex-review-cli
 description: Use this skill when you need external perspective for code analysis, architecture advice, debugging guidance, or when stuck on complex problems. Executes Codex CLI in read-only mode for rapid consultation and second opinion. Note that Codex analyzes and suggests improvements but does not implement changes.
 context: fork
 ---
 
 # Codex Review CLI Skill
 
-Codex CLIを直接実行して、外部視点からの即座のフィードバックを取得します。miseで管理されているCodex CLIバイナリを使用します。
+Codex CLIを直接実行して、外部視点からの即座のフィードバックを取得します。
 
 **重要**: read-onlyモードで実行するため、Codexはコード分析と改善提案のみを行い、実装やファイル変更は行いません。
 
@@ -26,24 +26,11 @@ Codex CLIを直接実行して、外部視点からの即座のフィードバ�
 
 ## 基本的な使用方法
 
-### コマンドフォーマット
-
 ```bash
 codex exec --full-auto --sandbox read-only --cd <project_directory> "<prompt>"
 ```
 
-### パラメータ説明
-
-- `--full-auto`: 自動実行モード（インタラクティブプロンプトなし）
-- `--sandbox read-only`: 読み取り専用サンドボックス（安全性確保）
-- `--cd <project_directory>`: プロジェクトのルートディレクトリを指定
-- `"<prompt>"`: Codexに送信するプロンプト
-
-### プロジェクトディレクトリの決定
-
-1. **明示的な指定がある場合**: ユーザーが指定したディレクトリを使用
-2. **現在のプロジェクト**: カレントディレクトリ（`pwd`で取得）を使用
-3. **chezmoi管理下**: `/home/berlysia/.local/share/chezmoi` が対象
+プロジェクトディレクトリには `$(pwd)` または明示的なパスを指定します。
 
 ## 使用例
 
@@ -75,95 +62,22 @@ codex exec --full-auto --sandbox read-only --cd $(pwd) \
   "src/hooks/useAuth.tsのカスタムフックをレビューしてください。React Hooksのベストプラクティスに従っているか、useMemoやuseCallbackの使い方が適切か分析し、改善提案があれば具体例とともに教えてください。"
 ```
 
-## プロンプト設計のベストプラクティス
+## プロンプト設計のガイドライン
 
-### 効果的なプロンプトの構造
+効果的なプロンプトには：
+- 明確な依頼内容と対象ファイル
+- 背景情報や制約条件
+- 具体的な確認ポイント
 
-```markdown
-[明確な依頼内容]
-
-## コンテキスト
-[背景情報や制約条件]
-
-## 具体的な質問
-1. [質問1]
-2. [質問2]
-
-## 期待する回答形式
-[箇条書き、コード例、比較表など]
-```
-
-### 良いプロンプトの例
-
-```bash
-codex exec --full-auto --sandbox read-only --cd $(pwd) \
-  "src/stream/processor.tsのストリーム処理実装をレビューしてください。
-
-## コンテキスト
-大容量ファイル（1GB以上）を処理する必要があり、メモリ効率を重視しています。
-
-## 確認ポイント
-1. バックプレッシャー制御は適切か
-2. エラーハンドリングに漏れはないか
-3. メモリリークのリスクはあるか
-
-## 期待する回答
-問題点を指摘し、改善案を具体的なコード例とともに提案してください。"
-```
-
-### 避けるべきプロンプト
-
-❌ **曖昧すぎる**:
-```
-"このコードを見てください"
-```
-
-❌ **コンテキスト不足**:
-```
-"エラーが出ます。原因を教えてください"
-```
-
-❌ **範囲が広すぎる**:
-```
-"プロジェクト全体をレビューしてください"
-```
-
-❌ **実装を依頼（read-onlyモードでは不可）**:
-```
-"このバグを修正してください"
-"新しい機能を実装してください"
-```
-
-✅ **正しい依頼方法**:
-```
-"このバグの原因を分析し、どのように修正すべきか提案してください"
-"この機能をどのように実装すべきか、設計案を提示してください"
-```
+**重要**: read-onlyモードのため、実装依頼ではなく分析・提案を依頼してください。
+- ❌ "このバグを修正してください"
+- ✅ "このバグの原因を分析し、修正方法を提案してください"
 
 ## 実装パターン
 
-### Bashツール経由での実行
-
-```typescript
-// Claude Code内での使用例
-Bash({
-  command: `codex exec --full-auto --sandbox read-only --cd "${projectDir}" "${prompt}"`,
-  description: "Codex CLIでコードレビューを依頼"
-})
-```
-
-### プロンプトのエスケープ処理
+長いプロンプトにはヒアドキュメントを使用：
 
 ```bash
-# シングルクォートとダブルクォートを適切にエスケープ
-prompt="プロジェクトの'認証'機能を\"レビュー\"してください"
-codex exec --full-auto --sandbox read-only --cd $(pwd) "${prompt}"
-```
-
-### 長いプロンプトの扱い
-
-```bash
-# ヒアドキュメントを使用
 read -r -d '' PROMPT <<'EOF'
 以下の実装計画をレビューしてください：
 
@@ -182,24 +96,9 @@ codex exec --full-auto --sandbox read-only --cd $(pwd) "${PROMPT}"
 
 ## 注意事項
 
-### セキュリティ
-
-1. **機密情報**: API キー、パスワード、個人情報を含むコードは送信しない
-2. **read-onlyサンドボックス**: 常に `--sandbox read-only` を使用してファイル変更を防止
-3. **プロジェクト範囲**: `--cd` で適切なディレクトリに制限
-
-### 応答の取り扱い
-
-1. **read-onlyモードの制限**: Codexはファイルの読み取りと分析のみ可能。実装やファイル変更は行えないため、提案された改善案は自分で実装する必要がある
-2. **検証必須**: Codexの提案は参考意見として扱い、盲目的に適用しない
-3. **コンテキスト依存**: Codexはプロジェクト全体のコンテキストを持たないため、提案を実装前に検証
-4. **ベストプラクティス**: 一般的なベストプラクティスには従うが、プロジェクト固有の制約を優先
-
-### パフォーマンス
-
-1. **応答時間**: Codex実行には数秒〜数十秒かかる可能性がある
-2. **並列実行**: 複数の独立した質問がある場合は、並列実行を検討
-3. **タイムアウト**: 必要に応じてBashツールのtimeoutパラメータを設定
+- **機密情報**: API キー、パスワード、個人情報を含むコードは送信しない
+- **検証必須**: Codexの提案は参考意見として扱い、実装前に検証する
+- **タイムアウト**: 必要に応じてBashツールのtimeoutパラメータを設定（デフォルト120秒）
 
 ## 既存スキルとの使い分け
 
@@ -226,33 +125,8 @@ codex exec --full-auto --sandbox read-only --cd $(pwd) "${PROMPT}"
 
 ## トラブルシューティング
 
-### codex コマンドが見つからない
-
-```bash
-# mise でインストールされているか確認
-mise list | grep codex
-
-# インストールされていなければ追加
-mise use -g codex@latest
-```
-
-### タイムアウトエラー
-
-```bash
-# Bashツールのtimeoutを延長（デフォルト120秒→300秒）
-Bash({
-  command: "codex exec ...",
-  timeout: 300000  # ミリ秒単位
-})
-```
-
-### エンコーディングエラー
-
-```bash
-# UTF-8環境変数を設定
-export LANG=ja_JP.UTF-8
-codex exec --full-auto --sandbox read-only --cd $(pwd) "プロンプト"
-```
+- **codex コマンドが見つからない**: `mise list | grep codex` で確認し、未インストールなら `mise use -g codex@latest` の許可を利用者に求める
+- **タイムアウトエラー**: Bashツールのtimeoutパラメータを延長（例: 300000ミリ秒）
 
 ## ワークフロー統合
 
