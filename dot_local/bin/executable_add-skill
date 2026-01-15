@@ -55,35 +55,51 @@ update_yaml() {
     local jq_filter="$2"
     local temp_json=$(mktemp)
     local temp_yaml=$(mktemp)
-    trap 'rm -f "$temp_json" "$temp_yaml" "${temp_json}.new"' RETURN
+    local temp_json_new="${temp_json}.new"
+
+    # Cleanup function
+    cleanup_temp_files() {
+        rm -f "$temp_json" "$temp_yaml" "$temp_json_new" 2>/dev/null || true
+    }
+    trap cleanup_temp_files RETURN
 
     # YAML → JSON
     if ! mise x -- dasel -i yaml -o json < "$YAML_FILE" > "$temp_json"; then
         echo -e "${RED}❌ YAML parse failed${NC}" >&2
+        cleanup_temp_files
+        trap - RETURN
         return 1
     fi
 
     # jq transformation
-    if ! eval "jq $jq_args '$jq_filter' '$temp_json' > '${temp_json}.new'"; then
+    if ! eval "jq $jq_args '$jq_filter' '$temp_json' > '$temp_json_new'"; then
         echo -e "${RED}❌ jq transformation failed${NC}" >&2
+        cleanup_temp_files
+        trap - RETURN
         return 1
     fi
 
     # JSON → YAML
-    if ! mise x -- dasel -i json -o yaml < "${temp_json}.new" > "$temp_yaml"; then
+    if ! mise x -- dasel -i json -o yaml < "$temp_json_new" > "$temp_yaml"; then
         echo -e "${RED}❌ JSON to YAML conversion failed${NC}" >&2
+        cleanup_temp_files
+        trap - RETURN
         return 1
     fi
 
     # Show diff
     if diff -u "$YAML_FILE" "$temp_yaml"; then
         echo -e "${YELLOW}⚠️  No changes detected${NC}"
+        cleanup_temp_files
+        trap - RETURN
         return 0
     fi
 
     # Atomic replacement
     mv "$temp_yaml" "$YAML_FILE"
     echo -e "${GREEN}✅ Updated successfully${NC}"
+    cleanup_temp_files
+    trap - RETURN
 }
 
 # Add skill
@@ -98,7 +114,7 @@ cmd_add() {
 
     echo -e "${BLUE}📦 Adding skill: $skill from $repo${NC}"
 
-    local jq_args="--arg repo '$repo' --arg skill '$skill'"
+    local jq_args="--arg repo \"$repo\" --arg skill \"$skill\""
     local jq_filter='
 def has_repo: .claude_skills.repositories | any(.repo == $repo);
 
@@ -131,7 +147,7 @@ cmd_remove() {
 
     echo -e "${BLUE}🗑️  Removing skill: $skill${NC}"
 
-    local jq_args="--arg skill '$skill'"
+    local jq_args="--arg skill \"$skill\""
     local jq_filter='
 .claude_skills.repositories |= (
   map(.skills |= map(select(. != $skill)))
