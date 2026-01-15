@@ -1,7 +1,7 @@
 ---
 name: Codex Review CLI
 description: Use this skill when you need external perspective for code analysis, architecture advice, debugging guidance, or when stuck on complex problems. Executes Codex CLI in read-only mode for rapid consultation and second opinion. Note that Codex analyzes and suggests improvements but does not implement changes.
-version: 0.1.0
+context: fork
 ---
 
 # Codex Review CLI Skill
