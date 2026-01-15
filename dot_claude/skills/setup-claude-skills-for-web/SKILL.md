@@ -1,6 +1,6 @@
 ---
-name: setup-claude-skills
-description: Setup Claude Code skills from berlysia/dotfiles in other projects. Creates .claude/settings.json with auto-update hook. Use when setting up skills in a new project or when user asks to configure, install, or setup external Claude Code skills.
+name: setup-claude-skills-for-web
+description: Setup Claude Code skills from berlysia/dotfiles for web version in other projects. Creates .claude/settings.json with auto-update hook. Use when setting up skills for web version or when user asks to configure, install, or setup external Claude Code skills for web.
 ---
 
 # Setup Claude Skills
