@@ -7,6 +7,7 @@
 scripts
 .gitleaks.toml
 .gitleaksignore
+docs
 
 # Test files - exclude from deployment
 **/*.test.ts
