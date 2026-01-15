@@ -72,7 +72,7 @@ To use these skills in another project:
 
 ```bash
 cd /path/to/your/project
-curl -fsSL https://raw.githubusercontent.com/berlysia/dotfiles/master/scripts/setup-claude-skills.sh | bash
+curl -fsSL https://raw.githubusercontent.com/berlysia/dotfiles/master/scripts/setup-claude-skills-for-web.sh | bash
 ```
 
 This creates a simple `.claude/settings.json` with inline SessionStart command - no hook files needed!
@@ -83,7 +83,7 @@ See [docs/external-usage.md](docs/external-usage.md) for detailed documentation.
 
 ### Skills Included
 
-- **setup-claude-skills**: Setup skills in other projects with one command
+- **setup-claude-skills-for-web**: Setup skills in other projects with one command
 - **semantic-commit**: Semantic commit message generation with change analysis
 - **react-hooks**: React hooks best practices and optimization guidance
 - **codex-review-cli**: Quick code review via Codex CLI (read-only)
