@@ -1,0 +1,6 @@
+claude_skills:
+    repositories:
+        - repo: vercel-labs/agent-skills
+          skills:
+            - vercel-react-best-practices
+            - web-design-guidelines

@@ -1,0 +1,233 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+# Constants
+CHEZMOI_SOURCE_DIR="${CHEZMOI_SOURCE_DIR:-}"
+YAML_FILE=""
+
+# Check dependencies
+check_dependencies() {
+    local missing=()
+    command -v mise &>/dev/null || missing+=("mise")
+    command -v jq &>/dev/null || missing+=("jq")
+    command -v chezmoi &>/dev/null || missing+=("chezmoi")
+
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        echo -e "${RED}❌ Missing dependencies: ${missing[*]}${NC}" >&2
+        echo "   Install mise: https://mise.jdx.dev/" >&2
+        echo "   Install jq: sudo apt-get install jq" >&2
+        exit 1
+    fi
+
+    # daselの実行可能性確認
+    if ! mise x -- dasel version &>/dev/null; then
+        echo -e "${RED}❌ dasel not properly installed${NC}" >&2
+        echo "   Install: mise install dasel -f" >&2
+        exit 1
+    fi
+}
+
+# YAML validation
+validate_yaml() {
+    local file=$1
+    if [[ ! -f "$file" ]]; then
+        echo -e "${RED}❌ File not found: $file${NC}" >&2
+        exit 1
+    fi
+
+    if ! mise x -- dasel -i yaml -o json < "$file" &>/dev/null; then
+        echo -e "${RED}❌ Invalid YAML syntax${NC}" >&2
+        exit 1
+    fi
+}
+
+# YAML update with atomic replacement
+update_yaml() {
+    local jq_args="$1"
+    local jq_filter="$2"
+    local temp_json=$(mktemp)
+    local temp_yaml=$(mktemp)
+    trap 'rm -f "$temp_json" "$temp_yaml" "${temp_json}.new"' RETURN
+
+    # YAML → JSON
+    if ! mise x -- dasel -i yaml -o json < "$YAML_FILE" > "$temp_json"; then
+        echo -e "${RED}❌ YAML parse failed${NC}" >&2
+        return 1
+    fi
+
+    # jq transformation
+    if ! eval "jq $jq_args '$jq_filter' '$temp_json' > '${temp_json}.new'"; then
+        echo -e "${RED}❌ jq transformation failed${NC}" >&2
+        return 1
+    fi
+
+    # JSON → YAML
+    if ! mise x -- dasel -i json -o yaml < "${temp_json}.new" > "$temp_yaml"; then
+        echo -e "${RED}❌ JSON to YAML conversion failed${NC}" >&2
+        return 1
+    fi
+
+    # Show diff
+    if diff -u "$YAML_FILE" "$temp_yaml"; then
+        echo -e "${YELLOW}⚠️  No changes detected${NC}"
+        return 0
+    fi
+
+    # Atomic replacement
+    mv "$temp_yaml" "$YAML_FILE"
+    echo -e "${GREEN}✅ Updated successfully${NC}"
+}
+
+# Add skill
+cmd_add() {
+    local repo=$1
+    local skill=$2
+
+    [[ -z "$repo" || -z "$skill" ]] && {
+        echo -e "${RED}Usage: add-skill add <repo> <skill>${NC}" >&2
+        exit 1
+    }
+
+    echo -e "${BLUE}📦 Adding skill: $skill from $repo${NC}"
+
+    local jq_args="--arg repo '$repo' --arg skill '$skill'"
+    local jq_filter='
+def has_repo: .claude_skills.repositories | any(.repo == $repo);
+
+if has_repo then
+  .claude_skills.repositories |= (
+    map(if .repo == $repo
+        then .skills += [$skill]
+        else .
+        end)
+    | map(.skills |= (unique | sort))
+  )
+else
+  .claude_skills.repositories += [{"repo": $repo, "skills": [$skill]}]
+end
+'
+
+    if update_yaml "$jq_args" "$jq_filter"; then
+        echo -e "${BLUE}💡 Next: chezmoi apply${NC}"
+    fi
+}
+
+# Remove skill
+cmd_remove() {
+    local skill=$1
+
+    [[ -z "$skill" ]] && {
+        echo -e "${RED}Usage: add-skill remove <skill>${NC}" >&2
+        exit 1
+    }
+
+    echo -e "${BLUE}🗑️  Removing skill: $skill${NC}"
+
+    local jq_args="--arg skill '$skill'"
+    local jq_filter='
+.claude_skills.repositories |= (
+  map(.skills |= map(select(. != $skill)))
+  | map(select(.skills | length > 0))
+)
+'
+
+    if update_yaml "$jq_args" "$jq_filter"; then
+        echo -e "${BLUE}💡 Next: chezmoi apply${NC}"
+    fi
+}
+
+# List skills
+cmd_list() {
+    echo -e "${BLUE}📋 Current skills configuration:${NC}"
+    echo ""
+
+    mise x -- dasel -i yaml -o json < "$YAML_FILE" | jq -r '
+        .claude_skills.repositories[]
+        | "[\(.repo)]" + "\n  " + (.skills | join("\n  "))
+    '
+}
+
+# Search skills
+cmd_search() {
+    local repo=${1:-}
+
+    [[ -z "$repo" ]] && {
+        echo -e "${RED}Usage: add-skill search <repo>${NC}" >&2
+        exit 1
+    }
+
+    echo -e "${BLUE}🔍 Searching skills in $repo...${NC}"
+    npx --yes add-skill "$repo" --list
+}
+
+# Help
+cmd_help() {
+    cat <<'EOF'
+add-skill - Manage Claude Code skills in chezmoi
+
+Usage:
+  add-skill add <repo> <skill>     Add skill to configuration
+  add-skill remove <skill>         Remove skill from configuration
+  add-skill list                   Show current configuration
+  add-skill search <repo>          Search available skills in repository
+  add-skill help                   Show this help
+
+Examples:
+  add-skill add vercel-labs/agent-skills web-design-guidelines
+  add-skill remove web-design-guidelines
+  add-skill list
+  add-skill search vercel-labs/agent-skills
+
+After modifying configuration, run: chezmoi apply
+EOF
+}
+
+# Main
+main() {
+    check_dependencies
+
+    local subcommand=${1:-help}
+    shift || true
+
+    # YAML_FILE path resolution
+    if [[ -z "$CHEZMOI_SOURCE_DIR" ]]; then
+        CHEZMOI_SOURCE_DIR=$(chezmoi source-path 2>/dev/null || echo "$HOME/.local/share/chezmoi")
+    fi
+    YAML_FILE="$CHEZMOI_SOURCE_DIR/.chezmoidata/claude_skills.yaml"
+
+    case "$subcommand" in
+        add)
+            validate_yaml "$YAML_FILE"
+            cmd_add "$@"
+            ;;
+        remove)
+            validate_yaml "$YAML_FILE"
+            cmd_remove "$@"
+            ;;
+        list)
+            validate_yaml "$YAML_FILE"
+            cmd_list
+            ;;
+        search)
+            cmd_search "$@"
+            ;;
+        help|--help|-h)
+            cmd_help
+            ;;
+        *)
+            echo -e "${RED}Unknown command: $subcommand${NC}" >&2
+            cmd_help
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"

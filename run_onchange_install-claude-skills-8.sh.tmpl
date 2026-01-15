@@ -1,0 +1,38 @@
+{{ if ne .chezmoi.os "windows" -}}
+#!/bin/bash
+# Install Claude Code skills via add-skill
+# Hash: {{ .claude_skills | toJson | sha256sum }}
+
+set -euo pipefail
+
+log() {
+    local level="${2:-INFO}"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $1"
+}
+
+# Check if npx is available
+if ! command -v npx &> /dev/null; then
+    log "npx not found. Skipping skill installation." "WARNING"
+    exit 0
+fi
+
+TARGET_DIR="$HOME/.claude/skills"
+mkdir -p "$TARGET_DIR"
+
+log "Starting Claude Code skill installation..."
+
+# Install each skill from repositories
+{{ range .claude_skills.repositories -}}
+{{ $repo := .repo -}}
+{{ range .skills -}}
+log "Installing skill: {{ . }} from {{ $repo }}"
+if npx --yes add-skill "{{ $repo }}" --global --skill "{{ . }}" --yes 2>&1; then
+    log "Successfully installed: {{ . }}" "SUCCESS"
+else
+    log "Failed to install: {{ . }} (continuing...)" "ERROR"
+fi
+{{ end -}}
+{{ end -}}
+
+log "Skill installation completed"
+{{ end -}}
