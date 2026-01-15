@@ -51,5 +51,18 @@
       "MultiEdit(~/.claude/**)"
     ]
   },
-  "outputStyle": "Explanatory"
+  "outputStyle": "Explanatory",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [[ -n \"${CLAUDE_CODE_REMOTE:-}\" ]]; then mkdir -p ~/.claude/skills ~/.claude/rules && cp -rf \"$CLAUDE_PROJECT_DIR\"/dot_claude/skills/* ~/.claude/skills/ && cp -rf \"$CLAUDE_PROJECT_DIR\"/dot_claude/rules/* ~/.claude/rules/ && echo '[session-start] Skills installed to ~/.claude/' >&2; fi"
+          }
+        ]
+      }
+    ]
+  }
 }
