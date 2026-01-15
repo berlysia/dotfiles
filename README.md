@@ -58,3 +58,35 @@ bun dot_claude/scripts/update-auto-approve.ts --verbose
 - Interactive review interface for pattern approval
 - Automatic backup of permission files
 - Supports time-based filtering of logs
+
+## Claude Code Configuration
+
+This repository includes comprehensive Claude Code configuration with:
+- 7 custom skills (semantic-commit, react-hooks, codex-review, logic-validation, etc.)
+- Global development guidelines (CLAUDE.md)
+- Development rules (debugging, external-review, TypeScript standards)
+
+### Using in Other Projects
+
+To use these skills in another project:
+
+```bash
+cd /path/to/your/project
+curl -fsSL https://raw.githubusercontent.com/berlysia/dotfiles/master/scripts/setup-claude-skills.sh | bash
+```
+
+This creates a simple `.claude/settings.json` with inline SessionStart command - no hook files needed!
+
+Skills are installed to `~/.claude/` and auto-update on Claude Code startup.
+
+See [dot_claude/README-external-usage.md](dot_claude/README-external-usage.md) for detailed documentation.
+
+### Skills Included
+
+- **semantic-commit**: Semantic commit message generation with change analysis
+- **react-hooks**: React hooks best practices and optimization guidance
+- **codex-review-cli**: Quick code review via Codex CLI (read-only)
+- **codex-review-mcp**: Conversational code review via Codex MCP
+- **logic-validation**: Validate logical consistency of decisions
+- **optimizing-claude-md**: Analyze and improve CLAUDE.md files
+- **skill-builder**: Guided skill creation following best practices
