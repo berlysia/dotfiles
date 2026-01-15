@@ -112,6 +112,20 @@ user-invocable: false           # Hide from slash menu
 ---
 ```
 
+**When to use `context: fork`:**
+- Complex multi-step operations that would clutter the main conversation
+- Deep analysis tasks (code quality, architecture review)
+- Operations requiring isolated context (separate conversation history)
+- Long-running workflows that generate verbose output
+
+**Choosing the `agent` type (requires `context: fork`):**
+- `Explore`: Codebase exploration, file discovery, pattern searching
+- `Plan`: Implementation planning, architecture design
+- `general-purpose`: Default for general tasks (if omitted)
+- Custom agent name: Use agents defined in `.claude/agents/` (can access Skills via `skills` field)
+
+**Important:** Built-in agents (Explore, Plan, general-purpose) do NOT have access to Skills. Only custom agents with explicit `skills` field can use Skills.
+
 #### Write clear instructions
 
 **Follow the "Concise is Key" principle:**

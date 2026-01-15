@@ -10,6 +10,7 @@ This document provides detailed examples of common patterns for building effecti
 - Conditional Workflow Pattern - Guide through decision points
 - Progressive Disclosure Pattern - Organize content for on-demand loading
 - Feedback Loop Pattern - Implement validation and iteration cycles
+- Forked Context Pattern - Run Skills in isolated subagent contexts
 - Domain Organization Pattern - Organize content by functional domain
 
 ---
@@ -509,6 +510,227 @@ For complex operations with many possible errors:
 
 ---
 
+## Forked Context Pattern
+
+Run Skills in isolated subagent contexts with separate conversation history.
+
+### When to Use Forked Context
+
+Use `context: fork` when:
+
+1. **Complex multi-step operations**: Deep analysis that involves many steps
+2. **Verbose output generation**: Reports, analyses that produce long outputs
+3. **Isolated exploration**: Codebase exploration that shouldn't clutter main chat
+4. **Independent workflows**: Tasks that don't need to reference main conversation
+
+**Don't use** when:
+- Simple, quick operations
+- Results need to reference main conversation context
+- Interactive back-and-forth with user expected
+
+### Choosing the Agent Type
+
+When using `context: fork`, specify which agent type should handle the task:
+
+#### Built-in Agents (No Skill Access)
+
+**Explore Agent**: Fast codebase exploration
+```yaml
+---
+name: finding-patterns
+description: Find code patterns across large codebases
+context: fork
+agent: Explore
+---
+```
+
+Use when:
+- Searching for files matching patterns
+- Finding code snippets or functions
+- Exploring directory structures
+- Quick grep/glob operations
+
+**Plan Agent**: Implementation planning
+```yaml
+---
+name: designing-architecture
+description: Design implementation plans for features
+context: fork
+agent: Plan
+---
+```
+
+Use when:
+- Designing implementation approaches
+- Creating step-by-step plans
+- Analyzing architectural options
+- Planning refactoring strategies
+
+**General-Purpose Agent** (default if omitted):
+```yaml
+---
+name: analyzing-data
+description: Analyze data and generate reports
+context: fork
+# agent: general-purpose  # Optional, this is the default
+---
+```
+
+Use when:
+- General analysis tasks
+- Report generation
+- Data processing
+- Mixed operations not fitting Explore/Plan
+
+#### Custom Agents (Can Access Skills)
+
+Custom agents defined in `.claude/agents/` can access Skills via the `skills` field:
+
+**Custom agent definition** (`.claude/agents/code-reviewer.md`):
+```yaml
+---
+name: code-reviewer
+description: Review code for quality and best practices
+skills: pr-review, security-check
+---
+```
+
+**Skill using custom agent**:
+```yaml
+---
+name: comprehensive-code-review
+description: Perform comprehensive code review with multiple perspectives
+context: fork
+agent: code-reviewer  # References custom agent
+---
+```
+
+**Important distinctions:**
+- **Built-in agents**: Fast, optimized, but NO access to Skills
+- **Custom agents**: Can access Skills listed in agent's `skills` field
+- Skills loaded into custom agent are injected at startup (always loaded, not progressive disclosure)
+
+### Example: Code Quality Analysis with Forked Context
+
+````markdown
+---
+name: analyzing-code-quality
+description: Perform comprehensive code quality analysis and generate detailed reports. Use when analyzing code quality, technical debt, or generating quality reports.
+context: fork
+agent: Explore
+---
+
+# Code Quality Analysis
+
+## Overview
+
+This Skill runs in an isolated context to perform deep code analysis without cluttering the main conversation.
+
+## Analysis Process
+
+1. **Codebase exploration**: Identify all source files using Explore agent capabilities
+2. **Pattern detection**: Find code smells, duplication, complexity
+3. **Metrics calculation**: Cyclomatic complexity, test coverage, documentation
+4. **Report generation**: Comprehensive quality report
+
+## Output Format
+
+The analysis produces a structured report returned to main conversation:
+
+```markdown
+# Code Quality Report
+
+## Executive Summary
+[Overall quality score and key findings]
+
+## Complexity Analysis
+[Functions/classes with high complexity]
+
+## Code Duplication
+[Duplicated code blocks identified]
+
+## Recommendations
+[Prioritized improvement suggestions]
+```
+
+## Usage
+
+Simply ask: "Analyze code quality for this project"
+
+The analysis runs in forked context and returns the complete report.
+````
+
+### Example: Interactive Research (No Fork)
+
+For comparison, here's when NOT to use `context: fork`:
+
+````markdown
+---
+name: explaining-code-interactively
+description: Explain code with diagrams and analogies through interactive discussion
+# No context: fork - stays in main conversation
+---
+
+# Interactive Code Explanation
+
+When explaining code:
+
+1. Ask clarifying questions about what aspects to focus on
+2. Provide explanation with ASCII diagram
+3. Check if user needs more detail
+4. Iterate based on feedback
+
+Stay in main conversation for interactive back-and-forth.
+````
+
+### Workflow Pattern with Forked Context
+
+```markdown
+---
+name: batch-file-processing
+description: Process multiple files in batch with validation
+context: fork
+agent: general-purpose
+---
+
+## Batch Processing Workflow
+
+This runs in isolated context to avoid cluttering main conversation with per-file output.
+
+1. **Discover files**: Find all files matching criteria
+2. **Validate each**: Check file format and requirements
+3. **Process batch**: Apply transformations
+4. **Generate summary**: Return summary report to main conversation
+   - Files processed: 127
+   - Files succeeded: 125
+   - Files failed: 2 (with error details)
+```
+
+### Decision Guide
+
+| Scenario | Use Fork? | Agent Type |
+|----------|-----------|------------|
+| Deep codebase exploration | Yes | Explore |
+| Implementation planning | Yes | Plan |
+| Long analysis report | Yes | general-purpose |
+| Quick file lookup | No | - |
+| Interactive debugging | No | - |
+| Multi-step data processing | Yes | general-purpose |
+| Code review with Skill access | Yes | Custom agent |
+| Simple explanation | No | - |
+
+### Important Notes
+
+1. **Built-in agents cannot access Skills**: Even if your Skill has detailed patterns, Explore/Plan/general-purpose agents won't see them
+2. **Custom agents can access Skills**: Define agent in `.claude/agents/`, specify Skills in `skills` field
+3. **Skills in custom agents are fully loaded**: Not progressive disclosure - all content loaded at agent startup
+4. **Return to main conversation**: Results returned when forked agent completes
+5. **No cross-reference**: Forked context cannot reference main conversation history
+
+**When in doubt**: Start without `context: fork`. Add it only when main conversation becomes cluttered or task clearly benefits from isolation.
+
+---
+
 ## Domain Organization Pattern
 
 Organize large Skills by functional domain to minimize context loading.
@@ -575,6 +797,12 @@ Provide template structure, then show filled examples.
 ### Conditional Workflow + Progressive Disclosure
 Decision tree in SKILL.md, each branch points to detailed workflow file.
 
+### Forked Context + Workflow
+Complex multi-step analysis in isolated context with structured workflow.
+
+### Forked Context + Domain Organization
+Deep exploration across multiple domains without cluttering main conversation.
+
 ---
 
 ## Pattern Selection Guide
@@ -587,6 +815,9 @@ Decision tree in SKILL.md, each branch points to detailed workflow file.
 | Multiple approaches possible | Conditional Workflow Pattern |
 | Content exceeds 500 lines | Progressive Disclosure Pattern |
 | Error-prone operations | Feedback Loop Pattern |
+| Complex analysis/verbose output | Forked Context Pattern |
+| Deep codebase exploration | Forked Context Pattern (Explore agent) |
+| Implementation planning in isolation | Forked Context Pattern (Plan agent) |
 | Multiple functional areas | Domain Organization Pattern |
 | Need format consistency + examples | Template + Examples |
 | Complex process with validation | Workflow + Feedback Loop |
