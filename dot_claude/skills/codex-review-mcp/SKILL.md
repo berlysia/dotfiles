@@ -1,7 +1,7 @@
 ---
 name: Codex Review MCP
 description: Use this skill when completing a plan in Plan mode, when stuck on a complex problem, when needing a second opinion on architecture decisions, when facing difficult debugging, or when the user explicitly asks for Codex review. Invokes OpenAI Codex MCP for external perspective and validation through conversational interface.
-version: 0.1.0
+context: fork
 ---
 
 # Codex Review MCP Skill

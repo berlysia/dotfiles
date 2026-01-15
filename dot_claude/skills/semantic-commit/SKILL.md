@@ -1,7 +1,7 @@
 ---
 name: Semantic Commit Guide
 description: Use this skill when dealing with complex commits involving multiple change types, when unsure how to split changes into atomic commits, when determining appropriate scope for a commit, when writing commit body for non-trivial changes, or when the user asks about commit best practices, semantic versioning impact, or conventional commit format details.
-version: 0.1.0
+context: fork
 ---
 
 # Semantic Commit Guide
