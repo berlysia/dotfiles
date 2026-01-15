@@ -2,6 +2,16 @@
 
 This dotfiles repository contains reusable Claude Code skills that can be used in any project via `~/.claude/`.
 
+## Using the Skill (Easiest)
+
+If you already have these skills installed, simply run:
+
+```
+/setup-claude-skills
+```
+
+Claude will automatically create `.claude/settings.json` with the auto-update hook and install all skills.
+
 ## Quick Setup (Recommended)
 
 From any project directory, run:
@@ -50,6 +60,7 @@ If you prefer manual installation:
 
 ## Available Skills
 
+- **setup-claude-skills** - Setup skills in other projects with one command
 - **semantic-commit** - Complex commit splitting and semantic commit message generation
 - **react-hooks** - React hooks best practices and performance optimization
 - **codex-review-cli** - Quick code review via Codex CLI
