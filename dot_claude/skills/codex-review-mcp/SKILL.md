@@ -1,12 +1,12 @@
 ---
-name: Codex Review
-description: Use this skill when completing a plan in Plan mode, when stuck on a complex problem, when needing a second opinion on architecture decisions, when facing difficult debugging, or when the user explicitly asks for Codex review. Invokes OpenAI Codex MCP for external perspective and validation.
+name: Codex Review MCP
+description: Use this skill when completing a plan in Plan mode, when stuck on a complex problem, when needing a second opinion on architecture decisions, when facing difficult debugging, or when the user explicitly asks for Codex review. Invokes OpenAI Codex MCP for external perspective and validation through conversational interface.
 version: 0.1.0
 ---
 
-# Codex Review Skill
+# Codex Review MCP Skill
 
-このスキルはOpenAI Codex MCPを使用して、計画やアーキテクチャ決定に対する外部視点からのレビューを取得します。
+このスキルはOpenAI Codex MCPを使用して、計画やアーキテクチャ決定に対する外部視点からのレビューを継続的な会話形式で取得します。
 
 ## 使用タイミング
 
@@ -17,8 +17,9 @@ version: 0.1.0
 4. **デバッグ困難時**: 根本原因の特定が難しいとき
 
 ### ユーザーから明示的に呼ばれる場面
-- `/codex-review` コマンドの実行
+- `/codex-review-mcp` コマンドの実行
 - 「Codexに聞いて」「セカンドオピニオンが欲しい」などのリクエスト
+- 継続的な議論や深い分析が必要なとき
 
 ## 使用方法
 
@@ -110,10 +111,36 @@ mcp__codex__codex-reply ツールを使用:
 1. Planモードで計画を作成
 2. ExitPlanMode前に:
    a. logic-validatorで論理的整合性を検証（必須）
-   b. /codex-review で外部視点のレビュー（必要に応じて）
+   b. 複雑な判断の場合:
+      - codex-review-cli で即座の意見取得（クイック相談）
+      - codex-review-mcp で継続的な議論（深い分析が必要な場合）
 3. フィードバックを元に計画を改善
 4. 改善後の計画でExitPlanModeを実行
 5. ユーザーに最終承認を求める
 ```
 
 **Note**: ExitPlanModeのPreToolUse hookにより、この手順は自動的にプロンプトされます。
+
+## 他のCodexスキルとの使い分け
+
+### codex-review-cli との違い
+
+| 特徴 | codex-review-cli | codex-review-mcp (このスキル) |
+|------|------------------|------------------------------|
+| 実行方法 | Shell CLIコマンド | MCPツール |
+| 会話継続 | 不可（1回限り） | 可能（conversationId使用） |
+| 速度 | 高速 | やや遅い（MCP経由） |
+| 適用場面 | クイック相談 | 深い議論・継続的レビュー |
+
+### 使い分けガイドライン
+
+- **codex-review-cli を使う**:
+  - 即座のフィードバックが欲しい
+  - 1つの明確な質問がある
+  - MCPサーバーが利用できない環境
+
+- **このスキル（codex-review-mcp）を使う**:
+  - 複数回のやりとりが必要
+  - 段階的な議論を深めたい
+  - より構造化されたレビューフロー
+  - 計画の包括的なレビュー
