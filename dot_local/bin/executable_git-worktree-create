@@ -9,10 +9,51 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Check if branch name is provided
-if [[ $# -eq 0 ]]; then
-    echo -e "${RED}Usage: git-worktree-create <branch-name>${NC}"
-    exit 1
+# Help function
+show_help() {
+    cat <<'EOF'
+git-worktree-create - Create a new git worktree in .git/worktree directory
+
+Usage:
+  git-worktree-create <branch-name>
+  git-worktree-create --help
+
+Description:
+  Creates a new git worktree in the .git/worktree directory. The command
+  intelligently handles different scenarios:
+
+  - If branch exists locally: Creates worktree from local branch
+  - If branch exists on remote: Creates local tracking branch and worktree
+  - If branch doesn't exist: Creates new branch from current HEAD
+
+Arguments:
+  <branch-name>  Name of the branch for the worktree
+
+Options:
+  --help, -h     Show this help message
+
+Examples:
+  # Create worktree for existing branch
+  git-worktree-create feature-login
+
+  # Create worktree for new branch
+  git-worktree-create new-feature
+
+  # Create worktree from remote branch
+  git-worktree-create origin-feature
+
+Location:
+  Worktrees are created in: <repo-root>/.git/worktree/<branch-name>
+EOF
+}
+
+# Check for help flag
+if [[ $# -eq 0 ]] || [[ "$1" == "--help" ]] || [[ "$1" == "-h" ]] || [[ "$1" == "help" ]]; then
+    if [[ $# -eq 0 ]]; then
+        echo -e "${RED}Error: Branch name is required${NC}\n"
+    fi
+    show_help
+    exit $([ $# -eq 0 ] && echo 1 || echo 0)
 fi
 
 branch_name="$1"

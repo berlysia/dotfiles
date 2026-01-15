@@ -8,6 +8,53 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# Help function
+show_help() {
+    cat <<'EOF'
+git-worktree-cleanup - Interactively clean up git worktrees
+
+Usage:
+  git-worktree-cleanup
+  git-worktree-cleanup --help
+
+Description:
+  Interactively checks and removes completed git worktrees. The command
+  performs the following checks for each worktree:
+
+  Safety checks (automatically skips):
+  - Has uncommitted changes
+  - Has unpushed commits (local ahead of remote)
+
+  Interactive checks (prompts for confirmation):
+  - Branch not merged into main branch
+  - Has stashed changes
+
+  Automatic removal criteria:
+  - No uncommitted changes
+  - No unpushed commits
+  - Branch is merged into main, or user confirms deletion
+  - No stashes, or user confirms deletion
+
+Options:
+  --help, -h     Show this help message
+
+Examples:
+  # Clean up all completed worktrees interactively
+  git-worktree-cleanup
+
+Note:
+  - Main worktree is always skipped
+  - Prunes worktree list after successful deletions
+  - Safe by default - preserves work-in-progress worktrees
+EOF
+}
+
+# Check for help flag
+if [[ "${1:-}" == "--help" ]] || [[ "${1:-}" == "-h" ]] || [[ "${1:-}" == "help" ]]; then
+    show_help
+    exit 0
+fi
+
 echo "🔍 Checking git worktrees..."
 
 # Get main branch (usually main or master)
