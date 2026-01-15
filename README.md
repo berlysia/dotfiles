@@ -79,7 +79,7 @@ This creates a simple `.claude/settings.json` with inline SessionStart command -
 
 Skills are installed to `~/.claude/` and auto-update on Claude Code startup.
 
-See [dot_claude/README-external-usage.md](dot_claude/README-external-usage.md) for detailed documentation.
+See [docs/external-usage.md](docs/external-usage.md) for detailed documentation.
 
 ### Skills Included
 
