@@ -99,11 +99,14 @@ _.msm
 
 mise.local.toml
 .env
+.env.local
+.env.*.local
 
 **/.claude/settings.local.json
 **/.claude/review-result/*
 **/.claude/tmp/*
 **/.claude/log/*
 **/.claude/tasks/*
+CLAUDE.local.md
 
 .tmp
