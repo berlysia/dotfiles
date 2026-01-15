@@ -1,6 +1,6 @@
 .vscode
 *.md
-!dot_claude/skills/**/SKILL.md
+!dot_claude/skills/**/*.md
 
 # Repository tooling (not for home directory)
 .github

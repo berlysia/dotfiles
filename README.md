@@ -83,6 +83,7 @@ See [docs/external-usage.md](docs/external-usage.md) for detailed documentation.
 
 ### Skills Included
 
+- **setup-claude-skills**: Setup skills in other projects with one command
 - **semantic-commit**: Semantic commit message generation with change analysis
 - **react-hooks**: React hooks best practices and optimization guidance
 - **codex-review-cli**: Quick code review via Codex CLI (read-only)
