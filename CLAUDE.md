@@ -5,13 +5,9 @@
 ### Language
 - Japanese for discussion, English for code
 
-## Current Active Project
-**Completed**: TypeScript conversion project is finished. See CURRENT_WORK.md for details.
+## Project Overview
 
-現在は特定のアクティブプロジェクトはありません。日常的なdotfilesメンテナンスが行われています。
-
-## Project Structure Context
-このプロジェクトはchezmoi管理のdotfiles設定です。
+This is a chezmoi-managed dotfiles repository for daily maintenance.
 
 ### Chezmoi ファイル管理
 
