@@ -31,7 +31,7 @@
     "@mizchi/readability": "0.7.7",
     "@openai/codex": "0.77.0",
     "@playwright/mcp": "0.0.54",
-    "@upstash/context7-mcp": "1.0.33",
+    "@upstash/context7-mcp": "2.1.0",
     "add-skill": "1.0.11",
     "cc-hooks-ts": "2.1.2",
     "ccstatusline": "2.0.23",
