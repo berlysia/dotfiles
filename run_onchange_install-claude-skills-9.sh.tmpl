@@ -1,0 +1,93 @@
+{{ if ne .chezmoi.os "windows" -}}
+#!/bin/bash
+# Install Claude Code skills via add-skill
+# Hash: {{ .claude_skills | toJson | sha256sum }}
+
+set -euo pipefail
+
+log() {
+    local level="${2:-INFO}"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $1"
+}
+
+# Check if npx is available
+if ! command -v npx &> /dev/null; then
+    log "npx not found. Skipping skill installation." "WARNING"
+    exit 0
+fi
+
+TARGET_DIR="$HOME/.claude/skills"
+HISTORY_FILE="$HOME/.claude/.external-skills-installed"
+mkdir -p "$TARGET_DIR"
+
+# Build current skill list
+CURRENT_SKILLS=()
+{{ range .claude_skills.repositories -}}
+{{ $repo := .repo -}}
+{{ range .skills -}}
+CURRENT_SKILLS+=("{{ . }}")
+{{ end -}}
+{{ end -}}
+
+# Detect removed skills
+if [ -f "$HISTORY_FILE" ]; then
+    mapfile -t PREVIOUS_SKILLS < "$HISTORY_FILE"
+    REMOVED_SKILLS=()
+
+    for prev_skill in "${PREVIOUS_SKILLS[@]}"; do
+        # Skip empty lines
+        [ -z "$prev_skill" ] && continue
+
+        # Check if skill exists in current list
+        found=false
+        for curr_skill in "${CURRENT_SKILLS[@]}"; do
+            if [ "$prev_skill" = "$curr_skill" ]; then
+                found=true
+                break
+            fi
+        done
+
+        if ! $found; then
+            REMOVED_SKILLS+=("$prev_skill")
+        fi
+    done
+
+    # Auto-remove deleted skills
+    if [ ${#REMOVED_SKILLS[@]} -gt 0 ]; then
+        echo ""
+        log "⚠️  Detected removed skills from claude_skills.yaml:" "WARNING"
+        echo ""
+        for skill in "${REMOVED_SKILLS[@]}"; do
+            skill_path="$TARGET_DIR/$skill"
+            if [ -d "$skill_path" ]; then
+                log "Removing: $skill" "WARNING"
+                rm -rf "$skill_path"
+                log "Removed: $skill" "SUCCESS"
+            else
+                log "Skill directory not found (already removed?): $skill" "INFO"
+            fi
+        done
+        echo ""
+    fi
+fi
+
+log "Starting Claude Code skill installation..."
+
+# Install each skill from repositories
+{{ range .claude_skills.repositories -}}
+{{ $repo := .repo -}}
+{{ range .skills -}}
+log "Installing skill: {{ . }} from {{ $repo }}"
+if npx --yes add-skill "{{ $repo }}" --global --skill "{{ . }}" --yes 2>&1; then
+    log "Successfully installed: {{ . }}" "SUCCESS"
+else
+    log "Failed to install: {{ . }} (continuing...)" "ERROR"
+fi
+{{ end -}}
+{{ end -}}
+
+# Save current skill list for next run
+printf "%s\n" "${CURRENT_SKILLS[@]}" > "$HISTORY_FILE"
+
+log "Skill installation completed"
+{{ end -}}
