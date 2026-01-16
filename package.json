@@ -20,13 +20,13 @@
   "author": "",
   "packageManager": "pnpm@10.27.0",
   "devDependencies": {
-    "@biomejs/biome": "2.2.4",
+    "@biomejs/biome": "2.3.11",
     "@mizchi/lsmcp": "0.10.0",
     "@mizchi/readability": "0.7.7",
-    "@openai/codex": "0.77.0",
-    "@playwright/mcp": "0.0.53",
+    "@openai/codex": "0.80.0",
+    "@playwright/mcp": "0.0.54",
     "@types/node": "24.10.4",
-    "@typescript/native-preview": "7.0.0-dev.20251228.1",
+    "@typescript/native-preview": "7.0.0-dev.20260109.1",
     "@upstash/context7-mcp": "1.0.33",
     "chrome-devtools-mcp": "0.12.1",
     "o3-search-mcp": "0.0.9",
@@ -34,8 +34,8 @@
   },
   "dependencies": {
     "@mizchi/readability": "0.7.7",
-    "cc-hooks-ts": "2.0.76",
-    "ccusage": "17.2.0",
+    "cc-hooks-ts": "2.1.2",
+    "ccusage": "17.2.1",
     "dax": "0.44.2",
     "tree-sitter-bash": "0.25.1",
     "web-tree-sitter": "0.26.3"
