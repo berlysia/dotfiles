@@ -15,8 +15,8 @@ importers:
         specifier: 2.1.2
         version: 2.1.2(typescript@5.9.3)(zod@3.25.76)
       ccusage:
-        specifier: 17.2.1
-        version: 17.2.1
+        specifier: 18.0.5
+        version: 18.0.5
       dax:
         specifier: 0.44.2
         version: 0.44.2
@@ -390,8 +390,8 @@ packages:
     resolution: {integrity: sha512-z88qwD5xRsAgbc1DMB+XQAOsp1J5+DNF2JxuqIZ5KjKGX/UKx5LZGZNlp9E6weE845Yr+sigzjgsCzhNIP6d9A==}
     engines: {node: ^20.12.0 || ^22.0.0 || >=24.0.0}
 
-  ccusage@17.2.1:
-    resolution: {integrity: sha512-++F9rwk7EHsNyuCfs0D2vHyT/G0kaS3GVHhyh4BJ+dVKm0W4a/Mkld9lXGesgQzMnI6uE0V5RgmB/2Jf8zR7yg==}
+  ccusage@18.0.5:
+    resolution: {integrity: sha512-bnZrVbGm5h7hIIOH3FZFaDxKgJLLHhWDWIv7/9M6/O373YM6RAwsG9hxZXA1ep+C2ISiNEX6MYVoXgkoSuFf9Q==}
     engines: {node: '>=20.19.4'}
     hasBin: true
 
@@ -1252,7 +1252,7 @@ snapshots:
       - typescript
       - zod
 
-  ccusage@17.2.1: {}
+  ccusage@18.0.5: {}
 
   chrome-devtools-mcp@0.12.1: {}
 
