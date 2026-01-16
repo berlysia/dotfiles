@@ -6,4 +6,12 @@ claude_skills:
             - web-design-guidelines
         - repo: anthropics/skills
           skills:
+            - doc-coauthoring
             - skill-creator
+            - docx
+            - pptx
+            - xlsx
+            - pdf
+            - theme-factory
+            - frontend-design
+            - webapp-testing
