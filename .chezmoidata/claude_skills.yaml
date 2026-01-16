@@ -4,3 +4,6 @@ claude_skills:
           skills:
             - vercel-react-best-practices
             - web-design-guidelines
+        - repo: anthropics/skills
+          skills:
+            - skill-creator
