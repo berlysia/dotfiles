@@ -11,12 +11,27 @@ importers:
       '@mizchi/readability':
         specifier: 0.7.7
         version: 0.7.7(hono@4.11.3)
+      '@openai/codex':
+        specifier: 0.77.0
+        version: 0.77.0
+      '@playwright/mcp':
+        specifier: 0.0.54
+        version: 0.0.54
+      '@upstash/context7-mcp':
+        specifier: 1.0.33
+        version: 1.0.33(hono@4.11.3)
+      add-skill:
+        specifier: 1.0.11
+        version: 1.0.11
       cc-hooks-ts:
         specifier: 2.1.2
         version: 2.1.2(typescript@5.9.3)(zod@3.25.76)
       ccstatusline:
         specifier: 2.0.23
         version: 2.0.23
+      chrome-devtools-mcp:
+        specifier: 0.12.1
+        version: 0.12.1
       dax:
         specifier: 0.44.2
         version: 0.44.2
@@ -33,27 +48,12 @@ importers:
       '@mizchi/lsmcp':
         specifier: 0.10.0
         version: 0.10.0
-      '@openai/codex':
-        specifier: 0.80.0
-        version: 0.80.0
-      '@playwright/mcp':
-        specifier: 0.0.54
-        version: 0.0.54
       '@types/node':
         specifier: 24.10.4
         version: 24.10.4
       '@typescript/native-preview':
         specifier: 7.0.0-dev.20260109.1
         version: 7.0.0-dev.20260109.1
-      '@upstash/context7-mcp':
-        specifier: 1.0.33
-        version: 1.0.33(hono@4.11.3)
-      add-skill:
-        specifier: 1.0.11
-        version: 1.0.11
-      chrome-devtools-mcp:
-        specifier: 0.12.1
-        version: 0.12.1
       o3-search-mcp:
         specifier: 0.0.9
         version: 0.0.9(hono@4.11.3)
@@ -275,8 +275,8 @@ packages:
       '@cfworker/json-schema':
         optional: true
 
-  '@openai/codex@0.80.0':
-    resolution: {integrity: sha512-U1DWDy7eTjx+SF32Wx9oO6cyX1dd9WiRvIW4XCP3FVcv7Xq7CSCvDrFAdzpFxPNPg6CLz9a4qtO42yntpcJpDw==}
+  '@openai/codex@0.77.0':
+    resolution: {integrity: sha512-1Z3tuJsePfQvBELmTT3Dpzm4GheQn0t4H8RtdZnYVBdj1vA2Hi6eGCrOHXxPSfXRKDrSZ4VvALcQmZpFmYsaHA==}
     engines: {node: '>=16'}
     hasBin: true
 
@@ -1200,7 +1200,7 @@ snapshots:
       - hono
       - supports-color
 
-  '@openai/codex@0.80.0': {}
+  '@openai/codex@0.77.0': {}
 
   '@pkgjs/parseargs@0.11.0':
     optional: true

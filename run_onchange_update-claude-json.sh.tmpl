@@ -11,11 +11,11 @@ BACKUP_FILE="${TARGET_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
 PACKAGE_JSON="{{ .chezmoi.sourceDir }}/package.json"
 
 # Read versions from package.json
-READABILITY_VER=$(jq -r '.devDependencies["@mizchi/readability"] // empty' "$PACKAGE_JSON")
-CHROME_DEVTOOLS_VER=$(jq -r '.devDependencies["chrome-devtools-mcp"] // empty' "$PACKAGE_JSON")
-PLAYWRIGHT_VER=$(jq -r '.devDependencies["@playwright/mcp"] // empty' "$PACKAGE_JSON")
-CONTEXT7_VER=$(jq -r '.devDependencies["@upstash/context7-mcp"] // empty' "$PACKAGE_JSON")
-CODEX_VER=$(jq -r '.devDependencies["@openai/codex"] // empty' "$PACKAGE_JSON")
+READABILITY_VER=$(jq -r '.dependencies["@mizchi/readability"] // empty' "$PACKAGE_JSON")
+CHROME_DEVTOOLS_VER=$(jq -r '.dependencies["chrome-devtools-mcp"] // empty' "$PACKAGE_JSON")
+PLAYWRIGHT_VER=$(jq -r '.dependencies["@playwright/mcp"] // empty' "$PACKAGE_JSON")
+CONTEXT7_VER=$(jq -r '.dependencies["@upstash/context7-mcp"] // empty' "$PACKAGE_JSON")
+CODEX_VER=$(jq -r '.dependencies["@openai/codex"] // empty' "$PACKAGE_JSON")
 
 # Generate new content from versions
 TEMPLATE_CONTENT=$(cat << EOF

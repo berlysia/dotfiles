@@ -1,5 +1,5 @@
 {{- $pkgJson := include "package.json" | fromJson -}}
-{{- $addSkillVersion := index $pkgJson.devDependencies "add-skill" -}}
+{{- $addSkillVersion := index $pkgJson.dependencies "add-skill" -}}
 #!/usr/bin/env bash
 
 set -euo pipefail
