@@ -22,21 +22,20 @@
   "devDependencies": {
     "@biomejs/biome": "2.3.11",
     "@mizchi/lsmcp": "0.10.0",
-    "@mizchi/readability": "0.7.7",
-    "@openai/codex": "0.80.0",
-    "@playwright/mcp": "0.0.54",
     "@types/node": "24.10.4",
     "@typescript/native-preview": "7.0.0-dev.20260109.1",
-    "@upstash/context7-mcp": "1.0.33",
-    "add-skill": "1.0.11",
-    "chrome-devtools-mcp": "0.12.1",
     "o3-search-mcp": "0.0.9",
     "typescript": "5.9.3"
   },
   "dependencies": {
     "@mizchi/readability": "0.7.7",
+    "@openai/codex": "0.77.0",
+    "@playwright/mcp": "0.0.54",
+    "@upstash/context7-mcp": "1.0.33",
+    "add-skill": "1.0.11",
     "cc-hooks-ts": "2.1.2",
     "ccstatusline": "2.0.23",
+    "chrome-devtools-mcp": "0.12.1",
     "dax": "0.44.2",
     "tree-sitter-bash": "0.25.1",
     "web-tree-sitter": "0.26.3"
