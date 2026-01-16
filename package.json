@@ -36,7 +36,7 @@
   "dependencies": {
     "@mizchi/readability": "0.7.7",
     "cc-hooks-ts": "2.1.2",
-    "ccusage": "17.2.1",
+    "ccstatusline": "2.0.23",
     "dax": "0.44.2",
     "tree-sitter-bash": "0.25.1",
     "web-tree-sitter": "0.26.3"
