@@ -28,6 +28,7 @@
     "@types/node": "24.10.4",
     "@typescript/native-preview": "7.0.0-dev.20260109.1",
     "@upstash/context7-mcp": "1.0.33",
+    "add-skill": "1.0.11",
     "chrome-devtools-mcp": "0.12.1",
     "o3-search-mcp": "0.0.9",
     "typescript": "5.9.3"

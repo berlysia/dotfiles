@@ -1,6 +1,9 @@
 # Minimum release age before installing packages (requires pnpm >= 10.16)
 minimum-release-age=10080
 
+# Exclude add-skill from minimum release age check
+minimum-release-age-exclude[]=add-skill
+
 # Always install exact versions to avoid unintended updates
 save-prefix=
 

@@ -1,4 +1,6 @@
 {{ if ne .chezmoi.os "windows" -}}
+{{- $pkgJson := include "package.json" | fromJson -}}
+{{- $addSkillVersion := index $pkgJson.devDependencies "add-skill" -}}
 #!/bin/bash
 # Install Claude Code skills via add-skill
 # Hash: {{ .claude_skills | toJson | sha256sum }}
@@ -10,9 +12,9 @@ log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $1"
 }
 
-# Check if npx is available
-if ! command -v npx &> /dev/null; then
-    log "npx not found. Skipping skill installation." "WARNING"
+# Check if pnpm is available
+if ! command -v pnpm &> /dev/null; then
+    log "pnpm not found. Skipping skill installation." "WARNING"
     exit 0
 fi
 
@@ -78,7 +80,7 @@ log "Starting Claude Code skill installation..."
 {{ $repo := .repo -}}
 {{ $skills := .skills -}}
 log "Installing {{ len $skills }} skill(s) from {{ $repo }}"
-if npx --yes add-skill "{{ $repo }}" --global --skill {{ range $skills }}"{{ . }}" {{ end }}--yes 2>&1; then
+if pnpm dlx add-skill@{{ $addSkillVersion }} "{{ $repo }}" --global --skill {{ range $skills }}"{{ . }}" {{ end }}--yes 2>&1; then
     log "Successfully installed skills from {{ $repo }}" "SUCCESS"
 else
     log "Failed to install some skills from {{ $repo }} (continuing...)" "ERROR"

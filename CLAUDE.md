@@ -36,7 +36,7 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
 
 1. 利用可能なスキルを確認:
    ```bash
-   npx add-skill <repository> --list
+   add-skill search <repository>
    ```
 
 2. `.chezmoidata/claude_skills.yaml` を編集:
@@ -70,13 +70,17 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
 
 #### トラブルシューティング
 
-**npx not found**:
+**pnpm not found**:
 - miseでnodeがインストールされているか確認: `mise list`
 - `run_onchange_install-packages-7.sh.tmpl` が実行されているか確認
 
+**add-skill でエラーが発生する場合**:
+- package.json の add-skill バージョンを確認: `jq '.devDependencies["add-skill"]' package.json`
+- pnpm が正しくインストールされているか確認: `mise list`
+
 **スキルのインストール失敗**:
 - リポジトリが存在するか確認: `gh api repos/<owner>/<repo>`
-- スキル名が正しいか確認: `npx add-skill <repo> --list`
+- スキル名が正しいか確認: `add-skill search <repo>`
 - ネットワーク接続を確認
 
 **冪等性の確認**:
