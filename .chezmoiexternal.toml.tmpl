@@ -6,6 +6,12 @@ refreshPeriod = "24h"
 # fzf is now managed by mise - see ~/.config/mise/config.toml
 {{ end }}
 
+{{/* ui-skills: Opinionated constraints for building better interfaces */}}
+[".claude/skills/ui-skills/SKILL.md"]
+type = "file"
+url = "https://ui-skills.com/llms.txt"
+refreshPeriod = "168h" # 1 week
+
 {{/* wsl2-ssh-agent is only needed in WSL2 environment */}}
 {{ if and (eq .chezmoi.os "linux") (.chezmoi.kernel.osrelease | lower | contains "microsoft") }}
 [".local/bin/wsl2-ssh-agent"]
