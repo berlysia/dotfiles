@@ -233,7 +233,7 @@ git-sequential-stage -patch="changes.patch" -hunk="file.py:1,3"
 - [ ] 説明文は現在形・命令形
 - [ ] 72文字以内に収まっている
 - [ ] 複数種類の変更が混在していない
-- [ ] Breaking changesは `!` と `BREAKING CHANGE:` で明示
+- [ ] Breaking changesは感嘆符(!)およびBREAKING CHANGE:で明示
 - [ ] 本文はWHYを説明している（必要な場合）
 
 ## 関連ツール
