@@ -186,6 +186,27 @@ cmd_search() {
     pnpm dlx add-skill@{{ $addSkillVersion }} "$repo" --list
 }
 
+# Install skills
+cmd_install() {
+    echo -e "${BLUE}📦 Installing skills from configuration...${NC}"
+
+    # YAMLからリポジトリ・スキル情報を読み取り
+    local repos_json
+    repos_json=$(mise x -- dasel -i yaml -o json < "$YAML_FILE" | jq '.claude_skills.repositories')
+
+    # 全スキルをインストール
+    echo "$repos_json" | jq -c '.[]' | while read -r repo_entry; do
+        local repo=$(echo "$repo_entry" | jq -r '.repo')
+        local skills=$(echo "$repo_entry" | jq -r '.skills | join(" ")')
+
+        echo -e "${BLUE}Installing from $repo: $skills${NC}"
+        # shellcheck disable=SC2086
+        pnpm dlx add-skill@{{ $addSkillVersion }} "$repo" --global --skill $skills --yes
+    done
+
+    echo -e "${GREEN}✅ Installation completed${NC}"
+}
+
 # Help
 cmd_help() {
     cat <<'EOF'
@@ -196,6 +217,7 @@ Usage:
   add-skill remove <skill>         Remove skill from configuration
   add-skill list                   Show current configuration
   add-skill search <repo>          Search available skills in repository
+  add-skill install                Install all skills from configuration
   add-skill help                   Show this help
 
 Examples:
@@ -203,6 +225,7 @@ Examples:
   add-skill remove web-design-guidelines
   add-skill list
   add-skill search vercel-labs/agent-skills
+  add-skill install
 
 After modifying configuration, run: chezmoi apply
 EOF
@@ -236,6 +259,10 @@ main() {
             ;;
         search)
             cmd_search "$@"
+            ;;
+        install)
+            validate_yaml "$YAML_FILE"
+            cmd_install
             ;;
         help|--help|-h)
             cmd_help
