@@ -59,12 +59,14 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
 #### スキルの削除方法
 
 1. `.chezmoidata/claude_skills.yaml` から該当スキルを削除
-2. 物理ファイルを手動削除:
+2. `chezmoi apply` を実行
    ```bash
-   rm -rf ~/.claude/skills/<skill-name>
+   chezmoi apply
    ```
 
-**注意**: 削除は自動化されていません。手作りスキルとの誤削除を防ぐため、手動削除を推奨します。
+**自動削除**: yamlから削除されたスキルは、次回の `chezmoi apply` 実行時に自動的に `~/.claude/skills/` から削除されます。削除されたスキルがある場合は、削除ログが表示されます。
+
+**安全性**: 削除対象は `.claude/.external-skills-installed` に記録されたスキル（このスクリプトでインストールしたもの）のみです。手作りスキルは誤削除されません。
 
 #### トラブルシューティング
 
