@@ -1,3 +1,5 @@
+{{- $pkgJson := include "package.json" | fromJson -}}
+{{- $addSkillVersion := index $pkgJson.devDependencies "add-skill" -}}
 #!/usr/bin/env bash
 
 set -euo pipefail
@@ -181,7 +183,7 @@ cmd_search() {
     }
 
     echo -e "${BLUE}🔍 Searching skills in $repo...${NC}"
-    npx --yes add-skill "$repo" --list
+    pnpm dlx add-skill@{{ $addSkillVersion }} "$repo" --list
 }
 
 # Help
