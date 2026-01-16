@@ -73,17 +73,16 @@ fi
 
 log "Starting Claude Code skill installation..."
 
-# Install each skill from repositories
+# Install skills by repository (batch mode)
 {{ range .claude_skills.repositories -}}
 {{ $repo := .repo -}}
-{{ range .skills -}}
-log "Installing skill: {{ . }} from {{ $repo }}"
-if npx --yes add-skill "{{ $repo }}" --global --skill "{{ . }}" --yes 2>&1; then
-    log "Successfully installed: {{ . }}" "SUCCESS"
+{{ $skills := .skills -}}
+log "Installing {{ len $skills }} skill(s) from {{ $repo }}"
+if npx --yes add-skill "{{ $repo }}" --global --skill {{ range $skills }}"{{ . }}" {{ end }}--yes 2>&1; then
+    log "Successfully installed skills from {{ $repo }}" "SUCCESS"
 else
-    log "Failed to install: {{ . }} (continuing...)" "ERROR"
+    log "Failed to install some skills from {{ $repo }} (continuing...)" "ERROR"
 fi
-{{ end -}}
 {{ end -}}
 
 # Save current skill list for next run
