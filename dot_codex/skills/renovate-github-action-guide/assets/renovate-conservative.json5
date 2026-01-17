@@ -1,0 +1,78 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+
+  // Conservative preset: Stability-focused with minimal disruption
+  // - Updates only during maintenance windows
+  // - Longer stabilization periods
+  // - Manual review for major updates
+
+  "extends": [
+    "config:recommended"
+  ],
+
+  // Update schedule: Weekly on Saturday early morning
+  "schedule": [
+    "before 6am on saturday"
+  ],
+
+  // Timezone configuration
+  "timezone": "UTC",
+
+  // Group updates to reduce PR noise
+  "packageRules": [
+    {
+      "description": "Auto-merge patch updates after 3 days",
+      "matchUpdateTypes": ["patch"],
+      "stabilityDays": 3,
+      "automerge": true
+    },
+    {
+      "description": "Auto-merge minor updates after 7 days",
+      "matchUpdateTypes": ["minor"],
+      "stabilityDays": 7,
+      "automerge": true
+    },
+    {
+      "description": "Manual review for major updates",
+      "matchUpdateTypes": ["major"],
+      "automerge": false,
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "Group all non-major devDependencies",
+      "matchDepTypes": ["devDependencies"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "dev dependencies (non-major)"
+    },
+    {
+      "description": "Group GitHub Actions updates",
+      "matchManagers": ["github-actions"],
+      "groupName": "GitHub Actions"
+    }
+  ],
+
+  // Pull request settings
+  "prConcurrentLimit": 3,
+  "prCreation": "not-pending",
+  "prHourlyLimit": 2,
+
+  // Labels for categorization
+  "labels": ["dependencies", "renovate"],
+  "addLabels": ["automerge"],
+
+  // Commit message format
+  "commitMessagePrefix": "chore(deps):",
+
+  // Dependency dashboard
+  "dependencyDashboard": true,
+  "dependencyDashboardTitle": "Dependency Updates (Conservative)",
+
+  // Platform auto-merge (if repository settings allow)
+  "platformAutomerge": true,
+
+  // Lockfile maintenance: Monthly
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on the first day of the month"]
+  }
+}
