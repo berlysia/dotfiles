@@ -63,7 +63,7 @@ jobs:
             for (const workflowName of requiredWorkflows) {
               const run = latestRuns[workflowName];
               if (!run) {
-                results.push(`❌ ${workflowName}: Not found`);
+                results.push(`⏭️ ${workflowName}: Not run (paths filter)`);
                 continue;
               }
 
@@ -72,7 +72,7 @@ jobs:
                 continue;
               }
 
-              if (run.conclusion === 'success') {
+              if (run.conclusion === 'success' || run.conclusion === 'skipped') {
                 results.push(`✅ ${workflowName}: ${run.conclusion}`);
               } else {
                 results.push(`❌ ${workflowName}: ${run.conclusion}`);
@@ -84,13 +84,23 @@ jobs:
               core.info(result);
             }
 
-            // Check if all are successful
-            const allSuccess = Object.values(latestRuns).every(
-              run => run.status === 'completed' && run.conclusion === 'success'
-            );
-            const allCompleted = Object.values(latestRuns).every(
-              run => run.status === 'completed'
-            );
+            // Check if all required workflows either passed or were skipped
+            const allPassedOrSkipped = requiredWorkflows.every(workflowName => {
+              const run = latestRuns[workflowName];
+              // Not found means skipped by paths filter - treat as success
+              if (!run) return true;
+              // Must be completed
+              if (run.status !== 'completed') return false;
+              // Success or skipped are acceptable
+              return run.conclusion === 'success' || run.conclusion === 'skipped';
+            });
+
+            const allCompleted = requiredWorkflows.every(workflowName => {
+              const run = latestRuns[workflowName];
+              // Not found means skipped by paths filter - treat as completed
+              if (!run) return true;
+              return run.status === 'completed';
+            });
 
             if (!allCompleted) {
               core.info('⏳ Waiting for all workflows to complete...');
@@ -98,10 +108,14 @@ jobs:
               return;
             }
 
-            if (!allSuccess) {
-              const failed = Object.entries(latestRuns)
-                .filter(([_, run]) => run.conclusion !== 'success')
-                .map(([name, run]) => `${name} (${run.conclusion})`);
+            if (!allPassedOrSkipped) {
+              const failed = requiredWorkflows
+                .map(workflowName => {
+                  const run = latestRuns[workflowName];
+                  if (!run || run.conclusion === 'success' || run.conclusion === 'skipped') return null;
+                  return `${workflowName} (${run.conclusion})`;
+                })
+                .filter(Boolean);
 
               core.setFailed(`Required workflows failed: ${failed.join(', ')}`);
               return;
