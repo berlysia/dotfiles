@@ -1,0 +1,90 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+
+  // Aggressive preset: Latest versions with fast adoption
+  // - Frequent updates
+  // - Minimal stabilization periods
+  // - Auto-merge most updates
+
+  "extends": [
+    "config:recommended"
+  ],
+
+  // Update schedule: Daily during business hours
+  "schedule": [
+    "after 9am and before 5pm on weekday"
+  ],
+
+  // Timezone configuration
+  "timezone": "UTC",
+
+  // Aggressive update strategy
+  "packageRules": [
+    {
+      "description": "Auto-merge patch updates immediately",
+      "matchUpdateTypes": ["patch"],
+      "stabilityDays": 0,
+      "automerge": true
+    },
+    {
+      "description": "Auto-merge minor updates after 1 day",
+      "matchUpdateTypes": ["minor"],
+      "stabilityDays": 1,
+      "automerge": true
+    },
+    {
+      "description": "Auto-merge major updates after 3 days",
+      "matchUpdateTypes": ["major"],
+      "stabilityDays": 3,
+      "automerge": true
+    },
+    {
+      "description": "Group all non-major dependencies",
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "dependencies (non-major)"
+    },
+    {
+      "description": "Separate major updates for visibility",
+      "matchUpdateTypes": ["major"],
+      "groupName": null  // Don't group major updates
+    },
+    {
+      "description": "GitHub Actions: auto-merge all",
+      "matchManagers": ["github-actions"],
+      "automerge": true,
+      "stabilityDays": 0
+    }
+  ],
+
+  // Pull request settings: Allow more concurrent updates
+  "prConcurrentLimit": 10,
+  "prCreation": "immediate",
+  "prHourlyLimit": 10,
+
+  // Labels for categorization
+  "labels": ["dependencies", "renovate", "automerge"],
+
+  // Commit message format
+  "commitMessagePrefix": "chore(deps):",
+
+  // Dependency dashboard
+  "dependencyDashboard": true,
+  "dependencyDashboardTitle": "Dependency Updates (Aggressive)",
+
+  // Platform auto-merge (if repository settings allow)
+  "platformAutomerge": true,
+
+  // Lockfile maintenance: Weekly
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on monday"]
+  },
+
+  // Vulnerability alerts: Immediate action
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "schedule": ["at any time"],
+    "stabilityDays": 0,
+    "automerge": true
+  }
+}

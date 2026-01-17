@@ -1,0 +1,126 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [master, main]
+  push:
+    branches: [master, main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Path filter to determine which jobs to run
+  paths-filter:
+    runs-on: ubuntu-latest
+    outputs:
+      typescript: ${{ steps.filter.outputs.typescript }}
+      shell: ${{ steps.filter.outputs.shell }}
+      json: ${{ steps.filter.outputs.json }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check changed paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            typescript:
+              - '**/*.ts'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'tsconfig.json'
+            shell:
+              - '**/*.sh'
+              - '.shellcheckrc'
+            json:
+              - '**/*.json'
+              - '**/*.json5'
+
+  # TypeScript checks
+  typescript-check:
+    needs: paths-filter
+    if: needs.paths-filter.outputs.typescript == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js with pnpm
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: Type check
+        run: pnpm run typecheck
+
+      - name: Run tests
+        run: pnpm test
+
+      - name: Lint check
+        run: pnpm biome check .
+
+  # Shell checks
+  shell-check:
+    needs: paths-filter
+    if: needs.paths-filter.outputs.shell == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run shellcheck
+        uses: ludeeus/action-shellcheck@v2
+        with:
+          scandir: '.'
+          ignore_paths: 'node_modules .git .tmp'
+          severity: warning
+
+  # JSON validation
+  json-validation:
+    needs: paths-filter
+    if: needs.paths-filter.outputs.json == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate JSON files
+        run: |
+          # Add your JSON validation logic here
+          echo "Validating JSON files..."
+
+  # CRITICAL: status-check job for branch protection
+  # This job must:
+  # 1. Depend on ALL required jobs (needs: [...])
+  # 2. Always run (if: always())
+  # 3. Fail if any required job failed
+  # 4. Be the ONLY required status check in branch protection
+  #
+  # Why separate from auto-merge/approval jobs?
+  # - If a required job fails and you re-run only that job,
+  #   a combined job can be skipped and the PR may merge unexpectedly.
+  status-check:
+    runs-on: ubuntu-latest
+    needs:
+      - typescript-check
+      - shell-check
+      - json-validation
+    if: always()
+    steps:
+      - name: Check all jobs status
+        run: |
+          # This ensures the job fails if any dependency failed
+          if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" ]]; then
+            echo "One or more required jobs failed"
+            exit 1
+          fi
+          if [[ "${{ contains(needs.*.result, 'cancelled') }}" == "true" ]]; then
+            echo "One or more required jobs were cancelled"
+            exit 1
+          fi
+          echo "All required jobs passed"
