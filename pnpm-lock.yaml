@@ -49,8 +49,8 @@ importers:
         specifier: 0.10.0
         version: 0.10.0
       '@types/node':
-        specifier: 24.10.4
-        version: 24.10.4
+        specifier: 24.10.5
+        version: 24.10.5
       '@typescript/native-preview':
         specifier: 7.0.0-dev.20260109.1
         version: 7.0.0-dev.20260109.1
@@ -290,8 +290,8 @@ packages:
   '@types/http-errors@2.0.5':
     resolution: {integrity: sha512-r8Tayk8HJnX0FztbZN7oVqGccWgw98T/0neJphO91KkmOzug1KkofZURD4UaD5uH8AqcFLfdPErnBod0u71/qg==}
 
-  '@types/node@24.10.4':
-    resolution: {integrity: sha512-vnDVpYPMzs4wunl27jHrfmwojOGKya0xyM3sH+UE5iv5uPS6vX7UIoh6m+vQc5LGBq52HBKPIn/zcSZVzeDEZg==}
+  '@types/node@24.10.5':
+    resolution: {integrity: sha512-tPacJqtEN9wmsHA9YKHxDQlODhoUN3SFQV8kCiWc4oCV1QjbigUNHH8xH3KAyM963jGRCmeDGsBl4ePSgsFivA==}
 
   '@types/qs@6.14.0':
     resolution: {integrity: sha512-eOunJqu0K1923aExK6y8p6fsihYEn/BYuQ4g0CxAAgFc4b/ZLN4CrsRZ55srTdqoiLzU2B2evC+apEIxprEzkQ==}
@@ -1199,15 +1199,15 @@ snapshots:
   '@types/body-parser@1.19.6':
     dependencies:
       '@types/connect': 3.4.38
-      '@types/node': 24.10.4
+      '@types/node': 24.10.5
 
   '@types/connect@3.4.38':
     dependencies:
-      '@types/node': 24.10.4
+      '@types/node': 24.10.5
 
   '@types/express-serve-static-core@5.1.1':
     dependencies:
-      '@types/node': 24.10.4
+      '@types/node': 24.10.5
       '@types/qs': 6.14.0
       '@types/range-parser': 1.2.7
       '@types/send': 1.2.1
@@ -1220,7 +1220,7 @@ snapshots:
 
   '@types/http-errors@2.0.5': {}
 
-  '@types/node@24.10.4':
+  '@types/node@24.10.5':
     dependencies:
       undici-types: 7.16.0
 
@@ -1230,12 +1230,12 @@ snapshots:
 
   '@types/send@1.2.1':
     dependencies:
-      '@types/node': 24.10.4
+      '@types/node': 24.10.5
 
   '@types/serve-static@2.2.0':
     dependencies:
       '@types/http-errors': 2.0.5
-      '@types/node': 24.10.4
+      '@types/node': 24.10.5
 
   '@typescript/native-preview-darwin-arm64@7.0.0-dev.20260109.1':
     optional: true
