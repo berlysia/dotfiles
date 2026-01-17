@@ -1,0 +1,108 @@
+name: CI Status Check
+
+on:
+  workflow_run:
+    workflows:
+      - "Shell Lint (shellcheck)"
+      - "TypeScript CI"
+      - "Secret Detection (gitleaks)"
+      - "Lint GitHub Actions"
+      - "Shell Compatibility Test"
+      - "Validate Codex Config"
+      - "Validate JSON Templates"
+    types:
+      - completed
+
+jobs:
+  status-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check all required workflows passed
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const workflowRun = context.payload.workflow_run;
+
+            // Get all workflow runs for this commit
+            const { data: runs } = await github.rest.actions.listWorkflowRunsForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              head_sha: workflowRun.head_sha,
+              event: workflowRun.event,
+              per_page: 100
+            });
+
+            // Required workflow names (must match the trigger list)
+            const requiredWorkflows = [
+              'Shell Lint (shellcheck)',
+              'TypeScript CI',
+              'Secret Detection (gitleaks)',
+              'Lint GitHub Actions',
+              'Shell Compatibility Test',
+              'Validate Codex Config',
+              'Validate JSON Templates'
+            ];
+
+            // Filter runs to only required workflows
+            const requiredRuns = runs.workflow_runs.filter(run =>
+              requiredWorkflows.includes(run.name)
+            );
+
+            // Group by workflow name and get the latest run for each
+            const latestRuns = {};
+            for (const run of requiredRuns) {
+              if (!latestRuns[run.name] || run.created_at > latestRuns[run.name].created_at) {
+                latestRuns[run.name] = run;
+              }
+            }
+
+            // Check if all required workflows have completed successfully
+            const results = [];
+            for (const workflowName of requiredWorkflows) {
+              const run = latestRuns[workflowName];
+              if (!run) {
+                results.push(`❌ ${workflowName}: Not found`);
+                continue;
+              }
+
+              if (run.status !== 'completed') {
+                results.push(`⏳ ${workflowName}: ${run.status}`);
+                continue;
+              }
+
+              if (run.conclusion === 'success') {
+                results.push(`✅ ${workflowName}: ${run.conclusion}`);
+              } else {
+                results.push(`❌ ${workflowName}: ${run.conclusion}`);
+              }
+            }
+
+            core.info('Required workflow results:');
+            for (const result of results) {
+              core.info(result);
+            }
+
+            // Check if all are successful
+            const allSuccess = Object.values(latestRuns).every(
+              run => run.status === 'completed' && run.conclusion === 'success'
+            );
+            const allCompleted = Object.values(latestRuns).every(
+              run => run.status === 'completed'
+            );
+
+            if (!allCompleted) {
+              core.info('⏳ Waiting for all workflows to complete...');
+              // Don't fail yet, just exit
+              return;
+            }
+
+            if (!allSuccess) {
+              const failed = Object.entries(latestRuns)
+                .filter(([_, run]) => run.conclusion !== 'success')
+                .map(([name, run]) => `${name} (${run.conclusion})`);
+
+              core.setFailed(`Required workflows failed: ${failed.join(', ')}`);
+              return;
+            }
+
+            core.info('✅ All required workflows passed!');
