@@ -28,9 +28,11 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
 
 #### スキル管理の仕組み
 
-- **手作りスキル**: `${projectRoot}/dot_claude/skills/` で直接管理（semantic-commit, react-hooks, codex-review）
+- **手作りスキル**: `${projectRoot}/.skills/` で一元管理
+  - Claude Code と Codex の両方で使用するスキルを統合
+  - `run_after_sync-skills.sh.tmpl` が `chezmoi apply` 時に自動的に `~/.claude/skills/` と `~/.codex/skills/` に同期
 - **外部スキル**: `.chezmoidata/claude_skills.yaml` で宣言的に管理し、`add-skill` 経由でインストール
-- **インストール先**: 両方とも `~/.claude/skills/` に展開され、共存
+- **共存**: 手作りスキルと外部スキルが両方のディレクトリに展開され、共存
 
 #### スキルの追加方法
 

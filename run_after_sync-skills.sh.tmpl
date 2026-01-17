@@ -1,0 +1,20 @@
+{{ if ne .chezmoi.os "windows" -}}
+#!/bin/bash
+# Sync .skills to ~/.claude/skills and ~/.codex/skills
+
+set -euo pipefail
+
+SKILLS_SOURCE="{{ .chezmoi.sourceDir }}/.skills"
+CLAUDE_SKILLS="$HOME/.claude/skills"
+CODEX_SKILLS="$HOME/.codex/skills"
+
+# Create directories if they don't exist
+mkdir -p "$CLAUDE_SKILLS" "$CODEX_SKILLS"
+
+# Sync .skills to ~/.claude/skills and ~/.codex/skills
+echo "Syncing handcrafted skills from .skills..."
+rsync -a "$SKILLS_SOURCE/" "$CLAUDE_SKILLS/"
+rsync -a "$SKILLS_SOURCE/" "$CODEX_SKILLS/"
+
+echo "✅ Handcrafted skills synced successfully"
+{{ end -}}
