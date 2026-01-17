@@ -17,10 +17,9 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
 - **テンプレート**: `.tmpl` 拡張子で動的生成
 
 #### このプロジェクト独自のルール
-- **グローバル設定**: `${projectRoot}/dot_claude/.CLAUDE.md` → `~/.claude/CLAUDE.md`
-  - 一般ルールでは `~/.claude/.CLAUDE.md` になるはずだが、`run_update-CLAUDE-md.sh` スクリプトが `.` を除去して配置
+- **グローバル設定**: `${projectRoot}/dot_claude/CLAUDE.md` → `~/.claude/CLAUDE.md`
   - スクリプトは `includeTemplate` で内容を読み込み、ハッシュ値で変更検知
-  - 編集する場合は `${projectRoot}/dot_claude/.CLAUDE.md` を変更してから `chezmoi apply` を実行
+  - 編集する場合は `${projectRoot}/dot_claude/CLAUDE.md` を変更してから `chezmoi apply` を実行
 
 ### Claude Code Skills Management
 
