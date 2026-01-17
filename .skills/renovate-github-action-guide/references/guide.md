@@ -115,7 +115,43 @@ if: |
   github.event_name != 'pull_request' || ! github.event.pull_request.head.repo.fork
 ```
 
+## CI auto-fix workflow
+
+Automatically fix dependency update PRs when CI fails using Claude Code Action.
+
+**How it works:**
+1. Triggered by `workflow_run` when CI completes with failure
+2. Checks if PR is from a dependency bot (renovate[bot] or dependabot[bot])
+3. Claude Code investigates the failure and attempts to fix it
+4. Commits and pushes fixes to the PR branch
+5. Auto-merge handles merging once all checks pass
+
+**Required setup:**
+- **Authentication (choose one):**
+  - **Option A (Recommended): Claude Code OAuth token**
+    - Run `/install-github-app` in Claude Code CLI (handles OAuth token and secret setup automatically)
+    - Or manually create at https://claude.ai/settings/oauth and store as repository secret `CLAUDE_CODE_OAUTH_TOKEN`
+  - **Option B: Anthropic API key**
+    - Create at https://console.anthropic.com/settings/keys
+    - Store as repository secret `ANTHROPIC_API_KEY`
+- Update `workflows` array to match your CI workflow names
+
+**Permissions needed:**
+- `contents: write` - Push fixes to PR branch
+- `pull-requests: write` - Add comments
+- `issues: write` - Update issue status
+- `id-token: write` - OIDC authentication
+- `actions: read` - Access workflow run information
+
+**Tool restrictions:**
+- Use `claude_args` to restrict allowed tools
+- Default: `gh`, `git`, `pnpm`, `npm`, `Read`, `Write`, `Edit`, `Glob`, `Grep`
+- Prevents destructive operations outside the scope
+
+**Example workflow:** See `assets/workflows/auto-fix-dependencies.yml`
+
 ## Cost note
 
 - Consider self-hosted runners if additional jobs increase billing.
-- Examples of additional jobs: `status-check`, `paths-filter`, `approve-and-enable-automerge-renovate`.
+- Examples of additional jobs: `status-check`, `paths-filter`, `approve-and-enable-automerge-renovate`, `auto-fix`.
+- Claude Code Action incurs Claude API costs per execution.

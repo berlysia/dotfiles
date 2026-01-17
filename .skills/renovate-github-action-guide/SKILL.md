@@ -1,6 +1,6 @@
 ---
 name: renovate-github-action-guide
-description: Apply the "GitHub Actions and Renovate Guide" to configure repo settings, branch protection, GitHub App/PAT secrets, and renovate.json5 for personal or team GitHub projects. Use when asked to introduce Renovate, enable dependency auto-updates, or align settings with the guide.
+description: Apply the "GitHub Actions and Renovate Guide" to configure repo settings, branch protection, GitHub App/PAT secrets, renovate.json5, and optional CI auto-fix workflow for personal or team GitHub projects. Use when asked to introduce Renovate, enable dependency auto-updates, auto-fix dependency failures, or align settings with the guide.
 ---
 
 # Renovate GitHub Actions Guide
@@ -100,7 +100,8 @@ Renovate Setup Progress:
 - [ ] Step 2: GitHub App setup + secrets (or use hosted app)
 - [ ] Step 3: Add renovate.json5 (choose preset)
 - [ ] Step 4: (Optional) Self-hosted workflow
-- [ ] Step 5: Validation + test PR
+- [ ] Step 5: (Optional) CI auto-fix workflow
+- [ ] Step 6: Validation + test PR
 ```
 
 ### Step 1: Apply repository settings and branch protection rules
@@ -326,7 +327,63 @@ actionlint .github/workflows/renovate.yml
 gh workflow run renovate.yml
 ```
 
-### Step 5: Validate configuration
+### Step 5: (Optional) Add CI auto-fix workflow
+
+**When to use:**
+- Auto-fix dependency update PRs when CI fails
+- Reduce manual intervention for breaking changes in dependencies
+
+**How it works:**
+1. Triggered when CI workflow completes with failure on dependency bot PRs
+2. Claude Code investigates the failure and attempts to fix it
+3. Commits and pushes fixes to the PR
+4. Auto-merge handles merging once all checks pass
+
+**Setup:**
+```bash
+# Copy workflow template
+mkdir -p .github/workflows
+cp assets/workflows/auto-fix-dependencies.yml .github/workflows/auto-fix-dependencies.yml
+```
+
+**Required authentication (choose one):**
+
+**Option A: Claude Code OAuth token (recommended)**
+```bash
+# Easiest: Use Claude Code's built-in command
+/install-github-app
+
+# Or manually create OAuth token at https://claude.ai/settings/oauth
+gh secret set CLAUDE_CODE_OAUTH_TOKEN --body "<oauth-token>"
+```
+
+**Option B: Anthropic API key**
+```bash
+# Create API key at https://console.anthropic.com/settings/keys
+gh secret set ANTHROPIC_API_KEY --body "<api-key>"
+```
+
+**Note:** OAuth token setup via `/install-github-app` is the easiest method. API key requires manual management but works for direct API access.
+
+**Configure workflow:**
+- Update `workflows` array to match your CI workflow names
+- Choose authentication method in the workflow file:
+  - Use `claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}`
+  - OR use `anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}`
+- Adjust `claude_args` to allow necessary tools
+- Set appropriate permissions
+
+**Validation:**
+```bash
+# Check workflow syntax
+actionlint .github/workflows/auto-fix-dependencies.yml
+
+# Test by triggering a failed CI (optional)
+```
+
+See `assets/workflows/auto-fix-dependencies.yml` for complete example.
+
+### Step 6: Validate configuration
 
 **Check Renovate config:**
 ```bash
@@ -364,6 +421,7 @@ npx renovate --dry-run --token=$GITHUB_TOKEN $OWNER/$REPO
 - `assets/renovate-aggressive.json5`: aggressive update strategy preset.
 - `assets/workflows/renovate.yml`: Renovate GitHub Actions workflow template (self-hosting only).
 - `assets/workflows/ci-unified-example.yml`: **unified CI workflow with status-check job pattern**.
+- `assets/workflows/auto-fix-dependencies.yml`: **CI auto-fix workflow using Claude Code Action** (optional).
 
 ## References
 
