@@ -7,76 +7,39 @@ description: Apply the "GitHub Actions and Renovate Guide" to configure repo set
 
 ## Prerequisites
 
-**GitHub CLI Authentication:**
+**Required:**
+- GitHub CLI installed and authenticated: `gh auth login`
+- Repository admin access
+- Token scopes: `repo`, `admin:org` (for org repos), `workflow`
 
-All setup commands require GitHub CLI with proper authentication and permissions.
-
+**Quick verification:**
 ```bash
-# 1. Check if gh CLI is installed
-gh --version
-
-# 2. Authenticate with required scopes
-gh auth login
-# Required scopes: repo (full control), admin:org (for org repos), workflow
-
-# 3. Verify authentication and scopes
+# Check admin access and required scopes
 gh auth status
-# Should show: ✓ Token scopes: repo, admin:org, workflow
-
-# 4. Check repository access
-gh api repos/$OWNER/$REPO | jq '.permissions'
-# Required: {"admin": true, "push": true, "pull": true}
+gh api repos/$OWNER/$REPO | jq -e '.permissions.admin == true' || echo "Need admin access"
 ```
 
-**If you lack required permissions:**
-- Personal repo: You must be the owner
-- Organization repo: You need Admin access
-- See `references/GH_CLI_SETUP.md` for detailed permission requirements
-
-**Quick permission check:**
-```bash
-# Run this before starting setup
-OWNER="your-username"
-REPO="your-repo"
-
-# Check admin access
-if gh api repos/$OWNER/$REPO | jq -e '.permissions.admin == true' >/dev/null; then
-  echo "✓ Have admin access"
-else
-  echo "✗ Need admin access to continue"
-  exit 1
-fi
-```
+**If setup fails:** See `references/GH_CLI_SETUP.md` for detailed authentication troubleshooting and permission requirements.
 
 ## Quick Start
 
-**Before starting:**
-Check if Renovate is already configured:
+**1. Check existing setup:**
 ```bash
-# Check for existing config
 ls -la renovate.json* .github/renovate.json* .renovaterc* 2>/dev/null
-
-# Check if Renovate is already creating PRs
 gh pr list --author "renovate[bot]" --limit 5
 ```
 
-If Renovate is already configured, skip to Step 5 (Validate configuration).
+**2. Identify project type:**
+- Personal: Single maintainer
+- Team: Multiple maintainers, requires reviews
+- Public (single maintainer): Can use hosted Renovate App → Skip to Step 3
 
-**Identify project type:**
-- Personal project: Single maintainer, simpler setup
-- Team project: Multiple maintainers, requires review workflows
-- Public repository (single maintainer): Simplest setup, can skip many steps (see below)
+**3. Collect inputs:**
+- Repo: owner/name, default branch
+- CI: workflow names
+- Schedule: timezone, auto-merge policy
 
-**Collect inputs:**
-- Repo owner/name, default branch
-- Existing CI workflow name(s)
-- Desired schedule/timezone
-- Auto-merge policy
-- Whether GitHub Actions updates are needed
-
-**Decide auth:**
-- GitHub App (recommended) for personal and team workflows
-- For team workflows: optional fine-grained PAT for approving PRs
+**4. Follow workflow steps below**
 
 ## Public Repository (Single Maintainer) - Simplified Setup
 
@@ -132,11 +95,12 @@ Copy this checklist and track your progress:
 
 ```
 Renovate Setup Progress:
-- [ ] Step 1: Apply repository settings and branch protection rules
-- [ ] Step 2: Set up GitHub App and secrets
-- [ ] Step 3: Add and customize renovate.json5
-- [ ] Step 4: (Optional) Add Renovate GitHub Actions workflow
-- [ ] Step 5: Validate configuration
+- [ ] Prerequisites: gh CLI authenticated, admin access verified
+- [ ] Step 1: Repository settings + status-check job + branch protection
+- [ ] Step 2: GitHub App setup + secrets (or use hosted app)
+- [ ] Step 3: Add renovate.json5 (choose preset)
+- [ ] Step 4: (Optional) Self-hosted workflow
+- [ ] Step 5: Validation + test PR
 ```
 
 ### Step 1: Apply repository settings and branch protection rules
@@ -250,87 +214,42 @@ gh api repos/$OWNER/$REPO/branches/$BRANCH/protection | jq '.required_status_che
 
 ### Step 2: Set up GitHub App and secrets
 
-**Required permissions for Option 2 (self-hosted):**
-- Repository: Admin access OR "Secrets" write permission
-- Scope: `repo` (full control)
-- Organization: "Repository" → "Secrets" permission
+**Choose authentication method:**
 
-**Verify before proceeding:**
-```bash
-# Must succeed (shows secret names, not values)
-gh api repos/$OWNER/$REPO/actions/secrets
-```
+1. **Hosted Renovate App** (simplest):
+   - Install [Renovate GitHub App](https://github.com/apps/renovate)
+   - Select repositories → Done
+   - Skip to Step 3
 
-**Option 1: Use Hosted Renovate App (Simplest)**
+2. **Self-hosted with GitHub App** (full control):
 
-For public repositories or if you don't need custom scheduling:
+   **Quick setup:**
+   a. Create app: https://github.com/settings/apps/new
+      - Name: `renovate-bot-<username>` (globally unique)
+      - Permissions: `contents: write`, `pull-requests: write`, `workflows: write` (optional)
+      - Webhook: Disabled
 
-1. Install the [Renovate GitHub App](https://github.com/apps/renovate)
-2. Select repositories to enable
-3. Add `renovate.json5` to your repository
-4. Done! Skip to Step 3.
+   b. Generate private key → Download `.pem` file
 
-**Option 2: Create Your Own GitHub App (Full Control)**
+   c. Install app to repositories
 
-For self-hosted Renovate or custom requirements:
-
-See `references/GITHUB_APP_SETUP.md` for complete step-by-step guide including:
-- Creating GitHub App (personal or organization)
-- Setting permissions (`contents: write`, `pull-requests: write`)
-- Generating and storing private key
-- Installing the app
-- Storing secrets (repository vs environment)
-- Bot username configuration
-- Troubleshooting
-
-**Quick summary:**
-
-1. **Create app** at https://github.com/settings/apps/new
-   - Required permissions: `contents: write`, `pull-requests: write`
-   - Optional: `workflows: write` (for updating GitHub Actions)
-
-2. **Generate private key** and download `.pem` file
-
-3. **Install app** to your account/repositories
-
-4. **Store secrets:**
-
-   Personal projects (repository secrets):
+   d. Store secrets:
    ```bash
-   # Requires: admin access OR "Secrets" permission, repo scope
+   # Personal project
    gh secret set RENOVATE_APP_ID --body "<app-id>"
    gh secret set RENOVATE_APP_PRIVATE_KEY < private-key.pem
-   # If error 403: Need admin or secrets write permission
-   ```
 
-   Team projects (environment secrets):
-   ```bash
-   # Create environment with branch restrictions
-   # Requires: admin access, repo scope
-   gh api -X PUT repos/$OWNER/$REPO/environments/renovate \
-     --input - <<EOF
-   {
-     "deployment_branch_policy": {
-       "protected_branches": false,
-       "custom_branch_policies": true
-     }
-   }
+   # Team project (environment) - protects secrets with branch policy
+   gh api -X PUT repos/$OWNER/$REPO/environments/renovate --input - <<EOF
+   {"deployment_branch_policy": {"protected_branches": false, "custom_branch_policies": true}}
    EOF
-
-   # Store secrets in environment
-   # Requires: admin access OR "Secrets" permission, repo scope
    gh secret set RENOVATE_APP_ID --env renovate --body "<app-id>"
    gh secret set RENOVATE_APP_PRIVATE_KEY --env renovate < private-key.pem
-   # If error 403: Need admin or secrets write permission
    ```
 
-5. **Configure bot username in renovate.json5:**
+   e. Configure bot username in renovate.json5:
    ```json5
-   {
-     // Bot username format: <app-name>[bot]
-     "username": "renovate-bot-<your-username>[bot]",
-     // ... rest of config
-   }
+   {"username": "renovate-bot-<your-username>[bot]"}
    ```
 
    Find exact username after first run:
@@ -338,17 +257,7 @@ See `references/GITHUB_APP_SETUP.md` for complete step-by-step guide including:
    gh pr list --author "renovate" --json author --jq '.[0].author.login'
    ```
 
-**Validation:**
-```bash
-# Check if secrets are set (won't show values)
-gh api repos/$OWNER/$REPO/actions/secrets | jq '.secrets[].name'
-
-# For environments
-gh api repos/$OWNER/$REPO/environments/renovate | jq '{name, deployment_branch_policy}'
-
-# Test token generation (create test workflow, see GITHUB_APP_SETUP.md)
-gh workflow run test-app-token.yml
-```
+**Detailed guide:** See `references/GITHUB_APP_SETUP.md` for troubleshooting, permission details, and alternative setups.
 
 ### Step 3: Add and customize renovate.json5
 
