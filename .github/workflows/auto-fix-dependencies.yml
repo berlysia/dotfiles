@@ -1,15 +1,18 @@
-name: Claude Dependency Review
+name: Auto-fix Dependencies
 
 on:
-  pull_request:
-    types: [opened, synchronize]
+  workflow_run:
+    workflows:
+      - "CI Status Check"
+    types:
+      - completed
 
 jobs:
-  claude-deps-review:
-    # Only run for dependency bot PRs
+  auto-fix:
+    # Only run when CI fails on dependency bot PRs
     if: |
-      github.event.pull_request.user.login == 'renovate[bot]' ||
-      github.event.pull_request.user.login == 'dependabot[bot]'
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.event == 'pull_request'
 
     runs-on: ubuntu-latest
     permissions:
@@ -20,33 +23,79 @@ jobs:
       actions: read
 
     steps:
+      - name: Get PR information
+        id: pr-info
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Get PR from the workflow_run event
+            const prs = context.payload.workflow_run.pull_requests;
+            if (!prs || prs.length === 0) {
+              core.setFailed('No PR found in workflow_run event');
+              return;
+            }
+
+            const pr = prs[0];
+
+            // Get full PR details
+            const { data: prData } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number
+            });
+
+            // Check if PR is from a dependency bot
+            const author = prData.user.login;
+            const isBot = author === 'renovate[bot]' || author === 'dependabot[bot]';
+
+            if (!isBot) {
+              core.info(`Skipping: PR author is ${author}, not a dependency bot`);
+              core.setOutput('skip', 'true');
+              return;
+            }
+
+            core.setOutput('skip', 'false');
+            core.setOutput('pr_number', pr.number);
+            core.setOutput('head_ref', prData.head.ref);
+            core.setOutput('pr_url', prData.html_url);
+            core.setOutput('pr_title', prData.title);
+            core.setOutput('pr_author', author);
+
       - name: Checkout repository
+        if: steps.pr-info.outputs.skip != 'true'
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
         with:
           fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.ref }}
+          ref: ${{ steps.pr-info.outputs.head_ref }}
           persist-credentials: false
 
-      - name: Run Claude Dependency Review
-        id: claude-deps
+      - name: Auto-fix dependencies
+        if: steps.pr-info.outputs.skip != 'true'
+        id: auto-fix
         uses: anthropics/claude-code-action@1b8ee3b94104046d71fde52ec3557651ad8c0d71 # v1.0.29
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           use_bedrock: false
           use_vertex: false
           prompt: |
-            This is an automated dependency update PR from ${{ github.event.pull_request.user.login }}.
+            **CI Failed - Fix Required**
 
-            PR: ${{ github.event.pull_request.html_url }}
-            Title: ${{ github.event.pull_request.title }}
+            A dependency update PR from ${{ steps.pr-info.outputs.pr_author }} has failed the status check.
 
-            Please:
-            1. Review the dependency changes for any breaking changes or security concerns
-            2. If there are lockfile conflicts or issues, resolve them
-            3. Run any relevant tests to verify the update works
-            4. If everything looks good, approve and merge the PR
+            PR: ${{ steps.pr-info.outputs.pr_url }}
+            Title: ${{ steps.pr-info.outputs.pr_title }}
 
-            Use `gh pr view`, `gh pr diff`, `gh pr merge` commands as needed.
-            If tests fail or there are issues, leave a comment explaining the problem.
+            **Your task:**
+            1. Check which CI workflows failed: `gh pr checks ${{ steps.pr-info.outputs.pr_number }}`
+            2. Investigate failures using `gh run view` and checking test logs
+            3. Fix the issues (e.g., update lockfile, resolve conflicts, fix breaking changes)
+            4. Commit and push the fixes
+            5. DO NOT merge - auto-merge will handle it once all CI checks pass
+
+            **Important:**
+            - Focus only on fixing the CI failures
+            - After pushing fixes, verify all checks pass with `gh pr checks`
+            - Do not manually merge - this repository uses auto-merge for dependency PRs
+            - If the issue cannot be fixed automatically, leave a detailed comment explaining the problem
 
           claude_args: '--allowed-tools "Bash(gh:*),Bash(git:*),Bash(pnpm:*),Bash(npm:*),Read,Write,Edit,Glob,Grep"'
