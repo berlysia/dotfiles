@@ -18,6 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       actions: read
+      statuses: write
     steps:
       - name: Check all required workflows passed
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
@@ -104,7 +105,15 @@ jobs:
 
             if (!allCompleted) {
               core.info('⏳ Waiting for all workflows to complete...');
-              // Don't fail yet, just exit
+              // Set pending status
+              await github.rest.repos.createCommitStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                sha: workflowRun.head_sha,
+                state: 'pending',
+                context: 'status-check',
+                description: 'Waiting for all workflows to complete...'
+              });
               return;
             }
 
@@ -117,8 +126,27 @@ jobs:
                 })
                 .filter(Boolean);
 
+              // Set failure status
+              await github.rest.repos.createCommitStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                sha: workflowRun.head_sha,
+                state: 'failure',
+                context: 'status-check',
+                description: `Required workflows failed: ${failed.join(', ')}`
+              });
               core.setFailed(`Required workflows failed: ${failed.join(', ')}`);
               return;
             }
 
             core.info('✅ All required workflows passed!');
+
+            // Set success status
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: workflowRun.head_sha,
+              state: 'success',
+              context: 'status-check',
+              description: 'All required workflows passed!'
+            });
