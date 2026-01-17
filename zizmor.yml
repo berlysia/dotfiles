@@ -1,0 +1,17 @@
+# Zizmor security configuration for GitHub Actions workflows
+# https://docs.zizmor.sh/configuration/
+
+rules:
+  dangerous-triggers:
+    ignore:
+      # status-check.yml uses workflow_run safely:
+      # - Read-only permissions (actions: read)
+      # - No PR checkout
+      # - Aggregates CI results only
+      - status-check.yml:3
+
+      # auto-fix-dependencies.yml uses workflow_run safely:
+      # - Validates dependency bot PRs before any operations
+      # - Checks author identity before checkout
+      # - Limited to bot PRs only
+      - auto-fix-dependencies.yml:3

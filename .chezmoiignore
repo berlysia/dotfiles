@@ -29,6 +29,7 @@ tsconfig.json
 .lsmcp
 pnpm-workspace.yaml
 renovate.json
+zizmor.yml
 
 # Windows専用ファイル - Windows以外では無視
 {{ if ne .chezmoi.os "windows" }}
