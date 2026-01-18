@@ -107,6 +107,7 @@ mise.local.toml
 **/.claude/tmp/*
 **/.claude/log/*
 **/.claude/tasks/*
+**/.claude/plans/*
 CLAUDE.local.md
 
 .tmp

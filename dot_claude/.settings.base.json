@@ -7,6 +7,6 @@
     "padding": 0
   },
   "alwaysThinkingEnabled": true,
-  "plansDirectory": "./.tmp/plans",
+  "plansDirectory": "./.claude/plans",
   "language": "japanese"
 }
