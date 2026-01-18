@@ -22,7 +22,7 @@
   "devDependencies": {
     "@biomejs/biome": "2.3.11",
     "@mizchi/lsmcp": "0.10.0",
-    "@types/node": "24.10.5",
+    "@types/node": "24.10.7",
     "@typescript/native-preview": "7.0.0-dev.20260109.1",
     "o3-search-mcp": "0.0.9",
     "typescript": "5.9.3"
