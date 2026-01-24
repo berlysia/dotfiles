@@ -21,6 +21,15 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
   - スクリプトは `includeTemplate` で内容を読み込み、ハッシュ値で変更検知
   - 編集する場合は `${projectRoot}/dot_claude/CLAUDE.md` を変更してから `chezmoi apply` を実行
 
+- **Settings.json分割管理**: `~/.claude/settings.json`は複数ファイルに分割して管理
+  - `.settings.base.json`: 基本設定（model、language、statusLine、alwaysThinkingEnabled等）
+  - `.settings.permissions.json`: パーミッション設定（allow/deny）
+  - `.settings.hooks.json.tmpl`: Hooks設定（chezmoi変数で動的生成）
+  - `.settings.plugins.json`: プラグイン設定（enabledPlugins）
+  - これらは`run_onchange_update-settings-json.sh.tmpl`でjq統合され、`chezmoi apply`時に自動更新
+  - **重要**: hooks設定を変更する場合は`.settings.hooks.json.tmpl`を編集してから`chezmoi apply`を実行
+  - 既存の`enabledPlugins`設定は保持される（ユーザーの手動変更を上書きしない）
+
 ### Claude Code Skills Management
 
 このプロジェクトは`add-skill`を使用して、Gitリポジトリから選択的にClaude Codeスキルをインストールします。
