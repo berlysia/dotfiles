@@ -80,6 +80,7 @@
     "Task",
     "TodoRead",
     "TodoWrite",
+    "TaskList",
     "TaskCreate",
     "TaskOutput",
     "TaskUpdate",
