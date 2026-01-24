@@ -1,10 +1,10 @@
 ---
-name: semantic-commit
+name: commit-conventions
 description: Use this skill when dealing with complex commits involving multiple change types, when unsure how to split changes into atomic commits, when determining appropriate scope for a commit, when writing commit body for non-trivial changes, or when the user asks about commit best practices, semantic versioning impact, or conventional commit format details.
 context: fork
 ---
 
-# Semantic Commit Guide
+# Commit Conventions Guide
 
 複雑なコミットシナリオや判断に迷う場面での詳細ガイダンス。単純なケースはCLAUDE.mdの基本原則で十分。
 
@@ -16,8 +16,8 @@ context: fork
 |----------|--------|----------------|
 | 1ファイル、1種類の変更 | 単純 | CLAUDE.md原則で直接コミット |
 | 複数ファイル、同一目的 | 単純 | CLAUDE.md原則で直接コミット |
-| 複数種類の変更が混在 | **複雑** | このスキル参照 or `/commit` |
-| 大規模リファクタリング | **複雑** | `/commit` で自動分割 |
+| 複数種類の変更が混在 | **複雑** | このスキル参照 or `/semantic-commit` |
+| 大規模リファクタリング | **複雑** | `/semantic-commit` で自動分割 |
 | Breaking changes | **複雑** | このスキル参照 |
 
 ## 変更の分離戦略
@@ -238,7 +238,8 @@ git-sequential-stage -patch="changes.patch" -hunk="file.py:1,3"
 
 ## 関連ツール
 
-- `/commit` - 複雑な変更の自動分析・分割
+- `/commit` - 汎用コミットコマンド（シンプルな変更を直接コミット）
+- `/semantic-commit` - 複雑な変更の自動分析・分割
 - `git-sequential-stage` - hunk単位の精密なステージング
 - `commit-workflow-orchestrator` agent - 完全なワークフロー管理
 - `commit-message-generator` agent - メッセージ生成の詳細ロジック
