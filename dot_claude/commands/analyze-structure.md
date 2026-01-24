@@ -4,15 +4,34 @@
 
 コードベースの構造を分析し、システムが処理しやすい構造化データフォーマットで出力するコマンド。専門エージェントのオーケストレーションにより、CI/CD、自動化、メトリクス収集などのシステム連携に最適化されています。
 
-## エージェントオーケストレーション
+## 分析フェーズ
 
-このコマンドは`structure-analysis-orchestrator`エージェントに分析を委譲し、以下の専門エージェントを連携させます：
+このコマンドは以下の2フェーズで専門エージェントを直接呼び出します：
+
+### Phase 1: Analysis (並列実行)
+
+以下の4つの専門エージェントを並列実行:
 
 - **code-complexity-analyzer**: 複雑度メトリクス（McCabe、認知的複雑度等）
 - **architecture-boundary-analyzer**: アーキテクチャ境界・依存関係分析
 - **coupling-evaluator**: モジュール間結合度評価
 - **cohesion-evaluator**: モジュール内凝集度評価
-- **metrics-collection-orchestrator**: 構造化データ出力・フォーマット変換
+
+**実行方法**:
+```
+Task(code-complexity-analyzer): 対象コードの複雑度分析
+Task(architecture-boundary-analyzer): アーキテクチャ境界分析
+Task(coupling-evaluator): 結合度評価
+Task(cohesion-evaluator): 凝集度評価
+```
+
+### Phase 2: Integration
+
+エージェント分析結果の統合と出力フォーマット変換:
+1. 各エージェントの結果を収集
+2. メトリクスを統一スケール（1-5）に正規化
+3. 指定フォーマット（JSON/YAML/CSV/XML）に変換
+4. ファイル出力または標準出力
 
 ## 使用法
 
@@ -119,46 +138,55 @@
 /analyze-structure src/payment/ --metrics complexity,quality
 ```
 
-## エージェント連携パターン
+## 実装詳細
 
-### オーケストレーションによる効率的な分析
+### Phase 1: Analysis実行
 
-```bash
-# エージェント連携による構造分析結果を同時表示・保存
-generate_structure_analysis() {
-    local target="$1"
-    local output_format="${2:-json}"
-    local output_file="structure-analysis.${output_format}"
-    
-    # structure-analysis-orchestratorによる統合分析結果を表示・保存
-    orchestrate_analysis "$target" --output "$output_format" | tee "$output_file"
-}
+```markdown
+## 並列エージェント実行
+Task(code-complexity-analyzer):
+  - 対象: <target>
+  - 出力: 複雑度メトリクス、保守性指標
 
-# エージェント統合メトリクス収集
-collect_orchestrated_metrics() {
-    local target="$1"
-    local metrics_file="metrics-$(date +%Y%m%d).json"
-    
-    # metrics-collection-orchestratorによる統合メトリクス収集・整形・保存
-    orchestrate_metrics_collection "$target" | tee "$metrics_file"
-}
+Task(architecture-boundary-analyzer):
+  - 対象: <target>
+  - 出力: 依存関係グラフ、境界違反
 
-# 複数エージェント結果の統合
-analyze_with_orchestrated_agents() {
-    local target="$1"
-    local output_file="analysis-$(date +%Y%m%d).json"
-    
-    # structure-analysis-orchestratorによる複数エージェント統合分析
-    structure_analysis_orchestrator "$target" --output json | tee "$output_file"
-}
+Task(coupling-evaluator):
+  - 対象: <target>
+  - 出力: 結合度スコア、依存関係評価
+
+Task(cohesion-evaluator):
+  - 対象: <target>
+  - 出力: 凝集度スコア、責務評価
 ```
 
-### エージェントオーケストレーションの利点
+### Phase 2: Integration実行
+
+```markdown
+## 結果統合プロセス
+1. 各エージェント結果を収集
+2. メトリクス正規化（1-5スケール）:
+   - Complexity: McCabe複雑度 → スコア変換
+   - Architecture: 境界違反数 → スコア変換
+   - Coupling: 依存関係数 → スコア変換
+   - Cohesion: 凝集度レベル → スコア変換
+3. フォーマット変換:
+   - JSON: 構造化オブジェクト
+   - YAML: 階層的表現
+   - CSV: 表形式データ
+   - XML: タグベース構造
+4. 出力:
+   - --export指定時: ファイル保存
+   - 未指定時: 標準出力
+```
+
+### 並列実行の利点
 
 - **専門性**: 各エージェントが専門分野に特化した高精度分析
-- **並列処理**: 複数エージェント同時実行による高速化
-- **統合分析**: エージェント間の結果統合と矛盾解決
-- **標準化**: 統一されたメトリクスフォーマットと品質基準
+- **並列処理**: 4エージェント同時実行による高速化
+- **統合分析**: 複数観点からの包括的品質評価
+- **標準化**: 統一されたメトリクスフォーマット（1-5スケール）
 - **拡張性**: 新しい専門エージェント追加による機能拡張
 - **CI/CD統合**: 標準化されたデータフォーマットによるシステム連携
 
@@ -185,16 +213,18 @@ structure:
 
 ## システム連携
 
-### CI/CD統合（エージェントオーケストレーション）
+### CI/CD統合（並列エージェント分析）
 ```yaml
-# GitHub Actions例 - structure-analysis-orchestratorによる統合分析
-- name: Orchestrated Structure Analysis
+# GitHub Actions例 - 4エージェント並列分析
+- name: Structure Analysis
   run: |
     claude /analyze-structure src/ --export structure.json
-    # 複数エージェントの統合メトリクス取得
+    # 統合メトリクス取得
     cat structure.json | jq '.summary.overall_score'
     cat structure.json | jq '.metrics.complexity.score'
     cat structure.json | jq '.metrics.coupling.score'
+    cat structure.json | jq '.metrics.cohesion.score'
+    cat structure.json | jq '.metrics.architecture.score'
 ```
 
 ### 品質ゲート（統合メトリクス活用）
@@ -206,8 +236,9 @@ if (( $(echo "$overall_score < 3" | bc -l) )); then
   exit 1
 fi
 
-# 複数次元での品質チェック
+# 各次元での品質チェック
 complexity_score=$(cat structure.json | jq '.metrics.complexity.score')
+architecture_score=$(cat structure.json | jq '.metrics.architecture.score')
 coupling_score=$(cat structure.json | jq '.metrics.coupling.score')
 cohesion_score=$(cat structure.json | jq '.metrics.cohesion.score')
 ```
@@ -228,20 +259,20 @@ cohesion_score=$(cat structure.json | jq '.metrics.cohesion.score')
 - `/visualize`: 構造分析結果を視覚化
 - `/self-review`: 構造分析結果をコードレビューに統合
 
-## エージェント連携の特徴
+## 分析の特徴
 
-- **専門性の高い分析**: 各エージェントが特定領域に特化
-- **統合された洞察**: 複数観点からの包括的な品質評価
+- **専門性の高い分析**: 各エージェントが特定領域に特化（複雑度、アーキテクチャ、結合度、凝集度）
+- **統合された洞察**: 4観点からの包括的な品質評価
 - **標準化されたメトリクス**: 1-5スケールでの一貫した品質指標
-- **効率的な並列処理**: 複数エージェント同時実行による高速分析
+- **効率的な並列処理**: 4エージェント同時実行による高速分析
 - **拡張可能なアーキテクチャ**: 新しい分析エージェント追加対応
 
 ## 注意事項
 
-- 大規模なコードベースでは複数エージェント並列処理により処理時間を最適化
-- エージェント間の結果統合により一貫性のある品質評価を提供
+- 大規模なコードベースでは4エージェント並列処理により処理時間を最適化
+- Phase 2で結果統合により一貫性のある品質評価を提供
 - メトリクス精度は各専門エージェントの言語サポートレベルに依存
 
 ---
 
-*エージェントオーケストレーションによるデータ駆動型開発を支援し、多角的なコード品質の定量的管理を実現します。*
+*4つの専門エージェント並列実行によるデータ駆動型開発を支援し、多角的なコード品質の定量的管理を実現します。*

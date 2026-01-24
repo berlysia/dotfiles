@@ -9,23 +9,77 @@ This command orchestrates comprehensive code reviews by coordinating multiple sp
 **"The future is now"** - All potential improvements must be addressed immediately. No deferral of enhancements or fixes.
 
 ## Implementation
-1. **Determine review target**:
-   - If PR number provided: Fetch PR using `gh pr view` and checkout PR branch locally
-   - Otherwise: Analyze recent git changes (staged and unstaged) with dependency analysis
 
-2. **Orchestrate multi-agent review** using `code-review-orchestrator` agent
+### 1. Review Target Determination
+- **If PR number provided**:
+  - Fetch PR using `gh pr view <pr-number> --json title,body,files`
+  - Checkout PR branch locally with `gh pr checkout <pr-number>`
+- **Otherwise**:
+  - Analyze recent git changes with `git diff HEAD` and `git status`
+  - Run dependency analysis with tools like `dpdm` or `madge`
 
-3. **Generate comprehensive report** with:
-   - Root-relative paths for file references
-   - `${filepath}:${lines}` format for line references
-   - PR metadata (when reviewing pull requests)
-   - Dependency analysis results (when reviewing local changes)
+### 2. Six-Phase Multi-Agent Review
 
-4. **Save results** to `.claude/review-result/pr<number>-<timestamp>.md` or `.claude/review-result/<branch>-<HEAD>.md`
+Execute specialized agents across 6 sequential phases:
+
+**Phase 1: Technical Foundation** (並列実行)
+```markdown
+Task(architecture-boundary-analyzer): アーキテクチャ境界と依存関係分析
+Task(code-complexity-analyzer): 複雑度メトリクスと保守性評価
+Task(code-duplication-analyzer): コード重複検出と統合推奨
+Task(resilience-analyzer): 耐障害性とエラー処理評価
+```
+
+**Phase 2: Interface & Design** (並列実行)
+```markdown
+Task(interface-ergonomics-reviewer): インターフェース設計と使いやすさ評価
+Task(ui-ux-consistency-reviewer): UI一貫性とアクセシビリティ評価
+Task(documentation-consistency-reviewer): ドキュメント整合性検証
+Task(data-contract-evolution-evaluator): API/スキーマ互換性評価
+```
+
+**Phase 3: Security & Safety** (並列実行)
+```markdown
+Task(security-vulnerability-analyzer): セキュリティ脆弱性とコンプライアンス検証
+Task(test-quality-evaluator): テストカバレッジと品質評価
+Task(logic-validator): 実装ロジックと要件整合性検証
+```
+
+**Phase 4: Operational Readiness** (並列実行)
+```markdown
+Task(deployment-readiness-evaluator): CI/CDとインフラ準備度評価
+Task(release-safety-evaluator): デプロイリスクと安全性評価
+Task(observability-evaluator): 監視・ログ・トレースカバレッジ評価
+```
+
+**Phase 5: Business Impact** (順次実行)
+```markdown
+Task(product-value-evaluator): ビジネス価値と戦略整合性評価
+```
+
+**Phase 6: Integration & Synthesis**
+- 各フェーズ結果の収集と統合
+- 優先度の統合（P0/P1/P2分類）
+- 矛盾の解決と改善ロードマップ生成
+
+### 3. Comprehensive Report Generation
+
+統合レポートを生成:
+- Root-relative paths for file references (`src/module/file.ts:123`)
+- PR metadata (when reviewing pull requests)
+- Phase-by-phase findings with dependency mapping
+- Unified priority classification
+- Implementation roadmap
+
+### 4. Save Results
+
+Save to `.claude/review-result/`:
+- PR review: `pr<number>-<timestamp>.md`
+- Local changes: `<branch>-<HEAD>.md`
 
 ## Review Perspectives
 
-The `code-review-orchestrator` agent coordinates 13 specialized agents for comprehensive review across all stakeholder dimensions:
+このコマンドは14の専門エージェントを直接呼び出し、全ステークホルダー観点からの包括的レビューを実施:
 
 ### Product Manager Review (`product-value-evaluator`)
 - Business value and strategic alignment
@@ -36,12 +90,11 @@ The `code-review-orchestrator` agent coordinates 13 specialized agents for compr
 
 ### Developer Reviews (Multiple Specialized Agents)
 
-#### Technical Architecture (`architecture-integration-orchestrator`)
-- Code quality and architectural patterns
-- Performance and scalability considerations
-- Design patterns and maintainability
-- Coupling/cohesion analysis
-- Technical debt assessment
+#### Technical Architecture (`architecture-boundary-analyzer`)
+- Architectural boundaries and dependency analysis
+- Boundary violations and coupling issues
+- Layer compliance and unidirectional dependency
+- Circular dependency detection
 
 #### Code Quality Analysis (`code-complexity-analyzer`, `code-duplication-analyzer`)
 - Cyclomatic and cognitive complexity metrics
@@ -49,12 +102,24 @@ The `code-review-orchestrator` agent coordinates 13 specialized agents for compr
 - Maintainability indices and technical debt hotspots
 - Refactoring recommendations and complexity reduction strategies
 
+#### Resilience & Fault Tolerance (`resilience-analyzer`)
+- Error handling and recovery mechanisms
+- Timeout and retry patterns
+- Circuit breaker implementation
+- Graceful degradation strategies
+
 #### Interface Design (`interface-ergonomics-reviewer`)
 - API design and ergonomics evaluation
 - Interface usability and developer experience
 - Method signatures and parameter design
 - Internal module interface consistency
 - Public API backward compatibility
+
+#### Data Contract Evolution (`data-contract-evolution-evaluator`)
+- API/Schema backward compatibility
+- Breaking change detection
+- Versioning strategy evaluation
+- Migration path validation
 
 ### Quality Engineer Review (`test-quality-evaluator`)
 - Test coverage and effectiveness
@@ -115,42 +180,57 @@ The `code-review-orchestrator` agent coordinates 13 specialized agents for compr
 - Error condition coverage
 - Business rule implementation accuracy
 
-## Agent Orchestration
+## Multi-Agent Execution Strategy
 
-The command delegates comprehensive review coordination to the `code-review-orchestrator` agent, which executes a 6-phase review process with 13 specialized agents:
+### Phase-Based Direct Execution
 
-### Phase-Based Execution Strategy
+6つのフェーズで14の専門エージェントを直接呼び出し:
 
-1. **Phase 1: Technical Foundation** (3 agents)
-   - Establishes code quality baseline with architecture, complexity, and duplication analysis
-   - Creates foundation for subsequent analysis phases
+1. **Phase 1: Technical Foundation** (4 agents, 並列実行)
+   - `architecture-boundary-analyzer`: アーキテクチャ境界分析
+   - `code-complexity-analyzer`: 複雑度メトリクス評価
+   - `code-duplication-analyzer`: コード重複検出
+   - `resilience-analyzer`: 耐障害性評価
+   - **目的**: コード品質ベースライン確立
 
-2. **Phase 2: Interface & Design** (3 agents) 
-   - Evaluates user and developer experience using Phase 1 architectural insights
-   - Assesses interface ergonomics, UI consistency, and documentation quality
+2. **Phase 2: Interface & Design** (4 agents, 並列実行)
+   - `interface-ergonomics-reviewer`: インターフェース設計評価
+   - `ui-ux-consistency-reviewer`: UI一貫性とアクセシビリティ
+   - `documentation-consistency-reviewer`: ドキュメント整合性
+   - `data-contract-evolution-evaluator`: API/スキーマ互換性
+   - **依存**: Phase 1のアーキテクチャ知見を活用
+   - **目的**: ユーザー・開発者体験評価
 
-3. **Phase 3: Security & Safety** (3 agents)
-   - Validates correctness and security using complexity and interface findings
-   - Performs vulnerability analysis, test evaluation, and logic validation
+3. **Phase 3: Security & Safety** (3 agents, 並列実行)
+   - `security-vulnerability-analyzer`: セキュリティ脆弱性分析
+   - `test-quality-evaluator`: テスト品質評価
+   - `logic-validator`: ロジック整合性検証
+   - **依存**: Phase 1の複雑度、Phase 2のインターフェース知見を活用
+   - **目的**: 正確性とセキュリティ検証
 
-4. **Phase 4: Operational Readiness** (3 agents)
-   - Assesses deployment and monitoring preparedness based on safety analysis
-   - Evaluates infrastructure, release safety, and observability coverage
+4. **Phase 4: Operational Readiness** (3 agents, 並列実行)
+   - `deployment-readiness-evaluator`: デプロイ準備度評価
+   - `release-safety-evaluator`: リリース安全性評価
+   - `observability-evaluator`: 監視カバレッジ評価
+   - **依存**: Phase 3の安全性分析結果を基に評価
+   - **目的**: 本番環境準備度評価
 
-5. **Phase 5: Business Impact** (1 agent)
-   - Synthesizes technical findings into strategic business assessment
-   - Provides ROI analysis and business value evaluation
+5. **Phase 5: Business Impact** (1 agent, 順次実行)
+   - `product-value-evaluator`: ビジネス価値評価
+   - **依存**: 全フェーズの技術知見を統合
+   - **目的**: 戦略的ビジネス価値評価
 
-6. **Phase 6: Integration & Synthesis**
-   - Cross-phase contradiction resolution and priority consolidation
-   - Generates unified improvement roadmap with clear dependencies
+6. **Phase 6: Integration & Synthesis** (コマンド内処理)
+   - 全フェーズ結果の統合
+   - 優先度統合（P0/P1/P2）
+   - 矛盾解決と改善ロードマップ生成
 
-### Orchestration Benefits
-- **Manageable Complexity**: Sequential phase execution with clear dependencies
-- **Quality Focus**: Each phase builds on previous findings for deeper analysis
-- **Efficient Resource Usage**: Smaller agent groups with focused objectives
-- **Better Integration**: Natural flow from technical to business concerns
-- **Clearer Reporting**: Phase-structured results easier to understand and act upon
+### Execution Benefits
+- **Manageable Complexity**: 6フェーズの順次実行で明確な依存関係
+- **Quality Focus**: 各フェーズが前フェーズの知見を活用
+- **Efficient Resource Usage**: フェーズ内並列実行で効率化
+- **Better Integration**: 技術からビジネスへの自然な流れ
+- **Clearer Reporting**: フェーズ構造化結果で理解と行動が容易
 
 ## Usage
 ```
@@ -170,48 +250,80 @@ The command delegates comprehensive review coordination to the `code-review-orch
 
 ### Pull Request Review
 When PR number is provided:
-1. Fetch PR metadata using `gh pr view <pr-number>`
+1. Fetch PR metadata using `gh pr view <pr-number> --json title,body,files`
 2. Checkout PR branch locally using `gh pr checkout <pr-number>`
-3. **Delegate to `code-review-orchestrator`** for multi-agent analysis
+3. **Execute 6-phase multi-agent review** directly:
+   - Phase 1-5: 各フェーズの専門エージェントを並列/順次実行
+   - Phase 6: 統合処理でレポート生成
 4. Include PR context (title, description, comments) in review
-5. Generate comprehensive orchestrated review covering all changed files
+5. Generate comprehensive review covering all changed files
 
 ### Local Changes Review
 When no PR number is provided:
-1. **Change Context Analysis**: Recent git changes (staged and unstaged) with impact assessment
-2. **Phase-Based Review Execution**: `code-review-orchestrator` coordinates sequential analysis:
 
-   **Phase 1: Technical Foundation**
-   - Architecture assessment, complexity analysis, duplication detection
-   - Establishes technical quality baseline for subsequent phases
+**Step 1: Change Context Analysis**
+```bash
+git status
+git diff HEAD
+# Optionally: dpdm src/ or madge src/
+```
 
-   **Phase 2: Interface & Design Quality**  
-   - Interface ergonomics, UI consistency, documentation alignment
-   - Uses Phase 1 architectural findings to inform design evaluation
+**Step 2: Execute 6-Phase Review**
 
-   **Phase 3: Security & Safety Assessment**
-   - Vulnerability analysis, test coverage, logic validation
-   - Informed by complexity and interface findings from previous phases
+*Phase 1: Technical Foundation (並列実行)*
+```markdown
+Task(architecture-boundary-analyzer)
+Task(code-complexity-analyzer)
+Task(code-duplication-analyzer)
+Task(resilience-analyzer)
+```
+→ Technical quality baseline確立
 
-   **Phase 4: Operational Readiness**
-   - Deployment safety, observability coverage, release strategy
-   - Builds on security assessment to evaluate production readiness
+*Phase 2: Interface & Design (並列実行)*
+```markdown
+Task(interface-ergonomics-reviewer)
+Task(ui-ux-consistency-reviewer)
+Task(documentation-consistency-reviewer)
+Task(data-contract-evolution-evaluator)
+```
+→ User/Developer experience評価（Phase 1の知見を活用）
 
-   **Phase 5: Business Impact Analysis**
-   - Strategic value assessment using all technical findings
-   - ROI evaluation and business alignment validation
+*Phase 3: Security & Safety (並列実行)*
+```markdown
+Task(security-vulnerability-analyzer)
+Task(test-quality-evaluator)
+Task(logic-validator)
+```
+→ セキュリティと正確性検証（Phase 1-2の知見を活用）
 
-   **Phase 6: Cross-Phase Integration**
-   - Synthesis of all findings with dependency-aware prioritization
-   - Unified improvement roadmap with clear implementation sequence
+*Phase 4: Operational Readiness (並列実行)*
+```markdown
+Task(deployment-readiness-evaluator)
+Task(release-safety-evaluator)
+Task(observability-evaluator)
+```
+→ 本番環境準備度評価（Phase 3の安全性評価を基に）
 
-3. **Tool Integration Per Phase**: Agents leverage specialized analysis tools:
-   - Phase 1: `similarity-ts`, complexity analyzers, `dpdm`/`madge` for architectural analysis
-   - Phase 2: Interface analyzers, documentation consistency checkers
-   - Phase 3: Security scanners, test coverage tools, logic validators
-   - Phase 4: Deployment analyzers, monitoring coverage tools
-   - Phase 5: Business impact assessment frameworks
-   - Phase 6: Integration and reporting tools
+*Phase 5: Business Impact (順次実行)*
+```markdown
+Task(product-value-evaluator)
+```
+→ 戦略的ビジネス価値評価（全フェーズの知見を統合）
+
+*Phase 6: Integration & Synthesis*
+- 全フェーズ結果の統合
+- 優先度統合（P0/P1/P2分類）
+- 矛盾解決
+- 統一改善ロードマップ生成
+
+**Step 3: Tool Integration**
+各フェーズで専門ツールを活用:
+- Phase 1: `similarity-ts`, `dpdm`, `madge`, complexity analyzers
+- Phase 2: Interface analyzers, documentation checkers
+- Phase 3: Security scanners, test coverage tools
+- Phase 4: Deployment analyzers, monitoring coverage tools
+- Phase 5: Business impact frameworks
+- Phase 6: Reporting and integration tools
 
 ## Output
 

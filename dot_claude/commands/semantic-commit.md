@@ -25,34 +25,67 @@ This command orchestrates the complete commit workflow by coordinating specializ
 
 ## Implementation
 
-### 1. Automatic Workflow Orchestration
-The command delegates to the `commit-workflow-orchestrator` agent, which manages the complete four-phase workflow:
+### 1. Four-Phase Workflow
 
 **Phase 1: Preparation**
-- Move to repository root
-- Verify repository state
-- Generate comprehensive diff patch
+- Move to repository root using `git rev-parse --show-toplevel`
+- Verify repository state with `git status`
+- Generate comprehensive diff patch to `.claude/tmp/current_changes.patch`:
+  ```bash
+  git diff HEAD > .claude/tmp/current_changes.patch
+  ```
 - Set up working directory
 
 **Phase 2: Analysis**
-- Invoke `change-semantic-analyzer` agent to:
+Execute `change-semantic-analyzer` agent using Task tool:
+```
+Task(change-semantic-analyzer):
   - Parse git diff and identify all hunks
   - Group changes by semantic purpose
   - Classify change types (feat/fix/refactor/etc.)
   - Propose logical commit boundaries
-  - Generate staging commands
+  - Generate git-sequential-stage commands
+```
 
 **Phase 3: Execution** (Iterative)
-For each proposed commit:
-- Stage changes selectively using `git-sequential-stage`
-- Invoke `commit-message-generator` agent to create semantic messages
-- Execute commit with generated message
-- Handle pre-commit hook modifications
-- Update diff for next iteration
+For each proposed commit group:
+
+1. **Selective Staging**: Execute git-sequential-stage command from analyzer
+   ```bash
+   git-sequential-stage -patch=".claude/tmp/current_changes.patch" \
+     -hunk="file1.ts:1,3,5" -hunk="file2.ts:2"
+   ```
+
+2. **Message Generation**: Execute `commit-message-generator` agent using Task tool:
+   ```
+   Task(commit-message-generator):
+     - Analyze staged changes
+     - Generate conventional commit message
+     - Include type, scope, description
+     - Add optional body and attribution
+   ```
+
+3. **Commit Execution**: Execute git commit with generated message
+   ```bash
+   git commit -m "$(cat <<'EOF'
+   type(scope): description
+
+   [optional body]
+
+   🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+   Co-Authored-By: Claude <noreply@anthropic.com>
+   EOF
+   )"
+   ```
+
+4. **Hook Handling**: Handle pre-commit hook modifications if needed
+
+5. **Diff Update**: Regenerate patch for next iteration
 
 **Phase 4: Verification**
-- Confirm all changes are committed
-- Validate commit history
+- Confirm all changes are committed with `git status`
+- Validate commit history with `git log --oneline -n <count>`
 - Report completion status
 
 ### 2. User Interaction
@@ -68,41 +101,34 @@ For each proposed commit:
 ## Workflow Overview
 
 ```
-/commit invoked
-    ↓
-commit-workflow-orchestrator
+/semantic-commit invoked
     ↓
     ├─ Phase 1: Preparation
-    │   └─ Generate .claude/tmp/current_changes.patch
+    │   ├─ cd $(git rev-parse --show-toplevel)
+    │   ├─ git status (verify clean state)
+    │   └─ git diff HEAD > .claude/tmp/current_changes.patch
     │
     ├─ Phase 2: Analysis
-    │   └─ change-semantic-analyzer
-    │       ├─ Analyze hunks
-    │       ├─ Group semantically
-    │       └─ Propose commits
+    │   └─ Task(change-semantic-analyzer)
+    │       ├─ Parse patch hunks
+    │       ├─ Group by semantic purpose
+    │       ├─ Classify change types
+    │       └─ Output staging commands
     │
     ├─ Phase 3: Execution (repeat for each commit)
     │   ├─ git-sequential-stage (selective staging)
-    │   ├─ commit-message-generator (message creation)
-    │   └─ git commit (execution)
+    │   ├─ Task(commit-message-generator)
+    │   │   └─ Generate conventional commit message
+    │   ├─ git commit (execution)
+    │   └─ git diff HEAD > .claude/tmp/current_changes.patch (update)
     │
     └─ Phase 4: Verification
-        └─ Confirm all changes committed
+        ├─ git status (confirm clean)
+        ├─ git log --oneline -n N
+        └─ Report success
 ```
 
 ## Agent Responsibilities
-
-### `commit-workflow-orchestrator`
-**Role**: Overall workflow coordination and execution management
-
-**Responsibilities**:
-- Manage four-phase workflow from start to finish
-- Coordinate specialized agents at appropriate phases
-- Handle iteration for multiple commits
-- Manage error recovery and retries
-- Validate completion and report results
-
-**When**: Automatically invoked by `/commit` command
 
 ### `change-semantic-analyzer`
 **Role**: Intelligent change analysis and semantic grouping
