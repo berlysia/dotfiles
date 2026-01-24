@@ -30,6 +30,19 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
   - **重要**: hooks設定を変更する場合は`.settings.hooks.json.tmpl`を編集してから`chezmoi apply`を実行
   - 既存の`enabledPlugins`設定は保持される（ユーザーの手動変更を上書きしない）
 
+- **~/.claude.json自動管理**: MCPサーバー設定を`package.json`のバージョンから自動生成
+  - `run_onchange_update-claude-json.sh.tmpl`が`package.json`の`dependencies`からバージョンを読み取る
+  - テンプレート内容と既存の`~/.claude.json`をjqでマージ（mcpServers, preferredNotifChannel, defaultModeを更新）
+  - 変更前に自動バックアップ、変更内容の差分表示
+  - **管理対象MCPサーバー**: @mizchi/readability, chrome-devtools-mcp, @playwright/mcp, @upstash/context7-mcp, @openai/codex
+  - **バージョン更新方法**: `package.json`のdependenciesを編集してから`chezmoi apply`を実行
+
+- **プラグイン管理**: `.settings.plugins.json`で宣言的に管理、不足プラグインを自動検出
+  - `chezmoi apply`後に`show-missing-plugins.sh`が実行され、不足プラグインを検出
+  - マーケットプレイス登録コマンドとインストールコマンドを表示
+  - **逆同期**: `~/.claude/scripts/sync-enabled-plugins.sh`でsettings.json → dotfilesへの同期も可能
+  - プラグインの有効/無効化をClaude Code IDEで行った後、このスクリプトでdotfilesに反映できる
+
 ### Claude Code Skills Management
 
 このプロジェクトは`add-skill`を使用して、Gitリポジトリから選択的にClaude Codeスキルをインストールします。
@@ -39,7 +52,14 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
 - **手作りスキル**: `${projectRoot}/.skills/` で一元管理
   - Claude Code と Codex の両方で使用するスキルを統合
   - `run_after_sync-skills.sh.tmpl` が `chezmoi apply` 時に自動的に `~/.claude/skills/` と `~/.codex/skills/` に同期
+  - rsyncで完全同期され、常に最新の状態を維持
+
 - **外部スキル**: `.chezmoidata/claude_skills.yaml` で宣言的に管理し、`add-skill` 経由でインストール
+  - `run_onchange_install-claude-skills-9.sh.tmpl`がインストール・削除を実行
+  - `.claude/.external-skills-installed`でインストール済みスキルを追跡
+  - yamlから削除されたスキルを自動削除（手作りスキルは保護される）
+  - リポジトリごとにバッチインストール（効率化）
+
 - **共存**: 手作りスキルと外部スキルが両方のディレクトリに展開され、共存
 
 #### スキルの追加方法
