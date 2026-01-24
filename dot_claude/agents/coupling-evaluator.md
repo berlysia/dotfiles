@@ -1,6 +1,7 @@
 ---
 name: coupling-evaluator
-description: Use this agent when you need to analyze the coupling (dependency strength) between modules, classes, or components in your codebase. Examples include: after implementing new features that introduce dependencies between modules, when refactoring code to reduce tight coupling, during code reviews to assess architectural quality, or when evaluating the impact of changes on system modularity. Example usage: user: 'I just implemented a new payment processing module that interacts with our user service and notification system. Can you evaluate the coupling?' assistant: 'I'll use the coupling-evaluator agent to analyze the dependency relationships and coupling strength in your payment processing implementation.
+description: >
+  Use this agent when you need to analyze the coupling (dependency strength) between modules, classes, or components in your codebase. Examples include: after implementing new features that introduce dependencies between modules, when refactoring code to reduce tight coupling, during code reviews to assess architectural quality, or when evaluating the impact of changes on system modularity. Example usage: user: 'I just implemented a new payment processing module that interacts with our user service and notification system. Can you evaluate the coupling?' assistant: 'I'll use the coupling-evaluator agent to analyze the dependency relationships and coupling strength in your payment processing implementation.'
 model: sonnet
 ---
 
