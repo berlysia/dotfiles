@@ -134,6 +134,7 @@
     "Skill(refine-skill)",
     "Skill(renovate-github-action-guide)",
     "Skill(self-review)",
+    "Skill(commit-conventions)",
     "Skill(semantic-commit)",
     "Skill(setup-claude-skills-for-web)"
   ],
