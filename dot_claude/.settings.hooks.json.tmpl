@@ -32,6 +32,15 @@
       ]
     },
     {
+      "matcher": "AskUserQuestion",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/ask-user-question-notification.ts"
+        }
+      ]
+    },
+    {
       "matcher": "",
       "hooks": [
         {
@@ -139,6 +148,17 @@
         {
           "type": "command",
           "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'"
+        }
+      ]
+    }
+  ],
+  "PermissionRequest": [
+    {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/permission-request-notification.ts"
         }
       ]
     }
