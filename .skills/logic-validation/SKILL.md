@@ -1,8 +1,6 @@
 ---
 name: logic-validation
 description: Validate logical consistency of decisions and claims through context forking. Use proactively when judgment validity is unclear, but prefer direct tools (Read, Bash) for simple verifications like file contents or test results.
-context: fork
-agent: logic-validator
 ---
 
 # Logic Validation Skill
