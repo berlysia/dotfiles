@@ -238,7 +238,7 @@ let loggerInstance: CentralizedLogger | null = null;
 /**
  * グローバルログマネージャーインスタンスを取得
  */
-export function getLogger(
+function getLogger(
   config?: Partial<LogManagerConfig>,
 ): CentralizedLogger {
   if (!loggerInstance) {

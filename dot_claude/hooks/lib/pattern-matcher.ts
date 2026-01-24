@@ -296,17 +296,6 @@ async function checkIndividualCommandWithPattern(
 }
 
 /**
- * Check individual command matches allow patterns
- */
-export async function checkIndividualCommand(
-  cmd: string,
-  allowList: string[],
-): Promise<boolean> {
-  const result = await checkIndividualCommandWithPattern(cmd, allowList);
-  return result.matches;
-}
-
-/**
  * Check individual command and return matching pattern
  */
 export async function checkIndividualCommandWithMatchedPattern(
@@ -323,19 +312,6 @@ export async function checkIndividualCommandWithMatchedPattern(
 /**
  * Check individual command matches deny patterns
  */
-export async function checkIndividualCommandDeny(
-  cmd: string,
-  denyList: string[],
-): Promise<boolean> {
-  // Skip built-in safe commands - they should never be denied
-  if (isSafeBuiltinCommand(cmd)) {
-    return false;
-  }
-
-  const result = await checkIndividualCommandWithPattern(cmd, denyList);
-  return result.matches;
-}
-
 /**
  * Check individual command deny and return matching pattern
  */

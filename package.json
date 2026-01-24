@@ -2,8 +2,7 @@
   "name": "@berlysia-dotfiles/root",
   "private": true,
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Dotfiles managed by chezmoi with Claude Code hooks",
   "type": "module",
   "scripts": {
     "test": "node --test dot_claude/hooks/tests/**/*.test.ts",
@@ -24,6 +23,7 @@
     "@mizchi/lsmcp": "0.10.0",
     "@types/node": "24.10.7",
     "@typescript/native-preview": "7.0.0-dev.20260109.1",
+    "knip": "5.81.0",
     "o3-search-mcp": "0.0.9",
     "typescript": "5.9.3"
   },

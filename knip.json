@@ -1,0 +1,25 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "entry": [
+    "dot_claude/hooks/implementations/*.ts",
+    "dot_claude/lib/*.ts",
+    "dot_claude/scripts/*.ts"
+  ],
+  "project": [
+    "dot_claude/**/*.ts"
+  ],
+  "ignore": [
+    "**/*.test.ts"
+  ],
+  "ignoreDependencies": [
+    "add-skill",
+    "ccstatusline",
+    "@openai/codex",
+    "@playwright/mcp",
+    "@upstash/context7-mcp",
+    "chrome-devtools-mcp",
+    "@mizchi/lsmcp",
+    "o3-search-mcp",
+    "tree-sitter-bash"
+  ]
+}

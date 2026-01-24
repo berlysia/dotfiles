@@ -29,6 +29,7 @@ import {
 import {
   isBashToolInput,
   type PermissionDecision,
+  type SettingsFile,
 } from "../types/project-types.ts";
 import "../types/tool-schemas.ts";
 
@@ -273,13 +274,6 @@ function getWorkspaceRoot(): string | undefined {
   } catch {
     return process.cwd();
   }
-}
-
-interface SettingsFile {
-  permissions?: {
-    allow?: string[];
-    deny?: string[];
-  };
 }
 
 function getSettingsFiles(workspaceRoot?: string): SettingsFile[] {

@@ -133,7 +133,7 @@ export function getChezmoiSourcePath(
  * @param targetFileName - Target filename without chezmoi attributes
  * @returns Full path to the chezmoi source file, or undefined if not found
  */
-export function findChezmoiFile(
+function findChezmoiFile(
   dirPath: string,
   targetFileName: string,
 ): string | undefined {

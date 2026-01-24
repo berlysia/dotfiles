@@ -15,6 +15,7 @@ export interface GitContextInfo {
   containerType: "リポジトリ" | "ディレクトリ";
 }
 
+/** @public Git remote repository information */
 export interface GitRemoteInfo {
   url: string;
   name: string | null;
@@ -178,7 +179,7 @@ export async function getGitContext(): Promise<GitContextInfo> {
  * Get repository name only (simplified interface)
  * For backward compatibility with existing code
  */
-export async function getRepoName(): Promise<string> {
+async function getRepoName(): Promise<string> {
   const context = await getGitContext();
   return context.name;
 }

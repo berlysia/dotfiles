@@ -15,30 +15,19 @@ import type {
 } from "cc-hooks-ts";
 // Import module augmentation for custom tool types (MultiEdit, etc.)
 import "./tool-schemas.ts";
+/** @public Re-exported from cc-hooks-ts for convenience */
 export type { ExtractAllHookInputsForEvent, ExtractSpecificHookInputForEvent };
 
 // Type aliases for commonly used cc-hooks-ts types
 export type PermissionDecision = "allow" | "deny" | "ask" | "pass";
+/** @public Type alias for built-in tool names */
 export type BuiltinToolName =
   ExtractAllHookInputsForEvent<"PreToolUse">["tool_name"];
+/** @public Type pattern for MCP tool names */
 export type MCPToolName = `mcp__${string}__${string}`;
+/** @public Union type for all tool names */
 export type ToolName = BuiltinToolName | MCPToolName;
 export type ToolInput = Record<string, unknown>;
-
-export type PreToolUseHookInput = {
-  [K in keyof ToolSchema]: {
-    tool_name: K;
-    tool_input: ToolSchema[K]["input"];
-  };
-};
-
-export type PostToolUseHookInput = {
-  [K in keyof ToolSchema]: {
-    tool_name: K;
-    tool_input: ToolSchema[K]["input"];
-    tool_response: ToolSchema[K]["response"];
-  };
-};
 
 // Define PreToolUseHookOutput locally since it's not exported from cc-hooks-ts
 // Note: permissionDecision is restricted to cc-hooks-ts supported values (excludes "pass")
@@ -55,13 +44,10 @@ export interface PreToolUseHookOutput {
 }
 
 // Union types for hook inputs (for backward compatibility)
+/** @public Union type for hook inputs (backward compatibility) */
 export type HookInput =
   | ExtractAllHookInputsForEvent<"PreToolUse">
   | ExtractAllHookInputsForEvent<"PostToolUse">;
-
-export type StopHookInput =
-  | ExtractAllHookInputsForEvent<"Stop">
-  | ExtractAllHookInputsForEvent<"SubagentStop">;
 
 /**
  * Structure of Claude settings files (.claude/settings.json)
@@ -93,65 +79,6 @@ export interface CommandAnalysisResult {
 }
 
 /**
- * Pattern matching configuration
- */
-export interface PatternMatchConfig {
-  /** Patterns to check */
-  patterns: string[];
-  /** Whether to use exact matching */
-  exact?: boolean;
-  /** Whether patterns are case-sensitive */
-  caseSensitive?: boolean;
-}
-
-/**
- * Command processing context
- */
-export interface ProcessingContext {
-  /** Current workspace root directory */
-  workspaceRoot?: string | undefined;
-  /** Available settings files */
-  settingsFiles: string[];
-  /** Allow patterns from settings */
-  allowPatterns: string[];
-  /** Deny patterns from settings */
-  denyPatterns: string[];
-}
-
-/**
- * Dangerous command detection result
- */
-export interface DangerousCommandResult {
-  /** Whether command is dangerous */
-  isDangerous: boolean;
-  /** Reason why command is dangerous */
-  reason?: string;
-  /** Whether manual review is required */
-  requiresManualReview?: boolean;
-}
-
-/**
- * Log entry for command approvals
- */
-export interface CommandLogEntry {
-  /** Timestamp of the decision */
-  timestamp: string;
-  /** Command that was processed */
-  command: string;
-  /** Decision made */
-  decision: PermissionDecision;
-  /** Reason for the decision */
-  reason: string;
-  /** Tool name */
-  toolName: string;
-}
-
-/**
- * File system operation types for path validation
- */
-export type FileOperation = "read" | "write" | "execute" | "delete";
-
-/**
  * Path validation result
  */
 export interface PathValidationResult {
@@ -161,22 +88,6 @@ export interface PathValidationResult {
   reason?: string;
   /** Resolved absolute path */
   resolvedPath?: string;
-}
-
-// Command logging interfaces
-export interface LogEntry {
-  timestamp: string;
-  command_id: string;
-  duration_ms: number;
-  command: string;
-  description: string;
-}
-
-export interface PendingCommand {
-  command_id: string;
-  command: string;
-  description: string;
-  timestamp_ns: number;
 }
 
 // ツール入力の型定義（中央ログマネージャー用）
@@ -252,18 +163,6 @@ export function isMultiEditInput(
   );
 }
 
-export function isReadInput(
-  tool_name: string,
-  tool_input: unknown,
-): tool_input is import("cc-hooks-ts").ToolSchema["Read"]["input"] {
-  return (
-    tool_name === "Read" &&
-    typeof tool_input === "object" &&
-    tool_input !== null &&
-    "file_path" in tool_input
-  );
-}
-
 export function isNotebookEditInput(
   tool_name: string,
   tool_input: unknown,
@@ -273,17 +172,5 @@ export function isNotebookEditInput(
     typeof tool_input === "object" &&
     tool_input !== null &&
     "notebook_path" in tool_input
-  );
-}
-
-export function isGrepInput(
-  tool_name: string,
-  tool_input: unknown,
-): tool_input is import("cc-hooks-ts").ToolSchema["Grep"]["input"] {
-  return (
-    tool_name === "Grep" &&
-    typeof tool_input === "object" &&
-    tool_input !== null &&
-    "pattern" in tool_input
   );
 }

@@ -22,7 +22,7 @@ type ExplicitPermissionDecision = "allow" | "deny" | "ask";
  * Create a properly formatted PreToolUse response for cc-hooks-ts
  * Note: "pass" decisions should use context.success() directly, not JSON responses
  */
-export function createPreToolUseResponse(
+function createPreToolUseResponse(
   decision: ExplicitPermissionDecision,
   reason: string,
 ): HookJSONResponse {
