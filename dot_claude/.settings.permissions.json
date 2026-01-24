@@ -76,6 +76,8 @@
     "Task",
     "TodoRead",
     "TodoWrite",
+    "TaskCreate",
+    "TaskUpdate",
     "WebFetch(domain:*)",
     "Write(!.git/**)",
     "Write(!.next/**)",
