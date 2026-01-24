@@ -239,7 +239,7 @@ git-sequential-stage -patch="changes.patch" -hunk="file.py:1,3"
 ## 関連ツール
 
 - `/commit` - 汎用コミットコマンド（シンプルな変更を直接コミット）
-- `/semantic-commit` - 複雑な変更の自動分析・分割
+- `/semantic-commit` - 複雑な変更の自動分析・分割（4フェーズワークフロー）
 - `git-sequential-stage` - hunk単位の精密なステージング
-- `commit-workflow-orchestrator` agent - 完全なワークフロー管理
+- `change-semantic-analyzer` agent - 変更の意味解析とグループ化
 - `commit-message-generator` agent - メッセージ生成の詳細ロジック
