@@ -13,6 +13,10 @@ import {
 import { createDenyResponse } from "../lib/context-helpers.ts";
 import { expandTilde } from "../lib/path-utils.ts";
 import { matchGitignorePattern } from "../lib/pattern-matcher.ts";
+import type {
+  PathValidationResult,
+  SettingsFile,
+} from "../types/project-types.ts";
 import "../types/tool-schemas.ts";
 
 /**
@@ -87,20 +91,6 @@ const hook = defineHook({
     }
   },
 });
-
-interface PathValidationResult {
-  isAllowed: boolean;
-  resolvedPath?: string;
-  reason?: string;
-}
-
-interface SettingsFile {
-  additionalDirectories?: string[];
-  permissions?: {
-    allow?: string[];
-    deny?: string[];
-  };
-}
 
 function getRepositoryRoot(): string | undefined {
   if (process.env.CLAUDE_TEST_REPO_ROOT) {

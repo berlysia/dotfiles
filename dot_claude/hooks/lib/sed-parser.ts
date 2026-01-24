@@ -280,11 +280,3 @@ export function parseSedInPlace(command: string): SedInPlaceParseResult {
   };
 }
 
-/**
- * バッチ処理用: 複数コマンドをパース
- */
-export function parseSedInPlaceBatch(
-  commands: string[],
-): SedInPlaceParseResult[] {
-  return commands.map(parseSedInPlace);
-}
