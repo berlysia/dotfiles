@@ -13,8 +13,18 @@ mkdir -p "$CLAUDE_SKILLS" "$CODEX_SKILLS"
 
 # Sync .skills to ~/.claude/skills and ~/.codex/skills
 echo "Syncing handcrafted skills from .skills..."
-rsync -a "$SKILLS_SOURCE/" "$CLAUDE_SKILLS/"
-rsync -a "$SKILLS_SOURCE/" "$CODEX_SKILLS/"
+
+# Build exclude filter for external skills
+EXCLUDE_ARGS=()
+if [ -f "$HOME/.claude/.external-skills-installed" ]; then
+  while IFS= read -r skill_name; do
+    [ -n "$skill_name" ] && EXCLUDE_ARGS+=(--exclude="$skill_name")
+  done < "$HOME/.claude/.external-skills-installed"
+fi
+
+# Sync with --delete, but preserve external skills
+rsync -a --delete "${EXCLUDE_ARGS[@]}" "$SKILLS_SOURCE/" "$CLAUDE_SKILLS/"
+rsync -a --delete "${EXCLUDE_ARGS[@]}" "$SKILLS_SOURCE/" "$CODEX_SKILLS/"
 
 echo "✅ Handcrafted skills synced successfully"
 {{ end -}}

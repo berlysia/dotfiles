@@ -198,3 +198,28 @@ Use validation tools for logic verification and external perspective:
 - **Key scenarios**: Plan mode completion, architecture decisions, debugging blocks
 
 See `@~/.claude/rules/external-review.md` for detailed usage patterns and examples.
+
+## claude-code-guide Agent Usage
+
+**When to use claude-code-guide agent**:
+- Claude Code features and capabilities ("How do I...", "Can Claude...", "Does Claude support...")
+- Configuration (settings.json, CLAUDE.md, MCP servers, permissions)
+- Workflows (Plan Mode, skills, subagents, hooks, context management)
+- **Skill development** (SKILL.md syntax, triggering conditions, design patterns, best practices)
+- IDE integration (VS Code, JetBrains, keyboard shortcuts)
+- Troubleshooting Claude Code itself (permission errors, hook issues, skill not triggering)
+- Claude API/Agent SDK usage (tool use, computer use, custom agents)
+
+**DO NOT use for**:
+- User application code implementation or debugging
+- Project-specific build/test/runtime issues
+- General programming questions
+
+**Examples**:
+- ✅ "skillとsubagentの使い分けは？"
+- ✅ "MCP serverの設定方法は？"
+- ✅ "code complexity分析スキルを作りたい" ← Skill development requires Claude Code-specific knowledge
+- ✅ "SKILL.mdの書き方とベストプラクティスは？"
+- ❌ "このTypeScriptエラーを修正して"
+- ❌ "Reactコンポーネントを実装して"
+- ❌ "payment APIのバグを直して"
