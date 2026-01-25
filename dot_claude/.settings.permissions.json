@@ -2,8 +2,6 @@
   "allow": [
     "Bash(!:*)",
     "Bash(::*)",
-    "Bash([:*)",
-    "Bash([[:*)",
     "Bash(break:*)",
     "Bash(bun:*)",
     "Bash(bunx:*)",
