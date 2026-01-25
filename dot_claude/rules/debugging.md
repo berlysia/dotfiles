@@ -59,6 +59,7 @@ Step-by-step verification process:
 **Action**: Use logic-validator agent to verify reasoning
 
 Before:
+- **Changing approach mid-task** (e.g., "This is taking too long, let's try X instead")
 - Changing working configurations
 - Applying symptomatic fixes without root cause analysis
 - Assuming without evidence

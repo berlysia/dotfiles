@@ -19,6 +19,7 @@ Leverage multiple validation tools for logic verification, external perspective,
 |-----------|-----------------|---------|
 | **Plan mode complete** | logic-validator agent | Validate consistency before ExitPlanMode |
 | **Quick logic check** | `/logic-validation` skill | Fast validation of reasoning/decisions |
+| **Approach change mid-task** | logic-validator agent | Verify reasoning before switching strategies |
 | **Assumption-based reasoning** | logic-validator agent | Verify you're not drawing conclusions without evidence |
 | **Stuck on problem** | Codex Review | Get fresh perspective, alternative approaches |
 | **Architecture decision** | Codex Review | Compare options, evaluate tradeoffs |
