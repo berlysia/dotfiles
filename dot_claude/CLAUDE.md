@@ -147,8 +147,9 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 - **git-sequential-stage**: `git-sequential-stage -patch=X -hunk=Y` (by `/commit`)
 
 ## Temporary Files
-- When in a project, use `${projectRoot}/.tmp` for temporary files and work-in-progress documentation
-- Ensure `.tmp/` is gitignored in the project 
+- **Prefer** `${projectRoot}/.tmp` for temporary files and work-in-progress documentation
+- **Avoid** `/tmp` unless no other suitable location exists - it's outside the project scope and can cause path confusion
+- Ensure `.tmp/` is gitignored in the project
 
 ## Knowledge Management
 
