@@ -88,16 +88,9 @@ See `@~/.claude/rules/debugging.md` for detailed procedures.
 
 ## Git Workflow
 
-### Worktree Management
-- **Create**: `git-worktree-create <branch-name>`
-  - Location: `.git/worktree/` directory
-  - Auto-creates branch from current if needed
-  - Uses existing local/remote branches when available
-  
-- **Cleanup**: `git-worktree-cleanup`
-  - Safely removes completed worktrees
-  - Preserves worktrees with uncommitted changes or unpushed commits
-  - Auto-prunes after deletion
+### Worktree
+- **Create**: `git-worktree-create <branch>` → `.git/worktree/`
+- **Cleanup**: `git-worktree-cleanup` (保護: uncommitted/unpushed)
 
 ### Commit Standards
 
@@ -150,16 +143,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 - **複雑な変更**（複数種類の変更が混在）: `/commit` コマンドで自動分割・分析
 
 ## Useful Commands
-
-### Code Analysis
-- **similarity-ts**: Detect code duplication
-  - `similarity-ts src/`
-  - `similarity-ts --threshold 0.8 src/`
-
-### Git Tools
-- **git-sequential-stage**: Stage specific hunks for semantic commits
-  - `git-sequential-stage -patch="changes.patch" -hunk="file.go:1,3,5"`
-  - Used by `/commit` command for precise staging
+- **similarity-ts**: `similarity-ts [--threshold N] src/`
+- **git-sequential-stage**: `git-sequential-stage -patch=X -hunk=Y` (by `/commit`)
 
 ## Temporary Files
 - When in a project, use `${projectRoot}/.tmp` for temporary files and work-in-progress documentation
@@ -167,16 +152,9 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 
 ## Knowledge Management
 
-### 推奨ドキュメント構造
-プロジェクトの `.claude/CLAUDE.md` で定義することを推奨。標準的な構造：
-- `.tmp/docs/` - 作業中の一時ファイル（gitignore）
-- `docs/decisions/` - Architecture Decision Records (ADR)
-- `docs/` - その他の完成したドキュメント
-
-### 記録の原則
-- **作業中**: `.tmp/` 配下に配置（gitignore推奨）
-- **完成品**: `docs/` 配下に配置（git管理）
-- **重要な意思決定**: ADRとして記録
+### ドキュメント構造
+- WIP: `.tmp/docs/` (gitignored)
+- Done: `docs/` (git tracked), `docs/decisions/` (ADRs)
 
 ### ドキュメント内リンクの原則
 
