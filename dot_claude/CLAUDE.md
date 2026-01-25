@@ -51,6 +51,43 @@
 - Root cause analysis for bug fixes
 - Create scripts for repetitive tasks
 - **Decision transparency**: When changing approach mid-task, explicitly explain the reasoning and new plan before proceeding
+- **Structured decision requests**: When asking users to make decisions, follow this framework:
+  1. **Context**: Explain the situation and why a decision is needed
+  2. **Decision criteria**: Define what factors should guide the choice (performance, maintainability, risk, time, etc.)
+  3. **Options**: List all viable alternatives clearly (usually 2-4 options)
+  4. **Trade-offs**: For each option, document:
+     - Advantages (evaluated against decision criteria)
+     - Disadvantages (evaluated against decision criteria)
+     - Risks and unknowns
+     - Implementation effort/time estimate (if relevant)
+  5. **Recommendation** (if applicable): Suggest preferred option with clear rationale based on decision criteria
+  6. **Question**: Explicitly ask for the user's decision
+
+  **Example structure:**
+  ```
+  ## Decision Required: [Topic]
+
+  **Context:** [Why this decision is needed]
+
+  **Decision Criteria:**
+  - [Criterion 1]: [Why it matters]
+  - [Criterion 2]: [Why it matters]
+
+  **Options:**
+
+  ### Option A: [Name]
+  - Advantages: [evaluated against criteria]
+  - Disadvantages: [evaluated against criteria]
+  - Risk level: [Low/Medium/High with explanation]
+  - Effort: [estimate if relevant]
+
+  ### Option B: [Name]
+  - [Same structure]
+
+  **Recommendation:** [Option X] because [rationale based on criteria]
+
+  **Your Decision:** Which approach would you like to take?
+  ```
 
 ### Architecture
 - **Libraries**: Minimal dependencies, prefer built-ins
