@@ -50,7 +50,10 @@
 - Thorough planning before implementation
 - Root cause analysis for bug fixes
 - Create scripts for repetitive tasks
-- **Decision transparency**: When changing approach mid-task, explicitly explain the reasoning and new plan before proceeding
+- **Decision transparency & validation**: When changing approach mid-task:
+  1. **MUST use logic-validator agent** to verify the reasoning for the change
+  2. Explicitly explain the validation results and new plan before proceeding
+  3. Document why the original approach was abandoned
 - **Structured decision requests**: Use this template when asking for user decisions:
   ```
   ## Decision Required: [Topic]
