@@ -1,5 +1,11 @@
 #!/usr/bin/env -S bun run --silent
 
+// Debug logging helper
+const DEBUG = process.env.BASH_PARSER_DEBUG === "1";
+function debugLog(...args: unknown[]) {
+  if (DEBUG) console.log(...args);
+}
+
 // Tree-sitter node type definition
 interface TreeSitterNode {
   type: string;
@@ -40,6 +46,46 @@ export interface ExtractedCommands {
   originalCommand: string | null;
   // パース方法
   parsingMethod: "tree-sitter" | "fallback";
+}
+
+// Helper function to extract quoted string content, handling nested quotes
+function extractQuotedString(text: string, startPos: number): string | null {
+  const quoteChar = text[startPos];
+  if (quoteChar !== '"' && quoteChar !== "'") return null;
+
+  let pos = startPos + 1;
+  let result = "";
+  let inNestedQuote = false;
+  let nestedQuoteChar = "";
+
+  while (pos < text.length) {
+    const char = text[pos];
+
+    if (!inNestedQuote && char === quoteChar) {
+      // Found closing quote
+      return result;
+    } else if (!inNestedQuote && (char === '"' || char === "'") && char !== quoteChar) {
+      // Entering nested quote
+      inNestedQuote = true;
+      nestedQuoteChar = char;
+      result += char;
+    } else if (inNestedQuote && char === nestedQuoteChar) {
+      // Exiting nested quote
+      inNestedQuote = false;
+      nestedQuoteChar = "";
+      result += char;
+    } else if (char === "\\" && pos + 1 < text.length) {
+      // Escape sequence
+      result += char + text[pos + 1];
+      pos++;
+    } else {
+      result += char;
+    }
+
+    pos++;
+  }
+
+  return null; // Unclosed quote
 }
 
 // Meta commands that can execute other commands (from original implementation)
@@ -410,10 +456,36 @@ async function parseWithTreeSitter(
   // If meta-execution is present (sh -c, xargs sh -c, etc.), prefer the existing
   // meta extractor to pull out nested commands for safety analysis
   const metaOnly = extractMetaCommands(command, new Set<string>());
+  console.log(`[bash-parser] metaOnly.length: ${metaOnly.length}, commands: ${metaOnly.join(", ")}`);
   if (metaOnly.length > 0) {
+    // Validate extractMetaCommands result before trusting it
+    // Check if expected meta-commands are present in the original but missing from extraction
+    const hasXargsInOriginal = /\bxargs\b/.test(command);
+    const hasBashCInOriginal = /\bbash\s+-c\b/.test(command);
+    const hasShCInOriginal = /\bsh\s+-c\b/.test(command);
+    const hasZshCInOriginal = /\bzsh\s+-c\b/.test(command);
+
     const mapped = metaOnly
       .map((t, i) => parseSimpleCommandFallback(t, i, command))
       .filter(Boolean) as SimpleCommand[];
+
+    // Check if meta commands are missing from extraction
+    const extractedTexts = new Set(metaOnly.map(cmd => cmd.toLowerCase()));
+    const missingXargs = hasXargsInOriginal && !Array.from(extractedTexts).some(t => t.includes("xargs"));
+    const missingBash = hasBashCInOriginal && !Array.from(extractedTexts).some(t => t.includes("bash"));
+    const missingSh = hasShCInOriginal && !Array.from(extractedTexts).some(t => t.includes("sh -c"));
+    const missingZsh = hasZshCInOriginal && !Array.from(extractedTexts).some(t => t.includes("zsh"));
+
+    console.log(`[bash-parser] Meta validation - missingXargs: ${missingXargs}, missingBash: ${missingBash}`);
+
+    if (missingXargs || missingBash || missingSh || missingZsh) {
+      console.warn(
+        `extractMetaCommands incomplete (missing: ${[missingXargs && "xargs", missingBash && "bash", missingSh && "sh", missingZsh && "zsh"].filter(Boolean).join(", ")}), falling back to regex parser`,
+      );
+      return parseWithFallback(command);
+    }
+
+    console.log(`[bash-parser] Early return from metaOnly with ${mapped.length} commands`);
     return { commands: mapped, errors: [], parsingMethod: "tree-sitter" };
   }
 
@@ -451,6 +523,38 @@ async function parseWithTreeSitter(
     );
     if (originalCmd?.name && !CONTROL_KEYWORDS.includes(originalCmd.name)) {
       cmds.push(originalCmd);
+    }
+  }
+
+  // Validate tree-sitter results: check for meta-commands that should be present
+  // If the original command contains xargs/bash but extracted commands don't include them,
+  // fall back to the fallback parser
+  const shouldValidate = /\b(xargs|bash\s+-c|sh\s+-c|zsh\s+-c)\b/.test(command);
+  console.log(`[bash-parser] shouldValidate: ${shouldValidate}`);
+  if (shouldValidate) {
+    const extractedCommandNames = new Set(cmds.map((c) => c.name).filter(Boolean));
+    const hasXargs = /\bxargs\b/.test(command);
+    const hasBashC = /\bbash\s+-c\b/.test(command);
+    const hasShC = /\bsh\s+-c\b/.test(command);
+    const hasZshC = /\bzsh\s+-c\b/.test(command);
+
+    console.log(`[bash-parser] hasXargs: ${hasXargs}, hasBashC: ${hasBashC}`);
+    console.log(`[bash-parser] extractedCommandNames: ${Array.from(extractedCommandNames).join(", ")}`);
+
+    // Check if expected commands are missing from extraction
+    const missingXargs = hasXargs && !extractedCommandNames.has("xargs");
+    const missingBash = hasBashC && !extractedCommandNames.has("bash");
+    const missingSh = hasShC && !extractedCommandNames.has("sh");
+    const missingZsh = hasZshC && !extractedCommandNames.has("zsh");
+
+    console.log(`[bash-parser] missingXargs: ${missingXargs}, missingBash: ${missingBash}`);
+
+    if (missingXargs || missingBash || missingSh || missingZsh) {
+      // Tree-sitter failed to extract meta-commands, use fallback
+      console.warn(
+        `Tree-sitter incomplete extraction detected (missing: ${[missingXargs && "xargs", missingBash && "bash", missingSh && "sh", missingZsh && "zsh"].filter(Boolean).join(", ")}), falling back to regex parser`,
+      );
+      return parseWithFallback(command);
     }
   }
 
@@ -528,23 +632,73 @@ function extractMetaCommands(
 
   // First check if this is a pipeline with meta commands
   const pipelineParts = splitPipelineAndOperators(command);
+  console.log(`[extractMetaCommands] pipelineParts: ${pipelineParts.length} parts`);
 
   // Process each part of the pipeline for meta commands
   for (let partIndex = 0; partIndex < pipelineParts.length; partIndex++) {
     const part = pipelineParts[partIndex] ?? "";
+    console.log(`[extractMetaCommands] part ${partIndex}: ${part.substring(0, 50)}...`);
 
     for (const [metaCmd, patterns] of Object.entries(META_COMMANDS)) {
       if (part.includes(metaCmd)) {
+        console.log(`[extractMetaCommands] Found ${metaCmd} in part ${partIndex}`);
+
+        // Special handling for bash/sh/zsh -c to properly extract quoted strings
+        if ((metaCmd === "bash" || metaCmd === "sh" || metaCmd === "zsh") && part.includes(" -c ")) {
+          const cFlagIndex = part.indexOf(" -c ");
+          if (cFlagIndex !== -1) {
+            const afterCFlag = part.substring(cFlagIndex + 4).trimStart(); // Skip " -c "
+            const quoted = extractQuotedString(afterCFlag, 0);
+            if (quoted) {
+              console.log(`[extractMetaCommands] Extracted quoted string from ${metaCmd} -c: ${quoted.substring(0, 50)}...`);
+              processed.add(command);
+
+              // Extract commands from the nested command
+              let nestedCommands = extractCommandsInternal(quoted);
+              console.log(`[extractMetaCommands] Nested commands: ${nestedCommands.join(", ")}`);
+
+              // Also check for command substitutions
+              nestedCommands = nestedCommands.flatMap((cmd) =>
+                extractCommandSubstitutions(cmd),
+              );
+
+              // Add pipeline parts before the meta command
+              for (let i = 0; i < partIndex; i++) {
+                const prevPart = pipelineParts[i];
+                if (prevPart?.trim()) commands.push(prevPart);
+              }
+
+              // Add the meta command itself (for permission checking)
+              commands.push(part);
+
+              // Add nested commands
+              commands.push(...nestedCommands);
+
+              // Add pipeline parts after the meta command
+              for (let i = partIndex + 1; i < pipelineParts.length; i++) {
+                const nextPart = pipelineParts[i];
+                if (nextPart?.trim()) commands.push(nextPart);
+              }
+
+              console.log(`[extractMetaCommands] Returning ${commands.length} commands: ${commands.join(", ")}`);
+              return commands;
+            }
+          }
+        }
+
+        // Regular pattern matching for other meta commands
         for (const pattern of patterns) {
           const regex = new RegExp(`\\b${metaCmd}\\s+${pattern.source}`, "g");
           let match: RegExpExecArray | null;
           while ((match = regex.exec(part)) !== null) {
             const extractedCommand = match[1] || match[2] || match[3]; // Handle multiple capture groups
+            console.log(`[extractMetaCommands] Matched pattern, extracted: ${extractedCommand?.substring(0, 50)}...`);
             if (extractedCommand?.trim()) {
               processed.add(command);
 
               // Extract commands from the nested command, including backticks
               let nestedCommands = extractCommandsInternal(extractedCommand);
+              console.log(`[extractMetaCommands] Nested commands: ${nestedCommands.join(", ")}`);
 
               // Also check for command substitutions (backticks) in the nested commands
               nestedCommands = nestedCommands.flatMap((cmd) =>
@@ -557,6 +711,9 @@ function extractMetaCommands(
                 if (prevPart?.trim()) commands.push(prevPart);
               }
 
+              // Add the meta command itself (for permission checking)
+              commands.push(part);
+
               // Add nested commands
               commands.push(...nestedCommands);
 
@@ -566,6 +723,7 @@ function extractMetaCommands(
                 if (nextPart?.trim()) commands.push(nextPart);
               }
 
+              console.log(`[extractMetaCommands] Returning ${commands.length} commands: ${commands.join(", ")}`);
               return commands;
             }
           }
@@ -574,6 +732,7 @@ function extractMetaCommands(
     }
   }
 
+  console.log(`[extractMetaCommands] No meta commands found, returning empty`);
   return commands;
 }
 
