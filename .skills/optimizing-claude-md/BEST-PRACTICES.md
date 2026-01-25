@@ -552,6 +552,40 @@ Use functional programming style where practical:
 Note: Performance-critical code (src/engine/) may use mutations
 ```
 
+### 8. Adding Information Not in Original
+
+**Critical Rule:** Optimization means improving how existing information is presented, NOT adding new rules or information that wasn't there before.
+
+❌ Bad:
+```markdown
+# Original CLAUDE.md
+Use `${projectRoot}/.tmp` for temporary files
+
+# Optimization recommendation adds new information
+Use `${projectRoot}/.tmp` for project temporary files
+Use `~/.tmp` for system-wide temporary files  ← Not in original!
+```
+
+✅ Good:
+```markdown
+# Original CLAUDE.md
+Use `${projectRoot}/.tmp` for temporary files
+
+# Optimization only clarifies existing information
+When in a project, use `${projectRoot}/.tmp` for temporary files
+```
+
+**Why this matters:**
+- User may have intentionally kept instructions minimal
+- Adding inferred rules changes user's established workflow
+- Creates maintenance burden with rules user didn't request
+- Violates principle: optimize ≠ expand
+
+**What to do instead:**
+- If information seems incomplete, ask the user
+- Only reorganize, clarify, or simplify what exists
+- Suggest splitting existing content, not adding new content
+
 ## Measuring Effectiveness
 
 **Good CLAUDE.md results in:**
