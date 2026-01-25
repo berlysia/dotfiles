@@ -98,3 +98,61 @@ Drastically simplifies CLAUDE.md to significantly reduce token count.
 - **85-95% reduction**: extreme
 
 Analyzes current CLAUDE.md and executes maximum simplification while preserving information value.
+
+## Simplification Rules
+
+### Rule 1: Explain Every Simplification
+
+For each proposed change, provide:
+- **Why simplifiable**: Specific reason (inferable, redundant, duplicate)
+- **Preserved**: Critical decision-making information retained
+- **Removed**: Only verbose explanations or implementation details
+- **Evidence**: Quote showing removed content is non-critical
+
+**Example format**:
+```
+**Section**: Worktree Management
+**Why**: Implementation details inferable from command name
+**Preserved**: Protection behavior (uncommitted/unpushed)
+**Removed**: Auto-creates, uses existing (automatic behavior)
+**Evidence**: "Auto-creates branch from current" ← user doesn't decide this
+```
+
+### Rule 2: Identify Behavioral Constraints
+
+**NEVER simplify** content that serves as:
+
+1. **Explicit lists**: Commit types, allowed values, prohibited patterns
+   - Example: Conventional commit type list prevents custom type invention
+
+2. **Constraint definitions**: "Only use X", "Never do Y"
+   - Example: "Only link to git-tracked files" defines allowed behavior
+
+3. **Annotated examples**: Annotations like "← why" clarify intent
+   - Example: "スキルを作りたい ← Skill development requires Claude Code knowledge"
+
+4. **Decision matrices**: Tables showing when to use what
+   - Example: Tool comparison tables, workflow selection guides
+
+**Preservation examples**:
+- ✅ Keep: Commit type list (9 items) → prevents `feat2`, `bugfix`, etc.
+- ✅ Keep: "NOT for user code" with examples → defines boundary
+- ✅ Keep: Multiple examples showing pattern diversity → improves judgment
+- ❌ Simplify: "Auto-creates branch if needed" → implementation detail
+
+### Rule 3: Approval Before Execution
+
+1. **Present proposals with rationale**: Show before/after with explanation
+2. **Group by category**: Related simplifications together
+3. **User approval required**: Each category must be explicitly approved
+4. **Rejected items**: Keep original if user rejects simplification
+
+**Approval format**:
+```
+Proposal X: [Category name] (N lines reduced)
+- Why: [Reason]
+- Preserved: [Critical info]
+- Removed: [Non-critical content]
+
+Apply? (User must approve)
+```
