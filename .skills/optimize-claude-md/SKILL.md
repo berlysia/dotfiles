@@ -1,21 +1,74 @@
 ---
-name: optimizing-claude-md
-description: Analyze CLAUDE.md files for quality and suggest improvements based on Claude Code best practices. Use when asked to "review", "optimize", "improve", "check", or "update" CLAUDE.md or project instructions.
+name: optimize-claude-md
+description: Analyze and optimize CLAUDE.md files for quality improvements and token reduction. Supports analysis-only, simplification-only, or full optimization modes. Use when asked to "review", "optimize", "simplify", "improve", "check", or "reduce tokens" in CLAUDE.md.
 context: fork
 ---
 
-# Optimizing CLAUDE.md
+# Optimize CLAUDE.md
 
-This Skill analyzes CLAUDE.md files and project instructions for quality, then provides actionable improvements based on Claude Code official best practices.
+This Skill analyzes CLAUDE.md files for quality, suggests improvements based on Claude Code best practices, and simplifies content to reduce token usage.
+
+## Usage
+
+```
+/optimize-claude-md [mode] [level] [target]
+```
+
+**Modes:**
+- `analyze`: Quality analysis and improvement recommendations only
+- `simplify`: Token reduction through simplification
+- `full`: Both analysis and simplification (default)
+
+**Levels** (for simplify/full mode):
+- `conservative`: Careful simplification (50-70% reduction)
+- `aggressive`: Bold simplification (70-85% reduction, recommended)
+- `extreme`: Maximum reduction (85-95% reduction)
+
+**Targets:**
+- (none): Both project and global CLAUDE.md
+- `project`: Project CLAUDE.md only
+- `global`: Global CLAUDE.md only
+
+**Examples:**
+```
+/optimize-claude-md                           # Full optimization, aggressive, both
+/optimize-claude-md analyze                   # Analysis only
+/optimize-claude-md simplify conservative     # Conservative simplification
+/optimize-claude-md full aggressive project   # Full optimization, project only
+```
 
 ## When to Use This Skill
 
 Trigger this Skill when the user asks to:
 - "Review my CLAUDE.md"
 - "Optimize project instructions"
+- "Simplify CLAUDE.md to reduce tokens"
 - "Improve my CLAUDE.md"
 - "Check if my CLAUDE.md follows best practices"
 - "Update CLAUDE.md structure"
+- "Reduce CLAUDE.md token usage"
+
+## Workflow Selection
+
+Based on the mode parameter, follow the appropriate workflow:
+
+### Mode: analyze
+1. Locate CLAUDE.md files
+2. Analyze structure (organization, specificity, modularity)
+3. Generate improvement report
+4. Provide specific examples
+5. Consider modularity suggestions
+
+### Mode: simplify
+1. Locate CLAUDE.md files
+2. Identify simplification opportunities
+3. Apply simplification rules (Rule 1 & 2)
+4. Present proposals with rationale
+5. Request user approval
+6. Apply approved simplifications
+
+### Mode: full (default)
+Execute both `analyze` and `simplify` workflows in sequence.
 
 ## Analysis Workflow
 
@@ -107,6 +160,32 @@ For each recommendation, show:
 - **Before**: Current problematic text
 - **After**: Improved version
 - **Explanation**: Why the change helps
+
+## Simplification Targets (for simplify/full mode)
+
+### Remove Redundant Descriptions
+- Duplicate explanations
+- Overly detailed explanations
+- Obvious content descriptions
+- Excessive example lists
+
+### Structure Optimization
+- Merge unnecessary sections
+- Flatten hierarchy
+- Simplify lists
+- Streamline bullet points
+
+### Expression Compression
+- Long sentences → short sentences
+- Multiple sentences → single sentence
+- Descriptive expressions → keywords
+- Minimize examples
+
+### Technical Information Consolidation
+- Merge command examples
+- Simplify configuration items
+- Summarize development rules
+- Compress checklists
 
 ### Step 4.5: Apply Simplification Rules
 
