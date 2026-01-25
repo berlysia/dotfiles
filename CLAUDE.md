@@ -1,9 +1,6 @@
 # Dotfiles Project - Development Context
 
-## Development Guidelines
-
-### Language
-- Japanese for discussion, English for code
+**Note:** This project inherits global development guidelines from `~/.claude/CLAUDE.md`. This file contains dotfiles-specific context only.
 
 ## Project Overview
 
@@ -117,6 +114,3 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
 - 2回目の `chezmoi apply` でスキルが再インストールされないことを確認
 - ハッシュ値が変更されない限り、スクリプトは再実行されません
 
-## Testing Tool
-常に node:test, node:assert を好みます。Bunの組み込みメソッドの利用は禁じられます。
-テストの実行時は node --test ${testfile} で実行します。
