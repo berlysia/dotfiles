@@ -23,8 +23,9 @@ if [ -f "$HOME/.claude/.external-skills-installed" ]; then
 fi
 
 # Sync with --delete, but preserve external skills
-rsync -a --delete "${EXCLUDE_ARGS[@]}" "$SKILLS_SOURCE/" "$CLAUDE_SKILLS/"
-rsync -a --delete "${EXCLUDE_ARGS[@]}" "$SKILLS_SOURCE/" "$CODEX_SKILLS/"
+# Also exclude ui-skills (managed by chezmoi external)
+rsync -a --delete --exclude="ui-skills" "${EXCLUDE_ARGS[@]}" "$SKILLS_SOURCE/" "$CLAUDE_SKILLS/"
+rsync -a --delete --exclude="ui-skills" "${EXCLUDE_ARGS[@]}" "$SKILLS_SOURCE/" "$CODEX_SKILLS/"
 
 echo "✅ Handcrafted skills synced successfully"
 {{ end -}}
