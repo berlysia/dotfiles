@@ -152,13 +152,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>
   - Used by `/commit` command for precise staging
 
 ## Temporary Files
-
-**For project work:**
-- Use `${projectRoot}/.tmp` for temporary files and work-in-progress documentation
-- Ensure `.tmp/` is gitignored in the project
-
-**For system-wide work:**
-- Use `~/.tmp` when not in a specific project context 
+- When in a project, use `${projectRoot}/.tmp` for temporary files and work-in-progress documentation
+- Ensure `.tmp/` is gitignored in the project 
 
 ## Knowledge Management
 
