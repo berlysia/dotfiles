@@ -30,14 +30,20 @@
 - **Formatting**: Use project formatter (prettier/oxlint as configured)
 - **Naming**:
   - Variables: descriptive nouns (`userData` not `data`)
-  - Functions: verb-object (`fetchUserData` not `getUserData`)
+  - Functions: verb-object with intent clarity
+    - Async/side-effects: `fetchUserData`, `createUser`, `updateProfile`
+    - Synchronous/pure: `getUserName`, `calculateTotal`, `formatDate`
   - Types: PascalCase interfaces (`UserProfile` not `IUserProfile`)
 - **コメント方針**:
   - **WHYを説明**: コードの理由・背景・制約を記述する
   - **型システム尊重**: TypeScript型定義から自明な情報はコメントで重複しない
   - **ビジネスロジック重視**: ドメイン知識・設計決定・トレードオフの説明に集中
   - **差分ではなく現状を説明する**: 変更適用後のコードが何をしているかに対して説明する
-- **Error handling**: Comprehensive error handling and parallelization
+- **Error handling**: Handle all error paths explicitly
+  - Use typed errors (Error subclasses or discriminated unions)
+  - Log errors with context before propagating
+  - Avoid silent failures or generic catch-all handlers
+- **Performance**: Parallelize independent operations with Promise.all()
 
 ### Developer Experience
 - Minimize developer friction
@@ -59,12 +65,12 @@
 
 ### Debugging
 
-See `@~/.claude/rules/debugging.md` for comprehensive debugging procedures.
+**Emergency checklist:**
+1. Read FIRST error: `command 2>&1 | head -50`
+2. Suspect recent changes (git stash to test)
+3. Apply 5 Whys (not symptomatic fixes)
 
-**Quick reference:**
-- Focus on FIRST error (`2>&1 | head -50`)
-- Suspect recent changes when Task N works but Task N+1 fails
-- Use 5 Whys for root cause analysis
+See `@~/.claude/rules/debugging.md` for detailed procedures.
 
 ## TypeScript Project Standards
 
@@ -74,7 +80,11 @@ See `@~/.claude/rules/debugging.md` for comprehensive debugging procedures.
 
 ## Security Requirements
 - **Prohibited**: Hardcoded secrets, unvalidated inputs, suppressed errors
-- **Required**: Input validation, environment variables, comprehensive logging, passing lint/test
+- **Required**:
+  - Input validation (type checks, sanitization, bounds checking)
+  - Environment variables for secrets (never hardcode)
+  - Structured logging with severity levels (error/warn/info/debug)
+  - All tests and lints passing
 
 ## Git Workflow
 
@@ -195,14 +205,15 @@ Always gather evidence (read files, run tests, check actual state) before making
 Use validation tools for logic verification and external perspective:
 - **Logic validation**: logic-validator agent, `/logic-validation` skill
 - **External review**: `/codex-review`, `/self-review` skills, Codex MCP
+- **Claude Code guidance**: claude-code-guide agent for Claude Code-specific questions
 - **Key scenarios**: Plan mode completion, architecture decisions, debugging blocks
 
 See `@~/.claude/rules/external-review.md` for detailed usage patterns and examples.
 
-## claude-code-guide Agent Usage
+### When to Use claude-code-guide Agent
 
-**When to use claude-code-guide agent**:
-- Claude Code features and capabilities ("How do I...", "Can Claude...", "Does Claude support...")
+**For Claude Code questions**:
+- Features and capabilities ("How do I...", "Can Claude...", "Does Claude support...")
 - Configuration (settings.json, CLAUDE.md, MCP servers, permissions)
 - Workflows (Plan Mode, skills, subagents, hooks, context management)
 - **Skill development** (SKILL.md syntax, triggering conditions, design patterns, best practices)
@@ -210,7 +221,7 @@ See `@~/.claude/rules/external-review.md` for detailed usage patterns and exampl
 - Troubleshooting Claude Code itself (permission errors, hook issues, skill not triggering)
 - Claude API/Agent SDK usage (tool use, computer use, custom agents)
 
-**DO NOT use for**:
+**NOT for user code**:
 - User application code implementation or debugging
 - Project-specific build/test/runtime issues
 - General programming questions
