@@ -59,14 +59,12 @@
 
 ### Debugging
 
-Core principles:
-- **First error wins**: Read complete messages, focus on FIRST error (`2>&1 | head -50`)
-- **Recent changes**: Suspect Task N+1 code when Task N worked
-- **Root cause**: Use 5 Whys, avoid symptomatic fixes
-- **Incremental**: Verify hypotheses step-by-step
-- **Protect configs**: Don't change working configurations without evidence
+See `@~/.claude/rules/debugging.md` for comprehensive debugging procedures.
 
-See `@~/.claude/rules/debugging.md` for detailed procedures and examples.
+**Quick reference:**
+- Focus on FIRST error (`2>&1 | head -50`)
+- Suspect recent changes when Task N works but Task N+1 fails
+- Use 5 Whys for root cause analysis
 
 ## TypeScript Project Standards
 
@@ -153,8 +151,14 @@ Co-Authored-By: Claude <noreply@anthropic.com>
   - `git-sequential-stage -patch="changes.patch" -hunk="file.go:1,3,5"`
   - Used by `/commit` command for precise staging
 
-## Temporal Directory
-- If you are in some project, use `${projectRoot}/.tmp` 
+## Temporary Files
+
+**For project work:**
+- Use `${projectRoot}/.tmp` for temporary files and work-in-progress documentation
+- Ensure `.tmp/` is gitignored in the project
+
+**For system-wide work:**
+- Use `~/.tmp` when not in a specific project context 
 
 ## Knowledge Management
 
@@ -170,19 +174,22 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 - **重要な意思決定**: ADRとして記録
 
 ### ドキュメント内リンクの原則
-コミット対象の文書（README、docs/配下など）には、以下へのリンクを含めてはならない：
-- **gitignoreされたファイル/ディレクトリ**: `.tmp/`、`node_modules/`、ビルド出力など
-- **プランファイル**: 一時的な作業計画ファイル
-- **ローカル固有のパス**: 絶対パスや環境依存のパス
 
-**対処法**: リンク先の情報が永続的に必要な場合は、`docs/` などgit管理対象の場所に移動してからリンクする。
+**Rule:** Committed documentation (README, docs/) must only link to git-tracked files.
+
+**Prohibited links:**
+- Gitignored paths (`.tmp/`, `node_modules/`, build outputs)
+- Temporary plan files
+- Absolute or environment-specific paths
+
+**Solution:** Move essential information to `docs/` before linking.
 
 ```
-# ❌ Bad: gitignore対象へのリンク
-詳細は [設計メモ](.tmp/docs/design-notes.md) を参照
+# ❌ Bad
+See [design notes](.tmp/docs/design-notes.md)
 
-# ✅ Good: git管理対象へのリンク
-詳細は [設計メモ](docs/design-notes.md) を参照
+# ✅ Good
+See [design notes](docs/design-notes.md)
 ```
 
 **Critical Rule:**
