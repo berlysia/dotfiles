@@ -7,8 +7,8 @@ refreshPeriod = "24h"
 {{ end }}
 
 {{/* ui-skills: Opinionated constraints for building better interfaces */}}
-{{/* Download to .skills/ so rsync can sync it with other handcrafted skills */}}
-[".skills/ui-skills/SKILL.md"]
+{{/* Downloaded directly to ~/.claude/skills/, excluded from rsync */}}
+[".claude/skills/ui-skills/SKILL.md"]
 type = "file"
 url = "https://ui-skills.com/llms.txt"
 refreshPeriod = "168h" # 1 week
