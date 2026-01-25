@@ -162,6 +162,17 @@ See @~/.claude/my-preferences.md for personal settings
 ❌ Bad: 2000-line CLAUDE.md with everything
 ✅ Good: Core in CLAUDE.md, specifics in .claude/rules/
 
+### 7. Adding Information Not in Original
+❌ Bad: Inferring missing details and adding them as recommendations
+✅ Good: Only reorganize, clarify, or simplify existing information
+
+**Critical Rule:** Optimization means improving how existing information is presented, NOT adding new rules or information that wasn't there before. If something is unclear or seems incomplete, ask the user rather than assuming their intent.
+
+**Example of violation:**
+- Original: "Use `${projectRoot}/.tmp` for temporary files"
+- ❌ Bad recommendation: Add "Use `~/.tmp` for system-wide temporary files"
+- ✅ Good recommendation: Clarify "When in a project, use `${projectRoot}/.tmp`"
+
 ## Best Practices Reference
 
 For comprehensive best practices, see [BEST-PRACTICES.md](BEST-PRACTICES.md).
