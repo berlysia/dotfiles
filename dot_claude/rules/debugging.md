@@ -47,10 +47,26 @@ Step-by-step verification process:
 
 ## Use logic-validator Proactively
 
+**When to use**: Catch assumption-based reasoning before it leads to wrong fixes.
+
+**Symptoms of assumption-based reasoning**:
+- "I think X causes Y because..." (without verifying)
+- Drawing conclusions from function names without reading implementation
+- "This should work but doesn't" situations
+- Time-consuming trial-and-error cycles
+- Proposing "fundamental redesign" without evidence
+
+**Action**: Use logic-validator agent to verify reasoning
+
 Before:
 - Changing working configurations
 - Applying symptomatic fixes without root cause analysis
 - Assuming without evidence
+- Drawing conclusions without reading code
+
+**Real example**:
+- ❌ Assumption: "Function names suggest X happens" → Wrong fix
+- ✅ Validation: logic-validator points out "read the implementation" → Debug logs reveal actual behavior → Correct minimal fix
 
 Ask: "Is this reasoning logically sound?"
 
