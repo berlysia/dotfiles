@@ -45,7 +45,7 @@ export function createUnifiedVoiceConfig(): UnifiedVoiceConfig {
 
     behavior: {
       fallbackToStatic: true,
-      systemNotifications: platform === "linux",
+      systemNotifications: platform === "linux" || platform === "wsl",
       cleanupOnExit: true,
     },
   };

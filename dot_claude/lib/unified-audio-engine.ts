@@ -519,7 +519,9 @@ export async function sendSystemNotification(
   if (!config.behavior.systemNotifications) return;
 
   try {
-    await $`notify-send "Claude Code" ${message}`.quiet();
+    // Run in background with & to avoid blocking
+    const cmd = `notify-send 'Claude Code' '${message.replace(/'/g, "'\\''")}' &`;
+    $`bash -ic ${cmd}`.spawn();
     logMessage(`System notification sent: ${message}`, config);
   } catch {
     logMessage(`Failed to send system notification: ${message}`, config);
