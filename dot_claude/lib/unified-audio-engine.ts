@@ -407,11 +407,11 @@ export async function speakNotification(
   );
   session.currentWavFile = audioFile;
 
-  const unifiedText = `${config.system.computerName}の${text}`;
-  logMessage(`Unified message: ${unifiedText}`, config);
+  // text should already include computer name prefix (from messages.voice)
+  logMessage(`Unified message: ${text}`, config);
 
   // Generate audio query
-  const query = await generateAudioQuery(unifiedText, config);
+  const query = await generateAudioQuery(text, config);
   if (!query) {
     return await executeFallbackNotification(
       eventType,
@@ -477,7 +477,7 @@ export async function handleNotification(
   await cleanupOldFiles(config);
 
   const messages = await createNotificationMessagesAuto("Notification");
-  return await speakNotification(messages.action, "Notification", config, session);
+  return await speakNotification(messages.voice, "Notification", config, session);
 }
 
 export async function handleStop(
@@ -485,7 +485,7 @@ export async function handleStop(
   session: VoiceSession,
 ): Promise<NotificationResult> {
   const messages = await createNotificationMessagesAuto("Stop");
-  const result = await speakNotification(messages.action, "Stop", config, session);
+  const result = await speakNotification(messages.voice, "Stop", config, session);
 
   // Cleanup session directory
   if (config.behavior.cleanupOnExit && existsSync(session.sessionDir)) {
@@ -505,7 +505,7 @@ export async function handleError(
   session: VoiceSession,
 ): Promise<NotificationResult> {
   const messages = await createNotificationMessagesAuto("Error");
-  return await speakNotification(messages.action, "Error", config, session);
+  return await speakNotification(messages.voice, "Error", config, session);
 }
 
 // =========================================================================

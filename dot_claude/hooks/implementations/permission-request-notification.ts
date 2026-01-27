@@ -45,7 +45,7 @@ const hook = defineHook({
         sendSystemNotification(messages.system, config),
 
         // 音声通知（VoiceVoxが利用可能な場合）
-        speakNotification(messages.action, "Notification", config, session),
+        speakNotification(messages.voice, "PermissionRequest", config, session),
       ]);
 
       // PermissionRequestイベントは処理を継続させるため、空のメッセージで成功を返す
