@@ -1,0 +1,42 @@
+{{- if and (eq .chezmoi.os "linux") (.chezmoi.kernel.osrelease | lower | contains "microsoft") -}}
+#!/bin/bash
+# Install wsl-notify-send for Windows toast notifications from WSL
+# Version hash (update to trigger reinstall): v0.1.871612270
+
+set -euo pipefail
+
+WSL_NOTIFY_SEND_VERSION="v0.1.871612270"
+WSL_NOTIFY_SEND_URL="https://github.com/stuartleeks/wsl-notify-send/releases/download/${WSL_NOTIFY_SEND_VERSION}/wsl-notify-send_windows_amd64.zip"
+INSTALL_DIR="/mnt/c/Users/{{ .chezmoi.username }}/.local/bin"
+INSTALL_PATH="${INSTALL_DIR}/wsl-notify-send.exe"
+
+echo "Installing wsl-notify-send ${WSL_NOTIFY_SEND_VERSION}..."
+
+# Create directory if it doesn't exist
+if [ ! -d "$INSTALL_DIR" ]; then
+  echo "Creating directory: $INSTALL_DIR"
+  mkdir -p "$INSTALL_DIR"
+fi
+
+# Skip if already installed
+if [ -f "$INSTALL_PATH" ]; then
+  echo "wsl-notify-send already installed at $INSTALL_PATH"
+  exit 0
+fi
+
+# Download and extract
+TEMP_DIR=$(mktemp -d)
+trap 'rm -rf "$TEMP_DIR"' EXIT
+
+echo "Downloading from $WSL_NOTIFY_SEND_URL..."
+curl -fsSL "$WSL_NOTIFY_SEND_URL" -o "$TEMP_DIR/wsl-notify-send.zip"
+
+echo "Extracting..."
+unzip -q "$TEMP_DIR/wsl-notify-send.zip" -d "$TEMP_DIR"
+
+echo "Installing to $INSTALL_PATH..."
+mv "$TEMP_DIR/wsl-notify-send.exe" "$INSTALL_PATH"
+
+echo "Done! Make sure $INSTALL_DIR is in your Windows PATH."
+echo "Test with: notify-send 'Hello from WSL'"
+{{- end }}

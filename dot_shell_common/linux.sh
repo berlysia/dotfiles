@@ -12,3 +12,13 @@ if type snap >/dev/null 2>&1; then
   # Add snap bin to PATH if not already there
   add_to_path "/snap/bin"
 fi
+
+# WSL-specific: notify-send using wsl-notify-send.exe for Windows toast notifications
+if [ -n "$WSL_DISTRO_NAME" ]; then
+  WSL_NOTIFY_SEND_PATH="/mnt/c/Users/$USER/.local/bin/wsl-notify-send.exe"
+  if [ -f "$WSL_NOTIFY_SEND_PATH" ]; then
+    notify-send() {
+      "$WSL_NOTIFY_SEND_PATH" --category "$WSL_DISTRO_NAME" "$@"
+    }
+  fi
+fi
