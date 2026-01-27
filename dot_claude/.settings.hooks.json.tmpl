@@ -14,7 +14,7 @@
       ]
     },
     {
-      "matcher": "",
+      "matcher": "Read|Write|Edit|MultiEdit",
       "hooks": [
         {
           "type": "command",
@@ -168,6 +168,10 @@
         {
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/permission-request-notification.ts"
+        },
+        {
+          "type": "command",
+          "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'"
         }
       ]
     }

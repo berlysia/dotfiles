@@ -189,12 +189,14 @@ async function getRepoName(): Promise<string> {
  */
 export function createContextMessage(
   context: GitContextInfo,
-  action: "confirm" | "complete" | "error",
+  action: "confirm" | "complete" | "error" | "question" | "permission",
 ): string {
   const actionMessages = {
     confirm: "操作の確認が必要です",
     complete: "処理が完了しました",
     error: "エラーが発生しました",
+    question: "質問があります",
+    permission: "許可の確認が必要です",
   };
 
   return `${context.name} ${context.containerType}で${actionMessages[action]}`;

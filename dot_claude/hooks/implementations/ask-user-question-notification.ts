@@ -13,6 +13,7 @@ import {
   sendSystemNotification,
 } from "../../lib/unified-audio-engine.ts";
 import { logEvent } from "../lib/centralized-logging.ts";
+import { createContextMessage, getGitContext } from "../lib/git-context.ts";
 
 const hook = defineHook({
   trigger: {
@@ -23,6 +24,8 @@ const hook = defineHook({
 
     try {
       const { config, session } = await createAudioEngine();
+      const gitContext = await getGitContext();
+      const message = createContextMessage(gitContext, "question");
 
       // Setup cleanup on exit
       const cleanup = () => cleanupSession(session, config);
@@ -36,10 +39,10 @@ const hook = defineHook({
         logEvent("AskUserQuestion", sessionId),
 
         // システム通知
-        sendSystemNotification("Claude が質問しています", config),
+        sendSystemNotification(`Claude が質問しています: ${gitContext.name}`, config),
 
         // 音声通知（VoiceVoxが利用可能な場合）
-        speakNotification("質問があります", "Notification", config, session),
+        speakNotification(message, "Notification", config, session),
       ]);
 
       // PreToolUseイベントは処理を継続させるため、空のメッセージで成功を返す

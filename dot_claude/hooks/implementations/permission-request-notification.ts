@@ -13,6 +13,7 @@ import {
   sendSystemNotification,
 } from "../../lib/unified-audio-engine.ts";
 import { logEvent } from "../lib/centralized-logging.ts";
+import { createContextMessage, getGitContext } from "../lib/git-context.ts";
 
 const hook = defineHook({
   trigger: {
@@ -24,6 +25,8 @@ const hook = defineHook({
 
     try {
       const { config, session } = await createAudioEngine();
+      const gitContext = await getGitContext();
+      const message = createContextMessage(gitContext, "permission");
 
       // Setup cleanup on exit
       const cleanup = () => cleanupSession(session, config);
@@ -38,12 +41,12 @@ const hook = defineHook({
 
         // システム通知
         sendSystemNotification(
-          `パーミッション確認: ${toolName || "操作"}`,
+          `パーミッション確認: ${toolName || "操作"} (${gitContext.name})`,
           config,
         ),
 
         // 音声通知（VoiceVoxが利用可能な場合）
-        speakNotification("確認が必要です", "Notification", config, session),
+        speakNotification(message, "Notification", config, session),
       ]);
 
       // PermissionRequestイベントは処理を継続させるため、空のメッセージで成功を返す
