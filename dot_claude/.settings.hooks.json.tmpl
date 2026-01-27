@@ -66,6 +66,15 @@
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/web-fetch-guardian.ts"
         }
       ]
+    },
+    {
+      "matcher": "ExitPlanMode",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "f=$(ls -t .claude/plans/*.md 2>/dev/null | head -1) && [ -n \"$f\" ] && \"${EDITOR:-code}\" \"$f\""
+        }
+      ]
     }
   ],
   "PostToolUse": [
@@ -159,17 +168,6 @@
         {
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/permission-request-notification.ts"
-        }
-      ]
-    }
-  ],
-  "ExitPlanMode": [
-    {
-      "matcher": "",
-      "hooks": [
-        {
-          "type": "command",
-          "command": "f=$(ls -t .claude/plans/*.md 2>/dev/null | head -1) && [ -n \"$f\" ] && \"${EDITOR:-code}\" \"$f\""
         }
       ]
     }
