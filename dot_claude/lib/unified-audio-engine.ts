@@ -14,10 +14,7 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { $ } from "dax";
-import {
-  createContextMessage,
-  getGitContext,
-} from "../hooks/lib/git-context.ts";
+import { createNotificationMessagesAuto } from "./notification-messages.ts";
 import { checkClaudeCompanionStatus } from "./claude-companion-detector.ts";
 import {
   createUnifiedVoiceConfig,
@@ -479,18 +476,16 @@ export async function handleNotification(
 ): Promise<NotificationResult> {
   await cleanupOldFiles(config);
 
-  const context = await getGitContext();
-  const message = createContextMessage(context, "confirm");
-  return await speakNotification(message, "Notification", config, session);
+  const messages = await createNotificationMessagesAuto("Notification");
+  return await speakNotification(messages.action, "Notification", config, session);
 }
 
 export async function handleStop(
   config: UnifiedVoiceConfig,
   session: VoiceSession,
 ): Promise<NotificationResult> {
-  const context = await getGitContext();
-  const message = createContextMessage(context, "complete");
-  const result = await speakNotification(message, "Stop", config, session);
+  const messages = await createNotificationMessagesAuto("Stop");
+  const result = await speakNotification(messages.action, "Stop", config, session);
 
   // Cleanup session directory
   if (config.behavior.cleanupOnExit && existsSync(session.sessionDir)) {
@@ -509,9 +504,8 @@ export async function handleError(
   config: UnifiedVoiceConfig,
   session: VoiceSession,
 ): Promise<NotificationResult> {
-  const context = await getGitContext();
-  const message = createContextMessage(context, "error");
-  return await speakNotification(message, "Error", config, session);
+  const messages = await createNotificationMessagesAuto("Error");
+  return await speakNotification(messages.action, "Error", config, session);
 }
 
 // =========================================================================
