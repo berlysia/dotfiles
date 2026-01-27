@@ -12,8 +12,8 @@ import {
   speakNotification,
   sendSystemNotification,
 } from "../../lib/unified-audio-engine.ts";
+import { createNotificationMessagesAuto } from "../../lib/notification-messages.ts";
 import { logEvent } from "../lib/centralized-logging.ts";
-import { createContextMessage, getGitContext } from "../lib/git-context.ts";
 
 const hook = defineHook({
   trigger: {
@@ -25,8 +25,10 @@ const hook = defineHook({
 
     try {
       const { config, session } = await createAudioEngine();
-      const gitContext = await getGitContext();
-      const message = createContextMessage(gitContext, "permission");
+      const messages = await createNotificationMessagesAuto(
+        "PermissionRequest",
+        toolName,
+      );
 
       // Setup cleanup on exit
       const cleanup = () => cleanupSession(session, config);
@@ -40,13 +42,10 @@ const hook = defineHook({
         logEvent("PermissionRequest", sessionId),
 
         // システム通知
-        sendSystemNotification(
-          `パーミッション確認: ${toolName || "操作"} (${gitContext.name})`,
-          config,
-        ),
+        sendSystemNotification(messages.system, config),
 
         // 音声通知（VoiceVoxが利用可能な場合）
-        speakNotification(message, "Notification", config, session),
+        speakNotification(messages.action, "Notification", config, session),
       ]);
 
       // PermissionRequestイベントは処理を継続させるため、空のメッセージで成功を返す

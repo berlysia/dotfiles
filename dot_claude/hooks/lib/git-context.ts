@@ -174,30 +174,3 @@ export async function getGitContext(): Promise<GitContextInfo> {
     };
   }
 }
-
-/**
- * Get repository name only (simplified interface)
- * For backward compatibility with existing code
- */
-async function getRepoName(): Promise<string> {
-  const context = await getGitContext();
-  return context.name;
-}
-
-/**
- * Create localized message with repository context
- */
-export function createContextMessage(
-  context: GitContextInfo,
-  action: "confirm" | "complete" | "error" | "question" | "permission",
-): string {
-  const actionMessages = {
-    confirm: "操作の確認が必要です",
-    complete: "処理が完了しました",
-    error: "エラーが発生しました",
-    question: "質問があります",
-    permission: "許可の確認が必要です",
-  };
-
-  return `${context.name} ${context.containerType}で${actionMessages[action]}`;
-}
