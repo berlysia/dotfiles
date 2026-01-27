@@ -91,13 +91,14 @@ const DEFAULT_ACTION = (v: MessageTemplateVars): string =>
 
 const MESSAGE_TEMPLATES: Record<NotificationEventType, MessageTemplate> = {
   Notification: {
-    actionText: "操作の確認が必要です",
-    system: (v) => `確認が必要です: ${v.repoName}`,
+    actionText: "通知があります",
+    system: (v) => `通知: ${v.repoName}`,
   },
 
   Stop: {
-    actionText: "処理が完了しました",
-    system: (v) => `完了: ${v.repoName}`,
+    voice: (v) => `${v.computerName}の${v.location}で、Claudeが動作を停止しました`,
+    actionText: "動作を停止しました",
+    system: (v) => `停止: ${v.repoName}`,
   },
 
   Error: {
@@ -106,11 +107,16 @@ const MESSAGE_TEMPLATES: Record<NotificationEventType, MessageTemplate> = {
   },
 
   AskUserQuestion: {
+    voice: (v) => `${v.computerName}の${v.location}で、Claudeから質問があります。`,
     actionText: "質問があります",
     system: (v) => `Claude が質問しています: ${v.repoName}`,
   },
 
   PermissionRequest: {
+    voice: (v) =>
+      v.toolName
+        ? `${v.computerName}の${v.location}で、Claudeが ${v.toolName} を使う許可を求めています。`
+        : `${v.computerName}の${v.location}で、Claudeが許可を求めています。`,
     actionText: "許可の確認が必要です",
     system: (v) =>
       v.toolName
