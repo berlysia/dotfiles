@@ -33,7 +33,11 @@ CURRENT_SKILLS+=("{{ . }}")
 
 # Detect removed skills
 if [ -f "$HISTORY_FILE" ]; then
-    mapfile -t PREVIOUS_SKILLS < "$HISTORY_FILE"
+    # Use while-read loop instead of mapfile for macOS compatibility (Bash 3.2)
+    PREVIOUS_SKILLS=()
+    while IFS= read -r line; do
+        [ -n "$line" ] && PREVIOUS_SKILLS+=("$line")
+    done < "$HISTORY_FILE"
     REMOVED_SKILLS=()
 
     for prev_skill in "${PREVIOUS_SKILLS[@]}"; do

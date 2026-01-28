@@ -27,7 +27,11 @@ for ignore in "${IGNORE_PATHS[@]}"; do
 done
 
 # Find all .sh files (same as CI scandir: '.')
-mapfile -t SHELL_FILES < <(find . -type f -name "*.sh" "${FIND_ARGS[@]}" | sort)
+# Use while-read loop instead of mapfile for macOS compatibility (Bash 3.2)
+SHELL_FILES=()
+while IFS= read -r file; do
+  SHELL_FILES+=("$file")
+done < <(find . -type f -name "*.sh" "${FIND_ARGS[@]}" | sort)
 
 if [[ ${#SHELL_FILES[@]} -eq 0 ]]; then
   echo -e "${YELLOW}No shell files found to check${NC}"
