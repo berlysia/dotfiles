@@ -4,21 +4,24 @@ This directory contains sound files for Claude Code notifications.
 
 ## File Naming Convention
 
-Sound files are named based on `EventType`:
+Sound files follow the pattern:
 ```
 Claude${EventType}.wav
 ```
 
-## Expected Sound Files
+- **Prefix**: `Claude`
+- **Body**: EventType name (PascalCase)
+- **Extension**: `.wav`
 
-### Required Files
-- `ClaudeNotification.wav` - Default notification sound (used as fallback)
-- `ClaudeStop.wav` - Task completion sound
+## Sound Files
 
-### Optional Files (enhance user experience)
-- `ClaudeError.wav` - Error notification
-- `ClaudePermissionRequest.wav` - Permission request notifications
-- `ClaudeAskUserQuestion.wav` - User input required notifications
+| EventType | File Name | Description |
+|-----------|-----------|-------------|
+| `Notification` | `ClaudeNotification.wav` | Default notification (fallback) |
+| `Stop` | `ClaudeStop.wav` | Task completion |
+| `Error` | `ClaudeError.wav` | Error notification |
+| `PermissionRequest` | `ClaudePermissionRequest.wav` | Permission request |
+| `AskUserQuestion` | `ClaudeAskUserQuestion.wav` | User input required |
 
 ## Fallback Behavior
 
