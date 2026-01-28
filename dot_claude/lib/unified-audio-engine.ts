@@ -25,7 +25,6 @@ import type {
   EventType,
   NotificationResult,
   Platform,
-  SoundType,
   UnifiedVoiceConfig,
   VoiceSession,
 } from "./unified-audio-types.ts";
@@ -280,10 +279,10 @@ export async function synthesizeSpeech(
 // =========================================================================
 
 export function getStaticSoundPath(
-  type: SoundType,
+  type: EventType,
   config: UnifiedVoiceConfig,
 ): string {
-  const fileName = `Claude${type.charAt(0).toUpperCase() + type.slice(1)}.wav`;
+  const fileName = `Claude${type}.wav`;
   return join(config.paths.soundsDir, fileName);
 }
 
@@ -358,8 +357,7 @@ export async function executeFallbackNotification(
   }
 
   // Play main event sound
-  const soundType = eventType.toLowerCase() as SoundType;
-  const fallbackFile = getStaticSoundPath(soundType, config);
+  const fallbackFile = getStaticSoundPath(eventType, config);
 
   if (existsSync(fallbackFile)) {
     logMessage(`Using fallback static WAV: ${fallbackFile}`, config);
@@ -524,8 +522,8 @@ export async function sendSystemNotification(
     if (config.system.platform === "wsl") {
       // WSL: Call wsl-notify-send.exe directly without bash -ic
       // bash -ic causes process suspension issues with WSL interop
-      const wslNotifySendPath = `/mnt/c/Users/${Bun.env.USER}/.local/bin/wsl-notify-send.exe`;
-      const wslDistroName = Bun.env.WSL_DISTRO_NAME || "WSL";
+      const wslNotifySendPath = `/mnt/c/Users/${process.env.USER}/.local/bin/wsl-notify-send.exe`;
+      const wslDistroName = process.env.WSL_DISTRO_NAME || "WSL";
 
       // Use nohup to fully detach the process from the terminal
       $`nohup ${wslNotifySendPath} --category ${wslDistroName} 'Claude Code' ${escapedMessage} >/dev/null 2>&1`.spawn();
