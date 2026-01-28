@@ -94,6 +94,13 @@ ope() {
 		esac
 	done
 
+	# Require command when not in load mode
+	if ! $load && [ $# -eq 0 ]; then
+		echo "❌ No command specified. Use 'ope -l' to load secrets, or provide a command."
+		ope -h
+		return 1
+	fi
+
 	_ope_auth_check
 
 	# Determine scope
@@ -135,17 +142,20 @@ EOF
 		_ope_update_paths "$update_path"
 		echo "☑️ Done!"
 	else
-		# Build --env-file options string (avoiding subshell to preserve variable)
-		env_opts=""
-		# Use parameter expansion to iterate over newline-separated files
-		old_ifs="$IFS"
-		IFS='
-'
-		for env_file in $env_files; do
-			[ -n "$env_file" ] || continue
-			env_opts="$env_opts --env-file=$env_file"
-		done
-		IFS="$old_ifs"
+		# Parse env files into variables using here-doc to avoid subshell
+		# Note: Scopes are exclusive (global OR local), so max 2 files per invocation
+		env_file1=""
+		env_file2=""
+		while IFS= read -r _env_file || [ -n "$_env_file" ]; do
+			[ -n "$_env_file" ] || continue
+			if [ -z "$env_file1" ]; then
+				env_file1="$_env_file"
+			else
+				env_file2="$_env_file"
+			fi
+		done <<EOF
+$env_files
+EOF
 
 		if $interactive; then
 			# Build properly escaped command string for script
@@ -156,16 +166,25 @@ EOF
 			# script command syntax differs between Linux and macOS
 			if [ "$(uname)" = "Darwin" ]; then
 				# macOS: script [-q] file command
-				# shellcheck disable=SC2086
-				op run $env_opts -- script -q /dev/null sh -c "$cmd_quoted"
+				if [ -n "$env_file2" ]; then
+					op run --env-file="$env_file1" --env-file="$env_file2" -- script -q /dev/null sh -c "$cmd_quoted"
+				else
+					op run --env-file="$env_file1" -- script -q /dev/null sh -c "$cmd_quoted"
+				fi
 			else
 				# Linux: script [-q] -c command file
-				# shellcheck disable=SC2086
-				op run $env_opts -- script -q /dev/null -c "$cmd_quoted"
+				if [ -n "$env_file2" ]; then
+					op run --env-file="$env_file1" --env-file="$env_file2" -- script -q /dev/null -c "$cmd_quoted"
+				else
+					op run --env-file="$env_file1" -- script -q /dev/null -c "$cmd_quoted"
+				fi
 			fi
 		else
-			# shellcheck disable=SC2086
-			op run $env_opts -- "$@"
+			if [ -n "$env_file2" ]; then
+				op run --env-file="$env_file1" --env-file="$env_file2" -- "$@"
+			else
+				op run --env-file="$env_file1" -- "$@"
+			fi
 		fi
 	fi
 }
