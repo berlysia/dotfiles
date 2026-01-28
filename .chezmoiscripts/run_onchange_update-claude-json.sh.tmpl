@@ -1,7 +1,8 @@
 {{ if ne .chezmoi.os "windows" -}}
 #!/bin/bash
 # Update ~/.claude.json by merging chezmoi template changes
-# Hash: {{ include "package.json" | sha256sum }}
+# package.json hash: {{ include "package.json" | sha256sum }}
+# script hash: {{ include ".chezmoiscripts/run_onchange_update-claude-json.sh.tmpl" | sha256sum }}
 
 set -euo pipefail
 
@@ -61,6 +62,7 @@ TEMPLATE_CONTENT=$(cat << EOF
       ]
     }
   },
+  "installMethod": "native",
   "preferredNotifChannel": "terminal_bell",
   "defaultMode": "allowEdits"
 }
@@ -102,8 +104,9 @@ cp "$TARGET_FILE" "$BACKUP_FILE"
 # - defaultMode: use template value
 # - All other fields: preserve existing values
 jq --slurpfile template <(echo "$TEMPLATE_CONTENT") '
-    . * $template[0] | 
+    . * $template[0] |
     .mcpServers = ((.mcpServers // {}) + ($template[0].mcpServers // {})) |
+    .installMethod = $template[0].installMethod |
     .preferredNotifChannel = $template[0].preferredNotifChannel |
     .defaultMode = $template[0].defaultMode
 ' "$TARGET_FILE" > "$TEMP_FILE"
