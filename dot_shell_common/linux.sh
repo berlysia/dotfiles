@@ -18,7 +18,9 @@ if [ -n "$WSL_DISTRO_NAME" ]; then
   WSL_NOTIFY_SEND_PATH="/mnt/c/Users/$USER/.local/bin/wsl-notify-send.exe"
   if [ -f "$WSL_NOTIFY_SEND_PATH" ]; then
     notify-send() {
-      "$WSL_NOTIFY_SEND_PATH" --category "$WSL_DISTRO_NAME" "$@"
+      # Use nohup and background to prevent process suspension issues
+      # wsl-notify-send.exe can cause parent process suspension in interactive shells
+      nohup "$WSL_NOTIFY_SEND_PATH" --category "$WSL_DISTRO_NAME" "$@" </dev/null >/dev/null 2>&1 &
     }
   fi
 fi
