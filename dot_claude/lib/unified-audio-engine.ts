@@ -518,10 +518,21 @@ export async function sendSystemNotification(
 ): Promise<void> {
   if (!config.behavior.systemNotifications) return;
 
+  const escapedMessage = message.replace(/'/g, "'\\''");
+
   try {
-    // Run in background with & to avoid blocking
-    const cmd = `notify-send 'Claude Code' '${message.replace(/'/g, "'\\''")}' &`;
-    $`bash -ic ${cmd}`.spawn();
+    if (config.system.platform === "wsl") {
+      // WSL: Call wsl-notify-send.exe directly without bash -ic
+      // bash -ic causes process suspension issues with WSL interop
+      const wslNotifySendPath = `/mnt/c/Users/${Bun.env.USER}/.local/bin/wsl-notify-send.exe`;
+      const wslDistroName = Bun.env.WSL_DISTRO_NAME || "WSL";
+
+      // Use nohup to fully detach the process from the terminal
+      $`nohup ${wslNotifySendPath} --category ${wslDistroName} 'Claude Code' ${escapedMessage} >/dev/null 2>&1`.spawn();
+    } else {
+      // Non-WSL Linux: Use notify-send directly
+      $`notify-send 'Claude Code' ${escapedMessage}`.spawn();
+    }
     logMessage(`System notification sent: ${message}`, config);
   } catch {
     logMessage(`Failed to send system notification: ${message}`, config);
