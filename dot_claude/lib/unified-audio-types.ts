@@ -4,8 +4,7 @@
  */
 
 export type Platform = "darwin" | "linux" | "wsl";
-export type SoundType = "notification" | "stop" | "permission" | "waiting";
-export type EventType = "Notification" | "Stop" | "Error" | string;
+export type EventType = "Notification" | "Stop" | "Error" | "PermissionRequest" | "AskUserQuestion" | string;
 
 export interface UnifiedVoiceConfig {
   // VoiceVox互換エンジン設定
