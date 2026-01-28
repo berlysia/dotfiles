@@ -6,6 +6,7 @@
 import {
   existsSync,
   mkdirSync,
+  readFileSync,
   readdirSync,
   rmSync,
   statSync,
@@ -134,12 +135,37 @@ export function ensureDirectories(
   }
 }
 
+// Log rotation constants
+const LOG_MAX_SIZE_BYTES = 1 * 1024 * 1024; // 1MB
+const LOG_RETAIN_LINES = 1000; // Keep latest 1000 lines after rotation
+
+function rotateLogIfNeeded(logFile: string): void {
+  try {
+    if (!existsSync(logFile)) return;
+
+    const stats = statSync(logFile);
+    if (stats.size <= LOG_MAX_SIZE_BYTES) return;
+
+    // Read and keep only the latest lines
+    const content = readFileSync(logFile, "utf-8");
+    const lines = content.split("\n").filter((line) => line.trim());
+    const retainedLines = lines.slice(-LOG_RETAIN_LINES);
+
+    writeFileSync(logFile, `${retainedLines.join("\n")}\n`);
+  } catch {
+    // Rotation errors are not fatal
+  }
+}
+
 export function logMessage(message: string, config: UnifiedVoiceConfig): void {
   try {
     const logDir = dirname(config.paths.logFile);
     if (!existsSync(logDir)) {
       mkdirSync(logDir, { recursive: true });
     }
+
+    // Rotate log if needed before writing
+    rotateLogIfNeeded(config.paths.logFile);
 
     const timestamp = new Date().toISOString();
     const logEntry = `[${timestamp}] ${message}\n`;
