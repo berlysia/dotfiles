@@ -15,6 +15,9 @@ import {
 import { createNotificationMessagesAuto } from "../../lib/notification-messages.ts";
 import { logEvent } from "../lib/centralized-logging.ts";
 
+// AskUserQuestionは専用hookがあるため、PermissionRequestでの通知をスキップ
+const SKIP_NOTIFICATION_TOOLS = ["AskUserQuestion"];
+
 const hook = defineHook({
   trigger: {
     PermissionRequest: true,
@@ -22,6 +25,11 @@ const hook = defineHook({
   run: async (context) => {
     const sessionId = context.input.session_id;
     const toolName = context.input.tool_name;
+
+    // Skip notification for tools that have dedicated notification hooks
+    if (SKIP_NOTIFICATION_TOOLS.includes(toolName)) {
+      return context.success({});
+    }
 
     try {
       const { config, session } = await createAudioEngine();
