@@ -31,6 +31,24 @@ Claude${EventType}.wav
 |-----------|-------------|
 | `Prefix.wav` | Played before event sound in fallback mode |
 
+#### Prefix.wav Usage
+
+`Prefix.wav` is played before the main event sound, useful for:
+
+- **Device identification**: "MacBook Pro" or "Dev Server" voice announcement
+- **Context setting**: Distinguish notifications from multiple machines
+- **Attention grabber**: Short chime before the actual notification
+
+Example: Create with text-to-speech
+```bash
+# macOS
+say -o Prefix.aiff "MacBook Pro"
+ffmpeg -i Prefix.aiff Prefix.wav
+
+# Linux (with espeak)
+espeak -w Prefix.wav "Dev Server"
+```
+
 ## Fallback Behavior
 
 If a specific sound file doesn't exist, the script falls back to `ClaudeNotification.wav`.
