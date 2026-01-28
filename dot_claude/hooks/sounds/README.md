@@ -15,6 +15,8 @@ Claude${EventType}.wav
 
 ## Sound Files
 
+### Event Sounds
+
 | EventType | File Name | Description |
 |-----------|-----------|-------------|
 | `Notification` | `ClaudeNotification.wav` | Default notification (fallback) |
@@ -22,6 +24,12 @@ Claude${EventType}.wav
 | `Error` | `ClaudeError.wav` | Error notification |
 | `PermissionRequest` | `ClaudePermissionRequest.wav` | Permission request |
 | `AskUserQuestion` | `ClaudeAskUserQuestion.wav` | User input required |
+
+### Special Files
+
+| File Name | Description |
+|-----------|-------------|
+| `Prefix.wav` | Played before event sound in fallback mode |
 
 ## Fallback Behavior
 
