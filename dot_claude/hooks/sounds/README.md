@@ -2,29 +2,27 @@
 
 This directory contains sound files for Claude Code notifications.
 
-## Current Sound Files
+## File Naming Convention
 
-- `ClaudeNotification.wav` - Default notification sound (fallback)
-- `ClaudeStop.wav` - Stop sound
+Sound files are named based on `EventType`:
+```
+Claude${EventType}.wav
+```
 
 ## Expected Sound Files
 
-The notification script dynamically selects sounds based on message content:
-
 ### Required Files
 - `ClaudeNotification.wav` - Default notification sound (used as fallback)
-- `ClaudeStop.wav` - Stop sound
+- `ClaudeStop.wav` - Task completion sound
 
 ### Optional Files (enhance user experience)
-- `ClaudePermission.wav` - Permission request notifications
-  - Triggered by messages containing "needs your permission" or "permission to use"
-- `ClaudeWaiting.wav` - Input waiting notifications  
-  - Triggered by messages containing "waiting for your input" or "has been idle"
+- `ClaudeError.wav` - Error notification
+- `ClaudePermissionRequest.wav` - Permission request notifications
+- `ClaudeAskUserQuestion.wav` - User input required notifications
 
 ## Fallback Behavior
 
-If specific sound files don't exist, the script falls back to `ClaudeNotification.wav`.
-All permission and waiting notifications currently use the default notification sound.
+If a specific sound file doesn't exist, the script falls back to `ClaudeNotification.wav`.
 
 ## Platform Support
 
