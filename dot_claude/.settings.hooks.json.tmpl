@@ -36,7 +36,8 @@
       "hooks": [
         {
           "type": "command",
-          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/ask-user-question-notification.ts"
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/ask-user-question-notification.ts",
+          "async": true
         }
       ]
     },
@@ -83,11 +84,13 @@
       "hooks": [
         {
           "type": "command",
-          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/command-logger.ts"
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/command-logger.ts",
+          "async": true
         },
         {
           "type": "command",
-          "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'"
+          "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'",
+          "async": true
         }
       ]
     },
@@ -96,7 +99,8 @@
       "hooks": [
         {
           "type": "command",
-          "command": "echo \"[$(date '+%F %H:%M:%S')] $USER [$(pwd)]: $(jq -r '.tool_input.command' | sed 's/$/\\\\n/' | tr -d '\\n')\" >> ~/.claude/command_history.log"
+          "command": "echo \"[$(date '+%F %H:%M:%S')] $USER [$(pwd)]: $(jq -r '.tool_input.command' | sed 's/$/\\\\n/' | tr -d '\\n')\" >> ~/.claude/command_history.log",
+          "async": true
         }
       ]
     }
@@ -111,7 +115,8 @@
         },
         {
           "type": "command",
-          "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'"
+          "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'",
+          "async": true
         }
       ]
     }
@@ -122,11 +127,13 @@
       "hooks": [
         {
           "type": "command",
-          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/speak-notification.ts Stop"
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/speak-notification.ts Stop",
+          "async": true
         },
         {
           "type": "command",
-          "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'"
+          "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'",
+          "async": true
         }
       ]
     }
@@ -137,11 +144,13 @@
       "hooks": [
         {
           "type": "command",
-          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/speak-notification.ts Notification"
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/speak-notification.ts Notification",
+          "async": true
         },
         {
           "type": "command",
-          "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'"
+          "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'",
+          "async": true
         }
       ]
     }
@@ -152,11 +161,13 @@
       "hooks": [
         {
           "type": "command",
-          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/user-prompt-logger.ts"
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/user-prompt-logger.ts",
+          "async": true
         },
         {
           "type": "command",
-          "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'"
+          "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'",
+          "async": true
         }
       ]
     }
@@ -167,11 +178,13 @@
       "hooks": [
         {
           "type": "command",
-          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/permission-request-notification.ts"
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/permission-request-notification.ts",
+          "async": true
         },
         {
           "type": "command",
-          "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'"
+          "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'",
+          "async": true
         }
       ]
     }
