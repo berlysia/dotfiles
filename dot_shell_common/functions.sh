@@ -158,28 +158,23 @@ $env_files
 EOF
 
 		if $interactive; then
-			# Build properly escaped command string for script
-			cmd_quoted=""
-			for arg in "$@"; do
-				cmd_quoted="$cmd_quoted$(printf '%s ' "$arg" | sed "s/'/'\\\\''/g;s/^/'/;s/\$/'/")"
-			done
-			# Use current shell to preserve PATH (needed for mise/asdf managed tools)
+			# Launch shell in interactive mode (-i) to ensure rc files are loaded
+			# This preserves PATH and tool initialization (mise/asdf) naturally
 			current_shell="${SHELL:-/bin/sh}"
 			# script command syntax differs between Linux and macOS
 			if [ "$(uname)" = "Darwin" ]; then
 				# macOS: script [-q] file command
 				if [ -n "$env_file2" ]; then
-					op run --env-file="$env_file1" --env-file="$env_file2" -- script -q /dev/null "$current_shell" -c "$cmd_quoted"
+					op run --env-file="$env_file1" --env-file="$env_file2" -- script -q /dev/null "$current_shell" -i -c "$*"
 				else
-					op run --env-file="$env_file1" -- script -q /dev/null "$current_shell" -c "$cmd_quoted"
+					op run --env-file="$env_file1" -- script -q /dev/null "$current_shell" -i -c "$*"
 				fi
 			else
 				# Linux: script [-q] -c command file
-				# Use env var to avoid nested quote issues
 				if [ -n "$env_file2" ]; then
-					_OPE_CMD=$cmd_quoted op run --env-file="$env_file1" --env-file="$env_file2" -- script -q /dev/null -c "$current_shell -c \"\$_OPE_CMD\""
+					op run --env-file="$env_file1" --env-file="$env_file2" -- script -q /dev/null -c "$current_shell -i -c \"$*\""
 				else
-					_OPE_CMD=$cmd_quoted op run --env-file="$env_file1" -- script -q /dev/null -c "$current_shell -c \"\$_OPE_CMD\""
+					op run --env-file="$env_file1" -- script -q /dev/null -c "$current_shell -i -c \"$*\""
 				fi
 			fi
 		else
