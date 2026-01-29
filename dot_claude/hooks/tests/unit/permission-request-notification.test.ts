@@ -158,6 +158,64 @@ describe("permission-request-notification.ts hook behavior", () => {
     });
   });
 
+  describe("skip notification for specific tools", () => {
+    it("should skip notification for AskUserQuestion tool", async () => {
+      const hook = createPermissionRequestNotificationHookWithSkip();
+
+      const context = createPermissionRequestContext("AskUserQuestion", {
+        questions: [{ question: "test?" }],
+      });
+
+      await invokeRun(hook, context);
+
+      // Should succeed without any notification logs
+      context.assertSuccess({});
+      strictEqual(
+        consoleCapture.logs.filter((log) =>
+          log.includes("PermissionRequest notification triggered"),
+        ).length,
+        0,
+        "Should not trigger notification for AskUserQuestion",
+      );
+    });
+
+    it("should skip notification for ExitPlanMode tool", async () => {
+      const hook = createPermissionRequestNotificationHookWithSkip();
+
+      const context = createPermissionRequestContext("ExitPlanMode", {});
+
+      await invokeRun(hook, context);
+
+      // Should succeed without any notification logs
+      context.assertSuccess({});
+      strictEqual(
+        consoleCapture.logs.filter((log) =>
+          log.includes("PermissionRequest notification triggered"),
+        ).length,
+        0,
+        "Should not trigger notification for ExitPlanMode",
+      );
+    });
+
+    it("should notify for other tools (Bash)", async () => {
+      const hook = createPermissionRequestNotificationHookWithSkip();
+
+      const context = createPermissionRequestContext("Bash", {
+        command: "ls",
+      });
+
+      await invokeRun(hook, context);
+
+      context.assertSuccess({});
+      ok(
+        consoleCapture.logs.some((log) =>
+          log.includes("PermissionRequest notification triggered"),
+        ),
+        "Should trigger notification for Bash",
+      );
+    });
+  });
+
   describe("logging", () => {
     it("should log PermissionRequest event", async () => {
       const hook = createPermissionRequestNotificationHook();
@@ -180,6 +238,53 @@ describe("permission-request-notification.ts hook behavior", () => {
     });
   });
 });
+
+// Skip notification tools list (matches production code)
+const SKIP_NOTIFICATION_TOOLS = ["AskUserQuestion", "ExitPlanMode"];
+
+// Helper function to create permission-request-notification hook with skip logic
+function createPermissionRequestNotificationHookWithSkip() {
+  return defineHook({
+    trigger: {
+      PermissionRequest: true,
+    },
+    run: async (context: any) => {
+      const toolName = context.input.tool_name;
+
+      // Skip notification for tools that have dedicated notification hooks
+      if (SKIP_NOTIFICATION_TOOLS.includes(toolName)) {
+        return context.success({});
+      }
+
+      const sessionId = context.input.session_id || "default";
+
+      try {
+        console.log("PermissionRequest notification triggered");
+        console.log(`Session ID: ${sessionId}`);
+        console.log(`Tool: ${toolName}`);
+
+        await Promise.allSettled([
+          (async () => {
+            console.log(
+              `Logging PermissionRequest event for session ${sessionId}`,
+            );
+          })(),
+          (async () => {
+            console.log(`System notification: パーミッション確認: ${toolName}`);
+          })(),
+          (async () => {
+            console.log("Voice notification: 確認が必要です");
+          })(),
+        ]);
+
+        return context.success({});
+      } catch (error) {
+        console.error(`PermissionRequest notification error: ${error}`);
+        return context.success({});
+      }
+    },
+  });
+}
 
 // Helper function to create permission-request-notification hook
 function createPermissionRequestNotificationHook() {
