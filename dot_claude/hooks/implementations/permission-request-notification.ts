@@ -15,8 +15,8 @@ import {
 import { createNotificationMessagesAuto } from "../../lib/notification-messages.ts";
 import { logEvent } from "../lib/centralized-logging.ts";
 
-// AskUserQuestionは専用hookがあるため、PermissionRequestでの通知をスキップ
-const SKIP_NOTIFICATION_TOOLS = ["AskUserQuestion"];
+// 専用hookがあるツール、またはユーザー対話を目的とするツールはスキップ
+const SKIP_NOTIFICATION_TOOLS = ["AskUserQuestion", "ExitPlanMode"];
 
 const hook = defineHook({
   trigger: {
