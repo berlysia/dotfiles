@@ -73,7 +73,8 @@
       "hooks": [
         {
           "type": "command",
-          "command": "f=$(ls -t .claude/plans/*.md 2>/dev/null | head -1) && [ -n \"$f\" ] && \"${EDITOR:-code}\" \"$f\""
+          "command": "f=$(ls -t .claude/plans/*.md 2>/dev/null | head -1) && [ -n \"$f\" ] && { command -v code >/dev/null && code \"$f\" || xdg-open \"$f\" 2>/dev/null || open \"$f\" 2>/dev/null || true; }",
+          "async": true
         }
       ]
     }
