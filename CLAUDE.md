@@ -114,3 +114,27 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
 - 2回目の `chezmoi apply` でスキルが再インストールされないことを確認
 - ハッシュ値が変更されない限り、スクリプトは再実行されません
 
+### Hooks Development
+
+#### フックの依存パッケージ
+
+フック（`~/.claude/hooks/`）は、実行時のcwdにある`node_modules`からパッケージを解決します。
+このプロジェクトの`node_modules`が参照されるため、フックで使用するパッケージは`package.json`に追加する必要があります。
+
+**主要な依存パッケージ**:
+- `cc-hooks-ts`: フック定義ヘルパー
+- `@anthropic-ai/claude-agent-sdk`: LLM評価用（Claude Codeライセンスで認証）
+
+#### bunキャッシュの問題
+
+新しいパッケージを追加した後、フックで「package not found」エラーが発生する場合：
+
+```bash
+# bunのキャッシュをクリア
+bun pm cache rm
+
+# Claude Codeを再起動
+```
+
+**原因**: bunがモジュール解決結果をキャッシュしており、新しいパッケージが認識されない場合がある
+
