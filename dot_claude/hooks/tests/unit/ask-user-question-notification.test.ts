@@ -125,8 +125,7 @@ describe("ask-user-question-notification.ts hook behavior", () => {
       // Should attempt system notification
       ok(
         consoleCapture.logs.some(
-          (log) =>
-            log.includes("System notification") || log.includes("通知"),
+          (log) => log.includes("System notification") || log.includes("通知"),
         ),
       );
     });
@@ -244,8 +243,7 @@ describe("ask-user-question-notification.ts hook behavior", () => {
       // Should log the event
       ok(
         consoleCapture.logs.some(
-          (log) =>
-            log.includes("AskUserQuestion") || log.includes("質問"),
+          (log) => log.includes("AskUserQuestion") || log.includes("質問"),
         ),
       );
     });
@@ -270,7 +268,9 @@ function createAskUserQuestionNotificationHook() {
         await Promise.allSettled([
           // Log event
           (async () => {
-            console.log(`Logging AskUserQuestion event for session ${sessionId}`);
+            console.log(
+              `Logging AskUserQuestion event for session ${sessionId}`,
+            );
           })(),
 
           // System notification

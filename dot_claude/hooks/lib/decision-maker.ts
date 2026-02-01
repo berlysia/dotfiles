@@ -31,4 +31,3 @@ export function analyzePatternMatches(
     reason: "No patterns matched",
   };
 }
-

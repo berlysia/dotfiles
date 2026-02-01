@@ -167,7 +167,10 @@ const hook = defineHook({
         session_id,
         tool_input,
       );
-      return context.json(createPermissionRequestAllowResponse());
+      return context.json({
+        event: "PermissionRequest",
+        output: createPermissionRequestAllowResponse(),
+      });
     }
 
     // LLM denied or couldn't evaluate - pass to user confirmation

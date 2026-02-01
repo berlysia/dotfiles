@@ -296,7 +296,9 @@ class AutoApproveUpdater {
     if (candidate.examples.length > 0 && candidate.examples[0]) {
       const example = candidate.examples[0];
       const exampleCommand =
-        example.input && typeof example.input === "object" && "command" in example.input
+        example.input &&
+        typeof example.input === "object" &&
+        "command" in example.input
           ? String(example.input.command)
           : "N/A";
       console.log(`├─ Example: ${exampleCommand}`);

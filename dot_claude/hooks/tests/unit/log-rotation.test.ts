@@ -16,9 +16,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import {
-  createUnifiedVoiceConfig,
-} from "../../../lib/unified-audio-config.ts";
+import { createUnifiedVoiceConfig } from "../../../lib/unified-audio-config.ts";
 import { logMessage } from "../../../lib/unified-audio-engine.ts";
 
 describe("Log Rotation", () => {
@@ -63,7 +61,10 @@ describe("Log Rotation", () => {
       writeFileSync(logFile, lines);
 
       const sizeBefore = statSync(logFile).size;
-      assert.ok(sizeBefore > 1024 * 1024, "Log should be larger than 1MB before rotation");
+      assert.ok(
+        sizeBefore > 1024 * 1024,
+        "Log should be larger than 1MB before rotation",
+      );
 
       // Trigger rotation by logging a new message
       logMessage("New message after rotation", config);
@@ -72,7 +73,10 @@ describe("Log Rotation", () => {
       assert.ok(sizeAfter < sizeBefore, "Log should be smaller after rotation");
 
       const content = readFileSync(logFile, "utf-8");
-      assert.ok(content.includes("New message after rotation"), "New message should be present");
+      assert.ok(
+        content.includes("New message after rotation"),
+        "New message should be present",
+      );
     });
 
     it("should retain recent lines after rotation", () => {
@@ -82,7 +86,9 @@ describe("Log Rotation", () => {
       // Create lines with identifiable content
       const lines: string[] = [];
       for (let i = 0; i < 2000; i++) {
-        lines.push(`[2025-01-01T00:00:00.000Z] Line ${i.toString().padStart(4, "0")}`);
+        lines.push(
+          `[2025-01-01T00:00:00.000Z] Line ${i.toString().padStart(4, "0")}`,
+        );
       }
       // Add extra content to exceed 1MB
       const extraPadding = "X".repeat(500);
@@ -96,8 +102,14 @@ describe("Log Rotation", () => {
       const resultLines = content.split("\n").filter((l) => l.trim());
 
       // Should retain approximately 1000 lines plus the new message
-      assert.ok(resultLines.length <= 1100, `Should have ~1000 lines, got ${resultLines.length}`);
-      assert.ok(content.includes("Final message"), "New message should be present");
+      assert.ok(
+        resultLines.length <= 1100,
+        `Should have ~1000 lines, got ${resultLines.length}`,
+      );
+      assert.ok(
+        content.includes("Final message"),
+        "New message should be present",
+      );
       // Should retain recent lines (higher numbers)
       assert.ok(content.includes("Line 1999"), "Should retain recent lines");
     });

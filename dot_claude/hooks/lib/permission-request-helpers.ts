@@ -1,31 +1,73 @@
 /**
  * Helper functions for creating PermissionRequest hook responses
- * Based on Claude Code hook specification
+ * Based on Claude Code hook specification and cc-hooks-ts types
  */
 
 /**
- * PermissionRequest allow response structure
+ * Permission update structure (matches cc-hooks-ts PermissionUpdate)
+ */
+type PermissionUpdate =
+  | {
+      type: "addRules" | "replaceRules" | "removeRules";
+      behavior: "allow" | "deny" | "ask";
+      destination:
+        | "userSettings"
+        | "projectSettings"
+        | "localSettings"
+        | "session"
+        | "cliArg";
+      rules: Array<{ toolName: string; ruleContent?: string }>;
+    }
+  | {
+      type: "setMode";
+      destination:
+        | "userSettings"
+        | "projectSettings"
+        | "localSettings"
+        | "session"
+        | "cliArg";
+      mode:
+        | "acceptEdits"
+        | "bypassPermissions"
+        | "default"
+        | "dontAsk"
+        | "delegate"
+        | "plan";
+    }
+  | {
+      type: "addDirectories" | "removeDirectories";
+      destination:
+        | "userSettings"
+        | "projectSettings"
+        | "localSettings"
+        | "session"
+        | "cliArg";
+      directories: string[];
+    };
+
+/**
+ * PermissionRequest allow response structure (matches cc-hooks-ts PermissionRequestHookOutput)
  */
 type PermissionRequestAllowResponse = {
-  hookSpecificOutput: {
+  hookSpecificOutput?: {
     hookEventName: "PermissionRequest";
     decision: {
       behavior: "allow";
       updatedInput?: Record<string, unknown>;
-      updatedPermissions?: Array<{ type: string; tool?: string }>;
+      updatedPermissions?: PermissionUpdate[];
     };
   };
 };
 
 /**
- * PermissionRequest deny response structure
+ * PermissionRequest deny response structure (matches cc-hooks-ts PermissionRequestHookOutput)
  */
 type PermissionRequestDenyResponse = {
-  hookSpecificOutput: {
+  hookSpecificOutput?: {
     hookEventName: "PermissionRequest";
     decision: {
       behavior: "deny";
-      message: string;
+      message?: string;
       interrupt?: boolean;
     };
   };
@@ -46,7 +88,7 @@ export type PermissionRequestResponse =
  */
 export function createPermissionRequestAllowResponse(
   updatedInput?: Record<string, unknown>,
-  updatedPermissions?: Array<{ type: string; tool?: string }>,
+  updatedPermissions?: PermissionUpdate[],
 ): PermissionRequestAllowResponse {
   return {
     hookSpecificOutput: {

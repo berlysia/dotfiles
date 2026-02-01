@@ -5,12 +5,8 @@
     "dot_claude/lib/*.ts",
     "dot_claude/scripts/*.ts"
   ],
-  "project": [
-    "dot_claude/**/*.ts"
-  ],
-  "ignore": [
-    "**/*.test.ts"
-  ],
+  "project": ["dot_claude/**/*.ts"],
+  "ignore": ["**/*.test.ts"],
   "ignoreDependencies": [
     "add-skill",
     "ccstatusline",
