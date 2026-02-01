@@ -17,6 +17,16 @@ export type NotificationEventType =
   | "PermissionRequest";
 
 /**
+ * Notification types from Claude Code Notification hook
+ * @see https://code.claude.com/docs/en/hooks#notification
+ */
+export type NotificationType =
+  | "permission_prompt"
+  | "idle_prompt"
+  | "auth_success"
+  | "elicitation_dialog";
+
+/**
  * Generated notification messages
  */
 export interface NotificationMessages {
@@ -44,6 +54,10 @@ export interface MessageTemplateVars {
   toolName?: string | undefined;
   /** Base action text (e.g., "質問があります") */
   actionText: string;
+  /** Notification type (for Notification events) */
+  notificationType?: NotificationType | undefined;
+  /** Original message from Claude Code (for Notification events) */
+  notificationMessage?: string | undefined;
 }
 
 /**
@@ -89,14 +103,48 @@ const DEFAULT_ACTION = (v: MessageTemplateVars): string =>
 // Message Templates per Event Type
 // =========================================================================
 
+/**
+ * Action text mapping for notification types
+ */
+const NOTIFICATION_TYPE_ACTION_TEXT: Record<NotificationType, string> = {
+  permission_prompt: "Claudeが許可を求めています",
+  idle_prompt: "Claudeが入力を待っています",
+  auth_success: "認証が完了しました",
+  elicitation_dialog: "Claudeから確認があります",
+};
+
+/**
+ * Get action text based on notification type
+ */
+function getNotificationActionText(
+  notificationType?: NotificationType,
+): string {
+  if (notificationType && notificationType in NOTIFICATION_TYPE_ACTION_TEXT) {
+    return NOTIFICATION_TYPE_ACTION_TEXT[notificationType];
+  }
+  return "通知があります";
+}
+
 const MESSAGE_TEMPLATES: Record<NotificationEventType, MessageTemplate> = {
   Notification: {
     actionText: "通知があります",
-    system: (v) => `通知: ${v.repoName}`,
+    voice: (v) => {
+      const actionText = getNotificationActionText(v.notificationType);
+      return `${v.computerName}の${v.location}で、${actionText}`;
+    },
+    system: (v) => {
+      const actionText = getNotificationActionText(v.notificationType);
+      return `${actionText} (${v.repoName})`;
+    },
+    action: (v) => {
+      const actionText = getNotificationActionText(v.notificationType);
+      return `${v.location}で${actionText}`;
+    },
   },
 
   Stop: {
-    voice: (v) => `${v.computerName}の${v.location}で、Claudeが動作を停止しました`,
+    voice: (v) =>
+      `${v.computerName}の${v.location}で、Claudeが動作を停止しました`,
     actionText: "動作を停止しました",
     system: (v) => `停止: ${v.repoName}`,
   },
@@ -107,7 +155,8 @@ const MESSAGE_TEMPLATES: Record<NotificationEventType, MessageTemplate> = {
   },
 
   AskUserQuestion: {
-    voice: (v) => `${v.computerName}の${v.location}で、Claudeから質問があります。`,
+    voice: (v) =>
+      `${v.computerName}の${v.location}で、Claudeから質問があります。`,
     actionText: "質問があります",
     system: (v) => `Claude が質問しています: ${v.repoName}`,
   },
@@ -136,21 +185,45 @@ export interface MessageContext {
   computerName: string;
   gitContext: GitContextInfo;
   toolName?: string | undefined;
+  /** Notification type from Claude Code Notification hook */
+  notificationType?: NotificationType | undefined;
+  /** Original message from Claude Code Notification hook */
+  notificationMessage?: string | undefined;
+}
+
+/**
+ * Options for getting message context
+ */
+export interface MessageContextOptions {
+  toolName?: string | undefined;
+  notificationType?: NotificationType | undefined;
+  notificationMessage?: string | undefined;
 }
 
 /**
  * Get message context from environment and git
  */
 export async function getMessageContext(
-  toolName?: string,
+  options?: MessageContextOptions | string,
 ): Promise<MessageContext> {
   const computerName = process.env.CLAUDE_COMPUTER_NAME || "Claude";
   const gitContext = await getGitContext();
 
+  // Support legacy string argument (toolName only)
+  if (typeof options === "string") {
+    return {
+      computerName,
+      gitContext,
+      toolName: options,
+    };
+  }
+
   return {
     computerName,
     gitContext,
-    toolName,
+    toolName: options?.toolName,
+    notificationType: options?.notificationType,
+    notificationMessage: options?.notificationMessage,
   };
 }
 
@@ -165,7 +238,13 @@ function buildTemplateVars(
   template: MessageTemplate,
   context: MessageContext,
 ): MessageTemplateVars {
-  const { gitContext, computerName, toolName } = context;
+  const {
+    gitContext,
+    computerName,
+    toolName,
+    notificationType,
+    notificationMessage,
+  } = context;
 
   return {
     repoName: gitContext.name,
@@ -174,6 +253,8 @@ function buildTemplateVars(
     computerName,
     toolName,
     actionText: template.actionText,
+    notificationType,
+    notificationMessage,
   };
 }
 
@@ -224,9 +305,9 @@ export function createNotificationMessages(
  */
 export async function createNotificationMessagesAuto(
   eventType: NotificationEventType,
-  toolName?: string,
+  options?: MessageContextOptions | string,
 ): Promise<NotificationMessages> {
-  const context = await getMessageContext(toolName);
+  const context = await getMessageContext(options);
   return createNotificationMessages(eventType, context);
 }
 

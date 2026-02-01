@@ -6,8 +6,8 @@
 import {
   existsSync,
   mkdirSync,
-  readFileSync,
   readdirSync,
+  readFileSync,
   rmSync,
   statSync,
   unlinkSync,
@@ -15,8 +15,9 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { $ } from "dax";
-import { createNotificationMessagesAuto } from "./notification-messages.ts";
 import { checkClaudeCompanionStatus } from "./claude-companion-detector.ts";
+import type { NotificationType } from "./notification-messages.ts";
+import { createNotificationMessagesAuto } from "./notification-messages.ts";
 import {
   createUnifiedVoiceConfig,
   createVoiceSession,
@@ -494,14 +495,33 @@ export async function speakNotification(
 // Context-Aware Notification Functions
 // =========================================================================
 
+/**
+ * Options for handleNotification
+ */
+export interface NotificationOptions {
+  /** Notification type from Claude Code Notification hook */
+  notificationType?: NotificationType | undefined;
+  /** Original message from Claude Code Notification hook */
+  notificationMessage?: string | undefined;
+}
+
 export async function handleNotification(
   config: UnifiedVoiceConfig,
   session: VoiceSession,
+  options?: NotificationOptions,
 ): Promise<NotificationResult> {
   await cleanupOldFiles(config);
 
-  const messages = await createNotificationMessagesAuto("Notification");
-  return await speakNotification(messages.voice, "Notification", config, session);
+  const messages = await createNotificationMessagesAuto("Notification", {
+    notificationType: options?.notificationType,
+    notificationMessage: options?.notificationMessage,
+  });
+  return await speakNotification(
+    messages.voice,
+    "Notification",
+    config,
+    session,
+  );
 }
 
 export async function handleStop(
@@ -509,7 +529,12 @@ export async function handleStop(
   session: VoiceSession,
 ): Promise<NotificationResult> {
   const messages = await createNotificationMessagesAuto("Stop");
-  const result = await speakNotification(messages.voice, "Stop", config, session);
+  const result = await speakNotification(
+    messages.voice,
+    "Stop",
+    config,
+    session,
+  );
 
   // Cleanup session directory
   if (config.behavior.cleanupOnExit && existsSync(session.sessionDir)) {
