@@ -28,6 +28,7 @@
     "typescript": "5.9.3"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "0.71.2",
     "@mizchi/readability": "0.7.7",
     "@openai/codex": "0.77.0",
     "@playwright/mcp": "0.0.54",
