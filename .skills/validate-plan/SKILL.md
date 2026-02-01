@@ -1,6 +1,6 @@
 ---
 name: validate-plan
-description: Review completed implementation plan for logical consistency, completeness, and best practices. Use after exiting plan mode. Invokes logic-validator and optionally external review agents. Trigger keywords:"validate plan", "review plan", "check plan quality", "plan validation".
+description: Required when ExitPlanMode is blocked by hook. Reviews implementation plan for logical consistency using logic-validator. Adds <!-- validated --> marker after successful validation. Trigger keywords:"validate plan", "review plan", "check plan quality", "plan validation".
 context: fork
 agent: general-purpose
 allowed-tools: Read, Bash, Task, Edit
@@ -14,15 +14,15 @@ Planモードで作成した実装計画を、ExitPlanMode実行後にサブエ�
 
 ## 重要な前提
 
-**使用タイミング**: ExitPlanMode実行**後**、実装開始前
+**使用タイミング**: ExitPlanMode が**ブロックされた時**
 
-Plan Mode中はサブエージェント起動に制限があるため、このスキルはPlan Modeを終了してから実行してください。
+ExitPlanMode を実行すると、hook によって計画ファイルの検証マーカー（`<!-- validated -->`）がチェックされます。マーカーがない場合は ExitPlanMode がブロックされ、このスキルの実行を促されます。
 
 ## 基本ワークフロー
 
 ```
 1. Plan Mode で計画作成
-2. ExitPlanMode 実行
+2. ExitPlanMode 実行 → hook によりブロック
 3. /validate-plan 実行（このスキル）
    ├─ logic-validator で論理検証
    └─ 必要なら外部レビュー
@@ -30,10 +30,14 @@ Plan Mode中はサブエージェント起動に制限があるため、この�
    ├─ 問題なし/軽微 → 5へ
    ├─ 中程度（修正可能） → 修正して再検証（最大2回）
    └─ 決定的な欠落 → 実装停止、計画再作成
-5. 実装開始（問題なしの場合のみ）
+5. 計画ファイルに <!-- validated --> マーカーを追加
+6. ExitPlanMode を再実行 → 成功
+7. 実装開始
 ```
 
-**重要な原則**: 決定的な欠落がある状態では、絶対に実装を開始しません。
+**重要な原則**:
+- 決定的な欠落がある状態では、絶対に実装を開始しません
+- `<!-- validated -->` マーカーがないと ExitPlanMode は hook によりブロックされます
 
 ## Validation Steps
 
@@ -166,9 +170,22 @@ Edit({
 
 #### ✅ 問題なし、または軽微な問題のみ
 
-**実装を開始してOK**
+**検証完了マーカーを追加してから実装を開始**
 
-計画ファイルはすでに `~/.claude/plans/` または `.claude/plans/` に保存されているはずです。
+計画ファイルに検証完了マーカーを追加してください：
+
+```typescript
+// 計画ファイルの末尾に追加
+Edit({
+  file_path: "/path/to/plan.md",
+  old_string: "[計画ファイルの最後の行]",
+  new_string: "[計画ファイルの最後の行]\n\n<!-- validated -->"
+})
+```
+
+**重要**: このマーカーがないと、ExitPlanMode が hook によってブロックされます。
+
+マーカー追加後、ExitPlanMode を再実行して実装を開始してください。
 
 #### ⚠️ 中程度の問題（2回目の検証後も残る）
 
@@ -356,7 +373,7 @@ Task({ subagent_type: "logic-validator", ... })
 ## Quick Reference
 
 ```bash
-# 基本フロー（Plan Mode終了後）
+# 基本フロー（ExitPlanMode がブロックされた後）
 1. 計画ファイル確認: ls -lt ~/.claude/plans/*.md
 2. 読み取り: Read({ file_path: "~/.claude/plans/plan.md" })
 3. 論理検証: Task(logic-validator)
@@ -365,7 +382,9 @@ Task({ subagent_type: "logic-validator", ... })
    - 🚫 決定的な欠落 → 実装停止、計画再作成
    - ⚠️ 中程度 → 改善: Edit({ ... }) → 再検証（最大2回）
    - ✅ 問題なし → 6へ
-6. 実装開始
+6. 検証完了マーカーを追加:
+   Edit({ file_path: "plan.md", old_string: "[last line]", new_string: "[last line]\n\n<!-- validated -->" })
+7. ExitPlanMode を再実行 → 実装開始
 
 # 検証レベルの選択
 - Simple plan → logic-validator のみ
@@ -373,5 +392,6 @@ Task({ subagent_type: "logic-validator", ... })
 - Complex/security-critical → + self-review
 
 # 重要原則
-決定的な欠落がある状態では、絶対に実装を開始しない
+- 決定的な欠落がある状態では、絶対に実装を開始しない
+- <!-- validated --> マーカーがないと ExitPlanMode はブロックされる
 ```
