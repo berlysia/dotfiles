@@ -89,11 +89,13 @@ function extractQuotedString(text: string, startPos: number): string | null {
 }
 
 // Meta commands that can execute other commands (from original implementation)
+// Note: Patterns use [\s\S] instead of . for multiline support (. doesn't match newlines)
 const META_COMMANDS = {
   sh: [/-c\s+['"](.+?)['"]/, /(.+)/],
   bash: [/-c\s+['"](.+?)['"]/, /(.+)/],
   zsh: [/-c\s+['"](.+?)['"]/, /(.+)/],
-  node: [/-e\s+['"](.+?)['"]/, /(.+)/],
+  // Removed 'node' - node -e executes JavaScript, not shell commands
+  // node commands should be treated as single commands and matched with Bash(node:*)
   xargs: [/sh\s+-c\s+['"](.+?)['"]/, /-I\s+\S+\s+(.+)/, /(.+)/],
   timeout: [/\d+\s+(.+)/],
   time: [/(.+)/],
