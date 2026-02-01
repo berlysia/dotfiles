@@ -2,19 +2,16 @@
 
 /**
  * PermissionRequest LLM Evaluator Hook
- * Layer 2b: LLM-based evaluation using Anthropic API (Haiku model)
+ * Layer 2b: LLM-based evaluation using Claude Agent SDK
  *
  * Evaluates uncertain permission requests that passed through Layer 2a (static rules)
- * Uses prompt injection protection and structured output
+ * Uses Claude Code's license for authentication (no API key required)
  */
 
-import Anthropic from "@anthropic-ai/sdk";
+import { query } from "@anthropic-ai/claude-agent-sdk";
 import { defineHook } from "cc-hooks-ts";
 import { logDecision } from "../lib/centralized-logging.ts";
-import {
-  createPermissionRequestAllowResponse,
-  createPermissionRequestDenyResponse,
-} from "../lib/permission-request-helpers.ts";
+import { createPermissionRequestAllowResponse } from "../lib/permission-request-helpers.ts";
 import type { PermissionRequestInput } from "../lib/structured-llm-evaluator.ts";
 
 const SYSTEM_PROMPT = `You are a security evaluation AI for developer tool permission requests.
@@ -72,38 +69,50 @@ function formatToolInputForEvaluation(input: PermissionRequestInput): string {
 }
 
 /**
- * Call Anthropic API to evaluate the permission request
- * Uses Claude Code's license when running within Claude Code environment
+ * Call Claude Agent SDK to evaluate the permission request
+ * Uses Claude Code's license for authentication
  */
 async function evaluateWithLLM(
   input: PermissionRequestInput,
 ): Promise<{ allow: boolean; reason: string }> {
-  // SDK automatically uses ANTHROPIC_API_KEY env var or Claude Code's license
-  const client = new Anthropic();
-
   const toolDescription = formatToolInputForEvaluation(input);
+  const userPrompt = `Evaluate this permission request:\n\n<user_input>\n${toolDescription}\n</user_input>`;
 
   try {
-    const response = await client.messages.create({
-      model: "claude-3-5-haiku-latest",
-      max_tokens: 256,
-      system: SYSTEM_PROMPT,
-      messages: [
-        {
-          role: "user",
-          content: `Evaluate this permission request:\n\n<user_input>\n${toolDescription}\n</user_input>`,
-        },
-      ],
+    const conversation = query({
+      prompt: userPrompt,
+      options: {
+        model: "haiku",
+        maxTurns: 1,
+        systemPrompt: SYSTEM_PROMPT,
+        // Disable all tools - we just want LLM text response
+        allowedTools: [],
+        // Bypass permissions since we're running inside a hook
+        permissionMode: "bypassPermissions",
+        allowDangerouslySkipPermissions: true,
+      },
     });
 
-    // Extract text content
-    const textContent = response.content.find((c) => c.type === "text");
-    if (!textContent || textContent.type !== "text") {
-      return { allow: false, reason: "LLM returned no text response" };
+    // Collect the response
+    let responseText = "";
+    for await (const message of conversation) {
+      if (message.type === "assistant") {
+        // Extract text from assistant message
+        for (const block of message.message.content) {
+          if (block.type === "text") {
+            responseText += block.text;
+          }
+        }
+      } else if (message.type === "result") {
+        // Use the result if available
+        if (message.subtype === "success" && message.result) {
+          responseText = message.result;
+        }
+      }
     }
 
     // Parse JSON response
-    const jsonMatch = textContent.text.match(/\{[\s\S]*\}/);
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       return { allow: false, reason: "LLM returned non-JSON response" };
     }
@@ -128,8 +137,26 @@ const hook = defineHook({
     const input = context.input as unknown as PermissionRequestInput;
     const { tool_name, tool_input, session_id } = input;
 
+    // Log before LLM evaluation
+    logDecision(
+      tool_name,
+      "ask",
+      `Starting LLM evaluation (Layer 2b)...`,
+      session_id,
+      tool_input,
+    );
+
     // Evaluate with LLM (uses Claude Code's license)
     const result = await evaluateWithLLM(input);
+
+    // Log after LLM evaluation
+    logDecision(
+      tool_name,
+      "ask",
+      `LLM evaluation completed (Layer 2b): ${JSON.stringify(result)}`,
+      session_id,
+      tool_input,
+    );
 
     if (result.allow) {
       // LLM approved the request
