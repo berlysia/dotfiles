@@ -27,7 +27,6 @@ import {
   checkPattern as patternMatcherCheckPattern,
 } from "../lib/pattern-matcher.ts";
 import {
-  isBashToolInput,
   type PermissionDecision,
   type SettingsFile,
 } from "../types/project-types.ts";
@@ -67,15 +66,11 @@ const hook = defineHook({
         );
 
         // Log the decision using centralized logger
-        const command = isBashToolInput(tool_name, tool_input)
-          ? tool_input.command
-          : undefined;
         logDecision(
           tool_name,
           decision.decision,
           decision.reason,
           context.input.session_id,
-          command,
           tool_input,
         );
 
@@ -127,7 +122,6 @@ const hook = defineHook({
               decision.decision,
               decision.reason,
               context.input.session_id,
-              undefined,
               tool_input,
             );
 
@@ -144,7 +138,6 @@ const hook = defineHook({
             "pass",
             `Tool '${tool_name}' has no explicit patterns, delegating to Claude Code`,
             context.input.session_id,
-            undefined,
             tool_input,
           );
           return context.success({});
@@ -168,7 +161,6 @@ const hook = defineHook({
           decision.decision,
           decision.reason,
           context.input.session_id,
-          undefined,
           tool_input,
         );
 
@@ -186,7 +178,6 @@ const hook = defineHook({
           "pass",
           `Tool '${tool_name}' has no matching patterns, delegating to Claude Code`,
           context.input.session_id,
-          undefined,
           tool_input,
         );
         return context.success({});

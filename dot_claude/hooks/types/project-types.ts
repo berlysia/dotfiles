@@ -19,7 +19,12 @@ import "./tool-schemas.ts";
 export type { ExtractAllHookInputsForEvent, ExtractSpecificHookInputForEvent };
 
 // Type aliases for commonly used cc-hooks-ts types
-export type PermissionDecision = "allow" | "deny" | "ask" | "pass";
+export type PermissionDecision =
+  | "allow"
+  | "deny"
+  | "ask"
+  | "pass"
+  | "permission_request";
 /** @public Type alias for built-in tool names */
 export type BuiltinToolName =
   ExtractAllHookInputsForEvent<"PreToolUse">["tool_name"];
