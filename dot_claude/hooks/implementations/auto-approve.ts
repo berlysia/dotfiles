@@ -466,6 +466,29 @@ async function processBashCommand(
     }
   }
 
+  // Layer 1: Static safe patterns (always allow regardless of allowList)
+  // These are read-only commands with no side effects
+  const SAFE_BASH_PATTERNS_LAYER1 = [
+    // Information retrieval
+    /^(ls|pwd|echo|cat|head|tail|wc|file|stat|which|type|whereis|basename|dirname|realpath)\s/,
+    /^(ls|pwd|echo|cat|head|tail|wc|file|stat|which|type|whereis|basename|dirname|realpath)$/,
+    // Git read-only operations
+    /^git\s+(status|log|diff|branch|remote|show|describe|tag|rev-parse)(\s|$)/,
+    /^git\s+config\s+--get\s/,
+    // Package information
+    /^(npm|pnpm|yarn|bun)\s+(ls|list|outdated|view|info|why|explain)(\s|$)/,
+  ];
+
+  for (const pattern of SAFE_BASH_PATTERNS_LAYER1) {
+    if (pattern.test(cmd)) {
+      return {
+        type: "allow",
+        command: cmd,
+        pattern: `Static safe pattern (Layer 1)`,
+      };
+    }
+  }
+
   // Check allow patterns
   if (allowList.length > 0) {
     const allowResult = await patternMatcherCheckAllow(cmd, allowList);
