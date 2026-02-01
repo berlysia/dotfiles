@@ -47,4 +47,6 @@ export interface LogManagerConfig {
   logDir: string;
   maxLines: number;
   rotateBackups: number;
+  /** Rotation interval in days. If set, rotates when oldest entry is older than this. */
+  rotateIntervalDays?: number;
 }
