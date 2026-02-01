@@ -6,8 +6,9 @@
 ## Workflow
 1. **Explore** - Understand codebase and requirements
 2. **Plan** - Design solution with clear steps
-3. **Code** - Implement following best practices
-4. **Commit** - Clean, meaningful commits
+3. **Validate** - Verify plan with `/validate-plan` (mandatory for Plan Mode)
+4. **Code** - Implement following best practices
+5. **Commit** - Clean, meaningful commits
 
 ## Task Completion Protocol
 
@@ -23,6 +24,35 @@
 - Ambiguous requirements → Ask clarification
 
 **Critical**: Never unilaterally lower user expectations or disable steering.
+
+## Plan Mode Completion Protocol (MANDATORY)
+
+**重要**: ExitPlanMode は hook によって計画検証を強制される。
+
+### フロー
+
+```
+1. Plan Mode で計画作成
+2. ExitPlanMode 実行 → hook でブロック（<!-- validated --> マーカーがない場合）
+3. /validate-plan 実行
+   ├─ 🚫 決定的な欠落 → 実装停止、計画再作成
+   ├─ ⚠️ 中程度の問題 → 修正して再検証（最大2回）
+   └─ ✅ 問題なし → 4へ
+4. 計画ファイルに <!-- validated --> マーカーを追加
+5. ExitPlanMode 再実行 → 成功
+6. 実装開始
+```
+
+### 検証の省略方法
+
+計画ファイルに直接 `<!-- validated -->` を追加することでスキップ可能。以下の**すべて**を満たす場合のみ：
+- 単一ファイルの軽微な修正
+- 既存パターンに完全に従う実装
+- 失敗しても影響が限定的
+
+**判断に迷ったら /validate-plan を実行する**。
+
+詳細は `/validate-plan` スキルおよび `@~/.claude/rules/external-review.md` を参照。
 
 ## Development Principles
 
