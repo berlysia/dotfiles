@@ -30,6 +30,7 @@ const DEFAULT_CONFIG: LogManagerConfig = {
   logDir: join(homedir(), ".claude", "logs"),
   maxLines: 1000,
   rotateBackups: 5,
+  rotateIntervalDays: 3,
 };
 
 class CentralizedLogger {
@@ -100,7 +101,33 @@ class CentralizedLogger {
       const content = readFileSync(logFile, "utf-8");
       const lines = content.split("\n").filter(Boolean);
 
-      if (lines.length > this.config.maxLines) {
+      let shouldRotate = false;
+
+      // Check time-based rotation (primary)
+      if (this.config.rotateIntervalDays && lines.length > 0) {
+        const firstLine = lines[0];
+        try {
+          const firstEntry = JSON.parse(firstLine);
+          if (firstEntry.timestamp) {
+            const oldestTimestamp = new Date(firstEntry.timestamp).getTime();
+            const now = Date.now();
+            const intervalMs =
+              this.config.rotateIntervalDays * 24 * 60 * 60 * 1000;
+            if (now - oldestTimestamp > intervalMs) {
+              shouldRotate = true;
+            }
+          }
+        } catch {
+          // If we can't parse the first line, fall back to line count
+        }
+      }
+
+      // Fallback: line count based rotation
+      if (!shouldRotate && lines.length > this.config.maxLines) {
+        shouldRotate = true;
+      }
+
+      if (shouldRotate) {
         const timestamp = new Date()
           .toISOString()
           .replace(/[:.]/g, "-")
