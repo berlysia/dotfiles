@@ -28,6 +28,7 @@
     "typescript": "5.9.3"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.2.19",
     "@anthropic-ai/sdk": "0.71.2",
     "@mizchi/readability": "0.7.7",
     "@openai/codex": "0.77.0",
