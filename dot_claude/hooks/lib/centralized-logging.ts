@@ -213,7 +213,6 @@ class CentralizedLogger {
     decision: DecisionLogEntry["decision"],
     reason: string,
     sessionId?: string,
-    command?: string,
     input?: unknown,
   ): void {
     const entry: DecisionLogEntry = {
@@ -222,7 +221,6 @@ class CentralizedLogger {
       decision,
       reason,
       ...(sessionId ? { session_id: sessionId } : {}),
-      ...(command ? { command } : {}),
       ...(input !== undefined
         ? { input: input as Record<string, unknown> | null }
         : {}),
@@ -290,15 +288,7 @@ export function logDecision(
   decision: DecisionLogEntry["decision"],
   reason: string,
   sessionId?: string,
-  command?: string,
   input?: unknown,
 ): void {
-  getLogger().logDecision(
-    toolName,
-    decision,
-    reason,
-    sessionId,
-    command,
-    input,
-  );
+  getLogger().logDecision(toolName, decision, reason, sessionId, input);
 }

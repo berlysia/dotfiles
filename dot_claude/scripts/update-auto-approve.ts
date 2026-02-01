@@ -294,7 +294,12 @@ class AutoApproveUpdater {
     console.log(`├─ Reasoning: ${candidate.reasoning}`);
 
     if (candidate.examples.length > 0 && candidate.examples[0]) {
-      console.log(`├─ Example: ${candidate.examples[0].command || "N/A"}`);
+      const example = candidate.examples[0];
+      const exampleCommand =
+        example.input && typeof example.input === "object" && "command" in example.input
+          ? String(example.input.command)
+          : "N/A";
+      console.log(`├─ Example: ${exampleCommand}`);
     }
 
     console.log(`└─ Action: [A]pprove / [S]kip / [E]dit / [Q]uit`);

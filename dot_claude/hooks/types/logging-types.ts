@@ -32,7 +32,6 @@ export interface DecisionLogEntry extends BaseLogEntry {
   tool_name: string;
   decision: PermissionDecision;
   reason: string;
-  command?: string;
   input?: Record<string, unknown> | null;
 }
 

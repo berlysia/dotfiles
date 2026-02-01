@@ -13,18 +13,27 @@ import {
   sendSystemNotification,
 } from "../../lib/unified-audio-engine.ts";
 import { createNotificationMessagesAuto } from "../../lib/notification-messages.ts";
-import { logEvent } from "../lib/centralized-logging.ts";
+import { logDecision } from "../lib/centralized-logging.ts";
 
 // 専用hookがあるツール、またはユーザー対話を目的とするツールはスキップ
 const SKIP_NOTIFICATION_TOOLS = ["AskUserQuestion", "ExitPlanMode"];
+
+// Type assertion for PermissionRequest input (Claude Code provides more than cc-hooks-ts types)
+interface PermissionRequestInput {
+  session_id: string;
+  tool_name: string;
+  tool_input?: Record<string, unknown>;
+}
 
 const hook = defineHook({
   trigger: {
     PermissionRequest: true,
   },
   run: async (context) => {
-    const sessionId = context.input.session_id;
-    const toolName = context.input.tool_name;
+    const input = context.input as unknown as PermissionRequestInput;
+    const sessionId = input.session_id;
+    const toolName = input.tool_name;
+    const toolInput = input.tool_input;
 
     // Skip notification for tools that have dedicated notification hooks
     if (SKIP_NOTIFICATION_TOOLS.includes(toolName)) {
@@ -46,8 +55,14 @@ const hook = defineHook({
 
       // 並列実行で高速化
       await Promise.allSettled([
-        // ログ記録
-        logEvent("PermissionRequest", sessionId),
+        // ログ記録（decisions.jsonlに記録、auto-approveのログと合流）
+        logDecision(
+          toolName,
+          "permission_request",
+          `User permission requested for ${toolName}`,
+          sessionId,
+          toolInput,
+        ),
 
         // システム通知
         sendSystemNotification(messages.system, config),

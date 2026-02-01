@@ -254,7 +254,11 @@ export class PermissionAnalyzer {
   private async extractPattern(
     entry: DecisionLogEntry,
   ): Promise<string | null> {
-    const { tool_name, command, input } = entry;
+    const { tool_name, input } = entry;
+    const command =
+      input && typeof input === "object" && "command" in input
+        ? String(input.command)
+        : undefined;
 
     if (tool_name === "Bash" && command) {
       // Bashコマンドの場合、実行可能部分を抽出
