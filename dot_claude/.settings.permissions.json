@@ -120,6 +120,7 @@
     "TaskCreate",
     "TaskOutput",
     "TaskUpdate",
+    "TaskGet",
     "WebFetch(domain:*)",
     "WebSearch",
     "Write(!.git/**)",
