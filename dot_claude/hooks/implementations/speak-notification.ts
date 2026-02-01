@@ -6,6 +6,8 @@
  */
 
 import { defineHook } from "cc-hooks-ts";
+
+import type { NotificationType } from "../../lib/notification-messages.ts";
 import {
   cleanupOldFiles,
   cleanupSession,
@@ -23,6 +25,15 @@ const hook = defineHook({
   run: async (context) => {
     const eventType = context.input.hook_event_name as "Notification" | "Stop";
     const sessionId = context.input.session_id;
+    // Extract notification_type and message from Notification events
+    // @see https://code.claude.com/docs/en/hooks#notification
+    // cc-hooks-ts types don't include these fields yet, so we cast to unknown first
+    const inputAny = context.input as unknown as {
+      notification_type?: NotificationType;
+      message?: string;
+    };
+    const notificationType = inputAny.notification_type;
+    const notificationMessage = inputAny.message;
 
     try {
       const { config, session } = await createAudioEngine();
@@ -42,7 +53,10 @@ const hook = defineHook({
         (async () => {
           switch (eventType) {
             case "Notification":
-              await handleNotification(config, session);
+              await handleNotification(config, session, {
+                notificationType,
+                notificationMessage,
+              });
               // Notificationイベント時のみクリーンアップ
               await cleanupOldFiles(config);
               break;
