@@ -396,6 +396,25 @@ export async function checkPattern(
     return false;
   }
 
+  // Handle Skill tool specifically
+  // Skill tool uses { skill: "skillName" } format, not file paths
+  if (pattern.startsWith("Skill(") && pattern.endsWith(")")) {
+    if (toolName !== "Skill") {
+      return false;
+    }
+
+    // Extract the skill name pattern from Skill(skillName)
+    const skillPattern = pattern.slice(6, -1); // Remove "Skill(" and ")"
+
+    // Get the actual skill name from tool input
+    const actualSkill =
+      typeof toolInput === "object" && toolInput !== null
+        ? ((toolInput as { skill?: string }).skill ?? "")
+        : "";
+
+    return actualSkill === skillPattern;
+  }
+
   // Handle other tools with file path patterns
   if (pattern.startsWith(`${toolName}(`)) {
     // Extract the path pattern
