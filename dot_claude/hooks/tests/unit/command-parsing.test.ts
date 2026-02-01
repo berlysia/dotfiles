@@ -299,7 +299,9 @@ describe("Command Parsing Library", () => {
     it("should define NO_PAREN_TOOL_NAMES", () => {
       strictEqual(Array.isArray(NO_PAREN_TOOL_NAMES), true);
       strictEqual(NO_PAREN_TOOL_NAMES.includes("TodoWrite"), true);
-      strictEqual(NO_PAREN_TOOL_NAMES.includes("Glob"), true);
+      // Glob was removed - it now uses path patterns like Glob(./**)
+      strictEqual(NO_PAREN_TOOL_NAMES.includes("Glob"), false);
+      strictEqual(NO_PAREN_TOOL_NAMES.includes("ExitPlanMode"), true);
     });
 
     it("should define CONTROL_STRUCTURE_KEYWORDS", () => {

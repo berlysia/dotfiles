@@ -215,7 +215,7 @@ export const NO_PAREN_TOOL_NAMES = [
   "Task",
   "BashOutput",
   "KillBash",
-  "Glob",
+  // Glob removed - it uses pattern parameter and should support path patterns like Glob(./**)
   "ExitPlanMode",
   "WebSearch",
   "ListMcpResourcesTool",
