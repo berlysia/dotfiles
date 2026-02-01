@@ -105,11 +105,14 @@ class CentralizedLogger {
 
       // Check time-based rotation (primary)
       if (this.config.rotateIntervalDays && lines.length > 0) {
-        const firstLine = lines[0];
+        const firstLine = lines[0] as string; // Safe: lines.length > 0 guarantees existence
         try {
-          const firstEntry = JSON.parse(firstLine);
-          if (firstEntry.timestamp) {
-            const oldestTimestamp = new Date(firstEntry.timestamp).getTime();
+          const firstEntry = JSON.parse(firstLine) as {
+            timestamp?: string;
+          };
+          const timestamp = firstEntry.timestamp;
+          if (timestamp !== undefined && typeof timestamp === "string") {
+            const oldestTimestamp = new Date(timestamp).getTime();
             const now = Date.now();
             const intervalMs =
               this.config.rotateIntervalDays * 24 * 60 * 60 * 1000;
@@ -263,9 +266,7 @@ let loggerInstance: CentralizedLogger | null = null;
 /**
  * グローバルログマネージャーインスタンスを取得
  */
-function getLogger(
-  config?: Partial<LogManagerConfig>,
-): CentralizedLogger {
+function getLogger(config?: Partial<LogManagerConfig>): CentralizedLogger {
   if (!loggerInstance) {
     loggerInstance = new CentralizedLogger(config);
   }

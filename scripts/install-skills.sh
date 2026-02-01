@@ -32,7 +32,7 @@ fi
 
 # Clone or update temporary repo
 TEMP_DIR=$(mktemp -d)
-trap "rm -rf $TEMP_DIR" EXIT
+trap 'rm -rf "$TEMP_DIR"' EXIT
 
 log "Fetching skills from $DOTFILES_REPO..."
 git clone --depth 1 --branch "$BRANCH" --single-branch "$DOTFILES_REPO" "$TEMP_DIR" &> /dev/null || error "Failed to clone repository"

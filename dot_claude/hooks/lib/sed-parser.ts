@@ -279,4 +279,3 @@ export function parseSedInPlace(command: string): SedInPlaceParseResult {
     backupExtension,
   };
 }
-

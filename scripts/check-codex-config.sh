@@ -32,8 +32,10 @@ fi
 
 # Check if config file exists
 if [[ ! -f "$CONFIG_FILE" ]]; then
-    echo "❌ Error: $CONFIG_FILE not found" >&2
-    exit 1
+    # When running locally without CI context, skip if file doesn't exist
+    # CI uses path filters to only run when the file is present
+    echo "⏭️ Skipping: $CONFIG_FILE not found (this is normal for template-based configs)"
+    exit 0
 fi
 
 # Generate formatted version

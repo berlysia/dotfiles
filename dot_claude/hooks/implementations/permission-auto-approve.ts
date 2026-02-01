@@ -160,7 +160,10 @@ const hook = defineHook({
         tool_input,
       );
 
-      return context.json(createPermissionRequestAllowResponse());
+      return context.json({
+        event: "PermissionRequest",
+        output: createPermissionRequestAllowResponse(),
+      });
     }
 
     if (staticResult === "deny") {

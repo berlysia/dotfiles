@@ -1,6 +1,6 @@
 #!/usr/bin/env -S bun run --silent
 
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { defineHook } from "cc-hooks-ts";
 import { createDenyResponse } from "../lib/context-helpers.ts";
@@ -87,8 +87,8 @@ const hook = defineHook({
           `Plan file: ${latestPlan}\n\n` +
           `After validation completes, the plan will be marked as validated and you can retry ExitPlanMode.\n\n` +
           `If this is a simple plan that doesn't require validation, you can skip by adding the marker manually:\n` +
-          `Edit the plan file and add "${VALIDATION_MARKER}" at the end.`
-      )
+          `Edit the plan file and add "${VALIDATION_MARKER}" at the end.`,
+      ),
     );
   },
 });

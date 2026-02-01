@@ -26,9 +26,9 @@ import {
   checkIndividualCommandDenyWithPattern as patternMatcherCheckDeny,
   checkPattern as patternMatcherCheckPattern,
 } from "../lib/pattern-matcher.ts";
-import {
-  type PermissionDecision,
-  type SettingsFile,
+import type {
+  PermissionDecision,
+  SettingsFile,
 } from "../types/project-types.ts";
 import "../types/tool-schemas.ts";
 

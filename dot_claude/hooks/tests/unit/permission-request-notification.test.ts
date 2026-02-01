@@ -231,8 +231,7 @@ describe("permission-request-notification.ts hook behavior", () => {
       // Should log the event
       ok(
         consoleCapture.logs.some(
-          (log) =>
-            log.includes("PermissionRequest") || log.includes("確認"),
+          (log) => log.includes("PermissionRequest") || log.includes("確認"),
         ),
       );
     });

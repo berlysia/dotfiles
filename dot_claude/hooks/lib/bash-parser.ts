@@ -64,7 +64,11 @@ function extractQuotedString(text: string, startPos: number): string | null {
     if (!inNestedQuote && char === quoteChar) {
       // Found closing quote
       return result;
-    } else if (!inNestedQuote && (char === '"' || char === "'") && char !== quoteChar) {
+    } else if (
+      !inNestedQuote &&
+      (char === '"' || char === "'") &&
+      char !== quoteChar
+    ) {
       // Entering nested quote
       inNestedQuote = true;
       nestedQuoteChar = char;
@@ -458,7 +462,9 @@ async function parseWithTreeSitter(
   // If meta-execution is present (sh -c, xargs sh -c, etc.), prefer the existing
   // meta extractor to pull out nested commands for safety analysis
   const metaOnly = extractMetaCommands(command, new Set<string>());
-  console.log(`[bash-parser] metaOnly.length: ${metaOnly.length}, commands: ${metaOnly.join(", ")}`);
+  console.log(
+    `[bash-parser] metaOnly.length: ${metaOnly.length}, commands: ${metaOnly.join(", ")}`,
+  );
   if (metaOnly.length > 0) {
     // Validate extractMetaCommands result before trusting it
     // Check if expected meta-commands are present in the original but missing from extraction
@@ -472,13 +478,23 @@ async function parseWithTreeSitter(
       .filter(Boolean) as SimpleCommand[];
 
     // Check if meta commands are missing from extraction
-    const extractedTexts = new Set(metaOnly.map(cmd => cmd.toLowerCase()));
-    const missingXargs = hasXargsInOriginal && !Array.from(extractedTexts).some(t => t.includes("xargs"));
-    const missingBash = hasBashCInOriginal && !Array.from(extractedTexts).some(t => t.includes("bash"));
-    const missingSh = hasShCInOriginal && !Array.from(extractedTexts).some(t => t.includes("sh -c"));
-    const missingZsh = hasZshCInOriginal && !Array.from(extractedTexts).some(t => t.includes("zsh"));
+    const extractedTexts = new Set(metaOnly.map((cmd) => cmd.toLowerCase()));
+    const missingXargs =
+      hasXargsInOriginal &&
+      !Array.from(extractedTexts).some((t) => t.includes("xargs"));
+    const missingBash =
+      hasBashCInOriginal &&
+      !Array.from(extractedTexts).some((t) => t.includes("bash"));
+    const missingSh =
+      hasShCInOriginal &&
+      !Array.from(extractedTexts).some((t) => t.includes("sh -c"));
+    const missingZsh =
+      hasZshCInOriginal &&
+      !Array.from(extractedTexts).some((t) => t.includes("zsh"));
 
-    console.log(`[bash-parser] Meta validation - missingXargs: ${missingXargs}, missingBash: ${missingBash}`);
+    console.log(
+      `[bash-parser] Meta validation - missingXargs: ${missingXargs}, missingBash: ${missingBash}`,
+    );
 
     if (missingXargs || missingBash || missingSh || missingZsh) {
       console.warn(
@@ -487,7 +503,9 @@ async function parseWithTreeSitter(
       return parseWithFallback(command);
     }
 
-    console.log(`[bash-parser] Early return from metaOnly with ${mapped.length} commands`);
+    console.log(
+      `[bash-parser] Early return from metaOnly with ${mapped.length} commands`,
+    );
     return { commands: mapped, errors: [], parsingMethod: "tree-sitter" };
   }
 
@@ -534,14 +552,18 @@ async function parseWithTreeSitter(
   const shouldValidate = /\b(xargs|bash\s+-c|sh\s+-c|zsh\s+-c)\b/.test(command);
   console.log(`[bash-parser] shouldValidate: ${shouldValidate}`);
   if (shouldValidate) {
-    const extractedCommandNames = new Set(cmds.map((c) => c.name).filter(Boolean));
+    const extractedCommandNames = new Set(
+      cmds.map((c) => c.name).filter(Boolean),
+    );
     const hasXargs = /\bxargs\b/.test(command);
     const hasBashC = /\bbash\s+-c\b/.test(command);
     const hasShC = /\bsh\s+-c\b/.test(command);
     const hasZshC = /\bzsh\s+-c\b/.test(command);
 
     console.log(`[bash-parser] hasXargs: ${hasXargs}, hasBashC: ${hasBashC}`);
-    console.log(`[bash-parser] extractedCommandNames: ${Array.from(extractedCommandNames).join(", ")}`);
+    console.log(
+      `[bash-parser] extractedCommandNames: ${Array.from(extractedCommandNames).join(", ")}`,
+    );
 
     // Check if expected commands are missing from extraction
     const missingXargs = hasXargs && !extractedCommandNames.has("xargs");
@@ -549,7 +571,9 @@ async function parseWithTreeSitter(
     const missingSh = hasShC && !extractedCommandNames.has("sh");
     const missingZsh = hasZshC && !extractedCommandNames.has("zsh");
 
-    console.log(`[bash-parser] missingXargs: ${missingXargs}, missingBash: ${missingBash}`);
+    console.log(
+      `[bash-parser] missingXargs: ${missingXargs}, missingBash: ${missingBash}`,
+    );
 
     if (missingXargs || missingBash || missingSh || missingZsh) {
       // Tree-sitter failed to extract meta-commands, use fallback
@@ -634,30 +658,43 @@ function extractMetaCommands(
 
   // First check if this is a pipeline with meta commands
   const pipelineParts = splitPipelineAndOperators(command);
-  console.log(`[extractMetaCommands] pipelineParts: ${pipelineParts.length} parts`);
+  console.log(
+    `[extractMetaCommands] pipelineParts: ${pipelineParts.length} parts`,
+  );
 
   // Process each part of the pipeline for meta commands
   for (let partIndex = 0; partIndex < pipelineParts.length; partIndex++) {
     const part = pipelineParts[partIndex] ?? "";
-    console.log(`[extractMetaCommands] part ${partIndex}: ${part.substring(0, 50)}...`);
+    console.log(
+      `[extractMetaCommands] part ${partIndex}: ${part.substring(0, 50)}...`,
+    );
 
     for (const [metaCmd, patterns] of Object.entries(META_COMMANDS)) {
       if (part.includes(metaCmd)) {
-        console.log(`[extractMetaCommands] Found ${metaCmd} in part ${partIndex}`);
+        console.log(
+          `[extractMetaCommands] Found ${metaCmd} in part ${partIndex}`,
+        );
 
         // Special handling for bash/sh/zsh -c to properly extract quoted strings
-        if ((metaCmd === "bash" || metaCmd === "sh" || metaCmd === "zsh") && part.includes(" -c ")) {
+        if (
+          (metaCmd === "bash" || metaCmd === "sh" || metaCmd === "zsh") &&
+          part.includes(" -c ")
+        ) {
           const cFlagIndex = part.indexOf(" -c ");
           if (cFlagIndex !== -1) {
             const afterCFlag = part.substring(cFlagIndex + 4).trimStart(); // Skip " -c "
             const quoted = extractQuotedString(afterCFlag, 0);
             if (quoted) {
-              console.log(`[extractMetaCommands] Extracted quoted string from ${metaCmd} -c: ${quoted.substring(0, 50)}...`);
+              console.log(
+                `[extractMetaCommands] Extracted quoted string from ${metaCmd} -c: ${quoted.substring(0, 50)}...`,
+              );
               processed.add(command);
 
               // Extract commands from the nested command
               let nestedCommands = extractCommandsInternal(quoted);
-              console.log(`[extractMetaCommands] Nested commands: ${nestedCommands.join(", ")}`);
+              console.log(
+                `[extractMetaCommands] Nested commands: ${nestedCommands.join(", ")}`,
+              );
 
               // Also check for command substitutions
               nestedCommands = nestedCommands.flatMap((cmd) =>
@@ -682,7 +719,9 @@ function extractMetaCommands(
                 if (nextPart?.trim()) commands.push(nextPart);
               }
 
-              console.log(`[extractMetaCommands] Returning ${commands.length} commands: ${commands.join(", ")}`);
+              console.log(
+                `[extractMetaCommands] Returning ${commands.length} commands: ${commands.join(", ")}`,
+              );
               return commands;
             }
           }
@@ -694,13 +733,17 @@ function extractMetaCommands(
           let match: RegExpExecArray | null;
           while ((match = regex.exec(part)) !== null) {
             const extractedCommand = match[1] || match[2] || match[3]; // Handle multiple capture groups
-            console.log(`[extractMetaCommands] Matched pattern, extracted: ${extractedCommand?.substring(0, 50)}...`);
+            console.log(
+              `[extractMetaCommands] Matched pattern, extracted: ${extractedCommand?.substring(0, 50)}...`,
+            );
             if (extractedCommand?.trim()) {
               processed.add(command);
 
               // Extract commands from the nested command, including backticks
               let nestedCommands = extractCommandsInternal(extractedCommand);
-              console.log(`[extractMetaCommands] Nested commands: ${nestedCommands.join(", ")}`);
+              console.log(
+                `[extractMetaCommands] Nested commands: ${nestedCommands.join(", ")}`,
+              );
 
               // Also check for command substitutions (backticks) in the nested commands
               nestedCommands = nestedCommands.flatMap((cmd) =>
@@ -725,7 +768,9 @@ function extractMetaCommands(
                 if (nextPart?.trim()) commands.push(nextPart);
               }
 
-              console.log(`[extractMetaCommands] Returning ${commands.length} commands: ${commands.join(", ")}`);
+              console.log(
+                `[extractMetaCommands] Returning ${commands.length} commands: ${commands.join(", ")}`,
+              );
               return commands;
             }
           }
