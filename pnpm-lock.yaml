@@ -11,9 +11,6 @@ importers:
       '@anthropic-ai/claude-agent-sdk':
         specifier: 0.2.19
         version: 0.2.19(zod@4.3.5)
-      '@anthropic-ai/sdk':
-        specifier: 0.71.2
-        version: 0.71.2(zod@4.3.5)
       '@mizchi/readability':
         specifier: 0.7.7
         version: 0.7.7(hono@4.11.3)
@@ -83,19 +80,6 @@ packages:
     engines: {node: '>=18.0.0'}
     peerDependencies:
       zod: ^4.0.0
-
-  '@anthropic-ai/sdk@0.71.2':
-    resolution: {integrity: sha512-TGNDEUuEstk/DKu0/TflXAEt+p+p/WhTlFzEnoosvbaDU2LTjm42igSdlL0VijrKpWejtOKxX0b8A7uc+XiSAQ==}
-    hasBin: true
-    peerDependencies:
-      zod: ^3.25.0 || ^4.0.0
-    peerDependenciesMeta:
-      zod:
-        optional: true
-
-  '@babel/runtime@7.28.6':
-    resolution: {integrity: sha512-05WQkdpL9COIMz4LjTxGpPNCdlpyimKppYNoJ5Di5EUObifl8t4tuLuUBBZEpoLYOmfvIWrsp9fCl0HoPRVTdA==}
-    engines: {node: '>=6.9.0'}
 
   '@biomejs/biome@2.3.11':
     resolution: {integrity: sha512-/zt+6qazBWguPG6+eWmiELqO+9jRsMZ/DBU3lfuU2ngtIQYzymocHhKiZRyrbra4aCOoyTg/BmY+6WH5mv9xmQ==}
@@ -907,10 +891,6 @@ packages:
     resolution: {integrity: sha512-qQKT4zQxXl8lLwBtHMWwaTcGfFOZviOJet3Oy/xmGk2gZH677CJM9EvtfdSkgWcATZhj/55JZ0rmy3myCT5lsA==}
     hasBin: true
 
-  json-schema-to-ts@3.1.1:
-    resolution: {integrity: sha512-+DWg8jCJG2TEnpy7kOm/7/AxaYoaRbjVB4LFZLySZlWn8exGs3A4OLJR966cVvU26N7X9TWxl+Jsw7dzAqKT6g==}
-    engines: {node: '>=16'}
-
   json-schema-traverse@1.0.0:
     resolution: {integrity: sha512-NM8/P9n3XjXhIZn1lLhkFaACTOURQXjWhV4BA/RnOv8xvgqtqpAX9IO4mRQxSx1Rlo4tqzeqb0sOlruaOy3dug==}
 
@@ -1204,9 +1184,6 @@ packages:
       tree-sitter:
         optional: true
 
-  ts-algebra@2.0.0:
-    resolution: {integrity: sha512-FPAhNPFMrkwz76P7cdjdmiShwMynZYN6SgOujD1urY4oNm80Ou9oMdmbR45LotcKOXoy7wSmHkRFE6Mxbrhefw==}
-
   tslib@2.8.1:
     resolution: {integrity: sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w==}
 
@@ -1315,14 +1292,6 @@ snapshots:
       '@img/sharp-linuxmusl-arm64': 0.33.5
       '@img/sharp-linuxmusl-x64': 0.33.5
       '@img/sharp-win32-x64': 0.33.5
-
-  '@anthropic-ai/sdk@0.71.2(zod@4.3.5)':
-    dependencies:
-      json-schema-to-ts: 3.1.1
-    optionalDependencies:
-      zod: 4.3.5
-
-  '@babel/runtime@7.28.6': {}
 
   '@biomejs/biome@2.3.11':
     optionalDependencies:
@@ -2097,11 +2066,6 @@ snapshots:
     dependencies:
       argparse: 2.0.1
 
-  json-schema-to-ts@3.1.1:
-    dependencies:
-      '@babel/runtime': 7.28.6
-      ts-algebra: 2.0.0
-
   json-schema-traverse@1.0.0: {}
 
   json-schema-typed@8.0.2: {}
@@ -2403,8 +2367,6 @@ snapshots:
     dependencies:
       node-addon-api: 8.5.0
       node-gyp-build: 4.8.4
-
-  ts-algebra@2.0.0: {}
 
   tslib@2.8.1:
     optional: true
