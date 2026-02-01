@@ -134,6 +134,7 @@
     "Write(~/workspace/**)",
     "Write(~/.claude/plans/**)",
     "Edit(~/.claude/plans/**)",
+    "EnterPlanMode",
     "mcp__context7__get-library-docs",
     "mcp__context7__resolve-library-id",
     "mcp__ide__getDiagnostics",
