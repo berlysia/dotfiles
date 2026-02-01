@@ -663,6 +663,38 @@ describe("auto-approve.ts hook behavior", () => {
       // Should allow all Edit operations
       context.assertAllow();
     });
+
+    it("should accept Glob(./**) pattern", async () => {
+      // Glob now supports path patterns like Glob(./**)
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Glob(./**)"]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+
+      const hook = autoApproveHook;
+
+      const context = createPreToolUseContextFor(autoApproveHook, "Glob", {
+        pattern: "src/**/*.ts",
+      });
+      await hook.run(context);
+
+      // Should allow Glob operations matching the path pattern
+      context.assertAllow();
+    });
+
+    it("should accept Glob(**) pattern", async () => {
+      // Glob also supports the wildcard ** pattern
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Glob(**)"]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+
+      const hook = autoApproveHook;
+
+      const context = createPreToolUseContextFor(autoApproveHook, "Glob", {
+        pattern: "any/path/here",
+      });
+      await hook.run(context);
+
+      // Should allow all Glob operations
+      context.assertAllow();
+    });
   });
 
   describe("Detailed breakdown messages", () => {
