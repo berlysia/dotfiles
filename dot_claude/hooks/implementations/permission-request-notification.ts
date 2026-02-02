@@ -16,7 +16,8 @@ import {
 import { logDecision } from "../lib/centralized-logging.ts";
 
 // 専用hookがあるツール、またはユーザー対話を目的とするツールはスキップ
-const SKIP_NOTIFICATION_TOOLS = ["AskUserQuestion", "ExitPlanMode"];
+// NOTE: AskUserQuestion はスキップしない - LLM evaluatorが承認しない場合のみここに到達する
+const SKIP_NOTIFICATION_TOOLS = ["ExitPlanMode"];
 
 // Type assertion for PermissionRequest input (Claude Code provides more than cc-hooks-ts types)
 interface PermissionRequestInput {
