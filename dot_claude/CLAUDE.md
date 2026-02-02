@@ -6,7 +6,7 @@
 ## Workflow
 1. **Explore** - Understand codebase and requirements
 2. **Plan** - Design solution with clear steps
-3. **Validate** - Verify plan with `/validate-plan` (mandatory for Plan Mode)
+3. **Validate** - Verify plan with logic-validator agent (mandatory for Plan Mode)
 4. **Code** - Implement following best practices
 5. **Commit** - Clean, meaningful commits
 
@@ -34,7 +34,7 @@
 ```
 1. Plan Mode で計画作成
 2. ExitPlanMode 実行 → hook でブロック（<!-- validated --> マーカーがない場合）
-3. /validate-plan 実行
+3. logic-validator agent で検証（Task tool with subagent_type: logic-validator）
    ├─ 🚫 決定的な欠落 → 実装停止、計画再作成
    ├─ ⚠️ 中程度の問題 → 修正して再検証（最大2回）
    └─ ✅ 問題なし → 4へ
@@ -43,7 +43,7 @@
 6. 実装開始
 ```
 
-詳細は `/validate-plan` スキルおよび `@~/.claude/rules/external-review.md` を参照。
+詳細は `@~/.claude/rules/external-review.md` を参照。
 
 ## Development Principles
 
@@ -226,7 +226,7 @@ Always gather evidence (read files, run tests, check actual state) before making
 ## External Review & Validation
 
 Use validation tools for logic verification and external perspective:
-- **Logic validation**: logic-validator agent, `/logic-validation` skill
+- **Logic validation**: logic-validator agent (Task tool with `subagent_type: logic-validator`)
 - **External review**: `/codex-review`, `/self-review` skills, Codex MCP
 - **Claude Code guidance**: claude-code-guide agent for Claude Code-specific questions
 - **Key scenarios**: Plan mode completion, architecture decisions, debugging blocks
