@@ -43,15 +43,6 @@
 6. 実装開始
 ```
 
-### 検証の省略方法
-
-計画ファイルに直接 `<!-- validated -->` を追加することでスキップ可能。以下の**すべて**を満たす場合のみ：
-- 単一ファイルの軽微な修正
-- 既存パターンに完全に従う実装
-- 失敗しても影響が限定的
-
-**判断に迷ったら /validate-plan を実行する**。
-
 詳細は `/validate-plan` スキルおよび `@~/.claude/rules/external-review.md` を参照。
 
 ## Development Principles

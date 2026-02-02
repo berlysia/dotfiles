@@ -140,7 +140,9 @@ const hook = defineHook({
     const { tool_name, tool_input, session_id } = input;
 
     // Tools that MUST always reach the user for decision (skip LLM evaluation entirely)
-    const USER_DECISION_TOOLS = ["AskUserQuestion"];
+    // - AskUserQuestion: User interaction must not be auto-approved
+    // - ExitPlanMode: Plan mode results vary by context; user should decide when to exit
+    const USER_DECISION_TOOLS = ["AskUserQuestion", "ExitPlanMode"];
     if (USER_DECISION_TOOLS.includes(tool_name)) {
       logDecision(
         tool_name,
