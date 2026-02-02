@@ -571,13 +571,14 @@ export async function sendSystemNotification(
 
   try {
     if (config.system.platform === "wsl") {
-      // WSL: Call wsl-notify-send.exe via bash to handle redirects
-      // dax doesn't support multiple redirects directly
+      // WSL: wsl-notify-send.exe takes a single message argument
+      // @see https://github.com/stuartleeks/wsl-notify-send
       const wslNotifySendPath = `/mnt/c/Users/${process.env.USER}/.local/bin/wsl-notify-send.exe`;
       const wslDistroName = process.env.WSL_DISTRO_NAME || "WSL";
+      const fullMessage = `Claude Code: ${escapedMessage}`;
 
       // Use bash -c to handle nohup and redirects properly
-      const cmd = `nohup '${wslNotifySendPath}' --category '${wslDistroName}' 'Claude Code' '${escapedMessage}' >/dev/null 2>&1 &`;
+      const cmd = `nohup '${wslNotifySendPath}' --category '${wslDistroName}' '${fullMessage}' >/dev/null 2>&1 &`;
       $`bash -c ${cmd}`.spawn();
     } else {
       // Non-WSL Linux: Use notify-send directly
