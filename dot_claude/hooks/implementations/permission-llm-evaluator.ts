@@ -176,7 +176,7 @@ const hook = defineHook({
       try {
         const { config } = await createAudioEngine();
         await sendSystemNotification(
-          `🤖 Auto-approved: ${tool_name}`,
+          `🤖 Auto-approved: ${tool_name} - ${result.reason}\n${tool_input}`,
           config,
         );
       } catch {
@@ -197,6 +197,17 @@ const hook = defineHook({
       session_id,
       tool_input,
     );
+
+    // Send notification for auto-approval decision
+    try {
+      const { config } = await createAudioEngine();
+      await sendSystemNotification(
+        `🤖 Pass to user: ${tool_name} - ${result.reason}\n${tool_input}`,
+        config,
+      );
+    } catch {
+      // Notification failure should not block the response
+    }
 
     // Don't deny automatically - let user decide
     // Only use deny for clearly malicious operations
