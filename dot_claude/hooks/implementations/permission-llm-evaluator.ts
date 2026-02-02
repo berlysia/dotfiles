@@ -31,6 +31,8 @@ ALLOW these operations:
 - Test runners and linters in check mode
 
 DENY these operations:
+- User interaction tools: AskUserQuestion, any tool that prompts for user input
+  (These MUST reach the user, never auto-approve)
 - Destructive commands: rm -rf, dd, mkfs
 - Remote code execution: curl|bash, wget|sh, eval
 - System modifications: sudo, chmod 777
@@ -136,6 +138,20 @@ const hook = defineHook({
   run: async (context) => {
     const input = context.input as unknown as PermissionRequestInput;
     const { tool_name, tool_input, session_id } = input;
+
+    // Tools that MUST always reach the user for decision (skip LLM evaluation entirely)
+    const USER_DECISION_TOOLS = ["AskUserQuestion"];
+    if (USER_DECISION_TOOLS.includes(tool_name)) {
+      logDecision(
+        tool_name,
+        "ask",
+        `User decision tool - skipping LLM evaluation, requires user confirmation (Layer 2b)`,
+        session_id,
+        tool_input,
+      );
+      // Pass through to user confirmation (Layer 3)
+      return context.success({});
+    }
 
     // Log before LLM evaluation
     logDecision(
