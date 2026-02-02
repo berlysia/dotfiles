@@ -172,11 +172,11 @@ const hook = defineHook({
         tool_input,
       );
 
-      // Send notification for auto-approval decision
+      // Send notification for auto-approval decision (ASCII only for WSL compatibility)
       try {
         const { config } = await createAudioEngine();
         await sendSystemNotification(
-          `🤖 Auto-approved: ${tool_name} - ${result.reason}\n${tool_input}`,
+          `[LLM] Auto-approved: ${tool_name} - ${result.reason}`,
           config,
         );
       } catch {
@@ -198,11 +198,11 @@ const hook = defineHook({
       tool_input,
     );
 
-    // Send notification for auto-approval decision
+    // Send notification for delegation decision (ASCII only for WSL compatibility)
     try {
       const { config } = await createAudioEngine();
       await sendSystemNotification(
-        `🤖 Pass to user: ${tool_name} - ${result.reason}\n${tool_input}`,
+        `[LLM] Pass to user: ${tool_name} - ${result.reason}`,
         config,
       );
     } catch {
