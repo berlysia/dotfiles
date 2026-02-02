@@ -571,13 +571,14 @@ export async function sendSystemNotification(
 
   try {
     if (config.system.platform === "wsl") {
-      // WSL: Call wsl-notify-send.exe directly without bash -ic
-      // bash -ic causes process suspension issues with WSL interop
+      // WSL: Call wsl-notify-send.exe via bash to handle redirects
+      // dax doesn't support multiple redirects directly
       const wslNotifySendPath = `/mnt/c/Users/${process.env.USER}/.local/bin/wsl-notify-send.exe`;
       const wslDistroName = process.env.WSL_DISTRO_NAME || "WSL";
 
-      // Use nohup to fully detach the process from the terminal
-      $`nohup ${wslNotifySendPath} --category ${wslDistroName} 'Claude Code' ${escapedMessage} >/dev/null 2>&1`.spawn();
+      // Use bash -c to handle nohup and redirects properly
+      const cmd = `nohup '${wslNotifySendPath}' --category '${wslDistroName}' 'Claude Code' '${escapedMessage}' >/dev/null 2>&1 &`;
+      $`bash -c ${cmd}`.spawn();
     } else {
       // Non-WSL Linux: Use notify-send directly
       $`notify-send 'Claude Code' ${escapedMessage}`.spawn();
