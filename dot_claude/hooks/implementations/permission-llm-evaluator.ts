@@ -10,6 +10,10 @@
 
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { defineHook } from "cc-hooks-ts";
+import {
+  createAudioEngine,
+  sendSystemNotification,
+} from "../../lib/unified-audio-engine.ts";
 import { logDecision } from "../lib/centralized-logging.ts";
 import { createPermissionRequestAllowResponse } from "../lib/permission-request-helpers.ts";
 import type { PermissionRequestInput } from "../lib/structured-llm-evaluator.ts";
@@ -155,26 +159,8 @@ const hook = defineHook({
       return context.success({});
     }
 
-    // Log before LLM evaluation
-    logDecision(
-      tool_name,
-      "ask",
-      `Starting LLM evaluation (Layer 2b)...`,
-      session_id,
-      tool_input,
-    );
-
     // Evaluate with LLM (uses Claude Code's license)
     const result = await evaluateWithLLM(input);
-
-    // Log after LLM evaluation
-    logDecision(
-      tool_name,
-      "ask",
-      `LLM evaluation completed (Layer 2b): ${JSON.stringify(result)}`,
-      session_id,
-      tool_input,
-    );
 
     if (result.allow) {
       // LLM approved the request
@@ -185,6 +171,18 @@ const hook = defineHook({
         session_id,
         tool_input,
       );
+
+      // Send notification for auto-approval decision
+      try {
+        const { config } = await createAudioEngine();
+        await sendSystemNotification(
+          `🤖 Auto-approved: ${tool_name}`,
+          config,
+        );
+      } catch {
+        // Notification failure should not block the response
+      }
+
       return context.json({
         event: "PermissionRequest",
         output: createPermissionRequestAllowResponse(),
