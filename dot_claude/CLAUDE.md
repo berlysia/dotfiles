@@ -1,23 +1,41 @@
 # Development Guidelines
 
 ## Language
+
 - Japanese for discussion, English for code
 
 ## Workflow
+
 1. **Explore** - Understand codebase and requirements
 2. **Plan** - Design solution with clear steps
 3. **Validate** - Verify plan with logic-validator agent (mandatory for Plan Mode)
 4. **Code** - Implement following best practices
 5. **Commit** - Clean, meaningful commits
 
+### Session Scoping
+
+- One focused goal per session (investigate OR implement, not both)
+- For multi-phase work: separate investigation, planning, and implementation into distinct sessions
+- Use sub-agents (Task tool with Explore agent) for codebase investigation to preserve main context
+- Track cross-session progress with TaskCreate when work spans multiple sessions
+
+### Task Management
+
+- **Simple tasks** (1-2 steps): Execute directly without task tracking
+- **Medium tasks** (3-5 steps): Use TodoWrite for lightweight progress tracking
+- **Complex tasks** (6+ steps or multi-session): Use TaskCreate/TaskUpdate for full tracking
+- Avoid creating tasks for trivial operations — the overhead should not exceed the work itself
+
 ## Task Completion Protocol
 
 作業停止前の必須チェック：
+
 - 元のタスクが完全に達成されたか
 - テスト・ビルドが成功しているか
 - 明示的に依頼されたコミットが完了しているか
 
 **継続すべきケース**:
+
 - Tests/build failing → Fix and retry
 - Clear next steps → Execute them
 - Explicit commit request → Complete it
@@ -48,6 +66,7 @@
 ## Development Principles
 
 ### Code Quality
+
 - **Formatting**: Use project formatter (prettier/oxlint as configured)
 - **Naming**:
   - Variables: descriptive nouns (`userData` not `data`)
@@ -65,17 +84,21 @@
   - Log errors with context before propagating
   - Avoid silent failures or generic catch-all handlers
 - **Performance**: Parallelize independent operations with Promise.all()
+- **Serialization/transformation**: When editing data conversion logic (stringify, serialize, format), verify edge cases for data preservation — special characters, optional fields, and nested structures are common loss points
 
 ### Developer Experience
+
 - Minimize developer friction
 - Thorough planning before implementation
 - Root cause analysis for bug fixes
 - Create scripts for repetitive tasks
+- **Tool selection**: Prefer specialized tools over Bash for file operations (Read over `cat`, Grep over `grep`, Edit over `sed`, Glob over `find`). Reserve Bash for execution, builds, and git operations
 - **Decision transparency & validation**: When changing approach mid-task:
   1. **MUST use logic-validator agent** to verify the reasoning for the change
   2. Explicitly explain the validation results and new plan before proceeding
   3. Document why the original approach was abandoned
 - **Structured decision requests**: Use this template when asking for user decisions:
+
   ```
   ## Decision Required: [Topic]
 
@@ -97,12 +120,14 @@
   ```
 
 ### Architecture
+
 - **Libraries**: Minimal dependencies, prefer built-ins
 - **Design**: Respect existing architecture, maintain unidirectional dependency graph
 - **Documentation**: Record significant decisions in ADRs (Architecture Decision Records)
 - **Patterns**: Abstract repeated patterns, use tools like `similarity-ts` for detection, `knip` for cleaning
 
 ### Testing
+
 - Follow t-wada's TDD style
 - Strict Red-Green-Refactor cycle
 - Before writing new tests, grep existing test files for similar patterns and match the project's established assertion style, data structures, and helper conventions
@@ -111,6 +136,7 @@
 ### Debugging
 
 **Emergency checklist:**
+
 1. Read FIRST error: `command 2>&1 | head -50`
 2. Suspect recent changes (git stash to test)
 3. Apply 5 Whys (not symptomatic fixes)
@@ -124,6 +150,7 @@ See `@~/.claude/rules/debugging.md` for detailed procedures.
 **For existing projects**, respect the project's established tool choices.
 
 ## Security Requirements
+
 - **Prohibited**: Hardcoded secrets, unvalidated inputs, suppressed errors
 - **Required**:
   - Input validation (type checks, sanitization, bounds checking)
@@ -134,20 +161,24 @@ See `@~/.claude/rules/debugging.md` for detailed procedures.
 ## Git Workflow
 
 ### Worktree
+
 - **Create**: `git-worktree-create <branch>` → `.git/worktree/`
 - **Cleanup**: `git-worktree-cleanup` (保護: uncommitted/unpushed)
 
 ### Commit Standards
 
 #### 基本原則
+
 - All tests and lints must pass
 - Clear, descriptive commit messages
 - Break large changes into logical, atomic commits
 
 #### コミットメッセージ生成（自動適用）
+
 コミット作成時は、以下の原則を**自動的に**適用する：
 
 **Conventional Commit形式**:
+
 ```
 <type>(<scope>): <description>
 
@@ -159,6 +190,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
 **タイプ選択**:
+
 - `feat`: 新機能追加
 - `fix`: バグ修正
 - `refactor`: 動作変更なしのコード改善
@@ -173,25 +205,30 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 **スコープ決定**: 影響を受けるモジュール・コンポーネント名（auth, api, hooks等）
 
 **説明文の書き方**:
+
 - 現在形・命令形（add, fix, update - not added, fixed, updated）
 - 小文字開始、末尾ピリオドなし
 - 具体的かつ簡潔に（72文字以内目安）
 
 **本文が必要な場合**:
+
 - 複数ファイル/コンポーネントに影響
 - 非自明な実装判断
 - Breaking changes
 - マイグレーション手順
 
 #### ワークフロー使い分け
+
 - **単純な変更**: 上記原則を適用してコミット作成
 - **複雑な変更**（複数種類の変更が混在）: `/commit` コマンドで自動分割・分析
 
 ## Useful Commands
+
 - **similarity-ts**: `similarity-ts [--threshold N] src/`
 - **git-sequential-stage**: `git-sequential-stage -patch=X -hunk=Y` (by `/commit`)
 
 ## Temporary Files
+
 - **Prefer** `${projectRoot}/.tmp` for temporary files and work-in-progress documentation
 - **Avoid** `/tmp` unless no other suitable location exists - it's outside the project scope and can cause path confusion
 - Ensure `.tmp/` is gitignored in the project
@@ -199,6 +236,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 ## Knowledge Management
 
 ### ドキュメント構造
+
 - WIP: `.tmp/docs/` (gitignored)
 - Done: `docs/` (git tracked), `docs/decisions/` (ADRs)
 
@@ -207,6 +245,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 **Rule:** Committed documentation (README, docs/) must only link to git-tracked files.
 
 **Prohibited links:**
+
 - Gitignored paths (`.tmp/`, `node_modules/`, build outputs)
 - Temporary plan files
 - Absolute or environment-specific paths
@@ -227,6 +266,7 @@ Always gather evidence (read files, run tests, check actual state) before making
 ## External Review & Validation
 
 Use validation tools for logic verification and external perspective:
+
 - **Logic validation**: logic-validator agent (Task tool with `subagent_type: logic-validator`)
 - **External review**: `/codex-review`, `/self-review` skills, Codex MCP
 - **Claude Code guidance**: claude-code-guide agent for Claude Code-specific questions
@@ -237,6 +277,7 @@ See `@~/.claude/rules/external-review.md` for detailed usage patterns and exampl
 ### When to Use claude-code-guide Agent
 
 **For Claude Code questions**:
+
 - Features and capabilities ("How do I...", "Can Claude...", "Does Claude support...")
 - Configuration (settings.json, CLAUDE.md, MCP servers, permissions)
 - Workflows (Plan Mode, skills, subagents, hooks, context management)
@@ -246,11 +287,13 @@ See `@~/.claude/rules/external-review.md` for detailed usage patterns and exampl
 - Claude API/Agent SDK usage (tool use, computer use, custom agents)
 
 **NOT for user code**:
+
 - User application code implementation or debugging
 - Project-specific build/test/runtime issues
 - General programming questions
 
 **Examples**:
+
 - ✅ "skillとsubagentの使い分けは？"
 - ✅ "MCP serverの設定方法は？"
 - ✅ "code complexity分析スキルを作りたい" ← Skill development requires Claude Code-specific knowledge
