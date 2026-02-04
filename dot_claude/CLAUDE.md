@@ -105,6 +105,7 @@
 ### Testing
 - Follow t-wada's TDD style
 - Strict Red-Green-Refactor cycle
+- Before writing new tests, grep existing test files for similar patterns and match the project's established assertion style, data structures, and helper conventions
 - Tests must pass before commits
 
 ### Debugging
