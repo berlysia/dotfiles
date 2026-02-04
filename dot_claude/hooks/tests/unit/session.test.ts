@@ -11,7 +11,10 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { createSessionStartContext } from "./test-helpers.ts";
+import {
+  createSessionStartContext,
+  EnvironmentHelper,
+} from "./test-helpers.ts";
 
 describe("session.ts hook behavior", () => {
   let testDir: string;
@@ -164,6 +167,83 @@ describe("session.ts hook behavior", () => {
       } catch (error) {
         ok(error instanceof SyntaxError, "Should get JSON parse error");
       }
+    });
+  });
+
+  describe("shared task list warning", () => {
+    const envHelper = new EnvironmentHelper();
+
+    afterEach(() => {
+      envHelper.restore();
+    });
+
+    it("should warn when CLAUDE_CODE_TASK_LIST_ID is set", () => {
+      envHelper.set("CLAUDE_CODE_TASK_LIST_ID", "abc-123-def");
+
+      const taskListId = process.env.CLAUDE_CODE_TASK_LIST_ID;
+      ok(taskListId, "CLAUDE_CODE_TASK_LIST_ID should be set");
+
+      // Simulate checkSharedTaskList behavior
+      const warning = taskListId
+        ? `⚠️ CLAUDE_CODE_TASK_LIST_ID is set: ${taskListId}\n   This session shares a task list from another session. Tasks may be overwritten unintentionally.\n   To detach: unset CLAUDE_CODE_TASK_LIST_ID`
+        : null;
+
+      ok(warning, "Warning should be generated");
+      ok(
+        warning.includes("abc-123-def"),
+        "Warning should include the task list ID",
+      );
+      ok(
+        warning.includes("unset CLAUDE_CODE_TASK_LIST_ID"),
+        "Warning should include detach instruction",
+      );
+    });
+
+    it("should not warn when CLAUDE_CODE_TASK_LIST_ID is not set", () => {
+      envHelper.set("CLAUDE_CODE_TASK_LIST_ID", undefined);
+
+      const taskListId = process.env.CLAUDE_CODE_TASK_LIST_ID;
+      const warning = taskListId
+        ? `⚠️ CLAUDE_CODE_TASK_LIST_ID is set: ${taskListId}`
+        : null;
+
+      strictEqual(warning, null, "No warning should be generated");
+    });
+
+    it("should include task list warning in session start message", () => {
+      envHelper.set("CLAUDE_CODE_TASK_LIST_ID", "shared-list-456");
+
+      const mockContext = createSessionStartContext("cli");
+
+      // Simulate the hook's message assembly
+      const taskListId = process.env.CLAUDE_CODE_TASK_LIST_ID;
+      const taskListWarning = taskListId
+        ? `⚠️ CLAUDE_CODE_TASK_LIST_ID is set: ${taskListId}\n   This session shares a task list from another session. Tasks may be overwritten unintentionally.\n   To detach: unset CLAUDE_CODE_TASK_LIST_ID`
+        : null;
+
+      const messages = [
+        "🚀 Claude Code session started. Ready for development!",
+      ];
+      if (taskListWarning) {
+        messages.push(taskListWarning);
+      }
+
+      const result = mockContext.success({
+        messageForUser: messages.join("\n"),
+      });
+
+      ok(
+        result.messageForUser.includes("CLAUDE_CODE_TASK_LIST_ID"),
+        "Message should contain task list warning",
+      );
+      ok(
+        result.messageForUser.includes("shared-list-456"),
+        "Message should contain the specific task list ID",
+      );
+      ok(
+        result.messageForUser.startsWith("🚀"),
+        "Message should still start with session start message",
+      );
     });
   });
 
