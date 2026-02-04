@@ -13,8 +13,16 @@ context: fork
 引数に応じて動作モードを切り替える:
 
 - **引数なし** (`/session-memo`): 現在のセッションを要約してメモファイルに保存
+- **フォーカス指定** (`/session-memo 認証周りの設計判断について`): 指定トピックに焦点を当てて要約
 - **セッションID指定** (`/session-memo <session-id>`): 指定セッションのJSONLを読んで要約を返す
+- **セッションID + フォーカス** (`/session-memo <session-id> パフォーマンスの議論`): 過去セッションを特定トピックで要約
 - **`list`** (`/session-memo list`): 保存済みメモの一覧を表示
+
+### 引数の判別ルール
+
+1. `list` → Mode 3
+2. UUID形式（8文字以上の hex + ハイフン）で始まる → Mode 2（残りがあればフォーカス指示）
+3. それ以外のテキスト → Mode 1 + フォーカス指示
 
 ## Mode 1: 現在のセッションを要約保存（引数なし）
 
@@ -29,10 +37,20 @@ SESSION_ID=$(jq -r '.entries[-1].sessionId' "$INDEX")
 
 ### Step 2: サブエージェントで要約生成
 
-Task ツールで `general-purpose` サブエージェントを起動し、以下のプロンプトを渡す:
+Task ツールで `general-purpose` サブエージェントを起動し、以下のプロンプトを渡す。
+
+**フォーカス指示がある場合**は、プロンプト冒頭に追加する:
 
 ```
-以下のセッションJSONLを読んで、このセッションの「問題意識」「議論の要点」「未解決事項」を簡潔にまとめてください。
+【フォーカス】: <ユーザーの指示テキスト>
+上記のトピックを中心に、関連する議論・決定・未解決事項を重点的にまとめてください。
+フォーカス外の内容は、関連がある場合のみ簡潔に触れてください。
+```
+
+**ベースプロンプト**:
+
+```
+以下のセッションJSONLを読んで、このセッションの要約をまとめてください。
 
 ファイル: ~/.claude/projects/-<project-dir>/sessions-index.json を読んで最新セッションのfullPathを特定し、そのJSONLファイルを読んでください。
 
@@ -41,6 +59,7 @@ Task ツールで `general-purpose` サブエージェントを起動し、以�
 session_id: <session-id>
 project: <project-path>
 created: <timestamp>
+focus: <フォーカス指示があれば記載、なければ "general">
 ---
 
 ## 問題意識
@@ -102,7 +121,7 @@ find "$HOME/.claude/projects/" -name "<引数>*.jsonl"
 
 ### Step 2: サブエージェントで要約
 
-Mode 1 の Step 2 と同じフォーマットで Task ツール（`general-purpose`）を起動し、特定したJSONLファイルを読ませる。
+Mode 1 の Step 2 と同じベースプロンプト + フォーカス指示（あれば）で Task ツール（`general-purpose`）を起動し、特定したJSONLファイルパスを直接指定して読ませる。
 
 ### Step 3: 要約を直接表示
 
