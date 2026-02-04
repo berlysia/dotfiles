@@ -22,7 +22,17 @@ type StaticDecision = "allow" | "deny" | "uncertain";
 /**
  * Read-only tools that are always safe to allow
  */
-const READ_ONLY_TOOLS = ["Read", "Glob", "Grep", "Search", "LS", "WebSearch"];
+const READ_ONLY_TOOLS = [
+  "Read",
+  "Glob",
+  "Grep",
+  "Search",
+  "LS",
+  "WebSearch",
+  "TaskList",
+  "TaskGet",
+  "TaskOutput",
+];
 
 /**
  * Safe Bash command patterns (whitelist)
@@ -32,6 +42,8 @@ const SAFE_BASH_PATTERNS = [
   /^(ls|pwd|echo|cat|head|tail|wc|file|stat|which|type|whereis|basename|dirname|realpath)\b/,
   // Git read-only operations
   /^git\s+(status|log|diff|branch|remote|show|describe|tag|rev-parse|config\s+--get)\b/,
+  // Git write operations (common safe dev workflow)
+  /^git\s+(add|commit|stash|checkout|switch|fetch|pull|cherry-pick|rebase|merge)\b/,
   // Package information
   /^(npm|pnpm|yarn|bun)\s+(ls|list|outdated|view|info|why|explain)\b/,
   // Development tools (no side effects)
@@ -42,6 +54,18 @@ const SAFE_BASH_PATTERNS = [
   /^(eslint|prettier|oxlint|biome)\s+.*--check\b/,
   /^(eslint|prettier|oxlint|biome)\s+--check\b/,
   /^tsc\s+--noEmit\b/,
+  // Safe directory/file creation
+  /^mkdir\s/,
+  /^touch\s/,
+  // Environment inspection (read-only)
+  /^env\b/,
+  /^printenv\b/,
+  // Port/process inspection (read-only)
+  /^lsof\b/,
+  // Dev tool execution
+  /^npx\s/,
+  /^pnpx\s/,
+  /^bunx\s/,
 ];
 
 /**
@@ -197,7 +221,12 @@ const hook = defineHook({
 export default hook;
 
 // Export for testing
-export { staticRuleEngine, SAFE_BASH_PATTERNS, DANGEROUS_PATTERNS };
+export {
+  staticRuleEngine,
+  READ_ONLY_TOOLS,
+  SAFE_BASH_PATTERNS,
+  DANGEROUS_PATTERNS,
+};
 
 if (import.meta.main) {
   const { runHook } = await import("cc-hooks-ts");
