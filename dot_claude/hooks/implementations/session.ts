@@ -11,6 +11,14 @@ import {
 } from "../../lib/plugin-utils.ts";
 import { logEvent } from "../lib/centralized-logging.ts";
 
+function checkSharedTaskList(): string | null {
+  const taskListId = process.env.CLAUDE_CODE_TASK_LIST_ID;
+  if (taskListId) {
+    return `⚠️ CLAUDE_CODE_TASK_LIST_ID is set: ${taskListId}\n   This session shares a task list from another session. Tasks may be overwritten unintentionally.\n   To detach: unset CLAUDE_CODE_TASK_LIST_ID`;
+  }
+  return null;
+}
+
 function checkPluginSync(): string | null {
   if (
     !existsSync(PLUGIN_DEPENDENCIES_PATH) ||
@@ -47,10 +55,14 @@ const hook = defineHook({
       // Log session start using centralized logger
       logEvent("SessionStart", context.input.session_id);
 
+      const taskListWarning = checkSharedTaskList();
       const pluginSyncMessage = checkPluginSync();
       const messages = [
         "🚀 Claude Code session started. Ready for development!",
       ];
+      if (taskListWarning) {
+        messages.push(taskListWarning);
+      }
       if (pluginSyncMessage) {
         messages.push(pluginSyncMessage);
       }
