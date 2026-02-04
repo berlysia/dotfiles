@@ -2,6 +2,15 @@
 
 **Note**: These principles apply to all programming languages. Examples use TypeScript, but the methodology is universal.
 
+## Prevention (Before Writing Code)
+
+**Avoid generating buggy code in the first place:**
+
+- Read related source files and understand the data model before writing code
+- Check existing test patterns and match the project's conventions (see CLAUDE.md Testing section)
+- Verify assumptions about APIs and interfaces by reading implementations, not just signatures
+- For unfamiliar domains, ask the user about constraints before generating code
+
 ## Read Complete Error Messages
 
 **Focus on the FIRST error, not the last.**
@@ -50,6 +59,7 @@ Step-by-step verification process:
 **When to use**: Catch assumption-based reasoning before it leads to wrong fixes.
 
 **Symptoms of assumption-based reasoning**:
+
 - "I think X causes Y because..." (without verifying)
 - Drawing conclusions from function names without reading implementation
 - "This should work but doesn't" situations
@@ -59,6 +69,7 @@ Step-by-step verification process:
 **Action**: Use logic-validator agent to verify reasoning
 
 Before:
+
 - **Changing approach mid-task** (e.g., "This is taking too long, let's try X instead")
 - Changing working configurations
 - Applying symptomatic fixes without root cause analysis
@@ -66,6 +77,7 @@ Before:
 - Drawing conclusions without reading code
 
 **Real example**:
+
 - ❌ Assumption: "Function names suggest X happens" → Wrong fix
 - ✅ Validation: logic-validator points out "read the implementation" → Debug logs reveal actual behavior → Correct minimal fix
 

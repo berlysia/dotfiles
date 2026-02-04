@@ -21,3 +21,14 @@
 
 - **No `any` types**: Use proper type annotations
 - **Prefer `async/await`**: Over callbacks and promise chains
+
+## Claude Code Project Setup
+
+### Recommended Hooks
+
+Set up project-level hooks in `.claude/settings.json` to catch errors early:
+
+- **afterEdit type-check**: Run type checker after file edits
+  - Prefer project's `typecheck` script if available: `pnpm typecheck`
+  - Otherwise use `tsgo` (preferred) or project's type checker (`vitest typecheck`, etc.)
+  - Example: `"command": "pnpm typecheck 2>&1 | head -20"`
