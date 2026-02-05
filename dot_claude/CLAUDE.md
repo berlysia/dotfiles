@@ -240,6 +240,14 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 - WIP: `.tmp/docs/` (gitignored)
 - Done: `docs/` (git tracked), `docs/decisions/` (ADRs)
 
+### MEMORY.md 運用ルール
+
+- CLAUDE.md と重複する情報を書かない（API一覧、型定義、テストヘルパー等はCLAUDE.mdの責務）
+- CLAUDE.md に書けない「落とし穴」「間違えやすい引数順」「教訓」を記録する
+- 完了タスクの詳細は ADR/docs に委ね、MEMORY.md では1行サマリーに留める
+- 行番号など変動しやすい情報は書かない
+- 定期的に見直し、stale な情報は削除・更新する
+
 ### ドキュメント内リンクの原則
 
 **Rule:** Committed documentation (README, docs/) must only link to git-tracked files.
