@@ -148,3 +148,7 @@ ls -lt .tmp/session-memos/*.md 2>/dev/null
 - **context: fork** を使用: メインセッションのコンテキストを消費しない
 - **サブエージェントで読み書き**: JSONLの読み取りと要約生成をサブエージェントに委譲し、メインセッションのトークン消費を最小化
 - **保存先は `.tmp/`**: gitignored で一時的、プロジェクトスコープ
+
+## 禁止事項
+
+- **Codex MCP を使用しない**: 要約生成にはTask ツールの `general-purpose` サブエージェントのみを使うこと。Codex MCP（`mcp__codex__codex` 等）は絶対に使用しない
