@@ -222,7 +222,7 @@ describe("Operation Risk Assessment", () => {
   });
 
   test("should evaluate destructive Bash commands as CRITICAL", () => {
-    const result = evaluateOperationRisk("Bash(rm -rf:*)");
+    const result = evaluateOperationRisk("Bash(rm -rf *)");
 
     assert.equal(result.level, RiskLevel.CRITICAL);
     assert.equal(result.category, "operation");
@@ -231,7 +231,7 @@ describe("Operation Risk Assessment", () => {
   });
 
   test("should evaluate safe Bash commands as LOW", () => {
-    const result = evaluateOperationRisk("Bash(ls:*)");
+    const result = evaluateOperationRisk("Bash(ls *)");
 
     assert.equal(result.level, RiskLevel.LOW);
     assert.equal(result.category, "operation");
@@ -240,7 +240,7 @@ describe("Operation Risk Assessment", () => {
   });
 
   test("should evaluate test commands as LOW", () => {
-    const result = evaluateOperationRisk("Bash(npm test:*)");
+    const result = evaluateOperationRisk("Bash(npm test *)");
 
     assert.equal(result.level, RiskLevel.LOW);
     assert.equal(result.category, "operation");

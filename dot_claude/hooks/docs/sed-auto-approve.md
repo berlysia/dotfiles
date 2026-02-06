@@ -182,12 +182,12 @@ CLAUDE_TEST_MODE=1 node --test tests/unit/auto-approve.test.ts
     "allow": [
       "Edit(./**)",
       "MultiEdit(src/**)",
-      "Bash(git:*)",
-      "Bash(pnpm:*)"
+      "Bash(git *)",
+      "Bash(pnpm *)"
     ],
     "deny": [
       "Edit(~/.claude/**)",
-      "Bash(rm:*)"
+      "Bash(rm *)"
     ]
   }
 }

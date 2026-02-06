@@ -211,12 +211,12 @@ describe("Command Parsing Library", () => {
     });
 
     it("should match wildcard patterns", () => {
-      const result = checkCommandPattern("Bash(npm:*)", "npm install express");
+      const result = checkCommandPattern("Bash(npm *)", "npm install express");
       strictEqual(result, true);
     });
 
     it("should not match different commands", () => {
-      const result = checkCommandPattern("Bash(git:*)", "npm install");
+      const result = checkCommandPattern("Bash(git *)", "npm install");
       strictEqual(result, false);
     });
 

@@ -14,15 +14,15 @@ describe("Pattern matching validation", () => {
   });
 
   it("should accept valid Bash patterns", async () => {
-    const result1 = await checkPattern("Bash(echo:*)", "Bash", {
+    const result1 = await checkPattern("Bash(echo *)", "Bash", {
       command: "echo hello world",
     });
-    strictEqual(result1, true, "Bash(echo:*) should match echo commands");
+    strictEqual(result1, true, "Bash(echo *) should match echo commands");
 
-    const result2 = await checkPattern("Bash(npm:*)", "Bash", {
+    const result2 = await checkPattern("Bash(npm *)", "Bash", {
       command: "npm install lodash",
     });
-    strictEqual(result2, true, "Bash(npm:*) should match npm commands");
+    strictEqual(result2, true, "Bash(npm *) should match npm commands");
   });
 
   it("should accept Read(**) pattern", async () => {
