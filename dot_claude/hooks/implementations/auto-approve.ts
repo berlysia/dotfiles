@@ -557,7 +557,7 @@ async function checkPattern(
   // Check for invalid Bash(**) pattern and log warning
   if (pattern === "Bash(**)" && tool_name === "Bash") {
     console.warn(
-      `Invalid pattern 'Bash(**)' detected. Bash tool uses command prefixes like 'Bash(npm:*)' not file patterns.`,
+      `Invalid pattern 'Bash(**)' detected. Bash tool uses command prefixes like 'Bash(npm *)' not file patterns.`,
     );
     return false;
   }

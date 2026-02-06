@@ -44,7 +44,7 @@ describe("auto-approve.ts hook behavior", () => {
 
   describe("Bash command approval", () => {
     it("should approve single command with allow pattern", async () => {
-      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(echo:*)"]));
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(echo *)"]));
       envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
 
       const _hook = autoApproveHook;
@@ -60,7 +60,7 @@ describe("auto-approve.ts hook behavior", () => {
 
     it("should deny single command with deny pattern", async () => {
       envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify([]));
-      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify(["Bash(rm:*)"]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify(["Bash(rm *)"]));
 
       const _hook = autoApproveHook;
 
@@ -89,7 +89,7 @@ describe("auto-approve.ts hook behavior", () => {
     });
 
     it("should approve compound command when all parts are allowed", async () => {
-      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(echo:*)"]));
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(echo *)"]));
       envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
 
       const _hook = autoApproveHook;
@@ -104,8 +104,8 @@ describe("auto-approve.ts hook behavior", () => {
     });
 
     it("should deny compound command when one part is denied", async () => {
-      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(echo:*)"]));
-      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify(["Bash(rm:*)"]));
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(echo *)"]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify(["Bash(rm *)"]));
 
       const _hook = autoApproveHook;
 
@@ -119,7 +119,7 @@ describe("auto-approve.ts hook behavior", () => {
     });
 
     it("should handle commands with special characters", async () => {
-      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(echo:*)"]));
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(echo *)"]));
 
       const hook = autoApproveHook;
 
@@ -134,7 +134,7 @@ describe("auto-approve.ts hook behavior", () => {
     it("should handle piped commands", async () => {
       envHelper.set(
         "CLAUDE_TEST_ALLOW",
-        JSON.stringify(["Bash(ls:*)", "Bash(grep:*)"]),
+        JSON.stringify(["Bash(ls *)", "Bash(grep *)"]),
       );
 
       const hook = autoApproveHook;
@@ -233,7 +233,7 @@ describe("auto-approve.ts hook behavior", () => {
 
   describe("Pattern matching", () => {
     it("should handle wildcard patterns", async () => {
-      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(npm:*)"]));
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(npm *)"]));
 
       const _hook = autoApproveHook;
 
@@ -269,8 +269,8 @@ describe("auto-approve.ts hook behavior", () => {
     });
 
     it("should prioritize deny over allow", async () => {
-      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(rm:*)"]));
-      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify(["Bash(rm:*)"]));
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(rm *)"]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify(["Bash(rm *)"]));
 
       const hook = autoApproveHook;
 
@@ -289,11 +289,11 @@ describe("auto-approve.ts hook behavior", () => {
       envHelper.set(
         "CLAUDE_TEST_ALLOW",
         JSON.stringify([
-          "Bash(git:*)",
-          "Bash(echo:*)",
-          "Bash(wc:*)",
-          "Bash(xargs:*)",
-          "Bash(sh:*)",
+          "Bash(git *)",
+          "Bash(echo *)",
+          "Bash(wc *)",
+          "Bash(xargs *)",
+          "Bash(sh *)",
         ]),
       );
 
@@ -312,10 +312,10 @@ describe("auto-approve.ts hook behavior", () => {
       envHelper.set(
         "CLAUDE_TEST_ALLOW",
         JSON.stringify([
-          "Bash(find:*)",
-          "Bash(head:*)",
-          "Bash(timeout:*)",
-          "Bash(bash:*)",
+          "Bash(find *)",
+          "Bash(head *)",
+          "Bash(timeout *)",
+          "Bash(bash *)",
         ]),
       );
 
@@ -330,7 +330,7 @@ describe("auto-approve.ts hook behavior", () => {
     });
 
     it("should block dangerous commands in meta commands", async () => {
-      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(echo:*)"]));
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(echo *)"]));
 
       const hook = autoApproveHook;
 
@@ -347,10 +347,10 @@ describe("auto-approve.ts hook behavior", () => {
       envHelper.set(
         "CLAUDE_TEST_ALLOW",
         JSON.stringify([
-          "Bash(echo:*)",
-          "Bash(timeout:*)",
-          "Bash(bash:*)",
-          "Bash(sh:*)",
+          "Bash(echo *)",
+          "Bash(timeout *)",
+          "Bash(bash *)",
+          "Bash(sh *)",
         ]),
       );
 
@@ -369,7 +369,7 @@ describe("auto-approve.ts hook behavior", () => {
     it("should handle for loops transparently", async () => {
       envHelper.set(
         "CLAUDE_TEST_ALLOW",
-        JSON.stringify(["Bash(echo:*)", "Bash(wc:*)"]),
+        JSON.stringify(["Bash(echo *)", "Bash(wc *)"]),
       );
 
       const _hook = autoApproveHook;
@@ -384,7 +384,7 @@ describe("auto-approve.ts hook behavior", () => {
     });
 
     it("should block dangerous commands in for loops", async () => {
-      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(echo:*)"]));
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(echo *)"]));
 
       const _hook = autoApproveHook;
 
@@ -477,7 +477,7 @@ describe("auto-approve.ts hook behavior", () => {
 
   describe("Security Edge Cases", () => {
     it("should handle quote escaping attacks", async () => {
-      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(echo:*)"]));
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(echo *)"]));
 
       const _hook = autoApproveHook;
 
@@ -499,7 +499,7 @@ describe("auto-approve.ts hook behavior", () => {
     });
 
     it("should handle mixed quotes correctly", async () => {
-      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(echo:*)"]));
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(echo *)"]));
 
       const _hook = autoApproveHook;
 
@@ -569,8 +569,8 @@ describe("auto-approve.ts hook behavior", () => {
   describe("Type Safety Verification", () => {
     it("should provide structured result types for debugging", async () => {
       // This test verifies the type safety improvements
-      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(echo:*)"]));
-      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify(["Bash(rm:*)"]));
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(echo *)"]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify(["Bash(rm *)"]));
 
       const _hook = autoApproveHook;
 
@@ -599,7 +599,7 @@ describe("auto-approve.ts hook behavior", () => {
     });
 
     it("should handle mixed command types correctly", async () => {
-      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(echo:*)"]));
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(echo *)"]));
 
       const _hook = autoApproveHook;
 
@@ -704,7 +704,7 @@ describe("auto-approve.ts hook behavior", () => {
     it.skip("should provide detailed allow breakdown with pattern matches", async () => {
       envHelper.set(
         "CLAUDE_TEST_ALLOW",
-        JSON.stringify(["Bash(git:*)", "Bash(ls:*)"]),
+        JSON.stringify(["Bash(git *)", "Bash(ls *)"]),
       );
       envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
 
@@ -722,8 +722,8 @@ describe("auto-approve.ts hook behavior", () => {
         context.jsonCalls[0]?.hookSpecificOutput?.permissionDecisionReason;
       ok(reason?.includes("git status"), "Should mention git status command");
       ok(reason?.includes("ls -la"), "Should mention ls -la command");
-      ok(reason?.includes("Bash(git:*)"), "Should mention git pattern");
-      ok(reason?.includes("Bash(ls:*)"), "Should mention ls pattern");
+      ok(reason?.includes("Bash(git *)"), "Should mention git pattern");
+      ok(reason?.includes("Bash(ls *)"), "Should mention ls pattern");
       ok(reason?.includes("→"), "Should use arrow format");
     });
 
@@ -731,7 +731,7 @@ describe("auto-approve.ts hook behavior", () => {
       envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify([]));
       envHelper.set(
         "CLAUDE_TEST_DENY",
-        JSON.stringify(["Bash(rm:*)", "Bash(chmod:*)"]),
+        JSON.stringify(["Bash(rm *)", "Bash(chmod *)"]),
       );
 
       const _hook = autoApproveHook;
@@ -752,11 +752,11 @@ describe("auto-approve.ts hook behavior", () => {
         "Should mention chmod command",
       );
       ok(
-        reason?.includes("blocked by Bash(rm:*)"),
+        reason?.includes("blocked by Bash(rm *)"),
         "Should mention rm pattern",
       );
       ok(
-        reason?.includes("blocked by Bash(chmod:*)"),
+        reason?.includes("blocked by Bash(chmod *)"),
         "Should mention chmod pattern",
       );
       ok(reason?.includes("→"), "Should use arrow format");
@@ -764,8 +764,8 @@ describe("auto-approve.ts hook behavior", () => {
     });
 
     it("should show mixed allow and deny details in deny response", async () => {
-      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(echo:*)"]));
-      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify(["Bash(rm:*)"]));
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(echo *)"]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify(["Bash(rm *)"]));
 
       const _hook = autoApproveHook;
 
@@ -781,7 +781,7 @@ describe("auto-approve.ts hook behavior", () => {
         context.jsonCalls[0]?.hookSpecificOutput?.permissionDecisionReason;
       ok(reason?.includes("rm file.txt"), "Should mention denied rm command");
       ok(
-        reason?.includes("blocked by Bash(rm:*)"),
+        reason?.includes("blocked by Bash(rm *)"),
         "Should mention rm pattern",
       );
       ok(reason?.includes("→"), "Should use arrow format");
@@ -815,7 +815,7 @@ describe("auto-approve.ts hook behavior", () => {
     it.skip("should show detailed allow breakdown for multiple matching patterns", async () => {
       envHelper.set(
         "CLAUDE_TEST_ALLOW",
-        JSON.stringify(["Bash(git:*)", "Bash(npm:*)", "Bash(echo:*)"]),
+        JSON.stringify(["Bash(git *)", "Bash(npm *)", "Bash(echo *)"]),
       );
       envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
 
@@ -834,9 +834,9 @@ describe("auto-approve.ts hook behavior", () => {
       ok(reason?.includes("git add ."), "Should mention git command");
       ok(reason?.includes("npm install"), "Should mention npm command");
       ok(reason?.includes("echo done"), "Should mention echo command");
-      ok(reason?.includes("Bash(git:*)"), "Should mention git pattern");
-      ok(reason?.includes("Bash(npm:*)"), "Should mention npm pattern");
-      ok(reason?.includes("Bash(echo:*)"), "Should mention echo pattern");
+      ok(reason?.includes("Bash(git *)"), "Should mention git pattern");
+      ok(reason?.includes("Bash(npm *)"), "Should mention npm pattern");
+      ok(reason?.includes("Bash(echo *)"), "Should mention echo pattern");
       ok(reason?.includes("(3 commands)"), "Should show correct command count");
     });
   });
@@ -1111,7 +1111,7 @@ describe("auto-approve.ts hook behavior", () => {
     it("should respect explicit Bash allow patterns over inference", async () => {
       envHelper.set(
         "CLAUDE_TEST_ALLOW",
-        JSON.stringify(["Bash(sed:*)", "Edit(src/**)"]),
+        JSON.stringify(["Bash(sed *)", "Edit(src/**)"]),
       );
       envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
 
@@ -1126,7 +1126,7 @@ describe("auto-approve.ts hook behavior", () => {
 
     it("should respect deny patterns before inference", async () => {
       envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Edit(src/**)"]));
-      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify(["Bash(sed:*)"]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify(["Bash(sed *)"]));
 
       const context = createPreToolUseContextFor(autoApproveHook, "Bash", {
         command: "sed -i 's/foo/bar/' src/utils.ts",

@@ -38,7 +38,7 @@ describe("file-permission-inference", () => {
     it("should permit file matching Edit pattern", () => {
       const result = checkFilePermissions(
         ["src/utils.ts"],
-        ["Edit(./**)", "Bash(git:*)"],
+        ["Edit(./**)", "Bash(git *)"],
       );
 
       expect(result.allFilesPermitted).toBeTruthy();
@@ -50,7 +50,7 @@ describe("file-permission-inference", () => {
     it("should permit file matching MultiEdit pattern", () => {
       const result = checkFilePermissions(
         ["src/utils.ts"],
-        ["MultiEdit(src/**)", "Bash(git:*)"],
+        ["MultiEdit(src/**)", "Bash(git *)"],
       );
 
       expect(result.allFilesPermitted).toBeTruthy();
@@ -86,7 +86,7 @@ describe("file-permission-inference", () => {
     it("should deny when no Edit patterns exist", () => {
       const result = checkFilePermissions(
         ["src/utils.ts"],
-        ["Bash(git:*)", "Read(./**)"],
+        ["Bash(git *)", "Read(./**)"],
       );
 
       expect(result.allFilesPermitted).toBeFalsy();
@@ -200,7 +200,7 @@ describe("file-permission-inference", () => {
     });
 
     it("should return false when no Edit patterns", () => {
-      const result = canApproveSedTargets(["file.txt"], ["Bash(git:*)"]);
+      const result = canApproveSedTargets(["file.txt"], ["Bash(git *)"]);
 
       expect(result).toBeFalsy();
     });
