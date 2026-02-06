@@ -202,7 +202,7 @@ describe("permission-auto-approve.ts hook behavior", () => {
       "make build",
       // Security boundary: commands that need LLM evaluation
       "git apply malicious.patch",
-      "node -e 'require(\"fs\").writeFileSync(\"test.txt\", \"data\")'",
+      'node -e \'require("fs").writeFileSync("test.txt", "data")\'',
       "kill -9 1",
       "eslint --fix src/",
       "prettier --write src/",

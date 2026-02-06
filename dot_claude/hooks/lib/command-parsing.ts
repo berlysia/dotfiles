@@ -113,7 +113,7 @@ export function checkDangerousCommand(cmd: string): {
  * Check if a command matches a pattern (for Bash commands)
  */
 export function checkCommandPattern(pattern: string, cmd: string): boolean {
-  // Extract command from Bash(command:*) format
+  // Extract command from Bash(command *) format
   const match = pattern.match(/^Bash\(([^)]+)\)$/);
   if (!match) return false;
 
@@ -121,7 +121,7 @@ export function checkCommandPattern(pattern: string, cmd: string): boolean {
   if (!cmdPattern) return false;
 
   // Simple wildcard matching - can be enhanced
-  if (cmdPattern.endsWith(":*")) {
+  if (cmdPattern.endsWith(" *")) {
     const prefix = cmdPattern.slice(0, -2);
     return cmd.startsWith(prefix);
   }

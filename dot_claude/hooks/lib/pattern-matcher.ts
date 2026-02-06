@@ -346,11 +346,11 @@ export async function checkPattern(
       return false;
     }
 
-    // Extract the command pattern from Bash(command:*)
+    // Extract the command pattern from Bash(command *)
     const cmdPattern = pattern.slice(5, -1); // Remove "Bash(" and ")"
 
     // Reject ** pattern for Bash tool - it's not a valid Bash pattern
-    // Bash tool uses command prefixes like "npm:*" not file patterns like "**"
+    // Bash tool uses command prefixes like "npm *" not file patterns like "**"
     if (cmdPattern === "**") {
       return false;
     }
@@ -361,8 +361,8 @@ export async function checkPattern(
       : "";
 
     // Check if command matches the pattern
-    if (cmdPattern.includes(":")) {
-      const cmdPrefix = cmdPattern.split(":")[0];
+    if (cmdPattern.endsWith(" *")) {
+      const cmdPrefix = cmdPattern.slice(0, -2);
       if (!cmdPrefix) return false;
 
       // Handle compound commands (&&, ||, ;) - now async
@@ -384,7 +384,7 @@ export async function checkPattern(
         }
 
         // Also check if the prefix appears as a word within the command
-        // This catches cases like "timeout 15 pnpm test" matching "pnpm:*"
+        // This catches cases like "timeout 15 pnpm test" matching "pnpm *"
         if (cmd.includes(` ${cmdPrefix} `) || cmd.endsWith(` ${cmdPrefix}`)) {
           return true;
         }

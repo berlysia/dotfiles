@@ -247,7 +247,7 @@ export function evaluateOperationRisk(pattern: string): RiskAssessment {
     }
 
     // 安全な読み取りコマンド
-    if (command.match(/^(ls|pwd|echo|cat|head|tail|grep|rg|find|fd):/)) {
+    if (command.match(/^(ls|pwd|echo|cat|head|tail|grep|rg|find|fd) /)) {
       return {
         level: RiskLevel.LOW,
         category: "operation",
@@ -257,7 +257,7 @@ export function evaluateOperationRisk(pattern: string): RiskAssessment {
     }
 
     // Git読み取り専用コマンド
-    if (command.match(/^git (status|log|diff|show|branch):/)) {
+    if (command.match(/^git (status|log|diff|show|branch) /)) {
       return {
         level: RiskLevel.LOW,
         category: "operation",
@@ -267,7 +267,7 @@ export function evaluateOperationRisk(pattern: string): RiskAssessment {
     }
 
     // npm/pnpm情報取得コマンド
-    if (command.match(/^(npm view|pnpm view):/)) {
+    if (command.match(/^(npm view|pnpm view) /)) {
       return {
         level: RiskLevel.LOW,
         category: "operation",
@@ -277,7 +277,7 @@ export function evaluateOperationRisk(pattern: string): RiskAssessment {
     }
 
     // テスト実行コマンド
-    if (command.match(/^(npm test|pnpm test|bun test|jest|vitest):/)) {
+    if (command.match(/^(npm test|pnpm test|bun test|jest|vitest) /)) {
       return {
         level: RiskLevel.LOW,
         category: "operation",
@@ -287,7 +287,7 @@ export function evaluateOperationRisk(pattern: string): RiskAssessment {
     }
 
     // ビルド・型チェックコマンド（副作用あるが安全性が高い）
-    if (command.match(/^(pnpm (build|typecheck|run)|npm run|bun run):/)) {
+    if (command.match(/^(pnpm (build|typecheck|run)|npm run|bun run) /)) {
       return {
         level: RiskLevel.MEDIUM,
         category: "operation",
@@ -299,7 +299,7 @@ export function evaluateOperationRisk(pattern: string): RiskAssessment {
     // パッケージ管理コマンド（変更を伴うが制御可能）
     if (
       command.match(
-        /^(pnpm (add|remove|install|update)|npm (install|uninstall)):/,
+        /^(pnpm (add|remove|install|update)|npm (install|uninstall)) /,
       )
     ) {
       return {

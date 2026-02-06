@@ -87,13 +87,13 @@ hooks/
 {
   "permissions": {
     "allow": [
-      "Bash(git:*)",
-      "Bash(npm:*)",
+      "Bash(git *)",
+      "Bash(npm *)",
       "Edit(src/**)",
       "Read(**)"
     ],
     "deny": [
-      "Bash(rm:*)",
+      "Bash(rm *)",
       "Edit(.git/**)"
     ]
   }

@@ -109,4 +109,4 @@ jobs:
             - If the issue cannot be fixed automatically, leave a detailed comment explaining the problem
 
           # Adjust allowed tools based on your project needs
-          claude_args: '--allowed-tools "Bash(gh:*),Bash(git:*),Bash(pnpm:*),Bash(npm:*),Read,Write,Edit,Glob,Grep"'
+          claude_args: '--allowed-tools "Bash(gh *),Bash(git *),Bash(pnpm *),Bash(npm *),Read,Write,Edit,Glob,Grep"'

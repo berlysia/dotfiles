@@ -99,7 +99,7 @@ function checkSingleFile(
  * ```typescript
  * const result = checkFilePermissions(
  *   ["src/utils.ts", "src/index.ts"],
- *   ["Edit(./**\/*.ts)", "Edit(src/**)", "Bash(git:*)"]
+ *   ["Edit(./**\/*.ts)", "Edit(src/**)", "Bash(git *)"]
  * );
  * console.log(result.allFilesPermitted); // true
  * ```

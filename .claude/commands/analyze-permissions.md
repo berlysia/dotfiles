@@ -122,32 +122,32 @@ Options:
 ## 🟢 ADDITIONS (High Priority)
 
 ### Build Tools
-- `Bash(pnpm --filter:*)` - Used in 4 projects for monorepo operations
-- `Bash(npm run lint:*)` - Used in 3 projects for linting
+- `Bash(pnpm --filter *)` - Used in 4 projects for monorepo operations
+- `Bash(npm run lint *)` - Used in 3 projects for linting
 
-### File Operations  
-- `Bash(touch:*)` - Used in 5 projects (already in template at line 103)
-- `Bash(diff:*)` - Used in 3 projects for comparisons
+### File Operations
+- `Bash(touch *)` - Used in 5 projects (already in template at line 103)
+- `Bash(diff *)` - Used in 3 projects for comparisons
 
 ## 🟡 MODIFICATIONS (Medium Priority)
 
 ### Overly Broad Patterns
-- `Bash(npm:*)` → Split into specific commands:
-  - `Bash(npm install:*)`
-  - `Bash(npm run:*)`
-  - `Bash(npm test:*)`
+- `Bash(npm *)` → Split into specific commands:
+  - `Bash(npm install *)`
+  - `Bash(npm run *)`
+  - `Bash(npm test *)`
 
 ## 🔴 REMOVALS (Low Priority)
 
 ### Never Used
-- `Bash(perf:*)` (line 117) - No usage in any project
-- `Bash(7z:*)` (line 116) - No usage, consider removing
+- `Bash(perf *)` (line 117) - No usage in any project
+- `Bash(7z *)` (line 116) - No usage, consider removing
 
 ## 📋 CONSIDERATIONS (Future Additions)
 
 ### Used in 2 Projects
-- `Bash(npx @biomejs/biome:*)` - Biome tooling variant
-- `Bash(git worktree:*)` - Advanced git workflows
+- `Bash(npx @biomejs/biome *)` - Biome tooling variant
+- `Bash(git worktree *)` - Advanced git workflows
 ```
 
 ## Security Considerations

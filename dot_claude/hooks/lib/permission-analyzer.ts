@@ -316,7 +316,7 @@ export class PermissionAnalyzer {
         return generalized || null;
       }
       // 安全でない/判定不能なら pass/review 寄りのパターンにする
-      return "sh -c:*";
+      return "sh -c *";
     }
 
     // 最初のコマンドを取得して一般化
@@ -356,7 +356,7 @@ export class PermissionAnalyzer {
     // よくあるパターンに基づいて一般化
     if (cmd.match(/^(npm|pnpm|yarn|bun)$/)) {
       const subCommand = parts[1];
-      return subCommand ? `${cmd} ${subCommand}:*` : `${cmd}:*`;
+      return subCommand ? `${cmd} ${subCommand} *` : `${cmd} *`;
     }
 
     if (cmd.match(/^git$/)) {
@@ -364,7 +364,7 @@ export class PermissionAnalyzer {
       if (subCommand === "status" && parts.length === 2) {
         return "git status";
       }
-      return subCommand ? `git ${subCommand}:*` : "git:*";
+      return subCommand ? `git ${subCommand} *` : `git *`;
     }
 
     // npx / pnpx / bunx / pnpm dlx / yarn dlx を同等扱いし、パッケージ名ベースに正規化
@@ -381,27 +381,27 @@ export class PermissionAnalyzer {
 
     if (cmd === "npx") {
       const pkg = normalizeNpxPackage(parts, 1);
-      return pkg ? `npx ${pkg}:*` : "npx:*";
+      return pkg ? `npx ${pkg} *` : "npx *";
     }
 
     if (cmd === "pnpx") {
       const pkg = normalizeNpxPackage(parts, 1);
-      return pkg ? `npx ${pkg}:*` : "npx:*";
+      return pkg ? `npx ${pkg} *` : "npx *";
     }
 
     if (cmd === "bunx") {
       const pkg = normalizeNpxPackage(parts, 1);
-      return pkg ? `npx ${pkg}:*` : "npx:*";
+      return pkg ? `npx ${pkg} *` : "npx *";
     }
 
     if (cmd === "pnpm" && parts[1] === "dlx") {
       const pkg = normalizeNpxPackage(parts, 2);
-      return pkg ? `npx ${pkg}:*` : "npx:*";
+      return pkg ? `npx ${pkg} *` : "npx *";
     }
 
     if (cmd === "yarn" && parts[1] === "dlx") {
       const pkg = normalizeNpxPackage(parts, 2);
-      return pkg ? `npx ${pkg}:*` : "npx:*";
+      return pkg ? `npx ${pkg} *` : "npx *";
     }
 
     // 基本コマンドの場合
@@ -409,23 +409,23 @@ export class PermissionAnalyzer {
     if (cmd === "find") {
       // Highlight destructive variants for deny analysis
       if (parts.includes("-delete")) {
-        return "find -delete:*";
+        return "find -delete *";
       }
       const execIndex = parts.indexOf("-exec");
       if (execIndex !== -1) {
         const next = parts.slice(execIndex + 1).join(" ");
         if (/\brm\b/.test(next)) {
-          return "find -exec rm:*";
+          return "find -exec rm *";
         }
       }
-      return "find:*";
+      return "find *";
     }
 
     if (cmd.match(/^(ls|cat|head|tail|grep|echo|printf|pwd|mkdir|touch|cd)$/)) {
-      return `${cmd}:*`;
+      return `${cmd} *`;
     }
 
-    return `${cmd}:*`;
+    return `${cmd} *`;
   }
 
   /**
@@ -648,13 +648,13 @@ export class PermissionAnalyzer {
     entries: DecisionLogEntry[],
   ): boolean {
     const passThroughPatterns = [
-      // 複雑なパイプライン操作（:* 構文のみ）
-      "Bash(xargs:*)",
-      "Bash(timeout:*)",
+      // 複雑なパイプライン操作
+      "Bash(xargs *)",
+      "Bash(timeout *)",
       // メタ実行（詳細解析が必要なためセッション限定推奨）
-      "Bash(sh -c:*)",
-      "Bash(bash -c:*)",
-      "Bash(zsh -c:*)",
+      "Bash(sh -c *)",
+      "Bash(bash -c *)",
+      "Bash(zsh -c *)",
 
       // 一時的な探索・分析コマンド（unknown_commandなど）
       "Bash(unknown_command)",
