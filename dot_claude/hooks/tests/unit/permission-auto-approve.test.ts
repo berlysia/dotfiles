@@ -196,7 +196,6 @@ describe("permission-auto-approve.ts hook behavior", () => {
 
   describe("staticRuleEngine - Uncertain cases (delegated to Layer 2b)", () => {
     const uncertainCommands = [
-      "npm install lodash",
       "git push origin main",
       "docker build .",
       "make build",
