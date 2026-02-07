@@ -53,6 +53,7 @@ export function checkDangerousCommand(cmd: string): {
   reason: string;
 } {
   const dangerousPatterns = [
+    // === Destructive file operations ===
     {
       // Match rm with recursive and force flags, variable substitution (immediate deny - unpredictable)
       pattern:
@@ -83,6 +84,43 @@ export function checkDangerousCommand(cmd: string): {
       reason: "Piped shell execution",
       requiresReview: true,
     },
+
+    // === Destructive git operations ===
+    {
+      pattern: /git\s+push\s+.*--force\b/,
+      reason: "Force push can overwrite remote history",
+      requiresReview: true,
+    },
+    {
+      pattern: /git\s+push\s+.*-f\b/,
+      reason: "Force push (-f) can overwrite remote history",
+      requiresReview: true,
+    },
+    {
+      pattern: /git\s+push\s+--force\b/,
+      reason: "Force push can overwrite remote history",
+      requiresReview: true,
+    },
+    {
+      pattern: /git\s+push\s+-f\b/,
+      reason: "Force push (-f) can overwrite remote history",
+      requiresReview: true,
+    },
+    {
+      pattern: /git\s+reset\s+--hard\b/,
+      reason: "Hard reset discards uncommitted changes permanently",
+      requiresReview: true,
+    },
+    {
+      pattern: /git\s+clean\s+.*-[fd]/,
+      reason: "Git clean removes untracked files/directories permanently",
+      requiresReview: true,
+    },
+    {
+      pattern: /git\s+branch\s+.*-D\b/,
+      reason: "Force delete branch (-D) ignores unmerged status",
+      requiresReview: true,
+    },
     {
       pattern: /git\s+.*--no-verify/,
       reason: "Git command with --no-verify bypasses hooks and safety checks",
@@ -92,6 +130,70 @@ export function checkDangerousCommand(cmd: string): {
       pattern: /git\s+.*--no-gpg-sign/,
       reason:
         "Git command with --no-gpg-sign bypasses GPG signature verification",
+      requiresReview: true,
+    },
+
+    // === Destructive GitHub CLI operations ===
+    {
+      pattern: /gh\s+pr\s+merge\b/,
+      reason: "Merging PR affects shared repository state",
+      requiresReview: true,
+    },
+    {
+      pattern: /gh\s+pr\s+close\b/,
+      reason: "Closing PR affects shared repository state",
+      requiresReview: true,
+    },
+    {
+      pattern: /gh\s+issue\s+close\b/,
+      reason: "Closing issue affects shared repository state",
+      requiresReview: true,
+    },
+    {
+      pattern: /gh\s+issue\s+delete\b/,
+      reason: "Deleting issue is irreversible",
+      requiresReview: true,
+    },
+    {
+      pattern: /gh\s+repo\s+delete\b/,
+      reason: "Deleting repository is irreversible",
+      requiresReview: false,
+    },
+    {
+      pattern: /gh\s+repo\s+archive\b/,
+      reason: "Archiving repository affects all collaborators",
+      requiresReview: true,
+    },
+    {
+      pattern: /gh\s+release\s+delete\b/,
+      reason: "Deleting release is irreversible",
+      requiresReview: true,
+    },
+
+    // === Destructive package manager operations ===
+    {
+      pattern: /npm\s+publish\b/,
+      reason: "Publishing package to registry is public and hard to undo",
+      requiresReview: true,
+    },
+    {
+      pattern: /npm\s+unpublish\b/,
+      reason: "Unpublishing can break dependent packages",
+      requiresReview: false,
+    },
+    {
+      pattern: /npm\s+deprecate\b/,
+      reason: "Deprecating package affects all users",
+      requiresReview: true,
+    },
+    {
+      pattern: /pnpm\s+publish\b/,
+      reason: "Publishing package to registry is public and hard to undo",
+      requiresReview: true,
+    },
+    {
+      pattern: /bun\s+publish\b/,
+      reason: "Publishing package to registry is public and hard to undo",
       requiresReview: true,
     },
   ];

@@ -48,6 +48,8 @@ const SAFE_BASH_PATTERNS = [
   /^(npm|pnpm|yarn|bun)\s+(ls|list|outdated|view|info|why|explain)\b/,
   // Development tools (no side effects)
   /^(npm|pnpm|yarn|bun)\s+(test|lint|format|typecheck|check|type-check)\b/,
+  // Package installation (safe in dev context)
+  /^(npm|pnpm|yarn|bun)\s+(install|add|remove|ci)\b/,
   // Test runners
   /^(vitest|jest|mocha|ava|tap|node\s+--test)\b/,
   // Linters and formatters (check mode)
@@ -62,10 +64,8 @@ const SAFE_BASH_PATTERNS = [
   /^printenv\b/,
   // Port/process inspection (read-only)
   /^lsof\b/,
-  // Dev tool execution
-  /^npx\s/,
-  /^pnpx\s/,
-  /^bunx\s/,
+  // Dev tool execution (trusted tools only, not arbitrary packages)
+  /^(npx|pnpx|bunx)\s+(vitest|jest|prettier|eslint|oxlint|tsc|tsgo|knip)\b/,
 ];
 
 /**
