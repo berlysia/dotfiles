@@ -1,11 +1,11 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
   "entry": [
-    "dot_claude/hooks/implementations/*.ts",
-    "dot_claude/lib/*.ts",
-    "dot_claude/scripts/*.ts"
+    "home/dot_claude/hooks/implementations/*.ts",
+    "home/dot_claude/lib/*.ts",
+    "home/dot_claude/scripts/*.ts"
   ],
-  "project": ["dot_claude/**/*.ts"],
+  "project": ["home/dot_claude/**/*.ts"],
   "ignore": ["**/*.test.ts"],
   "ignoreDependencies": [
     "add-skill",
