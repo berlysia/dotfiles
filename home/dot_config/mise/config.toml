@@ -5,7 +5,7 @@ experimental = true
 [tools]
 actionlint = "1.7.10"
 bun = "1.3.6"
-deno = "2.6.7"
+deno = "2.6.8"
 direnv = "2.37.1"
 fzf = "0.67.0"  # Fuzzy finder - migrated from chezmoi external
 gitleaks = "8.30.0"
