@@ -1,5 +1,5 @@
 # Zsh completion cache files
-dot_zsh/.zcompdump*
+home/dot_zsh/.zcompdump*
 
 # Editor and IDE files
 .vscode/
@@ -32,8 +32,8 @@ node_modules
 .lsmcp/cache
 
 # TypeScript compiled output
-dot_claude/**/*.js
-!dot_claude/**/.*config*.js
+home/dot_claude/**/*.js
+!home/dot_claude/**/.*config*.js
 
 # Backup files
 *.backup-*
