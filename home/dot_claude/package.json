@@ -1,0 +1,13 @@
+{
+  "name": "@berlysia-dotfiles/claude-hooks",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "cc-hooks-ts": "2.1.2",
+    "@anthropic-ai/claude-agent-sdk": "0.2.19",
+    "@mizchi/readability": "0.7.7",
+    "dax": "0.44.2",
+    "web-tree-sitter": "0.26.3",
+    "tree-sitter-bash": "0.25.1"
+  }
+}

@@ -10,9 +10,10 @@ TARGET_FILE="$HOME/.claude.json"
 TEMP_FILE=$(mktemp)
 BACKUP_FILE="${TARGET_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
 PACKAGE_JSON="{{ .chezmoi.workingTree }}/package.json"
+HOOKS_PACKAGE_JSON="{{ .chezmoi.workingTree }}/home/dot_claude/package.json"
 
-# Read versions from package.json
-READABILITY_VER=$(jq -r '.dependencies["@mizchi/readability"] // empty' "$PACKAGE_JSON")
+# Read versions from package.json (root or hook workspace)
+READABILITY_VER=$(jq -r '.dependencies["@mizchi/readability"] // empty' "$HOOKS_PACKAGE_JSON")
 CHROME_DEVTOOLS_VER=$(jq -r '.dependencies["chrome-devtools-mcp"] // empty' "$PACKAGE_JSON")
 PLAYWRIGHT_VER=$(jq -r '.dependencies["@playwright/mcp"] // empty' "$PACKAGE_JSON")
 CONTEXT7_VER=$(jq -r '.dependencies["@upstash/context7-mcp"] // empty' "$PACKAGE_JSON")

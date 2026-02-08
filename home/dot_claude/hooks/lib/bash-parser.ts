@@ -451,8 +451,10 @@ async function parseWithTreeSitter(
       await Parser.init();
     }
 
-    // Resolve WASM path from installed package
-    const wasmPath = `${process.cwd()}/node_modules/tree-sitter-bash/tree-sitter-bash.wasm`;
+    // Resolve WASM path via createRequire to avoid cwd dependency
+    const { createRequire } = await import("node:module");
+    const _require = createRequire(import.meta.url);
+    const wasmPath = _require.resolve("tree-sitter-bash/tree-sitter-bash.wasm");
     const Language = ParserMod.Language || Parser.Language;
     const BashLang = await Language.load(wasmPath);
     bashParser = new Parser() as TreeSitterParser;
