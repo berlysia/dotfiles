@@ -1,8 +1,8 @@
 {{ if ne .chezmoi.os "windows" -}}
 #!/bin/bash
 # Install node_modules for chezmoi source directory (hooks, skills, etc.)
-# package.json hash: {{ include "package.json" | sha256sum }}
-# pnpm-lock.yaml hash: {{ include "pnpm-lock.yaml" | sha256sum }}
+# package.json hash: {{ output "cat" (joinPath .chezmoi.workingTree "package.json") | sha256sum }}
+# pnpm-lock.yaml hash: {{ output "cat" (joinPath .chezmoi.workingTree "pnpm-lock.yaml") | sha256sum }}
 
 set -euo pipefail
 
@@ -11,7 +11,7 @@ log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $1"
 }
 
-SOURCE_DIR="{{ .chezmoi.sourceDir }}"
+SOURCE_DIR="{{ .chezmoi.workingTree }}"
 
 # Initialize mise environment to access pnpm
 if command -v mise &> /dev/null; then
