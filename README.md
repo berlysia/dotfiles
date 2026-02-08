@@ -31,25 +31,25 @@ depends on [chezmoi](https://github.com/twpayne/chezmoi)
 
 This dotfiles project includes tools for analyzing Claude Code hook decision logs:
 
-### `dot_claude/scripts/update-auto-approve.ts`
+### `home/dot_claude/scripts/update-auto-approve.ts`
 
 Automated permission pattern analysis and management tool:
 
 ```bash
 # Interactive review of all patterns
-bun dot_claude/scripts/update-auto-approve.ts
+bun home/dot_claude/scripts/update-auto-approve.ts
 
 # Preview changes without applying
-bun dot_claude/scripts/update-auto-approve.ts --dry-run
+bun home/dot_claude/scripts/update-auto-approve.ts --dry-run
 
-# Analyze last 7 days only  
-bun dot_claude/scripts/update-auto-approve.ts --since 7d
+# Analyze last 7 days only
+bun home/dot_claude/scripts/update-auto-approve.ts --since 7d
 
 # Auto-approve safe patterns without interaction
-bun dot_claude/scripts/update-auto-approve.ts --auto-approve-safe
+bun home/dot_claude/scripts/update-auto-approve.ts --auto-approve-safe
 
 # Show detailed analysis information
-bun dot_claude/scripts/update-auto-approve.ts --verbose
+bun home/dot_claude/scripts/update-auto-approve.ts --verbose
 ```
 
 **Features:**
@@ -105,12 +105,12 @@ These files are automatically merged by `run_onchange_update-settings-json.sh.tm
 This project uses a two-layer approach for managing Claude Code skills:
 
 #### 1. Handcrafted Skills (`.skills/`)
-- Stored in `${projectRoot}/.skills/` for unified management
+- Stored in `${projectRoot}/.skills/` for unified management (at repo root, outside `home/`)
 - Synced to both `~/.claude/skills/` and `~/.codex/skills/` via `run_after_sync-skills.sh.tmpl`
 - Used by both Claude Code and Codex
 - Always preserved during updates
 
-#### 2. External Skills (`.chezmoidata/claude_skills.yaml`)
+#### 2. External Skills (`home/.chezmoidata/claude_skills.yaml`)
 - Declaratively managed in YAML configuration
 - Installed via `add-skill` from GitHub repositories
 - Tracked in `.claude/.external-skills-installed`
