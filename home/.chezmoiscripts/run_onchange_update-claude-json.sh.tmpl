@@ -1,7 +1,7 @@
 {{ if ne .chezmoi.os "windows" -}}
 #!/bin/bash
 # Update ~/.claude.json by merging chezmoi template changes
-# package.json hash: {{ include "package.json" | sha256sum }}
+# package.json hash: {{ output "cat" (joinPath .chezmoi.workingTree "package.json") | sha256sum }}
 # script hash: {{ include ".chezmoiscripts/run_onchange_update-claude-json.sh.tmpl" | sha256sum }}
 
 set -euo pipefail
@@ -9,7 +9,7 @@ set -euo pipefail
 TARGET_FILE="$HOME/.claude.json"
 TEMP_FILE=$(mktemp)
 BACKUP_FILE="${TARGET_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
-PACKAGE_JSON="{{ .chezmoi.sourceDir }}/package.json"
+PACKAGE_JSON="{{ .chezmoi.workingTree }}/package.json"
 
 # Read versions from package.json
 READABILITY_VER=$(jq -r '.dependencies["@mizchi/readability"] // empty' "$PACKAGE_JSON")

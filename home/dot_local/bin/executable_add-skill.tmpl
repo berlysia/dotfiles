@@ -1,4 +1,4 @@
-{{- $pkgJson := include "package.json" | fromJson -}}
+{{- $pkgJson := output "cat" (joinPath .chezmoi.workingTree "package.json") | fromJson -}}
 {{- $addSkillVersion := index $pkgJson.dependencies "add-skill" -}}
 #!/usr/bin/env bash
 
