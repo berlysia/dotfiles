@@ -125,23 +125,20 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
 
 #### フックの依存パッケージ
 
-フック（`~/.claude/hooks/`）は、実行時のcwdにある`node_modules`からパッケージを解決します。
-このプロジェクトの`node_modules`が参照されるため、フックで使用するパッケージは`package.json`に追加する必要があります。
+フック（`~/.claude/hooks/`）は bun で絶対パス実行される（`bun ~/.claude/hooks/implementations/*.ts`）。
+bun はスクリプト位置から `node_modules` を上方探索するため、`~/.claude/node_modules/` に依存パッケージが必要。
+
+**パッケージ管理構造**:
+- **hook依存の定義**: `home/dot_claude/package.json`（pnpm workspace パッケージ）
+- **開発時**: `pnpm install` で `home/dot_claude/node_modules/` にインストール
+- **deploy後**: `chezmoi apply` → install script が `~/.claude/` で `bun install` を実行
+
+**依存パッケージの追加方法**:
+1. `home/dot_claude/package.json` の `dependencies` に追加
+2. `pnpm install` で lockfile を更新
+3. `chezmoi apply` で deploy（自動的に `~/.claude/node_modules/` にインストールされる）
 
 **主要な依存パッケージ**:
 - `cc-hooks-ts`: フック定義ヘルパー
 - `@anthropic-ai/claude-agent-sdk`: LLM評価用（Claude Codeライセンスで認証）
-
-#### bunキャッシュの問題
-
-新しいパッケージを追加した後、フックで「package not found」エラーが発生する場合：
-
-```bash
-# bunのキャッシュをクリア
-bun pm cache rm
-
-# Claude Codeを再起動
-```
-
-**原因**: bunがモジュール解決結果をキャッシュしており、新しいパッケージが認識されない場合がある
 

@@ -28,17 +28,11 @@
     "typescript": "5.9.3"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "0.2.19",
-    "@mizchi/readability": "0.7.7",
     "@openai/codex": "0.77.0",
     "@playwright/mcp": "0.0.54",
     "@upstash/context7-mcp": "2.1.0",
     "add-skill": "1.0.11",
-    "cc-hooks-ts": "2.1.2",
     "ccstatusline": "2.0.23",
-    "chrome-devtools-mcp": "0.12.1",
-    "dax": "0.44.2",
-    "tree-sitter-bash": "0.25.1",
-    "web-tree-sitter": "0.26.3"
+    "chrome-devtools-mcp": "0.12.1"
   }
 }
