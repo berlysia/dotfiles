@@ -19,15 +19,21 @@ hooks/
 │   ├── speak-notification.ts    # 音声通知
 │   └── user-prompt-logger.ts    # プロンプトログ
 ├── lib/                         # 共有ライブラリ（TypeScript）
-│   ├── hook-common.ts           # フック共通機能
-│   ├── pattern-matcher.ts       # パターンマッチング
-│   ├── dangerous-commands.ts    # 危険なコマンドの検出
+│   ├── bash-parser.ts           # Bashコマンド構造解析
+│   ├── centralized-logging.ts   # 統合ロギング
+│   ├── chezmoi-utils.ts         # chezmoi関連ユーティリティ
+│   ├── command-parsing.ts       # コマンド解析・危険コマンド検出
+│   ├── context-helpers.ts       # コンテキストヘルパー
 │   ├── decision-maker.ts        # 判定ロジック
-│   ├── logging.ts               # ロギング機能
-│   ├── notification-logging.ts  # 通知ログ機能
-│   ├── voicevox-audio.ts        # VoiceVox音声合成・音声再生
+│   ├── file-permission-inference.ts # ファイルパーミッション推論
 │   ├── git-context.ts           # Git リポジトリ情報管理
-│   └── sound-types.ts           # 音声通知型定義
+│   ├── path-utils.ts            # パス操作ユーティリティ
+│   ├── pattern-matcher.ts       # パターンマッチング
+│   ├── permission-analyzer.ts   # パーミッション分析
+│   ├── permission-request-helpers.ts # パーミッション要求ヘルパー
+│   ├── risk-assessment.ts       # リスク評価
+│   ├── sed-parser.ts            # sedコマンド解析
+│   └── structured-llm-evaluator.ts # LLM評価ロジック
 ├── utilities/                   # スタンドアロンツール
 │   └── generate-stats.ts        # 統計レポート生成
 ├── types/                       # 型定義
@@ -55,12 +61,12 @@ hooks/
 
 #### 機能
 
-1. **危険なコマンドの検出**
-   - `git push -f`: 強制プッシュをブロック
-   - `git commit --no-verify`: 検証スキップを手動レビュー
-   - `git config` の書き込み操作: 手動レビュー
-   - `rm -rf`: 強制削除をブロック
-   - `.git` ディレクトリへの操作: 保護
+1. **危険なコマンドの検出**（`command-parsing.ts` の `checkDangerousCommand` で実装）
+   - **ファイル操作**: `rm -rf`（変数展開/ルート指定）、`sudo rm`、`dd`、`mkfs`
+   - **Git操作**: `push --force/-f`、`reset --hard`、`clean -fd`、`branch -D`、`--no-verify`
+   - **GitHub CLI**: `pr merge/close`、`issue close/delete`、`repo delete/archive`
+   - **パッケージマネージャ**: `npm/pnpm/bun publish/unpublish/deprecate`
+   - **その他**: piped shell execution、環境変数操作
 
 2. **パターンマッチング**
    - GitIgnore形式のパターンサポート
@@ -74,11 +80,11 @@ hooks/
 
 モジュール化されたTypeScript設計により、保守性と拡張性を向上：
 
-- **hook-common.ts**: JSON入力の解析、設定ファイルの読み込み
-- **pattern-matcher.ts**: コマンドとパターンのマッチング処理
-- **dangerous-commands.ts**: 危険なコマンドパターンの定義と検出
-- **decision-maker.ts**: 判定ロジック
-- **logging.ts**: 分析結果のロギング
+- **bash-parser.ts**: 複合コマンド（`&&`, `||`, `;`）の構造解析
+- **command-parsing.ts**: コマンド抽出と危険なコマンドの検出（`checkDangerousCommand`）
+- **pattern-matcher.ts**: Allow/Denyパターンとのマッチング処理
+- **decision-maker.ts**: 最終的な承認/拒否の判定ロジック
+- **centralized-logging.ts**: 分析結果のロギング
 
 ### 設定例
 
@@ -87,18 +93,24 @@ hooks/
 {
   "permissions": {
     "allow": [
-      "Bash(git *)",
-      "Bash(npm *)",
+      "Bash(git status)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(npm install *)",
+      "Bash(pnpm install *)",
       "Edit(src/**)",
       "Read(**)"
     ],
     "deny": [
-      "Bash(rm *)",
+      "Bash(rm -rf *)",
       "Edit(.git/**)"
     ]
   }
 }
 ```
+
+**注意**: パターン構文は `Bash(command *)` 形式を使用します（旧 `:*` 形式は非推奨）。
+安全のため、`git *` や `npm *` のような広範なワイルドカードは避け、個別のサブコマンドを指定してください。
 
 ## 技術仕様
 

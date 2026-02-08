@@ -182,16 +182,19 @@ CLAUDE_TEST_MODE=1 node --test tests/unit/auto-approve.test.ts
     "allow": [
       "Edit(./**)",
       "MultiEdit(src/**)",
-      "Bash(git *)",
-      "Bash(pnpm *)"
+      "Bash(git status)",
+      "Bash(git diff *)",
+      "Bash(pnpm install *)"
     ],
     "deny": [
       "Edit(~/.claude/**)",
-      "Bash(rm *)"
+      "Bash(rm -rf *)"
     ]
   }
 }
 ```
+
+**注意**: パーミッションは具体的なサブコマンドレベルで指定することを推奨します（`Bash(git *)` のような広範なワイルドカードは避ける）。
 
 ### プロジェクト設定（.claude/settings.json）
 
