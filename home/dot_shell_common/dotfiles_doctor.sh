@@ -475,7 +475,7 @@ check_chezmoi() {
             add_weight $WEIGHT_REQUIRED 1
             
             # Check for uncommitted changes
-            if [ -d "$source_dir/.git" ]; then
+            if git -C "$source_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
                 local git_status
                 git_status=$(cd "$source_dir" && git status --porcelain 2>/dev/null)
                 if [ -z "$git_status" ]; then

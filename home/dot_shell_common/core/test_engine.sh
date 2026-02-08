@@ -492,7 +492,7 @@ test_git_configuration() {
         if command -v chezmoi >/dev/null 2>&1; then
             local chezmoi_source
             chezmoi_source=$(chezmoi source-path 2>/dev/null)
-            if [ -d "$chezmoi_source" ] && [ -d "$chezmoi_source/.git" ]; then
+            if [ -d "$chezmoi_source" ] && git -C "$chezmoi_source" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
                 # Check if repository is clean (save current directory)
                 local current_dir="$PWD"
                 cd "$chezmoi_source"

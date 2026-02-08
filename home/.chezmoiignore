@@ -1,13 +1,5 @@
-.vscode
 *.md
 !dot_claude/skills/**/*.md
-
-# Repository tooling (not for home directory)
-.github
-scripts
-.gitleaks.toml
-.gitleaksignore
-docs
 
 # Test files - exclude from deployment
 **/*.test.ts
@@ -19,17 +11,8 @@ dot_claude/hooks/scripts/README_TESTING.md
 # Zsh completion cache files
 dot_zsh/.zcompdump*
 
-package.json
-!dot_claude/package.json
-node_modules
 **/node_modules
 **/node_modules/**
-pnpm-lock.yaml
-tsconfig.json
-.lsmcp
-pnpm-workspace.yaml
-renovate.json
-zizmor.yml
 
 # Windows専用ファイル - Windows以外では無視
 {{ if ne .chezmoi.os "windows" }}

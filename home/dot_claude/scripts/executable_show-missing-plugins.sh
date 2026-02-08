@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-CHEZMOI_SOURCE_DIR="${CHEZMOI_SOURCE_DIR:-$(chezmoi source-path 2>/dev/null || echo "$HOME/.local/share/chezmoi")}"
+CHEZMOI_SOURCE_DIR="${CHEZMOI_SOURCE_DIR:-$(chezmoi source-path 2>/dev/null || echo "$HOME/.local/share/chezmoi/home")}"
 PLUGINS_FILE="${CHEZMOI_SOURCE_DIR}/dot_claude/.settings.plugins.json"
 INSTALLED_FILE="$HOME/.claude/plugins/installed_plugins.json"
 KNOWN_MARKETPLACES_FILE="$HOME/.claude/plugins/known_marketplaces.json"
