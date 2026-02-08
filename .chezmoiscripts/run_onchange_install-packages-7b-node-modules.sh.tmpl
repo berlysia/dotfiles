@@ -1,0 +1,51 @@
+{{ if ne .chezmoi.os "windows" -}}
+#!/bin/bash
+# Install node_modules for chezmoi source directory (hooks, skills, etc.)
+# package.json hash: {{ include "package.json" | sha256sum }}
+# pnpm-lock.yaml hash: {{ include "pnpm-lock.yaml" | sha256sum }}
+
+set -euo pipefail
+
+log() {
+    local level="${2:-INFO}"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $1"
+}
+
+SOURCE_DIR="{{ .chezmoi.sourceDir }}"
+
+# Initialize mise environment to access pnpm
+if command -v mise &> /dev/null; then
+    if mise_env=$(mise env --shell bash 2>/dev/null); then
+        eval "$mise_env"
+    fi
+fi
+
+# Check if pnpm is available
+if ! command -v pnpm &> /dev/null; then
+    log "pnpm not found. Skipping node_modules install." "WARNING"
+    log "Run 'mise install' to install node first." "INFO"
+    exit 0
+fi
+
+log "Installing node_modules in $SOURCE_DIR..."
+if (cd "$SOURCE_DIR" && pnpm install --frozen-lockfile 2>&1); then
+    log "Successfully installed node_modules" "SUCCESS"
+else
+    log "frozen-lockfile failed, trying regular install..." "WARNING"
+    if (cd "$SOURCE_DIR" && pnpm install 2>&1); then
+        log "Successfully installed node_modules" "SUCCESS"
+    else
+        log "Failed to install node_modules" "ERROR"
+        exit 1
+    fi
+fi
+
+# Clear bun module resolution cache to pick up new versions
+if command -v bun &> /dev/null; then
+    log "Clearing bun module cache..."
+    bun pm cache rm 2>/dev/null || true
+    log "Bun cache cleared" "SUCCESS"
+fi
+
+log "node_modules installation completed"
+{{ end -}}
