@@ -62,8 +62,8 @@ else
     if agent-browser install 2>&1; then
         log "Successfully installed Chromium" "SUCCESS"
     else
-        log "Failed to install Chromium. Please install manually with 'agent-browser install'" "ERROR"
-        exit 1
+        log "Failed to install Chromium. Please install manually with 'agent-browser install'" "WARNING"
+        exit 0
     fi
 fi
 
