@@ -62,7 +62,7 @@ bun dot_claude/scripts/update-auto-approve.ts --verbose
 ## Claude Code Configuration
 
 This repository includes comprehensive Claude Code configuration with:
-- 7 custom skills (semantic-commit, react-hooks, codex-review, logic-validation, etc.)
+- Custom skills (see `.skills/` directory)
 - Global development guidelines (CLAUDE.md)
 - Development rules (debugging, external-review, TypeScript standards)
 
@@ -139,7 +139,7 @@ To use these skills in another project:
 
 ```bash
 cd /path/to/your/project
-curl -fsSL https://raw.githubusercontent.com/berlysia/dotfiles/master/scripts/setup-claude-skills-for-web.sh | bash
+curl -fsSL https://raw.githubusercontent.com/berlysia/dotfiles/master/scripts/setup-claude-skills.sh | bash
 ```
 
 This creates a simple `.claude/settings.json` with inline SessionStart command - no hook files needed!
@@ -150,11 +150,4 @@ See [docs/external-usage.md](docs/external-usage.md) for detailed documentation.
 
 ### Skills Included
 
-- **setup-claude-skills-for-web**: Setup skills in other projects with one command
-- **semantic-commit**: Semantic commit message generation with change analysis
-- **react-hooks**: React hooks best practices and optimization guidance
-- **codex-review-cli**: Quick code review via Codex CLI (read-only)
-- **codex-review-mcp**: Conversational code review via Codex MCP
-- **logic-validation**: Validate logical consistency of decisions
-- **optimizing-claude-md**: Analyze and improve CLAUDE.md files
-- **skill-builder**: Guided skill creation following best practices
+See `.skills/` directory for available skills. Key skills include setup-claude-skills-for-web, commit-conventions, react-hooks, codex-review-cli, and logic-validation.

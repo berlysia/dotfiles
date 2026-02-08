@@ -17,7 +17,7 @@ Claude will automatically create `.claude/settings.json` with the auto-update ho
 From any project directory, run:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/berlysia/dotfiles/master/scripts/setup-claude-skills-for-web.sh | bash
+curl -fsSL https://raw.githubusercontent.com/berlysia/dotfiles/master/scripts/setup-claude-skills.sh | bash
 ```
 
 This will:
@@ -60,14 +60,7 @@ If you prefer manual installation:
 
 ## Available Skills
 
-- **setup-claude-skills-for-web** - Setup skills in other projects with one command
-- **semantic-commit** - Complex commit splitting and semantic commit message generation
-- **react-hooks** - React hooks best practices and performance optimization
-- **codex-review-cli** - Quick code review via Codex CLI
-- **codex-review-mcp** - Conversational code review via Codex MCP
-- **logic-validation** - Logic consistency validation
-- **optimizing-claude-md** - CLAUDE.md quality analysis
-- **skill-builder** - Guided skill creation following best practices
+See `~/.claude/skills/` directory for all available skills. Key skills include setup-claude-skills-for-web, commit-conventions, react-hooks, codex-review-cli, and logic-validation.
 
 ## Using Global CLAUDE.md
 
@@ -90,7 +83,7 @@ Note: In web version, you may need to include guidelines directly or copy them i
 Before running scripts from the internet, review their contents:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/berlysia/dotfiles/master/scripts/setup-claude-skills-for-web.sh
+curl -fsSL https://raw.githubusercontent.com/berlysia/dotfiles/master/scripts/setup-claude-skills.sh
 curl -fsSL https://raw.githubusercontent.com/berlysia/dotfiles/master/scripts/install-skills.sh
 ```
 

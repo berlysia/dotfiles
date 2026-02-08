@@ -102,7 +102,7 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
 - `run_onchange_install-packages-7.sh.tmpl` が実行されているか確認
 
 **add-skill でエラーが発生する場合**:
-- package.json の add-skill バージョンを確認: `jq '.devDependencies["add-skill"]' package.json`
+- package.json の add-skill バージョンを確認: `jq '.dependencies["add-skill"]' package.json`
 - pnpm が正しくインストールされているか確認: `mise list`
 
 **スキルのインストール失敗**:
