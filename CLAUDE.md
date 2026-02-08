@@ -9,14 +9,21 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
 ### Chezmoi ファイル管理
 
 #### 一般的なルール
-- **ファイル名変換**: `dot_*` → `.*` (例: `${projectRoot}/dot_claude/foo.txt` → `~/.claude/foo.txt`)
+- **ファイル名変換**: `dot_*` → `.*` (例: `${projectRoot}/home/dot_claude/foo.txt` → `~/.claude/foo.txt`)
 - **パーミッション**: `private_*` → パーミッション600で配置
 - **テンプレート**: `.tmpl` 拡張子で動的生成
 
+#### ディレクトリ構造
+- **`.chezmoiroot`**: リポジトリルートの `.chezmoiroot` ファイルに `home` と記載
+  - chezmoi source stateは `${projectRoot}/home/` 配下に格納
+  - `.chezmoi.sourceDir` → `${projectRoot}/home/`
+  - `.chezmoi.workingTree` → `${projectRoot}/`（リポジトリルート、不変）
+  - リポジトリルートにあるファイル（`package.json`等）を参照するテンプレートでは `workingTree` を使用
+
 #### このプロジェクト独自のルール
-- **グローバル設定**: `${projectRoot}/dot_claude/CLAUDE.md` → `~/.claude/CLAUDE.md`
+- **グローバル設定**: `${projectRoot}/home/dot_claude/CLAUDE.md` → `~/.claude/CLAUDE.md`
   - スクリプトは `includeTemplate` で内容を読み込み、ハッシュ値で変更検知
-  - 編集する場合は `${projectRoot}/dot_claude/CLAUDE.md` を変更してから `chezmoi apply` を実行
+  - 編集する場合は `${projectRoot}/home/dot_claude/CLAUDE.md` を変更してから `chezmoi apply` を実行
 
 - **Settings.json分割管理**: `~/.claude/settings.json`は複数ファイルに分割して管理
   - `.settings.base.json`: 基本設定（model、language、statusLine、alwaysThinkingEnabled等）
@@ -51,7 +58,7 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
   - `run_after_sync-skills.sh.tmpl` が `chezmoi apply` 時に自動的に `~/.claude/skills/` と `~/.codex/skills/` に同期
   - rsyncで完全同期され、常に最新の状態を維持
 
-- **外部スキル**: `.chezmoidata/claude_skills.yaml` で宣言的に管理し、`add-skill` 経由でインストール
+- **外部スキル**: `home/.chezmoidata/claude_skills.yaml` で宣言的に管理し、`add-skill` 経由でインストール
   - `run_onchange_install-claude-skills-9.sh.tmpl`がインストール・削除を実行
   - `.claude/.external-skills-installed`でインストール済みスキルを追跡
   - yamlから削除されたスキルを自動削除（手作りスキルは保護される）
@@ -66,7 +73,7 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
    add-skill search <repository>
    ```
 
-2. `.chezmoidata/claude_skills.yaml` を編集:
+2. `home/.chezmoidata/claude_skills.yaml` を編集:
    ```yaml
    claude_skills:
      repositories:
@@ -85,7 +92,7 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
 
 #### スキルの削除方法
 
-1. `.chezmoidata/claude_skills.yaml` から該当スキルを削除
+1. `home/.chezmoidata/claude_skills.yaml` から該当スキルを削除
 2. `chezmoi apply` を実行
    ```bash
    chezmoi apply
