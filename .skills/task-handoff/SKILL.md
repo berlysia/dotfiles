@@ -26,24 +26,16 @@ TaskList ツールを呼び出し、現在のセッションにタスクがあ�
 
 タスクリストID（= `~/.claude/tasks/` 配下のディレクトリ名）を特定する。
 
-**手順**:
-1. TaskList でタスク一覧を取得
-2. TaskGet で最初のタスクの subject を読み取る
-3. Bash で `~/.claude/tasks/` 配下のディレクトリを最新順に走査
-4. 各ディレクトリの `1.json` の `.subject` を `jq -r '.subject'` で読み取り、一致するディレクトリ名を TASK_LIST_ID として確定
+`$CLAUDE_TASK_LIST_ID` が設定済みならそれを使用。未設定なら `claude-task-list-id` スクリプトで検索する。
+
+1. TaskGet で最初のタスクの subject を読み取る
+2. 以下を実行:
 
 ```bash
-FIRST_SUBJECT="<TaskGetで取得した最初のタスクのsubject>"
-for dir in $(ls -t ~/.claude/tasks/); do
-  if [ -f ~/.claude/tasks/$dir/1.json ]; then
-    subject=$(cat ~/.claude/tasks/$dir/1.json | jq -r '.subject')
-    if [ "$subject" = "$FIRST_SUBJECT" ]; then
-      echo "TASK_LIST_ID=$dir"
-      break
-    fi
-  fi
-done
+echo ${CLAUDE_TASK_LIST_ID:-$(claude-task-list-id "<TaskGetで取得した最初のタスクのsubject>")}
 ```
+
+出力されたディレクトリ名が TASK_LIST_ID となる。
 
 **見つからない場合**: `~/.claude/tasks/` にまだ書き込まれていない可能性がある。ユーザーに「タスクが未保存の可能性があります」と通知する。
 

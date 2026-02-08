@@ -124,6 +124,7 @@
     "Bash(bunx tsc *)",
     "Bash(bunx tsgo *)",
     "Bash(bunx knip *)",
+    "Bash(claude-task-list-id *)",
     "Bash(similarity-ts *)",
     "Bash(git-sequential-stage *)",
     "Bash(pnpx vitest *)",
