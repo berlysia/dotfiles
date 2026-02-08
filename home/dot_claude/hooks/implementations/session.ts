@@ -1,6 +1,6 @@
 #!/usr/bin/env -S bun run --silent
 
-import { existsSync } from "node:fs";
+import { appendFileSync, existsSync } from "node:fs";
 import { defineHook } from "cc-hooks-ts";
 import {
   findUntrackedPlugins,
@@ -54,6 +54,36 @@ const hook = defineHook({
     try {
       // Log session start using centralized logger
       logEvent("SessionStart", context.input.session_id);
+
+      // Export session info to CLAUDE_ENV_FILE for skills to consume
+      const envFile = process.env.CLAUDE_ENV_FILE;
+      if (envFile) {
+        const sessionId = context.input.session_id;
+        const transcriptPath = context.input.transcript_path;
+        const projectHash = context.input.cwd
+          .replace(/\//g, "-")
+          .replace(/^-/, "");
+        appendFileSync(
+          envFile,
+          `export CLAUDE_SESSION_ID="${sessionId}"\n`,
+        );
+        appendFileSync(
+          envFile,
+          `export CLAUDE_TRANSCRIPT_PATH="${transcriptPath}"\n`,
+        );
+        appendFileSync(
+          envFile,
+          `export CLAUDE_PROJECT_HASH="${projectHash}"\n`,
+        );
+
+        const taskListId = process.env.CLAUDE_CODE_TASK_LIST_ID;
+        if (taskListId) {
+          appendFileSync(
+            envFile,
+            `export CLAUDE_TASK_LIST_ID="${taskListId}"\n`,
+          );
+        }
+      }
 
       const taskListWarning = checkSharedTaskList();
       const pluginSyncMessage = checkPluginSync();

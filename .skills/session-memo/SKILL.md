@@ -28,11 +28,11 @@ context: fork
 
 ### Step 1: セッションIDを特定
 
+`$CLAUDE_SESSION_ID` 環境変数にセッションIDが格納されている（SessionStart hook で自動設定）。
+`$CLAUDE_TRANSCRIPT_PATH` にセッションJSONLのパスも格納されている。
+
 ```bash
-# sessions-index.jsonから現在のプロジェクトの最新セッションを取得
-PROJECT_DIR=$(pwd | sed 's|/|-|g; s|^-||')
-INDEX="$HOME/.claude/projects/-${PROJECT_DIR}/sessions-index.json"
-SESSION_ID=$(jq -r '.entries[-1].sessionId' "$INDEX")
+echo $CLAUDE_SESSION_ID
 ```
 
 ### Step 2: サブエージェントで要約生成
@@ -52,7 +52,7 @@ Task ツールで `general-purpose` サブエージェントを起動し、以�
 ```
 以下のセッションJSONLを読んで、このセッションの要約をまとめてください。
 
-ファイル: ~/.claude/projects/-<project-dir>/sessions-index.json を読んで最新セッションのfullPathを特定し、そのJSONLファイルを読んでください。
+ファイル: $CLAUDE_TRANSCRIPT_PATH（Step 1 で取得済み）のJSONLファイルを読んでください。
 
 出力形式（Markdown）:
 ---
@@ -107,16 +107,12 @@ focus: <フォーカス指示があれば記載、なければ "general">
 ### Step 1: セッションJSONLを特定
 
 ```bash
-PROJECT_DIR=$(pwd | sed 's|/|-|g; s|^-||')
-PROJECT_PATH="$HOME/.claude/projects/-${PROJECT_DIR}"
-# 完全UUIDまたは前方一致で検索
-ls "$PROJECT_PATH"/*.jsonl | grep "<引数>"
+ls ~/.claude/projects/-$CLAUDE_PROJECT_HASH/<引数>*.jsonl
 ```
 
 他プロジェクトのセッションを参照したい場合（引数に `/` を含む場合）:
 ```bash
-# 全プロジェクトから検索
-find "$HOME/.claude/projects/" -name "<引数>*.jsonl"
+find ~/.claude/projects/ -name "<引数>*.jsonl"
 ```
 
 ### Step 2: サブエージェントで要約
