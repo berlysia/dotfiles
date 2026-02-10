@@ -8,6 +8,14 @@ set -euo pipefail
 sudo apt-get update
 sudo apt-get install -y {{ range .packages.linux.apt }} {{.}}{{ end }}
 
+# install mise via official installer
+if command -v mise >/dev/null 2>&1; then
+  echo "mise is already installed"
+else
+  echo "install mise"
+  curl https://mise.run | sh
+fi
+
 # symlink batcat to bat
 if command -v bat >/dev/null 2>&1; then
   echo "bat is already installed"
