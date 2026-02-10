@@ -79,6 +79,7 @@
   - **型システム尊重**: TypeScript型定義から自明な情報はコメントで重複しない
   - **ビジネスロジック重視**: ドメイン知識・設計決定・トレードオフの説明に集中
   - **差分ではなく現状を説明する**: 変更適用後のコードが何をしているかに対して説明する
+- **Communication accuracy**: In GitHub Issues, PR descriptions, and documentation, clearly distinguish observed facts from speculation. Never assert unverified claims (e.g., "this is a browser bug") as definitive statements — use hedging language and note what remains unconfirmed
 - **Error handling**: Handle all error paths explicitly
   - Use typed errors (Error subclasses or discriminated unions)
   - Log errors with context before propagating
@@ -93,6 +94,7 @@
 - Root cause analysis for bug fixes
 - Create scripts for repetitive tasks
 - **Tool selection**: Prefer specialized tools over Bash for file operations (Read over `cat`, Grep over `grep`, Edit over `sed`, Glob over `find`). Reserve Bash for execution, builds, and git operations
+- **Proportional exploration**: When the user's problem description already specifies the cause and location, go directly to the fix. Do not re-derive what the user already explained through extensive grepping and reading. Reserve deep exploration for genuinely unclear or under-specified problems
 - **Decision transparency & validation**: When changing approach mid-task:
   1. **MUST use logic-validator agent** to verify the reasoning for the change
   2. Explicitly explain the validation results and new plan before proceeding
@@ -172,6 +174,7 @@ See `@~/.claude/rules/debugging.md` for detailed procedures.
 - All tests and lints must pass
 - Clear, descriptive commit messages
 - Break large changes into logical, atomic commits
+- When asked to just commit or push, do exactly that — do not start creating tasks, plans, or additional work unless explicitly requested
 
 #### コミットメッセージ生成（自動適用）
 
