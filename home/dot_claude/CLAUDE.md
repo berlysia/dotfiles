@@ -26,6 +26,22 @@
 - **Complex tasks** (6+ steps or multi-session): Use TaskCreate/TaskUpdate for full tracking
 - Avoid creating tasks for trivial operations — the overhead should not exceed the work itself
 
+### Scope Guard
+
+タスク受付時に以下の兆候が **複数** 該当する場合、スコープ過大の疑いありと判定する:
+
+- **広範囲キーワード**: 「すべて」「全体」「一通り」「各コンポーネント」
+- **複合動詞**: 「調査して実装」「設計して構築」（探索 + 実装の混在）
+- **終了条件の曖昧さ**: 「良い感じに」「きれいに」「最適化」（定量基準なし）
+- **複数モジュール列挙**: 3つ以上の独立コンポーネントへの言及
+- **推定ステップ数**: 10ステップ以上の見積もり
+- **段階的決定の必要性**: 「Xを調べてからYを決める」
+
+**検知時の行動**:
+1. ユーザーにスコープの大きさについて簡潔に伝える
+2. `/scope-guard` の利用を提案する
+3. ユーザーが不要と判断すればそのまま続行
+
 ## Task Completion Protocol
 
 作業停止前の必須チェック：
@@ -242,6 +258,10 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 
 - WIP: `.tmp/docs/` (gitignored)
 - Done: `docs/` (git tracked), `docs/decisions/` (ADRs)
+
+### ドキュメント自己完結性の検証
+
+別セッションや別の読者が文脈なしで理解する必要があるドキュメント（仕様書、ハンドオフ文書、ADR等）を作成したら、`/verify-doc` で自己完結性を検証する。文脈なしの軽量サブエージェントに読ませ、理解を説明させることで暗黙の文脈依存を検出する。
 
 ### MEMORY.md 運用ルール
 
