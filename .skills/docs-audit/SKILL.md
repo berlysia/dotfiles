@@ -16,6 +16,8 @@ Task tool (Explore agent) でコード-ドキュメント間の乖離を調査�
 
 **対象**: README.md, CLAUDE.md, docs/**/*.md, 設定ファイル
 
+**ファイル探索**: `git ls-files '*.md'` でgit管理下のファイルを列挙する。Glob/Grepを使う場合は node_modules/, .git/, dist/, build/, coverage/ を必ず除外する。
+
 **チェック内容**:
 - API/コマンド/設定の不一致（削除済み・未記載項目）
 - 存在しないファイル参照

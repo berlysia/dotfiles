@@ -19,9 +19,14 @@ Task tool (general-purpose) で以下を委任:
 
 手順:
 1. git diff/log で変更内容を把握
-2. 関連ドキュメント（README, docs/, CLAUDE.md）を探索
+2. ドキュメントファイルの探索（下記「ファイル探索ルール」に従う）
 3. 品質基準に従って評価・更新
 4. サマリーを返す（更新ファイル、主な変更、要確認箇所）
+
+ファイル探索ルール（重要）:
+- `git ls-files '*.md'` でgit管理下のドキュメントを列挙する
+- Glob/Grepを使う場合は node_modules/, .git/, dist/, build/, coverage/ を必ず除外する
+- 広いパターン（**/README.md等）を使わず、まず既知の場所（プロジェクトルート, docs/, src/）を確認する
 
 品質基準:
 - 正確性: コードと記述の一致

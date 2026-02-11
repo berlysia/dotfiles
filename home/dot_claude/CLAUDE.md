@@ -110,6 +110,7 @@
 - Root cause analysis for bug fixes
 - Create scripts for repetitive tasks
 - **Tool selection**: Prefer specialized tools over Bash for file operations (Read over `cat`, Grep over `grep`, Edit over `sed`, Glob over `find`). Reserve Bash for execution, builds, and git operations
+- **File discovery scope**: When searching for project files (docs, configs, source), prefer `git ls-files` over broad Glob patterns to avoid noise from `node_modules/`, `dist/`, etc. If using Glob/Grep, always exclude generated directories (`node_modules/`, `.git/`, `dist/`, `build/`, `coverage/`)
 - **Proportional exploration**: When the user's problem description already specifies the cause and location, go directly to the fix. Do not re-derive what the user already explained through extensive grepping and reading. Reserve deep exploration for genuinely unclear or under-specified problems
 - **Decision transparency & validation**: When changing approach mid-task:
   1. **MUST use logic-validator agent** to verify the reasoning for the change
