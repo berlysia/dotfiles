@@ -75,7 +75,7 @@ describe("permission-auto-approve.ts hook behavior", () => {
       "eslint src/ --check",
       "prettier --check src/",
       "tsc --noEmit",
-      // New: Git write operations
+      // Git write operations
       "git add .",
       "git commit -m 'test'",
       "git stash",
@@ -86,16 +86,66 @@ describe("permission-auto-approve.ts hook behavior", () => {
       "git cherry-pick abc123",
       "git rebase main",
       "git merge feature",
-      // New: Safe directory/file creation
+      // Git with -C <path> prefix
+      "git -C /home/user/project status",
+      "git -C /home/user/project log --oneline -5",
+      "git -C /home/user/project diff",
+      "git -C /home/user/project add .",
+      "git -C /home/user/project commit -m 'test'",
+      // Safe directory/file creation
       "mkdir -p src/components",
       "mkdir dist",
       "touch file.txt",
-      // New: Environment inspection
+      // Environment inspection
       "env",
       "printenv HOME",
-      // New: Port/process inspection
+      // Port/process inspection
       "lsof -ti:3000",
-      // New: Dev tool execution
+      "ss -tlnp",
+      "netstat -tlnp",
+      // Data processing
+      "jq '.dependencies' package.json",
+      "jq -r '.name' package.json",
+      // System information
+      "fc-list :lang=ja family",
+      "uname -a",
+      // Chezmoi read-only
+      "chezmoi cat-config",
+      "chezmoi doctor",
+      "chezmoi diff",
+      "chezmoi managed",
+      "chezmoi state dump",
+      "chezmoi status",
+      "chezmoi verify",
+      "chezmoi source-path",
+      "chezmoi target-path ~/.bashrc",
+      "chezmoi execute-template '{{ .chezmoi.os }}'",
+      // Claude CLI
+      "claude --version",
+      "claude doctor",
+      // Package manager build/dev scripts
+      "pnpm build",
+      "pnpm build 2>&1 | head -20",
+      "npm run build",
+      "pnpm dev",
+      "bun start",
+      "yarn serve",
+      "pnpm preview",
+      // Package manager run <script>
+      "pnpm run lint",
+      "npm run test:unit",
+      "pnpm run typecheck",
+      "pnpm run baseline:report",
+      // node --test with preceding flags
+      "node --experimental-strip-types --test tests/parser.test.ts",
+      "node --experimental-strip-types --test tests/parser.test.ts 2>&1 | head -20",
+      // Dev tool execution (extended)
+      "npx stylelint 'src/**/*.css'",
+      "bunx biome check src/",
+      // Git worktree management
+      "git-worktree-create feat/new-feature",
+      "git-worktree-cleanup",
+      // Dev tool execution
       "npx prettier --check src/",
       "pnpx vitest run",
       "bunx tsc --noEmit",
@@ -207,6 +257,17 @@ describe("permission-auto-approve.ts hook behavior", () => {
       "prettier --write src/",
       "cp src/file.ts src/backup.ts",
       "mv old-name.ts new-name.ts",
+      // Chezmoi write operations (need LLM evaluation)
+      "chezmoi apply",
+      "chezmoi update",
+      // Complex compound commands (need LLM evaluation)
+      "cd /tmp && cat > test.js << 'EOF'\nconsole.log('test')\nEOF",
+      // Commands with env var prefix (need context evaluation)
+      "BASELINE_YEAR=2023 node --test tests/report.test.ts",
+      // Python with arbitrary code
+      "python3 -c 'import os; os.remove(\"/tmp/test\")'",
+      // curl to remote (not localhost)
+      "curl -s https://example.com/api | jq .",
     ];
 
     for (const cmd of uncertainCommands) {
