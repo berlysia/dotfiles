@@ -40,18 +40,23 @@ const READ_ONLY_TOOLS = [
 const SAFE_BASH_PATTERNS = [
   // Information retrieval
   /^(ls|pwd|echo|cat|head|tail|wc|file|stat|which|type|whereis|basename|dirname|realpath)\b/,
-  // Git read-only operations
-  /^git\s+(status|log|diff|branch|remote|show|describe|tag|rev-parse|config\s+--get)\b/,
-  // Git write operations (common safe dev workflow)
-  /^git\s+(add|commit|stash|checkout|switch|fetch|pull|cherry-pick|rebase|merge)\b/,
+  // Git read-only operations (with optional -C <path> prefix)
+  /^git\s+(-C\s+\S+\s+)?(status|log|diff|branch|remote|show|describe|tag|rev-parse|config\s+--get)\b/,
+  // Git write operations (common safe dev workflow, with optional -C <path> prefix)
+  /^git\s+(-C\s+\S+\s+)?(add|commit|stash|checkout|switch|fetch|pull|cherry-pick|rebase|merge)\b/,
   // Package information
   /^(npm|pnpm|yarn|bun)\s+(ls|list|outdated|view|info|why|explain)\b/,
   // Development tools (no side effects)
   /^(npm|pnpm|yarn|bun)\s+(test|lint|format|typecheck|check|type-check)\b/,
+  // Package manager build/dev/serve scripts (common safe dev workflow)
+  /^(npm|pnpm|yarn|bun)\s+(build|dev|start|serve|preview)\b/,
+  // Package manager run <script> (user-defined scripts in package.json)
+  /^(npm|pnpm|yarn|bun)\s+run\s+\S+/,
   // Package installation (safe in dev context)
   /^(npm|pnpm|yarn|bun)\s+(install|add|remove|ci)\b/,
-  // Test runners
-  /^(vitest|jest|mocha|ava|tap|node\s+--test)\b/,
+  // Test runners (node --test with optional preceding flags like --experimental-strip-types)
+  /^(vitest|jest|mocha|ava|tap)\b/,
+  /^node\s+(-\S+\s+)*--test\b/,
   // Linters and formatters (check mode)
   /^(eslint|prettier|oxlint|biome)\s+.*--check\b/,
   /^(eslint|prettier|oxlint|biome)\s+--check\b/,
@@ -64,8 +69,19 @@ const SAFE_BASH_PATTERNS = [
   /^printenv\b/,
   // Port/process inspection (read-only)
   /^lsof\b/,
+  /^(ss|netstat)\b/,
+  // Data processing (read-only, no side effects)
+  /^jq\b/,
+  // System information (read-only)
+  /^(fc-list|uname|hostnamectl|locale)\b/,
+  // Chezmoi read-only operations
+  /^chezmoi\s+(cat-config|data|doctor|diff|dump|dump-config|managed|state|status|verify|source-path|target-path|execute-template)\b/,
+  // Claude CLI (read-only)
+  /^claude\s+(--version|doctor|--help)\b/,
   // Dev tool execution (trusted tools only, not arbitrary packages)
-  /^(npx|pnpx|bunx)\s+(vitest|jest|prettier|eslint|oxlint|tsc|tsgo|knip)\b/,
+  /^(npx|pnpx|bunx)\s+(vitest|jest|prettier|eslint|oxlint|tsc|tsgo|knip|stylelint|biome)\b/,
+  // Git worktree management (custom script)
+  /^git-worktree-(create|cleanup)\b/,
 ];
 
 /**

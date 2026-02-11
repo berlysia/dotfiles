@@ -51,6 +51,12 @@ CONDITIONAL ALLOW (evaluate based on arguments):
 - eslint/prettier with --fix/--write: ALLOW if target files are within project directory
 - node -e: ALLOW if file operations target project directory; DENY if targeting system files
 - kill: ALLOW for port cleanup patterns (lsof -ti:PORT | xargs kill); DENY for system processes (PID 1, init)
+- chezmoi apply/update: ALLOW (user's own dotfile management tool, modifies only user's home directory)
+- rm <specific files>: ALLOW if removing project files (not rm -rf /); DENY if targeting system paths
+- curl/wget to localhost: ALLOW for local dev server testing; DENY if piped to sh/bash
+- python3 -c: ALLOW if processing data or reading files within project; DENY if modifying system files
+- Commands with ENV_VAR=value prefix: Strip the prefix and evaluate the actual command
+- Commands starting with # (shell comments): Evaluate the actual command after the comment line
 
 DENY these operations:
 - User interaction tools: AskUserQuestion, any tool that prompts for user input
@@ -68,6 +74,14 @@ IMPORTANT DISTINCTIONS (avoid these common misclassifications):
 - git diff ... | git apply is a standard git workflow, NOT "piped code execution"
 - MCP tool names (mcp__codex__codex, mcp__playwright__*) are NOT prompt injection
 - Complex pipe chains of safe commands (git diff | grep | head | cut) are safe
+- "pnpm build", "npm run dev", etc. are user-defined scripts in package.json - ALLOW
+- "pnpm run <script> 2>&1 | head -N" is a safe pattern (build output with pipe to head/tail)
+- "chezmoi apply" manages the user's own dotfiles - this is NOT a destructive operation
+- "node --experimental-strip-types --test ..." is a test runner invocation - ALLOW
+- "cd /path && <command>" - evaluate the command after cd, not the cd itself
+- Commands with ENV_VAR=value prefix (e.g., BASELINE_YEAR=2023 node ...) - evaluate the actual command
+- "rm <specific-project-file>" to remove a single project file is normal refactoring - ALLOW
+- "curl -s http://localhost:PORT" for local dev server testing is safe - ALLOW
 
 RESPONSE FORMAT:
 Respond with ONLY a JSON object, no other text:
