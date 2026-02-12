@@ -11,7 +11,6 @@
 import type {
   ExtractAllHookInputsForEvent,
   ExtractSpecificHookInputForEvent,
-  ToolSchema,
 } from "cc-hooks-ts";
 // Import module augmentation for custom tool types (MultiEdit, etc.)
 import "./tool-schemas.ts";

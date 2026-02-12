@@ -2,7 +2,7 @@
 
 // Debug logging helper
 const DEBUG = process.env.BASH_PARSER_DEBUG === "1";
-function debugLog(...args: unknown[]) {
+function _debugLog(...args: unknown[]) {
   if (DEBUG) console.log(...args);
 }
 

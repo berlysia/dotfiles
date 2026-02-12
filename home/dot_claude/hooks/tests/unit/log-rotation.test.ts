@@ -56,7 +56,7 @@ describe("Log Rotation", () => {
       const logFile = config.paths.logFile;
 
       // Create a log file larger than 1MB (1.5MB)
-      const largeContent = "X".repeat(1024) + "\n";
+      const largeContent = `${"X".repeat(1024)}\n`;
       const lines = Array(1500).fill(largeContent).join("");
       writeFileSync(logFile, lines);
 
@@ -93,7 +93,7 @@ describe("Log Rotation", () => {
       // Add extra content to exceed 1MB
       const extraPadding = "X".repeat(500);
       const paddedLines = lines.map((line) => line + extraPadding);
-      writeFileSync(logFile, paddedLines.join("\n") + "\n");
+      writeFileSync(logFile, `${paddedLines.join("\n")}\n`);
 
       // Trigger rotation
       logMessage("Final message", config);

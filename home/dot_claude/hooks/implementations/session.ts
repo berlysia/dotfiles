@@ -63,10 +63,7 @@ const hook = defineHook({
         const projectHash = context.input.cwd
           .replace(/\//g, "-")
           .replace(/^-/, "");
-        appendFileSync(
-          envFile,
-          `export CLAUDE_SESSION_ID="${sessionId}"\n`,
-        );
+        appendFileSync(envFile, `export CLAUDE_SESSION_ID="${sessionId}"\n`);
         appendFileSync(
           envFile,
           `export CLAUDE_TRANSCRIPT_PATH="${transcriptPath}"\n`,
