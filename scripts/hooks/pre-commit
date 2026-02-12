@@ -46,12 +46,17 @@ STAGED_TS_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(
 if [ -n "$STAGED_TS_FILES" ]; then
     echo -e "${BLUE}🦋 Checking TypeScript/JavaScript with biome...${NC}"
     if command -v biome &> /dev/null; then
-        if biome check --staged --files-ignore-unknown=true; then
-            echo -e "${GREEN}✓ All staged files passed biome checks${NC}"
-        else
-            echo -e "${RED}❌ biome found issues in staged files${NC}"
-            echo -e "${YELLOW}  Run: biome check --write .${NC}"
+        if ! biome check --write --staged --files-ignore-unknown=true; then
+            echo -e "${RED}❌ biome found unfixable issues in staged files${NC}"
             EXIT_CODE=1
+        else
+            # Re-stage files that biome may have formatted
+            for file in $STAGED_TS_FILES; do
+                if [ -f "$file" ]; then
+                    git add "$file"
+                fi
+            done
+            echo -e "${GREEN}✓ All staged files passed biome checks${NC}"
         fi
     else
         echo -e "${YELLOW}⚠ biome not installed, skipping${NC}"
@@ -66,12 +71,15 @@ echo
 #
 # 3. Shell Script Linting (shellcheck)
 #
-STAGED_SH_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.sh$' || true)
-if [ -n "$STAGED_SH_FILES" ]; then
+STAGED_SH_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.sh' || true)
+# Also check staged executable scripts without .sh extension (e.g., executable_*)
+STAGED_EXEC_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '(^|/)executable_' || true)
+ALL_SHELL_FILES=$(echo -e "${STAGED_SH_FILES}\n${STAGED_EXEC_FILES}" | sort -u | grep -v '^$' || true)
+if [ -n "$ALL_SHELL_FILES" ]; then
     echo -e "${BLUE}🐚 Checking shell scripts with shellcheck...${NC}"
     if command -v shellcheck &> /dev/null; then
         SHELLCHECK_FAILED=false
-        for file in $STAGED_SH_FILES; do
+        for file in $ALL_SHELL_FILES; do
             if [ -f "$file" ]; then
                 echo "  Checking: $file"
                 if ! shellcheck --severity=warning "$file"; then
