@@ -1,0 +1,16 @@
+[Unit]
+Description=Happy CLI Daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=HOME=%h
+Environment=PATH=%h/.local/share/mise/shims:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=%h/.local/share/mise/shims/happy daemon start-sync
+ExecStop=%h/.local/share/mise/shims/happy daemon stop
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
