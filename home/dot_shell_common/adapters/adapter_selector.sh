@@ -2,6 +2,21 @@
 # adapter_selector.sh
 # Automatically selects the appropriate adapter based on environment
 
+# Resolve .chezmoiroot redirect for a given directory
+# If .chezmoiroot exists, returns dir/chezmoiroot_value; otherwise returns dir unchanged
+resolve_chezmoiroot() {
+    local dir="$1"
+    if [ -f "$dir/.chezmoiroot" ]; then
+        local root_subdir
+        root_subdir=$(head -1 "$dir/.chezmoiroot" | tr -d '[:space:]')
+        if [ -n "$root_subdir" ] && [ -d "$dir/$root_subdir" ]; then
+            echo "$dir/$root_subdir"
+            return
+        fi
+    fi
+    echo "$dir"
+}
+
 # Detect if we're in pre-apply mode (chezmoi source directory)
 is_pre_apply_mode() {
     # Check if we're in chezmoi source directory by looking for characteristic files
@@ -192,7 +207,7 @@ get_platform_tool_paths() {
 # Get the base directory based on mode (enhanced)
 get_base_directory() {
     if is_ci_mode && [ -n "$GITHUB_WORKSPACE" ]; then
-        echo "$GITHUB_WORKSPACE"
+        resolve_chezmoiroot "$GITHUB_WORKSPACE"
     elif is_pre_apply_mode; then
         # If we're in chezmoi source directory, find the root
         local check_dir="$PWD"
