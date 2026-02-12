@@ -4,24 +4,34 @@
 
 # Get base directory for pre-apply mode
 pre_apply_get_base_dir() {
+    local start_dir=""
     if [ -n "$GITHUB_WORKSPACE" ]; then
-        echo "$GITHUB_WORKSPACE"
+        start_dir="$GITHUB_WORKSPACE"
     else
-        # Find the chezmoi source root directory
-        local check_dir="$PWD"
-        while [ "$check_dir" != "/" ]; do
-            if [ -f "$check_dir/dot_bashrc" ] || [ -d "$check_dir/dot_shell_common" ]; then
-                echo "$check_dir"
-                return
-            fi
-            check_dir="$(dirname "$check_dir")"
-        done
-        # Fallback to parent if we're inside dot_shell_common
-        if [ "$(basename "$PWD")" = "dot_shell_common" ]; then
-            echo "$(dirname "$PWD")"
-        else
-            echo "$PWD"
+        start_dir="$PWD"
+    fi
+
+    # Walk up looking for .chezmoiroot or direct source files
+    local check_dir="$start_dir"
+    while [ "$check_dir" != "/" ]; do
+        # Check for .chezmoiroot redirect
+        if [ -f "$check_dir/.chezmoiroot" ]; then
+            resolve_chezmoiroot "$check_dir"
+            return
         fi
+        # Check for direct source files
+        if [ -f "$check_dir/dot_bashrc" ] || [ -d "$check_dir/dot_shell_common" ]; then
+            echo "$check_dir"
+            return
+        fi
+        check_dir="$(dirname "$check_dir")"
+    done
+
+    # Fallback to parent if we're inside dot_shell_common
+    if [ "$(basename "$PWD")" = "dot_shell_common" ]; then
+        echo "$(dirname "$PWD")"
+    else
+        echo "$start_dir"
     fi
 }
 
@@ -104,7 +114,9 @@ pre_apply_test_zsh_loading() {
     if [ -f "$zshrc_path" ]; then
         # For CI environment, set ZDOTDIR
         if [ -n "$GITHUB_WORKSPACE" ]; then
-            local zdotdir="$GITHUB_WORKSPACE/dot_zsh"
+            local base_dir
+            base_dir=$(pre_apply_get_base_dir)
+            local zdotdir="$base_dir/dot_zsh"
             zsh -c "export ZDOTDIR='$zdotdir' && source '$zshrc_path' && [ -n \"\$SHELL_COMMON\" ] && echo 'SUCCESS' || echo 'FAILED'" 2>/dev/null
         else
             # Local environment
