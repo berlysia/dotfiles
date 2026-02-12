@@ -4,21 +4,21 @@ on:
   push:
     branches: [ master, main ]
     paths:
-      - 'dot_shell_common/**'
-      - 'dot_bashrc'
-      - 'dot_bash_profile'
-      - 'dot_zsh/**'
-      - 'dot_zshenv'
+      - 'home/dot_shell_common/**'
+      - 'home/dot_bashrc'
+      - 'home/dot_bash_profile'
+      - 'home/dot_zsh/**'
+      - 'home/dot_zshenv'
       - '.github/workflows/test-shell-compatibility.yml'
       - '.github/actions/install-chezmoi/**'
   pull_request:
     branches: [ master, main ]
     paths:
-      - 'dot_shell_common/**'
-      - 'dot_bashrc'
-      - 'dot_bash_profile'
-      - 'dot_zsh/**'
-      - 'dot_zshenv'
+      - 'home/dot_shell_common/**'
+      - 'home/dot_bashrc'
+      - 'home/dot_bash_profile'
+      - 'home/dot_zsh/**'
+      - 'home/dot_zshenv'
       - '.github/workflows/test-shell-compatibility.yml'
       - '.github/actions/install-chezmoi/**'
   workflow_dispatch:  # Allow manual trigger
@@ -64,7 +64,7 @@ jobs:
 
     - name: Run shell compatibility tests
       run: |
-        chmod +x dot_shell_common/test_suite.sh
-        ./dot_shell_common/test_suite.sh --pre-apply -v
+        chmod +x home/dot_shell_common/test_suite.sh
+        ./home/dot_shell_common/test_suite.sh --pre-apply -v
       env:
         GITHUB_WORKSPACE: ${{ github.workspace }}

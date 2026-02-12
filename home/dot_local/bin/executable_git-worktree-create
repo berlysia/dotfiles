@@ -53,7 +53,7 @@ if [[ $# -eq 0 ]] || [[ "$1" == "--help" ]] || [[ "$1" == "-h" ]] || [[ "$1" == 
         echo -e "${RED}Error: Branch name is required${NC}\n"
     fi
     show_help
-    exit $([ $# -eq 0 ] && echo 1 || echo 0)
+    exit "$([ $# -eq 0 ] && echo 1 || echo 0)"
 fi
 
 branch_name="$1"
