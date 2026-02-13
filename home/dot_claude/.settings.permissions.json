@@ -231,6 +231,7 @@
     "mcp__playwright__browser_fill_form",
     "mcp__playwright__browser_file_upload",
     "mcp__playwright__browser_tabs",
+    "mcp__plugin_playwright_playwright__*",
     "mcp__readability__read_url_content_as_markdown",
     "mcp__typescript__*",
     "Skill(analyze-permissions)",
