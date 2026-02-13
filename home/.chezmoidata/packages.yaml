@@ -36,6 +36,7 @@ packages:
       - "coteditor"
       - "dropbox"
       - "firefox"
+      - "font-moralerspace"
       - "google-chrome"
       - "google-chrome@canary"
       - "raycast"
