@@ -1,0 +1,40 @@
+# ====================
+# Font
+# ====================
+font-family = Moralerspace Argon HWJPDOC
+font-size = 14
+# font-thicken = true
+
+# ====================
+# Theme / Appearance
+# ====================
+# theme = catppuccin-mocha
+background-opacity = 0.8
+window-padding-x = 4
+window-padding-y = 4
+
+# ====================
+# Cursor
+# ====================
+cursor-style = bar
+cursor-style-blink = true
+mouse-hide-while-typing = true
+
+# ====================
+# Behavior
+# ====================
+# copy-on-select = true
+confirm-close-surface = false
+shell-integration = detect
+
+# ====================
+# macOS
+# ====================
+macos-titlebar-style = tabs
+macos-option-as-alt = true
+
+# ====================
+# Keybinds (examples)
+# ====================
+# keybind = super+t=new_tab
+# keybind = super+w=close_surface
