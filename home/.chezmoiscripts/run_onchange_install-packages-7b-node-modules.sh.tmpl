@@ -1,10 +1,8 @@
 {{ if ne .chezmoi.os "windows" -}}
 #!/bin/bash
-# Install node_modules for chezmoi source directory (hooks, skills, etc.)
+# Install node_modules for chezmoi source directory (root workspace)
 # package.json hash: {{ output "cat" (joinPath .chezmoi.workingTree "package.json") | sha256sum }}
 # pnpm-lock.yaml hash: {{ output "cat" (joinPath .chezmoi.workingTree "pnpm-lock.yaml") | sha256sum }}
-# hook package.json hash: {{ output "cat" (joinPath .chezmoi.workingTree "home/dot_claude/package.json") | sha256sum }}
-# hook bun.lock hash: {{ output "cat" (joinPath .chezmoi.workingTree "home/dot_claude/bun.lock") | sha256sum }}
 
 set -euo pipefail
 
@@ -14,7 +12,6 @@ log() {
 }
 
 SOURCE_DIR="{{ .chezmoi.workingTree }}"
-CLAUDE_DIR="$HOME/.claude"
 
 # Initialize mise environment to access pnpm
 if command -v mise &> /dev/null; then
@@ -39,18 +36,6 @@ else
         log "Successfully installed node_modules" "SUCCESS"
     else
         log "Failed to install node_modules" "ERROR"
-        exit 1
-    fi
-fi
-
-# Install hook dependencies at ~/.claude/ so bun can resolve them
-# bun resolves modules by walking up from the script location (~/.claude/hooks/)
-if [ -f "$CLAUDE_DIR/package.json" ] && command -v bun &> /dev/null; then
-    log "Installing hook dependencies in $CLAUDE_DIR..."
-    if (cd "$CLAUDE_DIR" && bun install 2>&1); then
-        log "Successfully installed hook dependencies" "SUCCESS"
-    else
-        log "Failed to install hook dependencies" "ERROR"
         exit 1
     fi
 fi
