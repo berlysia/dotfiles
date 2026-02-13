@@ -76,12 +76,17 @@ IMPORTANT DISTINCTIONS (avoid these common misclassifications):
 - Complex pipe chains of safe commands (git diff | grep | head | cut) are safe
 - "pnpm build", "npm run dev", etc. are user-defined scripts in package.json - ALLOW
 - "pnpm run <script> 2>&1 | head -N" is a safe pattern (build output with pipe to head/tail)
+- "pnpm --filter <pkg> test/build/dev/lint/run <script>" is a standard monorepo workflow - ALLOW
+- "pnpm --filter <pkg> exec <cmd>" runs arbitrary commands - evaluate <cmd> separately
 - "chezmoi apply" manages the user's own dotfiles - this is NOT a destructive operation
 - "node --experimental-strip-types --test ..." is a test runner invocation - ALLOW
 - "cd /path && <command>" - evaluate the command after cd, not the cd itself
 - Commands with ENV_VAR=value prefix (e.g., BASELINE_YEAR=2023 node ...) - evaluate the actual command
 - "rm <specific-project-file>" to remove a single project file is normal refactoring - ALLOW
 - "curl -s http://localhost:PORT" for local dev server testing is safe - ALLOW
+- "python3 << 'EOF' ... EOF" heredocs for data analysis/processing within project are safe - ALLOW
+- "diff <(...) <(...)" process substitution for comparison is read-only - ALLOW
+- "sleep N" is a harmless delay command - ALLOW
 
 RESPONSE FORMAT:
 Respond with ONLY a JSON object, no other text:

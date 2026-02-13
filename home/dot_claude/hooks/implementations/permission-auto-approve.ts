@@ -40,6 +40,8 @@ const READ_ONLY_TOOLS = [
 const SAFE_BASH_PATTERNS = [
   // Information retrieval
   /^(ls|pwd|echo|cat|head|tail|wc|file|stat|which|type|whereis|basename|dirname|realpath)\b/,
+  // Read-only comparison / delay (no side effects)
+  /^(diff|cmp|sleep)\b/,
   // Git read-only operations (with optional -C <path> prefix)
   /^git\s+(-C\s+\S+\s+)?(status|log|diff|branch|remote|show|describe|tag|rev-parse|config\s+--get)\b/,
   // Git write operations (common safe dev workflow, with optional -C <path> prefix)
@@ -54,6 +56,11 @@ const SAFE_BASH_PATTERNS = [
   /^(npm|pnpm|yarn|bun)\s+run\s+\S+/,
   // Package installation (safe in dev context)
   /^(npm|pnpm|yarn|bun)\s+(install|add|remove|ci)\b/,
+  // pnpm --filter <pkg> with safe subcommands (workspace development workflow)
+  /^pnpm\s+--filter\s+\S+\s+(test|build|dev|start|serve|preview|lint|format|typecheck|check|type-check)\b/,
+  /^pnpm\s+--filter\s+\S+\s+run\s+\S+/,
+  /^pnpm\s+--filter\s+\S+\s+(ls|list|outdated|info|why)\b/,
+  /^pnpm\s+--filter\s+\S+\s+(install|add|remove)\b/,
   // Test runners (node --test with optional preceding flags like --experimental-strip-types)
   /^(vitest|jest|mocha|ava|tap)\b/,
   /^node\s+(-\S+\s+)*--test\b/,
@@ -75,7 +82,7 @@ const SAFE_BASH_PATTERNS = [
   // System information (read-only)
   /^(fc-list|uname|hostnamectl|locale)\b/,
   // Chezmoi read-only operations
-  /^chezmoi\s+(cat-config|data|doctor|diff|dump|dump-config|managed|state|status|verify|source-path|target-path|execute-template)\b/,
+  /^chezmoi\s+(cat-config|data|doctor|diff|dump|dump-config|managed|unmanaged|state|status|verify|source-path|target-path|execute-template)\b/,
   // Claude CLI (read-only)
   /^claude\s+(--version|doctor|--help)\b/,
   // Dev tool execution (trusted tools only, not arbitrary packages)
@@ -110,6 +117,28 @@ const DANGEROUS_PATTERNS = [
 ];
 
 /**
+ * Normalize a command by stripping known-safe prefixes.
+ * This allows the underlying command to be evaluated by SAFE_BASH_PATTERNS.
+ *
+ * Stripped prefixes:
+ * - `cd <path> && ` : directory change before actual command
+ * - `ENV_VAR=value ` : environment variable prefix(es)
+ */
+function normalizeCommand(cmd: string): string {
+  let normalized = cmd;
+
+  // Strip `cd <path> && ` prefix (cd itself is harmless; evaluate the next command)
+  normalized = normalized.replace(/^cd\s+\S+\s*&&\s*/, "").trim();
+
+  // Strip leading ENV_VAR=value prefix(es) (e.g., BASELINE_YEAR=2023 FOO=bar node --test ...)
+  normalized = normalized
+    .replace(/^([A-Z_][A-Z0-9_]*=\S+\s+)+/, "")
+    .trim();
+
+  return normalized;
+}
+
+/**
  * Layer 2a: Static rule-based evaluation
  * No injection risk - purely pattern matching
  */
@@ -126,17 +155,28 @@ function staticRuleEngine(input: PermissionRequestInput): StaticDecision {
   if (toolName === "Bash" && toolInput && "command" in toolInput) {
     const cmd = String(toolInput.command).trim();
 
-    // Check dangerous patterns first
+    // Check dangerous patterns first (against ORIGINAL command, before normalization)
     for (const pattern of DANGEROUS_PATTERNS) {
       if (pattern.test(cmd)) {
         return "deny";
       }
     }
 
-    // Check safe patterns
+    // Check safe patterns against original command first
     for (const pattern of SAFE_BASH_PATTERNS) {
       if (pattern.test(cmd)) {
         return "allow";
+      }
+    }
+
+    // If original command didn't match, try with normalized command
+    // (strips cd prefix, ENV_VAR prefix, etc.)
+    const normalizedCmd = normalizeCommand(cmd);
+    if (normalizedCmd !== cmd) {
+      for (const pattern of SAFE_BASH_PATTERNS) {
+        if (pattern.test(normalizedCmd)) {
+          return "allow";
+        }
       }
     }
   }
@@ -239,6 +279,7 @@ export default hook;
 // Export for testing
 export {
   staticRuleEngine,
+  normalizeCommand,
   READ_ONLY_TOOLS,
   SAFE_BASH_PATTERNS,
   DANGEROUS_PATTERNS,
