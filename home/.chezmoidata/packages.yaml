@@ -42,6 +42,7 @@ packages:
       - "visual-studio-code"
       - "vlc"
       - "iterm2"
+      - "ghostty"
       - "karabiner-elements"
   linux:
     apt:
