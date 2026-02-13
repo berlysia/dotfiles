@@ -1,0 +1,41 @@
+{{ if ne .chezmoi.os "windows" -}}
+#!/bin/bash
+# Install hook dependencies at ~/.claude/ so bun can resolve them
+# bun resolves modules by walking up from the script location (~/.claude/hooks/)
+# hook package.json hash: {{ output "cat" (joinPath .chezmoi.workingTree "home/dot_claude/package.json") | sha256sum }}
+# hook bun.lock hash: {{ output "cat" (joinPath .chezmoi.workingTree "home/dot_claude/bun.lock") | sha256sum }}
+
+set -euo pipefail
+
+log() {
+    local level="${2:-INFO}"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $1"
+}
+
+CLAUDE_DIR="$HOME/.claude"
+
+if [ ! -f "$CLAUDE_DIR/package.json" ]; then
+    log "No package.json at $CLAUDE_DIR, skipping hook deps install." "INFO"
+    exit 0
+fi
+
+# Initialize mise environment to access bun
+if command -v mise &> /dev/null; then
+    if mise_env=$(mise env --shell bash 2>/dev/null); then
+        eval "$mise_env"
+    fi
+fi
+
+if ! command -v bun &> /dev/null; then
+    log "bun not found. Skipping hook deps install." "WARNING"
+    exit 0
+fi
+
+log "Installing hook dependencies in $CLAUDE_DIR..."
+if (cd "$CLAUDE_DIR" && bun install 2>&1); then
+    log "Successfully installed hook dependencies" "SUCCESS"
+else
+    log "Failed to install hook dependencies" "ERROR"
+    exit 1
+fi
+{{ end -}}
