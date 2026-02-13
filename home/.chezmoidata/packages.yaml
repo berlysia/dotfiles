@@ -42,6 +42,7 @@ packages:
       - "visual-studio-code"
       - "vlc"
       - "iterm2"
+      - "karabiner-elements"
   linux:
     apt:
       - "age"
