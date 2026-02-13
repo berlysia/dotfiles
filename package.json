@@ -24,7 +24,6 @@
     "@types/node": "24.10.9",
     "@typescript/native-preview": "7.0.0-dev.20260109.1",
     "knip": "5.81.0",
-    "o3-search-mcp": "0.0.9",
     "typescript": "5.9.3"
   },
   "dependencies": {
