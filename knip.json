@@ -15,7 +15,6 @@
     "@upstash/context7-mcp",
     "chrome-devtools-mcp",
     "@mizchi/lsmcp",
-    "o3-search-mcp",
     "tree-sitter-bash"
   ]
 }

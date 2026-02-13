@@ -42,9 +42,6 @@ importers:
       knip:
         specifier: 5.81.0
         version: 5.81.0(@types/node@24.10.9)(typescript@5.9.3)
-      o3-search-mcp:
-        specifier: 0.0.9
-        version: 0.0.9(hono@4.11.7)
       typescript:
         specifier: 5.9.3
         version: 5.9.3
@@ -974,10 +971,6 @@ packages:
     resolution: {integrity: sha512-LA4ZjwlnUblHVgq0oBF3Jl/6h/Nvs5fzBLwdEF4nuxnFdsfajde4WfxtJr3CaiH+F6ewcIB/q4jQ4UzPyid+CQ==}
     hasBin: true
 
-  o3-search-mcp@0.0.9:
-    resolution: {integrity: sha512-XV55s/Pl2WXsX3HN0ir9ksg8z3AV6u3DCqGxou6901jx739nrxxlNrJwIRBBy3Oa1noSaNT3ML1UdjTIWF3VOg==}
-    hasBin: true
-
   object-assign@4.1.1:
     resolution: {integrity: sha512-rJgTQnkUnH1sFw8yT6VSU3zD3sWmu6sZhIseY8VX+GRu3P6F7Fu+JNDoXfklElbLJSnc3FUQHVe4cU5hj+BcUg==}
     engines: {node: '>=0.10.0'}
@@ -992,18 +985,6 @@ packages:
 
   once@1.4.0:
     resolution: {integrity: sha512-lNaJgI+2Q5URQBkccEKHTQOPaXdUxnZZElQTZY0MFUAuaEqe1E+Nyvgdz/aIyNi6Z9MzO5dv1H8n58/GELp3+w==}
-
-  openai@5.23.2:
-    resolution: {integrity: sha512-MQBzmTulj+MM5O8SKEk/gL8a7s5mktS9zUtAkU257WjvobGc9nKcBuVwjyEEcb9SI8a8Y2G/mzn3vm9n1Jlleg==}
-    hasBin: true
-    peerDependencies:
-      ws: ^8.18.0
-      zod: ^3.23.8
-    peerDependenciesMeta:
-      ws:
-        optional: true
-      zod:
-        optional: true
 
   oxc-resolver@11.17.0:
     resolution: {integrity: sha512-R5P2Tw6th+nQJdNcZGfuppBS/sM0x1EukqYffmlfX2xXLgLGCCPwu4ruEr9Sx29mrpkHgITc130Qps2JR90NdQ==}
@@ -2134,17 +2115,6 @@ snapshots:
 
   node-gyp-build@4.8.4: {}
 
-  o3-search-mcp@0.0.9(hono@4.11.7):
-    dependencies:
-      '@modelcontextprotocol/sdk': 1.25.3(hono@4.11.7)(zod@3.25.76)
-      openai: 5.23.2(zod@3.25.76)
-      zod: 3.25.76
-    transitivePeerDependencies:
-      - '@cfworker/json-schema'
-      - hono
-      - supports-color
-      - ws
-
   object-assign@4.1.1: {}
 
   object-inspect@1.13.4: {}
@@ -2156,10 +2126,6 @@ snapshots:
   once@1.4.0:
     dependencies:
       wrappy: 1.0.2
-
-  openai@5.23.2(zod@3.25.76):
-    optionalDependencies:
-      zod: 3.25.76
 
   oxc-resolver@11.17.0:
     optionalDependencies:
