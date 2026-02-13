@@ -4,58 +4,47 @@
 
 {{- /* Check if target file exists */ -}}
 {{- if stat $targetFile -}}
-  {{- /* Target file exists, merge with existing user settings */ -}}
+  {{- /* Target file exists, smart merge with existing user settings */ -}}
+  {{- /* Strategy: template as base, user settings override, mcp_servers forced from template */ -}}
   {{- $mergeScript := `
 set -euo pipefail
 
 TARGET_FILE="$1"
 TEMPLATE_CONTENT="$2"
 TEMP_TEMPLATE=$(mktemp)
-TEMP_OUTPUT=$(mktemp)
+trap 'rm -f "$TEMP_TEMPLATE"' EXIT
 
-# Save template content
 echo "$TEMPLATE_CONTENT" > "$TEMP_TEMPLATE"
 
 # Check if mise and dasel are available
 if ! command -v mise &>/dev/null || ! mise list dasel &>/dev/null 2>&1; then
-    # Tools not available, output template as-is
     cat "$TEMP_TEMPLATE"
-    rm "$TEMP_TEMPLATE"
     exit 0
 fi
 
 # Check if target file is valid TOML
 if ! cat "$TARGET_FILE" | mise x -- dasel query --root -i toml -o json >/dev/null 2>&1; then
-    # Invalid TOML, output template as-is
     cat "$TEMP_TEMPLATE"
-    rm "$TEMP_TEMPLATE"
     exit 0
 fi
 
-# Extract user settings from existing file
-EXISTING_PROJECTS_JSON=$(cat "$TARGET_FILE" | mise x -- dasel query 'projects' -i toml -o json 2>/dev/null || echo '{}')
-EXISTING_SANDBOX_WS_JSON=$(cat "$TARGET_FILE" | mise x -- dasel query 'sandbox_workspace_write' -i toml -o json 2>/dev/null || echo '{}')
-EXISTING_NOTICE_JSON=$(cat "$TARGET_FILE" | mise x -- dasel query 'notice' -i toml -o json 2>/dev/null || echo '{}')
-
-# Convert template to JSON
+# Convert both to JSON
+EXISTING_JSON=$(cat "$TARGET_FILE" | mise x -- dasel query --root -i toml -o json 2>/dev/null)
 TEMPLATE_JSON=$(cat "$TEMP_TEMPLATE" | mise x -- dasel query --root -i toml -o json 2>/dev/null)
 
 if [ $? -ne 0 ]; then
-    # Template conversion failed, output template as-is
     cat "$TEMP_TEMPLATE"
-    rm "$TEMP_TEMPLATE"
     exit 0
 fi
 
-# Merge and output
+# Merge: template as base, user settings override, then force template-managed keys
+# - User keys (model, model_reasoning_effort, projects, etc.) are preserved
+# - mcp_servers always comes from template (managed infrastructure)
+# - Deprecated keys (features) are removed
 echo "$TEMPLATE_JSON" | jq \
-  --argjson projects "$EXISTING_PROJECTS_JSON" \
-  --argjson sandbox_ws "$EXISTING_SANDBOX_WS_JSON" \
-  --argjson notice "$EXISTING_NOTICE_JSON" \
-  '. + {projects: $projects, sandbox_workspace_write: $sandbox_ws, notice: $notice}' \
+  --argjson existing "$EXISTING_JSON" \
+  '. as $template | (. * ($existing | del(.mcp_servers) | del(.features))) | .mcp_servers = $template.mcp_servers' \
   | mise x -- dasel query --root -i json -o toml
-
-rm "$TEMP_TEMPLATE"
 ` -}}
   {{- output "bash" "-c" $mergeScript "--" $targetFile $templateContent -}}
 {{- else -}}
