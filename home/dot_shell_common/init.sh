@@ -95,3 +95,8 @@ fi
 if [ "$HAS_OPAM" = "1" ] && type opam >/dev/null 2>&1; then
   eval "$(opam env)"
 fi
+
+# 1Password CLI plugins
+if [ -f "$HOME/.config/op/plugins.sh" ]; then
+  . "$HOME/.config/op/plugins.sh"
+fi
