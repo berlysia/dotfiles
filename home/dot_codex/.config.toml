@@ -1,19 +1,17 @@
 hide_agent_reasoning = true
 model_reasoning_effort = 'high'
 network_access = true
-
-[features]
-web_search_request = true
+web_search = 'live'
 
 [mcp_servers]
 [mcp_servers.context7]
 args = ['@upstash/context7-mcp@latest']
-command = 'pnpx'
+command = 'npx'
 
 [mcp_servers.playwright]
 args = ['@playwright/mcp@latest']
-command = 'pnpx'
+command = 'npx'
 
 [mcp_servers.readability]
 args = ['@mizchi/readability@latest', '--mcp']
-command = 'pnpx'
+command = 'npx'
