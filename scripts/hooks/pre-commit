@@ -71,7 +71,7 @@ echo
 #
 # 3. Shell Script Linting (shellcheck)
 #
-STAGED_SH_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.sh' || true)
+STAGED_SH_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.sh$' || true)
 # Also check staged executable scripts without .sh extension (e.g., executable_*)
 STAGED_EXEC_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '(^|/)executable_' || true)
 ALL_SHELL_FILES=$(echo -e "${STAGED_SH_FILES}\n${STAGED_EXEC_FILES}" | sort -u | grep -v '^$' || true)
