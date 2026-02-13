@@ -31,6 +31,8 @@ shell-integration = detect
 # macOS
 # ====================
 macos-titlebar-style = tabs
+gtk-tabs-location = bottom
+window-show-tab-bar = always
 macos-option-as-alt = true
 
 # ====================
