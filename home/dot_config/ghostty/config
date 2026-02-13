@@ -26,6 +26,7 @@ mouse-hide-while-typing = true
 # copy-on-select = true
 confirm-close-surface = false
 shell-integration = detect
+window-inherit-working-directory = false
 
 # ====================
 # macOS
@@ -34,7 +35,9 @@ macos-titlebar-style = tabs
 macos-option-as-alt = true
 
 # ====================
-# Keybinds (examples)
+# Keybinds
 # ====================
 # keybind = super+t=new_tab
 # keybind = super+w=close_surface
+keybind = super+d=new_split:right:cwd
+keybind = super+shift+d=new_split:down:cwd
