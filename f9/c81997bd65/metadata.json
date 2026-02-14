@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "f9c81997bd65",
+  "strategy": "manual-commit",
+  "branch": "master",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "home/.chezmoiscripts/run_onchange_update-claude-json.sh.tmpl"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f9/c81997bd65/0/metadata.json",
+      "transcript": "/f9/c81997bd65/0/full.jsonl",
+      "context": "/f9/c81997bd65/0/context.md",
+      "content_hash": "/f9/c81997bd65/0/content_hash.txt",
+      "prompt": "/f9/c81997bd65/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 914,
+    "cache_creation_tokens": 31556,
+    "cache_read_tokens": 846532,
+    "output_tokens": 174,
+    "api_call_count": 17
+  }
+}
