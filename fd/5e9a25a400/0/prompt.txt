@@ -1,0 +1,5 @@
+なんかエラー出るね rsync(86136): warning: /Users/berlysia/.codex/skills//./.system: not empty, cannot delete
+
+---
+
+コミットして

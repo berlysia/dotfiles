@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "fd5e9a25a400",
+  "strategy": "manual-commit",
+  "branch": "master",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "home/.chezmoiscripts/run_after_sync-skills.sh.tmpl"
+  ],
+  "sessions": [
+    {
+      "metadata": "/fd/5e9a25a400/0/metadata.json",
+      "transcript": "/fd/5e9a25a400/0/full.jsonl",
+      "context": "/fd/5e9a25a400/0/context.md",
+      "content_hash": "/fd/5e9a25a400/0/content_hash.txt",
+      "prompt": "/fd/5e9a25a400/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 163,
+    "cache_creation_tokens": 20793,
+    "cache_read_tokens": 429359,
+    "output_tokens": 104,
+    "api_call_count": 10
+  }
+}
