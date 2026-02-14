@@ -25,39 +25,44 @@ TEMPLATE_CONTENT=$(cat << EOF
   "mcpServers": {
     "readability": {
       "type": "stdio",
-      "command": "pnpx",
+      "command": "pnpm",
       "args": [
+        "dlx",
         "@mizchi/readability@${READABILITY_VER}",
         "--mcp"
       ],
       "env": {}
     },
     "chrome-devtools": {
-      "command": "pnpx",
+      "command": "pnpm",
       "args": [
+        "dlx",
         "chrome-devtools-mcp@${CHROME_DEVTOOLS_VER}"
       ]
     },
     "playwright": {
       "type": "stdio",
-      "command": "pnpx",
+      "command": "pnpm",
       "args": [
+        "dlx",
         "@playwright/mcp@${PLAYWRIGHT_VER}"
       ],
       "env": {}
     },
     "context7": {
       "type": "stdio",
-      "command": "pnpx",
+      "command": "pnpm",
       "args": [
+        "dlx",
         "@upstash/context7-mcp@${CONTEXT7_VER}"
       ],
       "env": {}
     },
     "codex": {
       "type": "stdio",
-      "command": "pnpx",
+      "command": "pnpm",
       "args": [
+        "dlx",
         "@openai/codex@${CODEX_VER}",
         "mcp-server"
       ]
@@ -106,7 +111,7 @@ cp "$TARGET_FILE" "$BACKUP_FILE"
 # - All other fields: preserve existing values
 jq --slurpfile template <(echo "$TEMPLATE_CONTENT") '
     . * $template[0] |
-    .mcpServers = ((.mcpServers // {}) + ($template[0].mcpServers // {})) |
+    .mcpServers = (((.mcpServers // {}) | del(.vibe_kanban)) + ($template[0].mcpServers // {})) |
     .installMethod = $template[0].installMethod |
     .preferredNotifChannel = $template[0].preferredNotifChannel |
     .defaultMode = $template[0].defaultMode
