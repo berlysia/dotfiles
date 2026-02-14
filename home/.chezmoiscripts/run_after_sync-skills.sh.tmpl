@@ -24,8 +24,8 @@ fi
 
 # Sync with --delete, but preserve external skills
 # Also exclude ui-skills (managed by chezmoi external)
-rsync -a --delete --exclude="ui-skills" "${EXCLUDE_ARGS[@]}" "$SKILLS_SOURCE/" "$CLAUDE_SKILLS/"
-rsync -a --delete --exclude="ui-skills" "${EXCLUDE_ARGS[@]}" "$SKILLS_SOURCE/" "$CODEX_SKILLS/"
+rsync -a --delete --exclude="ui-skills" --exclude=".system" "${EXCLUDE_ARGS[@]}" "$SKILLS_SOURCE/" "$CLAUDE_SKILLS/"
+rsync -a --delete --exclude="ui-skills" --exclude=".system" "${EXCLUDE_ARGS[@]}" "$SKILLS_SOURCE/" "$CODEX_SKILLS/"
 
 echo "✅ Handcrafted skills synced successfully"
 {{ end -}}
