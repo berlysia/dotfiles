@@ -102,6 +102,7 @@
   - Avoid silent failures or generic catch-all handlers
 - **Performance**: Parallelize independent operations with Promise.all()
 - **Serialization/transformation**: When editing data conversion logic (stringify, serialize, format), verify edge cases for data preservation — special characters, optional fields, and nested structures are common loss points
+- **No speculative compatibility**: Do not implement backward compatibility, fallbacks, or migration shims unless explicitly requested by the user
 
 ### Developer Experience
 
