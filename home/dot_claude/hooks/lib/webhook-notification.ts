@@ -5,10 +5,10 @@
  * transcript extraction, footer construction) into a shared module.
  * Discord/Slack adapters consume the output.
  *
- * Note: PermissionRequest events are intentionally NOT handled here.
- * Notification(permission_prompt) fires only when the user sees the prompt
- * (not auto-approved), so we use that instead to avoid notifying on
- * auto-approved permissions.
+ * Note: Permission notifications are NOT handled via events here.
+ * Notification(permission_prompt) may fire before PermissionRequest hooks
+ * complete (e.g. LLM evaluator), so permission webhooks are sent directly
+ * from the permission hook chain via webhook-sender.ts.
  */
 
 import * as fs from "node:fs";
@@ -140,12 +140,9 @@ export async function buildNotification(
 
     switch (notificationType) {
       case "permission_prompt":
-        // Only fires when the user actually sees the permission prompt (not auto-approved)
-        title = "🔑 パーミッション確認";
-        severity = "warning";
-        description =
-          notificationMessage || "パーミッション確認が表示されています。";
-        break;
+        // Permission webhooks are sent from the permission hook chain
+        // (permission-llm-evaluator.ts) when passing to user, not from events
+        return null;
       case "idle_prompt":
         title = "💤 入力待ち";
         severity = "muted";
@@ -164,20 +161,30 @@ export async function buildNotification(
     return null;
   }
 
-  // Build footer with project name and session ID
+  return {
+    title,
+    description,
+    severity,
+    footer: await buildFooter(cwd, sessionId),
+  };
+}
+
+/**
+ * Build footer string with project name and session ID.
+ * Exported for use by permission hook chain (webhook-sender.ts).
+ */
+export async function buildFooter(
+  cwd?: string,
+  sessionId?: string,
+): Promise<string> {
   const footerParts: string[] = [];
   if (cwd) {
     const gitContext = await getGitContext();
     footerParts.push(`📁 ${gitContext.name}`);
   }
-  if (sessionId) {
-    footerParts.push(`🔑 ${sessionId}`);
+  const shortId = (sessionId ?? "").slice(0, 8);
+  if (shortId) {
+    footerParts.push(`🔑 ${shortId}`);
   }
-
-  return {
-    title,
-    description,
-    severity,
-    footer: footerParts.join("  |  "),
-  };
+  return footerParts.join("  |  ");
 }

@@ -17,6 +17,8 @@ import {
 import { logDecision } from "../lib/centralized-logging.ts";
 import { createPermissionRequestAllowResponse } from "../lib/permission-request-helpers.ts";
 import type { PermissionRequestInput } from "../lib/structured-llm-evaluator.ts";
+import { buildFooter } from "../lib/webhook-notification.ts";
+import { sendWebhookNotifications } from "../lib/webhook-sender.ts";
 
 const SYSTEM_PROMPT = `You are a security evaluation AI for developer tool permission requests.
 
@@ -186,7 +188,7 @@ const hook = defineHook({
   },
   run: async (context) => {
     const input = context.input as unknown as PermissionRequestInput;
-    const { tool_name, tool_input, session_id } = input;
+    const { tool_name, tool_input, session_id, cwd } = input;
 
     // Tools that MUST always reach the user for decision (skip LLM evaluation entirely)
     // - AskUserQuestion: User interaction must not be auto-approved
@@ -243,12 +245,28 @@ const hook = defineHook({
       tool_input,
     );
 
-    // Send notification for delegation decision (ASCII only for WSL compatibility)
+    // Send notification for delegation decision
     try {
-      const { config } = await createAudioEngine();
-      await sendSystemNotification(
-        `[LLM] Pass to user: ${tool_name} - ${result.reason}`,
-        config,
+      const [, footer] = await Promise.all([
+        // System notification (ASCII only for WSL compatibility)
+        (async () => {
+          const { config } = await createAudioEngine();
+          await sendSystemNotification(
+            `[LLM] Pass to user: ${tool_name} - ${result.reason}`,
+            config,
+          );
+        })(),
+        buildFooter(cwd, session_id),
+      ]);
+      // Webhook notification (Discord/Slack)
+      await sendWebhookNotifications(
+        {
+          title: "🔑 パーミッション確認",
+          description: `${tool_name} の実行許可を求めています`,
+          severity: "warning",
+          footer,
+        },
+        session_id ?? "",
       );
     } catch {
       // Notification failure should not block the response
