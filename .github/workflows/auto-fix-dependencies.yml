@@ -63,7 +63,7 @@ jobs:
 
       - name: Checkout repository
         if: steps.pr-info.outputs.skip != 'true'
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
           ref: ${{ steps.pr-info.outputs.head_ref }}
@@ -72,7 +72,7 @@ jobs:
       - name: Auto-fix dependencies
         if: steps.pr-info.outputs.skip != 'true'
         id: auto-fix
-        uses: anthropics/claude-code-action@70e16deb18402428bd09e08d1ec3662a872e3c72 # v1.0.41
+        uses: anthropics/claude-code-action@ea36d6abdedc17fc2a671b36060770b208a6f8f1 # v1.0.51
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           use_bedrock: false
