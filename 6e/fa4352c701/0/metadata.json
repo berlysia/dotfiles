@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "6efa4352c701",
+  "session_id": "bf22d09a-8154-4329-ae9a-a2d1a7ebc029",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-15T14:24:12.438279Z",
+  "branch": "master",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "home/dot_claude/.settings.hooks.json.tmpl",
+    "home/dot_claude/hooks/implementations/discord-notification.ts"
+  ],
+  "agent": "Claude Code",
+  "token_usage": {
+    "input_tokens": 599,
+    "cache_creation_tokens": 71634,
+    "cache_read_tokens": 1440960,
+    "output_tokens": 716,
+    "api_call_count": 19
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-15T14:24:12.315991Z",
+    "agent_lines": 235,
+    "human_added": 1459,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 1694,
+    "agent_percentage": 13.872491145218419
+  },
+  "transcript_path": ".claude/projects/-Users-berlysia--local-share-chezmoi/bf22d09a-8154-4329-ae9a-a2d1a7ebc029.jsonl"
+}

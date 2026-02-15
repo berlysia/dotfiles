@@ -1,0 +1,12 @@
+# Session Context
+
+## User Prompts
+
+### Prompt 1
+
+https://nyosegawa.github.io/posts/claude-code-mac-dev-environment/ の記事にあるDiscord通知は便利そうだ。環境変数の有無に寄ってその動作を切り替えて良いから、ベースを構築して
+
+### Prompt 2
+
+まずコミット
+
