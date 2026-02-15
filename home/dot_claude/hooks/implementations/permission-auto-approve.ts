@@ -131,9 +131,7 @@ function normalizeCommand(cmd: string): string {
   normalized = normalized.replace(/^cd\s+\S+\s*&&\s*/, "").trim();
 
   // Strip leading ENV_VAR=value prefix(es) (e.g., BASELINE_YEAR=2023 FOO=bar node --test ...)
-  normalized = normalized
-    .replace(/^([A-Z_][A-Z0-9_]*=\S+\s+)+/, "")
-    .trim();
+  normalized = normalized.replace(/^([A-Z_][A-Z0-9_]*=\S+\s+)+/, "").trim();
 
   return normalized;
 }

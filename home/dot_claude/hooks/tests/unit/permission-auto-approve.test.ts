@@ -326,10 +326,7 @@ describe("permission-auto-approve.ts hook behavior", () => {
     });
 
     it("should strip cd prefix with tight spacing", () => {
-      strictEqual(
-        normalizeCommand("cd /path&&git status"),
-        "git status",
-      );
+      strictEqual(normalizeCommand("cd /path&&git status"), "git status");
     });
 
     it("should strip ENV_VAR=value prefix", () => {
@@ -379,7 +376,11 @@ describe("permission-auto-approve.ts hook behavior", () => {
         };
 
         const result = staticRuleEngine(input);
-        strictEqual(result, "allow", `Command "${cmd}" should be allowed after cd normalization`);
+        strictEqual(
+          result,
+          "allow",
+          `Command "${cmd}" should be allowed after cd normalization`,
+        );
       });
     }
 
@@ -397,7 +398,11 @@ describe("permission-auto-approve.ts hook behavior", () => {
         };
 
         const result = staticRuleEngine(input);
-        strictEqual(result, "uncertain", `Command "${cmd}" should remain uncertain`);
+        strictEqual(
+          result,
+          "uncertain",
+          `Command "${cmd}" should remain uncertain`,
+        );
       });
     }
 
@@ -429,7 +434,11 @@ describe("permission-auto-approve.ts hook behavior", () => {
         };
 
         const result = staticRuleEngine(input);
-        strictEqual(result, "allow", `Command "${cmd}" should be allowed after ENV normalization`);
+        strictEqual(
+          result,
+          "allow",
+          `Command "${cmd}" should be allowed after ENV normalization`,
+        );
       });
     }
   });
