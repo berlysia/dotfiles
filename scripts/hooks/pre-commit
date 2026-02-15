@@ -45,8 +45,8 @@ echo
 STAGED_TS_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(ts|tsx|js|jsx|json)$' || true)
 if [ -n "$STAGED_TS_FILES" ]; then
     echo -e "${BLUE}🦋 Checking TypeScript/JavaScript with biome...${NC}"
-    if command -v biome &> /dev/null; then
-        if ! biome check --write --staged --files-ignore-unknown=true; then
+    if command -v pnpm &> /dev/null && pnpm biome --version &> /dev/null; then
+        if ! pnpm biome check --write --staged --files-ignore-unknown=true; then
             echo -e "${RED}❌ biome found unfixable issues in staged files${NC}"
             EXIT_CODE=1
         else
