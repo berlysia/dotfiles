@@ -9,7 +9,11 @@
  *   2. Forum channel: CLAUDE_DISCORD_FORUM_WEBHOOK_URL — session-scoped threads
  *
  * When forum webhook is configured, SessionStart creates a new thread and
- * subsequent events (Stop/Notification/PermissionRequest) post into that thread.
+ * subsequent events (Stop/Notification) post into that thread.
+ *
+ * Note: PermissionRequest events are NOT triggered — permission notifications
+ * come via Notification(permission_prompt), which only fires when the user
+ * actually sees the prompt (not auto-approved).
  *
  * @see https://discord.com/developers/docs/resources/webhook
  */
@@ -76,7 +80,6 @@ async function buildThreadName(sessionId: string): Promise<string> {
 const hook = defineHook({
   trigger: {
     Notification: true,
-    PermissionRequest: true,
     SessionStart: true,
     Stop: true,
   },

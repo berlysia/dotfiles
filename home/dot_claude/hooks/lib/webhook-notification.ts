@@ -1,9 +1,14 @@
 /**
  * Platform-neutral webhook notification builder
  *
- * Extracts event processing logic (Stop/PermissionRequest/Notification branching,
- * transcript extraction, permission_prompt deduplication, footer construction)
- * into a shared module. Discord/Slack adapters consume the output.
+ * Extracts event processing logic (Stop/Notification branching,
+ * transcript extraction, footer construction) into a shared module.
+ * Discord/Slack adapters consume the output.
+ *
+ * Note: PermissionRequest events are intentionally NOT handled here.
+ * Notification(permission_prompt) fires only when the user sees the prompt
+ * (not auto-approved), so we use that instead to avoid notifying on
+ * auto-approved permissions.
  */
 
 import * as fs from "node:fs";
@@ -90,7 +95,7 @@ export async function extractFromTranscript(
 
 /**
  * Build a platform-neutral notification from hook input.
- * Returns null when the event should be skipped (e.g. stop_hook_active, permission_prompt dedup).
+ * Returns null when the event should be skipped (e.g. stop_hook_active, unrecognized event).
  */
 export async function buildNotification(
   input: HookInput,
@@ -129,21 +134,18 @@ export async function buildNotification(
       parts.length > 0
         ? parts.join("\n\n")
         : "Claudeの返信が完了しました。";
-  } else if (eventType === "PermissionRequest") {
-    const toolName = input.tool_name ?? "unknown";
-    title = "🔑 パーミッション確認";
-    severity = "warning";
-    description = `${toolName} の実行許可を求めています`;
   } else if (eventType === "Notification") {
     const notificationType = input.notification_type;
     const notificationMessage = input.message ?? "";
 
-    // PermissionRequest fires before Notification(permission_prompt), skip the duplicate
-    if (notificationType === "permission_prompt") {
-      return null;
-    }
-
     switch (notificationType) {
+      case "permission_prompt":
+        // Only fires when the user actually sees the permission prompt (not auto-approved)
+        title = "🔑 パーミッション確認";
+        severity = "warning";
+        description =
+          notificationMessage || "パーミッション確認が表示されています。";
+        break;
       case "idle_prompt":
         title = "💤 入力待ち";
         severity = "muted";

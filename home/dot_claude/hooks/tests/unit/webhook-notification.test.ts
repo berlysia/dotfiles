@@ -179,12 +179,27 @@ describe("buildNotification", () => {
   });
 
   describe("PermissionRequest event", () => {
-    it("should return warning notification with tool_name", async () => {
+    it("should return null (not handled — use Notification(permission_prompt) instead)", async () => {
       const input: HookInput = {
         hook_event_name: "PermissionRequest",
         session_id: "a2f252b1-1234-5678-abcd-123456789012",
         cwd: "/test",
         tool_name: "Bash",
+      };
+
+      const result = await buildNotification(input);
+      strictEqual(result, null);
+    });
+  });
+
+  describe("Notification event", () => {
+    it("should return warning notification for permission_prompt", async () => {
+      const input: HookInput = {
+        hook_event_name: "Notification",
+        session_id: "test-session",
+        cwd: "/test",
+        notification_type: "permission_prompt",
+        message: "Bash の実行許可を求めています",
       };
 
       const result = await buildNotification(input);
@@ -194,29 +209,17 @@ describe("buildNotification", () => {
       strictEqual(result.description, "Bash の実行許可を求めています");
     });
 
-    it("should use 'unknown' when tool_name is missing", async () => {
-      const input: HookInput = {
-        hook_event_name: "PermissionRequest",
-        session_id: "test-session",
-        cwd: "/test",
-      };
-
-      const result = await buildNotification(input);
-      ok(result !== null);
-      ok(result.description.includes("unknown"));
-    });
-  });
-
-  describe("Notification event", () => {
-    it("should return null for permission_prompt (deduplication)", async () => {
+    it("should use fallback message for permission_prompt without message", async () => {
       const input: HookInput = {
         hook_event_name: "Notification",
         session_id: "test-session",
+        cwd: "/test",
         notification_type: "permission_prompt",
       };
 
       const result = await buildNotification(input);
-      strictEqual(result, null);
+      ok(result !== null, "should return notification");
+      strictEqual(result.description, "パーミッション確認が表示されています。");
     });
 
     it("should return muted notification for idle_prompt", async () => {
@@ -292,10 +295,11 @@ describe("buildNotification", () => {
   describe("footer construction", () => {
     it("should include session ID in footer", async () => {
       const input: HookInput = {
-        hook_event_name: "PermissionRequest",
+        hook_event_name: "Notification",
         session_id: "a2f252b1-1234-5678-abcd-123456789012",
         cwd: "/test",
-        tool_name: "Bash",
+        notification_type: "permission_prompt",
+        message: "Bash の実行許可を求めています",
       };
 
       const result = await buildNotification(input);
@@ -306,8 +310,8 @@ describe("buildNotification", () => {
 
     it("should have empty footer when no cwd and no session_id", async () => {
       const input: HookInput = {
-        hook_event_name: "PermissionRequest",
-        tool_name: "Bash",
+        hook_event_name: "Notification",
+        notification_type: "idle_prompt",
       };
 
       const result = await buildNotification(input);

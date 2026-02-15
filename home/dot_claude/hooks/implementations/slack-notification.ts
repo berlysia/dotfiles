@@ -53,7 +53,6 @@ async function sendSlackAttachment(
 const hook = defineHook({
   trigger: {
     Notification: true,
-    PermissionRequest: true,
     Stop: true,
   },
   run: async (context) => {
