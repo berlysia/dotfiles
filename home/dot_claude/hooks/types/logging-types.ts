@@ -11,7 +11,13 @@ export interface BaseLogEntry {
 }
 
 export interface EventLogEntry extends BaseLogEntry {
-  event: "SessionStart" | "UserPromptSubmit" | "Notification" | "Stop";
+  event:
+    | "SessionStart"
+    | "UserPromptSubmit"
+    | "Notification"
+    | "PermissionRequest"
+    | "Stop"
+    | "Error";
   message?: string;
 }
 

@@ -15,6 +15,7 @@ import * as fs from "node:fs";
 import * as readline from "node:readline";
 
 import type { NotificationType } from "../../lib/notification-messages.ts";
+import { logEvent } from "../lib/centralized-logging.ts";
 import { getGitContext } from "../lib/git-context.ts";
 
 // Discord embed color codes
@@ -113,6 +114,7 @@ async function sendDiscordEmbed(
 const hook = defineHook({
   trigger: {
     Notification: true,
+    PermissionRequest: true,
     Stop: true,
   },
   run: async (context) => {
@@ -122,7 +124,10 @@ const hook = defineHook({
       return context.success({});
     }
 
-    const eventType = context.input.hook_event_name as "Notification" | "Stop";
+    const eventType = context.input.hook_event_name as
+      | "Notification"
+      | "PermissionRequest"
+      | "Stop";
     const sessionId = (context.input.session_id ?? "").slice(0, 8);
     const cwd = context.input.cwd ?? "";
 
@@ -132,6 +137,7 @@ const hook = defineHook({
       message?: string;
       transcript_path?: string;
       stop_hook_active?: boolean;
+      tool_name?: string;
     };
 
     let title = "";
@@ -161,16 +167,21 @@ const hook = defineHook({
           parts.length > 0
             ? parts.join("\n\n")
             : "Claudeの返信が完了しました。";
+      } else if (eventType === "PermissionRequest") {
+        const toolName = inputAny.tool_name ?? "unknown";
+        title = "🔑 パーミッション確認";
+        color = COLORS.orange;
+        description = `${toolName} の実行許可を求めています`;
       } else if (eventType === "Notification") {
         const notificationType = inputAny.notification_type;
         const notificationMessage = inputAny.message ?? "";
 
+        // PermissionRequest 経由の方が tool_name を含みリッチなため、重複を排除
+        if (notificationType === "permission_prompt") {
+          return context.success({});
+        }
+
         switch (notificationType) {
-          case "permission_prompt":
-            title = "⚠️ 確認待ち";
-            color = COLORS.orange;
-            description = notificationMessage || "権限の確認が必要です。";
-            break;
           case "idle_prompt":
             title = "💤 入力待ち";
             color = COLORS.grey;
@@ -210,7 +221,7 @@ const hook = defineHook({
 
       await sendDiscordEmbed(webhookUrl, embed);
     } catch (error) {
-      console.error(`Discord notification error: ${error}`);
+      logEvent("Error", sessionId, `discord-notification: ${String(error)}`);
     }
 
     return context.success({});

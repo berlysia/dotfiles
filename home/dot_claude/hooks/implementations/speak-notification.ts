@@ -7,13 +7,17 @@
 
 import { defineHook } from "cc-hooks-ts";
 
-import type { NotificationType } from "../../lib/notification-messages.ts";
+import {
+  createNotificationMessagesAuto,
+  type NotificationType,
+} from "../../lib/notification-messages.ts";
 import {
   cleanupOldFiles,
   cleanupSession,
   createAudioEngine,
   handleNotification,
   handleStop,
+  sendSystemNotification,
 } from "../../lib/unified-audio-engine.ts";
 import { logEvent } from "../lib/centralized-logging.ts";
 
@@ -57,6 +61,14 @@ const hook = defineHook({
                 notificationType,
                 notificationMessage,
               });
+              // permission_prompt の場合はシステム通知も併用して気付きやすくする
+              if (notificationType === "permission_prompt") {
+                const messages = await createNotificationMessagesAuto(
+                  "Notification",
+                  { notificationType },
+                );
+                await sendSystemNotification(messages.system, config);
+              }
               // Notificationイベント時のみクリーンアップ
               await cleanupOldFiles(config);
               break;
