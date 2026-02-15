@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "54fd9444a2d5",
+  "strategy": "manual-commit",
+  "branch": "master",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "home/dot_shell_common/init.sh"
+  ],
+  "sessions": [
+    {
+      "metadata": "/54/fd9444a2d5/0/metadata.json",
+      "transcript": "/54/fd9444a2d5/0/full.jsonl",
+      "context": "/54/fd9444a2d5/0/context.md",
+      "content_hash": "/54/fd9444a2d5/0/content_hash.txt",
+      "prompt": "/54/fd9444a2d5/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 69,
+    "cache_creation_tokens": 28982,
+    "cache_read_tokens": 1170515,
+    "output_tokens": 366,
+    "api_call_count": 20
+  }
+}
