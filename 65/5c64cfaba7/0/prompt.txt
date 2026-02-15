@@ -1,0 +1,119 @@
+Implement the following plan:
+
+# Discord Forum Channel スレッド対応
+
+## Context
+
+Discord通知フックは現在、通常のテキストチャンネルにembed投稿している。
+フォーラムチャンネルを使い、セッションIDごとに1スレッドにまとめることで、
+通知の視認性と整理性を大幅に向上させたい。
+
+## 設計方針
+
+- 環境変数 `CLAUDE_DISCORD_FORUM_WEBHOOK_URL` を新設（既存の `CLAUDE_DISCORD_WEBHOOK_URL` と共存）
+- SessionStart でフォーラムスレッドを作成し、thread_id をファイルに保存
+- 以降のイベント（Stop/Notification/PermissionRequest）は保存済み thread_id を使って同スレッドに投稿
+- スレッド名: `📁 {project} | 🔑 {sessionId8}`
+
+## 変更ファイル一覧
+
+### 1. 新規: `home/dot_claude/hooks/lib/discord-forum.ts`
+
+Forum thread管理モジュール:
+
+```
+- THREADS_FILE = ~/.claude/.discord-forum-threads.json
+- loadThreadMap(): Record<string, string>  // sessionId → threadId
+- saveThreadId(sessionId, threadId): void
+- createForumThread(webhookUrl, threadName, embed): Promise<string>  // returns threadId
+- sendToThread(webhookUrl, threadId, embed): Promise<void>
+- cleanupOldThreads(maxAge: 7days): void  // 古いエントリを削除
+```
+
+Discord webhook API:
+- スレッド作成: `POST {webhookUrl}?wait=true` with `{ thread_name, embeds }` → response.channel_id がthread_id
+- スレッド投稿: `POST {webhookUrl}?thread_id={id}` with `{ embeds }`
+
+### 2. 変更: `home/dot_claude/hooks/lib/webhook-notification.ts`
+
+`buildNotification()` に SessionStart イベントの処理を追加:
+
+```typescript
+if (eventType === "SessionStart") {
+  title = "🚀 セッション開始";
+  severity = "info";
+  description = "新しいClaude Codeセッションが開始されました。";
+}
+```
+
+### 3. 変更: `home/dot_claude/hooks/implementations/discord-notification.ts`
+
+- trigger に `SessionStart` を追加
+- Forum webhook対応ロジック:
+  - `CLAUDE_DISCORD_FORUM_WEBHOOK_URL` が設定されている場合:
+    - SessionStart → `createForumThread()` でスレッド作成、thread_id保存
+    - 他イベント → `sendToThread()` で既存スレッドに投稿（thread_id未発見時はフォールバックで新スレッド作成）
+  - `CLAUDE_DISCORD_WEBHOOK_URL` が設定されている場合:
+    - 従来通りの通常チャンネル投稿（SessionStartはスキップ）
+  - 両方設定時は両方に送信
+
+### 4. 変更: `home/dot_claude/.settings.hooks.json.tmpl`
+
+SessionStart フックに discord-notification.ts を追加:
+
+```json
+"SessionStart": [
+  { existing session.ts hook },
+  {
+    "type": "command",
+    "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/discord-notification.ts",
+    "async": true
+  },
+  { existing logging hook }
+]
+```
+
+### 5. テスト: `home/dot_claude/hooks/tests/unit/discord-forum.test.ts`
+
+- loadThreadMap / saveThreadId の読み書き
+- cleanupOldThreads の古エントリ削除
+- createForumThread のレスポンスパース
+- sendToThread のURL構築（?thread_id付与）
+
+### 6. テスト変更: `home/dot_claude/hooks/tests/unit/webhook-notification.test.ts`
+
+- SessionStart イベントのテストケース追加
+
+## 実装順序
+
+1. `webhook-notification.ts` に SessionStart 対応追加 + テスト
+2. `discord-forum.ts` 新規作成 + テスト
+3. `discord-notification.ts` にフォーラム対応追加
+4. `.settings.hooks.json.tmpl` にSessionStartフック追加
+5. 動作確認
+
+## 検証方法
+
+1. 単体テスト: `bun test home/dot_claude/hooks/tests/unit/`
+2. 手動テスト:
+   - `CLAUDE_DISCORD_FORUM_WEBHOOK_URL` を設定して `chezmoi apply`
+   - 新セッション開始 → フォーラムにスレッド作成確認
+   - Stop/PermissionRequest → 同スレッドへの投稿確認
+   - `~/.claude/.discord-forum-threads.json` にエントリ確認
+
+<!-- validated -->
+
+
+If you need specific details from before exiting plan mode (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/berlysia/.REDACTED.jsonl
+
+---
+
+環境変数どうやって渡すのが良いかな？
+
+---
+
+.env.1password.local的なやつに書こうかな、共通にしたくはないので
+
+---
+
+コミットして
