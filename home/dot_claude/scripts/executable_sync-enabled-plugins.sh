@@ -1,48 +1,73 @@
 #!/bin/bash
-# Syncs enabledPlugins from ~/.claude/settings.json to chezmoi source
-# Usage: bun ~/.claude/scripts/sync-enabled-plugins.sh
-#
-# This exports the current enabledPlugins state to dotfiles, allowing you to
-# commit plugin enable/disable changes made via Claude Code.
+# Reverse sync: generate YAML from installed plugins and compare with current YAML
+# Usage: ~/.claude/scripts/sync-enabled-plugins.sh
 
 set -euo pipefail
 
-SETTINGS_FILE="$HOME/.claude/settings.json"
-CHEZMOI_SOURCE_DIR="${CHEZMOI_SOURCE_DIR:-$(chezmoi source-path)}"
-TARGET_FILE="${CHEZMOI_SOURCE_DIR}/dot_claude/.settings.plugins.json"
-
-# Check if settings file exists
-if [[ ! -f "$SETTINGS_FILE" ]]; then
-    echo "❌ ~/.claude/settings.json not found"
+# Check dependencies
+if ! command -v claude &> /dev/null; then
+    echo "claude CLI not found"
+    exit 1
+fi
+if ! command -v jq &> /dev/null; then
+    echo "jq not found"
     exit 1
 fi
 
-# Extract enabledPlugins
-ENABLED_PLUGINS=$(jq '.enabledPlugins // {}' "$SETTINGS_FILE")
+CHEZMOI_SOURCE_DIR="${CHEZMOI_SOURCE_DIR:-$(chezmoi source-path 2>/dev/null || echo "$HOME/.local/share/chezmoi/home")}"
+YAML_FILE="${CHEZMOI_SOURCE_DIR}/../home/.chezmoidata/claude_plugins.yaml"
 
-# Validate JSON
-if ! echo "$ENABLED_PLUGINS" | jq empty 2>/dev/null; then
-    echo "❌ Failed to extract enabledPlugins"
-    exit 1
+# Normalize path (resolve ../home when source-path already points to home/)
+if [ ! -f "$YAML_FILE" ]; then
+    YAML_FILE="${CHEZMOI_SOURCE_DIR%/home}/.chezmoidata/claude_plugins.yaml"
 fi
-
-# Check if there are changes
-if [[ -f "$TARGET_FILE" ]]; then
-    CURRENT=$(cat "$TARGET_FILE")
-    if [[ "$CURRENT" == "$ENABLED_PLUGINS" ]]; then
-        echo "✅ No changes to sync"
-        exit 0
+if [ ! -f "$YAML_FILE" ]; then
+    # Try working tree path
+    WORKING_TREE=$(chezmoi data --format json 2>/dev/null | jq -r '.chezmoi.workingTree // empty')
+    if [ -n "$WORKING_TREE" ]; then
+        YAML_FILE="${WORKING_TREE}/home/.chezmoidata/claude_plugins.yaml"
     fi
 fi
 
-# Write to target
-echo "$ENABLED_PLUGINS" | jq '.' > "$TARGET_FILE"
+# Get actual state from claude CLI
+ACTUAL_MARKETPLACES=$(CLAUDECODE='' claude plugin marketplace list --json 2>/dev/null || echo '[]')
+ACTUAL_PLUGINS=$(CLAUDECODE='' claude plugin list --json 2>/dev/null || echo '[]')
 
-# Show result
-PLUGIN_COUNT=$(echo "$ENABLED_PLUGINS" | jq 'length')
-echo "✅ Synced $PLUGIN_COUNT plugins to .settings.plugins.json"
-echo ""
-echo "Changes:"
-git -C "$CHEZMOI_SOURCE_DIR" diff --color dot_claude/.settings.plugins.json 2>/dev/null || cat "$TARGET_FILE"
-echo ""
-echo "To commit: cd $CHEZMOI_SOURCE_DIR && git add dot_claude/.settings.plugins.json && git commit -m 'chore: sync enabledPlugins'"
+# Generate YAML output
+echo "claude_plugins:"
+echo "    marketplaces:"
+echo "$ACTUAL_MARKETPLACES" | jq -r '.[] | "        - name: \(.name)\n          repo: \(.repo)"'
+echo "    plugins:"
+echo "$ACTUAL_PLUGINS" | jq -r '.[].id' | while IFS= read -r id; do
+    echo "        - $id"
+done
+
+# Show diff with current YAML if it exists
+if [ -f "$YAML_FILE" ]; then
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "Diff with current YAML ($YAML_FILE):"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    # Generate YAML to temp file for comparison
+    TEMP_YAML=$(mktemp)
+    {
+        echo "claude_plugins:"
+        echo "    marketplaces:"
+        echo "$ACTUAL_MARKETPLACES" | jq -r '.[] | "        - name: \(.name)\n          repo: \(.repo)"'
+        echo "    plugins:"
+        echo "$ACTUAL_PLUGINS" | jq -r '.[].id' | while IFS= read -r id; do
+            echo "        - $id"
+        done
+    } > "$TEMP_YAML"
+
+    diff --color "$YAML_FILE" "$TEMP_YAML" || true
+    rm "$TEMP_YAML"
+
+    echo ""
+    echo "To update: copy the YAML output above to $YAML_FILE"
+else
+    echo ""
+    echo "YAML file not found at: $YAML_FILE"
+    echo "Copy the output above to home/.chezmoidata/claude_plugins.yaml"
+fi
