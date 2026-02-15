@@ -1,0 +1,36 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "c8848764b9c7",
+  "session_id": "3f3d249c-648b-4d3b-97db-50ac92e57709",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-15T16:28:06.013432Z",
+  "branch": "master",
+  "checkpoints_count": 0,
+  "files_touched": [
+    ".claude/plans/squishy-wobbling-harbor.md",
+    "home/dot_claude/.settings.hooks.json.tmpl",
+    "home/dot_claude/hooks/implementations/discord-notification.ts",
+    "home/dot_claude/hooks/implementations/speak-notification.ts",
+    "home/dot_claude/hooks/types/logging-types.ts"
+  ],
+  "agent": "Claude Code",
+  "checkpoint_transcript_start": 610,
+  "transcript_lines_at_start": 610,
+  "token_usage": {
+    "input_tokens": 30,
+    "cache_creation_tokens": 78603,
+    "cache_read_tokens": 1306117,
+    "output_tokens": 234,
+    "api_call_count": 14
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-15T16:28:05.70132Z",
+    "agent_lines": 35,
+    "human_added": 418,
+    "human_modified": 153,
+    "human_removed": 0,
+    "total_committed": 606,
+    "agent_percentage": 5.775577557755775
+  },
+  "transcript_path": ".claude/projects/-Users-berlysia--local-share-chezmoi/3f3d249c-648b-4d3b-97db-50ac92e57709.jsonl"
+}

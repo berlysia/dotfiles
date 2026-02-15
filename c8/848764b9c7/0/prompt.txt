@@ -1,0 +1,150 @@
+Implement the following plan:
+
+# 計画: Discord通知と音声通知の相互改善
+
+## Context
+
+Discord通知と音声通知は並行動作する2つの通知フックだが、それぞれに相手にない強みがある。
+比較分析の結果、以下の改善を行い相互に高め合う。
+
+**イベントフロー（検証済み）**:
+```
+PermissionRequest hook → (auto-approveしない場合) → Notification hook (permission_prompt)
+```
+- 両イベントが順次発火するため、両方にDiscord通知を登録すると**重複通知**になる
+- `PermissionRequest` は `tool_name` を含む（よりリッチ）、`Notification` は `message` を含む
+
+**現状の問題**:
+- Discord通知が `PermissionRequest` に未対応（音声側はNotification経由でカバー）
+- `permission-request-notification.ts` が実装済みだがhooks configに未登録（デッドコード）
+- Discord通知のエラーハンドリングが `console.error` のみ
+- Discord通知がdeploy済みsettings.jsonに未反映（テンプレートには記述済み）
+
+## 変更一覧
+
+### Task 1: Discord通知に PermissionRequest 対応を追加
+
+**ファイル**: `home/dot_claude/hooks/implementations/discord-notification.ts`
+
+- `trigger` に `PermissionRequest: true` を追加
+- `PermissionRequest` イベントのembed生成ロジック追加:
+  - title: `🔑 パーミッション確認`
+  - color: `COLORS.orange`
+  - description: `tool_name` を含む（例: "Bash の実行許可を求めています"）
+  - footer: 既存の `📁 repoName | 🔑 sessionId` を再利用
+- 型定義 `inputAny` に `tool_name?: string` を追加
+
+**重複排除**: `Notification` イベントで `notification_type === "permission_prompt"` の場合は**スキップ**する。
+PermissionRequest 経由の方が `tool_name` を含みリッチなため、そちらを優先。
+
+### Task 2: 音声通知に permission_prompt 時のシステム通知を統合
+
+**ファイル**: `home/dot_claude/hooks/implementations/speak-notification.ts`
+
+`permission-request-notification.ts` のシステム通知機能を統合:
+- `Notification` イベントで `notificationType === "permission_prompt"` の場合:
+  - 既存の音声通知に加え `sendSystemNotification()` を `Promise.allSettled` に追加
+  - メッセージは `createNotificationMessagesAuto("Notification", { notificationType })` の `.system` を使用
+- import追加: `sendSystemNotification`, `createNotificationMessagesAuto` (後者は notification-messages.ts から)
+
+**理由**: permission-request-notification.ts が持っていた「音声 + システム通知の併用」を、
+既にアクティブな speak-notification.ts のNotificationパスに統合する。
+
+### Task 3: Discord通知のエラーログを構造化
+
+**ファイル**: `home/dot_claude/hooks/implementations/discord-notification.ts`
+
+- `console.error` → `centralized-logging.ts` の `logEvent` を使用
+- import追加: `logEvent` from `../lib/centralized-logging.ts`
+
+### Task 4: hooks config を更新
+
+**ファイル**: `home/dot_claude/.settings.hooks.json.tmpl`
+
+- `PermissionRequest` セクションに discord-notification を async hookとして追加
+  - `permission-auto-approve` → `permission-llm-evaluator` → **discord-notification (async)** → companion-log
+
+### Task 5: permission-request-notification.ts の削除
+
+Task 2 で機能統合完了後、デッドコードを削除:
+- `home/dot_claude/hooks/implementations/permission-request-notification.ts` 削除
+- `home/dot_claude/hooks/tests/unit/permission-request-notification.test.ts` 削除
+
+## 変更後の通知フロー
+
+```
+パーミッション確認が必要な場合:
+
+1. PermissionRequest 発火
+   → permission-auto-approve (sync)
+   → permission-llm-evaluator (sync)
+   → discord-notification (async) ← NEW: tool_name付きembed
+   → companion-log (async)
+
+2. auto-approveしない場合、Notification (permission_prompt) 発火
+   → speak-notification (async): 音声通知 + システム通知 ← ENHANCED
+   → discord-notification (async): permission_prompt をスキップ ← 重複排除
+   → companion-log (async)
+```
+
+## 対象ファイル一覧
+
+| ファイル | 変更内容 |
+|---------|---------|
+| `home/dot_claude/hooks/implementations/discord-notification.ts` | PermissionRequest対応 + permission_prompt重複排除 + ログ構造化 |
+| `home/dot_claude/hooks/implementations/speak-notification.ts` | permission_prompt時のシステム通知追加 |
+| `home/dot_claude/.settings.hooks.json.tmpl` | PermissionRequestにDiscord hook登録 |
+| `home/dot_claude/hooks/implementations/permission-request-notification.ts` | 削除 |
+| `home/dot_claude/hooks/tests/unit/permission-request-notification.test.ts` | 削除 |
+
+## 再利用する既存機能
+
+- `centralized-logging.ts`: `logEvent()` — Discord通知のエラーログ構造化
+- `unified-audio-engine.ts`: `sendSystemNotification()` — 音声通知にシステム通知追加
+- `notification-messages.ts`: `createNotificationMessagesAuto()` — メッセージ生成
+- `git-context.ts`: `getGitContext()` — Discord通知のリポジトリ情報（既存）
+
+## 検証方法
+
+1. **型チェック**: `pnpm typecheck` パス
+2. **既存テスト**: `bun test home/dot_claude/hooks/tests/unit/` パス
+3. **Discord通知テスト**:
+   - Stop イベント → embed届く（緑、transcript付き）
+   - Notification (idle_prompt) → embed届く（灰）
+   - Notification (permission_prompt) → スキップ確認
+   - PermissionRequest → embed届く（橙、tool_name付き）
+4. **音声通知テスト**: permission_prompt 時にシステム通知が追加で発火することを確認
+5. **chezmoi apply**: テンプレート → settings.json 反映確認
+
+<!-- validated -->
+
+
+If you need specific details from before exiting plan mode (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/berlysia/.claude/projects/-Users-berlysia--local-share-chezmoi/7fac472e-8a4e-4f99-aa95-81b43e8d8974.jsonl
+
+---
+
+コミットして
+
+---
+
+n文字選択、のところは全く見えないねえというのと、ボトムシートの端っこがドラッグ出来そうで何も出来ない
+
+---
+
+今の変更の話をしてるよ
+
+---
+
+[Image: source: /Users/berlysia/Desktop/スクリーンショット 2026-02-15 23.53.54.png]
+
+---
+
+Slackに投稿する機能も持てるようにしたいな。別hookにする？
+
+---
+
+A
+
+---
+
+[Request interrupted by user for tool use]
