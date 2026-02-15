@@ -1,0 +1,36 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "e0df1b30749b",
+  "session_id": "2292514e-422f-4a8f-a9f3-71389bb4a2b7",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-15T17:33:28.62041Z",
+  "branch": "master",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "home/dot_claude/hooks/implementations/permission-llm-evaluator.ts",
+    "home/dot_claude/hooks/lib/webhook-notification.ts",
+    "home/dot_claude/hooks/lib/webhook-sender.ts",
+    "home/dot_claude/hooks/tests/unit/webhook-notification.test.ts"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "246294ba-adf0-4d4b-8542-72ef7859e2b5",
+  "checkpoint_transcript_start": 339,
+  "transcript_lines_at_start": 339,
+  "token_usage": {
+    "input_tokens": 1956,
+    "cache_creation_tokens": 40723,
+    "cache_read_tokens": 1789983,
+    "output_tokens": 1272,
+    "api_call_count": 15
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-15T17:33:28.364006Z",
+    "agent_lines": 189,
+    "human_added": 1724,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 1913,
+    "agent_percentage": 9.879769994772609
+  },
+  "transcript_path": ".claude/projects/-Users-berlysia--local-share-chezmoi/2292514e-422f-4a8f-a9f3-71389bb4a2b7.jsonl"
+}

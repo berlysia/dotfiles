@@ -1,0 +1,17 @@
+パーミッション確認がユーザーに出てないのにDiscordに通知が行っちゃってる。音声と同じようにユーザーに委ねてないものは省略してほしい
+
+---
+
+apply and commit
+
+---
+
+@home/dot_claude/hooks/implementations/permission-llm-evaluator.ts で終わらせたやつは音声ならないようにしてた気がするけど、同じ仕組みじゃないのか
+
+---
+
+PermissionRequestがユーザーに通知された後にLLMで自動承認してると思うんだけど、それの場合も通知したくないんだよね
+
+---
+
+B
