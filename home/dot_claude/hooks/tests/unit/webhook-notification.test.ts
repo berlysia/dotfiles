@@ -131,6 +131,25 @@ describe("extractFromTranscript", () => {
 });
 
 describe("buildNotification", () => {
+  describe("SessionStart event", () => {
+    it("should return info notification for session start", async () => {
+      const input: HookInput = {
+        hook_event_name: "SessionStart",
+        session_id: "a2f252b1-1234-5678-abcd-123456789012",
+        cwd: "/test",
+      };
+
+      const result = await buildNotification(input);
+      ok(result !== null, "should return notification");
+      strictEqual(result.title, "🚀 セッション開始");
+      strictEqual(result.severity, "info");
+      strictEqual(
+        result.description,
+        "新しいClaude Codeセッションが開始されました。",
+      );
+    });
+  });
+
   describe("Stop event", () => {
     it("should return success notification", async () => {
       const input: HookInput = {

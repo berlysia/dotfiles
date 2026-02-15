@@ -103,7 +103,11 @@ export async function buildNotification(
   let description = "";
   let severity: WebhookNotification["severity"] = "info";
 
-  if (eventType === "Stop") {
+  if (eventType === "SessionStart") {
+    title = "🚀 セッション開始";
+    severity = "info";
+    description = "新しいClaude Codeセッションが開始されました。";
+  } else if (eventType === "Stop") {
     // Prevent infinite loop: stop_hook_active means this was triggered by a hook
     if (input.stop_hook_active) {
       return null;
