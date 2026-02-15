@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "3715f8228bfb",
+  "strategy": "manual-commit",
+  "branch": "master",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "home/dot_config/mise/config.toml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/37/15f8228bfb/0/metadata.json",
+      "transcript": "/37/15f8228bfb/0/full.jsonl",
+      "context": "/37/15f8228bfb/0/context.md",
+      "content_hash": "/37/15f8228bfb/0/content_hash.txt",
+      "prompt": "/37/15f8228bfb/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 788,
+    "cache_creation_tokens": 58618,
+    "cache_read_tokens": 275798,
+    "output_tokens": 362,
+    "api_call_count": 6
+  }
+}
