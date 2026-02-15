@@ -1,7 +1,9 @@
 {
   "cli_version": "0.4.4",
   "checkpoint_id": "970d9524adc0",
+  "session_id": "2207cd76-a0fe-4969-ae47-83839e630fae",
   "strategy": "manual-commit",
+  "created_at": "2026-02-15T18:23:41.269185Z",
   "branch": "master",
   "checkpoints_count": 2,
   "files_touched": [
@@ -28,27 +30,22 @@
     "home/dot_claude/scripts/executable_show-missing-plugins.sh",
     "home/dot_claude/scripts/executable_sync-enabled-plugins.sh"
   ],
-  "sessions": [
-    {
-      "metadata": "/97/0d9524adc0/0/metadata.json",
-      "transcript": "/97/0d9524adc0/0/full.jsonl",
-      "context": "/97/0d9524adc0/0/context.md",
-      "content_hash": "/97/0d9524adc0/0/content_hash.txt",
-      "prompt": "/97/0d9524adc0/0/prompt.txt"
-    },
-    {
-      "metadata": "/97/0d9524adc0/1/metadata.json",
-      "transcript": "/97/0d9524adc0/1/full.jsonl",
-      "context": "/97/0d9524adc0/1/context.md",
-      "content_hash": "/97/0d9524adc0/1/content_hash.txt",
-      "prompt": "/97/0d9524adc0/1/prompt.txt"
-    }
-  ],
+  "agent": "Claude Code",
   "token_usage": {
-    "input_tokens": 1825,
-    "cache_creation_tokens": 139001,
-    "cache_read_tokens": 7311216,
-    "output_tokens": 4237,
-    "api_call_count": 92
-  }
+    "input_tokens": 75,
+    "cache_creation_tokens": 62739,
+    "cache_read_tokens": 5630675,
+    "output_tokens": 4071,
+    "api_call_count": 71
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-15T18:23:41.126923Z",
+    "agent_lines": 0,
+    "human_added": 1323,
+    "human_modified": 413,
+    "human_removed": 0,
+    "total_committed": 1323,
+    "agent_percentage": 0
+  },
+  "transcript_path": ".claude/projects/-Users-berlysia--local-share-chezmoi/2207cd76-a0fe-4969-ae47-83839e630fae.jsonl"
 }

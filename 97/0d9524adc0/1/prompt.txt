@@ -1,0 +1,116 @@
+Implement the following plan:
+
+# Plan: Claude Code Plugin Management YAML Migration
+
+## Context
+
+現在のプラグイン管理は `.settings.plugins.json`（空オブジェクト `{}`）+ `show-missing-plugins.sh`（手動コマンド表示）という半手動の仕組み。
+`claude plugin` CLIサブコマンドが `--json` 出力対応で利用可能であることが判明したため、`claude_skills.yaml` と同様のYAML宣言的管理に移行し、`chezmoi apply` 時に自動インストールする。
+
+## Step 1: Create `home/.chezmoidata/claude_plugins.yaml`
+
+YAML chezmoidata として marketplaces + plugins を宣言。
+
+```yaml
+claude_plugins:
+  marketplaces:
+    - name: claude-plugins-official
+      repo: anthropics/claude-plugins-official
+    - name: kuu-marketplace
+      repo: fumiya-kume/claude-code
+    - name: knowledge-work-plugins
+      repo: anthropics/knowledge-work-plugins
+  plugins:
+    - clarify@kuu-marketplace
+    - decomposition@kuu-marketplace
+```
+
+**Note**: `playwright@claude-plugins-official` は除外（マーケットプレイスから削除済み、errors あり）。
+
+## Step 2: Create `home/.chezmoiscripts/run_onchange_install-claude-plugins-8.sh.tmpl`
+
+`run_onchange_install-claude-skills-9.sh.tmpl` のパターンに従う。
+
+**処理フロー**:
+1. `claude` CLI 存在チェック（なければ skip）
+2. `CLAUDECODE= claude plugin marketplace list --json` で登録済みマーケットプレイス取得
+3. YAML 宣言のマーケットプレイスで未登録のものを `claude plugin marketplace add <repo>` で追加
+4. `CLAUDECODE= claude plugin list --json` でインストール済みプラグイン取得
+5. YAML 宣言のプラグインで未インストールのものを `claude plugin install <id>` でインストール
+6. `~/.claude/.managed-plugins-installed` と比較して、YAML から削除されたプラグインを `claude plugin uninstall` で自動削除
+7. 現在のプラグインリストを history file に保存
+
+**Key details**:
+- Hash: `{{ .claude_plugins | toJson | sha256sum }}` で変更検知
+- `CLAUDECODE=` prefix で Claude Code セッション内からも実行可能
+- エラー時は続行（skills script と同じパターン）
+- マーケットプレイスは追加のみ（削除は手動）
+
+## Step 3: Update `home/.chezmoiscripts/run_onchange_update-settings-json.sh.tmpl`
+
+`.settings.plugins.json` への依存を除去。`enabledPlugins` は `claude plugin install/uninstall` が直接管理する。
+
+**変更点**:
+1. Hash 行から `.settings.plugins.json` の sha256sum を削除
+2. `DOTFILES_PLUGINS` 変数の読み込みを削除（`cat .settings.plugins.json` の行）
+3. `MERGED_PLUGINS` の計算を削除（`jq -n --argjson dotfiles ... + $existing` の行）
+4. jq マージを変更:
+   - Before: `$template + {"enabledPlugins": $plugins}`（`$plugins` = dotfiles base + existing override）
+   - After: `$template + {"enabledPlugins": $plugins}`（`$plugins` = 既存 `enabledPlugins` のみ）
+   - `EXISTING_PLUGINS` 抽出は既存コードをそのまま使用
+   - 設計意図: settings.json は template から完全再構築 + `enabledPlugins` のみ既存値を保持
+5. 新規作成パス: `enabledPlugins` なしで template のみ書き込み（plugin install が後で追加）
+
+**Note**: `CLAUDECODE= claude plugin install` は settings.json の `enabledPlugins` に自動追加する。通常シェルでは `CLAUDECODE` は未設定のため no-op、Claude Code セッション内では環境変数をクリアしてネストチェックを回避する。
+
+## Step 4: Delete files
+
+- `home/.chezmoiscripts/run_onchange_after_show-missing-plugins.sh.tmpl` - 自動インストールにより不要
+- `home/dot_claude/.settings.plugins.json` - CLI が `enabledPlugins` を管理
+- `home/dot_claude/lib/plugin-utils.ts` - 未使用の custom file パスを参照、新システムでは不要
+- `home/dot_claude/lib/plugin-utils.test.ts` - 上記のテスト
+
+## Step 5: Update `home/dot_claude/scripts/executable_show-missing-plugins.sh`
+
+YAML ベースの監査ツールに変更。
+
+- `chezmoi data --format json | jq '.claude_plugins'` で宣言状態を取得
+- `CLAUDECODE= claude plugin list --json` / `marketplace list --json` で実際の状態を取得
+- 差分を表示（missing marketplaces, missing plugins, extra plugins）
+- `chezmoi apply` の post-trigger からは切り離し、手動実行の監査ツールとして維持
+
+## Step 6: Update `home/dot_claude/scripts/executable_sync-enabled-plugins.sh`
+
+インストール済みプラグインから YAML スニペットを生成する逆同期ツールに変更。
+
+- `claude plugin marketplace list --json` と `claude plugin list --json` から現在の状態を読み取り
+- `claude_plugins.yaml` 形式の YAML を出力
+- 現在の YAML との差分を表示
+
+## Step 7: Update CLAUDE.md
+
+`Settings.json分割管理` セクションと `プラグイン管理` セクションの文書を更新。
+
+## Verification
+
+1. `chezmoi diff` で変更内容を確認
+2. `chezmoi apply` を実行し、自動インストールを確認
+3. `CLAUDECODE= claude plugin list --json` でインストール状態を確認
+4. `~/.claude/settings.json` の `enabledPlugins` が保持されていることを確認
+5. 2回目の `chezmoi apply` で何も変更されないことを確認（冪等性）
+6. YAML からプラグインを削除 → `chezmoi apply` → 自動アンインストールを確認
+
+## Critical files
+
+- `home/.chezmoiscripts/run_onchange_install-claude-skills-9.sh.tmpl` - install script のパターン
+- `home/.chezmoiscripts/run_onchange_update-settings-json.sh.tmpl` - settings merge 変更対象
+- `home/.chezmoidata/claude_skills.yaml` - YAML 構造のパターン
+
+<!-- validated -->
+
+
+If you need specific details from before exiting plan mode (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/berlysia/.REDACTED.jsonl
+
+---
+
+コミットしてプッシュ
