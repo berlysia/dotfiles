@@ -1,123 +1,101 @@
 #!/bin/bash
-# Shows missing plugins and manual install instructions
+# Audit tool: compare declared plugins (YAML) vs actual state (claude CLI)
 # Usage: ~/.claude/scripts/show-missing-plugins.sh
-#
-# Compares .settings.plugins.json with installed_plugins.json
-# and displays commands to run manually in Claude Code.
-# Note: /plugin commands only work in interactive Claude Code sessions (IDE),
-#       not via CLI (-p mode).
 
 set -euo pipefail
 
-CHEZMOI_SOURCE_DIR="${CHEZMOI_SOURCE_DIR:-$(chezmoi source-path 2>/dev/null || echo "$HOME/.local/share/chezmoi/home")}"
-PLUGINS_FILE="${CHEZMOI_SOURCE_DIR}/dot_claude/.settings.plugins.json"
-INSTALLED_FILE="$HOME/.claude/plugins/installed_plugins.json"
-KNOWN_MARKETPLACES_FILE="$HOME/.claude/plugins/known_marketplaces.json"
-
-# Check if plugins file exists
-if [[ ! -f "$PLUGINS_FILE" ]]; then
-    echo "❌ .settings.plugins.json not found at $PLUGINS_FILE"
+# Check dependencies
+if ! command -v chezmoi &> /dev/null; then
+    echo "chezmoi not found"
+    exit 1
+fi
+if ! command -v claude &> /dev/null; then
+    echo "claude CLI not found"
+    exit 1
+fi
+if ! command -v jq &> /dev/null; then
+    echo "jq not found"
     exit 1
 fi
 
-# Get required plugin keys from .settings.plugins.json
-# Format: "plugin-name@marketplace"
-REQUIRED_PLUGINS=$(jq -r 'keys[]' "$PLUGINS_FILE")
-
-# Get installed plugin keys from installed_plugins.json
-if [[ -f "$INSTALLED_FILE" ]]; then
-    INSTALLED_PLUGINS=$(jq -r '.plugins // {} | keys[]' "$INSTALLED_FILE")
-else
-    INSTALLED_PLUGINS=""
+# Get declared state from chezmoi data
+DECLARED=$(chezmoi data --format json | jq '.claude_plugins // empty')
+if [ -z "$DECLARED" ]; then
+    echo "No claude_plugins found in chezmoi data"
+    exit 1
 fi
 
-# Find missing plugins
-MISSING=()
-while IFS= read -r plugin; do
-    [[ -z "$plugin" ]] && continue
-    if ! echo "$INSTALLED_PLUGINS" | grep -qxF "$plugin"; then
-        MISSING+=("$plugin")
+# Get actual state from claude CLI
+ACTUAL_MARKETPLACES=$(CLAUDECODE='' claude plugin marketplace list --json 2>/dev/null || echo '[]')
+ACTUAL_PLUGINS=$(CLAUDECODE='' claude plugin list --json 2>/dev/null || echo '[]')
+
+# ─── Check marketplaces ───
+
+MISSING_MARKETPLACES=()
+while IFS= read -r name; do
+    [ -z "$name" ] && continue
+    if ! echo "$ACTUAL_MARKETPLACES" | jq -e ".[] | select(.name == \"$name\")" >/dev/null 2>&1; then
+        MISSING_MARKETPLACES+=("$name")
     fi
-done <<< "$REQUIRED_PLUGINS"
+done < <(echo "$DECLARED" | jq -r '.marketplaces[].name')
 
-# Output results
-if [[ ${#MISSING[@]} -eq 0 ]]; then
-    echo "✅ All required plugins are installed!"
-    exit 0
-fi
+# ─── Check plugins ───
 
-# Get registered marketplaces from known_marketplaces.json
-REGISTERED_MARKETPLACES=""
-if [[ -f "$KNOWN_MARKETPLACES_FILE" ]]; then
-    REGISTERED_MARKETPLACES=$(jq -r 'keys[]' "$KNOWN_MARKETPLACES_FILE" 2>/dev/null || echo "")
-fi
-
-# Collect unique marketplaces needed for missing plugins (using regular array)
-MARKETPLACES=()
-for plugin in "${MISSING[@]}"; do
-    marketplace="${plugin##*@}"
-    # Only add if not already registered and not already in list
-    if ! echo "$REGISTERED_MARKETPLACES" | grep -qxF "$marketplace"; then
-        # Check if already in MARKETPLACES array
-        already_added=false
-        for m in "${MARKETPLACES[@]+"${MARKETPLACES[@]}"}"; do
-            if [[ "$m" == "$marketplace" ]]; then
-                already_added=true
-                break
-            fi
-        done
-        if [[ "$already_added" == "false" ]]; then
-            MARKETPLACES+=("$marketplace")
-        fi
+MISSING_PLUGINS=()
+while IFS= read -r id; do
+    [ -z "$id" ] && continue
+    if ! echo "$ACTUAL_PLUGINS" | jq -e ".[] | select(.id == \"$id\")" >/dev/null 2>&1; then
+        MISSING_PLUGINS+=("$id")
     fi
-done
+done < <(echo "$DECLARED" | jq -r '.plugins[]')
 
-echo "📦 Missing plugins (${#MISSING[@]}):"
-for plugin in "${MISSING[@]}"; do
-    name="${plugin%@*}"
-    marketplace="${plugin##*@}"
-    echo "   - $name ($marketplace)"
-done
-echo ""
+# ─── Check extra plugins (installed but not declared) ───
 
-# Helper function to get repo name from marketplace
-get_repo_name() {
-    local marketplace="$1"
-    if [[ "$marketplace" == "claude-code-plugins" ]]; then
-        echo "anthropics/claude-code"
-    else
-        echo "$marketplace"
+DECLARED_PLUGIN_LIST=$(echo "$DECLARED" | jq -r '.plugins[]')
+EXTRA_PLUGINS=()
+while IFS= read -r id; do
+    [ -z "$id" ] && continue
+    if ! echo "$DECLARED_PLUGIN_LIST" | grep -qxF "$id"; then
+        EXTRA_PLUGINS+=("$id")
     fi
-}
+done < <(echo "$ACTUAL_PLUGINS" | jq -r '.[].id')
 
-# Show marketplace registration commands if needed
-if [[ ${#MARKETPLACES[@]} -gt 0 ]]; then
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "📋 Step 1: Register marketplaces (run in Claude Code):"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-    for marketplace in "${MARKETPLACES[@]}"; do
-        echo "    /plugin marketplace add $(get_repo_name "$marketplace")"
+# ─── Output results ───
+
+ALL_OK=true
+
+if [ ${#MISSING_MARKETPLACES[@]} -gt 0 ]; then
+    ALL_OK=false
+    echo "Missing marketplaces (${#MISSING_MARKETPLACES[@]}):"
+    for m in "${MISSING_MARKETPLACES[@]}"; do
+        echo "  - $m"
     done
     echo ""
 fi
 
-# Show plugin install commands
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-if [[ ${#MARKETPLACES[@]} -gt 0 ]]; then
-    echo "📋 Step 2: Install plugins (run in Claude Code):"
-else
-    echo "📋 Install plugins (run in Claude Code):"
+if [ ${#MISSING_PLUGINS[@]} -gt 0 ]; then
+    ALL_OK=false
+    echo "Missing plugins (${#MISSING_PLUGINS[@]}):"
+    for p in "${MISSING_PLUGINS[@]}"; do
+        echo "  - $p"
+    done
+    echo ""
+    echo "Run 'chezmoi apply' to install missing plugins."
+    echo ""
 fi
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-for plugin in "${MISSING[@]}"; do
-    name="${plugin%@*}"
-    marketplace="${plugin##*@}"
-    if [[ "$marketplace" == "claude-code-plugins" ]]; then
-        echo "    /plugin install ${name}@anthropics/claude-code"
-    else
-        echo "    /plugin install $plugin"
-    fi
-done
-echo ""
+
+if [ ${#EXTRA_PLUGINS[@]} -gt 0 ]; then
+    ALL_OK=false
+    echo "Extra plugins not in YAML (${#EXTRA_PLUGINS[@]}):"
+    for p in "${EXTRA_PLUGINS[@]}"; do
+        echo "  - $p"
+    done
+    echo ""
+    echo "To track these, add them to home/.chezmoidata/claude_plugins.yaml"
+    echo "Or run ~/.claude/scripts/sync-enabled-plugins.sh to generate YAML."
+    echo ""
+fi
+
+if $ALL_OK; then
+    echo "All declared plugins are installed. No extra plugins found."
+fi

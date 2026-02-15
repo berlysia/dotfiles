@@ -1,8 +1,8 @@
 {{ if ne .chezmoi.os "windows" -}}
 #!/bin/bash
 # Update ~/.claude/settings.json by merging chezmoi template changes
-# Merge strategy for enabledPlugins: existing values take precedence, new plugins from dotfiles are added
-# Hash: {{ include "dot_claude/.settings.base.json" | sha256sum }}{{ include "dot_claude/.settings.permissions.json" | sha256sum }}{{ include "dot_claude/.settings.hooks.json.tmpl" | sha256sum }}{{ include "dot_claude/.settings.plugins.json" | sha256sum }}
+# enabledPlugins is managed by claude plugin CLI, existing values are preserved
+# Hash: {{ include "dot_claude/.settings.base.json" | sha256sum }}{{ include "dot_claude/.settings.permissions.json" | sha256sum }}{{ include "dot_claude/.settings.hooks.json.tmpl" | sha256sum }}
 
 set -euo pipefail
 
@@ -14,7 +14,6 @@ SOURCE_DIR="{{ .chezmoi.sourceDir }}"
 # Read component files
 BASE_CONTENT=$(cat "${SOURCE_DIR}/dot_claude/.settings.base.json")
 PERMISSIONS_CONTENT=$(cat "${SOURCE_DIR}/dot_claude/.settings.permissions.json")
-DOTFILES_PLUGINS=$(cat "${SOURCE_DIR}/dot_claude/.settings.plugins.json")
 
 # Process hooks template with chezmoi
 HOOKS_CONTENT=$(chezmoi execute-template < "${SOURCE_DIR}/dot_claude/.settings.hooks.json.tmpl")
@@ -30,9 +29,8 @@ TEMPLATE_CONTENT=$(jq -n \
 if [[ ! -f "$TARGET_FILE" ]]; then
     echo "Creating new ~/.claude/settings.json..."
     mkdir -p "$(dirname "$TARGET_FILE")"
-    # Use dotfiles plugins for new installation
-    jq --argjson template "$TEMPLATE_CONTENT" --argjson plugins "$DOTFILES_PLUGINS" \
-        '$template + {"enabledPlugins": $plugins}' <<< '{}' > "$TARGET_FILE"
+    # enabledPlugins will be populated by claude plugin install
+    echo "$TEMPLATE_CONTENT" | jq '.' > "$TARGET_FILE"
     echo "~/.claude/settings.json created successfully"
     exit 0
 fi
@@ -57,15 +55,8 @@ fi
 # Create backup
 cp "$TARGET_FILE" "$BACKUP_FILE"
 
-# Extract enabledPlugins from existing file
+# Extract enabledPlugins from existing file (managed by claude plugin CLI)
 EXISTING_PLUGINS=$(jq '.enabledPlugins // {}' "$TARGET_FILE")
-
-# Merge enabledPlugins: dotfiles as base, existing values take precedence
-# This allows:
-# - New plugins from dotfiles to be added with their default values
-# - Existing plugin states (enabled/disabled by Claude Code) to be preserved
-MERGED_PLUGINS=$(jq -n --argjson dotfiles "$DOTFILES_PLUGINS" --argjson existing "$EXISTING_PLUGINS" \
-    '$dotfiles + $existing')
 
 # Merge JSONs using jq
 # Strategy:
@@ -73,9 +64,9 @@ MERGED_PLUGINS=$(jq -n --argjson dotfiles "$DOTFILES_PLUGINS" --argjson existing
 # - hooks: use template value (dotfiles managed)
 # - statusLine: use template value (dotfiles managed)
 # - alwaysThinkingEnabled: use template value (dotfiles managed)
-# - enabledPlugins: merge (dotfiles base + existing overrides)
+# - enabledPlugins: preserve existing values (managed by claude plugin CLI)
 # - All other fields in base: use template value
-jq --argjson template "$TEMPLATE_CONTENT" --argjson plugins "$MERGED_PLUGINS" '
+jq --argjson template "$TEMPLATE_CONTENT" --argjson plugins "$EXISTING_PLUGINS" '
     $template + {"enabledPlugins": $plugins}
 ' "$TARGET_FILE" > "$TEMP_FILE"
 

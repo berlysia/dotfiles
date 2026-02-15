@@ -1,0 +1,115 @@
+{{ if ne .chezmoi.os "windows" -}}
+#!/bin/bash
+# Install Claude Code plugins via claude CLI
+# Hash: {{ .claude_plugins | toJson | sha256sum }}
+
+set -euo pipefail
+
+log() {
+    local level="${2:-INFO}"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $1"
+}
+
+# Check if claude CLI is available
+if ! command -v claude &> /dev/null; then
+    log "claude CLI not found. Skipping plugin installation." "WARNING"
+    exit 0
+fi
+
+HISTORY_FILE="$HOME/.claude/.managed-plugins-installed"
+
+# ─── Step 1: Register marketplaces ───
+
+log "Checking marketplace registrations..."
+
+# Get currently registered marketplaces
+REGISTERED_MARKETPLACES=$(CLAUDECODE='' claude plugin marketplace list --json 2>/dev/null || echo '[]')
+
+{{ range .claude_plugins.marketplaces -}}
+# Check if {{ .name }} is registered
+if echo "$REGISTERED_MARKETPLACES" | jq -e '.[] | select(.name == "{{ .name }}")' >/dev/null 2>&1; then
+    log "Marketplace already registered: {{ .name }}"
+else
+    log "Registering marketplace: {{ .name }} ({{ .repo }})"
+    if CLAUDECODE='' claude plugin marketplace add "{{ .repo }}" 2>&1; then
+        log "Successfully registered: {{ .name }}" "SUCCESS"
+    else
+        log "Failed to register marketplace: {{ .name }} (continuing...)" "ERROR"
+    fi
+fi
+{{ end -}}
+
+# ─── Step 2: Install plugins ───
+
+log "Checking plugin installations..."
+
+# Get currently installed plugins
+INSTALLED_PLUGINS=$(CLAUDECODE='' claude plugin list --json 2>/dev/null || echo '[]')
+
+# Build current plugin list from YAML
+CURRENT_PLUGINS=()
+{{ range .claude_plugins.plugins -}}
+CURRENT_PLUGINS+=("{{ . }}")
+{{ end -}}
+
+# Install missing plugins
+{{ range .claude_plugins.plugins -}}
+if echo "$INSTALLED_PLUGINS" | jq -e '.[] | select(.id == "{{ . }}")' >/dev/null 2>&1; then
+    log "Plugin already installed: {{ . }}"
+else
+    log "Installing plugin: {{ . }}"
+    if CLAUDECODE='' claude plugin install "{{ . }}" 2>&1; then
+        log "Successfully installed: {{ . }}" "SUCCESS"
+    else
+        log "Failed to install plugin: {{ . }} (continuing...)" "ERROR"
+    fi
+fi
+{{ end -}}
+
+# ─── Step 3: Remove plugins deleted from YAML ───
+
+if [ -f "$HISTORY_FILE" ]; then
+    PREVIOUS_PLUGINS=()
+    while IFS= read -r line; do
+        [ -n "$line" ] && PREVIOUS_PLUGINS+=("$line")
+    done < "$HISTORY_FILE"
+
+    REMOVED_PLUGINS=()
+    for prev_plugin in "${PREVIOUS_PLUGINS[@]}"; do
+        [ -z "$prev_plugin" ] && continue
+
+        found=false
+        for curr_plugin in "${CURRENT_PLUGINS[@]}"; do
+            if [ "$prev_plugin" = "$curr_plugin" ]; then
+                found=true
+                break
+            fi
+        done
+
+        if ! $found; then
+            REMOVED_PLUGINS+=("$prev_plugin")
+        fi
+    done
+
+    if [ ${#REMOVED_PLUGINS[@]} -gt 0 ]; then
+        echo ""
+        log "Detected removed plugins from claude_plugins.yaml:" "WARNING"
+        echo ""
+        for plugin in "${REMOVED_PLUGINS[@]}"; do
+            log "Uninstalling: $plugin" "WARNING"
+            if CLAUDECODE='' claude plugin uninstall "$plugin" 2>&1; then
+                log "Uninstalled: $plugin" "SUCCESS"
+            else
+                log "Failed to uninstall: $plugin (continuing...)" "ERROR"
+            fi
+        done
+        echo ""
+    fi
+fi
+
+# ─── Save current plugin list for next run ───
+
+printf "%s\n" "${CURRENT_PLUGINS[@]}" > "$HISTORY_FILE"
+
+log "Plugin installation completed"
+{{ end -}}

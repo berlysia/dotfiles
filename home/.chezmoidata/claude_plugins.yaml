@@ -1,0 +1,11 @@
+claude_plugins:
+    marketplaces:
+        - name: claude-plugins-official
+          repo: anthropics/claude-plugins-official
+        - name: kuu-marketplace
+          repo: fumiya-kume/claude-code
+        - name: knowledge-work-plugins
+          repo: anthropics/knowledge-work-plugins
+    plugins:
+        - clarify@kuu-marketplace
+        - decomposition@kuu-marketplace

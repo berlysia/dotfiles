@@ -29,10 +29,9 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
   - `.settings.base.json`: 基本設定（model、language、statusLine、alwaysThinkingEnabled等）
   - `.settings.permissions.json`: パーミッション設定（allow/deny）
   - `.settings.hooks.json.tmpl`: Hooks設定（chezmoi変数で動的生成）
-  - `.settings.plugins.json`: プラグイン設定（enabledPlugins）
   - これらは`run_onchange_update-settings-json.sh.tmpl`でjq統合され、`chezmoi apply`時に自動更新
   - **重要**: hooks設定を変更する場合は`.settings.hooks.json.tmpl`を編集してから`chezmoi apply`を実行
-  - 既存の`enabledPlugins`設定は保持される（ユーザーの手動変更を上書きしない）
+  - `enabledPlugins`は`claude plugin` CLIが管理し、既存値はsettings.json更新時に保持される
 
 - **~/.claude.json自動管理**: MCPサーバー設定を`package.json`のバージョンから自動生成
   - `run_onchange_update-claude-json.sh.tmpl`が`package.json`の`dependencies`からバージョンを読み取る
@@ -41,11 +40,12 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
   - **管理対象MCPサーバー**: @mizchi/readability, chrome-devtools-mcp, @playwright/mcp, @upstash/context7-mcp, @openai/codex
   - **バージョン更新方法**: `package.json`のdependenciesを編集してから`chezmoi apply`を実行
 
-- **プラグイン管理**: `.settings.plugins.json`で宣言的に管理、不足プラグインを自動検出
-  - `chezmoi apply`後に`show-missing-plugins.sh`が実行され、不足プラグインを検出
-  - マーケットプレイス登録コマンドとインストールコマンドを表示
-  - **逆同期**: `~/.claude/scripts/sync-enabled-plugins.sh`でsettings.json → dotfilesへの同期も可能
-  - プラグインの有効/無効化をClaude Code IDEで行った後、このスクリプトでdotfilesに反映できる
+- **プラグイン管理**: `home/.chezmoidata/claude_plugins.yaml`で宣言的に管理、`chezmoi apply`時に自動インストール
+  - `run_onchange_install-claude-plugins-8.sh.tmpl`が`claude plugin` CLIでマーケットプレイス登録・プラグインインストール・削除を実行
+  - `.claude/.managed-plugins-installed`でインストール済みプラグインを追跡
+  - YAMLから削除されたプラグインは自動アンインストール
+  - **監査ツール**: `~/.claude/scripts/show-missing-plugins.sh`で宣言状態と実際の状態を比較
+  - **逆同期**: `~/.claude/scripts/sync-enabled-plugins.sh`でインストール済みプラグインからYAMLスニペットを生成
 
 ### Claude Code Skills Management
 
