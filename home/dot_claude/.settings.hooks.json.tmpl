@@ -127,6 +127,11 @@
         },
         {
           "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/discord-notification.ts",
+          "async": true
+        },
+        {
+          "type": "command",
           "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'",
           "async": true
         }
@@ -140,6 +145,11 @@
         {
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/speak-notification.ts Notification",
+          "async": true
+        },
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/discord-notification.ts",
           "async": true
         },
         {
