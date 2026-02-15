@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "970d9524adc0",
+  "session_id": "512a4828-8414-4c6d-8e58-2fcb527052be",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-15T18:23:17.123955Z",
+  "branch": "master",
+  "checkpoints_count": 0,
+  "files_touched": [
+    ".claude/plans/humble-leaping-matsumoto-agent-a360a20.md",
+    ".claude/plans/humble-leaping-matsumoto.md"
+  ],
+  "agent": "Claude Code",
+  "token_usage": {
+    "input_tokens": 1750,
+    "cache_creation_tokens": 76262,
+    "cache_read_tokens": 1680541,
+    "output_tokens": 166,
+    "api_call_count": 21
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-15T18:23:16.8456Z",
+    "agent_lines": 0,
+    "human_added": 0,
+    "human_modified": 276,
+    "human_removed": 131,
+    "total_committed": 276,
+    "agent_percentage": 0
+  },
+  "transcript_path": ".claude/projects/-Users-berlysia--local-share-chezmoi/512a4828-8414-4c6d-8e58-2fcb527052be.jsonl"
+}

@@ -1,0 +1,5 @@
+`claude plugin marketplace add anthropics/knowledge-work-plugins` `claude plugin install sales@knowledge-work-plugins` みたいなコマンドを実行するようにしてプラグインとマーケットプレイスの情報をdotfiles管理できないかな
+
+---
+
+[Request interrupted by user for tool use]

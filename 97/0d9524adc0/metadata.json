@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "970d9524adc0",
+  "strategy": "manual-commit",
+  "branch": "master",
+  "checkpoints_count": 0,
+  "files_touched": [
+    ".claude/plans/humble-leaping-matsumoto-agent-a360a20.md",
+    ".claude/plans/humble-leaping-matsumoto.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/97/0d9524adc0/0/metadata.json",
+      "transcript": "/97/0d9524adc0/0/full.jsonl",
+      "context": "/97/0d9524adc0/0/context.md",
+      "content_hash": "/97/0d9524adc0/0/content_hash.txt",
+      "prompt": "/97/0d9524adc0/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1750,
+    "cache_creation_tokens": 76262,
+    "cache_read_tokens": 1680541,
+    "output_tokens": 166,
+    "api_call_count": 21
+  }
+}
