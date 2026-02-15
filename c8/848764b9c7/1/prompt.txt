@@ -1,0 +1,172 @@
+Implement the following plan:
+
+# 計画: 外部通知の共通化 + Slack通知追加
+
+## Context
+
+Discord通知hookに蓄積されたイベント処理ロジック（Stop/PermissionRequest/Notification分岐、
+transcript抽出、permission_prompt重複排除、footer構築）をプラットフォーム中立な共通モジュールに
+抽出し、Discord/Slackを薄いアダプターとして実装する。
+
+**動機**: Slack通知を追加したいが、イベント処理ロジックをコピーすると変更時に2箇所修正が必要になる。
+
+## 共通インターフェース設計
+
+```typescript
+// home/dot_claude/hooks/lib/webhook-notification.ts
+
+/** プラットフォーム中立な通知メッセージ */
+interface WebhookNotification {
+  title: string;        // "✅ 返信完了", "🔑 パーミッション確認", etc.
+  description: string;  // transcript summary, tool_name info, etc.
+  severity: "success" | "warning" | "info" | "muted";  // color mapping は各adapter側
+  footer: string;       // "📁 dotfiles  |  🔑 a2f252b"
+}
+
+/** イベント入力 → 通知メッセージ変換。null = スキップすべき */
+async function buildNotification(input: HookInput): Promise<WebhookNotification | null>;
+
+/** JSONL transcriptから最後のメッセージを抽出（Stop用） */
+async function extractFromTranscript(path: string, role: string, limit: number): Promise<string>;
+```
+
+## 変更一覧
+
+### Task 1: 共通モジュール `webhook-notification.ts` 作成
+
+**ファイル**: `home/dot_claude/hooks/lib/webhook-notification.ts` (新規)
+
+discord-notification.ts から以下を抽出:
+- `extractFromTranscript()` — そのまま移動
+- `buildNotification(input)` — 新規。イベント分岐ロジック全体を包含:
+  - Stop: `stop_hook_active` チェック → transcript抽出 → severity: `"success"`
+  - PermissionRequest: `tool_name` 取得 → severity: `"warning"`
+  - Notification: `permission_prompt` スキップ(null返却)、`idle_prompt` → `"muted"`、other → `"info"`
+  - footer構築: `getGitContext()` + sessionId
+- `WebhookNotification` 型と `HookInput` 型をexport
+
+**入力型 `HookInput`**:
+```typescript
+interface HookInput {
+  hook_event_name: string;
+  session_id?: string;
+  cwd?: string;
+  notification_type?: NotificationType;
+  message?: string;
+  transcript_path?: string;
+  stop_hook_active?: boolean;
+  tool_name?: string;
+}
+```
+
+### Task 2: discord-notification.ts をアダプター化
+
+**ファイル**: `home/dot_claude/hooks/implementations/discord-notification.ts`
+
+- イベント分岐ロジック・transcript抽出・footer構築を削除し、`buildNotification()` を呼ぶだけに
+- 残る責務: env varチェック、`severity → Discord color`マッピング、embed構築、webhook送信
+- `COLORS` マッピング: `success→green`, `warning→orange`, `muted→grey`, `info→blue`
+- `sendDiscordEmbed()` はそのまま残す（Discord API固有）
+
+**リファクタ後の骨格**:
+```typescript
+const notification = await buildNotification(context.input as HookInput);
+if (!notification) return context.success({});
+
+const embed = {
+  title: notification.title,
+  description: notification.description,
+  color: SEVERITY_TO_COLOR[notification.severity],
+  ...(notification.footer ? { footer: { text: notification.footer } } : {}),
+};
+await sendDiscordEmbed(webhookUrl, embed);
+```
+
+### Task 3: slack-notification.ts 新規作成
+
+**ファイル**: `home/dot_claude/hooks/implementations/slack-notification.ts` (新規)
+
+- 環境変数: `CLAUDE_SLACK_WEBHOOK_URL`（未設定時はsilent skip）
+- `buildNotification()` を呼び、Slack attachment形式に変換
+- Slack attachment は Discord embed と概念が近い（color, text, footer）
+
+**Slack webhook payload**:
+```typescript
+{
+  attachments: [{
+    color: SEVERITY_TO_HEX[notification.severity],  // "#2EB67D" etc.
+    text: `*${notification.title}*\n${notification.description}`,
+    footer: notification.footer,
+  }]
+}
+```
+
+**色マッピング**:
+- `success` → `"#2EB67D"` (Slack green)
+- `warning` → `"#E0A500"` (Slack orange)
+- `muted` → `"#959595"` (grey)
+- `info` → `"#36C5F0"` (Slack blue)
+
+**trigger/error handling**: discord-notification.ts と同じパターン。
+
+### Task 4: hooks config 更新
+
+**ファイル**: `home/dot_claude/.settings.hooks.json.tmpl`
+
+3つのイベントセクション（Stop, Notification, PermissionRequest）にslack-notification.tsをasync hookとして追加。discord-notificationの隣に配置。
+
+### Task 5: 共通モジュールのユニットテスト
+
+**ファイル**: `home/dot_claude/hooks/tests/unit/webhook-notification.test.ts` (新規)
+
+- `buildNotification()` の各イベントパターンをテスト:
+  - Stop → success notification with transcript
+  - Stop (stop_hook_active) → null
+  - PermissionRequest → warning notification with tool_name
+  - Notification (permission_prompt) → null (スキップ)
+  - Notification (idle_prompt) → muted notification
+  - Notification (other) → info notification
+- `extractFromTranscript()` のテスト（既存discord testから移植可能）
+- 既存の `test-helpers.ts` を活用
+
+## 対象ファイル一覧
+
+| ファイル | 変更 |
+|---------|------|
+| `home/dot_claude/hooks/lib/webhook-notification.ts` | 新規: 共通イベント処理ロジック |
+| `home/dot_claude/hooks/implementations/discord-notification.ts` | リファクタ: 薄いアダプター化 |
+| `home/dot_claude/hooks/implementations/slack-notification.ts` | 新規: Slackアダプター |
+| `home/dot_claude/.settings.hooks.json.tmpl` | Slack hook登録 |
+| `home/dot_claude/hooks/tests/unit/webhook-notification.test.ts` | 新規: 共通ロジックのテスト |
+
+## 再利用する既存機能
+
+- `hooks/lib/git-context.ts`: `getGitContext()` — footer構築（共通モジュールで使用）
+- `hooks/lib/centralized-logging.ts`: `logEvent()` — エラーログ（各adapterで使用）
+- `lib/notification-messages.ts`: `NotificationType` 型
+
+## 設計判断の根拠
+
+- **footer生成を共通モジュールに含める理由**: Discord embed footerもSlack attachment footerもプレーンテキスト。`getGitContext()`は両platform共通の情報であり、adapter側で重複させる理由がない
+- **permission_prompt重複排除が共通にある理由**: `PermissionRequest` → `Notification(permission_prompt)` と順次発火するイベントフロー（前回計画で検証済み）。この排除ロジックはプラットフォーム問わず必要
+- **stop_hook_active スキップ**: Claude Codeがhook起因のStopイベントに付与するフラグ。通知hookが無限ループするのを防ぐ
+- **エラー時 context.success({})**: 通知はbest-effort。webhook失敗がClaude Codeのメイン処理を妨げてはならない
+- **複数platform同時利用**: 各hookは独立asyncで実行。片方の失敗はもう一方に影響しない
+
+## 検証方法
+
+1. **型チェック**: `pnpm typecheck` パス
+2. **ユニットテスト**: `bun test home/dot_claude/hooks/tests/unit/webhook-notification.test.ts` パス
+3. **既存テスト回帰**: `bun test home/dot_claude/hooks/tests/unit/` 全パス
+4. **Discord動作確認**: 既存動作が変わらないことを手動確認
+5. **Slack動作確認**: `CLAUDE_SLACK_WEBHOOK_URL` 設定時にattachmentが届くことを確認
+6. **chezmoi apply**: テンプレート → settings.json 反映確認
+
+<!-- validated -->
+
+
+If you need specific details from before exiting plan mode (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/berlysia/.REDACTED.jsonl
+
+---
+
+コミットして

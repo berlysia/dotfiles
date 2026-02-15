@@ -1,0 +1,43 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "c8848764b9c7",
+  "session_id": "59a6a09a-de2b-406b-b5d7-12cfb04ccb07",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-15T16:28:09.86098Z",
+  "branch": "master",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".claude/plans/expressive-scribbling-sphinx-agent-a3478a3.md",
+    ".claude/plans/expressive-scribbling-sphinx.md",
+    ".claude/plans/hazy-brewing-floyd.md",
+    ".claude/plans/squishy-wobbling-harbor.md",
+    ".claude/settings.local.json",
+    ".claude/tmp/current_changes.patch",
+    ".claude/tmp/final_check.patch",
+    "home/.claude/plans/jazzy-toasting-lerdorf-agent-ae41aaf.md",
+    "home/.claude/plans/jazzy-toasting-lerdorf.md",
+    "home/dot_claude/.settings.hooks.json.tmpl",
+    "home/dot_claude/hooks/implementations/discord-notification.ts",
+    "home/dot_claude/hooks/implementations/slack-notification.ts",
+    "home/dot_claude/hooks/lib/webhook-notification.ts",
+    "home/dot_claude/hooks/tests/unit/webhook-notification.test.ts"
+  ],
+  "agent": "Claude Code",
+  "token_usage": {
+    "input_tokens": 3698,
+    "cache_creation_tokens": 64369,
+    "cache_read_tokens": 2896039,
+    "output_tokens": 3253,
+    "api_call_count": 34
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-15T16:28:09.727358Z",
+    "agent_lines": 606,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 153,
+    "total_committed": 606,
+    "agent_percentage": 100
+  },
+  "transcript_path": ".claude/projects/-Users-berlysia--local-share-chezmoi/59a6a09a-de2b-406b-b5d7-12cfb04ccb07.jsonl"
+}
