@@ -5,5 +5,8 @@
 {{- end }}
 {{- end }}
 
+[data]
+only_private = {{ has .chezmoi.hostname (list "CITRINE" "BIXBITE") }}
+
 [onepassword]
 prompt = false
