@@ -1,7 +1,9 @@
 {
   "cli_version": "0.4.4",
   "checkpoint_id": "4b7d98c4f35f",
+  "session_id": "976b440e-9562-4c8b-b38e-4569bd21a972",
   "strategy": "manual-commit",
+  "created_at": "2026-02-16T06:54:39.416682Z",
   "branch": "master",
   "checkpoints_count": 1,
   "files_touched": [
@@ -25,27 +27,22 @@
     "home/.claude/plans/jazzy-toasting-lerdorf-agent-ae41aaf.md",
     "home/.claude/plans/jazzy-toasting-lerdorf.md"
   ],
-  "sessions": [
-    {
-      "metadata": "/4b/7d98c4f35f/0/metadata.json",
-      "transcript": "/4b/7d98c4f35f/0/full.jsonl",
-      "context": "/4b/7d98c4f35f/0/context.md",
-      "content_hash": "/4b/7d98c4f35f/0/content_hash.txt",
-      "prompt": "/4b/7d98c4f35f/0/prompt.txt"
-    },
-    {
-      "metadata": "/4b/7d98c4f35f/1/metadata.json",
-      "transcript": "/4b/7d98c4f35f/1/full.jsonl",
-      "context": "/4b/7d98c4f35f/1/context.md",
-      "content_hash": "/4b/7d98c4f35f/1/content_hash.txt",
-      "prompt": "/4b/7d98c4f35f/1/prompt.txt"
-    }
-  ],
+  "agent": "Claude Code",
   "token_usage": {
-    "input_tokens": 591,
-    "cache_creation_tokens": 168527,
-    "cache_read_tokens": 4114657,
-    "output_tokens": 1660,
-    "api_call_count": 55
-  }
+    "input_tokens": 38,
+    "cache_creation_tokens": 109921,
+    "cache_read_tokens": 2369202,
+    "output_tokens": 1465,
+    "api_call_count": 32
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-16T06:54:39.325707Z",
+    "agent_lines": 664,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 566,
+    "total_committed": 664,
+    "agent_percentage": 100
+  },
+  "transcript_path": ".claude/projects/-Users-berlysia--local-share-chezmoi/976b440e-9562-4c8b-b38e-4569bd21a972.jsonl"
 }

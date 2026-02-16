@@ -1,0 +1,184 @@
+Implement the following plan:
+
+# ADR マスターセット - dotfiles への導入計画
+
+## Context
+
+kanbun-annotation プロジェクトで運用している ADR frontmatter 管理（YAML frontmatter による状態管理 + TypeScript スクリプトによる可視化・依存分析）を、dotfiles でマスターとして汎用化する。
+
+**目的**: どのプロジェクトでも ADR frontmatter 運用を即座に始められるようにする。
+
+**設計方針**: TypeScript スクリプト（`adr-status.ts`, `adr-deps.ts`, `adr-parser.ts`）をそのまま持ち出すのではなく、Claude Code 自身がファイルを読んで解析する形にする。これにより Node.js ランタイムやプロジェクト固有のスクリプトセットアップが不要になり、`docs/decisions/` ディレクトリさえあればどこでも動作する。
+
+## 成果物一覧
+
+| ファイル | 種類 | 行数目安 |
+|---------|------|---------|
+| `.skills/adr-session/SKILL.md` | スキル本体 | ~200行 |
+| `.skills/adr-session/references/adr-schema.md` | スキーマ定義 | ~80行 |
+| `.skills/adr-session/references/adr-template.md` | ADR テンプレート | ~30行 |
+| `.skills/adr-session/references/plan-template.md` | Plan テンプレート | ~35行 |
+| `.skills/adr-migrate/SKILL.md` | マイグレーションスキル | ~130行 |
+
+計 5 ファイル。既存ファイルの変更なし。
+
+## 1. `.skills/adr-session/SKILL.md`
+
+**context: inherit** — セッション作業の継続が前提。
+
+### フロントマター
+```yaml
+---
+name: adr-session
+description: "Start or resume an ADR session. Without number: show status overview and recommend next actionable ADR. With number: provide phase-specific guidance. Trigger: /adr-session, /adr-session NNN, /adr-session new"
+context: inherit
+---
+```
+
+### 構成
+
+1. **引数のモード分岐**
+   - 引数なし: ステータス概要モード
+   - `NNN`: セッションモード（特定ADR）
+   - `new`: 新規ADR作成モード
+
+2. **ステータス概要モード**（引数なし）
+   - `Glob` で `docs/decisions/adr-*.md` を走査
+   - ADRがない場合: ディレクトリ構造の作成を提案
+   - 各ファイルの frontmatter を読み、`references/adr-schema.md` のルールに従って phase を判定
+   - frontmatter が不正な場合（YAML パースエラー、無効な status 値）: 警告表示し、そのファイルはスキップ
+   - ステータステーブル表示（#, Title, Status, Plan, Phase）
+   - Actionable ADR のフィルタリング（deps がすべて Complete、循環依存を検出した場合は警告）
+   - 次に着手すべき ADR を推薦
+
+3. **セッションモード**（`NNN` 指定）
+   - 対象 ADR を読み込み、要約表示
+   - deps チェック: 依存 ADR が Complete でなければ警告
+   - phase に応じたガイダンス:
+     - `investigation`: 調査セッション。ADR の内容を充実させ、status を Accepted に更新。**完了時に logic-validator で ADR の論理的整合性を検証**
+     - `planning`: Plan Mode の使用を促す、plan-template.md を参照に提供
+     - `validation`: `/validate-plan` の使用を促す
+     - `implementation`: Plan に従って実装、必要なら `/decompose`, `/execute-plan` を紹介
+     - `done`: 完了済み表示
+   - `.tmp/session-memos/` で関連メモを検索（`ADR-{NNN}` を含むもの）
+   - セッション終了時に `/session-memo` の使用を推奨
+
+4. **新規ADR作成モード**（`new`）
+   - 既存ADRの最大番号 + 1 で番号を採番
+   - ユーザーにタイトルを質問（AskUserQuestion）
+   - `references/adr-template.md` を読んで、番号・タイトルを埋めて作成
+   - 必要なら `docs/decisions/` と `docs/plans/` ディレクトリも作成
+   - ADR 内容を充実させた後、**logic-validator で検証を促す**（investigation → Accepted への遷移時）
+
+5. **他スキルとの連携**
+   - `logic-validator`: ADR 作成・更新後の論理検証（investigation phase 完了時）
+   - `/validate-plan`: Plan の検証（validation phase）
+   - `/session-memo`: セッション終了時
+   - `/decompose`, `/execute-plan`: implementation phase
+   - `/scope-guard`: ADR のスコープが大きすぎる場合
+
+## 2. `.skills/adr-session/references/adr-schema.md`
+
+ADR frontmatter のスキーマ定義と運用ルールをまとめたリファレンス。
+
+### 内容
+- **Frontmatter スキーマ**: status, deps, plan, substatus の各フィールド定義
+- **Status 値**: Proposed / Accepted / InProgress / Complete の意味
+- **Phase 判定ロジック**: status + plan 有無 + validation 状態 → phase
+- **Actionable 判定**: deps がすべて Complete（または deps なし）かつ自身が Complete でない
+- **循環依存の検出**: deps グラフを走査し、サイクルがあれば警告（関与する ADR 番号を列挙）
+- **エラーハンドリング**: frontmatter の YAML パースエラー、無効な status 値 → 警告してスキップ
+- **ファイル命名規約**: `adr-NNN-{slug}.md`, `plan-{slug}.md`
+- **双方向リンク規約**: ADR ↔ Plan の相互参照
+- **Plan validation マーカー**: `<!-- validated -->`
+- **ワークフロー**:
+  - Session A: 調査 → ADR作成 → **logic-validator で ADR 検証** (status: Proposed → Accepted)
+  - Session B: Plan作成 → **logic-validator で Plan 検証** → `<!-- validated -->` → 実装
+
+## 3. `.skills/adr-session/references/adr-template.md`
+
+kanbun-annotation のテンプレートを汎用化。日本語セクション名。
+
+```markdown
+---
+status: Proposed
+---
+# ADR-NNN: {タイトル}
+## コンテキスト
+## 決定
+## 影響（ポジティブ / ネガティブ）
+## 参考
+```
+
+任意セクション: `## 検討した選択肢`
+
+## 4. `.skills/adr-session/references/plan-template.md`
+
+kanbun-annotation のテンプレートを汎用化。
+
+```markdown
+# {タイトル}
+## 概要
+関連 ADR: [ADR-NNN](../decisions/adr-NNN-{slug}.md)
+## 前提知識
+## 実装計画（Step 1, 2, ...）
+## リスクと軽減策
+## 検証方法
+```
+
+末尾の `<!-- validated -->` マーカーはテンプレートには含めない（logic-validator が追加するため）。
+
+## 5. `.skills/adr-migrate/SKILL.md`
+
+**context: inherit** — dry-run 結果の表示後にユーザー承認を待つ。
+
+### フロントマター
+```yaml
+---
+name: adr-migrate
+description: "Migrate existing ADRs to YAML frontmatter format. Scans docs/decisions/ for ADRs without frontmatter, infers status from body text, shows dry-run for approval. Trigger: /adr-migrate"
+context: inherit
+---
+```
+
+### 構成
+
+1. **スキャン**: `Glob` で `docs/decisions/adr-*.md` を走査、frontmatter 有無で分類
+2. **推定ルール**:
+   - `## Status` / `## ステータス` セクションを探す
+   - キーワードマッチ: complete/done/実装完了 → Complete, in progress/実装中 → InProgress, proposed/提案 → Proposed, default → Accepted
+   - `plan-*.md` へのリンク → `plan` フィールド
+   - `ADR-NNN` パターン → deps 候補として記録（自動設定はせず、ノートとして報告）
+3. **Dry-run レポート**: 各ファイルの推定結果を表示、ユーザー承認を待つ
+4. **適用**: 承認後、Edit ツールで frontmatter を挿入。冗長になったステータスセクションの削除はユーザーに確認
+5. **エッジケース**: frontmatter 既存 → スキップ、ステータスセクションなし → Proposed + 警告
+
+## 検証方法
+
+1. `chezmoi apply` でスキルが `~/.claude/skills/` に同期されることを確認
+2. kanbun-annotation で `/adr-session` を実行し、ステータス概要が正しく表示されることを確認
+3. kanbun-annotation で `/adr-session 1` を実行し、phase ガイダンスが適切か確認
+4. ADR のない新規プロジェクトで `/adr-session` → ディレクトリ作成提案 → `/adr-session new` → テンプレートからの ADR 作成を確認
+5. `/adr-migrate` は frontmatter のない ADR ファイルを用意してテスト
+
+## 実装順序
+
+1. `references/adr-schema.md` — 両スキルの基盤
+2. `references/adr-template.md` + `references/plan-template.md` — テンプレート
+3. `.skills/adr-session/SKILL.md` — メインスキル
+4. `.skills/adr-migrate/SKILL.md` — マイグレーションスキル
+5. `chezmoi apply` で同期テスト
+
+<!-- validated -->
+
+
+If you need specific details from before exiting plan mode (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/berlysia/.REDACTED.jsonl
+
+---
+
+ADRをつくる、着手時にPLANをつくって、Taskをつくる、それを遂行する、という流れがある、でいいですよね？
+開発中にIssueのようなもの、TODOのようなものがあった場合の管理もしたいけど、それはもうちょっと後でいいか
+
+---
+
+コミットして
