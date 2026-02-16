@@ -109,4 +109,10 @@ jobs:
             - Do not manually merge - this repository uses auto-merge for dependency PRs
             - If the issue cannot be fixed automatically, leave a detailed comment explaining the problem
 
-          claude_args: '--allowed-tools "Bash(*),Read,Write,Edit,Glob,Grep"'
+            **Tool constraints (MUST follow):**
+            - Use Read/Glob/Grep tools for file discovery and inspection — never use `ls`, `cat`, `find`, `test` via Bash
+            - Git commits: use single-line format `git commit -m "type(scope): description"` — NEVER use heredocs, `$(cat <<EOF)`, or multiline -m flags
+            - Run `git add` and `git commit` as separate Bash calls, not chained with `&&`
+            - Only use `gh`, `git`, `pnpm`, `npm` commands via Bash
+
+          claude_args: '--allowed-tools "Bash(gh *),Bash(git *),Bash(pnpm *),Bash(npm *),Read,Write,Edit,Glob,Grep"'
