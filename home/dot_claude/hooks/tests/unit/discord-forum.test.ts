@@ -4,7 +4,7 @@ import { deepStrictEqual, ok, strictEqual } from "node:assert";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, it, mock } from "node:test";
+import { afterEach, beforeEach, describe, it } from "node:test";
 
 // We test the pure file-based functions by overriding THREADS_FILE via module internals.
 // Since the module uses a const path derived from HOME, we override HOME before importing.
@@ -41,10 +41,7 @@ describe("discord-forum", () => {
       const claudeDir = join(tempDir, ".claude");
       const { mkdirSync } = await import("node:fs");
       mkdirSync(claudeDir, { recursive: true });
-      writeFileSync(
-        join(claudeDir, ".discord-forum-threads.json"),
-        "not json",
-      );
+      writeFileSync(join(claudeDir, ".discord-forum-threads.json"), "not json");
 
       const mod = await importModule();
       const result = mod.loadThreadMap();
@@ -172,8 +169,8 @@ describe("discord-forum", () => {
 
       const filePath = join(claudeDir, ".discord-forum-threads.json");
       const parsed = JSON.parse(readFileSync(filePath, "utf-8"));
-      strictEqual(parsed["old"], undefined, "old entry should be removed");
-      ok(parsed["recent"], "recent entry should remain");
+      strictEqual(parsed.old, undefined, "old entry should be removed");
+      ok(parsed.recent, "recent entry should remain");
     });
 
     it("should not write file when nothing to clean", async () => {

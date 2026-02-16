@@ -131,9 +131,7 @@ export async function buildNotification(
     if (userMsg) parts.push(`> ${userMsg}`);
     if (assistantMsg) parts.push(assistantMsg);
     description =
-      parts.length > 0
-        ? parts.join("\n\n")
-        : "Claudeの返信が完了しました。";
+      parts.length > 0 ? parts.join("\n\n") : "Claudeの返信が完了しました。";
   } else if (eventType === "Notification") {
     const notificationType = input.notification_type;
     const notificationMessage = input.message ?? "";
@@ -146,8 +144,7 @@ export async function buildNotification(
       case "idle_prompt":
         title = "💤 入力待ち";
         severity = "muted";
-        description =
-          notificationMessage || "Claudeが入力を待っています。";
+        description = notificationMessage || "Claudeが入力を待っています。";
         break;
       default:
         title = "🔔 通知";

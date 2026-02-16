@@ -95,9 +95,7 @@ const hook = defineHook({
     const eventType = context.input.hook_event_name;
 
     try {
-      const notification = await buildNotification(
-        context.input as HookInput,
-      );
+      const notification = await buildNotification(context.input as HookInput);
       if (!notification) {
         return context.success({});
       }
