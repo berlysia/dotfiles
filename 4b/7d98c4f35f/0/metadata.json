@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "4b7d98c4f35f",
+  "session_id": "52ff821a-d806-49d5-94a2-b5fdb76bf897",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-16T06:54:34.678321Z",
+  "branch": "master",
+  "checkpoints_count": 0,
+  "files_touched": [
+    ".claude/plans/buzzing-bubbling-riddle-agent-a7c0c98.md",
+    ".claude/plans/buzzing-bubbling-riddle.md"
+  ],
+  "agent": "Claude Code",
+  "token_usage": {
+    "input_tokens": 553,
+    "cache_creation_tokens": 58606,
+    "cache_read_tokens": 1745455,
+    "output_tokens": 195,
+    "api_call_count": 23
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-16T06:54:34.411929Z",
+    "agent_lines": 0,
+    "human_added": 98,
+    "human_modified": 566,
+    "human_removed": 0,
+    "total_committed": 664,
+    "agent_percentage": 0
+  },
+  "transcript_path": ".claude/projects/-Users-berlysia--local-share-chezmoi/52ff821a-d806-49d5-94a2-b5fdb76bf897.jsonl"
+}

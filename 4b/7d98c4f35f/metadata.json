@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "4b7d98c4f35f",
+  "strategy": "manual-commit",
+  "branch": "master",
+  "checkpoints_count": 0,
+  "files_touched": [
+    ".claude/plans/buzzing-bubbling-riddle-agent-a7c0c98.md",
+    ".claude/plans/buzzing-bubbling-riddle.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/4b/7d98c4f35f/0/metadata.json",
+      "transcript": "/4b/7d98c4f35f/0/full.jsonl",
+      "context": "/4b/7d98c4f35f/0/context.md",
+      "content_hash": "/4b/7d98c4f35f/0/content_hash.txt",
+      "prompt": "/4b/7d98c4f35f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 553,
+    "cache_creation_tokens": 58606,
+    "cache_read_tokens": 1745455,
+    "output_tokens": 195,
+    "api_call_count": 23
+  }
+}

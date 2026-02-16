@@ -1,0 +1,17 @@
+~/workspace/kanbun-annotation で行われているADRのfrontmatter運用とコマンドによるADR状態整理は、dotfilesでそのやり方のマスターを持っておきたいので、エッセンスを抽出して。
+
+---
+
+微調整すると、ADR作成後にもlogic-validator検証はやってもらう。
+
+---
+
+マイグレートを作成するためのスキル、があってもいいかもしれない。
+
+---
+
+OK,このスタイルで
+
+---
+
+[Request interrupted by user for tool use]
