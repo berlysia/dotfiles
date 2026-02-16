@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# Z.ai API wrapper for Claude Code
+# Uses 1Password CLI (op) to retrieve the API key securely.
+#
+# Setup:
+#   1. Store your Z.ai API key in 1Password
+#   2. Set ZAI_OP_REF to the op:// reference, or export ZAI_API_KEY directly
+#
+# Usage:
+#   claude-zai              # Start Claude Code with Z.ai
+#   claude-zai --help       # Show this help
+#   claude-zai [args...]    # Pass any Claude Code arguments
+
+ZAI_BASE_URL="https://api.z.ai/api/anthropic"
+ZAI_TIMEOUT_MS="${ZAI_TIMEOUT_MS:-3000000}"
+
+# op:// reference for the API key (override with ZAI_OP_REF env var)
+ZAI_OP_REF="${ZAI_OP_REF:-op://Personal/ZAI_API_KEY/password}"
+
+show_help() {
+    cat <<'EOF'
+claude-zai - Run Claude Code with Z.ai GLM Coding Plan
+
+Usage:
+  claude-zai [claude-code-args...]
+
+Environment Variables:
+  ZAI_API_KEY     API key (skips 1Password lookup if set)
+  ZAI_OP_REF      1Password reference (default: op://Private/Z.ai API Key/credential)
+  ZAI_TIMEOUT_MS  API timeout in ms (default: 3000000)
+
+Setup:
+  1. Subscribe to Z.ai GLM Coding Plan: https://z.ai/subscribe
+  2. Create an API key: https://z.ai/manage-apikey/apikey-list
+  3. Store it in 1Password, or export ZAI_API_KEY
+
+Examples:
+  claude-zai                    # Interactive mode
+  claude-zai -p "explain this"  # One-shot prompt
+  ZAI_API_KEY=xxx claude-zai    # Use explicit key
+EOF
+}
+
+if [[ "${1:-}" == "--help" ]] || [[ "${1:-}" == "-h" ]]; then
+    show_help
+    exit 0
+fi
+
+# Resolve API key: env var > 1Password
+if [[ -z "${ZAI_API_KEY:-}" ]]; then
+    if ! command -v op &>/dev/null; then
+        echo "Error: 'op' (1Password CLI) not found and ZAI_API_KEY not set" >&2
+        echo "Install: https://developer.1password.com/docs/cli/get-started/" >&2
+        exit 1
+    fi
+    ZAI_API_KEY="$(op read "$ZAI_OP_REF" 2>/dev/null)" || {
+        echo "Error: Failed to read API key from 1Password" >&2
+        echo "Reference: $ZAI_OP_REF" >&2
+        echo "Verify with: op read \"$ZAI_OP_REF\"" >&2
+        exit 1
+    }
+fi
+
+export ANTHROPIC_BASE_URL="$ZAI_BASE_URL"
+export ANTHROPIC_AUTH_TOKEN="$ZAI_API_KEY"
+export API_TIMEOUT_MS="$ZAI_TIMEOUT_MS"
+
+exec claude "$@"
