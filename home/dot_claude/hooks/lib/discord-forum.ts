@@ -35,7 +35,11 @@ export function loadThreadMap(): ThreadMap {
   try {
     const raw = fs.readFileSync(THREADS_FILE, "utf-8");
     const parsed = JSON.parse(raw);
-    if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      !Array.isArray(parsed)
+    ) {
       return parsed as ThreadMap;
     }
     return {};

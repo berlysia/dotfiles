@@ -64,9 +64,7 @@ const hook = defineHook({
     const sessionId = (context.input.session_id ?? "").slice(0, 8);
 
     try {
-      const notification = await buildNotification(
-        context.input as HookInput,
-      );
+      const notification = await buildNotification(context.input as HookInput);
       if (!notification) {
         return context.success({});
       }
