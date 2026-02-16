@@ -151,11 +151,13 @@ If ADR has `deps`, check each referenced ADR's status:
 
 ADR は承認済みです。実装計画を作成しましょう。
 
-1. Plan Mode に入って実装計画を作成（または手動で作成）
+**Plan Mode の使用が必須です。** EnterPlanMode を実行してください。
+
+1. Plan Mode で実装計画を作成
 2. テンプレート: この skill の [plan-template.md](references/plan-template.md) を参照
 3. 計画ファイルを `docs/plans/plan-{slug}.md` に保存
 4. ADR の frontmatter に `plan: plan-{slug}.md` を追加
-5. `/validate-plan` で計画を検証
+5. ExitPlanMode → validate-plan-guard hook が検証を強制
 ```
 
 #### validation (status: Accepted, plan exists, not validated)
