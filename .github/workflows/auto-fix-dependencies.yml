@@ -3,9 +3,19 @@ name: Auto-fix Dependencies
 on:
   workflow_run:
     workflows:
-      - "CI Status Check"
+      - "Shell Lint (shellcheck)"
+      - "TypeScript CI"
+      - "Secret Detection (gitleaks)"
+      - "Lint GitHub Actions"
+      - "Shell Compatibility Test"
+      - "Validate Codex Config"
+      - "Validate JSON Templates"
     types:
       - completed
+
+concurrency:
+  group: auto-fix-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
 
 jobs:
   auto-fix:
