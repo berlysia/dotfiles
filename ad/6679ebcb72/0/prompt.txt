@@ -1,0 +1,45 @@
+Z.aiの契約をしたので、その契約でClaude Codeを使うためのラッパーを用意して。
+
+---
+
+[Request interrupted by user for tool use]
+
+---
+
+https://docs.z.ai/devpack/tool/claude#manual-configuration
+
+---
+
+<bash-input>code ~/.local/share/chezmoi/home/dot_local/bin/executable_claude-zai</bash-input>
+
+---
+
+<bash-stdout></bash-stdout><bash-stderr></bash-stderr>
+
+---
+
+"op://Personal/ZAI_API_KEY/password"
+
+---
+
+あれ、GLM-5つかえるんだっけ
+
+---
+
+Proだわ、たりないね
+
+---
+
+やってみよう
+
+---
+
+~/.env.1password にも設定をいれて、 ope -ig claude-zai でもいいようにして
+
+---
+
+USER_OPENAI_API_KEY_FOR_MCP、消しちゃっていいや
+
+---
+
+コミットしてアプライー

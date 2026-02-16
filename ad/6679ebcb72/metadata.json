@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "ad6679ebcb72",
+  "strategy": "manual-commit",
+  "branch": "master",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "home/dot_env.1password",
+    "home/dot_local/bin/executable_claude-zai"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ad/6679ebcb72/0/metadata.json",
+      "transcript": "/ad/6679ebcb72/0/full.jsonl",
+      "context": "/ad/6679ebcb72/0/context.md",
+      "content_hash": "/ad/6679ebcb72/0/content_hash.txt",
+      "prompt": "/ad/6679ebcb72/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1702,
+    "cache_creation_tokens": 187623,
+    "cache_read_tokens": 1957467,
+    "output_tokens": 1990,
+    "api_call_count": 33
+  }
+}
