@@ -109,4 +109,4 @@ jobs:
             - Do not manually merge - this repository uses auto-merge for dependency PRs
             - If the issue cannot be fixed automatically, leave a detailed comment explaining the problem
 
-          claude_args: '--allowed-tools "Bash(gh *),Bash(git *),Bash(pnpm *),Bash(npm *),Read,Write,Edit,Glob,Grep"'
+          claude_args: '--allowed-tools "Bash(*),Read,Write,Edit,Glob,Grep"'

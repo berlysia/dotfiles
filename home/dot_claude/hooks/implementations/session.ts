@@ -1,45 +1,13 @@
 #!/usr/bin/env -S bun run --silent
 
-import { appendFileSync, existsSync } from "node:fs";
+import { appendFileSync } from "node:fs";
 import { defineHook } from "cc-hooks-ts";
-import {
-  findUntrackedPlugins,
-  INSTALLED_PLUGINS_PATH,
-  loadDependencies,
-  loadInstalledPlugins,
-  PLUGIN_DEPENDENCIES_PATH,
-} from "../../lib/plugin-utils.ts";
 import { logEvent } from "../lib/centralized-logging.ts";
 
 function checkSharedTaskList(): string | null {
   const taskListId = process.env.CLAUDE_CODE_TASK_LIST_ID;
   if (taskListId) {
     return `⚠️ CLAUDE_CODE_TASK_LIST_ID is set: ${taskListId}\n   This session shares a task list from another session. Tasks may be overwritten unintentionally.\n   To detach: unset CLAUDE_CODE_TASK_LIST_ID`;
-  }
-  return null;
-}
-
-function checkPluginSync(): string | null {
-  if (
-    !existsSync(PLUGIN_DEPENDENCIES_PATH) ||
-    !existsSync(INSTALLED_PLUGINS_PATH)
-  ) {
-    return null;
-  }
-
-  try {
-    const dependencies = loadDependencies();
-    const installed = loadInstalledPlugins();
-    const installedKeys = Array.from(installed);
-
-    const untracked = findUntrackedPlugins(dependencies, installedKeys);
-
-    if (untracked.length > 0) {
-      const names = untracked.map((k) => k.split("@")[0]).join(", ");
-      return `📦 New plugins detected: ${names}\n   Run: bun ~/.claude/scripts/sync-plugin-dependencies.ts`;
-    }
-  } catch {
-    // ignore errors
   }
   return null;
 }
@@ -83,15 +51,11 @@ const hook = defineHook({
       }
 
       const taskListWarning = checkSharedTaskList();
-      const pluginSyncMessage = checkPluginSync();
       const messages = [
         "🚀 Claude Code session started. Ready for development!",
       ];
       if (taskListWarning) {
         messages.push(taskListWarning);
-      }
-      if (pluginSyncMessage) {
-        messages.push(pluginSyncMessage);
       }
 
       return context.success({
