@@ -26,6 +26,27 @@
 - **Complex tasks** (6+ steps or multi-session): Use TaskCreate/TaskUpdate for full tracking
 - Avoid creating tasks for trivial operations — the overhead should not exceed the work itself
 
+### Task Intake Routing
+
+タスク受付時に実行モードを判定してから着手する:
+
+| 条件 | 実行モード |
+|------|-----------|
+| 1-2 ステップ、1-2 ファイル | 直接実行 |
+| 3-5 ステップ、明確な方針 | `/approach-check` |
+| 6+ ステップ、または設計判断を伴う（API・データモデル・アーキテクチャ変更等） | **Plan Mode（必須）** |
+| Scope Guard 検知 | `/scope-guard` → 戦略に応じて Plan Mode |
+
+**Plan Mode 必須トリガー（いずれか1つで発動）**:
+- ADR の planning phase に該当する作業
+- アーキテクチャ・API設計・データモデルの変更
+- 探索と実装が混在するタスク（「調べてから実装」）
+- ユーザーが計画を要求した場合
+
+**禁止**: 上記トリガーに該当するタスクで Plan Mode を経由せず実装に着手すること
+
+**Note**: ステップ数が少なくても設計判断を伴う場合は Plan Mode 必須。Scope Guard が検知した場合は `/scope-guard` の推奨戦略に従う。
+
 ### Scope Guard
 
 タスク受付時に以下の兆候が **複数** 該当する場合、スコープ過大の疑いありと判定する:
@@ -39,8 +60,10 @@
 
 **検知時の行動**:
 1. ユーザーにスコープの大きさについて簡潔に伝える
-2. `/scope-guard` の利用を提案する
-3. ユーザーが不要と判断すればそのまま続行
+2. `/scope-guard` を実行する（提案ではなく実行）
+3. 推奨戦略を提示し、ユーザー承認を得てから着手する
+
+**例外**: ユーザーが明示的に不要と指示した場合のみスキップ可能
 
 ## Task Completion Protocol
 
