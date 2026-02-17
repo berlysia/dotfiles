@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "ad6679ebcb72",
+  "session_id": "72ba04d3-0bee-43e9-ae5e-b535ac07bd77",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-17T15:51:23.038058Z",
+  "branch": "master",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "home/dot_config/pnpm/rc",
+    "home/dot_shell_common/tools.sh"
+  ],
+  "agent": "Claude Code",
+  "token_usage": {
+    "input_tokens": 52755,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 875185,
+    "output_tokens": 2183,
+    "api_call_count": 18
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-17T15:51:22.970017Z",
+    "agent_lines": 15,
+    "human_added": 2727,
+    "human_modified": 1,
+    "human_removed": 0,
+    "total_committed": 2743,
+    "agent_percentage": 0.5468465184104995
+  },
+  "transcript_path": ".claude/projects/-Users-berlysia--local-share-chezmoi/72ba04d3-0bee-43e9-ae5e-b535ac07bd77.jsonl"
+}
