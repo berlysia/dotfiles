@@ -1,0 +1,67 @@
+{{ if ne .chezmoi.os "windows" -}}
+#!/bin/bash
+# Force-reinstall go: backend tools pinned to "latest" in mise config.
+# The go: backend cannot detect new commits for untagged repos,
+# so mise upgrade never updates them. This script runs on every
+# chezmoi apply but only does work when REFRESH_INTERVAL_DAYS has elapsed.
+
+set -euo pipefail
+
+REFRESH_INTERVAL_DAYS=7
+STAMP_FILE="$HOME/.local/state/mise/go-latest-refresh-stamp"
+
+# Check if enough time has elapsed since last refresh
+if [ -f "$STAMP_FILE" ]; then
+    last_refresh=$(cat "$STAMP_FILE")
+    now=$(date +%s)
+    elapsed_days=$(( (now - last_refresh) / 86400 ))
+    if [ "$elapsed_days" -lt "$REFRESH_INTERVAL_DAYS" ]; then
+        exit 0
+    fi
+fi
+
+# Initialize mise environment
+if ! command -v mise &> /dev/null; then
+    exit 0
+fi
+if mise_env=$(mise env --shell bash 2>/dev/null); then
+    eval "$mise_env"
+fi
+
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Refreshing go: latest tools (last refresh: ${elapsed_days:-never} days ago)"
+
+# Collect go: tools set to "latest" from mise config
+tools=$(mise ls --json 2>/dev/null \
+    | jq -r 'to_entries[]
+        | select(.key | startswith("go:"))
+        | select(.value[0].requested_version == "latest")
+        | .key' 2>/dev/null) || true
+
+if [ -z "$tools" ]; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] No go: latest tools found, skipping"
+    mkdir -p "$(dirname "$STAMP_FILE")"
+    date +%s > "$STAMP_FILE"
+    exit 0
+fi
+
+failed=0
+while IFS= read -r tool; do
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Force-reinstalling $tool"
+    if mise install "$tool@latest" --force 2>&1; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [SUCCESS] Updated $tool"
+    else
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [WARNING] Failed to update $tool"
+        failed=1
+    fi
+done <<< "$tools"
+
+# Update stamp even on partial failure to avoid retry loops
+mkdir -p "$(dirname "$STAMP_FILE")"
+date +%s > "$STAMP_FILE"
+
+if [ "$failed" -eq 0 ]; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] All go: latest tools refreshed successfully"
+else
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [WARNING] Some tools failed to refresh"
+fi
+{{ end -}}
