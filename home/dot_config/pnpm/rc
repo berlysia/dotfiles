@@ -10,3 +10,7 @@ save-prefix=
 # Prevent automatic execution of lifecycle scripts (postinstall, etc.)
 # This blocks supply chain attacks via malicious scripts
 ignore-scripts=true
+
+# Centralized store directory for mise-managed pnpm
+# Store all packages in XDG data directory
+store-dir=~/.local/share/pnpm/store
