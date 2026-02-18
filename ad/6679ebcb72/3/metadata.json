@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "ad6679ebcb72",
+  "session_id": "41d9aaf3-b429-403d-b510-27a5b418b2ef",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-18T15:13:54.326435Z",
+  "branch": "master",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "home/dot_claude/hooks/lib/webhook-notification.ts",
+    "home/dot_claude/hooks/tests/unit/webhook-notification.test.ts"
+  ],
+  "agent": "Claude Code",
+  "token_usage": {
+    "input_tokens": 34,
+    "cache_creation_tokens": 242813,
+    "cache_read_tokens": 3142044,
+    "output_tokens": 5849,
+    "api_call_count": 30
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-18T15:13:54.149755Z",
+    "agent_lines": 215,
+    "human_added": 2727,
+    "human_modified": 1,
+    "human_removed": 0,
+    "total_committed": 2943,
+    "agent_percentage": 7.305470608222901
+  },
+  "transcript_path": ".claude/projects/-Users-berlysia--local-share-chezmoi/41d9aaf3-b429-403d-b510-27a5b418b2ef.jsonl"
+}
