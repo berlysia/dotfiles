@@ -10,6 +10,7 @@ import {
   buildFooter,
   buildNotification,
   extractFromTranscript,
+  extractLastExchange,
   type HookInput,
 } from "../../lib/webhook-notification.ts";
 
@@ -128,6 +129,137 @@ describe("extractFromTranscript", () => {
 
     const result = await extractFromTranscript(filePath, "assistant", 300);
     strictEqual(result, "");
+  });
+});
+
+describe("extractLastExchange", () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), "webhook-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("should return empty strings for empty path", async () => {
+    const result = await extractLastExchange("");
+    strictEqual(result.userMsg, "");
+    strictEqual(result.assistantMsg, "");
+  });
+
+  it("should return paired user and assistant messages", async () => {
+    const transcript = [
+      JSON.stringify({ type: "user", message: { content: "question" } }),
+      JSON.stringify({
+        type: "assistant",
+        message: { content: [{ type: "text", text: "answer" }] },
+      }),
+    ].join("\n");
+
+    const filePath = join(tempDir, "transcript.jsonl");
+    writeFileSync(filePath, transcript);
+
+    const result = await extractLastExchange(filePath);
+    strictEqual(result.userMsg, "question");
+    strictEqual(result.assistantMsg, "answer");
+  });
+
+  it("should match assistant to the user message before it (not after)", async () => {
+    // Simulates the bug: last user text comes AFTER the last assistant text
+    // when tool_use or thinking entries appear at the end.
+    // extractLastExchange should pair the last assistant text with the user before it.
+    const transcript = [
+      JSON.stringify({ type: "user", message: { content: "question A" } }),
+      JSON.stringify({
+        type: "assistant",
+        message: { content: [{ type: "text", text: "answer A" }] },
+      }),
+      // Turn 2 starts: user posts question B, then assistant uses tool (no text)
+      JSON.stringify({ type: "user", message: { content: "question B" } }),
+      JSON.stringify({
+        type: "assistant",
+        message: {
+          content: [{ type: "tool_use", id: "t1", name: "Bash", input: {} }],
+        },
+      }),
+      JSON.stringify({
+        type: "user",
+        message: {
+          content: [{ tool_use_id: "t1", type: "tool_result", content: "ok" }],
+        },
+      }),
+      JSON.stringify({
+        type: "assistant",
+        message: { content: [{ type: "text", text: "answer B" }] },
+      }),
+    ].join("\n");
+
+    const filePath = join(tempDir, "transcript.jsonl");
+    writeFileSync(filePath, transcript);
+
+    const result = await extractLastExchange(filePath);
+    strictEqual(result.assistantMsg, "answer B");
+    strictEqual(result.userMsg, "question B");
+  });
+
+  it("should skip tool_result user entries and return the real user text", async () => {
+    // The last user entry in the transcript is a tool_result (not human text).
+    // extractLastExchange should skip it and find the actual human message.
+    const transcript = [
+      JSON.stringify({ type: "user", message: { content: "real question" } }),
+      JSON.stringify({
+        type: "assistant",
+        message: {
+          content: [{ type: "tool_use", id: "t1", name: "Bash", input: {} }],
+        },
+      }),
+      JSON.stringify({
+        type: "user",
+        message: {
+          content: [
+            { tool_use_id: "t1", type: "tool_result", content: "result" },
+          ],
+        },
+      }),
+      JSON.stringify({
+        type: "assistant",
+        message: { content: [{ type: "text", text: "final answer" }] },
+      }),
+    ].join("\n");
+
+    const filePath = join(tempDir, "transcript.jsonl");
+    writeFileSync(filePath, transcript);
+
+    const result = await extractLastExchange(filePath);
+    strictEqual(result.assistantMsg, "final answer");
+    strictEqual(result.userMsg, "real question");
+  });
+
+  it("should skip thinking-only assistant entries to find the last text entry", async () => {
+    // Thinking entries appear after the final text due to streaming.
+    // extractLastExchange must skip them and pick the text entry.
+    const transcript = [
+      JSON.stringify({ type: "user", message: { content: "question" } }),
+      JSON.stringify({
+        type: "assistant",
+        message: { content: [{ type: "text", text: "final answer" }] },
+      }),
+      JSON.stringify({
+        type: "assistant",
+        message: {
+          content: [{ type: "thinking", thinking: "post-processing..." }],
+        },
+      }),
+    ].join("\n");
+
+    const filePath = join(tempDir, "transcript.jsonl");
+    writeFileSync(filePath, transcript);
+
+    const result = await extractLastExchange(filePath);
+    strictEqual(result.assistantMsg, "final answer");
+    strictEqual(result.userMsg, "question");
   });
 });
 

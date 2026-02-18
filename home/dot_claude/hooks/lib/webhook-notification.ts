@@ -38,6 +38,20 @@ export interface HookInput {
 }
 
 /**
+ * Extract text content from a JSONL transcript entry's message content field.
+ * Returns empty string if no text block is found (e.g. tool_use, tool_result, thinking).
+ */
+function extractTextFromContent(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  for (const block of content) {
+    if (typeof block === "string") return block;
+    if (block?.type === "text" && block.text) return block.text;
+  }
+  return "";
+}
+
+/**
  * Extract the last message of a given role from a JSONL transcript file.
  * Reads the file then searches in reverse to find the most recent match.
  */
@@ -63,25 +77,7 @@ export async function extractFromTranscript(
       const entry = JSON.parse(line);
       if (entry.type !== role) continue;
 
-      const content = entry.message?.content;
-      if (!content) continue;
-
-      let text = "";
-      if (typeof content === "string") {
-        text = content;
-      } else if (Array.isArray(content)) {
-        for (const block of content) {
-          if (typeof block === "string") {
-            text = block;
-            break;
-          }
-          if (block?.type === "text" && block.text) {
-            text = block.text;
-            break;
-          }
-        }
-      }
-
+      const text = extractTextFromContent(entry.message?.content);
       if (text) {
         return text.length > limit ? `${text.slice(0, limit)}...` : text;
       }
@@ -91,6 +87,75 @@ export async function extractFromTranscript(
   }
 
   return "";
+}
+
+/**
+ * Extract the last assistant-user exchange from a JSONL transcript file.
+ *
+ * Searches backward for the last assistant text entry (the latest Claude response),
+ * then searches backward from that position for the preceding user text entry
+ * (the corresponding user message). This ensures the pair belongs to the same
+ * conversational turn, avoiding a mismatch when tool-use or thinking entries
+ * appear between the last user text and the final assistant text.
+ */
+export async function extractLastExchange(
+  transcriptPath: string,
+): Promise<{ userMsg: string; assistantMsg: string }> {
+  if (!transcriptPath) return { userMsg: "", assistantMsg: "" };
+
+  const fileStream = fs.createReadStream(transcriptPath, { encoding: "utf-8" });
+  const rl = readline.createInterface({ input: fileStream });
+
+  const lines: string[] = [];
+  for await (const line of rl) {
+    lines.push(line);
+  }
+
+  // Find the last assistant text entry
+  let assistantMsg = "";
+  let assistantLineIndex = -1;
+
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i];
+    if (!line) continue;
+    try {
+      const entry = JSON.parse(line);
+      if (entry.type !== "assistant") continue;
+
+      const text = extractTextFromContent(entry.message?.content);
+      if (text) {
+        assistantMsg = text.length > 300 ? `${text.slice(0, 300)}...` : text;
+        assistantLineIndex = i;
+        break;
+      }
+    } catch {
+      // Skip malformed JSONL lines
+    }
+  }
+
+  // Find the user text entry preceding the assistant entry
+  let userMsg = "";
+  const searchEnd =
+    assistantLineIndex >= 0 ? assistantLineIndex : lines.length - 1;
+
+  for (let i = searchEnd; i >= 0; i--) {
+    const line = lines[i];
+    if (!line) continue;
+    try {
+      const entry = JSON.parse(line);
+      if (entry.type !== "user") continue;
+
+      const text = extractTextFromContent(entry.message?.content);
+      if (text) {
+        userMsg = text.length > 100 ? `${text.slice(0, 100)}...` : text;
+        break;
+      }
+    } catch {
+      // Skip malformed JSONL lines
+    }
+  }
+
+  return { userMsg, assistantMsg };
 }
 
 /**
@@ -122,10 +187,7 @@ export async function buildNotification(
     severity = "success";
 
     const transcriptPath = input.transcript_path ?? "";
-    const [userMsg, assistantMsg] = await Promise.all([
-      extractFromTranscript(transcriptPath, "user", 100),
-      extractFromTranscript(transcriptPath, "assistant", 300),
-    ]);
+    const { userMsg, assistantMsg } = await extractLastExchange(transcriptPath);
 
     const parts: string[] = [];
     if (userMsg) parts.push(`> ${userMsg}`);
