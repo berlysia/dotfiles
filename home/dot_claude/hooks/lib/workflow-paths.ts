@@ -63,18 +63,25 @@ export function isPlanFile(absolutePath: string): boolean {
 }
 
 /**
- * Resolve review output paths relative to a given directory.
- * Used by plan-review-automation to co-locate review artifacts with the plan file.
+ * Resolve all workflow artifact paths from a known workflow directory.
+ * Enables co-location: once any artifact's directory is known,
+ * all sibling artifacts can be found without env var resolution.
  */
-export function resolveReviewOutputPaths(outputDir: string): {
-  cachePath: string;
-  markdownPath: string;
-  jsonPath: string;
+export function resolveWorkflowPaths(workflowDir: string): {
+  plan: string;
+  research: string;
+  state: string;
+  reviewCache: string;
+  reviewMarkdown: string;
+  reviewJson: string;
 } {
   return {
-    cachePath: resolve(outputDir, REVIEW_CACHE_FILENAME),
-    markdownPath: resolve(outputDir, REVIEW_MARKDOWN_FILENAME),
-    jsonPath: resolve(outputDir, REVIEW_JSON_FILENAME),
+    plan: resolve(workflowDir, PLAN_FILENAME),
+    research: resolve(workflowDir, RESEARCH_FILENAME),
+    state: resolve(workflowDir, STATE_FILENAME),
+    reviewCache: resolve(workflowDir, REVIEW_CACHE_FILENAME),
+    reviewMarkdown: resolve(workflowDir, REVIEW_MARKDOWN_FILENAME),
+    reviewJson: resolve(workflowDir, REVIEW_JSON_FILENAME),
   };
 }
 

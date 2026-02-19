@@ -8,7 +8,7 @@ import { defineHook } from "cc-hooks-ts";
 import { expandTilde } from "../lib/path-utils.ts";
 import {
   isPlanFile,
-  resolveReviewOutputPaths,
+  resolveWorkflowPaths,
 } from "../lib/workflow-paths.ts";
 import "../types/tool-schemas.ts";
 
@@ -162,8 +162,11 @@ const hook = defineHook({
     // review artifacts in the same directory without relying on env vars.
     const planDir = dirname(absoluteTargetPath);
     mkdirSync(planDir, { recursive: true });
-    const { cachePath, markdownPath, jsonPath } =
-      resolveReviewOutputPaths(planDir);
+    const {
+      reviewCache: cachePath,
+      reviewMarkdown: markdownPath,
+      reviewJson: jsonPath,
+    } = resolveWorkflowPaths(planDir);
 
     const previousCache = readCache(cachePath);
     const canSkipByCache =

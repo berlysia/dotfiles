@@ -2,16 +2,16 @@
 
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { defineHook } from "cc-hooks-ts";
 import { extractCommandsStructured } from "../lib/bash-parser.ts";
 import { getCommandFromToolInput } from "../lib/command-parsing.ts";
 import { createDenyResponse } from "../lib/context-helpers.ts";
+import { expandTilde } from "../lib/path-utils.ts";
 import {
-  getPlanPath,
-  getResearchPath,
-  getStatePath,
+  getWorkflowDir,
   getWorkflowDirRelative,
-  isWorkflowDocumentPath,
+  resolveWorkflowPaths,
 } from "../lib/workflow-paths.ts";
 import "../types/tool-schemas.ts";
 
@@ -51,18 +51,22 @@ const hook = defineHook({
     }
 
     const cwd = getWorkingDirectory();
-    const state = readWorkflowState(cwd);
-    const workflowActive = isWorkflowActive(cwd, state);
+    // Single resolution: derive all workflow artifact paths from one directory
+    const wfDir = getWorkflowDir(cwd);
+    const wfPaths = resolveWorkflowPaths(wfDir);
+
+    const state = readWorkflowState(wfPaths.state);
+    const workflowActive = isWorkflowActive(wfPaths, state);
     if (!workflowActive) {
       return context.success({});
     }
 
     const warnOnly = process.env.DOCUMENT_WORKFLOW_WARN_ONLY === "1";
-    const approved = hasApprovedPlan(cwd);
-    const researched = hasResearchArtifact(cwd);
-    const wfDir = getWorkflowDirRelative();
+    const approved = hasApprovedPlan(wfPaths.plan);
+    const researched = existsSync(wfPaths.research);
+    const wfDirLabel = getWorkflowDirRelative();
     const denyReason =
-      `Document workflow gate: implementation is blocked until \`${wfDir}/research.md\` exists and \`${wfDir}/plan.md\` has \`- Plan Status: complete\`, \`- Review Status: pass\`, \`- Approval Status: approved\`, and \`<!-- auto-review: verdict=pass; hash=... -->\` with a matching hash.`;
+      `Document workflow gate: implementation is blocked until \`${wfDirLabel}/research.md\` exists and \`${wfDirLabel}/plan.md\` has \`- Plan Status: complete\`, \`- Review Status: pass\`, \`- Approval Status: approved\`, and \`<!-- auto-review: verdict=pass; hash=... -->\` with a matching hash.`;
 
     if (tool_name === "Bash") {
       const command = getCommandFromToolInput("Bash", tool_input) || "";
@@ -71,7 +75,7 @@ const hook = defineHook({
         return context.success({});
       }
 
-      if (areAllTargetsDocumentPaths(cwd, analysis.targets)) {
+      if (areAllTargetsDocumentPaths(cwd, analysis.targets, wfPaths)) {
         return context.success({});
       }
 
@@ -94,7 +98,7 @@ const hook = defineHook({
       return context.success({});
     }
 
-    if (isDocumentPath(cwd, targetPath)) {
+    if (isDocumentPath(cwd, targetPath, wfPaths)) {
       return context.success({});
     }
 
@@ -117,19 +121,29 @@ function getWorkingDirectory(): string {
   return process.env.CLAUDE_TEST_CWD || process.cwd();
 }
 
-function isDocumentPath(cwd: string, path: string): boolean {
-  return isWorkflowDocumentPath(cwd, path);
+type WorkflowPaths = ReturnType<typeof resolveWorkflowPaths>;
+
+function isDocumentPath(
+  cwd: string,
+  path: string,
+  wfPaths: WorkflowPaths,
+): boolean {
+  const normalized = resolve(cwd, expandTilde(path));
+  return normalized === wfPaths.plan || normalized === wfPaths.research;
 }
 
-function areAllTargetsDocumentPaths(cwd: string, targets: string[]): boolean {
+function areAllTargetsDocumentPaths(
+  cwd: string,
+  targets: string[],
+  wfPaths: WorkflowPaths,
+): boolean {
   if (targets.length === 0) {
     return false;
   }
-  return targets.every((target) => isDocumentPath(cwd, target));
+  return targets.every((target) => isDocumentPath(cwd, target, wfPaths));
 }
 
-function readWorkflowState(cwd: string): WorkflowState | null {
-  const statePath = getStatePath(cwd);
+function readWorkflowState(statePath: string): WorkflowState | null {
   if (!existsSync(statePath)) {
     return null;
   }
@@ -143,15 +157,17 @@ function readWorkflowState(cwd: string): WorkflowState | null {
   }
 }
 
-function isWorkflowActive(cwd: string, state: WorkflowState | null): boolean {
+function isWorkflowActive(
+  wfPaths: WorkflowPaths,
+  state: WorkflowState | null,
+): boolean {
   if (state?.mode === "document-workflow") {
     return true;
   }
-  return existsSync(getPlanPath(cwd)) || existsSync(getResearchPath(cwd));
+  return existsSync(wfPaths.plan) || existsSync(wfPaths.research);
 }
 
-function hasApprovedPlan(cwd: string): boolean {
-  const planPath = getPlanPath(cwd);
+function hasApprovedPlan(planPath: string): boolean {
   if (!existsSync(planPath)) {
     return false;
   }
@@ -175,10 +191,6 @@ function hasApprovedPlan(cwd: string): boolean {
   } catch {
     return false;
   }
-}
-
-function hasResearchArtifact(cwd: string): boolean {
-  return existsSync(getResearchPath(cwd));
 }
 
 function getTargetFilePath(tool_name: string, tool_input: unknown): string | null {
