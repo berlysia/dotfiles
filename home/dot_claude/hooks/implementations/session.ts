@@ -48,12 +48,26 @@ const hook = defineHook({
             `export CLAUDE_TASK_LIST_ID="${taskListId}"\n`,
           );
         }
+
+        // Set session-specific workflow directory for parallel Document Workflow
+        const shortSessionId = sessionId.slice(0, 8);
+        const workflowDir = `.tmp/sessions/${shortSessionId}`;
+        appendFileSync(
+          envFile,
+          `export DOCUMENT_WORKFLOW_DIR="${workflowDir}"\n`,
+        );
       }
 
       const taskListWarning = checkSharedTaskList();
       const messages = [
         "🚀 Claude Code session started. Ready for development!",
       ];
+      if (envFile) {
+        const shortId = context.input.session_id.slice(0, 8);
+        messages.push(
+          `Document Workflow directory: .tmp/sessions/${shortId}/`,
+        );
+      }
       if (taskListWarning) {
         messages.push(taskListWarning);
       }

@@ -7,7 +7,7 @@ import {
   decideVerdict,
   extractTargetPath,
   extractLatestReviewMarker,
-  isPlanPath,
+  isPlanFile,
   parseReviewerResult,
   parseStructuredOutput,
   stripReviewMarkers,
@@ -16,9 +16,11 @@ import {
 } from "../../implementations/plan-review-automation.ts";
 
 describe("plan-review-automation.ts helpers", () => {
-  it("isPlanPath detects plan.md only", () => {
-    strictEqual(isPlanPath("/tmp/plan.md"), true);
-    strictEqual(isPlanPath("/tmp/plan.mdx"), false);
+  it("isPlanFile detects plan.md in any directory", () => {
+    strictEqual(isPlanFile("/tmp/plan.md"), true);
+    strictEqual(isPlanFile("/project/.tmp/sessions/abcd1234/plan.md"), true);
+    strictEqual(isPlanFile("/tmp/plan.mdx"), false);
+    strictEqual(isPlanFile("/project/src/app.ts"), false);
   });
 
   it("extractTargetPath reads file_path for write-like tools", () => {

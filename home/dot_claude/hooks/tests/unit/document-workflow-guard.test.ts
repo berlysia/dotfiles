@@ -290,6 +290,97 @@ describe("document-workflow-guard.ts hook behavior", () => {
     context.assertDeny();
   });
 
+  describe("session-specific workflow directory (DOCUMENT_WORKFLOW_DIR)", () => {
+    function createSessionWorkflowRepo(
+      sessionDir: string,
+      options: WorkflowRepoOptions,
+    ): string {
+      const repo = mkdtempSync(join(tmpdir(), "document-workflow-guard-session-"));
+      mkdirSync(join(repo, sessionDir), { recursive: true });
+      writeFileSync(join(repo, sessionDir, "research.md"), "research");
+      writeFileSync(join(repo, sessionDir, "plan.md"), buildPlanContent(options));
+      return repo;
+    }
+
+    it("blocks Write when session-specific plan is pending", async () => {
+      const sessionDir = ".tmp/sessions/abcd1234";
+      const repo = createSessionWorkflowRepo(sessionDir, pendingWorkflowRepo());
+      envHelper.set("CLAUDE_TEST_CWD", repo);
+      envHelper.set("DOCUMENT_WORKFLOW_DIR", sessionDir);
+
+      const context = createPreToolUseContextFor(hook, "Write", {
+        file_path: "src/a.ts",
+        content: "const a = 1;",
+      });
+
+      await invokeRun(hook, context);
+      context.assertDeny();
+    });
+
+    it("allows Write when session-specific plan is approved", async () => {
+      const sessionDir = ".tmp/sessions/abcd1234";
+      const repo = createSessionWorkflowRepo(sessionDir, approvedWorkflowRepo());
+      envHelper.set("CLAUDE_TEST_CWD", repo);
+      envHelper.set("DOCUMENT_WORKFLOW_DIR", sessionDir);
+
+      const context = createPreToolUseContextFor(hook, "Write", {
+        file_path: "src/a.ts",
+        content: "const a = 1;",
+      });
+
+      await invokeRun(hook, context);
+      context.assertSuccess({});
+    });
+
+    it("allows editing session-specific plan.md while pending", async () => {
+      const sessionDir = ".tmp/sessions/abcd1234";
+      const repo = createSessionWorkflowRepo(sessionDir, pendingWorkflowRepo());
+      envHelper.set("CLAUDE_TEST_CWD", repo);
+      envHelper.set("DOCUMENT_WORKFLOW_DIR", sessionDir);
+
+      const context = createPreToolUseContextFor(hook, "Edit", {
+        file_path: `./${sessionDir}/plan.md`,
+        old_string: "- Plan Status: drafting",
+        new_string: "- Plan Status: drafting",
+      });
+
+      await invokeRun(hook, context);
+      context.assertSuccess({});
+    });
+
+    it("does not activate when default .tmp has no artifacts but session dir does", async () => {
+      const repo = mkdtempSync(join(tmpdir(), "document-workflow-guard-session-"));
+      const sessionDir = ".tmp/sessions/abcd1234";
+      mkdirSync(join(repo, sessionDir), { recursive: true });
+      writeFileSync(join(repo, sessionDir, "plan.md"), buildPlanContent(pendingWorkflowRepo()));
+      writeFileSync(join(repo, sessionDir, "research.md"), "research");
+      envHelper.set("CLAUDE_TEST_CWD", repo);
+      envHelper.set("DOCUMENT_WORKFLOW_DIR", sessionDir);
+
+      const context = createPreToolUseContextFor(hook, "Write", {
+        file_path: "src/a.ts",
+        content: "const a = 1;",
+      });
+
+      await invokeRun(hook, context);
+      context.assertDeny();
+    });
+
+    it("does not block when session dir has no artifacts", async () => {
+      const repo = mkdtempSync(join(tmpdir(), "document-workflow-guard-session-"));
+      envHelper.set("CLAUDE_TEST_CWD", repo);
+      envHelper.set("DOCUMENT_WORKFLOW_DIR", ".tmp/sessions/empty1234");
+
+      const context = createPreToolUseContextFor(hook, "Write", {
+        file_path: "src/a.ts",
+        content: "const a = 1;",
+      });
+
+      await invokeRun(hook, context);
+      context.assertSuccess({});
+    });
+  });
+
   it("blocks Write when review marker is pass but review status line is pending", async () => {
     const repo = mkdtempSync(join(tmpdir(), "document-workflow-guard-"));
     mkdirSync(join(repo, ".tmp"), { recursive: true });
