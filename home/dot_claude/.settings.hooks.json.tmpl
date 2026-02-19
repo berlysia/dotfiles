@@ -84,6 +84,16 @@
   ],
   "PostToolUse": [
     {
+      "matcher": "Write|Edit|MultiEdit|NotebookEdit",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/plan-review-automation.ts",
+          "async": true
+        }
+      ]
+    },
+    {
       "matcher": "",
       "hooks": [
         {

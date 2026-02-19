@@ -35,10 +35,11 @@ don’t implement yet
 ## 5. Implementation Directive
 
 ```text
-.tmp/plan.md の承認済みタスクをすべて実装してください。
+.tmp/plan.md の実装対象タスクをすべて実装してください。
+実装前に `Plan Status: complete`、`Review Status: pass`、`Approval Status: approved` を確認してください。
+実装前に `auto-review: verdict=pass` コメントが最新計画ハッシュと一致していることを確認してください。
 タスクまたはフェーズが完了するたびに .tmp/plan.md のチェックを更新してください。
 不要なコメントや JSDoc は追加しないでください。
 不明な型は使わないでください。
 typecheck と test を継続的に実行し、新しい問題があればその場で修正してください。
 ```
-

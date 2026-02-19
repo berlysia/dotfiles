@@ -9,7 +9,8 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
 ### Document Workflow 方針
 
 - 中規模以上の作業（3ステップ以上、または設計判断を伴う変更）は、Plan Mode より **Document Workflow** を優先する
-- 実装前に `.tmp/research.md` と `.tmp/plan.md` を作成し、`Status: approved` 後に実装する
+- 実装前に `.tmp/research.md` と `.tmp/plan.md` を作成し、`Plan Status: complete` + `Review Status: pass` + `Approval Status: approved` と `auto-review: verdict=pass` を満たしてから実装する
+- `.tmp/plan.md` 更新時は `plan-review-automation` hook が自動で `logic-validator` + 設計系レビューを実行し、レビュー結果を `.tmp/plan-review.md` / `.tmp/plan-review.json` と `plan.md` コメントへ反映する
 - 実装系書き込みは `document-workflow-guard` hook で制御し、導入初期は `DOCUMENT_WORKFLOW_WARN_ONLY=1` で観測する
 
 ### Chezmoi ファイル管理

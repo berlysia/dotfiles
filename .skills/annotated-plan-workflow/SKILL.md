@@ -20,7 +20,7 @@ Plan Mode ではなく `.tmp/research.md` / `.tmp/plan.md` を中心に実装を
 2. 実装計画を `.tmp/plan.md` に作成する
 3. ユーザー注釈を反映する反復を行う
 4. 具体的 TODO を `plan.md` に追加する
-5. 承認を得てから実装する
+5. 承認 + 自動レビュー pass を満たしてから実装する
 6. タスク完了ごとに `plan.md` を更新する
 
 ## Hard Rules
@@ -36,14 +36,15 @@ Plan Mode ではなく `.tmp/research.md` / `.tmp/plan.md` を中心に実装を
 
 ```markdown
 ## Approval
-- Status: pending
-- Approved by:
+- Plan Status: drafting
+- Review Status: pending
+- Approval Status: pending
+- Approved by: (human)
 - Approved at:
 ```
 
-実装開始は `Status: approved` になってから。
+実装開始は `Plan Status: complete` + `Review Status: pass` + `Approval Status: approved` かつ `<!-- auto-review: verdict=pass; hash=... -->` が最新計画に一致している状態になってから。
 
 ## Templates
 
 テンプレートは `references/templates.md` を使う。
-
