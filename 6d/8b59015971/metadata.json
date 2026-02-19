@@ -3,7 +3,7 @@
   "checkpoint_id": "6d8b59015971",
   "strategy": "manual-commit",
   "branch": "master",
-  "checkpoints_count": 2,
+  "checkpoints_count": 3,
   "files_touched": [
     ".skills/annotated-plan-workflow/SKILL.md",
     ".skills/annotated-plan-workflow/references/templates.md",
@@ -26,13 +26,20 @@
       "context": "/6d/8b59015971/0/context.md",
       "content_hash": "/6d/8b59015971/0/content_hash.txt",
       "prompt": "/6d/8b59015971/0/prompt.txt"
+    },
+    {
+      "metadata": "/6d/8b59015971/1/metadata.json",
+      "transcript": "/6d/8b59015971/1/full.jsonl",
+      "context": "/6d/8b59015971/1/context.md",
+      "content_hash": "/6d/8b59015971/1/content_hash.txt",
+      "prompt": "/6d/8b59015971/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 3882,
-    "cache_creation_tokens": 210344,
-    "cache_read_tokens": 9395660,
-    "output_tokens": 16521,
-    "api_call_count": 76
+    "input_tokens": 5130,
+    "cache_creation_tokens": 270678,
+    "cache_read_tokens": 11458033,
+    "output_tokens": 21329,
+    "api_call_count": 101
   }
 }
