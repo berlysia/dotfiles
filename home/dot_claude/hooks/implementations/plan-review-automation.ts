@@ -57,6 +57,7 @@ interface AutoReviewMarker {
 interface QueryResult {
   text: string;
   structuredOutput?: unknown;
+  errorInfo?: string;
 }
 
 const REVIEW_RESULT_SCHEMA: Record<string, unknown> = {
@@ -338,7 +339,16 @@ async function runReviewer(
   model: string,
 ): Promise<ReviewerResult> {
   const userPrompt = createReviewerPrompt(reviewer, planContent, planPath);
-  const { text, structuredOutput } = await queryReviewer(userPrompt, model);
+  const { text, structuredOutput, errorInfo } = await queryReviewer(
+    userPrompt,
+    model,
+  );
+
+  if (errorInfo) {
+    console.error(
+      `[plan-review-automation] ${reviewer.name}: SDK error — ${errorInfo}`,
+    );
+  }
 
   if (structuredOutput !== undefined && structuredOutput !== null) {
     return parseStructuredOutput(reviewer.name, structuredOutput);
@@ -387,6 +397,7 @@ async function queryReviewer(
   let assistantText = "";
   let resultText = "";
   let structuredOutput: unknown = undefined;
+  let errorInfo: string | undefined;
 
   for await (const message of conversation) {
     if (message.type === "assistant") {
@@ -395,10 +406,20 @@ async function queryReviewer(
           assistantText += block.text;
         }
       }
-    } else if (message.type === "result" && message.subtype === "success") {
-      structuredOutput = message.structured_output;
-      if (message.result) {
-        resultText = message.result;
+    } else if (message.type === "result") {
+      if (message.subtype === "success") {
+        structuredOutput = message.structured_output;
+        if (message.result) {
+          resultText = message.result;
+        }
+      } else {
+        // SDKResultError: error_during_execution, error_max_turns,
+        // error_max_budget_usd, error_max_structured_output_retries
+        const errors =
+          "errors" in message && Array.isArray(message.errors)
+            ? (message.errors as string[]).join("; ")
+            : "unknown";
+        errorInfo = `${message.subtype}: ${errors}`;
       }
     }
   }
@@ -406,15 +427,20 @@ async function queryReviewer(
   return {
     text: assistantText || resultText,
     structuredOutput,
+    errorInfo,
   };
 }
 
 function createFallbackResult(
   reviewer: string,
   reason: string,
+  rawText?: string,
 ): ReviewerResult {
+  const preview = rawText
+    ? ` | text preview: "${rawText.slice(0, 200)}"`
+    : "";
   console.error(
-    `[plan-review-automation] ${reviewer}: parse failed — ${reason}`,
+    `[plan-review-automation] ${reviewer}: parse failed — ${reason}${preview}`,
   );
   return {
     reviewer,
@@ -469,6 +495,7 @@ function parseReviewerResult(
     return createFallbackResult(
       reviewer,
       `no JSON found in text response (length=${response.length})`,
+      response,
     );
   }
 
@@ -479,6 +506,7 @@ function parseReviewerResult(
     return createFallbackResult(
       reviewer,
       "JSON.parse failed on extracted text",
+      response,
     );
   }
 }
