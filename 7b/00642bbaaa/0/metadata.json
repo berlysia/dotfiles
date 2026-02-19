@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "7b00642bbaaa",
+  "session_id": "190bd543-8ddb-4b8d-9d92-4a40a234768d",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-19T12:28:37.648921Z",
+  "branch": "master",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "home/dot_claude/hooks/implementations/plan-review-automation.ts"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "d56e3dd0-fffb-4877-86ae-9ea96845395d",
+  "checkpoint_transcript_start": 502,
+  "transcript_lines_at_start": 502,
+  "token_usage": {
+    "input_tokens": 24,
+    "cache_creation_tokens": 15298,
+    "cache_read_tokens": 1767091,
+    "output_tokens": 948,
+    "api_call_count": 17
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-19T12:28:37.371138Z",
+    "agent_lines": 0,
+    "human_added": 2656,
+    "human_modified": 4,
+    "human_removed": 0,
+    "total_committed": 2656,
+    "agent_percentage": 0
+  },
+  "transcript_path": ".claude/projects/-Users-berlysia--local-share-chezmoi/190bd543-8ddb-4b8d-9d92-4a40a234768d.jsonl"
+}
