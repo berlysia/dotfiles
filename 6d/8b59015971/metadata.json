@@ -1,0 +1,38 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "6d8b59015971",
+  "strategy": "manual-commit",
+  "branch": "master",
+  "checkpoints_count": 2,
+  "files_touched": [
+    ".skills/annotated-plan-workflow/SKILL.md",
+    ".skills/annotated-plan-workflow/references/templates.md",
+    ".tmp/plan.md",
+    ".tmp/research.md",
+    "CLAUDE.md",
+    "home/dot_claude/CLAUDE.md",
+    "home/dot_claude/hooks/implementations/document-workflow-guard.ts",
+    "home/dot_claude/hooks/implementations/plan-review-automation.ts",
+    "home/dot_claude/hooks/implementations/session.ts",
+    "home/dot_claude/hooks/lib/workflow-paths.ts",
+    "home/dot_claude/hooks/tests/unit/document-workflow-guard.test.ts",
+    "home/dot_claude/hooks/tests/unit/plan-review-automation.test.ts",
+    "home/dot_claude/hooks/tests/unit/workflow-paths.test.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/6d/8b59015971/0/metadata.json",
+      "transcript": "/6d/8b59015971/0/full.jsonl",
+      "context": "/6d/8b59015971/0/context.md",
+      "content_hash": "/6d/8b59015971/0/content_hash.txt",
+      "prompt": "/6d/8b59015971/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 3882,
+    "cache_creation_tokens": 210344,
+    "cache_read_tokens": 9395660,
+    "output_tokens": 16521,
+    "api_call_count": 76
+  }
+}
