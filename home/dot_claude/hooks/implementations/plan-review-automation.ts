@@ -97,6 +97,7 @@ You MUST return ONLY a JSON object with this exact shape:
 }
 
 Rules:
+- Respond in a SINGLE turn with the JSON object. Do NOT use tools or request additional turns.
 - No markdown output.
 - Score 5 means excellent, 1 means unsafe.
 - If no meaningful issue exists, return empty findings array.
@@ -394,9 +395,10 @@ async function queryReviewer(
     prompt,
     options: {
       model,
-      // Each reviewer needs only a single LLM round-trip (no tools enabled).
-      // Allow a small margin for structured output validation retries.
-      maxTurns: 3,
+      // Each reviewer should complete in 1-3 turns (no tools enabled).
+      // Hard cap at 10 to tolerate structured output validation retries
+      // without hitting error_max_turns.
+      maxTurns: 10,
       systemPrompt: SYSTEM_PROMPT,
       allowedTools: [],
       permissionMode: "bypassPermissions",
