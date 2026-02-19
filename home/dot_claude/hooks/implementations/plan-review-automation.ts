@@ -48,6 +48,33 @@ interface AutoReviewMarker {
   hash: string;
 }
 
+interface QueryResult {
+  text: string;
+  structuredOutput?: unknown;
+}
+
+const REVIEW_RESULT_SCHEMA: Record<string, unknown> = {
+  type: "object",
+  properties: {
+    score: { type: "number" },
+    summary: { type: "string" },
+    findings: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          severity: { type: "string", enum: ["P0", "P1", "P2"] },
+          title: { type: "string" },
+          detail: { type: "string" },
+          suggestion: { type: "string" },
+        },
+        required: ["severity", "title", "detail", "suggestion"],
+      },
+    },
+  },
+  required: ["score", "summary", "findings"],
+};
+
 const SYSTEM_PROMPT = `You are an automated plan reviewer.
 
 You MUST return ONLY a JSON object with this exact shape:
@@ -290,8 +317,13 @@ async function runReviewer(
   model: string,
 ): Promise<ReviewerResult> {
   const userPrompt = createReviewerPrompt(reviewer, planContent, planPath);
-  const response = await queryReviewer(userPrompt, model);
-  return parseReviewerResult(reviewer.name, response);
+  const { text, structuredOutput } = await queryReviewer(userPrompt, model);
+
+  if (structuredOutput !== undefined && structuredOutput !== null) {
+    return parseStructuredOutput(reviewer.name, structuredOutput);
+  }
+
+  return parseReviewerResult(reviewer.name, text);
 }
 
 function createReviewerPrompt(
@@ -311,7 +343,7 @@ function createReviewerPrompt(
   ].join("\n");
 }
 
-async function queryReviewer(prompt: string, model: string): Promise<string> {
+async function queryReviewer(prompt: string, model: string): Promise<QueryResult> {
   const conversation = query({
     prompt,
     options: {
@@ -321,31 +353,44 @@ async function queryReviewer(prompt: string, model: string): Promise<string> {
       allowedTools: [],
       permissionMode: "bypassPermissions",
       allowDangerouslySkipPermissions: true,
+      outputFormat: {
+        type: "json_schema",
+        schema: REVIEW_RESULT_SCHEMA,
+      },
     },
   });
 
-  let responseText = "";
+  let assistantText = "";
+  let resultText = "";
+  let structuredOutput: unknown = undefined;
+
   for await (const message of conversation) {
     if (message.type === "assistant") {
       for (const block of message.message.content) {
         if (block.type === "text") {
-          responseText += block.text;
+          assistantText += block.text;
         }
       }
     } else if (
       message.type === "result" &&
-      message.subtype === "success" &&
-      message.result
+      message.subtype === "success"
     ) {
-      responseText = message.result;
+      structuredOutput = message.structured_output;
+      if (message.result) {
+        resultText = message.result;
+      }
     }
   }
 
-  return responseText;
+  return {
+    text: assistantText || resultText,
+    structuredOutput,
+  };
 }
 
-function parseReviewerResult(reviewer: string, response: string): ReviewerResult {
-  const fallback: ReviewerResult = {
+function createFallbackResult(reviewer: string, reason: string): ReviewerResult {
+  console.error(`[plan-review-automation] ${reviewer}: parse failed — ${reason}`);
+  return {
     reviewer,
     score: 2,
     summary:
@@ -354,36 +399,49 @@ function parseReviewerResult(reviewer: string, response: string): ReviewerResult
       {
         severity: "P1",
         title: "Review parse failure",
-        detail:
-          "Automated reviewer did not return valid JSON. Validation quality is unknown.",
+        detail: `Automated reviewer did not return valid JSON (${reason}). Validation quality is unknown.`,
         suggestion:
           "Run manual /self-review and /validate-plan before approving the plan.",
       },
     ],
   };
+}
 
+function buildReviewerResult(
+  reviewer: string,
+  parsed: Record<string, unknown>,
+): ReviewerResult {
+  const score = normalizeScore(parsed.score);
+  const summary =
+    typeof parsed.summary === "string" && parsed.summary.length > 0
+      ? parsed.summary
+      : "No summary provided.";
+  const findings = normalizeFindings(parsed.findings);
+
+  return { reviewer, score, summary, findings };
+}
+
+function parseStructuredOutput(reviewer: string, output: unknown): ReviewerResult {
+  if (!isRecord(output)) {
+    return createFallbackResult(reviewer, `structured_output is ${typeof output}`);
+  }
+  return buildReviewerResult(reviewer, output);
+}
+
+function parseReviewerResult(reviewer: string, response: string): ReviewerResult {
   const jsonMatch = response.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
-    return fallback;
+    return createFallbackResult(
+      reviewer,
+      `no JSON found in text response (length=${response.length})`,
+    );
   }
 
   try {
     const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
-    const score = normalizeScore(parsed.score);
-    const summary =
-      typeof parsed.summary === "string" && parsed.summary.length > 0
-        ? parsed.summary
-        : "No summary provided.";
-    const findings = normalizeFindings(parsed.findings);
-
-    return {
-      reviewer,
-      score,
-      summary,
-      findings,
-    };
+    return buildReviewerResult(reviewer, parsed);
   } catch {
-    return fallback;
+    return createFallbackResult(reviewer, "JSON.parse failed on extracted text");
   }
 }
 
@@ -525,12 +583,15 @@ function buildReviewMarkdown(report: ReviewReport): string {
 export {
   buildReviewMarkdown,
   buildReviewMarker,
+  buildReviewerResult,
   computePlanHash,
+  createFallbackResult,
   decideVerdict,
   extractTargetPath,
   extractLatestReviewMarker,
   isPlanPath,
   parseReviewerResult,
+  parseStructuredOutput,
   stripReviewMarkers,
   upsertReviewMarker,
   upsertReviewStatus,
