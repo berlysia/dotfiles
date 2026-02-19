@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "c355bc003395",
+  "strategy": "manual-commit",
+  "branch": "master",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "home/dot_claude/hooks/implementations/plan-review-automation.ts",
+    "home/dot_claude/hooks/tests/unit/plan-review-automation.test.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/c3/55bc003395/0/metadata.json",
+      "transcript": "/c3/55bc003395/0/full.jsonl",
+      "context": "/c3/55bc003395/0/context.md",
+      "content_hash": "/c3/55bc003395/0/content_hash.txt",
+      "prompt": "/c3/55bc003395/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 20,
+    "cache_creation_tokens": 187119,
+    "cache_read_tokens": 2127632,
+    "output_tokens": 3608,
+    "api_call_count": 16
+  }
+}
