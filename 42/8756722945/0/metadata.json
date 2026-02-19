@@ -1,0 +1,36 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "428756722945",
+  "session_id": "35cb9896-db79-4b3b-a391-0541dc0a9b1b",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-19T06:35:16.16995Z",
+  "branch": "master",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "home/dot_claude/hooks/implementations/document-workflow-guard.ts",
+    "home/dot_claude/hooks/implementations/plan-review-automation.ts",
+    "home/dot_claude/hooks/lib/workflow-paths.ts",
+    "home/dot_claude/hooks/tests/unit/workflow-paths.test.ts"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "8dedac3c-a60f-47cc-aef2-ceb105c9f267",
+  "checkpoint_transcript_start": 564,
+  "transcript_lines_at_start": 564,
+  "token_usage": {
+    "input_tokens": 26,
+    "cache_creation_tokens": 33222,
+    "cache_read_tokens": 3297128,
+    "output_tokens": 261,
+    "api_call_count": 24
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-19T06:35:15.895467Z",
+    "agent_lines": 0,
+    "human_added": 2645,
+    "human_modified": 49,
+    "human_removed": 0,
+    "total_committed": 2645,
+    "agent_percentage": 0
+  },
+  "transcript_path": ".claude/projects/-Users-berlysia--local-share-chezmoi/35cb9896-db79-4b3b-a391-0541dc0a9b1b.jsonl"
+}
