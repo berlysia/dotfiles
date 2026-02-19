@@ -14,7 +14,7 @@ import {
   isWorkflowDocumentPath,
   isPlanFile,
   getWorkflowDirRelative,
-  resolveReviewOutputPaths,
+  resolveWorkflowPaths,
 } from "../../lib/workflow-paths.ts";
 import { EnvironmentHelper } from "./test-helpers.ts";
 
@@ -163,21 +163,26 @@ describe("workflow-paths.ts", () => {
     });
   });
 
-  describe("resolveReviewOutputPaths", () => {
-    it("resolves review output files in the given directory", () => {
+  describe("resolveWorkflowPaths", () => {
+    it("resolves all workflow artifact paths in the given directory", () => {
       const dir = "/project/.tmp/sessions/abcd1234";
-      const paths = resolveReviewOutputPaths(dir);
-      strictEqual(paths.cachePath, resolve(dir, "plan-review.cache.json"));
-      strictEqual(paths.markdownPath, resolve(dir, "plan-review.md"));
-      strictEqual(paths.jsonPath, resolve(dir, "plan-review.json"));
+      const paths = resolveWorkflowPaths(dir);
+      strictEqual(paths.plan, resolve(dir, "plan.md"));
+      strictEqual(paths.research, resolve(dir, "research.md"));
+      strictEqual(paths.state, resolve(dir, "workflow-state.json"));
+      strictEqual(paths.reviewCache, resolve(dir, "plan-review.cache.json"));
+      strictEqual(paths.reviewMarkdown, resolve(dir, "plan-review.md"));
+      strictEqual(paths.reviewJson, resolve(dir, "plan-review.json"));
     });
 
     it("works with legacy .tmp directory", () => {
       const dir = "/project/.tmp";
-      const paths = resolveReviewOutputPaths(dir);
-      strictEqual(paths.cachePath, resolve(dir, "plan-review.cache.json"));
-      strictEqual(paths.markdownPath, resolve(dir, "plan-review.md"));
-      strictEqual(paths.jsonPath, resolve(dir, "plan-review.json"));
+      const paths = resolveWorkflowPaths(dir);
+      strictEqual(paths.plan, resolve(dir, "plan.md"));
+      strictEqual(paths.research, resolve(dir, "research.md"));
+      strictEqual(paths.reviewCache, resolve(dir, "plan-review.cache.json"));
+      strictEqual(paths.reviewMarkdown, resolve(dir, "plan-review.md"));
+      strictEqual(paths.reviewJson, resolve(dir, "plan-review.json"));
     });
   });
 
