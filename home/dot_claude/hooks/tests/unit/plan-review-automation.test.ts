@@ -9,6 +9,7 @@ import {
   extractLatestReviewMarker,
   isPlanPath,
   parseReviewerResult,
+  parseStructuredOutput,
   stripReviewMarkers,
   upsertReviewMarker,
   upsertReviewStatus,
@@ -218,5 +219,69 @@ describe("plan-review-automation.ts helpers", () => {
     strictEqual(result.score, 2);
     strictEqual(result.findings.length, 1);
     strictEqual(result.findings[0]?.severity, "P1");
+  });
+
+  it("parseStructuredOutput parses valid structured output", () => {
+    const output = {
+      score: 4,
+      summary: "Minor issues found",
+      findings: [
+        {
+          severity: "P2",
+          title: "Style nit",
+          detail: "Consider renaming variable",
+          suggestion: "Use descriptive name",
+        },
+      ],
+    };
+
+    const result = parseStructuredOutput("logic-validator", output);
+
+    strictEqual(result.reviewer, "logic-validator");
+    strictEqual(result.score, 4);
+    strictEqual(result.summary, "Minor issues found");
+    deepStrictEqual(result.findings, [
+      {
+        severity: "P2",
+        title: "Style nit",
+        detail: "Consider renaming variable",
+        suggestion: "Use descriptive name",
+      },
+    ]);
+  });
+
+  it("parseStructuredOutput falls back for non-object input", () => {
+    const result = parseStructuredOutput("logic-validator", "not-an-object");
+
+    strictEqual(result.reviewer, "logic-validator");
+    strictEqual(result.score, 2);
+    strictEqual(result.findings.length, 1);
+    strictEqual(result.findings[0]?.severity, "P1");
+  });
+
+  it("parseStructuredOutput handles empty findings", () => {
+    const output = {
+      score: 5,
+      summary: "All good",
+      findings: [],
+    };
+
+    const result = parseStructuredOutput("release-safety-evaluator", output);
+
+    strictEqual(result.score, 5);
+    strictEqual(result.summary, "All good");
+    deepStrictEqual(result.findings, []);
+  });
+
+  it("parseStructuredOutput normalizes out-of-range scores", () => {
+    const output = {
+      score: 10,
+      summary: "Inflated score",
+      findings: [],
+    };
+
+    const result = parseStructuredOutput("logic-validator", output);
+
+    strictEqual(result.score, 5);
   });
 });
