@@ -1,0 +1,39 @@
+直近追加されている自動レビューの仕組みがうまくうごいてないっぽい。レポートをもらったので渡す
+
+## plan-review-automation hook の不具合レポート
+
+### 動作確認
+
+- **トリガー**: `.tmp/plan.md` への `Edit` で正常に発火する
+- **成果物生成**: `.tmp/plan-review.md`, `.tmp/plan-review.json`, `.tmp/plan-review.cache.json` が生成される
+- **plan.md への埋め込み**: `Review Status` と `<!-- auto-review: verdict=...; hash=... -->` マーカーが正しく追記される
+
+### 問題
+
+**3つのレビュアー全てが JSON パースに失敗し、実質的なレビューが行われていない。**
+
+| レビュアー | Score | 結果 |
+|-----------|-------|------|
+| `logic-validator` | 2/5 | `Reviewer response could not be parsed` |
+| `architecture-boundary-analyzer` | 2/5 | `Reviewer response could not be parsed` |
+| `release-safety-evaluator` | 2/5 | `Reviewer response could not be parsed` |
+
+- 使用モデル: `haiku`
+- verdict: `needs-work`（パース失敗のフォールバック値）
+- 全レビュアーが同一のエラーパターン → レビュアー個別の問題ではなく、**haiku の応答が期待する JSON 形式を満たしていない**可能性が高い
+
+### 再現手順
+
+```bash
+# .tmp/plan.md を Edit ツールで編集すると自動発火
+# → .tmp/plan-review.json で結果確認
+```
+
+### 確認ファイル
+
+- hook 出力: `.tmp/plan-review.md`, `.tmp/plan-review.json`
+- レビュー対象: `.tmp/plan.md`
+
+---
+
+commit apply push
