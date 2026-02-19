@@ -180,10 +180,22 @@ const hook = defineHook({
 
     const model = process.env.PLAN_REVIEW_MODEL || "sonnet";
 
+    // Read sibling research.md to provide project investigation context
+    const { research: researchPath } = resolveWorkflowPaths(planDir);
+    const researchContent =
+      existsSync(researchPath) ? readFileSync(researchPath, "utf-8") : null;
+
     try {
       const reviewerResults = await Promise.all(
         REVIEWERS.map((reviewer) =>
-          runReviewer(reviewer, planContent, absoluteTargetPath, model),
+          runReviewer(
+            reviewer,
+            planContent,
+            absoluteTargetPath,
+            model,
+            baseDir,
+            researchContent,
+          ),
         ),
       );
 
@@ -338,11 +350,19 @@ async function runReviewer(
   planContent: string,
   planPath: string,
   model: string,
+  cwd: string,
+  researchContent: string | null,
 ): Promise<ReviewerResult> {
-  const userPrompt = createReviewerPrompt(reviewer, planContent, planPath);
+  const userPrompt = createReviewerPrompt(
+    reviewer,
+    planContent,
+    planPath,
+    researchContent,
+  );
   const { text, structuredOutput, errorInfo } = await queryReviewer(
     userPrompt,
     model,
+    cwd,
   );
 
   if (errorInfo) {
@@ -374,26 +394,44 @@ function createReviewerPrompt(
   reviewer: ReviewerSpec,
   planContent: string,
   planPath: string,
+  researchContent: string | null,
 ): string {
-  return [
+  const sections = [
     `Reviewer: ${reviewer.name}`,
     `Focus: ${reviewer.focus}`,
     `Plan Path: ${planPath}`,
     "",
+  ];
+
+  if (researchContent) {
+    sections.push(
+      "Project research context (investigation findings that inform the plan):",
+      "<research>",
+      researchContent,
+      "</research>",
+      "",
+    );
+  }
+
+  sections.push(
     "Review this implementation plan:",
     "<plan>",
     planContent,
     "</plan>",
-  ].join("\n");
+  );
+
+  return sections.join("\n");
 }
 
 async function queryReviewer(
   prompt: string,
   model: string,
+  cwd: string,
 ): Promise<QueryResult> {
   const conversation = query({
     prompt,
     options: {
+      cwd,
       model,
       // Each reviewer should complete in 1-3 turns (no tools enabled).
       // Hard cap at 10 to tolerate structured output validation retries
