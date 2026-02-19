@@ -8,8 +8,8 @@ import {
   extractTargetPath,
   extractLatestReviewMarker,
   isPlanFile,
+  parseFindingsFromVerdict,
   parseReviewerResult,
-  parseStructuredOutput,
   stripReviewMarkers,
   upsertReviewMarker,
   upsertReviewStatus,
@@ -185,105 +185,112 @@ describe("plan-review-automation.ts helpers", () => {
     strictEqual(verdict, "pass");
   });
 
-  it("parseReviewerResult parses valid JSON payload", () => {
-    const response = JSON.stringify({
-      score: 5,
-      summary: "No issues",
-      findings: [
-        {
-          severity: "P1",
-          title: "Missing rollback",
-          detail: "Rollback path is not documented",
-          suggestion: "Add rollback section",
-        },
-      ],
-    });
+  it("parseReviewerResult extracts verdict from <review_verdict> tag", () => {
+    const response = [
+      "The plan looks solid overall. I verified the file paths exist.",
+      "",
+      "<review_verdict>",
+      "score: 4",
+      "summary: Generally sound plan with one missing rollback strategy",
+      "findings:",
+      "- P1: Missing rollback | No rollback strategy documented | Add rollback section",
+      "- P2: Minor naming | Variable naming inconsistency | Consider renaming for clarity",
+      "</review_verdict>",
+    ].join("\n");
 
     const result = parseReviewerResult("logic-validator", response);
 
     strictEqual(result.reviewer, "logic-validator");
-    strictEqual(result.score, 5);
-    strictEqual(result.summary, "No issues");
-    deepStrictEqual(result.findings, [
-      {
-        severity: "P1",
-        title: "Missing rollback",
-        detail: "Rollback path is not documented",
-        suggestion: "Add rollback section",
-      },
-    ]);
-  });
-
-  it("parseReviewerResult falls back when JSON is invalid", () => {
-    const result = parseReviewerResult("logic-validator", "not-json");
-
-    strictEqual(result.reviewer, "logic-validator");
-    strictEqual(result.score, 2);
-    strictEqual(result.findings.length, 1);
-    strictEqual(result.findings[0]?.severity, "P1");
-  });
-
-  it("parseStructuredOutput parses valid structured output", () => {
-    const output = {
-      score: 4,
-      summary: "Minor issues found",
-      findings: [
-        {
-          severity: "P2",
-          title: "Style nit",
-          detail: "Consider renaming variable",
-          suggestion: "Use descriptive name",
-        },
-      ],
-    };
-
-    const result = parseStructuredOutput("logic-validator", output);
-
-    strictEqual(result.reviewer, "logic-validator");
     strictEqual(result.score, 4);
-    strictEqual(result.summary, "Minor issues found");
-    deepStrictEqual(result.findings, [
-      {
-        severity: "P2",
-        title: "Style nit",
-        detail: "Consider renaming variable",
-        suggestion: "Use descriptive name",
-      },
-    ]);
+    strictEqual(result.summary, "Generally sound plan with one missing rollback strategy");
+    strictEqual(result.findings.length, 2);
+    deepStrictEqual(result.findings[0], {
+      severity: "P1",
+      title: "Missing rollback",
+      detail: "No rollback strategy documented",
+      suggestion: "Add rollback section",
+    });
+    deepStrictEqual(result.findings[1], {
+      severity: "P2",
+      title: "Minor naming",
+      detail: "Variable naming inconsistency",
+      suggestion: "Consider renaming for clarity",
+    });
   });
 
-  it("parseStructuredOutput falls back for non-object input", () => {
-    const result = parseStructuredOutput("logic-validator", "not-an-object");
+  it("parseReviewerResult handles clean verdict with no findings", () => {
+    const response = [
+      "Everything checks out.",
+      "",
+      "<review_verdict>",
+      "score: 5",
+      "summary: No issues found",
+      "findings:",
+      "</review_verdict>",
+    ].join("\n");
 
-    strictEqual(result.reviewer, "logic-validator");
-    strictEqual(result.score, 2);
-    strictEqual(result.findings.length, 1);
-    strictEqual(result.findings[0]?.severity, "P1");
-  });
-
-  it("parseStructuredOutput handles empty findings", () => {
-    const output = {
-      score: 5,
-      summary: "All good",
-      findings: [],
-    };
-
-    const result = parseStructuredOutput("release-safety-evaluator", output);
+    const result = parseReviewerResult("release-safety-evaluator", response);
 
     strictEqual(result.score, 5);
-    strictEqual(result.summary, "All good");
+    strictEqual(result.summary, "No issues found");
     deepStrictEqual(result.findings, []);
   });
 
-  it("parseStructuredOutput normalizes out-of-range scores", () => {
-    const output = {
-      score: 10,
-      summary: "Inflated score",
-      findings: [],
-    };
+  it("parseReviewerResult falls back when no verdict tag found", () => {
+    const result = parseReviewerResult("logic-validator", "no verdict here");
 
-    const result = parseStructuredOutput("logic-validator", output);
+    strictEqual(result.reviewer, "logic-validator");
+    strictEqual(result.score, 2);
+    strictEqual(result.findings.length, 1);
+    strictEqual(result.findings[0]?.severity, "P1");
+  });
+
+  it("parseReviewerResult normalizes out-of-range scores", () => {
+    const response = [
+      "<review_verdict>",
+      "score: 10",
+      "summary: Inflated score",
+      "findings:",
+      "</review_verdict>",
+    ].join("\n");
+
+    const result = parseReviewerResult("logic-validator", response);
 
     strictEqual(result.score, 5);
+  });
+
+  it("parseFindingsFromVerdict extracts multiple findings", () => {
+    const block = [
+      "score: 3",
+      "summary: Several issues",
+      "findings:",
+      "- P0: Critical flaw | Data loss risk | Add backup step",
+      "- P1: Missing test | No integration test planned | Add test task",
+      "- P2: Naming nit | Inconsistent naming | Standardize names",
+    ].join("\n");
+
+    const findings = parseFindingsFromVerdict(block);
+
+    strictEqual(findings.length, 3);
+    strictEqual(findings[0]?.severity, "P0");
+    strictEqual(findings[0]?.title, "Critical flaw");
+    strictEqual(findings[1]?.severity, "P1");
+    strictEqual(findings[2]?.severity, "P2");
+  });
+
+  it("parseFindingsFromVerdict handles title-only findings", () => {
+    const block = [
+      "score: 4",
+      "summary: ok",
+      "findings:",
+      "- P1: Missing error handling",
+    ].join("\n");
+
+    const findings = parseFindingsFromVerdict(block);
+
+    strictEqual(findings.length, 1);
+    strictEqual(findings[0]?.title, "Missing error handling");
+    strictEqual(findings[0]?.detail, "Missing error handling");
+    strictEqual(findings[0]?.suggestion, "");
   });
 });
