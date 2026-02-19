@@ -6,6 +6,12 @@
 
 This is a chezmoi-managed dotfiles repository for daily maintenance.
 
+### Document Workflow 方針
+
+- 中規模以上の作業（3ステップ以上、または設計判断を伴う変更）は、Plan Mode より **Document Workflow** を優先する
+- 実装前に `.tmp/research.md` と `.tmp/plan.md` を作成し、`Status: approved` 後に実装する
+- 実装系書き込みは `document-workflow-guard` hook で制御し、導入初期は `DOCUMENT_WORKFLOW_WARN_ONLY=1` で観測する
+
 ### Chezmoi ファイル管理
 
 #### 一般的なルール
@@ -141,4 +147,3 @@ bun はスクリプト位置から `node_modules` を上方探索するため、
 **主要な依存パッケージ**:
 - `cc-hooks-ts`: フック定義ヘルパー
 - `@anthropic-ai/claude-agent-sdk`: LLM評価用（Claude Codeライセンスで認証）
-

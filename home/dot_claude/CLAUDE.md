@@ -7,10 +7,11 @@
 ## Workflow
 
 1. **Explore** - Understand codebase and requirements
-2. **Plan** - Design solution with clear steps
-3. **Validate** - Verify plan with logic-validator agent (mandatory for Plan Mode)
-4. **Code** - Implement following best practices
-5. **Commit** - Clean, meaningful commits
+2. **Research** - Write detailed findings to `.tmp/research.md`
+3. **Plan** - Write implementation plan to `.tmp/plan.md`
+4. **Annotate & Approve** - Iterate plan updates until `Status: approved`
+5. **Code** - Implement following best practices
+6. **Commit** - Clean, meaningful commits
 
 ### Session Scoping
 
@@ -34,18 +35,32 @@
 |------|-----------|
 | 1-2 ステップ、1-2 ファイル | 直接実行 |
 | 3-5 ステップ、明確な方針 | `/approach-check` |
-| 6+ ステップ、または設計判断を伴う（API・データモデル・アーキテクチャ変更等） | **Plan Mode（必須）** |
-| Scope Guard 検知 | `/scope-guard` → 戦略に応じて Plan Mode |
+| 3+ ステップ、または設計判断を伴う（API・データモデル・アーキテクチャ変更等） | **Document Workflow（必須）** |
+| Scope Guard 検知 | `/scope-guard` → 戦略に応じて Document Workflow |
 
-**Plan Mode 必須トリガー（いずれか1つで発動）**:
+**Document Workflow 必須トリガー（いずれか1つで発動）**:
 - ADR の planning phase に該当する作業
 - アーキテクチャ・API設計・データモデルの変更
 - 探索と実装が混在するタスク（「調べてから実装」）
 - ユーザーが計画を要求した場合
 
-**禁止**: 上記トリガーに該当するタスクで Plan Mode を経由せず実装に着手すること
+**禁止**: 上記トリガーに該当するタスクで `.tmp/plan.md` 承認前に実装へ着手すること
 
-**Note**: ステップ数が少なくても設計判断を伴う場合は Plan Mode 必須。Scope Guard が検知した場合は `/scope-guard` の推奨戦略に従う。
+**Note**: ステップ数が少なくても設計判断を伴う場合は Document Workflow 必須。Scope Guard が検知した場合は `/scope-guard` の推奨戦略に従う。
+
+### Document Workflow Protocol (MANDATORY)
+
+```
+1. 調査: 対象コードを深く読み `.tmp/research.md` を作成
+2. 計画: `.tmp/plan.md` に方針・対象ファイル・TODO・リスクを書く
+3. 注釈反復: ユーザー注釈を反映し、都度「don’t implement yet」を明示
+4. 承認: `.tmp/plan.md` の `## Approval` を `Status: approved` にする
+5. 実装: 承認後に着手し、タスク完了ごとに `.tmp/plan.md` を更新
+```
+
+- `.tmp/research.md` と `.tmp/plan.md` への編集は承認前でも許可される
+- `Write/Edit/MultiEdit/NotebookEdit/Bash` の実装系書き込みは `document-workflow-guard` が制御する
+- ロールアウト初期は `DOCUMENT_WORKFLOW_WARN_ONLY=1` で観測し、安定後に enforce へ移行する
 
 ### Scope Guard
 
@@ -82,9 +97,9 @@
 
 **Critical**: Never unilaterally lower user expectations or disable steering.
 
-## Plan Mode Completion Protocol (MANDATORY)
+## Plan Mode Completion Protocol (LEGACY)
 
-**重要**: ExitPlanMode は hook によって計画検証を強制される。
+**重要**: 既存ワークフロー互換のために維持。通常は Document Workflow を優先する。
 
 ### フロー
 
