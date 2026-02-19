@@ -54,54 +54,45 @@ interface AutoReviewMarker {
 
 interface QueryResult {
   text: string;
-  structuredOutput?: unknown;
   errorInfo?: string;
 }
 
-const REVIEW_RESULT_SCHEMA: Record<string, unknown> = {
-  type: "object",
-  properties: {
-    score: { type: "number" },
-    summary: { type: "string" },
-    findings: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          severity: { type: "string", enum: ["P0", "P1", "P2"] },
-          title: { type: "string" },
-          detail: { type: "string" },
-          suggestion: { type: "string" },
-        },
-        required: ["severity", "title", "detail", "suggestion"],
-      },
-    },
-  },
-  required: ["score", "summary", "findings"],
-};
+const REVIEW_VERDICT_REGEX =
+  /<review_verdict>([\s\S]*?)<\/review_verdict>/;
 
-const SYSTEM_PROMPT = `You are an automated plan reviewer.
+const SYSTEM_PROMPT = `You are an automated plan reviewer acting as a sub-agent.
 
-You MUST return ONLY a JSON object with this exact shape:
-{
-  "score": 1-5,
-  "summary": "string",
-  "findings": [
-    {
-      "severity": "P0|P1|P2",
-      "title": "string",
-      "detail": "string",
-      "suggestion": "string"
-    }
-  ]
-}
+You may use Read, Grep, Glob, and LS tools to inspect the project codebase
+when you need to verify claims, file paths, or architecture assumptions in the plan.
+
+Analyze the plan thoroughly, then end your response with a verdict block
+in exactly this format:
+
+<review_verdict>
+score: 1-5
+summary: one-line summary of your assessment
+findings:
+- P0: title | detail | suggestion
+- P1: title | detail | suggestion
+- P2: title | detail | suggestion
+</review_verdict>
+
+Severity levels:
+- P0: Blocker — the plan has a critical flaw that will cause failure
+- P1: Needs work — significant issue that should be addressed
+- P2: Minor — nice-to-have improvement, not blocking
+
+If no issues found:
+<review_verdict>
+score: 5
+summary: No issues found
+findings:
+</review_verdict>
 
 Rules:
-- Respond in a SINGLE turn with the JSON object. Do NOT use tools or request additional turns.
-- No markdown output.
 - Score 5 means excellent, 1 means unsafe.
-- If no meaningful issue exists, return empty findings array.
-- Focus on concrete, actionable findings only.`;
+- Focus on concrete, actionable findings only.
+- You MUST include the <review_verdict> block at the end.`;
 
 const REVIEWERS: ReviewerSpec[] = [
   {
@@ -369,7 +360,6 @@ async function runReviewer(
     console.error(
       `[plan-review-automation] ${reviewer.name}: SDK error — ${errorInfo}`,
     );
-    // Short-circuit: SDK errors produce no useful text to parse
     return createFallbackResult(
       reviewer.name,
       `SDK error: ${errorInfo}`,
@@ -377,13 +367,9 @@ async function runReviewer(
     );
   }
 
-  if (structuredOutput !== undefined && structuredOutput !== null) {
-    return parseStructuredOutput(reviewer.name, structuredOutput);
-  }
-
   if (text.length === 0) {
     console.error(
-      `[plan-review-automation] ${reviewer.name}: empty response (no structured_output, no text)`,
+      `[plan-review-automation] ${reviewer.name}: empty response`,
     );
   }
 
@@ -433,24 +419,18 @@ async function queryReviewer(
     options: {
       cwd,
       model,
-      // Each reviewer should complete in 1-3 turns (no tools enabled).
-      // Hard cap at 10 to tolerate structured output validation retries
-      // without hitting error_max_turns.
-      maxTurns: 10,
+      // Sub-agent reviewers may use read-only tools to verify plan claims.
+      // 20 turns allows several tool calls plus the final verdict response.
+      maxTurns: 20,
       systemPrompt: SYSTEM_PROMPT,
-      allowedTools: [],
+      allowedTools: ["Read", "Grep", "Glob", "LS"],
       permissionMode: "bypassPermissions",
       allowDangerouslySkipPermissions: true,
-      outputFormat: {
-        type: "json_schema",
-        schema: REVIEW_RESULT_SCHEMA,
-      },
     },
   });
 
   let assistantText = "";
   let resultText = "";
-  let structuredOutput: unknown = undefined;
   let errorInfo: string | undefined;
 
   for await (const message of conversation) {
@@ -462,13 +442,10 @@ async function queryReviewer(
       }
     } else if (message.type === "result") {
       if (message.subtype === "success") {
-        structuredOutput = message.structured_output;
         if (message.result) {
           resultText = message.result;
         }
       } else {
-        // SDKResultError: error_during_execution, error_max_turns,
-        // error_max_budget_usd, error_max_structured_output_retries
         const errors =
           "errors" in message && Array.isArray(message.errors)
             ? (message.errors as string[]).join("; ")
@@ -480,7 +457,6 @@ async function queryReviewer(
 
   return {
     text: assistantText || resultText,
-    structuredOutput,
     errorInfo,
   };
 }
@@ -513,56 +489,60 @@ function createFallbackResult(
   };
 }
 
-function buildReviewerResult(
-  reviewer: string,
-  parsed: Record<string, unknown>,
-): ReviewerResult {
-  const score = normalizeScore(parsed.score);
-  const summary =
-    typeof parsed.summary === "string" && parsed.summary.length > 0
-      ? parsed.summary
-      : "No summary provided.";
-  const findings = normalizeFindings(parsed.findings);
-
-  return { reviewer, score, summary, findings };
-}
-
-function parseStructuredOutput(
-  reviewer: string,
-  output: unknown,
-): ReviewerResult {
-  if (!isRecord(output)) {
-    return createFallbackResult(
-      reviewer,
-      `structured_output is ${typeof output}`,
-    );
-  }
-  return buildReviewerResult(reviewer, output);
-}
-
 function parseReviewerResult(
   reviewer: string,
   response: string,
 ): ReviewerResult {
-  const jsonMatch = response.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
+  const verdictMatch = response.match(REVIEW_VERDICT_REGEX);
+  if (!verdictMatch?.[1]) {
     return createFallbackResult(
       reviewer,
-      `no JSON found in text response (length=${response.length})`,
+      `no <review_verdict> tag found (length=${response.length})`,
       response,
     );
   }
 
-  try {
-    const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
-    return buildReviewerResult(reviewer, parsed);
-  } catch {
-    return createFallbackResult(
-      reviewer,
-      "JSON.parse failed on extracted text",
-      response,
-    );
+  const verdictBlock = verdictMatch[1];
+
+  const scoreMatch = verdictBlock.match(/^score:\s*(\d+)/m);
+  const score = normalizeScore(
+    scoreMatch ? Number.parseInt(scoreMatch[1] ?? "", 10) : undefined,
+  );
+
+  const summaryMatch = verdictBlock.match(/^summary:\s*(.+)/m);
+  const summary =
+    summaryMatch?.[1]?.trim() || "No summary provided.";
+
+  const findings = parseFindingsFromVerdict(verdictBlock);
+
+  return { reviewer, score, summary, findings };
+}
+
+function parseFindingsFromVerdict(verdictBlock: string): Finding[] {
+  const findings: Finding[] = [];
+  const findingLines = verdictBlock.match(
+    /^- (P[012]):\s*(.+)/gm,
+  );
+  if (!findingLines) {
+    return findings;
   }
+
+  for (const line of findingLines) {
+    const match = line.match(/^- (P[012]):\s*(.+)/);
+    if (!match?.[1] || !match[2]) {
+      continue;
+    }
+    const severity = match[1] as Severity;
+    const parts = match[2].split("|").map((s) => s.trim());
+    const title = parts[0] || "";
+    const detail = parts[1] || title;
+    const suggestion = parts[2] || "";
+    if (title.length === 0) {
+      continue;
+    }
+    findings.push({ severity, title, detail, suggestion });
+  }
+  return findings;
 }
 
 function normalizeScore(value: unknown): number {
@@ -575,38 +555,6 @@ function normalizeScore(value: unknown): number {
   return rounded;
 }
 
-function normalizeFindings(value: unknown): Finding[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  const findings: Finding[] = [];
-  for (const item of value) {
-    if (!isRecord(item)) {
-      continue;
-    }
-    const severity = normalizeSeverity(item.severity);
-    if (!severity) {
-      continue;
-    }
-    const title = typeof item.title === "string" ? item.title : "";
-    const detail = typeof item.detail === "string" ? item.detail : "";
-    const suggestion =
-      typeof item.suggestion === "string" ? item.suggestion : "";
-    if (title.length === 0 || detail.length === 0) {
-      continue;
-    }
-    findings.push({ severity, title, detail, suggestion });
-  }
-  return findings;
-}
-
-function normalizeSeverity(value: unknown): Severity | null {
-  if (value === "P0" || value === "P1" || value === "P2") {
-    return value;
-  }
-  return null;
-}
 
 function decideVerdict(results: ReviewerResult[]): Verdict {
   const severities = results.flatMap((result) =>
@@ -707,15 +655,14 @@ function buildReviewMarkdown(report: ReviewReport): string {
 export {
   buildReviewMarkdown,
   buildReviewMarker,
-  buildReviewerResult,
   computePlanHash,
   createFallbackResult,
   decideVerdict,
   extractTargetPath,
   extractLatestReviewMarker,
   isPlanFile,
+  parseFindingsFromVerdict,
   parseReviewerResult,
-  parseStructuredOutput,
   stripReviewMarkers,
   upsertReviewMarker,
   upsertReviewStatus,
