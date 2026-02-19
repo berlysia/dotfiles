@@ -14,6 +14,7 @@ import {
   isWorkflowDocumentPath,
   isPlanFile,
   getWorkflowDirRelative,
+  resolveReviewOutputPaths,
 } from "../../lib/workflow-paths.ts";
 import { EnvironmentHelper } from "./test-helpers.ts";
 
@@ -159,6 +160,24 @@ describe("workflow-paths.ts", () => {
 
     it("returns false for plan.mdx", () => {
       strictEqual(isPlanFile("/project/.tmp/plan.mdx"), false);
+    });
+  });
+
+  describe("resolveReviewOutputPaths", () => {
+    it("resolves review output files in the given directory", () => {
+      const dir = "/project/.tmp/sessions/abcd1234";
+      const paths = resolveReviewOutputPaths(dir);
+      strictEqual(paths.cachePath, resolve(dir, "plan-review.cache.json"));
+      strictEqual(paths.markdownPath, resolve(dir, "plan-review.md"));
+      strictEqual(paths.jsonPath, resolve(dir, "plan-review.json"));
+    });
+
+    it("works with legacy .tmp directory", () => {
+      const dir = "/project/.tmp";
+      const paths = resolveReviewOutputPaths(dir);
+      strictEqual(paths.cachePath, resolve(dir, "plan-review.cache.json"));
+      strictEqual(paths.markdownPath, resolve(dir, "plan-review.md"));
+      strictEqual(paths.jsonPath, resolve(dir, "plan-review.json"));
     });
   });
 
