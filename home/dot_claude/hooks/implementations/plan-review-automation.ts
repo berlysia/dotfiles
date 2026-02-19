@@ -6,6 +6,12 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { defineHook } from "cc-hooks-ts";
 import { expandTilde } from "../lib/path-utils.ts";
+import {
+  getReviewCachePath,
+  getReviewJsonPath,
+  getReviewMarkdownPath,
+  isPlanFile,
+} from "../lib/workflow-paths.ts";
 import "../types/tool-schemas.ts";
 
 type Severity = "P0" | "P1" | "P2";
@@ -115,9 +121,15 @@ const REVIEWERS: ReviewerSpec[] = [
   },
 ];
 
-const TARGET_TOOL_NAMES = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
+const TARGET_TOOL_NAMES = new Set([
+  "Write",
+  "Edit",
+  "MultiEdit",
+  "NotebookEdit",
+]);
 const REVIEW_MARKER_REGEX = /<!--\s*auto-review:[^>]*-->/g;
-const REVIEW_STATUS_REGEX = /^- Review Status:\s*(pending|pass|needs-work|blocker)\s*$/m;
+const REVIEW_STATUS_REGEX =
+  /^- Review Status:\s*(pending|pass|needs-work|blocker)\s*$/m;
 
 const hook = defineHook({
   trigger: { PostToolUse: true },
@@ -134,7 +146,7 @@ const hook = defineHook({
     }
 
     const absoluteTargetPath = normalizePath(baseDir, targetPath);
-    if (!isPlanPath(absoluteTargetPath)) {
+    if (!isPlanFile(absoluteTargetPath)) {
       return context.success({});
     }
 
@@ -146,11 +158,14 @@ const hook = defineHook({
     const planHash = computePlanHash(planContent);
     const existingMarker = extractLatestReviewMarker(planContent);
 
-    const outputDir = resolve(baseDir, ".tmp");
-    mkdirSync(outputDir, { recursive: true });
-    const cachePath = resolve(outputDir, "plan-review.cache.json");
-    const markdownPath = resolve(outputDir, "plan-review.md");
-    const jsonPath = resolve(outputDir, "plan-review.json");
+    // Resolve output paths relative to plan's parent directory (workflow dir)
+    const planDir = dirname(absoluteTargetPath);
+    mkdirSync(planDir, { recursive: true });
+    const cachePath = getReviewCachePath(baseDir);
+    const markdownPath = getReviewMarkdownPath(baseDir);
+    const jsonPath = getReviewJsonPath(baseDir);
+    // Ensure the output directory exists (for session-specific paths)
+    mkdirSync(dirname(cachePath), { recursive: true });
 
     const previousCache = readCache(cachePath);
     const canSkipByCache =
@@ -161,7 +176,7 @@ const hook = defineHook({
       return context.success({});
     }
 
-    const model = process.env.PLAN_REVIEW_MODEL || "haiku";
+    const model = process.env.PLAN_REVIEW_MODEL || "sonnet";
 
     try {
       const reviewerResults = await Promise.all(
@@ -191,7 +206,11 @@ const hook = defineHook({
       writeFileSync(jsonPath, JSON.stringify(report, null, 2), "utf-8");
       writeFileSync(
         cachePath,
-        JSON.stringify({ planHash: nextPlanHash, reviewedAt } satisfies CacheState, null, 2),
+        JSON.stringify(
+          { planHash: nextPlanHash, reviewedAt } satisfies CacheState,
+          null,
+          2,
+        ),
         "utf-8",
       );
     } catch (error) {
@@ -217,11 +236,10 @@ function normalizePath(cwd: string, path: string): string {
   return resolve(cwd, expandTilde(path));
 }
 
-function isPlanPath(path: string): boolean {
-  return path.endsWith("/plan.md");
-}
-
-function extractTargetPath(toolName: string, toolInput: unknown): string | null {
+function extractTargetPath(
+  toolName: string,
+  toolInput: unknown,
+): string | null {
   if (!isRecord(toolInput)) {
     return null;
   }
@@ -233,7 +251,10 @@ function extractTargetPath(toolName: string, toolInput: unknown): string | null 
     return toolInput.file_path;
   }
 
-  if (toolName === "NotebookEdit" && typeof toolInput.notebook_path === "string") {
+  if (
+    toolName === "NotebookEdit" &&
+    typeof toolInput.notebook_path === "string"
+  ) {
     return toolInput.notebook_path;
   }
 
@@ -343,7 +364,10 @@ function createReviewerPrompt(
   ].join("\n");
 }
 
-async function queryReviewer(prompt: string, model: string): Promise<QueryResult> {
+async function queryReviewer(
+  prompt: string,
+  model: string,
+): Promise<QueryResult> {
   const conversation = query({
     prompt,
     options: {
@@ -371,10 +395,7 @@ async function queryReviewer(prompt: string, model: string): Promise<QueryResult
           assistantText += block.text;
         }
       }
-    } else if (
-      message.type === "result" &&
-      message.subtype === "success"
-    ) {
+    } else if (message.type === "result" && message.subtype === "success") {
       structuredOutput = message.structured_output;
       if (message.result) {
         resultText = message.result;
@@ -388,8 +409,13 @@ async function queryReviewer(prompt: string, model: string): Promise<QueryResult
   };
 }
 
-function createFallbackResult(reviewer: string, reason: string): ReviewerResult {
-  console.error(`[plan-review-automation] ${reviewer}: parse failed — ${reason}`);
+function createFallbackResult(
+  reviewer: string,
+  reason: string,
+): ReviewerResult {
+  console.error(
+    `[plan-review-automation] ${reviewer}: parse failed — ${reason}`,
+  );
   return {
     reviewer,
     score: 2,
@@ -421,14 +447,23 @@ function buildReviewerResult(
   return { reviewer, score, summary, findings };
 }
 
-function parseStructuredOutput(reviewer: string, output: unknown): ReviewerResult {
+function parseStructuredOutput(
+  reviewer: string,
+  output: unknown,
+): ReviewerResult {
   if (!isRecord(output)) {
-    return createFallbackResult(reviewer, `structured_output is ${typeof output}`);
+    return createFallbackResult(
+      reviewer,
+      `structured_output is ${typeof output}`,
+    );
   }
   return buildReviewerResult(reviewer, output);
 }
 
-function parseReviewerResult(reviewer: string, response: string): ReviewerResult {
+function parseReviewerResult(
+  reviewer: string,
+  response: string,
+): ReviewerResult {
   const jsonMatch = response.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
     return createFallbackResult(
@@ -441,7 +476,10 @@ function parseReviewerResult(reviewer: string, response: string): ReviewerResult
     const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
     return buildReviewerResult(reviewer, parsed);
   } catch {
-    return createFallbackResult(reviewer, "JSON.parse failed on extracted text");
+    return createFallbackResult(
+      reviewer,
+      "JSON.parse failed on extracted text",
+    );
   }
 }
 
@@ -502,7 +540,9 @@ function decideVerdict(results: ReviewerResult[]): Verdict {
 }
 
 function buildReviewMarker(report: ReviewReport, planHash: string): string {
-  const reviewers = report.reviewers.map((reviewer) => reviewer.reviewer).join(",");
+  const reviewers = report.reviewers
+    .map((reviewer) => reviewer.reviewer)
+    .join(",");
   return `<!-- auto-review: verdict=${report.verdict}; hash=${planHash}; at=${report.reviewedAt}; reviewers=${reviewers} -->`;
 }
 
@@ -519,7 +559,9 @@ function upsertReviewStatus(planContent: string, verdict: Verdict): string {
   }
 
   const lines = withoutMarker.split("\n");
-  const approvalIndex = lines.findIndex((line) => line.trim() === "## Approval");
+  const approvalIndex = lines.findIndex(
+    (line) => line.trim() === "## Approval",
+  );
   if (approvalIndex === -1) {
     return withoutMarker;
   }
@@ -589,7 +631,7 @@ export {
   decideVerdict,
   extractTargetPath,
   extractLatestReviewMarker,
-  isPlanPath,
+  isPlanFile,
   parseReviewerResult,
   parseStructuredOutput,
   stripReviewMarkers,
