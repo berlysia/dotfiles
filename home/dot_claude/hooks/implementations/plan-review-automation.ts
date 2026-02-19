@@ -119,10 +119,8 @@ function buildRecommendation(
   }
   lines.push(
     "",
-    "Recommended sub-agents (use Task tool):",
+    "Recommended sub-agent (use Task tool):",
     "1. subagent_type: logic-validator — Check logical consistency, assumptions, and contradictions",
-    "2. subagent_type: architecture-boundary-analyzer — Check architecture boundaries and coupling risks",
-    "3. subagent_type: release-safety-evaluator — Check test strategy, rollback readiness, and operational risks",
     "",
     "After reviews, update plan.md:",
     "- Set `- Review Status: pass|needs-work|blocker` in ## Approval section",
