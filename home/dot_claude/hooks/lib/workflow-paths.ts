@@ -63,6 +63,22 @@ export function isPlanFile(absolutePath: string): boolean {
 }
 
 /**
+ * Resolve review output paths relative to a given directory.
+ * Used by plan-review-automation to co-locate review artifacts with the plan file.
+ */
+export function resolveReviewOutputPaths(outputDir: string): {
+  cachePath: string;
+  markdownPath: string;
+  jsonPath: string;
+} {
+  return {
+    cachePath: resolve(outputDir, REVIEW_CACHE_FILENAME),
+    markdownPath: resolve(outputDir, REVIEW_MARKDOWN_FILENAME),
+    jsonPath: resolve(outputDir, REVIEW_JSON_FILENAME),
+  };
+}
+
+/**
  * Get the relative workflow dir path (for display/logging purposes).
  */
 export function getWorkflowDirRelative(): string {

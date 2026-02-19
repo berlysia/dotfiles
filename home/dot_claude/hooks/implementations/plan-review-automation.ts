@@ -7,10 +7,8 @@ import { dirname, resolve } from "node:path";
 import { defineHook } from "cc-hooks-ts";
 import { expandTilde } from "../lib/path-utils.ts";
 import {
-  getReviewCachePath,
-  getReviewJsonPath,
-  getReviewMarkdownPath,
   isPlanFile,
+  resolveReviewOutputPaths,
 } from "../lib/workflow-paths.ts";
 import "../types/tool-schemas.ts";
 
@@ -159,14 +157,13 @@ const hook = defineHook({
     const planHash = computePlanHash(planContent);
     const existingMarker = extractLatestReviewMarker(planContent);
 
-    // Resolve output paths relative to plan's parent directory (workflow dir)
+    // Co-locate review output files with the plan file itself,
+    // so session-scoped plans (.tmp/sessions/<id>/plan.md) get their
+    // review artifacts in the same directory without relying on env vars.
     const planDir = dirname(absoluteTargetPath);
     mkdirSync(planDir, { recursive: true });
-    const cachePath = getReviewCachePath(baseDir);
-    const markdownPath = getReviewMarkdownPath(baseDir);
-    const jsonPath = getReviewJsonPath(baseDir);
-    // Ensure the output directory exists (for session-specific paths)
-    mkdirSync(dirname(cachePath), { recursive: true });
+    const { cachePath, markdownPath, jsonPath } =
+      resolveReviewOutputPaths(planDir);
 
     const previousCache = readCache(cachePath);
     const canSkipByCache =
@@ -348,10 +345,22 @@ async function runReviewer(
     console.error(
       `[plan-review-automation] ${reviewer.name}: SDK error — ${errorInfo}`,
     );
+    // Short-circuit: SDK errors produce no useful text to parse
+    return createFallbackResult(
+      reviewer.name,
+      `SDK error: ${errorInfo}`,
+      text || undefined,
+    );
   }
 
   if (structuredOutput !== undefined && structuredOutput !== null) {
     return parseStructuredOutput(reviewer.name, structuredOutput);
+  }
+
+  if (text.length === 0) {
+    console.error(
+      `[plan-review-automation] ${reviewer.name}: empty response (no structured_output, no text)`,
+    );
   }
 
   return parseReviewerResult(reviewer.name, text);
