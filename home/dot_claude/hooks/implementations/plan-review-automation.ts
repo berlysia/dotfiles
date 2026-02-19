@@ -394,7 +394,9 @@ async function queryReviewer(
     prompt,
     options: {
       model,
-      maxTurns: 1,
+      // Each reviewer needs only a single LLM round-trip (no tools enabled).
+      // Allow a small margin for structured output validation retries.
+      maxTurns: 3,
       systemPrompt: SYSTEM_PROMPT,
       allowedTools: [],
       permissionMode: "bypassPermissions",
