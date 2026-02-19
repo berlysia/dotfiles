@@ -1,5 +1,6 @@
 #!/usr/bin/env -S bun run --silent
 
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineHook } from "cc-hooks-ts";
@@ -12,7 +13,10 @@ import "../types/tool-schemas.ts";
 const PLAN_PATH = ".tmp/plan.md";
 const RESEARCH_PATH = ".tmp/research.md";
 const STATE_PATH = ".tmp/workflow-state.json";
-const APPROVAL_REGEX = /^- Status:\s*approved\s*$/m;
+const PLAN_STATUS_REGEX = /^- Plan Status:\s*complete\s*$/m;
+const REVIEW_STATUS_REGEX = /^- Review Status:\s*pass\s*$/m;
+const APPROVAL_STATUS_REGEX = /^- Approval Status:\s*approved\s*$/m;
+const REVIEW_MARKER_REGEX = /<!--\s*auto-review:[^>]*-->/g;
 const GUARDED_TOOLS = new Set([
   "Write",
   "Edit",
@@ -31,6 +35,11 @@ interface WorkflowState {
   approved?: boolean;
 }
 
+interface AutoReviewMarker {
+  verdict: string;
+  hash: string;
+}
+
 const hook = defineHook({
   trigger: { PreToolUse: true },
   run: async (context) => {
@@ -47,10 +56,10 @@ const hook = defineHook({
     }
 
     const warnOnly = process.env.DOCUMENT_WORKFLOW_WARN_ONLY === "1";
-    const approved = hasApprovedPlan(cwd, state);
+    const approved = hasApprovedPlan(cwd);
     const researched = hasResearchArtifact(cwd);
     const denyReason =
-      "Document workflow gate: implementation is blocked until `.tmp/research.md` exists and `.tmp/plan.md` has `- Status: approved`.";
+      "Document workflow gate: implementation is blocked until `.tmp/research.md` exists and `.tmp/plan.md` has `- Plan Status: complete`, `- Review Status: pass`, `- Approval Status: approved`, and `<!-- auto-review: verdict=pass; hash=... -->` with a matching hash.";
 
     if (tool_name === "Bash") {
       const command = getCommandFromToolInput("Bash", tool_input) || "";
@@ -159,11 +168,7 @@ function isWorkflowActive(cwd: string, state: WorkflowState | null): boolean {
   return existsSync(getPlanAbsolutePath(cwd)) || existsSync(getResearchAbsolutePath(cwd));
 }
 
-function hasApprovedPlan(cwd: string, state: WorkflowState | null): boolean {
-  if (state?.approved === true) {
-    return true;
-  }
-
+function hasApprovedPlan(cwd: string): boolean {
   const planPath = getPlanAbsolutePath(cwd);
   if (!existsSync(planPath)) {
     return false;
@@ -171,7 +176,20 @@ function hasApprovedPlan(cwd: string, state: WorkflowState | null): boolean {
 
   try {
     const content = readFileSync(planPath, "utf-8");
-    return APPROVAL_REGEX.test(content);
+    const hasCompletePlan = PLAN_STATUS_REGEX.test(content);
+    const hasReviewPass = REVIEW_STATUS_REGEX.test(content);
+    const hasHumanApproval = APPROVAL_STATUS_REGEX.test(content);
+    if (!hasCompletePlan || !hasReviewPass || !hasHumanApproval) {
+      return false;
+    }
+
+    const marker = extractLatestAutoReviewMarker(content);
+    if (!marker || marker.verdict !== "pass") {
+      return false;
+    }
+
+    const actualHash = computePlanHash(content);
+    return marker.hash === actualHash;
   } catch {
     return false;
   }
@@ -351,6 +369,45 @@ function stripQuotes(value: string): string {
     return value.slice(1, -1);
   }
   return value;
+}
+
+function computePlanHash(content: string): string {
+  const stripped = content.replace(REVIEW_MARKER_REGEX, "").trimEnd();
+  return createHash("sha256").update(stripped, "utf-8").digest("hex");
+}
+
+function extractLatestAutoReviewMarker(content: string): AutoReviewMarker | null {
+  const matches = content.match(REVIEW_MARKER_REGEX);
+  if (!matches || matches.length === 0) {
+    return null;
+  }
+
+  const latest = matches[matches.length - 1];
+  if (!latest) {
+    return null;
+  }
+
+  let verdict = "";
+  let hash = "";
+  const fields = latest.matchAll(/(\w+)=([^;]+)/g);
+  for (const field of fields) {
+    const key = field[1]?.trim();
+    const value = field[2]?.trim();
+    if (!key || !value) {
+      continue;
+    }
+    if (key === "verdict") {
+      verdict = value;
+    } else if (key === "hash") {
+      hash = value;
+    }
+  }
+
+  if (verdict.length === 0 || hash.length === 0) {
+    return null;
+  }
+
+  return { verdict, hash };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -1,6 +1,7 @@
 #!/usr/bin/env node --test
 
 import { ok } from "node:assert";
+import { createHash } from "node:crypto";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,11 +14,71 @@ import {
   invokeRun,
 } from "./test-helpers.ts";
 
-function createWorkflowRepo(status: "pending" | "approved"): string {
+interface ReviewMarkerOptions {
+  verdict: "pass" | "needs-work" | "blocker";
+  hashOverride?: string;
+}
+
+interface WorkflowRepoOptions {
+  planStatus: "drafting" | "complete";
+  approvalStatus: "pending" | "approved";
+  review?: ReviewMarkerOptions;
+}
+
+function computePlanHash(content: string): string {
+  return createHash("sha256").update(content.trimEnd(), "utf-8").digest("hex");
+}
+
+function buildPlanContent(
+  options: WorkflowRepoOptions,
+): string {
+  const reviewStatus = options.review?.verdict ?? "pending";
+  const base = [
+    "## Approval",
+    `- Plan Status: ${options.planStatus}`,
+    `- Review Status: ${reviewStatus}`,
+    `- Approval Status: ${options.approvalStatus}`,
+  ].join("\n");
+  if (!options.review) {
+    return base;
+  }
+
+  const hash = options.review.hashOverride ?? computePlanHash(base);
+  return `${base}\n\n<!-- auto-review: verdict=${options.review.verdict}; hash=${hash}; at=2026-02-19T00:00:00.000Z; reviewers=logic-validator -->`;
+}
+
+function createWorkflowRepo(options: WorkflowRepoOptions): string {
   const repo = mkdtempSync(join(tmpdir(), "document-workflow-guard-"));
   mkdirSync(join(repo, ".tmp"), { recursive: true });
   writeFileSync(join(repo, ".tmp/research.md"), "research");
-  writeFileSync(join(repo, ".tmp/plan.md"), `- Status: ${status}`);
+  writeFileSync(join(repo, ".tmp/plan.md"), buildPlanContent(options));
+  return repo;
+}
+
+function approvedWorkflowRepo(): WorkflowRepoOptions {
+  return {
+    planStatus: "complete",
+    approvalStatus: "approved",
+    review: { verdict: "pass" },
+  };
+}
+
+function pendingWorkflowRepo(): WorkflowRepoOptions {
+  return {
+    planStatus: "drafting",
+    approvalStatus: "pending",
+  };
+}
+
+function buildRepoWithReview(
+  base: WorkflowRepoOptions,
+  review: ReviewMarkerOptions | undefined,
+): string {
+  const repo = mkdtempSync(join(tmpdir(), "document-workflow-guard-"));
+  mkdirSync(join(repo, ".tmp"), { recursive: true });
+  const complete = { ...base, review };
+  writeFileSync(join(repo, ".tmp/research.md"), "research");
+  writeFileSync(join(repo, ".tmp/plan.md"), buildPlanContent(complete));
   return repo;
 }
 
@@ -37,7 +98,7 @@ describe("document-workflow-guard.ts hook behavior", () => {
   });
 
   it("blocks Write when plan is pending", async () => {
-    const repo = createWorkflowRepo("pending");
+    const repo = createWorkflowRepo(pendingWorkflowRepo());
     envHelper.set("CLAUDE_TEST_CWD", repo);
 
     const context = createPreToolUseContextFor(hook, "Write", {
@@ -50,13 +111,13 @@ describe("document-workflow-guard.ts hook behavior", () => {
   });
 
   it("allows editing .tmp/plan.md while pending", async () => {
-    const repo = createWorkflowRepo("pending");
+    const repo = createWorkflowRepo(pendingWorkflowRepo());
     envHelper.set("CLAUDE_TEST_CWD", repo);
 
     const context = createPreToolUseContextFor(hook, "Edit", {
       file_path: "./.tmp/plan.md",
-      old_string: "- Status: pending",
-      new_string: "- Status: pending",
+      old_string: "- Plan Status: drafting",
+      new_string: "- Plan Status: drafting",
     });
 
     await invokeRun(hook, context);
@@ -64,7 +125,7 @@ describe("document-workflow-guard.ts hook behavior", () => {
   });
 
   it("allows editing .tmp/research.md using absolute path while pending", async () => {
-    const repo = createWorkflowRepo("pending");
+    const repo = createWorkflowRepo(pendingWorkflowRepo());
     envHelper.set("CLAUDE_TEST_CWD", repo);
 
     const context = createPreToolUseContextFor(hook, "Edit", {
@@ -78,7 +139,7 @@ describe("document-workflow-guard.ts hook behavior", () => {
   });
 
   it("allows Write after plan approval", async () => {
-    const repo = createWorkflowRepo("approved");
+    const repo = createWorkflowRepo(approvedWorkflowRepo());
     envHelper.set("CLAUDE_TEST_CWD", repo);
 
     const context = createPreToolUseContextFor(hook, "Write", {
@@ -90,8 +151,62 @@ describe("document-workflow-guard.ts hook behavior", () => {
     context.assertSuccess({});
   });
 
+  it("blocks Write when approved but auto-review marker is missing", async () => {
+    const repo = createWorkflowRepo({
+      planStatus: "complete",
+      approvalStatus: "approved",
+    });
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+
+    const context = createPreToolUseContextFor(hook, "Write", {
+      file_path: "src/a.ts",
+      content: "const a = 1;",
+    });
+
+    await invokeRun(hook, context);
+    context.assertDeny();
+  });
+
+  it("blocks Write when auto-review marker hash mismatches", async () => {
+    const repo = buildRepoWithReview(
+      {
+        planStatus: "complete",
+        approvalStatus: "approved",
+      },
+      { verdict: "pass", hashOverride: "deadbeef" },
+    );
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+
+    const context = createPreToolUseContextFor(hook, "Write", {
+      file_path: "src/a.ts",
+      content: "const a = 1;",
+    });
+
+    await invokeRun(hook, context);
+    context.assertDeny();
+  });
+
+  it("blocks Write when auto-review verdict is needs-work", async () => {
+    const repo = buildRepoWithReview(
+      {
+        planStatus: "complete",
+        approvalStatus: "approved",
+      },
+      { verdict: "needs-work" },
+    );
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+
+    const context = createPreToolUseContextFor(hook, "Write", {
+      file_path: "src/a.ts",
+      content: "const a = 1;",
+    });
+
+    await invokeRun(hook, context);
+    context.assertDeny();
+  });
+
   it("blocks Bash write-like command while pending", async () => {
-    const repo = createWorkflowRepo("pending");
+    const repo = createWorkflowRepo(pendingWorkflowRepo());
     envHelper.set("CLAUDE_TEST_CWD", repo);
 
     const context = createPreToolUseContextFor(hook, "Bash", {
@@ -103,7 +218,7 @@ describe("document-workflow-guard.ts hook behavior", () => {
   });
 
   it("allows Bash read-only command while pending", async () => {
-    const repo = createWorkflowRepo("pending");
+    const repo = createWorkflowRepo(pendingWorkflowRepo());
     envHelper.set("CLAUDE_TEST_CWD", repo);
 
     const context = createPreToolUseContextFor(hook, "Bash", {
@@ -115,7 +230,7 @@ describe("document-workflow-guard.ts hook behavior", () => {
   });
 
   it("allows Bash command that only writes to .tmp documents while pending", async () => {
-    const repo = createWorkflowRepo("pending");
+    const repo = createWorkflowRepo(pendingWorkflowRepo());
     envHelper.set("CLAUDE_TEST_CWD", repo);
 
     const context = createPreToolUseContextFor(hook, "Bash", {
@@ -127,7 +242,7 @@ describe("document-workflow-guard.ts hook behavior", () => {
   });
 
   it("warn-only mode allows but records would-block log", async () => {
-    const repo = createWorkflowRepo("pending");
+    const repo = createWorkflowRepo(pendingWorkflowRepo());
     envHelper.set("CLAUDE_TEST_CWD", repo);
     envHelper.set("DOCUMENT_WORKFLOW_WARN_ONLY", "1");
 
@@ -156,5 +271,52 @@ describe("document-workflow-guard.ts hook behavior", () => {
 
     await invokeRun(hook, context);
     context.assertSuccess({});
+  });
+
+  it("blocks Write when review passes but plan status is not complete", async () => {
+    const repo = createWorkflowRepo({
+      planStatus: "drafting",
+      approvalStatus: "approved",
+      review: { verdict: "pass" },
+    });
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+
+    const context = createPreToolUseContextFor(hook, "Write", {
+      file_path: "src/a.ts",
+      content: "const a = 1;",
+    });
+
+    await invokeRun(hook, context);
+    context.assertDeny();
+  });
+
+  it("blocks Write when review marker is pass but review status line is pending", async () => {
+    const repo = mkdtempSync(join(tmpdir(), "document-workflow-guard-"));
+    mkdirSync(join(repo, ".tmp"), { recursive: true });
+    writeFileSync(join(repo, ".tmp/research.md"), "research");
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+    const base = [
+      "## Approval",
+      "- Plan Status: complete",
+      "- Review Status: pending",
+      "- Approval Status: approved",
+    ].join("\n");
+    const hash = computePlanHash(base);
+    writeFileSync(
+      join(repo, ".tmp/plan.md"),
+      [
+        base,
+        "",
+        `<!-- auto-review: verdict=pass; hash=${hash}; at=2026-02-19T00:00:00.000Z; reviewers=logic-validator -->`,
+      ].join("\n"),
+    );
+
+    const context = createPreToolUseContextFor(hook, "Write", {
+      file_path: "src/a.ts",
+      content: "const a = 1;",
+    });
+
+    await invokeRun(hook, context);
+    context.assertDeny();
   });
 });

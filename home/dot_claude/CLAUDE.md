@@ -9,9 +9,10 @@
 1. **Explore** - Understand codebase and requirements
 2. **Research** - Write detailed findings to `.tmp/research.md`
 3. **Plan** - Write implementation plan to `.tmp/plan.md`
-4. **Annotate & Approve** - Iterate plan updates until `Status: approved`
-5. **Code** - Implement following best practices
-6. **Commit** - Clean, meaningful commits
+4. **Annotate & Finalize** - Iterate plan updates until `Plan Status: complete`
+5. **Auto Review** - Require `auto-review: verdict=pass` marker on `.tmp/plan.md`
+6. **Code** - Implement following best practices
+7. **Commit** - Clean, meaningful commits
 
 ### Session Scoping
 
@@ -54,12 +55,15 @@
 1. 調査: 対象コードを深く読み `.tmp/research.md` を作成
 2. 計画: `.tmp/plan.md` に方針・対象ファイル・TODO・リスクを書く
 3. 注釈反復: ユーザー注釈を反映し、都度「don’t implement yet」を明示
-4. 承認: `.tmp/plan.md` の `## Approval` を `Status: approved` にする
-5. 実装: 承認後に着手し、タスク完了ごとに `.tmp/plan.md` を更新
+4. 完成: `.tmp/plan.md` の `## Approval` で `Plan Status: complete` にする
+5. 自動レビュー: `plan-review-automation` が `logic-validator` + 設計系レビュアで評価し、`Review Status` と `<!-- auto-review: verdict=...; hash=... -->` を更新する
+6. 承認: 人間が `Approval Status: approved` にする
+7. 実装: `Plan Status: complete` + `Review Status: pass` + `Approval Status: approved` + hash 一致を満たした後に着手し、タスク完了ごとに `.tmp/plan.md` を更新
 ```
 
 - `.tmp/research.md` と `.tmp/plan.md` への編集は承認前でも許可される
-- `Write/Edit/MultiEdit/NotebookEdit/Bash` の実装系書き込みは `document-workflow-guard` が制御する
+- `Write/Edit/MultiEdit/NotebookEdit` で `.tmp/plan.md` を更新すると `plan-review-automation` が自動実行され、`.tmp/plan-review.md` と `.tmp/plan-review.json` を生成する
+- `Write/Edit/MultiEdit/NotebookEdit/Bash` の実装系書き込みは `document-workflow-guard` が制御し、plan complete + review pass + human approval を要求する
 - ロールアウト初期は `DOCUMENT_WORKFLOW_WARN_ONLY=1` で観測し、安定後に enforce へ移行する
 
 ### Scope Guard
