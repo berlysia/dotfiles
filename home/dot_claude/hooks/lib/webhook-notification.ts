@@ -187,6 +187,10 @@ export async function buildNotification(
     severity = "success";
 
     const transcriptPath = input.transcript_path ?? "";
+    // Wait briefly for the transcript file to be fully flushed to disk.
+    // The Stop event fires ~50ms after the final assistant entry is created,
+    // but the write may still be buffered in the parent process.
+    await new Promise((resolve) => setTimeout(resolve, 200));
     const { userMsg, assistantMsg } = await extractLastExchange(transcriptPath);
 
     const parts: string[] = [];
