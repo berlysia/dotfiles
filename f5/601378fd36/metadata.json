@@ -3,9 +3,10 @@
   "checkpoint_id": "f5601378fd36",
   "strategy": "manual-commit",
   "branch": "master",
-  "checkpoints_count": 1,
+  "checkpoints_count": 2,
   "files_touched": [
     "home/dot_claude/.settings.hooks.json.tmpl",
+    "home/dot_claude/CLAUDE.md",
     "home/dot_claude/hooks/implementations/block-plan-mode.ts",
     "home/dot_claude/hooks/tests/unit/block-plan-mode.test.ts"
   ],
@@ -16,13 +17,20 @@
       "context": "/f5/601378fd36/0/context.md",
       "content_hash": "/f5/601378fd36/0/content_hash.txt",
       "prompt": "/f5/601378fd36/0/prompt.txt"
+    },
+    {
+      "metadata": "/f5/601378fd36/1/metadata.json",
+      "transcript": "/f5/601378fd36/1/full.jsonl",
+      "context": "/f5/601378fd36/1/context.md",
+      "content_hash": "/f5/601378fd36/1/content_hash.txt",
+      "prompt": "/f5/601378fd36/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 27,
-    "cache_creation_tokens": 54388,
-    "cache_read_tokens": 1761774,
-    "output_tokens": 4281,
-    "api_call_count": 23
+    "input_tokens": 45,
+    "cache_creation_tokens": 121689,
+    "cache_read_tokens": 2438891,
+    "output_tokens": 4635,
+    "api_call_count": 35
   }
 }

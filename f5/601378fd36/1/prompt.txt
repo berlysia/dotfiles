@@ -1,0 +1,9 @@
+Document Workflowは、明示的に承認／approveと言うか、 execute-plan の指示がなければ、勝手に承認扱いして進めてはいけない。
+
+---
+
+dotfilesの指示に反映して
+
+---
+
+commit & push
