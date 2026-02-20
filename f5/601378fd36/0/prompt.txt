@@ -1,0 +1,5 @@
+EnterPlanModeコマンドをブロックしてDocument Workflowを使う指示ってできる？
+
+---
+
+commit & apply & push
