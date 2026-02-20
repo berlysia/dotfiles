@@ -68,6 +68,15 @@
       ]
     },
     {
+      "matcher": "EnterPlanMode",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/block-plan-mode.ts"
+        }
+      ]
+    },
+    {
       "matcher": "ExitPlanMode",
       "hooks": [
         {
