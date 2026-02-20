@@ -4,8 +4,12 @@ claude_plugins:
           repo: anthropics/claude-plugins-official
         - name: kuu-marketplace
           repo: fumiya-kume/claude-code
+        - name: every-marketplace
+          repo: EveryInc/compound-engineering-plugin
         - name: knowledge-work-plugins
           repo: anthropics/knowledge-work-plugins
     plugins:
         - clarify@kuu-marketplace
+        - compound-engineering@every-marketplace
         - decomposition@kuu-marketplace
+        - playwright@claude-plugins-official
