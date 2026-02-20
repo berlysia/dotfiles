@@ -8,8 +8,9 @@
  *   1. Regular channel: CLAUDE_DISCORD_WEBHOOK_URL — traditional embed posts
  *   2. Forum channel: CLAUDE_DISCORD_FORUM_WEBHOOK_URL — session-scoped threads
  *
- * When forum webhook is configured, SessionStart creates a new thread and
- * subsequent events (Stop/Notification) post into that thread.
+ * When forum webhook is configured, the thread is created lazily on the first
+ * UserPromptSubmit (not on SessionStart) to avoid spurious threads from /clear.
+ * Subsequent events (Stop/Notification) post into that thread.
  *
  * Note: PermissionRequest events are NOT triggered — permission notifications
  * come via Notification(permission_prompt), which only fires when the user
@@ -30,6 +31,7 @@ import {
 } from "../lib/discord-forum.ts";
 import { getGitContext } from "../lib/git-context.ts";
 import {
+  buildFooter,
   buildNotification,
   type HookInput,
 } from "../lib/webhook-notification.ts";
@@ -82,6 +84,7 @@ const hook = defineHook({
     Notification: true,
     SessionStart: true,
     Stop: true,
+    UserPromptSubmit: true,
   },
   run: async (context) => {
     const regularWebhookUrl = process.env.CLAUDE_DISCORD_WEBHOOK_URL;
@@ -95,6 +98,34 @@ const hook = defineHook({
     const eventType = context.input.hook_event_name;
 
     try {
+      // UserPromptSubmit: create forum thread on first prompt (lazy creation).
+      // This avoids creating threads for /clear sessions that are never actually used.
+      if (eventType === "UserPromptSubmit") {
+        if (forumWebhookUrl && !getThreadId(sessionId)) {
+          const embed: DiscordEmbed = {
+            title: "🚀 セッション開始",
+            description: "新しいClaude Codeセッションが開始されました。",
+            color: SEVERITY_TO_COLOR.info,
+            footer: { text: await buildFooter(context.input.cwd, sessionId) },
+          };
+          const threadName = await buildThreadName(sessionId);
+          const threadId = await createForumThread(
+            forumWebhookUrl,
+            threadName,
+            embed,
+          );
+          saveThreadId(sessionId, threadId);
+          cleanupOldThreads();
+        }
+        return context.success({});
+      }
+
+      // SessionStart: no-op for forum channel (thread creation is deferred to
+      // the first UserPromptSubmit). Nothing to do for regular channels either.
+      if (eventType === "SessionStart") {
+        return context.success({});
+      }
+
       const notification = await buildNotification(context.input as HookInput);
       if (!notification) {
         return context.success({});
@@ -109,10 +140,13 @@ const hook = defineHook({
           : {}),
       };
 
-      // Forum channel handling
+      // Forum channel: post to existing thread, or create one as fallback
       if (forumWebhookUrl) {
-        if (eventType === "SessionStart") {
-          // Create a new forum thread for this session
+        const existingThreadId = getThreadId(sessionId);
+        if (existingThreadId) {
+          await sendToThread(forumWebhookUrl, existingThreadId, embed);
+        } else {
+          // Fallback: thread not found (e.g. UserPromptSubmit was missed)
           const threadName = await buildThreadName(sessionId);
           const threadId = await createForumThread(
             forumWebhookUrl,
@@ -120,29 +154,11 @@ const hook = defineHook({
             embed,
           );
           saveThreadId(sessionId, threadId);
-
-          // Periodically clean up old thread mappings
-          cleanupOldThreads();
-        } else {
-          // Post to existing thread, or create new one as fallback
-          const existingThreadId = getThreadId(sessionId);
-          if (existingThreadId) {
-            await sendToThread(forumWebhookUrl, existingThreadId, embed);
-          } else {
-            // Fallback: session thread not found (e.g. SessionStart was missed)
-            const threadName = await buildThreadName(sessionId);
-            const threadId = await createForumThread(
-              forumWebhookUrl,
-              threadName,
-              embed,
-            );
-            saveThreadId(sessionId, threadId);
-          }
         }
       }
 
-      // Regular channel handling (skip SessionStart for regular channels)
-      if (regularWebhookUrl && eventType !== "SessionStart") {
+      // Regular channel handling
+      if (regularWebhookUrl) {
         await sendDiscordEmbed(regularWebhookUrl, embed);
       }
     } catch (error) {
