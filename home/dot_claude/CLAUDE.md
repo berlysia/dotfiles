@@ -65,6 +65,8 @@
 7. 実装: `Plan Status: complete` + `Review Status: pass` + `Approval Status: approved` + hash 一致を満たした後に着手し、タスク完了ごとに `$DOCUMENT_WORKFLOW_DIR/plan.md` を更新
 ```
 
+**CRITICAL: 承認は人間のみが行う。** ユーザーが明示的に「approve」「承認」と発言するか、`/execute-plan` を指示しない限り、Claudeは `Approval Status: approved` に変更したり、実装へ着手してはならない。自動レビュー（`Review Status: pass`）が通過しても、人間の承認なしに勝手に進めることは禁止。
+
 - `$DOCUMENT_WORKFLOW_DIR/research.md` と `$DOCUMENT_WORKFLOW_DIR/plan.md` への編集は承認前でも許可される
 - `Write/Edit/MultiEdit/NotebookEdit` で `plan.md` を更新すると `plan-review-automation` が自動実行され、同ディレクトリに `plan-review.md` と `plan-review.json` を生成する
 - `Write/Edit/MultiEdit/NotebookEdit/Bash` の実装系書き込みは `document-workflow-guard` が制御し、plan complete + review pass + human approval を要求する
