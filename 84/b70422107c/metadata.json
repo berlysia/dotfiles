@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "84b70422107c",
+  "strategy": "manual-commit",
+  "branch": "master",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "home/.chezmoidata/claude_plugins.yaml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/84/b70422107c/0/metadata.json",
+      "transcript": "/84/b70422107c/0/full.jsonl",
+      "context": "/84/b70422107c/0/context.md",
+      "content_hash": "/84/b70422107c/0/content_hash.txt",
+      "prompt": "/84/b70422107c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 86,
+    "cache_creation_tokens": 66986,
+    "cache_read_tokens": 812493,
+    "output_tokens": 99,
+    "api_call_count": 14
+  }
+}
