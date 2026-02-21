@@ -46,7 +46,7 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
   - `run_onchange_update-claude-json.sh.tmpl`が`package.json`の`dependencies`からバージョンを読み取る
   - テンプレート内容と既存の`~/.claude.json`をjqでマージ（mcpServers, preferredNotifChannel, defaultModeを更新）
   - 変更前に自動バックアップ、変更内容の差分表示
-  - **管理対象MCPサーバー**: @mizchi/readability, chrome-devtools-mcp, @playwright/mcp, @upstash/context7-mcp, @openai/codex
+  - **管理対象MCPサーバー**: @mizchi/readability, chrome-devtools-mcp, @playwright/mcp, @upstash/context7-mcp, @openai/codex, @drawio/mcp
   - **バージョン更新方法**: `package.json`のdependenciesを編集してから`chezmoi apply`を実行
 
 - **プラグイン管理**: `home/.chezmoidata/claude_plugins.yaml`で宣言的に管理、`chezmoi apply`時に自動インストール
