@@ -18,6 +18,7 @@ CHROME_DEVTOOLS_VER=$(jq -r '.dependencies["chrome-devtools-mcp"] // empty' "$PA
 PLAYWRIGHT_VER=$(jq -r '.dependencies["@playwright/mcp"] // empty' "$PACKAGE_JSON")
 CONTEXT7_VER=$(jq -r '.dependencies["@upstash/context7-mcp"] // empty' "$PACKAGE_JSON")
 CODEX_VER=$(jq -r '.dependencies["@openai/codex"] // empty' "$PACKAGE_JSON")
+DRAWIO_VER=$(jq -r '.dependencies["@drawio/mcp"] // empty' "$PACKAGE_JSON")
 
 # Generate new content from versions
 TEMPLATE_CONTENT=$(cat << EOF
@@ -65,6 +66,14 @@ TEMPLATE_CONTENT=$(cat << EOF
         "dlx",
         "@openai/codex@${CODEX_VER}",
         "mcp-server"
+      ]
+    },
+    "drawio": {
+      "type": "stdio",
+      "command": "pnpm",
+      "args": [
+        "dlx",
+        "@drawio/mcp@${DRAWIO_VER}"
       ]
     }
   },
