@@ -4,16 +4,16 @@ import { strictEqual } from "node:assert";
 import { resolve } from "node:path";
 import { afterEach, describe, it } from "node:test";
 import {
-  getWorkflowDir,
   getPlanPath,
   getResearchPath,
-  getStatePath,
   getReviewCachePath,
-  getReviewMarkdownPath,
   getReviewJsonPath,
-  isWorkflowDocumentPath,
-  isPlanFile,
+  getReviewMarkdownPath,
+  getStatePath,
+  getWorkflowDir,
   getWorkflowDirRelative,
+  isPlanFile,
+  isWorkflowDocumentPath,
   resolveWorkflowPaths,
 } from "../../lib/workflow-paths.ts";
 import { EnvironmentHelper } from "./test-helpers.ts";
@@ -35,10 +35,7 @@ describe("workflow-paths.ts", () => {
     it("returns session dir when DOCUMENT_WORKFLOW_DIR is set", () => {
       envHelper.set("DOCUMENT_WORKFLOW_DIR", ".tmp/sessions/abcd1234");
       const cwd = "/project";
-      strictEqual(
-        getWorkflowDir(cwd),
-        resolve(cwd, ".tmp/sessions/abcd1234"),
-      );
+      strictEqual(getWorkflowDir(cwd), resolve(cwd, ".tmp/sessions/abcd1234"));
     });
 
     it("ignores empty DOCUMENT_WORKFLOW_DIR", () => {
@@ -148,10 +145,7 @@ describe("workflow-paths.ts", () => {
     });
 
     it("returns true for session-specific plan.md", () => {
-      strictEqual(
-        isPlanFile("/project/.tmp/sessions/abcd1234/plan.md"),
-        true,
-      );
+      strictEqual(isPlanFile("/project/.tmp/sessions/abcd1234/plan.md"), true);
     });
 
     it("returns false for non-plan file", () => {

@@ -5,10 +5,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { defineHook } from "cc-hooks-ts";
 import { expandTilde } from "../lib/path-utils.ts";
-import {
-  isPlanFile,
-  resolveWorkflowPaths,
-} from "../lib/workflow-paths.ts";
+import { isPlanFile, resolveWorkflowPaths } from "../lib/workflow-paths.ts";
 import "../types/tool-schemas.ts";
 
 interface CacheState {

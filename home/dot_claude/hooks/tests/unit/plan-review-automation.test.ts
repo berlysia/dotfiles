@@ -4,8 +4,8 @@ import { deepStrictEqual, strictEqual } from "node:assert";
 import { describe, it } from "node:test";
 import {
   computePlanHash,
-  extractTargetPath,
   extractLatestReviewMarker,
+  extractTargetPath,
   isPlanFile,
   stripReviewMarkers,
 } from "../../implementations/plan-review-automation.ts";

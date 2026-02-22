@@ -64,9 +64,7 @@ const hook = defineHook({
       ];
       if (envFile) {
         const shortId = context.input.session_id.slice(0, 8);
-        messages.push(
-          `Document Workflow directory: .tmp/sessions/${shortId}/`,
-        );
+        messages.push(`Document Workflow directory: .tmp/sessions/${shortId}/`);
       }
       if (taskListWarning) {
         messages.push(taskListWarning);
