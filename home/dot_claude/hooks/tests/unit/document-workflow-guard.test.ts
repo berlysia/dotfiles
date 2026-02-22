@@ -2,7 +2,7 @@
 
 import { ok } from "node:assert";
 import { createHash } from "node:crypto";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
@@ -29,9 +29,7 @@ function computePlanHash(content: string): string {
   return createHash("sha256").update(content.trimEnd(), "utf-8").digest("hex");
 }
 
-function buildPlanContent(
-  options: WorkflowRepoOptions,
-): string {
+function buildPlanContent(options: WorkflowRepoOptions): string {
   const reviewStatus = options.review?.verdict ?? "pending";
   const base = [
     "## Approval",
@@ -295,10 +293,15 @@ describe("document-workflow-guard.ts hook behavior", () => {
       sessionDir: string,
       options: WorkflowRepoOptions,
     ): string {
-      const repo = mkdtempSync(join(tmpdir(), "document-workflow-guard-session-"));
+      const repo = mkdtempSync(
+        join(tmpdir(), "document-workflow-guard-session-"),
+      );
       mkdirSync(join(repo, sessionDir), { recursive: true });
       writeFileSync(join(repo, sessionDir, "research.md"), "research");
-      writeFileSync(join(repo, sessionDir, "plan.md"), buildPlanContent(options));
+      writeFileSync(
+        join(repo, sessionDir, "plan.md"),
+        buildPlanContent(options),
+      );
       return repo;
     }
 
@@ -319,7 +322,10 @@ describe("document-workflow-guard.ts hook behavior", () => {
 
     it("allows Write when session-specific plan is approved", async () => {
       const sessionDir = ".tmp/sessions/abcd1234";
-      const repo = createSessionWorkflowRepo(sessionDir, approvedWorkflowRepo());
+      const repo = createSessionWorkflowRepo(
+        sessionDir,
+        approvedWorkflowRepo(),
+      );
       envHelper.set("CLAUDE_TEST_CWD", repo);
       envHelper.set("DOCUMENT_WORKFLOW_DIR", sessionDir);
 
@@ -349,10 +355,15 @@ describe("document-workflow-guard.ts hook behavior", () => {
     });
 
     it("does not activate when default .tmp has no artifacts but session dir does", async () => {
-      const repo = mkdtempSync(join(tmpdir(), "document-workflow-guard-session-"));
+      const repo = mkdtempSync(
+        join(tmpdir(), "document-workflow-guard-session-"),
+      );
       const sessionDir = ".tmp/sessions/abcd1234";
       mkdirSync(join(repo, sessionDir), { recursive: true });
-      writeFileSync(join(repo, sessionDir, "plan.md"), buildPlanContent(pendingWorkflowRepo()));
+      writeFileSync(
+        join(repo, sessionDir, "plan.md"),
+        buildPlanContent(pendingWorkflowRepo()),
+      );
       writeFileSync(join(repo, sessionDir, "research.md"), "research");
       envHelper.set("CLAUDE_TEST_CWD", repo);
       envHelper.set("DOCUMENT_WORKFLOW_DIR", sessionDir);
@@ -367,7 +378,9 @@ describe("document-workflow-guard.ts hook behavior", () => {
     });
 
     it("does not block when session dir has no artifacts", async () => {
-      const repo = mkdtempSync(join(tmpdir(), "document-workflow-guard-session-"));
+      const repo = mkdtempSync(
+        join(tmpdir(), "document-workflow-guard-session-"),
+      );
       envHelper.set("CLAUDE_TEST_CWD", repo);
       envHelper.set("DOCUMENT_WORKFLOW_DIR", ".tmp/sessions/empty1234");
 
