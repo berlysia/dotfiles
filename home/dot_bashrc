@@ -30,9 +30,11 @@ if [[ "$PROMPT_COMMAND" != *"echo -ne"* ]]; then
   PROMPT_COMMAND='echo -ne "\033]0;$(basename "$PWD")\007"'
 fi
 
-# Load bash-specific prompt (fallback if Starship is not available)
-if [ "$HAS_STARSHIP" = "1" ]; then
+# Load prompt
+if [ "$USE_STARSHIP" = "1" ] && [ "$HAS_STARSHIP" = "1" ]; then
   eval "$(starship init bash)"
+elif [ -f "$SHELL_COMMON/prompt/bash.sh" ]; then
+  source "$SHELL_COMMON/prompt/bash.sh"
 fi
 
 # Source local configuration if it exists
