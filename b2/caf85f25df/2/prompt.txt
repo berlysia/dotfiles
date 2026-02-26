@@ -1,0 +1,1208 @@
+starshipが大変遅いので、同等の表示をするものを自作してしまいたい
+
+---
+
+必要なものだけで良い。良対応を維持する。毎回の表示が少し遅いようだ。
+
+---
+
+Base directory for this skill: /Users/berlysia/.claude/skills/execute-plan
+
+# Execute Plan
+
+計画ファイルまたは分解済みタスクリストを入力として、順次実装・検証・コミットする。
+`/decompose` でタスク分解した後の実装フェーズで使用する。
+
+## 前提条件
+
+以下のいずれかが存在すること:
+- 計画ファイル（Markdown、ADRなど）のパス
+- TaskCreate で作成済みのタスクリスト
+- ユーザーが直接指定するタスク一覧
+
+## ワークフロー
+
+### 1. 計画の読み込み
+
+- 指定されたパスの計画ファイルを Read で読む
+- TaskList で既存タスクを確認する
+- 計画にタスク一覧がない場合、計画から実装タスクを抽出して TaskCreate で登録する
+
+### 2. 順次実装ループ
+
+各タスクについて以下を実行:
+
+```
+for each task:
+  1. TaskUpdate → in_progress
+  2. 実装（Edit/Write で変更）
+  3. ビルド実行（プロジェクトの build コマンド）
+     - 失敗 → 修正して再ビルド（最大3回）
+  4. テスト実行（プロジェクトの test コマンド）
+     - 失敗 → 修正して再テスト（最大3回）
+  5. lint/type-check 実行
+  6. TaskUpdate → completed
+```
+
+### 3. 検証とコミット
+
+- 全タスク完了後、全テストスイートを再実行
+- 成功したら変更内容のサマリーをユーザーに提示
+- ユーザーの指示に従ってコミット
+
+## 制約
+
+### 実行の継続性
+
+- **全タスク完了まで停止しない**: タスクやフェーズが完了したら計画ドキュメントにも完了とマークし、即座に次のタスクに進む。途中で不要な確認や報告で中断しない
+- **タスク間の依存**: 前のタスクのテストが通らない場合、次のタスクに進まない
+- **ビルド/テスト3回失敗**: 自動修正を諦め、失敗状況をユーザーに報告して判断を仰ぐ（これが唯一の停止条件）
+
+### コード品質
+
+- **不要なコメント・JSDoc禁止**: 変更していないコードにコメントやJSDocを追加しない。新規コードにも自明な内容のコメントは書かない
+- **unknown型禁止**: 適切な型注釈を使用する。`any` / `unknown` でごまかさない
+- **typecheck継続実行**: 各タスクの実装後だけでなく、複数ファイルを変更した場合は途中でも typecheck を実行し、型エラーの蓄積を防ぐ
+
+### その他
+
+- **計画からの逸脱禁止**: 計画にない変更が必要な場合、ユーザーに確認してから実行する
+- **コミットはユーザー指示で**: 自動コミットしない — サマリー提示後にユーザーが判断する
+
+---
+
+トラッキングブランチは別名の時だけでるのかな？
+
+---
+
+トラッキングブランチがあるかどうかはわかるようにしたいな
+
+---
+
+commit
+
+---
+
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Analysis:
+Let me chronologically analyze the conversation:
+
+1. **User's initial request**: Replace starship prompt with a self-made alternative because starship is too slow.
+
+2. **Clarification questions answered by user**:
+   - "必要なものだけで良い" - Only necessary items
+   - "良対応を維持する" (typo for 両対応) - Maintain bash/zsh dual support
+   - "毎回の表示が少し遅いようだ" - Every prompt display is a bit slow
+
+3. **Research phase**: Explored the codebase using subagent, found:
+   - starship.toml at `home/dot_config/starship.toml` (136 lines)
+   - Shell init flow: tools.sh detects HAS_STARSHIP → .zshrc/.bashrc eval starship init
+   - Legacy prompt.zsh exists at deploy target only (not in source state)
+   - starship prompt takes ~177ms per invocation
+
+4. **Document Workflow**: Created research.md and plan.md in `.tmp/sessions/e53d791d/`
+   - Plan reviewed by logic-validator multiple times
+   - Key issues found and fixed: PROMPT_COMMAND conflict, VSCode integration, rollout strategy, $SECONDS precision, file structure consistency, task dependencies
+
+5. **Implementation** (after user approved via `/execute-plan`):
+   - Created 4 new files + modified 2 existing files
+   - Key bug found: `while read` in pipe creates subshell (variables not visible to caller) → fixed with grep -c approach
+   - Key bug found: `grep -c` returns exit code 1 when no matches → fixed with `|| true`
+   - Key bug found: Multiple precmd hooks in zsh overwrite `$?` → restructured to single precmd hook
+   - Key bug found: bash 3.2 doesn't support `
+
+Summary:
+1. Primary Request and Intent:
+   The user wants to replace starship (a Rust-based shell prompt tool) with a self-made native shell prompt because starship is noticeably slow on every prompt display (~177ms). Requirements:
+   - Only display necessary information (minimal set)
+   - Maintain bash/zsh dual support ("両対応")
+   - Focus on per-prompt display speed improvement
+   - Later added: Show whether a tracking branch exists (display remote name when tracking, omit when not)
+
+2. Key Technical Concepts:
+   - **chezmoi dotfiles management**: Source state in `home/` dir, `dot_*` → `.*` naming, `.chezmoiroot=home`
+   - **Shell prompt architecture**: zsh uses `%F{color}` escapes + `precmd`/`preexec` hooks; bash uses `\[\033[Xm\]` escapes + `PROMPT_COMMAND`
+   - **POSIX sh subshell gotcha**: `cmd | while read` runs loop in subshell, variables don't propagate to parent
+   - **`grep -c` exit code**: Returns 1 when no matches found, even though it outputs "0"
+   - **zsh precmd hook chain**: Each hook's return value overwrites `$?` for the next hook - must capture exit code in first hook
+   - **bash 3.2 limitations**: macOS default bash doesn't support `\uNNNN'` → replaced with literal UTF-8 characters
+
+6. **User requested tracking branch display**: "トラッキングブランチがあるかどうかはわかるようにしたいな"
+   - Added PROMPT_GIT_REMOTE variable to git_info.sh
+   - Shows remote name when tracking exists (e.g., `→ origin` for same name, `→ origin/other` for different name)
+
+7. **Commit attempt**: User said "commit"
+   - Pre-commit hook shellcheck failed: SC2154 warnings about PROMPT_GIT_* variables referenced but not assigned in bash.sh
+   - Added `# shellcheck source=git_info.sh` directive
+   - But the hook doesn't seem to use `-x` flag, so the source directive isn't followed
+   - Still failing on second attempt with same SC2154 warnings
+
+Let me now trace through all the files and their current state.
+
+Current files:
+- `home/dot_shell_common/prompt/git_info.sh` - shared git info extraction
+- `home/dot_shell_common/prompt/cmd_duration.sh` - command duration measurement
+- `home/dot_shell_common/prompt/bash.sh` - bash prompt implementation
+- `home/dot_zsh/prompt.zsh` - zsh prompt implementation
+- `home/dot_zsh/dot_zshrc` - modified for USE_STARSHIP switching
+- `home/dot_bashrc` - modified for USE_STARSHIP switching
+
+The immediate problem is that shellcheck in the pre-commit hook is blocking the commit because it doesn't follow `# shellcheck source=` directives (likely not using `-x` flag). The SC2154 warnings about PROMPT_GIT_* variables being referenced but not assigned in bash.sh need to be suppressed differently.
+
+<summary>
+1. Primary Request and Intent:
+   The user wants to replace starship (a Rust-based shell prompt tool) with a self-made native shell prompt because starship is noticeably slow on every prompt display (~177ms). Requirements:
+   - Only display necessary information (minimal set)
+   - Maintain bash/zsh dual support ("両対応")
+   - Focus on per-prompt display speed improvement
+   - Later added: Show whether a tracking branch exists (display remote name when tracking, omit when not)
+
+2. Key Technical Concepts:
+   - **chezmoi dotfiles management**: Source state in `home/` dir, `dot_*` → `.*` naming, `.chezmoiroot=home`
+   - **Shell prompt architecture**: zsh uses `%F{color}` escapes + `precmd`/`preexec` hooks; bash uses `\[\033[Xm\]` escapes + `PROMPT_COMMAND`
+   - **POSIX sh subshell gotcha**: `cmd | while read` runs loop in subshell, variables don't propagate to parent
+   - **`grep -c` exit code**: Returns 1 when no matches found, even though it outputs "0"
+   - **zsh precmd hook chain**: Each hook's return value overwrites `$?` for the next hook - must capture exit code in first hook
+   - **bash 3.2 limitations**: macOS default bash doesn't support `$'\uNNNN'` unicode escapes (bash 4.4+ feature)
+   - **shellcheck source directives**: `# shellcheck source=file` requires `-x` flag to follow
+   - **Document Workflow**: research.md → plan.md → logic-validator review → approval → implementation
+   - **Starship fallback**: `USE_STARSHIP=1` env var to revert to starship
+
+3. Files and Code Sections:
+
+   - **`home/dot_shell_common/prompt/git_info.sh`** (NEW - shared git info extraction)
+     - POSIX sh compatible, shared between bash and zsh
+     - Runs `git status --porcelain --branch` once, parses header for branch/remote/ahead/behind
+     - Uses `grep -c` with `|| true` to count file statuses
+     - Sets variables: PROMPT_GIT_BRANCH, PROMPT_GIT_REMOTE, PROMPT_GIT_AHEAD, PROMPT_GIT_BEHIND, PROMPT_GIT_STAGED, PROMPT_GIT_MODIFIED, PROMPT_GIT_UNTRACKED, PROMPT_GIT_DELETED, PROMPT_GIT_STATE, PROMPT_GIT_ACTIVE
+     - Remote tracking: shows just remote name when branch names match, full ref when different
+     ```sh
+     #!/bin/sh
+     # Git information extraction for shell prompts
+     # Compatible with bash and zsh - shared between both
+     
+     __prompt_git_info() {
+       PROMPT_GIT_BRANCH=""
+       PROMPT_GIT_REMOTE=""
+       PROMPT_GIT_AHEAD=""
+       PROMPT_GIT_BEHIND=""
+       PROMPT_GIT_STAGED=0
+       PROMPT_GIT_MODIFIED=0
+       PROMPT_GIT_UNTRACKED=0
+       PROMPT_GIT_DELETED=0
+       PROMPT_GIT_STATE=""
+       PROMPT_GIT_ACTIVE=0
+     
+       local git_dir
+       git_dir="$(git rev-parse --git-dir 2>/dev/null)" || return
+       PROMPT_GIT_ACTIVE=1
+     
+       # Detect special states
+       if [ -f "$git_dir/MERGE_HEAD" ]; then
+         PROMPT_GIT_STATE="merge"
+       elif [ -d "$git_dir/rebase-merge" ]; then
+         PROMPT_GIT_STATE="rebase"
+       elif [ -d "$git_dir/rebase-apply" ]; then
+         PROMPT_GIT_STATE="rebase"
+       elif [ -f "$git_dir/CHERRY_PICK_HEAD" ]; then
+         PROMPT_GIT_STATE="cherry-pick"
+       elif [ -f "$git_dir/BISECT_LOG" ]; then
+         PROMPT_GIT_STATE="bisect"
+       elif [ -f "$git_dir/REVERT_HEAD" ]; then
+         PROMPT_GIT_STATE="revert"
+       fi
+     
+       local status_output
+       status_output=$(git status --porcelain --branch 2>/dev/null) || return
+     
+       local header
+       header=$(printf '%s\n' "$status_output" | head -1)
+       header="${header#\#\# }"
+     
+       case "$header" in
+         *...*)
+           PROMPT_GIT_BRANCH="${header%%...*}"
+           local tracking="${header#*...}"
+           local remote_ref="${tracking%% *}"
+           remote_ref="${remote_ref%%\[*}"
+           local remote_name="${remote_ref%%/*}"
+           local remote_branch="${remote_ref#*/}"
+           if [ "$remote_branch" = "$PROMPT_GIT_BRANCH" ]; then
+             PROMPT_GIT_REMOTE="$remote_name"
+           else
+             PROMPT_GIT_REMOTE="$remote_ref"
+           fi
+           case "$tracking" in
+             *'[ahead '*)
+               local tmp="${tracking#*\[ahead }"
+               PROMPT_GIT_AHEAD="${tmp%%[],]*}"
+               ;;
+           esac
+           case "$tracking" in
+             *'behind '*)
+               local tmp="${tracking#*behind }"
+               PROMPT_GIT_BEHIND="${tmp%%[],]*}"
+               ;;
+           esac
+           ;;
+         'No commits yet on '*)
+           PROMPT_GIT_BRANCH="${header#No commits yet on }"
+           ;;
+         *)
+           PROMPT_GIT_BRANCH="$header"
+           ;;
+       esac
+     
+       local files
+       files=$(printf '%s\n' "$status_output" | tail -n +2)
+     
+       if [ -n "$files" ]; then
+         PROMPT_GIT_UNTRACKED=$(printf '%s\n' "$files" | grep -c '^??' || true)
+         PROMPT_GIT_STAGED=$(printf '%s\n' "$files" | grep -c '^[MADRC]' || true)
+         PROMPT_GIT_MODIFIED=$(printf '%s\n' "$files" | grep -c '^.M' || true)
+         PROMPT_GIT_DELETED=$(printf '%s\n' "$files" | grep -c '^.D' || true)
+       fi
+     }
+     ```
+
+   - **`home/dot_shell_common/prompt/cmd_duration.sh`** (NEW - command duration helper)
+     - POSIX sh compatible, uses `$SECONDS` (integer precision, sufficient for ≥1s threshold)
+     - Formats as `Xs` or `Xm Ys` for ≥60s
+     ```sh
+     #!/bin/sh
+     __prompt_cmd_timer_start() {
+       PROMPT_CMD_TIMER_START="${PROMPT_CMD_TIMER_START:-$SECONDS}"
+     }
+     __prompt_cmd_timer_stop() {
+       PROMPT_CMD_DURATION=""
+       if [ -n "$PROMPT_CMD_TIMER_START" ]; then
+         local elapsed=$((SECONDS - PROMPT_CMD_TIMER_START))
+         if [ "$elapsed" -ge 1 ]; then
+           if [ "$elapsed" -ge 60 ]; then
+             local minutes=$((elapsed / 60))
+             local secs=$((elapsed % 60))
+             PROMPT_CMD_DURATION="${minutes}m${secs}s"
+           else
+             PROMPT_CMD_DURATION="${elapsed}s"
+           fi
+         fi
+         unset PROMPT_CMD_TIMER_START
+       fi
+     }
+     ```
+
+   - **`home/dot_zsh/prompt.zsh`** (NEW - zsh prompt, replaces legacy prompt.zsh)
+     - Uses single `__prompt_precmd` hook to capture `$?` before any other processing
+     - Calls helpers internally, then `__prompt_render` with exit code
+     - Separate `__prompt_newline_precmd` for blank line between prompts
+     - Display: `dir user@host ✅/❌N [took Xs]` / `branch → remote [⇡N⇣N] +N staged !N modified` / `>`
+
+   - **`home/dot_shell_common/prompt/bash.sh`** (NEW - bash prompt)
+     - Uses `PROMPT_COMMAND` prepended to existing value (preserves terminal title update)
+     - Uses `trap DEBUG` for cmd_duration (with conflict detection via `trap -p DEBUG`)
+     - Uses literal UTF-8 characters for emoji (bash 3.2 compat)
+     - Has `# shellcheck source=git_info.sh` directive (but pre-commit hook doesn't use `-x`)
+
+   - **`home/dot_zsh/dot_zshrc`** (MODIFIED)
+     - Changed from `if [ "$HAS_STARSHIP" = "1" ]` to `if [ "$USE_STARSHIP" = "1" ] && [ "$HAS_STARSHIP" = "1" ]`
+     - Added `else` branch to source `$ZDOTDIR/prompt.zsh`
+
+   - **`home/dot_bashrc`** (MODIFIED)
+     - Same USE_STARSHIP switching pattern
+     - Added `elif` to source `$SHELL_COMMON/prompt/bash.sh`
+
+   - **`.tmp/sessions/e53d791d/plan.md`** - Implementation plan with task checklist, risks, approval status
+   - **`.tmp/sessions/e53d791d/research.md`** - Research on starship config and shell init flow
+
+4. Errors and fixes:
+   - **`while read` in pipe subshell**: Variables set inside `git status | while read` were not visible to caller. Fixed by capturing full output into variable, then using `grep -c` for counting.
+   - **`grep -c` exit code 1 on no matches**: Function returned non-zero even on clean repos. Fixed by appending `|| true` to each `grep -c` call.
+   - **zsh precmd hook chain overwrites `$?`**: Multiple precmd hooks caused `$?` to reflect previous hook's exit code, not user's command. Fixed by consolidating into single `__prompt_precmd` that captures `$?` first, then calls helpers.
+   - **bash 3.2 `$'\uNNNN'` not supported**: macOS default bash is 3.2.57, doesn't support unicode escapes. Fixed by using literal UTF-8 characters (`'✅'` instead of `$'\u2705'`).
+   - **shellcheck SC2154 warnings blocking commit**: Pre-commit hook runs shellcheck on bash.sh, which doesn't see variables set by sourced git_info.sh. Added `# shellcheck source=git_info.sh` directive, but the pre-commit hook apparently doesn't use shellcheck's `-x` flag to follow source directives. **This is the current blocking issue.**
+
+5. Problem Solving:
+   - Successfully replaced starship (~177ms) with native prompt (~55ms), a 3.2x speedup
+   - All functional tests pass: git repo/non-repo, exit codes, cmd_duration, USE_STARSHIP fallback, PROMPT_COMMAND coexistence
+   - Added tracking branch display per user request
+   - **Unsolved**: Pre-commit shellcheck hook blocks commit due to SC2154 warnings in bash.sh. The `# shellcheck source=` directive doesn't work because the hook doesn't pass `-x` flag to shellcheck.
+
+6. All user messages:
+   - "starshipが大変遅いので、同等の表示をするものを自作してしまいたい"
+   - "必要なものだけで良い。良対応を維持する。毎回の表示が少し遅いようだ。"
+   - (approved plan implicitly by `/execute-plan` command)
+   - "トラッキングブランチは別名の時だけでるのかな？"
+   - "トラッキングブランチがあるかどうかはわかるようにしたいな"
+   - "commit"
+
+7. Pending Tasks:
+   - Fix shellcheck SC2154 pre-commit hook failure for bash.sh so the commit can succeed
+   - Manual testing items still pending: SSH connection test, VSCode terminal test, git merge/rebase state test
+
+8. Current Work:
+   Attempting to commit all changes but blocked by pre-commit shellcheck hook. The hook runs shellcheck on `home/dot_shell_common/prompt/bash.sh` and reports SC2154 warnings because `PROMPT_GIT_ACTIVE`, `PROMPT_GIT_BRANCH`, `PROMPT_GIT_STAGED`, `PROMPT_GIT_MODIFIED`, `PROMPT_GIT_UNTRACKED`, `PROMPT_GIT_DELETED` are "referenced but not assigned" (they're assigned by the sourced `git_info.sh`). Adding `# shellcheck source=git_info.sh` did not fix it because the pre-commit hook doesn't use shellcheck's `-x` flag. Two commit attempts have failed with the same error.
+
+9. Optional Next Step:
+   Fix the shellcheck SC2154 warnings in `bash.sh` by either:
+   - Adding `# shellcheck disable=SC2154` at the top of the file (or before specific lines) to suppress the warnings
+   - Or investigating the pre-commit hook to see if it can be configured to use `-x`
+   
+   This is directly continuing the user's last request: "commit" - which requires the pre-commit hook to pass.
+</summary>\uNNNN'` unicode escapes (bash 4.4+ feature)
+   - **shellcheck source directives**: `# shellcheck source=file` requires `-x` flag to follow
+   - **Document Workflow**: research.md → plan.md → logic-validator review → approval → implementation
+   - **Starship fallback**: `USE_STARSHIP=1` env var to revert to starship
+
+3. Files and Code Sections:
+
+   - **`home/dot_shell_common/prompt/git_info.sh`** (NEW - shared git info extraction)
+     - POSIX sh compatible, shared between bash and zsh
+     - Runs `git status --porcelain --branch` once, parses header for branch/remote/ahead/behind
+     - Uses `grep -c` with `|| true` to count file statuses
+     - Sets variables: PROMPT_GIT_BRANCH, PROMPT_GIT_REMOTE, PROMPT_GIT_AHEAD, PROMPT_GIT_BEHIND, PROMPT_GIT_STAGED, PROMPT_GIT_MODIFIED, PROMPT_GIT_UNTRACKED, PROMPT_GIT_DELETED, PROMPT_GIT_STATE, PROMPT_GIT_ACTIVE
+     - Remote tracking: shows just remote name when branch names match, full ref when different
+     ```sh
+     #!/bin/sh
+     # Git information extraction for shell prompts
+     # Compatible with bash and zsh - shared between both
+     
+     __prompt_git_info() {
+       PROMPT_GIT_BRANCH=""
+       PROMPT_GIT_REMOTE=""
+       PROMPT_GIT_AHEAD=""
+       PROMPT_GIT_BEHIND=""
+       PROMPT_GIT_STAGED=0
+       PROMPT_GIT_MODIFIED=0
+       PROMPT_GIT_UNTRACKED=0
+       PROMPT_GIT_DELETED=0
+       PROMPT_GIT_STATE=""
+       PROMPT_GIT_ACTIVE=0
+     
+       local git_dir
+       git_dir="$(git rev-parse --git-dir 2>/dev/null)" || return
+       PROMPT_GIT_ACTIVE=1
+     
+       # Detect special states
+       if [ -f "$git_dir/MERGE_HEAD" ]; then
+         PROMPT_GIT_STATE="merge"
+       elif [ -d "$git_dir/rebase-merge" ]; then
+         PROMPT_GIT_STATE="rebase"
+       elif [ -d "$git_dir/rebase-apply" ]; then
+         PROMPT_GIT_STATE="rebase"
+       elif [ -f "$git_dir/CHERRY_PICK_HEAD" ]; then
+         PROMPT_GIT_STATE="cherry-pick"
+       elif [ -f "$git_dir/BISECT_LOG" ]; then
+         PROMPT_GIT_STATE="bisect"
+       elif [ -f "$git_dir/REVERT_HEAD" ]; then
+         PROMPT_GIT_STATE="revert"
+       fi
+     
+       local status_output
+       status_output=$(git status --porcelain --branch 2>/dev/null) || return
+     
+       local header
+       header=$(printf '%s\n' "$status_output" | head -1)
+       header="${header#\#\# }"
+     
+       case "$header" in
+         *...*)
+           PROMPT_GIT_BRANCH="${header%%...*}"
+           local tracking="${header#*...}"
+           local remote_ref="${tracking%% *}"
+           remote_ref="${remote_ref%%\[*}"
+           local remote_name="${remote_ref%%/*}"
+           local remote_branch="${remote_ref#*/}"
+           if [ "$remote_branch" = "$PROMPT_GIT_BRANCH" ]; then
+             PROMPT_GIT_REMOTE="$remote_name"
+           else
+             PROMPT_GIT_REMOTE="$remote_ref"
+           fi
+           case "$tracking" in
+             *'[ahead '*)
+               local tmp="${tracking#*\[ahead }"
+               PROMPT_GIT_AHEAD="${tmp%%[],]*}"
+               ;;
+           esac
+           case "$tracking" in
+             *'behind '*)
+               local tmp="${tracking#*behind }"
+               PROMPT_GIT_BEHIND="${tmp%%[],]*}"
+               ;;
+           esac
+           ;;
+         'No commits yet on '*)
+           PROMPT_GIT_BRANCH="${header#No commits yet on }"
+           ;;
+         *)
+           PROMPT_GIT_BRANCH="$header"
+           ;;
+       esac
+     
+       local files
+       files=$(printf '%s\n' "$status_output" | tail -n +2)
+     
+       if [ -n "$files" ]; then
+         PROMPT_GIT_UNTRACKED=$(printf '%s\n' "$files" | grep -c '^??' || true)
+         PROMPT_GIT_STAGED=$(printf '%s\n' "$files" | grep -c '^[MADRC]' || true)
+         PROMPT_GIT_MODIFIED=$(printf '%s\n' "$files" | grep -c '^.M' || true)
+         PROMPT_GIT_DELETED=$(printf '%s\n' "$files" | grep -c '^.D' || true)
+       fi
+     }
+     ```
+
+   - **`home/dot_shell_common/prompt/cmd_duration.sh`** (NEW - command duration helper)
+     - POSIX sh compatible, uses `$SECONDS` (integer precision, sufficient for ≥1s threshold)
+     - Formats as `Xs` or `Xm Ys` for ≥60s
+     ```sh
+     #!/bin/sh
+     __prompt_cmd_timer_start() {
+       PROMPT_CMD_TIMER_START="${PROMPT_CMD_TIMER_START:-$SECONDS}"
+     }
+     __prompt_cmd_timer_stop() {
+       PROMPT_CMD_DURATION=""
+       if [ -n "$PROMPT_CMD_TIMER_START" ]; then
+         local elapsed=$((SECONDS - PROMPT_CMD_TIMER_START))
+         if [ "$elapsed" -ge 1 ]; then
+           if [ "$elapsed" -ge 60 ]; then
+             local minutes=$((elapsed / 60))
+             local secs=$((elapsed % 60))
+             PROMPT_CMD_DURATION="${minutes}m${secs}s"
+           else
+             PROMPT_CMD_DURATION="${elapsed}s"
+           fi
+         fi
+         unset PROMPT_CMD_TIMER_START
+       fi
+     }
+     ```
+
+   - **`home/dot_zsh/prompt.zsh`** (NEW - zsh prompt, replaces legacy prompt.zsh)
+     - Uses single `__prompt_precmd` hook to capture `$?` before any other processing
+     - Calls helpers internally, then `__prompt_render` with exit code
+     - Separate `__prompt_newline_precmd` for blank line between prompts
+     - Display: `dir user@host ✅/❌N [took Xs]` / `branch → remote [⇡N⇣N] +N staged !N modified` / `>`
+
+   - **`home/dot_shell_common/prompt/bash.sh`** (NEW - bash prompt)
+     - Uses `PROMPT_COMMAND` prepended to existing value (preserves terminal title update)
+     - Uses `trap DEBUG` for cmd_duration (with conflict detection via `trap -p DEBUG`)
+     - Uses literal UTF-8 characters for emoji (bash 3.2 compat)
+     - Has `# shellcheck source=git_info.sh` directive (but pre-commit hook doesn't use `-x`)
+
+   - **`home/dot_zsh/dot_zshrc`** (MODIFIED)
+     - Changed from `if [ "$HAS_STARSHIP" = "1" ]` to `if [ "$USE_STARSHIP" = "1" ] && [ "$HAS_STARSHIP" = "1" ]`
+     - Added `else` branch to source `$ZDOTDIR/prompt.zsh`
+
+   - **`home/dot_bashrc`** (MODIFIED)
+     - Same USE_STARSHIP switching pattern
+     - Added `elif` to source `$SHELL_COMMON/prompt/bash.sh`
+
+   - **`.tmp/sessions/e53d791d/plan.md`** - Implementation plan with task checklist, risks, approval status
+   - **`.tmp/sessions/e53d791d/research.md`** - Research on starship config and shell init flow
+
+4. Errors and fixes:
+   - **`while read` in pipe subshell**: Variables set inside `git status | while read` were not visible to caller. Fixed by capturing full output into variable, then using `grep -c` for counting.
+   - **`grep -c` exit code 1 on no matches**: Function returned non-zero even on clean repos. Fixed by appending `|| true` to each `grep -c` call.
+   - **zsh precmd hook chain overwrites `$?`**: Multiple precmd hooks caused `$?` to reflect previous hook's exit code, not user's command. Fixed by consolidating into single `__prompt_precmd` that captures `$?` first, then calls helpers.
+   - **bash 3.2 `\uNNNN'` → replaced with literal UTF-8 characters
+
+6. **User requested tracking branch display**: "トラッキングブランチがあるかどうかはわかるようにしたいな"
+   - Added PROMPT_GIT_REMOTE variable to git_info.sh
+   - Shows remote name when tracking exists (e.g., `→ origin` for same name, `→ origin/other` for different name)
+
+7. **Commit attempt**: User said "commit"
+   - Pre-commit hook shellcheck failed: SC2154 warnings about PROMPT_GIT_* variables referenced but not assigned in bash.sh
+   - Added `# shellcheck source=git_info.sh` directive
+   - But the hook doesn't seem to use `-x` flag, so the source directive isn't followed
+   - Still failing on second attempt with same SC2154 warnings
+
+Let me now trace through all the files and their current state.
+
+Current files:
+- `home/dot_shell_common/prompt/git_info.sh` - shared git info extraction
+- `home/dot_shell_common/prompt/cmd_duration.sh` - command duration measurement
+- `home/dot_shell_common/prompt/bash.sh` - bash prompt implementation
+- `home/dot_zsh/prompt.zsh` - zsh prompt implementation
+- `home/dot_zsh/dot_zshrc` - modified for USE_STARSHIP switching
+- `home/dot_bashrc` - modified for USE_STARSHIP switching
+
+The immediate problem is that shellcheck in the pre-commit hook is blocking the commit because it doesn't follow `# shellcheck source=` directives (likely not using `-x` flag). The SC2154 warnings about PROMPT_GIT_* variables being referenced but not assigned in bash.sh need to be suppressed differently.
+
+<summary>
+1. Primary Request and Intent:
+   The user wants to replace starship (a Rust-based shell prompt tool) with a self-made native shell prompt because starship is noticeably slow on every prompt display (~177ms). Requirements:
+   - Only display necessary information (minimal set)
+   - Maintain bash/zsh dual support ("両対応")
+   - Focus on per-prompt display speed improvement
+   - Later added: Show whether a tracking branch exists (display remote name when tracking, omit when not)
+
+2. Key Technical Concepts:
+   - **chezmoi dotfiles management**: Source state in `home/` dir, `dot_*` → `.*` naming, `.chezmoiroot=home`
+   - **Shell prompt architecture**: zsh uses `%F{color}` escapes + `precmd`/`preexec` hooks; bash uses `\[\033[Xm\]` escapes + `PROMPT_COMMAND`
+   - **POSIX sh subshell gotcha**: `cmd | while read` runs loop in subshell, variables don't propagate to parent
+   - **`grep -c` exit code**: Returns 1 when no matches found, even though it outputs "0"
+   - **zsh precmd hook chain**: Each hook's return value overwrites `$?` for the next hook - must capture exit code in first hook
+   - **bash 3.2 limitations**: macOS default bash doesn't support `$'\uNNNN'` unicode escapes (bash 4.4+ feature)
+   - **shellcheck source directives**: `# shellcheck source=file` requires `-x` flag to follow
+   - **Document Workflow**: research.md → plan.md → logic-validator review → approval → implementation
+   - **Starship fallback**: `USE_STARSHIP=1` env var to revert to starship
+
+3. Files and Code Sections:
+
+   - **`home/dot_shell_common/prompt/git_info.sh`** (NEW - shared git info extraction)
+     - POSIX sh compatible, shared between bash and zsh
+     - Runs `git status --porcelain --branch` once, parses header for branch/remote/ahead/behind
+     - Uses `grep -c` with `|| true` to count file statuses
+     - Sets variables: PROMPT_GIT_BRANCH, PROMPT_GIT_REMOTE, PROMPT_GIT_AHEAD, PROMPT_GIT_BEHIND, PROMPT_GIT_STAGED, PROMPT_GIT_MODIFIED, PROMPT_GIT_UNTRACKED, PROMPT_GIT_DELETED, PROMPT_GIT_STATE, PROMPT_GIT_ACTIVE
+     - Remote tracking: shows just remote name when branch names match, full ref when different
+     ```sh
+     #!/bin/sh
+     # Git information extraction for shell prompts
+     # Compatible with bash and zsh - shared between both
+     
+     __prompt_git_info() {
+       PROMPT_GIT_BRANCH=""
+       PROMPT_GIT_REMOTE=""
+       PROMPT_GIT_AHEAD=""
+       PROMPT_GIT_BEHIND=""
+       PROMPT_GIT_STAGED=0
+       PROMPT_GIT_MODIFIED=0
+       PROMPT_GIT_UNTRACKED=0
+       PROMPT_GIT_DELETED=0
+       PROMPT_GIT_STATE=""
+       PROMPT_GIT_ACTIVE=0
+     
+       local git_dir
+       git_dir="$(git rev-parse --git-dir 2>/dev/null)" || return
+       PROMPT_GIT_ACTIVE=1
+     
+       # Detect special states
+       if [ -f "$git_dir/MERGE_HEAD" ]; then
+         PROMPT_GIT_STATE="merge"
+       elif [ -d "$git_dir/rebase-merge" ]; then
+         PROMPT_GIT_STATE="rebase"
+       elif [ -d "$git_dir/rebase-apply" ]; then
+         PROMPT_GIT_STATE="rebase"
+       elif [ -f "$git_dir/CHERRY_PICK_HEAD" ]; then
+         PROMPT_GIT_STATE="cherry-pick"
+       elif [ -f "$git_dir/BISECT_LOG" ]; then
+         PROMPT_GIT_STATE="bisect"
+       elif [ -f "$git_dir/REVERT_HEAD" ]; then
+         PROMPT_GIT_STATE="revert"
+       fi
+     
+       local status_output
+       status_output=$(git status --porcelain --branch 2>/dev/null) || return
+     
+       local header
+       header=$(printf '%s\n' "$status_output" | head -1)
+       header="${header#\#\# }"
+     
+       case "$header" in
+         *...*)
+           PROMPT_GIT_BRANCH="${header%%...*}"
+           local tracking="${header#*...}"
+           local remote_ref="${tracking%% *}"
+           remote_ref="${remote_ref%%\[*}"
+           local remote_name="${remote_ref%%/*}"
+           local remote_branch="${remote_ref#*/}"
+           if [ "$remote_branch" = "$PROMPT_GIT_BRANCH" ]; then
+             PROMPT_GIT_REMOTE="$remote_name"
+           else
+             PROMPT_GIT_REMOTE="$remote_ref"
+           fi
+           case "$tracking" in
+             *'[ahead '*)
+               local tmp="${tracking#*\[ahead }"
+               PROMPT_GIT_AHEAD="${tmp%%[],]*}"
+               ;;
+           esac
+           case "$tracking" in
+             *'behind '*)
+               local tmp="${tracking#*behind }"
+               PROMPT_GIT_BEHIND="${tmp%%[],]*}"
+               ;;
+           esac
+           ;;
+         'No commits yet on '*)
+           PROMPT_GIT_BRANCH="${header#No commits yet on }"
+           ;;
+         *)
+           PROMPT_GIT_BRANCH="$header"
+           ;;
+       esac
+     
+       local files
+       files=$(printf '%s\n' "$status_output" | tail -n +2)
+     
+       if [ -n "$files" ]; then
+         PROMPT_GIT_UNTRACKED=$(printf '%s\n' "$files" | grep -c '^??' || true)
+         PROMPT_GIT_STAGED=$(printf '%s\n' "$files" | grep -c '^[MADRC]' || true)
+         PROMPT_GIT_MODIFIED=$(printf '%s\n' "$files" | grep -c '^.M' || true)
+         PROMPT_GIT_DELETED=$(printf '%s\n' "$files" | grep -c '^.D' || true)
+       fi
+     }
+     ```
+
+   - **`home/dot_shell_common/prompt/cmd_duration.sh`** (NEW - command duration helper)
+     - POSIX sh compatible, uses `$SECONDS` (integer precision, sufficient for ≥1s threshold)
+     - Formats as `Xs` or `Xm Ys` for ≥60s
+     ```sh
+     #!/bin/sh
+     __prompt_cmd_timer_start() {
+       PROMPT_CMD_TIMER_START="${PROMPT_CMD_TIMER_START:-$SECONDS}"
+     }
+     __prompt_cmd_timer_stop() {
+       PROMPT_CMD_DURATION=""
+       if [ -n "$PROMPT_CMD_TIMER_START" ]; then
+         local elapsed=$((SECONDS - PROMPT_CMD_TIMER_START))
+         if [ "$elapsed" -ge 1 ]; then
+           if [ "$elapsed" -ge 60 ]; then
+             local minutes=$((elapsed / 60))
+             local secs=$((elapsed % 60))
+             PROMPT_CMD_DURATION="${minutes}m${secs}s"
+           else
+             PROMPT_CMD_DURATION="${elapsed}s"
+           fi
+         fi
+         unset PROMPT_CMD_TIMER_START
+       fi
+     }
+     ```
+
+   - **`home/dot_zsh/prompt.zsh`** (NEW - zsh prompt, replaces legacy prompt.zsh)
+     - Uses single `__prompt_precmd` hook to capture `$?` before any other processing
+     - Calls helpers internally, then `__prompt_render` with exit code
+     - Separate `__prompt_newline_precmd` for blank line between prompts
+     - Display: `dir user@host ✅/❌N [took Xs]` / `branch → remote [⇡N⇣N] +N staged !N modified` / `>`
+
+   - **`home/dot_shell_common/prompt/bash.sh`** (NEW - bash prompt)
+     - Uses `PROMPT_COMMAND` prepended to existing value (preserves terminal title update)
+     - Uses `trap DEBUG` for cmd_duration (with conflict detection via `trap -p DEBUG`)
+     - Uses literal UTF-8 characters for emoji (bash 3.2 compat)
+     - Has `# shellcheck source=git_info.sh` directive (but pre-commit hook doesn't use `-x`)
+
+   - **`home/dot_zsh/dot_zshrc`** (MODIFIED)
+     - Changed from `if [ "$HAS_STARSHIP" = "1" ]` to `if [ "$USE_STARSHIP" = "1" ] && [ "$HAS_STARSHIP" = "1" ]`
+     - Added `else` branch to source `$ZDOTDIR/prompt.zsh`
+
+   - **`home/dot_bashrc`** (MODIFIED)
+     - Same USE_STARSHIP switching pattern
+     - Added `elif` to source `$SHELL_COMMON/prompt/bash.sh`
+
+   - **`.tmp/sessions/e53d791d/plan.md`** - Implementation plan with task checklist, risks, approval status
+   - **`.tmp/sessions/e53d791d/research.md`** - Research on starship config and shell init flow
+
+4. Errors and fixes:
+   - **`while read` in pipe subshell**: Variables set inside `git status | while read` were not visible to caller. Fixed by capturing full output into variable, then using `grep -c` for counting.
+   - **`grep -c` exit code 1 on no matches**: Function returned non-zero even on clean repos. Fixed by appending `|| true` to each `grep -c` call.
+   - **zsh precmd hook chain overwrites `$?`**: Multiple precmd hooks caused `$?` to reflect previous hook's exit code, not user's command. Fixed by consolidating into single `__prompt_precmd` that captures `$?` first, then calls helpers.
+   - **bash 3.2 `$'\uNNNN'` not supported**: macOS default bash is 3.2.57, doesn't support unicode escapes. Fixed by using literal UTF-8 characters (`'✅'` instead of `$'\u2705'`).
+   - **shellcheck SC2154 warnings blocking commit**: Pre-commit hook runs shellcheck on bash.sh, which doesn't see variables set by sourced git_info.sh. Added `# shellcheck source=git_info.sh` directive, but the pre-commit hook apparently doesn't use shellcheck's `-x` flag to follow source directives. **This is the current blocking issue.**
+
+5. Problem Solving:
+   - Successfully replaced starship (~177ms) with native prompt (~55ms), a 3.2x speedup
+   - All functional tests pass: git repo/non-repo, exit codes, cmd_duration, USE_STARSHIP fallback, PROMPT_COMMAND coexistence
+   - Added tracking branch display per user request
+   - **Unsolved**: Pre-commit shellcheck hook blocks commit due to SC2154 warnings in bash.sh. The `# shellcheck source=` directive doesn't work because the hook doesn't pass `-x` flag to shellcheck.
+
+6. All user messages:
+   - "starshipが大変遅いので、同等の表示をするものを自作してしまいたい"
+   - "必要なものだけで良い。良対応を維持する。毎回の表示が少し遅いようだ。"
+   - (approved plan implicitly by `/execute-plan` command)
+   - "トラッキングブランチは別名の時だけでるのかな？"
+   - "トラッキングブランチがあるかどうかはわかるようにしたいな"
+   - "commit"
+
+7. Pending Tasks:
+   - Fix shellcheck SC2154 pre-commit hook failure for bash.sh so the commit can succeed
+   - Manual testing items still pending: SSH connection test, VSCode terminal test, git merge/rebase state test
+
+8. Current Work:
+   Attempting to commit all changes but blocked by pre-commit shellcheck hook. The hook runs shellcheck on `home/dot_shell_common/prompt/bash.sh` and reports SC2154 warnings because `PROMPT_GIT_ACTIVE`, `PROMPT_GIT_BRANCH`, `PROMPT_GIT_STAGED`, `PROMPT_GIT_MODIFIED`, `PROMPT_GIT_UNTRACKED`, `PROMPT_GIT_DELETED` are "referenced but not assigned" (they're assigned by the sourced `git_info.sh`). Adding `# shellcheck source=git_info.sh` did not fix it because the pre-commit hook doesn't use shellcheck's `-x` flag. Two commit attempts have failed with the same error.
+
+9. Optional Next Step:
+   Fix the shellcheck SC2154 warnings in `bash.sh` by either:
+   - Adding `# shellcheck disable=SC2154` at the top of the file (or before specific lines) to suppress the warnings
+   - Or investigating the pre-commit hook to see if it can be configured to use `-x`
+   
+   This is directly continuing the user's last request: "commit" - which requires the pre-commit hook to pass.
+</summary>\uNNNN'` not supported**: macOS default bash is 3.2.57, doesn't support unicode escapes. Fixed by using literal UTF-8 characters (`'✅'` instead of `\uNNNN'` → replaced with literal UTF-8 characters
+
+6. **User requested tracking branch display**: "トラッキングブランチがあるかどうかはわかるようにしたいな"
+   - Added PROMPT_GIT_REMOTE variable to git_info.sh
+   - Shows remote name when tracking exists (e.g., `→ origin` for same name, `→ origin/other` for different name)
+
+7. **Commit attempt**: User said "commit"
+   - Pre-commit hook shellcheck failed: SC2154 warnings about PROMPT_GIT_* variables referenced but not assigned in bash.sh
+   - Added `# shellcheck source=git_info.sh` directive
+   - But the hook doesn't seem to use `-x` flag, so the source directive isn't followed
+   - Still failing on second attempt with same SC2154 warnings
+
+Let me now trace through all the files and their current state.
+
+Current files:
+- `home/dot_shell_common/prompt/git_info.sh` - shared git info extraction
+- `home/dot_shell_common/prompt/cmd_duration.sh` - command duration measurement
+- `home/dot_shell_common/prompt/bash.sh` - bash prompt implementation
+- `home/dot_zsh/prompt.zsh` - zsh prompt implementation
+- `home/dot_zsh/dot_zshrc` - modified for USE_STARSHIP switching
+- `home/dot_bashrc` - modified for USE_STARSHIP switching
+
+The immediate problem is that shellcheck in the pre-commit hook is blocking the commit because it doesn't follow `# shellcheck source=` directives (likely not using `-x` flag). The SC2154 warnings about PROMPT_GIT_* variables being referenced but not assigned in bash.sh need to be suppressed differently.
+
+<summary>
+1. Primary Request and Intent:
+   The user wants to replace starship (a Rust-based shell prompt tool) with a self-made native shell prompt because starship is noticeably slow on every prompt display (~177ms). Requirements:
+   - Only display necessary information (minimal set)
+   - Maintain bash/zsh dual support ("両対応")
+   - Focus on per-prompt display speed improvement
+   - Later added: Show whether a tracking branch exists (display remote name when tracking, omit when not)
+
+2. Key Technical Concepts:
+   - **chezmoi dotfiles management**: Source state in `home/` dir, `dot_*` → `.*` naming, `.chezmoiroot=home`
+   - **Shell prompt architecture**: zsh uses `%F{color}` escapes + `precmd`/`preexec` hooks; bash uses `\[\033[Xm\]` escapes + `PROMPT_COMMAND`
+   - **POSIX sh subshell gotcha**: `cmd | while read` runs loop in subshell, variables don't propagate to parent
+   - **`grep -c` exit code**: Returns 1 when no matches found, even though it outputs "0"
+   - **zsh precmd hook chain**: Each hook's return value overwrites `$?` for the next hook - must capture exit code in first hook
+   - **bash 3.2 limitations**: macOS default bash doesn't support `$'\uNNNN'` unicode escapes (bash 4.4+ feature)
+   - **shellcheck source directives**: `# shellcheck source=file` requires `-x` flag to follow
+   - **Document Workflow**: research.md → plan.md → logic-validator review → approval → implementation
+   - **Starship fallback**: `USE_STARSHIP=1` env var to revert to starship
+
+3. Files and Code Sections:
+
+   - **`home/dot_shell_common/prompt/git_info.sh`** (NEW - shared git info extraction)
+     - POSIX sh compatible, shared between bash and zsh
+     - Runs `git status --porcelain --branch` once, parses header for branch/remote/ahead/behind
+     - Uses `grep -c` with `|| true` to count file statuses
+     - Sets variables: PROMPT_GIT_BRANCH, PROMPT_GIT_REMOTE, PROMPT_GIT_AHEAD, PROMPT_GIT_BEHIND, PROMPT_GIT_STAGED, PROMPT_GIT_MODIFIED, PROMPT_GIT_UNTRACKED, PROMPT_GIT_DELETED, PROMPT_GIT_STATE, PROMPT_GIT_ACTIVE
+     - Remote tracking: shows just remote name when branch names match, full ref when different
+     ```sh
+     #!/bin/sh
+     # Git information extraction for shell prompts
+     # Compatible with bash and zsh - shared between both
+     
+     __prompt_git_info() {
+       PROMPT_GIT_BRANCH=""
+       PROMPT_GIT_REMOTE=""
+       PROMPT_GIT_AHEAD=""
+       PROMPT_GIT_BEHIND=""
+       PROMPT_GIT_STAGED=0
+       PROMPT_GIT_MODIFIED=0
+       PROMPT_GIT_UNTRACKED=0
+       PROMPT_GIT_DELETED=0
+       PROMPT_GIT_STATE=""
+       PROMPT_GIT_ACTIVE=0
+     
+       local git_dir
+       git_dir="$(git rev-parse --git-dir 2>/dev/null)" || return
+       PROMPT_GIT_ACTIVE=1
+     
+       # Detect special states
+       if [ -f "$git_dir/MERGE_HEAD" ]; then
+         PROMPT_GIT_STATE="merge"
+       elif [ -d "$git_dir/rebase-merge" ]; then
+         PROMPT_GIT_STATE="rebase"
+       elif [ -d "$git_dir/rebase-apply" ]; then
+         PROMPT_GIT_STATE="rebase"
+       elif [ -f "$git_dir/CHERRY_PICK_HEAD" ]; then
+         PROMPT_GIT_STATE="cherry-pick"
+       elif [ -f "$git_dir/BISECT_LOG" ]; then
+         PROMPT_GIT_STATE="bisect"
+       elif [ -f "$git_dir/REVERT_HEAD" ]; then
+         PROMPT_GIT_STATE="revert"
+       fi
+     
+       local status_output
+       status_output=$(git status --porcelain --branch 2>/dev/null) || return
+     
+       local header
+       header=$(printf '%s\n' "$status_output" | head -1)
+       header="${header#\#\# }"
+     
+       case "$header" in
+         *...*)
+           PROMPT_GIT_BRANCH="${header%%...*}"
+           local tracking="${header#*...}"
+           local remote_ref="${tracking%% *}"
+           remote_ref="${remote_ref%%\[*}"
+           local remote_name="${remote_ref%%/*}"
+           local remote_branch="${remote_ref#*/}"
+           if [ "$remote_branch" = "$PROMPT_GIT_BRANCH" ]; then
+             PROMPT_GIT_REMOTE="$remote_name"
+           else
+             PROMPT_GIT_REMOTE="$remote_ref"
+           fi
+           case "$tracking" in
+             *'[ahead '*)
+               local tmp="${tracking#*\[ahead }"
+               PROMPT_GIT_AHEAD="${tmp%%[],]*}"
+               ;;
+           esac
+           case "$tracking" in
+             *'behind '*)
+               local tmp="${tracking#*behind }"
+               PROMPT_GIT_BEHIND="${tmp%%[],]*}"
+               ;;
+           esac
+           ;;
+         'No commits yet on '*)
+           PROMPT_GIT_BRANCH="${header#No commits yet on }"
+           ;;
+         *)
+           PROMPT_GIT_BRANCH="$header"
+           ;;
+       esac
+     
+       local files
+       files=$(printf '%s\n' "$status_output" | tail -n +2)
+     
+       if [ -n "$files" ]; then
+         PROMPT_GIT_UNTRACKED=$(printf '%s\n' "$files" | grep -c '^??' || true)
+         PROMPT_GIT_STAGED=$(printf '%s\n' "$files" | grep -c '^[MADRC]' || true)
+         PROMPT_GIT_MODIFIED=$(printf '%s\n' "$files" | grep -c '^.M' || true)
+         PROMPT_GIT_DELETED=$(printf '%s\n' "$files" | grep -c '^.D' || true)
+       fi
+     }
+     ```
+
+   - **`home/dot_shell_common/prompt/cmd_duration.sh`** (NEW - command duration helper)
+     - POSIX sh compatible, uses `$SECONDS` (integer precision, sufficient for ≥1s threshold)
+     - Formats as `Xs` or `Xm Ys` for ≥60s
+     ```sh
+     #!/bin/sh
+     __prompt_cmd_timer_start() {
+       PROMPT_CMD_TIMER_START="${PROMPT_CMD_TIMER_START:-$SECONDS}"
+     }
+     __prompt_cmd_timer_stop() {
+       PROMPT_CMD_DURATION=""
+       if [ -n "$PROMPT_CMD_TIMER_START" ]; then
+         local elapsed=$((SECONDS - PROMPT_CMD_TIMER_START))
+         if [ "$elapsed" -ge 1 ]; then
+           if [ "$elapsed" -ge 60 ]; then
+             local minutes=$((elapsed / 60))
+             local secs=$((elapsed % 60))
+             PROMPT_CMD_DURATION="${minutes}m${secs}s"
+           else
+             PROMPT_CMD_DURATION="${elapsed}s"
+           fi
+         fi
+         unset PROMPT_CMD_TIMER_START
+       fi
+     }
+     ```
+
+   - **`home/dot_zsh/prompt.zsh`** (NEW - zsh prompt, replaces legacy prompt.zsh)
+     - Uses single `__prompt_precmd` hook to capture `$?` before any other processing
+     - Calls helpers internally, then `__prompt_render` with exit code
+     - Separate `__prompt_newline_precmd` for blank line between prompts
+     - Display: `dir user@host ✅/❌N [took Xs]` / `branch → remote [⇡N⇣N] +N staged !N modified` / `>`
+
+   - **`home/dot_shell_common/prompt/bash.sh`** (NEW - bash prompt)
+     - Uses `PROMPT_COMMAND` prepended to existing value (preserves terminal title update)
+     - Uses `trap DEBUG` for cmd_duration (with conflict detection via `trap -p DEBUG`)
+     - Uses literal UTF-8 characters for emoji (bash 3.2 compat)
+     - Has `# shellcheck source=git_info.sh` directive (but pre-commit hook doesn't use `-x`)
+
+   - **`home/dot_zsh/dot_zshrc`** (MODIFIED)
+     - Changed from `if [ "$HAS_STARSHIP" = "1" ]` to `if [ "$USE_STARSHIP" = "1" ] && [ "$HAS_STARSHIP" = "1" ]`
+     - Added `else` branch to source `$ZDOTDIR/prompt.zsh`
+
+   - **`home/dot_bashrc`** (MODIFIED)
+     - Same USE_STARSHIP switching pattern
+     - Added `elif` to source `$SHELL_COMMON/prompt/bash.sh`
+
+   - **`.tmp/sessions/e53d791d/plan.md`** - Implementation plan with task checklist, risks, approval status
+   - **`.tmp/sessions/e53d791d/research.md`** - Research on starship config and shell init flow
+
+4. Errors and fixes:
+   - **`while read` in pipe subshell**: Variables set inside `git status | while read` were not visible to caller. Fixed by capturing full output into variable, then using `grep -c` for counting.
+   - **`grep -c` exit code 1 on no matches**: Function returned non-zero even on clean repos. Fixed by appending `|| true` to each `grep -c` call.
+   - **zsh precmd hook chain overwrites `$?`**: Multiple precmd hooks caused `$?` to reflect previous hook's exit code, not user's command. Fixed by consolidating into single `__prompt_precmd` that captures `$?` first, then calls helpers.
+   - **bash 3.2 `$'\uNNNN'` not supported**: macOS default bash is 3.2.57, doesn't support unicode escapes. Fixed by using literal UTF-8 characters (`'✅'` instead of `$'\u2705'`).
+   - **shellcheck SC2154 warnings blocking commit**: Pre-commit hook runs shellcheck on bash.sh, which doesn't see variables set by sourced git_info.sh. Added `# shellcheck source=git_info.sh` directive, but the pre-commit hook apparently doesn't use shellcheck's `-x` flag to follow source directives. **This is the current blocking issue.**
+
+5. Problem Solving:
+   - Successfully replaced starship (~177ms) with native prompt (~55ms), a 3.2x speedup
+   - All functional tests pass: git repo/non-repo, exit codes, cmd_duration, USE_STARSHIP fallback, PROMPT_COMMAND coexistence
+   - Added tracking branch display per user request
+   - **Unsolved**: Pre-commit shellcheck hook blocks commit due to SC2154 warnings in bash.sh. The `# shellcheck source=` directive doesn't work because the hook doesn't pass `-x` flag to shellcheck.
+
+6. All user messages:
+   - "starshipが大変遅いので、同等の表示をするものを自作してしまいたい"
+   - "必要なものだけで良い。良対応を維持する。毎回の表示が少し遅いようだ。"
+   - (approved plan implicitly by `/execute-plan` command)
+   - "トラッキングブランチは別名の時だけでるのかな？"
+   - "トラッキングブランチがあるかどうかはわかるようにしたいな"
+   - "commit"
+
+7. Pending Tasks:
+   - Fix shellcheck SC2154 pre-commit hook failure for bash.sh so the commit can succeed
+   - Manual testing items still pending: SSH connection test, VSCode terminal test, git merge/rebase state test
+
+8. Current Work:
+   Attempting to commit all changes but blocked by pre-commit shellcheck hook. The hook runs shellcheck on `home/dot_shell_common/prompt/bash.sh` and reports SC2154 warnings because `PROMPT_GIT_ACTIVE`, `PROMPT_GIT_BRANCH`, `PROMPT_GIT_STAGED`, `PROMPT_GIT_MODIFIED`, `PROMPT_GIT_UNTRACKED`, `PROMPT_GIT_DELETED` are "referenced but not assigned" (they're assigned by the sourced `git_info.sh`). Adding `# shellcheck source=git_info.sh` did not fix it because the pre-commit hook doesn't use shellcheck's `-x` flag. Two commit attempts have failed with the same error.
+
+9. Optional Next Step:
+   Fix the shellcheck SC2154 warnings in `bash.sh` by either:
+   - Adding `# shellcheck disable=SC2154` at the top of the file (or before specific lines) to suppress the warnings
+   - Or investigating the pre-commit hook to see if it can be configured to use `-x`
+   
+   This is directly continuing the user's last request: "commit" - which requires the pre-commit hook to pass.
+</summary>\u2705'`).
+   - **shellcheck SC2154 warnings blocking commit**: Pre-commit hook runs shellcheck on bash.sh, which doesn't see variables set by sourced git_info.sh. Added `# shellcheck source=git_info.sh` directive, but the pre-commit hook apparently doesn't use shellcheck's `-x` flag to follow source directives. **This is the current blocking issue.**
+
+5. Problem Solving:
+   - Successfully replaced starship (~177ms) with native prompt (~55ms), a 3.2x speedup
+   - All functional tests pass: git repo/non-repo, exit codes, cmd_duration, USE_STARSHIP fallback, PROMPT_COMMAND coexistence
+   - Added tracking branch display per user request
+   - **Unsolved**: Pre-commit shellcheck hook blocks commit due to SC2154 warnings in bash.sh. The `# shellcheck source=` directive doesn't work because the hook doesn't pass `-x` flag to shellcheck.
+
+6. All user messages:
+   - "starshipが大変遅いので、同等の表示をするものを自作してしまいたい"
+   - "必要なものだけで良い。良対応を維持する。毎回の表示が少し遅いようだ。"
+   - (approved plan implicitly by `/execute-plan` command)
+   - "トラッキングブランチは別名の時だけでるのかな？"
+   - "トラッキングブランチがあるかどうかはわかるようにしたいな"
+   - "commit"
+
+7. Pending Tasks:
+   - Fix shellcheck SC2154 pre-commit hook failure for bash.sh so the commit can succeed
+   - Manual testing items still pending: SSH connection test, VSCode terminal test, git merge/rebase state test
+
+8. Current Work:
+   Attempting to commit all changes but blocked by pre-commit shellcheck hook. The hook runs shellcheck on `home/dot_shell_common/prompt/bash.sh` and reports SC2154 warnings because `PROMPT_GIT_ACTIVE`, `PROMPT_GIT_BRANCH`, `PROMPT_GIT_STAGED`, `PROMPT_GIT_MODIFIED`, `PROMPT_GIT_UNTRACKED`, `PROMPT_GIT_DELETED` are "referenced but not assigned" (they're assigned by the sourced `git_info.sh`). Adding `# shellcheck source=git_info.sh` did not fix it because the pre-commit hook doesn't use shellcheck's `-x` flag. Two commit attempts have failed with the same error.
+
+9. Optional Next Step:
+   Fix the shellcheck SC2154 warnings in `bash.sh` by either:
+   - Adding `# shellcheck disable=SC2154` at the top of the file (or before specific lines) to suppress the warnings
+   - Or investigating the pre-commit hook to see if it can be configured to use `-x`
+   
+   This is directly continuing the user's last request: "commit" - which requires the pre-commit hook to pass.\uNNNN'` → replaced with literal UTF-8 characters
+
+6. **User requested tracking branch display**: "トラッキングブランチがあるかどうかはわかるようにしたいな"
+   - Added PROMPT_GIT_REMOTE variable to git_info.sh
+   - Shows remote name when tracking exists (e.g., `→ origin` for same name, `→ origin/other` for different name)
+
+7. **Commit attempt**: User said "commit"
+   - Pre-commit hook shellcheck failed: SC2154 warnings about PROMPT_GIT_* variables referenced but not assigned in bash.sh
+   - Added `# shellcheck source=git_info.sh` directive
+   - But the hook doesn't seem to use `-x` flag, so the source directive isn't followed
+   - Still failing on second attempt with same SC2154 warnings
+
+Let me now trace through all the files and their current state.
+
+Current files:
+- `home/dot_shell_common/prompt/git_info.sh` - shared git info extraction
+- `home/dot_shell_common/prompt/cmd_duration.sh` - command duration measurement
+- `home/dot_shell_common/prompt/bash.sh` - bash prompt implementation
+- `home/dot_zsh/prompt.zsh` - zsh prompt implementation
+- `home/dot_zsh/dot_zshrc` - modified for USE_STARSHIP switching
+- `home/dot_bashrc` - modified for USE_STARSHIP switching
+
+The immediate problem is that shellcheck in the pre-commit hook is blocking the commit because it doesn't follow `# shellcheck source=` directives (likely not using `-x` flag). The SC2154 warnings about PROMPT_GIT_* variables being referenced but not assigned in bash.sh need to be suppressed differently.
+
+<summary>
+1. Primary Request and Intent:
+   The user wants to replace starship (a Rust-based shell prompt tool) with a self-made native shell prompt because starship is noticeably slow on every prompt display (~177ms). Requirements:
+   - Only display necessary information (minimal set)
+   - Maintain bash/zsh dual support ("両対応")
+   - Focus on per-prompt display speed improvement
+   - Later added: Show whether a tracking branch exists (display remote name when tracking, omit when not)
+
+2. Key Technical Concepts:
+   - **chezmoi dotfiles management**: Source state in `home/` dir, `dot_*` → `.*` naming, `.chezmoiroot=home`
+   - **Shell prompt architecture**: zsh uses `%F{color}` escapes + `precmd`/`preexec` hooks; bash uses `\[\033[Xm\]` escapes + `PROMPT_COMMAND`
+   - **POSIX sh subshell gotcha**: `cmd | while read` runs loop in subshell, variables don't propagate to parent
+   - **`grep -c` exit code**: Returns 1 when no matches found, even though it outputs "0"
+   - **zsh precmd hook chain**: Each hook's return value overwrites `$?` for the next hook - must capture exit code in first hook
+   - **bash 3.2 limitations**: macOS default bash doesn't support `$'\uNNNN'` unicode escapes (bash 4.4+ feature)
+   - **shellcheck source directives**: `# shellcheck source=file` requires `-x` flag to follow
+   - **Document Workflow**: research.md → plan.md → logic-validator review → approval → implementation
+   - **Starship fallback**: `USE_STARSHIP=1` env var to revert to starship
+
+3. Files and Code Sections:
+
+   - **`home/dot_shell_common/prompt/git_info.sh`** (NEW - shared git info extraction)
+     - POSIX sh compatible, shared between bash and zsh
+     - Runs `git status --porcelain --branch` once, parses header for branch/remote/ahead/behind
+     - Uses `grep -c` with `|| true` to count file statuses
+     - Sets variables: PROMPT_GIT_BRANCH, PROMPT_GIT_REMOTE, PROMPT_GIT_AHEAD, PROMPT_GIT_BEHIND, PROMPT_GIT_STAGED, PROMPT_GIT_MODIFIED, PROMPT_GIT_UNTRACKED, PROMPT_GIT_DELETED, PROMPT_GIT_STATE, PROMPT_GIT_ACTIVE
+     - Remote tracking: shows just remote name when branch names match, full ref when different
+     ```sh
+     #!/bin/sh
+     # Git information extraction for shell prompts
+     # Compatible with bash and zsh - shared between both
+     
+     __prompt_git_info() {
+       PROMPT_GIT_BRANCH=""
+       PROMPT_GIT_REMOTE=""
+       PROMPT_GIT_AHEAD=""
+       PROMPT_GIT_BEHIND=""
+       PROMPT_GIT_STAGED=0
+       PROMPT_GIT_MODIFIED=0
+       PROMPT_GIT_UNTRACKED=0
+       PROMPT_GIT_DELETED=0
+       PROMPT_GIT_STATE=""
+       PROMPT_GIT_ACTIVE=0
+     
+       local git_dir
+       git_dir="$(git rev-parse --git-dir 2>/dev/null)" || return
+       PROMPT_GIT_ACTIVE=1
+     
+       # Detect special states
+       if [ -f "$git_dir/MERGE_HEAD" ]; then
+         PROMPT_GIT_STATE="merge"
+       elif [ -d "$git_dir/rebase-merge" ]; then
+         PROMPT_GIT_STATE="rebase"
+       elif [ -d "$git_dir/rebase-apply" ]; then
+         PROMPT_GIT_STATE="rebase"
+       elif [ -f "$git_dir/CHERRY_PICK_HEAD" ]; then
+         PROMPT_GIT_STATE="cherry-pick"
+       elif [ -f "$git_dir/BISECT_LOG" ]; then
+         PROMPT_GIT_STATE="bisect"
+       elif [ -f "$git_dir/REVERT_HEAD" ]; then
+         PROMPT_GIT_STATE="revert"
+       fi
+     
+       local status_output
+       status_output=$(git status --porcelain --branch 2>/dev/null) || return
+     
+       local header
+       header=$(printf '%s\n' "$status_output" | head -1)
+       header="${header#\#\# }"
+     
+       case "$header" in
+         *...*)
+           PROMPT_GIT_BRANCH="${header%%...*}"
+           local tracking="${header#*...}"
+           local remote_ref="${tracking%% *}"
+           remote_ref="${remote_ref%%\[*}"
+           local remote_name="${remote_ref%%/*}"
+           local remote_branch="${remote_ref#*/}"
+           if [ "$remote_branch" = "$PROMPT_GIT_BRANCH" ]; then
+             PROMPT_GIT_REMOTE="$remote_name"
+           else
+             PROMPT_GIT_REMOTE="$remote_ref"
+           fi
+           case "$tracking" in
+             *'[ahead '*)
+               local tmp="${tracking#*\[ahead }"
+               PROMPT_GIT_AHEAD="${tmp%%[],]*}"
+               ;;
+           esac
+           case "$tracking" in
+             *'behind '*)
+               local tmp="${tracking#*behind }"
+               PROMPT_GIT_BEHIND="${tmp%%[],]*}"
+               ;;
+           esac
+           ;;
+         'No commits yet on '*)
+           PROMPT_GIT_BRANCH="${header#No commits yet on }"
+           ;;
+         *)
+           PROMPT_GIT_BRANCH="$header"
+           ;;
+       esac
+     
+       local files
+       files=$(printf '%s\n' "$status_output" | tail -n +2)
+     
+       if [ -n "$files" ]; then
+         PROMPT_GIT_UNTRACKED=$(printf '%s\n' "$files" | grep -c '^??' || true)
+         PROMPT_GIT_STAGED=$(printf '%s\n' "$files" | grep -c '^[MADRC]' || true)
+         PROMPT_GIT_MODIFIED=$(printf '%s\n' "$files" | grep -c '^.M' || true)
+         PROMPT_GIT_DELETED=$(printf '%s\n' "$files" | grep -c '^.D' || true)
+       fi
+     }
+     ```
+
+   - **`home/dot_shell_common/prompt/cmd_duration.sh`** (NEW - command duration helper)
+     - POSIX sh compatible, uses `$SECONDS` (integer precision, sufficient for ≥1s threshold)
+     - Formats as `Xs` or `Xm Ys` for ≥60s
+     ```sh
+     #!/bin/sh
+     __prompt_cmd_timer_start() {
+       PROMPT_CMD_TIMER_START="${PROMPT_CMD_TIMER_START:-$SECONDS}"
+     }
+     __prompt_cmd_timer_stop() {
+       PROMPT_CMD_DURATION=""
+       if [ -n "$PROMPT_CMD_TIMER_START" ]; then
+         local elapsed=$((SECONDS - PROMPT_CMD_TIMER_START))
+         if [ "$elapsed" -ge 1 ]; then
+           if [ "$elapsed" -ge 60 ]; then
+             local minutes=$((elapsed / 60))
+             local secs=$((elapsed % 60))
+             PROMPT_CMD_DURATION="${minutes}m${secs}s"
+           else
+             PROMPT_CMD_DURATION="${elapsed}s"
+           fi
+         fi
+         unset PROMPT_CMD_TIMER_START
+       fi
+     }
+     ```
+
+   - **`home/dot_zsh/prompt.zsh`** (NEW - zsh prompt, replaces legacy prompt.zsh)
+     - Uses single `__prompt_precmd` hook to capture `$?` before any other processing
+     - Calls helpers internally, then `__prompt_render` with exit code
+     - Separate `__prompt_newline_precmd` for blank line between prompts
+     - Display: `dir user@host ✅/❌N [took Xs]` / `branch → remote [⇡N⇣N] +N staged !N modified` / `>`
+
+   - **`home/dot_shell_common/prompt/bash.sh`** (NEW - bash prompt)
+     - Uses `PROMPT_COMMAND` prepended to existing value (preserves terminal title update)
+     - Uses `trap DEBUG` for cmd_duration (with conflict detection via `trap -p DEBUG`)
+     - Uses literal UTF-8 characters for emoji (bash 3.2 compat)
+     - Has `# shellcheck source=git_info.sh` directive (but pre-commit hook doesn't use `-x`)
+
+   - **`home/dot_zsh/dot_zshrc`** (MODIFIED)
+     - Changed from `if [ "$HAS_STARSHIP" = "1" ]` to `if [ "$USE_STARSHIP" = "1" ] && [ "$HAS_STARSHIP" = "1" ]`
+     - Added `else` branch to source `$ZDOTDIR/prompt.zsh`
+
+   - **`home/dot_bashrc`** (MODIFIED)
+     - Same USE_STARSHIP switching pattern
+     - Added `elif` to source `$SHELL_COMMON/prompt/bash.sh`
+
+   - **`.tmp/sessions/e53d791d/plan.md`** - Implementation plan with task checklist, risks, approval status
+   - **`.tmp/sessions/e53d791d/research.md`** - Research on starship config and shell init flow
+
+4. Errors and fixes:
+   - **`while read` in pipe subshell**: Variables set inside `git status | while read` were not visible to caller. Fixed by capturing full output into variable, then using `grep -c` for counting.
+   - **`grep -c` exit code 1 on no matches**: Function returned non-zero even on clean repos. Fixed by appending `|| true` to each `grep -c` call.
+   - **zsh precmd hook chain overwrites `$?`**: Multiple precmd hooks caused `$?` to reflect previous hook's exit code, not user's command. Fixed by consolidating into single `__prompt_precmd` that captures `$?` first, then calls helpers.
+   - **bash 3.2 `$'\uNNNN'` not supported**: macOS default bash is 3.2.57, doesn't support unicode escapes. Fixed by using literal UTF-8 characters (`'✅'` instead of `$'\u2705'`).
+   - **shellcheck SC2154 warnings blocking commit**: Pre-commit hook runs shellcheck on bash.sh, which doesn't see variables set by sourced git_info.sh. Added `# shellcheck source=git_info.sh` directive, but the pre-commit hook apparently doesn't use shellcheck's `-x` flag to follow source directives. **This is the current blocking issue.**
+
+5. Problem Solving:
+   - Successfully replaced starship (~177ms) with native prompt (~55ms), a 3.2x speedup
+   - All functional tests pass: git repo/non-repo, exit codes, cmd_duration, USE_STARSHIP fallback, PROMPT_COMMAND coexistence
+   - Added tracking branch display per user request
+   - **Unsolved**: Pre-commit shellcheck hook blocks commit due to SC2154 warnings in bash.sh. The `# shellcheck source=` directive doesn't work because the hook doesn't pass `-x` flag to shellcheck.
+
+6. All user messages:
+   - "starshipが大変遅いので、同等の表示をするものを自作してしまいたい"
+   - "必要なものだけで良い。良対応を維持する。毎回の表示が少し遅いようだ。"
+   - (approved plan implicitly by `/execute-plan` command)
+   - "トラッキングブランチは別名の時だけでるのかな？"
+   - "トラッキングブランチがあるかどうかはわかるようにしたいな"
+   - "commit"
+
+7. Pending Tasks:
+   - Fix shellcheck SC2154 pre-commit hook failure for bash.sh so the commit can succeed
+   - Manual testing items still pending: SSH connection test, VSCode terminal test, git merge/rebase state test
+
+8. Current Work:
+   Attempting to commit all changes but blocked by pre-commit shellcheck hook. The hook runs shellcheck on `home/dot_shell_common/prompt/bash.sh` and reports SC2154 warnings because `PROMPT_GIT_ACTIVE`, `PROMPT_GIT_BRANCH`, `PROMPT_GIT_STAGED`, `PROMPT_GIT_MODIFIED`, `PROMPT_GIT_UNTRACKED`, `PROMPT_GIT_DELETED` are "referenced but not assigned" (they're assigned by the sourced `git_info.sh`). Adding `# shellcheck source=git_info.sh` did not fix it because the pre-commit hook doesn't use shellcheck's `-x` flag. Two commit attempts have failed with the same error.
+
+9. Optional Next Step:
+   Fix the shellcheck SC2154 warnings in `bash.sh` by either:
+   - Adding `# shellcheck disable=SC2154` at the top of the file (or before specific lines) to suppress the warnings
+   - Or investigating the pre-commit hook to see if it can be configured to use `-x`
+   
+   This is directly continuing the user's last request: "commit" - which requires the pre-commit hook to pass.
+</summary>
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/berlysia/.REDACTED.jsonl
+Please continue the conversation from where we left off without asking the user any further questions. Continue with the last task that you were asked to work on.

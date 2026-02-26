@@ -3,13 +3,21 @@
   "checkpoint_id": "b2caf85f25df",
   "strategy": "manual-commit",
   "branch": "master",
-  "checkpoints_count": 3,
+  "checkpoints_count": 7,
   "files_touched": [
+    ".tmp/sessions/e53d791d/plan.md",
+    ".tmp/sessions/e53d791d/research.md",
     "CLAUDE.md",
     "home/.chezmoiscripts/run_onchange_update-claude-json.sh.tmpl",
+    "home/dot_bashrc",
     "home/dot_shell_common/env.sh.tmpl",
     "home/dot_shell_common/path.sh",
+    "home/dot_shell_common/prompt/bash.sh",
+    "home/dot_shell_common/prompt/cmd_duration.sh",
+    "home/dot_shell_common/prompt/git_info.sh",
     "home/dot_shell_common/tools.sh",
+    "home/dot_zsh/dot_zshrc",
+    "home/dot_zsh/prompt.zsh",
     "package.json"
   ],
   "sessions": [
@@ -26,13 +34,20 @@
       "context": "/b2/caf85f25df/1/context.md",
       "content_hash": "/b2/caf85f25df/1/content_hash.txt",
       "prompt": "/b2/caf85f25df/1/prompt.txt"
+    },
+    {
+      "metadata": "/b2/caf85f25df/2/metadata.json",
+      "transcript": "/b2/caf85f25df/2/full.jsonl",
+      "context": "/b2/caf85f25df/2/context.md",
+      "content_hash": "/b2/caf85f25df/2/content_hash.txt",
+      "prompt": "/b2/caf85f25df/2/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 1216,
-    "cache_creation_tokens": 118308,
-    "cache_read_tokens": 2312518,
-    "output_tokens": 10494,
-    "api_call_count": 41
+    "input_tokens": 3103,
+    "cache_creation_tokens": 768721,
+    "cache_read_tokens": 12984619,
+    "output_tokens": 60486,
+    "api_call_count": 143
   }
 }
