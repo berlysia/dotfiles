@@ -1,0 +1,23 @@
+{{- if ne .chezmoi.os "windows" -}}
+#!/bin/bash
+# Run safe-chain setup to create shell integration scripts
+# Binary is managed by mise (github:AikidoSec/safe-chain)
+# mise config hash: {{ include "dot_config/mise/config.toml" | sha256sum }}
+
+set -euo pipefail
+
+# Activate mise to ensure safe-chain is in PATH
+if [ -f "$HOME/.local/bin/mise" ]; then
+  eval "$($HOME/.local/bin/mise activate bash)" 2>/dev/null || true
+fi
+
+if ! command -v safe-chain &> /dev/null; then
+  echo "safe-chain not found in PATH (mise may not have installed it yet)"
+  exit 0
+fi
+
+# Run setup to copy startup scripts to ~/.safe-chain/scripts/
+# This creates init-posix.sh which is sourced from .zshrc
+echo "Running safe-chain setup..."
+safe-chain setup || echo "safe-chain setup encountered issues"
+{{- end }}
