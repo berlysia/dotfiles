@@ -16,6 +16,9 @@ rust = "1.92.0"
 uv = "0.9.26"
 yarn = "4.10.3"
 
+# Security tools
+"github:AikidoSec/safe-chain" = "1.4.4"
+
 # CLI tools (migrated from go install / cargo install)
 "cargo:similarity-ts" = "=0.4.1"
 "cargo:zizmor" = "=1.21.0"
