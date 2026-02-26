@@ -40,8 +40,10 @@ if [ -z "$SHELL_COMMON" ]; then
 fi
 [ -f "$SHELL_COMMON/interactive.sh" ] && source "$SHELL_COMMON/interactive.sh"
 
-if [ "$HAS_STARSHIP" = "1" ]; then
+if [ "$USE_STARSHIP" = "1" ] && [ "$HAS_STARSHIP" = "1" ]; then
   eval "$(starship init zsh)"
+else
+  [ -f "$ZDOTDIR/prompt.zsh" ] && source "$ZDOTDIR/prompt.zsh"
 fi
 
 if type fzf &> /dev/null; then
