@@ -24,14 +24,3 @@ if type mise >/dev/null 2>&1 && mise list | grep python >/dev/null && type gclou
   export CLOUDSDK_PYTHON="$(mise which python)"
 fi
 
-# pnpm global package directory (managed by mise)
-if type pnpm >/dev/null 2>&1; then
-  # PNPM_HOME for global packages installation
-  export PNPM_HOME="$HOME/.local/share/pnpm"
-
-  # Add PNPM_HOME to PATH if not already present
-  case ":$PATH:" in
-    *":$PNPM_HOME:"*) ;;
-    *) PATH="$PNPM_HOME:$PATH" ;;
-  esac
-fi

@@ -2,6 +2,7 @@
 # Common PATH configuration for all shells
 
 # Define paths to add (as an array for easier maintenance)
+# shellcheck disable=SC2154 # PNPM_HOME is exported in env.sh
 _common_paths=(
   "$HOME/.local/bin"
   "$HOME/.local/.bin"
@@ -10,6 +11,7 @@ _common_paths=(
   "$HOME/google-cloud-sdk/bin"
   "$HOME/workspace/depot_tools"
   "${GOPATH:-$HOME/go}/bin"
+  "$PNPM_HOME"
 )
 
 # Function to add paths to PATH without duplication
