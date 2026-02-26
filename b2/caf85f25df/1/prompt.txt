@@ -1,0 +1,9 @@
+PNPM_HOMEがPATHに含まれるようにして
+
+---
+
+PNPM_HOMEほんとにPATHに含まれてます？
+
+---
+
+commit
