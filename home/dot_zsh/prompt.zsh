@@ -44,9 +44,8 @@ __prompt_render() {
   else
     status_icon=$'\u274c'" %F{red}${exit_code}%f"
   fi
-  local current_time
-  current_time=$(date '+%Y-%m-%d %H:%M:%S')
-  local timestamp="%F{blue}at ${current_time}%f"
+  # Single quotes: $(date ...) stays literal in PROMPT, expanded at display time via PROMPT_SUBST
+  local timestamp='%F{blue}at $(date "+%Y-%m-%d %H:%M:%S")%f'
 
   local duration=""
   if [ -n "$PROMPT_CMD_DURATION" ]; then
