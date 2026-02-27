@@ -119,3 +119,10 @@ __prompt_newline_precmd() {
   fi
 }
 add-zsh-hook precmd __prompt_newline_precmd
+
+# --- Re-render prompt on Enter to update timestamp to command execution time ---
+__prompt_accept_line() {
+  zle reset-prompt
+  zle .accept-line
+}
+zle -N accept-line __prompt_accept_line
