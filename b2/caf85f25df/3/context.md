@@ -53,3 +53,42 @@ Syncing handcrafted skills from .skills...
 
 更新されないねえ
 
+### Prompt 11
+
+<bash-input>chezmoi apply</bash-input>
+
+### Prompt 12
+
+<bash-stdout>Pre-apply JSON template validation...
+  Checking .settings.hooks.json... ✅
+
+✅ All JSON templates are valid
+Syncing handcrafted skills from .skills...
+✅ Handcrafted skills synced successfully</bash-stdout><bash-stderr></bash-stderr>
+
+### Prompt 13
+
+うごかんな、何を見るべき？
+
+### Prompt 14
+
+>   echo "$PROMPT" | head -1
+%F{green}%B%~%b%f %F{cyan}%B%n%b%f%F{yellow}@%f%F{blue}%B%m%b%f ❌ %F{red}127%f %F{blue}at $(date "+%Y-%m-%d %H:%M:%S")%f
+
+~ berlysia@CITRINE ✅ at 2026-02-27 21:18:31
+>   echo $options[promptsubst]
+on
+
+~ berlysia@CITRINE ✅ at 2026-02-27 21:18:35
+>   echo $precmd_functions
+_mise_hook_precmd __prompt_precmd __prompt_newline_precmd
+
+~ berlysia@CITRINE ✅ at 2026-02-27 21:18:39
+>   __prompt_precmd; echo "---"; sleep 2; __prompt_precmd; echo "$PROMPT" | head -1
+---
+...
+
+### Prompt 15
+
+最初にプロンプトが表示された時刻が出ているんだけど、コマンド実行すると実行時点の時刻に更新される、って仕組みが元々あったのさ
+
