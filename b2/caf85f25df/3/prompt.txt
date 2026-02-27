@@ -71,3 +71,7 @@ To github.com:berlysia/dotfiles.git
 ---
 
 時刻が更新されないね
+
+---
+
+更新されないねえ
