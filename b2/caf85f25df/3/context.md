@@ -92,3 +92,7 @@ _mise_hook_precmd __prompt_precmd __prompt_newline_precmd
 
 最初にプロンプトが表示された時刻が出ているんだけど、コマンド実行すると実行時点の時刻に更新される、って仕組みが元々あったのさ
 
+### Prompt 16
+
+良いかんじ。bashのほうはできてる？
+
