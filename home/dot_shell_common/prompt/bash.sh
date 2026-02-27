@@ -56,12 +56,14 @@ __prompt_bash_build() {
     status_icon='❌'" ${_c_red}${exit_code}${_c_reset}"
   fi
 
+  local timestamp="${_c_blue}at \D{%Y-%m-%d %H:%M:%S}${_c_reset}"
+
   local duration=""
   if [ -n "$PROMPT_CMD_DURATION" ]; then
     duration=" ${_c_yellow}took ${PROMPT_CMD_DURATION}${_c_reset}"
   fi
 
-  local line1="${dir} ${user}${_c_yellow}@${_c_reset}${host} ${status_icon}${duration}"
+  local line1="${dir} ${user}${_c_yellow}@${_c_reset}${host} ${status_icon} ${timestamp}${duration}"
 
   # Line 2: git info (only in git repos)
   local line2=""

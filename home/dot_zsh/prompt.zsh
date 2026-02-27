@@ -44,12 +44,14 @@ __prompt_render() {
   else
     status_icon=$'\u274c'" %F{red}${exit_code}%f"
   fi
+  local timestamp="%F{blue}at %D{%Y-%m-%d %H:%M:%S}%f"
+
   local duration=""
   if [ -n "$PROMPT_CMD_DURATION" ]; then
     duration=" %F{yellow}took ${PROMPT_CMD_DURATION}%f"
   fi
 
-  local line1="${dir} ${user}%F{yellow}@%f${host} ${status_icon}${duration}"
+  local line1="${dir} ${user}%F{yellow}@%f${host} ${status_icon} ${timestamp}${duration}"
 
   # Line 2: git info (only in git repos)
   local line2=""
