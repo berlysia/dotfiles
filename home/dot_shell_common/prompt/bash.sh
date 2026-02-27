@@ -56,9 +56,7 @@ __prompt_bash_build() {
     status_icon='❌'" ${_c_red}${exit_code}${_c_reset}"
   fi
 
-  local current_time
-  current_time=$(date '+%Y-%m-%d %H:%M:%S')
-  local timestamp="${_c_blue}at ${current_time}${_c_reset}"
+  local timestamp="${_c_blue}at \D{%Y-%m-%d %H:%M:%S}${_c_reset}"
 
   local duration=""
   if [ -n "$PROMPT_CMD_DURATION" ]; then
