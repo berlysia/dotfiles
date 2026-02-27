@@ -3,3 +3,71 @@
 ---
 
 commit
+
+---
+
+<bash-input>chezmoi apply</bash-input>
+
+---
+
+<bash-stdout>Pre-apply JSON template validation...
+  Checking .settings.hooks.json... ✅
+
+✅ All JSON templates are valid
+Syncing handcrafted skills from .skills...
+✅ Handcrafted skills synced successfully</bash-stdout><bash-stderr></bash-stderr>
+
+---
+
+<bash-input>git push</bash-input>
+
+---
+
+<bash-stdout>[entire] Pushing session logs to origin...
+[0;34m⚡ Checking GitHub Actions workflows with zizmor...[0m
+🌈 zizmor v1.21.0
+ INFO audit: zizmor: 🌈 completed /Users/berlysia/.local/share/chezmoi/.github/workflows/auto-fix-dependencies.yml
+ INFO audit: zizmor: 🌈 completed /Users/berlysia/.local/share/chezmoi/.github/workflows/ci-shellcheck.yml
+ INFO audit: zizmor: 🌈 completed /Users/berlysia/.local/share/chezmoi/.github/workflows/ci-typescript.yml
+ INFO audit: zizmor: 🌈 completed /Users/berlysia/.local/share/chezmoi/.github/workflows/claude.yml
+ INFO audit: zizmor: 🌈 completed /Users/berlysia/.local/share/chezmoi/.github/workflows/gitleaks.yml
+ INFO audit: zizmor: 🌈 completed /Users/berlysia/.local/share/chezmoi/.github/workflows/lint-actions.yml
+ INFO audit: zizmor: 🌈 completed /Users/berlysia/.local/share/chezmoi/.github/workflows/status-check.yml
+ INFO audit: zizmor: 🌈 completed /Users/berlysia/.local/share/chezmoi/.github/workflows/test-shell-compatibility.yml
+ INFO audit: zizmor: 🌈 completed /Users/berlysia/.local/share/chezmoi/.github/workflows/validate-codex-config.yml
+ INFO audit: zizmor: 🌈 completed /Users/berlysia/.local/share/chezmoi/.github/workflows/validate-json.yml
+No findings to report. Good job! (2 ignored, 26 suppressed)
+[0;32m✓ All workflows passed zizmor security checks[0m
+
+[0;34m🔍 Scanning repository for secrets before push...[0m
+
+    ○
+    │╲
+    │ ○
+    ○ ░
+    ░    gitleaks
+
+[90m7:45PM[0m [32mINF[0m [1m975 commits scanned.[0m
+[90m7:45PM[0m [32mINF[0m [1mscanned ~56717545 bytes (56.72 MB) in 3.06s[0m
+[90m7:45PM[0m [32mINF[0m [1mno leaks found[0m
+[0;32m✓ No secrets found[0m
+remote: Bypassed rule violations for refs/heads/master:        
+remote: 
+remote: - Changes must be made through a pull request.        
+remote: 
+remote: - Required status check "status-check" is expected.        
+remote: 
+To github.com:berlysia/dotfiles.git
+   110c9a8..e6547a4  master -> master</bash-stdout><bash-stderr></bash-stderr>
+
+---
+
+更新されないね
+
+---
+
+[Request interrupted by user]
+
+---
+
+時刻が更新されないね

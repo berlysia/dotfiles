@@ -3,7 +3,7 @@
   "checkpoint_id": "b2caf85f25df",
   "session_id": "abd2924d-dae6-43c5-a346-8a09b729b908",
   "strategy": "manual-commit",
-  "created_at": "2026-02-27T10:39:13.762543Z",
+  "created_at": "2026-02-27T12:05:43.49822Z",
   "branch": "master",
   "checkpoints_count": 1,
   "files_touched": [
@@ -11,22 +11,24 @@
     "home/dot_zsh/prompt.zsh"
   ],
   "agent": "Claude Code",
-  "transcript_identifier_at_start": "efc52627-891f-4e86-86b6-e4e87cc8cc13",
+  "transcript_identifier_at_start": "7455b6c5-aadf-4578-9120-da118b7f5094",
+  "checkpoint_transcript_start": 212,
+  "transcript_lines_at_start": 212,
   "token_usage": {
-    "input_tokens": 14,
-    "cache_creation_tokens": 30668,
-    "cache_read_tokens": 502630,
-    "output_tokens": 2631,
-    "api_call_count": 8
+    "input_tokens": 7,
+    "cache_creation_tokens": 90751,
+    "cache_read_tokens": 337774,
+    "output_tokens": 13196,
+    "api_call_count": 5
   },
   "initial_attribution": {
-    "calculated_at": "2026-02-27T10:39:13.689432Z",
-    "agent_lines": 6,
-    "human_added": 2619,
-    "human_modified": 0,
+    "calculated_at": "2026-02-27T12:05:43.343923Z",
+    "agent_lines": 0,
+    "human_added": 2623,
+    "human_modified": 2,
     "human_removed": 0,
-    "total_committed": 2625,
-    "agent_percentage": 0.2285714285714286
+    "total_committed": 2623,
+    "agent_percentage": 0
   },
   "transcript_path": ".claude/projects/-Users-berlysia--local-share-chezmoi/abd2924d-dae6-43c5-a346-8a09b729b908.jsonl"
 }
