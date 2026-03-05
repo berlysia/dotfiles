@@ -175,6 +175,7 @@
     "Search(./**)",
     "Search(~/workspace/**)",
     "Task",
+    "ToolSearch",
     "TodoRead",
     "TodoWrite",
     "TaskList",

@@ -11,7 +11,8 @@
       "scripts/**/*.ts",
       "*.ts",
       "*.js",
-      "*.json"
+      "*.json",
+      "home/**/*.json"
     ]
   },
   "formatter": {
