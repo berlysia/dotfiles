@@ -1,5 +1,7 @@
 packages:
   darwin:
+    taps:
+      - "k1Low/tap"
     brews:
       - "age"
       - "aria2"
@@ -31,6 +33,7 @@ packages:
       - "patchutils"
       - "shellcheck"
       - "sox"
+      - "k1Low/tap/mo"
     casks:
       - "1password"
       - "coteditor"
