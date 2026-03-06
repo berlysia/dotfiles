@@ -1,6 +1,7 @@
 {{ if eq .chezmoi.os "darwin" -}}
 #!/bin/bash
 
+# packages.yaml taps hash: {{ .packages.darwin.taps | toJson | sha256sum }}
 # packages.yaml brews hash: {{ .packages.darwin.brews | toJson | sha256sum }}
 # packages.yaml casks hash: {{ .packages.darwin.casks | toJson | sha256sum }}
 
@@ -20,6 +21,9 @@ else
 fi
 
 brew bundle --file=- <<EOF
+{{ range .packages.darwin.taps -}}
+tap {{ . | quote }}
+{{ end -}}
 {{ range .packages.darwin.brews -}}
 brew {{ . | quote }}
 {{ end -}}
