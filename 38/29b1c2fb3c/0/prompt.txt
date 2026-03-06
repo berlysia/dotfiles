@@ -1,0 +1,5 @@
+brew
+
+---
+
+途中できれてたね。 brew install k1Low/tap/mo したから、管理ファイルにも追加しといて

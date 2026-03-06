@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "3829b1c2fb3c",
+  "session_id": "59e6919f-ca87-45a6-954e-735105da9d82",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-06T15:25:12.419555Z",
+  "branch": "master",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "home/.chezmoidata/packages.yaml",
+    "home/.chezmoiscripts/run_onchange_install-packages-1-darwin.sh.tmpl"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "f5264323-f9d0-4b56-856c-30f3fb480188",
+  "token_usage": {
+    "input_tokens": 14,
+    "cache_creation_tokens": 65032,
+    "cache_read_tokens": 551006,
+    "output_tokens": 2493,
+    "api_call_count": 10
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-06T15:25:12.362472Z",
+    "agent_lines": 7,
+    "human_added": 2619,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 2626,
+    "agent_percentage": 0.26656511805026656
+  },
+  "transcript_path": ".claude/projects/-Users-berlysia--local-share-chezmoi/59e6919f-ca87-45a6-954e-735105da9d82.jsonl"
+}
