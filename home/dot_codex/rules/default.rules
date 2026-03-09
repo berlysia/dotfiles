@@ -78,3 +78,95 @@ prefix_rule(
     decision = "allow",
     justification = "Shellcheck is always safe",
 )
+
+# === Allow: read-only git commands ===
+
+prefix_rule(
+    pattern = ["git", "status"],
+    decision = "allow",
+    justification = "Read-only git status",
+)
+
+prefix_rule(
+    pattern = ["git", "log"],
+    decision = "allow",
+    justification = "Read-only git log",
+)
+
+prefix_rule(
+    pattern = ["git", "diff"],
+    decision = "allow",
+    justification = "Read-only git diff",
+)
+
+prefix_rule(
+    pattern = ["git", "show"],
+    decision = "allow",
+    justification = "Read-only git show",
+)
+
+prefix_rule(
+    pattern = ["git", "rev-parse"],
+    decision = "allow",
+    justification = "Read-only git rev-parse",
+)
+
+prefix_rule(
+    pattern = ["git", "branch"],
+    decision = "allow",
+    justification = "Read-only git branch listing",
+)
+
+prefix_rule(
+    pattern = ["git", "remote"],
+    decision = "allow",
+    justification = "Read-only git remote listing",
+)
+
+prefix_rule(
+    pattern = ["git", "ls-files"],
+    decision = "allow",
+    justification = "Read-only file listing from git index",
+)
+
+# === Allow: test runner ===
+
+prefix_rule(
+    pattern = ["node", "--test"],
+    decision = "allow",
+    justification = "Running tests with node:test is safe",
+)
+
+# === Allow: runtime manager (read-only) ===
+
+prefix_rule(
+    pattern = ["mise", "list"],
+    decision = "allow",
+    justification = "Read-only runtime listing",
+)
+
+prefix_rule(
+    pattern = ["mise", "which"],
+    decision = "allow",
+    justification = "Read-only command path resolution",
+)
+
+# === Allow: chezmoi (read-only) ===
+
+prefix_rule(
+    pattern = ["chezmoi", "status"],
+    decision = "allow",
+    justification = "Read-only chezmoi status",
+)
+
+prefix_rule(
+    pattern = ["chezmoi", "diff"],
+    decision = "allow",
+    justification = "Read-only chezmoi diff",
+)
+
+prefix_rule(
+    pattern = ["chezmoi", "data"],
+    decision = "allow",
+    justification = "Read-only chezmoi template data",
+)
