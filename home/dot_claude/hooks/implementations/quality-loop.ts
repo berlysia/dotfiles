@@ -1,9 +1,10 @@
 #!/usr/bin/env -S bun run --silent
 
 import { execSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { extname, resolve } from "node:path";
 import { defineHook } from "cc-hooks-ts";
+import { runCustomRules } from "../lib/custom-rules.ts";
 import "../types/tool-schemas.ts";
 
 /**
@@ -130,6 +131,20 @@ function runShellcheck(filePath: string): LintResult | null {
   }
 }
 
+function runCustomLint(filePath: string): LintResult | null {
+  try {
+    const resolved = resolve(filePath);
+    const content = readFileSync(resolved, "utf-8");
+    const output = runCustomRules(resolved, content);
+    if (output) {
+      return { tool: "custom-rules", output, exitCode: 1 };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 function getLinters(
   filePath: string,
   repoRoot: string,
@@ -152,7 +167,9 @@ function getLinters(
         () => runBiomeCheck(filePath, repoRoot),
       ];
     case ".sh":
-      return [() => runShellcheck(filePath)];
+      return [() => runShellcheck(filePath), () => runCustomLint(filePath)];
+    case ".tmpl":
+      return [() => runCustomLint(filePath)];
     default:
       return [];
   }
