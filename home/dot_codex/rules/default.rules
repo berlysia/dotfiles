@@ -1,0 +1,80 @@
+# Codex execution policy rules
+# Scope: shell commands (execvp) only — does NOT affect file editing tools
+
+# === Safety: dangerous commands ===
+
+prefix_rule(
+    pattern = ["rm", "-rf"],
+    decision = "forbidden",
+    justification = "Recursive force-delete is too dangerous for automated execution",
+)
+
+prefix_rule(
+    pattern = ["rm", "-r"],
+    decision = "prompt",
+    justification = "Recursive delete requires human approval",
+)
+
+# === Safety: destructive git commands ===
+
+prefix_rule(
+    pattern = ["git", "push", "--force"],
+    decision = "forbidden",
+    justification = "Force-push can destroy remote history",
+)
+
+prefix_rule(
+    pattern = ["git", "push", "-f"],
+    decision = "forbidden",
+    justification = "Force-push can destroy remote history",
+)
+
+prefix_rule(
+    pattern = ["git", "reset", "--hard"],
+    decision = "prompt",
+    justification = "Hard reset discards uncommitted changes — requires human approval",
+)
+
+prefix_rule(
+    pattern = ["git", "clean", "-f"],
+    decision = "prompt",
+    justification = "Clean -f removes untracked files — requires human approval",
+)
+
+# === Allow: quality commands ===
+
+prefix_rule(
+    pattern = ["pnpm", "test"],
+    decision = "allow",
+    justification = "Running tests is always safe",
+)
+
+prefix_rule(
+    pattern = ["pnpm", "typecheck"],
+    decision = "allow",
+    justification = "Type checking is always safe",
+)
+
+prefix_rule(
+    pattern = ["pnpm", "lint"],
+    decision = "allow",
+    justification = "Linting is always safe",
+)
+
+prefix_rule(
+    pattern = ["npx", "biome"],
+    decision = "allow",
+    justification = "Biome linting/formatting is always safe",
+)
+
+prefix_rule(
+    pattern = ["npx", "oxlint"],
+    decision = "allow",
+    justification = "Oxlint is always safe",
+)
+
+prefix_rule(
+    pattern = ["npx", "shellcheck"],
+    decision = "allow",
+    justification = "Shellcheck is always safe",
+)

@@ -134,6 +134,38 @@ fi
 echo
 
 #
+# 4.5. Codex Execution Policy Check
+#
+STAGED_RULES_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E 'dot_codex/rules/' || true)
+if [ -n "$STAGED_RULES_FILES" ]; then
+    echo -e "${BLUE}📋 Checking Codex execution policy rules...${NC}"
+    if command -v codex &> /dev/null; then
+        RULES_FAILED=false
+        for file in $STAGED_RULES_FILES; do
+            if [ -f "$file" ]; then
+                echo "  Checking: $file"
+                if ! codex execpolicy check "$file" 2>&1; then
+                    RULES_FAILED=true
+                fi
+            fi
+        done
+
+        if [ "$RULES_FAILED" = true ]; then
+            echo -e "${RED}❌ Codex execution policy check failed${NC}"
+            EXIT_CODE=1
+        else
+            echo -e "${GREEN}✓ All execution policy rules are valid${NC}"
+        fi
+    else
+        echo -e "${YELLOW}⚠ codex not installed, skipping execution policy check${NC}"
+    fi
+else
+    echo -e "${GREEN}✓ No Codex rules files staged${NC}"
+fi
+
+echo
+
+#
 # 5. TypeScript Type Check
 #
 STAGED_TS_FOR_TYPECHECK=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(ts|tsx)$' || true)
