@@ -29,6 +29,9 @@ const READ_ONLY_TOOLS = [
   "Search",
   "LS",
   "WebSearch",
+  "WebFetch",
+  "ToolSearch",
+  "Agent",
   "TaskList",
   "TaskGet",
   "TaskOutput",
@@ -43,7 +46,7 @@ const SAFE_BASH_PATTERNS = [
   // Read-only comparison / delay (no side effects)
   /^(diff|cmp|sleep)\b/,
   // Git read-only operations (with optional -C <path> prefix)
-  /^git\s+(-C\s+\S+\s+)?(status|log|diff|branch|remote|show|describe|tag|rev-parse|config\s+--get)\b/,
+  /^git\s+(-C\s+\S+\s+)?(status|log|diff|branch|remote|show|describe|tag|rev-parse|config\s+--get|ls-files|shortlog|blame)\b/,
   // Git write operations (common safe dev workflow, with optional -C <path> prefix)
   /^git\s+(-C\s+\S+\s+)?(add|commit|stash|checkout|switch|fetch|pull|cherry-pick|rebase|merge)\b/,
   // Package information
@@ -81,12 +84,19 @@ const SAFE_BASH_PATTERNS = [
   /^jq\b/,
   // System information (read-only)
   /^(fc-list|uname|hostnamectl|locale)\b/,
-  // Chezmoi read-only operations
-  /^chezmoi\s+(cat-config|data|doctor|diff|dump|dump-config|managed|unmanaged|state|status|verify|source-path|target-path|execute-template)\b/,
+  // Hash calculation (read-only)
+  /^(md5sum|sha1sum|sha256sum|sha512sum|shasum|cksum)\b/,
+  // Package query (read-only)
+  /^apt-cache\b/,
+  /^dpkg\s+(-l|-L|-s|--list|--listfiles|--status)\b/,
+  // Chezmoi operations (manages user's own dotfiles)
+  /^chezmoi\s+(cat-config|data|doctor|diff|dump|dump-config|managed|unmanaged|state|status|verify|source-path|target-path|execute-template|apply|update|add|init)\b/,
   // Claude CLI (read-only)
   /^claude\s+(--version|doctor|--help)\b/,
+  // Package manager direct tool invocation (pnpm <tool>, not via `run`)
+  /^pnpm\s+(biome|oxlint|eslint|prettier|knip|tsc|tsgo|vitest)\b/,
   // Dev tool execution (trusted tools only, not arbitrary packages)
-  /^(npx|pnpx|bunx)\s+(vitest|jest|prettier|eslint|oxlint|tsc|tsgo|knip|stylelint|biome)\b/,
+  /^(npx|pnpx|bunx)\s+(--no\s+)?(vitest|jest|prettier|eslint|oxlint|tsc|tsgo|knip|stylelint|biome)\b/,
   // Git worktree management (custom script)
   /^git-worktree-(create|cleanup)\b/,
 ];

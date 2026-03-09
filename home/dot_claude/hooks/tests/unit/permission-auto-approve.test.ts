@@ -32,6 +32,9 @@ describe("permission-auto-approve.ts hook behavior", () => {
       "Search",
       "LS",
       "WebSearch",
+      "WebFetch",
+      "ToolSearch",
+      "Agent",
       "TaskList",
       "TaskGet",
       "TaskOutput",
@@ -168,9 +171,43 @@ describe("permission-auto-approve.ts hook behavior", () => {
       "pnpm --filter @scope/pkg run typecheck",
       "pnpm --filter @scope/pkg list",
       "pnpm --filter @scope/pkg install",
-      // Chezmoi unmanaged (read-only)
+      // Chezmoi operations
       "chezmoi unmanaged",
       "chezmoi unmanaged --path-style=absolute",
+      "chezmoi apply",
+      "chezmoi apply --verbose",
+      "chezmoi update",
+      "chezmoi add ~/.bashrc",
+      "chezmoi init",
+      // Git read-only (extended)
+      "git ls-files",
+      "git ls-files --others --exclude-standard",
+      "git -C /home/user/project ls-files",
+      "git tag",
+      "git tag -l 'v*'",
+      "git blame src/index.ts",
+      "git shortlog -sn",
+      // Package manager direct tool invocation
+      "pnpm biome check src/",
+      "pnpm oxlint src/",
+      "pnpm eslint src/",
+      "pnpm prettier --check src/",
+      // npx --no form
+      "npx --no eslint src/",
+      "npx --no prettier --check .",
+      "bunx --no vitest run",
+      "pnpx --no tsc --noEmit",
+      "pnpx tsgo --noEmit",
+      // Hash calculation
+      "md5sum file.txt",
+      "sha256sum package-lock.json",
+      "sha1sum dist/bundle.js",
+      // Package query
+      "apt-cache search nodejs",
+      "apt-cache show fonts-noto-cjk",
+      "dpkg -l fonts-noto*",
+      "dpkg -L fonts-noto-cjk",
+      "dpkg -s fonts-noto-cjk",
     ];
 
     for (const cmd of safeCommands) {
@@ -281,9 +318,9 @@ describe("permission-auto-approve.ts hook behavior", () => {
       "prettier --write src/",
       "cp src/file.ts src/backup.ts",
       "mv old-name.ts new-name.ts",
-      // Chezmoi write operations (need LLM evaluation)
-      "chezmoi apply",
-      "chezmoi update",
+      // Chezmoi destructive operations (need LLM evaluation)
+      "chezmoi purge",
+      "chezmoi destroy",
       // Complex compound commands (need LLM evaluation)
       // Note: "cd /tmp && cat > test.js << 'EOF'..." now matches after cd normalization
       // because `cat` pattern can't distinguish read vs write redirection (known limitation)

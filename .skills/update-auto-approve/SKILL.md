@@ -11,10 +11,10 @@ PermissionRequest の決定ログを分析し、不要な ask 判定を削減す
 
 | Layer | ファイル (chezmoi管理) | 役割 |
 |-------|----------------------|------|
-| 0/1 | `dot_claude/.settings.permissions.json` | Claude Code組み込みのallowリスト（MCP, Skill, ファイルパス） |
-| 2a | `dot_claude/hooks/implementations/permission-auto-approve.ts` | 静的ルール（正規表現パターンマッチ） |
-| 2b | `dot_claude/hooks/implementations/permission-llm-evaluator.ts` | LLM評価（SYSTEM_PROMPT） |
-| Test | `dot_claude/hooks/tests/unit/permission-auto-approve.test.ts` | Layer 2aのユニットテスト |
+| 0/1 | `home/dot_claude/.settings.permissions.json` | Claude Code組み込みのallowリスト（MCP, Skill, ファイルパス） |
+| 2a | `home/dot_claude/hooks/implementations/permission-auto-approve.ts` | 静的ルール（正規表現パターンマッチ） |
+| 2b | `home/dot_claude/hooks/implementations/permission-llm-evaluator.ts` | LLM評価（SYSTEM_PROMPT） |
+| Test | `home/dot_claude/hooks/tests/unit/permission-auto-approve.test.ts` | Layer 2aのユニットテスト |
 
 ## ワークフロー
 
@@ -24,10 +24,10 @@ PermissionRequest の決定ログを分析し、不要な ask 判定を削減す
 
 ```bash
 # スクリプトで自動分析（dry-run）
-bun run dot_claude/scripts/update-auto-approve.ts --dry-run --verbose
+bun run home/dot_claude/scripts/update-auto-approve.ts --dry-run --verbose
 
 # 直近N日間のみ分析する場合
-bun run dot_claude/scripts/update-auto-approve.ts --dry-run --verbose --since 7d
+bun run home/dot_claude/scripts/update-auto-approve.ts --dry-run --verbose --since 7d
 ```
 
 スクリプト出力に加え、以下の手動分析も行う：
@@ -113,7 +113,7 @@ bun run dot_claude/scripts/update-auto-approve.ts --dry-run --verbose --since 7d
 
 ```bash
 # テスト実行
-node --test dot_claude/hooks/tests/unit/permission-auto-approve.test.ts
+node --test home/dot_claude/hooks/tests/unit/permission-auto-approve.test.ts
 ```
 
 ### Phase 6: 適用
