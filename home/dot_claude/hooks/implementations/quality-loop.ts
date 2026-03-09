@@ -4,6 +4,7 @@ import { execSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { extname, resolve } from "node:path";
 import { defineHook } from "cc-hooks-ts";
+import { logQuality } from "../lib/centralized-logging.ts";
 import { runCustomRules } from "../lib/custom-rules.ts";
 import "../types/tool-schemas.ts";
 
@@ -178,7 +179,7 @@ function getLinters(
 const hook = defineHook({
   trigger: { PostToolUse: true },
   run: (context) => {
-    const { tool_name, tool_input } = context.input;
+    const { tool_name, tool_input, session_id } = context.input;
 
     try {
       const filePath = getFilePath(
@@ -204,6 +205,13 @@ const hook = defineHook({
         const result = runLinter();
         if (result) {
           errors.push(`[${result.tool}] ${result.output}`);
+          logQuality(
+            "quality-loop",
+            result.tool,
+            result.output,
+            session_id,
+            filePath,
+          );
         }
       }
 

@@ -23,6 +23,9 @@ import type {
   LogCategory,
   LogEntry,
   LogManagerConfig,
+  QualityLogEntry,
+  ReflectionEntry,
+  ReflectionLogEntry,
   ToolLogEntry,
 } from "../types/logging-types.ts";
 
@@ -235,6 +238,40 @@ class CentralizedLogger {
     this.writeLog("tools", entry);
   }
 
+  logQuality(
+    source: QualityLogEntry["source"],
+    lintTool: string,
+    errorOutput: string,
+    sessionId?: string,
+    filePath?: string,
+  ): void {
+    const entry: QualityLogEntry = {
+      ...this.createBaseEntry(),
+      source,
+      lint_tool: lintTool,
+      error_output: errorOutput,
+      ...(sessionId && { session_id: sessionId }),
+      ...(filePath && { file_path: filePath }),
+    };
+
+    this.writeLog("quality", entry);
+  }
+
+  logReflection(
+    errorsAnalyzed: number,
+    reflections: ReflectionEntry[],
+    sessionId?: string,
+  ): void {
+    const entry: ReflectionLogEntry = {
+      ...this.createBaseEntry(),
+      errors_analyzed: errorsAnalyzed,
+      reflections,
+      ...(sessionId && { session_id: sessionId }),
+    };
+
+    this.writeLog("reflections", entry);
+  }
+
   /**
    * 決定ログを記録
    */
@@ -306,6 +343,24 @@ export function logTool(
   description?: string,
 ): void {
   getLogger().logTool(toolName, sessionId, filePath, description);
+}
+
+export function logQuality(
+  source: QualityLogEntry["source"],
+  lintTool: string,
+  errorOutput: string,
+  sessionId?: string,
+  filePath?: string,
+): void {
+  getLogger().logQuality(source, lintTool, errorOutput, sessionId, filePath);
+}
+
+export function logReflection(
+  errorsAnalyzed: number,
+  reflections: ReflectionEntry[],
+  sessionId?: string,
+): void {
+  getLogger().logReflection(errorsAnalyzed, reflections, sessionId);
 }
 
 /**
