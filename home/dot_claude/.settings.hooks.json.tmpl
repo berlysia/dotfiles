@@ -68,6 +68,15 @@
       ]
     },
     {
+      "matcher": "Write|Edit|MultiEdit",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/linter-config-guard.ts"
+        }
+      ]
+    },
+    {
       "matcher": "EnterPlanMode",
       "hooks": [
         {
@@ -92,6 +101,15 @@
     }
   ],
   "PostToolUse": [
+    {
+      "matcher": "Write|Edit|MultiEdit",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/quality-loop.ts"
+        }
+      ]
+    },
     {
       "matcher": "Write|Edit|MultiEdit|NotebookEdit",
       "hooks": [
@@ -152,6 +170,10 @@
     {
       "matcher": "",
       "hooks": [
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/completion-gate.ts"
+        },
         {
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/speak-notification.ts Stop",
