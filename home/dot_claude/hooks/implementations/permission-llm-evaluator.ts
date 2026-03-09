@@ -46,6 +46,9 @@ ALLOW these operations:
 - Read/write access to ~/.config/claude-companion/ (own logging)
 - mkdir for project or home directories
 - MCP tool invocations (mcp__*) - these are user-configured and trusted
+- Agent tool invocations (subagent spawning) - sandboxed sub-conversations with no direct system access
+- ToolSearch - deferred tool discovery, read-only
+- WebFetch - web content retrieval, read-only
 
 CONDITIONAL ALLOW (evaluate based on arguments):
 - cp/mv: ALLOW if destination is within project directory or ~/.claude/; DENY if destination is /etc/, /usr/, ~/.ssh/
@@ -89,6 +92,12 @@ IMPORTANT DISTINCTIONS (avoid these common misclassifications):
 - "python3 << 'EOF' ... EOF" heredocs for data analysis/processing within project are safe - ALLOW
 - "diff <(...) <(...)" process substitution for comparison is read-only - ALLOW
 - "sleep N" is a harmless delay command - ALLOW
+- Agent tool with subagent_type (logic-validator, Explore, general-purpose, etc.) are sandboxed sub-conversations - ALLOW
+- ToolSearch is a read-only tool discovery mechanism - ALLOW
+- WebFetch retrieves web content for reading - ALLOW
+- "bash script.sh" or "./script.sh" within project directory runs project scripts - ALLOW
+- "pnpm biome", "pnpm oxlint", "pnpm eslint" are direct tool invocations from package.json - ALLOW
+- "npx --no <tool>" runs locally installed tools without downloading - ALLOW
 
 RESPONSE FORMAT:
 Respond with ONLY a JSON object, no other text:
