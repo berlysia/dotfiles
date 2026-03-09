@@ -5,7 +5,7 @@
 {{- /* Check if target file exists */ -}}
 {{- if stat $targetFile -}}
   {{- /* Target file exists, smart merge with existing user settings */ -}}
-  {{- /* Strategy: template as base, user settings override, mcp_servers forced from template */ -}}
+  {{- /* Strategy: template as base, user settings override, security/infra keys forced from template */ -}}
   {{- $mergeScript := `
 set -euo pipefail
 
@@ -38,12 +38,22 @@ if [ $? -ne 0 ]; then
 fi
 
 # Merge: template as base, user settings override, then force template-managed keys
-# - User keys (model, model_reasoning_effort, projects, etc.) are preserved
-# - mcp_servers always comes from template (managed infrastructure)
-# - Deprecated keys (features) are removed
+# Template-forced keys (security/infrastructure):
+#   mcp_servers, sandbox_mode, shell_environment_policy,
+#   allow_login_shell, approval_policy, network_access
+# User-preferred keys (personal preferences):
+#   model, model_reasoning_effort, hide_agent_reasoning, web_search, etc.
+# Deprecated keys: features (removed)
 echo "$TEMPLATE_JSON" | jq \
   --argjson existing "$EXISTING_JSON" \
-  '. as $template | (. * ($existing | del(.mcp_servers) | del(.features))) | .mcp_servers = $template.mcp_servers' \
+  '. as $template |
+   (. * ($existing | del(.mcp_servers) | del(.features) | del(.sandbox_mode) | del(.shell_environment_policy) | del(.allow_login_shell) | del(.approval_policy) | del(.network_access))) |
+   .mcp_servers = $template.mcp_servers |
+   .sandbox_mode = $template.sandbox_mode |
+   .shell_environment_policy = $template.shell_environment_policy |
+   .allow_login_shell = $template.allow_login_shell |
+   .approval_policy = $template.approval_policy |
+   .network_access = $template.network_access' \
   | mise x -- dasel query --root -i json -o toml
 ` -}}
   {{- output "bash" "-c" $mergeScript "--" $targetFile $templateContent -}}
