@@ -1,7 +1,7 @@
 # GC (Garbage Collection)
 
-Detect and report stale files, unused code, and documentation drift in the dotfiles repository.
-All checks are non-destructive: report findings and let the user decide what to delete.
+Detect and clean up stale files, unused code, and documentation drift in the dotfiles repository.
+Report findings, then delete stale files (sessions, tmp). For code/docs issues, report only.
 
 ## Trigger
 
@@ -21,7 +21,7 @@ cd "$(git rev-parse --show-toplevel)"
 find .tmp/sessions/ -maxdepth 1 -mindepth 1 -type d -mtime +7 2>/dev/null
 ```
 
-Report each directory with its last modified date. Ask the user before deleting.
+Report each directory with its last modified date, then delete them.
 
 ### 2. Tmp File GC
 
@@ -33,7 +33,7 @@ find .tmp/ -maxdepth 1 -mindepth 1 -not -name sessions -not -name .completion-ga
 ```
 
 This includes stale subdirectories like `docs/`, `plans/`, and leftover test/patch files.
-Report each item with its last modified date. Ask the user before deleting.
+Report each item with its last modified date, then delete them.
 
 ### 3. CLAUDE.md Integrity
 
@@ -80,6 +80,7 @@ Report the knip output as-is. Let the user decide which items to address.
 ### Knip
 [knip output summary]
 
-## Actions
-Which items would you like to clean up?
+## Actions Taken
+- Deleted [count] stale session(s)
+- Deleted [count] stale tmp item(s)
 ```
