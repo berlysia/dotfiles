@@ -55,7 +55,7 @@
 - `$DOCUMENT_WORKFLOW_DIR/research.md` と `$DOCUMENT_WORKFLOW_DIR/plan.md` への編集は承認前でも許可される
 - `Write/Edit/MultiEdit/NotebookEdit` で `plan.md` を更新すると `plan-review-automation` が自動実行される
 - `Write/Edit/MultiEdit/NotebookEdit/Bash` の実装系書き込みは `document-workflow-guard` が制御する
-- ロールアウト初期は `DOCUMENT_WORKFLOW_WARN_ONLY=1` で観測し、安定後に enforce へ移行する
+- `document-workflow-guard` は enforce モードで動作し、plan 未承認の実装をブロックする
 
 ## Scope Guard
 
