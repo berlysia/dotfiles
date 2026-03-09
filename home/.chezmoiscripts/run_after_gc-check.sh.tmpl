@@ -1,0 +1,47 @@
+{{ if ne .chezmoi.os "windows" -}}
+#!/bin/bash
+# GC check: warn about stale session directories and tmp files
+
+WORK_TREE="{{ .chezmoi.workingTree }}"
+TMP_DIR="$WORK_TREE/.tmp"
+STALE_DAYS=7
+
+# Skip if .tmp doesn't exist
+[ -d "$TMP_DIR" ] || exit 0
+
+stale_found=0
+
+# Check stale session directories
+if [ -d "$TMP_DIR/sessions" ]; then
+  stale_sessions=$(find "$TMP_DIR/sessions/" -maxdepth 1 -mindepth 1 -type d -mtime +$STALE_DAYS 2>/dev/null)
+  if [ -n "$stale_sessions" ]; then
+    if [ $stale_found -eq 0 ]; then
+      echo "⚠️  GC: stale items detected (older than ${STALE_DAYS} days)"
+      stale_found=1
+    fi
+    count=$(echo "$stale_sessions" | wc -l)
+    echo "  Sessions: $count stale directory(ies)"
+    echo "$stale_sessions" | while read -r dir; do
+      echo "    - $(basename "$dir") ($(date -r "$dir" '+%Y-%m-%d'))"
+    done
+  fi
+fi
+
+# Check stale files/dirs directly under .tmp (excluding sessions and .completion-gate-retries)
+stale_tmp=$(find "$TMP_DIR/" -maxdepth 1 -mindepth 1 -not -name sessions -not -name .completion-gate-retries -mtime +$STALE_DAYS 2>/dev/null)
+if [ -n "$stale_tmp" ]; then
+  if [ $stale_found -eq 0 ]; then
+    echo "⚠️  GC: stale items detected (older than ${STALE_DAYS} days)"
+    stale_found=1
+  fi
+  count=$(echo "$stale_tmp" | wc -l)
+  echo "  Tmp files: $count stale item(s)"
+  echo "$stale_tmp" | while read -r item; do
+    echo "    - $(basename "$item") ($(date -r "$item" '+%Y-%m-%d'))"
+  done
+fi
+
+if [ $stale_found -eq 1 ]; then
+  echo "  Run /gc in Claude Code to clean up."
+fi
+{{ end -}}
