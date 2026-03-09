@@ -1,0 +1,8 @@
+{
+  "jsPlugins": ["./custom-lint-plugin.mjs"],
+  "rules": {
+    "custom-lint/no-console-log": "error",
+    "custom-lint/no-process-exit": "error",
+    "custom-lint/no-any-cast": "error"
+  }
+}
