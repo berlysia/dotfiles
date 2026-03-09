@@ -134,7 +134,61 @@ fi
 echo
 
 #
-# 5. Hook Tests (existing functionality)
+# 5. TypeScript Type Check
+#
+STAGED_TS_FOR_TYPECHECK=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(ts|tsx)$' || true)
+if [ -n "$STAGED_TS_FOR_TYPECHECK" ]; then
+    echo -e "${BLUE}📐 Running TypeScript type check...${NC}"
+    if command -v pnpm &> /dev/null && [ -f "package.json" ] && jq -e '.scripts.typecheck' package.json &> /dev/null; then
+        if ! pnpm typecheck 2>&1 | tail -20; then
+            echo -e "${RED}❌ TypeScript type check failed${NC}"
+            EXIT_CODE=1
+        else
+            echo -e "${GREEN}✓ TypeScript type check passed${NC}"
+        fi
+    else
+        echo -e "${YELLOW}⚠ No typecheck script found, skipping${NC}"
+    fi
+else
+    echo -e "${GREEN}✓ No TypeScript files staged${NC}"
+fi
+
+echo
+
+#
+# 6. Oxlint (additional lint rules beyond biome)
+#
+STAGED_OXLINT_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(ts|tsx|js|jsx)$' || true)
+if [ -n "$STAGED_OXLINT_FILES" ]; then
+    echo -e "${BLUE}🦊 Checking with oxlint...${NC}"
+    if command -v npx &> /dev/null && npx oxlint --version &> /dev/null 2>&1; then
+        OXLINT_FAILED=false
+        for file in $STAGED_OXLINT_FILES; do
+            if [ -f "$file" ]; then
+                if ! npx oxlint "$file" 2>&1 | tail -5; then
+                    OXLINT_FAILED=true
+                fi
+            fi
+        done
+
+        if [ "$OXLINT_FAILED" = true ]; then
+            echo -e "${RED}❌ oxlint found issues in staged files${NC}"
+            EXIT_CODE=1
+        else
+            echo -e "${GREEN}✓ All staged files passed oxlint checks${NC}"
+        fi
+    else
+        echo -e "${YELLOW}⚠ oxlint not installed, skipping${NC}"
+        echo -e "${YELLOW}  Install: pnpm add -D oxlint${NC}"
+    fi
+else
+    echo -e "${GREEN}✓ No JS/TS files staged for oxlint${NC}"
+fi
+
+echo
+
+#
+# 7. Hook Tests (existing functionality)
 #
 HOOKS_SCRIPTS_DIR="${REPO_ROOT}/dot_claude/hooks/scripts"
 STAGED_FILES=$(git diff --cached --name-only)

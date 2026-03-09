@@ -11,7 +11,8 @@
     "lint:shell": "./scripts/lint-shell.sh",
     "lint:actions": "./scripts/lint-actions.sh",
     "lint:codex": "./scripts/check-codex-config.sh",
-    "lint": "npm run lint:biome && npm run lint:shell && npm run lint:actions && npm run lint:codex",
+    "lint:oxlint": "oxlint --ignore-pattern '.claude/skills/' --ignore-pattern '.codex/skills/' --ignore-pattern '.skills/' --ignore-pattern 'node_modules/' .",
+    "lint": "npm run lint:biome && npm run lint:oxlint && npm run lint:shell && npm run lint:actions && npm run lint:codex",
     "check": "npm run test && npm run typecheck && npm run lint",
     "prepare": "./scripts/install-hooks.sh"
   },
@@ -24,13 +25,14 @@
     "@types/node": "24.10.12",
     "@typescript/native-preview": "7.0.0-dev.20260109.1",
     "knip": "5.81.0",
+    "oxlint": "1.51.0",
     "typescript": "5.9.3"
   },
   "dependencies": {
+    "@drawio/mcp": "1.1.2",
     "@openai/codex": "0.77.0",
     "@playwright/mcp": "0.0.54",
     "@upstash/context7-mcp": "2.1.0",
-    "@drawio/mcp": "1.1.2",
     "add-skill": "1.0.11",
     "ccstatusline": "2.0.23",
     "chrome-devtools-mcp": "0.12.1"
