@@ -65,8 +65,7 @@ const hook = defineHook({
     const approved = hasApprovedPlan(wfPaths.plan);
     const researched = existsSync(wfPaths.research);
     const wfDirLabel = getWorkflowDirRelative();
-    const denyReason =
-      `Document workflow gate: implementation is blocked until \`${wfDirLabel}/research.md\` exists and \`${wfDirLabel}/plan.md\` has \`- Plan Status: complete\`, \`- Review Status: pass\`, \`- Approval Status: approved\`, and \`<!-- auto-review: verdict=pass; hash=... -->\` with a matching hash.`;
+    const denyReason = `Document workflow gate: implementation is blocked until \`${wfDirLabel}/research.md\` exists and \`${wfDirLabel}/plan.md\` has \`- Plan Status: complete\`, \`- Review Status: pass\`, \`- Approval Status: approved\`, and \`<!-- auto-review: verdict=pass; hash=... -->\` with a matching hash.`;
 
     if (tool_name === "Bash") {
       const command = getCommandFromToolInput("Bash", tool_input) || "";
@@ -193,7 +192,10 @@ function hasApprovedPlan(planPath: string): boolean {
   }
 }
 
-function getTargetFilePath(tool_name: string, tool_input: unknown): string | null {
+function getTargetFilePath(
+  tool_name: string,
+  tool_input: unknown,
+): string | null {
   if (!isRecord(tool_input)) {
     return null;
   }
@@ -207,7 +209,10 @@ function getTargetFilePath(tool_name: string, tool_input: unknown): string | nul
     return tool_input.file_path;
   }
 
-  if (tool_name === "NotebookEdit" && typeof tool_input.notebook_path === "string") {
+  if (
+    tool_name === "NotebookEdit" &&
+    typeof tool_input.notebook_path === "string"
+  ) {
     return tool_input.notebook_path;
   }
 
@@ -296,7 +301,9 @@ function analyzeSingleCommand(command: string): WriteAnalysis {
   };
 }
 
-function extractMainCommand(words: string[]): { name: string; args: string[] } | null {
+function extractMainCommand(
+  words: string[],
+): { name: string; args: string[] } | null {
   let index = 0;
   while (index < words.length) {
     const token = words[index];
@@ -370,7 +377,9 @@ function computePlanHash(content: string): string {
   return createHash("sha256").update(stripped, "utf-8").digest("hex");
 }
 
-function extractLatestAutoReviewMarker(content: string): AutoReviewMarker | null {
+function extractLatestAutoReviewMarker(
+  content: string,
+): AutoReviewMarker | null {
   const matches = content.match(REVIEW_MARKER_REGEX);
   if (!matches || matches.length === 0) {
     return null;

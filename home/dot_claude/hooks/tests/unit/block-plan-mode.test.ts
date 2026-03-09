@@ -6,11 +6,13 @@ import type { ExtractAllHookInputsForEvent } from "cc-hooks-ts";
 import blockPlanModeHook from "../../implementations/block-plan-mode.ts";
 import {
   EnvironmentHelper,
-  MockHookContext,
   invokeRun,
+  MockHookContext,
 } from "./test-helpers.ts";
 
-function createContext(toolName: string): MockHookContext<{ PreToolUse: true }> {
+function createContext(
+  toolName: string,
+): MockHookContext<{ PreToolUse: true }> {
   const input = {
     hook_event_name: "PreToolUse" as const,
     cwd: "/test",
@@ -41,8 +43,12 @@ describe("block-plan-mode.ts hook behavior", () => {
       await invokeRun(blockPlanModeHook, context);
 
       const reason =
-        context.jsonCalls[0]?.hookSpecificOutput?.permissionDecisionReason ?? "";
-      ok(reason.includes("Document Workflow"), "should mention Document Workflow");
+        context.jsonCalls[0]?.hookSpecificOutput?.permissionDecisionReason ??
+        "";
+      ok(
+        reason.includes("Document Workflow"),
+        "should mention Document Workflow",
+      );
       ok(reason.includes("plan.md"), "should mention plan.md");
     });
 
@@ -53,7 +59,8 @@ describe("block-plan-mode.ts hook behavior", () => {
       await invokeRun(blockPlanModeHook, context);
 
       const reason =
-        context.jsonCalls[0]?.hookSpecificOutput?.permissionDecisionReason ?? "";
+        context.jsonCalls[0]?.hookSpecificOutput?.permissionDecisionReason ??
+        "";
       ok(
         reason.includes(".tmp/sessions/abc123/"),
         "should include DOCUMENT_WORKFLOW_DIR value",
