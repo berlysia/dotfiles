@@ -4,6 +4,7 @@ import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { defineHook } from "cc-hooks-ts";
+import { logQuality } from "../lib/centralized-logging.ts";
 import "../types/tool-schemas.ts";
 
 /**
@@ -78,6 +79,7 @@ const hook = defineHook({
   trigger: { Stop: true },
   run: (context) => {
     try {
+      const { session_id } = context.input;
       const retryCount = getRetryCount();
 
       if (retryCount >= MAX_RETRIES) {
@@ -91,12 +93,18 @@ const hook = defineHook({
 
       if (hasScript("typecheck")) {
         const result = runCheck("pnpm typecheck", "typecheck");
-        if (result) errors.push(result);
+        if (result) {
+          errors.push(result);
+          logQuality("completion-gate", "typecheck", result, session_id);
+        }
       }
 
       if (hasScript("test")) {
         const result = runCheck("pnpm test", "test");
-        if (result) errors.push(result);
+        if (result) {
+          errors.push(result);
+          logQuality("completion-gate", "test", result, session_id);
+        }
       }
 
       if (errors.length === 0) {
