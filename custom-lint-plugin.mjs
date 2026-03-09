@@ -17,7 +17,8 @@ const plugin = {
                 message:
                   "console.log found in hook implementation\n" +
                   "  WHY: Hooks run as subprocess — console.log pollutes stdout and corrupts JSON protocol\n" +
-                  "  FIX: Use console.error for debug output, or remove the log",
+                  "  FIX: Use console.error for debug output, or remove the log\n" +
+                  "  ADR: docs/decisions/0002-hooks-typescript-bun.md",
               });
             }
           },
@@ -40,7 +41,8 @@ const plugin = {
                 message:
                   "process.exit() found in hook implementation\n" +
                   "  WHY: process.exit in hooks kills the Claude Code process unexpectedly\n" +
-                  "  FIX: Throw an error or return an error response instead",
+                  "  FIX: Throw an error or return an error response instead\n" +
+                  "  ADR: docs/decisions/0002-hooks-typescript-bun.md",
               });
             }
           },

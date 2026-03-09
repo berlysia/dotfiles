@@ -5,6 +5,7 @@ interface CustomRule {
   message: string;
   why: string;
   fix: string;
+  adr?: string;
 }
 
 const homeDir = process.env.HOME;
@@ -41,8 +42,9 @@ export function runCustomRules(
   for (const rule of applicableRules) {
     for (const [i, line] of lines.entries()) {
       if (rule.linePattern.test(line)) {
+        const adrLine = rule.adr ? `\n  ADR: ${rule.adr}` : "";
         violations.push(
-          `[custom-rules] ${rule.id} (line ${i + 1}): ${rule.message}\n  WHY: ${rule.why}\n  FIX: ${rule.fix}`,
+          `[custom-rules] ${rule.id} (line ${i + 1}): ${rule.message}\n  WHY: ${rule.why}\n  FIX: ${rule.fix}${adrLine}`,
         );
       }
     }
