@@ -26,7 +26,11 @@ interface WorkflowRepoOptions {
 }
 
 function computePlanHash(content: string): string {
-  return createHash("sha256").update(content.trimEnd(), "utf-8").digest("hex");
+  const normalized = content
+    .replace(/^(- Approval Status:)\s*.*$/m, "$1")
+    .replace(/^(\s*- )\[x\]/gm, "$1[ ]")
+    .trimEnd();
+  return createHash("sha256").update(normalized, "utf-8").digest("hex");
 }
 
 function buildPlanContent(options: WorkflowRepoOptions): string {
@@ -454,6 +458,21 @@ describe("document-workflow-guard.ts hook behavior", () => {
       await invokeRun(hook, context);
       context.assertSuccess({});
     });
+  });
+
+  it("allows Write when plan was reviewed with pending then approved", async () => {
+    // Simulate: review happens with Approval Status: pending,
+    // then user changes to approved — hash should still match
+    const repo = createWorkflowRepo(approvedWorkflowRepo());
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+
+    const context = createPreToolUseContextFor(hook, "Write", {
+      file_path: "src/a.ts",
+      content: "const a = 1;",
+    });
+
+    await invokeRun(hook, context);
+    context.assertSuccess({});
   });
 
   it("blocks Write when review marker is pass but review status line is pending", async () => {
