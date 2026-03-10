@@ -1,0 +1,36 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "2b1617ac504a",
+  "session_id": "01aeadd3-8abc-465f-ab97-35054516a25b",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-10T18:16:01.846617Z",
+  "branch": "master",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/commands/add-skill.md",
+    "docs/plans/add-skill-wrapper.md",
+    "home/.chezmoiscripts/run_onchange_install-claude-skills-9.sh.tmpl",
+    "home/dot_local/bin/executable_add-skill.tmpl"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "d7e5b3fa-738b-416f-93ab-54ac10b14eb1",
+  "checkpoint_transcript_start": 766,
+  "transcript_lines_at_start": 766,
+  "token_usage": {
+    "input_tokens": 3,
+    "cache_creation_tokens": 314,
+    "cache_read_tokens": 154581,
+    "output_tokens": 27,
+    "api_call_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-10T18:16:01.61661Z",
+    "agent_lines": 0,
+    "human_added": 2619,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 2619,
+    "agent_percentage": 0
+  },
+  "transcript_path": ".claude/projects/-Users-berlysia--local-share-chezmoi/01aeadd3-8abc-465f-ab97-35054516a25b.jsonl"
+}

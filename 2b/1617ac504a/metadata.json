@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "2b1617ac504a",
+  "strategy": "manual-commit",
+  "branch": "master",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/commands/add-skill.md",
+    "docs/plans/add-skill-wrapper.md",
+    "home/.chezmoiscripts/run_onchange_install-claude-skills-9.sh.tmpl",
+    "home/dot_local/bin/executable_add-skill.tmpl"
+  ],
+  "sessions": [
+    {
+      "metadata": "/2b/1617ac504a/0/metadata.json",
+      "transcript": "/2b/1617ac504a/0/full.jsonl",
+      "context": "/2b/1617ac504a/0/context.md",
+      "content_hash": "/2b/1617ac504a/0/content_hash.txt",
+      "prompt": "/2b/1617ac504a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 3,
+    "cache_creation_tokens": 314,
+    "cache_read_tokens": 154581,
+    "output_tokens": 27,
+    "api_call_count": 1
+  }
+}
