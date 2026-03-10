@@ -15,3 +15,14 @@ claude_skills:
         - theme-factory
         - frontend-design
         - webapp-testing
+    - repo: berlysia/ralf-project
+      skills:
+        - proposal-add
+        - proposal-complete
+        - proposal-list
+    - repo: berlysia/shiori
+      skills:
+        - shiori-adopt
+        - shiori-guide
+        - shiori-triage
+        - shiori-workflow
