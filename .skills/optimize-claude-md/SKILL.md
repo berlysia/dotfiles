@@ -28,17 +28,19 @@ This Skill analyzes CLAUDE.md files for quality, suggests improvements based on 
 
 **Targets:**
 
-- (none): Both project and global CLAUDE.md
+- (none): Project CLAUDE.md only (default)
 - `project`: Project CLAUDE.md only
-- `global`: Global CLAUDE.md only
+- `all`: Both project and global CLAUDE.md (global is read-only for reference)
+
+**Global CLAUDE.md policy:** Global `~/.claude/CLAUDE.md` is always **read-only**. It may be read for cross-reference during analysis, but NEVER modified. Simplification proposals apply only to project-level files. If the user wants to change global CLAUDE.md, inform them to edit the chezmoi source instead.
 
 **Examples:**
 
 ```
-/optimize-claude-md                           # Full optimization, aggressive, both
-/optimize-claude-md analyze                   # Analysis only
-/optimize-claude-md simplify conservative     # Conservative simplification
-/optimize-claude-md full aggressive project   # Full optimization, project only
+/optimize-claude-md                           # Full optimization, aggressive, project only
+/optimize-claude-md analyze                   # Analysis only, project
+/optimize-claude-md simplify conservative     # Conservative simplification, project
+/optimize-claude-md full aggressive all       # Full optimization, global read for reference
 ```
 
 ## When to Use This Skill
@@ -86,12 +88,12 @@ Follow these steps to analyze and improve CLAUDE.md files:
 
 Check all memory locations in this order:
 
-1. Project memory: `./CLAUDE.md` or `./.claude/CLAUDE.md`
-2. User memory: `~/.claude/CLAUDE.md`
-3. Project rules: `./.claude/rules/*.md`
-4. Local memory: `./CLAUDE.local.md`
+1. Project memory: `./CLAUDE.md` or `./.claude/CLAUDE.md` — **editable**
+2. User memory: `~/.claude/CLAUDE.md` — **read-only** (reference only, never modify)
+3. Project rules: `./.claude/rules/*.md` — **editable**
+4. Local memory: `./CLAUDE.local.md` — **editable**
 
-Read each file found and note its location in the hierarchy.
+Read each file found and note its location in the hierarchy. Global files (`~/.claude/`) are read for cross-reference context only — all modification proposals must target project-level files.
 
 ### Step 2: Analyze Structure
 
