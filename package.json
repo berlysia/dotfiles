@@ -1,32 +1,23 @@
 {
   "name": "@berlysia-dotfiles/root",
-  "private": true,
   "version": "1.0.0",
+  "private": true,
   "description": "Dotfiles managed by chezmoi with Claude Code hooks",
+  "keywords": [],
+  "author": "",
   "type": "module",
   "scripts": {
     "test": "node --test home/dot_claude/hooks/tests/**/*.test.ts",
     "typecheck": "tsgo --noEmit",
-    "lint:biome": "biome check .",
+    "format:check": "oxfmt --check .",
+    "format:biome": "biome check --formatter-enabled=true --linter-enabled=false .",
     "lint:shell": "./scripts/lint-shell.sh",
     "lint:actions": "./scripts/lint-actions.sh",
     "lint:codex": "./scripts/check-codex-config.sh",
     "lint:oxlint": "oxlint --ignore-pattern '.claude/skills/' --ignore-pattern '.codex/skills/' --ignore-pattern '.skills/' --ignore-pattern 'node_modules/' .",
-    "lint": "npm run lint:biome && npm run lint:oxlint && npm run lint:shell && npm run lint:actions && npm run lint:codex",
+    "lint": "npm run format:check && npm run lint:oxlint && npm run lint:shell && npm run lint:actions && npm run lint:codex",
     "check": "npm run test && npm run typecheck && npm run lint",
     "prepare": "./scripts/install-hooks.sh"
-  },
-  "keywords": [],
-  "author": "",
-  "packageManager": "pnpm@10.27.0",
-  "devDependencies": {
-    "@biomejs/biome": "2.3.11",
-    "@mizchi/lsmcp": "0.10.0",
-    "@types/node": "24.10.12",
-    "@typescript/native-preview": "7.0.0-dev.20260109.1",
-    "knip": "5.81.0",
-    "oxlint": "1.51.0",
-    "typescript": "5.9.3"
   },
   "dependencies": {
     "@drawio/mcp": "1.1.2",
@@ -36,5 +27,16 @@
     "add-skill": "1.0.11",
     "ccstatusline": "2.0.23",
     "chrome-devtools-mcp": "0.12.1"
-  }
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.3.11",
+    "@mizchi/lsmcp": "0.10.0",
+    "@types/node": "24.10.12",
+    "@typescript/native-preview": "7.0.0-dev.20260109.1",
+    "knip": "5.81.0",
+    "oxfmt": "0.36.0",
+    "oxlint": "1.51.0",
+    "typescript": "5.9.3"
+  },
+  "packageManager": "pnpm@10.27.0"
 }

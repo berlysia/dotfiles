@@ -53,7 +53,7 @@ export interface ReflectionEntry {
   root_cause: string;
   preventable_by_lint: boolean;
   suggested_rule?: {
-    type: "custom-rule" | "oxlint-config" | "biome-config" | "eslint-plugin";
+    type: "custom-rule" | "oxlint-config" | "oxfmt-config" | "eslint-plugin";
     description: string;
     pattern_hint?: string;
   };

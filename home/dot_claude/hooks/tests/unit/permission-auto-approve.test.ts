@@ -148,6 +148,7 @@ describe("permission-auto-approve.ts hook behavior", () => {
       // Dev tool execution (extended)
       "npx stylelint 'src/**/*.css'",
       "bunx biome check src/",
+      "bunx oxfmt --check src/",
       // Git worktree management
       "git-worktree-create feat/new-feature",
       "git-worktree-cleanup",

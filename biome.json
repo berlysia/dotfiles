@@ -23,55 +23,8 @@
     "lineWidth": 80
   },
   "linter": {
-    "enabled": true,
-    "rules": {
-      "recommended": true,
-      "style": {
-        "useNodejsImportProtocol": "warn",
-        "useTemplate": "warn",
-        "noNonNullAssertion": "warn"
-      },
-      "complexity": {
-        "noUselessEscapeInRegex": "warn"
-      },
-      "correctness": {
-        "useExhaustiveDependencies": "off",
-        "noUnusedVariables": "warn"
-      },
-      "suspicious": {
-        "noAssignInExpressions": "off",
-        "noImplicitAnyLet": "warn",
-        "noTemplateCurlyInString": "warn",
-        "noFallthroughSwitchClause": "warn",
-        "useIterableCallbackReturn": "warn"
-      }
-    }
+    "enabled": false
   },
-  "overrides": [
-    {
-      "includes": ["**/*.test.ts", "**/tests/**/*.ts"],
-      "linter": {
-        "rules": {
-          "suspicious": {
-            "noExplicitAny": "off"
-          },
-          "correctness": {
-            "noUnusedVariables": "off"
-          }
-        }
-      }
-    },
-    {
-      "includes": ["**/scripts/**/*.ts"],
-      "linter": {
-        "rules": {
-          "suspicious": {
-            "noExplicitAny": "warn"
-          }
-        }
-      }
-    }
-  ],
   "javascript": {
     "formatter": {
       "quoteStyle": "double",

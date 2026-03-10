@@ -147,6 +147,7 @@
     "Bash(git tag)",
     "Bash(git blame *)",
     "Bash(pnpm biome *)",
+    "Bash(pnpm oxfmt *)",
     "Bash(pnpm oxlint *)",
     "Bash(pnpm eslint *)",
     "Bash(pnpm prettier *)",

@@ -4,23 +4,27 @@ on:
   push:
     branches: [master, main]
     paths:
-      - '**/*.ts'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - 'tsconfig.json'
-      - 'biome.json'
-      - '.github/workflows/ci-typescript.yml'
-      - '.github/actions/setup-node-pnpm/**'
+      - "**/*.ts"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "tsconfig.json"
+      - "biome.json"
+      - ".oxfmtrc.json"
+      - ".oxlintrc.json"
+      - ".github/workflows/ci-typescript.yml"
+      - ".github/actions/setup-node-pnpm/**"
   pull_request:
     branches: [master, main]
     paths:
-      - '**/*.ts'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - 'tsconfig.json'
-      - 'biome.json'
-      - '.github/workflows/ci-typescript.yml'
-      - '.github/actions/setup-node-pnpm/**'
+      - "**/*.ts"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "tsconfig.json"
+      - "biome.json"
+      - ".oxfmtrc.json"
+      - ".oxlintrc.json"
+      - ".github/workflows/ci-typescript.yml"
+      - ".github/actions/setup-node-pnpm/**"
   workflow_dispatch:
 
 concurrency:
@@ -51,4 +55,4 @@ jobs:
         run: pnpm test
 
       - name: Lint check
-        run: pnpm biome check .
+        run: pnpm run lint

@@ -50,9 +50,9 @@ function findRepoRoot(): string | null {
   }
 }
 
-function runBiomeFormat(filePath: string, repoRoot: string): LintResult | null {
+function runOxfmtFormat(filePath: string, repoRoot: string): LintResult | null {
   try {
-    execSync(`npx biome format --write "${filePath}"`, {
+    execSync(`npx oxfmt --write "${filePath}"`, {
       cwd: repoRoot,
       encoding: "utf-8",
       timeout: 10000,
@@ -61,29 +61,6 @@ function runBiomeFormat(filePath: string, repoRoot: string): LintResult | null {
     return null; // format succeeded silently
   } catch {
     return null; // format errors are non-blocking
-  }
-}
-
-function runBiomeCheck(filePath: string, repoRoot: string): LintResult | null {
-  try {
-    execSync(`npx biome check "${filePath}"`, {
-      cwd: repoRoot,
-      encoding: "utf-8",
-      timeout: 10000,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    return null;
-  } catch (error: unknown) {
-    const err = error as { stdout?: string; stderr?: string; status?: number };
-    const output = (err.stdout || "") + (err.stderr || "");
-    if (output.trim()) {
-      return {
-        tool: "biome check",
-        output: output.trim(),
-        exitCode: err.status || 1,
-      };
-    }
-    return null;
   }
 }
 
@@ -158,15 +135,11 @@ function getLinters(
     case ".js":
     case ".jsx":
       return [
-        () => runBiomeFormat(filePath, repoRoot),
-        () => runBiomeCheck(filePath, repoRoot),
+        () => runOxfmtFormat(filePath, repoRoot),
         () => runOxlint(filePath, repoRoot),
       ];
     case ".json":
-      return [
-        () => runBiomeFormat(filePath, repoRoot),
-        () => runBiomeCheck(filePath, repoRoot),
-      ];
+      return [() => runOxfmtFormat(filePath, repoRoot)];
     case ".sh":
       return [() => runShellcheck(filePath), () => runCustomLint(filePath)];
     case ".tmpl":

@@ -68,8 +68,8 @@ const SAFE_BASH_PATTERNS = [
   /^(vitest|jest|mocha|ava|tap)\b/,
   /^node\s+(-\S+\s+)*--test\b/,
   // Linters and formatters (check mode)
-  /^(eslint|prettier|oxlint|biome)\s+.*--check\b/,
-  /^(eslint|prettier|oxlint|biome)\s+--check\b/,
+  /^(eslint|prettier|oxlint|oxfmt|biome)\s+.*--check\b/,
+  /^(eslint|prettier|oxlint|oxfmt|biome)\s+--check\b/,
   /^tsc\s+--noEmit\b/,
   // Safe directory/file creation
   /^mkdir\s/,
@@ -94,9 +94,9 @@ const SAFE_BASH_PATTERNS = [
   // Claude CLI (read-only)
   /^claude\s+(--version|doctor|--help)\b/,
   // Package manager direct tool invocation (pnpm <tool>, not via `run`)
-  /^pnpm\s+(biome|oxlint|eslint|prettier|knip|tsc|tsgo|vitest)\b/,
+  /^pnpm\s+(biome|oxfmt|oxlint|eslint|prettier|knip|tsc|tsgo|vitest)\b/,
   // Dev tool execution (trusted tools only, not arbitrary packages)
-  /^(npx|pnpx|bunx)\s+(--no\s+)?(vitest|jest|prettier|eslint|oxlint|tsc|tsgo|knip|stylelint|biome)\b/,
+  /^(npx|pnpx|bunx)\s+(--no\s+)?(vitest|jest|prettier|eslint|oxlint|oxfmt|tsc|tsgo|knip|stylelint|biome)\b/,
   // Git worktree management (custom script)
   /^git-worktree-(create|cleanup)\b/,
 ];
