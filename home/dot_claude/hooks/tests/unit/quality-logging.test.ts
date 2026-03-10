@@ -47,7 +47,7 @@ describe("quality logging", () => {
     it("writes quality entry to quality.jsonl", () => {
       logQuality(
         "quality-loop",
-        "biome check",
+        "oxlint",
         "lint error output",
         "test-session",
         "/test/file.ts",
@@ -60,7 +60,7 @@ describe("quality logging", () => {
       const entry = JSON.parse(content) as QualityLogEntry;
 
       assert.strictEqual(entry.source, "quality-loop");
-      assert.strictEqual(entry.lint_tool, "biome check");
+      assert.strictEqual(entry.lint_tool, "oxlint");
       assert.strictEqual(entry.error_output, "lint error output");
       assert.strictEqual(entry.session_id, "test-session");
       assert.strictEqual(entry.file_path, "/test/file.ts");

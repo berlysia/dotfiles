@@ -3,6 +3,19 @@
   "rules": {
     "custom-lint/no-console-log": "error",
     "custom-lint/no-process-exit": "error",
-    "custom-lint/no-any-cast": "error"
-  }
+    "custom-lint/no-any-cast": "error",
+    "prefer-template": "warn",
+    "no-non-null-assertion": "warn",
+    "no-template-curly-in-string": "warn",
+    "no-fallthrough": "warn",
+    "unicorn/prefer-node-protocol": "warn"
+  },
+  "overrides": [
+    {
+      "files": ["**/*.test.ts", "**/tests/**/*.ts"],
+      "rules": {
+        "no-explicit-any": "off"
+      }
+    }
+  ]
 }

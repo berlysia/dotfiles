@@ -35,7 +35,7 @@ RESPONSE FORMAT:
       "root_cause": "what code pattern caused it",
       "preventable_by_lint": true/false,
       "suggested_rule": {
-        "type": "custom-rule|oxlint-config|biome-config|eslint-plugin",
+        "type": "custom-rule|oxlint-config|oxfmt-config|eslint-plugin",
         "description": "what the rule should check",
         "pattern_hint": "regex or code pattern hint"
       }

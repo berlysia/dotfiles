@@ -27,6 +27,8 @@ const PROTECTED_BASENAMES = new Set([
   ".prettierrc.js",
   "prettier.config.js",
   "prettier.config.mjs",
+  ".oxfmtrc.json",
+  ".oxfmtrc.jsonc",
   "tsconfig.json",
   "tsconfig.build.json",
   "lefthook.yml",

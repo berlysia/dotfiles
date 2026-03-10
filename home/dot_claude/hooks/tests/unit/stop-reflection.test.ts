@@ -65,8 +65,8 @@ describe("stop-reflection", () => {
           cwd: "/test",
           session_id: "session-1",
           source: "quality-loop",
-          lint_tool: "biome check",
-          error_output: "biome error",
+          lint_tool: "oxlint",
+          error_output: "oxlint error",
         },
         {
           timestamp: "2026-03-10T00:00:02Z",
