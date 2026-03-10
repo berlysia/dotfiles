@@ -3,13 +3,15 @@
   "checkpoint_id": "3829b1c2fb3c",
   "strategy": "manual-commit",
   "branch": "master",
-  "checkpoints_count": 3,
+  "checkpoints_count": 5,
   "files_touched": [
     ".tmp/plan.md",
     ".tmp/research.md",
     "home/.chezmoidata/packages.yaml",
     "home/.chezmoiscripts/run_onchange_install-packages-1-darwin.sh.tmpl",
     "home/.chezmoiscripts/run_onchange_install-safe-chain.sh.tmpl",
+    "home/dot_claude/hooks/implementations/document-workflow-guard.ts",
+    "home/dot_claude/hooks/tests/unit/document-workflow-guard.test.ts",
     "home/dot_codex/.config.toml"
   ],
   "sessions": [
@@ -26,13 +28,20 @@
       "context": "/38/29b1c2fb3c/1/context.md",
       "content_hash": "/38/29b1c2fb3c/1/content_hash.txt",
       "prompt": "/38/29b1c2fb3c/1/prompt.txt"
+    },
+    {
+      "metadata": "/38/29b1c2fb3c/2/metadata.json",
+      "transcript": "/38/29b1c2fb3c/2/full.jsonl",
+      "context": "/38/29b1c2fb3c/2/context.md",
+      "content_hash": "/38/29b1c2fb3c/2/content_hash.txt",
+      "prompt": "/38/29b1c2fb3c/2/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 1412,
-    "cache_creation_tokens": 280968,
-    "cache_read_tokens": 4646580,
-    "output_tokens": 23737,
-    "api_call_count": 72
+    "input_tokens": 3102,
+    "cache_creation_tokens": 432775,
+    "cache_read_tokens": 8008553,
+    "output_tokens": 41992,
+    "api_call_count": 130
   }
 }

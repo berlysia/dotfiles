@@ -1,0 +1,31 @@
+# Session Context
+
+## User Prompts
+
+### Prompt 1
+
+```
+document-workflow-guard の extractRedirectionTargets に誤検知バグがある。`2>/dev/null` 等の stderr リダイレクトが「書き込み操作」と判定されて Bash コマンドがブロックされる。MEMORY.md に詳細記録済み。修正して。
+```
+
+### Prompt 2
+
+Base directory for this skill: /Users/berlysia/.claude/skills/execute-plan
+
+# Execute Plan
+
+計画ファイルまたは分解済みタスクリストを入力として、順次実装・検証・コミットする。
+`/decompose` でタスク分解した後の実装フェーズで使用する。
+
+## 前提条件
+
+以下のいずれかが存在すること:
+
+- 計画ファイル（Markdown、ADRなど）のパス
+- TaskCreate で作成済みのタスクリスト
+- ユーザーが直接指定する...
+
+### Prompt 3
+
+コミットして
+
