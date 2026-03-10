@@ -3,4 +3,3 @@ packages:
 
 minimumReleaseAgeExclude:
   - dax
-  - add-skill

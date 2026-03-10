@@ -8,7 +8,6 @@
   "project": ["home/dot_claude/**/*.ts"],
   "ignore": ["**/*.test.ts"],
   "ignoreDependencies": [
-    "add-skill",
     "ccstatusline",
     "@openai/codex",
     "@playwright/mcp",
