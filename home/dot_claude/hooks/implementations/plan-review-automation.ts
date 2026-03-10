@@ -177,8 +177,16 @@ function stripReviewMarkers(content: string): string {
   return content.replace(REVIEW_MARKER_REGEX, "").trimEnd();
 }
 
+function normalizeForHash(content: string): string {
+  return content
+    .replace(REVIEW_MARKER_REGEX, "")
+    .replace(/^(- Approval Status:)\s*.*$/m, "$1")
+    .replace(/^(\s*- )\[x\]/gm, "$1[ ]")
+    .trimEnd();
+}
+
 function computePlanHash(planContent: string): string {
-  return hashText(stripReviewMarkers(planContent));
+  return hashText(normalizeForHash(planContent));
 }
 
 function extractLatestReviewMarker(content: string): AutoReviewMarker | null {
@@ -240,6 +248,7 @@ export {
   extractTargetPath,
   extractLatestReviewMarker,
   isPlanFile,
+  normalizeForHash,
   stripReviewMarkers,
 };
 

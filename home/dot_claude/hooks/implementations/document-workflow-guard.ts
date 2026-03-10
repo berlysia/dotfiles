@@ -384,8 +384,12 @@ function stripQuotes(value: string): string {
 }
 
 function computePlanHash(content: string): string {
-  const stripped = content.replace(REVIEW_MARKER_REGEX, "").trimEnd();
-  return createHash("sha256").update(stripped, "utf-8").digest("hex");
+  const normalized = content
+    .replace(REVIEW_MARKER_REGEX, "")
+    .replace(/^(- Approval Status:)\s*.*$/m, "$1")
+    .replace(/^(\s*- )\[x\]/gm, "$1[ ]")
+    .trimEnd();
+  return createHash("sha256").update(normalized, "utf-8").digest("hex");
 }
 
 function extractLatestAutoReviewMarker(

@@ -1,12 +1,13 @@
 #!/usr/bin/env node --test
 
-import { deepStrictEqual, strictEqual } from "node:assert";
+import { deepStrictEqual, ok, strictEqual } from "node:assert";
 import { describe, it } from "node:test";
 import {
   computePlanHash,
   extractTargetPath,
   extractLatestReviewMarker,
   isPlanFile,
+  normalizeForHash,
   stripReviewMarkers,
 } from "../../implementations/plan-review-automation.ts";
 
@@ -78,5 +79,76 @@ describe("plan-review-automation.ts helpers", () => {
     const withMarker = `${base}\n\n<!-- auto-review: verdict=pass; hash=abc -->\n`;
 
     strictEqual(computePlanHash(base), computePlanHash(withMarker));
+  });
+
+  it("computePlanHash is stable across Approval Status changes", () => {
+    const pending = [
+      "## Approval",
+      "- Plan Status: complete",
+      "- Review Status: pass",
+      "- Approval Status: pending",
+    ].join("\n");
+    const approved = [
+      "## Approval",
+      "- Plan Status: complete",
+      "- Review Status: pass",
+      "- Approval Status: approved",
+    ].join("\n");
+
+    strictEqual(computePlanHash(pending), computePlanHash(approved));
+  });
+
+  it("computePlanHash is stable across checkbox state changes", () => {
+    const unchecked = [
+      "## Success Criteria",
+      "- [ ] Tests pass",
+      "- [ ] No regressions",
+    ].join("\n");
+    const checked = [
+      "## Success Criteria",
+      "- [x] Tests pass",
+      "- [ ] No regressions",
+    ].join("\n");
+
+    strictEqual(computePlanHash(unchecked), computePlanHash(checked));
+  });
+
+  it("computePlanHash changes when substantive plan content changes", () => {
+    const original = [
+      "## Plan",
+      "- Refactor module A",
+      "## Approval",
+      "- Approval Status: pending",
+    ].join("\n");
+    const modified = [
+      "## Plan",
+      "- Refactor module A and B",
+      "## Approval",
+      "- Approval Status: pending",
+    ].join("\n");
+
+    ok(computePlanHash(original) !== computePlanHash(modified));
+  });
+
+  it("normalizeForHash strips markers, approval value, and checkbox state", () => {
+    const content = [
+      "## Plan",
+      "- [ ] task one",
+      "- [x] task two",
+      "## Approval",
+      "- Approval Status: approved",
+      "",
+      "<!-- auto-review: verdict=pass; hash=abc -->",
+    ].join("\n");
+
+    const expected = [
+      "## Plan",
+      "- [ ] task one",
+      "- [ ] task two",
+      "## Approval",
+      "- Approval Status:",
+    ].join("\n");
+
+    strictEqual(normalizeForHash(content), expected);
   });
 });
