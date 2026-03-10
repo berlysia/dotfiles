@@ -78,6 +78,10 @@ const hook = defineHook({
         return context.success({});
       }
 
+      if (areAllTargetsOutsideProject(cwd, analysis.targets)) {
+        return context.success({});
+      }
+
       if (approved && researched) {
         return context.success({});
       }
@@ -98,6 +102,10 @@ const hook = defineHook({
     }
 
     if (isDocumentPath(cwd, targetPath, wfPaths)) {
+      return context.success({});
+    }
+
+    if (isOutsideProject(cwd, targetPath)) {
       return context.success({});
     }
 
@@ -140,6 +148,18 @@ function areAllTargetsDocumentPaths(
     return false;
   }
   return targets.every((target) => isDocumentPath(cwd, target, wfPaths));
+}
+
+function isOutsideProject(cwd: string, path: string): boolean {
+  const normalized = resolve(cwd, expandTilde(path));
+  return !normalized.startsWith(cwd + "/") && normalized !== cwd;
+}
+
+function areAllTargetsOutsideProject(cwd: string, targets: string[]): boolean {
+  if (targets.length === 0) {
+    return false;
+  }
+  return targets.every((target) => isOutsideProject(cwd, target));
 }
 
 function readWorkflowState(statePath: string): WorkflowState | null {

@@ -504,4 +504,58 @@ describe("document-workflow-guard.ts hook behavior", () => {
     await invokeRun(hook, context);
     context.assertDeny();
   });
+
+  describe("external path exemption", () => {
+    it("allows Write to absolute path outside project while pending", async () => {
+      const repo = createWorkflowRepo(pendingWorkflowRepo());
+      envHelper.set("CLAUDE_TEST_CWD", repo);
+
+      const context = createPreToolUseContextFor(hook, "Write", {
+        file_path: "/Users/someone/.claude/projects/memory/MEMORY.md",
+        content: "# Notes",
+      });
+
+      await invokeRun(hook, context);
+      context.assertSuccess({});
+    });
+
+    it("allows Edit to absolute path outside project while pending", async () => {
+      const repo = createWorkflowRepo(pendingWorkflowRepo());
+      envHelper.set("CLAUDE_TEST_CWD", repo);
+
+      const context = createPreToolUseContextFor(hook, "Edit", {
+        file_path: "/tmp/other-project/src/file.ts",
+        old_string: "old",
+        new_string: "new",
+      });
+
+      await invokeRun(hook, context);
+      context.assertSuccess({});
+    });
+
+    it("still blocks Write to relative path inside project while pending", async () => {
+      const repo = createWorkflowRepo(pendingWorkflowRepo());
+      envHelper.set("CLAUDE_TEST_CWD", repo);
+
+      const context = createPreToolUseContextFor(hook, "Write", {
+        file_path: "src/inside.ts",
+        content: "blocked",
+      });
+
+      await invokeRun(hook, context);
+      context.assertDeny();
+    });
+
+    it("allows Bash writing to external path while pending", async () => {
+      const repo = createWorkflowRepo(pendingWorkflowRepo());
+      envHelper.set("CLAUDE_TEST_CWD", repo);
+
+      const context = createPreToolUseContextFor(hook, "Bash", {
+        command: "echo note >> /tmp/external/notes.md",
+      });
+
+      await invokeRun(hook, context);
+      context.assertSuccess({});
+    });
+  });
 });
