@@ -35,6 +35,7 @@ The following implementations have unit tests:
 ### 🔄 Components Needing Tests
 
 The following implementations still need unit tests:
+
 - `auto-approve.ts` - Complex pattern matching logic
 - `auto-format.ts` - File formatting automation
 - `block-package-json-tsx.ts` - File modification blocking
@@ -47,6 +48,7 @@ The following implementations still need unit tests:
 ## Running Tests
 
 ### Run All Unit Tests
+
 ```bash
 # Using npm script
 npm run test:unit
@@ -59,7 +61,9 @@ node --test dot_claude/hooks/tests/unit/session.test.ts
 ```
 
 ### Test Output
+
 Tests provide:
+
 - ✅ Pass/fail status for each test file
 - Total test count and results
 - Detailed failure information when tests fail
@@ -79,11 +83,11 @@ describe("component behavior", () => {
   beforeEach(() => {
     // Setup test environment
   });
-  
+
   afterEach(() => {
     // Cleanup
   });
-  
+
   describe("feature group", () => {
     it("should do something", () => {
       // Test implementation
@@ -109,6 +113,7 @@ describe("component behavior", () => {
 ## Contributing
 
 When adding new tests:
+
 1. Follow the existing test structure
 2. Test happy paths, edge cases, and error scenarios
 3. Use descriptive test names

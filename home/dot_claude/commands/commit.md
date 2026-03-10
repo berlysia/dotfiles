@@ -25,11 +25,13 @@ Commits current changes with semantic commit messages. Automatically handles sim
 ## Complexity Detection
 
 **Simple** (handle directly):
+
 - Single file with one type of change
 - Multiple files with same purpose (e.g., all feat, all fix)
 - Related changes that form one logical unit
 
 **Complex** (delegate to `/semantic-commit`):
+
 - Mixed change types (feat + fix, refactor + test)
 - Large refactoring spanning many files
 - Changes that should be split for better git history
@@ -53,6 +55,7 @@ git log --oneline -5
 ### Step 2: Analyze Complexity
 
 Examine the changes and determine:
+
 1. How many distinct purposes are present?
 2. Are there mixed change types (feat/fix/refactor/test/docs/chore)?
 3. Would splitting improve the git history?
@@ -60,11 +63,13 @@ Examine the changes and determine:
 ### Step 3: Execute
 
 **If Simple:**
+
 1. Stage all changes: `git add <files>`
 2. Generate commit message following CLAUDE.md conventions
 3. Commit with semantic message
 
 **If Complex:**
+
 1. Inform user: "Multiple change types detected. Using /semantic-commit for intelligent splitting."
 2. Delegate to `/semantic-commit` command
 
@@ -84,18 +89,18 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 
 ### Type Selection
 
-| Type | Usage |
-|------|-------|
-| `feat` | New feature |
-| `fix` | Bug fix |
+| Type       | Usage                                   |
+| ---------- | --------------------------------------- |
+| `feat`     | New feature                             |
+| `fix`      | Bug fix                                 |
 | `refactor` | Code restructuring (no behavior change) |
-| `test` | Test additions/modifications |
-| `docs` | Documentation |
-| `chore` | Maintenance (deps, config) |
-| `perf` | Performance improvement |
-| `style` | Formatting (no logic change) |
-| `build` | Build system |
-| `ci` | CI/CD changes |
+| `test`     | Test additions/modifications            |
+| `docs`     | Documentation                           |
+| `chore`    | Maintenance (deps, config)              |
+| `perf`     | Performance improvement                 |
+| `style`    | Formatting (no logic change)            |
+| `build`    | Build system                            |
+| `ci`       | CI/CD changes                           |
 
 ## Examples
 

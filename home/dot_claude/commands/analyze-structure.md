@@ -18,6 +18,7 @@
 - **cohesion-evaluator**: モジュール内凝集度評価
 
 **実行方法**:
+
 ```
 Task(code-complexity-analyzer): 対象コードの複雑度分析
 Task(architecture-boundary-analyzer): アーキテクチャ境界分析
@@ -28,6 +29,7 @@ Task(cohesion-evaluator): 凝集度評価
 ### Phase 2: Integration
 
 エージェント分析結果の統合と出力フォーマット変換:
+
 1. 各エージェントの結果を収集
 2. メトリクスを統一スケール（1-5）に正規化
 3. 指定フォーマット（JSON/YAML/CSV/XML）に変換
@@ -62,6 +64,7 @@ Task(cohesion-evaluator): 凝集度評価
 ## 出力データ構造
 
 ### 基本構造（JSON例）
+
 ```json
 {
   "metadata": {
@@ -94,6 +97,7 @@ Task(cohesion-evaluator): 凝集度評価
 ### エージェント別メトリクス
 
 #### 複雑度メトリクス（`code-complexity-analyzer`）
+
 - 循環的複雑度（McCabe）
 - 認知的複雑度
 - ネストレベル
@@ -102,18 +106,21 @@ Task(cohesion-evaluator): 凝集度評価
 - 保守性指標
 
 #### アーキテクチャメトリクス（`architecture-boundary-analyzer`）
+
 - 依存関係グラフ
 - 循環依存検出
 - 境界違反分析
 - レイヤー準拠性
 
 #### 結合度メトリクス（`coupling-evaluator`）
+
 - 内部依存関係
 - 外部依存関係
 - 結合強度評価
 - デカップリング推奨
 
 #### 凝集度メトリクス（`cohesion-evaluator`）
+
 - モジュール内統合度
 - 責務一貫性
 - 重複コード検出
@@ -144,27 +151,33 @@ Task(cohesion-evaluator): 凝集度評価
 
 ```markdown
 ## 並列エージェント実行
+
 Task(code-complexity-analyzer):
-  - 対象: <target>
-  - 出力: 複雑度メトリクス、保守性指標
+
+- 対象: <target>
+- 出力: 複雑度メトリクス、保守性指標
 
 Task(architecture-boundary-analyzer):
-  - 対象: <target>
-  - 出力: 依存関係グラフ、境界違反
+
+- 対象: <target>
+- 出力: 依存関係グラフ、境界違反
 
 Task(coupling-evaluator):
-  - 対象: <target>
-  - 出力: 結合度スコア、依存関係評価
+
+- 対象: <target>
+- 出力: 結合度スコア、依存関係評価
 
 Task(cohesion-evaluator):
-  - 対象: <target>
-  - 出力: 凝集度スコア、責務評価
+
+- 対象: <target>
+- 出力: 凝集度スコア、責務評価
 ```
 
 ### Phase 2: Integration実行
 
 ```markdown
 ## 結果統合プロセス
+
 1. 各エージェント結果を収集
 2. メトリクス正規化（1-5スケール）:
    - Complexity: McCabe複雑度 → スコア変換
@@ -193,6 +206,7 @@ Task(cohesion-evaluator):
 ## 出力フォーマット例
 
 ### CSV出力例
+
 ```csv
 file,function,complexity,lines,dependencies
 src/main.ts,main,3,25,5
@@ -200,6 +214,7 @@ src/utils.ts,calculateTotal,7,45,2
 ```
 
 ### YAML出力例
+
 ```yaml
 metadata:
   timestamp: 2024-01-01T00:00:00Z
@@ -214,6 +229,7 @@ structure:
 ## システム連携
 
 ### CI/CD統合（並列エージェント分析）
+
 ```yaml
 # GitHub Actions例 - 4エージェント並列分析
 - name: Structure Analysis
@@ -228,6 +244,7 @@ structure:
 ```
 
 ### 品質ゲート（統合メトリクス活用）
+
 ```bash
 # 統合品質スコアチェック
 overall_score=$(claude /analyze-structure src/ --metrics all --output json | jq '.summary.overall_score')
@@ -275,4 +292,4 @@ cohesion_score=$(cat structure.json | jq '.metrics.cohesion.score')
 
 ---
 
-*4つの専門エージェント並列実行によるデータ駆動型開発を支援し、多角的なコード品質の定量的管理を実現します。*
+_4つの専門エージェント並列実行によるデータ駆動型開発を支援し、多角的なコード品質の定量的管理を実現します。_

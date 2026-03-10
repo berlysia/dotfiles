@@ -14,11 +14,13 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
 ### Chezmoi ファイル管理
 
 #### 一般的なルール
+
 - **ファイル名変換**: `dot_*` → `.*` (例: `${projectRoot}/home/dot_claude/foo.txt` → `~/.claude/foo.txt`)
 - **パーミッション**: `private_*` → パーミッション600で配置
 - **テンプレート**: `.tmpl` 拡張子で動的生成
 
 #### ディレクトリ構造
+
 - **`.chezmoiroot`**: リポジトリルートの `.chezmoiroot` ファイルに `home` と記載
   - chezmoi source stateは `${projectRoot}/home/` 配下に格納
   - `.chezmoi.sourceDir` → `${projectRoot}/home/`
@@ -26,6 +28,7 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
   - リポジトリルートにあるファイル（`package.json`等）を参照するテンプレートでは `workingTree` を使用
 
 #### このプロジェクト独自のルール
+
 - **グローバル設定**: `${projectRoot}/home/dot_claude/CLAUDE.md` → `~/.claude/CLAUDE.md`
   - 編集する場合は `${projectRoot}/home/dot_claude/CLAUDE.md` を変更してから `chezmoi apply` を実行
 
@@ -55,6 +58,7 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
 フック（`~/.claude/hooks/`）は bun で絶対パス実行（`bun ~/.claude/hooks/implementations/*.ts`）。
 
 **パッケージ管理**:
+
 - **hook依存の定義**: `home/dot_claude/package.json`（pnpm workspace パッケージ）
 - **開発時**: `pnpm install` → `home/dot_claude/node_modules/`
 - **deploy後**: `chezmoi apply` → `~/.claude/` で `bun install`

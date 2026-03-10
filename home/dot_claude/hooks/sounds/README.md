@@ -5,6 +5,7 @@ This directory contains sound files for Claude Code notifications.
 ## File Naming Convention
 
 Sound files follow the pattern:
+
 ```
 Claude${EventType}.wav
 ```
@@ -17,18 +18,18 @@ Claude${EventType}.wav
 
 ### Event Sounds
 
-| EventType | File Name | Description |
-|-----------|-----------|-------------|
-| `Notification` | `ClaudeNotification.wav` | Default notification (fallback) |
-| `Stop` | `ClaudeStop.wav` | Task completion |
-| `Error` | `ClaudeError.wav` | Error notification |
-| `PermissionRequest` | `ClaudePermissionRequest.wav` | Permission request |
-| `AskUserQuestion` | `ClaudeAskUserQuestion.wav` | User input required |
+| EventType           | File Name                     | Description                     |
+| ------------------- | ----------------------------- | ------------------------------- |
+| `Notification`      | `ClaudeNotification.wav`      | Default notification (fallback) |
+| `Stop`              | `ClaudeStop.wav`              | Task completion                 |
+| `Error`             | `ClaudeError.wav`             | Error notification              |
+| `PermissionRequest` | `ClaudePermissionRequest.wav` | Permission request              |
+| `AskUserQuestion`   | `ClaudeAskUserQuestion.wav`   | User input required             |
 
 ### Special Files
 
-| File Name | Description |
-|-----------|-------------|
+| File Name    | Description                                |
+| ------------ | ------------------------------------------ |
 | `Prefix.wav` | Played before event sound in fallback mode |
 
 #### Prefix.wav Usage
@@ -40,6 +41,7 @@ Claude${EventType}.wav
 - **Attention grabber**: Short chime before the actual notification
 
 Example: Create with text-to-speech
+
 ```bash
 # macOS
 say -o Prefix.aiff "MacBook Pro"

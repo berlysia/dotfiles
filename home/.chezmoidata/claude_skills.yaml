@@ -1,17 +1,17 @@
 claude_skills:
-    repositories:
-        - repo: vercel-labs/agent-skills
-          skills:
-            - vercel-react-best-practices
-            - web-design-guidelines
-        - repo: anthropics/skills
-          skills:
-            - doc-coauthoring
-            - skill-creator
-            - docx
-            - pptx
-            - xlsx
-            - pdf
-            - theme-factory
-            - frontend-design
-            - webapp-testing
+  repositories:
+    - repo: vercel-labs/agent-skills
+      skills:
+        - vercel-react-best-practices
+        - web-design-guidelines
+    - repo: anthropics/skills
+      skills:
+        - doc-coauthoring
+        - skill-creator
+        - docx
+        - pptx
+        - xlsx
+        - pdf
+        - theme-factory
+        - frontend-design
+        - webapp-testing

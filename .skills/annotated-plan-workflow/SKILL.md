@@ -47,6 +47,7 @@ SessionStart メッセージでディレクトリパスが通知される（例:
 
 ```markdown
 ## Approval
+
 - Plan Status: drafting
 - Review Status: pending
 - Approval Status: pending

@@ -6,9 +6,11 @@ Repository: {{repo}}
 PR #{{pr_number}}: {{pr_title}}
 
 ## Changes Made (Iteration {{iteration}})
+
 {{changes_summary}}
 
 ## Updated Diff (Current State)
+
 ```diff
 {{updated_diff}}
 ```

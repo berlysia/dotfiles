@@ -5,6 +5,7 @@ This directory contains common shell configuration files that are shared between
 ## Structure
 
 ### Core Configuration Files
+
 - `init.sh` - Common entry point for both shells
 - `path.sh` - Common PATH configuration
 - `aliases.sh` - Common aliases
@@ -16,6 +17,7 @@ This directory contains common shell configuration files that are shared between
 - `windows.sh` - Windows-specific common settings
 
 ### Testing Suite
+
 - `test_suite.sh` - Comprehensive testing and health check system
 - `executable_doctor` - Legacy wrapper for backward compatibility
 - `core/` - Core testing infrastructure
@@ -27,12 +29,14 @@ This directory contains common shell configuration files that are shared between
 ## Usage
 
 ### Loading Configuration
+
 The common configuration is loaded from the shell-specific configuration files:
 
 - For zsh: `~/.zsh/dot_zshrc.tmpl`
 - For bash: `~/.bash/dot_bashrc`
 
 ### Health Checks
+
 Run comprehensive health checks on your dotfiles setup:
 
 ```bash
@@ -50,6 +54,7 @@ Run comprehensive health checks on your dotfiles setup:
 ```
 
 ### Test Categories
+
 - **core** - Essential commands (sh, bash, git, curl, chezmoi)
 - **tools** - Development tools (rg, fzf, bat, jq, mise)
 - **languages** - Programming language runtimes

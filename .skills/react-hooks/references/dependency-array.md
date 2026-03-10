@@ -49,7 +49,7 @@ useEffect(() => {
 // ✅ CORRECT: Use functional update
 useEffect(() => {
   const timer = setInterval(() => {
-    setCount(c => c + 1); // No external dependency
+    setCount((c) => c + 1); // No external dependency
   }, 1000);
   return () => clearInterval(timer);
 }, []); // Honestly empty
@@ -59,19 +59,19 @@ useEffect(() => {
 
 Understand what creates new references:
 
-| Always Stable | Unstable (new each render) |
-|---------------|---------------------------|
-| `useState` setter | Inline objects `{}` |
-| `useReducer` dispatch | Inline arrays `[]` |
-| `useRef` object | Inline functions `() => {}` |
-| Module-level values | Props (objects/arrays/functions) |
-| Constants | Computed objects/arrays |
+| Always Stable         | Unstable (new each render)       |
+| --------------------- | -------------------------------- |
+| `useState` setter     | Inline objects `{}`              |
+| `useReducer` dispatch | Inline arrays `[]`               |
+| `useRef` object       | Inline functions `() => {}`      |
+| Module-level values   | Props (objects/arrays/functions) |
+| Constants             | Computed objects/arrays          |
 
 ```tsx
 // ❌ WRONG: Inline object creates new reference
 function Component({ userId }: { userId: string }) {
   useEffect(() => {
-    fetch('/api', { body: JSON.stringify({ userId }) });
+    fetch("/api", { body: JSON.stringify({ userId }) });
   }, [{ userId }]); // New object every render = infinite loop
 
   return null;
@@ -80,7 +80,7 @@ function Component({ userId }: { userId: string }) {
 // ✅ CORRECT: Use primitive or memoize
 function Component({ userId }: { userId: string }) {
   useEffect(() => {
-    fetch('/api', { body: JSON.stringify({ userId }) });
+    fetch("/api", { body: JSON.stringify({ userId }) });
   }, [userId]); // Primitive is stable
 
   return null;
@@ -95,7 +95,7 @@ Problem: Object/array props are new references each render.
 
 ```tsx
 // Parent creates new object each render
-<Child options={{ theme: 'dark', size: 'large' }} />
+<Child options={{ theme: "dark", size: "large" }} />;
 
 // Child's effect runs every render
 function Child({ options }: { options: Options }) {
@@ -108,8 +108,8 @@ function Child({ options }: { options: Options }) {
 **Solution A: Memoize in parent**
 
 ```tsx
-const options = useMemo(() => ({ theme: 'dark', size: 'large' }), []);
-<Child options={options} />
+const options = useMemo(() => ({ theme: "dark", size: "large" }), []);
+<Child options={options} />;
 ```
 
 **Solution B: Destructure to primitives**
@@ -129,7 +129,7 @@ function Child({ options }: { options: Options }) {
 ```tsx
 function useDeepCompareEffect(
   callback: EffectCallback,
-  dependencies: DependencyList
+  dependencies: DependencyList,
 ) {
   const ref = useRef<string>();
   const signatureKey = JSON.stringify(dependencies);
@@ -149,11 +149,11 @@ Problem: Callback props are new functions each render.
 
 ```tsx
 // Parent
-<SearchInput onSearch={(q) => setQuery(q)} /> // New function each render
+<SearchInput onSearch={(q) => setQuery(q)} />; // New function each render
 
 // Child
 function SearchInput({ onSearch }: { onSearch: (q: string) => void }) {
-  const [value, setValue] = useState('');
+  const [value, setValue] = useState("");
 
   useEffect(() => {
     const timer = setTimeout(() => onSearch(value), 300);
@@ -166,14 +166,14 @@ function SearchInput({ onSearch }: { onSearch: (q: string) => void }) {
 
 ```tsx
 const handleSearch = useCallback((q: string) => setQuery(q), []);
-<SearchInput onSearch={handleSearch} />
+<SearchInput onSearch={handleSearch} />;
 ```
 
 **Solution B: useRef to capture latest**
 
 ```tsx
 function SearchInput({ onSearch }: Props) {
-  const [value, setValue] = useState('');
+  const [value, setValue] = useState("");
   const onSearchRef = useRef(onSearch);
 
   useEffect(() => {
@@ -259,9 +259,11 @@ Problem: Dependencies change based on conditions.
 
 ```tsx
 // ❌ WRONG: Conditional hook call
-function SearchInput({ mode }: { mode: 'local' | 'remote' }) {
-  if (mode === 'remote') {
-    useEffect(() => { /* ... */ }, [query]); // Conditional hook!
+function SearchInput({ mode }: { mode: "local" | "remote" }) {
+  if (mode === "remote") {
+    useEffect(() => {
+      /* ... */
+    }, [query]); // Conditional hook!
   }
 }
 ```
@@ -271,11 +273,11 @@ function SearchInput({ mode }: { mode: 'local' | 'remote' }) {
 ```tsx
 function SearchInput({ mode, query }: Props) {
   useEffect(() => {
-    if (mode !== 'remote') return;
+    if (mode !== "remote") return;
 
     const controller = new AbortController();
     fetch(`/search?q=${query}`, { signal: controller.signal })
-      .then(r => r.json())
+      .then((r) => r.json())
       .then(setResults);
 
     return () => controller.abort();
@@ -332,7 +334,7 @@ useEffect(() => {
 
 // ✅ One-time DOM setup
 useEffect(() => {
-  const observer = new ResizeObserver(entries => {
+  const observer = new ResizeObserver((entries) => {
     for (const entry of entries) {
       handleResize(entry);
     }
@@ -353,12 +355,13 @@ useEffect(() => {
 // ❌ WRONG: Callback uses component state
 useEffect(() => {
   const handler = () => {
-    if (isEnabled) { // Uses `isEnabled`
+    if (isEnabled) {
+      // Uses `isEnabled`
       doSomething();
     }
   };
-  window.addEventListener('click', handler);
-  return () => window.removeEventListener('click', handler);
+  window.addEventListener("click", handler);
+  return () => window.removeEventListener("click", handler);
 }, []); // Should be [isEnabled]
 ```
 
@@ -381,6 +384,7 @@ Enable `eslint-plugin-react-hooks`:
 ### Identifying Stale Closures
 
 Symptoms of stale closure:
+
 - Effect uses outdated state/props values
 - Handlers reference old values
 - Computed values don't update
@@ -397,7 +401,7 @@ function Counter() {
     return () => clearInterval(timer);
   }, []); // count is stale
 
-  return <button onClick={() => setCount(c => c + 1)}>{count}</button>;
+  return <button onClick={() => setCount((c) => c + 1)}>{count}</button>;
 }
 ```
 
@@ -412,7 +416,7 @@ function Counter() {
 // Debug helper
 function useWhyDidYouUpdate<T extends Record<string, unknown>>(
   name: string,
-  props: T
+  props: T,
 ) {
   const previousProps = useRef<T>();
 
@@ -421,7 +425,7 @@ function useWhyDidYouUpdate<T extends Record<string, unknown>>(
       const allKeys = Object.keys({ ...previousProps.current, ...props });
       const changes: Record<string, { from: unknown; to: unknown }> = {};
 
-      allKeys.forEach(key => {
+      allKeys.forEach((key) => {
         if (previousProps.current![key] !== props[key]) {
           changes[key] = {
             from: previousProps.current![key],
@@ -431,7 +435,7 @@ function useWhyDidYouUpdate<T extends Record<string, unknown>>(
       });
 
       if (Object.keys(changes).length) {
-        console.log('[why-did-you-update]', name, changes);
+        console.log("[why-did-you-update]", name, changes);
       }
     }
 
@@ -448,8 +452,8 @@ function useWhyDidYouUpdate<T extends Record<string, unknown>>(
 // Using useRef for stable object
 function Component() {
   const stableConfig = useRef({
-    option1: 'value1',
-    option2: 'value2',
+    option1: "value1",
+    option2: "value2",
   }).current;
 
   useEffect(() => {
@@ -459,10 +463,7 @@ function Component() {
 
 // Using useMemo for computed stable object
 function Component({ width, height }: Props) {
-  const dimensions = useMemo(
-    () => ({ width, height }),
-    [width, height]
-  );
+  const dimensions = useMemo(() => ({ width, height }), [width, height]);
 
   useEffect(() => {
     resize(dimensions);

@@ -5,6 +5,7 @@ This reference provides comprehensive patterns for identifying and removing unne
 ## The Cost of Unnecessary Hooks
 
 Every hook adds:
+
 - **Cognitive load**: More code to understand and maintain
 - **Runtime overhead**: React tracks hook state and dependencies
 - **Bug surface**: Incorrect dependencies, stale closures, infinite loops
@@ -75,7 +76,7 @@ function DataTable({ data, sortConfig }: Props) {
     return [...data].sort((a, b) => {
       const aVal = a[sortConfig.key];
       const bVal = b[sortConfig.key];
-      return sortConfig.direction === 'asc'
+      return sortConfig.direction === "asc"
         ? compare(aVal, bVal)
         : compare(bVal, aVal);
     });
@@ -92,38 +93,33 @@ function DataTable({ data, sortConfig }: Props) {
 ```tsx
 // ❌ WRONG: Effect chain, delayed response, race conditions
 function SearchForm() {
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
 
   useEffect(() => {
     if (query.length > 2) {
       setIsSearching(true);
-      analytics.track('search_started', { query });
+      analytics.track("search_started", { query });
     }
   }, [query]);
 
   useEffect(() => {
     if (isSearching) {
-      fetchResults(query).then(results => {
+      fetchResults(query).then((results) => {
         setIsSearching(false);
         setResults(results);
       });
     }
   }, [isSearching, query]);
 
-  return (
-    <input
-      value={query}
-      onChange={e => setQuery(e.target.value)}
-    />
-  );
+  return <input value={query} onChange={(e) => setQuery(e.target.value)} />;
 }
 ```
 
 ```tsx
 // ✅ CORRECT: Direct event handling, immediate response
 function SearchForm() {
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState("");
   const [results, setResults] = useState<Result[]>([]);
   const [isSearching, setIsSearching] = useState(false);
 
@@ -131,7 +127,7 @@ function SearchForm() {
     setQuery(newQuery);
 
     if (newQuery.length > 2) {
-      analytics.track('search_started', { query: newQuery });
+      analytics.track("search_started", { query: newQuery });
       setIsSearching(true);
 
       const results = await fetchResults(newQuery);
@@ -140,12 +136,7 @@ function SearchForm() {
     }
   };
 
-  return (
-    <input
-      value={query}
-      onChange={e => handleSearch(e.target.value)}
-    />
-  );
+  return <input value={query} onChange={(e) => handleSearch(e.target.value)} />;
 }
 ```
 
@@ -166,7 +157,7 @@ function EditableField({ initialValue, onSave }: Props) {
   return (
     <input
       value={value}
-      onChange={e => setValue(e.target.value)}
+      onChange={(e) => setValue(e.target.value)}
       onBlur={() => onSave(value)}
     />
   );
@@ -178,10 +169,10 @@ function EditableField({ initialValue, onSave }: Props) {
 ```tsx
 // ✅ Parent controls reset via key
 <EditableField
-  key={recordId}  // Changes when record changes
+  key={recordId} // Changes when record changes
   initialValue={record.name}
   onSave={handleSave}
-/>
+/>;
 
 function EditableField({ initialValue, onSave }: Props) {
   const [value, setValue] = useState(initialValue);
@@ -190,7 +181,7 @@ function EditableField({ initialValue, onSave }: Props) {
   return (
     <input
       value={value}
-      onChange={e => setValue(e.target.value)}
+      onChange={(e) => setValue(e.target.value)}
       onBlur={() => onSave(value)}
     />
   );
@@ -205,7 +196,7 @@ function EditableField({ value, onChange, onSave }: Props) {
   return (
     <input
       value={value}
-      onChange={e => onChange(e.target.value)}
+      onChange={(e) => onChange(e.target.value)}
       onBlur={() => onSave(value)}
     />
   );
@@ -232,7 +223,7 @@ function EditableField({ initialValue, onSave }: Props) {
   return (
     <input
       value={displayValue}
-      onChange={e => setEditedValue(e.target.value)}
+      onChange={(e) => setEditedValue(e.target.value)}
       onBlur={handleSave}
     />
   );
@@ -249,25 +240,27 @@ function UserProfile({ user }: { user: User }) {
   // Unnecessary: string concatenation is cheap
   const fullName = useMemo(
     () => `${user.firstName} ${user.lastName}`,
-    [user.firstName, user.lastName]
+    [user.firstName, user.lastName],
   );
 
   // Unnecessary: inline function is fine for standard elements
   const handleClick = useCallback(() => {
-    console.log('clicked');
+    console.log("clicked");
   }, []);
 
   // Unnecessary: simple filter is O(n) but n is small
   const activeItems = useMemo(
-    () => user.items.filter(i => i.active),
-    [user.items]
+    () => user.items.filter((i) => i.active),
+    [user.items],
   );
 
   return (
     <div onClick={handleClick}>
       <h1>{fullName}</h1>
       <ul>
-        {activeItems.map(item => <li key={item.id}>{item.name}</li>)}
+        {activeItems.map((item) => (
+          <li key={item.id}>{item.name}</li>
+        ))}
       </ul>
     </div>
   );
@@ -278,13 +271,15 @@ function UserProfile({ user }: { user: User }) {
 // ✅ CORRECT: No memoization needed
 function UserProfile({ user }: { user: User }) {
   const fullName = `${user.firstName} ${user.lastName}`;
-  const activeItems = user.items.filter(i => i.active);
+  const activeItems = user.items.filter((i) => i.active);
 
   return (
-    <div onClick={() => console.log('clicked')}>
+    <div onClick={() => console.log("clicked")}>
       <h1>{fullName}</h1>
       <ul>
-        {activeItems.map(item => <li key={item.id}>{item.name}</li>)}
+        {activeItems.map((item) => (
+          <li key={item.id}>{item.name}</li>
+        ))}
       </ul>
     </div>
   );
@@ -297,13 +292,10 @@ Only when passing to memoized children:
 
 ```tsx
 // ✅ useCallback needed: Child uses React.memo
-const MemoizedList = memo(function ItemList({
-  items,
-  onSelect
-}: Props) {
+const MemoizedList = memo(function ItemList({ items, onSelect }: Props) {
   return (
     <ul>
-      {items.map(item => (
+      {items.map((item) => (
         <li key={item.id} onClick={() => onSelect(item.id)}>
           {item.name}
         </li>
@@ -356,20 +348,22 @@ function UserProfile({ userId }: { userId: string }) {
     setError(null);
 
     fetchUser(userId)
-      .then(data => {
+      .then((data) => {
         if (!cancelled) {
           setUser(data);
           setLoading(false);
         }
       })
-      .catch(err => {
+      .catch((err) => {
         if (!cancelled) {
           setError(err);
           setLoading(false);
         }
       });
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [userId]);
 
   if (loading) return <Spinner />;
@@ -383,11 +377,15 @@ function UserProfile({ userId }: { userId: string }) {
 
 ```tsx
 // ✅ CORRECT: Use TanStack Query, SWR, or similar
-import { useQuery } from '@tanstack/react-query';
+import { useQuery } from "@tanstack/react-query";
 
 function UserProfile({ userId }: { userId: string }) {
-  const { data: user, isLoading, error } = useQuery({
-    queryKey: ['user', userId],
+  const {
+    data: user,
+    isLoading,
+    error,
+  } = useQuery({
+    queryKey: ["user", userId],
     queryFn: () => fetchUser(userId),
   });
 
@@ -427,15 +425,15 @@ Is this callback passed to React.memo child?
 
 Watch for these patterns in code review:
 
-| Code Smell | Usually Indicates |
-|------------|-------------------|
-| `useState` + `useEffect` updating same value | Derived state anti-pattern |
-| `useEffect` with `setState` inside | Possibly event-driven logic |
-| `useEffect` watching props, setting state | Props-to-state sync issue |
-| `useMemo` returning primitive | Unnecessary memoization |
-| `useCallback` not passed to child | Unnecessary memoization |
-| Multiple `useState` for related data | Consider useReducer or object |
-| `useEffect` with `[]` deps and fetch | Use data fetching library |
+| Code Smell                                   | Usually Indicates             |
+| -------------------------------------------- | ----------------------------- |
+| `useState` + `useEffect` updating same value | Derived state anti-pattern    |
+| `useEffect` with `setState` inside           | Possibly event-driven logic   |
+| `useEffect` watching props, setting state    | Props-to-state sync issue     |
+| `useMemo` returning primitive                | Unnecessary memoization       |
+| `useCallback` not passed to child            | Unnecessary memoization       |
+| Multiple `useState` for related data         | Consider useReducer or object |
+| `useEffect` with `[]` deps and fetch         | Use data fetching library     |
 
 ## Summary
 

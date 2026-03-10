@@ -8,6 +8,7 @@ Filename: `docs/decisions/adr-NNN-{slug}.md`
 ---
 status: Proposed
 ---
+
 # ADR-NNN: {title}
 
 ## コンテキスト

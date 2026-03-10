@@ -28,10 +28,12 @@ add-skill add <repo> <skill>
 指定されたリポジトリからスキルをYAML設定に追加します。
 
 **引数:**
+
 - `<repo>`: GitHubリポジトリ（例: `vercel-labs/agent-skills`）
 - `<skill>`: スキル名（例: `web-design-guidelines`）
 
 **例:**
+
 ```bash
 add-skill add vercel-labs/agent-skills web-design-guidelines
 ```
@@ -45,9 +47,11 @@ add-skill remove <skill>
 指定されたスキルをYAML設定から削除します。
 
 **引数:**
+
 - `<skill>`: 削除するスキル名
 
 **例:**
+
 ```bash
 add-skill remove web-design-guidelines
 ```
@@ -61,6 +65,7 @@ add-skill list
 `.chezmoidata/claude_skills.yaml` に設定されている全スキルを表示します。
 
 **出力例:**
+
 ```
 📋 Current skills configuration:
 
@@ -78,9 +83,11 @@ add-skill search <repo>
 指定されたリポジトリで利用可能なスキルを検索します。内部的に`npx add-skill --list`に委譲します。
 
 **引数:**
+
 - `<repo>`: GitHubリポジトリ（例: `vercel-labs/agent-skills`）
 
 **例:**
+
 ```bash
 add-skill search vercel-labs/agent-skills
 ```
@@ -94,6 +101,7 @@ add-skill install
 `.chezmoidata/claude_skills.yaml` に記載されている全スキルを即座にインストールします。`chezmoi apply`を経由せずに明示的にインストールしたい場合に使用します。
 
 **例:**
+
 ```bash
 # YAML更新
 add-skill add vercel-labs/agent-skills pdf
@@ -103,6 +111,7 @@ add-skill install
 ```
 
 **動作:**
+
 - YAMLに記載された全リポジトリ・スキルを順次インストール
 - 内部的に`pnpm dlx add-skill`を使用
 - `--global --yes`フラグで自動確認
@@ -195,12 +204,14 @@ ls -la ~/.claude/skills/pdf/
 `add-skill add/remove` コマンドはYAML設定を更新するのみです。実際にスキルをインストール/削除するには以下のいずれかを実行します：
 
 **方法1: chezmoi経由（推奨）**
+
 ```bash
 add-skill add vercel-labs/agent-skills web-design-guidelines
 chezmoi apply  # これで実際にインストールされる
 ```
 
 **方法2: 即座にインストール**
+
 ```bash
 add-skill add vercel-labs/agent-skills web-design-guidelines
 add-skill install  # chezmoi applyを待たずに即座にインストール

@@ -338,8 +338,24 @@ import { createDenyResponse } from "../lib/context-helpers.ts";
 const PLAN_PATH = ".tmp/plan.md";
 const RESEARCH_PATH = ".tmp/research.md";
 const APPROVAL_REGEX = /^- Status:\s*approved\s*$/m;
-const GUARDED_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"]);
-const BASH_WRITE_PATTERNS = [/>/, /\btee\b/, /\bsed\s+-i\b/, /\bperl\s+-i\b/, /\bcp\b/, /\bmv\b/, /\btouch\b/, /\bmkdir\b/, /\brm\b/];
+const GUARDED_TOOLS = new Set([
+  "Write",
+  "Edit",
+  "MultiEdit",
+  "NotebookEdit",
+  "Bash",
+]);
+const BASH_WRITE_PATTERNS = [
+  />/,
+  /\btee\b/,
+  /\bsed\s+-i\b/,
+  /\bperl\s+-i\b/,
+  /\bcp\b/,
+  /\bmv\b/,
+  /\btouch\b/,
+  /\bmkdir\b/,
+  /\brm\b/,
+];
 
 function normPath(cwd: string, p: string): string {
   const expanded = p.startsWith("~/")
@@ -391,19 +407,25 @@ const hook = defineHook({
       if (!isBashWriteLike(command)) return context.success({});
       if (approved && researched) return context.success({});
       if (warnOnly) {
-        console.error(`[document-workflow-guard][would-block] Bash: ${command}`);
+        console.error(
+          `[document-workflow-guard][would-block] Bash: ${command}`,
+        );
         return context.success({});
       }
       return context.json(createDenyResponse(denyReason));
     }
 
-    const targetPath = String(tool_input.file_path || tool_input.notebook_path || "");
+    const targetPath = String(
+      tool_input.file_path || tool_input.notebook_path || "",
+    );
     if (!targetPath) return context.success({});
     if (isDocPath(cwd, targetPath)) return context.success({});
 
     if (approved && researched) return context.success({});
     if (warnOnly) {
-      console.error(`[document-workflow-guard][would-block] ${tool_name}: ${targetPath}`);
+      console.error(
+        `[document-workflow-guard][would-block] ${tool_name}: ${targetPath}`,
+      );
       return context.success({});
     }
 
@@ -514,7 +536,9 @@ describe("document-workflow-guard", () => {
     writeFileSync(join(repo, ".tmp/plan.md"), "- Status: pending");
     process.chdir(repo);
 
-    const context = createPreToolUseContext("Edit", { file_path: "./.tmp/plan.md" });
+    const context = createPreToolUseContext("Edit", {
+      file_path: "./.tmp/plan.md",
+    });
     await invokeRun(hook, context);
     context.assertSuccess({});
   });
@@ -538,7 +562,9 @@ describe("document-workflow-guard", () => {
     writeFileSync(join(repo, ".tmp/plan.md"), "- Status: pending");
     process.chdir(repo);
 
-    const context = createPreToolUseContext("Bash", { command: "echo hi > src/a.ts" });
+    const context = createPreToolUseContext("Bash", {
+      command: "echo hi > src/a.ts",
+    });
     await invokeRun(hook, context);
     context.assertDeny();
   });

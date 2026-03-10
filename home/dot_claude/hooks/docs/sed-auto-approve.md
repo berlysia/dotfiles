@@ -104,18 +104,25 @@ sed 's/foo/bar/' file.txt            # -iなし（対象外）
 if (cmd.includes("sed") && cmd.includes("-i")) {
   const sedResult = parseSedInPlace(cmd);
 
-  if (sedResult.isSedInPlace &&
-      !sedResult.containsGlob &&
-      !sedResult.parseError &&
-      sedResult.targetFiles.length > 0) {
-
+  if (
+    sedResult.isSedInPlace &&
+    !sedResult.containsGlob &&
+    !sedResult.parseError &&
+    sedResult.targetFiles.length > 0
+  ) {
     // Edit/MultiEditパターンを取得
     const editPermissions = getPermissionLists("Edit");
     const multiEditPermissions = getPermissionLists("MultiEdit");
-    const editAllowList = [...editPermissions.allowList, ...multiEditPermissions.allowList];
+    const editAllowList = [
+      ...editPermissions.allowList,
+      ...multiEditPermissions.allowList,
+    ];
 
     // ファイル権限チェック
-    const permResult = checkFilePermissions(sedResult.targetFiles, editAllowList);
+    const permResult = checkFilePermissions(
+      sedResult.targetFiles,
+      editAllowList,
+    );
 
     if (permResult.allFilesPermitted) {
       return {
@@ -186,10 +193,7 @@ CLAUDE_TEST_MODE=1 node --test tests/unit/auto-approve.test.ts
       "Bash(git diff *)",
       "Bash(pnpm install *)"
     ],
-    "deny": [
-      "Edit(~/.claude/**)",
-      "Bash(rm -rf *)"
-    ]
+    "deny": ["Edit(~/.claude/**)", "Bash(rm -rf *)"]
   }
 }
 ```
@@ -201,11 +205,7 @@ CLAUDE_TEST_MODE=1 node --test tests/unit/auto-approve.test.ts
 ```json
 {
   "permissions": {
-    "allow": [
-      "Edit(src/**)",
-      "Edit(tests/**)",
-      "MultiEdit(**/*.test.ts)"
-    ]
+    "allow": ["Edit(src/**)", "Edit(tests/**)", "MultiEdit(**/*.test.ts)"]
   }
 }
 ```
@@ -231,6 +231,7 @@ CLAUDE_TEST_MODE=1 node --test tests/unit/auto-approve.test.ts
 ### sed -i が自動承認されない場合
 
 1. **Editパターンの確認**
+
    ```bash
    cat ~/.claude/settings.json | jq '.permissions.allow'
    ```

@@ -13,7 +13,7 @@ import {
   useRef,
   memo,
   type ReactNode,
-} from 'react';
+} from "react";
 
 // =============================================================================
 // Pattern 1: Derived State - Calculate During Render
@@ -43,7 +43,7 @@ export function Cart({ products }: CartProps) {
   const itemCount = activeProducts.length;
   const subtotal = activeProducts.reduce(
     (sum, p) => sum + p.price * p.quantity,
-    0
+    0,
   );
   const tax = subtotal * 0.1;
   const total = subtotal + tax;
@@ -75,7 +75,7 @@ interface SearchFormProps {
  * - No effect chains or race conditions
  */
 export function SearchForm({ onResults }: SearchFormProps) {
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -84,12 +84,14 @@ export function SearchForm({ onResults }: SearchFormProps) {
     if (!query.trim()) return;
 
     // Analytics at point of action
-    console.log('Search submitted:', query);
+    console.log("Search submitted:", query);
 
     setIsLoading(true);
 
     try {
-      const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+      const response = await fetch(
+        `/api/search?q=${encodeURIComponent(query)}`,
+      );
       const results = await response.json();
       onResults(results);
     } finally {
@@ -106,7 +108,7 @@ export function SearchForm({ onResults }: SearchFormProps) {
         disabled={isLoading}
       />
       <button type="submit" disabled={isLoading}>
-        {isLoading ? 'Searching...' : 'Search'}
+        {isLoading ? "Searching..." : "Search"}
       </button>
     </form>
   );
@@ -155,8 +157,8 @@ export function EditableField({ initialValue, onSave }: EditableFieldProps) {
 
 interface DataTableProps {
   data: Array<{ id: string; name: string; value: number }>;
-  sortKey: 'name' | 'value';
-  sortDirection: 'asc' | 'desc';
+  sortKey: "name" | "value";
+  sortDirection: "asc" | "desc";
   onRowClick: (id: string) => void;
 }
 
@@ -178,8 +180,10 @@ export function DataTable({
       const aVal = a[sortKey];
       const bVal = b[sortKey];
       const comparison =
-        typeof aVal === 'string' ? aVal.localeCompare(bVal as string) : aVal - (bVal as number);
-      return sortDirection === 'asc' ? comparison : -comparison;
+        typeof aVal === "string"
+          ? aVal.localeCompare(bVal as string)
+          : aVal - (bVal as number);
+      return sortDirection === "asc" ? comparison : -comparison;
     });
   }, [data, sortKey, sortDirection]);
 
@@ -188,7 +192,7 @@ export function DataTable({
     (id: string) => {
       onRowClick(id);
     },
-    [onRowClick]
+    [onRowClick],
   );
 
   return (
@@ -253,7 +257,7 @@ export function Map({ center, zoom }: MapProps) {
     // mapRef.current?.setZoom(zoom);
   }, [center, zoom]);
 
-  return <div ref={containerRef} style={{ width: '100%', height: '400px' }} />;
+  return <div ref={containerRef} style={{ width: "100%", height: "400px" }} />;
 }
 
 // =============================================================================

@@ -89,6 +89,7 @@ hooks/
 ### 設定例
 
 `.claude/settings.json`:
+
 ```json
 {
   "permissions": {
@@ -101,10 +102,7 @@ hooks/
       "Edit(src/**)",
       "Read(**)"
     ],
-    "deny": [
-      "Bash(rm -rf *)",
-      "Edit(.git/**)"
-    ]
+    "deny": ["Bash(rm -rf *)", "Edit(.git/**)"]
   }
 }
 ```
@@ -115,15 +113,18 @@ hooks/
 ## 技術仕様
 
 ### 実行環境
+
 - **Runtime**: Bun (推奨) または Node.js
 - **Language**: TypeScript
 - **Framework**: cc-hooks-ts (型安全なhook定義)
 
 ### 依存関係管理
+
 - **Package Manager**: pnpm
 - **Location**: プロジェクトルート (`/home/berlysia/.local/share/chezmoi/`)
 
 ### Hook設定
+
 - **設定ファイル**: `common.json.tmpl` (chezmoi管理)
 - **実行パス**: `{{ .chezmoi.homeDir }}/.claude/hooks/implementations/`
 
@@ -160,30 +161,32 @@ export default defineHook({
   trigger: { PreToolUse: true },
   run: (context) => {
     const { tool_name, tool_input } = context.input;
-    
+
     // validation logic here
-    
+
     return context.success({
-      messageForUser: "Hook executed successfully"
+      messageForUser: "Hook executed successfully",
     });
-  }
+  },
 });
 ```
 
 ## ユーティリティ
 
 ### generate-stats.ts
-コマンド実行統計の生成とレポート出力
 
+コマンド実行統計の生成とレポート出力
 
 ## トラブルシューティング
 
 ### 実行エラー
+
 1. プロジェクトルートから実行しているか確認
 2. 依存関係が正しくインストールされているか確認
 3. TypeScriptの型エラーがないか確認
 
 ### デバッグ
+
 ```bash
 # 個別hookの実行テスト
 echo '{"tool_name": "Bash", "tool_input": {"command": "ls"}}' | bun implementations/auto-approve.ts

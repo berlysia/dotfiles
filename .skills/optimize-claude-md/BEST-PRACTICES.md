@@ -18,6 +18,7 @@ Comprehensive guidelines for writing effective CLAUDE.md files based on Claude C
 **Replace vague instructions with concrete examples.**
 
 ❌ Bad:
+
 ```markdown
 - Format code properly
 - Use good naming conventions
@@ -25,6 +26,7 @@ Comprehensive guidelines for writing effective CLAUDE.md files based on Claude C
 ```
 
 ✅ Good:
+
 ```markdown
 - Use 2-space indentation for JavaScript
 - Name functions with verb prefix: `fetchUserData()`, `validateEmail()`
@@ -38,8 +40,10 @@ Comprehensive guidelines for writing effective CLAUDE.md files based on Claude C
 **Group related information under descriptive headings.**
 
 ❌ Bad:
+
 ```markdown
 Instructions:
+
 - Use TypeScript
 - Run tests before commit
 - Follow REST conventions
@@ -49,16 +53,20 @@ Instructions:
 ```
 
 ✅ Good:
+
 ```markdown
 ## Language Standards
+
 - Use TypeScript with strict mode enabled
 - Document all public functions with JSDoc
 
 ## Development Workflow
+
 - Run `npm test` before every commit
 - Follow semantic versioning (semver)
 
 ## API Design
+
 - Follow REST conventions for endpoints
 - No console.logs in production code
 ```
@@ -70,25 +78,30 @@ Instructions:
 **Show, don't just tell.**
 
 ❌ Bad:
+
 ```markdown
 Use async/await for asynchronous operations
 ```
 
 ✅ Good:
-```markdown
+
+````markdown
 Use async/await for asynchronous operations:
+
 ```typescript
 async function fetchUser(id: string) {
   try {
     const response = await fetch(`/api/users/${id}`);
     return await response.json();
   } catch (error) {
-    logger.error('Failed to fetch user', { id, error });
+    logger.error("Failed to fetch user", { id, error });
     throw error;
   }
 }
 ```
-```
+````
+
+````
 
 **Guideline:** Examples reduce ambiguity and show the expected pattern.
 
@@ -102,11 +115,13 @@ Git is a distributed version control system that tracks changes
 in source code during software development. When you want to
 save your changes, you need to commit them. A commit is a
 snapshot of your code at a specific point in time...
-```
+````
 
 ✅ Good:
+
 ```markdown
 ## Git Workflow
+
 - Use conventional commits: `feat:`, `fix:`, `refactor:`
 - Squash WIP commits before merging
 - Run `git rebase -i main` to clean up branch history
@@ -119,6 +134,7 @@ snapshot of your code at a specific point in time...
 **Avoid time-sensitive information that will become outdated.**
 
 ❌ Bad:
+
 ```markdown
 - Use React 18 features
 - Target Node.js 16 LTS
@@ -126,6 +142,7 @@ snapshot of your code at a specific point in time...
 ```
 
 ✅ Good:
+
 ```markdown
 - Prefer React hooks over class components
 - Use ES modules (import/export) over CommonJS
@@ -140,38 +157,43 @@ Claude Code loads memory files in a specific order, with higher priority files l
 
 ### Memory Types
 
-| Type | Location | Purpose | Shared With |
-|------|----------|---------|-------------|
-| **Enterprise** | `/Library/Application Support/ClaudeCode/` (macOS)<br>`/etc/claude-code/` (Linux)<br>`C:\Program Files\ClaudeCode\` (Windows) | Organization-wide policies | All users |
-| **Project** | `./CLAUDE.md` or `./.claude/CLAUDE.md` | Team-shared instructions | Team via git |
-| **Project Rules** | `./.claude/rules/*.md` | Modular project instructions | Team via git |
-| **User** | `~/.claude/CLAUDE.md` | Personal preferences (all projects) | Just you |
-| **Project Local** | `./CLAUDE.local.md` | Personal project preferences | Just you (gitignored) |
+| Type              | Location                                                                                                                      | Purpose                             | Shared With           |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- | --------------------- |
+| **Enterprise**    | `/Library/Application Support/ClaudeCode/` (macOS)<br>`/etc/claude-code/` (Linux)<br>`C:\Program Files\ClaudeCode\` (Windows) | Organization-wide policies          | All users             |
+| **Project**       | `./CLAUDE.md` or `./.claude/CLAUDE.md`                                                                                        | Team-shared instructions            | Team via git          |
+| **Project Rules** | `./.claude/rules/*.md`                                                                                                        | Modular project instructions        | Team via git          |
+| **User**          | `~/.claude/CLAUDE.md`                                                                                                         | Personal preferences (all projects) | Just you              |
+| **Project Local** | `./CLAUDE.local.md`                                                                                                           | Personal project preferences        | Just you (gitignored) |
 
 ### When to Use Each Location
 
 **Enterprise Policy:**
+
 - Security requirements
 - Compliance standards
 - Approved technology stack
 
 **Project Memory (`./CLAUDE.md` or `./.claude/CLAUDE.md`):**
+
 - Project architecture patterns
 - Team coding standards
 - Common commands (build, test, deploy)
 - Git workflow conventions
 
 **Project Rules (`./.claude/rules/*.md`):**
+
 - Language-specific guidelines
 - Framework conventions
 - Path-specific rules (e.g., only for `src/api/**/*.ts`)
 
 **User Memory (`~/.claude/CLAUDE.md`):**
+
 - Your personal code style preferences
 - Shortcuts you frequently use
 - Tooling you prefer across all projects
 
 **Project Local (`./CLAUDE.local.md`):**
+
 - Your local dev environment specifics
 - Personal test data or credentials
 - Temporary notes (not committed to git)
@@ -185,6 +207,7 @@ Claude Code reads CLAUDE.md files recursively:
 3. **Subtree discovery:** Nested CLAUDE.md loaded when reading those files
 
 **Example directory structure:**
+
 ```
 /workspace/
 ├── CLAUDE.md              # Loaded at launch (workspace-wide)
@@ -222,6 +245,7 @@ your-project/
 ### When to Split into Rules
 
 Consider splitting when:
+
 - CLAUDE.md exceeds 500 lines
 - You have distinct topics (frontend, backend, testing, etc.)
 - Different file types need different guidelines
@@ -232,7 +256,8 @@ Consider splitting when:
 Scope rules to specific files using YAML frontmatter.
 
 **Example: API-specific rules**
-```markdown
+
+````markdown
 ---
 paths:
   - "src/api/**/*.ts"
@@ -246,8 +271,11 @@ paths:
   ```typescript
   { error: string; code: string; details?: unknown }
   ```
+````
+
 - Include OpenAPI documentation comments
-```
+
+````
 
 **Example: Test-specific rules**
 ```markdown
@@ -262,9 +290,10 @@ paths:
 - Use AAA pattern (Arrange, Act, Assert)
 - Mock external dependencies with vi.mock()
 - Test edge cases and error conditions
-```
+````
 
 **Glob Pattern Support:**
+
 - `**/*.ts` - All TypeScript files
 - `src/**/*` - All files under src/
 - `*.{ts,tsx}` - TypeScript and TSX files
@@ -313,6 +342,7 @@ See @README.md for project overview
 See @package.json for available npm commands
 
 # Architecture
+
 Refer to @docs/architecture.md for system design
 ```
 
@@ -320,13 +350,16 @@ Refer to @docs/architecture.md for system design
 
 ```markdown
 # Relative to current file
+
 @../docs/api-spec.md
 @./examples/authentication.md
 
 # Absolute paths
+
 @/workspace/docs/deployment.md
 
 # Home directory
+
 @~/.claude/my-conventions.md
 ```
 
@@ -338,37 +371,46 @@ Refer to @docs/architecture.md for system design
    - ❌ `@/tmp/notes.txt` (temporary files)
 
 2. **Use imports for large reference docs:**
+
    ```markdown
    For API reference, see @docs/api-reference.md
    For examples, see @examples/usage-patterns.md
    ```
 
 3. **Import personal preferences from home:**
+
    ```markdown
    # Team members can add personal conventions
+
    @~/.claude/my-project-preferences.md
    ```
 
 4. **Recursive imports (max 5 hops):**
+
    ```markdown
    # File A
+
    @file-b.md
 
    # File B
-   @file-c.md  # Still works
+
+   @file-c.md # Still works
 
    # File C
-   @file-d.md  # 3 hops deep, OK
+
+   @file-d.md # 3 hops deep, OK
    ```
 
 ### Imports vs .claude/rules/
 
 **Use imports when:**
+
 - Content is large but rarely needed
 - Documentation lives outside `.claude/`
 - Personal preferences in home directory
 
 **Use .claude/rules/ when:**
+
 - Instructions are always relevant
 - Team should see rules in version control
 - You want path-specific scoping
@@ -426,6 +468,7 @@ Review CLAUDE.md regularly to keep instructions fresh and relevant.
 ### 1. Tutorial-Style Explanations
 
 ❌ Bad:
+
 ```markdown
 TypeScript is a superset of JavaScript that adds static typing.
 It was developed by Microsoft and released in 2012. TypeScript
@@ -433,8 +476,10 @@ compiles to JavaScript, which means...
 ```
 
 ✅ Good:
+
 ```markdown
 ## TypeScript Standards
+
 - Enable `strict: true` in tsconfig.json
 - No `any` types; use `unknown` for truly dynamic values
 - Prefer interfaces for object shapes, types for unions
@@ -443,6 +488,7 @@ compiles to JavaScript, which means...
 ### 2. Vague Quality Statements
 
 ❌ Bad:
+
 ```markdown
 - Write clean code
 - Use best practices
@@ -451,6 +497,7 @@ compiles to JavaScript, which means...
 ```
 
 ✅ Good:
+
 ```markdown
 - Functions should do one thing (single responsibility)
 - Extract magic numbers to named constants
@@ -461,6 +508,7 @@ compiles to JavaScript, which means...
 ### 3. Copying Framework Documentation
 
 ❌ Bad:
+
 ```markdown
 React hooks are functions that let you "hook into" React state
 and lifecycle features from function components. Here's how
@@ -470,8 +518,10 @@ useState works...
 ```
 
 ✅ Good:
+
 ```markdown
 ## React Conventions
+
 - Prefer function components with hooks
 - Extract custom hooks for reusable logic
 - Use `useCallback` for event handlers in memoized components
@@ -481,6 +531,7 @@ useState works...
 ### 4. Overly Generic Instructions
 
 ❌ Bad:
+
 ```markdown
 - Follow project conventions
 - Use the same style as existing code
@@ -488,6 +539,7 @@ useState works...
 ```
 
 ✅ Good:
+
 ```markdown
 - Match indentation (2 spaces for JS/TS, 4 spaces for Python)
 - Place utilities in `src/lib/`, components in `src/components/`
@@ -497,6 +549,7 @@ useState works...
 ### 5. Instruction Pollution
 
 ❌ Bad:
+
 ```markdown
 When you commit code, first you need to stage your changes with
 git add, then you write a commit message. The commit message should
@@ -505,8 +558,10 @@ you should pull to get the latest changes...
 ```
 
 ✅ Good:
+
 ```markdown
 ## Commit Standards
+
 - Use conventional commits: `feat:`, `fix:`, `refactor:`
 - Run `npm test` before committing
 - Squash WIP commits before merging to main
@@ -515,6 +570,7 @@ you should pull to get the latest changes...
 ### 6. Inconsistent Terminology
 
 ❌ Bad:
+
 ```markdown
 - Place helpers in utils/ directory
 - Add utility functions to lib/ folder
@@ -522,6 +578,7 @@ you should pull to get the latest changes...
 ```
 
 ✅ Good:
+
 ```markdown
 - Place all utility functions in src/lib/
 - Examples: src/lib/date-utils.ts, src/lib/string-utils.ts
@@ -530,21 +587,27 @@ you should pull to get the latest changes...
 ### 7. Missing Context Boundaries
 
 ❌ Bad:
+
 ```markdown
 # Instructions apply to everything
+
 Use functional programming style
 Avoid mutations
 Prefer immutability
 ```
 
 ✅ Good:
+
 ```markdown
 ---
 paths:
   - "src/**/*.ts"
 ---
+
 # TypeScript Code Standards
+
 Use functional programming style where practical:
+
 - Prefer `map/filter/reduce` over loops
 - Use `const` by default
 - Treat data structures as immutable
@@ -557,31 +620,39 @@ Note: Performance-critical code (src/engine/) may use mutations
 **Critical Rule:** Optimization means improving how existing information is presented, NOT adding new rules or information that wasn't there before.
 
 ❌ Bad:
+
 ```markdown
 # Original CLAUDE.md
+
 Use `${projectRoot}/.tmp` for temporary files
 
 # Optimization recommendation adds new information
+
 Use `${projectRoot}/.tmp` for project temporary files
-Use `~/.tmp` for system-wide temporary files  ← Not in original!
+Use `~/.tmp` for system-wide temporary files ← Not in original!
 ```
 
 ✅ Good:
+
 ```markdown
 # Original CLAUDE.md
+
 Use `${projectRoot}/.tmp` for temporary files
 
 # Optimization only clarifies existing information
+
 When in a project, use `${projectRoot}/.tmp` for temporary files
 ```
 
 **Why this matters:**
+
 - User may have intentionally kept instructions minimal
 - Adding inferred rules changes user's established workflow
 - Creates maintenance burden with rules user didn't request
 - Violates principle: optimize ≠ expand
 
 **What to do instead:**
+
 - If information seems incomplete, ask the user
 - Only reorganize, clarify, or simplify what exists
 - Suggest splitting existing content, not adding new content
@@ -589,12 +660,14 @@ When in a project, use `${projectRoot}/.tmp` for temporary files
 ## Measuring Effectiveness
 
 **Good CLAUDE.md results in:**
+
 - Claude follows conventions without repeated reminders
 - New team members onboard faster
 - Consistent code style across contributors
 - Fewer "how should I do X?" questions
 
 **Warning signs:**
+
 - Claude ignores documented patterns
 - Team members don't reference CLAUDE.md
 - Instructions contradict actual codebase

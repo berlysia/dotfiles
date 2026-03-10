@@ -21,6 +21,7 @@ curl -fsSL https://raw.githubusercontent.com/berlysia/dotfiles/master/scripts/se
 ```
 
 This will:
+
 1. Create `.claude/settings.json` with inline SessionStart command
 2. Install all skills to `~/.claude/` immediately
 3. Auto-update skills on every Claude Code startup
@@ -70,9 +71,11 @@ Add this to your project's `.claude/CLAUDE.md`:
 
 ```markdown
 # Project-Specific Instructions
+
 [Your project instructions here]
 
 ## User-Level Development Guidelines
+
 @~/.claude/CLAUDE.md
 ```
 
@@ -97,14 +100,17 @@ curl -fsSL https://raw.githubusercontent.com/berlysia/dotfiles/master/scripts/in
 ## Troubleshooting
 
 **Hook not running:**
+
 - Verify `.claude/settings.json` contains SessionStart hook configuration
 - Check settings.json syntax is valid JSON
 
 **Skills not appearing:**
+
 - Check `~/.claude/skills/` directory: `ls ~/.claude/skills/`
 - Run install script manually: `curl -fsSL https://raw.githubusercontent.com/berlysia/dotfiles/master/scripts/install-skills.sh | bash`
 - Check for curl and git availability: `curl --version && git --version`
 
 **Network errors:**
+
 - Ensure GitHub is accessible
 - Try manual clone: `git clone --depth 1 https://github.com/berlysia/dotfiles`

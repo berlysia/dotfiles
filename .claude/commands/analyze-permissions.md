@@ -14,17 +14,21 @@ Analyze and consolidate Claude permission settings across all workspace projects
 ## Implementation Steps
 
 ### 1. Scan for settings files
+
 ```bash
 find ~/workspace -name "settings.local.json" -path "*/.claude/*"
 ```
 
 ### 2. Parse and analyze each file
+
 - Read JSON content
 - Extract `permissions.allow` and `permissions.deny` arrays
 - Count usage frequency across projects
 
 ### 3. Categorize commands
+
 Group commands by type:
+
 - **Build/Test**: `pnpm build:*`, `npm run test:*`, etc.
 - **Code Quality**: `biome check:*`, `eslint:*`, `prettier:*`
 - **Package Management**: `pnpm add:*`, `npm install:*`
@@ -33,19 +37,25 @@ Group commands by type:
 - **MCP Tools**: Playwright, Context7, Readability operations
 
 ### 4. Generate recommendations
+
 Based on frequency analysis:
+
 - **Core commands** (used in 50%+ projects): Recommend for global settings
 - **Common commands** (used in 30-50% projects): Suggest as project-type specific
 - **Rare commands** (used in <30% projects): Keep in local settings
 
 ### 5. Compare with current template
+
 Load and analyze `dot_claude/settings.json.tmpl` to:
+
 - Identify commands already in template
 - Find frequently used commands not in template
 - Detect template commands rarely used in practice
 
 ### 6. Generate update recommendations
+
 Categorize findings into:
+
 - **ADD**: New commands to add (used in 3+ projects, not in template)
 - **MODIFY**: Commands to adjust (e.g., too broad/narrow patterns)
 - **CONSIDER**: Commands used in 2 projects (potential additions)
@@ -53,7 +63,9 @@ Categorize findings into:
 - **KEEP**: Well-utilized template commands
 
 ### 7. Create comprehensive report
+
 Output includes:
+
 - Executive summary with key statistics
 - Project-by-project breakdown
 - Frequency analysis table
@@ -64,11 +76,11 @@ Output includes:
 ## Output Format
 
 The command generates a markdown report with:
+
 1. **Executive Summary**
    - Total projects analyzed
    - Total unique commands found
    - Coverage percentage of template
-   
 2. **Update Recommendations**
    - **Additions Section**: Commands to add with justification
    - **Modifications Section**: Pattern adjustments needed
@@ -113,6 +125,7 @@ Options:
 # Claude Permissions Analysis Report
 
 ## Executive Summary
+
 - Analyzed: 6 projects
 - Unique commands: 145
 - Template coverage: 78%
@@ -122,16 +135,19 @@ Options:
 ## 🟢 ADDITIONS (High Priority)
 
 ### Build Tools
+
 - `Bash(pnpm --filter *)` - Used in 4 projects for monorepo operations
 - `Bash(npm run lint *)` - Used in 3 projects for linting
 
 ### File Operations
+
 - `Bash(touch *)` - Used in 5 projects (already in template at line 103)
 - `Bash(diff *)` - Used in 3 projects for comparisons
 
 ## 🟡 MODIFICATIONS (Medium Priority)
 
 ### Overly Broad Patterns
+
 - `Bash(npm *)` → Split into specific commands:
   - `Bash(npm install *)`
   - `Bash(npm run *)`
@@ -140,12 +156,14 @@ Options:
 ## 🔴 REMOVALS (Low Priority)
 
 ### Never Used
+
 - `Bash(perf *)` (line 117) - No usage in any project
 - `Bash(7z *)` (line 116) - No usage, consider removing
 
 ## 📋 CONSIDERATIONS (Future Additions)
 
 ### Used in 2 Projects
+
 - `Bash(npx @biomejs/biome *)` - Biome tooling variant
 - `Bash(git worktree *)` - Advanced git workflows
 ```

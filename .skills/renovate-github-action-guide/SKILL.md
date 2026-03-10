@@ -8,11 +8,13 @@ description: Apply the "GitHub Actions and Renovate Guide" to configure repo set
 ## Prerequisites
 
 **Required:**
+
 - GitHub CLI installed and authenticated: `gh auth login`
 - Repository admin access
 - Token scopes: `repo`, `admin:org` (for org repos), `workflow`
 
 **Quick verification:**
+
 ```bash
 # Check admin access and required scopes
 gh auth status
@@ -24,17 +26,20 @@ gh api repos/$OWNER/$REPO | jq -e '.permissions.admin == true' || echo "Need adm
 ## Quick Start
 
 **1. Check existing setup:**
+
 ```bash
 ls -la renovate.json* .github/renovate.json* .renovaterc* 2>/dev/null
 gh pr list --author "renovate[bot]" --limit 5
 ```
 
 **2. Identify project type:**
+
 - Personal: Single maintainer
 - Team: Multiple maintainers, requires reviews
 - Public (single maintainer): Can use hosted Renovate App → Skip to Step 3
 
 **3. Collect inputs:**
+
 - Repo: owner/name, default branch
 - CI: workflow names
 - Schedule: timezone, auto-merge policy
@@ -46,6 +51,7 @@ gh pr list --author "renovate[bot]" --limit 5
 If your repository is public with a single maintainer, you can use a much simpler setup:
 
 **What you can skip:**
+
 - GitHub App setup (use hosted Renovate App instead)
 - Fine-grained PAT for approvals
 - GitHub Environment for secrets
@@ -53,6 +59,7 @@ If your repository is public with a single maintainer, you can use a much simple
 - Complex branch protection rules
 
 **Minimal setup steps:**
+
 1. Enable auto-merge in repository settings
 2. Install the [Renovate GitHub App](https://github.com/apps/renovate)
 3. Add `.github/renovate.json5` or `renovate.json` to your repository
@@ -80,6 +87,7 @@ jobs:
 ```
 
 **Why this matters:**
+
 - Fork PRs can't access repository secrets (security feature)
 - Workflows with secrets will fail on fork PRs
 - Tests and checks should run on forks
@@ -107,11 +115,13 @@ Renovate Setup Progress:
 ### Step 1: Apply repository settings and branch protection rules
 
 **Required permissions:**
+
 - Repository: Admin access
 - Scope: `repo` (full control)
 - Organization: "Repository" → "Administration" permission
 
 **Verify before proceeding:**
+
 ```bash
 # Must return true
 gh api repos/$OWNER/$REPO | jq '.permissions.admin'
@@ -144,6 +154,7 @@ Before configuring branch protection, you MUST add a `status-check` job to your 
    - `assets/workflows/ci-unified-example.yml` for working example
 
 **Repository settings:**
+
 ```bash
 # Enable auto-merge (requires admin access)
 gh api -X PATCH repos/$OWNER/$REPO -f allow_auto_merge=true
@@ -201,6 +212,7 @@ EOF
 ```
 
 **Validation:**
+
 ```bash
 # Verify auto-merge is enabled
 gh api repos/$OWNER/$REPO | jq '.allow_auto_merge'
@@ -226,15 +238,16 @@ gh api repos/$OWNER/$REPO/branches/$BRANCH/protection | jq '.required_status_che
 
    **Quick setup:**
    a. Create app: https://github.com/settings/apps/new
-      - Name: `renovate-bot-<username>` (globally unique)
-      - Permissions: `contents: write`, `pull-requests: write`, `workflows: write` (optional)
-      - Webhook: Disabled
+   - Name: `renovate-bot-<username>` (globally unique)
+   - Permissions: `contents: write`, `pull-requests: write`, `workflows: write` (optional)
+   - Webhook: Disabled
 
    b. Generate private key → Download `.pem` file
 
    c. Install app to repositories
 
    d. Store secrets:
+
    ```bash
    # Personal project
    gh secret set RENOVATE_APP_ID --body "<app-id>"
@@ -249,11 +262,13 @@ gh api repos/$OWNER/$REPO/branches/$BRANCH/protection | jq '.required_status_che
    ```
 
    e. Configure bot username in renovate.json5:
+
    ```json5
-   {"username": "renovate-bot-<your-username>[bot]"}
+   { username: "renovate-bot-<your-username>[bot]" }
    ```
 
    Find exact username after first run:
+
    ```bash
    gh pr list --author "renovate" --json author --jq '.[0].author.login'
    ```
@@ -263,6 +278,7 @@ gh api repos/$OWNER/$REPO/branches/$BRANCH/protection | jq '.required_status_che
 ### Step 3: Add and customize renovate.json5
 
 **Check for existing configuration first:**
+
 ```bash
 # Check for existing Renovate config
 if [ -f renovate.json ] || [ -f .github/renovate.json5 ] || [ -f .renovaterc ]; then
@@ -276,23 +292,27 @@ fi
 If configuration already exists, validate it with Step 5 and skip the rest of this step.
 
 **Choose configuration preset:**
+
 - `assets/renovate.json5` - Minimal (extends external config)
 - `assets/renovate-conservative.json5` - Conservative updates (stable dependencies)
 - `assets/renovate-aggressive.json5` - Aggressive updates (latest versions quickly)
 
 **Place config file:**
+
 ```bash
 # Copy chosen preset to your repository
 cp assets/renovate-conservative.json5 .github/renovate.json5
 ```
 
 **Customize as needed:**
+
 - Schedule: Adjust timezone and frequency
 - Labels: Add project-specific labels
 - Auto-merge: Configure which update types to auto-merge
 - Bot username: Set when using GitHub App (see guide)
 
 **Validation:**
+
 ```bash
 # Validate JSON5 syntax
 npx -p renovate renovate-config-validator .github/renovate.json5
@@ -301,10 +321,12 @@ npx -p renovate renovate-config-validator .github/renovate.json5
 ### Step 4: (Optional) Add Renovate GitHub Actions workflow
 
 **When to use:**
+
 - Self-hosting Renovate (not using hosted Renovate App)
 - Need custom runner or private registry access
 
 **Setup:**
+
 ```bash
 # Copy workflow template
 mkdir -p .github/workflows
@@ -312,6 +334,7 @@ cp assets/workflows/renovate.yml .github/workflows/renovate.yml
 ```
 
 **Configure workflow:**
+
 - Update secret names to match Step 2
 - Adjust schedule (default: daily at 2 AM)
 - Set `repositories` parameter if managing multiple repos
@@ -319,6 +342,7 @@ cp assets/workflows/renovate.yml .github/workflows/renovate.yml
 See `references/renovate-action.md` for action inputs and GitHub App token usage.
 
 **Validation:**
+
 ```bash
 # Check workflow syntax
 actionlint .github/workflows/renovate.yml
@@ -330,16 +354,19 @@ gh workflow run renovate.yml
 ### Step 5: (Optional) Add CI auto-fix workflow
 
 **When to use:**
+
 - Auto-fix dependency update PRs when CI fails
 - Reduce manual intervention for breaking changes in dependencies
 
 **How it works:**
+
 1. Triggered when CI workflow completes with failure on dependency bot PRs
 2. Claude Code investigates the failure and attempts to fix it
 3. Commits and pushes fixes to the PR
 4. Auto-merge handles merging once all checks pass
 
 **Setup:**
+
 ```bash
 # Copy workflow template
 mkdir -p .github/workflows
@@ -349,6 +376,7 @@ cp assets/workflows/auto-fix-dependencies.yml .github/workflows/auto-fix-depende
 **Required authentication (choose one):**
 
 **Option A: Claude Code OAuth token (recommended)**
+
 ```bash
 # Easiest: Use Claude Code's built-in command
 /install-github-app
@@ -358,6 +386,7 @@ gh secret set CLAUDE_CODE_OAUTH_TOKEN --body "<oauth-token>"
 ```
 
 **Option B: Anthropic API key**
+
 ```bash
 # Create API key at https://console.anthropic.com/settings/keys
 gh secret set ANTHROPIC_API_KEY --body "<api-key>"
@@ -366,6 +395,7 @@ gh secret set ANTHROPIC_API_KEY --body "<api-key>"
 **Note:** OAuth token setup via `/install-github-app` is the easiest method. API key requires manual management but works for direct API access.
 
 **Configure workflow:**
+
 - Update `workflows` array to match your CI workflow names
 - Choose authentication method in the workflow file:
   - Use `claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}`
@@ -374,6 +404,7 @@ gh secret set ANTHROPIC_API_KEY --body "<api-key>"
 - Set appropriate permissions
 
 **Validation:**
+
 ```bash
 # Check workflow syntax
 actionlint .github/workflows/auto-fix-dependencies.yml
@@ -386,11 +417,13 @@ See `assets/workflows/auto-fix-dependencies.yml` for complete example.
 ### Step 6: Validate configuration
 
 **Check Renovate config:**
+
 ```bash
 npx -p renovate renovate-config-validator .github/renovate.json5
 ```
 
 **Verify GitHub settings:**
+
 ```bash
 # Repository settings
 gh api repos/$OWNER/$REPO | jq '{allow_auto_merge, default_branch}'
@@ -403,6 +436,7 @@ gh api repos/$OWNER/$REPO/actions/secrets | jq '.secrets[].name'
 ```
 
 **Test with dry-run** (if self-hosting):
+
 ```bash
 # Add --dry-run to workflow for testing
 # Or run locally:

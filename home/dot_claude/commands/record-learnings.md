@@ -5,14 +5,12 @@ User action to record important learnings from recent conversations to `.claude/
 ## Process
 
 1. **Conversation History Analysis**
-
    - Review recent conversation content
    - Identify technical discoveries, solutions, and patterns
    - Record error-solution pairs
    - Identify effective and failed approaches
 
 2. **Learning Classification**
-
    - **Technical Knowledge**: New technologies, libraries, API usage
    - **Problem-Solving Patterns**: Effective approaches to specific problems
    - **Development Methods**: Efficient workflows and procedures
@@ -52,12 +50,10 @@ User action to record important learnings from recent conversations to `.claude/
 ## Implementation
 
 1. **Memory File Check/Creation**
-
    - Check if `.claude/memory/<timestamp>-<task-summary>.md` exists
    - Create with appropriate headers if it doesn't exist
 
 2. **Learning Extraction**
-
    - Identify important points from recent conversations
    - Organize as reusable knowledge
    - Include concrete examples and code snippets

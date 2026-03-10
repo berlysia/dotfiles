@@ -12,15 +12,21 @@ Each hook should encapsulate one concern:
 // ❌ WRONG: Multiple unrelated concerns
 function useUserData(userId: string) {
   const [user, setUser] = useState<User | null>(null);
-  const [theme, setTheme] = useState('light');
+  const [theme, setTheme] = useState("light");
   const [notifications, setNotifications] = useState<Notification[]>([]);
   // ... mixed logic for user, theme, and notifications
 }
 
 // ✅ CORRECT: Separate concerns
-function useUser(userId: string) { /* user fetching logic */ }
-function useTheme() { /* theme logic */ }
-function useNotifications() { /* notification logic */ }
+function useUser(userId: string) {
+  /* user fetching logic */
+}
+function useTheme() {
+  /* theme logic */
+}
+function useNotifications() {
+  /* notification logic */
+}
 ```
 
 ### 2. Minimal API Surface
@@ -32,15 +38,15 @@ Expose only what consumers need:
 function useCounter() {
   const [count, setCount] = useState(0);
   const [history, setHistory] = useState<number[]>([]);
-  const [lastAction, setLastAction] = useState<'inc' | 'dec' | null>(null);
+  const [lastAction, setLastAction] = useState<"inc" | "dec" | null>(null);
 
   return {
     count,
-    setCount,        // Exposes raw setter
-    history,         // Internal detail
-    setHistory,      // Internal detail
-    lastAction,      // Internal detail
-    setLastAction,   // Internal detail
+    setCount, // Exposes raw setter
+    history, // Internal detail
+    setHistory, // Internal detail
+    lastAction, // Internal detail
+    setLastAction, // Internal detail
   };
 }
 
@@ -48,8 +54,8 @@ function useCounter() {
 function useCounter(initial = 0) {
   const [count, setCount] = useState(initial);
 
-  const increment = useCallback(() => setCount(c => c + 1), []);
-  const decrement = useCallback(() => setCount(c => c - 1), []);
+  const increment = useCallback(() => setCount((c) => c + 1), []);
+  const decrement = useCallback(() => setCount((c) => c - 1), []);
   const reset = useCallback(() => setCount(initial), [initial]);
 
   return { count, increment, decrement, reset };
@@ -60,11 +66,11 @@ function useCounter(initial = 0) {
 
 Choose return type based on usage pattern:
 
-| Pattern | Structure | Use Case |
-|---------|-----------|----------|
-| Tuple | `[value, setter]` | State-like APIs |
-| Object | `{ data, error, loading }` | Multiple related values |
-| Single Value | `value` | Derived/computed values |
+| Pattern      | Structure                  | Use Case                |
+| ------------ | -------------------------- | ----------------------- |
+| Tuple        | `[value, setter]`          | State-like APIs         |
+| Object       | `{ data, error, loading }` | Multiple related values |
+| Single Value | `value`                    | Derived/computed values |
 
 ```tsx
 // Tuple: mirrors useState API
@@ -74,10 +80,13 @@ function useLocalStorage<T>(key: string, initial: T): [T, (value: T) => void] {
     return stored ? JSON.parse(stored) : initial;
   });
 
-  const setStoredValue = useCallback((newValue: T) => {
-    setValue(newValue);
-    localStorage.setItem(key, JSON.stringify(newValue));
-  }, [key]);
+  const setStoredValue = useCallback(
+    (newValue: T) => {
+      setValue(newValue);
+      localStorage.setItem(key, JSON.stringify(newValue));
+    },
+    [key],
+  );
 
   return [value, setStoredValue];
 }
@@ -102,12 +111,12 @@ function useAsync<T>(asyncFn: () => Promise<T>): UseAsyncState<T> {
   });
 
   const execute = useCallback(async () => {
-    setState(s => ({ ...s, loading: true, error: null }));
+    setState((s) => ({ ...s, loading: true, error: null }));
     try {
       const data = await asyncFn();
       setState({ data, error: null, loading: false });
     } catch (error) {
-      setState(s => ({ ...s, error: error as Error, loading: false }));
+      setState((s) => ({ ...s, error: error as Error, loading: false }));
     }
   }, [asyncFn]);
 
@@ -116,16 +125,16 @@ function useAsync<T>(asyncFn: () => Promise<T>): UseAsyncState<T> {
 
 // Single value: computed result
 function useMediaQuery(query: string): boolean {
-  const [matches, setMatches] = useState(() =>
-    window.matchMedia(query).matches
+  const [matches, setMatches] = useState(
+    () => window.matchMedia(query).matches,
   );
 
   useEffect(() => {
     const mediaQuery = window.matchMedia(query);
     const handler = (e: MediaQueryListEvent) => setMatches(e.matches);
 
-    mediaQuery.addEventListener('change', handler);
-    return () => mediaQuery.removeEventListener('change', handler);
+    mediaQuery.addEventListener("change", handler);
+    return () => mediaQuery.removeEventListener("change", handler);
   }, [query]);
 
   return matches;
@@ -161,21 +170,23 @@ function useFetch<T>(url: string | null) {
     setLoading(true);
 
     fetch(url)
-      .then(res => res.json())
-      .then(data => {
+      .then((res) => res.json())
+      .then((data) => {
         if (!cancelled) {
           setData(data);
           setLoading(false);
         }
       })
-      .catch(error => {
+      .catch((error) => {
         if (!cancelled) {
           setError(error);
           setLoading(false);
         }
       });
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [url]);
 
   return { data, loading, error };
@@ -184,7 +195,9 @@ function useFetch<T>(url: string | null) {
 // Composed hook
 function useDebouncedSearch<T>(searchTerm: string, baseUrl: string) {
   const debouncedTerm = useDebounce(searchTerm, 300);
-  const url = debouncedTerm ? `${baseUrl}?q=${encodeURIComponent(debouncedTerm)}` : null;
+  const url = debouncedTerm
+    ? `${baseUrl}?q=${encodeURIComponent(debouncedTerm)}`
+    : null;
   const { data, loading, error } = useFetch<T>(url);
 
   return {
@@ -203,7 +216,10 @@ Create parameterized hooks for similar patterns:
 ```tsx
 // Factory for storage hooks
 function createStorageHook(storage: Storage) {
-  return function useStorage<T>(key: string, initial: T): [T, (value: T) => void] {
+  return function useStorage<T>(
+    key: string,
+    initial: T,
+  ): [T, (value: T) => void] {
     const [value, setValue] = useState<T>(() => {
       try {
         const item = storage.getItem(key);
@@ -213,10 +229,13 @@ function createStorageHook(storage: Storage) {
       }
     });
 
-    const setStoredValue = useCallback((newValue: T) => {
-      setValue(newValue);
-      storage.setItem(key, JSON.stringify(newValue));
-    }, [key]);
+    const setStoredValue = useCallback(
+      (newValue: T) => {
+        setValue(newValue);
+        storage.setItem(key, JSON.stringify(newValue));
+      },
+      [key],
+    );
 
     return [value, setStoredValue];
   };
@@ -241,39 +260,39 @@ interface FormState<T> {
 }
 
 type FormAction<T> =
-  | { type: 'SET_VALUE'; field: keyof T; value: T[keyof T] }
-  | { type: 'SET_ERROR'; field: keyof T; error: string }
-  | { type: 'TOUCH'; field: keyof T }
-  | { type: 'SUBMIT_START' }
-  | { type: 'SUBMIT_END' }
-  | { type: 'RESET'; values: T };
+  | { type: "SET_VALUE"; field: keyof T; value: T[keyof T] }
+  | { type: "SET_ERROR"; field: keyof T; error: string }
+  | { type: "TOUCH"; field: keyof T }
+  | { type: "SUBMIT_START" }
+  | { type: "SUBMIT_END" }
+  | { type: "RESET"; values: T };
 
 function createFormReducer<T>() {
   return function formReducer(
     state: FormState<T>,
-    action: FormAction<T>
+    action: FormAction<T>,
   ): FormState<T> {
     switch (action.type) {
-      case 'SET_VALUE':
+      case "SET_VALUE":
         return {
           ...state,
           values: { ...state.values, [action.field]: action.value },
         };
-      case 'SET_ERROR':
+      case "SET_ERROR":
         return {
           ...state,
           errors: { ...state.errors, [action.field]: action.error },
         };
-      case 'TOUCH':
+      case "TOUCH":
         return {
           ...state,
           touched: { ...state.touched, [action.field]: true },
         };
-      case 'SUBMIT_START':
+      case "SUBMIT_START":
         return { ...state, isSubmitting: true };
-      case 'SUBMIT_END':
+      case "SUBMIT_END":
         return { ...state, isSubmitting: false };
-      case 'RESET':
+      case "RESET":
         return {
           values: action.values,
           errors: {},
@@ -288,31 +307,28 @@ function createFormReducer<T>() {
 }
 
 function useForm<T extends Record<string, unknown>>(initialValues: T) {
-  const [state, dispatch] = useReducer(
-    createFormReducer<T>(),
-    {
-      values: initialValues,
-      errors: {},
-      touched: {},
-      isSubmitting: false,
-      isValid: true,
-    }
-  );
+  const [state, dispatch] = useReducer(createFormReducer<T>(), {
+    values: initialValues,
+    errors: {},
+    touched: {},
+    isSubmitting: false,
+    isValid: true,
+  });
 
   const setValue = useCallback(<K extends keyof T>(field: K, value: T[K]) => {
-    dispatch({ type: 'SET_VALUE', field, value });
+    dispatch({ type: "SET_VALUE", field, value });
   }, []);
 
   const setError = useCallback((field: keyof T, error: string) => {
-    dispatch({ type: 'SET_ERROR', field, error });
+    dispatch({ type: "SET_ERROR", field, error });
   }, []);
 
   const touch = useCallback((field: keyof T) => {
-    dispatch({ type: 'TOUCH', field });
+    dispatch({ type: "TOUCH", field });
   }, []);
 
   const reset = useCallback(() => {
-    dispatch({ type: 'RESET', values: initialValues });
+    dispatch({ type: "RESET", values: initialValues });
   }, [initialValues]);
 
   return {
@@ -333,7 +349,7 @@ function useForm<T extends Record<string, unknown>>(initialValues: T) {
 function useEventListener<K extends keyof WindowEventMap>(
   eventName: K,
   handler: (event: WindowEventMap[K]) => void,
-  element: Window | HTMLElement | null = window
+  element: Window | HTMLElement | null = window,
 ) {
   const savedHandler = useRef(handler);
 
@@ -359,7 +375,7 @@ function useEventListener<K extends keyof WindowEventMap>(
 ```tsx
 function useExternalStore<T>(
   subscribe: (callback: () => void) => () => void,
-  getSnapshot: () => T
+  getSnapshot: () => T,
 ): T {
   const [state, setState] = useState(getSnapshot);
 
@@ -375,13 +391,14 @@ function useExternalStore<T>(
 }
 
 // Usage with external store
-const useRouterLocation = () => useExternalStore(
-  (callback) => {
-    window.addEventListener('popstate', callback);
-    return () => window.removeEventListener('popstate', callback);
-  },
-  () => window.location.pathname
-);
+const useRouterLocation = () =>
+  useExternalStore(
+    (callback) => {
+      window.addEventListener("popstate", callback);
+      return () => window.removeEventListener("popstate", callback);
+    },
+    () => window.location.pathname,
+  );
 ```
 
 ## Testing Custom Hooks
@@ -389,10 +406,10 @@ const useRouterLocation = () => useExternalStore(
 ### Using @testing-library/react-hooks
 
 ```tsx
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act } from "@testing-library/react";
 
-describe('useCounter', () => {
-  it('increments counter', () => {
+describe("useCounter", () => {
+  it("increments counter", () => {
     const { result } = renderHook(() => useCounter(0));
 
     expect(result.current.count).toBe(0);
@@ -404,7 +421,7 @@ describe('useCounter', () => {
     expect(result.current.count).toBe(1);
   });
 
-  it('resets to initial value', () => {
+  it("resets to initial value", () => {
     const { result } = renderHook(() => useCounter(5));
 
     act(() => {
@@ -426,9 +443,9 @@ describe('useCounter', () => {
 ### Testing Async Hooks
 
 ```tsx
-describe('useAsync', () => {
-  it('handles successful async operation', async () => {
-    const mockFn = jest.fn().mockResolvedValue('data');
+describe("useAsync", () => {
+  it("handles successful async operation", async () => {
+    const mockFn = jest.fn().mockResolvedValue("data");
     const { result } = renderHook(() => useAsync(mockFn));
 
     expect(result.current.loading).toBe(false);
@@ -439,12 +456,12 @@ describe('useAsync', () => {
     });
 
     expect(result.current.loading).toBe(false);
-    expect(result.current.data).toBe('data');
+    expect(result.current.data).toBe("data");
     expect(result.current.error).toBe(null);
   });
 
-  it('handles errors', async () => {
-    const error = new Error('Failed');
+  it("handles errors", async () => {
+    const error = new Error("Failed");
     const mockFn = jest.fn().mockRejectedValue(error);
     const { result } = renderHook(() => useAsync(mockFn));
 
@@ -466,7 +483,7 @@ describe('useAsync', () => {
 ```tsx
 function useToggle(initial = false): [boolean, () => void] {
   const [value, setValue] = useState(initial);
-  const toggle = useCallback(() => setValue(v => !v), []);
+  const toggle = useCallback(() => setValue((v) => !v), []);
   return [value, toggle];
 }
 ```
@@ -490,7 +507,7 @@ function usePrevious<T>(value: T): T | undefined {
 ```tsx
 function useOnClickOutside<T extends HTMLElement>(
   ref: RefObject<T>,
-  handler: (event: MouseEvent | TouchEvent) => void
+  handler: (event: MouseEvent | TouchEvent) => void,
 ) {
   useEffect(() => {
     const listener = (event: MouseEvent | TouchEvent) => {
@@ -500,12 +517,12 @@ function useOnClickOutside<T extends HTMLElement>(
       handler(event);
     };
 
-    document.addEventListener('mousedown', listener);
-    document.addEventListener('touchstart', listener);
+    document.addEventListener("mousedown", listener);
+    document.addEventListener("touchstart", listener);
 
     return () => {
-      document.removeEventListener('mousedown', listener);
-      document.removeEventListener('touchstart', listener);
+      document.removeEventListener("mousedown", listener);
+      document.removeEventListener("touchstart", listener);
     };
   }, [ref, handler]);
 }

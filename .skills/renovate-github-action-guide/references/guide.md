@@ -120,6 +120,7 @@ if: |
 Automatically fix dependency update PRs when CI fails using Claude Code Action.
 
 **How it works:**
+
 1. Triggered by `workflow_run` when CI completes with failure
 2. Checks if PR is from a dependency bot (renovate[bot] or dependabot[bot])
 3. Claude Code investigates the failure and attempts to fix it
@@ -127,6 +128,7 @@ Automatically fix dependency update PRs when CI fails using Claude Code Action.
 5. Auto-merge handles merging once all checks pass
 
 **Required setup:**
+
 - **Authentication (choose one):**
   - **Option A (Recommended): Claude Code OAuth token**
     - Run `/install-github-app` in Claude Code CLI (handles OAuth token and secret setup automatically)
@@ -137,6 +139,7 @@ Automatically fix dependency update PRs when CI fails using Claude Code Action.
 - Update `workflows` array to match your CI workflow names
 
 **Permissions needed:**
+
 - `contents: write` - Push fixes to PR branch
 - `pull-requests: write` - Add comments
 - `issues: write` - Update issue status
@@ -144,6 +147,7 @@ Automatically fix dependency update PRs when CI fails using Claude Code Action.
 - `actions: read` - Access workflow run information
 
 **Tool restrictions:**
+
 - Use `claude_args` to restrict allowed tools
 - Default: `gh`, `git`, `pnpm`, `npm`, `Read`, `Write`, `Edit`, `Glob`, `Grep`
 - Prevents destructive operations outside the scope

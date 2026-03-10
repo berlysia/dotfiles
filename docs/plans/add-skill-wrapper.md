@@ -9,6 +9,7 @@
 **コマンド名**: `add-skill`(npx add-skillを上書き)
 
 **実装機能**:
+
 1. **add**: リポジトリとスキル名を指定してYAMLに追加
 2. **remove**: スキル名を指定してYAMLから削除
 3. **list**: 現在の設定を表示
@@ -21,6 +22,7 @@
 ### ファイル配置
 
 **作成ファイル**: `/home/berlysia/.local/share/chezmoi/dot_local/bin/executable_add-skill`
+
 - chezmoi適用後: `~/.local/bin/add-skill`
 - PATH経由でアクセス可能
 
@@ -66,6 +68,7 @@ jq --arg repo "$REPO" --arg skill "$SKILL" '
 ```
 
 **重要ポイント**:
+
 - `unique | sort`で重複排除とソート
 - リポジトリ存在確認の条件分岐
 - 既存リポジトリへの追加と新規リポジトリ作成を統合
@@ -82,6 +85,7 @@ jq --arg skill "$SKILL" '
 ```
 
 **重要ポイント**:
+
 - スキル配列から該当スキルをフィルタリング
 - `select(.skills | length > 0)`で空のリポジトリエントリを自動削除
 
@@ -344,12 +348,12 @@ main "$@"
 
 ### 依存関係チェック
 
-| ツール | チェック方法 | エラー時の対応 |
-|--------|-------------|---------------|
-| mise | `command -v mise` | インストールURLを表示 |
-| jq | `command -v jq` | apt-getコマンドを表示 |
-| chezmoi | `command -v chezmoi` | エラーメッセージ |
-| dasel | `mise x -- dasel version` | mise installコマンドを表示 |
+| ツール  | チェック方法              | エラー時の対応             |
+| ------- | ------------------------- | -------------------------- |
+| mise    | `command -v mise`         | インストールURLを表示      |
+| jq      | `command -v jq`           | apt-getコマンドを表示      |
+| chezmoi | `command -v chezmoi`      | エラーメッセージ           |
+| dasel   | `mise x -- dasel version` | mise installコマンドを表示 |
 
 ### YAML妥当性検証
 
@@ -365,12 +369,12 @@ main "$@"
 
 ### エッジケース対応
 
-| ケース | 検出 | 対応 |
-|--------|------|------|
-| 同じスキルの重複追加 | diff結果 | "No changes"表示 |
-| 存在しないスキル削除 | diff結果 | "No changes"表示 |
-| 最後のスキル削除 | `select(length > 0)` | リポジトリごと削除 |
-| 不正なYAML | daselパース | エラー終了 |
+| ケース               | 検出                 | 対応               |
+| -------------------- | -------------------- | ------------------ |
+| 同じスキルの重複追加 | diff結果             | "No changes"表示   |
+| 存在しないスキル削除 | diff結果             | "No changes"表示   |
+| 最後のスキル削除     | `select(length > 0)` | リポジトリごと削除 |
+| 不正なYAML           | daselパース          | エラー終了         |
 
 ## ユーザーフィードバック設計
 
@@ -528,16 +532,19 @@ ls -la ~/.claude/skills/web-design-guidelines/
 ### 将来的な拡張可能性
 
 1. **一括操作**:
+
    ```bash
    add-skill add repo skill1 skill2 skill3
    ```
 
 2. **物理削除オプション**:
+
    ```bash
    add-skill remove skill --purge  # ~/.claude/skills/も削除
    ```
 
 3. **バリデーション**:
+
    ```bash
    add-skill validate  # リポジトリとスキル存在確認
    ```

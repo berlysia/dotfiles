@@ -19,6 +19,7 @@ Glob: docs/decisions/adr-*.md
 If no files found: "ADR ファイルが見つかりません。" → Stop.
 
 Classify each file:
+
 - **Has frontmatter** (starts with `---`): Skip (already migrated)
 - **No frontmatter**: Candidate for migration
 
@@ -34,12 +35,12 @@ Search for a `## Status` or `## ステータス` section. Extract the text conte
 
 Keyword matching (case-insensitive):
 
-| Keywords | Inferred Status |
-|----------|----------------|
-| `complete`, `done`, `implemented`, `実装完了`, `完了` | Complete |
-| `in progress`, `in-progress`, `implementing`, `実装中`, `進行中` | InProgress |
-| `proposed`, `draft`, `提案`, `ドラフト` | Proposed |
-| No status section or no keyword match | Accepted (default) |
+| Keywords                                                         | Inferred Status    |
+| ---------------------------------------------------------------- | ------------------ |
+| `complete`, `done`, `implemented`, `実装完了`, `完了`            | Complete           |
+| `in progress`, `in-progress`, `implementing`, `実装中`, `進行中` | InProgress         |
+| `proposed`, `draft`, `提案`, `ドラフト`                          | Proposed           |
+| No status section or no keyword match                            | Accepted (default) |
 
 #### Plan detection
 
@@ -85,8 +86,8 @@ After user approval, for each candidate file:
 
 ```yaml
 ---
-status: {inferred_status}
-plan: {plan_filename}  # only if detected
+status: { inferred_status }
+plan: { plan_filename } # only if detected
 ---
 ```
 
@@ -112,13 +113,13 @@ Only remove if the user approves.
 
 ## Edge Cases
 
-| Case | Behavior |
-|------|----------|
-| File already has frontmatter | Skip, report in "Skipped" section |
-| No status section found | Default to `Accepted`, add warning note |
-| Multiple status keywords match | Use the first match, note ambiguity |
-| File is empty or malformed | Skip with warning |
-| `docs/decisions/` doesn't exist | Report and stop |
+| Case                            | Behavior                                |
+| ------------------------------- | --------------------------------------- |
+| File already has frontmatter    | Skip, report in "Skipped" section       |
+| No status section found         | Default to `Accepted`, add warning note |
+| Multiple status keywords match  | Use the first match, note ambiguity     |
+| File is empty or malformed      | Skip with warning                       |
+| `docs/decisions/` doesn't exist | Report and stop                         |
 
 ## Related
 

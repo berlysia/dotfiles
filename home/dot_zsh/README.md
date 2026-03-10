@@ -19,6 +19,7 @@ This directory contains the Zsh configuration managed by chezmoi.
 ## Custom Prompt
 
 The configuration includes a feature-rich prompt with:
+
 - Git status integration (branch, dirty state)
 - Node.js project info (package version, runtime version)
 - Error status indication
@@ -28,6 +29,7 @@ The configuration includes a feature-rich prompt with:
 ## Migration Notes
 
 When porting to another environment:
+
 1. Review tool integrations (fzf, mise) based on availability
 2. Adapt platform-specific sections as needed
 3. Maintain `~/.zshrc.local` support for local overrides
