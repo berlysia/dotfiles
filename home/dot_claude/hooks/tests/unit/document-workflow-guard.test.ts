@@ -241,6 +241,66 @@ describe("document-workflow-guard.ts hook behavior", () => {
     context.assertSuccess({});
   });
 
+  it("allows Bash command with stderr redirection to /dev/null while pending", async () => {
+    const repo = createWorkflowRepo(pendingWorkflowRepo());
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+
+    const context = createPreToolUseContextFor(hook, "Bash", {
+      command: "ls /some/path 2>/dev/null",
+    });
+
+    await invokeRun(hook, context);
+    context.assertSuccess({});
+  });
+
+  it("allows Bash command with stdout redirection to /dev/null while pending", async () => {
+    const repo = createWorkflowRepo(pendingWorkflowRepo());
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+
+    const context = createPreToolUseContextFor(hook, "Bash", {
+      command: "some_cmd >/dev/null",
+    });
+
+    await invokeRun(hook, context);
+    context.assertSuccess({});
+  });
+
+  it("allows Bash command with separated stderr redirection while pending", async () => {
+    const repo = createWorkflowRepo(pendingWorkflowRepo());
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+
+    const context = createPreToolUseContextFor(hook, "Bash", {
+      command: "some_cmd 2> /dev/null",
+    });
+
+    await invokeRun(hook, context);
+    context.assertSuccess({});
+  });
+
+  it("allows Bash command with stderr redirection to a file while pending", async () => {
+    const repo = createWorkflowRepo(pendingWorkflowRepo());
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+
+    const context = createPreToolUseContextFor(hook, "Bash", {
+      command: "some_cmd 2>/tmp/debug.log",
+    });
+
+    await invokeRun(hook, context);
+    context.assertSuccess({});
+  });
+
+  it("still blocks stdout redirection to a file while pending", async () => {
+    const repo = createWorkflowRepo(pendingWorkflowRepo());
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+
+    const context = createPreToolUseContextFor(hook, "Bash", {
+      command: "echo data > src/output.txt",
+    });
+
+    await invokeRun(hook, context);
+    context.assertDeny();
+  });
+
   it("warn-only mode allows but records would-block log", async () => {
     const repo = createWorkflowRepo(pendingWorkflowRepo());
     envHelper.set("CLAUDE_TEST_CWD", repo);

@@ -338,15 +338,22 @@ function extractRedirectionTargets(words: string[]): string[] {
 
     if (isRedirectionToken(token)) {
       const next = words[i + 1];
-      if (next && !next.startsWith("&")) {
+      if (
+        next &&
+        !next.startsWith("&") &&
+        !isStderrRedirection(token) &&
+        next !== "/dev/null"
+      ) {
         targets.push(next);
       }
       continue;
     }
 
-    const inline = token.match(/^(?:\d*>>?|\d*>\|)(.+)$/);
-    if (inline?.[1] && !inline[1].startsWith("&")) {
-      targets.push(inline[1]);
+    const inline = token.match(/^(\d*)(>>?|>\|)(.+)$/);
+    if (inline?.[3] && !inline[3].startsWith("&")) {
+      if (inline[1] !== "2" && inline[3] !== "/dev/null") {
+        targets.push(inline[3]);
+      }
     }
   }
 
@@ -355,6 +362,10 @@ function extractRedirectionTargets(words: string[]): string[] {
 
 function isRedirectionToken(token: string): boolean {
   return /^(?:\d*>>?|\d*>\|)$/.test(token);
+}
+
+function isStderrRedirection(token: string): boolean {
+  return /^2(>>?|>\|)$/.test(token);
 }
 
 function splitShellWords(command: string): string[] {
