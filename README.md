@@ -119,7 +119,7 @@ This project uses a two-layer approach for managing Claude Code skills:
 #### 2. External Skills (`home/.chezmoidata/claude_skills.yaml`)
 
 - Declaratively managed in YAML configuration
-- Installed via `add-skill` from GitHub repositories
+- Installed via `npx skills add` from GitHub repositories
 - Tracked in `.claude/.external-skills-installed`
 - Auto-removed when deleted from YAML (handcrafted skills are protected)
 

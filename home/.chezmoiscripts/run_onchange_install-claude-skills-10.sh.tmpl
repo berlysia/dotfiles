@@ -1,8 +1,6 @@
 {{ if ne .chezmoi.os "windows" -}}
-{{- $pkgJson := output "cat" (joinPath .chezmoi.workingTree "package.json") | fromJson -}}
-{{- $addSkillVersion := index $pkgJson.dependencies "add-skill" -}}
 #!/bin/bash
-# Install Claude Code skills via add-skill
+# Install Claude Code skills via skills CLI
 # Hash: {{ .claude_skills | toJson | sha256sum }}
 
 set -euo pipefail
@@ -84,7 +82,7 @@ log "Starting Claude Code skill installation..."
 {{ $repo := .repo -}}
 {{ $skills := .skills -}}
 log "Installing {{ len $skills }} skill(s) from {{ $repo }}"
-if pnpm dlx add-skill@{{ $addSkillVersion }} "{{ $repo }}" --global --skill {{ range $skills }}"{{ . }}" {{ end }}--yes 2>&1; then
+if pnpm dlx skills add "{{ $repo }}" --global --skill {{ range $skills }}"{{ . }}" {{ end }}--yes 2>&1; then
     log "Successfully installed skills from {{ $repo }}" "SUCCESS"
 else
     log "Failed to install some skills from {{ $repo }} (continuing...)" "ERROR"
