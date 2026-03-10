@@ -4,8 +4,8 @@
 
 - **Test**: `pnpm test`
 - **Typecheck**: `pnpm typecheck`
-- **Lint**: `pnpm lint` or `npx biome check --write . && npx oxlint .`
-- **Format**: `npx biome format --write .`
+- **Lint**: `pnpm lint` or `npx oxlint .`
+- **Format**: `npx oxfmt --write .`
 
 ## Quality Gates
 
@@ -15,7 +15,7 @@
 
 ## Prohibitions
 
-- リンター・フォーマッター設定ファイル（biome.json, tsconfig.json, oxlint.json, .prettierrc等）を変更しない
+- リンター・フォーマッター設定ファイル（tsconfig.json, .oxlintrc.json, .oxfmtrc.json, .prettierrc等）を変更しない
 - secrets/credentials をコードに直書きしない — 環境変数を使用する
 - エラーを握り潰さない — catch節でのログなし再throw禁止
 - `any` 型を使用しない
