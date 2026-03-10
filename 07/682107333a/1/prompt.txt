@@ -1,0 +1,33 @@
+minimum-release-age類で自分の個人scopeのライブラリはスキップするように設定して。
+
+---
+
+safe-chainの設定も同様にできるかな？
+
+---
+
+[Request interrupted by user for tool use]
+
+---
+
+pnpmじゃないよ。
+
+---
+
+XDG_CONFIGには一できないの？
+
+---
+
+環境変数にしよっか
+
+---
+
+[Request interrupted by user]
+
+---
+
+ごめんやっぱ設定ファイルで良いわ
+
+---
+
+こっみｔ
