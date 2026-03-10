@@ -1,6 +1,6 @@
 ---
 name: refine-skill
-description: Analyze and refine existing Claude Code Skills for conciseness and effectiveness. Use when asked to "review", "refine", "improve", "optimize" Skills, or when the user mentions "skill quality", "skill refinement", or wants to make a Skill more concise.
+description: Analyze and refine existing Claude Code Skills for conciseness and effectiveness. Use when asked to "review", "refine", "improve", "optimize" Skills, or when user mentions "skill quality", "skill refinement", "too verbose", "skill doesn't trigger", "description quality", or wants to make a Skill more concise. Do NOT use for creating new skills from scratch (use skill-creator instead).
 context: fork
 ---
 
@@ -45,22 +45,64 @@ context: fork
 
 詳細: [CHECKLIST.md](CHECKLIST.md)
 
-## 問題パターン
+## Description Formula
 
-| 問題               | 対策              |
-| ------------------ | ----------------- |
-| 過剰な説明         | 削除              |
-| 曖昧な記述         | 具体例に置換      |
-| 深い参照           | フラット化        |
-| 冗長なワークフロー | 3-5ステップに統合 |
-| トリガー不足       | キーワード追加    |
+description は `[What it does] + [When to use it] + [Key capabilities]` の公式に従う。
 
-## Anti-Patterns
+```yaml
+# Good — 具体的な what/when/triggers
+description: Extract text from PDFs, fill forms, merge documents. Use when working with PDF files or when user mentions "PDF", "forms", "document extraction".
 
-| Anti-Pattern | 代替                      |
-| ------------ | ------------------------- |
-| 教育的散文   | 直接的な指示              |
-| 無限の選択肢 | デフォルト + escape hatch |
-| Windowsパス  | 常に `/`                  |
-| 時間依存情報 | バージョン非依存          |
-| 深い参照     | フラット構造              |
+# Bad — 曖昧、トリガーなし
+description: Helps with documents.
+
+# Bad — 技術的すぎ、ユーザー視点なし
+description: Implements the Project entity model with hierarchical relationships.
+```
+
+negative trigger で over-triggering を防ぐ:
+```yaml
+description: ...Use for statistical modeling, regression. Do NOT use for simple data exploration (use data-viz skill instead).
+```
+
+## Common Issues
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| スキルがロードされない | description が曖昧/トリガー不足 | trigger phrases 追加、ユーザーが言いそうなフレーズを含める |
+| 無関係なクエリでロードされる | スコープが広すぎる | negative trigger 追加、対象を限定 |
+| 指示が無視される | instructions が冗長/埋もれている/曖昧 | 重要指示をトップに、箇条書き化、詳細は references/ へ |
+| 出力品質が低い | model laziness | `## Performance Notes` で明示的に品質要求 |
+| 過剰な説明 | Claude既知の情報を記載 | 「〜とは」説明・背景・自明なステップを削除 |
+| 深い参照チェーン | A→B→C の多段参照 | 1階層にフラット化 |
+
+## Iteration Signals
+
+- **Undertriggering**: ロードされない、手動有効化が必要、使い方の質問が来る → description にキーワード・ファイル種別を追加
+- **Overtriggering**: 無関係クエリでロード、無効化される → negative trigger 追加、スコープ限定
+- **Execution issues**: 一貫性なし、ユーザー修正必要 → instructions 改善、error handling 追加
+
+## Examples
+
+### Example 1: 冗長な description の改善
+
+Before:
+```yaml
+description: Creates sophisticated multi-page documentation systems.
+```
+問題: What はあるが When/Triggers がない。「sophisticated」は無意味。
+
+After:
+```yaml
+description: Generate multi-page documentation from source code. Use when user says "generate docs", "API documentation", or uploads code files for documentation.
+```
+
+### Example 2: Instructions not followed の診断
+
+Symptom: スキルはロードされるが指示通りに動かない。
+
+診断チェック:
+1. **Verbose?** → 500行超なら references/ に分割
+2. **Buried?** → 重要指示が下部にある → `## Critical` でトップに移動
+3. **Ambiguous?** → 「適切に処理」→ 具体的な検証項目リストに置換
+4. **Model laziness?** → `## Performance Notes` セクションで品質明示

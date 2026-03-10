@@ -14,19 +14,29 @@
 
 ### Description
 
+公式: `[What it does] + [When to use it] + [Key capabilities]`
+
 - [ ] 1024文字以下
 - [ ] **What**: 何をするか明記
-- [ ] **When**: いつ使うか明記
+- [ ] **When**: いつ使うか明記（trigger conditions）
 - [ ] **Triggers**: ユーザーが言いそうなキーワード含む
+- [ ] **Negative triggers**: over-triggering 防止用の否定フレーズ（必要に応じて）
 - [ ] 三人称: "Processes files" not "I can help"
 - [ ] 曖昧語なし: "helps with documents" ✗
+- [ ] XMLタグ (`<` `>`) を含まない
 
 ```yaml
-# Good
+# Good — what + when + triggers
 description: Extract text from PDFs, fill forms, merge documents. Use when working with PDF files or when user mentions "PDF", "forms", "document extraction".
 
-# Bad
+# Good — negative trigger で scope 限定
+description: Advanced data analysis for CSV files. Use for statistical modeling, regression. Do NOT use for simple data exploration (use data-viz skill instead).
+
+# Bad — 曖昧、トリガーなし
 description: Helps with documents
+
+# Bad — 技術的すぎ、ユーザー視点なし
+description: Implements the Project entity model with hierarchical relationships.
 ```
 
 ## 2. Structure
@@ -91,23 +101,55 @@ description: Helps with documents
 - [ ] 依存パッケージ記載
 - [ ] 実行意図明確: "Run" vs "See"
 
-## 6. Testing
+## 6. Instructions Quality
+
+- [ ] **Not verbose**: 500行以下、詳細は references/ へ
+- [ ] **Not buried**: 重要指示がトップにある（`## Critical` / `## Important`）
+- [ ] **Not ambiguous**: 「適切に」「良い」→ 具体的な検証項目に置換済み
+- [ ] **Anti-laziness**: 品質重要な操作に `## Performance Notes` セクションあり（必要に応じて）
+
+## 7. Triggering
+
+### Test Cases
+
+- [ ] Should trigger のテストケース（3+）を作成済み
+- [ ] Should NOT trigger のテストケース（2+）を作成済み
+- [ ] パラフレーズでもトリガーされることを確認
+
+### Iteration Signals
+
+- [ ] Undertriggering 時の対処法を認識: description にキーワード追加
+- [ ] Overtriggering 時の対処法を認識: negative trigger 追加、スコープ限定
+
+## 8. Testing
 
 - [ ] 3+シナリオで評価済み
 - [ ] 対象モデルでテスト済み（Haiku/Sonnet/Opus）
 - [ ] トリガー動作確認済み
 - [ ] ワークフロー正常動作確認済み
 
+## 9. Optional Fields
+
+必要に応じて frontmatter に追加:
+
+- `allowed-tools`: ツールアクセス制限（例: `"Bash(python:*) WebFetch"`）
+- `compatibility`: 環境要件（例: `"Requires Python 3.10+"`）
+- `license`: オープンソース公開時（MIT, Apache-2.0 等）
+- `metadata`: author, version, mcp-server, tags 等
+
 ## Quick Review
 
 最低限確認すべき項目:
 
 ```
-□ description: what + when + triggers
+□ description: [What] + [When] + [Key capabilities] 公式準拠
+□ description: negative trigger（必要に応じて）
 □ SKILL.md: 500行以下
 □ 参照: 1階層
 □ 例: 具体的
 □ Claude不要の情報: 削除済み
+□ 指示: verbose/buried/ambiguous でない
+□ トリガーテスト: Should trigger / Should NOT trigger 確認済み
 ```
 
 ## Severity Levels
