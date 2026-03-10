@@ -3,32 +3,35 @@
   "checkpoint_id": "3829b1c2fb3c",
   "session_id": "e2aab528-5169-4039-8f38-11b5f7c9dcfa",
   "strategy": "manual-commit",
-  "created_at": "2026-03-10T15:00:48.002155Z",
+  "created_at": "2026-03-10T15:22:51.224361Z",
   "branch": "master",
   "checkpoints_count": 1,
   "files_touched": [
     "home/dot_claude/hooks/implementations/document-workflow-guard.ts",
-    "home/dot_claude/hooks/tests/unit/document-workflow-guard.test.ts"
+    "home/dot_claude/hooks/lib/workflow-paths.ts",
+    "home/dot_claude/hooks/tests/unit/document-workflow-guard.test.ts",
+    "home/dot_claude/hooks/tests/unit/workflow-paths.test.ts",
+    "home/dot_claude/rules/workflow.md"
   ],
   "agent": "Claude Code",
-  "transcript_identifier_at_start": "1b854e20-a7a1-495a-be58-de02bad23804",
-  "checkpoint_transcript_start": 392,
-  "transcript_lines_at_start": 392,
+  "transcript_identifier_at_start": "591530f1-3493-4bc1-ae1f-711f70308475",
+  "checkpoint_transcript_start": 538,
+  "transcript_lines_at_start": 538,
   "token_usage": {
-    "input_tokens": 15,
-    "cache_creation_tokens": 6236,
-    "cache_read_tokens": 799774,
-    "output_tokens": 3372,
-    "api_call_count": 11
+    "input_tokens": 61,
+    "cache_creation_tokens": 89420,
+    "cache_read_tokens": 4760297,
+    "output_tokens": 16438,
+    "api_call_count": 51
   },
   "initial_attribution": {
-    "calculated_at": "2026-03-10T15:00:47.760156Z",
-    "agent_lines": 0,
-    "human_added": 2693,
+    "calculated_at": "2026-03-10T15:22:50.552702Z",
+    "agent_lines": 138,
+    "human_added": 2619,
     "human_modified": 0,
     "human_removed": 0,
-    "total_committed": 2693,
-    "agent_percentage": 0
+    "total_committed": 2757,
+    "agent_percentage": 5.00544069640914
   },
   "transcript_path": ".claude/projects/-Users-berlysia--local-share-chezmoi/e2aab528-5169-4039-8f38-11b5f7c9dcfa.jsonl"
 }
