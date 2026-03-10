@@ -2,7 +2,7 @@
 
 ## Formatting
 
-Use project formatter (biome/prettier as configured). Enforced by PostToolUse hook.
+Use project formatter (oxfmt/prettier as configured). Enforced by PostToolUse hook.
 
 ## Naming
 
