@@ -164,7 +164,7 @@ export async function getGitContext(): Promise<GitContextInfo> {
       hasRemote,
       containerType,
     };
-  } catch (_error) {
+  } catch {
     // Ultimate fallback
     return {
       name: "unknown",

@@ -750,7 +750,7 @@ class AutoApproveUpdater {
       if (pattern.includes("{") && !pattern.includes("}")) {
         return { isValid: false, reason: "Unclosed brace in pattern" };
       }
-    } catch (_error) {
+    } catch {
       return { isValid: false, reason: "Invalid pattern syntax" };
     }
 

@@ -148,7 +148,7 @@ function checkGitHubAccess(url: string, tool_name: string): CheckResult {
     }
 
     return { shouldBlock: false };
-  } catch (_error) {
+  } catch {
     // If URL parsing fails, allow the request
     return { shouldBlock: false };
   }

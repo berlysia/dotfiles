@@ -118,10 +118,7 @@ const hook = defineHook({
         event: "Stop",
         output: {
           decision: "block" as const,
-          reason:
-            `COMPLETION BLOCKED (attempt ${count}/${MAX_RETRIES}, ${remaining} remaining):\n\n` +
-            errors.join("\n\n") +
-            "\n\nFix these issues before completing.",
+          reason: `COMPLETION BLOCKED (attempt ${count}/${MAX_RETRIES}, ${remaining} remaining):\n\n${errors.join("\n\n")}\n\nFix these issues before completing.`,
         },
       });
     } catch (error) {

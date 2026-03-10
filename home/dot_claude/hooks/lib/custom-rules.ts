@@ -10,22 +10,18 @@ interface CustomRule {
 
 const homeDir = process.env.HOME;
 
-const RULES: CustomRule[] = [
-  ...(homeDir
-    ? [
-        {
-          id: "no-hardcoded-home",
-          filePattern: /\.(sh|tmpl)$/,
-          linePattern: new RegExp(
-            homeDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
-          ),
-          message: "Hardcoded home directory path found",
-          why: "Hardcoded paths break portability — chezmoi templates should use variables",
-          fix: "Use $HOME, ~, or chezmoi template variables (.chezmoi.homeDir)",
-        },
-      ]
-    : []),
-];
+const RULES: CustomRule[] = homeDir
+  ? [
+      {
+        id: "no-hardcoded-home",
+        filePattern: /\.(sh|tmpl)$/,
+        linePattern: new RegExp(homeDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+        message: "Hardcoded home directory path found",
+        why: "Hardcoded paths break portability — chezmoi templates should use variables",
+        fix: "Use $HOME, ~, or chezmoi template variables (.chezmoi.homeDir)",
+      },
+    ]
+  : [];
 
 export function runCustomRules(
   filePath: string,

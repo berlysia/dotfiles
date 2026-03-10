@@ -77,7 +77,7 @@ function checkSingleFile(
           matchedPattern: pattern,
         };
       }
-    } catch (_error) {}
+    } catch {}
   }
 
   // どのパターンにもマッチしなかった
