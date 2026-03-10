@@ -2,14 +2,14 @@
 
 import { basename } from "node:path";
 import { defineHook } from "cc-hooks-ts";
-import { createDenyResponse } from "../lib/context-helpers.ts";
+import { createAskResponse } from "../lib/context-helpers.ts";
 import "../types/tool-schemas.ts";
 
 /**
- * PreToolUse guard that blocks modifications to linter/formatter config files.
+ * PreToolUse guard that warns on modifications to linter/formatter config files.
  *
- * Prevents agents from weakening code quality rules by editing config files.
- * Users can bypass via Claude Code's permission prompt ("Allow").
+ * Forces a permission prompt so the user can explicitly allow or deny the edit.
+ * Prevents agents from silently weakening code quality rules.
  */
 
 const PROTECTED_BASENAMES = new Set([
@@ -71,10 +71,10 @@ const hook = defineHook({
 
     if (isProtectedFile(filePath)) {
       return context.json(
-        createDenyResponse(
-          `BLOCKED: ${basename(filePath)} is a protected linter/formatter config file.\n` +
-            "WHY: Agent modifications to linter configs can weaken code quality rules.\n" +
-            "FIX: If you need to change this file, ask the user to approve via permission prompt.",
+        createAskResponse(
+          `${basename(filePath)} is a protected linter/formatter config file.\n` +
+            "Agent modifications to linter configs can weaken code quality rules.\n" +
+            "Allow this edit only if the user explicitly requested it.",
         ),
       );
     }
