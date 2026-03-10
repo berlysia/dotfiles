@@ -25,3 +25,11 @@ plan.md の `Approval Status: pending` → `approved` に変更すると、auto-
 
 コミットして
 
+### Prompt 5
+
+メモリも編集できないとメモ取れなくて大変だったので例外がちょっとあってもよいかも。
+
+### Prompt 6
+
+まあ後者かな〜 chezmoi以外のコードベースからchezmoiいじらせたいことあるし
+

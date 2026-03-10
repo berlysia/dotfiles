@@ -11,9 +11,7 @@
     "home/.chezmoiscripts/run_onchange_install-packages-1-darwin.sh.tmpl",
     "home/.chezmoiscripts/run_onchange_install-safe-chain.sh.tmpl",
     "home/dot_claude/hooks/implementations/document-workflow-guard.ts",
-    "home/dot_claude/hooks/implementations/plan-review-automation.ts",
     "home/dot_claude/hooks/tests/unit/document-workflow-guard.test.ts",
-    "home/dot_claude/hooks/tests/unit/plan-review-automation.test.ts",
     "home/dot_codex/.config.toml"
   ],
   "sessions": [
@@ -47,10 +45,10 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 3129,
-    "cache_creation_tokens": 502515,
-    "cache_read_tokens": 9287144,
-    "output_tokens": 51110,
-    "api_call_count": 153
+    "input_tokens": 3117,
+    "cache_creation_tokens": 439011,
+    "cache_read_tokens": 8808327,
+    "output_tokens": 45364,
+    "api_call_count": 141
   }
 }
