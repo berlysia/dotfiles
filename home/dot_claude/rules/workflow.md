@@ -39,7 +39,7 @@
 ## Document Workflow Protocol (MANDATORY)
 
 セッション開始時に `DOCUMENT_WORKFLOW_DIR` 環境変数が設定される（例: `.tmp/sessions/abcd1234/`）。
-ワークフロー成果物はすべてこのディレクトリ配下に作成する。未設定時は `.tmp/` をフォールバックとする。
+ワークフロー成果物はすべてこのディレクトリ配下に作成する。未設定時はワークフローガードが無効になる。
 
 ```
 1. 調査: 対象コードを深く読み `$DOCUMENT_WORKFLOW_DIR/research.md` を作成

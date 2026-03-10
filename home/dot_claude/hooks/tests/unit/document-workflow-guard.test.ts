@@ -49,11 +49,16 @@ function buildPlanContent(options: WorkflowRepoOptions): string {
   return `${base}\n\n<!-- auto-review: verdict=${options.review.verdict}; hash=${hash}; at=2026-02-19T00:00:00.000Z; reviewers=logic-validator -->`;
 }
 
+const TEST_WORKFLOW_DIR = ".tmp/sessions/test";
+
 function createWorkflowRepo(options: WorkflowRepoOptions): string {
   const repo = mkdtempSync(join(tmpdir(), "document-workflow-guard-"));
-  mkdirSync(join(repo, ".tmp"), { recursive: true });
-  writeFileSync(join(repo, ".tmp/research.md"), "research");
-  writeFileSync(join(repo, ".tmp/plan.md"), buildPlanContent(options));
+  mkdirSync(join(repo, TEST_WORKFLOW_DIR), { recursive: true });
+  writeFileSync(join(repo, TEST_WORKFLOW_DIR, "research.md"), "research");
+  writeFileSync(
+    join(repo, TEST_WORKFLOW_DIR, "plan.md"),
+    buildPlanContent(options),
+  );
   return repo;
 }
 
@@ -77,10 +82,13 @@ function buildRepoWithReview(
   review: ReviewMarkerOptions | undefined,
 ): string {
   const repo = mkdtempSync(join(tmpdir(), "document-workflow-guard-"));
-  mkdirSync(join(repo, ".tmp"), { recursive: true });
+  mkdirSync(join(repo, TEST_WORKFLOW_DIR), { recursive: true });
   const complete = { ...base, review };
-  writeFileSync(join(repo, ".tmp/research.md"), "research");
-  writeFileSync(join(repo, ".tmp/plan.md"), buildPlanContent(complete));
+  writeFileSync(join(repo, TEST_WORKFLOW_DIR, "research.md"), "research");
+  writeFileSync(
+    join(repo, TEST_WORKFLOW_DIR, "plan.md"),
+    buildPlanContent(complete),
+  );
   return repo;
 }
 
@@ -92,8 +100,7 @@ describe("document-workflow-guard.ts hook behavior", () => {
   beforeEach(() => {
     consoleCapture.reset();
     consoleCapture.start();
-    // Clear session env var to prevent leakage from Claude Code sessions
-    envHelper.set("DOCUMENT_WORKFLOW_DIR", undefined);
+    envHelper.set("DOCUMENT_WORKFLOW_DIR", TEST_WORKFLOW_DIR);
   });
 
   afterEach(() => {
@@ -114,12 +121,12 @@ describe("document-workflow-guard.ts hook behavior", () => {
     context.assertDeny();
   });
 
-  it("allows editing .tmp/plan.md while pending", async () => {
+  it("allows editing session plan.md while pending", async () => {
     const repo = createWorkflowRepo(pendingWorkflowRepo());
     envHelper.set("CLAUDE_TEST_CWD", repo);
 
     const context = createPreToolUseContextFor(hook, "Edit", {
-      file_path: "./.tmp/plan.md",
+      file_path: `./${TEST_WORKFLOW_DIR}/plan.md`,
       old_string: "- Plan Status: drafting",
       new_string: "- Plan Status: drafting",
     });
@@ -128,12 +135,12 @@ describe("document-workflow-guard.ts hook behavior", () => {
     context.assertSuccess({});
   });
 
-  it("allows editing .tmp/research.md using absolute path while pending", async () => {
+  it("allows editing session research.md using absolute path while pending", async () => {
     const repo = createWorkflowRepo(pendingWorkflowRepo());
     envHelper.set("CLAUDE_TEST_CWD", repo);
 
     const context = createPreToolUseContextFor(hook, "Edit", {
-      file_path: join(repo, ".tmp/research.md"),
+      file_path: join(repo, TEST_WORKFLOW_DIR, "research.md"),
       old_string: "research",
       new_string: "updated research",
     });
@@ -233,12 +240,12 @@ describe("document-workflow-guard.ts hook behavior", () => {
     context.assertSuccess({});
   });
 
-  it("allows Bash command that only writes to .tmp documents while pending", async () => {
+  it("allows Bash command that only writes to session documents while pending", async () => {
     const repo = createWorkflowRepo(pendingWorkflowRepo());
     envHelper.set("CLAUDE_TEST_CWD", repo);
 
     const context = createPreToolUseContextFor(hook, "Bash", {
-      command: "echo note >> .tmp/plan.md",
+      command: `echo note >> ${TEST_WORKFLOW_DIR}/plan.md`,
     });
 
     await invokeRun(hook, context);
@@ -327,6 +334,50 @@ describe("document-workflow-guard.ts hook behavior", () => {
   it("does not enforce when workflow artifacts do not exist", async () => {
     const repo = mkdtempSync(join(tmpdir(), "document-workflow-guard-plain-"));
     envHelper.set("CLAUDE_TEST_CWD", repo);
+
+    const context = createPreToolUseContextFor(hook, "Write", {
+      file_path: "src/a.ts",
+      content: "const a = 1;",
+    });
+
+    await invokeRun(hook, context);
+    context.assertSuccess({});
+  });
+
+  it("does not enforce when DOCUMENT_WORKFLOW_DIR is not set and logs warning", async () => {
+    const repo = createWorkflowRepo(pendingWorkflowRepo());
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+    envHelper.set("DOCUMENT_WORKFLOW_DIR", undefined);
+
+    const context = createPreToolUseContextFor(hook, "Write", {
+      file_path: "src/a.ts",
+      content: "const a = 1;",
+    });
+
+    await invokeRun(hook, context);
+    context.assertSuccess({});
+
+    ok(
+      consoleCapture.errors.some((line) =>
+        line.includes("DOCUMENT_WORKFLOW_DIR is not set"),
+      ),
+      "should log that DOCUMENT_WORKFLOW_DIR is not set",
+    );
+  });
+
+  it("does not enforce when .tmp/plan.md exists but DOCUMENT_WORKFLOW_DIR points elsewhere", async () => {
+    const repo = mkdtempSync(join(tmpdir(), "document-workflow-guard-"));
+    // Create leftover .tmp/plan.md from a previous session
+    mkdirSync(join(repo, ".tmp"), { recursive: true });
+    writeFileSync(
+      join(repo, ".tmp/plan.md"),
+      buildPlanContent(pendingWorkflowRepo()),
+    );
+    writeFileSync(join(repo, ".tmp/research.md"), "research");
+    // Current session points to a different directory with no artifacts
+    const sessionDir = ".tmp/sessions/newsession";
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+    envHelper.set("DOCUMENT_WORKFLOW_DIR", sessionDir);
 
     const context = createPreToolUseContextFor(hook, "Write", {
       file_path: "src/a.ts",
@@ -477,8 +528,8 @@ describe("document-workflow-guard.ts hook behavior", () => {
 
   it("blocks Write when review marker is pass but review status line is pending", async () => {
     const repo = mkdtempSync(join(tmpdir(), "document-workflow-guard-"));
-    mkdirSync(join(repo, ".tmp"), { recursive: true });
-    writeFileSync(join(repo, ".tmp/research.md"), "research");
+    mkdirSync(join(repo, TEST_WORKFLOW_DIR), { recursive: true });
+    writeFileSync(join(repo, TEST_WORKFLOW_DIR, "research.md"), "research");
     envHelper.set("CLAUDE_TEST_CWD", repo);
     const base = [
       "## Approval",
@@ -488,7 +539,7 @@ describe("document-workflow-guard.ts hook behavior", () => {
     ].join("\n");
     const hash = computePlanHash(base);
     writeFileSync(
-      join(repo, ".tmp/plan.md"),
+      join(repo, TEST_WORKFLOW_DIR, "plan.md"),
       [
         base,
         "",

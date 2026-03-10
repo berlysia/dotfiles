@@ -51,10 +51,15 @@ const hook = defineHook({
     }
 
     const cwd = getWorkingDirectory();
-    // Single resolution: derive all workflow artifact paths from one directory
     const wfDir = getWorkflowDir(cwd);
-    const wfPaths = resolveWorkflowPaths(wfDir);
+    if (!wfDir) {
+      console.error(
+        "[document-workflow-guard] DOCUMENT_WORKFLOW_DIR is not set, skipping guard",
+      );
+      return context.success({});
+    }
 
+    const wfPaths = resolveWorkflowPaths(wfDir);
     const state = readWorkflowState(wfPaths.state);
     const workflowActive = isWorkflowActive(wfPaths, state);
     if (!workflowActive) {
@@ -64,7 +69,7 @@ const hook = defineHook({
     const warnOnly = process.env.DOCUMENT_WORKFLOW_WARN_ONLY === "1";
     const approved = hasApprovedPlan(wfPaths.plan);
     const researched = existsSync(wfPaths.research);
-    const wfDirLabel = getWorkflowDirRelative();
+    const wfDirLabel = getWorkflowDirRelative() ?? "(unknown)";
     const denyReason = `Document workflow gate: implementation is blocked until \`${wfDirLabel}/research.md\` exists and \`${wfDirLabel}/plan.md\` has \`- Plan Status: complete\`, \`- Review Status: pass\`, \`- Approval Status: approved\`, and \`<!-- auto-review: verdict=pass; hash=... -->\` with a matching hash.`;
 
     if (tool_name === "Bash") {

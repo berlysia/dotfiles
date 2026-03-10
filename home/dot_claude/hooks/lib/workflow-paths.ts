@@ -1,7 +1,6 @@
 import { resolve } from "node:path";
 import { expandTilde } from "./path-utils.ts";
 
-const DEFAULT_WORKFLOW_DIR = ".tmp";
 const PLAN_FILENAME = "plan.md";
 const RESEARCH_FILENAME = "research.md";
 const STATE_FILENAME = "workflow-state.json";
@@ -11,38 +10,44 @@ const REVIEW_JSON_FILENAME = "plan-review.json";
 
 /**
  * Resolve the workflow directory for the current session.
- * Uses DOCUMENT_WORKFLOW_DIR env var if set, otherwise falls back to `.tmp/`.
+ * Returns null when DOCUMENT_WORKFLOW_DIR is not set.
  */
-export function getWorkflowDir(cwd: string): string {
+export function getWorkflowDir(cwd: string): string | null {
   const envDir = process.env.DOCUMENT_WORKFLOW_DIR;
   if (envDir && envDir.length > 0) {
     return resolve(cwd, expandTilde(envDir));
   }
-  return resolve(cwd, DEFAULT_WORKFLOW_DIR);
+  return null;
 }
 
-export function getPlanPath(cwd: string): string {
-  return resolve(getWorkflowDir(cwd), PLAN_FILENAME);
+export function getPlanPath(cwd: string): string | null {
+  const dir = getWorkflowDir(cwd);
+  return dir ? resolve(dir, PLAN_FILENAME) : null;
 }
 
-export function getResearchPath(cwd: string): string {
-  return resolve(getWorkflowDir(cwd), RESEARCH_FILENAME);
+export function getResearchPath(cwd: string): string | null {
+  const dir = getWorkflowDir(cwd);
+  return dir ? resolve(dir, RESEARCH_FILENAME) : null;
 }
 
-export function getStatePath(cwd: string): string {
-  return resolve(getWorkflowDir(cwd), STATE_FILENAME);
+export function getStatePath(cwd: string): string | null {
+  const dir = getWorkflowDir(cwd);
+  return dir ? resolve(dir, STATE_FILENAME) : null;
 }
 
-export function getReviewCachePath(cwd: string): string {
-  return resolve(getWorkflowDir(cwd), REVIEW_CACHE_FILENAME);
+export function getReviewCachePath(cwd: string): string | null {
+  const dir = getWorkflowDir(cwd);
+  return dir ? resolve(dir, REVIEW_CACHE_FILENAME) : null;
 }
 
-export function getReviewMarkdownPath(cwd: string): string {
-  return resolve(getWorkflowDir(cwd), REVIEW_MARKDOWN_FILENAME);
+export function getReviewMarkdownPath(cwd: string): string | null {
+  const dir = getWorkflowDir(cwd);
+  return dir ? resolve(dir, REVIEW_MARKDOWN_FILENAME) : null;
 }
 
-export function getReviewJsonPath(cwd: string): string {
-  return resolve(getWorkflowDir(cwd), REVIEW_JSON_FILENAME);
+export function getReviewJsonPath(cwd: string): string | null {
+  const dir = getWorkflowDir(cwd);
+  return dir ? resolve(dir, REVIEW_JSON_FILENAME) : null;
 }
 
 /**
@@ -50,8 +55,13 @@ export function getReviewJsonPath(cwd: string): string {
  * within the current session's workflow directory.
  */
 export function isWorkflowDocumentPath(cwd: string, path: string): boolean {
+  const planPath = getPlanPath(cwd);
+  const researchPath = getResearchPath(cwd);
+  if (!planPath || !researchPath) {
+    return false;
+  }
   const normalized = resolve(cwd, expandTilde(path));
-  return normalized === getPlanPath(cwd) || normalized === getResearchPath(cwd);
+  return normalized === planPath || normalized === researchPath;
 }
 
 /**
@@ -87,11 +97,12 @@ export function resolveWorkflowPaths(workflowDir: string): {
 
 /**
  * Get the relative workflow dir path (for display/logging purposes).
+ * Returns null when DOCUMENT_WORKFLOW_DIR is not set.
  */
-export function getWorkflowDirRelative(): string {
+export function getWorkflowDirRelative(): string | null {
   const envDir = process.env.DOCUMENT_WORKFLOW_DIR;
   if (envDir && envDir.length > 0) {
     return envDir;
   }
-  return DEFAULT_WORKFLOW_DIR;
+  return null;
 }

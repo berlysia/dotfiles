@@ -26,10 +26,10 @@ describe("workflow-paths.ts", () => {
   });
 
   describe("getWorkflowDir", () => {
-    it("returns .tmp/ when DOCUMENT_WORKFLOW_DIR is not set", () => {
+    it("returns null when DOCUMENT_WORKFLOW_DIR is not set", () => {
       envHelper.set("DOCUMENT_WORKFLOW_DIR", undefined);
       const cwd = "/project";
-      strictEqual(getWorkflowDir(cwd), resolve(cwd, ".tmp"));
+      strictEqual(getWorkflowDir(cwd), null);
     });
 
     it("returns session dir when DOCUMENT_WORKFLOW_DIR is set", () => {
@@ -38,33 +38,27 @@ describe("workflow-paths.ts", () => {
       strictEqual(getWorkflowDir(cwd), resolve(cwd, ".tmp/sessions/abcd1234"));
     });
 
-    it("ignores empty DOCUMENT_WORKFLOW_DIR", () => {
+    it("returns null for empty DOCUMENT_WORKFLOW_DIR", () => {
       envHelper.set("DOCUMENT_WORKFLOW_DIR", "");
       const cwd = "/project";
-      strictEqual(getWorkflowDir(cwd), resolve(cwd, ".tmp"));
+      strictEqual(getWorkflowDir(cwd), null);
     });
   });
 
   describe("path accessors", () => {
-    it("getPlanPath returns plan.md in workflow dir", () => {
+    it("getPlanPath returns null when env is not set", () => {
       envHelper.set("DOCUMENT_WORKFLOW_DIR", undefined);
-      strictEqual(getPlanPath("/project"), resolve("/project", ".tmp/plan.md"));
+      strictEqual(getPlanPath("/project"), null);
     });
 
-    it("getResearchPath returns research.md in workflow dir", () => {
+    it("getResearchPath returns null when env is not set", () => {
       envHelper.set("DOCUMENT_WORKFLOW_DIR", undefined);
-      strictEqual(
-        getResearchPath("/project"),
-        resolve("/project", ".tmp/research.md"),
-      );
+      strictEqual(getResearchPath("/project"), null);
     });
 
-    it("getStatePath returns workflow-state.json in workflow dir", () => {
+    it("getStatePath returns null when env is not set", () => {
       envHelper.set("DOCUMENT_WORKFLOW_DIR", undefined);
-      strictEqual(
-        getStatePath("/project"),
-        resolve("/project", ".tmp/workflow-state.json"),
-      );
+      strictEqual(getStatePath("/project"), null);
     });
 
     it("getReviewCachePath returns plan-review.cache.json in workflow dir", () => {
@@ -102,18 +96,13 @@ describe("workflow-paths.ts", () => {
   });
 
   describe("isWorkflowDocumentPath", () => {
-    it("returns true for plan.md in workflow dir", () => {
+    it("returns false when env is not set", () => {
       envHelper.set("DOCUMENT_WORKFLOW_DIR", undefined);
-      strictEqual(isWorkflowDocumentPath("/project", ".tmp/plan.md"), true);
-    });
-
-    it("returns true for research.md in workflow dir", () => {
-      envHelper.set("DOCUMENT_WORKFLOW_DIR", undefined);
-      strictEqual(isWorkflowDocumentPath("/project", ".tmp/research.md"), true);
+      strictEqual(isWorkflowDocumentPath("/project", ".tmp/plan.md"), false);
     });
 
     it("returns false for unrelated file", () => {
-      envHelper.set("DOCUMENT_WORKFLOW_DIR", undefined);
+      envHelper.set("DOCUMENT_WORKFLOW_DIR", ".tmp/sessions/abcd1234");
       strictEqual(isWorkflowDocumentPath("/project", "src/app.ts"), false);
     });
 
@@ -125,15 +114,29 @@ describe("workflow-paths.ts", () => {
       );
     });
 
+    it("returns true for session-specific research.md when env is set", () => {
+      envHelper.set("DOCUMENT_WORKFLOW_DIR", ".tmp/sessions/abcd1234");
+      strictEqual(
+        isWorkflowDocumentPath(
+          "/project",
+          ".tmp/sessions/abcd1234/research.md",
+        ),
+        true,
+      );
+    });
+
     it("returns false for default plan.md when session env is set", () => {
       envHelper.set("DOCUMENT_WORKFLOW_DIR", ".tmp/sessions/abcd1234");
       strictEqual(isWorkflowDocumentPath("/project", ".tmp/plan.md"), false);
     });
 
     it("handles absolute paths", () => {
-      envHelper.set("DOCUMENT_WORKFLOW_DIR", undefined);
+      envHelper.set("DOCUMENT_WORKFLOW_DIR", ".tmp/sessions/abcd1234");
       strictEqual(
-        isWorkflowDocumentPath("/project", "/project/.tmp/plan.md"),
+        isWorkflowDocumentPath(
+          "/project",
+          "/project/.tmp/sessions/abcd1234/plan.md",
+        ),
         true,
       );
     });
@@ -168,22 +171,12 @@ describe("workflow-paths.ts", () => {
       strictEqual(paths.reviewMarkdown, resolve(dir, "plan-review.md"));
       strictEqual(paths.reviewJson, resolve(dir, "plan-review.json"));
     });
-
-    it("works with legacy .tmp directory", () => {
-      const dir = "/project/.tmp";
-      const paths = resolveWorkflowPaths(dir);
-      strictEqual(paths.plan, resolve(dir, "plan.md"));
-      strictEqual(paths.research, resolve(dir, "research.md"));
-      strictEqual(paths.reviewCache, resolve(dir, "plan-review.cache.json"));
-      strictEqual(paths.reviewMarkdown, resolve(dir, "plan-review.md"));
-      strictEqual(paths.reviewJson, resolve(dir, "plan-review.json"));
-    });
   });
 
   describe("getWorkflowDirRelative", () => {
-    it("returns .tmp when env is not set", () => {
+    it("returns null when env is not set", () => {
       envHelper.set("DOCUMENT_WORKFLOW_DIR", undefined);
-      strictEqual(getWorkflowDirRelative(), ".tmp");
+      strictEqual(getWorkflowDirRelative(), null);
     });
 
     it("returns env value when set", () => {
