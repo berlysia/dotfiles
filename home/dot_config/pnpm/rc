@@ -1,6 +1,6 @@
 # Minimum release age before installing packages (requires pnpm >= 10.16)
 minimum-release-age=10080
-
+minimum-release-age-exclude[]=@berlysia/*
 
 # Always install exact versions to avoid unintended updates
 save-prefix=
