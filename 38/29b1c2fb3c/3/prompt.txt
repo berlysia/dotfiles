@@ -1,0 +1,30 @@
+```
+document-workflow-guard の plan hash 計算で、Approval Status 変更のたびにハッシュが不一致になる問題を修正して。
+
+## 問題
+plan.md の `Approval Status: pending` → `approved` に変更すると、auto-review マーカーのハッシュが不一致になり、実装がブロックされる。成功条件のチェックボックス更新でも同様。承認後の正当な編集のたびにハッシュ再計算が必要で煩雑。
+
+## 関連コード
+- `computePlanHash` in `home/dot_claude/hooks/implementations/document-workflow-guard.ts`
+- `plan-review-automation` フック（ハッシュ計算・検証側）
+- auto-review マーカー: `<!-- auto-review: verdict=...; hash=...; ... -->`
+
+## 期待する動作
+- レビュー完了後の Approval Status 変更や成功条件チェックボックス更新でハッシュが壊れない
+- レビュー対象の実質的な計画内容（背景・変更内容・リスク等）が変わった場合はハッシュが変わる（改竄検知は維持）
+
+## MEMORY.md の記録
+「plan-review-automation: Approval Status 変更でハッシュ不一致（未修正）」参照
+```
+
+---
+
+<bash-input>echo $DOCUMENT_WORKFLOW_DIR</bash-input>
+
+---
+
+<bash-stdout>.tmp/sessions/e2aab528</bash-stdout><bash-stderr></bash-stderr>
+
+---
+
+コミットして
