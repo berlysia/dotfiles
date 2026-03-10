@@ -3,3 +3,4 @@ packages:
 
 minimumReleaseAgeExclude:
   - dax
+  - "@berlysia/*"
