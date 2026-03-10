@@ -58,6 +58,7 @@ Worktreeは以下の場所に作成されます：
 ```
 
 例：
+
 ```
 /home/user/myproject/.git/worktree/feature-login
 ```

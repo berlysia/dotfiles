@@ -3,17 +3,17 @@ description: Setup Node.js environment with pnpm and install dependencies
 
 inputs:
   node-version:
-    description: 'Node.js version'
+    description: "Node.js version"
     required: false
-    default: '22'
+    default: "22"
   pnpm-version:
-    description: 'pnpm version'
+    description: "pnpm version"
     required: false
-    default: '10.27.0'
+    default: "10.27.0"
   install-deps:
-    description: 'Install dependencies with frozen lockfile'
+    description: "Install dependencies with frozen lockfile"
     required: false
-    default: 'true'
+    default: "true"
 
 runs:
   using: composite
@@ -27,7 +27,7 @@ runs:
       uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6
       with:
         node-version: ${{ inputs.node-version }}
-        cache: 'pnpm'
+        cache: "pnpm"
 
     - name: Install dependencies
       if: inputs.install-deps == 'true'

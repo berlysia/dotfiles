@@ -47,11 +47,11 @@ Set-Service ssh-agent -StartupType Disabled
 
 ## トラブルシュート
 
-| 症状 | 原因 | 対処 |
-|------|------|------|
-| `ssh-add -l` が実行ごとに変わる | Agent 複数起動 | パターン A/B に統一 |
-| `git pull` が 30-60秒停止 | Agent 競合 | 上記を確認 |
-| 鍵が消えたり現れたりする | 1Password の統合モード | OpenSSH ssh-agent を停止 |
+| 症状                            | 原因                   | 対処                     |
+| ------------------------------- | ---------------------- | ------------------------ |
+| `ssh-add -l` が実行ごとに変わる | Agent 複数起動         | パターン A/B に統一      |
+| `git pull` が 30-60秒停止       | Agent 競合             | 上記を確認               |
+| 鍵が消えたり現れたりする        | 1Password の統合モード | OpenSSH ssh-agent を停止 |
 
 ```powershell
 # どのプロセスが ssh-agent を使っているか確認 (Sysinternals Handle が必要)

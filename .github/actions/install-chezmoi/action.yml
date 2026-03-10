@@ -3,13 +3,13 @@ description: Install chezmoi binary
 
 inputs:
   install-dir:
-    description: 'Installation directory'
+    description: "Installation directory"
     required: false
-    default: '/usr/local/bin'
+    default: "/usr/local/bin"
   add-to-path:
-    description: 'Add installation directory to PATH'
+    description: "Add installation directory to PATH"
     required: false
-    default: 'false'
+    default: "false"
 
 runs:
   using: composite

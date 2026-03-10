@@ -49,6 +49,7 @@ Creates a new branch with worktree, executes the given task, and optionally crea
 ## Branch Naming
 
 Branch names are auto-generated in the format:
+
 - `feature/<task-summary>-<timestamp>`
 - Example: `feature/dark-mode-settings-20240626`
 
@@ -72,11 +73,13 @@ Branch names are auto-generated in the format:
 ## Cleanup
 
 Manual worktree cleanup after completion:
+
 ```bash
 git-worktree-cleanup
 ```
 
 Or manually:
+
 ```bash
 git worktree remove .git/worktree/<branch-name>
 git branch -d <branch-name>

@@ -5,12 +5,14 @@
 ## テストファイル構成
 
 ### メインテストスイート
+
 - **`integration/run-ts-hook-tests.sh`** - TypeScript Hook統合テスト
 - **`integration/test-data/`** - テストデータファイル（JSON）
 - **`unit/`** - 単体テスト（未実装）
 - **`precommit/test_fast.sh`** - Pre-commitテスト
 
 ### CI/CD関連
+
 - **`../scripts/ci_test.sh`** - CI/CD環境での実行用スクリプト
 - **`../scripts/all_tests.sh`** - 全テスト実行スクリプト
 - **`../scripts/test-with-types.sh`** - 型チェック付きテスト
@@ -18,6 +20,7 @@
 ## テスト実行方法
 
 ### 基本実行
+
 ```bash
 # 型チェック付き全テスト実行（推奨）
 ../scripts/test-with-types.sh
@@ -30,6 +33,7 @@
 ```
 
 ### 個別Hook実行テスト
+
 ```bash
 # auto-approve.tsのテスト
 echo '{"tool_name": "Bash", "tool_input": {"command": "git status"}}' | bun ../implementations/auto-approve.ts
@@ -41,6 +45,7 @@ echo '{"tool_name": "Bash", "tool_input": {"command": "npx tsx script.ts"}}' | b
 ## テスト対象Hook実装
 
 ### TypeScript化済みHook
+
 - ✅ **auto-approve.ts** - コマンド自動承認/拒否
 - ✅ **block-tsx.ts** - tsx/ts-node実行制限
 - ✅ **deny-node-modules.ts** - node_modules書き込み制限
@@ -57,12 +62,14 @@ echo '{"tool_name": "Bash", "tool_input": {"command": "npx tsx script.ts"}}' | b
 ## テスト機能
 
 ### パターンマッチングテスト
+
 - ✅ Allow/Denyパターンの基本動作
 - ✅ 単一コマンドのマッチング
 - ✅ GitIgnore形式パターン
 - ✅ 複合コマンド処理（&&, ||, ;, |）
 
 ### ラッパーコマンド検出テスト
+
 - ✅ `timeout` コマンド内の子コマンド検出
 - ✅ `time` コマンド内の子コマンド検出
 - ✅ `npx/pnpx/bunx` コマンド内の子コマンド検出
@@ -70,12 +77,14 @@ echo '{"tool_name": "Bash", "tool_input": {"command": "npx tsx script.ts"}}' | b
 - ✅ `find -exec` 内の子コマンド検出
 
 ### セキュリティ機能テスト
+
 - ✅ 危険なコマンドの検出とブロック
 - ✅ 全コマンド明示的許可の要求
 - ✅ 1つでもDenyされた場合のブロック
 - ✅ 許可されていないコマンドのパススルー
 
 ### TypeScript型安全性テスト
+
 - ✅ cc-hooks-ts framework統合
 - ✅ 型推論の正確性
 - ✅ コンパイル時エラーチェック
@@ -84,12 +93,14 @@ echo '{"tool_name": "Bash", "tool_input": {"command": "npx tsx script.ts"}}' | b
 ## テスト環境
 
 ### 技術仕様
+
 - **Runtime**: Bun (主), Node.js (互換)
 - **型チェッカー**: tsgo
 - **テストフレームワーク**: Bash + JSON test data
 - **設定管理**: chezmoi template system
 
 ### 環境変数
+
 - `HOOKS_DIR` - テスト対象Hook実装ディレクトリ
 - `TEST_DATA_DIR` - テストデータディレクトリ
 - `CI_MODE=1` - CI環境モード（詳細出力）
@@ -97,6 +108,7 @@ echo '{"tool_name": "Bash", "tool_input": {"command": "npx tsx script.ts"}}' | b
 ## テストデータファイル
 
 ### integration/test-data/
+
 ```
 test-data/
 ├── auto-approve-allow.json          # 承認パターンテストデータ
@@ -107,6 +119,7 @@ test-data/
 ```
 
 ### テストデータ形式
+
 ```json
 {
   "tool_name": "Bash",
@@ -121,6 +134,7 @@ test-data/
 ## テスト結果の読み方
 
 ### 成功時
+
 ```
 ✅ Testing auto-approve.ts...
 ✅ All TypeScript Hook tests passed!
@@ -128,6 +142,7 @@ test-data/
 ```
 
 ### 型チェック成功
+
 ```
 🔍 Phase 1: Type Checking
 ==========================
@@ -136,6 +151,7 @@ Type checking: Common hook utilities... PASS
 ```
 
 ### 失敗時
+
 ```
 ❌ Testing block-tsx.ts...
 FAIL (expected allow, got deny)
@@ -154,12 +170,14 @@ FAIL (expected allow, got deny)
 ### よくある問題
 
 1. **型エラー**
+
    ```bash
    # 型チェック実行
    npx tsgo --noEmit ../implementations/*.ts
    ```
 
 2. **依存関係エラー**
+
    ```bash
    # プロジェクトルートから実行
    cd /home/berlysia/.local/share/chezmoi
@@ -173,6 +191,7 @@ FAIL (expected allow, got deny)
    ```
 
 ### デバッグ方法
+
 ```bash
 # 詳細デバッグ出力
 bash -x ./integration/run-ts-hook-tests.sh
@@ -184,11 +203,13 @@ DEBUG=1 echo '{"tool_name": "Bash", "tool_input": {"command": "ls"}}' | bun ../i
 ## 新しいテストの追加
 
 ### 統合テストケース追加
+
 1. `integration/test-data/` に JSONテストデータを作成
 2. `integration/run-ts-hook-tests.sh` にテストケースを追加
 3. 期待される動作を明確に指定
 
 ### テストデータ例
+
 ```json
 {
   "description": "新機能のテスト",
@@ -203,6 +224,7 @@ DEBUG=1 echo '{"tool_name": "Bash", "tool_input": {"command": "ls"}}' | bun ../i
 ```
 
 ### 単体テストの追加
+
 ```bash
 # tests/unit/ 配下に新しいテストスクリプトを作成
 # 例: tests/unit/test_pattern_matching.sh
@@ -211,6 +233,7 @@ DEBUG=1 echo '{"tool_name": "Bash", "tool_input": {"command": "ls"}}' | bun ../i
 ## CI/CD統合
 
 ### GitHub Actions例
+
 ```yaml
 - name: Run TypeScript Hook Tests
   run: |
@@ -219,6 +242,7 @@ DEBUG=1 echo '{"tool_name": "Bash", "tool_input": {"command": "ls"}}' | bun ../i
 ```
 
 ### Pre-commit統合
+
 ```bash
 # .git/hooks/pre-commit に設定
 ./dot_claude/hooks/tests/precommit/test_fast.sh

@@ -48,11 +48,11 @@ Same as above, but ensure your account has appropriate organization access.
 
 The authentication must include these scopes:
 
-| Scope | Required For | Commands |
-|-------|--------------|----------|
-| **`repo`** (full control) | All repository operations | All `gh api repos/...` commands |
-| **`admin:org`** (for org repos) | Organization settings | Organization repository configuration |
-| **`workflow`** | Workflow management | Triggering workflows, reading workflow runs |
+| Scope                           | Required For              | Commands                                    |
+| ------------------------------- | ------------------------- | ------------------------------------------- |
+| **`repo`** (full control)       | All repository operations | All `gh api repos/...` commands             |
+| **`admin:org`** (for org repos) | Organization settings     | Organization repository configuration       |
+| **`workflow`**                  | Workflow management       | Triggering workflows, reading workflow runs |
 
 **Verify current authentication:**
 
@@ -84,14 +84,17 @@ gh auth login
 ### Repository Settings Commands
 
 **Enable auto-merge:**
+
 ```bash
 gh api -X PATCH repos/$OWNER/$REPO -f allow_auto_merge=true
 ```
+
 - **Required:** Repository admin or owner
 - **Scope:** `repo` (full control)
 - **Organization:** Must have "Repository" → "Administration" permission
 
 **Verify permission:**
+
 ```bash
 # Check your permission level
 gh api repos/$OWNER/$REPO | jq '.permissions'
@@ -101,16 +104,19 @@ gh api repos/$OWNER/$REPO | jq '.permissions'
 ### Branch Protection Commands
 
 **Set branch protection:**
+
 ```bash
 gh api -X PUT repos/$OWNER/$REPO/branches/$BRANCH/protection --input - <<EOF
 { ... }
 EOF
 ```
+
 - **Required:** Repository admin or owner
 - **Scope:** `repo` (full control)
 - **Organization:** "Repository" → "Administration" permission
 
 **Verify permission:**
+
 ```bash
 # Try reading branch protection (less privileged operation)
 gh api repos/$OWNER/$REPO/branches/$BRANCH/protection
@@ -120,14 +126,17 @@ gh api repos/$OWNER/$REPO/branches/$BRANCH/protection
 ### Secrets Management Commands
 
 **Set repository secrets:**
+
 ```bash
 gh secret set SECRET_NAME --body "value"
 ```
+
 - **Required:** Repository admin or owner, OR "Secrets" write permission
 - **Scope:** `repo` (full control)
 - **Organization:** "Repository" → "Secrets" permission
 
 **Verify permission:**
+
 ```bash
 # List secrets (shows names only, not values)
 gh api repos/$OWNER/$REPO/actions/secrets
@@ -137,35 +146,43 @@ gh api repos/$OWNER/$REPO/actions/secrets
 ### Environment Management Commands
 
 **Create environment:**
+
 ```bash
 gh api -X PUT repos/$OWNER/$REPO/environments/renovate --input - <<EOF
 { ... }
 EOF
 ```
+
 - **Required:** Repository admin or owner
 - **Scope:** `repo` (full control)
 - **Organization:** "Repository" → "Administration" permission
 
 **Set environment secrets:**
+
 ```bash
 gh secret set SECRET_NAME --env renovate --body "value"
 ```
+
 - **Required:** Repository admin or owner, OR "Secrets" write permission
 - **Scope:** `repo` (full control)
 
 ### Workflow Management Commands
 
 **Trigger workflow:**
+
 ```bash
 gh workflow run workflow.yml
 ```
+
 - **Required:** Write access to repository
 - **Scope:** `workflow`
 
 **View workflow runs:**
+
 ```bash
 gh run list --workflow=workflow.yml
 ```
+
 - **Required:** Read access to repository
 - **Scope:** `repo` (at least read)
 
@@ -176,27 +193,30 @@ For organization repositories, additional permissions may be required:
 ### Organization Settings
 
 **Check organization membership:**
+
 ```bash
 gh api orgs/$ORG/memberships/$USERNAME
 ```
 
 **Required organization roles:**
+
 - **Member**: Can read and clone repositories
 - **Admin**: Can configure repositories and settings
 - **Owner**: Full organization control
 
 ### Repository Role Requirements
 
-| Task | Required Role |
-|------|---------------|
-| Read repository settings | Write access |
-| Modify repository settings | Admin access |
-| Create/modify branch protection | Admin access |
-| Manage secrets | Admin access OR "Secrets" permission |
-| Manage environments | Admin access |
-| Create GitHub Apps | Organization owner |
+| Task                            | Required Role                        |
+| ------------------------------- | ------------------------------------ |
+| Read repository settings        | Write access                         |
+| Modify repository settings      | Admin access                         |
+| Create/modify branch protection | Admin access                         |
+| Manage secrets                  | Admin access OR "Secrets" permission |
+| Manage environments             | Admin access                         |
+| Create GitHub Apps              | Organization owner                   |
 
 **Check your repository role:**
+
 ```bash
 gh api repos/$OWNER/$REPO/collaborators/$USERNAME/permission | jq '.permission'
 # Output: "admin", "write", "read", or "none"
@@ -261,6 +281,7 @@ echo -e "\n✓ All permission checks passed!"
 ```
 
 Save as `check-gh-permissions.sh` and run:
+
 ```bash
 chmod +x check-gh-permissions.sh
 ./check-gh-permissions.sh
@@ -271,10 +292,12 @@ chmod +x check-gh-permissions.sh
 ### Error: "Resource not accessible by integration"
 
 **When using gh CLI:**
+
 - Means your token lacks required scopes
 - Solution: `gh auth refresh -s repo -s admin:org -s workflow`
 
 **When using GitHub App:**
+
 - Means the app lacks required permissions
 - Solution: Update app permissions in app settings
 
@@ -283,6 +306,7 @@ chmod +x check-gh-permissions.sh
 **Cause:** You don't have admin access to the repository
 
 **Solutions:**
+
 1. Ask repository owner to grant you admin access
 2. Organization: Ask organization admin to add you to admin team
 3. Use repository owner's account for setup
@@ -292,6 +316,7 @@ chmod +x check-gh-permissions.sh
 **Cause:** Too many API calls in short period
 
 **Solutions:**
+
 ```bash
 # Check rate limit status
 gh api rate_limit
@@ -307,6 +332,7 @@ gh api rate_limit
 **Cause:** Token expired or invalid
 
 **Solution:**
+
 ```bash
 # Re-authenticate
 gh auth logout
@@ -320,12 +346,14 @@ gh auth login
    - Don't use organization owner account for routine tasks
 
 2. **Rotate tokens regularly**
+
    ```bash
    # Refresh token (generates new one)
    gh auth refresh
    ```
 
 3. **Use environment-specific authentication**
+
    ```bash
    # For automation, use GH_TOKEN environment variable
    export GH_TOKEN="ghp_..."
@@ -333,6 +361,7 @@ gh auth login
    ```
 
 4. **Audit token usage**
+
    ```bash
    # Check where token is used
    gh auth status
@@ -351,6 +380,7 @@ gh auth login
 Instead of `gh auth login`, you can use fine-grained PATs:
 
 **Create fine-grained PAT:**
+
 1. Go to Settings → Developer settings → Personal access tokens → Fine-grained tokens
 2. Click "Generate new token"
 3. Set expiration, description
@@ -363,6 +393,7 @@ Instead of `gh auth login`, you can use fine-grained PATs:
      - Workflows: Read and write
 
 **Use PAT with gh CLI:**
+
 ```bash
 # Set as environment variable
 export GH_TOKEN="github_pat_..."
@@ -375,12 +406,14 @@ gh auth status
 ```
 
 **Advantages of fine-grained PATs:**
+
 - More granular permissions than classic PATs
 - Can be scoped to specific repositories
 - Shorter expiration (max 1 year)
 - Better audit trail
 
 **Disadvantages:**
+
 - More complex to set up
 - Must manually renew when expired
 - Not all API endpoints support fine-grained PATs yet

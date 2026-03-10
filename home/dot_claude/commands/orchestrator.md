@@ -5,26 +5,22 @@ Split complex tasks into sequential steps, where each step can contain multiple 
 ## Process
 
 1. **Initial Analysis**
-
    - First, analyze the entire task to understand scope and requirements
    - Identify dependencies and execution order
    - Plan sequential steps based on dependencies
 
 2. **Step Planning**
-
    - Break down into 2-4 sequential steps
    - Each step can contain multiple parallel subtasks
    - Define what context from previous steps is needed
 
 3. **Step-by-Step Execution**
-
    - Execute all subtasks within a step in parallel
    - Wait for all subtasks in current step to complete
    - Pass relevant results to next step
    - Request concise summaries (100-200 words) from each subtask
 
 4. **Step Review and Adaptation**
-
    - After each step completion, review results
    - Validate if remaining steps are still appropriate
    - Adjust next steps based on discoveries

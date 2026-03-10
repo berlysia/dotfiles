@@ -40,6 +40,7 @@ You are an expert software engineering analyst specializing in semantic analysis
 ## Analysis Workflow
 
 ### Step 1: Repository Preparation
+
 ```bash
 # Move to repository root
 cd "$(git rev-parse --show-toplevel)"
@@ -52,6 +53,7 @@ git diff HEAD > .claude/tmp/current_changes.patch
 ```
 
 ### Step 2: Hunk Analysis
+
 Analyze the patch file to understand all modifications:
 
 ```bash
@@ -63,6 +65,7 @@ git diff HEAD --name-only | xargs -I {} sh -c 'printf "%s: " "{}"; git diff HEAD
 ```
 
 For each hunk:
+
 - Read the hunk context (surrounding unchanged lines)
 - Understand what the modification achieves
 - Identify which files/functions/modules are affected
@@ -71,9 +74,11 @@ For each hunk:
 ### Step 3: Semantic Grouping Strategy
 
 #### Same-File Semantic Division (Critical Pattern)
+
 When a single file contains multiple independent changes:
 
 **Example**:
+
 ```
 src/calculator.py:
 - Hunk 1: Add zero division check
@@ -88,9 +93,11 @@ Commit 2 (refactor): Hunks 2,4 - Code optimization
 ```
 
 #### Cross-File Semantic Grouping
+
 When related changes span multiple files:
 
 **Example**:
+
 ```
 src/auth.py:
 - Hunks 1,3,5: Security vulnerability fixes
@@ -118,30 +125,36 @@ For each proposed commit, generate:
 4. **git-sequential-stage Command**: Ready-to-execute command
 
 **Output Format**:
-```markdown
+
+````markdown
 ## Proposed Commit 1: fix(auth): handle zero division errors
 
 **Rationale**: All changes address zero division vulnerability across the codebase
 
 **Affected Changes**:
+
 - src/calculator.py: Hunks 1, 3, 5
 - src/utils.py: Hunk 2
 
 **Staging Command**:
+
 ```bash
 git-sequential-stage -patch=".claude/tmp/current_changes.patch" \
   -hunk="src/calculator.py:1,3,5" \
   -hunk="src/utils.py:2"
 ```
+````
 
 **Commit Message**:
+
 ```
 fix(auth): handle zero division errors
 
 Add comprehensive zero division checks and error logging
 to prevent runtime crashes in calculation operations.
 ```
-```
+
+````
 
 ## Analysis Principles
 
@@ -242,9 +255,10 @@ Your analysis must always include:
 cd "$(git rev-parse --show-toplevel)"
 git ls-files --others --exclude-standard | xargs -r git add -N
 git diff HEAD > .claude/tmp/current_changes.patch
-```
+````
 
 **Count Hunks**:
+
 ```bash
 # Total
 grep -c '^@@' .claude/tmp/current_changes.patch
@@ -255,6 +269,7 @@ git diff HEAD --name-only | xargs -I {} sh -c \
 ```
 
 **Stage Hunks**:
+
 ```bash
 # Single file
 git-sequential-stage -patch=".claude/tmp/current_changes.patch" \
@@ -279,6 +294,7 @@ git-sequential-stage -patch=".claude/tmp/current_changes.patch" \
 ## Success Criteria
 
 A successful analysis produces:
+
 - ✅ Clear, semantic commit boundaries
 - ✅ Accurate hunk specifications that apply cleanly
 - ✅ Meaningful commit messages following conventions

@@ -11,6 +11,7 @@ description: "Execute a pre-existing plan file by implementing tasks sequentiall
 ## 前提条件
 
 以下のいずれかが存在すること:
+
 - 計画ファイル（Markdown、ADRなど）のパス
 - TaskCreate で作成済みのタスクリスト
 - ユーザーが直接指定するタスク一覧

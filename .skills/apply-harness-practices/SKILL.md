@@ -44,7 +44,7 @@ context: inherit
 1. **言語検出**: package.json / go.mod / Cargo.toml / pyproject.toml / requirements.txt
 2. **CLAUDE.md / AGENTS.md**: 有無、行数、内容（ポインタ型 or 説明型）
 3. **Hooks設定**: `.claude/settings.json` と `.claude/settings.local.json` の両方を確認。settings.local.json は gitignore された個人設定の場合がある — チーム共有か個人レベルかを判断に含める
-4. **リンター**: biome.json, oxlint の設定, .eslintrc*, ruff.toml, .golangci.yml, clippy.toml 等
+4. **リンター**: biome.json, oxlint の設定, .eslintrc\*, ruff.toml, .golangci.yml, clippy.toml 等
 5. **フォーマッター**: prettier, biome, black/ruff format, gofmt, rustfmt 等
 6. **Pre-commit**: .husky/, lefthook.yml, .pre-commit-config.yaml
 7. **テスト**: テストランナー設定、テストファイルの存在
@@ -93,6 +93,7 @@ MVH Checklist の各項目について、Phase 1 の結果と照合する。
 選択された Stage の未実装項目について、言語別テンプレートを提示する。
 
 各項目で以下を含める:
+
 - 設定ファイルの具体例（プロジェクトの言語・ツールに合わせて調整）
 - 実装手順（1-3ステップ）
 - 期待される効果
@@ -103,14 +104,15 @@ MVH Checklist の各項目について、Phase 1 の結果と照合する。
 
 ### TypeScript / JavaScript
 
-| 項目 | 推奨ツール |
-|------|-----------|
-| リンター | Oxlint（高速）+ Biome |
-| フォーマッター | Biome format または Prettier |
-| 型チェック | tsc --noEmit / tsgo |
-| Pre-commit | lefthook または husky + lint-staged |
+| 項目           | 推奨ツール                          |
+| -------------- | ----------------------------------- |
+| リンター       | Oxlint（高速）+ Biome               |
+| フォーマッター | Biome format または Prettier        |
+| 型チェック     | tsc --noEmit / tsgo                 |
+| Pre-commit     | lefthook または husky + lint-staged |
 
 PostToolUse hooks 例:
+
 ```json
 {
   "type": "command",
@@ -122,13 +124,14 @@ PostToolUse hooks 例:
 
 ### Python
 
-| 項目 | 推奨ツール |
-|------|-----------|
+| 項目                      | 推奨ツール                |
+| ------------------------- | ------------------------- |
 | リンター + フォーマッター | Ruff（一択、900+ ルール） |
-| 型チェック | mypy / pyright |
-| Pre-commit | pre-commit フレームワーク |
+| 型チェック                | mypy / pyright            |
+| Pre-commit                | pre-commit フレームワーク |
 
 PostToolUse hooks 例:
+
 ```json
 {
   "type": "command",
@@ -140,23 +143,24 @@ PostToolUse hooks 例:
 
 ### Go
 
-| 項目 | 推奨ツール |
-|------|-----------|
-| リンター | golangci-lint（50+ リンター並列実行） |
-| フォーマッター | gofmt / goimports |
-| Pre-commit | lefthook |
+| 項目           | 推奨ツール                            |
+| -------------- | ------------------------------------- |
+| リンター       | golangci-lint（50+ リンター並列実行） |
+| フォーマッター | gofmt / goimports                     |
+| Pre-commit     | lefthook                              |
 
 ### Rust
 
-| 項目 | 推奨ツール |
-|------|-----------|
-| リンター | Clippy（pedantic レベル推奨） |
-| フォーマッター | rustfmt |
-| Pre-commit | lefthook |
+| 項目           | 推奨ツール                    |
+| -------------- | ----------------------------- |
+| リンター       | Clippy（pedantic レベル推奨） |
+| フォーマッター | rustfmt                       |
+| Pre-commit     | lefthook                      |
 
 ### Other
 
 言語固有のツールが不明な場合の一般原則:
+
 - **リンター**: 言語エコシステムで最も高速なものを選択（Rust 製ツール優先）
 - **フォーマッター**: エディタ統合があるものを選択
 - **Pre-commit**: lefthook（言語非依存、高速）
@@ -171,21 +175,25 @@ PostToolUse hooks 例:
 # Project Name
 
 ## Commands
+
 - **Test**: `<test command>`
 - **Lint**: `<lint command>`
 - **Typecheck**: `<typecheck command>`
 - **Build**: `<build command>`
 
 ## Architecture
+
 - [See ADR directory](docs/decisions/)
 - [See project structure](src/)
 
 ## Rules
+
 - No `any` types
 - Run lint before commit
 - Tests must pass before completion
 
 ## Prohibitions
+
 - Never hardcode secrets
 - Never suppress lint errors
 - Never modify lint/format config without ADR

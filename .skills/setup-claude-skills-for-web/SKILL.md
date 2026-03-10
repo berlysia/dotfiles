@@ -24,6 +24,7 @@ This Skill sets up Claude Code skills from berlysia/dotfiles repository in other
 ### Step 1: Check if .claude/settings.json exists
 
 Read `.claude/settings.json` to check current state:
+
 - If file doesn't exist → Proceed to Step 2
 - If file exists → Proceed to Step 3
 
@@ -103,6 +104,7 @@ Expected output: List of skill directories.
 ### Step 6: Inform user
 
 Tell user:
+
 - Skills are now available via `/skill-name` commands
 - Skills auto-update on Claude Code startup
 - List installed skills with descriptions
@@ -123,16 +125,19 @@ After installation, these skills will be available:
 ## Error Handling
 
 **curl command fails:**
+
 - Check network connection
 - Verify GitHub is accessible
 - Try manual installation: `git clone https://github.com/berlysia/dotfiles`
 
 **Settings.json syntax error:**
+
 - Validate JSON syntax
 - Ensure proper quote escaping
 - Check no trailing commas
 
 **Skills not appearing:**
+
 - Check `~/.claude/skills/` directory exists
 - Verify curl and git are installed
 - Run install script manually

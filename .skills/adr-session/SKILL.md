@@ -27,6 +27,7 @@ Glob: docs/decisions/adr-*.md
 ```
 
 If no files found AND `docs/decisions/` does not exist:
+
 - Report: "ADR ディレクトリが見つかりません"
 - Suggest: "`docs/decisions/` と `docs/plans/` を作成しますか？"
 - If user agrees, create both directories
@@ -34,6 +35,7 @@ If no files found AND `docs/decisions/` does not exist:
 - Stop here
 
 If directory exists but no ADR files:
+
 - Report: "ADR ファイルがまだありません"
 - Suggest: "`/adr-session new` で最初の ADR を作成できます"
 - Stop here
@@ -45,6 +47,7 @@ For each `adr-*.md` file, read the file and extract YAML frontmatter (content be
 Refer to [adr-schema.md](references/adr-schema.md) for valid field definitions.
 
 **Error handling:**
+
 - YAML parse error → warn with filename and error, skip file
 - Invalid `status` value (not in Proposed/Accepted/InProgress/Complete) → warn and skip
 - No frontmatter → report as "frontmatter なし" in the table
@@ -88,6 +91,7 @@ An ADR is actionable when (see [adr-schema.md](references/adr-schema.md#actionab
 
 **Circular dependency detection:**
 Build a directed graph from all `deps` fields. If a cycle is found:
+
 - Warn: "循環依存を検出: ADR-X → ADR-Y → ADR-X"
 - List all ADR numbers involved
 - Exclude them from actionable list
@@ -118,6 +122,7 @@ If not found: "ADR-NNN が見つかりません。`/adr-session` でステータ
 ### Step 2: Display ADR summary
 
 Show:
+
 - Title, status, phase
 - deps status (each dep's current status)
 - Plan link if exists
@@ -125,6 +130,7 @@ Show:
 ### Step 3: Check dependencies
 
 If ADR has `deps`, check each referenced ADR's status:
+
 - All Complete → proceed normally
 - Some not Complete → warn: "依存 ADR-X がまだ Complete ではありません（現在: {status}）。先にそちらを完了することを推奨します。"
 
@@ -246,6 +252,7 @@ Read [adr-template.md](references/adr-template.md) for the template structure.
 Generate the slug from the title (lowercase, spaces to hyphens, remove special chars).
 
 Write the file to `docs/decisions/adr-{NNN}-{slug}.md` with:
+
 - `status: Proposed` in frontmatter
 - NNN and title filled in
 
@@ -266,11 +273,11 @@ ADR-{NNN} を作成しました: `docs/decisions/adr-{NNN}-{slug}.md`
 
 ## Related Skills
 
-| Skill | When to Use |
-|-------|-------------|
+| Skill                           | When to Use                                              |
+| ------------------------------- | -------------------------------------------------------- |
 | logic-validator (Task subagent) | ADR 作成・更新後の論理検証（investigation phase 完了時） |
-| `/validate-plan` | Plan の検証（validation phase） |
-| `/session-memo` | セッション終了時の記録 |
-| `/decompose` | 実装タスクの細分化（implementation phase） |
-| `/execute-plan` | 計画に沿った順次実行（implementation phase） |
-| `/scope-guard` | ADR のスコープが大きすぎる場合 |
+| `/validate-plan`                | Plan の検証（validation phase）                          |
+| `/session-memo`                 | セッション終了時の記録                                   |
+| `/decompose`                    | 実装タスクの細分化（implementation phase）               |
+| `/execute-plan`                 | 計画に沿った順次実行（implementation phase）             |
+| `/scope-guard`                  | ADR のスコープが大きすぎる場合                           |

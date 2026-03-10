@@ -6,25 +6,25 @@
 ---
 status: Proposed | Accepted | InProgress | Complete
 deps:
-  - NNN  # ADR number this depends on
-plan: plan-{slug}.md  # relative path from docs/plans/
-substatus: investigating | blocked  # optional free-text
+  - NNN # ADR number this depends on
+plan: plan-{slug}.md # relative path from docs/plans/
+substatus: investigating | blocked # optional free-text
 ---
 ```
 
 ### Required Fields
 
-| Field | Type | Values | Description |
-|-------|------|--------|-------------|
+| Field    | Type   | Values                                           | Description             |
+| -------- | ------ | ------------------------------------------------ | ----------------------- |
 | `status` | string | `Proposed`, `Accepted`, `InProgress`, `Complete` | Current lifecycle state |
 
 ### Optional Fields
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `deps` | number[] | ADR numbers this depends on |
-| `plan` | string | Plan filename (e.g., `plan-auth-system.md`) |
-| `substatus` | string | Free-text sub-state (e.g., `investigating`, `blocked`) |
+| Field       | Type     | Description                                            |
+| ----------- | -------- | ------------------------------------------------------ |
+| `deps`      | number[] | ADR numbers this depends on                            |
+| `plan`      | string   | Plan filename (e.g., `plan-auth-system.md`)            |
+| `substatus` | string   | Free-text sub-state (e.g., `investigating`, `blocked`) |
 
 ## Status Lifecycle
 
@@ -34,12 +34,12 @@ Proposed → Accepted → InProgress → Complete
    └──────────────────────┘ (revert if plan invalidated)
 ```
 
-| Status | Meaning |
-|--------|---------|
-| `Proposed` | Initial draft, under investigation |
-| `Accepted` | Investigation complete, decision validated by logic-validator |
-| `InProgress` | Plan created, implementation underway |
-| `Complete` | Implementation finished, verified |
+| Status       | Meaning                                                       |
+| ------------ | ------------------------------------------------------------- |
+| `Proposed`   | Initial draft, under investigation                            |
+| `Accepted`   | Investigation complete, decision validated by logic-validator |
+| `InProgress` | Plan created, implementation underway                         |
+| `Complete`   | Implementation finished, verified                             |
 
 ## Phase Determination Logic
 
@@ -56,13 +56,13 @@ if status == Accepted:
 if status == InProgress         → phase: implementation
 ```
 
-| Phase | Status | Plan | Validated | Recommended Action |
-|-------|--------|------|-----------|--------------------|
-| `investigation` | Proposed | - | - | Research, fill ADR content, validate with logic-validator |
-| `planning` | Accepted | none | - | Create plan in `docs/plans/`, enter Plan Mode |
-| `validation` | Accepted | exists | no | Run `/validate-plan` to add `<!-- validated -->` |
-| `implementation` | Accepted/InProgress | exists | yes | Follow plan, use `/execute-plan` or `/decompose` |
-| `done` | Complete | - | - | No action needed |
+| Phase            | Status              | Plan   | Validated | Recommended Action                                        |
+| ---------------- | ------------------- | ------ | --------- | --------------------------------------------------------- |
+| `investigation`  | Proposed            | -      | -         | Research, fill ADR content, validate with logic-validator |
+| `planning`       | Accepted            | none   | -         | Create plan in `docs/plans/`, enter Plan Mode             |
+| `validation`     | Accepted            | exists | no        | Run `/validate-plan` to add `<!-- validated -->`          |
+| `implementation` | Accepted/InProgress | exists | yes       | Follow plan, use `/execute-plan` or `/decompose`          |
+| `done`           | Complete            | -      | -         | No action needed                                          |
 
 ## Actionable ADR Determination
 
@@ -107,6 +107,7 @@ In ADR body:
 
 ```markdown
 ## 実装計画
+
 [実装計画](../plans/plan-{slug}.md)
 ```
 

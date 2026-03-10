@@ -162,6 +162,7 @@ EOF
 ```
 
 **Key settings:**
+
 - `restrictions`: Only Renovate app can push to `renovate/*` branches
 - `allow_force_pushes`: Renovate needs this to rebase/amend commits
 - `allow_deletions`: Allow branch cleanup after merge
@@ -216,9 +217,9 @@ Don't unify workflows immediately. First, add the status-check pattern:
 jobs:
   # ... existing jobs ...
 
-  status-check-typescript:  # Unique name per workflow
+  status-check-typescript: # Unique name per workflow
     runs-on: ubuntu-latest
-    needs: [check]  # Depends on jobs in THIS workflow
+    needs: [check] # Depends on jobs in THIS workflow
     if: always()
     steps:
       - name: Check job status
@@ -274,10 +275,11 @@ EOF
 **Cause:** Missing `if: always()`
 
 **Solution:**
+
 ```yaml
 status-check:
   needs: [job1, job2]
-  if: always()  # ← Required!
+  if: always() # ← Required!
 ```
 
 ### Issue: PR merges despite failed checks
@@ -285,10 +287,11 @@ status-check:
 **Cause:** Old check results from previous commits still exist
 
 **Solution:**
+
 - Ensure `strict: true` in required_status_checks
 - This forces checks to run on the latest commit after merge
 
-### Issue: Can't push to renovate/* branches
+### Issue: Can't push to renovate/\* branches
 
 **Cause:** Branch protection blocking Renovate bot
 
@@ -328,11 +331,11 @@ on:
   push:
     branches: [master, main]
     paths:
-      - '.github/workflows/**'
+      - ".github/workflows/**"
   pull_request:
     branches: [master, main]
     paths:
-      - '.github/workflows/**'
+      - ".github/workflows/**"
 
 jobs:
   actionlint:

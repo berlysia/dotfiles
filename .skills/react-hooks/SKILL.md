@@ -36,16 +36,19 @@ Never use `useMemo` for constant values. Define unchanging values at module scop
 ```tsx
 // ❌ WRONG: useMemo for constants
 function Component() {
-  const options = useMemo(() => [
-    { value: 'a', label: 'Option A' },
-    { value: 'b', label: 'Option B' },
-  ], []);
+  const options = useMemo(
+    () => [
+      { value: "a", label: "Option A" },
+      { value: "b", label: "Option B" },
+    ],
+    [],
+  );
 }
 
 // ✅ CORRECT: Module-level constants
 const OPTIONS = [
-  { value: 'a', label: 'Option A' },
-  { value: 'b', label: 'Option B' },
+  { value: "a", label: "Option A" },
+  { value: "b", label: "Option B" },
 ] as const;
 
 function Component() {
@@ -63,8 +66,8 @@ function useData(id: string) {
   const [data, setData] = useState(null);
   return {
     data,
-    refresh: () => fetch(id),  // New function every render
-    meta: { id },              // New object every render
+    refresh: () => fetch(id), // New function every render
+    meta: { id }, // New object every render
   };
 }
 
@@ -83,12 +86,12 @@ function useData(id: string) {
 
 Use experimental/newer hooks when React version permits:
 
-| Hook | Purpose | Replaces |
-|------|---------|----------|
-| `useEffectEvent` | Stable event callbacks in effects | `useRef` + manual sync |
-| `use` | Read resources in render | `useEffect` + `useState` |
-| `useOptimistic` | Optimistic UI updates | Manual state management |
-| `useFormStatus` | Form submission state | Custom loading state |
+| Hook             | Purpose                           | Replaces                 |
+| ---------------- | --------------------------------- | ------------------------ |
+| `useEffectEvent` | Stable event callbacks in effects | `useRef` + manual sync   |
+| `use`            | Read resources in render          | `useEffect` + `useState` |
+| `useOptimistic`  | Optimistic UI updates             | Manual state management  |
+| `useFormStatus`  | Form submission state             | Custom loading state     |
 
 ### 5. Prefer Suspense for Async Operations
 
@@ -115,7 +118,7 @@ function UserProfile({ userId }: Props) {
   <Suspense fallback={<Spinner />}>
     <UserProfile userId={id} />
   </Suspense>
-</ErrorBoundary>
+</ErrorBoundary>;
 ```
 
 **Note**: Internal hook implementations may still use `{ data, error, loading }` structures. The preference for Suspense applies to component-level API design.
@@ -124,21 +127,21 @@ function UserProfile({ userId }: Props) {
 
 ### When NOT to Use useEffect
 
-| Scenario | Wrong Approach | Correct Approach |
-|----------|---------------|------------------|
-| Transform data for rendering | `useEffect` + `useState` | Calculate during render |
-| Respond to user event | `useEffect` watching state | Event handler directly |
-| Initialize from props | `useEffect` syncing props | Compute in render or use key |
-| Fetch on mount only | `useEffect` with `[]` | Use data fetching library |
+| Scenario                     | Wrong Approach             | Correct Approach             |
+| ---------------------------- | -------------------------- | ---------------------------- |
+| Transform data for rendering | `useEffect` + `useState`   | Calculate during render      |
+| Respond to user event        | `useEffect` watching state | Event handler directly       |
+| Initialize from props        | `useEffect` syncing props  | Compute in render or use key |
+| Fetch on mount only          | `useEffect` with `[]`      | Use data fetching library    |
 
 ### When NOT to Use useMemo/useCallback
 
-| Scenario | Skip Memoization When... |
-|----------|--------------------------|
-| Simple calculations | Operation is O(1) or simple array methods |
-| Non-object returns | Returning primitives (string, number, boolean) |
-| No child optimization | Child components don't use `React.memo` |
-| Development phase | Premature optimization without profiling |
+| Scenario              | Skip Memoization When...                       |
+| --------------------- | ---------------------------------------------- |
+| Simple calculations   | Operation is O(1) or simple array methods      |
+| Non-object returns    | Returning primitives (string, number, boolean) |
+| No child optimization | Child components don't use `React.memo`        |
+| Development phase     | Premature optimization without profiling       |
 
 ## Essential Patterns
 
@@ -150,23 +153,23 @@ const [items, setItems] = useState<Item[]>([]);
 const [filteredItems, setFilteredItems] = useState<Item[]>([]);
 
 useEffect(() => {
-  setFilteredItems(items.filter(item => item.active));
+  setFilteredItems(items.filter((item) => item.active));
 }, [items]);
 
 // ✅ Correct: Calculate during render
 const [items, setItems] = useState<Item[]>([]);
-const filteredItems = items.filter(item => item.active);
+const filteredItems = items.filter((item) => item.active);
 ```
 
 ### 2. Event Responses: Use Handlers, Not Effects
 
 ```tsx
 // ❌ Anti-pattern: Effect watching state
-const [query, setQuery] = useState('');
+const [query, setQuery] = useState("");
 
 useEffect(() => {
   if (query) {
-    analytics.track('search', { query });
+    analytics.track("search", { query });
   }
 }, [query]);
 
@@ -174,7 +177,7 @@ useEffect(() => {
 const handleSearch = (newQuery: string) => {
   setQuery(newQuery);
   if (newQuery) {
-    analytics.track('search', { query: newQuery });
+    analytics.track("search", { query: newQuery });
   }
 };
 ```
@@ -205,7 +208,7 @@ useEffect(() => {
 }, [initialValue]);
 
 // ✅ Correct: Use key to reset
-<Editor key={documentId} initialValue={initialValue} />
+<Editor key={documentId} initialValue={initialValue} />;
 ```
 
 ## Legitimate useEffect Use Cases
@@ -254,13 +257,13 @@ When memoization is needed:
 // Memoize expensive computations
 const sortedData = useMemo(
   () => data.toSorted((a, b) => complexSort(a, b)),
-  [data]
+  [data],
 );
 
 // Memoize callbacks for optimized children
 const handleClick = useCallback(
-  (id: string) => dispatch({ type: 'SELECT', id }),
-  [dispatch]
+  (id: string) => dispatch({ type: "SELECT", id }),
+  [dispatch],
 );
 
 // Combine with React.memo for child optimization
@@ -277,18 +280,24 @@ Each custom hook should do one thing well:
 
 ```tsx
 // ✅ Focused hooks
-function useLocalStorage<T>(key: string, initial: T) { /* ... */ }
-function useDebounce<T>(value: T, delay: number) { /* ... */ }
-function useMediaQuery(query: string) { /* ... */ }
+function useLocalStorage<T>(key: string, initial: T) {
+  /* ... */
+}
+function useDebounce<T>(value: T, delay: number) {
+  /* ... */
+}
+function useMediaQuery(query: string) {
+  /* ... */
+}
 ```
 
 ### Return Type Patterns
 
-| Pattern | Use When | Example |
-|---------|----------|---------|
-| Tuple `[value, setter]` | State-like API | `useState`, `useLocalStorage` |
-| Object `{ data, error, loading }` | Multiple related values | `useFetch`, `useQuery` |
-| Single value | Read-only derived data | `useMediaQuery`, `useOnline` |
+| Pattern                           | Use When                | Example                       |
+| --------------------------------- | ----------------------- | ----------------------------- |
+| Tuple `[value, setter]`           | State-like API          | `useState`, `useLocalStorage` |
+| Object `{ data, error, loading }` | Multiple related values | `useFetch`, `useQuery`        |
+| Single value                      | Read-only derived data  | `useMediaQuery`, `useOnline`  |
 
 ### Composition Over Complexity
 
@@ -306,31 +315,34 @@ function useSearchWithDebounce(initialQuery: string) {
 
 ## Common Mistakes at a Glance
 
-| Mistake | Why It's Wrong | Fix |
-|---------|---------------|-----|
-| `useState` + `useEffect` for filtering | Extra render, sync bugs | Calculate during render |
-| `useMemo(() => CONSTANT, [])` | Unnecessary overhead | Module-level constant |
-| `// eslint-disable-next-line` | Hides real bugs | Fix the dependency issue |
-| Unstable custom hook returns | Breaks consumer memoization | Memoize all non-primitives |
-| `useEffect` for analytics on click | Delayed, indirect | Track in click handler |
-| Manual loading/error state | Boilerplate, race conditions | Suspense + ErrorBoundary |
+| Mistake                                | Why It's Wrong               | Fix                        |
+| -------------------------------------- | ---------------------------- | -------------------------- |
+| `useState` + `useEffect` for filtering | Extra render, sync bugs      | Calculate during render    |
+| `useMemo(() => CONSTANT, [])`          | Unnecessary overhead         | Module-level constant      |
+| `// eslint-disable-next-line`          | Hides real bugs              | Fix the dependency issue   |
+| Unstable custom hook returns           | Breaks consumer memoization  | Memoize all non-primitives |
+| `useEffect` for analytics on click     | Delayed, indirect            | Track in click handler     |
+| Manual loading/error state             | Boilerplate, race conditions | Suspense + ErrorBoundary   |
 
 ## Code Review Checklist
 
 When reviewing React hooks code, verify:
 
 **Mandatory (Zero Tolerance)**
+
 - [ ] No ESLint `exhaustive-deps` warnings suppressed
 - [ ] No `useMemo` for constant values (use module-level)
 - [ ] All custom hook returns are stable (memoized or primitives)
 
 **Anti-Patterns**
+
 - [ ] No `useEffect` for derived state calculations
 - [ ] No `useEffect` for event response logic
 - [ ] No `useState` for values computable from other state/props
 - [ ] No `useMemo`/`useCallback` without proven performance need
 
 **Quality**
+
 - [ ] Dependencies arrays are complete and accurate
 - [ ] Custom hooks follow single responsibility principle
 - [ ] Cleanup functions provided where needed

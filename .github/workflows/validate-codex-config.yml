@@ -6,16 +6,16 @@ on:
       - master
       - main
     paths:
-      - 'dot_codex/config.toml'
-      - 'scripts/check-codex-config.sh'
-      - 'scripts/format-codex-config.sh'
-      - '.github/workflows/validate-codex-config.yml'
+      - "dot_codex/config.toml"
+      - "scripts/check-codex-config.sh"
+      - "scripts/format-codex-config.sh"
+      - ".github/workflows/validate-codex-config.yml"
   pull_request:
     paths:
-      - 'dot_codex/config.toml'
-      - 'scripts/check-codex-config.sh'
-      - 'scripts/format-codex-config.sh'
-      - '.github/workflows/validate-codex-config.yml'
+      - "dot_codex/config.toml"
+      - "scripts/check-codex-config.sh"
+      - "scripts/format-codex-config.sh"
+      - ".github/workflows/validate-codex-config.yml"
 
 jobs:
   validate:
@@ -24,21 +24,21 @@ jobs:
       contents: read
 
     steps:
-    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-      with:
-        persist-credentials: false
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
 
-    - name: Install mise
-      uses: jdx/mise-action@6d1e696aa24c1aa1bcc1adea0212707c71ab78a8 # v3.6.1
-      with:
-        experimental: true
-        reshim: true
+      - name: Install mise
+        uses: jdx/mise-action@6d1e696aa24c1aa1bcc1adea0212707c71ab78a8 # v3.6.1
+        with:
+          experimental: true
+          reshim: true
 
-    - name: Make scripts executable
-      run: |
-        chmod +x scripts/*.sh
+      - name: Make scripts executable
+        run: |
+          chmod +x scripts/*.sh
 
-    - name: Validate Codex config formatting
-      run: ./scripts/check-codex-config.sh
-      env:
-        CODEX_CONFIG_FILE: dot_codex/config.toml
+      - name: Validate Codex config formatting
+        run: ./scripts/check-codex-config.sh
+        env:
+          CODEX_CONFIG_FILE: dot_codex/config.toml

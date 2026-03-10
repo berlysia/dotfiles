@@ -7,17 +7,20 @@ Creates semantically meaningful git commits with intelligent change analysis, au
 This command is typically invoked by `/commit` when it detects complex changes that need splitting. You can also invoke it directly when you know you have mixed change types.
 
 ## Description
+
 This command orchestrates the complete commit workflow by coordinating specialized agents to analyze changes, group them semantically, generate conventional commit messages, and execute atomic commits following best practices.
 
 ## Core Principles
 
 ### Semantic Commits
+
 - **Atomic**: Each commit represents a single, coherent change
 - **Meaningful**: Commit messages clearly explain the "why" behind changes
 - **Self-contained**: The codebase works after each commit
 - **Conventional**: Follow Angular-style commit prefixes (feat, fix, refactor, etc.)
 
 ### Atomic Commits Best Practices
+
 - **Single Purpose**: Each commit addresses one specific change or feature
 - **Independent**: Commits work independently and don't break the build
 - **Reviewable**: Small enough to be understood in code review
@@ -28,6 +31,7 @@ This command orchestrates the complete commit workflow by coordinating specializ
 ### 1. Four-Phase Workflow
 
 **Phase 1: Preparation**
+
 - Move to repository root using `git rev-parse --show-toplevel`
 - Verify repository state with `git status`
 - Generate comprehensive diff patch to `.claude/tmp/current_changes.patch`:
@@ -38,6 +42,7 @@ This command orchestrates the complete commit workflow by coordinating specializ
 
 **Phase 2: Analysis**
 Execute `change-semantic-analyzer` agent using Task tool:
+
 ```
 Task(change-semantic-analyzer):
   - Parse git diff and identify all hunks
@@ -51,12 +56,14 @@ Task(change-semantic-analyzer):
 For each proposed commit group:
 
 1. **Selective Staging**: Execute git-sequential-stage command from analyzer
+
    ```bash
    git-sequential-stage -patch=".claude/tmp/current_changes.patch" \
      -hunk="file1.ts:1,3,5" -hunk="file2.ts:2"
    ```
 
 2. **Message Generation**: Execute `commit-message-generator` agent using Task tool:
+
    ```
    Task(commit-message-generator):
      - Analyze staged changes
@@ -66,6 +73,7 @@ For each proposed commit group:
    ```
 
 3. **Commit Execution**: Execute git commit with generated message
+
    ```bash
    git commit -m "$(cat <<'EOF'
    type(scope): description
@@ -84,16 +92,19 @@ For each proposed commit group:
 5. **Diff Update**: Regenerate patch for next iteration
 
 **Phase 4: Verification**
+
 - Confirm all changes are committed with `git status`
 - Validate commit history with `git log --oneline -n <count>`
 - Report completion status
 
 ### 2. User Interaction
+
 - **Automatic**: Simple changesets are processed automatically
 - **Confirmation**: Complex groupings may request user confirmation
 - **Intervention**: User can override proposals or handle failures
 
 ### 3. Error Handling
+
 - **Staging failures**: Automatic retry with updated hunk numbers
 - **Hook failures**: Display errors and stop for manual intervention
 - **Analysis issues**: Request clarification or use conservative grouping
@@ -131,9 +142,11 @@ For each proposed commit group:
 ## Agent Responsibilities
 
 ### `change-semantic-analyzer`
+
 **Role**: Intelligent change analysis and semantic grouping
 
 **Responsibilities**:
+
 - Parse git diff patches and identify hunks
 - Understand semantic purpose of modifications
 - Group related changes across multiple files
@@ -142,6 +155,7 @@ For each proposed commit group:
 - Propose logical commit boundaries and order
 
 **Output**: Detailed commit proposals with:
+
 - Commit type, scope, and description
 - List of affected files and specific hunks
 - Rationale for grouping
@@ -150,9 +164,11 @@ For each proposed commit group:
 **When**: Invoked during Phase 2 (Analysis)
 
 ### `commit-message-generator`
+
 **Role**: Semantic commit message generation following conventions
 
 **Responsibilities**:
+
 - Analyze staged changes
 - Follow Angular-style conventional commit format
 - Generate appropriate type (feat/fix/refactor/etc.)
@@ -162,6 +178,7 @@ For each proposed commit group:
 - Include Claude attribution footer
 
 **Output**: Complete commit message ready for `git commit`:
+
 ```
 type(scope): description
 
@@ -191,19 +208,25 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 ## Advanced Scenarios
 
 ### Large Changesets
+
 When dealing with many changes:
+
 - Automatically grouped by semantic purpose
 - Progress updates provided
 - Multiple commits created in logical order
 
 ### Mixed Change Types
+
 When changes span different types:
+
 - Automatically separated into appropriate commits
 - Maintains logical progression (setup → implementation → tests)
 - Each commit remains atomic and meaningful
 
 ### Complex Dependencies
+
 When changes depend on each other:
+
 - Commits ordered to maintain working state
 - Dependencies respected in commit sequence
 - Each intermediate commit leaves codebase functional
@@ -211,12 +234,15 @@ When changes depend on each other:
 ## Technical Details
 
 ### Hunk-Based Staging
+
 Uses `git-sequential-stage` for precise control:
+
 - Enables semantic division within single files
 - Supports multi-file atomic commits
 - Maintains hunk identity during staging operations
 
 **Example**:
+
 ```bash
 # Stage specific hunks from multiple files
 git-sequential-stage -patch=".claude/tmp/current_changes.patch" \
@@ -225,13 +251,16 @@ git-sequential-stage -patch=".claude/tmp/current_changes.patch" \
 ```
 
 ### Pre-commit Hook Handling
+
 - Respects project hooks (linting, formatting, tests)
 - Automatically handles hook modifications
 - Amends commits when safe (not pushed, correct author)
 - Stops workflow on hook failures
 
 ### Project Detection
+
 Automatically adapts to project conventions:
+
 - Analyzes recent commit history for patterns
 - Follows established type and scope naming
 - Matches project-specific message style
@@ -240,6 +269,7 @@ Automatically adapts to project conventions:
 ## Success Indicators
 
 A successful workflow produces:
+
 - ✅ All changes committed in atomic units
 - ✅ Semantic commit messages following conventions
 - ✅ Clean working directory (no uncommitted changes)
@@ -253,37 +283,44 @@ A successful workflow produces:
 # Commit Workflow Report
 
 ## Phase 1: Preparation ✅
+
 - Repository: /home/user/project
 - Total changes: 5 files, 23 hunks
 - Patch: .claude/tmp/current_changes.patch
 
 ## Phase 2: Analysis ✅
+
 - Proposed commits: 3
 - Change types: feat(1), fix(1), test(1)
 
 ## Phase 3: Execution ✅
 
 ### Commit 1/3: fix(auth): handle token expiration gracefully
+
 - Staged: src/auth.py (hunks 1,3), src/middleware.py (hunk 2)
 - Committed: a1b2c3d
 - Status: ✅ Success
 
 ### Commit 2/3: feat(auth): add refresh token rotation
+
 - Staged: src/auth.py (hunks 2,4,5), src/models.py (hunks 1,2)
 - Committed: e4f5g6h
 - Status: ✅ Success
 
 ### Commit 3/3: test(auth): add token lifecycle tests
+
 - Staged: tests/test_auth.py (all hunks)
 - Committed: i7j8k9l
 - Status: ✅ Success
 
 ## Phase 4: Verification ✅
+
 - Remaining changes: None
 - Working directory: Clean
 - Total commits: 3
 
 ## Summary
+
 ✅ Successfully created 3 semantic commits
 ✅ All changes committed
 ✅ Repository ready for push
@@ -292,21 +329,25 @@ A successful workflow produces:
 ## Troubleshooting
 
 ### No Changes Detected
+
 - Check `git status` to verify changes exist
 - Verify files aren't excluded by `.gitignore`
 - Check global gitignore configuration
 
 ### Staging Failures
+
 - Patch file will be regenerated automatically
 - Hunk numbers recalculated on retry
 - Manual intervention requested if persistent
 
 ### Hook Failures
+
 - Hook output displayed for debugging
 - Workflow stops for manual resolution
 - Staged changes preserved for inspection
 
 ### Semantic Ambiguity
+
 - Analyzer requests clarification when needed
 - Conservative grouping used as fallback
 - User can override automated proposals
@@ -314,11 +355,13 @@ A successful workflow produces:
 ## Notes
 
 ### Commands Handled Automatically
+
 - **DO NOT USE MANUALLY**: `git add`, `git restore`, `git reset`, `git stash`
 - **Automated Tools**: `git-sequential-stage` for selective staging
 - **Focus**: Review proposals and confirm groupings
 
 ### Best Practices
+
 - Trust the semantic analysis
 - Provide feedback on grouping if needed
 - Review generated commit messages
@@ -327,6 +370,7 @@ A successful workflow produces:
 ## Requirements
 
 ### Tools
+
 - `git` (standard git installation)
 - `git-sequential-stage` (for hunk-based staging)
   - Installation: See [GitHub README](https://github.com/syou6162/git-sequential-stage)
@@ -335,6 +379,7 @@ A successful workflow produces:
   - Ubuntu/Debian: `apt-get install patchutils`
 
 ### Environment
+
 - Git repository (initialized and clean of merge conflicts)
 - Working directory with changes (staged or unstaged)
 - Write access to `.claude/tmp/` directory

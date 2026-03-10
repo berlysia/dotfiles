@@ -6,22 +6,22 @@ on:
       - master
       - main
     paths:
-      - '**/*.json.tmpl'
-      - '**/*.json'
-      - '.github/workflows/validate-json.yml'
-      - '.github/scripts/validate-json-templates.sh'
-      - '.github/scripts/check-trailing-commas.sh'
-      - '.github/ci-chezmoi-data.json'
-      - '.github/actions/install-chezmoi/**'
+      - "**/*.json.tmpl"
+      - "**/*.json"
+      - ".github/workflows/validate-json.yml"
+      - ".github/scripts/validate-json-templates.sh"
+      - ".github/scripts/check-trailing-commas.sh"
+      - ".github/ci-chezmoi-data.json"
+      - ".github/actions/install-chezmoi/**"
   pull_request:
     paths:
-      - '**/*.json.tmpl'
-      - '**/*.json'
-      - '.github/workflows/validate-json.yml'
-      - '.github/scripts/validate-json-templates.sh'
-      - '.github/scripts/check-trailing-commas.sh'
-      - '.github/ci-chezmoi-data.json'
-      - '.github/actions/install-chezmoi/**'
+      - "**/*.json.tmpl"
+      - "**/*.json"
+      - ".github/workflows/validate-json.yml"
+      - ".github/scripts/validate-json-templates.sh"
+      - ".github/scripts/check-trailing-commas.sh"
+      - ".github/ci-chezmoi-data.json"
+      - ".github/actions/install-chezmoi/**"
 
 jobs:
   validate:
@@ -30,19 +30,19 @@ jobs:
       contents: read
 
     steps:
-    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-      with:
-        persist-credentials: false
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
 
-    - name: Install chezmoi
-      uses: ./.github/actions/install-chezmoi
+      - name: Install chezmoi
+        uses: ./.github/actions/install-chezmoi
 
-    - name: Make scripts executable
-      run: |
-        chmod +x .github/scripts/*.sh
+      - name: Make scripts executable
+        run: |
+          chmod +x .github/scripts/*.sh
 
-    - name: Validate JSON templates
-      run: .github/scripts/validate-json-templates.sh .github/ci-chezmoi-data.json
+      - name: Validate JSON templates
+        run: .github/scripts/validate-json-templates.sh .github/ci-chezmoi-data.json
 
-    - name: Check for trailing commas
-      run: .github/scripts/check-trailing-commas.sh
+      - name: Check for trailing commas
+        run: .github/scripts/check-trailing-commas.sh

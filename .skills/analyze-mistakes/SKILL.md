@@ -39,6 +39,7 @@ cat ~/.claude/logs/reflections.jsonl ~/.claude/logs/reflections.jsonl.* 2>/dev/n
 3. **対応不可**: `custom-rules.ts` の `CustomRule` テンプレートを提案
 
 `CustomRule` テンプレート:
+
 ```typescript
 {
   id: "<rule-id>",
@@ -64,6 +65,7 @@ cat ~/.claude/logs/quality.jsonl ~/.claude/logs/quality.jsonl.* 2>/dev/null \
 ```
 
 繰り返し違反があれば:
+
 - CLAUDE.md / rules への追記を提案
 - リンター設定の強化（warn → error 等）を提案
 
@@ -73,20 +75,24 @@ cat ~/.claude/logs/quality.jsonl ~/.claude/logs/quality.jsonl.* 2>/dev/null \
 ## Mistake Pattern Analysis
 
 ### Data Summary
+
 - reflections.jsonl: N entries (M days of data)
 - quality.jsonl: N entries
 - Sessions analyzed: N
 
 ### Preventable Patterns (from reflections)
+
 1. [type] description — N occurrences
    Pattern hint: ...
    Recommendation: ...
 
 ### Agent Weakness Patterns (from quality-loop)
+
 1. [lint_tool] rule — N violations across M sessions
    Recommendation: ...
 
 ### Proposed Rules
+
 1. Rule ID: ...
    ...
 ```

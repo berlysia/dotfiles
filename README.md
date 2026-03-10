@@ -53,6 +53,7 @@ bun home/dot_claude/scripts/update-auto-approve.ts --verbose
 ```
 
 **Features:**
+
 - Analyzes `~/.claude/logs/decisions.jsonl` for permission patterns
 - Provides risk scoring and confidence levels
 - Interactive review interface for pattern approval
@@ -62,6 +63,7 @@ bun home/dot_claude/scripts/update-auto-approve.ts --verbose
 ## Claude Code Configuration
 
 This repository includes comprehensive Claude Code configuration with:
+
 - Custom skills (see `.skills/` directory)
 - Global development guidelines (CLAUDE.md)
 - Development rules (debugging, external-review, TypeScript standards)
@@ -78,6 +80,7 @@ This repository includes comprehensive Claude Code configuration with:
 These files are automatically merged by `run_onchange_update-settings-json.sh.tmpl` during `chezmoi apply`.
 
 **Important notes:**
+
 - To modify hooks configuration, edit `.settings.hooks.json.tmpl` and run `chezmoi apply`
 - Existing `enabledPlugins` settings are preserved (user manual changes are not overwritten)
 
@@ -86,12 +89,14 @@ These files are automatically merged by `run_onchange_update-settings-json.sh.tm
 `~/.claude.json` (MCP servers configuration) is automatically managed by `run_onchange_update-claude-json.sh.tmpl`:
 
 **How it works:**
+
 - Reads MCP server versions from `package.json` dependencies
 - Merges template content with existing `~/.claude.json`
 - Auto-updates `mcpServers`, `preferredNotifChannel`, and `defaultMode`
 - Creates backup before changes and shows diff
 
 **Managed MCP servers:**
+
 - `@mizchi/readability` - Web page content extraction
 - `chrome-devtools-mcp` - Chrome DevTools automation
 - `@playwright/mcp` - Browser automation
@@ -105,12 +110,14 @@ These files are automatically merged by `run_onchange_update-settings-json.sh.tm
 This project uses a two-layer approach for managing Claude Code skills:
 
 #### 1. Handcrafted Skills (`.skills/`)
+
 - Stored in `${projectRoot}/.skills/` for unified management (at repo root, outside `home/`)
 - Synced to both `~/.claude/skills/` and `~/.codex/skills/` via `run_after_sync-skills.sh.tmpl`
 - Used by both Claude Code and Codex
 - Always preserved during updates
 
 #### 2. External Skills (`home/.chezmoidata/claude_skills.yaml`)
+
 - Declaratively managed in YAML configuration
 - Installed via `add-skill` from GitHub repositories
 - Tracked in `.claude/.external-skills-installed`
@@ -123,14 +130,17 @@ Both layers coexist in `~/.claude/skills/` directory.
 Plugins are managed declaratively through `.settings.plugins.json`:
 
 **After `chezmoi apply`:**
+
 - `show-missing-plugins.sh` detects missing plugins
 - Displays marketplace registration commands (if needed)
 - Shows plugin installation commands to run in Claude Code IDE
 
 **Syncing plugin changes back to dotfiles:**
+
 ```bash
 ~/.claude/scripts/sync-enabled-plugins.sh
 ```
+
 This exports current `enabledPlugins` from `~/.claude/settings.json` to dotfiles for version control.
 
 ### Using in Other Projects

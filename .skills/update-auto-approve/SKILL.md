@@ -9,12 +9,12 @@ PermissionRequest の決定ログを分析し、不要な ask 判定を削減す
 
 ## 対象ファイルと役割
 
-| Layer | ファイル (chezmoi管理) | 役割 |
-|-------|----------------------|------|
-| 0/1 | `home/dot_claude/.settings.permissions.json` | Claude Code組み込みのallowリスト（MCP, Skill, ファイルパス） |
-| 2a | `home/dot_claude/hooks/implementations/permission-auto-approve.ts` | 静的ルール（正規表現パターンマッチ） |
-| 2b | `home/dot_claude/hooks/implementations/permission-llm-evaluator.ts` | LLM評価（SYSTEM_PROMPT） |
-| Test | `home/dot_claude/hooks/tests/unit/permission-auto-approve.test.ts` | Layer 2aのユニットテスト |
+| Layer | ファイル (chezmoi管理)                                              | 役割                                                         |
+| ----- | ------------------------------------------------------------------- | ------------------------------------------------------------ |
+| 0/1   | `home/dot_claude/.settings.permissions.json`                        | Claude Code組み込みのallowリスト（MCP, Skill, ファイルパス） |
+| 2a    | `home/dot_claude/hooks/implementations/permission-auto-approve.ts`  | 静的ルール（正規表現パターンマッチ）                         |
+| 2b    | `home/dot_claude/hooks/implementations/permission-llm-evaluator.ts` | LLM評価（SYSTEM_PROMPT）                                     |
+| Test  | `home/dot_claude/hooks/tests/unit/permission-auto-approve.test.ts`  | Layer 2aのユニットテスト                                     |
 
 ## ワークフロー
 
@@ -63,18 +63,18 @@ bun run home/dot_claude/scripts/update-auto-approve.ts --dry-run --verbose --sin
 - **SAFE_BASH_PATTERNS に追加してよいもの**: 正規表現の静的マッチだけで安全性を保証できるコマンド
 - **Layer 2b に委ねるべきもの**: 引数の意味解析が必要なコマンド
 
-| コマンド | 判断 | 理由 |
-|---------|------|------|
-| `mkdir`, `touch` | Layer 2a で allow | ディレクトリ/ファイル作成は安全 |
-| `env`, `printenv` | Layer 2a で allow | 環境変数の読み取りのみ |
-| `lsof` | Layer 2a で allow | ポート/プロセス情報の読み取りのみ |
-| `git add/commit/stash/...` | Layer 2a で allow | 通常の開発ワークフロー |
-| `npx/pnpx/bunx` | Layer 2a で allow | settings.json でも許可済み |
-| `cp`/`mv` | **Layer 2b** | コピー先/移動先パスの検証が正規表現では不可能 |
-| `git apply` | **Layer 2b** | パッチ内容の検証が不可能 |
-| `eslint --fix` / `prettier --write` | **Layer 2b** | ファイル書き換えあり、対象パスの検証が必要 |
-| `node -e` | **Layer 2b** | 任意コード実行、内容の判断が必要 |
-| `kill` | **Layer 2b** | PID 1 等の危険なケースを静的に区別できない |
+| コマンド                            | 判断              | 理由                                          |
+| ----------------------------------- | ----------------- | --------------------------------------------- |
+| `mkdir`, `touch`                    | Layer 2a で allow | ディレクトリ/ファイル作成は安全               |
+| `env`, `printenv`                   | Layer 2a で allow | 環境変数の読み取りのみ                        |
+| `lsof`                              | Layer 2a で allow | ポート/プロセス情報の読み取りのみ             |
+| `git add/commit/stash/...`          | Layer 2a で allow | 通常の開発ワークフロー                        |
+| `npx/pnpx/bunx`                     | Layer 2a で allow | settings.json でも許可済み                    |
+| `cp`/`mv`                           | **Layer 2b**      | コピー先/移動先パスの検証が正規表現では不可能 |
+| `git apply`                         | **Layer 2b**      | パッチ内容の検証が不可能                      |
+| `eslint --fix` / `prettier --write` | **Layer 2b**      | ファイル書き換えあり、対象パスの検証が必要    |
+| `node -e`                           | **Layer 2b**      | 任意コード実行、内容の判断が必要              |
+| `kill`                              | **Layer 2b**      | PID 1 等の危険なケースを静的に区別できない    |
 
 #### 注意事項
 

@@ -6,12 +6,12 @@ on:
       - master
       - main
     paths:
-      - '.github/workflows/**'
-      - '.github/actions/**'
+      - ".github/workflows/**"
+      - ".github/actions/**"
   pull_request:
     paths:
-      - '.github/workflows/**'
-      - '.github/actions/**'
+      - ".github/workflows/**"
+      - ".github/actions/**"
   workflow_dispatch:
 
 permissions: {}

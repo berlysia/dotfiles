@@ -5,7 +5,7 @@
  * Each section shows the wrong approach and the correct alternative.
  */
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback } from "react";
 
 // =============================================================================
 // Anti-Pattern 1: Derived State with useState + useEffect
@@ -66,29 +66,27 @@ function GoodCart({ items }: { items: Item[] }) {
  * - Race conditions possible
  */
 function BadSearchForm() {
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState("");
   const [results, setResults] = useState<string[]>([]);
 
   useEffect(() => {
     if (query) {
       // Analytics delayed until next render
-      console.log('Search:', query);
+      console.log("Search:", query);
       fetch(`/api/search?q=${query}`)
         .then((r) => r.json())
         .then(setResults);
     }
   }, [query]);
 
-  return (
-    <input value={query} onChange={(e) => setQuery(e.target.value)} />
-  );
+  return <input value={query} onChange={(e) => setQuery(e.target.value)} />;
 }
 
 /**
  * ✅ CORRECT: Handle in event handler
  */
 function GoodSearchForm() {
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState("");
   const [results, setResults] = useState<string[]>([]);
 
   const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -96,7 +94,7 @@ function GoodSearchForm() {
     setQuery(newQuery);
 
     if (newQuery) {
-      console.log('Search:', newQuery);
+      console.log("Search:", newQuery);
       const response = await fetch(`/api/search?q=${newQuery}`);
       setResults(await response.json());
     }
@@ -175,18 +173,18 @@ function BadUserProfile({ user }: { user: User }) {
   // ❌ String concatenation is cheap
   const fullName = useMemo(
     () => `${user.firstName} ${user.lastName}`,
-    [user.firstName, user.lastName]
+    [user.firstName, user.lastName],
   );
 
   // ❌ Callback not passed to memoized child
   const handleClick = useCallback(() => {
-    console.log('clicked');
+    console.log("clicked");
   }, []);
 
   // ❌ Small array filter is cheap
   const activeItems = useMemo(
     () => user.items.filter((i) => i.active),
-    [user.items]
+    [user.items],
   );
 
   return (
@@ -209,7 +207,7 @@ function GoodUserProfile({ user }: { user: User }) {
   const activeItems = user.items.filter((i) => i.active);
 
   return (
-    <div onClick={() => console.log('clicked')}>
+    <div onClick={() => console.log("clicked")}>
       <h1>{fullName}</h1>
       <ul>
         {activeItems.map((item) => (
@@ -234,11 +232,11 @@ function BadComponent() {
   // ❌ These never change, shouldn't use useMemo
   const options = useMemo(
     () => [
-      { value: 'a', label: 'Option A' },
-      { value: 'b', label: 'Option B' },
-      { value: 'c', label: 'Option C' },
+      { value: "a", label: "Option A" },
+      { value: "b", label: "Option B" },
+      { value: "c", label: "Option C" },
     ],
-    []
+    [],
   );
 
   const config = useMemo(
@@ -246,7 +244,7 @@ function BadComponent() {
       timeout: 5000,
       retries: 3,
     }),
-    []
+    [],
   );
 
   return <Select options={options} />;
@@ -254,9 +252,9 @@ function BadComponent() {
 
 // ✅ CORRECT: Define constants at module level
 const OPTIONS = [
-  { value: 'a', label: 'Option A' },
-  { value: 'b', label: 'Option B' },
-  { value: 'c', label: 'Option C' },
+  { value: "a", label: "Option A" },
+  { value: "b", label: "Option B" },
+  { value: "c", label: "Option C" },
 ] as const;
 
 const CONFIG = {
@@ -270,7 +268,11 @@ function GoodComponent() {
 }
 
 // Placeholder component
-function Select({ options }: { options: readonly { value: string; label: string }[] }) {
+function Select({
+  options,
+}: {
+  options: readonly { value: string; label: string }[];
+}) {
   return (
     <select>
       {options.map((o) => (

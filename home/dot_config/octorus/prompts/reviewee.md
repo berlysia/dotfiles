@@ -8,16 +8,20 @@ PR #{{pr_number}}: {{pr_title}}
 ## Review Feedback (Iteration {{iteration}})
 
 ### Summary
+
 {{review_summary}}
 
 ### Review Action: {{review_action}}
 
 ### Comments
+
 {{review_comments}}
 
 ### Blocking Issues
+
 {{blocking_issues}}
 {{external_comments}}
+
 ## Git Operations
 
 After making changes, you MUST commit your changes locally:
@@ -30,6 +34,7 @@ NOTE: Do NOT push changes. The user will review and push manually.
 If git push is needed and allowed, it will be explicitly permitted via config.
 
 CRITICAL RULES:
+
 - NEVER use `git reset --hard` - this destroys work
 - NEVER use `git clean -fd` - this deletes untracked files permanently
 - Use `gh` commands for GitHub API operations (viewing PR info, comments, etc.)

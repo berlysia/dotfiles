@@ -111,6 +111,7 @@ ls ~/.claude/projects/-$CLAUDE_PROJECT_HASH/<引数>*.jsonl
 ```
 
 他プロジェクトのセッションを参照したい場合（引数に `/` を含む場合）:
+
 ```bash
 find ~/.claude/projects/ -name "<引数>*.jsonl"
 ```

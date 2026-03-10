@@ -29,8 +29,8 @@ Plan files accompany ADRs to detail implementation steps. Create in `docs/plans/
 
 ## リスクと軽減策
 
-| Risk | Impact | Mitigation |
-|------|--------|------------|
+| Risk   | Impact   | Mitigation   |
+| ------ | -------- | ------------ |
 | {risk} | {impact} | {mitigation} |
 
 ## 検証方法

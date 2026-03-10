@@ -4,12 +4,12 @@ ADR と自動リンタールールの対応関係を管理する。
 
 ## 対応表
 
-| ADR | ルール | リンターシステム | 概要 |
-|-----|--------|-----------------|------|
-| [ADR-0002](decisions/0002-hooks-typescript-bun.md) | `no-console-log` | oxlint jsPlugin | hooks内のconsole.log禁止 |
-| [ADR-0002](decisions/0002-hooks-typescript-bun.md) | `no-process-exit` | oxlint jsPlugin | hooks内のprocess.exit禁止 |
-| (なし) | `no-any-cast` | oxlint jsPlugin | `as any` キャスト禁止 |
-| (なし) | `no-hardcoded-home` | custom-rules | ハードコードされたホームディレクトリパス禁止 |
+| ADR                                                | ルール              | リンターシステム | 概要                                         |
+| -------------------------------------------------- | ------------------- | ---------------- | -------------------------------------------- |
+| [ADR-0002](decisions/0002-hooks-typescript-bun.md) | `no-console-log`    | oxlint jsPlugin  | hooks内のconsole.log禁止                     |
+| [ADR-0002](decisions/0002-hooks-typescript-bun.md) | `no-process-exit`   | oxlint jsPlugin  | hooks内のprocess.exit禁止                    |
+| (なし)                                             | `no-any-cast`       | oxlint jsPlugin  | `as any` キャスト禁止                        |
+| (なし)                                             | `no-hardcoded-home` | custom-rules     | ハードコードされたホームディレクトリパス禁止 |
 
 ## リンターシステム
 

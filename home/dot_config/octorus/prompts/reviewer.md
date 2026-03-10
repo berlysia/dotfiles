@@ -6,9 +6,11 @@ Repository: {{repo}}
 PR #{{pr_number}}: {{pr_title}}
 
 ### PR Description
+
 {{pr_body}}
 
 ### Diff
+
 ```diff
 {{diff}}
 ```

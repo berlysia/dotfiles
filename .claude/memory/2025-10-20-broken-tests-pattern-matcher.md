@@ -1,9 +1,11 @@
 # 既存テストの失敗問題 [解決済み]
 
 ## 発見日
+
 2025-10-20
 
 ## 解決日
+
 2025-10-20
 
 ## 問題概要
@@ -14,14 +16,16 @@
 ## 失敗していたテスト (解決済み)
 
 ### pattern-matching.test.ts (3件) ✅ すべて解決
-1. "should accept Read(**) pattern" ✅
-2. "should accept Edit(**) pattern" ✅
+
+1. "should accept Read(\*\*) pattern" ✅
+2. "should accept Edit(\*\*) pattern" ✅
 3. "should handle gitignore-style patterns correctly" ✅
 
 ### auto-approve.test.ts (Read/Edit/Writeツール) ✅ 解決
-- Edit(**) パターンのテスト ✅
-- Write(**) パターンのテスト ✅
-- Read(**) パターンのテスト ✅
+
+- Edit(\*\*) パターンのテスト ✅
+- Write(\*\*) パターンのテスト ✅
+- Read(\*\*) パターンのテスト ✅
 
 ## 根本原因
 
@@ -32,7 +36,7 @@ if (pattern === "**") {
   // Security checks:
   // 2. Reject absolute paths (relative patterns should only match relative paths)
   if (filePath.startsWith("/")) {
-    return false;  // ← テストは絶対パス `/any/path/file.txt` を使用
+    return false; // ← テストは絶対パス `/any/path/file.txt` を使用
   }
   return true;
 }
@@ -55,12 +59,12 @@ if (pattern === "**") {
 
 ### 実装内容
 
-1. **`**`パターンの修正** (pattern-matcher.ts:173-180行)
+1. **`**`パターンの修正\*\* (pattern-matcher.ts:173-180行)
    - 変更前: 絶対パスを一律拒否
    - 変更後: ディレクトリトラバーサル(`../`)のみ拒否
    - 理由: `**`は「すべてのファイル」を意味するため、正当な絶対パスを許可
 
-2. **`./**`パターンの修正** (pattern-matcher.ts:187-198行)
+2. **`./**`パターンの修正\*\* (pattern-matcher.ts:187-198行)
    - ディレクトリトラバーサルを拒否(維持)
    - cwd外の絶対パスを拒否(追加)
    - 理由: `./**`は「cwd配下」を意味するため、絶対パス制限を維持
@@ -74,12 +78,14 @@ if (pattern === "**") {
 ## テスト結果
 
 ### pattern-matching.test.ts
+
 ```
 ✅ 9 pass
 ❌ 0 fail
 ```
 
 ### auto-approve.test.ts (最終)
+
 ```
 ✅ 51 pass (すべて解決！)
 ❌ 0 fail
@@ -91,6 +97,7 @@ if (pattern === "**") {
 ### 問題
 
 当初の修正後も2件のテストが失敗していた：
+
 1. "should allow Grep with workspace path" (line 843)
 2. "should allow Search with workspace path" (line 909)
 
@@ -124,6 +131,7 @@ if (filePath.startsWith("~/")) {
 ### 既存の5つのエラー
 
 これらは以前から存在する別の問題:
+
 - 一部のテストでassertAsk()が期待するが、denyまたはallowが返される
 - これらは今回の修正とは無関係
 
