@@ -40,26 +40,61 @@ fi
 echo
 
 #
-# 2. TypeScript/JavaScript Linting (biome)
+# 2. TypeScript/JavaScript Formatting (oxfmt) & Linting (oxlint)
 #
-STAGED_TS_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(ts|tsx|js|jsx|json)$' || true)
+STAGED_TS_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(ts|tsx|js|jsx)$' || true)
 if [ -n "$STAGED_TS_FILES" ]; then
-    echo -e "${BLUE}🦋 Checking TypeScript/JavaScript with biome...${NC}"
-    if command -v pnpm &> /dev/null && pnpm biome --version &> /dev/null; then
-        if ! pnpm biome check --write --staged --files-ignore-unknown=true; then
-            echo -e "${RED}❌ biome found unfixable issues in staged files${NC}"
+    # 2a. Format with oxfmt
+    echo -e "${BLUE}🎨 Formatting with oxfmt...${NC}"
+    if command -v pnpm &> /dev/null && pnpm oxfmt --version &> /dev/null 2>&1; then
+        OXFMT_FAILED=false
+        for file in $STAGED_TS_FILES; do
+            if [ -f "$file" ]; then
+                if ! pnpm oxfmt "$file" 2>&1; then
+                    OXFMT_FAILED=true
+                fi
+            fi
+        done
+
+        if [ "$OXFMT_FAILED" = true ]; then
+            echo -e "${RED}❌ oxfmt formatting failed${NC}"
             EXIT_CODE=1
         else
-            # Re-stage files that biome may have formatted
+            # Re-stage files that oxfmt may have formatted
             for file in $STAGED_TS_FILES; do
                 if [ -f "$file" ]; then
                     git add "$file"
                 fi
             done
-            echo -e "${GREEN}✓ All staged files passed biome checks${NC}"
+            echo -e "${GREEN}✓ All staged files formatted with oxfmt${NC}"
         fi
     else
-        echo -e "${YELLOW}⚠ biome not installed, skipping${NC}"
+        echo -e "${YELLOW}⚠ oxfmt not installed, skipping formatting${NC}"
+        echo -e "${YELLOW}  Install: pnpm install${NC}"
+    fi
+
+    echo
+
+    # 2b. Lint with oxlint
+    echo -e "${BLUE}🦊 Linting with oxlint...${NC}"
+    if command -v npx &> /dev/null && npx oxlint --version &> /dev/null 2>&1; then
+        OXLINT_FAILED=false
+        for file in $STAGED_TS_FILES; do
+            if [ -f "$file" ]; then
+                if ! npx oxlint --ignore-pattern '.claude/skills/' --ignore-pattern '.codex/skills/' --ignore-pattern '.skills/' "$file" 2>&1 | tail -5; then
+                    OXLINT_FAILED=true
+                fi
+            fi
+        done
+
+        if [ "$OXLINT_FAILED" = true ]; then
+            echo -e "${RED}❌ oxlint found issues in staged files${NC}"
+            EXIT_CODE=1
+        else
+            echo -e "${GREEN}✓ All staged files passed oxlint checks${NC}"
+        fi
+    else
+        echo -e "${YELLOW}⚠ oxlint not installed, skipping linting${NC}"
         echo -e "${YELLOW}  Install: pnpm install${NC}"
     fi
 else
@@ -188,39 +223,7 @@ fi
 echo
 
 #
-# 6. Oxlint (additional lint rules beyond biome)
-#
-STAGED_OXLINT_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(ts|tsx|js|jsx)$' || true)
-if [ -n "$STAGED_OXLINT_FILES" ]; then
-    echo -e "${BLUE}🦊 Checking with oxlint...${NC}"
-    if command -v npx &> /dev/null && npx oxlint --version &> /dev/null 2>&1; then
-        OXLINT_FAILED=false
-        for file in $STAGED_OXLINT_FILES; do
-            if [ -f "$file" ]; then
-                if ! npx oxlint "$file" 2>&1 | tail -5; then
-                    OXLINT_FAILED=true
-                fi
-            fi
-        done
-
-        if [ "$OXLINT_FAILED" = true ]; then
-            echo -e "${RED}❌ oxlint found issues in staged files${NC}"
-            EXIT_CODE=1
-        else
-            echo -e "${GREEN}✓ All staged files passed oxlint checks${NC}"
-        fi
-    else
-        echo -e "${YELLOW}⚠ oxlint not installed, skipping${NC}"
-        echo -e "${YELLOW}  Install: pnpm add -D oxlint${NC}"
-    fi
-else
-    echo -e "${GREEN}✓ No JS/TS files staged for oxlint${NC}"
-fi
-
-echo
-
-#
-# 7. Hook Tests (existing functionality)
+# 6. Hook Tests (existing functionality)
 #
 HOOKS_SCRIPTS_DIR="${REPO_ROOT}/dot_claude/hooks/scripts"
 STAGED_FILES=$(git diff --cached --name-only)

@@ -10,7 +10,6 @@
     "test": "node --test home/dot_claude/hooks/tests/**/*.test.ts",
     "typecheck": "tsgo --noEmit",
     "format:check": "oxfmt --check .",
-    "format:biome": "biome check --formatter-enabled=true --linter-enabled=false .",
     "lint:shell": "./scripts/lint-shell.sh",
     "lint:actions": "./scripts/lint-actions.sh",
     "lint:codex": "./scripts/check-codex-config.sh",
