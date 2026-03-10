@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "07682107333a",
+  "session_id": "08dce50b-60c3-4f8c-b8a6-717b6c22e581",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-10T18:19:46.190564Z",
+  "branch": "master",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "home/.chezmoidata/claude_skills.yaml"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "a875e035-d046-4dbb-b6c1-22e8e8237a93",
+  "checkpoint_transcript_start": 1277,
+  "transcript_lines_at_start": 1277,
+  "token_usage": {
+    "input_tokens": 266,
+    "cache_creation_tokens": 120589,
+    "cache_read_tokens": 2281155,
+    "output_tokens": 3069,
+    "api_call_count": 18
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-10T18:19:45.632087Z",
+    "agent_lines": 11,
+    "human_added": 2619,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 2630,
+    "agent_percentage": 0.4182509505703422
+  },
+  "transcript_path": ".claude/projects/-Users-berlysia--local-share-chezmoi/08dce50b-60c3-4f8c-b8a6-717b6c22e581.jsonl"
+}
