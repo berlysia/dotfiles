@@ -1,0 +1,39 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "17b8aad65903",
+  "strategy": "manual-commit",
+  "branch": "master",
+  "checkpoints_count": 2,
+  "files_touched": [
+    ".tmp/sessions/08dce50b/plan.md",
+    ".tmp/sessions/08dce50b/research.md",
+    "CLAUDE.md",
+    "README.md",
+    "docs/commands/add-skill.md",
+    "docs/commands/skills.md",
+    "docs/plans/add-skill-wrapper.md",
+    "home/.chezmoiscripts/run_onchange_install-claude-skills-10.sh.tmpl",
+    "home/.chezmoiscripts/run_onchange_install-claude-skills-9.sh.tmpl",
+    "home/dot_config/pnpm/rc",
+    "home/dot_local/bin/executable_add-skill.tmpl",
+    "knip.json",
+    "package.json",
+    "pnpm-workspace.yaml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/17/b8aad65903/0/metadata.json",
+      "transcript": "/17/b8aad65903/0/full.jsonl",
+      "context": "/17/b8aad65903/0/context.md",
+      "content_hash": "/17/b8aad65903/0/content_hash.txt",
+      "prompt": "/17/b8aad65903/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 189,
+    "cache_creation_tokens": 207785,
+    "cache_read_tokens": 5929979,
+    "output_tokens": 24391,
+    "api_call_count": 65
+  }
+}
