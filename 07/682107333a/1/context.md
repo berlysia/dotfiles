@@ -38,3 +38,22 @@ XDG_CONFIGには一できないの？
 
 こっみｔ
 
+### Prompt 10
+
+とおらんが
+
+> pnpm install -g @berlysia/shiori@0.1.0
+ ERR_PNPM_NO_MATURE_MATCHING_VERSION  Version 0.1.0 (released 19 minutes ago) of @berlysia/shiori does not meet the minimumReleaseAge constraint
+
+This error happened while installing a direct dependency of /Users/berlysia/.local/share/pnpm/global/5
+
+The latest release of @berlysia/shiori is "0.1.0". Published at 2026-3-11 3:47:13
+
+If you need the full list of all 2 published versions run "$ pnpm view @berlysia/shiori versions".
+
+If yo...
+
+### Prompt 11
+
+そうして
+

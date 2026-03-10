@@ -3,11 +3,10 @@
   "checkpoint_id": "07682107333a",
   "strategy": "manual-commit",
   "branch": "master",
-  "checkpoints_count": 3,
+  "checkpoints_count": 2,
   "files_touched": [
     "home/.chezmoidata/claude_skills.yaml",
-    "home/dot_aikido/config.json",
-    "pnpm-workspace.yaml"
+    "home/dot_config/pnpm/rc"
   ],
   "sessions": [
     {
@@ -26,10 +25,10 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 589,
-    "cache_creation_tokens": 160753,
-    "cache_read_tokens": 4222445,
-    "output_tokens": 9890,
-    "api_call_count": 59
+    "input_tokens": 277,
+    "cache_creation_tokens": 122807,
+    "cache_read_tokens": 2693868,
+    "output_tokens": 3977,
+    "api_call_count": 25
   }
 }
