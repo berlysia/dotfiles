@@ -62,7 +62,7 @@ describe("ask-user-question-notification.ts hook behavior", () => {
 
       // Should log notification
       ok(
-        consoleCapture.logs.some(
+        consoleCapture.errors.some(
           (log) => log.includes("質問") || log.includes("question"),
         ),
       );
@@ -124,7 +124,7 @@ describe("ask-user-question-notification.ts hook behavior", () => {
 
       // Should attempt system notification
       ok(
-        consoleCapture.logs.some(
+        consoleCapture.errors.some(
           (log) => log.includes("System notification") || log.includes("通知"),
         ),
       );
@@ -155,7 +155,7 @@ describe("ask-user-question-notification.ts hook behavior", () => {
 
       // Should attempt voice notification
       ok(
-        consoleCapture.logs.some(
+        consoleCapture.errors.some(
           (log) =>
             log.includes("Voice notification") ||
             log.includes("音声") ||
@@ -242,7 +242,7 @@ describe("ask-user-question-notification.ts hook behavior", () => {
 
       // Should log the event
       ok(
-        consoleCapture.logs.some(
+        consoleCapture.errors.some(
           (log) => log.includes("AskUserQuestion") || log.includes("質問"),
         ),
       );
@@ -261,14 +261,14 @@ function createAskUserQuestionNotificationHook() {
 
       try {
         // Mock implementation for testing
-        console.log("AskUserQuestion notification triggered");
-        console.log(`Session ID: ${sessionId}`);
+        console.error("AskUserQuestion notification triggered");
+        console.error(`Session ID: ${sessionId}`);
 
         // Parallel execution for speed
         await Promise.allSettled([
           // Log event
           (async () => {
-            console.log(
+            console.error(
               `Logging AskUserQuestion event for session ${sessionId}`,
             );
           })(),
@@ -278,12 +278,12 @@ function createAskUserQuestionNotificationHook() {
             if (process.env.FORCE_NOTIFICATION_ERROR === "true") {
               throw new Error("Notification failed");
             }
-            console.log("System notification: Claude が質問しています");
+            console.error("System notification: Claude が質問しています");
           })(),
 
           // Voice notification
           (async () => {
-            console.log("Voice notification: 質問があります");
+            console.error("Voice notification: 質問があります");
           })(),
         ]);
 

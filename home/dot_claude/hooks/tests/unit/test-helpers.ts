@@ -28,7 +28,6 @@ export { createAskResponse, createDenyResponse, createAllowResponse };
 // Extract types from defineHook function
 type HookDefinition = Parameters<typeof originalDefineHook>[0];
 type HookTrigger = HookDefinition["trigger"];
-type HookHandler = HookDefinition["run"];
 
 // Type to extract proper input based on trigger events
 type ExtractHookInput<TTrigger extends HookTrigger> = {

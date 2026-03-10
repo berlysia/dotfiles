@@ -62,7 +62,7 @@ describe("speak-notification.ts hook behavior", () => {
 
       // Should attempt voice synthesis
       ok(
-        consoleCapture.logs.some(
+        consoleCapture.errors.some(
           (log) =>
             log.includes("Stop") ||
             log.includes("音声") ||
@@ -90,7 +90,7 @@ describe("speak-notification.ts hook behavior", () => {
 
       // Should include message in output
       ok(
-        consoleCapture.logs.some(
+        consoleCapture.errors.some(
           (log) => log.includes("notification") || log.includes("通知"),
         ),
       );
@@ -110,7 +110,7 @@ describe("speak-notification.ts hook behavior", () => {
 
       // Should not attempt synthesis when disabled
       strictEqual(
-        consoleCapture.logs.filter(
+        consoleCapture.errors.filter(
           (log) => log.includes("synthesis") || log.includes("音声生成"),
         ).length,
         0,
@@ -152,7 +152,7 @@ describe("speak-notification.ts hook behavior", () => {
       // Should create directory structure
       ok(
         fileSystemMock.directories.size > 0 ||
-          consoleCapture.logs.some((log) => log.includes("session")),
+          consoleCapture.errors.some((log) => log.includes("session")),
       );
     });
 
@@ -170,7 +170,7 @@ describe("speak-notification.ts hook behavior", () => {
       );
       ok(
         wavFiles.length > 0 ||
-          consoleCapture.logs.some((log) => log.includes(".wav")),
+          consoleCapture.errors.some((log) => log.includes(".wav")),
       );
     });
 
@@ -188,7 +188,7 @@ describe("speak-notification.ts hook behavior", () => {
 
       // Should attempt cleanup
       ok(
-        consoleCapture.logs.some(
+        consoleCapture.errors.some(
           (log) => log.includes("cleanup") || log.includes("クリーンアップ"),
         ) || !fileSystemMock.existsSync(oldFile),
       );
@@ -209,7 +209,7 @@ describe("speak-notification.ts hook behavior", () => {
 
       // Should include git info
       ok(
-        consoleCapture.logs.some(
+        consoleCapture.errors.some(
           (log) =>
             log.includes("git") ||
             log.includes("branch") ||
@@ -319,7 +319,7 @@ describe("speak-notification.ts hook behavior", () => {
 
       // Should play prefix sound
       ok(
-        consoleCapture.logs.some(
+        consoleCapture.errors.some(
           (log) =>
             log.includes("prefix") ||
             log.includes("immediate") ||
@@ -338,7 +338,7 @@ describe("speak-notification.ts hook behavior", () => {
 
       // Should queue synthesis
       ok(
-        consoleCapture.logs.some(
+        consoleCapture.errors.some(
           (log) =>
             log.includes("queue") ||
             log.includes("synthesis") ||
@@ -369,24 +369,24 @@ function createSpeakNotificationHook() {
 
       try {
         // Mock implementation for testing
-        console.log(`Voice notification for ${eventType} event`);
+        console.error(`Voice notification for ${eventType} event`);
 
         // Log git context if available (for testing)
         if (gitBranch || gitRepo) {
-          console.log(
+          console.error(
             `git context: branch=${gitBranch || ""} repo=${gitRepo || ""}`,
           );
         }
 
         // Simulate session directory creation
         const sessionDir = `/tmp/claude-voice/${sessionId}`;
-        console.log(`Creating directory: ${sessionDir}`);
+        console.error(`Creating directory: ${sessionDir}`);
 
         // Simulate prefix sound playback
-        console.log("Playing prefix sound");
+        console.error("Playing prefix sound");
         // For notifications, simulate queuing synthesis
         if (eventType === "Notification") {
-          console.log("queue synthesis");
+          console.error("queue synthesis");
         }
 
         // Simulate voice synthesis
@@ -395,15 +395,15 @@ function createSpeakNotificationHook() {
         }
 
         const message = generateMessage(eventType, context.input);
-        console.log(`Synthesizing: ${message}`);
+        console.error(`Synthesizing: ${message}`);
 
         // Simulate WAV file creation
         const wavFile = `${sessionDir}/notification.wav`;
-        console.log(`Creating audio file: ${wavFile}`);
+        console.error(`Creating audio file: ${wavFile}`);
 
         // Simulate cleanup for old files
         if (eventType === "Stop") {
-          console.log("Running cleanup");
+          console.error("Running cleanup");
         }
 
         return context.success({});

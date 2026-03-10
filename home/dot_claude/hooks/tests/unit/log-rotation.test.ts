@@ -122,8 +122,6 @@ describe("Log Rotation", () => {
       const smallContent = "Small log entry\n".repeat(100);
       writeFileSync(logFile, smallContent);
 
-      const sizeBefore = statSync(logFile).size;
-
       logMessage("New message", config);
 
       const content = readFileSync(logFile, "utf-8");
