@@ -366,9 +366,8 @@ export async function checkPattern(
       if (!cmdPrefix) return false;
 
       // Handle compound commands (&&, ||, ;) - now async
-      const { extractCommandsStructured } = await import(
-        "../lib/bash-parser.ts"
-      );
+      const { extractCommandsStructured } =
+        await import("../lib/bash-parser.ts");
       const { individualCommands } = await extractCommandsStructured(
         actualCommand || "",
       );
