@@ -3,9 +3,11 @@
   "checkpoint_id": "14c12afe3c36",
   "strategy": "manual-commit",
   "branch": "master",
-  "checkpoints_count": 1,
+  "checkpoints_count": 2,
   "files_touched": [
-    ".skills/tanstack-intent-setup/SKILL.md"
+    ".skills/apply-harness-practices/SKILL.md",
+    ".skills/tanstack-intent-setup/SKILL.md",
+    "home/dot_claude/hooks/implementations/completion-gate.ts"
   ],
   "sessions": [
     {
@@ -14,13 +16,20 @@
       "context": "/14/c12afe3c36/0/context.md",
       "content_hash": "/14/c12afe3c36/0/content_hash.txt",
       "prompt": "/14/c12afe3c36/0/prompt.txt"
+    },
+    {
+      "metadata": "/14/c12afe3c36/1/metadata.json",
+      "transcript": "/14/c12afe3c36/1/full.jsonl",
+      "context": "/14/c12afe3c36/1/context.md",
+      "content_hash": "/14/c12afe3c36/1/content_hash.txt",
+      "prompt": "/14/c12afe3c36/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 1463,
-    "cache_creation_tokens": 82884,
-    "cache_read_tokens": 1227052,
-    "output_tokens": 5600,
-    "api_call_count": 23
+    "input_tokens": 1482,
+    "cache_creation_tokens": 129492,
+    "cache_read_tokens": 1978246,
+    "output_tokens": 10543,
+    "api_call_count": 38
   }
 }

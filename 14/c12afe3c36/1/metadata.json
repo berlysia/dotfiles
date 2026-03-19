@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "14c12afe3c36",
+  "session_id": "52bee99d-9efe-4066-af21-35d9e6d34c55",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-19T14:35:51.899043Z",
+  "branch": "master",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".skills/apply-harness-practices/SKILL.md",
+    "home/dot_claude/hooks/implementations/completion-gate.ts"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "bca75511-6ea7-41f6-8cbe-1d425ae8c54b",
+  "token_usage": {
+    "input_tokens": 19,
+    "cache_creation_tokens": 46608,
+    "cache_read_tokens": 751194,
+    "output_tokens": 4943,
+    "api_call_count": 15
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-19T14:35:51.739166Z",
+    "agent_lines": 4,
+    "human_added": 2619,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 2623,
+    "agent_percentage": 0.15249714067861228
+  },
+  "transcript_path": ".claude/projects/-Users-berlysia--local-share-chezmoi/52bee99d-9efe-4066-af21-35d9e6d34c55.jsonl"
+}

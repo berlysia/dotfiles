@@ -1,0 +1,26 @@
+chezmoi管理の ~/.claude/settings.json テンプレートにある Stop hook の completion-gate コマンドを修正してください。
+
+## 問題
+Stop hook で `pnpm test 2>&1 | tail -5` を使うと、テスト自体は全てパスしていても、
+テスト内のログ出力（例: `extractJson failed`, `tests failed` 等のデバッグログ）が
+hookの出力に含まれ、Claude Code が「テスト失敗」と誤判定して COMPLETION BLOCKED になる。
+
+## 修正パターン
+Before:
+  pnpm test 2>&1 | tail -5; echo "exit:$?"
+
+After:
+  output=$(pnpm test 2>&1); rc=$?; if [ $rc -eq 0 ]; then echo 'All tests passed'; else echo "$output" | tail -20; fi; echo "exit:$rc"
+
+## 理由
+- テスト成功時（exit code 0）は 'All tests passed' のみ出力し、ログノイズを排除
+- テスト失敗時のみ末尾20行を表示して原因特定に必要な情報を提供
+- exit code を正しく伝播（パイプの最後のコマンドではなく pnpm test の終了コードを使用）
+
+## 適用対象
+chezmoi管理下の Claude Code settings テンプレートで、Stop hook に test コマンドを含むすべてのファイル。
+プロジェクト固有の settings.json（.claude/settings.json）にも同パターンが使われている場合は同様に修正。
+
+---
+
+コミットしてアプライしてプッシュ
