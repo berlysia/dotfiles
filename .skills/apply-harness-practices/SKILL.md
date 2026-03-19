@@ -246,7 +246,7 @@ PostToolUse hooks 例:
 {
   "type": "command",
   "event": "Stop",
-  "command": "<test command> 2>&1 | tail -5; echo \"exit:$?\"",
+  "command": "output=$(<test command> 2>&1); rc=$?; if [ $rc -eq 0 ]; then echo 'All tests passed'; else echo \"$output\" | tail -20; fi; echo \"exit:$rc\"",
   "blocking": true
 }
 ```
