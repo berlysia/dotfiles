@@ -49,4 +49,5 @@ Always gather evidence (read files, run tests, check actual state) before making
 - Conventional Commit format: `<type>(<scope>): <description>`
 - Types: feat, fix, refactor, test, docs, chore, perf, style, build, ci
 - Present tense imperative, lowercase, no trailing period
+- Commit body follows [Contextual Commits](https://github.com/berserkdisruptors/contextual-commits) — use action lines (`intent`, `decision`, `rejected`, `constraint`, `learned`) to capture reasoning the diff cannot show
 - Use `/commit` for complex multi-type changes
