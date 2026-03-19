@@ -1,0 +1,13 @@
+https://tanstack.com/intent/latest/docs/getting-started/quick-start-consumers をみて、intentを利用者としてセットアップする方法を設定したい。そういうスキルを加える形でもよい
+
+---
+
+これ、わざわざ用意する必要なかったりするか？
+
+---
+
+削除かなあ。intent対応のライブラリをインストールしてると何か表示されたりヒントが出たりして分かるような仕組みってある？
+
+---
+
+削除しよう

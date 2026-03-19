@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "14c12afe3c36",
+  "session_id": "e0c0604c-39fc-4b14-986a-81fe1ec4acee",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-19T14:35:22.403965Z",
+  "branch": "master",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".skills/tanstack-intent-setup/SKILL.md"
+  ],
+  "agent": "Claude Code",
+  "token_usage": {
+    "input_tokens": 1463,
+    "cache_creation_tokens": 82884,
+    "cache_read_tokens": 1227052,
+    "output_tokens": 5600,
+    "api_call_count": 23
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-19T14:35:22.332083Z",
+    "agent_lines": 0,
+    "human_added": 2537,
+    "human_modified": 82,
+    "human_removed": 0,
+    "total_committed": 2619,
+    "agent_percentage": 0
+  },
+  "transcript_path": ".claude/projects/-Users-berlysia--local-share-chezmoi/e0c0604c-39fc-4b14-986a-81fe1ec4acee.jsonl"
+}
