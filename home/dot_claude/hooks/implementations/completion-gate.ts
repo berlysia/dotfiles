@@ -70,8 +70,9 @@ function runCheck(command: string, label: string): string | null {
   } catch (error: unknown) {
     const err = error as { stdout?: string; stderr?: string };
     const output = ((err.stdout || "") + (err.stderr || "")).trim();
-    const head = output.split("\n").slice(0, 20).join("\n");
-    return `${label} failed:\n${head}`;
+    const lines = output.split("\n");
+    const tail = lines.slice(-20).join("\n");
+    return `${label} failed:\n${tail}`;
   }
 }
 
