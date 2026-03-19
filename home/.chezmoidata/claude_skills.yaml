@@ -20,6 +20,10 @@ claude_skills:
         - proposal-add
         - proposal-complete
         - proposal-list
+    - repo: berserkdisruptors/contextual-commits
+      skills:
+        - contextual-commit
+        - recall
     - repo: berlysia/shiori
       skills:
         - shiori-adopt

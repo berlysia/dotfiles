@@ -117,54 +117,35 @@ git log --oneline -50 | grep -oP '(?<=\()[^)]+(?=\))' | sort | uniq -c | sort -r
 
 ## 本文（Body）の書き方
 
-### 本文が必要なケース
+コミットボディは **Contextual Commits** 規約に従う。詳細は `contextual-commit` スキルが自動発動して処理する。
 
-1. **WHYが自明でない場合**
+### 基本原則
 
-   ```
-   refactor(api): change error response format
+- **diffが示せない「なぜ」を書く** — コード変更の理由・意思決定・制約を action line で構造化
+- **trivialなコミットには不要** — typo修正や依存更新は subject line で十分
+- **捏造しない** — セッション中に得た情報のみ記述。根拠のない intent/rejected/constraint/learned を書かない
 
-   The previous format was inconsistent with REST best practices
-   and caused confusion in client error handling. New format
-   follows RFC 7807 Problem Details specification.
-   ```
+### action line 早見表
 
-2. **複数の関連変更がある場合**
+| type | 用途 | 例 |
+|---|---|---|
+| `intent(scope)` | ユーザーの意図・目的 | `intent(auth): social login starting with Google` |
+| `decision(scope)` | 選択した方針と理由 | `decision(queue): SQS over RabbitMQ for managed scaling` |
+| `rejected(scope)` | 却下した選択肢と理由（必須） | `rejected(queue): RabbitMQ — requires self-managed infra` |
+| `constraint(scope)` | 実装を制約した条件 | `constraint(api): max 5MB payload, 30s timeout` |
+| `learned(scope)` | 発見した非自明な事実 | `learned(stripe): presentment ≠ settlement currency` |
 
-   ```
-   feat(auth): implement OAuth2 PKCE flow
+### Breaking Changes
 
-   Changes include:
-   - Add code verifier generation
-   - Implement code challenge creation
-   - Update token exchange to include verifier
-   - Add state parameter for CSRF protection
-   ```
-
-3. **Breaking Changesがある場合**
-
-   ```
-   feat(api)!: require authentication for all endpoints
-
-   Previously, read-only endpoints were public. This change
-   requires all API calls to include a valid JWT token.
-
-   Migration:
-   1. Generate API token in dashboard
-   2. Add Authorization header to all requests
-   3. Update client SDK to v2.0+
-
-   BREAKING CHANGE: All endpoints now require authentication.
-   ```
-
-### 本文のフォーマット
+Breaking changes は Conventional Commits の `!` + `BREAKING CHANGE:` footer で明示。action line と併用可能：
 
 ```
-<type>(<scope>): <description>
-                                    ← 空行必須
-<body - 72文字で折り返し>
-                                    ← 空行
-<footer>
+feat(api)!: require authentication for all endpoints
+
+intent(api): security audit required all endpoints authenticated
+constraint(api): existing public read endpoints must migrate within 2 weeks
+
+BREAKING CHANGE: All endpoints now require authentication.
 ```
 
 ## タイプ選択の詳細判断
