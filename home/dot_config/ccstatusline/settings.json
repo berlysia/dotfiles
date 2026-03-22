@@ -25,12 +25,29 @@
         "type": "context-percentage-usable"
       },
       {
-        "id": "2451a847-455a-47c2-ba4a-c3d0b1d37adc",
-        "type": "block-timer"
+        "id": "18525c65-212b-43db-8331-bfea9a9a3550",
+        "type": "reset-timer"
       },
       {
-        "id": "18525c65-212b-43db-8331-bfea9a9a3550",
-        "type": "session-cost"
+        "id": "4d84181c-daf2-4348-84f7-7d3bde4ecbee",
+        "type": "session-usage",
+        "metadata": {
+          "display": "time"
+        }
+      },
+      {
+        "id": "38661153-5cec-4333-bea8-b5fe78e8f6ee",
+        "type": "weekly-usage",
+        "metadata": {
+          "display": "time"
+        }
+      },
+      {
+        "id": "d68b4dff-89cd-43e5-80ce-f5ab0dc1a7b2",
+        "type": "weekly-reset-timer",
+        "metadata": {
+          "display": "time"
+        }
       }
     ],
     [
@@ -52,8 +69,12 @@
   "globalBold": false,
   "powerline": {
     "enabled": false,
-    "separators": [""],
-    "separatorInvertBackground": [false],
+    "separators": [
+      ""
+    ],
+    "separatorInvertBackground": [
+      false
+    ],
     "startCaps": [],
     "endCaps": [],
     "theme": "nord-aurora",
