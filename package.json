@@ -31,8 +31,8 @@
     "@types/node": "24.10.12",
     "@typescript/native-preview": "7.0.0-dev.20260109.1",
     "knip": "5.81.0",
-    "oxfmt": "0.36.0",
-    "oxlint": "1.51.0",
+    "oxfmt": "0.40.0",
+    "oxlint": "1.55.0",
     "typescript": "5.9.3"
   },
   "packageManager": "pnpm@10.27.0"
