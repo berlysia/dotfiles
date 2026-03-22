@@ -294,9 +294,8 @@ export class PermissionAnalyzer {
     entryCwd?: string,
   ): Promise<string | null> {
     // 既存のbash-parserを信頼して使用（内部でフォールバック処理済み）
-    const { extractCommandsStructured, extractCommandsDetailed } = await import(
-      "./bash-parser.ts"
-    );
+    const { extractCommandsStructured, extractCommandsDetailed } =
+      await import("./bash-parser.ts");
     const { individualCommands } = await extractCommandsStructured(command);
     const commands = individualCommands;
 

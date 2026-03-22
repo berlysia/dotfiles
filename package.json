@@ -9,6 +9,7 @@
   "scripts": {
     "test": "node --test home/dot_claude/hooks/tests/**/*.test.ts",
     "typecheck": "tsgo --noEmit",
+    "format": "oxfmt .",
     "format:check": "oxfmt --check .",
     "lint:shell": "./scripts/lint-shell.sh",
     "lint:actions": "./scripts/lint-actions.sh",

@@ -447,9 +447,8 @@ async function processBashCommand(
         ...multiEditPermissions.allowList,
       ];
 
-      const { checkFilePermissions } = await import(
-        "../lib/file-permission-inference.ts"
-      );
+      const { checkFilePermissions } =
+        await import("../lib/file-permission-inference.ts");
       const permResult = checkFilePermissions(
         sedResult.targetFiles,
         editAllowList,
