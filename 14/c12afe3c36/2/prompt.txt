@@ -11,3 +11,7 @@ berlysia/shioriもついかしといて
 ---
 
 commit apply push
+
+---
+
+ごめん今足した奴けしちゃって。
