@@ -1,0 +1,13 @@
+mise use --global "github:berlysia/ralf-project" に相当する内容をグローバルのmise設定に追加して。プライベートリポジトリだからGITHUB_TOKENが必要なことに注意。
+
+---
+
+latestにしといて
+
+---
+
+berlysia/shioriもついかしといて
+
+---
+
+commit apply push

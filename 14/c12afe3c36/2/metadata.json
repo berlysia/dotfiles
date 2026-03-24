@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "14c12afe3c36",
+  "session_id": "7fbc161f-ddab-4792-a797-faa9406b11aa",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-24T17:48:33.212945Z",
+  "branch": "master",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "home/dot_config/mise/config.toml"
+  ],
+  "agent": "Claude Code",
+  "token_usage": {
+    "input_tokens": 24,
+    "cache_creation_tokens": 48335,
+    "cache_read_tokens": 661692,
+    "output_tokens": 2066,
+    "api_call_count": 16
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-24T17:48:33.025851Z",
+    "agent_lines": 2,
+    "human_added": 7857,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 7859,
+    "agent_percentage": 0.025448530347372437
+  },
+  "transcript_path": ".claude/projects/-Users-berlysia--local-share-chezmoi/7fbc161f-ddab-4792-a797-faa9406b11aa.jsonl"
+}
