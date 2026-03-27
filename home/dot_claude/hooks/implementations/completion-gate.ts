@@ -10,6 +10,9 @@ import "../types/tool-schemas.ts";
 /**
  * Stop hook that runs tests/typecheck before allowing completion.
  *
+ * If the project has its own Stop hooks in .claude/settings.json,
+ * this hook skips execution to avoid redundant test/typecheck runs.
+ *
  * Uses a file-based retry counter (.tmp/.completion-gate-retries) to
  * prevent infinite loops. After MAX_RETRIES failures, switches to
  * warning-only mode.
@@ -59,6 +62,23 @@ function hasScript(scriptName: string): boolean {
   }
 }
 
+/**
+ * Check if the project's .claude/settings.json has its own Stop hooks.
+ * If so, the project handles completion checks itself and this hook
+ * should skip to avoid redundant execution.
+ */
+function projectHasStopHooks(): boolean {
+  try {
+    const settingsPath = join(process.cwd(), ".claude", "settings.json");
+    if (!existsSync(settingsPath)) return false;
+    const settings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+    const stopHooks = settings?.hooks?.Stop;
+    return Array.isArray(stopHooks) && stopHooks.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 function runCheck(command: string, label: string): string | null {
   try {
     execSync(command, {
@@ -80,6 +100,13 @@ const hook = defineHook({
   trigger: { Stop: true },
   run: (context) => {
     try {
+      if (projectHasStopHooks()) {
+        console.error(
+          "[completion-gate] Project has its own Stop hooks. Skipping to avoid redundant execution.",
+        );
+        return context.success({});
+      }
+
       const { session_id } = context.input;
       const retryCount = getRetryCount();
 
