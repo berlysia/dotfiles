@@ -1,0 +1,4 @@
+# MCP server sharing configuration
+# Set shared_mode = false to revert all servers to stdio (fallback)
+[mcp]
+shared_mode = true
