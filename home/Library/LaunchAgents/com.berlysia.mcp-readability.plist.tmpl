@@ -1,0 +1,41 @@
+{{- if and (eq .chezmoi.os "darwin") .mcp.shared_mode -}}
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.berlysia.mcp-readability</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{{ .chezmoi.workingTree }}/node_modules/.bin/supergateway</string>
+        <string>--stdio</string>
+        <string>pnpm dlx @mizchi/readability@{{ output "jq" "-r" ".dependencies[\"@mizchi/readability\"]" (joinPath .chezmoi.workingTree "home/dot_claude/package.json") | trim }} --mcp</string>
+        <string>--port</string>
+        <string>18101</string>
+        <string>--logLevel</string>
+        <string>info</string>
+        <string>--healthEndpoint</string>
+        <string>/healthz</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>{{ .chezmoi.homeDir }}/.local/share/mise/shims:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>{{ .chezmoi.homeDir }}</string>
+    </dict>
+    <key>WorkingDirectory</key>
+    <string>{{ .chezmoi.workingTree }}</string>
+    <key>KeepAlive</key>
+    <true/>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>{{ .chezmoi.homeDir }}/Library/Logs/mcp-readability.log</string>
+    <key>StandardErrorPath</key>
+    <string>{{ .chezmoi.homeDir }}/Library/Logs/mcp-readability.log</string>
+    <key>ThrottleInterval</key>
+    <integer>5</integer>
+</dict>
+</plist>
+{{- end -}}

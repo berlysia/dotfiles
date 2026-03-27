@@ -2,6 +2,8 @@
 #!/bin/bash
 # Update ~/.claude.json by merging chezmoi template changes
 # package.json hash: {{ output "cat" (joinPath .chezmoi.workingTree "package.json") | sha256sum }}
+# hooks package.json hash: {{ output "cat" (joinPath .chezmoi.workingTree "home/dot_claude/package.json") | sha256sum }}
+# mcp config hash: {{ output "cat" (joinPath .chezmoi.sourceDir ".chezmoidata/mcp.toml") | sha256sum }}
 # script hash: {{ include ".chezmoiscripts/run_onchange_update-claude-json.sh.tmpl" | sha256sum }}
 
 set -euo pipefail
@@ -21,60 +23,56 @@ CODEX_VER=$(jq -r '.dependencies["@openai/codex"] // empty' "$PACKAGE_JSON")
 DRAWIO_VER=$(jq -r '.dependencies["@drawio/mcp"] // empty' "$PACKAGE_JSON")
 
 # Generate new content from versions
+# MCP shared mode: {{ .mcp.shared_mode }}
 TEMPLATE_CONTENT=$(cat << EOF
 {
   "mcpServers": {
+{{- if and (eq .chezmoi.os "darwin") .mcp.shared_mode }}
+    "readability": {
+      "type": "sse",
+      "url": "http://localhost:18101/sse"
+    },
+    "context7": {
+      "type": "sse",
+      "url": "http://localhost:18102/sse"
+    },
+    "drawio": {
+      "type": "sse",
+      "url": "http://localhost:18103/sse"
+    },
+{{- else }}
     "readability": {
       "type": "stdio",
       "command": "pnpm",
-      "args": [
-        "dlx",
-        "@mizchi/readability@${READABILITY_VER}",
-        "--mcp"
-      ],
-      "env": {}
-    },
-    "chrome-devtools": {
-      "command": "pnpm",
-      "args": [
-        "dlx",
-        "chrome-devtools-mcp@${CHROME_DEVTOOLS_VER}"
-      ]
-    },
-    "playwright": {
-      "type": "stdio",
-      "command": "pnpm",
-      "args": [
-        "dlx",
-        "@playwright/mcp@${PLAYWRIGHT_VER}"
-      ],
+      "args": ["dlx", "@mizchi/readability@${READABILITY_VER}", "--mcp"],
       "env": {}
     },
     "context7": {
       "type": "stdio",
       "command": "pnpm",
-      "args": [
-        "dlx",
-        "@upstash/context7-mcp@${CONTEXT7_VER}"
-      ],
+      "args": ["dlx", "@upstash/context7-mcp@${CONTEXT7_VER}"],
+      "env": {}
+    },
+    "drawio": {
+      "type": "stdio",
+      "command": "pnpm",
+      "args": ["dlx", "@drawio/mcp@${DRAWIO_VER}"]
+    },
+{{- end }}
+    "chrome-devtools": {
+      "command": "pnpm",
+      "args": ["dlx", "chrome-devtools-mcp@${CHROME_DEVTOOLS_VER}"]
+    },
+    "playwright": {
+      "type": "stdio",
+      "command": "pnpm",
+      "args": ["dlx", "@playwright/mcp@${PLAYWRIGHT_VER}"],
       "env": {}
     },
     "codex": {
       "type": "stdio",
       "command": "pnpm",
-      "args": [
-        "dlx",
-        "@openai/codex@${CODEX_VER}",
-        "mcp-server"
-      ]
-    },
-    "drawio": {
-      "type": "stdio",
-      "command": "pnpm",
-      "args": [
-        "dlx",
-        "@drawio/mcp@${DRAWIO_VER}"
-      ]
+      "args": ["dlx", "@openai/codex@${CODEX_VER}", "mcp-server"]
     }
   },
   "installMethod": "native",
