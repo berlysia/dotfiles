@@ -79,6 +79,11 @@ esac
 # Shell-specific tool activations
 # shellcheck disable=SC2154
 if [ "$HAS_MISE" = "1" ] && [ -f "$HOME/.local/bin/mise" ]; then
+  # Set GITHUB_TOKEN for mise's github: backend (private repo access)
+  if [ -z "$GITHUB_TOKEN" ] && type gh >/dev/null 2>&1; then
+    GITHUB_TOKEN="$(gh auth token 2>/dev/null)" && export GITHUB_TOKEN
+  fi
+
   if [ "$CURRENT_SHELL" = "zsh" ]; then
     eval "$($HOME/.local/bin/mise activate zsh)"
   else
