@@ -21,7 +21,9 @@ if type fzf >/dev/null 2>&1; then
   fi
 fi
 
-# Update checkers (tools and dotfiles)
-[ -f "$SHELL_COMMON/updates/chezmoi.sh" ] && . "$SHELL_COMMON/updates/chezmoi.sh"
-[ -f "$SHELL_COMMON/updates/mise.sh" ] && . "$SHELL_COMMON/updates/mise.sh"
-[ -f "$SHELL_COMMON/updates/dotfiles.sh" ] && . "$SHELL_COMMON/updates/dotfiles.sh"
+# Update checkers (tools and dotfiles) — skip in Claude Code sessions
+if [ -z "$CLAUDECODE" ]; then
+  [ -f "$SHELL_COMMON/updates/chezmoi.sh" ] && . "$SHELL_COMMON/updates/chezmoi.sh"
+  [ -f "$SHELL_COMMON/updates/mise.sh" ] && . "$SHELL_COMMON/updates/mise.sh"
+  [ -f "$SHELL_COMMON/updates/dotfiles.sh" ] && . "$SHELL_COMMON/updates/dotfiles.sh"
+fi
