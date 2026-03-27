@@ -1,0 +1,130 @@
+## ハンドオーバー: MCP サーバーのセッション間プロセス共有
+
+### 背景
+Claude Code は MCP サーバーをセッションごとに個別プロセスで起動する。
+ralf-project のように ralf run → claude → MCP群 の構造があると、
+1セッションあたり6-8個のnodeプロセスが立ち、セッションが重なると30-40プロセスになる。
+/exit すればクリーンアップされるのでリークではないが、同時実行時のリソース消費が大きい。
+
+### 現状
+- MCP サーバーは chezmoi 管理でグローバルインストール済み
+- pnpm dlx ではなくローカルコマンドとして起動している
+- 問題はプロセスが別々に立つこと自体
+
+### 目標
+stateless な MCP サーバー（context7, readability, codex, drawio 等）を
+セッション間で共有し、プロセス数を削減する。
+
+### 調査済みの有力候補
+1. **supergateway** (GitHub ~2.5k stars) — stdio MCP を HTTP/SSE で公開。
+   `npx -y supergateway --stdio "command" --port 8001` で常駐化。
+   複数セッションが同一エンドポイントに接続してプロセス共有。
+   --stateful モードあり。
+
+2. **1mcp-app/agent** (~400 stars) — 複数 MCP サーバーを1プロセスに集約し
+   単一 HTTP エンドポイントで公開。
+
+3. **mcpmu** (~50 stars) — Go製マルチプレクサ。namespace プロファイル対応。
+   `mcpmu serve --stdio` で Claude Code から直接利用可。
+
+### 方針案
+- stateless 系: supergateway or 1mcp で常駐デーモン化 → launchd 管理
+- stateful 系 (playwright, chrome-devtools): 従来通り個別起動のまま
+- Claude Code の MCP 設定を stdio → URL ベースに変更
+- chezmoi テンプレートで環境差分を吸収
+
+### 未確認事項
+- Claude Code が HTTP/SSE トランスポートの MCP サーバーに対応しているか
+- supergateway の --stateful が複数クライアント同時接続で安定するか
+- launchd plist の chezmoi 管理方法
+
+---
+
+Base directory for this skill: /Users/berlysia/.claude/skills/execute-plan
+
+# Execute Plan
+
+計画ファイルまたは分解済みタスクリストを入力として、順次実装・検証・コミットする。
+`/decompose` でタスク分解した後の実装フェーズで使用する。
+
+## 前提条件
+
+以下のいずれかが存在すること:
+
+- 計画ファイル（Markdown、ADRなど）のパス
+- TaskCreate で作成済みのタスクリスト
+- ユーザーが直接指定するタスク一覧
+
+## ワークフロー
+
+### 1. 計画の読み込み
+
+- 指定されたパスの計画ファイルを Read で読む
+- TaskList で既存タスクを確認する
+- 計画にタスク一覧がない場合、計画から実装タスクを抽出して TaskCreate で登録する
+- 計画に新フィールドやデータフロー追加がある場合、**Wiring Checklist**（型定義→スキーマ→CLI定義→CLIパース→実行ロジック→永続化渡し→永続化型→正規化 の各レイヤー通過確認リスト）が含まれているか確認する。なければ計画から抽出して作成する
+
+### 2. 順次実装ループ
+
+各タスクについて以下を実行:
+
+```
+for each task:
+  1. TaskUpdate → in_progress
+  2. 実装（Edit/Write で変更）
+  3. ビルド実行（プロジェクトの build コマンド）
+     - 失敗 → 修正して再ビルド（最大3回）
+  4. テスト実行（プロジェクトの test コマンド）
+     - 失敗 → 修正して再テスト（最大3回）
+  5. lint/type-check 実行
+  6. TaskUpdate → completed
+```
+
+### 3. 完了検証
+
+全タスク完了後、以下を順に実行:
+
+1. **全テストスイートを再実行** — 失敗があれば修正
+2. **ワイヤリング検証（Wiring Verification）** — 今回の変更で追加した全フィールド・データフローについて、定義から最終利用まで途切れなく接続されているかを検証する
+   - 計画に Wiring Checklist がある場合はそれに従う
+   - ない場合は、`git diff --name-only` で変更ファイルを特定し、追加した型フィールド・関数・CLI オプションの使用箇所を grep で追跡
+   - 「型定義あり・使用なし」「CLI パース済み・実行フローに未渡し」「永続化型に追加・書き込みコードなし」等のdead wireを検出
+   - dead wire が見つかった場合は修正してから次に進む
+3. **変更内容のサマリーをユーザーに提示**
+4. **ユーザーの指示に従ってコミット**
+
+## 制約
+
+### 実行の継続性
+
+- **全タスク完了まで停止しない**: タスクやフェーズが完了したら計画ドキュメントにも完了とマークし、即座に次のタスクに進む。途中で不要な確認や報告で中断しない
+- **タスク間の依存**: 前のタスクのテストが通らない場合、次のタスクに進まない
+- **ビルド/テスト3回失敗**: 自動修正を諦め、失敗状況をユーザーに報告して判断を仰ぐ（これが唯一の停止条件）
+
+### コード品質
+
+- **不要なコメント・JSDoc禁止**: 変更していないコードにコメントやJSDocを追加しない。新規コードにも自明な内容のコメントは書かない
+- **unknown型禁止**: 適切な型注釈を使用する。`any` / `unknown` でごまかさない
+- **typecheck継続実行**: 各タスクの実装後だけでなく、複数ファイルを変更した場合は途中でも typecheck を実行し、型エラーの蓄積を防ぐ
+
+### その他
+
+- **計画からの逸脱禁止**: 計画にない変更が必要な場合、ユーザーに確認してから実行する
+- **コミットはユーザー指示で**: 自動コミットしない — サマリー提示後にユーザーが判断する
+
+
+ARGUMENTS: approve
+
+---
+
+<task-notification>
+<task-id>bpcaqr628</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>REDACTED.output</output-file>
+<status>completed</status>
+<summary>Background command "Test SSE MCP tool with a different URL" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+doit

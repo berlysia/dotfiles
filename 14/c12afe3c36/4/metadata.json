@@ -1,0 +1,39 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "14c12afe3c36",
+  "session_id": "74dcf58c-7ffa-464e-926b-6fdd979ca922",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-27T08:37:16.715177Z",
+  "branch": "master",
+  "checkpoints_count": 2,
+  "files_touched": [
+    ".tmp/sessions/74dcf58c/plan.md",
+    ".tmp/sessions/74dcf58c/research.md",
+    "home/.chezmoidata/mcp.toml",
+    "home/.chezmoiscripts/run_after_reload-mcp-launchd.sh.tmpl",
+    "home/.chezmoiscripts/run_onchange_reload-mcp-launchd.sh.tmpl",
+    "home/.chezmoiscripts/run_onchange_update-claude-json.sh.tmpl",
+    "home/Library/LaunchAgents/com.berlysia.mcp-context7.plist.tmpl",
+    "home/Library/LaunchAgents/com.berlysia.mcp-drawio.plist.tmpl",
+    "home/Library/LaunchAgents/com.berlysia.mcp-readability.plist.tmpl"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "dbeff0d1-db25-45d8-89da-c6a4e704a452",
+  "token_usage": {
+    "input_tokens": 465,
+    "cache_creation_tokens": 220513,
+    "cache_read_tokens": 9722856,
+    "output_tokens": 38396,
+    "api_call_count": 114
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-27T08:37:16.563093Z",
+    "agent_lines": 213,
+    "human_added": 5080,
+    "human_modified": 158,
+    "human_removed": 0,
+    "total_committed": 5451,
+    "agent_percentage": 3.907539900935608
+  },
+  "transcript_path": ".claude/projects/-Users-berlysia--local-share-chezmoi/74dcf58c-7ffa-464e-926b-6fdd979ca922.jsonl"
+}

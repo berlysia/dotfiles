@@ -3,10 +3,19 @@
   "checkpoint_id": "14c12afe3c36",
   "strategy": "manual-commit",
   "branch": "master",
-  "checkpoints_count": 6,
+  "checkpoints_count": 8,
   "files_touched": [
     ".skills/apply-harness-practices/SKILL.md",
     ".skills/tanstack-intent-setup/SKILL.md",
+    ".tmp/sessions/74dcf58c/plan.md",
+    ".tmp/sessions/74dcf58c/research.md",
+    "home/.chezmoidata/mcp.toml",
+    "home/.chezmoiscripts/run_after_reload-mcp-launchd.sh.tmpl",
+    "home/.chezmoiscripts/run_onchange_reload-mcp-launchd.sh.tmpl",
+    "home/.chezmoiscripts/run_onchange_update-claude-json.sh.tmpl",
+    "home/Library/LaunchAgents/com.berlysia.mcp-context7.plist.tmpl",
+    "home/Library/LaunchAgents/com.berlysia.mcp-drawio.plist.tmpl",
+    "home/Library/LaunchAgents/com.berlysia.mcp-readability.plist.tmpl",
     "home/dot_claude/hooks/implementations/completion-gate.ts",
     "home/dot_config/mise/config.toml",
     "home/dot_shell_common/init.sh",
@@ -40,13 +49,20 @@
       "context": "/14/c12afe3c36/3/context.md",
       "content_hash": "/14/c12afe3c36/3/content_hash.txt",
       "prompt": "/14/c12afe3c36/3/prompt.txt"
+    },
+    {
+      "metadata": "/14/c12afe3c36/4/metadata.json",
+      "transcript": "/14/c12afe3c36/4/full.jsonl",
+      "context": "/14/c12afe3c36/4/context.md",
+      "content_hash": "/14/c12afe3c36/4/content_hash.txt",
+      "prompt": "/14/c12afe3c36/4/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 1577,
-    "cache_creation_tokens": 199271,
-    "cache_read_tokens": 4636185,
-    "output_tokens": 21672,
-    "api_call_count": 90
+    "input_tokens": 2042,
+    "cache_creation_tokens": 419784,
+    "cache_read_tokens": 14359041,
+    "output_tokens": 60068,
+    "api_call_count": 204
   }
 }
