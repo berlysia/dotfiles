@@ -31,7 +31,7 @@
     "@mizchi/lsmcp": "0.10.0",
     "@types/node": "24.10.12",
     "@typescript/native-preview": "7.0.0-dev.20260109.1",
-    "knip": "5.81.0",
+    "knip": "6.0.1",
     "oxfmt": "0.36.0",
     "oxlint": "1.51.0",
     "typescript": "5.9.3"
