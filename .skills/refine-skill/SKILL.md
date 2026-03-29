@@ -61,20 +61,21 @@ description: Implements the Project entity model with hierarchical relationships
 ```
 
 negative trigger で over-triggering を防ぐ:
+
 ```yaml
 description: ...Use for statistical modeling, regression. Do NOT use for simple data exploration (use data-viz skill instead).
 ```
 
 ## Common Issues
 
-| Symptom | Cause | Fix |
-|---------|-------|-----|
-| スキルがロードされない | description が曖昧/トリガー不足 | trigger phrases 追加、ユーザーが言いそうなフレーズを含める |
-| 無関係なクエリでロードされる | スコープが広すぎる | negative trigger 追加、対象を限定 |
-| 指示が無視される | instructions が冗長/埋もれている/曖昧 | 重要指示をトップに、箇条書き化、詳細は references/ へ |
-| 出力品質が低い | model laziness | `## Performance Notes` で明示的に品質要求 |
-| 過剰な説明 | Claude既知の情報を記載 | 「〜とは」説明・背景・自明なステップを削除 |
-| 深い参照チェーン | A→B→C の多段参照 | 1階層にフラット化 |
+| Symptom                      | Cause                                 | Fix                                                        |
+| ---------------------------- | ------------------------------------- | ---------------------------------------------------------- |
+| スキルがロードされない       | description が曖昧/トリガー不足       | trigger phrases 追加、ユーザーが言いそうなフレーズを含める |
+| 無関係なクエリでロードされる | スコープが広すぎる                    | negative trigger 追加、対象を限定                          |
+| 指示が無視される             | instructions が冗長/埋もれている/曖昧 | 重要指示をトップに、箇条書き化、詳細は references/ へ      |
+| 出力品質が低い               | model laziness                        | `## Performance Notes` で明示的に品質要求                  |
+| 過剰な説明                   | Claude既知の情報を記載                | 「〜とは」説明・背景・自明なステップを削除                 |
+| 深い参照チェーン             | A→B→C の多段参照                      | 1階層にフラット化                                          |
 
 ## Iteration Signals
 
@@ -87,12 +88,15 @@ description: ...Use for statistical modeling, regression. Do NOT use for simple 
 ### Example 1: 冗長な description の改善
 
 Before:
+
 ```yaml
 description: Creates sophisticated multi-page documentation systems.
 ```
+
 問題: What はあるが When/Triggers がない。「sophisticated」は無意味。
 
 After:
+
 ```yaml
 description: Generate multi-page documentation from source code. Use when user says "generate docs", "API documentation", or uploads code files for documentation.
 ```
@@ -102,6 +106,7 @@ description: Generate multi-page documentation from source code. Use when user s
 Symptom: スキルはロードされるが指示通りに動かない。
 
 診断チェック:
+
 1. **Verbose?** → 500行超なら references/ に分割
 2. **Buried?** → 重要指示が下部にある → `## Critical` でトップに移動
 3. **Ambiguous?** → 「適切に処理」→ 具体的な検証項目リストに置換
