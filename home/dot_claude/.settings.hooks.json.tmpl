@@ -14,6 +14,10 @@
       "hooks": [
         {
           "type": "command",
+          "command": "echo '{\"event\":\"PreToolUse\",\"output\":{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"Current time: '\"$(date '+%F %H:%M:%S')\"'\"}}}'"
+        },
+        {
+          "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/auto-approve.ts"
         },
         {
@@ -151,6 +155,10 @@
       "hooks": [
         {
           "type": "command",
+          "command": "echo '{\"event\":\"SessionStart\",\"output\":{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"Current time: '\"$(date '+%F %H:%M:%S')\"'\"}}}'"
+        },
+        {
+          "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/session.ts"
         },
         {
@@ -170,6 +178,10 @@
     {
       "matcher": "",
       "hooks": [
+        {
+          "type": "command",
+          "command": "echo '{\"event\":\"Stop\",\"output\":{\"hookSpecificOutput\":{\"hookEventName\":\"Stop\",\"additionalContext\":\"Current time: '\"$(date '+%F %H:%M:%S')\"'\"}}}'"
+        },
         {
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/completion-gate.ts"
@@ -232,6 +244,10 @@
     {
       "matcher": "",
       "hooks": [
+        {
+          "type": "command",
+          "command": "echo '{\"event\":\"UserPromptSubmit\",\"output\":{\"hookSpecificOutput\":{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":\"Current time: '\"$(date '+%F %H:%M:%S')\"'\"}}}'"
+        },
         {
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/user-prompt-logger.ts",
