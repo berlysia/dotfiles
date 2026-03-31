@@ -4,8 +4,8 @@ import { deepStrictEqual, ok, strictEqual } from "node:assert";
 import { describe, it } from "node:test";
 import {
   computePlanHash,
-  extractTargetPath,
   extractLatestReviewMarker,
+  extractTargetPath,
   isPlanFile,
   normalizeForHash,
   stripReviewMarkers,
