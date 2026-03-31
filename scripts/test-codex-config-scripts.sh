@@ -6,6 +6,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+OXFMT_BIN="${PROJECT_ROOT}/node_modules/.bin/oxfmt"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -34,6 +35,7 @@ test_fail() {
 setup_test() {
     TEST_DIR=$(mktemp -d)
     export CODEX_CONFIG_FILE="$TEST_DIR/config.toml"
+    export OXFMT_BIN
     echo "Test directory: $TEST_DIR"
 }
 
@@ -47,6 +49,30 @@ cleanup_test() {
 
 # Cleanup on script exit
 trap 'cleanup_test' EXIT
+
+# Test 0: Default path resolves to chezmoi source-state location
+test_start "Default path resolves home/dot_codex/.config.toml in repo layout"
+setup_test
+TEMP_REPO="$TEST_DIR/repo"
+mkdir -p "$TEMP_REPO/scripts" "$TEMP_REPO/home/dot_codex"
+cp "$SCRIPT_DIR/check-codex-config.sh" "$TEMP_REPO/scripts/check-codex-config.sh"
+cp "$SCRIPT_DIR/format-codex-config.sh" "$TEMP_REPO/scripts/format-codex-config.sh"
+chmod +x "$TEMP_REPO/scripts/check-codex-config.sh" "$TEMP_REPO/scripts/format-codex-config.sh"
+unset CODEX_CONFIG_FILE
+cat > "$TEMP_REPO/home/dot_codex/.config.toml" << 'EOF'
+hide_agent_reasoning = true
+model_reasoning_effort = 'high'
+network_access = true
+EOF
+
+DEFAULT_PATH_OUTPUT=$("$TEMP_REPO/scripts/check-codex-config.sh" 2>&1 || true)
+if printf '%s' "$DEFAULT_PATH_OUTPUT" | grep -q "Config is properly formatted"; then
+    test_pass
+else
+    test_fail "Check script did not read default home/dot_codex/.config.toml"
+fi
+
+cleanup_test
 
 # Test 1: Check script accepts properly formatted config
 test_start "Check script accepts properly formatted config"

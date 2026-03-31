@@ -33,12 +33,8 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
       - name: Run shellcheck
-        uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # v2.0.0
-        with:
-          scandir: "."
-          ignore_paths: >-
-            node_modules
-            .git
-            .tmp
-          severity: warning
+        run: ./scripts/lint-shell.sh

@@ -3,18 +3,12 @@ name: Auto-fix Dependencies
 on:
   workflow_run:
     workflows:
-      - "Shell Lint (shellcheck)"
-      - "TypeScript CI"
-      - "Secret Detection (gitleaks)"
-      - "Lint GitHub Actions"
-      - "Shell Compatibility Test"
-      - "Validate Codex Config"
-      - "Validate JSON Templates"
+      - "CI Status Check"
     types:
       - completed
 
 concurrency:
-  group: auto-fix-${{ github.event.workflow_run.head_branch }}
+  group: auto-fix-${{ github.event.workflow_run.head_sha }}
   cancel-in-progress: true
 
 jobs:
@@ -35,7 +29,7 @@ jobs:
     steps:
       - name: Get PR information
         id: pr-info
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
           script: |
             // Get PR from the workflow_run event
@@ -56,7 +50,10 @@ jobs:
 
             // Check if PR is from a dependency bot
             const author = prData.user.login;
-            const isBot = author === 'renovate[bot]' || author === 'dependabot[bot]';
+            const isBot =
+              author === 'renovate[bot]' ||
+              author === 'dependabot[bot]' ||
+              author === 'app/renovate';
 
             if (!isBot) {
               core.info(`Skipping: PR author is ${author}, not a dependency bot`);
@@ -82,12 +79,12 @@ jobs:
       - name: Auto-fix dependencies
         if: steps.pr-info.outputs.skip != 'true'
         id: auto-fix
-        uses: anthropics/claude-code-action@ea36d6abdedc17fc2a671b36060770b208a6f8f1 # v1.0.51
+        uses: anthropics/claude-code-action@26ec041249acb0a944c0a47b6c0c13f05dbc5b44 # v1.0.70
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           use_bedrock: false
           use_vertex: false
-          allowed_bots: "renovate[bot],dependabot[bot]"
+          allowed_bots: "renovate[bot],dependabot[bot],app/renovate"
           prompt: |
             **CI Failed - Fix Required**
 
@@ -106,7 +103,7 @@ jobs:
             **Important:**
             - Focus only on fixing the CI failures
             - After pushing fixes, verify all checks pass with `gh pr checks`
-            - Do not manually merge - this repository uses auto-merge for dependency PRs
+            - Do not manually merge - this repository uses auto-merge for eligible dependency PRs
             - If the issue cannot be fixed automatically, leave a detailed comment explaining the problem
 
             **Tool constraints (MUST follow):**

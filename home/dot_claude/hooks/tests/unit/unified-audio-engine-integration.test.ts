@@ -24,9 +24,10 @@ import {
 } from "../../../lib/unified-audio-engine.ts";
 
 // モック用の簡単なcheckClaudeCompanionStatus実装
-const _originalCheckClaudeCompanionStatus = await import(
-  "../../../lib/claude-companion-detector.ts"
-).then((m) => m.checkClaudeCompanionStatus);
+const _originalCheckClaudeCompanionStatus =
+  await import("../../../lib/claude-companion-detector.ts").then(
+    (m) => m.checkClaudeCompanionStatus,
+  );
 
 describe("Unified Audio Engine - Claude Companion Integration", () => {
   const originalEnvHome = process.env.HOME;
