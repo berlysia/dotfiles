@@ -31,7 +31,6 @@ type PermissionUpdate =
         | "bypassPermissions"
         | "default"
         | "dontAsk"
-        | "delegate"
         | "plan";
     }
   | {
