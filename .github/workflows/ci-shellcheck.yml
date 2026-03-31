@@ -41,4 +41,16 @@ jobs:
             node_modules
             .git
             .tmp
+          ignore_names: >-
+            *.zsh
+            .zshrc
+            .zprofile
+            .zlogin
+            .zlogout
+            .zsenv
+            zshrc
+            zprofile
+            zlogin
+            zlogout
+            zsenv
           severity: warning
