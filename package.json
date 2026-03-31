@@ -20,21 +20,21 @@
   },
   "dependencies": {
     "@drawio/mcp": "1.1.2",
-    "@openai/codex": "0.77.0",
-    "@playwright/mcp": "0.0.54",
-    "@upstash/context7-mcp": "2.1.0",
-    "ccstatusline": "2.0.23",
-    "chrome-devtools-mcp": "0.12.1",
+    "@openai/codex": "0.106.0",
+    "@playwright/mcp": "0.0.68",
+    "@upstash/context7-mcp": "2.1.2",
+    "ccstatusline": "2.0.29",
+    "chrome-devtools-mcp": "0.18.1",
     "supergateway": "3.4.3"
   },
   "devDependencies": {
     "@mizchi/lsmcp": "0.10.0",
     "@types/node": "24.10.13",
-    "@typescript/native-preview": "7.0.0-dev.20260109.1",
-    "knip": "5.81.0",
+    "@typescript/native-preview": "7.0.0-dev.20260301.1",
+    "knip": "5.85.0",
     "oxfmt": "0.36.0",
     "oxlint": "1.51.0",
     "typescript": "5.9.3"
   },
-  "packageManager": "pnpm@10.27.0"
+  "packageManager": "pnpm@10.30.3"
 }
