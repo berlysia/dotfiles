@@ -1,14 +1,14 @@
 #!/bin/sh
 
 # sync-claude-config.sh
-# Sync ~/.claude/CLAUDE.md to dot_claude/CLAUDE.md in chezmoi dotfiles
+# Sync ~/.claude/CLAUDE.md to home/dot_claude/CLAUDE.md in chezmoi source state
 # with conflict detection and resolution
 
 set -e
 
 # Define paths
 SOURCE_FILE="$HOME/.claude/CLAUDE.md"
-TARGET_FILE="$(chezmoi source-path)/dot_claude/CLAUDE.md"
+TARGET_FILE="$(chezmoi source-path)/home/dot_claude/CLAUDE.md"
 
 # Check if source file exists
 if [ ! -f "$SOURCE_FILE" ]; then
@@ -34,7 +34,7 @@ files_identical() {
 # Function to check if target has uncommitted changes
 has_uncommitted_changes() {
     cd "$(chezmoi source-path)"
-    git status --porcelain "dot_claude/CLAUDE.md" | grep -q "."
+    git status --porcelain "home/dot_claude/CLAUDE.md" | grep -q "."
 }
 
 # Function to show diff

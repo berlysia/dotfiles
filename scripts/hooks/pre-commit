@@ -145,13 +145,13 @@ echo
 #
 # 4. Codex Config Format Check
 #
-STAGED_CODEX_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E 'dot_codex/config\.toml|scripts/(check|format)-codex-config\.sh' || true)
+STAGED_CODEX_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E 'home/dot_codex/\.config\.toml|scripts/(check|format)-codex-config\.sh' || true)
 if [ -n "$STAGED_CODEX_FILES" ]; then
     echo -e "${BLUE}⚙️  Checking Codex config format...${NC}"
     CHECK_SCRIPT="${REPO_ROOT}/scripts/check-codex-config.sh"
 
     if [ -f "$CHECK_SCRIPT" ]; then
-        if [ -f "${REPO_ROOT}/dot_codex/config.toml" ]; then
+        if [ -f "${REPO_ROOT}/home/dot_codex/.config.toml" ]; then
             if "$CHECK_SCRIPT"; then
                 echo -e "${GREEN}✓ Codex config is properly formatted${NC}"
             else
@@ -160,7 +160,7 @@ if [ -n "$STAGED_CODEX_FILES" ]; then
                 EXIT_CODE=1
             fi
         else
-            echo -e "${YELLOW}⚠ dot_codex/config.toml not found, skipping${NC}"
+            echo -e "${YELLOW}⚠ home/dot_codex/.config.toml not found, skipping${NC}"
         fi
     else
         echo -e "${YELLOW}⚠ Check script not found, skipping${NC}"
@@ -174,7 +174,7 @@ echo
 #
 # 4.5. Codex Execution Policy Check
 #
-STAGED_RULES_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E 'dot_codex/rules/' || true)
+STAGED_RULES_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E 'home/dot_codex/rules/' || true)
 if [ -n "$STAGED_RULES_FILES" ]; then
     echo -e "${BLUE}📋 Checking Codex execution policy rules...${NC}"
     if command -v codex &> /dev/null; then
@@ -228,7 +228,7 @@ echo
 #
 # 6. Hook Tests (existing functionality)
 #
-HOOKS_SCRIPTS_DIR="${REPO_ROOT}/dot_claude/hooks/scripts"
+HOOKS_PROJECT_DIR="${REPO_ROOT}"
 STAGED_FILES=$(git diff --cached --name-only)
 
 HOOK_FILES_MODIFIED=false
@@ -244,26 +244,15 @@ done
 if [ "$HOOK_FILES_MODIFIED" = true ] || [ "${FORCE_HOOK_TESTS:-}" = "1" ]; then
     echo -e "${BLUE}🧪 Running hook tests...${NC}"
 
-    FAST_TEST="${HOOKS_SCRIPTS_DIR}/test_fast.sh"
-    FULL_TEST="${HOOKS_SCRIPTS_DIR}/run_all_tests.sh"
-
-    if [ -f "$FAST_TEST" ]; then
-        TEST_RUNNER="$FAST_TEST"
-    elif [ -f "$FULL_TEST" ]; then
-        TEST_RUNNER="$FULL_TEST"
-    else
-        echo -e "${YELLOW}⚠ No test runner found, skipping${NC}"
-        TEST_RUNNER=""
-    fi
-
-    if [ -n "$TEST_RUNNER" ]; then
-        cd "$HOOKS_SCRIPTS_DIR"
-        if ! "$TEST_RUNNER"; then
+    if command -v pnpm &> /dev/null && [ -f "${HOOKS_PROJECT_DIR}/package.json" ] && jq -e '.scripts.test' "${HOOKS_PROJECT_DIR}/package.json" &> /dev/null; then
+        if ! (cd "${HOOKS_PROJECT_DIR}" && pnpm test); then
             echo -e "${RED}❌ Hook tests failed!${NC}"
             EXIT_CODE=1
         else
             echo -e "${GREEN}✓ Hook tests passed${NC}"
         fi
+    else
+        echo -e "${YELLOW}⚠ No hook test runner found, skipping${NC}"
     fi
 else
     echo -e "${GREEN}✓ No hook files modified, skipping tests${NC}"

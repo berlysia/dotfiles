@@ -1,5 +1,5 @@
 #!/bin/bash
-# Install Claude Code skills from berlysia/dotfiles to ~/.claude/
+# Install Claude Code skills from berlysia/dotfiles source state to ~/.claude/
 # Called from SessionStart inline commands
 
 set -euo pipefail
@@ -12,8 +12,8 @@ fi
 
 DOTFILES_REPO="https://github.com/berlysia/dotfiles"
 BRANCH="master"
-SKILLS_PATH="dot_claude/skills"
-RULES_PATH="dot_claude/rules"
+SKILLS_PATH=".skills"
+RULES_PATH="home/dot_claude/rules"
 TARGET_DIR="$HOME/.claude"
 
 log() {

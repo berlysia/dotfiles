@@ -157,7 +157,7 @@ function areAllTargetsDocumentPaths(
 
 function isOutsideProject(cwd: string, path: string): boolean {
   const normalized = resolve(cwd, expandTilde(path));
-  return !normalized.startsWith(cwd + "/") && normalized !== cwd;
+  return !normalized.startsWith(`${cwd}/`) && normalized !== cwd;
 }
 
 function areAllTargetsOutsideProject(cwd: string, targets: string[]): boolean {

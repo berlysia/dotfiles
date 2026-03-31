@@ -1,6 +1,15 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["github>berlysia/renovate-config"],
+  "packageRules": [
+    {
+      "description": "Auto-merge non-major GitHub Actions updates",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "automerge": true,
+      "platformAutomerge": true
+    }
+  ],
   "mise": {
     "managerFilePatterns": [
       "^dot_config/mise/config\\.toml$",

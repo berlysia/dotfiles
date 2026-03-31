@@ -127,13 +127,13 @@ git log --oneline -50 | grep -oP '(?<=\()[^)]+(?=\))' | sort | uniq -c | sort -r
 
 ### action line 早見表
 
-| type | 用途 | 例 |
-|---|---|---|
-| `intent(scope)` | ユーザーの意図・目的 | `intent(auth): social login starting with Google` |
-| `decision(scope)` | 選択した方針と理由 | `decision(queue): SQS over RabbitMQ for managed scaling` |
-| `rejected(scope)` | 却下した選択肢と理由（必須） | `rejected(queue): RabbitMQ — requires self-managed infra` |
-| `constraint(scope)` | 実装を制約した条件 | `constraint(api): max 5MB payload, 30s timeout` |
-| `learned(scope)` | 発見した非自明な事実 | `learned(stripe): presentment ≠ settlement currency` |
+| type                | 用途                         | 例                                                        |
+| ------------------- | ---------------------------- | --------------------------------------------------------- |
+| `intent(scope)`     | ユーザーの意図・目的         | `intent(auth): social login starting with Google`         |
+| `decision(scope)`   | 選択した方針と理由           | `decision(queue): SQS over RabbitMQ for managed scaling`  |
+| `rejected(scope)`   | 却下した選択肢と理由（必須） | `rejected(queue): RabbitMQ — requires self-managed infra` |
+| `constraint(scope)` | 実装を制約した条件           | `constraint(api): max 5MB payload, 30s timeout`           |
+| `learned(scope)`    | 発見した非自明な事実         | `learned(stripe): presentment ≠ settlement currency`      |
 
 ### Breaking Changes
 

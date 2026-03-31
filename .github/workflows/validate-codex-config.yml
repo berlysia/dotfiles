@@ -6,13 +6,13 @@ on:
       - master
       - main
     paths:
-      - "dot_codex/config.toml"
+      - "home/dot_codex/.config.toml"
       - "scripts/check-codex-config.sh"
       - "scripts/format-codex-config.sh"
       - ".github/workflows/validate-codex-config.yml"
   pull_request:
     paths:
-      - "dot_codex/config.toml"
+      - "home/dot_codex/.config.toml"
       - "scripts/check-codex-config.sh"
       - "scripts/format-codex-config.sh"
       - ".github/workflows/validate-codex-config.yml"
@@ -28,8 +28,11 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Setup Node.js with pnpm
+        uses: ./.github/actions/setup-node-pnpm
+
       - name: Install mise
-        uses: jdx/mise-action@6d1e696aa24c1aa1bcc1adea0212707c71ab78a8 # v3.6.1
+        uses: jdx/mise-action@c1ecc8f748cd28cdeabf76dab3cccde4ce692fe4 # v4.0.0
         with:
           experimental: true
           reshim: true
@@ -41,4 +44,4 @@ jobs:
       - name: Validate Codex config formatting
         run: ./scripts/check-codex-config.sh
         env:
-          CODEX_CONFIG_FILE: dot_codex/config.toml
+          CODEX_CONFIG_FILE: home/dot_codex/.config.toml
