@@ -85,6 +85,7 @@ context: inherit
 MVH Checklist の各項目について、Phase 1 の結果（ユーザーレベル・プロジェクトレベル両方）と照合する。
 
 分類基準:
+
 - **ユーザーレベルで実装済み** = `~/.claude/settings.json` に該当 hook/設定が存在する
 - **プロジェクトレベルで実装済み** = `.claude/settings.json` に該当設定が存在する
 - **未実装** = どちらにも存在しない

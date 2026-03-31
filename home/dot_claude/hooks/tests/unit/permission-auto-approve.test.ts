@@ -519,9 +519,8 @@ describe("permission-auto-approve.ts hook behavior", () => {
 describe("permission-request-helpers.ts", () => {
   describe("createPermissionRequestAllowResponse", () => {
     it("should create valid allow response", async () => {
-      const { createPermissionRequestAllowResponse } = await import(
-        "../../lib/permission-request-helpers.ts"
-      );
+      const { createPermissionRequestAllowResponse } =
+        await import("../../lib/permission-request-helpers.ts");
 
       const response = createPermissionRequestAllowResponse();
 
@@ -533,9 +532,8 @@ describe("permission-request-helpers.ts", () => {
     });
 
     it("should include updatedInput when provided", async () => {
-      const { createPermissionRequestAllowResponse } = await import(
-        "../../lib/permission-request-helpers.ts"
-      );
+      const { createPermissionRequestAllowResponse } =
+        await import("../../lib/permission-request-helpers.ts");
 
       const updatedInput = { command: "ls -la" };
       const response = createPermissionRequestAllowResponse(updatedInput);
@@ -549,9 +547,8 @@ describe("permission-request-helpers.ts", () => {
 
   describe("createPermissionRequestDenyResponse", () => {
     it("should create valid deny response", async () => {
-      const { createPermissionRequestDenyResponse } = await import(
-        "../../lib/permission-request-helpers.ts"
-      );
+      const { createPermissionRequestDenyResponse } =
+        await import("../../lib/permission-request-helpers.ts");
 
       const response = createPermissionRequestDenyResponse("Dangerous command");
 
@@ -567,9 +564,8 @@ describe("permission-request-helpers.ts", () => {
     });
 
     it("should include interrupt flag when specified", async () => {
-      const { createPermissionRequestDenyResponse } = await import(
-        "../../lib/permission-request-helpers.ts"
-      );
+      const { createPermissionRequestDenyResponse } =
+        await import("../../lib/permission-request-helpers.ts");
 
       const response = createPermissionRequestDenyResponse(
         "Critical error",
