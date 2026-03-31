@@ -6,13 +6,13 @@ on:
       - master
       - main
     paths:
-      - "dot_codex/config.toml"
+      - "home/dot_codex/.config.toml"
       - "scripts/check-codex-config.sh"
       - "scripts/format-codex-config.sh"
       - ".github/workflows/validate-codex-config.yml"
   pull_request:
     paths:
-      - "dot_codex/config.toml"
+      - "home/dot_codex/.config.toml"
       - "scripts/check-codex-config.sh"
       - "scripts/format-codex-config.sh"
       - ".github/workflows/validate-codex-config.yml"
@@ -41,4 +41,4 @@ jobs:
       - name: Validate Codex config formatting
         run: ./scripts/check-codex-config.sh
         env:
-          CODEX_CONFIG_FILE: dot_codex/config.toml
+          CODEX_CONFIG_FILE: home/dot_codex/.config.toml
