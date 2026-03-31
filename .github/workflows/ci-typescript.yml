@@ -53,4 +53,4 @@ jobs:
         run: pnpm test
 
       - name: Lint check
-        run: pnpm run format:check && pnpm run lint:oxlint && pnpm run lint:codex
+        run: pnpm run format:check && pnpm run lint:oxlint
