@@ -15,6 +15,19 @@ depends on [chezmoi](https://github.com/twpayne/chezmoi)
 - `~/.local/bin` will be added to `$PATH`
 - `~/.local/.bin` will be added to `$PATH` , and overwrite this directory with symlink
 
+## Local CI
+
+Local workflow verification uses `actrun`, managed by this project's [`mise`](https://mise.jdx.dev/) config.
+
+```bash
+mise install
+pnpm ci:local:typescript
+pnpm ci:local:codex
+pnpm ci:local:shell
+```
+
+If your shell is not activated by `mise`, run commands through `mise exec -- ...` instead.
+
 ## list of something will be set up
 
 - homebrew (only mac)
