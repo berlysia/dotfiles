@@ -1,3 +1,8 @@
+---
+name: gc
+description: Detect and clean up stale sessions/tmp files and report documentation drift or unused code in the dotfiles repository.
+---
+
 # GC (Garbage Collection)
 
 Detect and clean up stale files, unused code, and documentation drift in the dotfiles repository.
