@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
-# Wrapper script for shellcheck to match CI behavior
-# Mimics: .github/workflows/ci-shellcheck.yml
+# Single source of truth for shellcheck target discovery.
+# Both local development and CI should invoke this script directly.
 
 set -euo pipefail
 
@@ -13,7 +13,7 @@ NC='\033[0m' # No Color
 
 echo "Running shellcheck with CI-equivalent settings..."
 
-# Directories to ignore (same as CI)
+# Directories to ignore during target discovery
 IGNORE_PATHS=(
   "node_modules"
   ".git"
@@ -26,7 +26,7 @@ for ignore in "${IGNORE_PATHS[@]}"; do
   FIND_ARGS+=(-not -path "*/${ignore}/*")
 done
 
-# Find all .sh files (same as CI scandir: '.')
+# Find all .sh files to check
 # Use while-read loop instead of mapfile for macOS compatibility (Bash 3.2)
 SHELL_FILES=()
 while IFS= read -r file; do
@@ -41,7 +41,7 @@ fi
 echo "Found ${#SHELL_FILES[@]} shell script(s) to check"
 echo ""
 
-# Run shellcheck with CI settings (severity: warning)
+# Run shellcheck with repository-standard settings
 # Note: .shellcheckrc will be automatically loaded
 FAILED=0
 for file in "${SHELL_FILES[@]}"; do
