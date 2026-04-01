@@ -15,13 +15,3 @@ rules:
       # - Checks author identity before checkout
       # - Limited to bot PRs only
       - auto-fix-dependencies.yml:3
-
-  secrets-outside-env:
-    ignore:
-      # auto-fix-dependencies.yml consumes a single repository secret in a
-      # restricted workflow that already gates by failed dependency-bot PRs.
-      - auto-fix-dependencies.yml:84
-
-      # claude.yml is manually triggered by trusted maintainer mentions and
-      # uses the repository-level Claude OAuth token without deployment envs.
-      - claude.yml:41

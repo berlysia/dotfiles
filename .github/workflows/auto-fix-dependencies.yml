@@ -19,6 +19,7 @@ jobs:
       github.event.workflow_run.event == 'pull_request'
 
     runs-on: ubuntu-latest
+    environment: claude-autofix
     permissions:
       contents: write
       pull-requests: write
@@ -61,6 +62,18 @@ jobs:
               return;
             }
 
+            const sameRepo =
+              prData.head.repo.full_name === `${context.repo.owner}/${context.repo.repo}`;
+            const isFork = prData.head.repo.fork === true;
+
+            if (!sameRepo || isFork) {
+              core.info(
+                `Skipping: PR head repo is ${prData.head.repo.full_name} (fork=${isFork})`
+              );
+              core.setOutput('skip', 'true');
+              return;
+            }
+
             core.setOutput('skip', 'false');
             core.setOutput('pr_number', pr.number);
             core.setOutput('head_ref', prData.head.ref);
@@ -81,6 +94,7 @@ jobs:
         id: auto-fix
         uses: anthropics/claude-code-action@26ec041249acb0a944c0a47b6c0c13f05dbc5b44 # v1.0.70
         with:
+          # Requires the CLAUDE_CODE_OAUTH_TOKEN environment secret on claude-autofix.
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           use_bedrock: false
           use_vertex: false

@@ -28,6 +28,15 @@ pnpm ci:local:shell
 
 If your shell is not activated by `mise`, run commands through `mise exec -- ...` instead.
 
+## GitHub Environments
+
+Claude workflows use environment-scoped secrets instead of repository-wide secrets.
+
+- `claude-manual`: used by [`.github/workflows/claude.yml`](./.github/workflows/claude.yml)
+- `claude-autofix`: used by [`.github/workflows/auto-fix-dependencies.yml`](./.github/workflows/auto-fix-dependencies.yml)
+
+Add `CLAUDE_CODE_OAUTH_TOKEN` to both environments. If you want unattended automation, leave approvals and wait timers disabled.
+
 ## list of something will be set up
 
 - homebrew (only mac)
