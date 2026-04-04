@@ -197,6 +197,23 @@ oprg()  { ope -g "$@"; }
 oprgi() { ope -gi "$@"; }
 oplg()  { ope -gl; }
 
+# mise wrapper — injects GITHUB_TOKEN only for subcommands that need GitHub access
+# Token is passed inline to the command environment and never persists in the shell
+mise() {
+  case "$1" in
+    install|upgrade|self-update|use)
+      if [ -z "$GITHUB_TOKEN" ] && type gh >/dev/null 2>&1; then
+        GITHUB_TOKEN="$(gh auth token 2>/dev/null)" command mise "$@"
+      else
+        command mise "$@"
+      fi
+      ;;
+    *)
+      command mise "$@"
+      ;;
+  esac
+}
+
 # Enhanced dotfiles health check function - now using unified test suite
 dotfiles_doctor() {
   local script_path="$SHELL_COMMON/test_suite.sh"
