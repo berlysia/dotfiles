@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "14c12afe3c36",
+  "session_id": "53395bcb-70cd-447c-a071-0213d095f74a",
+  "strategy": "manual-commit",
+  "created_at": "2026-04-04T14:40:03.933774Z",
+  "branch": "master",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "home/dot_shell_common/functions.sh",
+    "home/dot_shell_common/init.sh",
+    "home/dot_shell_common/interactive.sh"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "fdc76e1d-85d9-4a72-8f55-612b57663c71",
+  "token_usage": {
+    "input_tokens": 30,
+    "cache_creation_tokens": 53658,
+    "cache_read_tokens": 755779,
+    "output_tokens": 6934,
+    "api_call_count": 18
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-04-04T14:40:03.869614Z",
+    "agent_lines": 16,
+    "human_added": 5239,
+    "human_modified": 1,
+    "human_removed": 0,
+    "total_committed": 5256,
+    "agent_percentage": 0.30441400304414
+  },
+  "transcript_path": ".claude/projects/-Users-berlysia--local-share-chezmoi/53395bcb-70cd-447c-a071-0213d095f74a.jsonl"
+}

@@ -3,7 +3,7 @@
   "checkpoint_id": "14c12afe3c36",
   "strategy": "manual-commit",
   "branch": "master",
-  "checkpoints_count": 8,
+  "checkpoints_count": 10,
   "files_touched": [
     ".skills/apply-harness-practices/SKILL.md",
     ".skills/tanstack-intent-setup/SKILL.md",
@@ -18,6 +18,7 @@
     "home/Library/LaunchAgents/com.berlysia.mcp-readability.plist.tmpl",
     "home/dot_claude/hooks/implementations/completion-gate.ts",
     "home/dot_config/mise/config.toml",
+    "home/dot_shell_common/functions.sh",
     "home/dot_shell_common/init.sh",
     "home/dot_shell_common/interactive.sh"
   ],
@@ -56,13 +57,20 @@
       "context": "/14/c12afe3c36/4/context.md",
       "content_hash": "/14/c12afe3c36/4/content_hash.txt",
       "prompt": "/14/c12afe3c36/4/prompt.txt"
+    },
+    {
+      "metadata": "/14/c12afe3c36/5/metadata.json",
+      "transcript": "/14/c12afe3c36/5/full.jsonl",
+      "context": "/14/c12afe3c36/5/context.md",
+      "content_hash": "/14/c12afe3c36/5/content_hash.txt",
+      "prompt": "/14/c12afe3c36/5/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 2042,
-    "cache_creation_tokens": 419784,
-    "cache_read_tokens": 14359041,
-    "output_tokens": 60068,
-    "api_call_count": 204
+    "input_tokens": 2072,
+    "cache_creation_tokens": 473442,
+    "cache_read_tokens": 15114820,
+    "output_tokens": 67002,
+    "api_call_count": 222
   }
 }
