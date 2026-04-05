@@ -3,11 +3,11 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "0.2.63",
+    "@anthropic-ai/claude-agent-sdk": "0.2.87",
     "@mizchi/readability": "0.7.7",
-    "cc-hooks-ts": "2.1.50",
+    "cc-hooks-ts": "2.1.86",
     "dax": "0.45.0",
     "tree-sitter-bash": "0.25.1",
-    "web-tree-sitter": "0.26.6"
+    "web-tree-sitter": "0.26.7"
   }
 }
