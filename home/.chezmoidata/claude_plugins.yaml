@@ -8,8 +8,11 @@ claude_plugins:
       repo: EveryInc/compound-engineering-plugin
     - name: knowledge-work-plugins
       repo: anthropics/knowledge-work-plugins
+    - name: openai-codex
+      repo: openai/codex-plugin-cc
   plugins:
     - clarify@kuu-marketplace
     - compound-engineering@every-marketplace
     - decomposition@kuu-marketplace
+    - codex@openai-codex
     - playwright@claude-plugins-official
