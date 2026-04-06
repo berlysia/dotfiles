@@ -86,8 +86,10 @@ if [ "$HAS_MISE" = "1" ] && [ -f "$HOME/.local/bin/mise" ]; then
 
   if [ "$CURRENT_SHELL" = "zsh" ]; then
     eval "$($HOME/.local/bin/mise activate zsh)"
+    eval "$($HOME/.local/bin/mise hook-env -s zsh)"
   else
     eval "$($HOME/.local/bin/mise activate bash)"
+    eval "$($HOME/.local/bin/mise hook-env -s bash)"
   fi
 fi
 
@@ -100,4 +102,3 @@ fi
 if [ "$HAS_OPAM" = "1" ] && type opam >/dev/null 2>&1; then
   eval "$(opam env)"
 fi
-
