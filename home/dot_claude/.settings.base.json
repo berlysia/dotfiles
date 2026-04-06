@@ -8,5 +8,6 @@
   },
   "alwaysThinkingEnabled": true,
   "plansDirectory": "./.claude/plans",
-  "language": "japanese"
+  "language": "japanese",
+  "autoMemoryEnabled": false
 }
