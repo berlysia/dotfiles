@@ -54,6 +54,11 @@ Do not implement backward compatibility, fallbacks, or migration shims unless ex
 
 ## Architecture
 
+- **関数型ドメインモデリング優先**: TypeScriptではクラスベースより関数型アプローチを選ぶ
+  - Plain objects + discriminated unions で状態を表現（クラスの内部状態は型システムで追跡困難）
+  - 純粋関数でドメインロジックを記述し、副作用を境界に押し出す
+  - 状態遷移は型で表現する（例: `Draft → Published` を別の型として定義）
+  - クラスは外部ライブラリとの統合やフレームワーク要求がある場合のみ使用
 - Minimal dependencies, prefer built-ins
 - Respect existing architecture, maintain unidirectional dependency graph
 - Record significant decisions in ADRs (`docs/decisions/`)
