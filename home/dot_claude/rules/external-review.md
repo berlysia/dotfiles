@@ -18,6 +18,7 @@ Leverage multiple validation tools for logic verification, external perspective,
 | Situation                      | Recommended Tool                  | Purpose                                                    |
 | ------------------------------ | --------------------------------- | ---------------------------------------------------------- |
 | **Plan mode complete**         | logic-validator agent             | Validate consistency before ExitPlanMode                   |
+| **Plan auto-review**           | plan-review-automation (auto)     | Content-based reviewer selection + parallel execution      |
 | **Quick logic check**          | logic-validator agent             | Fast validation of reasoning/decisions                     |
 | **Approach change mid-task**   | logic-validator agent             | Verify reasoning before switching strategies               |
 | **Assumption-based reasoning** | logic-validator agent             | Verify you're not drawing conclusions without evidence     |
@@ -38,12 +39,14 @@ Leverage multiple validation tools for logic verification, external perspective,
 
 Before executing `ExitPlanMode`:
 
-### 1. Logic Validation (Required)
+### 1. Auto-Review via plan-review-automation (Required)
 
-**Use logic-validator agent**:
+`plan-review-automation` フックが plan.md 編集時に自動トリガーされ、コンテンツベースでレビュアーを選定:
 
-- Use Task tool with `subagent_type: logic-validator`
-- Verifies plan consistency, identifies assumptions, checks edge cases
+- **logic-validator**: 常に必須（論理整合性・仮定・矛盾の検証）
+- **追加レビュアー**: plan.md のキーワードに応じて最大3つ自動選定（英語・日本語対応）
+  - architecture-strategist, security-sentinel, data-integrity-guardian, performance-oracle, resilience-analyzer, test-quality-evaluator, deployment-readiness-evaluator, code-simplicity-reviewer
+- フックの推奨に従い、Agent tool で **全レビュアーを並列実行** する
 
 ### 2. External Perspective Review (Optional)
 

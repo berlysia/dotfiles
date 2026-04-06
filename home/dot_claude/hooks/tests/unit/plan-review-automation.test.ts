@@ -3,11 +3,14 @@
 import { deepStrictEqual, ok, strictEqual } from "node:assert";
 import { describe, it } from "node:test";
 import {
+  buildRecommendation,
   computePlanHash,
   extractLatestReviewMarker,
   extractTargetPath,
   isPlanFile,
   normalizeForHash,
+  REVIEWER_CATALOG,
+  selectReviewers,
   stripReviewMarkers,
 } from "../../implementations/plan-review-automation.ts";
 
@@ -150,5 +153,137 @@ describe("plan-review-automation.ts helpers", () => {
     ].join("\n");
 
     strictEqual(normalizeForHash(content), expected);
+  });
+});
+
+describe("selectReviewers", () => {
+  it("selects architecture-strategist for English architecture keywords", () => {
+    const content =
+      "## Plan\nRefactor the module boundary and dependency graph";
+    const result = selectReviewers(content);
+    ok(
+      result.some(
+        (r) =>
+          r.subagentType ===
+          "compound-engineering:review:architecture-strategist",
+      ),
+    );
+  });
+
+  it("selects architecture-strategist for Japanese keywords", () => {
+    const content = "## Plan\nアーキテクチャの変更と依存関係の整理";
+    const result = selectReviewers(content);
+    ok(
+      result.some(
+        (r) =>
+          r.subagentType ===
+          "compound-engineering:review:architecture-strategist",
+      ),
+    );
+  });
+
+  it("selects security-sentinel for security keywords", () => {
+    const content = "## Plan\nAdd authentication and authorization logic";
+    const result = selectReviewers(content);
+    ok(
+      result.some(
+        (r) =>
+          r.subagentType === "compound-engineering:review:security-sentinel",
+      ),
+    );
+  });
+
+  it("returns empty array when no keywords match", () => {
+    const content = "## Plan\nUpdate README with new instructions";
+    const result = selectReviewers(content);
+    strictEqual(result.length, 0);
+  });
+
+  it("limits to maximum 3 additional reviewers", () => {
+    const content = [
+      "## Plan",
+      "Refactor architecture with security auth",
+      "Optimize database migration performance cache",
+      "Add resilience retry and deploy rollback",
+      "Simplify refactor abstraction complexity",
+    ].join("\n");
+    const result = selectReviewers(content);
+    ok(result.length <= 3);
+  });
+
+  it("sorts by priority (lower number first)", () => {
+    const content = [
+      "## Plan",
+      "Deploy rollback pipeline",
+      "Architecture module boundary",
+    ].join("\n");
+    const result = selectReviewers(content);
+    for (let i = 1; i < result.length; i++) {
+      ok(result[i]!.priority >= result[i - 1]!.priority);
+    }
+  });
+
+  it("ignores keywords inside Approval section", () => {
+    const content = [
+      "## Plan",
+      "Update README",
+      "## Approval",
+      "- Plan Status: complete",
+      "Architecture security database performance",
+    ].join("\n");
+    const result = selectReviewers(content);
+    strictEqual(result.length, 0);
+  });
+
+  it("handles plan without Approval section", () => {
+    const content = "## Plan\nAdd security token validation";
+    const result = selectReviewers(content);
+    ok(
+      result.some(
+        (r) =>
+          r.subagentType === "compound-engineering:review:security-sentinel",
+      ),
+    );
+  });
+});
+
+describe("buildRecommendation with dynamic reviewers", () => {
+  it("always includes logic-validator", () => {
+    const result = buildRecommendation(
+      "/tmp/plan.md",
+      null,
+      "## Plan\nUpdate README",
+    );
+    ok(result.includes("logic-validator"));
+  });
+
+  it("includes dynamic reviewers in recommendation text", () => {
+    const result = buildRecommendation(
+      "/tmp/plan.md",
+      null,
+      "## Plan\nRefactor the architecture boundary",
+    );
+    ok(result.includes("architecture-strategist"));
+    ok(result.includes("run ALL in parallel"));
+  });
+
+  it("includes reviewers= field with selected reviewer names", () => {
+    const result = buildRecommendation(
+      "/tmp/plan.md",
+      null,
+      "## Plan\nAdd security authentication",
+    );
+    ok(result.includes("reviewers=logic-validator+security-sentinel"));
+  });
+
+  it("uses singular form when no additional reviewers matched", () => {
+    const result = buildRecommendation(
+      "/tmp/plan.md",
+      null,
+      "## Plan\nUpdate README",
+    );
+    ok(result.includes("Recommended sub-agent (use Agent tool):"));
+    ok(!result.includes("in parallel"));
+    ok(result.includes("reviewers=logic-validator"));
   });
 });
