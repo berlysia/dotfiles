@@ -10,8 +10,7 @@ Leverage multiple validation tools for logic verification, external perspective,
 
 ### External Review
 
-- **Codex Review CLI**: `/codex-review` skill for read-only analysis
-- **Codex Review MCP**: Conversational interface for deeper exploration
+- **Codex Plugin**: `/codex:review` command for code review, `/codex:adversarial-review` for adversarial analysis (via `codex@openai-codex` plugin)
 - **Self-Review**: `/self-review` skill for comprehensive multi-perspective review
 
 ## When to Use
@@ -22,10 +21,10 @@ Leverage multiple validation tools for logic verification, external perspective,
 | **Quick logic check**          | logic-validator agent             | Fast validation of reasoning/decisions                     |
 | **Approach change mid-task**   | logic-validator agent             | Verify reasoning before switching strategies               |
 | **Assumption-based reasoning** | logic-validator agent             | Verify you're not drawing conclusions without evidence     |
-| **Stuck on problem**           | Codex Review                      | Get fresh perspective, alternative approaches              |
-| **Architecture decision**      | Codex Review                      | Compare options, evaluate tradeoffs                        |
-| **Debug blocked**              | Codex Review                      | Discuss symptoms, brainstorm solutions                     |
-| **User explicit request**      | `/codex-review` or `/self-review` | Read-only analysis or comprehensive review                 |
+| **Stuck on problem**           | Codex Plugin `/codex:review`            | Get fresh perspective, alternative approaches              |
+| **Architecture decision**      | Codex Plugin `/codex:review`            | Compare options, evaluate tradeoffs                        |
+| **Debug blocked**              | Codex Plugin `/codex:review`            | Discuss symptoms, brainstorm solutions                     |
+| **User explicit request**      | `/codex:review` or `/self-review`       | Read-only analysis or comprehensive review                 |
 | **Pre-deployment review**      | `/self-review`                    | Multi-stakeholder perspective (security, UX, DevOps, etc.) |
 
 ## Best Practices
@@ -56,9 +55,8 @@ Before executing `ExitPlanMode`:
 
 **How to use**:
 
-- `/codex-review` - Read-only analysis of current state
+- `/codex:review` - Codex plugin による code review
 - `/self-review` - Comprehensive review from multiple perspectives
-- Codex MCP conversational interface - For interactive exploration
 
 ## Usage Examples
 
@@ -78,13 +76,9 @@ Task tool (subagent_type: logic-validator):
 ### External Code Review
 
 ```
-/codex-review
+/codex:review
 
 or
 
 /self-review
 ```
-
-### Interactive Exploration (Codex MCP)
-
-Use when you need conversational back-and-forth to explore complex problems.

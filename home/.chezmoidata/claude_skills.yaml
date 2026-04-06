@@ -30,3 +30,6 @@ claude_skills:
         - shiori-guide
         - shiori-triage
         - shiori-workflow
+    - repo: yoshiko-pg/difit
+      skills:
+        - difit-review
