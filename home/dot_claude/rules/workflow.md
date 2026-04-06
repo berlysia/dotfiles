@@ -46,7 +46,7 @@
 2. 計画: `$DOCUMENT_WORKFLOW_DIR/plan.md` に方針・対象ファイル・TODO・リスクを書く
 3. 注釈反復: ユーザー注釈を反映し、都度「don't implement yet」を明示
 4. 完成: `$DOCUMENT_WORKFLOW_DIR/plan.md` の `## Approval` で `Plan Status: complete` にする
-5. 自動レビュー: `plan-review-automation` が `logic-validator` + 設計系レビュアで評価し、`Review Status` と `<!-- auto-review: verdict=...; hash=... -->` を更新する
+5. 自動レビュー: `plan-review-automation` が plan.md の内容を分析し、`logic-validator`（必須）+ コンテンツベースで選定した追加レビュアー（最大3つ）を並列実行推奨。`Review Status` と `<!-- auto-review: verdict=...; hash=...; reviewers=... -->` を更新する
 6. 承認: 人間が `Approval Status: approved` にする
 7. 実装: `Plan Status: complete` + `Review Status: pass` + `Approval Status: approved` + hash 一致を満たした後に着手し、タスク完了ごとに `$DOCUMENT_WORKFLOW_DIR/plan.md` を更新
 ```

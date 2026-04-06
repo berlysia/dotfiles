@@ -18,6 +18,168 @@ interface AutoReviewMarker {
   hash: string;
 }
 
+interface ReviewerRule {
+  subagentType: string;
+  label: string;
+  keywords: string[];
+  priority: number;
+}
+
+const MAX_ADDITIONAL_REVIEWERS = 3;
+
+const REVIEWER_CATALOG: ReviewerRule[] = [
+  {
+    subagentType: "compound-engineering:review:architecture-strategist",
+    label: "Architecture pattern compliance",
+    keywords: [
+      "architecture",
+      "module",
+      "layer",
+      "dependency",
+      "boundary",
+      "service",
+      "component",
+      "アーキテクチャ",
+      "モジュール",
+      "レイヤー",
+      "依存",
+      "境界",
+      "サービス",
+      "コンポーネント",
+    ],
+    priority: 1,
+  },
+  {
+    subagentType: "compound-engineering:review:security-sentinel",
+    label: "Security audit",
+    keywords: [
+      "security",
+      "auth",
+      "token",
+      "credential",
+      "injection",
+      "xss",
+      "csrf",
+      "permission",
+      "secret",
+      "セキュリティ",
+      "認証",
+      "認可",
+      "トークン",
+      "権限",
+      "脆弱性",
+    ],
+    priority: 1,
+  },
+  {
+    subagentType: "compound-engineering:review:data-integrity-guardian",
+    label: "Data model and migration safety",
+    keywords: [
+      "database",
+      "migration",
+      "schema",
+      "table",
+      "column",
+      "index",
+      "query",
+      "sql",
+      "データベース",
+      "マイグレーション",
+      "スキーマ",
+      "テーブル",
+      "カラム",
+    ],
+    priority: 2,
+  },
+  {
+    subagentType: "compound-engineering:review:performance-oracle",
+    label: "Performance and scalability",
+    keywords: [
+      "performance",
+      "optimization",
+      "cache",
+      "latency",
+      "scalability",
+      "n+1",
+      "bottleneck",
+      "パフォーマンス",
+      "最適化",
+      "キャッシュ",
+      "レイテンシ",
+      "スケーラビリティ",
+    ],
+    priority: 2,
+  },
+  {
+    subagentType: "resilience-analyzer",
+    label: "Fault tolerance and resilience",
+    keywords: [
+      "resilience",
+      "retry",
+      "circuit breaker",
+      "fault tolerance",
+      "timeout",
+      "fallback",
+      "recovery",
+      "リトライ",
+      "タイムアウト",
+      "フォールバック",
+      "障害耐性",
+      "復旧",
+    ],
+    priority: 3,
+  },
+  {
+    subagentType: "test-quality-evaluator",
+    label: "Test quality and coverage",
+    keywords: [
+      "test coverage",
+      "regression",
+      "tdd",
+      "test strategy",
+      "test plan",
+      "テストカバレッジ",
+      "リグレッション",
+      "テスト戦略",
+    ],
+    priority: 3,
+  },
+  {
+    subagentType: "deployment-readiness-evaluator",
+    label: "Deployment safety",
+    keywords: [
+      "deploy",
+      "release",
+      "ci/cd",
+      "rollback",
+      "infrastructure",
+      "pipeline",
+      "デプロイ",
+      "リリース",
+      "ロールバック",
+      "パイプライン",
+    ],
+    priority: 3,
+  },
+  {
+    subagentType: "compound-engineering:review:code-simplicity-reviewer",
+    label: "YAGNI and simplification",
+    keywords: [
+      "refactor",
+      "simplify",
+      "cleanup",
+      "abstraction",
+      "complexity",
+      "technical debt",
+      "リファクタリング",
+      "簡素化",
+      "抽象化",
+      "技術的負債",
+    ],
+    priority: 3,
+  },
+];
+
 const TARGET_TOOL_NAMES = new Set([
   "Write",
   "Edit",
@@ -88,6 +250,7 @@ const hook = defineHook({
     const additionalContext = buildRecommendation(
       absoluteTargetPath,
       hasResearch ? researchPath : null,
+      planContent,
     );
 
     return context.json({
@@ -105,7 +268,11 @@ const hook = defineHook({
 function buildRecommendation(
   planPath: string,
   researchPath: string | null,
+  planContent: string,
 ): string {
+  const additionalReviewers = selectReviewers(planContent);
+  const allReviewerNames = ["logic-validator"];
+
   const lines = [
     "[plan-review-automation] plan.md was updated. Run sub-agent reviews before approval.",
     "",
@@ -114,14 +281,33 @@ function buildRecommendation(
   if (researchPath) {
     lines.push(`Research: ${researchPath}`);
   }
+
+  if (additionalReviewers.length > 0) {
+    lines.push(
+      "",
+      "Recommended sub-agents (use Agent tool, run ALL in parallel):",
+      "1. subagent_type: logic-validator — Check logical consistency, assumptions, and contradictions",
+    );
+    for (let i = 0; i < additionalReviewers.length; i++) {
+      const r = additionalReviewers[i]!;
+      const shortName = r.subagentType.split(":").pop()!;
+      allReviewerNames.push(shortName);
+      lines.push(`${i + 2}. subagent_type: ${r.subagentType} — ${r.label}`);
+    }
+  } else {
+    lines.push(
+      "",
+      "Recommended sub-agent (use Agent tool):",
+      "1. subagent_type: logic-validator — Check logical consistency, assumptions, and contradictions",
+    );
+  }
+
+  const reviewersValue = allReviewerNames.join("+");
   lines.push(
-    "",
-    "Recommended sub-agent (use Task tool):",
-    "1. subagent_type: logic-validator — Check logical consistency, assumptions, and contradictions",
     "",
     "After reviews, update plan.md:",
     "- Set `- Review Status: pass|needs-work|blocker` in ## Approval section",
-    "- Append `<!-- auto-review: verdict=...; hash=...; at=...; reviewers=... -->` marker",
+    `- Append \`<!-- auto-review: verdict=...; hash=...; at=...; reviewers=${reviewersValue} -->\` marker`,
   );
   return lines.join("\n");
 }
@@ -223,6 +409,26 @@ function extractLatestReviewMarker(content: string): AutoReviewMarker | null {
   return { verdict, hash };
 }
 
+function stripApprovalSection(content: string): string {
+  const approvalIndex = content.indexOf("## Approval");
+  if (approvalIndex === -1) {
+    return content;
+  }
+  return content.slice(0, approvalIndex);
+}
+
+function selectReviewers(planContent: string): ReviewerRule[] {
+  const body = stripApprovalSection(stripReviewMarkers(planContent));
+  const lowerBody = body.toLowerCase();
+
+  const matched = REVIEWER_CATALOG.filter((rule) =>
+    rule.keywords.some((kw) => lowerBody.includes(kw.toLowerCase())),
+  );
+
+  matched.sort((a, b) => a.priority - b.priority);
+  return matched.slice(0, MAX_ADDITIONAL_REVIEWERS);
+}
+
 function readCache(path: string): CacheState | null {
   if (!existsSync(path)) {
     return null;
@@ -244,11 +450,14 @@ function readCache(path: string): CacheState | null {
 }
 
 export {
+  buildRecommendation,
   computePlanHash,
   extractTargetPath,
   extractLatestReviewMarker,
   isPlanFile,
   normalizeForHash,
+  REVIEWER_CATALOG,
+  selectReviewers,
   stripReviewMarkers,
 };
 
