@@ -19,6 +19,9 @@ command = 'npx'
 args = ['@mizchi/readability@latest', '--mcp']
 command = 'npx'
 
+[sandbox_workspace_write]
+writable_roots = ['__CHEZMOI_HOME__/.cache/mise']
+
 [shell_environment_policy]
 include_only = [
   'EDITOR',
@@ -42,3 +45,6 @@ include_only = [
   'XDG_DATA_HOME',
 ]
 inherit = 'none'
+
+[shell_environment_policy.set]
+PATH = '__CHEZMOI_HOME__/.local/share/mise/shims:__CHEZMOI_HOME__/.cargo/bin:/snap/bin:__CHEZMOI_HOME__/.local/share/pnpm:__CHEZMOI_HOME__/go/bin:__CHEZMOI_HOME__/workspace/depot_tools:__CHEZMOI_HOME__/google-cloud-sdk/bin:__CHEZMOI_HOME__/.moon/bin:__CHEZMOI_HOME__/.deno/bin:__CHEZMOI_HOME__/.local/.bin:__CHEZMOI_HOME__/.local/bin:/bin:/usr/bin:/usr/ucb:/usr/local/bin'

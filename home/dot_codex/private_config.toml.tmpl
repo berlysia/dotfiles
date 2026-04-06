@@ -1,5 +1,5 @@
 {{- /* Template content */ -}}
-{{- $templateContent := include "dot_codex/.config.toml" -}}
+{{- $templateContent := include "dot_codex/.config.toml" | replace "__CHEZMOI_HOME__" .chezmoi.homeDir -}}
 {{- $targetFile := joinPath .chezmoi.homeDir ".codex" "config.toml" -}}
 
 {{- /* Check if target file exists */ -}}
@@ -39,7 +39,7 @@ fi
 
 # Merge: template as base, user settings override, then force template-managed keys
 # Template-forced keys (security/infrastructure):
-#   mcp_servers, sandbox_mode, shell_environment_policy,
+#   mcp_servers, sandbox_mode, sandbox_workspace_write, shell_environment_policy,
 #   allow_login_shell, approval_policy, network_access
 # User-preferred keys (personal preferences):
 #   model, model_reasoning_effort, hide_agent_reasoning, web_search, etc.
@@ -47,9 +47,10 @@ fi
 echo "$TEMPLATE_JSON" | jq \
   --argjson existing "$EXISTING_JSON" \
   '. as $template |
-   (. * ($existing | del(.mcp_servers) | del(.features) | del(.sandbox_mode) | del(.shell_environment_policy) | del(.allow_login_shell) | del(.approval_policy) | del(.network_access))) |
+   (. * ($existing | del(.mcp_servers) | del(.features) | del(.sandbox_mode) | del(.sandbox_workspace_write) | del(.shell_environment_policy) | del(.allow_login_shell) | del(.approval_policy) | del(.network_access))) |
    .mcp_servers = $template.mcp_servers |
    .sandbox_mode = $template.sandbox_mode |
+   .sandbox_workspace_write = $template.sandbox_workspace_write |
    .shell_environment_policy = $template.shell_environment_policy |
    .allow_login_shell = $template.allow_login_shell |
    .approval_policy = $template.approval_policy |
