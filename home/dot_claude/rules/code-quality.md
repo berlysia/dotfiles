@@ -19,6 +19,12 @@ Use project formatter (biome/prettier/oxfmt as configured). Enforced by PostTool
 - **ビジネスロジック重視**: ドメイン知識・設計決定・トレードオフの説明に集中
 - **差分ではなく現状を説明する**: 変更適用後のコードが何をしているかに対して説明する
 
+## Documentation Content
+
+- **コンセプト優先**: 目的・設計意図・使い方を書く。実装詳細は最小限に
+- **陳腐化しやすい情報を避ける**: ファイルツリー、タスクリスト、バージョン番号一覧などハードコードしない。`tree`コマンド、`git ls-files`、各ディレクトリのREADME/CLAUDE.mdで動的に得られる情報はドキュメントに複製しない
+- **自動導出可能な情報は書かない**: コードや設定ファイルから機械的に得られる情報（関数一覧、設定キー一覧等）はドキュメントに転記しない
+
 ## Communication Accuracy
 
 In GitHub Issues, PR descriptions, and documentation, clearly distinguish observed facts from speculation. Never assert unverified claims as definitive statements.
