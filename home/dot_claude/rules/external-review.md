@@ -21,10 +21,10 @@ Leverage multiple validation tools for logic verification, external perspective,
 | **Quick logic check**          | logic-validator agent             | Fast validation of reasoning/decisions                     |
 | **Approach change mid-task**   | logic-validator agent             | Verify reasoning before switching strategies               |
 | **Assumption-based reasoning** | logic-validator agent             | Verify you're not drawing conclusions without evidence     |
-| **Stuck on problem**           | Codex Plugin `/codex:review`            | Get fresh perspective, alternative approaches              |
-| **Architecture decision**      | Codex Plugin `/codex:review`            | Compare options, evaluate tradeoffs                        |
-| **Debug blocked**              | Codex Plugin `/codex:review`            | Discuss symptoms, brainstorm solutions                     |
-| **User explicit request**      | `/codex:review` or `/self-review`       | Read-only analysis or comprehensive review                 |
+| **Stuck on problem**           | Codex Plugin `/codex:review`      | Get fresh perspective, alternative approaches              |
+| **Architecture decision**      | Codex Plugin `/codex:review`      | Compare options, evaluate tradeoffs                        |
+| **Debug blocked**              | Codex Plugin `/codex:review`      | Discuss symptoms, brainstorm solutions                     |
+| **User explicit request**      | `/codex:review` or `/self-review` | Read-only analysis or comprehensive review                 |
 | **Pre-deployment review**      | `/self-review`                    | Multi-stakeholder perspective (security, UX, DevOps, etc.) |
 
 ## Best Practices
