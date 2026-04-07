@@ -161,23 +161,6 @@ const REVIEWER_CATALOG: ReviewerRule[] = [
     ],
     priority: 3,
   },
-  {
-    subagentType: "compound-engineering:review:code-simplicity-reviewer",
-    label: "YAGNI and simplification",
-    keywords: [
-      "refactor",
-      "simplify",
-      "cleanup",
-      "abstraction",
-      "complexity",
-      "technical debt",
-      "リファクタリング",
-      "簡素化",
-      "抽象化",
-      "技術的負債",
-    ],
-    priority: 3,
-  },
 ];
 
 const TARGET_TOOL_NAMES = new Set([
@@ -271,7 +254,7 @@ function buildRecommendation(
   planContent: string,
 ): string {
   const additionalReviewers = selectReviewers(planContent);
-  const allReviewerNames = ["logic-validator"];
+  const allReviewerNames = ["logic-validator", "change-conservatism-reviewer"];
 
   const lines = [
     "[plan-review-automation] plan.md was updated. Run sub-agent reviews before approval.",
@@ -282,23 +265,28 @@ function buildRecommendation(
     lines.push(`Research: ${researchPath}`);
   }
 
+  const alwaysOnLines = [
+    "1. subagent_type: logic-validator — Check logical consistency, assumptions, and contradictions",
+    "2. subagent_type: change-conservatism-reviewer — Question change necessity, scope creep, and YAGNI",
+  ];
+
   if (additionalReviewers.length > 0) {
     lines.push(
       "",
       "Recommended sub-agents (use Agent tool, run ALL in parallel):",
-      "1. subagent_type: logic-validator — Check logical consistency, assumptions, and contradictions",
+      ...alwaysOnLines,
     );
     for (let i = 0; i < additionalReviewers.length; i++) {
       const r = additionalReviewers[i]!;
       const shortName = r.subagentType.split(":").pop()!;
       allReviewerNames.push(shortName);
-      lines.push(`${i + 2}. subagent_type: ${r.subagentType} — ${r.label}`);
+      lines.push(`${i + 3}. subagent_type: ${r.subagentType} — ${r.label}`);
     }
   } else {
     lines.push(
       "",
-      "Recommended sub-agent (use Agent tool):",
-      "1. subagent_type: logic-validator — Check logical consistency, assumptions, and contradictions",
+      "Recommended sub-agents (use Agent tool, run ALL in parallel):",
+      ...alwaysOnLines,
     );
   }
 
