@@ -205,7 +205,7 @@ describe("selectReviewers", () => {
       "Refactor architecture with security auth",
       "Optimize database migration performance cache",
       "Add resilience retry and deploy rollback",
-      "Simplify refactor abstraction complexity",
+      "Test coverage regression tdd strategy",
     ].join("\n");
     const result = selectReviewers(content);
     ok(result.length <= 3);
@@ -248,13 +248,14 @@ describe("selectReviewers", () => {
 });
 
 describe("buildRecommendation with dynamic reviewers", () => {
-  it("always includes logic-validator", () => {
+  it("always includes logic-validator and change-conservatism-reviewer", () => {
     const result = buildRecommendation(
       "/tmp/plan.md",
       null,
       "## Plan\nUpdate README",
     );
     ok(result.includes("logic-validator"));
+    ok(result.includes("change-conservatism-reviewer"));
   });
 
   it("includes dynamic reviewers in recommendation text", () => {
@@ -267,23 +268,43 @@ describe("buildRecommendation with dynamic reviewers", () => {
     ok(result.includes("run ALL in parallel"));
   });
 
-  it("includes reviewers= field with selected reviewer names", () => {
+  it("includes reviewers= field with always-on and selected reviewer names", () => {
     const result = buildRecommendation(
       "/tmp/plan.md",
       null,
       "## Plan\nAdd security authentication",
     );
-    ok(result.includes("reviewers=logic-validator+security-sentinel"));
+    ok(
+      result.includes(
+        "reviewers=logic-validator+change-conservatism-reviewer+security-sentinel",
+      ),
+    );
   });
 
-  it("uses singular form when no additional reviewers matched", () => {
+  it("always uses parallel form even when no additional reviewers matched", () => {
     const result = buildRecommendation(
       "/tmp/plan.md",
       null,
       "## Plan\nUpdate README",
     );
-    ok(result.includes("Recommended sub-agent (use Agent tool):"));
-    ok(!result.includes("in parallel"));
-    ok(result.includes("reviewers=logic-validator"));
+    ok(
+      result.includes(
+        "Recommended sub-agents (use Agent tool, run ALL in parallel):",
+      ),
+    );
+    ok(
+      result.includes("reviewers=logic-validator+change-conservatism-reviewer"),
+    );
+  });
+
+  it("numbers catalog reviewers starting at 3 after always-on reviewers", () => {
+    const result = buildRecommendation(
+      "/tmp/plan.md",
+      null,
+      "## Plan\nRefactor the architecture boundary",
+    );
+    ok(result.includes("1. subagent_type: logic-validator"));
+    ok(result.includes("2. subagent_type: change-conservatism-reviewer"));
+    ok(result.includes("3. subagent_type:"));
   });
 });
