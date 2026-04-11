@@ -44,6 +44,12 @@ Always gather evidence (read files, run tests, check actual state) before making
 - MEMORY.md: record pitfalls/lessons only, not what's in CLAUDE.md
 - Committed docs must only link to git-tracked files
 
+## Git Worktree Convention
+
+- **Path**: Always place worktrees at `<repo-root>/.git/worktree/<branch-name>` (singular `worktree`, inside `.git/` so no gitignore entry is needed)
+- **Tools**: Use `git-worktree-create` / `git-worktree-cleanup` (`~/.local/bin/`). Do **not** invoke `git worktree add` directly
+- **Prohibited**: Do not use `compound-engineering:git-worktree` skill or any other tool that creates worktrees at `.worktrees/` (repo root) or `.claude/worktrees/` — they conflict with this convention and pollute the repo root
+
 ## Git Commit Standards
 
 - Conventional Commit format: `<type>(<scope>): <description>`
