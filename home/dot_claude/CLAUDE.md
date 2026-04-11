@@ -27,10 +27,6 @@ Design decisions (API/architecture/data model changes) or 3+ step tasks **requir
 - `@~/.claude/rules/typescript-new-project.md` — New TS project tooling standards
 - `@~/.claude/rules/external-review.md` — Logic validation, external review, claude-code-guide usage
 
-## Tools
-
-- `@~/.claude/RTK.md` — rtk CLI proxy meta commands (auto-rewrite enabled via PreToolUse hook)
-
 ## Prohibitions
 
 - Never implement before plan approval (enforced by `document-workflow-guard` hook)
