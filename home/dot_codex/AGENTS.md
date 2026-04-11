@@ -36,7 +36,3 @@
 - Tests: co-located `*.test.ts` files
 - Type definitions: `*.d.ts` or inline TypeScript types
 - Execution policy: `~/.codex/rules/`
-
-## Tools
-
-@~/.codex/RTK.md
