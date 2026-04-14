@@ -160,12 +160,12 @@
         {
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/session.ts"
-        },
+        }{{ if .only_private }},
         {
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/discord-notification.ts",
           "async": true
-        },
+        }{{ end }},
         {
           "type": "command",
           "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'",
@@ -194,7 +194,7 @@
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/speak-notification.ts Stop",
           "async": true
-        },
+        }{{ if .only_private }},
         {
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/discord-notification.ts",
@@ -204,7 +204,7 @@
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/slack-notification.ts",
           "async": true
-        },
+        }{{ end }},
         {
           "type": "command",
           "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'",
@@ -221,7 +221,7 @@
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/speak-notification.ts Notification",
           "async": true
-        },
+        }{{ if .only_private }},
         {
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/discord-notification.ts",
@@ -231,7 +231,7 @@
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/slack-notification.ts",
           "async": true
-        },
+        }{{ end }},
         {
           "type": "command",
           "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'",
@@ -272,7 +272,7 @@
         {
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/permission-llm-evaluator.ts"
-        },
+        }{{ if .only_private }},
         {
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/discord-notification.ts",
@@ -282,7 +282,7 @@
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/slack-notification.ts",
           "async": true
-        },
+        }{{ end }},
         {
           "type": "command",
           "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'",
