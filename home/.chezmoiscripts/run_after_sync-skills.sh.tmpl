@@ -5,6 +5,7 @@
 set -euo pipefail
 
 SKILLS_SOURCE="{{ .chezmoi.workingTree }}/.skills"
+PRIVATE_SKILLS_SOURCE="$HOME/.local/share/private-skills"
 CLAUDE_SKILLS="$HOME/.claude/skills"
 CODEX_SKILLS="$HOME/.codex/skills"
 
@@ -22,10 +23,32 @@ if [ -f "$HOME/.claude/.external-skills-installed" ]; then
   done < "$HOME/.claude/.external-skills-installed"
 fi
 
-# Sync with --delete, but preserve external skills
+# Also exclude private skill names so the --delete pass below doesn't wipe them
+PRIVATE_EXCLUDE_ARGS=()
+if [ -d "$PRIVATE_SKILLS_SOURCE" ]; then
+  for d in "$PRIVATE_SKILLS_SOURCE"/*/; do
+    [ -d "$d" ] || continue
+    name=$(basename "$d")
+    PRIVATE_EXCLUDE_ARGS+=(--exclude="$name")
+  done
+fi
+
+# Sync with --delete, but preserve external/private skills
 # Also exclude ui-skills (managed by chezmoi external)
-rsync -a --delete --exclude="ui-skills" --exclude=".system" "${EXCLUDE_ARGS[@]}" "$SKILLS_SOURCE/" "$CLAUDE_SKILLS/"
-rsync -a --delete --exclude="ui-skills" --exclude=".system" "${EXCLUDE_ARGS[@]}" "$SKILLS_SOURCE/" "$CODEX_SKILLS/"
+rsync -a --delete --exclude="ui-skills" --exclude=".system" "${EXCLUDE_ARGS[@]}" "${PRIVATE_EXCLUDE_ARGS[@]}" "$SKILLS_SOURCE/" "$CLAUDE_SKILLS/"
+rsync -a --delete --exclude="ui-skills" --exclude=".system" "${EXCLUDE_ARGS[@]}" "${PRIVATE_EXCLUDE_ARGS[@]}" "$SKILLS_SOURCE/" "$CODEX_SKILLS/"
+
+# Overlay private skills (sourced from private repo via chezmoi external).
+# Use --delete inside each skill dir but keep other skills untouched.
+if [ -d "$PRIVATE_SKILLS_SOURCE" ]; then
+  echo "Syncing private skills from $PRIVATE_SKILLS_SOURCE..."
+  for src in "$PRIVATE_SKILLS_SOURCE"/*/; do
+    [ -d "$src" ] || continue
+    name=$(basename "$src")
+    rsync -a --delete --exclude=".git" "$src" "$CLAUDE_SKILLS/$name/"
+    rsync -a --delete --exclude=".git" "$src" "$CODEX_SKILLS/$name/"
+  done
+fi
 
 echo "✅ Handcrafted skills synced successfully"
 {{ end -}}

@@ -13,6 +13,16 @@ type = "file"
 url = "https://ui-skills.com/llms.txt"
 refreshPeriod = "168h" # 1 week
 
+{{/* private-skills: personal canon (berlysia-style, berlysia-slide). */}}
+{{/* Cloned via SSH to a holding location, then merged into ~/.claude/skills and */}}
+{{/* ~/.codex/skills by run_after_sync-skills.sh. Public dotfiles stays safe. */}}
+[".local/share/private-skills"]
+type = "git-repo"
+url = "git@github.com:berlysia/private-skills.git"
+refreshPeriod = "168h" # 1 week
+[".local/share/private-skills".pull]
+args = ["--ff-only"]
+
 {{/* wsl2-ssh-agent is only needed in WSL2 environment */}}
 {{ if and (eq .chezmoi.os "linux") (.chezmoi.kernel.osrelease | lower | contains "microsoft") }}
 [".local/bin/wsl2-ssh-agent"]
