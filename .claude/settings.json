@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "entire hooks claude-code post-task"
+            "command": "if command -v entire >/dev/null 2>&1; then entire hooks claude-code post-task; fi"
           }
         ]
       },
@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "entire hooks claude-code post-todo"
+            "command": "if command -v entire >/dev/null 2>&1; then entire hooks claude-code post-todo; fi"
           }
         ]
       }
@@ -26,7 +26,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "entire hooks claude-code pre-task"
+            "command": "if command -v entire >/dev/null 2>&1; then entire hooks claude-code pre-task; fi"
           }
         ]
       }
@@ -37,7 +37,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "entire hooks claude-code session-end"
+            "command": "if command -v entire >/dev/null 2>&1; then entire hooks claude-code session-end; fi"
           }
         ]
       }
@@ -57,7 +57,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "entire hooks claude-code session-start"
+            "command": "if command -v entire >/dev/null 2>&1; then entire hooks claude-code session-start; fi"
           }
         ]
       }
@@ -68,7 +68,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "entire hooks claude-code stop"
+            "command": "if command -v entire >/dev/null 2>&1; then entire hooks claude-code stop; fi"
           }
         ]
       }
@@ -79,7 +79,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "entire hooks claude-code user-prompt-submit"
+            "command": "if command -v entire >/dev/null 2>&1; then entire hooks claude-code user-prompt-submit; fi"
           }
         ]
       }
