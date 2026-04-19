@@ -65,7 +65,7 @@ Bootstrap Progress:
 - [ ] Step 2: パラメータ収集（allowed senders / env / CI / bots）
 - [ ] Step 3: claude.yml 展開（mandatory）
 - [ ] Step 4: auto-fix-dependencies.yml 展開（optional）
-- [ ] Step 5: Environments + Secrets 設定
+- [ ] Step 5: Environments + Secrets 設定 → verify-secrets.sh が exit 0
 - [ ] Step 6: actionlint + zizmor 検証
 - [ ] Step 7: 動作確認
 ```
@@ -181,13 +181,29 @@ gh secret set CLAUDE_CODE_OAUTH_TOKEN --env $AUTOFIX_ENV
 gh api -X PATCH repos/$OWNER_REPO -f allow_auto_merge=true
 ```
 
-**確認:**
+**確認（自己検証スクリプト）:**
+
+skill は env 作成 + secret 登録が終わったら、以下のスクリプトで pass/fail を機械判定する。exit 0 でなければ Step 6 に進まない。
 
 ```bash
-gh api repos/$OWNER_REPO/environments | jq '.environments[].name'
-gh api repos/$OWNER_REPO/environments/$MANUAL_ENV/secrets | jq '.secrets[].name'
-gh api repos/$OWNER_REPO/environments/$AUTOFIX_ENV/secrets | jq '.secrets[].name'
+# デフォルト env 名を使う場合
+MANUAL_ENV=claude-manual AUTOFIX_ENV=claude-autofix \
+  bash ~/.claude/skills/claude-action-bootstrap/scripts/verify-secrets.sh
+
+# auto-fix を入れない場合は AUTOFIX_ENV を空で skip
+AUTOFIX_ENV= \
+  bash ~/.claude/skills/claude-action-bootstrap/scripts/verify-secrets.sh
 ```
+
+スクリプトが判定する項目:
+
+| 項目                              | 判定                                                        | fail 時の remediation                       |
+| --------------------------------- | ----------------------------------------------------------- | ------------------------------------------- |
+| 各 env の存在                     | `gh api repos/.../environments/<ENV>` が 200                | `gh api -X PUT` で env を作成               |
+| 各 env に `CLAUDE_CODE_OAUTH_TOKEN` | env secrets 一覧に含まれる                                  | `gh secret set CLAUDE_CODE_OAUTH_TOKEN --env <ENV>` |
+| repo-level の誤登録（warning）    | `actions/secrets` に同名 secret がある場合 `[!]` で警告     | 不要であれば `gh secret delete CLAUDE_CODE_OAUTH_TOKEN` |
+
+repo-level の警告は fail 扱いではない（env-scoped secret が優先されるため）。
 
 ### Step 6: 展開後検証（`actionlint` + `zizmor`）
 
@@ -263,7 +279,8 @@ sed -i 's/Bash(pnpm \*)/Bash(bun *)/g; s/pnpm, npm/bun, npm/g; s/update lockfile
 
 ## Assets
 
-- `scripts/verify-prerequisites.sh`: 自己検証スクリプト。Prerequisites の全項目を機械判定し、fail 時に remediation を提示して exit 1 で中断させる
+- `scripts/verify-prerequisites.sh`: 起動前の自己検証スクリプト。Prerequisites の全項目を機械判定し、fail 時に remediation を提示して exit 1 で中断させる
+- `scripts/verify-secrets.sh`: Step 5 後の自己検証スクリプト。env 存在 + env-scoped secret 存在を機械判定し、repo-level 誤登録を warning 表示する
 - `assets/workflows/claude.yml`: `@claude` メンションテンプレ（プレースホルダー: `{{ALLOWED_SENDERS}}`, `{{MANUAL_ENV_NAME}}`）
 - `assets/workflows/auto-fix-dependencies.yml`: 強化版 auto-fix テンプレ（プレースホルダー: `{{CI_WORKFLOW_NAMES}}`, `{{AUTOFIX_ENV_NAME}}`, `{{ALLOWED_BOTS}}`）
 
