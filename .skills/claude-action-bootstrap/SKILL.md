@@ -18,25 +18,28 @@ description: Policy-enforcing installer that deploys hardened Claude Code Action
 
 ## Prerequisites
 
-**すべて必須。いずれか欠けている場合は skill を中断し、インストール手順を提示する:**
-
-| ツール         | 確認コマンド                                            | 用途                               |
-| -------------- | ------------------------------------------------------- | ---------------------------------- |
-| GitHub CLI     | `gh auth status`                                        | repo 操作 / secret 登録            |
-| Admin 権限     | `gh api repos/$OWNER/$REPO \| jq '.permissions.admin'`  | environments 作成 / secret 登録    |
-| Claude OAuth   | `gh secret list` で `CLAUDE_CODE_OAUTH_TOKEN` 登録予定  | action 認証                        |
-| actionlint     | `actionlint -version`                                   | workflow YAML 検証                 |
-| zizmor         | `zizmor --version`                                      | GitHub Actions SAST                |
-
-**未インストール時の導入例**:
+**skill は同梱の自己検証スクリプトを最初に実行する。exit code が 0 でなければ Step 1 に進まない。**
 
 ```bash
-# actionlint / zizmor（mise を使用する場合）
-mise use -g actionlint@latest zizmor@latest
-
-# OAuth token（Claude Code から）
-/install-github-app
+bash ~/.claude/skills/claude-action-bootstrap/scripts/verify-prerequisites.sh
 ```
+
+検証対象（スクリプトが内部で実施）:
+
+| 項目         | 判定                                                    | fail 時の remediation                     |
+| ------------ | ------------------------------------------------------- | ----------------------------------------- |
+| gh CLI       | `command -v gh`                                         | `mise use -g gh@latest`                   |
+| gh auth      | `gh auth status`                                        | `gh auth login`                           |
+| repository   | `gh repo view --json nameWithOwner` が通る              | target repo のルートで再実行              |
+| admin 権限   | `.permissions.admin == true`                            | admin を取得するか別 repo で再実行        |
+| actionlint   | `command -v actionlint`                                 | `mise use -g actionlint@latest`           |
+| zizmor       | `command -v zizmor`                                     | `mise use -g zizmor@latest` または cargo  |
+
+**informational（スクリプトは表示するが判定しない）**:
+
+- `allow_auto_merge`: Step 5 で auto-fix workflow を導入する場合に有効化する
+
+**OAuth token は検証対象外**: skill 実行時には secret が未登録でも skill 本体の展開はできるため、スクリプトは token を検証しない。Step 5 で `gh secret set` により登録する（`/install-github-app` が最も簡単）。
 
 ## Quick Start
 
@@ -44,22 +47,21 @@ mise use -g actionlint@latest zizmor@latest
 # 1. ターゲット repo のルートに移動
 cd /path/to/target-repo
 
-# 2. 現状確認（skill が自動で実行）
-gh auth status
-gh api repos/$(gh repo view --json owner,name -q '.owner.login + "/" + .name') | jq '{admin: .permissions.admin, auto_merge: .allow_auto_merge, fork: .fork}'
-ls -la .github/workflows/claude*.yml .github/workflows/auto-fix-dependencies.yml 2>/dev/null
-actionlint -version
-zizmor --version
+# 2. 自己検証スクリプトを実行（全 pass で exit 0）
+bash ~/.claude/skills/claude-action-bootstrap/scripts/verify-prerequisites.sh
 ```
 
-すべての前提が満たされていれば、skill は Step 1 から進める。欠けている項目があれば、該当する導入手順を提示して中断する。
+skill はこの結果を見て:
+
+- exit 0 → Step 1 へ進む
+- exit 1 → スクリプト出力の remediation を提示して中断（ユーザーが修正後に再実行）
 
 ## Workflow
 
 ```
 Bootstrap Progress:
-- [ ] Prerequisites: gh auth, admin, actionlint, zizmor 確認
-- [ ] Step 1: ターゲット repo 検証 + 既存ファイル衝突確認
+- [ ] Prerequisites: verify-prerequisites.sh が exit 0
+- [ ] Step 1: 既存ファイル衝突確認
 - [ ] Step 2: パラメータ収集（allowed senders / env / CI / bots）
 - [ ] Step 3: claude.yml 展開（mandatory）
 - [ ] Step 4: auto-fix-dependencies.yml 展開（optional）
@@ -68,20 +70,12 @@ Bootstrap Progress:
 - [ ] Step 7: 動作確認
 ```
 
-### Step 1: ターゲット repo 検証
+### Step 1: 既存ファイル衝突確認
 
-**Admin 権限と auto-merge 設定を確認:**
+admin 権限 / auto-merge / ツール一式は Prerequisites スクリプトで検証済み。Step 1 では workflow ファイルの衝突のみ確認する。
 
 ```bash
-OWNER_REPO=$(gh repo view --json owner,name -q '.owner.login + "/" + .name')
-
-# admin 必須
-gh api repos/$OWNER_REPO | jq -e '.permissions.admin == true' \
-  || { echo "Error: admin 権限が必要"; exit 1; }
-
-# auto-merge 推奨（auto-fix を使う場合は必須）
-AUTOMERGE=$(gh api repos/$OWNER_REPO | jq -r '.allow_auto_merge')
-[ "$AUTOMERGE" = "true" ] || echo "Warning: allow_auto_merge=false。auto-fix 導入時は Step 5 で有効化する"
+OWNER_REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
 ```
 
 **既存 workflow 衝突確認:**
@@ -269,6 +263,7 @@ sed -i 's/Bash(pnpm \*)/Bash(bun *)/g; s/pnpm, npm/bun, npm/g; s/update lockfile
 
 ## Assets
 
+- `scripts/verify-prerequisites.sh`: 自己検証スクリプト。Prerequisites の全項目を機械判定し、fail 時に remediation を提示して exit 1 で中断させる
 - `assets/workflows/claude.yml`: `@claude` メンションテンプレ（プレースホルダー: `{{ALLOWED_SENDERS}}`, `{{MANUAL_ENV_NAME}}`）
 - `assets/workflows/auto-fix-dependencies.yml`: 強化版 auto-fix テンプレ（プレースホルダー: `{{CI_WORKFLOW_NAMES}}`, `{{AUTOFIX_ENV_NAME}}`, `{{ALLOWED_BOTS}}`）
 
