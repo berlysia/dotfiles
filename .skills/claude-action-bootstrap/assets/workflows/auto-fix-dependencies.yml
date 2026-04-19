@@ -1,0 +1,139 @@
+name: Auto-fix Dependencies
+
+# Template — replace {{PLACEHOLDER}} tokens at install time.
+# HARDCODED security-critical items (do NOT edit at install time):
+#   - anthropics/claude-code-action@<SHA> (pinned, updated via Renovate in this repo)
+#   - sameRepo && !isFork fork-exclusion logic
+#   - fetch-depth: 0 (required for auto-fix to push commits)
+#   - persist-credentials: false in checkout
+#   - GitHub Script bot detection (login-based, matches `{{ALLOWED_BOTS}}`)
+# Prompt body is pnpm-oriented. For other package managers, edit manually
+# after install (see SKILL.md "PM-specific prompt customization").
+
+on:
+  workflow_run:
+    workflows:
+{{CI_WORKFLOW_NAMES}}
+    types:
+      - completed
+
+concurrency:
+  group: auto-fix-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: true
+
+jobs:
+  auto-fix:
+    # Only run when CI fails on dependency bot PRs
+    if: |
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.event == 'pull_request'
+
+    runs-on: ubuntu-latest
+    environment: {{AUTOFIX_ENV_NAME}}
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+
+    steps:
+      - name: Get PR information
+        id: pr-info
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            // Get PR from the workflow_run event
+            const prs = context.payload.workflow_run.pull_requests;
+            if (!prs || prs.length === 0) {
+              core.setFailed('No PR found in workflow_run event');
+              return;
+            }
+
+            const pr = prs[0];
+
+            // Get full PR details
+            const { data: prData } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number
+            });
+
+            // Check if PR is from a dependency bot
+            // SECURITY-CRITICAL: do not edit this allowlist logic at install time.
+            const author = prData.user.login;
+            const allowedBots = '{{ALLOWED_BOTS}}'.split(',').map(s => s.trim());
+            const isBot = allowedBots.includes(author);
+
+            if (!isBot) {
+              core.info(`Skipping: PR author is ${author}, not a dependency bot`);
+              core.setOutput('skip', 'true');
+              return;
+            }
+
+            // SECURITY-CRITICAL: do not edit fork-exclusion logic.
+            const sameRepo =
+              prData.head.repo.full_name === `${context.repo.owner}/${context.repo.repo}`;
+            const isFork = prData.head.repo.fork === true;
+
+            if (!sameRepo || isFork) {
+              core.info(
+                `Skipping: PR head repo is ${prData.head.repo.full_name} (fork=${isFork})`
+              );
+              core.setOutput('skip', 'true');
+              return;
+            }
+
+            core.setOutput('skip', 'false');
+            core.setOutput('pr_number', pr.number);
+            core.setOutput('head_ref', prData.head.ref);
+            core.setOutput('pr_url', prData.html_url);
+            core.setOutput('pr_title', prData.title);
+            core.setOutput('pr_author', author);
+
+      - name: Checkout repository
+        if: steps.pr-info.outputs.skip != 'true'
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+          ref: ${{ steps.pr-info.outputs.head_ref }}
+          persist-credentials: false
+
+      - name: Auto-fix dependencies
+        if: steps.pr-info.outputs.skip != 'true'
+        id: auto-fix
+        uses: anthropics/claude-code-action@b47fd721da662d48c5680e154ad16a73ed74d2e0 # v1.0.93
+        with:
+          # Requires the CLAUDE_CODE_OAUTH_TOKEN secret scoped to the {{AUTOFIX_ENV_NAME}} environment.
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          use_bedrock: false
+          use_vertex: false
+          allowed_bots: "{{ALLOWED_BOTS}}"
+          prompt: |
+            **CI Failed - Fix Required**
+
+            A dependency update PR from ${{ steps.pr-info.outputs.pr_author }} has failed the status check.
+
+            PR: ${{ steps.pr-info.outputs.pr_url }}
+            Title: ${{ steps.pr-info.outputs.pr_title }}
+
+            **Your task:**
+            1. Check which CI workflows failed: `gh pr checks ${{ steps.pr-info.outputs.pr_number }}`
+            2. Investigate failures using `gh run view` and checking test logs
+            3. Fix the issues (e.g., update lockfile, resolve conflicts, fix breaking changes)
+            4. Commit and push the fixes
+            5. DO NOT merge - auto-merge will handle it once all CI checks pass
+
+            **Important:**
+            - Focus only on fixing the CI failures
+            - After pushing fixes, verify all checks pass with `gh pr checks`
+            - Do not manually merge - this repository uses auto-merge for eligible dependency PRs
+            - If the issue cannot be fixed automatically, leave a detailed comment explaining the problem
+
+            **Tool constraints (MUST follow):**
+            - Use Read/Glob/Grep tools for file discovery and inspection — never use `ls`, `cat`, `find`, `test` via Bash
+            - Git commits: use single-line format `git commit -m "type(scope): description"` — NEVER use heredocs, `$(cat <<EOF)`, or multiline -m flags
+            - Run `git add` and `git commit` as separate Bash calls, not chained with `&&`
+            - Only use `gh`, `git`, `pnpm`, `npm` commands via Bash
+
+          claude_args: '--allowed-tools "Bash(gh *),Bash(git *),Bash(pnpm *),Bash(npm *),Read,Write,Edit,Glob,Grep"'
