@@ -48,7 +48,12 @@
         "metadata": {
           "display": "time"
         }
-      }
+      }{{ if not (index .user "isPrivate") }},
+      {
+        "id": "c056f2e0-4f4c-4b7f-80a7-e74aa82f22dc",
+        "type": "custom-command",
+        "commandPath": "bash -c 'curl -s -X GET \"$ANTHROPIC_BASE_URL/user/info\" --header \"Authorization: Bearer $ANTHROPIC_AUTH_TOKEN\" | jq -r \"\\\"🔋 $\\\" + (.keys[0].max_budget - .keys[0].spend | tostring | .[:7])\"'"
+      }{{ end }}
     ],
     [
       {
