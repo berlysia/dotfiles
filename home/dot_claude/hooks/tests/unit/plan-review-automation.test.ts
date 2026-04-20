@@ -248,14 +248,14 @@ describe("selectReviewers", () => {
 });
 
 describe("buildRecommendation with dynamic reviewers", () => {
-  it("always includes logic-validator and change-conservatism-reviewer", () => {
+  it("always includes logic-validator and scope-justification-reviewer", () => {
     const result = buildRecommendation(
       "/tmp/plan.md",
       null,
       "## Plan\nUpdate README",
     );
     ok(result.includes("logic-validator"));
-    ok(result.includes("change-conservatism-reviewer"));
+    ok(result.includes("scope-justification-reviewer"));
   });
 
   it("includes dynamic reviewers in recommendation text", () => {
@@ -276,7 +276,7 @@ describe("buildRecommendation with dynamic reviewers", () => {
     );
     ok(
       result.includes(
-        "reviewers=logic-validator+change-conservatism-reviewer+security-sentinel",
+        "reviewers=logic-validator+scope-justification-reviewer+security-sentinel",
       ),
     );
   });
@@ -293,7 +293,7 @@ describe("buildRecommendation with dynamic reviewers", () => {
       ),
     );
     ok(
-      result.includes("reviewers=logic-validator+change-conservatism-reviewer"),
+      result.includes("reviewers=logic-validator+scope-justification-reviewer"),
     );
   });
 
@@ -304,7 +304,7 @@ describe("buildRecommendation with dynamic reviewers", () => {
       "## Plan\nRefactor the architecture boundary",
     );
     ok(result.includes("1. subagent_type: logic-validator"));
-    ok(result.includes("2. subagent_type: change-conservatism-reviewer"));
+    ok(result.includes("2. subagent_type: scope-justification-reviewer"));
     ok(result.includes("3. subagent_type:"));
   });
 });

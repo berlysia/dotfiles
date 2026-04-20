@@ -254,7 +254,7 @@ function buildRecommendation(
   planContent: string,
 ): string {
   const additionalReviewers = selectReviewers(planContent);
-  const allReviewerNames = ["logic-validator", "change-conservatism-reviewer"];
+  const allReviewerNames = ["logic-validator", "scope-justification-reviewer"];
 
   const lines = [
     "[plan-review-automation] plan.md was updated. Run sub-agent reviews before approval.",
@@ -267,7 +267,7 @@ function buildRecommendation(
 
   const alwaysOnLines = [
     "1. subagent_type: logic-validator — Check logical consistency, assumptions, and contradictions",
-    "2. subagent_type: change-conservatism-reviewer — Question change necessity, scope creep, and YAGNI",
+    "2. subagent_type: scope-justification-reviewer — Verify change justification, scope coherence, and near-term necessity",
   ];
 
   if (additionalReviewers.length > 0) {
