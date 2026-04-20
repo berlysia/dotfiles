@@ -60,8 +60,12 @@ type PermissionRequestAllowResponse = {
 
 /**
  * PermissionRequest deny response structure (matches cc-hooks-ts PermissionRequestHookOutput)
+ *
+ * `systemMessage` lives on the CommonHookOutputs mixin, not inside
+ * `hookSpecificOutput`. Claude Code renders it to the user.
  */
 type PermissionRequestDenyResponse = {
+  systemMessage?: string;
   hookSpecificOutput?: {
     hookEventName: "PermissionRequest";
     decision: {
@@ -104,14 +108,17 @@ export function createPermissionRequestAllowResponse(
 /**
  * Create a deny response for PermissionRequest hook
  *
- * @param message - Message explaining why the request was denied
+ * @param message - Message explaining why the request was denied (visible to Claude)
  * @param interrupt - If true, stops Claude's current task (default: false)
+ * @param systemMessage - Optional user-facing detailed message rendered by the UI
  */
 export function createPermissionRequestDenyResponse(
   message: string,
   interrupt = false,
+  systemMessage?: string,
 ): PermissionRequestDenyResponse {
   return {
+    ...(systemMessage !== undefined && { systemMessage }),
     hookSpecificOutput: {
       hookEventName: "PermissionRequest",
       decision: {

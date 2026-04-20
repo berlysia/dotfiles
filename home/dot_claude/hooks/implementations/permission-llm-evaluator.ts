@@ -15,8 +15,15 @@ import {
   sendSystemNotification,
 } from "../../lib/unified-audio-engine.ts";
 import { logDecision } from "../lib/centralized-logging.ts";
-import { createPermissionRequestAllowResponse } from "../lib/permission-request-helpers.ts";
-import type { PermissionRequestInput } from "../lib/structured-llm-evaluator.ts";
+import {
+  createPermissionRequestAllowResponse,
+  createPermissionRequestDenyResponse,
+} from "../lib/permission-request-helpers.ts";
+import { buildUserMessage } from "../lib/permission-user-message.ts";
+import type {
+  LLMEvaluationResult,
+  PermissionRequestInput,
+} from "../lib/structured-llm-evaluator.ts";
 import { buildFooter } from "../lib/webhook-notification.ts";
 import { sendWebhookNotifications } from "../lib/webhook-sender.ts";
 
@@ -100,10 +107,15 @@ IMPORTANT DISTINCTIONS (avoid these common misclassifications):
 - "npx --no <tool>" runs locally installed tools without downloading - ALLOW
 
 RESPONSE FORMAT:
-Respond with ONLY a JSON object, no other text:
+Respond with ONLY a JSON object, no other text. The JSON MUST include "confidence" on denials:
 {"allow": true, "reason": "brief reason"}
 or
-{"allow": false, "reason": "brief reason why denied"}`;
+{"allow": false, "reason": "brief reason why denied", "confidence": "high" | "medium" | "low"}
+
+Confidence guidance (denials only):
+- "high": clearly matches a DENY criterion with no ambiguity
+- "medium": likely unsafe but depends on context or arguments
+- "low": suspicious but could be legitimate; user review recommended`;
 
 /**
  * Format the tool input for evaluation
@@ -130,13 +142,56 @@ function formatToolInputForEvaluation(input: PermissionRequestInput): string {
   return description;
 }
 
+type RawLLMResponse = {
+  allow?: unknown;
+  reason?: unknown;
+  confidence?: unknown;
+};
+
+function normalizeConfidence(raw: unknown): "high" | "medium" | "low" {
+  if (raw === "high" || raw === "medium" || raw === "low") {
+    return raw;
+  }
+  // Missing or malformed confidence falls back to medium so we still surface
+  // the decision to the user via interrupt: false rather than failing safe.
+  return "medium";
+}
+
+function parseLLMResponse(responseText: string): LLMEvaluationResult {
+  const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    return { kind: "parse-error", rawText: responseText };
+  }
+
+  let parsed: RawLLMResponse;
+  try {
+    parsed = JSON.parse(jsonMatch[0]) as RawLLMResponse;
+  } catch {
+    return { kind: "parse-error", rawText: responseText };
+  }
+
+  const reason = typeof parsed.reason === "string" ? parsed.reason : "";
+
+  if (parsed.allow === true) {
+    return { kind: "allow", reason };
+  }
+  if (parsed.allow === false) {
+    return {
+      kind: "deny",
+      reason,
+      confidence: normalizeConfidence(parsed.confidence),
+    };
+  }
+  return { kind: "parse-error", rawText: responseText };
+}
+
 /**
  * Call Claude Agent SDK to evaluate the permission request
  * Uses Claude Code's license for authentication
  */
 async function evaluateWithLLM(
   input: PermissionRequestInput,
-): Promise<{ allow: boolean; reason: string }> {
+): Promise<LLMEvaluationResult> {
   const toolDescription = formatToolInputForEvaluation(input);
   const userPrompt = `Evaluate this permission request:\n\n<user_input>\n${toolDescription}\n</user_input>`;
 
@@ -147,47 +202,35 @@ async function evaluateWithLLM(
         model: "haiku",
         maxTurns: 1,
         systemPrompt: SYSTEM_PROMPT,
-        // Disable all tools - we just want LLM text response
         allowedTools: [],
-        // Bypass permissions since we're running inside a hook
         permissionMode: "bypassPermissions",
         allowDangerouslySkipPermissions: true,
       },
     });
 
-    // Collect the response
     let responseText = "";
     for await (const message of conversation) {
       if (message.type === "assistant") {
-        // Extract text from assistant message
         for (const block of message.message.content) {
           if (block.type === "text") {
             responseText += block.text;
           }
         }
       } else if (message.type === "result") {
-        // Use the result if available
         if (message.subtype === "success" && message.result) {
           responseText = message.result;
         }
       }
     }
 
-    // Parse JSON response
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      return { allow: false, reason: "LLM returned non-JSON response" };
-    }
-
-    const result = JSON.parse(jsonMatch[0]) as {
-      allow: boolean;
-      reason: string;
-    };
-    return result;
+    return parseLLMResponse(responseText);
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
-    return { allow: false, reason: `LLM evaluation failed: ${errorMessage}` };
+    return {
+      kind: "parse-error",
+      rawText: `LLM evaluation failed: ${errorMessage}`,
+    };
   }
 }
 
@@ -200,8 +243,6 @@ const hook = defineHook({
     const { tool_name, tool_input, session_id, cwd } = input;
 
     // Tools that MUST always reach the user for decision (skip LLM evaluation entirely)
-    // - AskUserQuestion: User interaction must not be auto-approved
-    // - ExitPlanMode: Plan mode results vary by context; user should decide when to exit
     const USER_DECISION_TOOLS = ["AskUserQuestion", "ExitPlanMode"];
     if (USER_DECISION_TOOLS.includes(tool_name)) {
       logDecision(
@@ -211,15 +252,12 @@ const hook = defineHook({
         session_id,
         tool_input,
       );
-      // Pass through to user confirmation (Layer 3)
       return context.success({});
     }
 
-    // Evaluate with LLM (uses Claude Code's license)
     const result = await evaluateWithLLM(input);
 
-    if (result.allow) {
-      // LLM approved the request
+    if (result.kind === "allow") {
       logDecision(
         tool_name,
         "allow",
@@ -228,7 +266,6 @@ const hook = defineHook({
         tool_input,
       );
 
-      // Send notification for auto-approval decision (ASCII only for WSL compatibility)
       try {
         const { config } = await createAudioEngine();
         await sendSystemNotification(
@@ -245,33 +282,37 @@ const hook = defineHook({
       });
     }
 
-    // LLM denied or couldn't evaluate - pass to user confirmation
-    logDecision(
-      tool_name,
-      "ask",
-      `LLM uncertain/denied (Layer 2b): ${result.reason}`,
-      session_id,
-      tool_input,
-    );
+    // deny or parse-error path: surface the verdict through the UI
+    const { claudeMessage, userMessage } = buildUserMessage(result, input);
+    const interrupt =
+      result.kind === "parse-error" || result.confidence === "high";
 
-    // Send notification for delegation decision
+    const decisionReason =
+      result.kind === "parse-error"
+        ? `LLM parse-error (Layer 2b, interrupt=${interrupt})`
+        : `LLM denied (Layer 2b, confidence=${result.confidence}, interrupt=${interrupt}): ${result.reason}`;
+
+    logDecision(tool_name, "deny", decisionReason, session_id, tool_input);
+
     try {
       const [, footer] = await Promise.all([
-        // System notification (ASCII only for WSL compatibility)
         (async () => {
           const { config } = await createAudioEngine();
+          const summary =
+            result.kind === "parse-error"
+              ? "automated review unavailable"
+              : result.reason;
           await sendSystemNotification(
-            `[LLM] Pass to user: ${tool_name} - ${result.reason}`,
+            `[LLM] Denied: ${tool_name} - ${summary}`,
             config,
           );
         })(),
         buildFooter(cwd, session_id),
       ]);
-      // Webhook notification (Discord/Slack)
       await sendWebhookNotifications(
         {
-          title: "🔑 パーミッション確認",
-          description: `${tool_name} の実行許可を求めています`,
+          title: "🚨 パーミッション拒否",
+          description: `${tool_name} の実行を自動審査で拒否しました`,
           severity: "warning",
           footer,
         },
@@ -281,16 +322,26 @@ const hook = defineHook({
       // Notification failure should not block the response
     }
 
-    // Don't deny automatically - let user decide
-    // Only use deny for clearly malicious operations
-    return context.success({});
+    return context.json({
+      event: "PermissionRequest",
+      output: createPermissionRequestDenyResponse(
+        claudeMessage,
+        interrupt,
+        userMessage,
+      ),
+    });
   },
 });
 
 export default hook;
 
 // Export for testing
-export { evaluateWithLLM, formatToolInputForEvaluation, SYSTEM_PROMPT };
+export {
+  evaluateWithLLM,
+  formatToolInputForEvaluation,
+  parseLLMResponse,
+  SYSTEM_PROMPT,
+};
 
 if (import.meta.main) {
   const { runHook } = await import("cc-hooks-ts");

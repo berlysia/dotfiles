@@ -3,6 +3,7 @@
 import { deepStrictEqual, strictEqual } from "node:assert";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import {
+  isProjectScopeSafe,
   normalizeCommand,
   staticRuleEngine,
 } from "../../implementations/permission-auto-approve.ts";
@@ -49,7 +50,7 @@ describe("permission-auto-approve.ts hook behavior", () => {
         };
 
         const result = staticRuleEngine(input);
-        strictEqual(result, "allow", `${tool} should be allowed`);
+        strictEqual(result.behavior, "allow", `${tool} should be allowed`);
       });
     }
   });
@@ -220,7 +221,11 @@ describe("permission-auto-approve.ts hook behavior", () => {
         };
 
         const result = staticRuleEngine(input);
-        strictEqual(result, "allow", `Command "${cmd}" should be allowed`);
+        strictEqual(
+          result.behavior,
+          "allow",
+          `Command "${cmd}" should be allowed`,
+        );
       });
     }
   });
@@ -251,7 +256,11 @@ describe("permission-auto-approve.ts hook behavior", () => {
         };
 
         const result = staticRuleEngine(input);
-        strictEqual(result, "deny", `Command "${cmd}" should be denied`);
+        strictEqual(
+          result.behavior,
+          "deny",
+          `Command "${cmd}" should be denied`,
+        );
       });
     }
   });
@@ -266,7 +275,7 @@ describe("permission-auto-approve.ts hook behavior", () => {
       };
 
       const result = staticRuleEngine(input);
-      strictEqual(result, "allow");
+      strictEqual(result.behavior, "allow");
     });
 
     it("should deny system file edits", () => {
@@ -278,7 +287,7 @@ describe("permission-auto-approve.ts hook behavior", () => {
       };
 
       const result = staticRuleEngine(input);
-      strictEqual(result, "deny");
+      strictEqual(result.behavior, "deny");
     });
 
     it("should deny SSH key edits", () => {
@@ -290,7 +299,7 @@ describe("permission-auto-approve.ts hook behavior", () => {
       };
 
       const result = staticRuleEngine(input);
-      strictEqual(result, "deny");
+      strictEqual(result.behavior, "deny");
     });
 
     it("should deny .env file edits", () => {
@@ -302,7 +311,7 @@ describe("permission-auto-approve.ts hook behavior", () => {
       };
 
       const result = staticRuleEngine(input);
-      strictEqual(result, "deny");
+      strictEqual(result.behavior, "deny");
     });
   });
 
@@ -347,7 +356,7 @@ describe("permission-auto-approve.ts hook behavior", () => {
 
         const result = staticRuleEngine(input);
         strictEqual(
-          result,
+          result.behavior,
           "uncertain",
           `Command "${cmd}" should be uncertain`,
         );
@@ -415,7 +424,7 @@ describe("permission-auto-approve.ts hook behavior", () => {
 
         const result = staticRuleEngine(input);
         strictEqual(
-          result,
+          result.behavior,
           "allow",
           `Command "${cmd}" should be allowed after cd normalization`,
         );
@@ -437,7 +446,7 @@ describe("permission-auto-approve.ts hook behavior", () => {
 
         const result = staticRuleEngine(input);
         strictEqual(
-          result,
+          result.behavior,
           "uncertain",
           `Command "${cmd}" should remain uncertain`,
         );
@@ -452,7 +461,7 @@ describe("permission-auto-approve.ts hook behavior", () => {
       };
 
       const result = staticRuleEngine(input);
-      strictEqual(result, "deny", "cd + rm -rf should be denied");
+      strictEqual(result.behavior, "deny", "cd + rm -rf should be denied");
     });
   });
 
@@ -473,7 +482,7 @@ describe("permission-auto-approve.ts hook behavior", () => {
 
         const result = staticRuleEngine(input);
         strictEqual(
-          result,
+          result.behavior,
           "allow",
           `Command "${cmd}" should be allowed after ENV normalization`,
         );
@@ -493,7 +502,11 @@ describe("permission-auto-approve.ts hook behavior", () => {
       };
 
       const result = staticRuleEngine(input);
-      strictEqual(result, "deny", "Should still detect rm -rf despite comment");
+      strictEqual(
+        result.behavior,
+        "deny",
+        "Should still detect rm -rf despite comment",
+      );
     });
 
     it("should not be fooled by misleading descriptions", () => {
@@ -508,7 +521,7 @@ describe("permission-auto-approve.ts hook behavior", () => {
 
       const result = staticRuleEngine(input);
       strictEqual(
-        result,
+        result.behavior,
         "deny",
         "Should detect dangerous pattern regardless of description",
       );
@@ -573,6 +586,232 @@ describe("permission-request-helpers.ts", () => {
       );
 
       strictEqual(response.hookSpecificOutput.decision.interrupt, true);
+    });
+
+    it("should include systemMessage at top level when provided", async () => {
+      const { createPermissionRequestDenyResponse } =
+        await import("../../lib/permission-request-helpers.ts");
+
+      const response = createPermissionRequestDenyResponse(
+        "Claude-facing",
+        false,
+        "User-facing detailed message",
+      );
+
+      strictEqual(response.systemMessage, "User-facing detailed message");
+      strictEqual(
+        response.hookSpecificOutput.decision.message,
+        "Claude-facing",
+      );
+    });
+  });
+});
+
+describe("isProjectScopeSafe", () => {
+  const cwd = "/home/user/project";
+
+  describe("prefilter and whitelist", () => {
+    it("rejects commands that do not start with a recognized prefix", () => {
+      const result = isProjectScopeSafe("ls -la", cwd);
+      deepStrictEqual(result, { safe: false, reason: "prefilter-miss" });
+    });
+
+    it("rejects commands containing `;` (shell composition)", () => {
+      const result = isProjectScopeSafe("rm -rf .tmp/foo; ls", cwd);
+      deepStrictEqual(result, { safe: false, reason: "shell-composition" });
+    });
+
+    it("rejects commands containing `&&` (shell composition)", () => {
+      const result = isProjectScopeSafe("rm -rf .tmp/foo && regenerate", cwd);
+      deepStrictEqual(result, { safe: false, reason: "shell-composition" });
+    });
+
+    it("rejects commands with `|` (pipe)", () => {
+      const result = isProjectScopeSafe("rm -rf .tmp/foo | cat", cwd);
+      deepStrictEqual(result, { safe: false, reason: "shell-composition" });
+    });
+
+    it("rejects commands with `$` (variable expansion)", () => {
+      const result = isProjectScopeSafe("rm -rf .tmp/$HOME", cwd);
+      deepStrictEqual(result, { safe: false, reason: "shell-composition" });
+    });
+
+    it("rejects commands with `>` redirection", () => {
+      const result = isProjectScopeSafe("rm -rf .tmp/foo > out.log", cwd);
+      deepStrictEqual(result, { safe: false, reason: "shell-composition" });
+    });
+
+    it("rejects commands with `#` (comment injection)", () => {
+      const result = isProjectScopeSafe("rm -rf .tmp/foo # comment", cwd);
+      deepStrictEqual(result, { safe: false, reason: "shell-composition" });
+    });
+
+    it("rejects commands with `*` (glob)", () => {
+      const result = isProjectScopeSafe("rm -rf .tmp/*", cwd);
+      deepStrictEqual(result, { safe: false, reason: "shell-composition" });
+    });
+
+    it("rejects ENV=value prefixed commands", () => {
+      const result = isProjectScopeSafe("NODE_ENV=test rm -rf .tmp/foo", cwd);
+      // NODE_ENV=test does not start with rm -rf, so prefilter catches it first
+      deepStrictEqual(result, { safe: false, reason: "prefilter-miss" });
+    });
+
+    it("rejects commands with `=` embedded in args", () => {
+      const result = isProjectScopeSafe("rm -rf .tmp/FOO=bar", cwd);
+      deepStrictEqual(result, { safe: false, reason: "shell-composition" });
+    });
+  });
+
+  describe("rm -rf", () => {
+    it("allows .tmp/ subdirectory deletion", () => {
+      const result = isProjectScopeSafe("rm -rf .tmp/repo-info", cwd);
+      deepStrictEqual(result, { safe: true, source: "project-scope-safe" });
+    });
+
+    it("allows dist/ deletion", () => {
+      const result = isProjectScopeSafe("rm -rf dist/bundle", cwd);
+      deepStrictEqual(result, { safe: true, source: "project-scope-safe" });
+    });
+
+    it("allows build/ deletion", () => {
+      const result = isProjectScopeSafe("rm -rf build", cwd);
+      deepStrictEqual(result, { safe: true, source: "project-scope-safe" });
+    });
+
+    it("allows .cache/ deletion", () => {
+      const result = isProjectScopeSafe("rm -rf .cache/entries", cwd);
+      deepStrictEqual(result, { safe: true, source: "project-scope-safe" });
+    });
+
+    it("rejects node_modules deletion (allowlist excludes it)", () => {
+      const result = isProjectScopeSafe("rm -rf node_modules", cwd);
+      deepStrictEqual(result, { safe: false, reason: "not-allowlisted" });
+    });
+
+    it("rejects targets outside cwd", () => {
+      const result = isProjectScopeSafe("rm -rf /tmp/foo", cwd);
+      deepStrictEqual(result, { safe: false, reason: "outside-cwd" });
+    });
+
+    it("rejects targets escaping cwd via ..", () => {
+      const result = isProjectScopeSafe("rm -rf ../escape", cwd);
+      deepStrictEqual(result, { safe: false, reason: "outside-cwd" });
+    });
+
+    it("rejects random cwd-contained paths not on allowlist", () => {
+      const result = isProjectScopeSafe("rm -rf src/main.ts", cwd);
+      deepStrictEqual(result, { safe: false, reason: "not-allowlisted" });
+    });
+  });
+
+  describe("chmod +x", () => {
+    it("allows .tmp/ script exec permission", () => {
+      const result = isProjectScopeSafe("chmod +x .tmp/analyze.sh", cwd);
+      deepStrictEqual(result, { safe: true, source: "project-scope-safe" });
+    });
+
+    it("allows scripts/ script exec permission", () => {
+      const result = isProjectScopeSafe("chmod +x scripts/build.sh", cwd);
+      deepStrictEqual(result, { safe: true, source: "project-scope-safe" });
+    });
+
+    it("rejects chmod +x outside allowlist", () => {
+      const result = isProjectScopeSafe("chmod +x src/index.ts", cwd);
+      deepStrictEqual(result, { safe: false, reason: "not-allowlisted" });
+    });
+
+    it("rejects absolute-path chmod +x outside cwd", () => {
+      const result = isProjectScopeSafe("chmod +x /usr/bin/evil", cwd);
+      deepStrictEqual(result, { safe: false, reason: "outside-cwd" });
+    });
+  });
+
+  describe("<path>.sh invocation", () => {
+    it("allows .tmp/ script execution with args", () => {
+      const result = isProjectScopeSafe(".tmp/collect.sh berlysia.net", cwd);
+      deepStrictEqual(result, { safe: true, source: "project-scope-safe" });
+    });
+
+    it("allows scripts/ script execution", () => {
+      const result = isProjectScopeSafe("scripts/deploy.sh", cwd);
+      deepStrictEqual(result, { safe: true, source: "project-scope-safe" });
+    });
+
+    it("rejects absolute script outside cwd", () => {
+      const result = isProjectScopeSafe("/tmp/attacker.sh", cwd);
+      deepStrictEqual(result, { safe: false, reason: "outside-cwd" });
+    });
+  });
+});
+
+describe("staticRuleEngine - known over-rejection cases (integration)", () => {
+  const cwd = "/home/user/project";
+
+  it("allows .tmp/collect.sh invocation via project-scope-safe", () => {
+    const result = staticRuleEngine({
+      session_id: "test",
+      tool_name: "Bash",
+      tool_input: { command: ".tmp/collect.sh berlysia.net" },
+      cwd,
+    });
+    deepStrictEqual(result, {
+      behavior: "allow",
+      source: "project-scope-safe",
+    });
+  });
+
+  it("allows rm -rf .tmp/repo-info via project-scope-safe", () => {
+    const result = staticRuleEngine({
+      session_id: "test",
+      tool_name: "Bash",
+      tool_input: { command: "rm -rf .tmp/repo-info" },
+      cwd,
+    });
+    deepStrictEqual(result, {
+      behavior: "allow",
+      source: "project-scope-safe",
+    });
+  });
+
+  it("allows chmod +x .tmp/analyze.sh via project-scope-safe", () => {
+    const result = staticRuleEngine({
+      session_id: "test",
+      tool_name: "Bash",
+      tool_input: { command: "chmod +x .tmp/analyze.sh" },
+      cwd,
+    });
+    deepStrictEqual(result, {
+      behavior: "allow",
+      source: "project-scope-safe",
+    });
+  });
+
+  it("keeps rm -rf / deny for absolute root", () => {
+    const result = staticRuleEngine({
+      session_id: "test",
+      tool_name: "Bash",
+      tool_input: { command: "rm -rf /" },
+      cwd,
+    });
+    deepStrictEqual(result, {
+      behavior: "deny",
+      source: "dangerous-pattern",
+    });
+  });
+
+  it("keeps compound rm -rf && still deny via dangerous-pattern", () => {
+    const result = staticRuleEngine({
+      session_id: "test",
+      tool_name: "Bash",
+      tool_input: { command: "rm -rf .tmp/foo && other-command" },
+      cwd,
+    });
+    // project-scope-safe rejects via shell-composition, falls back to
+    // DANGEROUS_PATTERNS match on `rm -rf\b`.
+    deepStrictEqual(result, {
+      behavior: "deny",
+      source: "dangerous-pattern",
     });
   });
 });

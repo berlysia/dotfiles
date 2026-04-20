@@ -9,15 +9,37 @@
  * Fallback: User confirmation (Layer 3)
  */
 
+import path from "node:path";
 import { defineHook } from "cc-hooks-ts";
 import { logDecision } from "../lib/centralized-logging.ts";
 import { createPermissionRequestAllowResponse } from "../lib/permission-request-helpers.ts";
 import type { PermissionRequestInput } from "../lib/structured-llm-evaluator.ts";
 
 /**
- * Static decision result
+ * Static decision with source attribution.
+ * `source` is required on every variant so decision logs can reason about the
+ * provenance of each allow/deny/uncertain outcome without string guessing.
  */
-type StaticDecision = "allow" | "deny" | "uncertain";
+export type StaticDecision =
+  | { behavior: "allow"; source: "pattern-match" | "project-scope-safe" }
+  | { behavior: "deny"; source: "dangerous-pattern" }
+  | { behavior: "uncertain"; source: "no-match" };
+
+/**
+ * Boundary check result for the project-scope allowance path.
+ * `reason` values let tests pinpoint which guard rejected a command.
+ */
+export type BoundaryCheckResult =
+  | { safe: true; source: "project-scope-safe" }
+  | {
+      safe: false;
+      reason:
+        | "prefilter-miss"
+        | "shell-composition"
+        | "outside-cwd"
+        | "not-allowlisted"
+        | "unresolvable";
+    };
 
 /**
  * Read-only tools that are always safe to allow
@@ -127,6 +149,38 @@ const DANGEROUS_PATTERNS = [
 ];
 
 /**
+ * Narrow prefilter for the project-scope-safe path. Only commands that LOOK
+ * like the three over-rejected shapes (rm -rf, chmod +x, or <path>.sh) are
+ * eligible for further inspection.
+ */
+const PREFILTER_REGEX = /^(rm\s+-rf|chmod\s+\+x|\S+\.sh(\s|$))/;
+
+/**
+ * Shell-safe character whitelist. Any character outside this set (including
+ * `;`, `&`, `|`, `$`, backticks, redirection, globs, braces, `=`, etc.) is
+ * rejected so that composition and environment-variable prefixes cannot slip
+ * into the scope-safe path and expand into arbitrary binary execution.
+ *
+ * `+` is intentionally allowed because `chmod +x` relies on it and `+` has
+ * no POSIX shell metacharacter meaning on its own. The plan omitted `+` in
+ * the initial spec; this deviation is documented here so future readers do
+ * not reintroduce the regression.
+ */
+const SHELL_WHITELIST_REGEX = /^[A-Za-z0-9_./+\s-]+$/;
+
+/**
+ * Directories under cwd that are allowed as `rm -rf` targets. Deliberately
+ * omits `node_modules/` since deleting it breaks lockfile coherence and is
+ * expensive to rebuild.
+ */
+const RM_RF_ALLOWED_DIRS = [".tmp/", ".cache/", "dist/", "build/"];
+
+/**
+ * Directories under cwd that are allowed as `chmod +x` targets.
+ */
+const CHMOD_X_ALLOWED_DIRS = [".tmp/", "scripts/"];
+
+/**
  * Normalize a command by stripping known-safe prefixes.
  * This allows the underlying command to be evaluated by SAFE_BASH_PATTERNS.
  *
@@ -147,6 +201,74 @@ function normalizeCommand(cmd: string): string {
 }
 
 /**
+ * Evaluate whether a Bash command is safe under the project-scope rule set.
+ *
+ * The check is intentionally conservative: it requires a narrow shape match,
+ * a strict character whitelist, and a cwd containment check before granting
+ * the allow. We do not consult realpath on purpose — following symlinks would
+ * introduce disk I/O and an attack surface this personal-dotfiles threat model
+ * does not need to cover.
+ */
+export function isProjectScopeSafe(
+  command: string,
+  cwd: string,
+): BoundaryCheckResult {
+  if (!PREFILTER_REGEX.test(command)) {
+    return { safe: false, reason: "prefilter-miss" };
+  }
+
+  if (!SHELL_WHITELIST_REGEX.test(command)) {
+    return { safe: false, reason: "shell-composition" };
+  }
+
+  let target: string | null = null;
+  let allowlist: readonly string[] = [];
+
+  const rmMatch = command.match(/^rm\s+-rf\s+(\S+)\s*$/);
+  const chmodMatch = command.match(/^chmod\s+\+x\s+(\S+)\s*$/);
+  const scriptMatch = command.match(/^(\S+\.sh)(?:\s|$)/);
+
+  if (rmMatch) {
+    target = rmMatch[1] ?? null;
+    allowlist = RM_RF_ALLOWED_DIRS;
+  } else if (chmodMatch) {
+    target = chmodMatch[1] ?? null;
+    allowlist = CHMOD_X_ALLOWED_DIRS;
+  } else if (scriptMatch) {
+    target = scriptMatch[1] ?? null;
+    // Script invocations only need cwd containment; no subdirectory allowlist.
+    allowlist = [];
+  }
+
+  if (target === null || target === "") {
+    return { safe: false, reason: "unresolvable" };
+  }
+
+  const absolute = path.resolve(cwd, target);
+  const cwdPrefix = cwd.endsWith("/") ? cwd : `${cwd}/`;
+  if (absolute !== cwd && !absolute.startsWith(cwdPrefix)) {
+    return { safe: false, reason: "outside-cwd" };
+  }
+
+  if (allowlist.length > 0) {
+    const relative = absolute === cwd ? "" : absolute.slice(cwdPrefix.length);
+    const allowed = allowlist.some((dir) => {
+      // Normalize `dist/` to accept both `dist` (bare directory) and
+      // `dist/anything` (nested path). path.resolve strips trailing slashes
+      // from the target, so we need to compare bare forms explicitly.
+      const prefix = dir.endsWith("/") ? dir : `${dir}/`;
+      const bare = prefix.slice(0, -1);
+      return relative === bare || relative.startsWith(prefix);
+    });
+    if (!allowed) {
+      return { safe: false, reason: "not-allowlisted" };
+    }
+  }
+
+  return { safe: true, source: "project-scope-safe" };
+}
+
+/**
  * Layer 2a: Static rule-based evaluation
  * No injection risk - purely pattern matching
  */
@@ -156,34 +278,42 @@ function staticRuleEngine(input: PermissionRequestInput): StaticDecision {
 
   // 1. Read-only tools are always safe
   if (READ_ONLY_TOOLS.includes(toolName)) {
-    return "allow";
+    return { behavior: "allow", source: "pattern-match" };
   }
 
   // 2. Bash command evaluation
   if (toolName === "Bash" && toolInput && "command" in toolInput) {
     const cmd = String(toolInput.command).trim();
+    const cwd = input.cwd || process.cwd();
 
-    // Check dangerous patterns first (against ORIGINAL command, before normalization)
+    // 2a. Project scope safe check runs BEFORE dangerous patterns so that the
+    // narrow over-rejection cases (rm -rf .tmp/..., chmod +x scripts/..., etc.)
+    // are not caught by the generic `rm -rf` deny.
+    const scopeCheck = isProjectScopeSafe(cmd, cwd);
+    if (scopeCheck.safe) {
+      return { behavior: "allow", source: "project-scope-safe" };
+    }
+
+    // 2b. Dangerous patterns (evaluated against original command)
     for (const pattern of DANGEROUS_PATTERNS) {
       if (pattern.test(cmd)) {
-        return "deny";
+        return { behavior: "deny", source: "dangerous-pattern" };
       }
     }
 
-    // Check safe patterns against original command first
+    // 2c. Safe patterns against original command
     for (const pattern of SAFE_BASH_PATTERNS) {
       if (pattern.test(cmd)) {
-        return "allow";
+        return { behavior: "allow", source: "pattern-match" };
       }
     }
 
-    // If original command didn't match, try with normalized command
-    // (strips cd prefix, ENV_VAR prefix, etc.)
+    // 2d. Safe patterns against normalized command (strips cd prefix, ENV prefix)
     const normalizedCmd = normalizeCommand(cmd);
     if (normalizedCmd !== cmd) {
       for (const pattern of SAFE_BASH_PATTERNS) {
         if (pattern.test(normalizedCmd)) {
-          return "allow";
+          return { behavior: "allow", source: "pattern-match" };
         }
       }
     }
@@ -198,7 +328,6 @@ function staticRuleEngine(input: PermissionRequestInput): StaticDecision {
     const filePath = String(toolInput.file_path);
     const cwd = input.cwd || process.cwd();
 
-    // Check for dangerous paths
     const dangerousPaths = [
       "/etc/",
       "/usr/",
@@ -213,18 +342,16 @@ function staticRuleEngine(input: PermissionRequestInput): StaticDecision {
 
     for (const dangerous of dangerousPaths) {
       if (filePath.includes(dangerous)) {
-        return "deny";
+        return { behavior: "deny", source: "dangerous-pattern" };
       }
     }
 
-    // Allow if within project directory
     if (filePath.startsWith(cwd) || filePath.startsWith("./")) {
-      return "allow";
+      return { behavior: "allow", source: "pattern-match" };
     }
   }
 
-  // Cannot determine - need further evaluation
-  return "uncertain";
+  return { behavior: "uncertain", source: "no-match" };
 }
 
 const hook = defineHook({
@@ -235,15 +362,13 @@ const hook = defineHook({
     const input = context.input as unknown as PermissionRequestInput;
     const { tool_name, tool_input, session_id } = input;
 
-    // Layer 2a: Static rule evaluation
     const staticResult = staticRuleEngine(input);
 
-    if (staticResult === "allow") {
-      // Log the decision
+    if (staticResult.behavior === "allow") {
       logDecision(
         tool_name,
         "allow",
-        `Auto-approved by static rule (Layer 2a)`,
+        `Auto-approved by static rule (Layer 2a, source=${staticResult.source})`,
         session_id,
         tool_input,
       );
@@ -254,26 +379,25 @@ const hook = defineHook({
       });
     }
 
-    if (staticResult === "deny") {
-      // Log but don't deny - let user decide
-      // (PermissionRequest deny would block, we want user confirmation)
+    if (staticResult.behavior === "deny") {
+      // Log but don't deny - let Layer 2b (LLM) attempt to re-evaluate.
+      // Final deny only comes from LLM (Layer 2b) so that over-zealous static
+      // deny patterns can still be overridden by contextual LLM judgment.
       logDecision(
         tool_name,
         "ask",
-        `Static rule flagged as potentially dangerous (Layer 2a)`,
+        `Static rule flagged as potentially dangerous (Layer 2a, source=${staticResult.source})`,
         session_id,
         tool_input,
       );
 
-      // Pass through to prompt hook (Layer 2b) or user confirmation (Layer 3)
       return context.success({});
     }
 
-    // Static rule returned "uncertain" - pass to prompt hook (Layer 2b)
     logDecision(
       tool_name,
       "ask",
-      `Static rule uncertain, deferring to prompt hook (Layer 2b)`,
+      `Static rule uncertain, deferring to prompt hook (Layer 2a, source=${staticResult.source})`,
       session_id,
       tool_input,
     );
@@ -291,6 +415,10 @@ export {
   READ_ONLY_TOOLS,
   SAFE_BASH_PATTERNS,
   DANGEROUS_PATTERNS,
+  PREFILTER_REGEX,
+  SHELL_WHITELIST_REGEX,
+  RM_RF_ALLOWED_DIRS,
+  CHMOD_X_ALLOWED_DIRS,
 };
 
 if (import.meta.main) {
