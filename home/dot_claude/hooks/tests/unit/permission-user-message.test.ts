@@ -1,10 +1,10 @@
 #!/usr/bin/env node --test
 
-import { deepStrictEqual, ok, strictEqual } from "node:assert";
+import { deepStrictEqual, ok } from "node:assert";
 import { describe, it } from "node:test";
 import {
   buildUserMessage,
-  CLAUDE_DENY_MESSAGE,
+  CLAUDE_DENY_MESSAGE_PREFIX,
   MAX_COMMAND_SUMMARY_LEN,
 } from "../../lib/permission-user-message.ts";
 import type {
@@ -20,7 +20,7 @@ const baseInput: PermissionRequestInput = {
 };
 
 describe("buildUserMessage", () => {
-  it("uses the fixed CLAUDE_DENY_MESSAGE for claudeMessage on deny", () => {
+  it("prefixes claudeMessage with the relay instruction and includes the user rationale", () => {
     const result: LLMEvaluationResult = {
       kind: "deny",
       reason: "potentially destructive",
@@ -28,7 +28,10 @@ describe("buildUserMessage", () => {
     };
 
     const parts = buildUserMessage(result, baseInput);
-    strictEqual(parts.claudeMessage, CLAUDE_DENY_MESSAGE);
+    ok(parts.claudeMessage.startsWith(CLAUDE_DENY_MESSAGE_PREFIX));
+    ok(parts.claudeMessage.includes("potentially destructive"));
+    ok(parts.claudeMessage.includes("Confidence: high"));
+    ok(parts.claudeMessage.includes("Target: rm -rf .tmp/foo"));
   });
 
   it("includes confidence and reason in userMessage for deny", () => {
@@ -99,7 +102,8 @@ describe("buildUserMessage", () => {
       rawText: "garbage",
     };
     const parts = buildUserMessage(result, baseInput);
-    strictEqual(parts.claudeMessage, CLAUDE_DENY_MESSAGE);
+    ok(parts.claudeMessage.startsWith(CLAUDE_DENY_MESSAGE_PREFIX));
+    ok(parts.claudeMessage.includes("automated review"));
     ok(parts.userMessage.includes("Confidence: n/a"));
     ok(parts.userMessage.includes("automated review"));
   });
