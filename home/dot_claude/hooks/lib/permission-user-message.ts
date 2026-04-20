@@ -1,9 +1,12 @@
 /**
- * User-facing message formatting for PermissionRequest deny responses.
+ * Message formatting for PermissionRequest deny responses.
  *
- * Separates the message shown to Claude (`claudeMessage`, fixed boilerplate to
- * avoid leaking decision heuristics) from the message shown to the user
- * (`userMessage`, detailed threat summary for informed review).
+ * Both messages carry the same detailed rationale. `systemMessage` is the
+ * top-level CommonHookOutputs field (rendered by the CLI when supported);
+ * `claudeMessage` is `decision.message` (delivered to Claude, who relays the
+ * reason to the user in its next response). Duplicating the content is
+ * intentional so the user always sees the rationale regardless of which
+ * channel the CLI honors.
  */
 
 import type {
@@ -11,8 +14,8 @@ import type {
   PermissionRequestInput,
 } from "./structured-llm-evaluator.ts";
 
-export const CLAUDE_DENY_MESSAGE =
-  "Denied by automated review. See user for details.";
+export const CLAUDE_DENY_MESSAGE_PREFIX =
+  "Denied by automated review. Please relay this reason to the user verbatim so they can decide whether to retry or modify the command:";
 
 export const MAX_COMMAND_SUMMARY_LEN = 500;
 
@@ -49,18 +52,20 @@ function summarizeToolInput(input: PermissionRequestInput): string {
 }
 
 /**
- * Build both Claude-facing and user-facing messages for a deny decision.
+ * Build the messages used for a deny decision.
  *
- * The Claude-facing message is intentionally fixed so that Claude cannot
- * exploit variance in rejection text. The user-facing message carries the
- * detailed threat breakdown for informed manual review.
+ * `userMessage` is the detailed rationale surfaced via `systemMessage` (CLI
+ * top-level) for direct UI rendering when supported. `claudeMessage` is the
+ * same rationale prefixed with an instruction asking Claude to forward it
+ * verbatim, guaranteeing the user sees the reason even if the CLI does not
+ * render `systemMessage` for PermissionRequest denies.
  */
 export function buildUserMessage(
   result: LLMEvaluationResult,
   input: PermissionRequestInput,
 ): UserMessageParts {
   const summary = summarizeToolInput(input);
-  const header = `🚨 Permission blocked: ${input.tool_name}`;
+  const header = `Permission blocked: ${input.tool_name}`;
   const target = `Target: ${summary}`;
 
   let body: string;
@@ -75,15 +80,14 @@ export function buildUserMessage(
       "Reason: LLM response could not be parsed; failing safe.",
     ].join("\n");
   } else {
-    // Allow results should not flow through the deny formatter, but keep the
-    // shape consistent so callers cannot produce a partial message by mistake.
     body = `Confidence: n/a (allow)\nReason: ${result.reason}`;
   }
 
   const userMessage = [header, target, body].join("\n");
+  const claudeMessage = `${CLAUDE_DENY_MESSAGE_PREFIX}\n\n${userMessage}`;
 
   return {
-    claudeMessage: CLAUDE_DENY_MESSAGE,
+    claudeMessage,
     userMessage,
   };
 }
