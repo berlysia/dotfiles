@@ -1,63 +1,30 @@
 {{- /* Template content */ -}}
 {{- $templateContent := include "dot_codex/.config.toml" | replace "__CHEZMOI_HOME__" .chezmoi.homeDir -}}
 {{- $targetFile := joinPath .chezmoi.homeDir ".codex" "config.toml" -}}
+{{- $mergeScript := joinPath .chezmoi.homeDir ".codex" ".merge-config.ts" -}}
 
 {{- /* Check if target file exists */ -}}
 {{- if stat $targetFile -}}
   {{- /* Target file exists, smart merge with existing user settings */ -}}
-  {{- /* Strategy: template as base, user settings override, security/infra keys forced from template */ -}}
-  {{- $mergeScript := `
+  {{- $shellScript := `
 set -euo pipefail
 
 TARGET_FILE="$1"
 TEMPLATE_CONTENT="$2"
-TEMP_TEMPLATE=$(mktemp)
-trap 'rm -f "$TEMP_TEMPLATE"' EXIT
+MERGE_SCRIPT="$3"
+TEMP_TOML=$(mktemp /tmp/codex-tpl.XXXXXX.toml)
+trap 'rm -f "$TEMP_TOML"' EXIT
 
-echo "$TEMPLATE_CONTENT" > "$TEMP_TEMPLATE"
+printf '%s' "$TEMPLATE_CONTENT" > "$TEMP_TOML"
 
-# Check if mise and dasel are available
-if ! command -v mise &>/dev/null || ! mise list dasel &>/dev/null 2>&1; then
-    cat "$TEMP_TEMPLATE"
+if ! command -v bun &>/dev/null || [ ! -f "$MERGE_SCRIPT" ]; then
+    cat "$TEMP_TOML"
     exit 0
 fi
 
-# Check if target file is valid TOML
-if ! cat "$TARGET_FILE" | mise x -- dasel query --root -i toml -o json >/dev/null 2>&1; then
-    cat "$TEMP_TEMPLATE"
-    exit 0
-fi
-
-# Convert both to JSON
-EXISTING_JSON=$(cat "$TARGET_FILE" | mise x -- dasel query --root -i toml -o json 2>/dev/null)
-TEMPLATE_JSON=$(cat "$TEMP_TEMPLATE" | mise x -- dasel query --root -i toml -o json 2>/dev/null)
-
-if [ $? -ne 0 ]; then
-    cat "$TEMP_TEMPLATE"
-    exit 0
-fi
-
-# Merge: template as base, user settings override, then force template-managed keys
-# Template-forced keys (security/infrastructure):
-#   mcp_servers, sandbox_mode, sandbox_workspace_write, shell_environment_policy,
-#   allow_login_shell, approval_policy, network_access
-# User-preferred keys (personal preferences):
-#   model, model_reasoning_effort, hide_agent_reasoning, web_search, etc.
-# Deprecated keys: features (removed)
-echo "$TEMPLATE_JSON" | jq \
-  --argjson existing "$EXISTING_JSON" \
-  '. as $template |
-   (. * ($existing | del(.mcp_servers) | del(.features) | del(.sandbox_mode) | del(.sandbox_workspace_write) | del(.shell_environment_policy) | del(.allow_login_shell) | del(.approval_policy) | del(.network_access))) |
-   .mcp_servers = $template.mcp_servers |
-   .sandbox_mode = $template.sandbox_mode |
-   .sandbox_workspace_write = $template.sandbox_workspace_write |
-   .shell_environment_policy = $template.shell_environment_policy |
-   .allow_login_shell = $template.allow_login_shell |
-   .approval_policy = $template.approval_policy |
-   .network_access = $template.network_access' \
-  | mise x -- dasel query --root -i json -o toml
+bun run "$MERGE_SCRIPT" "$TARGET_FILE" "$TEMP_TOML"
 ` -}}
-  {{- output "bash" "-c" $mergeScript "--" $targetFile $templateContent -}}
+  {{- output "bash" "-c" $shellScript "--" $targetFile $templateContent $mergeScript -}}
 {{- else -}}
   {{- /* Target file doesn't exist, output template as-is */ -}}
   {{- $templateContent -}}

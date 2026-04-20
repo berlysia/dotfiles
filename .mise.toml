@@ -5,3 +5,4 @@
 # Required for Codex config validation scripts
 dasel = "latest"
 "github:mizchi/actrun" = "0.29.0"
+"npm:@openai/codex" = "latest"
