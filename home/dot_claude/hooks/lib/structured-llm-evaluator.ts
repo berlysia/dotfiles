@@ -14,3 +14,18 @@ export interface PermissionRequestInput {
   tool_input?: Record<string, unknown>;
   cwd?: string;
 }
+
+/**
+ * LLM evaluation result variants.
+ * - `allow`: LLM approved the request
+ * - `deny`: LLM denied the request with a confidence level that controls UI severity
+ * - `parse-error`: LLM response could not be parsed; fail-safe to `interrupt: true`
+ */
+export type LLMEvaluationResult =
+  | { kind: "allow"; reason: string }
+  | {
+      kind: "deny";
+      reason: string;
+      confidence: "high" | "medium" | "low";
+    }
+  | { kind: "parse-error"; rawText: string };
