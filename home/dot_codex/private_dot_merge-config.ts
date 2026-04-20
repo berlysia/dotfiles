@@ -3,6 +3,10 @@ import { readFileSync } from "node:fs";
 
 const targetFile = process.argv[2];
 const templateTomlPath = process.argv[3];
+if (!targetFile || !templateTomlPath) {
+  console.error("Usage: merge-config.ts <target.toml> <template.toml>");
+  process.exit(1);
+}
 
 function toJson(tomlPath: string): Record<string, unknown> {
   const r = spawnSync(
@@ -40,7 +44,7 @@ function extractSections(content: string, prefixes: string[]): string {
     const m = line.match(/^\[([^\[\]]+)\]/);
     if (m) {
       // First bare key before any dot (handles [projects."/path/with.dots"])
-      const topKey = m[1].match(/^([A-Za-z0-9_-]+)/)?.[1] ?? "";
+      const topKey = m[1]?.match(/^([A-Za-z0-9_-]+)/)?.[1] ?? "";
       capturing = prefixes.includes(topKey);
     }
     if (capturing) captured.push(line);
