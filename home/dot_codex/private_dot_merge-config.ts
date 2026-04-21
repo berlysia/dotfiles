@@ -8,28 +8,31 @@ if (!targetFile || !templateTomlPath) {
   process.exit(1);
 }
 
+// Resolve dasel binary: prefer direct PATH lookup, fall back to `mise which`
+function resolveDasel(): string {
+  const direct = spawnSync("which", ["dasel"], { encoding: "utf8" });
+  if (direct.status === 0) return direct.stdout.trim();
+  const mise = spawnSync("mise", ["which", "dasel"], { encoding: "utf8" });
+  if (mise.status === 0) return mise.stdout.trim();
+  throw new Error("dasel not found. Install via mise: add dasel to .mise.toml");
+}
+
+const DASEL = resolveDasel();
+
 function toJson(tomlPath: string): Record<string, unknown> {
-  const r = spawnSync(
-    "mise",
-    ["x", "--", "dasel", "query", "--root", "-i", "toml", "-o", "json"],
-    {
-      input: readFileSync(tomlPath),
-      encoding: "utf8",
-    },
-  );
+  const r = spawnSync(DASEL, ["query", "--root", "-i", "toml", "-o", "json"], {
+    input: readFileSync(tomlPath),
+    encoding: "utf8",
+  });
   if (r.status !== 0) return {};
   return JSON.parse(r.stdout);
 }
 
 function toToml(json: Record<string, unknown>): string {
-  const r = spawnSync(
-    "mise",
-    ["x", "--", "dasel", "query", "--root", "-i", "json", "-o", "toml"],
-    {
-      input: JSON.stringify(json),
-      encoding: "utf8",
-    },
-  );
+  const r = spawnSync(DASEL, ["query", "--root", "-i", "json", "-o", "toml"], {
+    input: JSON.stringify(json),
+    encoding: "utf8",
+  });
   if (r.status !== 0) throw new Error(r.stderr ?? "dasel failed");
   return r.stdout;
 }
