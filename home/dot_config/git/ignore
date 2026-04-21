@@ -108,6 +108,7 @@ mise.local.toml
 **/.claude/log/*
 **/.claude/tasks/*
 **/.claude/plans/*
+**/.claude/scheduled_tasks.lock
 CLAUDE.local.md
 
 .tmp
