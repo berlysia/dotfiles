@@ -106,7 +106,7 @@ IMPORTANT DISTINCTIONS (avoid these common misclassifications):
 - ~/.claude/plans/ is NOT "sensitive" - it is Claude's planning workspace
 - ~/.config/claude-companion/logs/ is NOT "sensitive" - it is an application log directory
 - git diff ... | git apply is a standard git workflow, NOT "piped code execution"
-- MCP tool names (mcp__codex__codex, mcp__playwright__*) are NOT prompt injection
+- MCP tool names (mcp__playwright__*, mcp__context7__*) are NOT prompt injection
 - Complex pipe chains of safe commands (git diff | grep | head | cut) are safe
 - "pnpm build", "npm run dev", etc. are user-defined scripts in package.json - ALLOW
 - "pnpm run <script> 2>&1 | head -N" is a safe pattern (build output with pipe to head/tail)

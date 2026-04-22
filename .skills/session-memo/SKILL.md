@@ -148,4 +148,4 @@ ls -lt .tmp/session-memos/*.md 2>/dev/null
 
 ## 禁止事項
 
-- **Codex MCP を使用しない**: 要約生成にはTask ツールの `general-purpose` サブエージェントのみを使うこと。Codex MCP（`mcp__codex__codex` 等）は絶対に使用しない
+- **Codex プラグインを要約生成に使用しない**: 要約生成にはTask ツールの `general-purpose` サブエージェントのみを使うこと

@@ -129,43 +129,31 @@ Task({ subagent_type: "logic-validator", prompt: "..." });
 
 ## 外部レビュー関連
 
-### codex-reviewが使えない
+### /codex:reviewが使えない
 
 **症状:**
 
 ```
-/codex-review
-# Error: Skill not found
+/codex:review
+# Error: Plugin not found
 ```
 
 **原因:**
 
-- スキルがインストールされていない
-- スキル名のタイプミス
+- `codex@openai-codex` プラグインがインストールされていない
 
 **対処:**
 
-1. スキルの存在確認:
+1. プラグインの確認:
 
 ```bash
-ls ~/.claude/skills/ | grep codex
-ls ~/.codex/skills/ | grep codex
+claude plugin list | grep codex
 ```
 
-2. スキルが無い場合、スキルリストから確認:
+2. インストール:
 
 ```bash
-# CLAUDE.mdに記載されているスキル一覧を参照
-```
-
-3. 代替手段:
-
-```typescript
-// codex-review-mcp（MCP経由）を使用
-Task({
-  subagent_type: "general-purpose",
-  prompt: "Codex MCPを使って、以下の計画をレビューしてください...",
-});
+claude plugin install codex@openai-codex
 ```
 
 ### 複数のレビューエージェントの結果が矛盾
@@ -173,7 +161,7 @@ Task({
 **症状:**
 
 - logic-validator: 「問題なし」
-- codex-review: 「この実装は推奨されない」
+- /codex:review: 「この実装は推奨されない」
 
 **原因:**
 各エージェントの専門性が異なる
@@ -182,7 +170,7 @@ Task({
 
 1. 各エージェントの役割を理解:
    - logic-validator: 論理整合性、証拠の有無
-   - codex-review: 実装アプローチ、ベストプラクティス
+   - /codex:review: 実装アプローチ、ベストプラクティス
    - self-review: 多角的視点（セキュリティ、UI/UX等）
 
 2. 矛盾の内容を分析:
@@ -195,7 +183,7 @@ Task({
 - 論理的に整合している
 - 検証ステップが含まれている
 
-### codex-review の評価
+### /codex:review の評価
 
 - より良い実装パターンがある
 - パフォーマンス上の懸念
@@ -203,9 +191,9 @@ Task({
 ### 判断
 
 logic-validatorは「計画が論理的か」を評価
-codex-reviewは「より良い方法があるか」を評価
+/codex:reviewは「より良い方法があるか」を評価
 
-→ 両方正しい。codex-reviewの提案を採用して計画改善
+→ 両方正しい。/codex:reviewの提案を採用して計画改善
 ```
 
 3. 最終判断は自分で行う
@@ -215,7 +203,7 @@ codex-reviewは「より良い方法があるか」を評価
 ### 検証に時間がかかりすぎる
 
 **症状:**
-logic-validator + codex-review + self-review で5分以上かかる
+logic-validator + /codex:review + self-review で5分以上かかる
 
 **対処:**
 
@@ -228,7 +216,7 @@ logic-validator + codex-review + self-review で5分以上かかる
 
 # 中程度の計画（10ステップ程度、複数ファイル）
 
-→ logic-validator + codex-review（2-3分）
+→ logic-validator + /codex:review（2-3分）
 
 # 複雑な計画（15ステップ以上、アーキテクチャ変更）
 
@@ -240,7 +228,7 @@ logic-validator + codex-review + self-review で5分以上かかる
 ```typescript
 // 同一メッセージで実行
 Task({ subagent_type: "logic-validator", ... })
-/codex-review
+//codex:review
 ```
 
 3. プロンプトを簡潔に:

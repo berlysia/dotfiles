@@ -116,8 +116,7 @@ After installation, these skills will be available:
 
 - `/semantic-commit` - Complex commit splitting and semantic commit generation
 - `/react-hooks` - React hooks best practices and optimization
-- `/codex-review-cli` - Quick code review via Codex CLI
-- `/codex-review-mcp` - Conversational code review via Codex MCP
+- `/codex:review` - Code review via Codex plugin
 - `/logic-validation` - Logic consistency validation
 - `/optimizing-claude-md` - CLAUDE.md quality analysis
 - `/skill-builder` - Guided skill creation

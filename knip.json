@@ -9,7 +9,7 @@
   "ignore": ["**/*.test.ts"],
   "ignoreDependencies": [
     "ccstatusline",
-    "@openai/codex",
+
     "@playwright/mcp",
     "@upstash/context7-mcp",
     "chrome-devtools-mcp",

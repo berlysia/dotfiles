@@ -61,7 +61,7 @@ If you prefer manual installation:
 
 ## Available Skills
 
-See `~/.claude/skills/` directory for all available skills. Key skills include setup-claude-skills-for-web, commit-conventions, react-hooks, codex-review-cli, and logic-validation.
+See `~/.claude/skills/` directory for all available skills. Key skills include setup-claude-skills-for-web, commit-conventions, react-hooks, and logic-validation.
 
 ## Using Global CLAUDE.md
 
