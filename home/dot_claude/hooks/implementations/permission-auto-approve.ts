@@ -57,6 +57,34 @@ const READ_ONLY_TOOLS = [
   "TaskList",
   "TaskGet",
   "TaskOutput",
+  "ScheduleWakeup",
+  "CronCreate",
+  "CronDelete",
+  "CronList",
+];
+
+/**
+ * Skills that are safe to auto-approve.
+ * Codex delegation, read-only research, and non-destructive workflow skills.
+ */
+const SAFE_SKILLS = [
+  "codex:rescue",
+  "codex:setup",
+  "codex:codex-result-handling",
+  "codex:codex-cli-runtime",
+  "codex:gpt-5-4-prompting",
+  "recall",
+  "approach-check",
+  "session-memo",
+  "logic-validation",
+  "verify-doc",
+  "scope-guard",
+  "decompose",
+  "clarify",
+  "task-enrich",
+  "task-handoff",
+  "proposal-list",
+  "adr-session",
 ];
 
 /**
@@ -351,6 +379,15 @@ function staticRuleEngine(input: PermissionRequestInput): StaticDecision {
     }
   }
 
+  // 4. Skill invocations: per-skill allow, rest → uncertain (Layer 2b will ask)
+  if (toolName === "Skill" && toolInput && "skill" in toolInput) {
+    const skill = String(toolInput.skill);
+    if (SAFE_SKILLS.includes(skill)) {
+      return { behavior: "allow", source: "pattern-match" };
+    }
+    return { behavior: "uncertain", source: "no-match" };
+  }
+
   return { behavior: "uncertain", source: "no-match" };
 }
 
@@ -419,6 +456,7 @@ export {
   SHELL_WHITELIST_REGEX,
   RM_RF_ALLOWED_DIRS,
   CHMOD_X_ALLOWED_DIRS,
+  SAFE_SKILLS,
 };
 
 if (import.meta.main) {

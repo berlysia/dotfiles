@@ -58,6 +58,13 @@ ALLOW these operations:
 - Agent tool invocations (subagent spawning) - sandboxed sub-conversations with no direct system access
 - ToolSearch - deferred tool discovery, read-only
 - WebFetch - web content retrieval, read-only
+- Skill tool invocations - user-registered slash commands within Claude Code. Evaluate based on skill name and arguments:
+  - Delegation skills (codex:*, self-review, review) - delegate work to sub-agents, safe
+  - Read-only/analysis skills (recall, approach-check, session-memo, verify-doc, scope-guard, analyze-*, clarify, decompose, task-enrich, task-handoff, proposal-list, adr-session, docs-audit, optimize-claude-md, refine-skill) - inspection and analysis, safe
+  - Workflow skills (commit, semantic-commit, contextual-commit, create-pr, bugfix, execute-plan, self-correct-loop) - standard dev workflow, safe
+  - Design/research skills (annotated-plan-workflow, berlysia-style, berlysia-slide, deslop-writing, deslop:deslop) - content processing, safe
+  - Setup/config skills with explicit user intent (init, update-auto-approve, setup-*, apply-harness-practices) - modifies config but user-initiated, safe
+  - DENY only if skill arguments contain obvious credential exfiltration or destructive intent
 
 PRIMARY EVALUATION PRINCIPLE: **Evaluate what the command actually does, not which tool invokes it.**
 Ask these questions in order; any DENY answer denies the command:
@@ -147,7 +154,12 @@ function formatToolInputForEvaluation(input: PermissionRequestInput): string {
   }
 
   if (tool_input) {
-    if ("command" in tool_input) {
+    if (tool_name === "Skill" && "skill" in tool_input) {
+      description += `\nSkill: ${tool_input.skill}`;
+      if ("args" in tool_input && tool_input.args) {
+        description += `\nArguments: ${tool_input.args}`;
+      }
+    } else if ("command" in tool_input) {
       description += `\nCommand: ${tool_input.command}`;
     } else if ("file_path" in tool_input) {
       description += `\nFile Path: ${tool_input.file_path}`;
