@@ -19,7 +19,6 @@ READABILITY_VER=$(jq -r '.dependencies["@mizchi/readability"] // empty' "$HOOKS_
 CHROME_DEVTOOLS_VER=$(jq -r '.dependencies["chrome-devtools-mcp"] // empty' "$PACKAGE_JSON")
 PLAYWRIGHT_VER=$(jq -r '.dependencies["@playwright/mcp"] // empty' "$PACKAGE_JSON")
 CONTEXT7_VER=$(jq -r '.dependencies["@upstash/context7-mcp"] // empty' "$PACKAGE_JSON")
-CODEX_VER=$(jq -r '.dependencies["@openai/codex"] // empty' "$PACKAGE_JSON")
 DRAWIO_VER=$(jq -r '.dependencies["@drawio/mcp"] // empty' "$PACKAGE_JSON")
 
 # Generate new content from versions
@@ -68,11 +67,6 @@ TEMPLATE_CONTENT=$(cat << EOF
       "command": "pnpm",
       "args": ["dlx", "@playwright/mcp@${PLAYWRIGHT_VER}"],
       "env": {}
-    },
-    "codex": {
-      "type": "stdio",
-      "command": "pnpm",
-      "args": ["dlx", "@openai/codex@${CODEX_VER}", "mcp-server"]
     }
   },
   "installMethod": "native",

@@ -11,9 +11,6 @@ importers:
       '@drawio/mcp':
         specifier: 1.1.2
         version: 1.1.2
-      '@openai/codex':
-        specifier: 0.118.0
-        version: 0.118.0
       '@playwright/mcp':
         specifier: 0.0.68
         version: 0.0.68
@@ -262,47 +259,6 @@ packages:
   '@nodelib/fs.walk@1.2.8':
     resolution: {integrity: sha512-oGB+UxlgWcgQkgwo8GcEGwemoTFt3FIO9ababBmaGwXIoBKZ+GTy0pP185beGg7Llih/NSHSV2XAs1lnznocSg==}
     engines: {node: '>= 8'}
-
-  '@openai/codex@0.118.0':
-    resolution: {integrity: sha512-oJhNOsP/Vu7DBUhodpP15z60cCZv3sKORqUn1+pepleqSTmc0zXJZSjz6fQOLzny9Ra6sRcvprFFKmQ3Q6+E6w==}
-    engines: {node: '>=16'}
-    hasBin: true
-
-  '@openai/codex@0.118.0-darwin-arm64':
-    resolution: {integrity: sha512-sxq7Q2q9YiJN1wNrzvFRCC5oQKXPVUvu9Ejg6SI/CvyyI9YdtyLTO633wQJALGB7XQfT+3tyM5nNBivnSzLA3Q==}
-    engines: {node: '>=16'}
-    cpu: [arm64]
-    os: [darwin]
-
-  '@openai/codex@0.118.0-darwin-x64':
-    resolution: {integrity: sha512-iIvrqzsh1iJmVfqyYwLZBiuh0MkN1Suqniz9hBfmRmE6txMWhRVfigb9SMBiOkfCW1C4sjBwLCsCSzg11rvppQ==}
-    engines: {node: '>=16'}
-    cpu: [x64]
-    os: [darwin]
-
-  '@openai/codex@0.118.0-linux-arm64':
-    resolution: {integrity: sha512-YKWmIqLBu9mmBhN3JHQNkLzk0BtAtV6LBPvhnL5eeHkNrChvA6PKrhsjy0O7wvRkiByZY/1dD14qVdAUfxcbiA==}
-    engines: {node: '>=16'}
-    cpu: [arm64]
-    os: [linux]
-
-  '@openai/codex@0.118.0-linux-x64':
-    resolution: {integrity: sha512-vzU2d/gwAmZbf/DnwVzfQiNN3Ri04XpaZiJkHElIvGoqFbdrxRQFYTtslGDISYIO3o+POADZcFZIfamFsZj9yQ==}
-    engines: {node: '>=16'}
-    cpu: [x64]
-    os: [linux]
-
-  '@openai/codex@0.118.0-win32-arm64':
-    resolution: {integrity: sha512-AU7GPVFqd0Ml3P2OXfy6K6TONcxfCZLUh1zjYkkoPGWJ4A3BVMkOmMP9CAdSiQsnU/RQfdV/9IGqo1xwUQDdjA==}
-    engines: {node: '>=16'}
-    cpu: [arm64]
-    os: [win32]
-
-  '@openai/codex@0.118.0-win32-x64':
-    resolution: {integrity: sha512-9vKW1ANQxIUsLpiY0VsOM+1avZjqxDZgqgxKABJHWRlLMuaSykwXexf8Hqq+BnYFfmn0d6MjxTuE1UtVvg9caw==}
-    engines: {node: '>=16'}
-    cpu: [x64]
-    os: [win32]
 
   '@oxc-parser/binding-android-arm-eabi@0.120.0':
     resolution: {integrity: sha512-WU3qtINx802wOl8RxAF1v0VvmC2O4D9M8Sv486nLeQ7iPHVmncYZrtBhB4SYyX+XZxj2PNnCcN+PW21jHgiOxg==}
@@ -1968,33 +1924,6 @@ snapshots:
     dependencies:
       '@nodelib/fs.scandir': 2.1.5
       fastq: 1.20.1
-
-  '@openai/codex@0.118.0':
-    optionalDependencies:
-      '@openai/codex-darwin-arm64': '@openai/codex@0.118.0-darwin-arm64'
-      '@openai/codex-darwin-x64': '@openai/codex@0.118.0-darwin-x64'
-      '@openai/codex-linux-arm64': '@openai/codex@0.118.0-linux-arm64'
-      '@openai/codex-linux-x64': '@openai/codex@0.118.0-linux-x64'
-      '@openai/codex-win32-arm64': '@openai/codex@0.118.0-win32-arm64'
-      '@openai/codex-win32-x64': '@openai/codex@0.118.0-win32-x64'
-
-  '@openai/codex@0.118.0-darwin-arm64':
-    optional: true
-
-  '@openai/codex@0.118.0-darwin-x64':
-    optional: true
-
-  '@openai/codex@0.118.0-linux-arm64':
-    optional: true
-
-  '@openai/codex@0.118.0-linux-x64':
-    optional: true
-
-  '@openai/codex@0.118.0-win32-arm64':
-    optional: true
-
-  '@openai/codex@0.118.0-win32-x64':
-    optional: true
 
   '@oxc-parser/binding-android-arm-eabi@0.120.0':
     optional: true

@@ -26,7 +26,6 @@
   },
   "dependencies": {
     "@drawio/mcp": "1.1.2",
-    "@openai/codex": "0.118.0",
     "@playwright/mcp": "0.0.68",
     "@upstash/context7-mcp": "2.1.2",
     "ccstatusline": "2.0.29",

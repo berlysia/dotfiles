@@ -11,9 +11,8 @@
 
 ### オプション（外部レビューを使う場合）
 
-- [ ] `/codex-review` スキルがインストール済み
+- [ ] `codex@openai-codex` プラグインがインストール済み
 - [ ] `/self-review` スキルがインストール済み
-- [ ] Codex MCP設定済み（codex-review-mcp使用時）
 
 ## 論理的整合性
 

@@ -123,7 +123,7 @@ These files are automatically merged by `run_onchange_update-settings-json.sh.tm
 - `chrome-devtools-mcp` - Chrome DevTools automation
 - `@playwright/mcp` - Browser automation
 - `@upstash/context7-mcp` - Documentation search
-- `@openai/codex` - Code review and analysis
+
 
 **To update versions:** Edit `package.json` dependencies and run `chezmoi apply`
 
@@ -182,4 +182,4 @@ See [docs/external-usage.md](docs/external-usage.md) for detailed documentation.
 
 ### Skills Included
 
-See `.skills/` directory for available skills. Key skills include setup-claude-skills-for-web, commit-conventions, react-hooks, codex-review-cli, and logic-validation.
+See `.skills/` directory for available skills. Key skills include setup-claude-skills-for-web, commit-conventions, react-hooks, and logic-validation.

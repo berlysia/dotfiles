@@ -37,7 +37,7 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
   - `enabledPlugins` は `claude plugin` CLI が管理、settings.json 更新時に保持
 
 - **~/.claude.json自動管理**: `package.json` の dependencies からバージョン読み取り → jq マージ
-  - **管理対象MCP**: @mizchi/readability, chrome-devtools-mcp, @playwright/mcp, @upstash/context7-mcp, @openai/codex, @drawio/mcp
+  - **管理対象MCP**: @mizchi/readability, chrome-devtools-mcp, @playwright/mcp, @upstash/context7-mcp, @drawio/mcp
 
 - **プラグイン管理**: `home/.chezmoidata/claude_plugins.yaml` で宣言管理 → `chezmoi apply` で自動インストール/削除
 
