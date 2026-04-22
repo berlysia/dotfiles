@@ -305,7 +305,6 @@
     "Skill(ui-skills)",
     "Skill(update-auto-approve)",
     "Skill(update-docs)",
-    "Skill(validate-plan)",
     "Skill(vercel-react-best-practices)",
     "Skill(verify-doc)",
     "Skill(visualize)",

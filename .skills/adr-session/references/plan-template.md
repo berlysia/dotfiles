@@ -42,5 +42,5 @@ Plan files accompany ADRs to detail implementation steps. Create in `docs/plans/
 
 ## Notes
 
-- Do NOT include `<!-- validated -->` in the template. This marker is added only after successful validation by `/validate-plan` or logic-validator.
+- Plans are automatically reviewed by `plan-review-automation` when edited. Human approval is required before implementation.
 - The plan `{slug}` should match the corresponding ADR slug for easy cross-referencing.
