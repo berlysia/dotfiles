@@ -322,6 +322,10 @@ export const NO_PAREN_TOOL_NAMES = [
   "WebSearch",
   "ListMcpResourcesTool",
   "ReadMcpResourceTool",
+  "ScheduleWakeup",
+  "CronCreate",
+  "CronDelete",
+  "CronList",
 ];
 
 /**
