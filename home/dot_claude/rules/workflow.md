@@ -7,6 +7,16 @@
 - Use sub-agents (Task tool with Explore agent) for codebase investigation to preserve main context
 - Track cross-session progress with TaskCreate when work spans multiple sessions
 
+### Session Artifact Retention
+
+`.tmp/sessions/` は GC スクリプトにより **7日超で自動削除** される。セッション中に作成した成果物を残す必要がある場合、セッション終了前に以下のいずれかに再配置すること:
+
+- **設計判断**: `docs/decisions/` に ADR として記録
+- **実装計画（未着手・途中）**: `docs/plans/` に移動
+- **調査結果**: `docs/` 配下の適切な場所に移動
+
+`.tmp/sessions/` に残したまま放置された成果物は、7日後に予告なく削除される。
+
 ## Task Management
 
 - **Simple tasks** (1-2 steps): Execute directly without task tracking
