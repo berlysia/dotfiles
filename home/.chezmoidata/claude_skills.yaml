@@ -12,7 +12,6 @@ claude_skills:
         - pptx
         - xlsx
         - pdf
-        - theme-factory
         - frontend-design
         - webapp-testing
     - repo: berlysia/ralf-project
@@ -20,10 +19,6 @@ claude_skills:
         - proposal-add
         - proposal-complete
         - proposal-list
-    - repo: berserkdisruptors/contextual-commits
-      skills:
-        - contextual-commit
-        - recall
     - repo: berlysia/shiori
       skills:
         - shiori-adopt
