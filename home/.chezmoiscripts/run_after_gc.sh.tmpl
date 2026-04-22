@@ -1,0 +1,82 @@
+{{ if ne .chezmoi.os "windows" -}}
+#!/bin/bash
+# Periodic garbage collection:
+#   1. Remove .tmp/sessions/ older than 7 days
+#   2. CLAUDE.md path integrity check
+#   3. Run knip for dead code detection
+# Runs at most once every 7 days.
+
+set -euo pipefail
+
+INTERVAL_DAYS=7
+STAMP_FILE="$HOME/.claude/.last-gc"
+PROJECT_ROOT="{{ .chezmoi.workingTree }}"
+
+# --- frequency gate ---
+if [ -f "$STAMP_FILE" ]; then
+    last=$(cat "$STAMP_FILE")
+    now=$(date +%s)
+    elapsed=$(( (now - last) / 86400 ))
+    if [ "$elapsed" -lt "$INTERVAL_DAYS" ]; then
+        exit 0
+    fi
+fi
+
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] [GC] Starting (last run: ${elapsed:-never} days ago)"
+
+# --- 1. Clean old sessions ---
+SESSIONS_DIR="$PROJECT_ROOT/.tmp/sessions"
+if [ -d "$SESSIONS_DIR" ]; then
+    old_count=$(find "$SESSIONS_DIR" -mindepth 1 -maxdepth 1 -type d -mtime +7 2>/dev/null | wc -l)
+    if [ "$old_count" -gt 0 ]; then
+        find "$SESSIONS_DIR" -mindepth 1 -maxdepth 1 -type d -mtime +7 -exec rm -rf {} + 2>/dev/null
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [GC] Removed $old_count old session(s)"
+    fi
+fi
+
+# --- 2. CLAUDE.md path integrity ---
+CLAUDE_MD="$PROJECT_ROOT/home/dot_claude/CLAUDE.md"
+if [ -f "$CLAUDE_MD" ]; then
+    broken=0
+    while IFS= read -r ref_path; do
+        # Resolve relative paths from project root
+        if [[ "$ref_path" == ~/* ]]; then
+            resolved="${HOME}${ref_path#\~}"
+        elif [[ "$ref_path" == \$\{projectRoot\}/* ]]; then
+            resolved="${PROJECT_ROOT}${ref_path#\$\{projectRoot\}}"
+        elif [[ "$ref_path" == @~/* ]]; then
+            resolved="${HOME}${ref_path#@\~}"
+        else
+            continue
+        fi
+        if [ ! -e "$resolved" ]; then
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] [GC] Broken path in CLAUDE.md: $ref_path"
+            broken=$((broken + 1))
+        fi
+    done < <(grep -oE '(\$\{projectRoot\}|~|@~)/[^ )`"'"'"']+' "$CLAUDE_MD" 2>/dev/null || true)
+    if [ "$broken" -eq 0 ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [GC] CLAUDE.md paths: all OK"
+    else
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [GC] CLAUDE.md: $broken broken path(s) found"
+    fi
+fi
+
+# --- 3. knip dead code detection ---
+if [ -f "$PROJECT_ROOT/package.json" ]; then
+    if command -v pnpm &>/dev/null; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [GC] Running knip..."
+        cd "$PROJECT_ROOT"
+        if ! pnpm exec knip --no-progress 2>&1 | tail -20; then
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] [GC] knip reported issues (see above)"
+        else
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] [GC] knip: clean"
+        fi
+    fi
+fi
+
+# --- update stamp ---
+mkdir -p "$(dirname "$STAMP_FILE")"
+date +%s > "$STAMP_FILE"
+
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] [GC] Done"
+{{ end -}}

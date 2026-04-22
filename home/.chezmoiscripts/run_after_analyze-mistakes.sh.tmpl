@@ -1,0 +1,84 @@
+{{ if ne .chezmoi.os "windows" -}}
+#!/bin/bash
+# Analyze accumulated quality logs and LLM reflections to discover
+# custom linter rule candidates and agent weakness patterns.
+# Runs at most once every 30 days.
+
+set -euo pipefail
+
+INTERVAL_DAYS=30
+STAMP_FILE="$HOME/.claude/.last-analyze-mistakes"
+REPORT_FILE="$HOME/.claude/logs/mistake-analysis.md"
+REFLECTIONS="$HOME/.claude/logs/reflections.jsonl"
+QUALITY="$HOME/.claude/logs/quality.jsonl"
+
+# --- frequency gate ---
+if [ -f "$STAMP_FILE" ]; then
+    last=$(cat "$STAMP_FILE")
+    now=$(date +%s)
+    elapsed=$(( (now - last) / 86400 ))
+    if [ "$elapsed" -lt "$INTERVAL_DAYS" ]; then
+        exit 0
+    fi
+fi
+
+# --- prerequisite check ---
+if ! command -v jq &>/dev/null; then
+    exit 0
+fi
+
+has_data=0
+for f in "$REFLECTIONS" "$REFLECTIONS".* "$QUALITY" "$QUALITY".*; do
+    [ -f "$f" ] && { has_data=1; break; }
+done
+if [ "$has_data" -eq 0 ]; then
+    exit 0
+fi
+
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Analyzing mistake patterns (last run: ${elapsed:-never} days ago)"
+
+# --- Stage 1: preventable patterns from reflections ---
+preventable=$(cat "$REFLECTIONS" "$REFLECTIONS".* 2>/dev/null \
+    | jq -r 'select(.reflections) | .reflections[] | select(.preventable_by_lint == true) | "\(.suggested_rule.type)\t\(.suggested_rule.description)\t\(.error_summary)"' 2>/dev/null \
+    | sort | uniq -c | sort -rn) || true
+
+# --- Stage 2: quality-loop error frequency ---
+quality_errors=$(cat "$QUALITY" "$QUALITY".* 2>/dev/null \
+    | jq -r 'select(.source == "quality-loop") | .lint_tool' 2>/dev/null \
+    | sort | uniq -c | sort -rn) || true
+
+# --- count data ---
+reflection_count=$(cat "$REFLECTIONS" "$REFLECTIONS".* 2>/dev/null | wc -l) || reflection_count=0
+quality_count=$(cat "$QUALITY" "$QUALITY".* 2>/dev/null | wc -l) || quality_count=0
+
+# --- generate report ---
+mkdir -p "$(dirname "$REPORT_FILE")"
+cat > "$REPORT_FILE" <<REPORT
+## Mistake Pattern Analysis
+
+Generated: $(date '+%Y-%m-%d %H:%M:%S')
+
+### Data Summary
+
+- reflections.jsonl: ${reflection_count} entries
+- quality.jsonl: ${quality_count} entries
+
+### Preventable Patterns (from reflections)
+
+\`\`\`
+${preventable:-No preventable patterns found.}
+\`\`\`
+
+### Agent Weakness Patterns (from quality-loop)
+
+\`\`\`
+${quality_errors:-No quality-loop errors found.}
+\`\`\`
+REPORT
+
+# --- update stamp ---
+mkdir -p "$(dirname "$STAMP_FILE")"
+date +%s > "$STAMP_FILE"
+
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Mistake analysis written to $REPORT_FILE"
+{{ end -}}
