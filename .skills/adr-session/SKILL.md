@@ -163,22 +163,11 @@ ADR は承認済みです。実装計画を作成しましょう。
 2. テンプレート: この skill の [plan-template.md](references/plan-template.md) を参照
 3. 計画ファイルを `docs/plans/plan-{slug}.md` に保存
 4. ADR の frontmatter に `plan: plan-{slug}.md` を追加
-5. ExitPlanMode → validate-plan-guard hook が検証を強制
+5. plan-review-automation が自動レビューを実行
+6. 人間が `Approval Status: approved` を設定
 ```
 
-#### validation (status: Accepted, plan exists, not validated)
-
-```
-### Validation Session
-
-実装計画が作成済みですが、まだ検証されていません。
-
-1. `/validate-plan` を実行して計画の論理的整合性を検証
-2. 検証が通ったら `<!-- validated -->` マーカーが追加されます
-3. その後、実装に進めます
-```
-
-#### implementation (plan validated or status: InProgress)
+#### implementation (plan approved or status: InProgress)
 
 ```
 ### Implementation Session
@@ -276,7 +265,6 @@ ADR-{NNN} を作成しました: `docs/decisions/adr-{NNN}-{slug}.md`
 | Skill                           | When to Use                                              |
 | ------------------------------- | -------------------------------------------------------- |
 | logic-validator (Task subagent) | ADR 作成・更新後の論理検証（investigation phase 完了時） |
-| `/validate-plan`                | Plan の検証（validation phase）                          |
 | `/session-memo`                 | セッション終了時の記録                                   |
 | `/decompose`                    | 実装タスクの細分化（implementation phase）               |
 | `/execute-plan`                 | 計画に沿った順次実行（implementation phase）             |

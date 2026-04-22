@@ -50,9 +50,7 @@ if status == Complete           → phase: done
 if status == Proposed           → phase: investigation
 if status == Accepted:
   if no plan                    → phase: planning
-  if plan exists:
-    if plan has <!-- validated --> → phase: implementation
-    else                        → phase: validation
+  if plan exists                → phase: implementation
 if status == InProgress         → phase: implementation
 ```
 
@@ -60,7 +58,6 @@ if status == InProgress         → phase: implementation
 | ---------------- | ------------------- | ------ | --------- | --------------------------------------------------------- |
 | `investigation`  | Proposed            | -      | -         | Research, fill ADR content, validate with logic-validator |
 | `planning`       | Accepted            | none   | -         | Create plan in `docs/plans/`, enter Plan Mode             |
-| `validation`     | Accepted            | exists | no        | Run `/validate-plan` to add `<!-- validated -->`          |
 | `implementation` | Accepted/InProgress | exists | yes       | Follow plan, use `/execute-plan` or `/decompose`          |
 | `done`           | Complete            | -      | -         | No action needed                                          |
 
@@ -119,15 +116,9 @@ In Plan header:
 関連 ADR: [ADR-NNN](../decisions/adr-NNN-{slug}.md)
 ```
 
-### Plan Validation Marker
+### Plan Review
 
-Added by `/validate-plan` or logic-validator at the end of the plan file:
-
-```markdown
-<!-- validated -->
-```
-
-This marker is NOT included in the plan template. It is added only after successful validation.
+Plans are automatically reviewed by `plan-review-automation` hook when `plan.md` is edited. The hook selects reviewers based on content and updates `Review Status` in the plan file.
 
 ## Error Handling
 
@@ -165,8 +156,8 @@ Session A: Investigation
 Session B: Planning
   1. /adr-session NNN → See phase guidance
   2. Create plan (Plan Mode or manually)
-  3. /validate-plan → logic-validator validates plan
-  4. <!-- validated --> marker added to plan
+  3. plan-review-automation → auto-review on plan.md edit
+  4. Human sets Approval Status: approved
   5. Update status: Accepted → InProgress (optional, auto-detected by phase logic)
 
 Session C: Implementation
