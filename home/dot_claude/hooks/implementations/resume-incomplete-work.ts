@@ -66,6 +66,10 @@ function looksLikeCompletion(message: string): boolean {
     /if you have.*question/,
     /ご確認ください/,
     /please review/,
+    /しました/,
+    /済み/,
+    /残作業/,
+    /remaining/,
   ];
 
   return completionSignals.some((pattern) => pattern.test(lastLines));
