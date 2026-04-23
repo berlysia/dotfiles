@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
-  "model": "opus",
+  "model": "claude-opus-4-6-max-2025-09-25",
   "statusLine": {
     "type": "command",
     "command": "bunx -y ccstatusline@latest",
