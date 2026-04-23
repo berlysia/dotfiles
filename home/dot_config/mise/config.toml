@@ -1,7 +1,7 @@
 [settings]
 idiomatic_version_file_enable_tools = ["node"]
 experimental = true
-install_before = "3d"
+install_before = "7d"
 
 [tools]
 actionlint = "1.7.11"
