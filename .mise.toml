@@ -1,6 +1,9 @@
 # mise configuration for dotfiles project
 # https://mise.jdx.dev/configuration.html
 
+[settings]
+install_before = "7d"
+
 [tools]
 # Required for Codex config validation scripts
 dasel = "latest"
