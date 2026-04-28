@@ -12,6 +12,7 @@ set -euo pipefail
 TARGET_FILE="$1"
 TEMPLATE_CONTENT="$2"
 MERGE_SCRIPT="$3"
+WORKING_TREE="$4"
 TEMP_TOML=$(mktemp /tmp/codex-tpl.XXXXXX.toml)
 trap 'rm -f "$TEMP_TOML"' EXIT
 
@@ -22,9 +23,11 @@ if ! command -v bun &>/dev/null || [ ! -f "$MERGE_SCRIPT" ]; then
     exit 0
 fi
 
+# cd to working tree so mise can resolve .mise.toml and find tools like dasel
+cd "$WORKING_TREE"
 bun run "$MERGE_SCRIPT" "$TARGET_FILE" "$TEMP_TOML"
 ` -}}
-  {{- output "bash" "-c" $shellScript "--" $targetFile $templateContent $mergeScript -}}
+  {{- output "bash" "-c" $shellScript "--" $targetFile $templateContent $mergeScript .chezmoi.workingTree -}}
 {{- else -}}
   {{- /* Target file doesn't exist, output template as-is */ -}}
   {{- $templateContent -}}
