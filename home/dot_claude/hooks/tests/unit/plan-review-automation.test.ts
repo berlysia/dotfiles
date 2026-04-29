@@ -4,9 +4,11 @@ import { deepStrictEqual, ok, strictEqual } from "node:assert";
 import { describe, it } from "node:test";
 import {
   buildRecommendation,
+  buildSummaryReminder,
   computePlanHash,
   extractLatestReviewMarker,
   extractTargetPath,
+  isReviewCompletePendingApproval,
   isPlanFile,
   normalizeForHash,
   REVIEWER_CATALOG,
@@ -306,5 +308,94 @@ describe("buildRecommendation with dynamic reviewers", () => {
     ok(result.includes("1. subagent_type: logic-validator"));
     ok(result.includes("2. subagent_type: scope-justification-reviewer"));
     ok(result.includes("3. subagent_type:"));
+  });
+});
+
+describe("isReviewCompletePendingApproval", () => {
+  function makePlan(opts: {
+    planStatus?: string;
+    reviewStatus?: string;
+    approvalStatus?: string;
+    markerVerdict?: string;
+  }): {
+    content: string;
+    hash: string;
+    marker: { verdict: string; hash: string } | null;
+  } {
+    const lines = [
+      "## Plan",
+      "Refactor module A",
+      "",
+      "## Approval",
+      `- Plan Status: ${opts.planStatus ?? "complete"}`,
+      `- Review Status: ${opts.reviewStatus ?? "pass"}`,
+      `- Approval Status: ${opts.approvalStatus ?? "pending"}`,
+    ];
+    const content = lines.join("\n");
+    const hash = computePlanHash(content);
+    const marker =
+      opts.markerVerdict != null ? { verdict: opts.markerVerdict, hash } : null;
+    return { content, hash, marker };
+  }
+
+  it("returns true when plan is complete, review passed, and not yet approved", () => {
+    const { content, hash, marker } = makePlan({ markerVerdict: "pass" });
+    strictEqual(isReviewCompletePendingApproval(content, hash, marker), true);
+  });
+
+  it("returns false when plan is not complete", () => {
+    const { content, hash, marker } = makePlan({
+      planStatus: "draft",
+      markerVerdict: "pass",
+    });
+    strictEqual(isReviewCompletePendingApproval(content, hash, marker), false);
+  });
+
+  it("returns false when already approved", () => {
+    const { content, hash, marker } = makePlan({
+      approvalStatus: "approved",
+      markerVerdict: "pass",
+    });
+    strictEqual(isReviewCompletePendingApproval(content, hash, marker), false);
+  });
+
+  it("returns false when marker verdict is not pass", () => {
+    const { content, hash, marker } = makePlan({ markerVerdict: "needs-work" });
+    strictEqual(isReviewCompletePendingApproval(content, hash, marker), false);
+  });
+
+  it("returns false when marker hash does not match", () => {
+    const { content, hash } = makePlan({ markerVerdict: "pass" });
+    const staleMarker = { verdict: "pass", hash: "stale-hash" };
+    strictEqual(
+      isReviewCompletePendingApproval(content, hash, staleMarker),
+      false,
+    );
+  });
+
+  it("returns false when marker is null", () => {
+    const { content, hash } = makePlan({});
+    strictEqual(isReviewCompletePendingApproval(content, hash, null), false);
+  });
+});
+
+describe("buildSummaryReminder", () => {
+  it("includes MANDATORY instruction and Executive Summary template", () => {
+    const result = buildSummaryReminder("/tmp/sessions/abc/plan.md");
+    ok(result.includes("MANDATORY"));
+    ok(result.includes("Executive Summary"));
+    ok(result.includes("/tmp/sessions/abc/plan.md"));
+  });
+
+  it("includes all required fields from workflow.md template", () => {
+    const result = buildSummaryReminder("/tmp/plan.md");
+    ok(result.includes("**Goal**"));
+    ok(result.includes("**Proposed Approach**"));
+    ok(result.includes("**Scope**"));
+    ok(result.includes("**Key Decisions**"));
+    ok(result.includes("**Risks / Unknowns**"));
+    ok(result.includes("**Review Status**"));
+    ok(result.includes("**Open Questions**"));
+    ok(result.includes("**Next Action**"));
   });
 });
