@@ -11,6 +11,7 @@ import "../types/tool-schemas.ts";
 interface CacheState {
   planHash: string;
   recommendedAt: string;
+  summaryRemindedHash?: string;
 }
 
 interface AutoReviewMarker {
@@ -163,6 +164,9 @@ const REVIEWER_CATALOG: ReviewerRule[] = [
   },
 ];
 
+const PLAN_STATUS_COMPLETE_REGEX = /^- Plan Status:\s*complete\s*$/m;
+const APPROVAL_STATUS_APPROVED_REGEX = /^- Approval Status:\s*approved\s*$/m;
+
 const TARGET_TOOL_NAMES = new Set([
   "Write",
   "Edit",
@@ -204,11 +208,44 @@ const hook = defineHook({
     const { reviewCache: cachePath } = resolveWorkflowPaths(planDir);
 
     // Skip if already reviewed for this content hash
+    const cache = readCache(cachePath);
     const canSkip =
       (existingMarker?.hash === planHash &&
         existingMarker.verdict.length > 0) ||
-      readCache(cachePath)?.planHash === planHash;
+      cache?.planHash === planHash;
     if (canSkip) {
+      if (
+        isReviewCompletePendingApproval(
+          planContent,
+          planHash,
+          existingMarker,
+        ) &&
+        cache?.summaryRemindedHash !== planHash
+      ) {
+        writeFileSync(
+          cachePath,
+          JSON.stringify(
+            {
+              planHash: cache?.planHash ?? planHash,
+              recommendedAt: cache?.recommendedAt ?? new Date().toISOString(),
+              summaryRemindedHash: planHash,
+            } satisfies CacheState,
+            null,
+            2,
+          ),
+          "utf-8",
+        );
+
+        return context.json({
+          event: "PostToolUse",
+          output: {
+            hookSpecificOutput: {
+              hookEventName: "PostToolUse",
+              additionalContext: buildSummaryReminder(absoluteTargetPath),
+            },
+          },
+        });
+      }
       return context.success({});
     }
 
@@ -298,6 +335,45 @@ function buildRecommendation(
     `- Append \`<!-- auto-review: verdict=...; hash=...; at=...; reviewers=${reviewersValue} -->\` marker`,
   );
   return lines.join("\n");
+}
+
+function isReviewCompletePendingApproval(
+  planContent: string,
+  planHash: string,
+  marker: AutoReviewMarker | null,
+): boolean {
+  if (!marker || marker.verdict !== "pass" || marker.hash !== planHash) {
+    return false;
+  }
+  if (!PLAN_STATUS_COMPLETE_REGEX.test(planContent)) {
+    return false;
+  }
+  if (APPROVAL_STATUS_APPROVED_REGEX.test(planContent)) {
+    return false;
+  }
+  return true;
+}
+
+function buildSummaryReminder(planPath: string): string {
+  return [
+    "[plan-review-automation] Review complete (verdict=pass). MANDATORY: Present Executive Summary to user before requesting approval.",
+    "",
+    `Plan: ${planPath}`,
+    "",
+    "You MUST present the following Executive Summary format in your next response to the user:",
+    "",
+    "## Executive Summary (Review Request)",
+    "- **Goal**: <plan.md の目的を 1 行で>",
+    "- **Proposed Approach**: <採用する方針の本質を 1-3 行で>",
+    "- **Scope**: <変更予定ファイル/モジュールを最大5件>",
+    "- **Key Decisions**: <採用した設計判断と、却下した代替案を1-2行ずつ>",
+    "- **Risks / Unknowns**: <既知リスク・未検証の前提・影響範囲の広い箇所>",
+    "- **Review Status**: verdict / reviewers / hash from auto-review marker",
+    "- **Open Questions**: <ユーザー判断を仰ぎたい点（なければ N/A）>",
+    "- **Next Action**: `Approval Status: approved` にしてください / 追加修正を依頼してください",
+    "",
+    "Fill each field from plan.md content. Do NOT skip any field (use N/A if not applicable).",
+  ].join("\n");
 }
 
 function getWorkingDirectory(cwd: string | undefined): string {
@@ -439,9 +515,11 @@ function readCache(path: string): CacheState | null {
 
 export {
   buildRecommendation,
+  buildSummaryReminder,
   computePlanHash,
   extractTargetPath,
   extractLatestReviewMarker,
+  isReviewCompletePendingApproval,
   isPlanFile,
   normalizeForHash,
   REVIEWER_CATALOG,
