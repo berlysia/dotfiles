@@ -55,6 +55,9 @@
 1. 調査: 対象コードを深く読み `$DOCUMENT_WORKFLOW_DIR/research.md` を作成
 2. 計画: `$DOCUMENT_WORKFLOW_DIR/plan.md` に方針・対象ファイル・TODO・リスクを書く
 3. 注釈反復: ユーザー注釈を反映し、都度「don't implement yet」を明示
+   - コードベース探索ゲート: 質問前に、コードを読めば答えが得られる不明点は自力で解消し、事実と推奨を提示する。ユーザーに聞くのはコードだけでは判断できない点のみ
+   - 依存質問の逐次化: 前の回答に依存する質問は同じラウンドに含めず、次ラウンドで聞く
+   - 推奨理由の明示: 選択肢を提示する際は推奨とその理由を1行で明示する
 4. 完成: `$DOCUMENT_WORKFLOW_DIR/plan.md` の `## Approval` で `Plan Status: complete` にする
 5. 自動レビュー: `plan-review-automation` が plan.md の内容を分析し、`logic-validator`（必須）+ コンテンツベースで選定した追加レビュアー（最大3つ）を並列実行推奨。`Review Status` と `<!-- auto-review: verdict=...; hash=...; reviewers=... -->` を更新する
 6. 承認: 人間が `Approval Status: approved` にする
