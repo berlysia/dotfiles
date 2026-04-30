@@ -117,7 +117,15 @@
       "Read(dot_claude/hooks/**)",
       "Read(~/.local/share/chezmoi/**)",
       "Edit(~/.claude/plans/**)",
-      "Write(~/.claude/plans/**)"
+      "Write(~/.claude/plans/**)",
+      "Bash(npm view *)",
+      "Bash(apm search *)",
+      "Bash(apm list *)",
+      "Bash(apm deps *)",
+      "Bash(apm --help)",
+      "Bash(apm --version)",
+      "mcp__readability__read_url_content_as_markdown",
+      "mcp__context7__resolve-library-id"
     ],
     "deny": [
       "Edit(~/.claude/settings*.json)",
