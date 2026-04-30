@@ -391,6 +391,7 @@ describe("buildSummaryReminder", () => {
     const result = buildSummaryReminder("/tmp/plan.md");
     ok(result.includes("**Goal**"));
     ok(result.includes("**Proposed Approach**"));
+    ok(result.includes("**Experience Delta**"));
     ok(result.includes("**Scope**"));
     ok(result.includes("**Key Decisions**"));
     ok(result.includes("**Risks / Unknowns**"));

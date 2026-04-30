@@ -368,6 +368,7 @@ function buildSummaryReminder(planPath: string): string {
     "## Executive Summary (Review Request)",
     "- **Goal**: <plan.md の目的を 1 行で>",
     "- **Proposed Approach**: <採用する方針の本質を 1-3 行で>",
+    "- **Experience Delta**: <この変更で体験がどう変わるか。変更前→変更後の具体的な違いを 1-2 行で>",
     "- **Scope**: <変更予定ファイル/モジュールを最大5件>",
     "- **Key Decisions**: <採用した設計判断と、却下した代替案を1-2行ずつ>",
     "- **Risks / Unknowns**: <既知リスク・未検証の前提・影響範囲の広い箇所>",
