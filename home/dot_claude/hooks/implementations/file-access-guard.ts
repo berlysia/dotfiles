@@ -63,7 +63,13 @@ const hook = defineHook({
       const allowPatterns = getAllowPatterns(settingsFiles, tool_name);
 
       // Extract file paths from tool input
-      const filePaths = extractFilePaths(tool_name, tool_input);
+      if (typeof tool_input !== "object" || tool_input === null) {
+        return context.success({});
+      }
+      const filePaths = extractFilePaths(
+        tool_name,
+        tool_input as Record<string, unknown>,
+      );
 
       // Check each path
       for (const filePath of filePaths) {
