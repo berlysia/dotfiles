@@ -1,0 +1,34 @@
+{{ if ne .chezmoi.os "windows" -}}
+#!/bin/bash
+# Install Claude Code skills via APM
+# Hash: {{ include "dot_apm/apm.yml" | sha256sum }}
+
+set -euo pipefail
+
+log() {
+    local level="${2:-INFO}"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $1"
+}
+
+if ! command -v apm &> /dev/null; then
+    log "apm not found. Skipping skill installation." "WARNING"
+    log "Install APM: curl -sSL https://aka.ms/apm-unix | sh" "INFO"
+    exit 0
+fi
+
+if [ ! -f "$HOME/.apm/apm.yml" ]; then
+    log "~/.apm/apm.yml not found. Run 'chezmoi apply' again." "WARNING"
+    exit 0
+fi
+
+log "Starting Claude Code skill installation via APM..."
+
+if apm install -g 2>&1; then
+    log "APM install completed successfully" "SUCCESS"
+else
+    log "APM install failed" "ERROR"
+    exit 1
+fi
+
+log "Skill installation completed"
+{{ end -}}

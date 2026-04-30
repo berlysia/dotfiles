@@ -15,12 +15,12 @@ mkdir -p "$CLAUDE_SKILLS" "$CODEX_SKILLS"
 # Sync .skills to ~/.claude/skills and ~/.codex/skills
 echo "Syncing handcrafted skills from .skills..."
 
-# Build exclude filter for external skills
+# Build exclude filter for APM-managed skills (read directly from lockfile)
 EXCLUDE_ARGS=()
-if [ -f "$HOME/.claude/.external-skills-installed" ]; then
+if [ -f "$HOME/.apm/apm.lock.yaml" ]; then
   while IFS= read -r skill_name; do
     [ -n "$skill_name" ] && EXCLUDE_ARGS+=(--exclude="$skill_name")
-  done < "$HOME/.claude/.external-skills-installed"
+  done < <(grep '^  - \.claude/skills/' "$HOME/.apm/apm.lock.yaml" | sed 's|^  - \.claude/skills/||')
 fi
 
 # Also exclude private skill names so the --delete pass below doesn't wipe them

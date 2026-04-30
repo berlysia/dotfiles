@@ -138,12 +138,12 @@ This project uses a two-layer approach for managing Claude Code skills:
 - Used by both Claude Code and Codex
 - Always preserved during updates
 
-#### 2. External Skills (`home/.chezmoidata/claude_skills.yaml`)
+#### 2. External Skills (`home/dot_apm/apm.yml`)
 
-- Declaratively managed in YAML configuration
-- Installed via `npx skills add` from GitHub repositories
-- Tracked in `.claude/.external-skills-installed`
-- Auto-removed when deleted from YAML (handcrafted skills are protected)
+- Declaratively managed in APM manifest (`apm.yml`)
+- Installed via `apm install -g` from GitHub repositories
+- Tracked via `apm.lock.yaml`
+- Auto-removed when deleted from manifest (handcrafted skills are protected)
 
 Both layers coexist in `~/.claude/skills/` directory.
 

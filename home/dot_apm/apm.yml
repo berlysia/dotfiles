@@ -1,10 +1,13 @@
-claude_skills:
-  repositories:
-    - repo: vercel-labs/agent-skills
+name: berlysia-dotfiles
+version: 1.0.0
+target: claude
+dependencies:
+  apm:
+    - git: vercel-labs/agent-skills
       skills:
-        - vercel-react-best-practices
+        - react-best-practices
         - web-design-guidelines
-    - repo: anthropics/skills
+    - git: anthropics/skills
       skills:
         - doc-coauthoring
         - skill-creator
@@ -14,20 +17,18 @@ claude_skills:
         - pdf
         - frontend-design
         - webapp-testing
-    - repo: berlysia/ralf-project
+    - git: berlysia/ralf-project
       skills:
         - proposal-add
         - proposal-complete
         - proposal-list
-    - repo: berlysia/shiori
+    - git: berlysia/shiori
       skills:
         - shiori-adopt
         - shiori-guide
         - shiori-triage
         - shiori-workflow
-    - repo: yoshiko-pg/difit
+    - git: yoshiko-pg/difit
       skills:
         - difit-review
-    - repo: mizchi/skills
-      skills:
-        - empirical-prompt-tuning
+

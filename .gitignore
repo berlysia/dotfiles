@@ -37,3 +37,7 @@ home/dot_claude/**/*.js
 
 # Backup files
 *.backup-*
+
+
+# APM dependencies
+apm_modules/
