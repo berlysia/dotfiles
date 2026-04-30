@@ -44,14 +44,14 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
 ### Claude Code Skills Management
 
 - **手作りスキル**: `${projectRoot}/.skills/` で一元管理、`chezmoi apply` で `~/.claude/skills/` と `~/.codex/skills/` に rsync 同期
-- **外部スキル**: `home/.chezmoidata/claude_skills.yaml` で宣言的管理、`npx skills add` 経由でインストール
-  - `.claude/.external-skills-installed` で追跡、yaml から削除したスキルは自動削除（手作りスキルは保護）
+- **外部スキル**: `home/dot_apm/apm.yml` で宣言的管理、APM (`apm install -g`) 経由でインストール
+  - `apm.lock.yaml` で追跡、手作りスキルとの共存は rsync 除外で維持
 
 #### 変更手順
 
-1. `home/.chezmoidata/claude_skills.yaml` を編集（追加/削除）
+1. `home/dot_apm/apm.yml` を編集（追加/削除）
 2. `chezmoi apply` を実行
-3. スキル検索: `npx skills find <query>`
+3. スキル検索: `apm search <query>`
 
 ### Hooks Development
 
