@@ -60,8 +60,9 @@
    - 推奨理由の明示: 選択肢を提示する際は推奨とその理由を1行で明示する
 4. 完成: `$DOCUMENT_WORKFLOW_DIR/plan.md` の `## Approval` で `Plan Status: complete` にする
 5. 自動レビュー: `plan-review-automation` が plan.md の内容を分析し、`logic-validator`（必須）+ コンテンツベースで選定した追加レビュアー（最大3つ）を並列実行推奨。`Review Status` と `<!-- auto-review: verdict=...; hash=...; reviewers=... -->` を更新する
-6. 承認: 人間が `Approval Status: approved` にする
-7. 実装: `Plan Status: complete` + `Review Status: pass` + `Approval Status: approved` + hash 一致を満たした後に着手し、タスク完了ごとに `$DOCUMENT_WORKFLOW_DIR/plan.md` を更新
+6. インテント整合性トリアージ: 全レビュー指摘を元のオーダーの本義と突き合わせ、意図を歪める指摘を除外する（詳細は後述）
+7. 承認: 人間が `Approval Status: approved` にする
+8. 実装: `Plan Status: complete` + `Review Status: pass` + `Approval Status: approved` + hash 一致を満たした後に着手し、タスク完了ごとに `$DOCUMENT_WORKFLOW_DIR/plan.md` を更新
 ```
 
 **CRITICAL: 承認は人間のみが行う。** ユーザーが明示的に「approve」「承認」と発言するか、`/execute-plan` を指示しない限り、Claudeは `Approval Status: approved` に変更したり、実装へ着手してはならない。
@@ -71,14 +72,31 @@
 - `Write/Edit/MultiEdit/NotebookEdit/Bash` の実装系書き込みは `document-workflow-guard` が制御する
 - `document-workflow-guard` は enforce モードで動作し、plan 未承認の実装をブロックする
 
+### Intent Alignment Triage (Step 6, MANDATORY)
+
+自動レビュー（step 5）完了後、ユーザーに結果を提示する前に `/intent-alignment-triage` を実行する。
+
+**目的**: レビュアーエージェントは各専門領域で最適化するため、「元のオーダーの本義を歪めてスコープを縮小する」指摘を混入させることがある。このフェーズで全指摘を元のオーダーと突き合わせ、意図を歪める指摘を除外する。
+
+**フロー**:
+
+1. 自動レビューの全指摘を収集
+2. `/intent-alignment-triage` を実行し、各指摘を aligned / neutral / divergent に分類
+3. divergent 指摘を除外した上で Review Status を再評価
+4. トリアージ結果を `<!-- intent-triage: adopted=N; excluded=M; at=ISO8601 -->` マーカーとして plan.md に追記
+5. Executive Summary にトリアージ結果を含めてユーザーに提示
+
+**禁止**: トリアージを省略して自動レビュー結果をそのままユーザーに提示すること
+
 ### Executive Summary (MANDATORY on Review Request)
 
-`$DOCUMENT_WORKFLOW_DIR/plan.md` を完成させてユーザーに承認レビューを依頼する時点（step 4 完了後、step 5 の自動レビュー結果が揃った段階）で、**エグゼクティブサマリー** をユーザーへの応答の冒頭に必ず提示する。目的は、ユーザーが plan.md 全文や会話ログを辿らずに、承認可否を判断するための要点を一発で把握できるようにすること。
+`$DOCUMENT_WORKFLOW_DIR/plan.md` を完成させてユーザーに承認レビューを依頼する時点（step 4 完了後、step 5-6 の自動レビュー・トリアージが完了した段階）で、**エグゼクティブサマリー** をユーザーへの応答の冒頭に必ず提示する。目的は、ユーザーが plan.md 全文や会話ログを辿らずに、承認可否を判断するための要点を一発で把握できるようにすること。
 
 **提示タイミング**:
 
 - plan.md の `Plan Status: complete` にした直後
 - `plan-review-automation` が完了し、`Review Status` と `<!-- auto-review: verdict=...; reviewers=... -->` が plan.md に反映された後
+- `/intent-alignment-triage` が完了し、divergent 指摘の除外が反映された後
 - ユーザーに `Approval Status: approved` を依頼する応答の先頭
 
 **必須フィールド**（欠落させず、該当なしは `N/A` と明記）:
