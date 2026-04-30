@@ -311,15 +311,36 @@ const hook = defineHook({
       });
     }
 
-    // deny or parse-error path: surface the verdict through the UI
-    const { claudeMessage, userMessage } = buildUserMessage(result, input);
-    const interrupt =
-      result.kind === "parse-error" || result.confidence === "high";
+    // parse-error: LLM could not produce a valid verdict — fall through to
+    // user prompt instead of auto-denying (previous behavior caused 27+ false
+    // denies on legitimate commands like git commit, chezmoi apply, apm install)
+    if (result.kind === "parse-error") {
+      logDecision(
+        tool_name,
+        "ask",
+        "LLM parse-error (Layer 2b) — deferring to user",
+        session_id,
+        tool_input,
+      );
 
-    const decisionReason =
-      result.kind === "parse-error"
-        ? `LLM parse-error (Layer 2b, interrupt=${interrupt})`
-        : `LLM denied (Layer 2b, confidence=${result.confidence}, interrupt=${interrupt}): ${result.reason}`;
+      try {
+        const { config } = await createAudioEngine();
+        await sendSystemNotification(
+          `[LLM] Parse-error, deferring: ${tool_name}`,
+          config,
+        );
+      } catch {
+        // Notification failure should not block the response
+      }
+
+      return context.success({});
+    }
+
+    // deny path: surface the verdict through the UI
+    const { claudeMessage, userMessage } = buildUserMessage(result, input);
+    const interrupt = result.confidence === "high";
+
+    const decisionReason = `LLM denied (Layer 2b, confidence=${result.confidence}, interrupt=${interrupt}): ${result.reason}`;
 
     logDecision(tool_name, "deny", decisionReason, session_id, tool_input);
 
@@ -327,12 +348,8 @@ const hook = defineHook({
       const [, footer] = await Promise.all([
         (async () => {
           const { config } = await createAudioEngine();
-          const summary =
-            result.kind === "parse-error"
-              ? "automated review unavailable"
-              : result.reason;
           await sendSystemNotification(
-            `[LLM] Denied: ${tool_name} - ${summary}`,
+            `[LLM] Denied: ${tool_name} - ${result.reason}`,
             config,
           );
         })(),

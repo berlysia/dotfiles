@@ -95,10 +95,10 @@ const SAFE_BASH_PATTERNS = [
   /^(ls|pwd|echo|cat|head|tail|wc|file|stat|which|type|whereis|basename|dirname|realpath)\b/,
   // Read-only comparison / delay (no side effects)
   /^(diff|cmp|sleep)\b/,
-  // Git read-only operations (with optional -C <path> prefix)
-  /^git\s+(-C\s+\S+\s+)?(status|log|diff|branch|remote|show|describe|tag|rev-parse|config\s+--get|ls-files|shortlog|blame)\b/,
-  // Git write operations (common safe dev workflow, with optional -C <path> prefix)
-  /^git\s+(-C\s+\S+\s+)?(add|commit|stash|checkout|switch|fetch|pull|cherry-pick|rebase|merge)\b/,
+  // Git read-only operations (with optional -C <path> / -c key=value prefixes)
+  /^git\s+(-[cC]\s+\S+\s+)*(status|log|diff|branch|remote|show|describe|tag|rev-parse|config\s+--get|ls-files|shortlog|blame)\b/,
+  // Git local write operations (with optional -C <path> / -c key=value prefixes)
+  /^git\s+(-[cC]\s+\S+\s+)*(add|commit|stash|checkout|switch|fetch|pull|cherry-pick|rebase|merge|rm)\b/,
   // Package information
   /^(npm|pnpm|yarn|bun)\s+(ls|list|outdated|view|info|why|explain)\b/,
   // Development tools (no side effects)
@@ -149,6 +149,8 @@ const SAFE_BASH_PATTERNS = [
   /^(npx|pnpx|bunx)\s+(--no\s+)?(vitest|jest|prettier|eslint|oxlint|oxfmt|tsc|tsgo|knip|stylelint|biome)\b/,
   // Git worktree management (custom script)
   /^git-worktree-(create|cleanup)\b/,
+  // APM (skill package manager, local operations only)
+  /^apm\s+(install|search|pack|deps|list|info|update|remove|uninstall|--help|--version)\b/,
 ];
 
 /**
@@ -178,10 +180,10 @@ const DANGEROUS_PATTERNS = [
 
 /**
  * Narrow prefilter for the project-scope-safe path. Only commands that LOOK
- * like the three over-rejected shapes (rm -rf, chmod +x, or <path>.sh) are
- * eligible for further inspection.
+ * like the four over-rejected shapes (rm -rf, rm [-f], chmod +x, or <path>.sh)
+ * are eligible for further inspection.
  */
-const PREFILTER_REGEX = /^(rm\s+-rf|chmod\s+\+x|\S+\.sh(\s|$))/;
+const PREFILTER_REGEX = /^(rm\s+-rf|rm\s+(-f\s+)?\S|chmod\s+\+x|\S+\.sh(\s|$))/;
 
 /**
  * Shell-safe character whitelist. Any character outside this set (including
@@ -253,12 +255,17 @@ export function isProjectScopeSafe(
   let allowlist: readonly string[] = [];
 
   const rmMatch = command.match(/^rm\s+-rf\s+(\S+)\s*$/);
+  const rmSingleMatch = !rmMatch && command.match(/^rm\s+(-f\s+)?(\S+)\s*$/);
   const chmodMatch = command.match(/^chmod\s+\+x\s+(\S+)\s*$/);
   const scriptMatch = command.match(/^(\S+\.sh)(?:\s|$)/);
 
   if (rmMatch) {
     target = rmMatch[1] ?? null;
     allowlist = RM_RF_ALLOWED_DIRS;
+  } else if (rmSingleMatch) {
+    target = rmSingleMatch[2] ?? null;
+    // Single-file rm only needs cwd containment, no subdirectory restriction
+    allowlist = [];
   } else if (chmodMatch) {
     target = chmodMatch[1] ?? null;
     allowlist = CHMOD_X_ALLOWED_DIRS;

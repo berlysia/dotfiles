@@ -93,12 +93,19 @@ describe("permission-auto-approve.ts hook behavior", () => {
       "git cherry-pick abc123",
       "git rebase main",
       "git merge feature",
+      "git rm src/old-file.ts",
       // Git with -C <path> prefix
       "git -C /home/user/project status",
       "git -C /home/user/project log --oneline -5",
       "git -C /home/user/project diff",
       "git -C /home/user/project add .",
       "git -C /home/user/project commit -m 'test'",
+      "git -C /home/user/project rm old-file.ts",
+      // Git with -c key=value prefix (config override)
+      "git -c commit.gpgsign=false commit -m 'test'",
+      "git -c commit.gpgsign=false pull --rebase",
+      "git -c commit.gpgsign=false rebase --continue",
+      "git -C /home/user/project -c core.autocrlf=false add .",
       // Safe directory/file creation
       "mkdir -p src/components",
       "mkdir dist",
@@ -210,6 +217,14 @@ describe("permission-auto-approve.ts hook behavior", () => {
       "dpkg -l fonts-noto*",
       "dpkg -L fonts-noto-cjk",
       "dpkg -s fonts-noto-cjk",
+      // APM (skill package manager)
+      "apm install -g mizchi/skills/empirical-prompt-tuning",
+      "apm search react",
+      "apm pack --help",
+      "apm deps list",
+      "apm deps info --help",
+      "apm install --help",
+      "apm --version",
     ];
 
     for (const cmd of safeCommands) {
@@ -334,16 +349,17 @@ describe("permission-auto-approve.ts hook behavior", () => {
       // Complex compound commands (need LLM evaluation)
       // Note: "cd /tmp && cat > test.js << 'EOF'..." now matches after cd normalization
       // because `cat` pattern can't distinguish read vs write redirection (known limitation)
-      // Python with arbitrary code
+      // Python with arbitrary code (can execute destructive operations)
       "python3 -c 'import os; os.remove(\"/tmp/test\")'",
       // curl to remote (not localhost)
       "curl -s https://example.com/api | jq .",
       // pnpm --filter exec (runs arbitrary commands)
       "pnpm --filter @scope/pkg exec node script.mjs",
-      // git push (remote side effects)
-      "git push origin main",
       // docker (container operations)
       "docker build .",
+      // sqlite3 (can modify/delete data)
+      "sqlite3 data/app.db 'DELETE FROM users'",
+      "sqlite3 data/app.db 'SELECT * FROM users'",
     ];
 
     for (const cmd of uncertainCommands) {
@@ -727,6 +743,46 @@ describe("isProjectScopeSafe", () => {
     });
   });
 
+  describe("rm (single-file, no -r flag)", () => {
+    it("allows rm of relative project file", () => {
+      const result = isProjectScopeSafe("rm src/old-file.ts", cwd);
+      deepStrictEqual(result, { safe: true, source: "project-scope-safe" });
+    });
+
+    it("allows rm -f of relative project file", () => {
+      const result = isProjectScopeSafe("rm -f src/old-file.ts", cwd);
+      deepStrictEqual(result, { safe: true, source: "project-scope-safe" });
+    });
+
+    it("allows rm of absolute project file within cwd", () => {
+      const result = isProjectScopeSafe(
+        "rm /home/user/project/src/old-file.ts",
+        cwd,
+      );
+      deepStrictEqual(result, { safe: true, source: "project-scope-safe" });
+    });
+
+    it("rejects rm of file outside cwd", () => {
+      const result = isProjectScopeSafe("rm /tmp/secret.txt", cwd);
+      deepStrictEqual(result, { safe: false, reason: "outside-cwd" });
+    });
+
+    it("rejects rm with shell composition", () => {
+      const result = isProjectScopeSafe("rm src/file.ts && echo done", cwd);
+      deepStrictEqual(result, { safe: false, reason: "shell-composition" });
+    });
+
+    it("rejects rm with glob pattern", () => {
+      const result = isProjectScopeSafe("rm src/*.ts", cwd);
+      deepStrictEqual(result, { safe: false, reason: "shell-composition" });
+    });
+
+    it("rejects rm escaping cwd via ..", () => {
+      const result = isProjectScopeSafe("rm ../escape.txt", cwd);
+      deepStrictEqual(result, { safe: false, reason: "outside-cwd" });
+    });
+  });
+
   describe("<path>.sh invocation", () => {
     it("allows .tmp/ script execution with args", () => {
       const result = isProjectScopeSafe(".tmp/collect.sh berlysia.net", cwd);
@@ -779,6 +835,34 @@ describe("staticRuleEngine - known over-rejection cases (integration)", () => {
       session_id: "test",
       tool_name: "Bash",
       tool_input: { command: "chmod +x .tmp/analyze.sh" },
+      cwd,
+    });
+    deepStrictEqual(result, {
+      behavior: "allow",
+      source: "project-scope-safe",
+    });
+  });
+
+  it("allows rm of project file via project-scope-safe", () => {
+    const result = staticRuleEngine({
+      session_id: "test",
+      tool_name: "Bash",
+      tool_input: {
+        command: "rm /home/user/project/home/.chezmoidata/claude_skills.yaml",
+      },
+      cwd,
+    });
+    deepStrictEqual(result, {
+      behavior: "allow",
+      source: "project-scope-safe",
+    });
+  });
+
+  it("allows rm -f of project file via project-scope-safe", () => {
+    const result = staticRuleEngine({
+      session_id: "test",
+      tool_name: "Bash",
+      tool_input: { command: "rm -f src/deprecated.ts" },
       cwd,
     });
     deepStrictEqual(result, {
