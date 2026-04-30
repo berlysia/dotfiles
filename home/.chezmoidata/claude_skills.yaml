@@ -28,3 +28,6 @@ claude_skills:
     - repo: yoshiko-pg/difit
       skills:
         - difit-review
+    - repo: mizchi/skills
+      skills:
+        - empirical-prompt-tuning
