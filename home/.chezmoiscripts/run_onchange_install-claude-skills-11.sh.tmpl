@@ -21,6 +21,22 @@ if [ ! -f "$HOME/.apm/apm.yml" ]; then
     exit 0
 fi
 
+# Migration: remove pre-existing skill directories that APM cannot overwrite
+if [ ! -f "$HOME/.apm/apm.lock.yaml" ]; then
+    log "First APM run detected. Removing legacy skill directories..." "INFO"
+    if [ -f "$HOME/.claude/.external-skills-installed" ]; then
+        while IFS= read -r skill_name; do
+            [ -z "$skill_name" ] && continue
+            skill_dir="$HOME/.claude/skills/$skill_name"
+            if [ -d "$skill_dir" ]; then
+                rm -rf "$skill_dir"
+                log "Removed legacy: $skill_name" "INFO"
+            fi
+        done < "$HOME/.claude/.external-skills-installed"
+        rm -f "$HOME/.claude/.external-skills-installed"
+    fi
+fi
+
 log "Starting Claude Code skill installation via APM..."
 
 if apm install -g 2>&1; then
