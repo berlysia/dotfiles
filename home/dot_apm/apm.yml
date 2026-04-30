@@ -31,5 +31,6 @@ dependencies:
     - git: yoshiko-pg/difit
       skills:
         - difit-review
+    - mizchi/skills/apm-usage
     - mizchi/skills/empirical-prompt-tuning
 
