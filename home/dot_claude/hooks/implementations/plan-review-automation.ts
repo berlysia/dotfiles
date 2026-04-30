@@ -333,6 +333,9 @@ function buildRecommendation(
     "After reviews, update plan.md:",
     "- Set `- Review Status: pass|needs-work|blocker` in ## Approval section",
     `- Append \`<!-- auto-review: verdict=...; hash=...; at=...; reviewers=${reviewersValue} -->\` marker`,
+    "",
+    "THEN run /intent-alignment-triage to filter divergent findings that bend the original intent to reduce scope.",
+    "Do NOT present review results to the user before completing the intent alignment triage.",
   );
   return lines.join("\n");
 }

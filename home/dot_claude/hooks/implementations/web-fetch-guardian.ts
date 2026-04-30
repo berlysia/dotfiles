@@ -21,7 +21,10 @@ const hook = defineHook({
 
     try {
       // Extract URL from tool input
-      const url = extractUrl(tool_name, tool_input);
+      if (typeof tool_input !== "object" || tool_input === null) {
+        return context.success({});
+      }
+      const url = extractUrl(tool_name, tool_input as Record<string, unknown>);
       if (!url) {
         return context.success({});
       }
