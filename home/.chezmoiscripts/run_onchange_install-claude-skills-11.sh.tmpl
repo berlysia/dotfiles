@@ -12,7 +12,7 @@ log() {
 
 if ! command -v apm &> /dev/null; then
     log "apm not found. Skipping skill installation." "WARNING"
-    log "Install APM: curl -sSL https://aka.ms/apm-unix | sh" "INFO"
+    log "Install APM: mise install github:microsoft/apm" "INFO"
     exit 0
 fi
 
