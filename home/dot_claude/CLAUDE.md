@@ -6,7 +6,7 @@
 
 ## Workflow
 
-1. Explore → 2. Research (`$DOCUMENT_WORKFLOW_DIR/research.md`) → 3. Plan (`$DOCUMENT_WORKFLOW_DIR/plan.md`) → 4. Review (auto) → 5. Approve (human only) → 6. Implement → 7. Commit
+1. Explore → 2. Research (`$DOCUMENT_WORKFLOW_DIR/research.md`) → 3. Plan (`$DOCUMENT_WORKFLOW_DIR/plan.md`) → 4. Review (auto) → 5. Intent Triage (`/intent-alignment-triage`) → 6. Approve (human only) → 7. Implement → 8. Commit
 
 Design decisions (API/architecture/data model changes) or 3+ step tasks **require Document Workflow**. See `@~/.claude/rules/workflow.md`.
 
