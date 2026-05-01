@@ -250,7 +250,7 @@ describe("selectReviewers", () => {
 });
 
 describe("buildRecommendation with dynamic reviewers", () => {
-  it("always includes logic-validator and scope-justification-reviewer", () => {
+  it("always includes logic-validator, scope-justification-reviewer, and decision-quality-reviewer", () => {
     const result = buildRecommendation(
       "/tmp/plan.md",
       null,
@@ -258,6 +258,7 @@ describe("buildRecommendation with dynamic reviewers", () => {
     );
     ok(result.includes("logic-validator"));
     ok(result.includes("scope-justification-reviewer"));
+    ok(result.includes("decision-quality-reviewer"));
   });
 
   it("includes dynamic reviewers in recommendation text", () => {
@@ -278,7 +279,7 @@ describe("buildRecommendation with dynamic reviewers", () => {
     );
     ok(
       result.includes(
-        "reviewers=logic-validator+scope-justification-reviewer+security-sentinel",
+        "reviewers=logic-validator+scope-justification-reviewer+decision-quality-reviewer+security-sentinel",
       ),
     );
   });
@@ -295,11 +296,13 @@ describe("buildRecommendation with dynamic reviewers", () => {
       ),
     );
     ok(
-      result.includes("reviewers=logic-validator+scope-justification-reviewer"),
+      result.includes(
+        "reviewers=logic-validator+scope-justification-reviewer+decision-quality-reviewer",
+      ),
     );
   });
 
-  it("numbers catalog reviewers starting at 3 after always-on reviewers", () => {
+  it("numbers catalog reviewers starting at 4 after always-on reviewers", () => {
     const result = buildRecommendation(
       "/tmp/plan.md",
       null,
@@ -307,7 +310,8 @@ describe("buildRecommendation with dynamic reviewers", () => {
     );
     ok(result.includes("1. subagent_type: logic-validator"));
     ok(result.includes("2. subagent_type: scope-justification-reviewer"));
-    ok(result.includes("3. subagent_type:"));
+    ok(result.includes("3. subagent_type: decision-quality-reviewer"));
+    ok(result.includes("4. subagent_type:"));
   });
 });
 

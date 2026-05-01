@@ -291,7 +291,11 @@ function buildRecommendation(
   planContent: string,
 ): string {
   const additionalReviewers = selectReviewers(planContent);
-  const allReviewerNames = ["logic-validator", "scope-justification-reviewer"];
+  const allReviewerNames = [
+    "logic-validator",
+    "scope-justification-reviewer",
+    "decision-quality-reviewer",
+  ];
 
   const lines = [
     "[plan-review-automation] plan.md was updated. Run sub-agent reviews before approval.",
@@ -305,6 +309,7 @@ function buildRecommendation(
   const alwaysOnLines = [
     "1. subagent_type: logic-validator — Check logical consistency, assumptions, and contradictions",
     "2. subagent_type: scope-justification-reviewer — Verify change justification, scope coherence, and near-term necessity",
+    "3. subagent_type: decision-quality-reviewer — Detect dominant-axis misalignment in design decisions (Decision Quality framework)",
   ];
 
   if (additionalReviewers.length > 0) {
@@ -317,7 +322,7 @@ function buildRecommendation(
       const r = additionalReviewers[i]!;
       const shortName = r.subagentType.split(":").pop()!;
       allReviewerNames.push(shortName);
-      lines.push(`${i + 3}. subagent_type: ${r.subagentType} — ${r.label}`);
+      lines.push(`${i + 4}. subagent_type: ${r.subagentType} — ${r.label}`);
     }
   } else {
     lines.push(
