@@ -315,6 +315,8 @@
     "Skill(webapp-testing)",
     "Skill(worktree-pr)",
     "Skill(xlsx)",
+    "Skill(decision-quality-review)",
+    "Skill(intent-alignment-triage)",
     "Skill(compound-engineering:*)",
     "Skill(claude-code-setup:*)"
   ],
