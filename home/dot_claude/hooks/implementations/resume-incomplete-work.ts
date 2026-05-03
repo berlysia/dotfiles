@@ -70,6 +70,12 @@ function looksLikeCompletion(message: string): boolean {
     /済み/,
     /残作業/,
     /remaining/,
+    /承認/,
+    /approve/,
+    /Approval Status/,
+    /Executive Summary/,
+    /Next Action/,
+    /してください/,
   ];
 
   return completionSignals.some((pattern) => pattern.test(lastLines));
