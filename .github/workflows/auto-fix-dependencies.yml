@@ -92,7 +92,7 @@ jobs:
       - name: Auto-fix dependencies
         if: steps.pr-info.outputs.skip != 'true'
         id: auto-fix
-        uses: anthropics/claude-code-action@38ec876110f9fbf8b950c79f534430740c3ac009 # v1.0.101
+        uses: anthropics/claude-code-action@fefa07e9c665b7320f08c3b525980457f22f58aa # v1.0.111
         with:
           # Requires the CLAUDE_CODE_OAUTH_TOKEN environment secret on claude-autofix.
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
