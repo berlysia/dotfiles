@@ -124,7 +124,6 @@ These files are automatically merged by `run_onchange_update-settings-json.sh.tm
 - `@playwright/mcp` - Browser automation
 - `@upstash/context7-mcp` - Documentation search
 
-
 **To update versions:** Edit `package.json` dependencies and run `chezmoi apply`
 
 ### Dual-Layer Skills Management

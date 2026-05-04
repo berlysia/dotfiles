@@ -26,14 +26,14 @@ bash ~/.claude/skills/claude-action-bootstrap/scripts/verify-prerequisites.sh
 
 検証対象（スクリプトが内部で実施）:
 
-| 項目         | 判定                                                    | fail 時の remediation                     |
-| ------------ | ------------------------------------------------------- | ----------------------------------------- |
-| gh CLI       | `command -v gh`                                         | `mise use -g gh@latest`                   |
-| gh auth      | `gh auth status`                                        | `gh auth login`                           |
-| repository   | `gh repo view --json nameWithOwner` が通る              | target repo のルートで再実行              |
-| admin 権限   | `.permissions.admin == true`                            | admin を取得するか別 repo で再実行        |
-| actionlint   | `command -v actionlint`                                 | `mise use -g actionlint@latest`           |
-| zizmor       | `command -v zizmor`                                     | `mise use -g zizmor@latest` または cargo  |
+| 項目       | 判定                                       | fail 時の remediation                    |
+| ---------- | ------------------------------------------ | ---------------------------------------- |
+| gh CLI     | `command -v gh`                            | `mise use -g gh@latest`                  |
+| gh auth    | `gh auth status`                           | `gh auth login`                          |
+| repository | `gh repo view --json nameWithOwner` が通る | target repo のルートで再実行             |
+| admin 権限 | `.permissions.admin == true`               | admin を取得するか別 repo で再実行       |
+| actionlint | `command -v actionlint`                    | `mise use -g actionlint@latest`          |
+| zizmor     | `command -v zizmor`                        | `mise use -g zizmor@latest` または cargo |
 
 **informational（スクリプトは表示するが判定しない）**:
 
@@ -93,13 +93,13 @@ done
 
 skill は対話的に以下を収集する。デフォルト値を提示し、Enter で確定。
 
-| パラメータ               | プレースホルダー          | デフォルト                                                             |
-| ------------------------ | ------------------------- | ---------------------------------------------------------------------- |
-| Allowed senders          | `{{ALLOWED_SENDERS}}`     | `github.event.sender.login == 'berlysia'`                              |
-| Manual env name          | `{{MANUAL_ENV_NAME}}`     | `claude-manual`                                                        |
-| Autofix env name         | `{{AUTOFIX_ENV_NAME}}`    | `claude-autofix`                                                       |
-| CI workflow names (YAML) | `{{CI_WORKFLOW_NAMES}}`   | `      - "CI Status Check"` （インデント 6 空白）                      |
-| Allowed bots             | `{{ALLOWED_BOTS}}`        | `renovate[bot],dependabot[bot],app/renovate`                           |
+| パラメータ               | プレースホルダー        | デフォルト                                        |
+| ------------------------ | ----------------------- | ------------------------------------------------- |
+| Allowed senders          | `{{ALLOWED_SENDERS}}`   | `github.event.sender.login == 'berlysia'`         |
+| Manual env name          | `{{MANUAL_ENV_NAME}}`   | `claude-manual`                                   |
+| Autofix env name         | `{{AUTOFIX_ENV_NAME}}`  | `claude-autofix`                                  |
+| CI workflow names (YAML) | `{{CI_WORKFLOW_NAMES}}` | `      - "CI Status Check"` （インデント 6 空白） |
+| Allowed bots             | `{{ALLOWED_BOTS}}`      | `renovate[bot],dependabot[bot],app/renovate`      |
 
 **CI workflow 名の候補列挙:**
 
@@ -110,8 +110,8 @@ gh api repos/$OWNER_REPO/actions/workflows | jq -r '.workflows[] | select(.state
 複数 CI を監視する場合は YAML list として連結:
 
 ```yaml
-      - "CI Status Check"
-      - "Another CI"
+- "CI Status Check"
+- "Another CI"
 ```
 
 **Allowed senders に複数ユーザーを含める場合** (`||` 連結):
@@ -197,11 +197,11 @@ AUTOFIX_ENV= \
 
 スクリプトが判定する項目:
 
-| 項目                              | 判定                                                        | fail 時の remediation                       |
-| --------------------------------- | ----------------------------------------------------------- | ------------------------------------------- |
-| 各 env の存在                     | `gh api repos/.../environments/<ENV>` が 200                | `gh api -X PUT` で env を作成               |
-| 各 env に `CLAUDE_CODE_OAUTH_TOKEN` | env secrets 一覧に含まれる                                  | `gh secret set CLAUDE_CODE_OAUTH_TOKEN --env <ENV>` |
-| repo-level の誤登録（warning）    | `actions/secrets` に同名 secret がある場合 `[!]` で警告     | 不要であれば `gh secret delete CLAUDE_CODE_OAUTH_TOKEN` |
+| 項目                                | 判定                                                    | fail 時の remediation                                   |
+| ----------------------------------- | ------------------------------------------------------- | ------------------------------------------------------- |
+| 各 env の存在                       | `gh api repos/.../environments/<ENV>` が 200            | `gh api -X PUT` で env を作成                           |
+| 各 env に `CLAUDE_CODE_OAUTH_TOKEN` | env secrets 一覧に含まれる                              | `gh secret set CLAUDE_CODE_OAUTH_TOKEN --env <ENV>`     |
+| repo-level の誤登録（warning）      | `actions/secrets` に同名 secret がある場合 `[!]` で警告 | 不要であれば `gh secret delete CLAUDE_CODE_OAUTH_TOKEN` |
 
 repo-level の警告は fail 扱いではない（env-scoped secret が優先されるため）。
 
@@ -219,9 +219,9 @@ zizmor .github/workflows/claude.yml .github/workflows/auto-fix-dependencies.yml
 
 **既知で許容する zizmor finding**:
 
-| Finding                      | 対象ファイル                          | 許容根拠                                                                                                                                      |
-| ---------------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `dangerous-triggers` (high)  | `auto-fix-dependencies.yml` L13 `on:` | `workflow_run` は CI 完了後の失敗時起動と secret アクセスの両立に必須。Asset は `sameRepo && !isFork` による fork 除外、`allowed_bots` による author allowlist、checkout `persist-credentials: false` による credentials 混入防止を**すべて内包**しており、この trade-off を前提に受け入れる |
+| Finding                     | 対象ファイル                          | 許容根拠                                                                                                                                                                                                                                                                                     |
+| --------------------------- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dangerous-triggers` (high) | `auto-fix-dependencies.yml` L13 `on:` | `workflow_run` は CI 完了後の失敗時起動と secret アクセスの両立に必須。Asset は `sameRepo && !isFork` による fork 除外、`allowed_bots` による author allowlist、checkout `persist-credentials: false` による credentials 混入防止を**すべて内包**しており、この trade-off を前提に受け入れる |
 
 **これら以外に high/critical finding が出た場合**:
 

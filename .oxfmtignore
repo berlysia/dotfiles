@@ -1,0 +1,6 @@
+# File types that oxfmt cannot format (handled by prettier instead)
+*.yml
+*.yaml
+*.toml
+*.sh
+*.tmpl
