@@ -1,0 +1,2 @@
+# Skill templates contain placeholders that break YAML parsers
+.skills/
