@@ -1,2 +1,8 @@
 # Skill templates contain placeholders that break YAML parsers
 .skills/
+
+# Lock files are managed by package managers
+pnpm-lock.yaml
+bun.lock
+package-lock.json
+yarn.lock
