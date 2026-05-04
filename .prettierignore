@@ -1,0 +1,7 @@
+# oxfmt uses .prettierignore by default
+# Exclude file types that oxfmt cannot format
+*.yml
+*.yaml
+*.toml
+*.sh
+*.tmpl
