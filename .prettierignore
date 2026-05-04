@@ -1,7 +1,2 @@
-# oxfmt uses .prettierignore by default
-# Exclude file types that oxfmt cannot format
-*.yml
-*.yaml
-*.toml
-*.sh
-*.tmpl
+# Skill templates contain placeholders that break YAML parsers
+.skills/

@@ -9,8 +9,8 @@
   "scripts": {
     "test": "node --test home/dot_claude/hooks/tests/**/*.test.ts",
     "typecheck": "tsgo --noEmit",
-    "format": "oxfmt .",
-    "format:check": "oxfmt --check .",
+    "format": "oxfmt --ignore-path .oxfmtignore . && prettier --write '**/*.{yml,yaml}' --ignore-unknown",
+    "format:check": "oxfmt --check --ignore-path .oxfmtignore . && prettier --check '**/*.{yml,yaml}' --ignore-unknown",
     "ci:local": "./scripts/ci-local.sh all",
     "ci:local:codex": "./scripts/ci-local.sh codex",
     "ci:local:lint": "./scripts/ci-local.sh lint",
@@ -39,6 +39,7 @@
     "knip": "6.5.0",
     "oxfmt": "0.45.0",
     "oxlint": "1.55.0",
+    "prettier": "3.8.3",
     "typescript": "5.9.3"
   },
   "packageManager": "pnpm@10.33.0"
