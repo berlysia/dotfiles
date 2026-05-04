@@ -4,3 +4,9 @@
 *.toml
 *.sh
 *.tmpl
+
+# Lock files are managed by package managers
+pnpm-lock.yaml
+bun.lock
+package-lock.json
+yarn.lock
