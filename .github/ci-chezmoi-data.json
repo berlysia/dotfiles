@@ -4,11 +4,16 @@
     "os": "linux",
     "kernel": {
       "osrelease": "5.15.0-generic"
-    }
+    },
+    "hostname": "ci-runner"
   },
-  "user": {
-    "windows": {
-      "username": "testuser"
+  "data": {
+    "user": {
+      "name": "ci-runner",
+      "email": "ci@example.com",
+      "windows": {
+        "username": "testuser"
+      }
     }
   }
 }

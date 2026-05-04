@@ -6,10 +6,6 @@ inputs:
     description: "Node.js version"
     required: false
     default: "22"
-  pnpm-version:
-    description: "pnpm version"
-    required: false
-    default: "10.30.3"
   install-deps:
     description: "Install dependencies with frozen lockfile"
     required: false
@@ -20,8 +16,6 @@ runs:
   steps:
     - name: Setup pnpm
       uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
-      with:
-        version: ${{ inputs.pnpm-version }}
 
     - name: Setup Node.js
       uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
