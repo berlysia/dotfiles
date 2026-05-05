@@ -35,8 +35,8 @@ fi
 
 # Sync with --delete, but preserve external/private skills
 # Also exclude ui-skills (managed by chezmoi external)
-rsync -a --delete --exclude="ui-skills" --exclude=".system" "${EXCLUDE_ARGS[@]}" "${PRIVATE_EXCLUDE_ARGS[@]}" "$SKILLS_SOURCE/" "$CLAUDE_SKILLS/"
-rsync -a --delete --exclude="ui-skills" --exclude=".system" "${EXCLUDE_ARGS[@]}" "${PRIVATE_EXCLUDE_ARGS[@]}" "$SKILLS_SOURCE/" "$CODEX_SKILLS/"
+rsync -a --delete --exclude="ui-skills" --exclude=".system" ${EXCLUDE_ARGS[@]+"${EXCLUDE_ARGS[@]}"} ${PRIVATE_EXCLUDE_ARGS[@]+"${PRIVATE_EXCLUDE_ARGS[@]}"} "$SKILLS_SOURCE/" "$CLAUDE_SKILLS/"
+rsync -a --delete --exclude="ui-skills" --exclude=".system" ${EXCLUDE_ARGS[@]+"${EXCLUDE_ARGS[@]}"} ${PRIVATE_EXCLUDE_ARGS[@]+"${PRIVATE_EXCLUDE_ARGS[@]}"} "$SKILLS_SOURCE/" "$CODEX_SKILLS/"
 
 # Overlay private skills (sourced from private repo via chezmoi external).
 # Use --delete inside each skill dir but keep other skills untouched.
