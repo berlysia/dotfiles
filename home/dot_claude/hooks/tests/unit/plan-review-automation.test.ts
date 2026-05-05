@@ -313,6 +313,22 @@ describe("buildRecommendation with dynamic reviewers", () => {
     ok(result.includes("3. subagent_type: decision-quality-reviewer"));
     ok(result.includes("4. subagent_type:"));
   });
+
+  it("warns explicitly that all reviewers are Agent subagent_types, not Skills", () => {
+    const result = buildRecommendation(
+      "/tmp/plan.md",
+      null,
+      "## Plan\nUpdate README",
+    );
+    ok(
+      result.includes("ALL reviewers below are Agent tool subagent_types"),
+      "should explicitly state reviewers are Agent subagent_types",
+    );
+    ok(
+      result.includes("same name as a Skill"),
+      "should warn about reviewers sharing names with Skills",
+    );
+  });
 });
 
 describe("isReviewCompletePendingApproval", () => {

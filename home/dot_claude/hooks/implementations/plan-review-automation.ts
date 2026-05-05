@@ -312,24 +312,21 @@ function buildRecommendation(
     "3. subagent_type: decision-quality-reviewer — Detect dominant-axis misalignment in design decisions (Decision Quality framework)",
   ];
 
+  lines.push(
+    "",
+    "IMPORTANT: ALL reviewers below are Agent tool subagent_types. Execute every one via Agent tool with the specified subagent_type. A reviewer having the same name as a Skill does NOT mean it should be invoked as a Skill — always use Agent tool.",
+    "",
+    "Recommended sub-agents (use Agent tool, run ALL in parallel):",
+    ...alwaysOnLines,
+  );
+
   if (additionalReviewers.length > 0) {
-    lines.push(
-      "",
-      "Recommended sub-agents (use Agent tool, run ALL in parallel):",
-      ...alwaysOnLines,
-    );
     for (let i = 0; i < additionalReviewers.length; i++) {
       const r = additionalReviewers[i]!;
       const shortName = r.subagentType.split(":").pop()!;
       allReviewerNames.push(shortName);
       lines.push(`${i + 4}. subagent_type: ${r.subagentType} — ${r.label}`);
     }
-  } else {
-    lines.push(
-      "",
-      "Recommended sub-agents (use Agent tool, run ALL in parallel):",
-      ...alwaysOnLines,
-    );
   }
 
   const reviewersValue = allReviewerNames.join("+");
