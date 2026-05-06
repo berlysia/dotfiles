@@ -58,7 +58,7 @@ For each proposed commit group:
 1. **Selective Staging**: Execute git-sequential-stage command from analyzer
 
    ```bash
-   git-sequential-stage -patch=".claude/tmp/current_changes.patch" \
+   git-sequential-stage stage -patch=".claude/tmp/current_changes.patch" \
      -hunk="file1.ts:1,3,5" -hunk="file2.ts:2"
    ```
 
@@ -241,14 +241,16 @@ Uses `git-sequential-stage` for precise control:
 - Supports multi-file atomic commits
 - Maintains hunk identity during staging operations
 
-**Example**:
+**Example** (always quote `-hunk` values to prevent shell glob expansion of `*`):
 
 ```bash
 # Stage specific hunks from multiple files
-git-sequential-stage -patch=".claude/tmp/current_changes.patch" \
+git-sequential-stage stage -patch=".claude/tmp/current_changes.patch" \
   -hunk="src/auth.py:1,3,5" \
-  -hunk="src/models.py:2"
+  -hunk="src/models.py:*"     # ":*" stages the entire file
 ```
+
+Use `git-sequential-stage count-hunks` to inspect per-file hunk counts.
 
 ### Pre-commit Hook Handling
 
@@ -372,7 +374,7 @@ A successful workflow produces:
 ### Tools
 
 - `git` (standard git installation)
-- `git-sequential-stage` (for hunk-based staging)
+- `git-sequential-stage` (for hunk-based staging; subcommands: `stage`, `count-hunks`)
   - Installation: See [GitHub README](https://github.com/syou6162/git-sequential-stage)
 - `filterdiff` (patchutils package)
   - macOS: `brew install patchutils`

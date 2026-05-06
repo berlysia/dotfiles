@@ -33,8 +33,8 @@ You are an expert software engineering analyst specializing in semantic analysis
 
 4. **Hunk Specification Generation**:
    - Generate git-sequential-stage compatible hunk specifications
-   - Format: `filename:hunk_number1,hunk_number2,...`
-   - Example: `src/calculator.py:1,3,5` or multiple files with `-hunk` flags
+   - Format: `filename:hunk_number1,hunk_number2,...` or `filename:*` to stage the entire file
+   - Example: `src/calculator.py:1,3,5`, `src/logger.go:*`, or multiple files with `-hunk` flags
    - Ensure hunk numbers are accurate based on current patch
 
 ## Analysis Workflow
@@ -57,11 +57,8 @@ git diff HEAD > .claude/tmp/current_changes.patch
 Analyze the patch file to understand all modifications:
 
 ```bash
-# Count total hunks
-grep -c '^@@' .claude/tmp/current_changes.patch
-
-# Count hunks per file
-git diff HEAD --name-only | xargs -I {} sh -c 'printf "%s: " "{}"; git diff HEAD {} | grep -c "^@@" || echo "0"'
+# Per-file hunk counts (official subcommand; runs `git diff HEAD` internally and prints "<filepath>: <count>")
+git-sequential-stage count-hunks
 ```
 
 For each hunk:
@@ -136,10 +133,10 @@ For each proposed commit, generate:
 - src/calculator.py: Hunks 1, 3, 5
 - src/utils.py: Hunk 2
 
-**Staging Command**:
+**Staging Command** (always quote `-hunk` values; `*` would otherwise be glob-expanded by the shell):
 
 ```bash
-git-sequential-stage -patch=".claude/tmp/current_changes.patch" \
+git-sequential-stage stage -patch=".claude/tmp/current_changes.patch" \
   -hunk="src/calculator.py:1,3,5" \
   -hunk="src/utils.py:2"
 ```
@@ -244,8 +241,7 @@ Your analysis must always include:
 
 ### Tools Used
 - **git diff**: Generate patch files
-- **grep**: Count hunks and search patterns
-- **git-sequential-stage**: Apply hunk-based staging
+- **git-sequential-stage**: Apply hunk-based staging (`stage`) and inspect per-file hunk counts (`count-hunks`)
 - **filterdiff**: Extract file-specific patches (when needed)
 
 ### Command Templates
@@ -260,25 +256,26 @@ git diff HEAD > .claude/tmp/current_changes.patch
 **Count Hunks**:
 
 ```bash
-# Total
-grep -c '^@@' .claude/tmp/current_changes.patch
-
-# Per file
-git diff HEAD --name-only | xargs -I {} sh -c \
-  'printf "%s: " "{}"; git diff HEAD {} | grep -c "^@@" || echo "0"'
+# Per-file counts (sorted, format "<filepath>: <count>")
+git-sequential-stage count-hunks
 ```
 
-**Stage Hunks**:
+**Stage Hunks** (always quote `-hunk` values to keep `*` from being glob-expanded by the shell):
 
 ```bash
 # Single file
-git-sequential-stage -patch=".claude/tmp/current_changes.patch" \
+git-sequential-stage stage -patch=".claude/tmp/current_changes.patch" \
   -hunk="file.py:1,2,3"
 
 # Multiple files
-git-sequential-stage -patch=".claude/tmp/current_changes.patch" \
+git-sequential-stage stage -patch=".claude/tmp/current_changes.patch" \
   -hunk="file1.py:1,3" \
   -hunk="file2.py:2"
+
+# Wildcard: stage the entire file
+git-sequential-stage stage -patch=".claude/tmp/current_changes.patch" \
+  -hunk="src/logger.go:*" \
+  -hunk="src/test.go:1,2"
 ```
 
 ## Best Practices

@@ -30,11 +30,14 @@ Commits current changes with semantic commit messages. Automatically handles sim
 - Multiple files with same purpose (e.g., all feat, all fix)
 - Related changes that form one logical unit
 
+> A single file is **not** automatically Simple. If the file contains multiple semantically independent edits (e.g. a bug fix at one location plus an unrelated refactor elsewhere in the same file), treat it as Complex.
+
 **Complex** (delegate to `/semantic-commit`):
 
 - Mixed change types (feat + fix, refactor + test)
 - Large refactoring spanning many files
 - Changes that should be split for better git history
+- **Same-file semantic division**: a single file holds two or more independent purposes (e.g. zero-division fix at L40 plus unrelated logging refactor at L80) — these should land in separate commits via hunk-level staging
 
 ## Implementation
 
@@ -70,7 +73,7 @@ Examine the changes and determine:
 
 **If Complex:**
 
-1. Inform user: "Multiple change types detected. Using /semantic-commit for intelligent splitting."
+1. Inform user: "Multiple change types detected. Using /semantic-commit for intelligent splitting (it uses git-sequential-stage to split even a single file into hunk-level commits when needed)."
 2. Delegate to `/semantic-commit` command
 
 ## Commit Message Format
@@ -138,7 +141,18 @@ Changes:
    Delegating to /semantic-commit for intelligent splitting."
 ```
 
+### Complex Case: Same-File Semantic Division
+
+```
+Changes:
+- src/parser.ts (zero-division fix near L40 + unrelated logging refactor near L80)
+
+→ Delegate to /semantic-commit
+  "Single file holds two independent purposes (fix + refactor).
+   Delegating to /semantic-commit so git-sequential-stage can split it into hunk-level commits."
+```
+
 ## Related
 
-- `/semantic-commit` - Complex change analysis and multi-commit splitting
+- `/semantic-commit` - Complex change analysis and multi-commit splitting (uses git-sequential-stage for hunk-level division within a single file)
 - `/commit-conventions` skill - Detailed guidance for edge cases
