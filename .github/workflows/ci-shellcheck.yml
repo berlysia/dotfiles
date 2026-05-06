@@ -5,13 +5,17 @@ on:
     branches: [master, main]
     paths:
       - "**/*.sh"
+      - "**/*.sh.tmpl"
       - ".shellcheckrc"
+      - "scripts/lint-shell.sh"
       - ".github/workflows/ci-shellcheck.yml"
   pull_request:
     branches: [master, main]
     paths:
       - "**/*.sh"
+      - "**/*.sh.tmpl"
       - ".shellcheckrc"
+      - "scripts/lint-shell.sh"
       - ".github/workflows/ci-shellcheck.yml"
   workflow_dispatch:
 
@@ -35,6 +39,12 @@ jobs:
 
       - name: Install shellcheck
         run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Install chezmoi
+        uses: ./.github/actions/install-chezmoi
+        with:
+          install-dir: "$HOME/.local/bin"
+          add-to-path: "true"
 
       - name: Run shellcheck
         run: ./scripts/lint-shell.sh

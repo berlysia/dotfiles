@@ -1,5 +1,6 @@
 {{ if ne .chezmoi.os "windows" -}}
 #!/bin/bash
+# shellcheck disable=SC2088 # tilde used in human-readable log messages, not paths
 # Install Claude Code skills via APM
 # Hash: {{ include "dot_apm/apm.yml" | sha256sum }}
 

@@ -1,5 +1,6 @@
 {{ if ne .chezmoi.os "windows" -}}
 #!/bin/bash
+# shellcheck disable=SC2088 # tilde used in human-readable echo messages, not paths
 # Update ~/.claude.json by merging chezmoi template changes
 # package.json hash: {{ output "cat" (joinPath .chezmoi.workingTree "package.json") | sha256sum }}
 # hooks package.json hash: {{ output "cat" (joinPath .chezmoi.workingTree "home/dot_claude/package.json") | sha256sum }}

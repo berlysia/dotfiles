@@ -1,5 +1,6 @@
 {{ if ne .chezmoi.os "windows" -}}
 #!/bin/bash
+# shellcheck disable=SC2088 # tilde used in human-readable echo messages, not paths
 # Update ~/.claude/settings.json by merging chezmoi template changes
 # enabledPlugins is managed by claude plugin CLI, existing values are preserved
 # Hash: {{ include "dot_claude/.settings.base.json" | sha256sum }}{{ include "dot_claude/.settings.permissions.json" | sha256sum }}{{ include "dot_claude/.settings.hooks.json.tmpl" | sha256sum }}
