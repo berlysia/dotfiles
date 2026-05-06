@@ -1,0 +1,53 @@
+name: Smoke (chezmoi scripts)
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - "home/.chezmoiscripts/**"
+      - "tests/smoke/**"
+      - "scripts/smoke-chezmoi-scripts.sh"
+      - ".github/workflows/ci-smoke-chezmoi.yml"
+  pull_request:
+    branches: [master, main]
+    paths:
+      - "home/.chezmoiscripts/**"
+      - "tests/smoke/**"
+      - "scripts/smoke-chezmoi-scripts.sh"
+      - ".github/workflows/ci-smoke-chezmoi.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Smoke (bash 5.1)
+    # Pinned to ubuntu-22.04 (bash 5.1.16) on purpose: the original empty-array
+    # bug is masked on bash 5.2+. ubuntu-latest moved to ubuntu-24.04 (bash
+    # 5.2.21), where the smoke would silently pass against unfixed code. When
+    # ubuntu-22.04 reaches end of support (~2027), migrate this job to a
+    # bash:5.1 Docker container in a separate PR.
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - name: Report bash version (sanity check)
+        run: bash --version | head -1
+
+      - name: Install chezmoi
+        uses: ./.github/actions/install-chezmoi
+        with:
+          install-dir: "$HOME/.local/bin"
+          add-to-path: "true"
+
+      - name: Run smoke fixtures
+        run: ./scripts/smoke-chezmoi-scripts.sh
