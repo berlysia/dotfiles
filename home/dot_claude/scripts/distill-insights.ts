@@ -1,5 +1,6 @@
 #!/usr/bin/env -S bun run --silent
 
+import { execSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, basename } from "node:path";
 import { query } from "@anthropic-ai/claude-agent-sdk";
@@ -44,6 +45,14 @@ import {
   type StageBOutcome,
   type StageBQueryFn,
 } from "../hooks/lib/insight-digest.ts";
+
+function resolveClaudeExecutable(): string | undefined {
+  try {
+    return execSync("which claude", { encoding: "utf8" }).trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 const STAGE_B_DEFAULT_MODEL = "haiku";
 const STAGE_B_DISALLOWED_TOOLS = [
@@ -400,6 +409,7 @@ export async function runLlmDistillation(opts: {
 }): Promise<{ ok: true; raw: string } | { ok: false; reason: string }> {
   const { payload, queryFn } = opts;
   try {
+    const claudePath = resolveClaudeExecutable();
     const conversation = queryFn({
       prompt: payload.user_prompt,
       options: {
@@ -410,6 +420,9 @@ export async function runLlmDistillation(opts: {
         disallowedTools: STAGE_B_DISALLOWED_TOOLS,
         permissionMode: "bypassPermissions",
         allowDangerouslySkipPermissions: true,
+        ...(claudePath !== undefined
+          ? { pathToClaudeCodeExecutable: claudePath }
+          : {}),
       },
     });
     let raw = "";
