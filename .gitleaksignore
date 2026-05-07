@@ -13,3 +13,7 @@
 # Example:
 #   # Safe: Example API key in documentation
 #   abc123def456:docs/example.md:42
+
+# Safe: test fixture intentionally shaped like a .env-style credential so the
+# insight-digest sanitizer can demonstrate that it redacts such patterns.
+home/dot_claude/hooks/tests/unit/insight-digest.test.ts:generic-api-key:69
