@@ -3,7 +3,7 @@
 import { appendFileSync } from "node:fs";
 import { defineHook } from "cc-hooks-ts";
 import { logEvent } from "../lib/centralized-logging.ts";
-import { getUnreadDigestNotice } from "../lib/insight-digest.ts";
+import { getUnreadDigestPreview } from "../lib/insight-digest.ts";
 
 function checkSharedTaskList(): string | null {
   const taskListId = process.env.CLAUDE_CODE_TASK_LIST_ID;
@@ -70,9 +70,9 @@ const hook = defineHook({
       if (taskListWarning) {
         messages.push(taskListWarning);
       }
-      const digestNotice = getUnreadDigestNotice();
-      if (digestNotice) {
-        messages.push(digestNotice);
+      const digestPreview = getUnreadDigestPreview();
+      if (digestPreview) {
+        messages.push(digestPreview);
       }
 
       return context.success({

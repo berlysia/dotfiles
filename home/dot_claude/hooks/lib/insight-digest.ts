@@ -111,6 +111,27 @@ export function getUnreadDigestNotice(): string | null {
   }
 }
 
+export const DIGEST_PREVIEW_MAX_LINES = 14;
+
+export function getUnreadDigestPreview(
+  maxLines: number = DIGEST_PREVIEW_MAX_LINES,
+): string | null {
+  try {
+    if (!existsSync(DIGEST_PATH)) return null;
+    const digestMtime = statSync(DIGEST_PATH).mtimeMs;
+    if (digestMtime <= readAckMs()) return null;
+    const raw = readFileSync(DIGEST_PATH, "utf8");
+    const preview = raw
+      .split("\n")
+      .slice(0, maxLines)
+      .join("\n")
+      .replace(/\n+$/, "");
+    return `New Insight digest (${DIGEST_PATH}):\n${preview}\n\n_Run /insight-digest for full view, /insight-digest ack to mark read._`;
+  } catch {
+    return null;
+  }
+}
+
 export function sanitize(
   text: string,
   extraPatterns: RegExp[] = [],
