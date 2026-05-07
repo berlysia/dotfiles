@@ -59,11 +59,24 @@
    - 依存質問の逐次化: 前の回答に依存する質問は同じラウンドに含めず、次ラウンドで聞く
    - 推奨理由の明示: 選択肢を提示する際は推奨とその理由を1行で明示する
 4. 完成: `$DOCUMENT_WORKFLOW_DIR/plan.md` の `## Approval` で `Plan Status: complete` にする
-5. 自動レビュー: `plan-review-automation` が plan.md の内容を分析し、常時必須レビュアー4名（`logic-validator`, `scope-justification-reviewer`, `decision-quality-reviewer`, `greenfield-perspective-reviewer`）+ コンテンツベースで選定した追加レビュアー（最大3つ）を並列実行推奨。`Review Status` と `<!-- auto-review: verdict=...; hash=...; reviewers=... -->` を更新する
+5. 自動レビュー: `plan-review-automation` が plan.md の内容を分析し、常時必須レビュアー（下記の SSoT 区間参照）+ コンテンツベースで選定した追加レビュアー（最大3つ）を並列実行推奨。`Review Status` と `<!-- auto-review: verdict=...; hash=...; reviewers=... -->` を更新する
 6. インテント整合性トリアージ: 全レビュー指摘を元のオーダーの本義と突き合わせ、意図を歪める指摘を除外する（詳細は後述）
 7. 承認: 人間が `Approval Status: approved` にする
 8. 実装: `Plan Status: complete` + `Review Status: pass` + `Approval Status: approved` + hash 一致を満たした後に着手し、タスク完了ごとに `$DOCUMENT_WORKFLOW_DIR/plan.md` を更新
 ```
+
+**常時必須レビュアー（4 名、並列実行）**:
+
+<!-- ssot:always-on-reviewers:start -->
+
+- `logic-validator`
+- `scope-justification-reviewer`
+- `decision-quality-reviewer`
+- `greenfield-perspective-reviewer`
+
+<!-- ssot:always-on-reviewers:end -->
+
+このリストは `home/dot_claude/hooks/implementations/plan-review-automation.ts` の `ALWAYS_ON_REVIEWERS` 定数と CI レベルで同期される（ADR-0005 参照）。
 
 **CRITICAL: 承認は人間のみが行う。** ユーザーが明示的に「approve」「承認」と発言するか、`/execute-plan` を指示しない限り、Claudeは `Approval Status: approved` に変更したり、実装へ着手してはならない。
 

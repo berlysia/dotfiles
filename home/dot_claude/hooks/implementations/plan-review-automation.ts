@@ -28,6 +28,41 @@ interface ReviewerRule {
 
 const MAX_ADDITIONAL_REVIEWERS = 3;
 
+/**
+ * Single source of truth for the always-on reviewer set.
+ *
+ * `responsibility` is the agent-invocation instruction text emitted by
+ * `buildRecommendation()`. It is part of the agent-tool contract — semantic
+ * changes here affect what each reviewer is told to do at runtime.
+ *
+ * The same slug set must appear inside the SSoT marker regions in
+ * `home/dot_claude/rules/workflow.md` and
+ * `home/dot_claude/rules/external-review.md`.
+ * Drift is enforced by `plan-review-automation.test.ts` (`doc drift detection`).
+ */
+const ALWAYS_ON_REVIEWERS = [
+  {
+    slug: "logic-validator",
+    responsibility:
+      "Check logical consistency, assumptions, and contradictions",
+  },
+  {
+    slug: "scope-justification-reviewer",
+    responsibility:
+      "Verify change justification, scope coherence, and near-term necessity",
+  },
+  {
+    slug: "decision-quality-reviewer",
+    responsibility:
+      "Detect dominant-axis misalignment in design decisions (Decision Quality framework)",
+  },
+  {
+    slug: "greenfield-perspective-reviewer",
+    responsibility:
+      "Reconstruct the order from a clean slate and surface ambition gaps the incremental plan dropped",
+  },
+] as const satisfies ReadonlyArray<{ slug: string; responsibility: string }>;
+
 const REVIEWER_CATALOG: ReviewerRule[] = [
   {
     subagentType: "compound-engineering:review:architecture-strategist",
@@ -291,12 +326,7 @@ function buildRecommendation(
   planContent: string,
 ): string {
   const additionalReviewers = selectReviewers(planContent);
-  const allReviewerNames = [
-    "logic-validator",
-    "scope-justification-reviewer",
-    "decision-quality-reviewer",
-    "greenfield-perspective-reviewer",
-  ];
+  const allReviewerNames = ALWAYS_ON_REVIEWERS.map((r) => r.slug as string);
 
   const lines = [
     "[plan-review-automation] plan.md was updated. Run sub-agent reviews before approval.",
@@ -307,12 +337,9 @@ function buildRecommendation(
     lines.push(`Research: ${researchPath}`);
   }
 
-  const alwaysOnLines = [
-    "1. subagent_type: logic-validator — Check logical consistency, assumptions, and contradictions",
-    "2. subagent_type: scope-justification-reviewer — Verify change justification, scope coherence, and near-term necessity",
-    "3. subagent_type: decision-quality-reviewer — Detect dominant-axis misalignment in design decisions (Decision Quality framework)",
-    "4. subagent_type: greenfield-perspective-reviewer — Reconstruct the order from a clean slate and surface ambition gaps the incremental plan dropped",
-  ];
+  const alwaysOnLines = ALWAYS_ON_REVIEWERS.map(
+    (r, i) => `${i + 1}. subagent_type: ${r.slug} — ${r.responsibility}`,
+  );
 
   lines.push(
     "",
@@ -522,6 +549,7 @@ function readCache(path: string): CacheState | null {
 }
 
 export {
+  ALWAYS_ON_REVIEWERS,
   buildRecommendation,
   buildSummaryReminder,
   computePlanHash,

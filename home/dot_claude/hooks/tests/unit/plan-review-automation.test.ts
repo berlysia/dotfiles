@@ -1,8 +1,12 @@
 #!/usr/bin/env node --test
 
 import { deepStrictEqual, ok, strictEqual } from "node:assert";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 import {
+  ALWAYS_ON_REVIEWERS,
   buildRecommendation,
   buildSummaryReminder,
   computePlanHash,
@@ -421,4 +425,83 @@ describe("buildSummaryReminder", () => {
     ok(result.includes("**Open Questions**"));
     ok(result.includes("**Next Action**"));
   });
+});
+
+describe("ALWAYS_ON_REVIEWERS derivation", () => {
+  it("derives allReviewerNames as the slug array used by buildRecommendation", () => {
+    const expected = [
+      "logic-validator",
+      "scope-justification-reviewer",
+      "decision-quality-reviewer",
+      "greenfield-perspective-reviewer",
+    ];
+    deepStrictEqual(
+      ALWAYS_ON_REVIEWERS.map((r) => r.slug as string),
+      expected,
+    );
+  });
+
+  it("derives alwaysOnLines with exact format including em-dash separator", () => {
+    const expected = [
+      "1. subagent_type: logic-validator — Check logical consistency, assumptions, and contradictions",
+      "2. subagent_type: scope-justification-reviewer — Verify change justification, scope coherence, and near-term necessity",
+      "3. subagent_type: decision-quality-reviewer — Detect dominant-axis misalignment in design decisions (Decision Quality framework)",
+      "4. subagent_type: greenfield-perspective-reviewer — Reconstruct the order from a clean slate and surface ambition gaps the incremental plan dropped",
+    ];
+    deepStrictEqual(
+      ALWAYS_ON_REVIEWERS.map(
+        (r, i) => `${i + 1}. subagent_type: ${r.slug} — ${r.responsibility}`,
+      ),
+      expected,
+    );
+  });
+});
+
+describe("doc drift detection (integration boundary)", () => {
+  const RULES_DIR = fileURLToPath(new URL("../../../rules/", import.meta.url));
+  const DOC_BASENAMES = ["workflow.md", "external-review.md"];
+  const SLUG_REGEX = /[a-z][a-z-]*-(?:reviewer|validator|evaluator)/g;
+  const MARKER_START = "<!-- ssot:always-on-reviewers:start -->";
+  const MARKER_END = "<!-- ssot:always-on-reviewers:end -->";
+
+  function readDoc(basename: string): string {
+    return readFileSync(join(RULES_DIR, basename), "utf-8");
+  }
+
+  function extractSsotRegion(content: string): string {
+    const startIdx = content.indexOf(MARKER_START);
+    const endIdx = content.indexOf(MARKER_END);
+    return content.slice(startIdx + MARKER_START.length, endIdx);
+  }
+
+  for (const basename of DOC_BASENAMES) {
+    it(`${basename} contains both SSoT markers`, () => {
+      const content = readDoc(basename);
+      ok(
+        content.includes(MARKER_START),
+        `${basename} is missing ${MARKER_START}`,
+      );
+      ok(content.includes(MARKER_END), `${basename} is missing ${MARKER_END}`);
+    });
+
+    it(`${basename} markers appear in start-then-end order`, () => {
+      const content = readDoc(basename);
+      const startIdx = content.indexOf(MARKER_START);
+      const endIdx = content.indexOf(MARKER_END);
+      ok(
+        startIdx !== -1 && endIdx !== -1 && startIdx < endIdx,
+        `${basename} markers out of order: start=${startIdx}, end=${endIdx}`,
+      );
+    });
+
+    it(`${basename} SSoT region slug set equals ALWAYS_ON_REVIEWERS slug set`, () => {
+      const content = readDoc(basename);
+      const region = extractSsotRegion(content);
+      const docSlugs = new Set(region.match(SLUG_REGEX) ?? []);
+      const constantSlugs = new Set(
+        ALWAYS_ON_REVIEWERS.map((r) => r.slug as string),
+      );
+      deepStrictEqual(docSlugs, constantSlugs);
+    });
+  }
 });

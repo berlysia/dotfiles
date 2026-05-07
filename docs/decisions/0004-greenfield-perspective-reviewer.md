@@ -62,7 +62,7 @@ ADR-0001 / ADR-0003 で導入した plan-review-automation の常時必須レビ
 
 - 並列サブエージェントのトークンコストが約 33% 増（3→4 名）。手戻り削減効果による相殺は未測定で、初期数週間は純増として扱う。並列実行のため wallclock latency への影響はほぼなし
 - `scope-justification-reviewer`（控えめ寄りに見える）と `greenfield-perspective-reviewer`（積極寄り）の指摘が衝突するパターンが新発生する。`intent-alignment-triage` の三分類（aligned / neutral / divergent）で arbitrate する
-- 常時必須リストが `workflow.md`, `external-review.md`, `plan-review-automation.ts` の 3 箇所に分散している事実が顕在化。次回追加時に drift する懸念があり、Single Source of Truth 化は別 ADR で扱う候補
+- 常時必須リストが `workflow.md`, `external-review.md`, `plan-review-automation.ts` の 3 箇所に分散している事実が顕在化。次回追加時に drift する懸念があり、Single Source of Truth 化は別 ADR で扱う候補 → **ADR-0005 で解消**（hook 内 `ALWAYS_ON_REVIEWERS` 定数を SSoT、doc は手書き + マーカー、テストで drift 検知）
 - 進行中 plan の hash 不一致: 本変更前から進行中の Document Workflow plan を編集すると、新フォーマット非準拠の状態で 4 名推奨が出る。hook 側にガード機構はないため、当該セッションでは追加レビュアーの指摘を「フォーマット不一致による誤検知」として扱う運用判断
 
 ## Open observation items

@@ -44,10 +44,13 @@ Before executing `ExitPlanMode`:
 `plan-review-automation` フックが plan.md 編集時に自動トリガーされ、コンテンツベースでレビュアーを選定:
 
 - **常時必須レビュアー4名**（並列実行）:
+  <!-- ssot:always-on-reviewers:start -->
   - **logic-validator**: 論理整合性・仮定・矛盾の検証
   - **scope-justification-reviewer**: 各変更のエビデンス検証・scope coherence・近未来必要性（守備範囲: plan に書かれている変更）
   - **decision-quality-reviewer**: dominant-axis misalignment 検出
   - **greenfield-perspective-reviewer**: 白紙設計案を独自再構築し現計画との野心ギャップ検出（守備範囲: plan に書かれていない改善）
+  <!-- ssot:always-on-reviewers:end -->
+  - SSoT は `plan-review-automation.ts` の `ALWAYS_ON_REVIEWERS` 定数（ADR-0005 参照）。slug は drift 検知テストで CI レベル同期。責務文（上記日本語）は読み手向け説明として SSoT 化対象外で、表現は手書きで磨いて良い
 - **追加レビュアー**: plan.md のキーワードに応じて最大3つ自動選定（英語・日本語対応）
   - architecture-strategist, security-sentinel, data-integrity-guardian, performance-oracle, resilience-analyzer, test-quality-evaluator, deployment-readiness-evaluator, code-simplicity-reviewer
 - フックの推奨に従い、Agent tool で **全レビュアーを並列実行** する
