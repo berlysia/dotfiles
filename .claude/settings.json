@@ -1,85 +1,12 @@
 {
   "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "Task",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "if command -v entire >/dev/null 2>&1; then entire hooks claude-code post-task; fi"
-          }
-        ]
-      },
-      {
-        "matcher": "TodoWrite",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "if command -v entire >/dev/null 2>&1; then entire hooks claude-code post-todo; fi"
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "Task",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "if command -v entire >/dev/null 2>&1; then entire hooks claude-code pre-task; fi"
-          }
-        ]
-      }
-    ],
-    "SessionEnd": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "if command -v entire >/dev/null 2>&1; then entire hooks claude-code session-end; fi"
-          }
-        ]
-      }
-    ],
     "SessionStart": [
       {
         "matcher": "startup",
         "hooks": [
           {
             "type": "command",
-            "command": "if [[ -n \"${CLAUDE_CODE_REMOTE:-}\" ]]; then mkdir -p ~/.claude/skills ~/.claude/rules \u0026\u0026 cp -rf \"$CLAUDE_PROJECT_DIR\"/dot_claude/skills/* ~/.claude/skills/ \u0026\u0026 cp -rf \"$CLAUDE_PROJECT_DIR\"/dot_claude/rules/* ~/.claude/rules/ \u0026\u0026 echo '[session-start] Skills installed to ~/.claude/' \u003e\u00262; fi"
-          }
-        ]
-      },
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "if command -v entire >/dev/null 2>&1; then entire hooks claude-code session-start; fi"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "if command -v entire >/dev/null 2>&1; then entire hooks claude-code stop; fi"
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "if command -v entire >/dev/null 2>&1; then entire hooks claude-code user-prompt-submit; fi"
+            "command": "if [[ -n \"${CLAUDE_CODE_REMOTE:-}\" ]]; then mkdir -p ~/.claude/skills ~/.claude/rules && cp -rf \"$CLAUDE_PROJECT_DIR\"/dot_claude/skills/* ~/.claude/skills/ && cp -rf \"$CLAUDE_PROJECT_DIR\"/dot_claude/rules/* ~/.claude/rules/ && echo '[session-start] Skills installed to ~/.claude/' >&2; fi"
           }
         ]
       }
@@ -148,8 +75,7 @@
       "Write(~/.claude/plugins/**)",
       "Write(~/.claude/scripts/**)",
       "Write(~/.claude/lib/**)",
-      "MultiEdit(~/.claude/**)",
-      "Read(./.entire/metadata/**)"
+      "MultiEdit(~/.claude/**)"
     ]
   }
 }
