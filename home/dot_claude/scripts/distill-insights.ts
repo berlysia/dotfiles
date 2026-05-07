@@ -2,11 +2,15 @@
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, basename } from "node:path";
+import { query } from "@anthropic-ai/claude-agent-sdk";
 import {
   appendInsightRecord,
+  buildLlmPayload,
   DIGEST_PATH,
   ensureDir,
+  evaluateStageBGate,
   extractInsights,
+  formatProposalsAsMarkdown,
   hashInsight,
   hashSessionId,
   INSIGHTS_JSONL,
@@ -15,19 +19,45 @@ import {
   loadRedactList,
   LOGS_DIR,
   normalize,
+  parseProposalYaml,
+  PAYLOAD_DUMP_PATH,
   PROJECTS_DIR,
   readAckMs,
   readState,
   readStampMs,
+  replaceDigestDistillationSection,
   sanitize,
+  selectStageBInputs,
+  shouldUpdateStamp,
+  STAGE_B_SAFETY_MARGIN_MS,
+  STAGE_B_SYSTEM_PROMPT,
+  STAMP_LLM_PATH,
   STAMP_PATH,
   writeFileSyncAtomic,
+  writePayloadDump,
   writeStampAt,
   writeState,
   type DenyList,
   type DistillState,
   type InsightRecord,
+  type LlmPayload,
+  type StageBOutcome,
+  type StageBQueryFn,
 } from "../hooks/lib/insight-digest.ts";
+
+const STAGE_B_DEFAULT_MODEL = "haiku";
+const STAGE_B_DISALLOWED_TOOLS = [
+  "Bash",
+  "Read",
+  "Write",
+  "Edit",
+  "WebFetch",
+  "WebSearch",
+  "Task",
+  "Agent",
+  "TaskCreate",
+  "TaskUpdate",
+];
 
 interface ClusterRow {
   count: number;
@@ -38,9 +68,10 @@ interface ClusterRow {
   redacted: boolean;
 }
 
-function parseArgs(argv: string[]): { force: boolean } {
+function parseArgs(argv: string[]): { force: boolean; llm: boolean } {
   const force = argv.includes("--force");
-  return { force };
+  const llm = argv.includes("--llm");
+  return { force, llm };
 }
 
 function listJsonlFiles(deny: DenyList, since: number): string[] {
@@ -168,8 +199,8 @@ function deriveProjectFromPath(jsonlPath: string): string {
   return dir;
 }
 
-function main(): void {
-  const { force } = parseArgs(process.argv.slice(2));
+async function main(): Promise<void> {
+  const { force, llm } = parseArgs(process.argv.slice(2));
   ensureDir(LOGS_DIR);
 
   const tStart = Date.now();
@@ -239,6 +270,167 @@ function main(): void {
   console.error(
     `[distill-insights] scanned=${scanned} matched=${matched} appended=${appended} redact_hits=${totalRedactHits} digest=${DIGEST_PATH}`,
   );
+
+  if (llm) {
+    await runStageB({ force, state, tStart });
+  }
+}
+
+export interface StageBPaths {
+  jsonl: string;
+  stamp: string;
+  digest: string;
+  payloadDump: string;
+}
+
+interface RunStageBOpts {
+  force: boolean;
+  state: DistillState;
+  tStart: number;
+  queryFn?: StageBQueryFn;
+  model?: string;
+  paths?: Partial<StageBPaths>;
+  redactPatterns?: RegExp[];
+  maxInputChars?: number;
+}
+
+function resolvePaths(paths?: Partial<StageBPaths>): StageBPaths {
+  return {
+    jsonl: paths?.jsonl ?? INSIGHTS_JSONL,
+    stamp: paths?.stamp ?? STAMP_LLM_PATH,
+    digest: paths?.digest ?? DIGEST_PATH,
+    payloadDump: paths?.payloadDump ?? PAYLOAD_DUMP_PATH,
+  };
+}
+
+export async function runStageB(opts: RunStageBOpts): Promise<StageBOutcome> {
+  const { force, state, tStart } = opts;
+  const queryFn = opts.queryFn ?? (query as unknown as StageBQueryFn);
+  const model = opts.model ?? STAGE_B_DEFAULT_MODEL;
+  const paths = resolvePaths(opts.paths);
+  const redactPatterns = opts.redactPatterns ?? loadRedactList();
+
+  const gate = force
+    ? ({ ok: true } as const)
+    : evaluateStageBGate(state, paths.stamp);
+  if (!gate.ok) {
+    const outcome: StageBOutcome = { kind: "skipped", reason: gate.reason };
+    applyStageBOutcome(outcome, tStart, paths);
+    return outcome;
+  }
+
+  const set = selectStageBInputs({
+    force,
+    sinceLastAck: state.since_last_ack,
+    redactPatterns,
+    ...(opts.maxInputChars !== undefined
+      ? { maxInputChars: opts.maxInputChars }
+      : {}),
+    jsonlPath: paths.jsonl,
+  });
+  const payload = buildLlmPayload(set, { model });
+  writePayloadDump(payload, paths.payloadDump);
+
+  if (set.inputs.length === 0) {
+    const outcome: StageBOutcome = {
+      kind: "ok",
+      proposals: [],
+      truncated: set.truncated,
+      inputsCount: 0,
+      rawProposalCount: 0,
+    };
+    applyStageBOutcome(outcome, tStart, paths);
+    return outcome;
+  }
+
+  const result = await runLlmDistillation({ payload, queryFn });
+  if (!result.ok) {
+    const outcome: StageBOutcome = {
+      kind: "llm_error",
+      detail: result.reason,
+    };
+    applyStageBOutcome(outcome, tStart, paths);
+    return outcome;
+  }
+
+  const parsed = parseProposalYaml(result.raw);
+  if (!parsed.ok) {
+    const outcome: StageBOutcome = {
+      kind: "parse_error",
+      reason: parsed.reason,
+    };
+    applyStageBOutcome(outcome, tStart, paths);
+    return outcome;
+  }
+
+  const outcome: StageBOutcome = {
+    kind: "ok",
+    proposals: parsed.proposals,
+    truncated: set.truncated,
+    inputsCount: set.inputs.length,
+    rawProposalCount: parsed.rawCount,
+  };
+  applyStageBOutcome(outcome, tStart, paths);
+  return outcome;
+}
+
+function applyStageBOutcome(
+  outcome: StageBOutcome,
+  tStart: number,
+  paths: StageBPaths,
+): void {
+  let digestText = "";
+  try {
+    digestText = readFileSync(paths.digest, "utf8");
+  } catch {
+    digestText = "";
+  }
+  const newBody = formatProposalsAsMarkdown(outcome);
+  const updated = replaceDigestDistillationSection(digestText, newBody);
+  writeFileSyncAtomic(paths.digest, updated, 0o600);
+  if (shouldUpdateStamp(outcome)) {
+    writeStampAt(paths.stamp, tStart - STAGE_B_SAFETY_MARGIN_MS);
+  }
+  console.error(`[distill-insights] stage_b outcome=${outcome.kind}`);
+}
+
+export async function runLlmDistillation(opts: {
+  payload: LlmPayload;
+  queryFn: StageBQueryFn;
+}): Promise<{ ok: true; raw: string } | { ok: false; reason: string }> {
+  const { payload, queryFn } = opts;
+  try {
+    const conversation = queryFn({
+      prompt: payload.user_prompt,
+      options: {
+        model: payload.model,
+        maxTurns: 10,
+        systemPrompt: STAGE_B_SYSTEM_PROMPT,
+        allowedTools: [],
+        disallowedTools: STAGE_B_DISALLOWED_TOOLS,
+        permissionMode: "bypassPermissions",
+        allowDangerouslySkipPermissions: true,
+      },
+    });
+    let raw = "";
+    for await (const message of conversation) {
+      if (
+        message.type === "result" &&
+        message.subtype === "success" &&
+        typeof message.result === "string" &&
+        !message.is_error
+      ) {
+        raw = message.result;
+      }
+    }
+    if (raw.length === 0) {
+      return { ok: false, reason: "empty_response" };
+    }
+    return { ok: true, raw };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    return { ok: false, reason: detail };
+  }
 }
 
 function makePreview(text: string): string {
@@ -354,4 +546,9 @@ function writeDigest(
   writeFileSyncAtomic(DIGEST_PATH, lines.join("\n"), 0o600);
 }
 
-main();
+if (import.meta.main) {
+  main().catch((error) => {
+    console.error(`[distill-insights] fatal: ${error}`);
+    process.exit(1);
+  });
+}
