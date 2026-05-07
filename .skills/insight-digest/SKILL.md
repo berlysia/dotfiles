@@ -69,6 +69,15 @@ bun ~/.claude/scripts/distill-insights.ts --force
 を実行し、stdout/stderr をユーザーに簡潔に報告 (scanned / matched / appended / redact_hits)。
 完了後、digest パスを表示し「次は `/insight-digest` で内容を確認できます」と案内。
 
+> **`force --llm`**: Stage B (LLM 蒸留) も即時に実行する場合は `--force --llm` を併用する。
+> ゲート (7 日 / 新規 10 件) を bypass し、`~/.claude/logs/insights/insight-llm-payload.last.json`
+> に送信前 payload を残してから LLM を呼ぶ。proposal を試したいときや、`since_last_ack` が
+> ack 直後で 10 未満のときに使う。
+>
+> ```bash
+> bun ~/.claude/scripts/distill-insights.ts --force --llm
+> ```
+
 ## Mode C: Mark Read (`ack`)
 
 ack ファイルを書き換えるシンプルな bun 1-liner:

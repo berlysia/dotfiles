@@ -6,9 +6,13 @@
 
 set -euo pipefail
 umask 077
-# Defense against ANTHROPIC API redirection / proxy hijack (Stage B sends to Claude API).
+# Defense against ANTHROPIC API redirection / proxy hijack / Node runtime injection.
 # PATH is intentionally NOT hardened: bun is provisioned via mise and the user PATH is trusted.
-unset ANTHROPIC_BASE_URL ANTHROPIC_API_URL HTTPS_PROXY HTTP_PROXY ALL_PROXY 2>/dev/null || true
+unset ANTHROPIC_BASE_URL ANTHROPIC_API_URL \
+      HTTPS_PROXY HTTP_PROXY ALL_PROXY NO_PROXY \
+      https_proxy http_proxy all_proxy no_proxy \
+      NODE_OPTIONS NODE_EXTRA_CA_CERTS NODE_TLS_REJECT_UNAUTHORIZED \
+      2>/dev/null || true
 
 INTERVAL_HOURS=24
 STAMP_FILE="$HOME/.claude/.last-distill-insights-run"
@@ -49,7 +53,7 @@ if [ ! -f "$SCRIPT" ]; then
 fi
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Distilling insights"
-"$BUN" "$SCRIPT" || {
+"$BUN" "$SCRIPT" --llm || {
     echo "[distill-insights] script failed; not updating stamp" >&2
     exit 0
 }
