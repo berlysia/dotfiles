@@ -51,7 +51,7 @@ if [ -n "$STAGED_FMT_FILES" ]; then
         OXFMT_FAILED=false
         for file in $STAGED_FMT_FILES; do
             if [ -f "$file" ]; then
-                if ! pnpm oxfmt "$file" 2>&1; then
+                if ! pnpm oxfmt --no-error-on-unmatched-pattern "$file" 2>&1; then
                     OXFMT_FAILED=true
                 fi
             fi
