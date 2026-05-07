@@ -13,11 +13,11 @@ context: inherit
 
 ## 引数
 
-| 引数 | 動作 |
-|------|------|
-| なし | digest を Read で表示し、採否判断のフレームを併記する |
+| 引数    | 動作                                                                              |
+| ------- | --------------------------------------------------------------------------------- |
+| なし    | digest を Read で表示し、採否判断のフレームを併記する                             |
 | `force` | `bun ~/.claude/scripts/distill-insights.ts --force` を実行し、digest を強制再生成 |
-| `ack` | digest を既読扱いにする (SessionStart 通知を止める) |
+| `ack`   | digest を既読扱いにする (SessionStart 通知を止める)                               |
 
 ## モード判別
 
@@ -42,12 +42,12 @@ context: inherit
 
 digest 内の各 cluster に対し、以下のフレームでユーザーに整理して提示する:
 
-| ラベル | 採否方針 | 行き先 |
-|--------|----------|--------|
-| `proposal_type: skill` | 行為が反復されており、手順を Claude に外注できるならスキル化 | `.skills/<name>/SKILL.md` を新規作成、命名は `<verb>-<noun>` |
-| `proposal_type: claude_md` | プロジェクト固有の前提・規約・コマンド | `home/dot_claude/CLAUDE.md` または `home/<project>/CLAUDE.md` |
-| `proposal_type: rule` | 横断的な開発体験ルール (ワークフロー・品質・命名規約) | `home/dot_claude/rules/*.md` |
-| `proposal_type: discard` | 一回限りの気づきで再利用価値が低い | 採用しない |
+| ラベル                     | 採否方針                                                     | 行き先                                                        |
+| -------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------- |
+| `proposal_type: skill`     | 行為が反復されており、手順を Claude に外注できるならスキル化 | `.skills/<name>/SKILL.md` を新規作成、命名は `<verb>-<noun>`  |
+| `proposal_type: claude_md` | プロジェクト固有の前提・規約・コマンド                       | `home/dot_claude/CLAUDE.md` または `home/<project>/CLAUDE.md` |
+| `proposal_type: rule`      | 横断的な開発体験ルール (ワークフロー・品質・命名規約)        | `home/dot_claude/rules/*.md`                                  |
+| `proposal_type: discard`   | 一回限りの気づきで再利用価値が低い                           | 採用しない                                                    |
 
 判断補助:
 

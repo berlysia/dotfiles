@@ -40,9 +40,9 @@ Plan files accompany ADRs to detail implementation steps. Create in `docs/plans/
 
 ### 該当する品質特性
 
-| 品質特性 | 副特性 | テスト/検証方法 | 判定基準 |
-|----------|--------|----------------|----------|
-| {characteristic} | {sub-characteristic} | {method} | {criteria} |
+| 品質特性         | 副特性               | テスト/検証方法 | 判定基準   |
+| ---------------- | -------------------- | --------------- | ---------- |
+| {characteristic} | {sub-characteristic} | {method}        | {criteria} |
 
 <details>
 <summary>ISO 25010 品質特性リファレンス（該当するものを選択）</summary>
