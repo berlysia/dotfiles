@@ -12,9 +12,9 @@ Design decisions (API/architecture/data model changes) or 3+ step tasks **requir
 
 ## Key Commands
 
-- **Test**: `pnpm test`
-- **Typecheck**: `pnpm typecheck`
-- **Lint**: `pnpm lint`
+- **Test**: `bun run test`
+- **Typecheck**: `bun run typecheck`
+- **Lint**: `bun run lint`
 - **Worktree**: `git-worktree-create <branch>`, `git-worktree-cleanup`
 - **Temp files**: `${projectRoot}/.tmp` (gitignored)
 

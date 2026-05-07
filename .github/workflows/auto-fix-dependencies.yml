@@ -109,7 +109,7 @@ jobs:
             **Your task:**
             1. Check which CI workflows failed: `gh pr checks ${{ steps.pr-info.outputs.pr_number }}`
             2. Investigate failures using `gh run view` and checking test logs
-            3. Fix the issues (e.g., update lockfile, resolve conflicts, fix breaking changes)
+            3. Fix the issues (e.g., run `bun install` to update lockfile, resolve conflicts, fix breaking changes)
             4. Commit and push the fixes
             5. DO NOT merge - auto-merge will handle it once all CI checks pass
 
@@ -123,6 +123,6 @@ jobs:
             - Use Read/Glob/Grep tools for file discovery and inspection — never use `ls`, `cat`, `find`, `test` via Bash
             - Git commits: use single-line format `git commit -m "type(scope): description"` — NEVER use heredocs, `$(cat <<EOF)`, or multiline -m flags
             - Run `git add` and `git commit` as separate Bash calls, not chained with `&&`
-            - Only use `gh`, `git`, `pnpm`, `npm` commands via Bash
+            - Only use `gh`, `git`, `bun`, `npm` commands via Bash
 
-          claude_args: '--allowed-tools "Bash(gh *),Bash(git *),Bash(pnpm *),Bash(npm *),Read,Write,Edit,Glob,Grep"'
+          claude_args: '--allowed-tools "Bash(gh *),Bash(git *),Bash(bun *),Bash(npm *),Read,Write,Edit,Glob,Grep"'

@@ -59,10 +59,10 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
 
 **パッケージ管理**:
 
-- **hook依存の定義**: `home/dot_claude/package.json`（pnpm workspace パッケージ）
-- **開発時**: `pnpm install` → `home/dot_claude/node_modules/`
+- **hook依存の定義**: `home/dot_claude/package.json`（bun workspace パッケージ）
+- **開発時**: `bun install` → `home/dot_claude/node_modules/`
 - **deploy後**: `chezmoi apply` → `~/.claude/` で `bun install`
 
-**依存パッケージ追加**: `home/dot_claude/package.json` に追加 → `pnpm install` → `chezmoi apply`
+**依存パッケージ追加**: `home/dot_claude/package.json` に追加 → `bun install` → `chezmoi apply`
 
 **主要パッケージ**: `cc-hooks-ts`（フック定義ヘルパー）, `@anthropic-ai/claude-agent-sdk`（LLM評価用）

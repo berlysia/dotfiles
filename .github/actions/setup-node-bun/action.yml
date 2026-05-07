@@ -1,5 +1,5 @@
-name: Setup Node.js with pnpm
-description: Setup Node.js environment with pnpm and install dependencies
+name: Setup Node.js with bun
+description: Setup Node.js environment with bun and install dependencies
 
 inputs:
   node-version:
@@ -14,16 +14,15 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Setup pnpm
-      uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+    - name: Setup bun
+      uses: oven-sh/setup-bun@735343b667e3e1b0e4dd17a18a32c2f0a4e538b1 # v2.0.2
 
     - name: Setup Node.js
       uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
       with:
         node-version: ${{ inputs.node-version }}
-        cache: "pnpm"
 
     - name: Install dependencies
       if: inputs.install-deps == 'true'
       shell: bash
-      run: pnpm install --frozen-lockfile
+      run: bun install --frozen-lockfile

@@ -2,7 +2,7 @@
 #!/bin/bash
 # Install node_modules for chezmoi source directory (root workspace)
 # package.json hash: {{ output "cat" (joinPath .chezmoi.workingTree "package.json") | sha256sum }}
-# pnpm-lock.yaml hash: {{ output "cat" (joinPath .chezmoi.workingTree "pnpm-lock.yaml") | sha256sum }}
+# bun.lock hash: {{ output "cat" (joinPath .chezmoi.workingTree "bun.lock") | sha256sum }}
 
 set -euo pipefail
 
@@ -13,31 +13,25 @@ log() {
 
 SOURCE_DIR="{{ .chezmoi.workingTree }}"
 
-# Initialize mise environment to access pnpm
+# Initialize mise environment to access bun
 if command -v mise &> /dev/null; then
     if mise_env=$(mise env --shell bash 2>/dev/null); then
         eval "$mise_env"
     fi
 fi
 
-# Check if pnpm is available
-if ! command -v pnpm &> /dev/null; then
-    log "pnpm not found. Skipping node_modules install." "WARNING"
-    log "Run 'mise install' to install node first." "INFO"
+if ! command -v bun &> /dev/null; then
+    log "bun not found. Skipping node_modules install." "WARNING"
+    log "Run 'mise install' to install bun first." "INFO"
     exit 0
 fi
 
 log "Installing node_modules in $SOURCE_DIR..."
-if (cd "$SOURCE_DIR" && pnpm install --frozen-lockfile 2>&1); then
+if (cd "$SOURCE_DIR" && bun install --frozen-lockfile 2>&1); then
     log "Successfully installed node_modules" "SUCCESS"
 else
-    log "frozen-lockfile failed, trying regular install..." "WARNING"
-    if (cd "$SOURCE_DIR" && pnpm install 2>&1); then
-        log "Successfully installed node_modules" "SUCCESS"
-    else
-        log "Failed to install node_modules" "ERROR"
-        exit 1
-    fi
+    log "frozen-lockfile failed. Run 'bun install' manually to update bun.lock" "ERROR"
+    exit 1
 fi
 
 log "node_modules installation completed"

@@ -3,7 +3,7 @@
 # Install hook dependencies at ~/.claude/ so bun can resolve them
 # bun resolves modules by walking up from the script location (~/.claude/hooks/)
 # hook package.json hash: {{ output "cat" (joinPath .chezmoi.workingTree "home/dot_claude/package.json") | sha256sum }}
-# hook bun.lock hash: {{ output "cat" (joinPath .chezmoi.workingTree "home/dot_claude/bun.lock") | sha256sum }}
+# root bun.lock hash: {{ output "cat" (joinPath .chezmoi.workingTree "bun.lock") | sha256sum }}
 
 set -euo pipefail
 

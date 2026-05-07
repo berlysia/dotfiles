@@ -28,8 +28,8 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup Node.js with pnpm
-        uses: ./.github/actions/setup-node-pnpm
+      - name: Setup Node.js with bun
+        uses: ./.github/actions/setup-node-bun
 
       - name: Install mise
         uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1

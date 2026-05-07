@@ -63,10 +63,10 @@ fi
 
 # --- 3. knip dead code detection ---
 if [ -f "$PROJECT_ROOT/package.json" ]; then
-    if command -v pnpm &>/dev/null; then
+    if command -v bun &>/dev/null; then
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] [GC] Running knip..."
         cd "$PROJECT_ROOT"
-        if ! pnpm exec knip --no-progress 2>&1 | tail -20; then
+        if ! bunx knip --no-progress 2>&1 | tail -20; then
             echo "[$(date '+%Y-%m-%d %H:%M:%S')] [GC] knip reported issues (see above)"
         else
             echo "[$(date '+%Y-%m-%d %H:%M:%S')] [GC] knip: clean"

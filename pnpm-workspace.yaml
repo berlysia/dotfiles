@@ -1,6 +1,0 @@
-packages:
-  - "home/dot_claude"
-
-minimumReleaseAgeExclude:
-  - dax
-  - "@berlysia/*"

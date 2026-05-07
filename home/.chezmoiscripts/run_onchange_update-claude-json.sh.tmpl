@@ -43,30 +43,30 @@ TEMPLATE_CONTENT=$(cat << EOF
 {{- else }}
     "readability": {
       "type": "stdio",
-      "command": "pnpm",
-      "args": ["dlx", "@mizchi/readability@${READABILITY_VER}", "--mcp"],
+      "command": "bunx",
+      "args": ["@mizchi/readability@${READABILITY_VER}", "--mcp"],
       "env": {}
     },
     "context7": {
       "type": "stdio",
-      "command": "pnpm",
-      "args": ["dlx", "@upstash/context7-mcp@${CONTEXT7_VER}"],
+      "command": "bunx",
+      "args": ["@upstash/context7-mcp@${CONTEXT7_VER}"],
       "env": {}
     },
     "drawio": {
       "type": "stdio",
-      "command": "pnpm",
-      "args": ["dlx", "@drawio/mcp@${DRAWIO_VER}"]
+      "command": "bunx",
+      "args": ["@drawio/mcp@${DRAWIO_VER}"]
     },
 {{- end }}
     "chrome-devtools": {
-      "command": "pnpm",
-      "args": ["dlx", "chrome-devtools-mcp@${CHROME_DEVTOOLS_VER}"]
+      "command": "bunx",
+      "args": ["chrome-devtools-mcp@${CHROME_DEVTOOLS_VER}"]
     },
     "playwright": {
       "type": "stdio",
-      "command": "pnpm",
-      "args": ["dlx", "@playwright/mcp@${PLAYWRIGHT_VER}"],
+      "command": "bunx",
+      "args": ["@playwright/mcp@${PLAYWRIGHT_VER}"],
       "env": {}
     }
   },

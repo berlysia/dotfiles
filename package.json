@@ -5,6 +5,9 @@
   "description": "Dotfiles managed by chezmoi with Claude Code hooks",
   "keywords": [],
   "author": "",
+  "workspaces": [
+    "home/dot_claude"
+  ],
   "type": "module",
   "scripts": {
     "test": "node --test home/dot_claude/hooks/tests/**/*.test.ts",
@@ -42,6 +45,5 @@
     "oxlint": "1.55.0",
     "prettier": "3.8.3",
     "typescript": "5.9.3"
-  },
-  "packageManager": "pnpm@10.33.0"
+  }
 }
