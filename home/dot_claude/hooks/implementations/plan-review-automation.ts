@@ -295,6 +295,7 @@ function buildRecommendation(
     "logic-validator",
     "scope-justification-reviewer",
     "decision-quality-reviewer",
+    "greenfield-perspective-reviewer",
   ];
 
   const lines = [
@@ -310,6 +311,7 @@ function buildRecommendation(
     "1. subagent_type: logic-validator — Check logical consistency, assumptions, and contradictions",
     "2. subagent_type: scope-justification-reviewer — Verify change justification, scope coherence, and near-term necessity",
     "3. subagent_type: decision-quality-reviewer — Detect dominant-axis misalignment in design decisions (Decision Quality framework)",
+    "4. subagent_type: greenfield-perspective-reviewer — Reconstruct the order from a clean slate and surface ambition gaps the incremental plan dropped",
   ];
 
   lines.push(
@@ -325,7 +327,7 @@ function buildRecommendation(
       const r = additionalReviewers[i]!;
       const shortName = r.subagentType.split(":").pop()!;
       allReviewerNames.push(shortName);
-      lines.push(`${i + 4}. subagent_type: ${r.subagentType} — ${r.label}`);
+      lines.push(`${i + 5}. subagent_type: ${r.subagentType} — ${r.label}`);
     }
   }
 
