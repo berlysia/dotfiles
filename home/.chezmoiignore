@@ -11,6 +11,12 @@ dot_claude/hooks/scripts/README_TESTING.md
 # Zsh completion cache files
 dot_zsh/.zcompdump*
 
+# Insight distillation runtime artifacts (never tracked in source state)
+dot_claude/logs/insights
+dot_claude/logs/insights/**
+dot_claude/dot_last-distill-insights*
+dot_claude/dot_last-insight-digest-acked
+
 **/node_modules
 **/node_modules/**
 

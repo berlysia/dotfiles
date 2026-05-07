@@ -1,0 +1,17 @@
+# Insight distillation redact list (additional sanitizer patterns)
+# 1 line per pattern. Lines starting with '#' are comments.
+# Each non-empty line is compiled as a JavaScript RegExp with the 'g' flag.
+# Matches are replaced with [REDACTED] before any insight is persisted or
+# sent to the LLM.
+#
+# Default sanitizers (already applied): API keys (sk-, ghp_, AKIA, etc.),
+# JWTs, PEM private keys, Authorization Bearer headers, and .env-style lines.
+# Add project-specific patterns below.
+#
+# Examples:
+#   internal-corp-id-\d+
+#   acme-customer-[A-Z0-9]+
+#   https://[a-z0-9.-]+\.internal\.example/\S*
+#
+# This file is created once by chezmoi and is never overwritten by subsequent
+# applies. Edit freely.

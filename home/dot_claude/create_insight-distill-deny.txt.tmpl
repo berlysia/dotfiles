@@ -1,0 +1,16 @@
+# Insight distillation deny list
+# 1 line per pattern. Lines starting with '#' are comments.
+#
+# Syntax:
+#   path:<glob>      Skip jsonl files whose absolute path matches the glob (** allowed).
+#                    Applied at the file enumeration stage, before parsing.
+#   text:<regex>     Drop individual insight bodies whose text matches this regex.
+#                    Applied per-insight after extraction.
+#
+# Examples:
+#   path:**/projects/-home-myname-secret-project/**
+#   path:**/work-confidential/**
+#   text:internal-corp-id-\d+
+#
+# This file is created once by chezmoi and is never overwritten by subsequent
+# applies. Edit freely.

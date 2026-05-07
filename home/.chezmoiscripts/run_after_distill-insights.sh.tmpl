@@ -1,0 +1,59 @@
+{{ if ne .chezmoi.os "windows" -}}
+#!/bin/bash
+# Distill ★ Insight blocks from ~/.claude/projects/**/*.jsonl into a digest report.
+# Modeled after run_after_analyze-mistakes.sh.tmpl: stamp-gated, idempotent.
+# Stage A only (heuristic). Stage B (LLM) is added later once Stage A is stable.
+
+set -euo pipefail
+umask 077
+# Defense against ANTHROPIC API redirection / proxy hijack (Stage B sends to Claude API).
+# PATH is intentionally NOT hardened: bun is provisioned via mise and the user PATH is trusted.
+unset ANTHROPIC_BASE_URL ANTHROPIC_API_URL HTTPS_PROXY HTTP_PROXY ALL_PROXY 2>/dev/null || true
+
+INTERVAL_HOURS=24
+STAMP_FILE="$HOME/.claude/.last-distill-insights-run"
+SCRIPT="$HOME/.claude/scripts/distill-insights.ts"
+
+# --- frequency gate (per chezmoi apply trigger) ---
+if [ -f "$STAMP_FILE" ]; then
+    last=$(cat "$STAMP_FILE" 2>/dev/null || echo 0)
+    now=$(date +%s)
+    elapsed=$(( (now - last) / 3600 ))
+    if [ "$elapsed" -lt "$INTERVAL_HOURS" ]; then
+        exit 0
+    fi
+fi
+
+# --- initialize mise to access bun (project convention) ---
+if command -v mise &>/dev/null; then
+    if mise_env=$(mise env --shell bash 2>/dev/null); then
+        eval "$mise_env"
+    fi
+fi
+
+# --- prerequisite check ---
+BUN=""
+if command -v bun &>/dev/null; then
+    BUN=$(command -v bun)
+elif [ -x "$HOME/.local/share/mise/shims/bun" ]; then
+    BUN="$HOME/.local/share/mise/shims/bun"
+fi
+if [ -z "$BUN" ]; then
+    echo "[distill-insights] bun not found; skipping" >&2
+    exit 0
+fi
+
+if [ ! -f "$SCRIPT" ]; then
+    echo "[distill-insights] script not found at $SCRIPT; skipping" >&2
+    exit 0
+fi
+
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Distilling insights"
+"$BUN" "$SCRIPT" || {
+    echo "[distill-insights] script failed; not updating stamp" >&2
+    exit 0
+}
+
+mkdir -p "$(dirname "$STAMP_FILE")"
+date +%s > "$STAMP_FILE"
+{{ end -}}
