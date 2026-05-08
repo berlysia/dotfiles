@@ -7,15 +7,24 @@ import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
   ALWAYS_ON_REVIEWERS,
+  PLAN_NORMALIZERS,
+  PLAN_REVIEWERS,
+  SPEC_NORMALIZERS,
+  SPEC_REVIEWERS,
   buildRecommendation,
   buildSummaryReminder,
+  computeDocumentHash,
   computePlanHash,
   extractLatestReviewMarker,
   extractTargetPath,
-  isReviewCompletePendingApproval,
+  getWorkflowDocumentType,
   isPlanFile,
+  isReviewCompletePendingApproval,
+  isWorkflowDocument,
   normalizeForHash,
+  normalizersForDocumentType,
   REVIEWER_CATALOG,
+  reviewersForDocumentType,
   selectReviewers,
   stripReviewMarkers,
 } from "../../implementations/plan-review-automation.ts";
@@ -427,8 +436,12 @@ describe("buildSummaryReminder", () => {
   });
 });
 
-describe("ALWAYS_ON_REVIEWERS derivation", () => {
-  it("derives allReviewerNames as the slug array used by buildRecommendation", () => {
+describe("SPEC_REVIEWERS / PLAN_REVIEWERS derivation", () => {
+  it("ALWAYS_ON_REVIEWERS is an alias of SPEC_REVIEWERS (backward compat)", () => {
+    strictEqual(ALWAYS_ON_REVIEWERS, SPEC_REVIEWERS);
+  });
+
+  it("SPEC_REVIEWERS contains the 4 design-layer slugs in order", () => {
     const expected = [
       "logic-validator",
       "scope-justification-reviewer",
@@ -436,12 +449,35 @@ describe("ALWAYS_ON_REVIEWERS derivation", () => {
       "greenfield-perspective-reviewer",
     ];
     deepStrictEqual(
-      ALWAYS_ON_REVIEWERS.map((r) => r.slug as string),
+      SPEC_REVIEWERS.map((r) => r.slug as string),
       expected,
     );
   });
 
-  it("derives alwaysOnLines with exact format including em-dash separator", () => {
+  it("PLAN_REVIEWERS contains the 2 execution-layer slugs in order", () => {
+    const expected = ["logic-validator", "scope-justification-reviewer"];
+    deepStrictEqual(
+      PLAN_REVIEWERS.map((r) => r.slug as string),
+      expected,
+    );
+  });
+
+  it("logic-validator and scope-justification-reviewer appear in both layers (intentional duplication)", () => {
+    const specSlugs = new Set(SPEC_REVIEWERS.map((r) => r.slug as string));
+    const planSlugs = new Set(PLAN_REVIEWERS.map((r) => r.slug as string));
+    ok(specSlugs.has("logic-validator"));
+    ok(planSlugs.has("logic-validator"));
+    ok(specSlugs.has("scope-justification-reviewer"));
+    ok(planSlugs.has("scope-justification-reviewer"));
+  });
+
+  it("decision-quality-reviewer and greenfield-perspective-reviewer are spec-only", () => {
+    const planSlugs = new Set(PLAN_REVIEWERS.map((r) => r.slug as string));
+    ok(!planSlugs.has("decision-quality-reviewer"));
+    ok(!planSlugs.has("greenfield-perspective-reviewer"));
+  });
+
+  it("derives spec alwaysOnLines with exact format including em-dash separator", () => {
     const expected = [
       "1. subagent_type: logic-validator — Check logical consistency, assumptions, and contradictions",
       "2. subagent_type: scope-justification-reviewer — Verify change justification, scope coherence, and near-term necessity",
@@ -449,7 +485,7 @@ describe("ALWAYS_ON_REVIEWERS derivation", () => {
       "4. subagent_type: greenfield-perspective-reviewer — Reconstruct the order from a clean slate and surface ambition gaps the incremental plan dropped",
     ];
     deepStrictEqual(
-      ALWAYS_ON_REVIEWERS.map(
+      SPEC_REVIEWERS.map(
         (r, i) => `${i + 1}. subagent_type: ${r.slug} — ${r.responsibility}`,
       ),
       expected,
@@ -457,49 +493,208 @@ describe("ALWAYS_ON_REVIEWERS derivation", () => {
   });
 });
 
+describe("computeDocumentHash with normalizers", () => {
+  it("computeDocumentHash equals computePlanHash when SPEC_NORMALIZERS is passed", () => {
+    const content = "## Plan\n- task\n";
+    strictEqual(
+      computeDocumentHash(content, SPEC_NORMALIZERS),
+      computePlanHash(content),
+    );
+  });
+
+  it("computeDocumentHash with PLAN_NORMALIZERS is currently equivalent to SPEC_NORMALIZERS", () => {
+    const content =
+      "## Plan\n- [x] task\n## Approval\n- Approval Status: pending\n";
+    strictEqual(
+      computeDocumentHash(content, SPEC_NORMALIZERS),
+      computeDocumentHash(content, PLAN_NORMALIZERS),
+    );
+  });
+
+  it("normalizersForDocumentType picks plan normalizers for plan-numbered, spec normalizers otherwise", () => {
+    strictEqual(normalizersForDocumentType("plan-numbered"), PLAN_NORMALIZERS);
+    strictEqual(normalizersForDocumentType("spec"), SPEC_NORMALIZERS);
+    strictEqual(normalizersForDocumentType("plan"), SPEC_NORMALIZERS);
+  });
+
+  it("reviewersForDocumentType picks plan reviewers for plan-numbered, spec reviewers otherwise", () => {
+    strictEqual(reviewersForDocumentType("plan-numbered"), PLAN_REVIEWERS);
+    strictEqual(reviewersForDocumentType("spec"), SPEC_REVIEWERS);
+    strictEqual(reviewersForDocumentType("plan"), SPEC_REVIEWERS);
+  });
+});
+
+describe("getWorkflowDocumentType / isWorkflowDocument", () => {
+  it("detects spec.md / plan.md / plan-numbered.md", () => {
+    strictEqual(getWorkflowDocumentType("/tmp/spec.md"), "spec");
+    strictEqual(getWorkflowDocumentType("/tmp/plan.md"), "plan");
+    strictEqual(getWorkflowDocumentType("/tmp/plan-1.md"), "plan-numbered");
+    strictEqual(getWorkflowDocumentType("/tmp/plan-99.md"), "plan-numbered");
+  });
+
+  it("rejects suffixed / dotted / non-numeric variants (false-allow防止)", () => {
+    strictEqual(getWorkflowDocumentType("/tmp/plan-draft.md"), null);
+    strictEqual(getWorkflowDocumentType("/tmp/plan-rejected.md"), null);
+    strictEqual(getWorkflowDocumentType("/tmp/plan-template.md"), null);
+    strictEqual(getWorkflowDocumentType("/tmp/plan-1.md.bak"), null);
+    strictEqual(getWorkflowDocumentType("/tmp/plan-1.md.swp"), null);
+    strictEqual(getWorkflowDocumentType("/tmp/.plan-1.md"), null);
+    strictEqual(getWorkflowDocumentType("/tmp/plan-.md"), null);
+    strictEqual(getWorkflowDocumentType("/tmp/plan-1a.md"), null);
+    strictEqual(getWorkflowDocumentType("/tmp/plan-2-draft.md"), null);
+    strictEqual(getWorkflowDocumentType("/tmp/plan-2-wip.md"), null);
+  });
+
+  it("isWorkflowDocument returns true for spec/plan/plan-N.md and false otherwise", () => {
+    strictEqual(isWorkflowDocument("/tmp/spec.md"), true);
+    strictEqual(isWorkflowDocument("/tmp/plan.md"), true);
+    strictEqual(isWorkflowDocument("/tmp/plan-7.md"), true);
+    strictEqual(isWorkflowDocument("/tmp/plan-2-draft.md"), false);
+    strictEqual(isWorkflowDocument("/tmp/research.md"), false);
+    strictEqual(isWorkflowDocument("/tmp/code.ts"), false);
+  });
+});
+
+describe("buildRecommendation document-type branching", () => {
+  it("for spec.md uses spec reviewers (4 names) and includes <spec> delimiter note", () => {
+    const result = buildRecommendation(
+      "/tmp/wf/spec.md",
+      null,
+      "## Goal\nDesign a new module",
+    );
+    ok(result.includes("spec.md was updated"));
+    ok(result.includes("logic-validator"));
+    ok(result.includes("decision-quality-reviewer"));
+    ok(result.includes("greenfield-perspective-reviewer"));
+    ok(result.includes("<spec>...</spec>"));
+  });
+
+  it("for plan-N.md uses plan reviewers (2 names) and includes parent-spec-hash field", () => {
+    const result = buildRecommendation(
+      "/tmp/wf/plan-1.md",
+      null,
+      "## Tasks\n- T1: implement",
+      {
+        documentType: "plan-numbered",
+        specPath: "/tmp/wf/spec.md",
+        parentSpecHash: "abcdef1234",
+      },
+    );
+    ok(result.includes("plan-1.md was updated"));
+    ok(result.includes("logic-validator"));
+    ok(result.includes("scope-justification-reviewer"));
+    ok(result.includes("parent-spec-hash=abcdef1234"));
+    ok(result.includes("<plan>...</plan>"));
+    // Plan layer does not include design-layer reviewers as always-on.
+    ok(!result.includes("1. subagent_type: decision-quality-reviewer"));
+    ok(!result.includes("1. subagent_type: greenfield-perspective-reviewer"));
+  });
+
+  it("for plan.md (single-layer) uses spec reviewers and no parent-spec-hash field", () => {
+    const result = buildRecommendation(
+      "/tmp/wf/plan.md",
+      null,
+      "## Plan\n- task",
+    );
+    ok(result.includes("plan.md was updated"));
+    ok(result.includes("decision-quality-reviewer"));
+    ok(!result.includes("parent-spec-hash"));
+  });
+
+  it("plan-N.md without computed parent-spec-hash falls back to placeholder", () => {
+    const result = buildRecommendation(
+      "/tmp/wf/plan-1.md",
+      null,
+      "## Tasks\n- T1: implement",
+      { documentType: "plan-numbered", specPath: "/tmp/wf/spec.md" },
+    );
+    ok(result.includes("parent-spec-hash=<spec.md hash here>"));
+  });
+});
+
 describe("doc drift detection (integration boundary)", () => {
   const RULES_DIR = fileURLToPath(new URL("../../../rules/", import.meta.url));
   const DOC_BASENAMES = ["workflow.md", "external-review.md"];
-  const SLUG_REGEX = /[a-z][a-z-]*-(?:reviewer|validator|evaluator)/g;
-  const MARKER_START = "<!-- ssot:always-on-reviewers:start -->";
-  const MARKER_END = "<!-- ssot:always-on-reviewers:end -->";
+
+  // Slugs in the SSoT regions appear inside backticks (`logic-validator`) or
+  // after the bold marker `**logic-validator**`. We extract slugs only from
+  // these specific contexts to avoid picking up marker words like
+  // "spec-reviewer" / "plan-reviewer" embedded in marker comments themselves.
+  const INLINE_CODE_SLUG_REGEX =
+    /`([a-z][a-z-]*-(?:reviewer|validator|evaluator))`/g;
+  const BOLD_SLUG_REGEX =
+    /\*\*([a-z][a-z-]*-(?:reviewer|validator|evaluator))\*\*/g;
 
   function readDoc(basename: string): string {
     return readFileSync(join(RULES_DIR, basename), "utf-8");
   }
 
-  function extractSsotRegion(content: string): string {
-    const startIdx = content.indexOf(MARKER_START);
-    const endIdx = content.indexOf(MARKER_END);
-    return content.slice(startIdx + MARKER_START.length, endIdx);
+  function extractSsotRegion(
+    content: string,
+    layer: "spec-reviewers" | "plan-reviewers",
+  ): string {
+    const startMarker = `<!-- ssot:${layer}:start -->`;
+    const endMarker = `<!-- ssot:${layer}:end -->`;
+    const startIdx = content.indexOf(startMarker);
+    const endIdx = content.indexOf(endMarker);
+    return content.slice(startIdx + startMarker.length, endIdx);
+  }
+
+  function extractSlugSet(region: string): Set<string> {
+    const slugs = new Set<string>();
+    let match: RegExpExecArray | null;
+    INLINE_CODE_SLUG_REGEX.lastIndex = 0;
+    while ((match = INLINE_CODE_SLUG_REGEX.exec(region)) !== null) {
+      if (match[1]) slugs.add(match[1]);
+    }
+    BOLD_SLUG_REGEX.lastIndex = 0;
+    while ((match = BOLD_SLUG_REGEX.exec(region)) !== null) {
+      if (match[1]) slugs.add(match[1]);
+    }
+    return slugs;
   }
 
   for (const basename of DOC_BASENAMES) {
-    it(`${basename} contains both SSoT markers`, () => {
-      const content = readDoc(basename);
-      ok(
-        content.includes(MARKER_START),
-        `${basename} is missing ${MARKER_START}`,
-      );
-      ok(content.includes(MARKER_END), `${basename} is missing ${MARKER_END}`);
-    });
+    for (const layer of ["spec-reviewers", "plan-reviewers"] as const) {
+      const startMarker = `<!-- ssot:${layer}:start -->`;
+      const endMarker = `<!-- ssot:${layer}:end -->`;
 
-    it(`${basename} markers appear in start-then-end order`, () => {
-      const content = readDoc(basename);
-      const startIdx = content.indexOf(MARKER_START);
-      const endIdx = content.indexOf(MARKER_END);
-      ok(
-        startIdx !== -1 && endIdx !== -1 && startIdx < endIdx,
-        `${basename} markers out of order: start=${startIdx}, end=${endIdx}`,
-      );
-    });
+      it(`${basename} contains both ${layer} SSoT markers`, () => {
+        const content = readDoc(basename);
+        ok(
+          content.includes(startMarker),
+          `${basename} is missing ${startMarker}`,
+        );
+        ok(content.includes(endMarker), `${basename} is missing ${endMarker}`);
+      });
 
-    it(`${basename} SSoT region slug set equals ALWAYS_ON_REVIEWERS slug set`, () => {
+      it(`${basename} ${layer} markers appear in start-then-end order`, () => {
+        const content = readDoc(basename);
+        const startIdx = content.indexOf(startMarker);
+        const endIdx = content.indexOf(endMarker);
+        ok(
+          startIdx !== -1 && endIdx !== -1 && startIdx < endIdx,
+          `${basename} ${layer} markers out of order: start=${startIdx}, end=${endIdx}`,
+        );
+      });
+    }
+
+    it(`${basename} spec-reviewers SSoT region slug set equals SPEC_REVIEWERS slug set`, () => {
       const content = readDoc(basename);
-      const region = extractSsotRegion(content);
-      const docSlugs = new Set(region.match(SLUG_REGEX) ?? []);
+      const region = extractSsotRegion(content, "spec-reviewers");
+      const docSlugs = extractSlugSet(region);
       const constantSlugs = new Set(
-        ALWAYS_ON_REVIEWERS.map((r) => r.slug as string),
+        SPEC_REVIEWERS.map((r) => r.slug as string),
+      );
+      deepStrictEqual(docSlugs, constantSlugs);
+    });
+
+    it(`${basename} plan-reviewers SSoT region slug set equals PLAN_REVIEWERS slug set`, () => {
+      const content = readDoc(basename);
+      const region = extractSsotRegion(content, "plan-reviewers");
+      const docSlugs = extractSlugSet(region);
+      const constantSlugs = new Set(
+        PLAN_REVIEWERS.map((r) => r.slug as string),
       );
       deepStrictEqual(docSlugs, constantSlugs);
     });
