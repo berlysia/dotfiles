@@ -2,11 +2,16 @@ import { resolve } from "node:path";
 import { expandTilde } from "./path-utils.ts";
 
 const PLAN_FILENAME = "plan.md";
+const SPEC_FILENAME = "spec.md";
 const RESEARCH_FILENAME = "research.md";
 const STATE_FILENAME = "workflow-state.json";
 const REVIEW_CACHE_FILENAME = "plan-review.cache.json";
 const REVIEW_MARKDOWN_FILENAME = "plan-review.md";
 const REVIEW_JSON_FILENAME = "plan-review.json";
+
+const PLAN_NUMBERED_REGEX = /^plan-[0-9]+\.md$/;
+
+export type WorkflowDocumentType = "spec" | "plan" | "plan-numbered";
 
 /**
  * Resolve the workflow directory for the current session.
@@ -23,6 +28,11 @@ export function getWorkflowDir(cwd: string): string | null {
 export function getPlanPath(cwd: string): string | null {
   const dir = getWorkflowDir(cwd);
   return dir ? resolve(dir, PLAN_FILENAME) : null;
+}
+
+export function getSpecPath(cwd: string): string | null {
+  const dir = getWorkflowDir(cwd);
+  return dir ? resolve(dir, SPEC_FILENAME) : null;
 }
 
 export function getResearchPath(cwd: string): string | null {
@@ -73,12 +83,44 @@ export function isPlanFile(absolutePath: string): boolean {
 }
 
 /**
+ * Detect the type of a workflow document by filename.
+ * - "spec": spec.md (design layer in two-layer mode)
+ * - "plan": plan.md (single-layer mode, contains lightweight spec)
+ * - "plan-numbered": plan-N.md where N is one or more digits (execution layer in two-layer mode)
+ * Returns null for unrelated files. Strict regex match prevents false-allow on
+ * `plan-draft.md` / `plan-1.md.bak` / `plan-2-draft.md` etc.
+ */
+export function getWorkflowDocumentType(
+  absolutePath: string,
+): WorkflowDocumentType | null {
+  const filename = absolutePath.split("/").pop() ?? "";
+  if (filename === SPEC_FILENAME) {
+    return "spec";
+  }
+  if (filename === PLAN_FILENAME) {
+    return "plan";
+  }
+  if (PLAN_NUMBERED_REGEX.test(filename)) {
+    return "plan-numbered";
+  }
+  return null;
+}
+
+/**
+ * Check if a given absolute path is any workflow document (spec.md / plan.md / plan-N.md).
+ */
+export function isWorkflowDocument(absolutePath: string): boolean {
+  return getWorkflowDocumentType(absolutePath) !== null;
+}
+
+/**
  * Resolve all workflow artifact paths from a known workflow directory.
  * Enables co-location: once any artifact's directory is known,
  * all sibling artifacts can be found without env var resolution.
  */
 export function resolveWorkflowPaths(workflowDir: string): {
   plan: string;
+  spec: string;
   research: string;
   state: string;
   reviewCache: string;
@@ -87,6 +129,7 @@ export function resolveWorkflowPaths(workflowDir: string): {
 } {
   return {
     plan: resolve(workflowDir, PLAN_FILENAME),
+    spec: resolve(workflowDir, SPEC_FILENAME),
     research: resolve(workflowDir, RESEARCH_FILENAME),
     state: resolve(workflowDir, STATE_FILENAME),
     reviewCache: resolve(workflowDir, REVIEW_CACHE_FILENAME),
