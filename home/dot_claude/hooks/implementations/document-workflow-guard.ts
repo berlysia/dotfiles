@@ -1,7 +1,7 @@
 #!/usr/bin/env -S bun run --silent
 
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineHook } from "cc-hooks-ts";
 import { extractCommandsStructured } from "../lib/bash-parser.ts";
@@ -11,6 +11,7 @@ import { expandTilde } from "../lib/path-utils.ts";
 import {
   getWorkflowDir,
   getWorkflowDirRelative,
+  isWorkflowDocument,
   resolveWorkflowPaths,
 } from "../lib/workflow-paths.ts";
 import "../types/tool-schemas.ts";
@@ -19,6 +20,7 @@ const PLAN_STATUS_REGEX = /^- Plan Status:\s*complete\s*$/m;
 const REVIEW_STATUS_REGEX = /^- Review Status:\s*pass\s*$/m;
 const APPROVAL_STATUS_REGEX = /^- Approval Status:\s*approved\s*$/m;
 const REVIEW_MARKER_REGEX = /<!--\s*auto-review:[^>]*-->/g;
+const PLAN_NUMBERED_FILENAME_REGEX = /^plan-[0-9]+\.md$/;
 const GUARDED_TOOLS = new Set([
   "Write",
   "Edit",
@@ -40,6 +42,12 @@ interface WorkflowState {
 interface AutoReviewMarker {
   verdict: string;
   hash: string;
+  parentSpecHash: string | null;
+}
+
+interface ApprovalCheckResult {
+  approved: boolean;
+  reason?: string;
 }
 
 const hook = defineHook({
@@ -67,10 +75,12 @@ const hook = defineHook({
     }
 
     const warnOnly = process.env.DOCUMENT_WORKFLOW_WARN_ONLY === "1";
-    const approved = hasApprovedPlan(wfPaths.plan);
     const researched = existsSync(wfPaths.research);
+    const twoLayer = existsSync(wfPaths.spec);
     const wfDirLabel = getWorkflowDirRelative() ?? "(unknown)";
-    const denyReason = `Document workflow gate: implementation is blocked until \`${wfDirLabel}/research.md\` exists and \`${wfDirLabel}/plan.md\` has \`- Plan Status: complete\`, \`- Review Status: pass\`, \`- Approval Status: approved\`, and \`<!-- auto-review: verdict=pass; hash=... -->\` with a matching hash.`;
+    const denyReasonSingle = `Document workflow gate: implementation is blocked until \`${wfDirLabel}/research.md\` exists and \`${wfDirLabel}/plan.md\` has \`- Plan Status: complete\`, \`- Review Status: pass\`, \`- Approval Status: approved\`, and \`<!-- auto-review: verdict=pass; hash=... -->\` with a matching hash.`;
+    const denyReasonTwoLayer = `Document workflow gate (two-layer): implementation is blocked until \`${wfDirLabel}/spec.md\` is approved (Plan Status: complete + Review Status: pass + Approval Status: approved + matching hash), AND the plan-N.md whose Files section lists the target file is approved with matching \`parent-spec-hash\` for the current spec.md.`;
+    const denyReason = twoLayer ? denyReasonTwoLayer : denyReasonSingle;
 
     if (tool_name === "Bash") {
       const command = getCommandFromToolInput("Bash", tool_input) || "";
@@ -79,7 +89,7 @@ const hook = defineHook({
         return context.success({});
       }
 
-      if (areAllTargetsDocumentPaths(cwd, analysis.targets, wfPaths)) {
+      if (areAllTargetsDocumentPaths(cwd, analysis.targets, wfPaths, wfDir)) {
         return context.success({});
       }
 
@@ -87,7 +97,12 @@ const hook = defineHook({
         return context.success({});
       }
 
-      if (approved && researched) {
+      if (
+        researched &&
+        analysis.targets.every((target) =>
+          isTargetAllowed(cwd, target, wfDir, wfPaths, twoLayer),
+        )
+      ) {
         return context.success({});
       }
 
@@ -106,7 +121,7 @@ const hook = defineHook({
       return context.success({});
     }
 
-    if (isDocumentPath(cwd, targetPath, wfPaths)) {
+    if (isDocumentPath(cwd, targetPath, wfPaths, wfDir)) {
       return context.success({});
     }
 
@@ -114,7 +129,10 @@ const hook = defineHook({
       return context.success({});
     }
 
-    if (approved && researched) {
+    if (
+      researched &&
+      isTargetAllowed(cwd, targetPath, wfDir, wfPaths, twoLayer)
+    ) {
       return context.success({});
     }
 
@@ -139,20 +157,36 @@ function isDocumentPath(
   cwd: string,
   path: string,
   wfPaths: WorkflowPaths,
+  wfDir: string,
 ): boolean {
   const normalized = resolve(cwd, expandTilde(path));
-  return normalized === wfPaths.plan || normalized === wfPaths.research;
+  if (
+    normalized === wfPaths.plan ||
+    normalized === wfPaths.research ||
+    normalized === wfPaths.spec
+  ) {
+    return true;
+  }
+  // plan-N.md (N is one or more digits) within the workflow directory
+  if (normalized.startsWith(`${wfDir}/`)) {
+    const filename = normalized.slice(wfDir.length + 1);
+    if (PLAN_NUMBERED_FILENAME_REGEX.test(filename)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function areAllTargetsDocumentPaths(
   cwd: string,
   targets: string[],
   wfPaths: WorkflowPaths,
+  wfDir: string,
 ): boolean {
   if (targets.length === 0) {
     return false;
   }
-  return targets.every((target) => isDocumentPath(cwd, target, wfPaths));
+  return targets.every((target) => isDocumentPath(cwd, target, wfPaths, wfDir));
 }
 
 function isOutsideProject(cwd: string, path: string): boolean {
@@ -215,6 +249,163 @@ function hasApprovedPlan(planPath: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Check whether a specific implementation target file is allowed.
+ * - Single-layer mode (spec.md absent): falls back to global plan.md approval (current behavior).
+ * - Two-layer mode (spec.md exists): requires (a) spec.md approved + matching hash,
+ *   (b) the plan-N.md whose Files section contains the target is approved + matching hash,
+ *   (c) the plan-N.md `parent-spec-hash` field is present and equals the current spec.md hash.
+ *   parent-spec-hash absence is treated as mismatch (conservative deny, bypass防止).
+ */
+function isTargetAllowed(
+  cwd: string,
+  targetPath: string,
+  wfDir: string,
+  wfPaths: WorkflowPaths,
+  twoLayer: boolean,
+): boolean {
+  if (!twoLayer) {
+    return hasApprovedPlan(wfPaths.plan);
+  }
+
+  // Two-layer mode: verify spec.md approval first.
+  if (!existsSync(wfPaths.spec)) {
+    return false;
+  }
+  let specContent: string;
+  try {
+    specContent = readFileSync(wfPaths.spec, "utf-8");
+  } catch {
+    return false;
+  }
+  if (!isContentApproved(specContent)) {
+    return false;
+  }
+  const specHash = computePlanHash(specContent);
+
+  // Find plan-N.md files whose Files section lists the target.
+  const planFiles = findPlanNumberedFiles(wfDir);
+  if (planFiles.length === 0) {
+    return false;
+  }
+  const normalizedTarget = resolve(cwd, expandTilde(targetPath));
+
+  for (const planPath of planFiles) {
+    let planContent: string;
+    try {
+      planContent = readFileSync(planPath, "utf-8");
+    } catch {
+      continue;
+    }
+    const filesInPlan = parseFilesSection(planContent, cwd);
+    if (!filesInPlan.includes(normalizedTarget)) {
+      continue;
+    }
+
+    if (!isContentApproved(planContent)) {
+      return false;
+    }
+    const planMarker = extractLatestAutoReviewMarker(planContent);
+    if (!planMarker || planMarker.verdict !== "pass") {
+      return false;
+    }
+    if (planMarker.hash !== computePlanHash(planContent)) {
+      return false;
+    }
+    // parent-spec-hash absence = conservative deny (bypass防止)
+    if (planMarker.parentSpecHash === null) {
+      return false;
+    }
+    if (planMarker.parentSpecHash !== specHash) {
+      return false;
+    }
+    return true;
+  }
+
+  // No plan-N.md owns this target → conservative deny
+  return false;
+}
+
+function isContentApproved(content: string): boolean {
+  return (
+    PLAN_STATUS_REGEX.test(content) &&
+    REVIEW_STATUS_REGEX.test(content) &&
+    APPROVAL_STATUS_REGEX.test(content)
+  );
+}
+
+/**
+ * Enumerate plan-N.md files (where N is one or more digits) directly within wfDir.
+ * Strict regex match excludes plan-draft.md, plan-1.md.bak, plan-2-draft.md, etc.
+ */
+function findPlanNumberedFiles(wfDir: string): string[] {
+  if (!existsSync(wfDir)) {
+    return [];
+  }
+  try {
+    return readdirSync(wfDir)
+      .filter((name) => PLAN_NUMBERED_FILENAME_REGEX.test(name))
+      .map((name) => resolve(wfDir, name))
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Parse the `## Files` section of a plan-N.md as fenced code blocks containing
+ * one path per line (relative to project root). `#` lines and blank lines are
+ * skipped. Other non-path lines (indented, embedded whitespace, etc.) cause the
+ * code block to be ignored conservatively. Returns absolute paths.
+ */
+function parseFilesSection(planContent: string, cwd: string): string[] {
+  // Split on `## ` H2 headings, find the section starting with "Files".
+  // `\Z` doesn't exist in JS regex, so we partition the document into sections
+  // and pick the Files one explicitly.
+  const sections = planContent.split(/^##\s+/m);
+  const filesSection = sections.find((s) =>
+    /^Files\s*$/m.test(s.split("\n")[0] ?? ""),
+  );
+  if (!filesSection) {
+    return [];
+  }
+  // Drop the "Files" heading line and use the rest as body.
+  const sectionBody = filesSection.replace(/^Files\s*\n/, "");
+  const codeBlocks: string[] = [];
+  const codeBlockRegex = /^```[^\n]*\n([\s\S]*?)\n```/gm;
+  let match: RegExpExecArray | null;
+  while ((match = codeBlockRegex.exec(sectionBody)) !== null) {
+    if (match[1] !== undefined) {
+      codeBlocks.push(match[1]);
+    }
+  }
+
+  const collected: string[] = [];
+  for (const block of codeBlocks) {
+    const blockPaths: string[] = [];
+    let blockValid = true;
+    for (const rawLine of block.split("\n")) {
+      const line = rawLine.trim();
+      if (line === "") continue;
+      if (line.startsWith("#")) continue;
+      // Reject lines with internal whitespace (tabs, spaces) or other non-path
+      // characters that suggest formatting issues.
+      if (/\s/.test(line)) {
+        blockValid = false;
+        break;
+      }
+      blockPaths.push(line);
+    }
+    if (!blockValid) {
+      continue; // Conservative deny: ignore blocks with format violations.
+    }
+    for (const p of blockPaths) {
+      collected.push(resolve(cwd, expandTilde(p)));
+    }
+  }
+  return collected;
 }
 
 function getTargetFilePath(
@@ -432,7 +623,10 @@ function extractLatestAutoReviewMarker(
 
   let verdict = "";
   let hash = "";
-  const fields = latest.matchAll(/(\w+)=([^;]+)/g);
+  let parentSpecHash: string | null = null;
+  // Match keys with optional hyphens (e.g., parent-spec-hash). Values are anything
+  // up to the next semicolon or end of marker.
+  const fields = latest.matchAll(/([a-zA-Z][a-zA-Z0-9-]*)=([^;]+)/g);
   for (const field of fields) {
     const key = field[1]?.trim();
     const value = field[2]?.trim();
@@ -443,6 +637,8 @@ function extractLatestAutoReviewMarker(
       verdict = value;
     } else if (key === "hash") {
       hash = value;
+    } else if (key === "parent-spec-hash") {
+      parentSpecHash = value;
     }
   }
 
@@ -450,7 +646,7 @@ function extractLatestAutoReviewMarker(
     return null;
   }
 
-  return { verdict, hash };
+  return { verdict, hash, parentSpecHash };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

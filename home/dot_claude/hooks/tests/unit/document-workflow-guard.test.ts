@@ -27,6 +27,7 @@ interface WorkflowRepoOptions {
 
 function computePlanHash(content: string): string {
   const normalized = content
+    .replace(/<!--\s*auto-review:[^>]*-->/g, "")
     .replace(/^(- Approval Status:)\s*.*$/m, "$1")
     .replace(/^(\s*- )\[x\]/gm, "$1[ ]")
     .trimEnd();
@@ -608,5 +609,314 @@ describe("document-workflow-guard.ts hook behavior", () => {
       await invokeRun(hook, context);
       context.assertSuccess({});
     });
+  });
+});
+
+describe("document-workflow-guard.ts two-layer mode (spec.md + plan-N.md)", () => {
+  const envHelper = new EnvironmentHelper();
+  const consoleCapture = new ConsoleCapture();
+  const hook = documentWorkflowGuardHook;
+
+  beforeEach(() => {
+    consoleCapture.reset();
+    consoleCapture.start();
+    envHelper.set("DOCUMENT_WORKFLOW_DIR", TEST_WORKFLOW_DIR);
+  });
+
+  afterEach(() => {
+    consoleCapture.stop();
+    envHelper.restore();
+  });
+
+  interface TwoLayerOptions {
+    spec: WorkflowRepoOptions;
+    plans: Array<{
+      filename: string; // e.g., "plan-1.md"
+      options: WorkflowRepoOptions;
+      filesSection: string[]; // project-root-relative paths
+      parentSpecHashOverride?: string;
+      omitParentSpecHash?: boolean;
+    }>;
+  }
+
+  function buildPlanNContent(
+    options: WorkflowRepoOptions,
+    filesSection: string[],
+    parentSpecHash: string,
+    omitParentSpecHash: boolean,
+  ): string {
+    const reviewStatus = options.review?.verdict ?? "pending";
+    const filesBlock = ["## Files", "", "```", ...filesSection, "```"].join(
+      "\n",
+    );
+    const approval = [
+      "## Approval",
+      `- Plan Status: ${options.planStatus}`,
+      `- Review Status: ${reviewStatus}`,
+      `- Approval Status: ${options.approvalStatus}`,
+    ].join("\n");
+    const baseContent = `${filesBlock}\n\n${approval}`;
+    if (!options.review) {
+      return baseContent;
+    }
+    const hash = options.review.hashOverride ?? computePlanHash(baseContent);
+    const parentField = omitParentSpecHash
+      ? ""
+      : ` parent-spec-hash=${parentSpecHash};`;
+    return `${baseContent}\n\n<!-- auto-review: verdict=${options.review.verdict}; hash=${hash};${parentField} at=2026-02-19T00:00:00.000Z; reviewers=logic-validator -->`;
+  }
+
+  function createTwoLayerRepo(opts: TwoLayerOptions): {
+    repo: string;
+    specHash: string;
+  } {
+    const repo = mkdtempSync(join(tmpdir(), "document-workflow-guard-2layer-"));
+    mkdirSync(join(repo, TEST_WORKFLOW_DIR), { recursive: true });
+    writeFileSync(join(repo, TEST_WORKFLOW_DIR, "research.md"), "research");
+    const specContent = buildPlanContent(opts.spec);
+    writeFileSync(join(repo, TEST_WORKFLOW_DIR, "spec.md"), specContent);
+    const specHash = computePlanHash(specContent);
+    for (const plan of opts.plans) {
+      const planContent = buildPlanNContent(
+        plan.options,
+        plan.filesSection,
+        plan.parentSpecHashOverride ?? specHash,
+        plan.omitParentSpecHash ?? false,
+      );
+      writeFileSync(join(repo, TEST_WORKFLOW_DIR, plan.filename), planContent);
+    }
+    return { repo, specHash };
+  }
+
+  it("blocks Write when spec.md is pending (two-layer)", async () => {
+    const { repo } = createTwoLayerRepo({
+      spec: pendingWorkflowRepo(),
+      plans: [
+        {
+          filename: "plan-1.md",
+          options: approvedWorkflowRepo(),
+          filesSection: ["src/a.ts"],
+        },
+      ],
+    });
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+
+    const context = createPreToolUseContextFor(hook, "Write", {
+      file_path: "src/a.ts",
+      content: "const a = 1;",
+    });
+
+    await invokeRun(hook, context);
+    context.assertDeny();
+  });
+
+  it("blocks Write when spec approved but plan-N.md pending", async () => {
+    const { repo } = createTwoLayerRepo({
+      spec: approvedWorkflowRepo(),
+      plans: [
+        {
+          filename: "plan-1.md",
+          options: pendingWorkflowRepo(),
+          filesSection: ["src/a.ts"],
+        },
+      ],
+    });
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+
+    const context = createPreToolUseContextFor(hook, "Write", {
+      file_path: "src/a.ts",
+      content: "const a = 1;",
+    });
+
+    await invokeRun(hook, context);
+    context.assertDeny();
+  });
+
+  it("allows Write when both spec and plan-N.md fully approved with matching parent-spec-hash", async () => {
+    const { repo } = createTwoLayerRepo({
+      spec: approvedWorkflowRepo(),
+      plans: [
+        {
+          filename: "plan-1.md",
+          options: approvedWorkflowRepo(),
+          filesSection: ["src/a.ts"],
+        },
+      ],
+    });
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+
+    const context = createPreToolUseContextFor(hook, "Write", {
+      file_path: "src/a.ts",
+      content: "const a = 1;",
+    });
+
+    await invokeRun(hook, context);
+    context.assertSuccess({});
+  });
+
+  it("blocks Write when parent-spec-hash mismatches current spec.md hash (K7 stale plan detection)", async () => {
+    const { repo } = createTwoLayerRepo({
+      spec: approvedWorkflowRepo(),
+      plans: [
+        {
+          filename: "plan-1.md",
+          options: approvedWorkflowRepo(),
+          filesSection: ["src/a.ts"],
+          parentSpecHashOverride: "deadbeef",
+        },
+      ],
+    });
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+
+    const context = createPreToolUseContextFor(hook, "Write", {
+      file_path: "src/a.ts",
+      content: "const a = 1;",
+    });
+
+    await invokeRun(hook, context);
+    context.assertDeny();
+  });
+
+  it("blocks Write when parent-spec-hash field is omitted (K7 conservative deny on missing field)", async () => {
+    const { repo } = createTwoLayerRepo({
+      spec: approvedWorkflowRepo(),
+      plans: [
+        {
+          filename: "plan-1.md",
+          options: approvedWorkflowRepo(),
+          filesSection: ["src/a.ts"],
+          omitParentSpecHash: true,
+        },
+      ],
+    });
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+
+    const context = createPreToolUseContextFor(hook, "Write", {
+      file_path: "src/a.ts",
+      content: "const a = 1;",
+    });
+
+    await invokeRun(hook, context);
+    context.assertDeny();
+  });
+
+  it("blocks Write when target file is not in any plan-N.md Files section", async () => {
+    const { repo } = createTwoLayerRepo({
+      spec: approvedWorkflowRepo(),
+      plans: [
+        {
+          filename: "plan-1.md",
+          options: approvedWorkflowRepo(),
+          filesSection: ["src/a.ts"],
+        },
+      ],
+    });
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+
+    const context = createPreToolUseContextFor(hook, "Write", {
+      file_path: "src/b.ts", // not listed in plan-1.md
+      content: "const b = 2;",
+    });
+
+    await invokeRun(hook, context);
+    context.assertDeny();
+  });
+
+  it("permits Write to plan-2.md target while plan-1.md is unrelated to the target (independent plans)", async () => {
+    const { repo } = createTwoLayerRepo({
+      spec: approvedWorkflowRepo(),
+      plans: [
+        {
+          filename: "plan-1.md",
+          options: pendingWorkflowRepo(),
+          filesSection: ["src/a.ts"],
+        },
+        {
+          filename: "plan-2.md",
+          options: approvedWorkflowRepo(),
+          filesSection: ["src/b.ts"],
+        },
+      ],
+    });
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+
+    const context = createPreToolUseContextFor(hook, "Write", {
+      file_path: "src/b.ts",
+      content: "const b = 2;",
+    });
+
+    await invokeRun(hook, context);
+    context.assertSuccess({});
+  });
+
+  it("blocks editing src/a.ts when its plan-1.md is pending even though plan-2.md is approved", async () => {
+    const { repo } = createTwoLayerRepo({
+      spec: approvedWorkflowRepo(),
+      plans: [
+        {
+          filename: "plan-1.md",
+          options: pendingWorkflowRepo(),
+          filesSection: ["src/a.ts"],
+        },
+        {
+          filename: "plan-2.md",
+          options: approvedWorkflowRepo(),
+          filesSection: ["src/b.ts"],
+        },
+      ],
+    });
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+
+    const context = createPreToolUseContextFor(hook, "Write", {
+      file_path: "src/a.ts",
+      content: "const a = 1;",
+    });
+
+    await invokeRun(hook, context);
+    context.assertDeny();
+  });
+
+  it("allows editing spec.md and plan-N.md while in two-layer mode", async () => {
+    const { repo } = createTwoLayerRepo({
+      spec: pendingWorkflowRepo(),
+      plans: [
+        {
+          filename: "plan-1.md",
+          options: pendingWorkflowRepo(),
+          filesSection: ["src/a.ts"],
+        },
+      ],
+    });
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+
+    const specCtx = createPreToolUseContextFor(hook, "Edit", {
+      file_path: `${TEST_WORKFLOW_DIR}/spec.md`,
+      old_string: "x",
+      new_string: "y",
+    });
+    await invokeRun(hook, specCtx);
+    specCtx.assertSuccess({});
+
+    const planCtx = createPreToolUseContextFor(hook, "Edit", {
+      file_path: `${TEST_WORKFLOW_DIR}/plan-1.md`,
+      old_string: "x",
+      new_string: "y",
+    });
+    await invokeRun(hook, planCtx);
+    planCtx.assertSuccess({});
+  });
+
+  it("falls back to single-layer mode when spec.md is absent (backward compat)", async () => {
+    // Same as createWorkflowRepo (no spec.md created)
+    const repo = createWorkflowRepo(approvedWorkflowRepo());
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+
+    const context = createPreToolUseContextFor(hook, "Write", {
+      file_path: "src/a.ts",
+      content: "const a = 1;",
+    });
+
+    await invokeRun(hook, context);
+    context.assertSuccess({});
   });
 });
