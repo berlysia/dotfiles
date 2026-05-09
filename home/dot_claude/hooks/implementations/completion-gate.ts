@@ -1,7 +1,13 @@
 #!/usr/bin/env -S bun run --silent
 
 import { execSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { defineHook } from "cc-hooks-ts";
 import { logQuality } from "../lib/centralized-logging.ts";
@@ -53,6 +59,15 @@ function incrementRetryCount(): number {
   return newCount;
 }
 
+function resetRetryCount(): void {
+  const counterPath = getCounterPath();
+  try {
+    if (existsSync(counterPath)) unlinkSync(counterPath);
+  } catch {
+    // ignore unlink errors
+  }
+}
+
 function hasScript(scriptName: string): boolean {
   try {
     const pkg = JSON.parse(readFileSync("package.json", "utf-8"));
@@ -97,9 +112,16 @@ function runCheck(command: string, label: string): string | null {
 }
 
 const hook = defineHook({
-  trigger: { Stop: true },
+  trigger: { Stop: true, UserPromptSubmit: true },
   run: (context) => {
     try {
+      // 新しいユーザー入力 = 新しいターン。カウンタを reset しないと
+      // 一度 MAX に到達した時点で永続無効化される。
+      if (context.input.hook_event_name === "UserPromptSubmit") {
+        resetRetryCount();
+        return context.success({});
+      }
+
       if (projectHasStopHooks()) {
         console.error(
           "[completion-gate] Project has its own Stop hooks. Skipping to avoid redundant execution.",

@@ -267,6 +267,14 @@
         },
         {
           "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/resume-incomplete-work.ts"
+        },
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/completion-gate.ts"
+        },
+        {
+          "type": "command",
           "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'",
           "async": true
         }

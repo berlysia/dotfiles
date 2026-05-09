@@ -1,6 +1,12 @@
 #!/usr/bin/env -S bun run --silent
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { defineHook } from "cc-hooks-ts";
 import "../types/tool-schemas.ts";
@@ -40,51 +46,27 @@ function incrementRetryCount(): number {
   return newCount;
 }
 
-function looksLikeCompletion(message: string): boolean {
-  const trimmed = message.trim();
-  if (trimmed.length < MIN_MESSAGE_LENGTH) return false;
-
-  const lastLines = trimmed
-    .split("\n")
-    .filter((l) => l.trim().length > 0)
-    .slice(-3)
-    .join("\n")
-    .toLowerCase();
-
-  const completionSignals = [
-    /完了/,
-    /以上/,
-    /finished/,
-    /done/,
-    /complete[ds]?\b/,
-    /まとめ/,
-    /次のステップ/,
-    /next\s*step/,
-    /お知らせください/,
-    /let me know/,
-    /質問.*あれば/,
-    /if you have.*question/,
-    /ご確認ください/,
-    /please review/,
-    /しました/,
-    /済み/,
-    /残作業/,
-    /remaining/,
-    /承認/,
-    /approve/,
-    /Approval Status/,
-    /Executive Summary/,
-    /Next Action/,
-    /してください/,
-  ];
-
-  return completionSignals.some((pattern) => pattern.test(lastLines));
+function resetRetryCount(): void {
+  const counterPath = getCounterPath();
+  try {
+    if (existsSync(counterPath)) unlinkSync(counterPath);
+  } catch {
+    // ignore unlink errors
+  }
 }
 
 const hook = defineHook({
-  trigger: { Stop: true },
+  trigger: { Stop: true, UserPromptSubmit: true },
   run: (context) => {
     try {
+      // 新しいユーザー入力 = 新しいターン。カウンタを reset しないと
+      // 一度 MAX に到達した時点で永続無効化される（mtime が数週間前のまま
+      // MAX 値で固着し全プロジェクトでフックが死んでいた事例あり）。
+      if (context.input.hook_event_name === "UserPromptSubmit") {
+        resetRetryCount();
+        return context.success({});
+      }
+
       const { last_assistant_message } = context.input;
       const retryCount = getRetryCount();
 
@@ -97,20 +79,24 @@ const hook = defineHook({
 
       const message = last_assistant_message?.trim() ?? "";
 
-      if (
-        message.length >= MIN_MESSAGE_LENGTH &&
-        looksLikeCompletion(message)
-      ) {
+      // モデルが substantive なテキストを返して end_turn したなら
+      // 「ターンを終える意思」は表明済み。長さ判定一本で trust する。
+      // 旧実装は「完了文言」regex (しました/してください/ご確認ください 等)
+      // で再判定していたが、これらは mid-task 文に頻出するため heuristic
+      // としての信頼性が低く、実質的に noise だった。
+      if (message.length >= MIN_MESSAGE_LENGTH) {
         return context.success({});
       }
 
+      // 空 or 極短文だけが「沈黙落ち」の真のシグナル
+      // (典型: tool_use 直後にテキストなしで end_turn)
       const count = incrementRetryCount();
       const remaining = MAX_RETRIES - count;
 
       const reason =
         message.length === 0
           ? "You stopped without any message. The task may be incomplete. Review the original request and either continue working or explain what was completed and what remains."
-          : `You stopped with a very brief or non-conclusive message. The task may be incomplete. Review the original request and either continue working or provide a clear completion summary. (attempt ${count}/${MAX_RETRIES}, ${remaining} remaining)`;
+          : `You stopped with a very brief message ("${message.slice(0, 60)}"). The task may be incomplete. Review the original request and either continue working or provide a clear completion summary. (attempt ${count}/${MAX_RETRIES}, ${remaining} remaining)`;
 
       return context.json({
         event: "Stop",
