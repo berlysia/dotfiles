@@ -8,6 +8,7 @@ const STATE_FILENAME = "workflow-state.json";
 const REVIEW_CACHE_FILENAME = "plan-review.cache.json";
 const REVIEW_MARKDOWN_FILENAME = "plan-review.md";
 const REVIEW_JSON_FILENAME = "plan-review.json";
+const LESSONS_LEARNED_FILENAME = "lessons-learned.md";
 
 const PLAN_NUMBERED_REGEX = /^plan-[0-9]+\.md$/;
 
@@ -148,4 +149,24 @@ export function getWorkflowDirRelative(): string | null {
     return envDir;
   }
   return null;
+}
+
+/**
+ * Pure path predicates for spec / plan-N / lessons-learned within a workflow dir.
+ * Used by P9/P10/P12 hooks (added in plan-1) to share path detection logic.
+ * Reuses existing constants (SPEC_FILENAME, PLAN_NUMBERED_REGEX) for SSoT consistency.
+ */
+export function isSpecPath(absPath: string, wfDir: string): boolean {
+  return absPath === resolve(wfDir, SPEC_FILENAME);
+}
+
+export function isPlanNumberedPath(absPath: string, wfDir: string): boolean {
+  const prefix = `${wfDir}/`;
+  if (!absPath.startsWith(prefix)) return false;
+  const filename = absPath.slice(prefix.length);
+  return PLAN_NUMBERED_REGEX.test(filename);
+}
+
+export function isLessonsLearnedPath(absPath: string, wfDir: string): boolean {
+  return absPath === resolve(wfDir, LESSONS_LEARNED_FILENAME);
 }

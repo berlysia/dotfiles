@@ -12,7 +12,10 @@ import {
   getStatePath,
   getWorkflowDir,
   getWorkflowDirRelative,
+  isLessonsLearnedPath,
   isPlanFile,
+  isPlanNumberedPath,
+  isSpecPath,
   isWorkflowDocumentPath,
   resolveWorkflowPaths,
 } from "../../lib/workflow-paths.ts";
@@ -182,6 +185,41 @@ describe("workflow-paths.ts", () => {
     it("returns env value when set", () => {
       envHelper.set("DOCUMENT_WORKFLOW_DIR", ".tmp/sessions/abcd1234");
       strictEqual(getWorkflowDirRelative(), ".tmp/sessions/abcd1234");
+    });
+  });
+
+  describe("isSpecPath / isPlanNumberedPath / isLessonsLearnedPath (P9-P12 新規)", () => {
+    it("isSpecPath matches only $wfDir/spec.md", () => {
+      const wfDir = "/tmp/wf";
+      strictEqual(isSpecPath("/tmp/wf/spec.md", wfDir), true);
+      strictEqual(isSpecPath("/tmp/wf/plan-1.md", wfDir), false);
+      strictEqual(isSpecPath("/tmp/wf/spec.md.bak", wfDir), false);
+      strictEqual(isSpecPath("/tmp/other/spec.md", wfDir), false);
+    });
+
+    it("isPlanNumberedPath matches plan-<N>.md only", () => {
+      const wfDir = "/tmp/wf";
+      strictEqual(isPlanNumberedPath("/tmp/wf/plan-1.md", wfDir), true);
+      strictEqual(isPlanNumberedPath("/tmp/wf/plan-12.md", wfDir), true);
+      strictEqual(isPlanNumberedPath("/tmp/wf/plan.md", wfDir), false);
+      strictEqual(isPlanNumberedPath("/tmp/wf/plan-draft.md", wfDir), false);
+      strictEqual(isPlanNumberedPath("/tmp/other/plan-1.md", wfDir), false);
+    });
+
+    it("isLessonsLearnedPath matches lessons-learned.md only", () => {
+      const wfDir = "/tmp/wf";
+      strictEqual(
+        isLessonsLearnedPath("/tmp/wf/lessons-learned.md", wfDir),
+        true,
+      );
+      strictEqual(
+        isLessonsLearnedPath("/tmp/wf/lessons-learned.md.bak", wfDir),
+        false,
+      );
+      strictEqual(
+        isLessonsLearnedPath("/tmp/other/lessons-learned.md", wfDir),
+        false,
+      );
     });
   });
 });
