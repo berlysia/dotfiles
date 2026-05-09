@@ -32,10 +32,20 @@ home/dot_claude/hooks/tests/unit/example-hook.test.ts
 
 - 編集: `home/dot_claude/path/to/file.ts:123-145`
 - テスト: `home/dot_claude/hooks/tests/unit/file.test.ts`
+- 参照: `home/dot_claude/lib/dependency.ts:50-65` (再利用する既存関数 / 設計判断の根拠) — P1: 各 Task に最低 1 件の参照行を必須化
 
 - [ ] **Step 1: 失敗するテストを書く**
 
+前置: 依存 fixture (例: `silentLogger`, `fakeAdapter`) は以下のいずれかで明示する (P3: test fixture 共通化規約)。
+
+- (a) `home/dot_claude/hooks/tests/__fixtures__/<name>.ts` に集約済の場合は `import { silentLogger } from "../__fixtures__/silentLogger.ts"`
+- (b) 共通化していない場合はテストファイル冒頭に inline 定義式を完全に含める (関数本体まで省略しない)
+
 ```ts
+import { strict as assert } from "node:assert";
+// fixture は (a) import / (b) inline 定義のいずれか
+const silentLogger = { log: () => {}, error: () => {} }; // (b) inline 定義例
+
 test("specific behavior", () => {
   const result = func(input);
   assert.deepStrictEqual(result, expected);
@@ -99,4 +109,10 @@ No Placeholders 禁則（spec.md / plan-N.md / 単層 plan.md 共通）
 
 parent-spec-hash フィールドは plan-review-automation hook が auto-review marker 生成時に挿入する。
 人間が直接編集する必要はない。
+
+コード参照宣言フィールド (P1):
+各 Task の Files 直下に「参照: <file>:<lines>」を最低 1 つ含めること。再利用する既存関数 / 設計判断の根拠を明示する。引用無しは想像補完扱い。
+
+Test fixture 共通化規約 (P3):
+TDD Step 1 の依存 fixture は (a) `home/dot_claude/hooks/tests/__fixtures__/<name>.ts` 集約 or (b) inline 定義式を完全に含める。fixture 名のみ書いて定義を省略すると ReferenceError 再発リスク。
 -->
