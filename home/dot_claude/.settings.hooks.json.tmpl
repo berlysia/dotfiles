@@ -10,6 +10,15 @@
       ]
     },
     {
+      "matcher": "Write|Edit|MultiEdit|NotebookEdit",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/spec-plan-self-audit.ts"
+        }
+      ]
+    },
+    {
       "matcher": "",
       "hooks": [
         {
@@ -110,6 +119,15 @@
         {
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/plan-review-automation.ts"
+        },
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/spec-plan-placeholder-scan.ts"
+        },
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/lessons-learned-extractor.ts",
+          "async": true
         }
       ]
     },
