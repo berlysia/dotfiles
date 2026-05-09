@@ -1,7 +1,7 @@
 #!/usr/bin/env -S bun run --silent
 
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineHook } from "cc-hooks-ts";
 import { extractCommandsStructured } from "../lib/bash-parser.ts";
@@ -98,13 +98,27 @@ const hook = defineHook({
         return context.success({});
       }
 
-      if (
-        researched &&
-        analysis.targets.every((target) =>
-          isTargetAllowed(cwd, target, wfDir, wfPaths, twoLayer),
-        )
-      ) {
-        return context.success({});
+      if (researched) {
+        const decisions = analysis.targets.map((target) =>
+          checkTarget(cwd, target, wfDir, wfPaths, twoLayer),
+        );
+        if (decisions.every((d) => d === "allow")) {
+          return context.success({});
+        }
+        if (
+          decisions.every((d) => d === "allow" || d === "no-plan-owner") &&
+          isImplementationPhase(wfDir, wfPaths, twoLayer)
+        ) {
+          for (let i = 0; i < decisions.length; i++) {
+            if (decisions[i] !== "no-plan-owner") continue;
+            const target = analysis.targets[i] ?? "";
+            console.error(
+              `[document-workflow-guard][off-plan] Bash target \`${target}\` is not listed in any plan-N.md Files section; allowed under implementation-phase relaxation. Recorded in \`${wfDirLabel}/off-plan-writes.log\`.`,
+            );
+            appendOffPlanLog(wfDir, "Bash", target);
+          }
+          return context.success({});
+        }
       }
 
       if (warnOnly) {
@@ -130,11 +144,21 @@ const hook = defineHook({
       return context.success({});
     }
 
-    if (
-      researched &&
-      isTargetAllowed(cwd, targetPath, wfDir, wfPaths, twoLayer)
-    ) {
-      return context.success({});
+    if (researched) {
+      const decision = checkTarget(cwd, targetPath, wfDir, wfPaths, twoLayer);
+      if (decision === "allow") {
+        return context.success({});
+      }
+      if (
+        decision === "no-plan-owner" &&
+        isImplementationPhase(wfDir, wfPaths, twoLayer)
+      ) {
+        console.error(
+          `[document-workflow-guard][off-plan] ${tool_name} target \`${targetPath}\` is not listed in any plan-N.md Files section; allowed under implementation-phase relaxation. Recorded in \`${wfDirLabel}/off-plan-writes.log\`.`,
+        );
+        appendOffPlanLog(wfDir, tool_name, targetPath);
+        return context.success({});
+      }
     }
 
     if (warnOnly) {
@@ -258,44 +282,56 @@ function hasApprovedPlan(planPath: string): boolean {
   }
 }
 
+type TargetDecision = "allow" | "no-plan-owner" | "deny-other";
+
 /**
- * Check whether a specific implementation target file is allowed.
- * - Single-layer mode (spec.md absent): falls back to global plan.md approval (current behavior).
- * - Two-layer mode (spec.md exists): requires (a) spec.md approved + matching hash,
- *   (b) the plan-N.md whose Files section contains the target is approved + matching hash,
- *   (c) the plan-N.md `parent-spec-hash` field is present and equals the current spec.md hash.
- *   parent-spec-hash absence is treated as mismatch (conservative deny, bypass防止).
+ * Categorize the allowance state for a specific implementation target.
+ * - "allow": target is owned by an approved plan (or single-layer plan.md is approved).
+ * - "no-plan-owner": two-layer mode only; spec.md is approved but no plan-N.md
+ *   Files section lists the target. This represents files discovered during
+ *   implementation that haven't been retroactively recorded in any plan yet.
+ *   Eligible for warn+log relaxation when implementation phase is active.
+ * - "deny-other": all structural failures that must remain strict (spec not
+ *   approved, hash drift, parent-spec-hash mismatch, owning plan not approved).
+ *   These signal the design or plan is still moving and should not be bypassed.
  */
-function isTargetAllowed(
+function checkTarget(
   cwd: string,
   targetPath: string,
   wfDir: string,
   wfPaths: WorkflowPaths,
   twoLayer: boolean,
-): boolean {
+): TargetDecision {
   if (!twoLayer) {
-    return hasApprovedPlan(wfPaths.plan);
+    return hasApprovedPlan(wfPaths.plan) ? "allow" : "deny-other";
   }
 
   // Two-layer mode: verify spec.md approval first.
   if (!existsSync(wfPaths.spec)) {
-    return false;
+    return "deny-other";
   }
   let specContent: string;
   try {
     specContent = readFileSync(wfPaths.spec, "utf-8");
   } catch {
-    return false;
+    return "deny-other";
   }
   if (!isContentApproved(specContent)) {
-    return false;
+    return "deny-other";
+  }
+  const specMarker = extractLatestAutoReviewMarker(specContent);
+  if (!specMarker || specMarker.verdict !== "pass") {
+    return "deny-other";
   }
   const specHash = computePlanHash(specContent);
+  if (specMarker.hash !== specHash) {
+    return "deny-other";
+  }
 
   // Find plan-N.md files whose Files section lists the target.
   const planFiles = findPlanNumberedFiles(wfDir);
   if (planFiles.length === 0) {
-    return false;
+    return "no-plan-owner";
   }
   const normalizedTarget = resolve(cwd, expandTilde(targetPath));
 
@@ -312,27 +348,103 @@ function isTargetAllowed(
     }
 
     if (!isContentApproved(planContent)) {
-      return false;
+      return "deny-other";
     }
     const planMarker = extractLatestAutoReviewMarker(planContent);
     if (!planMarker || planMarker.verdict !== "pass") {
-      return false;
+      return "deny-other";
     }
     if (planMarker.hash !== computePlanHash(planContent)) {
-      return false;
+      return "deny-other";
     }
     // parent-spec-hash absence = conservative deny (bypass防止)
     if (planMarker.parentSpecHash === null) {
-      return false;
+      return "deny-other";
     }
     if (planMarker.parentSpecHash !== specHash) {
-      return false;
+      return "deny-other";
     }
-    return true;
+    return "allow";
   }
 
-  // No plan-N.md owns this target → conservative deny
+  // No plan-N.md owns this target. Eligible for implementation-phase relaxation.
+  return "no-plan-owner";
+}
+
+/**
+ * Detect whether the workflow has crossed into implementation phase, defined as:
+ * - Single-layer: plan.md fully approved with matching hash and verdict=pass.
+ * - Two-layer: spec.md fully approved (matching hash, verdict=pass) AND at least
+ *   one plan-N.md fully approved with matching hash and parent-spec-hash equal to
+ *   the current spec hash.
+ *
+ * Used to decide whether "no-plan-owner" target writes are warn-allowed (with audit
+ * log) or remain denied. Before implementation phase, the workflow is still in
+ * design/planning, so even off-plan writes should be blocked to prevent premature
+ * implementation.
+ */
+function isImplementationPhase(
+  wfDir: string,
+  wfPaths: WorkflowPaths,
+  twoLayer: boolean,
+): boolean {
+  if (!twoLayer) {
+    return hasApprovedPlan(wfPaths.plan);
+  }
+
+  if (!existsSync(wfPaths.spec)) return false;
+  let specContent: string;
+  try {
+    specContent = readFileSync(wfPaths.spec, "utf-8");
+  } catch {
+    return false;
+  }
+  if (!isContentApproved(specContent)) return false;
+  const specMarker = extractLatestAutoReviewMarker(specContent);
+  if (!specMarker || specMarker.verdict !== "pass") return false;
+  const specHash = computePlanHash(specContent);
+  if (specMarker.hash !== specHash) return false;
+
+  for (const planPath of findPlanNumberedFiles(wfDir)) {
+    let planContent: string;
+    try {
+      planContent = readFileSync(planPath, "utf-8");
+    } catch {
+      continue;
+    }
+    if (!isContentApproved(planContent)) continue;
+    const planMarker = extractLatestAutoReviewMarker(planContent);
+    if (!planMarker || planMarker.verdict !== "pass") continue;
+    if (planMarker.hash !== computePlanHash(planContent)) continue;
+    if (planMarker.parentSpecHash !== specHash) continue;
+    return true;
+  }
   return false;
+}
+
+/**
+ * Append a single-line audit entry to `<wfDir>/off-plan-writes.log` recording a
+ * write to a file not listed in any plan-N.md Files section. Best-effort: log
+ * write failures must not interfere with the user's tool call.
+ *
+ * Format: ISO8601 \t tool=<name> \t path=<rel-or-abs>
+ *
+ * The log is a discovery trail intended to be reviewed at end of session and
+ * folded back into plan-N.md before commit, preserving 厳格性 at the document
+ * level while allowing forward progress at the moment of write.
+ */
+function appendOffPlanLog(
+  wfDir: string,
+  toolName: string,
+  target: string,
+): void {
+  try {
+    const logPath = resolve(wfDir, "off-plan-writes.log");
+    const entry = `${new Date().toISOString()}\ttool=${toolName}\tpath=${target}\n`;
+    appendFileSync(logPath, entry, "utf-8");
+  } catch {
+    // best-effort; do not block the tool call on logging errors
+  }
 }
 
 function isContentApproved(content: string): boolean {

@@ -2,7 +2,7 @@
 
 import { ok } from "node:assert";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
@@ -800,7 +800,7 @@ describe("document-workflow-guard.ts two-layer mode (spec.md + plan-N.md)", () =
     context.assertDeny();
   });
 
-  it("blocks Write when target file is not in any plan-N.md Files section", async () => {
+  it("warns and audit-logs Write when target file is not in any plan-N.md Files section (implementation-phase relaxation)", async () => {
     const { repo } = createTwoLayerRepo({
       spec: approvedWorkflowRepo(),
       plans: [
@@ -816,6 +816,90 @@ describe("document-workflow-guard.ts two-layer mode (spec.md + plan-N.md)", () =
     const context = createPreToolUseContextFor(hook, "Write", {
       file_path: "src/b.ts", // not listed in plan-1.md
       content: "const b = 2;",
+    });
+
+    await invokeRun(hook, context);
+    // Implementation phase active (spec + plan-1.md fully approved + valid).
+    // Off-plan write is allowed with warn + audit log instead of deny.
+    context.assertSuccess({});
+    const logPath = join(repo, TEST_WORKFLOW_DIR, "off-plan-writes.log");
+    ok(
+      readFileSync(logPath, "utf-8").includes("path=src/b.ts"),
+      "off-plan-writes.log should record the off-plan Write target",
+    );
+  });
+
+  it("blocks Write to off-plan target when implementation phase is not active (no plan-N.md approved)", async () => {
+    const { repo } = createTwoLayerRepo({
+      spec: approvedWorkflowRepo(),
+      plans: [
+        {
+          filename: "plan-1.md",
+          options: pendingWorkflowRepo(),
+          filesSection: ["src/a.ts"],
+        },
+      ],
+    });
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+
+    const context = createPreToolUseContextFor(hook, "Write", {
+      file_path: "src/b.ts", // not listed; and no plan is fully approved yet
+      content: "const b = 2;",
+    });
+
+    await invokeRun(hook, context);
+    // Implementation phase NOT active → off-plan target still denies (strict during design phase).
+    context.assertDeny();
+  });
+
+  it("warns and audit-logs Bash off-plan redirect target under implementation-phase relaxation", async () => {
+    const { repo } = createTwoLayerRepo({
+      spec: approvedWorkflowRepo(),
+      plans: [
+        {
+          filename: "plan-1.md",
+          options: approvedWorkflowRepo(),
+          filesSection: ["src/a.ts"],
+        },
+      ],
+    });
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+
+    const context = createPreToolUseContextFor(hook, "Bash", {
+      command: "echo 'data' > src/c.ts", // not in plan-1.md Files
+    });
+
+    await invokeRun(hook, context);
+    context.assertSuccess({});
+    const logPath = join(repo, TEST_WORKFLOW_DIR, "off-plan-writes.log");
+    ok(
+      readFileSync(logPath, "utf-8").includes("path=src/c.ts"),
+      "off-plan-writes.log should record Bash off-plan redirect target",
+    );
+  });
+
+  it("still denies off-plan target when owning plan has hash drift (deny-other, not no-plan-owner)", async () => {
+    const { repo } = createTwoLayerRepo({
+      spec: approvedWorkflowRepo(),
+      plans: [
+        {
+          filename: "plan-1.md",
+          options: {
+            planStatus: "complete",
+            approvalStatus: "approved",
+            review: { verdict: "pass", hashOverride: "deadbeef" },
+          },
+          filesSection: ["src/a.ts"],
+        },
+      ],
+    });
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+
+    // src/a.ts IS owned by plan-1.md, but plan-1.md hash is drifted.
+    // This is "deny-other", not "no-plan-owner", so relaxation must NOT apply.
+    const context = createPreToolUseContextFor(hook, "Write", {
+      file_path: "src/a.ts",
+      content: "const a = 1;",
     });
 
     await invokeRun(hook, context);
