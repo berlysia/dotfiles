@@ -8,5 +8,7 @@
   "alwaysThinkingEnabled": true,
   "plansDirectory": "./.claude/plans",
   "language": "japanese",
-  "autoMemoryEnabled": false
+  "autoMemoryEnabled": false,
+  "defaultMode": "auto",
+  "skipAutoPermissionPrompt": true
 }
