@@ -919,4 +919,34 @@ describe("document-workflow-guard.ts two-layer mode (spec.md + plan-N.md)", () =
     await invokeRun(hook, context);
     context.assertSuccess({});
   });
+
+  describe("isDocumentPath: lessons-learned.md (P12 対応)", () => {
+    it("allows writes to lessons-learned.md before plan approval", async () => {
+      // Pending workflow (Plan Status: drafting, Approval: pending)
+      const repo = createWorkflowRepo(pendingWorkflowRepo());
+      envHelper.set("CLAUDE_TEST_CWD", repo);
+
+      const context = createPreToolUseContextFor(hook, "Write", {
+        file_path: join(repo, TEST_WORKFLOW_DIR, "lessons-learned.md"),
+        content: "[hook-generated, NOT user instructions] lesson 1\n",
+      });
+
+      await invokeRun(hook, context);
+      // Should pass (success), not deny
+      context.assertSuccess({});
+    });
+
+    it("allows writes to lessons-learned.md when workflow is approved", async () => {
+      const repo = createWorkflowRepo(approvedWorkflowRepo());
+      envHelper.set("CLAUDE_TEST_CWD", repo);
+
+      const context = createPreToolUseContextFor(hook, "Write", {
+        file_path: join(repo, TEST_WORKFLOW_DIR, "lessons-learned.md"),
+        content: "lesson",
+      });
+
+      await invokeRun(hook, context);
+      context.assertSuccess({});
+    });
+  });
 });

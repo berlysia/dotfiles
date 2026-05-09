@@ -11,6 +11,7 @@ import { expandTilde } from "../lib/path-utils.ts";
 import {
   getWorkflowDir,
   getWorkflowDirRelative,
+  isLessonsLearnedPath,
   isWorkflowDocument,
   resolveWorkflowPaths,
 } from "../lib/workflow-paths.ts";
@@ -165,6 +166,12 @@ function isDocumentPath(
     normalized === wfPaths.research ||
     normalized === wfPaths.spec
   ) {
+    return true;
+  }
+  // lessons-learned.md is written by the P12 hook (lessons-learned-extractor.ts)
+  // outside of the regular approval lifecycle, so it must be allowed regardless
+  // of plan approval state. See spec K7 / DI4.
+  if (isLessonsLearnedPath(normalized, wfDir)) {
     return true;
   }
   // plan-N.md (N is one or more digits) within the workflow directory
