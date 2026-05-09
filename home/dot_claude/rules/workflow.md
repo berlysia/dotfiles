@@ -56,7 +56,7 @@
 
 ### 共通フロー
 
-```
+````
 1. 調査: 対象コードを深く読み `$DOCUMENT_WORKFLOW_DIR/research.md` を作成
 2. 計画: モードに応じた成果物を作成（下記 plan.md-only モード / spec + plan-N モード参照）
 3. 注釈反復: ユーザー注釈を反映し、都度「don't implement yet」を明示
@@ -65,10 +65,28 @@
    - 推奨理由の明示: 選択肢を提示する際は推奨とその理由を1行で明示する
 4. 完成: 各成果物の `## Approval` で `Plan Status: complete` にする
 5. 自動レビュー: `plan-review-automation` が成果物の内容を分析し、層に応じた常時必須レビュアー（下記の SSoT 区間参照）+ コンテンツベースで選定した追加レビュアー（最大3つ）を並列実行推奨。`Review Status` と `<!-- auto-review: verdict=...; hash=...; reviewers=... -->` を更新する
+   - **5.1 Reviewer Outputs section の追記 (MANDATORY)**: reviewer 並列実行後、Claude は各 reviewer の verdict + 主指摘 1-2 文を spec/plan の auto-review marker 直前に `## Reviewer Outputs (Round N)` セクションとして追記する。N は当該文書の review round 数（1 から始まる）。フォーマット例:
+
+     ```markdown
+     ## Reviewer Outputs (Round 1)
+
+     ### logic-validator
+     - verdict: pass / needs-work / blocker
+     - 主指摘: <1-2 文>
+
+     ### scope-justification-reviewer
+     - verdict: ...
+     - 主指摘: ...
+
+     <!-- auto-review: verdict=...; hash=...; ... -->
+     ```
+
+     これは `lessons-learned-extractor.ts` (P12 hook) の入力主経路となる。section が無いと lessons 抽出は skip される（早期 return）。
+   - **5.2 入力 cap**: 各 reviewer の指摘記述は 1-2 文に絞る。長文 verbatim 引用は禁止（lessons-learned 抽出の noise になる）
 6. インテント整合性トリアージ: 全レビュー指摘を元のオーダーの本義と突き合わせ、意図を歪める指摘を除外する（詳細は後述）
 7. 承認: 人間が `Approval Status: approved` にする
 8. 実装: `Plan Status: complete` + `Review Status: pass` + `Approval Status: approved` + hash 一致を満たした後に着手し、タスク完了ごとに対象成果物を更新
-```
+````
 
 ### plan.md-only モード（軽量 spec 内包）
 
