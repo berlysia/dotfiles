@@ -30,18 +30,18 @@
   },
   "dependencies": {
     "@drawio/mcp": "1.2.6",
-    "@playwright/mcp": "0.0.73",
-    "@upstash/context7-mcp": "2.2.3",
+    "@playwright/mcp": "0.0.75",
+    "@upstash/context7-mcp": "2.2.4",
     "ccstatusline": "2.2.12",
-    "chrome-devtools-mcp": "0.23.0",
+    "chrome-devtools-mcp": "0.25.0",
     "supergateway": "3.4.3"
   },
   "devDependencies": {
     "@mizchi/lsmcp": "0.10.0",
     "@types/node": "24.10.13",
-    "@typescript/native-preview": "7.0.0-dev.20260503.1",
-    "knip": "6.11.0",
-    "oxfmt": "0.47.0",
+    "@typescript/native-preview": "7.0.0-dev.20260510.1",
+    "knip": "6.12.2",
+    "oxfmt": "0.48.0",
     "oxlint": "1.55.0",
     "prettier": "3.8.3",
     "typescript": "5.9.3"
