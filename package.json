@@ -42,7 +42,7 @@
     "@typescript/native-preview": "7.0.0-dev.20260503.1",
     "knip": "6.11.0",
     "oxfmt": "0.47.0",
-    "oxlint": "1.55.0",
+    "oxlint": "1.63.0",
     "prettier": "3.8.3",
     "typescript": "5.9.3"
   }
