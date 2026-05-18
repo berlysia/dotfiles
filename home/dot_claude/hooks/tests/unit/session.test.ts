@@ -11,9 +11,11 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
+import sessionHook from "../../implementations/session.ts";
 import {
   createSessionStartContext,
   EnvironmentHelper,
+  invokeRun,
 } from "./test-helpers.ts";
 
 describe("session.ts hook behavior", () => {
@@ -243,6 +245,90 @@ describe("session.ts hook behavior", () => {
       ok(
         result.messageForUser.startsWith("🚀"),
         "Message should still start with session start message",
+      );
+    });
+  });
+
+  describe("DOCUMENT_WORKFLOW_DIR resolution", () => {
+    const envHelper = new EnvironmentHelper();
+    let envFilePath: string;
+
+    beforeEach(() => {
+      envFilePath = join(testDir, "env-file");
+      // Ensure file exists so appendFileSync can write
+      appendFileSync(envFilePath, "");
+      envHelper.set("CLAUDE_ENV_FILE", envFilePath);
+    });
+
+    afterEach(() => {
+      envHelper.restore();
+    });
+
+    it("derives DOCUMENT_WORKFLOW_DIR from session id when not pre-set", async () => {
+      envHelper.set("DOCUMENT_WORKFLOW_DIR", undefined);
+      const ctx = createSessionStartContext("cli");
+      ctx.input.session_id = "abcdef1234567890";
+
+      await invokeRun(sessionHook, ctx);
+
+      const content = readFileSync(envFilePath, "utf-8");
+      ok(
+        content.includes(
+          'export DOCUMENT_WORKFLOW_DIR=".tmp/sessions/abcdef12"',
+        ),
+        `Expected derived path, got:\n${content}`,
+      );
+      const userMessage = ctx.successCalls[0]?.messageForUser ?? "";
+      ok(
+        userMessage.includes(".tmp/sessions/abcdef12/"),
+        `Expected derived path in message, got:\n${userMessage}`,
+      );
+      ok(
+        !userMessage.includes("(user-specified)"),
+        "Derived path should not be labeled as user-specified",
+      );
+    });
+
+    it("respects pre-set DOCUMENT_WORKFLOW_DIR", async () => {
+      envHelper.set("DOCUMENT_WORKFLOW_DIR", ".tmp/sessions/4dc42491");
+      const ctx = createSessionStartContext("cli");
+      ctx.input.session_id = "different-session-id";
+
+      await invokeRun(sessionHook, ctx);
+
+      const content = readFileSync(envFilePath, "utf-8");
+      ok(
+        content.includes(
+          'export DOCUMENT_WORKFLOW_DIR=".tmp/sessions/4dc42491"',
+        ),
+        `Expected user-specified path, got:\n${content}`,
+      );
+      ok(
+        !content.includes(
+          'export DOCUMENT_WORKFLOW_DIR=".tmp/sessions/differen',
+        ),
+        "Session-derived path should not be appended when user value is set",
+      );
+      const userMessage = ctx.successCalls[0]?.messageForUser ?? "";
+      ok(
+        userMessage.includes(".tmp/sessions/4dc42491/ (user-specified)"),
+        `Expected user-specified label in message, got:\n${userMessage}`,
+      );
+    });
+
+    it("falls back to session id when DOCUMENT_WORKFLOW_DIR is empty", async () => {
+      envHelper.set("DOCUMENT_WORKFLOW_DIR", "");
+      const ctx = createSessionStartContext("cli");
+      ctx.input.session_id = "fallback1234abcd";
+
+      await invokeRun(sessionHook, ctx);
+
+      const content = readFileSync(envFilePath, "utf-8");
+      ok(
+        content.includes(
+          'export DOCUMENT_WORKFLOW_DIR=".tmp/sessions/fallback"',
+        ),
+        `Expected fallback path, got:\n${content}`,
       );
     });
   });

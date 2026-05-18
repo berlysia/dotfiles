@@ -24,10 +24,19 @@ const hook = defineHook({
       // Log session start using centralized logger
       logEvent("SessionStart", context.input.session_id);
 
+      // Resolve DOCUMENT_WORKFLOW_DIR. Respect a pre-set value so users can pin
+      // a workflow across sessions via `DOCUMENT_WORKFLOW_DIR=.tmp/sessions/abc claude`.
+      const userWorkflowDir = process.env.DOCUMENT_WORKFLOW_DIR;
+      const useUserDir =
+        userWorkflowDir !== undefined && userWorkflowDir !== "";
+      const sessionId = context.input.session_id;
+      const workflowDir = useUserDir
+        ? userWorkflowDir
+        : `.tmp/sessions/${sessionId.slice(0, 8)}`;
+
       // Export session info to CLAUDE_ENV_FILE for skills to consume
       const envFile = process.env.CLAUDE_ENV_FILE;
       if (envFile) {
-        const sessionId = context.input.session_id;
         const transcriptPath = context.input.transcript_path;
         const projectHash = context.input.cwd
           .replace(/\//g, "-")
@@ -50,9 +59,6 @@ const hook = defineHook({
           );
         }
 
-        // Set session-specific workflow directory for parallel Document Workflow
-        const shortSessionId = sessionId.slice(0, 8);
-        const workflowDir = `.tmp/sessions/${shortSessionId}`;
         appendFileSync(
           envFile,
           `export DOCUMENT_WORKFLOW_DIR="${workflowDir}"\n`,
@@ -64,8 +70,10 @@ const hook = defineHook({
         "🚀 Claude Code session started. Ready for development!",
       ];
       if (envFile) {
-        const shortId = context.input.session_id.slice(0, 8);
-        messages.push(`Document Workflow directory: .tmp/sessions/${shortId}/`);
+        const sourceLabel = useUserDir ? " (user-specified)" : "";
+        messages.push(
+          `Document Workflow directory: ${workflowDir}/${sourceLabel}`,
+        );
       }
       if (taskListWarning) {
         messages.push(taskListWarning);
