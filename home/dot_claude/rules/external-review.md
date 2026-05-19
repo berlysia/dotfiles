@@ -76,6 +76,7 @@ Before executing `ExitPlanMode`:
 - **追加レビュアー**: spec.md / plan-N.md のキーワードに応じて最大3つ自動選定（英語・日本語対応）
   - architecture-strategist, security-sentinel, data-integrity-guardian, performance-oracle, resilience-analyzer, test-quality-evaluator, deployment-readiness-evaluator, code-simplicity-reviewer
 - フックの推奨に従い、Agent tool で **全レビュアーを並列実行** する
+- **prescribed-fix carry-forward**: needs-work 反映後の再レビュー省略は `workflow.md`「prescribed-fix carry-forward」節の 3 条件 AND（(a)(b) は運用規律、(c) section-scoped design-hash baseline 比較は hook 機械検証）でのみ発動。1 条件でも欠ければ全再レビュー
 
 ### 2. External Perspective Review (Optional)
 

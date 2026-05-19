@@ -33,6 +33,7 @@
 | 1-2 ステップ、1-2 ファイル                                            | 直接実行                                 |
 | 3-5 ステップ、明確な方針                                              | `/approach-check`                        |
 | 3-5 ステップ + 単一の設計判断                                         | **Document Workflow (plan.md のみ)**     |
+| mechanical-lane criteria 全 4 条件 AND 成立（下記、優先評価）         | **Document Workflow (plan.md のみ)**     |
 | 3-5 ステップ + 複数判断 OR 6+ ステップ + 単一判断 OR 複数サブシステム | **Document Workflow (spec + plan-N)**    |
 | Scope Guard 検知                                                      | `/scope-guard` → spec + 1..N plan に分解 |
 
@@ -48,6 +49,19 @@
 **禁止**: 上記トリガーに該当するタスクで `$DOCUMENT_WORKFLOW_DIR/plan.md` 承認前に実装へ着手すること（二層モード時は spec.md と plan-N.md の両方の承認が必要）
 
 **Note**: ステップ数が少なくても設計判断を伴う場合は Document Workflow 必須。Scope Guard が検知した場合は `/scope-guard` の推奨戦略に従う。設計判断が複数ある場合は二層モード (spec + plan-N)、単一判断ならステップ数次第で plan.md のみで足りる。
+
+### mechanical-lane criteria（ADR 抵触する小規模・機械的変更の軽量レーン）
+
+以下 **4 条件すべて（AND）** が成立する変更のみ mechanical-lane に分類し plan.md-only 単層へ routing する。判定責務は人間/Claude（routing 表参照、hook は観測しない）。本 row は「3-5 ステップ + 複数判断」以降の二層 row より優先評価する。
+
+- **(i)** スコープ内の全設計判断が「ユーザーがセッション内で明示確定済の _既存 ADR の特定条項_ の改訂」であり、net-new な設計空間がゼロ
+- **(ii)** 残差が決定論的変換（rename / move / 文字列置換）であり、新規 control flow / data model / API shape を導入しない
+- **(iii)** 既存テスト + typecheck が当該変換を被覆する（green ゲートを具体コマンド `bun run test` / `bun run typecheck` で定義）
+- **(iv)** 新規 ADR 自体を当該変更の設計記録とする（「複数判断」が「1 つの ADR 起草判断」に collapse）
+
+**1 条件でも非該当なら mechanical-lane 非該当 → `3-5 ステップ + 複数判断` 以降の二層 row に自動 fallback**（spec 層 4 レビュアー = decision-quality / greenfield 含む を維持）。mechanical-lane を選択した場合、**4 条件それぞれの該当根拠を plan.md に明記必須**（曖昧語のみの根拠は不可）。
+
+**guard 側バックストップ非対称（明示トレードオフ）**: `existsSync(spec.md)` シグナルはモード判定のみで、レーン分類（通常 / mechanical）を観測しない（ADR-0006 K1 境界を守るため意図的）。複雑な ADR 反転を mechanical と誤分類した場合の検出機構は guard 側に無く、緩和は本 criteria 4 条件 AND + 判定根拠明記のみ。これは既存 routing 表と同一の信頼モデル（mode 誤分類も guard が部分的にしか catch しないのと同水準）。
 
 ## Document Workflow Protocol (MANDATORY)
 
@@ -150,6 +164,29 @@ $DOCUMENT_WORKFLOW_DIR/
 2. plan-N.md の Approval セクションを更新（`Review Status: pending` および `Approval Status: pending` の両方に戻す。Approval を approved のままにすると K7 で実装ブロックされるが、状態整合性のため明示的に戻す）
 3. `plan-review-automation` が plan-N.md の auto-review marker に新しい `parent-spec-hash` を埋める
 4. 必要なら plan-N.md 本文を更新して再レビュー → 人間による再承認
+
+### prescribed-fix carry-forward（再レビュー省略の機械判定）
+
+needs-work 指摘の反映後、以下 3 条件の **AND** 成立時のみ再レビューを省略し直前 verdict を carry-forward する:
+
+- (a) 指摘が文言精度クラス（No Placeholders 禁則違反の修正等）
+- (b) reviewer が verbatim 置換を指定している
+- (c) `{Key Decisions, Files/Scope, Tasks}` の **section-scoped design-hash** が直近 `verdict=needs-work` marker の `design-hash` から不変
+
+`design-hash` は `plan-review-automation` hook が auto-review marker の `design-hash=<sha>` フィールドに記入する（K5 と同じ hook、人手記入なし）。1 条件でも欠ければ全再レビュー。`design-hash` フィールド欠落の marker は (c) 不成立扱い（conservative、`parent-spec-hash` 欠落と同方針）。
+
+**責務分離（重要）**: (a) 文言精度クラス・(b) reviewer verbatim 指定 は reviewer/人間が「prescribed と判断した指摘」という運用文脈で成立する条件であり、**hook は (a)(b) を機械判定しない**。hook が機械検証するのは (c) section-scoped design-hash 不変のみ（`canCarryForwardVerdict`）。(a)(b) は本節の運用規律として担保し、(c) は hook 層が担保する。3 条件 AND は層をまたいで成立する。
+
+**fallback**: section-scoped design-hash 機構が未デプロイの場合、本ルールは no-skip stance（再レビューは走らせるが省略はしない）に縮退する。「Claude が diff を目視」での (c) 判定は禁止（laundering 経路）。
+
+### S3 デプロイ移行手順（hash normalizer 変更時、旧 marker 互換）
+
+S3（Reviewer Outputs / intent-triage の hash 中立化）デプロイ後、旧 normalizer で承認済の進行中 plan/spec は marker hash が変わり `document-workflow-guard` が conservative deny する（fail-safe 方向）。回復は **新規セッションのみ適用**に加え以下を実装再開前に完了:
+
+1. **(R2) apply 後 hash parity 即検証**: `chezmoi apply` は非アトミック（`plan-review-automation.ts` / `document-workflow-guard.ts` / `lib/document-hash.ts` が別バッチになり得る）。apply 直後に **`bun run test`（全テスト）** を実行し、両 hook が同一 plan に同一 hash を返す **hash parity** を `document-hash.test.ts` の legacy↔new 境界 + parity ケース **および** `document-workflow-guard.test.ts`（guard hook が委譲ラッパ経由で共有モジュールを実際に消費する経路を被覆）が両方緑であることで即検証する。`document-hash.test.ts` 単独は共有モジュール関数のみ検証で guard hook 統合経路を被覆しないため不十分。
+2. **(R4a) 旧 marker 再計算**: 進行中 plan/spec の `<!-- auto-review: ... -->` の `hash` を新 normalizer で再算出し書き換える（hook の marker テンプレ提示値を採用）。
+3. **(R4b) `plan-review.cache.json` 無効化**: 対象キャッシュは `resolveWorkflowPaths(planDir)` で **plan ファイルと同ディレクトリに co-locate** される（`plan-review-automation.ts` の `planDir = dirname(対象 plan の絶対パス)`）。標準構成（plan-N.md が `$DOCUMENT_WORKFLOW_DIR` 直下）では `$DOCUMENT_WORKFLOW_DIR/plan-review.cache.json` を削除。サブディレクトリ構成では各 plan ファイルと同ディレクトリの `plan-review.cache.json` を削除する（誤って無関係パスを削除しない）。これで `canSkip` の `cache?.planHash===planHash` 短絡が旧 hash で誤 skip するのを防ぐ。
+4. **(R4c) 順序保証**: 1→2→3 完了前に実装を再開しない。回復前は guard が conservative deny（silent pass しない）。
 
 ### No Placeholders 禁則（plan.md / spec.md / plan-N.md 共通）
 

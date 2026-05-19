@@ -1,9 +1,16 @@
 #!/usr/bin/env -S bun run --silent
 
-import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { defineHook } from "cc-hooks-ts";
+import {
+  applyNormalizers,
+  computeDesignHash,
+  computeDocumentHash,
+  type Normalizer,
+  PLAN_NORMALIZERS,
+  SPEC_NORMALIZERS,
+} from "../lib/document-hash.ts";
 import { expandTilde } from "../lib/path-utils.ts";
 import {
   getWorkflowDocumentType,
@@ -23,6 +30,7 @@ interface CacheState {
 interface AutoReviewMarker {
   verdict: string;
   hash: string;
+  designHash: string | null;
 }
 
 interface ReviewerRule {
@@ -327,6 +335,21 @@ const hook = defineHook({
       return context.success({});
     }
 
+    // Prescribed-fix carry-forward (K7 c): not skippable by full-content hash,
+    // but the prior verdict was pass and the section-scoped design-hash is
+    // unchanged from the most recent needs-work baseline → the edit was a
+    // prescribed wording fix that did not move design sections. Do not
+    // re-recommend reviews (the prior pass verdict carries forward).
+    if (
+      existingMarker?.verdict === "pass" &&
+      canCarryForwardVerdict({
+        currentDesignHash: computeDesignHash(planContent),
+        baselineDesignHash: findNeedsWorkBaselineDesignHash(planContent),
+      })
+    ) {
+      return context.success({});
+    }
+
     // Record that we recommended review for this hash (prevents repeated prompts)
     writeFileSync(
       cachePath,
@@ -444,10 +467,15 @@ function buildRecommendation(
   }
 
   const reviewersValue = allReviewerNames.join("+");
+  const computedHash = computeDocumentHash(
+    planContent,
+    documentType === "plan-numbered" ? PLAN_NORMALIZERS : SPEC_NORMALIZERS,
+  );
+  const designHash = computeDesignHash(planContent) ?? "<no design sections>";
   const markerTemplate =
     documentType === "plan-numbered"
-      ? `<!-- auto-review: verdict=...; hash=...; parent-spec-hash=${options.parentSpecHash ?? "<spec.md hash here>"}; at=...; reviewers=${reviewersValue} -->`
-      : `<!-- auto-review: verdict=...; hash=...; at=...; reviewers=${reviewersValue} -->`;
+      ? `<!-- auto-review: verdict=...; hash=${computedHash}; design-hash=${designHash}; parent-spec-hash=${options.parentSpecHash ?? "<spec.md hash here>"}; at=...; reviewers=${reviewersValue} -->`
+      : `<!-- auto-review: verdict=...; hash=${computedHash}; design-hash=${designHash}; at=...; reviewers=${reviewersValue} -->`;
 
   lines.push(
     "",
@@ -565,54 +593,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function hashText(text: string): string {
-  return createHash("sha256").update(text, "utf-8").digest("hex");
-}
-
 function stripReviewMarkers(content: string): string {
   return content.replace(REVIEW_MARKER_REGEX, "").trimEnd();
-}
-
-type Normalizer = (content: string) => string;
-
-/**
- * Normalizers applied in order to compute a stable hash for spec-layer
- * documents (spec.md, single-layer plan.md). Strip auto-review markers
- * (which contain the hash itself), Approval Status values (so flipping
- * the status doesn't change the hash), and checkbox completion state.
- */
-const SPEC_NORMALIZERS: ReadonlyArray<Normalizer> = [
-  (c) => c.replace(REVIEW_MARKER_REGEX, ""),
-  (c) => c.replace(/^(- Approval Status:)\s*.*$/m, "$1"),
-  (c) => c.replace(/^(\s*- )\[x\]/gm, "$1[ ]"),
-  (c) => c.trimEnd(),
-];
-
-/**
- * Normalizers for plan-layer (plan-N.md) documents. Identical to
- * SPEC_NORMALIZERS for now; kept as a separate constant so future
- * layer-specific rules (e.g., tracking parent-spec-hash separately)
- * can be introduced without touching call sites.
- */
-const PLAN_NORMALIZERS: ReadonlyArray<Normalizer> = SPEC_NORMALIZERS;
-
-function applyNormalizers(
-  content: string,
-  normalizers: ReadonlyArray<Normalizer>,
-): string {
-  return normalizers.reduce((acc, fn) => fn(acc), content);
-}
-
-/**
- * Compute a normalized hash for a workflow document.
- * Pass `SPEC_NORMALIZERS` for spec.md / single-layer plan.md and
- * `PLAN_NORMALIZERS` for plan-N.md execution-layer documents.
- */
-function computeDocumentHash(
-  content: string,
-  normalizers: ReadonlyArray<Normalizer> = SPEC_NORMALIZERS,
-): string {
-  return hashText(applyNormalizers(content, normalizers));
 }
 
 /** @deprecated Backward-compatible alias for `computeDocumentHash(content, SPEC_NORMALIZERS)`. */
@@ -658,7 +640,10 @@ function extractLatestReviewMarker(content: string): AutoReviewMarker | null {
 
   let verdict = "";
   let hash = "";
-  for (const part of latest.matchAll(/(\w+)=([^;]+)/g)) {
+  let designHash: string | null = null;
+  // Hyphen-aware key match so `design-hash` / `parent-spec-hash` are distinct
+  // keys and never substring-collide with the bare `hash` field.
+  for (const part of latest.matchAll(/([a-zA-Z][a-zA-Z0-9-]*)=([^;]+)/g)) {
     const key = part[1]?.trim();
     const value = part[2]?.trim();
     if (!key || !value) {
@@ -666,9 +651,10 @@ function extractLatestReviewMarker(content: string): AutoReviewMarker | null {
     }
     if (key === "verdict") {
       verdict = value;
-    }
-    if (key === "hash") {
+    } else if (key === "hash") {
       hash = value;
+    } else if (key === "design-hash") {
+      designHash = value;
     }
   }
 
@@ -676,7 +662,64 @@ function extractLatestReviewMarker(content: string): AutoReviewMarker | null {
     return null;
   }
 
-  return { verdict, hash };
+  return { verdict, hash, designHash };
+}
+
+/**
+ * K7 (c) carry-forward gate. Returns true only when both the current and the
+ * baseline design-hash are present and equal. Either being `null` (no design
+ * sections, or the baseline needs-work marker lacked the field) forces a full
+ * re-review — same conservative policy as a missing parent-spec-hash.
+ *
+ * Note: K7 conditions (a) wording-precision class and (b) reviewer verbatim
+ * are NOT machine-decided here; they are upheld by the workflow.md
+ * "prescribed-fix carry-forward" protocol. This hook only machine-verifies (c).
+ */
+export function canCarryForwardVerdict(input: {
+  currentDesignHash: string | null;
+  baselineDesignHash: string | null;
+}): boolean {
+  if (input.currentDesignHash === null || input.baselineDesignHash === null) {
+    return false;
+  }
+  return input.currentDesignHash === input.baselineDesignHash;
+}
+
+/**
+ * Scan all auto-review markers and return the `design-hash` recorded in the
+ * most recent `verdict=needs-work` marker. Returns `null` when no needs-work
+ * marker exists or it lacks a non-empty design-hash field (conservative;
+ * routes `canCarryForwardVerdict` into its fail-safe branch).
+ */
+function findNeedsWorkBaselineDesignHash(content: string): string | null {
+  const matches = content.match(REVIEW_MARKER_REGEX);
+  if (!matches) {
+    return null;
+  }
+  for (let i = matches.length - 1; i >= 0; i--) {
+    const marker = matches[i];
+    if (!marker) {
+      continue;
+    }
+    let verdict = "";
+    let designHash: string | null = null;
+    for (const part of marker.matchAll(/([a-zA-Z][a-zA-Z0-9-]*)=([^;]+)/g)) {
+      const key = part[1]?.trim();
+      const value = part[2]?.trim();
+      if (!key || !value) {
+        continue;
+      }
+      if (key === "verdict") {
+        verdict = value;
+      } else if (key === "design-hash") {
+        designHash = value;
+      }
+    }
+    if (verdict === "needs-work") {
+      return designHash && designHash.length > 0 ? designHash : null;
+    }
+  }
+  return null;
 }
 
 function stripApprovalSection(content: string): string {

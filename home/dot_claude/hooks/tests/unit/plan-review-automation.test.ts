@@ -89,6 +89,21 @@ describe("plan-review-automation.ts helpers", () => {
     deepStrictEqual(extractLatestReviewMarker(content), {
       verdict: "pass",
       hash: "222",
+      designHash: null,
+    });
+  });
+
+  it("extractLatestReviewMarker parses design-hash without hash key collision", () => {
+    const content = [
+      "# Plan",
+      "",
+      "<!-- auto-review: verdict=pass; hash=AAA; design-hash=DDD; parent-spec-hash=PPP; at=2026-05-20T00:00:00Z -->",
+    ].join("\n");
+
+    deepStrictEqual(extractLatestReviewMarker(content), {
+      verdict: "pass",
+      hash: "AAA",
+      designHash: "DDD",
     });
   });
 

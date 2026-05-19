@@ -1,12 +1,15 @@
 #!/usr/bin/env node --test
 
 import { ok } from "node:assert";
-import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import documentWorkflowGuardHook from "../../implementations/document-workflow-guard.ts";
+import {
+  computeDocumentHash,
+  SPEC_NORMALIZERS,
+} from "../../lib/document-hash.ts";
 import {
   ConsoleCapture,
   createPreToolUseContextFor,
@@ -25,13 +28,10 @@ interface WorkflowRepoOptions {
   review?: ReviewMarkerOptions;
 }
 
+// Mirror the guard's hashing by consuming the same shared canonical module,
+// so S3 normalizer extensions cannot desync fixture hashes from marker hashes.
 function computePlanHash(content: string): string {
-  const normalized = content
-    .replace(/<!--\s*auto-review:[^>]*-->/g, "")
-    .replace(/^(- Approval Status:)\s*.*$/m, "$1")
-    .replace(/^(\s*- )\[x\]/gm, "$1[ ]")
-    .trimEnd();
-  return createHash("sha256").update(normalized, "utf-8").digest("hex");
+  return computeDocumentHash(content, SPEC_NORMALIZERS);
 }
 
 function buildPlanContent(options: WorkflowRepoOptions): string {

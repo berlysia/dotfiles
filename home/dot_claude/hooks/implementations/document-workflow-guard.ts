@@ -1,10 +1,10 @@
 #!/usr/bin/env -S bun run --silent
 
-import { createHash } from "node:crypto";
 import { appendFileSync, existsSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineHook } from "cc-hooks-ts";
 import { extractCommandsStructured } from "../lib/bash-parser.ts";
+import { computeDocumentHash, SPEC_NORMALIZERS } from "../lib/document-hash.ts";
 import { getCommandFromToolInput } from "../lib/command-parsing.ts";
 import { createDenyResponse } from "../lib/context-helpers.ts";
 import { expandTilde } from "../lib/path-utils.ts";
@@ -718,13 +718,11 @@ function stripQuotes(value: string): string {
   return value;
 }
 
+// Delegates to the single shared canonical hash (lib/document-hash.ts) so the
+// guard holds no private copy of the invariant it enforces (spec K4). The
+// call sites keep the original single-arg signature for a minimal diff.
 function computePlanHash(content: string): string {
-  const normalized = content
-    .replace(REVIEW_MARKER_REGEX, "")
-    .replace(/^(- Approval Status:)\s*.*$/m, "$1")
-    .replace(/^(\s*- )\[x\]/gm, "$1[ ]")
-    .trimEnd();
-  return createHash("sha256").update(normalized, "utf-8").digest("hex");
+  return computeDocumentHash(content, SPEC_NORMALIZERS);
 }
 
 function extractLatestAutoReviewMarker(
