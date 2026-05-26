@@ -77,6 +77,20 @@ function hasScript(scriptName: string): boolean {
   }
 }
 
+// Detect package manager from lockfile so commands like `typecheck` run via
+// the same tool that installed node_modules. Mismatched PMs (e.g. running
+// `pnpm` in a bun workspace) trigger destructive deps-status-check behavior.
+function detectPackageManager(): string {
+  const cwd = process.cwd();
+  if (existsSync(join(cwd, "bun.lock")) || existsSync(join(cwd, "bun.lockb"))) {
+    return "bun";
+  }
+  if (existsSync(join(cwd, "pnpm-lock.yaml"))) return "pnpm";
+  if (existsSync(join(cwd, "yarn.lock"))) return "yarn";
+  if (existsSync(join(cwd, "package-lock.json"))) return "npm";
+  return "pnpm";
+}
+
 /**
  * Check if the project's .claude/settings.json has its own Stop hooks.
  * If so, the project handles completion checks itself and this hook
@@ -140,9 +154,10 @@ const hook = defineHook({
       }
 
       const errors: string[] = [];
+      const pm = detectPackageManager();
 
       if (hasScript("typecheck")) {
-        const result = runCheck("pnpm typecheck", "typecheck");
+        const result = runCheck(`${pm} run typecheck`, "typecheck");
         if (result) {
           errors.push(result);
           logQuality("completion-gate", "typecheck", result, session_id);
@@ -150,7 +165,7 @@ const hook = defineHook({
       }
 
       if (hasScript("test")) {
-        const result = runCheck("pnpm test", "test");
+        const result = runCheck(`${pm} run test`, "test");
         if (result) {
           errors.push(result);
           logQuality("completion-gate", "test", result, session_id);
