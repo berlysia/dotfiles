@@ -17,6 +17,8 @@
 
 `.tmp/sessions/` に残したまま放置された成果物は、7日後に予告なく削除される。
 
+**`.tmp/docs/` は永続扱い**: `.tmp/docs/` 配下は GC 対象外。`home/.chezmoiscripts/run_after_gc.sh.tmpl` の GC 処理が `.tmp/sessions/` の path-prefix のみを `find -mindepth 1 -maxdepth 1 -type d -mtime +7` で対象としているため、`.tmp/docs/` の内容は mtime によらず保持される。per-project CONTEXT.md (`.tmp/docs/CONTEXT.md`) はこの規約に基づき maturity を蓄積する。
+
 ## Task Management
 
 - **Simple tasks** (1-2 steps): Execute directly without task tracking
