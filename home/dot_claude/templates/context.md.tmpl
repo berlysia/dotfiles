@@ -1,0 +1,33 @@
+<!--
+このファイルは個人スコープ (`.tmp/docs/CONTEXT.md`) のため commit しないこと。
+`.gitignore` の `.tmp/` エントリが第一防御だが、template ヘッダで二重防御する。
+
+機密 path (`.env*`, `secrets/`, `~/.ssh/` 等) は本ファイル内の `@path` 参照に含めないこと。
+AI が follow した際に機密が context に取り込まれるリスク (R6) を回避するため。
+
+仕様: `~/.claude/rules/context-md.md`
+ADR: `docs/decisions/0010-context-md-mechanism.md`
+-->
+
+# Project CONTEXT (personal)
+
+## Authoritative references
+
+プロジェクト側の権威ある docs を `@path` で index する。各エントリは 1 行要約のみ (要約と本体の drift を最小化)。
+
+- @docs/decisions/ — ADR (アーキテクチャ判断)
+- @CONTRIBUTING.md — PR 規約
+- @README.md — プロジェクト概要
+
+## Personal observations
+
+grill で得た個人理解 / 用語定義 / ステータス遷移を記録する。チーム合意化したい内容は `docs/` 配下や ADR へ昇格する。
+
+### <用語名>
+- <定義 / cardinality / 遷移 / etc.>
+
+## Open questions
+
+チーム確認用 TODO。確認後は Authoritative references (合意済) または Personal observations (個人解釈) に移動する。
+
+- <未解決事項>
