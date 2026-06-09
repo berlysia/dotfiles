@@ -50,6 +50,29 @@ CONTEXT.md は以下の 3 区分で構成する。template (`home/dot_claude/tem
 - 既存概念への小規模追加 (語彙は安定)
 - mechanical-lane criteria 全 4 条件 AND 成立タスク (`workflow.md` mechanical-lane 参照)
 
+## Canonical location (solo projects)
+
+solo project (team-shared / OSS / client work でない、自分のリポジトリ) では personal / team-shared の区別が collapse するため、canonical CONTEXT.md を root or `docs/` に置く運用パターンが有効。デフォルトの Read 経路 (`.tmp/docs/CONTEXT.md`) を保ちつつ canonical を symlink ターゲットにすることで:
+
+- LLM コストゼロ (1 ファイル Read で symlink 解決、二重 Read 不要)
+- commit による drift 追跡 (canonical は git 履歴で「常に最新」が保証される)
+- 別環境 clone 時の復旧性 (symlink 消失しても canonical が残り、再 symlink で復旧可能)
+
+### Discovery + Suggestion (session 開始時)
+
+AI は session 開始時に以下の検出ロジックを実行する:
+
+1. `.tmp/docs/CONTEXT.md` 存在 → Read (通常経路)
+2. `.tmp/docs/CONTEXT.md` 不在 + `./CONTEXT.md` 存在 → symlink 提案 (`ln -s ../../CONTEXT.md .tmp/docs/CONTEXT.md`)
+3. `.tmp/docs/CONTEXT.md` 不在 + `./docs/CONTEXT.md` 存在 → symlink 提案 (`ln -s ../../docs/CONTEXT.md .tmp/docs/CONTEXT.md`)
+4. いずれも不在 → degraded mode (本機構の機能オフ、Document Workflow と他機能は通常動作)
+
+AI による symlink 自動作成はしない (人間判断を保留する)。canonical を直接 Read 対象にしないことで、他プロジェクト (team / OSS / client) で適用された際の非侵入性を維持する。
+
+### dog-food 事例
+
+本 dotfiles リポジトリ自体がこのパターンの最初の利用者 (eat-your-own-dog-food)。root `CONTEXT.md` が canonical、`.tmp/docs/CONTEXT.md` が `../../CONTEXT.md` への symlink。詳細は `docs/decisions/0010-context-md-mechanism.md` の Consequences 節および本リポジトリ root の `CONTEXT.md` を参照。
+
 ## template
 
 - **場所**: `home/dot_claude/templates/context.md.tmpl` (デプロイ先は `~/.claude/templates/context.md`、chezmoi が `.tmpl` を strip)

@@ -33,6 +33,13 @@ Design decisions (API/architecture/data model changes) or 3+ step tasks **requir
 
 Session 開始時、現在のプロジェクトルートに `.tmp/docs/CONTEXT.md` が存在する場合は事前に Read する。CONTEXT.md 内の `@path` 表記は「人間と AI が共有する参照規約」であり、AI は必要時にその path を明示的に Read する (CLAUDE.md の `@~/` 自動ロードとは異なる解決メカニズム)。詳細は `@~/.claude/rules/context-md.md` を参照。
 
+`.tmp/docs/CONTEXT.md` が不在で root `./CONTEXT.md` または `./docs/CONTEXT.md` が存在する場合、canonical CONTEXT.md が solo project / dog-food パターンで配置されている可能性が高い。AI はユーザーに symlink 作成を提案する (作成は人間判断):
+
+- `ln -s ../../CONTEXT.md .tmp/docs/CONTEXT.md` (canonical が root の場合)
+- `ln -s ../../docs/CONTEXT.md .tmp/docs/CONTEXT.md` (canonical が `docs/` の場合)
+
+canonical を Read 対象として直接読むことはしない (他プロジェクト team / OSS / client での非侵入性維持のため、Read 権限は `.tmp/docs/CONTEXT.md` 経由のみ)。
+
 ## Prohibitions
 
 - Never implement before plan approval (enforced by `document-workflow-guard` hook)
