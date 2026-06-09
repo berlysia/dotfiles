@@ -26,6 +26,11 @@ Design decisions (API/architecture/data model changes) or 3+ step tasks **requir
 - `@~/.claude/rules/debugging.md` — Emergency checklist, root cause analysis, 5 Whys
 - `@~/.claude/rules/typescript-new-project.md` — New TS project tooling standards
 - `@~/.claude/rules/external-review.md` — Logic validation, external review, claude-code-guide usage
+- `@~/.claude/rules/context-md.md` — Per-project CONTEXT.md mechanism (`.tmp/docs/CONTEXT.md` 位置規約、@path lazy 解決、degraded mode)
+
+## Per-Project Context
+
+Session 開始時、現在のプロジェクトルートに `.tmp/docs/CONTEXT.md` が存在する場合は事前に Read する。CONTEXT.md 内の `@path` 表記は「人間と AI が共有する参照規約」であり、AI は必要時にその path を明示的に Read する (CLAUDE.md の `@~/` 自動ロードとは異なる解決メカニズム)。詳細は `@~/.claude/rules/context-md.md` を参照。
 
 ## Prohibitions
 
