@@ -65,6 +65,24 @@
 
 **guard 側バックストップ非対称（明示トレードオフ）**: `existsSync(spec.md)` シグナルはモード判定のみで、レーン分類（通常 / mechanical）を観測しない（ADR-0006 K1 境界を守るため意図的）。複雑な ADR 反転を mechanical と誤分類した場合の検出機構は guard 側に無く、緩和は本 criteria 4 条件 AND + 判定根拠明記のみ。これは既存 routing 表と同一の信頼モデル（mode 誤分類も guard が部分的にしか catch しないのと同水準）。
 
+### 起動軸（initiation: pull / push）
+
+上記 routing 表は **ceremony 軸**（手続きの重さ）のみを扱い、全行が「人間がタスクを surface して起動する（pull）」を前提とする。これと直交する第2軸として **起動軸** を定義する:
+
+- **pull（既定）**: 人間が起動する。実行場所はローカル session で、`document-workflow-guard` が実装書き込みを支配する。上記 routing 表の全行は pull に属する。
+- **push（CI/cron 専用）**: system がタスクを発見・起動する。実行場所は CI/cron のみで、出力は必ず PR。適用条件・安全境界は `@~/.claude/rules/autonomous-lane.md` の charter（C1 型ホワイトリスト / C2 可逆性 / C3 設計面非接触）に従う。ローカル session への自律 escape hatch は恒久的に非提供（guard 盲点の増幅を避ける）。
+
+```
+                起動: 人 pull              起動: system push
+高 ceremony  │ Document Workflow          │ （永久に空白＝設計判断は自律化しない）
+（設計判断）  │ = ローカル, guard 支配       │
+────────────┼───────────────────────────┼──────────────────────────────
+低 ceremony  │ 直接実行 / approach-check    │ 自律レーン (charter)
+（機械的）    │ = ローカル軽量               │ = CI/cron, 出力=PR, 型ホワイトリスト
+```
+
+右上象限（push × 設計判断）は**永久に空白**とする。設計判断（ADR / API / データモデル / routing 表自身の変更）を push に乗せることは禁止。`document-workflow-guard` は CI を管轄しない（ローカル fs 基準）ため、push レーンは guard とランタイムを共有せず並存し、衝突も bypass 穴も生じない。
+
 ## Document Workflow Protocol (MANDATORY)
 
 セッション開始時に `DOCUMENT_WORKFLOW_DIR` 環境変数が設定される（例: `.tmp/sessions/abcd1234/`）。

@@ -27,6 +27,7 @@ Design decisions (API/architecture/data model changes) or 3+ step tasks **requir
 - `@~/.claude/rules/typescript-new-project.md` — New TS project tooling standards
 - `@~/.claude/rules/external-review.md` — Logic validation, external review, claude-code-guide usage
 - `@~/.claude/rules/context-md.md` — Per-project CONTEXT.md mechanism (`.tmp/docs/CONTEXT.md` 位置規約、@path lazy 解決、degraded mode)
+- `@~/.claude/rules/autonomous-lane.md` — Autonomous push lane charter（CI/cron 専用、C1 型ホワイトリスト / C2 出力=PR / C3 設計面非接触）
 
 ## Per-Project Context
 
