@@ -1,0 +1,18 @@
+approval_policy = 'on-request'
+network_access = true
+sandbox_mode = 'workspace-write'
+hide_agent_reasoning = true
+user_key = 'keep'
+
+[mcp_servers]
+list_key = ['a']
+
+[mcp_servers.playwright]
+args = ['@playwright/mcp@latest']
+command = 'npx'
+
+[tui]
+notifications = true
+
+[projects."/tmp/example"]
+trust_level = 'trusted'

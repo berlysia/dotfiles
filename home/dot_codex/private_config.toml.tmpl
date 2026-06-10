@@ -1,11 +1,21 @@
-{{- /* Template content */ -}}
+{{- /* Renders ~/.codex/config.toml as a 3-layer composition:
+     base (dot_codex/.config.toml) -> host overlay (dot_codex/.config.<hostname>.toml, optional)
+     -> user-preserve (non-FORCED keys of the existing live file).
+     Overlays may only extend FORCED keys; .merge-config.ts validates and deep-merges them.
+     Overlay files cannot carry comments (canonical TOML check), so this header is the
+     discoverable home of the convention. */ -}}
 {{- $templateContent := include "dot_codex/.config.toml" | replace "__CHEZMOI_HOME__" .chezmoi.homeDir -}}
 {{- $targetFile := joinPath .chezmoi.homeDir ".codex" "config.toml" -}}
 {{- $mergeScript := joinPath .chezmoi.homeDir ".codex" ".merge-config.ts" -}}
+{{- $overlayName := printf ".config.%s.toml" .chezmoi.hostname -}}
+{{- $overlayPath := joinPath .chezmoi.sourceDir "dot_codex" $overlayName -}}
+{{- $overlayContent := "" -}}
+{{- if stat $overlayPath -}}
+{{-   $overlayContent = include (printf "dot_codex/%s" $overlayName) | replace "__CHEZMOI_HOME__" .chezmoi.homeDir -}}
+{{- end -}}
 
-{{- /* Check if target file exists */ -}}
-{{- if stat $targetFile -}}
-  {{- /* Target file exists, smart merge with existing user settings */ -}}
+{{- /* Smart merge whenever there is an existing target or a host overlay to compose */ -}}
+{{- if or (stat $targetFile) (ne $overlayContent "") -}}
   {{- $shellScript := `
 set -euo pipefail
 
@@ -13,8 +23,11 @@ TARGET_FILE="$1"
 TEMPLATE_CONTENT="$2"
 MERGE_SCRIPT="$3"
 WORKING_TREE="$4"
+OVERLAY_CONTENT="$5"
+TEMP_TOML=""
+TEMP_OVL=""
+trap 'rm -f "$TEMP_TOML" "$TEMP_OVL"' EXIT
 TEMP_TOML=$(mktemp /tmp/codex-tpl.XXXXXX.toml)
-trap 'rm -f "$TEMP_TOML"' EXIT
 
 printf '%s' "$TEMPLATE_CONTENT" > "$TEMP_TOML"
 
@@ -25,10 +38,16 @@ fi
 
 # cd to working tree so mise can resolve .mise.toml and find tools like dasel
 cd "$WORKING_TREE"
-bun run "$MERGE_SCRIPT" "$TARGET_FILE" "$TEMP_TOML"
+if [ -n "$OVERLAY_CONTENT" ]; then
+    TEMP_OVL=$(mktemp /tmp/codex-ovl.XXXXXX.toml)
+    printf '%s' "$OVERLAY_CONTENT" > "$TEMP_OVL"
+    bun run "$MERGE_SCRIPT" "$TARGET_FILE" "$TEMP_TOML" "$TEMP_OVL"
+else
+    bun run "$MERGE_SCRIPT" "$TARGET_FILE" "$TEMP_TOML"
+fi
 ` -}}
-  {{- output "bash" "-c" $shellScript "--" $targetFile $templateContent $mergeScript .chezmoi.workingTree -}}
+  {{- output "bash" "-c" $shellScript "--" $targetFile $templateContent $mergeScript .chezmoi.workingTree $overlayContent -}}
 {{- else -}}
-  {{- /* Target file doesn't exist, output template as-is */ -}}
+  {{- /* No target and no overlay: emit the base template as-is */ -}}
   {{- $templateContent -}}
 {{- end -}}

@@ -1,0 +1,11 @@
+[mcp_servers]
+[mcp_servers.playwright]
+[mcp_servers.playwright.tools]
+[mcp_servers.playwright.tools.browser_navigate]
+approval_mode = 'approve'
+
+[mcp_servers.playwright.tools.browser_run_code_unsafe]
+approval_mode = 'approve'
+
+[mcp_servers.playwright.tools.browser_tabs]
+approval_mode = 'approve'

@@ -275,6 +275,205 @@ else
     echo "After: $AFTER_JSON"
 fi
 
+# ─────────────────────────────────────────────
+# merge-config.ts tests (M1-M6)
+# ─────────────────────────────────────────────
+
+MERGE_SCRIPT="${PROJECT_ROOT}/home/dot_codex/private_dot_merge-config.ts"
+FIXTURE_DIR="${PROJECT_ROOT}/scripts/fixtures/codex-merge"
+
+run_merge() {
+    bun run "$MERGE_SCRIPT" "$@"
+}
+
+toml_to_json() {
+    mise x -- dasel query --root -i toml -o json
+}
+
+# Test M1: three-layer composition (base + overlay + user-preserve)
+test_start "M1: overlay deep-merges into base, user keys preserved, arrays overlay-win"
+setup_test
+cat > "$TEST_DIR/target.toml" << 'EOF'
+user_key = 'keep'
+EOF
+cat > "$TEST_DIR/base.toml" << 'EOF'
+[mcp_servers]
+list_key = ['a']
+
+[mcp_servers.playwright]
+args = ['base-arg']
+command = 'npx'
+EOF
+cat > "$TEST_DIR/overlay.toml" << 'EOF'
+[mcp_servers]
+list_key = ['b']
+
+[mcp_servers.playwright]
+[mcp_servers.playwright.tools]
+[mcp_servers.playwright.tools.browser_navigate]
+approval_mode = 'approve'
+EOF
+
+M1_JSON=$(run_merge "$TEST_DIR/target.toml" "$TEST_DIR/base.toml" "$TEST_DIR/overlay.toml" 2>/dev/null | toml_to_json || true)
+if [[ "$(printf '%s' "$M1_JSON" | jq -r '.mcp_servers.playwright.args[0]')" == "base-arg" ]] \
+    && [[ "$(printf '%s' "$M1_JSON" | jq -r '.mcp_servers.playwright.tools.browser_navigate.approval_mode')" == "approve" ]] \
+    && [[ "$(printf '%s' "$M1_JSON" | jq -r '.user_key')" == "keep" ]] \
+    && [[ "$(printf '%s' "$M1_JSON" | jq -c '.mcp_servers.list_key')" == '["b"]' ]]; then
+    test_pass
+else
+    test_fail "Three-layer composition produced unexpected output: $M1_JSON"
+fi
+cleanup_test
+
+# Test M2: backward compatibility against committed golden (2-arg invocation)
+test_start "M2: two-arg output is byte-identical to committed golden fixture"
+setup_test
+M2_OUT="$TEST_DIR/m2-output.toml"
+if run_merge "$FIXTURE_DIR/target.toml" "$FIXTURE_DIR/base.toml" > "$M2_OUT" 2>/dev/null \
+    && diff -q "$M2_OUT" "$FIXTURE_DIR/golden.toml" >/dev/null 2>&1; then
+    test_pass
+else
+    test_fail "Two-arg output differs from committed golden"
+    diff -u "$FIXTURE_DIR/golden.toml" "$M2_OUT" | head -20 || true
+fi
+cleanup_test
+
+# Test M3: absent target composes base + overlay with exit 0
+test_start "M3: absent target -> exit 0 with base + overlay composition"
+setup_test
+cat > "$TEST_DIR/base.toml" << 'EOF'
+[mcp_servers]
+[mcp_servers.playwright]
+args = ['base-arg']
+command = 'npx'
+EOF
+cat > "$TEST_DIR/overlay.toml" << 'EOF'
+[mcp_servers]
+[mcp_servers.playwright]
+[mcp_servers.playwright.tools]
+[mcp_servers.playwright.tools.browser_navigate]
+approval_mode = 'approve'
+EOF
+
+if M3_OUT=$(run_merge "$TEST_DIR/does-not-exist.toml" "$TEST_DIR/base.toml" "$TEST_DIR/overlay.toml" 2>/dev/null) \
+    && printf '%s' "$M3_OUT" | grep -q "approval_mode = 'approve'"; then
+    test_pass
+else
+    test_fail "Absent target did not produce composed output with exit 0"
+fi
+cleanup_test
+
+# Test M4a: invalid overlay TOML is fatal
+test_start "M4a: invalid overlay TOML -> non-zero exit"
+setup_test
+cat > "$TEST_DIR/target.toml" << 'EOF'
+user_key = 'keep'
+EOF
+cat > "$TEST_DIR/base.toml" << 'EOF'
+network_access = true
+EOF
+cat > "$TEST_DIR/overlay.toml" << 'EOF'
+[unclosed
+EOF
+
+if ! run_merge "$TEST_DIR/target.toml" "$TEST_DIR/base.toml" "$TEST_DIR/overlay.toml" >/dev/null 2>&1; then
+    test_pass
+else
+    test_fail "Invalid overlay TOML was not fatal"
+fi
+cleanup_test
+
+# Test M4b: invalid template TOML is fatal (closes the FORCED-wipe path)
+test_start "M4b: invalid template TOML -> non-zero exit"
+setup_test
+cat > "$TEST_DIR/target.toml" << 'EOF'
+user_key = 'keep'
+EOF
+cat > "$TEST_DIR/base.toml" << 'EOF'
+[unclosed
+EOF
+
+if ! run_merge "$TEST_DIR/target.toml" "$TEST_DIR/base.toml" >/dev/null 2>&1; then
+    test_pass
+else
+    test_fail "Invalid template TOML was not fatal"
+fi
+cleanup_test
+
+# Test M5: corrupt target keeps existing silent-{} behavior (template adopted, exit 0)
+test_start "M5: corrupt target -> exit 0 with template adopted (intentional silent fallback)"
+setup_test
+cat > "$TEST_DIR/target.toml" << 'EOF'
+this is not valid toml at all
+[unclosed section
+EOF
+cat > "$TEST_DIR/base.toml" << 'EOF'
+network_access = true
+EOF
+
+if M5_OUT=$(run_merge "$TEST_DIR/target.toml" "$TEST_DIR/base.toml" 2>/dev/null) \
+    && printf '%s' "$M5_OUT" | grep -q 'network_access = true'; then
+    test_pass
+else
+    test_fail "Corrupt target did not fall back to template with exit 0"
+fi
+cleanup_test
+
+# Test M6: overlay with non-FORCED top-level key is fatal
+test_start "M6: overlay with non-FORCED top-level keys -> non-zero exit"
+setup_test
+cat > "$TEST_DIR/target.toml" << 'EOF'
+user_key = 'keep'
+EOF
+cat > "$TEST_DIR/base.toml" << 'EOF'
+network_access = true
+EOF
+cat > "$TEST_DIR/overlay-verbatim.toml" << 'EOF'
+[projects."/tmp/x"]
+trust_level = 'trusted'
+EOF
+cat > "$TEST_DIR/overlay-user.toml" << 'EOF'
+user_key = 'oops'
+EOF
+
+if ! run_merge "$TEST_DIR/target.toml" "$TEST_DIR/base.toml" "$TEST_DIR/overlay-verbatim.toml" >/dev/null 2>&1 \
+    && ! run_merge "$TEST_DIR/target.toml" "$TEST_DIR/base.toml" "$TEST_DIR/overlay-user.toml" >/dev/null 2>&1; then
+    test_pass
+else
+    test_fail "Overlay with non-FORCED top-level key was not rejected"
+fi
+cleanup_test
+
+# Test C1: check script default mode validates base + all overlays
+test_start "C1: default mode checks every .config.*.toml overlay alongside base"
+setup_test
+TEMP_REPO="$TEST_DIR/repo"
+mkdir -p "$TEMP_REPO/scripts" "$TEMP_REPO/home/dot_codex"
+cp "$SCRIPT_DIR/check-codex-config.sh" "$TEMP_REPO/scripts/check-codex-config.sh"
+cp "$SCRIPT_DIR/format-codex-config.sh" "$TEMP_REPO/scripts/format-codex-config.sh"
+chmod +x "$TEMP_REPO/scripts/check-codex-config.sh" "$TEMP_REPO/scripts/format-codex-config.sh"
+unset CODEX_CONFIG_FILE
+cat > "$TEMP_REPO/home/dot_codex/.config.toml" << 'EOF'
+hide_agent_reasoning = true
+network_access = true
+EOF
+cat > "$TEMP_REPO/home/dot_codex/.config.TESTHOST.toml" << 'EOF'
+[mcp_servers.playwright.tools.browser_navigate]
+approval_mode = "approve"
+EOF
+
+if ! "$TEMP_REPO/scripts/check-codex-config.sh" >/dev/null 2>&1; then
+    CODEX_CONFIG_FILE="$TEMP_REPO/home/dot_codex/.config.TESTHOST.toml" "$TEMP_REPO/scripts/format-codex-config.sh" >/dev/null 2>&1
+    if "$TEMP_REPO/scripts/check-codex-config.sh" >/dev/null 2>&1; then
+        test_pass
+    else
+        test_fail "Check script still failing after overlay was canonicalized"
+    fi
+else
+    test_fail "Check script default mode did not detect non-canonical overlay"
+fi
+cleanup_test
+
 # Summary
 echo -e "\n${YELLOW}═══════════════════════════════════════${NC}"
 echo -e "${GREEN}Passed: $TESTS_PASSED${NC}"

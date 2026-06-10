@@ -1,0 +1,13 @@
+hide_agent_reasoning = true
+user_key = 'keep'
+
+[mcp_servers]
+[mcp_servers.playwright]
+args = ['stale-arg']
+command = 'stale-cmd'
+
+[projects."/tmp/example"]
+trust_level = 'trusted'
+
+[tui]
+notifications = true

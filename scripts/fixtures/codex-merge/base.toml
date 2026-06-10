@@ -1,0 +1,10 @@
+approval_policy = 'on-request'
+network_access = true
+sandbox_mode = 'workspace-write'
+
+[mcp_servers]
+list_key = ['a']
+
+[mcp_servers.playwright]
+args = ['@playwright/mcp@latest']
+command = 'npx'
