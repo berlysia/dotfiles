@@ -85,9 +85,14 @@ export interface InsightRecord {
   text: string;
 }
 
-export function readAckMs(): number {
+export interface DigestNoticePaths {
+  digestPath?: string;
+  ackPath?: string;
+}
+
+export function readAckMs(ackPath: string = ACK_PATH): number {
   try {
-    const raw = readFileSync(ACK_PATH, "utf8").trim();
+    const raw = readFileSync(ackPath, "utf8").trim();
     const n = Number(raw);
     return Number.isFinite(n) ? n : 0;
   } catch {
@@ -95,17 +100,24 @@ export function readAckMs(): number {
   }
 }
 
-export function writeAckMs(ms: number = Date.now()): void {
-  ensureDir(LOGS_DIR);
-  writeFileSync(ACK_PATH, String(Math.floor(ms)), { mode: 0o600 });
+export function writeAckMs(
+  ms: number = Date.now(),
+  ackPath: string = ACK_PATH,
+): void {
+  ensureDir(dirname(ackPath));
+  writeFileSync(ackPath, String(Math.floor(ms)), { mode: 0o600 });
 }
 
-export function getUnreadDigestNotice(): string | null {
+export function getUnreadDigestNotice(
+  paths: DigestNoticePaths = {},
+): string | null {
+  const digestPath = paths.digestPath ?? DIGEST_PATH;
+  const ackPath = paths.ackPath ?? ACK_PATH;
   try {
-    if (!existsSync(DIGEST_PATH)) return null;
-    const digestMtime = statSync(DIGEST_PATH).mtimeMs;
-    if (digestMtime <= readAckMs()) return null;
-    return `New Insight digest: ${DIGEST_PATH} (run /insight-digest ack to mark read)`;
+    if (!existsSync(digestPath)) return null;
+    const digestMtime = statSync(digestPath).mtimeMs;
+    if (digestMtime <= readAckMs(ackPath)) return null;
+    return `New Insight digest: ${digestPath} (run /insight-digest ack to mark read)`;
   } catch {
     return null;
   }
@@ -115,18 +127,21 @@ export const DIGEST_PREVIEW_MAX_LINES = 14;
 
 export function getUnreadDigestPreview(
   maxLines: number = DIGEST_PREVIEW_MAX_LINES,
+  paths: DigestNoticePaths = {},
 ): string | null {
+  const digestPath = paths.digestPath ?? DIGEST_PATH;
+  const ackPath = paths.ackPath ?? ACK_PATH;
   try {
-    if (!existsSync(DIGEST_PATH)) return null;
-    const digestMtime = statSync(DIGEST_PATH).mtimeMs;
-    if (digestMtime <= readAckMs()) return null;
-    const raw = readFileSync(DIGEST_PATH, "utf8");
+    if (!existsSync(digestPath)) return null;
+    const digestMtime = statSync(digestPath).mtimeMs;
+    if (digestMtime <= readAckMs(ackPath)) return null;
+    const raw = readFileSync(digestPath, "utf8");
     const preview = raw
       .split("\n")
       .slice(0, maxLines)
       .join("\n")
       .replace(/\n+$/, "");
-    return `New Insight digest (${DIGEST_PATH}):\n${preview}\n\n_Run /insight-digest for full view, /insight-digest ack to mark read._`;
+    return `New Insight digest (${digestPath}):\n${preview}\n\n_Run /insight-digest for full view, /insight-digest ack to mark read._`;
   } catch {
     return null;
   }

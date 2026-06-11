@@ -1,106 +1,80 @@
 #!/usr/bin/env -S bun test
 
 import { ok, strictEqual } from "node:assert";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 
 import {
-  ACK_PATH,
-  DIGEST_PATH,
   DIGEST_PREVIEW_MAX_LINES,
   getUnreadDigestNotice,
   getUnreadDigestPreview,
-  LOGS_DIR,
   readAckMs,
   writeAckMs,
 } from "../../lib/insight-digest.ts";
 
-function backup(): { digest?: Buffer; ack?: Buffer } {
-  // Save current state by reading raw bytes when present.
-  const result: { digest?: Buffer; ack?: Buffer } = {};
+function withTempPaths(
+  fn: (paths: { digestPath: string; ackPath: string }) => void,
+): void {
+  const dir = mkdtempSync(join(tmpdir(), "insight-notice-test-"));
   try {
-    if (existsSync(DIGEST_PATH))
-      result.digest = require("node:fs").readFileSync(DIGEST_PATH);
-  } catch {}
-  try {
-    if (existsSync(ACK_PATH))
-      result.ack = require("node:fs").readFileSync(ACK_PATH);
-  } catch {}
-  return result;
-}
-
-function restore(saved: { digest?: Buffer; ack?: Buffer }): void {
-  if (saved.digest) writeFileSync(DIGEST_PATH, saved.digest);
-  else if (existsSync(DIGEST_PATH)) rmSync(DIGEST_PATH);
-  if (saved.ack) writeFileSync(ACK_PATH, saved.ack);
-  else if (existsSync(ACK_PATH)) rmSync(ACK_PATH);
+    fn({
+      digestPath: join(dir, "insight-digest.md"),
+      ackPath: join(dir, "ack"),
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 describe("getUnreadDigestNotice", () => {
   it("returns null when digest does not exist", () => {
-    const saved = backup();
-    try {
-      if (existsSync(DIGEST_PATH)) rmSync(DIGEST_PATH);
-      strictEqual(getUnreadDigestNotice(), null);
-    } finally {
-      restore(saved);
-    }
+    withTempPaths(({ digestPath, ackPath }) => {
+      strictEqual(getUnreadDigestNotice({ digestPath, ackPath }), null);
+    });
   });
 
   it("returns notice when digest is newer than ack", () => {
-    const saved = backup();
-    try {
-      mkdirSync(LOGS_DIR, { recursive: true, mode: 0o700 });
-      writeFileSync(DIGEST_PATH, "fresh");
-      writeAckMs(0);
-      const notice = getUnreadDigestNotice();
+    withTempPaths(({ digestPath, ackPath }) => {
+      writeFileSync(digestPath, "fresh");
+      writeAckMs(0, ackPath);
+      const notice = getUnreadDigestNotice({ digestPath, ackPath });
       ok(notice !== null, "expected notice");
       ok(notice?.includes("Insight digest"));
-    } finally {
-      restore(saved);
-    }
+      ok(notice?.includes(digestPath));
+    });
   });
 
   it("returns null after ack matches digest mtime", () => {
-    const saved = backup();
-    try {
-      mkdirSync(LOGS_DIR, { recursive: true, mode: 0o700 });
-      writeFileSync(DIGEST_PATH, "marked-read");
-      writeAckMs(Date.now() + 1000);
-      strictEqual(getUnreadDigestNotice(), null);
-    } finally {
-      restore(saved);
-    }
+    withTempPaths(({ digestPath, ackPath }) => {
+      writeFileSync(digestPath, "marked-read");
+      writeAckMs(Date.now() + 1000, ackPath);
+      strictEqual(getUnreadDigestNotice({ digestPath, ackPath }), null);
+    });
   });
 
   it("readAckMs returns 0 when ack file missing or invalid", () => {
-    const saved = backup();
-    try {
-      if (existsSync(ACK_PATH)) rmSync(ACK_PATH);
-      strictEqual(readAckMs(), 0);
-      writeFileSync(ACK_PATH, "not-a-number");
-      strictEqual(readAckMs(), 0);
-    } finally {
-      restore(saved);
-    }
+    withTempPaths(({ ackPath }) => {
+      strictEqual(readAckMs(ackPath), 0);
+      writeFileSync(ackPath, "not-a-number");
+      strictEqual(readAckMs(ackPath), 0);
+    });
   });
 });
 
 describe("getUnreadDigestPreview", () => {
   it("returns null when digest is absent", () => {
-    const saved = backup();
-    try {
-      if (existsSync(DIGEST_PATH)) rmSync(DIGEST_PATH);
-      strictEqual(getUnreadDigestPreview(), null);
-    } finally {
-      restore(saved);
-    }
+    withTempPaths(({ digestPath, ackPath }) => {
+      strictEqual(
+        getUnreadDigestPreview(undefined, { digestPath, ackPath }),
+        null,
+      );
+    });
   });
 
   it("returns preview body when digest is newer than ack", () => {
-    const saved = backup();
-    try {
-      mkdirSync(LOGS_DIR, { recursive: true, mode: 0o700 });
+    withTempPaths(({ digestPath, ackPath }) => {
       const body = [
         "# Insight Digest",
         "",
@@ -120,44 +94,40 @@ describe("getUnreadDigestPreview", () => {
         "## Distillation (LLM)",
         "",
       ].join("\n");
-      writeFileSync(DIGEST_PATH, body);
-      writeAckMs(0);
-      const preview = getUnreadDigestPreview();
+      writeFileSync(digestPath, body);
+      writeAckMs(0, ackPath);
+      const preview = getUnreadDigestPreview(undefined, {
+        digestPath,
+        ackPath,
+      });
       ok(preview !== null, "expected preview");
       ok(preview?.includes("Total cumulative insights"));
       ok(preview?.includes("Run /insight-digest"));
-    } finally {
-      restore(saved);
-    }
+    });
   });
 
   it("returns null after ack catches up to digest mtime", () => {
-    const saved = backup();
-    try {
-      mkdirSync(LOGS_DIR, { recursive: true, mode: 0o700 });
-      writeFileSync(DIGEST_PATH, "marked-read body");
-      writeAckMs(Date.now() + 1000);
-      strictEqual(getUnreadDigestPreview(), null);
-    } finally {
-      restore(saved);
-    }
+    withTempPaths(({ digestPath, ackPath }) => {
+      writeFileSync(digestPath, "marked-read body");
+      writeAckMs(Date.now() + 1000, ackPath);
+      strictEqual(
+        getUnreadDigestPreview(undefined, { digestPath, ackPath }),
+        null,
+      );
+    });
   });
 
   it("respects maxLines argument", () => {
-    const saved = backup();
-    try {
-      mkdirSync(LOGS_DIR, { recursive: true, mode: 0o700 });
+    withTempPaths(({ digestPath, ackPath }) => {
       const lines = Array.from({ length: 50 }, (_, i) => `line-${i}`);
-      writeFileSync(DIGEST_PATH, lines.join("\n"));
-      writeAckMs(0);
-      const preview = getUnreadDigestPreview(3);
+      writeFileSync(digestPath, lines.join("\n"));
+      writeAckMs(0, ackPath);
+      const preview = getUnreadDigestPreview(3, { digestPath, ackPath });
       ok(preview !== null);
       ok(preview?.includes("line-0"));
       ok(preview?.includes("line-2"));
       ok(!preview?.includes("line-3"));
-    } finally {
-      restore(saved);
-    }
+    });
   });
 
   it("default maxLines constant is reasonable", () => {
