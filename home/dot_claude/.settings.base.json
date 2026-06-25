@@ -10,5 +10,8 @@
   "language": "japanese",
   "autoMemoryEnabled": false,
   "defaultMode": "auto",
-  "skipAutoPermissionPrompt": true
+  "skipAutoPermissionPrompt": true,
+  "env": {
+    "CLAUDE_CODE_NO_FLICKER": "0"
+  }
 }
