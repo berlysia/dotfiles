@@ -1,5 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 const targetFile = process.argv[2];
 const templateTomlPath = process.argv[3];
@@ -11,12 +13,27 @@ if (!targetFile || !templateTomlPath) {
   process.exit(1);
 }
 
-// Resolve dasel binary: prefer direct PATH lookup, fall back to `mise which`
+// Resolve dasel binary: prefer direct PATH lookup, fall back to `mise which`,
+// then probe mise installs layout directly. The last fallback exists because
+// mise can report a tool as "not currently active" even when the binary is
+// present on disk (e.g. immediately after `mise install` upgrades to a newer
+// `latest`, before the user runs `mise use`); without it, chezmoi apply fails
+// loudly on a host where the binary is actually available.
 function resolveDasel(): string {
   const direct = spawnSync("which", ["dasel"], { encoding: "utf8" });
-  if (direct.status === 0) return direct.stdout.trim();
+  if (direct.status === 0 && direct.stdout.trim()) return direct.stdout.trim();
   const mise = spawnSync("mise", ["which", "dasel"], { encoding: "utf8" });
-  if (mise.status === 0) return mise.stdout.trim();
+  if (mise.status === 0 && mise.stdout.trim()) return mise.stdout.trim();
+
+  const dataHome = process.env.XDG_DATA_HOME || join(homedir(), ".local/share");
+  const base = join(dataHome, "mise/installs/dasel");
+  if (existsSync(base)) {
+    const versions = ["latest", ...readdirSync(base).sort().reverse()];
+    for (const v of versions) {
+      const candidate = join(base, v, "dasel");
+      if (existsSync(candidate)) return candidate;
+    }
+  }
   throw new Error("dasel not found. Install via mise: add dasel to .mise.toml");
 }
 
