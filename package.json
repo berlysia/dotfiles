@@ -38,7 +38,7 @@
   },
   "devDependencies": {
     "@mizchi/lsmcp": "0.10.0",
-    "@types/node": "24.12.4",
+    "@types/node": "24.13.2",
     "@typescript/native-preview": "7.0.0-dev.20260510.1",
     "knip": "6.12.2",
     "oxfmt": "0.48.0",
