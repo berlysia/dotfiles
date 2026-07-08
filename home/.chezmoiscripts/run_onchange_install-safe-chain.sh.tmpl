@@ -22,10 +22,18 @@ fi
 # but chezmoi manages those files, so we restore them after setup
 echo "Running safe-chain setup..."
 
+# safe-chain resolves the zsh RC via ZDOTDIR (exported in .zshenv, which
+# only zsh reads), so ask zsh for the authoritative location instead of
+# hardcoding it; fall back to the inherited env / $HOME otherwise
+zsh_rc_dir="${ZDOTDIR:-$HOME}"
+if command -v zsh &> /dev/null; then
+  zsh_rc_dir="$(zsh -c 'printf %s "${ZDOTDIR:-$HOME}"' 2>/dev/null)" || zsh_rc_dir="${ZDOTDIR:-$HOME}"
+fi
+
+rc_files=("$HOME/.zshrc" "$zsh_rc_dir/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile")
+
 # Backup shell RC files before setup modifies them
-# safe-chain resolves the zsh RC via ZDOTDIR, so ~/.zsh/.zshrc must be
-# covered too — otherwise every setup run reintroduces drift there
-for rc in "$HOME/.zshrc" "$HOME/.zsh/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile"; do
+for rc in "${rc_files[@]}"; do
   if [ -f "$rc" ]; then
     cp "$rc" "${rc}.safe-chain-bak"
   fi
@@ -34,7 +42,7 @@ done
 safe-chain setup || echo "safe-chain setup encountered issues"
 
 # Restore shell RC files to undo safe-chain's modifications
-for rc in "$HOME/.zshrc" "$HOME/.zsh/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile"; do
+for rc in "${rc_files[@]}"; do
   if [ -f "${rc}.safe-chain-bak" ]; then
     mv "${rc}.safe-chain-bak" "$rc"
   fi
