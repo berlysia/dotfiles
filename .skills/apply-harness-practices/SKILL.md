@@ -150,7 +150,7 @@ hooks は全レイヤーで独立実行されるため、プロジェクトに�
 | -------------- | ----------------------------------- |
 | リンター       | Oxlint（高速）+ Biome               |
 | フォーマッター | Biome format または Prettier        |
-| 型チェック     | tsc --noEmit / tsgo                 |
+| 型チェック     | tsc --noEmit（TypeScript 7 native） |
 | Pre-commit     | lefthook または husky + lint-staged |
 
 PostToolUse hooks 例:
