@@ -95,7 +95,7 @@ echo '{"tool_name": "Bash", "tool_input": {"command": "npx tsx script.ts"}}' | b
 ### 技術仕様
 
 - **Runtime**: Bun (主), Node.js (互換)
-- **型チェッカー**: tsgo
+- **型チェッカー**: tsc (TypeScript 7 native)
 - **テストフレームワーク**: Bash + JSON test data
 - **設定管理**: chezmoi template system
 
@@ -172,8 +172,8 @@ FAIL (expected allow, got deny)
 1. **型エラー**
 
    ```bash
-   # 型チェック実行
-   npx tsgo --noEmit ../implementations/*.ts
+   # 型チェック実行（TypeScript 7 native tsc。tsconfig.json 検出時はファイル直接指定不可のため引数なしで実行）
+   npx tsc --noEmit
    ```
 
 2. **依存関係エラー**

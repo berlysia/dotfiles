@@ -191,6 +191,6 @@ export default defineHook({
 # 個別hookの実行テスト
 echo '{"tool_name": "Bash", "tool_input": {"command": "ls"}}' | bun implementations/auto-approve.ts
 
-# 型チェック
-npx tsgo --noEmit implementations/*.ts
+# 型チェック（TypeScript 7 native tsc。tsconfig.json 検出時はファイル直接指定不可のため引数なしで実行）
+npx tsc --noEmit
 ```
