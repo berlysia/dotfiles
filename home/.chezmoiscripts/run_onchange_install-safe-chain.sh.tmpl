@@ -23,7 +23,9 @@ fi
 echo "Running safe-chain setup..."
 
 # Backup shell RC files before setup modifies them
-for rc in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile"; do
+# safe-chain resolves the zsh RC via ZDOTDIR, so ~/.zsh/.zshrc must be
+# covered too — otherwise every setup run reintroduces drift there
+for rc in "$HOME/.zshrc" "$HOME/.zsh/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile"; do
   if [ -f "$rc" ]; then
     cp "$rc" "${rc}.safe-chain-bak"
   fi
@@ -32,7 +34,7 @@ done
 safe-chain setup || echo "safe-chain setup encountered issues"
 
 # Restore shell RC files to undo safe-chain's modifications
-for rc in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile"; do
+for rc in "$HOME/.zshrc" "$HOME/.zsh/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile"; do
   if [ -f "${rc}.safe-chain-bak" ]; then
     mv "${rc}.safe-chain-bak" "$rc"
   fi
