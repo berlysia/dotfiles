@@ -119,7 +119,7 @@
    - **5.2 入力 cap**: 各 reviewer の指摘記述は 1-2 文に絞る。長文 verbatim 引用は禁止（lessons-learned 抽出の noise になる）
 6. インテント整合性トリアージ: 全レビュー指摘を元のオーダーの本義と突き合わせ、意図を歪める指摘を除外する（詳細は後述）
 7. 承認: 人間が `Approval Status: approved` にする
-8. 実装: `Plan Status: complete` + `Review Status: pass` + `Approval Status: approved` + hash 一致を満たした後に着手し、タスク完了ごとに対象成果物を更新
+8. 実装: `Plan Status: complete` + `Review Status: pass` + `Approval Status: approved` + hash 一致を満たした後に着手し、タスク完了ごとに対象成果物を更新。**着手前に `model-offloading.md` の実装着手ゲート（オフロード宣言）を実施する**（Opus 以上のメインループが定型実装を直接抱え込むのを防ぐ）
 ````
 
 ### plan.md-only モード（軽量 spec 内包）
