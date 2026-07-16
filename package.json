@@ -30,7 +30,7 @@
   },
   "dependencies": {
     "@drawio/mcp": "1.2.6",
-    "@playwright/mcp": "0.0.75",
+    "@playwright/mcp": "0.0.78",
     "@upstash/context7-mcp": "2.2.4",
     "ccstatusline": "2.2.12",
     "chrome-devtools-mcp": "0.25.0",
