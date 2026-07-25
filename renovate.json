@@ -8,6 +8,12 @@
       "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
       "automerge": true,
       "platformAutomerge": true
+    },
+    {
+      "description": "Keep mise cargo: backend versions bare. The preset's rangeStrategy=pin writes cargo range syntax (=1.2.3), which mise rejects as an unsupported semver range; bump updates the bare version in place instead",
+      "matchManagers": ["mise"],
+      "matchDatasources": ["crate"],
+      "rangeStrategy": "bump"
     }
   ],
   "mise": {
