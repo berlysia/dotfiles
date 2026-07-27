@@ -39,13 +39,32 @@ while IFS= read -r file; do
   TEMPLATE_FILES+=("$file")
 done < <(find . -type f -name "*.sh.tmpl" "${FIND_ARGS[@]}" | sort)
 
-TOTAL=$((${#SHELL_FILES[@]} + ${#TEMPLATE_FILES[@]}))
+# Find shell scripts that carry a shebang but no .sh extension: git hooks
+# (scripts/hooks/*) and chezmoi executable_* / modify_* files. Discovery by
+# extension alone misses these entirely — they were linted neither locally nor
+# in CI until shebang detection was added. Detect by content rather than by
+# extending the name list, so a newly added extensionless script is covered
+# without touching this script again.
+SCRIPT_FILES=()
+while IFS= read -r file; do
+  SCRIPT_FILES+=("$file")
+done < <(
+  find . -type f -not -name "*.sh" -not -name "*.sh.tmpl" "${FIND_ARGS[@]}" -print0 |
+    while IFS= read -r -d '' candidate; do
+      if head -n 1 "${candidate}" 2>/dev/null |
+        grep -qE '^#!.*[/ ](bash|sh|dash|ksh)$|^#!.*env +(bash|sh)'; then
+        printf '%s\n' "${candidate}"
+      fi
+    done | sort
+)
+
+TOTAL=$((${#SHELL_FILES[@]} + ${#TEMPLATE_FILES[@]} + ${#SCRIPT_FILES[@]}))
 if [[ ${TOTAL} -eq 0 ]]; then
   echo -e "${YELLOW}No shell files found to check${NC}"
   exit 0
 fi
 
-echo "Found ${#SHELL_FILES[@]} .sh and ${#TEMPLATE_FILES[@]} .sh.tmpl file(s) to check"
+echo "Found ${#SHELL_FILES[@]} .sh, ${#TEMPLATE_FILES[@]} .sh.tmpl and ${#SCRIPT_FILES[@]} shebang-detected file(s) to check"
 echo ""
 
 # Run shellcheck with repository-standard settings
@@ -58,6 +77,15 @@ for file in "${SHELL_FILES[@]}"; do
     FAILED=1
   fi
 done
+
+if [[ ${#SCRIPT_FILES[@]} -gt 0 ]]; then
+  for file in "${SCRIPT_FILES[@]}"; do
+    echo "Checking (shebang-detected): $file"
+    if ! shellcheck --severity=warning "$file"; then
+      FAILED=1
+    fi
+  done
+fi
 
 # .sh.tmpl: render via chezmoi execute-template, then shellcheck the rendered output.
 # Output paths are rewritten back to the original .sh.tmpl path so users can

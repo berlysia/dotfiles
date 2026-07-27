@@ -1,22 +1,14 @@
 name: Shell Lint (shellcheck)
 
+# lint-shell.sh は対象を shebang で発見するため、対象集合を paths パターンで
+# 表現できない。拡張子を列挙すると拡張子なしのシェルスクリプト (git hooks,
+# chezmoi の executable_* / modify_*) を変更しても CI が発火せず、実際に
+# scripts/hooks/pre-commit は一度も CI で検査されていなかった。
 on:
   push:
     branches: [master, main]
-    paths:
-      - "**/*.sh"
-      - "**/*.sh.tmpl"
-      - ".shellcheckrc"
-      - "scripts/lint-shell.sh"
-      - ".github/workflows/ci-shellcheck.yml"
   pull_request:
     branches: [master, main]
-    paths:
-      - "**/*.sh"
-      - "**/*.sh.tmpl"
-      - ".shellcheckrc"
-      - "scripts/lint-shell.sh"
-      - ".github/workflows/ci-shellcheck.yml"
   workflow_dispatch:
 
 concurrency:
