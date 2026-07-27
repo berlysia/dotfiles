@@ -2,7 +2,9 @@
 
 import { deepStrictEqual, ok } from "node:assert";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import fileAccessGuardHook from "../../implementations/file-access-guard.ts";
+import fileAccessGuardHook, {
+  getAllowPatterns,
+} from "../../implementations/file-access-guard.ts";
 import {
   ConsoleCapture,
   createFileSystemMock,
@@ -360,6 +362,63 @@ describe("file-access-guard.ts hook behavior", () => {
       ok(
         reason.includes("/home/user/project") || reason.includes("Repository"),
       );
+    });
+  });
+
+  describe("getAllowPatterns category resolution", () => {
+    const settings = [
+      {
+        permissions: {
+          allow: [
+            "Edit(~/workspace/**)",
+            "Read(~/workspace/**)",
+            "Grep(~/notes/**)",
+            "Bash(git status)",
+          ],
+        },
+      },
+    ];
+
+    it("should let Edit patterns cover Write", () => {
+      deepStrictEqual(getAllowPatterns(settings, "Write"), [
+        "Edit(~/workspace/**)",
+      ]);
+    });
+
+    it("should let Edit patterns cover NotebookEdit and MultiEdit", () => {
+      deepStrictEqual(getAllowPatterns(settings, "NotebookEdit"), [
+        "Edit(~/workspace/**)",
+      ]);
+      deepStrictEqual(getAllowPatterns(settings, "MultiEdit"), [
+        "Edit(~/workspace/**)",
+      ]);
+    });
+
+    it("should let Read patterns cover Glob", () => {
+      deepStrictEqual(getAllowPatterns(settings, "Glob"), [
+        "Read(~/workspace/**)",
+      ]);
+    });
+
+    it("should keep tool-specific patterns alongside the category pattern", () => {
+      deepStrictEqual(getAllowPatterns(settings, "Grep"), [
+        "Read(~/workspace/**)",
+        "Grep(~/notes/**)",
+      ]);
+    });
+
+    it("should not let Write patterns leak into Edit", () => {
+      const legacy = [{ permissions: { allow: ["Write(~/legacy/**)"] } }];
+      deepStrictEqual(getAllowPatterns(legacy, "Edit"), []);
+      deepStrictEqual(getAllowPatterns(legacy, "Write"), [
+        "Write(~/legacy/**)",
+      ]);
+    });
+
+    it("should not grant Edit patterns to reading tools", () => {
+      deepStrictEqual(getAllowPatterns(settings, "Read"), [
+        "Read(~/workspace/**)",
+      ]);
     });
   });
 });

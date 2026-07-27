@@ -163,18 +163,44 @@ function getAdditionalDirectories(settingsFiles: SettingsFile[]): string[] {
   return directories;
 }
 
-function getAllowPatterns(
+/**
+ * Claude Code の権限モデルはツール単位ではなくカテゴリ単位で解決される。
+ * `Edit(path)` が全ファイル編集ツールを、`Read(path)` が全ファイル読み取りツールを
+ * カバーし、`Write(path)` / `NotebookEdit(path)` / `Glob(path)` のようなツール名固有の
+ * パスルールはネイティブ側で無視される（設定を書いても効かない）。
+ * 各ツールを代表カテゴリへ写像し、フック側の判定をネイティブと一致させる。
+ */
+const PERMISSION_CATEGORY: Record<string, string> = {
+  Write: "Edit",
+  MultiEdit: "Edit",
+  NotebookEdit: "Edit",
+  Glob: "Read",
+  Grep: "Read",
+  LS: "Read",
+  NotebookRead: "Read",
+};
+
+export function getAllowPatterns(
   settingsFiles: SettingsFile[],
   toolName: string,
 ): string[] {
   const patterns: string[] = [];
 
+  // 自身のツール名も残すことで、既存の Grep(...) 等の設定を失効させない
+  const acceptedNames = new Set([toolName]);
+  const category = PERMISSION_CATEGORY[toolName];
+  if (category) {
+    acceptedNames.add(category);
+  }
+
   for (const file of settingsFiles) {
     const allowList = file.permissions?.allow;
     if (Array.isArray(allowList)) {
-      // Filter patterns for this tool
-      const toolPatterns = allowList.filter(
-        (pattern) => pattern === toolName || pattern.startsWith(`${toolName}(`),
+      // Filter patterns for this tool and the category that covers it
+      const toolPatterns = allowList.filter((pattern) =>
+        [...acceptedNames].some(
+          (name) => pattern === name || pattern.startsWith(`${name}(`),
+        ),
       );
       patterns.push(...toolPatterns);
     }
