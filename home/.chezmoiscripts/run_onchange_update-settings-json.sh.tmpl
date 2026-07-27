@@ -67,8 +67,14 @@ EXISTING_PLUGINS=$(jq '.enabledPlugins // {}' "$TARGET_FILE")
 # - alwaysThinkingEnabled: use template value (dotfiles managed)
 # - enabledPlugins: preserve existing values (managed by claude plugin CLI)
 # - All other fields in base: use template value
+# - Keys absent from the template: preserve existing values.
+#   Claude Code writes its own runtime state here (preferredNotifChannel,
+#   remoteControlAtStartup など). `$template` で丸ごと置換するとユーザーが
+#   アプリ内で切り替えた設定が apply のたびに黙って消えるため、テンプレートが
+#   宣言していないキーは残す。副作用として、base からキーを削除しても
+#   デプロイ済みファイルからは自動削除されない (手動削除が必要)。
 jq --argjson template "$TEMPLATE_CONTENT" --argjson plugins "$EXISTING_PLUGINS" '
-    $template + {"enabledPlugins": $plugins}
+    . + $template + {"enabledPlugins": $plugins}
 ' "$TARGET_FILE" > "$TEMP_FILE"
 
 # Check if there are actual changes
