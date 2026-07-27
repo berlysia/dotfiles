@@ -43,7 +43,6 @@ echo
 # 2. Formatting (oxfmt) & Linting (oxlint)
 #
 STAGED_ALL_FILES=$(git diff --cached --name-only --diff-filter=ACM || true)
-STAGED_LINT_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(ts|tsx|js|jsx)$' || true)
 
 # 2a. Format via the package.json script (single source of truth)
 #
@@ -86,31 +85,33 @@ fi
 
 echo
 
-# 2b. Lint with oxlint (JS/TS only)
-if [ -n "$STAGED_LINT_FILES" ]; then
-    echo -e "${BLUE}🦊 Linting with oxlint...${NC}"
-    if command -v npx &> /dev/null && npx oxlint --version &> /dev/null 2>&1; then
-        OXLINT_FAILED=false
-        for file in $STAGED_LINT_FILES; do
-            if [ -f "$file" ]; then
-                if ! npx oxlint --ignore-pattern '.claude/skills/' --ignore-pattern '.codex/skills/' --ignore-pattern '.skills/' "$file" 2>&1 | tail -5; then
-                    OXLINT_FAILED=true
-                fi
-            fi
-        done
-
-        if [ "$OXLINT_FAILED" = true ]; then
-            echo -e "${RED}❌ oxlint found issues in staged files${NC}"
-            EXIT_CODE=1
+# 2b. Lint via the package.json script (single source of truth)
+#
+# 2a と同じ理由で、対象ファイル集合と ignore パターンをここで再定義しない。
+# 独自呼び出しは `--ignore-pattern 'node_modules/'` を欠いており、実行系も
+# npx (レジストリ解決) と CI の bun (pinned devDependency) で分かれていた。
+# staged 限定をやめリポジトリ全体を対象にするのは 2a と同じ理由で、
+# 全体でも 1 秒未満で完了する。
+echo -e "${BLUE}🦊 Linting (bun run lint:oxlint)...${NC}"
+if command -v bun &> /dev/null; then
+    if ! LINT_OUTPUT=$(bun run lint:oxlint 2>&1); then
+        echo -e "${RED}❌ oxlint found issues${NC}"
+        # oxlint は warning でも大量に出力するため、commit を止めた error 行を
+        # 明示的に拾う。error が無い失敗 (oxlint 自体の異常終了) は末尾を出す
+        LINT_ERRORS=$(echo "$LINT_OUTPUT" | grep -E ': error ' || true)
+        if [ -n "$LINT_ERRORS" ]; then
+            echo "$LINT_ERRORS" | head -20
         else
-            echo -e "${GREEN}✓ All staged files passed oxlint checks${NC}"
+            echo "$LINT_OUTPUT" | tail -20
         fi
+        EXIT_CODE=1
     else
-        echo -e "${YELLOW}⚠ oxlint not installed, skipping linting${NC}"
-        echo -e "${YELLOW}  Install: pnpm install${NC}"
+        echo -e "${GREEN}✓ Repository passed oxlint checks${NC}"
     fi
 else
-    echo -e "${GREEN}✓ No JS/TS files staged for oxlint${NC}"
+    echo -e "${RED}❌ bun not found; lint cannot be verified${NC}"
+    echo -e "${YELLOW}  Install: mise install (bypass with SKIP_HOOKS=1)${NC}"
+    EXIT_CODE=1
 fi
 
 echo
