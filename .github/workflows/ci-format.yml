@@ -1,0 +1,36 @@
+name: Format Check
+
+# format:check はリポジトリ全体を対象とするため paths フィルタを持たない。
+# 対象拡張子を paths に列挙すると、列挙漏れの拡張子だけを含む変更が
+# 無検査で通る (実例: .skills/**/*.md のみの commit が TypeScript CI を
+# 発火させず、整形違反がそのまま master に入った)。
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  format:
+    name: Format Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js with bun
+        uses: ./.github/actions/setup-node-bun
+
+      - name: Check formatting
+        run: bun run format:check

@@ -52,5 +52,7 @@ jobs:
       - name: Run tests
         run: bun run test
 
+      # format:check はリポジトリ全体が対象で paths フィルタと両立しないため
+      # ci-format.yml に分離した。ここは TS スコープの lint のみを担う。
       - name: Lint check
-        run: bun run format:check && bun run lint:oxlint
+        run: bun run lint:oxlint

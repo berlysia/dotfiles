@@ -42,66 +42,75 @@ echo
 #
 # 2. Formatting (oxfmt) & Linting (oxlint)
 #
-STAGED_FMT_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(ts|tsx|js|jsx|json|md)$' || true)
+STAGED_ALL_FILES=$(git diff --cached --name-only --diff-filter=ACM || true)
 STAGED_LINT_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(ts|tsx|js|jsx)$' || true)
-if [ -n "$STAGED_FMT_FILES" ]; then
-    # 2a. Format with oxfmt (JS/TS/JSON/MD)
-    echo -e "${BLUE}🎨 Formatting with oxfmt...${NC}"
-    if command -v pnpm &> /dev/null && pnpm oxfmt --version &> /dev/null 2>&1; then
-        OXFMT_FAILED=false
-        for file in $STAGED_FMT_FILES; do
+
+# 2a. Format via the package.json script (single source of truth)
+#
+# 対象ファイル集合とフォーマッタのフラグをここで再定義してはならない。
+# かつては `--ignore-path .oxfmtignore` を欠いた独自の oxfmt 呼び出しをしており、
+# CI の format:check と対象が 17 ファイルずれた結果、その隙間に整形違反が
+# 入り込んだ (.skills/japanese-tech-writing/SKILL.md)。prettier が担当する
+# yml/yaml に至っては commit 時に一度も検査されていなかった。
+#
+# リポジトリ全体を整形することで、staged 以外の経路で混入した違反や
+# フォーマッタのバージョン更新による drift も同じ commit で解消される
+# (staged 限定の整形では、一度入った違反は永久に検知されない)。
+echo -e "${BLUE}🎨 Formatting (bun run format)...${NC}"
+if command -v bun &> /dev/null; then
+    if ! FORMAT_OUTPUT=$(bun run format 2>&1); then
+        echo -e "${RED}❌ format failed${NC}"
+        echo "$FORMAT_OUTPUT" | tail -20
+        EXIT_CODE=1
+    else
+        # 整形結果のうち、元々 staged だったファイルのみ再 stage する
+        for file in $STAGED_ALL_FILES; do
             if [ -f "$file" ]; then
-                if ! pnpm oxfmt --no-error-on-unmatched-pattern "$file" 2>&1; then
-                    OXFMT_FAILED=true
+                git add "$file"
+            fi
+        done
+
+        # staged 外に整形差分が出たなら握りつぶさず知らせる
+        UNSTAGED_FMT=$(git diff --name-only || true)
+        if [ -n "$UNSTAGED_FMT" ]; then
+            echo -e "${YELLOW}⚠ staged 外のファイルも整形されました (別途 commit してください):${NC}"
+            echo "$UNSTAGED_FMT" | sed 's/^/    /'
+        fi
+        echo -e "${GREEN}✓ Repository formatted${NC}"
+    fi
+else
+    echo -e "${RED}❌ bun not found; formatting cannot be verified${NC}"
+    echo -e "${YELLOW}  Install: mise install (bypass with SKIP_HOOKS=1)${NC}"
+    EXIT_CODE=1
+fi
+
+echo
+
+# 2b. Lint with oxlint (JS/TS only)
+if [ -n "$STAGED_LINT_FILES" ]; then
+    echo -e "${BLUE}🦊 Linting with oxlint...${NC}"
+    if command -v npx &> /dev/null && npx oxlint --version &> /dev/null 2>&1; then
+        OXLINT_FAILED=false
+        for file in $STAGED_LINT_FILES; do
+            if [ -f "$file" ]; then
+                if ! npx oxlint --ignore-pattern '.claude/skills/' --ignore-pattern '.codex/skills/' --ignore-pattern '.skills/' "$file" 2>&1 | tail -5; then
+                    OXLINT_FAILED=true
                 fi
             fi
         done
 
-        if [ "$OXFMT_FAILED" = true ]; then
-            echo -e "${RED}❌ oxfmt formatting failed${NC}"
+        if [ "$OXLINT_FAILED" = true ]; then
+            echo -e "${RED}❌ oxlint found issues in staged files${NC}"
             EXIT_CODE=1
         else
-            # Re-stage files that oxfmt may have formatted
-            for file in $STAGED_FMT_FILES; do
-                if [ -f "$file" ]; then
-                    git add "$file"
-                fi
-            done
-            echo -e "${GREEN}✓ All staged files formatted with oxfmt${NC}"
+            echo -e "${GREEN}✓ All staged files passed oxlint checks${NC}"
         fi
     else
-        echo -e "${YELLOW}⚠ oxfmt not installed, skipping formatting${NC}"
+        echo -e "${YELLOW}⚠ oxlint not installed, skipping linting${NC}"
         echo -e "${YELLOW}  Install: pnpm install${NC}"
     fi
-
-    echo
-
-    # 2b. Lint with oxlint (JS/TS only)
-    if [ -n "$STAGED_LINT_FILES" ]; then
-        echo -e "${BLUE}🦊 Linting with oxlint...${NC}"
-        if command -v npx &> /dev/null && npx oxlint --version &> /dev/null 2>&1; then
-            OXLINT_FAILED=false
-            for file in $STAGED_LINT_FILES; do
-                if [ -f "$file" ]; then
-                    if ! npx oxlint --ignore-pattern '.claude/skills/' --ignore-pattern '.codex/skills/' --ignore-pattern '.skills/' "$file" 2>&1 | tail -5; then
-                        OXLINT_FAILED=true
-                    fi
-                fi
-            done
-
-            if [ "$OXLINT_FAILED" = true ]; then
-                echo -e "${RED}❌ oxlint found issues in staged files${NC}"
-                EXIT_CODE=1
-            else
-                echo -e "${GREEN}✓ All staged files passed oxlint checks${NC}"
-            fi
-        else
-            echo -e "${YELLOW}⚠ oxlint not installed, skipping linting${NC}"
-            echo -e "${YELLOW}  Install: pnpm install${NC}"
-        fi
-    fi
 else
-    echo -e "${GREEN}✓ No formattable files staged${NC}"
+    echo -e "${GREEN}✓ No JS/TS files staged for oxlint${NC}"
 fi
 
 echo
