@@ -44,7 +44,6 @@
       "Read(dot_claude/hooks/**)",
       "Read(~/.local/share/chezmoi/**)",
       "Edit(~/.claude/plans/**)",
-      "Write(~/.claude/plans/**)",
       "Bash(npm view *)",
       "Bash(apm search *)",
       "Bash(apm list *)",
@@ -64,18 +63,7 @@
       "Edit(~/.claude/skills/**)",
       "Edit(~/.claude/plugins/**)",
       "Edit(~/.claude/scripts/**)",
-      "Edit(~/.claude/lib/**)",
-      "Write(~/.claude/settings*.json)",
-      "Write(~/.claude/CLAUDE.md)",
-      "Write(~/.claude/.credentials.json)",
-      "Write(~/.claude/commands/**)",
-      "Write(~/.claude/agents/**)",
-      "Write(~/.claude/hooks/**)",
-      "Write(~/.claude/skills/**)",
-      "Write(~/.claude/plugins/**)",
-      "Write(~/.claude/scripts/**)",
-      "Write(~/.claude/lib/**)",
-      "MultiEdit(~/.claude/**)"
+      "Edit(~/.claude/lib/**)"
     ]
   }
 }
