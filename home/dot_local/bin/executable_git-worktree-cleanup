@@ -97,8 +97,8 @@ for worktree in $worktrees; do
         echo -e "${GREEN}✓ Branch not on remote${NC}"
     else
         # Check if local branch is behind or ahead of remote
-        ahead=$(git rev-list --count "origin/$branch".."$branch" 2>/dev/null || echo "0")
-        behind=$(git rev-list --count "$branch".."origin/$branch" 2>/dev/null || echo "0")
+        ahead=$(git rev-list --count "origin/$branch..$branch" 2>/dev/null || echo "0")
+        behind=$(git rev-list --count "$branch..origin/$branch" 2>/dev/null || echo "0")
         
         if [[ "$ahead" -gt 0 ]]; then
             echo -e "${RED}✗ Local branch is ahead of remote by $ahead commits - skipping${NC}"
