@@ -1,3 +1,5 @@
 {
-  "preset": "tsgo"
+  "preset": "tsgo",
+  "bin": "./node_modules/.bin/tsc",
+  "args": ["--lsp", "--stdio"]
 }
