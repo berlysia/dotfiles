@@ -10,6 +10,19 @@
       "platformAutomerge": true
     },
     {
+      "description": "Claude Code hook runtime contract. cc-hooks-ts mirrors Claude Code's hook input schema version-for-version (closed valibot enums), so a stale pin makes hooks fail to parse and die before their body runs — SessionStart source=fork did exactly that in 2026-07. Keep these out of the weekly all-non-major group so they land as soon as minimumReleaseAge clears instead of waiting on the slowest package in a 24-dep group. The split relies on packageRules order: repo rules are appended after preset rules, so this groupName overrides the one group:allNonMajor assigns",
+      "matchPackageNames": ["cc-hooks-ts", "@anthropic-ai/claude-agent-sdk"],
+      "groupName": "claude hook runtime",
+      "schedule": ["at any time"]
+    },
+    {
+      "description": "Auto-merge non-major hook runtime updates. Majors stay manual: cc-hooks-ts v2 required call-site changes, and the agent SDK is consumed directly by hook code",
+      "matchPackageNames": ["cc-hooks-ts", "@anthropic-ai/claude-agent-sdk"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true,
+      "platformAutomerge": true
+    },
+    {
       "description": "Keep mise cargo: backend versions bare. The preset's rangeStrategy=pin writes cargo range syntax (=1.2.3), which mise rejects as an unsupported semver range; bump updates the bare version in place instead",
       "matchManagers": ["mise"],
       "matchDatasources": ["crate"],
