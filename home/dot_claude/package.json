@@ -5,7 +5,7 @@
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.2.138",
     "@mizchi/readability": "0.7.7",
-    "cc-hooks-ts": "2.1.133",
+    "cc-hooks-ts": "2.1.214",
     "dax": "0.46.1",
     "tree-sitter-bash": "0.25.1",
     "valibot": "1.4.0",
