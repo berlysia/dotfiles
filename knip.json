@@ -6,17 +6,30 @@
       "project": ["home/dot_codex/**/*.ts"]
     },
     "home/dot_claude": {
-      "entry": ["hooks/implementations/*.ts", "lib/*.ts", "scripts/*.ts"],
+      "entry": ["hooks/implementations/*.ts", "scripts/*.ts"],
       "project": ["**/*.ts"]
     }
   },
   "ignoreDependencies": [
     "ccstatusline",
+    "@mizchi/lsmcp",
 
+    "@drawio/mcp",
     "@playwright/mcp",
     "@upstash/context7-mcp",
     "chrome-devtools-mcp",
-    "@mizchi/lsmcp",
+    "supergateway",
+
     "tree-sitter-bash"
+  ],
+  "ignoreBinaries": [
+    "ps",
+    "which",
+    "wslpath",
+    "powershell.exe",
+    "afplay",
+    "paplay",
+    "aplay",
+    "notify-send"
   ]
 }
