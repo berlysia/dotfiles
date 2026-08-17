@@ -12,11 +12,21 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-const THREADS_FILE = path.join(
-  process.env.HOME ?? "~",
-  ".claude",
-  ".discord-forum-threads.json",
-);
+/**
+ * Resolve the thread mapping file per call rather than at module evaluation.
+ *
+ * A module-level constant would freeze HOME at import time, which makes the
+ * path unobservable to anything that sets HOME afterwards — tests had to
+ * re-evaluate the whole module through a cache-busted dynamic import to work
+ * around it.
+ */
+function threadsFilePath(): string {
+  return path.join(
+    process.env.HOME ?? "~",
+    ".claude",
+    ".discord-forum-threads.json",
+  );
+}
 
 const MAX_THREAD_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
@@ -33,7 +43,7 @@ type ThreadMap = Record<string, ThreadEntry>;
  */
 export function loadThreadMap(): ThreadMap {
   try {
-    const raw = fs.readFileSync(THREADS_FILE, "utf-8");
+    const raw = fs.readFileSync(threadsFilePath(), "utf-8");
     const parsed = JSON.parse(raw);
     if (
       typeof parsed === "object" &&
@@ -54,11 +64,11 @@ export function loadThreadMap(): ThreadMap {
 export function saveThreadId(sessionId: string, threadId: string): void {
   const map = loadThreadMap();
   map[sessionId] = { threadId, createdAt: Date.now() };
-  const dir = path.dirname(THREADS_FILE);
+  const dir = path.dirname(threadsFilePath());
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
-  fs.writeFileSync(THREADS_FILE, JSON.stringify(map, null, 2));
+  fs.writeFileSync(threadsFilePath(), JSON.stringify(map, null, 2));
 }
 
 /**
@@ -85,7 +95,7 @@ export function cleanupOldThreads(maxAgeMs: number = MAX_THREAD_AGE_MS): void {
   }
 
   if (changed) {
-    fs.writeFileSync(THREADS_FILE, JSON.stringify(map, null, 2));
+    fs.writeFileSync(threadsFilePath(), JSON.stringify(map, null, 2));
   }
 }
 

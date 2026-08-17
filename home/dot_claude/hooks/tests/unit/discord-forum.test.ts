@@ -6,8 +6,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 
-// We test the pure file-based functions by overriding THREADS_FILE via module internals.
-// Since the module uses a const path derived from HOME, we override HOME before importing.
+import {
+  cleanupOldThreads,
+  createForumThread,
+  getThreadId,
+  loadThreadMap,
+  saveThreadId,
+  sendToThread,
+} from "../../lib/discord-forum.ts";
+
+// The file-based functions resolve their path from HOME on every call, so
+// pointing HOME at a temp dir per test is enough to isolate them.
 const originalHome = process.env.HOME;
 
 describe("discord-forum", () => {
@@ -23,17 +32,9 @@ describe("discord-forum", () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  // Dynamic import after setting HOME so the module picks up the temp path
-  async function importModule() {
-    // Use cache-busting query to force fresh module evaluation
-    const cacheBuster = `?t=${Date.now()}-${Math.random()}`;
-    return await import(`../../lib/discord-forum.ts${cacheBuster}`);
-  }
-
   describe("loadThreadMap", () => {
     it("should return empty map when file does not exist", async () => {
-      const mod = await importModule();
-      const result = mod.loadThreadMap();
+      const result = loadThreadMap();
       deepStrictEqual(result, {});
     });
 
@@ -42,9 +43,7 @@ describe("discord-forum", () => {
       const { mkdirSync } = await import("node:fs");
       mkdirSync(claudeDir, { recursive: true });
       writeFileSync(join(claudeDir, ".discord-forum-threads.json"), "not json");
-
-      const mod = await importModule();
-      const result = mod.loadThreadMap();
+      const result = loadThreadMap();
       deepStrictEqual(result, {});
     });
 
@@ -56,9 +55,7 @@ describe("discord-forum", () => {
         join(claudeDir, ".discord-forum-threads.json"),
         JSON.stringify([1, 2, 3]),
       );
-
-      const mod = await importModule();
-      const result = mod.loadThreadMap();
+      const result = loadThreadMap();
       deepStrictEqual(result, {});
     });
 
@@ -74,17 +71,14 @@ describe("discord-forum", () => {
         join(claudeDir, ".discord-forum-threads.json"),
         JSON.stringify(data),
       );
-
-      const mod = await importModule();
-      const result = mod.loadThreadMap();
+      const result = loadThreadMap();
       deepStrictEqual(result, data);
     });
   });
 
   describe("saveThreadId", () => {
     it("should create file and save thread ID", async () => {
-      const mod = await importModule();
-      mod.saveThreadId("session-abc", "thread-xyz");
+      saveThreadId("session-abc", "thread-xyz");
 
       const filePath = join(tempDir, ".claude", ".discord-forum-threads.json");
       const raw = readFileSync(filePath, "utf-8");
@@ -110,9 +104,7 @@ describe("discord-forum", () => {
         join(claudeDir, ".discord-forum-threads.json"),
         JSON.stringify(existing),
       );
-
-      const mod = await importModule();
-      mod.saveThreadId("new-session", "new-thread");
+      saveThreadId("new-session", "new-thread");
 
       const filePath = join(claudeDir, ".discord-forum-threads.json");
       const parsed = JSON.parse(readFileSync(filePath, "utf-8"));
@@ -123,8 +115,7 @@ describe("discord-forum", () => {
 
   describe("getThreadId", () => {
     it("should return null for unknown session", async () => {
-      const mod = await importModule();
-      const result = mod.getThreadId("nonexistent");
+      const result = getThreadId("nonexistent");
       strictEqual(result, null);
     });
 
@@ -140,9 +131,7 @@ describe("discord-forum", () => {
         join(claudeDir, ".discord-forum-threads.json"),
         JSON.stringify(data),
       );
-
-      const mod = await importModule();
-      const result = mod.getThreadId("known-session");
+      const result = getThreadId("known-session");
       strictEqual(result, "thread-456");
     });
   });
@@ -162,10 +151,8 @@ describe("discord-forum", () => {
         join(claudeDir, ".discord-forum-threads.json"),
         JSON.stringify(data),
       );
-
-      const mod = await importModule();
       // Cleanup entries older than 5 seconds
-      mod.cleanupOldThreads(5_000);
+      cleanupOldThreads(5_000);
 
       const filePath = join(claudeDir, ".discord-forum-threads.json");
       const parsed = JSON.parse(readFileSync(filePath, "utf-8"));
@@ -187,9 +174,7 @@ describe("discord-forum", () => {
 
       // Small delay to detect file modification
       await new Promise((r) => setTimeout(r, 50));
-
-      const mod = await importModule();
-      mod.cleanupOldThreads(999_999_999);
+      cleanupOldThreads(999_999_999);
 
       const mtimeAfter = statSync(filePath).mtimeMs;
       strictEqual(mtimeAfter, mtimeBefore, "file should not be rewritten");
@@ -212,8 +197,7 @@ describe("discord-forum", () => {
       };
 
       try {
-        const mod = await importModule();
-        const threadId = await mod.createForumThread(
+        const threadId = await createForumThread(
           "https://discord.com/api/webhooks/123/abc",
           "Test Thread",
           { title: "Test", description: "Desc", color: 3447003 },
@@ -235,10 +219,9 @@ describe("discord-forum", () => {
         new Response("Bad Request", { status: 400, statusText: "Bad Request" });
 
       try {
-        const mod = await importModule();
         let threw = false;
         try {
-          await mod.createForumThread(
+          await createForumThread(
             "https://discord.com/api/webhooks/123/abc",
             "Thread",
             { title: "T", description: "D", color: 0 },
@@ -265,8 +248,7 @@ describe("discord-forum", () => {
       };
 
       try {
-        const mod = await importModule();
-        await mod.sendToThread(
+        await sendToThread(
           "https://discord.com/api/webhooks/123/abc",
           "thread-42",
           { title: "T", description: "D", color: 0 },
@@ -287,10 +269,9 @@ describe("discord-forum", () => {
         new Response("Not Found", { status: 404, statusText: "Not Found" });
 
       try {
-        const mod = await importModule();
         let threw = false;
         try {
-          await mod.sendToThread(
+          await sendToThread(
             "https://discord.com/api/webhooks/123/abc",
             "thread-42",
             { title: "T", description: "D", color: 0 },
