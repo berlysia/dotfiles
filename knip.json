@@ -1,12 +1,15 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "entry": [
-    "home/dot_claude/hooks/implementations/*.ts",
-    "home/dot_claude/lib/*.ts",
-    "home/dot_claude/scripts/*.ts"
-  ],
-  "project": ["home/dot_claude/**/*.ts"],
-  "ignore": ["**/*.test.ts"],
+  "workspaces": {
+    ".": {
+      "entry": ["home/dot_codex/private_dot_merge-config.ts"],
+      "project": ["home/dot_codex/**/*.ts"]
+    },
+    "home/dot_claude": {
+      "entry": ["hooks/implementations/*.ts", "lib/*.ts", "scripts/*.ts"],
+      "project": ["**/*.ts"]
+    }
+  },
   "ignoreDependencies": [
     "ccstatusline",
 
