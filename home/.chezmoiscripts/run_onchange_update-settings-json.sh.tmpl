@@ -3,7 +3,17 @@
 # shellcheck disable=SC2088 # tilde used in human-readable echo messages, not paths
 # Update ~/.claude/settings.json by merging chezmoi template changes
 # enabledPlugins is managed by claude plugin CLI, existing values are preserved
-# Hash: {{ include "dot_claude/.settings.base.json" | sha256sum }}{{ include "dot_claude/.settings.permissions.json" | sha256sum }}{{ include "dot_claude/.settings.hooks.json.tmpl" | sha256sum }}
+#
+# Hash は「スクリプトが実際に消費する入力」を宣言する。第 3 項は下の
+# HOOKS_CONTENT でランタイム描画される結果であり、ソースのバイト列ではない。
+# include のままだと chezmoi データ (only_private 等) が変わってもハッシュが
+# 動かず、再実行されないまま settings.json が古い状態で残る。
+#
+# 制約: .settings.hooks.json.tmpl に副作用を持つ template function
+# (onepassword / exec / output / secret) を入れないこと。includeTemplate は
+# chezmoi status / diff でも評価されるため、dry-run で秘密取得や外部コマンド
+# 実行が走るようになる。
+# Hash: {{ includeTemplate "dot_claude/.settings.base.json" . | sha256sum }}{{ includeTemplate "dot_claude/.settings.permissions.json" . | sha256sum }}{{ includeTemplate "dot_claude/.settings.hooks.json.tmpl" . | sha256sum }}
 
 set -euo pipefail
 
