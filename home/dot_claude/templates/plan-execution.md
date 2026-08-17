@@ -54,7 +54,7 @@ test("specific behavior", () => {
 
 - [ ] **Step 2: テストを実行して失敗を確認**
 
-実行: `bun run test home/dot_claude/hooks/tests/unit/file.test.ts`
+実行: `pnpm run test home/dot_claude/hooks/tests/unit/file.test.ts`（bun プロジェクトでは `bun run test ...`）
 期待: FAIL with "func is not defined"
 
 - [ ] **Step 3: 最小実装を書く**
@@ -67,7 +67,7 @@ export function func(input: Input): Output {
 
 - [ ] **Step 4: テストを実行して通過を確認**
 
-実行: `bun run test home/dot_claude/hooks/tests/unit/file.test.ts`
+実行: `pnpm run test home/dot_claude/hooks/tests/unit/file.test.ts`（bun プロジェクトでは `bun run test ...`）
 期待: PASS
 
 - [ ] **Step 5: コミット**

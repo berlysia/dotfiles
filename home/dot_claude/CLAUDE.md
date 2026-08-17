@@ -12,9 +12,11 @@ Design decisions (API/architecture/data model changes) or 3+ step tasks **requir
 
 ## Key Commands
 
-- **Test**: `bun run test`
-- **Typecheck**: `bun run typecheck`
-- **Lint**: `bun run lint`
+package manager はプロジェクトの設定（lockfile / `packageManager` フィールド）に従う。以下は `pnpm` / `bun` 併記。
+
+- **Test**: `pnpm run test` / `bun run test`
+- **Typecheck**: `pnpm run typecheck` / `bun run typecheck`
+- **Lint**: `pnpm run lint` / `bun run lint`
 - **Worktree**: `git-worktree-create <branch>`, `git-worktree-cleanup`
 - **Temp files**: `${projectRoot}/.tmp` (gitignored)
 

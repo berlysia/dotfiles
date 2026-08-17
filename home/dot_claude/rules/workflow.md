@@ -58,7 +58,7 @@
 
 - **(i)** スコープ内の全設計判断が「ユーザーがセッション内で明示確定済の _既存 ADR の特定条項_ の改訂」であり、net-new な設計空間がゼロ
 - **(ii)** 残差が決定論的変換（rename / move / 文字列置換）であり、新規 control flow / data model / API shape を導入しない
-- **(iii)** 既存テスト + typecheck が当該変換を被覆する（green ゲートを具体コマンド `bun run test` / `bun run typecheck` で定義）
+- **(iii)** 既存テスト + typecheck が当該変換を被覆する（green ゲートを具体コマンドで定義: `pnpm run test` / `pnpm run typecheck`、bun プロジェクトでは `bun run test` / `bun run typecheck`）
 - **(iv)** 新規 ADR 自体を当該変更の設計記録とする（「複数判断」が「1 つの ADR 起草判断」に collapse）
 
 **1 条件でも非該当なら mechanical-lane 非該当 → `3-5 ステップ + 複数判断` 以降の二層 row に自動 fallback**（spec 層 4 レビュアー = decision-quality / greenfield 含む を維持）。mechanical-lane を選択した場合、**4 条件それぞれの該当根拠を plan.md に明記必須**（曖昧語のみの根拠は不可）。
