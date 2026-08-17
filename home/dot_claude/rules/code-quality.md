@@ -43,6 +43,14 @@ Parallelize independent operations with Promise.all()
 
 When editing data conversion logic, verify edge cases for data preservation — special characters, optional fields, and nested structures are common loss points.
 
+## Recoverable State Must Announce Itself
+
+When a change introduces persistent state (a column, a file, a flag) that latches or survives across runs, and recovering from a wrong value requires a human to run a procedure, that procedure must be surfaced by the system at the moment the state causes observable cost or harm. A line in a runbook is not enough: a procedure needed rarely and long after the change is one nobody will find.
+
+- Key the signal on the **harm becoming observable**, not on the state being set. Latched state is often correct and harmless; report when it costs something
+- Carry the recovery step as a structured field, not prose, so it survives log formatting and is greppable
+- Do not fire on legitimate occurrences of the same condition — a warning that is normal trains the reader to ignore it
+
 ## No Speculative Compatibility
 
 Do not implement backward compatibility, fallbacks, or migration shims unless explicitly requested.
