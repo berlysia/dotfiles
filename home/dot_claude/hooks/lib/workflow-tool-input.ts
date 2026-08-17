@@ -6,7 +6,7 @@ import {
   isSpecPath,
 } from "./workflow-paths.ts";
 
-export type WorkflowEditTargetType =
+type WorkflowEditTargetType =
   | "spec"
   | "plan-numbered"
   | "plan"

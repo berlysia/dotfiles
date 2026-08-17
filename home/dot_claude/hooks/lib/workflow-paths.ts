@@ -31,11 +31,6 @@ export function getPlanPath(cwd: string): string | null {
   return dir ? resolve(dir, PLAN_FILENAME) : null;
 }
 
-export function getSpecPath(cwd: string): string | null {
-  const dir = getWorkflowDir(cwd);
-  return dir ? resolve(dir, SPEC_FILENAME) : null;
-}
-
 export function getResearchPath(cwd: string): string | null {
   const dir = getWorkflowDir(cwd);
   return dir ? resolve(dir, RESEARCH_FILENAME) : null;

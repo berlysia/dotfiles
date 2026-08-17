@@ -20,7 +20,7 @@ export const PROJECTS_DIR = join(HOME, ".claude", "projects");
 export const LOGS_DIR = join(HOME, ".claude", "logs", "insights");
 export const INSIGHTS_JSONL = join(LOGS_DIR, "insights.jsonl");
 export const DIGEST_PATH = join(LOGS_DIR, "insight-digest.md");
-export const STATE_PATH = join(LOGS_DIR, "state.json");
+const STATE_PATH = join(LOGS_DIR, "state.json");
 export const PAYLOAD_DUMP_PATH = join(
   LOGS_DIR,
   "insight-llm-payload.last.json",
@@ -32,13 +32,9 @@ export const STAMP_LLM_PATH = join(
   ".claude",
   ".last-distill-insights-llm",
 );
-export const ACK_PATH = join(HOME, ".claude", ".last-insight-digest-acked");
-export const DENY_LIST_PATH = join(HOME, ".claude", "insight-distill-deny.txt");
-export const REDACT_LIST_PATH = join(
-  HOME,
-  ".claude",
-  "insight-distill-redact.txt",
-);
+const ACK_PATH = join(HOME, ".claude", ".last-insight-digest-acked");
+const DENY_LIST_PATH = join(HOME, ".claude", "insight-distill-deny.txt");
+const REDACT_LIST_PATH = join(HOME, ".claude", "insight-distill-redact.txt");
 
 const STAR = String.fromCharCode(0x2605);
 const HBAR = String.fromCharCode(0x2500);
@@ -52,7 +48,7 @@ export const INSIGHT_DELIMITER_PATTERN = new RegExp(
   "g",
 );
 
-export const DEFAULT_REDACT_PATTERNS: RegExp[] = [
+const DEFAULT_REDACT_PATTERNS: RegExp[] = [
   /sk-(?:ant-)?[A-Za-z0-9_-]{20,}/g,
   /xox[abprs]-[\w-]{10,}/g,
   /ghp_[A-Za-z0-9]{20,}/g,
@@ -343,26 +339,21 @@ export function writeStampAt(path: string, ms: number): void {
 // Stage B (LLM Distillation) — types and pure helpers
 // =============================================================================
 
-export const MAX_INPUT_CHARS = 200_000;
-export const LLM_GATE_DAYS = 7;
-export const LLM_GATE_COUNT = 10;
-export const YAML_BODY_CAP = 256_000;
+const MAX_INPUT_CHARS = 200_000;
+const LLM_GATE_DAYS = 7;
+const LLM_GATE_COUNT = 10;
+const YAML_BODY_CAP = 256_000;
 export const STAGE_B_SAFETY_MARGIN_MS = 60_000;
 
-export const PROPOSAL_TYPES = [
-  "skill",
-  "claude_md",
-  "rule",
-  "discard",
-] as const;
-export type ProposalType = (typeof PROPOSAL_TYPES)[number];
+const PROPOSAL_TYPES = ["skill", "claude_md", "rule", "discard"] as const;
+type ProposalType = (typeof PROPOSAL_TYPES)[number];
 
-export interface LlmEvidence {
+interface LlmEvidence {
   session_id_hash: string;
   excerpt: string;
 }
 
-export interface LlmProposal {
+interface LlmProposal {
   cluster_id: number;
   theme: string;
   proposal_type: ProposalType;
@@ -373,7 +364,7 @@ export interface LlmProposal {
   evidence: LlmEvidence[];
 }
 
-export interface LlmInputItem {
+interface LlmInputItem {
   cluster_id: number;
   hash: string;
   session_id_hash: string;
@@ -466,7 +457,7 @@ Schema (strict, every field required, JSON):
 
 Discard clusters with fewer than 2 evidence items unless they clearly demand a skill or rule.`;
 
-export function buildUserPrompt(inputs: LlmInputItem[]): string {
+function buildUserPrompt(inputs: LlmInputItem[]): string {
   const lines: string[] = [];
   lines.push(
     `Cluster the following ${inputs.length} insights and return YAML proposals as instructed.`,
@@ -684,7 +675,7 @@ export function shouldUpdateStamp(outcome: StageBOutcome): boolean {
   return outcome.kind === "ok";
 }
 
-export function formatTrailingComment(
+function formatTrailingComment(
   outcome: StageBOutcome,
   now: Date = new Date(),
 ): string {

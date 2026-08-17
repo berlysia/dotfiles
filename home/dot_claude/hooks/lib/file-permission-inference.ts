@@ -19,7 +19,7 @@ export interface FilePermissionCheckResult {
   firstDeniedFile?: string | undefined;
 }
 
-export interface FileCheckDetail {
+interface FileCheckDetail {
   /** チェック対象のファイルパス */
   filePath: string;
 
