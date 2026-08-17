@@ -25,7 +25,7 @@ yarn = "4.18.0"
 "cargo:zizmor" = "1.25.2"
 "go:github.com/syou6162/git-sequential-stage" = "latest"
 "npm:@mizchi/readability" = "0.7.7"
-"npm:@openai/codex" = "0.130.0"
+"npm:@openai/codex" = "latest"
 "github:k1LoW/mo" = "1.5.5"
 # registry の `deck` は Kong/decK に解決されるため repo 指定が必須
 "github:k1LoW/deck" = "1.24.1"
