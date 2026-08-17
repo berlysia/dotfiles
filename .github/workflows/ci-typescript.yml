@@ -12,6 +12,10 @@ on:
       - ".oxlintrc.json"
       - ".github/workflows/ci-typescript.yml"
       - ".github/actions/setup-node-bun/**"
+      # hook-target-drift.test.ts が読む。status-check.yml は paths フィルタで
+      # 未実行の workflow を success 扱いにするため、ここに無いと tmpl のみを
+      # 変更した PR で当該テストが一度も走らないまま green になる。
+      - "home/dot_claude/.settings.hooks.json.tmpl"
   pull_request:
     branches: [master, main]
     paths:
@@ -23,6 +27,10 @@ on:
       - ".oxlintrc.json"
       - ".github/workflows/ci-typescript.yml"
       - ".github/actions/setup-node-bun/**"
+      # hook-target-drift.test.ts が読む。status-check.yml は paths フィルタで
+      # 未実行の workflow を success 扱いにするため、ここに無いと tmpl のみを
+      # 変更した PR で当該テストが一度も走らないまま green になる。
+      - "home/dot_claude/.settings.hooks.json.tmpl"
   workflow_dispatch:
 
 concurrency:
