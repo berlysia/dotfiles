@@ -41,7 +41,7 @@ export interface NotificationMessages {
 /**
  * Variables available for message template functions
  */
-export interface MessageTemplateVars {
+interface MessageTemplateVars {
   /** Repository or directory name */
   repoName: string;
   /** "リポジトリ" or "ディレクトリ" */
@@ -63,7 +63,7 @@ export interface MessageTemplateVars {
 /**
  * Message template definition for each event type
  */
-export interface MessageTemplate {
+interface MessageTemplate {
   /** Base action text (required) */
   actionText: string;
   /** Custom voice message generator (optional, uses default if not provided) */
@@ -181,7 +181,7 @@ const MESSAGE_TEMPLATES: Record<NotificationEventType, MessageTemplate> = {
 /**
  * Context for message generation
  */
-export interface MessageContext {
+interface MessageContext {
   computerName: string;
   gitContext: GitContextInfo;
   toolName?: string | undefined;
@@ -203,7 +203,7 @@ export interface MessageContextOptions {
 /**
  * Get message context from environment and git
  */
-export async function getMessageContext(
+async function getMessageContext(
   options?: MessageContextOptions | string,
 ): Promise<MessageContext> {
   const computerName = process.env.CLAUDE_COMPUTER_NAME || "Claude";
@@ -262,7 +262,7 @@ function buildTemplateVars(
  * Create notification messages for a given event type
  * Uses custom template functions if defined, otherwise falls back to defaults
  */
-export function createNotificationMessages(
+function createNotificationMessages(
   eventType: NotificationEventType,
   context: MessageContext,
 ): NotificationMessages {
@@ -317,6 +317,8 @@ export async function createNotificationMessagesAuto(
 
 /**
  * Get available event types (for type checking and validation)
+ *
+ * @public
  */
 export function getAvailableEventTypes(): NotificationEventType[] {
   return Object.keys(MESSAGE_TEMPLATES) as NotificationEventType[];
@@ -324,6 +326,8 @@ export function getAvailableEventTypes(): NotificationEventType[] {
 
 /**
  * Check if an event type is valid
+ *
+ * @public
  */
 export function isValidEventType(
   eventType: string,
@@ -334,7 +338,7 @@ export function isValidEventType(
 /**
  * Get default message generators (for external customization)
  */
-export const defaultGenerators = {
+const defaultGenerators = {
   voice: DEFAULT_VOICE,
   system: DEFAULT_SYSTEM,
   action: DEFAULT_ACTION,

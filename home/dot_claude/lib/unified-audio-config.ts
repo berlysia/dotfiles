@@ -12,7 +12,7 @@ import type {
 } from "./unified-audio-types.ts";
 
 // プラットフォーム検出
-export function detectPlatform(): Platform {
+function detectPlatform(): Platform {
   const osType = process.env.OSTYPE || "";
   if (osType.startsWith("darwin")) return "darwin";
   if (process.env.WSL_DISTRO_NAME) return "wsl";

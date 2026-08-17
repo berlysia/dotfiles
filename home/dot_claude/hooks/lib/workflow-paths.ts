@@ -31,6 +31,20 @@ export function getPlanPath(cwd: string): string | null {
   return dir ? resolve(dir, PLAN_FILENAME) : null;
 }
 
+/**
+ * Path to the design-layer document in two-layer mode.
+ *
+ * Consumers reach spec.md through `resolveWorkflowPaths().spec`; this accessor
+ * exists to keep the per-document family complete alongside getPlanPath and
+ * getResearchPath.
+ *
+ * @public
+ */
+export function getSpecPath(cwd: string): string | null {
+  const dir = getWorkflowDir(cwd);
+  return dir ? resolve(dir, SPEC_FILENAME) : null;
+}
+
 export function getResearchPath(cwd: string): string | null {
   const dir = getWorkflowDir(cwd);
   return dir ? resolve(dir, RESEARCH_FILENAME) : null;

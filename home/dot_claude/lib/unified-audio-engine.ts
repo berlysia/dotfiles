@@ -35,7 +35,7 @@ import type {
 // Low-level Platform Audio Functions
 // =========================================================================
 
-export async function commandExists(command: string): Promise<boolean> {
+async function commandExists(command: string): Promise<boolean> {
   try {
     await $`which ${command}`.quiet();
     return true;
@@ -77,7 +77,7 @@ async function playWSLSound(soundFile: string): Promise<boolean> {
   }
 }
 
-export async function playSound(
+async function playSound(
   soundFile: string,
   platform: Platform,
 ): Promise<boolean> {
@@ -114,7 +114,7 @@ export async function playSound(
 // Directory and File Management
 // =========================================================================
 
-export function ensureDirectories(
+function ensureDirectories(
   config: UnifiedVoiceConfig,
   session: VoiceSession,
 ): void {
@@ -218,7 +218,7 @@ export function cleanupSession(
 // VoiceVox Engine Integration
 // =========================================================================
 
-export async function checkVoiceVoxEngine(
+async function checkVoiceVoxEngine(
   config: UnifiedVoiceConfig,
 ): Promise<boolean> {
   try {
@@ -236,7 +236,7 @@ export async function checkVoiceVoxEngine(
   }
 }
 
-export async function generateAudioQuery(
+async function generateAudioQuery(
   text: string,
   config: UnifiedVoiceConfig,
 ): Promise<AudioQuery | null> {
@@ -264,7 +264,7 @@ export async function generateAudioQuery(
   }
 }
 
-export async function synthesizeSpeech(
+async function synthesizeSpeech(
   query: AudioQuery,
   outputFile: string,
   config: UnifiedVoiceConfig,
@@ -305,7 +305,7 @@ export async function synthesizeSpeech(
 // Static Sound File Management
 // =========================================================================
 
-export function getStaticSoundPath(
+function getStaticSoundPath(
   type: EventType,
   config: UnifiedVoiceConfig,
 ): string {
@@ -313,7 +313,7 @@ export function getStaticSoundPath(
   return join(config.paths.soundsDir, fileName);
 }
 
-export async function playStaticWav(
+async function playStaticWav(
   wavFile: string,
   config: UnifiedVoiceConfig,
 ): Promise<boolean> {
@@ -370,7 +370,7 @@ export async function checkAndDelegateToClaude(
 // High-level Notification Functions
 // =========================================================================
 
-export async function executeFallbackNotification(
+async function executeFallbackNotification(
   eventType: EventType,
   reason: string,
   config: UnifiedVoiceConfig,

@@ -22,6 +22,7 @@
 
     "tree-sitter-bash"
   ],
+  "tags": ["-public"],
   "ignoreBinaries": [
     "ps",
     "which",

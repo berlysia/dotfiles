@@ -77,6 +77,15 @@ type PermissionRequestDenyResponse = {
 };
 
 /**
+ * Union type for all PermissionRequest responses
+ *
+ * @public
+ */
+export type PermissionRequestResponse =
+  | PermissionRequestAllowResponse
+  | PermissionRequestDenyResponse;
+
+/**
  * Create an allow response for PermissionRequest hook
  *
  * @param updatedInput - Optional modified tool input
