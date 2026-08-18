@@ -83,8 +83,17 @@ const hook = defineHook({
         messages.push(digestPreview);
       }
 
-      return context.success({
-        messageForUser: messages.join("\n"),
+      // SessionStart では cc-hooks-ts の success() が messageForUser を破棄する
+      // (additionalClaudeContext しか読まない)。加えて素の stdout は hook_success
+      // attachment として Claude のモデル入力に注入されるため、ユーザー向け通知には
+      // 使えない。systemMessage は UI に表示され、モデル入力には入らない唯一のチャネル
+      // （Claude Code 2.1.234 の binary 実測。再検証手順は
+      //  docs/plans/hook-target-diagnostics-followups.md の「課題 A」節）。
+      // なお context.json の event は trigger 宣言に対して型検査され、ランタイムの
+      // hook_event_name とは結び付かない。複数イベント trigger に変える場合は注意。
+      return context.json({
+        event: "SessionStart",
+        output: { systemMessage: messages.join("\n") },
       });
     } catch (error) {
       console.error(`Session start error: ${error}`);

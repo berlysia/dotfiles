@@ -171,6 +171,13 @@ export default defineHook({
 });
 ```
 
+**注意**: `messageForUser` は `SessionStart` / `UserPromptSubmit` では `cc-hooks-ts` の
+`handleHookResult` に読まれず破棄される（この 2 イベントでは `additionalClaudeContext`
+のみが参照される）。これらのイベントでユーザーに表示したい場合は
+`context.json({ event, output: { systemMessage } })` を使う。`systemMessage` は UI に
+表示され Claude のモデル入力には入らない。`hookSpecificOutput.additionalContext` は
+逆にモデル入力へ入る。
+
 ## ユーティリティ
 
 ### generate-stats.ts

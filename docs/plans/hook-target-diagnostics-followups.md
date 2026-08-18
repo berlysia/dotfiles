@@ -6,12 +6,16 @@
 
 ## 課題 A: `session.ts` のユーザー向け出力がどこにも届いていない
 
+**解決済み**（2026-08-18）。採用案は選択肢表の A1/A2/A3 のいずれでもなく、`context.json({ event: "SessionStart", output: { systemMessage } })` を使う案（下記「### 選択肢」節への追記を参照）。実装は `home/dot_claude/hooks/implementations/session.ts` の `return` 文の置換のみで、`messages` 配列の組み立てロジックは変更していない。
+
 ### 確定した事実
 
 - `cc-hooks-ts/dist/index.mjs:527-533` の `success` 分岐は、`SessionStart` と `UserPromptSubmit` では `additionalClaudeContext` のみを見て早期 return し、**`messageForUser` を破棄する**
 - 実測: `echo '{...SessionStart...}' | bun ~/.claude/hooks/implementations/session.ts` は exit 0 / stdout 0 バイト。同時に `~/.claude/logs/events.jsonl` に SessionStart が記録され、hook 本体は実行されている
 - 影響を受ける実装は `session.ts` のみ。`SessionStart` / `UserPromptSubmit` を trigger に持つ他の 4 実装（`completion-gate` / `resume-incomplete-work` / `user-prompt-logger` / `discord-notification`）は `messageForUser` を使っていない
 - 届いていないもの: 起動メッセージ、`CLAUDE_CODE_TASK_LIST_ID` 共有警告、insight digest プレビュー
+- hook 由来の attachment type は 10 種で全て（Claude Code 2.1.234 の binary 実測。type guard による列挙と変換テーブルのキー列挙を突き合わせて確認済み）。このうちモデル入力へ注入するのは 4 種（`hook_additional_context` / `hook_blocking_error` / `hook_stopped_continuation` / `hook_success`）のみで、`hook_system_message` は `()=>[]` にマップされ注入しない
+- SessionStart における素の stdout（JSON として妥当でない出力）は `hook_success` attachment の `content` に生 stdout が入る経路で、Claude のモデル入力に注入される。「stdout に出す」は「ユーザーに見せる」ではなく「Claude に見せる」に近い
 
 ### 設計判断が要る点
 
@@ -29,11 +33,39 @@
 | A2  | `getUnreadDigestNotice()` のパス通知のみ。本文は `/insight-digest` skill が必要時に読む | ゼロ                       |
 | A3  | 起動メッセージとタスクリスト警告は context、digest は notice のみ                       | ゼロ                       |
 
-A3 を推奨する。起動メッセージとタスク共有警告は自リポジトリ生成で曝露がなく、digest だけを notice に落とせば Goal（出力を届ける）を満たしつつ流出経路を作らない。
+**この表は前提が無効化されている**: A1-A3 はいずれも「digest 本文を Claude のモデル入力に入れるか、notice に落として入れないか」の二択を前提に組まれている。しかし hook 出力 JSON のトップレベル `systemMessage` は Claude Code 2.1.234 で実測した結果、UI に表示されつつモデル入力には注入されない（`hook_system_message` の変換テーブルエントリが `()=>[]`）。この経路は二択の外側にあり、全文配信とモデル入力への流入ゼロを同時に満たす。採用したのはこの `systemMessage` 案であり、A1/A2/A3 のいずれでもない。
+
+A3 を推奨する（この推奨は上記の理由により採用されなかった。当時の判断記録として残す）。起動メッセージとタスク共有警告は自リポジトリ生成で曝露がなく、digest だけを notice に落とせば Goal（出力を届ける）を満たしつつ流出経路を作らない。
 
 ### 注意
 
 `normalize()`（`insight-digest.ts:170-188`）を表示用に転用してはならない。末尾で `.toLowerCase()` するため大小文字が潰れる。加えて `DEFAULT_REDACT_PATTERNS`（同 `:55-65`）9 本のうち `AKIA[0-9A-Z]{16}` / `eyJ...`（JWT）/ `-----BEGIN ... PRIVATE KEY-----` / `^[A-Z][A-Z0-9_]{2,}=\S+$` の 4 本は大文字を要求するため、小文字化後の文字列には原理的にマッチしない。再利用できるのは `sanitize()` のみ。
+
+### 課題 A の解決作業（`session.ts` 出力チャネル修正、`.tmp/sessions/9fe32ad8/`）で確定した未解決事実
+
+出力チャネル修正自体は完了した（節冒頭を参照）。その調査中に確定したが、修正対象外として残した事実をここへ移送する。選別基準は「調査中に確定した事実のうち、session 成果物の GC（7 日）で失われると再調査コストが高く、かつ出力チャネル修正では直さないもの」。
+
+#### `session.ts:44-65` の `CLAUDE_ENV_FILE` への未エスケープ補間（severity: high — ローカル RCE）
+
+`session.ts:44-65` は `sessionId` / `transcriptPath` / `projectHash` / `CLAUDE_CODE_TASK_LIST_ID` / `DOCUMENT_WORKFLOW_DIR` の 5 つの値を `export X="${value}"` の形でエスケープなしに `CLAUDE_ENV_FILE` へ追記している。double quote の内側では `"` / `$(...)` / backtick がいずれも生きているため、値にこれらが含まれると env file が source された時点で任意コマンド実行になる。
+
+供給元別の到達性:
+
+- `sessionId` / `transcriptPath`: Claude Code が生成
+- `projectHash`: `cwd` からの導出（`session.ts:41-43`）
+- `CLAUDE_CODE_TASK_LIST_ID`: 環境変数
+- `DOCUMENT_WORKFLOW_DIR`: 環境変数。project-local `.claude/settings.json` の `env` ブロックからも供給されうる
+
+最後の `DOCUMENT_WORKFLOW_DIR` が問題で、`CLAUDE_ENV_FILE` は Claude Code が Bash 実行のたびに source する前提のファイルであり、project-local `.claude/settings.json` の `env` ブロックは settings.json の正規の surface（本リポジトリの `home/dot_claude/.settings.base.json` 自身も使用）である以上、clone した repository が経路になりうる。実質はローカル任意コマンド実行であり、値に `"` / `$(...)` / backtick が入れば env file が source された時点で発火する。
+
+出力チャネル修正では対応しなかった理由: 修正対象は `return` 文であり、この箇所は独立した既存の問題である。同一ファイルにあることは修正の根拠にならず、束ねるとレビュー対象が入力サニタイズにまで広がる。独立したオーダーとして扱う。
+
+#### その他の移送事項
+
+- **`systemMessage` の非注入性の再検証手順**: 「モデル入力に注入されない」という保証は Claude Code 2.1.234 の binary 実測に依拠しており、リポジトリ内のどのテストもこの事実を保持しない。変換テーブルが将来変われば digest 本文がモデル入力に流入し始めるが、テストは全緑のままになる。再検証トリガーは Claude Code のアップグレード。再検証手順（バージョン間で byte offset は変わるため offset に依存しない形で書く）: (1) 起動中の実体を特定する（`~/.local/share/claude/versions/<version>`）。(2) `grep -abo 'hook_system_message' <binary>` で全出現の byte offset を列挙する（複数ヒットするため、これ単独では変換テーブルのエントリを一意に特定できない）。(3) 各 offset の周辺を切り出し、`grep -o 'hook_[a-z_]*:('` と `grep -o 'case"hook_[a-z_]*"'` で attachment type キーを列挙する。両者が複数キーを返す領域が変換テーブル本体。(4) その領域内で `hook_system_message` に対応する値が `()=>[]` のままであることを確認する。(5) type guard（`hook_` 接頭辞を `||` で列挙している箇所）と突き合わせ、新しい attachment type が増えていないことを確認する
+- **digest の表示経路でサニタイズが再適用されない**: `sanitize()` は取り込み時に 1 回だけ適用され、表示経路では再適用されない。`~/.claude/insight-distill-redact.txt` に後からパターンを追加しても既存の `insights.jsonl` と digest には遡及しない。加えて `sanitize()` は制御文字を扱わないため、ANSI エスケープ・bidi（`U+202A-202E`, `U+2066-2069`）・zero-width（`U+200B-200F`, `U+FEFF`）は素通りする。digest の元は `~/.claude/projects/*.jsonl` の assistant text であり、web fetch 結果や clone した repo の内容を model が echo したものを部分的に含みうる。同一 `systemMessage` 内で上位行（`CLAUDE_CODE_TASK_LIST_ID` 警告等）が制御文字で上書きされうるかは Claude Code の UI 実装が ANSI 等を素通しするかに依存し、**未検証**
+- **同型の並行実行バグが他 2 ファイルに残る**: `command-logger.test.ts:23` と `user-prompt-logger.test.ts:23` が `join(tmpdir(), \`...-${Date.now()}\`)` で一時ディレクトリを作っており、`session.test.ts:28`（出力チャネル修正で `mkdtempSync` に置換済み）と同じ非決定性を持つ。実測での並行実行（4 プロセス並行 × 複数回）の失敗数は user-prompt-logger が 8/9/7/7、command-logger が 8/7/2/7。`tests/unit/\*.test.ts`の他ファイルは既に`mkdtempSync`を使っており、残存はこの 2 件のみ。修正自体は`mkdtempSync` への置換 1 行で、独立したオーダーとして実行できる
+- **`hooks/README.md` の drift**: `common.json.tmpl`（実体は `.settings.hooks.json.tmpl`）/ `test-with-types.sh`・`tests/integration/run-ts-hook-tests.sh`・`ci_test.sh`（3 本とも不在）/ `generate-stats.ts`（不在）/ Package Manager を pnpm と記載（実体は bun）。出力チャネル修正で同 README の「### 例: 新しいHook実装」コードブロック直後に `messageForUser` の破棄条件についての注意書きを追記したが、隣接する記述が上記の通り drift しているため、「新しい hook を書く人が先に読む防御」としての実効性は割り引く必要がある。同文書「課題 C」（deploy と source の乖離）と同型の問題
 
 ## 課題 B: `run_onchange` のハッシュが chezmoi データを捕捉しない
 

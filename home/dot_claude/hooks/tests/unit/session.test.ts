@@ -1,16 +1,20 @@
 #!/usr/bin/env node --test
 
 import { deepStrictEqual, ok, strictEqual } from "node:assert";
+import { execFileSync } from "node:child_process";
 import {
   appendFileSync,
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   rmSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 import sessionHook from "../../implementations/session.ts";
 import {
   createSessionStartContext,
@@ -25,7 +29,10 @@ describe("session.ts hook behavior", () => {
 
   beforeEach(() => {
     // Create test directory
-    testDir = join(tmpdir(), `session-test-${Date.now()}`);
+    // Date.now() はプロセス間で一意でない。並行実行時に同名ディレクトリを共有し、
+    // 片方の afterEach の rmSync が他方の env-file を実行中に削除して ENOENT を起こす
+    // （実測: 4 プロセス並行で 32/32 失敗）。mkdtemp は OS が一意性を保証する。
+    testDir = mkdtempSync(join(tmpdir(), "session-test-"));
     logDir = join(testDir, ".config", "claude-companion", "logs");
     logFile = join(logDir, "hooks.jsonl");
     mkdirSync(logDir, { recursive: true });
@@ -172,79 +179,85 @@ describe("session.ts hook behavior", () => {
     });
   });
 
-  describe("shared task list warning", () => {
+  describe("user-facing output channel", () => {
     const envHelper = new EnvironmentHelper();
+    let envFilePath: string;
+
+    beforeEach(() => {
+      envFilePath = join(testDir, "env-file");
+      appendFileSync(envFilePath, "");
+      envHelper.set("CLAUDE_ENV_FILE", envFilePath);
+      envHelper.set("CLAUDE_CODE_TASK_LIST_ID", undefined);
+      envHelper.set("DOCUMENT_WORKFLOW_DIR", undefined);
+    });
 
     afterEach(() => {
       envHelper.restore();
     });
 
-    it("should warn when CLAUDE_CODE_TASK_LIST_ID is set", () => {
-      envHelper.set("CLAUDE_CODE_TASK_LIST_ID", "abc-123-def");
+    it("T1: emits output via the json channel", async () => {
+      const ctx = createSessionStartContext("cli");
+      ctx.input.session_id = "abcdef1234567890";
 
-      const taskListId = process.env.CLAUDE_CODE_TASK_LIST_ID;
-      ok(taskListId, "CLAUDE_CODE_TASK_LIST_ID should be set");
+      await invokeRun(sessionHook, ctx);
 
-      // Simulate checkSharedTaskList behavior
-      const warning = taskListId
-        ? `⚠️ CLAUDE_CODE_TASK_LIST_ID is set: ${taskListId}\n   This session shares a task list from another session. Tasks may be overwritten unintentionally.\n   To detach: unset CLAUDE_CODE_TASK_LIST_ID`
-        : null;
-
-      ok(warning, "Warning should be generated");
-      ok(
-        warning.includes("abc-123-def"),
-        "Warning should include the task list ID",
+      strictEqual(ctx.jsonCalls.length, 1, "json() should be called once");
+      strictEqual(ctx.successCalls.length, 0, "success() should not be called");
+      strictEqual(
+        typeof ctx.jsonCalls[0]?.systemMessage,
+        "string",
+        "systemMessage should be a string",
       );
       ok(
-        warning.includes("unset CLAUDE_CODE_TASK_LIST_ID"),
-        "Warning should include detach instruction",
+        ctx.jsonCalls[0].systemMessage.startsWith(
+          "🚀 Claude Code session started. Ready for development!",
+        ),
+        "systemMessage should start with the session start message",
       );
     });
 
-    it("should not warn when CLAUDE_CODE_TASK_LIST_ID is not set", () => {
-      envHelper.set("CLAUDE_CODE_TASK_LIST_ID", undefined);
+    it("T2: payload key set is systemMessage only (allowlist)", async () => {
+      const ctx = createSessionStartContext("cli");
+      ctx.input.session_id = "abcdef1234567890";
 
-      const taskListId = process.env.CLAUDE_CODE_TASK_LIST_ID;
-      const warning = taskListId
-        ? `⚠️ CLAUDE_CODE_TASK_LIST_ID is set: ${taskListId}`
-        : null;
+      await invokeRun(sessionHook, ctx);
 
-      strictEqual(warning, null, "No warning should be generated");
+      deepStrictEqual(Object.keys(ctx.jsonCalls[0]).sort(), ["systemMessage"]);
     });
 
-    it("should include task list warning in session start message", () => {
+    it("T4: task list warning appears in systemMessage when shared", async () => {
       envHelper.set("CLAUDE_CODE_TASK_LIST_ID", "shared-list-456");
+      const ctx = createSessionStartContext("cli");
+      ctx.input.session_id = "abcdef1234567890";
 
-      const mockContext = createSessionStartContext("cli");
+      await invokeRun(sessionHook, ctx);
 
-      // Simulate the hook's message assembly
-      const taskListId = process.env.CLAUDE_CODE_TASK_LIST_ID;
-      const taskListWarning = taskListId
-        ? `⚠️ CLAUDE_CODE_TASK_LIST_ID is set: ${taskListId}\n   This session shares a task list from another session. Tasks may be overwritten unintentionally.\n   To detach: unset CLAUDE_CODE_TASK_LIST_ID`
-        : null;
-
-      const messages = [
-        "🚀 Claude Code session started. Ready for development!",
-      ];
-      if (taskListWarning) {
-        messages.push(taskListWarning);
-      }
-
-      const result = mockContext.success({
-        messageForUser: messages.join("\n"),
-      });
-
+      const systemMessage = ctx.jsonCalls[0]?.systemMessage ?? "";
       ok(
-        result.messageForUser.includes("CLAUDE_CODE_TASK_LIST_ID"),
-        "Message should contain task list warning",
+        systemMessage.includes("CLAUDE_CODE_TASK_LIST_ID"),
+        "systemMessage should include the env var name",
       );
       ok(
-        result.messageForUser.includes("shared-list-456"),
-        "Message should contain the specific task list ID",
+        systemMessage.includes("shared-list-456"),
+        "systemMessage should include the task list id",
       );
       ok(
-        result.messageForUser.startsWith("🚀"),
-        "Message should still start with session start message",
+        systemMessage.includes("unset CLAUDE_CODE_TASK_LIST_ID"),
+        "systemMessage should include the detach instruction",
+      );
+    });
+
+    it("T4: task list warning absent when CLAUDE_CODE_TASK_LIST_ID is unset", async () => {
+      envHelper.set("CLAUDE_CODE_TASK_LIST_ID", undefined);
+      const ctx = createSessionStartContext("cli");
+      ctx.input.session_id = "abcdef1234567890";
+
+      await invokeRun(sessionHook, ctx);
+
+      const systemMessage = ctx.jsonCalls[0]?.systemMessage ?? "";
+      ok(
+        !systemMessage.includes("⚠️ CLAUDE_CODE_TASK_LIST_ID is set:"),
+        "systemMessage should not include the task list warning",
       );
     });
   });
@@ -258,6 +271,7 @@ describe("session.ts hook behavior", () => {
       // Ensure file exists so appendFileSync can write
       appendFileSync(envFilePath, "");
       envHelper.set("CLAUDE_ENV_FILE", envFilePath);
+      envHelper.set("CLAUDE_CODE_TASK_LIST_ID", undefined);
     });
 
     afterEach(() => {
@@ -278,13 +292,13 @@ describe("session.ts hook behavior", () => {
         ),
         `Expected derived path, got:\n${content}`,
       );
-      const userMessage = ctx.successCalls[0]?.messageForUser ?? "";
+      const systemMessage = ctx.jsonCalls[0]?.systemMessage ?? "";
       ok(
-        userMessage.includes(".tmp/sessions/abcdef12/"),
-        `Expected derived path in message, got:\n${userMessage}`,
+        systemMessage.includes(".tmp/sessions/abcdef12/"),
+        "systemMessage should contain the session-derived workflow directory",
       );
       ok(
-        !userMessage.includes("(user-specified)"),
+        !systemMessage.includes("(user-specified)"),
         "Derived path should not be labeled as user-specified",
       );
     });
@@ -309,10 +323,10 @@ describe("session.ts hook behavior", () => {
         ),
         "Session-derived path should not be appended when user value is set",
       );
-      const userMessage = ctx.successCalls[0]?.messageForUser ?? "";
+      const systemMessage = ctx.jsonCalls[0]?.systemMessage ?? "";
       ok(
-        userMessage.includes(".tmp/sessions/4dc42491/ (user-specified)"),
-        `Expected user-specified label in message, got:\n${userMessage}`,
+        systemMessage.includes(".tmp/sessions/4dc42491/ (user-specified)"),
+        "systemMessage should contain the user-specified workflow directory with its label",
       );
     });
 
@@ -332,60 +346,108 @@ describe("session.ts hook behavior", () => {
       );
     });
   });
+});
 
-  describe("hook context simulation", () => {
-    it("should simulate successful hook execution", () => {
-      // Create properly typed context using test helper
-      const mockContext = createSessionStartContext("cli");
+// 本ブロックは PATH 上の bun に依存する（node --test <file> の単体実行でも必要）。
+// 起動形は .settings.hooks.json.tmpl の SessionStart エントリ
+// "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/session.ts" に対応する。
+// in-process の検査は context.json に渡す JS オブジェクトしか見ないため、
+// stdout が JSON として壊れる経路（壊れると生 stdout が hook_success.content として
+// Claude のモデル入力に注入される）はここでしか検知できない。
+describe("wire output (subprocess)", () => {
+  const REPO_ROOT = fileURLToPath(new URL("../../../../../", import.meta.url));
 
-      // Simulate hook behavior
-      const logEntry = {
-        timestamp: new Date().toISOString(),
-        event: "SessionStart",
-        session_id: mockContext.input.session_id,
-        source: mockContext.input.source,
-        user: process.env.USER || "unknown",
-        cwd: process.cwd(),
-      };
+  let tmp: string;
 
-      // Would normally write to log
-      appendFileSync(logFile, `${JSON.stringify(logEntry)}\n`);
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), "session-wire-"));
+    const digestDir = join(tmp, ".claude", "logs", "insights");
+    mkdirSync(digestDir, { recursive: true });
+    writeFileSync(
+      join(digestDir, "insight-digest.md"),
+      "# Insight digest\n\nMARKER_LINE_FOR_TEST\n\n- entry one\n",
+    );
+    writeFileSync(join(tmp, "envfile"), "");
+  });
 
-      // Simulate success response
-      const result = mockContext.success({
-        messageForUser:
-          "🚀 Claude Code session started. Ready for development!",
-      });
+  afterEach(() => {
+    rmSync(tmp, { recursive: true, force: true });
+  });
 
-      deepStrictEqual(result, {
-        messageForUser:
-          "🚀 Claude Code session started. Ready for development!",
-      });
-
-      // Verify log was written
-      const content = readFileSync(logFile, "utf-8");
-      ok(content.includes(mockContext.input.session_id));
+  function runSessionHookWire(): string {
+    const input = JSON.stringify({
+      hook_event_name: "SessionStart",
+      cwd: REPO_ROOT,
+      session_id: "abcdef1234567890",
+      transcript_path: "/tmp/fake-transcript.jsonl",
+      source: "startup",
     });
 
-    it("should handle error and still return success", () => {
-      const mockContext = createSessionStartContext("api");
+    const childEnv = { ...process.env };
+    delete childEnv.DOCUMENT_WORKFLOW_DIR;
+    childEnv.HOME = tmp;
+    childEnv.CLAUDE_ENV_FILE = join(tmp, "envfile");
+    childEnv.CLAUDE_CODE_TASK_LIST_ID = "shared-list-456";
 
-      // Simulate error handling
-      let errorOccurred = false;
-      try {
-        // Simulate an error
-        throw new Error("Test error");
-      } catch (error) {
-        errorOccurred = true;
-        // Hook would log error but still return success
-        console.error(`Session start error: ${error}`);
-      }
+    try {
+      return execFileSync(
+        "bun",
+        [join(REPO_ROOT, "home/dot_claude/hooks/implementations/session.ts")],
+        {
+          cwd: REPO_ROOT,
+          input,
+          encoding: "utf-8",
+          env: childEnv,
+          timeout: 30_000,
+        },
+      );
+    } catch (e: any) {
+      throw new Error(
+        `bun session.ts failed (status=${e.status}): ${e.stderr ?? "(no stderr)"}`,
+      );
+    }
+  }
 
-      ok(errorOccurred, "Error should have occurred");
+  it("T5: unread digest, systemMessage on the wire includes the body", () => {
+    const stdout = runSessionHookWire();
 
-      // Hook should still return success
-      const result = mockContext.success({});
-      deepStrictEqual(result, {});
-    });
+    ok(stdout.length > 0, "stdout should not be empty");
+    const parsed = JSON.parse(stdout);
+    deepStrictEqual(Object.keys(parsed).sort(), ["systemMessage"]);
+    ok(
+      parsed.systemMessage.startsWith(
+        "🚀 Claude Code session started. Ready for development!",
+      ),
+      "systemMessage should start with the session start message",
+    );
+    ok(
+      parsed.systemMessage.includes("MARKER_LINE_FOR_TEST"),
+      "systemMessage should include the digest marker line",
+    );
+    ok(
+      parsed.systemMessage.includes("shared-list-456"),
+      "systemMessage should include the task list id",
+    );
+  });
+
+  it("T6: acked digest, body is not present", () => {
+    writeFileSync(
+      join(tmp, ".claude", ".last-insight-digest-acked"),
+      String(Date.now() + 600_000),
+    );
+
+    const stdout = runSessionHookWire();
+    const parsed = JSON.parse(stdout);
+
+    ok(
+      !parsed.systemMessage.includes("MARKER_LINE_FOR_TEST"),
+      "systemMessage should not include the digest marker line once acked",
+    );
+    ok(
+      parsed.systemMessage.startsWith(
+        "🚀 Claude Code session started. Ready for development!",
+      ),
+      "systemMessage should start with the session start message",
+    );
   });
 });
