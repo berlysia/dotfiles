@@ -76,9 +76,46 @@ echo ${CLAUDE_TASK_LIST_ID:-$(claude-task-list-id "<TaskGetで取得した最初
 > ⚠️ 一部のタスクに文脈が不足しています。`/task-enrich` で説明を拡充してからハンドオフすることを推奨します。
 ```
 
-### Step 5: ハンドオフコマンドを生成
+### Step 5: 引き継ぎ経路を判定する
 
-Step 4 の評価結果に応じて、`claude "<prompt>"` 形式のコマンドを生成する。プロンプトには**確認手順・関連ドキュメント・推奨フロー**を含め、次セッションが自律的に作業を再開できるようにする。
+引き継ぎ先には 2 経路あり、**env 変数を渡せるかどうか**が違う。先にどちらかを確定させる。
+
+| 経路                                                   | env の扱い                                                                                                         | 生成物                                      |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------- |
+| **A. `/clear` して同じプロセスで続ける**（既定・最頻） | env は一切渡せない。`claude` プロセスは起動済みで、session 途中の `export` は Bash 呼び出し 1 回限りにしか効かない | `/clear` 後に貼る**プロンプト本文**         |
+| **B. `claude` を起動し直す**                           | 起動コマンドの前置きで env を渡せる                                                                                | `ENV=... claude "..."` の**シェルコマンド** |
+
+**禁止**: どちらの経路でも `export DOCUMENT_WORKFLOW_DIR=...` / `export CLAUDE_CODE_TASK_LIST_ID=...` を「次セッションで実行させる手順」として書くこと。既に起動しているプロセスの env は差し替えられないため、無効な指示になる。
+
+Document Workflow が進行中か（`$DOCUMENT_WORKFLOW_DIR` に `research.md` / `spec.md` / `plan*.md` があるか）を確認し、あれば旧 dir の実パスを控える:
+
+```bash
+echo "$DOCUMENT_WORKFLOW_DIR" && ls "$DOCUMENT_WORKFLOW_DIR" 2>/dev/null
+```
+
+#### 経路 A: `/clear` 後に貼るプロンプト
+
+`/clear` は session を終了して新しい session id を発行するため、`DOCUMENT_WORKFLOW_DIR` は新しい `.tmp/sessions/<新 id 先頭8桁>` に切り替わり、タスクリストも新規になる。旧成果物は**パスで明示し、コピーさせる**（auto-review hash は文書内容から算出されるため、dir を移しても承認状態は保たれる）。
+
+```markdown
+## `/clear` 後に貼るプロンプト
+
+\`\`\`
+タスクを引き継ぎます。
+
+1. 前セッションの Document Workflow 成果物を現セッションの dir に取り込む:
+   cp -a .tmp/sessions/<旧 id 先頭8桁>/. "$DOCUMENT_WORKFLOW_DIR"/
+2. 前セッションのタスクは ~/.claude/tasks/<task-list-id>/ にある。読み込んで TaskCreate で再登録するか、内容を確認して作業を再開する
+3. /execute-plan でタスクを順番に実装（ビルド・テスト検証付き）
+   CLAUDE.md にプロジェクト固有のルールがあれば従ってください。
+   \`\`\`
+```
+
+Document Workflow が進行中でない場合は手順 1 を省く。
+
+#### 経路 B: 新プロセスを起動するコマンド
+
+Step 4 の評価結果に応じて、`claude "<prompt>"` 形式のコマンドを生成する。プロンプトには**確認手順・関連ドキュメント・推奨フロー**を含め、次セッションが自律的に作業を再開できるようにする。Document Workflow が進行中なら `DOCUMENT_WORKFLOW_DIR=<旧 dir>` も前置きに含める（この形なら起動時 env として有効）。
 
 #### ⚠️ タスクに文脈不足がある場合
 
@@ -86,7 +123,7 @@ Step 4 の評価結果に応じて、`claude "<prompt>"` 形式のコマンド�
 ## ハンドオフコマンド
 
 \`\`\`bash
-CLAUDE_CODE_TASK_LIST_ID=<task-list-id> claude "タスクを引き継ぎます。以下の手順で進めてください:
+CLAUDE_CODE_TASK_LIST_ID=<task-list-id> DOCUMENT_WORKFLOW_DIR=<進行中なら旧 dir、なければ省略> claude "タスクを引き継ぎます。以下の手順で進めてください:
 
 1. TaskList でタスク一覧を確認
 2. /task-enrich でタスク説明を検証・拡充（一部のタスクに文脈が不足しています）
@@ -101,7 +138,7 @@ CLAUDE_CODE_TASK_LIST_ID=<task-list-id> claude "タスクを引き継ぎます�
 ## ハンドオフコマンド
 
 \`\`\`bash
-CLAUDE_CODE_TASK_LIST_ID=<task-list-id> claude "タスクを引き継ぎます。以下の手順で進めてください:
+CLAUDE_CODE_TASK_LIST_ID=<task-list-id> DOCUMENT_WORKFLOW_DIR=<進行中なら旧 dir、なければ省略> claude "タスクを引き継ぎます。以下の手順で進めてください:
 
 1. TaskList でタスク一覧と各タスクの状態を確認
 2. /execute-plan でタスクを順番に実装（ビルド・テスト検証付き）
@@ -125,7 +162,7 @@ CLAUDE_CODE_TASK_LIST_ID=<task-list-id> claude "タスクを引き継ぎます�
 
 ### 新セッション開始後
 
-1. 上記コマンドで次のセッションを開始（プロンプトに手順が含まれています）
+1. 経路 A なら `/clear` してから生成プロンプトを貼る / 経路 B なら生成コマンドで新プロセスを起動（どちらもプロンプトに手順が含まれています）
 2. `TaskList` でタスク一覧を確認
 3. `/execute-plan` で自動実行、または手動で1タスクずつ実装
 

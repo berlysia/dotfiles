@@ -88,6 +88,20 @@
 セッション開始時に `DOCUMENT_WORKFLOW_DIR` 環境変数が設定される（例: `.tmp/sessions/abcd1234/`）。
 ワークフロー成果物はすべてこのディレクトリ配下に作成する。未設定時はワークフローガードが無効になる。
 
+### DOCUMENT_WORKFLOW_DIR の引き継ぎ（次セッションへ渡すとき）
+
+`DOCUMENT_WORKFLOW_DIR` の入力経路は **`claude` プロセスの起動時 env だけ**。未設定なら SessionStart hook (`home/dot_claude/hooks/implementations/session.ts`) が `.tmp/sessions/<session-id 先頭8桁>` を採用し、`CLAUDE_ENV_FILE`（`~/.claude/session-env/<session-id>/`）経由で Bash 実行環境へ流す。
+
+- **session 途中の `export` は効かない**: Bash ツールのシェルは呼び出しごとに使い捨てで、hook も起動済み Claude Code プロセスから env を継承する。次セッション用プロンプトに `export DOCUMENT_WORKFLOW_DIR=...` を書くのは誤り
+- **`/clear` すると dir が変わる**: `/clear` は session を終了して新しい session id を発行するため、SessionStart が再発火して `.tmp/sessions/<新 id 先頭8桁>` になる。プロセスは再起動しないので env で上書きもできず、前セッションの成果物は旧 dir に取り残される
+
+引き継ぎ方は状況で 2 通り:
+
+| 状況                                      | 方法                                                                                                                                                                                                                                                              |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/clear` して同じプロセスで続ける（通常） | 次のプロンプトに旧 dir パスを明示し、冒頭で `cp -a .tmp/sessions/<旧 id 先頭8桁>/. "$DOCUMENT_WORKFLOW_DIR"/` を実行させる。auto-review hash は文書内容のみから算出される（`home/dot_claude/hooks/lib/document-hash.ts`）ため、パスが変わっても承認状態は保たれる |
+| `claude` を起動し直す                     | `DOCUMENT_WORKFLOW_DIR=.tmp/sessions/<旧 id 先頭8桁> claude "..."` と起動時 env で pin する（`--resume` でも同じく前置きする）                                                                                                                                    |
+
 ### 共通フロー
 
 ````
