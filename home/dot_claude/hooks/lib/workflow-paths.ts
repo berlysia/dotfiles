@@ -179,3 +179,37 @@ export function isPlanNumberedPath(absPath: string, wfDir: string): boolean {
 export function isLessonsLearnedPath(absPath: string, wfDir: string): boolean {
   return absPath === resolve(wfDir, LESSONS_LEARNED_FILENAME);
 }
+
+const SESSION_ID_REGEX = /^[A-Za-z0-9_-]{8,}$/;
+
+/** The project-relative directory that holds one directory per session. */
+export const SESSIONS_ROOT = ".tmp/sessions";
+
+/**
+ * Session ids reach hooks as `string` with no non-empty guarantee, and the
+ * derived dir is built by slicing them. An allowlist is required rather than a
+ * denylist: `""` slices to `""` and `"."` collapses to the sessions root, so
+ * both would make every session share one directory.
+ *
+ * This prevents the degenerate collision, not every collision: two ids sharing
+ * their first eight characters still map to one dir. That property is
+ * inherited from `session.ts:33-35` and is accepted by spec K13, which
+ * declines to bind approval to a session.
+ */
+export function isValidSessionId(sessionId: string): boolean {
+  return SESSION_ID_REGEX.test(sessionId);
+}
+
+/**
+ * The default workflow dir, relative to the project root.
+ *
+ * This is the single definition of the expression that `session.ts` previously
+ * held on its own; both it and the guard now derive from here so the startup
+ * summary and the enforcement path cannot drift apart silently.
+ *
+ * Callers must check `isValidSessionId` first. `resolveWorkflowDir` does; call
+ * that instead unless you have already validated.
+ */
+export function deriveDefaultWorkflowDir(sessionId: string): string {
+  return `${SESSIONS_ROOT}/${sessionId.slice(0, 8)}`;
+}

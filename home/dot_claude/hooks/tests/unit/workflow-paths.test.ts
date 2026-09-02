@@ -4,6 +4,7 @@ import { strictEqual } from "node:assert";
 import { resolve } from "node:path";
 import { afterEach, describe, it } from "node:test";
 import {
+  deriveDefaultWorkflowDir,
   getPlanPath,
   getResearchPath,
   getReviewCachePath,
@@ -16,6 +17,7 @@ import {
   isPlanFile,
   isPlanNumberedPath,
   isSpecPath,
+  isValidSessionId,
   isWorkflowDocumentPath,
   resolveWorkflowPaths,
 } from "../../lib/workflow-paths.ts";
@@ -221,5 +223,36 @@ describe("workflow-paths.ts", () => {
         false,
       );
     });
+  });
+});
+
+describe("session id validation and default derivation", () => {
+  it("accepts a normal session id", () => {
+    strictEqual(isValidSessionId("aecb11d7-f8bc-4252-b8ed-d658507b5bc7"), true);
+  });
+
+  it("rejects an empty string", () => {
+    strictEqual(isValidSessionId(""), false);
+  });
+
+  it("rejects a single dot, which would collapse to the sessions root", () => {
+    strictEqual(isValidSessionId("."), false);
+  });
+
+  it("rejects path separators and traversal", () => {
+    strictEqual(isValidSessionId("../../x"), false);
+    strictEqual(isValidSessionId("a/b"), false);
+  });
+
+  it("rejects ids shorter than eight characters", () => {
+    strictEqual(isValidSessionId("abc1234"), false);
+    strictEqual(isValidSessionId("abcd1234"), true);
+  });
+
+  it("derives the same relative dir the SessionStart hook used", () => {
+    strictEqual(
+      deriveDefaultWorkflowDir("aecb11d7-f8bc-4252-b8ed-d658507b5bc7"),
+      ".tmp/sessions/aecb11d7",
+    );
   });
 });
