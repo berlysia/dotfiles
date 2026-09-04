@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "statusLine": {
     "type": "command",
-    "command": "bunx -y ccstatusline@latest",
+    "command": "bun {{ .chezmoi.homeDir }}/.claude/node_modules/ccstatusline/dist/ccstatusline.js",
     "padding": 0
   },
   "alwaysThinkingEnabled": true,

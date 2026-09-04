@@ -8,7 +8,6 @@
         "@drawio/mcp": "1.2.6",
         "@playwright/mcp": "0.0.75",
         "@upstash/context7-mcp": "2.2.4",
-        "ccstatusline": "2.2.12",
         "chrome-devtools-mcp": "0.25.0",
         "supergateway": "3.4.3",
       },
@@ -28,6 +27,7 @@
         "@anthropic-ai/claude-agent-sdk": "0.3.251",
         "@mizchi/readability": "0.7.7",
         "cc-hooks-ts": "2.1.251",
+        "ccstatusline": "2.2.27",
         "dax": "0.46.1",
         "tree-sitter-bash": "0.25.1",
         "web-tree-sitter": "0.26.8",
@@ -333,7 +333,7 @@
 
     "cc-hooks-ts": ["cc-hooks-ts@2.1.251", "", { "dependencies": { "@anthropic-ai/claude-agent-sdk": "0.3.251", "get-stdin": "10.0.0", "valibot": "1.4.2" } }, "sha512-1zxaKJvCf5voNviD5swxHyEhoXfr0nBaxXOx8eIXlEGOD5EnkhDvgBa1K9VuyK7VLOvqPUXftGFLQAezP1ytag=="],
 
-    "ccstatusline": ["ccstatusline@2.2.12", "", { "bin": { "ccstatusline": "dist/ccstatusline.js" } }, "sha512-vnwvzi9NT7WA2g9aFs3gI40X9xZvBTyqmQlrFfX2Jd9r7UNL9mu1NV9/t/OOrGZDl5W1DdMKzqFybLjEqQ1KJg=="],
+    "ccstatusline": ["ccstatusline@2.2.27", "", { "bin": { "ccstatusline": "dist/ccstatusline.js" } }, "sha512-8SqNdSuIaMsrefn4dCrSlBEZ7kE8UZMMa8iy4iv4OMl1INnEtmqzCYMwo7/hzmNrOVC+esFSiCj+T0pUS9HrLQ=="],
 
     "chrome-devtools-mcp": ["chrome-devtools-mcp@0.25.0", "", { "bin": { "chrome-devtools": "build/src/bin/chrome-devtools.js", "chrome-devtools-mcp": "build/src/bin/chrome-devtools-mcp.js" } }, "sha512-A6Zh3iH+O7lvjhUOQNxbxMy6KJhKnMtVKb+37oy4QcnDp7JEJYKkeqtsw4hFXJG5ISfNTVlaWxKsKLxRdJAAUA=="],
 

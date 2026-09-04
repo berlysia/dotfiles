@@ -13,7 +13,7 @@
 # (onepassword / exec / output / secret) を入れないこと。includeTemplate は
 # chezmoi status / diff でも評価されるため、dry-run で秘密取得や外部コマンド
 # 実行が走るようになる。
-# Hash: {{ includeTemplate "dot_claude/.settings.base.json" . | sha256sum }}{{ includeTemplate "dot_claude/.settings.permissions.json" . | sha256sum }}{{ includeTemplate "dot_claude/.settings.hooks.json.tmpl" . | sha256sum }}
+# Hash: {{ includeTemplate "dot_claude/.settings.base.json.tmpl" . | sha256sum }}{{ includeTemplate "dot_claude/.settings.permissions.json" . | sha256sum }}{{ includeTemplate "dot_claude/.settings.hooks.json.tmpl" . | sha256sum }}
 
 set -euo pipefail
 
@@ -23,7 +23,7 @@ BACKUP_FILE="${TARGET_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
 SOURCE_DIR="{{ .chezmoi.sourceDir }}"
 
 # Read component files
-BASE_CONTENT=$(cat "${SOURCE_DIR}/dot_claude/.settings.base.json")
+BASE_CONTENT=$(chezmoi execute-template < "${SOURCE_DIR}/dot_claude/.settings.base.json.tmpl")
 PERMISSIONS_CONTENT=$(cat "${SOURCE_DIR}/dot_claude/.settings.permissions.json")
 
 # Process hooks template with chezmoi
