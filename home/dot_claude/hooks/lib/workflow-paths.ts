@@ -17,6 +17,11 @@ export type WorkflowDocumentType = "spec" | "plan" | "plan-numbered";
 /**
  * Resolve the workflow directory for the current session.
  * Returns null when DOCUMENT_WORKFLOW_DIR is not set.
+ *
+ * Superseded by `resolveWorkflowDir` in `lib/workflow-resolve.ts`. Kept only so
+ * that the two-phase chezmoi apply stays safe: removing a lib export while the
+ * deployed hooks still import it opens the window spec K15 describes. Deletion
+ * is tracked as K8 item 6.
  */
 export function getWorkflowDir(cwd: string): string | null {
   const envDir = process.env.DOCUMENT_WORKFLOW_DIR;
@@ -151,6 +156,11 @@ export function resolveWorkflowPaths(workflowDir: string): {
 /**
  * Get the relative workflow dir path (for display/logging purposes).
  * Returns null when DOCUMENT_WORKFLOW_DIR is not set.
+ *
+ * Superseded by `resolveWorkflowDir` in `lib/workflow-resolve.ts`. Kept only so
+ * that the two-phase chezmoi apply stays safe: removing a lib export while the
+ * deployed hooks still import it opens the window spec K15 describes. Deletion
+ * is tracked as K8 item 6.
  */
 export function getWorkflowDirRelative(): string | null {
   const envDir = process.env.DOCUMENT_WORKFLOW_DIR;
