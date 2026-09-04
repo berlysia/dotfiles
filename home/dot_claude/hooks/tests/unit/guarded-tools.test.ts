@@ -65,4 +65,13 @@ describe("guarded-tools.ts", () => {
     // wrong "not covered" is visible.
     strictEqual(matcherCoversGuardedTools("(Write|Edit)").covered, false);
   });
+
+  it("stays in step with the guard's own list", async () => {
+    const { GUARDED_TOOLS_FOR_TESTING } =
+      await import("../../implementations/document-workflow-guard.ts");
+    deepStrictEqual(
+      [...GUARDED_TOOLS_FOR_TESTING].sort(),
+      [...GUARDED_TOOLS].sort(),
+    );
+  });
 });

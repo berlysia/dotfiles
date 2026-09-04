@@ -29,6 +29,7 @@ const GUARDED_TOOLS = new Set([
   "NotebookEdit",
   "Bash",
 ]);
+export const GUARDED_TOOLS_FOR_TESTING = GUARDED_TOOLS;
 
 interface WriteAnalysis {
   isWriteLike: boolean;
