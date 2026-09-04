@@ -50,6 +50,21 @@ function hasOutput(x: unknown): x is { output: unknown } {
 }
 
 /**
+ * The session id every context builder uses unless a test overrides it.
+ *
+ * Extracted to a constant because `resolveWorkflowDir` derives the workflow dir
+ * from the first eight characters of this value: a test that asserts on the
+ * derived dir has to be able to name the same eight characters, and a literal
+ * repeated at eight call sites cannot be kept in step with them.
+ */
+export const TEST_SESSION_ID = "test-session";
+
+export interface ContextOverrides {
+  session_id?: string;
+  cwd?: string;
+}
+
+/**
  * Mock context object that simulates cc-hooks-ts hook context with proper type safety
  */
 export class MockHookContext<TTrigger extends HookTrigger> {
@@ -269,12 +284,13 @@ export function createPreToolUseContextFor<
   _hook: H,
   tool_name: Name,
   tool_input: Input,
+  overrides: ContextOverrides = {},
 ): Parameters<H["run"]>[0] & MockHookContext<{ PreToolUse: true }> {
   type Ctx = Parameters<H["run"]>[0];
   const baseInput = {
     hook_event_name: "PreToolUse" as const,
-    cwd: "/test",
-    session_id: "test-session",
+    cwd: overrides.cwd ?? "/test",
+    session_id: overrides.session_id ?? TEST_SESSION_ID,
     transcript_path: "/test/transcript",
     tool_name,
     tool_input,
@@ -294,12 +310,13 @@ export function createPostToolUseContextFor<
   tool_name: Name,
   tool_input: Input,
   tool_response: Response,
+  overrides: ContextOverrides = {},
 ): Parameters<H["run"]>[0] & MockHookContext<{ PostToolUse: true }> {
   type Ctx = Parameters<H["run"]>[0];
   const baseInput = {
     hook_event_name: "PostToolUse" as const,
-    cwd: "/test",
-    session_id: "test-session",
+    cwd: overrides.cwd ?? "/test",
+    session_id: overrides.session_id ?? TEST_SESSION_ID,
     transcript_path: "/test/transcript",
     tool_name,
     tool_input,
@@ -448,7 +465,7 @@ export const createPreToolUseContext = <Name extends keyof ToolSchema>(
   const input: ExtractAllHookInputsForEvent<"PreToolUse"> = {
     hook_event_name: "PreToolUse" as const,
     cwd: "/test",
-    session_id: "test-session",
+    session_id: TEST_SESSION_ID,
     transcript_path: "/test/transcript",
     tool_name,
     tool_input,
@@ -470,7 +487,7 @@ export const createPostToolUseContext = <Name extends keyof ToolSchema>(
   const input = {
     hook_event_name: "PostToolUse" as const,
     cwd: "/test",
-    session_id: "test-session",
+    session_id: TEST_SESSION_ID,
     transcript_path: "/test/transcript",
     tool_name,
     tool_input,
@@ -484,7 +501,7 @@ export const createNotificationContext = (message?: string) => {
   return new MockHookContext<{ Notification: true }>({
     hook_event_name: "Notification",
     cwd: "/test",
-    session_id: "test-session",
+    session_id: TEST_SESSION_ID,
     transcript_path: "/test/transcript",
     message,
   });
@@ -494,17 +511,20 @@ export const createStopContext = (stop_hook_active?: boolean) => {
   return new MockHookContext<{ Stop: true }>({
     hook_event_name: "Stop",
     cwd: "/test",
-    session_id: "test-session",
+    session_id: TEST_SESSION_ID,
     transcript_path: "/test/transcript",
     stop_hook_active,
   });
 };
 
-export const createSessionStartContext = (source: string) => {
+export const createSessionStartContext = (
+  source: string,
+  overrides: ContextOverrides = {},
+) => {
   return new MockHookContext<{ SessionStart: true }>({
     hook_event_name: "SessionStart",
-    cwd: "/test",
-    session_id: "test-session",
+    cwd: overrides.cwd ?? "/test",
+    session_id: overrides.session_id ?? TEST_SESSION_ID,
     transcript_path: "/test/transcript",
     source,
   });
@@ -514,7 +534,7 @@ export const createUserPromptSubmitContext = (prompt: string) => {
   return new MockHookContext<{ UserPromptSubmit: true }>({
     hook_event_name: "UserPromptSubmit",
     cwd: "/test",
-    session_id: "test-session",
+    session_id: TEST_SESSION_ID,
     transcript_path: "/test/transcript",
     prompt,
   });

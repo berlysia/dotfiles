@@ -1,6 +1,6 @@
 #!/usr/bin/env node --test
 
-import { ok } from "node:assert";
+import { ok, strictEqual } from "node:assert";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,6 +15,7 @@ import {
   createPreToolUseContextFor,
   EnvironmentHelper,
   invokeRun,
+  TEST_SESSION_ID,
 } from "./test-helpers.ts";
 
 interface ReviewMarkerOptions {
@@ -608,6 +609,26 @@ describe("document-workflow-guard.ts hook behavior", () => {
 
       await invokeRun(hook, context);
       context.assertSuccess({});
+    });
+  });
+
+  describe("test-helpers session id override", () => {
+    it("uses the default session id when no override is given", () => {
+      const ctx = createPreToolUseContextFor(hook, "Write", {
+        file_path: "/x",
+        content: "",
+      });
+      strictEqual(ctx.input.session_id, TEST_SESSION_ID);
+    });
+
+    it("uses the override when one is given", () => {
+      const ctx = createPreToolUseContextFor(
+        hook,
+        "Write",
+        { file_path: "/x", content: "" },
+        { session_id: "abcd1234-override" },
+      );
+      strictEqual(ctx.input.session_id, "abcd1234-override");
     });
   });
 });
