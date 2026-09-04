@@ -85,22 +85,43 @@
 
 ## Document Workflow Protocol (MANDATORY)
 
-セッション開始時に `DOCUMENT_WORKFLOW_DIR` 環境変数が設定される（例: `.tmp/sessions/abcd1234/`）。
-ワークフロー成果物はすべてこのディレクトリ配下に作成する。未設定時はワークフローガードが無効になる。
+ワークフロー成果物の置き場は `.tmp/sessions/<session-id 先頭8桁>`（例: `.tmp/sessions/abcd1234/`）。成果物はすべてこのディレクトリ配下に作成する。
+
+**hook はこのパスを hook 入力の `session_id` から自力で導出するため、環境変数が無くても enforce は効く。** `$DOCUMENT_WORKFLOW_DIR` は Bash から成果物を参照するための変数として引き続き `CLAUDE_ENV_FILE` 経由で供給されるが、ガードの有効・無効を左右しない。根拠は `docs/decisions/0013-workflow-dir-session-derivation.md`。
 
 ### DOCUMENT_WORKFLOW_DIR の引き継ぎ（次セッションへ渡すとき）
 
-`DOCUMENT_WORKFLOW_DIR` の入力経路は **`claude` プロセスの起動時 env だけ**。未設定なら SessionStart hook (`home/dot_claude/hooks/implementations/session.ts`) が `.tmp/sessions/<session-id 先頭8桁>` を採用し、`CLAUDE_ENV_FILE`（`~/.claude/session-env/<session-id>/`）経由で Bash 実行環境へ流す。
+hook が dir を決める順序は 4 段（`home/dot_claude/hooks/lib/workflow-resolve.ts`）:
 
-- **session 途中の `export` は効かない**: Bash ツールのシェルは呼び出しごとに使い捨てで、hook も起動済み Claude Code プロセスから env を継承する。次セッション用プロンプトに `export DOCUMENT_WORKFLOW_DIR=...` を書くのは誤り
+1. `session_id` の形式検証
+2. `<cwd>/.tmp/sessions/<先頭8桁>` を導出
+3. **導出先の containment 検査** — ここで落ちると `unresolvable` になり、env は読まれない
+4. `DOCUMENT_WORKFLOW_DIR` があり、realpath containment と字句 prefix 検査の両方を満たす場合のみ override として採用
+
+containment を満たさない env は `env-rejected` として**捨てられ、導出値が使われる**。したがって**プロジェクト外を指す pin でガードを解除することはできない**（`.tmp/sessions/` 内の空ディレクトリを指す pin は採用されてガードが inactive になる、という残余は ADR-0013 の Consequences 4 を参照）。
+
+**既知の縮退**: リポジトリのサブディレクトリから `claude` を起動して**リポジトリルート基準の絶対パスで pin した**場合、その env は `env-rejected` になる。基準は hook が見る作業ディレクトリであってリポジトリルートではないため。この構成ではガードが armed にならないので、起動時サマリの `resolved:` 行を確認すること。
+
+- **session 途中の `export` は効かない**: Bash ツールのシェルは呼び出しごとに使い捨てなので、次セッション用プロンプトに `export DOCUMENT_WORKFLOW_DIR=...` を書くのは誤り（hook 側はそもそも env を必要としない）
 - **`/clear` すると dir が変わる**: `/clear` は session を終了して新しい session id を発行するため、SessionStart が再発火して `.tmp/sessions/<新 id 先頭8桁>` になる。プロセスは再起動しないので env で上書きもできず、前セッションの成果物は旧 dir に取り残される
 
 引き継ぎ方は状況で 2 通り:
 
-| 状況                                      | 方法                                                                                                                                                                                                                                                              |
-| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/clear` して同じプロセスで続ける（通常） | 次のプロンプトに旧 dir パスを明示し、冒頭で `cp -a .tmp/sessions/<旧 id 先頭8桁>/. "$DOCUMENT_WORKFLOW_DIR"/` を実行させる。auto-review hash は文書内容のみから算出される（`home/dot_claude/hooks/lib/document-hash.ts`）ため、パスが変わっても承認状態は保たれる |
-| `claude` を起動し直す                     | `DOCUMENT_WORKFLOW_DIR=.tmp/sessions/<旧 id 先頭8桁> claude "..."` と起動時 env で pin する（`--resume` でも同じく前置きする）                                                                                                                                    |
+| 状況                                      | 方法                                                                                                                                                                                                           |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/clear` して同じプロセスで続ける（通常） | 次のプロンプトに旧 dir パスを明示し、冒頭で下記のコピー手順を実行させる。auto-review hash は文書内容のみから算出される（`home/dot_claude/hooks/lib/document-hash.ts`）ため、パスが変わっても承認状態は保たれる |
+| `claude` を起動し直す                     | `DOCUMENT_WORKFLOW_DIR=.tmp/sessions/<旧 id 先頭8桁> claude "..."` と起動時 env で pin する（`--resume` でも同じく前置きする）                                                                                 |
+
+コピー手順は**空変数ガードとセットで、必ず同じ Bash 呼び出しの中で**実行する:
+
+```bash
+: "${DOCUMENT_WORKFLOW_DIR:?set by the SessionStart hook; unset means the workflow dir was unresolvable}"
+cp -a .tmp/sessions/<旧 id 先頭8桁>/. "$DOCUMENT_WORKFLOW_DIR"/
+```
+
+ガードを別呼び出しにすると、シェルが使い捨てなので次の呼び出しに効果が残らず `cp` 行が素で走る。**変数が空のまま `cp` が走ると `cp -a <src>/. /` になり、旧セッションの内容をルート直下へ展開する。**
+
+`DOCUMENT_WORKFLOW_DIR` が export されないケースは実在する（`home/dot_claude/hooks/implementations/session.ts:203-209`）。解決が `unresolvable` に終わった場合と、解決先のパスが shell export に不適な文字を含む場合で、いずれも起動時サマリに `DOCUMENT_WORKFLOW_DIR is not exported` が出る。
 
 ### 共通フロー
 
