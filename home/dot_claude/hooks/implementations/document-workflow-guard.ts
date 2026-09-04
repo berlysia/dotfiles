@@ -88,7 +88,7 @@ const hook = defineHook({
 
       const wfPaths = resolveWorkflowPaths(wfDir);
       const state = readWorkflowState(wfPaths.state);
-      const workflowActive = isWorkflowActive(wfPaths, state);
+      const workflowActive = isWorkflowActiveForTesting(wfPaths, state);
       if (!workflowActive) {
         return context.success({});
       }
@@ -298,7 +298,14 @@ function readWorkflowState(statePath: string): WorkflowState | null {
   }
 }
 
-function isWorkflowActive(
+/**
+ * Exported so `session.ts`'s local copy of this predicate (armed vs inactive
+ * in the startup summary) can be checked for drift against the real thing in
+ * `session.test.ts`. No production module imports this export -- `session.ts`
+ * keeps its own copy specifically to avoid depending on the module it exists
+ * to observe (spec K5).
+ */
+export function isWorkflowActiveForTesting(
   wfPaths: WorkflowPaths,
   state: WorkflowState | null,
 ): boolean {

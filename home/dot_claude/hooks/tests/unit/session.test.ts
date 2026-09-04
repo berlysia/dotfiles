@@ -8,14 +8,22 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import sessionHook from "../../implementations/session.ts";
+import { isWorkflowActiveForTesting } from "../../implementations/document-workflow-guard.ts";
+import sessionHook, {
+  extractGuardMatcher,
+  isWorkflowArmedForTesting,
+} from "../../implementations/session.ts";
+import { matcherCoversGuardedTools } from "../../lib/guarded-tools.ts";
+import { resolveWorkflowPaths } from "../../lib/workflow-paths.ts";
 import {
   createSessionStartContext,
   EnvironmentHelper,
@@ -345,6 +353,178 @@ describe("session.ts hook behavior", () => {
         `Expected fallback path, got:\n${content}`,
       );
     });
+  });
+});
+
+describe("startup summary", () => {
+  const envHelper = new EnvironmentHelper();
+
+  beforeEach(() => {
+    // Baseline reset. Individual `it`s below set only what they need to
+    // exercise; without this, a value left behind by an earlier test (or the
+    // ambient shell this test run happens to inherit) would leak in, and the
+    // two cases below that differ only in whether CLAUDE_ENV_FILE is set /
+    // broken are exactly the ones that would go undetected by that leak.
+    envHelper.set("CLAUDE_ENV_FILE", undefined);
+    envHelper.set("DOCUMENT_WORKFLOW_DIR", undefined);
+    envHelper.set("DOCUMENT_WORKFLOW_WARN_ONLY", undefined);
+    envHelper.set("CLAUDE_CODE_TASK_LIST_ID", undefined);
+  });
+
+  afterEach(() => {
+    envHelper.restore();
+  });
+
+  it("shows the resolution even when CLAUDE_ENV_FILE is unset", async () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "sess-")));
+    mkdirSync(join(cwd, ".tmp", "sessions", "abcd1234"), { recursive: true });
+    envHelper.set("CLAUDE_ENV_FILE", undefined);
+    envHelper.set("DOCUMENT_WORKFLOW_DIR", undefined);
+    const previous = process.cwd();
+    process.chdir(cwd);
+    try {
+      const context = createSessionStartContext("startup", {
+        session_id: "abcd1234-0000-0000-0000-000000000000",
+      });
+      await invokeRun(sessionHook, context);
+      const message = context.jsonCalls[0].systemMessage;
+      ok(message.includes(join(cwd, ".tmp", "sessions", "abcd1234")));
+      ok(message.includes("derived"));
+    } finally {
+      process.chdir(previous);
+    }
+  });
+
+  it("names the file it audited and flags a matcher that misses a guarded tool", () => {
+    strictEqual(
+      extractGuardMatcher({
+        hooks: {
+          PreToolUse: [
+            {
+              matcher: "Write|Edit|NotebookEdit|Bash",
+              hooks: [
+                {
+                  command:
+                    "bun ~/.claude/hooks/implementations/document-workflow-guard.ts",
+                },
+              ],
+            },
+          ],
+        },
+      }),
+      "Write|Edit|NotebookEdit|Bash",
+    );
+    deepStrictEqual(
+      matcherCoversGuardedTools("Write|Edit|NotebookEdit|Bash").missing,
+      ["MultiEdit"],
+    );
+  });
+
+  it("returns null when no entry references the guard", () => {
+    strictEqual(extractGuardMatcher({ hooks: { PreToolUse: [] } }), null);
+    strictEqual(extractGuardMatcher({}), null);
+    strictEqual(extractGuardMatcher(null), null);
+  });
+
+  it("names the failing check, not a cause, when the dir is unresolvable", async () => {
+    // K2b: unresolvable の原因は複数あり、session_id を断定すると
+    // .tmp/sessions の symlink を疑うべきユーザーを誤誘導する。
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "sess-")));
+    mkdirSync(join(cwd, "docs"), { recursive: true });
+    mkdirSync(join(cwd, ".tmp"), { recursive: true });
+    symlinkSync(join(cwd, "docs"), join(cwd, ".tmp", "sessions"));
+    const previous = process.cwd();
+    process.chdir(cwd);
+    try {
+      const context = createSessionStartContext("startup", {
+        session_id: "abcd1234-0000-0000-0000-000000000000",
+      });
+      await invokeRun(sessionHook, context);
+      const message = context.jsonCalls[0].systemMessage;
+      ok(message.includes(".tmp/sessions"));
+      ok(!message.includes("session id is malformed"));
+    } finally {
+      process.chdir(previous);
+    }
+  });
+
+  it("warns about an unresolvable dir without entering the outer catch", async () => {
+    // session_id が空でも throw はしない。resolveWorkflowDir が
+    // { source: "unresolvable", reason: "invalid-session-id" } を返し、決定 5 の
+    // 警告行として出る。**これは K5a の検証にはならない** — 外側 catch を
+    // 一度も通らないため、catch が context.success({}) のままでも緑になる。
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "sess-")));
+    envHelper.set("CLAUDE_ENV_FILE", undefined);
+    const previous = process.cwd();
+    process.chdir(cwd);
+    try {
+      const context = createSessionStartContext("startup", { session_id: "" });
+      await invokeRun(sessionHook, context);
+      ok(context.jsonCalls[0].systemMessage.includes("session id"));
+    } finally {
+      process.chdir(previous);
+    }
+  });
+
+  it("reports the failure through systemMessage when the run actually throws", async () => {
+    // K5a の回帰ガード。誘発手段は CLAUDE_ENV_FILE の書き込み失敗にする —
+    // appendFileSync は try の内側（session.ts:43-65）にあり、親ディレクトリが
+    // 無ければ ENOENT で throw する。session_id は正常値にして unresolvable
+    // 経路と混ざらないようにする。
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "sess-")));
+    mkdirSync(join(cwd, ".tmp", "sessions", "abcd1234"), { recursive: true });
+    envHelper.set("CLAUDE_ENV_FILE", join(cwd, "no-such-dir", "env.sh"));
+    const previous = process.cwd();
+    process.chdir(cwd);
+    try {
+      const context = createSessionStartContext("startup", {
+        session_id: "abcd1234-0000-0000-0000-000000000000",
+      });
+      await invokeRun(sessionHook, context);
+      strictEqual(context.jsonCalls.length, 1);
+      ok(
+        context.jsonCalls[0].systemMessage.includes(
+          "Session start hook failed",
+        ),
+      );
+    } finally {
+      process.chdir(previous);
+    }
+  });
+});
+
+describe("armed predicate drift", () => {
+  // K2 が禁じるのは重複ではなく食い違いが無言であること。session.ts の縮退した
+  // 判定と guard の isWorkflowActive を同じ fixture 表に通し、一致（および
+  // 既知の差）を固定する。
+  it("agrees with the guard whenever workflow-state.json is absent", () => {
+    for (const files of [
+      [],
+      ["research.md"],
+      ["plan.md"],
+      ["research.md", "plan.md"],
+    ]) {
+      const dir = realpathSync(mkdtempSync(join(tmpdir(), "armed-")));
+      for (const f of files) writeFileSync(join(dir, f), "x");
+      const paths = resolveWorkflowPaths(dir);
+      strictEqual(
+        isWorkflowArmedForTesting(paths),
+        isWorkflowActiveForTesting(paths, null),
+        files.join(",") || "(none)",
+      );
+    }
+  });
+
+  it("degrades conservatively when workflow-state.json marks the workflow active", () => {
+    // 実測: workflow-state.json は本リポジトリにも他プロジェクトにも存在しない。
+    // 存在する場合に session.ts が inactive 寄りに出ることを既知の差として固定する。
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "armed-")));
+    const paths = resolveWorkflowPaths(dir);
+    strictEqual(isWorkflowArmedForTesting(paths), false);
+    strictEqual(
+      isWorkflowActiveForTesting(paths, { mode: "document-workflow" }),
+      true,
+    );
   });
 });
 
