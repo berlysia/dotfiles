@@ -197,6 +197,7 @@
     "TaskGet",
     "WebFetch(domain:*)",
     "WebSearch",
+    "Write(/tmp/**)",
     "Edit(~/.claude/plans/**)",
     "EnterPlanMode",
     "mcp__drawio__*",
