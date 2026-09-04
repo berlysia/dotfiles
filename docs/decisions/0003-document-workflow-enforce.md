@@ -29,3 +29,7 @@ Keep the `DOCUMENT_WORKFLOW_WARN_ONLY` code path in the implementation for futur
 - Plan-unapproved implementations will be blocked (deny response) instead of warned
 - The `DOCUMENT_WORKFLOW_WARN_ONLY` env var can still be used for temporary debugging
 - New sessions will pick up enforce mode after `chezmoi apply`
+
+## Amended by
+
+- `docs/decisions/0013-workflow-dir-session-derivation.md` (2026-09-04) — enforce モードは「`DOCUMENT_WORKFLOW_DIR` が hook プロセスへ届く」ことを暗黙の前提にしていたが、その配送は Bash 実行環境にしか届いておらず、pin 起動していないセッションでは guard が無言 skip していた（実測: 2026-07-28 以降 deny ゼロ）。ADR-0013 がその前提を訂正する。enforce するという本 ADR の決定自体は不変
