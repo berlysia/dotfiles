@@ -11,11 +11,14 @@ import {
   createPreToolUseContextFor,
   EnvironmentHelper,
   invokeRun,
+  TEST_SESSION_ID,
 } from "./test-helpers.ts";
 
-function setupWfDir(): string {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "spsa-")));
-  return dir;
+function setupWfDir(): { cwd: string; wfDir: string } {
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), "spsa-")));
+  const wfDir = join(cwd, ".tmp", "sessions", TEST_SESSION_ID.slice(0, 8));
+  mkdirSync(wfDir, { recursive: true });
+  return { cwd, wfDir };
 }
 
 describe("spec-plan-self-audit hook", () => {
@@ -29,9 +32,9 @@ describe("spec-plan-self-audit hook", () => {
   });
 
   it("emits checklist additionalContext when editing spec.md", async () => {
-    const wfDir = setupWfDir();
-    env.set("DOCUMENT_WORKFLOW_DIR", wfDir);
-    env.set("CLAUDE_TEST_CWD", wfDir);
+    const { cwd, wfDir } = setupWfDir();
+    env.set("CLAUDE_TEST_CWD", cwd);
+    env.set("DOCUMENT_WORKFLOW_DIR", undefined);
     const specPath = join(wfDir, "spec.md");
     writeFileSync(specPath, "# spec");
     const ctx = createPreToolUseContextFor(specPlanSelfAuditHook, "Edit", {
@@ -48,9 +51,9 @@ describe("spec-plan-self-audit hook", () => {
   });
 
   it("does not emit checklist for unrelated file", async () => {
-    const wfDir = setupWfDir();
-    env.set("DOCUMENT_WORKFLOW_DIR", wfDir);
-    env.set("CLAUDE_TEST_CWD", wfDir);
+    const { cwd, wfDir } = setupWfDir();
+    env.set("CLAUDE_TEST_CWD", cwd);
+    env.set("DOCUMENT_WORKFLOW_DIR", undefined);
     const ctx = createPreToolUseContextFor(specPlanSelfAuditHook, "Edit", {
       file_path: "/tmp/other.ts",
       old_string: "a",
@@ -62,9 +65,9 @@ describe("spec-plan-self-audit hook", () => {
   });
 
   it("includes lessons-learned.md content (capped) when present", async () => {
-    const wfDir = setupWfDir();
-    env.set("DOCUMENT_WORKFLOW_DIR", wfDir);
-    env.set("CLAUDE_TEST_CWD", wfDir);
+    const { cwd, wfDir } = setupWfDir();
+    env.set("CLAUDE_TEST_CWD", cwd);
+    env.set("DOCUMENT_WORKFLOW_DIR", undefined);
     const specPath = join(wfDir, "spec.md");
     writeFileSync(specPath, "# spec");
     writeFileSync(join(wfDir, "lessons-learned.md"), "lesson 1\nlesson 2");
@@ -93,10 +96,30 @@ describe("spec-plan-self-audit hook", () => {
     strictEqual(ctx.jsonCalls.length, 0);
   });
 
+  it("honours an env pin that sits under the sessions root", async () => {
+    const { cwd } = setupWfDir();
+    const pinned = join(cwd, ".tmp", "sessions", "pinned01");
+    mkdirSync(pinned, { recursive: true });
+    env.set("CLAUDE_TEST_CWD", cwd);
+    env.set("DOCUMENT_WORKFLOW_DIR", pinned);
+    const specPath = join(pinned, "spec.md");
+    writeFileSync(specPath, "# spec");
+    const ctx = createPreToolUseContextFor(specPlanSelfAuditHook, "Edit", {
+      file_path: specPath,
+      old_string: "# spec",
+      new_string: "# spec v2",
+    });
+    await invokeRun(specPlanSelfAuditHook, ctx);
+    strictEqual(ctx.jsonCalls.length, 1);
+    const additional = ctx.jsonCalls[0].hookSpecificOutput
+      .additionalContext as string;
+    match(additional, /Self-audit checklist/);
+  });
+
   it("supports plan-N.md edits", async () => {
-    const wfDir = setupWfDir();
-    env.set("DOCUMENT_WORKFLOW_DIR", wfDir);
-    env.set("CLAUDE_TEST_CWD", wfDir);
+    const { cwd, wfDir } = setupWfDir();
+    env.set("CLAUDE_TEST_CWD", cwd);
+    env.set("DOCUMENT_WORKFLOW_DIR", undefined);
     const planPath = join(wfDir, "plan-1.md");
     writeFileSync(planPath, "# plan");
     const ctx = createPreToolUseContextFor(specPlanSelfAuditHook, "Edit", {
@@ -109,9 +132,9 @@ describe("spec-plan-self-audit hook", () => {
   });
 
   it("does not emit checklist for lessons-learned.md edits (avoid recursive prompt)", async () => {
-    const wfDir = setupWfDir();
-    env.set("DOCUMENT_WORKFLOW_DIR", wfDir);
-    env.set("CLAUDE_TEST_CWD", wfDir);
+    const { cwd, wfDir } = setupWfDir();
+    env.set("CLAUDE_TEST_CWD", cwd);
+    env.set("DOCUMENT_WORKFLOW_DIR", undefined);
     const lessonsPath = join(wfDir, "lessons-learned.md");
     const ctx = createPreToolUseContextFor(specPlanSelfAuditHook, "Write", {
       file_path: lessonsPath,

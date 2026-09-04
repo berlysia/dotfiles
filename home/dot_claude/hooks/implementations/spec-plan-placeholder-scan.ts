@@ -3,8 +3,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { defineHook } from "cc-hooks-ts";
 import { realpathInsideWorkflowDir } from "../lib/workflow-fs.ts";
-import { getWorkflowDir } from "../lib/workflow-paths.ts";
 import { isWorkflowDocumentEdit } from "../lib/workflow-tool-input.ts";
+import { resolveWorkflowDir } from "../lib/workflow-resolve.ts";
 import "../types/tool-schemas.ts";
 
 /**
@@ -32,8 +32,12 @@ const hook = defineHook({
   trigger: { PostToolUse: true },
   run: async (context) => {
     const cwd = process.env.CLAUDE_TEST_CWD || process.cwd();
-    const wfDir = getWorkflowDir(cwd);
-    if (!wfDir) return context.success({});
+    const resolution = resolveWorkflowDir({
+      cwd,
+      sessionId: context.input.session_id,
+    });
+    if (resolution.source === "unresolvable") return context.success({});
+    const wfDir = resolution.dir;
 
     const editInfo = isWorkflowDocumentEdit(
       context.input.tool_name,
