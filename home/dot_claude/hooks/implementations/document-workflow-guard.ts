@@ -9,10 +9,7 @@ import { getCommandFromToolInput } from "../lib/command-parsing.ts";
 import { createDenyResponse } from "../lib/context-helpers.ts";
 import { expandTilde } from "../lib/path-utils.ts";
 import { sanitizeForDisplay } from "../lib/sanitize-display.ts";
-import {
-  isLessonsLearnedPath,
-  resolveWorkflowPaths,
-} from "../lib/workflow-paths.ts";
+import { resolveWorkflowPaths } from "../lib/workflow-paths.ts";
 import { resolveWorkflowDir } from "../lib/workflow-resolve.ts";
 import "../types/tool-schemas.ts";
 
@@ -111,7 +108,7 @@ const hook = defineHook({
           return context.success({});
         }
 
-        if (areAllTargetsDocumentPaths(cwd, analysis.targets, wfPaths, wfDir)) {
+        if (areAllTargetsDocumentPaths(cwd, analysis.targets, wfDir)) {
           return context.success({});
         }
 
@@ -168,7 +165,7 @@ const hook = defineHook({
         return context.success({});
       }
 
-      if (isDocumentPath(cwd, targetPath, wfPaths, wfDir)) {
+      if (isDocumentPath(cwd, targetPath, wfDir)) {
         return context.success({});
       }
 
@@ -230,46 +227,36 @@ function getWorkingDirectory(): string {
 
 type WorkflowPaths = ReturnType<typeof resolveWorkflowPaths>;
 
-function isDocumentPath(
-  cwd: string,
-  path: string,
-  wfPaths: WorkflowPaths,
-  wfDir: string,
-): boolean {
+/**
+ * Markdown under the workflow directory is a workflow document, never
+ * implementation: the directory is session-scoped scratch under `.tmp/`, so
+ * nothing written there is deployed or committed. The predicate is stated as a
+ * property of the directory rather than as a list of filenames because naming
+ * the artifacts individually (plan.md / spec.md / research.md /
+ * lessons-learned.md — including P12's out-of-lifecycle writes per spec K7 /
+ * DI4 — and plan-N.md) sent every other note the workflow legitimately produces
+ * (handoff memos such as NEXT-SESSION.md, plan drafts, split research notes)
+ * into the implementation gate, where an unapproved plan denied them.
+ *
+ * Non-markdown inside the directory stays gated on purpose:
+ * `plan-review.cache.json` and `off-plan-writes.log` are hook-managed state, and
+ * a tool-driven write to them could forge a cached verdict or rewrite the audit
+ * trail the off-plan relaxation depends on.
+ */
+function isDocumentPath(cwd: string, path: string, wfDir: string): boolean {
   const normalized = resolve(cwd, expandTilde(path));
-  if (
-    normalized === wfPaths.plan ||
-    normalized === wfPaths.research ||
-    normalized === wfPaths.spec
-  ) {
-    return true;
-  }
-  // lessons-learned.md is written by the P12 hook (lessons-learned-extractor.ts)
-  // outside of the regular approval lifecycle, so it must be allowed regardless
-  // of plan approval state. See spec K7 / DI4.
-  if (isLessonsLearnedPath(normalized, wfDir)) {
-    return true;
-  }
-  // plan-N.md (N is one or more digits) within the workflow directory
-  if (normalized.startsWith(`${wfDir}/`)) {
-    const filename = normalized.slice(wfDir.length + 1);
-    if (PLAN_NUMBERED_FILENAME_REGEX.test(filename)) {
-      return true;
-    }
-  }
-  return false;
+  return normalized.startsWith(`${wfDir}/`) && normalized.endsWith(".md");
 }
 
 function areAllTargetsDocumentPaths(
   cwd: string,
   targets: string[],
-  wfPaths: WorkflowPaths,
   wfDir: string,
 ): boolean {
   if (targets.length === 0) {
     return false;
   }
-  return targets.every((target) => isDocumentPath(cwd, target, wfPaths, wfDir));
+  return targets.every((target) => isDocumentPath(cwd, target, wfDir));
 }
 
 function isOutsideProject(cwd: string, path: string): boolean {

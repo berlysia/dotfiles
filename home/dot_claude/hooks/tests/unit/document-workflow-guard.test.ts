@@ -1178,4 +1178,46 @@ describe("document-workflow-guard.ts two-layer mode (spec.md + plan-N.md)", () =
       context.assertSuccess({});
     });
   });
+
+  describe("isDocumentPath: ad-hoc markdown in the workflow directory", () => {
+    it("allows writing a handoff note before plan approval", async () => {
+      const repo = createWorkflowRepo(pendingWorkflowRepo());
+      envHelper.set("CLAUDE_TEST_CWD", repo);
+
+      const context = createPreToolUseContextFor(hook, "Write", {
+        file_path: join(repo, TEST_WORKFLOW_DIR, "NEXT-SESSION.md"),
+        content: "## Handoff\n\n- resume from task 3\n",
+      });
+
+      await invokeRun(hook, context);
+      context.assertSuccess({});
+    });
+
+    it("allows a heredoc Bash write to a handoff note before plan approval", async () => {
+      const repo = createWorkflowRepo(pendingWorkflowRepo());
+      envHelper.set("CLAUDE_TEST_CWD", repo);
+
+      const context = createPreToolUseContextFor(hook, "Bash", {
+        command: `cat > ${join(repo, TEST_WORKFLOW_DIR, "NEXT-SESSION.md")} <<'EOF'\nhandoff\nEOF`,
+      });
+
+      await invokeRun(hook, context);
+      context.assertSuccess({});
+    });
+
+    it("denies writes to hook-managed non-markdown state in the workflow directory", async () => {
+      // plan-review.cache.json gates review skipping; a tool-driven write would
+      // let a stale verdict be forged, so the markdown widening must not reach it.
+      const repo = createWorkflowRepo(pendingWorkflowRepo());
+      envHelper.set("CLAUDE_TEST_CWD", repo);
+
+      const context = createPreToolUseContextFor(hook, "Write", {
+        file_path: join(repo, TEST_WORKFLOW_DIR, "plan-review.cache.json"),
+        content: '{"planHash":"forged"}',
+      });
+
+      await invokeRun(hook, context);
+      context.assertDeny();
+    });
+  });
 });
