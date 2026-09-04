@@ -8,13 +8,12 @@ import { computeDocumentHash, SPEC_NORMALIZERS } from "../lib/document-hash.ts";
 import { getCommandFromToolInput } from "../lib/command-parsing.ts";
 import { createDenyResponse } from "../lib/context-helpers.ts";
 import { expandTilde } from "../lib/path-utils.ts";
+import { sanitizeForDisplay } from "../lib/sanitize-display.ts";
 import {
-  getWorkflowDir,
-  getWorkflowDirRelative,
   isLessonsLearnedPath,
-  isWorkflowDocument,
   resolveWorkflowPaths,
 } from "../lib/workflow-paths.ts";
+import { resolveWorkflowDir } from "../lib/workflow-resolve.ts";
 import "../types/tool-schemas.ts";
 
 const PLAN_STATUS_REGEX = /^- Plan Status:\s*complete\s*$/m;
@@ -61,13 +60,30 @@ const hook = defineHook({
     }
 
     const cwd = getWorkingDirectory();
-    const wfDir = getWorkflowDir(cwd);
-    if (!wfDir) {
-      console.error(
-        "[document-workflow-guard] DOCUMENT_WORKFLOW_DIR is not set, skipping guard",
-      );
-      return context.success({});
+    const resolution = resolveWorkflowDir({
+      cwd,
+      sessionId: context.input.session_id,
+    });
+    // The `unresolvable` early return is deliberately not silent here, unlike
+    // the other four hooks that share this shape. Two reasons: (1) fs
+    // failures (ELOOP/EACCES on the containment check) land here because
+    // `workflow-fs.ts` folds them into the predicate's `false`, so this is
+    // the only place K10's exception visibility can reach them -- nothing
+    // throws. (2) `resolution.reason` already names which check failed, and
+    // `workflow-resolve.ts`'s docstring requires that a message built from it
+    // name the check, not a guessed cause.
+    if (resolution.source === "unresolvable") {
+      return context.json({
+        event: "PreToolUse",
+        output: {
+          systemMessage:
+            resolution.reason === "invalid-session-id"
+              ? "[document-workflow-guard] the session id is malformed, so no workflow directory could be derived; the gate is not enforcing for this call."
+              : "[document-workflow-guard] could not verify that the derived workflow directory is a strict descendant of <cwd>/.tmp/sessions; the gate is not enforcing for this call.",
+        },
+      });
     }
+    const wfDir = resolution.dir;
 
     const wfPaths = resolveWorkflowPaths(wfDir);
     const state = readWorkflowState(wfPaths.state);
@@ -79,7 +95,7 @@ const hook = defineHook({
     const warnOnly = process.env.DOCUMENT_WORKFLOW_WARN_ONLY === "1";
     const researched = existsSync(wfPaths.research);
     const twoLayer = existsSync(wfPaths.spec);
-    const wfDirLabel = getWorkflowDirRelative() ?? "(unknown)";
+    const wfDirLabel = sanitizeForDisplay(resolution.relative);
     const denyReasonSingle = `Document workflow gate: implementation is blocked until \`${wfDirLabel}/research.md\` exists and \`${wfDirLabel}/plan.md\` has \`- Plan Status: complete\`, \`- Review Status: pass\`, \`- Approval Status: approved\`, and \`<!-- auto-review: verdict=pass; hash=... -->\` with a matching hash.`;
     const denyReasonTwoLayer = `Document workflow gate (two-layer): implementation is blocked until \`${wfDirLabel}/spec.md\` is approved (Plan Status: complete + Review Status: pass + Approval Status: approved + matching hash), AND the plan-N.md whose Files section lists the target file is approved with matching \`parent-spec-hash\` for the current spec.md.`;
     const denyReason = twoLayer ? denyReasonTwoLayer : denyReasonSingle;

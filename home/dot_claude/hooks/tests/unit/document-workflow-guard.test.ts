@@ -1,7 +1,14 @@
 #!/usr/bin/env node --test
 
 import { ok, strictEqual } from "node:assert";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
@@ -61,6 +68,17 @@ function createWorkflowRepo(options: WorkflowRepoOptions): string {
     join(repo, TEST_WORKFLOW_DIR, "plan.md"),
     buildPlanContent(options),
   );
+  return repo;
+}
+
+function createSessionWorkflowRepo(
+  sessionDir: string,
+  options: WorkflowRepoOptions,
+): string {
+  const repo = mkdtempSync(join(tmpdir(), "document-workflow-guard-session-"));
+  mkdirSync(join(repo, sessionDir), { recursive: true });
+  writeFileSync(join(repo, sessionDir, "research.md"), "research");
+  writeFileSync(join(repo, sessionDir, "plan.md"), buildPlanContent(options));
   return repo;
 }
 
@@ -346,25 +364,70 @@ describe("document-workflow-guard.ts hook behavior", () => {
     context.assertSuccess({});
   });
 
-  it("does not enforce when DOCUMENT_WORKFLOW_DIR is not set and logs warning", async () => {
-    const repo = createWorkflowRepo(pendingWorkflowRepo());
-    envHelper.set("CLAUDE_TEST_CWD", repo);
+  it("enforces using the derived dir when DOCUMENT_WORKFLOW_DIR is not set", async () => {
+    // env の配送に依存しなくなったことの回帰ガード。この it は元々
+    // 「env 不在なら enforce しない」を assert しており、恒常的な無言 skip を
+    // 緑で保証していた（spec K7）。
+    const sessionId = "abcd1234-0000-0000-0000-000000000000";
+    const cwd = createSessionWorkflowRepo(
+      join(".tmp", "sessions", "abcd1234"),
+      pendingWorkflowRepo(),
+    );
+    envHelper.set("CLAUDE_TEST_CWD", cwd);
     envHelper.set("DOCUMENT_WORKFLOW_DIR", undefined);
 
-    const context = createPreToolUseContextFor(hook, "Write", {
-      file_path: "src/a.ts",
-      content: "const a = 1;",
-    });
-
-    await invokeRun(hook, context);
-    context.assertSuccess({});
-
-    ok(
-      consoleCapture.errors.some((line) =>
-        line.includes("DOCUMENT_WORKFLOW_DIR is not set"),
-      ),
-      "should log that DOCUMENT_WORKFLOW_DIR is not set",
+    const context = createPreToolUseContextFor(
+      hook,
+      "Write",
+      { file_path: join(cwd, "src", "a.ts"), content: "x" },
+      { session_id: sessionId },
     );
+    await invokeRun(hook, context);
+
+    const reason =
+      context.jsonCalls[0].hookSpecificOutput.permissionDecisionReason;
+    // deny したことだけでなく、deny 文中の dir が導出値であることまで assert する。
+    // さもないと `(unknown)` 劣化のような別要因の deny でも緑になる（spec K7）。
+    ok(reason.includes(".tmp/sessions/abcd1234"));
+  });
+
+  it("says which check failed when the session id is malformed", async () => {
+    const cwd = createSessionWorkflowRepo(
+      join(".tmp", "sessions", "abcd1234"),
+      pendingWorkflowRepo(),
+    );
+    envHelper.set("CLAUDE_TEST_CWD", cwd);
+    envHelper.set("DOCUMENT_WORKFLOW_DIR", undefined);
+    const context = createPreToolUseContextFor(
+      hook,
+      "Write",
+      { file_path: join(cwd, "src", "a.ts"), content: "x" },
+      { session_id: "" },
+    );
+    await invokeRun(hook, context);
+    const message = context.jsonCalls[0].systemMessage;
+    ok(message.includes("session id"));
+    // deny ではないこと（fail-open のまま）
+    strictEqual(context.jsonCalls[0].hookSpecificOutput, undefined);
+  });
+
+  it("names the containment check, not a cause, when the sessions root is redirected", async () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "guard-")));
+    mkdirSync(join(cwd, "docs"), { recursive: true });
+    mkdirSync(join(cwd, ".tmp"), { recursive: true });
+    symlinkSync(join(cwd, "docs"), join(cwd, ".tmp", "sessions"));
+    envHelper.set("CLAUDE_TEST_CWD", cwd);
+    envHelper.set("DOCUMENT_WORKFLOW_DIR", undefined);
+    const context = createPreToolUseContextFor(
+      hook,
+      "Write",
+      { file_path: join(cwd, "src", "a.ts"), content: "x" },
+      { session_id: "abcd1234-0000-0000-0000-000000000000" },
+    );
+    await invokeRun(hook, context);
+    const message = context.jsonCalls[0].systemMessage;
+    ok(message.includes(".tmp/sessions"));
+    ok(!message.includes("session id"));
   });
 
   it("does not enforce when .tmp/plan.md exists but DOCUMENT_WORKFLOW_DIR points elsewhere", async () => {
@@ -408,22 +471,6 @@ describe("document-workflow-guard.ts hook behavior", () => {
   });
 
   describe("session-specific workflow directory (DOCUMENT_WORKFLOW_DIR)", () => {
-    function createSessionWorkflowRepo(
-      sessionDir: string,
-      options: WorkflowRepoOptions,
-    ): string {
-      const repo = mkdtempSync(
-        join(tmpdir(), "document-workflow-guard-session-"),
-      );
-      mkdirSync(join(repo, sessionDir), { recursive: true });
-      writeFileSync(join(repo, sessionDir, "research.md"), "research");
-      writeFileSync(
-        join(repo, sessionDir, "plan.md"),
-        buildPlanContent(options),
-      );
-      return repo;
-    }
-
     it("blocks Write when session-specific plan is pending", async () => {
       const sessionDir = ".tmp/sessions/abcd1234";
       const repo = createSessionWorkflowRepo(sessionDir, pendingWorkflowRepo());
