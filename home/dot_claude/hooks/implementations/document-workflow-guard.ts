@@ -54,138 +54,173 @@ interface ApprovalCheckResult {
 const hook = defineHook({
   trigger: { PreToolUse: true },
   run: async (context) => {
-    const { tool_name, tool_input } = context.input;
-    if (!GUARDED_TOOLS.has(tool_name)) {
-      return context.success({});
-    }
+    try {
+      const { tool_name, tool_input } = context.input;
+      if (!GUARDED_TOOLS.has(tool_name)) {
+        return context.success({});
+      }
 
-    const cwd = getWorkingDirectory();
-    const resolution = resolveWorkflowDir({
-      cwd,
-      sessionId: context.input.session_id,
-    });
-    // The `unresolvable` early return is deliberately not silent here, unlike
-    // the other four hooks that share this shape. Two reasons: (1) fs
-    // failures (ELOOP/EACCES on the containment check) land here because
-    // `workflow-fs.ts` folds them into the predicate's `false`, so this is
-    // the only place K10's exception visibility can reach them -- nothing
-    // throws. (2) `resolution.reason` already names which check failed, and
-    // `workflow-resolve.ts`'s docstring requires that a message built from it
-    // name the check, not a guessed cause.
-    if (resolution.source === "unresolvable") {
-      return context.json({
-        event: "PreToolUse",
-        output: {
-          systemMessage:
-            resolution.reason === "invalid-session-id"
-              ? "[document-workflow-guard] the session id is malformed, so no workflow directory could be derived; the gate is not enforcing for this call."
-              : "[document-workflow-guard] could not verify that the derived workflow directory is a strict descendant of <cwd>/.tmp/sessions; the gate is not enforcing for this call.",
-        },
+      const cwd = getWorkingDirectory();
+      const resolution = resolveWorkflowDir({
+        cwd,
+        sessionId: context.input.session_id,
       });
-    }
-    const wfDir = resolution.dir;
+      // The `unresolvable` early return is deliberately not silent here, unlike
+      // the other four hooks that share this shape. Two reasons: (1) fs
+      // failures (ELOOP/EACCES on the containment check) land here because
+      // `workflow-fs.ts` folds them into the predicate's `false`, so this is
+      // the only place K10's exception visibility can reach them -- nothing
+      // throws. (2) `resolution.reason` already names which check failed, and
+      // `workflow-resolve.ts`'s docstring requires that a message built from it
+      // name the check, not a guessed cause.
+      if (resolution.source === "unresolvable") {
+        return context.json({
+          event: "PreToolUse",
+          output: {
+            systemMessage:
+              resolution.reason === "invalid-session-id"
+                ? "[document-workflow-guard] the session id is malformed, so no workflow directory could be derived; the gate is not enforcing for this call."
+                : "[document-workflow-guard] could not verify that the derived workflow directory is a strict descendant of <cwd>/.tmp/sessions; the gate is not enforcing for this call.",
+          },
+        });
+      }
+      const wfDir = resolution.dir;
 
-    const wfPaths = resolveWorkflowPaths(wfDir);
-    const state = readWorkflowState(wfPaths.state);
-    const workflowActive = isWorkflowActive(wfPaths, state);
-    if (!workflowActive) {
-      return context.success({});
-    }
-
-    const warnOnly = process.env.DOCUMENT_WORKFLOW_WARN_ONLY === "1";
-    const researched = existsSync(wfPaths.research);
-    const twoLayer = existsSync(wfPaths.spec);
-    const wfDirLabel = sanitizeForDisplay(resolution.relative);
-    const denyReasonSingle = `Document workflow gate: implementation is blocked until \`${wfDirLabel}/research.md\` exists and \`${wfDirLabel}/plan.md\` has \`- Plan Status: complete\`, \`- Review Status: pass\`, \`- Approval Status: approved\`, and \`<!-- auto-review: verdict=pass; hash=... -->\` with a matching hash.`;
-    const denyReasonTwoLayer = `Document workflow gate (two-layer): implementation is blocked until \`${wfDirLabel}/spec.md\` is approved (Plan Status: complete + Review Status: pass + Approval Status: approved + matching hash), AND the plan-N.md whose Files section lists the target file is approved with matching \`parent-spec-hash\` for the current spec.md.`;
-    const denyReason = twoLayer ? denyReasonTwoLayer : denyReasonSingle;
-
-    if (tool_name === "Bash") {
-      const command = getCommandFromToolInput("Bash", tool_input) || "";
-      const analysis = await analyzeBashWrite(command);
-      if (!analysis.isWriteLike) {
+      const wfPaths = resolveWorkflowPaths(wfDir);
+      const state = readWorkflowState(wfPaths.state);
+      const workflowActive = isWorkflowActive(wfPaths, state);
+      if (!workflowActive) {
         return context.success({});
       }
 
-      if (areAllTargetsDocumentPaths(cwd, analysis.targets, wfPaths, wfDir)) {
+      const warnOnly = process.env.DOCUMENT_WORKFLOW_WARN_ONLY === "1";
+      const researched = existsSync(wfPaths.research);
+      const twoLayer = existsSync(wfPaths.spec);
+      const wfDirLabel = sanitizeForDisplay(resolution.relative);
+      const denyReasonSingle = `Document workflow gate: implementation is blocked until \`${wfDirLabel}/research.md\` exists and \`${wfDirLabel}/plan.md\` has \`- Plan Status: complete\`, \`- Review Status: pass\`, \`- Approval Status: approved\`, and \`<!-- auto-review: verdict=pass; hash=... -->\` with a matching hash.`;
+      const denyReasonTwoLayer = `Document workflow gate (two-layer): implementation is blocked until \`${wfDirLabel}/spec.md\` is approved (Plan Status: complete + Review Status: pass + Approval Status: approved + matching hash), AND the plan-N.md whose Files section lists the target file is approved with matching \`parent-spec-hash\` for the current spec.md.`;
+      const denyReason = twoLayer ? denyReasonTwoLayer : denyReasonSingle;
+      const emptyTargetDenyReason = sanitizeForDisplay(
+        "Document workflow gate: this command was classified as write-like but the guard could not determine which files it writes, so it was refused conservatively. Re-run with the target paths written explicitly.",
+      );
+
+      if (tool_name === "Bash") {
+        const command = getCommandFromToolInput("Bash", tool_input) || "";
+        const analysis = await analyzeBashWrite(command);
+        if (!analysis.isWriteLike) {
+          return context.success({});
+        }
+
+        if (areAllTargetsDocumentPaths(cwd, analysis.targets, wfPaths, wfDir)) {
+          return context.success({});
+        }
+
+        if (areAllTargetsOutsideProject(cwd, analysis.targets)) {
+          return context.success({});
+        }
+
+        // [].every() is vacuous true. The two shortcuts above
+        // (areAllTargetsDocumentPaths / areAllTargetsOutsideProject) already
+        // refuse an empty target list with `false`, but the checkTarget path
+        // below did not: a write-like command whose targets could not be
+        // extracted fell through `.every()` on an empty array and was
+        // allowed (research.md §10.14). Being classified as write-like with
+        // zero targets means "could not tell what it writes", not "writes
+        // nothing".
+        let reasonForThisCall = denyReason;
+        if (analysis.targets.length === 0) {
+          reasonForThisCall = emptyTargetDenyReason;
+        } else if (researched) {
+          const decisions = analysis.targets.map((target) =>
+            checkTarget(cwd, target, wfDir, wfPaths, twoLayer),
+          );
+          if (decisions.every((d) => d === "allow")) {
+            return context.success({});
+          }
+          if (
+            decisions.every((d) => d === "allow" || d === "no-plan-owner") &&
+            isImplementationPhase(wfDir, wfPaths, twoLayer)
+          ) {
+            for (let i = 0; i < decisions.length; i++) {
+              if (decisions[i] !== "no-plan-owner") continue;
+              const target = analysis.targets[i] ?? "";
+              console.error(
+                `[document-workflow-guard][off-plan] Bash target \`${target}\` is not listed in any plan-N.md Files section; allowed under implementation-phase relaxation. Recorded in \`${wfDirLabel}/off-plan-writes.log\`.`,
+              );
+              appendOffPlanLog(wfDir, "Bash", target);
+            }
+            return context.success({});
+          }
+        }
+
+        if (warnOnly) {
+          console.error(
+            `[document-workflow-guard][would-block] Bash: ${command}`,
+          );
+          return context.success({});
+        }
+
+        return context.json(createDenyResponse(reasonForThisCall));
+      }
+
+      const targetPath = getTargetFilePath(tool_name, tool_input);
+      if (!targetPath) {
         return context.success({});
       }
 
-      if (areAllTargetsOutsideProject(cwd, analysis.targets)) {
+      if (isDocumentPath(cwd, targetPath, wfPaths, wfDir)) {
+        return context.success({});
+      }
+
+      if (isOutsideProject(cwd, targetPath)) {
         return context.success({});
       }
 
       if (researched) {
-        const decisions = analysis.targets.map((target) =>
-          checkTarget(cwd, target, wfDir, wfPaths, twoLayer),
-        );
-        if (decisions.every((d) => d === "allow")) {
+        const decision = checkTarget(cwd, targetPath, wfDir, wfPaths, twoLayer);
+        if (decision === "allow") {
           return context.success({});
         }
         if (
-          decisions.every((d) => d === "allow" || d === "no-plan-owner") &&
+          decision === "no-plan-owner" &&
           isImplementationPhase(wfDir, wfPaths, twoLayer)
         ) {
-          for (let i = 0; i < decisions.length; i++) {
-            if (decisions[i] !== "no-plan-owner") continue;
-            const target = analysis.targets[i] ?? "";
-            console.error(
-              `[document-workflow-guard][off-plan] Bash target \`${target}\` is not listed in any plan-N.md Files section; allowed under implementation-phase relaxation. Recorded in \`${wfDirLabel}/off-plan-writes.log\`.`,
-            );
-            appendOffPlanLog(wfDir, "Bash", target);
-          }
+          console.error(
+            `[document-workflow-guard][off-plan] ${tool_name} target \`${targetPath}\` is not listed in any plan-N.md Files section; allowed under implementation-phase relaxation. Recorded in \`${wfDirLabel}/off-plan-writes.log\`.`,
+          );
+          appendOffPlanLog(wfDir, tool_name, targetPath);
           return context.success({});
         }
       }
 
       if (warnOnly) {
         console.error(
-          `[document-workflow-guard][would-block] Bash: ${command}`,
+          `[document-workflow-guard][would-block] ${tool_name}: ${targetPath}`,
         );
         return context.success({});
       }
 
       return context.json(createDenyResponse(denyReason));
+    } catch (error) {
+      // fail-open is preserved (matching what runHook already does when a
+      // throw escapes to it: convert to exit 1). What changes is that the
+      // call is no longer allowed silently. context.success() would discard
+      // systemMessage, so context.json is used instead (research.md §10.3).
+      //
+      // console.error is kept alongside. Today an escaping exception reaches
+      // runHook and prints a stack trace to stderr; catching it here and
+      // returning context.json would otherwise lose that. Root-causing a
+      // fail-open gate needs exactly this trail, so it is not trimmed to a
+      // 256-character single line. PreToolUse exits 0, so stderr does not
+      // reach the model here -- this does not add a model-input surface.
+      console.error("[document-workflow-guard] internal error:", error);
+      return context.json({
+        event: "PreToolUse",
+        output: {
+          systemMessage: `[document-workflow-guard] internal error, allowing the call: ${sanitizeForDisplay(String(error))}`,
+        },
+      });
     }
-
-    const targetPath = getTargetFilePath(tool_name, tool_input);
-    if (!targetPath) {
-      return context.success({});
-    }
-
-    if (isDocumentPath(cwd, targetPath, wfPaths, wfDir)) {
-      return context.success({});
-    }
-
-    if (isOutsideProject(cwd, targetPath)) {
-      return context.success({});
-    }
-
-    if (researched) {
-      const decision = checkTarget(cwd, targetPath, wfDir, wfPaths, twoLayer);
-      if (decision === "allow") {
-        return context.success({});
-      }
-      if (
-        decision === "no-plan-owner" &&
-        isImplementationPhase(wfDir, wfPaths, twoLayer)
-      ) {
-        console.error(
-          `[document-workflow-guard][off-plan] ${tool_name} target \`${targetPath}\` is not listed in any plan-N.md Files section; allowed under implementation-phase relaxation. Recorded in \`${wfDirLabel}/off-plan-writes.log\`.`,
-        );
-        appendOffPlanLog(wfDir, tool_name, targetPath);
-        return context.success({});
-      }
-    }
-
-    if (warnOnly) {
-      console.error(
-        `[document-workflow-guard][would-block] ${tool_name}: ${targetPath}`,
-      );
-      return context.success({});
-    }
-
-    return context.json(createDenyResponse(denyReason));
   },
 });
 
@@ -444,7 +479,14 @@ function isImplementationPhase(
  * write to a file not listed in any plan-N.md Files section. Best-effort: log
  * write failures must not interfere with the user's tool call.
  *
- * Format: ISO8601 \t tool=<name> \t path=<rel-or-abs>
+ * Format: ISO8601 \t tool=<name> \t path=<JSON-encoded rel-or-abs>
+ *
+ * The path is JSON-encoded (not sanitizeForDisplay'd) because this log is
+ * meant to be read back and folded into a plan-N.md Files section, which
+ * requires round-tripping the exact path. sanitizeForDisplay's redaction is
+ * irreversible and would break that round trip; JSON.stringify is reversible
+ * and still neutralizes control characters / embedded quotes for the log's
+ * tab-separated format.
  *
  * The log is a discovery trail intended to be reviewed at end of session and
  * folded back into plan-N.md before commit, preserving 厳格性 at the document
@@ -457,7 +499,7 @@ function appendOffPlanLog(
 ): void {
   try {
     const logPath = resolve(wfDir, "off-plan-writes.log");
-    const entry = `${new Date().toISOString()}\ttool=${toolName}\tpath=${target}\n`;
+    const entry = `${new Date().toISOString()}\ttool=${toolName}\tpath=${JSON.stringify(target)}\n`;
     appendFileSync(logPath, entry, "utf-8");
   } catch {
     // best-effort; do not block the tool call on logging errors

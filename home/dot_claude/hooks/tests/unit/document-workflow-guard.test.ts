@@ -678,6 +678,83 @@ describe("document-workflow-guard.ts hook behavior", () => {
       strictEqual(ctx.input.session_id, "abcd1234-override");
     });
   });
+
+  describe("guard exception visibility and empty-target handling", () => {
+    // 内部例外を自然入力で誘発するテストは置かない。resolveWorkflowDir /
+    // workflow-fs / guard の 6 ヘルパがいずれも throw しないため、到達経路が無い。
+    // K10 の catch は「将来 throw する変更が入ったときに無言にしない」ための保険であり、
+    // 現時点で検証できるのはコードの存在までである。人工的な throw 注入は、
+    // テストの意図（本物の障害で catch が動く）を満たさないので採らない。
+    it.skip("reports an internal exception through systemMessage and still allows", async () => {
+      // fail-open は cc-hooks-ts 元来の挙動であり本変更では変えない。
+      // 変えるのは「無言で通る」ことだけ（spec K10）。
+      const cwd = createSessionWorkflowRepo(
+        join(".tmp", "sessions", "abcd1234"),
+        pendingWorkflowRepo(),
+      );
+      envHelper.set("CLAUDE_TEST_CWD", cwd);
+      envHelper.set("DOCUMENT_WORKFLOW_DIR", undefined);
+      // wfDir を辿れない状態を作って内部例外を誘発する。誘発手段は実装時に
+      // 既存ヘルパの構造を読んで決める（chmod ではなく、読めないパスを仕込む形にする）。
+      const context = createPreToolUseContextFor(
+        hook,
+        "Write",
+        { file_path: join(cwd, "src", "a.ts"), content: "x" },
+        { session_id: "abcd1234-0000-0000-0000-000000000000" },
+      );
+      await invokeRun(hook, context);
+      const message = context.jsonCalls[0].systemMessage;
+      ok(message.includes("document-workflow-guard"));
+      // deny ではないこと（fail-open のまま）
+      strictEqual(context.jsonCalls[0].hookSpecificOutput, undefined);
+    });
+
+    it("denies a write-like Bash command whose targets could not be extracted", async () => {
+      const cwd = createSessionWorkflowRepo(
+        join(".tmp", "sessions", "abcd1234"),
+        pendingWorkflowRepo(),
+      );
+      envHelper.set("CLAUDE_TEST_CWD", cwd);
+      envHelper.set("DOCUMENT_WORKFLOW_DIR", undefined);
+      const context = createPreToolUseContextFor(
+        hook,
+        "Bash",
+        // write-like と判定されるが対象パスを 1 つも取り出せない形。実測で到達する
+        // のは対象位置に空文字クォート引数がある場合だけ（touch "" / rm "" /
+        // mkdir -p "" / cp src.txt "" / mv a ""）。`tee` 単体は files.length > 0 を
+        // 満たさず isWriteLike にすらならないので使えない。
+        { command: 'touch ""' },
+        { session_id: "abcd1234-0000-0000-0000-000000000000" },
+      );
+      await invokeRun(hook, context);
+      const reason =
+        context.jsonCalls[0].hookSpecificOutput.permissionDecisionReason;
+      ok(reason.includes("could not determine"));
+    });
+
+    it("still honours warn-only for a command whose targets could not be extracted", async () => {
+      // この修正の回帰ガード。空チェックを if (researched) の内側に置くと
+      // ここから return して warnOnly の脱出路を飛び越える。直した箇所こそ、
+      // 次に壊れたときに気づけない箇所なので固定する。
+      const cwd = createSessionWorkflowRepo(
+        join(".tmp", "sessions", "abcd1234"),
+        pendingWorkflowRepo(),
+      );
+      envHelper.set("CLAUDE_TEST_CWD", cwd);
+      envHelper.set("DOCUMENT_WORKFLOW_DIR", undefined);
+      envHelper.set("DOCUMENT_WORKFLOW_WARN_ONLY", "1");
+      const context = createPreToolUseContextFor(
+        hook,
+        "Bash",
+        { command: 'touch ""' },
+        { session_id: "abcd1234-0000-0000-0000-000000000000" },
+      );
+      await invokeRun(hook, context);
+      // deny せず allow に降格し、would-block が stderr に出ること
+      strictEqual(context.jsonCalls.length, 0);
+      ok(consoleCapture.errors.some((e) => e.includes("would-block")));
+    });
+  });
 });
 
 describe("document-workflow-guard.ts two-layer mode (spec.md + plan-N.md)", () => {
@@ -892,7 +969,7 @@ describe("document-workflow-guard.ts two-layer mode (spec.md + plan-N.md)", () =
     context.assertSuccess({});
     const logPath = join(repo, TEST_WORKFLOW_DIR, "off-plan-writes.log");
     ok(
-      readFileSync(logPath, "utf-8").includes("path=src/b.ts"),
+      readFileSync(logPath, "utf-8").includes('path="src/b.ts"'),
       "off-plan-writes.log should record the off-plan Write target",
     );
   });
@@ -941,7 +1018,7 @@ describe("document-workflow-guard.ts two-layer mode (spec.md + plan-N.md)", () =
     context.assertSuccess({});
     const logPath = join(repo, TEST_WORKFLOW_DIR, "off-plan-writes.log");
     ok(
-      readFileSync(logPath, "utf-8").includes("path=src/c.ts"),
+      readFileSync(logPath, "utf-8").includes('path="src/c.ts"'),
       "off-plan-writes.log should record Bash off-plan redirect target",
     );
   });
