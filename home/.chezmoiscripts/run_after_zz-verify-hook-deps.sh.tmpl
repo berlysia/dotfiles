@@ -1,0 +1,37 @@
+{{ if ne .chezmoi.os "windows" -}}
+#!/bin/bash
+# Final gate: turns a recorded hook-dependency install failure into a non-zero
+# `chezmoi apply`, so a stale ~/.claude/node_modules cannot pass as success.
+#
+# Placement (do not move or rename without updating
+# scripts/smoke-hook-deps-invariants.sh):
+#   The zz- prefix is reserved for this verifier so it runs last among
+#   run_after_ scripts. Reporting last is what lets the installer keep exit 0
+#   and leave sync-skills / gc / refresh-go-latest-tools untouched.
+#
+# This script deliberately initializes no toolchain and spawns no package
+# manager. Its whole job is to stat one file, which keeps it off the ~70ms
+# environment bootstrap that the installer pays.
+#
+# The marker is echoed as-is. That is safe only while the writer keeps to fixed
+# key=value fields; if the writer is ever changed to copy command output, this
+# display path needs escaping before it renders attacker-influenced bytes.
+
+set -uo pipefail
+
+MARKER_FILE="$HOME/.claude/.hook-deps-install-failed"
+
+if [ ! -f "$MARKER_FILE" ]; then
+    exit 0
+fi
+
+{
+    echo "[hook-deps] Hook dependencies were not installed."
+    echo "[hook-deps] ~/.claude/node_modules does not match ~/.claude/package.json."
+    echo "[hook-deps] Recorded details:"
+    sed 's/^/[hook-deps]   /' "$MARKER_FILE"
+    echo "[hook-deps] Recover with: cd ~/.claude && bun install"
+} >&2
+
+exit 1
+{{ end -}}

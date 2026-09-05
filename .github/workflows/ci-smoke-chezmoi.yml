@@ -8,6 +8,11 @@ on:
       - "tests/smoke/**"
       - "scripts/smoke-chezmoi-scripts.sh"
       - ".github/workflows/ci-smoke-chezmoi.yml"
+      - "home/dot_claude/private_bunfig.toml.tmpl"
+      - "scripts/smoke-hook-deps-invariants.sh"
+      # The deployed bunfig is generated verbatim from this file, so a change
+      # here is what the hook-deps invariants' bunfig assertion exists to catch.
+      - "bunfig.toml"
   pull_request:
     branches: [master, main]
     paths:
@@ -15,6 +20,11 @@ on:
       - "tests/smoke/**"
       - "scripts/smoke-chezmoi-scripts.sh"
       - ".github/workflows/ci-smoke-chezmoi.yml"
+      - "home/dot_claude/private_bunfig.toml.tmpl"
+      - "scripts/smoke-hook-deps-invariants.sh"
+      # The deployed bunfig is generated verbatim from this file, so a change
+      # here is what the hook-deps invariants' bunfig assertion exists to catch.
+      - "bunfig.toml"
   workflow_dispatch:
 
 concurrency:
@@ -51,3 +61,6 @@ jobs:
 
       - name: Run smoke fixtures
         run: ./scripts/smoke-chezmoi-scripts.sh
+
+      - name: Run hook-deps invariants
+        run: ./scripts/smoke-hook-deps-invariants.sh

@@ -1,0 +1,94 @@
+{{ if ne .chezmoi.os "windows" -}}
+#!/bin/bash
+# The single entry point that installs hook dependencies into ~/.claude.
+#
+# Placement (do not move or rename without updating
+# scripts/smoke-hook-deps-invariants.sh):
+#   chezmoi applies every entry in ASCII order of its target path, and
+#   ".chezmoiscripts/..." sorts before ".claude/..." (".ch" < ".cl"). A script
+#   in that phase reads the PREVIOUS ~/.claude/package.json, which is why the
+#   old run_onchange_install-packages-7c script never installed a newly added
+#   dependency. Only the run_after_ phase is guaranteed to see the file that
+#   this same apply just deployed.
+#   The 00- prefix is reserved for this installer so it runs ahead of
+#   run_after_distill-insights, whose script imports a hook dependency.
+#
+# Exit code: 0 even when the install fails, so a transient failure does not
+# abort the remaining run_after_ scripts (sync-skills, gc,
+# refresh-go-latest-tools). The failure is recorded in MARKER_FILE and
+# run_after_zz-verify-hook-deps turns it into a non-zero apply at the end.
+#   The one exception is being unable to write MARKER_FILE: that is the
+#   deferral channel itself failing, so the failure is reported immediately
+#   rather than deferred into a channel that is not working.
+#
+# No node_modules guard: `bun install` is itself the cheapest accurate check of
+# whether the tree matches package.json. A separate guard is a proxy that can
+# drift from reality, which is the defect class this script exists to end.
+
+set -uo pipefail
+
+log() {
+    local level="${2:-INFO}"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $1"
+}
+
+CLAUDE_DIR="$HOME/.claude"
+MARKER_FILE="$CLAUDE_DIR/.hook-deps-install-failed"
+
+if [ ! -f "$CLAUDE_DIR/package.json" ]; then
+    log "No package.json at $CLAUDE_DIR, skipping hook deps install."
+    exit 0
+fi
+
+# Initialize mise environment to access bun: run_after_ scripts execute in a
+# non-interactive shell that does not read the user rc, so bun is not on PATH.
+if command -v mise &> /dev/null; then
+    if mise_env=$(mise env --shell bash 2>/dev/null); then
+        eval "$mise_env"
+    fi
+fi
+
+if ! command -v bun &> /dev/null; then
+    # Accepted non-goal: a machine without bun cannot install anything, and the
+    # install-packages scripts that provision bun run earlier in the same apply.
+    # Reaching here means bootstrap itself is incomplete, which this script is
+    # not the right place to report.
+    log "bun not found. Skipping hook deps install." "WARNING"
+    exit 0
+fi
+
+log "Installing hook dependencies in $CLAUDE_DIR..."
+if (cd "$CLAUDE_DIR" && bun install 2>&1); then
+    log "Hook dependencies are in sync" "SUCCESS"
+    # An undeletable marker (immutable flag, changed ownership) would make the
+    # verifier report a failure forever. Surface that rather than hide it.
+    if [ -e "$MARKER_FILE" ] && ! rm -f "$MARKER_FILE"; then
+        log "Could not clear stale $MARKER_FILE; remove it by hand" "ERROR"
+    fi
+else
+    log "bun install failed in $CLAUDE_DIR (see output above)" "ERROR"
+    # Write to a sibling temp file and rename into place. Creating the temp file
+    # under umask 077 fixes its mode at 600, and rename(2) carries that mode
+    # over atomically - redirecting into an existing MARKER_FILE would leave
+    # whatever mode it already had. Fixed fields only: bun's stderr is not
+    # copied here because this file outlives the run that produced it and would
+    # carry registry credentials if one is ever configured.
+    marker_tmp="${MARKER_FILE}.tmp.$$"
+    if (
+        umask 077
+        printf '%s\n' \
+            "at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+            "reason=bun-install-failed" \
+            "recover=cd ~/.claude && bun install" > "$marker_tmp"
+    ) && mv -f "$marker_tmp" "$MARKER_FILE"; then
+        log "Recorded the failure at $MARKER_FILE" "INFO"
+    else
+        rm -f "$marker_tmp"
+        log "Could not record the failure at $MARKER_FILE. Failing now." "ERROR"
+        log "Recover with: cd ~/.claude && bun install" "ERROR"
+        exit 1
+    fi
+fi
+
+exit 0
+{{ end -}}

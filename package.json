@@ -21,6 +21,7 @@
     "ci:local:typescript": "./scripts/ci-local.sh typescript",
     "lint:shell": "./scripts/lint-shell.sh",
     "smoke:chezmoi": "./scripts/smoke-chezmoi-scripts.sh",
+    "smoke:hook-deps": "./scripts/smoke-hook-deps-invariants.sh",
     "lint:actions": "./scripts/lint-actions.sh",
     "lint:codex": "./scripts/check-codex-config.sh",
     "lint:oxlint": "oxlint --ignore-pattern '.claude/skills/' --ignore-pattern '.codex/skills/' --ignore-pattern '.skills/' --ignore-pattern 'node_modules/' .",

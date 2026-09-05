@@ -39,7 +39,7 @@ chezmoi が managed 外のファイルを刈らないため、所有ディレク
 ### `run_after_` スクリプトの制約
 
 - chezmoi は属性 prefix を剥がした名前で辞書順ソートする。数字は英字より前に来るため `run_after_99-...` は `run_after_gc` / `run_after_sync-skills` より**先**に走る。最後に置くなら `zz-` 等
-- 非ゼロ終了すると `chezmoi apply` 全体が exit 1 になり、後続の `run_after_` も実行されない。参照実装は `run_after_ensure-hook-deps.sh.tmpl`（`set -e` を使わず `exit 0`）、反例は `run_after_gc.sh.tmpl`（`set -euo pipefail`）
+- 非ゼロ終了すると `chezmoi apply` 全体が exit 1 になり、後続の `run_after_` も実行されない。参照実装は `run_after_00-install-hook-deps.sh.tmpl`（`set -e` を使わず `exit 0` を保ち、失敗は marker に記録して末尾の `run_after_zz-verify-hook-deps.sh.tmpl` が非ゼロ終了に変換する）、反例は `run_after_gc.sh.tmpl`（`set -euo pipefail`）
 - `$CHEZMOI_EXECUTABLE` / `$CHEZMOI_SOURCE_DIR` / `$CHEZMOI_DEST_DIR` / `$CHEZMOI_CONFIG_FILE` は v2.71.1 で実際に export される。本リポジトリの既存スクリプトは 1 つも使っていない
 - **素の `chezmoi` を呼ぶと source は素の config から、dest は環境変数から解決され、食い違う。** 結果は「0 行」ではなく「もっともらしい間違った 201 行」になる。`--source` / `--destination` だけでは不十分で、`[data]` を含む config 自体が再解決されるため `--config "$CHEZMOI_CONFIG_FILE"` も要る
 - cwd は destDir。`chezmoi unmanaged` の相対パス引数は cwd 基準で解決されるため、絶対パスを使うべき
