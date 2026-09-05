@@ -60,6 +60,7 @@ source 側の `home/dot_claude` を bun workspace（root `package.json` の `wor
 
 ## References
 
+- `docs/research/hook-deps-install-investigation.md` — 本 ADR の根拠となった実測の手順と生の結果（順序の再現実験、bunfig の探索範囲、mise bootstrap のコスト、`minimumReleaseAge` の効き方）
 - `home/.chezmoiscripts/run_after_00-install-hook-deps.sh.tmpl` — 本 ADR の installer 実装（旧 `run_after_ensure-hook-deps.sh.tmpl` の改名・改修）
 - `home/.chezmoiscripts/run_after_zz-verify-hook-deps.sh.tmpl` — fail-loud を担う verifier 実装
 - `home/dot_claude/private_bunfig.toml.tmpl` — デプロイ先 `~/.claude/bunfig.toml` を root から verbatim 生成するテンプレート
