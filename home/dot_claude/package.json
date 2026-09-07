@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "0.3.251",
+    "@anthropic-ai/claude-agent-sdk": "0.3.252",
     "@mizchi/readability": "0.7.7",
     "cc-hooks-ts": "2.1.251",
     "ccstatusline": "2.2.27",
