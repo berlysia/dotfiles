@@ -37,3 +37,8 @@ declare module "cc-hooks-ts" {
     };
   }
 }
+
+// `Agent` (subagent_type, description, prompt) is already declared by
+// cc-hooks-ts itself (@anthropic-ai/claude-agent-sdk's AgentInput/AgentOutput)
+// — no augmentation needed here. `reviewer-run-recorder.ts` (spec K5) reads
+// `tool_input.subagent_type` from that existing type.
