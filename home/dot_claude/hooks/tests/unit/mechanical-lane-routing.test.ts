@@ -26,7 +26,13 @@ describe("S1: mechanical-lane routing row", () => {
   });
 
   it("criteria states 4 conditions and the AND requirement with no-fallback to two-layer", () => {
-    const c = wf();
+    // The 4-condition criteria detail moved from workflow.md into the
+    // document-workflow-reference skill (spec K8); workflow.md keeps only the
+    // routing-table row (asserted above). Read the skill for the criteria.
+    const c = readFileSync(
+      repoUrl(".skills/document-workflow-reference/SKILL.md"),
+      "utf-8",
+    );
     ok(
       c.includes("(i)") &&
         c.includes("(ii)") &&
@@ -37,7 +43,8 @@ describe("S1: mechanical-lane routing row", () => {
     ok(
       c.includes("1条件でも") ||
         c.includes("いずれか") ||
-        c.includes("1 条件でも"),
+        c.includes("1 条件でも") ||
+        c.includes("非該当なら"),
     );
     ok(c.includes("判定根拠") && c.includes("plan.md"));
   });

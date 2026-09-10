@@ -1,263 +1,57 @@
-# Workflow Rules
+# Workflow — Operator Guide
 
-## Session Scoping
+これはモデルが Document Workflow を実行するための操作ガイド。行動する順に読む。機構の詳細（hash 3 種の意味、DOCUMENT_WORKFLOW_DIR 引き継ぎ、S3 移行手順、carry-forward の責務分離、mechanical-lane の全条件、起動軸）は `/document-workflow-reference` skill に分離してある。判断に迷ったらそれを読む。
 
-- One focused goal per session (investigate OR implement, not both)
-- For multi-phase work: separate investigation, planning, and implementation into distinct sessions
-- Use sub-agents (Task tool with Explore agent) for codebase investigation to preserve main context
-- Track cross-session progress with TaskCreate when work spans multiple sessions
-
-### Session Artifact Retention
-
-`.tmp/sessions/` は GC スクリプトにより **7日超で自動削除** される。セッション中に作成した成果物を残す必要がある場合、セッション終了前に以下のいずれかに再配置すること:
-
-- **設計判断**: `docs/decisions/` に ADR として記録
-- **実装計画（未着手・途中）**: `docs/plans/` に移動
-- **調査結果**: `docs/` 配下の適切な場所に移動
-
-`.tmp/sessions/` に残したまま放置された成果物は、7日後に予告なく削除される。
-
-**`.tmp/docs/` は永続扱い**: `.tmp/docs/` 配下は GC 対象外。`home/.chezmoiscripts/run_after_gc.sh.tmpl` の GC 処理が `.tmp/sessions/` の path-prefix のみを `find -mindepth 1 -maxdepth 1 -type d -mtime +7` で対象としているため、`.tmp/docs/` の内容は mtime によらず保持される。per-project CONTEXT.md (`.tmp/docs/CONTEXT.md`) はこの規約に基づき maturity を蓄積する。
-
-## Task Management
-
-- **Simple tasks** (1-2 steps): Execute directly without task tracking
-- **Medium tasks** (3-5 steps): Use TodoWrite for lightweight progress tracking
-- **Complex tasks** (6+ steps or multi-session): Use TaskCreate/TaskUpdate for full tracking
-- Avoid creating tasks for trivial operations — the overhead should not exceed the work itself
+成果物の置き場は `$DOCUMENT_WORKFLOW_DIR`（= `.tmp/sessions/<session-id 先頭8桁>`）。hook はこのパスを hook 入力から自力で導出するため、環境変数が無くても enforce は効く。
 
 ## Task Intake Routing
 
-タスク受付時に実行モードを判定してから着手する:
-
-| 条件                                                                  | 実行モード                               |
-| --------------------------------------------------------------------- | ---------------------------------------- |
-| 1-2 ステップ、1-2 ファイル                                            | 直接実行                                 |
-| 3-5 ステップ、明確な方針                                              | `/approach-check`                        |
-| 3-5 ステップ + 単一の設計判断                                         | **Document Workflow (plan.md のみ)**     |
-| mechanical-lane criteria 全 4 条件 AND 成立（下記、優先評価）         | **Document Workflow (plan.md のみ)**     |
-| 3-5 ステップ + 複数判断 OR 6+ ステップ + 単一判断 OR 複数サブシステム | **Document Workflow (spec + plan-N)**    |
-| Scope Guard 検知                                                      | `/scope-guard` → spec + 1..N plan に分解 |
-
-**Document Workflow 必須トリガー（いずれか1つで発動）**:
-
-- ADR の planning phase に該当する作業
-- アーキテクチャ・API設計・データモデルの変更
-- 探索と実装が混在するタスク（「調べてから実装」）
-- ユーザーが計画を要求した場合
-
-**モード判定の責務**: しきい値判定は **人間/Claude が routing 表を参照して行う**。`document-workflow-guard` hook は spec.md ファイル存在で二層モード判定するのみ（モード推奨は行わない）。判定の揺れを最小化するため routing 表に従って機械的に振り分ける。
-
-**禁止**: 上記トリガーに該当するタスクで `$DOCUMENT_WORKFLOW_DIR/plan.md` 承認前に実装へ着手すること（二層モード時は spec.md と plan-N.md の両方の承認が必要）
-
-**Note**: ステップ数が少なくても設計判断を伴う場合は Document Workflow 必須。Scope Guard が検知した場合は `/scope-guard` の推奨戦略に従う。設計判断が複数ある場合は二層モード (spec + plan-N)、単一判断ならステップ数次第で plan.md のみで足りる。
-
-### mechanical-lane criteria（ADR 抵触する小規模・機械的変更の軽量レーン）
-
-以下 **4 条件すべて（AND）** が成立する変更のみ mechanical-lane に分類し plan.md-only 単層へ routing する。判定責務は人間/Claude（routing 表参照、hook は観測しない）。本 row は「3-5 ステップ + 複数判断」以降の二層 row より優先評価する。
-
-- **(i)** スコープ内の全設計判断が「ユーザーがセッション内で明示確定済の _既存 ADR の特定条項_ の改訂」であり、net-new な設計空間がゼロ
-- **(ii)** 残差が決定論的変換（rename / move / 文字列置換）であり、新規 control flow / data model / API shape を導入しない
-- **(iii)** 既存テスト + typecheck が当該変換を被覆する（green ゲートを具体コマンドで定義: `pnpm run test` / `pnpm run typecheck`、bun プロジェクトでは `bun run test` / `bun run typecheck`）
-- **(iv)** 新規 ADR 自体を当該変更の設計記録とする（「複数判断」が「1 つの ADR 起草判断」に collapse）
-
-**1 条件でも非該当なら mechanical-lane 非該当 → `3-5 ステップ + 複数判断` 以降の二層 row に自動 fallback**（spec 層 4 レビュアー = decision-quality / greenfield 含む を維持）。mechanical-lane を選択した場合、**4 条件それぞれの該当根拠を plan.md に明記必須**（曖昧語のみの根拠は不可）。
-
-**guard 側バックストップ非対称（明示トレードオフ）**: `existsSync(spec.md)` シグナルはモード判定のみで、レーン分類（通常 / mechanical）を観測しない（ADR-0006 K1 境界を守るため意図的）。複雑な ADR 反転を mechanical と誤分類した場合の検出機構は guard 側に無く、緩和は本 criteria 4 条件 AND + 判定根拠明記のみ。これは既存 routing 表と同一の信頼モデル（mode 誤分類も guard が部分的にしか catch しないのと同水準）。
-
-### 起動軸（initiation: pull / push）
-
-上記 routing 表は **ceremony 軸**（手続きの重さ）のみを扱い、全行が「人間がタスクを surface して起動する（pull）」を前提とする。これと直交する第2軸として **起動軸** を定義する:
-
-- **pull（既定）**: 人間が起動する。実行場所はローカル session で、`document-workflow-guard` が実装書き込みを支配する。上記 routing 表の全行は pull に属する。
-- **push（CI/cron 専用）**: system がタスクを発見・起動する。実行場所は CI/cron のみで、出力は必ず PR。適用条件・安全境界は `@~/.claude/rules/autonomous-lane.md` の charter（C1 型ホワイトリスト / C2 可逆性 / C3 設計面非接触）に従う。ローカル session への自律 escape hatch は恒久的に非提供（guard 盲点の増幅を避ける）。
-
-```
-                起動: 人 pull              起動: system push
-高 ceremony  │ Document Workflow          │ （永久に空白＝設計判断は自律化しない）
-（設計判断）  │ = ローカル, guard 支配       │
-────────────┼───────────────────────────┼──────────────────────────────
-低 ceremony  │ 直接実行 / approach-check    │ 自律レーン (charter)
-（機械的）    │ = ローカル軽量               │ = CI/cron, 出力=PR, 型ホワイトリスト
-```
-
-右上象限（push × 設計判断）は**永久に空白**とする。設計判断（ADR / API / データモデル / routing 表自身の変更）を push に乗せることは禁止。`document-workflow-guard` は CI を管轄しない（ローカル fs 基準）ため、push レーンは guard とランタイムを共有せず並存し、衝突も bypass 穴も生じない。
-
-## Document Workflow Protocol (MANDATORY)
-
-ワークフロー成果物の置き場は `.tmp/sessions/<session-id 先頭8桁>`（例: `.tmp/sessions/abcd1234/`）。成果物はすべてこのディレクトリ配下に作成する。
-
-**hook はこのパスを hook 入力の `session_id` から自力で導出するため、環境変数が無くても enforce は効く。** `$DOCUMENT_WORKFLOW_DIR` は Bash から成果物を参照するための変数として引き続き `CLAUDE_ENV_FILE` 経由で供給されるが、ガードの有効・無効を左右しない。根拠は `docs/decisions/0013-workflow-dir-session-derivation.md`。
-
-### DOCUMENT_WORKFLOW_DIR の引き継ぎ（次セッションへ渡すとき）
-
-hook が dir を決める順序は 4 段（`home/dot_claude/hooks/lib/workflow-resolve.ts`）:
-
-1. `session_id` の形式検証
-2. `<cwd>/.tmp/sessions/<先頭8桁>` を導出
-3. **導出先の containment 検査** — ここで落ちると `unresolvable` になり、env は読まれない
-4. `DOCUMENT_WORKFLOW_DIR` があり、realpath containment と字句 prefix 検査の両方を満たす場合のみ override として採用
-
-containment を満たさない env は `env-rejected` として**捨てられ、導出値が使われる**。したがって**プロジェクト外を指す pin でガードを解除することはできない**（`.tmp/sessions/` 内の空ディレクトリを指す pin は採用されてガードが inactive になる、という残余は ADR-0013 の Consequences 4 を参照）。
-
-**既知の縮退**: リポジトリのサブディレクトリから `claude` を起動して**リポジトリルート基準の絶対パスで pin した**場合、その env は `env-rejected` になる。基準は hook が見る作業ディレクトリであってリポジトリルートではないため。この構成ではガードが armed にならないので、起動時サマリの `resolved:` 行を確認すること。
-
-- **session 途中の `export` は効かない**: Bash ツールのシェルは呼び出しごとに使い捨てなので、次セッション用プロンプトに `export DOCUMENT_WORKFLOW_DIR=...` を書くのは誤り（hook 側はそもそも env を必要としない）
-- **`/clear` すると dir が変わる**: `/clear` は session を終了して新しい session id を発行するため、SessionStart が再発火して `.tmp/sessions/<新 id 先頭8桁>` になる。プロセスは再起動しないので env で上書きもできず、前セッションの成果物は旧 dir に取り残される
-
-引き継ぎ方は状況で 2 通り:
-
-| 状況                                      | 方法                                                                                                                                                                                                           |
-| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/clear` して同じプロセスで続ける（通常） | 次のプロンプトに旧 dir パスを明示し、冒頭で下記のコピー手順を実行させる。auto-review hash は文書内容のみから算出される（`home/dot_claude/hooks/lib/document-hash.ts`）ため、パスが変わっても承認状態は保たれる |
-| `claude` を起動し直す                     | `DOCUMENT_WORKFLOW_DIR=.tmp/sessions/<旧 id 先頭8桁> claude "..."` と起動時 env で pin する（`--resume` でも同じく前置きする）                                                                                 |
-
-コピー手順は**空変数ガードとセットで、必ず同じ Bash 呼び出しの中で**実行する:
-
-```bash
-: "${DOCUMENT_WORKFLOW_DIR:?set by the SessionStart hook; unset means the workflow dir was unresolvable}"
-cp -a .tmp/sessions/<旧 id 先頭8桁>/. "$DOCUMENT_WORKFLOW_DIR"/
-```
-
-ガードを別呼び出しにすると、シェルが使い捨てなので次の呼び出しに効果が残らず `cp` 行が素で走る。**変数が空のまま `cp` が走ると `cp -a <src>/. /` になり、旧セッションの内容をルート直下へ展開する。**
-
-`DOCUMENT_WORKFLOW_DIR` が export されないケースは実在する（`home/dot_claude/hooks/implementations/session.ts:203-209`）。解決が `unresolvable` に終わった場合と、解決先のパスが shell export に不適な文字を含む場合で、いずれも起動時サマリに `DOCUMENT_WORKFLOW_DIR is not exported` が出る。
-
-### 共通フロー
-
-````
-1. 調査: 対象コードを深く読み `$DOCUMENT_WORKFLOW_DIR/research.md` を作成
-2. 計画: モードに応じた成果物を作成（下記 plan.md-only モード / spec + plan-N モード参照）
-3. 注釈反復: ユーザー注釈を反映し、都度「don't implement yet」を明示
-   - コードベース探索ゲート: 質問前に、コードを読めば答えが得られる不明点は自力で解消し、事実と推奨を提示する。ユーザーに聞くのはコードだけでは判断できない点のみ
-   - 依存質問の逐次化: 前の回答に依存する質問は同じラウンドに含めず、次ラウンドで聞く
-   - 推奨理由の明示: 選択肢を提示する際は推奨とその理由を1行で明示する
-4. 完成: 各成果物の `## Approval` で `Plan Status: complete` にする
-5. 自動レビュー: `plan-review-automation` が成果物の内容を分析し、層に応じた常時必須レビュアー（下記の SSoT 区間参照）+ コンテンツベースで選定した追加レビュアー（最大3つ）を並列実行推奨。`Review Status` と `<!-- auto-review: verdict=...; hash=...; reviewers=... -->` を更新する
-   - **5.1 Reviewer Outputs section の追記 (MANDATORY)**: reviewer 並列実行後、Claude は各 reviewer の verdict + 主指摘 1-2 文を spec/plan の auto-review marker 直前に `## Reviewer Outputs (Round N)` セクションとして追記する。N は当該文書の review round 数（1 から始まる）。フォーマット例:
-
-     ```markdown
-     ## Reviewer Outputs (Round 1)
-
-     ### logic-validator
-     - verdict: pass / needs-work / blocker
-     - 主指摘: <1-2 文>
-
-     ### scope-justification-reviewer
-     - verdict: ...
-     - 主指摘: ...
-
-     <!-- auto-review: verdict=...; hash=...; ... -->
-     ```
-
-     これは `lessons-learned-extractor.ts` (P12 hook) の入力主経路となる。section が無いと lessons 抽出は skip される（早期 return）。
-   - **5.2 入力 cap**: 各 reviewer の指摘記述は 1-2 文に絞る。長文 verbatim 引用は禁止（lessons-learned 抽出の noise になる）
-6. インテント整合性トリアージ: 全レビュー指摘を元のオーダーの本義と突き合わせ、意図を歪める指摘を除外する（詳細は後述）
-7. 承認: 人間が `Approval Status: approved` にする
-8. 実装: `Plan Status: complete` + `Review Status: pass` + `Approval Status: approved` + hash 一致を満たした後に着手し、タスク完了ごとに対象成果物を更新。**着手前に `model-offloading.md` の実装着手ゲート（オフロード宣言）を実施する**（Opus 以上のメインループが定型実装を直接抱え込むのを防ぐ）
-````
-
-### plan.md-only モード（軽量 spec 内包）
-
-**適用条件**: 3-5 ステップ + 単一の設計判断。
-
-**成果物**: `$DOCUMENT_WORKFLOW_DIR/research.md` + `$DOCUMENT_WORKFLOW_DIR/plan.md`
-
-`plan.md` には軽量 spec セクション（短文版）を内包する:
-
-- Goal: 1 行
-- Experience Delta: 1-2 行（Goal に同居も可）
-- Alternative Approaches (Greenfield View): 各案 1-3 行
-- Key Decisions: 箇条書き 1-3 行/件
-- Risks: 必要時のみ
-- Files / Tasks / ISO 25010 テスト計画
-- Approval
-
-ステップ数や設計判断が膨らんで二層モードへ昇格する場合は、軽量 spec セクションを抜き出して `spec.md` を作成し、Files/Tasks を `plan-1.md` / `plan-2.md` に切り出す。
-
-### spec + plan-N モード（二層）
-
-**適用条件**: 3-5 ステップ + 複数判断 OR 6+ ステップ + 単一判断 OR 複数サブシステム OR Scope Guard 検知。
-
-**成果物**:
-
-```
-$DOCUMENT_WORKFLOW_DIR/
-  research.md
-  spec.md             # 設計層（1 つ）
-  plan-1.md           # 実行層 1
-  plan-2.md           # 実行層 2 (任意)
-  ...
-```
-
-- **spec.md**: Goal / Experience Delta / Architecture / Alternative Approaches (Greenfield View) / Key Decisions / Risks / ISO 25010 次元選択 / Approval
-  - テンプレート: `home/dot_claude/templates/spec.md` を参照
-- **plan-N.md**: 冒頭 `<!-- spec-ref: spec.md -->` / Files (fenced code block + 1 行 1 パス) / Tasks (バイトサイズ TDD scaffold) / ISO 25010 具体テストケース / Approval (`parent-spec-hash` フィールド必須)
-  - テンプレート: `home/dot_claude/templates/plan-execution.md` を参照
-  - ファイル名は `plan-1.md` / `plan-2.md` ... の連番形式（`^plan-[0-9]+\.md$` 完全一致、欠番許容）
-  - `parent-spec-hash` フィールドは `plan-review-automation` hook が auto-review marker 生成時に挿入する
-
-**Files セクションの形式仕様**: plan-N.md の `## Files` は fenced code block (` ``` ` 区切り) + 1 行 1 パス（プロジェクトルート相対）。`#` 始まりの行と空行は無視。それ以外の非パス行（インデント・タブ混入・複数パス連結等）は形式違反として `document-workflow-guard` が conservative deny する。
-
-**承認連鎖**:
-
-1. spec.md を `Plan Status: complete` → `Review Status: pass` → `Approval Status: approved` の順で進める
-2. spec 承認後、plan-N.md を独立に同手順で承認
-3. 実装系書き込み時に `document-workflow-guard` は: (a) spec.md 三状態 + hash 一致、(b) 対象ファイルの所属 plan-N.md 三状態 + hash 一致、(c) plan-N.md の `parent-spec-hash` と現 spec.md hash 一致、を read-snapshot で検証
-
-**state machine 遷移ルール**: spec.md 編集（hash 変動）後は plan-N.md の `parent-spec-hash` が不一致になり、自動的に実装ブロック（K7 連鎖検証）。`parent-spec-hash` フィールドが欠落している plan-N.md は不一致と同等扱いで conservative deny（bypass 防止）。
-
-**進行中 plan.md → 二層モード昇格手順**:
-
-1. 軽量 spec セクション（Goal / Greenfield / Decisions 等）を `spec.md` に抽出
-2. Files / Tasks を `plan-1.md` （以降 plan-2.md ...）に切り出す
-3. spec.md / plan-N.md 各々で承認再取得（`Plan Status: draft` から再開）
-
-**spec.md 改訂後の plan-N.md 再同期手順**:
-
-1. spec.md を編集して `plan-review-automation` を発火させる
-2. plan-N.md の Approval セクションを更新（`Review Status: pending` および `Approval Status: pending` の両方に戻す。Approval を approved のままにすると K7 で実装ブロックされるが、状態整合性のため明示的に戻す）
-3. `plan-review-automation` が plan-N.md の auto-review marker に新しい `parent-spec-hash` を埋める
-4. 必要なら plan-N.md 本文を更新して再レビュー → 人間による再承認
-
-### prescribed-fix carry-forward（再レビュー省略の機械判定）
-
-needs-work 指摘の反映後、以下 3 条件の **AND** 成立時のみ再レビューを省略し直前 verdict を carry-forward する:
-
-- (a) 指摘が文言精度クラス（No Placeholders 禁則違反の修正等）
-- (b) reviewer が verbatim 置換を指定している
-- (c) `{Key Decisions, Files/Scope, Tasks}` の **section-scoped design-hash** が直近 `verdict=needs-work` marker の `design-hash` から不変
-
-`design-hash` は `plan-review-automation` hook が auto-review marker の `design-hash=<sha>` フィールドに記入する（K5 と同じ hook、人手記入なし）。1 条件でも欠ければ全再レビュー。`design-hash` フィールド欠落の marker は (c) 不成立扱い（conservative、`parent-spec-hash` 欠落と同方針）。
-
-**責務分離（重要）**: (a) 文言精度クラス・(b) reviewer verbatim 指定 は reviewer/人間が「prescribed と判断した指摘」という運用文脈で成立する条件であり、**hook は (a)(b) を機械判定しない**。hook が機械検証するのは (c) section-scoped design-hash 不変のみ（`canCarryForwardVerdict`）。(a)(b) は本節の運用規律として担保し、(c) は hook 層が担保する。3 条件 AND は層をまたいで成立する。
-
-**fallback**: section-scoped design-hash 機構が未デプロイの場合、本ルールは no-skip stance（再レビューは走らせるが省略はしない）に縮退する。「Claude が diff を目視」での (c) 判定は禁止（laundering 経路）。
-
-### S3 デプロイ移行手順（hash normalizer 変更時、旧 marker 互換）
-
-S3（Reviewer Outputs / intent-triage の hash 中立化）デプロイ後、旧 normalizer で承認済の進行中 plan/spec は marker hash が変わり `document-workflow-guard` が conservative deny する（fail-safe 方向）。回復は **新規セッションのみ適用**に加え以下を実装再開前に完了:
-
-1. **(R2) apply 後 hash parity 即検証**: `chezmoi apply` は非アトミック（`plan-review-automation.ts` / `document-workflow-guard.ts` / `lib/document-hash.ts` が別バッチになり得る）。apply 直後に **`bun run test`（全テスト）** を実行し、両 hook が同一 plan に同一 hash を返す **hash parity** を `document-hash.test.ts` の legacy↔new 境界 + parity ケース **および** `document-workflow-guard.test.ts`（guard hook が委譲ラッパ経由で共有モジュールを実際に消費する経路を被覆）が両方緑であることで即検証する。`document-hash.test.ts` 単独は共有モジュール関数のみ検証で guard hook 統合経路を被覆しないため不十分。
-2. **(R4a) 旧 marker 再計算**: 進行中 plan/spec の `<!-- auto-review: ... -->` の `hash` を新 normalizer で再算出し書き換える（hook の marker テンプレ提示値を採用）。
-3. **(R4b) `plan-review.cache.json` 無効化**: 対象キャッシュは `resolveWorkflowPaths(planDir)` で **plan ファイルと同ディレクトリに co-locate** される（`plan-review-automation.ts` の `planDir = dirname(対象 plan の絶対パス)`）。標準構成（plan-N.md が `$DOCUMENT_WORKFLOW_DIR` 直下）では `$DOCUMENT_WORKFLOW_DIR/plan-review.cache.json` を削除。サブディレクトリ構成では各 plan ファイルと同ディレクトリの `plan-review.cache.json` を削除する（誤って無関係パスを削除しない）。これで `canSkip` の `cache?.planHash===planHash` 短絡が旧 hash で誤 skip するのを防ぐ。
-4. **(R4c) 順序保証**: 1→2→3 完了前に実装を再開しない。回復前は guard が conservative deny（silent pass しない）。
-
-### No Placeholders 禁則（plan.md / spec.md / plan-N.md 共通）
-
-以下を成果物に残してはならない（実装フェーズ前に全て解消する）:
-
-- "TBD" / "TODO" / "後で実装" / "fill in details"
-- "適切にエラー処理" / "バリデーションを追加" / "エッジケース対応"
-- "上記と同様" / "Task N と類似"（同じコードを繰り返し書く。タスクは独立に読まれる）
-- 他タスクで未定義の型・関数・メソッドへの参照
-- 評価語のみの根拠（"シンプル" / "安全" / "リスクが低い" のみで具体的根拠なし）
-
-判定基準に曖昧語を使わない（「正しく」「適切に」「問題なく」→ 具体的な期待値・状態で記述）。境界値・異常値が関わる場合は具体的な値を明記する。
-
-### 常時必須レビュアー（層別、並列実行）
-
-**spec 層レビュアー（4 名）**:
+タスク受付時に実行モードを決めてから着手する。
+
+| 条件                                                                   | モード                                |
+| ---------------------------------------------------------------------- | ------------------------------------- |
+| 1-2 ステップ、1-2 ファイル                                             | 直接実行                              |
+| 3-5 ステップ、明確な方針                                               | `/approach-check`                     |
+| 3-5 ステップ + 単一の設計判断                                          | Document Workflow（plan.md のみ）     |
+| mechanical-lane 4 条件 AND 成立（`/document-workflow-reference` 参照） | Document Workflow（plan.md のみ）     |
+| 3-5 ステップ + 複数判断 / 6+ ステップ / 複数サブシステム               | Document Workflow（spec + plan-N）    |
+| Scope Guard 検知                                                       | `/scope-guard` → spec + plan-N に分解 |
+
+**Document Workflow 必須トリガー**（いずれか 1 つ）: ADR planning phase / アーキテクチャ・API 設計・データモデルの変更 / 探索と実装が混在するタスク / ユーザーが計画を要求。
+
+**禁止**: これらに該当するタスクで、承認前に実装へ着手すること。設計判断を伴うならステップ数が少なくても Document Workflow を使う。
+
+## 共通フロー（8 ステップ）
+
+1. **調査**: 対象コードを深く読み `$DOCUMENT_WORKFLOW_DIR/research.md` を書く。
+2. **計画**: モードに応じ `plan.md`（単層）または `spec.md` + `plan-1.md`…（二層）を書く。テンプレートは `~/.claude/templates/spec.md` / `plan-execution.md`。
+3. **注釈反復**: ユーザー注釈を反映し、都度「まだ実装しない」を明示する。
+   - **コードベース探索ゲート**: 質問の前に、コードを読めば分かる不明点は自力で解消し、事実と推奨を出す。聞くのはコードだけでは決められない点のみ。
+   - **依存質問の逐次化**: 前の回答に依存する質問は次ラウンドに回す。
+   - 選択肢を出すときは推奨とその理由を 1 行で添える。
+4. **完成**: 各成果物の `## Approval` を `Plan Status: complete` にする。
+5. **自動レビュー**: `plan-review-automation` が編集を検知して層別のレビュアー集合を推奨する。**推奨された全レビュアーを Agent tool で並列実行する**。
+   - **5.1 Reviewer Outputs 追記（必須）**: 各 reviewer の verdict + 主指摘 1-2 文を、auto-review marker の直前に `## Reviewer Outputs (Round N)` として書く。骨格は `workflow-cli round <doc>` が作る。このセクションが無いと lessons 抽出が skip される。長文の逐語引用はしない。
+   - **marker と Review Status は `workflow-cli` が書く**: レビュー後に `workflow-cli round <doc>`（骨格挿入）→ reviewer 実行 → `workflow-cli stamp <doc> --verdict <pass|needs-work|blocker> --reviewers a+b`。stamp は hash / design-hash / parent-spec-hash を自分で計算して marker を書く。**hash を手で転記しない**。stamp は reviewer が実際に起動された証跡（`reviewer-runs.log`）が無いと通らない。
+6. **インテント整合性トリアージ（必須）**: `/intent-alignment-triage` を実行し、元のオーダーの本義を歪めてスコープを縮める指摘（divergent）を除外する。結果は `workflow-cli triage <doc> --adopted N --excluded M` で marker に記録する。トリアージ前にレビュー結果をユーザーへ提示しない。
+7. **承認**: 人間が `Approval Status: approved` にする（下記 CRITICAL）。
+8. **実装**: 三状態 + hash 一致がそろってから着手する。**着手前にオフロード判定を 1 行宣言する**（`@~/.claude/rules/model-offloading.md`）。
+
+### ターン終端規則（重要）
+
+「〜します」「走らせます」と宣言したら、そのターン内で実際に実行する。**宣言だけしてツールを呼ばずにターンを閉じない**。レビュアーの結果が全部届いたら、報告して止まらず、その場で次の step に進む。人間の入力を待つ場合は、最終行に「何を待っているか」を書く。
+
+## 二層モード（spec + plan-N）
+
+- `spec.md` = 設計承認単位（独立 hash）。`plan-N.md` = 実行承認単位（独立 hash + `parent-spec-hash` 連鎖）。
+- 承認順: spec.md を complete → pass → approved にしてから、各 plan-N.md を独立に同手順で承認する。
+- `document-workflow-guard` は実装系書き込み時に、(a) spec.md 三状態 + hash 一致、(b) 対象ファイルが属する plan-N.md 三状態 + hash 一致、(c) plan-N.md の `parent-spec-hash` = 現 spec.md hash、を検証する。いずれか欠けると deny。
+- spec.md を編集して hash が動いたら plan-N.md の `parent-spec-hash` が不一致になり自動で実装ブロックされる。plan-N.md の Approval を pending に戻し、再レビュー・再承認する。
+- deny された場合、guard は「どの条件が不成立か・見つかった status 行・次の 1 手」を診断で示す。`workflow-cli status` で同じ診断を確認できる。文書を Bash の heredoc で書いても検知される。承認前のインタプリタ書き込みは保守的に deny される。
+
+## 常時必須レビュアー（層別、並列実行）
+
+**spec 層（plan.md 単層も同じ 4 名）**:
 
 <!-- ssot:spec-reviewers:start -->
 
@@ -268,7 +62,7 @@ S3（Reviewer Outputs / intent-triage の hash 中立化）デプロイ後、旧
 
 <!-- ssot:spec-reviewers:end -->
 
-**plan 層レビュアー（2 名 + コンテンツベース選定）**:
+**plan 層（二層モードの plan-N.md、+ コンテンツベースで最大 3 名）**:
 
 <!-- ssot:plan-reviewers:start -->
 
@@ -277,168 +71,59 @@ S3（Reviewer Outputs / intent-triage の hash 中立化）デプロイ後、旧
 
 <!-- ssot:plan-reviewers:end -->
 
-plan-N.md は実行層であり、設計判断は spec.md で済んでいる前提のため、`decision-quality-reviewer` / `greenfield-perspective-reviewer` は spec 層のみに常駐させる。plan 層では追加で `test-quality-evaluator` / `code-simplicity-reviewer` 等をコンテンツベースで自動選定する。
+これらは Agent tool の subagent_type であって Skill ではない。SSoT はコード定数（`plan-review-automation.ts` の `SPEC_REVIEWERS` / `PLAN_REVIEWERS`、実体は `lib/workflow-review-core.ts`）で、上の区間と CI で同期される。
 
-**plan.md-only モード（単層）の常時必須レビュアー**は spec 層と同じ 4 名（軽量 spec を内包しているため設計レビュアーが必要）。
+## Alternative Approaches (Greenfield View) — 設計層 MANDATORY
 
-両配列に同名 slug (`logic-validator` / `scope-justification-reviewer`) が出現することは許容する。drift detection は各マーカー区間 × 各定数配列の独立 deepStrictEqual で実施（ADR-0005 / ADR-0006 規約）。
+設計層（単層は plan.md、二層は spec.md）に必ず設ける。差分最小案 / 白紙設計案 / 採用案と理由。白紙案には「ゼロから設計したらこの選択になった理由（起源）」を書く。採用理由は具体的根拠（既存テスト・外部契約・計測コスト）に基づく。評価語のみ（「シンプル」「安全」「リスクが低い」）は不可。バグ修正等で差分最小が妥当な場合も両案を比較した形跡を残す。
 
-これらのリストは `home/dot_claude/hooks/implementations/plan-review-automation.ts` の `SPEC_REVIEWERS` / `PLAN_REVIEWERS` 定数と CI レベルで同期される（ADR-0006 参照）。
+## No Placeholders 禁則
 
-**CRITICAL: 承認は人間のみが行う。** ユーザーが明示的に「approve」「承認」と発言するか、`/execute-plan` を指示しない限り、Claudeは `Approval Status: approved` に変更したり、実装へ着手してはならない。
+実装フェーズ前に全て解消する: "TBD" / "TODO" / "後で実装" / "適切に〜" / "上記と同様" / "Task N と類似" / 他タスクで未定義の型・関数への参照 / 評価語のみの根拠。判定基準に曖昧語（「正しく」「適切に」「問題なく」）を使わず、具体的な期待値・状態で書く。境界値・異常値は具体値を明記する。
 
-- `$DOCUMENT_WORKFLOW_DIR/research.md` / `spec.md` / `plan.md` / `plan-N.md` への編集は承認前でも許可される
-- `Write/Edit/NotebookEdit` で spec.md / plan.md / plan-N.md を更新すると `plan-review-automation` が自動実行される
-- `Write/Edit/NotebookEdit/Bash` の実装系書き込みは `document-workflow-guard` が制御する
-- `document-workflow-guard` は enforce モードで動作し、二層モード時は spec.md と対象 plan-N.md の両方が承認 + hash 一致 + parent-spec-hash 一致でない場合に実装をブロックする
-- spec.md 不在時は単層モード（plan.md ベース）に自動 fallback する
-- **実装フェーズの off-plan 緩和**: spec.md が承認 + hash 一致 + verdict=pass、かつ少なくとも1つの plan-N.md が同様に有効な場合のみ、「どの plan-N.md の Files セクションにも記載されていないファイル」への書き込みを deny ではなく warn + 監査ログ (`<wfDir>/off-plan-writes.log`) に降格する。hash drift / parent-spec-hash 不一致 / 所属 plan の未承認は依然 deny（設計が動いている兆候のため）。off-plan-writes.log は実装中の発見ファイルを後から plan-N.md に追記する運用の入口
+## テスト計画（ISO 25010）
 
-### テスト計画 (ISO 25010 準拠)
+plan に `## テスト計画 (ISO 25010)` を設け、変更に関連する品質特性を選び、各特性のテスト方法と判定基準を「入力/操作 → 期待結果」形式で書く。最低 1 特性。対象外にした特性は理由を添える。特性選択ガイドは `/document-workflow-reference`。
 
-plan.md に `## テスト計画 (ISO 25010)` セクションを設け、変更内容に関連する品質特性を明示的に選択し、各特性に対するテスト/検証方法を記載する。
+## CRITICAL: 承認は人間のみ
 
-**記載ルール**:
+ユーザーが明示的に「approve」「承認」と発言するか `/execute-plan` を指示しない限り、Claude は `Approval Status: approved` に変更してはならず、実装へ着手してはならない。`workflow-cli` は Approval 行に触れる変更を拒否する。
 
-- 変更の性質に応じて、ISO 25010 の 8 品質特性から該当するものを選択する
-- 各特性について副特性レベルでテスト方法と判定基準を記載する
-- 対象外とした特性は理由とともに記載する（網羅的に列挙する必要はなく、検討したが除外したものを記載）
-- 最低 1 つの品質特性を含めること
+- research/spec/plan/plan-N への編集は承認前でも許可される。
+- 実装系書き込み（Write/Edit/NotebookEdit/Bash）は `document-workflow-guard` が enforce で制御する。
+- 実装フェーズでは、承認済み spec + plan の三状態 + hash 一致がそろっていれば、どの plan-N.md の Files にも無いファイルへの書き込みは deny でなく warn + `off-plan-writes.log` に降格する。hash drift / parent-spec-hash 不一致 / 未承認は依然 deny。
 
-**品質特性の選択ガイド**（参考。変更の実態に応じて判断すること）:
+## Executive Summary（レビュー依頼時 MANDATORY）
 
-| 変更の種類            | 優先的に検討すべき品質特性           |
-| --------------------- | ------------------------------------ |
-| 新機能追加            | 機能適合性、使用性、信頼性           |
-| バグ修正              | 機能適合性（正確性）、信頼性         |
-| パフォーマンス改善    | 性能効率性                           |
-| リファクタリング      | 保守性、機能適合性（リグレッション） |
-| インフラ/デプロイ変更 | 移植性、互換性、信頼性               |
-| セキュリティ対応      | セキュリティ、信頼性                 |
-| API/データモデル変更  | 互換性、機能適合性、セキュリティ     |
-
-**テスト観点の記述品質ルール**:
-
-- 判定基準に曖昧語を使用しない（「正しく」「適切に」「問題なく」→ 具体的な期待値・状態で記述）
-- 各テスト観点は「入力/操作 → 期待される結果」の形式で検証可能にする
-- 境界値・異常値が関わる場合は具体的な値を明記する
-
-**過去知見の参照**:
-
-- テスト観点作成時にプロジェクトの既存テストパターンを参照する
-- テストで見落としが発覚した場合はテスト観点としてプロジェクトの知識ベースに記録する
-
-### Alternative Approaches (Greenfield View) — MANDATORY 設計層セクション
-
-`## Alternative Approaches (Greenfield View)` セクションは設計層に必ず設ける。配置先はモードによって異なる:
-
-- **plan.md-only モード（単層）**: plan.md 内（軽量 spec の一部として、各案 1-3 行の短文版）
-- **spec + plan-N モード（二層）**: spec.md 内（各案を段落で展開）
-
-これは Claude が「既存コードへの差分最小」を出発点にする傾向（incremental bias）を構造的に抑制するためのもの。下流の `greenfield-perspective-reviewer` がこのセクションを検証する。
-
-**必須要素**:
-
-```
-## Alternative Approaches (Greenfield View)
-
-- **差分最小案 (Incremental)**: 既存コードに最小限の手を入れた場合の方針
-- **白紙設計案 (Greenfield)**: このオーダーをゼロから設計するならどう実現するか
-- **採用案と理由**: どちらを採用するか、または両者のハイブリッドか。選択理由
-```
-
-**記述品質ルール**（greenfield-perspective-reviewer の formalism checklist と対応）:
-
-- (a) 白紙案の記述には「ゼロから設計したらこの選択になった理由」を含める。単なる結果の描写ではなく、起源 (origin) を書く
-- (b) 採用案理由は具体的根拠（既存テスト・外部契約・計測コスト）に基づく。「シンプル」「安全」「リスクが低い」等の評価語のみは不可
-- (c) 「白紙案 = 差分最小案」とする結論は、オーダーの本義に照らして本当に同じ形になる場合にのみ許容する。バグ修正等で正当な場合も、両案を比較した形跡を残す（「白紙でも結局同じ shape に落ちる」と書く前に、なぜそう言えるかを 1 行で説明）
-
-**適用範囲**: 全 Document Workflow に必須。バグ修正等で本来差分最小が妥当なケースも例外なし（思考の経由を強制するため）。
-
-### Intent Alignment Triage (Step 6, MANDATORY)
-
-自動レビュー（step 5）完了後、ユーザーに結果を提示する前に `/intent-alignment-triage` を実行する。
-
-**目的**: レビュアーエージェントは各専門領域で最適化するため、「元のオーダーの本義を歪めてスコープを縮小する」指摘を混入させることがある。このフェーズで全指摘を元のオーダーと突き合わせ、意図を歪める指摘を除外する。
-
-**フロー**:
-
-1. 自動レビューの全指摘を収集
-2. `/intent-alignment-triage` を実行し、各指摘を aligned / neutral / divergent に分類
-3. divergent 指摘を除外した上で Review Status を再評価
-4. トリアージ結果を `<!-- intent-triage: adopted=N; excluded=M; at=ISO8601 -->` マーカーとして plan.md に追記
-5. Executive Summary にトリアージ結果を含めてユーザーに提示
-
-**禁止**: トリアージを省略して自動レビュー結果をそのままユーザーに提示すること
-
-### Executive Summary (MANDATORY on Review Request)
-
-`$DOCUMENT_WORKFLOW_DIR/plan.md` を完成させてユーザーに承認レビューを依頼する時点（step 4 完了後、step 5-6 の自動レビュー・トリアージが完了した段階）で、**エグゼクティブサマリー** をユーザーへの応答の冒頭に必ず提示する。目的は、ユーザーが plan.md 全文や会話ログを辿らずに、承認可否を判断するための要点を一発で把握できるようにすること。
-
-**提示タイミング**:
-
-- plan.md の `Plan Status: complete` にした直後
-- `plan-review-automation` が完了し、`Review Status` と `<!-- auto-review: verdict=...; reviewers=... -->` が plan.md に反映された後
-- `/intent-alignment-triage` が完了し、divergent 指摘の除外が反映された後
-- ユーザーに `Approval Status: approved` を依頼する応答の先頭
-
-**必須フィールド**（欠落させず、該当なしは `N/A` と明記）:
+plan/spec を complete にし、自動レビュー + トリアージが済んだら、承認を依頼する応答の冒頭に必ず提示する。各フィールドは 1-3 行、該当なしは `N/A`。
 
 ```
 ## Executive Summary (Review Request)
-
-- **Goal**: <plan.md の目的を 1 行で>
-- **Proposed Approach**: <採用する方針の本質を 1-3 行で>
-- **Experience Delta**: <この変更で体験がどう変わるか。変更前→変更後の具体的な違いを 1-2 行で>
-- **Scope**: <変更予定ファイル/モジュールを最大5件>
-- **Key Decisions**: <採用した設計判断と、却下した代替案を1-2行ずつ>
-- **Risks / Unknowns**: <既知リスク・未検証の前提・影響範囲の広い箇所>
-- **Review Status**: verdict=<pass/fail/needs-revision> / reviewers=<agent名カンマ区切り> / hash=<auto-review の hash>
-- **Open Questions**: <ユーザー判断を仰ぎたい点（なければ N/A）>
+- **Goal**: <目的を 1 行>
+- **Proposed Approach**: <採用方針の本質 1-3 行>
+- **Experience Delta**: <変更前→変更後の体験差 1-2 行>
+- **Scope**: <変更予定ファイル/モジュール 最大5件>
+- **Key Decisions**: <採用した判断と却下した代替案 各1-2行>
+- **Risks / Unknowns**: <既知リスク・未検証の前提>
+- **Review Status**: verdict / reviewers / hash（auto-review marker から）
+- **Open Questions**: <ユーザー判断を仰ぐ点、なければ N/A>
 - **Next Action**: `Approval Status: approved` にしてください / 追加修正を依頼してください
 ```
 
-**原則**:
-
-- **目的整合性**: Experience Delta が Goal の達成に直結しているか自己検証する。体験変化を言語化できない変更は目的を見失っている兆候
-- **判断材料に絞る**: 実装詳細の羅列ではなく、承認判断に必要な情報（方針・リスク・未解決点）を優先
-- **plan.md との一貫性**: サマリー内容は plan.md から投影する。plan.md にない主張は書かない
-- **事実のみ**: 自動レビューを通さずに `verdict=pass` と書かない（`code-quality.md` の Communication Accuracy 準拠）
-- **簡潔性**: 各フィールド1-3行まで。詳細は plan.md 本文に委ねる
-- **更新時**: plan.md を改訂して再レビューを依頼する場合は、変更点を明示した新サマリーを再提示する
+Experience Delta が Goal の達成に直結しているか自己検証する。自動レビューを通さずに `verdict=pass` と書かない。
 
 ## Scope Guard
 
-タスク受付時に以下の兆候が **複数** 該当する場合、スコープ過大の疑いありと判定する:
+次の兆候が複数該当したらスコープ過大を疑う: 広範囲キーワード（すべて/全体/一通り）/ 複合動詞（調査して実装）/ 終了条件の曖昧さ（良い感じに/最適化）/ 3 つ以上の独立コンポーネント / 10 ステップ以上 / 段階的決定の必要性。検知したら簡潔に伝え、`/scope-guard` を実行し、推奨戦略の承認を得てから着手する。
 
-- **広範囲キーワード**: 「すべて」「全体」「一通り」「各コンポーネント」
-- **複合動詞**: 「調査して実装」「設計して構築」（探索 + 実装の混在）
-- **終了条件の曖昧さ**: 「良い感じに」「きれいに」「最適化」（定量基準なし）
-- **複数モジュール列挙**: 3つ以上の独立コンポーネントへの言及
-- **推定ステップ数**: 10ステップ以上の見積もり
-- **段階的決定の必要性**: 「Xを調べてからYを決める」
+## Session Artifact Retention
 
-**検知時の行動**:
-
-1. ユーザーにスコープの大きさについて簡潔に伝える
-2. `/scope-guard` を実行する（提案ではなく実行）
-3. 推奨戦略を提示し、ユーザー承認を得てから着手する
-
-**例外**: ユーザーが明示的に不要と指示した場合のみスキップ可能
+`.tmp/sessions/` は 7 日超で GC される。残す成果物はセッション終了前に再配置する: 設計判断 → `docs/decisions/` の ADR、実装計画 → `docs/plans/`、調査結果 → `docs/` 配下。`.tmp/docs/` は GC 対象外（永続）。
 
 ## Task Completion Protocol
 
-作業停止前の必須チェック：
+停止前に確認する: 元のタスクが完全に達成されたか / テスト・ビルドが成功しているか / 依頼されたコミットが完了したか。テスト失敗・明確な次手順・明示的なコミット依頼があれば継続する。ユーザーの期待を勝手に下げたり steering を無効化しない。
 
-- 元のタスクが完全に達成されたか
-- テスト・ビルドが成功しているか
-- 明示的に依頼されたコミットが完了しているか
+## 起動軸（pull / push）
 
-**継続すべきケース**:
-
-- Tests/build failing → Fix and retry
-- Clear next steps → Execute them
-- Explicit commit request → Complete it
-- Ambiguous requirements → Ask clarification
-
-**Critical**: Never unilaterally lower user expectations or disable steering.
+上の全フローは人間が起動する pull レーン。system が発見・起動する push レーン（CI/cron 専用、出力は必ず PR）は `@~/.claude/rules/autonomous-lane.md` の charter に従う。設計判断を push に乗せることは禁止。

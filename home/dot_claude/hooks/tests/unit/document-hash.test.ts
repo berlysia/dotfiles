@@ -282,11 +282,23 @@ describe("K7: prescribed-fix carry-forward (design-hash baseline)", () => {
 });
 
 describe("S2 doc: prescribed-fix convergence rule presence", () => {
-  it("workflow.md states the 3-condition AND and no-skip fallback", () => {
-    const wf = readFileSync(
-      fileURLToPath(new URL("../../../rules/workflow.md", import.meta.url)),
+  // The detailed mechanism moved from the always-loaded workflow.md operator
+  // guide into the document-workflow-reference skill (spec K8). The invariant
+  // — the rule is documented and discoverable — is preserved; only its
+  // location changed, so these assertions read the reference skill.
+  const referenceSkill = () =>
+    readFileSync(
+      fileURLToPath(
+        new URL(
+          "../../../../../.skills/document-workflow-reference/SKILL.md",
+          import.meta.url,
+        ),
+      ),
       "utf-8",
     );
+
+  it("reference skill states the 3-condition AND and no-skip fallback", () => {
+    const wf = referenceSkill();
     ok(wf.includes("prescribed-fix"));
     ok(wf.includes("design-hash"));
     ok(
@@ -295,11 +307,8 @@ describe("S2 doc: prescribed-fix convergence rule presence", () => {
     );
   });
 
-  it("workflow.md S3 migration runbook includes review-cache invalidation and parity verify", () => {
-    const wf = readFileSync(
-      fileURLToPath(new URL("../../../rules/workflow.md", import.meta.url)),
-      "utf-8",
-    );
+  it("reference skill S3 migration runbook includes review-cache invalidation and parity verify", () => {
+    const wf = referenceSkill();
     ok(wf.includes("plan-review.cache.json"));
     ok(wf.includes("hash parity") || wf.includes("hash 一致を即検証"));
     ok(wf.includes("実装再開前"));
