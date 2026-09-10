@@ -1,6 +1,6 @@
 #!/usr/bin/env -S bun run --silent
 
-import { appendFileSync, existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineHook } from "cc-hooks-ts";
 import { extractCommandsStructured } from "../lib/bash-parser.ts";
@@ -9,14 +9,29 @@ import { getCommandFromToolInput } from "../lib/command-parsing.ts";
 import { createDenyResponse } from "../lib/context-helpers.ts";
 import { expandTilde } from "../lib/path-utils.ts";
 import { sanitizeForDisplay } from "../lib/sanitize-display.ts";
+import { appendOffPlanLog } from "../lib/workflow-audit-log.ts";
 import { resolveWorkflowPaths } from "../lib/workflow-paths.ts";
 import { resolveWorkflowDir } from "../lib/workflow-resolve.ts";
+import {
+  type AutoReviewMarker,
+  parseLatestAutoReviewMarker,
+  STRICT_APPROVAL_STATUS,
+  STRICT_PLAN_STATUS,
+  STRICT_REVIEW_STATUS,
+} from "../lib/workflow-marker.ts";
+import {
+  diagnoseGate,
+  formatGateDiagnosis,
+  isImplementationPhase,
+} from "../lib/workflow-gate.ts";
 import "../types/tool-schemas.ts";
 
-const PLAN_STATUS_REGEX = /^- Plan Status:\s*complete\s*$/m;
-const REVIEW_STATUS_REGEX = /^- Review Status:\s*pass\s*$/m;
-const APPROVAL_STATUS_REGEX = /^- Approval Status:\s*approved\s*$/m;
-const REVIEW_MARKER_REGEX = /<!--\s*auto-review:[^>]*-->/g;
+// Status regexes and the marker parser now live in the shared workflow-marker
+// module so the guard and plan-review-automation cannot drift (spec K4/N7).
+// Aliased to the original names for a minimal diff at the call sites below.
+const PLAN_STATUS_REGEX = STRICT_PLAN_STATUS;
+const REVIEW_STATUS_REGEX = STRICT_REVIEW_STATUS;
+const APPROVAL_STATUS_REGEX = STRICT_APPROVAL_STATUS;
 const PLAN_NUMBERED_FILENAME_REGEX = /^plan-[0-9]+\.md$/;
 const GUARDED_TOOLS = new Set([
   "Write",
@@ -35,12 +50,6 @@ interface WriteAnalysis {
 interface WorkflowState {
   mode?: string;
   approved?: boolean;
-}
-
-interface AutoReviewMarker {
-  verdict: string;
-  hash: string;
-  parentSpecHash: string | null;
 }
 
 interface ApprovalCheckResult {
@@ -103,7 +112,19 @@ const hook = defineHook({
 
       if (tool_name === "Bash") {
         const command = getCommandFromToolInput("Bash", tool_input) || "";
-        const analysis = await analyzeBashWrite(command);
+        // K3's interpreter-write check only fires while the design gate is
+        // closed (spec K3): once implementation phase is active, a Write/Edit
+        // to an owned target already goes through the normal (non-conservative)
+        // per-target check below, so hard-blocking every interpreter
+        // invocation regardless of approval would add friction without
+        // preventing anything the gate still protects.
+        const gateClosed = !isImplementationPhase(wfDir, wfPaths, twoLayer);
+        const analysis = await analyzeBashWrite(
+          command,
+          cwd,
+          wfDir,
+          gateClosed,
+        );
         if (!analysis.isWriteLike) {
           return context.success({});
         }
@@ -157,6 +178,19 @@ const hook = defineHook({
           return context.success({});
         }
 
+        // Diagnostic deny (spec K4): when a target is known, replace the fixed
+        // gate text with a per-condition diagnosis so the model can see which
+        // condition failed and on which line (research P4/P5). The empty-target
+        // deny keeps its own message (there is nothing to diagnose against).
+        if (reasonForThisCall !== emptyTargetDenyReason) {
+          const diagTarget = analysis.targets[0] ?? "";
+          const docLabel = `${wfDirLabel}/${twoLayer ? "spec.md" : "plan.md"}`;
+          reasonForThisCall = formatGateDiagnosis(
+            diagnoseGate(wfDir, diagTarget),
+            sanitizeForDisplay(diagTarget),
+            docLabel,
+          );
+        }
         return context.json(createDenyResponse(reasonForThisCall));
       }
 
@@ -197,7 +231,15 @@ const hook = defineHook({
         return context.success({});
       }
 
-      return context.json(createDenyResponse(denyReason));
+      // Diagnostic deny (spec K4): describe which gate condition failed on the
+      // owning document and how to clear it, instead of the fixed gate text.
+      const docLabel = `${wfDirLabel}/${twoLayer ? "spec.md" : "plan.md"}`;
+      const diagnosticReason = formatGateDiagnosis(
+        diagnoseGate(wfDir, targetPath),
+        sanitizeForDisplay(targetPath),
+        docLabel,
+      );
+      return context.json(createDenyResponse(diagnosticReason));
     } catch (error) {
       // fail-open is preserved (matching what runHook already does when a
       // throw escapes to it: convert to exit 1). What changes is that the
@@ -417,88 +459,12 @@ function checkTarget(
   return "no-plan-owner";
 }
 
-/**
- * Detect whether the workflow has crossed into implementation phase, defined as:
- * - Single-layer: plan.md fully approved with matching hash and verdict=pass.
- * - Two-layer: spec.md fully approved (matching hash, verdict=pass) AND at least
- *   one plan-N.md fully approved with matching hash and parent-spec-hash equal to
- *   the current spec hash.
- *
- * Used to decide whether "no-plan-owner" target writes are warn-allowed (with audit
- * log) or remain denied. Before implementation phase, the workflow is still in
- * design/planning, so even off-plan writes should be blocked to prevent premature
- * implementation.
- */
-function isImplementationPhase(
-  wfDir: string,
-  wfPaths: WorkflowPaths,
-  twoLayer: boolean,
-): boolean {
-  if (!twoLayer) {
-    return hasApprovedPlan(wfPaths.plan);
-  }
-
-  if (!existsSync(wfPaths.spec)) return false;
-  let specContent: string;
-  try {
-    specContent = readFileSync(wfPaths.spec, "utf-8");
-  } catch {
-    return false;
-  }
-  if (!isContentApproved(specContent)) return false;
-  const specMarker = extractLatestAutoReviewMarker(specContent);
-  if (!specMarker || specMarker.verdict !== "pass") return false;
-  const specHash = computePlanHash(specContent);
-  if (specMarker.hash !== specHash) return false;
-
-  for (const planPath of findPlanNumberedFiles(wfDir)) {
-    let planContent: string;
-    try {
-      planContent = readFileSync(planPath, "utf-8");
-    } catch {
-      continue;
-    }
-    if (!isContentApproved(planContent)) continue;
-    const planMarker = extractLatestAutoReviewMarker(planContent);
-    if (!planMarker || planMarker.verdict !== "pass") continue;
-    if (planMarker.hash !== computePlanHash(planContent)) continue;
-    if (planMarker.parentSpecHash !== specHash) continue;
-    return true;
-  }
-  return false;
-}
-
-/**
- * Append a single-line audit entry to `<wfDir>/off-plan-writes.log` recording a
- * write to a file not listed in any plan-N.md Files section. Best-effort: log
- * write failures must not interfere with the user's tool call.
- *
- * Format: ISO8601 \t tool=<name> \t path=<JSON-encoded rel-or-abs>
- *
- * The path is JSON-encoded (not sanitizeForDisplay'd) because this log is
- * meant to be read back and folded into a plan-N.md Files section, which
- * requires round-tripping the exact path. sanitizeForDisplay's redaction is
- * irreversible and would break that round trip; JSON.stringify is reversible
- * and still neutralizes control characters / embedded quotes for the log's
- * tab-separated format.
- *
- * The log is a discovery trail intended to be reviewed at end of session and
- * folded back into plan-N.md before commit, preserving 厳格性 at the document
- * level while allowing forward progress at the moment of write.
- */
-function appendOffPlanLog(
-  wfDir: string,
-  toolName: string,
-  target: string,
-): void {
-  try {
-    const logPath = resolve(wfDir, "off-plan-writes.log");
-    const entry = `${new Date().toISOString()}\ttool=${toolName}\tpath=${JSON.stringify(target)}\n`;
-    appendFileSync(logPath, entry, "utf-8");
-  } catch {
-    // best-effort; do not block the tool call on logging errors
-  }
-}
+// appendOffPlanLog moved to lib/workflow-audit-log.ts (plan-2 T4) so
+// workflow-bash-sync.ts's tripwire can share the exact same appender
+// (including its O_NOFOLLOW hardening) without an
+// implementations->implementations import. The log's shape and purpose --
+// discovery trail folded back into plan-N.md before commit -- are documented
+// there now.
 
 function isContentApproved(content: string): boolean {
   return (
@@ -607,7 +573,12 @@ function getTargetFilePath(
   return null;
 }
 
-async function analyzeBashWrite(command: string): Promise<WriteAnalysis> {
+async function analyzeBashWrite(
+  command: string,
+  cwd: string,
+  wfDir: string,
+  gateClosed: boolean,
+): Promise<WriteAnalysis> {
   const result = await extractCommandsStructured(command);
   const commands = result.individualCommands;
 
@@ -615,7 +586,7 @@ async function analyzeBashWrite(command: string): Promise<WriteAnalysis> {
   let isWriteLike = false;
 
   for (const cmd of commands) {
-    const analysis = analyzeSingleCommand(cmd);
+    const analysis = analyzeSingleCommand(cmd, cwd, wfDir, gateClosed);
     if (analysis.isWriteLike) {
       isWriteLike = true;
       targets.push(...analysis.targets);
@@ -628,7 +599,274 @@ async function analyzeBashWrite(command: string): Promise<WriteAnalysis> {
   };
 }
 
-function analyzeSingleCommand(command: string): WriteAnalysis {
+/**
+ * Interpreter names whose inline-script invocation forms (`-c`/`-e`/`-p`/`-`
+ * / heredoc) are checked for a write indicator (plan-2 T3, spec K3). ruby and
+ * php are intentionally excluded from this set -- narrowing the trigger
+ * surface to the interpreters actually observed running inline write scripts
+ * in this workflow keeps the false-positive rate on ordinary read-only Bash
+ * usage low.
+ */
+const INTERPRETER_NAMES = new Set(["python", "python3", "node", "bun", "deno"]);
+
+/**
+ * Substring/pattern indicators that a script body performs a filesystem (or
+ * process-spawning) write. Deliberately narrower than "contains .write(":
+ * `sys.stdout.write(...)` / `process.stdout.write(...)` are common in
+ * read-only scripts and must not trip this classifier (spec K3 read-only
+ * allow case).
+ */
+const INTERPRETER_WRITE_INDICATOR_PATTERNS: RegExp[] = [
+  /open\([^)]*['"][wa]\+?b?['"]/, // open(path, 'w'|'a'|'wb'|'ab'|'w+'|'a+')
+  /Path\([^)]*\)\.open\(/,
+  /write_text\s*\(/,
+  /write_bytes\s*\(/,
+  /writeFileSync\s*\(/,
+  /\bwriteFile\s*\(/,
+  /appendFile\s*\(/,
+  /createWriteStream\s*\(/,
+  /fs\.promises/,
+  /Bun\.write/,
+  /Deno\.write/,
+  /os\.remove/,
+  /os\.rename/,
+  /os\.system/,
+  /subprocess/,
+  /shutil\./,
+  /child_process/,
+  /execSync/,
+];
+
+const HEREDOC_MARKER_REGEX = /<<-?\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?/;
+
+/**
+ * Extract the inline script text this interpreter invocation will execute,
+ * from a `-c`/`-e`/`-p` argument and/or a heredoc body embedded in the raw
+ * command string. Returns null when this invocation is not one of those
+ * script-carrying forms (e.g. `python3 script.py`, which is out of scope for
+ * this narrow, conservative check).
+ */
+function extractInterpreterScriptText(
+  rawCommand: string,
+  args: string[],
+): string | null {
+  let scriptText = "";
+  let triggered = false;
+
+  const flagIndex = args.findIndex(
+    (arg) => arg === "-c" || arg === "-e" || arg === "-p",
+  );
+  if (flagIndex !== -1) {
+    triggered = true;
+    const inline = args[flagIndex + 1];
+    if (inline !== undefined) {
+      scriptText += `${inline}\n`;
+    }
+  }
+  if (args.some((arg) => arg === "-" || arg === "eval")) {
+    triggered = true;
+  }
+
+  const heredocMatch = rawCommand.match(HEREDOC_MARKER_REGEX);
+  if (heredocMatch?.[0]) {
+    triggered = true;
+    const markerEnd =
+      rawCommand.indexOf(heredocMatch[0]) + heredocMatch[0].length;
+    scriptText += `${rawCommand.slice(markerEnd)}\n`;
+  }
+
+  return triggered ? scriptText : null;
+}
+
+function hasInterpreterWriteIndicator(scriptText: string): boolean {
+  return INTERPRETER_WRITE_INDICATOR_PATTERNS.some((re) => re.test(scriptText));
+}
+
+function extractQuotedStringLiterals(scriptText: string): string[] {
+  const literals: string[] = [];
+  const re = /'([^']*)'|"([^"]*)"/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(scriptText)) !== null) {
+    const value = match[1] !== undefined ? match[1] : match[2];
+    if (value !== undefined) {
+      literals.push(value);
+    }
+  }
+  return literals;
+}
+
+function isUnderSegmentRoot(target: string, root: string): boolean {
+  return target === root || target.startsWith(`${root}/`);
+}
+
+function stripTrailingSlash(value: string): string {
+  return value.length > 1 ? value.replace(/\/+$/, "") : value;
+}
+
+/**
+ * `/tmp` and any of `$CLAUDE_JOB_DIR` / `$DOCUMENT_WORKFLOW_DIR` that happen
+ * to be set to an absolute path. Checked against literals that are
+ * themselves absolute (spec K3).
+ */
+function absoluteInterpreterScratchRoots(): string[] {
+  const roots: string[] = ["/tmp"];
+  for (const envVar of ["CLAUDE_JOB_DIR", "DOCUMENT_WORKFLOW_DIR"]) {
+    const value = process.env[envVar]?.trim();
+    if (value && value.startsWith("/")) {
+      roots.push(stripTrailingSlash(expandTilde(value)));
+    }
+  }
+  return roots;
+}
+
+/**
+ * `.tmp` and any of `$CLAUDE_JOB_DIR` / `$DOCUMENT_WORKFLOW_DIR` that happen
+ * to be set to a relative path. Checked against literals that are themselves
+ * relative -- as the literal's own written text, NOT resolved against `cwd`.
+ *
+ * This split (absolute-vs-absolute, relative-vs-relative-text) is
+ * deliberate: resolving every literal against `cwd` before comparing to
+ * `/tmp` would make the check vacuous whenever the project itself happens to
+ * be checked out under `/tmp` (true of every mkdtemp-based test fixture in
+ * this suite) -- a relative literal like `src/x.ts` would then trivially
+ * read as "under /tmp" and never be denied. Comparing the literal's own text
+ * against the relative roots sidesteps that, and matches how `.tmp/` reads
+ * in spec K3 to begin with: a project-root-relative prefix, not an absolute
+ * path fragment.
+ */
+function relativeInterpreterScratchRoots(): string[] {
+  const roots: string[] = [".tmp"];
+  for (const envVar of ["CLAUDE_JOB_DIR", "DOCUMENT_WORKFLOW_DIR"]) {
+    const value = process.env[envVar]?.trim();
+    if (value && !value.startsWith("/")) {
+      roots.push(stripTrailingSlash(value));
+    }
+  }
+  return roots;
+}
+
+/**
+ * A path literal is "provably scratch" only when it is not itself inside
+ * wfDir, and either (a) it is absolute and falls under an absolute scratch
+ * root, or (b) it is relative and its own text falls under a relative
+ * scratch root prefix.
+ *
+ * The wfDir exclusion is checked first via `resolve(cwd, literal)` -- safe
+ * here (unlike the broad roots above) because wfDir is one specific,
+ * narrow directory rather than something every fixture might coincidentally
+ * sit inside of. wfDir is generally a descendant of `.tmp/`, so without this
+ * exclusion a script writing straight into plan.md/spec.md would read as
+ * "scratch" and be silently allowed, bypassing the Write/Edit path that
+ * triggers `plan-review-automation`. Denying it here routes the model back
+ * to Write/Edit (or a plain heredoc redirect), which does trigger review.
+ */
+function isPathWithinInterpreterScratch(
+  literal: string,
+  cwd: string,
+  wfDir: string,
+): boolean {
+  if (literal.includes("..")) {
+    return false;
+  }
+  const resolvedAgainstCwd = resolve(cwd, literal);
+  if (isUnderSegmentRoot(resolvedAgainstCwd, wfDir)) {
+    return false;
+  }
+  if (literal.startsWith("/")) {
+    return absoluteInterpreterScratchRoots().some((root) =>
+      isUnderSegmentRoot(literal, root),
+    );
+  }
+  return relativeInterpreterScratchRoots().some((root) =>
+    isUnderSegmentRoot(literal, root),
+  );
+}
+
+/**
+ * True when this interpreter invocation should be conservatively denied:
+ * its script text contains a write indicator AND at least one of {no
+ * path-like literal is present, a path-like literal resolves outside every
+ * scratch root, a path literal contains ".."} holds. Path-like means the
+ * literal contains "/" -- a bare mode flag ('w') or file content ('h') never
+ * qualifies, so only literals that plausibly denote a path drive this
+ * decision (spec K3, plan-2 T3).
+ */
+function isInterpreterWriteDenyWorthy(
+  rawCommand: string,
+  args: string[],
+  cwd: string,
+  wfDir: string,
+): boolean {
+  const scriptText = extractInterpreterScriptText(rawCommand, args);
+  if (scriptText === null || !hasInterpreterWriteIndicator(scriptText)) {
+    return false;
+  }
+  const pathLikeLiterals = extractQuotedStringLiterals(scriptText).filter(
+    (lit) => lit.includes("/"),
+  );
+  if (pathLikeLiterals.length === 0) {
+    return true;
+  }
+  return pathLikeLiterals.some(
+    (lit) => !isPathWithinInterpreterScratch(lit, cwd, wfDir),
+  );
+}
+
+/**
+ * `round`/`stamp`/`triage`, the three `workflow-cli` subcommands that write
+ * to a workflow document (spec K5). `status` is deliberately excluded — it
+ * only reads.
+ */
+const WORKFLOW_CLI_WRITE_SUBCOMMANDS = new Set(["round", "stamp", "triage"]);
+const WORKFLOW_DOC_FILENAME_REGEX = /^(plan-[0-9]+\.md|spec\.md)$/;
+
+/**
+ * True for the `workflow-cli` wrapper by name, or a direct
+ * `bun .../cli/workflow.ts` invocation of the same script (spec K5's
+ * `home/dot_local/bin/executable_workflow-cli` wrapper execs the latter).
+ */
+function isWorkflowCliInvocation(lowerName: string, args: string[]): boolean {
+  if (lowerName === "workflow-cli") {
+    return true;
+  }
+  if (lowerName === "bun") {
+    return args.some(
+      (arg) => arg === "cli/workflow.ts" || arg.endsWith("/cli/workflow.ts"),
+    );
+  }
+  return false;
+}
+
+/**
+ * Find `round|stamp|triage <doc>` in the command's args and, if `<doc>` is a
+ * bare `plan-N.md`/`spec.md` filename, resolve it against `wfDir` (not cwd —
+ * that is the CLI's own argument convention, spec K5). Returns null when no
+ * write subcommand is present or its doc argument is not a bare workflow
+ * document filename.
+ */
+function extractWorkflowCliDocTarget(
+  args: string[],
+  wfDir: string,
+): string | null {
+  const subIndex = args.findIndex((arg) =>
+    WORKFLOW_CLI_WRITE_SUBCOMMANDS.has(arg),
+  );
+  if (subIndex === -1) {
+    return null;
+  }
+  const docArg = args[subIndex + 1];
+  if (!docArg || !WORKFLOW_DOC_FILENAME_REGEX.test(docArg)) {
+    return null;
+  }
+  return resolve(wfDir, docArg);
+}
+
+function analyzeSingleCommand(
+  command: string,
+  cwd: string,
+  wfDir: string,
+  gateClosed: boolean,
+): WriteAnalysis {
   const words = splitShellWords(command);
   if (words.length === 0) {
     return { isWriteLike: false, targets: [] };
@@ -660,7 +898,7 @@ function analyzeSingleCommand(command: string): WriteAnalysis {
       isWriteLike = true;
       commandTargets.push(...files);
     }
-  } else if (["cp", "mv", "install"].includes(lower)) {
+  } else if (["cp", "mv", "install", "ln"].includes(lower)) {
     const positional = args.filter((arg) => !arg.startsWith("-"));
     if (positional.length >= 2) {
       isWriteLike = true;
@@ -675,6 +913,27 @@ function analyzeSingleCommand(command: string): WriteAnalysis {
         commandTargets.push(last);
       }
     }
+  } else if (isWorkflowCliInvocation(lower, args)) {
+    // spec K5: `workflow-cli round|stamp|triage <plan-N.md|spec.md>` writes
+    // are always a wfDir document write, resolved against wfDir (not cwd) —
+    // the CLI's own argument convention takes a bare doc filename. This
+    // makes the classification explicit (isDocumentPath then allows it, same
+    // as a direct Write/Edit to the doc would) rather than leaving the call
+    // unclassified and falling through by accident.
+    const docTarget = extractWorkflowCliDocTarget(args, wfDir);
+    if (docTarget) {
+      isWriteLike = true;
+      commandTargets.push(docTarget);
+    }
+  } else if (
+    gateClosed &&
+    INTERPRETER_NAMES.has(lower) &&
+    isInterpreterWriteDenyWorthy(command, args, cwd, wfDir)
+  ) {
+    // Deliberately no target push: this routes through the existing
+    // "write-like with no extractable target" conservative-deny path
+    // (spec K3) rather than the normal per-target plan-ownership check.
+    isWriteLike = true;
   }
 
   if (!isWriteLike) {
@@ -778,46 +1037,13 @@ function computePlanHash(content: string): string {
   return computeDocumentHash(content, SPEC_NORMALIZERS);
 }
 
-function extractLatestAutoReviewMarker(
+// The marker scanner is shared with plan-review-automation via workflow-marker
+// (spec K4/N7). Re-exported under the original name so existing tests and call
+// sites are unchanged; the returned shape now also carries `designHash`, which
+// the guard's judgment paths (hasApprovedPlan/checkTarget) do not read.
+const extractLatestAutoReviewMarker: (
   content: string,
-): AutoReviewMarker | null {
-  const matches = content.match(REVIEW_MARKER_REGEX);
-  if (!matches || matches.length === 0) {
-    return null;
-  }
-
-  const latest = matches[matches.length - 1];
-  if (!latest) {
-    return null;
-  }
-
-  let verdict = "";
-  let hash = "";
-  let parentSpecHash: string | null = null;
-  // Match keys with optional hyphens (e.g., parent-spec-hash). Values are anything
-  // up to the next semicolon or end of marker.
-  const fields = latest.matchAll(/([a-zA-Z][a-zA-Z0-9-]*)=([^;]+)/g);
-  for (const field of fields) {
-    const key = field[1]?.trim();
-    const value = field[2]?.trim();
-    if (!key || !value) {
-      continue;
-    }
-    if (key === "verdict") {
-      verdict = value;
-    } else if (key === "hash") {
-      hash = value;
-    } else if (key === "parent-spec-hash") {
-      parentSpecHash = value;
-    }
-  }
-
-  if (verdict.length === 0 || hash.length === 0) {
-    return null;
-  }
-
-  return { verdict, hash, parentSpecHash };
-}
+) => AutoReviewMarker | null = parseLatestAutoReviewMarker;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;

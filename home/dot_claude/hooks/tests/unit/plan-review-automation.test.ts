@@ -90,6 +90,7 @@ describe("plan-review-automation.ts helpers", () => {
       verdict: "pass",
       hash: "222",
       designHash: null,
+      parentSpecHash: null,
     });
   });
 
@@ -104,6 +105,7 @@ describe("plan-review-automation.ts helpers", () => {
       verdict: "pass",
       hash: "AAA",
       designHash: "DDD",
+      parentSpecHash: "PPP",
     });
   });
 

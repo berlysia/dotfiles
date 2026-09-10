@@ -116,6 +116,24 @@ function computeDesignHash(content: string): string | null {
   return hashText(normalized);
 }
 
+/**
+ * Count `## Reviewer Outputs (Round N)` headings in a document. Used by K6's
+ * pointer-ization to decide whether the current round has already had its
+ * one full-text recommendation emitted (spec K6). Reuses
+ * `REVIEWER_OUTPUTS_HEADING`, the same anchor `stripReviewerOutputsSections`
+ * scans with, so the two never disagree about what counts as a round
+ * heading.
+ */
+function countReviewerOutputsRounds(content: string): number {
+  let count = 0;
+  for (const line of content.split("\n")) {
+    if (REVIEWER_OUTPUTS_HEADING.test(line)) {
+      count++;
+    }
+  }
+  return count;
+}
+
 export {
   SPEC_NORMALIZERS,
   PLAN_NORMALIZERS,
@@ -123,4 +141,5 @@ export {
   computeDocumentHash,
   computeDesignHash,
   stripReviewerOutputsSections,
+  countReviewerOutputsRounds,
 };

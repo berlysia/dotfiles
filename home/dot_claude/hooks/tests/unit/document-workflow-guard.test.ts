@@ -18,58 +18,20 @@ import {
   SPEC_NORMALIZERS,
 } from "../../lib/document-hash.ts";
 import {
+  approvedWorkflowRepo,
+  buildPlanContent,
+  computeWorkflowRepoPlanHash as computePlanHash,
   ConsoleCapture,
   createPreToolUseContextFor,
+  createWorkflowRepo,
   EnvironmentHelper,
   invokeRun,
+  pendingWorkflowRepo,
   TEST_SESSION_ID,
+  TEST_WORKFLOW_DIR,
+  type ReviewMarkerOptions,
+  type WorkflowRepoOptions,
 } from "./test-helpers.ts";
-
-interface ReviewMarkerOptions {
-  verdict: "pass" | "needs-work" | "blocker";
-  hashOverride?: string;
-}
-
-interface WorkflowRepoOptions {
-  planStatus: "drafting" | "complete";
-  approvalStatus: "pending" | "approved";
-  review?: ReviewMarkerOptions;
-}
-
-// Mirror the guard's hashing by consuming the same shared canonical module,
-// so S3 normalizer extensions cannot desync fixture hashes from marker hashes.
-function computePlanHash(content: string): string {
-  return computeDocumentHash(content, SPEC_NORMALIZERS);
-}
-
-function buildPlanContent(options: WorkflowRepoOptions): string {
-  const reviewStatus = options.review?.verdict ?? "pending";
-  const base = [
-    "## Approval",
-    `- Plan Status: ${options.planStatus}`,
-    `- Review Status: ${reviewStatus}`,
-    `- Approval Status: ${options.approvalStatus}`,
-  ].join("\n");
-  if (!options.review) {
-    return base;
-  }
-
-  const hash = options.review.hashOverride ?? computePlanHash(base);
-  return `${base}\n\n<!-- auto-review: verdict=${options.review.verdict}; hash=${hash}; at=2026-02-19T00:00:00.000Z; reviewers=logic-validator -->`;
-}
-
-const TEST_WORKFLOW_DIR = ".tmp/sessions/test";
-
-function createWorkflowRepo(options: WorkflowRepoOptions): string {
-  const repo = mkdtempSync(join(tmpdir(), "document-workflow-guard-"));
-  mkdirSync(join(repo, TEST_WORKFLOW_DIR), { recursive: true });
-  writeFileSync(join(repo, TEST_WORKFLOW_DIR, "research.md"), "research");
-  writeFileSync(
-    join(repo, TEST_WORKFLOW_DIR, "plan.md"),
-    buildPlanContent(options),
-  );
-  return repo;
-}
 
 function createSessionWorkflowRepo(
   sessionDir: string,
@@ -80,21 +42,6 @@ function createSessionWorkflowRepo(
   writeFileSync(join(repo, sessionDir, "research.md"), "research");
   writeFileSync(join(repo, sessionDir, "plan.md"), buildPlanContent(options));
   return repo;
-}
-
-function approvedWorkflowRepo(): WorkflowRepoOptions {
-  return {
-    planStatus: "complete",
-    approvalStatus: "approved",
-    review: { verdict: "pass" },
-  };
-}
-
-function pendingWorkflowRepo(): WorkflowRepoOptions {
-  return {
-    planStatus: "drafting",
-    approvalStatus: "pending",
-  };
 }
 
 function buildRepoWithReview(
@@ -163,6 +110,31 @@ describe("document-workflow-guard.ts hook behavior", () => {
       file_path: join(repo, TEST_WORKFLOW_DIR, "research.md"),
       old_string: "research",
       new_string: "updated research",
+    });
+
+    await invokeRun(hook, context);
+    context.assertSuccess({});
+  });
+
+  it("classifies a workflow-cli invocation as a wfDir document write and allows it", async () => {
+    const repo = createWorkflowRepo(pendingWorkflowRepo());
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+
+    const context = createPreToolUseContextFor(hook, "Bash", {
+      command:
+        "workflow-cli stamp plan-1.md --verdict pass --reviewers logic-validator",
+    });
+
+    await invokeRun(hook, context);
+    context.assertSuccess({});
+  });
+
+  it("classifies a `bun .../cli/workflow.ts round <doc>` invocation the same way", async () => {
+    const repo = createWorkflowRepo(pendingWorkflowRepo());
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+
+    const context = createPreToolUseContextFor(hook, "Bash", {
+      command: "bun /home/x/.claude/hooks/cli/workflow.ts round spec.md",
     });
 
     await invokeRun(hook, context);

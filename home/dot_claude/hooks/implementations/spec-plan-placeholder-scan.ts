@@ -1,32 +1,16 @@
 #!/usr/bin/env -S bun run --silent
 
 import { existsSync, readFileSync } from "node:fs";
+import { basename } from "node:path";
 import { defineHook } from "cc-hooks-ts";
+import {
+  isCompleteAndChanged,
+  scanPlaceholders,
+} from "../lib/workflow-review-core.ts";
 import { realpathInsideWorkflowDir } from "../lib/workflow-fs.ts";
 import { isWorkflowDocumentEdit } from "../lib/workflow-tool-input.ts";
 import { resolveWorkflowDir } from "../lib/workflow-resolve.ts";
 import "../types/tool-schemas.ts";
-
-/**
- * Placeholder pattern table. Each detection emits "line N: <name>" only —
- * the matched body is NOT included in output to prevent spec/plan content
- * leakage to hooks.jsonl (spec.md R8).
- */
-const PLACEHOLDER_PATTERNS: Array<{ name: string; pattern: RegExp }> = [
-  { name: "TBD", pattern: /\bTBD\b/ },
-  { name: "TODO", pattern: /\bTODO\b/ },
-  { name: "後で実装", pattern: /後で実装/ },
-  { name: "fill-in-details", pattern: /fill in details/i },
-  { name: "適切に", pattern: /適切に/ },
-  { name: "問題なく", pattern: /問題なく/ },
-  { name: "正しく", pattern: /正しく/ },
-  { name: "シンプルに", pattern: /シンプルに/ },
-  { name: "安全に", pattern: /安全に/ },
-  { name: "妥当な", pattern: /妥当な/ },
-];
-
-const IGNORE_OPEN = "<!-- placeholder-scan: ignore -->";
-const IGNORE_CLOSE = "<!-- /placeholder-scan: ignore -->";
 
 const hook = defineHook({
   trigger: { PostToolUse: true },
@@ -64,26 +48,16 @@ const hook = defineHook({
       return context.success({});
     }
 
-    const lines = body.split("\n");
-    const findings: string[] = [];
-    let inIgnore = false;
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i] ?? "";
-      if (line.includes(IGNORE_OPEN)) {
-        inIgnore = true;
-        continue;
-      }
-      if (line.includes(IGNORE_CLOSE)) {
-        inIgnore = false;
-        continue;
-      }
-      if (inIgnore) continue;
-      for (const { name, pattern } of PLACEHOLDER_PATTERNS) {
-        if (pattern.test(line)) {
-          findings.push(`line ${i + 1}: ${name}`);
-        }
-      }
+    // K10: only scan a document that is both complete and newly changed
+    // (per-doc cache hash differs) — not on every keystroke of a still-draft
+    // document (spec K10, decision-quality 2 / performance 10).
+    if (!isCompleteAndChanged(wfDir, basename(safe), body)) {
+      return context.success({});
     }
+
+    const findings = scanPlaceholders(body).map(
+      ({ line, name }) => `line ${line}: ${name}`,
+    );
     if (findings.length === 0) return context.success({});
 
     const additionalContext = [
