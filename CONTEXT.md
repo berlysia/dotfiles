@@ -46,7 +46,15 @@ ADR: `docs/decisions/0010-context-md-mechanism.md`
 - **常時必須レビュアー (層別)**:
   - spec 層 4 名: logic-validator + scope-justification-reviewer + decision-quality-reviewer + greenfield-perspective-reviewer
   - plan 層 2 名 + コンテンツベース: logic-validator + scope-justification-reviewer + content-selected (architecture-strategist / security-sentinel / data-integrity-guardian / test-quality-evaluator / 等から最大 3 名)
-  - SSoT は `plan-review-automation.ts` の `SPEC_REVIEWERS` / `PLAN_REVIEWERS` 定数
+  - SSoT は `SPEC_REVIEWERS` / `PLAN_REVIEWERS` 定数（実体は `lib/workflow-review-core.ts`、`plan-review-automation.ts` が re-export）
+- **ADR-0015 で追加された語彙（2026-09-10）**:
+  - **workflow-cli**: `status` / `round` / `stamp` / `triage` で Review Status・marker・Reviewer Outputs 骨格・triage marker を書く CLI。モデルは hash を転記しない。Approval 行には触れない
+  - **reviewer-runs.log**: `reviewer-run-recorder`（PostToolUse `Agent`）が書く reviewer 起動台帳。`stamp` は必須 reviewer の証跡が無いと通らない
+  - **workflow-bash-sync**: PostToolUse `Bash` で wfDir 文書の内容 hash 差分を検知して推奨を出す hook。subagent 由来（`agent_id` あり）は対象外
+  - **tripwire**: gate 閉時の repo 内書換を rolling `git status` baseline で事後検知。`.tripwire-baseline` / `.tripwire-disabled`
+  - **診断 deny**: guard の deny は「不成立条件・見つかった status 行・次の 1 手」。`lib/workflow-gate.ts` の `diagnoseGate` を CLI `status` と共有
+  - **pointer**: 同一 round 内の 2 回目以降の推奨は ≤160B。全文は `## Reviewer Outputs (Round N)` 数が増えた最初の変更でのみ
+  - **operator guide / reference skill**: `rules/workflow.md`（≤12KB、行動順）と `.skills/document-workflow-reference/SKILL.md`（機構仕様）の分離
 
 ### Chezmoi 用語
 

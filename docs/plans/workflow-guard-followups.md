@@ -4,6 +4,14 @@
 
 設計層（spec）が列挙したのは 8 件だが、本ドキュメントは 9 件を扱う。課題 I は plan のレビュー中に新規発見したものを追加した。spec は承認済みで凍結されており本 plan は spec を触らないため、spec だけを読んだ人が 9 件目を見落とさないよう、この橋渡しをここに置く。
 
+## 2026-09-10 更新: ADR-0015 での扱い
+
+`docs/decisions/0015-document-workflow-operator-ergonomics.md` の実装で以下が変わった。
+
+- **課題 D は解消**: `workflow-bash-sync`（PostToolUse `Bash`）が wfDir 内 spec/plan/plan-N の内容 hash 差分で編集を検知し、`plan-review-automation` と同じ推奨を出す。tool 名の allowlist には依存しない。
+- **課題 A / B は事後検知の対象になった**: gate 閉時に repo 内ファイルが変わると tripwire（rolling `git status` baseline）が検知して `off-plan-writes.log` に記録する。分類器のリダイレクト・複合コマンド解析そのものは未変更で、事前 deny としての穴は残る。tree-sitter 側の対応は引き続き別タスク。
+- **課題 I は未解消のまま**: `plan-review.cache.json` は依然 plan と同ディレクトリに落ちる。`docs/plans/` 配下に spec/plan を凍結コピーすると hook が反応して cache を作るので、コミット前に削除する運用が必要。
+
 ## 課題 A: `&>` / `&>>` によるゲート回避
 
 `document-workflow-guard.ts` のリダイレクト対象抽出は、`&` を先頭に持つトークンを一貫して除外する形になっている。
