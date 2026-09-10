@@ -151,7 +151,21 @@
       "hooks": [
         {
           "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/workflow-bash-sync.ts"
+        },
+        {
+          "type": "command",
           "command": "echo \"[$(date '+%F %H:%M:%S')] $USER [$(pwd)]: $(jq -r '.tool_input.command' | sed 's/$/\\\\n/' | tr -d '\\n')\" >> ~/.claude/command_history.log",
+          "async": true
+        }
+      ]
+    },
+    {
+      "matcher": "Agent",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/reviewer-run-recorder.ts",
           "async": true
         }
       ]

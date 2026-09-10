@@ -36,7 +36,7 @@ describe("spec-plan-self-audit hook", () => {
     env.set("CLAUDE_TEST_CWD", cwd);
     env.set("DOCUMENT_WORKFLOW_DIR", undefined);
     const specPath = join(wfDir, "spec.md");
-    writeFileSync(specPath, "# spec");
+    writeFileSync(specPath, "# spec\n\n## Approval\n- Plan Status: complete");
     const ctx = createPreToolUseContextFor(specPlanSelfAuditHook, "Edit", {
       file_path: specPath,
       old_string: "# spec",
@@ -69,7 +69,7 @@ describe("spec-plan-self-audit hook", () => {
     env.set("CLAUDE_TEST_CWD", cwd);
     env.set("DOCUMENT_WORKFLOW_DIR", undefined);
     const specPath = join(wfDir, "spec.md");
-    writeFileSync(specPath, "# spec");
+    writeFileSync(specPath, "# spec\n\n## Approval\n- Plan Status: complete");
     writeFileSync(join(wfDir, "lessons-learned.md"), "lesson 1\nlesson 2");
     const ctx = createPreToolUseContextFor(specPlanSelfAuditHook, "Edit", {
       file_path: specPath,
@@ -103,7 +103,7 @@ describe("spec-plan-self-audit hook", () => {
     env.set("CLAUDE_TEST_CWD", cwd);
     env.set("DOCUMENT_WORKFLOW_DIR", pinned);
     const specPath = join(pinned, "spec.md");
-    writeFileSync(specPath, "# spec");
+    writeFileSync(specPath, "# spec\n\n## Approval\n- Plan Status: complete");
     const ctx = createPreToolUseContextFor(specPlanSelfAuditHook, "Edit", {
       file_path: specPath,
       old_string: "# spec",
@@ -121,7 +121,7 @@ describe("spec-plan-self-audit hook", () => {
     env.set("CLAUDE_TEST_CWD", cwd);
     env.set("DOCUMENT_WORKFLOW_DIR", undefined);
     const planPath = join(wfDir, "plan-1.md");
-    writeFileSync(planPath, "# plan");
+    writeFileSync(planPath, "# plan\n\n## Approval\n- Plan Status: complete");
     const ctx = createPreToolUseContextFor(specPlanSelfAuditHook, "Edit", {
       file_path: planPath,
       old_string: "# plan",
@@ -129,6 +129,22 @@ describe("spec-plan-self-audit hook", () => {
     });
     await invokeRun(specPlanSelfAuditHook, ctx);
     strictEqual(ctx.jsonCalls.length, 1);
+  });
+
+  it("does not emit checklist when the post-write doc is not complete (K10)", async () => {
+    const { cwd, wfDir } = setupWfDir();
+    env.set("CLAUDE_TEST_CWD", cwd);
+    env.set("DOCUMENT_WORKFLOW_DIR", undefined);
+    const specPath = join(wfDir, "spec.md");
+    writeFileSync(specPath, "# spec\n\n## Approval\n- Plan Status: draft");
+    const ctx = createPreToolUseContextFor(specPlanSelfAuditHook, "Edit", {
+      file_path: specPath,
+      old_string: "# spec",
+      new_string: "# spec v2",
+    });
+    await invokeRun(specPlanSelfAuditHook, ctx);
+    strictEqual(ctx.successCalls.length, 1);
+    strictEqual(ctx.jsonCalls.length, 0);
   });
 
   it("does not emit checklist for lessons-learned.md edits (avoid recursive prompt)", async () => {

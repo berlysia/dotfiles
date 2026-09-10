@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# workflow-cli: thin wrapper around cli/workflow.ts (spec K5).
+# Deployed by chezmoi at ~/.local/bin/workflow-cli; the real logic lives at
+# ~/.claude/hooks/cli/workflow.ts (home/dot_claude/hooks/cli/workflow.ts in
+# source). Kept as a separate process rather than a symlink so PATH lookup
+# sees a stable name `Bash(workflow-cli *)` permission entries can match,
+# regardless of how bun resolves the target file's own shebang.
+exec bun run --silent "${HOME}/.claude/hooks/cli/workflow.ts" "$@"

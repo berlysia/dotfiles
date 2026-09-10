@@ -55,6 +55,7 @@
     "Bash(uniq *)",
     "Bash(wc *)",
     "Bash(which *)",
+    "Bash(workflow-cli *)",
     "Bash(xargs *)",
     "Bash(git status)",
     "Bash(git log *)",

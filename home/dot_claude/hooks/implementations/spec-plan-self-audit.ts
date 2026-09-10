@@ -1,14 +1,16 @@
 #!/usr/bin/env -S bun run --silent
 
 import { existsSync, readFileSync } from "node:fs";
+import { basename } from "node:path";
 import { defineHook } from "cc-hooks-ts";
+import { isCompleteAndChanged } from "../lib/workflow-review-core.ts";
 import { realpathInsideWorkflowDir } from "../lib/workflow-fs.ts";
 import { isWorkflowDocumentEdit } from "../lib/workflow-tool-input.ts";
 import { resolveWorkflowDir } from "../lib/workflow-resolve.ts";
 import "../types/tool-schemas.ts";
 
 const CHECKLIST_LINES = [
-  "Self-audit checklist (P9):",
+  "Self-audit checklist:",
   "[ ] 参照する既存関数 / API / SQL は実コードを Read 済みか?",
   "[ ] 外部ライブラリの挙動は公式 source / doc で確認済みか?",
   "[ ] テスト fixture (silentLogger 等) の出処を inline / 共通化で明記したか?",
@@ -51,9 +53,31 @@ const hook = defineHook({
 
     // Symlink containment: if targetPath exists and resolves outside wfDir,
     // silently pass without emitting context (avoid info leak).
+    let safeTargetPath: string | null = null;
     if (editInfo.targetPath && existsSync(editInfo.targetPath)) {
       const safe = realpathInsideWorkflowDir(editInfo.targetPath, wfDir);
       if (!safe) return context.success({});
+      safeTargetPath = safe;
+    }
+
+    // K10: fire only when the post-write content will be complete AND its
+    // hash differs from what the per-doc cache last recorded. This runs
+    // PreToolUse, so the "post-write" content is synthesized from tool_input
+    // rather than read off disk (spec K10). When synthesis is not possible
+    // (a tool shape this hook does not model), fall back to the pre-K10
+    // behavior of always emitting rather than silently going dark.
+    if (editInfo.targetPath) {
+      const postContent = synthesizePostWriteContent(
+        context.input.tool_name,
+        context.input.tool_input,
+        safeTargetPath,
+      );
+      if (
+        postContent !== null &&
+        !isCompleteAndChanged(wfDir, basename(editInfo.targetPath), postContent)
+      ) {
+        return context.success({});
+      }
     }
 
     const lines: string[] = [...CHECKLIST_LINES];
@@ -86,6 +110,49 @@ const hook = defineHook({
     });
   },
 });
+
+/**
+ * Reconstruct the document content this tool call would produce, without
+ * writing anything (PreToolUse runs before the actual write). Write's
+ * `content` already IS the full post-write content. Edit's `new_string`
+ * replaces `old_string` in the current on-disk content (first occurrence,
+ * matching the Edit tool's own semantics, unless `replace_all` is set).
+ * Returns null for any other tool shape (NotebookEdit's cell-based input
+ * cannot be linearized into markdown text) so callers fall back to always
+ * emitting rather than silently suppressing on an unmodeled shape.
+ */
+function synthesizePostWriteContent(
+  toolName: string,
+  toolInput: unknown,
+  currentFilePath: string | null,
+): string | null {
+  if (typeof toolInput !== "object" || toolInput === null) {
+    return null;
+  }
+  const input = toolInput as Record<string, unknown>;
+
+  if (toolName === "Write" && typeof input.content === "string") {
+    return input.content;
+  }
+
+  if (
+    toolName === "Edit" &&
+    typeof input.old_string === "string" &&
+    typeof input.new_string === "string"
+  ) {
+    let current: string;
+    try {
+      current = currentFilePath ? readFileSync(currentFilePath, "utf-8") : "";
+    } catch {
+      return null;
+    }
+    return input.replace_all === true
+      ? current.replaceAll(input.old_string, input.new_string)
+      : current.replace(input.old_string, input.new_string);
+  }
+
+  return null;
+}
 
 export default hook;
 

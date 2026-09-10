@@ -38,7 +38,7 @@ describe("spec-plan-placeholder-scan hook", () => {
     const specPath = join(wfDir, "spec.md");
     writeFileSync(
       specPath,
-      "# Goal\nTBD\n## K1\n適切にエラー処理\n## K2\n通常記述",
+      "# Goal\nTBD\n## K1\n適切にエラー処理\n## K2\n通常記述\n\n## Approval\n- Plan Status: complete",
     );
     const ctx = createPostToolUseContextFor(
       placeholderScanHook,
@@ -98,7 +98,10 @@ describe("spec-plan-placeholder-scan hook", () => {
     env.set("CLAUDE_TEST_CWD", cwd);
     env.set("DOCUMENT_WORKFLOW_DIR", pinned);
     const specPath = join(pinned, "spec.md");
-    writeFileSync(specPath, "# Goal\nTBD\n## K1\n適切にエラー処理");
+    writeFileSync(
+      specPath,
+      "# Goal\nTBD\n## K1\n適切にエラー処理\n\n## Approval\n- Plan Status: complete",
+    );
     const ctx = createPostToolUseContextFor(
       placeholderScanHook,
       "Edit",
@@ -110,6 +113,26 @@ describe("spec-plan-placeholder-scan hook", () => {
     const additional = ctx.jsonCalls[0].hookSpecificOutput
       .additionalContext as string;
     match(additional, /placeholder-scan/);
+  });
+
+  it("does not scan when the on-disk doc is not complete (K10)", async () => {
+    const { cwd, wfDir } = setupWfDir();
+    env.set("CLAUDE_TEST_CWD", cwd);
+    env.set("DOCUMENT_WORKFLOW_DIR", undefined);
+    const specPath = join(wfDir, "spec.md");
+    writeFileSync(
+      specPath,
+      "# Goal\nTBD\n## K1\n適切にエラー処理\n\n## Approval\n- Plan Status: draft",
+    );
+    const ctx = createPostToolUseContextFor(
+      placeholderScanHook,
+      "Edit",
+      { file_path: specPath, old_string: "x", new_string: "y" },
+      { filePath: specPath, oldString: "x", newString: "y" },
+    );
+    await invokeRun(placeholderScanHook, ctx);
+    strictEqual(ctx.successCalls.length, 1);
+    strictEqual(ctx.jsonCalls.length, 0);
   });
 
   it("returns success when no placeholders found", async () => {

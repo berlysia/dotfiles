@@ -33,24 +33,14 @@ const hook = defineHook({
         ? null
         : sanitizeForDisplay(resolution.relative);
 
-    const researchLine = resolved
-      ? `1. Research: Read relevant code and write findings to \`${resolved}/research.md\``
-      : "1. Research: Read relevant code and write findings to `research.md` in the session workflow directory (the guard could not resolve its path)";
-    const planLine = resolved
-      ? `2. Plan: Write implementation plan to \`${resolved}/plan.md\``
-      : "2. Plan: Write implementation plan to `plan.md` in the same directory";
+    const workflowLine = resolved
+      ? `Write \`${resolved}/research.md\` and \`${resolved}/plan.md\` (or \`spec.md\`).`
+      : "Write `research.md` and `plan.md` in the session workflow directory (the guard could not resolve its path).";
 
     return context.json(
       createDenyResponse(
         `EnterPlanMode is disabled. Use Document Workflow instead.\n\n` +
-          `Document Workflow procedure:\n` +
-          `${researchLine}\n` +
-          `${planLine}\n` +
-          `3. Iterate: Update plan until \`Plan Status: complete\`\n` +
-          `4. Auto-review: plan-review-automation runs automatically on plan.md edits\n` +
-          `5. Approval: Human sets \`Approval Status: approved\`\n` +
-          `6. Implement: Proceed only after plan complete + review pass + human approval\n\n` +
-          `This workflow provides better traceability and review automation than Plan Mode.`,
+          `Follow the Document Workflow common flow (see ~/.claude/rules/workflow.md). ${workflowLine}`,
       ),
     );
   },
