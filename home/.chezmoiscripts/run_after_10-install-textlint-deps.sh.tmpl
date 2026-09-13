@@ -1,0 +1,65 @@
+{{ if ne .chezmoi.os "windows" -}}
+#!/bin/bash
+# Installs the global textlint runtime (textlint + rule presets) into
+# ~/.config/textlint, next to the .textlintrc.json chezmoi deploys there.
+#
+# Runs in the run_after_ phase for the same reason as
+# run_after_00-install-hook-deps: scripts in the ASCII phase read the
+# package.json from the PREVIOUS apply. The 10- prefix keeps it after the
+# reserved 00- installer and before the zz- verifier (ADR-0014).
+#
+# Exit code is 0 even when the install fails so the remaining run_after_
+# scripts still run. The failure surfaces where it costs something: the
+# ~/.local/bin/textlint-global wrapper exits 2 when the binary is missing and warns
+# when .install-state (sha256 of the package.json that last installed
+# successfully) no longer matches the deployed package.json.
+#
+# --ignore-scripts: no package in this tree needs a lifecycle script today,
+# and a text linter has no business running one at install time.
+
+set -uo pipefail
+
+log() {
+    local level="${2:-INFO}"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $1"
+}
+
+TEXTLINT_DIR="$HOME/.config/textlint"
+STATE_FILE="$TEXTLINT_DIR/.install-state"
+
+if [ ! -f "$TEXTLINT_DIR/package.json" ]; then
+    log "No package.json at $TEXTLINT_DIR, skipping textlint deps install."
+    exit 0
+fi
+
+if command -v mise &> /dev/null; then
+    if mise_env=$(mise env --shell bash 2>/dev/null); then
+        eval "$mise_env"
+    fi
+fi
+
+if ! command -v bun &> /dev/null; then
+    log "bun not found. Skipping textlint deps install." "WARNING"
+    exit 0
+fi
+
+log "Installing textlint dependencies in $TEXTLINT_DIR..."
+if (cd "$TEXTLINT_DIR" && bun install --ignore-scripts 2>&1); then
+    log "textlint dependencies are in sync" "SUCCESS"
+    # Write via a sibling temp file and rename, as run_after_00-install-hook-deps
+    # does for its marker, so a half-written hash never reads as "stale".
+    state_tmp="${STATE_FILE}.tmp.$$"
+    if sha256sum "$TEXTLINT_DIR/package.json" | awk '{print $1}' > "$state_tmp" \
+        && mv -f "$state_tmp" "$STATE_FILE"; then
+        :
+    else
+        rm -f "$state_tmp"
+        log "Could not write $STATE_FILE; the wrapper will report the runtime as stale" "WARNING"
+    fi
+else
+    log "bun install failed in $TEXTLINT_DIR (see output above)" "ERROR"
+    log "Recover with: cd $TEXTLINT_DIR && bun install --ignore-scripts" "ERROR"
+fi
+
+exit 0
+{{ end -}}

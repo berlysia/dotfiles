@@ -40,6 +40,7 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
   - **管理対象MCP**: @mizchi/readability, chrome-devtools-mcp, @playwright/mcp, @upstash/context7-mcp, @drawio/mcp
 
 - **プラグイン管理**: `home/.chezmoidata/claude_plugins.yaml` で宣言管理 → `chezmoi apply` で自動インストール/削除
+- **グローバル textlint**: `home/dot_config/textlint/`（package.json + `.textlintrc.json`）→ `~/.config/textlint/`。`run_after_10-install-textlint-deps.sh.tmpl` が apply 末尾で `bun install --ignore-scripts`。`~/.local/bin/textlint-global` ラッパがどこからでも同 config で実行（`--text "..."` / `-` で stdin）。rule 追加は package.json と `.textlintrc.json` を編集 → `chezmoi apply`
 
 ### Claude Code Skills Management
 

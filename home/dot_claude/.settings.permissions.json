@@ -56,6 +56,7 @@
     "Bash(wc *)",
     "Bash(which *)",
     "Bash(workflow-cli *)",
+    "Bash(textlint-global *)",
     "Bash(xargs *)",
     "Bash(git status)",
     "Bash(git log *)",

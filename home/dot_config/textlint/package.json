@@ -1,0 +1,8 @@
+{
+  "name": "@berlysia-dotfiles/textlint",
+  "private": true,
+  "dependencies": {
+    "textlint": "15.8.0",
+    "textlint-rule-preset-ai-words-ja": "1.2.0"
+  }
+}

@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+# Global textlint: runs the textlint installed in ~/.config/textlint with the
+# .textlintrc.json deployed there, from any directory.
+#
+# Kept as a standalone file (not a symlink) so PATH lookup yields a stable name
+# for Bash(textlint-global *) permission matching, same as workflow-cli.
+#
+# Usage:
+#   textlint-global FILE...                 lint files
+#   textlint-global - [--stdin-filename N]  lint stdin (default filename: stdin.md)
+#   textlint-global --text "文章"           lint the given string as markdown
+#   textlint-global --config C ...          use another config instead of the global one
+# Every other argument is passed through to textlint unchanged.
+#
+# TEXTLINT_HOME overrides the runtime directory (used to test against a
+# scratch install). It is honoured as-is, so never invoke this wrapper from a
+# path where untrusted input can set environment variables.
+set -euo pipefail
+
+TEXTLINT_HOME="${TEXTLINT_HOME:-$HOME/.config/textlint}"
+TEXTLINT_BIN="$TEXTLINT_HOME/node_modules/.bin/textlint"
+TEXTLINT_CONFIG="$TEXTLINT_HOME/.textlintrc.json"
+STATE_FILE="$TEXTLINT_HOME/.install-state"
+RECOVER="cd $TEXTLINT_HOME && bun install --ignore-scripts"
+
+if [[ ! -x "$TEXTLINT_BIN" ]]; then
+    echo "textlint: runtime not installed at $TEXTLINT_HOME" >&2
+    echo "Recover with: $RECOVER" >&2
+    exit 2
+fi
+
+# Stale runtime: package.json was redeployed but the last install of it did
+# not succeed (the installer records the sha256 only on success).
+if [[ -f "$TEXTLINT_HOME/package.json" ]]; then
+    current_hash="$(sha256sum "$TEXTLINT_HOME/package.json" | awk '{print $1}')"
+    installed_hash="$(cat "$STATE_FILE" 2>/dev/null || true)"
+    if [[ "$current_hash" != "$installed_hash" ]]; then
+        echo "textlint: WARNING runtime at $TEXTLINT_HOME is older than its package.json" >&2
+        echo "Recover with: $RECOVER" >&2
+    fi
+fi
+
+args=()
+text=""
+use_stdin=false
+has_config=false
+has_stdin_filename=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --text)
+            if [[ $# -lt 2 ]]; then
+                echo "textlint: --text requires an argument" >&2
+                exit 2
+            fi
+            text="$2"
+            use_stdin=true
+            shift 2
+            ;;
+        --text=*)
+            text="${1#--text=}"
+            use_stdin=true
+            shift
+            ;;
+        -)
+            use_stdin=true
+            shift
+            ;;
+        --stdin)
+            use_stdin=true
+            shift
+            ;;
+        --config|-c|--config=*)
+            has_config=true
+            args+=("$1")
+            shift
+            ;;
+        --stdin-filename|--stdin-filename=*)
+            has_stdin_filename=true
+            args+=("$1")
+            shift
+            ;;
+        *)
+            args+=("$1")
+            shift
+            ;;
+    esac
+done
+
+if [[ "$has_config" == false ]]; then
+    args=(--config "$TEXTLINT_CONFIG" "${args[@]+"${args[@]}"}")
+fi
+
+if [[ "$use_stdin" == true ]]; then
+    args+=(--stdin)
+    if [[ "$has_stdin_filename" == false ]]; then
+        args+=(--stdin-filename stdin.md)
+    fi
+    if [[ -n "$text" ]]; then
+        # Not `exec` here: exec on the right side of a pipe only replaces the
+        # forked subshell, and control would fall through to the next exec
+        # and run textlint a second time on the real stdin.
+        printf '%s\n' "$text" | "$TEXTLINT_BIN" "${args[@]}"
+        exit $?
+    fi
+    exec "$TEXTLINT_BIN" "${args[@]}"
+fi
+
+if [[ ${#args[@]} -eq 2 && -t 0 ]]; then
+    # Only the injected --config remains: nothing to lint. Show textlint's own
+    # help instead of its "no files" error.
+    exec "$TEXTLINT_BIN" --help
+fi
+
+exec "$TEXTLINT_BIN" "${args[@]}"
