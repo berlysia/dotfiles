@@ -17,9 +17,31 @@ import {
   createAudioEngine,
   handleNotification,
   handleStop,
+  logMessage,
   sendSystemNotification,
 } from "../../lib/unified-audio-engine.ts";
 import { logEvent } from "../lib/centralized-logging.ts";
+
+/**
+ * Stop 入力の background_tasks に status=running のタスクがあるか。
+ *
+ * バックグラウンド subagent が 1 つ完了するたびにメインループが再起動して
+ * 短い応答を返し、その都度 Stop が発火する。まだ他の subagent が走っている
+ * Stop は「作業の区切り」ではなく「待ち」なので、読み上げ対象から外す。
+ * 最後の subagent が終わった後の Stop は background_tasks が空になるため
+ * 通常どおり読み上げる。
+ */
+export function hasRunningBackgroundTasks(input: unknown): boolean {
+  if (typeof input !== "object" || input === null) return false;
+  const tasks = (input as { background_tasks?: unknown }).background_tasks;
+  if (!Array.isArray(tasks)) return false;
+  return tasks.some(
+    (task) =>
+      typeof task === "object" &&
+      task !== null &&
+      (task as { status?: unknown }).status === "running",
+  );
+}
 
 const hook = defineHook({
   trigger: {
@@ -73,6 +95,13 @@ const hook = defineHook({
               await cleanupOldFiles(config);
               break;
             case "Stop":
+              if (hasRunningBackgroundTasks(context.input)) {
+                logMessage(
+                  "Stop skipped: background subagents still running",
+                  config,
+                );
+                break;
+              }
               await handleStop(config, session);
               break;
             default:
