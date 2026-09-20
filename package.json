@@ -38,7 +38,7 @@
   },
   "devDependencies": {
     "@mizchi/lsmcp": "0.10.0",
-    "@types/node": "24.13.3",
+    "@types/node": "24.13.4",
     "knip": "6.12.2",
     "oxfmt": "0.48.0",
     "oxlint": "1.81.0",
