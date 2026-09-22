@@ -1,6 +1,6 @@
 ---
 name: document-workflow-reference
-description: Document Workflow の機構リファレンス。operator guide (`~/.claude/rules/workflow.md`) から分離した詳細を引く。hash 3 種の意味、三状態承認、DOCUMENT_WORKFLOW_DIR 引き継ぎ、S3 移行手順、prescribed-fix carry-forward の責務分離、mechanical-lane の 4 条件、ISO 25010 特性選択ガイド、workflow-cli のサブコマンド仕様を扱う。deny の原因が分からない・hash が動いた・モード判定に迷う・mechanical-lane の可否を判断するとき、または `/document-workflow-reference` と指示されたときに読む。
+description: Document Workflow の機構リファレンス。operator guide (`~/.claude/rules/workflow.md`) から分離した詳細を引く。hash 3 種の意味、三状態承認、DOCUMENT_WORKFLOW_DIR 引き継ぎ、S3 移行手順、prescribed-fix carry-forward の責務分離、mechanical-lane の 4 条件、ISO 25010 特性選択ガイド、workflow-cli のサブコマンド仕様を扱う。deny の原因が分からない・hash が動いた・モード判定に迷う・mechanical-lane の可否を判断するとき、誤って workflow に入ってしまい抜けたいとき、または `/document-workflow-reference` と指示されたときに読む。
 ---
 
 # Document Workflow — Mechanism Reference
@@ -42,6 +42,30 @@ guard の deny は固定文ではなく診断を返す: どの条件（Plan/Revi
 - 文書を Bash（`python3 - <<'PY'` 等のインタプリタ heredoc）で書き換えても、`workflow-bash-sync`（PostToolUse Bash）が wfDir 内文書の内容 hash 差分を検知してレビュー推奨を出す。subagent 由来の Bash（`agent_id` あり）は対象外。
 - 承認前のインタプリタ inline-script 書き込み（`python|node|bun|deno` の `-c`/`-e`/heredoc に書込指標があり、書込先が scratch root 外 or 証明不能）は保守的に deny される。scratch root は `/tmp` / `$CLAUDE_JOB_DIR` / `.tmp/` / `$DOCUMENT_WORKFLOW_DIR`。読み取りのみの解析スクリプトは許可される。
 - gate 閉（承認前）に repo 内ファイルが書き換わると tripwire が次の Bash 後に検知し `off-plan-writes.log` に記録して告知する。`git` 不在・200ms 超過では `.tripwire-disabled` を作り一度だけ告知して skip する。
+
+## 誤って入った場合の脱出
+
+guard は wfDir に `research.md` または `plan.md` が存在した時点で enforce を始める。`spec.md` 単独では始まらない。`workflow-state.json` の `mode` も条件だが、現在どの hook も書かない。Task Intake Routing で「直接実行」相当のタスクに research/plan を書いてしまった場合、承認を経ずに抜ける経路は **wfDir の文書を消すこと** だけである。承認が人間のみであるのと対称に、消す操作もユーザーに委ねる。
+
+手順:
+
+1. モデルは routing を誤ったと 1 行で述べる。どの条件で直接実行相当と判断したかを含める。**まだ実装しない**。
+2. `echo "$DOCUMENT_WORKFLOW_DIR"` で wfDir を得て、リテラルパスに展開した削除コマンドをユーザーに提示し、実行を依頼する。プロンプトで `! rm -f ...` と打てば同セッション内で実行できる。
+
+   ```bash
+   rm -f .tmp/sessions/<id8>/research.md .tmp/sessions/<id8>/plan.md .tmp/sessions/<id8>/spec.md .tmp/sessions/<id8>/plan-*.md
+   ```
+
+3. 実行後、次のツール呼び出しから guard と `workflow-bash-sync` は inactive になる。SessionStart summary の `workflow gate:` 行は再表示されないので、`workflow-cli status` で `plan.md` が missing 扱いになることを確認してから直接実行に戻る。
+4. plan に書いた内容のうち残す価値があるものは会話で要約して引き継ぐ。文書は消えている。
+
+機構メモ:
+
+- `research.md` と `plan.md` の**両方**を消す。どちらか一方が残ると armed のまま。
+- モデル自身が Bash で `rm` しても通る。wfDir 配下の `.md` は文書書き込みとして allow されるためである。ただし `rm "$DOCUMENT_WORKFLOW_DIR/plan.md"` は **deny** される。guard はコマンド文字列の環境変数を展開せず、リテラル `$DOCUMENT_WORKFLOW_DIR/...` を cwd 相対で解決するため wfDir 配下と判定できない。`rm -r <wfDir>` も対象が `.md` でないので deny される。通るとしてもユーザーに委ねるのは、routing 誤りの自己判定を guard の外で単独実行しないためである。CLAUDE.md の「steering を一方的に無効化しない」に従う。
+- `.tripwire-baseline` / `plan-review.cache.json` / `reviewer-runs.log` 等は残っても無害で、7 日で GC される。ただし同セッションで後から本当に workflow に入り直すと、古い `.tripwire-baseline` との差分が「gate 閉時の off-plan 書換」として 1 回報告される。気になるなら `.tripwire-baseline` も同時に消す。
+- `/clear` も脱出になる。新 session id で新 wfDir が導出され inactive になる。会話文脈を失う代わりにコマンドは不要。
+- `DOCUMENT_WORKFLOW_WARN_ONLY=1` は脱出ではなく guard 全体の無効化であり、起動時 env でしか効かない。routing 誤りの対処に使わない。ADR-0013 参照。
 
 ## prescribed-fix carry-forward（再レビュー省略）
 

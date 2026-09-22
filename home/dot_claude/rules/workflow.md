@@ -21,6 +21,8 @@
 
 **禁止**: これらに該当するタスクで、承認前に実装へ着手すること。設計判断を伴うならステップ数が少なくても Document Workflow を使う。
 
+**誤入時**: 直接実行相当なのに research/plan を書いたら自分で消さず、`/document-workflow-reference` の脱出手順どおり削除コマンドをユーザーに提示し実行を依頼する。
+
 ## 共通フロー（8 ステップ）
 
 1. **調査**: 対象コードを深く読み `$DOCUMENT_WORKFLOW_DIR/research.md` を書く。
@@ -47,7 +49,7 @@
 - 承認順: spec.md を complete → pass → approved にしてから、各 plan-N.md を独立に同手順で承認する。
 - `document-workflow-guard` は実装系書き込み時に、(a) spec.md 三状態 + hash 一致、(b) 対象ファイルが属する plan-N.md 三状態 + hash 一致、(c) plan-N.md の `parent-spec-hash` = 現 spec.md hash、を検証する。いずれか欠けると deny。
 - spec.md を編集して hash が動いたら plan-N.md の `parent-spec-hash` が不一致になり自動で実装ブロックされる。plan-N.md の Approval を pending に戻し、再レビュー・再承認する。
-- deny された場合、guard は「どの条件が不成立か・見つかった status 行・次の 1 手」を診断で示す。`workflow-cli status` で同じ診断を確認できる。文書を Bash の heredoc で書いても検知される。承認前のインタプリタ書き込みは保守的に deny される。
+- deny された場合、guard は「どの条件が不成立か・見つかった status 行・次の 1 手」を診断で示す。`workflow-cli status` で同じ診断を確認できる。
 - **ワークフロー成果物の書き込みは Edit / Write ツールで行う**。guard は Bash コマンド文字列をヒューリスティックで解析するため、heredoc の中身にある `->` / `<hash>` / `eval` 等を書き込み操作として誤検出する。Edit / Write はツール種別で判定されるので誤検出がなく、`plan-review-automation` の発火も確実になる。
 
 ## 常時必須レビュアー（層別、並列実行）
