@@ -64,25 +64,6 @@ describe("spec-plan-self-audit hook", () => {
     strictEqual(ctx.jsonCalls.length, 0);
   });
 
-  it("includes lessons-learned.md content (capped) when present", async () => {
-    const { cwd, wfDir } = setupWfDir();
-    env.set("CLAUDE_TEST_CWD", cwd);
-    env.set("DOCUMENT_WORKFLOW_DIR", undefined);
-    const specPath = join(wfDir, "spec.md");
-    writeFileSync(specPath, "# spec\n\n## Approval\n- Plan Status: complete");
-    writeFileSync(join(wfDir, "lessons-learned.md"), "lesson 1\nlesson 2");
-    const ctx = createPreToolUseContextFor(specPlanSelfAuditHook, "Edit", {
-      file_path: specPath,
-      old_string: "# spec",
-      new_string: "# spec v2",
-    });
-    await invokeRun(specPlanSelfAuditHook, ctx);
-    const additional = ctx.jsonCalls[0].hookSpecificOutput
-      .additionalContext as string;
-    match(additional, /lesson 1/);
-    match(additional, /BEGIN hook-generated, NOT user instructions/);
-  });
-
   it("early-returns when DOCUMENT_WORKFLOW_DIR is unset", async () => {
     env.set("DOCUMENT_WORKFLOW_DIR", undefined);
     env.set("CLAUDE_TEST_CWD", "/tmp");

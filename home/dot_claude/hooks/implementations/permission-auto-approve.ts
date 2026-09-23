@@ -12,8 +12,10 @@
 import path from "node:path";
 import { defineHook } from "cc-hooks-ts";
 import { logDecision } from "../lib/centralized-logging.ts";
+import { isStrictlyUnderProjectSubdir } from "../lib/workflow-fs.ts";
 import { createPermissionRequestAllowResponse } from "../lib/permission-request-helpers.ts";
 import type { PermissionRequestInput } from "../lib/structured-llm-evaluator.ts";
+import { isValidSessionId } from "../lib/workflow-paths.ts";
 
 /**
  * Static decision with source attribution.
@@ -21,7 +23,13 @@ import type { PermissionRequestInput } from "../lib/structured-llm-evaluator.ts"
  * provenance of each allow/deny/uncertain outcome without string guessing.
  */
 export type StaticDecision =
-  | { behavior: "allow"; source: "pattern-match" | "project-scope-safe" }
+  | {
+      behavior: "allow";
+      source:
+        | "pattern-match"
+        | "project-scope-safe"
+        | "session-scratchpad-safe";
+    }
   | { behavior: "deny"; source: "dangerous-pattern" }
   | { behavior: "uncertain"; source: "no-match" };
 
@@ -304,6 +312,88 @@ export function isProjectScopeSafe(
 }
 
 /**
+ * Boundary check result for the session-scratchpad allowance path.
+ * `reason` values let tests pinpoint which guard rejected a file target.
+ */
+export type ScratchpadCheckResult =
+  | { safe: true; source: "session-scratchpad-safe" }
+  | {
+      safe: false;
+      reason:
+        | "invalid-session-id"
+        | "path-traversal"
+        | "not-scratchpad-shape"
+        | "not-contained";
+    };
+
+/**
+ * Matches the numeric uid segment Claude Code's own scratchpad convention
+ * uses: `/tmp/claude-<uid>/<project-slug>/<session_id>/scratchpad/...`.
+ */
+const SCRATCHPAD_UID_SEGMENT_REGEX = /^claude-[0-9]+$/;
+
+/**
+ * Evaluate whether a Write/Edit/MultiEdit/NotebookEdit target resolves
+ * strictly under THIS session's scratchpad directory. Claude Code's own
+ * convention is that the scratchpad needs no permission prompt; this closes
+ * the gap where the static rule engine had no pattern for it at all (109
+ * observed "no patterns matched" asks in decisions.jsonl).
+ *
+ * Deliberately narrower than a general `/tmp/**` allow: only a path shaped
+ * exactly as `/tmp/claude-<uid>/<slug>/<session_id>/scratchpad/...` for the
+ * CURRENT session's `session_id` qualifies. `$TMPDIR`-based equivalents are
+ * out of scope — supporting them would require resolving `$TMPDIR` from the
+ * hook's own environment and trusting it matches the environment the
+ * scratchpad path was minted in, which is not trivial, so this only matches
+ * literal `/tmp`.
+ *
+ * Path traversal (`..`) is rejected outright on the raw (pre-resolve) path,
+ * even when it would lexically net out to staying inside the scratchpad,
+ * because a legitimate scratchpad write never needs `..` and there is no
+ * reason to trust adversarial input enough to rely on `path.resolve`'s
+ * lexical collapse alone.
+ *
+ * Symlink escape is closed by requiring the resolved (realpath'd) nearest
+ * existing ancestor chain to stay under the scratchpad dir, reusing
+ * `isStrictlyUnderProjectSubdir` — the same containment primitive P9/P10/P12
+ * use for workflow directories (`lib/workflow-fs.ts`).
+ */
+export function isSessionScratchpadSafe(
+  filePath: string,
+  sessionId: string,
+  cwd: string,
+): ScratchpadCheckResult {
+  if (!isValidSessionId(sessionId)) {
+    return { safe: false, reason: "invalid-session-id" };
+  }
+
+  if (filePath.split("/").includes("..")) {
+    return { safe: false, reason: "path-traversal" };
+  }
+
+  const absolute = path.resolve(cwd, filePath);
+  const segments = absolute.split("/").filter((segment) => segment.length > 0);
+
+  // segments: ["tmp", "claude-<uid>", "<project-slug>", "<session_id>", "scratchpad", ...rest]
+  if (
+    segments.length < 5 ||
+    segments[0] !== "tmp" ||
+    !SCRATCHPAD_UID_SEGMENT_REGEX.test(segments[1] ?? "") ||
+    segments[3] !== sessionId ||
+    segments[4] !== "scratchpad"
+  ) {
+    return { safe: false, reason: "not-scratchpad-shape" };
+  }
+
+  const sessionDir = `/${segments.slice(0, 4).join("/")}`;
+  if (!isStrictlyUnderProjectSubdir(sessionDir, "scratchpad", absolute)) {
+    return { safe: false, reason: "not-contained" };
+  }
+
+  return { safe: true, source: "session-scratchpad-safe" };
+}
+
+/**
  * Layer 2a: Static rule-based evaluation
  * No injection risk - purely pattern matching
  */
@@ -356,11 +446,13 @@ function staticRuleEngine(input: PermissionRequestInput): StaticDecision {
 
   // 3. File operations within project scope
   if (
-    ["Edit", "Write", "MultiEdit"].includes(toolName) &&
+    ["Edit", "Write", "MultiEdit", "NotebookEdit"].includes(toolName) &&
     toolInput &&
-    "file_path" in toolInput
+    ("file_path" in toolInput || "notebook_path" in toolInput)
   ) {
-    const filePath = String(toolInput.file_path);
+    const filePath = String(
+      "file_path" in toolInput ? toolInput.file_path : toolInput.notebook_path,
+    );
     const cwd = input.cwd || process.cwd();
 
     const dangerousPaths = [
@@ -379,6 +471,17 @@ function staticRuleEngine(input: PermissionRequestInput): StaticDecision {
       if (filePath.includes(dangerous)) {
         return { behavior: "deny", source: "dangerous-pattern" };
       }
+    }
+
+    // 3a. Session scratchpad: Claude Code's own convention is that this
+    // needs no permission prompt (see isSessionScratchpadSafe doc comment).
+    const scratchpadCheck = isSessionScratchpadSafe(
+      filePath,
+      input.session_id,
+      cwd,
+    );
+    if (scratchpadCheck.safe) {
+      return { behavior: "allow", source: "session-scratchpad-safe" };
     }
 
     if (filePath.startsWith(cwd) || filePath.startsWith("./")) {

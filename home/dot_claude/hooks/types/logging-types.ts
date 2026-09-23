@@ -48,37 +48,19 @@ export interface QualityLogEntry extends BaseLogEntry {
   file_path?: string;
 }
 
-export interface ReflectionEntry {
-  error_summary: string;
-  root_cause: string;
-  preventable_by_lint: boolean;
-  suggested_rule?: {
-    type: "custom-rule" | "oxlint-config" | "oxfmt-config" | "eslint-plugin";
-    description: string;
-    pattern_hint?: string;
-  };
-}
-
-export interface ReflectionLogEntry extends BaseLogEntry {
-  errors_analyzed: number;
-  reflections: ReflectionEntry[];
-}
-
 export type LogEntry =
   | EventLogEntry
   | CommandLogEntry
   | ToolLogEntry
   | DecisionLogEntry
-  | QualityLogEntry
-  | ReflectionLogEntry;
+  | QualityLogEntry;
 
 export type LogCategory =
   | "events"
   | "commands"
   | "tools"
   | "decisions"
-  | "quality"
-  | "reflections";
+  | "quality";
 
 export interface LogManagerConfig {
   logDir: string;

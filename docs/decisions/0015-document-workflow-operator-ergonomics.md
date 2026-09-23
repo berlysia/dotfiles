@@ -68,6 +68,15 @@ ADR-0001（human-only approval、hook enforcement）、ADR-0003（enforce 既定
 - 実装は 4 コミット（`128e08f` / `2801abb` / `4065170` / `3d599a4`）。全 1264 テストと typecheck を pre-commit で通している。`chezmoi apply` は別途実行する
 - `stop-reflection.ts` の `messageForUser` は Stop での到達先を実機確認するまで変更しない。intent-triage marker の guard 必須化は warn 表示に留め、deny 昇格は「warn 後に triage 無しで承認へ進んだ事例 2 件」を再評価トリガーとする
 
+## Amendment (2026-09-24): 差分再レビューを機構に揃える
+
+K6 は「round ≥ 2 は前 round で needs-work / blocker だった reviewer だけ再確認」と決めていたが、K5 の `stamp` は毎 round 必須 reviewer 全員の起動証跡を要求し、推奨テキスト冒頭も「ALL を並列実行」と指示していた。意図と機構が食い違っていたため、実運用では毎 round 全員が回っていた（CPK-C108 `c93da47d` は 6 round で reviewer 延べ約 40 回。Round 4〜6 はいずれも 7 名中 needs-work が 1 名以下）。
+
+- `planRoundReviewers`（`lib/workflow-review-core.ts`）を推奨・`round` 骨格・`stamp` の共通の判定にした。rerun は `logic-validator` + 前 round で非 pass の reviewer + 前 round に居ない必須 reviewer。残りは carried として骨格に `pass (carried from Round N)` で書く。前 round が無い・verdict が空欄・blocker がある・`round --full` のいずれかなら全員に戻す
+- `stamp` が要求するのは rerun のうち必須 reviewer の分だけ。内容選定 reviewer は Round 1 と同じく推奨はするが必須にしない。差分 round が full round より厳しくならないようにするため
+- 受容したリスク: carried の再検証は機械判定しない。Key Decisions・白紙案を変える修正で `--full` を使うかは operator の規律に任せる。回帰の見張りとして `logic-validator` は毎 round 回す
+- リプレイ（変更後の 7 文書、Round 2 以降）: 必須 reviewer の起動回数は round あたり 4 名から 1〜2 名に減る。見積もりの詳細は当該コミットのメッセージに記す
+
 ## References
 
 - `docs/plans/document-workflow-overhaul/research.md` — 失敗パターン P1〜P8 と根本原因

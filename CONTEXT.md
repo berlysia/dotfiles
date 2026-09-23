@@ -41,7 +41,7 @@ ADR: `docs/decisions/0010-context-md-mechanism.md`
 - **K7 連鎖検証**: `document-workflow-guard` hook が実装系書き込み時に (a) spec.md 三状態 + hash 一致、(b) 対象ファイルが属する plan-N.md 三状態 + hash 一致、(c) plan-N.md の parent-spec-hash と現 spec.md hash 一致、を検証。いずれか欠けると conservative deny
 - **off-plan-writes 緩和**: 実装フェーズで Files セクション外への書き込みが、spec + plan の三状態 + hash 一致を満たしていれば deny ではなく warn + `<wfDir>/off-plan-writes.log` に降格
 - **carry-forward (prescribed-fix)**: (a) 文言精度クラスの修正 + (b) reviewer verbatim 指定 + (c) section-scoped design-hash 不変、の 3 条件 AND 成立時のみ再レビュー省略
-- **Reviewer Outputs (Round N)**: workflow.md 5.1 で MANDATORY、各 reviewer の verdict + 主指摘 1-2 文を auto-review marker 直前に追記。lessons-learned-extractor の入力主経路
+- **Reviewer Outputs (Round N)**: workflow.md 5.1 で MANDATORY、各 reviewer の verdict + 主指摘 1-2 文を auto-review marker 直前に追記
 - **intent triage**: workflow.md step 6 で MANDATORY、divergent (本義を歪める指摘) を除外。「未実装機能のリスク対策」「dominant axis を勝手に変える」「先回り対応」が divergent の典型パターン
 - **常時必須レビュアー (層別)**:
   - spec 層 4 名: logic-validator + scope-justification-reviewer + decision-quality-reviewer + greenfield-perspective-reviewer
@@ -70,7 +70,7 @@ ADR: `docs/decisions/0010-context-md-mechanism.md`
 - `~/.claude/hooks/implementations/` 配下に約 26 個の TypeScript hook
 - bun で絶対パス実行 (`bun ~/.claude/hooks/implementations/*.ts`)
 - 主要依存: `cc-hooks-ts` (フック定義ヘルパー) / `@anthropic-ai/claude-agent-sdk` (LLM 評価)
-- 主要 hook: `document-workflow-guard` / `plan-review-automation` / `permission-auto-approve` / `lessons-learned-extractor`
+- 主要 hook: `document-workflow-guard` / `plan-review-automation` / `permission-auto-approve` / `workflow-bash-sync`
 
 ### GC スクリプト (R3/K4 根拠)
 

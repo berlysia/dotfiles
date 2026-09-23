@@ -10,7 +10,7 @@
   ],
   "type": "module",
   "scripts": {
-    "test": "node --test home/dot_claude/hooks/tests/**/*.test.ts",
+    "test": "node --import ./home/dot_claude/hooks/tests/preload-test-env.mjs --test home/dot_claude/hooks/tests/**/*.test.ts",
     "typecheck": "tsc --noEmit",
     "format": "oxfmt --ignore-path .oxfmtignore . && prettier --write '**/*.{yml,yaml}' --ignore-unknown",
     "format:check": "oxfmt --check --ignore-path .oxfmtignore . && prettier --check '**/*.{yml,yaml}' --ignore-unknown",

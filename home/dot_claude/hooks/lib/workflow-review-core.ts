@@ -303,6 +303,90 @@ export function reviewersForDocumentType(
   return type === "plan-numbered" ? PLAN_REVIEWERS : SPEC_REVIEWERS;
 }
 
+/**
+ * Reviewer set for the round after `priorRound` (spec K6). `full` means every
+ * always-on reviewer runs; `delta` means only `rerun` runs and `carried`
+ * reviewers keep their prior pass.
+ */
+export type RoundReviewerPlan =
+  | { kind: "full" }
+  | { kind: "delta"; rerun: string[]; carried: string[] };
+
+/** Always re-run so a fix for one reviewer cannot silently break another's pass. */
+const REGRESSION_GUARD_REVIEWER = "logic-validator";
+
+function bareReviewerSlug(subagentType: string): string {
+  const parts = subagentType.split(":");
+  return parts[parts.length - 1] ?? subagentType;
+}
+
+/**
+ * Verdict per reviewer in `## Reviewer Outputs (Round <round>)`, keyed by bare
+ * slug. Only `### <slug>` blocks that carry a `- verdict:` line count, so other
+ * `###` headings inside the section are ignored. Returns null when the section
+ * does not exist.
+ */
+function parseRoundVerdicts(
+  content: string,
+  round: number,
+): Map<string, string> | null {
+  const lines = content.split("\n");
+  const start = lines.indexOf(`## Reviewer Outputs (Round ${round})`);
+  if (start === -1) return null;
+
+  const verdicts = new Map<string, string>();
+  let currentSlug: string | null = null;
+  for (const line of lines.slice(start + 1)) {
+    if (line.startsWith("## ") || line.startsWith("<!-- auto-review:")) break;
+    const heading = /^### (\S+)\s*$/.exec(line);
+    if (heading?.[1]) {
+      currentSlug = bareReviewerSlug(heading[1]);
+      continue;
+    }
+    const verdict = /^- verdict:(.*)$/.exec(line);
+    if (verdict && currentSlug !== null && !verdicts.has(currentSlug)) {
+      verdicts.set(currentSlug, (verdict[1] ?? "").trim().toLowerCase());
+    }
+  }
+  return verdicts;
+}
+
+/**
+ * Decide who reviews the round following `priorRound`, from the verdicts
+ * recorded in that round's section. Anything ambiguous (no section, an
+ * unfilled verdict, a blocker) falls back to `full` — the delta may only ever
+ * shrink the set when every prior verdict is explicit.
+ */
+export function planRoundReviewers(
+  content: string,
+  documentType: WorkflowDocumentType,
+  priorRound: number,
+): RoundReviewerPlan {
+  if (priorRound < 1) return { kind: "full" };
+  const verdicts = parseRoundVerdicts(content, priorRound);
+  if (verdicts === null || verdicts.size === 0) return { kind: "full" };
+
+  const values = [...verdicts.values()];
+  if (values.some((v) => v === "" || v.startsWith("blocker"))) {
+    return { kind: "full" };
+  }
+
+  const isPass = (slug: string) => verdicts.get(slug)?.startsWith("pass");
+  const mandatory = reviewersForDocumentType(documentType).map(
+    (r) => r.slug as string,
+  );
+  const rerun = mandatory.filter(
+    (slug) => slug === REGRESSION_GUARD_REVIEWER || !isPass(slug),
+  );
+  for (const slug of verdicts.keys()) {
+    if (!isPass(slug) && !rerun.includes(slug)) rerun.push(slug);
+  }
+  const carried = [...verdicts.keys()].filter(
+    (slug) => isPass(slug) && !rerun.includes(slug),
+  );
+  return { kind: "delta", rerun, carried };
+}
+
 export interface RecommendationOptions {
   documentType?: WorkflowDocumentType | undefined;
   specPath?: string | null | undefined;
@@ -337,6 +421,49 @@ function buildPointerRecommendation(
     documentType === "plan-numbered" ? PLAN_NORMALIZERS : SPEC_NORMALIZERS,
   ).slice(0, 8);
   return `[plan-review-automation] ${docLabel} changed (hash ${hash}); Round ${roundCount + 1}: 前回提示の推奨のまま。reviewer 実行後 workflow-cli round/stamp`;
+}
+
+interface RecommendedReviewer {
+  subagentType: string;
+  description: string;
+}
+
+/**
+ * Reviewers named in the recommendation. A full round lists the always-on set
+ * plus keyword-selected catalog reviewers; a delta round lists only `rerun`,
+ * resolving each bare slug back to its catalog subagent_type (plugin prefix
+ * included) so the Agent call uses the name the ledger will normalize.
+ */
+function listRecommendedReviewers(
+  planContent: string,
+  documentType: WorkflowDocumentType,
+  roundPlan: RoundReviewerPlan,
+): RecommendedReviewer[] {
+  const alwaysOn = reviewersForDocumentType(documentType).map((r) => ({
+    subagentType: r.slug as string,
+    description: r.responsibility as string,
+  }));
+  if (roundPlan.kind === "full") {
+    const additional = selectReviewers(planContent).map((r) => ({
+      subagentType: r.subagentType,
+      description: r.label,
+    }));
+    return [...alwaysOn, ...additional];
+  }
+  const known = [
+    ...alwaysOn,
+    ...REVIEWER_CATALOG.map((r) => ({
+      subagentType: r.subagentType,
+      description: r.label,
+    })),
+  ];
+  return roundPlan.rerun.map(
+    (slug) =>
+      known.find((r) => bareReviewerSlug(r.subagentType) === slug) ?? {
+        subagentType: slug,
+        description: "Re-check your prior finding against the diff",
+      },
+  );
 }
 
 export function buildRecommendation(
@@ -376,9 +503,15 @@ export function buildRecommendation(
     return pointer;
   }
 
-  const alwaysOnReviewers = reviewersForDocumentType(documentType);
-  const additionalReviewers = selectReviewers(planContent);
-  const allReviewerNames = alwaysOnReviewers.map((r) => r.slug as string);
+  const roundPlan = planRoundReviewers(planContent, documentType, roundCount);
+  const recommended = listRecommendedReviewers(
+    planContent,
+    documentType,
+    roundPlan,
+  );
+  const allReviewerNames = recommended.map((r) =>
+    bareReviewerSlug(r.subagentType),
+  );
 
   const lines = [
     `[plan-review-automation] ${docLabel} was updated. Run sub-agent reviews before approval.`,
@@ -392,28 +525,21 @@ export function buildRecommendation(
     lines.push(`Spec: ${options.specPath}`);
   }
 
-  const alwaysOnLines = alwaysOnReviewers.map(
-    (r, i) => `${i + 1}. subagent_type: ${r.slug} — ${r.responsibility}`,
-  );
-
   lines.push(
     "",
     "IMPORTANT: ALL reviewers below are Agent tool subagent_types. Execute every one via Agent tool with the specified subagent_type. A reviewer having the same name as a Skill does NOT mean it should be invoked as a Skill — always use Agent tool.",
     "",
     "Recommended sub-agents (use Agent tool, run ALL in parallel):",
-    ...alwaysOnLines,
+    ...recommended.map(
+      (r, i) => `${i + 1}. subagent_type: ${r.subagentType} — ${r.description}`,
+    ),
   );
 
-  if (additionalReviewers.length > 0) {
-    const startIndex = alwaysOnReviewers.length + 1;
-    for (let i = 0; i < additionalReviewers.length; i++) {
-      const r = additionalReviewers[i]!;
-      const shortName = r.subagentType.split(":").pop()!;
-      allReviewerNames.push(shortName);
-      lines.push(
-        `${startIndex + i}. subagent_type: ${r.subagentType} — ${r.label}`,
-      );
-    }
+  if (roundPlan.kind === "delta") {
+    lines.push(
+      "",
+      `Carried from Round ${roundCount} (pass, do NOT re-run): ${roundPlan.carried.join(", ") || "none"}. Give each re-run reviewer its own prior finding plus the diff since Round ${roundCount}. If the fix changed Key Decisions or Alternative Approaches, use \`workflow-cli round <doc> --full\` and run every always-on reviewer instead.`,
+    );
   }
 
   const reviewersValue = allReviewerNames.join("+");
@@ -458,15 +584,6 @@ export function buildRecommendation(
     "Do NOT present review results to the user before completing the intent alignment triage.",
   );
 
-  // K6 round-budget guidance: only meaningful once at least one round has
-  // completed (a marker with a verdict exists), so it is silent on the very
-  // first Round 1 recommendation.
-  if (roundCount >= 2) {
-    lines.push(
-      "",
-      `Round ${roundCount}: re-run ONLY the reviewers whose prior verdict was needs-work or blocker. Give each its own prior finding plus the diff since that round.`,
-    );
-  }
   const marker = parseLatestAutoReviewMarker(planContent);
   if (roundCount >= 3 && marker?.verdict !== "pass") {
     lines.push(

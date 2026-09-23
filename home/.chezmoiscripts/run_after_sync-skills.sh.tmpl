@@ -33,10 +33,17 @@ if [ -d "$PRIVATE_SKILLS_SOURCE" ]; then
   done
 fi
 
-# Sync with --delete, but preserve external/private skills
-# Also exclude ui-skills (managed by chezmoi external)
-rsync -a --delete --exclude="ui-skills" --exclude=".system" ${EXCLUDE_ARGS[@]+"${EXCLUDE_ARGS[@]}"} ${PRIVATE_EXCLUDE_ARGS[@]+"${PRIVATE_EXCLUDE_ARGS[@]}"} "$SKILLS_SOURCE/" "$CLAUDE_SKILLS/"
-rsync -a --delete --exclude="ui-skills" --exclude=".system" ${EXCLUDE_ARGS[@]+"${EXCLUDE_ARGS[@]}"} ${PRIVATE_EXCLUDE_ARGS[@]+"${PRIVATE_EXCLUDE_ARGS[@]}"} "$SKILLS_SOURCE/" "$CODEX_SKILLS/"
+# Directories the tools themselves own inside the skills dir. Anchored to the
+# destination root so a skill that happens to contain e.g. `synced/` is still synced.
+# - ui-skills: managed by chezmoi external
+# - .system: Codex built-in skills
+# - synced / .trash: Claude Code's synced (org/Anthropic-provided) skills and its
+#   rotation of previous copies; --delete would otherwise wipe them on every apply
+TOOL_OWNED_EXCLUDE_ARGS=(--exclude="/ui-skills" --exclude="/.system" --exclude="/synced" --exclude="/.trash")
+
+# Sync with --delete, but preserve external/private/tool-owned skills
+rsync -a --delete "${TOOL_OWNED_EXCLUDE_ARGS[@]}" ${EXCLUDE_ARGS[@]+"${EXCLUDE_ARGS[@]}"} ${PRIVATE_EXCLUDE_ARGS[@]+"${PRIVATE_EXCLUDE_ARGS[@]}"} "$SKILLS_SOURCE/" "$CLAUDE_SKILLS/"
+rsync -a --delete "${TOOL_OWNED_EXCLUDE_ARGS[@]}" ${EXCLUDE_ARGS[@]+"${EXCLUDE_ARGS[@]}"} ${PRIVATE_EXCLUDE_ARGS[@]+"${PRIVATE_EXCLUDE_ARGS[@]}"} "$SKILLS_SOURCE/" "$CODEX_SKILLS/"
 
 # Overlay private skills (sourced from private repo via chezmoi external).
 # Use --delete inside each skill dir but keep other skills untouched.

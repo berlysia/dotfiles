@@ -120,7 +120,7 @@ hooks/
 
 ### 依存関係管理
 
-- **Package Manager**: pnpm
+- **Package Manager**: bun
 - **Location**: プロジェクトルート (`/home/berlysia/.local/share/chezmoi/`)
 
 ### Hook設定
@@ -199,5 +199,5 @@ export default defineHook({
 echo '{"tool_name": "Bash", "tool_input": {"command": "ls"}}' | bun implementations/auto-approve.ts
 
 # 型チェック（TypeScript 7 native tsc。tsconfig.json 検出時はファイル直接指定不可のため引数なしで実行）
-npx tsc --noEmit
+bunx tsc --noEmit
 ```

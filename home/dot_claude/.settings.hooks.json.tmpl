@@ -28,10 +28,6 @@
         {
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/auto-approve.ts"
-        },
-        {
-          "type": "command",
-          "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'"
         }
       ]
     },
@@ -123,11 +119,6 @@
         {
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/spec-plan-placeholder-scan.ts"
-        },
-        {
-          "type": "command",
-          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/lessons-learned-extractor.ts",
-          "async": true
         }
       ]
     },
@@ -137,11 +128,6 @@
         {
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/command-logger.ts",
-          "async": true
-        },
-        {
-          "type": "command",
-          "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'",
           "async": true
         }
       ]
@@ -187,12 +173,7 @@
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/discord-notification.ts",
           "async": true
-        }{{ end }},
-        {
-          "type": "command",
-          "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'",
-          "async": true
-        }
+        }{{ end }}
       ]
     }
   ],
@@ -214,10 +195,6 @@
         },
         {
           "type": "command",
-          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/stop-reflection.ts"
-        },
-        {
-          "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/speak-notification.ts Stop",
           "async": true
         }{{ if dig "only_private" false . }},
@@ -230,12 +207,7 @@
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/slack-notification.ts",
           "async": true
-        }{{ end }},
-        {
-          "type": "command",
-          "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'",
-          "async": true
-        }
+        }{{ end }}
       ]
     }
   ],
@@ -257,12 +229,7 @@
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/slack-notification.ts",
           "async": true
-        }{{ end }},
-        {
-          "type": "command",
-          "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'",
-          "async": true
-        }
+        }{{ end }}
       ]
     }
   ],
@@ -286,11 +253,6 @@
         {
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/completion-gate.ts"
-        },
-        {
-          "type": "command",
-          "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'",
-          "async": true
         }
       ]
     }
@@ -316,12 +278,7 @@
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/slack-notification.ts",
           "async": true
-        }{{ end }},
-        {
-          "type": "command",
-          "command": "awk '{print}' >> '{{ .chezmoi.homeDir }}/.config/claude-companion/logs/hooks.jsonl'",
-          "async": true
-        }
+        }{{ end }}
       ]
     }
   ]

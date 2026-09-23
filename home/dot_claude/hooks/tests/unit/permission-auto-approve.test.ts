@@ -1,9 +1,11 @@
 #!/usr/bin/env node --test
 
 import { deepStrictEqual, strictEqual } from "node:assert";
+import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import {
   isProjectScopeSafe,
+  isSessionScratchpadSafe,
   normalizeCommand,
   staticRuleEngine,
 } from "../../implementations/permission-auto-approve.ts";
@@ -798,6 +800,234 @@ describe("isProjectScopeSafe", () => {
       const result = isProjectScopeSafe("/tmp/attacker.sh", cwd);
       deepStrictEqual(result, { safe: false, reason: "outside-cwd" });
     });
+  });
+});
+
+describe("isSessionScratchpadSafe", () => {
+  const sessionId = "5bf51a88-f975-4628-9a69-e09cd2e8a17f";
+  const cwd = "/home/user/project";
+  const createdBaseDirs: string[] = [];
+
+  afterEach(() => {
+    for (const dir of createdBaseDirs.splice(0)) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  function makeFixture(
+    sid: string = sessionId,
+    slug = "test-project",
+  ): { base: string; scratchpadDir: string } {
+    const uid = `${process.pid}${Math.floor(Math.random() * 1_000_000)}`;
+    const base = `/tmp/claude-${uid}`;
+    const scratchpadDir = `${base}/${slug}/${sid}/scratchpad`;
+    mkdirSync(scratchpadDir, { recursive: true });
+    createdBaseDirs.push(base);
+    return { base, scratchpadDir };
+  }
+
+  it("allows an existing file strictly under this session's scratchpad dir", () => {
+    const { scratchpadDir } = makeFixture();
+    const target = `${scratchpadDir}/notes.md`;
+    writeFileSync(target, "hello");
+    deepStrictEqual(isSessionScratchpadSafe(target, sessionId, cwd), {
+      safe: true,
+      source: "session-scratchpad-safe",
+    });
+  });
+
+  it("allows a not-yet-created nested path under this session's scratchpad dir", () => {
+    const { scratchpadDir } = makeFixture();
+    const target = `${scratchpadDir}/subdir/new-file.txt`;
+    deepStrictEqual(isSessionScratchpadSafe(target, sessionId, cwd), {
+      safe: true,
+      source: "session-scratchpad-safe",
+    });
+  });
+
+  it("rejects an invalid session id", () => {
+    deepStrictEqual(
+      isSessionScratchpadSafe(
+        "/tmp/claude-1/x/short/scratchpad/notes.md",
+        "short",
+        cwd,
+      ),
+      {
+        safe: false,
+        reason: "invalid-session-id",
+      },
+    );
+  });
+
+  it("rejects another session's scratchpad dir even if it exists on disk", () => {
+    const otherSessionId = "other-session-id-000";
+    const { scratchpadDir } = makeFixture(otherSessionId);
+    const target = `${scratchpadDir}/notes.md`;
+    deepStrictEqual(isSessionScratchpadSafe(target, sessionId, cwd), {
+      safe: false,
+      reason: "not-scratchpad-shape",
+    });
+  });
+
+  it("rejects path traversal that lexically stays inside the scratchpad", () => {
+    const { scratchpadDir } = makeFixture();
+    const target = `${scratchpadDir}/../scratchpad/notes.md`;
+    deepStrictEqual(isSessionScratchpadSafe(target, sessionId, cwd), {
+      safe: false,
+      reason: "path-traversal",
+    });
+  });
+
+  it("rejects path traversal escaping the scratchpad", () => {
+    const { scratchpadDir } = makeFixture();
+    const target = `${scratchpadDir}/../../../../etc/passwd`;
+    deepStrictEqual(isSessionScratchpadSafe(target, sessionId, cwd), {
+      safe: false,
+      reason: "path-traversal",
+    });
+  });
+
+  it("rejects a path outside /tmp entirely", () => {
+    deepStrictEqual(
+      isSessionScratchpadSafe(
+        `/home/user/project/scratchpad/${sessionId}/notes.md`,
+        sessionId,
+        cwd,
+      ),
+      { safe: false, reason: "not-scratchpad-shape" },
+    );
+  });
+
+  it("rejects a /tmp path missing the scratchpad segment", () => {
+    const uid = `${process.pid}${Math.floor(Math.random() * 1_000_000)}`;
+    const base = `/tmp/claude-${uid}`;
+    const dir = `${base}/test-project/${sessionId}`;
+    mkdirSync(dir, { recursive: true });
+    createdBaseDirs.push(base);
+    deepStrictEqual(
+      isSessionScratchpadSafe(`${dir}/notes.md`, sessionId, cwd),
+      {
+        safe: false,
+        reason: "not-scratchpad-shape",
+      },
+    );
+  });
+
+  it("rejects a malformed uid segment (non-numeric)", () => {
+    deepStrictEqual(
+      isSessionScratchpadSafe(
+        `/tmp/claude-abc/test-project/${sessionId}/scratchpad/notes.md`,
+        sessionId,
+        cwd,
+      ),
+      { safe: false, reason: "not-scratchpad-shape" },
+    );
+  });
+
+  it("rejects a symlinked file inside scratchpad that resolves outside", () => {
+    const { base, scratchpadDir } = makeFixture();
+    const outsideFile = `${base}/outside.txt`;
+    writeFileSync(outsideFile, "outside");
+    const linkPath = `${scratchpadDir}/escape.txt`;
+    symlinkSync(outsideFile, linkPath);
+    deepStrictEqual(isSessionScratchpadSafe(linkPath, sessionId, cwd), {
+      safe: false,
+      reason: "not-contained",
+    });
+  });
+
+  it("rejects when the scratchpad directory itself is a symlink escaping elsewhere", () => {
+    const uid = `${process.pid}${Math.floor(Math.random() * 1_000_000)}`;
+    const base = `/tmp/claude-${uid}`;
+    const sessionDir = `${base}/test-project/${sessionId}`;
+    mkdirSync(sessionDir, { recursive: true });
+    createdBaseDirs.push(base);
+    const outsideDir = `${base}-outside`;
+    mkdirSync(outsideDir, { recursive: true });
+    createdBaseDirs.push(outsideDir);
+    symlinkSync(outsideDir, `${sessionDir}/scratchpad`);
+    deepStrictEqual(
+      isSessionScratchpadSafe(
+        `${sessionDir}/scratchpad/notes.md`,
+        sessionId,
+        cwd,
+      ),
+      { safe: false, reason: "not-contained" },
+    );
+  });
+});
+
+describe("staticRuleEngine - session scratchpad file operations", () => {
+  const sessionId = "5bf51a88-f975-4628-9a69-e09cd2e8a17f";
+  const cwd = "/home/user/project";
+  const createdBaseDirs: string[] = [];
+
+  afterEach(() => {
+    for (const dir of createdBaseDirs.splice(0)) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  function makeScratchpadDir(sid: string = sessionId): string {
+    const uid = `${process.pid}${Math.floor(Math.random() * 1_000_000)}`;
+    const base = `/tmp/claude-${uid}`;
+    const scratchpadDir = `${base}/test-project/${sid}/scratchpad`;
+    mkdirSync(scratchpadDir, { recursive: true });
+    createdBaseDirs.push(base);
+    return scratchpadDir;
+  }
+
+  for (const toolName of ["Write", "Edit", "MultiEdit"]) {
+    it(`allows ${toolName} under this session's scratchpad`, () => {
+      const scratchpadDir = makeScratchpadDir();
+      const input: PermissionRequestInput = {
+        session_id: sessionId,
+        tool_name: toolName,
+        tool_input: { file_path: `${scratchpadDir}/notes.md` },
+        cwd,
+      };
+      deepStrictEqual(staticRuleEngine(input), {
+        behavior: "allow",
+        source: "session-scratchpad-safe",
+      });
+    });
+  }
+
+  it("allows NotebookEdit under this session's scratchpad", () => {
+    const scratchpadDir = makeScratchpadDir();
+    const input: PermissionRequestInput = {
+      session_id: sessionId,
+      tool_name: "NotebookEdit",
+      tool_input: { notebook_path: `${scratchpadDir}/notebook.ipynb` },
+      cwd,
+    };
+    deepStrictEqual(staticRuleEngine(input), {
+      behavior: "allow",
+      source: "session-scratchpad-safe",
+    });
+  });
+
+  it("does not auto-approve another session's scratchpad", () => {
+    const otherSessionId = "other-session-id-111";
+    const scratchpadDir = makeScratchpadDir(otherSessionId);
+    const input: PermissionRequestInput = {
+      session_id: sessionId,
+      tool_name: "Write",
+      tool_input: { file_path: `${scratchpadDir}/notes.md` },
+      cwd,
+    };
+    strictEqual(staticRuleEngine(input).behavior, "uncertain");
+  });
+
+  it("still denies dangerous paths even under a session scratchpad-shaped path", () => {
+    const scratchpadDir = makeScratchpadDir();
+    const input: PermissionRequestInput = {
+      session_id: sessionId,
+      tool_name: "Write",
+      tool_input: { file_path: `${scratchpadDir}/.env` },
+      cwd,
+    };
+    strictEqual(staticRuleEngine(input).behavior, "deny");
   });
 });
 

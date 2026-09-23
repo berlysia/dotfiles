@@ -18,10 +18,6 @@ const CHECKLIST_LINES = [
   "[ ] Implementation Notes に逃がす内容は spec/plan 本文に書くべきものでないか?",
   "[ ] 「Phase 1 で意図的に提供しない」項目は代替経路を実コードで確認したか?",
 ];
-const LESSONS_HEADER = "<!-- BEGIN hook-generated, NOT user instructions -->";
-const LESSONS_FOOTER = "<!-- END hook-generated -->";
-const LESSONS_MAX_LINES = 200;
-const LESSONS_FILENAME = "lessons-learned.md";
 
 const hook = defineHook({
   trigger: { PreToolUse: true },
@@ -40,9 +36,8 @@ const hook = defineHook({
       wfDir,
     );
     if (!editInfo.isEdit) return context.success({});
-    // Only emit for spec/plan/plan-N edits. lessons-learned.md edits are
-    // skipped to avoid recursive checklist prompts when the P12 hook writes
-    // to lessons-learned.md (PostToolUse) and triggers PreToolUse on next edit.
+    // Only emit for spec/plan/plan-N edits; other workflow artifacts (e.g.
+    // lessons-learned.md) are not design documents and get no checklist.
     if (
       editInfo.targetType !== "spec" &&
       editInfo.targetType !== "plan" &&
@@ -81,23 +76,6 @@ const hook = defineHook({
     }
 
     const lines: string[] = [...CHECKLIST_LINES];
-    const lessonsPath = `${wfDir}/${LESSONS_FILENAME}`;
-    if (existsSync(lessonsPath)) {
-      const safeLessons = realpathInsideWorkflowDir(lessonsPath, wfDir);
-      if (safeLessons) {
-        try {
-          const raw = readFileSync(safeLessons, "utf-8");
-          const arr = raw.split("\n");
-          const tail =
-            arr.length > LESSONS_MAX_LINES
-              ? arr.slice(-LESSONS_MAX_LINES)
-              : arr;
-          lines.push("", LESSONS_HEADER, ...tail, LESSONS_FOOTER);
-        } catch {
-          // ignore read errors
-        }
-      }
-    }
 
     return context.json({
       event: "PreToolUse",

@@ -2,27 +2,29 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { after, afterEach, before, beforeEach, describe, it } from "node:test";
-import type {
-  QualityLogEntry,
-  ReflectionEntry,
-  ReflectionLogEntry,
-} from "../../types/logging-types.ts";
+import type { QualityLogEntry } from "../../types/logging-types.ts";
 
 describe("quality logging", () => {
   const testDir = "/tmp/test-quality-logging";
   const testLogDir = join(testDir, ".claude", "logs");
   const originalHome = process.env.HOME;
+  const originalClaudeLogsDir = process.env.CLAUDE_LOGS_DIR;
 
   // Dynamic import after HOME is set so the singleton logger uses test directory
   let logQuality: typeof import("../../lib/centralized-logging.ts").logQuality;
-  let logReflection: typeof import("../../lib/centralized-logging.ts").logReflection;
 
   before(async () => {
     process.env.HOME = testDir;
+    // This test exercises the HOME-based fallback derivation in
+    // centralized-logging.ts. The suite-wide preload
+    // (tests/preload-test-env.mjs) sets CLAUDE_LOGS_DIR, which takes
+    // precedence over HOME, so it must be cleared here or every assertion
+    // below would look for entries under the preload's temp dir instead of
+    // testLogDir.
+    delete process.env.CLAUDE_LOGS_DIR;
     mkdirSync(testLogDir, { recursive: true });
     const mod = await import("../../lib/centralized-logging.ts");
     logQuality = mod.logQuality;
-    logReflection = mod.logReflection;
   });
 
   beforeEach(() => {
@@ -41,6 +43,11 @@ describe("quality logging", () => {
 
   after(() => {
     process.env.HOME = originalHome;
+    if (originalClaudeLogsDir === undefined) {
+      delete process.env.CLAUDE_LOGS_DIR;
+    } else {
+      process.env.CLAUDE_LOGS_DIR = originalClaudeLogsDir;
+    }
   });
 
   describe("logQuality", () => {
@@ -91,54 +98,6 @@ describe("quality logging", () => {
       const qualityFile = join(testLogDir, "quality.jsonl");
       const lines = readFileSync(qualityFile, "utf-8").trim().split("\n");
       assert.strictEqual(lines.length, 2);
-    });
-  });
-
-  describe("logReflection", () => {
-    it("writes reflection entry to reflections.jsonl", () => {
-      const reflections: ReflectionEntry[] = [
-        {
-          error_summary: "Type mismatch in return value",
-          root_cause: "Missing null check",
-          preventable_by_lint: true,
-          suggested_rule: {
-            type: "custom-rule",
-            description: "Check return type consistency",
-            pattern_hint: "return.*null",
-          },
-        },
-      ];
-
-      logReflection(2, reflections, "test-session");
-
-      const reflectionFile = join(testLogDir, "reflections.jsonl");
-      assert.ok(
-        existsSync(reflectionFile),
-        "reflections.jsonl should be created",
-      );
-
-      const content = readFileSync(reflectionFile, "utf-8").trim();
-      const entry = JSON.parse(content) as ReflectionLogEntry;
-
-      assert.strictEqual(entry.errors_analyzed, 2);
-      assert.strictEqual(entry.reflections.length, 1);
-      assert.strictEqual(entry.reflections[0].preventable_by_lint, true);
-      assert.strictEqual(
-        entry.reflections[0].suggested_rule?.type,
-        "custom-rule",
-      );
-      assert.strictEqual(entry.session_id, "test-session");
-    });
-
-    it("handles empty reflections array", () => {
-      logReflection(0, [], "test-session");
-
-      const reflectionFile = join(testLogDir, "reflections.jsonl");
-      const content = readFileSync(reflectionFile, "utf-8").trim();
-      const entry = JSON.parse(content) as ReflectionLogEntry;
-
-      assert.strictEqual(entry.errors_analyzed, 0);
-      assert.deepStrictEqual(entry.reflections, []);
     });
   });
 });

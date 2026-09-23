@@ -12,6 +12,7 @@ import {
   computeDocumentHash,
   isCompleteAndChanged,
   PLAN_REVIEWERS,
+  planRoundReviewers,
   readDocCache,
   REVIEWER_CATALOG,
   scanPlaceholders,
@@ -239,6 +240,145 @@ describe("workflow-review-core: buildRecommendation pointer-ization (K6)", () =>
     const doc = specWithRounds(1);
     const result = buildRecommendation("/tmp/wf/spec.md", null, doc);
     ok(result.length > 400);
+  });
+});
+
+function docWithRound(round: number, verdicts: Record<string, string>): string {
+  const lines = ["## Key Decisions", "- K1", "", "## Tasks", "- T1", ""];
+  lines.push(`## Reviewer Outputs (Round ${round})`, "");
+  for (const [slug, verdict] of Object.entries(verdicts)) {
+    lines.push(`### ${slug}`, `- verdict: ${verdict}`, "- 主指摘: x", "");
+  }
+  lines.push(
+    "<!-- auto-review: verdict=needs-work; hash=h; at=2026-01-01T00:00:00.000Z; reviewers=x -->",
+    "",
+    "## Approval",
+    "- Plan Status: complete",
+    "- Review Status: needs-work",
+    "- Approval Status: pending",
+  );
+  return lines.join("\n");
+}
+
+const ALL_SPEC_PASS_BUT_SCOPE = {
+  "logic-validator": "pass",
+  "scope-justification-reviewer": "needs-work",
+  "decision-quality-reviewer": "pass",
+  "greenfield-perspective-reviewer": "pass（軽微あり）",
+};
+
+describe("workflow-review-core: planRoundReviewers (K6 delta re-review)", () => {
+  it("is full when there is no prior round", () => {
+    deepStrictEqual(planRoundReviewers(docWithRound(1, {}), "spec", 0), {
+      kind: "full",
+    });
+  });
+
+  it("re-runs non-pass reviewers plus logic-validator and carries the rest", () => {
+    const plan = planRoundReviewers(
+      docWithRound(1, ALL_SPEC_PASS_BUT_SCOPE),
+      "spec",
+      1,
+    );
+    deepStrictEqual(plan, {
+      kind: "delta",
+      rerun: ["logic-validator", "scope-justification-reviewer"],
+      carried: ["decision-quality-reviewer", "greenfield-perspective-reviewer"],
+    });
+  });
+
+  it("requires a content-selected reviewer that returned needs-work", () => {
+    const plan = planRoundReviewers(
+      docWithRound(1, {
+        "logic-validator": "pass",
+        "scope-justification-reviewer": "pass",
+        "compound-engineering:review:security-sentinel": "needs-work",
+      }),
+      "plan-numbered",
+      1,
+    );
+    deepStrictEqual(plan, {
+      kind: "delta",
+      rerun: ["logic-validator", "security-sentinel"],
+      carried: ["scope-justification-reviewer"],
+    });
+  });
+
+  it("re-runs a mandatory reviewer missing from the prior round", () => {
+    const plan = planRoundReviewers(
+      docWithRound(1, {
+        "logic-validator": "pass",
+        "scope-justification-reviewer": "pass",
+        "decision-quality-reviewer": "pass",
+      }),
+      "spec",
+      1,
+    );
+    deepStrictEqual(plan, {
+      kind: "delta",
+      rerun: ["logic-validator", "greenfield-perspective-reviewer"],
+      carried: ["scope-justification-reviewer", "decision-quality-reviewer"],
+    });
+  });
+
+  it("treats carried lines as pass so the chain does not oscillate", () => {
+    const plan = planRoundReviewers(
+      docWithRound(2, {
+        "logic-validator": "pass",
+        "scope-justification-reviewer": "pass",
+        "decision-quality-reviewer": "pass (carried from Round 1)",
+        "greenfield-perspective-reviewer": "pass (carried from Round 1)",
+      }),
+      "spec",
+      2,
+    );
+    strictEqual(plan.kind, "delta");
+    deepStrictEqual(plan.kind === "delta" ? plan.rerun : [], [
+      "logic-validator",
+    ]);
+  });
+
+  it("falls back to full when any verdict in the prior round is unfilled", () => {
+    const plan = planRoundReviewers(
+      docWithRound(1, { ...ALL_SPEC_PASS_BUT_SCOPE, "logic-validator": "" }),
+      "spec",
+      1,
+    );
+    deepStrictEqual(plan, { kind: "full" });
+  });
+
+  it("falls back to full when any reviewer returned blocker", () => {
+    const plan = planRoundReviewers(
+      docWithRound(1, {
+        ...ALL_SPEC_PASS_BUT_SCOPE,
+        "decision-quality-reviewer": "blocker",
+      }),
+      "spec",
+      1,
+    );
+    deepStrictEqual(plan, { kind: "full" });
+  });
+
+  it("falls back to full when the requested prior round section is absent", () => {
+    deepStrictEqual(
+      planRoundReviewers(docWithRound(1, ALL_SPEC_PASS_BUT_SCOPE), "spec", 2),
+      { kind: "full" },
+    );
+  });
+});
+
+describe("workflow-review-core: buildRecommendation delta (K6)", () => {
+  it("lists only the re-run reviewers once a round has verdicts", () => {
+    const result = buildRecommendation(
+      "/tmp/wf/spec.md",
+      null,
+      docWithRound(1, ALL_SPEC_PASS_BUT_SCOPE),
+    );
+    ok(result.includes("subagent_type: logic-validator"));
+    ok(result.includes("subagent_type: scope-justification-reviewer"));
+    ok(!result.includes("subagent_type: decision-quality-reviewer"));
+    ok(!result.includes("subagent_type: greenfield-perspective-reviewer"));
+    ok(result.includes("Carried from Round 1"));
   });
 });
 

@@ -131,15 +131,26 @@ hash 正規化を変更した場合、旧 normalizer で承認済の進行中成
 `workflow-cli` は marker / Review Status / Reviewer Outputs 骨格 / intent-triage marker を書く。モデルは hash を転記しない。
 
 - `workflow-cli status [--wf-dir <dir>]`: gate 診断 + tripwire 状態を表示。
-- `workflow-cli round <doc>`: `## Reviewer Outputs (Round N)` 骨格を marker 直前に挿入し、`.round-baseline` に round 番号と時刻を記録する。
+- `workflow-cli round <doc> [--full]`: `## Reviewer Outputs (Round N)` 骨格を marker 直前に挿入し、`.round-baseline` に round 番号と時刻を記録する。Round 2 以降は下記「差分再レビュー」の集合だけを空欄で並べ、carried reviewer は `- verdict: pass (carried from Round N-1)` で埋める。`--full` は常に必須 reviewer 全員の空欄骨格にする。
 - `workflow-cli stamp <doc> --verdict <pass|needs-work|blocker> --reviewers a+b`: Round N セクションと reviewer 実行証跡（`reviewer-runs.log`）を確認し、揃っていれば厳密形の Review Status と marker を書く。証跡が無ければ非 0。
 - `workflow-cli triage <doc> --adopted N --excluded M`: intent-triage marker を書く。
 
 いずれも Approval 行に触れる変更は拒否する（承認は人間のみ）。wfDir は `--wf-dir`（`isStrictlyUnderProjectSubdir` で検証）または `$DOCUMENT_WORKFLOW_DIR`。session 由来の dir と食い違うと警告する。
 
+## 差分再レビュー（Round 2 以降、ADR-0015 K6）
+
+`planRoundReviewers`（`lib/workflow-review-core.ts`）が前 round セクションの `### <slug>` / `- verdict:` を読み、次 round の reviewer を決める。推奨テキスト・`round` の骨格・`stamp` の要求集合はすべてこの関数の結果を使うので食い違わない。
+
+- **再実行（rerun）**: `logic-validator`（回帰の見張り、常に）+ verdict が `pass` で始まらない reviewer + 前 round に現れない必須 reviewer。前 round で needs-work だった内容選定 reviewer（例: security-sentinel）も推奨と骨格には入るが、stamp が起動証跡を要求するのは必須 reviewer の分だけ（Round 1 と同じ扱いで、差分 round が full round より厳しくならないようにするため）。
+- **引き継ぎ（carried）**: verdict が `pass` で始まる残りの reviewer。骨格に carried 行として書かれるので、次の round でも pass として連鎖する。
+- **全員に戻る（full）条件**: 前 round セクションが無い / 空欄の verdict がある / `blocker` がある / `round --full`。曖昧なときは集合を小さくしない側に倒す。
+- **運用規律（機械判定なし）**: Key Decisions・白紙案を変える修正は `--full`。全員 pass で残りが軽微指摘だけなら、反映してから `stamp --verdict pass` する（stamp は反映後の内容で hash を計算するので、guard の hash 一致はそのまま成立する）。
+
+stamp は Round N の要求集合を Round N-1 の verdict から再計算する。`--full` で全員を回した場合は要求集合の上位集合になるので、そのまま通る。
+
 ## reviewer 実行台帳（reviewer-runs.log）
 
-`reviewer-run-recorder`（PostToolUse Agent）が reviewer subagent の起動を `<sessionId>\t<subagent_type>\t<ISO>` で記録する（200 行 FIFO）。`stamp` はこの台帳で「対象層の必須 reviewer が現 round の baseline 以降に起動されたか」を検証する。これにより round + stamp だけで reviewer 未起動のまま pass を書くことを防ぐ。台帳は session 単位で文書単位ではない（同 session で spec と plan-N を同 round で見る場合は両層の必須 reviewer が揃えば通る、過剰許容側の fail-open）。
+`reviewer-run-recorder`（PostToolUse Agent）が reviewer subagent の起動を `<sessionId>\t<subagent_type>\t<ISO>` で記録する（200 行 FIFO）。`stamp` はこの台帳で「現 round の要求集合（Round 1 と full round は対象層の必須 reviewer、以降は差分再レビューの rerun のうち必須 reviewer）が現 round の baseline 以降に起動されたか」を検証する。これにより round + stamp だけで reviewer 未起動のまま pass を書くことを防ぐ。台帳は session 単位で文書単位ではない（同 session で spec と plan-N を同 round で見る場合は両層の必須 reviewer が揃えば通る、過剰許容側の fail-open）。
 
 ## 起動軸（pull / push）と autonomous lane
 

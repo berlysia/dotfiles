@@ -1,7 +1,7 @@
 {{ if ne .chezmoi.os "windows" -}}
 #!/bin/bash
 # Distill ★ Insight blocks from ~/.claude/projects/**/*.jsonl into a digest report.
-# Modeled after run_after_analyze-mistakes.sh.tmpl: stamp-gated, idempotent.
+# Stamp-gated and idempotent.
 # Stage A only (heuristic). Stage B (LLM) is added later once Stage A is stable.
 
 set -euo pipefail

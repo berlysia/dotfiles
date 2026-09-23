@@ -565,6 +565,10 @@ describe("wire output (subprocess)", () => {
 
     const childEnv = { ...process.env };
     delete childEnv.DOCUMENT_WORKFLOW_DIR;
+    // The suite-wide preload (tests/preload-test-env.mjs) sets this in the
+    // parent test process; clear it here so the spawned session.ts process
+    // derives its log dir from childEnv.HOME below, matching this test's intent.
+    delete childEnv.CLAUDE_LOGS_DIR;
     childEnv.HOME = tmp;
     childEnv.CLAUDE_ENV_FILE = join(tmp, "envfile");
     childEnv.CLAUDE_CODE_TASK_LIST_ID = "shared-list-456";

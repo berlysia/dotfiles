@@ -5,6 +5,7 @@ import {
   appendFileSync,
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   rmSync,
 } from "node:fs";
@@ -20,7 +21,7 @@ describe("user-prompt-logger.ts hook behavior", () => {
 
   beforeEach(() => {
     // Create test directory
-    testDir = join(tmpdir(), `user-prompt-logger-test-${Date.now()}`);
+    testDir = mkdtempSync(join(tmpdir(), "user-prompt-logger-test-"));
     logDir = join(testDir, ".config", "claude-companion", "logs");
     logFile = join(logDir, "hooks.jsonl");
     mkdirSync(logDir, { recursive: true });

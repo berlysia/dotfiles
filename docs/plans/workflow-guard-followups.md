@@ -58,7 +58,7 @@ production コードで `process.env.CLAUDE_TEST_CWD` を読むのは次の **7 
 
 1. `knip` は CI に配線されていない。`grep -rn "knip" .github/` はヒット 0。
 2. `home/dot_claude/hooks/tests/unit/workflow-paths.test.ts:6-23` が一族全体を import しているため、テストが死んだコードを緑で保護している。実測: `bunx knip --no-progress` の出力は `Unused exported types (1) WorkflowDirUnresolvableReason` のみで、シム 2 本も派生関数も報告されない。
-3. `home/.chezmoiscripts/run_after_gc.sh.tmpl:64-75` が最大週 1 回 `bunx knip` をローカル実行するが、この経路は常に「clean」と報告する。`run_after_gc.sh.tmpl:69` の `if ! bunx knip --no-progress 2>&1 | tail -20; then` の終了コードはパイプ末尾の `tail` のものであり、knip の検出結果に関わらず 0 になる。したがって「報告はされるがゲートではない」ではなく、この経路では報告すら成功扱いに潰れている。
+3. `home/.chezmoiscripts/run_after_gc.sh.tmpl:64-75` が最大週 1 回 `bunx knip` をローカル実行する。これは報告のみでゲートではない。（2026-09-24 訂正: 以前「`| tail -20` の終了コードで常に clean になる」と書いていたが誤り。同スクリプト 9 行目の `set -euo pipefail` によりパイプの終了コードは knip のものになり、検出時は「knip reported issues」と出る。）
 
 加えて、`document-workflow-guard.ts` の未使用 import `isWorkflowDocument` の除去は spec.md の K8 項目 6 に含まれていたが、plan-2 の `25a3aac` で既に解消済みである（実測: 同ファイルに `isWorkflowDocument` は 1 件も残っていない）。本課題からは除外する。
 

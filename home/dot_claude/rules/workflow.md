@@ -32,9 +32,10 @@
    - **依存質問の逐次化**: 前の回答に依存する質問は次ラウンドに回す。
    - 選択肢を出すときは推奨とその理由を 1 行で添える。
 4. **完成**: 各成果物の `## Approval` を `Plan Status: complete` にする。
-5. **自動レビュー**: `plan-review-automation` が編集を検知して層別のレビュアー集合を推奨する。**推奨された全レビュアーを Agent tool で並列実行する**。
-   - **5.1 Reviewer Outputs 追記（必須）**: 各 reviewer の verdict + 主指摘 1-2 文を、auto-review marker の直前に `## Reviewer Outputs (Round N)` として書く。骨格は `workflow-cli round <doc>` が作る。このセクションが無いと lessons 抽出が skip される。長文の逐語引用はしない。
-   - **marker と Review Status は `workflow-cli` が書く**: レビュー後に `workflow-cli round <doc>`（骨格挿入）→ reviewer 実行 → `workflow-cli stamp <doc> --verdict <pass|needs-work|blocker> --reviewers a+b`。stamp は hash / design-hash / parent-spec-hash を自分で計算して marker を書く。**hash を手で転記しない**。stamp は reviewer が実際に起動された証跡（`reviewer-runs.log`）が無いと通らない。
+5. **自動レビュー**: `plan-review-automation` が編集を検知して層別のレビュアー集合を推奨する。**推奨されたレビュアーを Agent tool で並列実行する**。
+   - **5.1 Reviewer Outputs（必須）**: 各 reviewer の verdict + 主指摘 1-2 文を `## Reviewer Outputs (Round N)` に書く。長文の逐語引用はしない。
+   - **帳簿は `workflow-cli` が書く**: `round <doc>`（骨格挿入）→ reviewer 実行 → `stamp <doc> --verdict <pass|needs-work|blocker> --reviewers a+b`。hash は stamp が計算する（**手で転記しない**）。起動証跡（`reviewer-runs.log`）が無いと stamp は通らない。
+   - **5.2 Round 2 以降は差分**: 前 round の非 pass reviewer + `logic-validator` だけ再実行（`round` / `stamp` もこの集合）。Key Decisions / 白紙案を変えたら `round <doc> --full`。全員 pass で軽微指摘のみなら反映後に `stamp --verdict pass`、新 round は起こさない。
 6. **インテント整合性トリアージ（必須）**: `/intent-alignment-triage` を実行し、元のオーダーの本義を歪めてスコープを縮める指摘（divergent）を除外する。結果は `workflow-cli triage <doc> --adopted N --excluded M` で marker に記録する。トリアージ前にレビュー結果をユーザーへ提示しない。
 7. **承認**: 人間が `Approval Status: approved` にする（下記 CRITICAL）。
 8. **実装**: 三状態 + hash 一致がそろってから着手する。**着手前にオフロード判定を 1 行宣言する**（`@~/.claude/rules/model-offloading.md`）。

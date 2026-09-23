@@ -15,4 +15,3 @@ claude_plugins:
     - compound-engineering@every-marketplace
     - decomposition@kuu-marketplace
     - codex@openai-codex
-    - playwright@claude-plugins-official

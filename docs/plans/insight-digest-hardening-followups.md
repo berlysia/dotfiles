@@ -12,6 +12,8 @@
 
 ## 2. `appendInsightRecord` の ensureDir 責務不整合
 
+**解消済み (2026-09-24)**: `home/dot_claude/hooks/lib/insight-digest.ts` の `appendInsightRecord` を `ensureDir(dirname(path))` に修正済み。
+
 - **内容**: `appendInsightRecord(record, path = INSIGHTS_JSONL)` が `ensureDir(LOGS_DIR)` を呼ぶため、tmpdir パス注入時も実 `~/.claude/logs/insights` を mkdir しうる。`ensureDir(dirname(path))` に揃える
 - **背景**: 4b4d889 で `writeAckMs` に適用した修正と同種 (architecture-strategist 指摘)。`writeStampAt` は既に `ensureDir(dirname(path))` 形
 

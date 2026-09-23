@@ -40,6 +40,8 @@ import {
   computeDocumentHash,
   countReviewerOutputsRounds,
   PLAN_NORMALIZERS,
+  planRoundReviewers,
+  type RoundReviewerPlan,
   reviewersForDocumentType,
   SPEC_NORMALIZERS,
 } from "../lib/workflow-review-core.ts";
@@ -100,6 +102,9 @@ interface ParsedArgs {
   flags: Record<string, string>;
 }
 
+/** Flags that take no value, so `round --full spec.md` keeps `spec.md` positional. */
+const BOOLEAN_FLAGS = new Set(["full"]);
+
 function parseArgs(args: string[]): ParsedArgs {
   const positional: string[] = [];
   const flags: Record<string, string> = {};
@@ -108,6 +113,10 @@ function parseArgs(args: string[]): ParsedArgs {
     if (token === undefined) continue;
     if (token.startsWith("--")) {
       const key = token.slice(2);
+      if (BOOLEAN_FLAGS.has(key)) {
+        flags[key] = "true";
+        continue;
+      }
       const value = args[i + 1];
       flags[key] = value ?? "";
       i++;
@@ -267,11 +276,28 @@ function cmdRound(
   const documentType = getWorkflowDocumentType(docPath) ?? "plan";
   const currentRound = countReviewerOutputsRounds(oldContent);
   const nextRound = currentRound + 1;
-  const mandatoryReviewers = reviewersForDocumentType(documentType);
+  const roundPlan: RoundReviewerPlan =
+    flags["full"] === "true"
+      ? { kind: "full" }
+      : planRoundReviewers(oldContent, documentType, currentRound);
 
   const skeletonLines = [`## Reviewer Outputs (Round ${nextRound})`, ""];
-  for (const reviewer of mandatoryReviewers) {
-    skeletonLines.push(`### ${reviewer.slug}`, "- verdict: ", "- 主指摘: ", "");
+  const rerun =
+    roundPlan.kind === "delta"
+      ? roundPlan.rerun
+      : reviewersForDocumentType(documentType).map((r) => r.slug as string);
+  for (const slug of rerun) {
+    skeletonLines.push(`### ${slug}`, "- verdict: ", "- 主指摘: ", "");
+  }
+  if (roundPlan.kind === "delta") {
+    for (const slug of roundPlan.carried) {
+      skeletonLines.push(
+        `### ${slug}`,
+        `- verdict: pass (carried from Round ${currentRound})`,
+        `- 主指摘: Round ${currentRound} で pass、再実行なし`,
+        "",
+      );
+    }
   }
 
   const newContent = insertBeforeLatestMarker(
@@ -288,8 +314,12 @@ function cmdRound(
   writeFileSync(docPath, newContent);
   appendRoundBaseline(wfDir, nextRound, deps.now);
 
+  const summary =
+    roundPlan.kind === "delta"
+      ? `re-run: ${roundPlan.rerun.join(", ")}; carried: ${roundPlan.carried.join(", ") || "none"}`
+      : `re-run: all always-on reviewers${currentRound > 0 ? " (full round)" : ""}`;
   return ok(
-    `inserted "## Reviewer Outputs (Round ${nextRound})" into ${docName}\n`,
+    `inserted "## Reviewer Outputs (Round ${nextRound})" into ${docName}\n${summary}\n`,
     warning,
   );
 }
@@ -435,9 +465,22 @@ function cmdStamp(
     );
   }
 
-  const mandatorySlugs = reviewersForDocumentType(documentType).map(
+  // Round N is held to the always-on reviewers Round N-1 left unresolved
+  // (spec K6); anything ambiguous in Round N-1 falls back to the full set.
+  // Content-selected reviewers are recommended for re-run but never required,
+  // same as in Round 1, so a delta round is never stricter than a full one.
+  const alwaysOnSlugs = reviewersForDocumentType(documentType).map(
     (r) => r.slug as string,
   );
+  const roundPlan = planRoundReviewers(
+    oldContent,
+    documentType,
+    currentRound - 1,
+  );
+  const mandatorySlugs =
+    roundPlan.kind === "delta"
+      ? roundPlan.rerun.filter((slug) => alwaysOnSlugs.includes(slug))
+      : alwaysOnSlugs;
   const ledgerPath = deps.ledgerPath ?? resolve(wfDir, "reviewer-runs.log");
   const baselineFromRound = readRoundBaselineTime(wfDir, currentRound);
   const usedFallback = baselineFromRound === null;

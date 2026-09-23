@@ -5,6 +5,7 @@ import {
   appendFileSync,
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   rmSync,
 } from "node:fs";
@@ -20,7 +21,7 @@ describe("command-logger.ts hook behavior", () => {
 
   beforeEach(() => {
     // Create test directory
-    testDir = join(tmpdir(), `command-logger-test-${Date.now()}`);
+    testDir = mkdtempSync(join(tmpdir(), "command-logger-test-"));
     claudeDir = join(testDir, ".claude");
     commandHistoryFile = join(claudeDir, "command_history.log");
     toolUsageFile = join(claudeDir, "tool_usage.jsonl");

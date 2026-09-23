@@ -280,7 +280,7 @@ export function appendInsightRecord(
   record: InsightRecord,
   path: string = INSIGHTS_JSONL,
 ): void {
-  ensureDir(LOGS_DIR);
+  ensureDir(dirname(path));
   const fd = openSync(path, "a", 0o600);
   try {
     writeSync(fd, `${JSON.stringify(record)}\n`);

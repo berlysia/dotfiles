@@ -24,13 +24,16 @@ import type {
   LogEntry,
   LogManagerConfig,
   QualityLogEntry,
-  ReflectionEntry,
-  ReflectionLogEntry,
   ToolLogEntry,
 } from "../types/logging-types.ts";
 
+// CLAUDE_LOGS_DIR lets callers relocate the log directory without touching
+// HOME (same override shape as DOCUMENT_WORKFLOW_DIR in workflow-paths.ts).
+// Tests rely on this: home/dot_claude/hooks/tests/preload-test-env.mjs sets
+// it to a per-process temp dir so `node --test` never appends to the real
+// ~/.claude/logs/*.jsonl files.
 const DEFAULT_CONFIG: LogManagerConfig = {
-  logDir: join(homedir(), ".claude", "logs"),
+  logDir: process.env.CLAUDE_LOGS_DIR || join(homedir(), ".claude", "logs"),
   maxLines: 1000,
   rotateBackups: 5,
   rotateIntervalDays: 3,
@@ -71,27 +74,6 @@ class CentralizedLogger {
       this.rotateLogIfNeeded(category);
     } catch (error) {
       console.error(`Failed to write to ${category} log: ${error}`);
-    }
-  }
-
-  private writeClaudeCompanionLog(entry: EventLogEntry): void {
-    const logFile = join(
-      homedir(),
-      ".config",
-      "claude-companion",
-      "logs",
-      "hooks.jsonl",
-    );
-    const logLine = `${JSON.stringify(entry)}\n`;
-
-    try {
-      // Ensure directory exists
-      const logDir = join(homedir(), ".config", "claude-companion", "logs");
-      mkdirSync(logDir, { recursive: true });
-
-      appendFileSync(logFile, logLine);
-    } catch (error) {
-      console.error(`Failed to write to claude-companion log: ${error}`);
     }
   }
 
@@ -192,9 +174,6 @@ class CentralizedLogger {
     };
 
     this.writeLog("events", entry);
-
-    // claude-companionプロジェクトとの互換性のため、デュアル書き込み
-    this.writeClaudeCompanionLog(entry);
   }
 
   /**
@@ -255,21 +234,6 @@ class CentralizedLogger {
     };
 
     this.writeLog("quality", entry);
-  }
-
-  logReflection(
-    errorsAnalyzed: number,
-    reflections: ReflectionEntry[],
-    sessionId?: string,
-  ): void {
-    const entry: ReflectionLogEntry = {
-      ...this.createBaseEntry(),
-      errors_analyzed: errorsAnalyzed,
-      reflections,
-      ...(sessionId && { session_id: sessionId }),
-    };
-
-    this.writeLog("reflections", entry);
   }
 
   /**
@@ -353,14 +317,6 @@ export function logQuality(
   filePath?: string,
 ): void {
   getLogger().logQuality(source, lintTool, errorOutput, sessionId, filePath);
-}
-
-export function logReflection(
-  errorsAnalyzed: number,
-  reflections: ReflectionEntry[],
-  sessionId?: string,
-): void {
-  getLogger().logReflection(errorsAnalyzed, reflections, sessionId);
 }
 
 /**

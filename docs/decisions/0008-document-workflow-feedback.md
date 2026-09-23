@@ -73,6 +73,8 @@ my-secretary セッション (08535ebf) のフィードバックファイル `do
 
 **再評価条件**: 軽量パスで蓄積した lessons-learned.md が起草者から「粗すぎて使えない」とフィードバックされた場合、または同一 pattern の指摘が異なる文言で 3 件以上 lessons-learned に保存され dedup が機能しない事態が発生した場合。
 
+**2026-09-24 追記（撤去）**: `lessons-learned-extractor.ts` と、`spec-plan-self-audit.ts` が lessons-learned.md を注入する処理を撤去した。16 セッション分の lessons-learned.md を確認すると、中身は同じ文書の `## Reviewer Outputs (Round N)` にある主指摘の写しで、spec/plan を編集するたびに最大 200 行を二重に注入していた。セッション間で持ち越す経路（Deferred-4）も無く、教訓として働いていなかったため、LLM 化せずに撤去する。
+
 ## Consequences
 
 - **Positive**:

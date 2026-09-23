@@ -160,6 +160,203 @@ describe("workflow-cli: round", () => {
   });
 });
 
+/**
+ * spec.md whose Round 1 is fully filled: only scope-justification-reviewer
+ * asked for changes. Round 2 is optionally present (as `round` would insert).
+ */
+function writeSpecAfterRound1(wf: string, withRound2: boolean): void {
+  const round1 = [
+    "## Reviewer Outputs (Round 1)",
+    "",
+    "### logic-validator",
+    "- verdict: pass",
+    "",
+    "### scope-justification-reviewer",
+    "- verdict: needs-work",
+    "",
+    "### decision-quality-reviewer",
+    "- verdict: pass",
+    "",
+    "### greenfield-perspective-reviewer",
+    "- verdict: pass",
+    "",
+    "<!-- auto-review: verdict=needs-work; hash=h; at=2026-01-01T00:00:00.000Z; reviewers=x -->",
+    "",
+  ];
+  const round2 = withRound2
+    ? [
+        "## Reviewer Outputs (Round 2)",
+        "",
+        "### logic-validator",
+        "- verdict: pass",
+        "",
+        "### scope-justification-reviewer",
+        "- verdict: pass",
+        "",
+      ]
+    : [];
+  writeFileSync(
+    join(wf, "spec.md"),
+    [
+      "## Key Decisions",
+      "- K1",
+      "",
+      ...round1,
+      ...round2,
+      "## Approval",
+      "- Plan Status: complete",
+      "- Review Status: needs-work",
+      "- Approval Status: pending",
+    ].join("\n"),
+  );
+}
+
+describe("workflow-cli: delta re-review (K6)", () => {
+  it("round skeleton lists re-run reviewers and prefills carried passes", () => {
+    const { wf } = seedWorkflow({ doc: "plan.md", round: 0, ledgerSlugs: [] });
+    writeSpecAfterRound1(wf, false);
+    const r = runWorkflowCli(["round", "spec.md"], {
+      cwd: wf,
+      wfDir: wf,
+      sessionId: "test-ses",
+      now: NOW,
+    });
+    assert.equal(r.exitCode, 0, r.stderr);
+    const doc = readFileSync(join(wf, "spec.md"), "utf-8");
+    const round2 = doc.slice(doc.indexOf("## Reviewer Outputs (Round 2)"));
+    assert.match(round2, /### logic-validator\n- verdict: \n/);
+    assert.match(round2, /### scope-justification-reviewer\n- verdict: \n/);
+    assert.match(
+      round2,
+      /### decision-quality-reviewer\n- verdict: pass \(carried from Round 1\)/,
+    );
+    assert.match(
+      r.stdout,
+      /re-run: logic-validator, scope-justification-reviewer/,
+    );
+  });
+
+  it("round --full lists every mandatory reviewer unfilled", () => {
+    const { wf } = seedWorkflow({ doc: "plan.md", round: 0, ledgerSlugs: [] });
+    writeSpecAfterRound1(wf, false);
+    const r = runWorkflowCli(["round", "spec.md", "--full"], {
+      cwd: wf,
+      wfDir: wf,
+      sessionId: "test-ses",
+      now: NOW,
+    });
+    assert.equal(r.exitCode, 0, r.stderr);
+    const doc = readFileSync(join(wf, "spec.md"), "utf-8");
+    assert.doesNotMatch(doc, /carried from Round 1/);
+    assert.match(doc, /### greenfield-perspective-reviewer\n- verdict: \n/);
+  });
+
+  it("stamp accepts a round where only the re-run reviewers ran", () => {
+    const { wf, ledger } = seedWorkflow({
+      doc: "plan.md",
+      round: 0,
+      ledgerSlugs: ["logic-validator", "scope-justification-reviewer"],
+    });
+    writeSpecAfterRound1(wf, true);
+    const r = runWorkflowCli(
+      [
+        "stamp",
+        "spec.md",
+        "--verdict",
+        "pass",
+        "--reviewers",
+        "logic-validator+scope-justification-reviewer",
+      ],
+      {
+        cwd: wf,
+        wfDir: wf,
+        sessionId: "test-ses",
+        now: NOW,
+        ledgerPath: ledger,
+      },
+    );
+    assert.equal(r.exitCode, 0, r.stderr);
+  });
+
+  it("stamp still requires the re-run reviewers", () => {
+    const { wf, ledger } = seedWorkflow({
+      doc: "plan.md",
+      round: 0,
+      ledgerSlugs: ["logic-validator"],
+    });
+    writeSpecAfterRound1(wf, true);
+    const r = runWorkflowCli(
+      [
+        "stamp",
+        "spec.md",
+        "--verdict",
+        "pass",
+        "--reviewers",
+        "logic-validator",
+      ],
+      {
+        cwd: wf,
+        wfDir: wf,
+        sessionId: "test-ses",
+        now: NOW,
+        ledgerPath: ledger,
+      },
+    );
+    assert.notEqual(r.exitCode, 0);
+    assert.match(r.stderr, /scope-justification-reviewer/);
+  });
+});
+
+describe("workflow-cli: delta re-review never exceeds a full round (K6)", () => {
+  it("stamp does not require a content-selected reviewer that returned needs-work", () => {
+    const { wf, ledger } = seedWorkflow({
+      doc: "plan-1.md",
+      round: 0,
+      ledgerSlugs: ["logic-validator", "scope-justification-reviewer"],
+    });
+    const doc = readFileSync(join(wf, "plan-1.md"), "utf-8").replace(
+      "## Approval",
+      [
+        "## Reviewer Outputs (Round 1)",
+        "",
+        "### logic-validator",
+        "- verdict: needs-work",
+        "",
+        "### scope-justification-reviewer",
+        "- verdict: needs-work",
+        "",
+        "### security-sentinel",
+        "- verdict: needs-work",
+        "",
+        "<!-- auto-review: verdict=needs-work; hash=h; at=2026-01-01T00:00:00.000Z; reviewers=x -->",
+        "",
+        "## Reviewer Outputs (Round 2)",
+        "",
+        "## Approval",
+      ].join("\n"),
+    );
+    writeFileSync(join(wf, "plan-1.md"), doc);
+    const r = runWorkflowCli(
+      [
+        "stamp",
+        "plan-1.md",
+        "--verdict",
+        "pass",
+        "--reviewers",
+        "logic-validator+scope-justification-reviewer",
+      ],
+      {
+        cwd: wf,
+        wfDir: wf,
+        sessionId: "test-ses",
+        now: NOW,
+        ledgerPath: ledger,
+      },
+    );
+    assert.equal(r.exitCode, 0, r.stderr);
+  });
+});
+
 describe("workflow-cli: triage", () => {
   it("appends an intent-triage marker", () => {
     const { wf } = seedWorkflow({
