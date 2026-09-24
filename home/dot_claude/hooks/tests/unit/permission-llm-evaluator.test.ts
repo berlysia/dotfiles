@@ -2,7 +2,10 @@
 
 import { deepStrictEqual, strictEqual } from "node:assert";
 import { describe, it } from "node:test";
-import { parseLLMResponse } from "../../implementations/permission-llm-evaluator.ts";
+import {
+  EVALUATOR_QUERY_OPTIONS,
+  parseLLMResponse,
+} from "../../implementations/permission-llm-evaluator.ts";
 
 describe("parseLLMResponse", () => {
   it("returns allow variant when JSON says allow: true", () => {
@@ -75,5 +78,14 @@ describe("parseLLMResponse", () => {
   it("returns empty reason when reason is missing but allow is boolean", () => {
     const result = parseLLMResponse('{"allow": true}');
     deepStrictEqual(result, { kind: "allow", reason: "" });
+  });
+});
+
+describe("EVALUATOR_QUERY_OPTIONS", () => {
+  // The evaluator runs inside a PermissionRequest hook. If its subprocess
+  // loads user settings, every evaluation starts a session that fires the
+  // user's Stop hooks (voice, Discord, Slack) on its own.
+  it("loads no filesystem settings so user hooks do not run in the evaluator session", () => {
+    deepStrictEqual(EVALUATOR_QUERY_OPTIONS.settingSources, []);
   });
 });

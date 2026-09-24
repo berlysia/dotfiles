@@ -8,7 +8,7 @@
  * Uses Claude Code's license for authentication (no API key required)
  */
 
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import { type Options, query } from "@anthropic-ai/claude-agent-sdk";
 import { defineHook } from "cc-hooks-ts";
 import {
   createAudioEngine,
@@ -216,6 +216,24 @@ function parseLLMResponse(responseText: string): LLMEvaluationResult {
 }
 
 /**
+ * Options for the evaluator's SDK session.
+ *
+ * settingSources is empty because the SDK otherwise loads the user's
+ * settings, and the evaluator session would run every user hook: its Stop
+ * fires the voice / Discord / Slack notifications once per permission
+ * request, which sounds like the main session stopping.
+ */
+const EVALUATOR_QUERY_OPTIONS = {
+  model: "haiku",
+  maxTurns: 1,
+  systemPrompt: SYSTEM_PROMPT,
+  allowedTools: [],
+  settingSources: [],
+  permissionMode: "bypassPermissions",
+  allowDangerouslySkipPermissions: true,
+} satisfies Options;
+
+/**
  * Call Claude Agent SDK to evaluate the permission request
  * Uses Claude Code's license for authentication
  */
@@ -228,14 +246,7 @@ async function evaluateWithLLM(
   try {
     const conversation = query({
       prompt: userPrompt,
-      options: {
-        model: "haiku",
-        maxTurns: 1,
-        systemPrompt: SYSTEM_PROMPT,
-        allowedTools: [],
-        permissionMode: "bypassPermissions",
-        allowDangerouslySkipPermissions: true,
-      },
+      options: EVALUATOR_QUERY_OPTIONS,
     });
 
     let responseText = "";
@@ -384,6 +395,7 @@ export default hook;
 
 // Export for testing
 export {
+  EVALUATOR_QUERY_OPTIONS,
   evaluateWithLLM,
   formatToolInputForEvaluation,
   parseLLMResponse,
