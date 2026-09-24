@@ -6,6 +6,7 @@ import {
   CONTROL_STRUCTURE_KEYWORDS,
   checkCommandPattern,
   checkDangerousCommand,
+  checkHomeDestruction,
   extractCommandsStructured,
   getFilePathFromToolInput,
   NO_PAREN_TOOL_NAMES,
@@ -309,6 +310,105 @@ describe("Command Parsing Library", () => {
       strictEqual(CONTROL_STRUCTURE_KEYWORDS.includes("for"), true);
       strictEqual(CONTROL_STRUCTURE_KEYWORDS.includes("do"), true);
       strictEqual(CONTROL_STRUCTURE_KEYWORDS.includes("done"), true);
+    });
+  });
+});
+
+describe("checkHomeDestruction", () => {
+  // Pure string classification: nothing here is ever executed.
+  const opts = { home: "/home/u", cwd: "/home/u/proj", user: "u" };
+
+  const denied = [
+    "rm -rf $HOME",
+    'rm -rf "$HOME"',
+    "rm -rf ${HOME}",
+    'rm -rf "${HOME}"',
+    "rm -rf ~",
+    "rm -rf ~/",
+    "rm -fr ~/",
+    "rm -r -f ~",
+    'rm --recursive --force "$HOME/"',
+    "rm -rf /home/u",
+    "rm -rf /home/u/.local",
+    "rm -rf ~/.claude",
+    "rm -rf ~/*",
+    "rm -rf /home",
+    "sudo rm -rf ~",
+    "cd ~ && rm -rf .",
+    'cd "$HOME"; rm -rf *',
+    "cd .. && cd .. && rm -rf u",
+    'find "$HOME" -delete',
+    "find ~ -name x -exec rm -rf {} +",
+    "rsync -a --delete /tmp/empty/ ~/",
+    "mv ~ /tmp/x",
+    'mv "$HOME/.local" /tmp/',
+    'rm -rf "$TMPHOME"',
+    'rm -rf "$(mktemp -d)"',
+    "bash -c 'rm -rf ~'",
+    "echo ~ | xargs rm -rf",
+    "\\rm -rf ~",
+    "command rm -rf ~",
+    "env rm -rf ~",
+    "/bin/rm -rf ~",
+    "rm -rf ~u",
+    'find "$HOME" -maxdepth 1 -mindepth 1 -exec mv {} /tmp/old \;',
+    "rsync -a --remove-source-files ~/ /tmp/dest/",
+    "tar czf /tmp/b.tgz --remove-files -C /home u",
+    'h="$HOME"; mv "$h" /tmp/x',
+    "tar czf /tmp/b.tgz --remove-files -C ~ .config",
+  ];
+
+  const allowed = [
+    "rm -rf ~/workspace/proj/node_modules",
+    "rm -rf ./dist",
+    "rm -rf /tmp/tmp.abc123",
+    "rm ~/.zcompdump",
+    "find ~ -name '*.log'",
+    'mv "$tmp" ./out',
+    "rsync -a ~/src/ /tmp/backup/",
+    'ls -la "$HOME"',
+    "cd ~ && ls",
+    "tar czf /tmp/b.tgz -C ~ workspace",
+    "tar czf /tmp/b.tgz --remove-files -C ~/workspace/proj dist",
+  ];
+
+  for (const command of denied) {
+    it(`denies ${command}`, () => {
+      const result = checkHomeDestruction(command, opts);
+      strictEqual(result.isDangerous, true);
+      strictEqual(result.reason.includes("home directory"), true);
+    });
+  }
+
+  for (const command of allowed) {
+    it(`allows ${command}`, () => {
+      strictEqual(checkHomeDestruction(command, opts).isDangerous, false);
+    });
+  }
+
+  describe("when the starting cwd is the home directory itself", () => {
+    const atHome = { ...opts, cwd: "/home/u" };
+
+    it("denies rm -rf .", () => {
+      strictEqual(checkHomeDestruction("rm -rf .", atHome).isDangerous, true);
+    });
+
+    it("denies rm -rf *", () => {
+      strictEqual(checkHomeDestruction("rm -rf *", atHome).isDangerous, true);
+    });
+
+    it("denies rm -rf ./dist (a direct child of home)", () => {
+      strictEqual(
+        checkHomeDestruction("rm -rf ./dist", atHome).isDangerous,
+        true,
+      );
+    });
+
+    it("allows rm -rf ./proj/dist", () => {
+      strictEqual(
+        checkHomeDestruction("rm -rf ./proj/dist", atHome).isDangerous,
+        false,
+      );
     });
   });
 });

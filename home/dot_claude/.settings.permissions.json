@@ -318,6 +318,19 @@
     "Edit(~/.ssh/*_ed25519)",
     "Edit(/etc/passwd)",
     "Edit(/etc/shadow)",
-    "Edit(/etc/sudoers)"
+    "Edit(/etc/sudoers)",
+    "Bash(rm * ~)",
+    "Bash(rm * ~/)",
+    "Bash(rm * $HOME)",
+    "Bash(rm * $HOME/)",
+    "Bash(rm * \"$HOME\")",
+    "Bash(rm * \"$HOME/\")",
+    "Bash(rm * ${HOME})",
+    "Bash(rm * \"${HOME}\")",
+    "Bash(find ~ *-delete*)",
+    "Bash(find $HOME *-delete*)",
+    "Bash(find \"$HOME\" *-delete*)",
+    "Bash(find ${HOME} *-delete*)",
+    "Bash(find \"${HOME}\" *-delete*)"
   ]
 }

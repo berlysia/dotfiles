@@ -73,6 +73,51 @@ describe("auto-approve.ts hook behavior", () => {
       context.assertDeny();
     });
 
+    it("should deny recursive deletion of the home directory even with a quoted variable", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(rm *)"]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+
+      // Classified only: the command string is never executed.
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", {
+        command: 'rm -rf "$HOME"',
+      });
+      await invokeRun(autoApproveHook, context);
+
+      context.assertDeny();
+    });
+
+    it("should deny cd to home followed by a relative recursive delete", async () => {
+      envHelper.set(
+        "CLAUDE_TEST_ALLOW",
+        JSON.stringify(["Bash(rm *)", "Bash(cd *)"]),
+      );
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", {
+        command: "cd ~ && rm -rf .",
+      });
+      await invokeRun(autoApproveHook, context);
+
+      context.assertDeny();
+    });
+
+    it("should not deny a recursive delete inside the project", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(rm *)"]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", {
+        command: "rm -rf ./dist",
+      });
+      await invokeRun(autoApproveHook, context);
+
+      ok(
+        context.jsonCalls.every(
+          (call: any) =>
+            call?.output?.hookSpecificOutput?.permissionDecision !== "deny",
+        ),
+      );
+    });
+
     it("should ask for approval when no patterns match", async () => {
       envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify([]));
       envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));

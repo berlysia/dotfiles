@@ -2,7 +2,7 @@
 
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
 import { defineHook } from "cc-hooks-ts";
 import { extractCommandsStructured } from "../lib/bash-parser.ts";
@@ -10,6 +10,7 @@ import { logDecision } from "../lib/centralized-logging.ts";
 import {
   CONTROL_STRUCTURE_KEYWORDS,
   checkDangerousCommand,
+  checkHomeDestruction,
   getCommandFromToolInput,
   NO_PAREN_TOOL_NAMES,
 } from "../lib/command-parsing.ts";
@@ -58,6 +59,7 @@ const hook = defineHook({
           tool_input,
           denyList,
           allowList,
+          context.input.cwd,
         );
         const decision = analyzeBashCommands(
           bashResult.commands,
@@ -255,6 +257,14 @@ function getPermissionLists(tool_name: string): {
   }
 }
 
+function currentUserName(): string | undefined {
+  try {
+    return userInfo().username;
+  } catch {
+    return undefined;
+  }
+}
+
 function getWorkspaceRoot(): string | undefined {
   try {
     const result = execSync("git rev-parse --show-toplevel", {
@@ -340,8 +350,28 @@ async function processBashTool(
   tool_input: unknown,
   denyList: string[],
   allowList: string[],
+  cwd: string | undefined,
 ): Promise<BashToolResult> {
   const bashCommand = getCommandFromToolInput("Bash", tool_input) || "";
+
+  // Judged on the whole command before splitting, because splitting loses the
+  // `cd` context. `home` comes from this process, never from the command, so a
+  // `HOME=...` assignment in an earlier Bash call cannot redirect the check.
+  const homeResult = checkHomeDestruction(bashCommand, {
+    home: homedir(),
+    cwd: cwd || process.cwd(),
+    user: currentUserName(),
+  });
+  if (homeResult.isDangerous) {
+    return {
+      commands: [
+        { type: "deny", command: bashCommand, reason: homeResult.reason },
+      ],
+      hasAskRequired: false,
+      hasPassRequired: false,
+    };
+  }
+
   const { individualCommands } = await extractCommandsStructured(bashCommand);
   const extractedCommands = individualCommands;
 

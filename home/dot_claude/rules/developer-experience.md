@@ -4,6 +4,14 @@
 
 Prefer specialized tools over Bash for file operations (Read over `cat`, Grep over `grep`, Edit over `sed`, Glob over `find`). Reserve Bash for execution, builds, and git operations.
 
+## Shell State
+
+Each Bash tool call starts a fresh shell: environment variables (including `HOME`) and the working directory set in one call do not carry over to the next.
+
+- Never override `HOME` to try something out, and never write such a step into a plan. A later "cleanup" of `$HOME` in another call hits the real home directory (2026-09-24 incident)
+- To remove a temporary directory, write the absolute path that `mktemp -d` printed, not a variable
+- Do not move deletions or moves of the home directory or its children into another language's API (`shutil.rmtree`, `fs.rmSync`, ...) or into a script file. Write the `rm` / `mv` inline so the guard hook can see it
+
 ## File Discovery
 
 Prefer `git ls-files` over broad Glob patterns to avoid noise from `node_modules/`, `dist/`, etc.
