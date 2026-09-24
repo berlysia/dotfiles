@@ -11,8 +11,8 @@ This command pushes current changes and creates a pull request with proper quali
 1. Check git status and current branch
 2. Verify changes are ready for PR
 3. Push changes to remote
-4. Create PR with appropriate title and description
-5. Follow repository's commit message style and PR conventions
+4. Write the PR title and description with the `pr-description` skill
+5. Follow the repository's commit message style
 
 ## Usage
 
