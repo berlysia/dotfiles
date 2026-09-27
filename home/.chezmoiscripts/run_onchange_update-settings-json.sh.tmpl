@@ -29,6 +29,17 @@ PERMISSIONS_CONTENT=$(cat "${SOURCE_DIR}/dot_claude/.settings.permissions.json")
 # Process hooks template with chezmoi
 HOOKS_CONTENT=$(chezmoi execute-template < "${SOURCE_DIR}/dot_claude/.settings.hooks.json.tmpl")
 
+# Every command hook runs through hook-timer.sh so per-hook wall-clock time
+# lands in ~/.claude/logs/hook-timing.jsonl. Wrapping here, not in the tmpl,
+# keeps new hooks from escaping measurement. A trailing `|| exit 2` is
+# repeated outside the wrapper so a missing/crashing timer still blocks.
+HOOKS_CONTENT=$(printf '%s' "$HOOKS_CONTENT" | jq --arg timer "{{ .chezmoi.homeDir }}/.claude/hooks/hook-timer.sh" '
+  with_entries(.key as $ev | .value |= map(.hooks |= map(
+    if .type == "command" then
+      .command = "sh \($timer | @sh) \($ev | @sh) \(if .async then 1 else 0 end) \(.command | @sh)"
+        + (if (.command | test("\\|\\|\\s*exit 2\\s*$")) then " || exit 2" else "" end)
+    else . end)))')
+
 # Merge all components into template
 TEMPLATE_CONTENT=$(jq -n \
     --argjson base "$BASE_CONTENT" \

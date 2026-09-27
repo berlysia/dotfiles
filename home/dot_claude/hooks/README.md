@@ -180,6 +180,29 @@ export default defineHook({
 
 ## ユーティリティ
 
+### Hook telemetry
+
+`~/.claude/settings.json` に載る全 command hook は、chezmoi が settings.json を生成する段（`run_onchange_update-settings-json.sh.tmpl` の jq merge）で `hook-timer.sh` に自動的にラップされ、実行 1 回ごとの wall-clock 所要時間が `$CLAUDE_LOGS_DIR/hook-timing.jsonl`（既定 `~/.claude/logs/hook-timing.jsonl`）に 1 行 1 実行で追記される。tmpl 自体は変えないので、新しいフックを追加してもラップは自動的に効く。
+
+計測対象は chezmoi が生成する `~/.claude/settings.json` の command hook に限る。次の 2 つは計測されない:
+
+- **プラグインの `hooks/hooks.json`**（例: codex プラグインの SessionStart / SessionEnd / Stop）。ファイルは `claude plugin` CLI が管理するキャッシュで、Claude Code のフック起動に割り込む手段が無い。遅いと疑ったときは、トランスクリプト JSONL の `hook_success` attachment（`command` と `durationMs` を持つ）で個別に確認する。**ただし `hook_success` は stdout/stderr が空でないフックしか記録されないので、記録が無いことは速いことを意味しない**。
+- **プロジェクトの `.claude/settings.json`**。本リポジトリでは `CLAUDE_CODE_REMOTE`（claude.ai/code の web 環境）のときだけ動く SessionStart が 1 本あるが、その環境には `hook-timer.sh` が配備されない（配備は chezmoi apply による）ため、包むとフック自体が壊れる。
+
+集計は `hook-timing` コマンド（`~/.local/bin/hook-timing`）で見る:
+
+```bash
+hook-timing                          # 直近24時間
+hook-timing --since 3d               # 直近3日
+hook-timing --session <id前方一致>    # 特定セッションだけ
+hook-timing --json                   # {byHook, blocking} をJSONで出力（jqでの追加分析用）
+```
+
+出力は2つの表:
+
+- **フック別**: label（`implementations/<name>.ts` から取れなければ `inline:` + コマンド先頭40文字）ごとの count / p50 / p95 / max / 合計ms、および stderr の最大バイト数（出力肥大の傾向を追う手がかり）。
+- **イベント別のブロック時間**: 同一イベントのフックは並列実行されるため、1回の発火でツール呼び出しが実際に待った時間は、その発火にマッチした sync フックの duration の**最大値**であり、合計ではない。この表の p50 / p95 / max はその最大値の分布。`topBottleneck` はどのフックが最大値を最も多く占めたか。`async: true` のフックはツール呼び出しをブロックしないため、この表に含まれない。
+
 ### generate-stats.ts
 
 コマンド実行統計の生成とレポート出力

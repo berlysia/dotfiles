@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# hook-timing: thin wrapper around cli/hook-timing.ts (plan T4).
+# Deployed by chezmoi at ~/.local/bin/hook-timing; the real logic lives at
+# ~/.claude/hooks/cli/hook-timing.ts (home/dot_claude/hooks/cli/hook-timing.ts
+# in source). Kept as a separate process rather than a symlink so PATH lookup
+# sees a stable name, matching the workflow-cli launcher convention.
+exec bun run --silent "${HOME}/.claude/hooks/cli/hook-timing.ts" "$@"
