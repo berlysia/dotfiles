@@ -45,6 +45,7 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
 ### Claude Code Skills Management
 
 - **手作りスキル**: `${projectRoot}/.skills/` で一元管理、`chezmoi apply` で `~/.claude/skills/` と `~/.codex/skills/` に rsync 同期
+  - rsync は run script が行うため `chezmoi apply <path>` では反映されない。スキル変更後は引数なしの `chezmoi apply` を実行する
 - **外部スキル**: `home/dot_apm/apm.yml` で宣言的管理、APM (`apm install -g`) 経由でインストール
   - `apm.lock.yaml` で追跡、手作りスキルとの共存は rsync 除外で維持
 
