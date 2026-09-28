@@ -428,3 +428,51 @@ describe("workflow-review-core: REVIEWER_CATALOG (K9a code-simplicity-reviewer)"
     );
   });
 });
+
+const proseFiles =
+  "## Files\n\n```\n.skills/pr-description/SKILL.md\n```\n\n## Tasks\npermission timeout モジュール\n";
+const codeFiles =
+  "## Files\n\n```\nhome/dot_claude/hooks/lib/x.ts\n```\n\n## Tasks\npermission timeout モジュール\n";
+
+describe("workflow-review-core: prose-only change", () => {
+  it("recommends no catalog reviewers and says why", () => {
+    const result = buildRecommendation("/tmp/wf/plan.md", null, proseFiles);
+    ok(!result.includes("security-sentinel"));
+    ok(!result.includes("resilience-analyzer"));
+    ok(
+      result.includes(
+        "Additional reviewers: skipped (all ## Files entries are prose)",
+      ),
+    );
+    ok(result.includes("1. subagent_type: logic-validator"));
+  });
+  it("keeps keyword selection when Files lists code", () => {
+    const result = buildRecommendation("/tmp/wf/plan.md", null, codeFiles);
+    ok(result.includes("security-sentinel"));
+    ok(!result.includes("Additional reviewers: skipped"));
+  });
+});
+
+describe("workflow-review-core: round budget line", () => {
+  const rounds = (n: number) =>
+    Array.from(
+      { length: n },
+      (_, i) => `## Reviewer Outputs (Round ${i + 1})\n`,
+    ).join("\n");
+  it("mentions --extend once the cycle reaches 3 rounds", () => {
+    const content = `## Goal\nx\n${rounds(3)}\n<!-- auto-review: verdict=needs-work; hash=1; round=3 -->\n`;
+    ok(
+      buildRecommendation("/tmp/wf/spec.md", null, content).includes(
+        "--extend --reason",
+      ),
+    );
+  });
+  it("is silent when the cycle restarted after a pass at round 3", () => {
+    const content = `## Goal\nx\n${rounds(4)}\n<!-- auto-review: verdict=pass; hash=1; round=3 -->\n<!-- auto-review: verdict=needs-work; hash=2; round=4 -->\n`;
+    ok(
+      !buildRecommendation("/tmp/wf/spec.md", null, content).includes(
+        "Round budget reached",
+      ),
+    );
+  });
+});

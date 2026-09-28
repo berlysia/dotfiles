@@ -19,8 +19,10 @@ import {
   PLAN_NORMALIZERS,
   SPEC_NORMALIZERS,
 } from "./document-hash.ts";
+import { isProseOnlyChange } from "./workflow-files.ts";
 import {
   type AutoReviewMarker,
+  lastPassMarkerRound,
   parseLatestAutoReviewMarker,
   STRICT_PLAN_STATUS,
 } from "./workflow-marker.ts";
@@ -454,10 +456,16 @@ function listRecommendedReviewers(
     description: r.responsibility as string,
   }));
   if (roundPlan.kind === "full") {
-    const additional = selectReviewers(planContent).map((r) => ({
-      subagentType: r.subagentType,
-      description: r.label,
-    }));
+    // A prose-only change (## Files lists only .md/.txt/... paths) has
+    // nothing for the code-quality catalog (security, resilience, ...) to
+    // review, so skip keyword selection entirely rather than recommend
+    // reviewers with no diff to look at (spec K2).
+    const additional = isProseOnlyChange(planContent)
+      ? []
+      : selectReviewers(planContent).map((r) => ({
+          subagentType: r.subagentType,
+          description: r.label,
+        }));
     return [...alwaysOn, ...additional];
   }
   const known = [
@@ -545,6 +553,13 @@ export function buildRecommendation(
     ),
   );
 
+  if (roundPlan.kind === "full" && isProseOnlyChange(planContent)) {
+    lines.push(
+      "",
+      "Additional reviewers: skipped (all ## Files entries are prose). If this plan changes code, list those paths in ## Files.",
+    );
+  }
+
   if (roundPlan.kind === "delta") {
     lines.push(
       "",
@@ -595,10 +610,13 @@ export function buildRecommendation(
   );
 
   const marker = parseLatestAutoReviewMarker(planContent);
-  if (roundCount >= 3 && marker?.verdict !== "pass") {
+  if (
+    roundCount - lastPassMarkerRound(planContent) >= ROUND_BUDGET &&
+    marker?.verdict !== "pass"
+  ) {
     lines.push(
       "",
-      "Round budget reached (3). Present the Executive Summary with unresolved findings and ask the human for direction. Do NOT start Round 4 without being told to.",
+      `Round budget reached (${ROUND_BUDGET}). \`workflow-cli round\` will refuse the next round. Present the Executive Summary with unresolved findings and ask the human for direction. Only if the human tells you to continue, run \`workflow-cli round <doc> --extend --reason "<their instruction>"\`.`,
     );
   }
 
