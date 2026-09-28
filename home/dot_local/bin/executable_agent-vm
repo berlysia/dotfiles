@@ -23,12 +23,16 @@ Usage:
   agent-vm env edit                 Edit this repo's host-only 1Password env file
   agent-vm env adopt <machine>      Take over the env file of a moved repo
   agent-vm list | gc | rm [repo]    Manage machines
+  agent-vm sync [--inspect]         Ingest session logs and check git surfaces now
+  agent-vm restore-git [repo]       Undo reported changes to host-executed git files
 EOF
 }
 
 resolve_repo_root() {
   local common
-  common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || die "not inside a git repository"
+  # Hardened flags: sync/restore-git run this right after a VM session, in a repo whose .git it
+  # may have just modified, so config-driven program execution is disabled for this invocation.
+  common=$(git -c core.fsmonitor= -c core.hooksPath=/dev/null --no-optional-locks rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || die "not inside a git repository"
   (cd -P "$(dirname "$common")" && pwd -P)
 }
 
@@ -533,6 +537,10 @@ prepare_machine() { # tool -> sets MACHINE and REPO; leaves the machine bootstra
   MACHINE=$(derive_machine_name "$REPO")
   write_machine_meta "$MACHINE" "$REPO"
   acquire_lock "$MACHINE" 60 || die "timed out waiting for another session of this repo"
+  # Steps 4-5: report git-surface changes left by an earlier session (including a crashed one)
+  # and catch up on logs it did not get to ingest. Findings are reported, the launch continues.
+  check_git_surfaces "$MACHINE" "$REPO" || true
+  ingest_outbox "$MACHINE" || true
   # Assignment form so set -e aborts when build_staging dies (a here-string substitution is not checked).
   out=$(build_staging "$MACHINE" "$wt")
   read -r gen hash <<<"$out"
@@ -541,8 +549,21 @@ prepare_machine() { # tool -> sets MACHINE and REPO; leaves the machine bootstra
   release_lock
 }
 
+finish_session() { # machine repo -> 0, 3 (git surfaces), 4 (log divergence), 5 (lock timeout)
+  local status=0
+  if ! acquire_lock "$1" "${AGENT_VM_FINISH_WAIT:-60}"; then
+    step "skipped log ingestion and git checks: another session of this repo holds the lock"
+    step "recover: agent-vm sync $2 (the next launch also runs them)"
+    return 5
+  fi
+  ingest_outbox "$1" || status=4
+  check_git_surfaces "$1" "$2" || status=3
+  release_lock
+  return "$status"
+}
+
 run_tool() { # tool args...
-  local tool=$1 envf script status=0
+  local tool=$1 envf script status=0 finish=0
   shift
   prepare_machine "$tool"
   notice_orphan_env "$MACHINE"
@@ -550,8 +571,28 @@ run_tool() { # tool args...
   envf=$(inject_secrets "$MACHINE")
   script=$(build_launch_script "$tool" "$REPO" "$envf" "$@")
   set_title "[vm:$MACHINE] $REPO"
+  # Step 9 also runs when the launcher is interrupted while the session is open.
+  trap 'set_title "$REPO"; finish_session "$MACHINE" "$REPO" || true; exit 130' INT TERM
   session_exec "$MACHINE" "$script" || status=$?
+  trap - INT TERM
   set_title "$REPO"
+  finish_session "$MACHINE" "$REPO" || finish=$?
+  if [[ "$status" -ne 0 ]]; then return "$status"; fi
+  return "$finish"
+}
+
+cmd_sync() { # [--inspect]
+  local repo m status=0
+  repo=$(resolve_repo_root)
+  m=$(derive_machine_name "$repo")
+  if [[ "${1:-}" == --inspect ]]; then
+    inspect_outbox "$m"
+    return 0
+  fi
+  acquire_lock "$m" 60 || die "timed out waiting for another session of this repo"
+  ingest_outbox "$m" || status=4
+  check_git_surfaces "$m" "$repo" || status=3
+  release_lock
   return "$status"
 }
 
@@ -569,6 +610,8 @@ main() {
     list) cmd_list ;;
     gc) cmd_gc ;;
     rm) shift; cmd_rm "$@" ;;
+    sync) shift; cmd_sync "$@" ;;
+    restore-git) shift; cmd_restore_git "$@" ;;
     env)
       case "${2:-}" in
         edit) cmd_env_edit ;;
