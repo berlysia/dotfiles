@@ -24,13 +24,6 @@ Usage:
 EOF
 }
 
-main() {
-  case "${1:-}" in
-    -h | --help | help | "") show_help ;;
-    *) die "unknown command: $1" ;;
-  esac
-}
-
 resolve_repo_root() {
   local common
   common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || die "not inside a git repository"
@@ -175,6 +168,87 @@ inject_secrets() { # machine -> prints the in-VM env file path (empty when nothi
     d=${XDG_RUNTIME_DIR:-/dev/shm}
     find "$d" -maxdepth 1 -name "agent-vm.env.*" -mmin +1 -delete 2>/dev/null
     umask 077; f=$(mktemp "$d/agent-vm.env.XXXXXX"); cat >"$f"; echo "$f"' 9>&-
+}
+
+build_launch_script() { # tool repo_root env_file args...
+  local tool=$1 repo=$2 envf=$3 script
+  shift 3
+  script="cd $(printf '%q' "$repo")"
+  if [[ -n "$envf" ]]; then
+    script+="; set -a; . $(printf '%q' "$envf"); set +a; rm -f $(printf '%q' "$envf")"
+  fi
+  script+="; exec $tool"
+  if [[ $# -gt 0 ]]; then script+="$(printf ' %q' "$@")"; fi
+  printf '%s\n' "$script"
+}
+
+ensure_codex_auth() { # machine
+  if orb -m "$1" sh -c 'test -f "$HOME/.codex/auth.json"' </dev/null 9>&-; then return 0; fi
+  step "Codex is not logged in on $1; starting device authorization (once per repo)"
+  # Passed as separate argv words (not a single "bash -lc '...'" string) so the command
+  # is unambiguous in process listings and no shell-quoting layer sits between it and orb.
+  orb -m "$1" codex login --device-auth
+}
+
+set_title() {
+  if [[ -t 1 ]]; then printf '\033]0;%s\007' "$1"; fi
+}
+
+session_exec() { orb -m "$1" bash -lc "$2"; } # machine script
+
+prepare_machine() { # tool -> sets MACHINE and REPO; leaves the machine bootstrapped
+  local wt gen hash out
+  check_health
+  wt=$(resolve_working_tree)
+  REPO=$(resolve_repo_root)
+  MACHINE=$(derive_machine_name "$REPO")
+  write_machine_meta "$MACHINE" "$REPO"
+  acquire_lock "$MACHINE" 60 || die "timed out waiting for another session of this repo"
+  # Assignment form so set -e aborts when build_staging dies (a here-string substitution is not checked).
+  out=$(build_staging "$MACHINE" "$wt")
+  read -r gen hash <<<"$out"
+  ensure_machine "$MACHINE" "$REPO" "$wt"
+  maybe_bootstrap "$MACHINE" "$gen" "$hash"
+  release_lock
+}
+
+run_tool() { # tool args...
+  local tool=$1 envf script status=0
+  shift
+  prepare_machine "$tool"
+  notice_orphan_env "$MACHINE"
+  if [[ "$tool" == codex ]]; then ensure_codex_auth "$MACHINE"; fi
+  envf=$(inject_secrets "$MACHINE")
+  script=$(build_launch_script "$tool" "$REPO" "$envf" "$@")
+  set_title "[vm:$MACHINE] $REPO"
+  session_exec "$MACHINE" "$script" || status=$?
+  set_title "$REPO"
+  return "$status"
+}
+
+cmd_prewarm() {
+  prepare_machine prewarm
+  step "machine $MACHINE is ready"
+}
+
+main() {
+  case "${1:-}" in
+    -h | --help | help | "") show_help ;;
+    claude | codex) run_tool "$@" ;;
+    shell) run_tool bash ;;
+    prewarm) cmd_prewarm ;;
+    list) cmd_list ;;
+    gc) cmd_gc ;;
+    rm) shift; cmd_rm "$@" ;;
+    env)
+      case "${2:-}" in
+        edit) cmd_env_edit ;;
+        adopt) cmd_env_adopt "${3:-}" ;;
+        *) show_help >&2; return 1 ;;
+      esac
+      ;;
+    *) die "unknown command: $1" ;;
+  esac
 }
 
 if [[ -z "${AGENT_VM_LIB:-}" ]]; then main "$@"; fi
