@@ -45,7 +45,7 @@ ADR: `docs/decisions/0010-context-md-mechanism.md`
 - **intent triage**: workflow.md step 6 で MANDATORY、divergent (本義を歪める指摘) を除外。「未実装機能のリスク対策」「dominant axis を勝手に変える」「先回り対応」が divergent の典型パターン
 - **常時必須レビュアー (層別)**:
   - spec 層 4 名: logic-validator + scope-justification-reviewer + decision-quality-reviewer + greenfield-perspective-reviewer
-  - plan 層 2 名 + コンテンツベース: logic-validator + scope-justification-reviewer + content-selected (architecture-strategist / security-sentinel / data-integrity-guardian / test-quality-evaluator / 等から最大 3 名)
+  - plan 層 2 名 + コンテンツベース: logic-validator + scope-justification-reviewer + content-selected (architecture-boundary-analyzer / security-vulnerability-analyzer / data-contract-evolution-evaluator / test-quality-evaluator / 等から最大 3 名)
   - SSoT は `SPEC_REVIEWERS` / `PLAN_REVIEWERS` 定数（実体は `lib/workflow-review-core.ts`、`plan-review-automation.ts` が re-export）
 - **ADR-0015 で追加された語彙（2026-09-10）**:
   - **workflow-cli**: `status` / `round` / `stamp` / `triage` で Review Status・marker・Reviewer Outputs 骨格・triage marker を書く CLI。モデルは hash を転記しない。Approval 行には触れない

@@ -87,7 +87,7 @@ Step 1 のあるべき支配軸と Step 2 の実際の重点を比較し、ズ�
 
 - **個別変更の正当性検証** → scope-justification-reviewer の責務
 - **個別主張の論理整合性チェック** → logic-validator の責務
-- **アーキテクチャパターンの詳細検証** → architecture-strategist の責務
+- **アーキテクチャパターンの詳細検証** → architecture-boundary-analyzer の責務
 - **実装コードのレビュー** → 対象外（plan.md の設計判断のみ）
 
 ## 出力フォーマット

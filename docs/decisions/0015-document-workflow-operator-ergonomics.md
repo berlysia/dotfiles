@@ -85,7 +85,7 @@ K6 は「round ≥ 2 は前 round で needs-work / blocker だった reviewer �
 - plan.md / plan-N.md の `## Files` が prose だけなら、full round の推奨に追加 reviewer を付けない。パーサは guard と共有する（`lib/workflow-files.ts`）。必須 reviewer の構成と差分再レビューの規則は変えない
 - 却下: 追加 reviewer の blocker で全員再実行に戻さない案。1 ラウンドあたりの reviewer を減らす方向で、ユーザーが選んだ「ラウンド数を減らす」と軸が異なる。予算の機構化で blocker の連鎖も Round 3 で人間に回る
 - 受容したリスク: `--extend` の指示元と、周の起点になる pass marker（`stamp --verdict pass` は各 reviewer の verdict 行と突き合わせない）は prompt 統制のまま。偽の pass はレビューを打ち切って人間の承認に回す向きに働き、予算が防ぐ「人間に見せずに回り続ける」経路にはならない。再評価トリガーは、log に人間の指示に対応しない reason が 1 件、または非 pass が残るのに pass marker が付いた事例 1 件
-- 別件として残したもの: `REVIEWER_CATALOG` が未インストールの `compound-engineering:review:*` を参照していること（代用されたローカル agent の起動が台帳に記録されない）。K9 の `code-simplicity-reviewer` 追加にも関わるため、このオーダーには含めない
+- 同日に解消: カタログをローカル agent に置き換え（performance / code-simplicity はローカルに agent 定義が無いため外した。観点が不要と判断したのではなく、戻すなら agent 定義を先に作る。K9 の code-simplicity-reviewer 追加はこれで取り消し）。compound-engineering の現行版は該当 agent を subagent として提供しない。3 つのロースターの各 slug がローカル定義を持つことをテストで固定。台帳は記録された subagent_type の plugin 名前空間を外して照合するので、同名の plugin agent の実行も当該 reviewer として数える（受容した挙動。照合を完全一致にするのは stamp にも及ぶため別オーダー）
 - 経緯と観測の詳細: `docs/plans/workflow-review-budget/`（research / spec / plan-1 と、集計レポート `evidence/review-cost-report.md`）
 
 ## References

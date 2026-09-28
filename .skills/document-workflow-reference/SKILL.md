@@ -141,7 +141,7 @@ hash 正規化を変更した場合、旧 normalizer で承認済の進行中成
 
 `planRoundReviewers`（`lib/workflow-review-core.ts`）が前 round セクションの `### <slug>` / `- verdict:` を読み、次 round の reviewer を決める。推奨テキスト・`round` の骨格・`stamp` の要求集合はすべてこの関数の結果を使うので食い違わない。
 
-- **再実行（rerun）**: `logic-validator`（回帰の見張り、常に）+ verdict が `pass` で始まらない reviewer + 前 round に現れない必須 reviewer。前 round で needs-work だった内容選定 reviewer（例: security-sentinel）も推奨と骨格には入るが、stamp が起動証跡を要求するのは必須 reviewer の分だけ（Round 1 と同じ扱いで、差分 round が full round より厳しくならないようにするため）。
+- **再実行（rerun）**: `logic-validator`（回帰の見張り、常に）+ verdict が `pass` で始まらない reviewer + 前 round に現れない必須 reviewer。前 round で needs-work だった内容選定 reviewer（例: security-vulnerability-analyzer）も推奨と骨格には入るが、stamp が起動証跡を要求するのは必須 reviewer の分だけ（Round 1 と同じ扱いで、差分 round が full round より厳しくならないようにするため）。
 - **引き継ぎ（carried）**: verdict が `pass` で始まる残りの reviewer。骨格に carried 行として書かれるので、次の round でも pass として連鎖する。
 - **全員に戻る（full）条件**: 前 round セクションが無い / 空欄の verdict がある / `blocker` がある / `round --full`。曖昧なときは集合を小さくしない側に倒す。
 - **運用規律（機械判定なし）**: Key Decisions・白紙案を変える修正は `--full`。全員 pass で残りが軽微指摘だけなら、反映してから `stamp --verdict pass` する（stamp は反映後の内容で hash を計算するので、guard の hash 一致はそのまま成立する）。
