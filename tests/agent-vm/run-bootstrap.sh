@@ -5,7 +5,9 @@ REPO_ROOT="$(cd "$TEST_DIR/../.." && pwd)"
 BOOTSTRAP="$REPO_ROOT/agent-vm/bootstrap.sh"
 TMP_BASE=$(mktemp -d -t agent-vm-bootstrap-XXXXXX)
 trap 'rm -rf "$TMP_BASE"' EXIT
-export PATH="$TEST_DIR/stubs:$PATH" RESULTS_FILE="$TMP_BASE/results"
+# A fixed PATH (stubs + system dirs only): a claude/chezmoi installed in the developer's own ~/.local/bin
+# or mise shims must not leak into the fake VM, or the "claude is missing" cases cannot be exercised.
+export PATH="$TEST_DIR/stubs:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" RESULTS_FILE="$TMP_BASE/results"
 : >"$RESULTS_FILE"
 # shellcheck source=tests/agent-vm/lib.sh
 . "$TEST_DIR/lib.sh"
