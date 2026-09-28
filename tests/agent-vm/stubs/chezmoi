@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Test stub: records argv (and stdin when asked), replies with configured output.
+# shellcheck disable=SC2154 # STUB_LOG is exported by tests/agent-vm/run.sh
+{ printf 'chezmoi'; printf ' %q' "$@"; printf '\n'; } >>"$STUB_LOG"
+if [[ "${STUB_CAPTURE_STDIN:-}" == 1 ]]; then cat >>"$STUB_LOG.stdin"; fi
+if [[ -n "${STUB_CHEZMOI_SLEEP:-}" ]]; then sleep "$STUB_CHEZMOI_SLEEP"; fi
+if [[ -n "${STUB_CHEZMOI_STDOUT:-}" ]]; then printf '%s\n' "$STUB_CHEZMOI_STDOUT"; fi
+exit "${STUB_CHEZMOI_EXIT:-0}"

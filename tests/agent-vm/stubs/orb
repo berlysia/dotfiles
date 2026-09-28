@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Test stub: records argv (and stdin when asked), replies with configured output.
+# shellcheck disable=SC2154 # STUB_LOG is exported by tests/agent-vm/run.sh
+{ printf 'orb'; printf ' %q' "$@"; printf '\n'; } >>"$STUB_LOG"
+if [[ "${STUB_CAPTURE_STDIN:-}" == 1 ]]; then cat >>"$STUB_LOG.stdin"; fi
+if [[ -n "${STUB_ORB_SLEEP:-}" ]]; then sleep "$STUB_ORB_SLEEP"; fi
+# `orb list` has its own canned output so a test can script "machine exists" and "applied hash" independently
+if [[ "${1:-}" == list && -n "${STUB_ORB_LIST_STDOUT:-}" ]]; then printf '%s\n' "$STUB_ORB_LIST_STDOUT"; exit 0; fi
+if [[ -n "${STUB_ORB_STDOUT:-}" ]]; then printf '%s\n' "$STUB_ORB_STDOUT"; fi
+exit "${STUB_ORB_EXIT:-0}"
