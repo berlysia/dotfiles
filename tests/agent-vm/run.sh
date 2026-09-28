@@ -43,6 +43,25 @@ test_outside_git_repo_fails() {
   assert_status 1 "non-repo fails" -- bash -c "cd '$TMP_ROOT/plain' && GIT_CEILING_DIRECTORIES='$TMP_ROOT' AGENT_VM_LIB=1 . '$LAUNCHER' && resolve_repo_root"
 }
 
+test_meta_roundtrip_with_equals_in_path() {
+  write_machine_meta agent-x-000000 "/tmp/a=b/repo"
+  assert_eq "/tmp/a=b/repo" "$(read_meta_field agent-x-000000 repo_path)" "repo_path keeps '='"
+  assert_eq "1" "$(read_meta_field agent-x-000000 format)" "format=1"
+}
+test_meta_rejects_newline_path() {
+  # die exits, so run it in a child process like the other fail-closed tests
+  assert_status 1 "newline path rejected" -- bash -c "AGENT_VM_STATE_DIR='$AGENT_VM_STATE_DIR' AGENT_VM_LIB=1 . '$LAUNCHER'; write_machine_meta agent-x-000000 \"\$(printf '/tmp/a\\nb')\""
+}
+test_exclude_prefix_on_directory_boundary() {
+  mkdir -p "$AGENT_VM_CONFIG_DIR" "$TMP_ROOT/ex/repo" "$TMP_ROOT/ex/repo2"
+  printf '# comment\n%s  # trailing comment\n' "$TMP_ROOT/ex/repo" >"$AGENT_VM_CONFIG_DIR/config"
+  assert_status 0 "exact match excluded" -- is_excluded "$(cd -P "$TMP_ROOT/ex/repo" && pwd -P)"
+  assert_status 1 "sibling with same prefix not excluded" -- is_excluded "$(cd -P "$TMP_ROOT/ex/repo2" && pwd -P)"
+}
+test_exclude_missing_config_means_not_excluded() {
+  assert_status 1 "no config" -- is_excluded "$TMP_ROOT/any"
+}
+
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do
   (
     TMP_ROOT="$TMP_BASE/$t"; mkdir -p "$TMP_ROOT"
