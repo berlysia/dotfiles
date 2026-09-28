@@ -10,6 +10,7 @@ import { createDenyResponse } from "../lib/context-helpers.ts";
 import { expandTilde } from "../lib/path-utils.ts";
 import { sanitizeForDisplay } from "../lib/sanitize-display.ts";
 import { appendOffPlanLog } from "../lib/workflow-audit-log.ts";
+import { parseFilesPaths } from "../lib/workflow-files.ts";
 import { resolveWorkflowPaths } from "../lib/workflow-paths.ts";
 import { resolveWorkflowDir } from "../lib/workflow-resolve.ts";
 import {
@@ -494,56 +495,13 @@ function findPlanNumberedFiles(wfDir: string): string[] {
 
 /**
  * Parse the `## Files` section of a plan-N.md as fenced code blocks containing
- * one path per line (relative to project root). `#` lines and blank lines are
- * skipped. Other non-path lines (indented, embedded whitespace, etc.) cause the
- * code block to be ignored conservatively. Returns absolute paths.
+ * one path per line (relative to project root). Path extraction itself lives
+ * in lib/workflow-files.ts (shared with review selection, spec K2); this
+ * wrapper only adds the realpath resolution the guard needs. Returns absolute
+ * paths.
  */
 function parseFilesSection(planContent: string, cwd: string): string[] {
-  // Split on `## ` H2 headings, find the section starting with "Files".
-  // `\Z` doesn't exist in JS regex, so we partition the document into sections
-  // and pick the Files one explicitly.
-  const sections = planContent.split(/^##\s+/m);
-  const filesSection = sections.find((s) =>
-    /^Files\s*$/m.test(s.split("\n")[0] ?? ""),
-  );
-  if (!filesSection) {
-    return [];
-  }
-  // Drop the "Files" heading line and use the rest as body.
-  const sectionBody = filesSection.replace(/^Files\s*\n/, "");
-  const codeBlocks: string[] = [];
-  const codeBlockRegex = /^```[^\n]*\n([\s\S]*?)\n```/gm;
-  let match: RegExpExecArray | null;
-  while ((match = codeBlockRegex.exec(sectionBody)) !== null) {
-    if (match[1] !== undefined) {
-      codeBlocks.push(match[1]);
-    }
-  }
-
-  const collected: string[] = [];
-  for (const block of codeBlocks) {
-    const blockPaths: string[] = [];
-    let blockValid = true;
-    for (const rawLine of block.split("\n")) {
-      const line = rawLine.trim();
-      if (line === "") continue;
-      if (line.startsWith("#")) continue;
-      // Reject lines with internal whitespace (tabs, spaces) or other non-path
-      // characters that suggest formatting issues.
-      if (/\s/.test(line)) {
-        blockValid = false;
-        break;
-      }
-      blockPaths.push(line);
-    }
-    if (!blockValid) {
-      continue; // Conservative deny: ignore blocks with format violations.
-    }
-    for (const p of blockPaths) {
-      collected.push(resolve(cwd, expandTilde(p)));
-    }
-  }
-  return collected;
+  return parseFilesPaths(planContent).map((p) => resolve(cwd, expandTilde(p)));
 }
 
 function getTargetFilePath(
