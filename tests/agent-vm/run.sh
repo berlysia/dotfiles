@@ -258,6 +258,67 @@ test_main_dispatches_commands() {
   assert_status 1 "unknown env subcommand" -- main env frobnicate
 }
 
+test_list_marks_missing_repos_and_skips_lock_files() {
+  write_machine_meta agent-live-000000 "$TMP_ROOT"
+  write_machine_meta agent-gone-000000 "$TMP_ROOT/does-not-exist"
+  : >"$AGENT_VM_STATE_DIR/machines/agent-live-000000.lock"
+  local out; out=$(cmd_list)
+  assert_contains "$out" "agent-live-000000	present" "live listed"
+  assert_contains "$out" "agent-gone-000000	missing" "gone repo marked missing"
+  assert_not_contains "$out" ".lock" "lock files are not machines"
+}
+test_list_shows_orphaned_env_files() {
+  write_machine_meta agent-gone-000000 "$TMP_ROOT/does-not-exist"
+  mkdir -p "$AGENT_VM_CONFIG_DIR/repos"; : >"$AGENT_VM_CONFIG_DIR/repos/agent-gone-000000.env.1password"
+  assert_contains "$(cmd_list)" "orphaned env: agent-gone-000000" "orphan env listed"
+}
+test_gc_deletes_missing_machines_but_keeps_env_files() {
+  write_machine_meta agent-live-000000 "$TMP_ROOT"
+  write_machine_meta agent-gone-000000 "$TMP_ROOT/does-not-exist"
+  mkdir -p "$AGENT_VM_STATE_DIR/staging/agent-gone-000000" "$AGENT_VM_CONFIG_DIR/repos"
+  : >"$AGENT_VM_CONFIG_DIR/repos/agent-gone-000000.env.1password"
+  printf 'y\n' | cmd_gc >/dev/null
+  assert_contains "$(cat "$STUB_LOG")" "orb delete -f agent-gone-000000" "orb delete for missing"
+  assert_not_contains "$(cat "$STUB_LOG")" "agent-live-000000" "live untouched"
+  assert_status 1 "staging of gone removed" -- test -e "$AGENT_VM_STATE_DIR/staging/agent-gone-000000"
+  assert_status 0 "host-authored env file kept" -- test -f "$AGENT_VM_CONFIG_DIR/repos/agent-gone-000000.env.1password"
+}
+test_gc_aborts_without_yes() {
+  write_machine_meta agent-gone-000000 "$TMP_ROOT/does-not-exist"
+  printf 'n\n' | cmd_gc >/dev/null
+  assert_not_contains "$(cat "$STUB_LOG")" "delete" "no deletion on 'n'"
+}
+test_launch_notices_orphan_env_when_own_is_missing() {
+  write_machine_meta agent-gone-000000 "$TMP_ROOT/does-not-exist"
+  mkdir -p "$AGENT_VM_CONFIG_DIR/repos"; : >"$AGENT_VM_CONFIG_DIR/repos/agent-gone-000000.env.1password"
+  assert_contains "$(notice_orphan_env agent-new-000000 2>&1)" "agent-vm env adopt agent-gone-000000" "adopt hint"
+  : >"$AGENT_VM_CONFIG_DIR/repos/agent-new-000000.env.1password"
+  assert_eq "" "$(notice_orphan_env agent-new-000000 2>&1)" "silent when own env exists"
+}
+test_env_adopt_renames_orphan_to_current_machine() {
+  local repo="$TMP_ROOT/adopt-repo"; mkdir -p "$repo" && git -C "$repo" init -q
+  local m; m=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
+  write_machine_meta agent-gone-000000 "$TMP_ROOT/does-not-exist"
+  mkdir -p "$AGENT_VM_CONFIG_DIR/repos"; printf 'A=op://v/a/x\n' >"$AGENT_VM_CONFIG_DIR/repos/agent-gone-000000.env.1password"
+  (cd "$repo" && cmd_env_adopt agent-gone-000000) 2>/dev/null
+  assert_eq "A=op://v/a/x" "$(cat "$AGENT_VM_CONFIG_DIR/repos/$m.env.1password")" "adopted"
+  assert_status 1 "old name gone" -- test -e "$AGENT_VM_CONFIG_DIR/repos/agent-gone-000000.env.1password"
+}
+test_env_adopt_refuses_non_orphan() {
+  local repo="$TMP_ROOT/adopt-repo2"; mkdir -p "$repo" && git -C "$repo" init -q
+  write_machine_meta agent-live-000000 "$TMP_ROOT"
+  mkdir -p "$AGENT_VM_CONFIG_DIR/repos"; : >"$AGENT_VM_CONFIG_DIR/repos/agent-live-000000.env.1password"
+  assert_status 1 "live repo env not adoptable" -- bash -c "cd '$repo' && AGENT_VM_STATE_DIR='$AGENT_VM_STATE_DIR' AGENT_VM_CONFIG_DIR='$AGENT_VM_CONFIG_DIR' AGENT_VM_LIB=1 . '$LAUNCHER'; cmd_env_adopt agent-live-000000"
+}
+test_env_edit_creates_private_file() {
+  local repo="$TMP_ROOT/edit-repo"; mkdir -p "$repo" && git -C "$repo" init -q
+  local m; m=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
+  (cd "$repo" && EDITOR=true cmd_env_edit)
+  local f="$AGENT_VM_CONFIG_DIR/repos/$m.env.1password"
+  assert_status 0 "file created" -- test -f "$f"
+  assert_eq "600" "$(perl -e 'printf "%o", (stat shift)[2] & 07777' "$f")" "mode 600 from creation"
+}
+
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do
   (
     TMP_ROOT="$TMP_BASE/$t"; mkdir -p "$TMP_ROOT"
