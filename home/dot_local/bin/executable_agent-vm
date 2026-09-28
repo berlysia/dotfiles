@@ -5,6 +5,7 @@ set -euo pipefail
 
 AGENT_VM_STATE_DIR="${AGENT_VM_STATE_DIR:-$HOME/.local/share/agent-vm}"
 AGENT_VM_CONFIG_DIR="${AGENT_VM_CONFIG_DIR:-$HOME/.config/agent-vm}"
+BOOTSTRAP_CONTRACT=1
 
 die() { printf 'agent-vm: %s\n' "$1" >&2; exit "${2:-1}"; }
 step() { printf 'agent-vm: %s\n' "$1" >&2; }
@@ -129,6 +130,29 @@ build_staging() { # machine working_tree -> prints "<generation> <hash>"
   # rm does not follow symlinks, so VM-planted links are unlinked, never traversed.
   find "$st" -mindepth 1 -maxdepth 1 ! -name "$gen" -exec rm -rf {} + 9>&-
   printf '%s %s\n' "$gen" "$hash"
+}
+
+# Mount-root assumption: an isolated machine sees only the mounted subtree, so the guest can
+# change entries inside staging/<m> but cannot replace staging/<m> itself (spec K2).
+ensure_machine() { # machine repo_root working_tree
+  if orb list </dev/null 9>&- | awk '{print $1}' | grep -qx "$1"; then return 0; fi
+  mkdir -p "$AGENT_VM_STATE_DIR/staging/$1" "$AGENT_VM_STATE_DIR/outbox/$1"
+  step "creating isolated machine $1 (first run only)"
+  orb create --isolated --isolate-network --forward-ssh-agent \
+    -c "$3/agent-vm/cloud-init.yaml" \
+    --mount "$2:$2" \
+    --mount "$AGENT_VM_STATE_DIR/staging/$1:/opt/agent-vm/src" \
+    --mount "$AGENT_VM_STATE_DIR/outbox/$1:/opt/agent-vm/outbox" \
+    ubuntu "$1" </dev/null 9>&-
+}
+
+maybe_bootstrap() { # machine generation staging_hash
+  local applied src="/opt/agent-vm/src/$2"
+  # The command's cwd inside the machine is not guaranteed to be $HOME, so read by absolute path.
+  applied=$(orb -m "$1" sh -c 'cat "$HOME/.local/state/agent-vm/applied-hash"' 2>/dev/null </dev/null 9>&-) || applied=""
+  if [[ "$applied" == "$3" ]]; then return 0; fi
+  step "applying dotfiles in $1"
+  orb -m "$1" bash "$src/agent-vm/bootstrap.sh" "$BOOTSTRAP_CONTRACT" "$3" "$src" </dev/null 9>&-
 }
 
 if [[ -z "${AGENT_VM_LIB:-}" ]]; then main "$@"; fi
