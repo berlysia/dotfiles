@@ -251,4 +251,92 @@ main() {
   esac
 }
 
+forget_machine() { # machine: host-side state for one machine (host-authored env files are kept)
+  rm -rf "$AGENT_VM_STATE_DIR/staging/$1" "$AGENT_VM_STATE_DIR/outbox/$1" \
+    "$AGENT_VM_STATE_DIR/snapshots/$1" "$AGENT_VM_STATE_DIR/ingested/$1" \
+    "$(meta_path "$1")" "$AGENT_VM_STATE_DIR/machines/$1.lock"
+}
+
+machine_state() { # machine -> present|missing (missing also when metadata is absent)
+  local repo
+  repo=$(read_meta_field "$1" repo_path) || { echo missing; return 0; }
+  if [[ -d "$repo" ]]; then echo present; else echo missing; fi
+}
+
+orphaned_env_machines() { # machines whose env file exists but whose repo is gone
+  local f m
+  for f in "$AGENT_VM_CONFIG_DIR"/repos/*.env.1password; do
+    [[ -f "$f" ]] || continue
+    m=$(basename "$f" .env.1password)
+    if [[ "$(machine_state "$m")" == missing ]]; then printf '%s\n' "$m"; fi
+  done
+  return 0
+}
+
+machine_rows() { # TSV only: machine, state, repo_path (consumed by cmd_list and cmd_gc)
+  local f m
+  for f in "$AGENT_VM_STATE_DIR"/machines/*; do
+    [[ -f "$f" && "$f" != *.lock ]] || continue
+    m=$(basename "$f")
+    printf '%s\t%s\t%s\n' "$m" "$(machine_state "$m")" "$(read_meta_field "$m" repo_path || true)"
+  done
+  return 0
+}
+
+cmd_list() { # human-facing: machine rows followed by orphaned env notes
+  machine_rows
+  orphaned_env_machines | sed 's/^/orphaned env: /'
+}
+
+notice_orphan_env() { # machine
+  local m
+  if [[ -f "$AGENT_VM_CONFIG_DIR/repos/$1.env.1password" ]]; then return 0; fi
+  for m in $(orphaned_env_machines); do
+    step "an env file of a missing repo exists; if this repo was moved: agent-vm env adopt $m"
+  done
+  return 0
+}
+
+cmd_gc() {
+  local targets answer m
+  targets=$(machine_rows | awk -F'\t' '$2 == "missing" {print $1}')
+  if [[ -z "$targets" ]]; then echo "nothing to collect"; return 0; fi
+  printf 'machines whose repository no longer exists:\n%s\ndelete them? [y/N] ' "$targets"
+  read -r answer
+  if [[ "$answer" != y && "$answer" != Y ]]; then return 0; fi
+  while IFS= read -r m; do
+    orb delete -f "$m" </dev/null
+    forget_machine "$m"
+  done <<<"$targets"
+}
+
+cmd_rm() { # [repo]
+  local repo m answer
+  repo=$(cd "${1:-.}" && resolve_repo_root)
+  m=$(derive_machine_name "$repo")
+  printf 'delete machine %s for %s? [y/N] ' "$m" "$repo"
+  read -r answer
+  if [[ "$answer" != y && "$answer" != Y ]]; then return 0; fi
+  orb delete -f "$m" </dev/null
+  forget_machine "$m"
+}
+
+cmd_env_edit() {
+  local f
+  f="$AGENT_VM_CONFIG_DIR/repos/$(derive_machine_name "$(resolve_repo_root)").env.1password"
+  mkdir -p "$(dirname "$f")"
+  if [[ ! -f "$f" ]]; then (umask 077 && : >"$f"); fi
+  "${EDITOR:-vi}" "$f"
+}
+
+cmd_env_adopt() { # old_machine
+  local old=$1 new
+  [[ -n "$old" ]] || die "usage: agent-vm env adopt <machine>"
+  orphaned_env_machines | grep -qx "$old" || die "$old is not an orphaned env file (its repo still exists or it has no env file)"
+  new=$(derive_machine_name "$(resolve_repo_root)")
+  [[ ! -e "$AGENT_VM_CONFIG_DIR/repos/$new.env.1password" ]] || die "this repo already has an env file"
+  mv "$AGENT_VM_CONFIG_DIR/repos/$old.env.1password" "$AGENT_VM_CONFIG_DIR/repos/$new.env.1password"
+  step "adopted env file of $old for $new"
+}
+
 if [[ -z "${AGENT_VM_LIB:-}" ]]; then main "$@"; fi
