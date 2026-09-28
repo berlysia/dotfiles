@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Test stub: records argv; prints a tiny installer script that logs its own execution.
+# shellcheck disable=SC2154 # STUB_LOG is exported by tests/agent-vm/run-bootstrap.sh
+{ printf 'curl'; printf ' %q' "$@"; printf '\n'; } >>"$STUB_LOG"
+if [[ "${STUB_CURL_EXIT:-0}" -ne 0 ]]; then exit "$STUB_CURL_EXIT"; fi
+printf 'echo installer-ran >>%q\n' "$STUB_LOG"
