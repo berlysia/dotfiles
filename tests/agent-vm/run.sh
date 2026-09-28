@@ -34,7 +34,7 @@ test_machine_name_falls_back_for_symbol_only_basename() {
 test_worktree_resolves_to_main_repo_root() {
   local repo="$TMP_ROOT/wt-main"
   mkdir -p "$repo" && git -C "$repo" init -q
-  git -C "$repo" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
+  git -C "$repo" -c user.email=t@t -c user.name=t -c commit.gpgsign=false commit -q --allow-empty -m init
   git -C "$repo" worktree add -q "$repo/.git/worktree/feat" -b feat
   assert_eq "$(cd -P "$repo" && pwd -P)" "$(cd "$repo/.git/worktree/feat" && resolve_repo_root)" "worktree -> main root"
 }
@@ -117,7 +117,7 @@ make_dotfiles_fixture() { # -> path of a git repo with tracked + untracked files
   local wt="$TMP_ROOT/df"; mkdir -p "$wt/home" "$wt/.skills/s"
   git -C "$wt" init -q
   printf 'a\n' >"$wt/home/dot_a"; printf 's\n' >"$wt/.skills/s/SKILL.md"
-  git -C "$wt" add . && git -C "$wt" -c user.email=t@t -c user.name=t commit -q -m init
+  git -C "$wt" add . && git -C "$wt" -c user.email=t@t -c user.name=t -c commit.gpgsign=false commit -q -m init
   printf 'secret\n' >"$wt/.env.local" # untracked, must not be staged
   printf '%s\n' "$wt"
 }
@@ -215,7 +215,8 @@ test_launch_script_sources_and_deletes_env_file() {
 }
 test_codex_login_runs_only_when_auth_missing() {
   STUB_ORB_EXIT=1 ensure_codex_auth agent-a-000000 || true
-  assert_contains "$(cat "$STUB_LOG")" "codex login --device-auth" "device auth when missing"
+  # the stub logs argv with printf %q, so the single bash -lc script shows escaped spaces
+  assert_contains "$(cat "$STUB_LOG")" 'bash -lc codex\ login\ --device-auth' "device auth in a login shell when missing"
   : >"$STUB_LOG"
   ensure_codex_auth agent-a-000000
   assert_not_contains "$(cat "$STUB_LOG")" "login" "no login when present"

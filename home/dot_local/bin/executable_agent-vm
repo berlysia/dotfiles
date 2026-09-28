@@ -185,9 +185,8 @@ build_launch_script() { # tool repo_root env_file args...
 ensure_codex_auth() { # machine
   if orb -m "$1" sh -c 'test -f "$HOME/.codex/auth.json"' </dev/null 9>&-; then return 0; fi
   step "Codex is not logged in on $1; starting device authorization (once per repo)"
-  # Passed as separate argv words (not a single "bash -lc '...'" string) so the command
-  # is unambiguous in process listings and no shell-quoting layer sits between it and orb.
-  orb -m "$1" codex login --device-auth
+  # A login shell is required: codex is installed via mise, whose PATH setup lives in the shell profile.
+  orb -m "$1" bash -lc 'codex login --device-auth'
 }
 
 set_title() {
