@@ -33,6 +33,6 @@ install-packages-*-windows.ps1
 
 # agent-vm (OrbStack launcher) - macOS host only
 {{ if ne .chezmoi.os "darwin" }}
-dot_local/bin/executable_agent-vm
-dot_config/agent-vm
+.local/bin/agent-vm
+.config/agent-vm
 {{ end }}
