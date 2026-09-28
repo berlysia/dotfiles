@@ -97,18 +97,22 @@ cmdRound() ── currentRound >= 3 → 拒否
 ## Reviewer Outputs (Round 1)
 
 ### logic-validator
+
 - verdict: needs-work
 - 主指摘: K1 は最新 marker の verdict で判定するが marker にラウンド番号が無く、stamp を挟まず `round` を重ねると古い pass で素通りする。K2 は Files の書き漏れで誤判定しうる。K3（カタログ張替え）は既存テスト 3 本を壊し Goal にも無い
 
 ### scope-justification-reviewer
+
 - verdict: needs-work
 - 主指摘: K1・K2・K4 は根拠あり。K3（カタログ張替え、performance / simplicity 除外）と ADR-0015 K9 の取り消しはオーダーに紐づかないスコープドリフト
 
 ### decision-quality-reviewer
+
 - verdict: pass
 - 主指摘: 支配軸の取り違えなし。`--extend` が機構化の看板の下で prompt 統制に留まる点は人間確認事項
 
 ### greenfield-perspective-reviewer
+
 - verdict: needs-work
 - 主指摘: K4 は 1 ラウンドの厚みを削る案でユーザーの選んだ軸とずれ、K1 だけで足りる。`--extend` の理由・指示元が構造化して残らない
 
@@ -118,18 +122,22 @@ cmdRound() ── currentRound >= 3 → 拒否
 ## Reviewer Outputs (Round 2)
 
 ### logic-validator
+
 - verdict: needs-work
 - 主指摘: 前回指摘は解消。新規: 全生涯の累積カウントは承認後の正当な再レビュー（parent-spec-hash ずれでの再承認）を塞ぐ。`--extend` と `--full` の併用可否が未定義
 
 ### scope-justification-reviewer
+
 - verdict: pass
 - 主指摘: 旧 K3 の切り出しでスコープドリフトは解消。parser 切り出し・round-extensions.log は K1/K2 に直結し妥当
 
 ### decision-quality-reviewer
+
 - verdict: pass
 - 主指摘: 支配軸と整合。`--reason` 必須化は prompt 統制の限界を事後追跡で受容する形で過不足なし
 
 ### greenfield-perspective-reviewer
+
 - verdict: pass
 - 主指摘: 前回指摘は解消。軽微: spec.md は prose 判定の対象外になる既知の限界を Risks に明記するとよい（R5 として反映）
 
@@ -139,18 +147,22 @@ cmdRound() ── currentRound >= 3 → 拒否
 ## Reviewer Outputs (Round 3)
 
 ### logic-validator
+
 - verdict: needs-work
 - 主指摘: Round 2 の (a) 累積カウント・(b) `--extend`/`--full` 併用は解消。新規: 周の起点の pass marker は `stamp --verdict pass` の自己申告で作れ（verdict 行と未突合、同一ラウンド再 stamp 可）、偽 pass でカウンタが戻る。機構で塞ぐか受容リスクとして明記を → R8 として明記し、人間が「A: 受容して進む」を選択（2026-09-28）。未解決指摘なし
 
 ### scope-justification-reviewer
+
 - verdict: pass (carried from Round 2)
 - 主指摘: Round 2 で pass、再実行なし
 
 ### decision-quality-reviewer
+
 - verdict: pass (carried from Round 2)
 - 主指摘: Round 2 で pass、再実行なし
 
 ### greenfield-perspective-reviewer
+
 - verdict: pass (carried from Round 2)
 - 主指摘: Round 2 で pass、再実行なし
 

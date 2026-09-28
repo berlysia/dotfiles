@@ -43,13 +43,20 @@ home/dot_claude/hooks/tests/unit/workflow-review-core.test.ts
 #!/usr/bin/env node --test
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import { describe, it } from "node:test";
-import { isProseOnlyChange, parseFilesPaths } from "../../lib/workflow-files.ts";
+import {
+  isProseOnlyChange,
+  parseFilesPaths,
+} from "../../lib/workflow-files.ts";
 
-const doc = (block: string) => `# Plan\n\n## Files\n\n\`\`\`\n${block}\n\`\`\`\n\n## Tasks\n`;
+const doc = (block: string) =>
+  `# Plan\n\n## Files\n\n\`\`\`\n${block}\n\`\`\`\n\n## Tasks\n`;
 
 describe("workflow-files: parseFilesPaths", () => {
   it("returns raw relative paths, skipping # comments and blank lines", () => {
-    deepStrictEqual(parseFilesPaths(doc("# 編集\na/b.ts\n\n.skills/x/SKILL.md")), ["a/b.ts", ".skills/x/SKILL.md"]);
+    deepStrictEqual(
+      parseFilesPaths(doc("# 編集\na/b.ts\n\n.skills/x/SKILL.md")),
+      ["a/b.ts", ".skills/x/SKILL.md"],
+    );
   });
   it("drops a block that contains a line with internal whitespace", () => {
     deepStrictEqual(parseFilesPaths(doc("a/b.ts\nfoo bar.md")), []);
@@ -61,14 +68,28 @@ describe("workflow-files: parseFilesPaths", () => {
 
 describe("workflow-files: isProseOnlyChange", () => {
   it("true when every path is prose (.md/.mdx/.markdown/.txt/.rst/.adoc)", () => {
-    strictEqual(isProseOnlyChange(doc(".skills/a/SKILL.md\nhome/dot_claude/rules/x.md\nnotes.txt")), true);
+    strictEqual(
+      isProseOnlyChange(
+        doc(".skills/a/SKILL.md\nhome/dot_claude/rules/x.md\nnotes.txt"),
+      ),
+      true,
+    );
   });
   it("strips a trailing .tmpl before judging", () => {
-    strictEqual(isProseOnlyChange(doc("home/dot_claude/templates/context.md.tmpl")), true);
-    strictEqual(isProseOnlyChange(doc("home/.chezmoiscripts/run.sh.tmpl")), false);
+    strictEqual(
+      isProseOnlyChange(doc("home/dot_claude/templates/context.md.tmpl")),
+      true,
+    );
+    strictEqual(
+      isProseOnlyChange(doc("home/.chezmoiscripts/run.sh.tmpl")),
+      false,
+    );
   });
   it("false when any path is code", () => {
-    strictEqual(isProseOnlyChange(doc("a/SKILL.md\nhome/dot_claude/hooks/lib/x.ts")), false);
+    strictEqual(
+      isProseOnlyChange(doc("a/SKILL.md\nhome/dot_claude/hooks/lib/x.ts")),
+      false,
+    );
   });
   it("false when Files is missing or empty (falls back to keyword selection)", () => {
     strictEqual(isProseOnlyChange("# Spec\n\n## Goal\nx\n"), false);
@@ -81,7 +102,7 @@ describe("workflow-files: isProseOnlyChange", () => {
 
 - [ ] **Step 3: 最小実装**
 
-```ts
+````ts
 // home/dot_claude/hooks/lib/workflow-files.ts
 /**
  * `## Files` section parsing shared by document-workflow-guard (which owns
@@ -99,7 +120,9 @@ const PROSE_EXTENSIONS = [".md", ".mdx", ".markdown", ".txt", ".rst", ".adoc"];
  */
 export function parseFilesPaths(planContent: string): string[] {
   const sections = planContent.split(/^##\s+/m);
-  const filesSection = sections.find((s) => /^Files\s*$/m.test(s.split("\n")[0] ?? ""));
+  const filesSection = sections.find((s) =>
+    /^Files\s*$/m.test(s.split("\n")[0] ?? ""),
+  );
   if (!filesSection) return [];
   const sectionBody = filesSection.replace(/^Files\s*\n/, "");
   const collected: string[] = [];
@@ -136,7 +159,7 @@ export function isProseOnlyChange(planContent: string): boolean {
     return PROSE_EXTENSIONS.some((ext) => lower.endsWith(ext));
   });
 }
-```
+````
 
 guard 側は `parseFilesSection` の本体を次に置き換える（関数名・シグネチャ・戻り値は不変）:
 
@@ -176,8 +199,18 @@ test("lastPassMarkerRound returns round= of the last verdict=pass marker", () =>
 });
 
 test("lastPassMarkerRound returns 0 without a pass marker or when the pass marker has no round=", () => {
-  strictEqual(lastPassMarkerRound("<!-- auto-review: verdict=needs-work; hash=2; round=2 -->"), 0);
-  strictEqual(lastPassMarkerRound("<!-- auto-review: verdict=pass; hash=1; design-hash=a -->"), 0);
+  strictEqual(
+    lastPassMarkerRound(
+      "<!-- auto-review: verdict=needs-work; hash=2; round=2 -->",
+    ),
+    0,
+  );
+  strictEqual(
+    lastPassMarkerRound(
+      "<!-- auto-review: verdict=pass; hash=1; design-hash=a -->",
+    ),
+    0,
+  );
   strictEqual(lastPassMarkerRound("no markers"), 0);
 });
 ```
@@ -221,15 +254,29 @@ export function lastPassMarkerRound(content: string): number {
 - [ ] **Step 1: 失敗するテストを書く**（`describe("workflow-cli: stamp")` 内。既存 `seedWorkflow` を使う）
 
 ```ts
-  it("writes round=<current round> into the marker", () => {
-    const { wf, ledger } = seedWorkflow({ doc: "plan-1.md", round: 2, ledgerSlugs: ["logic-validator", "scope-justification-reviewer"] });
-    const r = runWorkflowCli(
-      ["stamp", "plan-1.md", "--verdict", "pass", "--reviewers", "logic-validator+scope-justification-reviewer"],
-      { cwd: wf, wfDir: wf, sessionId: "test-ses", now: NOW, ledgerPath: ledger },
-    );
-    assert.equal(r.exitCode, 0, r.stderr);
-    assert.match(readFileSync(join(wf, "plan-1.md"), "utf-8"), /<!-- auto-review: verdict=pass; hash=[0-9a-f]{64}; design-hash=[^;]+; round=2;/);
+it("writes round=<current round> into the marker", () => {
+  const { wf, ledger } = seedWorkflow({
+    doc: "plan-1.md",
+    round: 2,
+    ledgerSlugs: ["logic-validator", "scope-justification-reviewer"],
   });
+  const r = runWorkflowCli(
+    [
+      "stamp",
+      "plan-1.md",
+      "--verdict",
+      "pass",
+      "--reviewers",
+      "logic-validator+scope-justification-reviewer",
+    ],
+    { cwd: wf, wfDir: wf, sessionId: "test-ses", now: NOW, ledgerPath: ledger },
+  );
+  assert.equal(r.exitCode, 0, r.stderr);
+  assert.match(
+    readFileSync(join(wf, "plan-1.md"), "utf-8"),
+    /<!-- auto-review: verdict=pass; hash=[0-9a-f]{64}; design-hash=[^;]+; round=2;/,
+  );
+});
 ```
 
 注: `seedWorkflow` は各ラウンドの verdict 行を空欄で書くため、round 2 の stamp が delta 判定で必須 reviewer を要求しても ledgerSlugs で満たされる。Step 2 で ledger 不足による失敗が出たら、失敗理由が「round= が無い」ではないので ledgerSlugs を必須集合に合わせる。
@@ -253,45 +300,72 @@ export function lastPassMarkerRound(content: string): number {
 - [ ] **Step 1: 失敗するテストを書く**（`describe("workflow-cli: round")` 内）
 
 ```ts
-  const ROUND_DEPS = (wf: string) => ({ cwd: wf, wfDir: wf, sessionId: "test-ses", now: NOW });
+const ROUND_DEPS = (wf: string) => ({
+  cwd: wf,
+  wfDir: wf,
+  sessionId: "test-ses",
+  now: NOW,
+});
 
-  it("refuses a 4th round in the same review cycle", () => {
-    const { wf } = seedWorkflow({ doc: "plan-1.md", round: 3, ledgerSlugs: [] });
-    const r = runWorkflowCli(["round", "plan-1.md"], ROUND_DEPS(wf));
-    assert.equal(r.exitCode, 1);
-    assert.match(r.stderr, /round budget \(3\)/);
-    assert.match(r.stderr, /--extend --reason/);
-    assert.doesNotMatch(readFileSync(join(wf, "plan-1.md"), "utf-8"), /Round 4/);
-  });
+it("refuses a 4th round in the same review cycle", () => {
+  const { wf } = seedWorkflow({ doc: "plan-1.md", round: 3, ledgerSlugs: [] });
+  const r = runWorkflowCli(["round", "plan-1.md"], ROUND_DEPS(wf));
+  assert.equal(r.exitCode, 1);
+  assert.match(r.stderr, /round budget \(3\)/);
+  assert.match(r.stderr, /--extend --reason/);
+  assert.doesNotMatch(readFileSync(join(wf, "plan-1.md"), "utf-8"), /Round 4/);
+});
 
-  it("allows round 3 (2 rounds so far in the cycle)", () => {
-    const { wf } = seedWorkflow({ doc: "plan-1.md", round: 2, ledgerSlugs: [] });
-    assert.equal(runWorkflowCli(["round", "plan-1.md"], ROUND_DEPS(wf)).exitCode, 0);
-  });
+it("allows round 3 (2 rounds so far in the cycle)", () => {
+  const { wf } = seedWorkflow({ doc: "plan-1.md", round: 2, ledgerSlugs: [] });
+  assert.equal(
+    runWorkflowCli(["round", "plan-1.md"], ROUND_DEPS(wf)).exitCode,
+    0,
+  );
+});
 
-  it("starts a fresh budget after a pass marker with round=", () => {
-    const { wf } = seedWorkflow({ doc: "plan-1.md", round: 3, ledgerSlugs: [] });
-    const p = join(wf, "plan-1.md");
-    writeFileSync(p, `${readFileSync(p, "utf-8")}\n<!-- auto-review: verdict=pass; hash=x; design-hash=y; round=3; at=z; reviewers=a -->\n`);
-    assert.equal(runWorkflowCli(["round", "plan-1.md"], ROUND_DEPS(wf)).exitCode, 0);
-  });
+it("starts a fresh budget after a pass marker with round=", () => {
+  const { wf } = seedWorkflow({ doc: "plan-1.md", round: 3, ledgerSlugs: [] });
+  const p = join(wf, "plan-1.md");
+  writeFileSync(
+    p,
+    `${readFileSync(p, "utf-8")}\n<!-- auto-review: verdict=pass; hash=x; design-hash=y; round=3; at=z; reviewers=a -->\n`,
+  );
+  assert.equal(
+    runWorkflowCli(["round", "plan-1.md"], ROUND_DEPS(wf)).exitCode,
+    0,
+  );
+});
 
-  it("--extend without --reason is refused", () => {
-    const { wf } = seedWorkflow({ doc: "plan-1.md", round: 3, ledgerSlugs: [] });
-    const r = runWorkflowCli(["round", "plan-1.md", "--extend"], ROUND_DEPS(wf));
-    assert.equal(r.exitCode, 1);
-    assert.match(r.stderr, /--reason/);
-  });
+it("--extend without --reason is refused", () => {
+  const { wf } = seedWorkflow({ doc: "plan-1.md", round: 3, ledgerSlugs: [] });
+  const r = runWorkflowCli(["round", "plan-1.md", "--extend"], ROUND_DEPS(wf));
+  assert.equal(r.exitCode, 1);
+  assert.match(r.stderr, /--reason/);
+});
 
-  it("--extend --reason proceeds, logs the extension, and composes with --full", () => {
-    const { wf } = seedWorkflow({ doc: "plan-1.md", round: 3, ledgerSlugs: [] });
-    const r = runWorkflowCli(["round", "plan-1.md", "--extend", "--reason", "user: continue once", "--full"], ROUND_DEPS(wf));
-    assert.equal(r.exitCode, 0, r.stderr);
-    assert.match(r.stdout, /extended beyond round budget \(3\)/);
-    assert.match(readFileSync(join(wf, "plan-1.md"), "utf-8"), /## Reviewer Outputs \(Round 4\)/);
-    const log = readFileSync(join(wf, "round-extensions.log"), "utf-8");
-    assert.match(log, /^2026-.*\tplan-1\.md\t4\tuser: continue once$/m);
-  });
+it("--extend --reason proceeds, logs the extension, and composes with --full", () => {
+  const { wf } = seedWorkflow({ doc: "plan-1.md", round: 3, ledgerSlugs: [] });
+  const r = runWorkflowCli(
+    [
+      "round",
+      "plan-1.md",
+      "--extend",
+      "--reason",
+      "user: continue once",
+      "--full",
+    ],
+    ROUND_DEPS(wf),
+  );
+  assert.equal(r.exitCode, 0, r.stderr);
+  assert.match(r.stdout, /extended beyond round budget \(3\)/);
+  assert.match(
+    readFileSync(join(wf, "plan-1.md"), "utf-8"),
+    /## Reviewer Outputs \(Round 4\)/,
+  );
+  const log = readFileSync(join(wf, "round-extensions.log"), "utf-8");
+  assert.match(log, /^2026-.*\tplan-1\.md\t4\tuser: continue once$/m);
+});
 ```
 
 （`NOW` は既存テストファイルの定数。`writeFileSync` / `readFileSync` / `join` は既存 import に無ければ足す。`NOW` の年が 2026 でない場合は log の正規表現を `^\S+\tplan-1\.md\t4\t...` にする）
@@ -303,29 +377,29 @@ export function lastPassMarkerRound(content: string): number {
 上限値は `lib/workflow-review-core.ts` に `export const ROUND_BUDGET = 3;`（`MAX_ADDITIONAL_REVIEWERS` の隣、`:53` 付近）として 1 か所で定義し、CLI は既存の `from "../lib/workflow-review-core.ts"` import（`cli/workflow.ts:47`）に `ROUND_BUDGET` を足して使う。T5 の予算行も同じ定数を使う（文言の `(3)` は `${ROUND_BUDGET}` で埋める）。
 
 ```ts
-  const roundsInCycle = currentRound - lastPassMarkerRound(oldContent);
-  const extending = flags["extend"] === "true";
-  if (extending && (flags["reason"] ?? "").trim() === "") {
-    return err("--extend requires --reason \"<the human's instruction>\"");
-  }
-  if (roundsInCycle >= ROUND_BUDGET && !extending) {
-    return err(
-      `refusing: ${docName} has used its round budget (${ROUND_BUDGET}) since the last pass. Present the Executive Summary with the unresolved findings and ask the human for direction. Only if the human tells you to continue, re-run with --extend --reason "<their instruction>".`,
-    );
-  }
+const roundsInCycle = currentRound - lastPassMarkerRound(oldContent);
+const extending = flags["extend"] === "true";
+if (extending && (flags["reason"] ?? "").trim() === "") {
+  return err('--extend requires --reason "<the human\'s instruction>"');
+}
+if (roundsInCycle >= ROUND_BUDGET && !extending) {
+  return err(
+    `refusing: ${docName} has used its round budget (${ROUND_BUDGET}) since the last pass. Present the Executive Summary with the unresolved findings and ask the human for direction. Only if the human tells you to continue, re-run with --extend --reason "<their instruction>".`,
+  );
+}
 ```
 
 書込成功後（`appendRoundBaseline` の後）:
 
 ```ts
-  let extensionNote = "";
-  if (roundsInCycle >= ROUND_BUDGET && extending) {
-    appendFileSync(
-      join(wfDir, "round-extensions.log"),
-      `${deps.now.toISOString()}\t${docName}\t${nextRound}\t${(flags["reason"] ?? "").trim()}\n`,
-    );
-    extensionNote = `extended beyond round budget (${ROUND_BUDGET})\n`;
-  }
+let extensionNote = "";
+if (roundsInCycle >= ROUND_BUDGET && extending) {
+  appendFileSync(
+    join(wfDir, "round-extensions.log"),
+    `${deps.now.toISOString()}\t${docName}\t${nextRound}\t${(flags["reason"] ?? "").trim()}\n`,
+  );
+  extensionNote = `extended beyond round budget (${ROUND_BUDGET})\n`;
+}
 ```
 
 `ok(...)` の stdout 末尾に `extensionNote` を連結する。`appendFileSync` / `join` を import に足す（既存 import を確認して重複させない）。予算内で `--extend` が付いた場合はログを書かない（上限を超えていないため）。
@@ -343,16 +417,22 @@ export function lastPassMarkerRound(content: string): number {
 
 - [ ] **Step 1: 失敗するテストを書く**
 
-```ts
-const proseFiles = "## Files\n\n```\n.skills/pr-description/SKILL.md\n```\n\n## Tasks\npermission timeout モジュール\n";
-const codeFiles = "## Files\n\n```\nhome/dot_claude/hooks/lib/x.ts\n```\n\n## Tasks\npermission timeout モジュール\n";
+````ts
+const proseFiles =
+  "## Files\n\n```\n.skills/pr-description/SKILL.md\n```\n\n## Tasks\npermission timeout モジュール\n";
+const codeFiles =
+  "## Files\n\n```\nhome/dot_claude/hooks/lib/x.ts\n```\n\n## Tasks\npermission timeout モジュール\n";
 
 describe("workflow-review-core: prose-only change", () => {
   it("recommends no catalog reviewers and says why", () => {
     const result = buildRecommendation("/tmp/wf/plan.md", null, proseFiles);
     ok(!result.includes("security-sentinel"));
     ok(!result.includes("resilience-analyzer"));
-    ok(result.includes("Additional reviewers: skipped (all ## Files entries are prose)"));
+    ok(
+      result.includes(
+        "Additional reviewers: skipped (all ## Files entries are prose)",
+      ),
+    );
     ok(result.includes("1. subagent_type: logic-validator"));
   });
   it("keeps keyword selection when Files lists code", () => {
@@ -363,17 +443,29 @@ describe("workflow-review-core: prose-only change", () => {
 });
 
 describe("workflow-review-core: round budget line", () => {
-  const rounds = (n: number) => Array.from({ length: n }, (_, i) => `## Reviewer Outputs (Round ${i + 1})\n`).join("\n");
+  const rounds = (n: number) =>
+    Array.from(
+      { length: n },
+      (_, i) => `## Reviewer Outputs (Round ${i + 1})\n`,
+    ).join("\n");
   it("mentions --extend once the cycle reaches 3 rounds", () => {
     const content = `## Goal\nx\n${rounds(3)}\n<!-- auto-review: verdict=needs-work; hash=1; round=3 -->\n`;
-    ok(buildRecommendation("/tmp/wf/spec.md", null, content).includes("--extend --reason"));
+    ok(
+      buildRecommendation("/tmp/wf/spec.md", null, content).includes(
+        "--extend --reason",
+      ),
+    );
   });
   it("is silent when the cycle restarted after a pass at round 3", () => {
     const content = `## Goal\nx\n${rounds(4)}\n<!-- auto-review: verdict=pass; hash=1; round=3 -->\n<!-- auto-review: verdict=needs-work; hash=2; round=4 -->\n`;
-    ok(!buildRecommendation("/tmp/wf/spec.md", null, content).includes("Round budget reached"));
+    ok(
+      !buildRecommendation("/tmp/wf/spec.md", null, content).includes(
+        "Round budget reached",
+      ),
+    );
   });
 });
-```
+````
 
 - [ ] **Step 2: 失敗を確認** — `$T home/dot_claude/hooks/tests/unit/workflow-review-core.test.ts` → 期待: 「recommends no catalog reviewers」「mentions --extend」「is silent when the cycle restarted」が FAIL
 
@@ -441,10 +533,12 @@ describe("workflow-review-core: round budget line", () => {
 ## Reviewer Outputs (Round 1)
 
 ### logic-validator
+
 - verdict: needs-work
 - 主指摘: T6 の追記で workflow.md が 12KB 予算を約 329 bytes 超過する（現 12232 bytes、余裕 56）。行番号・テストの fail→pass 理由・guard 挙動同一性・依存方向は実コードと整合
 
 ### scope-justification-reviewer
+
 - verdict: pass
 - 主指摘: 全タスクが spec K1〜K3 に対応し Files と一致。軽微: 上限値 3 が CLI と review-core に二重定義（`ROUND_BUDGET` 共有に反映）
 
@@ -453,10 +547,12 @@ describe("workflow-review-core: round budget line", () => {
 ## Reviewer Outputs (Round 2)
 
 ### logic-validator
+
 - verdict: pass
 - 主指摘: コピー上で置換を再現し 12232 − 87 − 66 + 193 = 12272 bytes（≤ 12288）を実測確認。言い換えで規則の欠落なし、SSoT 区間と必須言及は維持。`ROUND_BUDGET` の cli → lib import に循環なし
 
 ### scope-justification-reviewer
+
 - verdict: pass (carried from Round 1)
 - 主指摘: Round 1 で pass、再実行なし
 
