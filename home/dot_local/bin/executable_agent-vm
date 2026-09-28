@@ -155,4 +155,26 @@ maybe_bootstrap() { # machine generation staging_hash
   orb -m "$1" bash "$src/agent-vm/bootstrap.sh" "$BOOTSTRAP_CONTRACT" "$3" "$src" </dev/null 9>&-
 }
 
+env_files_for() { # machine -> host-owned op:// reference files that exist
+  local f
+  for f in "$AGENT_VM_CONFIG_DIR/env.1password" "$AGENT_VM_CONFIG_DIR/repos/$1.env.1password"; do
+    if [[ -f "$f" ]]; then printf '%s\n' "$f"; fi
+  done
+  return 0
+}
+
+inject_secrets() { # machine -> prints the in-VM env file path (empty when nothing to inject)
+  local files resolved="" f
+  files=$(env_files_for "$1")
+  if [[ -z "$files" ]]; then return 0; fi
+  # Resolve on the host first so the biometric prompt finishes before any file exists in the VM.
+  while IFS= read -r f; do
+    resolved+="$(op inject -i "$f" </dev/null 9>&-)"$'\n'
+  done <<<"$files"
+  printf '%s' "$resolved" | orb -m "$1" sh -c '
+    d=${XDG_RUNTIME_DIR:-/dev/shm}
+    find "$d" -maxdepth 1 -name "agent-vm.env.*" -mmin +1 -delete 2>/dev/null
+    umask 077; f=$(mktemp "$d/agent-vm.env.XXXXXX"); cat >"$f"; echo "$f"' 9>&-
+}
+
 if [[ -z "${AGENT_VM_LIB:-}" ]]; then main "$@"; fi

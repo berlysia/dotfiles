@@ -177,6 +177,28 @@ test_applied_hash_is_read_from_vm_home_not_cwd() {
   assert_contains "$(cat "$STUB_LOG")" '$HOME/.local/state/agent-vm/applied-hash' "absolute HOME path"
 }
 
+test_only_host_owned_env_files_are_resolved() {
+  local repo="$TMP_ROOT/sec-repo"; mkdir -p "$repo" "$AGENT_VM_CONFIG_DIR/repos"
+  printf 'A=op://v/a/x\n' >"$AGENT_VM_CONFIG_DIR/env.1password"
+  printf 'B=op://v/b/x\n' >"$AGENT_VM_CONFIG_DIR/repos/agent-p-000000.env.1password"
+  printf 'EVIL=op://v/other/x\n' >"$repo/.env"
+  local files; files=$(cd "$repo" && env_files_for agent-p-000000)
+  assert_contains "$files" "$AGENT_VM_CONFIG_DIR/env.1password" "global file"
+  assert_contains "$files" "agent-p-000000.env.1password" "per-repo host file"
+  assert_not_contains "$files" "$repo/.env" "repo .env never resolved"
+}
+test_secret_values_never_appear_in_argv() {
+  mkdir -p "$AGENT_VM_CONFIG_DIR"; printf 'A=op://v/a/x\n' >"$AGENT_VM_CONFIG_DIR/env.1password"
+  STUB_CAPTURE_STDIN=1 STUB_OP_STDOUT="A=s3cr3t-value" STUB_ORB_STDOUT="/dev/shm/agent-vm.env.abc123" inject_secrets agent-p-000000 >/dev/null
+  assert_not_contains "$(cat "$STUB_LOG")" "s3cr3t-value" "secret not in any argv"
+  assert_contains "$(cat "$STUB_LOG.stdin")" "s3cr3t-value" "secret delivered on stdin"
+  assert_contains "$(cat "$STUB_LOG")" "-mmin +1" "stale env files swept before write"
+}
+test_no_env_files_means_no_op_call() {
+  inject_secrets agent-n-000000 >/dev/null
+  assert_not_contains "$(cat "$STUB_LOG")" "op inject" "op not called"
+}
+
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do
   (
     TMP_ROOT="$TMP_BASE/$t"; mkdir -p "$TMP_ROOT"
