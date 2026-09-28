@@ -113,6 +113,41 @@ test_release_allows_reacquire() {
   assert_eq 0 "$status" "reacquire after release"
 }
 
+make_dotfiles_fixture() { # -> path of a git repo with tracked + untracked files
+  local wt="$TMP_ROOT/df"; mkdir -p "$wt/home" "$wt/.skills/s"
+  git -C "$wt" init -q
+  printf 'a\n' >"$wt/home/dot_a"; printf 's\n' >"$wt/.skills/s/SKILL.md"
+  git -C "$wt" add . && git -C "$wt" -c user.email=t@t -c user.name=t commit -q -m init
+  printf 'secret\n' >"$wt/.env.local" # untracked, must not be staged
+  printf '%s\n' "$wt"
+}
+test_generation_contains_tracked_files_only() {
+  local wt gen hash; wt=$(make_dotfiles_fixture)
+  read -r gen hash <<<"$(build_staging agent-s-000000 "$wt")"
+  local st="$AGENT_VM_STATE_DIR/staging/agent-s-000000/$gen"
+  assert_eq "a" "$(cat "$st/home/dot_a")" "tracked file copied"
+  assert_eq "s" "$(cat "$st/.skills/s/SKILL.md")" "repo-root .skills copied"
+  assert_status 1 "untracked secret not copied" -- test -e "$st/.env.local"
+  assert_contains "$hash" "v1:" "hash is versioned"
+}
+test_vm_planted_entries_are_removed_without_following_symlinks() {
+  local wt gen hash; wt=$(make_dotfiles_fixture)
+  local st="$AGENT_VM_STATE_DIR/staging/agent-s-000001" outside="$TMP_ROOT/outside"
+  mkdir -p "$st" "$outside"; printf 'keep\n' >"$outside/victim"
+  ln -s "$outside" "$st/evil-link"; printf 'x\n' >"$st/injected"
+  read -r gen hash <<<"$(build_staging agent-s-000001 "$wt")"
+  assert_eq "$gen" "$(ls "$st")" "only the new generation remains"
+  assert_eq "keep" "$(cat "$outside/victim")" "symlink target untouched"
+}
+test_hash_reflects_uncommitted_edits() {
+  local wt g1 h1 g2 h2; wt=$(make_dotfiles_fixture)
+  read -r g1 h1 <<<"$(build_staging agent-s-000002 "$wt")"
+  printf 'edited\n' >"$wt/home/dot_a"
+  read -r g2 h2 <<<"$(build_staging agent-s-000002 "$wt")"
+  if [[ "$h1" != "$h2" ]]; then record "PASS uncommitted edit changes hash"; else record "FAIL uncommitted edit changes hash"; fi
+  if [[ "$g1" != "$g2" ]]; then record "PASS new generation name"; else record "FAIL new generation name"; fi
+}
+
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do
   (
     TMP_ROOT="$TMP_BASE/$t"; mkdir -p "$TMP_ROOT"

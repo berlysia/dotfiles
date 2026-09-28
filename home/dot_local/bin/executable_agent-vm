@@ -108,4 +108,27 @@ acquire_lock() { # machine max_wait_seconds; holds fd 9 until release_lock or pr
 
 release_lock() { exec 9>&-; }
 
+dir_hash() { # dir -> v1:<sha256 of sorted "sha256  ./path" lines>
+  local digest
+  digest=$(cd "$1" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -c1-64)
+  printf 'v1:%s\n' "$digest"
+}
+
+build_staging() { # machine working_tree -> prints "<generation> <hash>"
+  local build gen hash st="$AGENT_VM_STATE_DIR/staging/$1"
+  mkdir -p "$AGENT_VM_STATE_DIR/build" "$st"
+  # Build where the VM cannot see it; the host never writes file contents inside the mounted tree.
+  # build/ and staging/ share $AGENT_VM_STATE_DIR so rename(2) stays on one filesystem; if an override
+  # ever splits them, rename fails with EXDEV and we die (fail closed) rather than copy into the mount.
+  build=$(mktemp -d "$AGENT_VM_STATE_DIR/build/$1.XXXXXX")
+  { git -C "$2" ls-files -z | rsync -a --from0 --files-from=- "$2/" "$build/"; } 9>&-
+  hash=$(dir_hash "$build")
+  gen="gen-${build##*.}"
+  # rename(2) replaces a planted symlink entry instead of following it, and fails on a planted non-empty dir.
+  perl -e 'rename($ARGV[0], $ARGV[1]) or die "rename: $!\n"' "$build" "$st/$gen" || die "could not publish staging generation"
+  # rm does not follow symlinks, so VM-planted links are unlinked, never traversed.
+  find "$st" -mindepth 1 -maxdepth 1 ! -name "$gen" -exec rm -rf {} + 9>&-
+  printf '%s %s\n' "$gen" "$hash"
+}
+
 if [[ -z "${AGENT_VM_LIB:-}" ]]; then main "$@"; fi
