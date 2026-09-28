@@ -498,6 +498,68 @@ test_fetch_time_exec_keys_are_monitored() {
   assert_eq 3 "$(surface_status agent-g-000000 "$repo")" "url.*.insteadOf reported"
 }
 
+test_restore_git_undoes_hook_config_and_envrc_changes() {
+  local repo m; repo=$(make_git_repo); m=$(derive_machine_name "$repo")
+  write_machine_meta "$m" "$repo"
+  printf '#!/bin/sh\n' >"$repo/.git/hooks/pre-commit"
+  check_git_surfaces "$m" "$repo" 2>/dev/null
+  printf '#!/bin/sh\necho changed\n' >"$repo/.git/hooks/pre-commit"
+  printf '#!/bin/sh\necho pwned\n' >"$repo/.git/hooks/post-checkout"
+  git -C "$repo" config core.fsmonitor "sh -c 'echo pwned'"
+  printf 'export X=1\n' >"$repo/.envrc"
+  printf 'y\n' | cmd_restore_git "$repo" >/dev/null 2>&1
+  assert_eq "#!/bin/sh" "$(cat "$repo/.git/hooks/pre-commit")" "changed hook restored"
+  assert_status 1 "added hook removed" -- test -e "$repo/.git/hooks/post-checkout"
+  assert_status 1 "added exec config unset" -- git -C "$repo" config --get core.fsmonitor
+  assert_status 0 ".envrc quarantined" -- test -f "$repo/.envrc.agent-vm-quarantine"
+  assert_eq 0 "$(surface_status "$m" "$repo")" "clean after restore"
+}
+test_restore_git_fixes_symlinked_hooks_dir_before_files() {
+  local repo m; repo=$(make_git_repo); m=$(derive_machine_name "$repo")
+  write_machine_meta "$m" "$repo"
+  printf '#!/bin/sh\n' >"$repo/.git/hooks/pre-commit"
+  check_git_surfaces "$m" "$repo" 2>/dev/null
+  local outside="$TMP_ROOT/outside-hooks"; mkdir -p "$outside"
+  printf 'keep\n' >"$outside/victim"
+  rm -rf "$repo/.git/hooks"; ln -s "$outside" "$repo/.git/hooks"
+  printf '#!/bin/sh\n' >"$outside/post-checkout"
+  cp "$outside/victim" "$outside/pre-commit"
+  printf 'y\n' | cmd_restore_git "$repo" >/dev/null 2>&1 || true
+  assert_eq "keep" "$(cat "$outside/victim")" "file outside the repo untouched"
+  assert_eq "keep" "$(cat "$outside/pre-commit")" "same-named file outside the repo not overwritten"
+  assert_status 0 "file outside the repo not deleted" -- test -e "$outside/post-checkout"
+  assert_status 1 "hooks dir is a real directory again" -- test -L "$repo/.git/hooks"
+}
+test_restore_git_skips_a_tampered_saved_copy() {
+  local repo m; repo=$(make_git_repo); m=$(derive_machine_name "$repo")
+  write_machine_meta "$m" "$repo"
+  printf '#!/bin/sh\n' >"$repo/.git/hooks/pre-commit"
+  check_git_surfaces "$m" "$repo" 2>/dev/null
+  # simulate a copy captured through a swapped-in symlink: content differs from the baseline hash
+  printf '#!/bin/sh\necho planted\n' >"$AGENT_VM_STATE_DIR/snapshots/$m/files/hooks/pre-commit"
+  printf '#!/bin/sh\necho changed\n' >"$repo/.git/hooks/pre-commit"
+  printf 'y\n' | cmd_restore_git "$repo" >/dev/null 2>&1 || true
+  assert_status 1 "tampered copy not written back (file left removed)" -- test -e "$repo/.git/hooks/pre-commit"
+}
+test_restore_git_refuses_symlinked_git_dir() {
+  local repo m; repo=$(make_git_repo); m=$(derive_machine_name "$repo")
+  write_machine_meta "$m" "$repo"; check_git_surfaces "$m" "$repo" 2>/dev/null
+  mv "$repo/.git" "$TMP_ROOT/moved-git"; ln -s "$TMP_ROOT/moved-git" "$repo/.git"
+  assert_status 1 "symlinked .git refused" -- bash -c "AGENT_VM_STATE_DIR='$AGENT_VM_STATE_DIR' AGENT_VM_LIB=1 . '$LAUNCHER'; printf 'y\n' | cmd_restore_git '$repo'"
+}
+test_restore_git_does_nothing_without_yes() {
+  local repo m; repo=$(make_git_repo); m=$(derive_machine_name "$repo")
+  write_machine_meta "$m" "$repo"; check_git_surfaces "$m" "$repo" 2>/dev/null
+  printf '#!/bin/sh\n' >"$repo/.git/hooks/post-checkout"
+  printf 'n\n' | cmd_restore_git "$repo" >/dev/null 2>&1
+  assert_status 0 "hook left in place" -- test -f "$repo/.git/hooks/post-checkout"
+}
+test_restore_git_refuses_snapshot_of_another_path() {
+  local repo m; repo=$(make_git_repo); m=$(derive_machine_name "$repo")
+  write_machine_meta "$m" "/somewhere/else"
+  assert_status 1 "path mismatch refused" -- bash -c "AGENT_VM_STATE_DIR='$AGENT_VM_STATE_DIR' AGENT_VM_LIB=1 . '$LAUNCHER'; printf 'y\n' | cmd_restore_git '$repo'"
+}
+
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do
   (
     TMP_ROOT="$TMP_BASE/$t"; mkdir -p "$TMP_ROOT"
