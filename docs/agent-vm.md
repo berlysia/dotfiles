@@ -1,0 +1,123 @@
+# agent-vm: claude / codex を OrbStack の隔離マシンで動かす
+
+## 1. 何をするか
+
+`agent-vm` は、mac 上で `claude` / `codex` を打ったときに、その repo 専用の OrbStack isolated machine の中でツールを起動する仕組みである。
+
+isolated machine は `--isolated --isolate-network --forward-ssh-agent` で作られる。
+host のホームディレクトリ全体や、`mac` コマンドによる host 操作には到達できない。
+dotfiles（設定・hooks・skills）は VM の中から読めるが、host 側の原本は VM から書き換えられない。
+VM に渡すのは repo の tracked files を毎回コピーした専用の複製であり、VM がそこに何を書いても host の原本には影響しない。
+
+1Password の秘密と SSH 署名は mac 側で完結したまま使える。
+秘密は起動のたびに mac 側の `op` が解決してから VM に渡し、SSH の署名・認証は 1Password の SSH agent を agent forwarding で使う。
+どちらも認証情報そのものを VM に置かない。
+
+## 2. 最初の準備
+
+1. `chezmoi apply` を実行する。OrbStack が Homebrew cask で導入される。
+2. OrbStack を一度起動し、初回セットアップを終える。
+3. `chezmoi init` を実行する。config に `agent_vm` キーが入る。実行しなくても動作は変わらない（テンプレート側は `dig "agent_vm" false .` で参照しており、キーが無ければ既定値 `false` として host 扱いになる）。
+4. 1Password の SSH agent 設定で、承認を毎回アプリごとに求める側を選ぶ。agent forwarding は鍵全体を VM に使わせるため、承認済みの VM が任意のタイミングで鍵を使えないようにする。
+
+## 3. 普段の使い方
+
+repo の中で `claude` または `codex` と打つだけでよい。打鍵は変わらない。
+
+初めてその repo で起動したときだけ、machine の作成を待つ。
+進捗は段階ごとに 1 行ずつ表示される。
+待ちを事前に済ませたい場合は `agent-vm prewarm` を実行する。machine を作成し、dotfiles を適用するところまでを、ツールを起動せずに行う。
+
+Claude と Codex は machine ごとに初回だけログインが要る。
+表示された URL を mac のブラウザで開いて承認し、コードを VM 側に貼り付ける。
+2 回目以降はその machine に保存された認証でそのまま起動する。
+
+## 4. 秘密の渡し方
+
+秘密は 2 つのファイルにだけ書く。
+
+- `~/.config/agent-vm/env.1password`: 全 repo 共通。`agent-vm env edit` ではなく直接編集する。
+- repo 別のファイル: `agent-vm env edit` で開く。`$EDITOR` が起動し、無ければ新規作成される（パーミッション 600）。
+
+どちらのファイルにも `op://` 参照だけを書く。値をそのまま書いてはならない。
+起動のたびに mac 側の `op inject` がこれらのファイルを解決し、結果を VM の tmpfs にだけ渡す。
+
+**repo 内の `.env` / `.env.local` は解決しない。**
+repo は VM から書き換えられる領域なので、そこに書かれた `op://` 参照を host 側の認証済み `op` が解決してしまうと、VM が任意の秘密を持ち出す経路になる。
+
+## 5. host で動かしたいとき
+
+1 回だけ host で動かすには `AGENT_VM=off claude`（または `codex`）と打つ。
+
+常にその repo を host で動かしたい場合は、`~/.config/agent-vm/config` に repo の絶対パスを 1 行 1 パスで書く。`#` 以降はコメントとして無視される。
+このファイルは host にだけ置く。repo の中に置かないのは、VM が書ける場所に隔離の解除設定を置かせないためである。
+
+exclude に載せた repo では、隔離だけでなく、6 節の git 面検査とログの取り込みも行われない。host でそのまま `git` や `claude` を動かすのと同じ状態になる。
+
+起動が終了コード 1 で止まったときも、`AGENT_VM=off` を付ければ host に切り替えられる（6 節を参照）。
+
+## 6. 終了時の表示と復旧
+
+### 終了コード
+
+| コード | 意味                                                                                                                                                                                                                                                                  |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1      | 起動を止めた。OrbStack が応答しない、`.git` が壊れている、以前 VM で使った repo の `.git` が消えている、repo の外で `agent-vm shell` を実行した、など。host には切り替わらない。これは意図した挙動であり、host で動かすかどうかは `AGENT_VM=off` を付けて自分で選ぶ。 |
+| 3      | セッション中に `.git/hooks` や `.git/config` の実行系設定など、host で git を使ったときに実行される面が変わっていた。                                                                                                                                                 |
+| 4      | セッションログの一部が host 側の記録と食い違っていて、取り込めなかった。                                                                                                                                                                                              |
+| 5      | 終了処理のロックを取れず、ログ取り込みと git 面検査を省略した。                                                                                                                                                                                                       |
+
+コード 3 と 4 は、内容そのものは失われていない。ツールの起動と終了は正常に完了している。
+
+### 復旧コマンド
+
+- `agent-vm restore-git [repo]`: git 面検査が報告した変更を元に戻す。`.git/hooks` 配下の変更・削除された exec 系設定は取り消す。`.envrc` などの untracked ファイルは削除せず、`*.agent-vm-quarantine` に改名する。
+- `agent-vm sync [--inspect]`: ログ取り込みと git 面検査をその場で実行する。`--inspect` は何も書き換えずに差分だけを表示する。
+
+agent-vm 自体が想定外のエラーで止まったとき（OrbStack の不調を含む）は、その場は `AGENT_VM=off` で host に切り替えて作業を続けられる。machine を作り直したい場合は `agent-vm rm` で削除し、次回起動時に作り直す。
+
+`.git` が壊れた repo、または以前 VM で使った repo の `.git` が消えている場合だけは host に切り替わらず止まる。
+git が失敗したことも、`.git` が消えていることも、それ自体は「repo の外にいる証拠」にならない。VM が `.git` を壊した可能性を否定できないので、host での実行を続けさせないほうが安全である。この場合に host で動かすには `AGENT_VM=off` を明示する。
+
+## 7. 気をつけること
+
+- **VM セッション中は、その repo で host の git を使わない。** git 面検査は起動時と終了時にしか走らないので、セッション中に host で git を使うと、検査の前に改変された設定が実行されうる。ターミナルタイトルが `[vm:<machine>] <repo>` に変わっている間は VM セッション中である。
+- `agent-vm env adopt <machine>` は、孤立した env ファイルが「移動前の同じ repo」のものかどうかを確認しない。記録された repo path が存在しないというだけで孤立と判定する。引き継ぐかどうかは自分で判断する。
+- mac のクリップボードにある画像は VM に貼り付けられない。画像は repo 内に保存してパスで渡す（repo は host と同じパスで mount されているので、そのまま VM からも読める）。
+
+## 8. 片付け
+
+- `agent-vm list`: machine 名・repo path・repo の存在有無を一覧する。
+- `agent-vm gc`: repo が無くなった machine をまとめて削除する。確認を求められる。
+- `agent-vm rm [repo]`: 指定した repo の machine を明示的に削除する。作り直したいときや、不要になったときに使う。
+
+machine を侵害された疑いがある場合、または使わなくなった repo の認証を消したい場合は次を行う。
+
+1. claude.ai と ChatGPT のセッション管理画面から、その machine のログインセッションを取り消す。
+2. `agent-vm rm <repo>` で machine を削除する。
+
+認証は machine ごとに独立している。1 つの machine が侵害されても、影響はその machine の認証に限られる。
+
+## 9. mac 実機での確認項目
+
+以下は WSL 上のこのセッションでは検証できず、mac 実機で確認する。
+
+| #   | やること                                                                                                                  | 期待する結果                                                                                                                                                                |
+| --- | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| V1  | isolated machine の mount 先に VM 内から書き込む                                                                          | host 側に反映される（staging 方式が必要であることの確認）                                                                                                                   |
+| V2  | VM user の UID と mount 上ファイルの所有者表示を見る                                                                      | host 側と整合した表示になる                                                                                                                                                 |
+| V3  | `--forward-ssh-agent` + 1Password agent で `ssh -T git@github.com` と `git commit -S` を行う                              | どちらも成功し、承認プロンプトの粒度を確認できる                                                                                                                            |
+| V4  | 新規 machine を作成し初回 claude 起動までの所要時間を計測する（全 mise セット時と軽量セット時の両方）                     | warm 起動時の launcher 追加時間が 3 秒以内に収まる                                                                                                                          |
+| V5  | `--isolate-network` 下で claude / codex から API に到達する。`host.orb.internal` に到達を試みる                           | API 疎通は成功し、`host.orb.internal` には到達できない                                                                                                                      |
+| V6  | `orb -m <m> …` を実行する                                                                                                 | TTY が付き、claude の対話 UI が動く                                                                                                                                         |
+| V7  | 未ログインの VM で claude を起動する                                                                                      | ログイン手順が表示され、mac のブラウザで URL を開いて承認し、表示されたコードを VM 側に貼り付ける経路でログインできる。2 回目以降はログインなしで起動する                   |
+| V8  | VM 内のサーバーに mac の `localhost:<port>` または `<machine>.orb.local` で到達を試みる                                   | dev server のプレビューが到達可能かどうかが分かる                                                                                                                           |
+| V9  | Codex 内蔵 sandbox（Landlock + seccomp）を VM 内で動かす                                                                  | 動作する、または動作しないことが分かる                                                                                                                                      |
+| V10 | `orb -m <m> sh -c` 実行時に `XDG_RUNTIME_DIR` の有無と書き込み先を確認する                                                | 書き込み先が tmpfs である                                                                                                                                                   |
+| V11 | 同一ターミナルで claude / codex を連続起動する                                                                            | `op inject` の生体認証プロンプトの頻度が分かる                                                                                                                              |
+| V12 | `~/.codex/sessions` の中身を確認する                                                                                      | jsonl のみで構成されているか、付随ファイルの有無が分かる                                                                                                                    |
+| V13 | 非対話の `orb -m <m> bash bootstrap.sh` を実行する                                                                        | `SSH_AUTH_SOCK` が有効で、private-skills external の SSH clone が通る                                                                                                       |
+| V14 | macOS の bash 3.2 + 標準 perl で fd 9 の flock を取得し、launcher を `kill -9` する                                       | flock は perl 終了後も保持され、`kill -9` で解放される                                                                                                                      |
+| V15 | dotfiles を変更して bootstrap の再適用を走らせる                                                                          | VM の `~/.claude/.credentials.json` と `~/.codex/auth.json` が残り、再ログインが要らない                                                                                    |
+| V16 | 新規 machine の初回 bootstrap で claude の導入を確認し、2 回目の bootstrap も走らせる。導入をネットワーク遮断で失敗させる | 初回は非対話で導入され `bash -lc` の起動シェルから見つかる。2 回目は installer が再実行されず版も変わらない。導入失敗時は bootstrap が非 0 で終わり、次回起動で再試行される |
+| V17 | cloud-init が書く GitHub の host key を確認する                                                                           | 公式の fingerprint と一致し、bootstrap の SSH clone が確認なしで通る                                                                                                        |
