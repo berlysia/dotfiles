@@ -38,10 +38,13 @@ const LEDGER_MAX_LINES = 200;
  * Every slug a `workflow-cli stamp` ledger check might require, derived from
  * the same three rosters `workflow-review-core.ts` exports so this hook
  * cannot silently drift from the reviewer set it exists to ledger runs for.
- * `REVIEWER_CATALOG` entries carry a fully-qualified `subagentType` (e.g.
- * `compound-engineering:review:security-sentinel`); the bare slug is its
- * last `:`-separated segment, matching how `reviewer-run-recorder`'s own
- * normalization below treats a recorded `subagent_type`.
+ * All three rosters now carry bare slugs that resolve to a local agent under
+ * `home/dot_claude/agents/` (no `compound-engineering:review:` entries). A
+ * recorded `subagent_type` is still normalized to its last `:`-separated
+ * segment before the lookup below, so a plugin-namespaced run of a
+ * same-named agent (e.g. `some-plugin:review:security-vulnerability-analyzer`)
+ * is still counted as that reviewer's run — an accepted behaviour, not a
+ * plugin-agent allowance.
  */
 export const REVIEWER_SLUGS: ReadonlySet<string> = new Set([
   ...SPEC_REVIEWERS.map((r) => r.slug as string),

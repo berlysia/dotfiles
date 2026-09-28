@@ -1,10 +1,11 @@
 #!/usr/bin/env node --test
 
 import { deepStrictEqual, ok, strictEqual } from "node:assert";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 import {
   buildRecommendation,
   canSkip,
@@ -120,14 +121,11 @@ describe("workflow-review-core: per-doc cache", () => {
 });
 
 describe("workflow-review-core: selectReviewers", () => {
-  it("selects security-sentinel for security keywords", () => {
+  it("selects security-vulnerability-analyzer for security keywords", () => {
     const content = "## Plan\nAdd authentication and authorization logic";
     const result = selectReviewers(content);
     ok(
-      result.some(
-        (r) =>
-          r.subagentType === "compound-engineering:review:security-sentinel",
-      ),
+      result.some((r) => r.subagentType === "security-vulnerability-analyzer"),
     );
   });
 });
@@ -292,14 +290,14 @@ describe("workflow-review-core: planRoundReviewers (K6 delta re-review)", () => 
       docWithRound(1, {
         "logic-validator": "pass",
         "scope-justification-reviewer": "pass",
-        "compound-engineering:review:security-sentinel": "needs-work",
+        "security-vulnerability-analyzer": "needs-work",
       }),
       "plan-numbered",
       1,
     );
     deepStrictEqual(plan, {
       kind: "delta",
-      rerun: ["logic-validator", "security-sentinel"],
+      rerun: ["logic-validator", "security-vulnerability-analyzer"],
       carried: ["scope-justification-reviewer"],
     });
   });
@@ -406,26 +404,24 @@ describe("workflow-review-core: isCompleteAndChanged (K10)", () => {
   });
 });
 
-describe("workflow-review-core: REVIEWER_CATALOG (K9a code-simplicity-reviewer)", () => {
-  it("includes code-simplicity-reviewer", () => {
-    ok(
-      REVIEWER_CATALOG.some(
-        (r) =>
-          r.subagentType ===
-          "compound-engineering:review:code-simplicity-reviewer",
-      ),
-    );
-  });
-
-  it("selects code-simplicity-reviewer for simplification keywords", () => {
-    const sel = selectReviewers("この計画は YAGNI 観点で簡素化の余地がある");
-    ok(
-      sel.some(
-        (r) =>
-          r.subagentType ===
-          "compound-engineering:review:code-simplicity-reviewer",
-      ),
-    );
+describe("workflow-review-core: every reviewer roster points at local agents", () => {
+  const agentsDir = join(
+    dirname(fileURLToPath(import.meta.url)),
+    "../../../agents",
+  );
+  const slugs = [
+    ...SPEC_REVIEWERS.map((r) => r.slug as string),
+    ...PLAN_REVIEWERS.map((r) => r.slug as string),
+    ...REVIEWER_CATALOG.map((r) => r.subagentType),
+  ];
+  it("every slug is bare and has a definition under home/dot_claude/agents", () => {
+    for (const slug of slugs) {
+      ok(!slug.includes(":"), `${slug} must not be a plugin agent`);
+      ok(
+        existsSync(join(agentsDir, `${slug}.md`)),
+        `missing agents/${slug}.md`,
+      );
+    }
   });
 });
 
@@ -437,7 +433,7 @@ const codeFiles =
 describe("workflow-review-core: prose-only change", () => {
   it("recommends no catalog reviewers and says why", () => {
     const result = buildRecommendation("/tmp/wf/plan.md", null, proseFiles);
-    ok(!result.includes("security-sentinel"));
+    ok(!result.includes("security-vulnerability-analyzer"));
     ok(!result.includes("resilience-analyzer"));
     ok(
       result.includes(
@@ -448,7 +444,7 @@ describe("workflow-review-core: prose-only change", () => {
   });
   it("keeps keyword selection when Files lists code", () => {
     const result = buildRecommendation("/tmp/wf/plan.md", null, codeFiles);
-    ok(result.includes("security-sentinel"));
+    ok(result.includes("security-vulnerability-analyzer"));
     ok(!result.includes("Additional reviewers: skipped"));
   });
 });

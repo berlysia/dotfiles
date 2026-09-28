@@ -22,7 +22,7 @@ describe("reviewer-run-recorder.ts", () => {
   it("REVIEWER_SLUGS derives from the shared spec/plan/catalog rosters", () => {
     assert.ok(REVIEWER_SLUGS.has("logic-validator"));
     assert.ok(REVIEWER_SLUGS.has("scope-justification-reviewer"));
-    assert.ok(REVIEWER_SLUGS.has("security-sentinel"));
+    assert.ok(REVIEWER_SLUGS.has("security-vulnerability-analyzer"));
     assert.ok(!REVIEWER_SLUGS.has("Explore"));
     assert.ok(!REVIEWER_SLUGS.has("general-purpose"));
   });
@@ -44,19 +44,19 @@ describe("reviewer-run-recorder.ts", () => {
     envHelper.restore();
   });
 
-  it("normalizes a plugin-namespaced subagent_type but records it raw", async () => {
+  it("counts a plugin-namespaced run of a reviewer slug (accepted behaviour)", async () => {
     envHelper.set("DOCUMENT_WORKFLOW_DIR", TEST_WORKFLOW_DIR);
     const repo = createWorkflowRepo(pendingWorkflowRepo());
     envHelper.set("CLAUDE_TEST_CWD", repo);
     const ctx = createPostToolUseContextFor(hook, "Agent", {
-      subagent_type: "compound-engineering:review:security-sentinel",
+      subagent_type: "some-plugin:review:security-vulnerability-analyzer",
     });
     await invokeRun(hook, ctx);
     const log = readFileSync(
       join(repo, TEST_WORKFLOW_DIR, "reviewer-runs.log"),
       "utf-8",
     );
-    assert.match(log, /compound-engineering:review:security-sentinel/);
+    assert.match(log, /some-plugin:review:security-vulnerability-analyzer/);
     envHelper.restore();
   });
 

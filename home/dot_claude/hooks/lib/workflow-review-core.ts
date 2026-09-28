@@ -108,7 +108,7 @@ export const SPEC_REVIEWERS = [
  * Applied when the trigger document is `plan-N.md` (two-layer mode execution layer).
  * Design decisions are settled at the spec layer, so `decision-quality-reviewer`
  * and `greenfield-perspective-reviewer` are not always-on for plan-N.md;
- * additional content-based reviewers (test-quality, code-simplicity, etc.) are
+ * additional content-based reviewers (test-quality, security, etc.) are
  * selected from the catalog as needed.
  *
  * `logic-validator` and `scope-justification-reviewer` appear in both
@@ -136,7 +136,7 @@ export const ALWAYS_ON_REVIEWERS = SPEC_REVIEWERS;
 
 export const REVIEWER_CATALOG: ReviewerRule[] = [
   {
-    subagentType: "compound-engineering:review:architecture-strategist",
+    subagentType: "architecture-boundary-analyzer",
     label: "Architecture pattern compliance",
     keywords: [
       "architecture",
@@ -157,7 +157,7 @@ export const REVIEWER_CATALOG: ReviewerRule[] = [
     priority: 1,
   },
   {
-    subagentType: "compound-engineering:review:security-sentinel",
+    subagentType: "security-vulnerability-analyzer",
     label: "Security audit",
     keywords: [
       "security",
@@ -179,7 +179,7 @@ export const REVIEWER_CATALOG: ReviewerRule[] = [
     priority: 1,
   },
   {
-    subagentType: "compound-engineering:review:data-integrity-guardian",
+    subagentType: "data-contract-evolution-evaluator",
     label: "Data model and migration safety",
     keywords: [
       "database",
@@ -187,33 +187,11 @@ export const REVIEWER_CATALOG: ReviewerRule[] = [
       "schema",
       "table",
       "column",
-      "index",
-      "query",
-      "sql",
       "データベース",
       "マイグレーション",
       "スキーマ",
       "テーブル",
       "カラム",
-    ],
-    priority: 2,
-  },
-  {
-    subagentType: "compound-engineering:review:performance-oracle",
-    label: "Performance and scalability",
-    keywords: [
-      "performance",
-      "optimization",
-      "cache",
-      "latency",
-      "scalability",
-      "n+1",
-      "bottleneck",
-      "パフォーマンス",
-      "最適化",
-      "キャッシュ",
-      "レイテンシ",
-      "スケーラビリティ",
     ],
     priority: 2,
   },
@@ -266,12 +244,6 @@ export const REVIEWER_CATALOG: ReviewerRule[] = [
       "ロールバック",
       "パイプライン",
     ],
-    priority: 3,
-  },
-  {
-    subagentType: "compound-engineering:review:code-simplicity-reviewer",
-    label: "Simplicity and YAGNI compliance",
-    keywords: ["簡素化", "simplif", "yagni", "dead code", "削除"],
     priority: 3,
   },
 ];

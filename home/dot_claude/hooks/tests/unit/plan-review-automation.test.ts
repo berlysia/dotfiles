@@ -189,39 +189,24 @@ describe("plan-review-automation.ts helpers", () => {
 });
 
 describe("selectReviewers", () => {
-  it("selects architecture-strategist for English architecture keywords", () => {
+  it("selects architecture-boundary-analyzer for English architecture keywords", () => {
     const content =
       "## Plan\nRefactor the module boundary and dependency graph";
     const result = selectReviewers(content);
-    ok(
-      result.some(
-        (r) =>
-          r.subagentType ===
-          "compound-engineering:review:architecture-strategist",
-      ),
-    );
+    ok(result.some((r) => r.subagentType === "architecture-boundary-analyzer"));
   });
 
-  it("selects architecture-strategist for Japanese keywords", () => {
+  it("selects architecture-boundary-analyzer for Japanese keywords", () => {
     const content = "## Plan\nアーキテクチャの変更と依存関係の整理";
     const result = selectReviewers(content);
-    ok(
-      result.some(
-        (r) =>
-          r.subagentType ===
-          "compound-engineering:review:architecture-strategist",
-      ),
-    );
+    ok(result.some((r) => r.subagentType === "architecture-boundary-analyzer"));
   });
 
-  it("selects security-sentinel for security keywords", () => {
+  it("selects security-vulnerability-analyzer for security keywords", () => {
     const content = "## Plan\nAdd authentication and authorization logic";
     const result = selectReviewers(content);
     ok(
-      result.some(
-        (r) =>
-          r.subagentType === "compound-engineering:review:security-sentinel",
-      ),
+      result.some((r) => r.subagentType === "security-vulnerability-analyzer"),
     );
   });
 
@@ -271,10 +256,7 @@ describe("selectReviewers", () => {
     const content = "## Plan\nAdd security token validation";
     const result = selectReviewers(content);
     ok(
-      result.some(
-        (r) =>
-          r.subagentType === "compound-engineering:review:security-sentinel",
-      ),
+      result.some((r) => r.subagentType === "security-vulnerability-analyzer"),
     );
   });
 });
@@ -298,7 +280,7 @@ describe("buildRecommendation with dynamic reviewers", () => {
       null,
       "## Plan\nRefactor the architecture boundary",
     );
-    ok(result.includes("architecture-strategist"));
+    ok(result.includes("architecture-boundary-analyzer"));
     ok(result.includes("run ALL in parallel"));
   });
 
@@ -310,7 +292,7 @@ describe("buildRecommendation with dynamic reviewers", () => {
     );
     ok(
       result.includes(
-        "reviewers=logic-validator+scope-justification-reviewer+decision-quality-reviewer+greenfield-perspective-reviewer+security-sentinel",
+        "reviewers=logic-validator+scope-justification-reviewer+decision-quality-reviewer+greenfield-perspective-reviewer+security-vulnerability-analyzer",
       ),
     );
   });
