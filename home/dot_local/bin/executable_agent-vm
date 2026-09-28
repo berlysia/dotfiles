@@ -30,4 +30,18 @@ main() {
   esac
 }
 
+resolve_repo_root() {
+  local common
+  common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || die "not inside a git repository"
+  (cd -P "$(dirname "$common")" && pwd -P)
+}
+
+derive_machine_name() { # repo_root
+  local base hash
+  base=$(basename "$1" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9-\n' '-' | cut -c1-20 | sed 's/-*$//')
+  if [[ -z "$base" ]]; then base=repo; fi
+  hash=$(printf '%s' "$1" | shasum -a 256 | cut -c1-6)
+  printf 'agent-%s-%s\n' "$base" "$hash"
+}
+
 if [[ -z "${AGENT_VM_LIB:-}" ]]; then main "$@"; fi
