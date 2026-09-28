@@ -148,6 +148,35 @@ test_hash_reflects_uncommitted_edits() {
   if [[ "$g1" != "$g2" ]]; then record "PASS new generation name"; else record "FAIL new generation name"; fi
 }
 
+test_create_uses_isolation_flags_and_mounts() {
+  ensure_machine agent-c-000000 /repo/path /wt
+  local log; log=$(cat "$STUB_LOG")
+  assert_contains "$log" "orb create" "create called"
+  assert_contains "$log" "--isolated" "isolated"
+  assert_contains "$log" "--isolate-network" "network isolated"
+  assert_contains "$log" "--forward-ssh-agent" "agent forwarded"
+  assert_contains "$log" "-c /wt/agent-vm/cloud-init.yaml" "cloud-init from working tree"
+  assert_contains "$log" "--mount /repo/path:/repo/path" "repo mounted at same path"
+  assert_contains "$log" "--mount $AGENT_VM_STATE_DIR/staging/agent-c-000000:/opt/agent-vm/src" "staging mount"
+  assert_contains "$log" "--mount $AGENT_VM_STATE_DIR/outbox/agent-c-000000:/opt/agent-vm/outbox" "outbox mount"
+}
+test_existing_machine_is_not_recreated() {
+  STUB_ORB_LIST_STDOUT="agent-e-000000  running  ubuntu" ensure_machine agent-e-000000 /r /wt
+  assert_not_contains "$(cat "$STUB_LOG")" "orb create" "no create for existing"
+}
+test_bootstrap_skipped_when_hash_matches() {
+  STUB_ORB_STDOUT="v1:abc" maybe_bootstrap agent-b-000000 gen-x "v1:abc"
+  assert_not_contains "$(cat "$STUB_LOG")" "bootstrap.sh" "skip on match"
+}
+test_bootstrap_runs_with_generation_and_hash() {
+  STUB_ORB_STDOUT="v1:old" maybe_bootstrap agent-b-000000 gen-abc "v1:new"
+  assert_contains "$(cat "$STUB_LOG")" "bash /opt/agent-vm/src/gen-abc/agent-vm/bootstrap.sh 1 v1:new /opt/agent-vm/src/gen-abc" "bootstrap contract v1"
+}
+test_applied_hash_is_read_from_vm_home_not_cwd() {
+  STUB_ORB_STDOUT="v1:abc" maybe_bootstrap agent-b-000000 gen-x "v1:abc"
+  assert_contains "$(cat "$STUB_LOG")" '$HOME/.local/state/agent-vm/applied-hash' "absolute HOME path"
+}
+
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do
   (
     TMP_ROOT="$TMP_BASE/$t"; mkdir -p "$TMP_ROOT"
