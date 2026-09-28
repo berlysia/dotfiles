@@ -44,4 +44,34 @@ derive_machine_name() { # repo_root
   printf 'agent-%s-%s\n' "$base" "$hash"
 }
 
+meta_path() { printf '%s/machines/%s\n' "$AGENT_VM_STATE_DIR" "$1"; }
+
+write_machine_meta() { # machine repo_path
+  case "$2" in *$'\n'*) die "repository path contains a newline; refusing to launch" ;; esac
+  mkdir -p "$AGENT_VM_STATE_DIR/machines"
+  printf 'format=1\nrepo_path=%s\n' "$2" >"$(meta_path "$1")"
+}
+
+read_meta_field() { # machine key -> value after the first '=' (unknown keys are ignored)
+  local line
+  if [[ ! -f "$(meta_path "$1")" ]]; then return 1; fi
+  while IFS= read -r line; do
+    if [[ "${line%%=*}" == "$2" ]]; then printf '%s\n' "${line#*=}"; return 0; fi
+  done <"$(meta_path "$1")"
+  return 1
+}
+
+is_excluded() { # repo_root; config: one absolute path per line, '#' starts a comment
+  local cfg="$AGENT_VM_CONFIG_DIR/config" line entry
+  if [[ ! -f "$cfg" ]]; then return 1; fi
+  while IFS= read -r line; do
+    line="${line%%#*}"
+    line="$(printf '%s' "$line" | sed -e 's/[[:space:]]*$//' -e 's/^[[:space:]]*//')"
+    if [[ -z "$line" ]]; then continue; fi
+    entry=$(cd -P "$line" 2>/dev/null && pwd -P) || continue
+    if [[ "$1" == "$entry" || "$1" == "$entry"/* ]]; then return 0; fi
+  done <"$cfg"
+  return 1
+}
+
 if [[ -z "${AGENT_VM_LIB:-}" ]]; then main "$@"; fi
