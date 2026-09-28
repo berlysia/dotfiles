@@ -199,6 +199,65 @@ test_no_env_files_means_no_op_call() {
   assert_not_contains "$(cat "$STUB_LOG")" "op inject" "op not called"
 }
 
+make_flow_repo() { local repo="$TMP_ROOT/flow-repo"; mkdir -p "$repo" && git -C "$repo" init -q; printf '%s\n' "$repo"; }
+
+test_launch_script_without_args_succeeds() {
+  local cmd; cmd=$(build_launch_script claude /repo/path "")
+  assert_contains "$cmd" 'exec claude' "no-arg launch builds"
+  assert_not_contains "$cmd" '. ' "no env sourcing when no env file"
+}
+test_launch_script_sources_and_deletes_env_file() {
+  local cmd; cmd=$(build_launch_script claude "/repo/with space" /dev/shm/agent-vm.env.x --resume 'a;b')
+  assert_contains "$cmd" 'cd /repo/with\ space' "cwd quoted"
+  assert_contains "$cmd" '. /dev/shm/agent-vm.env.x' "env sourced"
+  assert_contains "$cmd" 'rm -f /dev/shm/agent-vm.env.x' "env deleted"
+  assert_contains "$cmd" 'exec claude --resume a\;b' "args quoted"
+}
+test_codex_login_runs_only_when_auth_missing() {
+  STUB_ORB_EXIT=1 ensure_codex_auth agent-a-000000 || true
+  assert_contains "$(cat "$STUB_LOG")" "codex login --device-auth" "device auth when missing"
+  : >"$STUB_LOG"
+  ensure_codex_auth agent-a-000000
+  assert_not_contains "$(cat "$STUB_LOG")" "login" "no login when present"
+}
+test_session_runs_without_holding_the_lock() {
+  local wt repo; wt=$(make_dotfiles_fixture); repo=$(make_flow_repo)
+  notice_orphan_env() { :; } # implemented in T10
+  session_exec() { # replaces the real orb session in this subshell only
+    if bash -c "AGENT_VM_STATE_DIR='$AGENT_VM_STATE_DIR' AGENT_VM_LIB=1 . '$LAUNCHER'; acquire_lock '$1' 1" </dev/null >/dev/null 2>&1; then
+      record "PASS lock free during session"
+    else
+      record "FAIL lock free during session"
+    fi
+  }
+  (cd "$repo" && STUB_CHEZMOI_STDOUT="$wt/home" run_tool claude) 2>/dev/null
+}
+test_prewarm_stops_before_secrets_and_session() {
+  local wt repo; wt=$(make_dotfiles_fixture); repo=$(make_flow_repo)
+  mkdir -p "$AGENT_VM_CONFIG_DIR"; printf 'A=op://v/a/x\n' >"$AGENT_VM_CONFIG_DIR/env.1password"
+  session_exec() { record "FAIL prewarm must not start a session"; }
+  local m; m=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
+  (cd "$repo" && STUB_CHEZMOI_STDOUT="$wt/home" STUB_ORB_LIST_STDOUT="$m running" STUB_ORB_STDOUT="v1:old" cmd_prewarm) 2>/dev/null
+  assert_not_contains "$(cat "$STUB_LOG")" "orb create" "existing machine reused"
+  assert_contains "$(cat "$STUB_LOG")" "bootstrap.sh" "prewarm bootstraps"
+  assert_not_contains "$(cat "$STUB_LOG")" "op inject" "prewarm injects no secrets"
+}
+test_main_dispatches_commands() {
+  run_tool() { printf 'run_tool %s\n' "$*"; }
+  cmd_list() { echo list; }; cmd_gc() { echo gc; }; cmd_rm() { echo "rm $*"; }
+  cmd_prewarm() { echo prewarm; }; cmd_env_edit() { echo env-edit; }; cmd_env_adopt() { echo "env-adopt $*"; }
+  assert_eq "run_tool claude -p x" "$(main claude -p x)" "claude"
+  assert_eq "run_tool codex" "$(main codex)" "codex"
+  assert_eq "run_tool bash" "$(main shell)" "shell"
+  assert_eq "prewarm" "$(main prewarm)" "prewarm"
+  assert_eq "list" "$(main list)" "list"
+  assert_eq "gc" "$(main gc)" "gc"
+  assert_eq "rm /r" "$(main rm /r)" "rm"
+  assert_eq "env-edit" "$(main env edit)" "env edit"
+  assert_eq "env-adopt agent-old-000000" "$(main env adopt agent-old-000000)" "env adopt"
+  assert_status 1 "unknown env subcommand" -- main env frobnicate
+}
+
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do
   (
     TMP_ROOT="$TMP_BASE/$t"; mkdir -p "$TMP_ROOT"
