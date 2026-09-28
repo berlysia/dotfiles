@@ -122,9 +122,18 @@ build_staging() { # machine working_tree -> prints "<generation> <hash>"
   # Build where the VM cannot see it; the host never writes file contents inside the mounted tree.
   # build/ and staging/ share $AGENT_VM_STATE_DIR so rename(2) stays on one filesystem; if an override
   # ever splits them, rename fails with EXDEV and we die (fail closed) rather than copy into the mount.
-  build=$(mktemp -d "$AGENT_VM_STATE_DIR/build/$1.XXXXXX")
-  { git -C "$2" ls-files -z | rsync -a --from0 --files-from=- "$2/" "$build/"; } 9>&-
+  build=$(mktemp -d "$AGENT_VM_STATE_DIR/build/$1.XXXXXX") || die "could not create a staging build dir"
+  # This function runs inside out=$(...), where set -e is not inherited: check each step explicitly so a
+  # partial copy is never published as a generation.
+  if ! { git -C "$2" ls-files -z | rsync -a --from0 --files-from=- "$2/" "$build/"; } 9>&-; then
+    rm -rf "$build"
+    die "could not copy the dotfiles into the staging build dir"
+  fi
   hash=$(dir_hash "$build")
+  case "$hash" in
+    v1:[0-9a-f][0-9a-f][0-9a-f][0-9a-f]*) ;;
+    *) rm -rf "$build"; die "could not hash the staging build dir" ;;
+  esac
   gen="gen-${build##*.}"
   # rename(2) replaces a planted symlink entry instead of following it, and fails on a planted non-empty dir.
   perl -e 'rename($ARGV[0], $ARGV[1]) or die "rename: $!\n"' "$build" "$st/$gen" || die "could not publish staging generation"

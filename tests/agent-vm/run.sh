@@ -712,6 +712,16 @@ test_main_dispatches_sync_and_restore_git() {
   assert_eq "sync --inspect" "$(main sync --inspect)" "sync"
   assert_eq "restore-git /r" "$(main restore-git /r)" "restore-git"
 }
+test_failed_copy_publishes_no_staging_generation() {
+  # build_staging runs inside out=$(...), where set -e is not inherited: failures must be checked explicitly
+  local wt; wt=$(make_dotfiles_fixture)
+  chmod 000 "$wt/home/dot_a"
+  local status=0
+  (out=$(build_staging agent-f-000000 "$wt")) 2>/dev/null || status=$?
+  chmod 644 "$wt/home/dot_a"
+  if [[ "$status" -ne 0 ]]; then record "PASS copy failure is reported"; else record "FAIL copy failure is reported"; fi
+  assert_eq "" "$(ls "$AGENT_VM_STATE_DIR/staging/agent-f-000000" 2>/dev/null)" "no partial generation published"
+}
 
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do
   (
