@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # agent-vm: run Claude Code / Codex inside a per-repo OrbStack isolated machine.
-# Design record: docs/decisions (added in plan-4).
+# Design record: docs/decisions/0017-agent-vm-orbstack.md; user guide: docs/agent-vm.md.
 set -euo pipefail
+# Convention: bash clears set -e inside $(...) (bash 3.2 has no inherit_errexit), so a function whose
+# output is captured with x=$(f) keeps running past its own failed steps. Such functions check each
+# step explicitly (`|| die`) or validate their output, and callers use the plain `x=$(f)` assignment
+# form (never `local x=$(f)`) so the substitution's exit status still reaches set -e.
 
 AGENT_VM_STATE_DIR="${AGENT_VM_STATE_DIR:-$HOME/.local/share/agent-vm}"
 AGENT_VM_CONFIG_DIR="${AGENT_VM_CONFIG_DIR:-$HOME/.config/agent-vm}"
@@ -513,10 +517,13 @@ inject_secrets() { # machine -> prints the in-VM env file path (empty when nothi
     out=$(op inject -i "$f" </dev/null 9>&-) || die "op inject failed for $f. $FAIL_CLOSED_HINT"
     resolved+="$out"$'\n'
   done <<<"$files"
-  printf '%s' "$resolved" | orb -m "$1" sh -c '
+  # An empty reply means the VM side could not store the values; launching without them would hide that.
+  out=$(printf '%s' "$resolved" | orb -m "$1" sh -c '
     d=${XDG_RUNTIME_DIR:-/dev/shm}
     find "$d" -maxdepth 1 -name "agent-vm.env.*" -mmin +1 -delete 2>/dev/null
-    umask 077; f=$(mktemp "$d/agent-vm.env.XXXXXX"); cat >"$f"; echo "$f"' 9>&-
+    umask 077; f=$(mktemp "$d/agent-vm.env.XXXXXX") && cat >"$f" && echo "$f"' 9>&-) || die "could not hand the secrets to the VM. $FAIL_CLOSED_HINT"
+  if [[ -z "$out" ]]; then die "could not hand the secrets to the VM. $FAIL_CLOSED_HINT"; fi
+  printf '%s\n' "$out"
 }
 
 build_launch_script() { # tool repo_root env_file args...
