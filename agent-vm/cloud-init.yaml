@@ -1,0 +1,22 @@
+#cloud-config
+# First-boot provisioning for agent-vm machines (see agent-vm/bootstrap.sh for the per-launch part).
+package_update: true
+packages:
+  - git
+  - curl
+  - rsync
+  - ca-certificates
+  - build-essential
+  - unzip
+  - zsh
+write_files:
+  - path: /etc/agent-vm
+    content: "1\n"
+    permissions: "0644"
+  # Pinned GitHub host keys so non-interactive SSH clones (private-skills, insteadOf rewrites) do not stop on a prompt.
+  - path: /etc/ssh/ssh_known_hosts
+    append: true
+    content: |
+      github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl
+runcmd:
+  - [sh, -c, "curl -fsLS https://get.chezmoi.io | sh -s -- -b /usr/local/bin"]

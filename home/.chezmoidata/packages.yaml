@@ -48,6 +48,7 @@ packages:
       - "iterm2"
       - "ghostty"
       - "karabiner-elements"
+      - "orbstack"
   linux:
     apt:
       - "age"
