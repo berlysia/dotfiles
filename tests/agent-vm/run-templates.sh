@@ -54,6 +54,14 @@ test_host_render_equals_template_without_vm_guards() {
   assert_eq "$stripped" "$(render dot_config/mise/config.toml.tmpl '{"agent_vm":false}')" "hosts see no change"
 }
 
+# .chezmoiignore matches target paths, not source names: `dot_local/bin/executable_agent-vm` would never match.
+test_ignore_excludes_launcher_off_darwin_by_target_path() {
+  local out; out=$(render .chezmoiignore '{"chezmoi":{"os":"linux"}}')
+  out=$'\n'"$out"$'\n' # line-anchor both ends ($(...) strips the final newline)
+  assert_contains "$out" $'\n.local/bin/agent-vm\n' "launcher ignored by its target path"
+  assert_contains "$out" $'\n.config/agent-vm\n' "launcher config ignored by its target path"
+  assert_not_contains "$(render .chezmoiignore '{"chezmoi":{"os":"darwin"}}')" ".local/bin/agent-vm" "deployed on macOS"
+}
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do
   ( "$t" ) </dev/null || record "FAIL $t (test aborted)"
 done
