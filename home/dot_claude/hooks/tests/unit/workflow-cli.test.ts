@@ -188,6 +188,99 @@ describe("workflow-cli: round", () => {
     const baseline = readFileSync(join(wf, ".round-baseline"), "utf-8");
     assert.match(baseline, /^2\t/m);
   });
+
+  const ROUND_DEPS = (wf: string) => ({
+    cwd: wf,
+    wfDir: wf,
+    sessionId: "test-ses",
+    now: NOW,
+  });
+
+  it("refuses a 4th round in the same review cycle", () => {
+    const { wf } = seedWorkflow({
+      doc: "plan-1.md",
+      round: 3,
+      ledgerSlugs: [],
+    });
+    const r = runWorkflowCli(["round", "plan-1.md"], ROUND_DEPS(wf));
+    assert.equal(r.exitCode, 1);
+    assert.match(r.stderr, /round budget \(3\)/);
+    assert.match(r.stderr, /--extend --reason/);
+    assert.doesNotMatch(
+      readFileSync(join(wf, "plan-1.md"), "utf-8"),
+      /Round 4/,
+    );
+  });
+
+  it("allows round 3 (2 rounds so far in the cycle)", () => {
+    const { wf } = seedWorkflow({
+      doc: "plan-1.md",
+      round: 2,
+      ledgerSlugs: [],
+    });
+    assert.equal(
+      runWorkflowCli(["round", "plan-1.md"], ROUND_DEPS(wf)).exitCode,
+      0,
+    );
+  });
+
+  it("starts a fresh budget after a pass marker with round=", () => {
+    const { wf } = seedWorkflow({
+      doc: "plan-1.md",
+      round: 3,
+      ledgerSlugs: [],
+    });
+    const p = join(wf, "plan-1.md");
+    writeFileSync(
+      p,
+      `${readFileSync(p, "utf-8")}\n<!-- auto-review: verdict=pass; hash=x; design-hash=y; round=3; at=z; reviewers=a -->\n`,
+    );
+    assert.equal(
+      runWorkflowCli(["round", "plan-1.md"], ROUND_DEPS(wf)).exitCode,
+      0,
+    );
+  });
+
+  it("--extend without --reason is refused", () => {
+    const { wf } = seedWorkflow({
+      doc: "plan-1.md",
+      round: 3,
+      ledgerSlugs: [],
+    });
+    const r = runWorkflowCli(
+      ["round", "plan-1.md", "--extend"],
+      ROUND_DEPS(wf),
+    );
+    assert.equal(r.exitCode, 1);
+    assert.match(r.stderr, /--reason/);
+  });
+
+  it("--extend --reason proceeds, logs the extension, and composes with --full", () => {
+    const { wf } = seedWorkflow({
+      doc: "plan-1.md",
+      round: 3,
+      ledgerSlugs: [],
+    });
+    const r = runWorkflowCli(
+      [
+        "round",
+        "plan-1.md",
+        "--extend",
+        "--reason",
+        "user: continue once",
+        "--full",
+      ],
+      ROUND_DEPS(wf),
+    );
+    assert.equal(r.exitCode, 0, r.stderr);
+    assert.match(r.stdout, /extended beyond round budget \(3\)/);
+    assert.match(
+      readFileSync(join(wf, "plan-1.md"), "utf-8"),
+      /## Reviewer Outputs \(Round 4\)/,
+    );
+    const log = readFileSync(join(wf, "round-extensions.log"), "utf-8");
+    assert.match(log, /^2026-.*\tplan-1\.md\t4\tuser: continue once$/m);
+  });
 });
 
 /**

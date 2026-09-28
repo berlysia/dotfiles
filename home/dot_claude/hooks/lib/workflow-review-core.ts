@@ -53,6 +53,16 @@ export interface ReviewerRule {
 export const MAX_ADDITIONAL_REVIEWERS = 3;
 
 /**
+ * Rounds allowed per review cycle before `workflow-cli round` refuses and the
+ * model must present the Executive Summary and ask the human for direction
+ * (spec K1). A cycle resets at the last `verdict=pass` marker
+ * (`lastPassMarkerRound`), so approval starts a fresh budget. Shared by
+ * `cli/workflow.ts` (the refusal) and this module's own round-budget notice
+ * in `buildRecommendation` so the two never quote different numbers.
+ */
+export const ROUND_BUDGET = 3;
+
+/**
  * Single source of truth for the spec-layer reviewer set.
  *
  * Applied when the trigger document is `spec.md` (two-layer mode) or `plan.md`

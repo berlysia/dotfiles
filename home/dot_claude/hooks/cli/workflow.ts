@@ -17,6 +17,7 @@
  */
 
 import {
+  appendFileSync,
   closeSync,
   constants as fsConstants,
   existsSync,
@@ -28,6 +29,7 @@ import {
 import { resolve } from "node:path";
 import { diagnoseGate, formatGateDiagnosis } from "../lib/workflow-gate.ts";
 import { isStrictlyUnderProjectSubdir } from "../lib/workflow-fs.ts";
+import { lastPassMarkerRound } from "../lib/workflow-marker.ts";
 import {
   deriveDefaultWorkflowDir,
   getWorkflowDocumentType,
@@ -41,6 +43,7 @@ import {
   countReviewerOutputsRounds,
   PLAN_NORMALIZERS,
   planRoundReviewers,
+  ROUND_BUDGET,
   type RoundReviewerPlan,
   reviewersForDocumentType,
   SPEC_NORMALIZERS,
@@ -103,7 +106,7 @@ interface ParsedArgs {
 }
 
 /** Flags that take no value, so `round --full spec.md` keeps `spec.md` positional. */
-const BOOLEAN_FLAGS = new Set(["full"]);
+const BOOLEAN_FLAGS = new Set(["full", "extend"]);
 
 function parseArgs(args: string[]): ParsedArgs {
   const positional: string[] = [];
@@ -276,6 +279,21 @@ function cmdRound(
   const documentType = getWorkflowDocumentType(docPath) ?? "plan";
   const currentRound = countReviewerOutputsRounds(oldContent);
   const nextRound = currentRound + 1;
+
+  // A cycle resets at the last verdict=pass marker (approval), so re-review
+  // after approval gets a fresh budget while unstamped `round` calls keep
+  // counting against it (spec K1).
+  const roundsInCycle = currentRound - lastPassMarkerRound(oldContent);
+  const extending = flags["extend"] === "true";
+  if (extending && (flags["reason"] ?? "").trim() === "") {
+    return err('--extend requires --reason "<the human\'s instruction>"');
+  }
+  if (roundsInCycle >= ROUND_BUDGET && !extending) {
+    return err(
+      `refusing: ${docName} has used its round budget (${ROUND_BUDGET}) since the last pass. Present the Executive Summary with the unresolved findings and ask the human for direction. Only if the human tells you to continue, re-run with --extend --reason "<their instruction>".`,
+    );
+  }
+
   const roundPlan: RoundReviewerPlan =
     flags["full"] === "true"
       ? { kind: "full" }
@@ -314,12 +332,21 @@ function cmdRound(
   writeFileSync(docPath, newContent);
   appendRoundBaseline(wfDir, nextRound, deps.now);
 
+  let extensionNote = "";
+  if (roundsInCycle >= ROUND_BUDGET && extending) {
+    appendFileSync(
+      resolve(wfDir, "round-extensions.log"),
+      `${deps.now.toISOString()}\t${docName}\t${nextRound}\t${(flags["reason"] ?? "").trim()}\n`,
+    );
+    extensionNote = `extended beyond round budget (${ROUND_BUDGET})\n`;
+  }
+
   const summary =
     roundPlan.kind === "delta"
       ? `re-run: ${roundPlan.rerun.join(", ")}; carried: ${roundPlan.carried.join(", ") || "none"}`
       : `re-run: all always-on reviewers${currentRound > 0 ? " (full round)" : ""}`;
   return ok(
-    `inserted "## Reviewer Outputs (Round ${nextRound})" into ${docName}\n${summary}\n`,
+    `inserted "## Reviewer Outputs (Round ${nextRound})" into ${docName}\n${summary}\n${extensionNote}`,
     warning,
   );
 }
