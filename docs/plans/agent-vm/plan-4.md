@@ -445,27 +445,22 @@ fi
 ## Reviewer Outputs (Round 1)
 
 ### logic-validator
-
 - verdict: needs-work
 - 主指摘: exclude のテストが stub の無い `codex` を stdin 付きで exec し、実物の codex がある開発機では対話セッションが起動して止まる。exclude 対象では plan-2 の検査と取り込みも走らない点が未記載。CI の paths に darwin.sh が無い。
 
 ### scope-justification-reviewer
-
 - verdict: pass
 - 主指摘: 4 タスクとも K10 と保存規則に対応。CONTEXT.md への語彙追加と README からの参照は必須ではない（判断を記録すべき）。
 
 ### security-vulnerability-analyzer
-
 - verdict: blocker
 - 主指摘: `host_reason` は「repo の外」と「VM が `.git` を壊して git が失敗」を区別できず、後者で host に素通しして隔離を丸ごと外す。`resolve_repo_root` の防御フラグは plan-2 で入るので、plan-4 は plan-2 の後に実装する必要がある。
 
 ### data-contract-evolution-evaluator
-
 - verdict: pass
 - 主指摘: 終了コードとサブコマンド名はガイドと実装が一致。ADR 番号 0017 は空き。関数定義を別ファイルに置く点を spec の図は反映していない（軽微）。
 
 ### resilience-analyzer
-
 - verdict: needs-work
 - 主指摘: fail closed と再帰しないことは確認。ただし staging・mount・bootstrap の途中で想定外に失敗すると生の bash エラーだけが出て `AGENT_VM=off` の案内が無く、ガイドにもこの場合の復旧が無い。
 
@@ -475,27 +470,22 @@ fi
 ## Reviewer Outputs (Round 2)
 
 ### logic-validator
-
 - verdict: needs-work
 - 主指摘: 想定外失敗のテストは `check_health` の既存の `die` で止まり ERR trap に届かない（→ `orb create` だけを失敗させる stub 指定に変更、bootstrap 失敗のテストも追加）。chezmoi の source path が空だと `resolve_working_tree` が cwd（壊れた repo）に防御フラグなしで git を実行する（→ 空なら git を呼ばず die、防御フラグを付け、`resolve_repo_root` を先に実行）。
 
 ### scope-justification-reviewer
-
 - verdict: pass
 - 主指摘: 追加分は Round 1 の指摘に直結。`op://` の確認に理由を 1 行添えるとよい（反映済み）。
 
 ### security-vulnerability-analyzer
-
 - verdict: blocker
 - 主指摘: ファイルシステムの走査だけだと、VM が `.git` を丸ごと消せば次回から host に素通しになる（→ host 側の記録 `machines/<m>` にある repo の中なら、`.git` が無くても止める）。
 
 ### data-contract-evolution-evaluator
-
 - verdict: needs-work
 - 主指摘: ガイドの終了コード一覧に、起動を止める終了コード 1 の場合を載せるべき。5 節からも参照すべき（反映済み）。
 
 ### resilience-analyzer
-
 - verdict: needs-work
 - 主指摘: die が ERR trap を二重に発火しないことは実測で確認。想定外失敗のテストが 1 箇所だけで、bootstrap での失敗は未検証（→ テスト追加）。
 
@@ -505,27 +495,22 @@ fi
 ## Reviewer Outputs (Round 3)
 
 ### logic-validator
-
 - verdict: blocker（前提の読み違いを含む、一部採用）
 - 主指摘: 現在の launcher に plan-2 の防御フラグが無いことを blocker とした → plan-4 は「plan-2 の実装後に着手」と明記済みで、現時点の未実装は想定どおり。着手時に `grep -c 'core.fsmonitor='` で前提を機械的に確かめる手順を追加。ERR trap・bootstrap 失敗・host_reason の die の経路は正しい。2 つのテストに `GIT_CEILING_DIRECTORIES` が無い（→ 追加）。
 
 ### scope-justification-reviewer
-
 - verdict: pass
 - 主指摘: 追加分はすべて Round 2 の指摘に 1 対 1 で対応。stub の FAIL_ON はテスト側にだけある。
 
 ### security-vulnerability-analyzer
-
 - verdict: pass（Round 2 の blocker は解消、残り 2 件は反映済み）
 - 主指摘: host 側の記録で `.git` 削除時の素通しを止める修正は正しい。記録ディレクトリが VM に mount されないことの明記（→ コメントで明記）と、読めない記録を「無い」とみなすと素通しになる点（→ 読めない記録があれば止める、テスト追加）。
 
 ### data-contract-evolution-evaluator
-
 - verdict: blocker（反映済み）
 - 主指摘: 終了コード 1 の記載は解消。停止メッセージが勧める `agent-vm rm <repo>` は `resolve_repo_root` を使うため `.git` の消えた repo では失敗する（→ git で解決できなければ記録と照合する形に `cmd_rm` を変更、テスト追加）。
 
 ### resilience-analyzer
-
 - verdict: needs-work（反映済み）
 - 主指摘: 想定外失敗の検証が 2 箇所だけ（→ `op inject` 失敗時にも案内が出るテストを追加）。`envf=$(…)` は代入形なので set -e で止まることを確認。
 
@@ -535,27 +520,22 @@ fi
 ## Reviewer Outputs (Round 4)
 
 ### logic-validator
-
 - verdict: pass（minor 1 件、反映済み）
 - 主指摘: 記録の読み取り失敗・`cmd_rm` の代替解決・`op inject` 失敗時の ERR trap はいずれも正しい。コマンド置換の中の失敗では ERR trap が subshell と外側で 2 回発火しうる → 最上位の shell（`BASH_SUBSHELL` が 0）でだけ表示し、1 回だけであることをテストで確認。
 
 ### scope-justification-reviewer
-
 - verdict: pass
 - 主指摘: 追加分はすべて Round 3 の指摘に 1 対 1 で対応。
 
 ### security-vulnerability-analyzer
-
 - verdict: pass
 - 主指摘: `cmd_rm` の代替解決は realpath の完全一致で、machine 名は引数から導出するので記録内容から注入できない。確認プロンプトも残る。
 
 ### data-contract-evolution-evaluator
-
 - verdict: pass（minor 1 件、反映済み）
 - 主指摘: `.git` の無い repo でも `agent-vm rm` が効くことを確認。git を先に試すと祖先の別 repo が一致して別 machine を消す確認が出うる → 記録との完全一致を先に調べる順に変更。
 
 ### resilience-analyzer
-
 - verdict: pass（minor 1 件、反映済み）
 - 主指摘: `cmd_rm` の復旧経路は正しい。秘密を VM に書き込む `orb` 呼び出しの失敗が未検証 → テスト追加。
 

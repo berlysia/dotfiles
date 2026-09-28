@@ -5,7 +5,6 @@
 spec の K1・K2・K3・K6・K7（Codex 認証確認）・K10（health / fail closed / タイトル）・K11（workingTree 解決）・K14・K15 を実装する。ログ取り込み（K9）と git 面検査（K13）は plan-2、VM 側（cloud-init / bootstrap / chezmoi フラグ / mise）は plan-3、シェル統合と導入ガイドは plan-4 で扱う。
 
 実装上の共通制約:
-
 - macOS 標準の bash 3.2 で動くこと（連想配列・`mapfile`・`${var,,}` を使わない）。`timeout`・`flock`・`sha256sum`・`realpath`・`mv -T` は macOS 標準に無いので、perl・`shasum -a 256`・`cd -P && pwd -P`・perl の `rename` で代替する（spec K1/K2/K3/K10）。
 - `set -euo pipefail` 下で、関数の最終文に `[[ … ]] && …` を置かない（偽のとき関数が 1 を返して呼び出し側が落ちるため）。条件付き処理は `if` で書く。
 - machine の lock を保持している間に起動する外部コマンドは、パイプ全体を `{ …; } 9>&-` で囲むか各コマンドに `9>&-` を付け、fd 9 を継承させない（spec K1）。
@@ -1093,27 +1092,22 @@ jobs:
 ## Reviewer Outputs (Round 1)
 
 ### logic-validator
-
 - verdict: needs-work
 - 主指摘: `build_launch_script` は引数なしのとき末尾の `[[ ]] &&` が 1 を返し `set -e` で落ちる。T2 の期待パターンが実際の切り詰め結果と合わない。テスト間で config/state が漏れる。stub の stdin 取り込みが CI でハングしうる。パイプ前段が fd 9 を継承する。prewarm 分岐が未実装。
 
 ### scope-justification-reviewer
-
 - verdict: needs-work
 - 主指摘: prewarm 分岐と `main()` の振り分け（shell / 管理コマンド）が prose のみでテストが無い。
 
 ### architecture-boundary-analyzer
-
 - verdict: needs-work
 - 主指摘: 組み込み先の CI workflow が `status-check.yml` の必須集合に無く merge を止めない。chezmoiscripts 用 job への相乗りは目的が違う。`tests/agent-vm/` 配置の理由が無い。
 
 ### security-vulnerability-analyzer
-
 - verdict: blocker
 - 主指摘: テスト用 `eval` フックが本番 launcher に入る。VM が書ける staging に host が直接 rsync で書き込むと、symlink の差し替えで host 上の任意パスへ書かれうる。env edit のファイル作成時に一瞬 umask 既定の権限になる。
 
 ### data-contract-evolution-evaluator
-
 - verdict: needs-work
 - 主指摘: repo の rename で `repos/<machine>.env.1password` が黙って孤立する（host で書いた状態なので通知が要る）。lock ファイルと共存する `cmd_list` のテストが無い。
 
@@ -1123,27 +1117,22 @@ jobs:
 ## Reviewer Outputs (Round 2)
 
 ### logic-validator
-
 - verdict: needs-work
 - 主指摘: Round 1 は解消。T3 の改行パステストが `die` で subshell ごと終了し常に FAIL になる。here-string 内の置換は `set -e` で検査されず、`build_staging` の失敗が黙って進む。prewarm テストの stub 出力が `orb list` にも効き、`ensure_machine` の退行を拾えない。
 
 ### scope-justification-reviewer
-
 - verdict: pass
 - 主指摘: Round 1 は解消。env adopt と専用 CI は spec K14 と前ラウンド指摘に直結。
 
 ### architecture-boundary-analyzer
-
 - verdict: pass
 - 主指摘: 専用 workflow と status-check への登録で解消。macOS runner のコストは軽微な記録事項。
 
 ### security-vulnerability-analyzer
-
 - verdict: pass
 - 主指摘: 3 件とも解消。同一ファイルシステム前提と mount root 前提をコメントで固定するとよい。
 
 ### data-contract-evolution-evaluator
-
 - verdict: needs-work
 - 主指摘: applied-hash を cwd 相対で読んでおり、cwd が `$HOME` でないと毎回 bootstrap が走る。launcher（apply 済み）と bootstrap.sh（作業中の staging）の呼び出し契約に版が無い。`cmd_list` の出力を `cmd_gc` が構文解析している。
 
@@ -1153,27 +1142,22 @@ jobs:
 ## Reviewer Outputs (Round 3)
 
 ### logic-validator
-
 - verdict: pass
 - 主指摘: Round 2 の 4 件はすべて解消。変更箇所に新規の問題なし。
 
 ### data-contract-evolution-evaluator
-
 - verdict: pass
 - 主指摘: 3 件とも解消。bootstrap.sh の終了コード 3 の案内が利用者に届くことは plan-3 でテストする。
 
 ### scope-justification-reviewer
-
 - verdict: pass (carried from Round 2)
 - 主指摘: Round 2 で pass、再実行なし
 
 ### architecture-boundary-analyzer
-
 - verdict: pass (carried from Round 2)
 - 主指摘: Round 2 で pass、再実行なし
 
 ### security-vulnerability-analyzer
-
 - verdict: pass (carried from Round 2)
 - 主指摘: Round 2 で pass、再実行なし
 
@@ -1183,27 +1167,22 @@ jobs:
 ## Reviewer Outputs (Round 4)
 
 ### logic-validator
-
 - verdict: pass
 - 主指摘: 親 spec の変更（K3 の hash 計算位置、K7 の認証確認と注入の順序、K14 の adopt の前提）と plan-1 は整合。変更不要。
 
 ### data-contract-evolution-evaluator
-
 - verdict: pass (carried from Round 3)
 - 主指摘: Round 3 で pass、再実行なし
 
 ### scope-justification-reviewer
-
 - verdict: pass (carried from Round 3)
 - 主指摘: Round 3 で pass、再実行なし
 
 ### architecture-boundary-analyzer
-
 - verdict: pass (carried from Round 3)
 - 主指摘: Round 3 で pass、再実行なし
 
 ### security-vulnerability-analyzer
-
 - verdict: pass (carried from Round 3)
 - 主指摘: Round 3 で pass、再実行なし
 
@@ -1213,27 +1192,22 @@ jobs:
 ## Reviewer Outputs (Round 5)
 
 ### logic-validator
-
 - verdict: pass
 - 主指摘: 親 spec の K7 変更（Claude は VM ごとの初回ログイン、launcher は何もしない）と整合。plan-1 に Claude token の参照は無く、inject_secrets は汎用。変更不要。
 
 ### data-contract-evolution-evaluator
-
 - verdict: pass (carried from Round 4)
 - 主指摘: Round 4 で pass、再実行なし
 
 ### scope-justification-reviewer
-
 - verdict: pass (carried from Round 4)
 - 主指摘: Round 4 で pass、再実行なし
 
 ### architecture-boundary-analyzer
-
 - verdict: pass (carried from Round 4)
 - 主指摘: Round 4 で pass、再実行なし
 
 ### security-vulnerability-analyzer
-
 - verdict: pass (carried from Round 4)
 - 主指摘: Round 4 で pass、再実行なし
 
@@ -1243,27 +1217,22 @@ jobs:
 ## Reviewer Outputs (Round 6)
 
 ### logic-validator
-
 - verdict: pass
 - 主指摘: 親 spec の K16 と cloud-init の担当訂正は bootstrap / cloud-init の中身の話で、plan-1 の呼び出し契約と cloud-init のパス受け渡しは影響を受けない。変更不要。
 
 ### data-contract-evolution-evaluator
-
 - verdict: pass (carried from Round 5)
 - 主指摘: Round 5 で pass、再実行なし
 
 ### scope-justification-reviewer
-
 - verdict: pass (carried from Round 5)
 - 主指摘: Round 5 で pass、再実行なし
 
 ### architecture-boundary-analyzer
-
 - verdict: pass (carried from Round 5)
 - 主指摘: Round 5 で pass、再実行なし
 
 ### security-vulnerability-analyzer
-
 - verdict: pass (carried from Round 5)
 - 主指摘: Round 5 で pass、再実行なし
 

@@ -5,7 +5,6 @@
 spec の K3（bootstrap 契約）・K4（`agent_vm` フラグ）・K5（VM の mise 軽量化）・K9（outbox への symlink は bootstrap が所有）・K10（exclude 設定の書式）・K11（cloud-init と bootstrap は repo root の `agent-vm/`）・K12（OrbStack cask）・K16（claude は未導入時だけ bootstrap が公式 installer で入れる）と、K6 の「秘密の置き場が tmpfs であることを bootstrap が確認する」を実装する。launcher 側の呼び出し契約は plan-1 で固定済み: `orb -m <m> bash /opt/agent-vm/src/<gen>/agent-vm/bootstrap.sh <contract> <hash> <src dir>`（`BOOTSTRAP_CONTRACT=1`）。
 
 共通制約:
-
 - bootstrap.sh は VM（Ubuntu）の bash で動くが、テストは Linux CI 上で HOME を一時ディレクトリにして実行する。VM 固有のパスは環境変数で上書きできる: `AGENT_VM_MARKER`（既定 `/etc/agent-vm`）、`AGENT_VM_OUTBOX_ROOT`（既定 `/opt/agent-vm/outbox`）、`AGENT_VM_SECRETS_DIR`（既定 `${XDG_RUNTIME_DIR:-/dev/shm}`）。本番コードにテスト専用の分岐は置かない。
 - テストの合否は `N run, 0 failed` の「0 failed」で判定する（`N` は assert の数で、タスクを足すたびに増える）。
 - bootstrap 実行中も VM は転送された SSH agent を使えるが、これはセッション全体を通じた既存の露出（spec K1・K8・R3）の一部で、本 plan で新たに増えるものではない。
@@ -442,26 +441,26 @@ GitHub の host key は実装時に上記の公式ページの値と照合し、
 `.github/workflows/ci-agent-vm.yml` の `push` と `pull_request` の **両方の** paths に `agent-vm/**`・`home/.chezmoi.toml.tmpl`・`home/dot_config/mise/**`・`home/.chezmoiscripts/run_onchange_install-packages-7.sh.tmpl`・`home/.chezmoiscripts/run_onchange_install-safe-chain.sh.tmpl` を追加し、job を次の形にする（bootstrap と template のテストは Linux の ubuntu job だけで走らせる）:
 
 ```yaml
-steps:
-  - name: Checkout repository
-    uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-    with:
-      persist-credentials: false
-  # /bin/bash is 3.2 on macOS: the launcher must run on the stock shell.
-  - name: Run launcher tests
-    run: /bin/bash tests/agent-vm/run.sh
-  - name: Run VM bootstrap tests
-    if: runner.os == 'Linux'
-    run: bash tests/agent-vm/run-bootstrap.sh
-  - name: Install chezmoi
-    if: runner.os == 'Linux'
-    uses: ./.github/actions/install-chezmoi
-    with:
-      install-dir: "$HOME/.local/bin"
-      add-to-path: "true"
-  - name: Run template tests
-    if: runner.os == 'Linux'
-    run: bash tests/agent-vm/run-templates.sh
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      # /bin/bash is 3.2 on macOS: the launcher must run on the stock shell.
+      - name: Run launcher tests
+        run: /bin/bash tests/agent-vm/run.sh
+      - name: Run VM bootstrap tests
+        if: runner.os == 'Linux'
+        run: bash tests/agent-vm/run-bootstrap.sh
+      - name: Install chezmoi
+        if: runner.os == 'Linux'
+        uses: ./.github/actions/install-chezmoi
+        with:
+          install-dir: "$HOME/.local/bin"
+          add-to-path: "true"
+      - name: Run template tests
+        if: runner.os == 'Linux'
+        run: bash tests/agent-vm/run-templates.sh
 ```
 
 - [ ] **Step 3: 通過を確認** — Step 1 の 3 つが期待どおり。`npm run lint:actions` と `npm run lint:shell` が警告 0。`bash tests/agent-vm/run.sh`・`run-bootstrap.sh`・`run-templates.sh` がすべて `0 failed`。
@@ -499,27 +498,22 @@ steps:
 ## Reviewer Outputs (Round 1)
 
 ### logic-validator
-
 - verdict: needs-work
 - 主指摘: go/rust の移動で host の render 結果が変わり「差分なし」の判定と矛盾。install script のテストが変更前から通る（Red にならない）。「N run」は assert 数で数えるので件数が誤り。curl を stub していないため claude 導入のテストが失敗し得ない。tmpfs の `/tmp` がある環境では非 tmpfs テストが誤作動。
 
 ### scope-justification-reviewer
-
 - verdict: needs-work
 - 主指摘: VM への claude 導入方法が spec に無いまま plan が curl|bash を追加している（→ spec K16 として決定）。cloud-init が mise を入れない点が spec の記述とずれる（→ spec を訂正）。create_config の根拠が無い。
 
 ### architecture-boundary-analyzer
-
 - verdict: needs-work
 - 主指摘: `run_onchange_install-safe-chain.sh.tmpl` も `config.toml` を include しており改名で壊れる。go/rust は移動せずその場で囲むべき。CI の paths は push と pull_request の両方に足す必要がある。
 
 ### security-vulnerability-analyzer
-
 - verdict: pass
 - 主指摘: 新規の脆弱性なし。bootstrap 中の agent 転送は K1/K8 で受け入れ済みの常時露出の一部。curl|sh の追加は既存の mise 導入と同じ信頼モデル。
 
 ### data-contract-evolution-evaluator
-
 - verdict: blocker
 - 主指摘: safe-chain の include が改名で壊れ、全 host と VM で apply が失敗し applied-hash が書かれず bootstrap が毎回走る。go/rust の移動で全 host の render hash が変わり mise install と safe-chain が再実行される。
 
@@ -529,27 +523,22 @@ steps:
 ## Reviewer Outputs (Round 2)
 
 ### logic-validator
-
 - verdict: needs-work
 - 主指摘: 行ごとの囲み方は chezmoi v2.72.2 で実測し、host 側は byte 単位で同一・VM 側は対象行だけ消えることを確認。ただし host 側の同一性テストが `git show master:…` を使い、CI の浅い checkout に `master` が無く失敗する（→ テンプレートから VM 用の囲み行を除いたものと host の render 結果を比べる方式に変更、git 履歴に依存しない）。
 
 ### scope-justification-reviewer
-
 - verdict: pass
 - 主指摘: Round 1 は解消（K16・cloud-init の訂正・create_config の根拠）。cloud-init のパッケージ一覧に個別の理由が無いのは軽微。
 
 ### architecture-boundary-analyzer
-
 - verdict: pass
 - 主指摘: 3 件とも解消。CI の paths 差分がコード例でなく文章のみなのは軽微。
 
 ### security-vulnerability-analyzer
-
 - verdict: needs-work（1 件、不採用）
 - 主指摘: bootstrap が `~/.local/bin` を PATH の先頭に置くため、侵害されたセッションが偽のコマンドを置けば次の bootstrap で実行される。→ 不採用: bootstrap は agent のセッションと同じ VM・同じユーザーで動き、偽のコマンドが得られるのは VM が既に持つ権限だけ。host 側の処理は VM の PATH を使わない。VM は信頼しない側という前提の範囲内。
 
 ### data-contract-evolution-evaluator
-
 - verdict: pass
 - 主指摘: `include` と `includeTemplate`（agent_vm=false）の出力と hash が一致することを実測。host では run_onchange が再実行されない。Round 1 の blocker は解消。
 
@@ -559,27 +548,22 @@ steps:
 ## Reviewer Outputs (Round 3)
 
 ### logic-validator
-
 - verdict: pass
 - 主指摘: 囲み行を除いたテンプレートと host の render 結果が byte 単位で一致すること、正規表現が囲み行だけに当たることを chezmoi v2.72.2 で実測。浅い clone でも動く。
 
 ### security-vulnerability-analyzer
-
 - verdict: needs-work（non-blocking、一部採用）
 - 主指摘: 権限は増えないが、bootstrap は agent の承認・sandbox を通らずに次回起動で実行されるため、`~/.local/bin` に仕込んだものが「ゲートを通らず・セッション終了後に」走る持続経路になる。→ 採用: PATH は末尾追加にし、system のコマンド（curl・bash・rsync・git・chezmoi）を横取りできなくした（テスト追加）。受容: mise・claude など user 領域にしか無いツールの差し替えは、次回の対話セッション起動（`bash -lc` で `~/.local/bin/claude` を実行）でも同じく成立する既存の性質で、VM 境界の内側に留まる。
 
 ### scope-justification-reviewer
-
 - verdict: pass (carried from Round 2)
 - 主指摘: Round 2 で pass、再実行なし
 
 ### architecture-boundary-analyzer
-
 - verdict: pass (carried from Round 2)
 - 主指摘: Round 2 で pass、再実行なし
 
 ### data-contract-evolution-evaluator
-
 - verdict: pass (carried from Round 2)
 - 主指摘: Round 2 で pass、再実行なし
 
@@ -589,27 +573,22 @@ steps:
 ## Reviewer Outputs (Round 4)
 
 ### logic-validator
-
 - verdict: pass
 - 主指摘: PATH を末尾追加にしても、stub（chezmoi・curl）と claude の探索はどのテストでも期待どおりに解決される。T2 の件数も一致。
 
 ### security-vulnerability-analyzer
-
 - verdict: pass（minor 1 件、反映済み）
-- 主指摘: 末尾追加で system のコマンドは横取りできず、user 領域のツールの差し替えは対話セッション起動（path.sh が `~/.local/bin` を前置、`bash -lc` で claude を実行）でも成立する既存の性質であることをソースで確認。テストが rsync しか見ていない → curl も同じテストで確認するよう追加。
+- 主指摘: 末尾追加で system のコマンドは横取りできず、user 領域のツールの差し替えは対話セッション起動（path.sh が `~/.local/bin` を前置、`bash -lc` で claude を実行）でも成立する既存の性質であることをソースで確認。テストが rsync しか見ていない → curl も同じテストで確認するよう追加。 
 
 ### scope-justification-reviewer
-
 - verdict: pass (carried from Round 3)
 - 主指摘: Round 3 で pass、再実行なし
 
 ### architecture-boundary-analyzer
-
 - verdict: pass (carried from Round 3)
 - 主指摘: Round 3 で pass、再実行なし
 
 ### data-contract-evolution-evaluator
-
 - verdict: pass (carried from Round 3)
 - 主指摘: Round 3 で pass、再実行なし
 

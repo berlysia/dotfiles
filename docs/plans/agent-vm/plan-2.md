@@ -5,7 +5,6 @@
 spec の K9（outbox の取り込み）・K13（host で実行されるが `git diff` に出ない面の検査）と、Architecture の手順 4・5・9（起動時の catch-up、終了時の取り込みと検査）、`agent-vm sync [--inspect]` / `agent-vm restore-git [repo]` を、plan-1 で実装済みの launcher（`home/dot_local/bin/executable_agent-vm`）に追加する。
 
 plan-1 と同じ共通制約に従う（bash 3.2、`set -euo pipefail` 下で関数末尾に `[[ … ]] && …` を置かない、lock 保持中の外部コマンドは `9>&-`、本番コードにテスト専用分岐を置かない、`orb`/`op`/`chezmoi` は stub）。追加の制約:
-
 - outbox（VM が書ける）内のファイルは、bash のリダイレクトでは読まない（読む瞬間に symlink へ差し替えられると host 上の別ファイルを読んでしまうため）。代わりに perl の読み取り helper `outbox_read` で読む。helper は、親ディレクトリの realpath が outbox の tree root 配下にあることを確かめたうえで、`O_NOFOLLOW` で開いて通常ファイルであることを fstat で確かめる。サイズ取得と、指定オフセット・長さの読み出しはこの helper が行い、比較は `outbox_read … | cmp -s - dest` で行う（`stat` の書式と `cmp -n` の有無は macOS と Linux で違うが、この方式はその違いに依存しない）。
 - `outbox_read` に残る競合: realpath の確認から `sysopen` までの間に、途中のディレクトリを symlink に差し替えられる余地は残る（`O_NOFOLLOW` が効くのは最後の要素だけ）。成功しても起きるのは「host 上の別の `*.jsonl` が host の `~/.claude/projects` に写る」ことだけで、VM はその写しを読めず持ち出し経路にならないので、受容する。
 - lock 中の `9>&-` は、lock を解放した後も生き残りうる子プロセス（`orb` や `rsync` 等、plan-1 の範囲）に付ける規則とする。本 plan で lock 中に起動する git / perl / awk / find / shasum / sort / cmp は、関数が戻る前に必ず終了するので付けない。
@@ -834,27 +833,22 @@ cmd_sync() { # [--inspect]
 ## Reviewer Outputs (Round 1)
 
 ### logic-validator
-
 - verdict: blocker
 - 主指摘: `surface_rebaseline` の awk が読むファイル順（baseline, diff, current）と規則（ARGV[3] を diff とみなす）が食い違い、差分が出るたびに baseline へ不正な行が永久に残る。既存テストは差分ありの 2 回目以降を確かめていない。版 0 の新規種類に hookfile を含めるとテストの前提と矛盾する。restore の条件式の優先順位。
 
 ### scope-justification-reviewer
-
 - verdict: needs-work
 - 主指摘: 終了コード 4・5 と「ツールの終了コード優先」の根拠、untracked を削除でなく改名する根拠を plan に書くべき。
 
 ### architecture-boundary-analyzer
-
 - verdict: pass
 - 主指摘: 既存の単一ファイル構成と state 配置に整合。`ingest_outbox` が global を設定することをコメントに書くとよい。
 
 ### security-vulnerability-analyzer
-
 - verdict: blocker
 - 主指摘: restore は `added hookfile` を `changed hooksdir` より先に処理し、symlink に差し替えられた `.git/hooks` を辿って repo 外のファイルを消す・上書きしうる。`find` と読み込みの間に symlink へ差し替える TOCTOU。`git ls-files` は VM が置いた `core.fsmonitor` を host で実行しうる。`core.gitproxy`・`remote.*.uploadpack`・`url.*.insteadof` 等が監視対象に無い。
 
 ### data-contract-evolution-evaluator
-
 - verdict: needs-work
 - 主指摘: 食い違い時の recover 行に対象 repo が無い。git 面の差分とログの食い違いが同時に起きたときの終了コードの優先が暗黙。
 
@@ -864,27 +858,22 @@ cmd_sync() { # [--inspect]
 ## Reviewer Outputs (Round 2)
 
 ### logic-validator
-
 - verdict: pass
 - 主指摘: Round 1 の 3 件は解消し、テスト件数も一致。lock 中の `9>&-` 規則と本 plan のコードが食い違う点、worktree の config.worktree を restore で戻さない点を明記するとよい（反映済み）。
 
 ### scope-justification-reviewer
-
 - verdict: pass
 - 主指摘: 根拠の不足は解消。追加分はすべて Round 1 の指摘への対応で、scope の逸脱なし。
 
 ### architecture-boundary-analyzer
-
 - verdict: pass
 - 主指摘: 埋め込み perl helper・gitdir・git の防御フラグは既存構造に整合。
 
 ### security-vulnerability-analyzer
-
 - verdict: needs-work
 - 主指摘: Round 1 は解消。`resolve_repo_root` の `git rev-parse` が防御フラグ無しで、復旧コマンド（sync / restore-git）の先頭で走る。`outbox_read` は途中ディレクトリの差し替え競合が残る。`save_surface_copies` の確認と cp の間の競合。
 
 ### data-contract-evolution-evaluator
-
 - verdict: pass
 - 主指摘: recover 行と終了コードの優先順位はコードと一致。gitdir 追加は未実装のため移行の問題なし。
 
@@ -894,27 +883,22 @@ cmd_sync() { # [--inspect]
 ## Reviewer Outputs (Round 3)
 
 ### logic-validator
-
 - verdict: pass
 - 主指摘: realpath 比較・hardened `rev-parse`・コメント追加に誤りなし。
 
 ### security-vulnerability-analyzer
-
 - verdict: needs-work
 - 主指摘: `save_surface_copies` の確認は同じパス文字列を再解決するだけで、確認と cp の間の symlink 差し替えは防げない（同時に動く別セッションが仕込んだ hook を「正常な状態のコピー」にでき、restore が書き戻す）。`outbox_read` が FIFO を開くと止まる。→ 反映: コピーは内容 hash で検証（restore は baseline の hash と一致するコピーだけを書き戻す、テスト追加）、`O_NONBLOCK` で開いて fstat で通常ファイル以外を拒否。
 
 ### scope-justification-reviewer
-
 - verdict: pass (carried from Round 2)
 - 主指摘: Round 2 で pass、再実行なし
 
 ### architecture-boundary-analyzer
-
 - verdict: pass (carried from Round 2)
 - 主指摘: Round 2 で pass、再実行なし
 
 ### data-contract-evolution-evaluator
-
 - verdict: pass (carried from Round 2)
 - 主指摘: Round 2 で pass、再実行なし
 
@@ -924,27 +908,22 @@ cmd_sync() { # [--inspect]
 ## Reviewer Outputs (Round 4)
 
 ### logic-validator
-
 - verdict: needs-work
 - 主指摘: 改ざんコピーのテストが、存在しないファイルへの `grep` の終了コード 2 で正しい実装でも失敗する（→ `test -e` に変更）。ほかの restore テストと baseline 参照の awk は正しい。
 
 ### security-vulnerability-analyzer
-
 - verdict: needs-work
 - 主指摘: FIFO は解消、baseline が実行時の改変を取り込まないことも確認。ただし hash 照合は hook だけで、config と attributes の保存コピーは無条件に書き戻される（→ config は外すだけで再追加しない、attributes は baseline の hash と一致したときだけ戻す、config の保存コピー自体を廃止）。
 
 ### scope-justification-reviewer
-
 - verdict: pass (carried from Round 3)
 - 主指摘: Round 3 で pass、再実行なし
 
 ### architecture-boundary-analyzer
-
 - verdict: pass (carried from Round 3)
 - 主指摘: Round 3 で pass、再実行なし
 
 ### data-contract-evolution-evaluator
-
 - verdict: pass (carried from Round 3)
 - 主指摘: Round 3 で pass、再実行なし
 
@@ -954,27 +933,22 @@ cmd_sync() { # [--inspect]
 ## Reviewer Outputs (Round 5)
 
 ### logic-validator
-
 - verdict: pass
 - 主指摘: 改ざんコピーのテストは `test -e` で正しく判定。`restore_config_key` は引数 3 つで、保存 config への参照は残っていない。既存の restore テストも通る。
 
 ### security-vulnerability-analyzer
-
 - verdict: pass（Round 4 は解消、minor 2 件は反映済み）
 - 主指摘: exec 系設定は外すだけ、hook と attributes は baseline の hash と一致した保存コピーだけを戻すことを確認。restore 後の再検査の結果を `|| true` で捨てていた点（→ 戻しきれないとき終了コード 3 を返す）と、外していないキーにも「外した」と表示していた点（→ 実在するときだけ外して表示）を反映。
 
 ### scope-justification-reviewer
-
 - verdict: pass (carried from Round 4)
 - 主指摘: Round 4 で pass、再実行なし
 
 ### architecture-boundary-analyzer
-
 - verdict: pass (carried from Round 4)
 - 主指摘: Round 4 で pass、再実行なし
 
 ### data-contract-evolution-evaluator
-
 - verdict: pass (carried from Round 4)
 - 主指摘: Round 4 で pass、再実行なし
 
