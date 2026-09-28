@@ -39,7 +39,7 @@ const LEDGER_MAX_LINES = 200;
  * the same three rosters `workflow-review-core.ts` exports so this hook
  * cannot silently drift from the reviewer set it exists to ledger runs for.
  * All three rosters now carry bare slugs that resolve to a local agent under
- * `home/dot_claude/agents/` (no `compound-engineering:review:` entries). A
+ * `home/dot_claude/agents/` (no plugin-namespaced entries). A
  * recorded `subagent_type` is still normalized to its last `:`-separated
  * segment before the lookup below, so a plugin-namespaced run of a
  * same-named agent (e.g. `some-plugin:review:security-vulnerability-analyzer`)
