@@ -91,4 +91,21 @@ resolve_working_tree() {
   git -C "$src" rev-parse --show-toplevel 2>/dev/null || die "chezmoi source is not a git checkout. $FAIL_CLOSED_HINT"
 }
 
+acquire_lock() { # machine max_wait_seconds; holds fd 9 until release_lock or process exit
+  local waited=0
+  mkdir -p "$AGENT_VM_STATE_DIR/machines"
+  exec 9>"$AGENT_VM_STATE_DIR/machines/$1.lock"
+  until perl -MFcntl=:flock -e 'open(my $f, ">&=", 9) or die "fdopen: $!"; flock($f, LOCK_EX | LOCK_NB) or exit 1'; do
+    waited=$((waited + 1))
+    if [[ "$waited" -ge "$2" ]]; then
+      exec 9>&-
+      return 1
+    fi
+    step "another session for this repo is preparing (${waited}s)"
+    sleep 1
+  done
+}
+
+release_lock() { exec 9>&-; }
+
 if [[ -z "${AGENT_VM_LIB:-}" ]]; then main "$@"; fi

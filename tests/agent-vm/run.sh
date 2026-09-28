@@ -85,6 +85,34 @@ test_working_tree_failure_fails_closed() {
   assert_status 1 "chezmoi failure fails closed" -- env STUB_CHEZMOI_EXIT=1 bash -c "AGENT_VM_LIB=1 . '$LAUNCHER'; resolve_working_tree"
 }
 
+try_lock() { # machine -> exit status of a fresh process trying the lock for 1s
+  bash -c "AGENT_VM_STATE_DIR='$AGENT_VM_STATE_DIR' AGENT_VM_LIB=1 . '$LAUNCHER'; acquire_lock '$1' 1" </dev/null >/dev/null 2>&1
+}
+test_second_acquirer_is_refused_while_held() {
+  bash -c "AGENT_VM_STATE_DIR='$AGENT_VM_STATE_DIR' AGENT_VM_LIB=1 . '$LAUNCHER'; acquire_lock agent-l-000000 1 && sleep 3" </dev/null &
+  sleep 1
+  local status=0; try_lock agent-l-000000 || status=$?
+  assert_eq 1 "$status" "busy lock refused"
+  wait
+}
+test_lock_released_when_holder_is_killed() {
+  # exec (not a plain "sleep 30") so bash replaces itself in place: a forked child would
+  # inherit fd 9 as a duplicate of the same open file description, and flock(2) only
+  # releases once every duplicate fd is closed, so kill -9 on the parent PID alone
+  # would leave the lock held by the orphaned child.
+  bash -c "AGENT_VM_STATE_DIR='$AGENT_VM_STATE_DIR' AGENT_VM_LIB=1 . '$LAUNCHER'; acquire_lock agent-k-000000 1 && exec sleep 30" </dev/null &
+  local pid=$!
+  sleep 1; kill -9 "$pid"; wait "$pid" 2>/dev/null || true
+  local status=0; try_lock agent-k-000000 || status=$?
+  assert_eq 0 "$status" "lock free after kill -9"
+}
+test_release_allows_reacquire() {
+  acquire_lock agent-r-000000 1
+  release_lock
+  local status=0; try_lock agent-r-000000 || status=$?
+  assert_eq 0 "$status" "reacquire after release"
+}
+
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do
   (
     TMP_ROOT="$TMP_BASE/$t"; mkdir -p "$TMP_ROOT"
