@@ -10,3 +10,6 @@ pnpm-lock.yaml
 bun.lock
 package-lock.json
 yarn.lock
+
+# Archived Document Workflow records: kept byte-identical to the approved (hashed) originals
+docs/plans/agent-vm/

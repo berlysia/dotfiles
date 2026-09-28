@@ -39,7 +39,6 @@ darwin.sh: claude()/codex() → repo 内なら agent-vm へ
 ```
 
 責務と所有:
-
 - **launcher (`agent-vm`)**: machine ライフサイクル、下り（staging 再生成）、上り（outbox 取り込み）、秘密注入、git 面検査、起動。host にのみ存在。
 - **cloud-init**: 一度きりの OS レベル準備（marker、パッケージ、chezmoi の導入、GitHub の host key の固定）。host key を固定するのは、VM の git が host の gitconfig の `url "git@github.com:" insteadOf https://github.com/`（`home/dot_gitconfig.tmpl:67-68`）で GitHub への通信を SSH にし、bootstrap の非対話 apply で private-skills の clone（K2）が走るため、初回接続の確認で止まらず、かつ初回接続で鍵を無条件に信用しないようにするため。mise は chezmoi apply の既存スクリプト（`run_onchange_install-packages-1-linux.sh.tmpl`）が host と同じ方法で入れる。
 - **bootstrap.sh**: VM 側の冪等な再適用、chezmoi の宣言的管理外の VM 専用 symlink（`~/.claude/projects`, `~/.codex/sessions`）の作成、claude が未導入なら導入（K16）。
@@ -61,7 +60,6 @@ darwin.sh: claude()/codex() → repo 内なら agent-vm へ
 ### 採用案と理由
 
 白紙設計案を採用する。根拠:
-
 - ユーザー明示の支配軸がエルゴノミクスであり、差分最小案は VM 作成・同期・ログインの手作業を残す。
 - 設定の下り同期を VM 内 `chezmoi apply` の再実行として実装できる基盤が既にある: `~/.claude/settings.json`・`~/.claude.json`・hook deps・skills はすべて apply 時に生成される（research C3）。MCP も Linux では stdio に自動 fallback する（research C4）。
 - staging の毎回再生成は計測で 494 files / 4.3MB のコピー 0.07s、tar+sha256 0.01s（本 repo、WSL 上で計測）であり、warm 起動 3 秒目標に対して無視できる。
@@ -93,7 +91,7 @@ darwin.sh: claude()/codex() → repo 内なら agent-vm へ
   - outbox 側が長く、host 側の長さ分の先頭が一致（`cmp -n <host 側 size>`）→ 差分の末尾だけ追記
   - 同じ長さで内容一致 → 何もしない
   - それ以外（outbox 側が短い、または先頭不一致 = 既存行の書き換え・切り詰め）→ host 側を変更せず、ファイルパスと `recover: agent-vm sync --inspect <machine>` を警告として表示する
-    mtime 比較は VM と host の時計ずれで追記を取りこぼし、rsync `--append` は既存部分の書き換えを検知しないため、どちらも使わない。host 側の `~/.local/share/agent-vm/ingested/<machine>`（`format=1`、1 行に path・outbox 側 size・host 側 size。VM から書ける outbox の外に置く）を持ち、読めない・形式が不正な行は「記録なし」として判定に入る。両側の size がともに前回記録と同じファイルは判定を省く（host 側の削除・編集も size の変化で再判定に入る）。size を保ったままの outbox 側の書き換えは判定されないが、host 側には一切伝わらない（host 側は先頭一致を確かめた追記でしか変わらない）ので、host 側の完全性は保たれる。検知されないのはその書き換えの存在だけで、これは VM が書いたログの内容をもともと信頼しない前提と同じ扱いとする。jsonl 以外の付随ファイル（V12 で有無を確認）は意図的に取り込まない。repo を host と同一パスで mount するので Claude の project dir 名（cwd 由来）が host と一致し、`claude --resume` と `home/.chezmoiscripts/run_after_distill-insights.sh.tmpl` がそのまま拾う。
+  mtime 比較は VM と host の時計ずれで追記を取りこぼし、rsync `--append` は既存部分の書き換えを検知しないため、どちらも使わない。host 側の `~/.local/share/agent-vm/ingested/<machine>`（`format=1`、1 行に path・outbox 側 size・host 側 size。VM から書ける outbox の外に置く）を持ち、読めない・形式が不正な行は「記録なし」として判定に入る。両側の size がともに前回記録と同じファイルは判定を省く（host 側の削除・編集も size の変化で再判定に入る）。size を保ったままの outbox 側の書き換えは判定されないが、host 側には一切伝わらない（host 側は先頭一致を確かめた追記でしか変わらない）ので、host 側の完全性は保たれる。検知されないのはその書き換えの存在だけで、これは VM が書いたログの内容をもともと信頼しない前提と同じ扱いとする。jsonl 以外の付随ファイル（V12 で有無を確認）は意図的に取り込まない。repo を host と同一パスで mount するので Claude の project dir 名（cwd 由来）が host と一致し、`claude --resume` と `home/.chezmoiscripts/run_after_distill-insights.sh.tmpl` がそのまま拾う。
 - **K10: 既定で経由する（opt-out）、opt-out 設定は host 側のみ、OrbStack 不調時は fail closed** — `darwin.sh` に `claude()` / `codex()` を定義し、cwd が git repo 内、`AGENT_VM` が `off` でない、repo root が `~/.config/agent-vm/config` の exclude に該当しない、の 3 条件で `agent-vm <tool> "$@"` に回す。それ以外は `command claude`。config の書式は 1 行 1 絶対パス、`#` 以降はコメント、比較は realpath 化した repo root に対するディレクトリ境界での prefix 一致。opt-out を repo 内に置かないのは、VM から書ける場所で隔離を解除できないようにするため。`orb` が無い、または 3 秒の時間制限付き `orb status` が失敗したときは（macOS 標準に `timeout` コマンドが無いため、標準の perl で `perl -e 'alarm shift; exec @ARGV' 3 orb status` とする） host で起動せず、原因と `AGENT_VM=off claude` の案内を 1 行出して終了する（隔離の黙った迂回と、無応答時のハングの両方を避ける）。VM セッション中はターミナルタイトルを `[vm:<machine>] <repo>` にし、終了時に戻す（host と VM のどちらで操作しているかを取り違えないため。R8 の緩和も兼ねる）。
   - 参照: `home/dot_shell_common/init.sh:57`（darwin.sh は darwin でのみ読まれる）
 - **K11: host 側ファイルは darwin のみに deploy** — `agent-vm` launcher と `~/.config/agent-vm/` は `.chezmoiignore` で darwin 以外を除外する。cloud-init と bootstrap.sh は chezmoi の deploy 対象にせず repo root 配下（`agent-vm/`）に置く。launcher は実行のたびに `git -C "$(chezmoi source-path)" rev-parse --show-toplevel` で workingTree を解決し（render 時に固定すると sourceDir 変更で古くなるため）、そこから cloud-init を読み、K2 の staging もこのパスから作る。解決に失敗したら K10 と同じく fail closed。bootstrap.sh は staging 経由で VM に届く。
@@ -182,37 +180,30 @@ darwin.sh: claude()/codex() → repo 内なら agent-vm へ
 ## Reviewer Outputs (Round 1)
 
 ### logic-validator
-
 - verdict: needs-work
 - 主指摘: 共有 staging は rw で VM 間汚染経路になり、VM 内 `chezmoi apply` の `bun install` が staging に node_modules を書く。`git ls-files -s` hash は未コミット編集を反映せず、`--ignore-existing` は追記された jsonl を取りこぼす。private-skills は chezmoi external と二重経路。
 
 ### scope-justification-reviewer
-
 - verdict: needs-work
 - 主指摘: K5 の根拠が計測なし。Codex 内蔵 sandbox のネスト動作が V 項目に無い。K10 の既定 opt-out は推論による決定なので承認時に明示すべき。
 
 ### decision-quality-reviewer
-
 - verdict: needs-work
 - 主指摘: 支配軸がエルゴノミクスなのに warm 起動の目標値が無い。`op` の生体認証が毎回の割り込みになりうる点と、OrbStack daemon 無応答時のハングが未検討。
 
 ### greenfield-perspective-reviewer
-
 - verdict: needs-work
 - 主指摘: 秘密注入の頻度、初回待ちが手動 prewarm 頼み、ログ回収が exit trap 依存で crash 時に欠落しうる。「1Password等」の範囲を明記すべき。
 
 ### architecture-boundary-analyzer
-
 - verdict: needs-work
 - 主指摘: staging root を repo root に固定すべき（`.skills/`・root `package.json` を含める）。VM 側 symlink の作成責任者が未定義。共有 staging は VM 間の書き込み経路。
 
 ### security-vulnerability-analyzer
-
 - verdict: blocker
 - 主指摘: VM が書ける repo `.env` の `op://` 参照を host が解決すると任意の秘密を持ち出せる。共有 staging は VM 間 RCE 経路。rw mount された `.git/hooks`・`.git/config` は host の git 実行時に走る（`git diff` に出ない）。共有 codex-auth は 1 VM の侵害で全 VM の token を差し替えられる。
 
 ### data-contract-evolution-evaluator
-
 - verdict: needs-work
 - 主指摘: `agent_vm` キーを持たない既存 host の config で apply が失敗しうる（要 `dig` ガード）。repo の rename/move で machine が孤児化し、exclude の書式が未定義。Codex sessions の jsonl 以外のファイルが未確認。
 
@@ -222,37 +213,30 @@ darwin.sh: claude()/codex() → repo 内なら agent-vm へ
 ## Reviewer Outputs (Round 2)
 
 ### logic-validator
-
 - verdict: needs-work
 - 主指摘: `chezmoi init -W` は存在しないと指摘（→ `chezmoi help` で global flag `-W, --working-tree` の存在を確認、計器側の誤りとして不採用）。`.git` の無い source での init は `git init` を伴う。同一 machine への並行起動に排他が無い。bootstrap 時の非対話 exec で `SSH_AUTH_SOCK` が有効かの V 項目が無い。
 
 ### scope-justification-reviewer
-
 - verdict: pass
 - 主指摘: K13/K15 は根拠十分。K14 の `rm` だけ根拠行が無い。
 
 ### decision-quality-reviewer
-
 - verdict: needs-work
 - 主指摘: K9/K13 の毎回の処理が warm 起動 3 秒目標の計測対象に入っていない。R8 の運用ルールはエルゴノミクス上の残余コストとして明記すべき。
 
 ### greenfield-perspective-reviewer
-
 - verdict: pass
 - 主指摘: Round 1 は解消または明示的トレードオフ化済み。VM 内か host かを示す表示が無い点は判断事項。
 
 ### architecture-boundary-analyzer
-
 - verdict: needs-work
 - 主指摘: `~/.local/bin` に置かれる launcher が chezmoi workingTree を実行時に解決する方法が未定義。解決失敗時も fail closed にすべき。
 
 ### security-vulnerability-analyzer
-
 - verdict: needs-work
 - 主指摘: Round 1 の blocker は解消（K13 は検知のみで R8 に残余として明記済み）。staging 再生成と bootstrap の排他が無い。`core.hooksPath` の向き先や symlink 化した hooks の中身を hash していない。`restore-git` の repo への結び付けが未定義。
 
 ### data-contract-evolution-evaluator
-
 - verdict: needs-work
 - 主指摘: `machines/<m>` と snapshot に形式版が無い。`rsync --update` は VM と host の時計ずれで追記を黙って取りこぼしうる。
 
@@ -262,37 +246,30 @@ darwin.sh: claude()/codex() → repo 内なら agent-vm へ
 ## Reviewer Outputs (Round 3)
 
 ### logic-validator
-
 - verdict: needs-work
 - 主指摘: Round 2 は解消。stale lock の回収に TOCTOU がある（2 プロセスが同じ死んだ pid を見て、後から来た側が先に取った側の lock を消しうる）。
 
 ### decision-quality-reviewer
-
 - verdict: pass
 - 主指摘: V4・R8 は解消。K13 のコスト超過時に網羅範囲を黙って削らないことを注記するとよい。
 
 ### architecture-boundary-analyzer
-
 - verdict: pass
 - 主指摘: workingTree の実行時解決と fail closed で解消。新規の境界問題なし。
 
 ### security-vulnerability-analyzer
-
 - verdict: needs-work
 - 主指摘: 版上げ時の再ベースラインが既存の改変を正規化しうる。`--append` は既存部分の書き換えを検知しない。手順 7〜9（env ファイル・終了時処理）が lock の外で並行起動と競合する。
 
 ### data-contract-evolution-evaluator
-
 - verdict: needs-work
 - 主指摘: `--append` は先頭一致を検証せず、切り詰め・書き換えを黙って無視する。再ベースラインの範囲（新規キーのみか全体か）が曖昧。
 
 ### scope-justification-reviewer
-
 - verdict: pass (carried from Round 2)
 - 主指摘: Round 2 で pass、再実行なし
 
 ### greenfield-perspective-reviewer
-
 - verdict: pass (carried from Round 2)
 - 主指摘: Round 2 で pass、再実行なし
 
@@ -302,37 +279,30 @@ darwin.sh: claude()/codex() → repo 内なら agent-vm へ
 ## Reviewer Outputs (Round 4)
 
 ### logic-validator
-
 - verdict: needs-work
 - 主指摘: rename 方式の回収は、遅れて来たプロセスの `mv` が新しく取られた生きた lock を動かしてしまい、二重保持が再発する。`.ingested` が outbox 側の size だけを鍵にしており、host 側の削除・編集を修復しない。retry に上限が無い。
 
 ### security-vulnerability-analyzer
-
 - verdict: needs-work
 - 主指摘: 起動ごとに別名の env ファイルは、crash 時に tmpfs に溜まり続ける。size が変わらない書き換えは比較されず、警告も出ない。
 
 ### data-contract-evolution-evaluator
-
 - verdict: pass
 - 主指摘: Round 3 は解消。`.ingested` にも形式版があるとよい。
 
 ### decision-quality-reviewer
-
 - verdict: pass (carried from Round 3)
 - 主指摘: Round 3 で pass、再実行なし
 
 ### architecture-boundary-analyzer
-
 - verdict: pass (carried from Round 3)
 - 主指摘: Round 3 で pass、再実行なし
 
 ### scope-justification-reviewer
-
 - verdict: pass (carried from Round 3)
 - 主指摘: Round 3 で pass、再実行なし
 
 ### greenfield-perspective-reviewer
-
 - verdict: pass (carried from Round 3)
 - 主指摘: Round 3 で pass、再実行なし
 
@@ -342,37 +312,30 @@ darwin.sh: claude()/codex() → repo 内なら agent-vm へ
 ## Reviewer Outputs (Round 5)
 
 ### logic-validator
-
 - verdict: needs-work
 - 主指摘: fd 9 を閉じないまま `orb exec` で対話セッションに入ると、lock がセッション中ずっと保持され、同じ repo での並行起動が 60 秒後に失敗する。終了時処理での lock の再取得と、取れなかったときの扱いが未定義。perl の fd 受け渡し形式を固定すべき。
 
 ### security-vulnerability-analyzer
-
 - verdict: needs-work
 - 主指摘: 60 秒の掃除は lock の外で動くため、`op` の生体認証待ちが長いと別の起動が未読の env ファイルを消しうる。`.ingested` は VM が書ける outbox 内にあり、信頼できない状態として扱う必要がある。
 
 ### data-contract-evolution-evaluator
-
 - verdict: pass (carried from Round 4)
 - 主指摘: Round 4 で pass、再実行なし
 
 ### decision-quality-reviewer
-
 - verdict: pass (carried from Round 4)
 - 主指摘: Round 4 で pass、再実行なし
 
 ### architecture-boundary-analyzer
-
 - verdict: pass (carried from Round 4)
 - 主指摘: Round 4 で pass、再実行なし
 
 ### scope-justification-reviewer
-
 - verdict: pass (carried from Round 4)
 - 主指摘: Round 4 で pass、再実行なし
 
 ### greenfield-perspective-reviewer
-
 - verdict: pass (carried from Round 4)
 - 主指摘: Round 4 で pass、再実行なし
 
@@ -382,37 +345,30 @@ darwin.sh: claude()/codex() → repo 内なら agent-vm へ
 ## Reviewer Outputs (Round 6)
 
 ### logic-validator
-
 - verdict: pass
 - 主指摘: Round 5 は解消し、plan-1 とも整合。K3 の「staging 内」は build ディレクトリの誤記（反映済み）。
 
 ### security-vulnerability-analyzer
-
 - verdict: needs-work（本人が minor・non-blocking と明記）
 - 主指摘: Round 5 は解消。Codex の device 認証待ちと env ファイル削除の順序を明記すべき（plan-1 は認証確認が注入より先で既に安全、spec に明記して反映済み）。`env adopt` が同一プロジェクトかを確かめない前提を明記すべき（反映済み）。
 
 ### data-contract-evolution-evaluator
-
 - verdict: pass (carried from Round 5)
 - 主指摘: Round 5 で pass、再実行なし
 
 ### decision-quality-reviewer
-
 - verdict: pass (carried from Round 5)
 - 主指摘: Round 5 で pass、再実行なし
 
 ### architecture-boundary-analyzer
-
 - verdict: pass (carried from Round 5)
 - 主指摘: Round 5 で pass、再実行なし
 
 ### scope-justification-reviewer
-
 - verdict: pass (carried from Round 5)
 - 主指摘: Round 5 で pass、再実行なし
 
 ### greenfield-perspective-reviewer
-
 - verdict: pass (carried from Round 5)
 - 主指摘: Round 5 で pass、再実行なし
 
@@ -422,37 +378,30 @@ darwin.sh: claude()/codex() → repo 内なら agent-vm へ
 ## Reviewer Outputs (Round 7)
 
 ### logic-validator
-
 - verdict: pass
 - 主指摘: K7・R4・V7・Experience Delta に旧 token 方式の残りや矛盾なし。K6 との順序の記述も Codex に限定され plan-1 と整合。
 
 ### scope-justification-reviewer
-
 - verdict: pass
 - 主指摘: 部品を 1 つ減らす変更で、根拠（被害範囲・Codex との一貫性）が具体的。
 
 ### decision-quality-reviewer
-
 - verdict: pass
 - 主指摘: この部分判断ではユーザーが手間より安全と一貫性を明示的に選んでおり、支配軸のずれではない。Experience Delta も手間を隠していない。
 
 ### greenfield-perspective-reviewer
-
 - verdict: needs-work（1 件、不採用）
 - 主指摘: ログイン待ちの間 K6 の値が環境変数にあるので、Codex と同様に注入前にログインさせるべき。→ 不採用: K6 の値はログイン後もセッション全体で環境変数にあり、待ち時間で露出は増えない。Codex で確認を先にするのは tmpfs ファイルを待ち時間中に残さないためで、Claude もファイルは exec 前に消える。誤読を防ぐため K7 にこの説明を追記。
 
 ### architecture-boundary-analyzer
-
 - verdict: pass
 - 主指摘: 境界の問題なし。`.credentials.json` が再 apply で消えないことを明記するとよい（K7 に追記）。
 
 ### security-vulnerability-analyzer
-
 - verdict: pass
 - 主指摘: VM 内のログインがコード貼り付け経路で済むか確認すべき（V7 に追記）。失効の本筋はセッション取り消しで、R4 はそれを記載済み。
 
 ### data-contract-evolution-evaluator
-
 - verdict: pass
 - 主指摘: `home/dot_claude` に `exact_` が無く `.credentials.json` は再 apply で消えないが、専用の確認項目を足すべき（V15 を追加）。
 
@@ -462,37 +411,30 @@ darwin.sh: claude()/codex() → repo 内なら agent-vm へ
 ## Reviewer Outputs (Round 8)
 
 ### logic-validator
-
 - verdict: needs-work（minor、反映済み）
 - 主指摘: K16 の claude 導入が責務・Architecture 図の手順 6・K15 の進捗段階に反映されていない。非対話 shell の PATH で判定すると毎回再導入しうる。→ 3 箇所に反映、K16 に「判定前に `~/.local/bin` を PATH に加える」を明記。
 
 ### scope-justification-reviewer
-
 - verdict: pass（1 件の根拠補足、反映済み）
 - 主指摘: K16 は根拠十分。cloud-init の GitHub host key 固定に理由が無い → 責務に insteadOf と private-skills clone を根拠として追記。
 
 ### decision-quality-reviewer
-
 - verdict: pass
 - 主指摘: host と導入経路をそろえる判断は支配軸に整合。版の固定より host との一致を優先していることも既存の前例と同じ。
 
 ### greenfield-perspective-reviewer
-
 - verdict: needs-work（反映済み）
 - 主指摘: claude 導入の検証項目が無い → V16 を追加。導入失敗時に次の dotfiles 変更まで入らない → 実際は `set -euo pipefail` で applied-hash が書かれず次回起動で再試行されることを K16 に明記。
 
 ### architecture-boundary-analyzer
-
 - verdict: pass
 - 主指摘: bootstrap の責務一覧に K16 を足し、cloud-init / chezmoi apply / bootstrap の導入経路の分担原則を明文化すべき → 責務に「導入経路の分担」を追記。
 
 ### security-vulnerability-analyzer
-
 - verdict: pass
 - 主指摘: installer は隔離された VM 内で走り、既存の mise 導入と同じ信頼モデル。host key の固定は初回接続の確認を不要にする正味の改善。
 
 ### data-contract-evolution-evaluator
-
 - verdict: needs-work（反映済み）
 - 主指摘: 非対話 bootstrap の PATH に `~/.local/bin` が無いと毎回再導入して自己更新後の版を上書きしうる → K16 に PATH の追加を明記、V16 に 2 回目で再導入されないことを追加。
 

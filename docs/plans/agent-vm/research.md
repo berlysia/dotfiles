@@ -20,7 +20,6 @@
 ## 報告ベース（subagent 調査、mac 未検証）
 
 ### OrbStack
-
 - R1: 通常 machine は mac の home を同一パス・`/mnt/mac` で read-write 共有。制限フラグなし（all-or-nothing）。
 - R2: 通常 machine は `mac <cmd>` で host の任意コマンドを実行可能 → guest コード = host コマンド実行権。選択的無効化は無く、isolated にするしかない。
 - R3: default user は mac と同名・passwordless sudo。UID 一致は未記載。
@@ -29,11 +28,9 @@
 - R6: Docker container（OrbStack engine）は `-v host:ctr:ro` が使える（標準 Docker 挙動）。VirtioFS。
 
 ### 1Password
-
 - R7: desktop app 連携（生体認証）は VM 境界を越えない。選択肢は (a) mac 側で `op run`/`op inject` して解決済み値のみ渡す、(b) Service Account token (`OP_SERVICE_ACCOUNT_TOKEN`)、(c) Connect server。
 
 ### Claude / Codex
-
 - R8: Claude Code は Linux では `~/.claude/.credentials.json`（0600）に認証を保存。Codex は `~/.codex/auth.json`（`cli_auth_credentials_store` で切替）。
 - R9: Codex の Linux sandbox は Landlock+seccomp。ネスト環境で効かない可能性。Claude Code の Linux sandbox は bubblewrap+socat。
 - R10: Anthropic 公式 devcontainer は deny-by-default egress firewall (`init-firewall.sh`) を持つ。
