@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Test stub: records argv, replies 0. Standing in for the real agent-vm launcher so shell-function
+# tests can check routing without needing a real repo, OrbStack, or the launcher's own dependencies.
+# shellcheck disable=SC2154 # STUB_LOG is exported by tests/agent-vm/run-shell.sh
+{ printf 'agent-vm'; printf ' %q' "$@"; printf '\n'; } >>"$STUB_LOG"
+exit 0

@@ -12,6 +12,8 @@ on:
       - "home/dot_config/mise/**"
       - "home/.chezmoiscripts/run_onchange_install-packages-7.sh.tmpl"
       - "home/.chezmoiscripts/run_onchange_install-safe-chain.sh.tmpl"
+      - "home/dot_shell_common/agent_vm.sh"
+      - "home/dot_shell_common/darwin.sh"
   pull_request:
     branches: [master, main]
     paths:
@@ -23,6 +25,8 @@ on:
       - "home/dot_config/mise/**"
       - "home/.chezmoiscripts/run_onchange_install-packages-7.sh.tmpl"
       - "home/.chezmoiscripts/run_onchange_install-safe-chain.sh.tmpl"
+      - "home/dot_shell_common/agent_vm.sh"
+      - "home/dot_shell_common/darwin.sh"
   workflow_dispatch:
 
 concurrency:
@@ -48,6 +52,9 @@ jobs:
       # /bin/bash is 3.2 on macOS: the launcher must run on the stock shell.
       - name: Run launcher tests
         run: /bin/bash tests/agent-vm/run.sh
+      # Same reasoning as the launcher tests: exercise the stock macOS bash 3.2, not a newer one earlier on PATH.
+      - name: Run shell function tests
+        run: /bin/bash tests/agent-vm/run-shell.sh
       - name: Run VM bootstrap tests
         if: runner.os == 'Linux'
         run: bash tests/agent-vm/run-bootstrap.sh

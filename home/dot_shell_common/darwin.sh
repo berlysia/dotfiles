@@ -41,3 +41,7 @@ fi
 # macOS specific aliases
 alias showfiles='defaults write com.apple.finder AppleShowAllFiles YES; killall Finder'
 alias hidefiles='defaults write com.apple.finder AppleShowAllFiles NO; killall Finder'
+
+# agent-vm: route claude / codex into the per-repository OrbStack machine
+# shellcheck disable=SC2154
+[ -f "$SHELL_COMMON/agent_vm.sh" ] && . "$SHELL_COMMON/agent_vm.sh"
