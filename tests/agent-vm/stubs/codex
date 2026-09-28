@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Test stub: records argv, replies 0. Standing in for the real codex binary so tests never
+# start an interactive session on a developer machine that has codex installed for real.
+# shellcheck disable=SC2154 # STUB_LOG is exported by tests/agent-vm/run.sh
+{ printf 'codex'; printf ' %q' "$@"; printf '\n'; } >>"$STUB_LOG"
+exit 0

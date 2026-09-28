@@ -87,6 +87,103 @@ test_working_tree_failure_fails_closed() {
   assert_status 1 "chezmoi failure fails closed" -- env STUB_CHEZMOI_EXIT=1 bash -c "AGENT_VM_LIB=1 . '$LAUNCHER'; resolve_working_tree"
 }
 
+test_outside_a_repo_claude_runs_on_the_host() {
+  mkdir -p "$TMP_ROOT/plain"
+  local out; out=$(cd "$TMP_ROOT/plain" && GIT_CEILING_DIRECTORIES="$TMP_ROOT" bash "$LAUNCHER" claude -p hi 2>&1)
+  assert_contains "$(cat "$STUB_LOG")" "claude -p hi" "host claude executed with the same args"
+  assert_not_contains "$(cat "$STUB_LOG")" "orb " "no VM involved"
+  assert_contains "$out" "on the host" "says where it runs"
+}
+test_excluded_repo_runs_on_the_host() {
+  local repo; repo=$(make_flow_repo)
+  mkdir -p "$AGENT_VM_CONFIG_DIR"; printf '%s\n' "$(cd -P "$repo" && pwd -P)" >"$AGENT_VM_CONFIG_DIR/config"
+  (cd "$repo" && bash "$LAUNCHER" codex </dev/null 2>/dev/null) || true
+  assert_contains "$(cat "$STUB_LOG")" "codex" "host codex (stub) executed"
+  assert_not_contains "$(cat "$STUB_LOG")" "orb " "excluded repo does not touch OrbStack"
+}
+test_broken_git_dir_fails_closed_instead_of_running_on_the_host() {
+  local wt repo; wt=$(make_dotfiles_fixture); repo=$(make_flow_repo)
+  printf 'not a git dir\n' >"$repo/.git/HEAD"; printf '[broken\n' >"$repo/.git/config"
+  local status=0 out; out=$(cd "$repo" && STUB_CHEZMOI_STDOUT="$wt/home" bash "$LAUNCHER" claude </dev/null 2>&1) || status=$?
+  assert_eq 1 "$status" "broken repo -> refuse"
+  assert_contains "$out" "not inside a usable git repository" "refused by the repository check itself"
+  assert_contains "$out" "AGENT_VM=off" "hint printed"
+  assert_not_contains "$(cat "$STUB_LOG")" "claude" "host claude never executed"
+}
+test_git_file_worktree_marker_counts_as_a_repo() {
+  local wt; wt=$(make_dotfiles_fixture)
+  mkdir -p "$TMP_ROOT/wt"; printf 'gitdir: /nonexistent\n' >"$TMP_ROOT/wt/.git"
+  local status=0 out; out=$(cd "$TMP_ROOT/wt" && STUB_CHEZMOI_STDOUT="$wt/home" bash "$LAUNCHER" claude </dev/null 2>&1) || status=$?
+  assert_eq 1 "$status" "a .git file with a broken target is not 'outside a repo'"
+  assert_contains "$out" "not inside a usable git repository" "refused by the repository check itself"
+  assert_not_contains "$(cat "$STUB_LOG")" "claude" "host claude never executed"
+}
+test_known_repo_with_deleted_git_dir_is_refused() {
+  local repo; repo=$(make_flow_repo)
+  local real; real=$(cd -P "$repo" && pwd -P)
+  write_machine_meta "$(derive_machine_name "$real")" "$real"
+  rm -rf "$repo/.git"
+  local status=0 out; out=$(cd "$repo" && GIT_CEILING_DIRECTORIES="$TMP_ROOT" bash "$LAUNCHER" claude </dev/null 2>&1) || status=$?
+  assert_eq 1 "$status" "a previously used repo whose .git vanished -> refuse"
+  assert_contains "$out" ".git is missing" "names the reason"
+  assert_not_contains "$(cat "$STUB_LOG")" "claude" "host claude never executed"
+}
+test_unreadable_record_fails_closed_outside_a_repo() {
+  mkdir -p "$TMP_ROOT/plain" "$AGENT_VM_STATE_DIR/machines"
+  printf 'garbage\n' >"$AGENT_VM_STATE_DIR/machines/agent-bad-000000"
+  local status=0; (cd "$TMP_ROOT/plain" && GIT_CEILING_DIRECTORIES="$TMP_ROOT" bash "$LAUNCHER" claude </dev/null >/dev/null 2>&1) || status=$?
+  assert_eq 1 "$status" "an unreadable record blocks host passthrough"
+  assert_not_contains "$(cat "$STUB_LOG")" "claude" "host claude never executed"
+}
+test_rm_works_for_a_known_repo_without_git() {
+  local repo; repo=$(make_flow_repo)
+  local real m; real=$(cd -P "$repo" && pwd -P); m=$(derive_machine_name "$real")
+  write_machine_meta "$m" "$real"
+  rm -rf "$repo/.git"
+  printf 'y\n' | (cd "$TMP_ROOT" && GIT_CEILING_DIRECTORIES="$TMP_ROOT" cmd_rm "$real") >/dev/null 2>&1
+  assert_contains "$(cat "$STUB_LOG")" "orb delete -f $m" "machine of the .git-less repo deleted"
+  assert_status 1 "record removed" -- test -e "$AGENT_VM_STATE_DIR/machines/$m"
+}
+test_op_failure_prints_the_host_hint() {
+  local wt repo m; wt=$(make_dotfiles_fixture); repo=$(make_flow_repo)
+  m=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
+  mkdir -p "$AGENT_VM_CONFIG_DIR"; printf 'A=op://v/a/x\n' >"$AGENT_VM_CONFIG_DIR/env.1password"
+  local out; out=$(cd "$repo" && STUB_CHEZMOI_STDOUT="$wt/home" STUB_ORB_LIST_STDOUT="$m running" STUB_ORB_STDOUT="v1:old" STUB_OP_EXIT=1 bash "$LAUNCHER" claude </dev/null 2>&1) || true
+  assert_contains "$out" "failed unexpectedly" "ERR trap fired on an op inject failure"
+  assert_eq 1 "$(printf '%s\n' "$out" | grep -c 'failed unexpectedly')" "reported once, not per subshell"
+}
+test_secret_handoff_failure_prints_the_host_hint() {
+  local wt repo m; wt=$(make_dotfiles_fixture); repo=$(make_flow_repo)
+  m=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
+  mkdir -p "$AGENT_VM_CONFIG_DIR"; printf 'A=op://v/a/x\n' >"$AGENT_VM_CONFIG_DIR/env.1password"
+  # the in-VM write script contains "agent-vm.env"; only that orb call fails
+  local out; out=$(cd "$repo" && STUB_CHEZMOI_STDOUT="$wt/home" STUB_ORB_LIST_STDOUT="$m running" STUB_ORB_STDOUT="v1:old" STUB_OP_STDOUT="A=x" STUB_ORB_FAIL_ON="agent-vm.env" bash "$LAUNCHER" claude </dev/null 2>&1) || true
+  assert_contains "$out" "failed unexpectedly" "ERR trap fired when handing secrets to the VM fails"
+}
+test_empty_chezmoi_source_path_fails_closed() {
+  local repo; repo=$(make_flow_repo)
+  local status=0 out; out=$(cd "$repo" && GIT_CEILING_DIRECTORIES="$TMP_ROOT" STUB_CHEZMOI_STDOUT="" bash "$LAUNCHER" claude </dev/null 2>&1) || status=$?
+  assert_eq 1 "$status" "empty source path -> refuse"
+  assert_contains "$out" "cannot resolve chezmoi source path" "does not fall back to git in the cwd"
+}
+test_shell_outside_a_repo_is_refused() {
+  mkdir -p "$TMP_ROOT/plain"
+  assert_status 1 "agent-vm shell needs a repo" -- bash -c "cd '$TMP_ROOT/plain' && GIT_CEILING_DIRECTORIES='$TMP_ROOT' bash '$LAUNCHER' shell"
+}
+test_unexpected_failure_prints_the_host_hint() {
+  # health check and `orb list` succeed; only `orb create` fails, i.e. strictly after check_health
+  local wt repo; wt=$(make_dotfiles_fixture); repo=$(make_flow_repo)
+  local out; out=$(cd "$repo" && STUB_CHEZMOI_STDOUT="$wt/home" STUB_ORB_FAIL_ON="create" bash "$LAUNCHER" claude </dev/null 2>&1) || true
+  assert_contains "$out" "failed unexpectedly" "ERR trap fired"
+  assert_contains "$out" "AGENT_VM=off" "hint on an unexpected failure"
+}
+test_bootstrap_failure_prints_the_host_hint() {
+  local wt repo m; wt=$(make_dotfiles_fixture); repo=$(make_flow_repo)
+  m=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
+  local out; out=$(cd "$repo" && STUB_CHEZMOI_STDOUT="$wt/home" STUB_ORB_LIST_STDOUT="$m running" STUB_ORB_STDOUT="v1:old" STUB_ORB_FAIL_ON="bootstrap.sh" bash "$LAUNCHER" claude </dev/null 2>&1) || true
+  assert_contains "$out" "failed unexpectedly" "ERR trap fired on a bootstrap failure"
+}
+
 try_lock() { # machine -> exit status of a fresh process trying the lock for 1s
   bash -c "AGENT_VM_STATE_DIR='$AGENT_VM_STATE_DIR' AGENT_VM_LIB=1 . '$LAUNCHER'; acquire_lock '$1' 1" </dev/null >/dev/null 2>&1
 }

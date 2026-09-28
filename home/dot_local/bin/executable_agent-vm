@@ -32,7 +32,7 @@ resolve_repo_root() {
   local common
   # Hardened flags: sync/restore-git run this right after a VM session, in a repo whose .git it
   # may have just modified, so config-driven program execution is disabled for this invocation.
-  common=$(git -c core.fsmonitor= -c core.hooksPath=/dev/null --no-optional-locks rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || die "not inside a git repository"
+  common=$(git -c core.fsmonitor= -c core.hooksPath=/dev/null --no-optional-locks rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || die "not inside a usable git repository. $FAIL_CLOSED_HINT"
   (cd -P "$(dirname "$common")" && pwd -P)
 }
 
@@ -87,8 +87,10 @@ check_health() {
 
 resolve_working_tree() {
   local src
-  src=$(chezmoi source-path 2>/dev/null </dev/null) || die "cannot resolve chezmoi source path. $FAIL_CLOSED_HINT"
-  git -C "$src" rev-parse --show-toplevel 2>/dev/null || die "chezmoi source is not a git checkout. $FAIL_CLOSED_HINT"
+  src=$(chezmoi source-path 2>/dev/null </dev/null) || src=""
+  [[ -n "$src" ]] || die "cannot resolve chezmoi source path. $FAIL_CLOSED_HINT"
+  git -c core.fsmonitor= -c core.hooksPath=/dev/null --no-optional-locks -C "$src" rev-parse --show-toplevel 2>/dev/null \
+    || die "chezmoi source is not a git checkout. $FAIL_CLOSED_HINT"
 }
 
 acquire_lock() { # machine max_wait_seconds; holds fd 9 until release_lock or process exit
@@ -491,12 +493,16 @@ env_files_for() { # machine -> host-owned op:// reference files that exist
 }
 
 inject_secrets() { # machine -> prints the in-VM env file path (empty when nothing to inject)
-  local files resolved="" f
+  local files resolved="" f out
   files=$(env_files_for "$1")
   if [[ -z "$files" ]]; then return 0; fi
   # Resolve on the host first so the biometric prompt finishes before any file exists in the VM.
+  # This function itself runs inside run_tool's `envf=$(inject_secrets ...)` command substitution,
+  # where bash does not inherit errexit (true even on bash 3.2, which has no inherit_errexit shopt),
+  # so a failed `op inject` is checked explicitly instead of relying on `set -e` to stop the script.
   while IFS= read -r f; do
-    resolved+="$(op inject -i "$f" </dev/null 9>&-)"$'\n'
+    out=$(op inject -i "$f" </dev/null 9>&-) || die "op inject failed for $f. $FAIL_CLOSED_HINT"
+    resolved+="$out"$'\n'
   done <<<"$files"
   printf '%s' "$resolved" | orb -m "$1" sh -c '
     d=${XDG_RUNTIME_DIR:-/dev/shm}
@@ -532,8 +538,8 @@ session_exec() { orb -m "$1" bash -lc "$2"; } # machine script
 prepare_machine() { # tool -> sets MACHINE and REPO; leaves the machine bootstrapped
   local wt gen hash out
   check_health
-  wt=$(resolve_working_tree)
   REPO=$(resolve_repo_root)
+  wt=$(resolve_working_tree)
   MACHINE=$(derive_machine_name "$REPO")
   write_machine_meta "$MACHINE" "$REPO"
   acquire_lock "$MACHINE" 60 || die "timed out waiting for another session of this repo"
@@ -562,9 +568,61 @@ finish_session() { # machine repo -> 0, 3 (git surfaces), 4 (log divergence), 5 
   return "$status"
 }
 
+has_git_marker() { # 0 when this dir or an ancestor has .git (dir or file); a filesystem walk, no git call
+  local dir
+  dir=$(pwd -P)
+  while :; do
+    if [[ -e "$dir/.git" || -L "$dir/.git" ]]; then return 0; fi
+    if [[ "$dir" == / ]]; then return 1; fi
+    case ":${GIT_CEILING_DIRECTORIES:-}:" in *":$(dirname "$dir"):"*) return 1 ;; esac
+    dir=$(dirname "$dir")
+  done
+}
+
+# Records live in $AGENT_VM_STATE_DIR/machines, which no machine mounts (only staging/<m> and outbox/<m> are),
+# so a VM cannot erase its own record to re-enable host passthrough.
+known_repo_containing_cwd() { # -> repo_path whose record contains cwd; exit 2 when a record is unreadable
+  local here f repo
+  here=$(pwd -P)
+  for f in "$AGENT_VM_STATE_DIR"/machines/*; do
+    [[ -f "$f" && "$f" != *.lock ]] || continue
+    # An unreadable record could be the one for this directory: do not treat it as absent.
+    repo=$(read_meta_field "$(basename "$f")" repo_path) || { printf '%s\n' "$f"; return 2; }
+    if [[ "$here" == "$repo" || "$here" == "$repo"/* ]]; then printf '%s\n' "$repo"; return 0; fi
+  done
+  return 1
+}
+
+host_reason() { # -> why the tool should run on the host; empty when it should run in the VM
+  local repo known
+  # Only a proven absence of any .git allows the host: git failing is not evidence (a VM can break .git),
+  # and a missing .git in a directory the VM used before is not evidence either (the VM can delete it).
+  if ! has_git_marker; then
+    local status=0
+    known=$(known_repo_containing_cwd) || status=$?
+    case "$status" in
+      0) die ".git is missing in $known, which ran in an agent-vm machine before; refusing to run on the host. Check the repository, then: agent-vm rm $known (or AGENT_VM=off to override)" ;;
+      2) die "cannot read agent-vm record $known; refusing to run on the host. Remove or fix it (agent-vm list shows records), or use AGENT_VM=off to override" ;;
+    esac
+    echo "not inside a git repository"
+    return 0
+  fi
+  repo=$(resolve_repo_root 2>/dev/null) || return 0 # run_tool's own resolve then fails closed
+  if is_excluded "$repo"; then echo "listed in $AGENT_VM_CONFIG_DIR/config"; fi
+  return 0
+}
+
 run_tool() { # tool args...
   local tool=$1 envf script status=0 finish=0
   shift
+  if [[ "$tool" == claude || "$tool" == codex ]]; then
+    local reason
+    reason=$(host_reason) || exit 1 # a die inside host_reason (known repo, .git gone) must stop here
+    if [[ -n "$reason" ]]; then
+      step "running $tool on the host ($reason)"
+      exec "$tool" "$@"
+    fi
+  fi
   prepare_machine "$tool"
   notice_orphan_env "$MACHINE"
   if [[ "$tool" == codex ]]; then ensure_codex_auth "$MACHINE"; fi
@@ -683,8 +741,18 @@ cmd_gc() {
 }
 
 cmd_rm() { # [repo]
-  local repo m answer
-  repo=$(cd "${1:-.}" && resolve_repo_root)
+  local path repo m answer f
+  path=$(cd "${1:-.}" && pwd -P) || die "no such directory: ${1:-.}"
+  # An exact host-side record wins: it also works when .git is gone (see host_reason), and it cannot be
+  # shadowed by an unrelated git repository in an ancestor directory.
+  repo=""
+  for f in "$AGENT_VM_STATE_DIR"/machines/*; do
+    [[ -f "$f" && "$f" != *.lock ]] || continue
+    if [[ "$(read_meta_field "$(basename "$f")" repo_path 2>/dev/null || true)" == "$path" ]]; then repo=$path; fi
+  done
+  if [[ -z "$repo" ]]; then
+    repo=$(cd "$path" && resolve_repo_root 2>/dev/null) || die "$path is neither a git repository nor a recorded agent-vm repository"
+  fi
   m=$(derive_machine_name "$repo")
   printf 'delete machine %s for %s? [y/N] ' "$m" "$repo"
   read -r answer
@@ -711,4 +779,15 @@ cmd_env_adopt() { # old_machine
   step "adopted env file of $old for $new"
 }
 
-if [[ -z "${AGENT_VM_LIB:-}" ]]; then main "$@"; fi
+on_unexpected_error() {
+  # set -E makes command substitutions inherit the trap; report once, from the top-level shell only.
+  if [[ "$BASH_SUBSHELL" -eq 0 ]]; then
+    printf 'agent-vm: failed unexpectedly (see the error above). %s\n' "$FAIL_CLOSED_HINT" >&2
+  fi
+}
+
+if [[ -z "${AGENT_VM_LIB:-}" ]]; then
+  set -E
+  trap on_unexpected_error ERR
+  main "$@"
+fi
