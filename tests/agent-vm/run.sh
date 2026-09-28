@@ -62,6 +62,29 @@ test_exclude_missing_config_means_not_excluded() {
   assert_status 1 "no config" -- is_excluded "$TMP_ROOT/any"
 }
 
+test_health_fails_closed_when_orb_hangs() {
+  local out status=0 start end
+  start=$(date +%s)
+  out=$(STUB_ORB_SLEEP=5 bash -c "AGENT_VM_LIB=1 . '$LAUNCHER'; check_health" 2>&1) || status=$?
+  end=$(date +%s)
+  assert_eq 1 "$status" "hung orb fails"
+  assert_contains "$out" "AGENT_VM=off" "guidance printed"
+  if [[ $((end - start)) -le 4 ]]; then record "PASS gives up within ~3s"; else record "FAIL gives up within ~3s ($((end - start))s)"; fi
+}
+test_health_fails_when_orb_missing() {
+  local out status=0
+  out=$(PATH="/usr/bin:/bin" bash -c "AGENT_VM_LIB=1 . '$LAUNCHER'; check_health" 2>&1) || status=$?
+  assert_eq 1 "$status" "missing orb fails"
+  assert_contains "$out" "AGENT_VM=off" "guidance printed"
+}
+test_working_tree_resolved_from_chezmoi_source_path() {
+  local wt="$TMP_ROOT/dotfiles"; mkdir -p "$wt/home" && git -C "$wt" init -q
+  assert_eq "$(cd -P "$wt" && pwd -P)" "$(cd -P "$(STUB_CHEZMOI_STDOUT="$wt/home" resolve_working_tree)" && pwd -P)" "workingTree = git toplevel of source-path"
+}
+test_working_tree_failure_fails_closed() {
+  assert_status 1 "chezmoi failure fails closed" -- env STUB_CHEZMOI_EXIT=1 bash -c "AGENT_VM_LIB=1 . '$LAUNCHER'; resolve_working_tree"
+}
+
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do
   (
     TMP_ROOT="$TMP_BASE/$t"; mkdir -p "$TMP_ROOT"

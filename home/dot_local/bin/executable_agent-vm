@@ -74,4 +74,21 @@ is_excluded() { # repo_root; config: one absolute path per line, '#' starts a co
   return 1
 }
 
+FAIL_CLOSED_HINT="to run on the host instead: AGENT_VM=off claude"
+
+run_with_timeout() { # seconds cmd... (macOS has no timeout(1); perl alarm is standard)
+  perl -e 'alarm shift; exec @ARGV or exit 127' "$@"
+}
+
+check_health() {
+  command -v orb >/dev/null 2>&1 || die "OrbStack (orb) not found. $FAIL_CLOSED_HINT"
+  run_with_timeout 3 orb status >/dev/null 2>&1 </dev/null 9>&- || die "OrbStack is not responding. $FAIL_CLOSED_HINT"
+}
+
+resolve_working_tree() {
+  local src
+  src=$(chezmoi source-path 2>/dev/null </dev/null) || die "cannot resolve chezmoi source path. $FAIL_CLOSED_HINT"
+  git -C "$src" rev-parse --show-toplevel 2>/dev/null || die "chezmoi source is not a git checkout. $FAIL_CLOSED_HINT"
+}
+
 if [[ -z "${AGENT_VM_LIB:-}" ]]; then main "$@"; fi
