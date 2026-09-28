@@ -136,23 +136,28 @@ function parseArgs(args: string[]): ParsedArgs {
  * resolved dir diverges from the session-derived dir, since a stale pin from
  * before `/clear` is a real, recoverable operator mistake (spec K5 security
  * 15) rather than something the CLI should refuse to run under.
+ *
+ * An invalid `--wf-dir` is different: the operator named a target, so writing
+ * to the default dir instead would silently edit documents they did not ask
+ * about (a smoke test once inserted a round into an approved spec this way).
+ * That case is an error.
  */
 function resolveTargetWfDir(
   flags: Record<string, string>,
   deps: RunWorkflowCliDeps,
-): { wfDir: string; warning: string | null } {
+):
+  | { wfDir: string; warning: string | null; error?: undefined }
+  | { error: string } {
   let wfDir = deps.wfDir;
   const flagValue = flags["wf-dir"];
   if (flagValue) {
     const candidate = resolve(deps.cwd, flagValue);
-    if (isStrictlyUnderProjectSubdir(deps.cwd, SESSIONS_SUBDIR, candidate)) {
-      wfDir = candidate;
-    } else {
+    if (!isStrictlyUnderProjectSubdir(deps.cwd, SESSIONS_SUBDIR, candidate)) {
       return {
-        wfDir: deps.wfDir,
-        warning: `--wf-dir "${flagValue}" is not a strict descendant of ${SESSIONS_SUBDIR}; ignoring and using the resolved default (${deps.wfDir})`,
+        error: `--wf-dir "${flagValue}" is not a strict descendant of ${SESSIONS_SUBDIR}; refusing rather than falling back to ${deps.wfDir}`,
       };
     }
+    wfDir = candidate;
   }
 
   if (deps.sessionId && isValidSessionId(deps.sessionId)) {
@@ -199,7 +204,9 @@ function cmdStatus(
   deps: RunWorkflowCliDeps,
 ): RunWorkflowCliResult {
   const { positional, flags } = parseArgs(args);
-  const { wfDir, warning } = resolveTargetWfDir(flags, deps);
+  const resolvedDir = resolveTargetWfDir(flags, deps);
+  if (resolvedDir.error !== undefined) return err(resolvedDir.error);
+  const { wfDir, warning } = resolvedDir;
   const wfPaths = resolveWorkflowPaths(wfDir);
   const twoLayer = existsSync(wfPaths.spec);
   const targetArg = positional[0];
@@ -270,7 +277,9 @@ function cmdRound(
   if (!docName) {
     return err("round requires a document name (plan-N.md or spec.md)");
   }
-  const { wfDir, warning } = resolveTargetWfDir(flags, deps);
+  const resolvedDir = resolveTargetWfDir(flags, deps);
+  if (resolvedDir.error !== undefined) return err(resolvedDir.error);
+  const { wfDir, warning } = resolvedDir;
   const docPath = resolve(wfDir, docName);
   if (!existsSync(docPath)) {
     return err(`document not found: ${docPath}`);
@@ -479,7 +488,9 @@ function cmdStamp(
     return err("stamp requires --reviewers a+b+c");
   }
 
-  const { wfDir, warning } = resolveTargetWfDir(flags, deps);
+  const resolvedDir = resolveTargetWfDir(flags, deps);
+  if (resolvedDir.error !== undefined) return err(resolvedDir.error);
+  const { wfDir, warning } = resolvedDir;
   const docPath = resolve(wfDir, docName);
   if (!existsSync(docPath)) {
     return err(`document not found: ${docPath}`);
@@ -600,7 +611,9 @@ function cmdTriage(
     return err("triage requires --adopted N --excluded M");
   }
 
-  const { wfDir, warning } = resolveTargetWfDir(flags, deps);
+  const resolvedDir = resolveTargetWfDir(flags, deps);
+  if (resolvedDir.error !== undefined) return err(resolvedDir.error);
+  const { wfDir, warning } = resolvedDir;
   const docPath = resolve(wfDir, docName);
   if (!existsSync(docPath)) {
     return err(`document not found: ${docPath}`);

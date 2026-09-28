@@ -168,6 +168,32 @@ describe("workflow-cli: stamp", () => {
   });
 });
 
+describe("workflow-cli: --wf-dir validation", () => {
+  it("refuses a --wf-dir outside .tmp/sessions instead of falling back to the default dir", () => {
+    const { wf } = seedWorkflow({
+      doc: "plan-1.md",
+      round: 1,
+      ledgerSlugs: [],
+    });
+    const before = readFileSync(join(wf, "plan-1.md"), "utf-8");
+    const r = runWorkflowCli(
+      ["round", "plan-1.md", "--wf-dir", ".tmp/elsewhere"],
+      {
+        cwd: wf,
+        wfDir: wf,
+        sessionId: "test-ses",
+        now: NOW,
+      },
+    );
+    assert.equal(r.exitCode, 1);
+    assert.match(
+      r.stderr,
+      /--wf-dir "\.tmp\/elsewhere" is not a strict descendant of \.tmp\/sessions/,
+    );
+    assert.equal(readFileSync(join(wf, "plan-1.md"), "utf-8"), before);
+  });
+});
+
 describe("workflow-cli: round", () => {
   it("inserts the next round skeleton and records a round-baseline entry", () => {
     const { wf } = seedWorkflow({

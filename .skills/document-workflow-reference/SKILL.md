@@ -135,7 +135,7 @@ hash 正規化を変更した場合、旧 normalizer で承認済の進行中成
 - `workflow-cli stamp <doc> --verdict <pass|needs-work|blocker> --reviewers a+b`: Round N セクションと reviewer 実行証跡（`reviewer-runs.log`）を確認し、揃っていれば厳密形の Review Status と marker を書く。marker には stamp 時点の round 数を `round=N` として書く（marker は hash 計算前に除去されるので hash は動かない）。証跡が無ければ非 0。
 - `workflow-cli triage <doc> --adopted N --excluded M`: intent-triage marker を書く。
 
-いずれも Approval 行に触れる変更は拒否する（承認は人間のみ）。wfDir は `--wf-dir`（`isStrictlyUnderProjectSubdir` で検証）または `$DOCUMENT_WORKFLOW_DIR`。session 由来の dir と食い違うと警告する。
+いずれも Approval 行に触れる変更は拒否する（承認は人間のみ）。wfDir は `--wf-dir`（`isStrictlyUnderProjectSubdir` で検証し、`.tmp/sessions` の外なら既定 dir に切り替えず非 0）または `$DOCUMENT_WORKFLOW_DIR`。session 由来の dir と食い違うと警告する。
 
 ## 差分再レビュー（Round 2 以降、ADR-0015 K6）
 
