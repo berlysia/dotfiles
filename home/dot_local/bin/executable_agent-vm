@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# agent-vm: run Claude Code / Codex inside a per-repo OrbStack isolated machine.
+# Design record: docs/decisions (added in plan-4).
+set -euo pipefail
+
+AGENT_VM_STATE_DIR="${AGENT_VM_STATE_DIR:-$HOME/.local/share/agent-vm}"
+AGENT_VM_CONFIG_DIR="${AGENT_VM_CONFIG_DIR:-$HOME/.config/agent-vm}"
+
+die() { printf 'agent-vm: %s\n' "$1" >&2; exit "${2:-1}"; }
+step() { printf 'agent-vm: %s\n' "$1" >&2; }
+
+show_help() {
+  cat <<'EOF'
+agent-vm - run claude/codex in a per-repo OrbStack isolated machine
+
+Usage:
+  agent-vm claude|codex [args...]   Launch the tool in this repo's machine
+  agent-vm shell                    Open a shell in this repo's machine
+  agent-vm prewarm                  Create and provision the machine now
+  agent-vm env edit                 Edit this repo's host-only 1Password env file
+  agent-vm env adopt <machine>      Take over the env file of a moved repo
+  agent-vm list | gc | rm [repo]    Manage machines
+EOF
+}
+
+main() {
+  case "${1:-}" in
+    -h | --help | help | "") show_help ;;
+    *) die "unknown command: $1" ;;
+  esac
+}
+
+if [[ -z "${AGENT_VM_LIB:-}" ]]; then main "$@"; fi
