@@ -390,6 +390,94 @@ check_git_surfaces() { # machine repo_root -> 0 clean, 3 when a monitored item d
   return 3
 }
 
+saved_copy_matches_baseline() { # dir kind name saved_path -> 0 when the copy's content is the baseline's
+  local want got
+  want=$(awk -F'\t' -v k="$2" -v n="$3" '$1 == k && $2 == n { print $3 }' "$1/baseline")
+  if [[ -z "$want" ]]; then return 1; fi
+  if [[ "$2" == hooklink ]]; then
+    [[ -L "$4" ]] || return 1
+    got=$(readlink "$4")
+  else
+    [[ -f "$4" && ! -L "$4" ]] || return 1
+    got=$(sha_of_file "$4")
+  fi
+  [[ "$got" == "$want" ]]
+}
+
+restore_config_key() { # repo config_relpath key
+  # Exec settings are only removed, never re-added from a saved copy: that copy could have been captured
+  # while the VM was changing the file, and dropping a program-running setting is the safe direction.
+  if git config --file "$1/$2" --get-all "$3" >/dev/null 2>&1; then
+    git config --file "$1/$2" --unset-all "$3"
+    step "removed $3 from $2; re-add it by hand if it was your own setting"
+  fi
+}
+
+restore_surface_item() { # repo dir change kind name
+  local repo=$1 dir=$2 change=$3 kind=$4 name=$5 rel
+  case "$kind" in
+    hooksdir)
+      # Only recreate the directory; its files are restored one by one (hash-checked) by their own diff lines.
+      if [[ -L "$repo/.git/hooks" ]]; then rm -f "$repo/.git/hooks"; fi
+      mkdir -p "$repo/.git/hooks"
+      ;;
+    hookfile | hooklink)
+      case "$name" in
+        .git/hooks/*)
+          rel=${name#.git/hooks/}
+          # Re-check right before touching anything: never operate through a symlinked hooks dir.
+          if [[ -L "$repo/.git/hooks" ]]; then die "refusing to restore $name: .git/hooks is a symlink"; fi
+          case "$rel" in */*) die "refusing to restore nested hook path $name" ;; esac
+          rm -f "$repo/.git/hooks/$rel"
+          if [[ "$change" != added ]] && saved_copy_matches_baseline "$dir" "$kind" "$name" "$dir/files/hooks/$rel"; then
+            cp -pP "$dir/files/hooks/$rel" "$repo/.git/hooks/$rel"
+          elif [[ "$change" != added ]]; then
+            step "not restoring $name: the saved copy does not match the recorded baseline (left removed)"
+          fi
+          ;;
+        *) step "cannot restore $name (outside .git); the core.hooksPath change is restored instead" ;;
+      esac
+      ;;
+    config) restore_config_key "$repo" "${name%%:*}" "${name#*:}" ;;
+    attributes)
+      rm -f "$repo/.git/info/attributes"
+      if [[ "$change" != added ]] && saved_copy_matches_baseline "$dir" attributes "$name" "$dir/files/attributes"; then
+        cp -p "$dir/files/attributes" "$repo/.git/info/attributes"
+      elif [[ "$change" != added ]]; then
+        step "not restoring $name: the saved copy does not match the recorded baseline (left removed)"
+      fi
+      ;;
+    # Renamed rather than deleted: the file may hold the user's own work, and the rename is enough
+    # to stop direnv/mise from loading it (both look up the exact file name).
+    untracked) if [[ -f "$repo/$name" && ! -L "$repo/$name" ]]; then mv "$repo/$name" "$repo/$name.agent-vm-quarantine"; fi ;;
+  esac
+}
+
+cmd_restore_git() { # [repo]
+  local repo m dir answer change kind name
+  repo=$(cd "${1:-.}" && resolve_repo_root)
+  m=$(derive_machine_name "$repo")
+  [[ "$(read_meta_field "$m" repo_path 2>/dev/null || true)" == "$repo" ]] || die "no snapshot recorded for $repo"
+  dir=$(surface_dir "$m")
+  [[ -f "$dir/baseline" ]] || die "no snapshot recorded for $repo"
+  git_surface_manifest "$repo" >"$dir/current"
+  surface_diff "$dir/baseline" "$dir/current" >"$dir/diff"
+  if [[ ! -s "$dir/diff" ]]; then echo "nothing to restore"; return 0; fi
+  sed 's/^/  /' "$dir/diff"
+  printf 'restore these to the last clean snapshot (untracked files are renamed to *.agent-vm-quarantine)? [y/N] '
+  read -r answer
+  if [[ "$answer" != y && "$answer" != Y ]]; then return 0; fi
+  # A symlinked .git redirects every path below it; that needs a human, not an automatic restore.
+  if [[ -L "$repo/.git" ]]; then die "$repo/.git is a symlink; move it aside and restore the repository manually"; fi
+  # The hooks directory is fixed first so no per-file operation can run through a symlinked hooks dir.
+  { grep "	hooksdir	" "$dir/diff" || true; grep -v "	hooksdir	" "$dir/diff" || true; } >"$dir/diff.ordered"
+  while IFS=$'\t' read -r change kind name; do
+    restore_surface_item "$repo" "$dir" "$change" "$kind" "$name"
+  done <"$dir/diff.ordered"
+  # Exit 3 when something could not be restored (e.g. a saved copy failed its hash check), so the caller knows.
+  check_git_surfaces "$m" "$repo"
+}
+
 env_files_for() { # machine -> host-owned op:// reference files that exist
   local f
   for f in "$AGENT_VM_CONFIG_DIR/env.1password" "$AGENT_VM_CONFIG_DIR/repos/$1.env.1password"; do
