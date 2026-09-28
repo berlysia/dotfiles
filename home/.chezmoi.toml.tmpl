@@ -7,6 +7,7 @@
 
 [data]
 only_private = {{ has .chezmoi.hostname (list "CITRINE" "BIXBITE") }}
+agent_vm = {{ stat "/etc/agent-vm" | not | not }}
 
 [onepassword]
 prompt = false
