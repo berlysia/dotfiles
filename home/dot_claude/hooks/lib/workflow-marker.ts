@@ -87,3 +87,20 @@ export function parseLatestAutoReviewMarker(
 
   return { verdict, hash, designHash, parentSpecHash };
 }
+
+/**
+ * `round=` of the last `verdict=pass` marker, or 0 when there is none (or it
+ * predates the `round=` field). `workflow-cli round` counts the rounds of the
+ * current review cycle from here, so a re-review after approval gets a fresh
+ * budget while unstamped `round` calls keep counting.
+ */
+export function lastPassMarkerRound(content: string): number {
+  const markers = content.match(REVIEW_MARKER_REGEX) ?? [];
+  for (let i = markers.length - 1; i >= 0; i--) {
+    const marker = markers[i] ?? "";
+    if (!/\bverdict=pass\b/.test(marker)) continue;
+    const round = /\bround=(\d+)/.exec(marker);
+    return round?.[1] ? Number.parseInt(round[1], 10) : 0;
+  }
+  return 0;
+}

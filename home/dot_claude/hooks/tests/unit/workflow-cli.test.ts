@@ -73,6 +73,36 @@ describe("workflow-cli: stamp", () => {
     assert.match(doc, /parent-spec-hash=[0-9a-f]{64}/);
   });
 
+  it("writes round=<current round> into the marker", () => {
+    const { wf, ledger } = seedWorkflow({
+      doc: "plan-1.md",
+      round: 2,
+      ledgerSlugs: ["logic-validator", "scope-justification-reviewer"],
+    });
+    const r = runWorkflowCli(
+      [
+        "stamp",
+        "plan-1.md",
+        "--verdict",
+        "pass",
+        "--reviewers",
+        "logic-validator+scope-justification-reviewer",
+      ],
+      {
+        cwd: wf,
+        wfDir: wf,
+        sessionId: "test-ses",
+        now: NOW,
+        ledgerPath: ledger,
+      },
+    );
+    assert.equal(r.exitCode, 0, r.stderr);
+    assert.match(
+      readFileSync(join(wf, "plan-1.md"), "utf-8"),
+      /<!-- auto-review: verdict=pass; hash=[0-9a-f]{64}; design-hash=[^;]+; round=2;/,
+    );
+  });
+
   it("normalizes plugin-namespaced ledger entries when checking coverage", () => {
     const { wf, ledger } = seedWorkflow({
       doc: "plan-2.md",

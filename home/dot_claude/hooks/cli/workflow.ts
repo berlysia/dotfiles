@@ -416,6 +416,7 @@ function buildMarkerLine(fields: {
   verdict: string;
   hash: string;
   designHash: string;
+  round: number;
   parentSpecHash: string | null;
   at: string;
   reviewers: string;
@@ -424,6 +425,7 @@ function buildMarkerLine(fields: {
     `verdict=${fields.verdict}`,
     `hash=${fields.hash}`,
     `design-hash=${fields.designHash}`,
+    `round=${fields.round}`,
   ];
   if (fields.parentSpecHash !== null) {
     parts.push(`parent-spec-hash=${fields.parentSpecHash}`);
@@ -530,6 +532,7 @@ function cmdStamp(
     verdict,
     hash,
     designHash,
+    round: currentRound,
     parentSpecHash,
     at: deps.now.toISOString(),
     reviewers: reviewersFlag,

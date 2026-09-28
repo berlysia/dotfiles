@@ -4,6 +4,7 @@ import { deepStrictEqual, equal, strictEqual } from "node:assert";
 import { test } from "node:test";
 import {
   LENIENT_STATUS_LINE,
+  lastPassMarkerRound,
   parseLatestAutoReviewMarker,
   STRICT_APPROVAL_STATUS,
   STRICT_PLAN_STATUS,
@@ -56,4 +57,28 @@ test("lenient status line matches hyphen-less and annotated forms for display", 
   ].join("\n");
   const found = doc.match(LENIENT_STATUS_LINE) ?? [];
   strictEqual(found.length, 3);
+});
+
+test("lastPassMarkerRound returns round= of the last verdict=pass marker", () => {
+  const content = [
+    "<!-- auto-review: verdict=pass; hash=1; design-hash=a; round=3; at=x -->",
+    "<!-- auto-review: verdict=needs-work; hash=2; design-hash=b; round=4; at=y -->",
+  ].join("\n");
+  strictEqual(lastPassMarkerRound(content), 3);
+});
+
+test("lastPassMarkerRound returns 0 without a pass marker or when the pass marker has no round=", () => {
+  strictEqual(
+    lastPassMarkerRound(
+      "<!-- auto-review: verdict=needs-work; hash=2; round=2 -->",
+    ),
+    0,
+  );
+  strictEqual(
+    lastPassMarkerRound(
+      "<!-- auto-review: verdict=pass; hash=1; design-hash=a -->",
+    ),
+    0,
+  );
+  strictEqual(lastPassMarkerRound("no markers"), 0);
 });
