@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2154 # MACHINE/REPO are exported globally by executable_agent-vm's
+# prepare_machine once it is sourced (dynamic `. "$LAUNCHER"`, which shellcheck cannot follow)
 set -euo pipefail
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$TEST_DIR/../.." && pwd)"
@@ -558,6 +560,60 @@ test_restore_git_refuses_snapshot_of_another_path() {
   local repo m; repo=$(make_git_repo); m=$(derive_machine_name "$repo")
   write_machine_meta "$m" "/somewhere/else"
   assert_status 1 "path mismatch refused" -- bash -c "AGENT_VM_STATE_DIR='$AGENT_VM_STATE_DIR' AGENT_VM_LIB=1 . '$LAUNCHER'; printf 'y\n' | cmd_restore_git '$repo'"
+}
+
+test_session_logs_are_ingested_after_the_session() {
+  local wt repo; wt=$(make_dotfiles_fixture); repo=$(make_flow_repo)
+  export AGENT_VM_CLAUDE_PROJECTS_DIR="$TMP_ROOT/host-projects" AGENT_VM_CODEX_SESSIONS_DIR="$TMP_ROOT/host-codex"
+  notice_orphan_env() { :; }
+  session_exec() { mkdir -p "$AGENT_VM_STATE_DIR/outbox/$1/claude-projects/-r"; printf 'x\n' >"$AGENT_VM_STATE_DIR/outbox/$1/claude-projects/-r/s.jsonl"; }
+  (cd "$repo" && STUB_CHEZMOI_STDOUT="$wt/home" run_tool claude) 2>/dev/null
+  assert_eq "x" "$(cat "$AGENT_VM_CLAUDE_PROJECTS_DIR/-r/s.jsonl")" "ingested on exit"
+}
+test_git_surface_change_during_session_sets_exit_code() {
+  local wt repo; wt=$(make_dotfiles_fixture); repo=$(make_flow_repo)
+  notice_orphan_env() { :; }
+  session_exec() { printf '#!/bin/sh\n' >"$REPO/.git/hooks/post-checkout"; }
+  local status=0
+  (cd "$repo" && STUB_CHEZMOI_STDOUT="$wt/home" run_tool claude) 2>/dev/null || status=$?
+  assert_eq 3 "$status" "exit code 3 when git surfaces changed"
+}
+test_tool_failure_status_wins() {
+  local wt repo; wt=$(make_dotfiles_fixture); repo=$(make_flow_repo)
+  notice_orphan_env() { :; }
+  session_exec() { printf '#!/bin/sh\n' >"$REPO/.git/hooks/post-checkout"; return 7; }
+  local status=0
+  (cd "$repo" && STUB_CHEZMOI_STDOUT="$wt/home" run_tool claude) 2>/dev/null || status=$?
+  assert_eq 7 "$status" "tool status preferred"
+}
+test_finish_reports_lock_timeout_with_recover_hint() {
+  local wt repo m; wt=$(make_dotfiles_fixture); repo=$(make_flow_repo)
+  m=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
+  notice_orphan_env() { :; }
+  session_exec() {
+    bash -c "AGENT_VM_STATE_DIR='$AGENT_VM_STATE_DIR' AGENT_VM_LIB=1 . '$LAUNCHER'; acquire_lock '$m' 1 && exec sleep 5" </dev/null >/dev/null 2>&1 &
+    sleep 1
+  }
+  local status=0 err
+  err=$(cd "$repo" && STUB_CHEZMOI_STDOUT="$wt/home" AGENT_VM_FINISH_WAIT=1 run_tool claude 2>&1) || status=$?
+  assert_eq 5 "$status" "exit code 5 on lock timeout"
+  assert_contains "$err" "recover: agent-vm sync" "recover hint"
+  wait
+}
+test_sync_inspect_lists_divergence_without_writing() {
+  local repo m; repo=$(make_flow_repo); m=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
+  export AGENT_VM_CLAUDE_PROJECTS_DIR="$TMP_ROOT/host-projects" AGENT_VM_CODEX_SESSIONS_DIR="$TMP_ROOT/host-codex"
+  mkdir -p "$AGENT_VM_STATE_DIR/outbox/$m/claude-projects/-r" "$AGENT_VM_CLAUDE_PROJECTS_DIR/-r"
+  printf 'abc\n' >"$AGENT_VM_CLAUDE_PROJECTS_DIR/-r/s.jsonl"
+  printf 'XYZ\n' >"$AGENT_VM_STATE_DIR/outbox/$m/claude-projects/-r/s.jsonl"
+  local out; out=$(cd "$repo" && cmd_sync --inspect 2>&1)
+  assert_contains "$out" "diverged" "divergence listed"
+  assert_eq "abc" "$(cat "$AGENT_VM_CLAUDE_PROJECTS_DIR/-r/s.jsonl")" "inspect writes nothing"
+}
+test_main_dispatches_sync_and_restore_git() {
+  cmd_sync() { echo "sync $*"; }; cmd_restore_git() { echo "restore-git $*"; }
+  assert_eq "sync --inspect" "$(main sync --inspect)" "sync"
+  assert_eq "restore-git /r" "$(main restore-git /r)" "restore-git"
 }
 
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do
