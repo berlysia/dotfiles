@@ -293,6 +293,12 @@ test_secret_values_never_appear_in_argv() {
   assert_contains "$(cat "$STUB_LOG.stdin")" "s3cr3t-value" "secret delivered on stdin"
   assert_contains "$(cat "$STUB_LOG")" "-mmin +1" "stale env files swept before write"
 }
+test_empty_handoff_reply_is_a_failure_not_no_secrets() {
+  mkdir -p "$AGENT_VM_CONFIG_DIR"; printf 'A=op://v/a/x\n' >"$AGENT_VM_CONFIG_DIR/env.1password"
+  # The VM side answered but printed no path (e.g. mktemp failed): launching without the secrets is wrong.
+  local status=0; (STUB_OP_STDOUT="A=v" STUB_ORB_STDOUT="" inject_secrets agent-p-000000 >/dev/null 2>&1) || status=$?
+  assert_eq 1 "$status" "empty reply from the VM aborts"
+}
 test_no_env_files_means_no_op_call() {
   inject_secrets agent-n-000000 >/dev/null
   assert_not_contains "$(cat "$STUB_LOG")" "op inject" "op not called"
@@ -714,6 +720,8 @@ test_main_dispatches_sync_and_restore_git() {
 }
 test_failed_copy_publishes_no_staging_generation() {
   # build_staging runs inside out=$(...), where set -e is not inherited: failures must be checked explicitly
+  # root reads mode-000 files anyway, so the copy cannot be made to fail this way
+  if [[ "$(id -u)" -eq 0 ]]; then record "PASS copy failure is reported (skipped: running as root)"; return 0; fi
   local wt; wt=$(make_dotfiles_fixture)
   chmod 000 "$wt/home/dot_a"
   local status=0
