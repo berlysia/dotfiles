@@ -36,6 +36,7 @@
    - **5.1 Reviewer Outputs（必須）**: 各 reviewer の verdict + 主指摘 1-2 文を `## Reviewer Outputs (Round N)` に書く。長文の逐語引用はしない。
    - **帳簿は `workflow-cli` が書く**: `round <doc>`（骨格挿入）→ reviewer 実行 → `stamp <doc> --verdict <pass|needs-work|blocker> --reviewers a+b`。hash は stamp が計算する（**手で転記しない**）。起動証跡（`reviewer-runs.log`）が無いと stamp は通らない。
    - **5.2 Round 2 以降は差分**: 前 round の非 pass reviewer + `logic-validator` だけ再実行（`round` / `stamp` もこの集合）。Key Decisions / 白紙案を変えたら `round <doc> --full`。全員 pass で軽微指摘のみなら反映後に `stamp --verdict pass`、新 round は起こさない。
+   - **5.3 予算**: pass 後 3 round で `round` は拒否。続行は人間の指示時のみ `--extend --reason "<指示>"`。`## Files` が prose のみなら追加レビュアーなし。
 6. **インテント整合性トリアージ（必須）**: `/intent-alignment-triage` を実行し、元のオーダーの本義を歪めてスコープを縮める指摘（divergent）を除外する。結果は `workflow-cli triage <doc> --adopted N --excluded M` で marker に記録する。トリアージ前にレビュー結果をユーザーへ提示しない。
 7. **承認**: 人間が `Approval Status: approved` にする（下記 CRITICAL）。
 8. **実装**: 三状態 + hash 一致がそろってから着手する。**着手前にオフロード判定を 1 行宣言する**（`@~/.claude/rules/model-offloading.md`）。
@@ -51,7 +52,7 @@
 - `document-workflow-guard` は実装系書き込み時に、(a) spec.md 三状態 + hash 一致、(b) 対象ファイルが属する plan-N.md 三状態 + hash 一致、(c) plan-N.md の `parent-spec-hash` = 現 spec.md hash、を検証する。いずれか欠けると deny。
 - spec.md を編集して hash が動いたら plan-N.md の `parent-spec-hash` が不一致になり自動で実装ブロックされる。plan-N.md の Approval を pending に戻し、再レビュー・再承認する。
 - deny された場合、guard は「どの条件が不成立か・見つかった status 行・次の 1 手」を診断で示す。`workflow-cli status` で同じ診断を確認できる。
-- **ワークフロー成果物の書き込みは Edit / Write ツールで行う**。guard は Bash コマンド文字列をヒューリスティックで解析するため、heredoc の中身にある `->` / `<hash>` / `eval` 等を書き込み操作として誤検出する。Edit / Write はツール種別で判定されるので誤検出がなく、`plan-review-automation` の発火も確実になる。
+- **ワークフロー成果物の書き込みは Edit / Write ツールで行う**。Bash の heredoc の中身（`->` / `<hash>` / `eval` 等）は guard が書き込みと誤検出しうる。Edit / Write はツール種別で判定されるので誤検出がなく、`plan-review-automation` も確実に発火する。
 
 ## 常時必須レビュアー（層別、並列実行）
 
@@ -75,7 +76,7 @@
 
 <!-- ssot:plan-reviewers:end -->
 
-これらは Agent tool の subagent_type であって Skill ではない。SSoT はコード定数（`plan-review-automation.ts` の `SPEC_REVIEWERS` / `PLAN_REVIEWERS`、実体は `lib/workflow-review-core.ts`）で、上の区間と CI で同期される。
+これらは Agent tool の subagent_type で、Skill ではない。SSoT は `lib/workflow-review-core.ts` の `SPEC_REVIEWERS` / `PLAN_REVIEWERS` で、上の区間と CI で同期される。
 
 ## Alternative Approaches (Greenfield View) — 設計層 MANDATORY
 

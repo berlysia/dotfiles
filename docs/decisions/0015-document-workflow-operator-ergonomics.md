@@ -77,6 +77,16 @@ K6 は「round ≥ 2 は前 round で needs-work / blocker だった reviewer �
 - 受容したリスク: carried の再検証は機械判定しない。Key Decisions・白紙案を変える修正で `--full` を使うかは operator の規律に任せる。回帰の見張りとして `logic-validator` は毎 round 回す
 - リプレイ（変更後の 7 文書、Round 2 以降）: 必須 reviewer の起動回数は round あたり 4 名から 1〜2 名に減る。見積もりの詳細は当該コミットのメッセージに記す
 
+## Amendment (2026-09-28): ラウンド予算を機構に移し、prose 変更では追加レビュアーを付けない
+
+差分再レビューの後も検証フェーズは長かった。reviewer 台帳のある 7 セッション・9 文書を集計すると、新しい実質指摘があった文書の割合は Round 1 で 8/8、Round 2 で 5/8、Round 3 で 3/7、Round 4 以降で 0/4 だった。K6 の「Round 3 で未収束なら人間へエスカレーションし、指示なく Round 4 を始めない」は推奨文の文言だけで、3/9 文書が Round 4 以降に進んでいた。reviewer はすでに全員 sonnet で、reviewer subagent の入力トークンはセッション総コストの概ね 12〜27% にとどまる。残りの大半はラウンドごとにメインループが報告を読み、文書を直し、帳簿を回す部分と見られ、支配変数はラウンド数だった。また、`selectReviewers` は本文のキーワード 1 つで追加 reviewer を選ぶため、`SKILL.md` を 1 ファイル直すだけの plan にも architecture / security / resilience が推奨されていた（`permission`・`timeout`・`モジュール` に一致）。
+
+- `workflow-cli round` は、最後の `verdict=pass` marker から数えた周のラウンド数が 3 以上なら拒否する。周の起点は stamp が marker に書く `round=N` で、承認後の再レビューは新しい周になる。続行は人間の指示があるときだけ `--extend --reason` で、`round-extensions.log` に残る
+- plan.md / plan-N.md の `## Files` が prose だけなら、full round の推奨に追加 reviewer を付けない。パーサは guard と共有する（`lib/workflow-files.ts`）。必須 reviewer の構成と差分再レビューの規則は変えない
+- 却下: 追加 reviewer の blocker で全員再実行に戻さない案。1 ラウンドあたりの reviewer を減らす方向で、ユーザーが選んだ「ラウンド数を減らす」と軸が異なる。予算の機構化で blocker の連鎖も Round 3 で人間に回る
+- 受容したリスク: `--extend` の指示元と、周の起点になる pass marker（`stamp --verdict pass` は各 reviewer の verdict 行と突き合わせない）は prompt 統制のまま。偽の pass はレビューを打ち切って人間の承認に回す向きに働き、予算が防ぐ「人間に見せずに回り続ける」経路にはならない。再評価トリガーは、log に人間の指示に対応しない reason が 1 件、または非 pass が残るのに pass marker が付いた事例 1 件
+- 別件として残したもの: `REVIEWER_CATALOG` が未インストールの `compound-engineering:review:*` を参照していること（代用されたローカル agent の起動が台帳に記録されない）。K9 の `code-simplicity-reviewer` 追加にも関わるため、このオーダーには含めない
+
 ## References
 
 - `docs/plans/document-workflow-overhaul/research.md` — 失敗パターン P1〜P8 と根本原因

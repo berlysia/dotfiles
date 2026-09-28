@@ -131,8 +131,8 @@ hash 正規化を変更した場合、旧 normalizer で承認済の進行中成
 `workflow-cli` は marker / Review Status / Reviewer Outputs 骨格 / intent-triage marker を書く。モデルは hash を転記しない。
 
 - `workflow-cli status [--wf-dir <dir>]`: gate 診断 + tripwire 状態を表示。
-- `workflow-cli round <doc> [--full]`: `## Reviewer Outputs (Round N)` 骨格を marker 直前に挿入し、`.round-baseline` に round 番号と時刻を記録する。Round 2 以降は下記「差分再レビュー」の集合だけを空欄で並べ、carried reviewer は `- verdict: pass (carried from Round N-1)` で埋める。`--full` は常に必須 reviewer 全員の空欄骨格にする。
-- `workflow-cli stamp <doc> --verdict <pass|needs-work|blocker> --reviewers a+b`: Round N セクションと reviewer 実行証跡（`reviewer-runs.log`）を確認し、揃っていれば厳密形の Review Status と marker を書く。証跡が無ければ非 0。
+- `workflow-cli round <doc> [--full] [--extend --reason "<text>"]`: `## Reviewer Outputs (Round N)` 骨格を marker 直前に挿入し、`.round-baseline` に round 番号と時刻を記録する。Round 2 以降は下記「差分再レビュー」の集合だけを空欄で並べ、carried reviewer は `- verdict: pass (carried from Round N-1)` で埋める。`--full` は常に必須 reviewer 全員の空欄骨格にする。下記「ラウンド予算」を超える round は拒否する。
+- `workflow-cli stamp <doc> --verdict <pass|needs-work|blocker> --reviewers a+b`: Round N セクションと reviewer 実行証跡（`reviewer-runs.log`）を確認し、揃っていれば厳密形の Review Status と marker を書く。marker には stamp 時点の round 数を `round=N` として書く（marker は hash 計算前に除去されるので hash は動かない）。証跡が無ければ非 0。
 - `workflow-cli triage <doc> --adopted N --excluded M`: intent-triage marker を書く。
 
 いずれも Approval 行に触れる変更は拒否する（承認は人間のみ）。wfDir は `--wf-dir`（`isStrictlyUnderProjectSubdir` で検証）または `$DOCUMENT_WORKFLOW_DIR`。session 由来の dir と食い違うと警告する。
@@ -147,6 +147,18 @@ hash 正規化を変更した場合、旧 normalizer で承認済の進行中成
 - **運用規律（機械判定なし）**: Key Decisions・白紙案を変える修正は `--full`。全員 pass で残りが軽微指摘だけなら、反映してから `stamp --verdict pass` する（stamp は反映後の内容で hash を計算するので、guard の hash 一致はそのまま成立する）。
 
 stamp は Round N の要求集合を Round N-1 の verdict から再計算する。`--full` で全員を回した場合は要求集合の上位集合になるので、そのまま通る。
+
+## ラウンド予算（ADR-0015 Amendment 2026-09-28）
+
+観測では Round 4 以降に新しい実質指摘が出ていない（0/4 文書）一方、文言だけの予算は 3/9 文書で破られていた。そこで予算を `round` の拒否として機構化した。
+
+- **周の数え方**: 周のラウンド数 = 現在の `## Reviewer Outputs (Round N)` 数 − 最後の `verdict=pass` marker の `round=` 値（pass marker が無い、または `round=` の無い旧 marker しか無ければ 0）。これが `ROUND_BUDGET`（3、`lib/workflow-review-core.ts`）以上なら `round` は非 0 で終わる。承認後の再レビュー（parent-spec-hash のずれによる plan-N.md の再承認など）は pass 後の新しい周として予算を持つ。stamp を挟まない `round` の連打は周のラウンド数を増やすだけ
+- **止まったら**: 未解決の指摘を Executive Summary に載せて人間に方針を仰ぐ。人間が続行を指示したときだけ `round <doc> --extend --reason "<その指示>"`。`--reason` が空なら拒否。予算を超えて続行した記録が `<wfDir>/round-extensions.log` に `<ISO8601>\t<doc>\t<round>\t<reason>` で 1 行残る。`--extend` は上限判定だけを外すので `--full` と併用できる
+- **受容した限界**: `--extend` の指示元と、周の起点になる `stamp --verdict pass`（verdict 行と突き合わせない自己申告）は機械では検証しない。再評価トリガーは、log に人間の指示に対応しない reason が 1 件出たとき、または Reviewer Outputs に非 pass が残るのに pass marker が付いた事例が 1 件出たとき
+
+## prose だけの変更での追加レビュアー
+
+`## Files`（`lib/workflow-files.ts` の `parseFilesPaths`、guard と同じパーサ）のパスが 1 件以上あり、全件の拡張子（末尾の `.tmpl` は外して判定）が `.md` / `.mdx` / `.markdown` / `.txt` / `.rst` / `.adoc` なら、full round の推奨にキーワード選定の追加レビュアーを付けず、推奨文に skip の理由を 1 行出す。必須 reviewer は変わらない。Files が無い・空なら従来のキーワード選定に戻る。spec.md は Files を持たないので常にキーワード選定になる。コードを触るのに Files に書き漏れがあると prose と判定されるので、推奨文は Files の補正を促す。
 
 ## reviewer 実行台帳（reviewer-runs.log）
 
