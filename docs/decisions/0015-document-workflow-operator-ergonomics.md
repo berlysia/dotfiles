@@ -86,6 +86,7 @@ K6 は「round ≥ 2 は前 round で needs-work / blocker だった reviewer �
 - 却下: 追加 reviewer の blocker で全員再実行に戻さない案。1 ラウンドあたりの reviewer を減らす方向で、ユーザーが選んだ「ラウンド数を減らす」と軸が異なる。予算の機構化で blocker の連鎖も Round 3 で人間に回る
 - 受容したリスク: `--extend` の指示元と、周の起点になる pass marker（`stamp --verdict pass` は各 reviewer の verdict 行と突き合わせない）は prompt 統制のまま。偽の pass はレビューを打ち切って人間の承認に回す向きに働き、予算が防ぐ「人間に見せずに回り続ける」経路にはならない。再評価トリガーは、log に人間の指示に対応しない reason が 1 件、または非 pass が残るのに pass marker が付いた事例 1 件
 - 別件として残したもの: `REVIEWER_CATALOG` が未インストールの `compound-engineering:review:*` を参照していること（代用されたローカル agent の起動が台帳に記録されない）。K9 の `code-simplicity-reviewer` 追加にも関わるため、このオーダーには含めない
+- 経緯と観測の詳細: `docs/plans/workflow-review-budget/`（research / spec / plan-1 と、集計レポート `evidence/review-cost-report.md`）
 
 ## References
 
