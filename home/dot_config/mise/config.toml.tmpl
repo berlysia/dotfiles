@@ -10,10 +10,14 @@ deno = "2.9.7"
 direnv = "2.37.1"
 fzf = "0.72.0" # Fuzzy finder - migrated from chezmoi external
 gitleaks = "8.30.1"
+{{- if not (dig "agent_vm" false .) }}
 go = "1.26.3"
+{{- end }}
 node = "24.15.0"
 pnpm = "10.33.4"
+{{- if not (dig "agent_vm" false .) }}
 rust = "1.95.0"
+{{- end }}
 uv = "0.11.14"
 yarn = "4.18.0"
 
@@ -21,16 +25,24 @@ yarn = "4.18.0"
 "github:AikidoSec/safe-chain" = "1.5.3"
 
 # CLI tools (migrated from go install / cargo install)
+{{- if not (dig "agent_vm" false .) }}
 "cargo:similarity-ts" = "0.5.0"
+{{- end }}
+{{- if not (dig "agent_vm" false .) }}
 "cargo:zizmor" = "1.25.2"
+{{- end }}
+{{- if not (dig "agent_vm" false .) }}
 "go:github.com/syou6162/git-sequential-stage" = "latest"
+{{- end }}
 "npm:@mizchi/readability" = "0.7.7"
 "npm:@openai/codex" = "latest"
 "github:k1LoW/mo" = "1.5.5"
 # registry の `deck` は Kong/decK に解決されるため repo 指定が必須
 "github:k1LoW/deck" = "1.24.1"
 "npm:wrangler" = "latest"
+{{- if not (dig "agent_vm" false .) }}
 "cargo:octorus" = "latest"
+{{- end }}
 "npm:@playwright/cli" = "latest"
 "npm:difit" = "latest"
 ast-grep = "latest"
