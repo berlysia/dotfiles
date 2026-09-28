@@ -10,6 +10,7 @@ on:
       - "Shell Compatibility Test"
       - "Validate Codex Config"
       - "Validate JSON Templates"
+      - "agent-vm Launcher Tests"
     types:
       - completed
 
@@ -43,7 +44,8 @@ jobs:
               'Lint GitHub Actions',
               'Shell Compatibility Test',
               'Validate Codex Config',
-              'Validate JSON Templates'
+              'Validate JSON Templates',
+              'agent-vm Launcher Tests'
             ];
 
             // Filter runs to only required workflows
