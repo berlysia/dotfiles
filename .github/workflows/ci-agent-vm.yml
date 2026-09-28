@@ -7,12 +7,22 @@ on:
       - "home/dot_local/bin/executable_agent-vm"
       - "tests/agent-vm/**"
       - ".github/workflows/ci-agent-vm.yml"
+      - "agent-vm/**"
+      - "home/.chezmoi.toml.tmpl"
+      - "home/dot_config/mise/**"
+      - "home/.chezmoiscripts/run_onchange_install-packages-7.sh.tmpl"
+      - "home/.chezmoiscripts/run_onchange_install-safe-chain.sh.tmpl"
   pull_request:
     branches: [master, main]
     paths:
       - "home/dot_local/bin/executable_agent-vm"
       - "tests/agent-vm/**"
       - ".github/workflows/ci-agent-vm.yml"
+      - "agent-vm/**"
+      - "home/.chezmoi.toml.tmpl"
+      - "home/dot_config/mise/**"
+      - "home/.chezmoiscripts/run_onchange_install-packages-7.sh.tmpl"
+      - "home/.chezmoiscripts/run_onchange_install-safe-chain.sh.tmpl"
   workflow_dispatch:
 
 concurrency:
@@ -38,3 +48,15 @@ jobs:
       # /bin/bash is 3.2 on macOS: the launcher must run on the stock shell.
       - name: Run launcher tests
         run: /bin/bash tests/agent-vm/run.sh
+      - name: Run VM bootstrap tests
+        if: runner.os == 'Linux'
+        run: bash tests/agent-vm/run-bootstrap.sh
+      - name: Install chezmoi
+        if: runner.os == 'Linux'
+        uses: ./.github/actions/install-chezmoi
+        with:
+          install-dir: "$HOME/.local/bin"
+          add-to-path: "true"
+      - name: Run template tests
+        if: runner.os == 'Linux'
+        run: bash tests/agent-vm/run-templates.sh

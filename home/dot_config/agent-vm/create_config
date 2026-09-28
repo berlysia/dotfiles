@@ -1,0 +1,4 @@
+# agent-vm: repositories listed here run claude/codex on the host instead of in a VM.
+# One absolute path per line; a path also covers everything below it. '#' starts a comment.
+# Example:
+# /Users/you/src/trusted-repo
