@@ -5,9 +5,15 @@ REPO_ROOT="$(cd "$TEST_DIR/../.." && pwd)"
 BOOTSTRAP="$REPO_ROOT/agent-vm/bootstrap.sh"
 TMP_BASE=$(mktemp -d -t agent-vm-bootstrap-XXXXXX)
 trap 'rm -rf "$TMP_BASE"' EXIT
-# A fixed PATH (stubs + system dirs only): a claude/chezmoi installed in the developer's own ~/.local/bin
-# or mise shims must not leak into the fake VM, or the "claude is missing" cases cannot be exercised.
-export PATH="$TEST_DIR/stubs:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" RESULTS_FILE="$TMP_BASE/results"
+# A fixed PATH (only the two stubs bootstrap.sh actually calls, plus system dirs): a claude/chezmoi
+# installed in the developer's own ~/.local/bin or mise shims must not leak into the fake VM, or the
+# "claude is missing" cases cannot be exercised. The full tests/agent-vm/stubs/ dir is not used directly:
+# it also holds claude/codex stubs (for run.sh / run-shell.sh) that would make `command -v claude` succeed
+# here unconditionally and mask the very case this suite tests.
+BOOTSTRAP_STUB_DIR="$TMP_BASE/bootstrap-stubs"; mkdir -p "$BOOTSTRAP_STUB_DIR"
+ln -s "$TEST_DIR/stubs/curl" "$BOOTSTRAP_STUB_DIR/curl"
+ln -s "$TEST_DIR/stubs/chezmoi" "$BOOTSTRAP_STUB_DIR/chezmoi"
+export PATH="$BOOTSTRAP_STUB_DIR:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" RESULTS_FILE="$TMP_BASE/results"
 : >"$RESULTS_FILE"
 # shellcheck source=tests/agent-vm/lib.sh
 . "$TEST_DIR/lib.sh"
