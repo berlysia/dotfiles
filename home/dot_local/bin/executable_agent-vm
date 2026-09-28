@@ -6,6 +6,8 @@ set -euo pipefail
 AGENT_VM_STATE_DIR="${AGENT_VM_STATE_DIR:-$HOME/.local/share/agent-vm}"
 AGENT_VM_CONFIG_DIR="${AGENT_VM_CONFIG_DIR:-$HOME/.config/agent-vm}"
 BOOTSTRAP_CONTRACT=1
+CLAUDE_PROJECTS_DIR="${AGENT_VM_CLAUDE_PROJECTS_DIR:-$HOME/.claude/projects}"
+CODEX_SESSIONS_DIR="${AGENT_VM_CODEX_SESSIONS_DIR:-$HOME/.codex/sessions}"
 
 die() { printf 'agent-vm: %s\n' "$1" >&2; exit "${2:-1}"; }
 step() { printf 'agent-vm: %s\n' "$1" >&2; }
@@ -146,6 +148,113 @@ maybe_bootstrap() { # machine generation staging_hash
   if [[ "$applied" == "$3" ]]; then return 0; fi
   step "applying dotfiles in $1"
   orb -m "$1" bash "$src/agent-vm/bootstrap.sh" "$BOOTSTRAP_CONTRACT" "$3" "$src" </dev/null 9>&-
+}
+
+# Reads a file inside a VM-writable tree without following symlinks.
+# usage: outbox_read size|range <tree_root> <relpath> [offset length]; exit 2 = refused
+OUTBOX_READ_PL='
+use strict; use Fcntl qw(O_RDONLY O_NOFOLLOW O_NONBLOCK); use Cwd qw(realpath); use File::Basename qw(dirname);
+my ($mode, $root, $rel, $off, $len) = @ARGV;
+my $rroot = realpath($root); exit 2 unless defined $rroot;
+my $rdir = realpath(dirname("$root/$rel")); exit 2 unless defined $rdir;
+exit 2 unless $rdir eq $rroot || index($rdir, "$rroot/") == 0;
+# O_NONBLOCK: opening a planted FIFO returns at once instead of hanging; fstat then rejects it.
+sysopen(my $fh, "$root/$rel", O_RDONLY | O_NOFOLLOW | O_NONBLOCK) or exit 2;
+my @st = stat($fh); exit 2 unless -f _;
+if ($mode eq "size") { print $st[7], "\n"; exit 0 }
+exit 2 unless $mode eq "range";
+binmode $fh; binmode STDOUT;
+sysseek($fh, $off, 0) or exit 2 if $off > 0;
+my $left = $len;
+while ($left > 0) {
+  my $n = sysread($fh, my $buf, $left > 65536 ? 65536 : $left);
+  exit 2 unless defined $n; last if $n == 0;
+  print $buf; $left -= $n;
+}
+exit 0;
+'
+outbox_read() { perl -e "$OUTBOX_READ_PL" "$@"; }
+
+file_size() { wc -c <"$1" | tr -d ' '; } # host-owned files only
+ingested_path() { printf '%s/ingested/%s\n' "$AGENT_VM_STATE_DIR" "$1"; }
+
+ingested_lookup() { # machine key -> "osize hsize" from the host-side record (malformed lines ignored)
+  local f
+  f=$(ingested_path "$1")
+  if [[ ! -f "$f" ]]; then return 0; fi
+  awk -F'\t' -v k="$2" 'NR > 1 && NF == 3 && $1 == k && $2 ~ /^[0-9]+$/ && $3 ~ /^[0-9]+$/ { r = $2 " " $3 } END { if (r != "") print r }' "$f"
+}
+
+ingest_tree() { # machine subdir dest mode(apply|inspect); uses INGEST_RECORDS / INGEST_DIVERGED
+  local src="$AGENT_VM_STATE_DIR/outbox/$1/$2" dest=$3 mode=$4 rel key osize hsize prev
+  # The outbox is VM-writable: never follow a symlinked tree root.
+  if [[ ! -d "$src" || -L "$src" ]]; then return 0; fi
+  while IFS= read -r -d '' rel; do
+    rel=${rel#./}
+    case "$rel" in *$'\t'* | *$'\n'*) step "skipping a log with an unsupported name under $2"; continue ;; esac
+    key="$2/$rel"
+    if ! osize=$(outbox_read size "$src" "$rel"); then
+      step "skipping a log that is not a regular file inside the outbox: $key"
+      continue
+    fi
+    hsize=0
+    if [[ -f "$dest/$rel" ]]; then hsize=$(file_size "$dest/$rel"); fi
+    prev=$(ingested_lookup "$1" "$key")
+    if [[ "$mode" == apply && "$prev" == "$osize $hsize" ]]; then
+      printf '%s\t%s\t%s\n' "$key" "$osize" "$hsize" >>"$INGEST_RECORDS"
+      continue
+    fi
+    if [[ ! -f "$dest/$rel" ]]; then
+      if [[ "$mode" == inspect ]]; then printf 'new\t%s\n' "$key"; continue; fi
+      mkdir -p "$(dirname "$dest/$rel")"
+      outbox_read range "$src" "$rel" 0 "$osize" >"$dest/$rel" || { rm -f "$dest/$rel"; continue; }
+      hsize=$osize
+    elif [[ "$osize" -gt "$hsize" ]] && outbox_read range "$src" "$rel" 0 "$hsize" | cmp -s - "$dest/$rel"; then
+      if [[ "$mode" == inspect ]]; then printf 'append\t%s\n' "$key"; continue; fi
+      outbox_read range "$src" "$rel" "$hsize" "$((osize - hsize))" >>"$dest/$rel" || continue
+      hsize=$osize
+    elif [[ "$osize" -eq "$hsize" ]] && outbox_read range "$src" "$rel" 0 "$osize" | cmp -s - "$dest/$rel"; then
+      if [[ "$mode" == inspect ]]; then continue; fi
+    else
+      # Not recorded, so it is reported again on every run until someone looks at it.
+      if [[ "$mode" == inspect ]]; then printf 'diverged\t%s\t(outbox %s bytes, host %s bytes)\n' "$key" "$osize" "$hsize"; continue; fi
+      printf '%s\n' "$key" >>"$INGEST_DIVERGED"
+      step "log diverged from the host copy, not ingested: $key"
+      continue
+    fi
+    printf '%s\t%s\t%s\n' "$key" "$osize" "$hsize" >>"$INGEST_RECORDS"
+  done < <(cd "$src" && find . -type f -name '*.jsonl' -print0)
+}
+
+# Sets the INGEST_RECORDS / INGEST_DIVERGED globals that ingest_tree appends to.
+# Re-reads AGENT_VM_CLAUDE_PROJECTS_DIR / AGENT_VM_CODEX_SESSIONS_DIR here (rather than relying only on
+# the CLAUDE_PROJECTS_DIR / CODEX_SESSIONS_DIR defaults captured at startup) so a caller that sets them
+# after the launcher has been sourced (as the test harness does) is honored.
+ingest_outbox() { # machine -> 0, or 4 when some logs diverged from their host copies
+  local tmp status=0 repo claude_dir codex_dir
+  claude_dir="${AGENT_VM_CLAUDE_PROJECTS_DIR:-$CLAUDE_PROJECTS_DIR}"
+  codex_dir="${AGENT_VM_CODEX_SESSIONS_DIR:-$CODEX_SESSIONS_DIR}"
+  mkdir -p "$AGENT_VM_STATE_DIR/build" "$AGENT_VM_STATE_DIR/ingested"
+  tmp=$(mktemp -d "$AGENT_VM_STATE_DIR/build/ingest.XXXXXX")
+  INGEST_RECORDS="$tmp/records"
+  INGEST_DIVERGED="$tmp/diverged"
+  : >"$INGEST_RECORDS"
+  : >"$INGEST_DIVERGED"
+  ingest_tree "$1" claude-projects "$claude_dir" apply
+  ingest_tree "$1" codex-sessions "$codex_dir" apply
+  { printf 'format=1\n'; cat "$INGEST_RECORDS"; } >"$(ingested_path "$1")"
+  if [[ -s "$INGEST_DIVERGED" ]]; then
+    repo=$(read_meta_field "$1" repo_path 2>/dev/null) || repo="<repo of $1>"
+    step "recover: cd $repo && agent-vm sync --inspect"
+    status=4
+  fi
+  rm -rf "$tmp"
+  return "$status"
+}
+
+inspect_outbox() { # machine -> prints new/append/diverged lines without writing anything
+  ingest_tree "$1" claude-projects "${AGENT_VM_CLAUDE_PROJECTS_DIR:-$CLAUDE_PROJECTS_DIR}" inspect
+  ingest_tree "$1" codex-sessions "${AGENT_VM_CODEX_SESSIONS_DIR:-$CODEX_SESSIONS_DIR}" inspect
 }
 
 env_files_for() { # machine -> host-owned op:// reference files that exist

@@ -320,6 +320,74 @@ test_env_edit_creates_private_file() {
   assert_eq "600" "$(perl -e 'printf "%o", (stat shift)[2] & 07777' "$f")" "mode 600 from creation"
 }
 
+setup_ingest() { # -> sets OB (outbox claude dir) and HP (host projects dir)
+  export AGENT_VM_CLAUDE_PROJECTS_DIR="$TMP_ROOT/host-projects" AGENT_VM_CODEX_SESSIONS_DIR="$TMP_ROOT/host-codex"
+  OB="$AGENT_VM_STATE_DIR/outbox/agent-i-000000/claude-projects/-repo"
+  HP="$AGENT_VM_CLAUDE_PROJECTS_DIR/-repo"
+  mkdir -p "$OB" "$AGENT_VM_STATE_DIR/build"
+}
+test_ingest_copies_new_and_appends_growth() {
+  setup_ingest
+  printf 'a\n' >"$OB/s.jsonl"
+  ingest_outbox agent-i-000000 2>/dev/null
+  assert_eq "a" "$(cat "$HP/s.jsonl")" "new log copied"
+  printf 'b\n' >>"$OB/s.jsonl"
+  ingest_outbox agent-i-000000 2>/dev/null
+  assert_eq "$(printf 'a\nb')" "$(cat "$HP/s.jsonl")" "appended tail only"
+}
+test_ingest_refuses_rewritten_prefix() {
+  setup_ingest
+  printf 'a\n' >"$OB/s.jsonl"; ingest_outbox agent-i-000000 2>/dev/null
+  printf 'X\nlonger\n' >"$OB/s.jsonl"
+  local status=0 err; err=$(ingest_outbox agent-i-000000 2>&1) || status=$?
+  assert_eq 4 "$status" "divergence reported by status"
+  assert_contains "$err" "agent-vm sync --inspect" "recover hint names the command"
+  assert_eq "a" "$(cat "$HP/s.jsonl")" "host copy untouched"
+  status=0; ingest_outbox agent-i-000000 2>/dev/null || status=$?
+  assert_eq 4 "$status" "still reported on the next run (not recorded)"
+}
+test_ingest_refuses_truncation() {
+  setup_ingest
+  printf 'abc\n' >"$OB/s.jsonl"; ingest_outbox agent-i-000000 2>/dev/null
+  printf 'a\n' >"$OB/s.jsonl"
+  local status=0; ingest_outbox agent-i-000000 2>/dev/null || status=$?
+  assert_eq 4 "$status" "truncation reported"
+  assert_eq "abc" "$(cat "$HP/s.jsonl")" "host copy untouched"
+}
+test_ingest_ignores_symlinks_and_non_jsonl() {
+  setup_ingest
+  printf 'secret\n' >"$TMP_ROOT/outside.jsonl"
+  ln -s "$TMP_ROOT/outside.jsonl" "$OB/link.jsonl"
+  printf 'x\n' >"$OB/notes.txt"
+  ingest_outbox agent-i-000000 2>/dev/null
+  assert_status 1 "symlinked log ignored" -- test -e "$HP/link.jsonl"
+  assert_status 1 "non-jsonl ignored" -- test -e "$HP/notes.txt"
+}
+test_ingest_ignores_symlinked_tree_root() {
+  export AGENT_VM_CLAUDE_PROJECTS_DIR="$TMP_ROOT/host-projects" AGENT_VM_CODEX_SESSIONS_DIR="$TMP_ROOT/host-codex"
+  mkdir -p "$AGENT_VM_STATE_DIR/outbox/agent-i-000000" "$AGENT_VM_STATE_DIR/build" "$TMP_ROOT/elsewhere/-repo"
+  printf 'x\n' >"$TMP_ROOT/elsewhere/-repo/s.jsonl"
+  ln -s "$TMP_ROOT/elsewhere" "$AGENT_VM_STATE_DIR/outbox/agent-i-000000/claude-projects"
+  ingest_outbox agent-i-000000 2>/dev/null
+  assert_status 1 "symlinked root not followed" -- test -e "$AGENT_VM_CLAUDE_PROJECTS_DIR/-repo/s.jsonl"
+}
+test_ingest_recopies_after_host_deletion_and_tolerates_bad_records() {
+  setup_ingest
+  printf 'a\n' >"$OB/s.jsonl"; ingest_outbox agent-i-000000 2>/dev/null
+  rm "$HP/s.jsonl"
+  printf 'garbage line without tabs\n' >>"$AGENT_VM_STATE_DIR/ingested/agent-i-000000"
+  ingest_outbox agent-i-000000 2>/dev/null
+  assert_eq "a" "$(cat "$HP/s.jsonl")" "re-copied after host deletion"
+  assert_eq "format=1" "$(head -1 "$AGENT_VM_STATE_DIR/ingested/agent-i-000000")" "record header"
+}
+test_ingest_handles_codex_sessions_tree() {
+  setup_ingest
+  mkdir -p "$AGENT_VM_STATE_DIR/outbox/agent-i-000000/codex-sessions/2026/09"
+  printf 'c\n' >"$AGENT_VM_STATE_DIR/outbox/agent-i-000000/codex-sessions/2026/09/r.jsonl"
+  ingest_outbox agent-i-000000 2>/dev/null
+  assert_eq "c" "$(cat "$AGENT_VM_CODEX_SESSIONS_DIR/2026/09/r.jsonl")" "codex session ingested"
+}
+
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do
   (
     TMP_ROOT="$TMP_BASE/$t"; mkdir -p "$TMP_ROOT"
