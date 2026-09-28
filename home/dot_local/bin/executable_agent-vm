@@ -257,6 +257,139 @@ inspect_outbox() { # machine -> prints new/append/diverged lines without writing
   ingest_tree "$1" codex-sessions "${AGENT_VM_CODEX_SESSIONS_DIR:-$CODEX_SESSIONS_DIR}" inspect
 }
 
+GIT_SURFACE_MONITORED=1
+# Canonical (lowercased) git config names that make git run a program, now or on a later fetch/clone.
+EXEC_CONFIG_RE='^(core\.(hookspath|fsmonitor|sshcommand|pager|editor|askpass|gitproxy|alternaterefscommand)|sequence\.editor|filter\..*|diff\..*\.textconv|diff\.external|merge\..*\.driver|alias\..*|include\.path|includeif\..*|credential\..*|gpg\.program|gpg\..*\.program|remote\..*\.(uploadpack|receivepack)|url\..*\.insteadof|protocol\..*|uploadpack\.packobjectshook)$'
+
+# Kinds first monitored in each version; a baseline taken at version N adopts, without reporting,
+# items of kinds introduced after N. Add a line here when a version adds kinds.
+surface_kinds_since() { # version -> kinds introduced after that version
+  local v=$1 kinds=""
+  if [[ "$v" -lt 1 ]]; then kinds="gitdir hooksdir hookfile hooklink config attributes untracked"; fi
+  printf '%s\n' "$kinds"
+}
+
+sha_of_file() { shasum -a 256 <"$1" | cut -c1-64; }
+sha_of_str() { printf '%s' "$1" | shasum -a 256 | cut -c1-64; }
+
+hash_hook_dir() { # resolved_dir label
+  local f rel
+  if [[ ! -d "$1" ]]; then return 0; fi
+  while IFS= read -r -d '' f; do
+    rel=${f#"$1"/}
+    if [[ -L "$f" ]]; then
+      printf 'hooklink\t%s/%s\t%s\n' "$2" "$rel" "$(readlink "$f")"
+    else
+      printf 'hookfile\t%s/%s\t%s\n' "$2" "$rel" "$(sha_of_file "$f")"
+    fi
+  done < <(find "$1" -mindepth 1 \( -type f -o -type l \) -print0)
+}
+
+git_surface_items() { # repo_root -> unsorted "kind<TAB>name<TAB>value" lines
+  local repo=$1 hooks hp f name kv k v
+  # A symlinked .git would redirect every path below; record it so the change is reported.
+  if [[ -L "$repo/.git" ]]; then printf 'gitdir\t.git\tsymlink:%s\n' "$(readlink "$repo/.git")"; else printf 'gitdir\t.git\tdir\n'; fi
+  hooks=$(cd -P "$repo/.git/hooks" 2>/dev/null && pwd -P) || hooks=absent
+  printf 'hooksdir\t.git/hooks\t%s\n' "$hooks"
+  if [[ "$hooks" != absent ]]; then hash_hook_dir "$hooks" .git/hooks; fi
+  hp=$(git config --file "$repo/.git/config" --get core.hooksPath 2>/dev/null) || hp=""
+  if [[ -n "$hp" ]]; then
+    case "$hp" in /*) ;; *) hp="$repo/$hp" ;; esac
+    hp=$(cd -P "$hp" 2>/dev/null && pwd -P) || hp=""
+    if [[ -n "$hp" ]]; then hash_hook_dir "$hp" hookspath; fi
+  fi
+  for f in "$repo/.git/config" "$repo"/.git/worktrees/*/config.worktree; do
+    if [[ ! -f "$f" ]]; then continue; fi
+    name=${f#"$repo/"}
+    while IFS= read -r -d '' kv; do
+      k=${kv%%$'\n'*}
+      v=""
+      if [[ "$kv" == *$'\n'* ]]; then v=${kv#*$'\n'}; fi
+      printf 'config\t%s:%s\t%s\n' "$name" "$k" "$(sha_of_str "$v")"
+    done < <(git config --file "$f" --null --get-regexp "$EXEC_CONFIG_RE" 2>/dev/null || true)
+  done
+  if [[ -f "$repo/.git/info/attributes" ]]; then
+    printf 'attributes\t.git/info/attributes\t%s\n' "$(sha_of_file "$repo/.git/info/attributes")"
+  fi
+  for name in .envrc mise.local.toml .mise.local.toml; do
+    # Repo-context git on a VM-writable .git: neutralize settings that would run programs on the host.
+    if [[ -f "$repo/$name" ]] && ! git -c core.fsmonitor= -c core.hooksPath=/dev/null --no-optional-locks -C "$repo" ls-files --error-unmatch -- "$name" >/dev/null 2>&1; then
+      printf 'untracked\t%s\t%s\n' "$name" "$(sha_of_file "$repo/$name")"
+    fi
+  done
+}
+
+git_surface_manifest() { # repo_root -> "format=1", "monitored=N", then sorted items
+  printf 'format=1\nmonitored=%s\n' "$GIT_SURFACE_MONITORED"
+  git_surface_items "$1" | LC_ALL=C sort
+}
+
+surface_dir() { printf '%s/snapshots/%s\n' "$AGENT_VM_STATE_DIR" "$1"; }
+
+# Prints "added|changed|removed<TAB>kind<TAB>name" for monitored items that differ from the baseline.
+# Items of kinds first monitored after the baseline's version are not differences (they are adopted).
+surface_diff() { # baseline_file current_manifest_file
+  local newkinds
+  newkinds=$(surface_kinds_since "$(sed -n 's/^monitored=//p' "$1")")
+  awk -F'\t' -v newkinds=" $newkinds " '
+    FNR == NR { if (NF == 3) b[$1 FS $2] = $3; next }
+    NF == 3 {
+      k = $1 FS $2; seen[k] = 1
+      if (!(k in b)) { if (index(newkinds, " " $1 " ") == 0) print "added" FS k; next }
+      if (b[k] != $3) print "changed" FS k
+    }
+    END { for (k in b) if (!(k in seen)) print "removed" FS k }' "$1" "$2" | LC_ALL=C sort
+}
+
+# New baseline: current values for items without a difference (and for newly monitored kinds),
+# baseline values kept for changed/removed items, added items left out so they keep being reported.
+surface_rebaseline() { # baseline_file current_manifest_file diff_file -> new baseline on stdout
+  printf 'format=1\nmonitored=%s\n' "$GIT_SURFACE_MONITORED"
+  # Files are read in the order baseline, diff, current: the diff must be loaded before current is walked.
+  awk -F'\t' '
+    FILENAME == ARGV[1] { if (NF == 3) b[$1 FS $2] = $3; next }
+    FILENAME == ARGV[2] { d[$2 FS $3] = $1; next }
+    NF == 3 {
+      k = $1 FS $2; seen[k] = 1
+      if (!(k in d)) print $0
+      else if (d[k] == "changed") print k FS b[k]
+    }
+    END { for (k in b) if (!(k in seen)) print k FS b[k] }' "$1" "$3" "$2" | LC_ALL=C sort
+}
+
+# Copies used by restore-git, taken only from a clean state. A path check cannot pin what cp reads
+# (the VM may swap .git/hooks between check and copy), so the copies are validated by content instead:
+# restore-git only writes back a copy whose hash equals the baseline entry (see restore_surface_item).
+save_surface_copies() { # repo_root dir
+  rm -rf "$2/files"
+  mkdir -p "$2/files/hooks"
+  if [[ -d "$1/.git/hooks" && ! -L "$1/.git/hooks" ]]; then cp -pPR "$1/.git/hooks/." "$2/files/hooks/"; fi
+  if [[ -f "$1/.git/info/attributes" ]]; then cp -p "$1/.git/info/attributes" "$2/files/attributes"; fi
+}
+
+check_git_surfaces() { # machine repo_root -> 0 clean, 3 when a monitored item differs from the baseline
+  local dir
+  dir=$(surface_dir "$1")
+  mkdir -p "$dir"
+  git_surface_manifest "$2" >"$dir/current"
+  if [[ ! -f "$dir/baseline" ]]; then
+    mv "$dir/current" "$dir/baseline"
+    save_surface_copies "$2" "$dir"
+    return 0
+  fi
+  surface_diff "$dir/baseline" "$dir/current" >"$dir/diff"
+  surface_rebaseline "$dir/baseline" "$dir/current" "$dir/diff" >"$dir/baseline.new"
+  mv "$dir/baseline.new" "$dir/baseline"
+  if [[ ! -s "$dir/diff" ]]; then
+    save_surface_copies "$2" "$dir"
+    return 0
+  fi
+  step "files that git runs on the host changed since the last check (not visible in git diff):"
+  sed 's/^/  /' "$dir/diff" >&2
+  step "recover: agent-vm restore-git $2"
+  return 3
+}
+
 env_files_for() { # machine -> host-owned op:// reference files that exist
   local f
   for f in "$AGENT_VM_CONFIG_DIR/env.1password" "$AGENT_VM_CONFIG_DIR/repos/$1.env.1password"; do

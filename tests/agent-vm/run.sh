@@ -388,6 +388,116 @@ test_ingest_handles_codex_sessions_tree() {
   assert_eq "c" "$(cat "$AGENT_VM_CODEX_SESSIONS_DIR/2026/09/r.jsonl")" "codex session ingested"
 }
 
+make_git_repo() { # -> repo path with one commit
+  local repo="$TMP_ROOT/g-repo"
+  mkdir -p "$repo" && git -C "$repo" init -q
+  git -C "$repo" -c user.email=t@t -c user.name=t -c commit.gpgsign=false commit -q --allow-empty -m init
+  (cd -P "$repo" && pwd -P)
+}
+surface_status() { # machine repo -> exit status of check_git_surfaces
+  local s=0; check_git_surfaces "$1" "$2" >/dev/null 2>&1 || s=$?; printf '%s\n' "$s"
+}
+test_first_check_baselines_silently() {
+  local repo; repo=$(make_git_repo)
+  assert_eq 0 "$(surface_status agent-g-000000 "$repo")" "first run is clean"
+  assert_status 0 "baseline written" -- test -f "$AGENT_VM_STATE_DIR/snapshots/agent-g-000000/baseline"
+}
+test_added_hook_is_reported_until_resolved() {
+  local repo; repo=$(make_git_repo); surface_status agent-g-000000 "$repo" >/dev/null
+  printf '#!/bin/sh\necho pwned\n' >"$repo/.git/hooks/post-checkout"
+  local out; out=$(check_git_surfaces agent-g-000000 "$repo" 2>&1) || true
+  assert_contains "$out" "added" "added hook reported"
+  assert_contains "$out" "post-checkout" "names the hook"
+  assert_contains "$out" "recover: agent-vm restore-git" "recover hint"
+  assert_eq 3 "$(surface_status agent-g-000000 "$repo")" "still reported on the next check"
+}
+test_changed_hook_and_redirected_hooks_dir_are_reported() {
+  local repo; repo=$(make_git_repo)
+  printf '#!/bin/sh\n' >"$repo/.git/hooks/pre-commit"; surface_status agent-g-000000 "$repo" >/dev/null
+  printf '#!/bin/sh\necho changed\n' >"$repo/.git/hooks/pre-commit"
+  assert_eq 3 "$(surface_status agent-g-000000 "$repo")" "changed hook content"
+  local repo2="$TMP_ROOT/g2"; mkdir -p "$repo2" && git -C "$repo2" init -q; repo2=$(cd -P "$repo2" && pwd -P)
+  surface_status agent-g-000001 "$repo2" >/dev/null
+  mkdir -p "$TMP_ROOT/evil-hooks"; printf '#!/bin/sh\n' >"$TMP_ROOT/evil-hooks/pre-push"
+  rm -rf "$repo2/.git/hooks"; ln -s "$TMP_ROOT/evil-hooks" "$repo2/.git/hooks"
+  assert_eq 3 "$(surface_status agent-g-000001 "$repo2")" "hooks dir replaced by a symlink"
+}
+test_exec_config_keys_are_reported_but_benign_keys_are_not() {
+  local repo; repo=$(make_git_repo); surface_status agent-g-000000 "$repo" >/dev/null
+  git -C "$repo" config branch.main.remote origin
+  assert_eq 0 "$(surface_status agent-g-000000 "$repo")" "benign config ignored"
+  git -C "$repo" config core.fsmonitor "sh -c 'echo pwned'"
+  assert_eq 3 "$(surface_status agent-g-000000 "$repo")" "core.fsmonitor reported"
+}
+test_hookspath_target_contents_are_hashed() {
+  local repo; repo=$(make_git_repo)
+  mkdir -p "$repo/tools/hooks"; printf '#!/bin/sh\n' >"$repo/tools/hooks/pre-commit"
+  git -C "$repo" config core.hooksPath tools/hooks
+  surface_status agent-g-000000 "$repo" >/dev/null
+  printf '#!/bin/sh\necho changed\n' >"$repo/tools/hooks/pre-commit"
+  assert_eq 3 "$(surface_status agent-g-000000 "$repo")" "hooksPath target change reported"
+}
+test_untracked_envrc_reported_tracked_not() {
+  local repo; repo=$(make_git_repo); surface_status agent-g-000000 "$repo" >/dev/null
+  printf 'export X=1\n' >"$repo/.envrc"
+  assert_eq 3 "$(surface_status agent-g-000000 "$repo")" "untracked .envrc reported"
+  local repo2="$TMP_ROOT/g3"; mkdir -p "$repo2" && git -C "$repo2" init -q; repo2=$(cd -P "$repo2" && pwd -P)
+  printf 'export X=1\n' >"$repo2/.envrc"; git -C "$repo2" add .envrc
+  git -C "$repo2" -c user.email=t@t -c user.name=t -c commit.gpgsign=false commit -q -m envrc
+  surface_status agent-g-000002 "$repo2" >/dev/null
+  printf 'export X=2\n' >"$repo2/.envrc"
+  assert_eq 0 "$(surface_status agent-g-000002 "$repo2")" "tracked .envrc left to git diff"
+}
+test_version_bump_adopts_only_new_kinds() {
+  local repo; repo=$(make_git_repo)
+  printf '#!/bin/sh\n' >"$repo/.git/hooks/pre-commit"
+  surface_status agent-g-000000 "$repo" >/dev/null
+  local b="$AGENT_VM_STATE_DIR/snapshots/agent-g-000000/baseline"
+  # Simulate a future version 2 that starts monitoring "untracked": the version-1 baseline has none.
+  GIT_SURFACE_MONITORED=2
+  surface_kinds_since() { if [[ "$1" -lt 2 ]]; then echo untracked; else echo; fi; }
+  { printf 'format=1\nmonitored=1\n'; grep -v -e '^untracked' -e '^format=' -e '^monitored=' "$b"; } >"$b.tmp" && mv "$b.tmp" "$b"
+  printf 'export X=1\n' >"$repo/.envrc"
+  printf '#!/bin/sh\necho changed\n' >"$repo/.git/hooks/pre-commit"
+  printf '#!/bin/sh\n' >"$repo/.git/hooks/post-merge"
+  local out; out=$(check_git_surfaces agent-g-000000 "$repo" 2>&1) || true
+  assert_not_contains "$out" ".envrc" "new-kind item adopted silently"
+  assert_contains "$out" "changed	hookfile	.git/hooks/pre-commit" "old-kind change still reported"
+  assert_contains "$out" "added	hookfile	.git/hooks/post-merge" "old-kind addition still reported"
+  assert_contains "$(cat "$b")" "monitored=2" "baseline moves to the new version"
+}
+test_rebaseline_keeps_reporting_the_same_diff_and_clears_after_fix() {
+  local repo; repo=$(make_git_repo)
+  printf '#!/bin/sh\n' >"$repo/.git/hooks/pre-commit"; surface_status agent-g-000000 "$repo" >/dev/null
+  printf '#!/bin/sh\necho changed\n' >"$repo/.git/hooks/pre-commit"
+  printf '#!/bin/sh\n' >"$repo/.git/hooks/post-checkout"
+  local d="$AGENT_VM_STATE_DIR/snapshots/agent-g-000000/diff" first second
+  surface_status agent-g-000000 "$repo" >/dev/null; first=$(cat "$d")
+  surface_status agent-g-000000 "$repo" >/dev/null; second=$(cat "$d")
+  assert_eq "$first" "$second" "identical diff on the next check (no baseline corruption)"
+  assert_not_contains "$(cat "$AGENT_VM_STATE_DIR/snapshots/agent-g-000000/baseline")" "changed	" "no diff lines leaked into the baseline"
+  printf '#!/bin/sh\n' >"$repo/.git/hooks/pre-commit"; rm "$repo/.git/hooks/post-checkout"
+  assert_eq 0 "$(surface_status agent-g-000000 "$repo")" "clean once the changes are undone"
+}
+test_symlinked_git_dir_is_reported() {
+  local repo; repo=$(make_git_repo); surface_status agent-g-000000 "$repo" >/dev/null
+  mv "$repo/.git" "$TMP_ROOT/moved-git"; ln -s "$TMP_ROOT/moved-git" "$repo/.git"
+  local out; out=$(check_git_surfaces agent-g-000000 "$repo" 2>&1) || true
+  assert_contains "$out" "changed	gitdir	.git" ".git replaced by a symlink reported"
+}
+test_ls_files_does_not_run_planted_fsmonitor() {
+  local repo; repo=$(make_git_repo); surface_status agent-g-000000 "$repo" >/dev/null
+  git -C "$repo" config core.fsmonitor "touch $TMP_ROOT/fsmonitor-ran; false"
+  printf 'export X=1\n' >"$repo/.envrc"
+  surface_status agent-g-000000 "$repo" >/dev/null
+  assert_status 1 "planted fsmonitor not executed" -- test -e "$TMP_ROOT/fsmonitor-ran"
+}
+test_fetch_time_exec_keys_are_monitored() {
+  local repo; repo=$(make_git_repo); surface_status agent-g-000000 "$repo" >/dev/null
+  git -C "$repo" config url."ext::sh -c touch% /tmp/x".insteadOf https://example.com/
+  assert_eq 3 "$(surface_status agent-g-000000 "$repo")" "url.*.insteadOf reported"
+}
+
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do
   (
     TMP_ROOT="$TMP_BASE/$t"; mkdir -p "$TMP_ROOT"
