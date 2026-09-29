@@ -17,6 +17,33 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+// Git exports repository-local variables to hooks (GIT_DIR, GIT_INDEX_FILE,
+// ...). When the test suite runs from the pre-commit hook, every `git` a test
+// spawns -- even with `cwd` set to a mkdtemp fixture -- inherits them and acts
+// on the repository being committed instead. From a linked worktree this
+// rewrote the worktree index and, through the shared common config, set
+// `core.bare=true`, `user.*` and `commit.gpgsign=false` on the main
+// repository. The list is `git rev-parse --local-env-vars` (git 2.50).
+for (const name of [
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_CONFIG",
+  "GIT_CONFIG_PARAMETERS",
+  "GIT_CONFIG_COUNT",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_IMPLICIT_WORK_TREE",
+  "GIT_GRAFT_FILE",
+  "GIT_INDEX_FILE",
+  "GIT_NO_REPLACE_OBJECTS",
+  "GIT_REPLACE_REF_BASE",
+  "GIT_PREFIX",
+  "GIT_SHALLOW_FILE",
+  "GIT_COMMON_DIR",
+]) {
+  delete process.env[name];
+}
+
 if (!process.env.CLAUDE_LOGS_DIR) {
   const dir = mkdtempSync(join(tmpdir(), "claude-hooks-test-logs-"));
   process.env.CLAUDE_LOGS_DIR = dir;
