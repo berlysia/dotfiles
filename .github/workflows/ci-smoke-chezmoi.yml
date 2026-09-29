@@ -11,6 +11,7 @@ on:
       - ".github/workflows/ci-smoke-chezmoi.yml"
       - "home/dot_claude/private_bunfig.toml.tmpl"
       - "scripts/smoke-provisioning-invariants.sh"
+      - "home/dot_local/bin/executable_textlint-global"
       # The deployed bunfig is generated verbatim from this file, so a change
       # here is what the provisioning invariants' bunfig assertion exists to catch.
       - "bunfig.toml"
@@ -24,6 +25,7 @@ on:
       - ".github/workflows/ci-smoke-chezmoi.yml"
       - "home/dot_claude/private_bunfig.toml.tmpl"
       - "scripts/smoke-provisioning-invariants.sh"
+      - "home/dot_local/bin/executable_textlint-global"
       # The deployed bunfig is generated verbatim from this file, so a change
       # here is what the provisioning invariants' bunfig assertion exists to catch.
       - "bunfig.toml"

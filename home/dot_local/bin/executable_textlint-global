@@ -30,14 +30,15 @@ if [[ ! -x "$TEXTLINT_BIN" ]]; then
 fi
 
 # Stale runtime: package.json was redeployed but the last install of it did
-# not succeed (the installer records the sha256 only on success).
-if [[ -f "$TEXTLINT_HOME/package.json" ]]; then
-    current_hash="$(sha256sum "$TEXTLINT_HOME/package.json" | awk '{print $1}')"
-    installed_hash="$(cat "$STATE_FILE" 2>/dev/null || true)"
-    if [[ "$current_hash" != "$installed_hash" ]]; then
-        echo "textlint: WARNING runtime at $TEXTLINT_HOME is older than its package.json" >&2
-        echo "Recover with: $RECOVER" >&2
-    fi
+# not succeed (the installer copies package.json to .install-state only on
+# success; run_after_10-install-textlint-deps.sh.tmpl is its only writer).
+# Any mismatch, a missing state or a failed read counts as stale. The check
+# runs inside the `if` condition so that no failure in it, including a missing
+# cmp, stops textlint from running; it only decides whether to warn.
+if [[ -f "$TEXTLINT_HOME/package.json" ]] &&
+    ! cmp -s "$TEXTLINT_HOME/package.json" "$STATE_FILE" 2>/dev/null; then
+    echo "textlint: WARNING runtime at $TEXTLINT_HOME is older than its package.json" >&2
+    echo "Recover with: $RECOVER" >&2
 fi
 
 args=()

@@ -8,6 +8,8 @@
 # which files it can already see.
 # See docs/decisions/0014-hook-deps-install-phase.md and
 # docs/decisions/0017-provisioning-after-deploy.md.
+# It also covers the .install-state contract between the textlint installer
+# (writer) and the textlint-global wrapper (reader), in assertion L.
 
 set -euo pipefail
 
@@ -445,6 +447,135 @@ if [ "$j5_rc" -eq 1 ] && [ "$j5_entries" = "0" ]; then
   pass "J5: a directory at the marker path makes root-deps exit 1 without writing into it"
 else
   fail "J5: rc=${j5_rc}, entries inside the directory=${j5_entries}"
+fi
+
+# --- assertion L: textlint installer/wrapper .install-state contract ---
+# The installer copies package.json to .install-state on a successful install;
+# the wrapper treats any mismatch, absence or read error as stale, warns, and
+# still runs textlint. The wrapper is started with /bin/bash and a PATH that
+# holds no sha256sum (an empty directory, or one with only cmp), because the
+# runner's /usr/bin has coreutils and so cannot reproduce "no sha256sum".
+WRAPPER="${REPO_ROOT}/home/dot_local/bin/executable_textlint-global"
+l_dir="${TMP_ROOT}/l"
+mkdir -p "${l_dir}/path-empty" "${l_dir}/path-cmp"
+l_path_empty="${l_dir}/path-empty"
+l_path_cmp="${l_dir}/path-cmp"
+ln -s "$(command -v cmp)" "${l_path_cmp}/cmp"
+l_installer="${l_dir}/installer.sh"
+render_script "${SCRIPTS_DIR}/run_after_10-install-textlint-deps.sh.tmpl" "$l_installer"
+
+# make_textlint_stub TEXTLINT_HOME LOG
+# A textlint that only records that it ran; builtins only, so it works under an
+# empty PATH.
+make_textlint_stub() {
+  local stub_home="$1" stub_log="$2"
+  mkdir -p "${stub_home}/node_modules/.bin"
+  cat > "${stub_home}/node_modules/.bin/textlint" <<STUB
+#!/bin/sh
+echo ran >> "${stub_log}"
+exit 0
+STUB
+  chmod +x "${stub_home}/node_modules/.bin/textlint"
+}
+
+# L1: neither sha256sum nor cmp on PATH must not stop textlint from running
+l1_home="${l_dir}/l1/textlint"
+l1_log="${l_dir}/l1/ran.log"
+mkdir -p "$l1_home"
+printf '{"name":"l1"}\n' > "${l1_home}/package.json"
+: > "$l1_log"
+make_textlint_stub "$l1_home" "$l1_log"
+printf 'x\n' > "${l_dir}/l1/input.md"
+PATH="$l_path_empty" TEXTLINT_HOME="$l1_home" /bin/bash "$WRAPPER" "${l_dir}/l1/input.md" \
+  >/dev/null 2> "${l_dir}/l1/stderr.txt" && l1_rc=0 || l1_rc=$?
+l1_ran="$(grep -c '^ran$' "$l1_log" || true)"
+if [ "$l1_rc" -eq 0 ] && [ "$l1_ran" = "1" ]; then
+  pass "L1: wrapper runs textlint when neither sha256sum nor cmp is on PATH"
+else
+  fail "L1: rc=${l1_rc}, textlint runs=${l1_ran}, expected rc=0 and 1 run"
+fi
+
+# L2: install succeeds, then the wrapper sees a fresh runtime (no WARNING)
+l2_home="${l_dir}/l2/home"
+l2_textlint="${l2_home}/.config/textlint"
+l2_bun="${l_dir}/l2/bun-stub"
+l2_log="${l_dir}/l2/ran.log"
+mkdir -p "$l2_textlint" "$l2_bun"
+printf '{"name":"l2"}\n' > "${l2_textlint}/package.json"
+printf '#!/bin/sh\nexit 0\n' > "${l2_bun}/bun"
+chmod +x "${l2_bun}/bun"
+: > "$l2_log"
+make_textlint_stub "$l2_textlint" "$l2_log"
+printf 'x\n' > "${l_dir}/l2/input.md"
+PATH="${l2_bun}:/usr/bin:/bin" HOME="$l2_home" bash "$l_installer" >/dev/null 2>&1 || true
+l2_copied=false
+if cmp -s "${l2_textlint}/package.json" "${l2_textlint}/.install-state"; then
+  l2_copied=true
+fi
+PATH="$l_path_cmp" TEXTLINT_HOME="$l2_textlint" /bin/bash "$WRAPPER" "${l_dir}/l2/input.md" \
+  >/dev/null 2> "${l_dir}/l2/stderr.txt" && l2_rc=0 || l2_rc=$?
+l2_ran="$(grep -c '^ran$' "$l2_log" || true)"
+if [ "$l2_copied" = true ] && [ "$l2_rc" -eq 0 ] &&
+  ! grep -qF 'WARNING' "${l_dir}/l2/stderr.txt" && [ "$l2_ran" = "1" ]; then
+  pass "L2: after a successful install the wrapper does not warn"
+else
+  fail "L2: state copied=${l2_copied}, rc=${l2_rc}, textlint runs=${l2_ran}, expected a copy, rc=0, no WARNING, 1 run"
+fi
+
+# L3: package.json changed after the install means WARNING plus the recovery
+# command, and textlint still runs
+printf '{"name":"l2","changed":true}\n' > "${l2_textlint}/package.json"
+: > "$l2_log"
+PATH="$l_path_cmp" TEXTLINT_HOME="$l2_textlint" /bin/bash "$WRAPPER" "${l_dir}/l2/input.md" \
+  >/dev/null 2> "${l_dir}/l2/stderr-stale.txt" && l3_rc=0 || l3_rc=$?
+l3_ran="$(grep -c '^ran$' "$l2_log" || true)"
+if [ "$l3_rc" -eq 0 ] &&
+  grep -qF 'WARNING runtime at' "${l_dir}/l2/stderr-stale.txt" &&
+  grep -qF "Recover with: cd ${l2_textlint} && bun install --ignore-scripts" "${l_dir}/l2/stderr-stale.txt" &&
+  [ "$l3_ran" = "1" ]; then
+  pass "L3: a stale runtime warns with the recovery command and still runs textlint"
+else
+  fail "L3: rc=${l3_rc}, textlint runs=${l3_ran}, expected rc=0, WARNING, Recover with, 1 run"
+fi
+
+# L4: a failed install keeps the previous state byte for byte and leaves no tmp
+l4_home="${l_dir}/l4/home"
+l4_textlint="${l4_home}/.config/textlint"
+l4_bun="${l_dir}/l4/bun-stub"
+mkdir -p "$l4_textlint" "$l4_bun"
+printf '{"name":"l4"}\n' > "${l4_textlint}/package.json"
+printf 'sentinel-prior-install\n' > "${l4_textlint}/.install-state"
+printf 'sentinel-prior-install\n' > "${l_dir}/l4/state-before"
+printf '#!/bin/sh\nexit 1\n' > "${l4_bun}/bun"
+chmod +x "${l4_bun}/bun"
+PATH="${l4_bun}:/usr/bin:/bin" HOME="$l4_home" bash "$l_installer" >/dev/null 2>&1 &&
+  l4_rc=0 || l4_rc=$?
+if [ "$l4_rc" -eq 0 ] &&
+  cmp -s "${l4_textlint}/.install-state" "${l_dir}/l4/state-before" &&
+  [ -z "$(find "$l4_textlint" -name '.install-state.tmp.*')" ]; then
+  pass "L4: a failed install leaves the previous state untouched and no tmp file"
+else
+  fail "L4: rc=${l4_rc}, state changed or a .install-state.tmp.* file was left"
+fi
+
+# L5: a legacy hash-format state reads as stale (new wrapper, old state)
+l5_home="${l_dir}/l5/textlint"
+l5_log="${l_dir}/l5/ran.log"
+mkdir -p "$l5_home"
+printf '{"name":"l5"}\n' > "${l5_home}/package.json"
+printf '0000000000000000000000000000000000000000000000000000000000000000\n' > "${l5_home}/.install-state"
+: > "$l5_log"
+make_textlint_stub "$l5_home" "$l5_log"
+printf 'x\n' > "${l_dir}/l5/input.md"
+PATH="$l_path_cmp" TEXTLINT_HOME="$l5_home" /bin/bash "$WRAPPER" "${l_dir}/l5/input.md" \
+  >/dev/null 2> "${l_dir}/l5/stderr.txt" && l5_rc=0 || l5_rc=$?
+l5_ran="$(grep -c '^ran$' "$l5_log" || true)"
+if [ "$l5_rc" -eq 0 ] &&
+  grep -qF 'WARNING runtime at' "${l_dir}/l5/stderr.txt" &&
+  [ "$l5_ran" = "1" ]; then
+  pass "L5: a legacy hash-format state warns as stale and textlint still runs"
+else
+  fail "L5: rc=${l5_rc}, textlint runs=${l5_ran}, expected rc=0, WARNING, 1 run"
 fi
 
 # --- assertion F: no mise or bun toolchain use in the ASCII-ordered phase ---

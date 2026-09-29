@@ -12,8 +12,11 @@
 # Exit code is 0 even when the install fails so the remaining run_after_
 # scripts still run. The failure surfaces where it costs something: the
 # ~/.local/bin/textlint-global wrapper exits 2 when the binary is missing and warns
-# when .install-state (sha256 of the package.json that last installed
-# successfully) no longer matches the deployed package.json.
+# when .install-state no longer matches the deployed package.json.
+# .install-state is a byte copy of the package.json that last installed
+# successfully; this script is its only writer. The wrapper
+# (home/dot_local/bin/executable_textlint-global) only reads it, comparing with
+# cmp, and treats any mismatch, absence or read error as stale.
 #
 # --ignore-scripts: no package in this tree needs a lifecycle script today,
 # and a text linter has no business running one at install time.
@@ -48,9 +51,9 @@ log "Installing textlint dependencies in $TEXTLINT_DIR..."
 if (cd "$TEXTLINT_DIR" && bun install --ignore-scripts 2>&1); then
     log "textlint dependencies are in sync" "SUCCESS"
     # Write via a sibling temp file and rename, as record-provisioning-failure.sh
-    # does for the install-failure markers, so a half-written hash never reads as "stale".
+    # does for the install-failure markers, so a half-written copy never reads as "stale".
     state_tmp="${STATE_FILE}.tmp.$$"
-    if sha256sum "$TEXTLINT_DIR/package.json" | awk '{print $1}' > "$state_tmp" \
+    if cp "$TEXTLINT_DIR/package.json" "$state_tmp" \
         && mv -f "$state_tmp" "$STATE_FILE"; then
         :
     else
