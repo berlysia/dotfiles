@@ -633,7 +633,7 @@ l6_recover="$(sed -n 's/^Recover with: //p' "${l6_dir}/stderr-b.txt" | head -1)"
 l6_first_word="${l6_recover%% *}"
 l6_rest="${l6_recover#* }"
 if [ "$l6_b_warned" != true ]; then
-  fail "L6: the wrapper did not warn before Recover ran (stderr: $(head -2 "${l6_dir}/stderr-b.txt" | tr '\n' ' '))"
+  fail "L6: the wrapper did not warn before Recover ran (stderr: $(head -2 "${l6_dir}/stderr-b.txt" | tr '\n' ' '); deploy (a): $(head -5 "${l6_dir}/apply-a.out" | tr '\n' ' '))"
 elif [ "$l6_first_word" != "chezmoi" ] || [ "${l6_rest%% *}" != "apply" ]; then
   fail "L6: (i) the extracted Recover is not a chezmoi command: '${l6_recover}'"
 else
