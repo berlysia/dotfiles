@@ -61,6 +61,36 @@ test_ignore_excludes_launcher_off_darwin_by_target_path() {
   assert_contains "$out" $'\n.config/agent-vm\n' "launcher config ignored by its target path"
   assert_not_contains "$(render .chezmoiignore '{"chezmoi":{"os":"darwin"}}')" ".local/bin/agent-vm" "deployed on macOS"
 }
+VM_DATA='{"agent_vm":true,"chezmoi":{"os":"linux","kernel":{"osrelease":"6.8.0-orbstack"}}}'
+HOST_LINUX='{"agent_vm":false,"chezmoi":{"os":"linux","kernel":{"osrelease":"6.8.0"}}}'
+managed_as() { # override_data_json -> sorted target paths chezmoi would manage (isolated config/state, no fetches)
+  chezmoi managed --source "$SRC" --destination "$TMP_BASE/dst" --config "$TMP_BASE/chezmoi.toml" \
+    --cache "$TMP_BASE/cache" --persistent-state "$TMP_BASE/state.boltdb" --refresh-externals=never \
+    --include all --override-data "$1" | LC_ALL=C sort
+}
+# Collapses everything under a fixture root written as `<dir>/**` to that one line, so the fixture keeps the
+# allowlist's granularity and adding a file under ~/.claude does not require touching it (spec K20).
+collapse_to_fixture_roots() { # fixture_path (managed list on stdin)
+  awk -v fx="$1" 'BEGIN { while ((getline l < fx) > 0) if (l ~ /\/\*\*$/) roots[substr(l, 1, length(l) - 3)] = 1 }
+    { out = $0; for (r in roots) if (index($0, r "/") == 1) out = r "/**"; print out }' | LC_ALL=C sort -u
+}
+test_vm_manages_exactly_the_allowlist() {
+  local fx="$TEST_DIR/fixtures/vm-managed.txt"
+  assert_eq "$(LC_ALL=C sort -u "$fx")" "$(managed_as "$VM_DATA" | collapse_to_fixture_roots "$fx")" "VM manages exactly the reviewed allowlist (targets and scripts)"
+}
+test_host_still_manages_host_only_targets() {
+  local out; out=$(managed_as "$HOST_LINUX")
+  assert_contains "$out" ".chezmoiscripts/gc.sh" "hosts keep host-only scripts"
+  assert_contains "$out" ".config/emacs" "hosts keep host-only files"
+}
+test_ignore_vm_block_leaves_host_render_unchanged() {
+  local t=.chezmoiignore stripped data
+  stripped=$(sed '/^{{- if dig "agent_vm" false \. }}$/,/^{{- end }}$/d' "$SRC/$t")
+  for data in "$HOST_LINUX" '{"agent_vm":false,"chezmoi":{"os":"darwin"}}' '{"chezmoi":{"os":"linux","kernel":{"osrelease":"6.8.0"}}}'; do
+    assert_eq "$(chezmoi execute-template --source "$SRC" --override-data "$data" <<<"$stripped")" "$(render "$t" "$data")" "VM block renders nothing on hosts ($data)"
+  done
+}
+
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do
   ( "$t" ) </dev/null || record "FAIL $t (test aborted)"
 done
