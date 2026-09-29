@@ -1,12 +1,14 @@
 #!/usr/bin/env node --test
 
 import { ok, strictEqual } from "node:assert";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { once } from "node:events";
 import {
   chmodSync,
+  existsSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
-  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -30,22 +32,6 @@ function makeTempDir(): string {
   return dir;
 }
 
-/**
- * The host's timeout binary. The tests narrow PATH to /usr/bin:/bin, where macOS
- * has no timeout (coreutils lives under Homebrew), so the timeout case links it
- * next to the fake bun to reach the wrapper's timeout branch.
- */
-function findTimeoutBin(): string | undefined {
-  const found = spawnSync(
-    "sh",
-    ["-c", "command -v timeout || command -v gtimeout"],
-    {
-      encoding: "utf8",
-    },
-  ).stdout.trim();
-  return found === "" ? undefined : found;
-}
-
 /** A directory holding a fake `bun` executable with the given sh body. */
 function fakeBunDir(body: string): string {
   const dir = makeTempDir();
@@ -53,6 +39,17 @@ function fakeBunDir(body: string): string {
   writeFileSync(bin, `#!/bin/sh\n${body}\n`);
   chmodSync(bin, 0o755);
   return dir;
+}
+
+/**
+ * True when the process is gone or only a zombie waiting for its reaper
+ * (a container without an init process may leave zombies around).
+ */
+function isGone(pid: number): boolean {
+  const stat = spawnSync("ps", ["-o", "stat=", "-p", String(pid)], {
+    encoding: "utf8",
+  }).stdout.trim();
+  return stat === "" || stat.startsWith("Z");
 }
 
 function runWrapper(
@@ -121,16 +118,8 @@ describe("run-guard.sh", () => {
     strictEqual(result.stdout.trim(), payload);
   });
 
-  it("blocks with exit 2 when the hook exceeds the timeout", (t) => {
-    const timeoutBin = findTimeoutBin();
-    if (timeoutBin === undefined) {
-      t.skip(
-        "no timeout or gtimeout on this host; the wrapper has no timeout branch to test",
-      );
-      return;
-    }
+  it("blocks with exit 2 when the hook exceeds the timeout, with only /usr/bin:/bin on PATH", () => {
     const dir = fakeBunDir("exec sleep 30");
-    symlinkSync(timeoutBin, join(dir, "timeout"));
     const result = runWrapper(throwingHook, {
       PATH: `${dir}:/usr/bin:/bin`,
       HOME: makeTempDir(),
@@ -138,6 +127,93 @@ describe("run-guard.sh", () => {
     });
     strictEqual(result.status, 2);
     ok(result.stderr.includes("timed out"), result.stderr);
+  });
+
+  it("returns within the timeout and kills descendants that hold stdout", () => {
+    const pidFile = join(makeTempDir(), "child.pid");
+    const dir = fakeBunDir(`sleep 30 &\necho $! >${pidFile}\nwait`);
+    const started = Date.now();
+    const result = runWrapper(throwingHook, {
+      PATH: `${dir}:/usr/bin:/bin`,
+      HOME: makeTempDir(),
+      RUN_GUARD_TIMEOUT: "1",
+    });
+    const elapsed = Date.now() - started;
+    strictEqual(result.status, 2);
+    ok(result.stderr.includes("timed out"), result.stderr);
+    ok(elapsed < 10_000, `took ${elapsed}ms`);
+    const childPid = Number(readFileSync(pidFile, "utf8").trim());
+    ok(isGone(childPid), `descendant ${childPid} is still running`);
+  });
+
+  it("does not wait for the timeout when the hook finishes early", () => {
+    const dir = fakeBunDir("exit 0");
+    const started = Date.now();
+    const result = runWrapper(throwingHook, {
+      PATH: `${dir}:/usr/bin:/bin`,
+      HOME: makeTempDir(),
+      RUN_GUARD_TIMEOUT: "30",
+    });
+    const elapsed = Date.now() - started;
+    strictEqual(result.status, 0);
+    ok(elapsed < 10_000, `took ${elapsed}ms`);
+  });
+
+  it("reports a hook that exits 124 by itself as abnormal, not as a timeout", () => {
+    const dir = fakeBunDir("exit 124");
+    const result = runWrapper(throwingHook, {
+      PATH: `${dir}:/usr/bin:/bin`,
+      HOME: makeTempDir(),
+    });
+    strictEqual(result.status, 2);
+    ok(result.stderr.includes("exit code 124"), result.stderr);
+    ok(!result.stderr.includes("timed out"), result.stderr);
+  });
+
+  for (const value of ["abc", "0"]) {
+    it(`blocks with exit 2 when RUN_GUARD_TIMEOUT is ${JSON.stringify(value)}`, () => {
+      const dir = fakeBunDir("exit 0");
+      const result = runWrapper(throwingHook, {
+        PATH: `${dir}:/usr/bin:/bin`,
+        HOME: makeTempDir(),
+        RUN_GUARD_TIMEOUT: value,
+      });
+      strictEqual(result.status, 2);
+      ok(result.stderr.includes("RUN_GUARD_TIMEOUT"), result.stderr);
+    });
+  }
+
+  it("exits 2 and stops the hook when the wrapper itself is terminated", async () => {
+    const pidFile = join(makeTempDir(), "hook.pid");
+    const dir = fakeBunDir(`echo $$ >${pidFile}\nexec sleep 30`);
+    const child = spawn("sh", [wrapper, throwingHook], {
+      env: { PATH: `${dir}:/usr/bin:/bin`, HOME: makeTempDir() },
+    });
+    child.stdin.end('{"tool_name":"Bash"}');
+    // Wait until the hook is running, so the signal lands on the wrapper's wait.
+    const deadline = Date.now() + 5_000;
+    while (!existsSync(pidFile) && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    ok(existsSync(pidFile), "the hook did not start within 5s");
+    child.kill("SIGTERM");
+    const [code] = await once(child, "exit");
+    strictEqual(code, 2);
+    const hookPid = Number(readFileSync(pidFile, "utf8").trim());
+    ok(isGone(hookPid), `hook ${hookPid} is still running`);
+  });
+
+  it("blocks with exit 2 when sleep is not on PATH", () => {
+    // Only the fake bun directory is on PATH, so the timer cannot be started.
+    const dir = fakeBunDir("exit 0");
+    const result = spawnSync("/bin/sh", [wrapper, throwingHook], {
+      input: "{}",
+      encoding: "utf8",
+      env: { PATH: dir, HOME: makeTempDir() },
+      timeout: 15_000,
+    });
+    strictEqual(result.status, 2);
+    ok(result.stderr.includes("sleep not found"), result.stderr);
   });
 
   it("blocks with exit 2 through the settings command form when the wrapper itself is missing", () => {
