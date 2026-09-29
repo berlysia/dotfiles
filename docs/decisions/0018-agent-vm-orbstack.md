@@ -1,4 +1,4 @@
-# ADR-0017: claude / codex を repo ごとの OrbStack isolated machine で隔離起動する
+# ADR-0018: claude / codex を repo ごとの OrbStack isolated machine で隔離起動する
 
 ## Status
 

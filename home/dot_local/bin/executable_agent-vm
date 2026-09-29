@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # agent-vm: run Claude Code / Codex inside a per-repo OrbStack isolated machine.
-# Design record: docs/decisions/0017-agent-vm-orbstack.md; user guide: docs/agent-vm.md.
+# Design record: docs/decisions/0018-agent-vm-orbstack.md; user guide: docs/agent-vm.md.
 set -euo pipefail
 # Convention: bash clears set -e inside $(...) (bash 3.2 has no inherit_errexit), so a function whose
 # output is captured with x=$(f) keeps running past its own failed steps. Such functions check each
