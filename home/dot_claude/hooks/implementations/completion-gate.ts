@@ -8,9 +8,16 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { defineHook } from "cc-hooks-ts";
 import { logQuality } from "../lib/centralized-logging.ts";
+import {
+  checkTreeChange,
+  computeTreeFingerprint,
+  pruneStaleBaselines,
+  saveBaseline,
+} from "../lib/working-tree-fingerprint.ts";
 import "../types/tool-schemas.ts";
 
 /**
@@ -26,6 +33,14 @@ import "../types/tool-schemas.ts";
 
 const MAX_RETRIES = 3;
 const COUNTER_FILENAME = ".completion-gate-retries";
+// Outside the project so the baseline itself never shows up as an untracked file.
+const BASELINE_STATE_DIR = join(
+  homedir(),
+  ".claude",
+  "state",
+  "completion-gate",
+);
+const BASELINE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 function getCounterPath(): string {
   const cwd = process.cwd();
@@ -133,6 +148,12 @@ const hook = defineHook({
       // 一度 MAX に到達した時点で永続無効化される。
       if (context.input.hook_event_name === "UserPromptSubmit") {
         resetRetryCount();
+        pruneStaleBaselines(BASELINE_STATE_DIR, BASELINE_MAX_AGE_MS);
+        saveBaseline(
+          BASELINE_STATE_DIR,
+          context.input.session_id,
+          computeTreeFingerprint(process.cwd()),
+        );
         return context.success({});
       }
 
@@ -151,6 +172,23 @@ const hook = defineHook({
           `[completion-gate] Max retries (${MAX_RETRIES}) reached. Allowing completion with warning.`,
         );
         return context.success({});
+      }
+
+      const treeChange = checkTreeChange(
+        BASELINE_STATE_DIR,
+        session_id,
+        process.cwd(),
+      );
+      if (treeChange.state === "unchanged") {
+        console.error(
+          "[completion-gate] No working-tree change since the prompt. Skipping checks.",
+        );
+        return context.success({});
+      }
+      if (treeChange.state === "unknown") {
+        console.error(
+          `[completion-gate] Tree change unknown (${treeChange.reason}). Running checks.`,
+        );
       }
 
       const errors: string[] = [];
