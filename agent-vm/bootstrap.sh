@@ -19,6 +19,16 @@ OUTBOX_ROOT="${AGENT_VM_OUTBOX_ROOT:-/opt/agent-vm/outbox}"
 SECRETS_DIR="${AGENT_VM_SECRETS_DIR:-${XDG_RUNTIME_DIR:-/dev/shm}}"
 
 fail() { printf 'agent-vm bootstrap: %s\n' "$1" >&2; exit "${2:-1}"; }
+prepare_source_tools() { # chezmoi source dir
+  # home/dot_codex/private_config.toml.tmpl merges through home/dot_codex/private_dot_merge-config.ts on every
+  # apply after the first, from the working tree, so mise must resolve dasel from the source's own .mise.toml
+  # there, as on the host (spec K18). Installing dasel into mise's install dir alone is not enough: the merge
+  # script finds the mise shim first, and the shim refuses an untrusted .mise.toml. The trusted file is this VM's
+  # own copy of the source. Only dasel is installed. Runs on every bootstrap (idempotent) so re-applies never
+  # meet a missing dasel.
+  "$HOME/.local/bin/mise" trust "$1/.mise.toml"
+  (cd "$1" && "$HOME/.local/bin/mise" install dasel)
+}
 
 # bootstrap.sh owns no global EXIT trap: run_installer and filter_vm_config each set one for their own temp file
 # and clear it on success. A future global cleanup must be folded into those, not added as a separate trap.
@@ -146,6 +156,7 @@ cz="$HOME/.local/share/chezmoi"
 mkdir -p "$cz"
 # .git is excluded so the empty repository chezmoi init creates in a .git-less source survives resyncs.
 rsync -a --delete --exclude node_modules --exclude .git "$src/" "$cz/"
+prepare_source_tools "$cz"
 chezmoi init --force --no-tty -W "$cz" --apply
 
 # Every bootstrap, after apply: update-settings-json rewrites hooks wholesale, update-claude-json merges MCP

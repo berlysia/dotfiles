@@ -282,6 +282,19 @@ test_self_check_does_not_accept_a_kept_name_in_a_value() {
   expect_self_check_failure "a kept name that only appears in a value"
 }
 
+logging_mise_stub() { # replaces setup_vm_env's silent mise with one that records its calls and cwd
+  printf '#!/bin/sh\necho "mise $* @$PWD" >>"$STUB_LOG"\nexit 0\n' >"$HOME/.local/bin/mise"
+  chmod +x "$HOME/.local/bin/mise"
+}
+test_source_mise_config_trusted_and_dasel_installed_before_apply() {
+  setup_vm_env; logging_mise_stub; touch "$SRC/.mise.toml"
+  bash "$BOOTSTRAP" 1 v1:abc "$SRC" >/dev/null 2>&1
+  local cz="$HOME/.local/share/chezmoi" log; log=$(cat "$STUB_LOG")
+  assert_contains "$log" "mise trust $cz/.mise.toml" "trusts the VM's own copy of the source's mise config"
+  assert_contains "$log" "mise install dasel @$cz" "installs dasel from the source's mise config, in the source dir"
+  assert_eq "mise" "$(grep -m1 -oE '^(mise install dasel|chezmoi)' "$STUB_LOG" | cut -d' ' -f1)" "dasel comes before chezmoi apply"
+}
+
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do
   (
     TMP_ROOT="$TMP_BASE/$t"; mkdir -p "$TMP_ROOT"
