@@ -10,8 +10,9 @@ on:
       - "agent-vm/**"
       - "home/.chezmoi.toml.tmpl"
       - "home/dot_config/mise/**"
-      - "home/.chezmoiscripts/run_onchange_install-packages-7.sh.tmpl"
-      - "home/.chezmoiscripts/run_onchange_install-safe-chain.sh.tmpl"
+      - "home/.chezmoiscripts/**"
+      - "home/.chezmoiignore"
+      - "home/.chezmoidata/**"
       - "home/dot_shell_common/agent_vm.sh"
       - "home/dot_shell_common/darwin.sh"
   pull_request:
@@ -23,8 +24,9 @@ on:
       - "agent-vm/**"
       - "home/.chezmoi.toml.tmpl"
       - "home/dot_config/mise/**"
-      - "home/.chezmoiscripts/run_onchange_install-packages-7.sh.tmpl"
-      - "home/.chezmoiscripts/run_onchange_install-safe-chain.sh.tmpl"
+      - "home/.chezmoiscripts/**"
+      - "home/.chezmoiignore"
+      - "home/.chezmoidata/**"
       - "home/dot_shell_common/agent_vm.sh"
       - "home/dot_shell_common/darwin.sh"
   workflow_dispatch:
