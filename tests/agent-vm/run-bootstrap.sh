@@ -13,6 +13,8 @@ trap 'rm -rf "$TMP_BASE"' EXIT
 BOOTSTRAP_STUB_DIR="$TMP_BASE/bootstrap-stubs"; mkdir -p "$BOOTSTRAP_STUB_DIR"
 ln -s "$TEST_DIR/stubs/curl" "$BOOTSTRAP_STUB_DIR/curl"
 ln -s "$TEST_DIR/stubs/chezmoi" "$BOOTSTRAP_STUB_DIR/chezmoi"
+ln -s "$TEST_DIR/stubs/dpkg" "$BOOTSTRAP_STUB_DIR/dpkg"
+ln -s "$TEST_DIR/stubs/sudo" "$BOOTSTRAP_STUB_DIR/sudo"
 export PATH="$BOOTSTRAP_STUB_DIR:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" RESULTS_FILE="$TMP_BASE/results"
 : >"$RESULTS_FILE"
 # shellcheck source=tests/agent-vm/lib.sh
@@ -26,6 +28,11 @@ setup_vm_env() { # fake VM layout under TMP_ROOT; secrets dir on tmpfs (/dev/shm
   printf 'home\n' >"$SRC/.chezmoiroot"; printf 'a\n' >"$SRC/home/dot_a"; printf 'junk\n' >"$SRC/node_modules/x/f"
   mkdir -p "$TMP_ROOT/bin"; printf '#!/bin/sh\nexit 0\n' >"$TMP_ROOT/bin/claude"; chmod +x "$TMP_ROOT/bin/claude"
   export PATH="$TMP_ROOT/bin:$PATH"
+  # Every VM tool present by default; tests remove the one they exercise.
+  mkdir -p "$HOME/.local/bin"
+  local tool
+  printf '#!/bin/sh\nexit 0\n' >"$HOME/.local/bin/mise"; chmod +x "$HOME/.local/bin/mise"
+  for tool in starship bat fd; do printf '#!/bin/sh\nexit 0\n' >"$TMP_ROOT/bin/$tool"; chmod +x "$TMP_ROOT/bin/$tool"; done
 }
 
 test_unknown_contract_exits_3_with_guidance() {
@@ -111,6 +118,83 @@ test_failed_claude_install_does_not_record_hash() {
   STUB_CURL_EXIT=22 bash "$BOOTSTRAP" 1 v1:abc "$SRC" >/dev/null 2>&1 || status=$?
   if [[ "$status" -ne 0 ]]; then record "PASS install failure aborts bootstrap"; else record "FAIL install failure aborts bootstrap"; fi
   assert_status 1 "no applied hash after a failed install" -- test -e "$HOME/.local/state/agent-vm/applied-hash"
+}
+
+test_vm_tools_skipped_when_present() {
+  setup_vm_env
+  bash "$BOOTSTRAP" 1 v1:abc "$SRC" >/dev/null 2>&1
+  assert_contains "$(cat "$STUB_LOG")" "dpkg -s jq" "checks apt packages"
+  assert_not_contains "$(cat "$STUB_LOG")" "apt-get" "no apt when every package is present"
+  assert_not_contains "$(cat "$STUB_LOG")" "mise.run" "no mise installer when mise is present"
+}
+test_missing_apt_packages_installed_noninteractively_before_apply() {
+  setup_vm_env
+  STUB_DPKG_MISSING="jq ripgrep" bash "$BOOTSTRAP" 1 v1:abc "$SRC" >/dev/null 2>&1
+  local log; log=$(cat "$STUB_LOG")
+  assert_contains "$log" "sudo apt-get -o DPkg::Lock::Timeout=120 -o Acquire::Retries=3 update" "refreshes package lists, waiting for a held dpkg lock"
+  assert_contains "$log" "sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=120 -o Acquire::Retries=3 install -y --no-install-recommends jq ripgrep" "installs only the missing packages, without prompts or recommends"
+  assert_eq "sudo" "$(grep -m1 -oE '^(sudo|chezmoi)' <<<"$log")" "packages come before chezmoi apply"
+}
+test_mise_installed_before_apply_when_missing() {
+  setup_vm_env; rm "$HOME/.local/bin/mise"
+  bash "$BOOTSTRAP" 1 v1:abc "$SRC" >/dev/null 2>&1
+  local log; log=$(cat "$STUB_LOG")
+  assert_contains "$log" "https://mise.run" "fetches the mise installer"
+  assert_contains "$log" " -o " "downloads to a file instead of piping into sh"
+  assert_contains "$log" "--max-time" "downloads are time-bounded"
+  assert_contains "$log" "--proto =https" "downloads refuse non-https redirects"
+  assert_contains "$log" "installer-ran" "runs the downloaded installer"
+}
+test_installer_download_failure_leaves_no_temp_file() {
+  setup_vm_env; rm "$HOME/.local/bin/mise"
+  export TMPDIR="$TMP_ROOT/tmp"; mkdir -p "$TMPDIR"
+  local status=0
+  STUB_CURL_EXIT=22 bash "$BOOTSTRAP" 1 v1:abc "$SRC" >/dev/null 2>&1 || status=$?
+  if [[ "$status" -ne 0 ]]; then record "PASS download failure aborts bootstrap"; else record "FAIL download failure aborts bootstrap"; fi
+  assert_eq "" "$(ls -A "$TMPDIR")" "no installer temp file left behind"
+  assert_status 1 "no applied hash after a failed download" -- test -e "$HOME/.local/state/agent-vm/applied-hash"
+}
+test_dangling_bat_link_is_replaced() {
+  setup_vm_env; rm "$TMP_ROOT/bin/bat"
+  printf '#!/bin/sh\nexit 0\n' >"$TMP_ROOT/bin/batcat"; chmod +x "$TMP_ROOT/bin/batcat"
+  ln -s /nonexistent/batcat "$HOME/.local/bin/bat" # left by an earlier failed run
+  assert_status 0 "bootstrap recovers from a dangling bat link" -- bash "$BOOTSTRAP" 1 v1:abc "$SRC"
+  assert_eq "$TMP_ROOT/bin/batcat" "$(readlink "$HOME/.local/bin/bat")" "bat points at batcat"
+}
+test_missing_debian_binary_fails_with_its_name() {
+  # Needs a runner without fd / fdfind in the system dirs of the fixed PATH; skip visibly where they exist.
+  if command -v fdfind >/dev/null 2>&1 || [[ -x /usr/bin/fd ]]; then record "PASS missing fdfind case skipped (fd-find is installed on this runner)"; return 0; fi
+  setup_vm_env; rm "$TMP_ROOT/bin/fd" # and no fdfind anywhere on the fixed PATH
+  local err status=0; err=$(bash "$BOOTSTRAP" 1 v1:abc "$SRC" 2>&1) || status=$?
+  assert_eq 1 "$status" "missing fdfind fails the bootstrap"
+  assert_contains "$err" "fdfind is missing" "names the missing command"
+}
+test_failed_tool_install_does_not_record_hash() {
+  setup_vm_env
+  local status=0
+  STUB_DPKG_MISSING=jq STUB_SUDO_EXIT=100 bash "$BOOTSTRAP" 1 v1:abc "$SRC" >/dev/null 2>&1 || status=$?
+  if [[ "$status" -ne 0 ]]; then record "PASS tool install failure aborts bootstrap"; else record "FAIL tool install failure aborts bootstrap"; fi
+  assert_status 1 "no applied hash after a failed tool install" -- test -e "$HOME/.local/state/agent-vm/applied-hash"
+}
+# bootstrap mirrors part of the host apt script (spec K18). The package names come from what bootstrap actually
+# checks (the dpkg stub's log), not from its source text.
+test_vm_apt_packages_are_a_subset_of_the_host_list() {
+  setup_vm_env
+  bash "$BOOTSTRAP" 1 v1:abc "$SRC" >/dev/null 2>&1
+  local vm host pkg missing=""
+  vm=$(sed -n 's/^dpkg -s //p' "$STUB_LOG")
+  assert_contains "$vm" "jq" "bootstrap checks its apt packages"
+  host=$(awk '/^  linux:/{l=1;next} /^  [a-z_]+:/{l=0} l && /^    apt:/{a=1;next} l && /^    [a-z_]+:/{a=0} l && a && /^      - /{sub(/^ *- */,""); gsub(/"/,""); print}' "$REPO_ROOT/home/.chezmoidata/packages.yaml")
+  for pkg in $vm; do grep -qxF "$pkg" <<<"$host" || missing="$missing $pkg"; done
+  assert_eq "" "$missing" "VM apt packages are a subset of the host list"
+}
+test_vm_installers_come_from_the_host_sources() {
+  # A text check on purpose: both files must name the same installer origin.
+  local host_script="$REPO_ROOT/home/.chezmoiscripts/run_onchange_install-packages-1-linux.sh.tmpl"
+  local url; for url in https://mise.run https://starship.rs/install.sh; do
+    assert_contains "$(cat "$host_script")" "$url" "host script installs from $url"
+    assert_contains "$(cat "$BOOTSTRAP")" "$url" "bootstrap installs from $url"
+  done
 }
 
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do
