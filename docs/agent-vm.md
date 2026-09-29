@@ -129,3 +129,21 @@ machine を侵害された疑いがある場合、または使わなくなった
 | V15 | dotfiles を変更して bootstrap の再適用を走らせる                                                                          | VM の `~/.claude/.credentials.json` と `~/.codex/auth.json` が残り、再ログインが要らない                                                                                    |
 | V16 | 新規 machine の初回 bootstrap で claude の導入を確認し、2 回目の bootstrap も走らせる。導入をネットワーク遮断で失敗させる | 初回は非対話で導入され `bash -lc` の起動シェルから見つかる。2 回目は installer が再実行されず版も変わらない。導入失敗時は bootstrap が非 0 で終わり、次回起動で再試行される |
 | V17 | cloud-init が書く GitHub の host key を確認する                                                                           | 公式の fingerprint と一致し、bootstrap の SSH clone が確認なしで通る                                                                                                        |
+
+### 2026-09-30 の確認結果（macOS、OrbStack 2.2.3、Ubuntu resolute arm64）
+
+確認できた項目:
+
+- V1: VM から 3 つの mount 先（repo、staging、outbox）に書き込め、host に反映された。staging を host 側で作り直す方式が必要という前提は正しい。
+- V2: VM の user は uid 501 で、mount 上のファイルも 501:501 と表示される。
+- V3（素の machine で確認）: forwarded agent で `ssh -T git@github.com` と、SSH 署名付きの `git commit -S` が通った。launcher 経由の確認は未実施。
+- V4: 新規 machine の初回 prewarm は 282 秒（軽量の mise セット、VM 用ツールと APM・プラグインの導入を含む）。2 回目以降の prewarm は再 bootstrap が無ければ 1〜2 秒。
+- V5: API（api.anthropic.com、api.openai.com、github.com）には到達でき、host で待ち受けているポートへの `host.orb.internal` からの接続は拒否された。
+- V10: `XDG_RUNTIME_DIR` は `/run/user/501` で tmpfs。
+- V13: 非対話の bootstrap の中で、private-skills を SSH で clone できた。
+- V14: macOS の bash 3.2 と標準 perl で、fd 9 の flock は perl の終了後も保持され、launcher の `kill -9` で解放された。
+- V16（一部）: 初回の bootstrap で claude が非対話で導入され、再 bootstrap では再導入されない。ネットワーク遮断での失敗は未確認。
+- V17: GitHub の host key の fingerprint が公式の値（`SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU`）と一致した。
+- 再 bootstrap（dotfiles の変更後）: rc=0 で通り、`update-claude-json` の再実行で戻った MCP も後処理で取り除かれた。
+
+未確認の項目: V6（TTY）、V7（初回ログイン）、V8、V9、V11、V12、V15（ログイン後の認証情報の保持）。どれも対話でのログインか、launcher 経由の起動が要る。
