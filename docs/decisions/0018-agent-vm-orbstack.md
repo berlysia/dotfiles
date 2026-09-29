@@ -39,7 +39,7 @@ OrbStack の通常の machine（isolated 指定なし）は `/Users` 全体へ�
 
 - **K17**: VM に配置・実行するものは `.chezmoiignore` の VM ブロック（`agent_vm` が真のときだけ有効）の allowlist で決める。`**` で全除外し、ターゲットパスの `!` 行で必要なものだけ戻す。script はファイル単位、それ以外は粗いディレクトリ単位で戻す。
 - **K18**: VM 用のツール（apt の `jq` `bat` `fd-find` `ripgrep` `shellcheck`、mise、starship、bat / fd のリンク）は、host の `install-packages-1-linux` の代わりに bootstrap が apply の前に無いものだけ非対話で入れる。apt は推奨依存を入れず、postfix の debconf で止まる経路を避ける。
-- **K19**: apply の後、bootstrap が走るたびに、`settings.json` から音声通知の hook を、`~/.claude.json` と `~/.codex/config.toml` から残す MCP（readability、context7、excalidraw）以外を取り除く。変換は同じディレクトリの一時ファイル経由で行い、失敗したら元のファイルも `applied-hash` も変えない。取り除いた結果は、フィルタより緩い条件で自己検査し、残っていれば bootstrap を失敗させる。
+- **K19**: apply の後、bootstrap が走るたびに、`settings.json` から音声通知の hook を、`~/.claude.json` と `~/.codex/config.toml` から残す MCP（readability、context7、excalidraw）以外を取り除く。変換は同じディレクトリの一時ファイル経由で行い、失敗したら元のファイルも `applied-hash` も変えない。取り除いた結果は、フィルタより緩い条件で自己検査し、残っていれば bootstrap を失敗させる。codex の後処理と自己検査の実装は、ADR-0019 で TOML の解釈に置き換えた。
 - **K20**: host に影響が無いことは、VM が管理する対象と script の完全一致テスト（期待リストとの比較）と、VM ブロックを除いた `.chezmoiignore` の host 描画が変わらないことのテストで固定する。
 - **K21**: 既存 VM への移行処理は作らない。古い構成の VM が残った場合は `agent-vm rm` で作り直す。
 - **K22**: `install-claude-skills-11` を `run_onchange_after_` 帯へ改名し、mise が apm を入れた後に走らせる。ターゲット名と内容は変わらないので、既存の host では再実行されない。
@@ -67,8 +67,8 @@ OrbStack の通常の machine（isolated 指定なし）は `/Users` 全体へ�
 - Phase 1 で意図的に提供しない体験（egress の許可リスト制御、mac クリップボード画像の貼り付け、1Password 以外の host 資格情報ストアとの連携）は spec.md に記録し、`docs/agent-vm.md` には現状の制約として明記した。
 - **K17〜K22 の帰結**: VM でブラウザを操作する MCP（playwright、chrome-devtools、drawio）と音声通知は提供しない。VM の中で手で `chezmoi apply` すると、次の bootstrap まで音声通知の hook と除外した MCP が戻る。codex の設定の自己検査は、`[mcp_servers]` の直下に `playwright.command = …` のようにネストした書き方を対象にしない（今のテンプレートは出力しない）。VM の mise と starship の installer は、host と同じくチェックサムで検証しない。
 - **R21**: VM では APM の skills のうち、既定ブランチの解決が要る GitHub のリポジトリ（9 件中 5 件）が入らない。VM の `~/.gitconfig` の SSH への書き換えと、VM に GitHub のトークンを置かない設計の組み合わせが原因と推測している（推測。host で成功する理由は未検証）。今回の変更が原因ではなく、別の課題として `docs/agent-vm.md` に既知の制約として書いた。
-- **R22**: VM の mise で `npm:@mizchi/readability` がサプライチェーン対策の閾値に拒否されて入らない。host と共有する設定の問題で、別の課題とする。
-- **K18 の帰結（dasel）**: VM は codex の設定のマージのために、ソースの `.mise.toml` を信頼して dasel を入れる。マージを dasel や mise に依存させない作り替えは host にも影響する別の課題とする。
+- **R22**: VM の mise で `npm:@mizchi/readability` がサプライチェーン対策の閾値に拒否されて入らない。host と共有する設定の問題で、別の課題とする。`e4fd84a` で `allow_low_downloads` を指定して解消した。
+- **K18 の帰結（dasel）**: VM は codex の設定のマージのために、ソースの `.mise.toml` を信頼して dasel を入れる。マージを dasel や mise に依存させない作り替えは host にも影響する別の課題とする。ADR-0019 でマージを chezmoi の TOML 関数に移し、VM はソースの `.mise.toml` を信頼しなくなった。
 
 ## Amended by
 
