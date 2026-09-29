@@ -13,12 +13,15 @@ VM に渡すのは repo の tracked files を毎回コピーした専用の複�
 秘密は起動のたびに mac 側の `op` が解決してから VM に渡し、SSH の署名・認証は 1Password の SSH agent を agent forwarding で使う。
 どちらも認証情報そのものを VM に置かない。
 
+VM に入るのは `.chezmoiignore` の VM ブロックに載ったものだけである。VM 用のツールの導入と、VM 向けの設定の絞り込み（Claude と Codex の MCP、音声通知の hook）は bootstrap が行う。
+
 ## 2. 最初の準備
 
 1. `chezmoi apply` を実行する。OrbStack が Homebrew cask で導入される。
 2. OrbStack を一度起動し、初回セットアップを終える。
 3. `chezmoi init` を実行する。config に `agent_vm` キーが入る。実行しなくても動作は変わらない（テンプレート側は `dig "agent_vm" false .` で参照しており、キーが無ければ既定値 `false` として host 扱いになる）。
 4. 1Password の SSH agent 設定で、承認を毎回アプリごとに求める側を選ぶ。agent forwarding は鍵全体を VM に使わせるため、承認済みの VM が任意のタイミングで鍵を使えないようにする。
+   agent forwarding は、承認済みの間 VM に agent のすべての鍵を使わせる（private-skills の clone もこれで行う）。
 
 ## 3. 普段の使い方
 
@@ -73,6 +76,9 @@ exclude に載せた repo では、隔離だけでなく、6 節の git 面検�
 
 - `agent-vm restore-git [repo]`: git 面検査が報告した変更を元に戻す。`.git/hooks` 配下の変更・削除された exec 系設定は取り消す。`.envrc` などの untracked ファイルは削除せず、`*.agent-vm-quarantine` に改名する。
 - `agent-vm sync [--inspect]`: ログ取り込みと git 面検査をその場で実行する。`--inspect` は何も書き換えずに差分だけを表示する。
+- 初回の準備が途中で止まったマシンは `agent-vm rm` で消し、次の起動で作り直す。
+- VM の中で手で `chezmoi apply` すると、次の bootstrap まで音声通知の hook と除外した MCP が戻る。戻したくなければ `agent-vm rm` で作り直す。
+- VM の中で user スコープや codex の設定に足した MCP は、dotfiles の変更後の bootstrap で取り除かれる（Claude の project スコープは残る）。
 
 agent-vm 自体が想定外のエラーで止まったとき（OrbStack の不調を含む）は、その場は `AGENT_VM=off` で host に切り替えて作業を続けられる。machine を作り直したい場合は `agent-vm rm` で削除し、次回起動時に作り直す。
 
