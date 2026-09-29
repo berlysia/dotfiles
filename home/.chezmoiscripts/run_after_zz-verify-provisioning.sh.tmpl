@@ -1,0 +1,48 @@
+{{ if ne .chezmoi.os "windows" -}}
+#!/bin/bash
+# Final gate: turns every recorded provisioning failure into a non-zero
+# `chezmoi apply`, so a stale node_modules cannot pass as success.
+#
+# Placement (do not move or rename without updating
+# scripts/smoke-provisioning-invariants.sh):
+#   The zz- prefix is reserved for this verifier so it runs last among
+#   run_after_ scripts. Reporting last is what lets the 10- installers keep
+#   exit 0 and leave sync-skills / gc / refresh-go-latest-tools untouched.
+#   See docs/decisions/0017-provisioning-after-deploy.md.
+#
+# This script deliberately initializes no toolchain and spawns no package
+# manager. Its whole job is to stat marker files.
+#
+# Markers are echoed as-is. That is safe only while record_provisioning_failure
+# keeps to fixed key=value fields; if a writer ever copies command output, this
+# display path needs escaping before it renders attacker-influenced bytes.
+# The recovery commands below are fixed strings for the same reason, rather
+# than the recover= field read back from the marker.
+
+set -uo pipefail
+
+failed=0
+
+# report_marker MARKER_FILE LABEL SYMPTOM RECOVER
+report_marker() {
+    local marker_file="$1" label="$2" symptom="$3" recover="$4"
+    [ -f "$marker_file" ] || return 0
+    failed=1
+    {
+        echo "[${label}] ${symptom}"
+        echo "[${label}] Recorded details:"
+        sed "s/^/[${label}]   /" "$marker_file"
+        echo "[${label}] Recover with: ${recover}"
+    } >&2
+}
+
+report_marker "$HOME/.claude/.hook-deps-install-failed" "hook-deps" \
+    "Hook dependencies were not installed; ~/.claude/node_modules does not match ~/.claude/package.json." \
+    "cd ~/.claude && bun install"
+
+report_marker "$HOME/.claude/.root-deps-install-failed" "root-deps" \
+    "Root dependencies were not installed; {{ .chezmoi.workingTree }}/node_modules does not match bun.lock." \
+    "cd {{ .chezmoi.workingTree }} && bun install --frozen-lockfile"
+
+exit "$failed"
+{{ end -}}

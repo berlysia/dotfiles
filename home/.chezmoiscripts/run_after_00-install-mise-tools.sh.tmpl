@@ -1,0 +1,43 @@
+{{ if ne .chezmoi.os "windows" -}}
+#!/bin/bash
+# Installs every tool pinned in ~/.config/mise/config.toml.
+#
+# Placement (do not move or rename without updating
+# scripts/smoke-provisioning-invariants.sh):
+#   Scripts outside run_before_/run_after_ run before ~/.config/mise/config.toml
+#   is written (".chezmoiscripts" < ".config"), so an install there reads the
+#   PREVIOUS config. The 00- band runs first among run_after_ scripts, ahead of
+#   the 10- installers that need the bun this installs.
+#   See docs/decisions/0017-provisioning-after-deploy.md.
+#
+# Runs on every apply instead of run_onchange_: chezmoi records an onchange
+# script as done whenever it exits 0, and a failed install exits 0 here, so a
+# hash gate would turn one transient failure into a permanent skip. A
+# satisfied `mise install` takes about 20-50ms and does not re-resolve tools
+# pinned to "latest" (run_after_refresh-go-latest-tools exists for that).
+#
+# Exit code: 1 only when mise itself is missing, because bootstrap is then
+# incomplete. A failed `mise install` is a warning so that the remaining
+# run_after_ scripts still run; the next apply retries it.
+
+set -uo pipefail
+
+log() {
+    local level="${2:-INFO}"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $1"
+}
+
+if ! command -v mise &> /dev/null; then
+    log "mise not found. Please ensure package manager packages are installed first." "ERROR"
+    exit 1
+fi
+
+log "Installing tools from ~/.config/mise/config.toml..."
+if mise install; then
+    log "All mise tools are installed" "SUCCESS"
+else
+    log "Some mise tools failed to install; the next apply retries them" "WARNING"
+fi
+
+exit 0
+{{ end -}}

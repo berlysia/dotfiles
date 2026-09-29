@@ -58,6 +58,10 @@ source 側の `home/dot_claude` を bun workspace（root `package.json` の `wor
 
 これらの不変条件は `scripts/smoke-hook-deps-invariants.sh`（13 assertion）で機械的に守られており、`.github/workflows/ci-smoke-chezmoi.yml` に配線されている。
 
+## Amended by
+
+- `docs/decisions/0017-provisioning-after-deploy.md` (2026-09-29) — 同じ種類の問題が `~/.config/mise/config.toml` について起き、ツールチェーン（mise）と root の依存ツリーの install も `run_after_` に移した。これに伴い本 ADR の「`00-` と `zz-` は本機構専用に予約する」規則を `run_after_` 全体の帯（`00-` ツールチェーン / `10-` 依存ツリー / `zz-` 最終判定）に置き換え、installer を `10-install-hook-deps`、verifier を `zz-verify-provisioning`、不変条件のテストを `scripts/smoke-provisioning-invariants.sh` に改名した。KD1-KD4・KD6 の決定は supersede しない
+
 ## References
 
 - `docs/research/hook-deps-install-investigation.md` — 本 ADR の根拠となった実測の手順と生の結果（順序の再現実験、bunfig の探索範囲、mise bootstrap のコスト、`minimumReleaseAge` の効き方）

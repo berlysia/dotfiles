@@ -1,0 +1,71 @@
+{{ if ne .chezmoi.os "windows" -}}
+#!/bin/bash
+# Installs the chezmoi source tree's own node_modules from bun.lock.
+# Consumers include the MCP launchd agents, which run
+# node_modules/.bin/supergateway from this tree.
+#
+# Placement (do not move or rename without updating
+# scripts/smoke-provisioning-invariants.sh):
+#   The 10- band runs after 00-install-mise-tools, so the bun used here is the
+#   one pinned by the ~/.config/mise/config.toml that this same apply deployed.
+#   The old ASCII-phase script ran before that file was written and failed on
+#   a lockfile the previous bun could not parse, which aborted every apply.
+#   Sorting ahead of run_after_reload-mcp-launchd keeps supergateway current
+#   before the agents reload. See docs/decisions/0017-provisioning-after-deploy.md.
+#
+# Runs on every apply: a satisfied `bun install --frozen-lockfile` takes about
+# 10-90ms and is itself the accurate check of whether node_modules matches
+# bun.lock.
+#
+# Exit code: 0 even when the install fails, so the remaining run_after_ scripts
+# still run. The failure is recorded in MARKER_FILE and
+# run_after_zz-verify-provisioning turns it into a non-zero apply at the end.
+#   The one exception is being unable to write MARKER_FILE, which is reported
+#   immediately because the deferral channel itself failed.
+
+set -uo pipefail
+
+log() {
+    local level="${2:-INFO}"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $1"
+}
+
+SOURCE_DIR="{{ .chezmoi.workingTree }}"
+MARKER_FILE="$HOME/.claude/.root-deps-install-failed"
+RECOVER_COMMAND="cd {{ .chezmoi.workingTree }} && bun install --frozen-lockfile"
+
+{{ template "record-provisioning-failure.sh" . }}
+
+# run_after_ scripts execute in a non-interactive shell that does not read the
+# user rc, so bun is reachable only through mise.
+if command -v mise &> /dev/null; then
+    if mise_env=$(mise env --shell bash 2>/dev/null); then
+        eval "$mise_env"
+    fi
+fi
+
+if ! command -v bun &> /dev/null; then
+    # 00-install-mise-tools already logged why bun is missing.
+    log "bun not found. Skipping root node_modules install." "WARNING"
+    exit 0
+fi
+
+log "Installing node_modules in $SOURCE_DIR..."
+if (cd "$SOURCE_DIR" && bun install --frozen-lockfile 2>&1); then
+    log "Root node_modules are in sync" "SUCCESS"
+    if [ -e "$MARKER_FILE" ] && ! rm -f "$MARKER_FILE"; then
+        log "Could not clear stale $MARKER_FILE; remove it by hand" "ERROR"
+    fi
+else
+    log "bun install --frozen-lockfile failed in $SOURCE_DIR (see output above)" "ERROR"
+    if record_provisioning_failure "$MARKER_FILE" "bun-install-frozen-lockfile-failed" "$RECOVER_COMMAND"; then
+        log "Recorded the failure at $MARKER_FILE" "INFO"
+    else
+        log "Could not record the failure at $MARKER_FILE. Failing now." "ERROR"
+        log "Recover with: $RECOVER_COMMAND" "ERROR"
+        exit 1
+    fi
+fi
+
+exit 0
+{{ end -}}
