@@ -95,7 +95,7 @@ plan に `## テスト計画 (ISO 25010)` を設け、変更に関連する品�
 ユーザーが明示的に「approve」「承認」と発言するか `/execute-plan` を指示しない限り、Claude は `Approval Status: approved` に変更してはならず、実装へ着手してはならない。`workflow-cli` は Approval 行に触れる変更を拒否する。
 
 - research/spec/plan/plan-N への編集は承認前でも許可される。
-- 実装系書き込み（Write/Edit/NotebookEdit/Bash）は `document-workflow-guard` が enforce で制御する。
+- 実装系書き込み（Write/Edit/NotebookEdit/Bash）は `document-workflow-guard` が enforce で制御する。`.tmp/` もプロジェクト内なので対象になる。承認前の使い捨て作業は session の scratchpad か `mktemp -d` の出力先に、リテラルの絶対パスで書く（他 repo・`$HOME`・dotfiles には書かない）。
 - 実装フェーズでは、承認済み spec + plan の三状態 + hash 一致がそろっていれば、どの plan-N.md の Files にも無いファイルへの書き込みは deny でなく warn + `off-plan-writes.log` に降格する。hash drift / parent-spec-hash 不一致 / 未承認は依然 deny。
 
 ## Executive Summary（レビュー依頼時 MANDATORY）

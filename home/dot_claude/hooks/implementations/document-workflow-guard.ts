@@ -43,6 +43,25 @@ const GUARDED_TOOLS = new Set([
 ]);
 export const GUARDED_TOOLS_FOR_TESTING = GUARDED_TOOLS;
 
+/**
+ * Appended to every deny so a blocked throwaway write learns where it can go.
+ * Literal paths outside the project are already allowed; what was missing was
+ * the pointer (session 115e2d54 hit three denies in a row). The destinations
+ * are narrowed on purpose -- the model acts on this text, and "anywhere
+ * outside the project" would include $HOME and other repositories.
+ *
+ * Kept in step with the matching rule in rules/workflow.md (CRITICAL section).
+ * Not passed through sanitizeForDisplay: that strips the backticks. Why this
+ * is a hint rather than an in-project `.tmp/` exemption:
+ * docs/decisions/0018-workflow-gate-no-in-project-scratch-exemption.md.
+ */
+const SCRATCH_HINT =
+  "hint: if this is throwaway work, put it only under the session scratchpad or a fresh `mktemp -d` directory — never in other repositories, $HOME, or dotfiles. Run `mktemp -d` first, then write the printed path literally in the next command: targets are read as literal text, so shell variables are not expanded and `cd` is not followed.";
+
+function withScratchHint(reason: string): string {
+  return `${reason}\n${SCRATCH_HINT}`;
+}
+
 interface WriteAnalysis {
   isWriteLike: boolean;
   targets: string[];
@@ -192,7 +211,11 @@ const hook = defineHook({
             docLabel,
           );
         }
-        return context.json(createDenyResponse(reasonForThisCall));
+        // Wrapped only here: the emptyTargetDenyReason identity check above
+        // must see the unwrapped string.
+        return context.json(
+          createDenyResponse(withScratchHint(reasonForThisCall)),
+        );
       }
 
       const targetPath = getTargetFilePath(tool_name, tool_input);
@@ -240,7 +263,9 @@ const hook = defineHook({
         sanitizeForDisplay(targetPath),
         docLabel,
       );
-      return context.json(createDenyResponse(diagnosticReason));
+      return context.json(
+        createDenyResponse(withScratchHint(diagnosticReason)),
+      );
     } catch (error) {
       // fail-open is preserved (matching what runHook already does when a
       // throw escapes to it: convert to exit 1). What changes is that the

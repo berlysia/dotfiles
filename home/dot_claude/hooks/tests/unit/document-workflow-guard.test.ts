@@ -727,6 +727,120 @@ describe("document-workflow-guard.ts hook behavior", () => {
       ok(consoleCapture.errors.some((e) => e.includes("would-block")));
     });
   });
+
+  describe("deny hint for throwaway writes", () => {
+    // session 115e2d54 では、プロジェクト外にリテラルパスで書けば通るのに、
+    // deny 文が承認手順しか示さなかったため 3 回続けて止まった。
+    // hint は判定を変えず、どの deny にも無条件で付く。
+    function denyReasonOf(
+      context: ReturnType<typeof createPreToolUseContextFor>,
+    ): string {
+      return context.jsonCalls[0].hookSpecificOutput.permissionDecisionReason;
+    }
+
+    it("appends the hint to a Write deny after the existing diagnosis", async () => {
+      const repo = createWorkflowRepo(pendingWorkflowRepo());
+      envHelper.set("CLAUDE_TEST_CWD", repo);
+      const context = createPreToolUseContextFor(hook, "Write", {
+        file_path: "src/a.ts",
+        content: "x",
+      });
+      await invokeRun(hook, context);
+      context.assertDeny();
+      const reason = denyReasonOf(context);
+      ok(reason.includes("Plan Status"));
+      ok(reason.includes("hint:"));
+      ok(reason.includes("mktemp -d"));
+    });
+
+    it("appends the hint when the Bash target hides behind a shell variable", async () => {
+      const repo = createWorkflowRepo(pendingWorkflowRepo());
+      envHelper.set("CLAUDE_TEST_CWD", repo);
+      const context = createPreToolUseContextFor(hook, "Bash", {
+        command: 'P=$(mktemp -d); mkdir -p "$P/src"',
+      });
+      await invokeRun(hook, context);
+      context.assertDeny();
+      ok(denyReasonOf(context).includes("hint:"));
+    });
+
+    it("appends the hint when the Bash target is relative to a cd", async () => {
+      const repo = createWorkflowRepo(pendingWorkflowRepo());
+      envHelper.set("CLAUDE_TEST_CWD", repo);
+      const context = createPreToolUseContextFor(hook, "Bash", {
+        command: "cd .tmp && mkdir -p probe2/src",
+      });
+      await invokeRun(hook, context);
+      context.assertDeny();
+      ok(denyReasonOf(context).includes("hint:"));
+    });
+
+    it("appends the hint to the empty-target deny without replacing it", async () => {
+      const repo = createWorkflowRepo(pendingWorkflowRepo());
+      envHelper.set("CLAUDE_TEST_CWD", repo);
+      const context = createPreToolUseContextFor(hook, "Bash", {
+        command: 'touch ""',
+      });
+      await invokeRun(hook, context);
+      context.assertDeny();
+      const reason = denyReasonOf(context);
+      // 空 target の判定は理由文の同一性比較で行われるので、hint を先に
+      // 連結すると診断 deny に化ける。その回帰をここで捕まえる。
+      ok(reason.includes("could not determine"));
+      ok(reason.includes("hint:"));
+    });
+
+    it("still allows a literal write outside the project", async () => {
+      const repo = createWorkflowRepo(pendingWorkflowRepo());
+      envHelper.set("CLAUDE_TEST_CWD", repo);
+      const context = createPreToolUseContextFor(hook, "Bash", {
+        command: "mkdir -p /var/folders/xx/probe/src",
+      });
+      await invokeRun(hook, context);
+      context.assertSuccess({});
+    });
+
+    it("still allows a workflow note inside the workflow dir", async () => {
+      const repo = createWorkflowRepo(pendingWorkflowRepo());
+      envHelper.set("CLAUDE_TEST_CWD", repo);
+      const context = createPreToolUseContextFor(hook, "Write", {
+        file_path: join(TEST_WORKFLOW_DIR, "notes.md"),
+        content: "x",
+      });
+      await invokeRun(hook, context);
+      context.assertSuccess({});
+    });
+
+    it("still denies a write under the project .tmp", async () => {
+      // .tmp/ はプロジェクト内なので免除しない（免除すると .tmp/sessions を
+      // 守りきれないことがレビューで分かっている）。
+      const repo = createWorkflowRepo(pendingWorkflowRepo());
+      envHelper.set("CLAUDE_TEST_CWD", repo);
+      const context = createPreToolUseContextFor(hook, "Write", {
+        file_path: ".tmp/probe/a.txt",
+        content: "x",
+      });
+      await invokeRun(hook, context);
+      context.assertDeny();
+    });
+
+    it("does not add the hint to the warn-only would-block line", async () => {
+      const repo = createWorkflowRepo(pendingWorkflowRepo());
+      envHelper.set("CLAUDE_TEST_CWD", repo);
+      envHelper.set("DOCUMENT_WORKFLOW_WARN_ONLY", "1");
+      const context = createPreToolUseContextFor(hook, "Write", {
+        file_path: "src/a.ts",
+        content: "x",
+      });
+      await invokeRun(hook, context);
+      strictEqual(context.jsonCalls.length, 0);
+      const wouldBlock = consoleCapture.errors.filter((e) =>
+        e.includes("would-block"),
+      );
+      ok(wouldBlock.length > 0);
+      ok(wouldBlock.every((e) => !e.includes("hint:")));
+    });
+  });
 });
 
 describe("document-workflow-guard.ts two-layer mode (spec.md + plan-N.md)", () => {

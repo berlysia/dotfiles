@@ -16,7 +16,10 @@ const referenceSkill = join(
   ".skills/document-workflow-reference/SKILL.md",
 );
 
-const BUDGET_BYTES = 12 * 1024;
+// 12KB (K8) plus room for the pre-approval scratch-location rule, which is
+// mirrored by SCRATCH_HINT in document-workflow-guard.ts. The always-loaded
+// size is still about a third of the original 36KB.
+const BUDGET_BYTES = 13 * 1024;
 
 test("workflow.md stays within the operator-guide budget (K8)", () => {
   ok(existsSync(workflowMd), "workflow.md must exist");
