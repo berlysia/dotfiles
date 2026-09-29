@@ -31,7 +31,11 @@ runs:
       shell: bash
       env:
         INSTALL_DIR: ${{ inputs.install-dir }}
-      run: |
+      # github-env: install-dir only ever comes from this repository's own workflow files (a constant such as
+      # "$HOME/.local/bin"), never from event data such as a PR title or branch name, so no attacker-controlled
+      # text reaches GITHUB_PATH. A fork PR that edits the workflow could change it, but could equally run any
+      # command directly, so writing it to GITHUB_PATH adds no capability.
+      run: | # zizmor: ignore[github-env]
         dir="${INSTALL_DIR/#\~/$HOME}"
         dir="${dir/#\$HOME/$HOME}"
         echo "${dir}" >> "$GITHUB_PATH"
