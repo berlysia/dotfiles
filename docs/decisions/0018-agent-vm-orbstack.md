@@ -33,6 +33,17 @@ OrbStack の通常の machine（isolated 指定なし）は `/Users` 全体へ�
 - **K15**: 初回の待ちを前倒しする `agent-vm prewarm` を提供する。自動 prewarm は行わない。
 - **K16**: VM の claude は host と同じ公式 installer で導入し、bootstrap が未導入時だけ実行する。
 
+### VM に配るもの（K17〜K22、2026-09-30 追記）
+
+原則: host と共有するテンプレートには VM 分岐を入れない。VM との差分は `.chezmoiignore` の VM ブロックと `agent-vm/bootstrap.sh` の 2 か所だけで表す。共有部分に分岐を置くと、その分岐が host に影響しないことを毎回証明する仕組みが要るが、差分を VM 専用の場所に寄せれば host への影響が無いことは構造上明らかになる。
+
+- **K17**: VM に配置・実行するものは `.chezmoiignore` の VM ブロック（`agent_vm` が真のときだけ有効）の allowlist で決める。`**` で全除外し、ターゲットパスの `!` 行で必要なものだけ戻す。script はファイル単位、それ以外は粗いディレクトリ単位で戻す。
+- **K18**: VM 用のツール（apt の `jq` `bat` `fd-find` `ripgrep` `shellcheck`、mise、starship、bat / fd のリンク）は、host の `install-packages-1-linux` の代わりに bootstrap が apply の前に無いものだけ非対話で入れる。apt は推奨依存を入れず、postfix の debconf で止まる経路を避ける。
+- **K19**: apply の後、bootstrap が走るたびに、`settings.json` から音声通知の hook を、`~/.claude.json` と `~/.codex/config.toml` から残す MCP（readability、context7、excalidraw）以外を取り除く。変換は同じディレクトリの一時ファイル経由で行い、失敗したら元のファイルも `applied-hash` も変えない。取り除いた結果は、フィルタより緩い条件で自己検査し、残っていれば bootstrap を失敗させる。
+- **K20**: host に影響が無いことは、VM が管理する対象と script の完全一致テスト（期待リストとの比較）と、VM ブロックを除いた `.chezmoiignore` の host 描画が変わらないことのテストで固定する。
+- **K21**: 既存 VM への移行処理は作らない。古い構成の VM が残った場合は `agent-vm rm` で作り直す。
+- **K22**: `install-claude-skills-11` を `run_onchange_after_` 帯へ改名し、mise が apm を入れた後に走らせる。ターゲット名と内容は変わらないので、既存の host では再実行されない。
+
 ### 却下した代替案
 
 - **通常 machine + bubblewrap**: 通常 machine は `/Users` 全体 rw と `mac` コマンドを持ち、bubblewrap で追加の隔離層を作っても、OrbStack 自体が持つ mount と host 到達性を打ち消せない。isolated machine が標準機能として同等以上の隔離を提供する。
@@ -54,6 +65,7 @@ OrbStack の通常の machine（isolated 指定なし）は `/Users` 全体へ�
 - **R8**: K13 の git 面検査は事後検知であり、VM セッション実行中に host で同じ repo の git を使うと、検査の前に改変が実行されうる。この運用ルール（VM セッション中は host の git を使わない）は `docs/agent-vm.md` に明記した。完全な防止には `.git` を mount から外す必要があるが、それでは VM 内で commit できなくなり、オーダー（repo で作業する）を満たさない。
 - **R9**: Codex 内蔵 sandbox（Landlock + seccomp）が OrbStack のカーネルで動くかどうかは V9 で確認する。動かない場合は VM 境界を sandbox とみなし、VM 内の Codex だけ `sandbox_mode` を緩める設定を別 plan とする。
 - Phase 1 で意図的に提供しない体験（egress の許可リスト制御、mac クリップボード画像の貼り付け、1Password 以外の host 資格情報ストアとの連携）は spec.md に記録し、`docs/agent-vm.md` には現状の制約として明記した。
+- **K17〜K22 の帰結**: VM でブラウザを操作する MCP（playwright、chrome-devtools、drawio）と音声通知は提供しない。VM の中で手で `chezmoi apply` すると、次の bootstrap まで音声通知の hook と除外した MCP が戻る。codex の設定の自己検査は、`[mcp_servers]` の直下に `playwright.command = …` のようにネストした書き方を対象にしない（今のテンプレートは出力しない）。VM の mise と starship の installer は、host と同じくチェックサムで検証しない。
 
 ## References
 
