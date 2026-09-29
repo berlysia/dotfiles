@@ -150,4 +150,7 @@ machine を侵害された疑いがある場合、または使わなくなった
 - V15: ログイン後に再 bootstrap を起こしても、`~/.claude/.credentials.json` と `~/.codex/auth.json` はサイズ・権限（600）・更新時刻とも変わらず、`~/.claude.json` のログイン情報（`oauthAccount`）も後処理の後に残った。
 - V3（launcher 経由）: VM の中の `git commit` が SSH 署名付きになった（host の `git log --format=%G?` で `U`）。このとき 1Password の承認は求められなかった。以前の承認が一定時間有効になっていたためと推測する（未検証）。2 節のとおり毎回の承認を求めるには、1Password 側の設定を確認する。
 
-未確認の項目: V8、V9、V12。V11（`op inject` の生体認証の頻度）は、検証環境に `env.1password` を置いていなかったので `op inject` が呼ばれず、測れていない。
+- V11: テスト用の参照を `env.1password` に置き、`op signout` の直後に launcher 経由で 3 回続けて起動した。1Password の承認は 1 回目だけで、2 回目と 3 回目は求められなかった（`op` の CLI の承認が一定時間有効なため）。VM の中で `printenv` すると、注入した値が見えた。
+- 観測（原因未特定）: V11 の 3 回の起動の間に、iTerm に対する macOS のアクセス許可（「"書類"フォルダ内のファイル」「ほかのアプリのデータ」）が合わせて 4 回出た。launcher が触れるのは状態の置き場、`~/.config/agent-vm`、`~/.claude/projects`、`~/.codex/sessions`、repo だけで、「書類」やほかのアプリのデータには触れない。`orb` や `op`、同じ iTerm で動いていた別のプロセスが原因の候補だが、切り分けていない。
+
+未確認の項目: V8、V9、V12。
