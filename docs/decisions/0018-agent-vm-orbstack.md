@@ -66,6 +66,9 @@ OrbStack の通常の machine（isolated 指定なし）は `/Users` 全体へ�
 - **R9**: Codex 内蔵 sandbox（Landlock + seccomp）が OrbStack のカーネルで動くかどうかは V9 で確認する。動かない場合は VM 境界を sandbox とみなし、VM 内の Codex だけ `sandbox_mode` を緩める設定を別 plan とする。
 - Phase 1 で意図的に提供しない体験（egress の許可リスト制御、mac クリップボード画像の貼り付け、1Password 以外の host 資格情報ストアとの連携）は spec.md に記録し、`docs/agent-vm.md` には現状の制約として明記した。
 - **K17〜K22 の帰結**: VM でブラウザを操作する MCP（playwright、chrome-devtools、drawio）と音声通知は提供しない。VM の中で手で `chezmoi apply` すると、次の bootstrap まで音声通知の hook と除外した MCP が戻る。codex の設定の自己検査は、`[mcp_servers]` の直下に `playwright.command = …` のようにネストした書き方を対象にしない（今のテンプレートは出力しない）。VM の mise と starship の installer は、host と同じくチェックサムで検証しない。
+- **R21**: VM では APM の skills のうち、既定ブランチの解決が要る GitHub のリポジトリ（9 件中 5 件）が入らない。VM の `~/.gitconfig` の SSH への書き換えと、VM に GitHub のトークンを置かない設計の組み合わせが原因と推測している（推測。host で成功する理由は未検証）。今回の変更が原因ではなく、別の課題として `docs/agent-vm.md` に既知の制約として書いた。
+- **R22**: VM の mise で `npm:@mizchi/readability` がサプライチェーン対策の閾値に拒否されて入らない。host と共有する設定の問題で、別の課題とする。
+- **K18 の帰結（dasel）**: VM は codex の設定のマージのために、ソースの `.mise.toml` を信頼して dasel を入れる。マージを dasel や mise に依存させない作り替えは host にも影響する別の課題とする。
 
 ## References
 
