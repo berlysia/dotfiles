@@ -2,7 +2,13 @@
 
 import { ok, strictEqual } from "node:assert";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, describe, it } from "node:test";
@@ -22,6 +28,22 @@ function makeTempDir(): string {
   const dir = mkdtempSync(join(tmpdir(), "run-guard-test-"));
   tempDirs.push(dir);
   return dir;
+}
+
+/**
+ * The host's timeout binary. The tests narrow PATH to /usr/bin:/bin, where macOS
+ * has no timeout (coreutils lives under Homebrew), so the timeout case links it
+ * next to the fake bun to reach the wrapper's timeout branch.
+ */
+function findTimeoutBin(): string | undefined {
+  const found = spawnSync(
+    "sh",
+    ["-c", "command -v timeout || command -v gtimeout"],
+    {
+      encoding: "utf8",
+    },
+  ).stdout.trim();
+  return found === "" ? undefined : found;
 }
 
 /** A directory holding a fake `bun` executable with the given sh body. */
@@ -99,8 +121,16 @@ describe("run-guard.sh", () => {
     strictEqual(result.stdout.trim(), payload);
   });
 
-  it("blocks with exit 2 when the hook exceeds the timeout", () => {
+  it("blocks with exit 2 when the hook exceeds the timeout", (t) => {
+    const timeoutBin = findTimeoutBin();
+    if (timeoutBin === undefined) {
+      t.skip(
+        "no timeout or gtimeout on this host; the wrapper has no timeout branch to test",
+      );
+      return;
+    }
     const dir = fakeBunDir("exec sleep 30");
+    symlinkSync(timeoutBin, join(dir, "timeout"));
     const result = runWrapper(throwingHook, {
       PATH: `${dir}:/usr/bin:/bin`,
       HOME: makeTempDir(),
