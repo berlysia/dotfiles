@@ -145,5 +145,9 @@ machine を侵害された疑いがある場合、または使わなくなった
 - V16（一部）: 初回の bootstrap で claude が非対話で導入され、再 bootstrap では再導入されない。ネットワーク遮断での失敗は未確認。
 - V17: GitHub の host key の fingerprint が公式の値（`SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU`）と一致した。
 - 再 bootstrap（dotfiles の変更後）: rc=0 で通り、`update-claude-json` の再実行で戻った MCP も後処理で取り除かれた。
+- V6: `agent-vm claude` / `agent-vm codex` の対話画面が崩れずに動いた。
+- V7: Claude と Codex のどちらも、mac のブラウザで承認してコードを貼る経路でログインでき、2 回目以降の起動ではログインを求められなかった。
+- V15: ログイン後に再 bootstrap を起こしても、`~/.claude/.credentials.json` と `~/.codex/auth.json` はサイズ・権限（600）・更新時刻とも変わらず、`~/.claude.json` のログイン情報（`oauthAccount`）も後処理の後に残った。
+- V3（launcher 経由）: VM の中の `git commit` が SSH 署名付きになった（host の `git log --format=%G?` で `U`）。このとき 1Password の承認は求められなかった。以前の承認が一定時間有効になっていたためと推測する（未検証）。2 節のとおり毎回の承認を求めるには、1Password 側の設定を確認する。
 
-未確認の項目: V6（TTY）、V7（初回ログイン）、V8、V9、V11、V12、V15（ログイン後の認証情報の保持）。どれも対話でのログインか、launcher 経由の起動が要る。
+未確認の項目: V8、V9、V12。V11（`op inject` の生体認証の頻度）は、検証環境に `env.1password` を置いていなかったので `op inject` が呼ばれず、測れていない。
