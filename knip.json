@@ -1,10 +1,7 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
   "workspaces": {
-    ".": {
-      "entry": ["home/dot_codex/private_dot_merge-config.ts"],
-      "project": ["home/dot_codex/**/*.ts"]
-    },
+    ".": { "entry": [], "project": [] },
     "home/dot_claude": {
       "entry": ["hooks/implementations/*.ts", "scripts/*.ts"],
       "project": ["**/*.ts"]

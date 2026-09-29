@@ -1,0 +1,49 @@
+{{- /* chezmoi:modify-template */ -}}
+{{- /* Composes ~/.codex/config.toml from three layers (docs/codex-config.md):
+     base (dot_codex/.config.toml) -> host overlay (dot_codex/.config.<hostname>.toml, optional)
+     -> the current file on stdin, whose keys survive except the forced and deprecated ones.
+     Forced keys are security and infrastructure settings: they always come from base + overlay, and an
+     overlay may set nothing else. Unreadable input stops the apply instead of silently dropping settings. */ -}}
+{{- $forcedKeys := list "mcp_servers" "sandbox_mode" "sandbox_workspace_write" "shell_environment_policy" "allow_login_shell" "approval_policy" "network_access" -}}
+{{- $deprecatedKeys := list "features" -}}
+{{- $base := include "dot_codex/.config.toml" | replace "__CHEZMOI_HOME__" .chezmoi.homeDir | fromToml -}}
+{{- if not $base -}}
+{{-   fail "dot_codex/.config.toml has no keys; an empty base would drop every forced key from ~/.codex/config.toml" -}}
+{{- end -}}
+{{- $overlay := dict -}}
+{{- $overlayName := printf ".config.%s.toml" .chezmoi.hostname -}}
+{{- if stat (joinPath .chezmoi.sourceDir "dot_codex" $overlayName) -}}
+{{-   $overlay = include (printf "dot_codex/%s" $overlayName) | replace "__CHEZMOI_HOME__" .chezmoi.homeDir | fromToml -}}
+{{-   if not $overlay -}}
+{{-     fail (printf "dot_codex/%s has no keys; delete it or give it forced keys" $overlayName) -}}
+{{-   end -}}
+{{-   range $key := keys $overlay | sortAlpha -}}
+{{-     if not (has $key $forcedKeys) -}}
+{{-       fail (printf "dot_codex/%s may only set forced keys (%s), but sets %q" $overlayName (join ", " $forcedKeys) $key) -}}
+{{-     end -}}
+{{-   end -}}
+{{- end -}}
+{{- /* Fresh copies only: mergeOverwrite writes into its first argument. */ -}}
+{{- $forced := dict -}}
+{{- range $key := $forcedKeys -}}
+{{-   if hasKey $base $key -}}
+{{-     $_ := set $forced $key (deepCopy (get $base $key)) -}}
+{{-   end -}}
+{{- end -}}
+{{- $forced = mergeOverwrite $forced (deepCopy $overlay) -}}
+{{- $current := .chezmoi.stdin | fromToml -}}
+{{- $merged := dict -}}
+{{- range $key, $value := $base -}}
+{{-   if not (has $key $forcedKeys) -}}
+{{-     $_ := set $merged $key $value -}}
+{{-   end -}}
+{{- end -}}
+{{- range $key, $value := $current -}}
+{{-   if not (or (has $key $forcedKeys) (has $key $deprecatedKeys)) -}}
+{{-     $_ := set $merged $key $value -}}
+{{-   end -}}
+{{- end -}}
+{{- range $key, $value := $forced -}}
+{{-   $_ := set $merged $key $value -}}
+{{- end -}}
+{{- toToml $merged -}}
