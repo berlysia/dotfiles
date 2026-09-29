@@ -6,6 +6,8 @@ on:
       - master
       - main
     paths:
+      - "home/dot_codex/**"
+      - "scripts/test-codex-config-merge.sh"
       - "home/dot_codex/.config.toml"
       - "home/dot_codex/.config.*.toml"
       - "scripts/check-codex-config.sh"
@@ -13,6 +15,8 @@ on:
       - ".github/workflows/validate-codex-config.yml"
   pull_request:
     paths:
+      - "home/dot_codex/**"
+      - "scripts/test-codex-config-merge.sh"
       - "home/dot_codex/.config.toml"
       - "home/dot_codex/.config.*.toml"
       - "scripts/check-codex-config.sh"
@@ -39,9 +43,18 @@ jobs:
           experimental: true
           reshim: true
 
+      - name: Install chezmoi
+        uses: ./.github/actions/install-chezmoi
+        with:
+          install-dir: "$HOME/.local/bin"
+          add-to-path: "true"
+
       - name: Make scripts executable
         run: |
           chmod +x scripts/*.sh
 
       - name: Validate Codex config formatting
         run: ./scripts/check-codex-config.sh
+
+      - name: Test the codex config merge
+        run: ./scripts/test-codex-config-merge.sh

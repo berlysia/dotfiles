@@ -95,6 +95,14 @@ test_host_still_manages_host_only_targets() {
   assert_contains "$out" ".chezmoiscripts/gc.sh" "hosts keep host-only scripts"
   assert_contains "$out" ".config/emacs" "hosts keep host-only files"
 }
+test_vm_removes_the_old_codex_merge_script() {
+  local dst="$TMP_BASE/dst-remove"
+  mkdir -p "$dst/.codex"; touch "$dst/.codex/.merge-config.ts"
+  local out; out=$(chezmoi managed --source "$SRC" --destination "$dst" --config "$TMP_BASE/chezmoi.toml" \
+    --cache "$TMP_BASE/cache" --persistent-state "$TMP_BASE/state-remove.boltdb" --refresh-externals=never \
+    --include remove --override-data "$VM_DATA")
+  assert_contains "$out" ".codex/.merge-config.ts" "the VM removes the old codex merge script (not ignored)"
+}
 test_ignore_vm_block_leaves_host_render_unchanged() {
   local t=.chezmoiignore stripped data
   stripped=$(sed '/^{{- if dig "agent_vm" false \. }}$/,/^{{- end }}$/d' "$SRC/$t")

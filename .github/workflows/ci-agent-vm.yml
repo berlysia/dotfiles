@@ -5,6 +5,8 @@ on:
     branches: [master, main]
     paths:
       - "home/dot_local/bin/executable_agent-vm"
+      - "home/dot_codex/**"
+      - "home/.chezmoiremove"
       - "tests/agent-vm/**"
       - ".github/workflows/ci-agent-vm.yml"
       - "agent-vm/**"
@@ -19,6 +21,8 @@ on:
     branches: [master, main]
     paths:
       - "home/dot_local/bin/executable_agent-vm"
+      - "home/dot_codex/**"
+      - "home/.chezmoiremove"
       - "tests/agent-vm/**"
       - ".github/workflows/ci-agent-vm.yml"
       - "agent-vm/**"
@@ -57,15 +61,15 @@ jobs:
       # Same reasoning as the launcher tests: exercise the stock macOS bash 3.2, not a newer one earlier on PATH.
       - name: Run shell function tests
         run: /bin/bash tests/agent-vm/run-shell.sh
-      - name: Run VM bootstrap tests
-        if: runner.os == 'Linux'
-        run: bash tests/agent-vm/run-bootstrap.sh
       - name: Install chezmoi
         if: runner.os == 'Linux'
         uses: ./.github/actions/install-chezmoi
         with:
           install-dir: "$HOME/.local/bin"
           add-to-path: "true"
+      - name: Run VM bootstrap tests
+        if: runner.os == 'Linux'
+        run: bash tests/agent-vm/run-bootstrap.sh
       - name: Run template tests
         if: runner.os == 'Linux'
         run: bash tests/agent-vm/run-templates.sh

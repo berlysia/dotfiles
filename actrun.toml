@@ -1,5 +1,5 @@
 workspace_mode = "worktree"
-local_skip_actions = ["actions/checkout"]
+local_skip_actions = ["actions/checkout", "./.github/actions/install-chezmoi"]
 trust_actions = true
 include_dirty = true
 
