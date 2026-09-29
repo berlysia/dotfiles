@@ -1,0 +1,45 @@
+{
+  "enabledPlugins": { "x@y": true },
+  "permissions": { "allow": ["Bash(ls:*)"] },
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh '/home/u/.claude/hooks/hook-timer.sh' 'Stop' 0 'bun /home/u/.claude/hooks/implementations/completion-gate.ts'"
+          },
+          {
+            "type": "command",
+            "command": "sh '/home/u/.claude/hooks/hook-timer.sh' 'Stop' 1 'bun /home/u/.claude/hooks/implementations/speak-notification.ts Stop'",
+            "async": true
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh '/home/u/.claude/hooks/hook-timer.sh' 'Notification' 1 'bun /home/u/.claude/hooks/implementations/speak-notification.ts Notification'",
+            "async": true
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh '/home/u/.claude/hooks/hook-timer.sh' 'SessionStart' 0 'bun /home/u/.claude/hooks/implementations/speak-notification-extra.ts'"
+          }
+        ]
+      }
+    ]
+  }
+}
