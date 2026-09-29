@@ -36,15 +36,14 @@ test_mise_template_works_without_agent_vm_key() {
   assert_contains "$out" 'rust = ' "missing key behaves like a host (dig default false)"
 }
 hash_line() { render "$1" "$2" | grep 'mise config hash:'; }
+# run_after_00-install-mise-tools runs on every apply, so safe-chain is the only mise-hash-gated script.
 test_install_scripts_hash_the_rendered_template() {
-  local s
-  for s in .chezmoiscripts/run_onchange_install-packages-7.sh.tmpl .chezmoiscripts/run_onchange_install-safe-chain.sh.tmpl; do
-    if [[ "$(hash_line "$s" '{"agent_vm":true}')" != "$(hash_line "$s" '{"agent_vm":false}')" ]]; then
-      record "PASS $s re-runs when the rendered mise config differs"
-    else
-      record "FAIL $s re-runs when the rendered mise config differs"
-    fi
-  done
+  local s=.chezmoiscripts/run_onchange_after_install-safe-chain.sh.tmpl
+  if [[ "$(hash_line "$s" '{"agent_vm":true}')" != "$(hash_line "$s" '{"agent_vm":false}')" ]]; then
+    record "PASS $s re-runs when the rendered mise config differs"
+  else
+    record "FAIL $s re-runs when the rendered mise config differs"
+  fi
 }
 test_host_render_equals_template_without_vm_guards() {
   # The VM-only guards must be the template's only markup: removing their lines has to give exactly the
