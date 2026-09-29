@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Test stub: records argv instead of escalating; fails with STUB_SUDO_EXIT when set.
+# shellcheck disable=SC2154 # STUB_LOG is exported by the test runner
+{ printf 'sudo'; printf ' %q' "$@"; printf '\n'; } >>"$STUB_LOG"
+exit "${STUB_SUDO_EXIT:-0}"

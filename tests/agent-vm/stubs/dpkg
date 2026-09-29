@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Test stub: records argv; `dpkg -s <pkg>` reports installed unless the package is listed in STUB_DPKG_MISSING.
+# Assumes the only call shape is `dpkg -s <pkg>`, which is all bootstrap.sh uses.
+# shellcheck disable=SC2154 # STUB_LOG is exported by the test runner
+{ printf 'dpkg'; printf ' %q' "$@"; printf '\n'; } >>"$STUB_LOG"
+case " ${STUB_DPKG_MISSING:-} " in *" ${2:-} "*) exit 1 ;; esac
+exit 0
