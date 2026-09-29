@@ -1,23 +1,28 @@
 ---
 name: insight-digest
-description: Read the periodic Insight digest distilled from session logs and decide which entries to promote into skills, ~/.claude/rules/, or CLAUDE.md. Also supports manual regeneration (force) and acknowledgement (ack). Use when a SessionStart notice points to a new digest, or when reviewing accumulated insights.
+description: Distill ★ Insight blocks from session logs on demand (force), read the resulting digest, and decide which entries to promote into skills, ~/.claude/rules/, or CLAUDE.md. Also supports acknowledgement (ack). Use when you want to review accumulated insights now, or when a SessionStart notice points to a new digest.
 context: inherit
 ---
 
 # Insight Digest
 
-`★ Insight ─` ブロックを `~/.claude/projects/**/*.jsonl` から定期的に蒸留した結果を読み解き、
+`★ Insight ─` ブロックを `~/.claude/projects/**/*.jsonl` から蒸留した結果を読み解き、
 スキル化 / `~/.claude/rules/` 追記 / CLAUDE.md 追記 / 廃棄 の採否を判断する知見系スキル。
+
+蒸留は OS のスケジューラがバックグラウンドで実行する (macOS: LaunchAgent `com.berlysia.distill-insights`、Linux: systemd user timer `distill-insights.timer`)。
+実行されるのは毎日 04:00 と、ログイン時・スリープ復帰時で、直近 12 時間に走っていれば skip する。
+`chezmoi apply` では走らない。LLM 呼び出しを含み apply を遅くするため。
+失敗や 3 日以上の停滞は SessionStart に復旧手順つきで表示される。すぐ実行したいときは `force` を使う。
 
 `/insight-digest` を呼ぶと、引数に応じて 3 モードのいずれかで動作する。
 
 ## 引数
 
-| 引数    | 動作                                                                              |
-| ------- | --------------------------------------------------------------------------------- |
-| なし    | digest を Read で表示し、採否判断のフレームを併記する                             |
-| `force` | `bun ~/.claude/scripts/distill-insights.ts --force` を実行し、digest を強制再生成 |
-| `ack`   | digest を既読扱いにする (SessionStart 通知を止める)                               |
+| 引数    | 動作                                                                                     |
+| ------- | ---------------------------------------------------------------------------------------- |
+| なし    | digest を Read で表示し、採否判断のフレームを併記する                                    |
+| `force` | `bash ~/.claude/scripts/run-distill-insights.sh --force --llm` を実行し、digest を再生成 |
+| `ack`   | digest を既読扱いにする (SessionStart 通知を止める)                                      |
 
 ## モード判別
 
@@ -63,20 +68,26 @@ digest 内の各 cluster に対し、以下のフレームでユーザーに整�
 ## Mode B: Force Regenerate (`force`)
 
 ```bash
-bun ~/.claude/scripts/distill-insights.ts --force
+bash ~/.claude/scripts/run-distill-insights.sh --force --llm
 ```
 
 を実行し、stdout/stderr をユーザーに簡潔に報告 (scanned / matched / appended / redact_hits)。
 完了後、digest パスを表示し「次は `/insight-digest` で内容を確認できます」と案内。
 
-> **`force --llm`**: Stage B (LLM 蒸留) も即時に実行する場合は `--force --llm` を併用する。
-> ゲート (7 日 / 新規 10 件) を bypass し、`~/.claude/logs/insights/insight-llm-payload.last.json`
-> に送信前 payload を残してから LLM を呼ぶ。proposal を試したいときや、`since_last_ack` が
-> ack 直後で 10 未満のときに使う。
+`--llm` は Stage B (LLM 蒸留) を同時に走らせる。`--force` と併用するとゲート (7 日 / 新規 10 件) を
+bypass し、`~/.claude/logs/insights/insight-llm-payload.last.json` に送信前 payload を残してから LLM を呼ぶ。
+
+> **Stage A のみ**: LLM を呼ばずヒューリスティック集計だけ更新したい場合は `--llm` を外す。
 >
 > ```bash
-> bun ~/.claude/scripts/distill-insights.ts --force --llm
+> bash ~/.claude/scripts/run-distill-insights.sh --force
 > ```
+
+注意:
+
+- 定期実行とロックを共有するため、`distill-insights.ts` を直接実行しない。
+- 出力に `skipping` が出て exit 75 で終わった場合は、別の実行が進行中で何もしていない。少し待って再実行する。
+- 失敗マーカー (`last-run-failed`) のうち `stage_b outcome=…` のものは `stage_b outcome=ok` で消え、Stage A のみの実行では消えない。それ以外の理由のマーカーは、次に正常終了した実行で消える。
 
 ## Mode C: Mark Read (`ack`)
 
@@ -120,4 +131,7 @@ date +%s%3N > ~/.claude/.last-insight-digest-acked
 - `~/.claude/insight-distill-deny.txt` — 走査除外パターン
 - `~/.claude/insight-distill-redact.txt` — 追加サニタイザパターン
 - `~/.claude/scripts/distill-insights.ts` — 蒸留本体
+- `~/.claude/scripts/run-distill-insights.sh` — スケジューラと force の共通入口
+- `~/.claude/logs/insights/distill-run.log` — 実行ログ (2000 行で切り詰め)
+- `~/.claude/logs/insights/last-run-failed` — 失敗マーカー
 - `~/.claude/hooks/lib/insight-digest.ts` — sanitize / normalize / ack 関数

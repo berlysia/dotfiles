@@ -1,0 +1,13 @@
+{{- if eq .chezmoi.os "linux" -}}
+[Unit]
+Description=Distill Claude Code insight blocks into a digest
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash %h/.claude/scripts/run-distill-insights.sh --skip-if-ran-within-hours 12 --llm
+Environment=PATH=%h/.local/bin:%h/.local/share/mise/shims:/usr/local/bin:/usr/bin:/bin
+UMask=0077
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=yes
+{{- end }}

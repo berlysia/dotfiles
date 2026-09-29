@@ -1,0 +1,11 @@
+{{- if eq .chezmoi.os "linux" -}}
+[Unit]
+Description=Run distill-insights daily
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+{{- end }}

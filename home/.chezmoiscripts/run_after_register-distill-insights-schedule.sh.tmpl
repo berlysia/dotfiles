@@ -1,0 +1,47 @@
+{{ if eq .chezmoi.os "darwin" -}}
+#!/bin/bash
+# Keep the distill-insights LaunchAgent loaded with the plist this apply deployed.
+# Runs on every apply and does nothing when the agent is loaded from an
+# unchanged plist: a run_onchange_ gate would turn one failed load into a
+# permanent skip (ADR-0017 K2). A failure warns and exits 0 so the remaining
+# run_after_ scripts still run (ADR-0017 R1); it warns again on the next apply.
+# The hash file exists because a daily job has no health endpoint to probe the
+# way reload-mcp-launchd does; a missing or stale hash only costs one reload.
+set -uo pipefail
+label="com.berlysia.distill-insights"
+plist="$HOME/Library/LaunchAgents/$label.plist"
+domain="gui/$(id -u)"
+hash_file="$HOME/.claude/.distill-insights-plist.sha256"
+
+current=$(shasum -a 256 "$plist" | cut -d' ' -f1)
+loaded_from=$(cat "$hash_file" 2>/dev/null || true)
+if launchctl print "$domain/$label" >/dev/null 2>&1 && [ "$current" = "$loaded_from" ]; then
+    exit 0
+fi
+launchctl bootout "$domain/$label" 2>/dev/null || true
+if ! launchctl bootstrap "$domain" "$plist"; then
+    echo "[distill-insights] WARNING: could not load $label; daily distillation is NOT scheduled" >&2
+    echo "[distill-insights] recovery: launchctl bootstrap $domain $plist (then re-run 'chezmoi apply')" >&2
+    exit 0
+fi
+echo "$current" > "$hash_file"
+echo "[distill-insights] loaded $label (daily at 04:00, and at login)"
+{{ else if eq .chezmoi.os "linux" -}}
+#!/bin/bash
+# Keep the distill-insights systemd user timer enabled. Runs on every apply:
+# both commands below are idempotent, and a machine without a systemd user
+# instance gets the warning on every apply rather than once. Failures exit 0
+# so the remaining run_after_ scripts still run (ADR-0017 R1).
+set -uo pipefail
+if ! systemctl --user show-environment >/dev/null 2>&1; then
+    echo "[distill-insights] WARNING: no systemd user instance; daily distillation is NOT scheduled" >&2
+    echo "[distill-insights] recovery: enable systemd (WSL2: add '[boot]' and 'systemd=true' to /etc/wsl.conf, then run 'wsl.exe --shutdown' from Windows), then run 'chezmoi apply'" >&2
+    echo "[distill-insights] meanwhile: run '/insight-digest force' to distill manually" >&2
+    exit 0
+fi
+if ! { systemctl --user daemon-reload && systemctl --user enable --now distill-insights.timer; }; then
+    echo "[distill-insights] WARNING: could not enable distill-insights.timer" >&2
+    echo "[distill-insights] recovery: systemctl --user daemon-reload && systemctl --user enable --now distill-insights.timer" >&2
+fi
+exit 0
+{{ end -}}
