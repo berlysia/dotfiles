@@ -197,6 +197,25 @@ oprg()  { ope -g "$@"; }
 oprgi() { ope -gi "$@"; }
 oplg()  { ope -gl; }
 
+# LLM gateway sessions carry LLM_GATEWAY_API_KEY and ANTHROPIC_BASE_URL (injected
+# by `ope -gi claude` from ~/.env.1password.local). Claude Code reads the key as
+# ANTHROPIC_AUTH_TOKEN, so it is handed over only to the claude process, and
+# gateway MCP servers that use the same key are attached when the machine has a
+# local config for them. Without a base URL the key is not passed on, so it is
+# never sent to the default Anthropic API. See docs/llm-gateway-sessions.md.
+claude() {
+	if [ -z "$LLM_GATEWAY_API_KEY" ] || [ -z "$ANTHROPIC_BASE_URL" ]; then
+		command claude "$@"
+		return
+	fi
+	if [ -f "$HOME/.config/claude-local/gateway-mcp.json" ]; then
+		# The `=` form keeps the variadic --mcp-config from swallowing the following
+		# arguments, and only a leading root option is accepted by every subcommand.
+		set -- --mcp-config="$HOME/.config/claude-local/gateway-mcp.json" "$@"
+	fi
+	ANTHROPIC_AUTH_TOKEN="$LLM_GATEWAY_API_KEY" command claude "$@"
+}
+
 # mise wrapper — injects GITHUB_TOKEN only for subcommands that need GitHub access
 # Token is passed inline to the command environment and never persists in the shell
 mise() {
