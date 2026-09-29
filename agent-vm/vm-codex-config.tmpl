@@ -1,0 +1,19 @@
+{{- /* VM post-processing of ~/.codex/config.toml (spec K19, ADR-0019): keep only the top-level MCP servers named in
+     VM_MCP_KEEP (space-separated, exported by bootstrap.sh). The file is parsed as TOML, so the way a table is
+     written (headers, dotted keys, inline tables) does not matter. Servers nested elsewhere (e.g. under profiles)
+     are left for bootstrap's self-check, which stops the bootstrap. Must not include files from home/. */ -}}
+{{- $keep := env "VM_MCP_KEEP" | splitList " " | compact -}}
+{{- if not $keep -}}
+{{-   fail "VM_MCP_KEEP is empty; refusing to guess which MCP servers to keep" -}}
+{{- end -}}
+{{- $config := .chezmoi.stdin | fromToml -}}
+{{- if hasKey $config "mcp_servers" -}}
+{{-   $kept := dict -}}
+{{-   range $name, $server := $config.mcp_servers -}}
+{{-     if has $name $keep -}}
+{{-       $_ := set $kept $name $server -}}
+{{-     end -}}
+{{-   end -}}
+{{-   $_ := set $config "mcp_servers" $kept -}}
+{{- end -}}
+{{ toToml $config }}

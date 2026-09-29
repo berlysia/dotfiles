@@ -11,24 +11,16 @@ readonly VM_APT_PKGS=(jq bat fd-find ripgrep shellcheck gh)
 # A fresh machine can still hold the dpkg lock (cloud-init, unattended-upgrades); wait for it instead of failing,
 # and bound every download so a stalled network fails the bootstrap (retried next launch) instead of hanging it.
 readonly APT_OPTS=(-o DPkg::Lock::Timeout=120 -o Acquire::Retries=3)
-# The one list of MCP servers the VM keeps; the jq filter, the awk filter and the self-check all take it from here.
+# The one list of MCP servers the VM keeps; the jq filter, the codex filter template and the self-check all take it
+# from here. Exported because the codex filter template reads it with `env`.
 readonly VM_MCP_KEEP="readability context7 excalidraw"
+export VM_MCP_KEEP
 readonly CURL_OPTS=(-fsSL --proto "=https" --tlsv1.2 --retry 3 --retry-connrefused --connect-timeout 15 --max-time 300)
 MARKER="${AGENT_VM_MARKER:-/etc/agent-vm}"
 OUTBOX_ROOT="${AGENT_VM_OUTBOX_ROOT:-/opt/agent-vm/outbox}"
 SECRETS_DIR="${AGENT_VM_SECRETS_DIR:-${XDG_RUNTIME_DIR:-/dev/shm}}"
 
 fail() { printf 'agent-vm bootstrap: %s\n' "$1" >&2; exit "${2:-1}"; }
-prepare_source_tools() { # chezmoi source dir
-  # home/dot_codex/private_config.toml.tmpl merges through home/dot_codex/private_dot_merge-config.ts on every
-  # apply after the first, from the working tree, so mise must resolve dasel from the source's own .mise.toml
-  # there, as on the host (spec K18). Installing dasel into mise's install dir alone is not enough: the merge
-  # script finds the mise shim first, and the shim refuses an untrusted .mise.toml. The trusted file is this VM's
-  # own copy of the source. Only dasel is installed. Runs on every bootstrap (idempotent) so re-applies never
-  # meet a missing dasel.
-  "$HOME/.local/bin/mise" trust "$1/.mise.toml"
-  (cd "$1" && "$HOME/.local/bin/mise" install dasel)
-}
 
 # bootstrap.sh owns no global EXIT trap: run_installer and filter_vm_config each set one for their own temp file
 # and clear it on success. A future global cleanup must be folded into those, not added as a separate trap.
@@ -86,18 +78,22 @@ filter_vm_config() { # target file, command... (the target is appended last): re
   mv "$tmp" "$target"
   trap - EXIT
 }
+filter_codex_config() { # codex config path: filter_vm_config appends the target as an argument; the template reads stdin
+  local here
+  here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+  chezmoi execute-template --with-stdin --file "$here/vm-codex-config.tmpl" <"$1"
+}
 filter_vm_configs() { # every bootstrap, after apply (spec K19)
   local here
   here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
   filter_vm_config "$HOME/.claude/settings.json" jq -f "$here/vm-settings.jq"
   filter_vm_config "$HOME/.claude.json" jq --arg keep "$VM_MCP_KEEP" -f "$here/vm-claude-json.jq"
-  filter_vm_config "$HOME/.codex/config.toml" awk -v keep_list="$VM_MCP_KEEP" -f "$here/vm-codex-config.awk"
+  filter_vm_config "$HOME/.codex/config.toml" filter_codex_config
 }
 verify_vm_config() { # deliberately looser than the filters, and fail-closed: a filter that removed nothing must stop here
-  local keep_alt bad verdict
+  local verdict
   # A mismatch here repeats on every launch until the dotfiles or the filters change; say how to get unstuck.
   local recover="fix the filter in agent-vm/ (or the template that changed), then run: agent-vm rm (the next launch recreates the machine)"
-  keep_alt=${VM_MCP_KEEP// /|}
   if [[ -f "$HOME/.claude/settings.json" ]] && grep -q 'speak-notification' "$HOME/.claude/settings.json"; then
     fail "the audio notification hook is still registered after post-processing; $recover"
   fi
@@ -106,12 +102,13 @@ verify_vm_config() { # deliberately looser than the filters, and fail-closed: a 
     [[ "$verdict" == true ]] || fail "MCP servers outside the VM allowlist remain in ~/.claude.json; $recover"
   fi
   if [[ -f "$HOME/.codex/config.toml" ]]; then
-    # Any line starting with mcp_servers (table header, dotted key or inline table) must name a kept server right
-    # after `mcp_servers.`; the bare [mcp_servers] parent header is the only exception.
-    bad=$(grep -E '^[[:space:]]*\[*[[:space:]]*mcp_servers' "$HOME/.codex/config.toml" |
-      grep -vE '^[[:space:]]*\[[[:space:]]*mcp_servers[[:space:]]*\][[:space:]]*$' |
-      grep -vE "^[[:space:]]*\[*[[:space:]]*mcp_servers\.\"?(${keep_alt})\"?([].[:space:]=]|$)") || true
-    [[ -z "$bad" ]] || fail "MCP servers outside the VM allowlist remain in ~/.codex/config.toml: $bad; $recover"
+    # Parsed, not grepped: every mcp_servers table at any depth (the filter only handles the top level) must name
+    # kept servers only, and one that is not a table counts as a violation. A parse failure leaves jq without
+    # input, so the verdict is never "true". Inline template on purpose: the filter's own template is not reused.
+    verdict=$(chezmoi execute-template --with-stdin '{{ .chezmoi.stdin | fromToml | toJson }}' <"$HOME/.codex/config.toml" |
+      jq --arg keep "$VM_MCP_KEEP" '[.. | objects | select(has("mcp_servers")) | .mcp_servers
+        | if type == "object" then keys[] else "(mcp_servers is not a table)" end] - ($keep | split(" ")) | length == 0') || verdict=""
+    [[ "$verdict" == true ]] || fail "MCP servers outside the VM allowlist remain in ~/.codex/config.toml (or it cannot be parsed); $recover"
   fi
 }
 
@@ -156,8 +153,8 @@ cz="$HOME/.local/share/chezmoi"
 mkdir -p "$cz"
 # .git is excluded so the empty repository chezmoi init creates in a .git-less source survives resyncs.
 rsync -a --delete --exclude node_modules --exclude .git "$src/" "$cz/"
-prepare_source_tools "$cz"
-chezmoi init --force --no-tty -W "$cz" --apply
+chezmoi init --force --no-tty -W "$cz" --apply ||
+  fail "chezmoi apply failed; if the error names ~/.codex/config.toml, that file cannot be parsed: fix it or run agent-vm rm (the next launch recreates the machine)"
 
 # Every bootstrap, after apply: update-settings-json rewrites hooks wholesale, update-claude-json merges MCP
 # servers additively and the codex config is regenerated from its template, so anything removed here comes

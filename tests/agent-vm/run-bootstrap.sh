@@ -15,6 +15,11 @@ ln -s "$TEST_DIR/stubs/curl" "$BOOTSTRAP_STUB_DIR/curl"
 ln -s "$TEST_DIR/stubs/chezmoi" "$BOOTSTRAP_STUB_DIR/chezmoi"
 ln -s "$TEST_DIR/stubs/dpkg" "$BOOTSTRAP_STUB_DIR/dpkg"
 ln -s "$TEST_DIR/stubs/sudo" "$BOOTSTRAP_STUB_DIR/sudo"
+# The codex filter and self-check need a real chezmoi (execute-template); resolve it before PATH is narrowed.
+REAL_CHEZMOI=$(command -v chezmoi) || { echo "run-bootstrap.sh needs chezmoi on PATH" >&2; exit 1; }
+# A PATH that already holds the stubs would resolve to the stub itself, and its exec would loop.
+case "$REAL_CHEZMOI" in "$TEST_DIR"/stubs/*) echo "run-bootstrap.sh needs a real chezmoi, not the test stub" >&2; exit 1 ;; esac
+export REAL_CHEZMOI
 export PATH="$BOOTSTRAP_STUB_DIR:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" RESULTS_FILE="$TMP_BASE/results"
 : >"$RESULTS_FILE"
 # shellcheck source=tests/agent-vm/lib.sh
@@ -79,9 +84,11 @@ test_outbox_links_move_existing_logs() {
 }
 test_failed_apply_does_not_record_hash() {
   setup_vm_env
-  local status=0
-  STUB_CHEZMOI_EXIT=1 bash "$BOOTSTRAP" 1 v1:abc "$SRC" >/dev/null 2>&1 || status=$?
+  local status=0 err
+  err=$(STUB_CHEZMOI_EXIT=1 bash "$BOOTSTRAP" 1 v1:abc "$SRC" 2>&1 >/dev/null) || status=$?
   assert_eq 1 "$status" "apply failure propagates"
+  # shellcheck disable=SC2088 # a literal tilde: the message names the path as users write it
+  assert_contains "$err" "~/.codex/config.toml" "an apply failure names the codex config recovery"
   assert_status 1 "no applied hash on failure" -- test -e "$HOME/.local/state/agent-vm/applied-hash"
 }
 test_installs_claude_only_when_missing() {
@@ -218,17 +225,29 @@ test_claude_json_filter_keeps_only_network_mcp() {
   assert_eq '{"local-one":{}}' "$(jq -c '.projects["/r"].mcpServers' <<<"$out")" "project-scoped MCP servers are untouched"
   assert_eq '{"id":"keep-me"}' "$(jq -c '.oauthAccount' <<<"$out")" "other keys are untouched"
 }
-test_codex_filter_keeps_only_allowlisted_tables() {
-  local out; out=$(awk -v keep_list="$KEEP" -f "$AGENT_VM_DIR/vm-codex-config.awk" "$TEST_DIR/fixtures/codex-config.toml")
-  assert_eq '[mcp_servers] [mcp_servers.context7] [[profiles]] [sandbox_workspace_write] [mcp_servers."readability"]' \
-    "$(grep -E '^[[:space:]]*\[' <<<"$out" | paste -sd' ' -)" "codex keeps the allowlisted MCP tables and every other table"
-  assert_not_contains "$out" "DEBUG" "sub-tables of a dropped server go too"
-  assert_contains "$out" "name = 'kept'" "an array-of-tables header ends a dropped table"
-  assert_eq "approval_policy = 'on-request'" "$(head -1 <<<"$out")" "top-level keys are untouched"
+codex_filter() { # file: the VM codex filter as bootstrap runs it
+  VM_MCP_KEEP="$KEEP" "$REAL_CHEZMOI" execute-template --with-stdin --file "$AGENT_VM_DIR/vm-codex-config.tmpl" <"$1"
 }
-test_codex_filter_runs_under_the_system_awk() {
-  # Ubuntu's default awk is mawk; the filter must not rely on gawk extensions.
-  assert_status 0 "system awk runs the codex filter" -- awk -v keep_list="$KEEP" -f "$AGENT_VM_DIR/vm-codex-config.awk" "$TEST_DIR/fixtures/codex-config.toml"
+toml_to_json() { "$REAL_CHEZMOI" execute-template --with-stdin '{{ .chezmoi.stdin | fromToml | toJson }}'; }
+test_codex_filter_keeps_only_allowlisted_servers() {
+  local out; out=$(codex_filter "$TEST_DIR/fixtures/codex-config.toml" | toml_to_json)
+  assert_eq '["context7","readability"]' "$(jq -c '.mcp_servers | keys' <<<"$out")" "codex keeps exactly the allowlisted MCP servers (no prefix matches)"
+  assert_eq '[{"name":"kept"}]' "$(jq -c '.profiles' <<<"$out")" "other tables are untouched"
+  assert_eq '"on-request"' "$(jq -c '.approval_policy' <<<"$out")" "top-level keys are untouched"
+  assert_eq '["/home/u/.cache/mise"]' "$(jq -c '.sandbox_workspace_write.writable_roots' <<<"$out")" "other tables keep their values"
+}
+test_codex_filter_is_idempotent() {
+  local once; once=$(codex_filter "$TEST_DIR/fixtures/codex-config.toml")
+  printf '%s\n' "$once" >"$TMP_ROOT/once.toml"
+  assert_eq "$once" "$(codex_filter "$TMP_ROOT/once.toml")" "filtering twice changes nothing"
+}
+test_codex_filter_refuses_an_empty_allowlist() {
+  # Not assert_status: it runs the command with </dev/null (lib.sh), and the message proves which check refused.
+  local status=0 err
+  err=$(VM_MCP_KEEP="" "$REAL_CHEZMOI" execute-template --with-stdin --file "$AGENT_VM_DIR/vm-codex-config.tmpl" \
+    <"$TEST_DIR/fixtures/codex-config.toml" 2>&1 >/dev/null) || status=$?
+  assert_eq 1 "$status" "an empty allowlist is refused rather than guessed"
+  assert_contains "$err" "VM_MCP_KEEP is empty" "the refusal names the empty allowlist"
 }
 place_generated_configs() { # simulate what apply leaves behind (the settings fixture minus the look-alike hook)
   mkdir -p "$HOME/.claude" "$HOME/.codex"
@@ -244,6 +263,7 @@ test_bootstrap_filters_after_apply_and_before_recording() {
   assert_eq '{"id":"keep-me"}' "$(jq -c '.oauthAccount' "$HOME/.claude.json")" "Claude login state survives"
   assert_not_contains "$(cat "$HOME/.codex/config.toml")" "playwright" "codex MCP filtered after apply"
   assert_eq 600 "$(stat -c %a "$HOME/.claude.json")" ".claude.json keeps mode 600"
+  assert_eq 600 "$(stat -c %a "$HOME/.codex/config.toml")" "codex config keeps mode 600"
   assert_status 0 "applied hash recorded after filtering" -- test -e "$HOME/.local/state/agent-vm/applied-hash"
 }
 test_bootstrap_tolerates_missing_config_files() {
@@ -283,19 +303,43 @@ test_self_check_does_not_accept_a_kept_name_in_a_value() {
   printf '\n[profiles.y]\nmcp_servers.other.command = "context7"\n' >>"$HOME/.codex/config.toml"
   expect_self_check_failure "a kept name that only appears in a value"
 }
+test_self_check_catches_a_non_table_mcp_servers() {
+  setup_vm_env; place_generated_configs
+  printf '\n[profiles.z]\nmcp_servers = "x"\n' >>"$HOME/.codex/config.toml"
+  expect_self_check_failure "an mcp_servers that is not a table"
+}
+test_self_check_catches_mcp_servers_inside_an_array_of_tables() {
+  setup_vm_env; place_generated_configs
+  printf '\n[[arr]]\nmcp_servers = { evil = {} }\n' >>"$HOME/.codex/config.toml"
+  expect_self_check_failure "an MCP server inside an array of tables"
+}
+test_unparseable_codex_config_stops_bootstrap() {
+  # Stopped by the filter (it cannot parse the file), before the self-check runs.
+  setup_vm_env; place_generated_configs
+  printf '\nbroken = = 1\n' >>"$HOME/.codex/config.toml"
+  local before status=0; before=$(cat "$HOME/.codex/config.toml")
+  bash "$BOOTSTRAP" 1 v1:abc "$SRC" >/dev/null 2>&1 || status=$?
+  if [[ "$status" -ne 0 ]]; then record "PASS an unparseable codex config stops bootstrap"; else record "FAIL an unparseable codex config stops bootstrap"; fi
+  assert_eq "$before" "$(cat "$HOME/.codex/config.toml")" "the unparseable file is left as it was"
+  assert_status 1 "no applied hash for an unparseable codex config" -- test -e "$HOME/.local/state/agent-vm/applied-hash"
+}
+test_self_check_ignores_a_header_inside_a_string() {
+  setup_vm_env; place_generated_configs
+  printf '\n[notes]\ntext = """\n[mcp_servers.fake]\n"""\n' >>"$HOME/.codex/config.toml"
+  assert_status 0 "a table header inside a multi-line string is not a server" -- bash "$BOOTSTRAP" 1 v1:abc "$SRC"
+  assert_status 0 "applied hash recorded" -- test -e "$HOME/.local/state/agent-vm/applied-hash"
+}
 
 logging_mise_stub() { # replaces setup_vm_env's silent mise with one that records its calls and cwd
 # shellcheck disable=SC2016 # stub script text; $* and $PWD must expand when the stub runs
   printf '#!/bin/sh\necho "mise $* @$PWD" >>"$STUB_LOG"\nexit 0\n' >"$HOME/.local/bin/mise"
   chmod +x "$HOME/.local/bin/mise"
 }
-test_source_mise_config_trusted_and_dasel_installed_before_apply() {
+test_source_mise_config_is_not_trusted() {
   setup_vm_env; logging_mise_stub; touch "$SRC/.mise.toml"
   bash "$BOOTSTRAP" 1 v1:abc "$SRC" >/dev/null 2>&1
-  local cz="$HOME/.local/share/chezmoi" log; log=$(cat "$STUB_LOG")
-  assert_contains "$log" "mise trust $cz/.mise.toml" "trusts the VM's own copy of the source's mise config"
-  assert_contains "$log" "mise install dasel @$cz" "installs dasel from the source's mise config, in the source dir"
-  assert_eq "mise" "$(grep -m1 -oE '^(mise install dasel|chezmoi)' "$STUB_LOG" | cut -d' ' -f1)" "dasel comes before chezmoi apply"
+  assert_not_contains "$(cat "$STUB_LOG")" "mise trust" "the source's mise config is not trusted"
+  assert_not_contains "$(cat "$STUB_LOG")" "mise install dasel" "dasel is not installed"
 }
 
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do
