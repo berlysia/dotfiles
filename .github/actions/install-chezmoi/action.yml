@@ -14,16 +14,24 @@ inputs:
 runs:
   using: composite
   steps:
+    # Inputs are not shell-expanded, so a caller's "$HOME/.local/bin" arrives as that literal text. Expand a
+    # leading $HOME or ~ here; otherwise chezmoi lands in a directory literally named "$HOME" under the checkout
+    # and PATH gets a relative entry, which breaks anything that resolves chezmoi's path (e.g. a symlink to it).
     - name: Install chezmoi
       shell: bash
       env:
         INSTALL_DIR: ${{ inputs.install-dir }}
       run: |
-        sh -c "$(curl -fsLS https://get.chezmoi.io)" -- -b "${INSTALL_DIR}"
+        dir="${INSTALL_DIR/#\~/$HOME}"
+        dir="${dir/#\$HOME/$HOME}"
+        sh -c "$(curl -fsLS https://get.chezmoi.io)" -- -b "${dir}"
 
     - name: Add to PATH
       if: inputs.add-to-path == 'true'
       shell: bash
       env:
         INSTALL_DIR: ${{ inputs.install-dir }}
-      run: echo "${INSTALL_DIR}" >> "$GITHUB_PATH"
+      run: |
+        dir="${INSTALL_DIR/#\~/$HOME}"
+        dir="${dir/#\$HOME/$HOME}"
+        echo "${dir}" >> "$GITHUB_PATH"
