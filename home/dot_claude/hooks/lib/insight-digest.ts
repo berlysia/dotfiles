@@ -143,6 +143,54 @@ export function getUnreadDigestPreview(
   }
 }
 
+// Written by ~/.claude/scripts/run-distill-insights.sh (record_failure) as one
+// line, "<ISO8601> <reason>", and removed when a run observes
+// "stage_b outcome=ok". Keep MARKER_REASON in sync with the reasons that
+// script writes: anything else is not echoed, because the file is
+// user-writable and this notice reaches Claude's context.
+export const DISTILL_FAILED_MARKER_PATH = join(LOGS_DIR, "last-run-failed");
+export const DISTILL_RUN_LOG_PATH = join(LOGS_DIR, "distill-run.log");
+const MARKER_REASON =
+  /^\S+ (bun not found|script not found|lock tool not found|terminated by signal|distill-insights\.ts exited \d+|stage_b outcome=[a-z_]+)$/;
+// A daily job that also catches up on the next wake or login keeps the stamp
+// younger than the machine's downtime plus minutes. Three days stays quiet over
+// a weekend off and still speaks before a week of insights goes undistilled.
+export const DISTILL_STALE_AFTER_MS = 3 * 24 * 60 * 60 * 1000;
+
+const DISTILL_RECOVERY =
+  "recovery: check the scheduler (macOS: launchctl print gui/$(id -u)/com.berlysia.distill-insights; " +
+  "Linux: systemctl --user status distill-insights.timer, and loginctl enable-linger if the machine is often logged out), " +
+  "fix the cause, then run /insight-digest force";
+
+export interface DistillHealthPaths {
+  markerPath?: string;
+  stampPath?: string;
+}
+
+export function getDistillHealthNotice(
+  paths: DistillHealthPaths = {},
+  now: number = Date.now(),
+): string | null {
+  const markerPath = paths.markerPath ?? DISTILL_FAILED_MARKER_PATH;
+  const stampPath = paths.stampPath ?? STAMP_PATH;
+  try {
+    if (existsSync(markerPath)) {
+      const firstLine = readFileSync(markerPath, "utf8").split("\n")[0] ?? "";
+      const match = MARKER_REASON.exec(firstLine);
+      const reason = match ? match[1] : "unrecognized failure marker";
+      return `Insight distillation failed: ${reason}\nlog: ${DISTILL_RUN_LOG_PATH}\n${DISTILL_RECOVERY}`;
+    }
+    const stampMs = readStampMs(stampPath);
+    if (stampMs === 0) return null;
+    const ageMs = now - stampMs;
+    if (ageMs <= DISTILL_STALE_AFTER_MS) return null;
+    const days = Math.floor(ageMs / (24 * 60 * 60 * 1000));
+    return `Insight distillation has not run for ${days} days, so the digest is stale.\n${DISTILL_RECOVERY}`;
+  } catch {
+    return null;
+  }
+}
+
 export function sanitize(
   text: string,
   extraPatterns: RegExp[] = [],

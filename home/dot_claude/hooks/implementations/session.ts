@@ -6,7 +6,10 @@ import { resolve } from "node:path";
 import { defineHook } from "cc-hooks-ts";
 import { logEvent } from "../lib/centralized-logging.ts";
 import { matcherCoversGuardedTools } from "../lib/guarded-tools.ts";
-import { getUnreadDigestPreview } from "../lib/insight-digest.ts";
+import {
+  getDistillHealthNotice,
+  getUnreadDigestPreview,
+} from "../lib/insight-digest.ts";
 import { resolveWorkflowPaths } from "../lib/workflow-paths.ts";
 import { resolveWorkflowDir } from "../lib/workflow-resolve.ts";
 
@@ -250,6 +253,10 @@ const hook = defineHook({
       const digestPreview = getUnreadDigestPreview();
       if (digestPreview) {
         messages.push(digestPreview);
+      }
+      const distillHealth = getDistillHealthNotice();
+      if (distillHealth) {
+        messages.push(distillHealth);
       }
 
       // SessionStart では cc-hooks-ts の success() が messageForUser を破棄する
