@@ -25,7 +25,7 @@ check_shell() { # shell
   log="$TMP_BASE/$sh.log"
   : >"$log"
   local -a flags=(); IFS=' ' read -r -a flags <<<"$(shell_flags "$sh")"
-  STUB_LOG="$log" "$sh" "${flags[@]}" -c ". '$FUNCS'; claude -p hi; codex; AGENT_VM=off claude --version"
+  STUB_LOG="$log" "$sh" ${flags[@]+"${flags[@]}"} -c ". '$FUNCS'; claude -p hi; codex; AGENT_VM=off claude --version"
   assert_contains "$(cat "$log")" "agent-vm claude -p hi" "$sh: claude goes through agent-vm"
   assert_contains "$(cat "$log")" "agent-vm codex" "$sh: codex goes through agent-vm"
   assert_contains "$(cat "$log")" "claude --version" "$sh: AGENT_VM=off runs host claude"
@@ -38,7 +38,7 @@ check_without_launcher() { # shell: without agent-vm on PATH the functions are n
   mkdir -p "$bin"; cp "$TEST_DIR/stubs/claude" "$bin/claude"
   : >"$log"
   local -a flags=(); IFS=' ' read -r -a flags <<<"$(shell_flags "$sh")"
-  STUB_LOG="$log" PATH="$bin:/usr/bin:/bin" "$sh" "${flags[@]}" -c ". '$FUNCS'; claude -p hi"
+  STUB_LOG="$log" PATH="$bin:/usr/bin:/bin" "$sh" ${flags[@]+"${flags[@]}"} -c ". '$FUNCS'; claude -p hi"
   assert_eq "claude -p hi" "$(cat "$log")" "$sh: no launcher -> plain claude"
 }
 
