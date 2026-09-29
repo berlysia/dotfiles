@@ -14,14 +14,17 @@
 #
 # TEXTLINT_HOME overrides the runtime directory (used to test against a
 # scratch install). It is honoured as-is, so never invoke this wrapper from a
-# path where untrusted input can set environment variables.
+# path where untrusted input can set environment variables. The "Recover with"
+# command always targets the default location (~/.config/textlint), the only
+# one chezmoi manages, so under an override it will not fix the override.
 set -euo pipefail
 
 TEXTLINT_HOME="${TEXTLINT_HOME:-$HOME/.config/textlint}"
 TEXTLINT_BIN="$TEXTLINT_HOME/node_modules/.bin/textlint"
 TEXTLINT_CONFIG="$TEXTLINT_HOME/.textlintrc.json"
 STATE_FILE="$TEXTLINT_HOME/.install-state"
-RECOVER="cd $TEXTLINT_HOME && bun install --ignore-scripts"
+# Printed with a literal "~" so the user's own shell expands it.
+RECOVER="chezmoi apply ~/.config/textlint ~/.chezmoiscripts/10-install-textlint-deps.sh"
 
 if [[ ! -x "$TEXTLINT_BIN" ]]; then
     echo "textlint: runtime not installed at $TEXTLINT_HOME" >&2
@@ -32,13 +35,20 @@ fi
 # Stale runtime: package.json was redeployed but the last install of it did
 # not succeed (the installer copies package.json to .install-state only on
 # success; run_after_10-install-textlint-deps.sh.tmpl is its only writer).
-# Any mismatch, a missing state or a failed read counts as stale. The check
-# runs inside the `if` condition so that no failure in it, including a missing
-# cmp, stops textlint from running; it only decides whether to warn.
-if [[ -f "$TEXTLINT_HOME/package.json" ]] &&
-    ! cmp -s "$TEXTLINT_HOME/package.json" "$STATE_FILE" 2>/dev/null; then
-    echo "textlint: WARNING runtime at $TEXTLINT_HOME is older than its package.json" >&2
-    echo "Recover with: $RECOVER" >&2
+# Recovery is running that installer (RECOVER); a manual bun install does not
+# write the state, so it would leave the warning in place.
+# Any mismatch, a missing state or a failed read counts as stale. Without cmp
+# the state is unknown rather than stale, so that case gets its own warning.
+# The checks run inside `if` conditions so that no failure in them, including a
+# missing cmp, stops textlint from running; they only decide whether to warn.
+if [[ -f "$TEXTLINT_HOME/package.json" ]]; then
+    if ! command -v cmp >/dev/null 2>&1; then
+        echo "textlint: WARNING cannot check the runtime at $TEXTLINT_HOME against its package.json: cmp is not on PATH" >&2
+        echo "Fix: put cmp (diffutils) on PATH" >&2
+    elif ! cmp -s "$TEXTLINT_HOME/package.json" "$STATE_FILE" 2>/dev/null; then
+        echo "textlint: WARNING runtime at $TEXTLINT_HOME is older than its package.json" >&2
+        echo "Recover with: $RECOVER" >&2
+    fi
 fi
 
 args=()

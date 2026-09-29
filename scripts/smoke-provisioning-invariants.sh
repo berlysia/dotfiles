@@ -464,6 +464,10 @@ ln -s "$(command -v cmp)" "${l_path_cmp}/cmp"
 l_installer="${l_dir}/installer.sh"
 render_script "${SCRIPTS_DIR}/run_after_10-install-textlint-deps.sh.tmpl" "$l_installer"
 
+# The single recovery command the wrapper and the installer print. The tilde is
+# printed literally so the user's own shell expands it.
+l_recover='chezmoi apply ~/.config/textlint ~/.chezmoiscripts/10-install-textlint-deps.sh'
+
 # make_textlint_stub TEXTLINT_HOME LOG
 # A textlint that only records that it ran; builtins only, so it works under an
 # empty PATH.
@@ -489,10 +493,17 @@ printf 'x\n' > "${l_dir}/l1/input.md"
 PATH="$l_path_empty" TEXTLINT_HOME="$l1_home" /bin/bash "$WRAPPER" "${l_dir}/l1/input.md" \
   >/dev/null 2> "${l_dir}/l1/stderr.txt" && l1_rc=0 || l1_rc=$?
 l1_ran="$(grep -c '^ran$' "$l1_log" || true)"
-if [ "$l1_rc" -eq 0 ] && [ "$l1_ran" = "1" ]; then
-  pass "L1: wrapper runs textlint when neither sha256sum nor cmp is on PATH"
+# Without cmp the wrapper cannot tell stale from fresh, so it must say so
+# instead of claiming the runtime is old, and must not offer a Recover line
+# (a Recover line is always a command that can be run as printed).
+if [ "$l1_rc" -eq 0 ] && [ "$l1_ran" = "1" ] &&
+  grep -qF 'cmp is not on PATH' "${l_dir}/l1/stderr.txt" &&
+  grep -qF 'Fix: put cmp' "${l_dir}/l1/stderr.txt" &&
+  ! grep -qF 'older than its package.json' "${l_dir}/l1/stderr.txt" &&
+  ! grep -qF 'Recover with:' "${l_dir}/l1/stderr.txt"; then
+  pass "L1: without cmp the wrapper runs textlint and reports an unknown state, not a stale one"
 else
-  fail "L1: rc=${l1_rc}, textlint runs=${l1_ran}, expected rc=0 and 1 run"
+  fail "L1: rc=${l1_rc}, textlint runs=${l1_ran}, expected rc=0, 1 run, 'cmp is not on PATH' + 'Fix: put cmp', no 'older than' and no 'Recover with:'"
 fi
 
 # L2: install succeeds, then the wrapper sees a fresh runtime (no WARNING)
@@ -531,7 +542,7 @@ PATH="$l_path_cmp" TEXTLINT_HOME="$l2_textlint" /bin/bash "$WRAPPER" "${l_dir}/l
 l3_ran="$(grep -c '^ran$' "$l2_log" || true)"
 if [ "$l3_rc" -eq 0 ] &&
   grep -qF 'WARNING runtime at' "${l_dir}/l2/stderr-stale.txt" &&
-  grep -qF "Recover with: cd ${l2_textlint} && bun install --ignore-scripts" "${l_dir}/l2/stderr-stale.txt" &&
+  grep -qF "Recover with: ${l_recover}" "${l_dir}/l2/stderr-stale.txt" &&
   [ "$l3_ran" = "1" ]; then
   pass "L3: a stale runtime warns with the recovery command and still runs textlint"
 else
@@ -548,14 +559,15 @@ printf 'sentinel-prior-install\n' > "${l4_textlint}/.install-state"
 printf 'sentinel-prior-install\n' > "${l_dir}/l4/state-before"
 printf '#!/bin/sh\nexit 1\n' > "${l4_bun}/bun"
 chmod +x "${l4_bun}/bun"
-PATH="${l4_bun}:/usr/bin:/bin" HOME="$l4_home" bash "$l_installer" >/dev/null 2>&1 &&
+PATH="${l4_bun}:/usr/bin:/bin" HOME="$l4_home" bash "$l_installer" >"${l_dir}/l4/installer.out" 2>&1 &&
   l4_rc=0 || l4_rc=$?
 if [ "$l4_rc" -eq 0 ] &&
   cmp -s "${l4_textlint}/.install-state" "${l_dir}/l4/state-before" &&
-  [ -z "$(find "$l4_textlint" -name '.install-state.tmp.*')" ]; then
-  pass "L4: a failed install leaves the previous state untouched and no tmp file"
+  [ -z "$(find "$l4_textlint" -name '.install-state.tmp.*')" ] &&
+  grep -qF "Recover with: ${l_recover}" "${l_dir}/l4/installer.out"; then
+  pass "L4: a failed install leaves the previous state untouched, no tmp file, and prints the recovery command"
 else
-  fail "L4: rc=${l4_rc}, state changed or a .install-state.tmp.* file was left"
+  fail "L4: rc=${l4_rc}, state changed, a .install-state.tmp.* file was left, or the installer output lacks 'Recover with: ${l_recover}'"
 fi
 
 # L5: a legacy hash-format state reads as stale (new wrapper, old state)
@@ -576,6 +588,82 @@ if [ "$l5_rc" -eq 0 ] &&
   pass "L5: a legacy hash-format state warns as stale and textlint still runs"
 else
   fail "L5: rc=${l5_rc}, textlint runs=${l5_ran}, expected rc=0, WARNING, 1 run"
+fi
+
+# L6: running the printed Recover line with chezmoi clears the warning
+# Recover is the procedure for the default location (installer writes
+# $HOME/.config/textlint only), so TEXTLINT_HOME is set to
+# $HOME/.config/textlint of an isolated HOME here.
+l6_dir="${l_dir}/l6"
+l6_src="${l6_dir}/src"
+l6_home="${l6_dir}/home"
+l6_textlint="${l6_home}/.config/textlint"
+l6_bun="${l6_dir}/bun-stub"
+l6_chezmoi="${l6_dir}/chezmoi-only"
+l6_log="${l6_dir}/ran.log"
+mkdir -p "${l6_src}/home/.chezmoiscripts" "${l6_src}/home/dot_config/textlint" \
+  "${l6_home}/.config" "$l6_bun" "$l6_chezmoi"
+printf 'home\n' > "${l6_src}/.chezmoiroot"
+cp "${SCRIPTS_DIR}/run_after_10-install-textlint-deps.sh.tmpl" \
+  "${l6_src}/home/.chezmoiscripts/run_after_10-install-textlint-deps.sh.tmpl"
+printf '{"name":"l6"}\n' > "${l6_src}/home/dot_config/textlint/package.json"
+printf '#!/bin/sh\nexit 0\n' > "${l6_bun}/bun"
+chmod +x "${l6_bun}/bun"
+# chezmoi alone, so a developer's mise or bun on PATH cannot reach the installer.
+ln -s "$(command -v chezmoi)" "${l6_chezmoi}/chezmoi"
+l6_path="${l6_bun}:${l6_chezmoi}:/usr/bin:/bin"
+: > "$l6_log"
+printf 'x\n' > "${l6_dir}/input.md"
+
+# (a) deploy package.json only (the installer is not a target, so no state).
+# ~/.config exists in a real HOME; chezmoi does not create the parent of a target.
+# Absolute path: a tilde here would expand to the real HOME in this shell.
+HOME="$l6_home" PATH="$l6_path" chezmoi apply --source "$l6_src" --destination "$l6_home" \
+  --no-tty "$l6_textlint" > "${l6_dir}/apply-a.out" 2>&1 || true
+# (b) stale wrapper output and the Recover line it prints
+make_textlint_stub "$l6_textlint" "$l6_log"
+PATH="$l_path_cmp" TEXTLINT_HOME="$l6_textlint" /bin/bash "$WRAPPER" "${l6_dir}/input.md" \
+  >/dev/null 2> "${l6_dir}/stderr-b.txt" || true
+l6_b_warned=false
+if grep -qF 'WARNING runtime at' "${l6_dir}/stderr-b.txt"; then
+  l6_b_warned=true
+fi
+l6_recover="$(sed -n 's/^Recover with: //p' "${l6_dir}/stderr-b.txt" | head -1)"
+# (c) run the extracted line once in a child bash so the tilde expands there
+l6_first_word="${l6_recover%% *}"
+l6_rest="${l6_recover#* }"
+if [ "$l6_b_warned" != true ]; then
+  fail "L6: the wrapper did not warn before Recover ran (stderr: $(head -2 "${l6_dir}/stderr-b.txt" | tr '\n' ' '))"
+elif [ "$l6_first_word" != "chezmoi" ] || [ "${l6_rest%% *}" != "apply" ]; then
+  fail "L6: (i) the extracted Recover is not a chezmoi command: '${l6_recover}'"
+else
+  l6_cmd="${l6_recover} --source ${l6_src} --destination ${l6_home} --no-tty"
+  HOME="$l6_home" PATH="$l6_path" bash -c 'eval "$1"' _ "$l6_cmd" \
+    > "${l6_dir}/apply-c.out" 2>&1 || true
+  # (d) the wrapper again
+  : > "$l6_log"
+  PATH="$l_path_cmp" TEXTLINT_HOME="$l6_textlint" /bin/bash "$WRAPPER" "${l6_dir}/input.md" \
+    >/dev/null 2> "${l6_dir}/stderr-d.txt" && l6_rc=0 || l6_rc=$?
+  l6_ran="$(grep -c '^ran$' "$l6_log" || true)"
+  if ! cmp -s "${l6_textlint}/package.json" "${l6_textlint}/.install-state"; then
+    fail "L6: (ii) state not written after running Recover; chezmoi output: $(tr '\n' ' ' < "${l6_dir}/apply-c.out")"
+  elif [ "$l6_rc" -eq 0 ] && ! grep -qF 'WARNING' "${l6_dir}/stderr-d.txt" && [ "$l6_ran" = "1" ]; then
+    pass "L6: running the printed Recover line writes the state and clears the warning"
+  else
+    fail "L6: rc=${l6_rc}, textlint runs=${l6_ran}, expected rc=0, no WARNING and 1 run after Recover"
+  fi
+fi
+
+# L7: a missing binary exits 2 and prints the same Recover line as L3 and L4
+l7_home="${l_dir}/l7/textlint"
+mkdir -p "$l7_home"
+printf '{"name":"l7"}\n' > "${l7_home}/package.json"
+PATH="$l_path_cmp" TEXTLINT_HOME="$l7_home" /bin/bash "$WRAPPER" "${l_dir}/l5/input.md" \
+  >/dev/null 2> "${l_dir}/l7/stderr.txt" && l7_rc=0 || l7_rc=$?
+if [ "$l7_rc" -eq 2 ] && grep -qF "Recover with: ${l_recover}" "${l_dir}/l7/stderr.txt"; then
+  pass "L7: a missing binary exits 2 with the same recovery command"
+else
+  fail "L7: rc=${l7_rc}, expected rc=2 and 'Recover with: ${l_recover}'"
 fi
 
 # --- assertion F: no mise or bun toolchain use in the ASCII-ordered phase ---

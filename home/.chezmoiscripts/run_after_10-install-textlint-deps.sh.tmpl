@@ -16,7 +16,9 @@
 # .install-state is a byte copy of the package.json that last installed
 # successfully; this script is its only writer. The wrapper
 # (home/dot_local/bin/executable_textlint-global) only reads it, comparing with
-# cmp, and treats any mismatch, absence or read error as stale.
+# cmp, and treats any mismatch, absence or read error as stale; without cmp it
+# reports the state as unknown, not stale. The wrapper's "Recover with" command
+# runs this script through chezmoi, so this is the one place the state is fixed.
 #
 # --ignore-scripts: no package in this tree needs a lifecycle script today,
 # and a text linter has no business running one at install time.
@@ -62,7 +64,7 @@ if (cd "$TEXTLINT_DIR" && bun install --ignore-scripts 2>&1); then
     fi
 else
     log "bun install failed in $TEXTLINT_DIR (see output above)" "ERROR"
-    log "Recover with: cd $TEXTLINT_DIR && bun install --ignore-scripts" "ERROR"
+    log "Recover with: chezmoi apply ~/.config/textlint ~/.chezmoiscripts/10-install-textlint-deps.sh" "ERROR"
 fi
 
 exit 0
