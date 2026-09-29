@@ -34,7 +34,9 @@ yarn = "4.18.0"
 {{- if not (dig "agent_vm" false .) }}
 "go:github.com/syou6162/git-sequential-stage" = "latest"
 {{- end }}
-"npm:@mizchi/readability" = "0.7.7"
+# Weekly downloads hover around aube's 1000/week threshold, so installs fail intermittently.
+# The package and its author are known, so the low-download gate is explicitly approved.
+"npm:@mizchi/readability" = { version = "0.7.7", allow_low_downloads = true }
 "npm:@openai/codex" = "latest"
 "github:k1LoW/mo" = "1.5.5"
 # registry の `deck` は Kong/decK に解決されるため repo 指定が必須
