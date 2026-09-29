@@ -197,6 +197,91 @@ test_vm_installers_come_from_the_host_sources() {
   done
 }
 
+AGENT_VM_DIR="$REPO_ROOT/agent-vm"
+KEEP="readability context7 excalidraw"
+test_settings_filter_drops_only_the_audio_hook() {
+  local out; out=$(jq -f "$AGENT_VM_DIR/vm-settings.jq" "$TEST_DIR/fixtures/settings.json")
+  assert_eq '["SessionStart","Stop"]' "$(jq -c '.hooks | keys' <<<"$out")" "empty Notification event is removed"
+  assert_eq 1 "$(jq '.hooks.Stop[0].hooks | length' <<<"$out")" "only the audio hook is dropped from a mixed group"
+  assert_contains "$out" "speak-notification-extra.ts" "a similarly named hook survives"
+  assert_eq '{"x@y":true}' "$(jq -c '.enabledPlugins' <<<"$out")" "other keys are untouched"
+}
+test_settings_filter_is_idempotent() {
+  local once; once=$(jq -f "$AGENT_VM_DIR/vm-settings.jq" "$TEST_DIR/fixtures/settings.json")
+  assert_eq "$once" "$(jq -f "$AGENT_VM_DIR/vm-settings.jq" <<<"$once")" "filtering twice changes nothing"
+}
+test_claude_json_filter_keeps_only_network_mcp() {
+  local out; out=$(jq --arg keep "$KEEP" -f "$AGENT_VM_DIR/vm-claude-json.jq" "$TEST_DIR/fixtures/claude.json")
+  assert_eq '["context7","excalidraw","readability"]' "$(jq -c '.mcpServers | keys' <<<"$out")" "top-level MCP servers are exactly the allowlist (no prefix matches)"
+  assert_eq '{"local-one":{}}' "$(jq -c '.projects["/r"].mcpServers' <<<"$out")" "project-scoped MCP servers are untouched"
+  assert_eq '{"id":"keep-me"}' "$(jq -c '.oauthAccount' <<<"$out")" "other keys are untouched"
+}
+test_codex_filter_keeps_only_allowlisted_tables() {
+  local out; out=$(awk -v keep_list="$KEEP" -f "$AGENT_VM_DIR/vm-codex-config.awk" "$TEST_DIR/fixtures/codex-config.toml")
+  assert_eq '[mcp_servers] [mcp_servers.context7] [[profiles]] [sandbox_workspace_write] [mcp_servers."readability"]' \
+    "$(grep -E '^[[:space:]]*\[' <<<"$out" | paste -sd' ' -)" "codex keeps the allowlisted MCP tables and every other table"
+  assert_not_contains "$out" "DEBUG" "sub-tables of a dropped server go too"
+  assert_contains "$out" "name = 'kept'" "an array-of-tables header ends a dropped table"
+  assert_eq "approval_policy = 'on-request'" "$(head -1 <<<"$out")" "top-level keys are untouched"
+}
+test_codex_filter_runs_under_the_system_awk() {
+  # Ubuntu's default awk is mawk; the filter must not rely on gawk extensions.
+  assert_status 0 "system awk runs the codex filter" -- awk -v keep_list="$KEEP" -f "$AGENT_VM_DIR/vm-codex-config.awk" "$TEST_DIR/fixtures/codex-config.toml"
+}
+place_generated_configs() { # simulate what apply leaves behind (the settings fixture minus the look-alike hook)
+  mkdir -p "$HOME/.claude" "$HOME/.codex"
+  jq 'del(.hooks.SessionStart)' "$TEST_DIR/fixtures/settings.json" >"$HOME/.claude/settings.json"
+  cp "$TEST_DIR/fixtures/claude.json" "$HOME/.claude.json"; chmod 600 "$HOME/.claude.json"
+  cp "$TEST_DIR/fixtures/codex-config.toml" "$HOME/.codex/config.toml"; chmod 600 "$HOME/.codex/config.toml"
+}
+test_bootstrap_filters_after_apply_and_before_recording() {
+  setup_vm_env; place_generated_configs
+  bash "$BOOTSTRAP" 1 v1:abc "$SRC" >/dev/null 2>&1
+  assert_not_contains "$(cat "$HOME/.claude/settings.json")" "speak-notification" "settings filtered after apply"
+  assert_eq '["context7","excalidraw","readability"]' "$(jq -c '.mcpServers | keys' "$HOME/.claude.json")" "Claude MCP filtered after apply"
+  assert_eq '{"id":"keep-me"}' "$(jq -c '.oauthAccount' "$HOME/.claude.json")" "Claude login state survives"
+  assert_not_contains "$(cat "$HOME/.codex/config.toml")" "playwright" "codex MCP filtered after apply"
+  assert_eq 600 "$(stat -c %a "$HOME/.claude.json")" ".claude.json keeps mode 600"
+  assert_status 0 "applied hash recorded after filtering" -- test -e "$HOME/.local/state/agent-vm/applied-hash"
+}
+test_bootstrap_tolerates_missing_config_files() {
+  setup_vm_env
+  assert_status 0 "no generated configs yet is fine" -- bash "$BOOTSTRAP" 1 v1:abc "$SRC"
+}
+test_failed_filter_leaves_files_and_hash_untouched() {
+  setup_vm_env; place_generated_configs
+  printf '{ not json\n' >"$HOME/.claude.json"
+  local before status=0; before=$(cat "$HOME/.claude.json")
+  bash "$BOOTSTRAP" 1 v1:abc "$SRC" >/dev/null 2>&1 || status=$?
+  if [[ "$status" -ne 0 ]]; then record "PASS a filter failure aborts bootstrap"; else record "FAIL a filter failure aborts bootstrap"; fi
+  assert_eq "$before" "$(cat "$HOME/.claude.json")" "the unfilterable file is left as it was"
+  assert_eq "" "$(find "$HOME" -maxdepth 1 -name '.claude.json.*')" "no temp file left behind"
+  assert_status 1 "no applied hash after a filter failure" -- test -e "$HOME/.local/state/agent-vm/applied-hash"
+}
+expect_self_check_failure() { # label: bootstrap must exit non-zero and record nothing
+  local status=0
+  bash "$BOOTSTRAP" 1 v1:abc "$SRC" >/dev/null 2>&1 || status=$?
+  if [[ "$status" -ne 0 ]]; then record "PASS self-check catches $1"; else record "FAIL self-check catches $1"; fi
+  assert_status 1 "no applied hash when the self-check catches $1" -- test -e "$HOME/.local/state/agent-vm/applied-hash"
+}
+test_self_check_catches_an_audio_hook_the_filter_missed() {
+  # A wrapper change (here ';' instead of a space after .ts) makes the exact filter miss; the loose check must not.
+  setup_vm_env; place_generated_configs
+  sed -i 's#speak-notification\.ts Stop#speak-notification.ts;Stop#' "$HOME/.claude/settings.json"
+  jq empty "$HOME/.claude/settings.json" # the fixture stays valid JSON, so the failure comes from the self-check
+  expect_self_check_failure "a surviving audio hook"
+}
+test_self_check_catches_codex_mcp_in_unfiltered_forms() {
+  setup_vm_env; place_generated_configs
+  printf '\n[profiles.x]\nmcp_servers.playwright.command = "npx"\n' >>"$HOME/.codex/config.toml"
+  expect_self_check_failure "a dotted-key codex MCP server"
+}
+test_self_check_does_not_accept_a_kept_name_in_a_value() {
+  setup_vm_env; place_generated_configs
+  printf '\n[profiles.y]\nmcp_servers.other.command = "context7"\n' >>"$HOME/.codex/config.toml"
+  expect_self_check_failure "a kept name that only appears in a value"
+}
+
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do
   (
     TMP_ROOT="$TMP_BASE/$t"; mkdir -p "$TMP_ROOT"

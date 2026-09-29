@@ -1,0 +1,14 @@
+{
+  "installMethod": "native",
+  "oauthAccount": { "id": "keep-me" },
+  "projects": { "/r": { "mcpServers": { "local-one": {} } } },
+  "mcpServers": {
+    "readability": {},
+    "context7": {},
+    "drawio": {},
+    "chrome-devtools": {},
+    "playwright": {},
+    "excalidraw": {},
+    "context7-foo": {}
+  }
+}

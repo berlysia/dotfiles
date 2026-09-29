@@ -1,0 +1,32 @@
+approval_policy = 'on-request'
+
+[mcp_servers]
+[mcp_servers.context7]
+args = ['@upstash/context7-mcp@latest']
+command = 'npx'
+
+[mcp_servers.playwright]
+args = ['@playwright/mcp@latest']
+command = 'npx'
+
+[mcp_servers.playwright.env]
+DEBUG = '1'
+
+[mcp_servers.context7-foo]
+command = 'npx'
+
+[ mcp_servers."drawio" ]
+command = 'npx'
+
+[[profiles]]
+name = 'kept'
+
+[sandbox_workspace_write]
+writable_roots = ['/home/u/.cache/mise']
+
+[mcp_servers."readability"]
+args = ['@mizchi/readability@latest', '--mcp']
+command = 'npx'
+
+[mcp_servers.trailing]
+command = 'npx'

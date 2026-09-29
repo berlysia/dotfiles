@@ -11,6 +11,8 @@ readonly VM_APT_PKGS=(jq bat fd-find ripgrep shellcheck)
 # A fresh machine can still hold the dpkg lock (cloud-init, unattended-upgrades); wait for it instead of failing,
 # and bound every download so a stalled network fails the bootstrap (retried next launch) instead of hanging it.
 readonly APT_OPTS=(-o DPkg::Lock::Timeout=120 -o Acquire::Retries=3)
+# The one list of MCP servers the VM keeps; the jq filter, the awk filter and the self-check all take it from here.
+readonly VM_MCP_KEEP="readability context7 excalidraw"
 readonly CURL_OPTS=(-fsSL --proto "=https" --tlsv1.2 --retry 3 --retry-connrefused --connect-timeout 15 --max-time 300)
 MARKER="${AGENT_VM_MARKER:-/etc/agent-vm}"
 OUTBOX_ROOT="${AGENT_VM_OUTBOX_ROOT:-/opt/agent-vm/outbox}"
@@ -60,6 +62,48 @@ install_vm_tools() { # only what the VM needs, before apply: 00-install-mise-too
   link_debian_name batcat bat
   link_debian_name fdfind fd
 }
+filter_vm_config() { # target file, command... (the target is appended last): rewrite through a same-directory temp
+  local target=$1 tmp
+  shift
+  [[ -f "$target" ]] || return 0
+  tmp=$(mktemp "$target.XXXXXX") || fail "cannot create a temp file next to $target"
+  # shellcheck disable=SC2064 # expand now: remove this call's file even when fail() exits the script
+  trap "rm -f '$tmp'" EXIT
+  "$@" "$target" >"$tmp" || fail "could not post-process $target for the VM"
+  # An empty result is never a valid config; refuse it rather than wipe the file (and, for .claude.json, the login).
+  [[ -s "$tmp" ]] || fail "post-processing $target produced nothing"
+  chmod --reference="$target" "$tmp"
+  mv "$tmp" "$target"
+  trap - EXIT
+}
+filter_vm_configs() { # every bootstrap, after apply (spec K19)
+  local here
+  here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+  filter_vm_config "$HOME/.claude/settings.json" jq -f "$here/vm-settings.jq"
+  filter_vm_config "$HOME/.claude.json" jq --arg keep "$VM_MCP_KEEP" -f "$here/vm-claude-json.jq"
+  filter_vm_config "$HOME/.codex/config.toml" awk -v keep_list="$VM_MCP_KEEP" -f "$here/vm-codex-config.awk"
+}
+verify_vm_config() { # deliberately looser than the filters, and fail-closed: a filter that removed nothing must stop here
+  local keep_alt bad verdict
+  # A mismatch here repeats on every launch until the dotfiles or the filters change; say how to get unstuck.
+  local recover="fix the filter in agent-vm/ (or the template that changed), then run: agent-vm rm (the next launch recreates the machine)"
+  keep_alt=${VM_MCP_KEEP// /|}
+  if [[ -f "$HOME/.claude/settings.json" ]] && grep -q 'speak-notification' "$HOME/.claude/settings.json"; then
+    fail "the audio notification hook is still registered after post-processing; $recover"
+  fi
+  if [[ -f "$HOME/.claude.json" ]]; then
+    verdict=$(jq --arg keep "$VM_MCP_KEEP" '(.mcpServers // {}) | keys - ($keep | split(" ")) | length == 0' "$HOME/.claude.json") || verdict=""
+    [[ "$verdict" == true ]] || fail "MCP servers outside the VM allowlist remain in ~/.claude.json; $recover"
+  fi
+  if [[ -f "$HOME/.codex/config.toml" ]]; then
+    # Any line starting with mcp_servers (table header, dotted key or inline table) must name a kept server right
+    # after `mcp_servers.`; the bare [mcp_servers] parent header is the only exception.
+    bad=$(grep -E '^[[:space:]]*\[*[[:space:]]*mcp_servers' "$HOME/.codex/config.toml" |
+      grep -vE '^[[:space:]]*\[[[:space:]]*mcp_servers[[:space:]]*\][[:space:]]*$' |
+      grep -vE "^[[:space:]]*\[*[[:space:]]*mcp_servers\.\"?(${keep_alt})\"?([].[:space:]=]|$)") || true
+    [[ -z "$bad" ]] || fail "MCP servers outside the VM allowlist remain in ~/.codex/config.toml: $bad; $recover"
+  fi
+}
 
 contract=${1:-}
 hash=${2:-}
@@ -103,6 +147,12 @@ mkdir -p "$cz"
 # .git is excluded so the empty repository chezmoi init creates in a .git-less source survives resyncs.
 rsync -a --delete --exclude node_modules --exclude .git "$src/" "$cz/"
 chezmoi init --force --no-tty -W "$cz" --apply
+
+# Every bootstrap, after apply: update-settings-json rewrites hooks wholesale, update-claude-json merges MCP
+# servers additively and the codex config is regenerated from its template, so anything removed here comes
+# back whenever those scripts re-run (spec K19). Nothing records applied-hash unless both succeed.
+filter_vm_configs
+verify_vm_config
 
 mkdir -p "$HOME/.local/state/agent-vm"
 printf '%s\n' "$hash" >"$HOME/.local/state/agent-vm/applied-hash"
