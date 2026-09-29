@@ -11,6 +11,7 @@ on:
       - "home/dot_zshenv"
       - ".github/workflows/test-shell-compatibility.yml"
       - ".github/actions/install-chezmoi/**"
+      - ".github/actions/install-chezmoi/**"
   pull_request:
     branches: [master, main]
     paths:
@@ -20,6 +21,7 @@ on:
       - "home/dot_zsh/**"
       - "home/dot_zshenv"
       - ".github/workflows/test-shell-compatibility.yml"
+      - ".github/actions/install-chezmoi/**"
       - ".github/actions/install-chezmoi/**"
   workflow_dispatch: # Allow manual trigger
 
