@@ -6,7 +6,7 @@
 // need an async spawn + delayed kill(), since spawnSync cannot deliver a
 // signal mid-execution.
 
-import { ok, strictEqual } from "node:assert";
+import { deepStrictEqual, ok, strictEqual } from "node:assert";
 import { execSync, spawn, spawnSync } from "node:child_process";
 import {
   chmodSync,
@@ -106,6 +106,25 @@ function pollForLastRecord(
     throw new Error(`no record appeared in ${logPath} within ${timeoutMs}ms`);
   }
   return JSON.parse(lines[lines.length - 1]);
+}
+
+/**
+ * Polls until `dir` is empty, up to `timeoutMs`, and returns what remains.
+ * The wrapper creates its scratch dir before exiting and only the detached
+ * recorder removes it, so "empty" can only be reached by the cleanup under test.
+ */
+function pollUntilEmpty(
+  dir: string,
+  timeoutMs = 3500,
+  intervalMs = 50,
+): string[] {
+  const deadline = performance.now() + timeoutMs;
+  let entries = readdirSync(dir);
+  while (entries.length > 0 && performance.now() < deadline) {
+    sleepSync(intervalMs);
+    entries = readdirSync(dir);
+  }
+  return entries;
 }
 
 function runWrapperSync(
@@ -295,8 +314,7 @@ describe("hook-timer.sh", () => {
       env: { ...baseEnv(logDir), TMPDIR: tmpDir },
     });
     strictEqual(result.status, 0);
-    sleepSync(3500);
-    strictEqual(readdirSync(tmpDir).length, 0);
+    deepStrictEqual(pollUntilEmpty(tmpDir), []);
   });
 
   it("leaves no scratch dir behind (PATH without jq)", () => {
@@ -318,8 +336,7 @@ describe("hook-timer.sh", () => {
       env: { CLAUDE_LOGS_DIR: logDir, TMPDIR: tmpDir, PATH: minimalPath },
     });
     strictEqual(result.status, 0);
-    sleepSync(3500);
-    strictEqual(readdirSync(tmpDir).length, 0);
+    deepStrictEqual(pollUntilEmpty(tmpDir), []);
   });
 
   it("leaves no scratch dir behind (unwritable CLAUDE_LOGS_DIR)", () => {
@@ -329,8 +346,7 @@ describe("hook-timer.sh", () => {
       env: { ...baseEnv("/proc/nonexistent"), TMPDIR: tmpDir },
     });
     strictEqual(result.status, 0);
-    sleepSync(3500);
-    strictEqual(readdirSync(tmpDir).length, 0);
+    deepStrictEqual(pollUntilEmpty(tmpDir), []);
   });
 
   it("waits for a child that traps TERM before flushing stdout", async () => {
