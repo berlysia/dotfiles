@@ -91,6 +91,19 @@ test_ignore_vm_block_leaves_host_render_unchanged() {
   done
 }
 
+# chezmoi runs after-band scripts (run_after_*, run_onchange_after_*, ...) after all files, in target-name order.
+after_band_targets() { # target names of the after-band scripts in the source, in the order chezmoi runs them
+  local f
+  for f in "$SRC"/.chezmoiscripts/run_*after_*; do
+    f=${f##*/}; f=${f%.tmpl}; f=${f#run_}; f=${f#once_}; f=${f#onchange_}; f=${f#after_}
+    printf '%s\n' "$f"
+  done | LC_ALL=C sort
+}
+test_skills_install_runs_after_mise_tools_and_before_sync() {
+  local order; order=$(after_band_targets | grep -xE '00-install-mise-tools\.sh|install-claude-skills-11\.sh|sync-skills\.sh' | paste -sd' ' -)
+  assert_eq "00-install-mise-tools.sh install-claude-skills-11.sh sync-skills.sh" "$order" "apm is installed before skills, skills before sync"
+}
+
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do
   ( "$t" ) </dev/null || record "FAIL $t (test aborted)"
 done
