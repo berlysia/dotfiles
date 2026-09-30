@@ -84,6 +84,10 @@ spec.md の Risks R1-R11 を、本 ADR の時点で受け入れた残余とし�
 - `home/.chezmoitemplates/` の partial は chezmoi にテンプレートとして描画される。`#` はコメントとして扱われないため、partial の中に、コメントの中であっても `{{ }}` の区切りを書いてはならない。使い方の例を実際の区切り付きで書くと partial が自分自身を include し続け、`exceeded maximum template depth` で描画に失敗する（Round 5 で実際に発生した）。partial 内の使い方の説明は、区切りを含めない文章で書く
 - 本 ADR の不変条件は `scripts/smoke-provisioning-invariants.sh` で機械的に守られ、`.github/workflows/ci-smoke-chezmoi.yml` に配線されている
 
+## Amended by
+
+- `docs/plans/dependency-update-paths/spec.md` (2026-10-01) — APM の skill installer（旧 `run_onchange_after_install-claude-skills-11`）を `run_after_10-install-apm-skills` として 10- 帯に加えた。K2 の「ハッシュで gate せず毎回実行する」に対し、成功した install の後にだけ書く `~/.apm/.install-state` で `apm install -g` を省く installer を名前付きの例外として認める。失敗時は state を消し、marker がある間は省かないので、一度の失敗が恒久的な skip に変わることはない。verifier が見る marker は `.hook-deps-install-failed`・`.root-deps-install-failed`・`.apm-skills-install-failed` の 3 つになった。K4 の installer と異なり、apm が PATH に無いことも marker にする（bun と違い、apm の不在は他の場所で目に見える失敗を起こさない）。K1-K8 の決定は supersede しない
+
 ## References
 
 - `home/.chezmoitemplates/record-provisioning-failure.sh` — marker 書き込みの共有 partial

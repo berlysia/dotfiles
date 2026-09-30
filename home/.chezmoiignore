@@ -88,7 +88,7 @@ install-packages-*-windows.ps1
 !.chezmoiscripts/update-settings-json.sh
 !.chezmoiscripts/update-claude-json.sh
 !.chezmoiscripts/install-claude-plugins-8.sh
-!.chezmoiscripts/install-claude-skills-11.sh
+!.chezmoiscripts/10-install-apm-skills.sh
 !.chezmoiscripts/sync-skills.sh
 !.chezmoiscripts/install-safe-chain.sh
 {{- end }}

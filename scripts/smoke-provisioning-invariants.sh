@@ -22,6 +22,7 @@ SCRIPTS_DIR="${REPO_ROOT}/home/.chezmoiscripts"
 TOOLCHAIN_NAME="00-install-mise-tools"
 INSTALLER_NAME="10-install-hook-deps"
 ROOT_DEPS_NAME="10-install-root-deps"
+APM_SKILLS_NAME="10-install-apm-skills"
 VERIFIER_NAME="zz-verify-provisioning"
 
 TMP_ROOT="$(mktemp -d -t hook-deps-inv-XXXXXX)"
@@ -45,11 +46,13 @@ fail() {
 # replaced by a stub that exits 97. The remaining assertions then still run and
 # report, instead of `set -e` aborting the whole file.
 render_script() {
-  local template="$1" output="$2"
+  local template="$1" output="$2" data="${3:-}"
+  local -a data_args=()
+  [ -n "$data" ] && data_args=(--override-data "$data")
   if [ ! -f "$template" ]; then
     fail "render: $(basename "$template") does not exist"
     printf '#!/bin/sh\nexit 97\n' > "$output"
-  elif ! chezmoi execute-template --source "${REPO_ROOT}/home" < "$template" > "$output" 2> "${output}.err"; then
+  elif ! chezmoi execute-template --source "${REPO_ROOT}/home" ${data_args[@]+"${data_args[@]}"} < "$template" > "$output" 2> "${output}.err"; then
     fail "render: $(basename "$template") failed to render: $(head -1 "${output}.err")"
     printf '#!/bin/sh\nexit 97\n' > "$output"
   fi
@@ -97,14 +100,14 @@ fi
 # Membership, not positions: the band may hold other dependency-tree installers
 # (10-install-textlint-deps), and they do not depend on each other.
 a3_missing=""
-for a3_name in "$INSTALLER_NAME" "$ROOT_DEPS_NAME"; do
+for a3_name in "$INSTALLER_NAME" "$ROOT_DEPS_NAME" "$APM_SKILLS_NAME"; do
   case " ${order_band}" in
   *" ${a3_name} "*) ;;
   *) a3_missing="${a3_missing} ${a3_name}" ;;
   esac
 done
 if [ -z "$a3_missing" ]; then
-  pass "A3: the 10- band follows the toolchain and holds both dependency installers"
+  pass "A3: the 10- band follows the toolchain and holds the dependency installers"
 else
   fail "A3: 10- band after the toolchain is '${order_band}', missing:${a3_missing}"
 fi
@@ -148,7 +151,7 @@ mkdir -p "${c_home}/.claude" "${c_stub}"
 c_log="${TMP_ROOT}/c/invoked.log"
 : > "$c_log"
 
-for stub_cmd in mise bun; do
+for stub_cmd in mise bun apm; do
   cat > "${c_stub}/${stub_cmd}" <<STUB
 #!/bin/sh
 echo "${stub_cmd}" >> "${c_log}"
@@ -162,10 +165,11 @@ render_script "${SCRIPTS_DIR}/run_after_${VERIFIER_NAME}.sh.tmpl" "$c_rendered"
 
 printf 'reason=synthetic\n' > "${c_home}/.claude/.hook-deps-install-failed"
 printf 'reason=synthetic\n' > "${c_home}/.claude/.root-deps-install-failed"
+printf 'reason=synthetic\n' > "${c_home}/.claude/.apm-skills-install-failed"
 PATH="${c_stub}:${PATH}" HOME="$c_home" bash "$c_rendered" >/dev/null 2>&1 || true
 
 if [ ! -s "$c_log" ]; then
-  pass "C: verifier invoked neither mise nor bun"
+  pass "C: verifier invoked none of mise, bun, apm"
 else
   fail "C: verifier invoked $(tr '\n' ' ' < "$c_log")"
 fi
@@ -219,6 +223,18 @@ if [ "$d4_rc" -ne 0 ] && grep -q 'cd ~/.claude && bun install' "$d4_err" &&
   pass "D4: both markers are reported in one run"
 else
   fail "D4: rc=${d4_rc}, stderr lacked one of the two reports"
+fi
+
+d5_home="${TMP_ROOT}/d/home-apm"
+mkdir -p "${d5_home}/.claude"
+printf 'reason=apm-install-failed\n' > "${d5_home}/.claude/.apm-skills-install-failed"
+d5_err="${TMP_ROOT}/d/stderr-apm.txt"
+HOME="$d5_home" bash "$d_rendered" 2> "$d5_err" >/dev/null && d5_rc=0 || d5_rc=$?
+if [ "$d5_rc" -ne 0 ] && grep -q 'mise install github:microsoft/apm && apm install -g' "$d5_err" &&
+  ! grep -q '\[hook-deps\]' "$d5_err" && ! grep -q '\[root-deps\]' "$d5_err"; then
+  pass "D5: apm-skills marker alone exits non-zero with only its recovery command"
+else
+  fail "D5: rc=${d5_rc}, stderr did not match the apm-skills report"
 fi
 
 # --- assertion E: installer branches and marker hygiene ---
@@ -447,6 +463,211 @@ if [ "$j5_rc" -eq 1 ] && [ "$j5_entries" = "0" ]; then
   pass "J5: a directory at the marker path makes root-deps exit 1 without writing into it"
 else
   fail "J5: rc=${j5_rc}, entries inside the directory=${j5_entries}"
+fi
+
+# --- assertion M: APM skill installer branches, state gate and marker hygiene ---
+m_dir="${TMP_ROOT}/m"
+m_stub="${m_dir}/stub"
+mkdir -p "$m_stub"
+m_rendered="${m_dir}/apm-skills.sh"
+m_vm_rendered="${m_dir}/apm-skills-vm.sh"
+render_script "${SCRIPTS_DIR}/run_after_${APM_SKILLS_NAME}.sh.tmpl" "$m_rendered"
+render_script "${SCRIPTS_DIR}/run_after_${APM_SKILLS_NAME}.sh.tmpl" "$m_vm_rendered" '{"agent_vm":true}'
+
+# The stub apm: `--version` prints a real-looking line (or nothing with
+# APM_STUB_NO_VERSION=1); `install` logs the call, writes a secret-looking line
+# to stderr, fails with APM_STUB_FAIL=1, and otherwise creates the lockfile
+# unless APM_STUB_NO_LOCK=1.
+cat > "${m_stub}/apm" <<'STUB'
+#!/bin/sh
+case "$1" in
+--version)
+  [ "${APM_STUB_NO_VERSION:-0}" = 1 ] && exit 0
+  echo "[!] A new version of APM is available: 9.9.10 (current: ${APM_STUB_VERSION:-9.9.9})"
+  echo "Agent Package Manager (APM) CLI version ${APM_STUB_VERSION:-9.9.9} (stub)"
+  exit 0
+  ;;
+install)
+  echo install >> "$HOME/apm-install.log"
+  echo "SECRET_TOKEN_SHOULD_NOT_BE_COPIED" >&2
+  [ "${APM_STUB_FAIL:-0}" = 1 ] && exit 1
+  [ "${APM_STUB_NO_LOCK:-0}" = 1 ] || : > "$HOME/.apm/apm.lock.yaml"
+  exit 0
+  ;;
+esac
+exit 0
+STUB
+chmod +x "${m_stub}/apm"
+
+# m_home NAME: a fresh HOME with ~/.apm/apm.yml and ~/.claude
+m_home() {
+  local h="${m_dir}/$1"
+  mkdir -p "${h}/.apm" "${h}/.claude"
+  printf 'name: probe\n' > "${h}/.apm/apm.yml"
+  printf '%s' "$h"
+}
+# m_run HOME SCRIPT [VAR=VALUE...]: runs the installer with the stub first on PATH.
+# bash is resolved from the caller's PATH, not the trimmed one. Callers that do
+# not check the exit code append `|| true`: the smoke runs under `set -e`, and
+# the exit-97 stub that stands in for a missing template must not abort it.
+M_BASH="$(command -v bash)"
+m_run() {
+  local h="$1" script="$2"
+  shift 2
+  env "$@" PATH="${m_stub}:/usr/bin:/bin" HOME="$h" "$M_BASH" "$script" >/dev/null 2>&1
+}
+m_installs() {
+  local n
+  n="$(grep -c '^install$' "$1/apm-install.log" 2>/dev/null)" || true
+  printf '%s\n' "${n:-0}"
+}
+# M10-M12 need a PATH with neither apm nor mise on it
+for m_cmd in apm mise; do
+  if (PATH="/usr/bin:/bin" && command -v "$m_cmd" >/dev/null 2>&1); then
+    fail "M: /usr/bin:/bin already provides ${m_cmd}; M10/M11 cannot simulate its absence"
+  fi
+done
+m_mode() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null || echo none; }
+m_sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum | cut -d' ' -f1; else shasum -a 256 | cut -d' ' -f1; fi; }
+
+# M1: failing install: exit 0, marker at 600 with fixed fields, no stderr copied, no state
+m1="$(m_home m1)"
+m_run "$m1" "$m_rendered" APM_STUB_FAIL=1 && m1_rc=0 || m1_rc=$?
+m1_marker="${m1}/.claude/.apm-skills-install-failed"
+if [ "$m1_rc" -eq 0 ] && [ "$(m_mode "$m1_marker")" = "600" ] &&
+  grep -q '^reason=apm-install-failed$' "$m1_marker" &&
+  ! grep -q 'SECRET_TOKEN_SHOULD_NOT_BE_COPIED' "$m1_marker" &&
+  [ ! -e "${m1}/.apm/.install-state" ]; then
+  pass "M1: install failure exits 0, writes the marker at 600, copies no stderr, leaves no state"
+else
+  fail "M1: rc=${m1_rc}, marker or state unexpected"
+fi
+
+# M2: a later success writes the state and clears the marker
+m_run "$m1" "$m_rendered" && m2_rc=0 || m2_rc=$?
+if [ "$m2_rc" -eq 0 ] && [ ! -e "$m1_marker" ] &&
+  [ "$(cat "${m1}/.apm/.install-state" 2>/dev/null)" = "$(m_sha256 < "${m1}/.apm/apm.yml") 9.9.9" ] &&
+  [ "$(m_mode "${m1}/.apm/.install-state")" = "600" ]; then
+  pass "M2: a successful install writes '<apm.yml sha256> <version>' at 600 and clears the marker"
+else
+  fail "M2: rc=${m2_rc}, state='$(cat "${m1}/.apm/.install-state" 2>/dev/null)'"
+fi
+
+# M3: same apm.yml and version: no install (the update notice line must not matter)
+m3_before="$(m_installs "$m1")"
+m_run "$m1" "$m_rendered" && m3_rc=0 || m3_rc=$?
+if [ "$m3_rc" -eq 0 ] && [ "$(m_installs "$m1")" = "$m3_before" ]; then
+  pass "M3: an unchanged apm.yml and apm version skip apm install"
+else
+  fail "M3: rc=${m3_rc}, installs ${m3_before} -> $(m_installs "$m1")"
+fi
+
+# M4: a changed apm.yml installs again
+printf 'name: probe\nversion: 2\n' > "${m1}/.apm/apm.yml"
+m4_before="$(m_installs "$m1")"
+m_run "$m1" "$m_rendered" || true
+if [ "$(m_installs "$m1")" -gt "$m4_before" ]; then
+  pass "M4: a changed apm.yml runs apm install"
+else
+  fail "M4: apm install was skipped after apm.yml changed"
+fi
+
+# M5: a changed apm version installs again
+m5_before="$(m_installs "$m1")"
+m_run "$m1" "$m_rendered" APM_STUB_VERSION=9.9.10 || true
+if [ "$(m_installs "$m1")" -gt "$m5_before" ]; then
+  pass "M5: a changed apm version runs apm install"
+else
+  fail "M5: apm install was skipped after the apm version changed"
+fi
+
+# M6: a missing lockfile installs again
+rm -f "${m1}/.apm/apm.lock.yaml"
+m6_before="$(m_installs "$m1")"
+m_run "$m1" "$m_rendered" APM_STUB_VERSION=9.9.10 || true
+if [ "$(m_installs "$m1")" -gt "$m6_before" ]; then
+  pass "M6: a missing apm.lock.yaml runs apm install"
+else
+  fail "M6: apm install was skipped without a lockfile"
+fi
+
+# M7: state matches but a marker is present: install again, and success clears it
+printf 'reason=apm-install-failed\n' > "${m1}/.claude/.apm-skills-install-failed"
+m7_before="$(m_installs "$m1")"
+m_run "$m1" "$m_rendered" APM_STUB_VERSION=9.9.10 || true
+if [ "$(m_installs "$m1")" -gt "$m7_before" ] && [ ! -e "${m1}/.claude/.apm-skills-install-failed" ]; then
+  pass "M7: a present marker forces apm install even when the state matches, and success clears it"
+else
+  fail "M7: marker present but install skipped or marker kept"
+fi
+
+# M8: exit 0 without a lockfile counts as a failure
+m8="$(m_home m8)"
+m_run "$m8" "$m_rendered" APM_STUB_NO_LOCK=1 && m8_rc=0 || m8_rc=$?
+if [ "$m8_rc" -eq 0 ] && grep -q '^reason=apm-install-failed$' "${m8}/.claude/.apm-skills-install-failed" &&
+  [ ! -e "${m8}/.apm/.install-state" ]; then
+  pass "M8: apm install exiting 0 without a lockfile is recorded as a failure"
+else
+  fail "M8: rc=${m8_rc}, marker or state unexpected"
+fi
+
+# M9: no version line: install runs, no state is written, and the reason is logged
+m9="$(m_home m9)"
+m9_out="$(env APM_STUB_NO_VERSION=1 PATH="${m_stub}:/usr/bin:/bin" HOME="$m9" "$M_BASH" "$m_rendered" 2>&1)" || true
+if [ "$(m_installs "$m9")" = "1" ] && [ ! -e "${m9}/.apm/.install-state" ] &&
+  [ ! -e "${m9}/.claude/.apm-skills-install-failed" ] &&
+  printf '%s\n' "$m9_out" | grep -q 'Could not read the apm version'; then
+  pass "M9: without a version line apm install runs, no state is written, and a WARNING says why"
+else
+  fail "M9: installs=$(m_installs "$m9"), state or marker unexpected"
+fi
+
+# M10: apm not on PATH (host): exit 0 with an apm-not-found marker
+m10="$(m_home m10)"
+PATH="/usr/bin:/bin" HOME="$m10" "$M_BASH" "$m_rendered" >/dev/null 2>&1 && m10_rc=0 || m10_rc=$?
+if [ "$m10_rc" -eq 0 ] && grep -q '^reason=apm-not-found$' "${m10}/.claude/.apm-skills-install-failed"; then
+  pass "M10: no apm on PATH writes an apm-not-found marker on hosts"
+else
+  fail "M10: rc=${m10_rc}, marker missing or wrong"
+fi
+
+# M11: inside agent-vm, neither an install failure nor a missing apm writes a marker
+m11="$(m_home m11)"
+m_run "$m11" "$m_vm_rendered" APM_STUB_FAIL=1 && m11a_rc=0 || m11a_rc=$?
+PATH="/usr/bin:/bin" HOME="$m11" "$M_BASH" "$m_vm_rendered" >/dev/null 2>&1 && m11b_rc=0 || m11b_rc=$?
+if [ "$m11a_rc" -eq 0 ] && [ "$m11b_rc" -eq 0 ] && [ ! -e "${m11}/.claude/.apm-skills-install-failed" ] &&
+  [ ! -e "${m11}/.apm/.install-state" ]; then
+  pass "M11: agent-vm keeps APM failures as warnings (no marker, no state, exit 0)"
+else
+  fail "M11: rc=${m11a_rc}/${m11b_rc}, marker or state present"
+fi
+
+# M13: the legacy migration removes only bare names from the list, then the list
+m13="$(m_home m13)"
+mkdir -p "${m13}/.claude/skills/legacy-one" "${m13}/.claude/skills/keep" "${m13}/victim"
+printf 'legacy-one\n..\n../victim\nkeep/nested\n' > "${m13}/.claude/.external-skills-installed"
+m_run "$m13" "$m_rendered" || true
+if [ ! -e "${m13}/.claude/skills/legacy-one" ] && [ -d "${m13}/.claude/skills/keep" ] &&
+  [ -d "${m13}/victim" ] && [ -d "${m13}/.claude/skills" ] &&
+  [ ! -e "${m13}/.claude/.external-skills-installed" ]; then
+  pass "M13: legacy migration removes listed bare names only and deletes the list"
+else
+  fail "M13: legacy migration touched something outside the listed bare names"
+fi
+
+# M12: an unwritable marker path makes the host installer fail now
+if [ "$(id -u)" -eq 0 ]; then
+  pass "M12: skipped (root bypasses the read-only directory this test needs)"
+else
+  m12="$(m_home m12)"
+  chmod 500 "${m12}/.claude"
+  m_run "$m12" "$m_rendered" APM_STUB_FAIL=1 && m12_rc=0 || m12_rc=$?
+  chmod 700 "${m12}/.claude"
+  if [ "$m12_rc" -eq 1 ]; then
+    pass "M12: installer exits 1 when it cannot record the failure"
+  else
+    fail "M12: rc=${m12_rc}, expected 1"
+  fi
 fi
 
 # --- assertion L: textlint installer/wrapper .install-state contract ---

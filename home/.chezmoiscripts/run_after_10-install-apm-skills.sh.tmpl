@@ -1,0 +1,176 @@
+{{ if ne .chezmoi.os "windows" -}}
+#!/bin/bash
+# Installs the external skills declared in ~/.apm/apm.yml (APM, user scope)
+# into ~/.claude/skills and ~/.agents/skills.
+#
+# Placement (do not move or rename without updating
+# scripts/smoke-provisioning-invariants.sh and tests/agent-vm/):
+#   The 10- band runs after 00-install-mise-tools, so the apm used here is the
+#   one pinned by the ~/.config/mise/config.toml that this same apply deployed,
+#   and before run_after_sync-skills, which reads ~/.apm/apm.lock.yaml to keep
+#   APM-owned skills out of its --delete pass.
+#   See docs/decisions/0017-provisioning-after-deploy.md.
+#
+# Runs on every apply but skips `apm install -g` (seconds, resolves refs over
+# the network) while ~/.apm/.install-state matches. The state is one line,
+#   "<sha256 of ~/.apm/apm.yml> <apm version>",
+# written only after an install that exited 0 and left ~/.apm/apm.lock.yaml,
+# and removed on failure. The install also re-runs while the failure marker
+# exists, since a successful install is the only thing that clears it. The
+# former run_onchange_ script recorded its hash on the exit 0 it returned when
+# apm was not on PATH and then never ran again: the defect class ADR-0017 K2
+# names.
+#
+# `apm install` follows the SHAs in apm.lock.yaml, so re-running it never pulls
+# newer skill content; that takes `apm update` by hand.
+#
+# Marker reasons: apm-not-found, apm-install-failed (an install that exited
+# non-zero, or exited 0 without leaving apm.lock.yaml).
+#
+# Exit code: 0 even when the install fails, so the remaining run_after_ scripts
+# still run. On hosts the failure (including apm missing from PATH, which
+# unlike a missing bun breaks nothing else visibly) is recorded in MARKER_FILE
+# and run_after_zz-verify-provisioning turns it into a non-zero apply at the
+# end.
+#   The one exception is being unable to write MARKER_FILE, which is reported
+#   immediately because the deferral channel itself failed.
+# Inside agent-vm failures stay warnings: 5 of 9 skills cannot be fetched there
+# (ADR-0018 R21), apm then exits 1, and a marker would stop every bootstrap at
+# the verifier.
+
+set -uo pipefail
+
+log() {
+    local level="${2:-INFO}"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $1"
+}
+
+APM_DIR="$HOME/.apm"
+STATE_FILE="$APM_DIR/.install-state"
+LOCK_FILE="$APM_DIR/apm.lock.yaml"
+MARKER_FILE="$HOME/.claude/.apm-skills-install-failed"
+RECOVER_COMMAND="mise install github:microsoft/apm && apm install -g"
+IN_AGENT_VM={{ if dig "agent_vm" false . }}1{{ else }}0{{ end }}
+
+{{ template "record-provisioning-failure.sh" . }}
+
+# report_failure REASON
+report_failure() {
+    local reason="$1"
+    if [ "$IN_AGENT_VM" = "1" ]; then
+        log "APM skills were not installed (${reason}); only a warning inside agent-vm (ADR-0018 R21)" "WARNING"
+        return 0
+    fi
+    if record_provisioning_failure "$MARKER_FILE" "$reason" "$RECOVER_COMMAND"; then
+        log "Recorded the failure at $MARKER_FILE" "INFO"
+    else
+        log "Could not record the failure at $MARKER_FILE. Failing now." "ERROR"
+        log "Recover with: $RECOVER_COMMAND" "ERROR"
+        exit 1
+    fi
+}
+
+sha256_stdin() {
+    if command -v sha256sum &> /dev/null; then
+        sha256sum | cut -d' ' -f1
+    else
+        shasum -a 256 | cut -d' ' -f1
+    fi
+}
+
+# run_after_ scripts execute in a non-interactive shell that does not read the
+# user rc, so apm is reachable only through mise.
+if command -v mise &> /dev/null; then
+    if mise_env=$(mise env --shell bash 2>/dev/null); then
+        eval "$mise_env"
+    fi
+fi
+
+if [ ! -f "$APM_DIR/apm.yml" ]; then
+    # A deploy problem, not something apm can fix.
+    log "~/.apm/apm.yml not found; nothing to install." "WARNING"
+    exit 0
+fi
+
+if ! command -v apm &> /dev/null; then
+    log "apm not found on PATH (00-install-mise-tools logged why)." "ERROR"
+    report_failure "apm-not-found"
+    exit 0
+fi
+
+# Only the "version X.Y.Z" part: `apm --version` also prints an update notice
+# when a newer release exists, which must not change the key. A failing
+# `apm --version`, or one without that part, leaves the key empty: the install
+# then runs every time and no state is written.
+state_key=""
+apm_version=""
+if apm_version_out="$(apm --version 2>/dev/null)"; then
+    apm_version="$(printf '%s\n' "$apm_version_out" | grep -oE 'version [0-9][0-9A-Za-z.+-]*' | head -1)"
+fi
+if [ -n "$apm_version" ]; then
+    state_key="$(sha256_stdin < "$APM_DIR/apm.yml") ${apm_version#version }"
+else
+    log "Could not read the apm version; installing without recording state" "WARNING"
+fi
+
+if [ -n "$state_key" ] && [ -f "$LOCK_FILE" ] && [ ! -e "$MARKER_FILE" ] &&
+    [ "$(cat "$STATE_FILE" 2>/dev/null)" = "$state_key" ]; then
+    log "APM skills are in sync (apm.yml and apm version unchanged)" "SUCCESS"
+    exit 0
+fi
+
+# Migration: remove pre-existing skill directories that APM cannot overwrite
+if [ ! -f "$LOCK_FILE" ]; then
+    log "First APM run detected. Removing legacy skill directories..." "INFO"
+    if [ -f "$HOME/.claude/.external-skills-installed" ]; then
+        while IFS= read -r skill_name; do
+            # A bare directory name only: never ".", "..", or anything with a
+            # slash, so a stray line cannot delete outside ~/.claude/skills.
+            case "$skill_name" in
+            "" | . | .. | */*) continue ;;
+            esac
+            skill_dir="$HOME/.claude/skills/$skill_name"
+            if [ -d "$skill_dir" ]; then
+                rm -rf "$skill_dir"
+                log "Removed legacy: $skill_name" "INFO"
+            fi
+        done < "$HOME/.claude/.external-skills-installed"
+        rm -f "$HOME/.claude/.external-skills-installed"
+    fi
+fi
+
+log "Installing APM skills (apm install -g)..."
+apm install -g 2>&1
+install_rc=$?
+
+if [ "$install_rc" -eq 0 ] && [ -f "$LOCK_FILE" ]; then
+    log "APM skills are installed" "SUCCESS"
+    if [ -n "$state_key" ]; then
+        state_tmp=""
+        if state_tmp="$(mktemp "${STATE_FILE}.tmp.XXXXXX" 2>/dev/null)" &&
+            printf '%s\n' "$state_key" > "$state_tmp" &&
+            chmod 600 "$state_tmp" &&
+            mv -f "$state_tmp" "$STATE_FILE"; then
+            :
+        else
+            [ -n "$state_tmp" ] && rm -f "$state_tmp"
+            log "Could not write $STATE_FILE; the next apply installs again" "WARNING"
+        fi
+    fi
+    if [ -e "$MARKER_FILE" ] && ! rm -f "$MARKER_FILE"; then
+        log "Could not clear stale $MARKER_FILE; remove it by hand" "ERROR"
+    fi
+else
+    if [ "$install_rc" -eq 0 ]; then
+        log "apm install -g exited 0 but left no $LOCK_FILE" "ERROR"
+    else
+        log "apm install -g failed (see output above)" "ERROR"
+    fi
+    if [ -e "$STATE_FILE" ] && ! rm -f "$STATE_FILE"; then
+        log "Could not remove $STATE_FILE" "ERROR"
+    fi
+    report_failure "apm-install-failed"
+fi
+
+exit 0
+{{ end -}}

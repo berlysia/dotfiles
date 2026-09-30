@@ -44,5 +44,9 @@ report_marker "$HOME/.claude/.root-deps-install-failed" "root-deps" \
     "Root dependencies were not installed; {{ .chezmoi.workingTree }}/node_modules does not match bun.lock." \
     "cd {{ .chezmoi.workingTree }} && bun install --frozen-lockfile"
 
+report_marker "$HOME/.claude/.apm-skills-install-failed" "apm-skills" \
+    "APM skills were not installed; ~/.claude/skills and ~/.agents/skills may not match ~/.apm/apm.yml." \
+    "mise install github:microsoft/apm && apm install -g"
+
 exit "$failed"
 {{ end -}}

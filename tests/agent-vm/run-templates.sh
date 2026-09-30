@@ -100,8 +100,8 @@ after_band_targets() { # target names of the after-band scripts in the source, i
   done | LC_ALL=C sort
 }
 test_skills_install_runs_after_mise_tools_and_before_sync() {
-  local order; order=$(after_band_targets | grep -xE '00-install-mise-tools\.sh|install-claude-skills-11\.sh|sync-skills\.sh' | paste -sd' ' -)
-  assert_eq "00-install-mise-tools.sh install-claude-skills-11.sh sync-skills.sh" "$order" "apm is installed before skills, skills before sync"
+  local order; order=$(after_band_targets | grep -xE '00-install-mise-tools\.sh|10-install-apm-skills\.sh|sync-skills\.sh' | paste -sd' ' -)
+  assert_eq "00-install-mise-tools.sh 10-install-apm-skills.sh sync-skills.sh" "$order" "apm is installed before skills, skills before sync"
 }
 
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do

@@ -70,6 +70,10 @@ OrbStack の通常の machine（isolated 指定なし）は `/Users` 全体へ�
 - **R22**: VM の mise で `npm:@mizchi/readability` がサプライチェーン対策の閾値に拒否されて入らない。host と共有する設定の問題で、別の課題とする。
 - **K18 の帰結（dasel）**: VM は codex の設定のマージのために、ソースの `.mise.toml` を信頼して dasel を入れる。マージを dasel や mise に依存させない作り替えは host にも影響する別の課題とする。
 
+## Amended by
+
+- `docs/plans/dependency-update-paths/spec.md` (2026-10-01) — K22 の script は `run_after_10-install-apm-skills`（ADR-0017 の 10- 帯）になった。K22 本文の「ターゲット名と内容は変わらない」はこの改名で上書きされる。VM では APM の失敗を marker にせず WARNING に留める。R21 の状態では apm 0.31 が exit 1 を返し、verifier が毎回の bootstrap を止めるためである
+
 ## References
 
 - `docs/plans/agent-vm/spec.md` / `research.md` / `plan-1.md` / `plan-2.md` / `plan-3.md` / `plan-4.md`
