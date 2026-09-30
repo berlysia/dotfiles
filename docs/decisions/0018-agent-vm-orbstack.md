@@ -73,6 +73,7 @@ OrbStack の通常の machine（isolated 指定なし）は `/Users` 全体へ�
 ## Amended by
 
 - `docs/plans/dependency-update-paths/spec.md` (2026-10-01) — K22 の script は `run_after_10-install-apm-skills`（ADR-0017 の 10- 帯）になった。K22 本文の「ターゲット名と内容は変わらない」はこの改名で上書きされる。VM では APM の失敗を marker にせず WARNING に留める。R21 の状態では apm 0.31 が exit 1 を返し、verifier が毎回の bootstrap を止めるためである
+- `docs/plans/dependency-update-paths/spec.md` (2026-10-01) — K5 の軽量セットはテンプレートの条件分岐ではなくファイルの配置で実現するようにした。host 専用のツールチェーンは `~/.config/mise/conf.d/host-toolchains.toml` に分け、VM には配置しない。これに伴い K17 の allowlist のうち mise だけはディレクトリ単位（`!.config/mise/**`）からファイル単位（`!.config/mise/config.toml`）になった。`.chezmoiignore` の除外（`!`）は後続の無視行より優先されるので、同じディレクトリの一部だけを VM から外すにはファイル単位で戻すしかない
 
 ## References
 
