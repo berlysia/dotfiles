@@ -53,7 +53,7 @@ install-packages-*-windows.ps1
 !.config/git
 !.config/git/**
 !.config/mise
-!.config/mise/**
+!.config/mise/config.toml
 !.config/starship.toml
 !.config/ccstatusline
 !.config/ccstatusline/**

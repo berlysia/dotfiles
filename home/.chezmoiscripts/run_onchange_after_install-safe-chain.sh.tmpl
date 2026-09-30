@@ -8,7 +8,7 @@
 # The content change from this move re-runs the script once on the next apply;
 # that run backs up and restores the freshly deployed rc files, so nothing is
 # lost. See docs/decisions/0017-provisioning-after-deploy.md.
-# mise config hash: {{ includeTemplate "dot_config/mise/config.toml.tmpl" . | sha256sum }}
+# mise config hash: {{ include "dot_config/mise/config.toml" | sha256sum }}
 
 set -euo pipefail
 

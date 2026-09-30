@@ -16,41 +16,44 @@ render() { # template_relpath override_data_json
 test_config_template_derives_agent_vm_false_on_ordinary_hosts() {
   assert_contains "$(chezmoi execute-template --source "$SRC" --init <"$SRC/.chezmoi.toml.tmpl")" "agent_vm = false" "not a VM here"
 }
-test_mise_full_set_outside_vm() {
-  local out; out=$(render dot_config/mise/config.toml.tmpl '{"agent_vm":false}')
-  assert_contains "$out" 'rust = ' "rust kept on hosts"
-  assert_contains "$out" '"cargo:similarity-ts"' "cargo tools kept on hosts"
-  assert_contains "$out" 'node = ' "node kept on hosts"
+MISE_SHARED="$SRC/dot_config/mise/config.toml"
+MISE_HOST_ONLY="$SRC/dot_config/mise/conf.d/host-toolchains.toml"
+# Tests run as `( "$t" ) || record ...`, where set -e does not fire, so a missing file would only give an
+# empty string and let the negative assertions pass. Each test checks existence first.
+require_file() { [[ -s "$1" ]] || { record "FAIL missing or empty ${1#"$SRC"/}"; return 1; }; }
+# Renovate's mise manager parses these files as strict TOML, so they must stay free of template markup.
+test_mise_files_are_plain_toml() {
+  local f
+  for f in "$MISE_SHARED" "$MISE_HOST_ONLY"; do
+    require_file "$f" || continue
+    assert_not_contains "$(cat "$f")" '{{' "no template markup in ${f#"$SRC"/}"
+  done
 }
-test_mise_light_set_in_vm() {
-  local out; out=$(render dot_config/mise/config.toml.tmpl '{"agent_vm":true}')
-  assert_not_contains "$out" 'rust = ' "rust dropped in the VM"
-  assert_not_contains "$out" 'go = ' "go dropped in the VM"
-  assert_not_contains "$out" '"cargo:' "cargo backend tools dropped in the VM"
-  assert_not_contains "$out" '"go:' "go backend tools dropped in the VM"
-  assert_contains "$out" 'node = ' "node kept in the VM"
-  assert_contains "$out" '"npm:@openai/codex"' "codex kept in the VM"
+test_mise_shared_set_has_no_host_toolchains() {
+  require_file "$MISE_SHARED" || return 0
+  local out; out=$(cat "$MISE_SHARED")
+  assert_not_contains "$out" $'\nrust = ' "rust lives in conf.d/host-toolchains.toml"
+  assert_not_contains "$out" $'\ngo = ' "go lives in conf.d/host-toolchains.toml"
+  assert_not_contains "$out" '"cargo:' "cargo backend tools live in conf.d/host-toolchains.toml"
+  assert_not_contains "$out" '"go:' "go backend tools live in conf.d/host-toolchains.toml"
+  assert_contains "$out" $'\nnode = ' "node stays in the shared set"
+  assert_contains "$out" '"npm:@openai/codex"' "codex stays in the shared set"
+  assert_contains "$out" '"github:microsoft/apm"' "apm stays in the shared set (the VM installs skills)"
+  # run_onchange_after_install-safe-chain hashes only config.toml (spec K7)
+  assert_contains "$out" '"github:AikidoSec/safe-chain"' "safe-chain stays in config.toml"
 }
-test_mise_template_works_without_agent_vm_key() {
-  local out; out=$(render dot_config/mise/config.toml.tmpl '{}')
-  assert_contains "$out" 'rust = ' "missing key behaves like a host (dig default false)"
+test_mise_host_only_file_holds_only_toolchain_bound_tools() {
+  local keys bad
+  require_file "$MISE_HOST_ONLY" || return 0
+  keys=$(awk -F' = ' '/^[^#[][^=]* = /{print $1}' "$MISE_HOST_ONLY")
+  assert_contains $'\n'"$keys"$'\n' $'\nrust\n' "host-only file declares rust"
+  assert_contains $'\n'"$keys"$'\n' $'\ngo\n' "host-only file declares go"
+  bad=$(printf '%s\n' "$keys" | grep -vxE 'go|rust|"cargo:[^"]+"|"go:[^"]+"' || true)
+  assert_eq "" "$bad" "conf.d/host-toolchains.toml declares only go, rust and cargo:/go: backend tools"
 }
-hash_line() { render "$1" "$2" | grep 'mise config hash:'; }
-# run_after_00-install-mise-tools runs on every apply, so safe-chain is the only mise-hash-gated script.
-test_install_scripts_hash_the_rendered_template() {
-  local s=.chezmoiscripts/run_onchange_after_install-safe-chain.sh.tmpl
-  if [[ "$(hash_line "$s" '{"agent_vm":true}')" != "$(hash_line "$s" '{"agent_vm":false}')" ]]; then
-    record "PASS $s re-runs when the rendered mise config differs"
-  else
-    record "FAIL $s re-runs when the rendered mise config differs"
-  fi
-}
-test_host_render_equals_template_without_vm_guards() {
-  # The VM-only guards must be the template's only markup: removing their lines has to give exactly the
-  # host render. This needs no git history (CI checkouts are shallow) and keeps holding as the list evolves.
-  local stripped
-  stripped=$(grep -v -E '^\{\{-? (if not \(dig "agent_vm" false \.\)|end) -?\}\}$' "$SRC/dot_config/mise/config.toml.tmpl")
-  assert_eq "$stripped" "$(render dot_config/mise/config.toml.tmpl '{"agent_vm":false}')" "hosts see no change"
+test_install_scripts_hash_the_shared_mise_config() {
+  assert_contains "$(cat "$SRC/.chezmoiscripts/run_onchange_after_install-safe-chain.sh.tmpl")" \
+    'include "dot_config/mise/config.toml" | sha256sum' "safe-chain re-runs when config.toml changes"
 }
 
 # .chezmoiignore matches target paths, not source names: `dot_local/bin/executable_agent-vm` would never match.
@@ -73,6 +76,15 @@ managed_as() { # override_data_json -> sorted target paths chezmoi would manage 
 collapse_to_fixture_roots() { # fixture_path (managed list on stdin)
   awk -v fx="$1" 'BEGIN { while ((getline l < fx) > 0) if (l ~ /\/\*\*$/) roots[substr(l, 1, length(l) - 3)] = 1 }
     { out = $0; for (r in roots) if (index($0, r "/") == 1) out = r "/**"; print out }' | LC_ALL=C sort -u
+}
+test_host_toolchains_are_host_only() {
+  local vm host
+  vm=$'\n'"$(managed_as "$VM_DATA")"$'\n'
+  host=$'\n'"$(managed_as "$HOST_LINUX")"$'\n'
+  assert_contains "$vm" $'\n.config/mise/config.toml\n' "the VM gets the shared mise config"
+  assert_not_contains "$vm" '.config/mise/conf.d' "the VM gets no conf.d (no rust/go toolchains)"
+  assert_contains "$host" $'\n.config/mise/config.toml\n' "hosts get the shared mise config"
+  assert_contains "$host" $'\n.config/mise/conf.d/host-toolchains.toml\n' "hosts get the host toolchains"
 }
 test_vm_manages_exactly_the_allowlist() {
   local fx="$TEST_DIR/fixtures/vm-managed.txt"

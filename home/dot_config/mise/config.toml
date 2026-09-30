@@ -1,3 +1,7 @@
+# Shared by hosts and agent-vm. Host-only toolchains (go, rust and the tools
+# built through them) live in conf.d/host-toolchains.toml, which the VM does
+# not get (home/.chezmoiignore, ADR-0018 K5). Keep this file plain TOML:
+# Renovate's mise manager parses it strictly and finds nothing in a template.
 [settings]
 idiomatic_version_file_enable_tools = ["node"]
 experimental = true
@@ -10,30 +14,14 @@ deno = "2.9.7"
 direnv = "2.37.1"
 fzf = "0.72.0" # Fuzzy finder - migrated from chezmoi external
 gitleaks = "8.30.1"
-{{- if not (dig "agent_vm" false .) }}
-go = "1.26.3"
-{{- end }}
 node = "24.15.0"
 pnpm = "10.33.4"
-{{- if not (dig "agent_vm" false .) }}
-rust = "1.95.0"
-{{- end }}
 uv = "0.11.14"
 yarn = "4.18.0"
 
 # Security tools
 "github:AikidoSec/safe-chain" = "1.5.3"
 
-# CLI tools (migrated from go install / cargo install)
-{{- if not (dig "agent_vm" false .) }}
-"cargo:similarity-ts" = "0.5.0"
-{{- end }}
-{{- if not (dig "agent_vm" false .) }}
-"cargo:zizmor" = "1.25.2"
-{{- end }}
-{{- if not (dig "agent_vm" false .) }}
-"go:github.com/syou6162/git-sequential-stage" = "latest"
-{{- end }}
 # Weekly downloads hover around aube's 1000/week threshold, so installs fail intermittently.
 # The package and its author are known, so the low-download gate is explicitly approved.
 "npm:@mizchi/readability" = { version = "0.7.7", allow_low_downloads = true }
@@ -42,9 +30,6 @@ yarn = "4.18.0"
 # registry の `deck` は Kong/decK に解決されるため repo 指定が必須
 "github:k1LoW/deck" = "1.24.1"
 "npm:wrangler" = "latest"
-{{- if not (dig "agent_vm" false .) }}
-"cargo:octorus" = "latest"
-{{- end }}
 "npm:@playwright/cli" = "latest"
 "npm:difit" = "latest"
 ast-grep = "latest"
