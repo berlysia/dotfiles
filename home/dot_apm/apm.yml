@@ -31,6 +31,12 @@ dependencies:
     - git: yoshiko-pg/difit
       skills:
         - difit-review
+    # explainer-book runs ../../explainer/scripts/verify-doc.mjs, so all three must be installed together
+    - git: mizchi/explainer
+      skills:
+        - explainer
+        - explainer-book
+        - first-reader
     - mizchi/skills/apm-usage
     - mizchi/skills/ast-grep-practice
     - mizchi/skills/empirical-prompt-tuning
