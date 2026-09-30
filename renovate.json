@@ -37,6 +37,8 @@
     }
   ],
   "mise": {
-    "managerFilePatterns": ["/(^|/)dot_config/mise/(config|conf\\.d/[^/]+)\\.toml$/"]
+    "managerFilePatterns": [
+      "/(^|/)dot_config/mise/(config|conf\\.d/[^/]+)\\.toml$/"
+    ]
   }
 }

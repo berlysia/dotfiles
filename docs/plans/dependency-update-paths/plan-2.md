@@ -108,6 +108,7 @@ test_host_toolchains_are_host_only() {
 
 実行: `bash tests/agent-vm/run-templates.sh 2>&1 | tail -8`
 期待: 次が FAIL。
+
 - `FAIL missing or empty dot_config/mise/config.toml`（`test_mise_files_are_plain_toml` と `test_mise_shared_set_has_no_host_toolchains` から計 2 行）と `FAIL missing or empty dot_config/mise/conf.d/host-toolchains.toml`（`test_mise_files_are_plain_toml` と `test_mise_host_only_file_holds_only_toolchain_bound_tools` から計 2 行）。テストはサブシェルの `||` の左で走るので `set -e` は効かず、`require_file` が無ければ空文字列で否定の assertion が通ってしまう
 - `hosts get the host toolchains`（`test_host_toolchains_are_host_only` の 4 件のうちこれだけ。残り 3 件は Red でも pass）
 - `safe-chain re-runs when config.toml changes`
@@ -285,11 +286,11 @@ commit 本文に、仮説（窓 4 時間 × `prHourlyLimit` 2）と判定方法�
 - [ ] **Step 1: `packageRules` の末尾に足す**
 
 ```json
-    {
-      "description": "Hold mise tool updates for 7 days like npm ones (the preset sets minimumReleaseAge for npm only), matching install_before = \"7d\" in the mise config. Takes effect only for datasources that report release timestamps",
-      "matchManagers": ["mise"],
-      "minimumReleaseAge": "7 days"
-    }
+{
+  "description": "Hold mise tool updates for 7 days like npm ones (the preset sets minimumReleaseAge for npm only), matching install_before = \"7d\" in the mise config. Takes effect only for datasources that report release timestamps",
+  "matchManagers": ["mise"],
+  "minimumReleaseAge": "7 days"
+}
 ```
 
 - [ ] **Step 2: 構文を確かめる**
@@ -366,22 +367,27 @@ git commit  # docs(adr): record the mise split in ADR-0018 and keep the dependen
 ## Reviewer Outputs (Round 1)
 
 ### logic-validator
+
 - verdict: needs-work
 - 主指摘: T1 の Red の期待値が誤り（host 専用テストはファイルが無いと空振りで pass、fixture テストも Red で pass、cat の失敗は "test aborted"）。共通 + host 専用 = 旧 host 全セットの証明が無い。`# CLI tools` コメントが共通側に取り残される。T6 の release age が timestamp の無い datasource で更新を止めうる。
 
 ### scope-justification-reviewer
+
 - verdict: pass
 - 主指摘: 全タスクが spec に対応。軽微: T1 の期待失敗の列挙漏れ、T7 の成果物コピーのタイミング、Windows 未検証の注記、元のコメントを保つこと。
 
 ### architecture-boundary-analyzer
+
 - verdict: needs-work
 - 主指摘: `# CLI tools` の見出しが共通側に中身なしで残る。T6 は timestamp の無い datasource で更新を止めうるので、revert の判定基準を名指しすること。T7 は plan-1 T5 の `## Amended by` 節に依存。
 
 ### security-vulnerability-analyzer
+
 - verdict: needs-work
 - 主指摘: 自動 merge を止める gate は `internalChecksFilter: strict` と `minimumReleaseAge` で、schedule ではない旨を明記。T6 は timestamp が無いと fail-closed で更新が黙って止まりうる。既存 VM に conf.d は元々無いので残骸は出ない。
 
 ### deployment-readiness-evaluator
+
 - verdict: needs-work
 - 主指摘: T4 のパターンに共有 config.toml も含めて明示すること（デフォルトでの検出に依存しない）。T3 の gate は名前しか比べないので版と導入状態も比べること（`$HOME` で `--json`）。T2 を revert すると host に conf.d が残る旨を rollback に記載。
 
@@ -391,22 +397,27 @@ git commit  # docs(adr): record the mise split in ADR-0018 and keep the dependen
 ## Reviewer Outputs (Round 2)
 
 ### logic-validator
+
 - verdict: needs-work
 - 主指摘: テストは `( "$t" ) || record` の左で走り `set -e` が効かないので、ファイルが無いと "test aborted" にならず空文字列で否定の assertion が空振りする（→ `require_file` を追加し Red の期待値を修正）。2b・T3 の jq・T4 のパターン確認に不具合なし。
 
 ### architecture-boundary-analyzer
+
 - verdict: pass
 - 主指摘: Round 1 の 3 件は解消。軽微: smoke の件数を固定しない（→ `0 failed` のみに）、T7 のコピーは承認・stamp 後（→ 明記）。
 
 ### security-vulnerability-analyzer
+
 - verdict: pass
 - 主指摘: 自動 merge の gate と T6 の fail-closed が明記された。`timestamp-optional` の例外はツールごとに出所を確かめてから。
 
 ### deployment-readiness-evaluator
+
 - verdict: pass
 - 主指摘: T3 は mise 以外の apply 失敗と切り分けること、revert 時の conf.d の手動削除は必須手順に、Windows は apply 後に `mise config ls` を一度確認するとよい。
 
 ### scope-justification-reviewer
+
 - verdict: pass (carried from Round 1)
 - 主指摘: Round 1 で pass、再実行なし
 
@@ -415,22 +426,27 @@ git commit  # docs(adr): record the mise split in ADR-0018 and keep the dependen
 ## Reviewer Outputs (Round 3)
 
 ### logic-validator
+
 - verdict: pass
 - 主指摘: `record` の定義（`lib.sh:5`）と一致し、Red の期待値（FAIL 6 行）が現状と合う。承認を妨げる指摘なし。
 
 ### architecture-boundary-analyzer
+
 - verdict: pass (carried from Round 2)
 - 主指摘: Round 2 で pass、再実行なし
 
 ### security-vulnerability-analyzer
+
 - verdict: pass (carried from Round 2)
 - 主指摘: Round 2 で pass、再実行なし
 
 ### deployment-readiness-evaluator
+
 - verdict: pass (carried from Round 2)
 - 主指摘: Round 2 で pass、再実行なし
 
 ### scope-justification-reviewer
+
 - verdict: pass (carried from Round 2)
 - 主指摘: Round 2 で pass、再実行なし
 

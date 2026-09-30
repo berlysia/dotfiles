@@ -66,6 +66,7 @@ plan-1 は急ぐ。VM の bootstrap は host の作業ツリーを rsync して 
 - schedule: 何もしない（Dashboard のチェックボックスで都度作らせる）。
 
 却下理由:
+
 - installer の `exit 1` は apply 全体を止める。ADR-0017 K4 が root/hook deps で「exit 0 + marker、最後に verifier」を選んだのと同じ理由で、APM だけ apply を途中で止める根拠が無い。
 - `.tmpl` をパターンに足しても、Renovate の mise manager は厳格な TOML パーサ（`Toml.pipe`）で読むため `{{- if ... }}` 行で失敗し依存 0 件になる（`research.md`「Renovate mise manager」）。custom manager は、mise manager が持つバックエンドごとの datasource 対応（`github:` → github-releases、`cargo:` → crate、`go:` → go、`npm:` → npm、core ツール → 各 datasource）を正規表現と `datasourceTemplate` で手書きし直すことになり、ツールを足すたびに対応の漏れがありうる。
 - schedule を放置すると、Dashboard の Awaiting Schedule 10 件が今後も溜まり続ける。
@@ -94,7 +95,7 @@ plan-1 は急ぐ。VM の bootstrap は host の作業ツリーを rsync して 
 - **K3: mise 設定を `config.toml`（共通）と `conf.d/host-toolchains.toml`（host のみ）に分割する** — ADR-0018 K5 の「VM の global mise ツールを軽量セットに絞る」を、配置の有無で同じ結果に保つ。mise は `~/.config/mise/conf.d/*.toml` を global 設定として config.toml とマージする（`research.md` の実測）。
   - 参照: `home/dot_config/mise/config.toml.tmpl:13-15,18-20,29-37,45-47`（ガード位置）
   - 参照: `docs/decisions/0018-agent-vm-orbstack.md:24`（K5）
-- **K4: VM の allowlist を `!.config/mise/**` から `!.config/mise/config.toml` に狭める** — `.chezmoiignore` の VM ブロックは `**` で全無視し `!` で戻す構成で、`!.config/mise/**` のままだと後の行で `conf.d/host-toolchains.toml` を無視しても配置される。2026-10-01 に一時ディレクトリの source で `chezmoi managed` を実行して確認した: 広い allowlist + 後続の無視行では `host-toolchains.toml` が managed に残り、`!.config/mise/config.toml` に狭めると `config.toml` だけになった。ADR-0018 K17 の「script 以外はディレクトリ単位で戻す」から外れるが、同じディレクトリに VM へ入れてはいけないファイルができるため。今後 `~/.config/mise/` 配下にファイルを足すと VM には入らない（allowlist の fail-closed 側）。
+- **K4: VM の allowlist を `!.config/mise/**`から`!.config/mise/config.toml`に狭める** —`.chezmoiignore`の VM ブロックは`**`で全無視し`!` で戻す構成で、`!.config/mise/**`のままだと後の行で`conf.d/host-toolchains.toml`を無視しても配置される。2026-10-01 に一時ディレクトリの source で`chezmoi managed`を実行して確認した: 広い allowlist + 後続の無視行では`host-toolchains.toml` が managed に残り、`!.config/mise/config.toml`に狭めると`config.toml`だけになった。ADR-0018 K17 の「script 以外はディレクトリ単位で戻す」から外れるが、同じディレクトリに VM へ入れてはいけないファイルができるため。今後`~/.config/mise/` 配下にファイルを足すと VM には入らない（allowlist の fail-closed 側）。
   - 参照: `home/.chezmoiignore:55-56`
   - 参照: `docs/decisions/0018-agent-vm-orbstack.md:40`（K17）
 - **K5: `renovate.json` の `mise.managerFilePatterns` を conf.d 用の正規表現 1 本にする** — 現行 2 項目は `/.../` 区切りが無く glob 扱いで何にも一致しない。repo の `managerFilePatterns` はデフォルトを置き換えずに追加される: Renovate の `docs/usage/configuration-options.md` に "Patterns in the user config are _added_ to the default values, they do not replace the default values." とある（2026-10-01 に main を確認）。PR #180（deno、2026-09-20）が変更したのは `home/dot_config/mise/config.toml` で、デフォルトの glob で検出されていたことと整合する。`home/dot_config/mise/config.toml` と `.mise.toml` はデフォルトの `**/{,.}mise/config{,.*}.toml` / `**/{,.}mise{,.*}.toml` で検出される。conf.d はデフォルト（`**/.config/mise/conf.d/*.toml`）が `dot_config` に一致しないので足す。`github:` バックエンドは Renovate #40706（2026-02-13）で対応済み。
@@ -150,30 +151,37 @@ plan-1 は急ぐ。VM の bootstrap は host の作業ツリーを rsync して 
 ## Reviewer Outputs (Round 1)
 
 ### logic-validator
+
 - verdict: needs-work
 - 主指摘: Goal の「上流更新が反映される」と K1/K8（skill は `main` 追従だが再 install は `apm.yml`/apm 版の変化時のみ）が矛盾。K5 はデフォルトと独自パターンのマージを前提にしているのに明記がない。`test_install_scripts_hash_the_rendered_template` など壊れる既存テストが列挙されていない。
 
 ### scope-justification-reviewer
+
 - verdict: needs-work
 - 主指摘: `github:` バックエンドが検出対象に戻ることの根拠と push 後の確認が無い。K8 は未固定警告の扱いを明言すべき。plan の分け方の理由、ローカルでの完了条件と push 後の観測の区別、ADR-0017/0018 の追記が抜けている。
 
 ### decision-quality-reviewer
+
 - verdict: pass
 - 主指摘: 主軸（信頼性・運用性）と判断は整合。K6 は原因未確定のまま 2 つを緩めるので単独で revert できる形にすること、R3 の host 確認を commit 前の gate にすることを推奨。
 
 ### greenfield-perspective-reviewer
+
 - verdict: needs-work
 - 主指摘: Goal と APM skill の鮮度が食い違う（K1 の「今と同じ頻度」は今の不具合と同じ）。K6 は仮説に基づく変更と明記すべき。safe-chain が将来 conf.d に移ると hash が拾わない。
 
 ### architecture-boundary-analyzer
+
 - verdict: needs-work
 - 主指摘: 毎回走る installer が失敗すると VM の bootstrap（`set -e` 下の `chezmoi init --apply`）が止まりうる（ADR-0018 R21）。ADR-0017（gate 付き 10- installer、3 つ目の marker）と ADR-0018（K5/K17/K22）の追記、旧名を参照するテスト・fixture の更新が作業項目に無い。
 
 ### security-vulnerability-analyzer
+
 - verdict: needs-work
 - 主指摘: K6 で溜まった更新が一斉に自動 merge される。npm 以外（mise の github/crate/go）には release age の gate が無い。K8 の `main` 追従は受容リスクとして明記すべき。ISO の「セキュリティ対象外」は誤り。
 
 ### resilience-analyzer
+
 - verdict: needs-work
 - 主指摘: apm 不在で marker を書かないと 5 ヶ月の沈黙と同じ経路が残る。state の書き込み順序（install 前に key を計算、成功かつ lockfile ありのときだけ原子的に書く、失敗時は削除）と、`apm --version` が空・失敗のときの扱いを規定すること。
 
@@ -183,30 +191,37 @@ plan-1 は急ぐ。VM の bootstrap は host の作業ツリーを rsync して 
 ## Reviewer Outputs (Round 2)
 
 ### logic-validator
+
 - verdict: needs-work
 - 主指摘: K5 の加算前提の根拠が deno PR の間接証拠だけ。K6 の mise release age は原因 (b) と交絡するので commit を分けること。K9 の「条件は変わらない」は新設計（exit 0 + marker → verifier）では不正確。assertion M の参照先が無い。
 
 ### scope-justification-reviewer
+
 - verdict: needs-work
 - 主指摘: `github:` が載らなかった場合の扱いが無い。K5 の加算前提は push 前に文書で確かめられる。Goal の「上流の更新が PR として届く」は mise/npm に限ると明記すること。push 後の完了条件は push 承認が前提と書くこと。
 
 ### decision-quality-reviewer
+
 - verdict: pass
 - 主指摘: apm 不在 marker が apm を持たない正当なホストで出うる（範囲を書く）。K6 の revert 条件。K9 の推測は commit 前に一度確かめること。
 
 ### greenfield-perspective-reviewer
+
 - verdict: needs-work
 - 主指摘: skill の中身の鮮度が手作業で、促す仕組みが無いことを明記すること。K7 の hash が config.toml だけなのは設計上の選択と書くこと。mise release age は別 commit に。差分最小案に custom manager を挙げること。
 
 ### architecture-boundary-analyzer
+
 - verdict: pass
 - 主指摘: `home/.chezmoiignore:91` を plan-1 の Files に明記すること。VM でも mise が apm を入れられない場合（R22 の類）に marker が出て bootstrap が止まる挙動変化を K9 に書くこと。一時的な失敗で bootstrap が止まるコストを R5 に。
 
 ### security-vulnerability-analyzer
+
 - verdict: needs-work
 - 主指摘: mise の release age は datasource が日時を返す場合にしか効かないので「見込み」とし push 後に確認すること。lockfile がマシンローカルで伝播しないことを K8 に。state の一時ファイルの mode を明記。月曜の一斉更新（特に safe-chain）は merge 前の目視を勧めること。
 
 ### resilience-analyzer
+
 - verdict: needs-work
 - 主指摘: 失敗時に state を消せないと手順 4 が一致して再試行されない。marker を消すのは成功経路だけにすること。mise 不在時の復旧コマンドの扱い。K9 は verifier 経由で bootstrap が止まる実態を正確に書くこと。
 
@@ -215,30 +230,37 @@ plan-1 は急ぐ。VM の bootstrap は host の作業ツリーを rsync して 
 ## Reviewer Outputs (Round 3)
 
 ### logic-validator
+
 - verdict: needs-work（軽微）
 - 主指摘: 旧 script は `mise env` を呼ばないので VM で apm に届いていたかが未確認（→ `bootstrap.sh:134` が shims を PATH に足すことを確認し反映）。Experience Delta の「host では」。VM の毎回の WARNING が常態化する代償。state を消せない失敗後の回復経路。
 
 ### scope-justification-reviewer
+
 - verdict: pass
 - 主指摘: Round 2 の指摘はすべて解消。Experience Delta に VM を除く旨を足すと整合する。plan-1 を先に進めるのは妥当。
 
 ### decision-quality-reviewer
+
 - verdict: pass
 - 主指摘: K6 の成功判定と revert 条件を 1 行で。R1 の目視の勧めは努力目標と明記。skill の鮮度の手作業を記録された判断として残すこと。
 
 ### greenfield-perspective-reviewer
+
 - verdict: pass
 - 主指摘: lockfile を chezmoi で配らない理由を K8 に 1 行。
 
 ### architecture-boundary-analyzer
+
 - verdict: pass
 - 主指摘: VM の apm 不在分岐も assertion M で見ること、VM では state 書き込み失敗でも exit 0 と明記、VM の WARNING を `docs/agent-vm.md` に書くこと。
 
 ### security-vulnerability-analyzer
+
 - verdict: pass
 - 主指摘: 手順 6 の state 書き込み失敗時の扱い。`apm update` 後の SHA 差分の確認を勧めること。safe-chain の確認を具体的に。
 
 ### resilience-analyzer
+
 - verdict: needs-work
 - 主指摘: P0: state を消せずに marker が残ると、手順 4 が install を省き続け marker が永久に消えない（→ 手順 4 に「marker が無いこと」を条件として追加し、assertion M に対応ケースを追加して反映）。
 
@@ -249,32 +271,39 @@ Round 3 の指摘は上記「→」のとおり反映済み。反映後の再レ
 ## Reviewer Outputs (Round 4)
 
 ### logic-validator
+
 - verdict: pass
 - 主指摘: Round 3 の 4 件は解消。軽微: `docs/agent-vm.md` を plan-1 の範囲に明記、state 削除と marker 書き込みの二重失敗の扱いを 1 行（→ 反映）。
 
 ### resilience-analyzer
+
 - verdict: pass
 - 主指摘: P0 は解消。軽微: exit 0 でも lockfile が無い場合を失敗と明記（→ 反映）。state を失っても再 install 1 回の費用で済む。
 
 Round 4 の軽微指摘は反映済み。あわせて、state key の apm 版を `apm --version` の全出力から `version X.Y.Z` の部分に絞った（更新通知の有無で key が変わるのを避ける自己指摘）。
 
 ### scope-justification-reviewer
+
 - verdict: pass (carried from Round 3)
 - 主指摘: Round 3 で pass、再実行なし
 
 ### decision-quality-reviewer
+
 - verdict: pass (carried from Round 3)
 - 主指摘: Round 3 で pass、再実行なし
 
 ### greenfield-perspective-reviewer
+
 - verdict: pass (carried from Round 3)
 - 主指摘: Round 3 で pass、再実行なし
 
 ### architecture-boundary-analyzer
+
 - verdict: pass (carried from Round 3)
 - 主指摘: Round 3 で pass、再実行なし
 
 ### security-vulnerability-analyzer
+
 - verdict: pass (carried from Round 3)
 - 主指摘: Round 3 で pass、再実行なし
 

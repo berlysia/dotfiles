@@ -663,22 +663,27 @@ git commit  # fix(chezmoi): move the APM skill installer into the run_after_ 10-
 ## Reviewer Outputs (Round 1)
 
 ### logic-validator
+
 - verdict: needs-work
 - 主指摘: Red 段階で `m_run` を裸で呼ぶと stub の exit 97 で `set -e` が smoke 全体を止める。`render_script` のコードが注記（bash 3.2 安全な展開）と食い違う。Step 6 の期待値が矛盾（A3・C も Red で落ちる）。`m_installs` が 0 を 2 回出す。spec は `apm --version` の非ゼロ終了も key 空としている。`env ... bash` の PATH 依存。
 
 ### scope-justification-reviewer
+
 - verdict: needs-work
 - 主指摘: spec の対象は全タスクに対応しスコープの逸脱なし。`render_script` の注記とコード、Step 6 の期待値の矛盾。spec K1 の state 形式の記述が §1 手順 3 と食い違う。
 
 ### architecture-boundary-analyzer
+
 - verdict: needs-work
 - 主指摘: ADR 追記が参照する `docs/plans/dependency-update-paths/spec.md` が plan-1 のコミット時点で存在しない。T4 の apply の exit code がパイプで観測できない。ADR-0018 K22 本文の「内容は変わらない」を Amended by で上書きする旨を明記。
 
 ### security-vulnerability-analyzer
+
 - verdict: needs-work
 - 主指摘: legacy 移行ループが `~/.claude/.external-skills-installed` の行を検証せず `rm -rf` に渡す（`..` 等）。state に明示の `chmod 600` を。`apm install` の出力がログに出ることを明記。
 
 ### data-contract-evolution-evaluator
+
 - verdict: needs-work
 - 主指摘: 版を読めないと毎回 install が走るのに何も知らせない（WARNING を）。旧 script の exit 1 から exit 0 + marker への変化と、chezmoi の scriptState の残骸を明記。marker の reason の列挙を header に。
 
@@ -688,22 +693,27 @@ git commit  # fix(chezmoi): move the APM skill installer into the run_after_ 10-
 ## Reviewer Outputs (Round 2)
 
 ### logic-validator
+
 - verdict: pass
 - 主指摘: M1-M12 を机上で追い、Red/Green とも意図どおり。軽微: M2 の sha256sum に fallback を、legacy ループのテスト追加、docs に写す spec の K1 を直すこと（→ 反映）。
 
 ### scope-justification-reviewer
+
 - verdict: pass
 - 主指摘: 追加分（名前検証・chmod・WARNING・docs コピー）はすべて spec の範囲内。軽微: Red の FAIL 件数を明示、docs コピーは plan-2 で上書きされる旨を残すこと（→ 反映）。
 
 ### architecture-boundary-analyzer
+
 - verdict: pass
 - 主指摘: Round 1 の 4 件は解消。軽微: コピーする docs の鮮度、件数の根拠（既存 30 は 2026-10-01 に実測済み）。
 
 ### security-vulnerability-analyzer
+
 - verdict: pass
 - 主指摘: 名前検証・chmod 600・ログの扱いで解消。mise env の cwd は既存 installer と揃え、強化するなら全 installer まとめて。
 
 ### data-contract-evolution-evaluator
+
 - verdict: needs-work（軽微）
 - 主指摘: legacy 移行処理のテストが無い、M9 が新しい WARNING を確認していない（→ M13 追加、M9 で出力を grep するよう反映）。
 
@@ -712,22 +722,27 @@ git commit  # fix(chezmoi): move the APM skill installer into the run_after_ 10-
 ## Reviewer Outputs (Round 3)
 
 ### logic-validator
+
 - verdict: pass
 - 主指摘: `set -euo pipefail` の下で M9 の出力取得と M13 を追い、不具合なし。軽微: M13 が M12 の前に置かれている（番号順のみの問題）。
 
 ### data-contract-evolution-evaluator
+
 - verdict: pass
 - 主指摘: Round 2 の 2 件は解消。任意: lockfile がある host で古い一覧ファイルを移行しないことを固定する assertion。
 
 ### scope-justification-reviewer
+
 - verdict: pass (carried from Round 2)
 - 主指摘: Round 2 で pass、再実行なし
 
 ### architecture-boundary-analyzer
+
 - verdict: pass (carried from Round 2)
 - 主指摘: Round 2 で pass、再実行なし
 
 ### security-vulnerability-analyzer
+
 - verdict: pass (carried from Round 2)
 - 主指摘: Round 2 で pass、再実行なし
 
