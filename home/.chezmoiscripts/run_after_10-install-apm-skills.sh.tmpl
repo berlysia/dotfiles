@@ -88,7 +88,7 @@ fi
 
 if [ ! -f "$APM_DIR/apm.yml" ]; then
     # A deploy problem, not something apm can fix.
-    log "~/.apm/apm.yml not found; nothing to install." "WARNING"
+    log "$APM_DIR/apm.yml not found; nothing to install." "WARNING"
     exit 0
 fi
 
