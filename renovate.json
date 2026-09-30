@@ -29,6 +29,11 @@
       "matchManagers": ["mise"],
       "matchDatasources": ["crate"],
       "rangeStrategy": "bump"
+    },
+    {
+      "description": "Hold mise tool updates for 7 days like npm ones (the preset sets minimumReleaseAge for npm only), matching install_before = \"7d\" in the mise config. Takes effect only for datasources that report release timestamps",
+      "matchManagers": ["mise"],
+      "minimumReleaseAge": "7 days"
     }
   ],
   "mise": {
