@@ -1,6 +1,8 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["github>berlysia/renovate-config"],
+  "prHourlyLimit": 0,
+  "schedule": ["* * * * 1"],
   "packageRules": [
     {
       "description": "Auto-merge non-major GitHub Actions updates",
