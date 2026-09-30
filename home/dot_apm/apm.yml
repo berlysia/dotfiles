@@ -1,6 +1,6 @@
 name: berlysia-dotfiles
 version: 1.0.0
-target: claude
+targets: [claude, codex]
 dependencies:
   apm:
     - git: vercel-labs/agent-skills
