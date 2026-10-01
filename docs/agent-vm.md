@@ -35,6 +35,32 @@ Claude と Codex は machine ごとに初回だけログインが要る。
 表示された URL を mac のブラウザで開いて承認し、コードを VM 側に貼り付ける。
 2 回目以降はその machine に保存された認証でそのまま起動する。
 
+### VM でブラウザを使う
+
+VM の Claude は、playwright と chrome-devtools の MCP で、VM の中の headless ブラウザを操作できる。dev server の画面確認を、VM を離れずに行える（スクリーンショット、DOM のスナップショット、パフォーマンストレース）。drawio MCP は VM では使わない。
+
+- **Codex では使えない。** VM の Codex にはブラウザの MCP を載せていない（Codex の playwright は `@latest` の指定で、利用頻度が低いため別 issue とした）。ブラウザが要るときは、同じ VM の Claude を使う。
+- **人が画面を見るとき。** mac のブラウザで `http://localhost:<port>` を開く。dev server は既定の loopback bind（`127.0.0.1`）のままでよく、`<machine>.orb.local` は `0.0.0.0` に bind したときにしか届かない。
+- **同じポートの衝突。** 複数の VM が同じポートを使うと、`localhost` は先に bind した machine に届く。ポートを変える。
+- **`localhost` の注意。** `localhost` のオリジンはポートをまたいで cookie を共有する。VM の dev server は、`localhost` にログイン済みのセッションを持つ普段のプロファイルでは開かず、シークレットウィンドウなどを使う。host で使うポート（OAuth のコールバックなど）とも重ねない。
+- **ブラウザの置き場。** ブラウザ本体（linux-arm64 の headless shell）は、host に 1 部だけ置き、machine ごとに APFS の clonefile で複製して VM に見せる。VM ごとの増分は apt の依存ライブラリとフォントで、約 35 MB である。
+- **取得。** 取得は `chezmoi apply` が自動で行う。手で行うときは `agent-vm fetch-browsers` を実行し、ストアが使えなくなったときは `--force` で取り直す。ブラウザ本体は `cdn.playwright.dev` から取得し、内容のハッシュは repo に固定していない。取得した直後のハッシュを記録して複製の前に比べるので、検出できるのは取得後の改変だけである（取得元の侵害は防がない）。
+- **版。** ブラウザの版は `package.json` の `@playwright/mcp` の版で決まる。chrome-devtools-mcp を headless shell と組み合わせるのは公式にはサポートされていない。動作を確認した版は 0.25.0 で、版を上げたときは playwright と chrome-devtools の両方で、スクリーンショットとパフォーマンストレースを取る確認をやり直す。
+
+警告は、害が出る場面で出る。どれも起動は失敗させず、ブラウザの MCP だけが使えない状態になる。
+
+| 場面            | 条件                                                     | 回復手順                                                         |
+| --------------- | -------------------------------------------------------- | ---------------------------------------------------------------- |
+| `chezmoi apply` | ブラウザの取得の失敗（同じ理由が続くときは 1 行に縮む）  | `agent-vm fetch-browsers`                                        |
+| 起動            | ストアに要求された版が無い                               | `agent-vm fetch-browsers`                                        |
+| 起動            | ストアの内容が取得時の記録と一致しない                   | `agent-vm fetch-browsers --force`                                |
+| 起動            | clonefile の失敗、または別のボリューム                   | `$AGENT_VM_STATE_DIR` が APFS の単一ボリュームにあるかを確かめる |
+| bootstrap       | machine にブラウザのマウントが無い（古い machine）       | `agent-vm rm` で作り直す                                         |
+| bootstrap       | ブラウザの実行ファイルが無い、依存ライブラリの欠け       | `agent-vm fetch-browsers` の後に、もう一度起動する               |
+| bootstrap       | VM の MCP の版と、複製したブラウザの版が違う（助言のみ） | `chezmoi apply` と `agent-vm fetch-browsers`                     |
+
+ブラウザの対応より前に作った machine には、マウントが無く、後から足す手段も無い。使うには `agent-vm rm` で作り直す。失うのは VM 内のログイン状態（Claude と Codex）と、VM の中に入れたツールである。repo、セッションログ（outbox 経由で取り込み済み）、host の env ファイルは残る。
+
 ## 4. 秘密の渡し方
 
 秘密は 2 つのファイルにだけ書く。
@@ -191,4 +217,31 @@ machine を侵害された疑いがある場合、または使わなくなった
 - V11: テスト用の参照を `env.1password` に置き、`op signout` の直後に launcher 経由で 3 回続けて起動した。1Password の承認は 1 回目だけで、2 回目と 3 回目は求められなかった（`op` の CLI の承認が一定時間有効なため）。VM の中で `printenv` すると、注入した値が見えた。
 - 観測（原因未特定）: V11 の 3 回の起動の間に、iTerm に対する macOS のアクセス許可（「"書類"フォルダ内のファイル」「ほかのアプリのデータ」）が合わせて 4 回出た。launcher が触れるのは状態の置き場、`~/.config/agent-vm`、`~/.claude/projects`、`~/.codex/sessions`、repo だけで、「書類」やほかのアプリのデータには触れない。その後、launcher を使わずに `orb delete` と `op item delete` / `op item get` だけを実行したときにも「ほかのアプリのデータ」の許可が出たので、launcher ではなく `orb` か `op` の CLI が原因と考えられる（どちらかは切り分けていない）。
 
-未確認の項目: V8、V9、V12。
+- V8: VM の loopback（`127.0.0.1`）に bind したサーバーに、mac の `localhost:<port>` から届く。`<machine>.orb.local` は `0.0.0.0` に bind したときにしか届かず、loopback のサーバーには接続できない。`--isolate-network` の下でも同じだった（設計時の probe machine で測定し、loopback への `localhost` の到達は 2026-10-02 の下記の確認でも再確認した）。
+
+未確認の項目: V9、V12。
+
+### 2026-10-02 の確認結果（VM のブラウザ、macOS、OrbStack、Ubuntu resolute arm64）
+
+VM でブラウザを使う構成（3 節）を、実機で確かめた。古い machine での警告を先に確かめ、`agent-vm rm` の後に新しい machine で残りを確かめた。
+
+確認できた項目:
+
+- ストア: `chezmoi apply` の後、`browser-store/` には `mcp-0.0.75` が 1 つだけあり、mode は 700。host での容量は約 337 MB（ffmpeg を含む）で、1 部だけ。
+- 古い machine（マウントが無い本物の machine）: `agent-vm prewarm` は終了コード 0 で、bootstrap が「ブラウザのマウントが無く、ブラウザの MCP は無効」「有効にするには `agent-vm rm` の後に起動し直す。失うのは VM 側のログインと VM の中に入れたツール、残るのは repo、セッションログ、env ファイル」という警告を出した。VM の `~/.claude.json` の MCP は readability、context7、excalidraw だけで、ブラウザの MCP は外れていた。
+- 新しい machine: `agent-vm prewarm` は終了コード 0 で、bootstrap の警告は 0 件。playwright と chrome-devtools の `args` は固定の実行パス（`/opt/agent-vm/browsers/current/bin/headless_shell`）と `--headless --isolated` を持ち、playwright の `env.LD_LIBRARY_PATH` は VM の `~/.local/lib/agent-vm-browser` を指す。Codex の設定に playwright は残らない。`/opt/agent-vm` にストアはマウントされない。
+- `headless_shell` は `LD_LIBRARY_PATH` が無いと libgbm が見つからず起動に失敗する。これは設計どおりで、MCP には環境変数で渡している。付けて実行すると Chromium 149 が起動し、`ldd` に not found は無い。
+- 容量: ブラウザの依存の apt は 48 パッケージ、Installed-Size の合計が 35.1 MB で、目標の 40 MB 以内に収まった。
+- MCP の動作: VM の `~/.claude.json` のコマンドと env をそのまま使って MCP サーバーを起動し、stdio の JSON-RPC で確かめた。
+  - playwright: `browser_navigate`（ページのタイトルは `vm-a`）と `browser_take_screenshot`（PNG）がエラー無しで応答した。
+  - chrome-devtools: `navigate_page`、`take_screenshot`（PNG）、`performance_start_trace`（reload、autoStop）がエラー無しで応答し、trace の応答に `The performance trace has been stopped` を含んでいた。
+  - どちらのスクリーンショットでも、見出し「こんにちは playwright」は豆腐にならずに描画された。`fc-match "sans-serif:lang=ja"` は IPAPGothic を返す。
+- 人の閲覧とポートの衝突（mac から curl、cookie なし）: VM の loopback に bind したサーバーに、mac の `localhost:5174` が届いた。2 台目の machine が後から同じポートに bind しても、届く先は 1 台目のままだった（F8 の再確認）。2 台目を `agent-vm rm` すると、その machine のブラウザの複製と記録だけが消え、1 台目の分は残った。
+- 版の更新: `@playwright/mcp` を 0.0.74（playwright は exact の版）に一時的に変えて `chezmoi apply` を実行すると、ストアは `mcp-0.0.74` に入れ替わって `mcp-0.0.75` は消え、host の `~/.claude.json` も 0.0.74 になった。続く `agent-vm prewarm` は警告 0 件で、`current` は新しい世代を指し、古い世代は machine に残った。`git checkout package.json` の後に `chezmoi apply` と `agent-vm prewarm` を実行すると、ストアと `~/.claude.json` は 0.75 に戻った。
+
+観測と、未確認の項目:
+
+- 観測（切り替わりの条件は未確認）: 1 台目のサーバーを止めると、2 台目が同じポートに bind していても、mac の `localhost:5174` は 30 秒間応答しなかった。1 台目を再起動すると、再び 1 台目に届いた。最初に bind した machine に転送が固定されるように見える。2 台目に切り替わる条件は確かめていない。
+- 観測: `package.json` の版だけを変えて `chezmoi apply` を実行したときは、`bun install --frozen-lockfile` が lockfile の不一致で失敗し、apply 自体の終了コードは 1 になった。ブラウザのストアの更新とは無関係で、`package.json` を戻して再実行すると終了コード 0 になった。
+- 観測（この確認の範囲外）: `agent-vm rm` の確認プロンプトに EOF を渡すと「failed unexpectedly」と出る。
+- 未確認: VM の Claude の `/mcp` で、playwright と chrome-devtools が connected になること。VM の Claude のログインが要るので、人が確かめる。上の MCP の動作の確認は、Claude を介さずに同じコマンドと env で MCP サーバーを起動したものである。
