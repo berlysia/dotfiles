@@ -54,7 +54,7 @@
       "hooks": [
         {
           "type": "command",
-          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/deny-node-modules.ts"
+          "command": "sh {{ .chezmoi.homeDir }}/.claude/hooks/run-guard.sh {{ .chezmoi.homeDir }}/.claude/hooks/implementations/deny-node-modules.ts || exit 2"
         }
       ]
     },

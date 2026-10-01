@@ -248,3 +248,56 @@ describe("run-guard.sh", () => {
     ok(result.stderr.includes("exit code 1"), result.stderr);
   });
 });
+
+describe("deny-node-modules through run-guard", () => {
+  it("is wired through run-guard in the settings template", () => {
+    const template = readFileSync(
+      join(here, "..", "..", "..", ".settings.hooks.json.tmpl"),
+      "utf8",
+    );
+    const line = template
+      .split("\n")
+      .find((l) => l.includes("deny-node-modules.ts"));
+    ok(line, "deny-node-modules.ts is registered in the template");
+    ok(line.includes("run-guard.sh"), line);
+    ok(/\|\| exit 2"?,?\s*$/.test(line), line);
+  });
+
+  it("passes the hook's JSON deny through the wrapper unchanged", (t) => {
+    const probe = spawnSync("sh", ["-c", "command -v bun"], {
+      encoding: "utf8",
+      env: { PATH: process.env.PATH ?? "" },
+    });
+    if (probe.status !== 0) {
+      t.skip("bun is not on PATH");
+      return;
+    }
+    const cwd = makeTempDir();
+    const hookPath = join(
+      here,
+      "..",
+      "..",
+      "implementations",
+      "deny-node-modules.ts",
+    );
+    const input = JSON.stringify({
+      hook_event_name: "PreToolUse",
+      tool_name: "Bash",
+      tool_input: { command: "rm -rf node_modules" },
+      session_id: "test",
+      tool_use_id: "toolu_test",
+      transcript_path: join(cwd, "transcript.jsonl"),
+      cwd,
+    });
+    const result = spawnSync("sh", [wrapper, hookPath], {
+      input,
+      encoding: "utf8",
+      cwd,
+      env: { ...process.env, HOME: makeTempDir(), RUN_GUARD_TIMEOUT: "30" },
+      timeout: 45_000,
+    });
+    strictEqual(result.status, 0, result.stderr);
+    const parsed = JSON.parse(result.stdout);
+    strictEqual(parsed.hookSpecificOutput?.permissionDecision, "deny");
+  });
+});
