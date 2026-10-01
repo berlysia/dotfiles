@@ -36,7 +36,7 @@
    - **5.1 Reviewer Outputs（必須）**: 各 reviewer の verdict + 主指摘 1-2 文を `## Reviewer Outputs (Round N)` に書く。長文の逐語引用はしない。
    - **帳簿は `workflow-cli` が書く**: `round <doc>`（骨格挿入）→ reviewer 実行 → `stamp <doc> --verdict <pass|needs-work|blocker> --reviewers a+b`。hash は stamp が計算する（**手で転記しない**）。起動証跡（`reviewer-runs.log`）が無いと stamp は通らない。
    - **5.2 Round 2 以降は差分**: 前 round の非 pass reviewer + `logic-validator` だけ再実行（`round` / `stamp` もこの集合）。Key Decisions / 白紙案を変えたら `round <doc> --full`。全員 pass で軽微指摘のみなら反映後に `stamp --verdict pass`、新 round は起こさない。
-   - **5.3 予算**: pass 後 3 round で `round` は拒否。続行は人間の指示時のみ `--extend --reason "<指示>"`。`## Files` が prose のみなら追加レビュアーなし。
+   - **5.3 予算**: pass 後 3 round で素の `round` は拒否。着地見込み（blocker なし・Key Decisions 不変で直せる・指摘が狭まる）があれば Round 6 まで `--self-extend --reason "non-pass N→M; remaining: ..."`。Round 6 で未着地なら `review-reframer` に問題変形を含む 4 択を検討させ `<wfDir>/reframer-review.<doc>` に記録。(a) 続行推奨なら Round 9 まで `--reframer-extend`、他の推奨か Round 9 で未着地なら人間に仰ぐ。Executive Summary に承認者別の延長回数と記録の要約、Round 7 以降は Risks にも書く。人間の指示なら `--extend --reason "<指示>"`。詳細は `/document-workflow-reference`「ラウンド予算」。`## Files` が prose のみなら追加レビュアーなし。
 6. **インテント整合性トリアージ（必須）**: `/intent-alignment-triage` を実行し、元のオーダーの本義を歪めてスコープを縮める指摘（divergent）を除外する。結果は `workflow-cli triage <doc> --adopted N --excluded M` で marker に記録する。トリアージ前にレビュー結果をユーザーへ提示しない。
 7. **承認**: 人間が `Approval Status: approved` にする（下記 CRITICAL）。
 8. **実装**: 三状態 + hash 一致がそろってから着手する。**着手前にオフロード判定を 1 行宣言する**（`@~/.claude/rules/model-offloading.md`）。

@@ -131,7 +131,7 @@ hash 正規化を変更した場合、旧 normalizer で承認済の進行中成
 `workflow-cli` は marker / Review Status / Reviewer Outputs 骨格 / intent-triage marker を書く。モデルは hash を転記しない。
 
 - `workflow-cli status [--wf-dir <dir>]`: gate 診断 + tripwire 状態を表示。
-- `workflow-cli round <doc> [--full] [--extend --reason "<text>"]`: `## Reviewer Outputs (Round N)` 骨格を marker 直前に挿入し、`.round-baseline` に round 番号と時刻を記録する。Round 2 以降は下記「差分再レビュー」の集合だけを空欄で並べ、carried reviewer は `- verdict: pass (carried from Round N-1)` で埋める。`--full` は常に必須 reviewer 全員の空欄骨格にする。下記「ラウンド予算」を超える round は拒否する。
+- `workflow-cli round <doc> [--full] [--extend|--self-extend|--reframer-extend --reason "<text>"]`: `## Reviewer Outputs (Round N)` 骨格を marker 直前に挿入し、`.round-baseline` に round 番号と時刻を記録する。Round 2 以降は下記「差分再レビュー」の集合だけを空欄で並べ、carried reviewer は `- verdict: pass (carried from Round N-1)` で埋める。`--full` は常に必須 reviewer 全員の空欄骨格にする。`<doc>` は wfDir 直下のファイル名（`plan.md` など、パス区切りを含まない `.md`）に限る。下記「ラウンド予算」を超える round は拒否する。
 - `workflow-cli stamp <doc> --verdict <pass|needs-work|blocker> --reviewers a+b`: Round N セクションと reviewer 実行証跡（`reviewer-runs.log`）を確認し、揃っていれば厳密形の Review Status と marker を書く。marker には stamp 時点の round 数を `round=N` として書く（marker は hash 計算前に除去されるので hash は動かない）。証跡が無ければ非 0。
 - `workflow-cli triage <doc> --adopted N --excluded M`: intent-triage marker を書く。
 
@@ -148,13 +148,42 @@ hash 正規化を変更した場合、旧 normalizer で承認済の進行中成
 
 stamp は Round N の要求集合を Round N-1 の verdict から再計算する。`--full` で全員を回した場合は要求集合の上位集合になるので、そのまま通る。
 
-## ラウンド予算（ADR-0015 Amendment 2026-09-28）
+## ラウンド予算（ADR-0015 Amendment 2026-09-28 / 2026-10-01）
 
-観測では Round 4 以降に新しい実質指摘が出ていない（0/4 文書）一方、文言だけの予算は 3/9 文書で破られていた。そこで予算を `round` の拒否として機構化した。
+文言だけの予算は 3/9 文書で破られていたので、予算を `round` の拒否として機構化した（2026-09-28）。そのうえで、着地見込みがあるときはモデルの判断で、Round 6 で詰まったら `review-reframer` の判断で延長できるようにした（2026-10-01）。延長のたびに、誰の判断かを log に残す。
 
-- **周の数え方**: 周のラウンド数 = 現在の `## Reviewer Outputs (Round N)` 数 − 最後の `verdict=pass` marker の `round=` 値（pass marker が無い、または `round=` の無い旧 marker しか無ければ 0）。これが `ROUND_BUDGET`（3、`lib/workflow-review-core.ts`）以上なら `round` は非 0 で終わる。承認後の再レビュー（parent-spec-hash のずれによる plan-N.md の再承認など）は pass 後の新しい周として予算を持つ。stamp を挟まない `round` の連打は周のラウンド数を増やすだけ
-- **止まったら**: 未解決の指摘を Executive Summary に載せて人間に方針を仰ぐ。人間が続行を指示したときだけ `round <doc> --extend --reason "<その指示>"`。`--reason` が空なら拒否。予算を超えて続行した記録が `<wfDir>/round-extensions.log` に `<ISO8601>\t<doc>\t<round>\t<reason>` で 1 行残る。`--extend` は上限判定だけを外すので `--full` と併用できる
-- **受容した限界**: `--extend` の指示元と、周の起点になる `stamp --verdict pass`（verdict 行と突き合わせない自己申告）は機械では検証しない。再評価トリガーは、log に人間の指示に対応しない reason が 1 件出たとき、または Reviewer Outputs に非 pass が残るのに pass marker が付いた事例が 1 件出たとき
+- **周の数え方**: 周のラウンド数 = 現在の `## Reviewer Outputs (Round N)` 数 − 最後の `verdict=pass` marker の `round=` 値（pass marker が無い、または `round=` の無い旧 marker しか無ければ 0。差が負なら 0）。承認後の再レビュー（parent-spec-hash のずれによる plan-N.md の再承認など）は pass 後の新しい周として予算を持つ。stamp を挟まない `round` の連打は周のラウンド数を増やすだけ
+- **段階と許可**（`getRoundBudgetPhase` / `isExtensionAllowed`、`lib/workflow-review-core.ts`。CLI の拒否と推奨テキストの通知は同じ関数を使う）:
+
+  | 周のラウンド数 | phase           | 素の `round` | `--self-extend` | `--reframer-extend`            | `--extend`（人間） |
+  | -------------- | --------------- | ------------ | --------------- | ------------------------------ | ------------------ |
+  | 0〜2           | open            | 可           | 可（記録なし）  | 可（記録なし・裏付け検査なし） | 可（記録なし）     |
+  | 3〜5           | self-extendable | 拒否         | 可（`self`）    | 拒否                           | 可（`human`）      |
+  | 6〜8           | reframer-review | 拒否         | 拒否            | 裏付けがあれば可（`reframer`） | 可（`human`）      |
+  | 9 以上         | human-only      | 拒否         | 拒否            | 拒否                           | 可（`human`）      |
+
+  上限の 6 と 9 は予算 3 の刻みに揃えた設計値で、収束分析に基づく値ではない。人間の `--extend` に上限は無い
+
+- **引数検査の順序**（先に当たったものを返す）: 文書名が wfDir 直下の `.md` でない → 延長フラグが 2 つ以上 → `--self-extend` / `--reframer-extend` と `--full` の併用（Key Decisions を変える修正はモデル / reframer の判断の範囲外。人間の `--extend` は `--full` と併用できる）→ reason がサニタイズ後に空 → phase → （reframer-review での `--reframer-extend` のみ）記録ファイル → 起動記録
+- **自己延長（`--self-extend`）の条件**（機械判定しない）: 直近 round の reviewer verdict に `blocker` が無い / 残る指摘が Key Decisions・白紙案を変えずに直せる / 残る指摘が前 round より狭まっている（非 pass 数は目安。同数でも中身が局所化していればよい、同じ指摘の再発は不可）。reason は `non-pass N→M; remaining: <残る指摘の要約>`。満たさなければ Round 6 を待たずに Executive Summary で人間に仰ぐ
+- **reframer**（`home/dot_claude/agents/review-reframer.md`）: Round 6 の結果が stamp 済みで pass でなければ、Agent tool で `subagent_type: review-reframer` を周内で 1 回だけ起動する（`model` 引数は書かない。モデルはエージェント定義の frontmatter で決まる）。起動できなければ他のエージェントやモデルで代替せず、人間に仰ぐ。入力は文書のパスと全 round の非 pass 指摘の要約。出力は、収束しない原因の仮説と、(a) 現枠組みで続行 / (b) 問題の変形（文書固有の変形案を 1 つ以上、推奨時は新 Key Decisions の骨子）/ (c) 既知の未解決を明記して承認に回す / (d) 取り下げ、それぞれの利点・欠点と推奨 1 つ
+- **記録ファイル** `<wfDir>/reframer-review.<doc>`: 推奨にかかわらず、末尾に次の節を足す（無ければ Write で作成、あれば Edit で追記。各フィールド 1 行、本文に `## ` 行を書かない、`- agent:` / `- recommendation:` は節内で 1 回だけ）。N は相談時点の最新 stamp 済み round。文書外にあるので文書の hash は変わらない
+
+  ```
+  ## Reframer Review (Round N)
+  - agent: review-reframer
+  - recommendation: <(a)|(b)|(c)|(d)>
+  - rejected: <推奨以外の 3 択を退けた理由>
+  - hypothesis: <収束しない原因の仮説>
+  - plan: <(a) なら Round 9 までの修正方針 / (b) なら変形案と新 Key Decisions の骨子>
+  ```
+
+- **`--reframer-extend` の裏付け検査**: 記録ファイルの最後の節について、N が周の入り口（最後の pass marker の `round=` + 6）と等しい / `agent` が `review-reframer` と完全一致 / `recommendation` が `(a)` と完全一致。加えて、`.round-baseline` の Round N の時刻以降に `reviewer-runs.log` に `review-reframer` の起動記録がある（`reviewer-run-recorder` が記録する）。reason は `reframer: (a) <着地見込みの要約>; rejected: <(b)〜(d) を退けた理由の要約>`
+- **推奨が (b)(c)(d) のとき**: Executive Summary の Open Questions に載せて人間の判断を待つ（(b) の採否は人間が決める設計である旨を 1 行添える）。Round 9 でも着地しなければ、記録ファイルの要約と Round 7〜9 の経過を載せて人間に仰ぐ。reframer は再起動しない
+- **Executive Summary への記載**: 延長した周は Review Status に承認者別の延長回数（例: `pass / Round 8（self-extended 3, reframer-extended 2）`）。reframer を使った周は記録ファイルのパスと要約（人間が reframer の判断に気づける唯一の経路なので必須）。Round 7 以降に進んだことは Risks に書く
+- **log**: 予算を超えた延長は `<wfDir>/round-extensions.log` に `<ISO8601>\t<doc>\t<round>\t<human|self|reframer>\t<reason>` で 1 行残る。reason は制御文字・行区切りを空白にし、前後の空白を除き、500 文字で切り詰める。この形式より前の 4 列の行は承認者列が無く、`human` として読む
+- **受容した限界**（重要度順）: (1) `--reframer-extend` で人間抜きに Round 7〜9 を進める根拠は記録ファイルと台帳の起動記録で、記録ファイルはメインループが書く。推奨の書き換え、空に近い入力での起動、別文書向けの起動、既存の節の書き直し、台帳ファイルの偽造は検知できない。(2) `human` 行は人間の承認を証明しない（`--extend` はモデルも打てる）。(3) 着地見込みの判定は機械検証しない。(4) reason 形式の確認は目視。(5) Round 7〜9 は「上位モデルのサブエージェントが判断するならさらに延長してよい」というユーザー指示を、続行の判断に限って reframer に委ねると解釈したもの。(6) reframer に上位モデルを当てる効果は未検証。加えて、周の起点になる `stamp --verdict pass` は verdict 行と突き合わせない自己申告
+- **観測と再評価トリガー**: 周は到達した最大 phase で 1 つに分類し、`round-extensions.log` の承認者列・auto-review marker・記録ファイルで結果を見る。次のいずれかで見直す: self-extendable 止まりの周が Round 6 までに pass せず reframer-review に入った例が 2 件 / reframer-review 以上の周が Round 9 までに pass しなかった例が 2 件 / reason 形式（`non-pass N→M`、`reframer: (a)`）を外れた例が 1 件 / reframer を起動できず人間に回った例が 2 件（エージェント定義のモデル指定を見直す）/ 記録ファイルと reframer の出力が食い違った例が 1 件（`--reframer-extend` を廃止する）/ 正当な記録があるのに `--reframer-extend` が拒否された例が 2 件（検査を減らす）/ log に人間の指示に対応しない `human` 行が 1 件 / 非 pass が残るのに pass marker が付いた例が 1 件
 
 ## prose だけの変更での追加レビュアー
 
