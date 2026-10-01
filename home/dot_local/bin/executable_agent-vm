@@ -26,6 +26,7 @@ Usage:
   agent-vm prewarm                  Create and provision the machine now
   agent-vm env edit                 Edit this repo's host-only 1Password env file
   agent-vm env adopt <machine>      Take over the env file of a moved repo
+  agent-vm env gh [--repo R] [--vault V]  Register or renew this repo's GH_TOKEN (fine-grained PAT)
   agent-vm list | gc | rm [repo]    Manage machines
   agent-vm sync [--inspect]         Ingest session logs and check git surfaces now
   agent-vm restore-git [repo]       Undo reported changes to host-executed git files
@@ -862,6 +863,7 @@ main() {
       case "${2:-}" in
         edit) cmd_env_edit ;;
         adopt) cmd_env_adopt "${3:-}" ;;
+        gh) shift 2; cmd_env_gh "$@" ;;
         *) show_help >&2; return 1 ;;
       esac
       ;;
@@ -935,6 +937,203 @@ notice_gh_token_expiry() { # machine: speak only when the token is near or past 
     step "GH_TOKEN for this repo expires on $GH_STATE_EXPIRES; renew with: agent-vm env gh"
   fi
   return 0
+}
+
+gh_origin_repo() { # repo_root -> owner/repo from origin; empty when absent or not a github.com URL
+  local url
+  # Same hardening as resolve_repo_root: .git/config is writable from the VM.
+  url=$(git -C "$1" -c core.fsmonitor= -c core.hooksPath=/dev/null --no-optional-locks remote get-url origin 2>/dev/null </dev/null 9>&- 3<&-) || return 0
+  gh_repo_from_url "$url" || true
+}
+
+gh_ask() { # prompt -> one trimmed line from fd 3 (the tty opened by cmd_env_gh)
+  local answer
+  printf 'agent-vm: %s ' "$1" >&2
+  IFS= read -r answer <&3 || die "could not read the answer"
+  gh_trim "$answer"
+}
+
+gh_abort() { # message: a PAT may already exist on GitHub from here on
+  die "$1; delete the PAT named $GH_PENDING_PAT at https://github.com/settings/personal-access-tokens if you generated it"
+}
+
+gh_decide_repo() { # repo_root arg_repo -> sets GH_REPO and GH_REPO_CHANGED (1 when not the recorded repo)
+  local origin answer
+  origin=$(gh_origin_repo "$1")
+  if [[ -n "$2" ]] && ! gh_valid_repo "$2"; then die "--repo must be OWNER/REPO"; fi
+  if [[ "$GH_STATE" == ok && -z "$2" ]]; then
+    if [[ -z "$origin" ]]; then
+      die "origin cannot be parsed; this repo is recorded as $GH_STATE_REPO. If it moved, fix origin on the host (git remote set-url origin ...) and run: agent-vm env gh --repo OWNER/REPO"
+    fi
+    if ! gh_same_repo "$origin" "$GH_STATE_REPO"; then
+      die "origin points to $origin but this repo is recorded as $GH_STATE_REPO. If that is intended, fix origin on the host and run: agent-vm env gh --repo OWNER/REPO"
+    fi
+    GH_REPO=$GH_STATE_REPO GH_REPO_CHANGED=0
+    return 0
+  fi
+  if [[ "$GH_STATE" == ok ]] && gh_same_repo "$2" "$GH_STATE_REPO"; then GH_REPO_CHANGED=0; else GH_REPO_CHANGED=1; fi
+  if [[ "$GH_STATE" == ok && "$GH_REPO_CHANGED" == 1 ]]; then step "this repo was recorded as $GH_STATE_REPO"; fi
+  step "origin can be rewritten from inside the VM; type the name you checked on the host"
+  answer=$(gh_ask "GitHub repository for this machine (OWNER/REPO):")
+  gh_valid_repo "$answer" || die "not an OWNER/REPO name"
+  if [[ -n "$2" ]] && ! gh_same_repo "$answer" "$2"; then die "the typed name does not match --repo"; fi
+  if [[ -n "$origin" ]] && ! gh_same_repo "$answer" "$origin"; then die "the typed name does not match origin ($origin)"; fi
+  GH_REPO=$answer
+}
+
+gh_decide_vault() { # arg_vault -> sets GH_VAULT (needs GH_STATE, GH_ENV, GH_REPO_CHANGED)
+  local answer
+  if [[ -n "$1" ]]; then
+    GH_VAULT=$1
+  elif [[ "$GH_STATE" == ok && "$GH_REPO_CHANGED" == 0 ]]; then
+    if [[ "$GH_ENV" == auto && "$GH_ENV_VAULT" != "$GH_STATE_VAULT" ]]; then
+      die "the env file uses vault $GH_ENV_VAULT but the state file says $GH_STATE_VAULT; pass --vault Personal or --vault Formal"
+    fi
+    GH_VAULT=$GH_STATE_VAULT
+  else
+    if [[ "$GH_ENV" == auto ]]; then step "the current token is in vault $GH_ENV_VAULT"; fi
+    answer=$(gh_ask "vault for this repo's token (Personal: 90 days / Formal: 30 days):")
+    GH_VAULT=$answer
+  fi
+  gh_vault_days "$GH_VAULT" >/dev/null || die "vault must be Personal or Formal (case-sensitive)"
+  if [[ "$GH_ENV" == auto && "$GH_ENV_VAULT" != "$GH_VAULT" ]]; then
+    step "the token moves from vault $GH_ENV_VAULT to $GH_VAULT; the new token expires in $(gh_vault_days "$GH_VAULT") days"
+  fi
+}
+
+gh_read_token() { # -> GH_PAT (not exported), read hidden from fd 3, trimmed and validated
+  local raw
+  printf 'agent-vm: paste the generated token (input is hidden): ' >&2
+  IFS= read -rs raw <&3 || gh_abort "could not read the token"
+  printf '\n' >&2
+  raw=$(gh_trim "$raw")
+  [[ "$raw" =~ $GH_PAT_RE ]] || gh_abort "the input is not a fine-grained token (github_pat_...); nothing was saved"
+  GH_PAT=$raw
+}
+
+gh_check_token() { # owner/repo: the token in GH_PAT must see the repository before anything is saved
+  local code
+  code=$(printf 'Authorization: Bearer %s\n' "$GH_PAT" |
+    curl -q -sS --max-time 15 -o /dev/null -w '%{http_code}' -H @- "https://api.github.com/repos/$1" 9>&-) || code=000
+  # -q must come first: it stops curl from reading ~/.curlrc, where verbose/trace settings would print the header.
+  case "$code" in
+    200) return 0 ;;
+    000) gh_abort "could not reach GitHub (HTTP 000); nothing was saved" ;;
+    401) gh_abort "GitHub rejected the token (HTTP 401: invalid or expired); nothing was saved" ;;
+    403 | 404) gh_abort "the token cannot see $1 (HTTP $code); check that only this repository was selected; nothing was saved" ;;
+    *) gh_abort "unexpected HTTP $code from GitHub; nothing was saved" ;;
+  esac
+}
+
+gh_create_item() { # vault title -> item id; the token travels from GH_PAT through stdin only
+  local id
+  id=$(printf '%s' "$GH_PAT" |
+    jq -cRs --arg title "$2" '{title: $title, category: "API_CREDENTIAL",
+      fields: [{id: "credential", type: "CONCEALED", label: "credential", value: .}]}' |
+    op item create --vault "$1" --format json - 9>&- | jq -r .id) || return 1
+  [[ "$id" =~ $GH_ITEM_ID_RE ]] || return 1
+  printf '%s\n' "$id"
+}
+
+gh_print_cleanup() { # machine old_pat_name new_lines: what the user still has to do by hand
+  local env_files id_hits=""
+  step "clean up the previous token by hand:"
+  if [[ -n "$2" ]]; then
+    step "  - delete the PAT named $2 at https://github.com/settings/personal-access-tokens"
+  fi
+  if [[ "$GH_ENV" == auto ]]; then
+    step "  - archive the previous 1Password item after checking its title starts with 'agent-vm-gh ':"
+    step "    op item delete --archive $GH_ENV_ID --vault $GH_ENV_VAULT"
+    env_files="$AGENT_VM_CONFIG_DIR/env.1password $(gh_env_path "$1")"
+    # shellcheck disable=SC2086 # two fixed paths, split on purpose
+    id_hits=$(grep -l -F "$GH_ENV_ID" $env_files 2>/dev/null || true)
+    if [[ -n "$id_hits" ]]; then
+      step "    first remove the lines that still mention it (op inject would fail at launch): $id_hits"
+    fi
+  fi
+  step "the state file $(gh_state_path "$1") is written next with these lines;"
+  step "if that fails or is interrupted, do not re-run: write them into the file by hand"
+  printf '%s\n' "$3" >&2
+}
+
+cmd_env_gh() { # [--repo OWNER/REPO] [--vault Personal|Formal]
+  # The token lives only in GH_PAT, a function-local, never-exported variable: drop any exported GH_PAT the
+  # user's environment brought, so op / jq / curl never inherit it. LC_ALL=C keeps [A-Za-z] ranges ASCII.
+  { set +x; } 2>/dev/null # xtrace would print the expanded Authorization header
+  unset GH_PAT
+  local GH_PAT="" LC_ALL=C
+  local arg_repo="" arg_vault="" root m tty tool days now pat_name expires url id ref lines old_pat="" account
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --repo) [[ $# -ge 2 ]] || die "--repo needs OWNER/REPO"; arg_repo=$2; shift 2 ;;
+      --vault) [[ $# -ge 2 ]] || die "--vault needs Personal or Formal"; arg_vault=$2; shift 2 ;;
+      *) die "usage: agent-vm env gh [--repo OWNER/REPO] [--vault Personal|Formal]" ;;
+    esac
+  done
+  for tool in op jq curl perl; do
+    command -v "$tool" >/dev/null 2>&1 || die "$tool is required for agent-vm env gh"
+  done
+  root=$(resolve_repo_root)
+  m=$(derive_machine_name "$root")
+  # 0. state, 1. env files: refuse before any PAT exists
+  gh_read_state "$m"
+  if [[ "$GH_STATE" == broken ]]; then
+    die "the state file $(gh_state_path "$m") is broken; delete it and re-run (you will type the repo and choose the vault again)"
+  fi
+  if grep -Eq "$GH_ANY_LINE_RE" "$AGENT_VM_CONFIG_DIR/env.1password" 2>/dev/null; then
+    die "env.1password sets GH_TOKEN for every machine; remove that line first"
+  fi
+  gh_scan_env "$(gh_env_path "$m")"
+  case "$GH_ENV" in
+    crlf) die "$(gh_env_path "$m") has CRLF line endings around GH_TOKEN; convert it to LF first" ;;
+    unreadable) die "$(gh_env_path "$m") cannot be read; fix its permissions first" ;;
+    manual) die "a hand-written GH_TOKEN line exists; remove it with agent-vm env edit, then re-run" ;;
+  esac
+  tty=/dev/tty
+  if [[ -n "$GH_TEST_MODE" && -n "${AGENT_VM_TTY:-}" ]]; then tty=$AGENT_VM_TTY; fi # test-only input file
+  if ! (: <"$tty") 2>/dev/null; then die "cannot open $tty for input"; fi
+  exec 3<"$tty"
+  # 2. repo, 2b. vault and lifetime
+  gh_decide_repo "$root" "$arg_repo"
+  gh_decide_vault "$arg_vault"
+  days=$(gh_vault_days "$GH_VAULT") || die "unknown vault"
+  op vault get "$GH_VAULT" >/dev/null </dev/null 9>&- 3<&- || die "1Password vault $GH_VAULT is not available"
+  # op uses its default account, as inject_secrets does; show which one before the user creates a PAT, so a
+  # default that moved to another account (with a vault of the same name) does not store the token there silently.
+  account=$(op whoami --format json </dev/null 9>&- 3<&- | jq -r '.url // empty') || account=""
+  step "the token will be saved in vault $GH_VAULT of 1Password account ${account:-(unknown)}"
+  # 3. names and dates, computed once
+  now=$(gh_now)
+  pat_name=$(gh_pat_name "$m" "$now") || die "could not compute the PAT name"
+  if [[ "$GH_STATE" == ok ]]; then old_pat=$GH_STATE_PAT_NAME; fi
+  if [[ "$pat_name" == "$old_pat" ]]; then die "a PAT named $pat_name was registered this minute; wait a minute and re-run"; fi
+  expires=$(gh_utc %Y-%m-%d "$now" "$days") || die "could not compute the expiry date"
+  # 4. creation page
+  url=$(gh_template_url "$pat_name" "$GH_REPO" "$days") || die "could not build the creation URL"
+  step "create the token at: $url"
+  step "select only $GH_REPO under Repository access (for an organization repository choose it as the resource owner), keep the expiration, then Generate"
+  if [[ "$(uname -s)" == Darwin ]] && command -v open >/dev/null 2>&1; then open "$url" </dev/null 9>&- 3<&- || true; fi
+  GH_PENDING_PAT=$pat_name
+  # 5. token, 6. check
+  gh_read_token
+  exec 3<&-
+  gh_check_token "$GH_REPO"
+  # 7. item, 8. read back
+  id=$(gh_create_item "$GH_VAULT" "agent-vm-gh $pat_name") ||
+    gh_abort "could not create the 1Password item or read its id; if an item titled 'agent-vm-gh $pat_name' exists in vault $GH_VAULT, delete it"
+  GH_PAT=""
+  ref="op://$GH_VAULT/$id/credential"
+  op read "$ref" >/dev/null </dev/null 9>&- || gh_abort "the new item $id in vault $GH_VAULT cannot be read back; delete it"
+  # 9. env
+  gh_rewrite_env "$(gh_env_path "$m")" "GH_TOKEN=$ref" ||
+    gh_abort "could not update $(gh_env_path "$m"); delete the new item $id in vault $GH_VAULT"
+  # 10. cleanup and the state lines, before writing the state
+  lines=$(gh_state_lines "$GH_REPO" "$GH_VAULT" "$pat_name" "$expires")
+  gh_print_cleanup "$m" "$old_pat" "$lines"
+  # 11. state
+  gh_write_state "$m" "$GH_REPO" "$GH_VAULT" "$pat_name" "$expires" ||
+    die "could not write $(gh_state_path "$m"); GH_TOKEN is already registered, so do not re-run: write the lines above into it by hand"
+  step "registered GH_TOKEN for $GH_REPO (vault $GH_VAULT, expires $expires)"
 }
 
 cmd_gc() {

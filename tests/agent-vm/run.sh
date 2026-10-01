@@ -899,6 +899,195 @@ test_gh_notice_survives_a_broken_state_file() {
   assert_status 0 "launch not blocked" -- notice_gh_token_expiry "$m"
 }
 
+gh_fixture_repo() { # origin_url -> a git repo with that origin
+  local repo="$TMP_ROOT/ghrepo"
+  mkdir -p "$repo" && git -C "$repo" init -q
+  if [[ -n "${1:-}" ]]; then git -C "$repo" remote add origin "$1"; fi
+  printf '%s\n' "$repo"
+}
+gh_fake_tools() { # replace op / curl / open with recording functions
+  # GH_TEST_OP_FAIL_ON: op fails when its arguments contain this text. LEAK: a token reached a child's environment.
+  op() {
+    printf 'op %s\n' "$*" >>"$STUB_LOG"
+    if [[ -n "$(printenv GH_PAT 2>/dev/null)" ]]; then printf 'LEAK GH_PAT exported to op\n' >>"$STUB_LOG"; fi
+    if [[ -n "${GH_TEST_OP_FAIL_ON:-}" && "$*" == *"$GH_TEST_OP_FAIL_ON"* ]]; then cat >/dev/null; return 1; fi
+    case "$1 $2" in
+      "item create") cat >>"$STUB_LOG.stdin"; printf '{"id":"%s"}\n' "${GH_TEST_ID:-zyxwvutsrqponmlkjihgfedcba}" ;;
+      "read "*) printf 'secret-from-op\n' ;;
+      "whoami --format") printf '{"url":"https://my.example.1password.com"}\n' ;;
+    esac
+  }
+  curl() {
+    printf 'curl %s\n' "$*" >>"$STUB_LOG"
+    if [[ -n "$(printenv GH_PAT 2>/dev/null)" ]]; then printf 'LEAK GH_PAT exported to curl\n' >>"$STUB_LOG"; fi
+    cat >>"$STUB_LOG.stdin"; printf '%s' "${GH_TEST_HTTP:-200}"
+  }
+  open() { printf 'open %s\n' "$*" >>"$STUB_LOG"; }
+}
+gh_tty() { printf '%b' "$1" >"$TMP_ROOT/tty"; export AGENT_VM_TTY="$TMP_ROOT/tty"; }
+gh_assert_no_token_at_rest() { # token string: nowhere on disk except the stub's stdin capture
+  assert_eq "" "$(grep -rlF "$1" "$AGENT_VM_CONFIG_DIR" "$AGENT_VM_STATE_DIR" "$TMP_ROOT" 2>/dev/null | grep -v '/stub\.log\.stdin$' | grep -v '/tty$' || true)" "token not written to disk"
+}
+GH_TEST_PAT=github_pat_ABCdef123_secretTail
+test_env_gh_first_registration_writes_env_and_state() {
+  export AGENT_VM_NOW=1767225600
+  local repo m out; repo=$(gh_fixture_repo git@github.com:Owner/Repo.git); m=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
+  gh_fake_tools; gh_tty "Owner/Repo\nFormal\n$GH_TEST_PAT\n"
+  export GH_PAT=preexisting-exported-value # a user environment that already exports the name must not leak the token
+  out=$(cd "$repo" && cmd_env_gh 2>&1)
+  assert_not_contains "$(cat "$STUB_LOG")" "LEAK" "token not exported to children"
+  assert_contains "$(cat "$STUB_LOG")" "curl -q " "curl ignores ~/.curlrc"
+  assert_contains "$(cat "$STUB_LOG")" "-H @-" "header read from stdin"
+  gh_assert_no_token_at_rest "$GH_TEST_PAT"
+  assert_contains "$out" "expires_in=30" "Formal gives 30 days"
+  assert_eq "GH_TOKEN=op://Formal/zyxwvutsrqponmlkjihgfedcba/credential" "$(cat "$AGENT_VM_CONFIG_DIR/repos/$m.env.1password")" "env line"
+  gh_read_state "$m"
+  assert_eq "ok Owner/Repo Formal 2026-01-31" "$GH_STATE $GH_STATE_REPO $GH_STATE_VAULT $GH_STATE_EXPIRES" "state"
+  assert_not_contains "$(cat "$STUB_LOG")" "$GH_TEST_PAT" "token never in argv"
+  assert_contains "$(cat "$STUB_LOG.stdin")" "Authorization: Bearer $GH_TEST_PAT" "token reaches curl on stdin"
+  assert_contains "$(cat "$STUB_LOG.stdin")" "\"value\":\"$GH_TEST_PAT\"" "token reaches op on stdin"
+  assert_not_contains "$out" "$GH_TEST_PAT" "token never printed"
+  assert_contains "$(cat "$STUB_LOG")" "op vault get Formal" "vault checked"
+  assert_contains "$out" "vault Formal of 1Password account https://my.example.1password.com" "account shown before the PAT is created"
+  assert_contains "$(cat "$STUB_LOG")" "op read op://Formal/zyxwvutsrqponmlkjihgfedcba/credential" "reference read back"
+}
+test_env_gh_renewal_prints_cleanup_and_keeps_vault() {
+  export AGENT_VM_NOW=1767225600
+  local repo m out; repo=$(gh_fixture_repo https://github.com/Owner/Repo); m=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
+  gh_put_auto_env "$m" Personal
+  gh_put_state "$m" "v=1\nrepo=Owner/Repo\nvault=Personal\npat_name=${m#agent-}-2510010000\nexpires=2026-01-03\n"
+  gh_fake_tools; gh_tty "$GH_TEST_PAT\n"
+  out=$(cd "$repo" && cmd_env_gh 2>&1)
+  assert_contains "$out" "expires_in=90" "Personal kept, 90 days"
+  assert_contains "$out" "${m#agent-}-2510010000" "old PAT name shown"
+  assert_contains "$out" "op item delete --archive abcdefghijklmnopqrstuvwxyz --vault Personal" "old item archive command"
+  assert_contains "$out" "agent-vm-gh " "title check advised"
+  assert_contains "$out" "pat_name=${m#agent-}-2601010000" "state lines shown before writing"
+}
+test_env_gh_refuses_before_any_pat_is_created() {
+  local repo m; repo=$(gh_fixture_repo git@github.com:Owner/Repo.git); m=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
+  gh_fake_tools
+  # recorded repo differs from origin
+  gh_put_state "$m" "v=1\nrepo=Owner/Other\nvault=Personal\npat_name=x-1\nexpires=2026-01-03\n"; gh_tty "$GH_TEST_PAT\n"
+  local status=0; (cd "$repo" && cmd_env_gh) >/dev/null 2>&1 || status=$?
+  assert_eq 1 "$status" "origin mismatch dies"
+  assert_not_contains "$(cat "$STUB_LOG")" "item create" "nothing saved on origin mismatch"
+  rm -f "$AGENT_VM_CONFIG_DIR/repos/$m.gh"
+  # hand-written GH_TOKEN line
+  mkdir -p "$AGENT_VM_CONFIG_DIR/repos"; printf 'export GH_TOKEN=abc\n' >"$AGENT_VM_CONFIG_DIR/repos/$m.env.1password"
+  gh_tty "Owner/Repo\nPersonal\n$GH_TEST_PAT\n"
+  local out; out=$(cd "$repo" && (cmd_env_gh) 2>&1) || true
+  assert_contains "$out" "agent-vm env edit" "manual line explained"
+  assert_not_contains "$out" "personal-access-tokens/new" "no creation page opened"
+  assert_not_contains "$(cat "$STUB_LOG")" "item create" "nothing saved"
+}
+test_env_gh_vault_mismatch_needs_explicit_vault() {
+  local repo m out; repo=$(gh_fixture_repo git@github.com:Owner/Repo.git); m=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
+  gh_put_auto_env "$m" Formal
+  gh_put_state "$m" "v=1\nrepo=Owner/Repo\nvault=Personal\npat_name=x-1\nexpires=2026-01-03\n"
+  gh_fake_tools; gh_tty "$GH_TEST_PAT\n"
+  out=$(cd "$repo" && (cmd_env_gh) 2>&1) || true
+  assert_contains "$out" "--vault" "asks for --vault"
+  assert_not_contains "$(cat "$STUB_LOG")" "item create" "nothing saved"
+}
+test_env_gh_repo_change_does_not_inherit_vault() {
+  export AGENT_VM_NOW=1767225600
+  local repo m out; repo=$(gh_fixture_repo git@github.com:New/Name.git); m=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
+  gh_put_state "$m" "v=1\nrepo=Old/Name\nvault=Personal\npat_name=x-1\nexpires=2026-01-03\n"
+  gh_fake_tools; gh_tty "New/Name\nFormal\n$GH_TEST_PAT\n"
+  out=$(cd "$repo" && cmd_env_gh --repo New/Name 2>&1)
+  assert_contains "$out" "Old/Name" "previous repo shown"
+  assert_contains "$out" "expires_in=30" "vault chosen again, not inherited"
+}
+test_env_gh_rejects_bad_token_and_failed_check() {
+  local repo out; repo=$(gh_fixture_repo git@github.com:Owner/Repo.git)
+  gh_fake_tools
+  gh_tty "Owner/Repo\nPersonal\nghp_classicToken\n"
+  out=$(cd "$repo" && (cmd_env_gh) 2>&1) || true
+  assert_contains "$out" "github_pat_" "classic token rejected"
+  assert_not_contains "$out" "ghp_classicToken" "rejected input not echoed"
+  assert_not_contains "$(cat "$STUB_LOG")" "curl" "no request with a bad token"
+  : >"$STUB_LOG"
+  gh_tty "Owner/Repo\nPersonal\n$GH_TEST_PAT\n"
+  out=$(cd "$repo" && (GH_TEST_HTTP=404 cmd_env_gh) 2>&1) || true
+  assert_contains "$out" "HTTP 404" "status shown"
+  assert_contains "$out" "delete the PAT named" "created PAT mentioned"
+  assert_not_contains "$out" "$GH_TEST_PAT" "token not printed on failure"
+  assert_not_contains "$(cat "$STUB_LOG")" "item create" "nothing saved after a failed check"
+  gh_assert_no_token_at_rest "$GH_TEST_PAT"
+}
+test_env_gh_refuses_other_unsafe_starts() {
+  local repo m out; repo=$(gh_fixture_repo git@github.com:Owner/Repo.git); m=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
+  gh_fake_tools; mkdir -p "$AGENT_VM_CONFIG_DIR/repos"
+  printf 'GH_TOKEN=op://v/i/f\n' >"$AGENT_VM_CONFIG_DIR/env.1password"; gh_tty "Owner/Repo\nPersonal\n$GH_TEST_PAT\n"
+  out=$(cd "$repo" && (cmd_env_gh) 2>&1) || true
+  assert_contains "$out" "env.1password sets GH_TOKEN" "global GH_TOKEN refused"
+  rm -f "$AGENT_VM_CONFIG_DIR/env.1password"
+  printf 'GH_TOKEN=op://Formal/abcdefghijklmnopqrstuvwxyz/credential\r\n' >"$AGENT_VM_CONFIG_DIR/repos/$m.env.1password"
+  out=$(cd "$repo" && (cmd_env_gh) 2>&1) || true
+  assert_contains "$out" "CRLF" "CRLF refused"
+  rm -f "$AGENT_VM_CONFIG_DIR/repos/$m.env.1password"
+  gh_put_state "$m" 'garbage\n'
+  out=$(cd "$repo" && (cmd_env_gh) 2>&1) || true
+  assert_contains "$out" "is broken" "broken state refused"
+  export AGENT_VM_NOW=1767225600
+  gh_put_state "$m" "v=1\nrepo=Owner/Repo\nvault=Personal\npat_name=${m#agent-}-2601010000\nexpires=2026-01-03\n"; gh_tty "$GH_TEST_PAT\n"
+  out=$(cd "$repo" && (cmd_env_gh) 2>&1) || true
+  assert_contains "$out" "wait a minute" "same-minute PAT name refused"
+  rm -f "$AGENT_VM_CONFIG_DIR/repos/$m.gh"; gh_tty "Owner/Repo\nPersonal\n$GH_TEST_PAT\n"
+  out=$(cd "$repo" && (GH_TEST_OP_FAIL_ON="vault get" cmd_env_gh) 2>&1) || true
+  assert_contains "$out" "vault Personal is not available" "missing vault refused"
+  assert_not_contains "$out" "personal-access-tokens/new" "before the creation page"
+  git -C "$repo" remote remove origin
+  gh_put_state "$m" "v=1\nrepo=Owner/Repo\nvault=Personal\npat_name=x-1\nexpires=2026-01-03\n"; gh_tty "$GH_TEST_PAT\n"
+  out=$(cd "$repo" && (cmd_env_gh) 2>&1) || true
+  assert_contains "$out" "origin cannot be parsed" "unparseable origin refused when a repo is recorded"
+  assert_not_contains "$(cat "$STUB_LOG")" "item create" "nothing saved in any of these cases"
+}
+test_env_gh_failures_after_the_pat_name_what_to_delete() {
+  export AGENT_VM_NOW=1767225600
+  local repo m out; repo=$(gh_fixture_repo git@github.com:Owner/Repo.git); m=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
+  gh_fake_tools; gh_tty "Owner/Repo\nFormal\n$GH_TEST_PAT\n"
+  out=$(cd "$repo" && (GH_TEST_OP_FAIL_ON="read op://" cmd_env_gh) 2>&1) || true
+  assert_contains "$out" "zyxwvutsrqponmlkjihgfedcba in vault Formal" "new item's id and vault shown"
+  assert_contains "$out" "${m#agent-}-2601010000" "PAT name shown"
+  assert_status 1 "env not written" -- test -e "$AGENT_VM_CONFIG_DIR/repos/$m.env.1password"
+  : >"$STUB_LOG"; gh_tty "Owner/Repo\nFormal\n$GH_TEST_PAT\n"
+  out=$(cd "$repo" && (GH_TEST_ID=short cmd_env_gh) 2>&1) || true
+  assert_contains "$out" "agent-vm-gh ${m#agent-}-2601010000" "item title to look for"
+}
+test_env_gh_vault_switch_and_same_repo_update() {
+  export AGENT_VM_NOW=1767225600
+  local repo m out; repo=$(gh_fixture_repo git@github.com:Owner/Repo.git); m=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
+  gh_put_auto_env "$m" Formal
+  gh_put_state "$m" "v=1\nrepo=Owner/Repo\nvault=Formal\npat_name=x-1\nexpires=2026-01-03\n"
+  gh_fake_tools; gh_tty "$GH_TEST_PAT\n"
+  out=$(cd "$repo" && GH_TEST_OP_FAIL_ON=whoami cmd_env_gh --vault Personal 2>&1)
+  assert_contains "$out" "of 1Password account (unknown)" "a failing op whoami does not stop the command"
+  assert_contains "$out" "from vault Formal to Personal; the new token expires in 90 days" "switch shown with the new lifetime"
+  assert_contains "$out" "--vault Formal" "old item archived from the old vault"
+  gh_put_auto_env "$m" Personal
+  gh_put_state "$m" "v=1\nrepo=Owner/Repo\nvault=Personal\npat_name=x-1\nexpires=2026-01-03\n"
+  gh_tty "owner/repo\n$GH_TEST_PAT\n"
+  out=$(cd "$repo" && cmd_env_gh --repo owner/repo 2>&1)
+  assert_not_contains "$out" "vault for this repo's token" "same repo (case-insensitive) is an update: vault not asked again"
+  assert_contains "$out" "expires_in=90" "recorded vault kept"
+}
+test_env_gh_state_write_failure_prints_lines_to_write() {
+  export AGENT_VM_NOW=1767225600
+  local repo out; repo=$(gh_fixture_repo git@github.com:Owner/Repo.git)
+  gh_fake_tools; gh_write_state() { return 1; }
+  gh_tty "Owner/Repo\nPersonal\n$GH_TEST_PAT\n"
+  out=$(cd "$repo" && (cmd_env_gh) 2>&1) || true
+  assert_contains "$out" "expires=2026-04-01" "lines shown"
+  assert_contains "$out" "do not re-run" "told not to re-run"
+  assert_not_contains "$out" "$GH_TEST_PAT" "token not printed on failure"
+}
+test_main_dispatches_env_gh() {
+  cmd_env_gh() { echo "env-gh $*"; }
+  assert_eq "env-gh --vault Formal" "$(main env gh --vault Formal)" "env gh"
+}
+
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do
   (
     TMP_ROOT="$TMP_BASE/$t"; mkdir -p "$TMP_ROOT"
