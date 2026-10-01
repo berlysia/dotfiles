@@ -1109,6 +1109,287 @@ test_env_adopt_refuses_when_a_gh_state_file_is_in_the_way() {
   assert_status 0 "env file not moved" -- test -f "$AGENT_VM_CONFIG_DIR/repos/agent-gone-000000.env.1password"
 }
 
+errexit_run() { # snippet: run it in a fresh bash with the launcher sourced under set -euo pipefail; prints "reached" at the end
+  # stderr is kept for diagnosis when "reached" is missing.
+  bash -c 'set -euo pipefail; AGENT_VM_LIB=1 . "$1"; eval "$2"; echo reached' _ "$LAUNCHER" "$1" 2>>"$TMP_ROOT/errexit.err" || true
+}
+test_store_hash_covers_symlinks_and_modes_but_not_meta() {
+  local s="$TMP_ROOT/s" h1 h2 h3 h4; mkdir -p "$s/bin" "$s/x"
+  printf 'a\n' >"$s/x/f"; ln -s ../x/f "$s/bin/l"; printf 'm\n' >"$s/.meta"
+  h1=$(store_hash "$s")
+  case "$h1" in v2:[0-9a-f]*) record "PASS store_hash has the v2 prefix" ;; *) record "FAIL store_hash has the v2 prefix ($h1)" ;; esac
+  printf 'other\n' >"$s/.meta"; h2=$(store_hash "$s")
+  assert_eq "$h1" "$h2" ".meta is excluded"
+  ln -sfn ../x/g "$s/bin/l"; h3=$(store_hash "$s")
+  if [[ "$h1" != "$h3" ]]; then record "PASS symlink target change is detected"; else record "FAIL symlink target change is detected"; fi
+  ln -sfn ../x/f "$s/bin/l"; chmod +x "$s/x/f"; h4=$(store_hash "$s")
+  if [[ "$h1" != "$h4" ]]; then record "PASS mode change is detected"; else record "FAIL mode change is detected"; fi
+}
+test_dir_hash_is_unchanged_by_store_hash() {
+  local s="$TMP_ROOT/s"; mkdir -p "$s"; printf 'a\n' >"$s/f"
+  case "$(dir_hash "$s")" in v1:*) record "PASS dir_hash keeps v1" ;; *) record "FAIL dir_hash keeps v1" ;; esac
+}
+test_clone_cmd_defaults_to_clonefile() {
+  assert_eq "cp -c -R" "$(clone_cmd)" "clonefile is the default clone command"
+  assert_eq "cp -R" "$(AGENT_VM_CLONE_CMD='cp -R' clone_cmd)" "tests can override the clone command"
+}
+test_run_bounded_stops_a_hung_command() {
+  assert_status 142 "a command past its bound is killed by SIGALRM" -- run_bounded 1 sleep 5
+  assert_status 0 "a quick command passes through" -- run_bounded 5 true
+}
+
+fetch_stubs() { # npm/bunx/file stubs for cmd_fetch_browsers; $1 = playwright version npm reports
+  mkdir -p "$TMP_ROOT/bin" "$TMP_ROOT/wt"; BUNX_LOG="$TMP_ROOT/bunx.log"; : >"$BUNX_LOG"
+  printf '{"dependencies":{"@playwright/mcp":"0.0.75"}}\n' >"$TMP_ROOT/wt/package.json"
+  printf '#!/bin/sh\nprintf %%s %s\n' "'{\"playwright\":\"$1\",\"playwright-core\":\"$1\"}'" >"$TMP_ROOT/bin/npm"
+  cat >"$TMP_ROOT/bin/bunx" <<EOF
+#!/bin/sh
+{ printf 'bunx %s\n' "\$*"; env | grep -E '^(PLAYWRIGHT_|HTTPS_PROXY=|NO_PROXY=|EVIL=)' | sort; } >>"$BUNX_LOG"
+d="\$PLAYWRIGHT_BROWSERS_PATH/chromium_headless_shell-1224/chrome-linux"; mkdir -p "\$d"
+printf 'elf\n' >"\$d/headless_shell"; chmod +x "\$d/headless_shell"
+EOF
+  printf '#!/bin/sh\necho "$1: ELF 64-bit LSB pie executable, ARM aarch64"\n' >"$TMP_ROOT/bin/file"
+  chmod +x "$TMP_ROOT/bin/npm" "$TMP_ROOT/bin/bunx" "$TMP_ROOT/bin/file"
+  export PATH="$TMP_ROOT/bin:$PATH"
+}
+test_browser_store_id_reads_the_scoped_package() {
+  mkdir -p "$TMP_ROOT/wt"; printf '{"dependencies":{"@playwright/mcp":"0.0.75"}}\n' >"$TMP_ROOT/wt/package.json"
+  assert_eq "mcp-0.0.75" "$(browser_store_id "$TMP_ROOT/wt")" "the scoped package name is read literally"
+}
+test_fetch_publishes_store_with_meta_and_stable_link() {
+  fetch_stubs 1.61.0-alpha-1778188671000
+  cmd_fetch_browsers --from-apply "$TMP_ROOT/wt" >/dev/null 2>&1 || true
+  local s="$AGENT_VM_STATE_DIR/browser-store/mcp-0.0.75"
+  assert_status 0 "store published under the mcp version" -- test -d "$s"
+  assert_eq "../chromium_headless_shell-1224/chrome-linux/headless_shell" "$(readlink "$s/bin/headless_shell")" "stable relative link"
+  assert_contains "$(cat "$s/.meta")" "playwright_version=1.61.0-alpha-1778188671000" "meta records the playwright version"
+  assert_eq "sha256=$(store_hash "$s")" "$(grep '^sha256=' "$s/.meta")" "meta records the store hash"
+  assert_eq "700" "$(perl -e 'printf "%o", (stat shift)[2] & 0777' "$AGENT_VM_STATE_DIR/browser-store")" "store dir is 0700"
+}
+test_fetch_is_a_no_op_when_the_store_exists() {
+  fetch_stubs 1.61.0-alpha-1778188671000
+  cmd_fetch_browsers --from-apply "$TMP_ROOT/wt" >/dev/null 2>&1 || true
+  assert_eq "1" "$(grep -c '^bunx ' "$BUNX_LOG")" "first run downloads once"
+  cmd_fetch_browsers --from-apply "$TMP_ROOT/wt" >/dev/null 2>&1 || true
+  assert_eq "1" "$(grep -c '^bunx ' "$BUNX_LOG")" "second run does not download"
+}
+test_fetch_force_replaces_an_existing_store() {
+  fetch_stubs 1.61.0-alpha-1778188671000
+  cmd_fetch_browsers --from-apply "$TMP_ROOT/wt" >/dev/null 2>&1 || true
+  printf 'tampered\n' >"$AGENT_VM_STATE_DIR/browser-store/mcp-0.0.75/chromium_headless_shell-1224/chrome-linux/headless_shell"
+  cmd_fetch_browsers --force --from-apply "$TMP_ROOT/wt" >/dev/null 2>&1 || true
+  assert_eq "elf" "$(cat "$AGENT_VM_STATE_DIR/browser-store/mcp-0.0.75/chromium_headless_shell-1224/chrome-linux/headless_shell")" "--force replaces the store"
+  assert_eq "" "$(ls "$AGENT_VM_STATE_DIR/build")" "no leftovers in build/"
+}
+test_fetch_refuses_a_range_version() {
+  fetch_stubs '^1.61.0'
+  assert_status 1 "a range version fails the fetch" -- cmd_fetch_browsers --from-apply "$TMP_ROOT/wt"
+  assert_contains "$(cat "$AGENT_VM_STATE_DIR/browser-store/.last-failure")" "range" "failure reason recorded"
+  assert_status 1 "nothing published" -- test -e "$AGENT_VM_STATE_DIR/browser-store/mcp-0.0.75"
+}
+test_fetch_failure_reason_keeps_paths_readable() {
+  fetch_stubs 1.61.0-alpha-1778188671000
+  printf '#!/bin/sh\nexit 3\n' >"$TMP_ROOT/bin/bunx"
+  cmd_fetch_browsers --from-apply "$TMP_ROOT/wt" >/dev/null 2>&1 || true
+  assert_contains "$(cat "$AGENT_VM_STATE_DIR/browser-store/.last-failure")" "(see $AGENT_VM_STATE_DIR/browser-store/.fetch.log)" "the sanitized reason keeps the log path intact"
+}
+test_fetch_refuses_a_non_arm64_binary() {
+  fetch_stubs 1.61.0-alpha-1778188671000
+  printf '#!/bin/sh\necho "$1: Mach-O 64-bit executable arm64"\n' >"$TMP_ROOT/bin/file"
+  assert_status 1 "a non-ELF binary fails the fetch" -- cmd_fetch_browsers --from-apply "$TMP_ROOT/wt"
+  assert_status 1 "nothing published" -- test -e "$AGENT_VM_STATE_DIR/browser-store/mcp-0.0.75"
+}
+test_fetch_records_a_failure_when_no_browser_was_installed() {
+  fetch_stubs 1.61.0-alpha-1778188671000
+  printf '#!/bin/sh\nexit 0\n' >"$TMP_ROOT/bin/bunx"
+  assert_status 1 "an empty install fails the fetch" -- cmd_fetch_browsers --from-apply "$TMP_ROOT/wt"
+  assert_status 0 "the failure is recorded" -- test -s "$AGENT_VM_STATE_DIR/browser-store/.last-failure"
+}
+test_fetch_passes_only_allowlisted_env() {
+  fetch_stubs 1.61.0-alpha-1778188671000
+  EVIL=1 PLAYWRIGHT_DOWNLOAD_HOST=http://evil HTTPS_PROXY=http://proxy NO_PROXY='*.local, 10.0.0.0/8' \
+    cmd_fetch_browsers --from-apply "$TMP_ROOT/wt" >/dev/null 2>&1 || true
+  local log; log=$(cat "$BUNX_LOG")
+  assert_not_contains "$log" "EVIL=" "unlisted variables are dropped"
+  assert_not_contains "$log" "PLAYWRIGHT_DOWNLOAD_HOST" "playwright overrides are dropped"
+  assert_contains "$log" "HTTPS_PROXY=http://proxy" "proxy is passed"
+  assert_contains "$log" "NO_PROXY=*.local, 10.0.0.0/8" "a value with spaces and globs is passed intact"
+  assert_contains "$log" "PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-arm64" "platform override is set"
+}
+test_fetch_failure_repeats_as_one_line() {
+  fetch_stubs '^1.61.0'
+  cmd_fetch_browsers --from-apply "$TMP_ROOT/wt" >/dev/null 2>&1 || true
+  local second; second=$(cmd_fetch_browsers --from-apply "$TMP_ROOT/wt" 2>&1 || true)
+  assert_eq "1" "$(printf '%s\n' "$second" | grep -c .)" "a repeated failure prints one line"
+  assert_contains "$second" "agent-vm fetch-browsers" "the line names the recovery"
+}
+test_fetch_cli_failure_prints_no_unexpected_error() {
+  fetch_stubs '^1.61.0'
+  local err status=0
+  err=$(AGENT_VM_STATE_DIR="$AGENT_VM_STATE_DIR" bash "$LAUNCHER" fetch-browsers --from-apply "$TMP_ROOT/wt" 2>&1 >/dev/null) || status=$?
+  assert_eq "1" "$status" "the CLI exits 1 on a fetch failure"
+  assert_not_contains "$err" "unexpectedly" "the ERR trap does not add its own report"
+}
+test_fetch_removes_older_stores_after_publishing() {
+  fetch_stubs 1.61.0-alpha-1778188671000
+  mkdir -p "$AGENT_VM_STATE_DIR/browser-store/mcp-0.0.74"
+  cmd_fetch_browsers --from-apply "$TMP_ROOT/wt" >/dev/null 2>&1 || true
+  assert_status 1 "older store removed" -- test -e "$AGENT_VM_STATE_DIR/browser-store/mcp-0.0.74"
+}
+
+test_new_machine_gets_browser_mount_and_marker() {
+  export STUB_ORB_LIST_STDOUT="other-machine"
+  ensure_machine agent-n-000000 "$TMP_ROOT" "$TMP_ROOT" >/dev/null 2>&1
+  assert_contains "$(cat "$STUB_LOG")" "--mount $AGENT_VM_STATE_DIR/browsers/agent-n-000000:/opt/agent-vm/browsers" "browser mount added"
+  assert_status 0 "mount marker written" -- test -f "$AGENT_VM_STATE_DIR/browser-records/agent-n-000000.mount"
+}
+test_new_machine_drops_a_stale_id_record() {
+  mkdir -p "$AGENT_VM_STATE_DIR/browser-records"; printf 'mcp-0.0.75\n' >"$AGENT_VM_STATE_DIR/browser-records/agent-n-000000.id"
+  export STUB_ORB_LIST_STDOUT="other-machine"
+  ensure_machine agent-n-000000 "$TMP_ROOT" "$TMP_ROOT" >/dev/null 2>&1
+  assert_status 1 "stale id removed on create" -- test -e "$AGENT_VM_STATE_DIR/browser-records/agent-n-000000.id"
+}
+test_existing_machine_gets_no_marker() {
+  export STUB_ORB_LIST_STDOUT="agent-n-000000"
+  ensure_machine agent-n-000000 "$TMP_ROOT" "$TMP_ROOT" >/dev/null 2>&1
+  assert_status 1 "no marker for an existing machine" -- test -e "$AGENT_VM_STATE_DIR/browser-records/agent-n-000000.mount"
+}
+test_failed_orb_list_writes_no_marker_and_stops() {
+  export STUB_ORB_FAIL_ON="list"
+  local out; out=$(errexit_run 'ensure_machine agent-n-000000 "$TMP_ROOT" "$TMP_ROOT"')
+  assert_not_contains "$out" "reached" "a failed orb list stops the launch"
+  assert_status 1 "no marker when orb list failed" -- test -e "$AGENT_VM_STATE_DIR/browser-records/agent-n-000000.mount"
+  assert_not_contains "$(cat "$STUB_LOG")" "orb create" "no create after a failed list"
+}
+test_marker_survives_a_failed_create() {
+  export STUB_ORB_LIST_STDOUT="other-machine" STUB_ORB_FAIL_ON="ubuntu agent-n-000000"
+  (ensure_machine agent-n-000000 "$TMP_ROOT" "$TMP_ROOT") >/dev/null 2>&1 || true
+  assert_contains "$(cat "$STUB_LOG")" "orb create" "create was attempted"
+  assert_status 0 "marker written before create" -- test -f "$AGENT_VM_STATE_DIR/browser-records/agent-n-000000.mount"
+}
+
+browsers_ready() { # store published + machine marker present
+  fetch_stubs 1.61.0-alpha-1778188671000; cmd_fetch_browsers --from-apply "$TMP_ROOT/wt" >/dev/null 2>&1 || true
+  mkdir -p "$AGENT_VM_STATE_DIR/browsers/agent-b-000000" "$AGENT_VM_STATE_DIR/browser-records"
+  : >"$AGENT_VM_STATE_DIR/browser-records/agent-b-000000.mount"
+  export AGENT_VM_CLONE_CMD='cp -R'
+}
+test_ensure_browsers_skips_without_marker() {
+  browsers_ready; rm "$AGENT_VM_STATE_DIR/browser-records/agent-b-000000.mount"
+  ensure_browsers agent-b-000000 "$TMP_ROOT/wt" 2>/dev/null
+  assert_eq "" "$(ls "$AGENT_VM_STATE_DIR/browsers/agent-b-000000")" "nothing published without the marker"
+}
+test_ensure_browsers_publishes_current_and_records_id() {
+  browsers_ready
+  local out; out=$(errexit_run 'ensure_browsers agent-b-000000 "$TMP_ROOT/wt"')
+  assert_contains "$out" "reached" "publishing completes under set -euo pipefail"
+  local b="$AGENT_VM_STATE_DIR/browsers/agent-b-000000"
+  assert_status 0 "current is a symlink" -- test -L "$b/current"
+  case "$(readlink "$b/current")" in gen-mcp-0.0.75.*) record "PASS current points at a gen-<id> dir" ;; *) record "FAIL current points at a gen-<id> dir" ;; esac
+  assert_status 0 "headless shell reachable through current" -- test -f "$b/current/bin/headless_shell"
+  assert_eq "mcp-0.0.75" "$(cat "$AGENT_VM_STATE_DIR/browser-records/agent-b-000000.id")" "id recorded"
+  local leftover=""; for _ in "$b"/current.*; do [[ -e "$_" || -L "$_" ]] && leftover=1; done
+  assert_eq "" "$leftover" "no temporary link left behind"
+}
+test_ensure_browsers_is_a_no_op_when_current_and_id_match() {
+  browsers_ready; ensure_browsers agent-b-000000 "$TMP_ROOT/wt" 2>/dev/null
+  local before; before=$(ls "$AGENT_VM_STATE_DIR/browsers/agent-b-000000")
+  ensure_browsers agent-b-000000 "$TMP_ROOT/wt" 2>/dev/null
+  assert_eq "$before" "$(ls "$AGENT_VM_STATE_DIR/browsers/agent-b-000000")" "no new generation"
+}
+test_ensure_browsers_rebuilds_when_current_is_gone() {
+  browsers_ready; ensure_browsers agent-b-000000 "$TMP_ROOT/wt" 2>/dev/null
+  rm "$AGENT_VM_STATE_DIR/browsers/agent-b-000000/current"
+  ensure_browsers agent-b-000000 "$TMP_ROOT/wt" 2>/dev/null
+  assert_status 0 "current restored" -- test -L "$AGENT_VM_STATE_DIR/browsers/agent-b-000000/current"
+}
+test_ensure_browsers_rebuilds_a_dangling_current() {
+  browsers_ready; ensure_browsers agent-b-000000 "$TMP_ROOT/wt" 2>/dev/null
+  rm -rf "$AGENT_VM_STATE_DIR/browsers/agent-b-000000"/gen-*
+  ensure_browsers agent-b-000000 "$TMP_ROOT/wt" 2>/dev/null
+  assert_status 0 "a dangling current is republished" -- test -f "$AGENT_VM_STATE_DIR/browsers/agent-b-000000/current/bin/headless_shell"
+}
+test_ensure_browsers_keeps_old_generations() {
+  browsers_ready; ensure_browsers agent-b-000000 "$TMP_ROOT/wt" 2>/dev/null
+  printf 'mcp-0.0.74\n' >"$AGENT_VM_STATE_DIR/browser-records/agent-b-000000.id"
+  ensure_browsers agent-b-000000 "$TMP_ROOT/wt" 2>/dev/null
+  assert_eq "2" "$(ls -d "$AGENT_VM_STATE_DIR/browsers/agent-b-000000"/gen-* | wc -l | tr -d ' ')" "old generation kept while the VM may run"
+}
+test_ensure_browsers_warns_when_store_is_missing() {
+  browsers_ready; rm -rf "$AGENT_VM_STATE_DIR/browser-store/mcp-0.0.75"
+  printf 'mcp-0.0.75\tnpm view failed\n' >"$AGENT_VM_STATE_DIR/browser-store/.last-failure"
+  local err; err=$(ensure_browsers agent-b-000000 "$TMP_ROOT/wt" 2>&1)
+  assert_contains "$err" "agent-vm fetch-browsers" "recovery printed"
+  assert_contains "$err" "npm view failed" "the last fetch failure is shown"
+  assert_status 1 "no id recorded" -- test -e "$AGENT_VM_STATE_DIR/browser-records/agent-b-000000.id"
+}
+test_ensure_browsers_refuses_a_tampered_store() {
+  browsers_ready
+  printf 'x\n' >"$AGENT_VM_STATE_DIR/browser-store/mcp-0.0.75/chromium_headless_shell-1224/chrome-linux/headless_shell"
+  local err; err=$(ensure_browsers agent-b-000000 "$TMP_ROOT/wt" 2>&1)
+  assert_contains "$err" "agent-vm fetch-browsers --force" "TOFU mismatch names --force"
+  assert_status 1 "current not published" -- test -e "$AGENT_VM_STATE_DIR/browsers/agent-b-000000/current"
+}
+test_ensure_browsers_does_not_follow_a_planted_current() {
+  browsers_ready; mkdir -p "$TMP_ROOT/outside"
+  ln -s "$TMP_ROOT/outside" "$AGENT_VM_STATE_DIR/browsers/agent-b-000000/current"
+  ensure_browsers agent-b-000000 "$TMP_ROOT/wt" 2>/dev/null
+  assert_eq "" "$(ls -A "$TMP_ROOT/outside")" "nothing written through a planted symlink"
+  case "$(readlink "$AGENT_VM_STATE_DIR/browsers/agent-b-000000/current")" in gen-*) record "PASS planted current replaced" ;; *) record "FAIL planted current replaced" ;; esac
+}
+test_ensure_browsers_warns_when_current_is_a_directory() {
+  browsers_ready; mkdir -p "$AGENT_VM_STATE_DIR/browsers/agent-b-000000/current/x"
+  local err; err=$(ensure_browsers agent-b-000000 "$TMP_ROOT/wt" 2>&1)
+  assert_contains "$err" "agent-vm rm" "a blocked current names agent-vm rm"
+  assert_eq "1" "$(ls -d "$AGENT_VM_STATE_DIR/browsers/agent-b-000000"/gen-* 2>/dev/null | wc -l | tr -d ' ')" "a failed publish leaves its generation for forget_machine (no deep delete in the VM-writable tree)"
+  assert_status 1 "no id recorded after a failed publish" -- test -e "$AGENT_VM_STATE_DIR/browser-records/agent-b-000000.id"
+}
+test_ensure_browsers_never_fails_and_closes_fd8() {
+  browsers_ready
+  local path out holder="" before
+  for path in clone tofu store busy; do
+    rm -rf "$AGENT_VM_STATE_DIR/browsers/agent-b-000000"/* "$AGENT_VM_STATE_DIR/browser-records/agent-b-000000.id"
+    case "$path" in
+      clone) export AGENT_VM_CLONE_CMD=false ;;
+      tofu) export AGENT_VM_CLONE_CMD='cp -R'
+            before=$(store_hash "$AGENT_VM_STATE_DIR/browser-store/mcp-0.0.75")
+            chmod 750 "$AGENT_VM_STATE_DIR/browser-store/mcp-0.0.75/bin"
+            if [[ "$before" != "$(store_hash "$AGENT_VM_STATE_DIR/browser-store/mcp-0.0.75")" ]]; then record "PASS tofu: the store hash really changed"; else record "FAIL tofu: the store hash really changed"; fi ;;
+      store) chmod 755 "$AGENT_VM_STATE_DIR/browser-store/mcp-0.0.75/bin"
+             mv "$AGENT_VM_STATE_DIR/browser-store/mcp-0.0.75" "$TMP_ROOT/store-aside" ;;
+      busy) mv "$TMP_ROOT/store-aside" "$AGENT_VM_STATE_DIR/browser-store/mcp-0.0.75"
+            perl -MFcntl=:flock -e 'open(my $f, ">", $ARGV[0]) or die; flock($f, LOCK_EX) or die;
+              open(my $r, ">", $ARGV[1]) or die; close $r; sleep 70' \
+              "$AGENT_VM_STATE_DIR/browser-store.lock" "$TMP_ROOT/held" &
+            holder=$!
+            for _ in $(seq 1 100); do [[ -e "$TMP_ROOT/held" ]] && break; sleep 0.1; done   # the holder has the lock first
+            if [[ ! -e "$TMP_ROOT/held" ]]; then record "FAIL busy: the lock holder never started"; continue; fi ;;
+    esac
+    out=$(errexit_run 'ensure_browsers agent-b-000000 "$TMP_ROOT/wt"; if test -e /dev/fd/8; then echo fd8-open; fi')
+    assert_contains "$out" "reached" "$path: ensure_browsers returns under set -euo pipefail"
+    assert_not_contains "$out" "fd8-open" "$path: fd 8 is closed afterwards"
+    assert_status 1 "$path: nothing published" -- test -e "$AGENT_VM_STATE_DIR/browsers/agent-b-000000/current"
+  done
+  if [[ -n "$holder" ]]; then kill "$holder" 2>/dev/null || true; fi
+}
+
+test_forget_machine_removes_browser_records_and_copies() {
+  mkdir -p "$AGENT_VM_STATE_DIR/browsers/agent-g-000000/gen-x" "$AGENT_VM_STATE_DIR/browser-records"
+  : >"$AGENT_VM_STATE_DIR/browser-records/agent-g-000000.mount"; : >"$AGENT_VM_STATE_DIR/browser-records/agent-g-000000.id"
+  : >"$AGENT_VM_STATE_DIR/browser-records/agent-g-000000.id.tmp.abc123"
+  : >"$AGENT_VM_STATE_DIR/browser-records/agent-other-000000.mount"
+  forget_machine agent-g-000000 2>/dev/null
+  assert_eq "agent-other-000000.mount" "$(ls "$AGENT_VM_STATE_DIR/browser-records")" "only this machine's records removed"
+  assert_status 1 "browser copies removed" -- test -e "$AGENT_VM_STATE_DIR/browsers/agent-g-000000"
+}
+test_forget_machine_removes_a_dir_the_vm_locked_down() {
+  if [[ "$(id -u)" -eq 0 ]]; then record "PASS locked-down dir removed (skipped: running as root)"; return 0; fi
+  mkdir -p "$AGENT_VM_STATE_DIR/browsers/agent-g-000000/locked/inner"; chmod 000 "$AGENT_VM_STATE_DIR/browsers/agent-g-000000/locked"
+  local out; out=$(errexit_run 'forget_machine agent-g-000000')
+  assert_contains "$out" "reached" "forget_machine does not abort"
+  assert_status 1 "locked-down dir removed" -- test -e "$AGENT_VM_STATE_DIR/browsers/agent-g-000000"
+}
+
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do
   (
     TMP_ROOT="$TMP_BASE/$t"; mkdir -p "$TMP_ROOT"

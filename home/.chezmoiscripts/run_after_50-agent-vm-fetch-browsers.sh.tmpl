@@ -1,0 +1,10 @@
+{{ if eq .chezmoi.os "darwin" -}}
+#!/usr/bin/env bash
+# Keep the host-side linux-arm64 browser store for agent-vm in step with package.json (docs/decisions/0018, K23).
+# Runs on every apply; agent-vm fetch-browsers is a no-op without network when the store is current.
+set -euo pipefail
+export PATH="$HOME/.local/share/mise/shims:$HOME/.local/bin:$PATH"
+# fetch-browsers prints its own one-line warning with the recovery; nothing is added here.
+"$HOME/.local/bin/agent-vm" fetch-browsers --from-apply {{ .chezmoi.workingTree | shellQuote }} || true
+exit 0
+{{ end -}}
