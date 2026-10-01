@@ -435,6 +435,109 @@ write_golden_meta() { # cloud_init_hash state staging_hash: written whole throug
   mv "$tmp" "$d/meta"
 }
 
+# A tree a VM could write into, removed only after its machine was deleted. chmod first like forget_machine:
+# the VM may have dropped permissions on directories inside it. Unlike forget_machine, which reports and goes on
+# (it cleans up after a machine the user removed), this dies: a leftover here would fail the golden checks or be
+# mounted into a new clone, so the launch must not continue past it.
+remove_vm_tree() { # dir
+  if [[ ! -e "$1" && ! -L "$1" ]]; then return 0; fi
+  chmod -R u+rwX "$1" 2>/dev/null || true
+  rm -rf "$1" || die "could not remove $1; remove it by hand, then retry"
+}
+
+discard_golden() { # record first, so an interrupted removal still reads as "rebuild" next time; the lock file stays
+  local vm d
+  rm -f "$(golden_dir)/meta"
+  vm=$(orb_machine_state "$GOLDEN_MACHINE")
+  if [[ -n "$vm" ]]; then
+    orb_q delete -f "$GOLDEN_MACHINE" || die "could not delete $GOLDEN_MACHINE. recover: orb delete -f $GOLDEN_MACHINE"
+  fi
+  for d in staging outbox browsers; do remove_vm_tree "$AGENT_VM_STATE_DIR/$d/$GOLDEN_MACHINE"; done
+}
+
+create_golden() { # working_tree: the only `orb create` left; repo machines are clones of this one (spec K1)
+  local mounts part
+  local -a parts args=()
+  # Also reached from `agent-vm golden refresh`, which does not pass through ensure_machine's check.
+  check_mount_paths "$AGENT_VM_STATE_DIR/staging/$GOLDEN_MACHINE" "$AGENT_VM_STATE_DIR/outbox/$GOLDEN_MACHINE" "$AGENT_VM_STATE_DIR/browsers/$GOLDEN_MACHINE"
+  mkdir -p "$AGENT_VM_STATE_DIR/staging/$GOLDEN_MACHINE" "$AGENT_VM_STATE_DIR/outbox/$GOLDEN_MACHINE" "$AGENT_VM_STATE_DIR/browsers/$GOLDEN_MACHINE"
+  mounts=$(vm_mounts "$GOLDEN_MACHINE")
+  IFS=, read -r -a parts <<<"$mounts"
+  for part in "${parts[@]}"; do args+=(--mount "$part"); done
+  orb_q create --isolated --isolate-network --forward-ssh-agent -c "$1/agent-vm/cloud-init.yaml" "${args[@]}" ubuntu "$GOLDEN_MACHINE"
+}
+
+seal_golden() { # generation
+  orb_q -m "$GOLDEN_MACHINE" bash "/opt/agent-vm/src/$1/agent-vm/golden-seal.sh" \
+    || die "sealing the golden machine failed (see above). recover: agent-vm golden rm"
+}
+
+count_entries() { find "$1" -mindepth 1 -print0 | tr -dc '\0' | wc -c | tr -d ' '; } # dir -> entries below it, NUL-counted
+
+verify_golden() { # host-side checks, run on every use even when the update is skipped (spec K6)
+  local ob="$AGENT_VM_STATE_DIR/outbox/$GOLDEN_MACHINE" br="$AGENT_VM_STATE_DIR/browsers/$GOLDEN_MACHINE" d n
+  verify_machine_config "$GOLDEN_MACHINE" "$(vm_mounts "$GOLDEN_MACHINE")" || die "the golden machine failed its check (see above). recover: agent-vm golden rm"
+  # Exactly two real, empty directories in the outbox; counted NUL-separated, so a name holding a newline or a
+  # separator cannot pass for the expected listing.
+  [[ -d "$ob" && ! -L "$ob" ]] || die "the golden machine's outbox is missing. recover: agent-vm golden rm"
+  for d in claude-projects codex-sessions; do
+    [[ -d "$ob/$d" && ! -L "$ob/$d" ]] || die "the golden machine's outbox lacks $d/. recover: agent-vm golden rm"
+  done
+  # find fails on a subtree the VM made unreadable; that is a failed check too, with the same recovery.
+  n=$(count_entries "$ob") || die "the golden machine's outbox could not be read in full. recover: agent-vm golden rm"
+  [[ "$n" == 2 ]] || die "the golden machine's outbox holds $n entries, expected only claude-projects/ and codex-sessions/. recover: agent-vm golden rm"
+  # The golden never gets a browser (it has no browser record); its browsers mount exists only for bootstrap.
+  [[ -d "$br" && ! -L "$br" ]] || die "the golden machine's browsers dir is missing. recover: agent-vm golden rm"
+  n=$(count_entries "$br") || die "the golden machine's browsers dir could not be read in full. recover: agent-vm golden rm"
+  [[ "$n" == 0 ]] || die "the golden machine's browsers dir holds $n entries, expected none. recover: agent-vm golden rm"
+}
+
+update_golden() { # cloud_init_hash generation staging_hash vm_state: bootstrap, seal, stop, check, record
+  if [[ "$4" != running ]]; then orb_q start "$GOLDEN_MACHINE"; fi
+  maybe_bootstrap "$GOLDEN_MACHINE" "$2" "$3"
+  seal_golden "$2"
+  orb_q stop "$GOLDEN_MACHINE"
+  verify_golden
+  write_golden_meta "$1" sealed "$3"
+}
+
+ensure_golden() { # working_tree force(0|1); the caller holds the golden lock (fd 7)
+  local ci vm state="" rc=0 reason="" out gen hash
+  ci=$(sha_of_file "$1/agent-vm/cloud-init.yaml")
+  vm=$(orb_machine_state "$GOLDEN_MACHINE")
+  state=$(golden_meta_field state) || rc=$?
+  if [[ -z "$vm" ]]; then
+    if [[ -f "$(golden_dir)/meta" ]]; then reason="it was removed outside agent-vm"; else reason=new; fi
+  elif [[ "$rc" -eq 2 ]]; then reason="its record has an unknown format (written by a newer agent-vm?)"
+  elif [[ "$rc" -ne 0 ]]; then reason="it has no complete record"
+  elif [[ "$state" != sealed && "$state" != updating ]]; then reason="its record has an unknown state"
+  elif [[ "$(golden_meta_field cloud_init_hash)" != "$ci" ]]; then reason="agent-vm/cloud-init.yaml changed"
+  elif [[ "$(golden_meta_field contract)" != "$BOOTSTRAP_CONTRACT" ]]; then reason="the bootstrap contract changed"
+  fi
+  if [[ -n "$reason" ]]; then
+    if [[ "$reason" == new ]]; then
+      step "creating the golden machine $GOLDEN_MACHINE (first run only; later machines are cloned from it)"
+    else
+      step "rebuilding the golden machine: $reason"
+    fi
+    discard_golden
+    create_golden "$1"
+    out=$(build_staging "$GOLDEN_MACHINE" "$1")
+    read -r gen hash <<<"$out"
+    update_golden "$ci" "$gen" "$hash" running # orb create leaves it running
+    return 0
+  fi
+  out=$(build_staging "$GOLDEN_MACHINE" "$1")
+  read -r gen hash <<<"$out"
+  if [[ "$2" -eq 0 && "$state" == sealed && "$(golden_meta_field staging_hash)" == "$hash" && "$vm" == stopped ]]; then
+    verify_golden
+    return 0
+  fi
+  step "updating the golden machine"
+  write_golden_meta "$ci" updating "$(golden_meta_field staging_hash || true)"
+  update_golden "$ci" "$gen" "$hash" "$vm"
+}
+
 maybe_bootstrap() { # machine generation staging_hash
   local applied src="/opt/agent-vm/src/$2"
   # The command's cwd inside the machine is not guaranteed to be $HOME, so read by absolute path.

@@ -1528,6 +1528,167 @@ test_forget_machine_removes_a_dir_the_vm_locked_down() {
   assert_status 1 "locked-down dir removed" -- test -e "$AGENT_VM_STATE_DIR/browsers/agent-g-000000"
 }
 
+make_golden_fixture() { # -> dotfiles working tree that also tracks agent-vm/cloud-init.yaml
+  local wt; wt=$(make_dotfiles_fixture)
+  mkdir -p "$wt/agent-vm"; printf '#cloud-config\n' >"$wt/agent-vm/cloud-init.yaml"
+  git -C "$wt" add agent-vm && git -C "$wt" -c user.email=t@t -c user.name=t -c commit.gpgsign=false commit -q -m ci
+  printf '%s\n' "$wt"
+}
+golden_dirs_as_bootstrapped() { # what create_golden and the VM's link_outbox leave on the host side
+  mkdir -p "$AGENT_VM_STATE_DIR/outbox/$GOLDEN_MACHINE/claude-projects" "$AGENT_VM_STATE_DIR/outbox/$GOLDEN_MACHINE/codex-sessions" \
+    "$AGENT_VM_STATE_DIR/browsers/$GOLDEN_MACHINE"
+}
+sealed_golden_fixture() { # wt -> a golden whose record matches the current staging; prints the config-show file
+  local out gen hash show="$TMP_ROOT/show"
+  out=$(build_staging "$GOLDEN_MACHINE" "$1"); read -r gen hash <<<"$out"
+  write_golden_meta "$(sha_of_file "$1/agent-vm/cloud-init.yaml")" sealed "$hash"
+  golden_dirs_as_bootstrapped
+  write_config_show "$show" "$GOLDEN_MACHINE" "$(vm_mounts "$GOLDEN_MACHINE")"
+  printf '%s\n' "$show"
+}
+test_first_golden_is_created_without_a_repo_and_sealed() {
+  local wt; wt=$(make_golden_fixture)
+  # shellcheck disable=SC2329 # replaces the real function; ensure_golden calls it
+  maybe_bootstrap() { golden_dirs_as_bootstrapped; } # the VM side would create these
+  write_config_show "$TMP_ROOT/show" "$GOLDEN_MACHINE" "$(vm_mounts "$GOLDEN_MACHINE")"
+  STUB_ORB_CONFIG_SHOW_FILE="$TMP_ROOT/show" ensure_golden "$wt" 0 2>/dev/null
+  local log st="$AGENT_VM_STATE_DIR"; log=$(cat "$STUB_LOG")
+  assert_contains "$log" "orb create --isolated --isolate-network --forward-ssh-agent -c $wt/agent-vm/cloud-init.yaml --mount $st/staging/$GOLDEN_MACHINE:/opt/agent-vm/src --mount $st/outbox/$GOLDEN_MACHINE:/opt/agent-vm/outbox --mount $st/browsers/$GOLDEN_MACHINE:/opt/agent-vm/browsers ubuntu $GOLDEN_MACHINE" \
+    "golden created with only its own three mounts"
+  assert_contains "$log" "agent-vm/golden-seal.sh" "sealed"
+  assert_contains "$log" "orb stop $GOLDEN_MACHINE" "stopped after sealing"
+  assert_eq sealed "$(golden_meta_field state)" "recorded as sealed"
+  assert_status 1 "the golden gets no browser record" -- test -e "$st/browser-records/$GOLDEN_MACHINE.mount"
+  local gen; gen=$(ls "$st/staging/$GOLDEN_MACHINE")
+  assert_eq "$(dir_hash "$st/staging/$GOLDEN_MACHINE/$gen")" "$(golden_meta_field staging_hash)" "staging hash recorded"
+}
+test_unchanged_stopped_golden_is_not_started() {
+  local wt show; wt=$(make_golden_fixture); show=$(sealed_golden_fixture "$wt"); : >"$STUB_LOG"
+  STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" ensure_golden "$wt" 0 2>/dev/null
+  local log; log=$(cat "$STUB_LOG")
+  assert_not_contains "$log" "orb start" "golden not started"
+  assert_not_contains "$log" "golden-seal.sh" "not resealed"
+  assert_contains "$log" "orb config show" "host-side check still runs"
+}
+test_forced_refresh_updates_an_unchanged_golden() {
+  local wt show; wt=$(make_golden_fixture); show=$(sealed_golden_fixture "$wt"); : >"$STUB_LOG"
+  STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" ensure_golden "$wt" 1 2>/dev/null
+  assert_contains "$(cat "$STUB_LOG")" "orb start $GOLDEN_MACHINE" "started"
+  assert_contains "$(cat "$STUB_LOG")" "golden-seal.sh" "resealed"
+  assert_eq sealed "$(golden_meta_field state)" "sealed again"
+}
+test_running_golden_is_resealed_not_cloned_as_is() {
+  local wt show; wt=$(make_golden_fixture); show=$(sealed_golden_fixture "$wt"); : >"$STUB_LOG"
+  STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE running ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" ensure_golden "$wt" 0 2>/dev/null
+  assert_contains "$(cat "$STUB_LOG")" "golden-seal.sh" "resealed"
+  assert_not_contains "$(cat "$STUB_LOG")" "orb start" "already running"
+}
+test_changed_dotfiles_update_through_the_updating_state() {
+  local wt show; wt=$(make_golden_fixture); show=$(sealed_golden_fixture "$wt")
+  write_golden_meta "$(sha_of_file "$wt/agent-vm/cloud-init.yaml")" sealed v1:old; : >"$STUB_LOG"
+  # shellcheck disable=SC2329 # replaces the real function; ensure_golden calls it
+  seal_golden() { assert_eq updating "$(golden_meta_field state)" "updating while sealing"; }
+  STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" ensure_golden "$wt" 0 2>/dev/null
+  assert_eq sealed "$(golden_meta_field state)" "sealed after the update"
+  if [[ "$(golden_meta_field staging_hash)" != v1:old ]]; then record "PASS new staging hash recorded"; else record "FAIL new staging hash recorded"; fi
+}
+test_interrupted_update_is_retried_not_rebuilt() {
+  local wt show; wt=$(make_golden_fixture); show=$(sealed_golden_fixture "$wt")
+  write_golden_meta "$(sha_of_file "$wt/agent-vm/cloud-init.yaml")" sealed v1:old; : >"$STUB_LOG"
+  (STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" STUB_ORB_FAIL_ON="golden-seal.sh" ensure_golden "$wt" 0) 2>/dev/null || true
+  assert_eq updating "$(golden_meta_field state)" "left as updating"
+  : >"$STUB_LOG"
+  STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" ensure_golden "$wt" 0 2>/dev/null
+  assert_not_contains "$(cat "$STUB_LOG")" "orb create" "retried as an update"
+  assert_eq sealed "$(golden_meta_field state)" "sealed on retry"
+}
+test_golden_is_rebuilt_when_cloud_init_changes() {
+  local wt show; wt=$(make_golden_fixture); show=$(sealed_golden_fixture "$wt")
+  write_golden_meta other sealed "$(golden_meta_field staging_hash)"; : >"$STUB_LOG"
+  printf 'old\n' >"$AGENT_VM_STATE_DIR/outbox/$GOLDEN_MACHINE/claude-projects/leftover.jsonl"
+  mkdir -p "$AGENT_VM_STATE_DIR/browsers/$GOLDEN_MACHINE/junk/sub"; : >"$AGENT_VM_STATE_DIR/browsers/$GOLDEN_MACHINE/junk/sub/f"
+  chmod 000 "$AGENT_VM_STATE_DIR/browsers/$GOLDEN_MACHINE/junk"
+  # shellcheck disable=SC2329 # replaces the real function; ensure_golden calls it
+  maybe_bootstrap() { golden_dirs_as_bootstrapped; }
+  local err; err=$(STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" ensure_golden "$wt" 0 2>&1)
+  assert_contains "$err" "cloud-init.yaml changed" "reason shown"
+  assert_contains "$(cat "$STUB_LOG")" "orb delete -f $GOLDEN_MACHINE" "old golden deleted"
+  assert_contains "$(cat "$STUB_LOG")" "orb create" "new golden created"
+  assert_status 1 "old outbox content removed with the old golden" -- test -e "$AGENT_VM_STATE_DIR/outbox/$GOLDEN_MACHINE/claude-projects/leftover.jsonl"
+  assert_status 1 "old browsers content removed even without permissions" -- test -e "$AGENT_VM_STATE_DIR/browsers/$GOLDEN_MACHINE/junk"
+}
+test_golden_record_of_unknown_format_is_rebuilt_with_its_own_reason() {
+  local wt show; wt=$(make_golden_fixture); show=$(sealed_golden_fixture "$wt")
+  printf 'format=2\nstate=sealed\n' >"$AGENT_VM_STATE_DIR/golden/meta"; : >"$STUB_LOG"
+  # shellcheck disable=SC2329 # replaces the real function; ensure_golden calls it
+  maybe_bootstrap() { golden_dirs_as_bootstrapped; }
+  local err; err=$(STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" ensure_golden "$wt" 0 2>&1)
+  assert_contains "$err" "unknown format" "format reason distinguished from a missing record"
+}
+test_golden_removed_outside_agent_vm_is_rebuilt() {
+  local wt show; wt=$(make_golden_fixture); show=$(sealed_golden_fixture "$wt"); : >"$STUB_LOG"
+  # shellcheck disable=SC2329 # replaces the real function; ensure_golden calls it
+  maybe_bootstrap() { golden_dirs_as_bootstrapped; }
+  STUB_ORB_LIST_STDOUT="other running ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" ensure_golden "$wt" 0 2>/dev/null
+  assert_not_contains "$(cat "$STUB_LOG")" "orb delete" "nothing to delete"
+  assert_contains "$(cat "$STUB_LOG")" "orb create" "recreated"
+}
+test_golden_without_a_record_is_rebuilt() {
+  local wt show; wt=$(make_golden_fixture); show=$(sealed_golden_fixture "$wt")
+  rm "$AGENT_VM_STATE_DIR/golden/meta"; : >"$STUB_LOG"
+  # shellcheck disable=SC2329 # replaces the real function; ensure_golden calls it
+  maybe_bootstrap() { golden_dirs_as_bootstrapped; }
+  STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" ensure_golden "$wt" 0 2>/dev/null
+  assert_contains "$(cat "$STUB_LOG")" "orb delete -f $GOLDEN_MACHINE" "unrecorded golden deleted"
+  assert_contains "$(cat "$STUB_LOG")" "orb create" "recreated"
+}
+test_golden_outbox_with_any_extra_entry_fails_with_recovery() {
+  local wt show; wt=$(make_golden_fixture); show=$(sealed_golden_fixture "$wt")
+  ln -s /etc "$AGENT_VM_STATE_DIR/outbox/$GOLDEN_MACHINE/claude-projects/x"
+  local status=0 err; err=$(STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" ensure_golden "$wt" 0 2>&1) || status=$?
+  assert_eq 1 "$status" "extra entry refused"
+  assert_contains "$err" "agent-vm golden rm" "recovery shown"
+}
+test_golden_outbox_name_with_a_newline_cannot_pass() {
+  local wt show; wt=$(make_golden_fixture); show=$(sealed_golden_fixture "$wt")
+  # A name with a newline is one entry however it would print in a line-based listing.
+  : >"$AGENT_VM_STATE_DIR/outbox/$GOLDEN_MACHINE/$(printf 'a\nb')"
+  local status=0 err; err=$(STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" ensure_golden "$wt" 0 2>&1) || status=$?
+  assert_eq 1 "$status" "extra entry with a newline refused"
+  assert_contains "$err" "holds 3 entries" "counted as one more entry"
+}
+test_missing_golden_outbox_fails_with_recovery() {
+  local wt show; wt=$(make_golden_fixture); show=$(sealed_golden_fixture "$wt")
+  rm -rf "$AGENT_VM_STATE_DIR/outbox/$GOLDEN_MACHINE"
+  local status=0 err; err=$(STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" ensure_golden "$wt" 0 2>&1) || status=$?
+  assert_eq 1 "$status" "refused"
+  assert_contains "$err" "agent-vm golden rm" "recovery shown"
+}
+test_unreadable_golden_outbox_fails_with_recovery() {
+  # root reads mode-000 directories anyway, so the failure cannot be produced this way
+  if [[ "$(id -u)" -eq 0 ]]; then record "PASS unreadable outbox refused (skipped: running as root)"; return 0; fi
+  local wt show; wt=$(make_golden_fixture); show=$(sealed_golden_fixture "$wt")
+  : >"$AGENT_VM_STATE_DIR/outbox/$GOLDEN_MACHINE/claude-projects/hidden"; chmod 000 "$AGENT_VM_STATE_DIR/outbox/$GOLDEN_MACHINE/claude-projects"
+  local status=0 err; err=$(STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" ensure_golden "$wt" 0 2>&1) || status=$?
+  chmod 755 "$AGENT_VM_STATE_DIR/outbox/$GOLDEN_MACHINE/claude-projects"
+  assert_eq 1 "$status" "an outbox the host cannot read in full is refused"
+  assert_contains "$err" "agent-vm golden rm" "recovery shown"
+}
+test_golden_browsers_must_stay_empty() {
+  local wt show; wt=$(make_golden_fixture); show=$(sealed_golden_fixture "$wt")
+  : >"$AGENT_VM_STATE_DIR/browsers/$GOLDEN_MACHINE/current"
+  local status=0 err; err=$(STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" ensure_golden "$wt" 0 2>&1) || status=$?
+  assert_eq 1 "$status" "a golden with something in its browsers dir is refused"
+  assert_contains "$err" "agent-vm golden rm" "recovery shown"
+}
+test_staging_hash_ignores_location_and_mtime() {
+  local wt h1 h2 out; wt=$(make_dotfiles_fixture)
+  out=$(build_staging agent-s-000003 "$wt"); h1=${out#* }
+  cp -R "$wt" "$TMP_ROOT/df-copy"; touch -t 200001010000 "$TMP_ROOT/df-copy/home/dot_a"
+  out=$(build_staging agent-s-000004 "$TMP_ROOT/df-copy"); h2=${out#* }
+  assert_eq "$h1" "$h2" "same content, same hash"
+}
+
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do
   (
     TMP_ROOT="$TMP_BASE/$t"; mkdir -p "$TMP_ROOT"
