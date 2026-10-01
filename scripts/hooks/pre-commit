@@ -121,8 +121,8 @@ echo
 # 3. Shell Script Linting (shellcheck)
 #
 # lint-shell.sh classifies the paths itself (.sh, .sh.tmpl, shebang) and runs the
-# shellcheck pinned in .mise.toml, so the hook checks what CI checks. Exit 2 means a
-# tool is missing; the hook warns and lets CI be the final check.
+# version of shellcheck pinned in .mise.toml, so the hook checks what CI checks. Exit 2
+# means a tool is missing; the hook warns and lets CI be the final check.
 LINT_TARGETS=()
 while IFS= read -r -d '' path; do
     LINT_TARGETS+=("$path")
