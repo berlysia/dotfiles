@@ -275,6 +275,58 @@ describe("auto-approve.ts hook behavior", () => {
       // Not explicitly in dangerous patterns; passes through to Claude Code
       context.assertSuccess();
     });
+
+    describe("read-only head exemption", () => {
+      const run = async (command: string) => {
+        envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify([]));
+        envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+        const context = createPreToolUseContextFor(autoApproveHook, "Bash", {
+          command,
+        });
+        await invokeRun(autoApproveHook, context);
+        return context;
+      };
+
+      const passes = [
+        'grep -n "rm -rf /" spec.md',
+        'grep -n -F -e "rm -rf ${X}/build" spec.md',
+        'grep "git push --force" notes.md',
+      ];
+      for (const command of passes) {
+        it(`skips the danger check: ${command}`, async () => {
+          (await run(command)).assertSuccess();
+        });
+      }
+
+      const denied = [
+        "grep x $(rm -rf $HOME/y)",
+        "cat <(rm -rf $X)",
+        "find . -name x -exec rm -rf {} +",
+        "find . -ex$'e'c rm -rf / $'\\073'",
+        './grep "rm -rf /" f',
+        'echo "rm -rf /"',
+        'env PATH=tmp grep -e "rm -rf /" f',
+        'grep() { "$@"; }; grep rm -rf /',
+        // parser returns "fallback" for this input (pinned in bash-parser.test.ts)
+        'grep -e "rm -rf /" -e "xargs" spec.md',
+        'grep -n x f; rm -rf "$HOME"',
+      ];
+      for (const command of denied) {
+        it(`still denies: ${command}`, async () => {
+          (await run(command)).assertDeny();
+        });
+      }
+
+      it("deny list still applies after the exemption", async () => {
+        envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify([]));
+        envHelper.set("CLAUDE_TEST_DENY", JSON.stringify(["Bash(grep *)"]));
+        const context = createPreToolUseContextFor(autoApproveHook, "Bash", {
+          command: 'grep -n "rm -rf /" spec.md',
+        });
+        await invokeRun(autoApproveHook, context);
+        context.assertDeny();
+      });
+    });
   });
 
   describe("Pattern matching", () => {

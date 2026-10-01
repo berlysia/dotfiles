@@ -6,6 +6,7 @@ import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
 import { defineHook } from "cc-hooks-ts";
 import { extractCommandsStructured } from "../lib/bash-parser.ts";
+import { isExemptReadOnlyCommand } from "../lib/read-only-command.ts";
 import { logDecision } from "../lib/centralized-logging.ts";
 import {
   CONTROL_STRUCTURE_KEYWORDS,
@@ -373,8 +374,14 @@ async function processBashTool(
     };
   }
 
-  const { individualCommands } = await extractCommandsStructured(bashCommand);
+  const { individualCommands, parsingMethod } =
+    await extractCommandsStructured(bashCommand);
   const extractedCommands = individualCommands;
+  // Judged once on the original text (not the trimmed fragments), because the
+  // shell executes that text; fragments only inherit the result.
+  const readOnlyExempt = isExemptReadOnlyCommand(bashCommand, {
+    parsingMethod,
+  });
 
   const commands: BashCommandResult[] = [];
   let hasAskRequired = false;
@@ -384,7 +391,9 @@ async function processBashTool(
     const trimmedCmd = cmd.trim();
     if (!trimmedCmd) continue;
 
-    const result = await processBashCommand(trimmedCmd, denyList, allowList);
+    const result = await processBashCommand(trimmedCmd, denyList, allowList, {
+      readOnlyExempt,
+    });
     commands.push(result);
 
     // Check if ask is required (early exit condition)
@@ -414,6 +423,7 @@ async function processBashCommand(
   cmd: string,
   denyList: string[],
   allowList: string[],
+  opts: { readOnlyExempt: boolean },
 ): Promise<BashCommandResult> {
   const trimmedCmd = cmd.trim();
 
@@ -427,20 +437,24 @@ async function processBashCommand(
   }
 
   // Check for dangerous commands first
-  const dangerResult = checkDangerousCommand(cmd);
-  if (dangerResult.isDangerous) {
-    if (dangerResult.requiresManualReview) {
-      return {
-        type: "ask",
-        command: cmd,
-        reason: dangerResult.reason,
-      };
-    } else {
-      return {
-        type: "deny",
-        command: cmd,
-        reason: dangerResult.reason,
-      };
+  // Skipped only when the whole command is a single read-only invocation whose
+  // arguments are plain text (lib/read-only-command.ts).
+  if (!opts.readOnlyExempt) {
+    const dangerResult = checkDangerousCommand(cmd);
+    if (dangerResult.isDangerous) {
+      if (dangerResult.requiresManualReview) {
+        return {
+          type: "ask",
+          command: cmd,
+          reason: dangerResult.reason,
+        };
+      } else {
+        return {
+          type: "deny",
+          command: cmd,
+          reason: dangerResult.reason,
+        };
+      }
     }
   }
 
