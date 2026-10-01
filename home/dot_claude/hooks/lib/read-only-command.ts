@@ -1,4 +1,4 @@
-// lib/read-only-command.ts — pure, no I/O, no imports
+// lib/read-only-command.ts — pure, no I/O; imports only shell-lex.ts, itself pure
 //
 // Decides whether a whole Bash command is a single simple invocation of a
 // read-only command whose arguments are only text (`grep -e "rm -rf /" spec.md`).
@@ -10,6 +10,8 @@
 // throws: callers treat false as "apply the normal checks", while an exception
 // would surface as a deny of an innocent command. When widening the scanner,
 // only add allowed forms; never grow a list of rejected forms.
+
+import { lexStep, type QuoteState } from "./shell-lex.ts";
 
 type ReadOnlyCategory = "list" | "read" | "search" | "navigate" | "info";
 
@@ -123,90 +125,35 @@ function isExemptHead(head: string): boolean {
   return false;
 }
 
-const NAME_START = /[A-Za-z_]/;
-const NAME_CHAR = /[A-Za-z0-9_]/;
-const BRACED_NAME = /^\{[A-Za-z_][A-Za-z0-9_]*\}/;
-const UNQUOTED_REJECTED = /[\n`;&|(){}]/;
-// The shell starts a comment at a `#` that begins a word. Judged on the raw
-// previous character, not on our quote state: quotes inside a comment are not
-// quotes to the shell, so reading past one would desync the two.
-const WORD_BOUNDARY_BEFORE = " \t\n;&|<>";
-
-/**
- * Returns the index after a `$` that is followed by an allowed form, or -1.
- * Anything not listed (`$(`, `$((`, `$[`, `${(`, `${X:-y}`, `$'`, ...) is -1.
- */
-function skipDollar(cmd: string, at: number, inDouble: boolean): number {
-  const next = cmd[at + 1];
-  if (next === undefined || next === " " || next === "\t") return at + 1;
-  if (inDouble && next === '"') return at + 1;
-  if (NAME_START.test(next)) {
-    let end = at + 2;
-    while (end < cmd.length && NAME_CHAR.test(cmd[end] as string)) end++;
-    return end;
-  }
-  if (inDouble && next === "{") {
-    const braced = BRACED_NAME.exec(cmd.slice(at + 1));
-    return braced ? at + 1 + braced[0].length : -1;
-  }
-  if (/[0-9@*#?!$-]/.test(next)) return at + 2;
-  return -1;
-}
-
-type QuoteState = "outside" | "single" | "double";
-
-/** One left-to-right pass; the state tells which characters are literal. */
+/** One left-to-right pass; shell-lex says what each character is, this decides what to allow. */
 function scanArguments(cmd: string): boolean {
   let state: QuoteState = "outside";
   let i = 0;
   while (i < cmd.length) {
-    const c = cmd[i] as string;
-    if (state === "single") {
-      if (c === "'") state = "outside";
-      i++;
-    } else if (state === "double") {
-      if (c === "`") return false;
-      if (c === '"') {
-        state = "outside";
-        i++;
-      } else if (c === "\\") {
-        const next = cmd[i + 1];
-        i += next !== undefined && '$`"\\\n'.includes(next) ? 2 : 1;
-      } else if (c === "$") {
-        const end = skipDollar(cmd, i, true);
-        if (end === -1) return false;
-        i = end;
-      } else {
-        i++;
-      }
-    } else {
-      if (c === "\\") {
-        if (i + 1 >= cmd.length) return false;
-        i += 2;
-      } else if (c === "'") {
-        state = "single";
-        i++;
-      } else if (c === '"') {
-        state = "double";
-        i++;
-      } else if (
-        c === "#" &&
-        (i === 0 || WORD_BOUNDARY_BEFORE.includes(cmd[i - 1] as string))
-      ) {
+    const step = lexStep(cmd, i, state);
+    switch (step.kind) {
+      case "reject":
         return false;
-      } else if (UNQUOTED_REJECTED.test(c)) {
-        return false;
-      } else if (c === "<" || c === ">") {
+      case "quote":
+        state = step.state;
+        break;
+      case "operator":
+        // A redirect is plain text to a read-only head unless it opens a
+        // process substitution; every other operator means more than one command.
+        if (step.char !== "<" && step.char !== ">") return false;
         if (cmd[i + 1] === "(") return false;
-        i++;
-      } else if (c === "$") {
-        const end = skipDollar(cmd, i, false);
-        if (end === -1) return false;
-        i = end;
-      } else {
-        i++;
+        break;
+      case "escape":
+      // An escape (including backslash-newline, a line continuation inside
+      // this one command) is literal text here.
+      case "literal":
+        break;
+      default: {
+        const unhandled: never = step;
+        return unhandled;
       }
     }
+    i = step.next;
   }
   return state === "outside";
 }
