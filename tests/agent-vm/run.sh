@@ -734,6 +734,42 @@ test_failed_copy_publishes_no_staging_generation() {
   assert_eq "" "$(ls "$AGENT_VM_STATE_DIR/staging/agent-f-000000" 2>/dev/null)" "no partial generation published"
 }
 
+test_gh_repo_from_url_accepts_three_github_forms() {
+  assert_eq "Owner/Repo" "$(gh_repo_from_url git@github.com:Owner/Repo.git)" "scp form with .git"
+  assert_eq "Owner/Repo" "$(gh_repo_from_url ssh://git@github.com/Owner/Repo)" "ssh url"
+  assert_eq "Owner/Repo" "$(gh_repo_from_url https://github.com/Owner/Repo/)" "https with trailing slash"
+  assert_status 1 "other host rejected" -- gh_repo_from_url git@gitlab.com:Owner/Repo.git
+  assert_status 1 "nested path rejected" -- gh_repo_from_url https://github.com/a/b/c
+  assert_status 1 "dot-dot rejected" -- gh_repo_from_url https://github.com/../Repo
+  assert_status 1 "control character rejected" -- gh_repo_from_url "$(printf 'https://github.com/O/R\033[2J')"
+}
+test_gh_same_repo_ignores_case() {
+  assert_status 0 "case-insensitive match" -- gh_same_repo Owner/Repo owner/repo
+  assert_status 1 "different repo" -- gh_same_repo Owner/Repo Owner/Other
+}
+test_gh_vault_days_maps_only_the_two_vaults() {
+  assert_eq 90 "$(gh_vault_days Personal)" "Personal is 90 days"
+  assert_eq 30 "$(gh_vault_days Formal)" "Formal is 30 days"
+  assert_status 1 "lowercase rejected" -- gh_vault_days personal
+  assert_status 1 "unknown rejected" -- gh_vault_days Shared
+}
+test_gh_pat_name_and_expiry_use_utc() {
+  # 1767225600 = 2026-01-01T00:00:00Z
+  assert_eq "repo-abc123-2601010000" "$(gh_pat_name agent-repo-abc123 1767225600)" "pat name"
+  assert_eq "2026-04-01" "$(gh_utc %Y-%m-%d 1767225600 90)" "expiry after 90 days"
+  local longest; longest=$(gh_pat_name agent-aaaaaaaaaaaaaaaaaaaa-abcdef 1767225600)
+  if [[ ${#longest} -le 40 ]]; then record "PASS pat name fits 40 chars"; else record "FAIL pat name fits 40 chars (${#longest})"; fi
+}
+test_gh_template_url_fills_name_expiry_and_permissions() {
+  local url; url=$(gh_template_url repo-abc123-2601010000 Owner/Repo 30)
+  assert_contains "$url" "https://github.com/settings/personal-access-tokens/new?name=repo-abc123-2601010000&" "name"
+  assert_contains "$url" "&expires_in=30&" "expiry"
+  assert_contains "$url" "Owner%2FRepo" "description is url-encoded"
+  assert_contains "$url" "contents=read&pull_requests=write&issues=write&actions=read" "permissions"
+  assert_not_contains "$url" "contents=write" "no push permission"
+  assert_not_contains "$url" "target_name" "no target_name"
+}
+
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do
   (
     TMP_ROOT="$TMP_BASE/$t"; mkdir -p "$TMP_ROOT"

@@ -499,6 +499,76 @@ cmd_restore_git() { # [repo]
   check_git_surfaces "$m" "$repo"
 }
 
+# --- gh token (agent-vm env gh) ---------------------------------------------------------------
+# A per-repo fine-grained PAT reaches the VM as GH_TOKEN through the repo env file (spec: docs/plans/agent-vm-gh-token).
+# AGENT_VM_LIB is set only while the tests source this file (a prefix assignment to `.`); remember it so the
+# test-only overrides (AGENT_VM_NOW, AGENT_VM_TTY) work in the tests and nowhere else.
+GH_TEST_MODE=${AGENT_VM_LIB:+1}
+# The vault decides the token's lifetime; this table is the only place that pairs them.
+GH_VAULT_DAYS="Personal:90 Formal:30"
+GH_WARN_DAYS=7
+GH_REPO_RE='^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'
+GH_ANY_LINE_RE='^[[:space:]]*(export[[:space:]]+)?GH_TOKEN='
+GH_AUTO_LINE_RE='^GH_TOKEN=op://[A-Za-z0-9_.-]+/[a-z0-9]{26}/credential$'
+GH_ITEM_ID_RE='^[a-z0-9]{26}$'
+GH_PAT_RE='^github_pat_[A-Za-z0-9_]{1,250}$'
+GH_PAT_NAME_RE='^[a-z0-9-]{1,40}$'
+GH_DATE_RE='^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+
+gh_vault_days() { # vault -> days; 1 when the vault is not in GH_VAULT_DAYS (case-sensitive)
+  local pair
+  for pair in $GH_VAULT_DAYS; do
+    if [[ "${pair%%:*}" == "$1" ]]; then printf '%s\n' "${pair#*:}"; return 0; fi
+  done
+  return 1
+}
+
+gh_valid_repo() { # owner/repo -> 0 when safe to show and to put into an API path
+  [[ "$1" =~ $GH_REPO_RE ]] || return 1
+  case "${1%%/*}" in . | ..) return 1 ;; esac
+  case "${1#*/}" in . | ..) return 1 ;; esac
+  return 0
+}
+
+gh_lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+gh_same_repo() { [[ "$(gh_lower "$1")" == "$(gh_lower "$2")" ]]; } # GitHub names are case-insensitive
+
+gh_repo_from_url() { # origin url -> owner/repo for the three github.com forms; 1 for anything else
+  local path
+  case "$1" in
+    git@github.com:*) path=${1#git@github.com:} ;;
+    ssh://git@github.com/*) path=${1#ssh://git@github.com/} ;;
+    https://github.com/*) path=${1#https://github.com/} ;;
+    *) return 1 ;;
+  esac
+  path=${path%/}
+  path=${path%.git}
+  gh_valid_repo "$path" || return 1
+  printf '%s\n' "$path"
+}
+
+gh_now() { # epoch seconds; AGENT_VM_NOW fixes the clock, only when sourced for tests
+  if [[ -n "$GH_TEST_MODE" && -n "${AGENT_VM_NOW:-}" ]]; then printf '%s\n' "$AGENT_VM_NOW"; else date +%s; fi
+}
+gh_utc() { # strftime_format epoch [days_to_add] -> UTC time (macOS date has no GNU -d)
+  perl -MPOSIX -e 'print strftime($ARGV[0], gmtime($ARGV[1] + 86400 * $ARGV[2])), "\n"' "$1" "$2" "${3:-0}"
+}
+gh_pat_name() { # machine epoch -> <base>-<hash>-<YYMMDDHHMM>, at most 38 characters
+  local stamp
+  stamp=$(gh_utc %y%m%d%H%M "$2") || return 1
+  printf '%s-%s\n' "${1#agent-}" "$stamp"
+}
+
+gh_template_url() { # pat_name owner/repo days -> creation page with name, expiry and permissions filled in
+  perl -e '
+    sub enc { my $s = shift; $s =~ s/([^A-Za-z0-9_.~-])/sprintf("%%%02X", ord $1)/ge; $s }
+    my ($name, $repo, $days) = @ARGV;
+    my $desc = "agent-vm GH_TOKEN for $repo. Select only this repository and keep the expiration.";
+    printf "https://github.com/settings/personal-access-tokens/new?name=%s&description=%s&expires_in=%d"
+      . "&contents=read&pull_requests=write&issues=write&actions=read\n", enc($name), enc($desc), $days;
+  ' "$1" "$2" "$3"
+}
+
 env_files_for() { # machine -> host-owned op:// reference files that exist
   local f
   for f in "$AGENT_VM_CONFIG_DIR/env.1password" "$AGENT_VM_CONFIG_DIR/repos/$1.env.1password"; do
