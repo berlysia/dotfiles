@@ -72,13 +72,15 @@ Branch names are auto-generated in the format:
 
 ## Cleanup
 
-Manual worktree cleanup after completion:
+Cleanup after completion, run from the main worktree:
 
 ```bash
-git-worktree-cleanup
+git-worktree-cleanup <branch-name>
 ```
 
-Or manually:
+Exit code 2 means the worktree was kept; the reason is in the output. To tidy up several at once, run `git-worktree-cleanup` from the main worktree.
+
+Or manually (the branch is not deleted by `git-worktree-cleanup`, so delete it by hand):
 
 ```bash
 git worktree remove .git/worktree/<branch-name>

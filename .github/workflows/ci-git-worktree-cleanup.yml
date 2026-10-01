@@ -1,0 +1,42 @@
+name: git-worktree-cleanup Tests
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - "home/dot_local/bin/executable_git-worktree-cleanup"
+      - "home/dot_local/bin/executable_git-worktree-create"
+      - "tests/git-worktree-cleanup/**"
+      - ".github/workflows/ci-git-worktree-cleanup.yml"
+  pull_request:
+    branches: [master, main]
+    paths:
+      - "home/dot_local/bin/executable_git-worktree-cleanup"
+      - "home/dot_local/bin/executable_git-worktree-create"
+      - "tests/git-worktree-cleanup/**"
+      - ".github/workflows/ci-git-worktree-cleanup.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: git-worktree-cleanup tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      # /bin/bash is 3.2 on macOS: the script must run on the stock shell.
+      - name: Run git-worktree-cleanup tests
+        run: /bin/bash tests/git-worktree-cleanup/run.sh

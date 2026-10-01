@@ -11,6 +11,7 @@ on:
       - "Validate Codex Config"
       - "Validate JSON Templates"
       - "agent-vm Launcher Tests"
+      - "git-worktree-cleanup Tests"
     types:
       - completed
 
@@ -45,7 +46,8 @@ jobs:
               'Shell Compatibility Test',
               'Validate Codex Config',
               'Validate JSON Templates',
-              'agent-vm Launcher Tests'
+              'agent-vm Launcher Tests',
+              'git-worktree-cleanup Tests'
             ];
 
             // Filter runs to only required workflows

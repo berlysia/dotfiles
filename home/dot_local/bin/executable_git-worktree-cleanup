@@ -11,61 +11,77 @@ NC='\033[0m' # No Color
 # Help function
 show_help() {
     cat <<'EOF'
-git-worktree-cleanup - Clean up completed git worktrees
+git-worktree-cleanup - Remove git worktrees whose work is finished
 
 Usage:
-  git-worktree-cleanup [--yes | --non-interactive]
+  git-worktree-cleanup [--yes | --non-interactive] [--] [<worktree-path | branch>...]
   git-worktree-cleanup --help
 
 Description:
-  Interactively checks and removes completed git worktrees. The command
-  performs the following checks for each worktree:
+  Fetches origin, then classifies each worktree and removes the ones whose work
+  is safely finished. Without arguments it scans only worktrees under
+  <repo>/.git/worktree/. Worktrees outside .git/worktree are removed only when named as a target.
+  A target is a worktree path or a branch name. If any target cannot be resolved,
+  nothing is removed. Branches are not deleted.
 
-  Safety checks (automatically skips):
-  - Has uncommitted changes
-  - Has unpushed commits (local ahead of remote)
+  Always kept:
+  - locked (git worktree lock)
+  - in use: the current directory of one of your processes is inside it
+  - uncommitted or untracked changes
+  - ahead of its origin/<branch>
 
-  Interactive checks (prompts for confirmation):
-  - Branch not merged into main branch
-  - Has stashed changes
-  Without a prompt (--yes, --non-interactive, or stdin is not a TTY),
-  these checks are answered automatically instead.
+  Removed without asking:
+  - merged into the origin main branch (ancestor, rebase merge or squash merge)
 
-  Automatic removal criteria:
-  - No uncommitted changes
-  - No unpushed commits
-  - Branch is merged into main, or user confirms deletion
-  - No stashes, or user confirms deletion
+  Asked (on a terminal only; otherwise kept):
+  - commits are all on origin but the branch is not detected as merged
+    (--yes answers these)
+  - commits exist that are not on origin (--yes does not answer these)
+  - files in .tmp/ or .entire/ (--yes does not answer these)
+  - no commits since the worktree was created (--yes does not answer these)
+  - it cannot be checked whether the worktree is in use (--yes does not answer these)
 
 Options:
-  --yes, -y              Never prompt; delete worktrees that would prompt
-  --non-interactive, -n  Never prompt; skip worktrees that would prompt
+  --yes, -y              Answer the questions that --yes may answer with "yes"
+  --non-interactive, -n  Never ask; keep every worktree that would be asked about
                          (default when stdin is not a TTY)
   --help, -h             Show this help message
 
-Examples:
-  # Clean up all completed worktrees interactively
-  git-worktree-cleanup
+  --yes answers only the questions about worktrees whose commits are all on origin but not detected as merged. Worktrees with commits not on origin, with files in .tmp/ or .entire/, with no commits since the worktree was created, or that cannot be checked for use, are asked only on a terminal and are kept by --yes.
+  When fetching origin fails, --yes removes nothing more than --non-interactive.
 
-  # Unattended: remove only worktrees that need no confirmation
+Exit codes:
+  0  Done. When scanning, worktrees that were kept are normal.
+  1  Usage error, a target that cannot be resolved, or the main worktree named as a target.
+  2  A target was given and at least one worktree was kept (the reason is printed),
+     including when git refused to remove it.
+
+Examples:
+  # From the main worktree: remove only the worktree of your own branch
+  git-worktree-cleanup my-branch
+
+  # Unattended: remove what is merged, keep everything else
   git-worktree-cleanup --non-interactive
 
-  # Unattended: also remove unmerged (e.g. squash-merged) branches and stashes
-  git-worktree-cleanup --yes
-
 Note:
-  - Main worktree is always skipped
-  - Prunes worktree list after successful deletions
-  - Safe by default - preserves work-in-progress worktrees
+  - Assumes the remote is named origin.
+  - The main worktree is never removed.
+  - Detecting merged branches writes one dangling commit object per worktree
+    (no ref is moved; git gc removes it).
+  - The in-use check sees only the current directory of your own processes.
+    A session started in the main worktree that works in another worktree by
+    absolute path is not seen, and neither are other users' processes. Clean up
+    your own worktree from the main worktree with: git-worktree-cleanup <branch>
 EOF
 }
 
 # How confirmation prompts are answered: ask | yes | no
 answer_mode=ask
+targets=()
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --help|-h|help)
+        --help|-h)
             show_help
             exit 0
             ;;
@@ -75,10 +91,21 @@ while [[ $# -gt 0 ]]; do
         --non-interactive|-n)
             answer_mode=no
             ;;
-        *)
+        --)
+            shift
+            while [[ $# -gt 0 ]]; do
+                targets+=("$1")
+                shift
+            done
+            break
+            ;;
+        -*)
             echo -e "${RED}Unknown option: $1${NC}" >&2
             echo "Run 'git-worktree-cleanup --help' for usage." >&2
             exit 1
+            ;;
+        *)
+            targets+=("$1")
             ;;
     esac
     shift
@@ -90,12 +117,373 @@ if [[ "$answer_mode" == ask ]] && [[ ! -t 0 ]]; then
     answer_mode=no
 fi
 
-# Ask "Delete anyway?" and return 0 when deletion is confirmed
+# say <color> <message>: print without interpreting backslashes in the message
+say() {
+    printf '%b%s%b\n' "$1" "$2" "$NC"
+}
+
+if ! git rev-parse --git-dir >/dev/null 2>&1; then
+    say "$RED" "✗ Not inside a git repository"
+    exit 1
+fi
+# -z needs git 2.36; without it the porcelain output could not be split safely.
+if ! git worktree list --porcelain -z >/dev/null 2>&1; then
+    say "$RED" "✗ git 2.36 or later is required (git worktree list -z)"
+    exit 1
+fi
+
+echo "🔍 Checking git worktrees..."
+
+# Parallel arrays describing every worktree; index 0 is the main worktree.
+wt_path=()
+wt_head=()
+wt_branch=()
+wt_locked=()
+wt_phys=()
+wt_missing=()
+wt_count=0
+
+cur_path=""
+cur_head=""
+cur_branch=""
+cur_locked=0
+cur_have=0
+
+push_entry() {
+    if [[ $cur_have -eq 1 ]]; then
+        wt_path[wt_count]=$cur_path
+        wt_head[wt_count]=$cur_head
+        wt_branch[wt_count]=$cur_branch
+        wt_locked[wt_count]=$cur_locked
+        wt_count=$((wt_count + 1))
+    fi
+    cur_path=""
+    cur_head=""
+    cur_branch=""
+    cur_locked=0
+    cur_have=0
+}
+
+while IFS= read -r -d '' field; do
+    case "$field" in
+        "")
+            push_entry
+            ;;
+        "worktree "*)
+            cur_path=${field#worktree }
+            cur_have=1
+            ;;
+        "HEAD "*)
+            cur_head=${field#HEAD }
+            ;;
+        "branch "*)
+            cur_branch=${field#branch }
+            cur_branch=${cur_branch#refs/heads/}
+            ;;
+        locked|"locked "*)
+            cur_locked=1
+            ;;
+    esac
+done < <(git worktree list --porcelain -z)
+push_entry
+
+main_worktree=${wt_path[0]}
+
+for ((i = 0; i < wt_count; i++)); do
+    if [[ -d "${wt_path[$i]}" ]] && phys=$(cd -P -- "${wt_path[$i]}" 2>/dev/null && pwd -P); then
+        wt_phys[i]=$phys
+        wt_missing[i]=0
+    else
+        wt_phys[i]=""
+        wt_missing[i]=1
+    fi
+done
+main_phys=${wt_phys[0]}
+
+# --- fetch ---------------------------------------------------------------------
+offline=false
+offline_reason=""
+
+# Never prompt for credentials; keep the user's own ssh configuration when they have one.
+try_fetch() {
+    if [[ -n "${GIT_SSH_COMMAND:-}" ]] || git -C "$main_worktree" config --get core.sshCommand >/dev/null 2>&1; then
+        GIT_TERMINAL_PROMPT=0 git -C "$main_worktree" fetch --prune --quiet origin </dev/null >/dev/null 2>&1
+    else
+        GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND="ssh -o BatchMode=yes -o ConnectTimeout=10" \
+            git -C "$main_worktree" fetch --prune --quiet origin </dev/null >/dev/null 2>&1
+    fi
+}
+
+if ! git -C "$main_worktree" remote get-url origin >/dev/null 2>&1; then
+    offline=true
+    offline_reason="no origin remote"
+elif ! try_fetch; then
+    offline=true
+    offline_reason="fetch failed"
+fi
+if [[ "$offline" == true ]]; then
+    say "$YELLOW" "⚠️  Could not fetch origin ($offline_reason); remote state may be stale. Unmerged worktrees are kept even with --yes."
+fi
+
+# --- main branch ---------------------------------------------------------------
+main_ref=""
+main_name=""
+head_ref=""
+if head_ref=$(git -C "$main_worktree" symbolic-ref -q refs/remotes/origin/HEAD 2>/dev/null) \
+    && git -C "$main_worktree" rev-parse --verify --quiet "$head_ref" >/dev/null 2>&1; then
+    main_ref=$head_ref
+else
+    for candidate in refs/remotes/origin/main refs/remotes/origin/master; do
+        if git -C "$main_worktree" rev-parse --verify --quiet "$candidate" >/dev/null 2>&1; then
+            main_ref=$candidate
+            break
+        fi
+    done
+fi
+if [[ -n "$main_ref" ]]; then
+    main_name=${main_ref#refs/remotes/origin/}
+fi
+
+# --- select the worktrees to process -------------------------------------------
+selected=()
+outside_count=0
+removed=0
+kept=0
+
+if [[ ${#targets[@]} -gt 0 ]]; then
+    unresolved=0
+    for target in "${targets[@]}"; do
+        found=-1
+        # Compare physical paths; the subshell keeps this script's own cwd where it is.
+        if [[ -d "$target" ]] && target_phys=$(cd -P -- "$target" 2>/dev/null && pwd -P); then
+            for ((i = 0; i < wt_count; i++)); do
+                if [[ -n "${wt_phys[$i]}" && "${wt_phys[$i]}" == "$target_phys" ]]; then
+                    found=$i
+                    break
+                fi
+            done
+        fi
+        if [[ $found -lt 0 ]]; then
+            for ((i = 0; i < wt_count; i++)); do
+                if [[ -n "${wt_branch[$i]}" && "${wt_branch[$i]}" == "$target" ]]; then
+                    found=$i
+                    break
+                fi
+            done
+        fi
+        if [[ $found -lt 0 ]]; then
+            say "$RED" "✗ Not a removable worktree: $target (see 'git worktree list')"
+            unresolved=1
+        elif [[ $found -eq 0 ]]; then
+            say "$RED" "✗ Refusing to remove the main worktree: $target"
+            unresolved=1
+        else
+            already=0
+            for chosen in ${selected[@]+"${selected[@]}"}; do
+                if [[ "$chosen" == "$found" ]]; then already=1; fi
+            done
+            if [[ $already -eq 0 ]]; then selected+=("$found"); fi
+        fi
+    done
+    if [[ $unresolved -ne 0 ]]; then
+        exit 1
+    fi
+else
+    for ((i = 1; i < wt_count; i++)); do
+        if [[ "${wt_missing[$i]}" -eq 1 ]]; then
+            selected+=("$i")
+        elif [[ "${wt_phys[$i]}" == "$main_phys/.git/worktree/"* ]]; then
+            selected+=("$i")
+        else
+            echo
+            echo "📁 ${wt_path[$i]}: outside .git/worktree - skipping"
+            outside_count=$((outside_count + 1))
+        fi
+    done
+fi
+
+# --- helpers -------------------------------------------------------------------
+
+# Sets cwd_list (newline separated physical cwds of your processes) and cwd_unknown.
+cwd_list=""
+cwd_unknown=false
+collect_cwds() {
+    local p out=""
+    cwd_list=""
+    cwd_unknown=false
+    if [[ -d /proc/self ]]; then
+        for p in /proc/[0-9]*/cwd; do
+            out+=$(readlink "$p" 2>/dev/null || true)$'\n'
+        done
+    elif command -v lsof >/dev/null 2>&1; then
+        # lsof exits non-zero on mere warnings, so only its output counts. Our own process
+        # is always in it, so empty output means the detection itself failed.
+        out=$(lsof -a -d cwd -u "$(id -u)" -Fn 2>/dev/null | sed -n 's/^n//p' || true)
+        if [[ -z "$out" ]]; then
+            cwd_unknown=true
+        fi
+    else
+        cwd_unknown=true
+    fi
+    cwd_list="$out"$'\n'"$(pwd -P)"
+}
+
+is_in_use() {
+    local phys=$1 line
+    while IFS= read -r line; do
+        if [[ -z "$line" ]]; then continue; fi
+        if [[ "$line" == "$phys" || "$line" == "$phys/"* ]]; then
+            return 0
+        fi
+    done <<<"$cwd_list"
+    return 1
+}
+
+# is_merged <sha>: sets merged_how to ancestor | rebase | squash.
+# The squash probe writes one dangling commit object (no ref is moved; gc removes it).
+merged_how=""
+is_merged() {
+    local sha=$1 base n c probe
+    merged_how=""
+    if [[ -z "$main_ref" ]]; then
+        return 1
+    fi
+    if git -C "$main_worktree" merge-base --is-ancestor "$sha" "$main_ref" 2>/dev/null; then
+        merged_how=ancestor
+        return 0
+    fi
+    if ! base=$(git -C "$main_worktree" merge-base "$sha" "$main_ref" 2>/dev/null); then
+        return 1
+    fi
+    # With no non-merge commit, git cherry prints nothing and "all lines are -" would hold vacuously.
+    if ! n=$(git -C "$main_worktree" rev-list --no-merges --count "$base..$sha" 2>/dev/null); then
+        return 1
+    fi
+    if [[ "$n" -eq 0 ]]; then
+        return 1
+    fi
+    if ! c=$(git -C "$main_worktree" cherry "$main_ref" "$sha" 2>/dev/null); then
+        return 1
+    fi
+    if [[ -n "$c" ]] && ! grep -q '^+' <<<"$c"; then
+        merged_how=rebase
+        return 0
+    fi
+    # Squash merge: compare the whole branch, folded into one commit, with main.
+    if ! probe=$(GIT_AUTHOR_NAME=git-worktree-cleanup GIT_AUTHOR_EMAIL=git-worktree-cleanup@localhost \
+        GIT_COMMITTER_NAME=git-worktree-cleanup GIT_COMMITTER_EMAIL=git-worktree-cleanup@localhost \
+        git -C "$main_worktree" commit-tree "$sha^{tree}" -p "$base" -m git-worktree-cleanup-probe 2>/dev/null); then
+        return 1
+    fi
+    if ! c=$(git -C "$main_worktree" cherry "$main_ref" "$probe" 2>/dev/null); then
+        return 1
+    fi
+    case "$c" in
+        -*)
+            merged_how=squash
+            return 0
+            ;;
+    esac
+    return 1
+}
+
+# is_fresh <wt> <sha>: the worktree's HEAD never pointed anywhere but <sha> (or the reflog is unreadable).
+is_fresh() {
+    local wt=$1 sha=$2 log line
+    if ! log=$(git -C "$wt" reflog show --format=%H HEAD -- 2>/dev/null); then
+        return 0
+    fi
+    if [[ -z "$log" ]]; then
+        return 0
+    fi
+    while IFS= read -r line; do
+        if [[ "$line" != "$sha" ]]; then
+            return 1
+        fi
+    done <<<"$log"
+    return 0
+}
+
+# classify <index> <sha>: sets verdict (KEEP | REMOVE | ASK | ASK_HUMAN) and reason.
+# The first matching stage decides; a failing git command falls to that stage's conservative verdict.
+verdict=""
+reason=""
+classify() {
+    local i=$1 sha=$2
+    local wt=${wt_path[$i]} br=${wt_branch[$i]} phys=${wt_phys[$i]}
+    local st ig a u
+
+    if [[ "${wt_locked[$i]}" -eq 1 ]]; then
+        verdict=KEEP; reason="locked"; return 0
+    fi
+    if is_in_use "$phys"; then
+        verdict=KEEP; reason="in use by a running process (or the current directory)"; return 0
+    fi
+    if ! st=$(git -C "$wt" status --porcelain 2>/dev/null); then
+        verdict=KEEP; reason="git status failed"; return 0
+    fi
+    if [[ -n "$st" ]]; then
+        verdict=KEEP; reason="uncommitted changes"; return 0
+    fi
+    if [[ -n "$br" ]] && git -C "$wt" rev-parse --verify --quiet "refs/remotes/origin/$br" >/dev/null 2>&1; then
+        if ! a=$(git -C "$wt" rev-list --count "refs/remotes/origin/$br..$sha" 2>/dev/null); then
+            verdict=KEEP; reason="cannot compare with origin/$br"; return 0
+        fi
+        if [[ "$a" -gt 0 ]]; then
+            verdict=KEEP; reason="ahead of origin/$br by $a commits"; return 0
+        fi
+    fi
+    if [[ "$cwd_unknown" == true ]]; then
+        verdict=ASK_HUMAN; reason="cannot detect whether it is in use"; return 0
+    fi
+    if ! ig=$(git -C "$wt" status --porcelain --ignored -- .tmp .entire 2>/dev/null); then
+        verdict=ASK_HUMAN; reason="cannot inspect .tmp/ and .entire/"; return 0
+    fi
+    if grep -q '^!! ' <<<"$ig"; then
+        verdict=ASK_HUMAN; reason="has ignored files in .tmp/ or .entire/"
+        if is_merged "$sha"; then
+            reason="$reason (merged: $merged_how); check them, then answer y on a terminal or move them and re-run"
+        fi
+        return 0
+    fi
+    if is_fresh "$wt" "$sha"; then
+        verdict=ASK_HUMAN; reason="no commits since the worktree was created"; return 0
+    fi
+    if is_merged "$sha"; then
+        verdict=REMOVE; reason="merged into $main_name ($merged_how)"; return 0
+    fi
+    if ! u=$(git -C "$wt" rev-list --count "$sha" --not --remotes=origin 2>/dev/null); then
+        verdict=ASK_HUMAN; reason="cannot count commits not on origin"; return 0
+    fi
+    if [[ "$u" -gt 0 ]]; then
+        verdict=ASK_HUMAN; reason="$u commits not on origin"; return 0
+    fi
+    verdict=ASK
+    if [[ -z "$main_ref" ]]; then
+        reason="no origin main branch to compare with"
+    elif [[ -z "$br" ]]; then
+        reason="detached HEAD, not merged into $main_name"
+    else
+        reason="pushed but not merged into $main_name"
+    fi
+    return 0
+}
+
+# confirm_delete <verdict>: return 0 when deletion is confirmed
 confirm_delete() {
+    local kind=$1
     case "$answer_mode" in
         yes)
-            echo "Delete anyway? (y/N) y [--yes]"
-            return 0
+            if [[ "$kind" == ASK && "$offline" != true ]]; then
+                echo "Delete anyway? (y/N) y [--yes]"
+                return 0
+            fi
+            if [[ "$kind" == ASK ]]; then
+                echo "Delete anyway? (y/N) n [--yes, offline] - skipping"
+            else
+                echo "Delete anyway? (y/N) n [--yes does not answer this; run it on a terminal] - skipping"
+            fi
+            return 1
             ;;
         no)
             echo "Delete anyway? (y/N) n [non-interactive] - skipping"
@@ -108,92 +496,70 @@ confirm_delete() {
     [[ $reply =~ ^[Yy]$ ]]
 }
 
-echo "🔍 Checking git worktrees..."
+# --- main loop -----------------------------------------------------------------
+collect_cwds
 
-# Get main branch (usually main or master)
-main_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo "main")
+for i in ${selected[@]+"${selected[@]}"}; do
+    worktree=${wt_path[$i]}
+    printf '\n📁 Checking worktree: %s\n' "$worktree"
 
-# Get list of worktrees; the first entry is always the main worktree
-worktrees=()
-while IFS= read -r line; do
-    worktrees+=("$line")
-done < <(git worktree list --porcelain | grep "^worktree " | cut -d' ' -f2-)
-main_worktree="${worktrees[0]}"
-
-# Track if any worktrees were deleted
-deleted_any=false
-
-for worktree in "${worktrees[@]}"; do
-    # Skip main worktree
-    if [[ "$worktree" == "$main_worktree" ]]; then
+    if [[ "${wt_missing[$i]}" -eq 1 ]]; then
+        say "$YELLOW" "⚠️  directory not found - leaving it to 'git worktree prune'"
+        kept=$((kept + 1))
         continue
     fi
-    
-    # Check if directory exists
-    if [[ ! -d "$worktree" ]]; then
-        echo -e "${YELLOW}⚠️  Worktree directory not found: $worktree${NC}"
-        continue
-    fi
-    
-    echo -e "\n📁 Checking worktree: $worktree"
-    
-    # Get current branch
-    branch=$(git -C "$worktree" branch --show-current)
-    
-    # Check for uncommitted changes
-    if [[ -n $(git -C "$worktree" status --porcelain) ]]; then
-        echo -e "${RED}✗ Has uncommitted changes - skipping${NC}"
-        continue
-    fi
-    
-    # Check if branch exists on remote
-    if ! git -C "$worktree" ls-remote --exit-code --heads origin "$branch" &>/dev/null; then
-        echo -e "${GREEN}✓ Branch not on remote${NC}"
-    else
-        # Check if local branch is behind or ahead of remote
-        ahead=$(git -C "$worktree" rev-list --count "origin/$branch..$branch" 2>/dev/null || echo "0")
-        behind=$(git -C "$worktree" rev-list --count "$branch..origin/$branch" 2>/dev/null || echo "0")
-        
-        if [[ "$ahead" -gt 0 ]]; then
-            echo -e "${RED}✗ Local branch is ahead of remote by $ahead commits - skipping${NC}"
+
+    first_sha=${wt_head[$i]}
+    classify "$i" "$first_sha"
+    first_verdict=$verdict
+
+    case "$verdict" in
+        KEEP)
+            say "$RED" "✗ $reason - skipping"
+            kept=$((kept + 1))
             continue
-        fi
-        
-        if [[ "$behind" -gt 0 ]]; then
-            echo -e "${YELLOW}⚠️  Local branch is behind remote by $behind commits${NC}"
-        fi
-        
-        # Check if branch is merged into main
-        if git -C "$worktree" merge-base --is-ancestor "$branch" "origin/$main_branch" 2>/dev/null; then
-            echo -e "${GREEN}✓ Branch is merged into $main_branch${NC}"
-        else
-            echo -e "${YELLOW}⚠️  Branch is not merged into $main_branch${NC}"
-            if ! confirm_delete; then
+            ;;
+        REMOVE)
+            say "$GREEN" "✓ $reason"
+            ;;
+        *)
+            say "$YELLOW" "⚠️  $reason"
+            if ! confirm_delete "$verdict"; then
+                kept=$((kept + 1))
                 continue
             fi
-        fi
+            ;;
+    esac
+
+    # A prompt can wait for minutes; other sessions may have used the worktree meanwhile.
+    collect_cwds
+    if ! now_sha=$(git -C "$worktree" rev-parse HEAD 2>/dev/null); then
+        now_sha=""
     fi
-    
-    # Check for stashes
-    stash_count=$(git -C "$worktree" stash list | wc -l)
-    if [[ "$stash_count" -gt 0 ]]; then
-        echo -e "${YELLOW}⚠️  Has $stash_count stashes${NC}"
-        if ! confirm_delete; then
-            continue
-        fi
+    classify "$i" "${now_sha:-$first_sha}"
+    if [[ "$now_sha" != "$first_sha" ]] || { [[ "$verdict" != "$first_verdict" ]] && [[ "$verdict" != REMOVE ]]; }; then
+        say "$RED" "✗ state changed since the check - skipping"
+        kept=$((kept + 1))
+        continue
     fi
-    
-    # Delete worktree
-    echo -e "${GREEN}✓ Removing worktree: $worktree${NC}"
-    git worktree remove "$worktree" --force
-    deleted_any=true
+
+    if ! err=$(git -C "$main_worktree" worktree remove -- "$worktree" 2>&1); then
+        say "$RED" "✗ git refused to remove it: $err - skipping"
+        kept=$((kept + 1))
+        continue
+    fi
+    say "$GREEN" "✓ Removing worktree: $worktree"
+    removed=$((removed + 1))
 done
 
-# Prune worktree list if any were deleted
-if [[ "$deleted_any" == true ]]; then
+if [[ $removed -gt 0 ]]; then
     echo -e "\n🧹 Pruning worktree list..."
-    git worktree prune
-    echo -e "${GREEN}✓ Done!${NC}"
-else
-    echo -e "\n${YELLOW}No worktrees were deleted.${NC}"
+    git -C "$main_worktree" worktree prune
 fi
+
+echo -e "\nRemoved $removed, kept $kept, outside .git/worktree $outside_count."
+
+if [[ ${#targets[@]} -gt 0 && $kept -gt 0 ]]; then
+    exit 2
+fi
+exit 0
