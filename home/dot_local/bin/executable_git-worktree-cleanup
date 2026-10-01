@@ -11,10 +11,10 @@ NC='\033[0m' # No Color
 # Help function
 show_help() {
     cat <<'EOF'
-git-worktree-cleanup - Interactively clean up git worktrees
+git-worktree-cleanup - Clean up completed git worktrees
 
 Usage:
-  git-worktree-cleanup
+  git-worktree-cleanup [--yes | --non-interactive]
   git-worktree-cleanup --help
 
 Description:
@@ -28,6 +28,8 @@ Description:
   Interactive checks (prompts for confirmation):
   - Branch not merged into main branch
   - Has stashed changes
+  Without a prompt (--yes, --non-interactive, or stdin is not a TTY),
+  these checks are answered automatically instead.
 
   Automatic removal criteria:
   - No uncommitted changes
@@ -36,11 +38,20 @@ Description:
   - No stashes, or user confirms deletion
 
 Options:
-  --help, -h     Show this help message
+  --yes, -y              Never prompt; delete worktrees that would prompt
+  --non-interactive, -n  Never prompt; skip worktrees that would prompt
+                         (default when stdin is not a TTY)
+  --help, -h             Show this help message
 
 Examples:
   # Clean up all completed worktrees interactively
   git-worktree-cleanup
+
+  # Unattended: remove only worktrees that need no confirmation
+  git-worktree-cleanup --non-interactive
+
+  # Unattended: also remove unmerged (e.g. squash-merged) branches and stashes
+  git-worktree-cleanup --yes
 
 Note:
   - Main worktree is always skipped
@@ -49,26 +60,72 @@ Note:
 EOF
 }
 
-# Check for help flag
-if [[ "${1:-}" == "--help" ]] || [[ "${1:-}" == "-h" ]] || [[ "${1:-}" == "help" ]]; then
-    show_help
-    exit 0
+# How confirmation prompts are answered: ask | yes | no
+answer_mode=ask
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --help|-h|help)
+            show_help
+            exit 0
+            ;;
+        --yes|-y)
+            answer_mode=yes
+            ;;
+        --non-interactive|-n)
+            answer_mode=no
+            ;;
+        *)
+            echo -e "${RED}Unknown option: $1${NC}" >&2
+            echo "Run 'git-worktree-cleanup --help' for usage." >&2
+            exit 1
+            ;;
+    esac
+    shift
+done
+
+# Without a terminal, read would hit EOF and abort the script under set -e,
+# so fall back to the safe answer.
+if [[ "$answer_mode" == ask ]] && [[ ! -t 0 ]]; then
+    answer_mode=no
 fi
+
+# Ask "Delete anyway?" and return 0 when deletion is confirmed
+confirm_delete() {
+    case "$answer_mode" in
+        yes)
+            echo "Delete anyway? (y/N) y [--yes]"
+            return 0
+            ;;
+        no)
+            echo "Delete anyway? (y/N) n [non-interactive] - skipping"
+            return 1
+            ;;
+    esac
+    local reply=""
+    read -p "Delete anyway? (y/N) " -n 1 -r reply || true
+    echo
+    [[ $reply =~ ^[Yy]$ ]]
+}
 
 echo "🔍 Checking git worktrees..."
 
 # Get main branch (usually main or master)
 main_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo "main")
 
-# Get list of worktrees
-worktrees=$(git worktree list --porcelain | grep "^worktree " | cut -d' ' -f2-)
+# Get list of worktrees; the first entry is always the main worktree
+worktrees=()
+while IFS= read -r line; do
+    worktrees+=("$line")
+done < <(git worktree list --porcelain | grep "^worktree " | cut -d' ' -f2-)
+main_worktree="${worktrees[0]}"
 
 # Track if any worktrees were deleted
 deleted_any=false
 
-for worktree in $worktrees; do
+for worktree in "${worktrees[@]}"; do
     # Skip main worktree
-    if [[ "$worktree" == "$(git rev-parse --show-toplevel)" ]]; then
+    if [[ "$worktree" == "$main_worktree" ]]; then
         continue
     fi
     
@@ -80,25 +137,22 @@ for worktree in $worktrees; do
     
     echo -e "\n📁 Checking worktree: $worktree"
     
-    # Enter worktree directory
-    cd "$worktree" || continue
-    
     # Get current branch
-    branch=$(git branch --show-current)
+    branch=$(git -C "$worktree" branch --show-current)
     
     # Check for uncommitted changes
-    if [[ -n $(git status --porcelain) ]]; then
+    if [[ -n $(git -C "$worktree" status --porcelain) ]]; then
         echo -e "${RED}✗ Has uncommitted changes - skipping${NC}"
         continue
     fi
     
     # Check if branch exists on remote
-    if ! git ls-remote --exit-code --heads origin "$branch" &>/dev/null; then
+    if ! git -C "$worktree" ls-remote --exit-code --heads origin "$branch" &>/dev/null; then
         echo -e "${GREEN}✓ Branch not on remote${NC}"
     else
         # Check if local branch is behind or ahead of remote
-        ahead=$(git rev-list --count "origin/$branch..$branch" 2>/dev/null || echo "0")
-        behind=$(git rev-list --count "$branch..origin/$branch" 2>/dev/null || echo "0")
+        ahead=$(git -C "$worktree" rev-list --count "origin/$branch..$branch" 2>/dev/null || echo "0")
+        behind=$(git -C "$worktree" rev-list --count "$branch..origin/$branch" 2>/dev/null || echo "0")
         
         if [[ "$ahead" -gt 0 ]]; then
             echo -e "${RED}✗ Local branch is ahead of remote by $ahead commits - skipping${NC}"
@@ -110,31 +164,24 @@ for worktree in $worktrees; do
         fi
         
         # Check if branch is merged into main
-        if git merge-base --is-ancestor "$branch" "origin/$main_branch" 2>/dev/null; then
+        if git -C "$worktree" merge-base --is-ancestor "$branch" "origin/$main_branch" 2>/dev/null; then
             echo -e "${GREEN}✓ Branch is merged into $main_branch${NC}"
         else
             echo -e "${YELLOW}⚠️  Branch is not merged into $main_branch${NC}"
-            read -p "Delete anyway? (y/N) " -n 1 -r
-            echo
-            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            if ! confirm_delete; then
                 continue
             fi
         fi
     fi
     
     # Check for stashes
-    stash_count=$(git stash list | wc -l)
+    stash_count=$(git -C "$worktree" stash list | wc -l)
     if [[ "$stash_count" -gt 0 ]]; then
         echo -e "${YELLOW}⚠️  Has $stash_count stashes${NC}"
-        read -p "Delete anyway? (y/N) " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        if ! confirm_delete; then
             continue
         fi
     fi
-    
-    # Return to original directory before deletion
-    cd - >/dev/null
     
     # Delete worktree
     echo -e "${GREEN}✓ Removing worktree: $worktree${NC}"

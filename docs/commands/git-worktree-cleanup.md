@@ -1,21 +1,25 @@
 # git-worktree-cleanup
 
-Interactively clean up git worktrees
+Clean up completed git worktrees
 
 ## 概要
 
-`git-worktree-cleanup` は、完了したgit worktreeを安全にクリーンアップするインタラクティブなコマンドです。作業中のworktreeを誤って削除しないよう、複数の安全チェックを実行します。
+`git-worktree-cleanup` は、完了したgit worktreeを安全にクリーンアップするコマンドです。対話実行と非対話実行（スクリプト・CI・AI エージェントからの実行）の両方に対応します。作業中のworktreeを誤って削除しないよう、複数の安全チェックを実行します。
 
 ## 使用方法
 
 ```bash
-git-worktree-cleanup
+git-worktree-cleanup [--yes | --non-interactive]
 git-worktree-cleanup --help
 ```
 
 ## オプション
 
+- `--yes`, `-y`: 確認せず、確認対象の worktree も削除する
+- `--non-interactive`, `-n`: 確認せず、確認対象の worktree はスキップする
 - `--help`, `-h`: ヘルプメッセージを表示
+
+stdin が TTY でない場合（パイプ・`</dev/null`・エージェントの Bash 実行など）は、自動的に `--non-interactive` と同じ動作になります。
 
 ## 動作
 
@@ -36,6 +40,8 @@ git-worktree-cleanup --help
 - **mainブランチにマージされていない**: `git merge-base --is-ancestor` でマージ済みかチェック
 - **stashがある**: `git stash list` が空でない
 
+非対話時はこの確認に自動で回答します。`--yes` なら削除し、それ以外はスキップします。「自動スキップ」の安全チェックは `--yes` でも上書きされません。
+
 ### 削除条件
 
 以下の条件を満たすworktreeが自動削除されます：
@@ -51,6 +57,16 @@ git-worktree-cleanup --help
 
 ```bash
 git-worktree-cleanup
+```
+
+### 非対話での使用
+
+```bash
+# 確認不要な worktree だけ削除する
+git-worktree-cleanup --non-interactive
+
+# squash merge 済みなど、未マージ判定のブランチも削除する
+git-worktree-cleanup --yes
 ```
 
 ### 実行例
