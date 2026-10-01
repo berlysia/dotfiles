@@ -189,6 +189,40 @@ test_bootstrap_failure_prints_the_host_hint() {
 try_lock() { # machine -> exit status of a fresh process trying the lock for 1s
   bash -c "AGENT_VM_STATE_DIR='$AGENT_VM_STATE_DIR' AGENT_VM_LIB=1 . '$LAUNCHER'; acquire_lock '$1' 1" </dev/null >/dev/null 2>&1
 }
+try_golden_lock() { # -> exit status of a fresh process trying the golden lock for 1s
+  bash -c "AGENT_VM_STATE_DIR='$AGENT_VM_STATE_DIR' AGENT_VM_LIB=1 . '$LAUNCHER'; acquire_golden_lock 1" </dev/null >/dev/null 2>&1
+}
+test_golden_lock_is_exclusive_and_independent_of_other_locks() {
+  bash -c "AGENT_VM_STATE_DIR='$AGENT_VM_STATE_DIR' AGENT_VM_LIB=1 . '$LAUNCHER'; acquire_golden_lock 1 && sleep 3" </dev/null &
+  sleep 1
+  local status=0; try_golden_lock || status=$?
+  assert_eq 1 "$status" "second golden lock refused"
+  status=0; try_lock agent-g-000000 || status=$?
+  assert_eq 0 "$status" "repo lock unaffected"
+  status=0; bash -c "AGENT_VM_STATE_DIR='$AGENT_VM_STATE_DIR' AGENT_VM_LIB=1 . '$LAUNCHER'; acquire_store_lock 1" </dev/null >/dev/null 2>&1 || status=$?
+  assert_eq 0 "$status" "browser store lock unaffected"
+  wait
+}
+test_golden_lock_lives_outside_machine_records() {
+  acquire_golden_lock 1
+  release_golden_lock
+  assert_status 0 "lock file under golden/" -- test -f "$AGENT_VM_STATE_DIR/golden/lock"
+  assert_eq "" "$(machine_rows)" "golden is not a machine record"
+}
+test_golden_meta_round_trip_and_format_guard() {
+  write_golden_meta abc sealed v1:h
+  assert_eq sealed "$(golden_meta_field state)" "state read back"
+  assert_eq v1:h "$(golden_meta_field staging_hash)" "staging hash read back"
+  assert_eq abc "$(golden_meta_field cloud_init_hash)" "cloud-init hash read back"
+  assert_eq 1 "$(golden_meta_field contract)" "contract recorded"
+  assert_eq "" "$(find "$AGENT_VM_STATE_DIR/golden" -name 'meta.*')" "no temp file left"
+  printf 'format=2\nstate=sealed\n' >"$AGENT_VM_STATE_DIR/golden/meta"
+  local status=0; golden_meta_field state >/dev/null || status=$?
+  assert_eq 2 "$status" "unknown format is not read"
+  rm "$AGENT_VM_STATE_DIR/golden/meta"
+  status=0; golden_meta_field state >/dev/null || status=$?
+  assert_eq 1 "$status" "absent record"
+}
 test_second_acquirer_is_refused_while_held() {
   bash -c "AGENT_VM_STATE_DIR='$AGENT_VM_STATE_DIR' AGENT_VM_LIB=1 . '$LAUNCHER'; acquire_lock agent-l-000000 1 && sleep 3" </dev/null &
   sleep 1

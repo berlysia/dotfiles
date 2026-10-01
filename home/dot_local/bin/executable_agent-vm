@@ -129,6 +129,24 @@ acquire_lock() { # machine max_wait_seconds; holds fd 9 until release_lock or pr
 
 release_lock() { exec 9>&-; }
 
+golden_dir() { printf '%s/golden\n' "$AGENT_VM_STATE_DIR"; }
+
+# Same flock scheme as acquire_lock, on fd 7 (fd 9 is the repo lock, fd 8 the browser store lock). Order: fd 9, then
+# fd 7; fd 8 is taken only after fd 7 is released. `agent-vm golden refresh|rm` take only fd 7 (spec K3).
+acquire_golden_lock() { # max_wait_seconds; holds fd 7 until release_golden_lock or process exit
+  local waited=0
+  mkdir -p "$(golden_dir)" || return 1
+  # A failed redirection on a bare `exec` would end the shell; braces turn it into an ordinary failure.
+  { exec 7>"$(golden_dir)/lock"; } 2>/dev/null || return 1
+  until perl -MFcntl=:flock -e 'open(my $f, ">&=", 7) or die "fdopen: $!"; flock($f, LOCK_EX | LOCK_NB) or exit 1'; do
+    waited=$((waited + 1))
+    if [[ "$waited" -ge "$1" ]]; then exec 7>&-; return 1; fi
+    step "another session is building the golden machine (${waited}s)"
+    sleep 1
+  done
+}
+release_golden_lock() { exec 7>&-; }
+
 dir_hash() { # dir -> v1:<sha256 of sorted "sha256  ./path" lines>
   local digest
   digest=$(cd "$1" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -c1-64)
@@ -395,6 +413,26 @@ verify_machine_config() { # machine expected_mounts -> 0, or 1 with the reason o
   done
   val=$(printf '%s\n' "$lines" | awk -F'\t' '$1 == "mounts" { print $2 }')
   if [[ "$val" != "$2" ]]; then step "$1 mounts '$val' (expected '$2')"; return 1; fi
+}
+
+# golden/meta: format=1, cloud_init_hash, contract, state (sealed|updating), staging_hash. Not read with
+# read_meta_field: machines/<m> records are a different schema under the same format number.
+golden_meta_field() { # key -> value; exit 1 when the record or the key is absent, 2 when its format is unknown
+  local f
+  f="$(golden_dir)/meta"
+  if [[ ! -f "$f" ]]; then return 1; fi
+  awk -F= -v k="$1" 'NR == 1 { if ($0 != "format=1") { bad = 1; exit } next }
+    $1 == k { sub(/^[^=]*=/, ""); print; found = 1; exit }
+    END { exit bad ? 2 : (found ? 0 : 1) }' "$f"
+}
+
+write_golden_meta() { # cloud_init_hash state staging_hash: written whole through a temp file, never in place
+  local d tmp
+  d=$(golden_dir)
+  mkdir -p "$d"
+  tmp=$(mktemp "$d/meta.XXXXXX") || die "could not write the golden machine record"
+  printf 'format=1\ncloud_init_hash=%s\ncontract=%s\nstate=%s\nstaging_hash=%s\n' "$1" "$BOOTSTRAP_CONTRACT" "$2" "$3" >"$tmp"
+  mv "$tmp" "$d/meta"
 }
 
 maybe_bootstrap() { # machine generation staging_hash
