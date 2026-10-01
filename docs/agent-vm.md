@@ -50,7 +50,7 @@ repo は VM から書き換えられる領域なので、そこに書かれた `
 
 ### gh の token
 
-VM の中の `gh` は、repo ごとに作った fine-grained PAT で認証する。token は `GH_TOKEN` として、tool（claude / codex）を起動するときにだけ注入される。権限は `pull_requests` と `issues` の write、`contents` と `actions` の read に絞られ、push はできない。
+VM の中の `gh` は、repo ごとに作った fine-grained PAT で認証する。token は `GH_TOKEN` として、tool（claude / codex / `agent-vm shell` の bash）を起動するときにだけ注入される。権限は `pull_requests` と `issues` の write、`contents` と `actions` の read に絞られ、push はできない。
 
 使い方:
 
@@ -71,7 +71,7 @@ agent-vm env gh [--repo OWNER/REPO] [--vault Personal|Formal]
 - token は 1Password の item（title は `agent-vm-gh <PAT 名>`）に入る。その vault を読める人は token も読める。
 - `GH_TOKEN` は VM の中で claude / codex / bash の環境変数になり、そこから起動される全てのプロセスから読める。
 - public repo の選び忘れと、全 repo を対象にした token は、検証では止められない。前者は最初の書き込み系の `gh` 操作が 403 になって分かる。後者は検出できないので、作成画面で選ぶ repo を確かめる。
-- `gh pr merge` は host で行う。この token では他者の PR の auto-merge は有効にできないが、merge の判断は host で行う。
+- `gh pr merge` は host で行う。この token には contents の write が無いので、VM から直接 merge はできない。他者の PR の auto-merge の有効化は、2026-10-01 に 1 つの repo で試して拒否された（`FORBIDDEN`）が、branch protection の設定によって結果が変わりうる。
 - `agent-vm env gh` を同時に実行しない。後から書いた方だけが env に残り、先の方の item と PAT は使われないまま残る。
 - `agent-vm rm` は PAT も 1Password の item も状態ファイルも消さない。状態ファイル（`~/.config/agent-vm/repos/<machine>.gh`）だけが残った場合は手で消してよい。次の `env gh` は repo 名と vault をもう一度聞く。
 - `agent-vm env adopt` は env ファイルと一緒に状態ファイルも移す。
