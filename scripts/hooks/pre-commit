@@ -156,7 +156,7 @@ echo
 #
 # 4. Codex Config Format Check
 #
-STAGED_CODEX_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E 'home/dot_codex/\.config\.toml|scripts/(check|format)-codex-config\.sh' || true)
+STAGED_CODEX_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E 'home/dot_codex/\.config(\.[^/]+)?\.toml|scripts/(check|format|test)-codex-config[^/]*\.sh' || true)
 if [ -n "$STAGED_CODEX_FILES" ]; then
     echo -e "${BLUE}⚙️  Checking Codex config format...${NC}"
     CHECK_SCRIPT="${REPO_ROOT}/scripts/check-codex-config.sh"
