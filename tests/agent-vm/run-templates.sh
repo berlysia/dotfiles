@@ -124,6 +124,12 @@ test_skills_install_runs_after_mise_tools_and_before_sync() {
   assert_eq "00-install-mise-tools.sh 10-install-apm-skills.sh sync-skills.sh" "$order" "apm is installed before skills, skills before sync"
 }
 
+test_fetch_browsers_script_is_darwin_only() {
+  local t=.chezmoiscripts/run_after_50-agent-vm-fetch-browsers.sh.tmpl
+  assert_eq "" "$(render "$t" '{"chezmoi":{"os":"linux"}}' | tr -d '[:space:]')" "renders empty on linux"
+  assert_contains "$(render "$t" '{"chezmoi":{"os":"darwin"}}')" "agent-vm\" fetch-browsers" "renders the fetch on darwin"
+}
+
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do
   ( "$t" ) </dev/null || record "FAIL $t (test aborted)"
 done

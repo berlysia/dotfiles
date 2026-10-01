@@ -30,6 +30,7 @@ Usage:
   agent-vm list | gc | rm [repo]    Manage machines
   agent-vm sync [--inspect]         Ingest session logs and check git surfaces now
   agent-vm restore-git [repo]       Undo reported changes to host-executed git files
+  agent-vm fetch-browsers [--force]  Fetch the linux-arm64 browser for VM browser MCPs
 EOF
 }
 
@@ -121,6 +122,26 @@ dir_hash() { # dir -> v1:<sha256 of sorted "sha256  ./path" lines>
   printf 'v1:%s\n' "$digest"
 }
 
+# Production always clones (APFS clonefile, no data copied); the override exists only for the Linux CI runner,
+# whose GNU cp has no -c. A plain copy would cost ~337MB per machine, so nothing falls back to it on its own.
+# The override is split on spaces; tests set it to a plain command without globs.
+clone_cmd() { printf '%s\n' "${AGENT_VM_CLONE_CMD:-cp -c -R}"; }
+
+# macOS has no timeout(1); SIGALRM survives exec, so the bound applies to the command itself (exit 142 when hit).
+run_bounded() { perl -e 'alarm shift; exec @ARGV or die "exec: $!\n"' "$@"; }
+
+store_hash() { # dir -> v2:<sha256>; covers symlink targets and modes, skips the top-level .meta (spec K3)
+  local digest
+  digest=$(cd "$1" && find . -mindepth 1 ! -path ./.meta -print0 | LC_ALL=C sort -z | perl -0ne '
+    use Digest::SHA; chomp; my $p = $_; my @st = lstat($p) or die "lstat $p: $!\n";
+    if (-l _) { printf "l %o %s -> %s\n", $st[2] & 07777, $p, readlink($p) }
+    elsif (-d _) { printf "d %o %s\n", $st[2] & 07777, $p }
+    elsif (-f _) { printf "f %o %s %s\n", $st[2] & 07777, $p, Digest::SHA->new(256)->addfile($p, "b")->hexdigest }
+    else { die "unexpected file type: $p\n" }' | shasum -a 256 | cut -c1-64) || return 1
+  [[ "$digest" =~ ^[0-9a-f]{64}$ ]] || return 1
+  printf 'v2:%s\n' "$digest"
+}
+
 build_staging() { # machine working_tree -> prints "<generation> <hash>"
   local build gen hash st="$AGENT_VM_STATE_DIR/staging/$1"
   mkdir -p "$AGENT_VM_STATE_DIR/build" "$st"
@@ -147,18 +168,173 @@ build_staging() { # machine working_tree -> prints "<generation> <hash>"
   printf '%s %s\n' "$gen" "$hash"
 }
 
+store_dir() { printf '%s/browser-store\n' "$AGENT_VM_STATE_DIR"; }
+
+browser_store_id() { # working tree -> mcp-<version>; the exact @playwright/mcp pin in package.json (spec K2)
+  local v
+  v=$(perl -MJSON::PP -0777 -ne 'my $j = decode_json($_); print $j->{dependencies}{q(@playwright/mcp)} // ""' "$1/package.json" 2>/dev/null) || return 1
+  [[ "$v" =~ ^[0-9][0-9A-Za-z.+-]*$ ]] || return 1
+  printf 'mcp-%s\n' "$v"
+}
+
+acquire_store_lock() { # max_wait_seconds; holds fd 8 until release_store_lock (lock order: fd 9, then fd 8)
+  local waited=0
+  mkdir -p "$AGENT_VM_STATE_DIR" || return 1
+  # A failed redirection on a bare `exec` would end the shell; braces turn it into an ordinary failure.
+  { exec 8>"$AGENT_VM_STATE_DIR/browser-store.lock"; } 2>/dev/null || return 1
+  until perl -MFcntl=:flock -e 'open(my $f, ">&=", 8) or die "fdopen: $!"; flock($f, LOCK_EX | LOCK_NB) or exit 1'; do
+    waited=$((waited + 1))
+    if [[ "$waited" -ge "$1" ]]; then exec 8>&-; return 1; fi
+    sleep 1
+  done
+}
+release_store_lock() { exec 8>&-; }
+
+# Fixed names only: a pattern such as MISE_* would also pass tokens the download has no use for.
+FETCH_ENV_NAMES="USER TMPDIR LANG HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy SSL_CERT_FILE NODE_EXTRA_CA_CERTS MISE_DATA_DIR MISE_CONFIG_DIR XDG_CACHE_HOME XDG_CONFIG_HOME XDG_DATA_HOME"
+fetch_env_args() { # fills FETCH_ENV with NAME=value pairs for env -i (values with a newline are not passed)
+  local n v
+  FETCH_ENV=("PATH=$PATH" "HOME=$HOME")
+  for n in $FETCH_ENV_NAMES; do
+    v=$(printenv "$n" 2>/dev/null) || continue
+    case "$v" in *$'\n'*) continue ;; esac
+    FETCH_ENV+=("$n=$v")
+  done
+}
+
+fetch_fail() { # id reason: record, then print one line (shortened when the same id failed before); returns 1
+  local f reason=${2//[^[:alnum:] .,:()\/@_+-]/?}
+  f="$(store_dir)/.last-failure"
+  if [[ -f "$f" && "$(cut -f1 "$f" 2>/dev/null)" == "$1" ]]; then
+    step "browser fetch still failing ($reason); recover: agent-vm fetch-browsers"
+  else
+    step "browser fetch failed for $1: $reason; recover: agent-vm fetch-browsers"
+  fi
+  printf '%s\t%s\n' "$1" "$reason" >"$f" || true
+  return 1
+}
+
+cmd_fetch_browsers() { # [--force] [--from-apply <working tree>]  (spec K2)
+  local force=0 wt="" from_apply="" id pw build bin rev hash meta log
+  while [[ $# -gt 0 ]]; do
+    case "$1" in --force) force=1 ;; --from-apply) wt=${2:-}; from_apply=1; shift ;; *) die "usage: agent-vm fetch-browsers [--force]" ;; esac
+    shift
+  done
+  if [[ -z "$wt" ]]; then wt=$(resolve_working_tree); fi
+  mkdir -p "$(store_dir)" "$AGENT_VM_STATE_DIR/build" && chmod 700 "$(store_dir)" || { step "cannot create $(store_dir)"; return 1; }
+  if ! id=$(browser_store_id "$wt"); then fetch_fail unknown "@playwright/mcp in package.json is missing or not an exact version"; return 1; fi
+  if [[ "$force" -eq 0 && -d "$(store_dir)/$id" ]]; then return 0; fi
+  # From chezmoi apply the bounds are tighter, so a network that keeps failing costs each apply at most ~5 minutes.
+  local view_limit=120 install_limit=900
+  if [[ -n "$from_apply" ]]; then view_limit=30; install_limit=300; fi
+  fetch_env_args
+  # Same clean cwd and allowlisted env as the install, so a .npmrc or mise config in the caller's cwd does not apply.
+  meta=$(cd "$AGENT_VM_STATE_DIR/build" && run_bounded "$view_limit" env -i "${FETCH_ENV[@]}" \
+    npm view "@playwright/mcp@${id#mcp-}" dependencies --json 2>/dev/null 9>&- 8>&-) || { fetch_fail "$id" "npm view failed"; return 1; }
+  pw=$(printf '%s' "$meta" | perl -MJSON::PP -0777 -ne 'print decode_json($_)->{playwright} // ""' 2>/dev/null) || pw=""
+  [[ "$pw" =~ ^[0-9][0-9A-Za-z.+-]*$ ]] || { fetch_fail "$id" "@playwright/mcp now gives playwright a range or no version"; return 1; }
+  build=$(mktemp -d "$AGENT_VM_STATE_DIR/build/store.XXXXXX") || { fetch_fail "$id" "no build dir"; return 1; }
+  log="$(store_dir)/.fetch.log"
+  if ! (cd "$build" && run_bounded "$install_limit" env -i "${FETCH_ENV[@]}" \
+      PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-arm64 PLAYWRIGHT_BROWSERS_PATH="$build" \
+      bunx "playwright@$pw" install --only-shell chromium) >"$log" 2>&1 9>&- 8>&-; then
+    rm -rf "$build"; fetch_fail "$id" "playwright install failed (see $log)"; return 1
+  fi
+  bin=$(cd "$build" && find . -path './chromium_headless_shell-*/chrome-linux/headless_shell' -type f 2>/dev/null) || bin=""
+  bin=${bin#./}
+  if [[ -z "$bin" || "$bin" == *$'\n'* ]] || ! file "$build/$bin" 2>/dev/null | grep -q 'ELF 64-bit.*aarch64'; then
+    rm -rf "$build"; fetch_fail "$id" "the downloaded browser is not a single linux-arm64 ELF"; return 1
+  fi
+  rev=${bin%%/*}; rev=${rev##*-}
+  # mktemp -d made the root 0700; the clones keep that mode, so open it up for the VM user before hashing.
+  if ! chmod 755 "$build" || ! mkdir "$build/bin" || ! ln -s "../$bin" "$build/bin/headless_shell" || ! hash=$(store_hash "$build"); then
+    rm -rf "$build"; fetch_fail "$id" "could not finish the store layout"; return 1
+  fi
+  printf 'mcp_version=%s\nplaywright_version=%s\nrevision=%s\nsha256=%s\n' "${id#mcp-}" "$pw" "$rev" "$hash" >"$build/.meta" ||
+    { rm -rf "$build"; fetch_fail "$id" "could not write .meta"; return 1; }
+  acquire_store_lock 60 || { rm -rf "$build"; fetch_fail "$id" "the browser store is busy"; return 1; }
+  if [[ -d "$(store_dir)/$id" ]]; then
+    if [[ "$force" -eq 0 ]]; then release_store_lock; rm -rf "$build"; rm -f "$(store_dir)/.last-failure"; return 0; fi
+    if ! perl -e 'rename($ARGV[0], $ARGV[1]) or die' "$(store_dir)/$id" "$build.old"; then
+      release_store_lock; rm -rf "$build"; fetch_fail "$id" "could not move the old store aside"; return 1
+    fi
+  fi
+  if ! perl -e 'rename($ARGV[0], $ARGV[1]) or die' "$build" "$(store_dir)/$id"; then
+    if [[ -d "$build.old" ]]; then perl -e 'rename($ARGV[0], $ARGV[1])' "$build.old" "$(store_dir)/$id" || true; fi
+    release_store_lock; rm -rf "$build"; fetch_fail "$id" "could not publish the store"; return 1
+  fi
+  rm -f "$(store_dir)/.last-failure"
+  # Best effort from here: the new store is published, so cleanup problems must not report the fetch as failed.
+  find "$(store_dir)" -mindepth 1 -maxdepth 1 -name 'mcp-*' ! -name "$id" -exec rm -rf {} + 9>&- 8>&- 2>/dev/null || true
+  release_store_lock
+  rm -rf "$build.old" 2>/dev/null || true
+  return 0
+}
+
 # Mount-root assumption: an isolated machine sees only the mounted subtree, so the guest can
 # change entries inside staging/<m> but cannot replace staging/<m> itself (spec K2).
 ensure_machine() { # machine repo_root working_tree
-  if orb list </dev/null 9>&- | awk '{print $1}' | grep -qx "$1"; then return 0; fi
-  mkdir -p "$AGENT_VM_STATE_DIR/staging/$1" "$AGENT_VM_STATE_DIR/outbox/$1"
+  local machines
+  machines=$(orb list </dev/null 9>&- 8>&-) || die "could not list OrbStack machines. $FAIL_CLOSED_HINT"
+  # No pipeline: under pipefail a grep -q that exits early could fail the producer and read as "no such machine".
+  if awk -v n="$1" '$1 == n {f = 1} END {exit !f}' <<<"$machines"; then return 0; fi
+  mkdir -p "$AGENT_VM_STATE_DIR/staging/$1" "$AGENT_VM_STATE_DIR/outbox/$1" \
+    "$AGENT_VM_STATE_DIR/browsers/$1" "$AGENT_VM_STATE_DIR/browser-records"
+  # The marker records the intent to create with the browser mount; written first so a create that made the
+  # machine but then failed still leaves it (this function returns early for existing machines). spec K3.
+  : >"$AGENT_VM_STATE_DIR/browser-records/$1.mount"
+  rm -f "$AGENT_VM_STATE_DIR/browser-records/$1.id"
   step "creating isolated machine $1 (first run only)"
   orb create --isolated --isolate-network --forward-ssh-agent \
     -c "$3/agent-vm/cloud-init.yaml" \
     --mount "$2:$2" \
     --mount "$AGENT_VM_STATE_DIR/staging/$1:/opt/agent-vm/src" \
     --mount "$AGENT_VM_STATE_DIR/outbox/$1:/opt/agent-vm/outbox" \
-    ubuntu "$1" </dev/null 9>&-
+    --mount "$AGENT_VM_STATE_DIR/browsers/$1:/opt/agent-vm/browsers" \
+    ubuntu "$1" </dev/null 9>&- 8>&-
+}
+
+ensure_browsers() { # machine working_tree; never fails: every problem is a warning and the browser is skipped (spec K3)
+  local rec="$AGENT_VM_STATE_DIR/browser-records/$1" dir="$AGENT_VM_STATE_DIR/browsers/$1" id src build gen link tmp
+  local -a clone
+  [[ -f "$rec.mount" ]] || return 0                                                          # decision 1
+  if ! id=$(browser_store_id "$2"); then step "browsers skipped: cannot read @playwright/mcp from package.json"; return 0; fi
+  # decision 2: -L and -e together: a current whose target generation is gone (dangling) counts as missing.
+  if [[ "$(cat "$rec.id" 2>/dev/null || true)" == "$id" && -L "$dir/current" && -e "$dir/current" ]]; then return 0; fi
+  src="$(store_dir)/$id"
+  if [[ ! -d "$src" ]]; then                                                                  # decision 3
+    step "browsers skipped: no browser for $id yet; recover: agent-vm fetch-browsers"
+    if [[ -f "$(store_dir)/.last-failure" ]]; then step "last fetch failure: $(cut -f2 "$(store_dir)/.last-failure" 2>/dev/null || true)"; fi
+    return 0
+  fi
+  if ! acquire_store_lock 60; then step "browsers skipped: the browser store is busy"; return 0; fi  # decision 4 from here
+  if [[ "$(grep '^sha256=' "$src/.meta" 2>/dev/null || true)" != "sha256=$(store_hash "$src" || true)" ]]; then
+    release_store_lock; step "browsers skipped: the browser store does not match its record; recover: agent-vm fetch-browsers --force"; return 0
+  fi
+  read -r -a clone <<<"$(clone_cmd)"
+  if ! build=$(mktemp -d "$AGENT_VM_STATE_DIR/build/browsers.XXXXXX") || ! "${clone[@]}" "$src" "$build/tree" 9>&- 8>&-; then
+    release_store_lock; rm -rf "${build:-/nonexistent}" 2>/dev/null || true
+    step "browsers skipped: could not clone the store; check that $AGENT_VM_STATE_DIR is on one APFS volume"; return 0
+  fi
+  release_store_lock
+  if ! gen=$(mktemp -u "$dir/gen-$id.XXXXXXXX") || ! link=$(mktemp -u "$dir/current.XXXXXXXX"); then
+    rm -rf "$build" 2>/dev/null || true; step "browsers skipped: no temporary name in $dir"; return 0
+  fi
+  if ! perl -e 'rename($ARGV[0], $ARGV[1]) or die' "$build/tree" "$gen" 9>&- 8>&- ||
+     ! perl -e 'symlink($ARGV[0], $ARGV[1]) or die' "${gen##*/}" "$link" 9>&- 8>&- ||
+     ! perl -e 'rename($ARGV[0], $ARGV[1]) or die' "$link" "$dir/current" 9>&- 8>&-; then
+    # $gen is already inside the VM-writable tree, so it is left for forget_machine (spec K3: no deep delete there
+    # while the VM may run). Only the link name and the host-only build dir are removed.
+    rm -f "$link" 2>/dev/null || true; rm -rf "$build" 2>/dev/null || true
+    step "browsers skipped: could not publish into $dir; if it persists: agent-vm rm"; return 0
+  fi
+  rm -rf "$build" 2>/dev/null || true
+  if ! tmp=$(mktemp "$rec.id.tmp.XXXXXX") || ! printf '%s\n' "$id" >"$tmp" ||
+     ! perl -e 'rename($ARGV[0], $ARGV[1]) or die' "$tmp" "$rec.id"; then
+    rm -f "${tmp:-/nonexistent}" 2>/dev/null || true
+    step "browsers: could not record the published id; the next launch publishes again"
+  fi
+  return 0
 }
 
 maybe_bootstrap() { # machine generation staging_hash
@@ -739,6 +915,7 @@ prepare_machine() { # tool -> sets MACHINE and REPO; leaves the machine bootstra
   out=$(build_staging "$MACHINE" "$wt")
   read -r gen hash <<<"$out"
   ensure_machine "$MACHINE" "$REPO" "$wt"
+  ensure_browsers "$MACHINE" "$wt"
   maybe_bootstrap "$MACHINE" "$gen" "$hash"
   release_lock
 }
@@ -859,6 +1036,7 @@ main() {
     rm) shift; cmd_rm "$@" ;;
     sync) shift; cmd_sync "$@" ;;
     restore-git) shift; cmd_restore_git "$@" ;;
+    fetch-browsers) shift; cmd_fetch_browsers "$@" || exit $? ;;
     env)
       case "${2:-}" in
         edit) cmd_env_edit ;;
@@ -875,6 +1053,13 @@ forget_machine() { # machine: host-side state for one machine (host-authored env
   rm -rf "$AGENT_VM_STATE_DIR/staging/$1" "$AGENT_VM_STATE_DIR/outbox/$1" \
     "$AGENT_VM_STATE_DIR/snapshots/$1" "$AGENT_VM_STATE_DIR/ingested/$1" \
     "$(meta_path "$1")" "$AGENT_VM_STATE_DIR/machines/$1.lock"
+  rm -f "$AGENT_VM_STATE_DIR/browser-records/$1".* 2>/dev/null || true
+  # Callers run this only after `orb delete` succeeded, so no VM can write into the tree while it is removed.
+  # chmod first: the VM may have dropped permissions on dirs inside its copy.
+  if [[ -e "$AGENT_VM_STATE_DIR/browsers/$1" ]]; then
+    chmod -R u+rwX "$AGENT_VM_STATE_DIR/browsers/$1" 2>/dev/null || true
+    rm -rf "$AGENT_VM_STATE_DIR/browsers/$1" 2>/dev/null || step "could not fully remove $AGENT_VM_STATE_DIR/browsers/$1; remove it by hand"
+  fi
 }
 
 machine_state() { # machine -> present|missing (missing also when metadata is absent)
