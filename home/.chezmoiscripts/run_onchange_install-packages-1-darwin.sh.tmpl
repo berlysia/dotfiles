@@ -20,7 +20,7 @@ else
   fi
 fi
 
-brew bundle --file=- <<EOF
+brew bundle --verbose --file=- <<EOF
 {{ range .packages.darwin.taps -}}
 tap {{ . | quote }}
 {{ end -}}
