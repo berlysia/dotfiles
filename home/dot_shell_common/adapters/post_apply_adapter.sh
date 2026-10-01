@@ -180,7 +180,12 @@ post_apply_test_git_config() {
 post_apply_test_env_var() {
     local var_name="$1"
     local config_path=""
-    
+
+    # var_name is spliced into code below; accept only shell identifiers.
+    case "$var_name" in
+        ''|[!A-Za-z_]*|*[!A-Za-z0-9_]*) return 1 ;;
+    esac
+
     # Try to load environment from shell configuration
     if [ "$SHELL" = "/bin/zsh" ] || [ "$SHELL" = "/usr/bin/zsh" ]; then
         config_path=$(post_apply_get_zshrc_path)
@@ -191,9 +196,9 @@ post_apply_test_env_var() {
     if [ -f "$config_path" ]; then
         local shell_name
         shell_name=$(basename "$SHELL")
-        "$shell_name" -c "source '$config_path' && eval echo \\\$$var_name" 2>/dev/null
+        "$shell_name" -c "source '$config_path' && printf '%s\n' \"\${$var_name}\"" 2>/dev/null
     else
-        eval echo \$$var_name
+        eval "printf '%s\n' \"\${$var_name}\""
     fi
 }
 

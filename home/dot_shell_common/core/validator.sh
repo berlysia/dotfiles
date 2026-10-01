@@ -73,8 +73,9 @@ validate_readiness_for_apply() {
     local critical_failures=0
     local warnings=0
     
-    # Parse results and count critical issues
-    echo "$results" | while IFS='|' read -r category name result_status details; do
+    # Parse results and count critical issues. A here-document (not a pipe)
+    # keeps the loop in the current shell so the counters survive it in bash.
+    while IFS='|' read -r category name result_status details; do
         case "$result_status" in
             FAIL)
                 case "$category" in
@@ -97,12 +98,14 @@ validate_readiness_for_apply() {
                 esac
                 ;;
         esac
-    done
-    
-    if [ $critical_failures -gt 0 ]; then
+    done <<EOF
+$results
+EOF
+
+    if [ "$critical_failures" -gt 0 ]; then
         echo "NOT_READY"
         return 1
-    elif [ $warnings -gt 0 ]; then
+    elif [ "$warnings" -gt 0 ]; then
         echo "READY_WITH_WARNINGS"
         return 0
     else
@@ -123,17 +126,17 @@ validate_system_health() {
     local counted_tests
     counted_tests=$((total_tests - skipped_tests))
     
-    if [ $counted_tests -gt 0 ]; then
+    if [ "$counted_tests" -gt 0 ]; then
         health_percentage=$((passed_tests * 100 / counted_tests))
     fi
     
-    if [ $health_percentage -ge 90 ]; then
+    if [ "$health_percentage" -ge 90 ]; then
         echo "EXCELLENT"
         return 0
-    elif [ $health_percentage -ge 70 ]; then
+    elif [ "$health_percentage" -ge 70 ]; then
         echo "GOOD"
         return 0
-    elif [ $health_percentage -ge 50 ]; then
+    elif [ "$health_percentage" -ge 50 ]; then
         echo "FAIR"
         return 1
     else
@@ -149,34 +152,34 @@ check_configuration_issues() {
     
     # Check shell common directory
     local shell_common_dir
-    shell_common_dir=$(${adapter}_get_shell_common_dir)
-    if ! ${adapter}_dir_exists "$shell_common_dir"; then
+    shell_common_dir=$("${adapter}_get_shell_common_dir")
+    if ! "${adapter}_dir_exists" "$shell_common_dir"; then
         issues="${issues}MISSING_SHELL_COMMON "
     fi
     
     # Check essential files
     local functions_path
-    functions_path=$(${adapter}_get_functions_path)
-    if ! ${adapter}_file_exists "$functions_path"; then
+    functions_path=$("${adapter}_get_functions_path")
+    if ! "${adapter}_file_exists" "$functions_path"; then
         issues="${issues}MISSING_FUNCTIONS "
     fi
     
     local aliases_path
-    aliases_path=$(${adapter}_get_aliases_path)
-    if ! ${adapter}_file_exists "$aliases_path"; then
+    aliases_path=$("${adapter}_get_aliases_path")
+    if ! "${adapter}_file_exists" "$aliases_path"; then
         issues="${issues}MISSING_ALIASES "
     fi
     
     # Check shell configurations
     local bashrc_path
-    bashrc_path=$(${adapter}_get_bashrc_path)
-    if ! ${adapter}_file_exists "$bashrc_path"; then
+    bashrc_path=$("${adapter}_get_bashrc_path")
+    if ! "${adapter}_file_exists" "$bashrc_path"; then
         issues="${issues}MISSING_BASHRC "
     fi
     
     local zshrc_path
-    zshrc_path=$(${adapter}_get_zshrc_path)
-    if ! ${adapter}_file_exists "$zshrc_path"; then
+    zshrc_path=$("${adapter}_get_zshrc_path")
+    if ! "${adapter}_file_exists" "$zshrc_path"; then
         issues="${issues}MISSING_ZSHRC "
     fi
     
@@ -194,7 +197,8 @@ analyze_test_patterns() {
     local config_failures=0
     local integration_failures=0
     
-    echo "$results" | while IFS='|' read -r category name result_status details; do
+    # Here-document instead of a pipe: see validate_readiness_for_apply.
+    while IFS='|' read -r category name result_status details; do
         if [ "$result_status" = "FAIL" ]; then
             case "$category" in
                 core) core_failures=$((core_failures + 1)) ;;
@@ -203,22 +207,24 @@ analyze_test_patterns() {
                 integration) integration_failures=$((integration_failures + 1)) ;;
             esac
         fi
-    done
+    done <<EOF
+$results
+EOF
     
     # Identify patterns
-    if [ $core_failures -gt 0 ]; then
+    if [ "$core_failures" -gt 0 ]; then
         patterns="${patterns}MISSING_CORE_TOOLS "
     fi
     
-    if [ $shell_failures -gt 1 ]; then
+    if [ "$shell_failures" -gt 1 ]; then
         patterns="${patterns}SHELL_COMPATIBILITY_ISSUES "
     fi
     
-    if [ $config_failures -gt 2 ]; then
+    if [ "$config_failures" -gt 2 ]; then
         patterns="${patterns}CONFIGURATION_INCOMPLETE "
     fi
     
-    if [ $integration_failures -gt 0 ] && [ $config_failures -eq 0 ]; then
+    if [ "$integration_failures" -gt 0 ] && [ "$config_failures" -eq 0 ]; then
         patterns="${patterns}INTEGRATION_ONLY_ISSUES "
     fi
     

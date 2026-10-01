@@ -88,8 +88,8 @@ add_test_result() {
     esac
     
     # Add weight if applicable
-    if [ $weight -gt 0 ]; then
-        add_weight $weight $achieved
+    if [ "$weight" -gt 0 ]; then
+        add_weight "$weight" "$achieved"
     fi
     
     # Store result for reporting (include priority and install hint if provided)
@@ -139,7 +139,7 @@ check_command_with_deps() {
                 # Check if managed by mise
                 if command -v mise >/dev/null 2>&1 && mise ls 2>/dev/null | grep -q "$cmd"; then
                     local mise_version
-                    mise_version=$(mise current $cmd 2>/dev/null)
+                    mise_version=$(mise current "$cmd" 2>/dev/null)
                     if [ -n "$mise_version" ]; then
                         version="$cmd $mise_version (managed by mise)"
                     else
@@ -211,7 +211,7 @@ test_shell_compatibility() {
     # Test bash loading
     if command -v bash >/dev/null 2>&1; then
         local bash_result
-        bash_result=$(${adapter}_test_bash_loading)
+        bash_result=$("${adapter}_test_bash_loading")
         case "$bash_result" in
             SUCCESS)
                 add_test_result "$TEST_CATEGORY_SHELL" "Bash loading" "PASS" "Configuration loaded successfully"
@@ -230,7 +230,7 @@ test_shell_compatibility() {
     # Test zsh loading
     if command -v zsh >/dev/null 2>&1; then
         local zsh_result
-        zsh_result=$(${adapter}_test_zsh_loading)
+        zsh_result=$("${adapter}_test_zsh_loading")
         case "$zsh_result" in
             SUCCESS)
                 add_test_result "$TEST_CATEGORY_SHELL" "Zsh loading" "PASS" "Configuration loaded successfully"
@@ -253,38 +253,38 @@ test_configuration_files() {
     
     # Test essential files
     local bashrc_path
-    bashrc_path=$(${adapter}_get_bashrc_path)
-    if ${adapter}_file_exists "$bashrc_path"; then
+    bashrc_path=$("${adapter}_get_bashrc_path")
+    if "${adapter}_file_exists" "$bashrc_path"; then
         add_test_result "$TEST_CATEGORY_CONFIG" "Bashrc file" "PASS" "$bashrc_path"
     else
         add_test_result "$TEST_CATEGORY_CONFIG" "Bashrc file" "FAIL" "Missing: $bashrc_path"
     fi
     
     local zshrc_path
-    zshrc_path=$(${adapter}_get_zshrc_path)
-    if ${adapter}_file_exists "$zshrc_path"; then
+    zshrc_path=$("${adapter}_get_zshrc_path")
+    if "${adapter}_file_exists" "$zshrc_path"; then
         add_test_result "$TEST_CATEGORY_CONFIG" "Zshrc file" "PASS" "$zshrc_path"
     else
         add_test_result "$TEST_CATEGORY_CONFIG" "Zshrc file" "FAIL" "Missing: $zshrc_path"
     fi
     
     local shell_common_dir
-    shell_common_dir=$(${adapter}_get_shell_common_dir)
-    if ${adapter}_dir_exists "$shell_common_dir"; then
+    shell_common_dir=$("${adapter}_get_shell_common_dir")
+    if "${adapter}_dir_exists" "$shell_common_dir"; then
         add_test_result "$TEST_CATEGORY_CONFIG" "Shell common directory" "PASS" "$shell_common_dir"
         
         # Test individual files within shell_common
         local functions_path
-        functions_path=$(${adapter}_get_functions_path)
-        if ${adapter}_file_exists "$functions_path"; then
+        functions_path=$("${adapter}_get_functions_path")
+        if "${adapter}_file_exists" "$functions_path"; then
             add_test_result "$TEST_CATEGORY_CONFIG" "Functions file" "PASS" "$functions_path"
         else
             add_test_result "$TEST_CATEGORY_CONFIG" "Functions file" "FAIL" "Missing: $functions_path"
         fi
         
         local aliases_path
-        aliases_path=$(${adapter}_get_aliases_path)
-        if ${adapter}_file_exists "$aliases_path"; then
+        aliases_path=$("${adapter}_get_aliases_path")
+        if "${adapter}_file_exists" "$aliases_path"; then
             add_test_result "$TEST_CATEGORY_CONFIG" "Aliases file" "PASS" "$aliases_path"
         else
             add_test_result "$TEST_CATEGORY_CONFIG" "Aliases file" "FAIL" "Missing: $aliases_path"
@@ -301,7 +301,7 @@ test_path_configuration() {
     # Test PATH setup for different shells
     for shell in bash zsh; do
         if command -v "$shell" >/dev/null 2>&1; then
-            if ${adapter}_test_path_setup "$shell"; then
+            if "${adapter}_test_path_setup" "$shell"; then
                 add_test_result "$TEST_CATEGORY_CONFIG" "PATH setup ($shell)" "PASS" ".local/bin found in PATH"
             else
                 add_test_result "$TEST_CATEGORY_CONFIG" "PATH setup ($shell)" "FAIL" ".local/bin not found in PATH"
@@ -321,7 +321,7 @@ test_integration() {
         for func in extract; do  # Add more functions as needed
             for shell in bash zsh; do
                 if command -v "$shell" >/dev/null 2>&1; then
-                    if ${adapter}_test_function_exists "$func" "$shell"; then
+                    if "${adapter}_test_function_exists" "$func" "$shell"; then
                         add_test_result "$TEST_CATEGORY_INTEGRATION" "Function: $func ($shell)" "PASS" "Function available"
                     else
                         add_test_result "$TEST_CATEGORY_INTEGRATION" "Function: $func ($shell)" "FAIL" "Function not available"
@@ -335,7 +335,7 @@ test_integration() {
     if [ "$adapter" = "post_apply" ] && command -v "${adapter}_test_alias_exists" >/dev/null 2>&1; then
         # Only test aliases that are actually defined in aliases.sh
         for alias_name in claude; do  # Only test existing aliases
-            if ${adapter}_test_alias_exists "$alias_name"; then
+            if "${adapter}_test_alias_exists" "$alias_name"; then
                 add_test_result "$TEST_CATEGORY_INTEGRATION" "Alias: $alias_name" "PASS" "Alias defined"
             else
                 add_test_result "$TEST_CATEGORY_INTEGRATION" "Alias: $alias_name" "FAIL" "Alias not defined"
@@ -509,79 +509,6 @@ test_git_configuration() {
         
         # Advanced Git workflow checks
         test_advanced_git_workflow
-    fi
-}
-
-# Advanced Git workflow checks
-test_advanced_git_workflow() {
-    if command -v git >/dev/null 2>&1; then
-        # Check if we're in a git repository
-        if git rev-parse --git-dir >/dev/null 2>&1; then
-            # Check current branch status
-            local current_branch
-            current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
-            if [ -n "$current_branch" ] && [ "$current_branch" != "HEAD" ]; then
-                add_test_result "$TEST_CATEGORY_CONFIG" "Git branch status" "PASS" "on branch $current_branch" "optional" ""
-                
-                # Check if branch has remote tracking
-                local remote_branch
-                # shellcheck disable=SC1083
-                remote_branch=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null)
-                if [ -n "$remote_branch" ]; then
-                    # Check if local is ahead/behind remote
-                    local ahead_behind
-                    ahead_behind=$(git rev-list --left-right --count HEAD...@{u} 2>/dev/null)
-                    if [ -n "$ahead_behind" ]; then
-                        local ahead
-                        ahead=$(echo "$ahead_behind" | cut -f1)
-                        local behind
-                        behind=$(echo "$ahead_behind" | cut -f2)
-                        if [ "$ahead" = "0" ] && [ "$behind" = "0" ]; then
-                            add_test_result "$TEST_CATEGORY_CONFIG" "Git remote sync" "PASS" "up to date with $remote_branch" "optional" ""
-                        else
-                            add_test_result "$TEST_CATEGORY_CONFIG" "Git remote sync" "WARN" "$ahead commits ahead, $behind behind $remote_branch" "optional" "git pull / git push"
-                        fi
-                    fi
-                else
-                    add_test_result "$TEST_CATEGORY_CONFIG" "Git remote tracking" "WARN" "no remote tracking branch" "optional" "git push -u origin $current_branch"
-                fi
-            else
-                add_test_result "$TEST_CATEGORY_CONFIG" "Git branch status" "WARN" "detached HEAD state" "optional" "git checkout <branch-name>"
-            fi
-            
-            # Check for uncommitted changes
-            if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
-                local staged
-                staged=$(git diff --cached --name-only 2>/dev/null | wc -l)
-                local unstaged
-                unstaged=$(git diff --name-only 2>/dev/null | wc -l)
-                local untracked
-                untracked=$(git ls-files --others --exclude-standard 2>/dev/null | wc -l)
-                add_test_result "$TEST_CATEGORY_CONFIG" "Git working directory" "WARN" "$staged staged, $unstaged modified, $untracked untracked" "optional" "git add -A && git commit"
-            else
-                add_test_result "$TEST_CATEGORY_CONFIG" "Git working directory" "PASS" "clean" "optional" ""
-            fi
-            
-            # Check recent commit signature (if GPG signing is enabled)
-            local gpg_sign
-            gpg_sign=$(git config commit.gpgsign 2>/dev/null)
-            if [ "$gpg_sign" = "true" ]; then
-                local last_commit_signed
-                last_commit_signed=$(git log -1 --format="%G?" 2>/dev/null)
-                case "$last_commit_signed" in
-                    "G") add_test_result "$TEST_CATEGORY_CONFIG" "Git commit signature" "PASS" "last commit properly signed" "optional" "" ;;
-                    "B") add_test_result "$TEST_CATEGORY_CONFIG" "Git commit signature" "WARN" "last commit bad signature" "optional" "Check GPG key configuration" ;;
-                    "U") add_test_result "$TEST_CATEGORY_CONFIG" "Git commit signature" "WARN" "last commit untrusted signature" "optional" "Trust the signing key" ;;
-                    "X") add_test_result "$TEST_CATEGORY_CONFIG" "Git commit signature" "WARN" "last commit signature expired" "optional" "Renew GPG key" ;;
-                    "Y") add_test_result "$TEST_CATEGORY_CONFIG" "Git commit signature" "WARN" "last commit signature from expired key" "optional" "Update signing key" ;;
-                    "R") add_test_result "$TEST_CATEGORY_CONFIG" "Git commit signature" "WARN" "last commit signature revoked" "optional" "Update signing key" ;;
-                    "E") add_test_result "$TEST_CATEGORY_CONFIG" "Git commit signature" "FAIL" "last commit signature error" "optional" "Check GPG configuration" ;;
-                    *) add_test_result "$TEST_CATEGORY_CONFIG" "Git commit signature" "FAIL" "last commit not signed" "optional" "Enable GPG signing" ;;
-                esac
-            fi
-        fi
-    else
-        add_test_result "$TEST_CATEGORY_CONFIG" "Git configuration" "FAIL" "git command not found" "required" "apt install git / brew install git"
     fi
 }
 
@@ -778,8 +705,10 @@ test_environment_detection() {
     if [ -n "$home_space" ]; then
         # Extract numeric value (remove G, M suffixes for comparison)
         local space_num
+        # shellcheck disable=SC2001 # regex, not a literal replacement
         space_num=$(echo "$home_space" | sed 's/[GM].*//')
         local space_unit
+        # shellcheck disable=SC2001 # regex, not a literal replacement
         space_unit=$(echo "$home_space" | sed 's/[0-9.]*//')
         
         if [ "$space_unit" = "G" ] && [ "$space_num" -ge 10 ]; then
@@ -918,6 +847,7 @@ test_platform_compatibility() {
             if [ -x "/opt/homebrew/bin/brew" ] || [ -x "/usr/local/bin/brew" ]; then
                 add_test_result "$TEST_CATEGORY_CONFIG" "Package Manager" "PASS" "Homebrew" "optional" ""
             else
+                # shellcheck disable=SC2016 # install hint shown verbatim to the user
                 add_test_result "$TEST_CATEGORY_CONFIG" "Package Manager" "WARN" "Homebrew not found" "optional" '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
             fi
             
@@ -1132,7 +1062,7 @@ run_all_tests() {
 # Get test results summary
 get_test_summary() {
     local health_score=0
-    if [ $TOTAL_WEIGHT -gt 0 ]; then
+    if [ "$TOTAL_WEIGHT" -gt 0 ]; then
         health_score=$((ACHIEVED_WEIGHT * 100 / TOTAL_WEIGHT))
     fi
     
