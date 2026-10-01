@@ -14,15 +14,9 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 OXFMT_BIN="${OXFMT_BIN:-${PROJECT_ROOT}/node_modules/.bin/oxfmt}"
 
 # Dependency check
-if ! command -v dasel &>/dev/null; then
-    echo "❌ Error: dasel is not properly installed" >&2
-    echo "   Install: mise install dasel -f" >&2
-    exit 1
-fi
-
-if ! command -v jq &>/dev/null; then
-    echo "❌ Error: jq is not installed" >&2
-    echo "   Install: sudo apt-get install jq" >&2
+if ! command -v chezmoi &>/dev/null; then
+    echo "❌ Error: chezmoi is not installed (it parses the TOML)" >&2
+    echo "   Install: sh -c \"\$(curl -fsLS get.chezmoi.io)\" -- -b \"\$HOME/.local/bin\"" >&2
     exit 1
 fi
 
@@ -42,12 +36,10 @@ run_oxfmt() {
 
 check_file() {
     local config_file="$1"
-    local temp_json temp_file temp_formatted
-    temp_json=$(mktemp)
-    temp_file=$(mktemp)
+    local temp_formatted
     temp_formatted=$(mktemp)
-    # shellcheck disable=SC2064 # expand temp paths now, they are loop-local
-    trap "rm -f '$temp_json' '$temp_file' '$temp_formatted'" RETURN
+    # shellcheck disable=SC2064 # expand temp path now, it is loop-local
+    trap "rm -f '$temp_formatted'" RETURN
 
     echo "🔍 Checking ${config_file} formatting..."
 
@@ -56,24 +48,19 @@ check_file() {
         return 1
     fi
 
-    if ! dasel query --root -i toml -o json < "${config_file}" > "${temp_json}"; then
+    local key_count
+    # Parse only to prove the file is TOML with at least one key; formatting is oxfmt's job (spec R6: key order
+    # and quote style are not enforced, since the merge re-sorts everything it writes).
+    if ! key_count=$(chezmoi execute-template --with-stdin '{{ .chezmoi.stdin | fromToml | len }}' < "${config_file}" 2>/dev/null); then
         echo "❌ Error: Failed to parse TOML" >&2
         return 1
     fi
-
-    local json_content
-    json_content=$(<"${temp_json}")
-    if [[ "${json_content}" == "{}" ]] || [[ "${json_content}" == "null" ]] || [[ -z "${json_content}" ]]; then
+    if [[ "${key_count}" == 0 ]]; then
         echo "❌ Error: TOML parsing produced empty result (possibly invalid syntax)" >&2
         return 1
     fi
 
-    if ! jq -S < "${temp_json}" | dasel query --root -i json -o toml > "${temp_file}"; then
-        echo "❌ Error: Failed to parse config" >&2
-        return 1
-    fi
-
-    if ! run_oxfmt --stdin-filepath config.toml < "${temp_file}" > "${temp_formatted}"; then
+    if ! run_oxfmt --stdin-filepath config.toml < "${config_file}" > "${temp_formatted}"; then
         echo "❌ Error: Failed to format config with oxfmt" >&2
         return 1
     fi
