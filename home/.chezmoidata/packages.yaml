@@ -56,6 +56,7 @@ packages:
       - "curl"
       - "emacs"
       - "git"
+      - "gh"
       - "build-essential"
       - "bat"
       - "ripgrep"

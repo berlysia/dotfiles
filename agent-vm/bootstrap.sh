@@ -7,7 +7,7 @@ set -euo pipefail
 readonly SUPPORTED_CONTRACT=1
 # VM counterpart of the host's run_onchange_install-packages-1-linux, which the VM does not run (spec K17/K18).
 # Constants on purpose: the VM controls both its environment and the staging copy.
-readonly VM_APT_PKGS=(jq bat fd-find ripgrep shellcheck)
+readonly VM_APT_PKGS=(jq bat fd-find ripgrep shellcheck gh)
 # A fresh machine can still hold the dpkg lock (cloud-init, unattended-upgrades); wait for it instead of failing,
 # and bound every download so a stalled network fails the bootstrap (retried next launch) instead of hanging it.
 readonly APT_OPTS=(-o DPkg::Lock::Timeout=120 -o Acquire::Retries=3)
