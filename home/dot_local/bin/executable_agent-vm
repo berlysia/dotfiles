@@ -302,29 +302,6 @@ cmd_fetch_browsers() { # [--force] [--from-apply <working tree>]  (spec K2)
   return 0
 }
 
-# Mount-root assumption: an isolated machine sees only the mounted subtree, so the guest can
-# change entries inside staging/<m> but cannot replace staging/<m> itself (spec K2).
-ensure_machine() { # machine repo_root working_tree
-  local machines
-  machines=$(orb list </dev/null 9>&- 8>&-) || die "could not list OrbStack machines. $FAIL_CLOSED_HINT"
-  # No pipeline: under pipefail a grep -q that exits early could fail the producer and read as "no such machine".
-  if awk -v n="$1" '$1 == n {f = 1} END {exit !f}' <<<"$machines"; then return 0; fi
-  mkdir -p "$AGENT_VM_STATE_DIR/staging/$1" "$AGENT_VM_STATE_DIR/outbox/$1" \
-    "$AGENT_VM_STATE_DIR/browsers/$1" "$AGENT_VM_STATE_DIR/browser-records"
-  # The marker records the intent to create with the browser mount; written first so a create that made the
-  # machine but then failed still leaves it (this function returns early for existing machines). spec K3.
-  : >"$AGENT_VM_STATE_DIR/browser-records/$1.mount"
-  rm -f "$AGENT_VM_STATE_DIR/browser-records/$1.id"
-  step "creating isolated machine $1 (first run only)"
-  orb create --isolated --isolate-network --forward-ssh-agent \
-    -c "$3/agent-vm/cloud-init.yaml" \
-    --mount "$2:$2" \
-    --mount "$AGENT_VM_STATE_DIR/staging/$1:/opt/agent-vm/src" \
-    --mount "$AGENT_VM_STATE_DIR/outbox/$1:/opt/agent-vm/outbox" \
-    --mount "$AGENT_VM_STATE_DIR/browsers/$1:/opt/agent-vm/browsers" \
-    ubuntu "$1" </dev/null 9>&- 8>&-
-}
-
 ensure_browsers() { # machine working_tree; never fails: every problem is a warning and the browser is skipped (spec K3)
   local rec="$AGENT_VM_STATE_DIR/browser-records/$1" dir="$AGENT_VM_STATE_DIR/browsers/$1" id src build gen link tmp
   local -a clone
@@ -536,6 +513,57 @@ ensure_golden() { # working_tree force(0|1); the caller holds the golden lock (f
   step "updating the golden machine"
   write_golden_meta "$ci" updating "$(golden_meta_field staging_hash || true)"
   update_golden "$ci" "$gen" "$hash" "$vm"
+}
+
+# A clone this launcher created, deleted by name only after the clone itself succeeded. The repo's own records
+# (machines/<m>, snapshots, ingested) and its staging/outbox stay; the browser copy and its records belonged to the
+# deleted machine, and the next creation writes the marker again (spec K5).
+discard_clone() { # machine
+  orb_q delete -f "$1" || die "could not delete the unfinished machine $1. recover: orb delete -f $1 (the next launch also retries)"
+  remove_vm_tree "$AGENT_VM_STATE_DIR/browsers/$1"
+  rm -f "$AGENT_VM_STATE_DIR/browser-records/$1".* "$AGENT_VM_STATE_DIR/creating/$1"
+}
+
+orb_version() { orb_q version 2>/dev/null | sed -n 's/^Version: //p'; } # for messages only
+
+# Mount-root assumption: an isolated machine sees only the mounted subtree, so the guest can
+# change entries inside staging/<m> but cannot replace staging/<m> itself (spec K2).
+# A clone starts with the golden's mounts; it is started only after its mounts are swapped and every setting
+# checked (spec K4). creating/<m> marks a clone that is not yet started: any launch that finds it, including after
+# a crash or kill, deletes the machine and clones again (spec K5).
+ensure_machine() { # machine repo_root working_tree; the caller holds the repo lock (fd 9)
+  local st=$AGENT_VM_STATE_DIR sentinel="$AGENT_VM_STATE_DIR/creating/$1" mounts vm
+  vm=$(orb_machine_state "$1")
+  if [[ -n "$vm" ]]; then
+    if [[ ! -e "$sentinel" ]]; then return 0; fi
+    step "removing $1, whose creation did not finish"
+    discard_clone "$1"
+  elif [[ -e "$sentinel" ]]; then
+    # An earlier creation stopped with no machine left (its clone failed, or discard_clone died after the delete):
+    # clear the browser copy it may have left, so the new clone does not mount it.
+    remove_vm_tree "$st/browsers/$1"
+    rm -f "$st/browser-records/$1".*
+  fi
+  check_mount_paths "$2" "$st/staging/$1" "$st/outbox/$1" "$st/browsers/$1"
+  mounts=$(vm_mounts "$1" "$2")
+  mkdir -p "$st/staging/$1" "$st/outbox/$1" "$st/browsers/$1" "$st/browser-records" "$st/creating"
+  acquire_golden_lock 900 || die "waited 900s for another session building the golden machine. Stop that agent-vm, then retry"
+  ensure_golden "$3" 0
+  : >"$sentinel"
+  # Same marker as the create path wrote: ensure_browsers publishes only into machines made with the browsers mount.
+  : >"$st/browser-records/$1.mount"
+  rm -f "$st/browser-records/$1.id"
+  step "creating isolated machine $1 from the golden machine"
+  # A failed clone is not deleted by name here (that could remove a machine that already existed), and the sentinel
+  # stays: if the clone left a machine behind, the next launch finds machine + sentinel and recreates it; if it left
+  # nothing, the next launch simply writes the sentinel again.
+  orb_q clone "$GOLDEN_MACHINE" "$1" || die "could not clone the golden machine into $1 (the next launch retries)"
+  orb_q config set "machine.$1.mounts" "$mounts" || { discard_clone "$1"; die "could not set the mounts of $1"; }
+  verify_machine_config "$1" "$mounts" \
+    || { discard_clone "$1"; die "refusing to start $1: its OrbStack settings are not the expected ones (see above). OrbStack $(orb_version) may have changed how clones keep settings. $FAIL_CLOSED_HINT"; }
+  release_golden_lock
+  orb_q start "$1" || { discard_clone "$1"; die "could not start $1"; }
+  rm -f "$sentinel"
 }
 
 maybe_bootstrap() { # machine generation staging_hash
@@ -1251,7 +1279,7 @@ main() {
 }
 
 forget_machine() { # machine: host-side state for one machine (host-authored env files are kept)
-  rm -rf "$AGENT_VM_STATE_DIR/staging/$1" "$AGENT_VM_STATE_DIR/outbox/$1" \
+  rm -rf "$AGENT_VM_STATE_DIR/staging/$1" "$AGENT_VM_STATE_DIR/outbox/$1" "$AGENT_VM_STATE_DIR/creating/$1" \
     "$AGENT_VM_STATE_DIR/snapshots/$1" "$AGENT_VM_STATE_DIR/ingested/$1" \
     "$(meta_path "$1")" "$AGENT_VM_STATE_DIR/machines/$1.lock"
   rm -f "$AGENT_VM_STATE_DIR/browser-records/$1".* 2>/dev/null || true
