@@ -129,6 +129,11 @@ filter_codex_config() { # codex config path: filter_vm_config appends the target
   here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
   chezmoi execute-template --with-stdin --file "$here/vm-codex-config.tmpl" <"$1"
 }
+# The golden machine is the source every repo machine is cloned from, and it mounts an empty browsers dir so this
+# returns the same list there as on a machine with the browser mount: entries dropped on the golden would not come
+# back on the clones (update-claude-json does not run again there). Keep the decision a pure function of the mount,
+# and keep BROWSERS_ROOT's default equal to the browsers destination in the launcher's vm_mounts (both are pinned
+# by tests in tests/agent-vm/).
 claude_keep() { # the Claude allowlist for this machine: without the browser mount the browser servers are dropped
   local name keep=""
   for name in $VM_CLAUDE_MCP_KEEP; do
@@ -263,5 +268,7 @@ filter_vm_configs
 verify_vm_config
 report_browser_state
 
+# agent-vm/golden-seal.sh removes this file by the same path so that every clone bootstraps once; keep them in sync
+# (tests/agent-vm/run-bootstrap.sh test_seal_leaves_no_applied_hash_so_every_clone_bootstraps catches a mismatch).
 mkdir -p "$HOME/.local/state/agent-vm"
 printf '%s\n' "$hash" >"$HOME/.local/state/agent-vm/applied-hash"

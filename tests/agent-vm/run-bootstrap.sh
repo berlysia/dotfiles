@@ -299,6 +299,84 @@ place_generated_configs() { # simulate what apply leaves behind (the settings fi
   cp "$TEST_DIR/fixtures/claude.json" "$HOME/.claude.json"; chmod 600 "$HOME/.claude.json"
   cp "$TEST_DIR/fixtures/codex-config.toml" "$HOME/.codex/config.toml"; chmod 600 "$HOME/.codex/config.toml"
 }
+SEAL="$REPO_ROOT/agent-vm/golden-seal.sh"
+setup_seal_env() {
+  setup_vm_env
+  export AGENT_VM_MACHINE_ID_FILE="$TMP_ROOT/machine-id" AGENT_VM_RANDOM_SEED_FILE="$TMP_ROOT/random-seed"
+  printf 'abc\n' >"$AGENT_VM_MACHINE_ID_FILE"; printf 'seed' >"$AGENT_VM_RANDOM_SEED_FILE"
+  printf '{"userID":"u1","machineID":"m1","mcpServers":{}}\n' >"$HOME/.claude.json"
+}
+test_seal_leaves_no_applied_hash_so_every_clone_bootstraps() {
+  setup_seal_env
+  bash "$BOOTSTRAP" 1 v1:sealme "$SRC" >/dev/null 2>&1
+  # Path-agnostic on purpose: if bootstrap ever records the hash elsewhere, this fails instead of passing silently.
+  assert_contains "$(grep -rl 'v1:sealme' "$HOME/.local/state" 2>/dev/null || true)" "/" "precondition: bootstrap recorded the hash"
+  bash "$SEAL" >/dev/null 2>&1
+  assert_eq "" "$(grep -rl 'v1:sealme' "$HOME/.local/state" 2>/dev/null || true)" "no record of the applied hash after seal"
+  # What the clone then does: the launcher finds no matching hash and runs bootstrap, which records it again.
+  : >"$STUB_LOG"
+  bash "$BOOTSTRAP" 1 v1:sealme "$SRC" >/dev/null 2>&1
+  assert_contains "$(cat "$STUB_LOG")" "chezmoi init --force --no-tty" "the next bootstrap applies again"
+  assert_contains "$(grep -rl 'v1:sealme' "$HOME/.local/state" 2>/dev/null || true)" "/" "and records the hash again"
+}
+test_golden_with_an_empty_browsers_mount_keeps_browser_mcp_through_seal() {
+  # The golden mounts an empty browsers dir so that claude_keep keeps these entries; clones cannot regain them,
+  # because update-claude-json does not run again there (spec K6). This pins that contract.
+  setup_seal_env; place_generated_configs
+  jq 'del(.oauthAccount)' "$HOME/.claude.json" >"$TMP_ROOT/c.json"; mv "$TMP_ROOT/c.json" "$HOME/.claude.json" # a golden never logs in
+  mkdir -p "$TMP_ROOT/golden-browsers"; export AGENT_VM_BROWSERS_ROOT="$TMP_ROOT/golden-browsers"
+  bash "$BOOTSTRAP" 1 v1:abc "$SRC" >/dev/null 2>&1
+  bash "$SEAL" >/dev/null 2>&1
+  assert_eq '["chrome-devtools","context7","excalidraw","playwright","readability"]' "$(jq -c '.mcpServers | keys' "$HOME/.claude.json")" \
+    "an empty browsers mount keeps the browser MCP servers, also after the seal"
+}
+test_seal_empties_machine_id_and_drops_random_seed() {
+  setup_seal_env
+  bash "$SEAL" >/dev/null 2>&1
+  assert_contains "$(cat "$STUB_LOG")" "sudo truncate -s 0 $AGENT_VM_MACHINE_ID_FILE" "machine-id emptied"
+  assert_contains "$(cat "$STUB_LOG")" "sudo rm -f $AGENT_VM_RANDOM_SEED_FILE" "random seed removed"
+}
+test_seal_refuses_a_golden_with_credentials() {
+  local f
+  for f in .claude/.credentials.json .codex/auth.json .config/gh/hosts.yml .git-credentials .netrc .ssh/id_ed25519 .zsh_history; do
+    setup_seal_env
+    mkdir -p "$(dirname "$HOME/$f")"; printf 'x\n' >"$HOME/$f"
+    local status=0 err; err=$(bash "$SEAL" 2>&1) || status=$?
+    assert_eq 1 "$status" "refused with $f"
+    assert_contains "$err" "$f" "names $f"
+    assert_contains "$err" "agent-vm golden rm" "recovery for $f"
+    rm -rf "${TMP_ROOT:?}/home"
+  done
+}
+test_seal_refuses_a_dangling_credential_link() {
+  setup_seal_env
+  mkdir -p "$HOME/.codex"; ln -s /nonexistent "$HOME/.codex/auth.json"
+  assert_status 1 "dangling link refused" -- bash "$SEAL"
+}
+test_seal_refuses_a_logged_in_claude_json() {
+  setup_seal_env
+  printf '{"oauthAccount":{"emailAddress":"x"}}\n' >"$HOME/.claude.json"
+  assert_status 1 "oauthAccount refused" -- bash "$SEAL"
+}
+test_seal_refuses_an_npm_token() {
+  setup_seal_env
+  printf '//registry.npmjs.org/:_authToken=x\n' >"$HOME/.npmrc"
+  assert_status 1 "npm token refused" -- bash "$SEAL"
+}
+test_seal_fails_when_the_applied_hash_cannot_be_removed() {
+  setup_seal_env
+  mkdir -p "$HOME/.local/state/agent-vm/applied-hash/x" # a directory: rm -f cannot remove it
+  assert_status 1 "seal fails instead of leaving the hash" -- bash "$SEAL"
+}
+test_seal_refuses_outside_an_agent_vm_machine() {
+  setup_seal_env; rm "$AGENT_VM_MARKER"
+  assert_status 1 "no marker -> refuse" -- bash "$SEAL"
+}
+test_seal_drops_claude_identifiers_and_keeps_the_rest() {
+  setup_seal_env
+  bash "$SEAL" >/dev/null 2>&1
+  assert_eq "null null {}" "$(jq -r '"\(.userID) \(.machineID) \(.mcpServers)"' "$HOME/.claude.json")" "identifiers dropped, settings kept"
+}
 test_bootstrap_filters_after_apply_and_before_recording() {
   setup_vm_env; place_generated_configs
   bash "$BOOTSTRAP" 1 v1:abc "$SRC" >/dev/null 2>&1
