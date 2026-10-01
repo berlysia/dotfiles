@@ -24,6 +24,7 @@ Usage:
   agent-vm claude|codex [args...]   Launch the tool in this repo's machine
   agent-vm shell                    Open a shell in this repo's machine
   agent-vm prewarm                  Create and provision the machine now
+  agent-vm golden refresh|rm        Update the golden machine now / delete it
   agent-vm env edit                 Edit this repo's host-only 1Password env file
   agent-vm env adopt <machine>      Take over the env file of a moved repo
   agent-vm env gh [--repo R] [--vault V]  Register or renew this repo's GH_TOKEN (fine-grained PAT)
@@ -1254,12 +1255,38 @@ cmd_prewarm() {
   step "machine $MACHINE is ready"
 }
 
+cmd_golden() { # refresh|rm; both hold the golden lock (fd 7), never a repo lock (spec K3)
+  local wt answer
+  case "${1:-}" in
+    refresh)
+      check_health
+      wt=$(resolve_working_tree)
+      acquire_golden_lock 900 || die "waited 900s for another session building the golden machine. Stop that agent-vm, then retry"
+      ensure_golden "$wt" 1
+      release_golden_lock
+      step "golden machine $GOLDEN_MACHINE is ready"
+      ;;
+    rm)
+      check_health
+      # Asks first like cmd_rm / cmd_gc: deleting costs a rebuild of several minutes on the next new machine.
+      printf 'delete the golden machine %s? the next new machine rebuilds it (several minutes) [y/N] ' "$GOLDEN_MACHINE"
+      read -r answer
+      if [[ "$answer" != y && "$answer" != Y ]]; then return 0; fi
+      acquire_golden_lock 900 || die "waited 900s for another session building the golden machine. Stop that agent-vm, then retry"
+      discard_golden
+      release_golden_lock
+      ;;
+    *) show_help >&2; return 1 ;;
+  esac
+}
+
 main() {
   case "${1:-}" in
     -h | --help | help | "") show_help ;;
     claude | codex) run_tool "$@" ;;
     shell) run_tool bash ;;
     prewarm) cmd_prewarm ;;
+    golden) shift; cmd_golden "$@" ;;
     list) cmd_list ;;
     gc) cmd_gc ;;
     rm) shift; cmd_rm "$@" ;;

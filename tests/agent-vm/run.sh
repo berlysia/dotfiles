@@ -1803,6 +1803,43 @@ test_staging_hash_ignores_location_and_mtime() {
   out=$(build_staging agent-s-000004 "$TMP_ROOT/df-copy"); h2=${out#* }
   assert_eq "$h1" "$h2" "same content, same hash"
 }
+test_golden_rm_removes_record_machine_and_host_state_but_keeps_the_lock() {
+  local wt; wt=$(make_golden_fixture); sealed_golden_fixture "$wt" >/dev/null
+  acquire_golden_lock 1; release_golden_lock; : >"$STUB_LOG"
+  printf 'y\n' | STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" cmd_golden rm >/dev/null 2>&1
+  assert_contains "$(cat "$STUB_LOG")" "orb delete -f $GOLDEN_MACHINE" "golden deleted"
+  assert_status 1 "record removed" -- test -e "$AGENT_VM_STATE_DIR/golden/meta"
+  assert_status 1 "staging removed" -- test -e "$AGENT_VM_STATE_DIR/staging/$GOLDEN_MACHINE"
+  assert_status 1 "outbox removed" -- test -e "$AGENT_VM_STATE_DIR/outbox/$GOLDEN_MACHINE"
+  assert_status 1 "browsers removed" -- test -e "$AGENT_VM_STATE_DIR/browsers/$GOLDEN_MACHINE"
+  assert_status 0 "lock file kept" -- test -f "$AGENT_VM_STATE_DIR/golden/lock"
+}
+test_golden_rm_asks_first() {
+  local wt; wt=$(make_golden_fixture); sealed_golden_fixture "$wt" >/dev/null; : >"$STUB_LOG"
+  printf 'n\n' | STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" cmd_golden rm >/dev/null 2>&1
+  assert_not_contains "$(cat "$STUB_LOG")" "orb delete" "nothing deleted without a yes"
+}
+test_golden_refresh_forces_an_update() {
+  local wt show; wt=$(make_golden_fixture); show=$(sealed_golden_fixture "$wt"); : >"$STUB_LOG"
+  STUB_CHEZMOI_STDOUT="$wt/home" STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" cmd_golden refresh 2>/dev/null
+  assert_contains "$(cat "$STUB_LOG")" "golden-seal.sh" "resealed although unchanged"
+}
+test_main_dispatches_golden() {
+  # shellcheck disable=SC2329 # replaces the real function; main dispatches to it
+
+  cmd_golden() { echo "golden $*"; }
+  assert_eq "golden refresh" "$(main golden refresh)" "golden refresh"
+  assert_eq "golden rm" "$(main golden rm)" "golden rm"
+  assert_contains "$(main --help)" "agent-vm golden refresh|rm" "help lists golden"
+}
+test_golden_name_is_never_a_repo_machine_name() {
+  mkdir -p "$TMP_ROOT/vm"
+  if [[ "$(derive_machine_name "$TMP_ROOT/vm")" != "$GOLDEN_MACHINE" ]]; then record "PASS repo 'vm' does not map to the golden"; else record "FAIL repo 'vm' maps to the golden"; fi
+  case "$GOLDEN_MACHINE" in
+    agent-*-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) record "FAIL golden name has the repo machine shape" ;;
+    *) record "PASS golden name is outside the repo machine shape" ;;
+  esac
+}
 
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do
   (
