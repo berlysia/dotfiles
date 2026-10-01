@@ -37,6 +37,7 @@ agent が `rm $W/node_modules`（自分で張った symlink の削除）を `den
 - **対象外の削除経路**: インタプリタ経由（`python -c 'shutil.rmtree(...)'`）、`git clean`、`rsync --delete`、`cd node_modules && rm -rf *`、パイプ経由（`find node_modules | xargs rm`）、glob 綴りは、旧実装と同じく機械的には deny しない。インタプリタ・`git clean`・`rsync` は ask になり、K4 の evaluator と K1 のガイダンスがベストエフォートで補う。
 - **再検討の条件**: 2 例目の綴りによる回避が観測されたら、解決済みパスで判定する効果モデルを再検討する。
 - **反映**: `chezmoi apply` の後から効く。`deny-node-modules` は run-guard 経由になり、bun 不在やタイムアウトでも deny になる。
+- **追記（F2、2026-10-02）**: read-only 先頭語の除外は `lib/read-only-command.ts` の `isExemptReadOnlyCommand` に移り、auto-approve の危険コマンド判定と共有された。判定は parser の断片ごとではなく Bash コマンド全文に対して 1 回だけ行い、引用符を解釈する走査で `$` は許可形だけを通し、先頭語は生の綴りで完全一致を求める。これに伴い deny-node-modules では次が変わった: 引用符内の区切り文字を含む read-only コマンド（`grep "a|rm" node_modules/x`）は deny されなくなった。`find` / `less` / `more` / `ll` / `la` 先頭、引用符やバックスラッシュ付きの先頭語（`\grep`）、複合コマンド中の read-only 断片（`ls node_modules; grep rm node_modules/x`）で削除語を含むものは deny になった。後者で、`find node_modules -ex$'e'c rm … $'\073'` のように ANSI-C クォートで `-exec` と終端を隠す回避（実測で通ることを確認）が閉じた。断片ごとの判定では、parser のメタコマンド抽出（`env PATH=x grep` を `grep` 断片に書き換える）や同じ行での先頭語の再定義（`grep() {…}; grep …`）で、hook が見る先頭語とシェルが実行するものが食い違ったため、全文判定にした。
 - **観測された隣接問題**: 実装中に、scratchpad や `mktemp -d` の出力先が guard 間で矛盾して使えないこと、worktree で Document Workflow を使うときに guard と `workflow-cli status` のパス解決が食い違うこと、heredoc の本文が誤検知されることを観測した。別の Issue として扱う。
 
 ## References
