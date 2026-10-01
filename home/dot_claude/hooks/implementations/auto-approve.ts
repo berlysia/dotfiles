@@ -17,6 +17,7 @@ import {
 import {
   createAllowResponse,
   createAskResponse,
+  createBoundaryDenyResponse,
   createDenyResponse,
 } from "../lib/context-helpers.ts";
 import { analyzePatternMatches } from "../lib/decision-maker.ts";
@@ -77,7 +78,7 @@ const hook = defineHook({
         );
 
         if (decision.decision === "deny") {
-          return context.json(createDenyResponse(decision.reason));
+          return context.json(createBoundaryDenyResponse(decision.reason));
         } else if (decision.decision === "ask") {
           return context.json(createAskResponse(decision.reason));
         } else if (decision.decision === "allow") {
@@ -128,7 +129,7 @@ const hook = defineHook({
             );
 
             if (decision.decision === "deny") {
-              return context.json(createDenyResponse(decision.reason));
+              return context.json(createBoundaryDenyResponse(decision.reason));
             } else if (decision.decision === "allow") {
               return context.json(createAllowResponse(decision.reason));
             }
@@ -167,7 +168,7 @@ const hook = defineHook({
         );
 
         if (decision.decision === "deny") {
-          return context.json(createDenyResponse(decision.reason));
+          return context.json(createBoundaryDenyResponse(decision.reason));
         } else if (decision.decision === "ask") {
           return context.json(createAskResponse(decision.reason));
         } else if (decision.decision === "allow") {

@@ -3,6 +3,7 @@
 import { deepStrictEqual, ok } from "node:assert";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import blockTsxHookImpl from "../../implementations/block-tsx.ts";
+import { BOUNDARY_DENY_GUIDANCE } from "../../lib/context-helpers.ts";
 import {
   ConsoleCapture,
   createPreToolUseContext,
@@ -47,6 +48,7 @@ describe("block-tsx.ts hook behavior", () => {
       const reason =
         context.jsonCalls[0].hookSpecificOutput?.permissionDecisionReason || "";
       ok(reason.includes("tsx") || reason.includes("TypeScript"));
+      ok(!reason.includes(BOUNDARY_DENY_GUIDANCE));
     });
 
     it("should block npx tsx command", async () => {

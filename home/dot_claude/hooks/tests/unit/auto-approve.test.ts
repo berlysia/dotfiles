@@ -4,6 +4,7 @@ import { deepStrictEqual, ok } from "node:assert";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import type { ToolSchema } from "cc-hooks-ts";
 import autoApproveHook from "../../implementations/auto-approve.ts";
+import { BOUNDARY_DENY_GUIDANCE } from "../../lib/context-helpers.ts";
 import {
   ConsoleCapture,
   createFileSystemMock,
@@ -1192,6 +1193,45 @@ describe("auto-approve.ts hook behavior", () => {
       await invokeRun(autoApproveHook, context);
 
       context.assertAllow();
+    });
+  });
+
+  describe("boundary deny guidance", () => {
+    const reasonOf = (context: { jsonCalls: any[] }): string =>
+      context.jsonCalls[0].hookSpecificOutput?.permissionDecisionReason || "";
+
+    it("appends the guidance to a Bash deny", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify([]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify(["Bash(rm *)"]));
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", {
+        command: "rm dangerous.txt",
+      });
+      await invokeRun(autoApproveHook, context);
+      context.assertDeny();
+      ok(reasonOf(context).includes(BOUNDARY_DENY_GUIDANCE));
+    });
+
+    it("appends the guidance to a smart-pass tool deny", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify([]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify(["Glob(**)"]));
+      const context = createPreToolUseContextFor(autoApproveHook, "Glob", {
+        pattern: "src/**/*.ts",
+      });
+      await invokeRun(autoApproveHook, context);
+      context.assertDeny();
+      ok(reasonOf(context).includes(BOUNDARY_DENY_GUIDANCE));
+    });
+
+    it("appends the guidance to an other-tool deny", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify([]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify(["Write(**)"]));
+      const context = createPreToolUseContextFor(autoApproveHook, "Write", {
+        file_path: "/path/to/.env",
+        content: "SECRET=value",
+      });
+      await invokeRun(autoApproveHook, context);
+      context.assertDeny();
+      ok(reasonOf(context).includes(BOUNDARY_DENY_GUIDANCE));
     });
   });
 });
