@@ -135,7 +135,7 @@ agent-vm claude|codex|shell（既存の run_tool）
   既知の限界: 状態ファイルは item の id を持たないので、警告は状態ファイルの `expires` が env の今の item のものかを確かめられない。vault も同じで、状態ファイルの `vault` が env の行の vault と食い違うことがある（次の `env gh` では K10 の検出で止まる）。食い違うのは、主に K13 の手順 9〜11 の間で止まった場合と、env の行や状態ファイルを手で書き換えた場合で、表示された内容で状態ファイルを手で書けば解消する。id を状態ファイルに持たせると「2 か所が item を持つ」問題（Alternative Approaches）が戻るので、持たせない。
   - 参照: `home/dot_local/bin/executable_agent-vm:83-85`（perl の利用）
   - 参照: `home/dot_local/bin/executable_agent-vm:737-744`（`notice_orphan_env` は常に 0 を返す）
-  - 参照: `~/.claude/rules/code-quality.md`「Recoverable State Must Announce Itself」
+  - 参照: `home/dot_claude/rules/code-quality.md`「Recoverable State Must Announce Itself」
 - **K12: 外部コマンドの呼び出し規約** — launcher の既存の規約に合わせる。stdin を使わない外部コマンド（`op read`、`git`、`open`）には `</dev/null` を付け、新しく呼ぶ外部コマンドはすべて fd 9（ロック）を閉じる（`9>&-`）。stdin を使うもの（`curl -H @-`、`jq`、`op item create -`）にはパイプで渡す。`x=$(f)` の中では errexit が効かないので、各ステップに `|| die` を付け、`local x=$(f)` は使わない。
   - 参照: `home/dot_local/bin/executable_agent-vm:5-8`（errexit の規約）
   - 参照: `home/dot_local/bin/executable_agent-vm:517`（`</dev/null 9>&-` の例）

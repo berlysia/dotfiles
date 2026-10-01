@@ -89,7 +89,7 @@ unset GH_TOKEN
 - `credential` が違う場合: spec K5 と本 plan の field 名を直してから進む。
 - id での参照が解決できない場合: 中止して spec を改訂する。
 - auto-merge が有効にできた場合: spec K2 を改訂する（権限を減らすか、残るリスクとして書くか）。spec の hash が変わるので、本 plan も承認し直す。
-- 期限ヘッダの有無と、同名 PAT の拒否の有無: 結果を `.tmp/sessions/0803a013/research.md` に追記するだけで進む（spec.md は変えない。変えると hash が変わり承認が外れる）。T6 で research.md を docs/plans へ複写するときに一緒に残る。
+- 期限ヘッダの有無と、同名 PAT の拒否の有無: 結果を同じディレクトリの `research.md` に追記するだけで進む（spec.md は変えない。変えると hash が変わり承認が外れる）。T6 で research.md を docs/plans へ複写するときに一緒に残る。
 
 ### T1: 純粋な補助関数（repo 名、vault、日時、URL）
 

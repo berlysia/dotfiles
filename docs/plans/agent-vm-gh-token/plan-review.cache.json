@@ -1,0 +1,12 @@
+{
+  "spec.md": {
+    "planHash": "84b685f35fb7f755f9ee64fcc3b343b16190b4348e8187bc5fa7193cfcbfb83c",
+    "recommendedAt": "2026-10-01T14:51:22.206Z",
+    "fullTextEmittedForRound": 7
+  },
+  "plan-1.md": {
+    "planHash": "830a0c238f108aaf485a6bfe14d6a704494c59a81a609771ab9b4fc5666a85f6",
+    "recommendedAt": "2026-10-01T14:51:23.103Z",
+    "fullTextEmittedForRound": 5
+  }
+}
