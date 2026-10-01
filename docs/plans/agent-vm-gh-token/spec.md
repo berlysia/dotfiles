@@ -129,13 +129,14 @@ agent-vm claude|codex|shell（既存の run_tool）
   - repo 別 env ファイルに自動形式（K8）の GH_TOKEN 行があり、`expires` が「今日 + 7 日」以前: `GH_TOKEN for this repo expires on <date>; renew with: agent-vm env gh`（過ぎていれば `expired on`）。
   - 自動形式の行があるのに、状態ファイルが無いか壊れている（K9）: 期限が分からないことと、`agent-vm env gh` で登録し直すよう案内する。`env gh` を通した運用では自動形式の行と状態ファイルが一緒に書かれるので、片方だけがあるのは、状態ファイルを手で消したか、`env gh` 以前の env ファイルを adopt した場合に限られる。
   - 全体共通の env.1password に GH_TOKEN 行がある: 全 VM に同じ token が入っていることを警告する（ADR K7）。
-  
+
   GH_TOKEN 行が無いとき、手で書いた形の行のとき、期限まで 7 日より長いときは何も出さない。どの場合も 0 を返し、起動は止めない（`notice_orphan_env` と同じ）。期限の警告は害が見えるとき（期限が近いか過ぎたとき）だけ出す。
-  
+
   既知の限界: 状態ファイルは item の id を持たないので、警告は状態ファイルの `expires` が env の今の item のものかを確かめられない。vault も同じで、状態ファイルの `vault` が env の行の vault と食い違うことがある（次の `env gh` では K10 の検出で止まる）。食い違うのは、主に K13 の手順 9〜11 の間で止まった場合と、env の行や状態ファイルを手で書き換えた場合で、表示された内容で状態ファイルを手で書けば解消する。id を状態ファイルに持たせると「2 か所が item を持つ」問題（Alternative Approaches）が戻るので、持たせない。
   - 参照: `home/dot_local/bin/executable_agent-vm:83-85`（perl の利用）
   - 参照: `home/dot_local/bin/executable_agent-vm:737-744`（`notice_orphan_env` は常に 0 を返す）
   - 参照: `home/dot_claude/rules/code-quality.md`「Recoverable State Must Announce Itself」
+
 - **K12: 外部コマンドの呼び出し規約** — launcher の既存の規約に合わせる。stdin を使わない外部コマンド（`op read`、`git`、`open`）には `</dev/null` を付け、新しく呼ぶ外部コマンドはすべて fd 9（ロック）を閉じる（`9>&-`）。stdin を使うもの（`curl -H @-`、`jq`、`op item create -`）にはパイプで渡す。`x=$(f)` の中では errexit が効かないので、各ステップに `|| die` を付け、`local x=$(f)` は使わない。
   - 参照: `home/dot_local/bin/executable_agent-vm:5-8`（errexit の規約）
   - 参照: `home/dot_local/bin/executable_agent-vm:517`（`</dev/null 9>&-` の例）
@@ -161,7 +162,7 @@ agent-vm claude|codex|shell（既存の run_tool）
   - `agent-vm rm` は PAT も 1Password の item も状態ファイルも消さないこと。状態ファイルだけが残った場合は手で消してよいこと。
   - archive した item にも token が残ること。
   - public repo の選び忘れと、全 repo を対象にした token は検証で止められないこと。
-  
+
   spec と plan は `docs/plans/agent-vm-gh-token/` へ移す（`.tmp/sessions/` は 7 日で GC される）。
   - 参照: `docs/decisions/0018-agent-vm-orbstack.md:26,54,69,73-76`（ADR K7、却下理由、R21、Amended by の書き方）
 
@@ -200,30 +201,37 @@ agent-vm claude|codex|shell（既存の run_tool）
 ## Reviewer Outputs (Round 1)
 
 ### logic-validator
+
 - verdict: needs-work
 - 主指摘: 更新すると同名の PAT が新旧 2 つ並ぶ（K2/K8）。archive 失敗・create 失敗・Ctrl-C のときにどういう状態で終わるかが書かれていない。形式が一致するだけで archive すると無関係な item を巻き込む。K7 の警告関数が起動を止めうる。jq は新しい依存。ADR K7 に対しては「矛盾しない」ではなく「例外」と書くべき。
 
 ### scope-justification-reviewer
+
 - verdict: needs-work
 - 主指摘: K5（新しい item を作って古い item を archive する方式）は代替案（固定 title の item）との比較が無い。K2 の issues=write と actions=read を付ける根拠が無い。K4 は検証で得るものが小さいので、得るものを明記するべき。
 
 ### decision-quality-reviewer
+
 - verdict: pass（advisory）
 - 主指摘: 秘密の経路には厳格なのに token の権限は緩い。contents=write は SSH を通さない push 経路を作る。K5 は部品数に見合う比較が無い。
 
 ### greenfield-perspective-reviewer
+
 - verdict: pass
 - 主指摘: 期限は API 応答のヘッダから取れるかを実機で確かめる価値がある。参照を固定 title にする案を K5 で比較し、却下するなら理由を残す。
 
 ### architecture-boundary-analyzer
+
 - verdict: needs-work
-- 主指摘: VM が書き換えられる origin の値が、人が選ぶ repo の手掛かりになっていて、信頼境界を越える（R1 は成立しない。K13 は remote.*.url を監視していない）。stdin と fd 9 の扱いが規定されていない。侵害時に失効させる手順が無い。
+- 主指摘: VM が書き換えられる origin の値が、人が選ぶ repo の手掛かりになっていて、信頼境界を越える（R1 は成立しない。K13 は remote.\*.url を監視していない）。stdin と fd 9 の扱いが規定されていない。侵害時に失効させる手順が無い。
 
 ### security-vulnerability-analyzer
+
 - verdict: needs-work
 - 主指摘: origin を信頼の根にしている（P1）。host 側に repo を記録して突き合わせるべき。contents=write と 90 日の既定は K7 の趣旨に対して広い。PAT 名に日付が無いので、手で削除するときに新旧を見分けられない。token は全体を正規表現で検証し、`op` の出力を表示しない。
 
 ### data-contract-evolution-evaluator
+
 - verdict: needs-work
 - 主指摘: op inject はコメントの中の op:// も解決するので、archive した item への参照が残っていると起動が止まる。手で書いた GH_TOKEN 行と自動で書く行を見分ける規則が無い（重複行、export、後勝ち）。期限コメントと GH_TOKEN 行の対応が保証されない。空白を含む vault 名と末尾改行の扱い。
 
@@ -233,30 +241,37 @@ agent-vm claude|codex|shell（既存の run_tool）
 ## Reviewer Outputs (Round 2)
 
 ### logic-validator
+
 - verdict: needs-work
 - 主指摘: 状態ファイルを env より先に書くので、手順 8 で失敗すると expires が先に進み、期限の警告が出なくなる。再実行で prev_item と pat_name が上書きされ、古い item と PAT が追跡から外れる。同じ日に 2 回実行すると PAT 名が衝突する。新しい参照が解決できるかを archive の前に確かめていない。
 
 ### scope-justification-reviewer
+
 - verdict: needs-work（軽微）
 - 主指摘: 状態ファイルの各項目に存在理由を書くべき。archive を自動で行う根拠と、archive をしない最小案との比較が無い。
 
 ### decision-quality-reviewer
+
 - verdict: pass（advisory）
 - 主指摘: 支配軸の取り違えは解消した。archive の自動化と prev_item による再開は、得るものに対して重いので、削る案を検討するべき。R5 のゲートに通らなかったときの退避先が無い。
 
 ### greenfield-perspective-reviewer
+
 - verdict: pass
 - 主指摘: 白紙設計で本当に必要なのは repo と expires だけ。archive は失敗してもよい作業として縮める余地がある。
 
 ### architecture-boundary-analyzer
+
 - verdict: needs-work
 - 主指摘: 状態ファイルが orphan の検出・adopt・rm・gc とつながっていない。prev_item の上書きで item が追跡から外れる。全体共通の env.1password にある GH_TOKEN を検査していない。検証では過大な権限範囲（全 repo の token）を検出できない。
 
 ### security-vulnerability-analyzer
+
 - verdict: needs-work
 - 主指摘: 初回の y/N 確認では、VM の書き換えた値が信頼の根になる（入力による突き合わせにするべき）。origin を表示する前に検査し、制御文字を出さない。状態ファイルの値を読むときに検査する。--repo での付け替えの案内に origin の値を埋め込まない。既定の期限は 30 日を推奨する。
 
 ### data-contract-evolution-evaluator
+
 - verdict: needs-work
 - 主指摘: 手順 8 が続けて失敗すると、復旧できない状態になる。状態ファイルの書式の契約（解析方法、重複キー、値の検査、バージョン）が無い。vault の変更を扱えない。CRLF の扱い。
 
@@ -266,30 +281,37 @@ agent-vm claude|codex|shell（既存の run_tool）
 ## Reviewer Outputs (Round 3)
 
 ### logic-validator
+
 - verdict: pass
 - 主指摘: 手順 10 で失敗すると片付けの表示が出ず、古い item の id がそこでしか分からないのに失われる。片付けは 1 回しか表示されない。`--days` を前より短くすると、手順 10 で失敗したときに警告が早めに出る保証が無くなる。adopt で状態ファイルを移す順序。
 
 ### scope-justification-reviewer
+
 - verdict: pass
 - 主指摘: K15 の失効手順に、状態ファイルが無いときの手掛かり（item の title）を足す。R4 に、許容する理由を書く。
 
 ### decision-quality-reviewer
+
 - verdict: pass
 - 主指摘: 片付けを忘れると古い token が期限まで有効のまま残るので、そのリスクを R と docs に書く。K13 は畳めるところを畳んでよい。
 
 ### greenfield-perspective-reviewer
+
 - verdict: pass
 - 主指摘: 片付けの表示を見逃したときの探し方（`agent-vm-gh ` で始まる title、PAT の一覧）を docs に書く。
 
 ### architecture-boundary-analyzer
+
 - verdict: needs-work（軽微）
 - 主指摘: adopt の後に GitHub 上の repo の名前が変わっていれば `--repo` で付け替えることを書く。adopt で状態ファイルが無いときの扱いを書く。全体共通の env.1password に後から GH_TOKEN が足されても、起動時には分からない。GH_TOKEN は agent の全子プロセスから読めることを docs に書く。
 
 ### security-vulnerability-analyzer
+
 - verdict: needs-work（軽微）
 - 主指摘: origin の URL の解析規則（受け付ける形、`.git` と末尾の `/` の除去、host は github.com のみ）が無い。自動形式の行があって状態ファイルが無いと、期限の警告が永久に出ない。片付けを忘れたときのリスクを書く。archive のコマンドを表示するときは、title を確かめるよう案内する。`pull_requests=write` で auto-merge を有効にできるかを確かめる。
 
 ### data-contract-evolution-evaluator
+
 - verdict: needs-work（軽微）
 - 主指摘: 手順 10 で失敗した後に再実行すると、間の PAT が片付けの表示から落ちる。状態ファイルが現在の env の item のものかどうかを、起動時の警告が確かめていない。adopt で、移動先の状態ファイルを env を移す前に検査すること。CR の検査を形式の検査より前に置くこと。コメント行に残った古い参照。
 
@@ -299,30 +321,37 @@ agent-vm claude|codex|shell（既存の run_tool）
 ## Reviewer Outputs (Round 4)
 
 ### logic-validator
+
 - verdict: pass
 - 主指摘: 手順番号と K13、K11 と K9 は整合している。軽微な点として、警告は状態ファイルの expires が今の item のものかを確かめない（既知の限界として書く）。手順 7 で op item create 自体が失敗した場合の記述が無い。（反映済み）
 
 ### architecture-boundary-analyzer
+
 - verdict: pass
 - 主指摘: repo の名前を変えた後の復旧は、付け替えでも origin との一致を求めるので、先に host で origin を直すよう案内する。adopt で移動先に状態ファイルだけが残っているときの die メッセージ。K11 の「正常な運用では出ない」の文言。（反映済み）
 
 ### security-vulnerability-analyzer
+
 - verdict: pass
 - 主指摘: auto-merge の経路は他者の PR の承認と auto-merge の有効化として確かめる。記録した repo があって origin が解析できないときは die する。repo 名の比較で大文字と小文字を区別しない。（反映済み）
 
 ### data-contract-evolution-evaluator
+
 - verdict: pass
 - 主指摘: 状態ファイルと今の item の対応は見られない（既知の限界として書く）。手順 9 と 11 の間の中断でも書くべき内容が表示されるようにする。状態ファイルの 4 つの key を必須にする。adopt 前の machine 名の PAT の探し方。（反映済み）
 
 ### scope-justification-reviewer
+
 - verdict: pass (carried from Round 3)
 - 主指摘: Round 3 で pass、再実行なし
 
 ### decision-quality-reviewer
+
 - verdict: pass (carried from Round 3)
 - 主指摘: Round 3 で pass、再実行なし
 
 ### greenfield-perspective-reviewer
+
 - verdict: pass (carried from Round 3)
 - 主指摘: Round 3 で pass、再実行なし
 
@@ -332,30 +361,37 @@ agent-vm claude|codex|shell（既存の run_tool）
 ## Reviewer Outputs (Round 5)
 
 ### logic-validator
+
 - verdict: pass
 - 主指摘: R5 に、Private と Formal の両方で op item create と参照の解決を確かめる項目が要る。--repo で別の repo に付け替えたときに vault を引き継ぐかどうかが不明。壊れた状態ファイルの die メッセージは vault の選択もやり直しになることを書く。vault を入力する元を書く。docs に vault の選択を書く。
 
 ### scope-justification-reviewer
+
 - verdict: needs-work（軽微）
 - 主指摘: --days の廃止と --vault の付け替えは妥当。日数は 1 か所で計算する。初回の選択で tty が開けないときは die する。vault を付け替えても、更新が終わるまで警告は古い expires のままになる。
 
 ### decision-quality-reviewer
+
 - verdict: pass
 - 主指摘: K10 の反映は支配軸と整合している。付け替えでは、新しい expires を新しい vault の日数で計算することを明記する。
 
 ### greenfield-perspective-reviewer
+
 - verdict: pass
 - 主指摘: 手順 9〜11 の間で止まると、状態ファイルの vault が古いまま残る。これを既知の限界に足す。
 
 ### architecture-boundary-analyzer
+
 - verdict: pass
 - 主指摘: vault が実在して item を作れるかが、PAT を作った後（手順 7）まで分からない。事前に確かめる。repo と vault の入力元を書く。
 
 ### security-vulnerability-analyzer
+
 - verdict: pass
 - 主指摘: 各 vault を誰が読めるかの前提を書く。失敗時の案内に新しい item の vault を含める。入力元と大文字小文字の区別を書く。付け替えの表示に新しい期限を含める。
 
 ### data-contract-evolution-evaluator
+
 - verdict: needs-work（軽微）
 - 主指摘: --repo で付け替えると、古い repo の vault を黙って引き継ぐ。手順 11 で失敗した後に再実行すると、vault の付け替えが黙って元に戻る。env の行の vault は値の範囲を検査しないことを書く。付け替えで表示する古い vault は env の行の値にそろえる。
 
@@ -365,30 +401,37 @@ agent-vm claude|codex|shell（既存の run_tool）
 ## Reviewer Outputs (Round 6)
 
 ### logic-validator
+
 - verdict: pass
 - 主指摘: 手順 2b が repo を付け替えたときにも状態ファイルの vault を使うように読める。食い違いの検出を付け替えのときにも当てるかが決まっていない。「付け替え」の定義を K4 と K10 でそろえる。（反映済み）
 
 ### scope-justification-reviewer
+
 - verdict: pass
 - 主指摘: --repo だけで付け替えた場合の分岐の順序を plan のテスト項目にする。R8 と K10 の末尾は重複している。
 
 ### data-contract-evolution-evaluator
+
 - verdict: pass
 - 主指摘: 食い違いの検出は、状態ファイルの repo と同じ repo のときだけにする。K11 の「手順 9〜11 の間で止まった場合だけ」は言い過ぎで、手で編集した場合も起きる。（反映済み）
 
 ### decision-quality-reviewer
+
 - verdict: pass (carried from Round 5)
 - 主指摘: Round 5 で pass、再実行なし
 
 ### greenfield-perspective-reviewer
+
 - verdict: pass (carried from Round 5)
 - 主指摘: Round 5 で pass、再実行なし
 
 ### architecture-boundary-analyzer
+
 - verdict: pass (carried from Round 5)
 - 主指摘: Round 5 で pass、再実行なし
 
 ### security-vulnerability-analyzer
+
 - verdict: pass (carried from Round 5)
 - 主指摘: Round 5 で pass、再実行なし
 
@@ -400,30 +443,37 @@ agent-vm claude|codex|shell（既存の run_tool）
 T0 の結果（個人用 vault の名前は Personal）を受けて、vault 名を置き換え、K5 に既定のアカウントの項目を足した回。
 
 ### logic-validator
+
 - verdict: pass
 - 主指摘: 置き換えの漏れや誤置換は無い（K7 の private repo は GitHub の意味なので残っている）。K5 の追加は他の K と矛盾しない。
 
 ### scope-justification-reviewer
+
 - verdict: pass
 - 主指摘: 名前で持つ判断と --account を付けない判断は比例的。K10 に「ID でなく名前で持つ理由」を 1 文足すとよい。（反映済み）
 
 ### decision-quality-reviewer
+
 - verdict: pass
 - 主指摘: 支配軸の整合は保たれている。
 
 ### greenfield-perspective-reviewer
+
 - verdict: pass
 - 主指摘: 新しいギャップは無い。既定のアカウントに vault が無ければ op vault get で止まることを K5 に書くとよい。（反映済み）
 
 ### architecture-boundary-analyzer
+
 - verdict: pass
 - 主指摘: K5 の根拠（inject_secrets の op inject も --account を使わない）は実コードと一致する。
 
 ### security-vulnerability-analyzer
+
 - verdict: pass
 - 主指摘: 既定のアカウントが組織側に切り替わり、同名の vault があると、token が組織の vault に黙って保存されうる。PAT を作る前に使うアカウントを表示する。OP_ACCOUNT / OP_SERVICE_ACCOUNT_TOKEN が無い前提を docs に書く。（反映済み）
 
 ### data-contract-evolution-evaluator
+
 - verdict: pass
 - 主指摘: vault の値域は全体で Personal|Formal にそろっている。旧値の状態ファイルは存在せず、紛れ込んでも K9 の検査で止まる。
 

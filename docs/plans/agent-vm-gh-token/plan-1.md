@@ -1124,22 +1124,27 @@ git commit -m "docs(agent-vm): document env gh and record the GH_TOKEN exception
 ## Reviewer Outputs (Round 1)
 
 ### logic-validator
+
 - verdict: needs-work
 - 主指摘: scratchpad で実装とテストを組み込んで実行した結果、263 件中 1 件だけ失敗した。原因は gh_abort の文言がテストの期待（"delete the PAT named"）と一致しないこと。perl が失敗しても env ファイルが空になる経路がある。失敗系のテストが薄い。
 
 ### scope-justification-reviewer
+
 - verdict: needs-work（軽微）
 - 主指摘: T0 の結果を spec に記録すると hash が変わり、承認が外れる（research.md に記録する）。T4 の失敗系のテストが足りない。T4 の粒度が大きい。
 
 ### architecture-boundary-analyzer
+
 - verdict: needs-work（軽微）
 - 主指摘: テストが期待する文言と実装の文言が一致しない。jq と perl に `9>&-` が無い（K12 との差）。fd 3 が op vault get と open に引き継がれる。AGENT_VM_NOW がテスト専用であることが書かれていない。
 
 ### security-vulnerability-analyzer
+
 - verdict: needs-work
 - 主指摘: T0 で PAT がシェルの履歴に残る。環境に export された GH_PAT を引き継ぐと、token が子プロセスに渡る。失敗経路と永続ディスクに token が出ないことを検査していない。curl が ~/.curlrc を読む（-q を付ける）。テスト用の差し替えが本番でも効く。
 
 ### data-contract-evolution-evaluator
+
 - verdict: needs-work
 - 主指摘: perl 側が失敗しても mv が先に済み、env ファイルが壊れる。perl と bash で行頭の空白の範囲が違う。末尾改行をバイト単位で検査していない。状態ファイルと env の境界のテストが足りない。gh_write_atomic が呼び出し元の trap を上書きする。
 
@@ -1149,22 +1154,27 @@ git commit -m "docs(agent-vm): document env gh and record the GH_TOKEN exception
 ## Reviewer Outputs (Round 2)
 
 ### logic-validator
+
 - verdict: needs-work
 - 主指摘: 実行すると 308 件中 33 件が失敗した。`AGENT_VM_LIB=1 . launcher` の前置き代入は source が終わると消えるので、テストを実行する時点では AGENT_VM_LIB が空になり、AGENT_VM_TTY と AGENT_VM_NOW が効かない。source 中に GH_TEST_MODE へ写す形にすると 308 件すべてが通る。
 
 ### scope-justification-reviewer
+
 - verdict: pass
 - 主指摘: 手順 9 の失敗と、--repo と入力の不一致を検査するテストが無い（許容範囲）。
 
 ### architecture-boundary-analyzer
+
 - verdict: pass
 - 主指摘: gh_origin_repo の git にも `3<&-` を付けてそろえる。
 
 ### security-vulnerability-analyzer
+
 - verdict: pass
 - 主指摘: `unset GH_PAT; local GH_PAT=""` で、export された値が子プロセスに渡らないことを bash 5.2 で実測した。軽微な点として、bash -x で起動されると xtrace に token が出る（set +x を入れる）。T0 で中断すると GH_TOKEN がシェルに残る。
 
 ### data-contract-evolution-evaluator
+
 - verdict: pass
 - 主指摘: 読めない env ファイルを gh_scan_env が none と判定しうる。gh_env_content の `-e` を `-f` にする。symlink の env ファイルは mv で通常ファイルに置き換わる。
 
@@ -1174,22 +1184,27 @@ git commit -m "docs(agent-vm): document env gh and record the GH_TOKEN exception
 ## Reviewer Outputs (Round 3)
 
 ### logic-validator
+
 - verdict: needs-work（軽微）
 - 主指摘: 組み込んで実行すると 310 件すべて通った。launcher に新しい shellcheck 警告は無い。テストの `ls | grep` 2 か所が SC2010 を新しく出す（find に置き換える）。
 
 ### scope-justification-reviewer
+
 - verdict: pass (carried from Round 2)
 - 主指摘: Round 2 で pass、再実行なし
 
 ### architecture-boundary-analyzer
+
 - verdict: pass (carried from Round 2)
 - 主指摘: Round 2 で pass、再実行なし
 
 ### security-vulnerability-analyzer
+
 - verdict: pass (carried from Round 2)
 - 主指摘: Round 2 で pass、再実行なし
 
 ### data-contract-evolution-evaluator
+
 - verdict: pass (carried from Round 2)
 - 主指摘: Round 2 で pass、再実行なし
 
@@ -1199,22 +1214,27 @@ git commit -m "docs(agent-vm): document env gh and record the GH_TOKEN exception
 ## Reviewer Outputs (Round 4)
 
 ### logic-validator
+
 - verdict: pass
 - 主指摘: 組み込み直して実行し、310 件すべて通った。SC2010 は消えた。報告にあった SC1090 と SC2034 は、rc なしで実行したことによる見かけのもの。いまの run.sh も rc なしでは同じ 2 種類を出し、repo の .shellcheckrc（disable=SC1090、disable=SC2034）が両方を無効化している（メインループで確認した）。
 
 ### scope-justification-reviewer
+
 - verdict: pass (carried from Round 3)
 - 主指摘: Round 3 で pass、再実行なし
 
 ### architecture-boundary-analyzer
+
 - verdict: pass (carried from Round 3)
 - 主指摘: Round 3 で pass、再実行なし
 
 ### security-vulnerability-analyzer
+
 - verdict: pass (carried from Round 3)
 - 主指摘: Round 3 で pass、再実行なし
 
 ### data-contract-evolution-evaluator
+
 - verdict: pass (carried from Round 3)
 - 主指摘: Round 3 で pass、再実行なし
 
@@ -1226,22 +1246,27 @@ git commit -m "docs(agent-vm): document env gh and record the GH_TOKEN exception
 T0 の結果（vault 名を Personal に）と、spec Round 7 で足したアカウント表示を反映した回。
 
 ### logic-validator
+
 - verdict: pass
 - 主指摘: 現 HEAD の launcher と run.sh に組み込み、311 件すべて通過。repo の .shellcheckrc で 1 ファイルずつ検査して 0 件。op whoami が失敗しても `|| account=""` で止まらないことを再現で確認した。軽微な点として、失敗時のテストが無いことと、jq が空を返した場合も「op whoami failed」と出る文言（どちらも反映済み: 文言を (unknown) にし、vault 切り替えのテストで whoami を失敗させて検査する）。
 
 ### scope-justification-reviewer
+
 - verdict: pass (carried from Round 4)
 - 主指摘: Round 4 で pass、再実行なし
 
 ### architecture-boundary-analyzer
+
 - verdict: pass (carried from Round 4)
 - 主指摘: Round 4 で pass、再実行なし
 
 ### security-vulnerability-analyzer
+
 - verdict: pass (carried from Round 4)
 - 主指摘: Round 4 で pass、再実行なし
 
 ### data-contract-evolution-evaluator
+
 - verdict: pass (carried from Round 4)
 - 主指摘: Round 4 で pass、再実行なし
 

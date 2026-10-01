@@ -17,16 +17,16 @@ shellcheck の指摘を、エディタが表示するレベル（全 severity、
 
 計測方法: `git ls-files` の `*.sh` と、shebang 付きの拡張子なしファイル（`lint-shell.sh` と同じ検出規則）の計 81 ファイルに対し `shellcheck -f gcc`。`enable=all` を外した値は、`git archive HEAD` を scratchpad に展開し、`.shellcheckrc` から `enable=all` の行だけを削除して計測した。
 
-| コード | 件数 | 主なファイル | 分類 |
-| --- | --- | --- | --- |
-| SC2248 | 129 | dotfiles_doctor 55, reporter 41, validator 11 | 機械的（クォート付与） |
-| SC2317 | 111 | test_engine 66, tests/agent-vm/run.sh 31, hook-timer 15 | 原因別（下記 T3） |
-| SC2086 | 50 | test_engine 16, reporter 15, validator 10, init 5 | サイト別ルール（T4） |
-| SC2059 | 41 | reporter 31, dotfiles_doctor 9 | 色変数の扱いに罠あり（T4） |
-| SC2030/2031 | 13 | validator.sh | **本物のバグ**（T2） |
-| SC1091 | 7 | init / interactive / functions / updates/* | 追跡不能な source（T3） |
-| SC2016 | 9 | agent-vm, run-bootstrap, run.sh, test_engine | 意図的なシングルクォート（T3） |
-| その他 | 14 | SC2012×4, SC2002×3, SC2001×3, SC2263, SC2181, SC2153, SC2005 | 個別（T4） |
+| コード      | 件数 | 主なファイル                                                 | 分類                           |
+| ----------- | ---- | ------------------------------------------------------------ | ------------------------------ |
+| SC2248      | 129  | dotfiles_doctor 55, reporter 41, validator 11                | 機械的（クォート付与）         |
+| SC2317      | 111  | test_engine 66, tests/agent-vm/run.sh 31, hook-timer 15      | 原因別（下記 T3）              |
+| SC2086      | 50   | test_engine 16, reporter 15, validator 10, init 5            | サイト別ルール（T4）           |
+| SC2059      | 41   | reporter 31, dotfiles_doctor 9                               | 色変数の扱いに罠あり（T4）     |
+| SC2030/2031 | 13   | validator.sh                                                 | **本物のバグ**（T2）           |
+| SC1091      | 7    | init / interactive / functions / updates/\*                  | 追跡不能な source（T3）        |
+| SC2016      | 9    | agent-vm, run-bootstrap, run.sh, test_engine                 | 意図的なシングルクォート（T3） |
+| その他      | 14   | SC2012×4, SC2002×3, SC2001×3, SC2263, SC2181, SC2153, SC2005 | 個別（T4）                     |
 
 ## Key Decisions
 
@@ -71,7 +71,7 @@ shellcheck の指摘を、エディタが表示するレベル（全 severity、
 - `home/dot_shell_common/init.sh` と `home/dot_shell_common/windows.sh` は**メインループだけが編集する**（T3 の SC1091 / SC2263 と T4 の eval クォートが同じファイルに重なるため）。`eval "$($HOME/.local/bin/...)"` は `eval "$("$HOME"/.local/bin/...)"` にする。`init.sh:98` の `eval "$(opam env)"` は指摘対象外で、変更しない。これらメインループ担当のファイルに残る SC2248 / SC2086 などにも、T4 の規則をそのまま適用する。
 - `tests/agent-vm/run.sh`: テストケース内で `session_exec` / `notice_orphan_env` / `run_tool` などをスタブとして再定義し、テスト対象のコードから間接的に呼ばせている（例: `:331-338`, `:679`）。ファイル先頭の既存ディレクティブ（`:2` の `disable=SC2154`）に SC2317 を追加し、理由をコメントで書く。`:679,687` の SC2153（`REPO`）は `:2` のコメントどおり `executable_agent-vm` が export する変数なので、同じディレクティブに SC2153 も追加する。
 - `home/dot_claude/hooks/executable_hook-timer.sh:61`: `on_signal` は `:80-82` の `trap` からだけ呼ばれる。関数定義の直前に `# shellcheck disable=SC2317 # invoked via trap below` を置く。
-- SC1091（7 件）: `init.sh:20`（`env.sh` は `env.sh.tmpl` のレンダリング結果で、lint 時には存在しない）、`init.sh:93`（`~/.cargo/env`）、`interactive.sh:19`（`/usr/share/doc/fzf/...`）、`functions.sh:138`（`/dev/stdin`）、`updates/{chezmoi,dotfiles,mise}.sh:14`（`$SHELL_COMMON/updates/_common.sh`。lint 時の解決パスと実行時のパスが違う）。各 source 行の直前に `# shellcheck source=/dev/null` を置く。`init.sh` 以外（interactive / functions / updates/*）はワーカー a が T4 と同じファイルを編集するときにこの規則で適用する。
+- SC1091（7 件）: `init.sh:20`（`env.sh` は `env.sh.tmpl` のレンダリング結果で、lint 時には存在しない）、`init.sh:93`（`~/.cargo/env`）、`interactive.sh:19`（`/usr/share/doc/fzf/...`）、`functions.sh:138`（`/dev/stdin`）、`updates/{chezmoi,dotfiles,mise}.sh:14`（`$SHELL_COMMON/updates/_common.sh`。lint 時の解決パスと実行時のパスが違う）。各 source 行の直前に `# shellcheck source=/dev/null` を置く。`init.sh` 以外（interactive / functions / updates/\*）はワーカー a が T4 と同じファイルを編集するときにこの規則で適用する。
 - SC2016（9 件）: 該当行を個別に読み、`$` がリモート側・子シェル側で展開されるべきリテラルであればその行に `# shellcheck disable=SC2016` を置く。ローカルで展開されるべきものであれば、ダブルクォートに直して T2 と同じく本物のバグとして報告する。
 - SC2263（`init.sh:63`）: 行を読んで alias の扱いを確認し、本物のバグかどうかを分類してから対応する。
 - 参照: `tests/agent-vm/run.sh:2`, `home/dot_claude/hooks/executable_hook-timer.sh:80-82`
@@ -186,7 +186,7 @@ home/.chezmoiscripts/run_onchange_after_install-safe-chain.sh.tmpl
 ## Implementation Notes（実装後に追記）
 
 - **基準値の訂正**: 着手時の 374 件は、81 ファイルを 1 回の `xargs shellcheck` でまとめて渡して数えた値だった。この場合、兄弟ファイルも入力として扱われ、source 先が追跡される。エディタと `lint-shell.sh` は 1 ファイルずつ検査するので、実際には SC1091 が 7 件ではなく 21 件あった（`test_suite.sh` → `core/*.sh`、`init.sh` → `path.sh` など、リポジトリ内の source）。
-- **方針の変更（logic-validator 検証済み、sound-with-conditions）**: 21 か所すべてに `source=/dev/null` を置く代わりに、`.shellcheckrc` に `external-sources=true` を追加した。既存の `# shellcheck source=...` 指定が意図どおり追跡されるようになった。`source=/dev/null` は、追跡できない source（レンダリング後の `env.sh`、`~/.cargo/env`、fzf、`/dev/stdin`）と、ワーカーがすでに適用していた interactive / updates/* にだけ残っている。
+- **方針の変更（logic-validator 検証済み、sound-with-conditions）**: 21 か所すべてに `source=/dev/null` を置く代わりに、`.shellcheckrc` に `external-sources=true` を追加した。既存の `# shellcheck source=...` 指定が意図どおり追跡されるようになった。`source=/dev/null` は、追跡できない source（レンダリング後の `env.sh`、`~/.cargo/env`、fzf、`/dev/stdin`）と、ワーカーがすでに適用していた interactive / updates/\* にだけ残っている。
 - **SC2263**: source を追跡すると `init.sh:63` に再び現れた。原因は、`linux.sh:6` の `alias grep=...` が同じ `case` の中で source されること。ここでは素の grep が望ましいので、理由つきで disable した。
 - **ワーカーの変更の差し戻し**: `scripts/setup-claude-skills.sh` の `ls` → `find -printf` は、GNU find でしか動かない（macOS で壊れる）ので、`ls` に戻して SC2012 を理由つきで disable した。
 - **ワーカーの見落とし**: `run_before_10-validate-json-templates-unix.sh.tmpl:90` の SC2248。ワーカーは rc を置いていない `/tmp` でレンダリングして検査したので、検出されなかった。メインループで修正した。
@@ -201,66 +201,82 @@ home/.chezmoiscripts/run_onchange_after_install-safe-chain.sh.tmpl
 ## Reviewer Outputs (Round 1)
 
 ### logic-validator
+
 - verdict: needs-work
 - 主指摘: `%b` 変換の回帰テストが機械依存の doctor 出力だけで弱い。`post_apply_adapter.sh:194` の兄弟 eval が残り、両分岐の出力が揃わない。here-doc の終端は 0 桁目に置く必要がある。
 
 ### scope-justification-reviewer
+
 - verdict: pass
 - 主指摘: 各変更はオーダーに根拠づけられている。eval 書き換えに個別のテストがない点のみ軽微。
 
 ### decision-quality-reviewer
+
 - verdict: needs-work（advisory）
 - 主指摘: CI の severity 撤廃に伴うバージョン変化リスクの受容根拠がない。挙動が変わる T2/T3 を lint 修正と同じ単位に混ぜている。（中間案の再提示はトリアージで除外）
 
 ### greenfield-perspective-reviewer
+
 - verdict: pass
 - 主指摘: バージョン差の受容と、計測対象外ファイルのスコープを明記するとよい。
 
 ### architecture-boundary-analyzer
+
 - verdict: needs-work
 - 主指摘: pre-commit が lint の呼び出しを独自に持ち、ドリフトしうる。`shell=bash` が `#!/bin/sh` の bashism を隠すので、POSIX 規則を検証する手段がない。
 
 ### security-vulnerability-analyzer
+
 - verdict: needs-work
 - 主指摘: `post_apply_adapter.sh:193-196` の eval は `var_name` 経由の注入が残る。`%b` を実行時データに適用するとエスケープが解釈される。
 
 ### data-contract-evolution-evaluator
+
 - verdict: pass
 - 主指摘: 出力をパースする消費者はいない。`%b` は色定数だけに限り、`test_suite.sh -v` の出力もバイト単位で比較するとよい。
 
 ### Intent triage (Round 1)
+
 - 採用 14 / 除外 1。除外: decision-quality の「中間案（SC2248 のみ・CI は warning 据え置き）を選択肢として再提示」。ユーザーが AskUserQuestion で範囲を選択済みのため。
 
 ## Reviewer Outputs (Round 2)
 
 ### logic-validator
+
 - verdict: pass
 - 主指摘: Round 1 の 3 点は解消。軽微: `:194` の置き換え後の行が未記載、`echo`→`printf` の挙動差を明記するとよい（反映済み）。
 
 ### decision-quality-reviewer
+
 - verdict: pass
 - 主指摘: 解消。軽微: `post_apply_test_env_var` の修正も別コミットに含める、Risks の「エディタにも同じ指摘」はバージョン一致が前提（反映済み）。
 
 ### architecture-boundary-analyzer
+
 - verdict: pass
 - 主指摘: 解消。軽微: SC3xxx 比較は件数でなく集合で、メインループ担当ファイルにも T4 規則を適用と明記（反映済み）。
 
 ### security-vulnerability-analyzer
+
 - verdict: pass
 - 主指摘: 解消。軽微: 数字で始まる名前を拒否、`echo`→`printf` の挙動差を意図した変更として明記（反映済み）。
 
 ### Intent triage (Round 2)
+
 - 採用 8 / 除外 0。すべて軽微で、本義を狭める指摘はなし。
 
 ### scope-justification-reviewer
+
 - verdict: pass (carried from Round 1)
 - 主指摘: Round 1 で pass、再実行なし
 
 ### greenfield-perspective-reviewer
+
 - verdict: pass (carried from Round 1)
 - 主指摘: Round 1 で pass、再実行なし
 
 ### data-contract-evolution-evaluator
+
 - verdict: pass (carried from Round 1)
 - 主指摘: Round 1 で pass、再実行なし
 

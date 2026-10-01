@@ -39,16 +39,16 @@
 
 ## T0: mac 実機での確認結果（2026-10-01、ユーザーが実施）
 
-| 項目 | 結果 |
-| --- | --- |
-| API Credential の秘密のフィールドの `id` | `credential` |
-| 作成・`op read`・`op inject` | `Formal` と `Personal` の両方で通った |
-| item の id | 26 文字の小文字英数字 |
-| 失敗時の出力への値の漏れ | 0 件 |
-| curl / jq | curl 8.7.1、jq は `/usr/bin/jq` |
-| `github-authentication-token-expiration` ヘッダ | あり（docs には無いが、実際の応答には含まれる） |
-| auto-merge（GraphQL の `enablePullRequestAutoMerge`） | 拒否された（`FORBIDDEN`）。spec K2 は変えない |
-| 同じ名前の PAT | 拒否された（`The token name has already been taken.`） |
+| 項目                                                  | 結果                                                   |
+| ----------------------------------------------------- | ------------------------------------------------------ |
+| API Credential の秘密のフィールドの `id`              | `credential`                                           |
+| 作成・`op read`・`op inject`                          | `Formal` と `Personal` の両方で通った                  |
+| item の id                                            | 26 文字の小文字英数字                                  |
+| 失敗時の出力への値の漏れ                              | 0 件                                                   |
+| curl / jq                                             | curl 8.7.1、jq は `/usr/bin/jq`                        |
+| `github-authentication-token-expiration` ヘッダ       | あり（docs には無いが、実際の応答には含まれる）        |
+| auto-merge（GraphQL の `enablePullRequestAutoMerge`） | 拒否された（`FORBIDDEN`）。spec K2 は変えない          |
+| 同じ名前の PAT                                        | 拒否された（`The token name has already been taken.`） |
 
 補足:
 
