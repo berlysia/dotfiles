@@ -55,6 +55,17 @@ export function createDenyResponse(reason: string): HookJSONResponse {
 }
 
 /**
+ * Appended to denies that protect a target, not to denies that redirect to an alternative.
+ * The agent reads this at the moment it decides what to do next.
+ */
+export const BOUNDARY_DENY_GUIDANCE =
+  "This is a protection boundary. Do not retry the same effect with a different command, tool, or language. If the operation is needed, stop and tell the user what you were trying to do and why.";
+
+export function createBoundaryDenyResponse(reason: string): HookJSONResponse {
+  return createDenyResponse(`${reason}\n\n${BOUNDARY_DENY_GUIDANCE}`);
+}
+
+/**
  * Helper to create an "allow" response (auto-approve)
  * This should be used for safe operations
  */

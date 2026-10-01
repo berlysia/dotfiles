@@ -1,13 +1,21 @@
 #!/usr/bin/env -S bun run --silent
 
+import { lstatSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineHook } from "cc-hooks-ts";
 import { extractCommandsStructured } from "../lib/bash-parser.ts";
 import { getCommandFromToolInput } from "../lib/command-parsing.ts";
 import {
   createAskResponse,
+  createBoundaryDenyResponse,
   createDenyResponse,
 } from "../lib/context-helpers.ts";
+import {
+  buildReadOnlyPatterns,
+  classifyDeletion,
+  mayAllowAsReadOnly,
+  standaloneSymlinkRemovalOperands,
+} from "../lib/node-modules-policy.ts";
 import {
   isEditInput,
   isMultiEditInput,
@@ -46,11 +54,17 @@ const hook = defineHook({
       // Special handling for Bash commands with 3-stage analysis
       if (tool_name === "Bash") {
         const cmd = getCommandFromToolInput("Bash", tool_input) || "";
+        // Removing a symlink named node_modules never touches its target, so a
+        // standalone, unambiguous rm/unlink of existing symlinks is exempt.
+        const linkOperands = standaloneSymlinkRemovalOperands(cmd);
+        if (linkOperands !== null && linkOperands.every(isSymlinkPath)) {
+          return context.success({});
+        }
         const bashResult = await analyzeBashCommand(cmd);
 
         switch (bashResult.decision) {
           case "deny":
-            return context.json(createDenyResponse(bashResult.reason));
+            return context.json(createBoundaryDenyResponse(bashResult.reason));
           case "ask":
             return context.json(createAskResponse(bashResult.reason));
           case "allow":
@@ -68,7 +82,7 @@ const hook = defineHook({
       const validation = validateNodeModulesAccess(filePath);
       if (!validation.isAllowed) {
         return context.json(
-          createDenyResponse(
+          createBoundaryDenyResponse(
             `${tool_name} access denied: ${validation.reason}\nPath: ${validation.resolvedPath}`,
           ),
         );
@@ -82,6 +96,14 @@ const hook = defineHook({
     }
   },
 });
+
+function isSymlinkPath(path: string): boolean {
+  try {
+    return lstatSync(path).isSymbolicLink();
+  } catch {
+    return false; // ENOENT / ENOTDIR / EACCES / ELOOP: no exemption, the regular deny applies
+  }
+}
 
 interface NodeModulesValidationResult {
   isAllowed: boolean;
@@ -178,7 +200,8 @@ async function analyzeBashCommand(
   command: string,
 ): Promise<BashAnalysisResult> {
   // Split compound commands and analyze each individually using bash-parser
-  const { individualCommands } = await extractCommandsStructured(command);
+  const { individualCommands, parsingMethod } =
+    await extractCommandsStructured(command);
   const commands = individualCommands;
 
   let hasUnknown = false;
@@ -186,13 +209,15 @@ async function analyzeBashCommand(
 
   // Check each command individually
   for (const cmd of commands) {
-    const result = analyzeIndividualCommand(cmd);
+    const result = analyzeIndividualCommand(cmd, {
+      fallback: parsingMethod === "fallback",
+    });
 
     // If any command should be denied, deny the entire compound command
     if (result.decision === "deny") {
       return {
         decision: "deny",
-        reason: `Destructive operation detected: ${cmd}`,
+        reason: `Destructive operation detected: ${cmd}\n${result.reason}`,
         operation: result.operation || "unknown",
       };
     }
@@ -220,15 +245,36 @@ async function analyzeBashCommand(
   };
 }
 
-function analyzeIndividualCommand(cmd: string): AnalysisResult {
+function deletionReason(
+  cmd: string,
+  verdict: "deny-delete" | "deny-find",
+): string {
+  const base =
+    verdict === "deny-find"
+      ? "find operation not allowed on node_modules"
+      : "delete operation not allowed on node_modules";
+  const targetsLink =
+    verdict === "deny-delete" &&
+    cmd
+      .toLowerCase()
+      .split(/\s+/)
+      .some((w) => w.endsWith("node_modules"));
+  return targetsLink
+    ? `${base}. If you created this node_modules symlink yourself, remove it with a standalone \`unlink <absolute path>\` command.`
+    : base;
+}
+
+function analyzeIndividualCommand(
+  cmd: string,
+  opts: { fallback: boolean },
+): AnalysisResult {
   // If no node_modules reference, always allow
-  if (!cmd.includes("node_modules")) {
+  if (!cmd.toLowerCase().includes("node_modules")) {
     return { decision: "allow", reason: "No node_modules reference" };
   }
 
   // Destructive operations - clear deny
   const destructivePatterns = [
-    { pattern: /(?:^|\s)(rm|rmdir)\s+.*node_modules/, operation: "delete" },
     { pattern: /(?:^|\s)mv\s+.*node_modules/, operation: "move" },
     { pattern: /(?:^|\s)cp\s+.*\s+.*node_modules/, operation: "copy-to" },
     { pattern: />+\s*[^\s]*node_modules/, operation: "overwrite" },
@@ -242,22 +288,18 @@ function analyzeIndividualCommand(cmd: string): AnalysisResult {
 
   // Read-only operations - clear allow
   const readOnlyPatterns = [
-    { pattern: /(?:^|\s)(ls|ll|la)\s+.*node_modules/, operation: "list" },
-    {
-      pattern: /(?:^|\s)(cat|head|tail|less|more)\s+.*node_modules/,
-      operation: "read",
-    },
-    {
-      pattern: /(?:^|\s)(grep|find|locate)\s+.*node_modules/,
-      operation: "search",
-    },
-    { pattern: /(?:^|\s)cd\s+.*node_modules/, operation: "navigate" },
+    ...buildReadOnlyPatterns(),
     { pattern: /(?:^|\s)(pwd|dirname|basename)/, operation: "path-info" },
-    {
-      pattern: /(?:^|\s)(file|stat|du|wc)\s+.*node_modules/,
-      operation: "info",
-    },
   ];
+
+  const verdict = classifyDeletion(cmd, opts);
+  if (verdict === "deny-delete" || verdict === "deny-find") {
+    return {
+      decision: "deny",
+      reason: deletionReason(cmd, verdict),
+      operation: "delete",
+    };
+  }
 
   // Check for destructive operations first
   for (const { pattern, operation } of destructivePatterns) {
@@ -268,6 +310,22 @@ function analyzeIndividualCommand(cmd: string): AnalysisResult {
         operation,
       };
     }
+  }
+
+  if (verdict === "ask-find") {
+    return {
+      decision: "ask",
+      reason: "find with -exec on node_modules requires approval",
+      operation: "unknown",
+    };
+  }
+  if (!mayAllowAsReadOnly(cmd, opts)) {
+    return {
+      decision: "ask",
+      reason:
+        "Compound command fragment under fallback parsing requires approval",
+      operation: "unknown",
+    };
   }
 
   // Check for read-only operations

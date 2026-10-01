@@ -1,7 +1,18 @@
 #!/usr/bin/env node --test
 
 import { deepStrictEqual, ok, strictEqual } from "node:assert";
-import { afterEach, beforeEach, describe, it } from "node:test";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { after, afterEach, beforeEach, describe, it } from "node:test";
+import { BOUNDARY_DENY_GUIDANCE } from "../../lib/context-helpers.ts";
 import denyNodeModulesHook from "../../implementations/deny-node-modules.ts";
 import {
   ConsoleCapture,
@@ -341,4 +352,152 @@ describe("deny-node-modules.ts hook behavior", () => {
   });
 });
 
-// Note: Using real implementation deny-node-modules hook; helper removed
+describe("deny-node-modules.ts boundary behaviour", () => {
+  const tempDirs: string[] = [];
+  after(() => {
+    for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+  });
+
+  const root = mkdtempSync(join(tmpdir(), "dnm-"));
+  tempDirs.push(root);
+  ok(/^[A-Za-z0-9_\/.@+=:,-]+$/.test(root), root);
+  mkdirSync(join(root, "target"));
+  mkdirSync(join(root, "a"));
+  mkdirSync(join(root, "c"));
+  mkdirSync(join(root, "b", "node_modules"), { recursive: true });
+  symlinkSync(join(root, "target"), join(root, "a", "node_modules"));
+  symlinkSync(join(root, "target"), join(root, "c", "node_modules"));
+  symlinkSync(join(root, "b"), join(root, "s"));
+  writeFileSync(join(root, "f"), "x");
+  const L = join(root, "a", "node_modules");
+  const D = join(root, "b", "node_modules");
+  const S = join(root, "s");
+
+  async function runBash(command: string) {
+    const context = createPreToolUseContext("Bash", { command });
+    await invokeRun(denyNodeModulesHook, context);
+    return context;
+  }
+  function reasonOf(context: { jsonCalls: any[] }): string {
+    return (
+      context.jsonCalls[0].hookSpecificOutput?.permissionDecisionReason || ""
+    );
+  }
+
+  const successCmds = [
+    `rm ${L}`,
+    `rm -f ${L}`,
+    `rm -f -f ${L}`,
+    `unlink ${L}`,
+    `rm ${L} ${join(root, "c", "node_modules")}`,
+    "grep rm node_modules/x",
+    "find x -name rm node_modules",
+    "grep -rn unlink node_modules/x",
+    "ls node_modules",
+  ];
+  for (const cmd of successCmds) {
+    it(`allows: ${cmd}`, async () => {
+      const context = await runBash(cmd);
+      context.assertSuccess({});
+    });
+  }
+
+  const denyCmds = [
+    `rm ${D}`,
+    `rm -f ${D}`,
+    `unlink ${D}`,
+    `rm ${L}/`,
+    `rm ${L}/.`,
+    `rm ${L}/../node_modules`,
+    `rm -rf ${L}`,
+    `rm -- ${L}`,
+    `rm "${L}"`,
+    `rm ${L}/.bin/x`,
+    `rm ${L} ${D}`,
+    `unlink ${L} ${L}`,
+    `rm ${S}/node_modules`,
+    `rm ${root}/missing/node_modules`,
+    `rm ${root}/f/node_modules`,
+    `rm ${L};`,
+    `W=${root}/a; rm $W/node_modules`,
+    `ln -s /x ${root}/a/node_modules; rm ${root}/a/node_modules`,
+    "rm -rf NODE_MODULES",
+    "ls node_modules; rm -rf node_modules",
+    "cat x | rm node_modules",
+    "bash -c 'rm -rf node_modules'",
+    "find . -name x | xargs rm -rf node_modules",
+    "(rm -rf node_modules)",
+    "echo $(rm -rf node_modules)",
+    "find node_modules -delete",
+    "find node_modules -exec env mv {} /tmp \\;",
+    "sudo find node_modules -delete",
+    "find node_modules -exec echo {} \\; > node_modules/x",
+  ];
+  for (const cmd of denyCmds) {
+    it(`denies with guidance: ${cmd}`, async () => {
+      const context = await runBash(cmd);
+      context.assertDeny();
+      ok(reasonOf(context).includes(BOUNDARY_DENY_GUIDANCE));
+    });
+  }
+
+  it("explains the standalone unlink route when a real directory is removed", async () => {
+    const reason = reasonOf(await runBash(`rm -rf ${D}`));
+    ok(reason.includes("Destructive operation detected"));
+    ok(reason.includes("standalone"));
+    ok(reason.includes("unlink"));
+  });
+  it("does not suggest unlink for find -delete", async () => {
+    const reason = reasonOf(await runBash("find node_modules -delete"));
+    ok(!reason.includes("unlink"));
+  });
+
+  const askCmds = [
+    "python3 -c 'import shutil; shutil.rmtree(\"node_modules\")'",
+    "git clean -fdx node_modules",
+    "rsync -a --delete empty/ node_modules/",
+    "/bin/ls node_modules",
+    "\\ls node_modules",
+    "find node_modules -exec echo {} \\;",
+  ];
+  for (const cmd of askCmds) {
+    it(`asks: ${cmd}`, async () => {
+      const context = await runBash(cmd);
+      strictEqual(
+        context.jsonCalls[0].hookSpecificOutput?.permissionDecision,
+        "ask",
+      );
+    });
+  }
+
+  it("keeps the guidance on file-tool denies", async () => {
+    const context = createPreToolUseContext("Write", {
+      file_path: join(root, "a", "node_modules", "x"),
+      content: "x",
+    });
+    await invokeRun(denyNodeModulesHook, context);
+    context.assertDeny();
+    ok(reasonOf(context).includes(BOUNDARY_DENY_GUIDANCE));
+  });
+
+  it("does not attach the guidance to the internal-error deny", () => {
+    const src = readFileSync(
+      join(
+        import.meta.dirname,
+        "..",
+        "..",
+        "implementations",
+        "deny-node-modules.ts",
+      ),
+      "utf8",
+    );
+    const lines = src.split("\n");
+    const idx = lines.findIndex((l) =>
+      l.includes("Error in node_modules access check"),
+    );
+    ok(idx >= 0, "internal error line exists");
+    const near = lines.slice(Math.max(0, idx - 2), idx + 1).join("\n");
+    ok(near.includes("createDenyResponse("));
+    ok(!near.includes("createBoundaryDenyResponse"));
+  });
+});
