@@ -392,14 +392,21 @@ const WRAPPER_COMMANDS = new Set([
   "builtin",
 ]);
 
-const FIND_DESTRUCTIVE_EXEC = new Set([
+/** @public */
+export const FIND_DESTRUCTIVE_EXEC: ReadonlySet<string> = new Set([
   "rm",
   "mv",
   "shred",
   "truncate",
   "unlink",
 ]);
-const FIND_EXEC_FLAGS = new Set(["-exec", "-execdir", "-ok", "-okdir"]);
+/** @public */
+export const FIND_EXEC_FLAGS: ReadonlySet<string> = new Set([
+  "-exec",
+  "-execdir",
+  "-ok",
+  "-okdir",
+]);
 const INDIRECT_SHELLS = new Set(["bash", "sh", "zsh", "dash"]);
 
 function splitSegments(command: string): CommandSegment[] {
