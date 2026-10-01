@@ -88,6 +88,21 @@ K6 は「round ≥ 2 は前 round で needs-work / blocker だった reviewer �
 - 同日に解消: カタログをローカル agent に置き換え（performance / code-simplicity はローカルに agent 定義が無いため外した。観点が不要と判断したのではなく、戻すなら agent 定義を先に作る。K9 の code-simplicity-reviewer 追加はこれで取り消し）。compound-engineering の現行版は該当 agent を subagent として提供しない。3 つのロースターの各 slug がローカル定義を持つことをテストで固定。台帳は記録された subagent_type の plugin 名前空間を外して照合するので、同名の plugin agent の実行も当該 reviewer として数える（受容した挙動。照合を完全一致にするのは stamp にも及ぶため別オーダー）
 - 経緯と観測の詳細: `docs/plans/workflow-review-budget/`（research / spec / plan-1 と、集計レポート `evidence/review-cost-report.md`）
 
+## Amendment (2026-10-01): 自己延長を Round 6 まで、reframer 判断の延長を Round 9 まで認め、問題変形は人間に回す
+
+予算 3 を超えるたびに人間の許可を待つと、着地寸前の周でも止まる。ユーザーの判断として、着地見込みがあればモデルが Round 6 まで自分で延長してよく、それでも着地しなければ問題の変形を選択肢に含めた検討をサブエージェントに任せることにした。サブエージェントは上位モデル（Fable）で動かし、その判断が「現在の枠組みのまま続行」なら Round 9 まで延長してよいとした。上の Amendment (2026-09-28) の観測「Round 4 以降で新しい実質指摘があった文書は 0/4」は把握したうえで、その逆向きに上限を広げている。標本は 4 と小さく、以下の再評価トリガーで観測する。
+
+- 周のラウンド数で段階を決める: 0〜2 は制限なし、3〜5 はモデル判断の `--self-extend`、6〜8 は reframer 判断の `--reframer-extend`、9 以上は人間の `--extend` だけ。6 と 9 は予算 3 の刻みに揃えた設計値で、ユーザーの指定値でも収束分析に基づく値でもない。段階判定・許可表・見出し・案内文・log 整形は `lib/workflow-review-core.ts` の純粋関数にまとめ、CLI の拒否と推奨テキストの通知が同じ関数を使う
+- 延長の承認者ごとにフラグを分け、`round-extensions.log` に承認者列（`human` / `self` / `reframer`）を足した。`--extend` は「人間の指示」の意味のまま残す。上の受容したリスクの再評価トリガー（人間の指示に対応しない reason）はこの意味に依存しているため
+- 「着地見込み」は prompt 上の基準（blocker なし / Key Decisions を変えずに直せる / 指摘が狭まっている）にとどめ、機械判定しない。非 pass 数で収束を測る案は、差分再レビューでは数が構造的に減るため計器として粗く、採らなかった。機械的に拒否するのは、判定に計器の妥当性が要らない `--self-extend` / `--reframer-extend` と `--full` の併用だけ
+- 変形を検討する役は `home/dot_claude/agents/review-reframer.md` として定義し、モデルは frontmatter の `model:` 1 行でだけ指定する。Agent tool の引数や CLI のフラグ・定数・案内文にモデル名を書かない（ユーザー指示。既存の reviewer もすべて frontmatter でモデルを決めている）。上位モデルを当てる理由の主軸はユーザー指示で、6 round の修正に引きずられない新しいコンテキストで枠組みを見直させることが狙い。上位モデルの必要性そのものは未検証
+- reframer の結果は文書の中ではなく `<wfDir>/reframer-review.<doc>` に記録する。文書内に節として書く案は、stamp 後の追記で文書 hash が変わるため hash の正規化に節の除去を足す必要があり、除去の終端条件や fenced code 内の見出しの誤検出という新しい境界問題を hash の中核に持ち込むので退けた。既存の帳簿（`reviewer-runs.log` / `round-extensions.log` / `.round-baseline`）も文書外にある
+- `--reframer-extend` は、記録ファイルの最後の節（周の入り口の round、`agent`、推奨 `(a)` の完全一致）と、`reviewer-run-recorder` が記録した `review-reframer` の起動記録（Round N の baseline 以降）で裏付ける。推奨が (b) 変形 / (c) 現状で承認 / (d) 取り下げなら、スコープ・承認・オーダーそのものに関わるので、モデルも reframer も選ばず人間に回す。周内の相談は 1 回
+- 却下: 予算を 9 に上げて文言だけで運用する案（延長の事実も承認者も残らない。文言だけの予算は 3/9 文書で破られていた）。reframer 判断の延長に上限を設けない案（モデル / reframer の判断だけで回り続ける経路に歯止めがなくなる）。Agent tool の `model` 引数でモデルを指定する案（ユーザー指示に反し、モデル名が各所に散る）
+- 受容した限界（重要度順）: (1) 人間抜きで Round 7〜9 を進める根拠は記録ファイルと起動記録で、記録ファイルはメインループが書く。推奨の書き換え、空に近い入力での起動、別文書向けの起動、節の書き直し、台帳の偽造は検知できない。承認依頼の Executive Summary に記録ファイルのパスと要約を載せることを必須にし、人間の確認経路とする。(2) `human` 行は人間の承認を証明しない。(3) 着地見込みの判定は機械検証しない。(4) reason 形式の確認は目視。(5) Round 7〜9 は「Fable が判断するならさらにセルフエクステンドを選んでも良い」というユーザー指示を、続行の判断に限って reframer に委ねると解釈したもので、当初のオーダー本文「6 ラウンドまで」を越える。(6) 上位モデルを当てる効果は未検証
+- 再評価トリガー: 周は到達した最大の段階で 1 つに分類する。次のいずれかで見直す。自己延長止まりの周が Round 6 までに pass せず reframer に回った例が 2 件（K3 の条件か自己延長の上限）/ reframer 判断の周が Round 9 までに pass しなかった例が 2 件（reframer 判断の延長をやめるか上限を見直す）/ reason 形式を外れた例が 1 件（形式の機械検査）/ reframer を起動できず人間に回った例が 2 件（エージェント定義のモデル指定）/ 記録ファイルと reframer の出力が食い違った例が 1 件（`--reframer-extend` を廃止）/ 正当な記録があるのに `--reframer-extend` が拒否された例が 2 件（検査を減らす）
+- 経緯: この Amendment 自体の plan は予算 3 のもとで Round 7 まで回った（Round 6・7 は人間の指示による `--extend`）。Round 3 以降は途中のユーザー指示（上位モデルでの検討、reframer 判断の延長、モデル名を引数に書かない）で Key Decisions が変わり、全員を回す周が続いた。0/4 の観測は差分再レビューの周が前提で、設計そのものが動く周は別に数える必要がある。research と plan（Reviewer Outputs 全 7 round を含む）は `docs/plans/round-budget-reframer/` に置いた
+
 ## References
 
 - `docs/plans/document-workflow-overhaul/research.md` — 失敗パターン P1〜P8 と根本原因
