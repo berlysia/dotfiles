@@ -91,6 +91,19 @@ check_health() {
   run_with_timeout 3 orb status >/dev/null 2>&1 </dev/null 9>&- || die "OrbStack is not responding. $FAIL_CLOSED_HINT"
 }
 
+# Non-interactive orb call: no lock fd may reach orb (fd 9 repo, fd 8 browser store, fd 7 golden), or a lingering
+# orb process keeps the lock held after the launcher exits (spec K3).
+orb_q() { orb "$@" </dev/null 9>&- 8>&- 7>&-; }
+
+# machine -> its state (running|stopped; "present" for a row without one), or "" when it does not exist.
+# A failed `orb list` dies instead of reading as "absent", which would send a launch into clone-and-discard.
+# Callers take the result with a plain assignment (x=$(orb_machine_state m)) so the die stops them too.
+orb_machine_state() {
+  local machines
+  machines=$(orb_q list) || die "could not list OrbStack machines. $FAIL_CLOSED_HINT"
+  awk -v n="$1" '$1 == n { print ($2 == "" ? "present" : $2); exit }' <<<"$machines"
+}
+
 resolve_working_tree() {
   local src
   src=$(chezmoi source-path 2>/dev/null </dev/null) || src=""
@@ -151,7 +164,7 @@ build_staging() { # machine working_tree -> prints "<generation> <hash>"
   build=$(mktemp -d "$AGENT_VM_STATE_DIR/build/$1.XXXXXX") || die "could not create a staging build dir"
   # This function runs inside out=$(...), where set -e is not inherited: check each step explicitly so a
   # partial copy is never published as a generation.
-  if ! { git -C "$2" ls-files -z | rsync -a --from0 --files-from=- "$2/" "$build/"; } 9>&-; then
+  if ! { git -C "$2" ls-files -z | rsync -a --from0 --files-from=- "$2/" "$build/"; } 9>&- 8>&- 7>&-; then
     rm -rf "$build"
     die "could not copy the dotfiles into the staging build dir"
   fi
@@ -164,7 +177,7 @@ build_staging() { # machine working_tree -> prints "<generation> <hash>"
   # rename(2) replaces a planted symlink entry instead of following it, and fails on a planted non-empty dir.
   perl -e 'rename($ARGV[0], $ARGV[1]) or die "rename: $!\n"' "$build" "$st/$gen" || die "could not publish staging generation"
   # rm does not follow symlinks, so VM-planted links are unlinked, never traversed.
-  find "$st" -mindepth 1 -maxdepth 1 ! -name "$gen" -exec rm -rf {} + 9>&-
+  find "$st" -mindepth 1 -maxdepth 1 ! -name "$gen" -exec rm -rf {} + 9>&- 8>&- 7>&-
   printf '%s %s\n' "$gen" "$hash"
 }
 
@@ -337,14 +350,61 @@ ensure_browsers() { # machine working_tree; never fails: every problem is a warn
   return 0
 }
 
+GOLDEN_MACHINE=agent-vm-golden
+# Every per-machine key OrbStack 2.2.3 prints in `orb config show`. An unknown or missing key fails the check:
+# a new kind of mount or sharing must be looked at before machines are started with it (spec K4).
+MACHINE_CONFIG_KEYS="cpu disk_bytes forward_ssh_agent http_port https_port isolate_network isolated memory_mib mounts username"
+
+check_mount_paths() { # path...: OrbStack's mount list is "SRC:DEST,SRC:DEST", so these characters cannot be represented
+  local p
+  for p in "$@"; do
+    case "$p" in
+      *,* | *:* | *$'\n'*) die "cannot mount $p: it contains ',' ':' or a newline, which OrbStack's mount list cannot hold. $FAIL_CLOSED_HINT" ;;
+    esac
+  done
+}
+
+# The one place that knows the mount shape. A repo machine gets its repo first; the golden gets the same shape
+# without it, including an empty browsers mount so bootstrap keeps the browser MCP entries for the clones (spec K6).
+vm_mounts() { # machine [repo_root] -> OrbStack's comma-separated mount list
+  local st=$AGENT_VM_STATE_DIR repo=""
+  if [[ -n "${2:-}" ]]; then repo="$2:$2,"; fi
+  printf '%s%s:/opt/agent-vm/src,%s:/opt/agent-vm/outbox,%s:/opt/agent-vm/browsers\n' \
+    "$repo" "$st/staging/$1" "$st/outbox/$1" "$st/browsers/$1"
+}
+
+# Reads the machine's settings from the host-side OrbStack config (the VM cannot change them, and a stopped
+# machine cannot race us) and compares every key: exact key set, isolation flags on, mounts exactly as expected.
+verify_machine_config() { # machine expected_mounts -> 0, or 1 with the reason on stderr
+  local show lines got want unknown missing key val
+  show=$(orb_q config show) || { step "could not read the OrbStack settings"; return 1; }
+  lines=$(printf '%s\n' "$show" | awk -v p="machine.$1." 'index($0, p) == 1 { r = substr($0, length(p) + 1); k = r; sub(/:.*/, "", k); v = r; sub(/^[^:]*: ?/, "", v); print k "\t" v }')
+  # An empty key (a line like "machine.<m>.: x") stays in the set and so counts as unknown.
+  got=$(printf '%s\n' "$lines" | cut -f1 | LC_ALL=C sort)
+  # shellcheck disable=SC2086 # word splitting of the key list is intended
+  want=$(printf '%s\n' $MACHINE_CONFIG_KEYS | LC_ALL=C sort)
+  if [[ "$got" != "$want" ]]; then
+    unknown=$(LC_ALL=C comm -13 <(printf '%s\n' "$want") <(printf '%s\n' "$got") | tr '\n' ' ')
+    missing=$(LC_ALL=C comm -23 <(printf '%s\n' "$want") <(printf '%s\n' "$got") | tr '\n' ' ')
+    step "$1 has unexpected OrbStack settings (unknown: ${unknown:-none}; missing: ${missing:-none})"
+    return 1
+  fi
+  for key in isolated isolate_network forward_ssh_agent; do
+    val=$(printf '%s\n' "$lines" | awk -F'\t' -v k="$key" '$1 == k { print $2 }')
+    if [[ "$val" != true ]]; then step "$1 has $key=$val (expected true)"; return 1; fi
+  done
+  val=$(printf '%s\n' "$lines" | awk -F'\t' '$1 == "mounts" { print $2 }')
+  if [[ "$val" != "$2" ]]; then step "$1 mounts '$val' (expected '$2')"; return 1; fi
+}
+
 maybe_bootstrap() { # machine generation staging_hash
   local applied src="/opt/agent-vm/src/$2"
   # The command's cwd inside the machine is not guaranteed to be $HOME, so read by absolute path.
   # shellcheck disable=SC2016 # $HOME must expand in the machine, not locally
-  applied=$(orb -m "$1" sh -c 'cat "$HOME/.local/state/agent-vm/applied-hash"' 2>/dev/null </dev/null 9>&-) || applied=""
+  applied=$(orb_q -m "$1" sh -c 'cat "$HOME/.local/state/agent-vm/applied-hash"' 2>/dev/null) || applied=""
   if [[ "$applied" == "$3" ]]; then return 0; fi
   step "applying dotfiles in $1"
-  orb -m "$1" bash "$src/agent-vm/bootstrap.sh" "$BOOTSTRAP_CONTRACT" "$3" "$src" </dev/null 9>&-
+  orb_q -m "$1" bash "$src/agent-vm/bootstrap.sh" "$BOOTSTRAP_CONTRACT" "$3" "$src"
 }
 
 # Reads a file inside a VM-writable tree without following symlinks.

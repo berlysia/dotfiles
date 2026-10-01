@@ -249,6 +249,98 @@ test_hash_reflects_uncommitted_edits() {
   if [[ "$g1" != "$g2" ]]; then record "PASS new generation name"; else record "FAIL new generation name"; fi
 }
 
+write_config_show() { # file machine mounts [extra_line]: the 10 keys OrbStack 2.2.3 prints per machine
+  local k
+  {
+    for k in cpu disk_bytes forward_ssh_agent http_port https_port isolate_network isolated memory_mib mounts username; do
+      case "$k" in
+        isolated | isolate_network | forward_ssh_agent) printf 'machine.%s.%s: true\n' "$2" "$k" ;;
+        mounts) printf 'machine.%s.mounts: %s\n' "$2" "$3" ;;
+        username) printf 'machine.%s.username: u\n' "$2" ;;
+        *) printf 'machine.%s.%s: 0\n' "$2" "$k" ;;
+      esac
+    done
+    if [[ -n "${4:-}" ]]; then printf '%s\n' "$4"; fi
+  } >>"$1"
+}
+test_mount_paths_with_separators_are_refused() {
+  local status
+  status=0; (check_mount_paths /ok "/a,b") 2>/dev/null || status=$?
+  assert_eq 1 "$status" "comma refused"
+  status=0; (check_mount_paths "/a:b") 2>/dev/null || status=$?
+  assert_eq 1 "$status" "colon refused"
+  status=0; (check_mount_paths "$(printf '/a\nb')") 2>/dev/null || status=$?
+  assert_eq 1 "$status" "newline refused"
+  assert_status 0 "plain paths pass" -- check_mount_paths /a/b "/with space/c"
+  local err; err=$( (check_mount_paths "/a,b") 2>&1 || true)
+  assert_contains "$err" "/a,b" "message names the path"
+  assert_contains "$err" "AGENT_VM=off" "message gives the host fallback"
+}
+test_vm_mounts_browsers_destination_is_what_bootstrap_checks() {
+  # bootstrap's claude_keep decides on the presence of BROWSERS_ROOT; the golden keeps the browser MCP entries for
+  # its clones only if the launcher mounts the browsers dir exactly there (spec K6).
+  local dest; dest=$(vm_mounts "$GOLDEN_MACHINE" | tr ',' '\n' | awk -F: '$2 ~ /^\/opt\/agent-vm\/browsers$/ { print $2 }')
+  assert_contains "$(grep -E '^BROWSERS_ROOT=' "$REPO_ROOT/agent-vm/bootstrap.sh")" ":-$dest}" "bootstrap's default BROWSERS_ROOT is the launcher's browsers destination"
+}
+test_vm_mounts_give_the_golden_and_repo_shapes_from_one_place() {
+  local st="$AGENT_VM_STATE_DIR"
+  assert_eq "/r:/r,$st/staging/agent-x-000000:/opt/agent-vm/src,$st/outbox/agent-x-000000:/opt/agent-vm/outbox,$st/browsers/agent-x-000000:/opt/agent-vm/browsers" \
+    "$(vm_mounts agent-x-000000 /r)" "repo machine: repo, staging, outbox, browsers"
+  assert_eq "$st/staging/$GOLDEN_MACHINE:/opt/agent-vm/src,$st/outbox/$GOLDEN_MACHINE:/opt/agent-vm/outbox,$st/browsers/$GOLDEN_MACHINE:/opt/agent-vm/browsers" \
+    "$(vm_mounts "$GOLDEN_MACHINE")" "golden: the same shape without the repo"
+}
+test_machine_config_must_match_exactly() {
+  local f="$TMP_ROOT/show"
+  write_config_show "$f" agent-x-000000 "/r:/r"
+  write_config_show "$f" agent-x-0000001 "/other:/other" # a machine whose name extends ours must not leak in
+  STUB_ORB_CONFIG_SHOW_FILE="$f" assert_status 0 "exact settings pass" -- verify_machine_config agent-x-000000 "/r:/r"
+  STUB_ORB_CONFIG_SHOW_FILE="$f" assert_status 1 "different mounts fail" -- verify_machine_config agent-x-000000 "/r:/r,/x:/y"
+  local g="$TMP_ROOT/show-unknown"
+  write_config_show "$g" agent-x-000000 "/r:/r" "machine.agent-x-000000.share_home: true"
+  STUB_ORB_CONFIG_SHOW_FILE="$g" assert_status 1 "unknown key fails" -- verify_machine_config agent-x-000000 "/r:/r"
+  local err; err=$(STUB_ORB_CONFIG_SHOW_FILE="$g" verify_machine_config agent-x-000000 "/r:/r" 2>&1 || true)
+  assert_contains "$err" "share_home" "unknown key named"
+  local h="$TMP_ROOT/show-net"
+  write_config_show "$h" agent-x-000000 "/r:/r"
+  sed -i.bak 's/isolate_network: true/isolate_network: false/' "$h"
+  STUB_ORB_CONFIG_SHOW_FILE="$h" assert_status 1 "network isolation off fails" -- verify_machine_config agent-x-000000 "/r:/r"
+  local k="$TMP_ROOT/show-missing"
+  write_config_show "$k" agent-x-000000 "/r:/r"
+  grep -v forward_ssh_agent "$k" >"$k.2"
+  STUB_ORB_CONFIG_SHOW_FILE="$k.2" assert_status 1 "missing key fails" -- verify_machine_config agent-x-000000 "/r:/r"
+  err=$(STUB_ORB_CONFIG_SHOW_FILE="$k.2" verify_machine_config agent-x-000000 "/r:/r" 2>&1 || true)
+  assert_contains "$err" "forward_ssh_agent" "missing key named"
+}
+test_empty_config_key_counts_as_unknown() {
+  local f="$TMP_ROOT/show"
+  write_config_show "$f" agent-x-000000 "/r:/r" "machine.agent-x-000000.: x"
+  STUB_ORB_CONFIG_SHOW_FILE="$f" assert_status 1 "empty key fails" -- verify_machine_config agent-x-000000 "/r:/r"
+}
+test_machine_state_reads_listing_rows() {
+  assert_eq "stopped" "$(STUB_ORB_LIST_STDOUT="$(printf 'a running ubuntu\nagent-x-000000 stopped ubuntu')" orb_machine_state agent-x-000000)" "state column"
+  assert_eq "present" "$(STUB_ORB_LIST_STDOUT="agent-x-000000" orb_machine_state agent-x-000000)" "a row with only the name still counts as existing"
+  assert_eq "" "$(STUB_ORB_LIST_STDOUT="agent-x-0000001 running" orb_machine_state agent-x-000000)" "absent"
+}
+test_failed_machine_listing_is_an_error_not_absence() {
+  export STUB_ORB_FAIL_ON="list"
+  local out
+  # shellcheck disable=SC2016 # snippet text; expands inside errexit_run's fresh bash
+  out=$(errexit_run 'vm=$(orb_machine_state agent-x-000000); echo "state=$vm"')
+  assert_not_contains "$out" "reached" "a failed orb list stops the caller"
+  assert_not_contains "$out" "state=" "the caller did not continue"
+}
+test_orb_q_closes_every_lock_fd() {
+  orb() { ls /dev/fd >"$TMP_ROOT/fds"; } # replaces the stub for this subshell only
+  exec 7>"$TMP_ROOT/l7" 8>"$TMP_ROOT/l8" 9>"$TMP_ROOT/l9"
+  orb list # positive control: a direct call does see the lock fds, so the listing below can detect a leak
+  assert_contains " $(tr '\n' ' ' <"$TMP_ROOT/fds")" " 7 " "control: a direct call inherits fd 7"
+  orb_q list
+  exec 7>&- 8>&- 9>&-
+  local fds; fds=" $(tr '\n' ' ' <"$TMP_ROOT/fds")"
+  assert_not_contains "$fds" " 7 " "fd 7 not inherited"
+  assert_not_contains "$fds" " 8 " "fd 8 not inherited"
+  assert_not_contains "$fds" " 9 " "fd 9 not inherited"
+}
 test_create_uses_isolation_flags_and_mounts() {
   ensure_machine agent-c-000000 /repo/path /wt
   local log; log=$(cat "$STUB_LOG")
