@@ -26,7 +26,7 @@ gitleaks = "8.30.1"
 node = "24.15.0"
 # Decouple npm from the copy bundled with node so it is pinned and updated on its own
 npm = "12.1.0"
-pnpm = "10.33.4"
+pnpm = "12.1.0"
 uv = "0.11.14"
 yarn = "4.18.0"
 
@@ -47,4 +47,4 @@ ast-grep = "latest"
 "github:microsoft/apm" = "0.31.0"
 # The source repo is private, so take the public npm package instead of github:.
 # It is our own package with a handful of weekly downloads, so the low-download gate is explicitly approved.
-"npm:@berlysia/shiori" = { version = "0.2.1", allow_low_downloads = true }
+"npm:@berlysia/shiori" = { version = "0.2.2", allow_low_downloads = true }
