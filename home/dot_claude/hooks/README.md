@@ -67,6 +67,8 @@ hooks/
    - **GitHub CLI**: `pr merge/close`、`issue close/delete`、`repo delete/archive`
    - **パッケージマネージャ**: `npm/pnpm/bun publish/unpublish/deprecate`
    - **その他**: piped shell execution、環境変数操作
+   - **除外**: コマンド全文が read-only 先頭語の単一単純コマンド（`grep -e "..." file` など）のときは、引数の綴りに対する危険判定を適用しない（条件は `lib/read-only-command.ts` を参照）。判定はコマンド全文に対して行うので、パイプやリストの中の read-only コマンドは除外されない。read-only 以外の先頭語（`echo "rm -rf /"` など）の引数による誤検知は残る
+   - deny-node-modules も同じ判定を使う。`find` / `less` / `more` / `ll` / `la` 先頭や複合コマンドの中で削除語を含むものは deny になる
 
 2. **パターンマッチング**
    - GitIgnore形式のパターンサポート
