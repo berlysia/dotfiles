@@ -351,6 +351,11 @@ test_prewarm_stops_before_secrets_and_session() {
   assert_contains "$(cat "$STUB_LOG")" "bootstrap.sh" "prewarm bootstraps"
   assert_not_contains "$(cat "$STUB_LOG")" "op inject" "prewarm injects no secrets"
 }
+test_stub_serves_config_show_from_a_file() {
+  printf 'machine.a.mounts: /x:/y\n' >"$TMP_ROOT/show"
+  assert_eq "machine.a.mounts: /x:/y" "$(STUB_ORB_CONFIG_SHOW_FILE="$TMP_ROOT/show" STUB_ORB_STDOUT=other orb config show)" "config show from file"
+  assert_eq "other" "$(STUB_ORB_CONFIG_SHOW_FILE="$TMP_ROOT/show" STUB_ORB_STDOUT=other orb list)" "other subcommands unchanged"
+}
 test_main_dispatches_commands() {
   run_tool() { printf 'run_tool %s\n' "$*"; }
   cmd_list() { echo list; }; cmd_gc() { echo gc; }; cmd_rm() { echo "rm $*"; }
