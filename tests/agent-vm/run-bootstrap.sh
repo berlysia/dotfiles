@@ -325,7 +325,7 @@ test_browser_apt_list_is_exact() {
   # What bootstrap actually asks dpkg about on a machine with the mount, so the test sees behaviour, not source text.
   setup_vm_env; mkdir -p "$TMP_ROOT/browsers"; export AGENT_VM_BROWSERS_ROOT="$TMP_ROOT/browsers"
   bash "$BOOTSTRAP" 1 v1:abc "$SRC" >/dev/null 2>&1
-  local vm_tools=" jq bat fd-find ripgrep shellcheck "
+  local vm_tools=" jq bat fd-find ripgrep shellcheck gh "
   local got; got=$(sed -n 's/^dpkg -s //p' "$STUB_LOG" | while read -r p; do [[ "$vm_tools" == *" $p "* ]] || printf '%s\n' "$p"; done | LC_ALL=C sort -u | paste -sd' ' -)
   assert_eq "at-spi2-common fonts-ipafont-gothic fonts-liberation libasound2-data libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libatspi2.0-0t64 libavahi-client3 libavahi-common-data libavahi-common3 libcairo2 libcups2t64 libdatrie1 libdrm-common libdrm2 libfreetype6 libgraphite2-3 libharfbuzz0b libice6 libnspr4 libnss3 libpango-1.0-0 libpixman-1-0 libpng16-16t64 libsm6 libthai-data libthai0 libunwind8 libxaw7 libxcb-render0 libxcomposite1 libxdamage1 libxfixes3 libxi6 libxkbcommon0 libxkbfile1 libxmu6 libxpm4 libxrandr2 libxrender1 libxres1 libxt6t64 x11-common" \
     "$got" "browser apt list is exactly the measured set (research F11; 35.1MB, limit 40MB)"
@@ -347,7 +347,7 @@ test_libgbm_placed_alone_and_versioned() {
   setup_vm_env; mkdir -p "$TMP_ROOT/browsers"; export AGENT_VM_BROWSERS_ROOT="$TMP_ROOT/browsers"
   bash "$BOOTSTRAP" 1 v1:abc "$SRC" >/dev/null 2>&1
   local d="$HOME/.local/lib/agent-vm-browser"
-  assert_eq ".version libgbm.so.1 libgbm.so.1.0.0" "$(ls -A "$d" | LC_ALL=C sort | paste -sd' ' -)" "only libgbm.so.1* and the version file are placed"
+  assert_eq ".version libgbm.so.1 libgbm.so.1.0.0" "$(find "$d" -mindepth 1 -maxdepth 1 -exec basename {} \; | LC_ALL=C sort | paste -sd' ' -)" "only libgbm.so.1* and the version file are placed"
   assert_eq "26.0.8-1ubuntu0.3" "$(cat "$d/.version")" "deb version recorded"
 }
 test_libgbm_not_refetched_when_current_but_refetched_when_updated() {

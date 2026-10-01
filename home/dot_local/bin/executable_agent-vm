@@ -221,7 +221,7 @@ cmd_fetch_browsers() { # [--force] [--from-apply <working tree>]  (spec K2)
     shift
   done
   if [[ -z "$wt" ]]; then wt=$(resolve_working_tree); fi
-  mkdir -p "$(store_dir)" "$AGENT_VM_STATE_DIR/build" && chmod 700 "$(store_dir)" || { step "cannot create $(store_dir)"; return 1; }
+  if ! { mkdir -p "$(store_dir)" "$AGENT_VM_STATE_DIR/build" && chmod 700 "$(store_dir)"; }; then step "cannot create $(store_dir)"; return 1; fi
   if ! id=$(browser_store_id "$wt"); then fetch_fail unknown "@playwright/mcp in package.json is missing or not an exact version"; return 1; fi
   if [[ "$force" -eq 0 && -d "$(store_dir)/$id" ]]; then return 0; fi
   # From chezmoi apply the bounds are tighter, so a network that keeps failing costs each apply at most ~5 minutes.

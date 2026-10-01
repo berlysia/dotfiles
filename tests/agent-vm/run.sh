@@ -1148,6 +1148,7 @@ fetch_stubs() { # npm/bunx/file stubs for cmd_fetch_browsers; $1 = playwright ve
 d="\$PLAYWRIGHT_BROWSERS_PATH/chromium_headless_shell-1224/chrome-linux"; mkdir -p "\$d"
 printf 'elf\n' >"\$d/headless_shell"; chmod +x "\$d/headless_shell"
 EOF
+  # shellcheck disable=SC2016 # stub script text; $1 expands when the stub runs
   printf '#!/bin/sh\necho "$1: ELF 64-bit LSB pie executable, ARM aarch64"\n' >"$TMP_ROOT/bin/file"
   chmod +x "$TMP_ROOT/bin/npm" "$TMP_ROOT/bin/bunx" "$TMP_ROOT/bin/file"
   export PATH="$TMP_ROOT/bin:$PATH"
@@ -1195,6 +1196,7 @@ test_fetch_failure_reason_keeps_paths_readable() {
 }
 test_fetch_refuses_a_non_arm64_binary() {
   fetch_stubs 1.61.0-alpha-1778188671000
+  # shellcheck disable=SC2016 # stub script text; $1 expands when the stub runs
   printf '#!/bin/sh\necho "$1: Mach-O 64-bit executable arm64"\n' >"$TMP_ROOT/bin/file"
   assert_status 1 "a non-ELF binary fails the fetch" -- cmd_fetch_browsers --from-apply "$TMP_ROOT/wt"
   assert_status 1 "nothing published" -- test -e "$AGENT_VM_STATE_DIR/browser-store/mcp-0.0.75"
@@ -1256,7 +1258,9 @@ test_existing_machine_gets_no_marker() {
 }
 test_failed_orb_list_writes_no_marker_and_stops() {
   export STUB_ORB_FAIL_ON="list"
-  local out; out=$(errexit_run 'ensure_machine agent-n-000000 "$TMP_ROOT" "$TMP_ROOT"')
+  local out
+  # shellcheck disable=SC2016 # snippet text; expands inside errexit_run's fresh bash
+  out=$(errexit_run 'ensure_machine agent-n-000000 "$TMP_ROOT" "$TMP_ROOT"')
   assert_not_contains "$out" "reached" "a failed orb list stops the launch"
   assert_status 1 "no marker when orb list failed" -- test -e "$AGENT_VM_STATE_DIR/browser-records/agent-n-000000.mount"
   assert_not_contains "$(cat "$STUB_LOG")" "orb create" "no create after a failed list"
@@ -1281,7 +1285,9 @@ test_ensure_browsers_skips_without_marker() {
 }
 test_ensure_browsers_publishes_current_and_records_id() {
   browsers_ready
-  local out; out=$(errexit_run 'ensure_browsers agent-b-000000 "$TMP_ROOT/wt"')
+  local out
+  # shellcheck disable=SC2016 # snippet text; expands inside errexit_run's fresh bash
+  out=$(errexit_run 'ensure_browsers agent-b-000000 "$TMP_ROOT/wt"')
   assert_contains "$out" "reached" "publishing completes under set -euo pipefail"
   local b="$AGENT_VM_STATE_DIR/browsers/agent-b-000000"
   assert_status 0 "current is a symlink" -- test -L "$b/current"
@@ -1313,7 +1319,7 @@ test_ensure_browsers_keeps_old_generations() {
   browsers_ready; ensure_browsers agent-b-000000 "$TMP_ROOT/wt" 2>/dev/null
   printf 'mcp-0.0.74\n' >"$AGENT_VM_STATE_DIR/browser-records/agent-b-000000.id"
   ensure_browsers agent-b-000000 "$TMP_ROOT/wt" 2>/dev/null
-  assert_eq "2" "$(ls -d "$AGENT_VM_STATE_DIR/browsers/agent-b-000000"/gen-* | wc -l | tr -d ' ')" "old generation kept while the VM may run"
+  assert_eq "2" "$(find "$AGENT_VM_STATE_DIR/browsers/agent-b-000000" -mindepth 1 -maxdepth 1 -name 'gen-*' | wc -l | tr -d ' ')" "old generation kept while the VM may run"
 }
 test_ensure_browsers_warns_when_store_is_missing() {
   browsers_ready; rm -rf "$AGENT_VM_STATE_DIR/browser-store/mcp-0.0.75"
@@ -1341,7 +1347,7 @@ test_ensure_browsers_warns_when_current_is_a_directory() {
   browsers_ready; mkdir -p "$AGENT_VM_STATE_DIR/browsers/agent-b-000000/current/x"
   local err; err=$(ensure_browsers agent-b-000000 "$TMP_ROOT/wt" 2>&1)
   assert_contains "$err" "agent-vm rm" "a blocked current names agent-vm rm"
-  assert_eq "1" "$(ls -d "$AGENT_VM_STATE_DIR/browsers/agent-b-000000"/gen-* 2>/dev/null | wc -l | tr -d ' ')" "a failed publish leaves its generation for forget_machine (no deep delete in the VM-writable tree)"
+  assert_eq "1" "$(find "$AGENT_VM_STATE_DIR/browsers/agent-b-000000" -mindepth 1 -maxdepth 1 -name 'gen-*' 2>/dev/null | wc -l | tr -d ' ')" "a failed publish leaves its generation for forget_machine (no deep delete in the VM-writable tree)"
   assert_status 1 "no id recorded after a failed publish" -- test -e "$AGENT_VM_STATE_DIR/browser-records/agent-b-000000.id"
 }
 test_ensure_browsers_never_fails_and_closes_fd8() {
@@ -1365,6 +1371,7 @@ test_ensure_browsers_never_fails_and_closes_fd8() {
             for _ in $(seq 1 100); do [[ -e "$TMP_ROOT/held" ]] && break; sleep 0.1; done   # the holder has the lock first
             if [[ ! -e "$TMP_ROOT/held" ]]; then record "FAIL busy: the lock holder never started"; continue; fi ;;
     esac
+    # shellcheck disable=SC2016 # snippet text; expands inside errexit_run's fresh bash
     out=$(errexit_run 'ensure_browsers agent-b-000000 "$TMP_ROOT/wt"; if test -e /dev/fd/8; then echo fd8-open; fi')
     assert_contains "$out" "reached" "$path: ensure_browsers returns under set -euo pipefail"
     assert_not_contains "$out" "fd8-open" "$path: fd 8 is closed afterwards"

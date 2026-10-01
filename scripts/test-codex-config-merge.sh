@@ -142,9 +142,11 @@ rm -f "$CASE/dst/.codex/config.toml"
 expect "M4: an absent current file composes base + overlay and replaces __CHEZMOI_HOME__" \
     ".mcp_servers.playwright.tools.browser_tabs.approval_mode == \"approve\" and .sandbox_workspace_write.writable_roots == [\"$HOME/.cache/mise\"]"
 cz apply --force
+# shellcheck disable=SC2012 # one-line permission-string check; stat flags differ between BSD and GNU
 if [[ "$(ls -l "$CASE/dst/.codex/config.toml" | cut -c1-10)" == "-rw-------" ]]; then pass "M4b: a created file is private (0600)"; else fail_case "M4b: a created file is private (0600)"; fi
 chmod 644 "$CASE/dst/.codex/config.toml"
 cz apply --force
+# shellcheck disable=SC2012 # one-line permission-string check; stat flags differ between BSD and GNU
 if [[ "$(ls -l "$CASE/dst/.codex/config.toml" | cut -c1-10)" == "-rw-------" ]]; then pass "M4c: an existing 0644 file becomes private (0600)"; else fail_case "M4c: an existing 0644 file becomes private (0600)"; fi
 
 new_case
