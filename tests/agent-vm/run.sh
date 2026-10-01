@@ -869,6 +869,36 @@ test_gh_rewrite_env_leaves_the_file_alone_on_failure() {
   assert_eq "" "$(find "$TMP_ROOT" -maxdepth 1 -name '*.tmp.*')" "no temp file left"
 }
 
+gh_put_auto_env() { # machine vault: write an env file with an auto GH_TOKEN line
+  mkdir -p "$AGENT_VM_CONFIG_DIR/repos"
+  printf 'GH_TOKEN=op://%s/abcdefghijklmnopqrstuvwxyz/credential\n' "$2" >"$AGENT_VM_CONFIG_DIR/repos/$1.env.1password"
+}
+test_gh_notice_only_when_near_expiry_or_unknown() {
+  export AGENT_VM_NOW=1767225600 # 2026-01-01
+  local m=agent-n-000000 out
+  gh_put_auto_env "$m" Formal
+  gh_put_state "$m" 'v=1\nrepo=O/R\nvault=Formal\npat_name=n-000000-2512010000\nexpires=2026-03-01\n'
+  assert_eq "" "$(notice_gh_token_expiry "$m" 2>&1)" "far expiry is silent"
+  gh_put_state "$m" 'v=1\nrepo=O/R\nvault=Formal\npat_name=n-000000-2512010000\nexpires=2026-01-08\n'
+  assert_contains "$(notice_gh_token_expiry "$m" 2>&1)" "expires on 2026-01-08; renew with: agent-vm env gh" "within 7 days"
+  gh_put_state "$m" 'v=1\nrepo=O/R\nvault=Formal\npat_name=n-000000-2512010000\nexpires=2025-12-31\n'
+  assert_contains "$(notice_gh_token_expiry "$m" 2>&1)" "expired on 2025-12-31" "expired"
+  rm -f "$AGENT_VM_CONFIG_DIR/repos/$m.gh"
+  assert_contains "$(notice_gh_token_expiry "$m" 2>&1)" "expiry for this repo is unknown" "auto line without state"
+  printf 'export GH_TOKEN=x\n' >"$AGENT_VM_CONFIG_DIR/repos/$m.env.1password"
+  assert_eq "" "$(notice_gh_token_expiry "$m" 2>&1)" "hand-written line is silent"
+  printf 'GH_TOKEN=op://v/i/f\n' >"$AGENT_VM_CONFIG_DIR/env.1password"
+  assert_contains "$(notice_gh_token_expiry "$m" 2>&1)" "every machine gets the same token" "global GH_TOKEN warned"
+  assert_status 0 "never fails" -- notice_gh_token_expiry "$m"
+}
+test_gh_notice_survives_a_broken_state_file() {
+  local m=agent-b-000000
+  gh_put_auto_env "$m" Personal
+  gh_put_state "$m" 'garbage\n'
+  assert_contains "$(notice_gh_token_expiry "$m" 2>&1)" "is broken" "broken state reported"
+  assert_status 0 "launch not blocked" -- notice_gh_token_expiry "$m"
+}
+
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do
   (
     TMP_ROOT="$TMP_BASE/$t"; mkdir -p "$TMP_ROOT"

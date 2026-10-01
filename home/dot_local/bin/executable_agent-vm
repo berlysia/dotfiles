@@ -812,6 +812,7 @@ run_tool() { # tool args...
   fi
   prepare_machine "$tool"
   notice_orphan_env "$MACHINE"
+  notice_gh_token_expiry "$MACHINE"
   if [[ "$tool" == codex ]]; then ensure_codex_auth "$MACHINE"; fi
   envf=$(inject_secrets "$MACHINE")
   script=$(build_launch_script "$tool" "$REPO" "$envf" "$@")
@@ -911,6 +912,28 @@ notice_orphan_env() { # machine
   for m in $(orphaned_env_machines); do
     step "an env file of a missing repo exists; if this repo was moved: agent-vm env adopt $m"
   done
+  return 0
+}
+
+notice_gh_token_expiry() { # machine: speak only when the token is near or past expiry, or its expiry is unknown
+  local m=$1 today soon LC_ALL=C
+  if grep -Eq "$GH_ANY_LINE_RE" "$AGENT_VM_CONFIG_DIR/env.1password" 2>/dev/null; then
+    step "GH_TOKEN is set in env.1password, so every machine gets the same token; move it to this repo with: agent-vm env gh"
+  fi
+  gh_scan_env "$(gh_env_path "$m")"
+  if [[ "$GH_ENV" != auto ]]; then return 0; fi
+  gh_read_state "$m"
+  if [[ "$GH_STATE" != ok ]]; then
+    step "GH_TOKEN expiry for this repo is unknown ($(gh_state_path "$m") is $GH_STATE); re-register with: agent-vm env gh"
+    return 0
+  fi
+  today=$(gh_utc %Y-%m-%d "$(gh_now)") || return 0
+  soon=$(gh_utc %Y-%m-%d "$(gh_now)" "$GH_WARN_DAYS") || return 0
+  if [[ "$GH_STATE_EXPIRES" < "$today" ]]; then
+    step "GH_TOKEN for this repo expired on $GH_STATE_EXPIRES; renew with: agent-vm env gh"
+  elif ! [[ "$GH_STATE_EXPIRES" > "$soon" ]]; then
+    step "GH_TOKEN for this repo expires on $GH_STATE_EXPIRES; renew with: agent-vm env gh"
+  fi
   return 0
 }
 
