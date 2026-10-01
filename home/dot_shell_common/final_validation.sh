@@ -33,7 +33,7 @@ fi
 # Test 3: Shell compatibility
 echo "🧪 Testing shell compatibility..."
 for shell in sh bash zsh; do
-    if command -v $shell >/dev/null 2>&1; then
+    if command -v "$shell" >/dev/null 2>&1; then
         if $shell test_suite.sh --help >/dev/null 2>&1; then
             echo "  ✅ $shell: compatible"
             SUCCESS=$((SUCCESS + 1))
@@ -70,7 +70,7 @@ fi
 # Test 6: Category filtering
 echo "🧪 Testing category filtering..."
 for cat in core shell config tools; do
-    if ./test_suite.sh --categories=$cat --quiet >/dev/null 2>&1; then
+    if ./test_suite.sh --categories="$cat" --quiet >/dev/null 2>&1; then
         echo "  ✅ Category '$cat' works"
         SUCCESS=$((SUCCESS + 1))
     else
@@ -86,7 +86,7 @@ START=$(date +%s%N)
 END=$(date +%s%N)
 TIME_MS=$(( (END - START) / 1000000 ))
 
-if [ $TIME_MS -lt 5000 ]; then
+if [ "$TIME_MS" -lt 5000 ]; then
     echo "  ✅ Performance: ${TIME_MS}ms (< 5s target)"
     SUCCESS=$((SUCCESS + 1))
 else
@@ -132,7 +132,7 @@ echo "  ⚠️  Warnings: $WARNINGS"
 echo "  ❌ Failed tests: $FAILURES"
 echo ""
 
-if [ $FAILURES -eq 0 ]; then
+if [ "$FAILURES" -eq 0 ]; then
     echo "🎉 VALIDATION PASSED - Migration successful!"
     echo ""
     echo "✅ All Phase 4 objectives achieved:"

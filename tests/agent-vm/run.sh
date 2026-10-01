@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2154 # MACHINE/REPO are exported globally by executable_agent-vm's
+# shellcheck disable=SC2154,SC2153 # MACHINE/REPO are exported globally by executable_agent-vm's
 # prepare_machine once it is sourced (dynamic `. "$LAUNCHER"`, which shellcheck cannot follow)
+# shellcheck disable=SC2317 # test cases redefine launcher functions (session_exec,
+# notice_orphan_env, run_tool, cmd_*) as stubs that the code under test calls indirectly
 set -euo pipefail
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$TEST_DIR/../.." && pwd)"
@@ -273,6 +275,7 @@ test_bootstrap_runs_with_generation_and_hash() {
 }
 test_applied_hash_is_read_from_vm_home_not_cwd() {
   STUB_ORB_STDOUT="v1:abc" maybe_bootstrap agent-b-000000 gen-x "v1:abc"
+  # shellcheck disable=SC2016 # asserts the literal command text sent to the VM
   assert_contains "$(cat "$STUB_LOG")" '$HOME/.local/state/agent-vm/applied-hash' "absolute HOME path"
 }
 

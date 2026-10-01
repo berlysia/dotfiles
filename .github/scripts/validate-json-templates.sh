@@ -40,7 +40,7 @@ while IFS= read -r -d '' template; do
     fi
 done < <(find . -name "*.json.tmpl" -type f -not -path "*/node_modules/*" -print0)
 
-if [ $ERRORS -gt 0 ]; then
+if [ "$ERRORS" -gt 0 ]; then
     echo "❌ Found $ERRORS invalid template(s)"
     exit 1
 else

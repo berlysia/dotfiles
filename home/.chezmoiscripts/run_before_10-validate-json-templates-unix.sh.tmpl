@@ -87,7 +87,7 @@ while IFS= read -r template; do
     fi
 done < <(find "{{ .chezmoi.sourceDir }}" -name "*.json.tmpl" -type f)
 
-if [ $ERRORS -gt 0 ]; then
+if [ "$ERRORS" -gt 0 ]; then
     echo -e "\n❌ Found $ERRORS template error(s)"
     echo "   Please fix the errors before applying"
     exit 1

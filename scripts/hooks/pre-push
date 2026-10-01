@@ -58,4 +58,4 @@ else
     echo -e "${YELLOW}⚠ gitleaks not installed, skipping secret detection${NC}"
 fi
 
-exit $EXIT_CODE
+exit "$EXIT_CODE"

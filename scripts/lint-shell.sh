@@ -73,7 +73,7 @@ FAILED=0
 
 for file in "${SHELL_FILES[@]}"; do
   echo "Checking: $file"
-  if ! shellcheck --severity=warning "$file"; then
+  if ! shellcheck "$file"; then
     FAILED=1
   fi
 done
@@ -81,7 +81,7 @@ done
 if [[ ${#SCRIPT_FILES[@]} -gt 0 ]]; then
   for file in "${SCRIPT_FILES[@]}"; do
     echo "Checking (shebang-detected): $file"
-    if ! shellcheck --severity=warning "$file"; then
+    if ! shellcheck "$file"; then
       FAILED=1
     fi
   done
@@ -135,7 +135,7 @@ if [[ ${#TEMPLATE_FILES[@]} -gt 0 ]]; then
     echo "Checking (rendered): $file"
     # --shell=bash forces shell detection for templates that may render
     # without a shebang on certain OS branches.
-    if ! shellcheck --shell=bash --severity=warning "$rendered" 2>&1 | sed "s|${rendered}|${file} (rendered)|g"; then
+    if ! shellcheck --shell=bash "$rendered" 2>&1 | sed "s|${rendered}|${file} (rendered)|g"; then
       FAILED=1
     fi
   done

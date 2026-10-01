@@ -102,9 +102,9 @@ parse_arguments() {
     done
     
     # Set report level based on verbosity flags
-    if [ $QUIET -eq 1 ]; then
+    if [ "$QUIET" -eq 1 ]; then
         set_report_level quiet
-    elif [ $VERBOSE -eq 1 ]; then
+    elif [ "$VERBOSE" -eq 1 ]; then
         set_report_level verbose
     else
         set_report_level normal
@@ -124,7 +124,7 @@ show_configuration() {
     # Load the adapter
     . "$SCRIPT_DIR/adapters/${adapter}_adapter.sh"
     
-    printf "${BOLD}Dotfiles Test Suite Configuration${NC}\n"
+    printf "%bDotfiles Test Suite Configuration%b\n" "$BOLD" "$NC"
     printf "${GRAY}%s${NC}\n\n" "$(date '+%Y-%m-%d %H:%M:%S')"
     
     # Environment detection info
@@ -132,7 +132,7 @@ show_configuration() {
     printf "\n"
     
     # Adapter configuration
-    ${adapter}_get_config_summary
+    "${adapter}_get_config_summary"
 }
 
 # Convert comma-separated categories to space-separated
@@ -174,13 +174,13 @@ main() {
     parse_arguments "$@"
     
     # Show help if requested
-    if [ $SHOW_HELP -eq 1 ]; then
+    if [ "$SHOW_HELP" -eq 1 ]; then
         show_help
         exit 0
     fi
     
     # Show configuration if requested
-    if [ $SHOW_CONFIG -eq 1 ]; then
+    if [ "$SHOW_CONFIG" -eq 1 ]; then
         show_configuration
         exit 0
     fi
@@ -190,8 +190,7 @@ main() {
     if [ -n "$FORCE_MODE" ]; then
         adapter="$FORCE_MODE"
     else
-        adapter=$(select_adapter)
-        if [ $? -ne 0 ]; then
+        if ! adapter=$(select_adapter); then
             echo "Error: Failed to select adapter" >&2
             exit 1
         fi
@@ -234,12 +233,12 @@ main() {
     local exit_code=$?
     
     # Show validation summary in verbose mode
-    if [ $VERBOSE -eq 1 ]; then
+    if [ "$VERBOSE" -eq 1 ]; then
         printf "\n"
         generate_validation_summary "$adapter" "$test_results" "$total_tests" "$passed_tests" "$failed_tests" "$skipped_tests"
     fi
     
-    exit $exit_code
+    exit "$exit_code"
 }
 
 # Execute main function with all arguments

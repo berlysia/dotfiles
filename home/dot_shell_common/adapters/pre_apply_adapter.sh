@@ -29,7 +29,7 @@ pre_apply_get_base_dir() {
 
     # Fallback to parent if we're inside dot_shell_common
     if [ "$(basename "$PWD")" = "dot_shell_common" ]; then
-        echo "$(dirname "$PWD")"
+        dirname "$PWD"
     else
         echo "$start_dir"
     fi

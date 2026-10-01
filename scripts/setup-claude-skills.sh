@@ -62,4 +62,5 @@ log "Setup complete!"
 log "Skills are now available in ~/.claude/ and will auto-update on Claude Code startup."
 log ""
 log "Available skills:"
+# shellcheck disable=SC2012 # display-only list of skill dir names; find -printf is GNU-only (macOS lacks it)
 ls -1 ~/.claude/skills 2>/dev/null | sed 's/^/  - \//' || log "  (run Claude Code to see skills)"

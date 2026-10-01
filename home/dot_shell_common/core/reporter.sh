@@ -54,27 +54,27 @@ print_status() {
     local min_level="${4:-$REPORT_NORMAL}"
     
     # Check if we should print based on verbosity level
-    [ $REPORT_LEVEL -lt $min_level ] && return
+    [ "$REPORT_LEVEL" -lt "$min_level" ] && return
     
     case "$print_status_arg" in
         PASS)
-            [ $REPORT_LEVEL -ge $REPORT_NORMAL ] && printf "${GREEN}${ICON_PASS}${NC} %s\n" "$message"
-            [ $REPORT_LEVEL -ge $REPORT_VERBOSE ] && [ -n "$details" ] && printf "   ${GRAY}%s${NC}\n" "$details"
+            [ "$REPORT_LEVEL" -ge "$REPORT_NORMAL" ] && printf "${GREEN}${ICON_PASS}${NC} %s\n" "$message"
+            [ "$REPORT_LEVEL" -ge "$REPORT_VERBOSE" ] && [ -n "$details" ] && printf "   ${GRAY}%s${NC}\n" "$details"
             ;;
         FAIL)
             printf "${RED}${ICON_FAIL}${NC} %s\n" "$message"
             [ -n "$details" ] && printf "   ${GRAY}%s${NC}\n" "$details"
             ;;
         SKIP)
-            [ $REPORT_LEVEL -ge $REPORT_VERBOSE ] && printf "${GRAY}${ICON_SKIP} %s${NC}\n" "$message"
-            [ $REPORT_LEVEL -ge $REPORT_VERBOSE ] && [ -n "$details" ] && printf "   ${GRAY}%s${NC}\n" "$details"
+            [ "$REPORT_LEVEL" -ge "$REPORT_VERBOSE" ] && printf "${GRAY}${ICON_SKIP} %s${NC}\n" "$message"
+            [ "$REPORT_LEVEL" -ge "$REPORT_VERBOSE" ] && [ -n "$details" ] && printf "   ${GRAY}%s${NC}\n" "$details"
             ;;
         INFO)
-            [ $REPORT_LEVEL -ge $REPORT_NORMAL ] && printf "${BLUE}${ICON_INFO}${NC} %s\n" "$message"
-            [ $REPORT_LEVEL -ge $REPORT_VERBOSE ] && [ -n "$details" ] && printf "   ${GRAY}%s${NC}\n" "$details"
+            [ "$REPORT_LEVEL" -ge "$REPORT_NORMAL" ] && printf "${BLUE}${ICON_INFO}${NC} %s\n" "$message"
+            [ "$REPORT_LEVEL" -ge "$REPORT_VERBOSE" ] && [ -n "$details" ] && printf "   ${GRAY}%s${NC}\n" "$details"
             ;;
         HEADER)
-            [ $REPORT_LEVEL -ge $REPORT_NORMAL ] && printf "\n${BOLD}%s${NC}\n" "$message"
+            [ "$REPORT_LEVEL" -ge "$REPORT_NORMAL" ] && printf "\n${BOLD}%s${NC}\n" "$message"
             ;;
     esac
 }
@@ -96,8 +96,8 @@ print_report_header() {
             ;;
     esac
     
-    if [ $REPORT_LEVEL -ge $REPORT_NORMAL ]; then
-        printf "${BOLD}Dotfiles Test Suite Report${NC}\n"
+    if [ "$REPORT_LEVEL" -ge "$REPORT_NORMAL" ]; then
+        printf "%bDotfiles Test Suite Report%b\n" "$BOLD" "$NC"
         printf "${GRAY}%s${NC}\n" "$(date '+%Y-%m-%d %H:%M:%S')"
         printf "${GRAY}Mode: %s${NC}\n" "$mode_display"
     fi
@@ -107,10 +107,10 @@ print_report_header() {
 print_config_summary() {
     local adapter="$1"
     
-    if [ $REPORT_LEVEL -ge $REPORT_VERBOSE ]; then
+    if [ "$REPORT_LEVEL" -ge "$REPORT_VERBOSE" ]; then
         print_status "HEADER" "Environment Configuration"
-        ${adapter}_get_config_summary | while IFS= read -r line; do
-            print_status "INFO" "$line" "" $REPORT_VERBOSE
+        "${adapter}_get_config_summary" | while IFS= read -r line; do
+            print_status "INFO" "$line" "" "$REPORT_VERBOSE"
         done
     fi
 }
@@ -155,26 +155,26 @@ print_health_score() {
     local counted_tests=$((total - skipped))
     local health_score=0
     
-    if [ $counted_tests -gt 0 ]; then
+    if [ "$counted_tests" -gt 0 ]; then
         health_score=$((passed * 100 / counted_tests))
     fi
     
-    if [ $REPORT_LEVEL -ge $REPORT_NORMAL ]; then
-        printf "\n${BOLD}Health Score${NC}\n"
-        printf "${GRAY}────────────────────────────────────────${NC}\n"
+    if [ "$REPORT_LEVEL" -ge "$REPORT_NORMAL" ]; then
+        printf "\n%bHealth Score%b\n" "$BOLD" "$NC"
+        printf "%b────────────────────────────────────────%b\n" "$GRAY" "$NC"
         
-        if [ $health_score -ge 90 ]; then
+        if [ "$health_score" -ge 90 ]; then
             printf "${GREEN}${BOLD}%d%%${NC} - Excellent! Your configuration is working perfectly.${NC}\n" "$health_score"
-        elif [ $health_score -ge 70 ]; then
+        elif [ "$health_score" -ge 70 ]; then
             printf "${GREEN}%d%%${NC} - Good. Most components are working correctly.\n" "$health_score"
-        elif [ $health_score -ge 50 ]; then
+        elif [ "$health_score" -ge 50 ]; then
             printf "${YELLOW}%d%%${NC} - Fair. Some issues need attention.\n" "$health_score"
         else
             printf "${RED}%d%%${NC} - Poor. Significant issues detected.\n" "$health_score"
         fi
     fi
     
-    return $health_score
+    return "$health_score"
 }
 
 # Print summary statistics
@@ -184,17 +184,17 @@ print_test_summary() {
     local failed="$3"
     local skipped="$4"
     
-    if [ $REPORT_LEVEL -ge $REPORT_NORMAL ]; then
-        printf "\n${BOLD}Test Summary${NC}\n"
-        printf "${GRAY}────────────────────────────────────────${NC}\n"
+    if [ "$REPORT_LEVEL" -ge "$REPORT_NORMAL" ]; then
+        printf "\n%bTest Summary%b\n" "$BOLD" "$NC"
+        printf "%b────────────────────────────────────────%b\n" "$GRAY" "$NC"
         printf "Total Tests:     %d\n" "$total"
         printf "${GREEN}Passed:          %d${NC}\n" "$passed"
         
-        if [ $failed -gt 0 ]; then
+        if [ "$failed" -gt 0 ]; then
             printf "${RED}Failed:          %d${NC}\n" "$failed"
         fi
         
-        if [ $skipped -gt 0 ] && [ $REPORT_LEVEL -ge $REPORT_VERBOSE ]; then
+        if [ "$skipped" -gt 0 ] && [ "$REPORT_LEVEL" -ge "$REPORT_VERBOSE" ]; then
             printf "${GRAY}Skipped:         %d${NC}\n" "$skipped"
         fi
     fi
@@ -205,9 +205,9 @@ print_recommendations() {
     local failed="$1"
     local adapter="$2"
     
-    if [ $failed -gt 0 ] && [ $REPORT_LEVEL -ge $REPORT_NORMAL ]; then
-        printf "\n${BOLD}Actionable Recommendations${NC}\n"
-        printf "${GRAY}────────────────────────────────────────${NC}\n"
+    if [ "$failed" -gt 0 ] && [ "$REPORT_LEVEL" -ge "$REPORT_NORMAL" ]; then
+        printf "\n%bActionable Recommendations%b\n" "$BOLD" "$NC"
+        printf "%b────────────────────────────────────────%b\n" "$GRAY" "$NC"
         
         # Parse failed tests to provide specific recommendations
         generate_specific_recommendations "$adapter"
@@ -215,14 +215,14 @@ print_recommendations() {
         # General recommendations based on adapter mode
         case "$adapter" in
             pre_apply)
-                printf "\n${YELLOW}Before running 'chezmoi apply':${NC}\n"
+                printf "\n%bBefore running 'chezmoi apply':%b\n" "$YELLOW" "$NC"
                 printf "  • Review specific recommendations above\n"
                 printf "  • Install missing required components (priority: required > recommended > optional)\n"
                 printf "  • Run tests with -v for detailed installation hints\n"
                 printf "  • Focus on fixing 'required' failures first\n"
                 ;;
             post_apply)
-                printf "\n${YELLOW}To fix configuration issues:${NC}\n"
+                printf "\n%bTo fix configuration issues:%b\n" "$YELLOW" "$NC"
                 printf "  • Install missing components using provided commands\n"
                 printf "  • Run 'chezmoi apply' to update configuration after installations\n"
                 printf "  • Check shell configuration files and restart shell sessions\n"
@@ -241,7 +241,7 @@ generate_specific_recommendations() {
     local shell_issues=""
     
     # Analyze test results to identify specific issues
-    printf "${BLUE}${ICON_INFO}${NC} Specific Issues Found:\n"
+    printf "%b%b%b Specific Issues Found:\n" "$BLUE" "$ICON_INFO" "$NC"
     
     # Parse TEST_RESULTS for failed tests with install hints
     local old_ifs="$IFS"
@@ -249,6 +249,7 @@ generate_specific_recommendations() {
 '
     for result_line in $TEST_RESULTS; do
         IFS='|'
+        # shellcheck disable=SC2086 # split result_line into fields
         set -- $result_line
         local category="$1"
         local name="$2"
@@ -302,12 +303,12 @@ generate_specific_recommendations() {
     # Category-specific advice
     if [ -n "$git_issues" ]; then
         printf "\n${BLUE}🔧 Git Configuration Issues:${NC}\n%s\n" "$git_issues"
-        printf "     ${GRAY}Tip: Configure git globally with user.name and user.email${NC}\n"
+        printf "     %bTip: Configure git globally with user.name and user.email%b\n" "$GRAY" "$NC"
     fi
     
     if [ -n "$shell_issues" ]; then
         printf "\n${BLUE}🐚 Shell Configuration Issues:${NC}\n%s\n" "$shell_issues"
-        printf "     ${GRAY}Tip: Source shell files after installation or restart terminal${NC}\n"
+        printf "     %bTip: Source shell files after installation or restart terminal%b\n" "$GRAY" "$NC"
     fi
 }
 
@@ -317,9 +318,9 @@ print_chezmoi_readiness_status() {
     local failed="$2" 
     local score="$3"
     
-    if [ $REPORT_LEVEL -ge $REPORT_NORMAL ]; then
-        printf "\n${BOLD}Chezmoi Apply Readiness${NC}\n"
-        printf "${GRAY}────────────────────────────────────────${NC}\n"
+    if [ "$REPORT_LEVEL" -ge "$REPORT_NORMAL" ]; then
+        printf "\n%bChezmoi Apply Readiness%b\n" "$BOLD" "$NC"
+        printf "%b────────────────────────────────────────%b\n" "$GRAY" "$NC"
         
         # Analyze critical failures (required priority)
         local critical_failures=0
@@ -331,7 +332,8 @@ print_chezmoi_readiness_status() {
 '
         for result_line in $TEST_RESULTS; do
             IFS='|'
-            set -- $result_line
+            # shellcheck disable=SC2086 # split result_line into fields
+        set -- $result_line
             local category="$1"
             local name="$2"
             local test_status="$3"
@@ -350,30 +352,30 @@ print_chezmoi_readiness_status() {
         # Determine readiness status
         case "$adapter" in
             pre_apply)
-                if [ $critical_failures -eq 0 ] && [ $score -ge 70 ]; then
-                    printf "${GREEN}✅ READY${NC} - Safe to run 'chezmoi apply'\n"
+                if [ "$critical_failures" -eq 0 ] && [ "$score" -ge 70 ]; then
+                    printf "%b✅ READY%b - Safe to run 'chezmoi apply'\n" "$GREEN" "$NC"
                     printf "   ${GRAY}All critical requirements met (Health: ${score}%%)${NC}\n"
                     
-                    if [ $failed -gt 0 ]; then
-                        printf "\n${YELLOW}⚠️  NON-BLOCKING ISSUES:${NC}\n"
-                        printf "   ${GRAY}Some optional/recommended components missing${NC}\n"
-                        printf "   ${GRAY}You can proceed but consider installing them later${NC}\n"
+                    if [ "$failed" -gt 0 ]; then
+                        printf "\n%b⚠️  NON-BLOCKING ISSUES:%b\n" "$YELLOW" "$NC"
+                        printf "   %bSome optional/recommended components missing%b\n" "$GRAY" "$NC"
+                        printf "   %bYou can proceed but consider installing them later%b\n" "$GRAY" "$NC"
                     fi
                     
-                elif [ $critical_failures -eq 0 ] && [ $score -ge 50 ]; then
-                    printf "${YELLOW}⚠️  READY WITH WARNINGS${NC} - Can proceed with caution\n"
+                elif [ "$critical_failures" -eq 0 ] && [ "$score" -ge 50 ]; then
+                    printf "%b⚠️  READY WITH WARNINGS%b - Can proceed with caution\n" "$YELLOW" "$NC"
                     printf "   ${GRAY}No critical failures but health is moderate (${score}%%)${NC}\n"
-                    printf "   ${GRAY}Consider fixing recommended issues first${NC}\n"
+                    printf "   %bConsider fixing recommended issues first%b\n" "$GRAY" "$NC"
                     
                 else
-                    printf "${RED}🚫 NOT READY${NC} - Do not run 'chezmoi apply' yet\n"
-                    printf "   ${GRAY}Critical failures must be resolved first${NC}\n"
+                    printf "%b🚫 NOT READY%b - Do not run 'chezmoi apply' yet\n" "$RED" "$NC"
+                    printf "   %bCritical failures must be resolved first%b\n" "$GRAY" "$NC"
                     
                     if [ -n "$blocking_issues" ]; then
                         printf "\n${RED}🚨 BLOCKING ISSUES:${NC}%s\n" "$blocking_issues"
                     fi
                     
-                    printf "\n${YELLOW}NEXT STEPS:${NC}\n"
+                    printf "\n%bNEXT STEPS:%b\n" "$YELLOW" "$NC"
                     printf "   1. Fix all critical (required) failures above\n" 
                     printf "   2. Re-run test suite to verify fixes\n"
                     printf "   3. Proceed with 'chezmoi apply' once ready\n"
@@ -381,23 +383,23 @@ print_chezmoi_readiness_status() {
                 ;;
                 
             post_apply)
-                if [ $critical_failures -eq 0 ] && [ $score -ge 80 ]; then
-                    printf "${GREEN}✅ OPTIMAL${NC} - Configuration is working well\n"
+                if [ "$critical_failures" -eq 0 ] && [ "$score" -ge 80 ]; then
+                    printf "%b✅ OPTIMAL%b - Configuration is working well\n" "$GREEN" "$NC"
                     printf "   ${GRAY}Environment is properly configured (Health: ${score}%%)${NC}\n"
                     
-                elif [ $critical_failures -eq 0 ] && [ $score -ge 60 ]; then
-                    printf "${YELLOW}⚠️  FUNCTIONAL${NC} - Basic functionality working\n"
+                elif [ "$critical_failures" -eq 0 ] && [ "$score" -ge 60 ]; then
+                    printf "%b⚠️  FUNCTIONAL%b - Basic functionality working\n" "$YELLOW" "$NC"
                     printf "   ${GRAY}Core features available but some enhancements missing (${score}%%)${NC}\n"
                     
                 else
-                    printf "${RED}🚫 NEEDS ATTENTION${NC} - Configuration issues detected\n"
-                    printf "   ${GRAY}Critical components missing or misconfigured${NC}\n"
+                    printf "%b🚫 NEEDS ATTENTION%b - Configuration issues detected\n" "$RED" "$NC"
+                    printf "   %bCritical components missing or misconfigured%b\n" "$GRAY" "$NC"
                     
                     if [ -n "$blocking_issues" ]; then
                         printf "\n${RED}🚨 CRITICAL ISSUES:${NC}%s\n" "$blocking_issues"
                     fi
                     
-                    printf "\n${YELLOW}NEXT STEPS:${NC}\n"
+                    printf "\n%bNEXT STEPS:%b\n" "$YELLOW" "$NC"
                     printf "   1. Install missing critical components\n"
                     printf "   2. Run 'chezmoi apply' to refresh configuration\n" 
                     printf "   3. Restart shell sessions after fixes\n"
@@ -406,12 +408,12 @@ print_chezmoi_readiness_status() {
         esac
         
         # Additional context based on score
-        if [ $score -lt 30 ]; then
-            printf "\n${RED}💥 SEVERE ISSUES${NC}: Multiple critical components missing\n"
-        elif [ $score -lt 60 ]; then
-            printf "\n${YELLOW}⚠️  MODERATE ISSUES${NC}: Several components need attention\n"
-        elif [ $score -lt 90 ]; then
-            printf "\n${BLUE}ℹ️  MINOR ISSUES${NC}: Mostly good with some enhancements possible\n"
+        if [ "$score" -lt 30 ]; then
+            printf "\n%b💥 SEVERE ISSUES%b: Multiple critical components missing\n" "$RED" "$NC"
+        elif [ "$score" -lt 60 ]; then
+            printf "\n%b⚠️  MODERATE ISSUES%b: Several components need attention\n" "$YELLOW" "$NC"
+        elif [ "$score" -lt 90 ]; then
+            printf "\n%bℹ️  MINOR ISSUES%b: Mostly good with some enhancements possible\n" "$BLUE" "$NC"
         fi
     fi
 }
@@ -457,8 +459,8 @@ $results
 EOF
 
     # Return exit code aligned with readiness status
-    if [ $critical_count -gt 0 ]; then
-        if [ $score -lt 50 ]; then
+    if [ "$critical_count" -gt 0 ]; then
+        if [ "$score" -lt 50 ]; then
             return 2  # Critical failures with low score
         else
             return 1  # Some critical failures

@@ -3,6 +3,7 @@
 
 # Load common aliases
 # shellcheck disable=SC2154
+# shellcheck source=/dev/null
 [ -f "$SHELL_COMMON/aliases.sh" ] && . "$SHELL_COMMON/aliases.sh"
 
 # FZF integration based on shell type
@@ -16,6 +17,7 @@ if type fzf >/dev/null 2>&1; then
     if [ -f ~/.fzf.bash ]; then
       . ~/.fzf.bash
     elif [ -f /usr/share/doc/fzf/examples/key-bindings.bash ]; then
+      # shellcheck source=/dev/null
       . /usr/share/doc/fzf/examples/key-bindings.bash
     fi
   fi
@@ -23,7 +25,10 @@ fi
 
 # Update checkers (tools and dotfiles) — skip in Claude Code sessions
 if [ -z "$CLAUDECODE" ]; then
+  # shellcheck source=/dev/null
   [ -f "$SHELL_COMMON/updates/chezmoi.sh" ] && . "$SHELL_COMMON/updates/chezmoi.sh"
+  # shellcheck source=/dev/null
   [ -f "$SHELL_COMMON/updates/mise.sh" ] && . "$SHELL_COMMON/updates/mise.sh"
+  # shellcheck source=/dev/null
   [ -f "$SHELL_COMMON/updates/dotfiles.sh" ] && . "$SHELL_COMMON/updates/dotfiles.sh"
 fi

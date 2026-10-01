@@ -260,12 +260,12 @@ web_search_request = true
 EOF
 
 # Extract semantic content before formatting
-BEFORE_JSON=$(cat "$CODEX_CONFIG_FILE" | mise x -- dasel query --root -i toml -o json | jq -S)
+BEFORE_JSON=$(mise x -- dasel query --root -i toml -o json < "$CODEX_CONFIG_FILE" | jq -S)
 
 "$SCRIPT_DIR/format-codex-config.sh" >/dev/null 2>&1
 
 # Extract semantic content after formatting
-AFTER_JSON=$(cat "$CODEX_CONFIG_FILE" | mise x -- dasel query --root -i toml -o json | jq -S)
+AFTER_JSON=$(mise x -- dasel query --root -i toml -o json < "$CODEX_CONFIG_FILE" | jq -S)
 
 if [[ "$BEFORE_JSON" == "$AFTER_JSON" ]]; then
     test_pass

@@ -458,7 +458,7 @@ STUB
 chmod +x "${j5_stub}/bun"
 PATH="${j5_stub}:/usr/bin:/bin" HOME="$j5_home" bash "$j_rendered" >/dev/null 2>&1 &&
   j5_rc=0 || j5_rc=$?
-j5_entries="$(ls -A "${j5_home}/.claude/.root-deps-install-failed" | wc -l | tr -d ' ')"
+j5_entries="$(find "${j5_home}/.claude/.root-deps-install-failed" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')"
 if [ "$j5_rc" -eq 1 ] && [ "$j5_entries" = "0" ]; then
   pass "J5: a directory at the marker path makes root-deps exit 1 without writing into it"
 else

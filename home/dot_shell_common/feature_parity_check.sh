@@ -72,7 +72,7 @@ NEW_TIME=$(( (NEW_END - NEW_START) / 1000000 ))
 echo "    Old system: ${OLD_TIME}ms"
 echo "    New system: ${NEW_TIME}ms"
 
-if [ $NEW_TIME -lt $OLD_TIME ]; then
+if [ "$NEW_TIME" -lt "$OLD_TIME" ]; then
     IMPROVEMENT=$(( (OLD_TIME - NEW_TIME) * 100 / OLD_TIME ))
     echo "    🚀 Performance improved by ${IMPROVEMENT}%"
 else

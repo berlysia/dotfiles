@@ -14,7 +14,7 @@ set -euo pipefail
 
 # Activate mise to ensure safe-chain is in PATH
 if [ -f "$HOME/.local/bin/mise" ]; then
-  eval "$($HOME/.local/bin/mise activate bash)" 2>/dev/null || true
+  eval "$("$HOME/.local/bin/mise" activate bash)" 2>/dev/null || true
 fi
 
 if ! command -v safe-chain &> /dev/null; then

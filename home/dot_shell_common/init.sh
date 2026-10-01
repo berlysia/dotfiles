@@ -17,6 +17,7 @@ if [ -z "$SHELL_COMMON" ]; then
 fi
 
 # Load common environment variables
+# shellcheck source=/dev/null # env.sh is rendered from env.sh.tmpl by chezmoi apply
 [ -f "$SHELL_COMMON/env.sh" ] && . "$SHELL_COMMON/env.sh"
 
 
@@ -60,9 +61,10 @@ case "$(uname -s)" in
     # Linux
     [ -f "$SHELL_COMMON/linux.sh" ] && . "$SHELL_COMMON/linux.sh"
     # WSL detection
+    # shellcheck disable=SC2263 # plain grep is wanted; linux.sh's color alias need not apply
     if grep -q microsoft /proc/version 2>/dev/null; then
       if [ -f "$HOME/.local/bin/wsl2-ssh-agent" ]; then
-        eval "$($HOME/.local/bin/wsl2-ssh-agent -powershell-path pwsh.exe)"
+        eval "$("$HOME"/.local/bin/wsl2-ssh-agent -powershell-path pwsh.exe)"
       fi
       export BROWSER=wslview
     fi
@@ -80,16 +82,17 @@ esac
 # shellcheck disable=SC2154
 if [ "$HAS_MISE" = "1" ] && [ -f "$HOME/.local/bin/mise" ]; then
   if [ "$CURRENT_SHELL" = "zsh" ]; then
-    eval "$($HOME/.local/bin/mise activate zsh)"
-    eval "$($HOME/.local/bin/mise hook-env -s zsh)"
+    eval "$("$HOME"/.local/bin/mise activate zsh)"
+    eval "$("$HOME"/.local/bin/mise hook-env -s zsh)"
   else
-    eval "$($HOME/.local/bin/mise activate bash)"
-    eval "$($HOME/.local/bin/mise hook-env -s bash)"
+    eval "$("$HOME"/.local/bin/mise activate bash)"
+    eval "$("$HOME"/.local/bin/mise hook-env -s bash)"
   fi
 fi
 
 # Load Rust/Cargo environment
 if [ -f "$HOME/.cargo/env" ]; then
+  # shellcheck source=/dev/null # installed by rustup, outside this repository
   . "$HOME/.cargo/env"
 fi
 

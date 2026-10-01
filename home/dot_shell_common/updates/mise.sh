@@ -11,6 +11,7 @@ mise_check_updates() {
 
   # Load common functions
   # shellcheck disable=SC2154
+  # shellcheck source=/dev/null
   . "$SHELL_COMMON/updates/_common.sh"
 
   # Check if interval has passed

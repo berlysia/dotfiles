@@ -12,7 +12,7 @@ for arg in "$@"; do
     esac
 done
 
-if [ $show_notice -eq 1 ] && [ -t 1 ]; then
+if [ "$show_notice" -eq 1 ] && [ -t 1 ]; then
     echo "🚀 'doctor' command upgraded with enhanced features" >&2
     echo "" >&2
 fi

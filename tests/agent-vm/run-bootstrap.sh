@@ -103,7 +103,9 @@ test_finds_claude_in_local_bin_without_profile() {
 test_planted_local_bin_does_not_shadow_system_commands() {
   setup_vm_env
   mkdir -p "$HOME/.local/bin"
+  # shellcheck disable=SC2016 # stub script text; $STUB_LOG expands when the stub runs
   printf '#!/bin/sh\necho planted-rsync >>"$STUB_LOG"\nexit 0\n' >"$HOME/.local/bin/rsync"; chmod +x "$HOME/.local/bin/rsync"
+  # shellcheck disable=SC2016 # stub script text; $STUB_LOG expands when the stub runs
   printf '#!/bin/sh\necho planted-curl >>"$STUB_LOG"\nexit 0\n' >"$HOME/.local/bin/curl"; chmod +x "$HOME/.local/bin/curl"
   rm "$TMP_ROOT/bin/claude" # force the installer path so curl is actually invoked
   bash "$BOOTSTRAP" 1 v1:abc "$SRC" >/dev/null 2>&1
@@ -283,6 +285,7 @@ test_self_check_does_not_accept_a_kept_name_in_a_value() {
 }
 
 logging_mise_stub() { # replaces setup_vm_env's silent mise with one that records its calls and cwd
+# shellcheck disable=SC2016 # stub script text; $* and $PWD must expand when the stub runs
   printf '#!/bin/sh\necho "mise $* @$PWD" >>"$STUB_LOG"\nexit 0\n' >"$HOME/.local/bin/mise"
   chmod +x "$HOME/.local/bin/mise"
 }

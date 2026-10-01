@@ -163,6 +163,7 @@ ensure_machine() { # machine repo_root working_tree
 maybe_bootstrap() { # machine generation staging_hash
   local applied src="/opt/agent-vm/src/$2"
   # The command's cwd inside the machine is not guaranteed to be $HOME, so read by absolute path.
+  # shellcheck disable=SC2016 # $HOME must expand in the machine, not locally
   applied=$(orb -m "$1" sh -c 'cat "$HOME/.local/state/agent-vm/applied-hash"' 2>/dev/null </dev/null 9>&-) || applied=""
   if [[ "$applied" == "$3" ]]; then return 0; fi
   step "applying dotfiles in $1"
@@ -171,6 +172,7 @@ maybe_bootstrap() { # machine generation staging_hash
 
 # Reads a file inside a VM-writable tree without following symlinks.
 # usage: outbox_read size|range <tree_root> <relpath> [offset length]; exit 2 = refused
+# shellcheck disable=SC2016 # Perl source; $ is Perl syntax
 OUTBOX_READ_PL='
 use strict; use Fcntl qw(O_RDONLY O_NOFOLLOW O_NONBLOCK); use Cwd qw(realpath); use File::Basename qw(dirname);
 my ($mode, $root, $rel, $off, $len) = @ARGV;
@@ -518,6 +520,7 @@ inject_secrets() { # machine -> prints the in-VM env file path (empty when nothi
     resolved+="$out"$'\n'
   done <<<"$files"
   # An empty reply means the VM side could not store the values; launching without them would hide that.
+  # shellcheck disable=SC2016 # script runs in the machine; expansions are remote
   out=$(printf '%s' "$resolved" | orb -m "$1" sh -c '
     d=${XDG_RUNTIME_DIR:-/dev/shm}
     find "$d" -maxdepth 1 -name "agent-vm.env.*" -mmin +1 -delete 2>/dev/null
@@ -539,6 +542,7 @@ build_launch_script() { # tool repo_root env_file args...
 }
 
 ensure_codex_auth() { # machine
+  # shellcheck disable=SC2016 # $HOME must expand in the machine, not locally
   if orb -m "$1" sh -c 'test -f "$HOME/.codex/auth.json"' </dev/null 9>&-; then return 0; fi
   step "Codex is not logged in on $1; starting device authorization (once per repo)"
   # A login shell is required: codex is installed via mise, whose PATH setup lives in the shell profile.

@@ -13,7 +13,7 @@ while IFS= read -r -d '' template; do
     fi
 done < <(find . -name "*.json.tmpl" -type f -not -path "*/node_modules/*" -print0)
 
-if [ $FOUND -gt 0 ]; then
+if [ "$FOUND" -gt 0 ]; then
     echo "❌ Found trailing commas in $FOUND file(s)"
     exit 1
 else

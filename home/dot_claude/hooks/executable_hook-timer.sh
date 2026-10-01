@@ -58,6 +58,7 @@ record() { # $1 exit_code|null  $2 terminated-signal|""
   ) </dev/null >/dev/null 2>&1 &
 }
 
+# shellcheck disable=SC2317 # invoked only via the traps below
 on_signal() { # $1 signal name  $2 signal number
   # Forward the signal and give the child up to 1s to finish writing, then
   # SIGKILL it: otherwise a child that traps the signal would outlive the

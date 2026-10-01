@@ -67,8 +67,8 @@ print_status() {
     case "$msg_status" in
         "success")
             PASSED_CHECKS=$((PASSED_CHECKS + 1))
-            [ $QUIET -eq 0 ] && printf "${GREEN}${ICON_SUCCESS}${NC} %s\n" "$message"
-            [ $VERBOSE -eq 1 ] && [ -n "$details" ] && printf "   ${GRAY}%s${NC}\n" "$details"
+            [ "$QUIET" -eq 0 ] && printf "${GREEN}${ICON_SUCCESS}${NC} %s\n" "$message"
+            [ "$VERBOSE" -eq 1 ] && [ -n "$details" ] && printf "   ${GRAY}%s${NC}\n" "$details"
             ;;
         "warning")
             WARNED_CHECKS=$((WARNED_CHECKS + 1))
@@ -81,15 +81,15 @@ print_status() {
             [ -n "$details" ] && printf "   ${GRAY}%s${NC}\n" "$details"
             ;;
         "info")
-            [ $QUIET -eq 0 ] && printf "${BLUE}${ICON_INFO}${NC} %s\n" "$message"
-            [ $VERBOSE -eq 1 ] && [ -n "$details" ] && printf "   ${GRAY}%s${NC}\n" "$details"
+            [ "$QUIET" -eq 0 ] && printf "${BLUE}${ICON_INFO}${NC} %s\n" "$message"
+            [ "$VERBOSE" -eq 1 ] && [ -n "$details" ] && printf "   ${GRAY}%s${NC}\n" "$details"
             ;;
         "skip")
             SKIPPED_CHECKS=$((SKIPPED_CHECKS + 1))
-            [ $VERBOSE -eq 1 ] && printf "${GRAY}${ICON_SKIP} %s${NC}\n" "$message"
+            [ "$VERBOSE" -eq 1 ] && printf "${GRAY}${ICON_SKIP} %s${NC}\n" "$message"
             ;;
         "header")
-            [ $QUIET -eq 0 ] && printf "\n${BOLD}%s${NC}\n" "$message"
+            [ "$QUIET" -eq 0 ] && printf "\n${BOLD}%s${NC}\n" "$message"
             ;;
     esac
 }
@@ -115,7 +115,7 @@ check_command_with_deps() {
     
     # Check dependency first
     if [ -n "$depends_on" ] && ! command -v "$depends_on" >/dev/null 2>&1; then
-        [ $VERBOSE -eq 1 ] && print_status "skip" "$cmd - $description (skipped: $depends_on not found)"
+        [ "$VERBOSE" -eq 1 ] && print_status "skip" "$cmd - $description (skipped: $depends_on not found)"
         return
     fi
     
@@ -136,7 +136,7 @@ check_command_with_deps() {
                 # Check if managed by mise
                 if command -v mise >/dev/null 2>&1 && mise ls 2>/dev/null | grep -q "$cmd"; then
                     local mise_version
-                    mise_version=$(mise current $cmd 2>/dev/null)
+                    mise_version=$(mise current "$cmd" 2>/dev/null)
                     if [ -n "$mise_version" ]; then
                         version="mise: $mise_version"
                     else
@@ -204,14 +204,14 @@ check_command_with_deps() {
                 ;;
         esac
         print_status "success" "$cmd - $description" "$version"
-        add_weight $weight 1
+        add_weight "$weight" 1
     else
         if [ "$priority" = "required" ]; then
             print_status "error" "$cmd - $description (NOT FOUND)" "$install_hint"
-            add_weight $weight 0
+            add_weight "$weight" 0
         else
             print_status "warning" "$cmd - $description ($priority, not installed)" "$install_hint"
-            add_weight $weight 0
+            add_weight "$weight" 0
         fi
     fi
 }
@@ -237,26 +237,26 @@ check_path() {
     if [ "$type" = "file" ]; then
         if [ -f "$path" ]; then
             print_status "success" "$description" "$path exists"
-            add_weight $weight 1
+            add_weight "$weight" 1
         else
             if [ "$priority" = "required" ]; then
                 print_status "error" "$description" "$path not found"
             else
                 print_status "warning" "$description" "$path not found"
             fi
-            add_weight $weight 0
+            add_weight "$weight" 0
         fi
     elif [ "$type" = "directory" ]; then
         if [ -d "$path" ]; then
             print_status "success" "$description" "$path exists"
-            add_weight $weight 1
+            add_weight "$weight" 1
         else
             if [ "$priority" = "required" ]; then
                 print_status "error" "$description" "$path not found"
             else
                 print_status "warning" "$description" "$path not found"
             fi
-            add_weight $weight 0
+            add_weight "$weight" 0
         fi
     fi
 }
@@ -275,7 +275,7 @@ check_env() {
     
     eval "value=\$$var"
     if [ -n "$value" ]; then
-        if [ $VERBOSE -eq 1 ]; then
+        if [ "$VERBOSE" -eq 1 ]; then
             # Truncate long values for readability
             if [ ${#value} -gt 50 ]; then
                 value="$(printf '%.47s...' "$value")"
@@ -284,14 +284,14 @@ check_env() {
         else
             print_status "success" "$var - $description" "set"
         fi
-        add_weight $weight 1
+        add_weight "$weight" 1
     else
         if [ "$priority" = "required" ]; then
             print_status "error" "$var - $description" "not set"
         else
             print_status "warning" "$var - $description ($priority)" "not set"
         fi
-        add_weight $weight 0
+        add_weight "$weight" 0
     fi
 }
 
@@ -316,10 +316,10 @@ check_function() {
         if grep -q "^${func}[[:space:]]*(" "$shell_rc" 2>/dev/null || \
            grep -q "^${func}[[:space:]]*(" "$functions_file" 2>/dev/null; then
             print_status "success" "Function: $func - $description" "defined"
-            add_weight $WEIGHT_OPTIONAL 1
+            add_weight "$WEIGHT_OPTIONAL" 1
         else
-            [ $VERBOSE -eq 1 ] && print_status "warning" "Function: $func - $description" "not found"
-            add_weight $WEIGHT_OPTIONAL 0
+            [ "$VERBOSE" -eq 1 ] && print_status "warning" "Function: $func - $description" "not found"
+            add_weight "$WEIGHT_OPTIONAL" 0
         fi
     fi
 }
@@ -338,10 +338,10 @@ check_alias() {
     if [ -f "$aliases_file" ]; then
         if grep -q "^alias $alias_name=" "$aliases_file" 2>/dev/null; then
             print_status "success" "Alias: $alias_name - $description" "defined"
-            add_weight $WEIGHT_OPTIONAL 1
+            add_weight "$WEIGHT_OPTIONAL" 1
         else
-            [ $VERBOSE -eq 1 ] && print_status "warning" "Alias: $alias_name - $description" "not found"
-            add_weight $WEIGHT_OPTIONAL 0
+            [ "$VERBOSE" -eq 1 ] && print_status "warning" "Alias: $alias_name - $description" "not found"
+            add_weight "$WEIGHT_OPTIONAL" 0
         fi
     fi
 }
@@ -414,18 +414,18 @@ check_shell_config() {
         # Check if shell common is sourced
         if grep -q "SHELL_COMMON" "$config_file" 2>/dev/null; then
             print_status "success" "$display_name configuration" "$config_file properly configured"
-            add_weight $weight 1
+            add_weight "$weight" 1
         else
             print_status "warning" "$display_name configuration" "$config_file exists but may not source common settings"
-            add_weight $weight 0
+            add_weight "$weight" 0
         fi
     else
         if [ "$priority" = "required" ]; then
             print_status "error" "$display_name configuration" "$config_file not found"
-            add_weight $weight 0
+            add_weight "$weight" 0
         else
             print_status "skip" "$display_name configuration" "$config_file not found"
-            add_weight $weight 0
+            add_weight "$weight" 0
         fi
     fi
 }
@@ -440,10 +440,10 @@ check_git_config() {
         
         if [ -n "$user_name" ] && [ -n "$user_email" ]; then
             print_status "success" "Git user configuration" "$user_name <$user_email>"
-            add_weight $WEIGHT_REQUIRED 1
+            add_weight "$WEIGHT_REQUIRED" 1
         else
             print_status "error" "Git user configuration" "user.name or user.email not set"
-            add_weight $WEIGHT_REQUIRED 0
+            add_weight "$WEIGHT_REQUIRED" 0
         fi
         
         # Check for GPG signing
@@ -454,13 +454,13 @@ check_git_config() {
             signing_key=$(git config --global user.signingkey 2>/dev/null)
             if [ -n "$signing_key" ]; then
                 print_status "success" "Git GPG signing" "enabled with key"
-                add_weight $WEIGHT_RECOMMENDED 1
+                add_weight "$WEIGHT_RECOMMENDED" 1
             else
                 print_status "warning" "Git GPG signing" "enabled but no signing key configured"
-                add_weight $WEIGHT_RECOMMENDED 0
+                add_weight "$WEIGHT_RECOMMENDED" 0
             fi
         else
-            [ $VERBOSE -eq 1 ] && print_status "info" "Git GPG signing" "not enabled"
+            [ "$VERBOSE" -eq 1 ] && print_status "info" "Git GPG signing" "not enabled"
         fi
     fi
 }
@@ -472,7 +472,7 @@ check_chezmoi() {
         source_dir=$(chezmoi source-path 2>/dev/null)
         if [ -n "$source_dir" ] && [ -d "$source_dir" ]; then
             print_status "success" "Chezmoi source directory" "$source_dir"
-            add_weight $WEIGHT_REQUIRED 1
+            add_weight "$WEIGHT_REQUIRED" 1
             
             # Check for uncommitted changes
             if git -C "$source_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -480,17 +480,17 @@ check_chezmoi() {
                 git_status=$(cd "$source_dir" && git status --porcelain 2>/dev/null)
                 if [ -z "$git_status" ]; then
                     print_status "success" "Chezmoi repository" "clean"
-                    add_weight $WEIGHT_RECOMMENDED 1
+                    add_weight "$WEIGHT_RECOMMENDED" 1
                 else
                     local changed_count
                     changed_count=$(echo "$git_status" | wc -l)
                     print_status "warning" "Chezmoi repository" "$changed_count uncommitted changes"
-                    add_weight $WEIGHT_RECOMMENDED 0
+                    add_weight "$WEIGHT_RECOMMENDED" 0
                 fi
             fi
         else
             print_status "error" "Chezmoi" "not initialized"
-            add_weight $WEIGHT_REQUIRED 0
+            add_weight "$WEIGHT_REQUIRED" 0
         fi
     fi
 }
@@ -572,9 +572,9 @@ while [ $# -gt 0 ]; do
 done
 
 # Main checks
-[ $QUIET -eq 0 ] && printf "${BOLD}System Health Check${NC}\n"
-[ $QUIET -eq 0 ] && printf "${GRAY}%s${NC}\n" "$(date '+%Y-%m-%d %H:%M:%S')"
-[ $QUIET -eq 0 ] && printf "${GRAY}OS: %s${NC}\n\n" "$OS_TYPE"
+[ "$QUIET" -eq 0 ] && printf "%bSystem Health Check%b\n" "$BOLD" "$NC"
+[ "$QUIET" -eq 0 ] && printf "${GRAY}%s${NC}\n" "$(date '+%Y-%m-%d %H:%M:%S')"
+[ "$QUIET" -eq 0 ] && printf "${GRAY}OS: %s${NC}\n\n" "$OS_TYPE"
 
 # Core Requirements
 print_status "header" "Core Requirements"
@@ -589,20 +589,20 @@ print_status "header" "Shell Environment"
 
 # Detect current shell
 CURRENT_SHELL=$(basename "$SHELL")
-[ $VERBOSE -eq 1 ] && print_status "info" "Current shell: $CURRENT_SHELL"
+[ "$VERBOSE" -eq 1 ] && print_status "info" "Current shell: $CURRENT_SHELL"
 
 # Check shells and their configurations
 if [ "$CURRENT_SHELL" = "zsh" ]; then
     check_command "zsh" "required" "Z shell (current)" "apt install zsh / brew install zsh"
     check_shell_config "zsh" "required"
     check_command "bash" "optional" "Bash shell" "apt install bash / brew install bash"
-    [ $VERBOSE -eq 1 ] && check_shell_config "bash" "optional"
+    [ "$VERBOSE" -eq 1 ] && check_shell_config "bash" "optional"
 else
     # Default to bash or other shells
     check_command "bash" "required" "Bash shell (current)" "apt install bash / brew install bash"  
     check_shell_config "bash" "required"
     check_command "zsh" "optional" "Z shell" "apt install zsh / brew install zsh"
-    [ $VERBOSE -eq 1 ] && check_shell_config "zsh" "optional"
+    [ "$VERBOSE" -eq 1 ] && check_shell_config "zsh" "optional"
 fi
 
 # Version Management
@@ -683,7 +683,7 @@ check_env "GOPATH" "Go workspace" "optional"
 check_env "FZF_DEFAULT_OPTS" "FZF configuration" "optional"
 
 # Shell Functions & Aliases
-if [ $VERBOSE -eq 1 ]; then
+if [ "$VERBOSE" -eq 1 ]; then
     print_status "header" "Shell Functions"
     check_function "extract" "Extract archives" "$CURRENT_SHELL"
     check_function "opr" "1Password run" "$CURRENT_SHELL"
@@ -705,47 +705,47 @@ check_chezmoi
 
 # Calculate health score
 HEALTH_SCORE=0
-if [ $TOTAL_WEIGHT -gt 0 ]; then
+if [ "$TOTAL_WEIGHT" -gt 0 ]; then
     HEALTH_SCORE=$((ACHIEVED_WEIGHT * 100 / TOTAL_WEIGHT))
 fi
 
 # Summary
-[ $QUIET -eq 0 ] && printf "\n"
-printf "${BOLD}Summary${NC}\n"
-printf "${GRAY}────────────────────────────────────────${NC}\n"
+[ "$QUIET" -eq 0 ] && printf "\n"
+printf "%bSummary%b\n" "$BOLD" "$NC"
+printf "%b────────────────────────────────────────%b\n" "$GRAY" "$NC"
 printf "Total checks:    %d\n" "$TOTAL_CHECKS"
 printf "${GREEN}Passed:          %d${NC}\n" "$PASSED_CHECKS"
-[ $WARNED_CHECKS -gt 0 ] && printf "${YELLOW}Warnings:        %d${NC}\n" "$WARNED_CHECKS"
-[ $FAILED_CHECKS -gt 0 ] && printf "${RED}Failed:          %d${NC}\n" "$FAILED_CHECKS"
-[ $VERBOSE -eq 1 ] && [ $SKIPPED_CHECKS -gt 0 ] && printf "${GRAY}Skipped:         %d${NC}\n" "$SKIPPED_CHECKS"
+[ "$WARNED_CHECKS" -gt 0 ] && printf "${YELLOW}Warnings:        %d${NC}\n" "$WARNED_CHECKS"
+[ "$FAILED_CHECKS" -gt 0 ] && printf "${RED}Failed:          %d${NC}\n" "$FAILED_CHECKS"
+[ "$VERBOSE" -eq 1 ] && [ "$SKIPPED_CHECKS" -gt 0 ] && printf "${GRAY}Skipped:         %d${NC}\n" "$SKIPPED_CHECKS"
 
 # Health Score
-printf "\n${BOLD}Health Score${NC}\n"
-printf "${GRAY}────────────────────────────────────────${NC}\n"
-if [ $HEALTH_SCORE -ge 90 ]; then
+printf "\n%bHealth Score%b\n" "$BOLD" "$NC"
+printf "%b────────────────────────────────────────%b\n" "$GRAY" "$NC"
+if [ "$HEALTH_SCORE" -ge 90 ]; then
     printf "${GREEN}${BOLD}%d%%${NC} - Excellent! Your environment is fully configured.${NC}\n" "$HEALTH_SCORE"
-elif [ $HEALTH_SCORE -ge 70 ]; then
+elif [ "$HEALTH_SCORE" -ge 70 ]; then
     printf "${GREEN}%d%%${NC} - Good. Most tools are properly configured.\n" "$HEALTH_SCORE"
-elif [ $HEALTH_SCORE -ge 50 ]; then
+elif [ "$HEALTH_SCORE" -ge 50 ]; then
     printf "${YELLOW}%d%%${NC} - Fair. Some recommended tools are missing.\n" "$HEALTH_SCORE"
 else
     printf "${RED}%d%%${NC} - Poor. Many required tools are missing.\n" "$HEALTH_SCORE"
 fi
 
 # Exit with appropriate code
-if [ $FAILED_CHECKS -gt 0 ]; then
+if [ "$FAILED_CHECKS" -gt 0 ]; then
     # Check if any required checks failed
-    if [ $HEALTH_SCORE -lt 50 ]; then
-        printf "\n${RED}Critical: Required components are missing. Please install them first.${NC}\n"
+    if [ "$HEALTH_SCORE" -lt 50 ]; then
+        printf "\n%bCritical: Required components are missing. Please install them first.%b\n" "$RED" "$NC"
         exit 2
     else
-        printf "\n${YELLOW}Some checks failed but system is functional.${NC}\n"
+        printf "\n%bSome checks failed but system is functional.%b\n" "$YELLOW" "$NC"
         exit 1
     fi
-elif [ $WARNED_CHECKS -gt 0 ]; then
-    printf "\n${YELLOW}System is functional but some optional components are missing.${NC}\n"
+elif [ "$WARNED_CHECKS" -gt 0 ]; then
+    printf "\n%bSystem is functional but some optional components are missing.%b\n" "$YELLOW" "$NC"
     exit 0
 else
-    printf "\n${GREEN}All checks passed! Your system is perfectly configured.${NC}\n"
+    printf "\n%bAll checks passed! Your system is perfectly configured.%b\n" "$GREEN" "$NC"
     exit 0
 fi

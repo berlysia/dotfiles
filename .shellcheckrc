@@ -17,8 +17,9 @@ source-path=dot_shell_common
 source-path=dot_bash
 source-path=dot_zsh
 
-# シェルスクリプトの拡張子を持たないファイルもチェック
-enable=all
+# source 先を追跡する（-x 相当）。エディタと lint-shell.sh は 1 ファイルずつ
+# 検査するため、これがないとリポジトリ内の source もすべて SC1091 になる
+external-sources=true
 
 # 厳格なチェック
 enable=avoid-nullary-conditions

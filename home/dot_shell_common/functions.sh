@@ -135,8 +135,9 @@ ope() {
 			[ -n "$env_file" ] || continue
 			echo "📁 Loading $(basename "$env_file")"
 			# shellcheck disable=SC1090
+			# shellcheck source=/dev/null
 			. /dev/stdin <<EOF
-$(cat "$env_file" | op inject)
+$(op inject < "$env_file")
 EOF
 		done
 		_ope_update_paths "$update_path"
@@ -247,7 +248,7 @@ dotfiles_doctor() {
       esac
     done
     
-    if [ $show_notice -eq 1 ] && [ -t 1 ]; then
+    if [ "$show_notice" -eq 1 ] && [ -t 1 ]; then
       echo "🚀 dotfiles_doctor() upgraded with enhanced features:" >&2
       echo "   • Weighted health scoring" >&2
       echo "   • Actionable recommendations" >&2

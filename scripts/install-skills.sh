@@ -44,7 +44,7 @@ mkdir -p "$TARGET_DIR/skills" "$TARGET_DIR/rules"
 if [[ -d "$TEMP_DIR/$SKILLS_PATH" ]]; then
     log "Installing skills to $TARGET_DIR/skills/"
     cp -rf "$TEMP_DIR/$SKILLS_PATH/"* "$TARGET_DIR/skills/"
-    SKILL_COUNT=$(ls -1 "$TARGET_DIR/skills" 2>/dev/null | wc -l)
+    SKILL_COUNT=$(find "$TARGET_DIR/skills" -mindepth 1 -maxdepth 1 ! -name ".*" 2>/dev/null | wc -l)
     log "Installed $SKILL_COUNT skills"
 else
     log "Warning: Skills directory not found in repository"
@@ -54,7 +54,7 @@ fi
 if [[ -d "$TEMP_DIR/$RULES_PATH" ]]; then
     log "Installing rules to $TARGET_DIR/rules/"
     cp -rf "$TEMP_DIR/$RULES_PATH/"* "$TARGET_DIR/rules/"
-    RULE_COUNT=$(ls -1 "$TARGET_DIR/rules" 2>/dev/null | wc -l)
+    RULE_COUNT=$(find "$TARGET_DIR/rules" -mindepth 1 -maxdepth 1 ! -name ".*" 2>/dev/null | wc -l)
     log "Installed $RULE_COUNT rule files"
 else
     log "Warning: Rules directory not found in repository"

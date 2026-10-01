@@ -73,6 +73,7 @@ if command -v bun &> /dev/null; then
         UNSTAGED_FMT=$(git diff --name-only || true)
         if [ -n "$UNSTAGED_FMT" ]; then
             echo -e "${YELLOW}⚠ staged 外のファイルも整形されました (別途 commit してください):${NC}"
+            # shellcheck disable=SC2001 # per-line prefix, not expressible as ${var//a/b}
             echo "$UNSTAGED_FMT" | sed 's/^/    /'
         fi
         echo -e "${GREEN}✓ Repository formatted${NC}"
@@ -130,7 +131,7 @@ if [ -n "$ALL_SHELL_FILES" ]; then
         for file in $ALL_SHELL_FILES; do
             if [ -f "$file" ]; then
                 echo "  Checking: $file"
-                if ! shellcheck --severity=warning "$file"; then
+                if ! shellcheck "$file"; then
                     SHELLCHECK_FAILED=true
                 fi
             fi
@@ -268,4 +269,4 @@ else
     echo -e "${GREEN}✓ No hook files modified, skipping tests${NC}"
 fi
 
-exit $EXIT_CODE
+exit "$EXIT_CODE"
