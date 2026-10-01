@@ -120,35 +120,24 @@ echo
 #
 # 3. Shell Script Linting (shellcheck)
 #
-STAGED_SH_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.sh$' || true)
-# Also check staged executable scripts without .sh extension (e.g., executable_*)
-STAGED_EXEC_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '(^|/)executable_' || true)
-ALL_SHELL_FILES=$(echo -e "${STAGED_SH_FILES}\n${STAGED_EXEC_FILES}" | sort -u | grep -v '^$' || true)
-if [ -n "$ALL_SHELL_FILES" ]; then
+# lint-shell.sh classifies the paths itself (.sh, .sh.tmpl, shebang) and runs the
+# version of shellcheck pinned in .mise.toml, so the hook checks what CI checks. Exit 2
+# means a tool is missing; the hook warns and lets CI be the final check.
+LINT_TARGETS=()
+while IFS= read -r -d '' path; do
+    LINT_TARGETS+=("$path")
+done < <(git diff --cached --name-only -z --diff-filter=ACM)
+if [ ${#LINT_TARGETS[@]} -gt 0 ]; then
     echo -e "${BLUE}🐚 Checking shell scripts with shellcheck...${NC}"
-    if command -v shellcheck &> /dev/null; then
-        SHELLCHECK_FAILED=false
-        for file in $ALL_SHELL_FILES; do
-            if [ -f "$file" ]; then
-                echo "  Checking: $file"
-                if ! shellcheck "$file"; then
-                    SHELLCHECK_FAILED=true
-                fi
-            fi
-        done
-
-        if [ "$SHELLCHECK_FAILED" = true ]; then
-            echo -e "${RED}❌ shellcheck found issues in staged files${NC}"
-            EXIT_CODE=1
-        else
-            echo -e "${GREEN}✓ All staged shell scripts passed shellcheck${NC}"
-        fi
-    else
-        echo -e "${YELLOW}⚠ shellcheck not installed, skipping${NC}"
-        echo -e "${YELLOW}  Install: apt install shellcheck${NC}"
-    fi
+    LINT_RC=0
+    "${REPO_ROOT}/scripts/lint-shell.sh" "${LINT_TARGETS[@]}" || LINT_RC=$?
+    case "$LINT_RC" in
+        0) echo -e "${GREEN}✓ Staged shell scripts passed shellcheck${NC}" ;;
+        2) echo -e "${YELLOW}⚠ shellcheck could not run; this commit is not checked and CI is the final check (see recover: above)${NC}" ;;
+        *) echo -e "${RED}❌ shellcheck found issues in staged files${NC}"; EXIT_CODE=1 ;;
+    esac
 else
-    echo -e "${GREEN}✓ No shell scripts staged${NC}"
+    echo -e "${GREEN}✓ No files staged${NC}"
 fi
 
 echo

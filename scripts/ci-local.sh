@@ -25,7 +25,7 @@ Usage:
 Targets:
   typescript | ts   Run .github/workflows/ci-typescript.yml
   codex            Run .github/workflows/validate-codex-config.yml
-  shell            Run .github/workflows/ci-shellcheck.yml
+  shell            Run .github/workflows/ci-shellcheck.yml (actrun cannot run jdx/mise-action; run ./scripts/lint-shell.sh directly instead)
   all              Run all supported local workflows
   lint             Run actrun workflow lint
 

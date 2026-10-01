@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Test stub: lint-shell.sh only calls `mise where github:koalaman/shellcheck`.
+# shellcheck disable=SC2154 # STUB_* are exported by tests/lint-shell/run.sh
+if [[ "${1:-}" == where && "${2:-}" == github:koalaman/shellcheck ]]; then
+  if [[ -n "${STUB_MISE_WHERE_FAIL:-}" ]]; then
+    echo "mise ERROR github:koalaman/shellcheck@0.11.0 not installed" >&2
+    exit 1
+  fi
+  printf '%s\n' "$STUB_INSTALL_DIR"
+  exit 0
+fi
+echo "stub mise: unexpected args: $*" >&2
+exit 99

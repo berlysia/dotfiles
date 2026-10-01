@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Test stub: records each call with argument boundaries; exit status comes from STUB_SHELLCHECK_RC.
+# On a non-zero status it prints a finding naming the last argument, as shellcheck does.
+# shellcheck disable=SC2154 # STUB_* are exported by tests/lint-shell/run.sh
+if [[ "${1:-}" == --version ]]; then
+  printf 'ShellCheck - shell script analysis tool\nversion: %s\n' "${STUB_SHELLCHECK_VERSION:-0.11.0}"
+  exit 0
+fi
+{ printf 'shellcheck'; printf ' [%s]' "$@"; printf '\n'; } >>"$STUB_LOG"
+rc=${STUB_SHELLCHECK_RC:-0}
+if [[ "$rc" -ne 0 ]]; then printf 'In %s line 1:\nstub finding\n' "${!#}"; fi
+exit "$rc"
