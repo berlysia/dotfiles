@@ -83,7 +83,7 @@ CONDITIONAL ALLOW (evaluate based on arguments):
 - node -e: ALLOW if file operations target project directory; DENY if targeting system files
 - kill: ALLOW for port cleanup patterns (lsof -ti:PORT | xargs kill); DENY for system processes (PID 1, init)
 - chezmoi apply/update: ALLOW (user's own dotfile management tool, modifies only user's home directory)
-- rm <specific files>: ALLOW if removing project files (not rm -rf /); DENY if targeting system paths
+- Deletion (rm, unlink, rmdir, shred, truncate, find -delete) is irreversible; never cite reversibility as a reason to ALLOW. ALLOW removing specific project files or symlinks inside the project; DENY if targeting system paths
 - curl/wget to localhost: ALLOW for local dev server testing; DENY if piped to sh/bash
 - python3 -c: ALLOW if processing data or reading files within project; DENY if modifying system files
 - Commands with ENV_VAR=value prefix: Strip the prefix and evaluate the actual command

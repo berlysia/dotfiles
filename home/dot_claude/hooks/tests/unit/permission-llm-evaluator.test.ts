@@ -1,10 +1,11 @@
 #!/usr/bin/env node --test
 
-import { deepStrictEqual, strictEqual } from "node:assert";
+import { deepStrictEqual, ok, strictEqual } from "node:assert";
 import { describe, it } from "node:test";
 import {
   EVALUATOR_QUERY_OPTIONS,
   parseLLMResponse,
+  SYSTEM_PROMPT,
 } from "../../implementations/permission-llm-evaluator.ts";
 
 describe("parseLLMResponse", () => {
@@ -87,5 +88,14 @@ describe("EVALUATOR_QUERY_OPTIONS", () => {
   // user's Stop hooks (voice, Discord, Slack) on its own.
   it("loads no filesystem settings so user hooks do not run in the evaluator session", () => {
     deepStrictEqual(EVALUATOR_QUERY_OPTIONS.settingSources, []);
+  });
+});
+
+describe("SYSTEM_PROMPT deletion policy", () => {
+  it("does not treat deletion as reversible", () => {
+    ok(SYSTEM_PROMPT.includes("never cite reversibility as a reason to ALLOW"));
+    ok(
+      !SYSTEM_PROMPT.includes("ALLOW if removing project files (not rm -rf /)"),
+    );
   });
 });
