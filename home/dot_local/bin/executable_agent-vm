@@ -569,6 +569,103 @@ gh_template_url() { # pat_name owner/repo days -> creation page with name, expir
   ' "$1" "$2" "$3"
 }
 
+gh_state_path() { printf '%s/repos/%s.gh\n' "$AGENT_VM_CONFIG_DIR" "$1"; }
+gh_env_path() { printf '%s/repos/%s.env.1password\n' "$AGENT_VM_CONFIG_DIR" "$1"; }
+
+gh_trim() { # string -> without surrounding whitespace and a trailing CR
+  local s=${1%$'\r'}
+  s=${s#"${s%%[![:space:]]*}"}
+  printf '%s' "${s%"${s##*[![:space:]]}"}"
+}
+
+gh_read_state() { # machine -> GH_STATE=absent|ok|broken and GH_STATE_{REPO,VAULT,PAT_NAME,EXPIRES}
+  # Plain key=value lines; never sourced. The first occurrence of a key wins; unknown keys are ignored.
+  local f line key v="" repo="" vault="" pat="" exp="" seen=" "
+  f=$(gh_state_path "$1")
+  GH_STATE=absent GH_STATE_REPO="" GH_STATE_VAULT="" GH_STATE_PAT_NAME="" GH_STATE_EXPIRES=""
+  if [[ ! -f "$f" ]]; then return 0; fi
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line=$(gh_trim "$line")
+    case "$line" in *=*) ;; *) continue ;; esac
+    key=${line%%=*}
+    case "$seen" in *" $key "*) continue ;; esac
+    seen="$seen$key "
+    case "$key" in
+      v) v=${line#*=} ;; repo) repo=${line#*=} ;; vault) vault=${line#*=} ;;
+      pat_name) pat=${line#*=} ;; expires) exp=${line#*=} ;;
+    esac
+  done <"$f"
+  GH_STATE=broken
+  if [[ "$v" != 1 ]] || ! gh_valid_repo "$repo" || ! gh_vault_days "$vault" >/dev/null; then return 0; fi
+  if ! [[ "$pat" =~ $GH_PAT_NAME_RE && "$exp" =~ $GH_DATE_RE ]]; then return 0; fi
+  GH_STATE=ok GH_STATE_REPO=$repo GH_STATE_VAULT=$vault GH_STATE_PAT_NAME=$pat GH_STATE_EXPIRES=$exp
+}
+
+gh_write_atomic() { # target command...: the command's stdout -> a same-directory temp file (mode 600) -> mv
+  # The command runs to completion before mv, so a failing producer leaves the target untouched; readers see
+  # the old or the new content, never a partial one. Runs in the caller's shell: it sets and then clears the
+  # INT/TERM trap, so callers must not rely on a trap of their own across this call (cmd_env_gh sets none).
+  local target=$1 dir tmp
+  shift
+  dir=$(dirname "$target")
+  mkdir -p "$dir" || return 1
+  tmp=$(umask 077 && mktemp "$dir/.$(basename "$target").tmp.XXXXXX") || return 1
+  # shellcheck disable=SC2064 # expand now: remove this call's temp file if the user interrupts
+  trap "rm -f '$tmp'; exit 130" INT TERM
+  if "$@" >"$tmp" && mv "$tmp" "$target"; then trap - INT TERM; return 0; fi
+  rm -f "$tmp"
+  trap - INT TERM
+  return 1
+}
+
+gh_state_lines() { # owner/repo vault pat_name expires -> the state file content
+  printf 'v=1\nrepo=%s\nvault=%s\npat_name=%s\nexpires=%s\n' "$1" "$2" "$3" "$4"
+}
+gh_write_state() { # machine owner/repo vault pat_name expires
+  gh_write_atomic "$(gh_state_path "$1")" gh_state_lines "$2" "$3" "$4" "$5"
+}
+
+gh_scan_env() { # env file -> GH_ENV=none|auto|manual|crlf|unreadable, and GH_ENV_VAULT / GH_ENV_ID for an auto line
+  # An auto line is the exact form agent-vm env gh writes; anything else is the user's and is never rewritten.
+  local line count=0 matched=""
+  GH_ENV=none GH_ENV_VAULT="" GH_ENV_ID=""
+  if [[ ! -e "$1" ]]; then return 0; fi
+  # Unreadable (or not a regular file) must not look like "no GH_TOKEN line": env gh would then go on and fail
+  # only after the user created a PAT.
+  if [[ ! -f "$1" || ! -r "$1" ]]; then GH_ENV=unreadable; return 0; fi
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ "$line" =~ $GH_ANY_LINE_RE ]] || continue
+    case "$line" in *$'\r'*) GH_ENV=crlf; return 0 ;; esac
+    count=$((count + 1))
+    matched=$line
+  done <"$1"
+  if [[ "$count" -eq 0 ]]; then return 0; fi
+  if [[ "$count" -eq 1 && "$matched" =~ $GH_AUTO_LINE_RE ]]; then
+    matched=${matched#GH_TOKEN=op://}
+    GH_ENV=auto GH_ENV_VAULT=${matched%%/*}
+    matched=${matched#*/}
+    GH_ENV_ID=${matched%%/*}
+  else
+    GH_ENV=manual
+  fi
+}
+
+gh_env_content() { # env file, new GH_TOKEN line -> the rewritten content on stdout; fails if the file is unreadable
+  # Leading whitespace is [^\S\n] to match the [[:space:]] of GH_ANY_LINE_RE, so scan and rewrite agree on
+  # which line is the GH_TOKEN line. Only the first one is replaced; gh_scan_env refuses files with two.
+  perl -e '
+    my ($f, $new) = @ARGV; my $c = "";
+    if (-e $f) { -f $f or exit 1; open(my $h, "<", $f) or exit 1; local $/; $c = <$h>; close $h }
+    my $done = 0;
+    $c =~ s{^[^\S\n]*(?:export[^\S\n]+)?GH_TOKEN=[^\n]*}{$done = 1; $new}me;
+    if (!$done) { $c .= "\n" if length($c) && substr($c, -1) ne "\n"; $c .= "$new\n" }
+    print $c;
+  ' "$1" "$2"
+}
+gh_rewrite_env() { # env file, new GH_TOKEN line: replace the GH_TOKEN line where it is, or append; keep other bytes
+  gh_write_atomic "$1" gh_env_content "$1" "$2"
+}
+
 env_files_for() { # machine -> host-owned op:// reference files that exist
   local f
   for f in "$AGENT_VM_CONFIG_DIR/env.1password" "$AGENT_VM_CONFIG_DIR/repos/$1.env.1password"; do

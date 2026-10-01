@@ -770,6 +770,105 @@ test_gh_template_url_fills_name_expiry_and_permissions() {
   assert_not_contains "$url" "target_name" "no target_name"
 }
 
+gh_put_state() { # machine content: write a state file fixture
+  mkdir -p "$AGENT_VM_CONFIG_DIR/repos"; printf '%b' "$2" >"$AGENT_VM_CONFIG_DIR/repos/$1.gh"
+}
+gh_bytes() { cat "$1"; printf x; } # file content with its trailing newlines kept (strip the x after $(...))
+gh_mode() { perl -e 'printf "%o", (stat $ARGV[0])[2] & 0777' "$1"; }
+GH_NEW_LINE=GH_TOKEN=op://Formal/zyxwvutsrqponmlkjihgfedcba/credential
+test_gh_read_state_classifies_absent_ok_broken() {
+  gh_read_state agent-s-000000; assert_eq absent "$GH_STATE" "absent"
+  gh_put_state agent-s-000000 'v=1\r\nrepo=Owner/Repo\nvault=Formal\npat_name=s-000000-2601010000\nexpires=2026-01-31\nrepo=Evil/Other\nextra=x\n'
+  gh_read_state agent-s-000000
+  assert_eq ok "$GH_STATE" "ok with CRLF, duplicate and unknown keys"
+  assert_eq "Owner/Repo" "$GH_STATE_REPO" "first repo wins"
+  assert_eq "Formal" "$GH_STATE_VAULT" "vault"
+  assert_eq "2026-01-31" "$GH_STATE_EXPIRES" "expires"
+  gh_put_state agent-s-000000 'v=1\nrepo=Owner/Repo\nvault=Formal\npat_name=s-000000-2601010000\n'
+  gh_read_state agent-s-000000; assert_eq broken "$GH_STATE" "missing key is broken"
+  gh_put_state agent-s-000000 'v=1\nrepo=Owner/Repo\nvault=personal\npat_name=s\nexpires=2026-01-31\n'
+  gh_read_state agent-s-000000; assert_eq broken "$GH_STATE" "bad vault is broken"
+  gh_put_state agent-s-000000 'v=2\nrepo=Owner/Repo\nvault=Formal\npat_name=s\nexpires=2026-01-31\n'
+  gh_read_state agent-s-000000; assert_eq broken "$GH_STATE" "unknown version is broken"
+  local bad
+  for bad in 'repo=a/b/c' 'repo=../x' 'pat_name=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' 'expires=2026-1-1' 'vault=Formal ' 'v='; do
+    gh_put_state agent-s-000000 "$bad\nv=1\nrepo=Owner/Repo\nvault=Formal\npat_name=s\nexpires=2026-01-31\n"
+    gh_read_state agent-s-000000
+    if [[ "$bad" == 'vault=Formal ' ]]; then assert_eq ok "$GH_STATE" "trailing space trimmed ($bad)"
+    else assert_eq broken "$GH_STATE" "first value wins and is checked ($bad)"; fi
+  done
+  gh_put_state agent-s-000000 ''
+  gh_read_state agent-s-000000; assert_eq broken "$GH_STATE" "empty file is broken"
+  gh_put_state agent-s-000000 '  v=1  \nnoequals\nrepo=Owner/Repo\nvault=Formal\npat_name=s\nexpires=2026-01-31'
+  gh_read_state agent-s-000000; assert_eq ok "$GH_STATE" "padded lines, a line without =, no final newline"
+}
+test_gh_write_state_roundtrips_with_mode_600() {
+  gh_write_state agent-w-000000 Owner/Repo Personal w-000000-2601010000 2026-04-01
+  gh_read_state agent-w-000000
+  assert_eq "ok Owner/Repo Personal w-000000-2601010000 2026-04-01" \
+    "$GH_STATE $GH_STATE_REPO $GH_STATE_VAULT $GH_STATE_PAT_NAME $GH_STATE_EXPIRES" "roundtrip"
+  assert_eq 600 "$(gh_mode "$AGENT_VM_CONFIG_DIR/repos/agent-w-000000.gh")" "mode 600"
+  assert_eq "" "$(find "$AGENT_VM_CONFIG_DIR/repos" -name '*.tmp.*')" "no temp file left"
+  printf 'extra=1\n' >>"$AGENT_VM_CONFIG_DIR/repos/agent-w-000000.gh"
+  gh_write_state agent-w-000000 Owner/Repo Formal w-000000-2601020000 2026-02-01
+  assert_not_contains "$(cat "$AGENT_VM_CONFIG_DIR/repos/agent-w-000000.gh")" "extra=1" "unknown keys dropped on rewrite"
+}
+test_gh_scan_env_classifies_lines() {
+  local f="$TMP_ROOT/e.env"
+  gh_scan_env "$f"; assert_eq none "$GH_ENV" "missing file"
+  printf 'A=op://v/a/x\n' >"$f"; gh_scan_env "$f"; assert_eq none "$GH_ENV" "no GH_TOKEN"
+  printf 'A=1\nGH_TOKEN=op://Formal/abcdefghijklmnopqrstuvwxyz/credential\n' >"$f"; gh_scan_env "$f"
+  assert_eq "auto Formal abcdefghijklmnopqrstuvwxyz" "$GH_ENV $GH_ENV_VAULT $GH_ENV_ID" "auto line parsed"
+  printf 'export GH_TOKEN=op://Formal/abcdefghijklmnopqrstuvwxyz/credential\n' >"$f"; gh_scan_env "$f"
+  assert_eq manual "$GH_ENV" "export is manual"
+  printf 'GH_TOKEN=op://Formal/abcdefghijklmnopqrstuvwxyz/credential\nGH_TOKEN=x\n' >"$f"; gh_scan_env "$f"
+  assert_eq manual "$GH_ENV" "two lines are manual"
+  printf 'GH_TOKEN=op://Formal/abcdefghijklmnopqrstuvwxyz/credential\r\n' >"$f"; gh_scan_env "$f"
+  assert_eq crlf "$GH_ENV" "CRLF detected before the format check"
+  local line
+  for line in '  GH_TOKEN=op://Formal/abcdefghijklmnopqrstuvwxyz/credential' \
+    'GH_TOKEN=op://Formal/abcdefghijklmnopqrstuvwxy/credential' 'GH_TOKEN=op://Formal/ABCDEFGHIJKLMNOPQRSTUVWXYZ/credential' \
+    'GH_TOKEN=op://Formal/abcdefghijklmnopqrstuvwxyz/credential ' 'GH_TOKEN=op://Formal/abcdefghijklmnopqrstuvwxyz/password'; do
+    printf '%s\n' "$line" >"$f"; gh_scan_env "$f"; assert_eq manual "$GH_ENV" "not the auto form: '$line'"
+  done
+  printf '# GH_TOKEN=op://Formal/abcdefghijklmnopqrstuvwxyz/credential\nGH_TOKEN_X=1\nA=1\r\n' >"$f"; gh_scan_env "$f"
+  assert_eq none "$GH_ENV" "comment, GH_TOKEN_X and a CR on another line are not GH_TOKEN lines"
+  mkdir -p "$TMP_ROOT/dir.env"; gh_scan_env "$TMP_ROOT/dir.env"
+  assert_eq unreadable "$GH_ENV" "a directory is not an env file"
+  if [[ "$(id -u)" -ne 0 ]]; then
+    chmod 000 "$f"; gh_scan_env "$f"; chmod 600 "$f"
+    assert_eq unreadable "$GH_ENV" "unreadable file is not 'none'"
+  fi
+}
+test_gh_rewrite_env_replaces_in_place_or_appends() {
+  local f="$TMP_ROOT/r.env"
+  printf 'A=op://v/a/x\r\nGH_TOKEN=op://Personal/abcdefghijklmnopqrstuvwxyz/credential\n# note\n' >"$f"; chmod 644 "$f"
+  gh_rewrite_env "$f" "$GH_NEW_LINE"
+  assert_eq "$(printf 'A=op://v/a/x\r\n%s\n# note\nx' "$GH_NEW_LINE")" "$(gh_bytes "$f")" "replaced in place, other bytes kept"
+  assert_eq 600 "$(gh_mode "$f")" "rewritten file is 600"
+  printf 'A=1' >"$f"
+  gh_rewrite_env "$f" "$GH_NEW_LINE"
+  assert_eq "$(printf 'A=1\n%s\nx' "$GH_NEW_LINE")" "$(gh_bytes "$f")" "newline added before appending, appended line ends with a newline"
+  printf 'GH_TOKEN=old' >"$f"
+  gh_rewrite_env "$f" "$GH_NEW_LINE"
+  assert_eq "$(printf '%sx' "$GH_NEW_LINE")" "$(gh_bytes "$f")" "last line without newline stays without newline"
+  printf '\tGH_TOKEN=old\n' >"$f"
+  gh_rewrite_env "$f" "$GH_NEW_LINE"
+  assert_eq "$(printf '%s\nx' "$GH_NEW_LINE")" "$(gh_bytes "$f")" "leading whitespace matches the scan's definition"
+  gh_rewrite_env "$TMP_ROOT/new/n.env" "$GH_NEW_LINE"
+  assert_eq 600 "$(gh_mode "$TMP_ROOT/new/n.env")" "new file is 600"
+}
+test_gh_rewrite_env_leaves_the_file_alone_on_failure() {
+  if [[ "$(id -u)" -eq 0 ]]; then record "PASS unreadable env file kept (skipped: running as root)"; return 0; fi
+  local f="$TMP_ROOT/u.env" status=0
+  printf 'A=1\nB=2\n' >"$f"; chmod 000 "$f"
+  gh_rewrite_env "$f" "$GH_NEW_LINE" 2>/dev/null || status=$?
+  chmod 600 "$f"
+  assert_eq 1 "$status" "unreadable file is an error"
+  assert_eq "$(printf 'A=1\nB=2\nx')" "$(gh_bytes "$f")" "content untouched"
+  assert_eq "" "$(find "$TMP_ROOT" -maxdepth 1 -name '*.tmp.*')" "no temp file left"
+}
+
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do
   (
     TMP_ROOT="$TMP_BASE/$t"; mkdir -p "$TMP_ROOT"
