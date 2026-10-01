@@ -2,6 +2,11 @@
 # shellcheck shell=bash
 # Single source of truth for shellcheck target discovery.
 # Both local development and CI should invoke this script directly.
+#
+# To count findings, run this script rather than `shellcheck a.sh b.sh ...`.
+# A multi-file call treats every listed file as input, so sources between
+# them resolve and their notes disappear. Editors and this script check one
+# file at a time, which is the count that matters.
 
 set -euo pipefail
 

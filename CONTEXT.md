@@ -78,6 +78,12 @@ ADR: `docs/decisions/0010-context-md-mechanism.md`
 - 動作 3 段階: (1) `.tmp/sessions/` 7日 GC (SAFE pattern: `SESSIONS_DIR` hardcoded + `find -mindepth 1 -maxdepth 1 -type d -mtime +7`) / (2) CLAUDE.md path integrity check (`@~/`, `${projectRoot}/` パスの存在確認) / (3) knip dead code 検出
 - `.tmp/docs/` は構造的に対象外 (SAFE pattern (a))
 
+### shellcheck の数え方
+
+- 件数は `scripts/lint-shell.sh` で数える。`shellcheck a.sh b.sh ...` のように複数ファイルをまとめて渡すと、渡したファイルどうしの source が解決され、1 ファイルずつ検査するエディタや CI より少なく出る
+- CI と pre-commit は全 severity で落とす（info / style も含む）。`.shellcheckrc` の `shell=bash` は `#!/bin/sh` の shebang より優先されるので、通常の lint では bashism を検出しない。`dot_shell_common/` は zsh からも source されるため、bashism を入れない
+- 経緯: @docs/plans/shellcheck-zero/plan.md の Implementation Notes
+
 ## Open questions
 
 - **ADR-0010 Defer 節 5 項目の優先順位**: grill skill (Socratic 質問発火による未定義語検出) が次に自然な拡張だが、context-audit (R1 参照腐敗の検出) も実害が薄いわりに価値が高い。実運用で先に困る方を優先するのが筋
