@@ -29,7 +29,14 @@ repo の中で `claude` または `codex` と打つだけでよい。打鍵は�
 
 初めてその repo で起動したときだけ、machine の作成を待つ。
 進捗は段階ごとに 1 行ずつ表示される。
-待ちを事前に済ませたい場合は `agent-vm prewarm` を実行する。machine を作成し、dotfiles を適用するところまでを、ツールを起動せずに行う。
+repo ごとの machine は、bootstrap 済みの golden machine（`agent-vm-golden`）の clone で作る。待ち時間は次のとおり（2026-10-02 の実測）。
+
+- **最初の 1 台**: golden machine の作成を待つ。実測 332 秒。Ubuntu の mirror が遅いと、さらに延びる（遅かった回は 27 分）。
+- **2 台目以降**: golden machine の clone から起動する。実測 6 秒。
+- **dotfiles を変えた後の最初の新規作成**: golden machine の差分更新の分だけ待つ。差分更新と clone を合わせて実測 10 秒（変更の量で延びる）。
+
+`agent-vm golden refresh` を実行すると、これらの待ちを前もって済ませられる。初回セットアップの最後に一度実行しておくとよい。
+1 台分の待ちを事前に済ませたい場合は、今までどおり `agent-vm prewarm` も使える。machine を作成し、dotfiles を適用するところまでを、ツールを起動せずに行う。
 
 Claude と Codex は machine ごとに初回だけログインが要る。
 表示された URL を mac のブラウザで開いて承認し、コードを VM 側に貼り付ける。
@@ -156,12 +163,19 @@ git が失敗したことも、`.git` が消えていることも、それ自体
 - `agent-vm env adopt <machine>` は、孤立した env ファイルが「移動前の同じ repo」のものかどうかを確認しない。記録された repo path が存在しないというだけで孤立と判定する。引き継ぐかどうかは自分で判断する。
 - mac のクリップボードにある画像は VM に貼り付けられない。画像は repo 内に保存してパスで渡す（repo は host と同じパスで mount されているので、そのまま VM からも読める）。
 - VM では APM の skills のうち、既定ブランチの解決が要る GitHub のリポジトリの分（9 件中 5 件）が入らず、`refs/heads/.invalid` で失敗する（実機で観測、再現あり）。VM の `~/.gitconfig` の SSH への書き換え（`url."git@github.com:".insteadOf https://github.com/`）と、VM に GitHub のトークンを置かない設計の組み合わせが原因と推測している（推測。host で成功する理由は未検証）。書き換えを無効にすると公開リポジトリは入る。別の課題として扱う。VM では APM の失敗は WARNING に留まり apply は止まらない。成功したかどうかは VM の中に `~/.apm/.install-state` があるかで判別できる。
+- **golden machine（`agent-vm-golden`）には手で入らない。** golden machine の中身はすべての clone に配られる。手で入って停止し直した golden machine は、dotfiles が同じ間は自動では検知されない。`orb -m agent-vm-golden` などで入ってしまった場合は、`agent-vm golden rm` で作り直す。
+- golden machine の作成と更新のときに出る「no headless shell」の警告は想定どおりである。golden machine にはブラウザを配らず、ブラウザは repo ごとの machine に配られる。
+- apt・mise・APM の上流の更新は、dotfiles を変えない限り golden machine に入らない。取り込むには `agent-vm golden refresh` を実行する。
+- golden machine の claude 本体は、golden machine を作ったときの版のまま残る。clone 先の claude が古くて困る場合は、`agent-vm golden rm` で作り直す。
+- dotfiles を古い版に戻すときは、先に `~/.local/share/agent-vm/creating/` が空であることを確かめる。古い launcher は作成中の印を知らない。
 
 ## 8. 片付け
 
 - `agent-vm list`: machine 名・repo path・repo の存在有無を一覧する。
 - `agent-vm gc`: repo が無くなった machine をまとめて削除する。確認を求められる。
 - `agent-vm rm [repo]`: 指定した repo の machine を明示的に削除する。作り直したいときや、不要になったときに使う。
+- `agent-vm golden refresh`: golden machine を今すぐ更新する。dotfiles が同じでも、bootstrap と seal をやり直す。
+- `agent-vm golden rm`: golden machine を削除する。確認を求められる。既存の repo ごとの machine はそのまま動く（V21）。golden machine は次の新規作成で作り直される。
 
 machine を侵害された疑いがある場合、または使わなくなった repo の認証を消したい場合は次を行う。
 
@@ -174,25 +188,31 @@ machine を侵害された疑いがある場合、または使わなくなった
 
 以下は WSL 上のこのセッションでは検証できず、mac 実機で確認する。
 
-| #   | やること                                                                                                                  | 期待する結果                                                                                                                                                                |
-| --- | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| V1  | isolated machine の mount 先に VM 内から書き込む                                                                          | host 側に反映される（staging 方式が必要であることの確認）                                                                                                                   |
-| V2  | VM user の UID と mount 上ファイルの所有者表示を見る                                                                      | host 側と整合した表示になる                                                                                                                                                 |
-| V3  | `--forward-ssh-agent` + 1Password agent で `ssh -T git@github.com` と `git commit -S` を行う                              | どちらも成功し、承認プロンプトの粒度を確認できる                                                                                                                            |
-| V4  | 新規 machine を作成し初回 claude 起動までの所要時間を計測する（全 mise セット時と軽量セット時の両方）                     | warm 起動時の launcher 追加時間が 3 秒以内に収まる                                                                                                                          |
-| V5  | `--isolate-network` 下で claude / codex から API に到達する。`host.orb.internal` に到達を試みる                           | API 疎通は成功し、`host.orb.internal` には到達できない                                                                                                                      |
-| V6  | `orb -m <m> …` を実行する                                                                                                 | TTY が付き、claude の対話 UI が動く                                                                                                                                         |
-| V7  | 未ログインの VM で claude を起動する                                                                                      | ログイン手順が表示され、mac のブラウザで URL を開いて承認し、表示されたコードを VM 側に貼り付ける経路でログインできる。2 回目以降はログインなしで起動する                   |
-| V8  | VM 内のサーバーに mac の `localhost:<port>` または `<machine>.orb.local` で到達を試みる                                   | dev server のプレビューが到達可能かどうかが分かる                                                                                                                           |
-| V9  | Codex 内蔵 sandbox（Landlock + seccomp）を VM 内で動かす                                                                  | 動作する、または動作しないことが分かる                                                                                                                                      |
-| V10 | `orb -m <m> sh -c` 実行時に `XDG_RUNTIME_DIR` の有無と書き込み先を確認する                                                | 書き込み先が tmpfs である                                                                                                                                                   |
-| V11 | 同一ターミナルで claude / codex を連続起動する                                                                            | `op inject` の生体認証プロンプトの頻度が分かる                                                                                                                              |
-| V12 | `~/.codex/sessions` の中身を確認する                                                                                      | jsonl のみで構成されているか、付随ファイルの有無が分かる                                                                                                                    |
-| V13 | 非対話の `orb -m <m> bash bootstrap.sh` を実行する                                                                        | `SSH_AUTH_SOCK` が有効で、private-skills external の SSH clone が通る                                                                                                       |
-| V14 | macOS の bash 3.2 + 標準 perl で fd 9 の flock を取得し、launcher を `kill -9` する                                       | flock は perl 終了後も保持され、`kill -9` で解放される                                                                                                                      |
-| V15 | dotfiles を変更して bootstrap の再適用を走らせる                                                                          | VM の `~/.claude/.credentials.json` と `~/.codex/auth.json` が残り、再ログインが要らない                                                                                    |
-| V16 | 新規 machine の初回 bootstrap で claude の導入を確認し、2 回目の bootstrap も走らせる。導入をネットワーク遮断で失敗させる | 初回は非対話で導入され `bash -lc` の起動シェルから見つかる。2 回目は installer が再実行されず版も変わらない。導入失敗時は bootstrap が非 0 で終わり、次回起動で再試行される |
-| V17 | cloud-init が書く GitHub の host key を確認する                                                                           | 公式の fingerprint と一致し、bootstrap の SSH clone が確認なしで通る                                                                                                        |
+| #   | やること                                                                                                                                              | 期待する結果                                                                                                                                                                                                                          |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| V1  | isolated machine の mount 先に VM 内から書き込む                                                                                                      | host 側に反映される（staging 方式が必要であることの確認）                                                                                                                                                                             |
+| V2  | VM user の UID と mount 上ファイルの所有者表示を見る                                                                                                  | host 側と整合した表示になる                                                                                                                                                                                                           |
+| V3  | `--forward-ssh-agent` + 1Password agent で `ssh -T git@github.com` と `git commit -S` を行う                                                          | どちらも成功し、承認プロンプトの粒度を確認できる                                                                                                                                                                                      |
+| V4  | 新規 machine を作成し初回 claude 起動までの所要時間を計測する（全 mise セット時と軽量セット時の両方）                                                 | warm 起動時の launcher 追加時間が 3 秒以内に収まる                                                                                                                                                                                    |
+| V5  | `--isolate-network` 下で claude / codex から API に到達する。`host.orb.internal` に到達を試みる                                                       | API 疎通は成功し、`host.orb.internal` には到達できない                                                                                                                                                                                |
+| V6  | `orb -m <m> …` を実行する                                                                                                                             | TTY が付き、claude の対話 UI が動く                                                                                                                                                                                                   |
+| V7  | 未ログインの VM で claude を起動する                                                                                                                  | ログイン手順が表示され、mac のブラウザで URL を開いて承認し、表示されたコードを VM 側に貼り付ける経路でログインできる。2 回目以降はログインなしで起動する                                                                             |
+| V8  | VM 内のサーバーに mac の `localhost:<port>` または `<machine>.orb.local` で到達を試みる                                                               | dev server のプレビューが到達可能かどうかが分かる                                                                                                                                                                                     |
+| V9  | Codex 内蔵 sandbox（Landlock + seccomp）を VM 内で動かす                                                                                              | 動作する、または動作しないことが分かる                                                                                                                                                                                                |
+| V10 | `orb -m <m> sh -c` 実行時に `XDG_RUNTIME_DIR` の有無と書き込み先を確認する                                                                            | 書き込み先が tmpfs である                                                                                                                                                                                                             |
+| V11 | 同一ターミナルで claude / codex を連続起動する                                                                                                        | `op inject` の生体認証プロンプトの頻度が分かる                                                                                                                                                                                        |
+| V12 | `~/.codex/sessions` の中身を確認する                                                                                                                  | jsonl のみで構成されているか、付随ファイルの有無が分かる                                                                                                                                                                              |
+| V13 | 非対話の `orb -m <m> bash bootstrap.sh` を実行する                                                                                                    | `SSH_AUTH_SOCK` が有効で、private-skills external の SSH clone が通る                                                                                                                                                                 |
+| V14 | macOS の bash 3.2 + 標準 perl で fd 9 の flock を取得し、launcher を `kill -9` する                                                                   | flock は perl 終了後も保持され、`kill -9` で解放される                                                                                                                                                                                |
+| V15 | dotfiles を変更して bootstrap の再適用を走らせる                                                                                                      | VM の `~/.claude/.credentials.json` と `~/.codex/auth.json` が残り、再ログインが要らない                                                                                                                                              |
+| V16 | 新規 machine の初回 bootstrap で claude の導入を確認し、2 回目の bootstrap も走らせる。導入をネットワーク遮断で失敗させる                             | 初回は非対話で導入され `bash -lc` の起動シェルから見つかる。2 回目は installer が再実行されず版も変わらない。導入失敗時は bootstrap が非 0 で終わり、次回起動で再試行される                                                           |
+| V17 | cloud-init が書く GitHub の host key を確認する                                                                                                       | 公式の fingerprint と一致し、bootstrap の SSH clone が確認なしで通る                                                                                                                                                                  |
+| V18 | golden machine が無い状態で、新しい repo で `agent-vm prewarm` を実行する（最初の 1 台）                                                              | 成功し、`agent-vm-golden`（stopped）と repo の machine（running）ができる。`creating the golden machine` が出る。golden machine の bootstrap の「no headless shell」の警告は想定どおり                                                |
+| V19 | dotfiles を変えずに、別の新しい repo で `agent-vm prewarm` を実行する（2 台目）                                                                       | `updating the golden machine` が出ず、30 秒以内に終わる                                                                                                                                                                               |
+| V20 | dotfiles の tracked file を 1 つ変えてから、別の新しい repo で `agent-vm prewarm` を実行する                                                          | `updating the golden machine` が出る                                                                                                                                                                                                  |
+| V21 | 2 台の clone 先に書き込んで停止し、`agent-vm golden rm` の後に両方を起動して読み出す。最後に `agent-vm golden refresh` を実行する                     | 両方が起動して書き込んだ内容を返す。`golden refresh` が golden machine を作り直して成功する                                                                                                                                           |
+| V22 | clone 先で hostname、`/etc/machine-id`、`/var/lib/cloud/instances` と sem の時刻、`CLAUDE_COMPUTER_NAME`、browser 系 MCP、`headless_shell` を確かめる | hostname と `CLAUDE_COMPUTER_NAME` は clone 先の名前。machine-id は clone ごとに違う。cloud-init の instance は `agent-vm-golden` の 1 つで、sem は clone より前の時刻。playwright と chrome-devtools が残り、`headless_shell` がある |
+| V23 | clone 先で claude と codex にログインしてから `agent-vm golden refresh` を実行し、別の新しい repo の machine の認証の痕跡を確かめる                   | 新しい machine に `~/.claude/.credentials.json` と `~/.codex/auth.json` が無く、`~/.claude.json` に `oauthAccount` が無い                                                                                                             |
 
 ### 2026-09-30 の確認結果（macOS、OrbStack 2.2.3、Ubuntu resolute arm64）
 
@@ -245,3 +265,18 @@ VM でブラウザを使う構成（3 節）を、実機で確かめた。古い
 - 観測（切り替わりの条件は未確認）: 1 台目のサーバーを止めると、2 台目が同じポートに bind していても、mac の `localhost:5174` は 30 秒間応答しなかった。1 台目を再起動すると、再び 1 台目に届いた。最初に bind した machine に転送が固定されるように見える。2 台目に切り替わる条件は確かめていない。
 - 観測: `package.json` の版だけを変えて `chezmoi apply` を実行したときは、`bun install --frozen-lockfile` が lockfile の不一致で失敗し、apply 自体の終了コードは 1 になった。ブラウザのストアの更新とは無関係で、`package.json` を戻して再実行すると終了コード 0 になった。
 - 観測（この確認の範囲外）: `agent-vm rm` の確認プロンプトに EOF を渡すと「failed unexpectedly」と出る。
+
+### 2026-10-02 の確認結果（golden clone、macOS、OrbStack 2.2.3、Ubuntu resolute arm64）
+
+repo ごとの machine を golden machine の clone で作る構成（3 節）を、使い捨ての repo 4 つで確かめた。V18〜V23 はすべて期待どおりだった。
+
+- V18: golden machine の作成を含む最初の 1 台は 332 秒、終了コード 0。`agent-vm-golden` は stopped、repo の machine は running で残った。警告は golden machine の bootstrap の「no headless shell」だけだった。
+- V19: dotfiles を変えずに 2 台目を作ると 6 秒で、`updating the golden machine` は出なかった。
+- V20: dotfiles の tracked file を 1 つ変えてから作ると 10 秒で、`updating the golden machine` が出た。
+- V22: clone 先の hostname と `CLAUDE_COMPUTER_NAME` は clone 先の名前になった。machine-id は 32 桁の 16 進で、2 台の clone で違った。cloud-init の instance は `agent-vm-golden` の 1 つだけで、package の導入の sem は clone より前の時刻だった（clone 先の起動で per-instance の module は再実行されていない）。playwright と chrome-devtools の MCP が残り、playwright の args に `--executable-path /opt/agent-vm/browsers/current/bin/headless_shell` が入り、その実体もあった。
+- V23: clone 先で claude と codex にログインしてから `agent-vm golden refresh`（6 秒）と別の repo の `agent-vm prewarm`（6 秒）を実行した。新しい machine には `~/.claude/.credentials.json` と `~/.codex/auth.json` が無く、`~/.claude.json` の `oauthAccount` も無かった。
+- V21: 2 台の clone 先に書き込んで停止し、`agent-vm golden rm` の後に起動すると、どちらも起動して書き込んだ内容を返した。最後の `agent-vm golden refresh` は golden machine を作り直して終了コード 0 で終わった。
+
+観測:
+
+- V21 の `agent-vm golden refresh`（golden machine の作り直し）は 1632 秒かかった。cloud-init の apt が `archive.ubuntu.com` から約 70 KB/s でしか取得できなかったためで、同じファイルを host から取得しても同じ速さだった。mirror 側の一時的な遅さで、golden machine の仕組みとは関係がない。

@@ -91,11 +91,12 @@ VM の Claude から playwright と chrome-devtools の MCP を使えるよう�
 - `docs/plans/dependency-update-paths/spec.md` (2026-10-01) — K22 の script は `run_after_10-install-apm-skills`（ADR-0017 の 10- 帯）になった。K22 本文の「ターゲット名と内容は変わらない」はこの改名で上書きされる。VM では APM の失敗を marker にせず WARNING に留める。R21 の状態では apm 0.31 が exit 1 を返し、verifier が毎回の bootstrap を止めるためである
 - `docs/plans/dependency-update-paths/spec.md` (2026-10-01) — K5 の軽量セットはテンプレートの条件分岐ではなくファイルの配置で実現するようにした。host 専用のツールチェーンは `~/.config/mise/conf.d/host-toolchains.toml` に分け、VM には配置しない。これに伴い K17 の allowlist のうち mise だけはディレクトリ単位（`!.config/mise/**`）からファイル単位（`!.config/mise/config.toml`）になった。`.chezmoiignore` の除外（`!`）は後続の無視行より優先されるので、同じディレクトリの一部だけを VM から外すにはファイル単位で戻すしかない
 - `docs/plans/agent-vm-gh-token/spec.md` (2026-10-01) — gh の token は K7（全 VM 共通の長期 token は注入しない）の例外として、repo ごとの fine-grained PAT を tool の起動時に `GH_TOKEN` で注入する。token は repo ごとに分かれ、権限は pull_requests / issues の write と contents / actions の read に絞る。残るリスクは、VM の中の agent が期限（Personal 90 日、Formal 30 日）まで token を読めることである。R21 は bootstrap の話なので変わらない
+- `docs/decisions/0021-agent-vm-golden-clone.md` (2026-10-02) — repo 用の machine は `orb create` ではなく、bootstrap 済みの golden machine（`agent-vm-golden`）の clone で作る。K1 の「repo ごとの isolated machine」という境界は変わらない。R5 の初回の待ちは、最初の 1 台（golden の作成）を除いて 6 秒になる
 
 ## References
 
 - `docs/plans/agent-vm/spec.md` / `research.md` / `plan-1.md` / `plan-2.md` / `plan-3.md` / `plan-4.md`
 - `docs/plans/agent-vm/vm-browsers/`（K23〜K28 の spec / research / plan-1〜3）
-- `docs/agent-vm.md`（導入ガイド、mac 実機検証項目 V1〜V17）
+- `docs/agent-vm.md`（導入ガイド、mac 実機検証項目 V1〜V23）
 - `home/dot_local/bin/executable_agent-vm`, `agent-vm/cloud-init.yaml`, `agent-vm/bootstrap.sh`, `home/dot_shell_common/agent_vm.sh`
 - https://docs.orbstack.dev/machines/isolated
