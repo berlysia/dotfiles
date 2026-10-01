@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Test stub: `dpkg-deb -x <deb> <dir>` lays out what the real arm64 libgbm1 deb holds (research F11).
+# shellcheck disable=SC2154 # STUB_LOG is exported by the test runner
+{ printf 'dpkg-deb'; printf ' %q' "$@"; printf '\n'; } >>"$STUB_LOG"
+d="$3/usr/lib/aarch64-linux-gnu"; mkdir -p "$d/gbm"
+printf 'so\n' >"$d/libgbm.so.1.0.0"; ln -sfn libgbm.so.1.0.0 "$d/libgbm.so.1"

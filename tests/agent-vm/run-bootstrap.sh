@@ -15,6 +15,10 @@ ln -s "$TEST_DIR/stubs/curl" "$BOOTSTRAP_STUB_DIR/curl"
 ln -s "$TEST_DIR/stubs/chezmoi" "$BOOTSTRAP_STUB_DIR/chezmoi"
 ln -s "$TEST_DIR/stubs/dpkg" "$BOOTSTRAP_STUB_DIR/dpkg"
 ln -s "$TEST_DIR/stubs/sudo" "$BOOTSTRAP_STUB_DIR/sudo"
+ln -s "$TEST_DIR/stubs/apt-get" "$BOOTSTRAP_STUB_DIR/apt-get"
+ln -s "$TEST_DIR/stubs/apt-cache" "$BOOTSTRAP_STUB_DIR/apt-cache"
+ln -s "$TEST_DIR/stubs/dpkg-deb" "$BOOTSTRAP_STUB_DIR/dpkg-deb"
+ln -s "$TEST_DIR/stubs/ldd" "$BOOTSTRAP_STUB_DIR/ldd"
 # The codex filter and self-check need a real chezmoi (execute-template); resolve it before PATH is narrowed.
 REAL_CHEZMOI=$(command -v chezmoi) || { echo "run-bootstrap.sh needs chezmoi on PATH" >&2; exit 1; }
 # A PATH that already holds the stubs would resolve to the stub itself, and its exec would loop.
@@ -28,6 +32,8 @@ export PATH="$BOOTSTRAP_STUB_DIR:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/b
 setup_vm_env() { # fake VM layout under TMP_ROOT; secrets dir on tmpfs (/dev/shm on Linux CI)
   export HOME="$TMP_ROOT/home" AGENT_VM_MARKER="$TMP_ROOT/etc-agent-vm"
   export AGENT_VM_OUTBOX_ROOT="$TMP_ROOT/outbox" AGENT_VM_SECRETS_DIR=/dev/shm
+  # A path that does not exist: no test depends on a real /opt/agent-vm/browsers; tests with the mount override this.
+  export AGENT_VM_BROWSERS_ROOT="$TMP_ROOT/no-browsers"
   mkdir -p "$HOME" "$AGENT_VM_OUTBOX_ROOT"; printf '1\n' >"$AGENT_VM_MARKER"
   SRC="$TMP_ROOT/src"; mkdir -p "$SRC/home" "$SRC/node_modules/x"
   printf 'home\n' >"$SRC/.chezmoiroot"; printf 'a\n' >"$SRC/home/dot_a"; printf 'junk\n' >"$SRC/node_modules/x/f"
@@ -225,6 +231,44 @@ test_claude_json_filter_keeps_only_network_mcp() {
   assert_eq '{"local-one":{}}' "$(jq -c '.projects["/r"].mcpServers' <<<"$out")" "project-scoped MCP servers are untouched"
   assert_eq '{"id":"keep-me"}' "$(jq -c '.oauthAccount' <<<"$out")" "other keys are untouched"
 }
+browser_filter() { # file: the browser args filter as bootstrap runs it
+  jq --arg exe /opt/agent-vm/browsers/current/bin/headless_shell --arg lib /home/u/.local/lib/agent-vm-browser \
+    -f "$AGENT_VM_DIR/vm-claude-browser.jq" "$1"
+}
+test_browser_filter_rebuilds_args_from_the_package_pin() {
+  local out; out=$(browser_filter "$TEST_DIR/fixtures/claude.json")
+  assert_eq '["@playwright/mcp@0.0.75","--headless","--isolated","--executable-path","/opt/agent-vm/browsers/current/bin/headless_shell"]' \
+    "$(jq -c '.mcpServers.playwright.args' <<<"$out")" "playwright args"
+  assert_eq '["chrome-devtools-mcp@0.25.0","--headless","--isolated","--executablePath","/opt/agent-vm/browsers/current/bin/headless_shell"]' \
+    "$(jq -c '.mcpServers["chrome-devtools"].args' <<<"$out")" "chrome-devtools args"
+  assert_eq '"/home/u/.local/lib/agent-vm-browser"' "$(jq -c '.mcpServers.playwright.env.LD_LIBRARY_PATH' <<<"$out")" "playwright LD_LIBRARY_PATH"
+  assert_eq '"/home/u/.local/lib/agent-vm-browser"' "$(jq -c '.mcpServers["chrome-devtools"].env.LD_LIBRARY_PATH' <<<"$out")" "chrome-devtools LD_LIBRARY_PATH"
+  assert_eq '{}' "$(jq -c '.mcpServers.context7' <<<"$out")" "other servers untouched (the fixture's context7 is {})"
+}
+test_browser_filter_is_idempotent() {
+  local once; once=$(browser_filter "$TEST_DIR/fixtures/claude.json")
+  printf '%s\n' "$once" >"$TMP_ROOT/once.json"
+  assert_eq "$once" "$(browser_filter "$TMP_ROOT/once.json")" "applying twice is byte-identical"
+}
+test_browser_filter_tolerates_missing_entries() {
+  local out; out=$(jq 'del(.mcpServers.playwright, .mcpServers["chrome-devtools"])' "$TEST_DIR/fixtures/claude.json" >"$TMP_ROOT/c.json"; browser_filter "$TMP_ROOT/c.json")
+  assert_eq "null" "$(jq -c '.mcpServers.playwright' <<<"$out")" "absent entries are not created"
+}
+test_browser_filter_leaves_an_entry_without_a_package_pin() {
+  local out; out=$(jq '.mcpServers.playwright = {}' "$TEST_DIR/fixtures/claude.json" >"$TMP_ROOT/c.json"; browser_filter "$TMP_ROOT/c.json")
+  assert_eq "{}" "$(jq -c '.mcpServers.playwright' <<<"$out")" "an entry without args[0] is left for the self-check"
+}
+test_browser_filter_keeps_entries_with_non_array_args() {
+  local v out
+  for v in '"--headless-x"' '3' '{"a":1}'; do
+    out=$(jq ".mcpServers.playwright = {args: $v}" "$TEST_DIR/fixtures/claude.json" >"$TMP_ROOT/c.json"; browser_filter "$TMP_ROOT/c.json")
+    assert_eq "{\"args\":$v}" "$(jq -c '.mcpServers.playwright' <<<"$out")" "args=$v: the entry is kept as is for the self-check"
+  done
+}
+test_browser_filter_tolerates_no_mcp_servers() {
+  local out; out=$(printf '{"oauthAccount":{"id":"x"}}\n' >"$TMP_ROOT/c.json"; browser_filter "$TMP_ROOT/c.json")
+  assert_eq '{"oauthAccount":{"id":"x"}}' "$(jq -c . <<<"$out")" "a file without mcpServers is unchanged"
+}
 codex_filter() { # file: the VM codex filter as bootstrap runs it
   VM_MCP_KEEP="$KEEP" "$REAL_CHEZMOI" execute-template --with-stdin --file "$AGENT_VM_DIR/vm-codex-config.tmpl" <"$1"
 }
@@ -265,6 +309,132 @@ test_bootstrap_filters_after_apply_and_before_recording() {
   assert_eq 600 "$(stat -c %a "$HOME/.claude.json")" ".claude.json keeps mode 600"
   assert_eq 600 "$(stat -c %a "$HOME/.codex/config.toml")" "codex config keeps mode 600"
   assert_status 0 "applied hash recorded after filtering" -- test -e "$HOME/.local/state/agent-vm/applied-hash"
+}
+test_claude_keeps_browser_mcp_but_codex_does_not() {
+  setup_vm_env; place_generated_configs; mkdir -p "$TMP_ROOT/browsers"; export AGENT_VM_BROWSERS_ROOT="$TMP_ROOT/browsers"
+  bash "$BOOTSTRAP" 1 v1:abc "$SRC" >/dev/null 2>&1
+  assert_eq '["chrome-devtools","context7","excalidraw","playwright","readability"]' "$(jq -c '.mcpServers | keys' "$HOME/.claude.json")" "Claude keeps the browser MCP servers"
+  assert_not_contains "$(cat "$HOME/.codex/config.toml")" "playwright" "Codex still drops playwright"
+}
+test_browser_mcp_dropped_on_a_machine_without_the_mount() {
+  setup_vm_env; place_generated_configs; export AGENT_VM_BROWSERS_ROOT="$TMP_ROOT/no-such-mount"
+  bash "$BOOTSTRAP" 1 v1:abc "$SRC" >/dev/null 2>&1
+  assert_eq '["context7","excalidraw","readability"]' "$(jq -c '.mcpServers | keys' "$HOME/.claude.json")" "no mount: browser MCP servers are dropped"
+}
+test_browser_apt_list_is_exact() {
+  # What bootstrap actually asks dpkg about on a machine with the mount, so the test sees behaviour, not source text.
+  setup_vm_env; mkdir -p "$TMP_ROOT/browsers"; export AGENT_VM_BROWSERS_ROOT="$TMP_ROOT/browsers"
+  bash "$BOOTSTRAP" 1 v1:abc "$SRC" >/dev/null 2>&1
+  local vm_tools=" jq bat fd-find ripgrep shellcheck "
+  local got; got=$(sed -n 's/^dpkg -s //p' "$STUB_LOG" | while read -r p; do [[ "$vm_tools" == *" $p "* ]] || printf '%s\n' "$p"; done | LC_ALL=C sort -u | paste -sd' ' -)
+  assert_eq "at-spi2-common fonts-ipafont-gothic fonts-liberation libasound2-data libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libatspi2.0-0t64 libavahi-client3 libavahi-common-data libavahi-common3 libcairo2 libcups2t64 libdatrie1 libdrm-common libdrm2 libfreetype6 libgraphite2-3 libharfbuzz0b libice6 libnspr4 libnss3 libpango-1.0-0 libpixman-1-0 libpng16-16t64 libsm6 libthai-data libthai0 libunwind8 libxaw7 libxcb-render0 libxcomposite1 libxdamage1 libxfixes3 libxi6 libxkbcommon0 libxkbfile1 libxmu6 libxpm4 libxrandr2 libxrender1 libxres1 libxt6t64 x11-common" \
+    "$got" "browser apt list is exactly the measured set (research F11; 35.1MB, limit 40MB)"
+}
+test_browser_deps_installed_only_when_mount_exists_and_missing() {
+  setup_vm_env; mkdir -p "$TMP_ROOT/browsers"; export AGENT_VM_BROWSERS_ROOT="$TMP_ROOT/browsers" STUB_DPKG_MISSING="libnss3"
+  bash "$BOOTSTRAP" 1 v1:abc "$SRC" >/dev/null 2>&1
+  local log; log=$(cat "$STUB_LOG")
+  assert_contains "$log" "install -y --no-install-recommends libnss3" "missing browser dep installed without recommends"
+  assert_eq "0" "$(grep -c '^sudo .*apt-get.* install .*libgbm1' "$STUB_LOG" || true)" "libgbm1 itself is never apt-installed"
+  assert_contains "$log" "apt-get -o DPkg::Lock::Timeout=120 -o Acquire::Retries=3 update" "apt lists refreshed before installing browser deps"
+}
+test_browser_deps_skipped_without_the_mount() {
+  setup_vm_env; export AGENT_VM_BROWSERS_ROOT="$TMP_ROOT/no-such-mount" STUB_DPKG_MISSING="libnss3"
+  bash "$BOOTSTRAP" 1 v1:abc "$SRC" >/dev/null 2>&1
+  assert_not_contains "$(cat "$STUB_LOG")" "libnss3" "no browser deps on a machine without the mount"
+}
+test_libgbm_placed_alone_and_versioned() {
+  setup_vm_env; mkdir -p "$TMP_ROOT/browsers"; export AGENT_VM_BROWSERS_ROOT="$TMP_ROOT/browsers"
+  bash "$BOOTSTRAP" 1 v1:abc "$SRC" >/dev/null 2>&1
+  local d="$HOME/.local/lib/agent-vm-browser"
+  assert_eq ".version libgbm.so.1 libgbm.so.1.0.0" "$(ls -A "$d" | LC_ALL=C sort | paste -sd' ' -)" "only libgbm.so.1* and the version file are placed"
+  assert_eq "26.0.8-1ubuntu0.3" "$(cat "$d/.version")" "deb version recorded"
+}
+test_libgbm_not_refetched_when_current_but_refetched_when_updated() {
+  setup_vm_env; mkdir -p "$TMP_ROOT/browsers"; export AGENT_VM_BROWSERS_ROOT="$TMP_ROOT/browsers"
+  bash "$BOOTSTRAP" 1 v1:abc "$SRC" >/dev/null 2>&1; : >"$STUB_LOG"
+  bash "$BOOTSTRAP" 1 v1:def "$SRC" >/dev/null 2>&1
+  assert_not_contains "$(cat "$STUB_LOG")" "download libgbm1" "same candidate: no download"
+  STUB_GBM_VERSION=26.0.9-1 bash "$BOOTSTRAP" 1 v1:ghi "$SRC" >/dev/null 2>&1
+  assert_contains "$(cat "$STUB_LOG")" "download libgbm1" "new candidate: downloaded again"
+  assert_eq "26.0.9-1" "$(cat "$HOME/.local/lib/agent-vm-browser/.version")" "new version recorded"
+}
+test_libgbm_is_refetched_after_a_failed_copy() {
+  setup_vm_env; mkdir -p "$TMP_ROOT/browsers"; export AGENT_VM_BROWSERS_ROOT="$TMP_ROOT/browsers"
+  bash "$BOOTSTRAP" 1 v1:abc "$SRC" >/dev/null 2>&1
+  rm -f "$HOME/.local/lib/agent-vm-browser/libgbm.so.1"; : >"$STUB_LOG"
+  bash "$BOOTSTRAP" 1 v1:def "$SRC" >/dev/null 2>&1
+  assert_contains "$(cat "$STUB_LOG")" "download libgbm1" "a missing libgbm.so.1 is fetched again even with a current .version"
+  assert_status 0 "libgbm.so.1 restored" -- test -e "$HOME/.local/lib/agent-vm-browser/libgbm.so.1"
+}
+test_libgbm_failure_warns_and_still_records_hash() {
+  setup_vm_env; mkdir -p "$TMP_ROOT/browsers"; export AGENT_VM_BROWSERS_ROOT="$TMP_ROOT/browsers" STUB_APT_DOWNLOAD_EXIT=100
+  local err; err=$(bash "$BOOTSTRAP" 1 v1:abc "$SRC" 2>&1 >/dev/null)
+  assert_contains "$err" "libgbm" "the warning names libgbm"
+  assert_status 0 "browser problems never block the bootstrap" -- test -e "$HOME/.local/state/agent-vm/applied-hash"
+}
+test_self_check_catches_a_browser_entry_without_headless() {
+  setup_vm_env; mkdir -p "$TMP_ROOT/browsers"; export AGENT_VM_BROWSERS_ROOT="$TMP_ROOT/browsers"
+  place_generated_configs
+  # Make the browser filter a no-op so the self-check sees the raw entry.
+  cp "$REPO_ROOT/agent-vm/bootstrap.sh" "$TMP_ROOT/bootstrap.sh"; cp "$REPO_ROOT/agent-vm/"*.jq "$REPO_ROOT/agent-vm/"*.tmpl "$TMP_ROOT/"
+  printf '.\n' >"$TMP_ROOT/vm-claude-browser.jq"
+  local err; err=$(bash "$TMP_ROOT/bootstrap.sh" 1 v1:abc "$SRC" 2>&1 >/dev/null) || true
+  assert_contains "$err" "browser MCP" "the self-check names the unconfigured browser entry"
+  assert_status 1 "no hash recorded" -- test -e "$HOME/.local/state/agent-vm/applied-hash"
+}
+self_check_with_entry() { # jq expression applied after the browser filter; stderr goes to $TMP_ROOT/err. Called directly
+  # (not inside $(...)) so setup_vm_env's HOME stays set for the caller's assertions.
+  setup_vm_env; mkdir -p "$TMP_ROOT/browsers"; export AGENT_VM_BROWSERS_ROOT="$TMP_ROOT/browsers"; place_generated_configs
+  cp "$REPO_ROOT/agent-vm/bootstrap.sh" "$TMP_ROOT/bootstrap.sh"; cp "$REPO_ROOT/agent-vm/"*.jq "$REPO_ROOT/agent-vm/"*.tmpl "$TMP_ROOT/"
+  { cat "$REPO_ROOT/agent-vm/vm-claude-browser.jq"; printf '| %s\n' "$1"; } >"$TMP_ROOT/vm-claude-browser.jq"
+  bash "$TMP_ROOT/bootstrap.sh" 1 v1:abc "$SRC" 2>"$TMP_ROOT/err" >/dev/null || true
+}
+test_self_check_catches_a_missing_ld_library_path() {
+  self_check_with_entry 'del(.mcpServers.playwright.env.LD_LIBRARY_PATH)'
+  assert_contains "$(cat "$TMP_ROOT/err")" "browser MCP" "missing LD_LIBRARY_PATH is caught"
+  assert_status 1 "no hash recorded" -- test -e "$HOME/.local/state/agent-vm/applied-hash"
+}
+test_self_check_catches_a_wrong_executable_path() {
+  self_check_with_entry '.mcpServers["chrome-devtools"].args[4] = "/usr/bin/chromium"'
+  assert_contains "$(cat "$TMP_ROOT/err")" "browser MCP" "wrong executable path is caught"
+  assert_status 1 "no hash recorded" -- test -e "$HOME/.local/state/agent-vm/applied-hash"
+}
+test_warns_on_missing_libraries() {
+  setup_vm_env; mkdir -p "$TMP_ROOT/browsers/gen-x/bin"; export AGENT_VM_BROWSERS_ROOT="$TMP_ROOT/browsers"
+  ln -s gen-x "$TMP_ROOT/browsers/current"; printf '#!/bin/sh\n' >"$TMP_ROOT/browsers/gen-x/bin/headless_shell"; chmod +x "$TMP_ROOT/browsers/gen-x/bin/headless_shell"
+  local err; err=$(STUB_LDD_MISSING="libnss3.so" bash "$BOOTSTRAP" 1 v1:abc "$SRC" 2>&1 >/dev/null)
+  assert_contains "$err" "missing libraries: libnss3.so" "a missing library is named"
+}
+test_warning_text_from_the_mount_is_sanitized() {
+  setup_vm_env; place_generated_configs; export AGENT_VM_BROWSERS_ROOT="$TMP_ROOT/browsers"
+  mkdir -p "$TMP_ROOT/browsers/gen-x/bin"; ln -s gen-x "$TMP_ROOT/browsers/current"
+  printf '#!/bin/sh\n' >"$TMP_ROOT/browsers/gen-x/bin/headless_shell"; chmod +x "$TMP_ROOT/browsers/gen-x/bin/headless_shell"
+  printf 'mcp_version=0.0.74\033[2J\n' >"$TMP_ROOT/browsers/gen-x/.meta"
+  local err; err=$(bash "$BOOTSTRAP" 1 v1:abc "$SRC" 2>&1 >/dev/null)
+  assert_not_contains "$err" $'\033' "no escape sequence from the VM-writable .meta reaches the terminal"
+  assert_contains "$err" "(unreadable)" "an unsafe value is replaced"
+}
+test_warns_on_a_machine_without_the_mount() {
+  setup_vm_env; export AGENT_VM_BROWSERS_ROOT="$TMP_ROOT/no-such-mount"
+  local err; err=$(bash "$BOOTSTRAP" 1 v1:abc "$SRC" 2>&1 >/dev/null)
+  assert_contains "$err" "agent-vm rm" "old machine: recovery is agent-vm rm"
+  assert_contains "$err" "you lose" "the warning says what agent-vm rm loses"
+}
+test_warns_when_the_headless_shell_is_missing() {
+  setup_vm_env; mkdir -p "$TMP_ROOT/browsers"; export AGENT_VM_BROWSERS_ROOT="$TMP_ROOT/browsers"
+  local err; err=$(bash "$BOOTSTRAP" 1 v1:abc "$SRC" 2>&1 >/dev/null)
+  assert_contains "$err" "agent-vm fetch-browsers" "no headless shell: recovery is fetch-browsers"
+}
+test_warns_when_mcp_version_and_store_differ() {
+  setup_vm_env; place_generated_configs; export AGENT_VM_BROWSERS_ROOT="$TMP_ROOT/browsers"
+  mkdir -p "$TMP_ROOT/browsers/gen-x/bin"; ln -s gen-x "$TMP_ROOT/browsers/current"
+  printf '#!/bin/sh\n' >"$TMP_ROOT/browsers/gen-x/bin/headless_shell"; chmod +x "$TMP_ROOT/browsers/gen-x/bin/headless_shell"
+  printf 'mcp_version=0.0.74\n' >"$TMP_ROOT/browsers/gen-x/.meta"
+  local err; err=$(bash "$BOOTSTRAP" 1 v1:abc "$SRC" 2>&1 >/dev/null)
+  assert_contains "$err" "0.0.75" "the warning names the MCP version"
+  assert_contains "$err" "0.0.74" "the warning names the store version"
+  assert_status 0 "an advisory warning does not block" -- test -e "$HOME/.local/state/agent-vm/applied-hash"
 }
 test_bootstrap_tolerates_missing_config_files() {
   setup_vm_env

@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Test stub: `apt-cache policy libgbm1` reports STUB_GBM_VERSION as the candidate.
+# shellcheck disable=SC2154 # STUB_LOG is exported by the test runner
+{ printf 'apt-cache'; printf ' %q' "$@"; printf '\n'; } >>"$STUB_LOG"
+printf 'libgbm1:\n  Installed: (none)\n  Candidate: %s\n' "${STUB_GBM_VERSION:-26.0.8-1ubuntu0.3}"

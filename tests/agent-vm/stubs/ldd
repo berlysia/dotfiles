@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Test stub: reports each name in STUB_LDD_MISSING as unresolved, like ldd does; nothing else.
+for n in ${STUB_LDD_MISSING:-}; do printf '\t%s => not found\n' "$n"; done
