@@ -17,11 +17,6 @@ dependencies:
         - pdf
         - frontend-design
         - webapp-testing
-    - git: berlysia/ralf-project
-      skills:
-        - proposal-add
-        - proposal-complete
-        - proposal-list
     - git: berlysia/shiori
       skills:
         - shiori-adopt

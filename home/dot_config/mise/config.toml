@@ -9,8 +9,8 @@ install_before = "7d"
 
 [settings.github]
 # gh keeps its token in the OS keyring, so hosts.yml has no oauth_token and
-# gh_cli_tokens finds nothing; ask gh directly. Private repos such as
-# berlysia/shiori need the token, since mise-versions does not serve them and
+# gh_cli_tokens finds nothing; ask gh directly. Private repos need the token,
+# since mise-versions does not serve them and
 # unauthenticated API calls get 404s until GitHub starts answering 403.
 # gh auth token also returns GH_TOKEN, so agent-vm sessions with a per-repo PAT
 # are covered; without any token mise falls back to unauthenticated requests.
@@ -45,3 +45,6 @@ yarn = "4.18.0"
 "npm:difit" = "latest"
 ast-grep = "latest"
 "github:microsoft/apm" = "0.31.0"
+# The source repo is private, so take the public npm package instead of github:.
+# It is our own package with a handful of weekly downloads, so the low-download gate is explicitly approved.
+"npm:@berlysia/shiori" = { version = "0.2.1", allow_low_downloads = true }
