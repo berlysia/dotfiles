@@ -317,6 +317,16 @@ describe("auto-approve.ts hook behavior", () => {
         });
       }
 
+      it("denies a deletion hidden behind a comment quote on the next line", async () => {
+        envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(grep *)"]));
+        envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+        const context = createPreToolUseContextFor(autoApproveHook, "Bash", {
+          command: "grep x # '\nrm -rf /usr/x\n#'",
+        });
+        await invokeRun(autoApproveHook, context);
+        context.assertDeny();
+      });
+
       it("deny list still applies after the exemption", async () => {
         envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify([]));
         envHelper.set("CLAUDE_TEST_DENY", JSON.stringify(["Bash(grep *)"]));

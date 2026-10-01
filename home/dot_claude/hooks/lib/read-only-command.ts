@@ -127,6 +127,10 @@ const NAME_START = /[A-Za-z_]/;
 const NAME_CHAR = /[A-Za-z0-9_]/;
 const BRACED_NAME = /^\{[A-Za-z_][A-Za-z0-9_]*\}/;
 const UNQUOTED_REJECTED = /[\n`;&|(){}]/;
+// The shell starts a comment at a `#` that begins a word. Judged on the raw
+// previous character, not on our quote state: quotes inside a comment are not
+// quotes to the shell, so reading past one would desync the two.
+const WORD_BOUNDARY_BEFORE = " \t\n;&|<>";
 
 /**
  * Returns the index after a `$` that is followed by an allowed form, or -1.
@@ -185,6 +189,11 @@ function scanArguments(cmd: string): boolean {
       } else if (c === '"') {
         state = "double";
         i++;
+      } else if (
+        c === "#" &&
+        (i === 0 || WORD_BOUNDARY_BEFORE.includes(cmd[i - 1] as string))
+      ) {
+        return false;
       } else if (UNQUOTED_REJECTED.test(c)) {
         return false;
       } else if (c === "<" || c === ">") {
