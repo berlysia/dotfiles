@@ -47,6 +47,8 @@ cleanup_test() {
     CODEX_CONFIG_FILE=""
 }
 
+toml_to_json() { chezmoi execute-template --with-stdin '{{ .chezmoi.stdin | fromToml | toJson }}' | jq -S .; }
+
 # Cleanup on script exit
 trap 'cleanup_test' EXIT
 
@@ -110,16 +112,9 @@ test_start "Check script rejects improperly formatted config"
 cleanup_test
 setup_test
 cat > "$CODEX_CONFIG_FILE" << 'EOF'
-model_reasoning_effort = "high"
-network_access = true
-hide_agent_reasoning = true
-
-[features]
-web_search_request = true
-
+hide_agent_reasoning=true
 [mcp_servers.context7]
-command = "pnpx"
-args = ["@upstash/context7-mcp@latest"]
+  command =   'pnpx'
 EOF
 
 if ! "$SCRIPT_DIR/check-codex-config.sh" >/dev/null 2>&1; then
@@ -133,25 +128,19 @@ test_start "Format script fixes improperly formatted config"
 cleanup_test
 setup_test
 cat > "$CODEX_CONFIG_FILE" << 'EOF'
-model_reasoning_effort = "high"
-network_access = true
-hide_agent_reasoning = true
-
-[features]
-web_search_request = true
-
+hide_agent_reasoning=true
 [mcp_servers.context7]
-command = "pnpx"
-args = ["@upstash/context7-mcp@latest"]
-
-[mcp_servers.readability]
-command = "pnpx"
-args = ["@mizchi/readability@latest", "--mcp"]
+  command =   'pnpx'
 EOF
+EXPECTED_FORMATTED=$'hide_agent_reasoning = true\n[mcp_servers.context7]\ncommand = \'pnpx\'\n'
 
 if "$SCRIPT_DIR/format-codex-config.sh" >/dev/null 2>&1; then
     if "$SCRIPT_DIR/check-codex-config.sh" >/dev/null 2>&1; then
-        test_pass
+        if [[ "$(cat "$CODEX_CONFIG_FILE")" == "${EXPECTED_FORMATTED%$'\n'}" ]]; then
+            test_pass
+        else
+            test_fail "Formatted content differs from expected: $(cat "$CODEX_CONFIG_FILE")"
+        fi
     else
         test_fail "Format script did not produce properly formatted config"
     fi
@@ -208,7 +197,7 @@ else
 fi
 
 # Test 7: Scripts reject invalid TOML
-test_start "Scripts reject invalid TOML (dasel returns empty)"
+test_start "Scripts reject invalid TOML"
 cleanup_test
 setup_test
 cat > "$CODEX_CONFIG_FILE" << 'EOF'
@@ -216,14 +205,14 @@ this is not valid toml at all
 [unclosed section
 EOF
 
-if ! "$SCRIPT_DIR/format-codex-config.sh" >/dev/null 2>&1; then
-    if ! "$SCRIPT_DIR/check-codex-config.sh" >/dev/null 2>&1; then
-        test_pass
-    else
-        test_fail "Check script accepted invalid TOML"
-    fi
-else
+if FORMAT_ERR=$("$SCRIPT_DIR/format-codex-config.sh" 2>&1 >/dev/null); then
     test_fail "Format script did not reject invalid TOML"
+elif CHECK_ERR=$("$SCRIPT_DIR/check-codex-config.sh" 2>&1 >/dev/null); then
+    test_fail "Check script accepted invalid TOML"
+elif [[ "$FORMAT_ERR" != *"Failed to parse TOML"* ]] || [[ "$CHECK_ERR" != *"Failed to parse TOML"* ]]; then
+    test_fail "Parse failure was not reported: format=[$FORMAT_ERR] check=[$CHECK_ERR]"
+else
+    test_pass
 fi
 
 # Test 8: Scripts reject empty files
@@ -260,12 +249,12 @@ web_search_request = true
 EOF
 
 # Extract semantic content before formatting
-BEFORE_JSON=$(mise x -- dasel query --root -i toml -o json < "$CODEX_CONFIG_FILE" | jq -S)
+BEFORE_JSON=$(toml_to_json < "$CODEX_CONFIG_FILE")
 
 "$SCRIPT_DIR/format-codex-config.sh" >/dev/null 2>&1
 
 # Extract semantic content after formatting
-AFTER_JSON=$(mise x -- dasel query --root -i toml -o json < "$CODEX_CONFIG_FILE" | jq -S)
+AFTER_JSON=$(toml_to_json < "$CODEX_CONFIG_FILE")
 
 if [[ "$BEFORE_JSON" == "$AFTER_JSON" ]]; then
     test_pass
@@ -273,6 +262,36 @@ else
     test_fail "Format script changed semantic content"
     echo "Before: $BEFORE_JSON"
     echo "After: $AFTER_JSON"
+fi
+
+test_start "Check script does not require sorted keys or single quotes (spec R6)"
+setup_test
+cat > "$CODEX_CONFIG_FILE" << 'EOF'
+network_access = true
+hide_agent_reasoning = "yes"
+EOF
+if "$SCRIPT_DIR/check-codex-config.sh" >/dev/null 2>&1; then test_pass; else test_fail "Check script rejected unsorted keys"; fi
+cleanup_test
+
+# Needs a chezmoi outside /usr/bin and /bin (the macOS host and CI install it under ~/.local/bin). Where it
+# lives there, PATH cannot hide it, so the case is reported as skipped and counted neither way.
+CHEZMOI_PATH=$(command -v chezmoi || true)
+if [[ "$CHEZMOI_PATH" == /usr/bin/* || "$CHEZMOI_PATH" == /bin/* ]]; then
+    echo -e "${YELLOW}⏭️ Skipped: chezmoi is in ${CHEZMOI_PATH%/*}, which PATH cannot hide${NC}"
+else
+    test_start "Scripts stop with install guidance when chezmoi is missing"
+    setup_test
+    printf 'network_access = true\n' > "$CODEX_CONFIG_FILE"
+    MISSING_OK=1
+    for script in check-codex-config.sh format-codex-config.sh; do
+        if ERR=$(PATH=/usr/bin:/bin "$SCRIPT_DIR/$script" 2>&1 >/dev/null); then
+            MISSING_OK=0; echo "$script ran without chezmoi"
+        elif [[ "$ERR" != *chezmoi* ]]; then
+            MISSING_OK=0; echo "$script error does not name chezmoi: $ERR"
+        fi
+    done
+    if [[ "$MISSING_OK" == 1 ]]; then test_pass; else test_fail "Missing chezmoi was not reported by both scripts"; fi
+    cleanup_test
 fi
 
 # Test C1: check script default mode validates base + all overlays
@@ -290,7 +309,7 @@ network_access = true
 EOF
 cat > "$TEMP_REPO/home/dot_codex/.config.TESTHOST.toml" << 'EOF'
 [mcp_servers.playwright.tools.browser_navigate]
-approval_mode = "approve"
+approval_mode="approve"
 EOF
 
 if ! "$TEMP_REPO/scripts/check-codex-config.sh" >/dev/null 2>&1; then
