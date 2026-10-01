@@ -1088,6 +1088,27 @@ test_main_dispatches_env_gh() {
   assert_eq "env-gh --vault Formal" "$(main env gh --vault Formal)" "env gh"
 }
 
+test_env_adopt_moves_the_gh_state_file() {
+  local repo new; repo=$(make_flow_repo); new=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
+  write_machine_meta agent-gone-000000 "$TMP_ROOT/does-not-exist"
+  mkdir -p "$AGENT_VM_CONFIG_DIR/repos"
+  : >"$AGENT_VM_CONFIG_DIR/repos/agent-gone-000000.env.1password"
+  : >"$AGENT_VM_CONFIG_DIR/repos/agent-gone-000000.gh"
+  (cd "$repo" && cmd_env_adopt agent-gone-000000) 2>/dev/null
+  assert_status 0 "state moved" -- test -f "$AGENT_VM_CONFIG_DIR/repos/$new.gh"
+  assert_status 1 "old state gone" -- test -e "$AGENT_VM_CONFIG_DIR/repos/agent-gone-000000.gh"
+}
+test_env_adopt_refuses_when_a_gh_state_file_is_in_the_way() {
+  local repo new out; repo=$(make_flow_repo); new=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
+  write_machine_meta agent-gone-000000 "$TMP_ROOT/does-not-exist"
+  mkdir -p "$AGENT_VM_CONFIG_DIR/repos"
+  : >"$AGENT_VM_CONFIG_DIR/repos/agent-gone-000000.env.1password"
+  : >"$AGENT_VM_CONFIG_DIR/repos/$new.gh"
+  out=$(cd "$repo" && (cmd_env_adopt agent-gone-000000) 2>&1) || true
+  assert_contains "$out" "$new.gh" "path named"
+  assert_status 0 "env file not moved" -- test -f "$AGENT_VM_CONFIG_DIR/repos/agent-gone-000000.env.1password"
+}
+
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do
   (
     TMP_ROOT="$TMP_BASE/$t"; mkdir -p "$TMP_ROOT"

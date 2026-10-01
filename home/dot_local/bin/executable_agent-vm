@@ -1184,7 +1184,10 @@ cmd_env_adopt() { # old_machine
   orphaned_env_machines | grep -qx "$old" || die "$old is not an orphaned env file (its repo still exists or it has no env file)"
   new=$(derive_machine_name "$(resolve_repo_root)")
   [[ ! -e "$AGENT_VM_CONFIG_DIR/repos/$new.env.1password" ]] || die "this repo already has an env file"
+  # Checked before anything moves, so a refusal leaves both machines as they were.
+  [[ ! -e "$(gh_state_path "$new")" ]] || die "this repo already has a gh state file ($(gh_state_path "$new")); if it is left over, delete it and retry"
   mv "$AGENT_VM_CONFIG_DIR/repos/$old.env.1password" "$AGENT_VM_CONFIG_DIR/repos/$new.env.1password"
+  if [[ -f "$(gh_state_path "$old")" ]]; then mv "$(gh_state_path "$old")" "$(gh_state_path "$new")"; fi
   step "adopted env file of $old for $new"
 }
 
