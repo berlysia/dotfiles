@@ -48,6 +48,9 @@ const EXEMPT_TRUE: string[] = [
   'head -n 3 "dd if=/dev/zero"',
   '/usr/bin/grep "sudo rm" .',
   "cd /tmp",
+  "grep a#b f",
+  "grep '#' f",
+  'grep "# x" f',
 ];
 
 const EXEMPT_FALSE: Array<[string, string]> = [
@@ -96,6 +99,12 @@ const EXEMPT_FALSE: Array<[string, string]> = [
   ["escaped backslash in dq then list", 'grep "\\\\" ; rm "'],
   ["escaped quote in dq", 'grep "a\\" $(x) "'],
   ["unterminated dq", 'grep "unterminated f'],
+  // a `#` at a word start begins a comment; quotes inside it are not quotes to the shell
+  ["comment sq hides next line", "grep x # '\nrm -rf /usr/x\n#'"],
+  ["comment dq hides next line", 'grep x # "\nrm -rf /usr/x\n#"'],
+  ["comment after line continuation", "grep x \\\n#'\nrm -rf /usr/x\n#'"],
+  ["trailing comment", "grep x f # note"],
+  ["comment after redirect char", "grep x <# '\nrm -rf /usr/x\n#'"],
   // head
   ["find head", 'find . -name "rm -rf /"'],
   ["find ANSI-C exec", "find . -ex$'e'c rm -rf / $'\\073'"],
