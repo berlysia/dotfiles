@@ -236,6 +236,7 @@ VM でブラウザを使う構成（3 節）を、実機で確かめた。古い
   - playwright: `browser_navigate`（ページのタイトルは `vm-a`）と `browser_take_screenshot`（PNG）がエラー無しで応答した。
   - chrome-devtools: `navigate_page`、`take_screenshot`（PNG）、`performance_start_trace`（reload、autoStop）がエラー無しで応答し、trace の応答に `The performance trace has been stopped` を含んでいた。
   - どちらのスクリーンショットでも、見出し「こんにちは playwright」は豆腐にならずに描画された。`fc-match "sans-serif:lang=ja"` は IPAPGothic を返す。
+  - VM の Claude を `agent-vm claude` で起動すると、`/mcp` で playwright と chrome-devtools が connected になった（人が確認）。上の 3 項目は、Claude を介さずに同じコマンドと env で MCP サーバーを起動して確かめたものである。
 - 人の閲覧とポートの衝突（mac から curl、cookie なし）: VM の loopback に bind したサーバーに、mac の `localhost:5174` が届いた。2 台目の machine が後から同じポートに bind しても、届く先は 1 台目のままだった（F8 の再確認）。2 台目を `agent-vm rm` すると、その machine のブラウザの複製と記録だけが消え、1 台目の分は残った。
 - 版の更新: `@playwright/mcp` を 0.0.74（playwright は exact の版）に一時的に変えて `chezmoi apply` を実行すると、ストアは `mcp-0.0.74` に入れ替わって `mcp-0.0.75` は消え、host の `~/.claude.json` も 0.0.74 になった。続く `agent-vm prewarm` は警告 0 件で、`current` は新しい世代を指し、古い世代は machine に残った。`git checkout package.json` の後に `chezmoi apply` と `agent-vm prewarm` を実行すると、ストアと `~/.claude.json` は 0.75 に戻った。
 
@@ -244,4 +245,3 @@ VM でブラウザを使う構成（3 節）を、実機で確かめた。古い
 - 観測（切り替わりの条件は未確認）: 1 台目のサーバーを止めると、2 台目が同じポートに bind していても、mac の `localhost:5174` は 30 秒間応答しなかった。1 台目を再起動すると、再び 1 台目に届いた。最初に bind した machine に転送が固定されるように見える。2 台目に切り替わる条件は確かめていない。
 - 観測: `package.json` の版だけを変えて `chezmoi apply` を実行したときは、`bun install --frozen-lockfile` が lockfile の不一致で失敗し、apply 自体の終了コードは 1 になった。ブラウザのストアの更新とは無関係で、`package.json` を戻して再実行すると終了コード 0 になった。
 - 観測（この確認の範囲外）: `agent-vm rm` の確認プロンプトに EOF を渡すと「failed unexpectedly」と出る。
-- 未確認: VM の Claude の `/mcp` で、playwright と chrome-devtools が connected になること。VM の Claude のログインが要るので、人が確かめる。上の MCP の動作の確認は、Claude を介さずに同じコマンドと env で MCP サーバーを起動したものである。
