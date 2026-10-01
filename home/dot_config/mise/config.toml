@@ -7,6 +7,15 @@ idiomatic_version_file_enable_tools = ["node"]
 experimental = true
 install_before = "7d"
 
+[settings.github]
+# gh keeps its token in the OS keyring, so hosts.yml has no oauth_token and
+# gh_cli_tokens finds nothing; ask gh directly. Private repos such as
+# berlysia/shiori need the token, since mise-versions does not serve them and
+# unauthenticated API calls get 404s until GitHub starts answering 403.
+# gh auth token also returns GH_TOKEN, so agent-vm sessions with a per-repo PAT
+# are covered; without any token mise falls back to unauthenticated requests.
+credential_command = "gh auth token"
+
 [tools]
 actionlint = "1.7.12"
 bun = "1.4.0"
