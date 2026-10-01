@@ -26,7 +26,7 @@ import {
   writeFileSync,
   writeSync,
 } from "node:fs";
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 import { diagnoseGate, formatGateDiagnosis } from "../lib/workflow-gate.ts";
 import { isStrictlyUnderProjectSubdir } from "../lib/workflow-fs.ts";
 import { lastPassMarkerRound } from "../lib/workflow-marker.ts";
@@ -38,14 +38,28 @@ import {
   type WorkflowDocumentType,
 } from "../lib/workflow-paths.ts";
 import {
+  bareSlug,
   computeDesignHash,
   computeDocumentHash,
   countReviewerOutputsRounds,
+  type ExtensionApprover,
+  formatExtensionLogLine,
+  formatRoundBudgetGuidance,
+  formatRoundBudgetHeadline,
+  getReframerReviewFileName,
+  getRoundBudgetPhase,
+  getRoundsInCycle,
+  isExtensionAllowed,
   PLAN_NORMALIZERS,
+  parseLatestReframerReview,
   planRoundReviewers,
+  REFRAMER_AGENT,
   ROUND_BUDGET,
+  ROUND_REFRAMER_CAP,
+  ROUND_SELF_CAP,
   type RoundReviewerPlan,
   reviewersForDocumentType,
+  sanitizeExtensionReason,
   SPEC_NORMALIZERS,
 } from "../lib/workflow-review-core.ts";
 
@@ -106,7 +120,12 @@ interface ParsedArgs {
 }
 
 /** Flags that take no value, so `round --full spec.md` keeps `spec.md` positional. */
-const BOOLEAN_FLAGS = new Set(["full", "extend"]);
+const BOOLEAN_FLAGS = new Set([
+  "full",
+  "extend",
+  "self-extend",
+  "reframer-extend",
+]);
 
 function parseArgs(args: string[]): ParsedArgs {
   const positional: string[] = [];
@@ -268,6 +287,60 @@ function appendRoundBaseline(wfDir: string, round: number, now: Date): void {
   }
 }
 
+const EXTENSION_NOTES: Record<ExtensionApprover, string> = {
+  human: `extended beyond round budget (${ROUND_BUDGET})`,
+  self: `self-extended beyond round budget (${ROUND_BUDGET}); self cap ${ROUND_SELF_CAP}`,
+  reframer: `reframer-extended beyond self cap (${ROUND_SELF_CAP}); reframer cap ${ROUND_REFRAMER_CAP}`,
+};
+
+function isBareMarkdownName(name: string): boolean {
+  return name.endsWith(".md") && name.length > ".md".length;
+}
+
+/**
+ * Why a `--reframer-extend` is not backed, or null when it is. The claim that
+ * the reframer recommended continuing rests on two artifacts: the record file
+ * section the main loop wrote, and the ledger line the launch hook wrote. The
+ * section must be the cycle's single consultation (round = cycle start + self
+ * cap), so appending a later section cannot redo it. Neither artifact proves
+ * the recommendation was truthfully transcribed (an accepted limitation).
+ */
+function checkReframerBacking(
+  wfDir: string,
+  docName: string,
+  docContent: string,
+  deps: RunWorkflowCliDeps,
+): string | null {
+  const recordName = getReframerReviewFileName(docName);
+  const recordPath = resolve(wfDir, recordName);
+  if (!existsSync(recordPath)) {
+    return `reframer record file ${recordName} not found; consult ${REFRAMER_AGENT} and record its result first`;
+  }
+  const review = parseLatestReframerReview(readFileSync(recordPath, "utf-8"));
+  if (review === null) {
+    return `${recordName} has no valid "Reframer Review (Round N)" section (the last section needs exactly one "- agent:" and one "- recommendation:" line)`;
+  }
+  const expectedRound = lastPassMarkerRound(docContent) + ROUND_SELF_CAP;
+  if (review.round !== expectedRound) {
+    return `the Reframer Review section is for round ${review.round}, but this cycle's consultation must be round ${expectedRound}`;
+  }
+  if (review.agent !== REFRAMER_AGENT) {
+    return `"- agent:" in ${recordName} must be exactly ${REFRAMER_AGENT} (found "${review.agent}")`;
+  }
+  if (review.recommendation !== "(a)") {
+    return `"- recommendation:" in ${recordName} must be exactly (a) to continue (found "${review.recommendation}"); other recommendations go to the human`;
+  }
+  const baseline = readRoundBaselineTime(wfDir, review.round);
+  if (baseline === null) {
+    return `baseline missing for round ${review.round}, so the ${REFRAMER_AGENT} launch cannot be verified`;
+  }
+  const ledgerPath = deps.ledgerPath ?? resolve(wfDir, "reviewer-runs.log");
+  if (!readLedgerSlugsAtOrAfter(ledgerPath, baseline).has(REFRAMER_AGENT)) {
+    return `no ${REFRAMER_AGENT} run recorded since the round ${review.round} baseline; launch it with the Agent tool`;
+  }
+  return null;
+}
+
 function cmdRound(
   args: string[],
   deps: RunWorkflowCliDeps,
@@ -276,6 +349,14 @@ function cmdRound(
   const docName = positional[0];
   if (!docName) {
     return err("round requires a document name (plan-N.md or spec.md)");
+  }
+  // A bare file name only: the reframer record file and the extension log are
+  // keyed by it, so a path like `../plan.md` would move the record outside the
+  // workflow dir and split the log's doc column across spellings.
+  if (basename(docName) !== docName || !isBareMarkdownName(docName)) {
+    return err(
+      `invalid document name "${docName}": the document name must be a bare file name ending in .md (e.g. plan-1.md), not a path`,
+    );
   }
   const resolvedDir = resolveTargetWfDir(flags, deps);
   if (resolvedDir.error !== undefined) return err(resolvedDir.error);
@@ -289,18 +370,44 @@ function cmdRound(
   const currentRound = countReviewerOutputsRounds(oldContent);
   const nextRound = currentRound + 1;
 
+  const requested: ExtensionApprover[] = [];
+  if (flags["extend"] === "true") requested.push("human");
+  if (flags["self-extend"] === "true") requested.push("self");
+  if (flags["reframer-extend"] === "true") requested.push("reframer");
+  if (requested.length > 1) {
+    return err(
+      "use only one of --extend, --self-extend, --reframer-extend (who approved the extension would be ambiguous)",
+    );
+  }
+  const approver = requested[0] ?? null;
+  if (approver !== null && approver !== "human" && flags["full"] === "true") {
+    return err(
+      `--${approver === "self" ? "self-extend" : "reframer-extend"} cannot be combined with --full: changing Key Decisions is outside the self/reframer mandate; ask the human for --extend`,
+    );
+  }
+  const reason = sanitizeExtensionReason(flags["reason"] ?? "");
+  if (approver !== null && reason === "") {
+    return err(
+      `--${approver === "human" ? "extend" : `${approver}-extend`} requires --reason "<why>"`,
+    );
+  }
+
   // A cycle resets at the last verdict=pass marker (approval), so re-review
   // after approval gets a fresh budget while unstamped `round` calls keep
   // counting against it (spec K1).
-  const roundsInCycle = currentRound - lastPassMarkerRound(oldContent);
-  const extending = flags["extend"] === "true";
-  if (extending && (flags["reason"] ?? "").trim() === "") {
-    return err('--extend requires --reason "<the human\'s instruction>"');
-  }
-  if (roundsInCycle >= ROUND_BUDGET && !extending) {
-    return err(
-      `refusing: ${docName} has used its round budget (${ROUND_BUDGET}) since the last pass. Present the Executive Summary with the unresolved findings and ask the human for direction. Only if the human tells you to continue, re-run with --extend --reason "<their instruction>".`,
-    );
+  const phase = getRoundBudgetPhase(getRoundsInCycle(oldContent));
+  if (phase !== "open") {
+    if (approver === null || !isExtensionAllowed(phase, approver)) {
+      return err(
+        `refusing: ${docName}: ${formatRoundBudgetHeadline(phase)} since the last pass. ${formatRoundBudgetGuidance(phase, docName)}`,
+      );
+    }
+    if (approver === "reframer") {
+      const backing = checkReframerBacking(wfDir, docName, oldContent, deps);
+      if (backing !== null) {
+        return err(`refusing: ${docName}: --reframer-extend: ${backing}`);
+      }
+    }
   }
 
   const roundPlan: RoundReviewerPlan =
@@ -341,13 +448,15 @@ function cmdRound(
   writeFileSync(docPath, newContent);
   appendRoundBaseline(wfDir, nextRound, deps.now);
 
+  // Below the budget an extension flag is unnecessary, so nothing is logged
+  // or announced: the log stays a record of actual overruns.
   let extensionNote = "";
-  if (roundsInCycle >= ROUND_BUDGET && extending) {
+  if (phase !== "open" && approver !== null) {
     appendFileSync(
       resolve(wfDir, "round-extensions.log"),
-      `${deps.now.toISOString()}\t${docName}\t${nextRound}\t${(flags["reason"] ?? "").trim()}\n`,
+      `${formatExtensionLogLine({ at: deps.now, doc: docName, round: nextRound, approver, reason })}\n`,
     );
-    extensionNote = `extended beyond round budget (${ROUND_BUDGET})\n`;
+    extensionNote = `${EXTENSION_NOTES[approver]}\n`;
   }
 
   const summary =
@@ -363,11 +472,6 @@ function cmdRound(
 // ---------------------------------------------------------------------------
 // stamp
 // ---------------------------------------------------------------------------
-
-function bareSlug(subagentType: string): string {
-  const parts = subagentType.split(":");
-  return parts[parts.length - 1] ?? subagentType;
-}
 
 /**
  * Latest baseline time recorded for `round` in `.round-baseline` (format:

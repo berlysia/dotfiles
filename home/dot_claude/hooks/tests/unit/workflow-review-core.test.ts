@@ -1,21 +1,38 @@
 #!/usr/bin/env node --test
 
 import { deepStrictEqual, ok, strictEqual } from "node:assert";
-import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
+  bareSlug,
   buildRecommendation,
   canSkip,
   type CacheState,
   computeDocumentHash,
+  type ExtensionApprover,
+  formatExtensionLogLine,
+  formatRoundBudgetGuidance,
+  formatRoundBudgetHeadline,
+  getReframerReviewFileName,
+  getRoundBudgetPhase,
+  getRoundsInCycle,
   isCompleteAndChanged,
+  isExtensionAllowed,
+  isRecordedAgentSlug,
+  parseLatestReframerReview,
   PLAN_REVIEWERS,
   planRoundReviewers,
   readDocCache,
+  REFRAMER_AGENT,
   REVIEWER_CATALOG,
+  ROUND_BUDGET,
+  ROUND_REFRAMER_CAP,
+  ROUND_SELF_CAP,
+  type RoundBudgetPhase,
+  sanitizeExtensionReason,
   scanPlaceholders,
   selectReviewers,
   SPEC_NORMALIZERS,
@@ -470,5 +487,334 @@ describe("workflow-review-core: round budget line", () => {
         "Round budget reached",
       ),
     );
+  });
+});
+
+const roundsN = (n: number) =>
+  Array.from(
+    { length: n },
+    (_, i) => `## Reviewer Outputs (Round ${i + 1})\n`,
+  ).join("\n");
+
+describe("workflow-review-core: getRoundBudgetPhase", () => {
+  const table: Array<[number, RoundBudgetPhase]> = [
+    [0, "open"],
+    [ROUND_BUDGET - 1, "open"],
+    [ROUND_BUDGET, "self-extendable"],
+    [ROUND_SELF_CAP - 1, "self-extendable"],
+    [ROUND_SELF_CAP, "reframer-review"],
+    [ROUND_REFRAMER_CAP - 1, "reframer-review"],
+    [ROUND_REFRAMER_CAP, "human-only"],
+    [12, "human-only"],
+  ];
+  for (const [rounds, phase] of table) {
+    it(`${rounds} rounds in cycle -> ${phase}`, () => {
+      strictEqual(getRoundBudgetPhase(rounds), phase);
+    });
+  }
+});
+
+describe("workflow-review-core: isExtensionAllowed", () => {
+  const phases: RoundBudgetPhase[] = [
+    "open",
+    "self-extendable",
+    "reframer-review",
+    "human-only",
+  ];
+  const approvers: ExtensionApprover[] = ["human", "self", "reframer"];
+  const allowed: Record<RoundBudgetPhase, ExtensionApprover[]> = {
+    open: ["human", "self", "reframer"],
+    "self-extendable": ["human", "self"],
+    "reframer-review": ["human", "reframer"],
+    "human-only": ["human"],
+  };
+  for (const phase of phases) {
+    for (const approver of approvers) {
+      const expected = allowed[phase].includes(approver);
+      it(`${phase} x ${approver} -> ${expected}`, () => {
+        strictEqual(isExtensionAllowed(phase, approver), expected);
+      });
+    }
+  }
+});
+
+describe("workflow-review-core: getRoundsInCycle", () => {
+  it("counts every round when there is no pass marker", () => {
+    strictEqual(getRoundsInCycle(roundsN(4)), 4);
+  });
+  it("counts from the last pass marker's round=", () => {
+    const content = `${roundsN(9)}\n<!-- auto-review: verdict=pass; hash=1; round=3 -->\n`;
+    strictEqual(getRoundsInCycle(content), 6);
+  });
+  it("treats a pass marker without round= as cycle start 0", () => {
+    const content = `${roundsN(3)}\n<!-- auto-review: verdict=pass; hash=1 -->\n`;
+    strictEqual(getRoundsInCycle(content), 3);
+  });
+  it("is 0 right after a pass at the current round", () => {
+    const content = `${roundsN(3)}\n<!-- auto-review: verdict=pass; hash=1; round=3 -->\n`;
+    strictEqual(getRoundsInCycle(content), 0);
+  });
+  it("clamps an anomalous round= above the heading count to 0", () => {
+    const content = `${roundsN(2)}\n<!-- auto-review: verdict=pass; hash=1; round=5 -->\n`;
+    strictEqual(getRoundsInCycle(content), 0);
+  });
+});
+
+describe("workflow-review-core: bareSlug / isRecordedAgentSlug", () => {
+  it("bareSlug keeps the last colon-separated segment", () => {
+    strictEqual(bareSlug("a:b:review-reframer"), "review-reframer");
+    strictEqual(bareSlug("logic-validator"), "logic-validator");
+  });
+  it("records reviewers and the reframer, with or without a namespace", () => {
+    ok(isRecordedAgentSlug("logic-validator"));
+    ok(isRecordedAgentSlug("review-reframer"));
+    ok(isRecordedAgentSlug("x:review-reframer"));
+  });
+  it("does not record other agents", () => {
+    ok(!isRecordedAgentSlug("general-purpose"));
+    ok(!isRecordedAgentSlug("review-reframer-x"));
+    ok(!isRecordedAgentSlug(""));
+  });
+});
+
+describe("workflow-review-core: round budget wording", () => {
+  it("formatRoundBudgetHeadline names the cap reached", () => {
+    strictEqual(
+      formatRoundBudgetHeadline("self-extendable"),
+      `Round budget reached (${ROUND_BUDGET})`,
+    );
+    strictEqual(
+      formatRoundBudgetHeadline("reframer-review"),
+      `Round self cap reached (${ROUND_SELF_CAP})`,
+    );
+    strictEqual(
+      formatRoundBudgetHeadline("human-only"),
+      `Round reframer cap reached (${ROUND_REFRAMER_CAP})`,
+    );
+  });
+
+  it("self-extendable guidance offers --self-extend and --extend only", () => {
+    const text = formatRoundBudgetGuidance("self-extendable", "plan.md");
+    ok(text.includes("--self-extend --reason"));
+    ok(text.includes("--extend --reason"));
+    ok(!text.includes("--reframer-extend"));
+  });
+
+  it("reframer-review guidance tells the operator how to consult and record", () => {
+    const text = formatRoundBudgetGuidance("reframer-review", "plan.md");
+    for (const needle of [
+      `subagent_type: ${REFRAMER_AGENT}`,
+      "reframer-review.plan.md",
+      "(a)",
+      "(b)",
+      "(c)",
+      "(d)",
+      "/scope-guard",
+      "--reframer-extend --reason",
+      "--extend --reason",
+      String(ROUND_REFRAMER_CAP),
+      "do not relaunch",
+    ]) {
+      ok(text.includes(needle), `missing: ${needle}`);
+    }
+    ok(!text.includes("--self-extend"));
+    ok(!text.includes("model"));
+  });
+
+  it("human-only guidance leaves continuation to --extend", () => {
+    const text = formatRoundBudgetGuidance("human-only", "plan.md");
+    ok(text.includes("--extend --reason"));
+    ok(!text.includes("--self-extend"));
+    ok(!text.includes("--reframer-extend"));
+  });
+
+  it("never names a concrete model", () => {
+    const phases = [
+      "self-extendable",
+      "reframer-review",
+      "human-only",
+    ] as const;
+    for (const phase of phases) {
+      const text = `${formatRoundBudgetHeadline(phase)}\n${formatRoundBudgetGuidance(phase, "plan.md")}`;
+      ok(!/fable|opus|sonnet/i.test(text), `${phase} names a model`);
+    }
+  });
+});
+
+describe("workflow-review-core: extension log helpers", () => {
+  it("sanitizeExtensionReason flattens control and line-separator characters", () => {
+    strictEqual(sanitizeExtensionReason("a\tb\nc"), "a b c");
+    strictEqual(sanitizeExtensionReason("a b"), "a b");
+    strictEqual(sanitizeExtensionReason("a\u007fb"), "a b");
+    strictEqual(sanitizeExtensionReason("  x  "), "x");
+    strictEqual(sanitizeExtensionReason("x".repeat(600)).length, 500);
+    strictEqual(sanitizeExtensionReason("\n"), "");
+  });
+
+  it("formatExtensionLogLine puts the approver before the reason", () => {
+    const at = new Date("2026-10-01T00:00:00.000Z");
+    strictEqual(
+      formatExtensionLogLine({
+        at,
+        doc: "plan.md",
+        round: 4,
+        approver: "self",
+        reason: "a\tb\nc",
+      }),
+      `${at.toISOString()}\tplan.md\t4\tself\ta b c`,
+    );
+  });
+});
+
+describe("workflow-review-core: reframer review record", () => {
+  it("getReframerReviewFileName prefixes the document name", () => {
+    strictEqual(
+      getReframerReviewFileName("plan.md"),
+      "reframer-review.plan.md",
+    );
+    strictEqual(
+      getReframerReviewFileName("plan-2.md"),
+      "reframer-review.plan-2.md",
+    );
+  });
+
+  const section = (round: string, agent: string, rec: string) =>
+    `## Reframer Review (Round ${round})\n- agent: ${agent}\n- recommendation: ${rec}\n- rejected: r\n`;
+
+  it("returns the last section", () => {
+    const content = `${section("6", "review-reframer", "(a)")}\n${section("7", "review-reframer", "(b)")}`;
+    deepStrictEqual(parseLatestReframerReview(content), {
+      round: 7,
+      agent: "review-reframer",
+      recommendation: "(b)",
+    });
+  });
+  it("trims values but leaves trailing text for the caller to judge", () => {
+    const content = section("6", "  review-reframer ", " (a) 続行 ");
+    deepStrictEqual(parseLatestReframerReview(content), {
+      round: 6,
+      agent: "review-reframer",
+      recommendation: "(a) 続行",
+    });
+  });
+  it("returns null without a section or with a non-numeric round", () => {
+    strictEqual(parseLatestReframerReview("nothing here\n"), null);
+    strictEqual(
+      parseLatestReframerReview(section("x", "review-reframer", "(a)")),
+      null,
+    );
+  });
+  it("ends a section at the next ## line", () => {
+    const content = `${section("6", "review-reframer", "(a)")}## Other\n- recommendation: (b)\n`;
+    strictEqual(parseLatestReframerReview(content)?.recommendation, "(a)");
+  });
+  it("returns null when agent or recommendation is missing", () => {
+    strictEqual(
+      parseLatestReframerReview(
+        "## Reframer Review (Round 6)\n- recommendation: (a)\n",
+      ),
+      null,
+    );
+    strictEqual(
+      parseLatestReframerReview(
+        "## Reframer Review (Round 6)\n- agent: review-reframer\n",
+      ),
+      null,
+    );
+  });
+  it("returns null when recommendation appears twice in a section", () => {
+    const content = `${section("6", "review-reframer", "(b)")}- recommendation: (a)\n`;
+    strictEqual(parseLatestReframerReview(content), null);
+  });
+  it("returns null when the agent line exists only in an earlier section", () => {
+    const content = `${section("6", "review-reframer", "(a)")}\n## Reframer Review (Round 7)\n- recommendation: (a)\n`;
+    strictEqual(parseLatestReframerReview(content), null);
+  });
+});
+
+describe("workflow-review-core: reframer agent definition", () => {
+  const agentFile = join(
+    dirname(fileURLToPath(import.meta.url)),
+    "../../../agents/review-reframer.md",
+  );
+  it("frontmatter name matches REFRAMER_AGENT", () => {
+    const frontmatter = readFileSync(agentFile, "utf-8").split("---")[1] ?? "";
+    const name = /^name:\s*(\S+)\s*$/m.exec(frontmatter)?.[1];
+    strictEqual(name, REFRAMER_AGENT);
+  });
+  it("is not part of any reviewer roster", () => {
+    const rosterSlugs = [
+      ...SPEC_REVIEWERS.map((r) => r.slug as string),
+      ...PLAN_REVIEWERS.map((r) => r.slug as string),
+      ...REVIEWER_CATALOG.map((r) => r.subagentType),
+    ];
+    ok(!rosterSlugs.includes(REFRAMER_AGENT));
+  });
+});
+
+describe("workflow-review-core: staged round budget notice", () => {
+  const notice = (content: string) =>
+    buildRecommendation("/tmp/wf/spec.md", null, content);
+  const nw = (round: number | string) =>
+    `<!-- auto-review: verdict=needs-work; hash=1; round=${round} -->\n`;
+  const pass = (round: number) =>
+    `<!-- auto-review: verdict=pass; hash=0; round=${round} -->\n`;
+  const headlines = [
+    "Round budget reached",
+    "Round self cap reached",
+    "Round reframer cap reached",
+  ];
+
+  it("is silent below the budget", () => {
+    const text = notice(`## Goal\nx\n${roundsN(2)}\n${nw(2)}`);
+    for (const h of headlines) ok(!text.includes(h));
+  });
+  for (const n of [3, 5]) {
+    it(`rounds(${n}) offers a self extension`, () => {
+      const text = notice(`## Goal\nx\n${roundsN(n)}\n${nw(n)}`);
+      ok(text.includes(`Round budget reached (${ROUND_BUDGET})`));
+      ok(text.includes("--self-extend --reason"));
+      ok(!text.includes("Round self cap reached"));
+    });
+  }
+  for (const n of [6, 8]) {
+    it(`rounds(${n}) points at the reframer`, () => {
+      const text = notice(`## Goal\nx\n${roundsN(n)}\n${nw(n)}`);
+      ok(text.includes(`Round self cap reached (${ROUND_SELF_CAP})`));
+      ok(text.includes("review-reframer"));
+      ok(text.includes("--reframer-extend"));
+      ok(!text.includes("--self-extend"));
+    });
+  }
+  for (const n of [9, 10]) {
+    it(`rounds(${n}) is human-only`, () => {
+      const text = notice(`## Goal\nx\n${roundsN(n)}\n${nw(n)}`);
+      ok(text.includes(`Round reframer cap reached (${ROUND_REFRAMER_CAP})`));
+      ok(text.includes("--extend --reason"));
+      ok(!text.includes("--reframer-extend"));
+    });
+  }
+  it("uses the in-cycle count after a pass (6 in cycle)", () => {
+    const text = notice(`${roundsN(9)}\n${pass(3)}${nw(9)}`);
+    ok(text.includes("Round self cap reached"));
+  });
+  it("uses the in-cycle count after a pass (3 in cycle)", () => {
+    const text = notice(`${roundsN(6)}\n${pass(3)}${nw(6)}`);
+    ok(text.includes("Round budget reached"));
+    ok(!text.includes("Round self cap reached"));
+  });
+
+  it("stays silent while the newest round is only a skeleton", () => {
+    const text = notice(`${roundsN(6)}\n${nw(5)}`);
+    for (const h of headlines) ok(!text.includes(h));
+  });
+  it("speaks once the newest round is stamped", () => {
+    ok(notice(`${roundsN(6)}\n${nw(6)}`).includes("Round self cap reached"));
+  });
+  it("treats a marker without round= as stamped", () => {
+    const text = notice(
+      `${roundsN(6)}\n<!-- auto-review: verdict=needs-work; hash=1 -->\n`,
+    );
+    ok(text.includes("Round self cap reached"));
   });
 });

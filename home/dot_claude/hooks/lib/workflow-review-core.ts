@@ -9,7 +9,7 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import {
   applyNormalizers,
   computeDesignHash,
@@ -63,6 +63,221 @@ export const MAX_ADDITIONAL_REVIEWERS = 3;
  * in `buildRecommendation` so the two never quote different numbers.
  */
 export const ROUND_BUDGET = 3;
+
+/**
+ * Upper bound of rounds per cycle that may be continued on the operator's own
+ * judgment (`--self-extend`). Past it, only a `review-reframer` consultation
+ * (or the human) may continue.
+ */
+export const ROUND_SELF_CAP = 6;
+
+/**
+ * Upper bound of rounds per cycle that may be continued on the reframer's
+ * recommendation (`--reframer-extend`). 9 is a design value that keeps the
+ * 3-round stride of `ROUND_BUDGET`; it is not derived from convergence data.
+ * Past it only the human's `--extend` continues.
+ */
+export const ROUND_REFRAMER_CAP = 9;
+
+/**
+ * Agent name of the problem-reframing consultant. It is a name, never a model:
+ * the model is chosen in the agent definition's frontmatter so swapping it
+ * touches one line. Deliberately absent from every reviewer roster — it is not
+ * a reviewer — but its launches are ledgered (`isRecordedAgentSlug`).
+ */
+export const REFRAMER_AGENT = "review-reframer";
+
+export type RoundBudgetPhase =
+  | "open"
+  | "self-extendable"
+  | "reframer-review"
+  | "human-only";
+
+/** Who took responsibility for continuing past a cap; recorded in the log. */
+export type ExtensionApprover = "human" | "self" | "reframer";
+
+/**
+ * Phase of the review cycle from the number of rounds already used in it.
+ * The CLI's refusals and `buildRecommendation`'s notice both derive from this
+ * one function so they can never disagree about where a cap sits.
+ */
+export function getRoundBudgetPhase(roundsInCycle: number): RoundBudgetPhase {
+  if (roundsInCycle < ROUND_BUDGET) return "open";
+  if (roundsInCycle < ROUND_SELF_CAP) return "self-extendable";
+  if (roundsInCycle < ROUND_REFRAMER_CAP) return "reframer-review";
+  return "human-only";
+}
+
+const EXTENSION_PERMISSIONS: Record<
+  RoundBudgetPhase,
+  ReadonlySet<ExtensionApprover>
+> = {
+  open: new Set(["human", "self", "reframer"]),
+  "self-extendable": new Set(["human", "self"]),
+  "reframer-review": new Set(["human", "reframer"]),
+  "human-only": new Set(["human"]),
+};
+
+/** The phase x approver permission table; the CLI holds no copy of it. */
+export function isExtensionAllowed(
+  phase: RoundBudgetPhase,
+  approver: ExtensionApprover,
+): boolean {
+  return EXTENSION_PERMISSIONS[phase].has(approver);
+}
+
+/**
+ * Rounds used in the current review cycle: headings present minus the round
+ * of the last pass marker. An anomalous `round=` above the heading count
+ * clamps to 0 (open side) rather than refusing on bad data.
+ */
+export function getRoundsInCycle(content: string): number {
+  return Math.max(
+    0,
+    countReviewerOutputsRounds(content) - lastPassMarkerRound(content),
+  );
+}
+
+export function bareSlug(subagentType: string): string {
+  const parts = subagentType.split(":");
+  return parts[parts.length - 1] ?? subagentType;
+}
+
+export function formatRoundBudgetHeadline(
+  phase: Exclude<RoundBudgetPhase, "open">,
+): string {
+  switch (phase) {
+    case "self-extendable":
+      return `Round budget reached (${ROUND_BUDGET})`;
+    case "reframer-review":
+      return `Round self cap reached (${ROUND_SELF_CAP})`;
+    case "human-only":
+      return `Round reframer cap reached (${ROUND_REFRAMER_CAP})`;
+  }
+}
+
+export function getReframerReviewFileName(docName: string): string {
+  return `reframer-review.${docName}`;
+}
+
+/**
+ * Operator instructions for each capped phase. Shared by the CLI refusal and
+ * the recommendation notice; `docName` is needed because the reframer's record
+ * file is named after the document.
+ */
+export function formatRoundBudgetGuidance(
+  phase: Exclude<RoundBudgetPhase, "open">,
+  docName: string,
+): string {
+  switch (phase) {
+    case "self-extendable":
+      return [
+        "Continue only if a landing is in sight: (1) the latest round has no blocker verdict, (2) the remaining findings can be fixed without changing Key Decisions or the Alternatives section, (3) the findings are narrower than the previous round's (fewer non-pass reviewers, or the same count with more localized findings rather than a recurrence).",
+        `If so, run \`workflow-cli round ${docName} --self-extend --reason "non-pass N→M; remaining: <summary>"\` (up to Round ${ROUND_SELF_CAP}).`,
+        `Otherwise present the Executive Summary with unresolved findings and ask the human. Only if the human tells you to continue, run \`workflow-cli round ${docName} --extend --reason "<their instruction>"\`.`,
+      ].join(" ");
+    case "reframer-review": {
+      const recordFile = getReframerReviewFileName(docName);
+      return [
+        `If the record file ${recordFile} has no Reframer Review section for this cycle, launch the reframer with the Agent tool (subagent_type: ${REFRAMER_AGENT}), passing the document path and a summary of the non-pass findings of every round (which ones persisted or recurred). If it cannot be launched, say so in Open Questions and ask the human; do not substitute another agent. If the record file already has this cycle's section, do not relaunch.`,
+        "The reframer returns a cause hypothesis and one recommendation among: (a) continue with the current framing, (b) reframe the problem (/scope-guard decomposition, spec + plan-N split, or redefining goal / constraints / Key Decisions), (c) go to approval with the known unresolved findings stated, (d) withdraw.",
+        `Append its result to ${recordFile} as a \`## Reframer Review (Round N)\` section with one-line fields agent / recommendation / rejected / hypothesis / plan (N = latest stamped round; no \`## \` lines in the body).`,
+        `If the recommendation is exactly (a), continue with \`workflow-cli round ${docName} --reframer-extend --reason "reframer: (a) <landing outlook>; rejected: <why (b)-(d) were rejected>"\` (up to Round ${ROUND_REFRAMER_CAP}) and put the extension counts, the record file path and the section summary in the Executive Summary.`,
+        `If it is (b), (c) or (d), put the result in the Executive Summary's Open Questions and wait for the human (the adoption of (b) is the human's decision). Only if the human tells you to continue, run \`workflow-cli round ${docName} --extend --reason "<their instruction>"\`.`,
+      ].join(" ");
+    }
+    case "human-only":
+      return [
+        `Put the Reframer Review section of ${getReframerReviewFileName(docName)} and the Round ${ROUND_SELF_CAP + 1}-${ROUND_REFRAMER_CAP} progress in the Executive Summary and ask the human for direction. Do not relaunch the reframer.`,
+        `Only if the human tells you to continue, run \`workflow-cli round ${docName} --extend --reason "<their instruction>"\`.`,
+      ].join(" ");
+  }
+}
+
+function isSeparatorOrControl(code: number): boolean {
+  return (
+    code <= 0x1f ||
+    (code >= 0x7f && code <= 0x9f) ||
+    code === 0x2028 ||
+    code === 0x2029
+  );
+}
+
+const EXTENSION_REASON_MAX_LENGTH = 500;
+
+/**
+ * Keep an extension reason on one log line. The reason is free text that may
+ * echo document content, so control characters and line separators become a
+ * single space each (no column or line forgery), then the text is trimmed and
+ * capped. Guards the 1-line / 5-column shape only, not the approver column's
+ * truthfulness.
+ */
+export function sanitizeExtensionReason(reason: string): string {
+  let flattened = "";
+  for (const char of reason) {
+    flattened += isSeparatorOrControl(char.codePointAt(0) ?? 0) ? " " : char;
+  }
+  return flattened.trim().slice(0, EXTENSION_REASON_MAX_LENGTH).trim();
+}
+
+/**
+ * One `round-extensions.log` line: `<ISO8601>\t<doc>\t<round>\t<approver>\t<reason>`.
+ * The approver sits before the free-text reason so the reason stays last.
+ */
+export function formatExtensionLogLine(entry: {
+  at: Date;
+  doc: string;
+  round: number;
+  approver: ExtensionApprover;
+  reason: string;
+}): string {
+  return `${entry.at.toISOString()}\t${entry.doc}\t${entry.round}\t${entry.approver}\t${sanitizeExtensionReason(entry.reason)}`;
+}
+
+/**
+ * Last `## Reframer Review (Round N)` section of a reframer record file.
+ * `- agent:` / `- recommendation:` are read only at line start and must occur
+ * exactly once in the section, so a recommendation cannot be smuggled in from
+ * another field's body. Exact-value judgment is left to the caller.
+ */
+export function parseLatestReframerReview(
+  content: string,
+): { round: number; agent: string; recommendation: string } | null {
+  const lines = content.split("\n");
+  let start = -1;
+  let roundText = "";
+  for (let i = 0; i < lines.length; i++) {
+    const heading = /^## Reframer Review \(Round (.*)\)\s*$/.exec(
+      lines[i] ?? "",
+    );
+    if (heading) {
+      start = i;
+      roundText = heading[1] ?? "";
+    }
+  }
+  if (start === -1 || !/^\d+$/.test(roundText)) return null;
+
+  const agents: string[] = [];
+  const recommendations: string[] = [];
+  for (const line of lines.slice(start + 1)) {
+    if (line.startsWith("## ")) break;
+    const agent = /^- agent:(.*)$/.exec(line);
+    if (agent) agents.push((agent[1] ?? "").trim());
+    const recommendation = /^- recommendation:(.*)$/.exec(line);
+    if (recommendation) recommendations.push((recommendation[1] ?? "").trim());
+  }
+  const agent = agents[0];
+  const recommendation = recommendations[0];
+  if (
+    agents.length !== 1 ||
+    recommendations.length !== 1 ||
+    agent === undefined ||
+    recommendation === undefined
+  ) {
+    return null;
+  }
+  return { round: Number.parseInt(roundText, 10), agent, recommendation };
+}
 
 /**
  * Single source of truth for the spec-layer reviewer set.
@@ -248,6 +463,27 @@ export const REVIEWER_CATALOG: ReviewerRule[] = [
   },
 ];
 
+/**
+ * Every reviewer slug a `workflow-cli stamp` ledger check might require,
+ * derived from the same rosters as above so the ledger cannot drift from the
+ * reviewer set. Bare slugs: a recorded `subagent_type` is normalized through
+ * `bareSlug` before lookup.
+ */
+export const REVIEWER_SLUGS: ReadonlySet<string> = new Set([
+  ...SPEC_REVIEWERS.map((r) => r.slug as string),
+  ...PLAN_REVIEWERS.map((r) => r.slug as string),
+  ...REVIEWER_CATALOG.map((r) => bareSlug(r.subagentType)),
+]);
+
+/**
+ * Whether an Agent launch is written to the reviewer ledger: a reviewer from
+ * the rosters, or the reframer. One definition of "what the ledger records".
+ */
+export function isRecordedAgentSlug(subagentType: string): boolean {
+  const slug = bareSlug(subagentType);
+  return REVIEWER_SLUGS.has(slug) || slug === REFRAMER_AGENT;
+}
+
 const PLAN_STATUS_COMPLETE_REGEX = /^- Plan Status:\s*complete\s*$/m;
 const APPROVAL_STATUS_APPROVED_REGEX = /^- Approval Status:\s*approved\s*$/m;
 const REVIEW_MARKER_REGEX = /<!--\s*auto-review:[^>]*-->/g;
@@ -299,11 +535,6 @@ export type RoundReviewerPlan =
 /** Always re-run so a fix for one reviewer cannot silently break another's pass. */
 const REGRESSION_GUARD_REVIEWER = "logic-validator";
 
-function bareReviewerSlug(subagentType: string): string {
-  const parts = subagentType.split(":");
-  return parts[parts.length - 1] ?? subagentType;
-}
-
 /**
  * Verdict per reviewer in `## Reviewer Outputs (Round <round>)`, keyed by bare
  * slug. Only `### <slug>` blocks that carry a `- verdict:` line count, so other
@@ -324,7 +555,7 @@ function parseRoundVerdicts(
     if (line.startsWith("## ") || line.startsWith("<!-- auto-review:")) break;
     const heading = /^### (\S+)\s*$/.exec(line);
     if (heading?.[1]) {
-      currentSlug = bareReviewerSlug(heading[1]);
+      currentSlug = bareSlug(heading[1]);
       continue;
     }
     const verdict = /^- verdict:(.*)$/.exec(line);
@@ -449,11 +680,19 @@ function listRecommendedReviewers(
   ];
   return roundPlan.rerun.map(
     (slug) =>
-      known.find((r) => bareReviewerSlug(r.subagentType) === slug) ?? {
+      known.find((r) => bareSlug(r.subagentType) === slug) ?? {
         subagentType: slug,
         description: "Re-check your prior finding against the diff",
       },
   );
+}
+
+/** `round=` of the newest auto-review marker, or null when absent / no marker. */
+function latestMarkerRound(content: string): number | null {
+  const markers = content.match(REVIEW_MARKER_REGEX) ?? [];
+  const latest = markers[markers.length - 1];
+  const round = latest ? /\bround=(\d+)/.exec(latest) : null;
+  return round?.[1] ? Number.parseInt(round[1], 10) : null;
 }
 
 export function buildRecommendation(
@@ -499,9 +738,7 @@ export function buildRecommendation(
     documentType,
     roundPlan,
   );
-  const allReviewerNames = recommended.map((r) =>
-    bareReviewerSlug(r.subagentType),
-  );
+  const allReviewerNames = recommended.map((r) => bareSlug(r.subagentType));
 
   const lines = [
     `[plan-review-automation] ${docLabel} was updated. Run sub-agent reviews before approval.`,
@@ -581,14 +818,18 @@ export function buildRecommendation(
     "Do NOT present review results to the user before completing the intent alignment triage.",
   );
 
+  // The staged notice speaks only once the newest round is stamped: right
+  // after `round` inserts an empty skeleton, the previous round's stale result
+  // must not prompt a reframer consultation. A marker without `round=`
+  // (legacy) counts as stamped.
   const marker = parseLatestAutoReviewMarker(planContent);
-  if (
-    roundCount - lastPassMarkerRound(planContent) >= ROUND_BUDGET &&
-    marker?.verdict !== "pass"
-  ) {
+  const markerRound = latestMarkerRound(planContent);
+  const newestRoundStamped = markerRound === null || markerRound === roundCount;
+  const phase = getRoundBudgetPhase(getRoundsInCycle(planContent));
+  if (phase !== "open" && marker?.verdict !== "pass" && newestRoundStamped) {
     lines.push(
       "",
-      `Round budget reached (${ROUND_BUDGET}). \`workflow-cli round\` will refuse the next round. Present the Executive Summary with unresolved findings and ask the human for direction. Only if the human tells you to continue, run \`workflow-cli round <doc> --extend --reason "<their instruction>"\`.`,
+      `${formatRoundBudgetHeadline(phase)}. ${formatRoundBudgetGuidance(phase, basename(planPath))}`,
     );
   }
 

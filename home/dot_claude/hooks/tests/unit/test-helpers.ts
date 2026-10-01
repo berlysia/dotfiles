@@ -712,6 +712,12 @@ export interface SeedWorkflowOptions {
   round: number;
   ledgerSlugs: string[];
   sessionId?: string;
+  /** Extra `.round-baseline` lines (fixed ISO times keep `at >= baseline` stable). */
+  extraBaselines?: { round: number; at: string }[];
+  /** Extra ledger lines at explicit times, appended after the `ledgerSlugs` lines. */
+  ledgerEntries?: { slug: string; at: string }[];
+  /** Skip the default `<round>\t<now>` baseline line. */
+  omitBaseline?: boolean;
 }
 
 export function seedWorkflow(options: SeedWorkflowOptions): {
@@ -763,15 +769,26 @@ export function seedWorkflow(options: SeedWorkflowOptions): {
   ].join("\n");
   writeFileSync(join(wf, options.doc), docContent);
 
+  const baselineLines = [
+    ...(options.omitBaseline
+      ? []
+      : [`${options.round}\t${new Date().toISOString()}`]),
+    ...(options.extraBaselines ?? []).map((b) => `${b.round}\t${b.at}`),
+  ];
   writeFileSync(
     join(wf, ".round-baseline"),
-    `${options.round}\t${new Date().toISOString()}\n`,
+    baselineLines.length > 0 ? `${baselineLines.join("\n")}\n` : "",
   );
 
   const ledger = join(wf, "reviewer-runs.log");
-  const ledgerLines = options.ledgerSlugs.map(
-    (slug) => `${sessionId}\t${slug}\t${new Date().toISOString()}`,
-  );
+  const ledgerLines = [
+    ...options.ledgerSlugs.map(
+      (slug) => `${sessionId}\t${slug}\t${new Date().toISOString()}`,
+    ),
+    ...(options.ledgerEntries ?? []).map(
+      (e) => `${sessionId}\t${e.slug}\t${e.at}`,
+    ),
+  ];
   writeFileSync(
     ledger,
     ledgerLines.length > 0 ? `${ledgerLines.join("\n")}\n` : "",

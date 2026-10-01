@@ -60,6 +60,48 @@ describe("reviewer-run-recorder.ts", () => {
     envHelper.restore();
   });
 
+  for (const subagentType of [
+    "review-reframer",
+    "some-plugin:review-reframer",
+  ]) {
+    it(`records a ${subagentType} launch as one ledger line`, async () => {
+      envHelper.set("DOCUMENT_WORKFLOW_DIR", TEST_WORKFLOW_DIR);
+      const repo = createWorkflowRepo(pendingWorkflowRepo());
+      envHelper.set("CLAUDE_TEST_CWD", repo);
+      const ctx = createPostToolUseContextFor(hook, "Agent", {
+        subagent_type: subagentType,
+      });
+      await invokeRun(hook, ctx);
+      ctx.assertSuccess({});
+      const lines = readFileSync(
+        join(repo, TEST_WORKFLOW_DIR, "reviewer-runs.log"),
+        "utf-8",
+      )
+        .split("\n")
+        .filter((l) => l.length > 0);
+      assert.equal(lines.length, 1);
+      // column 2 keeps the value as launched (normalized only at lookup time)
+      assert.equal(lines[0]?.split("\t")[1], subagentType);
+      envHelper.restore();
+    });
+  }
+
+  it("still ignores general-purpose", async () => {
+    envHelper.set("DOCUMENT_WORKFLOW_DIR", TEST_WORKFLOW_DIR);
+    const repo = createWorkflowRepo(pendingWorkflowRepo());
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+    const ctx = createPostToolUseContextFor(hook, "Agent", {
+      subagent_type: "general-purpose",
+    });
+    await invokeRun(hook, ctx);
+    ctx.assertSuccess({});
+    assert.equal(
+      existsSync(join(repo, TEST_WORKFLOW_DIR, "reviewer-runs.log")),
+      false,
+    );
+    envHelper.restore();
+  });
+
   it("ignores non-reviewer subagents (Explore)", async () => {
     envHelper.set("DOCUMENT_WORKFLOW_DIR", TEST_WORKFLOW_DIR);
     const repo = createWorkflowRepo(pendingWorkflowRepo());

@@ -6,10 +6,11 @@
  * so `stamp` can refuse to write a verdict when the model claims reviews
  * happened but the Agent tool was never invoked with that subagent_type.
  *
- * Only reviewer-named subagents are recorded (`REVIEWER_SLUGS`, derived from
- * the same rosters `workflow-review-core.ts` uses — no third copy of the
- * reviewer set, spec K5 architecture-strategist finding). Explore /
- * general-purpose / any other subagent_type is ignored.
+ * Only reviewer-named subagents and the reframer are recorded
+ * (`isRecordedAgentSlug`, derived from the same rosters
+ * `workflow-review-core.ts` uses — no third copy of the reviewer set, spec K5
+ * architecture-strategist finding). Explore / general-purpose / any other
+ * subagent_type is ignored.
  */
 
 import {
@@ -24,9 +25,8 @@ import {
 import { resolve } from "node:path";
 import { defineHook } from "cc-hooks-ts";
 import {
-  PLAN_REVIEWERS,
-  REVIEWER_CATALOG,
-  SPEC_REVIEWERS,
+  isRecordedAgentSlug,
+  REVIEWER_SLUGS,
 } from "../lib/workflow-review-core.ts";
 import { resolveWorkflowDir } from "../lib/workflow-resolve.ts";
 import "../types/tool-schemas.ts";
@@ -35,27 +35,15 @@ const LEDGER_FILENAME = "reviewer-runs.log";
 const LEDGER_MAX_LINES = 200;
 
 /**
- * Every slug a `workflow-cli stamp` ledger check might require, derived from
- * the same three rosters `workflow-review-core.ts` exports so this hook
- * cannot silently drift from the reviewer set it exists to ledger runs for.
- * All three rosters now carry bare slugs that resolve to a local agent under
- * `home/dot_claude/agents/` (no plugin-namespaced entries). A
- * recorded `subagent_type` is still normalized to its last `:`-separated
- * segment before the lookup below, so a plugin-namespaced run of a
+ * The reviewer slug set and the "is this launch ledgered" rule live in
+ * `workflow-review-core.ts` so this hook cannot drift from the rosters it
+ * exists to ledger runs for. A recorded `subagent_type` is normalized to its
+ * last `:`-separated segment before lookup, so a plugin-namespaced run of a
  * same-named agent (e.g. `some-plugin:review:security-vulnerability-analyzer`)
- * is still counted as that reviewer's run — an accepted behaviour, not a
- * plugin-agent allowance.
+ * is still counted — an accepted behaviour, not a plugin-agent allowance.
+ * Re-exported for the existing tests.
  */
-export const REVIEWER_SLUGS: ReadonlySet<string> = new Set([
-  ...SPEC_REVIEWERS.map((r) => r.slug as string),
-  ...PLAN_REVIEWERS.map((r) => r.slug as string),
-  ...REVIEWER_CATALOG.map((r) => bareSlug(r.subagentType)),
-]);
-
-function bareSlug(subagentType: string): string {
-  const parts = subagentType.split(":");
-  return parts[parts.length - 1] ?? subagentType;
-}
+export { REVIEWER_SLUGS };
 
 const hook = defineHook({
   trigger: { PostToolUse: true },
@@ -71,7 +59,7 @@ const hook = defineHook({
     if (typeof subagentType !== "string" || subagentType.length === 0) {
       return context.success({});
     }
-    if (!REVIEWER_SLUGS.has(bareSlug(subagentType))) {
+    if (!isRecordedAgentSlug(subagentType)) {
       return context.success({});
     }
 
