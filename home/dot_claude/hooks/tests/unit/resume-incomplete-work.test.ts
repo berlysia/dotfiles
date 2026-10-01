@@ -76,6 +76,62 @@ describe("resume-incomplete-work.ts: announce-then-stop (K7)", () => {
     }
   });
 
+  // Last lines that the hook blocked in real sessions although they name what
+  // the turn is waiting on: background reviewers, a human reply, or an
+  // explicit go-ahead.
+  const namedWaitLines = [
+    "残り 4 名の結果を待って、まとめて反映します。",
+    "残る 3 名の結果を待っています。そろったら、指摘をまとめて spec に反映します。",
+    "logic と greenfield の結果がそろったら、まとめて反映します。",
+    "残り 3 名がそろってから、まとめて反映します。",
+    "結果が届いたら、5 人分の指摘をまとめて plan-3 に反映します。",
+    "logic-validator の結果が出てから、これらをまとめて plan に反映します。",
+    "セキュリティのレビューが返ってきたら、plan-1 を書き直します。",
+    "確認した結果を教えてください。それに合わせて本文と状態表を直します。",
+    "「デプロイして」と言っていただければ、この手順で進めます。",
+    "CLAUDE.md に Portrait の節を足すかどうかも、決めてもらえれば書きます。",
+    "仕組みと確認手順を書き足してよければ書きます。",
+    "コミットと本番への反映は、どちらも指示をもらってから進めます。",
+  ];
+  for (const line of namedWaitLines) {
+    it(`allows a Stop whose last line names what it waits on: ${line}`, async () => {
+      envHelper.set("CLAUDE_TEST_CWD", process.cwd());
+      const wfDir = join(process.cwd(), ".tmp", "sessions", "test-ses");
+      mkdirSync(wfDir, { recursive: true });
+      writeFileSync(join(wfDir, "research.md"), "research");
+      try {
+        const ctx = createStopContextFor(hook, {
+          last_assistant_message: line,
+          stop_hook_active: false,
+          session_id: "test-session",
+        });
+        await invokeRun(hook, ctx);
+        ctx.assertSuccess({});
+      } finally {
+        rmSync(wfDir, { recursive: true, force: true });
+      }
+    });
+  }
+
+  it("still blocks an announcement that names no wait", async () => {
+    envHelper.set("CLAUDE_TEST_CWD", process.cwd());
+    const wfDir = join(process.cwd(), ".tmp", "sessions", "test-ses");
+    mkdirSync(wfDir, { recursive: true });
+    writeFileSync(join(wfDir, "research.md"), "research");
+    try {
+      const ctx = createStopContextFor(hook, {
+        last_assistant_message:
+          "どれも範囲を削る指摘ではないので、まとめて plan に反映します。",
+        stop_hook_active: false,
+        session_id: "test-session",
+      });
+      await invokeRun(hook, ctx);
+      assert.equal(ctx.jsonCalls.at(-1)?.decision, "block");
+    } finally {
+      rmSync(wfDir, { recursive: true, force: true });
+    }
+  });
+
   it("allows an announce-only message when stop_hook_active is true", async () => {
     envHelper.set("CLAUDE_TEST_CWD", process.cwd());
     const wfDir = join(process.cwd(), ".tmp", "sessions", "test-ses");

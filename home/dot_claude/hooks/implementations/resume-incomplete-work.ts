@@ -25,8 +25,25 @@ const ANNOUNCE_ENDING_JA_REGEX =
   /(走らせ|実行し|反映し|直し|進め|着手し|書き|開始し|回し|起動し|更新し)ます[。.!]?$/;
 const ANNOUNCE_ENDING_EN_REGEX = /^(I('ll| will)|Let me) .*\.$/;
 // Presence of a wait-word anywhere in the last line means the model already
-// named what it's waiting on for a human — not an unqualified announcement.
-const WAIT_WORD_REGEX = /(承認|approve|待ち|判断を)/i;
+// named what it's waiting on — not an unqualified announcement. The wait may
+// be on a human (approval, a reply, a go-ahead) or on background work the
+// harness re-invokes the turn for (reviewer agents finishing). Verbs are
+// matched by stem plus inflection: 待っています / 待ってから are the common
+// forms, and matching the noun 待ち alone missed most real occurrences.
+const WAIT_WORD_REGEX = new RegExp(
+  [
+    "承認",
+    "approve",
+    "判断を",
+    "待[たちつてっ]",
+    "(そろっ|揃っ|届い|終わっ|完了し|返ってき|出)(たら|てから)",
+    "(そろ|揃)(えば|ってから)",
+    "(いただ|もら)[いけえっ](たら|れば|てから)",
+    "よければ",
+    "ください",
+  ].join("|"),
+  "i",
+);
 const TRAILING_QUESTION_REGEX = /[?？]\s*$/;
 
 function lastNonEmptyLine(message: string): string | null {
