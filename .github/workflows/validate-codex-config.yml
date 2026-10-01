@@ -12,6 +12,7 @@ on:
       - "home/dot_codex/.config.*.toml"
       - "scripts/check-codex-config.sh"
       - "scripts/format-codex-config.sh"
+      - "scripts/test-codex-config-scripts.sh"
       - ".github/workflows/validate-codex-config.yml"
   pull_request:
     paths:
@@ -21,6 +22,7 @@ on:
       - "home/dot_codex/.config.*.toml"
       - "scripts/check-codex-config.sh"
       - "scripts/format-codex-config.sh"
+      - "scripts/test-codex-config-scripts.sh"
       - ".github/workflows/validate-codex-config.yml"
 
 jobs:
@@ -37,12 +39,6 @@ jobs:
       - name: Setup Node.js with bun
         uses: ./.github/actions/setup-node-bun
 
-      - name: Install mise
-        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
-        with:
-          experimental: true
-          reshim: true
-
       - name: Install chezmoi
         uses: ./.github/actions/install-chezmoi
         with:
@@ -58,3 +54,6 @@ jobs:
 
       - name: Test the codex config merge
         run: ./scripts/test-codex-config-merge.sh
+
+      - name: Test the codex config check and format scripts
+        run: ./scripts/test-codex-config-scripts.sh

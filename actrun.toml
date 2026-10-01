@@ -17,11 +17,14 @@ patterns = [
 
 [affected.".github/workflows/validate-codex-config.yml"]
 patterns = [
-  "home/dot_codex/.config.toml",
+  "home/dot_codex/**",
   "scripts/check-codex-config.sh",
   "scripts/format-codex-config.sh",
+  "scripts/test-codex-config-merge.sh",
+  "scripts/test-codex-config-scripts.sh",
   ".github/workflows/validate-codex-config.yml",
-  ".github/actions/setup-node-pnpm/**",
+  ".github/actions/setup-node-bun/**",
+  ".github/actions/install-chezmoi/**",
   "package.json",
   "pnpm-lock.yaml",
 ]

@@ -5,6 +5,4 @@
 install_before = "7d"
 
 [tools]
-# Required for Codex config validation scripts
-dasel = "latest"
 "github:mizchi/actrun" = "0.29.0"
