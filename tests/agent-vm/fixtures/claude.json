@@ -6,8 +6,16 @@
     "readability": {},
     "context7": {},
     "drawio": {},
-    "chrome-devtools": {},
-    "playwright": {},
+    "chrome-devtools": {
+      "command": "bunx",
+      "args": ["chrome-devtools-mcp@0.25.0"]
+    },
+    "playwright": {
+      "type": "stdio",
+      "command": "bunx",
+      "args": ["@playwright/mcp@0.0.75"],
+      "env": {}
+    },
     "excalidraw": {},
     "context7-foo": {}
   }

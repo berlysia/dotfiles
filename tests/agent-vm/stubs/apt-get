@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Test stub: only `apt-get download <pkg>` reaches this stub (installs go through the sudo stub, which only records).
+# shellcheck disable=SC2154 # STUB_LOG is exported by the test runner
+{ printf 'apt-get'; printf ' %q' "$@"; printf '\n'; } >>"$STUB_LOG"
+[[ "${1:-}" == download ]] || exit 0
+[[ -z "${STUB_APT_DOWNLOAD_EXIT:-}" ]] || exit "$STUB_APT_DOWNLOAD_EXIT"
+: >"${2}_${STUB_GBM_VERSION:-26.0.8-1ubuntu0.3}_arm64.deb"
