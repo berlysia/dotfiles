@@ -48,6 +48,45 @@ Claude と Codex は machine ごとに初回だけログインが要る。
 **repo 内の `.env` / `.env.local` は解決しない。**
 repo は VM から書き換えられる領域なので、そこに書かれた `op://` 参照を host 側の認証済み `op` が解決してしまうと、VM が任意の秘密を持ち出す経路になる。
 
+### gh の token
+
+VM の中の `gh` は、repo ごとに作った fine-grained PAT で認証する。token は `GH_TOKEN` として、tool（claude / codex）を起動するときにだけ注入される。権限は `pull_requests` と `issues` の write、`contents` と `actions` の read に絞られ、push はできない。
+
+使い方:
+
+```bash
+cd <repo>
+agent-vm env gh [--repo OWNER/REPO] [--vault Personal|Formal]
+```
+
+- 初回は、host 側で確かめた repo 名（`OWNER/REPO`）の入力と、token を置く vault の選択がある。origin は VM から書き換えられるので、名前は自分で確かめて入力する。
+- 期限は vault で決まる。Personal は 90 日、Formal は 30 日。vault は `--vault` で変えられる。
+- 表示される URL で PAT の作成画面が開く（mac では自動で開く）。名前、期限、権限は入力済みなので、Repository access で**この repo だけ**を選び、期限は変えずに Generate して、token を貼り付ける。
+- 2 回目以降は記録された repo と vault を使う。origin が記録と違うときは止まる。移したのなら host で origin を直し、`--repo OWNER/REPO` を付けて実行する。
+- 期限の 7 日前から、起動のたびに更新を促す表示が出る。更新は同じコマンドを実行するだけでよい。
+- `op` は既定のアカウントを使う。保存先のアカウントは PAT を作る前に表示されるので、意図したアカウントか確かめる。`OP_ACCOUNT` と `OP_SERVICE_ACCOUNT_TOKEN` は設定されていない前提である。
+
+気をつけること:
+
+- token は 1Password の item（title は `agent-vm-gh <PAT 名>`）に入る。その vault を読める人は token も読める。
+- `GH_TOKEN` は VM の中で claude / codex / bash の環境変数になり、そこから起動される全てのプロセスから読める。
+- public repo の選び忘れと、全 repo を対象にした token は、検証では止められない。前者は最初の書き込み系の `gh` 操作が 403 になって分かる。後者は検出できないので、作成画面で選ぶ repo を確かめる。
+- `gh pr merge` は host で行う。この token では他者の PR の auto-merge は有効にできないが、merge の判断は host で行う。
+- `agent-vm env gh` を同時に実行しない。後から書いた方だけが env に残り、先の方の item と PAT は使われないまま残る。
+- `agent-vm rm` は PAT も 1Password の item も状態ファイルも消さない。状態ファイル（`~/.config/agent-vm/repos/<machine>.gh`）だけが残った場合は手で消してよい。次の `env gh` は repo 名と vault をもう一度聞く。
+- `agent-vm env adopt` は env ファイルと一緒に状態ファイルも移す。
+
+更新の後の片付け:
+
+- 更新すると、古い PAT の削除と古い item の archive の手順が表示される。実行しないと、古い token が期限まで有効なまま残る。
+- 表示を見逃したときは、`https://github.com/settings/personal-access-tokens` で名前が `<base>-<hash>-` で始まる PAT を、1Password で title が `agent-vm-gh ` で始まる item を探す。adopt した repo では、adopt 前の machine 名の PAT も探す。
+- archive した item にも token は残る。期限が切れるまでは有効である。
+
+侵害が疑われるときの失効手順:
+
+1. `https://github.com/settings/personal-access-tokens` で、状態ファイルの `pat_name` の PAT を削除する。
+2. 状態ファイルが無いときは、env ファイルの `GH_TOKEN=op://<vault>/<id>/credential` の id の item を開く。title（`agent-vm-gh <PAT 名>`）から PAT の名前が分かる。
+
 ## 5. host で動かしたいとき
 
 1 回だけ host で動かすには `AGENT_VM=off claude`（または `codex`）と打つ。
