@@ -391,9 +391,10 @@ describe("deny-node-modules.ts boundary behaviour", () => {
     `unlink ${L}`,
     `rm ${L} ${join(root, "c", "node_modules")}`,
     "grep rm node_modules/x",
-    "find x -name rm node_modules",
     "grep -rn unlink node_modules/x",
     "ls node_modules",
+    'grep "a|rm" node_modules/x',
+    'grep -e "rm -rf ${X}" node_modules/x',
   ];
   for (const cmd of successCmds) {
     it(`allows: ${cmd}`, async () => {
@@ -432,6 +433,11 @@ describe("deny-node-modules.ts boundary behaviour", () => {
     "find node_modules -exec env mv {} /tmp \\;",
     "sudo find node_modules -delete",
     "find node_modules -exec echo {} \\; > node_modules/x",
+    "find x -name rm node_modules",
+    "ls node_modules; grep rm node_modules/x",
+    "\\grep rm node_modules/x",
+    // parser returns "fallback" for this input (pinned in bash-parser.test.ts)
+    'grep -e "rm" -e "xargs" node_modules/x',
   ];
   for (const cmd of denyCmds) {
     it(`denies with guidance: ${cmd}`, async () => {

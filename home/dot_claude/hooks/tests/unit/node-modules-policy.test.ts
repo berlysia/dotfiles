@@ -4,9 +4,21 @@ import {
   buildReadOnlyPatterns,
   classifyDeletion,
   mayAllowAsReadOnly,
-  READ_ONLY_VERBS,
   standaloneSymlinkRemovalOperands as ops,
 } from "../../lib/node-modules-policy.ts";
+import {
+  ARGUMENT_SCAN_EXEMPT_HEADS,
+  isExemptReadOnlyCommand,
+  READ_ONLY_VERBS,
+} from "../../lib/read-only-command.ts";
+
+// `cmd` is the whole Bash command, as in the hook.
+const classify = (cmd: string, fallback: boolean) =>
+  classifyDeletion(cmd, {
+    readOnlyExempt: isExemptReadOnlyCommand(cmd, {
+      parsingMethod: fallback ? "fallback" : "tree-sitter",
+    }),
+  });
 
 const DENY_DELETE: Array<[string, boolean]> = [
   ["ls x\nrm -rf node_modules", true],
@@ -33,6 +45,14 @@ const DENY_DELETE: Array<[string, boolean]> = [
   ["git rm -r node_modules", false],
   ["rm -rf NODE_MODULES", false],
   ["unlink Node_Modules/x", false],
+  // K5(b): heads that are no longer exempt
+  ["\\grep rm node_modules/x", false],
+  ["find x -name rm node_modules", false],
+  // K5(c): a read-only fragment inside a compound command loses the exemption
+  ["ls node_modules; grep rm node_modules/x", false],
+  ['cd "${(e)${:-x}} rm -rf node_modules"', false],
+  ["find node_modules -ex$'e'c rm -rf node_modules $'\\073'", false],
+  ['grep -e "rm -rf ${X}" node_modules/x', true],
 ];
 const DENY_FIND: string[] = [
   "find node_modules -delete",
@@ -67,35 +87,31 @@ const NOT_DELETION: string[] = [
   "grep -rn unlink node_modules/x",
   "grep rm node_modules/x",
   "/bin/grep rm node_modules/x",
-  "\\grep rm node_modules/x",
-  "find x -name rm node_modules",
   "find node_modules -name '*.js'",
   "ls node_modules",
+  'grep "a|rm" node_modules/x',
+  'grep -e "rm -rf ${X}" node_modules/x',
 ];
 
 describe("classifyDeletion", () => {
   for (const [cmd, fallback] of DENY_DELETE) {
     it(`deny-delete: ${JSON.stringify(cmd)} fallback=${fallback}`, () => {
-      strictEqual(classifyDeletion(cmd, { fallback }), "deny-delete");
+      strictEqual(classify(cmd, fallback), "deny-delete");
     });
   }
   for (const cmd of DENY_FIND) {
     it(`deny-find: ${cmd}`, () =>
-      strictEqual(classifyDeletion(cmd, { fallback: false }), "deny-find"));
+      strictEqual(classify(cmd, false), "deny-find"));
   }
   for (const cmd of ASK_FIND) {
-    it(`ask-find: ${cmd}`, () =>
-      strictEqual(classifyDeletion(cmd, { fallback: false }), "ask-find"));
+    it(`ask-find: ${cmd}`, () => strictEqual(classify(cmd, false), "ask-find"));
   }
   for (const cmd of NOT_DELETION) {
-    it(`null: ${cmd}`, () =>
-      strictEqual(classifyDeletion(cmd, { fallback: false }), null));
+    it(`null: ${cmd}`, () => strictEqual(classify(cmd, false), null));
   }
   it("false positive accepted (fail-closed): a non-find command carrying find/-delete words", () => {
     strictEqual(
-      classifyDeletion('git commit -m "find -delete" node_modules', {
-        fallback: false,
-      }),
+      classify('git commit -m "find -delete" node_modules', false),
       "deny-find",
     );
   });
@@ -116,10 +132,10 @@ describe("classifyDeletion", () => {
     );
   });
   for (const { verb } of READ_ONLY_VERBS) {
-    it(`read-only head exemption covers ${verb}`, () => {
+    it(`read-only head exemption covers only exempt heads: ${verb}`, () => {
       strictEqual(
-        classifyDeletion(`${verb} node_modules/rm`, { fallback: false }),
-        null,
+        classify(`${verb} node_modules/rm`, false),
+        ARGUMENT_SCAN_EXEMPT_HEADS.has(verb) ? null : "deny-delete",
       );
     });
     it(`generated read-only regex matches ${verb}`, () => {

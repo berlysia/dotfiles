@@ -4,29 +4,7 @@ import {
   FIND_EXEC_FLAGS,
   MOVE_VERBS,
 } from "./destructive-verbs.ts";
-
-type ReadOnlyCategory = "list" | "read" | "search" | "navigate" | "info";
-export const READ_ONLY_VERBS: ReadonlyArray<{
-  verb: string;
-  category: ReadOnlyCategory;
-}> = [
-  { verb: "ls", category: "list" },
-  { verb: "ll", category: "list" },
-  { verb: "la", category: "list" },
-  { verb: "cat", category: "read" },
-  { verb: "head", category: "read" },
-  { verb: "tail", category: "read" },
-  { verb: "less", category: "read" },
-  { verb: "more", category: "read" },
-  { verb: "grep", category: "search" },
-  { verb: "find", category: "search" },
-  { verb: "locate", category: "search" },
-  { verb: "cd", category: "navigate" },
-  { verb: "file", category: "info" },
-  { verb: "stat", category: "info" },
-  { verb: "du", category: "info" },
-  { verb: "wc", category: "info" },
-];
+import { READ_ONLY_VERBS, type ReadOnlyCategory } from "./read-only-command.ts";
 
 /** Keeps the current `(?:^|\s)(<verbs>)\s+.*node_modules` shape per category (deny-node-modules.ts:244-260). */
 export function buildReadOnlyPatterns(): Array<{
@@ -43,9 +21,6 @@ export function buildReadOnlyPatterns(): Array<{
   }));
 }
 
-const READ_ONLY_HEADS: ReadonlySet<string> = new Set(
-  READ_ONLY_VERBS.map((v) => v.verb),
-);
 const BEFORE = "(?:^|[\\s'\"`(;|&{!\\\\/<>])";
 const AFTER = "(?=$|[\\s'\"`);|&<>])";
 const DELETE_WORD = new RegExp(
@@ -73,10 +48,6 @@ function baseName(word: string): string {
   return bare.slice(bare.lastIndexOf("/") + 1);
 }
 
-function headWord(lower: string): string {
-  return baseName(lower.trimStart().split(/\s+/, 1)[0] ?? "");
-}
-
 /** For the words after `find`: does it delete (-delete) or run a delete/move verb anywhere after an exec flag? */
 function findIsDestructive(findArgs: string[]): boolean {
   if (findArgs.includes("-delete")) return true;
@@ -87,13 +58,17 @@ function findIsDestructive(findArgs: string[]): boolean {
     .some((w) => DELETE_VERBS.has(w) || MOVE_VERBS.has(w));
 }
 
+/**
+ * `cmd` is one fragment the parser produced. `opts.readOnlyExempt` is a
+ * property of the whole Bash command (see isExemptReadOnlyCommand), not of
+ * `cmd`: when true, deletion words in the arguments do not count.
+ */
 export function classifyDeletion(
   cmd: string,
-  opts: { fallback: boolean },
+  opts: { readOnlyExempt: boolean },
 ): "deny-delete" | "deny-find" | "ask-find" | null {
   const lower = cmd.toLowerCase();
   if (!lower.includes("node_modules")) return null;
-  const head = headWord(lower);
   // Split on shell punctuation as well as whitespace so `$(find`, `-delete;` and `'true;mv` yield bare words.
   const words = lower
     .split(/[\s;&|(){}`$<>]+/)
@@ -106,11 +81,7 @@ export function classifyDeletion(
     (w) => w === "-delete" || FIND_EXEC_FLAGS.has(w),
   );
   if (findWithExec && findIsDestructive(findArgs)) return "deny-find";
-  if (DELETE_WORD.test(lower)) {
-    const exemptHead = READ_ONLY_HEADS.has(head) && !findWithExec;
-    const simple = !opts.fallback && !NOT_SIMPLE.test(lower);
-    if (!(exemptHead && simple)) return "deny-delete";
-  }
+  if (DELETE_WORD.test(lower) && !opts.readOnlyExempt) return "deny-delete";
   return findWithExec ? "ask-find" : null;
 }
 

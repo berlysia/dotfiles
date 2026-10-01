@@ -39,6 +39,22 @@ import {
 
 describe("bash-parser", () => {
   describe("extractCommandsStructured", () => {
+    // The read-only exemption tests rely on these inputs reaching the
+    // fallback path (xargs with no command word after it).
+    it("returns fallback for grep with an xargs-named argument (node_modules)", async () => {
+      const result = await extractCommandsStructured(
+        'grep -e "rm" -e "xargs" node_modules/x',
+      );
+      expect(result.parsingMethod).toBe("fallback");
+    });
+
+    it("returns fallback for grep with an xargs-named argument (auto-approve)", async () => {
+      const result = await extractCommandsStructured(
+        'grep -e "rm -rf /" -e "xargs" spec.md',
+      );
+      expect(result.parsingMethod).toBe("fallback");
+    });
+
     it("should separate individual commands from original command", async () => {
       const result = await extractCommandsStructured(
         "echo hello && echo world",
