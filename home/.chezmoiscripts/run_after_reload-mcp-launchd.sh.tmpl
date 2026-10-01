@@ -14,7 +14,7 @@ MCP_PORTS="18101 18102 18103"
 changed=0
 i=0
 for label in $MCP_LABELS; do
-    port=$(echo $MCP_PORTS | cut -d' ' -f$((i+1)))
+    port=$(echo "$MCP_PORTS" | cut -d' ' -f$((i+1)))
     i=$((i+1))
     plist="$LAUNCH_AGENTS_DIR/${label}.plist"
 
@@ -38,11 +38,11 @@ for label in $MCP_LABELS; do
     fi
 done
 
-if [ $changed -eq 1 ]; then
+if [ "$changed" -eq 1 ]; then
     sleep 3
     i=0
     for label in $MCP_LABELS; do
-        port=$(echo $MCP_PORTS | cut -d' ' -f$((i+1)))
+        port=$(echo "$MCP_PORTS" | cut -d' ' -f$((i+1)))
         i=$((i+1))
         if curl -s --max-time 2 "http://localhost:${port}/healthz" >/dev/null 2>&1; then
             echo "  healthy: $label (port $port)"

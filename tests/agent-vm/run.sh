@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2154,SC2153 # MACHINE/REPO are exported globally by executable_agent-vm's
 # prepare_machine once it is sourced (dynamic `. "$LAUNCHER"`, which shellcheck cannot follow)
-# shellcheck disable=SC2317 # test cases redefine launcher functions (session_exec,
+# shellcheck disable=SC2317,SC2329 # test cases redefine launcher functions (session_exec,
 # notice_orphan_env, run_tool, cmd_*) as stubs that the code under test calls indirectly
 set -euo pipefail
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
