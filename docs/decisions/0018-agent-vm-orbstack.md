@@ -93,6 +93,7 @@ VM の Claude から playwright と chrome-devtools の MCP を使えるよう�
 - `docs/plans/agent-vm-gh-token/spec.md` (2026-10-01) — gh の token は K7（全 VM 共通の長期 token は注入しない）の例外として、repo ごとの fine-grained PAT を tool の起動時に `GH_TOKEN` で注入する。token は repo ごとに分かれ、権限は pull_requests / issues の write と contents / actions の read に絞る。残るリスクは、VM の中の agent が期限（Personal 90 日、Formal 30 日）まで token を読めることである。R21 は bootstrap の話なので変わらない
 - `docs/decisions/0021-agent-vm-golden-clone.md` (2026-10-02) — repo 用の machine は `orb create` ではなく、bootstrap 済みの golden machine（`agent-vm-golden`）の clone で作る。K1 の「repo ごとの isolated machine」という境界は変わらない。R5 の初回の待ちは、最初の 1 台（golden の作成）を除いて 6 秒になる
 - #194 (2026-10-02) — R21 の原因は「既定ブランチの解決」ではなく、`https://github.com/` を SSH に書き換える `insteadOf` だった。VM の SSH は転送された agent の承認を毎回要し、承認のない取得は拒否されるか止まる（`git://` への書き換えも VM からは届かない）。VM の `~/.gitconfig` では取得の書き換えを外し、`url."git@github.com:".pushInsteadOf` だけを残す。取得は匿名の HTTPS、push は SSH になり、VM に GitHub の token を置かない方針は変わらない。ただし、上流の frontmatter が読めない `mizchi/explainer` が lockfile のない VM で `apm install` 全体を中止させ、private の `berlysia/shiori` も token なしでは取れないので（#231）、APM の失敗を WARNING に留める扱いは続く
+- `docs/decisions/0022-agent-vm-node-modules.md` (2026-10-02) — VM では、repo の各パッケージの `node_modules` を VM ローカルのディスクへの bind mount に差し替える。repo を同じパスで共有する決定は変わらず、install 物の層だけを machine ごとに分ける。K17 の VM 許可リストに `agent-vm-node-modules` を足した
 
 ## References
 

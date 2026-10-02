@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # agent-vm-node-modules: give each JS package of an agent-vm repository its own VM-local node_modules, so the
 # host's install and the VM's install stop replacing each other's platform packages.
+# Design: docs/decisions/0022-agent-vm-node-modules.md
 # Runs only inside an agent-vm machine, whose user has passwordless sudo (ADR-0018 R6): the checks here keep the
 # regular callers (the launcher, the worktree tools) from mounting or deleting in the wrong place by accident.
 # They are not a privilege boundary.

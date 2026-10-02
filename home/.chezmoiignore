@@ -37,7 +37,7 @@ install-packages-*-windows.ps1
 .config/agent-vm
 {{ end }}
 
-# agent-vm-node-modules runs only inside agent-vm machines
+# agent-vm-node-modules runs only inside agent-vm machines (docs/decisions/0022-agent-vm-node-modules.md)
 {{ if not (dig "agent_vm" false .) }}
 .local/bin/agent-vm-node-modules
 {{ end }}
