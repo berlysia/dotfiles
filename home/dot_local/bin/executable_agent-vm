@@ -1444,14 +1444,40 @@ inject_secrets() { # machine -> prints the in-VM env file path (empty when nothi
   printf '%s\n' "$out"
 }
 
+# The VM-side shell only sees what the launch script hands it, so host behavior knobs must be forwarded by name.
+# Fixed non-secret names only (like FETCH_ENV_NAMES): never a CLAUDE_CODE_* pattern, which would also pass
+# CLAUDE_CODE_OAUTH_TOKEN. Secrets reach the VM only through the repo env file.
+VM_FORWARD_ENV_NAMES="CLAUDE_CODE_AUTO_COMPACT_WINDOW CLAUDE_CODE_MAX_OUTPUT_TOKENS"
+forward_env_exports() { # prints "export NAME=value; " for each allowlisted name set on the host
+  local n out=""
+  for n in $VM_FORWARD_ENV_NAMES; do
+    [[ -n "${!n+x}" ]] || continue
+    out+="export $n=$(printf '%q' "${!n}"); "
+  done
+  printf '%s' "$out"
+}
+warn_unforwarded_env() { # names only, never values
+  # Inside a Claude Code session (CLAUDECODE set) the harness exports its own CLAUDE_CODE_* vars on every
+  # launch, and the OAuth token is withheld by design; reporting those would be a warning that is always on.
+  [[ -z "${CLAUDECODE:-}" ]] || return 0
+  local n skipped=""
+  while IFS= read -r n; do
+    case " $VM_FORWARD_ENV_NAMES CLAUDE_CODE_OAUTH_TOKEN " in *" $n "*) continue ;; esac
+    skipped+="${skipped:+, }$n"
+  done < <(compgen -e | grep '^CLAUDE_CODE_' || true)
+  if [[ -n "$skipped" ]]; then echo "agent-vm: not forwarded to the VM: $skipped" >&2; fi
+}
+
 build_launch_script() { # tool repo_root env_file args...
   local tool=$1 repo=$2 envf=$3 script
   shift 3
+  warn_unforwarded_env
   script="cd $(printf '%q' "$repo")"
   if [[ -n "$envf" ]]; then
     script+="; set -a; . $(printf '%q' "$envf"); set +a; rm -f $(printf '%q' "$envf")"
   fi
-  script+="; exec $tool"
+  # After the env file so a host knob wins over a stale value stored there.
+  script+="; $(forward_env_exports)exec $tool"
   if [[ $# -gt 0 ]]; then script+="$(printf ' %q' "$@")"; fi
   printf '%s\n' "$script"
 }

@@ -555,6 +555,26 @@ test_launch_script_sources_and_deletes_env_file() {
   assert_contains "$cmd" 'rm -f /dev/shm/agent-vm.env.x' "env deleted"
   assert_contains "$cmd" 'exec claude --resume a\;b' "args quoted"
 }
+test_launch_script_forwards_allowlisted_env_only_when_set() {
+  local cmd
+  cmd=$(env -u CLAUDE_CODE_AUTO_COMPACT_WINDOW -u CLAUDE_CODE_MAX_OUTPUT_TOKENS bash -c "AGENT_VM_LIB=1 . '$LAUNCHER'; build_launch_script claude /r ''" 2>/dev/null)
+  assert_not_contains "$cmd" 'export CLAUDE_CODE' "nothing exported when unset on the host"
+  cmd=$(CLAUDE_CODE_AUTO_COMPACT_WINDOW='1 0;x' CLAUDE_CODE_MAX_OUTPUT_TOKENS=64000 bash -c "AGENT_VM_LIB=1 . '$LAUNCHER'; build_launch_script claude /r ''" 2>/dev/null)
+  assert_contains "$cmd" 'export CLAUDE_CODE_AUTO_COMPACT_WINDOW=1\ 0\;x; ' "value shell-quoted"
+  assert_contains "$cmd" 'export CLAUDE_CODE_MAX_OUTPUT_TOKENS=64000; exec claude' "exported before exec"
+}
+test_launch_warns_about_unforwarded_claude_code_vars_by_name_only() {
+  local err
+  # env -u: the suite itself may run inside a Claude Code session, which silences the warning.
+  err=$(env -u CLAUDECODE CLAUDE_CODE_SOME_KNOB=knob-value CLAUDE_CODE_OAUTH_TOKEN=sekrit-value CLAUDE_CODE_AUTO_COMPACT_WINDOW=1 bash -c "AGENT_VM_LIB=1 . '$LAUNCHER'; build_launch_script claude /r '' >/dev/null" 2>&1)
+  assert_contains "$err" "not forwarded to the VM: " "warning printed"
+  assert_contains "$err" "CLAUDE_CODE_SOME_KNOB" "unlisted name reported"
+  assert_not_contains "$err" "knob-value" "value never printed"
+  assert_not_contains "$err" "OAUTH_TOKEN" "withheld-by-design token not reported"
+  assert_not_contains "$err" "AUTO_COMPACT_WINDOW" "forwarded name not reported"
+  err=$(CLAUDECODE=1 CLAUDE_CODE_SOME_KNOB=x bash -c "AGENT_VM_LIB=1 . '$LAUNCHER'; build_launch_script claude /r '' >/dev/null" 2>&1)
+  assert_not_contains "$err" "not forwarded" "silent inside a Claude Code session"
+}
 test_confirm_prompts_treat_eof_as_no_without_the_error_trap() {
   local repo real m out rc=0
   repo=$(make_flow_repo); real=$(cd -P "$repo" && pwd -P); m=$(derive_machine_name "$real")
