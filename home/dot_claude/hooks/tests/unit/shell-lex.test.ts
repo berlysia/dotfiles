@@ -6,9 +6,11 @@ import {
   isCommentStart,
   lexStep,
   skipDollar,
+  trimSpaces,
   trimSpaceTab,
   trimTrailingBlanks,
 } from "../../lib/shell-lex.ts";
+import { enumerate } from "../__fixtures__/same-language.ts";
 
 describe("lexStep", () => {
   it("reports unquoted operators for the caller to judge", () => {
@@ -120,7 +122,7 @@ describe("skipDollar / isCommentStart", () => {
 describe("trimTrailingBlanks / trimSpaceTab", () => {
   it("strips the listed blanks only", () => {
     strictEqual(trimTrailingBlanks("ls \t\n \n"), "ls");
-    strictEqual(trimTrailingBlanks(" ls "), " ls ");
+    strictEqual(trimTrailingBlanks(" ls\u00a0"), " ls\u00a0");
     strictEqual(trimSpaceTab(" \tls a\t "), "ls a");
     strictEqual(trimSpaceTab("\nls\n"), "\nls\n");
   });
@@ -130,6 +132,25 @@ describe("trimTrailingBlanks / trimSpaceTab", () => {
     const start = Date.now();
     strictEqual(trimTrailingBlanks(input), input);
     strictEqual(trimSpaceTab(input), input);
+    ok(Date.now() - start < 200);
+  });
+});
+
+describe("trimSpaces", () => {
+  it("agrees with the regex it replaces over every short string", () => {
+    for (const s of enumerate([" ", "\t", "\u00a0", "x"], 6)) {
+      strictEqual(trimSpaces(s), s.replace(/^ +| +$/g, ""), JSON.stringify(s));
+    }
+  });
+
+  it("leaves tabs and Unicode spaces to the shell", () => {
+    strictEqual(trimSpaces(" \t\u00a0x\u00a0\t "), "\t\u00a0x\u00a0\t");
+  });
+
+  it("trims a long inner blank run in linear time", () => {
+    const input = "x" + " ".repeat(500000) + "y";
+    const start = Date.now();
+    strictEqual(trimSpaces(input), input);
     ok(Date.now() - start < 200);
   });
 });

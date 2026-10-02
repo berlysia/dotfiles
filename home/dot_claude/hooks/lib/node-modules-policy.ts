@@ -5,6 +5,7 @@ import {
   MOVE_VERBS,
 } from "./destructive-verbs.ts";
 import { READ_ONLY_VERBS, type ReadOnlyCategory } from "./read-only-command.ts";
+import { trimSpaces } from "./shell-lex.ts";
 
 /** Keeps the current `(?:^|\s)(<verbs>)\s+.*node_modules` shape per category (deny-node-modules.ts:244-260). */
 export function buildReadOnlyPatterns(): Array<{
@@ -92,7 +93,7 @@ export function standaloneSymlinkRemovalOperands(
   command: string,
 ): string[] | null {
   // Trim ASCII spaces only: String#trim also strips Unicode spaces the shell keeps as part of a filename.
-  const trimmed = command.replace(/^ +| +$/g, "");
+  const trimmed = trimSpaces(command);
   if (!ALLOWED_COMMAND.test(trimmed)) return null;
   const [verb, ...rest] = trimmed.split(/ +/);
   let i = 0;

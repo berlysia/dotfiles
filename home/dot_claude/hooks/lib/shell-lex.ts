@@ -117,6 +117,15 @@ export function trimTrailingBlanks(s: string): string {
   return s.slice(0, end);
 }
 
+/** Strips leading and trailing ASCII spaces only in linear time (a /^ +| +$/g replace is quadratic on long inner space runs). */
+export function trimSpaces(s: string): string {
+  let start = 0;
+  let end = s.length;
+  while (start < end && s[start] === " ") start++;
+  while (end > start && s[end - 1] === " ") end--;
+  return s.slice(start, end);
+}
+
 /** Strips leading and trailing spaces and tabs in linear time. */
 export function trimSpaceTab(s: string): string {
   let start = 0;
