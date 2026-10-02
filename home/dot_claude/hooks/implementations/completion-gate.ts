@@ -120,17 +120,28 @@ function projectHasStopHooks(): boolean {
   }
 }
 
-function runCheck(command: string, label: string): string | null {
+// The hook test suite alone prints over 1 MiB, execSync's default maxBuffer.
+// Past the limit execSync kills the child with ENOBUFS and a passing run
+// reads as a failure, so leave ample room.
+const CHECK_MAX_BUFFER = 64 * 1024 * 1024;
+
+export function runCheck(command: string, label: string): string | null {
   try {
     execSync(command, {
       encoding: "utf-8",
       timeout: 120000,
+      maxBuffer: CHECK_MAX_BUFFER,
       stdio: ["pipe", "pipe", "pipe"],
     });
     return null;
   } catch (error: unknown) {
-    const err = error as { stdout?: string; stderr?: string };
-    const output = ((err.stdout || "") + (err.stderr || "")).trim();
+    const err = error as { stdout?: string; stderr?: string; code?: string };
+    if (err.code === "ENOBUFS") {
+      return `${label} failed: output exceeded ${CHECK_MAX_BUFFER} bytes (ENOBUFS); the run was cut off, not judged`;
+    }
+    // stdout last: test runners print the failure summary at the end of stdout,
+    // and the tail below would otherwise show only stderr.
+    const output = ((err.stderr || "") + (err.stdout || "")).trim();
     const lines = output.split("\n");
     const tail = lines.slice(-20).join("\n");
     return `${label} failed:\n${tail}`;
