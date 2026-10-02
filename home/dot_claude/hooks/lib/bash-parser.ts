@@ -942,9 +942,10 @@ function parseSimpleCommandFallback(
 
 import type { Node as TsNode, Tree as TsTree } from "web-tree-sitter";
 
-type ParseForCollect = (command: string) => Promise<TsTree | null>;
+// Exported so the deny-side policy (heredoc-data.ts) parses with the same function.
+export type ParseForCollect = (command: string) => Promise<TsTree | null>;
 
-const parseForCollect: ParseForCollect = async (command) => {
+export const parseForCollect: ParseForCollect = async (command) => {
   const parser = await ensureTreeSitter();
   // TreeSitterParser is this file's narrow view of web-tree-sitter's Parser.
   return parser.parse(command) as unknown as TsTree | null;
