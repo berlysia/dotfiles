@@ -151,7 +151,8 @@ function twoLayerRepo(files: string[], omitParentSpecHash = false) {
 test("evaluateTarget: inactive without research.md or plan.md", () => {
   const wf = freshWf();
   equal(
-    evaluateTarget({ wfDir: wf, target: join(wf, "a.ts"), filesBase: wf }).kind,
+    evaluateTarget({ wfDir: wf, target: join(wf, "a.ts"), projectRoot: wf })
+      .kind,
     "inactive",
   );
 });
@@ -163,7 +164,7 @@ test("evaluateTarget: single-layer approved plan allows and names plan.md", () =
   const e = evaluateTarget({
     wfDir: wf,
     target: "/r/src/a.ts",
-    filesBase: "/r",
+    projectRoot: "/r",
   });
   equal(e.kind, "allow");
   equal(e.kind === "allow" && e.owner, join(wf, "plan.md"));
@@ -173,7 +174,8 @@ test("evaluateTarget: an approved plan without research.md still denies", () => 
   const wf = freshWf();
   writeFileSync(join(wf, "plan.md"), buildPlanContent(approvedWorkflowRepo()));
   equal(
-    evaluateTarget({ wfDir: wf, target: "/r/src/a.ts", filesBase: "/r" }).kind,
+    evaluateTarget({ wfDir: wf, target: "/r/src/a.ts", projectRoot: "/r" })
+      .kind,
     "deny",
   );
 });
@@ -185,7 +187,7 @@ test("evaluateTarget: single-layer pending plan denies with a diagnosis", () => 
   const e = evaluateTarget({
     wfDir: wf,
     target: "/r/src/a.ts",
-    filesBase: "/r",
+    projectRoot: "/r",
   });
   equal(e.kind, "deny");
   ok(e.kind === "deny" && !e.diagnosis.primary.conditions.approvalStatus.ok);
@@ -196,7 +198,7 @@ test("evaluateTarget: two-layer allows a listed target and names its plan-N.md",
   const e = evaluateTarget({
     wfDir: wf,
     target: join(repo, "src", "a.ts"),
-    filesBase: repo,
+    projectRoot: repo,
   });
   equal(e.kind, "allow");
   equal(e.kind === "allow" && e.owner, join(wf, "plan-1.md"));
@@ -207,7 +209,7 @@ test("evaluateTarget: two-layer unlisted target is no-plan-owner during implemen
   const e = evaluateTarget({
     wfDir: wf,
     target: join(repo, "src", "b.ts"),
-    filesBase: repo,
+    projectRoot: repo,
   });
   equal(e.kind, "no-plan-owner");
   equal(e.kind === "no-plan-owner" && e.implementationPhase, true);
@@ -219,7 +221,7 @@ test("evaluateTarget: a plan-N.md without parent-spec-hash denies its listed tar
     evaluateTarget({
       wfDir: wf,
       target: join(repo, "src", "a.ts"),
-      filesBase: repo,
+      projectRoot: repo,
     }).kind,
     "deny",
   );

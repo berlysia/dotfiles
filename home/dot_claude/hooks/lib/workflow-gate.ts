@@ -16,9 +16,8 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { computeDocumentHash, SPEC_NORMALIZERS } from "./document-hash.ts";
-import { expandTilde } from "./path-utils.ts";
 import { sanitizeForDisplay } from "./sanitize-display.ts";
-import { parseFilesPaths } from "./workflow-files.ts";
+import { listsTarget } from "./workflow-files.ts";
 import { resolveWorkflowPaths } from "./workflow-paths.ts";
 import {
   LENIENT_STATUS_LINE,
@@ -309,8 +308,8 @@ export interface TargetQuery {
   wfDir: string;
   /** Absolute path of the file being written. */
   target: string;
-  /** Base for relative `## Files` entries (the guard passes its tool cwd). */
-  filesBase: string;
+  /** The session's project root; `## Files` entries resolve against the target's checkout. */
+  projectRoot: string;
   /** The target as the caller shows it in a diagnosis (raw tool input); defaults to `target`. */
   label?: string;
 }
@@ -366,10 +365,7 @@ export function evaluateTarget(query: TargetQuery): TargetEvaluation {
     } catch {
       continue;
     }
-    const listed = parseFilesPaths(planContent).map((entry) =>
-      resolve(query.filesBase, expandTilde(entry)),
-    );
-    if (!listed.includes(query.target)) {
+    if (!listsTarget(planContent, query.target, query.projectRoot)) {
       continue;
     }
     if (!isDocumentApproved(evaluateDocument(planPath))) {

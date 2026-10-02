@@ -2,6 +2,7 @@
 
 import { ok, strictEqual } from "node:assert";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -1163,6 +1164,38 @@ describe("document-workflow-guard.ts two-layer mode (spec.md + plan-N.md)", () =
 
     await invokeRun(hook, context);
     context.assertDeny();
+  });
+
+  it("matches a Files entry against the linked worktree the target lives in (spec K2)", async () => {
+    const { repo } = createTwoLayerRepo({
+      spec: approvedWorkflowRepo(),
+      plans: [
+        {
+          filename: "plan-1.md",
+          options: approvedWorkflowRepo(),
+          filesSection: ["src/a.ts"],
+        },
+      ],
+    });
+    mkdirSync(join(repo, ".git", "worktrees", "b"), { recursive: true });
+    const worktree = join(repo, ".git", "worktree", "b");
+    mkdirSync(join(worktree, "src"), { recursive: true });
+    writeFileSync(
+      join(worktree, ".git"),
+      `gitdir: ${join(repo, ".git", "worktrees", "b")}\n`,
+    );
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+
+    const context = createPreToolUseContextFor(hook, "Write", {
+      file_path: join(worktree, "src", "a.ts"),
+      content: "x",
+    });
+    await invokeRun(hook, context);
+    context.assertSuccess({});
+    ok(
+      !existsSync(join(repo, TEST_WORKFLOW_DIR, "off-plan-writes.log")),
+      "the worktree target was treated as off-plan",
+    );
   });
 
   it("allows editing spec.md and plan-N.md while in two-layer mode", async () => {
