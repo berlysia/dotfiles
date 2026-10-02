@@ -174,23 +174,32 @@ describe("parseTokenCount (K2)", () => {
 });
 
 describe("resolveCompactAt (K2)", () => {
-  it("prefers env, then settings, then the default", () => {
+  it("prefers env, then settings, then the default window", () => {
     assert.equal(
       resolveCompactAt(
         { CLAUDE_CODE_AUTO_COMPACT_WINDOW: "500000" },
         { autoCompactWindow: "1m" },
       ),
-      500000,
+      467000,
     );
     assert.equal(
       resolveCompactAt(
         { CLAUDE_CODE_AUTO_COMPACT_WINDOW: "abc" },
         { autoCompactWindow: "1m" },
       ),
-      1000000,
+      967000,
     );
     assert.equal(resolveCompactAt({}, {}), 967000);
     assert.equal(resolveCompactAt({}, null), 967000);
+  });
+
+  it("reserves the same amount below any window", () => {
+    // `/autocompact` stores the window as a plain integer.
+    assert.equal(resolveCompactAt({}, { autoCompactWindow: 200000 }), 167000);
+    assert.equal(
+      resolveCompactAt({ CLAUDE_CODE_AUTO_COMPACT_WINDOW: "100000" }, {}),
+      67000,
+    );
   });
 });
 
@@ -200,13 +209,13 @@ describe("getThresholds (K2)", () => {
       triggerAt: 867000,
       updateAt: 927000,
     });
-    assert.deepEqual(getThresholds(200000), {
-      triggerAt: 100000,
-      updateAt: 160000,
+    assert.deepEqual(getThresholds(167000), {
+      triggerAt: 83500,
+      updateAt: 133600,
     });
-    assert.deepEqual(getThresholds(100000), {
-      triggerAt: 50000,
-      updateAt: 80000,
+    assert.deepEqual(getThresholds(67000), {
+      triggerAt: 33500,
+      updateAt: 53600,
     });
   });
 });

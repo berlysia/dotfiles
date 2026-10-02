@@ -27,7 +27,12 @@ export type RequestKind =
   | "update"
   | "not-yet-written";
 
-export const DEFAULT_COMPACT_AT = 967_000;
+export const DEFAULT_COMPACT_WINDOW = 1_000_000;
+// Auto-compact fires this far below the window, not at the window itself.
+// Fitted to two points: the documented ~967K for a 1M window, and a measured
+// compact on a 200K window between 165,290 and 166,874 tokens (2026-10-02).
+// A percentage fits only one of them. The breakdown is not documented.
+export const COMPACT_RESERVE = 33_000;
 export const COMPACT_WINDOW_MIN = 100_000;
 export const COMPACT_WINDOW_MAX = 1_000_000;
 // Empirical margins: one tool result can add tens of K, the testament-writing
@@ -131,13 +136,20 @@ export function resolveCompactAt(
   env: Record<string, string | undefined>,
   settings: unknown,
 ): number {
+  return resolveCompactWindow(env, settings) - COMPACT_RESERVE;
+}
+
+function resolveCompactWindow(
+  env: Record<string, string | undefined>,
+  settings: unknown,
+): number {
   const fromEnv = parseTokenCount(env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"]);
   if (fromEnv !== null) return fromEnv;
   if (isRecord(settings)) {
     const fromSettings = parseTokenCount(settings["autoCompactWindow"]);
     if (fromSettings !== null) return fromSettings;
   }
-  return DEFAULT_COMPACT_AT;
+  return DEFAULT_COMPACT_WINDOW;
 }
 
 export function getThresholds(compactAt: number): Thresholds {
