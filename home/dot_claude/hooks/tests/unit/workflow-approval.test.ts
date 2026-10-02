@@ -14,8 +14,14 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
   APPROVALS_LOG,
+  APPROVAL_QUESTION_TEXT,
+  DECLINE_DESCRIPTION,
   appendApproval,
+  buildApprovalQuestions,
+  deepEqualIgnoringKeyOrder,
+  isApprovalLikeQuestion,
   isApprovalShapedPrompt,
+  matchApprovalAnswer,
   parseApprovalUtterance,
   readLatestApprovals,
 } from "../../lib/workflow-approval.ts";
@@ -191,5 +197,185 @@ describe("isApprovalShapedPrompt (issue J: scheduled prompts)", () => {
         JSON.stringify(prompt),
       );
     }
+  });
+});
+
+describe("approval question (spec K3/K4/K7)", () => {
+  const spec = { name: "spec.md", hash: H1 };
+  const plan1 = { name: "plan-1.md", hash: H2 };
+  const plan2 = { name: "plan-2.md", hash: H1 };
+
+  it("builds one multiSelect question with a decline option", () => {
+    assert.deepEqual(buildApprovalQuestions([spec]), [
+      {
+        question: APPROVAL_QUESTION_TEXT,
+        header: "承認",
+        multiSelect: true,
+        options: [
+          { label: "spec.md", description: `hash=${H1.slice(0, 12)}` },
+          { label: "承認しない", description: DECLINE_DESCRIPTION },
+        ],
+      },
+    ]);
+  });
+
+  it("keeps the input order", () => {
+    const [q] = buildApprovalQuestions([plan2, spec, plan1]);
+    assert.deepEqual(
+      q?.options.map((o) => o.label),
+      ["plan-2.md", "spec.md", "plan-1.md", "承認しない"],
+    );
+  });
+
+  it("throws on an unusable document list", () => {
+    const bad = (name: string) => ({ name, hash: H1 });
+    assert.throws(() => buildApprovalQuestions([]));
+    assert.throws(() =>
+      buildApprovalQuestions([spec, plan1, plan2, bad("plan-3.md")]),
+    );
+    assert.throws(() => buildApprovalQuestions([spec, spec]));
+    for (const name of [
+      "../x.md",
+      "plan-0.md",
+      "plan-01.md",
+      "spec.md\n",
+      "SPEC.md",
+      "spec.md/",
+      "spe\0c.md",
+      "承認しない",
+    ]) {
+      assert.throws(() => buildApprovalQuestions([bad(name)]), name);
+    }
+  });
+
+  it("isApprovalLikeQuestion holds for everything the builder produces", () => {
+    assert.equal(isApprovalLikeQuestion(buildApprovalQuestions([spec])), true);
+    assert.equal(
+      isApprovalLikeQuestion(buildApprovalQuestions([plan2, spec, plan1])),
+      true,
+    );
+  });
+
+  it("isApprovalLikeQuestion is true for approval-looking questions", () => {
+    assert.equal(
+      isApprovalLikeQuestion([
+        { question: "Document Workflow の承認（改変）" },
+      ]),
+      true,
+    );
+    assert.equal(
+      isApprovalLikeQuestion([
+        { question: "x", options: [{ label: "a" }, { label: "承認しない" }] },
+      ]),
+      true,
+    );
+    assert.equal(
+      isApprovalLikeQuestion([
+        {
+          question: "spec.md を承認しますか",
+          options: [{ label: "spec.md" }, { label: "いいえ" }],
+        },
+      ]),
+      true,
+    );
+    assert.equal(
+      isApprovalLikeQuestion([
+        { question: "ok?", options: [{ label: "a" }] },
+        { question: "Document Workflow の承認", options: [] },
+      ]),
+      true,
+    );
+  });
+
+  it("isApprovalLikeQuestion is false for ordinary questions", () => {
+    assert.equal(
+      isApprovalLikeQuestion([
+        {
+          question: "この方針で進めてよいか",
+          options: [{ label: "はい" }, { label: "いいえ" }],
+        },
+      ]),
+      false,
+    );
+    assert.equal(
+      isApprovalLikeQuestion([
+        {
+          question: "承認フローを変えますか",
+          options: [{ label: "はい" }, { label: "いいえ" }],
+        },
+      ]),
+      false,
+    );
+  });
+
+  it("isApprovalLikeQuestion never throws", () => {
+    const thrower = Object.defineProperty({}, "question", {
+      get() {
+        throw new Error("x");
+      },
+    });
+    for (const input of [
+      undefined,
+      null,
+      "x",
+      [null],
+      [{ options: null }],
+      [{ question: 1, options: [1] }],
+      [thrower],
+    ]) {
+      assert.equal(isApprovalLikeQuestion(input), false);
+    }
+  });
+
+  it("matchApprovalAnswer classifies the answer string", () => {
+    const expected = buildApprovalQuestions([spec, plan1]);
+    assert.deepEqual(matchApprovalAnswer(expected, "spec.md, plan-1.md"), {
+      kind: "approve",
+      docs: ["spec.md", "plan-1.md"],
+    });
+    assert.deepEqual(matchApprovalAnswer(expected, "spec.md, spec.md"), {
+      kind: "approve",
+      docs: ["spec.md"],
+    });
+    assert.deepEqual(matchApprovalAnswer(expected, "承認しない"), {
+      kind: "decline",
+    });
+    assert.deepEqual(matchApprovalAnswer(expected, "spec.md, 承認しない"), {
+      kind: "invalid",
+      reason: "decline-mixed",
+    });
+    assert.deepEqual(matchApprovalAnswer(expected, ""), {
+      kind: "freeText",
+      text: "",
+    });
+    assert.deepEqual(matchApprovalAnswer(expected, "直してほしい"), {
+      kind: "freeText",
+      text: "直してほしい",
+    });
+    assert.deepEqual(matchApprovalAnswer(expected, "spec.md, plan-9.md"), {
+      kind: "freeText",
+      text: "spec.md, plan-9.md",
+    });
+  });
+
+  it("deepEqualIgnoringKeyOrder ignores key order only", () => {
+    assert.equal(
+      deepEqualIgnoringKeyOrder({ a: 1, b: 2 }, { b: 2, a: 1 }),
+      true,
+    );
+    assert.equal(deepEqualIgnoringKeyOrder([1, 2], [2, 1]), false);
+    assert.equal(deepEqualIgnoringKeyOrder({ a: 1, b: 2 }, { a: 1 }), false);
+    assert.equal(deepEqualIgnoringKeyOrder({ a: 1 }, { a: 1, b: 2 }), false);
+    assert.equal(deepEqualIgnoringKeyOrder({ a: undefined }, {}), false);
+    assert.equal(deepEqualIgnoringKeyOrder([], {}), false);
+    assert.equal(deepEqualIgnoringKeyOrder(1, "1"), false);
+    assert.equal(deepEqualIgnoringKeyOrder({ a: null }, {}), false);
+    assert.equal(
+      deepEqualIgnoringKeyOrder(
+        { x: [{ a: 1, b: 2 }] },
+        { x: [{ b: 2, a: 1 }] },
+      ),
+      true,
+    );
   });
 });
