@@ -1302,10 +1302,11 @@ describe("staticRuleEngine - Bash allow from the whole-text split (spec K8)", ()
 
   it("runs in linear time on long inputs", () => {
     // Plan-time probe: 19 ms for both; the old `\s+.*--check` takes seconds.
-    const start = Date.now();
+    // Monotonic clock: a wall-clock step (WSL2 resyncs it) once failed a 22 ms run.
+    const start = performance.now();
     strictEqual(bash(`eslint${" ".repeat(500_000)}x`).behavior, "uncertain");
     strictEqual(bash(`ls ${"a".repeat(500_000)}`).behavior, "allow");
-    strictEqual(Date.now() - start < 1000, true);
+    strictEqual(performance.now() - start < 1000, true);
   });
 });
 
