@@ -23,8 +23,8 @@ import {
   unlinkSync,
   writeSync,
 } from "node:fs";
-import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { getHomeDir } from "../lib/path-utils.ts";
 import { defineHook } from "cc-hooks-ts";
 import {
   buildRestoreContext,
@@ -243,7 +243,7 @@ function getThresholdsFromEnvironment(): Thresholds {
     parseTokenCount(process.env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"]) === null
   ) {
     const configDir =
-      process.env["CLAUDE_CONFIG_DIR"] || join(homedir(), ".claude");
+      process.env["CLAUDE_CONFIG_DIR"] || join(getHomeDir(), ".claude");
     const text = readSmallText(join(configDir, "settings.json"));
     if (text !== null) {
       try {

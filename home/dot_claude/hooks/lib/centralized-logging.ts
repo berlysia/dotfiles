@@ -13,8 +13,8 @@ import {
   statSync,
   unlinkSync,
 } from "node:fs";
-import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
+import { getHomeDir } from "./path-utils.ts";
 import type {
   BaseLogEntry,
   CommandLogEntry,
@@ -33,7 +33,7 @@ import type {
 // it to a per-process temp dir so `node --test` never appends to the real
 // ~/.claude/logs/*.jsonl files.
 const DEFAULT_CONFIG: LogManagerConfig = {
-  logDir: process.env.CLAUDE_LOGS_DIR || join(homedir(), ".claude", "logs"),
+  logDir: process.env.CLAUDE_LOGS_DIR || join(getHomeDir(), ".claude", "logs"),
   maxLines: 1000,
   rotateBackups: 5,
   rotateIntervalDays: 3,

@@ -2,8 +2,9 @@
 
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { homedir, userInfo } from "node:os";
+import { userInfo } from "node:os";
 import { join } from "node:path";
+
 import { defineHook } from "cc-hooks-ts";
 import { extractCommandsStructured } from "../lib/bash-parser.ts";
 import { isExemptReadOnlyCommand } from "../lib/read-only-command.ts";
@@ -22,7 +23,11 @@ import {
   createDenyResponse,
 } from "../lib/context-helpers.ts";
 import { analyzePatternMatches } from "../lib/decision-maker.ts";
-import { normalizePath, normalizePattern } from "../lib/path-utils.ts";
+import {
+  getHomeDir,
+  normalizePath,
+  normalizePattern,
+} from "../lib/path-utils.ts";
 import {
   matchGitignorePattern,
   checkIndividualCommandDenyWithPattern as patternMatcherCheckDeny,
@@ -285,7 +290,7 @@ function getSettingsFiles(workspaceRoot?: string): SettingsFile[] {
   const settingsFiles: SettingsFile[] = [];
 
   // Global settings
-  const globalSettingsPath = join(homedir(), ".claude", "settings.json");
+  const globalSettingsPath = join(getHomeDir(), ".claude", "settings.json");
   if (existsSync(globalSettingsPath)) {
     try {
       const content = readFileSync(globalSettingsPath, "utf-8");
@@ -370,7 +375,7 @@ export async function processBashTool(
   // `cd` context. `home` comes from this process, never from the command, so a
   // `HOME=...` assignment in an earlier Bash call cannot redirect the check.
   const homeResult = checkHomeDestruction(bashCommand, {
-    home: homedir(),
+    home: getHomeDir(),
     cwd: cwd || process.cwd(),
     user: currentUserName(),
   });

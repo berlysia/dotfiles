@@ -2,7 +2,7 @@
 
 import { execSync } from "node:child_process";
 import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { basename, dirname, resolve } from "node:path";
 import { defineHook } from "cc-hooks-ts";
 import {
@@ -11,7 +11,7 @@ import {
   isDotfilesRepository,
 } from "../lib/chezmoi-utils.ts";
 import { createDenyResponse } from "../lib/context-helpers.ts";
-import { expandTilde } from "../lib/path-utils.ts";
+import { expandTilde, getHomeDir } from "../lib/path-utils.ts";
 import { matchGitignorePattern } from "../lib/pattern-matcher.ts";
 import type {
   PathValidationResult,
@@ -111,14 +111,6 @@ function getRepositoryRoot(): string | undefined {
   } catch {
     return undefined;
   }
-}
-
-// Bun's os.homedir() keeps returning the startup value after process.env.HOME
-// changes (measured; Node re-reads HOME), so tests that isolate HOME in-process
-// would still read the real ~/.claude/settings.json under `bun test`. Reading
-// HOME first matches what os.homedir() returns on POSIX at startup anyway.
-function getHomeDir(): string {
-  return process.env.HOME || homedir();
 }
 
 function getSettingsFiles(workspaceRoot?: string): SettingsFile[] {

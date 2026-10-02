@@ -1,8 +1,8 @@
 #!/usr/bin/env -S bun run --silent
 
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { resolve } from "node:path";
+import { getHomeDir } from "../lib/path-utils.ts";
 import { defineHook } from "cc-hooks-ts";
 import { logEvent } from "../lib/centralized-logging.ts";
 import { matcherCoversGuardedTools } from "../lib/guarded-tools.ts";
@@ -13,7 +13,10 @@ import {
 import { resolveWorkflowPaths } from "../lib/workflow-paths.ts";
 import { resolveWorkflowDir } from "../lib/workflow-resolve.ts";
 
-const GLOBAL_SETTINGS_PATH = resolve(homedir(), ".claude", "settings.json");
+// Resolved per call so a HOME swap (tests) is honored.
+function getGlobalSettingsPath(): string {
+  return resolve(getHomeDir(), ".claude", "settings.json");
+}
 
 // Characters that would break out of the double-quoted shell sink this
 // module writes DOCUMENT_WORKFLOW_DIR through (`export X="${value}"`). See
@@ -89,23 +92,23 @@ export function extractGuardMatcher(settings: unknown): string | null {
  */
 function auditGuardWiring(): string {
   try {
-    if (!existsSync(GLOBAL_SETTINGS_PATH)) {
-      return `wiring (${GLOBAL_SETTINGS_PATH}): file not found; could not audit the guard's PreToolUse matcher.`;
+    if (!existsSync(getGlobalSettingsPath())) {
+      return `wiring (${getGlobalSettingsPath()}): file not found; could not audit the guard's PreToolUse matcher.`;
     }
-    const parsed = JSON.parse(readFileSync(GLOBAL_SETTINGS_PATH, "utf-8"));
+    const parsed = JSON.parse(readFileSync(getGlobalSettingsPath(), "utf-8"));
     const matcher = extractGuardMatcher(parsed);
     if (matcher === null) {
-      return `wiring (${GLOBAL_SETTINGS_PATH}): no PreToolUse entry references document-workflow-guard.ts.`;
+      return `wiring (${getGlobalSettingsPath()}): no PreToolUse entry references document-workflow-guard.ts.`;
     }
     const coverage = matcherCoversGuardedTools(matcher);
     return coverage.covered
-      ? `wiring (${GLOBAL_SETTINGS_PATH}): matcher "${matcher}" covers all guarded tools.`
-      : `wiring (${GLOBAL_SETTINGS_PATH}): matcher "${matcher}" is missing ${coverage.missing.join(", ")}.`;
+      ? `wiring (${getGlobalSettingsPath()}): matcher "${matcher}" covers all guarded tools.`
+      : `wiring (${getGlobalSettingsPath()}): matcher "${matcher}" is missing ${coverage.missing.join(", ")}.`;
   } catch (error) {
     // Deliberately not String(error): settings.json can carry tokens in an
     // `env` block, and unlike Bun, Node sometimes embeds a slice of the
     // offending input in a JSON.parse SyntaxError message.
-    return `wiring (${GLOBAL_SETTINGS_PATH}): could not audit it (${
+    return `wiring (${getGlobalSettingsPath()}): could not audit it (${
       error instanceof Error ? error.name : "unknown"
     }).`;
   }

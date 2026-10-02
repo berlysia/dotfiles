@@ -8,8 +8,8 @@
  */
 
 import { existsSync, readdirSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
+import { getHomeDir } from "./path-utils.ts";
 
 /**
  * Check if the repository is a dotfiles/chezmoi repository
@@ -75,7 +75,7 @@ export function getChezmoiSourcePath(
   absPath: string,
   repoRoot: string,
 ): string | undefined {
-  const homeDir = homedir();
+  const homeDir = getHomeDir();
 
   // Only process paths under home directory
   if (!absPath.startsWith(`${homeDir}/`)) {

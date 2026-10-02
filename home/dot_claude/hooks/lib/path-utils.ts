@@ -15,6 +15,20 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 /**
+ * Home directory resolved at call time.
+ *
+ * Bun's os.homedir() keeps returning the HOME captured at process startup even
+ * after process.env.HOME is reassigned (Node re-reads it), so tests that swap
+ * HOME in beforeEach would not isolate code calling homedir() under `bun test`
+ * and could touch the developer's real home. Reading process.env.HOME first
+ * restores isolation; on POSIX it equals the startup value otherwise, so
+ * production behavior is unchanged. Never cache the result at module load.
+ */
+export function getHomeDir(): string {
+  return process.env.HOME || homedir();
+}
+
+/**
  * Branded type utility for creating opaque types
  *
  * This creates a nominal type that is incompatible with its base type,
@@ -75,7 +89,7 @@ function toNormalizedPattern(s: string): NormalizedPattern {
  */
 export function expandTilde(path: string): string {
   if (path.startsWith("~/")) {
-    return join(homedir(), path.slice(2));
+    return join(getHomeDir(), path.slice(2));
   }
   return path;
 }
@@ -282,7 +296,7 @@ export function normalizePattern(
 
   // Expand tilde
   if (pattern.startsWith("~/")) {
-    return toNormalizedPattern(join(homedir(), pattern.slice(2)));
+    return toNormalizedPattern(join(getHomeDir(), pattern.slice(2)));
   }
 
   // Expand relative paths

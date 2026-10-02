@@ -3,8 +3,8 @@
  * Enum-based risk evaluation for permission patterns
  */
 
-import { homedir } from "node:os";
 import { resolve } from "node:path";
+import { getHomeDir } from "./path-utils.ts";
 
 function resolvePatternPath(pattern: string, cwd: string): string {
   const path = pattern.match(/[^(]+\(([^)]+)\)/)?.[1] || "";
@@ -12,7 +12,7 @@ function resolvePatternPath(pattern: string, cwd: string): string {
   const pathWithoutGlob = path.replace(/\/?\*+.*$/, "");
 
   if (pathWithoutGlob.startsWith("~/")) {
-    return resolve(homedir(), pathWithoutGlob.slice(2));
+    return resolve(getHomeDir(), pathWithoutGlob.slice(2));
   }
 
   if (pathWithoutGlob.startsWith("/")) {
@@ -120,7 +120,7 @@ export function evaluateScopeRisk(
   cwd = process.cwd(),
 ): RiskAssessment {
   const resolvedPath = resolvePatternPath(pattern, cwd);
-  const homeDir = homedir();
+  const homeDir = getHomeDir();
 
   if (
     resolvedPath.startsWith("/etc/") ||

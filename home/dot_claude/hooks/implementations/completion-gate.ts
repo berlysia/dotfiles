@@ -8,8 +8,8 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { getHomeDir } from "../lib/path-utils.ts";
 import { defineHook } from "cc-hooks-ts";
 import { logQuality } from "../lib/centralized-logging.ts";
 import {
@@ -34,12 +34,9 @@ import "../types/tool-schemas.ts";
 const MAX_RETRIES = 3;
 const COUNTER_FILENAME = ".completion-gate-retries";
 // Outside the project so the baseline itself never shows up as an untracked file.
-const BASELINE_STATE_DIR = join(
-  homedir(),
-  ".claude",
-  "state",
-  "completion-gate",
-);
+function getBaselineStateDir(): string {
+  return join(getHomeDir(), ".claude", "state", "completion-gate");
+}
 const BASELINE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 function getCounterPath(): string {
@@ -148,9 +145,9 @@ const hook = defineHook({
       // 一度 MAX に到達した時点で永続無効化される。
       if (context.input.hook_event_name === "UserPromptSubmit") {
         resetRetryCount();
-        pruneStaleBaselines(BASELINE_STATE_DIR, BASELINE_MAX_AGE_MS);
+        pruneStaleBaselines(getBaselineStateDir(), BASELINE_MAX_AGE_MS);
         saveBaseline(
-          BASELINE_STATE_DIR,
+          getBaselineStateDir(),
           context.input.session_id,
           computeTreeFingerprint(process.cwd()),
         );
@@ -175,7 +172,7 @@ const hook = defineHook({
       }
 
       const treeChange = checkTreeChange(
-        BASELINE_STATE_DIR,
+        getBaselineStateDir(),
         session_id,
         process.cwd(),
       );
