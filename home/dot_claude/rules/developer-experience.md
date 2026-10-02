@@ -44,6 +44,8 @@ Always gather evidence (read files, run tests, check actual state) before making
 **Your Decision:** Which approach?
 ```
 
+When proposing to record something (an ADR, a doc, a plan moved to `docs/`), list the decisions or facts it would record and what it would leave out, and state what is lost if nothing is recorded. A bare "shall I write an ADR?" gives the user nothing to judge.
+
 ## Knowledge Management
 
 - WIP docs: `.tmp/docs/` (gitignored)
