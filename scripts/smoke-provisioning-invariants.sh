@@ -24,6 +24,7 @@ INSTALLER_NAME="10-install-hook-deps"
 ROOT_DEPS_NAME="10-install-root-deps"
 APM_SKILLS_NAME="10-install-apm-skills"
 VERIFIER_NAME="zz-verify-provisioning"
+SETTINGS_NAME="update-settings-json"
 
 TMP_ROOT="$(mktemp -d -t hook-deps-inv-XXXXXX)"
 trap 'rm -rf "${TMP_ROOT}"' EXIT
@@ -166,6 +167,8 @@ render_script "${SCRIPTS_DIR}/run_after_${VERIFIER_NAME}.sh.tmpl" "$c_rendered"
 printf 'reason=synthetic\n' > "${c_home}/.claude/.hook-deps-install-failed"
 printf 'reason=synthetic\n' > "${c_home}/.claude/.root-deps-install-failed"
 printf 'reason=synthetic\n' > "${c_home}/.claude/.apm-skills-install-failed"
+printf 'reason=synthetic\n' > "${c_home}/.claude/.skill-allow-failed"
+printf 'reason=synthetic\n' > "${c_home}/.claude/.skill-approvals-sync-failed"
 PATH="${c_stub}:${PATH}" HOME="$c_home" bash "$c_rendered" >/dev/null 2>&1 || true
 
 if [ ! -s "$c_log" ]; then
@@ -235,6 +238,32 @@ if [ "$d5_rc" -ne 0 ] && grep -q 'mise install github:microsoft/apm && apm insta
   pass "D5: apm-skills marker alone exits non-zero with only its recovery command"
 else
   fail "D5: rc=${d5_rc}, stderr did not match the apm-skills report"
+fi
+
+d6a_home="${TMP_ROOT}/d/home-skill-allow"
+mkdir -p "${d6a_home}/.claude"
+printf 'reason=skill-inventory-allow-failed\n' > "${d6a_home}/.claude/.skill-allow-failed"
+d6a_err="${TMP_ROOT}/d/stderr-skill-allow.txt"
+HOME="$d6a_home" bash "$d_rendered" 2> "$d6a_err" >/dev/null && d6a_rc=0 || d6a_rc=$?
+if [ "$d6a_rc" -ne 0 ] && grep -q 'skill-inventory.sh allow' "$d6a_err" &&
+  ! grep -q 'skill-inventory.sh sync-md' "$d6a_err" && ! grep -q '\[skill-approvals\]' "$d6a_err" &&
+  ! grep -q '\[hook-deps\]' "$d6a_err" && ! grep -q '\[apm-skills\]' "$d6a_err"; then
+  pass "D6a: skill-allow marker alone exits non-zero with only its recovery command"
+else
+  fail "D6a: rc=${d6a_rc}, stderr did not match the skill-allow report"
+fi
+
+d6b_home="${TMP_ROOT}/d/home-skill-approvals"
+mkdir -p "${d6b_home}/.claude"
+printf 'reason=skill-inventory-sync-md-failed\n' > "${d6b_home}/.claude/.skill-approvals-sync-failed"
+d6b_err="${TMP_ROOT}/d/stderr-skill-approvals.txt"
+HOME="$d6b_home" bash "$d_rendered" 2> "$d6b_err" >/dev/null && d6b_rc=0 || d6b_rc=$?
+if [ "$d6b_rc" -ne 0 ] && grep -q 'skill-inventory.sh sync-md' "$d6b_err" &&
+  ! grep -q 'skill-inventory.sh allow' "$d6b_err" && ! grep -q '\[skill-allow\]' "$d6b_err" &&
+  ! grep -q '\[hook-deps\]' "$d6b_err" && ! grep -q '\[apm-skills\]' "$d6b_err"; then
+  pass "D6b: skill-approvals marker alone exits non-zero with only its recovery command"
+else
+  fail "D6b: rc=${d6b_rc}, stderr did not match the skill-approvals report"
 fi
 
 # --- assertion E: installer branches and marker hygiene ---
@@ -929,6 +958,44 @@ elif printf '%s\n' "$g_rendered" | grep -qF 'minimumReleaseAge = 604800' &&
   pass "G: deployed bunfig carries the root minimumReleaseAge settings"
 else
   fail "G: deployed bunfig lost the root minimumReleaseAge settings"
+fi
+
+# --- assertion N: the settings step fails soft when the Skill inventory cannot be read ---
+# (Named N because F is taken by the toolchain-use assertion below.)
+# run_onchange_update-settings-json runs before ~/.claude is deployed, so a hard
+# failure there would abort every later placement. A directory at the apm lock
+# path makes skill-inventory.sh allow exit non-zero; the step must keep the
+# existing Skill(...) entries, record .skill-allow-failed, and still exit 0.
+n_dir="${TMP_ROOT}/n"
+n_home="${n_dir}/home"
+mkdir -p "${n_home}/.claude" "${n_home}/.apm/apm.lock.yaml"
+printf '%s\n' '{"permissions":{"allow":["Skill(keep-me)"]}}' > "${n_home}/.claude/settings.json"
+n_rendered="${n_dir}/settings.sh"
+# HOME is set for rendering too: .chezmoi.homeDir follows it, and the Hash line
+# and the script body then both look at the isolated HOME.
+HOME="$n_home" render_script "${SCRIPTS_DIR}/run_onchange_${SETTINGS_NAME}.sh.tmpl" "$n_rendered"
+n_marker="${n_home}/.claude/.skill-allow-failed"
+n_settings="${n_home}/.claude/settings.json"
+
+HOME="$n_home" bash "$n_rendered" >"${n_dir}/out1.txt" 2>&1 && n1_rc=0 || n1_rc=$?
+n_mode="$(stat -c '%a' "$n_marker" 2>/dev/null || stat -f '%Lp' "$n_marker" 2>/dev/null || echo none)"
+if [ "$n1_rc" -eq 0 ] && jq empty "$n_settings" 2>/dev/null &&
+  jq -e '.permissions.allow | index("Skill(keep-me)")' "$n_settings" >/dev/null 2>&1 &&
+  [ "$n_mode" = "600" ] && [ "$(wc -l < "$n_marker" | tr -d ' ')" = "3" ] &&
+  grep -q '^at=' "$n_marker" && grep -q '^reason=' "$n_marker" && grep -q '^recover=' "$n_marker" &&
+  [ "$(grep -c -E '^(at|reason|recover)=' "$n_marker")" = "3" ]; then
+  pass "N1: allow failure exits 0, keeps Skill(keep-me), records a 3-line marker at 600"
+else
+  fail "N1: rc=${n1_rc}, mode=${n_mode}, settings or marker unexpected: $(head -3 "${n_dir}/out1.txt" | tr '\n' ' ')"
+fi
+
+rmdir "${n_home}/.apm/apm.lock.yaml"
+HOME="$n_home" bash "$n_rendered" >"${n_dir}/out2.txt" 2>&1 && n2_rc=0 || n2_rc=$?
+if [ "$n2_rc" -eq 0 ] && [ ! -e "$n_marker" ] && jq empty "$n_settings" 2>/dev/null &&
+  ! jq -e '.permissions.allow | index("Skill(keep-me)")' "$n_settings" >/dev/null 2>&1; then
+  pass "N2: a successful rerun removes the marker and drops the carried-over Skill(keep-me)"
+else
+  fail "N2: rc=${n2_rc}, marker or carried-over entry unexpected: $(head -3 "${n_dir}/out2.txt" | tr '\n' ' ')"
 fi
 
 echo ""

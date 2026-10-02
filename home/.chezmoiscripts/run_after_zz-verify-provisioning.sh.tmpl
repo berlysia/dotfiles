@@ -48,5 +48,13 @@ report_marker "$HOME/.claude/.apm-skills-install-failed" "apm-skills" \
     "APM skills were not installed; ~/.claude/skills and ~/.agents/skills may not match ~/.apm/apm.yml." \
     "mise install github:microsoft/apm && apm install -g"
 
+report_marker "$HOME/.claude/.skill-allow-failed" "skill-allow" \
+    "The Skill permission list could not be computed; the previous Skill(...) permissions in ~/.claude/settings.json were kept." \
+    "bash {{ .chezmoi.workingTree }}/scripts/skill-inventory.sh allow (same arguments as the settings step), fix the reported error, then chezmoi apply"
+
+report_marker "$HOME/.claude/.skill-approvals-sync-failed" "skill-approvals" \
+    "skill-approvals.md could not be updated with newly installed skills." \
+    "bash {{ .chezmoi.workingTree }}/scripts/skill-inventory.sh sync-md (same arguments as run_after_update-skill-approvals), fix the reported error, then chezmoi apply"
+
 exit "$failed"
 {{ end -}}

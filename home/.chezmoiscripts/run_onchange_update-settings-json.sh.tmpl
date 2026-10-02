@@ -13,7 +13,15 @@
 # (onepassword / exec / output / secret) を入れないこと。includeTemplate は
 # chezmoi status / diff でも評価されるため、dry-run で秘密取得や外部コマンド
 # 実行が走るようになる。
-# Hash: {{ includeTemplate "dot_claude/.settings.base.json.tmpl" . | sha256sum }}{{ includeTemplate "dot_claude/.settings.permissions.json" . | sha256sum }}{{ includeTemplate "dot_claude/.settings.hooks.json.tmpl" . | sha256sum }}
+# Hash: {{ includeTemplate "dot_claude/.settings.base.json.tmpl" . | sha256sum }}{{ includeTemplate "dot_claude/.settings.permissions.json" . | sha256sum }}{{ includeTemplate "dot_claude/.settings.hooks.json.tmpl" . | sha256sum }}{{ include (print .chezmoi.sourceDir "/dot_claude/skill-approvals.md") | sha256sum }}{{ include (print .chezmoi.workingTree "/scripts/skill-inventory.sh") | sha256sum }}{{ include (print .chezmoi.sourceDir "/.chezmoiexternal.toml.tmpl") | sha256sum }}{{ glob (print .chezmoi.workingTree "/.skills/*") }}{{ glob (print .chezmoi.sourceDir "/dot_claude/commands/*.md") }}{{ glob (print .chezmoi.homeDir "/.local/share/private-skills/*") }}{{ $apmLock := print .chezmoi.homeDir "/.apm/apm.lock.yaml" }}{{ with stat $apmLock }}{{ if not .isDir }}{{ include $apmLock | sha256sum }}{{ end }}{{ end }}{{ $allowMarker := print .chezmoi.homeDir "/.claude/.skill-allow-failed" }}{{ with stat $allowMarker }}{{ if not .isDir }}{{ include $allowMarker | sha256sum }}{{ end }}{{ end }}
+#
+# 上の第 4 項以降は skill-inventory.sh allow の入力 (Skill(...) 許可の計算元)。
+# skill-approvals.md・inventory スクリプト・供給源の一覧 (.skills / commands /
+# private-skills の glob、apm lock の内容) が動いたら再実行する。
+# ~/.claude/.skill-allow-failed は、allow が失敗して前回の Skill 許可を据え置いた
+# ことを示す marker (ADR-0017 K5)。その中身 (at=) を Hash に入れることで、fail-soft の
+# exit 0 でハッシュが記録されても、失敗が続く間は次の apply でも再実行される (K2 の趣旨)。
+# 復旧した apply が marker を消すと Hash は marker 無しの値に戻る。
 
 set -euo pipefail
 
@@ -22,9 +30,44 @@ TEMP_FILE=$(mktemp)
 BACKUP_FILE="${TARGET_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
 SOURCE_DIR="{{ .chezmoi.sourceDir }}"
 
+{{ template "record-provisioning-failure.sh" . }}
+
+# Skill(...) allow entries come from scripts/skill-inventory.sh (checklist md +
+# supplier directories). This script runs before ~/.claude is deployed, so a
+# hard failure here would abort every later placement (the defect ADR-0017
+# prevents). It therefore fails soft, an exception to K4 limited to this stage:
+# keep the Skill(...) entries already in settings.json, record a marker, and
+# let run_after_zz-verify-provisioning make the apply exit non-zero.
+SKILL_MARKER="$HOME/.claude/.skill-allow-failed"
+SKILL_REASON="skill-inventory-allow-failed"
+SKILL_RECOVER="bash {{ .chezmoi.workingTree }}/scripts/skill-inventory.sh allow (same arguments as this settings step), fix the reported error, then chezmoi apply"
+
+if ! SKILL_NAMES=$(bash "{{ .chezmoi.workingTree }}/scripts/skill-inventory.sh" allow \
+    --md "{{ .chezmoi.sourceDir }}/dot_claude/skill-approvals.md" \
+    --self-skills-dir "{{ .chezmoi.workingTree }}/.skills" \
+    --commands-dir "{{ .chezmoi.sourceDir }}/dot_claude/commands" \
+    --private-dir "$HOME/.local/share/private-skills" \
+    --apm-lock "$HOME/.apm/apm.lock.yaml" \
+    --chezmoi-external "{{ .chezmoi.sourceDir }}/.chezmoiexternal.toml.tmpl"); then
+    echo "WARNING: skill-inventory.sh allow failed; keeping the existing Skill(...) permissions in ~/.claude/settings.json" >&2
+    SKILL_ENTRIES=$(jq '[.permissions.allow[]? | select(type == "string" and startswith("Skill("))]' "$TARGET_FILE" 2>/dev/null || echo '[]')
+    mkdir -p "$HOME/.claude" 2>/dev/null || true
+    if ! record_provisioning_failure "$SKILL_MARKER" "$SKILL_REASON" "$SKILL_RECOVER"; then
+        echo "WARNING: could not record the failure at $SKILL_MARKER; fix write permission on ~/.claude and run chezmoi apply" >&2
+    fi
+else
+    SKILL_ENTRIES=$(printf '%s' "$SKILL_NAMES" | jq -c 'map("Skill(\(.))")')
+    if [[ -e "$SKILL_MARKER" ]] && ! rm -f "$SKILL_MARKER" 2>/dev/null; then
+        echo "WARNING: could not clear stale $SKILL_MARKER; remove it by hand" >&2
+    fi
+fi
+
 # Read component files
 BASE_CONTENT=$(chezmoi execute-template < "${SOURCE_DIR}/dot_claude/.settings.base.json.tmpl")
-PERMISSIONS_CONTENT=$(cat "${SOURCE_DIR}/dot_claude/.settings.permissions.json")
+# Static allow list first, then Skill(<name>) entries; duplicates dropped, order kept.
+PERMISSIONS_CONTENT=$(jq --argjson skills "$SKILL_ENTRIES" '
+  .allow = (((.allow // []) + $skills) | reduce .[] as $x ([]; if index([$x]) then . else . + [$x] end))
+' "${SOURCE_DIR}/dot_claude/.settings.permissions.json")
 
 # Process hooks template with chezmoi
 HOOKS_CONTENT=$(chezmoi execute-template < "${SOURCE_DIR}/dot_claude/.settings.hooks.json.tmpl")

@@ -1,0 +1,56 @@
+{{ if ne .chezmoi.os "windows" -}}
+#!/bin/bash
+# Appends newly installed skills to the Skill auto-approve checklist
+# ({{ .chezmoi.sourceDir }}/dot_claude/skill-approvals.md) via
+# scripts/skill-inventory.sh sync-md.
+#
+# Placement (do not move or rename without updating
+# scripts/smoke-provisioning-invariants.sh):
+#   ASCII order puts this after 10-install-apm-skills and sync-skills, whose
+#   results it reads, and before zz-verify-provisioning, which reports its marker.
+#
+# Exit code: always 0. A failing sync-md (bad arguments, unreadable input, write
+# failure) is recorded in MARKER_FILE and run_after_zz-verify-provisioning turns
+# it into a non-zero apply at the end. Malformed checklist lines are warnings
+# from sync-md itself, not failures. The marker is separate from
+# .skill-allow-failed (written by the run_onchange settings step), so a success
+# here never clears that step's failure report.
+# If the marker itself cannot be written, a WARNING is logged and the apply
+# still continues (no ADR-0017 R11 style abort).
+
+set -uo pipefail
+
+log() {
+    local level="${2:-INFO}"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $1"
+}
+
+MARKER_FILE="$HOME/.claude/.skill-approvals-sync-failed"
+REASON="skill-inventory-sync-md-failed"
+RECOVER_COMMAND="bash {{ .chezmoi.workingTree }}/scripts/skill-inventory.sh sync-md (same arguments as this script), fix the reported error, then chezmoi apply"
+
+{{ template "record-provisioning-failure.sh" . }}
+
+if bash "{{ .chezmoi.workingTree }}/scripts/skill-inventory.sh" sync-md \
+    --md "{{ .chezmoi.sourceDir }}/dot_claude/skill-approvals.md" \
+    --self-skills-dir "{{ .chezmoi.workingTree }}/.skills" \
+    --commands-dir "{{ .chezmoi.sourceDir }}/dot_claude/commands" \
+    --private-dir "$HOME/.local/share/private-skills" \
+    --apm-lock "$HOME/.apm/apm.lock.yaml" \
+    --chezmoi-external "{{ .chezmoi.sourceDir }}/.chezmoiexternal.toml.tmpl" \
+    --installed-skills-dir "$HOME/.claude/skills"; then
+    if [ -e "$MARKER_FILE" ] && ! rm -f "$MARKER_FILE"; then
+        log "Could not clear stale $MARKER_FILE; remove it by hand" "ERROR"
+    fi
+else
+    log "skill-inventory.sh sync-md failed (see output above)" "ERROR"
+    mkdir -p "$HOME/.claude" 2>/dev/null || true
+    if record_provisioning_failure "$MARKER_FILE" "$REASON" "$RECOVER_COMMAND"; then
+        log "Recorded the failure at $MARKER_FILE" "INFO"
+    else
+        log "Could not record the failure at $MARKER_FILE; fix write permission on ~/.claude and run chezmoi apply" "WARNING"
+    fi
+fi
+
+exit 0
+{{ end -}}
