@@ -4,6 +4,17 @@
  */
 import { dirname, isAbsolute, resolve } from "node:path";
 import type { ToolSchema } from "cc-hooks-ts";
+import {
+  createLineIndex,
+  createRunEnds,
+  createStartIndex,
+  isLineTerminator,
+  isWhitespace,
+  onLine,
+  type OracleMatcher,
+  prefixThenOnLine,
+  type TextMatcher,
+} from "./linear-match.ts";
 
 // Meta commands that can execute other commands
 const _META_COMMANDS = {
@@ -45,6 +56,212 @@ export async function extractCommandsStructured(command: string) {
 
 // Legacy helper functions removed - functionality moved to bash-parser.ts
 
+const RM_RECURSIVE = /-[fr]*r|--recursive/;
+const RM_FORCE = /-[rf]*f|--force/;
+
+/**
+ * Linear equivalent of `rm\s+(?=.*R)(?=.*F).*\s+<tail>` (R: recursive flag,
+ * F: force flag; `tail` is a one-character class that cannot match whitespace).
+ *
+ * For an `rm` followed by a blank run [q, r): the lookaheads start at some j in
+ * (q, r], and R and F begin with `-`, so they are found at or after r, on the
+ * line of r. `.*\s+<tail>` then either ends the run at r (the tail character is
+ * text[r], which needs a run of two or more blanks not ending in a line
+ * terminator so that j can sit inside it), or finds the tail after a later
+ * blank run that starts on the same line (j = r, the greedy choice, is never
+ * worse). All lookups are binary searches over indexes built once per call.
+ *
+ * The oracle is test-only (the super-linear original); see linear-match.ts.
+ */
+export function rmRecursiveForceThen(tail: RegExp): OracleMatcher {
+  if (tail.flags !== "") {
+    throw new TypeError("rmRecursiveForceThen takes a flag-less regex");
+  }
+  return {
+    oracle: new RegExp(
+      `rm\\s+(?=.*(?:${RM_RECURSIVE.source}))(?=.*(?:${RM_FORCE.source})).*\\s+${tail.source}`,
+    ),
+    test(text) {
+      let at = text.indexOf("rm");
+      if (at === -1) return false;
+      const lines = createLineIndex(text);
+      const recursive = createStartIndex(text, RM_RECURSIVE);
+      const force = createStartIndex(text, RM_FORCE);
+      const tailRun = createStartIndex(
+        text,
+        new RegExp(`(?<!\\s)\\s+${tail.source}`),
+      );
+      const runEnds = createRunEnds(text);
+      for (; at !== -1; at = text.indexOf("rm", at + 1)) {
+        const q = at + 2;
+        if (!isWhitespace(text[q])) continue;
+        const r = runEnds[q] as number;
+        if (!onLine(lines, recursive, r) || !onLine(lines, force, r)) continue;
+        const tailAtRunEnd =
+          r - q >= 2 &&
+          !isLineTerminator(text[r - 1]) &&
+          r < text.length &&
+          tail.test(text[r] as string);
+        if (tailAtRunEnd || onLine(lines, tailRun, r)) return true;
+      }
+      return false;
+    },
+  };
+}
+
+interface DangerousPattern {
+  readonly pattern: TextMatcher;
+  readonly reason: string;
+  readonly requiresReview: boolean;
+}
+
+// Exported for the differential test (linear-match-equivalence.test.ts).
+// Do not add a regex of the form `X\s+.*Y` / `X.*Y` here; use prefixThenOnLine
+// (see Issue #219).
+export const DANGEROUS_COMMAND_PATTERNS: ReadonlyArray<DangerousPattern> = [
+  // === Destructive file operations ===
+  {
+    // Match rm with recursive and force flags, variable substitution (immediate deny - unpredictable)
+    pattern: rmRecursiveForceThen(/[{$]/),
+    reason: "rm -rf with variable substitution is too dangerous",
+    requiresReview: false,
+  },
+  {
+    // Match rm with recursive and force flags, targeting system directories (immediate deny)
+    pattern: rmRecursiveForceThen(/\//),
+    reason: "Dangerous system deletion",
+    requiresReview: false,
+  },
+  {
+    pattern: /sudo\s+rm/,
+    reason: "Sudo deletion command",
+    requiresReview: false,
+  },
+  {
+    pattern: prefixThenOnLine(/dd\s+/, /\/dev\//),
+    reason: "Disk operation",
+    requiresReview: false,
+  },
+  { pattern: /mkfs/, reason: "Filesystem creation", requiresReview: false },
+  {
+    pattern: prefixThenOnLine(/(curl|wget)/, /\|\s*(sh|bash|zsh|fish|dash)/),
+    reason: "Piped shell execution",
+    requiresReview: true,
+  },
+
+  // === Destructive git operations ===
+  {
+    pattern: prefixThenOnLine(/git\s+push\s+/, /--force\b/),
+    reason: "Force push can overwrite remote history",
+    requiresReview: true,
+  },
+  {
+    pattern: prefixThenOnLine(/git\s+push\s+/, /-f\b/),
+    reason: "Force push (-f) can overwrite remote history",
+    requiresReview: true,
+  },
+  {
+    pattern: /git\s+push\s+--force\b/,
+    reason: "Force push can overwrite remote history",
+    requiresReview: true,
+  },
+  {
+    pattern: /git\s+push\s+-f\b/,
+    reason: "Force push (-f) can overwrite remote history",
+    requiresReview: true,
+  },
+  {
+    pattern: /git\s+reset\s+--hard\b/,
+    reason: "Hard reset discards uncommitted changes permanently",
+    requiresReview: true,
+  },
+  {
+    pattern: prefixThenOnLine(/git\s+clean\s+/, /-[fd]/),
+    reason: "Git clean removes untracked files/directories permanently",
+    requiresReview: true,
+  },
+  {
+    pattern: prefixThenOnLine(/git\s+branch\s+/, /-D\b/),
+    reason: "Force delete branch (-D) ignores unmerged status",
+    requiresReview: true,
+  },
+  {
+    pattern: prefixThenOnLine(/git\s+/, /--no-verify/),
+    reason: "Git command with --no-verify bypasses hooks and safety checks",
+    requiresReview: true,
+  },
+  {
+    pattern: prefixThenOnLine(/git\s+/, /--no-gpg-sign/),
+    reason:
+      "Git command with --no-gpg-sign bypasses GPG signature verification",
+    requiresReview: true,
+  },
+
+  // === Destructive GitHub CLI operations ===
+  {
+    pattern: /gh\s+pr\s+merge\b/,
+    reason: "Merging PR affects shared repository state",
+    requiresReview: true,
+  },
+  {
+    pattern: /gh\s+pr\s+close\b/,
+    reason: "Closing PR affects shared repository state",
+    requiresReview: true,
+  },
+  {
+    pattern: /gh\s+issue\s+close\b/,
+    reason: "Closing issue affects shared repository state",
+    requiresReview: true,
+  },
+  {
+    pattern: /gh\s+issue\s+delete\b/,
+    reason: "Deleting issue is irreversible",
+    requiresReview: true,
+  },
+  {
+    pattern: /gh\s+repo\s+delete\b/,
+    reason: "Deleting repository is irreversible",
+    requiresReview: false,
+  },
+  {
+    pattern: /gh\s+repo\s+archive\b/,
+    reason: "Archiving repository affects all collaborators",
+    requiresReview: true,
+  },
+  {
+    pattern: /gh\s+release\s+delete\b/,
+    reason: "Deleting release is irreversible",
+    requiresReview: true,
+  },
+
+  // === Destructive package manager operations ===
+  {
+    pattern: /npm\s+publish\b/,
+    reason: "Publishing package to registry is public and hard to undo",
+    requiresReview: true,
+  },
+  {
+    pattern: /npm\s+unpublish\b/,
+    reason: "Unpublishing can break dependent packages",
+    requiresReview: false,
+  },
+  {
+    pattern: /npm\s+deprecate\b/,
+    reason: "Deprecating package affects all users",
+    requiresReview: true,
+  },
+  {
+    pattern: /pnpm\s+publish\b/,
+    reason: "Publishing package to registry is public and hard to undo",
+    requiresReview: true,
+  },
+  {
+    pattern: /bun\s+publish\b/,
+    reason: "Publishing package to registry is public and hard to undo",
+    requiresReview: true,
+  },
+];
+
 /**
  * Check if a command is potentially dangerous and requires review
  */
@@ -53,153 +270,11 @@ export function checkDangerousCommand(cmd: string): {
   requiresManualReview: boolean;
   reason: string;
 } {
-  const dangerousPatterns = [
-    // === Destructive file operations ===
-    {
-      // Match rm with recursive and force flags, variable substitution (immediate deny - unpredictable)
-      pattern:
-        /rm\s+(?=.*(?:-[fr]*r|--recursive))(?=.*(?:-[rf]*f|--force)).*\s+[{$]/,
-      reason: "rm -rf with variable substitution is too dangerous",
-      requiresReview: false,
-    },
-    {
-      // Match rm with recursive and force flags, targeting system directories (immediate deny)
-      pattern:
-        /rm\s+(?=.*(?:-[fr]*r|--recursive))(?=.*(?:-[rf]*f|--force)).*\s+\//,
-      reason: "Dangerous system deletion",
-      requiresReview: false,
-    },
-    {
-      pattern: /sudo\s+rm/,
-      reason: "Sudo deletion command",
-      requiresReview: false,
-    },
-    {
-      pattern: /dd\s+.*\/dev\//,
-      reason: "Disk operation",
-      requiresReview: false,
-    },
-    { pattern: /mkfs/, reason: "Filesystem creation", requiresReview: false },
-    {
-      pattern: /(curl|wget).*\|\s*(sh|bash|zsh|fish|dash)/,
-      reason: "Piped shell execution",
-      requiresReview: true,
-    },
-
-    // === Destructive git operations ===
-    {
-      pattern: /git\s+push\s+.*--force\b/,
-      reason: "Force push can overwrite remote history",
-      requiresReview: true,
-    },
-    {
-      pattern: /git\s+push\s+.*-f\b/,
-      reason: "Force push (-f) can overwrite remote history",
-      requiresReview: true,
-    },
-    {
-      pattern: /git\s+push\s+--force\b/,
-      reason: "Force push can overwrite remote history",
-      requiresReview: true,
-    },
-    {
-      pattern: /git\s+push\s+-f\b/,
-      reason: "Force push (-f) can overwrite remote history",
-      requiresReview: true,
-    },
-    {
-      pattern: /git\s+reset\s+--hard\b/,
-      reason: "Hard reset discards uncommitted changes permanently",
-      requiresReview: true,
-    },
-    {
-      pattern: /git\s+clean\s+.*-[fd]/,
-      reason: "Git clean removes untracked files/directories permanently",
-      requiresReview: true,
-    },
-    {
-      pattern: /git\s+branch\s+.*-D\b/,
-      reason: "Force delete branch (-D) ignores unmerged status",
-      requiresReview: true,
-    },
-    {
-      pattern: /git\s+.*--no-verify/,
-      reason: "Git command with --no-verify bypasses hooks and safety checks",
-      requiresReview: true,
-    },
-    {
-      pattern: /git\s+.*--no-gpg-sign/,
-      reason:
-        "Git command with --no-gpg-sign bypasses GPG signature verification",
-      requiresReview: true,
-    },
-
-    // === Destructive GitHub CLI operations ===
-    {
-      pattern: /gh\s+pr\s+merge\b/,
-      reason: "Merging PR affects shared repository state",
-      requiresReview: true,
-    },
-    {
-      pattern: /gh\s+pr\s+close\b/,
-      reason: "Closing PR affects shared repository state",
-      requiresReview: true,
-    },
-    {
-      pattern: /gh\s+issue\s+close\b/,
-      reason: "Closing issue affects shared repository state",
-      requiresReview: true,
-    },
-    {
-      pattern: /gh\s+issue\s+delete\b/,
-      reason: "Deleting issue is irreversible",
-      requiresReview: true,
-    },
-    {
-      pattern: /gh\s+repo\s+delete\b/,
-      reason: "Deleting repository is irreversible",
-      requiresReview: false,
-    },
-    {
-      pattern: /gh\s+repo\s+archive\b/,
-      reason: "Archiving repository affects all collaborators",
-      requiresReview: true,
-    },
-    {
-      pattern: /gh\s+release\s+delete\b/,
-      reason: "Deleting release is irreversible",
-      requiresReview: true,
-    },
-
-    // === Destructive package manager operations ===
-    {
-      pattern: /npm\s+publish\b/,
-      reason: "Publishing package to registry is public and hard to undo",
-      requiresReview: true,
-    },
-    {
-      pattern: /npm\s+unpublish\b/,
-      reason: "Unpublishing can break dependent packages",
-      requiresReview: false,
-    },
-    {
-      pattern: /npm\s+deprecate\b/,
-      reason: "Deprecating package affects all users",
-      requiresReview: true,
-    },
-    {
-      pattern: /pnpm\s+publish\b/,
-      reason: "Publishing package to registry is public and hard to undo",
-      requiresReview: true,
-    },
-    {
-      pattern: /bun\s+publish\b/,
-      reason: "Publishing package to registry is public and hard to undo",
-      requiresReview: true,
-    },
-  ];
-
-  for (const { pattern, reason, requiresReview } of dangerousPatterns) {
+  for (const {
+    pattern,
+    reason,
+    requiresReview,
+  } of DANGEROUS_COMMAND_PATTERNS) {
     if (pattern.test(cmd)) {
       return {
         isDangerous: true,
