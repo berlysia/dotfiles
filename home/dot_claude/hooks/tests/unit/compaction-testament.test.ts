@@ -1073,6 +1073,69 @@ describe("compaction-testament hook", () => {
     });
   });
 
+  describe("project dir anchoring", () => {
+    // A Bash `cd` moves the session cwd that every later hook receives, so the
+    // workflow dir must not be derived from it. The drift target below is the
+    // workflow dir itself, as observed on a real device.
+    const anchorOnProjectDir = (env: HookEnv): void => {
+      envHelper.set("CLAUDE_TEST_CWD", undefined);
+      envHelper.set("CLAUDE_PROJECT_DIR", env.repo);
+    };
+
+    it("restores the testament after the session cwd drifts into a subdir", async () => {
+      const env = setup();
+      anchorOnProjectDir(env);
+      writeFileSync(join(env.wfDir, "testament.md"), "DRIFT-SURVIVOR");
+      const postCtx = createPostToolUseContextFor(
+        hook,
+        "Write",
+        { file_path: join(env.wfDir, "testament.md"), content: "ignored" },
+        {},
+        { cwd: env.repo },
+      );
+      (postCtx.input as { transcript_path: string }).transcript_path =
+        transcriptAt(env, 100_000);
+      await invokeRun(hook, postCtx);
+      assert.ok(existsSync(recordPath(env)));
+
+      await invokeRun(
+        hook,
+        createPreCompactContext({
+          cwd: env.wfDir,
+          transcript_path: transcriptAt(env, 100_000),
+        }),
+      );
+      const startCtx = createSessionStartContext("compact", { cwd: env.wfDir });
+      await invokeRun(hook, startCtx);
+
+      assert.match(additionalContextOf(startCtx), /DRIFT-SURVIVOR/);
+      assert.equal(existsSync(recordPath(env)), false);
+      assert.equal(existsSync(join(env.wfDir, ".tmp")), false);
+    });
+
+    it("resolves a relative testament path against the drifted cwd", async () => {
+      const env = setup();
+      anchorOnProjectDir(env);
+      writeFileSync(join(env.wfDir, "testament.md"), "relative");
+      const ctx = createPostToolUseContextFor(
+        hook,
+        "Write",
+        { file_path: "testament.md", content: "ignored" },
+        {},
+        { cwd: env.wfDir },
+      );
+      (ctx.input as { transcript_path: string }).transcript_path = transcriptAt(
+        env,
+        100_000,
+      );
+      await invokeRun(hook, ctx);
+      assert.equal(
+        JSON.parse(readFileSync(recordPath(env), "utf8")).sha256,
+        sha256Hex("relative"),
+      );
+    });
+  });
+
   describe("PreCompact", () => {
     const compact = async (
       env: HookEnv,
