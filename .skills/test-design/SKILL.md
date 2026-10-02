@@ -23,7 +23,7 @@ context: inherit
 
 1. **引数あり** → そのまま使用（ファイルパス、変更概要、PR番号など）
 2. **引数なし** → `git diff HEAD` で変更差分を取得
-3. **Document Workflow 内** → `$DOCUMENT_WORKFLOW_DIR/plan.md` のテスト計画セクションがあれば参照（オプション）
+3. **Document Workflow 内** → `<wfDir>/plan.md` のテスト計画セクションがあれば参照（オプション）
 
 ## Phase 1: テスト観点の洗い出し
 

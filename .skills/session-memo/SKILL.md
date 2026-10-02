@@ -28,11 +28,11 @@ context: fork
 
 ### Step 1: セッションIDを特定
 
-`$CLAUDE_SESSION_ID` 環境変数にセッションIDが格納されている（SessionStart hook で自動設定）。
+`$CLAUDE_CODE_SESSION_ID` 環境変数にセッションIDが格納されている（Claude Code が Bash ツールに渡す。`/clear` で新しい ID に変わる）。
 `$CLAUDE_TRANSCRIPT_PATH` にセッションJSONLのパスも格納されている。
 
 ```bash
-echo $CLAUDE_SESSION_ID
+echo $CLAUDE_CODE_SESSION_ID
 ```
 
 ### Step 2: サブエージェントで要約生成
