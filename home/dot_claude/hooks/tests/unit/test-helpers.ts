@@ -549,6 +549,7 @@ export function createStopContextFor<H extends { run: (ctx: any) => any }>(
     stop_hook_active?: boolean | undefined;
     cwd?: string | undefined;
     session_id?: string | undefined;
+    transcript_path?: string | undefined;
   } = {},
 ): Parameters<H["run"]>[0] & MockHookContext<{ Stop: true }> {
   type Ctx = Parameters<H["run"]>[0];
@@ -556,7 +557,7 @@ export function createStopContextFor<H extends { run: (ctx: any) => any }>(
     hook_event_name: "Stop" as const,
     cwd: overrides.cwd ?? "/test",
     session_id: overrides.session_id ?? TEST_SESSION_ID,
-    transcript_path: "/test/transcript",
+    transcript_path: overrides.transcript_path ?? "/test/transcript",
     stop_hook_active: overrides.stop_hook_active,
     last_assistant_message: overrides.last_assistant_message,
   } as ExtractAllHookInputsForEvent<"Stop">;
@@ -566,15 +567,34 @@ export function createStopContextFor<H extends { run: (ctx: any) => any }>(
 
 export const createSessionStartContext = (
   source: string,
-  overrides: ContextOverrides = {},
+  overrides: ContextOverrides & { transcript_path?: string } = {},
 ) => {
   return new MockHookContext<{ SessionStart: true }>({
     hook_event_name: "SessionStart",
     cwd: overrides.cwd ?? "/test",
     session_id: overrides.session_id ?? TEST_SESSION_ID,
-    transcript_path: "/test/transcript",
+    transcript_path: overrides.transcript_path ?? "/test/transcript",
     source,
   });
+};
+
+export const createPreCompactContext = (
+  overrides: {
+    trigger?: "manual" | "auto";
+    custom_instructions?: string | null;
+    transcript_path?: string;
+    cwd?: string;
+    session_id?: string;
+  } = {},
+) => {
+  return new MockHookContext<{ PreCompact: true }>({
+    hook_event_name: "PreCompact",
+    cwd: overrides.cwd ?? "/test",
+    session_id: overrides.session_id ?? TEST_SESSION_ID,
+    transcript_path: overrides.transcript_path ?? "/test/transcript",
+    trigger: overrides.trigger ?? "auto",
+    custom_instructions: overrides.custom_instructions ?? null,
+  } as ExtractAllHookInputsForEvent<"PreCompact">);
 };
 
 /**

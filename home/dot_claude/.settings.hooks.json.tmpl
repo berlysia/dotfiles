@@ -133,6 +133,15 @@
       ]
     },
     {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/compaction-testament.ts"
+        }
+      ]
+    },
+    {
       "matcher": "Bash",
       "hooks": [
         {
@@ -175,6 +184,15 @@
           "async": true
         }{{ end }}
       ]
+    },
+    {
+      "matcher": "compact",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/compaction-testament.ts"
+        }
+      ]
     }
   ],
   "Stop": [
@@ -195,6 +213,10 @@
         },
         {
           "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/compaction-testament.ts"
+        },
+        {
+          "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/speak-notification.ts Stop",
           "async": true
         }{{ if dig "only_private" false . }},
@@ -208,6 +230,17 @@
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/slack-notification.ts",
           "async": true
         }{{ end }}
+      ]
+    }
+  ],
+  "PreCompact": [
+    {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/compaction-testament.ts"
+        }
       ]
     }
   ],
