@@ -220,6 +220,22 @@ function getWorkingDirectory(inputCwd: string | undefined): string {
   return process.env["CLAUDE_TEST_CWD"] || inputCwd || process.cwd();
 }
 
+/**
+ * The base the workflow dir and git are resolved from. The hook input `cwd`
+ * follows every Bash `cd`, so deriving the workflow dir from it lets the
+ * record written by PostToolUse and the read at SessionStart land in
+ * different dirs. CLAUDE_PROJECT_DIR stays at the dir the session started in.
+ * It also stays there when the session enters a worktree mid-way, so the
+ * testament then lives under the original root, not the worktree.
+ */
+function getProjectDirectory(inputCwd: string | undefined): string {
+  return (
+    process.env["CLAUDE_TEST_CWD"] ||
+    process.env["CLAUDE_PROJECT_DIR"] ||
+    getWorkingDirectory(inputCwd)
+  );
+}
+
 function getThresholdsFromEnvironment(): Thresholds {
   let settings: unknown = null;
   // Settings are only consulted when the env value does not already decide.
@@ -316,12 +332,13 @@ type PostToolUseResult = { additionalContext?: string; systemMessage?: string };
 
 function handlePostToolUse(input: {
   sessionId: string;
-  cwd: string;
+  projectDir: string;
+  toolCwd: string;
   transcriptPath: string;
   toolName: string;
   toolInput: unknown;
 }): PostToolUseResult {
-  const paths = resolvePaths(input.cwd, input.sessionId);
+  const paths = resolvePaths(input.projectDir, input.sessionId);
   if (paths === null) return {};
 
   const { reading, exhausted } = readUsage(input.transcriptPath);
@@ -329,7 +346,7 @@ function handlePostToolUse(input: {
   const health = updateUsageHealth(stateBefore, reading, exhausted);
   const tokens = reading.kind === "tokens" ? reading.value : null;
 
-  if (isTestamentWrite(input.toolName, input.toolInput, input.cwd, paths)) {
+  if (isTestamentWrite(input.toolName, input.toolInput, input.toolCwd, paths)) {
     recordTestamentWrite(paths, tokens);
   }
 
@@ -367,11 +384,11 @@ type StopResult = { reason?: string; systemMessage?: string };
 
 function handleStop(input: {
   sessionId: string;
-  cwd: string;
+  projectDir: string;
   transcriptPath: string;
   stopHookActive: boolean;
 }): StopResult {
-  const paths = resolvePaths(input.cwd, input.sessionId);
+  const paths = resolvePaths(input.projectDir, input.sessionId);
   if (paths === null) return {};
 
   const { reading, exhausted } = readUsage(input.transcriptPath);
@@ -484,25 +501,25 @@ function collectWorkflowStatus(wfDir: string): string[] {
 
 function handlePreCompact(input: {
   sessionId: string;
-  cwd: string;
+  projectDir: string;
   transcriptPath: string;
   trigger: string;
   customInstructions: string | null;
 }): void {
-  const paths = resolvePaths(input.cwd, input.sessionId);
+  const paths = resolvePaths(input.projectDir, input.sessionId);
   if (paths === null) return;
   mkdirSync(paths.wfDir, { recursive: true });
   // git must see the same spelling it resolves the repo with.
   const realSnapshot = join(realpathSync(paths.wfDir), SNAPSHOT_FILE);
-  const git = classifyGit(input.cwd, realSnapshot);
+  const git = classifyGit(input.projectDir, realSnapshot);
 
   let gitBranch: string | null = null;
   let gitStatus: string | null = null;
   if (git.insideRepo) {
-    const branch = runGit(input.cwd, ["branch", "--show-current"]);
+    const branch = runGit(input.projectDir, ["branch", "--show-current"]);
     if (branch.ok) gitBranch = redact(branch.stdout.trim()) || null;
     if (git.safeToWriteDetails) {
-      const status = runGit(input.cwd, ["status", "--short"]);
+      const status = runGit(input.projectDir, ["status", "--short"]);
       if (status.ok) {
         gitStatus = redact(
           status.stdout
@@ -558,9 +575,9 @@ function handlePreCompact(input: {
 
 function handleSessionStartCompact(input: {
   sessionId: string;
-  cwd: string;
+  projectDir: string;
 }): string | null {
-  const paths = resolvePaths(input.cwd, input.sessionId);
+  const paths = resolvePaths(input.projectDir, input.sessionId);
   if (paths === null) return null;
 
   // Single read: size check, hash and the injected text all come from this
@@ -613,12 +630,13 @@ const hook = defineHook({
     try {
       const input = context.input;
       if (hasAgentId(input)) return context.success({});
-      const cwd = getWorkingDirectory(input.cwd);
+      const projectDir = getProjectDirectory(input.cwd);
 
       if (input.hook_event_name === "PostToolUse") {
         const result = handlePostToolUse({
           sessionId: input.session_id,
-          cwd,
+          projectDir,
+          toolCwd: getWorkingDirectory(input.cwd),
           transcriptPath: input.transcript_path,
           toolName: input.tool_name,
           toolInput: input.tool_input,
@@ -650,7 +668,7 @@ const hook = defineHook({
       if (input.hook_event_name === "Stop") {
         const result = handleStop({
           sessionId: input.session_id,
-          cwd,
+          projectDir,
           transcriptPath: input.transcript_path,
           stopHookActive: input.stop_hook_active === true,
         });
@@ -673,7 +691,7 @@ const hook = defineHook({
       if (input.hook_event_name === "PreCompact") {
         handlePreCompact({
           sessionId: input.session_id,
-          cwd,
+          projectDir,
           transcriptPath: input.transcript_path,
           trigger: input.trigger,
           customInstructions: input.custom_instructions ?? null,
@@ -687,7 +705,7 @@ const hook = defineHook({
       ) {
         const additionalContext = handleSessionStartCompact({
           sessionId: input.session_id,
-          cwd,
+          projectDir,
         });
         if (additionalContext === null) return context.success({});
         return context.json({
