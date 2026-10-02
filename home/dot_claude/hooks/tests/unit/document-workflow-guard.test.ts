@@ -1301,6 +1301,36 @@ describe("document-workflow-guard.ts two-layer mode (spec.md + plan-N.md)", () =
       context.assertSuccess({});
     });
 
+    it("does not read write targets in a data heredoc body before plan approval (F3b)", async () => {
+      const repo = createWorkflowRepo(pendingWorkflowRepo());
+      envHelper.set("CLAUDE_TEST_CWD", repo);
+      const context = createPreToolUseContextFor(hook, "Bash", {
+        command: `cat > ${join(repo, TEST_WORKFLOW_DIR, "NEXT-SESSION.md")} <<'EOF'\nthen run: echo x > src/a.ts\nEOF`,
+      });
+      await invokeRun(hook, context);
+      context.assertSuccess({});
+    });
+
+    it("still denies the write target of a data heredoc before plan approval (F3b)", async () => {
+      const repo = createWorkflowRepo(pendingWorkflowRepo());
+      envHelper.set("CLAUDE_TEST_CWD", repo);
+      const context = createPreToolUseContextFor(hook, "Bash", {
+        command: `cat > src/a.ts <<'EOF'\nexport const x = 1;\nEOF`,
+      });
+      await invokeRun(hook, context);
+      context.assertDeny();
+    });
+
+    it("still checks an interpreter heredoc body before plan approval (F3b)", async () => {
+      const repo = createWorkflowRepo(pendingWorkflowRepo());
+      envHelper.set("CLAUDE_TEST_CWD", repo);
+      const context = createPreToolUseContextFor(hook, "Bash", {
+        command: `python3 - <<'EOF'\nopen('src/a.ts', 'w').write('x')\nEOF`,
+      });
+      await invokeRun(hook, context);
+      context.assertDeny();
+    });
+
     it("denies writes to hook-managed non-markdown state in the workflow directory", async () => {
       // plan-review.cache.json gates review skipping; a tool-driven write would
       // let a stale verdict be forged, so the markdown widening must not reach it.

@@ -3,9 +3,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { defineHook } from "cc-hooks-ts";
-import { extractCommandsStructured } from "../lib/bash-parser.ts";
 import { getCommandFromToolInput } from "../lib/command-parsing.ts";
 import { createDenyResponse } from "../lib/context-helpers.ts";
+import { prepareDenyInput } from "../lib/deny-input.ts";
 import { getProjectRoot } from "../lib/project-root.ts";
 import { expandTilde } from "../lib/path-utils.ts";
 import { sanitizeForDisplay } from "../lib/sanitize-display.ts";
@@ -327,8 +327,9 @@ async function analyzeBashWrite(
   wfDir: string,
   gateClosed: boolean,
 ): Promise<WriteAnalysis> {
-  const result = await extractCommandsStructured(command);
-  const commands = result.individualCommands;
+  // Data-only heredoc bodies are emptied so their text is not read as write
+  // targets (spec K3); interpreter and shell bodies are kept.
+  const { individualCommands: commands } = await prepareDenyInput(command);
 
   const targets: string[] = [];
   let isWriteLike = false;
