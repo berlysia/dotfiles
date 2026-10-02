@@ -1,9 +1,19 @@
 #!/usr/bin/env node --test
 
 import { deepStrictEqual, ok } from "node:assert";
+import {
+  lstatSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+} from "node:fs";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import fileAccessGuardHook, {
+  collectTempRoots,
   getAllowPatterns,
+  isWithinTempRoots,
 } from "../../implementations/file-access-guard.ts";
 import {
   ConsoleCapture,
@@ -365,6 +375,132 @@ describe("file-access-guard.ts hook behavior", () => {
     });
   });
 
+  describe("temp roots (HOME isolated)", () => {
+    const TMP = realpathSync("/tmp");
+    const MAC_TMPDIR = "/var/folders/ab/cd/T/";
+    let H = "";
+
+    beforeEach(() => {
+      // Isolates settings: a real ~/.claude/settings.json may carry Edit(/tmp/**).
+      H = mkdtempSync(join(TMP, "fag-home-"));
+      envHelper.set("HOME", H);
+      envHelper.set("CLAUDE_TEST_REPO_ROOT", "/home/user/project");
+    });
+
+    afterEach(() => {
+      // node:test runs this nested hook before the parent's; restore() is idempotent.
+      envHelper.restore();
+      rmSync(H, { recursive: true, force: true });
+    });
+
+    // On darwin /var -> /private/var, so the fictional T cannot be realpath'd;
+    // the allow logic is covered there by the collectTempRoots / isWithinTempRoots tests.
+    it(
+      "should allow Write under a macOS-shaped TMPDIR",
+      { skip: process.platform === "darwin" },
+      async () => {
+        envHelper.set("TMPDIR", MAC_TMPDIR);
+        const hook = fileAccessGuardHook;
+        const context = createPreToolUseContextFor(hook, "Write", {
+          file_path: "/var/folders/ab/cd/T/tmp.X1/note.md",
+          content: "x",
+        });
+        await invokeRun(hook, context);
+        context.assertSuccess({});
+      },
+    );
+
+    it("should still deny system paths when TMPDIR is macOS-shaped", async () => {
+      envHelper.set("TMPDIR", MAC_TMPDIR);
+      const hook = fileAccessGuardHook;
+      const context = createPreToolUseContextFor(hook, "Read", {
+        file_path: "/var/log/syslog",
+      });
+      await invokeRun(hook, context);
+      context.assertDeny();
+    });
+
+    it("should deny .. escaping a macOS-shaped TMPDIR", async () => {
+      envHelper.set("TMPDIR", MAC_TMPDIR);
+      const hook = fileAccessGuardHook;
+      const context = createPreToolUseContextFor(hook, "Write", {
+        file_path: "/var/folders/ab/cd/T/../../../../log/x",
+        content: "x",
+      });
+      await invokeRun(hook, context);
+      context.assertDeny();
+    });
+
+    it("should deny .. escaping /tmp", async () => {
+      const hook = fileAccessGuardHook;
+      const context = createPreToolUseContextFor(hook, "Write", {
+        file_path: "/tmp/../etc/passwd",
+        content: "x",
+      });
+      await invokeRun(hook, context);
+      context.assertDeny();
+    });
+
+    it("should deny a symlink under /tmp that points outside", async () => {
+      const D = mkdtempSync(join(TMP, "fag-"));
+      try {
+        symlinkSync("/etc", `${D}/s`);
+        const hook = fileAccessGuardHook;
+        const context = createPreToolUseContextFor(hook, "Write", {
+          file_path: `${D}/s/authorized_keys`,
+          content: "x",
+        });
+        await invokeRun(hook, context);
+        context.assertDeny();
+      } finally {
+        rmSync(D, { recursive: true, force: true });
+      }
+    });
+
+    it("should deny a dangling symlink under /tmp", async () => {
+      const D = mkdtempSync(join(TMP, "fag-"));
+      try {
+        symlinkSync(`${H}/.ssh/authorized_keys`, `${D}/dang`);
+        const hook = fileAccessGuardHook;
+        const context = createPreToolUseContextFor(hook, "Write", {
+          file_path: `${D}/dang`,
+          content: "x",
+        });
+        await invokeRun(hook, context);
+        context.assertDeny();
+      } finally {
+        rmSync(D, { recursive: true, force: true });
+      }
+    });
+
+    it("should not treat TMPDIR=/var as a temp root", async () => {
+      envHelper.set("TMPDIR", "/var");
+      const hook = fileAccessGuardHook;
+      const context = createPreToolUseContextFor(hook, "Write", {
+        file_path: "/var/log/x",
+        content: "x",
+      });
+      await invokeRun(hook, context);
+      context.assertDeny();
+    });
+
+    it("should allow LS on the /tmp root itself", async () => {
+      const hook = fileAccessGuardHook;
+      const context = createPreToolUseContextFor(hook, "LS", { path: "/tmp" });
+      await invokeRun(hook, context);
+      context.assertSuccess({});
+    });
+
+    it("should deny Bash paths that use .. under /tmp", async () => {
+      const hook = fileAccessGuardHook;
+      const context = createPreToolUseContextFor(hook, "Bash", {
+        command: "cat /tmp/../etc/passwd",
+      });
+      await invokeRun(hook, context);
+      context.assertDeny();
+    });
+  });
+
   describe("getAllowPatterns category resolution", () => {
     const settings = [
       {
@@ -419,6 +555,224 @@ describe("file-access-guard.ts hook behavior", () => {
       deepStrictEqual(getAllowPatterns(settings, "Read"), [
         "Read(~/workspace/**)",
       ]);
+    });
+  });
+});
+
+const fakeRealpath =
+  (m: Record<string, string>) =>
+  (p: string): string => {
+    if (p in m) return m[p] as string;
+    throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+  };
+
+const sortedUnique = (xs: string[]): string[] => [...new Set(xs)].sort();
+
+describe("collectTempRoots", () => {
+  it("collects literal and realpath forms for a macOS tmpdir with trailing slash", () => {
+    const result = collectTempRoots(
+      "/var/folders/ab/cd/T/",
+      fakeRealpath({
+        "/tmp": "/private/tmp",
+        "/var/folders/ab/cd/T": "/private/var/folders/ab/cd/T",
+      }),
+    );
+    deepStrictEqual(
+      sortedUnique(result),
+      [
+        "/tmp",
+        "/private/tmp",
+        "/var/folders/ab/cd/T",
+        "/private/var/folders/ab/cd/T",
+      ].sort(),
+    );
+  });
+
+  it("yields only /tmp for the Linux default", () => {
+    deepStrictEqual(sortedUnique(collectTempRoots("/tmp", fakeRealpath({}))), [
+      "/tmp",
+    ]);
+  });
+
+  for (const rejected of [
+    "/",
+    "/var",
+    "/var/log",
+    "/var/folders",
+    "/var/folders/ab",
+    "/var/folders/ab/cd",
+    "/var/folders/ab/cd/C",
+    "/var/folders/ab/cd/T/x",
+    "/var/folders/ab/cd/T/..",
+    "/home/u/.ssh",
+    "tmp",
+    "",
+  ]) {
+    it(`rejects tmpdir ${JSON.stringify(rejected)}`, () => {
+      deepStrictEqual(
+        sortedUnique(collectTempRoots(rejected, fakeRealpath({}))),
+        ["/tmp"],
+      );
+    });
+  }
+
+  it("judges the realpath form independently of the literal", () => {
+    const result = collectTempRoots(
+      "/var/folders/ab/cd/T",
+      fakeRealpath({ "/var/folders/ab/cd/T": "/etc/x" }),
+    );
+    deepStrictEqual(sortedUnique(result), ["/tmp", "/var/folders/ab/cd/T"]);
+  });
+});
+
+describe("isWithinTempRoots", () => {
+  const errno = (code: string) => () => {
+    throw Object.assign(new Error(code), { code });
+  };
+  const pureRoots = ["/tmp"];
+  const pureRealpath = fakeRealpath({ "/tmp": "/tmp" });
+  const lstatEnoent = errno("ENOENT");
+
+  it("rejects a path with a .. segment", () => {
+    deepStrictEqual(
+      isWithinTempRoots(
+        "/tmp/x/../../etc/passwd",
+        pureRoots,
+        pureRealpath,
+        lstatEnoent,
+      ),
+      false,
+    );
+  });
+
+  it("matches roots on a segment boundary", () => {
+    deepStrictEqual(
+      isWithinTempRoots("/tmpfoo/x", pureRoots, pureRealpath, lstatEnoent),
+      false,
+    );
+  });
+
+  it("accepts the exact root", () => {
+    deepStrictEqual(
+      isWithinTempRoots("/tmp", pureRoots, pureRealpath, lstatEnoent),
+      true,
+    );
+  });
+
+  it("accepts a non-existent tail by climbing to an existing ancestor", () => {
+    deepStrictEqual(
+      isWithinTempRoots(
+        "/tmp/new/file.md",
+        pureRoots,
+        pureRealpath,
+        lstatEnoent,
+      ),
+      true,
+    );
+  });
+
+  it("fails closed when realpath throws EACCES", () => {
+    const realpath = (p: string): string => {
+      if (p === "/tmp") return "/tmp";
+      throw Object.assign(new Error("EACCES"), { code: "EACCES" });
+    };
+    deepStrictEqual(
+      isWithinTempRoots("/tmp/locked/f", pureRoots, realpath, lstatEnoent),
+      false,
+    );
+  });
+
+  it("rejects a relative path", () => {
+    deepStrictEqual(
+      isWithinTempRoots("tmp/x", pureRoots, pureRealpath, lstatEnoent),
+      false,
+    );
+  });
+
+  it("fails closed when lstat throws EACCES after realpath ENOENT", () => {
+    deepStrictEqual(
+      isWithinTempRoots(
+        "/tmp/locked/f",
+        pureRoots,
+        pureRealpath,
+        errno("EACCES"),
+      ),
+      false,
+    );
+  });
+
+  describe("real filesystem", () => {
+    const TMP = realpathSync("/tmp");
+    const roots = [...new Set(["/tmp", TMP])];
+
+    it("rejects a symlink that escapes the temp root", () => {
+      const D = mkdtempSync(join(TMP, "fag-"));
+      try {
+        symlinkSync("/etc", `${D}/s`);
+        deepStrictEqual(
+          isWithinTempRoots(`${D}/s/passwd`, roots, realpathSync, lstatSync),
+          false,
+        );
+      } finally {
+        rmSync(D, { recursive: true, force: true });
+      }
+    });
+
+    it("rejects a dangling symlink", () => {
+      const D = mkdtempSync(join(TMP, "fag-"));
+      try {
+        symlinkSync("/nonexistent-fag-target", `${D}/dang`);
+        deepStrictEqual(
+          isWithinTempRoots(`${D}/dang`, roots, realpathSync, lstatSync),
+          false,
+        );
+      } finally {
+        rmSync(D, { recursive: true, force: true });
+      }
+    });
+
+    it("rejects a symlink loop", () => {
+      const D = mkdtempSync(join(TMP, "fag-"));
+      try {
+        symlinkSync(`${D}/loop`, `${D}/loop`);
+        deepStrictEqual(
+          isWithinTempRoots(`${D}/loop/x`, roots, realpathSync, lstatSync),
+          false,
+        );
+      } finally {
+        rmSync(D, { recursive: true, force: true });
+      }
+    });
+
+    it("accepts a non-existent file under a real directory", () => {
+      const D = mkdtempSync(join(TMP, "fag-"));
+      try {
+        deepStrictEqual(
+          isWithinTempRoots(`${D}/new/file.md`, roots, realpathSync, lstatSync),
+          true,
+        );
+      } finally {
+        rmSync(D, { recursive: true, force: true });
+      }
+    });
+
+    it("needs the realpath form of a root that is spelled through a symlink", () => {
+      const R = mkdtempSync(join(TMP, "fag-"));
+      const L = `${R}-link`;
+      try {
+        symlinkSync(R, L);
+        deepStrictEqual(
+          isWithinTempRoots(`${L}/f`, [L, R], realpathSync, lstatSync),
+          true,
+        );
+        deepStrictEqual(
+          isWithinTempRoots(`${L}/f`, [L], realpathSync, lstatSync),
+          false,
+        );
+      } finally {
+        rmSync(L, { recursive: true, force: true });
+        rmSync(R, { recursive: true, force: true });
+      }
     });
   });
 });
