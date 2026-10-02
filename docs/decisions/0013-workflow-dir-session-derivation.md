@@ -84,7 +84,7 @@ containment 述語 `isStrictlyUnderProjectSubdir` (`home/dot_claude/hooks/lib/wo
 
 ## Open observation items
 
-1. **cwd 解決の不一致**: 5 hook はいずれも `process.env.CLAUDE_TEST_CWD || process.cwd()` で cwd を得ており、`context.input.cwd` を使っていない。subagent 経路では両者が一致することを実測済み (親と同じ `session_id` / `cwd`)。**worktree 経路は未測定**であり、そこで不一致が出れば導出先が変わる。起動時サマリの cwd 行が発火するかで観測する。→ ADR-0022 で解消: hook と CLI の root を `CLAUDE_PROJECT_DIR`（session 開始時の dir）に固定し、worktree / `cd` で wfDir が動かないようにした。
+1. **cwd 解決の不一致**: 5 hook はいずれも `process.env.CLAUDE_TEST_CWD || process.cwd()` で cwd を得ており、`context.input.cwd` を使っていない。subagent 経路では両者が一致することを実測済み (親と同じ `session_id` / `cwd`)。**worktree 経路は未測定**であり、そこで不一致が出れば導出先が変わる。起動時サマリの cwd 行が発火するかで観測する。→ ADR-0023 で解消: hook と CLI の root を `CLAUDE_PROJECT_DIR`（session 開始時の dir）に固定し、worktree / `cd` で wfDir が動かないようにした。
 2. **`env-rejected` の実運用での発火**: 起動時サマリに `env-rejected` が出るかどうか。出る場合は pin の書き方か、Consequences 2 のサブディレクトリ起動の縮退が現に起きている。
 3. **`unresolvable` の発火**: guard は `unresolvable` のとき毎ツール呼び出しで systemMessage を出す。この表示が出続けるようなら、Consequences 3 の kill-switch か session id の形式違反が起きている。同時に、毎回出続けること自体が「正常時に鳴る警告」に近づくため、頻度が観測されたら課題 H の後続設計の入力にする。
 

@@ -1,4 +1,4 @@
-# ADR-0022: Document Workflow の同一性（セッション・版・場所）を確定させる
+# ADR-0023: Document Workflow の同一性（セッション・版・場所）を確定させる
 
 ## Status
 
@@ -74,25 +74,7 @@ V1 の実測（ユーザーが別ターミナルで実施）で、`/clear` の�
 
 ## References
 
-- spec / plan の置き場: `.tmp/sessions/7d715a2f/`（GC されるので要点はこの ADR に書き切った）
+- 設計の全文: `docs/plans/workflow-identity/`（research / spec / plan-1〜5。レビューの記録を含む）
 - `docs/decisions/0013-workflow-dir-session-derivation.md`（Open observation items 1 を本 ADR で解消）
 - Issue #197 / #221 / #209 / #216
-- 実装 commit（`git log --oneline fbfe556..HEAD`）:
-  - `4cef612` docs(workflow): read the workflow dir from workflow-cli dir
-  - `df9c497` fix(hooks): stop exporting the workflow dir and session id at session start
-  - `f026a28` feat(workflow-cli): print the workflow dir and the written path
-  - `cce7d0a` fix(workflow-cli): resolve the workflow dir from the hooks' own inputs
-  - `963e073` feat(workflow-cli): show the guard's decision for a path in status
-  - `e6d0dc6` fix(hooks): match plan Files entries against the target's checkout
-  - `fd38aa7` refactor(hooks): move the gate decision into workflow-gate
-  - `1139133` fix(hooks): let file-access-guard write the session workflow dir
-  - `bf02954` fix(hooks): export the project root and single-quote session exports
-  - `d9fcf90` fix(hooks): anchor workflow dir resolution on the project root
-  - `ea9f5c3` refactor(hooks): use the shared getProjectRoot in compaction testament
-  - `f65ad41` feat(hooks): add getProjectRoot and shellSingleQuote
-  - `bfd65ea` docs(git-worktree-create): note it works from inside a worktree
-  - `51f838c` fix(git-worktree-create): anchor on the common git dir
-  - `92ece7c` feat(hooks): add the approval ledger reader and writer
-  - `6daa0c2` feat(hooks): require a recorded human approval of the current version
-  - `d39ed09` feat(hooks): record a conversational approval in the ledger
-  - `552901a` feat(hooks): refuse tool writes that set approval or touch a ledger
+- 実装: ブランチ `fix/workflow-identity`（PR で master に取り込む）

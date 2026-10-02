@@ -12,7 +12,7 @@
  * "承認します、ただし…" or a sentence that mentions 承認 never records one,
  * and only when the user typed it: the input's `source` is "user" or absent
  * (scheduled, polled and SDK prompts carry another value), outside any
- * subagent. ADR-0022 records why an absent `source` is accepted.
+ * subagent. ADR-0023 records why an absent `source` is accepted.
  */
 
 import { randomBytes } from "node:crypto";
