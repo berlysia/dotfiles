@@ -170,7 +170,8 @@ git が失敗したことも、`.git` が消えていることも、それ自体
 - **VM セッション中は、その repo で host の git を使わない。** git 面検査は起動時と終了時にしか走らないので、セッション中に host で git を使うと、検査の前に改変された設定が実行されうる。ターミナルタイトルが `[vm:<machine>] <repo>` に変わっている間は VM セッション中である。
 - `agent-vm env adopt <machine>` は、孤立した env ファイルが「移動前の同じ repo」のものかどうかを確認しない。記録された repo path が存在しないというだけで孤立と判定する。引き継ぐかどうかは自分で判断する。
 - mac のクリップボードにある画像は VM に貼り付けられない。画像は repo 内に保存してパスで渡す（repo は host と同じパスで mount されているので、そのまま VM からも読める）。
-- VM では APM の skills のうち、既定ブランチの解決が要る GitHub のリポジトリの分（9 件中 5 件）が入らず、`refs/heads/.invalid` で失敗する（実機で観測、再現あり）。VM の `~/.gitconfig` の SSH への書き換え（`url."git@github.com:".insteadOf https://github.com/`）と、VM に GitHub のトークンを置かない設計の組み合わせが原因と推測している（推測。host で成功する理由は未検証）。書き換えを無効にすると公開リポジトリは入る。別の課題として扱う。VM では APM の失敗は WARNING に留まり apply は止まらない。成功したかどうかは VM の中に `~/.apm/.install-state` があるかで判別できる。
+- VM の `~/.gitconfig` は、GitHub の取得を SSH に書き換えない。`https://github.com/` の取得は匿名の HTTPS のまま行い、push だけを `pushInsteadOf` で SSH（転送された agent）にする。取得まで SSH に書き換えると、agent の承認が毎回要り、APM などの取得が失敗するか止まるため（#194）。そのため、VM の中では private のリポジトリを `https://github.com/` の URL で取得できない。private のリポジトリは `git@github.com:` の URL を直接使う（private-skills はこの形）。
+- VM では今、APM の skills が入らない。lockfile のない VM は `mizchi/explainer` の最新版を取りに行き、その `SKILL.md` の frontmatter が読めないため `apm install` 全体が中止される。private の `berlysia/shiori` も、token のない HTTPS では取れない（#231）。VM では APM の失敗は WARNING に留まり apply は止まらない。成功したかどうかは VM の中に `~/.apm/.install-state` があるかで判別できる。
 - **golden machine（`agent-vm-golden`）には手で入らない。** golden machine の中身はすべての clone に配られる。手で入って停止し直した golden machine は、dotfiles が同じ間は自動では検知されない。`orb -m agent-vm-golden` などで入ってしまった場合は、`agent-vm golden rm` で作り直す。
 - golden machine の作成と更新のときに出る「no headless shell」の警告は想定どおりである。golden machine にはブラウザを配らず、ブラウザは repo ごとの machine に配られる。
 - apt・mise・APM の上流の更新は、dotfiles を変えない限り golden machine に入らない。取り込むには `agent-vm golden refresh` を実行する。
