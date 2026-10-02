@@ -194,6 +194,8 @@ export function runWorkflowCli(
   switch (command) {
     case "status":
       return cmdStatus(rest, deps);
+    case "dir":
+      return cmdDir(rest, deps);
     case "round":
       return cmdRound(rest, deps);
     case "stamp":
@@ -202,7 +204,7 @@ export function runWorkflowCli(
       return cmdTriage(rest, deps);
     default:
       return err(
-        `unknown command: ${command ?? "<none>"}\nusage: workflow-cli <status|round|stamp|triage> [doc] [--flags]`,
+        `unknown command: ${command ?? "<none>"}\nusage: workflow-cli <status|dir|round|stamp|triage> [doc] [--flags]`,
       );
   }
 }
@@ -370,6 +372,34 @@ function cmdStatus(
 }
 
 // ---------------------------------------------------------------------------
+// dir
+// ---------------------------------------------------------------------------
+
+/**
+ * The workflow dir and where it came from, for the model to write documents
+ * into (rules/workflow.md). A derived dir that does not exist yet is the
+ * normal first use; a pinned or overridden one that does not exist is
+ * probably a typo or an old session's dir, so that is warned about.
+ */
+function cmdDir(
+  args: string[],
+  deps: RunWorkflowCliDeps,
+): RunWorkflowCliResult {
+  const resolvedDir = resolveTargetWfDir(parseArgs(args).flags, deps);
+  if (resolvedDir.error !== undefined) return err(resolvedDir.error);
+  const warnings = [resolvedDir.warning];
+  if (resolvedDir.source !== "derived" && !existsSync(resolvedDir.wfDir)) {
+    warnings.push(
+      `${resolvedDir.wfDir} does not exist (source=${resolvedDir.source})`,
+    );
+  }
+  return ok(
+    `wfDir=${resolvedDir.wfDir}\nsource=${resolvedDir.source}\n`,
+    warnings.filter(Boolean).join("\n") || null,
+  );
+}
+
+// ---------------------------------------------------------------------------
 // round
 // ---------------------------------------------------------------------------
 
@@ -415,6 +445,23 @@ const EXTENSION_NOTES: Record<ExtensionApprover, string> = {
 
 function isBareMarkdownName(name: string): boolean {
   return name.endsWith(".md") && name.length > ".md".length;
+}
+
+/**
+ * Write commands take a bare document name only: the reframer record file
+ * and the extension log are keyed by it, and a path like `../plan.md` would
+ * write outside the workflow dir (spec K5).
+ */
+function bareDocumentNameError(docName: string): string | null {
+  if (basename(docName) !== docName || !isBareMarkdownName(docName)) {
+    return `invalid document name "${docName}": the document name must be a bare file name ending in .md (e.g. plan-1.md), not a path`;
+  }
+  return null;
+}
+
+/** The provenance lines every successful write command ends with (spec K5). */
+function provenanceLines(wfDir: string, source: string, wrote: string): string {
+  return `wfDir=${wfDir}\nsource=${source}\nwrote=${wrote}\n`;
 }
 
 /**
@@ -470,17 +517,11 @@ function cmdRound(
   if (!docName) {
     return err("round requires a document name (plan-N.md or spec.md)");
   }
-  // A bare file name only: the reframer record file and the extension log are
-  // keyed by it, so a path like `../plan.md` would move the record outside the
-  // workflow dir and split the log's doc column across spellings.
-  if (basename(docName) !== docName || !isBareMarkdownName(docName)) {
-    return err(
-      `invalid document name "${docName}": the document name must be a bare file name ending in .md (e.g. plan-1.md), not a path`,
-    );
-  }
+  const nameError = bareDocumentNameError(docName);
+  if (nameError) return err(nameError);
   const resolvedDir = resolveTargetWfDir(flags, deps);
   if (resolvedDir.error !== undefined) return err(resolvedDir.error);
-  const { wfDir, warning } = resolvedDir;
+  const { wfDir, source, warning } = resolvedDir;
   const docPath = resolve(wfDir, docName);
   if (!existsSync(docPath)) {
     return err(`document not found: ${docPath}`);
@@ -584,7 +625,7 @@ function cmdRound(
       ? `re-run: ${roundPlan.rerun.join(", ")}; carried: ${roundPlan.carried.join(", ") || "none"}`
       : `re-run: all always-on reviewers${currentRound > 0 ? " (full round)" : ""}`;
   return ok(
-    `inserted "## Reviewer Outputs (Round ${nextRound})" into ${docName}\n${summary}\n${extensionNote}`,
+    `inserted "## Reviewer Outputs (Round ${nextRound})" into ${docName}\n${summary}\n${extensionNote}${provenanceLines(wfDir, source, docPath)}`,
     warning,
   );
 }
@@ -705,6 +746,8 @@ function cmdStamp(
   if (!docName) {
     return err("stamp requires a document name (plan-N.md or spec.md)");
   }
+  const stampNameError = bareDocumentNameError(docName);
+  if (stampNameError) return err(stampNameError);
   if (!verdict || !VALID_VERDICTS.has(verdict)) {
     return err("stamp requires --verdict <pass|needs-work|blocker>");
   }
@@ -714,7 +757,7 @@ function cmdStamp(
 
   const resolvedDir = resolveTargetWfDir(flags, deps);
   if (resolvedDir.error !== undefined) return err(resolvedDir.error);
-  const { wfDir, warning } = resolvedDir;
+  const { wfDir, source, warning } = resolvedDir;
   const docPath = resolve(wfDir, docName);
   if (!existsSync(docPath)) {
     return err(`document not found: ${docPath}`);
@@ -811,7 +854,7 @@ function cmdStamp(
 
   return {
     exitCode: 0,
-    stdout: `stamped ${docName}: verdict=${verdict} hash=${hash}\n`,
+    stdout: `stamped ${docName}: verdict=${verdict} hash=${hash}\n${provenanceLines(wfDir, source, docPath)}`,
     stderr: stderrParts.length > 0 ? `${stderrParts.join("\n")}\n` : "",
   };
 }
@@ -831,13 +874,15 @@ function cmdTriage(
   if (!docName) {
     return err("triage requires a document name");
   }
+  const triageNameError = bareDocumentNameError(docName);
+  if (triageNameError) return err(triageNameError);
   if (adopted === undefined || excluded === undefined) {
     return err("triage requires --adopted N --excluded M");
   }
 
   const resolvedDir = resolveTargetWfDir(flags, deps);
   if (resolvedDir.error !== undefined) return err(resolvedDir.error);
-  const { wfDir, warning } = resolvedDir;
+  const { wfDir, source, warning } = resolvedDir;
   const docPath = resolve(wfDir, docName);
   if (!existsSync(docPath)) {
     return err(`document not found: ${docPath}`);
@@ -854,7 +899,10 @@ function cmdTriage(
   }
 
   writeFileSync(docPath, newContent);
-  return ok(`appended intent-triage marker to ${docName}\n`, warning);
+  return ok(
+    `appended intent-triage marker to ${docName}\n${provenanceLines(wfDir, source, docPath)}`,
+    warning,
+  );
 }
 
 if (import.meta.main) {
