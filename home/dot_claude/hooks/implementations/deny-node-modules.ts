@@ -14,9 +14,12 @@ import {
 import {
   buildReadOnlyPatterns,
   classifyDeletion,
+  cpThenNodeModules,
   mayAllowAsReadOnly,
+  redirectToNodeModules,
   standaloneSymlinkRemovalOperands,
 } from "../lib/node-modules-policy.ts";
+import { prefixThenOnLine, type TextMatcher } from "../lib/linear-match.ts";
 import {
   isEditInput,
   isMultiEditInput,
@@ -269,6 +272,35 @@ function deletionReason(
     : base;
 }
 
+/**
+ * Destructive operations - clear deny. Exported for the differential test
+ * (linear-match-equivalence.test.ts). Do not add a regex of the form
+ * `X\s+.*Y` / `X.*Y` here; use prefixThenOnLine (see Issue #219).
+ */
+export const DESTRUCTIVE_NODE_MODULES_PATTERNS: ReadonlyArray<{
+  readonly pattern: TextMatcher;
+  readonly operation: string;
+}> = [
+  {
+    pattern: prefixThenOnLine(/(?:^|\s)mv\s+/, /node_modules/),
+    operation: "move",
+  },
+  { pattern: cpThenNodeModules(), operation: "copy-to" },
+  { pattern: redirectToNodeModules(), operation: "overwrite" },
+  {
+    pattern: prefixThenOnLine(/(?:^|\s)(chmod|chown)\s+/, /node_modules/),
+    operation: "permission",
+  },
+  {
+    pattern: prefixThenOnLine(/(?:^|\s)mkdir\s+/, /node_modules/),
+    operation: "create",
+  },
+  {
+    pattern: prefixThenOnLine(/(?:^|\s)touch\s+/, /node_modules/),
+    operation: "create",
+  },
+];
+
 function analyzeIndividualCommand(
   cmd: string,
   opts: { fallback: boolean; readOnlyExempt: boolean },
@@ -277,19 +309,6 @@ function analyzeIndividualCommand(
   if (!cmd.toLowerCase().includes("node_modules")) {
     return { decision: "allow", reason: "No node_modules reference" };
   }
-
-  // Destructive operations - clear deny
-  const destructivePatterns = [
-    { pattern: /(?:^|\s)mv\s+.*node_modules/, operation: "move" },
-    { pattern: /(?:^|\s)cp\s+.*\s+.*node_modules/, operation: "copy-to" },
-    { pattern: />+\s*[^\s]*node_modules/, operation: "overwrite" },
-    {
-      pattern: /(?:^|\s)(chmod|chown)\s+.*node_modules/,
-      operation: "permission",
-    },
-    { pattern: /(?:^|\s)mkdir\s+.*node_modules/, operation: "create" },
-    { pattern: /(?:^|\s)touch\s+.*node_modules/, operation: "create" },
-  ];
 
   // Read-only operations - clear allow
   const readOnlyPatterns = [
@@ -309,7 +328,7 @@ function analyzeIndividualCommand(
   }
 
   // Check for destructive operations first
-  for (const { pattern, operation } of destructivePatterns) {
+  for (const { pattern, operation } of DESTRUCTIVE_NODE_MODULES_PATTERNS) {
     if (pattern.test(cmd)) {
       return {
         decision: "deny",

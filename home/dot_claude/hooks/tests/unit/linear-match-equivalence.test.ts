@@ -7,8 +7,11 @@
 
 import { ok, strictEqual } from "node:assert";
 import { describe, it } from "node:test";
+import { DESTRUCTIVE_NODE_MODULES_PATTERNS } from "../../implementations/deny-node-modules.ts";
 import { DANGEROUS_PATTERNS } from "../../implementations/permission-auto-approve.ts";
 import { DANGEROUS_COMMAND_PATTERNS } from "../../lib/command-parsing.ts";
+import { buildReadOnlyPatterns } from "../../lib/node-modules-policy.ts";
+import { READ_ONLY_VERBS } from "../../lib/read-only-command.ts";
 import {
   hasTopLevelAlternation,
   type OracleMatcher,
@@ -52,7 +55,22 @@ const TABLES: Record<string, OracleMatcher[]> = {
     DANGEROUS_COMMAND_PATTERNS.map((entry) => entry.pattern),
   ),
   DANGEROUS_PATTERNS: oraclesOf(DANGEROUS_PATTERNS),
+  DESTRUCTIVE_NODE_MODULES_PATTERNS: oraclesOf(
+    DESTRUCTIVE_NODE_MODULES_PATTERNS.map((entry) => entry.pattern),
+  ),
+  READ_ONLY_PATTERNS: oraclesOf(
+    buildReadOnlyPatterns().map((entry) => entry.pattern),
+  ),
 };
+
+/** Verbs of each read-only category, in table order. */
+function readOnlyVerbsByCategory(): string[][] {
+  const byCategory = new Map<string, string[]>();
+  for (const { verb, category } of READ_ONLY_VERBS) {
+    byCategory.set(category, [...(byCategory.get(category) ?? []), verb]);
+  }
+  return [...byCategory.values()];
+}
 
 /** Regex sources copied verbatim from the literals on origin/master (`git show origin/master:<file>`), `.source` form. */
 const ORIGINAL_SOURCES: Record<string, string[]> = {
@@ -73,9 +91,21 @@ const ORIGINAL_SOURCES: Record<string, string[]> = {
     "curl.*\\|\\s*(sh|bash|zsh)",
     "wget.*\\|\\s*(sh|bash|zsh)",
   ],
+  DESTRUCTIVE_NODE_MODULES_PATTERNS: [
+    `(?:^|\\s)mv\\s+.*${NM}`,
+    `(?:^|\\s)cp\\s+.*\\s+.*${NM}`,
+    `>+\\s*[^\\s]*${NM}`,
+    `(?:^|\\s)(chmod|chown)\\s+.*${NM}`,
+    `(?:^|\\s)mkdir\\s+.*${NM}`,
+    `(?:^|\\s)touch\\s+.*${NM}`,
+  ],
+  // The construction buildReadOnlyPatterns used before the rewrite, applied to the verb table.
+  READ_ONLY_PATTERNS: readOnlyVerbsByCategory().map(
+    (verbs) => new RegExp(`(?:^|\\s)(${verbs.join("|")})\\s+.*${NM}`).source,
+  ),
 };
 
-const EXPECTED_TOTAL = 13;
+const EXPECTED_TOTAL = 24;
 
 interface RuleSpec {
   source: string;
@@ -222,6 +252,70 @@ const RULES: RuleSpec[] = [
     ["wget x | sh", "wget x |bash", "wget x |\nzsh", "wget|  zsh"],
     { perf: [() => "wget x ".repeat(14286)] },
   ),
+  spec(
+    `(?:^|\\s)mv\\s+.*${NM}`,
+    ["mv", NM, "x"],
+    ["cp", "mvx", "x mv", `${NM}/x`],
+    [`mv a ${NM}`, `x mv\n${NM}`, `mv  ${NM}`],
+  ),
+  spec(
+    `(?:^|\\s)cp\\s+.*\\s+.*${NM}`,
+    ["cp", NM, "x"],
+    ["mv", "cpx", "x cp", `${NM}/x`],
+    [
+      `cp a b ${NM}`,
+      `cp  ${NM}`,
+      `cp a\nb ${NM}`,
+      `cp a \n${NM}`,
+      `cp a \n\n ${NM}`,
+    ],
+    {
+      maxLen: 6,
+      whitespace: [" ", "\n"],
+      perf: [
+        () => "cp ".repeat(20000) + "\n".repeat(100000),
+        () => `${NM} ` + " cp ".repeat(25000),
+      ],
+    },
+  ),
+  spec(
+    `>+\\s*[^\\s]*${NM}`,
+    [">", NM, "x"],
+    ["a>", `${NM}/x`, ">>"],
+    [`>${NM}`, `> ${NM}`, `>>x${NM}`, `echo >\n${NM}`],
+    {
+      maxLen: 6,
+      whitespace: [" ", "\n"],
+      perf: [() => ">".repeat(100000), () => `${NM} ` + ">".repeat(100000)],
+    },
+  ),
+  spec(
+    `(?:^|\\s)(chmod|chown)\\s+.*${NM}`,
+    ["chmod", "chown", NM, "x"],
+    ["chm", "x chmod", `${NM}/x`],
+    [`chmod a ${NM}`, `chown  ${NM}`, `x chmod\n${NM}`],
+  ),
+  spec(
+    `(?:^|\\s)mkdir\\s+.*${NM}`,
+    ["mkdir", NM, "x"],
+    ["mkdirs", "x mkdir", `${NM}/x`],
+    [`mkdir a ${NM}`, `x mkdir\n${NM}`, `mkdir  ${NM}`],
+  ),
+  spec(
+    `(?:^|\\s)touch\\s+.*${NM}`,
+    ["touch", NM, "x"],
+    ["touchx", "x touch", `${NM}/x`],
+    [`touch a ${NM}`, `x touch\n${NM}`, `touch  ${NM}`],
+  ),
+  ...readOnlyVerbsByCategory().map((verbs) => {
+    const head = verbs[0] as string;
+    return spec(
+      new RegExp(`(?:^|\\s)(${verbs.join("|")})\\s+.*${NM}`).source,
+      [head, NM, "x"],
+      [...verbs.slice(1), `${head}x`, `x ${head}`, `${NM}/x`],
+      [`${head} ${NM}/x`, `${head}  x ${NM}`, `x ${head}\n${NM}`],
+    );
+  }),
 ];
 
 const SPEC_BY_SOURCE = new Map(RULES.map((rule) => [rule.source, rule]));
@@ -260,6 +354,8 @@ describe("production tables", () => {
   it("loads each owner module", async () => {
     await import("../../lib/command-parsing.ts");
     await import("../../implementations/permission-auto-approve.ts");
+    await import("../../implementations/deny-node-modules.ts");
+    await import("../../lib/node-modules-policy.ts");
   });
 
   it("holds the expected number of linear matchers", () => {
@@ -327,6 +423,42 @@ describe("branch boundary cases", () => {
       strictEqual(matcher.test(input), matcher.oracle.test(input), input);
     }
   });
+
+  // [input, what the original regex answers]
+  const cases: Array<[string, Array<[string, boolean]>]> = [
+    [
+      `(?:^|\\s)cp\\s+.*\\s+.*${NM}`,
+      [
+        [`cp  ${NM}`, true],
+        [`cp ${NM}`, false],
+        [`cp a\nb ${NM}`, true],
+        [`cp a \n${NM}`, true],
+        [`cp a\n${NM}`, true],
+        [`cp a\n\n${NM}`, true],
+        [`xcp a b ${NM}`, false],
+      ],
+    ],
+    [
+      `>+\\s*[^\\s]*${NM}`,
+      [
+        [`>${NM}`, true],
+        [`> \n${NM}`, true],
+        [`a>${NM}`, true],
+        [`\u00a0> ${NM}`, true],
+        [`> a ${NM}`, false],
+        [`>a${NM}`, true],
+      ],
+    ],
+  ];
+  for (const [source, inputs] of cases) {
+    it(`${source}`, () => {
+      const matcher = byName(source);
+      for (const [input, expected] of inputs) {
+        strictEqual(matcher.oracle.test(input), expected, input);
+        strictEqual(matcher.test(input), expected, input);
+      }
+    });
+  }
 });
 
 describe("preconditions of prefixThenOnLine", () => {
