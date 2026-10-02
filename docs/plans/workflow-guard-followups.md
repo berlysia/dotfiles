@@ -119,3 +119,14 @@ ADR-0023 Consequences 12 の配備後実測（plan-5 T5 Step 6）で確認した
 - 再訪のきっかけ: spec K7（承認の発話の判定）を改訂するとき、`/loop` / `ScheduleWakeup` を実測するとき、Claude Code の UserPromptSubmit の入力に出どころのフィールドが文書化されたとき。
 
 未着手である理由: 実測で判明したばかりで、`source` 以外の手がかり（transcript 上の区別など）があるかを調べていない。
+
+## 課題 K: `research.md` が無いことによる deny を、診断が理由として示さない
+
+ADR-0023 の配備後実測の作業中に踏んだ。2026-10-02。
+
+- 実測: wfDir に `plan.md` だけがあり（`research.md` なし）、plan.md の 6 条件（Plan / Review / Approval Status / marker verdict / hash match / approval）がすべてそろった状態で、`## Files` に載せたファイルを Edit すると deny された。deny の理由は 6 条件すべてに ✓ を付け、「Next: The gate conditions are satisfied.」と書いていた。`research.md` を書いた後は同じ Edit が通った。
+- 原因: `evaluateTarget`（`home/dot_claude/hooks/lib/workflow-gate.ts:375`）は `research.md` が無いと deny する。一方 `diagnoseGate` は `research.md` か `plan.md` のどちらかがあれば workflow を有効とみなし（同 `:164`）、plan の 6 条件だけを表示する。判定が見る条件と、診断が表示する条件が一致していない。
+- 影響: 診断が「満たされている」と言うので、利用者も model も次の一手を診断から得られない。`workflow-cli status`（対象なし）も、すべて ✓ の下で 1 行目に「is blocked」と表示する。
+- 対処の候補: `diagnoseGate` が `research.md` の有無を 7 つ目の条件として表示する。または、単層モードで `research.md` を要求するかどうかを見直す（rules/workflow.md の共通フロー step 1 は research.md を書くとしている）。
+
+未着手である理由: 実測の作業中に見つけたもので、どちらの対処にするかを決めていない。
