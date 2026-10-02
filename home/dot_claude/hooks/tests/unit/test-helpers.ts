@@ -636,6 +636,33 @@ export function buildPlanContent(options: WorkflowRepoOptions): string {
   return `${base}\n\n<!-- auto-review: verdict=${options.review.verdict}; hash=${hash}; at=2026-02-19T00:00:00.000Z; reviewers=logic-validator -->`;
 }
 
+/** A plan-N.md with a `## Files` block, as the two-layer gate reads it. */
+export function buildPlanNContent(
+  options: WorkflowRepoOptions,
+  filesSection: string[],
+  parentSpecHash: string,
+  omitParentSpecHash = false,
+): string {
+  const reviewStatus = options.review?.verdict ?? "pending";
+  const filesBlock = ["## Files", "", "```", ...filesSection, "```"].join("\n");
+  const approval = [
+    "## Approval",
+    `- Plan Status: ${options.planStatus}`,
+    `- Review Status: ${reviewStatus}`,
+    `- Approval Status: ${options.approvalStatus}`,
+  ].join("\n");
+  const baseContent = `${filesBlock}\n\n${approval}`;
+  if (!options.review) {
+    return baseContent;
+  }
+  const hash =
+    options.review.hashOverride ?? computeWorkflowRepoPlanHash(baseContent);
+  const parentField = omitParentSpecHash
+    ? ""
+    : ` parent-spec-hash=${parentSpecHash};`;
+  return `${baseContent}\n\n<!-- auto-review: verdict=${options.review.verdict}; hash=${hash};${parentField} at=2026-02-19T00:00:00.000Z; reviewers=logic-validator -->`;
+}
+
 /** Fixed relative workflow dir used by fixtures that pin `DOCUMENT_WORKFLOW_DIR` explicitly. */
 export const TEST_WORKFLOW_DIR = ".tmp/sessions/test";
 

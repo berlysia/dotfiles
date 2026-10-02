@@ -41,11 +41,10 @@ function checkSharedTaskList(): string | null {
 /**
  * Whether the workflow looks armed, as the startup summary reports it.
  *
- * Deliberately a local copy of the guard's `isWorkflowActive` rather than an
- * import: importing it would make the observer depend on the module it exists
- * to observe (spec K5), and moving it to `lib/` would add an export during the
- * phase that must not touch `lib/` (spec K15). The copy is kept honest by a
- * drift test that runs both against one fixture table.
+ * Deliberately a local copy of `isWorkflowActive` in lib/workflow-gate.ts
+ * rather than an import: importing it would make the observer depend on the
+ * module it exists to observe (spec K5). The copy is kept honest by a drift
+ * test (session.test.ts) that runs both against one fixture table.
  *
  * One deliberate degradation: the guard also returns true when
  * `workflow-state.json` says `mode === "document-workflow"`, and this does not

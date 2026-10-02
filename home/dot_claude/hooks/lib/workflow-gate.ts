@@ -16,7 +16,9 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { computeDocumentHash, SPEC_NORMALIZERS } from "./document-hash.ts";
+import { expandTilde } from "./path-utils.ts";
 import { sanitizeForDisplay } from "./sanitize-display.ts";
+import { parseFilesPaths } from "./workflow-files.ts";
 import { resolveWorkflowPaths } from "./workflow-paths.ts";
 import {
   LENIENT_STATUS_LINE,
@@ -65,7 +67,7 @@ function findStatusLine(
   return hit ? sanitizeForDisplay(hit.trim()) : undefined;
 }
 
-function diagnoseDocument(path: string): DocumentDiagnosis {
+export function evaluateDocument(path: string): DocumentDiagnosis {
   const exists = existsSync(path);
   const empty: GateCondition = { ok: false, expected: "" };
   if (!exists) {
@@ -140,7 +142,7 @@ export function diagnoseGate(wfDir: string, targetPath: string): GateDiagnosis {
   const active = existsSync(wfPaths.research) || existsSync(wfPaths.plan);
   const twoLayer = existsSync(wfPaths.spec);
   const primaryPath = twoLayer ? wfPaths.spec : wfPaths.plan;
-  const primary = diagnoseDocument(primaryPath);
+  const primary = evaluateDocument(primaryPath);
 
   const firstFailure = Object.values(primary.conditions).find((c) => !c.ok);
   const specOk = twoLayer && !firstFailure;
@@ -178,15 +180,9 @@ export function diagnoseGate(wfDir: string, targetPath: string): GateDiagnosis {
 const PLAN_NUMBERED_FILENAME_REGEX = /^plan-[0-9]+\.md$/;
 
 /**
- * Enumerate plan-N.md files (N is one or more digits) directly within wfDir.
- * Strict regex match excludes plan-draft.md, plan-1.md.bak, plan-2-draft.md.
- *
- * Duplicated from `document-workflow-guard.ts`'s original private copy so
- * `isImplementationPhase` (moved here in plan-2 T4 so `workflow-bash-sync.ts`
- * can share it without an implementations->implementations import, which
- * would violate the implementations->lib dependency direction this module's
- * sibling `workflow-review-core.ts` documents) has what it needs without
- * reaching back into the guard.
+ * Enumerate plan-N.md files (N is one or more digits) directly within wfDir,
+ * for the gate decision and `isImplementationPhase`. Strict regex match
+ * excludes plan-draft.md, plan-1.md.bak, plan-2-draft.md.
  */
 function findPlanNumberedFiles(wfDir: string): string[] {
   if (!existsSync(wfDir)) {
@@ -203,13 +199,12 @@ function findPlanNumberedFiles(wfDir: string): string[] {
 }
 
 /**
- * A document is "approved" when all five gate conditions `diagnoseDocument`
- * already computes are satisfied. Reusing it (rather than re-deriving the
- * same five checks a second time) keeps this predicate from silently
- * disagreeing with the deny-message diagnosis it shares a module with.
+ * A document is "approved" when all five gate conditions `evaluateDocument`
+ * computes are satisfied. Reusing it (rather than re-deriving the same five
+ * checks a second time) keeps this predicate from silently disagreeing with
+ * the deny-message diagnosis it shares a module with.
  */
-function hasApprovedDocument(path: string): boolean {
-  const d = diagnoseDocument(path);
+export function isDocumentApproved(d: DocumentDiagnosis): boolean {
   return (
     d.exists &&
     d.conditions.planStatus.ok &&
@@ -236,10 +231,10 @@ export function isImplementationPhase(
   twoLayer: boolean,
 ): boolean {
   if (!twoLayer) {
-    return hasApprovedDocument(wfPaths.plan);
+    return isDocumentApproved(evaluateDocument(wfPaths.plan));
   }
 
-  if (!hasApprovedDocument(wfPaths.spec)) {
+  if (!isDocumentApproved(evaluateDocument(wfPaths.spec))) {
     return false;
   }
   let specContent: string;
@@ -251,7 +246,7 @@ export function isImplementationPhase(
   const specHash = computeDocumentHash(specContent, SPEC_NORMALIZERS);
 
   for (const planPath of findPlanNumberedFiles(wfDir)) {
-    if (!hasApprovedDocument(planPath)) {
+    if (!isDocumentApproved(evaluateDocument(planPath))) {
       continue;
     }
     let planContent: string;
@@ -267,6 +262,137 @@ export function isImplementationPhase(
     return true;
   }
   return false;
+}
+
+export interface WorkflowState {
+  mode?: string;
+  approved?: boolean;
+}
+
+export function readWorkflowState(statePath: string): WorkflowState | null {
+  if (!existsSync(statePath)) {
+    return null;
+  }
+  try {
+    return JSON.parse(readFileSync(statePath, "utf-8")) as WorkflowState;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A workflow is active once workflow-state.json says so or plan.md /
+ * research.md exists. session.ts keeps a local copy for its startup summary
+ * (spec K5 of the overhaul); session.test.ts checks the two for drift.
+ */
+export function isWorkflowActive(
+  wfPaths: ReturnType<typeof resolveWorkflowPaths>,
+  state: WorkflowState | null,
+): boolean {
+  if (state?.mode === "document-workflow") {
+    return true;
+  }
+  return existsSync(wfPaths.plan) || existsSync(wfPaths.research);
+}
+
+export type TargetEvaluation =
+  | { kind: "inactive" }
+  | { kind: "allow"; owner: string }
+  | {
+      kind: "no-plan-owner";
+      implementationPhase: boolean;
+      diagnosis: GateDiagnosis;
+    }
+  | { kind: "deny"; diagnosis: GateDiagnosis };
+
+export interface TargetQuery {
+  wfDir: string;
+  /** Absolute path of the file being written. */
+  target: string;
+  /** Base for relative `## Files` entries (the guard passes its tool cwd). */
+  filesBase: string;
+  /** The target as the caller shows it in a diagnosis (raw tool input); defaults to `target`. */
+  label?: string;
+}
+
+/**
+ * The gate's decision for one write target, shared by the guard and
+ * `workflow-cli status <path>` so the two cannot disagree on a gated
+ * target (#209-2). The guard's shortcuts for workflow documents and paths
+ * outside the project run before this (classifyExemption, T3).
+ * - allow: single-layer plan.md approved, or the plan-N.md listing the
+ *   target approved with parent-spec-hash equal to the current spec.md hash.
+ * - no-plan-owner: two-layer, spec.md approved, no plan-N.md lists the
+ *   target. The guard relaxes it to warn + off-plan log during
+ *   implementation phase.
+ * - deny: anything else (no research.md, a document not approved, hash
+ *   drift, parent-spec-hash missing or stale).
+ */
+export function evaluateTarget(query: TargetQuery): TargetEvaluation {
+  const wfPaths = resolveWorkflowPaths(query.wfDir);
+  if (!isWorkflowActive(wfPaths, readWorkflowState(wfPaths.state))) {
+    return { kind: "inactive" };
+  }
+  const deny = (): TargetEvaluation => ({
+    kind: "deny",
+    diagnosis: diagnoseGate(query.wfDir, query.label ?? query.target),
+  });
+  if (!existsSync(wfPaths.research)) {
+    return deny();
+  }
+  if (!existsSync(wfPaths.spec)) {
+    return isDocumentApproved(evaluateDocument(wfPaths.plan))
+      ? { kind: "allow", owner: wfPaths.plan }
+      : deny();
+  }
+
+  if (!isDocumentApproved(evaluateDocument(wfPaths.spec))) {
+    return deny();
+  }
+  let specHash: string;
+  try {
+    specHash = computeDocumentHash(
+      readFileSync(wfPaths.spec, "utf-8"),
+      SPEC_NORMALIZERS,
+    );
+  } catch {
+    return deny();
+  }
+
+  for (const planPath of findPlanNumberedFiles(query.wfDir)) {
+    let planContent: string;
+    try {
+      planContent = readFileSync(planPath, "utf-8");
+    } catch {
+      continue;
+    }
+    const listed = parseFilesPaths(planContent).map((entry) =>
+      resolve(query.filesBase, expandTilde(entry)),
+    );
+    if (!listed.includes(query.target)) {
+      continue;
+    }
+    if (!isDocumentApproved(evaluateDocument(planPath))) {
+      return deny();
+    }
+    // A missing parent-spec-hash is a conservative deny: the plan cannot
+    // prove which spec it was approved against.
+    const marker = parseLatestAutoReviewMarker(planContent);
+    if (
+      !marker ||
+      marker.parentSpecHash === null ||
+      marker.parentSpecHash !== specHash
+    ) {
+      return deny();
+    }
+    return { kind: "allow", owner: planPath };
+  }
+
+  return {
+    kind: "no-plan-owner",
+    implementationPhase: isImplementationPhase(query.wfDir, wfPaths, true),
+    diagnosis: diagnoseGate(query.wfDir, query.label ?? query.target),
+  };
 }
 
 /** Render a diagnosis as the multi-line text used in a deny reason / `status`. */

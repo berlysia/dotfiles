@@ -17,7 +17,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { isWorkflowActiveForTesting } from "../../implementations/document-workflow-guard.ts";
+import { isWorkflowActive } from "../../lib/workflow-gate.ts";
 import sessionHook, {
   extractGuardMatcher,
   isWorkflowArmedForTesting,
@@ -542,7 +542,7 @@ describe("armed predicate drift", () => {
       const paths = resolveWorkflowPaths(dir);
       strictEqual(
         isWorkflowArmedForTesting(paths),
-        isWorkflowActiveForTesting(paths, null),
+        isWorkflowActive(paths, null),
         files.join(",") || "(none)",
       );
     }
@@ -554,10 +554,7 @@ describe("armed predicate drift", () => {
     const dir = realpathSync(mkdtempSync(join(tmpdir(), "armed-")));
     const paths = resolveWorkflowPaths(dir);
     strictEqual(isWorkflowArmedForTesting(paths), false);
-    strictEqual(
-      isWorkflowActiveForTesting(paths, { mode: "document-workflow" }),
-      true,
-    );
+    strictEqual(isWorkflowActive(paths, { mode: "document-workflow" }), true);
   });
 });
 
