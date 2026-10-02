@@ -2,7 +2,7 @@
 
 これはモデルが Document Workflow を実行するための操作ガイド。行動する順に読む。機構の詳細（hash 3 種の意味、workflow dir の引き継ぎ、S3 移行手順、carry-forward の責務分離、mechanical-lane の全条件、起動軸）は `/document-workflow-reference` skill に分離してある。判断に迷ったらそれを読む。
 
-成果物の置き場は workflow dir（`<session 開始時の root>/.tmp/sessions/<session-id 先頭8桁>`）。絶対パスは `workflow-cli dir` の `wfDir=` 行で確かめる。hook はこのパスを hook 入力から自力で導出するため、環境変数が無くても enforce は効く。
+成果物の置き場は workflow dir（`<開始時の root>/.tmp/sessions/<session-id 先頭8桁>`。絶対パスは `workflow-cli dir` の `wfDir=`）。hook は hook 入力から自力で導出するので、環境変数が無くても enforce は効く。
 
 ## Task Intake Routing
 
@@ -38,7 +38,7 @@
    - **5.2 Round 2 以降は差分**: 前 round の非 pass reviewer + `logic-validator` だけ再実行（`round` / `stamp` もこの集合）。Key Decisions / 白紙案を変えたら `round <doc> --full`。全員 pass で軽微指摘のみなら反映後に `stamp --verdict pass`、新 round は起こさない。
    - **5.3 予算**: pass 後 3 round で素の `round` は拒否。着地見込み（blocker なし・Key Decisions 不変で直せる・指摘が狭まる）があれば Round 6 まで `--self-extend --reason "non-pass N→M; remaining: ..."`。Round 6 で未着地なら `review-reframer` に問題変形を含む 4 択を検討させ `<wfDir>/reframer-review.<doc>` に記録。(a) 続行推奨なら Round 9 まで `--reframer-extend`、他の推奨か Round 9 で未着地なら人間に仰ぐ。Executive Summary に承認者別の延長回数と記録の要約、Round 7 以降は Risks にも書く。人間の指示なら `--extend --reason "<指示>"`。詳細は `/document-workflow-reference`「ラウンド予算」。`## Files` が prose のみなら追加レビュアーなし。
 6. **インテント整合性トリアージ（必須）**: `/intent-alignment-triage` を実行し、元のオーダーの本義を歪めてスコープを縮める指摘（divergent）を除外する。結果は `workflow-cli triage <doc> --adopted N --excluded M` で marker に記録する。トリアージ前にレビュー結果をユーザーへ提示しない。
-7. **承認**: 人間が会話で `承認`（承認待ちが複数なら `承認 plan-2.md`）と書く。hook がその時点の hash を `approvals.log` に記録する（下記 CRITICAL）。
+7. **承認**: 人間が会話で `承認`（複数なら文書名も）と書く（下記 CRITICAL）。
 8. **実装**: 三状態 + hash 一致がそろってから着手する。**着手前にオフロード判定を 1 行宣言する**（`@~/.claude/rules/model-offloading.md`）。
 
 ### ターン終端規則（重要）
@@ -48,9 +48,9 @@
 ## 二層モード（spec + plan-N）
 
 - `spec.md` = 設計承認単位（独立 hash）。`plan-N.md` = 実行承認単位（独立 hash + `parent-spec-hash` 連鎖）。
-- 承認順: spec.md を complete → pass → 人間が会話で承認してから、各 plan-N.md を独立に同手順で承認する。
+- 承認順: spec.md を complete → pass → 承認してから、各 plan-N.md を独立に同手順で承認する。
 - `document-workflow-guard` は実装系書き込み時に、(a) spec.md 三状態 + hash 一致、(b) 対象ファイルが属する plan-N.md 三状態 + hash 一致、(c) plan-N.md の `parent-spec-hash` = 現 spec.md hash、を検証する。いずれか欠けると deny。
-- spec.md を編集して hash が動いたら plan-N.md の `parent-spec-hash` が不一致になり自動で実装ブロックされる。plan-N.md の Approval を pending に戻し、再レビュー・再承認する。
+- spec.md を編集して hash が動いたら plan-N.md の `parent-spec-hash` が不一致になり自動で実装ブロックされる。plan-N.md を再レビュー・再承認する。
 - deny された場合、guard は「どの条件が不成立か・見つかった status 行・次の 1 手」を診断で示す。`workflow-cli status` で同じ診断を確認できる。
 - **ワークフロー成果物の書き込みは Edit / Write ツールで行う**。Bash の heredoc の中身（`->` / `<hash>` / `eval` 等）は guard が書き込みと誤検出しうる。Edit / Write はツール種別で判定されるので誤検出がなく、`plan-review-automation` も確実に発火する。
 
@@ -92,9 +92,9 @@ plan に `## テスト計画 (ISO 25010)` を設け、変更に関連する品�
 
 ## CRITICAL: 承認は人間のみ
 
-承認は人間が会話で `承認`（必要なら文書名）と書いたときにだけ記録され、gate は `approvals.log` の hash が現在の文書 hash と一致するときだけ通す。Claude は `Approval Status: approved` を書かない（guard が deny）。`/execute-plan` は承認の代わりにならない。
+人間が会話で `承認` と書くと hook がその版の hash を `approvals.log` に記録し、gate はこの hash と現在の hash の一致を求める。Claude は `Approval Status: approved` を書かない（guard が deny）。`/execute-plan` は承認ではない。
 
-- 承認後に hash が動く改訂は再承認が要る。hook が承認行を書き換えた直後は読み直す。取り消しは承認行を pending に戻す（詳細は reference skill「承認の記録」）
+- hash が動く改訂は再承認が要る。hook の書き換え直後は読み直す。取り消しは承認行を pending に（詳細: reference skill「承認の記録」）
 - research/spec/plan/plan-N への編集は承認前でも許可される。
 - 実装系書き込み（Write/Edit/NotebookEdit/Bash）は `document-workflow-guard` が enforce で制御する。`.tmp/` もプロジェクト内なので対象になる。承認前の使い捨て作業は session の scratchpad か `mktemp -d` の出力先に、リテラルの絶対パスで書く（他 repo・`$HOME`・dotfiles には書かない）。
 - 実装フェーズでは、承認済み spec + plan の三状態 + hash 一致がそろっていれば、どの plan-N.md の Files にも無いファイルへの書き込みは deny でなく warn + `off-plan-writes.log` に降格する。hash drift / parent-spec-hash 不一致 / 未承認は依然 deny。
@@ -113,7 +113,7 @@ plan/spec を complete にし、自動レビュー + トリアージが済んだ
 - **Risks / Unknowns**: <既知リスク・未検証の前提>
 - **Review Status**: verdict / reviewers / hash（auto-review marker から）
 - **Open Questions**: <ユーザー判断を仰ぐ点、なければ N/A>
-- **Next Action**: 会話で `承認`（複数なら文書名つき）と書いてください / 追加修正を依頼してください
+- **Next Action**: 会話で `承認`（複数なら文書名も）と書いてください / 追加修正を依頼してください
 ```
 
 Experience Delta が Goal の達成に直結しているか自己検証する。自動レビューを通さずに `verdict=pass` と書かない。

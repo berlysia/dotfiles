@@ -17,10 +17,9 @@ const referenceSkill = join(
 );
 
 // 12KB (K8) plus room for the pre-approval scratch-location rule, which is
-// mirrored by SCRATCH_HINT in document-workflow-guard.ts, and for the
-// conversational-approval procedure (ADR-0022). The always-loaded size is
-// still well under half of the original 36KB.
-const BUDGET_BYTES = 14 * 1024;
+// mirrored by SCRATCH_HINT in document-workflow-guard.ts. The always-loaded
+// size is still about a third of the original 36KB.
+const BUDGET_BYTES = 13 * 1024;
 
 test("workflow.md stays within the operator-guide budget (K8)", () => {
   ok(existsSync(workflowMd), "workflow.md must exist");
