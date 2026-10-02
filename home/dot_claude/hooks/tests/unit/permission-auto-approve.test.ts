@@ -1,6 +1,6 @@
 #!/usr/bin/env node --test
 
-import { deepStrictEqual, strictEqual } from "node:assert";
+import { deepStrictEqual, notStrictEqual, ok, strictEqual } from "node:assert";
 import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, it, mock } from "node:test";
 import {
@@ -277,6 +277,27 @@ describe("permission-auto-approve.ts hook behavior", () => {
           "deny",
           `Command "${cmd}" should be denied`,
         );
+      });
+    }
+
+    // Issue #219: these shapes took seconds with the regex versions of the dangerous patterns.
+    for (const [name, cmd] of [
+      ["a long blank run after dd", "dd " + " ".repeat(100000) + "x"],
+      ["a repeated dd word", "dd if ".repeat(16667)],
+      ["a repeated curl word", "curl x ".repeat(14286)],
+    ] as const) {
+      it(`judges ${name} in linear time without denying`, () => {
+        const input: PermissionRequestInput = {
+          session_id: "test-session",
+          tool_name: "Bash",
+          tool_input: { command: cmd },
+        };
+
+        const start = Date.now();
+        const result = staticRuleEngine(input);
+        const elapsed = Date.now() - start;
+        ok(elapsed < 1000, `${elapsed} ms`);
+        notStrictEqual(result.behavior, "deny");
       });
     }
   });

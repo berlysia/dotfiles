@@ -7,6 +7,7 @@
 
 import { ok, strictEqual } from "node:assert";
 import { describe, it } from "node:test";
+import { DANGEROUS_PATTERNS } from "../../implementations/permission-auto-approve.ts";
 import { DANGEROUS_COMMAND_PATTERNS } from "../../lib/command-parsing.ts";
 import {
   hasTopLevelAlternation,
@@ -50,6 +51,7 @@ const TABLES: Record<string, OracleMatcher[]> = {
   DANGEROUS_COMMAND_PATTERNS: oraclesOf(
     DANGEROUS_COMMAND_PATTERNS.map((entry) => entry.pattern),
   ),
+  DANGEROUS_PATTERNS: oraclesOf(DANGEROUS_PATTERNS),
 };
 
 /** Regex sources copied verbatim from the literals on origin/master (`git show origin/master:<file>`), `.source` form. */
@@ -66,9 +68,14 @@ const ORIGINAL_SOURCES: Record<string, string[]> = {
     "git\\s+.*--no-verify",
     "git\\s+.*--no-gpg-sign",
   ],
+  DANGEROUS_PATTERNS: [
+    "\\bdd\\s+.*if=",
+    "curl.*\\|\\s*(sh|bash|zsh)",
+    "wget.*\\|\\s*(sh|bash|zsh)",
+  ],
 };
 
-const EXPECTED_TOTAL = 10;
+const EXPECTED_TOTAL = 13;
 
 interface RuleSpec {
   source: string;
@@ -189,6 +196,32 @@ const RULES: RuleSpec[] = [
     ["git commit --no-gpg-sign", "git  commit  x --no-gpg-sign"],
     { perf: [() => "git " + " ".repeat(100000) + "x"] },
   ),
+  spec(
+    "\\bdd\\s+.*if=",
+    ["dd", "if=", "x"],
+    ["if", "dd if=", "ddd", "-dd"],
+    ["dd if=x", "dd  of=x if=y", "x dd \nif=", "dd \nif="],
+    {
+      perf: [
+        () => "dd " + " ".repeat(100000) + "x",
+        () => "dd if ".repeat(16667),
+      ],
+    },
+  ),
+  spec(
+    "curl.*\\|\\s*(sh|bash|zsh)",
+    ["curl", "|", "sh", "x"],
+    ["bash", "zsh", "| sh", "shx", "fish"],
+    ["curl x | sh", "curl x |bash", "curl x |\nzsh", "curl|  zsh"],
+    { perf: [() => "curl x ".repeat(14286)] },
+  ),
+  spec(
+    "wget.*\\|\\s*(sh|bash|zsh)",
+    ["wget", "|", "sh", "x"],
+    ["bash", "zsh", "| sh", "shx", "fish"],
+    ["wget x | sh", "wget x |bash", "wget x |\nzsh", "wget|  zsh"],
+    { perf: [() => "wget x ".repeat(14286)] },
+  ),
 ];
 
 const SPEC_BY_SOURCE = new Map(RULES.map((rule) => [rule.source, rule]));
@@ -226,6 +259,7 @@ function entriesWithSpec(): Array<{
 describe("production tables", () => {
   it("loads each owner module", async () => {
     await import("../../lib/command-parsing.ts");
+    await import("../../implementations/permission-auto-approve.ts");
   });
 
   it("holds the expected number of linear matchers", () => {
