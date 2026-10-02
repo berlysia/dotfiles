@@ -1317,3 +1317,125 @@ describe("document-workflow-guard.ts two-layer mode (spec.md + plan-N.md)", () =
     });
   });
 });
+
+describe("document-workflow-guard.ts approval writes (spec K9)", () => {
+  const envHelper = new EnvironmentHelper();
+  const hook = documentWorkflowGuardHook;
+
+  afterEach(() => {
+    envHelper.restore();
+  });
+
+  function repoWith(options: WorkflowRepoOptions): {
+    repo: string;
+    wf: string;
+  } {
+    const repo = realpathSync(createWorkflowRepo(options));
+    envHelper.set("DOCUMENT_WORKFLOW_DIR", TEST_WORKFLOW_DIR);
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+    return { repo, wf: join(repo, TEST_WORKFLOW_DIR) };
+  }
+
+  async function run(
+    tool: "Write" | "Edit" | "MultiEdit",
+    input: Record<string, unknown>,
+  ) {
+    const ctx = createPreToolUseContextFor(hook, tool, input);
+    await invokeRun(hook, ctx);
+    return ctx;
+  }
+
+  it("denies an Edit or MultiEdit that turns the Approval line to approved", async () => {
+    const { wf } = repoWith(pendingWorkflowRepo());
+    (
+      await run("Edit", {
+        file_path: join(wf, "plan.md"),
+        old_string: "- Approval Status: pending",
+        new_string: "- Approval Status: approved",
+      })
+    ).assertDeny();
+    (
+      await run("MultiEdit", {
+        file_path: join(wf, "plan.md"),
+        edits: [
+          {
+            old_string: "- Approval Status: pending",
+            new_string: "- Approval Status: approved",
+          },
+        ],
+      })
+    ).assertDeny();
+  });
+
+  it("denies a Write that creates or rewrites a document as approved, even without the hyphen", async () => {
+    const { wf } = repoWith(pendingWorkflowRepo());
+    (
+      await run("Write", {
+        file_path: join(wf, "plan-9.md"),
+        content: "- Approval Status: approved\n",
+      })
+    ).assertDeny();
+    (
+      await run("Write", {
+        file_path: join(wf, "plan.md"),
+        content: "Approval Status: approved\n",
+      })
+    ).assertDeny();
+  });
+
+  it("allows revoking and rewriting an approved document without changing the value", async () => {
+    const { wf } = repoWith(approvedWorkflowRepo());
+    const approved = readFileSync(join(wf, "plan.md"), "utf-8");
+    (
+      await run("Write", {
+        file_path: join(wf, "plan.md"),
+        content: `${approved}\n`,
+      })
+    ).assertSuccess({});
+    (
+      await run("Edit", {
+        file_path: join(wf, "plan.md"),
+        old_string: "- Approval Status: approved",
+        new_string: "- Approval Status: pending",
+      })
+    ).assertSuccess({});
+  });
+
+  it("denies tool writes to this or another session's approvals.log, in any letter case", async () => {
+    const { repo, wf } = repoWith(approvedWorkflowRepo());
+    for (const path of [
+      join(wf, "approvals.log"),
+      join(wf, "APPROVALS.LOG"),
+      join(repo, ".tmp", "sessions", "otherses", "approvals.log"),
+      join(repo, ".tmp", "sessions", "a", "b", "approvals.log"),
+      join(repo, ".TMP", "SESSIONS", "otherses", "approvals.log"),
+    ]) {
+      (await run("Write", { file_path: path, content: "{}\n" })).assertDeny();
+    }
+  });
+
+  it("judges a document path written with different letter case the same way", async () => {
+    // Approved workflow: an off-plan write is only warned about, so K9 is the
+    // only thing that can deny. Two approved lines exceed the existing one
+    // whether the upper-case path aliases plan.md (macOS) or is new (Linux).
+    const { repo } = repoWith(approvedWorkflowRepo());
+    const upper = join(repo, TEST_WORKFLOW_DIR.toUpperCase(), "PLAN.MD");
+    (
+      await run("Write", {
+        file_path: upper,
+        content: "- Approval Status: approved\n- Approval Status: approved\n",
+      })
+    ).assertDeny();
+  });
+
+  it("refuses an Edit whose old_string is not found but whose new_string adds approval", async () => {
+    const { wf } = repoWith(pendingWorkflowRepo());
+    (
+      await run("Edit", {
+        file_path: join(wf, "plan.md"),
+        old_string: "- Approval Status: “pending”",
+        new_string: "- Approval Status: approved",
+      })
+    ).assertDeny();
+  });
+});
