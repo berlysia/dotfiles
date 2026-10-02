@@ -87,15 +87,15 @@ echo ${CLAUDE_TASK_LIST_ID:-$(claude-task-list-id "<TaskGetで取得した最初
 
 **禁止**: どちらの経路でも `export DOCUMENT_WORKFLOW_DIR=...` / `export CLAUDE_CODE_TASK_LIST_ID=...` を「次セッションで実行させる手順」として書くこと。既に起動しているプロセスの env は差し替えられないため、無効な指示になる。
 
-Document Workflow が進行中か（`$DOCUMENT_WORKFLOW_DIR` に `research.md` / `spec.md` / `plan*.md` があるか）を確認し、あれば旧 dir の実パスを控える:
+Document Workflow が進行中か（wfDir（`workflow-cli dir` の `wfDir=`）に `research.md` / `spec.md` / `plan*.md` があるか）を確認し、あれば旧 dir の実パスを控える:
 
 ```bash
-echo "$DOCUMENT_WORKFLOW_DIR" && ls "$DOCUMENT_WORKFLOW_DIR" 2>/dev/null
+workflow-cli dir && ls "<wfDir の値>" 2>/dev/null
 ```
 
 #### 経路 A: `/clear` 後に貼るプロンプト
 
-`/clear` は session を終了して新しい session id を発行するため、`DOCUMENT_WORKFLOW_DIR` は新しい `.tmp/sessions/<新 id 先頭8桁>` に切り替わり、タスクリストも新規になる。旧成果物は**パスで明示し、コピーさせる**（auto-review hash は文書内容から算出されるため、dir を移しても承認状態は保たれる）。
+`/clear` は session を終了して新しい session id を発行するため、wfDir は新しい `.tmp/sessions/<新 id 先頭8桁>` に切り替わり、タスクリストも新規になる。旧成果物は**パスで明示し、コピーさせる**（auto-review hash は文書内容から算出されるため、dir を移しても承認状態は保たれる）。
 
 ```markdown
 ## `/clear` 後に貼るプロンプト
@@ -104,7 +104,7 @@ echo "$DOCUMENT_WORKFLOW_DIR" && ls "$DOCUMENT_WORKFLOW_DIR" 2>/dev/null
 タスクを引き継ぎます。
 
 1. 前セッションの Document Workflow 成果物を現セッションの dir に取り込む:
-   cp -a .tmp/sessions/<旧 id 先頭8桁>/. "$DOCUMENT_WORKFLOW_DIR"/
+   cp -a .tmp/sessions/<旧 id 先頭8桁>/. <新 session の wfDir>/
 2. 前セッションのタスクは ~/.claude/tasks/<task-list-id>/ にある。読み込んで TaskCreate で再登録するか、内容を確認して作業を再開する
 3. /execute-plan でタスクを順番に実装（ビルド・テスト検証付き）
    CLAUDE.md にプロジェクト固有のルールがあれば従ってください。

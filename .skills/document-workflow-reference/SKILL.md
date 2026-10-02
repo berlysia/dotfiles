@@ -1,6 +1,6 @@
 ---
 name: document-workflow-reference
-description: Document Workflow の機構リファレンス。operator guide (`~/.claude/rules/workflow.md`) から分離した詳細を引く。hash 3 種の意味、三状態承認、DOCUMENT_WORKFLOW_DIR 引き継ぎ、S3 移行手順、prescribed-fix carry-forward の責務分離、mechanical-lane の 4 条件、ISO 25010 特性選択ガイド、workflow-cli のサブコマンド仕様を扱う。deny の原因が分からない・hash が動いた・モード判定に迷う・mechanical-lane の可否を判断するとき、誤って workflow に入ってしまい抜けたいとき、または `/document-workflow-reference` と指示されたときに読む。
+description: Document Workflow の機構リファレンス。operator guide (`~/.claude/rules/workflow.md`) から分離した詳細を引く。hash 3 種の意味、三状態承認、workflow dir の引き継ぎ、S3 移行手順、prescribed-fix carry-forward の責務分離、mechanical-lane の 4 条件、ISO 25010 特性選択ガイド、workflow-cli のサブコマンド仕様を扱う。deny の原因が分からない・hash が動いた・モード判定に迷う・mechanical-lane の可否を判断するとき、誤って workflow に入ってしまい抜けたいとき、または `/document-workflow-reference` と指示されたときに読む。
 ---
 
 # Document Workflow — Mechanism Reference
@@ -40,7 +40,7 @@ guard の deny は固定文ではなく診断を返す: どの条件（Plan/Revi
 ## Bash 経路と tripwire
 
 - 文書を Bash（`python3 - <<'PY'` 等のインタプリタ heredoc）で書き換えても、`workflow-bash-sync`（PostToolUse Bash）が wfDir 内文書の内容 hash 差分を検知してレビュー推奨を出す。subagent 由来の Bash（`agent_id` あり）は対象外。
-- 承認前のインタプリタ inline-script 書き込み（`python|node|bun|deno` の `-c`/`-e`/heredoc に書込指標があり、書込先が scratch root 外 or 証明不能）は保守的に deny される。scratch root は `/tmp` / `$CLAUDE_JOB_DIR` / `.tmp/` / `$DOCUMENT_WORKFLOW_DIR`。読み取りのみの解析スクリプトは許可される。
+- 承認前のインタプリタ inline-script 書き込み（`python|node|bun|deno` の `-c`/`-e`/heredoc に書込指標があり、書込先が scratch root 外 or 証明不能）は保守的に deny される。scratch root は `/tmp` / `$CLAUDE_JOB_DIR` / `.tmp/` / 起動時に pin した `DOCUMENT_WORKFLOW_DIR`。読み取りのみの解析スクリプトは許可される。
 - gate 閉（承認前）に repo 内ファイルが書き換わると tripwire が次の Bash 後に検知し `off-plan-writes.log` に記録して告知する。`git` 不在・200ms 超過では `.tripwire-disabled` を作り一度だけ告知して skip する。
 
 ## 誤って入った場合の脱出
@@ -50,7 +50,7 @@ guard は wfDir に `research.md` または `plan.md` が存在した時点で e
 手順:
 
 1. モデルは routing を誤ったと 1 行で述べる。どの条件で直接実行相当と判断したかを含める。**まだ実装しない**。
-2. `echo "$DOCUMENT_WORKFLOW_DIR"` で wfDir を得て、リテラルパスに展開した削除コマンドをユーザーに提示し、実行を依頼する。プロンプトで `! rm -f ...` と打てば同セッション内で実行できる。
+2. `workflow-cli dir` の `wfDir=` 行で wfDir を得て、リテラルパスに展開した削除コマンドをユーザーに提示し、実行を依頼する。プロンプトで `! rm -f ...` と打てば同セッション内で実行できる。
 
    ```bash
    rm -f .tmp/sessions/<id8>/research.md .tmp/sessions/<id8>/plan.md .tmp/sessions/<id8>/spec.md .tmp/sessions/<id8>/plan-*.md
@@ -62,7 +62,7 @@ guard は wfDir に `research.md` または `plan.md` が存在した時点で e
 機構メモ:
 
 - `research.md` と `plan.md` の**両方**を消す。どちらか一方が残ると armed のまま。
-- モデル自身が Bash で `rm` しても通る。wfDir 配下の `.md` は文書書き込みとして allow されるためである。ただし `rm "$DOCUMENT_WORKFLOW_DIR/plan.md"` は **deny** される。guard はコマンド文字列の環境変数を展開せず、リテラル `$DOCUMENT_WORKFLOW_DIR/...` を cwd 相対で解決するため wfDir 配下と判定できない。`rm -r <wfDir>` も対象が `.md` でないので deny される。通るとしてもユーザーに委ねるのは、routing 誤りの自己判定を guard の外で単独実行しないためである。CLAUDE.md の「steering を一方的に無効化しない」に従う。
+- モデル自身が Bash で `rm` しても通る。wfDir 配下の `.md` は文書書き込みとして allow されるためである。ただし `rm "$WF/plan.md"` のようにシェル変数を使った形は **deny** される。guard はコマンド文字列の環境変数を展開せず、リテラル `$WF/...` を cwd 相対で解決するため wfDir 配下と判定できない。`rm -r <wfDir>` も対象が `.md` でないので deny される。通るとしてもユーザーに委ねるのは、routing 誤りの自己判定を guard の外で単独実行しないためである。CLAUDE.md の「steering を一方的に無効化しない」に従う。
 - `.tripwire-baseline` / `plan-review.cache.json` / `reviewer-runs.log` 等は残っても無害で、7 日で GC される。ただし同セッションで後から本当に workflow に入り直すと、古い `.tripwire-baseline` との差分が「gate 閉時の off-plan 書換」として 1 回報告される。気になるなら `.tripwire-baseline` も同時に消す。
 - `/clear` も脱出になる。新 session id で新 wfDir が導出され inactive になる。会話文脈を失う代わりにコマンドは不要。
 - `DOCUMENT_WORKFLOW_WARN_ONLY=1` は脱出ではなく guard 全体の無効化であり、起動時 env でしか効かない。routing 誤りの対処に使わない。ADR-0013 参照。
@@ -100,15 +100,15 @@ mechanical-lane を選んだら 4 条件それぞれの判定根拠を plan.md �
 | セキュリティ対応      | セキュリティ、信頼性                 |
 | API/データモデル変更  | 互換性、機能適合性、セキュリティ     |
 
-## DOCUMENT_WORKFLOW_DIR の引き継ぎ
+## workflow dir の引き継ぎ
 
 hook は wfDir を hook 入力の `session_id` + cwd から導出するので、環境変数が無くても enforce は効く。次セッションへ引き継ぐとき:
 
 - **`/clear` して同じプロセスで続ける**: `/clear` は新しい session id を発行し `.tmp/sessions/<新 id 先頭8桁>` になる。前セッションの成果物を新 dir へ `cp -a` でコピーする。auto-review hash は文書内容のみから算出されるのでパスが変わっても承認状態は保たれる。コピーは必ず空変数ガードとセットで同じ Bash 呼び出し内で行う:
 
   ```bash
-  : "${DOCUMENT_WORKFLOW_DIR:?set by the SessionStart hook; unset means unresolvable}"
-  cp -a .tmp/sessions/<旧 id 先頭8桁>/. "$DOCUMENT_WORKFLOW_DIR"/
+  workflow-cli dir   # wfDir=<新しい dir> を確かめる
+  cp -a .tmp/sessions/<旧 id 先頭8桁>/. <wfDir の値>/
   ```
 
   変数が空のまま `cp` が走ると `cp -a <src>/. /` になりルート直下へ展開する。
@@ -135,7 +135,7 @@ hash 正規化を変更した場合、旧 normalizer で承認済の進行中成
 - `workflow-cli stamp <doc> --verdict <pass|needs-work|blocker> --reviewers a+b`: Round N セクションと reviewer 実行証跡（`reviewer-runs.log`）を確認し、揃っていれば厳密形の Review Status と marker を書く。marker には stamp 時点の round 数を `round=N` として書く（marker は hash 計算前に除去されるので hash は動かない）。証跡が無ければ非 0。
 - `workflow-cli triage <doc> --adopted N --excluded M`: intent-triage marker を書く。
 
-いずれも Approval 行に触れる変更は拒否する（承認は人間のみ）。wfDir は `--wf-dir`（`isStrictlyUnderProjectSubdir` で検証し、`.tmp/sessions` の外なら既定 dir に切り替えず非 0）または `$DOCUMENT_WORKFLOW_DIR`。session 由来の dir と食い違うと警告する。
+いずれも Approval 行に触れる変更は拒否する（承認は人間のみ）。wfDir は `--wf-dir`（`isStrictlyUnderProjectSubdir` で検証し、`.tmp/sessions` の外なら既定 dir に切り替えず非 0）または `CLAUDE_PROJECT_DIR` と `CLAUDE_CODE_SESSION_ID` からの導出（起動時 pin があればそれ）。`--wf-dir` が session の dir と違えば警告する。成功出力は `wfDir=` / `source=` / `wrote=` で終わる。`workflow-cli dir` は wfDir と決定元だけを出す。
 
 ## 差分再レビュー（Round 2 以降、ADR-0015 K6）
 

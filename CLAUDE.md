@@ -9,7 +9,7 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
 ### Document Workflow 方針
 
 - このプロジェクトでは Plan Mode より **Document Workflow** を優先する（`@~/.claude/rules/workflow.md` 参照）
-- 複数セッション並行可能（`DOCUMENT_WORKFLOW_DIR` でディレクトリ分離）
+- 複数セッション並行可能（session ID ごとに `.tmp/sessions/<id 先頭8桁>` で分離。`workflow-cli dir` で確認）
 
 ### Chezmoi ファイル管理
 

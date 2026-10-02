@@ -1,8 +1,8 @@
 # Workflow — Operator Guide
 
-これはモデルが Document Workflow を実行するための操作ガイド。行動する順に読む。機構の詳細（hash 3 種の意味、DOCUMENT_WORKFLOW_DIR 引き継ぎ、S3 移行手順、carry-forward の責務分離、mechanical-lane の全条件、起動軸）は `/document-workflow-reference` skill に分離してある。判断に迷ったらそれを読む。
+これはモデルが Document Workflow を実行するための操作ガイド。行動する順に読む。機構の詳細（hash 3 種の意味、workflow dir の引き継ぎ、S3 移行手順、carry-forward の責務分離、mechanical-lane の全条件、起動軸）は `/document-workflow-reference` skill に分離してある。判断に迷ったらそれを読む。
 
-成果物の置き場は `$DOCUMENT_WORKFLOW_DIR`（= `.tmp/sessions/<session-id 先頭8桁>`）。hook はこのパスを hook 入力から自力で導出するため、環境変数が無くても enforce は効く。
+成果物の置き場は workflow dir（`<session 開始時の root>/.tmp/sessions/<session-id 先頭8桁>`）。絶対パスは `workflow-cli dir` の `wfDir=` 行で確かめる。hook はこのパスを hook 入力から自力で導出するため、環境変数が無くても enforce は効く。
 
 ## Task Intake Routing
 
@@ -25,7 +25,7 @@
 
 ## 共通フロー（8 ステップ）
 
-1. **調査**: 対象コードを深く読み `$DOCUMENT_WORKFLOW_DIR/research.md` を書く。
+1. **調査**: 対象コードを深く読み `<wfDir>/research.md` を書く。
 2. **計画**: モードに応じ `plan.md`（単層）または `spec.md` + `plan-1.md`…（二層）を書く。テンプレートは `~/.claude/templates/spec.md` / `plan-execution.md`。
 3. **注釈反復**: ユーザー注釈を反映し、都度「まだ実装しない」を明示する。
    - **コードベース探索ゲート**: 質問の前に、コードを読めば分かる不明点は自力で解消し、事実と推奨を出す。聞くのはコードだけでは決められない点のみ。
