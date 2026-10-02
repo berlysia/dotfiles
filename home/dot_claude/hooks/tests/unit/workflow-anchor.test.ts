@@ -69,6 +69,7 @@ describe("workflow dir anchors on CLAUDE_PROJECT_DIR, not the tool cwd", () => {
       "reviewer-run-recorder",
       "resume-incomplete-work",
       "compaction-testament",
+      "session",
     ]) {
       const source = readFileSync(join(implDir, `${name}.ts`), "utf-8");
       assert.match(

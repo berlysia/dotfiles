@@ -1,7 +1,7 @@
 #!/usr/bin/env node --test
 
 import { deepStrictEqual, ok, strictEqual } from "node:assert";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import {
   appendFileSync,
   existsSync,
@@ -352,6 +352,39 @@ describe("session.ts hook behavior", () => {
         ),
         `Expected fallback path, got:\n${content}`,
       );
+    });
+
+    it("exports CLAUDE_PROJECT_DIR single-quoted so sourcing returns it verbatim", async () => {
+      const weird = `/tmp/proj it's "q" $(touch x) \`id\``;
+      envHelper.set("CLAUDE_PROJECT_DIR", weird);
+      envHelper.set("DOCUMENT_WORKFLOW_DIR", undefined);
+      const ctx = createSessionStartContext("cli");
+      ctx.input.session_id = "abcdef1234567890";
+      await invokeRun(sessionHook, ctx);
+      // A minimal env keeps the user's BASH_ENV / exported functions out of the
+      // child shell, so only the env file decides what $CLAUDE_PROJECT_DIR is.
+      const result = spawnSync(
+        "bash",
+        ["-c", `. "$1"; printf %s "$CLAUDE_PROJECT_DIR"`, "_", envFilePath],
+        { encoding: "utf-8", env: { PATH: process.env.PATH ?? "" } },
+      );
+      strictEqual(result.status, 0);
+      strictEqual(result.stdout, weird);
+    });
+
+    it("quotes the transcript path export the same way", async () => {
+      const ctx = createSessionStartContext("cli", {
+        transcript_path: `/tmp/t it's $(id).jsonl`,
+      });
+      ctx.input.session_id = "abcdef1234567890";
+      await invokeRun(sessionHook, ctx);
+      const result = spawnSync(
+        "bash",
+        ["-c", `. "$1"; printf %s "$CLAUDE_TRANSCRIPT_PATH"`, "_", envFilePath],
+        { encoding: "utf-8", env: { PATH: process.env.PATH ?? "" } },
+      );
+      strictEqual(result.status, 0);
+      strictEqual(result.stdout, `/tmp/t it's $(id).jsonl`);
     });
   });
 });

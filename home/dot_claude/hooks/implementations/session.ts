@@ -10,6 +10,8 @@ import {
   getDistillHealthNotice,
   getUnreadDigestPreview,
 } from "../lib/insight-digest.ts";
+import { getProjectRoot } from "../lib/project-root.ts";
+import { shellSingleQuote } from "../lib/shell-quote.ts";
 import { resolveWorkflowPaths } from "../lib/workflow-paths.ts";
 import { resolveWorkflowDir } from "../lib/workflow-resolve.ts";
 
@@ -129,10 +131,11 @@ const hook = defineHook({
       // rather than trusting a pre-set value unconditionally: a pin that
       // escapes .tmp/sessions is rejected here exactly as it is by the guard,
       // so the two cannot silently disagree about which directory is armed.
-      // decision 2: cwd comes from process.cwd(), never context.input.cwd --
-      // this hook is not one of the five CLAUDE_TEST_CWD readers, and adding
-      // it as a sixth would blur the seam K11b deliberately left alone.
-      const cwd = process.cwd();
+      // The root is getProjectRoot(). In production that is the
+      // CLAUDE_PROJECT_DIR Claude Code passes (the dir the session started
+      // in), which a Bash `cd` or a move into a worktree does not change.
+      // input.cwd is not used.
+      const cwd = getProjectRoot();
       const sessionId = context.input.session_id;
       const resolution = resolveWorkflowDir({ cwd, sessionId });
       const userPin = process.env.DOCUMENT_WORKFLOW_DIR;
@@ -148,18 +151,22 @@ const hook = defineHook({
         appendFileSync(envFile, `export CLAUDE_SESSION_ID="${sessionId}"\n`);
         appendFileSync(
           envFile,
-          `export CLAUDE_TRANSCRIPT_PATH="${transcriptPath}"\n`,
+          `export CLAUDE_PROJECT_DIR=${shellSingleQuote(cwd)}\n`,
         );
         appendFileSync(
           envFile,
-          `export CLAUDE_PROJECT_HASH="${projectHash}"\n`,
+          `export CLAUDE_TRANSCRIPT_PATH=${shellSingleQuote(transcriptPath)}\n`,
+        );
+        appendFileSync(
+          envFile,
+          `export CLAUDE_PROJECT_HASH=${shellSingleQuote(projectHash)}\n`,
         );
 
         const taskListId = process.env.CLAUDE_CODE_TASK_LIST_ID;
         if (taskListId) {
           appendFileSync(
             envFile,
-            `export CLAUDE_TASK_LIST_ID="${taskListId}"\n`,
+            `export CLAUDE_TASK_LIST_ID=${shellSingleQuote(taskListId)}\n`,
           );
         }
 
@@ -246,7 +253,7 @@ const hook = defineHook({
 
       if (context.input.cwd !== cwd) {
         messages.push(
-          `cwd mismatch: context.input.cwd=${context.input.cwd} but process.cwd()=${cwd}.`,
+          `cwd mismatch: context.input.cwd=${context.input.cwd} but the project root is ${cwd}.`,
         );
       }
 
