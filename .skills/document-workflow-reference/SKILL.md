@@ -13,7 +13,7 @@ operator guide（`~/.claude/rules/workflow.md`）は「何をどの順でやる�
 
 - **Plan Status**: `draft` → `complete`（モデルが書く）
 - **Review Status**: `pass` / `needs-work` / `blocker`（`workflow-cli stamp` が厳密形で書く。手で転記しない）
-- **Approval Status**: `pending` → `approved`（**人間のみ**。下記「承認の記録」）
+- **Approval Status**: `pending` → `approved`（**人間のみ**。承認の質問で文書を選ぶか、会話で `approve` と書くと hook が記録して書き換える。下記「承認の記録」）
 
 hash は 3 種あり、いずれも `workflow-cli` が計算して marker に書く（モデルは転記しない）:
 
@@ -23,10 +23,15 @@ hash は 3 種あり、いずれも `workflow-cli` が計算して marker に書
 
 ## 承認の記録
 
+- **AskUserQuestion の経路**: `workflow-cli ask-approval` が質問の JSON を出す（承認待ちの先頭 3 件。残りは記録の後にもう一度呼ぶと出る。注意は標準エラー）。model はその出力をそのまま AskUserQuestion に渡す。`approval-answer-recorder`（PostToolUse）は `tool_response` だけを読み、記録時点の文書の状態から作り直した質問と深い等価で一致したときだけ記録する。`tool_input` は model が書けるので判定に使わない
+- 記録しない場合: 承認らしい質問でない（一般の質問は黙って通す）/ subagent の中の呼び出し / workflow dir を解決できない / 質問の形が違う / 候補でなくなった文書がある（版が変わった、既に承認済み）/ 利用者が離席していた / 自由入力 / 「承認しない」の選択 / 指摘（notes）が付いた。いずれも recorder が理由を返す。「承認しない」は過去の承認を取り消さない
+- 照合は全か無か（1 つでも合わなければ何も記録しない）。記録は文書ごとで、一部が失敗したら失敗した文書だけ `ask-approval` を再実行すると質問に出る。利用者が `approve <文書名>` と打つ回復も使える
+- ledger の行には記録した経路 `via`（`utterance` / `ask`）が入る。gate は読まず、`workflow-cli status` が `approval via:` で表示する
+- guard は承認らしい質問の `answers` / `annotations` を model が埋めた AskUserQuestion を deny する
 - 人間が会話で `承認`（複数が承認待ちなら `承認 plan-2.md`）と書くと、`approval-recorder`（UserPromptSubmit）が `<wfDir>/approvals.log` に `{"v":1,"doc","hash","session","at"}` を 1 行追記し、承認行を approved に書き換える。発話の全体がこの形で、`source` が `user` か無く、サブエージェントの外のときだけ記録する
 - gate の条件は、3 status 行・marker verdict・hash 一致に加えて「log の同じ `doc` の最後の行の hash = 現在の文書 hash」。`session` は照合に使わないので、wfDir を複製しても同じ版の承認は引き継がれる
 - 診断には `approval: recorded=<12 桁 | none> current=<12 桁>` が出る。読み飛ばした行があれば `; ignored-lines=<N>`、log が読めなければ `; ledger-unreadable`（gate は閉じたまま）
-- 名前付きの承認（`承認 spec.md plan-1.md`）は全か無か: 1 つでも承認以外の条件を満たさなければ何も記録しない。名前なしは、承認待ちがちょうど 1 件のときだけ記録する
+- 名前付きの承認（`承認 spec.md plan-1.md`）は全か無か: 1 つでも承認以外の条件を満たさなければ何も記録しない。名前なしは、承認待ちがちょうど 1 件のときだけ記録する。2 件以上なら記録せず、model に `ask-approval` で聞き直させる
 - 承認後に hash が動く改訂をすると再承認が要る（Reviewer Outputs・marker・チェックボックスは hash に含まれない。承認後の stamp は Review Status 行を書くので再承認を要する）。取り消しは承認行を pending に戻す
 - model の Write / Edit / MultiEdit で承認行を approved にする、または `approvals.log` に書くことは guard が deny する（Bash は対象外）
 - 承認の形のプロンプト（`承認` / `approve` だけなど）を `CronCreate` / `ScheduleWakeup`（`/loop` を含む）で予約することも guard が deny する。予約したプロンプトは UserPromptSubmit で利用者の入力と区別できないため
@@ -140,10 +145,11 @@ hash 正規化を変更すると、旧 normalizer で承認済の進行中成果
 
 `workflow-cli` は marker / Review Status / Reviewer Outputs 骨格 / intent-triage marker を書く。
 
-- `workflow-cli status [<path>] [--wf-dir <dir>]`: 引数なしは主文書（plan.md / spec.md）の gate 診断と tripwire 状態。`<path>` を渡すと、そのファイルへの Write / Edit に guard が下す判定（近道で対象外、許可している文書名、off-plan、止まるなら診断）を表示する。`<path>` は CLI を実行した dir 基準。Bash のように対象が複数あるときの集合の扱いは表示しない。
+- `workflow-cli status [<path>] [--wf-dir <dir>]`: 引数なしは主文書（plan.md / spec.md）の gate 診断と tripwire 状態。`<path>` を渡すと、そのファイルへの Write / Edit に guard が下す判定（近道で対象外、許可している文書名、off-plan、止まるなら診断）を表示する。`<path>` は CLI を実行した dir 基準。Bash のように対象が複数あるときの集合の扱いは表示しない。承認の記録がある文書ごとに `approval via: <doc> via=<utterance|ask|unknown>` の行も出す。
 - `workflow-cli round <doc> [--full] [--extend|--self-extend|--reframer-extend --reason "<text>"]`: `## Reviewer Outputs (Round N)` 骨格を marker 直前に挿入し、`.round-baseline` に round 番号と時刻を記録する。Round 2 以降は下記「差分再レビュー」の集合だけを空欄で並べ、carried reviewer は `- verdict: pass (carried from Round N-1)` で埋める。`--full` は必須 reviewer 全員の空欄骨格にする。`<doc>` は wfDir 直下のファイル名（パス区切りを含まない `.md`）に限る。下記「ラウンド予算」を超える round は拒否する。
 - `workflow-cli stamp <doc> --verdict <pass|needs-work|blocker> --reviewers a+b`: Round N セクションと reviewer 実行証跡（`reviewer-runs.log`）を確認し、揃っていれば厳密形の Review Status と marker を書く。marker には `round=N` を書く（marker は hash 計算前に除去されるので hash は動かない）。証跡が無ければ非 0。
-- `workflow-cli triage <doc> --adopted N --excluded M`: intent-triage marker を書く。
+- `workflow-cli triage <doc> --adopted N --excluded M`: intent-triage marker を書く。成功時は次の一手として `ask-approval` を出す。
+- `workflow-cli ask-approval [--wf-dir <dir>]`: 承認待ち（Plan complete・Review pass・hash 一致・未承認）の文書を先頭 3 件まで選び、`{"questions":[...]}` を標準出力に出す。そのまま AskUserQuestion に渡す。記録の返答の確認方法と、残りの件数は標準エラーに出る。承認待ちが 0 件なら非 0 で終わる。
 
 いずれも Approval 行に触れる変更は拒否する。wfDir は `--wf-dir`（`isStrictlyUnderProjectSubdir` で検証し、`.tmp/sessions` の外なら既定 dir に切り替えず非 0）か、`CLAUDE_PROJECT_DIR` と `CLAUDE_CODE_SESSION_ID` からの導出（起動時 pin があればそれ）。`--wf-dir` が session の dir と違えば警告する。成功出力は `wfDir=` / `source=` / `wrote=` で終わる。`workflow-cli dir` は wfDir と決定元だけを出す。
 
