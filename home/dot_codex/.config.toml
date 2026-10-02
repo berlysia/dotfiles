@@ -48,3 +48,12 @@ inherit = 'none'
 
 [shell_environment_policy.set]
 PATH = '__CHEZMOI_HOME__/.local/share/mise/shims:__CHEZMOI_HOME__/.cargo/bin:/snap/bin:__CHEZMOI_HOME__/.local/share/pnpm:__CHEZMOI_HOME__/go/bin:__CHEZMOI_HOME__/workspace/depot_tools:__CHEZMOI_HOME__/google-cloud-sdk/bin:__CHEZMOI_HOME__/.moon/bin:__CHEZMOI_HOME__/.deno/bin:__CHEZMOI_HOME__/.local/.bin:__CHEZMOI_HOME__/.local/bin:/bin:/usr/bin:/usr/ucb:/usr/local/bin'
+AI_AGENT = '1'
+EDITOR = 'true'
+VISUAL = 'true'
+GIT_EDITOR = 'true'
+GIT_SEQUENCE_EDITOR = 'true'
+PAGER = 'cat'
+GIT_PAGER = 'cat'
+MANPAGER = 'cat'
+GIT_TERMINAL_PROMPT = '0'
