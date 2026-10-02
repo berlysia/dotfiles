@@ -111,6 +111,55 @@ Consequences 12 は「値が無いのは古い Claude Code」とし、予約し�
 - 計装の扱い（KD4）: recorder の返答に付けていた `probe:` 行（`lib/prompt-origin-probe.ts`）は外した。答えようとした問い（recorder の実行時点で transcript の行が読めるか）に「読めない」と答えが出て、(b) を採らないので再測定の予定も無いため。hook-timer の `source` / `prompt_id` の射影は残す。課題 J の再訪のきっかけ（Claude Code を更新して測定をやり直す）で、`source` に値が入り始めたかを見る手段がこれだけだから。プロンプト本文は残さず、文字列を 64 文字で切る
 - recorder の `source` の判定は残す（KD5）。2.1.287 では区別に使えないが、`user` 以外の値が来たときに記録しない挙動は害が無く、版が上がって値が届けば効く
 
+## 改訂（2026-10-03）: AskUserQuestion による承認の経路
+
+前の節で却下した課題 J の (c)（承認を AskUserQuestion の回答で受け取る）を、発話の経路を残したまま足す形で採る。前の節の本文は残し、ここに追記する。
+
+### 却下理由の解消
+
+前の節は (c) を 2 つの理由で却下した。
+
+- 「利用者が任意の時点で `承認` と打てなくなる」: 発話の経路を残して AskUserQuestion の経路を足すので、成り立たない。質問をキャンセルして議論し、済んだら `approve` と打てる。
+- 「PostToolUse の `tool_response.answers` が未実測」: 次のとおり実測した（2026-10-03、本セッション、AskUserQuestion の PreToolUse / PostToolUse の入力を書き出す一時 hook を利用者が置いて測った。各 1 試行）。
+
+| 試行 | 操作                                                      | PreToolUse の `tool_input.answers` | PostToolUse の `tool_response.answers` | PostToolUse |
+| ---- | --------------------------------------------------------- | ---------------------------------- | -------------------------------------- | ----------- |
+| T2   | model が `answers` に `A` を先に入れ、利用者が `B` を選ぶ | `A`（model の値）                  | `B`（利用者の回答）                    | 発火        |
+| T3   | multiSelect で 2 つ選ぶ                                   | なし                               | `"spec.md, plan-1.md"`                 | 発火        |
+| T4   | Esc でキャンセル                                          | なし                               | —                                      | 発火しない  |
+
+T2 では PostToolUse の `tool_input.answers` も `B` だった。`tool_response.questions` には表示した質問（`question` / `header` / `options` の `label`・`description` / `multiSelect`）がそのまま載り、入力に無いキーは足されなかった。
+
+きっかけは利用者の指摘で、承認待ちが 2 件以上のときに `承認 spec.md plan-3.md` という完全一致の文字列を打つ必要があり、「手で打てない完全一致は使えないのと同じ」だった。
+
+### 決定
+
+- 記録は新しい PostToolUse hook `approval-answer-recorder` が `tool_response` だけを読んで行う。`tool_input` は承認の根拠にも veto にも使わない（T2 で、PostToolUse の `tool_input.answers` に利用者の回答が入っていたため、veto にすると正規の承認が記録されなくなる）。
+- 質問は `workflow-cli ask-approval` が生成する（固定文・`header`・文書名の `label`・`hash=<12 桁>` の `description`・`承認しない`）。recorder は記録時点の状態から質問を作り直し、`tool_response.questions` と深い等価で一致したときだけ記録する。質問の文面を model が自由に書けると表示を偽れるため、生成物との完全一致を求める。完全一致は model も手で写せないので、生成を CLI に任せる。
+- 1 回の呼び出しに質問は 1 つ、文書は 3 件まで。`answers` は質問文がキーの map なので、同じ質問文を並べられない。
+- 記録しない条件（すべて記録しない側に倒す）: 応答に `questions` / `answers` / `annotations` 以外のキーがある（`afkTimeoutMs`・`response` を含む）/ サブエージェントの中 / 文書名が `^(spec|plan|plan-[1-9][0-9]*)\.md$` でない・重複・候補に無い / 作り直した質問と一致しない / 回答が正規の `label` と一致しない / `承認しない` と文書の併選 / `annotations` に `notes` がある。返答は種類ごとに分け、`承認しない` は失敗でなく辞退として返す。
+- 照合は全か無か、記録は文書ごと。途中で失敗した文書は `ask-approval` を呼び直すと質問に戻る。
+- `approvals.log` の行に `via`（`utterance` / `ask`）を足し、`workflow-cli status` が表示する。gate は経路を区別しないので、監査のために残す。読み手は知らないキーを無視するので `v` は 1 のまま。
+- guard は承認らしい質問に `answers` / `annotations` があれば PreToolUse で deny する（多層防御。判定の例外時も、`answers` / `annotations` があれば deny）。`AskUserQuestion` を `GUARDED_TOOLS` に足し、guard のローカルの集合は lib に一本化した。spec は `GUARDED_TOOLS_FOR_TESTING` を残すとしていたが、一本化の後は一致の検査が常に通るので削除し、代わりにテンプレートの matcher が `GUARDED_TOOLS` を覆うことをテストする。
+- 文書名なしの `approve` で承認待ちが 2 件以上なら、記録せずに model に `ask-approval` で聞き直させる。全部を承認する案は、議論の結果一部だけ直すことが普通にあるので採らない。
+- SessionStart の監査が PostToolUse の recorder の登録も報告する。`workflow-cli triage` の成功時に次の一手として `ask-approval` を出す。
+- rules/workflow.md は容量の上限を上げず、5.3 段落を縮めて両経路の記述と「判断を求める点が複数あるときは AskUserQuestion でまとめて聞く」を入れた。
+
+### 信頼の根の移動
+
+承認の根拠が「利用者が打った文字列」から「model が出した UI への利用者のクリック」に変わる。生成物との完全一致で、利用者が見る文面は CLI が決めたものだけになる。ただし、質問に載せる文書の集合と順序は model が選べ、保証されるのは「利用者の選択を経由した」ことだけである。複数の文書を 1 クリックで承認できることは、オーダーの「一気に承認する」の裏返しとして受け入れた。記録の後に文書と hash を `systemMessage` で利用者に見せる。`承認しない` は記録に残らず、過去の版への承認も取り消さない（取り消しは承認行を pending に戻す、のまま）。
+
+### Consequences
+
+- 起動済みのセッションに hook の変更が入らないのは従来どおりである（前の節までの hook の変更と同じ）。この変更に固有なのは、`workflow-cli` は呼ぶたびに読まれて `chezmoi apply` の直後から新しい挙動になるが、hook の登録は起動時にしか読まれない、というずれである。起動済みのセッションで `ask-approval` を使うと、回答しても記録されない。`ask-approval` の標準エラーの注意と、`approve` の発話で回復できる。
+- 実測は各 1 試行である。配備後に新しいセッションで同じ確認を行う（下の「配備後の確認」）。
+- 非対話の実行（`claude -p`、SDK、CI）で host が回答を返す経路の `tool_response` は未実測で、閉じたとは主張しない。知らないキーがあれば記録しないので、残るのは host が対話と同じ形で回答を返す場合である。CI の自律レーンは設計面に触れない（autonomous-lane C3）ので承認を行う場面は無いが、これは規約による。
+- UI を通らずに model の `answers` が結果になる経路（PermissionRequest の hook が `answers` を返すなど）は未実測である。guard の deny で多層に止め、permission の層に AskUserQuestion の入力を書き換えるものが無いことは確認した。
+- サブエージェントの中の AskUserQuestion に `agent_id` が載るかは未実測で、載らなければサブエージェントの出した承認の質問への回答も記録される。利用者が CLI の生成した文面を見て選んだことは保証されるので、受け入れた。
+- 承認の依頼の発火点（rule と triage の出力）は助言で、強制しない。model が質問を出さなくても発話の経路で承認できる。Stop hook で強制する案は誤発火が多く採らない。
+- 実装の教訓: hook を足すタスクと settings に配線するタスクを分けたため、その間のコミット（4 つ）で `hook-target-drift.test.ts`（hook の実装と settings の対応の検査）が落ちていた。計画の時点では grep で該当するテストを探したが、個々の hook の名前を含まない検査は見つからなかった。途中のコミットでテストが通るかは、段階ごとに実際に走らせて確かめる方が確実である。
+- 再訪の条件: Claude Code の更新で `tool_response` の形が変わったとき（記録しない側に倒れるので、配備後の確認と同じ手順で測り直す）。
+
 ## References
 
 - 設計の全文: `docs/plans/workflow-identity/`（research / spec / plan-1〜5。レビューの記録を含む）
