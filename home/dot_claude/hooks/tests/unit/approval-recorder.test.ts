@@ -77,6 +77,7 @@ describe("approval-recorder (spec K7)", () => {
       computeWorkflowRepoPlanHash(readFileSync(join(wf, "plan.md"), "utf-8")),
     );
     assert.equal(latest.get("plan.md")?.session, TEST_SESSION_ID);
+    assert.equal(latest.get("plan.md")?.via, "utterance");
     assert.match(
       readFileSync(join(wf, "plan.md"), "utf-8"),
       /^- Approval Status: approved$/m,
@@ -204,7 +205,7 @@ describe("approval-recorder (spec K7)", () => {
       readFileSync(outside, "utf-8"),
       /^- Approval Status: pending$/m,
     );
-    assert.match(text, /通常のファイルではない/);
+    assert.match(text, /log には記録したが承認行の書き換えに失敗した/);
     assert.deepEqual(
       readdirSync(wf).filter((name) => name.endsWith(".approval-tmp")),
       [],
@@ -215,7 +216,8 @@ describe("approval-recorder (spec K7)", () => {
     writeFileSync(join(wf, "plan.md"), buildPlanContent(REVIEWED));
     mkdirSync(join(wf, "approvals.log"));
     const { text } = await say("承認");
-    assert.match(text, /記録できなかった可能性/);
+    assert.match(text, /plan\.md は記録できなかった（何も書いていない）/);
+    assert.doesNotMatch(text, /もう一度/);
     assert.match(
       readFileSync(join(wf, "plan.md"), "utf-8"),
       /^- Approval Status: pending$/m,

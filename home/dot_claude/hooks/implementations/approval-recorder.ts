@@ -22,7 +22,7 @@ import { defineHook } from "cc-hooks-ts";
 import { getProjectRoot } from "../lib/project-root.ts";
 import { parseApprovalUtterance } from "../lib/workflow-approval.ts";
 import {
-  type RecordResult,
+  describeRecordResult,
   recordOne,
 } from "../lib/workflow-approval-record.ts";
 import {
@@ -43,34 +43,6 @@ function approvalOutput(text: string) {
       },
     },
   };
-}
-
-/**
- * The wording each record state has always had on this route; the shared
- * lib returns structured results so other routes can word them differently.
- */
-function describeLegacy(result: RecordResult): string {
-  const { doc, hash } = result;
-  const detail = result.detail ?? "";
-  if (detail === "not-regular-file") {
-    return `${doc} は通常のファイルではない（symlink など）ので承認行を書き換えていない。log には記録したので、利用者が承認行を手で approved にすれば gate は通る。`;
-  }
-  if (detail === "rewritten") {
-    return `${doc} を hash=${hash.slice(0, 12)} で承認として記録し、承認行を approved に書き換えた。`;
-  }
-  if (detail === "already-approved") {
-    return `${doc} を hash=${hash.slice(0, 12)} で承認として記録した（承認行は既に approved）。`;
-  }
-  if (detail.startsWith("conditions:")) {
-    const logOk = detail.includes("log=ok");
-    const lineOk = detail.includes("line=ok");
-    return `${doc} の承認を記録しようとしたが gate の条件がそろっていない（log ${logOk ? "済" : "未"}、承認行 ${lineOk ? "済" : "未"}）。もう一度「承認 ${doc}」と書くか、\`workflow-cli status\` で確認する。`;
-  }
-  const state =
-    result.state === "loggedOnly"
-      ? "log には記録したが、承認行の書き換えに失敗した"
-      : "記録できなかった可能性がある";
-  return `${doc}: ${state}（${detail.replace(/^error:/, "")}）。もう一度「承認 ${doc}」と書くか、\`workflow-cli status\` で確認する。`;
 }
 
 /**
@@ -151,10 +123,18 @@ const hook = defineHook({
         hash: evaluateApprovalReadiness(wfDir, doc).hash,
       }));
       const at = new Date().toISOString();
-      const notes = planned.map(({ doc, hash }) =>
-        describeLegacy(
-          recordOne(wfDir, doc, hash, context.input.session_id, at),
-        ),
+      const notes = planned.map(
+        ({ doc, hash }) =>
+          `${describeRecordResult(
+            recordOne(
+              wfDir,
+              doc,
+              hash,
+              context.input.session_id,
+              at,
+              "utterance",
+            ),
+          )}。`,
       );
       notes.push(
         "編集する前に文書を読み直す。取り消すには承認行を pending に戻す。",

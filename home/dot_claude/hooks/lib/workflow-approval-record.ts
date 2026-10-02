@@ -17,8 +17,22 @@ import {
   writeFileSync,
 } from "node:fs";
 import { resolve } from "node:path";
-import { appendApproval } from "./workflow-approval.ts";
-import { evaluateDocument } from "./workflow-gate.ts";
+import {
+  type ApprovalVia,
+  DECLINE_LABEL,
+  WORKFLOW_DOC_NAME,
+  MAX_DOCS_PER_QUESTION,
+  appendApproval,
+  buildApprovalQuestions,
+  deepEqualIgnoringKeyOrder,
+  isApprovalLikeQuestion,
+  matchApprovalAnswer,
+} from "./workflow-approval.ts";
+import {
+  evaluateApprovalReadiness,
+  evaluateDocument,
+  listApprovalCandidates,
+} from "./workflow-gate.ts";
 import { setApprovalStatusLine } from "./workflow-marker.ts";
 
 /**
@@ -78,11 +92,12 @@ export function recordOne(
   hash: string,
   session: string,
   at: string,
+  via: ApprovalVia,
 ): RecordResult {
   const path = resolve(wfDir, doc);
   let logged = false;
   try {
-    appendApproval(wfDir, { doc, hash, session, at });
+    appendApproval(wfDir, { doc, hash, session, at, via });
     logged = true;
     if (!lstatSync(path).isFile()) {
       return { doc, state: "loggedOnly", hash, detail: "not-regular-file" };
@@ -110,5 +125,155 @@ export function recordOne(
       hash,
       detail: `error:${String(error).slice(0, 120)}`,
     };
+  }
+}
+
+/**
+ * The state of one document as a fact, the same for every route. A hook adds
+ * its own route-specific way to retry.
+ */
+export function describeRecordResult(result: RecordResult): string {
+  const { doc, hash } = result;
+  switch (result.state) {
+    case "recorded":
+      return `${doc} を hash=${hash.slice(0, 12)} で承認として記録した`;
+    case "loggedOnly":
+      return `${doc} は log には記録したが承認行の書き換えに失敗した。\`workflow-cli status\` で確認する`;
+    case "failed":
+      return `${doc} は記録できなかった（何も書いていない）。\`workflow-cli status\` で確認する`;
+  }
+}
+
+export type AnswerVerification =
+  | { kind: "notApproval" }
+  | { kind: "afk" }
+  | { kind: "freeText"; text: string }
+  | { kind: "malformed" }
+  | { kind: "notCandidate"; docs: string[] }
+  | { kind: "decline" }
+  | { kind: "notes"; notes: string }
+  | { kind: "recorded"; results: RecordResult[] };
+
+const RESPONSE_KEYS = new Set(["questions", "answers", "annotations"]);
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * The document names the model put in the question, or null when the
+ * options are not the shape the CLI generates. The names are model-chosen,
+ * so they are checked here before anything resolves them against the
+ * workflow dir or hands them to the gate.
+ */
+function extractDocNames(question: Record<string, unknown>): string[] | null {
+  const { options } = question;
+  if (!Array.isArray(options)) return null;
+  const labels: string[] = [];
+  for (const option of options) {
+    if (!isPlainObject(option) || typeof option.label !== "string") return null;
+    labels.push(option.label);
+  }
+  if (labels.filter((l) => l === DECLINE_LABEL).length !== 1) return null;
+  const docs = labels.filter((l) => l !== DECLINE_LABEL);
+  if (docs.length < 1 || docs.length > MAX_DOCS_PER_QUESTION) return null;
+  if (new Set(docs).size !== docs.length) return null;
+  if (!docs.every((d) => WORKFLOW_DOC_NAME.test(d))) return null;
+  return docs;
+}
+
+/**
+ * Decide whether an AskUserQuestion tool_response is a user's answer to the
+ * question `workflow-cli ask-approval` generates, and record the approval if
+ * so. Only `toolResponse` is read. The question is rebuilt from the current
+ * state of the documents and must equal the one in the response, so what
+ * the user saw was exactly what the mechanism generated, at the hashes that
+ * are recorded. Anything that does not fit is reported, never recorded.
+ */
+export function verifyAndRecordApprovalAnswer(
+  wfDir: string,
+  toolResponse: unknown,
+  session: string,
+  now: Date = new Date(),
+): AnswerVerification {
+  const r = isPlainObject(toolResponse) ? toolResponse : undefined;
+  if (!isApprovalLikeQuestion(r?.questions)) return { kind: "notApproval" };
+  if (r === undefined) return { kind: "notApproval" };
+  if (Object.hasOwn(r, "afkTimeoutMs")) return { kind: "afk" };
+  if (Object.hasOwn(r, "response")) {
+    return typeof r.response === "string"
+      ? { kind: "freeText", text: r.response }
+      : { kind: "malformed" };
+  }
+
+  if (!Object.keys(r).every((k) => RESPONSE_KEYS.has(k))) {
+    return { kind: "malformed" };
+  }
+  const { questions, answers, annotations } = r;
+  if (!Array.isArray(questions) || questions.length !== 1) {
+    return { kind: "malformed" };
+  }
+  const question = questions[0];
+  if (!isPlainObject(question) || typeof question.question !== "string") {
+    return { kind: "malformed" };
+  }
+  if (!isPlainObject(answers)) return { kind: "malformed" };
+  const answerKeys = Object.keys(answers);
+  const answer = answers[question.question];
+  if (
+    answerKeys.length !== 1 ||
+    answerKeys[0] !== question.question ||
+    typeof answer !== "string"
+  ) {
+    return { kind: "malformed" };
+  }
+
+  const docNames = extractDocNames(question);
+  if (docNames === null) return { kind: "malformed" };
+
+  const candidates = new Set(listApprovalCandidates(wfDir));
+  const missing = docNames.filter((d) => !candidates.has(d));
+  if (missing.length > 0) return { kind: "notCandidate", docs: missing };
+
+  const hashes = new Map(
+    docNames.map((d) => [d, evaluateApprovalReadiness(wfDir, d).hash]),
+  );
+  let rebuilt;
+  try {
+    rebuilt = buildApprovalQuestions(
+      docNames.map((name) => ({ name, hash: hashes.get(name) ?? "" })),
+    );
+  } catch {
+    return { kind: "malformed" };
+  }
+  if (!deepEqualIgnoringKeyOrder(rebuilt, questions)) {
+    return { kind: "malformed" };
+  }
+
+  if (isPlainObject(annotations)) {
+    for (const entry of Object.values(annotations)) {
+      if (isPlainObject(entry) && typeof entry.notes === "string") {
+        return { kind: "notes", notes: entry.notes };
+      }
+    }
+  }
+
+  const matched = matchApprovalAnswer(rebuilt, answer);
+  switch (matched.kind) {
+    case "decline":
+      return { kind: "decline" };
+    case "freeText":
+      return { kind: "freeText", text: matched.text };
+    case "invalid":
+      return { kind: "malformed" };
+    case "approve": {
+      const at = now.toISOString();
+      return {
+        kind: "recorded",
+        results: matched.docs.map((doc) =>
+          recordOne(wfDir, doc, hashes.get(doc) ?? "", session, at, "ask"),
+        ),
+      };
+    }
   }
 }
