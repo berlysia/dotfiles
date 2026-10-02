@@ -1,0 +1,409 @@
+#!/usr/bin/env bash
+# agent-vm-node-modules: give each JS package of an agent-vm repository its own VM-local node_modules, so the
+# host's install and the VM's install stop replacing each other's platform packages.
+# Runs only inside an agent-vm machine, whose user has passwordless sudo (ADR-0018 R6): the checks here keep the
+# regular callers (the launcher, the worktree tools) from mounting or deleting in the wrong place by accident.
+# They are not a privilege boundary.
+set -euo pipefail
+
+CONTRACT=1
+MAX_PACKAGES=500
+EXIT_PARTIAL=1 EXIT_LOCKED=2 EXIT_RECLAIM_ABORTED=3 EXIT_USAGE=64   # sync / attach (spec K10)
+EXIT_RM_FAILED=70 EXIT_RM_LOCKED=71   # remove: outside the statuses git worktree remove uses (0, 1, 128)
+
+PROD_STORE=/var/lib/agent-vm/node_modules TEST_STORE=/var/lib/agent-vm-test/node_modules
+STORE=${AGENT_VM_NM_STORE:-$PROD_STORE}
+if [[ "$STORE" != "$PROD_STORE" && "$STORE" != "$TEST_STORE" ]]; then
+  printf 'agent-vm-node-modules: AGENT_VM_NM_STORE must be %s or %s\n' "$PROD_STORE" "$TEST_STORE" >&2
+  exit "$EXIT_USAGE"
+fi
+# git must read the repository it is pointed at with -C, not one an inherited environment names.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_OBJECT_DIRECTORY
+LOCK_WAIT=30
+# Test-only knob, honored only with the test store: the launcher and the worktree tools never set it.
+if [[ "$STORE" == "$TEST_STORE" && "${AGENT_VM_NM_LOCK_WAIT:-}" =~ ^[1-9][0-9]*$ ]]; then LOCK_WAIT=$AGENT_VM_NM_LOCK_WAIT; fi
+
+warn() { printf 'agent-vm-node-modules: %s\n' "$*" >&2; }
+emit() { printf '%s\t%s\n' "$1" "$2"; }   # stdout carries records only (spec K10)
+has_ctrl() { [[ "$1" =~ [[:cntrl:]] ]]; }
+canon() { perl -MCwd=realpath -e 'my $r = realpath($ARGV[0]); (defined $r && -e $r) or exit 1; print $r' -- "$1"; }
+key_of() { local k; k=$(printf '%s' "$1" | sha256sum) || return 1; printf '%s\n' "${k:0:16}"; }
+ino() { stat -c '%d:%i' -- "$1" 2>/dev/null; }
+is_test_store() { [[ "$STORE" == "$TEST_STORE" ]]; }
+priv() { sudo -n perl -e "$PRIV_PL" -- "$STORE" "$@"; }
+rows() { perl -e "$PRIV_PL" -- "$STORE" rows "$1"; }   # reading mountinfo needs no root
+
+# Everything that needs root. It takes the mount target from the root-owned record, never from the caller, and
+# re-checks the record (key = sha256(path)), the last path component (no symlink) and the target's owner.
+# Containment in the repository is the caller's check.
+PRIV_PL=$(cat <<'PERL'
+use strict; use warnings; use POSIX ();
+use Fcntl qw(O_RDONLY O_WRONLY O_CREAT O_EXCL O_DIRECTORY O_NOFOLLOW F_GETFD F_SETFD FD_CLOEXEC);
+use Digest::SHA qw(sha256_hex);
+use constant FD_MOUNT => 1;   # from the T0 result (plan-1)
+my ($store, $op, @arg) = @ARGV;
+defined $op or die "usage\n";
+$store =~ m{\A/var/lib/agent-vm(?:-test)?/node_modules\z} or die "unsupported store root\n";
+sub key_ok { my ($k) = @_; (defined $k && $k =~ /\A[0-9a-f]{16}\z/) or die "bad key\n"; return $k }
+sub unesc { my ($s) = @_; $s =~ s/\\([0-7]{3})/chr(oct($1))/ge; return $s }
+sub path_ok { my ($p, $k) = @_; return $p =~ m{\A/} && $p !~ /[[:cntrl:]]/ && substr(sha256_hex($p), 0, 16) eq $k }
+sub same_inode { my @a = stat $_[0]; my @b = stat $_[1]; return @a && @b && $a[0] == $b[0] && $a[1] == $b[1] }
+sub mountinfo { # -> [mount id, root, mountpoint] for every mount, in mount order
+  open my $mi, '<', '/proc/self/mountinfo' or die "mountinfo: $!\n";
+  return map { my @f = split / /; [$f[0], unesc($f[3]), unesc($f[4])] } <$mi>;
+}
+sub all_rows { # key -> [mount id, mountpoint] of every mount whose root ends with this key's data (spec K3)
+  my $suffix = "$store/" . key_ok($_[0]) . '/data';
+  return map { [$_->[0], $_->[2]] }
+    grep { length($_->[1]) >= length($suffix) && substr($_->[1], -length $suffix) eq $suffix } mountinfo();
+}
+sub rows { # key -> mountpoints of this key's mounts. A row whose mountpoint was deleted (on the host) cannot be
+           # unmounted by path, so it is not counted (K9). Reachability is not a criterion: a mount stacked on
+           # top would hide a live row and let rmstore delete mounted content.
+  return map { $_->[1] } grep { $_->[1] !~ m{//deleted\z} } all_rows($_[0]);
+}
+sub owned_dir_ok { # path uid -> 1 for a real directory or file of that owner without group/other write
+  my @st = lstat $_[0];
+  return @st && (-d _ || -f _) && $st[4] == $_[1] && ($st[2] & 022) == 0;
+}
+sub record_path { # key -> package dir from the root-owned record, re-validated
+  my $key = key_ok($_[0]); my $d = "$store/$key";
+  die "record is a symlink\n" if -l $d || -l "$d/path";
+  open my $fh, '<', "$d/path" or die "record: $!\n";
+  my $p = <$fh>; defined $p or die "empty record\n"; chomp $p;
+  path_ok($p, $key) or die "inconsistent record\n";
+  return $p;
+}
+
+if ($op eq 'rows') { print "$_\n" for rows(key_ok($arg[0])); exit 0 }
+die "must run as root\n" unless $> == 0;
+my ($uid, $gid) = ($ENV{SUDO_UID} // '', $ENV{SUDO_GID} // '');
+($uid =~ /\A[1-9][0-9]*\z/ && $gid =~ /\A[0-9]+\z/) or die "must run through sudo from the VM user\n";
+
+# Creation tolerates EEXIST: prepare and mkstore run before the lock, so two first runs may race. Whoever made
+# it, the result must pass the same ownership and mode check.
+sub mkdir_root { my ($d) = @_; if (mkdir $d, 0755) { chmod 0755, $d } elsif (!$!{EEXIST}) { die "mkdir $d: $!\n" } }
+
+if ($op eq 'prepare') { # create the store root once; never adopt a directory or lock someone else made
+  (my $parent = $store) =~ s{/node_modules\z}{};
+  for my $d ($parent, $store) {
+    mkdir_root($d);
+    (owned_dir_ok($d, 0) && -d _) or die "$d must be a root-owned directory without group/other write\n";
+  }
+  my $lock = "$store/.lock";
+  if (sysopen(my $fh, $lock, O_WRONLY | O_CREAT | O_EXCL, 0644)) { close $fh; chmod 0644, $lock } elsif (!$!{EEXIST}) { die "lock: $!\n" }
+  (owned_dir_ok($lock, 0) && -f _) or die "$lock must be a root-owned file without group/other write\n";
+  exit 0;
+}
+if ($op eq 'mkstore') {
+  my ($key, $path) = (key_ok($arg[0]), $arg[1] // '');
+  path_ok($path, $key) or die "the key does not match the path\n";
+  my $d = "$store/$key";
+  mkdir_root($d);
+  (owned_dir_ok($d, 0) && -d _) or die "$d must be a root-owned directory\n";
+  my $tmp = "$d/path.tmp"; unlink $tmp;
+  sysopen(my $fh, $tmp, O_WRONLY | O_CREAT | O_EXCL, 0644) or die "record: $!\n";
+  print $fh "$path\n"; close $fh or die "record: $!\n";
+  rename $tmp, "$d/path" or die "record: $!\n";
+  my $data = "$d/data";
+  unless (lstat $data) { mkdir $data, 0755 or die "mkdir $data: $!\n"; chown $uid, $gid, $data or die "chown: $!\n" }
+  (owned_dir_ok($data, $uid) && -d _) or die "$data must be a directory owned by the VM user\n";
+  exit 0;
+}
+if ($op eq 'mount') { # spec K6 steps 2-5, in this one root process
+  my $key = key_ok($arg[0]); my $target = record_path($key) . '/node_modules'; my $data = "$store/$key/data";
+  sysopen(my $src, $data, O_RDONLY | O_DIRECTORY | O_NOFOLLOW) or die "open $data: $!\n";
+  sysopen(my $dst, $target, O_RDONLY | O_DIRECTORY | O_NOFOLLOW) or die "open $target: $!\n";
+  my ($s, $t) = (fileno $src, fileno $dst);
+  (readlink("/proc/self/fd/$s") // '') eq $data or die "the store moved\n";
+  (readlink("/proc/self/fd/$t") // '') eq $target or die "$target moved\n";
+  ((stat $dst)[4] // -1) == $uid or die "$target is not owned by the VM user\n";
+  die "$target is already mounted\n" if grep { $_ eq $target } rows($key);   # no stacking
+  my %before = map { $_->[0] => 1 } all_rows($key);
+  my @cmd = ('mount', '--no-canonicalize', '--bind', FD_MOUNT ? ("/proc/$$/fd/$s", "/proc/$$/fd/$t") : ($data, $target));
+  if (FD_MOUNT) { for my $fh ($src, $dst) { my $fl = fcntl($fh, F_GETFD, 0) or die "fcntl: $!\n"; fcntl($fh, F_SETFD, $fl & ~FD_CLOEXEC) or die "fcntl: $!\n" } }
+  my $pid = fork() // die "fork: $!\n";
+  if ($pid == 0) { exec(@cmd) or POSIX::_exit(127) }
+  waitpid($pid, 0); my $status = $?;
+  my %new = map { $_->[0] => 1 } grep { !$before{$_->[0]} && $_->[1] eq $target } all_rows($key);
+  exit 0 if $status == 0 && %new && same_inode($target, $data);
+  # Undo only when the topmost mount at the target is one this run added; umount by path removes the top one.
+  my ($top) = reverse grep { $_->[2] eq $target } mountinfo();
+  system('umount', '--no-canonicalize', $target) if $top && $new{$top->[0]};
+  die "the mount of $target did not verify\n";
+}
+if ($op eq 'unmount') { # lazily detach every row, including rows stacked at one mountpoint
+  my $key = key_ok($arg[0]);
+  ROUND: for (1 .. 8) {
+    my @r = rows($key) or last;
+    my %mine = map { $_->[0] => 1 } all_rows($key);
+    for my $mp (@r) {
+      # umount by path removes the topmost mount there; stop rather than remove a mount that is not ours
+      my ($top) = reverse grep { $_->[2] eq $mp } mountinfo();
+      last ROUND unless $top && $mine{$top->[0]};
+      system('umount', '-l', '--no-canonicalize', $mp);
+    }
+  }
+  my @left = rows($key);
+  exit(@left ? 1 : 0);
+}
+if ($op eq 'rmstore') { # delete a store that no live mount uses any more
+  my $key = key_ok($arg[0]); my $d = "$store/$key";
+  die "$d is a symlink\n" if -l $d;
+  my @left = rows($key); die "still mounted\n" if @left;
+  if (lstat "$d/path") { my $p = record_path($key); die "$p/node_modules is still this store\n" if same_inode("$p/node_modules", "$d/data") }
+  system('rm', '-rf', '--one-file-system', '--', $d) == 0 or die "could not remove $d\n";
+  exit 0;
+}
+die "unknown operation\n";
+PERL
+)
+
+usage() {
+  printf 'usage: agent-vm-node-modules --contract | sync <repo> | attach <worktree> | remove <worktree> -- <command...>\n' >&2
+  exit "$EXIT_USAGE"
+}
+# 0 inside an agent-vm machine (spec K6). The test suite stands in for one only with the test store.
+require_vm() { [[ -e /etc/agent-vm ]] || { is_test_store && [[ "${AGENT_VM_NM_ASSUME_VM:-}" == 1 ]]; }; }
+start() { WORK=$(mktemp -d); trap 'rm -rf -- "$WORK"' EXIT; }
+# prepare_failure_status timeout_status
+lock() {
+  priv prepare || { warn "could not prepare $STORE"; exit "$1"; }
+  exec 9<"$STORE/.lock"
+  flock -w "$LOCK_WAIT" 9 || { warn "another agent-vm-node-modules is running; gave up after ${LOCK_WAIT}s"; exit "$2"; }
+}
+
+# Associative arrays are keyed by key_of(path), never by a path.
+declare -a WORKTREES=() PKG_DIRS=() PKG_KEYS=()
+declare -A IS_WT=() WANT=() ABORT_WT=()
+ABORT_ALL=0 PARTIAL=0 MISSED=0 WORK='' WT='' ROOT=''   # MISSED: some package was never considered for mounting
+
+# root -> WORKTREES / IS_WT (spec K2, K6). 1: the list is unusable. 2: the list is usable, but a listed
+# worktree cannot be resolved, so reclaim must not trust it (attach and remove, which never reclaim, go on).
+load_worktrees() {
+  local root=$1 f c first=1 main_ok=0 unresolved=0
+  if [[ ! -e "$root/.git" ]]; then warn "the repository is not visible: $root"; return 1; fi
+  # 9>&-: a long-lived git child (fsmonitor) must not keep the lock
+  if ! git -C "$root" worktree list --porcelain -z >"$WORK/worktrees" 2>/dev/null 9>&-; then
+    warn "git worktree list failed in $root"; return 1
+  fi
+  while IFS= read -r -d '' f; do
+    [[ "$f" == "worktree "* ]] || continue
+    if [[ $first -eq 1 ]]; then   # git lists the main worktree first
+      first=0
+      if c=$(canon "${f#worktree }") && [[ "$c" == "$root" ]]; then main_ok=1; WORKTREES+=("$c"); IS_WT[$(key_of "$c")]=1; fi
+      continue
+    fi
+    if ! c=$(canon "${f#worktree }") || has_ctrl "$c"; then   # may be only temporarily invisible: keep its stores
+      warn "a worktree of $root cannot be resolved; its VM-local node_modules are kept (recover: git -C $root worktree prune)"
+      unresolved=1; continue
+    fi
+    if [[ "$c" != "$root/.git/worktree/"* ]]; then warn "skipping a worktree outside the repository: $c"; continue; fi
+    WORKTREES+=("$c"); IS_WT[$(key_of "$c")]=1
+  done <"$WORK/worktrees"
+  # An empty list fails here too: it has no first entry.
+  if [[ $main_ok -eq 0 ]]; then warn "the worktree list of $root does not start with $root"; return 1; fi
+  if [[ $unresolved -ne 0 ]]; then return 2; fi
+}
+# path -> the deepest listed worktree that contains it, or nothing
+owner_of() {
+  local w best=''
+  for w in "${WORKTREES[@]}"; do
+    if [[ ("$1" == "$w" || "$1" == "$w/"*) && ${#w} -gt ${#best} ]]; then best=$w; fi
+  done
+  printf '%s' "$best"
+}
+# worktree -> 0 when some consistent store records a package that this worktree owns
+stores_owned_by() {
+  local d p
+  for d in "$STORE"/*; do
+    [[ "${d##*/}" =~ ^[0-9a-f]{16}$ && -f "$d/path" && ! -L "$d/path" ]] || continue
+    IFS= read -r p <"$d/path" || continue
+    if [[ "$(key_of "$p")" == "${d##*/}" && "$(owner_of "$p")" == "$1" ]]; then return 0; fi
+  done
+  return 1
+}
+# worktree -> PKG_DIRS / PKG_KEYS / WANT; may set ABORT_WT and PARTIAL (spec K1, K2, K6)
+collect_packages() {
+  local wt=$1 wk p dir c k
+  local -a dirs=() keys=()
+  local -A seen=()
+  wk=$(key_of "$wt")
+  if ! git -C "$wt" ls-files -z --cached --others --exclude-standard -- package.json '*/package.json' >"$WORK/packages" 2>/dev/null 9>&-; then
+    warn "git ls-files failed in $wt; its VM-local node_modules are kept"
+    ABORT_WT[$wk]=1; MISSED=1; return 0
+  fi
+  while IFS= read -r -d '' p; do
+    case "/$p" in */node_modules/* | */.git/*) continue ;; esac
+    if [[ ! -f "$wt/$p" || -L "$wt/$p" ]]; then continue; fi
+    dir=$(dirname -- "$wt/$p")
+    c=$(canon "$dir") || continue
+    if has_ctrl "$c"; then warn "a package path in $wt has control characters; it stays shared with the host"; PARTIAL=1; continue; fi
+    if [[ "$c" != "$wt" && "$c" != "$wt/"* ]]; then continue; fi
+    k=$(key_of "$c")
+    if [[ -n "${seen[$k]:-}" ]]; then continue; fi
+    seen[$k]=1; dirs+=("$c"); keys+=("$k")
+  done <"$WORK/packages"
+  if [[ ${#dirs[@]} -gt $MAX_PACKAGES ]]; then
+    warn "$wt has ${#dirs[@]} packages (over $MAX_PACKAGES); only its root package gets a VM-local node_modules"
+    ABORT_WT[$wk]=1; MISSED=1; dirs=(); keys=()
+    if [[ -f "$wt/package.json" && ! -L "$wt/package.json" ]]; then dirs=("$wt"); keys=("$wk"); fi
+  fi
+  if [[ ${#dirs[@]} -eq 0 ]] && stores_owned_by "$wt"; then
+    warn "no package.json found in $wt, but it has VM-local node_modules; they are kept"
+    ABORT_WT[$wk]=1
+  fi
+  for k in "${keys[@]}"; do WANT[$k]=1; done
+  PKG_DIRS+=("${dirs[@]}"); PKG_KEYS+=("${keys[@]}")
+}
+# dir key: an "empty" record only for a worktree root whose VM-local node_modules is empty (spec K5)
+report_pkg() {
+  if [[ -n "${IS_WT[$2]:-}" && -z "$(ls -A -- "$STORE/$2/data")" ]]; then emit empty "$1"; else emit mounted "$1"; fi
+}
+# dir key -> 0 when dir/node_modules is the VM-local one (spec K6, K9)
+attach_pkg() {
+  local dir=$1 key=$2 nm="$1/node_modules" data="$STORE/$2/data"
+  if [[ -L "$nm" ]]; then warn "$nm is a symlink; it stays shared with the host"; emit skipped "$dir"; return 1; fi
+  if [[ ! -d "$data" ]] && ! priv mkstore "$key" "$dir"; then warn "could not create the store for $dir"; return 1; fi
+  if [[ -d "$nm" && "$(ino "$nm")" == "$(ino "$data")" ]]; then report_pkg "$dir" "$key"; return 0; fi
+  if [[ -n "$(rows "$key")" ]] && ! priv unmount "$key"; then warn "a stale mount for $dir is still there; not mounting over it"; return 1; fi
+  if [[ ! -d "$nm" ]] && ! mkdir -- "$nm"; then warn "could not create $nm"; return 1; fi
+  if ! priv mount "$key"; then warn "could not mount a VM-local node_modules for $dir"; return 1; fi
+  report_pkg "$dir" "$key"
+}
+attach_all() {
+  local i
+  for i in "${!PKG_DIRS[@]}"; do attach_pkg "${PKG_DIRS[$i]}" "${PKG_KEYS[$i]}" || PARTIAL=1; done
+}
+# spec K10: 1 (partial) wins over 3 (reclaim aborted)
+finish() {
+  if [[ $PARTIAL -ne 0 ]]; then exit "$EXIT_PARTIAL"; fi
+  if [[ $ABORT_ALL -ne 0 || ${#ABORT_WT[@]} -ne 0 ]]; then exit "$EXIT_RECLAIM_ABORTED"; fi
+  exit 0
+}
+# path -> 0 when the worktree that owns it has its reclaim aborted
+under_aborted() {
+  local o
+  o=$(owner_of "$1")
+  [[ -n "$o" && -n "${ABORT_WT[$(key_of "$o")]:-}" ]]
+}
+# path -> 0 when a .git sits between its owning worktree and the path: a nested repository's store, which
+# this repository's ls-files never lists
+in_nested_repo() {
+  local o d
+  o=$(owner_of "$1"); d=$1
+  while [[ -n "$o" && "$d" != "$o" && "$d" == "$o/"* ]]; do
+    if [[ -e "$d/.git" ]]; then return 0; fi
+    d=$(dirname -- "$d")
+  done
+  return 1
+}
+# root: delete the stores whose package is no longer wanted (spec K2, K3)
+reclaim() {
+  local root=$1 d key p
+  for d in "$STORE"/*; do
+    key=${d##*/}
+    if [[ ! "$key" =~ ^[0-9a-f]{16}$ || ! -d "$d" || -L "$d" ]]; then continue; fi
+    if [[ ! -e "$d/path" ]]; then   # an interrupted mkstore leaves an empty directory: quiet
+      if [[ -e "$d/data" ]]; then warn "a store without a record is kept: $d"; fi
+      continue
+    fi
+    if [[ -L "$d/path" ]] || ! IFS= read -r p <"$d/path"; then warn "an unreadable record is kept: $d"; continue; fi
+    if [[ "$p" != "$root" && "$p" != "$root/"* ]]; then continue; fi   # another repository's store
+    if has_ctrl "$p" || [[ "$(key_of "$p")" != "$key" ]]; then warn "an inconsistent record is kept: $d"; continue; fi
+    if [[ -n "${WANT[$key]:-}" ]] || under_aborted "$p" || in_nested_repo "$p"; then continue; fi
+    if ! { priv unmount "$key" && priv rmstore "$key"; }; then warn "could not reclaim the VM-local node_modules of $p"; PARTIAL=1; fi
+  done
+}
+cmd_sync() {
+  local wt
+  require_vm || exit 0
+  start
+  ROOT=$(canon "$1") || { warn "the repository is not visible: $1"; exit "$EXIT_RECLAIM_ABORTED"; }
+  lock "$EXIT_PARTIAL" "$EXIT_LOCKED"
+  load_worktrees "$ROOT" || ABORT_ALL=1
+  for wt in "${WORKTREES[@]}"; do collect_packages "$wt"; done
+  attach_all
+  if [[ $ABORT_ALL -eq 0 ]]; then reclaim "$ROOT"; else warn "kept every VM-local node_modules of $ROOT this time"; fi
+  finish
+}
+# path -> WT / ROOT when the path passes the worktree rule of spec K6 (membership in the list is checked
+# under the lock by the caller)
+resolve_worktree() {
+  local common
+  WT=$(canon "$1") || return 1
+  common=$(git -C "$WT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
+  ROOT=$(canon "$(dirname -- "$common")") || return 1
+  ! has_ctrl "$WT" && [[ "$WT" == "$ROOT" || "$WT" == "$ROOT/.git/worktree/"* ]]
+}
+# worktree
+cmd_attach() {
+  local rc
+  require_vm || exit 0
+  start
+  resolve_worktree "$1" || { warn "not a worktree of an agent-vm repository: $1"; exit "$EXIT_USAGE"; }
+  lock "$EXIT_PARTIAL" "$EXIT_LOCKED"
+  rc=0; load_worktrees "$ROOT" || rc=$?
+  if [[ $rc -eq 1 ]]; then warn "could not read the worktree list of $ROOT"; exit "$EXIT_PARTIAL"; fi
+  [[ -n "${IS_WT[$(key_of "$WT")]:-}" ]] || { warn "$WT is not in the worktree list of $ROOT"; exit "$EXIT_USAGE"; }
+  collect_packages "$WT"
+  attach_all
+  # attach never reclaims, so a kept store alone is no failure; a package never considered is
+  if [[ $MISSED -ne 0 ]]; then PARTIAL=1; fi
+  ABORT_WT=()
+  finish
+}
+# key -> 0 when no path lookup reaches this store any more
+detach() {
+  if is_test_store && [[ "${AGENT_VM_NM_TEST_FAIL_UNMOUNT:-}" == 1 ]]; then return 1; fi   # test-only fault
+  priv unmount "$1"
+}
+# worktree command...: detach, run, then delete or re-attach, all under the lock (spec K7)
+cmd_remove() {
+  local arg=$1 d key p i status rc
+  local -a keys=() dirs=()
+  shift
+  require_vm || exec "$@"   # outside a VM there is nothing to detach
+  # Until the command runs, an unexpected failure or an interrupt ends in 70, never in a status the caller could
+  # take for the command's own. Rows detached by then come back with the next sync.
+  set -o errtrace; trap 'exit "$EXIT_RM_FAILED"' ERR INT TERM
+  start
+  resolve_worktree "$arg" || { warn "not a worktree of an agent-vm repository: $arg"; exit "$EXIT_USAGE"; }
+  if [[ "$WT" == "$ROOT" ]]; then warn "refusing to remove the main worktree $WT"; exit "$EXIT_USAGE"; fi
+  lock "$EXIT_RM_FAILED" "$EXIT_RM_LOCKED"
+  rc=0; load_worktrees "$ROOT" || rc=$?
+  if [[ $rc -eq 1 ]]; then warn "could not read the worktree list of $ROOT; $WT is kept"; exit "$EXIT_RM_FAILED"; fi
+  [[ -n "${IS_WT[$(key_of "$WT")]:-}" ]] || { warn "$WT is not in the worktree list of $ROOT"; exit "$EXIT_USAGE"; }
+  for d in "$STORE"/*; do
+    key=${d##*/}
+    [[ "$key" =~ ^[0-9a-f]{16}$ && -f "$d/path" && ! -L "$d/path" ]] || continue
+    IFS= read -r p <"$d/path" || continue
+    if [[ "$(owner_of "$p")" == "$WT" && "$(key_of "$p")" == "$key" ]]; then keys+=("$key"); dirs+=("$p"); fi
+  done
+  for key in "${keys[@]}"; do
+    if detach "$key"; then continue; fi
+    warn "could not detach the VM-local node_modules under $WT; the worktree is kept and the command did not run"
+    for i in "${!dirs[@]}"; do attach_pkg "${dirs[$i]}" "${keys[$i]}" >/dev/null || warn "could not re-attach ${dirs[$i]}"; done
+    exit "$EXIT_RM_FAILED"
+  done
+  trap - ERR INT TERM
+  if "$@" 9>&-; then status=0; else status=$?; fi
+  if [[ $status -eq 0 && ! -e "$WT" ]]; then
+    for key in "${keys[@]}"; do priv rmstore "$key" || warn "could not delete the store $key; the next sync deletes it"; done
+  else
+    if [[ $status -eq 0 ]]; then warn "the command succeeded but $WT is still there; its VM-local node_modules are re-attached"; fi
+    for i in "${!dirs[@]}"; do attach_pkg "${dirs[$i]}" "${keys[$i]}" >/dev/null || warn "could not re-attach ${dirs[$i]}"; done
+  fi
+  exit "$status"
+}
+
+main() {
+  case "${1:-}" in
+    --contract) [[ $# -eq 1 ]] || usage; printf '%s\n' "$CONTRACT" ;;
+    sync) [[ $# -eq 2 ]] || usage; cmd_sync "$2" ;;
+    attach) [[ $# -eq 2 ]] || usage; cmd_attach "$2" ;;
+    remove) [[ $# -ge 4 && "$3" == -- ]] || usage; local wt=$2; shift 3; cmd_remove "$wt" "$@" ;;
+    *) usage ;;
+  esac
+}
+main "$@"
