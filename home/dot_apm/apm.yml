@@ -35,3 +35,5 @@ dependencies:
     - mizchi/skills/apm-usage
     - mizchi/skills/ast-grep-practice
     - mizchi/skills/empirical-prompt-tuning
+    # The repo root is the dev workspace; skills/tanteki is the packaged skill
+    - iwasa-kosui/tanteki/skills/tanteki
