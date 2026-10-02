@@ -44,6 +44,12 @@ for (const name of [
   delete process.env[name];
 }
 
+// The SessionStart hook exports CLAUDE_PROJECT_DIR into the Bash environment
+// this suite is often started from. Hooks under test read it through
+// getProjectRoot(), so a leaked value would anchor every fixture on the real
+// repository instead of the process.chdir() / CLAUDE_TEST_CWD the test set up.
+delete process.env.CLAUDE_PROJECT_DIR;
+
 if (!process.env.CLAUDE_LOGS_DIR) {
   const dir = mkdtempSync(join(tmpdir(), "claude-hooks-test-logs-"));
   process.env.CLAUDE_LOGS_DIR = dir;
