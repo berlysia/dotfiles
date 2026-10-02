@@ -13,8 +13,16 @@ BOOTSTRAP_CONTRACT=1
 CLAUDE_PROJECTS_DIR="${AGENT_VM_CLAUDE_PROJECTS_DIR:-$HOME/.claude/projects}"
 CODEX_SESSIONS_DIR="${AGENT_VM_CODEX_SESSIONS_DIR:-$HOME/.codex/sessions}"
 
-die() { printf 'agent-vm: %s\n' "$1" >&2; exit "${2:-1}"; }
-step() { printf 'agent-vm: %s\n' "$1" >&2; }
+# Text that reaches the terminal may carry names the VM chose (hook files, config keys). Control characters
+# (ESC, CR, OSC, BEL) would let it redraw or hide what the host user is shown, so they are turned into '?'.
+# sanitize_for_terminal is for whole streams (newline and TAB stay, so lines keep their shape);
+# sanitize_field is for one value inside a line the caller assembles (newline and TAB become '?' too).
+sanitize_for_terminal() { LC_ALL=C tr -c '\11\12\40-\176' '?'; }
+sanitize_field() { LC_ALL=C tr -c '\40-\176' '?'; }
+field_of() { printf '%s' "$1" | sanitize_field; }
+
+die() { printf 'agent-vm: %s\n' "$1" | sanitize_for_terminal >&2; exit "${2:-1}"; }
+step() { printf 'agent-vm: %s\n' "$1" | sanitize_for_terminal >&2; }
 
 show_help() {
   cat <<'EOF'
@@ -31,6 +39,7 @@ Usage:
   agent-vm list | gc | rm [repo]    Manage machines
   agent-vm sync [--inspect]         Ingest session logs and check git surfaces now
   agent-vm restore-git [repo]       Undo reported changes to host-executed git files
+  agent-vm accept-git [repo]        Accept hook changes you made on the host as the new baseline
   agent-vm fetch-browsers [--force]  Fetch the linux-arm64 browser for VM browser MCPs
 EOF
 }
@@ -813,8 +822,9 @@ check_git_surfaces() { # machine repo_root -> 0 clean, 3 when a monitored item d
     return 0
   fi
   step "files that git runs on the host changed since the last check (not visible in git diff):"
-  sed 's/^/  /' "$dir/diff" >&2
+  sed 's/^/  /' "$dir/diff" | sanitize_for_terminal >&2
   step "recover: agent-vm restore-git $2"
+  step "accept (only for hook changes you made on the host): agent-vm accept-git $2"
   return 3
 }
 
@@ -881,29 +891,348 @@ restore_surface_item() { # repo dir change kind name
   esac
 }
 
-cmd_restore_git() { # [repo]
-  local repo m dir answer change kind name
-  repo=$(cd "${1:-.}" && resolve_repo_root)
+# Private work directory of restore-git / accept-git ($dir/<prefix>.XXXXXX). Both commands run in a subshell
+# (cmd_*), so the global and the traps below never leak into a caller. Cleanup chmods first: a copy of a
+# read-only saved directory (mode 0500) cannot be removed otherwise. SIGKILL still leaves the directory behind;
+# it sits in host-only state where nothing reads it.
+WORKDIR=""
+workdir_cleanup() {
+  if [[ -z "$WORKDIR" ]]; then return 0; fi
+  { chmod -R u+rwX "$WORKDIR"; rm -rf "$WORKDIR"; } 2>/dev/null || true
+}
+workdir_begin() { # dir prefix -> sets WORKDIR and arms the cleanup
+  WORKDIR=$(mktemp -d "$1/$2.XXXXXX") || die "cannot create a work directory in $1"
+  trap 'workdir_cleanup' EXIT
+  trap 'workdir_cleanup; exit 130' INT TERM HUP
+}
+
+cmd_restore_git() { ( restore_git_main "$@" ); } # [repo]
+
+restore_git_main() { # [repo]
+  local repo m dir answer change kind name rc=0
+  repo=$(cd "${1:-.}" && resolve_repo_root) || exit 1
   m=$(derive_machine_name "$repo")
   [[ "$(read_meta_field "$m" repo_path 2>/dev/null || true)" == "$repo" ]] || die "no snapshot recorded for $repo"
   dir=$(surface_dir "$m")
   [[ -f "$dir/baseline" ]] || die "no snapshot recorded for $repo"
-  git_surface_manifest "$repo" >"$dir/current"
-  surface_diff "$dir/baseline" "$dir/current" >"$dir/diff"
-  if [[ ! -s "$dir/diff" ]]; then echo "nothing to restore"; return 0; fi
-  sed 's/^/  /' "$dir/diff"
+  workdir_begin "$dir" restore
+  git_surface_manifest "$repo" >"$WORKDIR/current"
+  surface_diff "$dir/baseline" "$WORKDIR/current" >"$WORKDIR/diff"
+  if [[ ! -s "$WORKDIR/diff" ]]; then echo "nothing to restore"; return 0; fi
+  sed 's/^/  /' "$WORKDIR/diff" | sanitize_for_terminal
   printf 'restore these to the last clean snapshot (untracked files are renamed to *.agent-vm-quarantine)? [y/N] '
-  read -r answer
+  read -r answer || answer=n
   if [[ "$answer" != y && "$answer" != Y ]]; then return 0; fi
+  # The confirmation can take long and the lock is not held meanwhile: take it now and restore only what was shown.
+  acquire_lock "$m" 60 || die "timed out waiting for another session of this repo"
+  git_surface_manifest "$repo" >"$WORKDIR/current"
+  surface_diff "$dir/baseline" "$WORKDIR/current" >"$WORKDIR/diff.now"
+  if ! cmp -s "$WORKDIR/diff" "$WORKDIR/diff.now"; then
+    release_lock
+    step "something changed after it was shown; nothing restored (re-run agent-vm restore-git)"
+    return 3
+  fi
   # A symlinked .git redirects every path below it; that needs a human, not an automatic restore.
   if [[ -L "$repo/.git" ]]; then die "$repo/.git is a symlink; move it aside and restore the repository manually"; fi
   # The hooks directory is fixed first so no per-file operation can run through a symlinked hooks dir.
-  { grep "	hooksdir	" "$dir/diff" || true; grep -v "	hooksdir	" "$dir/diff" || true; } >"$dir/diff.ordered"
+  { grep "	hooksdir	" "$WORKDIR/diff" || true; grep -v "	hooksdir	" "$WORKDIR/diff" || true; } >"$WORKDIR/diff.ordered"
   while IFS=$'\t' read -r change kind name; do
     restore_surface_item "$repo" "$dir" "$change" "$kind" "$name"
-  done <"$dir/diff.ordered"
+  done <"$WORKDIR/diff.ordered"
   # Exit 3 when something could not be restored (e.g. a saved copy failed its hash check), so the caller knows.
-  check_git_surfaces "$m" "$repo"
+  check_git_surfaces "$m" "$repo" || rc=$?
+  release_lock
+  return "$rc"
+}
+
+# --- accept-git: take hook changes made on the host as the new baseline ----------------------------
+# Design record: docs/decisions/0018-agent-vm-orbstack.md (K13); user guide: docs/agent-vm.md. What the human reads, what is
+# recorded in the baseline and what restore-git later writes back are all taken from one private copy (WORKDIR);
+# the live files are read again only to verify, under the lock, right before anything is written.
+ACCEPT_MAX_HOOKS=16
+ACCEPT_MAX_DISPLAY_LINES=3000
+ACCEPT_MAX_HOOK_BYTES=65536
+ACCEPT_MAX_HOOK_LINES=1000
+ACCEPT_MAX_LINE_BYTES=400
+ACCEPT_MAX_LISTED=50
+
+# Copies a live hook into the private area. Opens first (O_NONBLOCK|O_NOFOLLOW, so a FIFO or a symlink swapped
+# in after the listing cannot block or redirect us), then checks the opened file's type and reads at most
+# cap+1 bytes. Prints the mode (& 07777, 4 octal digits) and returns 0; or prints unreadable|type|size and returns 1.
+accept_copy_hook() { # src dest
+  perl -e '
+    use Fcntl qw(:DEFAULT :mode);
+    my ($src, $dest, $cap) = @ARGV;
+    sysopen(my $in, $src, O_RDONLY | O_NONBLOCK | O_NOFOLLOW) or do { print "unreadable\n"; exit 1 };
+    my @st = stat($in);
+    unless (@st && S_ISREG($st[2])) { print "type\n"; exit 1 }
+    my ($buf, $len) = ("", 0);
+    while ($len <= $cap) {
+      my $n = sysread($in, $buf, $cap + 1 - $len, $len);
+      unless (defined $n) { print "unreadable\n"; exit 1 }
+      last if $n == 0;
+      $len += $n;
+    }
+    if ($len > $cap) { print "size\n"; exit 1 }
+    sysopen(my $out, $dest, O_WRONLY | O_CREAT | O_EXCL, 0600) or do { print "unreadable\n"; exit 1 };
+    my $off = 0;
+    while ($off < $len) {
+      my $w = syswrite($out, $buf, $len - $off, $off);
+      unless (defined $w) { unlink $dest; print "unreadable\n"; exit 1 }
+      $off += $w;
+    }
+    close($out) or do { unlink $dest; print "unreadable\n"; exit 1 };
+    printf "%04o\n", $st[2] & 07777;
+  ' "$1" "$2" "$ACCEPT_MAX_HOOK_BYTES"
+}
+
+# Mode of the path itself (lstat), in the same format as accept_copy_hook. perl because stat(1) differs between GNU and BSD.
+accept_mode_of() { # path
+  perl -e '@s = lstat($ARGV[0]) or exit 1; printf "%04o\n", $s[2] & 07777' "$1"
+}
+
+# "binary" when the file holds a NUL (diff would reduce it to one "Binary files differ" line), else "size lines maxline".
+# Lines are counted like awk does (a final line without newline counts); lengths are in bytes.
+accept_file_facts() { # file
+  local size stripped
+  size=$(wc -c <"$1" | tr -d ' ')
+  stripped=$(LC_ALL=C tr -d '\000' <"$1" | wc -c | tr -d ' ')
+  if [[ "$size" != "$stripped" ]]; then echo binary; return 0; fi
+  LC_ALL=C awk -v size="$size" '{ if (length($0) > m) m = length($0) } END { print size, NR, m + 0 }' "$1"
+}
+
+accept_facts_problem() { # facts -> size|binary|lines|"line length", or nothing when the whole file can be shown
+  local size lines maxline
+  if [[ "$1" == binary ]]; then echo binary; return 0; fi
+  read -r size lines maxline <<<"$1"
+  if [[ "$size" -gt "$ACCEPT_MAX_HOOK_BYTES" ]]; then echo size
+  elif [[ "$lines" -gt "$ACCEPT_MAX_HOOK_LINES" ]]; then echo lines
+  elif [[ "$maxline" -gt "$ACCEPT_MAX_LINE_BYTES" ]]; then echo "line length"
+  fi
+  return 0
+}
+
+accept_live_value() { # manifest name -> the value of its single hookfile line, or "!N" when it has N != 1 such lines
+  N=$2 awk -F'\t' '$1 == "hookfile" && $2 == ENVIRON["N"] { c++; v = $3 } END { if (c == 1) print v; else print "!" c + 0 }' "$1"
+}
+
+accept_require_plain_git() { # repo; hooks are read through these paths, so neither may be redirected
+  if [[ -L "$1/.git" ]]; then die "$1/.git is a symlink; move it aside and restore the repository manually"; fi
+  if [[ -L "$1/.git/hooks" || ! -d "$1/.git/hooks" ]]; then die "$1/.git/hooks is a symlink or missing; recover: agent-vm restore-git $1"; fi
+}
+
+# Chooses what can be accepted. Reads WORKDIR/baseline, live0 and files/; writes
+#   WORKDIR/dlist  (accepted; TAB: change name sha mode size lines difffile has_old)
+#   WORKDIR/notacc (refused, they stay reported; TAB: reason kind name)
+# Only hook files directly under .git/hooks that the check itself reports as different are candidates, so
+# what is accepted and what is reported cannot drift apart (the listing rule lives in hash_hook_dir alone).
+accept_hook_candidates() { # repo workdir
+  local repo=$1 W=$2 change kind name group rel count=0 shown=0 res mode facts problem old body n=0 sha size nlines
+  : >"$W/dlist"; : >"$W/notacc"; : >"$W/cand"
+  surface_diff "$W/baseline" "$W/live0" >"$W/diff0"
+  while IFS=$'\t' read -r change kind name; do
+    if [[ "$kind" != hookfile ]]; then printf 'kind\t%s\t%s\n' "$kind" "$name" >>"$W/notacc"; continue; fi
+    case "$name" in
+      .git/hooks/*/*) printf 'nested\t%s\t%s\n' "$kind" "$name" >>"$W/notacc"; continue ;;
+      .git/hooks/?*) ;;
+      *) printf 'location\t%s\t%s\n' "$kind" "$name" >>"$W/notacc"; continue ;;
+    esac
+    # Hooks that already existed come before new ones, so planted new files cannot push a real update out of the budget.
+    group=0; if [[ "$change" == added ]]; then group=1; fi
+    printf '%s\t%s\t%s\n' "$group" "${name#.git/hooks/}" "$change" >>"$W/cand"
+  done <"$W/diff0"
+  LC_ALL=C sort -u "$W/cand" >"$W/cand.sorted"
+  while IFS=$'\t' read -r group rel change; do
+    name=.git/hooks/$rel
+    case "$rel" in
+      "" | [!A-Za-z0-9]* | *[!A-Za-z0-9._-]*) printf 'name\thookfile\t%s\n' "$name" >>"$W/notacc"; continue ;;
+    esac
+    count=$((count + 1))
+    if [[ "$count" -gt "$ACCEPT_MAX_HOOKS" ]]; then printf 'budget\thookfile\t%s\n' "$name" >>"$W/notacc"; continue; fi
+    res=$(accept_live_value "$W/live0" "$name")
+    # A name printed twice in the manifest means a file name forged a second line (see hash_hook_dir); trust neither.
+    case "$res" in
+      '!0' | '!1') ;;
+      '!'*) printf 'duplicate\thookfile\t%s\n' "$name" >>"$W/notacc"; continue ;;
+    esac
+    old=""
+    if [[ "$change" != added ]] && saved_copy_matches_baseline "$W" hookfile "$name" "$W/files/hooks/$rel"; then
+      facts=$(accept_file_facts "$W/files/hooks/$rel")
+      problem=$(accept_facts_problem "$facts")
+      if [[ -z "$problem" ]]; then old="$W/files/hooks/$rel"; fi
+    fi
+    n=$((n + 1))
+    if [[ "$change" == removed ]]; then
+      if [[ -e "$repo/$name" || -L "$repo/$name" ]]; then printf 'type\thookfile\t%s\n' "$name" >>"$W/notacc"; continue; fi
+      sha=-; mode=-; size=-; nlines=-
+      if [[ -n "$old" ]]; then diff -u --label accepted-before --label /dev/null "$old" /dev/null >"$W/d.$n" || true; else : >"$W/d.$n"; fi
+    else
+      if ! res=$(accept_copy_hook "$repo/$name" "$W/hooks/$rel"); then printf '%s\thookfile\t%s\n' "$res" "$name" >>"$W/notacc"; continue; fi
+      mode=$res
+      facts=$(accept_file_facts "$W/hooks/$rel")
+      problem=$(accept_facts_problem "$facts")
+      if [[ -n "$problem" ]]; then printf '%s\thookfile\t%s\n' "$problem" "$name" >>"$W/notacc"; continue; fi
+      read -r size nlines _ <<<"$facts"
+      sha=$(sha_of_file "$W/hooks/$rel")
+      if [[ "$change" == changed && -n "$old" ]]; then
+        diff -u --label accepted-before --label current "$old" "$W/hooks/$rel" >"$W/d.$n" || true
+      else
+        diff -u --label /dev/null --label current /dev/null "$W/hooks/$rel" >"$W/d.$n" || true
+      fi
+    fi
+    # Budget in shown lines: the diff body, without the two label lines and the @@ hunk headers.
+    body=$(awk 'NR > 2 && !/^@@ / { c++ } END { print c + 0 }' "$W/d.$n")
+    if [[ $((shown + body)) -gt "$ACCEPT_MAX_DISPLAY_LINES" ]]; then printf 'budget\thookfile\t%s\n' "$name" >>"$W/notacc"; continue; fi
+    shown=$((shown + body))
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$change" "$rel" "$sha" "$mode" "$size" "$nlines" "$n" "$([[ -n "$old" ]] && echo 1 || echo 0)" >>"$W/dlist"
+  done <"$W/cand.sorted"
+}
+
+accept_print_notacc() { # workdir; the first ACCEPT_MAX_LISTED, then a count (the exit code still reflects all)
+  local reason kind name total
+  total=$(wc -l <"$1/notacc" | tr -d ' ')
+  head -n "$ACCEPT_MAX_LISTED" "$1/notacc" | while IFS=$'\t' read -r reason kind name; do
+    printf 'not accepted (stays reported): %s %s %s\n' "$(field_of "$reason")" "$(field_of "$kind")" "$(field_of "$name")"
+  done
+  if [[ "$total" -gt "$ACCEPT_MAX_LISTED" ]]; then echo "... and $((total - ACCEPT_MAX_LISTED)) more not accepted"; fi
+  return 0
+}
+
+accept_show() { # workdir
+  local W=$1 change rel sha mode size nlines n has_old
+  if [[ -s "$W/dlist" ]]; then
+    echo "hook files to accept as the new baseline:"
+    printf 'change\tname\tsize\tlines\tmode\tsha8\n'
+    while IFS=$'\t' read -r change rel sha mode size nlines n has_old; do
+      printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$change" "$(field_of ".git/hooks/$rel")" "$size" "$nlines" "$mode" "$(field_of "${sha:0:8}")"
+    done <"$W/dlist"
+    while IFS=$'\t' read -r change rel sha mode size nlines n has_old; do
+      echo "== $change $(field_of ".git/hooks/$rel") =="
+      if [[ "$change" != added && "$has_old" == 0 ]]; then echo "previous content unavailable"; fi
+      sanitize_for_terminal <"$W/d.$n"
+    done <"$W/dlist"
+  fi
+  accept_print_notacc "$W"
+}
+
+# Runs under the lock: verify that what was shown is still what the live files hold, then update files/ and the baseline.
+accept_write() { # repo dir machine workdir baseline_sha -> 0 when nothing is left reported, 3 otherwise
+  local repo=$1 dir=$2 m=$3 W=$4 b0=$5 change rel sha mode size nlines n has_old name bad="" got livemode
+  acquire_lock "$m" 60 || die "timed out waiting for another session of this repo (a session may still be starting; re-run when it is up)"
+  accept_require_plain_git "$repo"
+  if [[ "$(sha_of_file "$dir/baseline")" != "$b0" ]]; then
+    release_lock
+    step "baseline changed meanwhile; re-run agent-vm accept-git"
+    return 3
+  fi
+  # Signals stay enabled here: a hook swapped for something that stalls the hashing must not trap the user.
+  git_surface_manifest "$repo" >"$W/live"
+  while IFS=$'\t' read -r change rel sha mode size nlines n has_old; do
+    name=.git/hooks/$rel
+    got=$(accept_live_value "$W/live" "$name")
+    if [[ "$change" == removed ]]; then
+      if [[ "$got" != '!0' || -e "$repo/$name" || -L "$repo/$name" ]]; then bad=$name; break; fi
+    else
+      livemode=$(accept_mode_of "$repo/$name" || true)
+      if [[ "$got" != "$sha" || "$livemode" != "$mode" ]]; then bad=$name; break; fi
+    fi
+  done <"$W/dlist"
+  if [[ -n "$bad" ]]; then
+    release_lock
+    step "$bad changed after it was shown; nothing accepted (stop the VM session and re-run)"
+    return 3
+  fi
+  : >"$W/dtab"
+  while IFS=$'\t' read -r change rel sha mode size nlines n has_old; do
+    printf '%s\t.git/hooks/%s\t%s\n' "$change" "$rel" "$sha" >>"$W/dtab"
+    if [[ "$change" != removed ]]; then
+      cp "$W/hooks/$rel" "$W/stage/$rel" || die "cannot stage $rel"
+      # The private copy is 0600; the saved copy keeps the verified mode so restore-git brings back an executable hook.
+      chmod "$mode" "$W/stage/$rel" || die "cannot set the mode of the staged $rel"
+    fi
+  done <"$W/dlist"
+  {
+    sed -n '1,2p' "$W/baseline"
+    awk -F'\t' '
+      FNR == NR { op[$2] = $1; val[$2] = $3; next }
+      FNR <= 2 { next }
+      $1 == "hookfile" && ($2 in op) { next }
+      { print }
+      END { for (k in op) if (op[k] != "removed") print "hookfile" FS k FS val[k] }' "$W/dtab" "$W/baseline" | LC_ALL=C sort
+  } >"$W/baseline.new" || die "cannot build the new baseline"
+  # Only the renames are shielded from signals, so an interrupt cannot leave a half-updated state.
+  trap '' INT TERM HUP
+  mkdir -p "$dir/files/hooks" || die "cannot create $dir/files/hooks"
+  chmod u+rwx "$dir/files/hooks"
+  while IFS=$'\t' read -r change rel sha mode size nlines n has_old; do
+    if [[ "$change" == removed ]]; then
+      rm -rf "$dir/files/hooks/$rel"
+    else
+      if [[ -e "$dir/files/hooks/$rel" || -L "$dir/files/hooks/$rel" ]] && [[ ! -f "$dir/files/hooks/$rel" || -L "$dir/files/hooks/$rel" ]]; then
+        rm -rf "$dir/files/hooks/$rel"
+      fi
+      mv "$W/stage/$rel" "$dir/files/hooks/$rel" || die "cannot update the saved copy of $rel"
+    fi
+  done <"$W/dlist"
+  mv "$W/baseline.new" "$dir/baseline" || die "cannot update the baseline"
+  trap 'workdir_cleanup; exit 130' INT TERM HUP
+  release_lock
+  echo accepted
+  surface_diff "$dir/baseline" "$W/live" >"$W/rest"
+  if [[ ! -s "$W/rest" ]]; then return 0; fi
+  echo "still reported:"
+  head -n "$ACCEPT_MAX_LISTED" "$W/rest" | while IFS=$'\t' read -r change rel name; do
+    printf '  %s\t%s\t%s\n' "$(field_of "$change")" "$(field_of "$rel")" "$(field_of "$name")"
+  done
+  got=$(wc -l <"$W/rest" | tr -d ' ')
+  if [[ "$got" -gt "$ACCEPT_MAX_LISTED" ]]; then echo "... and $((got - ACCEPT_MAX_LISTED)) more still reported"; fi
+  return 3
+}
+
+cmd_accept_git() { ( accept_git_main "$@" ); } # [repo]
+
+accept_git_main() { # [repo] -> 0 nothing left to report / nothing done, 3 something stays reported or was aborted, 1 refused
+  local repo m dir tty answer b0 W
+  LC_ALL=C; export LC_ALL
+  repo=$(cd "${1:-.}" && resolve_repo_root) || exit 1
+  m=$(derive_machine_name "$repo")
+  [[ "$(read_meta_field "$m" repo_path 2>/dev/null || true)" == "$repo" ]] || die "no snapshot recorded for $repo"
+  dir=$(surface_dir "$m")
+  [[ -f "$dir/baseline" ]] || die "no snapshot recorded for $repo"
+  accept_require_plain_git "$repo"
+  # The answer is read from the terminal, never from stdin: a pipe (printf y |) must not be able to approve.
+  # The tty is replaceable only in the tests, as in `env gh`.
+  if [[ -z "$GH_TEST_MODE" && ! -t 1 ]]; then die "stdout is not a terminal; run agent-vm accept-git where you can read its output"; fi
+  tty=/dev/tty
+  if [[ -n "$GH_TEST_MODE" && -n "${AGENT_VM_TTY:-}" ]]; then tty=$AGENT_VM_TTY; fi
+  if ! (: <"$tty") 2>/dev/null; then die "cannot open $tty for input"; fi
+  exec 3<"$tty"
+  workdir_begin "$dir" accept
+  W=$WORKDIR
+  mkdir "$W/hooks" "$W/files" "$W/stage" || die "cannot prepare $W"
+  # Pin the sources under a short lock: save_surface_copies replaces files/ while a check runs.
+  acquire_lock "$m" 60 || die "timed out waiting for another session of this repo (a session may still be starting; re-run when it is up)"
+  cp -p "$dir/baseline" "$W/baseline" || die "cannot copy the baseline"
+  if [[ -d "$dir/files" ]] && ! cp -pPR "$dir/files/." "$W/files/" 2>/dev/null; then
+    # Without the saved copies the old versions are simply not shown ("previous content unavailable").
+    { chmod -R u+rwX "$W/files"; rm -rf "$W/files"; } 2>/dev/null || true
+    mkdir -p "$W/files" || die "cannot prepare $W/files"
+  fi
+  release_lock
+  b0=$(sha_of_file "$W/baseline")
+  git_surface_manifest "$repo" >"$W/live0"
+  accept_hook_candidates "$repo" "$W"
+  accept_require_plain_git "$repo"
+  accept_show "$W"
+  if [[ ! -s "$W/dlist" ]]; then
+    echo "nothing to accept"
+    if [[ -s "$W/notacc" ]]; then return 3; fi
+    return 0
+  fi
+  printf 'accept the hook changes listed above as the new baseline? [y/N] '
+  read -r -u 3 answer || answer=n
+  if [[ "$answer" != y && "$answer" != Y ]]; then echo "nothing accepted"; return 0; fi
+  accept_write "$repo" "$dir" "$m" "$W" "$b0"
 }
 
 # --- gh token (agent-vm env gh) ---------------------------------------------------------------
@@ -1292,6 +1621,7 @@ main() {
     rm) shift; cmd_rm "$@" ;;
     sync) shift; cmd_sync "$@" ;;
     restore-git) shift; cmd_restore_git "$@" ;;
+    accept-git) shift; cmd_accept_git "$@" ;;
     fetch-browsers) shift; cmd_fetch_browsers "$@" || exit $? ;;
     env)
       case "${2:-}" in
