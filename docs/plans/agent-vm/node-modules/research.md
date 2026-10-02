@@ -116,5 +116,54 @@ Linux 側は OrbStack の docker（`node:lts-slim`、aarch64、Debian glibc 2.36
 | root 欄の形式 | `/scon/containers/01M3XFQBE6BYMPFZTZD8ZDXMJP/rootfs/var/lib/agent-vm-v1/data`（subvolume の接頭辞の後に、パスが丸ごと現れる） | 合格（末尾一致で判定できる） |
 | `/var/lib` のファイルシステム | `/dev/vdb1[/scon/containers/<id>/rootfs] btrfs`（rootfs と同じ） | 合格 |
 | major:minor と st_dev | mountinfo の第 3 欄は `0:37`、`stat` の st_dev は 64（= `0:64`）。一致しない | plan-1 で `DEV_CHECK` を廃止した判断を裏付ける |
-| host が作った `node_modules` の uid | 501。VM の `id -u` も 501 | 合格（所有者の検査が通る） |
+| host が作った `node_modules` の uid | 501。VM の `id -u` も 501 | 合格（所有者の検査が通る）。**訂正**: VM のユーザーで測った値で、root の perl の検査とは別の量だった。下の「V3 の中断」を参照 |
 | `/var/lib/agent-vm` | 存在しない | `prepare` が root 所有で作る |
+
+## V3 の中断: 共有 mount の所有者は「見る側の uid」で返る（plan-3 T5、2026-10-02）
+
+条件: scratchpad の試験用 repo（`.../scratchpad/nm check`、npm workspace）に、`agent-vm prewarm` で machine `agent-nm-check-660f1b` を作った。plan-1〜3 を `chezmoi apply` した後である。
+
+| 観測 | 結果 |
+|---|---|
+| `agent-vm node-modules-sync <R>` | 終了コード 1。`some packages could not be mounted` |
+| VM でヘルパーを直接実行 | ルートと `packages/a` の両方で「mount 先が VM のユーザーの所有でない」という警告 |
+| VM のユーザーで `stat` | `501:501` |
+| `sudo -n stat`（root） | `0:0` |
+| 普段の repo（`agent-chezmoi-23810b`、`/Users/berlysia/.local/share/chezmoi`、virtiofs） | VM のユーザーは `501:501`、root は `0:0`。同じ |
+| root の perl で、開いた fd を `fstat` | `$> = 0` では 0。`$> = SUDO_UID` に切り替えると 501。戻すと 0。inode は同じ |
+
+結論:
+- OrbStack の virtiofs は、所有者を「見ている側の実効 uid」として返す。
+- ヘルパーの root の perl が行う所有者の検査（`PRIV_PL` の `mount` の `(stat $dst)[4] == $uid`）は、共有 mount の上で必ず失敗する。どの repo でも、差し替えは一度も成立していなかった。
+- 上の表の「host が作った `node_modules` の uid 501（所有者の検査が通る）」は、VM のユーザーで測った値で、root の perl の検査とは別の量を測っていた（計器の側の誤り）。
+- plan-1 の統合テストは、fixture を VM ローカルの btrfs（`mktemp -d`）に置くので、この挙動を再現しない。
+- 実効 uid を VM のユーザーにして fd を `fstat` すると 501 が返る。ただし次の実測のとおり、これは実際の所有者ではない。
+
+追加の実測（plan-4 Round 1 の指摘を受けて、`agent-chezmoi-23810b`、repo の `.tmp/owner-probe/f`）:
+
+| 操作 | 結果 |
+|---|---|
+| VM で `sudo chown 1234:1234 f` | 終了コード 0 |
+| VM のユーザーで `stat` | `501:501` |
+| root で `stat` | `0:0` |
+| root の perl で `$> = 501` にして `stat` | 501 |
+| root の perl で `$> = 1234` にして `stat` | 1234 |
+| host で `stat` | `501:20`（chown は host に反映されない） |
+
+結論: virtiofs の上の所有者は、見ている側の実効 uid の写しで、ファイルの属性として観測できない。共有 mount の上では、どの uid の目で見ても「mount 先の所有者」の検査は情報を持たない。
+
+## V3〜V6 の結果（plan-3 T5、plan-4 の修正の後、2026-10-02）
+
+条件: 同じ試験用 repo と machine `agent-nm-check-660f1b`。plan-4（cf660b6）を `chezmoi apply` して `agent-vm prewarm` で machine に届けた後。docs の V26〜V29 に当たる。
+
+| 項目 | 観測 | 判定 |
+|---|---|---|
+| V3 の 1〜2 | sync は 0。ルートと `packages/a` の 2 行。root 欄は `/scon/containers/<id>/rootfs/var/lib/agent-vm/node_modules/<key>/data` | 合格 |
+| V3 の 3〜4 | ユーザーが host で `node_modules` を消して作り直した。VM の mountinfo の行は `//deleted` にならず、元のパスのまま | plan-1 の前提（`//deleted` になる）は成り立たない |
+| V3 の 5 | sync は 0。ルートの行が一覧の末尾に移り（張り直したと読める。前の mount id は控えていない）、device:inode は `data` と一致 | 合格 |
+| V3 の 6 | host で worktree を足して sync すると、mount 4 本と保存先 4 つ。host の `git worktree remove` は 0 で、VM の行は元のパスのまま。次の sync（0）で行が外れ、保存先は 2 に回収 | 合格 |
+| V4 | host: `npm install`、`tsc` 7.0.2、`oxlint` が 0（darwin-arm64）。sync は install を促す 1 行と 0。VM: `npm install`、`tsc`、`oxlint` が 0（linux-arm64）。その後の host も 0（darwin-arm64 のまま）。host の `packages/a/node_modules` は npm の実物で、install のやり直しも 0 | 合格 |
+| V5 | `npm ci`、`pnpm@10 install --force`、`yarn@1 install`、`bun install --force`（VM の mise の bun 1.4.0）がすべて 0。4 パッケージとも mount は保たれた。`npx bun@1` は postinstall が走らずに失敗（mount と無関係）したので、VM の bun に差し替えた | 合格 |
+| V6 | VM の Claude の `git-worktree-create v6` は、保護フックに止められずに 0。6 パッケージ分の mount。`git-worktree-cleanup v6` は、commit の無い worktree なので端末の無い Claude からは残した（仕様）。`agent-vm shell` で `y` と答えると消え、mount の行も保存先（12 から 6）も残らなかった | 合格 |
+
+`//deleted` について: host 側で mount 先を消しても、virtiofs では VM の mountinfo の行は元のパスのまま残る。sync はそのパスで失効を検出して外し、張り直す（回収もできる）。自分の行の判定の「`//deleted` を除く」条件は、この経路では使われなかった。判定は誤った振る舞いをしていないので、変えない。

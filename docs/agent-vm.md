@@ -200,7 +200,7 @@ git が失敗したことも、`.git` が消えていることも、それ自体
 - apt・mise・APM の上流の更新は、dotfiles を変えない限り golden machine に入らない。取り込むには `agent-vm golden refresh` を実行する。
 - golden machine の claude 本体は、golden machine を作ったときの版のまま残る。clone 先の claude が古くて困る場合は、`agent-vm golden rm` で作り直す。
 - dotfiles を古い版に戻すときは、先に `~/.local/share/agent-vm/creating/` が空であることを確かめる。古い launcher は作成中の印を知らない。
-- VM で `node_modules` を作り直す系のコマンド（`npm ci` など）は、`node_modules` ディレクトリ自体が mount 先なので、消そうとして失敗する可能性がある。確認の結果は V28（9 節）に記録する。
+- VM で `node_modules` を作り直す系のコマンド（`npm ci`、`pnpm install --force`、`yarn install`、`bun install --force`）は、`node_modules` ディレクトリが mount 先でも成功し、mount も保たれる（V28）。
 - 1 つの worktree で差し替えるパッケージは 500 件までである。超えた worktree はルートのパッケージだけを差し替え、警告を出す。
 
 ## 8. 片付け
@@ -249,7 +249,7 @@ machine を侵害された疑いがある場合、または使わなくなった
 | V23 | clone 先で claude と codex にログインしてから `agent-vm golden refresh` を実行し、別の新しい repo の machine の認証の痕跡を確かめる                                                       | 新しい machine に `~/.claude/.credentials.json` と `~/.codex/auth.json` が無く、`~/.claude.json` に `oauthAccount` が無い                                                                                                             |
 | V24 | VM で、fd 経由の bind mount（`mount --no-canonicalize --bind /proc/<pid>/fd/<src> /proc/<pid>/fd/<dst>`）を root の perl から行う                                                         | 成功し、mountinfo の mountpoint が正規化したパスになる                                                                                                                                                                                |
 | V25 | bind mount の mount 先と元の device:inode、mountinfo の root 欄と major:minor を見る                                                                                                      | device:inode が一致し、root 欄が保存先の `data` で終わる                                                                                                                                                                              |
-| V26 | host で `node_modules` を消して作り直し、`agent-vm node-modules-sync` を実行する。host で worktree を消してから同じく実行する                                                             | 消えた mount が mountinfo で `//deleted` になり、sync が張り直す。消した worktree の保存先が回収される                                                                                                                                |
+| V26 | host で `node_modules` を消して作り直し、`agent-vm node-modules-sync` を実行する。host で worktree を消してから同じく実行する                                                             | sync が失効を検出して張り直す。消した worktree の mount は sync が外し、保存先を回収する                                                                                                                                              |
 | V27 | 空白を含むパスの npm workspace を host と VM の両方で install し、両側で `tsc` と `oxlint` を実行する。host に現れた空の `node_modules` のまま、host で `npm install` と `tsc` をやり直す | どれも成功し、片側の install がもう片側を壊さない。host の空の `node_modules` は host の install と `tsc` を変えない                                                                                                                  |
 | V28 | VM で `npm ci`、`pnpm install --force`、`yarn install`、`bun install --force` を実行する                                                                                                  | 成功するか、失敗するものに回避策がある（7 節）                                                                                                                                                                                        |
 | V29 | VM の Claude から `git-worktree-create` と `git-worktree-cleanup` を実行する                                                                                                              | 保護フックに止められず、mount が張られて、外される                                                                                                                                                                                    |
@@ -320,3 +320,24 @@ repo ごとの machine を golden machine の clone で作る構成（3 節）�
 観測:
 
 - V21 の `agent-vm golden refresh`（golden machine の作り直し）は 1632 秒かかった。cloud-init の apt が `archive.ubuntu.com` から約 70 KB/s でしか取得できなかったためで、同じファイルを host から取得しても同じ速さだった。mirror 側の一時的な遅さで、golden machine の仕組みとは関係がない。
+
+### 2026-10-02 の確認結果（VM ローカルの node_modules、macOS、OrbStack 2.2.3、Ubuntu resolute arm64）
+
+試験用の repo は、空白を含むパス（`.../nm check`）に置いた npm workspace である（ルートが `typescript` 7.0.2 と `oxlint` 1.86.0、`packages/a` が衝突する `typescript` 6.0.3）。
+
+- V24、V25（plan-1 の T0）: fd 経由の mount は成功し、device:inode は一致した。mountinfo の root 欄は `/scon/containers/<id>/rootfs/var/lib/agent-vm/node_modules/<key>/data` の形で、major:minor（0:37）は stat の st_dev（0:64）と一致しなかった。このため、自分の mount の判定は major:minor を使わず、root 欄の末尾一致で行う（ADR-0022）。
+- V26 の準備で、ヘルパーの差し替えが一度も成立していなかったことが分かった。共有 mount（virtiofs）は所有者を見ている側の uid の写しとして返し（VM で `chown` しても変わらない）、root の perl による mount 先の所有者の検査が必ず失敗していた。検査を外して直した（ADR-0022、`docs/plans/agent-vm/node-modules/plan-4.md`）。以下は直した後の結果である。
+- V26:
+  - host で `node_modules` を消して作り直しても、mountinfo の行は `//deleted` にならず、元のパスのまま残った。続く `agent-vm node-modules-sync` は終了コード 0 で、失効を検出して張り直した。張り直した後、`node_modules` の device:inode は保存先の `data` と一致した。
+  - host で worktree を足して sync すると、mount と保存先が 2 つずつ増えた。host で `git worktree remove` すると、VM の行は元のパスのまま残った。次の sync（終了コード 0）で外れ、保存先も回収された（4 から 2）。
+- V27:
+  - host の `npm install` と、`tsc`（7.0.2）、`oxlint` は終了コード 0 だった。host には darwin-arm64 のパッケージが入った。
+  - sync は、install を促す 1 行を出して終了コード 0 だった。
+  - VM の `npm install`、`tsc`、`oxlint` も終了コード 0 で、VM には linux-arm64 のパッケージが入った。
+  - その後も、host の `tsc` と `oxlint` は終了コード 0 で、darwin-arm64 のままだった。
+  - host の `packages/a/node_modules` には、host の npm が入れた実物（`typescript` 6）があり、host での install のやり直しも終了コード 0 だった。
+- V28: `npm ci`、`pnpm install --force`（pnpm 10）、`yarn install`（yarn 1.22.22）、`bun install --force`（bun 1.4.0）は、どれも終了コード 0 だった。どのパッケージの mount も保たれた。bun は VM に mise が入れたものを使った（`npx bun@1` は postinstall が走らずに失敗した。mount とは関係がない）。
+- V29:
+  - VM の Claude から `git-worktree-create v6` を実行すると、保護フックに止められずに終了コード 0 で、6 パッケージ分の mount が張られた。
+  - `git-worktree-cleanup v6` は、作成後に commit の無い worktree なので、端末の無い VM の Claude からは確認できずに残した（仕様どおり）。
+  - `agent-vm shell` で同じコマンドを実行して確認に `y` と答えると、worktree は消えた。mount の行も、保存先（12 から 6）も残らなかった。
