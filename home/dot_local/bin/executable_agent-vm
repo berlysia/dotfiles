@@ -41,6 +41,7 @@ Usage:
   agent-vm restore-git [repo]       Undo reported changes to host-executed git files
   agent-vm accept-git [repo]        Accept hook changes you made on the host as the new baseline
   agent-vm fetch-browsers [--force]  Fetch the linux-arm64 browser for VM browser MCPs
+  agent-vm node-modules-sync [repo]  Give a running machine the VM-local node_modules of new worktrees
 EOF
 }
 
@@ -1658,6 +1659,7 @@ main() {
     gc) cmd_gc ;;
     rm) shift; cmd_rm "$@" ;;
     sync) shift; cmd_sync "$@" ;;
+    node-modules-sync) shift; cmd_node_modules_sync "$@" || exit $? ;;
     restore-git) shift; cmd_restore_git "$@" ;;
     accept-git) shift; cmd_accept_git "$@" ;;
     fetch-browsers) shift; cmd_fetch_browsers "$@" || exit $? ;;
@@ -2046,6 +2048,35 @@ cmd_gc() {
     orb delete -f "$m" </dev/null
     forget_machine "$m"
   done <<<"$targets"
+}
+
+# [repo]: sync a running machine now (spec K7; the contract table is in plan-2). The repository comes from git
+# alone, unlike cmd_rm's record lookup: without .git there is no worktree to sync. Quiet 0 whenever the next launch
+# will converge anyway.
+cmd_node_modules_sync() {
+  local path repo m state status=0
+  path=$(cd -P -- "${1:-.}" 2>/dev/null && pwd -P) || die "no such directory: ${1:-.}"
+  repo=$(cd "$path" && resolve_repo_root 2>/dev/null) || return 0
+  m=$(derive_machine_name "$repo")
+  [[ -f "$(meta_path "$m")" ]] || return 0
+  state=$(orb_machine_state "$m" 2>/dev/null) || return 0
+  [[ "$state" == running ]] || return 0
+  # A launch may be bootstrapping the machine (installing the helper) under the repo lock; a missing helper reported
+  # then would send the user to `agent-vm rm`. Short holders (ingest_outbox, finish_session) get a few quiet retries;
+  # a bootstrap outlasts them and is skipped. The lock is then held for as long as the helper's sync takes.
+  nm_lock_quietly "$m" 5 || return 0
+  nm_sync "$m" "$repo" || status=$?
+  release_lock
+  return "$status"
+}
+# machine tries -> 0 once the repo lock is held; one try per second, without acquire_lock's waiting messages
+nm_lock_quietly() {
+  local i
+  for ((i = 1; i <= $2; i++)); do
+    if acquire_lock "$1" 1; then return 0; fi
+    if [[ $i -lt $2 ]]; then sleep 1; fi
+  done
+  return 1
 }
 
 cmd_rm() { # [repo]

@@ -1652,6 +1652,108 @@ test_run_tool_syncs_after_the_notices_and_goes_on_when_it_fails() {
   assert_eq $'gh\nnm agent-r-000000 /r\nsession' "$(cat "$order")" "sync runs after the notices and before the session"
 }
 
+nm_record_machine() { # repo: write the host record of its machine; prints the machine name
+  local m; m=$(derive_machine_name "$1")
+  write_machine_meta "$m" "$1"; printf '%s' "$m"
+}
+nm_hold_lock() { # machine secs: a background process holding the repo lock; it creates $TMP_ROOT/held once it has it
+  perl -MFcntl=:flock -e 'open(my $f, ">", $ARGV[0]) or die; flock($f, LOCK_EX) or die; open(my $h, ">", $ARGV[1]) or die; close $h; sleep $ARGV[2]' \
+    "$AGENT_VM_STATE_DIR/machines/$1.lock" "$TMP_ROOT/held" "$2" &
+}
+nm_wait_for_holder() { # waits up to 10 s for nm_hold_lock's marker, so the test never races the holder
+  local i
+  for ((i = 0; i < 100; i++)); do
+    if [[ -e "$TMP_ROOT/held" ]]; then return 0; fi
+    sleep 0.1
+  done
+  record "FAIL the lock holder did not start"
+}
+nm_git_repo() { # a canonical git repository with one commit
+  local r; r=$(nm_repo); git -C "$r" init -q
+  git -C "$r" -c user.email=t@t -c user.name=t -c commit.gpgsign=false commit -q --allow-empty -m init
+  printf '%s' "$r"
+}
+test_node_modules_sync_is_silent_without_a_machine_record() {
+  local r; r=$(nm_git_repo)
+  assert_eq "" "$(cmd_node_modules_sync "$r" 2>&1)" "no output for a repository agent-vm never ran in"
+  assert_status 0 "exit 0" -- cmd_node_modules_sync "$r"
+  assert_not_contains "$(cat "$STUB_LOG")" "orb" "orb is not called"
+}
+test_node_modules_sync_is_silent_outside_git() {
+  mkdir -p "$TMP_ROOT/plain"
+  assert_eq "" "$(GIT_CEILING_DIRECTORIES="$TMP_ROOT" cmd_node_modules_sync "$TMP_ROOT/plain" 2>&1)" "no output outside git"
+  # shellcheck disable=SC2016 # the inner shell expands $1 and $2
+  assert_status 0 "exit 0" -- env GIT_CEILING_DIRECTORIES="$TMP_ROOT" bash -c 'AGENT_VM_LIB=1 . "$1"; cmd_node_modules_sync "$2"' _ "$LAUNCHER" "$TMP_ROOT/plain"
+}
+test_node_modules_sync_fails_for_a_missing_directory() {
+  local out status=0
+  out=$(bash "$LAUNCHER" node-modules-sync "$TMP_ROOT/none" 2>&1) || status=$?
+  assert_eq 1 "$status" "exit 1"
+  assert_contains "$out" "no such directory: $TMP_ROOT/none" "says which directory"
+}
+test_node_modules_sync_skips_a_stopped_machine() {
+  local r m; r=$(nm_git_repo); m=$(nm_record_machine "$r")
+  assert_eq "" "$(STUB_ORB_LIST_STDOUT="$m stopped" cmd_node_modules_sync "$r" 2>&1)" "no output for a stopped machine"
+  # shellcheck disable=SC2016 # the inner shell expands $1 and $2
+  assert_status 0 "exit 0" -- env STUB_ORB_LIST_STDOUT="$m stopped" bash -c 'AGENT_VM_LIB=1 . "$1"; cmd_node_modules_sync "$2"' _ "$LAUNCHER" "$r"
+  assert_not_contains "$(cat "$STUB_LOG")" "orb -m $m" "the stopped machine is not started"
+}
+test_node_modules_sync_is_silent_when_orb_cannot_list() {
+  local r m; r=$(nm_git_repo); m=$(nm_record_machine "$r")
+  assert_eq "" "$(STUB_ORB_FAIL_ON=list cmd_node_modules_sync "$r" 2>&1)" "no output when orb list fails"
+  # shellcheck disable=SC2016 # the inner shell expands $1 and $2
+  assert_status 0 "exit 0" -- env STUB_ORB_FAIL_ON=list bash -c 'AGENT_VM_LIB=1 . "$1"; cmd_node_modules_sync "$2"' _ "$LAUNCHER" "$r"
+}
+test_node_modules_sync_skips_while_a_launch_holds_the_lock() {
+  local r m holder; r=$(nm_git_repo); m=$(nm_record_machine "$r")
+  # The holder outlives the five quiet tries (about 4 s); the test kills it afterwards
+  nm_hold_lock "$m" 30
+  holder=$!
+  nm_wait_for_holder
+  assert_eq "" "$(STUB_ORB_LIST_STDOUT="$m running" STUB_ORB_EXIT=90 cmd_node_modules_sync "$r" 2>&1)" "no missing-helper warning during a bootstrap"
+  assert_not_contains "$(cat "$STUB_LOG")" "orb -m $m" "the sync is not attempted"
+  kill "$holder" 2>/dev/null || true
+  wait "$holder" 2>/dev/null || true
+}
+test_node_modules_sync_waits_out_a_short_lock_holder() {
+  local r m holder; r=$(nm_git_repo); m=$(nm_record_machine "$r")
+  # A one-second holder (like ingest_outbox) ends well within the five quiet tries
+  nm_hold_lock "$m" 1
+  holder=$!
+  nm_wait_for_holder
+  assert_eq "" "$(STUB_ORB_LIST_STDOUT="$m running" STUB_ORB_STDOUT=ran cmd_node_modules_sync "$r" 2>&1)" "no waiting messages"
+  assert_contains "$(cat "$STUB_LOG")" "orb -m $m bash -lc" "the sync runs once the holder is gone"
+  wait "$holder" 2>/dev/null || true
+}
+test_node_modules_sync_runs_in_a_running_machine() {
+  local r m; r=$(nm_git_repo); m=$(nm_record_machine "$r")
+  # shellcheck disable=SC2016 # the inner shell expands $1 and $2
+  assert_status 0 "converged" -- env STUB_ORB_LIST_STDOUT="$m running" STUB_ORB_STDOUT=ran bash -c 'AGENT_VM_LIB=1 . "$1"; cmd_node_modules_sync "$2"' _ "$LAUNCHER" "$r"
+  assert_contains "$(cat "$STUB_LOG")" "orb -m $m bash -lc" "the sync runs in the machine"
+  assert_contains "$(cat "$STUB_LOG")" "_ 1 $r" "for this repository"
+}
+test_node_modules_sync_fails_with_one_warning_and_no_crash_report() {
+  local r m out status=0; r=$(nm_git_repo); m=$(nm_record_machine "$r")
+  out=$(STUB_ORB_LIST_STDOUT="$m running" STUB_ORB_FAIL_ON=agent-vm-node-modules bash "$LAUNCHER" node-modules-sync "$r" 2>&1) || status=$?
+  assert_eq 9 "$status" "the VM-side status"
+  assert_eq "agent-vm: node_modules may be shared with the host in the VM (the sync did not run: status 9); recover: cd $r && agent-vm shell, then agent-vm-node-modules sync $r" "$out" "one warning line"
+  assert_not_contains "$out" "failed unexpectedly" "no ERR trap report"
+}
+test_node_modules_sync_resolves_a_worktree_to_its_repository() {
+  local r m; r=$(nm_git_repo)
+  git -C "$r" worktree add -q "$r/.git/worktree/feat" -b feat
+  m=$(nm_record_machine "$r")
+  STUB_ORB_LIST_STDOUT="$m running" STUB_ORB_STDOUT=ran cmd_node_modules_sync "$r/.git/worktree/feat" 2>/dev/null
+  assert_contains "$(cat "$STUB_LOG")" "_ 1 $r" "the main repository is synced"
+}
+test_main_dispatches_node_modules_sync() {
+  cmd_node_modules_sync() { echo "nms $*"; }
+  assert_eq "nms /r" "$(main node-modules-sync /r)" "main reaches cmd_node_modules_sync"
+}
+test_help_lists_node_modules_sync() {
+  assert_contains "$(main --help)" "agent-vm node-modules-sync [repo]" "help lists node-modules-sync"
+}
+
 gh_fixture_repo() { # origin_url -> a git repo with that origin
   local repo="$TMP_ROOT/ghrepo"
   mkdir -p "$repo" && git -C "$repo" init -q
