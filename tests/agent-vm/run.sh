@@ -555,6 +555,22 @@ test_launch_script_sources_and_deletes_env_file() {
   assert_contains "$cmd" 'rm -f /dev/shm/agent-vm.env.x' "env deleted"
   assert_contains "$cmd" 'exec claude --resume a\;b' "args quoted"
 }
+test_confirm_prompts_treat_eof_as_no_without_the_error_trap() {
+  local repo real m out rc=0
+  repo=$(make_flow_repo); real=$(cd -P "$repo" && pwd -P); m=$(derive_machine_name "$real")
+  write_machine_meta "$m" "$real"
+  # Run the real entry point (ERR trap installed) with stdin closed.
+  out=$(cd "$repo" && AGENT_VM_STATE_DIR="$AGENT_VM_STATE_DIR" bash "$LAUNCHER" rm </dev/null 2>&1) || rc=$?
+  assert_eq 0 "$rc" "rm on EOF: exit 0 like an explicit N"
+  assert_contains "$out" "no input; aborted" "rm on EOF: message"
+  assert_not_contains "$out" "failed unexpectedly" "rm on EOF: no ERR trap"
+  assert_not_contains "$(cat "$STUB_LOG")" "delete" "rm on EOF: nothing deleted"
+  write_machine_meta agent-gone-000000 "$TMP_ROOT/does-not-exist"
+  rc=0; out=$(cmd_gc </dev/null 2>&1) || rc=$?
+  assert_eq 0 "$rc" "gc on EOF: exit 0"
+  assert_contains "$out" "no input; aborted" "gc on EOF: message"
+  assert_not_contains "$(cat "$STUB_LOG")" "delete" "gc on EOF: nothing deleted"
+}
 test_codex_login_runs_only_when_auth_missing() {
   STUB_ORB_EXIT=1 ensure_codex_auth agent-a-000000 || true
   # the stub logs argv with printf %q, so the single bash -lc script shows escaped spaces

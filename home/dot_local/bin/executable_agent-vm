@@ -231,6 +231,19 @@ acquire_store_lock() { # max_wait_seconds; holds fd 8 until release_store_lock (
 }
 release_store_lock() { exec 8>&-; }
 
+# Reads the answer to a [y/N] prompt that is already printed. Returns 0 only for y/Y. A refusal and a closed stdin both
+# return 1 (callers abort with status 0 like an explicit "N"): EOF must not reach set -e, where it would surface as
+# the ERR trap's "failed unexpectedly" message for what is just "nobody answered".
+confirm_yes() {
+  local answer
+  if ! read -r answer; then
+    echo >&2
+    echo "agent-vm: no input; aborted" >&2
+    return 1
+  fi
+  [[ "$answer" == y || "$answer" == Y ]]
+}
+
 # Fixed names only: a pattern such as MISE_* would also pass tokens the download has no use for.
 FETCH_ENV_NAMES="USER TMPDIR LANG HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy SSL_CERT_FILE NODE_EXTRA_CA_CERTS MISE_DATA_DIR MISE_CONFIG_DIR XDG_CACHE_HOME XDG_CONFIG_HOME XDG_DATA_HOME"
 fetch_env_args() { # fills FETCH_ENV with NAME=value pairs for env -i (values with a newline are not passed)
@@ -921,8 +934,7 @@ restore_git_main() { # [repo]
   if [[ ! -s "$WORKDIR/diff" ]]; then echo "nothing to restore"; return 0; fi
   sed 's/^/  /' "$WORKDIR/diff" | sanitize_for_terminal
   printf 'restore these to the last clean snapshot (untracked files are renamed to *.agent-vm-quarantine)? [y/N] '
-  read -r answer || answer=n
-  if [[ "$answer" != y && "$answer" != Y ]]; then return 0; fi
+  confirm_yes || return 0
   # The confirmation can take long and the lock is not held meanwhile: take it now and restore only what was shown.
   acquire_lock "$m" 60 || die "timed out waiting for another session of this repo"
   git_surface_manifest "$repo" >"$WORKDIR/current"
@@ -1599,8 +1611,7 @@ cmd_golden() { # refresh|rm; both hold the golden lock (fd 7), never a repo lock
       check_health
       # Asks first like cmd_rm / cmd_gc: deleting costs a rebuild of several minutes on the next new machine.
       printf 'delete the golden machine %s? the next new machine rebuilds it (several minutes) [y/N] ' "$GOLDEN_MACHINE"
-      read -r answer
-      if [[ "$answer" != y && "$answer" != Y ]]; then return 0; fi
+      confirm_yes || return 0
       acquire_golden_lock 900 || die "waited 900s for another session building the golden machine. Stop that agent-vm, then retry"
       discard_golden
       release_golden_lock
@@ -1908,12 +1919,11 @@ cmd_env_gh() { # [--repo OWNER/REPO] [--vault Personal|Formal]
 }
 
 cmd_gc() {
-  local targets answer m
+  local targets m
   targets=$(machine_rows | awk -F'\t' '$2 == "missing" {print $1}')
   if [[ -z "$targets" ]]; then echo "nothing to collect"; return 0; fi
   printf 'machines whose repository no longer exists:\n%s\ndelete them? [y/N] ' "$targets"
-  read -r answer
-  if [[ "$answer" != y && "$answer" != Y ]]; then return 0; fi
+  confirm_yes || return 0
   while IFS= read -r m; do
     orb delete -f "$m" </dev/null
     forget_machine "$m"
@@ -1921,7 +1931,7 @@ cmd_gc() {
 }
 
 cmd_rm() { # [repo]
-  local path repo m answer f
+  local path repo m f
   path=$(cd "${1:-.}" && pwd -P) || die "no such directory: ${1:-.}"
   # An exact host-side record wins: it also works when .git is gone (see host_reason), and it cannot be
   # shadowed by an unrelated git repository in an ancestor directory.
@@ -1935,8 +1945,7 @@ cmd_rm() { # [repo]
   fi
   m=$(derive_machine_name "$repo")
   printf 'delete machine %s for %s? [y/N] ' "$m" "$repo"
-  read -r answer
-  if [[ "$answer" != y && "$answer" != Y ]]; then return 0; fi
+  confirm_yes || return 0
   orb delete -f "$m" </dev/null
   forget_machine "$m"
 }
