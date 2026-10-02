@@ -61,3 +61,14 @@ test("the document-workflow-reference skill exists", () => {
   ok(content.startsWith("---"), "reference skill must have frontmatter");
   ok(/name: document-workflow-reference/.test(content), "frontmatter name");
 });
+
+test("keeps the approval invariants in the operator guide", () => {
+  const content = readFileSync(workflowMd, "utf-8");
+  for (const fixed of [
+    "## CRITICAL: 承認は人間のみ",
+    "AskUserQuestion の `answers` を入れない",
+    "承認行と `approvals.log` を書かない",
+  ]) {
+    ok(content.includes(fixed), `workflow.md must keep: ${fixed}`);
+  }
+});

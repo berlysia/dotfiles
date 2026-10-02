@@ -38,12 +38,12 @@
    - **5.2 Round 2 以降は差分**: 前 round の非 pass reviewer + `logic-validator` だけ再実行（`round` / `stamp` もこの集合）。Key Decisions / 白紙案を変えたら `round <doc> --full`。全員 pass で軽微指摘のみなら反映後に `stamp --verdict pass`、新 round は起こさない。
    - **5.3 予算**: pass 後 3 round で素の `round` は拒否される。延長は拒否時の案内に従う。延長した周は Executive Summary に承認者別の延長回数と reframer 記録の要約を書き、Round 7 以降は Risks にも書く。詳細は `/document-workflow-reference`「ラウンド予算」。
 6. **インテント整合性トリアージ（必須）**: `/intent-alignment-triage` で、元のオーダーの本義を歪めてスコープを縮める指摘（divergent）を除外する。結果は `workflow-cli triage <doc> --adopted N --excluded M` で記録する。トリアージ前にレビュー結果をユーザーへ提示しない。
-7. **承認**: 人間が会話で `承認`（複数なら文書名も）と書く。
+7. **承認**: Executive Summary の直後に `workflow-cli ask-approval` の出力をそのまま AskUserQuestion に渡し、人間が文書を選ぶ。キャンセルされたら議論し、済んだら人間が `approve` と打つ（下記 CRITICAL）。
 8. **実装**: 三状態 + hash 一致がそろってから着手する。**着手前にオフロード判定を 1 行宣言する**（`@~/.claude/rules/model-offloading.md`）。
 
 ### ターン終端規則（重要）
 
-「〜します」「走らせます」と宣言したら、そのターン内で実際に実行する。**宣言だけしてツールを呼ばずにターンを閉じない**。レビュアーの結果が全部届いたら、報告して止まらず次の step に進む。人間の入力を待つ場合は、最終行に「何を待っているか」を書く。
+「〜します」「走らせます」と宣言したら、そのターン内で実際に実行する。**宣言だけしてツールを呼ばずにターンを閉じない**。レビュアーの結果が全部届いたら、報告して止まらず次の step に進む。人間の入力を待つ場合は、最終行に「何を待っているか」を書く。判断を求める点が複数あるときは、文章で並べず AskUserQuestion でまとめて聞く。承認の依頼は同じターンで質問まで出し、回答の後に `[approval-answer-recorder]` の返答が無ければ `workflow-cli status` で確かめる。
 
 ## 二層モード（spec + plan-N）
 
@@ -88,7 +88,7 @@ plan に `## テスト計画 (ISO 25010)` を設け、関連する品質特性�
 
 ## CRITICAL: 承認は人間のみ
 
-人間が会話で `承認` と書くと hook がその版の hash を `approvals.log` に記録し、gate はこの hash と現在の hash の一致を求める。Claude は `Approval Status: approved` を書かない（guard が deny）。`/execute-plan` は承認ではない。
+人間が承認の質問で文書を選ぶか、会話で `approve` / `承認` と書くと、hook がその版の hash を `approvals.log` に記録し、gate はこの hash と現在の hash の一致を求める。Claude は AskUserQuestion の `answers` を入れない。承認行と `approvals.log` を書かない（guard が deny）。`/execute-plan` は承認ではない。
 
 - hash が動く改訂は再承認が要る。取り消しは承認行を pending に戻す（詳細: reference skill「承認の記録」）。
 - research/spec/plan/plan-N への編集は承認前でも許可される。
@@ -103,7 +103,7 @@ plan に `## テスト計画 (ISO 25010)` を設け、関連する品質特性�
 - **Key Decisions**（採用と却下した代替案）/ **Risks / Unknowns**
 - **Review Status**: verdict / reviewers / hash（auto-review marker から）
 - **Open Questions**
-- **Next Action**: 会話で `承認` と書くか、追加修正を依頼する
+- **Next Action**: 続けて出す承認の質問で文書を選ぶ / 議論したいときは Esc でキャンセルしてチャットし、済んだら `approve` / 追加修正を依頼する
 
 Experience Delta が Goal の達成に直結しているか自己検証する。自動レビューを通さずに `verdict=pass` と書かない。
 
