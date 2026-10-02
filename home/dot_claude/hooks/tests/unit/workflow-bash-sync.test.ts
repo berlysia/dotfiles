@@ -7,6 +7,7 @@ import {
   mkdtempSync,
   readFileSync,
   symlinkSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -15,11 +16,13 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import hook from "../../implementations/workflow-bash-sync.ts";
 import { deriveDefaultWorkflowDir } from "../../lib/workflow-paths.ts";
 import {
+  approvedWorkflowRepo,
   createGitWorkflowRepo,
   createPostToolUseContextFor,
   draftPlanRepo,
   EnvironmentHelper,
   invokeRun,
+  recordApprovalsForTest,
   TEST_SESSION_ID,
 } from "./test-helpers.ts";
 
@@ -185,6 +188,44 @@ describe("workflow-bash-sync.ts: tripwire (K2)", () => {
     const log = readFileSync(join(repo, wfRel, "off-plan-writes.log"), "utf-8");
     match(log, /tool=Bash-tripwire/);
     match(log, /leaked\.ts/);
+  });
+
+  it("runs the tripwire for an approved plan whose research.md is missing", async () => {
+    const repo = createGitWorkflowRepo(approvedWorkflowRepo());
+    recordApprovalsForTest(
+      join(repo, deriveDefaultWorkflowDir(TEST_SESSION_ID)),
+    );
+    unlinkSync(join(repo, wfRel, "research.md"));
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+
+    const ctx1 = createPostToolUseContextFor(hook, "Bash", { command: "true" });
+    await invokeRun(hook, ctx1);
+    writeFileSync(join(repo, "src", "leaked.ts"), "export const x = 1;\n");
+    const ctx2 = createPostToolUseContextFor(hook, "Bash", { command: "true" });
+    await invokeRun(hook, ctx2);
+
+    const log = readFileSync(join(repo, wfRel, "off-plan-writes.log"), "utf-8");
+    match(log, /tool=Bash-tripwire/);
+  });
+
+  it("does not run the tripwire for an approved plan with research.md (implementation phase)", async () => {
+    const repo = createGitWorkflowRepo(approvedWorkflowRepo());
+    recordApprovalsForTest(
+      join(repo, deriveDefaultWorkflowDir(TEST_SESSION_ID)),
+    );
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+
+    const ctx1 = createPostToolUseContextFor(hook, "Bash", { command: "true" });
+    await invokeRun(hook, ctx1);
+    writeFileSync(join(repo, "src", "leaked.ts"), "export const x = 1;\n");
+    const ctx2 = createPostToolUseContextFor(hook, "Bash", { command: "true" });
+    await invokeRun(hook, ctx2);
+
+    const logPath = join(repo, wfRel, "off-plan-writes.log");
+    ok(
+      !existsSync(logPath) ||
+        !/Bash-tripwire/.test(readFileSync(logPath, "utf-8")),
+    );
   });
 
   it("disables itself when git is unavailable and does not repeat the notice", async () => {

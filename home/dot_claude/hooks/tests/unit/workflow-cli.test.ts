@@ -7,6 +7,7 @@ import {
   mkdtempSync,
   readFileSync,
   realpathSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -1168,6 +1169,37 @@ describe("workflow-cli: status", () => {
     const r = status(repo, wf, "src/a.ts");
     assert.match(r.stdout, /src\/a\.ts` is blocked/);
     assert.match(r.stdout, /✗ Approval Status/);
+  });
+
+  it("status without a target does not claim the gate is blocked when every condition holds", () => {
+    const { repo, wf } = statusRepo();
+    writeFileSync(
+      join(wf, "plan.md"),
+      buildPlanContent(approvedWorkflowRepo()),
+    );
+    recordApprovalsForTest(wf);
+    const r = runWorkflowCli(["status"], {
+      cwd: repo,
+      wfDir: wf,
+      sessionId: "test-ses",
+      wfDirSource: "derived",
+      now: NOW,
+    });
+    assert.doesNotMatch(r.stdout, /is blocked/);
+    assert.match(r.stdout, /conditions on `plan\.md`:/);
+  });
+
+  it("status <path> shows research.md as the missing condition for an approved plan", () => {
+    const { repo, wf } = statusRepo();
+    writeFileSync(
+      join(wf, "plan.md"),
+      buildPlanContent(approvedWorkflowRepo()),
+    );
+    recordApprovalsForTest(wf);
+    unlinkSync(join(wf, "research.md"));
+    const r = status(repo, wf, "src/a.ts");
+    assert.match(r.stdout, /is blocked/);
+    assert.match(r.stdout, /✗ research\.md/);
   });
 
   it("status <path> names the owning plan-N.md, or reports an unlisted target, in two-layer mode", () => {

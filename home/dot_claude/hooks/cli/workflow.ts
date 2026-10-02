@@ -36,7 +36,7 @@ import {
   classifyExemption,
   diagnoseGate,
   evaluateTarget,
-  formatGateDiagnosis,
+  formatGateChecklist,
   formatTargetEvaluation,
 } from "../lib/workflow-gate.ts";
 import { isStrictlyUnderProjectSubdir } from "../lib/workflow-fs.ts";
@@ -354,9 +354,14 @@ function cmdStatus(
           ),
     );
   } else {
+    // No target means no allow/deny verdict to state: in two-layer mode the
+    // plan-N.md side is not evaluated here, so even a passing spec.md does
+    // not mean a write is allowed.
     const primary = twoLayer ? wfPaths.spec : wfPaths.plan;
+    const diagnosis = diagnoseGate(wfDir, primary);
     lines.push(
-      formatGateDiagnosis(diagnoseGate(wfDir, primary), primary, docLabel),
+      `Document workflow gate${twoLayer ? " (two-layer)" : ""}: conditions on \`${sanitizeForDisplay(docLabel)}\`:`,
+      formatGateChecklist(diagnosis),
     );
   }
 

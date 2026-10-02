@@ -54,7 +54,7 @@ guard の deny は固定文ではなく診断を返す: どの条件（Plan/Revi
 
 ## 誤って入った場合の脱出
 
-guard は wfDir に `research.md` または `plan.md` が存在した時点で enforce を始める。`spec.md` 単独では始まらない。`workflow-state.json` の `mode` も条件だが、現在どの hook も書かない。Task Intake Routing で「直接実行」相当のタスクに research/plan を書いてしまった場合、承認を経ずに抜ける経路は **wfDir の文書を消すこと** だけである。承認が人間のみであるのと対称に、消す操作もユーザーに委ねる。
+guard は wfDir に `research.md` または `plan.md` が存在した時点で enforce を始める。`spec.md` 単独では始まらない。一方、allow には research.md の存在も要る（単層・二層とも）。plan.md が承認済みでも research.md が無ければ deny され、診断には `✗ research.md` が出る。`workflow-state.json` の `mode` も条件だが、現在どの hook も書かない。Task Intake Routing で「直接実行」相当のタスクに research/plan を書いてしまった場合、承認を経ずに抜ける経路は **wfDir の文書を消すこと** だけである。承認が人間のみであるのと対称に、消す操作もユーザーに委ねる。
 
 手順:
 

@@ -8,6 +8,7 @@ import {
   mkdtempSync,
   readFileSync,
   realpathSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -22,8 +23,10 @@ import {
   evaluateApprovalReadiness,
   evaluateTarget,
   formatGateDiagnosis,
+  isImplementationPhase,
   listApprovalCandidates,
 } from "../../lib/workflow-gate.ts";
+import { resolveWorkflowPaths } from "../../lib/workflow-paths.ts";
 import {
   approvedWorkflowRepo,
   buildPlanContent,
@@ -83,6 +86,36 @@ test("diagnoseGate reports all conditions satisfied for an approved single-layer
     equal(cond.ok, true);
   }
   match(d.nextAction, /satisfied/);
+  equal(d.research.ok, true);
+  match(formatGateDiagnosis(d, "src/a.ts"), /✓ research\.md/);
+});
+
+test("diagnoseGate names a missing research.md instead of saying the gate is satisfied", () => {
+  const wf = freshWf();
+  writeFileSync(join(wf, "plan.md"), buildPlanContent(approvedWorkflowRepo()));
+  recordApprovalsForTest(wf);
+  const d = diagnoseGate(wf, join(wf, "..", "src", "a.ts"));
+  equal(d.research.ok, false);
+  match(d.nextAction, /research\.md/);
+  const text = formatGateDiagnosis(d, "src/a.ts");
+  match(text, /✗ research\.md/);
+  ok(!/satisfied/.test(text));
+});
+
+test("diagnoseGate asks for research.md before the approval when both are missing", () => {
+  const wf = freshWf();
+  writeFileSync(join(wf, "plan.md"), buildPlanContent(pendingWorkflowRepo()));
+  const d = diagnoseGate(wf, join(wf, "..", "src", "a.ts"));
+  match(d.nextAction, /research\.md/);
+  ok(!/承認/.test(d.nextAction));
+});
+
+test("diagnoseGate in two-layer mode without research.md drops the plan-N note", () => {
+  const { wf } = twoLayerRepo(["src/a.ts"]);
+  unlinkSync(join(wf, "research.md"));
+  const d = diagnoseGate(wf, "src/a.ts");
+  equal(d.note, undefined);
+  match(formatGateDiagnosis(d, "src/a.ts"), /✗ research\.md/);
 });
 
 test("diagnoseGate points approval at a conversational 承認 when only approval is pending", () => {
@@ -142,17 +175,24 @@ test("formatGateDiagnosis renders the failing condition with a checkmark line", 
 });
 
 /** <repo>/.tmp/sessions/x with research.md, an approved spec.md and plan-1.md listing `files`. */
-function twoLayerRepo(files: string[], omitParentSpecHash = false) {
+function twoLayerRepo(
+  files: string[],
+  omitParentSpecHash = false,
+  approval: { specApproved?: boolean; planApproved?: boolean } = {},
+) {
+  const { specApproved = true, planApproved = true } = approval;
   const repo = realpathSync(mkdtempSync(join(tmpdir(), "gate-2layer-")));
   const wf = join(repo, ".tmp", "sessions", "x");
   mkdirSync(wf, { recursive: true });
   writeFileSync(join(wf, "research.md"), "x");
-  const spec = buildPlanContent(approvedWorkflowRepo());
+  const spec = buildPlanContent(
+    specApproved ? approvedWorkflowRepo() : pendingWorkflowRepo(),
+  );
   writeFileSync(join(wf, "spec.md"), spec);
   writeFileSync(
     join(wf, "plan-1.md"),
     buildPlanNContent(
-      approvedWorkflowRepo(),
+      planApproved ? approvedWorkflowRepo() : pendingWorkflowRepo(),
       files,
       computeWorkflowRepoPlanHash(spec),
       omitParentSpecHash,
@@ -373,3 +413,102 @@ test("two-layer: once spec.md passes, the note and next step ask for 承認 of t
   ok(d.note && /承認 plan-N\.md/.test(d.note));
   match(d.nextAction, /承認 plan-N\.md/);
 });
+
+test("isImplementationPhase is false without research.md, single-layer and two-layer", () => {
+  const single = freshWf();
+  writeFileSync(
+    join(single, "plan.md"),
+    buildPlanContent(approvedWorkflowRepo()),
+  );
+  recordApprovalsForTest(single);
+  equal(
+    isImplementationPhase(single, resolveWorkflowPaths(single), false),
+    false,
+  );
+
+  const { wf } = twoLayerRepo(["src/a.ts"]);
+  equal(isImplementationPhase(wf, resolveWorkflowPaths(wf), true), true);
+  unlinkSync(join(wf, "research.md"));
+  equal(isImplementationPhase(wf, resolveWorkflowPaths(wf), true), false);
+});
+
+// Invariant: whenever the gate is closed (deny, or no-plan-owner outside the
+// implementation phase), the rendered diagnosis shows a failing line (a ✗ row
+// or a `note:` line) and never says the conditions are satisfied. When a gate
+// condition is added, add the states that exercise it to this table.
+// Before diagnoseGate reported research.md, only "single-layer approved plan,
+// research.md missing" broke it (all rows ✓ yet "satisfied"). The two-layer rows
+// were already covered by the specOk note and are regression guards.
+interface InvariantState {
+  name: string;
+  build: () => { repo: string; wf: string; target: string };
+}
+
+function singleLayerState(approved: boolean): InvariantState["build"] {
+  return () => {
+    const wf = freshWf();
+    writeFileSync(join(wf, "research.md"), "x");
+    writeFileSync(
+      join(wf, "plan.md"),
+      buildPlanContent(
+        approved ? approvedWorkflowRepo() : pendingWorkflowRepo(),
+      ),
+    );
+    recordApprovalsForTest(wf);
+    return { repo: wf, wf, target: join(wf, "src", "a.ts") };
+  };
+}
+
+function twoLayerState(
+  options: Parameters<typeof twoLayerRepo>[2],
+  omitParentSpecHash = false,
+  listed = "src/a.ts",
+): InvariantState["build"] {
+  return () => {
+    const { repo, wf } = twoLayerRepo([listed], omitParentSpecHash, options);
+    return { repo, wf, target: join(repo, "src", "a.ts") };
+  };
+}
+
+const INVARIANT_STATES: InvariantState[] = [
+  { name: "single-layer pending plan", build: singleLayerState(false) },
+  { name: "single-layer approved plan", build: singleLayerState(true) },
+  {
+    name: "two-layer, spec pending",
+    build: twoLayerState({ specApproved: false }),
+  },
+  {
+    name: "two-layer, spec approved, plan-1 pending",
+    build: twoLayerState({ planApproved: false }),
+  },
+  { name: "two-layer, both approved", build: twoLayerState({}) },
+  {
+    name: "two-layer, plan-1 without parent-spec-hash",
+    build: twoLayerState({}, true),
+  },
+  {
+    name: "two-layer, no plan-N lists the target, plan-1 pending",
+    build: twoLayerState({ planApproved: false }, false, "src/b.ts"),
+  },
+];
+
+for (const withResearch of [true, false]) {
+  for (const state of INVARIANT_STATES) {
+    test(`gate-closed diagnosis names a failure (${state.name}, research.md ${withResearch ? "present" : "missing"})`, () => {
+      const { repo, wf, target } = state.build();
+      if (!withResearch) {
+        unlinkSync(join(wf, "research.md"));
+      }
+      const e = evaluateTarget({ wfDir: wf, target, projectRoot: repo });
+      const closed =
+        e.kind === "deny" ||
+        (e.kind === "no-plan-owner" && !e.implementationPhase);
+      if (!closed) {
+        return;
+      }
+      const text = formatGateDiagnosis(e.diagnosis, "src/a.ts");
+      ok(/✗ /.test(text) || /\n {2}note: /.test(text), text);
+      ok(!/satisfied/.test(text), text);
+    });
+  }
+}

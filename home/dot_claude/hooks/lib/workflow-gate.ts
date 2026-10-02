@@ -55,6 +55,8 @@ export interface DocumentDiagnosis {
 export interface GateDiagnosis {
   active: boolean;
   twoLayer: boolean;
+  /** research.md is a workflow-dir condition, not a per-document one (see `researchExists`). */
+  research: GateCondition;
   /** Single-layer: plan.md. Two-layer: spec.md (the first gate to clear). */
   primary: DocumentDiagnosis;
   /** Present in two-layer mode once spec.md passes: the plan-N.md requirement. */
@@ -155,27 +157,46 @@ export function evaluateDocument(path: string): DocumentDiagnosis {
 }
 
 /**
- * Diagnose why the gate is closed for `targetPath` under `wfDir`. Describes the
- * first document that must clear (plan.md single-layer, spec.md two-layer) and,
- * in two-layer mode once the spec passes, the owning plan-N.md requirement.
+ * The single predicate for "research.md exists" so the allow/deny decision,
+ * the implementation-phase check and the diagnosis cannot disagree on it.
+ */
+function researchExists(
+  wfPaths: ReturnType<typeof resolveWorkflowPaths>,
+): boolean {
+  return existsSync(wfPaths.research);
+}
+
+/**
+ * Diagnose why the gate is closed for `targetPath` under `wfDir`. research.md
+ * is evaluated first (the gate checks it before any document), then the first
+ * document that must clear (plan.md single-layer, spec.md two-layer) and, in
+ * two-layer mode once the spec passes, the owning plan-N.md requirement.
  */
 export function diagnoseGate(wfDir: string, targetPath: string): GateDiagnosis {
   const wfPaths = resolveWorkflowPaths(wfDir);
-  const active = existsSync(wfPaths.research) || existsSync(wfPaths.plan);
+  const hasResearch = researchExists(wfPaths);
+  const active = hasResearch || existsSync(wfPaths.plan);
   const twoLayer = existsSync(wfPaths.spec);
   const primaryPath = twoLayer ? wfPaths.spec : wfPaths.plan;
   const primary = evaluateDocument(primaryPath);
+  const research: GateCondition = {
+    ok: hasResearch,
+    expected: "research.md in the workflow dir",
+  };
 
   const firstFailure = Object.values(primary.conditions).find((c) => !c.ok);
   const specOk = twoLayer && !firstFailure;
 
   let note: string | undefined;
-  if (specOk) {
+  if (specOk && hasResearch) {
     note = `spec.md is approved. The plan-N.md whose ## Files section lists \`${sanitizeForDisplay(targetPath)}\` must also be complete + Review Status: pass + approved by the user saying 「承認 plan-N.md」 in the conversation (approvals.log then records its current hash), with an auto-review marker whose parent-spec-hash equals the current spec.md hash.`;
   }
 
   let nextAction: string;
-  if (firstFailure) {
+  if (!hasResearch) {
+    nextAction =
+      "Write research.md in the workflow dir (`workflow-cli dir` prints the path), as in step 1 of rules/workflow.md.";
+  } else if (firstFailure) {
     if (
       firstFailure === primary.conditions.approvalStatus ||
       firstFailure === primary.conditions.approvalRecord
@@ -198,7 +219,7 @@ export function diagnoseGate(wfDir: string, targetPath: string): GateDiagnosis {
     nextAction = "The gate conditions are satisfied.";
   }
 
-  return { active, twoLayer, primary, note, nextAction };
+  return { active, twoLayer, research, primary, note, nextAction };
 }
 
 const PLAN_NUMBERED_FILENAME_REGEX = /^plan-[0-9]+\.md$/;
@@ -257,6 +278,10 @@ export function isDocumentApproved(d: DocumentDiagnosis): boolean {
  * - Two-layer: spec.md fully approved AND at least one plan-N.md fully
  *   approved with `parent-spec-hash` equal to the current spec.md hash.
  *
+ * Both modes also require research.md: `evaluateTarget` denies every write
+ * without it, so a gate that is closed for writes must read as closed here too
+ * (the guard's interpreter-write check and the Bash tripwire key on this).
+ *
  * Moved here from `document-workflow-guard.ts` (spec K1, plan-2 T4) so
  * `workflow-bash-sync.ts`'s tripwire can gate on the same definition the
  * guard's off-plan relaxation uses, without the two hooks drifting apart.
@@ -266,6 +291,9 @@ export function isImplementationPhase(
   wfPaths: ReturnType<typeof resolveWorkflowPaths>,
   twoLayer: boolean,
 ): boolean {
+  if (!researchExists(wfPaths)) {
+    return false;
+  }
   if (!twoLayer) {
     return isDocumentApproved(evaluateDocument(wfPaths.plan));
   }
@@ -327,7 +355,7 @@ export function isWorkflowActive(
   if (state?.mode === "document-workflow") {
     return true;
   }
-  return existsSync(wfPaths.plan) || existsSync(wfPaths.research);
+  return existsSync(wfPaths.plan) || researchExists(wfPaths);
 }
 
 export type TargetEvaluation =
@@ -372,7 +400,7 @@ export function evaluateTarget(query: TargetQuery): TargetEvaluation {
     kind: "deny",
     diagnosis: diagnoseGate(query.wfDir, query.label ?? query.target),
   });
-  if (!existsSync(wfPaths.research)) {
+  if (!researchExists(wfPaths)) {
     return deny();
   }
   if (!existsSync(wfPaths.spec)) {
@@ -479,17 +507,16 @@ export function formatTargetEvaluation(
   }
 }
 
-/** Render a diagnosis as the multi-line text used in a deny reason / `status`. */
-export function formatGateDiagnosis(
-  d: GateDiagnosis,
-  targetLabel: string,
-  docLabel?: string,
-): string {
+/**
+ * The condition rows, `note:` and `Next:` lines of a diagnosis, with no verdict
+ * on the gate. Callers that know the gate is closed put a blocked header on it
+ * (`formatGateDiagnosis`); `status` without a target has no verdict to give and
+ * uses a neutral header instead.
+ */
+export function formatGateChecklist(d: GateDiagnosis): string {
   const lines: string[] = [];
-  lines.push(
-    `Document workflow gate${d.twoLayer ? " (two-layer)" : ""}: \`${targetLabel}\` is blocked. Conditions on \`${docLabel ?? d.primary.path}\`:`,
-  );
   const order: [string, GateCondition][] = [
+    ["research.md", d.research],
     ["Plan Status", d.primary.conditions.planStatus],
     ["Review Status", d.primary.conditions.reviewStatus],
     ["Approval Status", d.primary.conditions.approvalStatus],
@@ -511,6 +538,16 @@ export function formatGateDiagnosis(
   }
   lines.push(`Next: ${d.nextAction}`);
   return lines.join("\n");
+}
+
+/** Render a diagnosis of a closed gate as the multi-line text used in a deny reason / `status <path>`. */
+export function formatGateDiagnosis(
+  d: GateDiagnosis,
+  targetLabel: string,
+  docLabel?: string,
+): string {
+  const header = `Document workflow gate${d.twoLayer ? " (two-layer)" : ""}: \`${sanitizeForDisplay(targetLabel)}\` is blocked. Conditions on \`${sanitizeForDisplay(docLabel ?? d.primary.path)}\`:`;
+  return `${header}\n${formatGateChecklist(d)}`;
 }
 
 export interface ApprovalReadiness {

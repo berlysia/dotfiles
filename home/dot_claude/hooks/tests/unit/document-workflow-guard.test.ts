@@ -8,6 +8,7 @@ import {
   readFileSync,
   realpathSync,
   symlinkSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -1323,6 +1324,33 @@ describe("document-workflow-guard.ts two-layer mode (spec.md + plan-N.md)", () =
 
     it("still checks an interpreter heredoc body before plan approval (F3b)", async () => {
       const repo = createWorkflowRepo(pendingWorkflowRepo());
+      envHelper.set("CLAUDE_TEST_CWD", repo);
+      const context = createPreToolUseContextFor(hook, "Bash", {
+        command: `python3 - <<'EOF'\nopen('src/a.ts', 'w').write('x')\nEOF`,
+      });
+      await invokeRun(hook, context);
+      context.assertDeny();
+    });
+
+    it("denies a Write for an approved plan without research.md and names the missing file", async () => {
+      const repo = createWorkflowRepo(approvedWorkflowRepo());
+      unlinkSync(join(repo, TEST_WORKFLOW_DIR, "research.md"));
+      envHelper.set("CLAUDE_TEST_CWD", repo);
+      const context = createPreToolUseContextFor(hook, "Write", {
+        file_path: "src/a.ts",
+        content: "const a = 1;",
+      });
+      await invokeRun(hook, context);
+      context.assertDeny();
+      const reason =
+        context.jsonCalls[0].hookSpecificOutput.permissionDecisionReason;
+      ok(/✗ research\.md/.test(reason), reason);
+      ok(!/satisfied/.test(reason), reason);
+    });
+
+    it("checks an interpreter heredoc body when only research.md is missing", async () => {
+      const repo = createWorkflowRepo(approvedWorkflowRepo());
+      unlinkSync(join(repo, TEST_WORKFLOW_DIR, "research.md"));
       envHelper.set("CLAUDE_TEST_CWD", repo);
       const context = createPreToolUseContextFor(hook, "Bash", {
         command: `python3 - <<'EOF'\nopen('src/a.ts', 'w').write('x')\nEOF`,
