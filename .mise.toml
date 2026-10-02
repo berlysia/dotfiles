@@ -2,7 +2,7 @@
 # https://mise.jdx.dev/configuration.html
 
 [settings]
-install_before = "7d"
+minimum_release_age = "7d"
 
 [tools]
 "github:mizchi/actrun" = "0.29.0"

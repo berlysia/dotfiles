@@ -5,7 +5,7 @@
 [settings]
 idiomatic_version_file_enable_tools = ["node"]
 experimental = true
-install_before = "7d"
+minimum_release_age = "7d"
 
 [settings.github]
 # gh keeps its token in the OS keyring, so hosts.yml has no oauth_token and
