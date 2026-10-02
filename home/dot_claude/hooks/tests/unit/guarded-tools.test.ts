@@ -5,10 +5,12 @@ import { describe, it } from "node:test";
 import {
   GUARDED_TOOLS,
   matcherCoversGuardedTools,
+  matcherCoversTools,
 } from "../../lib/guarded-tools.ts";
 
 describe("guarded-tools.ts", () => {
   const ALL = [
+    "AskUserQuestion",
     "Bash",
     "CronCreate",
     "Edit",
@@ -25,14 +27,14 @@ describe("guarded-tools.ts", () => {
   it("reports the members a matcher does not list", () => {
     deepStrictEqual(matcherCoversGuardedTools("Write|Edit|NotebookEdit|Bash"), {
       covered: false,
-      missing: ["CronCreate", "MultiEdit", "ScheduleWakeup"],
+      missing: ["AskUserQuestion", "CronCreate", "MultiEdit", "ScheduleWakeup"],
     });
   });
 
   it("reports full coverage once every guarded tool is listed", () => {
     deepStrictEqual(
       matcherCoversGuardedTools(
-        "Write|Edit|MultiEdit|NotebookEdit|Bash|CronCreate|ScheduleWakeup",
+        "Write|Edit|MultiEdit|NotebookEdit|Bash|CronCreate|ScheduleWakeup|AskUserQuestion",
       ),
       { covered: true, missing: [] },
     );
@@ -74,5 +76,42 @@ describe("guarded-tools.ts", () => {
     // contract. Report it rather than guess: a wrong "covered" is silent, a
     // wrong "not covered" is visible.
     strictEqual(matcherCoversGuardedTools("(Write|Edit)").covered, false);
+  });
+
+  describe("matcherCoversTools", () => {
+    it("covers a tool the matcher lists, and treats wildcards as covering all", () => {
+      deepStrictEqual(
+        matcherCoversTools("AskUserQuestion", ["AskUserQuestion"]),
+        { covered: true, missing: [] },
+      );
+      deepStrictEqual(matcherCoversTools("", ["AskUserQuestion"]), {
+        covered: true,
+        missing: [],
+      });
+      deepStrictEqual(matcherCoversTools("*", ["AskUserQuestion"]), {
+        covered: true,
+        missing: [],
+      });
+    });
+
+    it("reports a near-miss name and does not read a matcher as a regex", () => {
+      deepStrictEqual(
+        matcherCoversTools("AskUserQuestions", ["AskUserQuestion"]),
+        { covered: false, missing: ["AskUserQuestion"] },
+      );
+      deepStrictEqual(matcherCoversTools("Ask.*", ["AskUserQuestion"]), {
+        covered: false,
+        missing: ["AskUserQuestion"],
+      });
+    });
+
+    it("agrees with matcherCoversGuardedTools for the guarded set", () => {
+      for (const m of ["Write|Edit", "", "AskUserQuestion", "Bash|Write"]) {
+        deepStrictEqual(
+          matcherCoversGuardedTools(m),
+          matcherCoversTools(m, [...GUARDED_TOOLS]),
+        );
+      }
+    });
   });
 });

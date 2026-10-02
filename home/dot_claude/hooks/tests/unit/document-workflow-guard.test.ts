@@ -16,6 +16,10 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import documentWorkflowGuardHook from "../../implementations/document-workflow-guard.ts";
 import {
+  APPROVAL_QUESTION_TEXT,
+  buildApprovalQuestions,
+} from "../../lib/workflow-approval.ts";
+import {
   computeDocumentHash,
   SPEC_NORMALIZERS,
 } from "../../lib/document-hash.ts";
@@ -1528,7 +1532,7 @@ describe("document-workflow-guard.ts scheduled approval prompts (issue J)", () =
     return ctx;
   }
 
-  it("denies a prompt that is only an approval, with a reason that points to the conversation", async () => {
+  it("denies a prompt that is only an approval, with a reason that points to ask-approval and approve", async () => {
     repoWith(pendingWorkflowRepo());
     for (const [tool, input] of [
       [
@@ -1549,11 +1553,10 @@ describe("document-workflow-guard.ts scheduled approval prompts (issue J)", () =
     ] as const) {
       const ctx = await schedule(tool, input);
       ctx.assertDeny();
-      ok(
-        ctx.jsonCalls[0].hookSpecificOutput.permissionDecisionReason.includes(
-          "会話で",
-        ),
-      );
+      const reason: string =
+        ctx.jsonCalls[0].hookSpecificOutput.permissionDecisionReason;
+      ok(reason.includes("ask-approval"));
+      ok(reason.includes("approve"));
     }
   });
 
@@ -1588,6 +1591,159 @@ describe("document-workflow-guard.ts scheduled approval prompts (issue J)", () =
         "CronCreate",
         { prompt: "承認" },
         { session_id: "../not-a-session" },
+      )
+    ).assertDeny();
+  });
+});
+
+describe("document-workflow-guard.ts AskUserQuestion (spec K4)", () => {
+  const envHelper = new EnvironmentHelper();
+  const hook = documentWorkflowGuardHook;
+  const H = "a".repeat(64);
+
+  afterEach(() => {
+    envHelper.restore();
+  });
+
+  function repoWith(options: WorkflowRepoOptions): void {
+    const repo = realpathSync(createWorkflowRepo(options));
+    envHelper.set("DOCUMENT_WORKFLOW_DIR", TEST_WORKFLOW_DIR);
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+  }
+
+  async function ask(input: unknown, overrides: { session_id?: string } = {}) {
+    // The tool schemas of cc-hooks-ts may not list AskUserQuestion's input shape.
+    const ctx = createPreToolUseContextFor(
+      hook,
+      "AskUserQuestion" as never,
+      input,
+      overrides,
+    );
+    await invokeRun(hook, ctx);
+    return ctx;
+  }
+
+  const approvalQuestions = () =>
+    buildApprovalQuestions([{ name: "spec.md", hash: H }]);
+
+  const generalQuestions = () => [
+    {
+      question: "進めてよいか",
+      header: "確認",
+      multiSelect: false,
+      options: [
+        { label: "はい", description: "" },
+        { label: "いいえ", description: "" },
+      ],
+    },
+  ];
+
+  it("denies an approval question that already carries answers, naming the field", async () => {
+    repoWith(pendingWorkflowRepo());
+    const ctx = await ask({
+      questions: approvalQuestions(),
+      answers: { [APPROVAL_QUESTION_TEXT]: "spec.md" },
+    });
+    ctx.assertDeny();
+    const reason: string =
+      ctx.jsonCalls[0].hookSpecificOutput.permissionDecisionReason;
+    ok(reason.includes("answers"));
+    ok(reason.includes("ask-approval"));
+  });
+
+  it("denies when answers or annotations is present in any form", async () => {
+    repoWith(pendingWorkflowRepo());
+    for (const extra of [
+      { answers: {} },
+      { answers: "" },
+      { answers: null },
+      { annotations: [] },
+      { annotations: { x: { notes: "n" } } },
+    ]) {
+      (await ask({ questions: approvalQuestions(), ...extra })).assertDeny();
+    }
+  });
+
+  it("allows an approval question with neither answers nor annotations", async () => {
+    repoWith(pendingWorkflowRepo());
+    (await ask({ questions: approvalQuestions() })).assertSuccess({});
+    (
+      await ask({ questions: approvalQuestions(), answers: undefined })
+    ).assertSuccess({});
+  });
+
+  it("looks at every question, not only the first", async () => {
+    repoWith(pendingWorkflowRepo());
+    (
+      await ask({
+        questions: [...generalQuestions(), ...approvalQuestions()],
+        answers: { x: "y" },
+      })
+    ).assertDeny();
+  });
+
+  it("allows a general question that carries answers", async () => {
+    repoWith(pendingWorkflowRepo());
+    (
+      await ask({
+        questions: generalQuestions(),
+        answers: { 進めてよいか: "はい" },
+      })
+    ).assertSuccess({});
+  });
+
+  it("allows an input that has no questions", async () => {
+    repoWith(pendingWorkflowRepo());
+    (await ask("x")).assertSuccess({});
+    (await ask(null)).assertSuccess({});
+  });
+
+  it("denies when reading questions throws and answers is present, warns when it is not", async () => {
+    repoWith(pendingWorkflowRepo());
+    const throwing = (extra: Record<string, unknown>) => {
+      const input = { ...extra };
+      Object.defineProperty(input, "questions", {
+        enumerable: true,
+        get() {
+          throw new Error("boom");
+        },
+      });
+      return input;
+    };
+    (await ask(throwing({ answers: { x: "y" } }))).assertDeny();
+    const ctx = await ask(throwing({}));
+    strictEqual(ctx.jsonCalls.length, 1);
+    ok(
+      String(ctx.jsonCalls[0].systemMessage ?? "").includes(
+        "document-workflow-guard",
+      ),
+    );
+    ok(!JSON.stringify(ctx.jsonCalls[0]).includes('"deny"'));
+  });
+
+  it("denies when both questions and answers throw on read", async () => {
+    repoWith(pendingWorkflowRepo());
+    const input = {};
+    for (const key of ["questions", "answers"]) {
+      Object.defineProperty(input, key, {
+        enumerable: true,
+        get() {
+          throw new Error("boom");
+        },
+      });
+    }
+    (await ask(input)).assertDeny();
+  });
+
+  it("decides before the workflow dir is resolved", async () => {
+    envHelper.set("DOCUMENT_WORKFLOW_DIR", undefined);
+    (
+      await ask(
+        {
+          questions: approvalQuestions(),
+          answers: { [APPROVAL_QUESTION_TEXT]: "spec.md" },
+        },
+        { session_id: "../bad" },
       )
     ).assertDeny();
   });

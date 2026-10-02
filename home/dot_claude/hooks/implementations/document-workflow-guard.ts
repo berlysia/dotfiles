@@ -18,6 +18,7 @@ import { sanitizeForDisplay } from "../lib/sanitize-display.ts";
 import { appendOffPlanLog } from "../lib/workflow-audit-log.ts";
 import {
   APPROVALS_LOG,
+  isApprovalLikeQuestion,
   isApprovalShapedPrompt,
 } from "../lib/workflow-approval.ts";
 import { resolveWithMissingTail } from "../lib/workflow-fs.ts";
@@ -59,6 +60,16 @@ function withScratchHint(reason: string): string {
   return `${reason}\n${SCRATCH_HINT}`;
 }
 
+const ASK_PREFILLED_DENY =
+  "承認の質問の回答は利用者が選ぶもので、`answers` / `annotations` を model が入れることはできない。`workflow-cli ask-approval` の出力をそのまま AskUserQuestion に渡す";
+
+/** `answers` or `annotations` is present and not undefined. */
+function hasPrefilledAnswer(toolInput: unknown): boolean {
+  if (typeof toolInput !== "object" || toolInput === null) return false;
+  const input = toolInput as { answers?: unknown; annotations?: unknown };
+  return input.answers !== undefined || input.annotations !== undefined;
+}
+
 interface WriteAnalysis {
   isWriteLike: boolean;
   targets: string[];
@@ -71,6 +82,42 @@ const hook = defineHook({
       const { tool_name, tool_input } = context.input;
       if (!GUARDED_TOOLS.has(tool_name)) {
         return context.success({});
+      }
+
+      // AskUserQuestion is handled on its own and always returns: the answer
+      // to an approval question is the user's, so a model-supplied `answers`
+      // or `annotations` on one is refused (spec K4). Decided from the input
+      // alone, before any workflow state is read.
+      if (tool_name === "AskUserQuestion") {
+        try {
+          const questions = (tool_input as { questions?: unknown } | null)
+            ?.questions;
+          if (
+            isApprovalLikeQuestion(questions) &&
+            hasPrefilledAnswer(tool_input)
+          ) {
+            return context.json(createDenyResponse(ASK_PREFILLED_DENY));
+          }
+          return context.success({});
+        } catch {
+          // Reading the input itself failed. Treat a present answers /
+          // annotations as the thing to refuse, so a model cannot push the
+          // check into an exception and get `answers` through.
+          try {
+            if (hasPrefilledAnswer(tool_input)) {
+              return context.json(createDenyResponse(ASK_PREFILLED_DENY));
+            }
+            return context.json({
+              event: "PreToolUse",
+              output: {
+                systemMessage:
+                  "[document-workflow-guard] could not read the AskUserQuestion input to check it for pre-filled answers; allowing the call because it carries no answers.",
+              },
+            });
+          } catch {
+            return context.json(createDenyResponse(ASK_PREFILLED_DENY));
+          }
+        }
       }
 
       // Issue J: a fired scheduled prompt reaches approval-recorder looking
@@ -87,7 +134,7 @@ const hook = defineHook({
           if (isApprovalShapedPrompt(prompt)) {
             return context.json(
               createDenyResponse(
-                "承認は利用者が会話で打つもので、予約したプロンプトでは記録しない（課題 J）。`承認` / `approve` だけのプロンプトは予約できない。承認が必要なら利用者に会話で打ってもらう",
+                "承認は利用者が行うもので、予約したプロンプトでは記録しない（課題 J）。`承認` / `approve` だけのプロンプトは予約できない。承認が必要なら、`workflow-cli ask-approval` の出力で AskUserQuestion を出すか、利用者に会話で `approve` と打ってもらう",
               ),
             );
           }
@@ -95,7 +142,7 @@ const hook = defineHook({
         } catch {
           return context.json(
             createDenyResponse(
-              "予約するプロンプトを検査できなかったので予約を止めた（課題 J）。承認は利用者が会話で打つもので、承認が必要なら利用者に会話で打ってもらう",
+              "予約するプロンプトを検査できなかったので予約を止めた（課題 J）。承認は利用者が行うもので、承認が必要なら、`workflow-cli ask-approval` の出力で AskUserQuestion を出すか、利用者に会話で `approve` と打ってもらう",
             ),
           );
         }
@@ -937,7 +984,7 @@ function judgeApprovalWrite(
     basename(realTarget).toLowerCase() === APPROVALS_LOG &&
     isUnder(realTarget, realSessions)
   ) {
-    return `${APPROVALS_LOG} is written only by approval-recorder when the user says 承認 in the conversation; tool writes to any session's ledger are refused.`;
+    return `${APPROVALS_LOG} is written only by approval-recorder (the user says 承認 / approve in the conversation) and approval-answer-recorder (the user answers the AskUserQuestion that \`workflow-cli ask-approval\` generates); tool writes to any session's ledger are refused.`;
   }
 
   const realWfDir = resolveWithMissingTail(wfDir) ?? wfDir;
@@ -953,7 +1000,7 @@ function judgeApprovalWrite(
   if (newContent === null) return null;
   if (countApprovedLines(newContent) <= countApprovedLines(oldContent ?? ""))
     return null;
-  return `Approval is recorded only from the user's own words: ask the user to write 「承認 ${basename(target)}」 in the conversation. Writes that set \`Approval Status: approved\` are refused; setting it back to pending (revoking) is allowed.`;
+  return `Approval is recorded only from the user's own action, by approval-recorder (the user writes \`approve ${basename(target)}\` in the conversation) or approval-answer-recorder (the user answers the AskUserQuestion from \`workflow-cli ask-approval\`): run \`workflow-cli ask-approval\` and pass its output to AskUserQuestion, or ask the user to write it. Writes that set \`Approval Status: approved\` are refused; setting it back to pending (revoking) is allowed.`;
 }
 
 /** The file content a Write / Edit / MultiEdit would leave, or null when it cannot be told. */

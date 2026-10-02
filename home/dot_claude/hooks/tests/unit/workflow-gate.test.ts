@@ -134,7 +134,8 @@ test("diagnoseGate points approval at a conversational 承認 when only approval
   );
   const d = diagnoseGate(wf, join(wf, "..", "src", "a.ts"));
   equal(d.primary.conditions.approvalStatus.ok, false);
-  match(d.nextAction, /承認 plan\.md/);
+  match(d.nextAction, /ask-approval/);
+  match(d.nextAction, /approve plan\.md/);
 });
 
 test("two-layer diagnosis adds the owning plan-N note once spec.md passes", () => {
@@ -296,7 +297,8 @@ test("evaluateTarget: an approved plan without a ledger entry denies, naming the
   const record = e.diagnosis.primary.conditions.approvalRecord;
   equal(record.ok, false);
   match(record.foundLine ?? "", /^recorded=none current=[0-9a-f]{12}$/);
-  match(e.diagnosis.nextAction, /承認 plan\.md/);
+  match(e.diagnosis.nextAction, /ask-approval/);
+  match(e.diagnosis.nextAction, /approve plan\.md/);
   match(
     formatGateDiagnosis(e.diagnosis, "src/a.ts"),
     /✗ approval \(found: recorded=none/,
@@ -411,7 +413,8 @@ test("two-layer: once spec.md passes, the note and next step ask for 承認 of t
   recordApprovalsForTest(wf);
   const d = diagnoseGate(wf, join(wf, "..", "src", "a.ts"));
   ok(d.note && /承認 plan-N\.md/.test(d.note));
-  match(d.nextAction, /承認 plan-N\.md/);
+  match(d.nextAction, /ask-approval/);
+  match(d.nextAction, /approve plan-N\.md/);
 });
 
 test("isImplementationPhase is false without research.md, single-layer and two-layer", () => {

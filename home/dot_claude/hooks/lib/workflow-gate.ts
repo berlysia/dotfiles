@@ -201,7 +201,7 @@ export function diagnoseGate(wfDir: string, targetPath: string): GateDiagnosis {
       firstFailure === primary.conditions.approvalStatus ||
       firstFailure === primary.conditions.approvalRecord
     ) {
-      nextAction = `会話で「承認 ${basename(primaryPath)}」と書く（承認は人間の発話でだけ記録される）。Run \`workflow-cli status\` to see the full checklist.`;
+      nextAction = `\`workflow-cli ask-approval\` で承認の質問を出すか、会話で \`approve ${basename(primaryPath)}\` と打つ（承認は利用者の操作でだけ記録される）。Run \`workflow-cli status\` to see the full checklist.`;
     } else if (
       firstFailure === primary.conditions.markerVerdict ||
       firstFailure === primary.conditions.reviewStatus
@@ -214,7 +214,7 @@ export function diagnoseGate(wfDir: string, targetPath: string): GateDiagnosis {
     }
   } else if (specOk) {
     nextAction =
-      "会話で「承認 plan-N.md」（対象を列挙している plan）と書く。`workflow-cli status <path>` で、どの plan が対象を列挙しているかと、足りない条件を確かめる。";
+      "`workflow-cli ask-approval` で承認の質問を出すか、会話で `approve plan-N.md`（対象を列挙している plan）と打つ。`workflow-cli status <path>` で、どの plan が対象を列挙しているかと、足りない条件を確かめる。";
   } else {
     nextAction = "The gate conditions are satisfied.";
   }
