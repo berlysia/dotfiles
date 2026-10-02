@@ -6,6 +6,9 @@
      overlay may set nothing else. Unreadable input stops the apply instead of silently dropping settings. */ -}}
 {{- $forcedKeys := list "mcp_servers" "sandbox_mode" "sandbox_workspace_write" "shell_environment_policy" "allow_login_shell" "approval_policy" "network_access" -}}
 {{- $deprecatedKeys := list "features" -}}
+{{- /* The forced keys a [profiles.*] table can also carry. codex lets the active profile win over the top-level
+     value, and -p selects a profile even without a top-level `profile`, so these are removed from every profile. */ -}}
+{{- $profileForcedKeys := list "sandbox_mode" "approval_policy" -}}
 {{- $base := include "dot_codex/.config.toml" | replace "__CHEZMOI_HOME__" .chezmoi.homeDir | fromToml -}}
 {{- if not $base -}}
 {{-   fail "dot_codex/.config.toml has no keys; an empty base would drop every forced key from ~/.codex/config.toml" -}}
@@ -45,5 +48,16 @@
 {{- end -}}
 {{- range $key, $value := $forced -}}
 {{-   $_ := set $merged $key $value -}}
+{{- end -}}
+{{- if hasKey $merged "profiles" -}}
+{{-   $profiles := deepCopy (get $merged "profiles") -}}
+{{-   range $name, $profile := $profiles -}}
+{{-     if kindIs "map" $profile -}}
+{{-       range $key := $profileForcedKeys -}}
+{{-         $_ := unset $profile $key -}}
+{{-       end -}}
+{{-     end -}}
+{{-   end -}}
+{{-   $_ := set $merged "profiles" $profiles -}}
 {{- end -}}
 {{- toToml $merged -}}

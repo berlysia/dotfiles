@@ -22,7 +22,9 @@ base と overlay の `__CHEZMOI_HOME__` は、ホームディレクトリの絶�
 - `features` は非推奨のキーとして出力に出さない。
 - それ以外の最上位キーは、今のファイルにあればその値が残り、無ければ base の値になる。
 - 出力は TOML を読み込んで書き直すので、コメントとキーの順は残らない。値は保たれる。
-- `profile` と `profiles` の中の値は強制の対象外である。今のファイルの `[profiles.x]` に `sandbox_mode` などを書くと、強制キーの上書きに使われうる（#198）。
+- すべての `[profiles.*]` から `sandbox_mode` と `approval_policy` を取り除く。codex（0.130.0 で確認）は有効な profile の値を最上位の値より優先し、`-p` は最上位の `profile` が無くても profile を選べるため、残すと強制キーを上書きできてしまう（#198）。profile の他のキーと `profile` 自体は残る。
+  - 強制キーのうち他の 5 つは、codex の profile に書けないキーなので対象にしない。
+  - 新しい codex の `--profile` が重ねる `<name>.config.toml` と、強制キーに入っていない `default_permissions` は、この合成では制御できていない（未確認の穴として #198 に記録）。
 
 ## apply が止まったとき
 

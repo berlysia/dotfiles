@@ -219,5 +219,28 @@ else
     fail_case "M9: local-date behavior changed; revisit spec R7 and docs/codex-config.md (got: $out)"
 fi
 
+# codex 0.130.0 lets the active profile's sandbox_mode / approval_policy win over the top-level values, and a profile
+# can be selected with -p even when no top-level `profile` is set (#198). Those two keys are removed from every
+# profile; the rest of each profile survives.
+new_case
+cat <<'EOF' | base
+approval_policy = 'on-request'
+sandbox_mode = 'workspace-write'
+EOF
+current <<'EOF'
+profile = 'x'
+
+[profiles.x]
+approval_policy = 'never'
+model = 'o4-mini'
+sandbox_mode = 'danger-full-access'
+
+[profiles.y]
+model = 'gpt-5'
+EOF
+expect "M10: a profile cannot carry the forced sandbox_mode / approval_policy, and its other keys survive" \
+    '.sandbox_mode == "workspace-write" and .approval_policy == "on-request" and .profile == "x"
+     and .profiles.x == {"model": "o4-mini"} and .profiles.y == {"model": "gpt-5"}'
+
 echo "Passed: $PASSED, Failed: $FAILED"
 [[ "$FAILED" -eq 0 ]]
