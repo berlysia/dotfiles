@@ -204,6 +204,17 @@ hold_cwd() {
 }
 
 # ---- 機能適合性 ----------------------------------------------------------------
+test_C1() {
+  make_repo c1
+  local outer rc=0
+  outer=$(wt fix/outer)
+  (cd "$outer" && bash "$CREATE" fix/inner >/dev/null 2>&1) || rc=$?
+  assert_eq 0 "$rc" "C1 exit"
+  assert_dir "$REPO/.git/worktree/fix/inner" "C1 created under the main .git/worktree"
+  assert_no_dir "$outer/.git/worktree" "C1 nothing created inside the outer worktree"
+  assert_eq "fix/inner" "$(git -C "$REPO/.git/worktree/fix/inner" branch --show-current)" "C1 branch"
+}
+
 test_F1() {
   make_repo f1
   local d

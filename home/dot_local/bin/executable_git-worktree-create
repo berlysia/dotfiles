@@ -44,6 +44,7 @@ Examples:
 
 Location:
   Worktrees are created in: <repo-root>/.git/worktree/<branch-name>
+  <repo-root> is the main checkout, even when run from inside a linked worktree.
 EOF
 }
 
@@ -63,9 +64,15 @@ fi
 
 branch_name="$1"
 
-# Get repository root
-repo_root=$(git rev-parse --show-toplevel)
-worktrees_dir="$repo_root/.git/worktree"
+# Anchor on the common git dir so that running from inside a linked worktree
+# (whose .git is a file) still creates the worktree under the main
+# repository's .git/worktree/.
+# --path-format needs git 2.31; git-worktree-cleanup already requires 2.36.
+if ! common_dir=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
+    echo -e "${RED}✗ Not inside a git repository, or git is older than 2.31 (git rev-parse --path-format)${NC}"
+    exit 1
+fi
+worktrees_dir="$common_dir/worktree"
 
 # Create .git/worktree directory if it doesn't exist
 if [[ ! -d "$worktrees_dir" ]]; then
