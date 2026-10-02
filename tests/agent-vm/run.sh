@@ -757,6 +757,7 @@ test_added_hook_is_reported_until_resolved() {
   assert_contains "$out" "added" "added hook reported"
   assert_contains "$out" "post-checkout" "names the hook"
   assert_contains "$out" "recover: agent-vm restore-git" "recover hint"
+  assert_contains "$out" "agent-vm accept-git" "accept hint"
   assert_eq 3 "$(surface_status agent-g-000000 "$repo")" "still reported on the next check"
 }
 test_changed_hook_and_redirected_hooks_dir_are_reported() {
@@ -908,6 +909,340 @@ test_restore_git_refuses_snapshot_of_another_path() {
   assert_status 1 "path mismatch refused" -- bash -c "AGENT_VM_STATE_DIR='$AGENT_VM_STATE_DIR' AGENT_VM_LIB=1 . '$LAUNCHER'; printf 'y\n' | cmd_restore_git '$repo'"
 }
 
+# --- accept-git ----------------------------------------------------------------------------------
+# Scripted /dev/tty: the tests source the launcher with AGENT_VM_LIB=1, which lets AGENT_VM_TTY replace /dev/tty.
+accept_setup() { # sets repo, m (callers declare them local); baseline taken with a plain pre-commit
+  repo=$(make_git_repo); m=$(derive_machine_name "$repo")
+  write_machine_meta "$m" "$repo"
+  printf '#!/bin/sh\n' >"$repo/.git/hooks/pre-commit"
+  check_git_surfaces "$m" "$repo" 2>/dev/null
+}
+accept_run() { # tty_content -> ACC_OUT (stdout+stderr), ACC_RC; runs cmd_accept_git against $repo
+  printf '%s' "$1" >"$TMP_ROOT/tty"
+  # errexit stays on inside the substitution, as in the real command (`|| rc=$?` would switch it off)
+  set +e
+  ACC_OUT=$(set -e; AGENT_VM_TTY="$TMP_ROOT/tty" cmd_accept_git "$repo" 2>&1)
+  ACC_RC=$?
+  set -e
+}
+accept_baseline_sha() { shasum -a 256 <"$AGENT_VM_STATE_DIR/snapshots/$m/baseline"; }
+accept_check_out() { check_git_surfaces "$m" "$repo" 2>&1 || true; }
+
+test_accept_git_adopts_hook_changes() {
+  local repo m; accept_setup
+  printf '#!/bin/sh\necho changed\n' >"$repo/.git/hooks/pre-commit"
+  printf '#!/bin/sh\n' >"$repo/.git/hooks/post-checkout"
+  accept_run $'y\n'
+  assert_eq 0 "$ACC_RC" "accept adopts: exit 0"
+  assert_eq 0 "$(surface_status "$m" "$repo")" "accept adopts: next check is clean"
+}
+test_accept_git_refreshes_saved_copies_for_restore() {
+  local repo m; accept_setup
+  printf '#!/bin/sh\necho changed\n' >"$repo/.git/hooks/pre-commit"; chmod 755 "$repo/.git/hooks/pre-commit"
+  accept_run $'y\n'
+  printf '#!/bin/sh\necho again\n' >"$repo/.git/hooks/pre-commit"
+  printf 'y\n' | cmd_restore_git "$repo" >/dev/null 2>&1 || true
+  assert_eq "$(printf '#!/bin/sh\necho changed')" "$(cat "$repo/.git/hooks/pre-commit")" "restore writes back the accepted version"
+  assert_status 0 "accepted hook keeps its executable bit" -- test -x "$repo/.git/hooks/pre-commit"
+}
+test_accept_git_accepts_a_removed_hook() {
+  local repo m; accept_setup
+  rm "$repo/.git/hooks/pre-commit"
+  accept_run $'y\n'
+  assert_eq 0 "$ACC_RC" "removed hook accepted: exit 0"
+  assert_eq 0 "$(surface_status "$m" "$repo")" "removed hook accepted: next check is clean"
+}
+test_accept_git_does_not_treat_a_retyped_hook_as_removed() {
+  local repo m; accept_setup
+  rm "$repo/.git/hooks/pre-commit"; ln -s /bin/sh "$repo/.git/hooks/pre-commit"
+  accept_run $'y\n'
+  assert_eq 3 "$ACC_RC" "retyped hook is not accepted: exit 3"
+  assert_contains "$(accept_check_out)" ".git/hooks/pre-commit" "retyped hook is still reported"
+}
+test_accept_git_does_nothing_without_yes() {
+  local repo m; accept_setup
+  printf '#!/bin/sh\n' >"$repo/.git/hooks/post-checkout"
+  accept_run $'n\n'
+  assert_eq 0 "$ACC_RC" "n: exit 0"
+  assert_eq 3 "$(surface_status "$m" "$repo")" "n: still reported"
+}
+test_accept_git_treats_eof_as_no() {
+  local repo m before; accept_setup
+  printf '#!/bin/sh\n' >"$repo/.git/hooks/post-checkout"
+  before=$(accept_baseline_sha)
+  accept_run ''
+  assert_eq 0 "$ACC_RC" "EOF: exit 0"
+  assert_eq "$before" "$(accept_baseline_sha)" "EOF: baseline untouched"
+}
+test_accept_git_aborts_when_a_hook_changes_after_display() {
+  local repo m before; accept_setup
+  printf '#!/bin/sh\necho changed\n' >"$repo/.git/hooks/pre-commit"
+  before=$(accept_baseline_sha)
+  # shellcheck disable=SC2162 # forwards the caller's own flags (-r) to the builtin
+  read() { if [[ "${!#}" == answer ]]; then printf '#!/bin/sh\necho late\n' >"$repo/.git/hooks/pre-commit"; fi; builtin read "$@"; }
+  accept_run $'y\n'
+  assert_eq 3 "$ACC_RC" "late content change: exit 3"
+  assert_contains "$ACC_OUT" "changed after it was shown" "late content change: message"
+  assert_eq "$before" "$(accept_baseline_sha)" "late content change: baseline untouched"
+  if grep -q 'echo late' "$repo/.git/hooks/pre-commit"; then record "PASS late overwrite fired"; else record "FAIL late overwrite fired"; fi
+}
+test_accept_git_aborts_when_a_hook_mode_changes_after_display() {
+  local repo m before; accept_setup
+  printf '#!/bin/sh\necho changed\n' >"$repo/.git/hooks/pre-commit"
+  before=$(accept_baseline_sha)
+  # shellcheck disable=SC2162 # forwards the caller's own flags (-r) to the builtin
+  read() { if [[ "${!#}" == answer ]]; then chmod 600 "$repo/.git/hooks/pre-commit"; fi; builtin read "$@"; }
+  accept_run $'y\n'
+  assert_eq 3 "$ACC_RC" "late mode change: exit 3"
+  assert_contains "$ACC_OUT" "changed after it was shown" "late mode change: message"
+  assert_eq "$before" "$(accept_baseline_sha)" "late mode change: baseline untouched"
+}
+test_accept_git_aborts_when_the_baseline_changes_meanwhile() {
+  local repo m; accept_setup
+  printf '#!/bin/sh\necho changed\n' >"$repo/.git/hooks/pre-commit"
+  # shellcheck disable=SC2162 # forwards the caller's own flags (-r) to the builtin
+  read() { if [[ "${!#}" == answer ]]; then printf 'config\tx:y\tabc\n' >>"$AGENT_VM_STATE_DIR/snapshots/$m/baseline"; fi; builtin read "$@"; }
+  accept_run $'y\n'
+  assert_eq 3 "$ACC_RC" "baseline race: exit 3"
+  assert_contains "$ACC_OUT" "baseline changed meanwhile" "baseline race: message"
+  assert_eq "#!/bin/sh" "$(cat "$AGENT_VM_STATE_DIR/snapshots/$m/files/hooks/pre-commit")" "baseline race: saved copy untouched"
+}
+test_accept_git_shows_sanitized_hook_diff() {
+  local repo m; accept_setup
+  printf '#!/bin/sh\necho changed\033[2J\r\n' >"$repo/.git/hooks/pre-commit"
+  accept_run $'n\n'
+  assert_contains "$ACC_OUT" "+echo changed" "diff body is shown"
+  assert_not_contains "$ACC_OUT" $'\033' "no raw ESC in accept output"
+  assert_not_contains "$ACC_OUT" $'\r' "no raw CR in accept output"
+}
+test_check_git_surfaces_sanitizes_reported_names() {
+  local repo m out; accept_setup
+  git -C "$repo" config "filter.$(printf 'a\033b').clean" x
+  printf '#!/bin/sh\n' >"$repo/.git/hooks/post-checkout"
+  out=$(check_git_surfaces "$m" "$repo" 2>&1) || true
+  assert_not_contains "$out" $'\033' "no raw ESC in the warning"
+  assert_eq 1 "$([[ $(printf '%s\n' "$out" | grep -c '^  added') -ge 2 ]] && echo 1 || echo 0)" "items stay on separate lines"
+}
+test_restore_git_sanitizes_its_listing() {
+  local repo m out; accept_setup
+  git -C "$repo" config "filter.$(printf 'a\033b').clean" x
+  printf '#!/bin/sh\n' >"$repo/.git/hooks/post-checkout"
+  out=$(printf 'n\n' | cmd_restore_git "$repo" 2>&1) || true
+  assert_not_contains "$out" $'\033' "no raw ESC in the restore listing"
+  assert_eq 1 "$([[ $(printf '%s\n' "$out" | grep -c '^  added') -ge 2 ]] && echo 1 || echo 0)" "restore items stay on separate lines"
+}
+test_step_and_die_sanitize_messages() {
+  local s out rc=0; s=$(printf 'a\033]52;c;x\007b')
+  out=$(step "$s" 2>&1)
+  assert_not_contains "$out" $'\033' "step: no ESC"
+  assert_not_contains "$out" $'\007' "step: no BEL"
+  out=$( (die "$s") 2>&1) || rc=$?
+  assert_eq 1 "$rc" "die: exit 1"
+  assert_not_contains "$out" $'\033' "die: no ESC"
+  assert_not_contains "$out" $'\007' "die: no BEL"
+}
+test_restore_git_aborts_when_changed_after_display() {
+  local repo m out rc=0; accept_setup
+  printf '#!/bin/sh\n' >"$repo/.git/hooks/post-merge"
+  # shellcheck disable=SC2162 # forwards the caller's own flags (-r) to the builtin
+  read() { if [[ "${!#}" == answer ]]; then printf '#!/bin/sh\n' >"$repo/.git/hooks/post-checkout"; fi; builtin read "$@"; }
+  out=$(printf 'y\n' | cmd_restore_git "$repo" 2>&1) || rc=$?
+  assert_eq 3 "$rc" "restore race: exit 3"
+  assert_contains "$out" "changed after it was shown" "restore race: message"
+  assert_status 0 "restore race: nothing was restored" -- test -e "$repo/.git/hooks/post-merge"
+}
+test_accept_git_with_nothing_to_accept() {
+  local repo m before; accept_setup
+  before=$(accept_baseline_sha)
+  accept_run $'y\n'
+  assert_eq 0 "$ACC_RC" "nothing to accept: exit 0"
+  assert_contains "$ACC_OUT" "nothing to accept" "nothing to accept: message"
+  assert_eq "$before" "$(accept_baseline_sha)" "nothing to accept: baseline untouched"
+}
+test_accept_git_with_only_unacceptable_changes() {
+  local repo m; accept_setup
+  git -C "$repo" config core.fsmonitor "sh -c 'echo pwned'"
+  accept_run $'y\n'
+  assert_eq 3 "$ACC_RC" "only unacceptable: exit 3"
+  assert_contains "$ACC_OUT" "nothing to accept" "only unacceptable: nothing to accept"
+  assert_contains "$ACC_OUT" "not accepted" "only unacceptable: listed"
+}
+test_accept_git_leaves_non_hook_changes_reported() {
+  local repo m out; accept_setup
+  printf '#!/bin/sh\necho changed\n' >"$repo/.git/hooks/pre-commit"
+  git -C "$repo" config core.fsmonitor "sh -c 'echo pwned'"
+  accept_run $'y\n'
+  assert_eq 3 "$ACC_RC" "mixed: exit 3"
+  assert_contains "$ACC_OUT" "still reported" "mixed: still reported"
+  out=$(accept_check_out)
+  assert_contains "$out" "core.fsmonitor" "mixed: config stays reported"
+  assert_not_contains "$out" ".git/hooks/pre-commit" "mixed: the hook was accepted"
+}
+test_accept_git_leaves_unreviewable_hooks_reported() {
+  local repo m out unreadable=0; accept_setup
+  printf '#!/bin/sh\necho changed\n' >"$repo/.git/hooks/pre-commit"
+  head -c 71680 /dev/zero | tr '\0' a >"$repo/.git/hooks/post-checkout"
+  { head -c 500 /dev/zero | tr '\0' a; echo; } >"$repo/.git/hooks/post-merge"
+  printf 'a\0b\n' >"$repo/.git/hooks/pre-rebase"
+  printf '#!/bin/sh\n' >"$repo/.git/hooks/bad name"
+  # root reads mode-000 files anyway
+  if [[ "$(id -u)" -ne 0 ]]; then unreadable=1; printf '#!/bin/sh\n' >"$repo/.git/hooks/pre-push"; chmod 000 "$repo/.git/hooks/pre-push"; fi
+  accept_run $'y\n'
+  assert_eq 3 "$ACC_RC" "unreviewable hooks: exit 3"
+  assert_contains "$ACC_OUT" "not accepted (stays reported): size hookfile .git/hooks/post-checkout" "size refused"
+  assert_contains "$ACC_OUT" "not accepted (stays reported): line length hookfile .git/hooks/post-merge" "line length refused"
+  assert_contains "$ACC_OUT" "not accepted (stays reported): binary hookfile .git/hooks/pre-rebase" "NUL refused"
+  assert_contains "$ACC_OUT" "not accepted (stays reported): name hookfile .git/hooks/bad name" "odd name refused"
+  out=$(accept_check_out)
+  assert_not_contains "$out" ".git/hooks/pre-commit" "the reviewable hook was accepted"
+  assert_contains "$out" ".git/hooks/post-checkout" "oversized hook still reported"
+  assert_contains "$out" ".git/hooks/pre-rebase" "NUL hook still reported"
+  if [[ "$unreadable" -eq 1 ]]; then
+    assert_contains "$ACC_OUT" "not accepted (stays reported): unreadable hookfile .git/hooks/pre-push" "unreadable refused"
+    assert_contains "$out" ".git/hooks/pre-push" "unreadable hook still reported"
+  else
+    record "PASS unreadable hook refused (skipped: running as root)"
+  fi
+}
+test_accept_git_rejects_forged_duplicate_entries() {
+  local repo m d out; accept_setup
+  # The nested path makes hash_hook_dir print a second, 3-column "hookfile .git/hooks/pre-commit" line.
+  d=$'x\nhookfile\t.git'
+  mkdir -p "$repo/.git/hooks/$d/hooks"
+  printf '#!/bin/sh\necho forged\n' >"$repo/.git/hooks/$d/hooks/pre-commit"
+  printf '#!/bin/sh\necho changed\n' >"$repo/.git/hooks/pre-commit"
+  accept_run $'y\n'
+  assert_eq 3 "$ACC_RC" "forged duplicate: exit 3"
+  assert_contains "$ACC_OUT" "duplicate" "forged duplicate: reason"
+  out=$(accept_check_out)
+  assert_contains "$out" ".git/hooks/pre-commit" "forged duplicate: pre-commit stays reported"
+}
+test_accept_git_keeps_existing_hooks_ahead_of_new_ones() {
+  local repo m c out; accept_setup
+  for c in {a..t}; do printf '#!/bin/sh\n' >"$repo/.git/hooks/0$c"; done
+  printf '#!/bin/sh\necho changed\n' >"$repo/.git/hooks/pre-commit"
+  accept_run $'y\n'
+  assert_eq 3 "$ACC_RC" "budget with an existing hook: exit 3"
+  assert_contains "$ACC_OUT" "budget" "budget reason shown"
+  out=$(accept_check_out)
+  assert_not_contains "$out" ".git/hooks/pre-commit" "the existing hook is accepted first"
+}
+test_accept_git_respects_the_display_budget() {
+  local repo m c out; accept_setup
+  for c in {a..t}; do printf '#!/bin/sh\n' >"$repo/.git/hooks/0$c"; done
+  accept_run $'y\n'
+  assert_eq 3 "$ACC_RC" "16 of 20 accepted: exit 3"
+  assert_eq 4 "$(printf '%s\n' "$ACC_OUT" | grep -c '^not accepted.*budget')" "4 hooks refused for budget"
+  out=$(accept_check_out)
+  assert_eq 4 "$(printf '%s\n' "$out" | grep -c '^  added')" "4 hooks remain reported"
+}
+test_accept_git_is_not_disturbed_by_special_files() {
+  local repo m rc=0; accept_setup
+  mkfifo "$repo/.git/hooks/post-merge"
+  printf '#!/bin/sh\necho changed\n' >"$repo/.git/hooks/pre-commit"
+  printf 'y\n' >"$TMP_ROOT/tty"
+  AGENT_VM_TTY="$TMP_ROOT/tty" perl -e 'alarm shift; exec @ARGV' 10 bash -c "AGENT_VM_LIB=1 . '$LAUNCHER'; cmd_accept_git '$repo'" >/dev/null 2>&1 </dev/null || rc=$?
+  assert_eq 0 "$rc" "FIFO in hooks does not stall accept (142 would be the alarm)"
+  assert_eq 0 "$(surface_status "$m" "$repo")" "hook accepted despite the FIFO"
+}
+test_accept_git_caps_the_not_accepted_listing() {
+  local repo m i; accept_setup
+  mkdir -p "$repo/.git/hooks/sub"
+  for i in $(seq 1 60); do printf '#!/bin/sh\n' >"$repo/.git/hooks/sub/f$i"; done
+  accept_run $'y\n'
+  assert_eq 3 "$ACC_RC" "60 not accepted: exit 3"
+  assert_eq 50 "$(printf '%s\n' "$ACC_OUT" | grep -c '^not accepted')" "listing capped at 50"
+  assert_contains "$ACC_OUT" "and 10 more" "remainder summarized"
+}
+test_accept_copy_hook_refuses_non_regular_and_oversized() {
+  local d="$TMP_ROOT/ach" r rc
+  mkdir -p "$d/dir"; mkfifo "$d/fifo"; ln -s /bin/sh "$d/link"
+  head -c 65536 /dev/zero | tr '\0' a >"$d/ok"; head -c 65537 /dev/zero | tr '\0' a >"$d/big"
+  rc=0; r=$(AGENT_VM_LIB=1 perl -e 'alarm shift; exec @ARGV' 10 bash -c ". '$LAUNCHER'; accept_copy_hook '$d/fifo' '$d/out-fifo'") || rc=$?
+  assert_eq "1 type" "$rc $r" "FIFO is refused without blocking"
+  rc=0; r=$(accept_copy_hook "$d/link" "$d/out-link") || rc=$?
+  assert_eq "1 unreadable" "$rc $r" "symlink is refused"
+  rc=0; r=$(accept_copy_hook "$d/dir" "$d/out-dir") || rc=$?
+  assert_eq "1 type" "$rc $r" "directory is refused"
+  rc=0; r=$(accept_copy_hook "$d/ok" "$d/out-ok") || rc=$?
+  assert_eq "0 0644" "$rc $r" "65536 bytes accepted (prints the mode)"
+  rc=0; r=$(accept_copy_hook "$d/big" "$d/out-big") || rc=$?
+  assert_eq "1 size" "$rc $r" "65537 bytes refused"
+  assert_status 1 "no partial copy left for a refused file" -- test -e "$d/out-big"
+}
+test_accept_git_limits_are_inclusive() {
+  local repo m h c; accept_setup
+  h="$repo/.git/hooks/lim"
+  seq 1 1000 >"$h"; accept_run $'n\n'
+  assert_not_contains "$ACC_OUT" "not accepted" "1000 lines accepted"
+  seq 1 1001 >"$h"; accept_run $'n\n'
+  assert_contains "$ACC_OUT" "not accepted (stays reported): lines hookfile .git/hooks/lim" "1001 lines refused"
+  { seq 1 1000; printf 'x'; } >"$h"; accept_run $'n\n'
+  assert_contains "$ACC_OUT" "not accepted (stays reported): lines hookfile .git/hooks/lim" "unterminated 1001st line counts"
+  head -c 400 /dev/zero | tr '\0' a >"$h"; echo >>"$h"; accept_run $'n\n'
+  assert_not_contains "$ACC_OUT" "not accepted" "400-byte line accepted"
+  head -c 401 /dev/zero | tr '\0' a >"$h"; echo >>"$h"; accept_run $'n\n'
+  assert_contains "$ACC_OUT" "not accepted (stays reported): line length hookfile .git/hooks/lim" "401-byte line refused"
+  rm "$h"
+  for c in a b c d; do seq 1 1000 >"$repo/.git/hooks/b$c"; done
+  accept_run $'n\n'
+  assert_eq 1 "$(printf '%s\n' "$ACC_OUT" | grep -c '^not accepted')" "4 x 1000 lines: one hook over the 3000-line budget"
+  assert_contains "$ACC_OUT" "not accepted (stays reported): budget hookfile .git/hooks/bd" "the 4th is refused for budget"
+}
+test_restore_git_cleans_up_its_workdir() {
+  local repo m; accept_setup
+  printf '#!/bin/sh\n' >"$repo/.git/hooks/post-checkout"
+  printf 'y\n' | cmd_restore_git "$repo" >/dev/null 2>&1 || true
+  assert_eq "" "$(ls -d "$AGENT_VM_STATE_DIR/snapshots/$m"/restore.* 2>/dev/null || true)" "no restore workdir left"
+}
+test_accept_git_cleans_up_its_workdir() {
+  local repo m
+  repo=$(make_git_repo); m=$(derive_machine_name "$repo"); write_machine_meta "$m" "$repo"
+  printf '#!/bin/sh\n' >"$repo/.git/hooks/pre-commit"
+  chmod 500 "$repo/.git/hooks"
+  check_git_surfaces "$m" "$repo" 2>/dev/null
+  chmod 700 "$repo/.git/hooks"
+  printf '#!/bin/sh\necho changed\n' >"$repo/.git/hooks/pre-commit"
+  accept_run $'y\n'
+  assert_eq 0 "$ACC_RC" "read-only saved copy: accept succeeds"
+  assert_eq "" "$(ls -d "$AGENT_VM_STATE_DIR/snapshots/$m"/accept.* 2>/dev/null || true)" "no accept workdir left"
+  printf '#!/bin/sh\necho again\n' >"$repo/.git/hooks/pre-commit"
+  printf 'y\n' | cmd_restore_git "$repo" >/dev/null 2>&1 || true
+  assert_eq "$(printf '#!/bin/sh\necho changed')" "$(cat "$repo/.git/hooks/pre-commit")" "restore writes back the accepted version"
+}
+test_accept_git_only_considers_hooks_in_the_report() {
+  local repo m reported candidates; accept_setup
+  printf '#!/bin/sh\n' >"$repo/.git/hooks/h1"; printf '#!/bin/sh\n' >"$repo/.git/hooks/h2"
+  mkdir -p "$repo/.git/hooks/sub"; printf '#!/bin/sh\n' >"$repo/.git/hooks/sub/x"
+  ln -s /bin/sh "$repo/.git/hooks/lnk"
+  printf '#!/bin/sh\n' >"$repo/.git/hooks/bad name"
+  reported=$(accept_check_out | sed -n 's/^  [a-z]*	[a-z]*	//p' | sort -u)
+  accept_run $'n\n'
+  candidates=$({
+    printf '%s\n' "$ACC_OUT" | sed -n 's/^not accepted (stays reported): [^ ]* [^ ]* //p'
+    printf '%s\n' "$ACC_OUT" | awk -F'\t' '$1 == "added" || $1 == "changed" || $1 == "removed" { print $2 }'
+  } | sort -u)
+  assert_eq "$reported" "$candidates" "accept's candidates are exactly the reported items"
+}
+test_accept_git_requires_a_terminal() {
+  local repo m; accept_setup
+  printf '#!/bin/sh\necho changed\n' >"$repo/.git/hooks/pre-commit"
+  assert_status 1 "no readable tty refused" -- bash -c "AGENT_VM_STATE_DIR='$AGENT_VM_STATE_DIR' AGENT_VM_LIB=1 AGENT_VM_TTY='$TMP_ROOT/missing' . '$LAUNCHER'; cmd_accept_git '$repo'"
+}
+test_accept_git_refuses_snapshot_of_another_path() {
+  local repo m; repo=$(make_git_repo); m=$(derive_machine_name "$repo")
+  write_machine_meta "$m" "/somewhere/else"
+  printf 'y\n' >"$TMP_ROOT/tty"
+  assert_status 1 "path mismatch refused" -- bash -c "AGENT_VM_STATE_DIR='$AGENT_VM_STATE_DIR' AGENT_VM_LIB=1 AGENT_VM_TTY='$TMP_ROOT/tty' . '$LAUNCHER'; cmd_accept_git '$repo'"
+}
+test_accept_git_refuses_symlinked_git_dir() {
+  local repo m; repo=$(make_git_repo); m=$(derive_machine_name "$repo")
+  write_machine_meta "$m" "$repo"; check_git_surfaces "$m" "$repo" 2>/dev/null
+  mv "$repo/.git" "$TMP_ROOT/moved-git"; ln -s "$TMP_ROOT/moved-git" "$repo/.git"
+  printf 'y\n' >"$TMP_ROOT/tty"
+  assert_status 1 "symlinked .git refused" -- bash -c "AGENT_VM_STATE_DIR='$AGENT_VM_STATE_DIR' AGENT_VM_LIB=1 AGENT_VM_TTY='$TMP_ROOT/tty' . '$LAUNCHER'; cmd_accept_git '$repo'"
+}
+
 test_session_logs_are_ingested_after_the_session() {
   local wt repo m; wt=$(make_dotfiles_fixture); repo=$(make_flow_repo)
   m=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
@@ -960,9 +1295,11 @@ test_sync_inspect_lists_divergence_without_writing() {
   assert_eq "abc" "$(cat "$AGENT_VM_CLAUDE_PROJECTS_DIR/-r/s.jsonl")" "inspect writes nothing"
 }
 test_main_dispatches_sync_and_restore_git() {
-  cmd_sync() { echo "sync $*"; }; cmd_restore_git() { echo "restore-git $*"; }
+  cmd_sync() { echo "sync $*"; }; cmd_restore_git() { echo "restore-git $*"; }; cmd_accept_git() { echo "accept-git $*"; }
   assert_eq "sync --inspect" "$(main sync --inspect)" "sync"
   assert_eq "restore-git /r" "$(main restore-git /r)" "restore-git"
+  assert_eq "accept-git /r" "$(main accept-git /r)" "accept-git"
+  assert_contains "$(main --help)" "agent-vm accept-git" "help lists accept-git"
 }
 test_failed_copy_publishes_no_staging_generation() {
   # build_staging runs inside out=$(...), where set -e is not inherited: failures must be checked explicitly

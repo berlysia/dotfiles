@@ -147,7 +147,15 @@ exclude に載せた repo では、隔離だけでなく、6 節の git 面検�
 ### 復旧コマンド
 
 - `agent-vm restore-git [repo]`: git 面検査が報告した変更を元に戻す。`.git/hooks` 配下の変更・削除された exec 系設定は取り消す。`.envrc` などの untracked ファイルは削除せず、`*.agent-vm-quarantine` に改名する。
-- `agent-vm sync [--inspect]`: ログ取り込みと git 面検査をその場で実行する。`--inspect` は何も書き換えずに差分だけを表示する。
+- `agent-vm accept-git [repo]`: host で自分が行った `.git/hooks` の変更（典型は `pnpm install` の `prepare` による hook の再インストール）を、内容 diff を確認して新しい基準に取り込む。host の端末で実行する。
+  - 変わった hook ごとに要約（size / lines / mode / sha 先頭 8 桁）と diff を表示し、`y` で確定する。確定した内容が `restore-git` の書き戻し元にもなる。確認は `/dev/tty` から読むので、`printf y |` のようなパイプでは承認できない。
+  - 身に覚えのない変更には使わず `restore-git` を使う。
+  - hook 以外の項目（実行系 config、`.envrc` など）と、全文を確認できない hook（64 KiB 超、1000 行超、400 バイト超の行、NUL を含む、読めない、名前が `[A-Za-z0-9][A-Za-z0-9._-]*` に合わない、サブディレクトリ内）は受け入れず、理由つきで `not accepted` と一覧に出る。これらは従来どおり報告され続ける（設計どおりで、不具合ではない）。
+  - 受け入れるのは hook ファイルのバイト列だけで、hook が呼ぶ repo 内のスクリプトは承認しない。それらは `git diff` で確認する。受け入れた後に実行ビットだけ変えられた場合は検知されない。
+  - 1 回に受け入れるのは 16 件・表示 3000 行まで。既にある hook の変更を新規の hook より優先する。見覚えのない hook が大量にあるときは `restore-git` で消してから受け入れる。
+  - 確認の後で hook や baseline が変わっていたら、何も書かずに終了コード 3 で止まる。VM のセッションを止めてから再実行する。起動中（準備中）は lock 待ちで失敗するので、起動が終わってから実行する。
+  - 終了コード: 0 は受け入れて残りなし、または何もしなかった（`n`・EOF を含む）。3 は受け入れた後も報告が残る、または中止した。1 は拒否。
+- `agent-vm sync [--inspect]`: ログ取り込みと`: ログ取り込みと git 面検査をその場で実行する。`--inspect` は何も書き換えずに差分だけを表示する。
 - 初回の準備が途中で止まったマシンは `agent-vm rm` で消し、次の起動で作り直す。
 - VM の中で手で `chezmoi apply` すると、次の bootstrap まで音声通知の hook と除外した MCP が戻る。戻したくなければ `agent-vm rm` で作り直す。
 - VM の中で user スコープや codex の設定に足した MCP は、dotfiles の変更後の bootstrap で取り除かれる（Claude の project スコープは残る）。
