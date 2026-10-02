@@ -138,7 +138,7 @@ export function evaluateDocument(path: string): DocumentDiagnosis {
         ok: recorded === computedHash,
         foundLine: `recorded=${recorded ? recorded.slice(0, 12) : "none"} current=${computedHash.slice(0, 12)}${notes}`,
         expected:
-          "approvals.log records the current hash (a human says 承認 in the conversation)",
+          "approvals.log records the current hash (the human answers the question from `workflow-cli ask-approval`, or says `approve` in the conversation)",
       },
       markerVerdict: {
         ok: marker?.verdict === "pass",
@@ -189,7 +189,7 @@ export function diagnoseGate(wfDir: string, targetPath: string): GateDiagnosis {
 
   let note: string | undefined;
   if (specOk && hasResearch) {
-    note = `spec.md is approved. The plan-N.md whose ## Files section lists \`${sanitizeForDisplay(targetPath)}\` must also be complete + Review Status: pass + approved by the user saying 「承認 plan-N.md」 in the conversation (approvals.log then records its current hash), with an auto-review marker whose parent-spec-hash equals the current spec.md hash.`;
+    note = `spec.md is approved. The plan-N.md whose ## Files section lists \`${sanitizeForDisplay(targetPath)}\` must also be complete + Review Status: pass + approved by the user, either by choosing it in the question from \`workflow-cli ask-approval\` or by saying \`approve plan-N.md\` in the conversation (approvals.log then records its current hash), with an auto-review marker whose parent-spec-hash equals the current spec.md hash.`;
   }
 
   let nextAction: string;

@@ -412,7 +412,8 @@ test("two-layer: once spec.md passes, the note and next step ask for 承認 of t
   writeFileSync(join(wf, "spec.md"), buildPlanContent(approvedWorkflowRepo()));
   recordApprovalsForTest(wf);
   const d = diagnoseGate(wf, join(wf, "..", "src", "a.ts"));
-  ok(d.note && /承認 plan-N\.md/.test(d.note));
+  ok(d.note && /approve plan-N\.md/.test(d.note));
+  ok(d.note && /ask-approval/.test(d.note));
   match(d.nextAction, /ask-approval/);
   match(d.nextAction, /approve plan-N\.md/);
 });
