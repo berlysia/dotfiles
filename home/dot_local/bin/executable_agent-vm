@@ -1588,6 +1588,7 @@ run_tool() { # tool args...
   prepare_machine "$tool"
   notice_orphan_env "$MACHINE"
   notice_gh_token_expiry "$MACHINE"
+  nm_sync "$MACHINE" "$REPO" || true
   if [[ "$tool" == codex ]]; then ensure_codex_auth "$MACHINE"; fi
   envf=$(inject_secrets "$MACHINE")
   script=$(build_launch_script "$tool" "$REPO" "$envf" "$@")
@@ -1745,6 +1746,97 @@ notice_gh_token_expiry() { # machine: speak only when the token is near or past 
     step "GH_TOKEN for this repo expires on $GH_STATE_EXPIRES; renew with: agent-vm env gh"
   fi
   return 0
+}
+
+# Each package's node_modules inside the VM is a VM-local bind mount made by agent-vm-node-modules
+# (delivered by chezmoi). The launcher only asks for a sync and reports.
+NM_CONTRACT=1
+# Runs in the machine with $1 = contract and $2 = repository. 90: no helper, 91: another contract.
+# "ran" marks that the helper itself started, so a non-zero status without it belongs to orb or the shell.
+# shellcheck disable=SC2016 # runs in the VM: $1 and $2 must expand there, not here
+NM_REMOTE_SCRIPT='command -v agent-vm-node-modules >/dev/null 2>&1 || exit 90
+[ "$(agent-vm-node-modules --contract 2>/dev/null)" = "$1" ] || exit 91
+echo ran
+exec agent-vm-node-modules sync "$2"'
+
+# repo path -> the path when it is a directory of the repository reached without a symlink. The path comes
+# from the VM, which the host does not trust and which can write into the shared repository: anything relative,
+# with empty, . or .. parts, holding control characters (a forged message line), outside the repository, or
+# passing through a symlink (which could lead the host into an automount or a network path) is dropped. Each part
+# is checked with lstat from the canonical repository down, so nothing outside it is ever touched. A real record
+# is a worktree or package directory, never a symlink.
+nm_record_path() {
+  local cur=$1 rest part
+  case "$2" in /*) ;; *) return 1 ;; esac
+  case "$2/" in */./* | */../* | *//*) return 1 ;; esac
+  case "$2" in *[[:cntrl:]]*) return 1 ;; esac
+  [[ "$2" == "$1" || "$2" == "$1"/* ]] || return 1
+  rest=${2#"$1"}
+  while [[ -n "$rest" ]]; do
+    rest=${rest#/}
+    part=${rest%%/*}
+    rest=${rest#"$part"}
+    cur=$cur/$part
+    if [[ -L "$cur" ]]; then return 1; fi
+  done
+  [[ -d "$2" ]] || return 1
+  printf '%s\n' "$2"
+}
+
+# word -> the word quoted for a shell, in plain ASCII ($'\343...' for non-ASCII), so the terminal sanitizer
+# leaves a recovery command intact enough to paste. bash 3.2 ignores LC_ALL=C prefixed to the printf builtin;
+# only a variable set in the shell takes effect.
+nm_q() {
+  local LC_ALL=C
+  printf '%q' "$1"
+}
+
+# dir -> 0 when the host's dir/node_modules has an entry not starting with "." (an install, not a cache).
+# A node_modules that is a symlink (the VM can make one) counts as no install and is not followed; -L comes first
+# so a symlinked entry is not followed either.
+nm_host_has_install() {
+  local e
+  if [[ -L "$1/node_modules" ]]; then return 1; fi
+  for e in "$1"/node_modules/*; do
+    if [[ -L "$e" || -e "$e" ]]; then return 0; fi
+  done
+  return 1
+}
+
+# machine repo -> 0, the helper's own status, 90/91, or orb's status. Never stops anything by itself: one
+# warning line on failure, and one install hint per worktree whose VM node_modules is empty while the host's is
+# not (spec K4, K5). Unlike notice_*, it returns the status for `agent-vm node-modules-sync`.
+nm_sync() {
+  local m=$1 repo=$2 out status=0 ran=0 kind path p q reason recover
+  out=$(orb_q -m "$m" bash -lc "$NM_REMOTE_SCRIPT" _ "$NM_CONTRACT" "$repo" 2>/dev/null) || status=$?
+  # Only "ran" and empty records are read, so a login profile writing to stdout changes nothing.
+  # Records stay valid whatever the status.
+  while IFS=$'\t' read -r kind path; do
+    if [[ "$kind" == ran ]]; then ran=1; continue; fi
+    [[ "$kind" == empty && -n "$path" ]] || continue
+    p=$(nm_record_path "$repo" "$path") || continue
+    if nm_host_has_install "$p"; then
+      step "node_modules in the VM is empty for $(nm_q "$p") (the host has one); recover: run the package manager's install in $(nm_q "$p") inside the VM"
+    fi
+  done <<<"$out"
+  if [[ "$status" -eq 0 ]]; then return 0; fi
+  # agent-vm shell and agent-vm (re)start act on the repository of the current directory, hence the cd
+  q=$(nm_q "$repo")
+  recover="cd $q && agent-vm shell, then agent-vm-node-modules sync $q"
+  case "$ran:$status" in
+    1:3)
+      step "kept VM-local node_modules that may be stale in $m (a worktree or package list could not be trusted); recover: $recover"
+      return 3
+      ;;
+    0:90) reason="the helper is missing"; recover="agent-vm rm $q, then start agent-vm again in $q" ;;
+    0:91) reason="the helper does not speak contract $NM_CONTRACT"; recover="agent-vm rm $q, then start agent-vm again in $q" ;;
+    1:1) reason="some packages could not be mounted" ;;
+    1:2) reason="another sync held the lock" ;;
+    1:*) reason="the helper failed: status $status" ;;
+    *) reason="the sync did not run: status $status" ;;
+  esac
+  step "node_modules may be shared with the host in the VM ($reason); recover: $recover"
+  return "$status"
 }
 
 gh_origin_repo() { # repo_root -> owner/repo from origin; empty when absent or not a github.com URL

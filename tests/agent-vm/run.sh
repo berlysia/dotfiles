@@ -1515,6 +1515,143 @@ test_gh_notice_survives_a_broken_state_file() {
   assert_status 0 "launch not blocked" -- notice_gh_token_expiry "$m"
 }
 
+nm_host_install() { mkdir -p "$1/node_modules/pkg"; } # dir: the host has an install there
+nm_repo() { # a canonical repository path under TMP_ROOT (macOS /var vs /private/var)
+  local r; r="$(cd -P "$TMP_ROOT" && pwd -P)/r"; mkdir -p "$r"; printf '%s' "$r"
+}
+nm_fake_helper() { # contract sync_status: an agent-vm-node-modules on $TMP_ROOT/vmbin that logs its sync calls
+  mkdir -p "$TMP_ROOT/vmbin"
+  cat >"$TMP_ROOT/vmbin/agent-vm-node-modules" <<EOF
+#!/bin/sh
+case "\$1" in
+  --contract) printf '%s\n' '$1' ;;
+  sync) echo "sync \$2" >>"$TMP_ROOT/helper.log"; printf 'mounted\t%s\n' "\$2"; exit $2 ;;
+esac
+EOF
+  chmod +x "$TMP_ROOT/vmbin/agent-vm-node-modules"
+}
+test_nm_remote_script_checks_the_helper_and_its_contract() {
+  local out
+  assert_status 90 "no helper" -- env PATH=/usr/bin:/bin bash -c "$NM_REMOTE_SCRIPT" _ 1 /r
+  nm_fake_helper 2 0
+  assert_status 91 "another contract" -- env PATH="$TMP_ROOT/vmbin:/usr/bin:/bin" bash -c "$NM_REMOTE_SCRIPT" _ 1 /r
+  if [[ -e "$TMP_ROOT/helper.log" ]]; then record "FAIL no sync under another contract"; else record "PASS no sync under another contract"; fi
+  nm_fake_helper '' 0
+  assert_status 91 "an empty contract" -- env PATH="$TMP_ROOT/vmbin:/usr/bin:/bin" bash -c "$NM_REMOTE_SCRIPT" _ 1 /r
+  nm_fake_helper 1 3
+  out=$(PATH="$TMP_ROOT/vmbin:/usr/bin:/bin" bash -c "$NM_REMOTE_SCRIPT" _ 1 /r) || true
+  assert_eq $'ran\nmounted\t/r' "$out" "ran, then the helper's records"
+  assert_eq "sync /r" "$(cat "$TMP_ROOT/helper.log")" "sync of the given repository"
+  assert_status 3 "the helper's status passes through" -- env PATH="$TMP_ROOT/vmbin:/usr/bin:/bin" bash -c "$NM_REMOTE_SCRIPT" _ 1 /r
+}
+test_nm_sync_is_silent_when_converged() {
+  local out
+  out=$(STUB_ORB_STDOUT=$'ran\nmounted\t/r' nm_sync agent-r-000000 /r 2>&1)
+  assert_eq "" "$out" "nothing to say when every package is mounted"
+  assert_contains "$(cat "$STUB_LOG")" "orb -m agent-r-000000 bash -lc" "runs one orb call in the machine"
+  assert_contains "$(cat "$STUB_LOG")" "_ 1 /r" "passes the contract and the repository as arguments"
+}
+test_nm_sync_hints_install_only_when_the_host_has_one() {
+  local r out; r=$(nm_repo)
+  mkdir -p "$r/node_modules/.cache"
+  out=$(STUB_ORB_STDOUT=$'ran\nempty\t'"$r" nm_sync agent-r-000000 "$r" 2>&1)
+  assert_eq "" "$out" "a host node_modules with only dot entries is not an install"
+  nm_host_install "$r"
+  out=$(STUB_ORB_STDOUT=$'ran\nempty\t'"$r" nm_sync agent-r-000000 "$r" 2>&1)
+  assert_eq "agent-vm: node_modules in the VM is empty for $r (the host has one); recover: run the package manager's install in $r inside the VM" "$out" "install hint"
+  out=$(STUB_ORB_STDOUT=$'ran\nmounted\t'"$r" nm_sync agent-r-000000 "$r" 2>&1)
+  assert_eq "" "$out" "no hint once the VM has its own install"
+  mkdir -p "$r/packages/a"
+  out=$(STUB_ORB_STDOUT=$'ran\nempty\t'"$r/packages/a" nm_sync agent-r-000000 "$r" 2>&1)
+  assert_eq "" "$out" "no hint when the host has not installed there either"
+}
+test_nm_sync_trusts_only_paths_inside_the_repository() {
+  local r o out; r=$(nm_repo); o="$(cd -P "$TMP_ROOT" && pwd -P)/other"
+  nm_host_install "$r"; nm_host_install "$o"
+  ln -s "$o" "$r/link"
+  out=$(STUB_ORB_STDOUT=$'ran\nempty\t'"$o" nm_sync agent-r-000000 "$r" 2>&1)
+  assert_eq "" "$out" "a path outside the repository is ignored"
+  out=$(STUB_ORB_STDOUT=$'ran\nempty\tr' nm_sync agent-r-000000 "$r" 2>&1)
+  assert_eq "" "$out" "a relative path is ignored"
+  out=$(STUB_ORB_STDOUT=$'ran\nempty\t'"$r/../other" nm_sync agent-r-000000 "$r" 2>&1)
+  assert_eq "" "$out" "a path with .. is ignored"
+  out=$(STUB_ORB_STDOUT=$'ran\nempty\t'"$r/link" nm_sync agent-r-000000 "$r" 2>&1)
+  assert_eq "" "$out" "a symlink resolving outside the repository is ignored"
+  out=$(STUB_ORB_STDOUT=$'ran\nempty\t'"$r/link/sub" nm_sync agent-r-000000 "$r" 2>&1)
+  assert_eq "" "$out" "a path passing through a symlink is ignored"
+  mkdir -p "$r/real"; nm_host_install "$r/real"; ln -s "$r/real" "$r/inner"
+  out=$(STUB_ORB_STDOUT=$'ran\nempty\t'"$r/inner" nm_sync agent-r-000000 "$r" 2>&1)
+  assert_eq "" "$out" "a symlink is ignored even when it stays inside the repository"
+  mkdir -p "$r/pkg"; ln -s "$o/node_modules" "$r/pkg/node_modules"
+  out=$(STUB_ORB_STDOUT=$'ran\nempty\t'"$r/pkg" nm_sync agent-r-000000 "$r" 2>&1)
+  assert_eq "" "$out" "a node_modules that is a symlink is not an install"
+}
+test_nm_sync_drops_paths_with_control_characters() {
+  local r out; r=$(nm_repo)
+  nm_host_install "$r/"$'\e[31mx'
+  out=$(STUB_ORB_STDOUT=$'ran\nempty\t'"$r/"$'\e[31mx' nm_sync agent-r-000000 "$r" 2>&1)
+  assert_eq "" "$out" "a path with an escape character is dropped"
+}
+test_nm_sync_hints_even_when_the_sync_fails() {
+  local r out; r=$(nm_repo)
+  nm_host_install "$r"
+  out=$(STUB_ORB_STDOUT=$'ran\nempty\t'"$r" STUB_ORB_EXIT=1 nm_sync agent-r-000000 "$r" 2>&1 || true)
+  assert_contains "$out" "node_modules in the VM is empty for $r" "records are read whatever the status"
+  assert_contains "$out" "(some packages could not be mounted)" "and the failure is reported too"
+}
+test_nm_sync_warns_once_per_failure_kind() {
+  local out status
+  nm_try() { status=0; out=$(STUB_ORB_STDOUT="$1" STUB_ORB_EXIT="$2" nm_sync agent-r-000000 /r 2>&1) || status=$?; }
+  nm_try "" 90
+  assert_eq "agent-vm: node_modules may be shared with the host in the VM (the helper is missing); recover: agent-vm rm /r, then start agent-vm again in /r" "$out" "missing helper"
+  assert_eq 90 "$status" "status 90"
+  nm_try "" 91
+  assert_contains "$out" "(the helper does not speak contract 1); recover: agent-vm rm /r, then start agent-vm again in /r" "contract mismatch"
+  assert_eq 91 "$status" "status 91"
+  nm_try ran 1
+  assert_eq "agent-vm: node_modules may be shared with the host in the VM (some packages could not be mounted); recover: cd /r && agent-vm shell, then agent-vm-node-modules sync /r" "$out" "partial"
+  assert_eq 1 "$status" "status 1"
+  nm_try ran 2
+  assert_contains "$out" "(another sync held the lock)" "lock"
+  assert_eq 2 "$status" "status 2"
+  nm_try ran 3
+  assert_eq "agent-vm: kept VM-local node_modules that may be stale in agent-r-000000 (a worktree or package list could not be trusted); recover: cd /r && agent-vm shell, then agent-vm-node-modules sync /r" "$out" "reclaim aborted"
+  assert_eq 3 "$status" "status 3"
+  nm_try ran 64
+  assert_contains "$out" "(the helper failed: status 64)" "the helper's usage error"
+  nm_try "" 1
+  assert_contains "$out" "(the sync did not run: status 1)" "orb's own 1 is not the helper's partial failure"
+  assert_eq 1 "$status" "status 1 from orb"
+  nm_try "" 255
+  assert_contains "$out" "(the sync did not run: status 255)" "orb failure"
+  assert_eq 1 "$(printf '%s\n' "$out" | grep -c .)" "exactly one line"
+}
+test_nm_sync_quotes_the_repository_in_the_recovery() {
+  local out
+  out=$(STUB_ORB_STDOUT=ran STUB_ORB_EXIT=1 nm_sync agent-r-000000 "/a b" 2>&1 || true)
+  assert_contains "$out" 'cd /a\ b && agent-vm shell, then agent-vm-node-modules sync /a\ b' "a path with a space is quoted"
+  assert_contains "$(cat "$STUB_LOG")" "_ 1 /a\\ b" "and passed as one argument"
+  out=$(STUB_ORB_STDOUT=ran STUB_ORB_EXIT=1 nm_sync agent-r-000000 $'/a\nb' 2>&1 || true)
+  assert_contains "$out" "sync \$'/a\\nb'" "a newline is quoted as \$'\\n'"
+  assert_eq 1 "$(printf '%s\n' "$out" | grep -c .)" "and stays on one line"
+  out=$(STUB_ORB_STDOUT=ran STUB_ORB_EXIT=1 nm_sync agent-r-000000 "/$(printf '\343\201\202')" 2>&1 || true)
+  assert_contains "$out" "sync \$'/\\343\\201\\202'" "non-ASCII is quoted in plain ASCII, so the sanitizer keeps it"
+}
+test_run_tool_syncs_after_the_notices_and_goes_on_when_it_fails() {
+  local order="$TMP_ROOT/order"
+  prepare_machine() { MACHINE=agent-r-000000 REPO=/r; }
+  notice_orphan_env() { :; }
+  notice_gh_token_expiry() { echo gh >>"$order"; }
+  nm_sync() { echo "nm $1 $2" >>"$order"; return 1; }
+  inject_secrets() { :; }
+  build_launch_script() { :; }
+  finish_session() { :; }
+  session_exec() { echo session >>"$order"; }
+  host_reason() { :; }
+  assert_status 0 "a failing sync does not stop the launch" -- run_tool claude
+  assert_eq $'gh\nnm agent-r-000000 /r\nsession' "$(cat "$order")" "sync runs after the notices and before the session"
+}
+
 gh_fixture_repo() { # origin_url -> a git repo with that origin
   local repo="$TMP_ROOT/ghrepo"
   mkdir -p "$repo" && git -C "$repo" init -q
