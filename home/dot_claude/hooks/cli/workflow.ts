@@ -12,8 +12,9 @@
  * `runWorkflowCli` is a pure function: no `process.exit`, no ambient
  * `process.cwd()` reads inside it. All environment facts arrive via `deps`,
  * so `node --test` can call it directly (spec K5's architecture-strategist
- * finding: "no spawn needed"). The `import.meta.main` block below is the only
- * place this file touches the real process.
+ * finding: "no spawn needed"). `resolveCliDeps` and the `import.meta.main`
+ * block below are the only places this file reads the real process
+ * environment; `runWorkflowCli` itself stays pure.
  */
 
 import {
@@ -23,11 +24,13 @@ import {
   existsSync,
   openSync,
   readFileSync,
+  statSync,
   writeFileSync,
   writeSync,
 } from "node:fs";
-import { basename, resolve } from "node:path";
+import { basename, isAbsolute, resolve } from "node:path";
 import { expandTilde } from "../lib/path-utils.ts";
+import { getProjectRoot } from "../lib/project-root.ts";
 import { sanitizeForDisplay } from "../lib/sanitize-display.ts";
 import {
   classifyExemption,
@@ -39,9 +42,7 @@ import {
 import { isStrictlyUnderProjectSubdir } from "../lib/workflow-fs.ts";
 import { lastPassMarkerRound } from "../lib/workflow-marker.ts";
 import {
-  deriveDefaultWorkflowDir,
   getWorkflowDocumentType,
-  isValidSessionId,
   resolveWorkflowPaths,
   type WorkflowDocumentType,
 } from "../lib/workflow-paths.ts";
@@ -70,11 +71,21 @@ import {
   sanitizeExtensionReason,
   SPEC_NORMALIZERS,
 } from "../lib/workflow-review-core.ts";
+import { resolveWorkflowDir } from "../lib/workflow-resolve.ts";
+
+/** Where a workflow dir came from. `override` is a --wf-dir flag. */
+export type WfDirSource = "derived" | "env" | "override";
 
 export interface RunWorkflowCliDeps {
   cwd: string;
   /** Default/fallback workflow dir (e.g. already resolved via `resolveWorkflowDir`). */
   wfDir: string;
+  /**
+   * Where `wfDir` came from: derived from the session id, a startup pin, or
+   * `none` when nothing resolved and only a --wf-dir flag can name the dir
+   * (`wfDir` is then empty and every command requires the flag).
+   */
+  wfDirSource: Exclude<WfDirSource, "override"> | "none";
   sessionId: string;
   now: Date;
   /** Test-only override for the ledger path; defaults to `<wfDir>/reviewer-runs.log`. */
@@ -92,6 +103,88 @@ const REVIEW_MARKER_REGEX = /<!--\s*auto-review:[^>]*-->/g;
 const APPROVAL_STATUS_LINE_REGEX = /^- Approval Status:.*$/m;
 const REVIEW_STATUS_FIND_REGEX = /^\s*-?\s*Review Status:.*$/m;
 const VALID_VERDICTS = new Set(["pass", "needs-work", "blocker"]);
+
+export type ResolvedCliDeps =
+  | { deps: RunWorkflowCliDeps; warning: string | null }
+  | { error: string };
+
+const RESTART_HINT =
+  "restart Claude Code if this session started before the hooks were deployed (and do not rely on the DOCUMENT_WORKFLOW_DIR value the old SessionStart exported), or pass --wf-dir <dir> from the project root.";
+
+/**
+ * The CLI's root, session and workflow dir, taken from the same inputs the
+ * hooks use (spec K3): the root from getProjectRoot(), the session from
+ * CLAUDE_CODE_SESSION_ID (Claude Code passes it to the Bash tool and it
+ * follows /clear, unlike the CLAUDE_SESSION_ID the SessionStart hook used to
+ * export), the dir from resolveWorkflowDir. Without those values the CLI
+ * fails instead of guessing from process.cwd(), unless --wf-dir names the
+ * dir -- then the root is process.cwd() (a human at a terminal in the
+ * project root) and resolveTargetWfDir validates the flag.
+ */
+export function resolveCliDeps(argv: string[], now: Date): ResolvedCliDeps {
+  const hasWfDirFlag = Boolean(parseArgs(argv).flags["wf-dir"]);
+  const rootEnv = process.env.CLAUDE_TEST_CWD || process.env.CLAUDE_PROJECT_DIR;
+  if (!rootEnv && !hasWfDirFlag) {
+    return {
+      error: `CLAUDE_PROJECT_DIR is not set. The SessionStart hook exports it; ${RESTART_HINT}`,
+    };
+  }
+  if (rootEnv && !isExistingAbsoluteDir(rootEnv)) {
+    return {
+      error: `CLAUDE_PROJECT_DIR="${sanitizeForDisplay(rootEnv)}" is not an existing absolute directory; ${RESTART_HINT}`,
+    };
+  }
+  const cwd = getProjectRoot();
+  const sessionId = process.env.CLAUDE_CODE_SESSION_ID ?? "";
+  if (!sessionId) {
+    if (hasWfDirFlag) {
+      return {
+        deps: { cwd, wfDir: "", wfDirSource: "none", sessionId, now },
+        warning: null,
+      };
+    }
+    return {
+      error:
+        "CLAUDE_CODE_SESSION_ID is not set (Claude Code passes it to its Bash tool). Outside Claude Code, pass --wf-dir <dir>.",
+    };
+  }
+  const resolution = resolveWorkflowDir({ cwd, sessionId });
+  if (resolution.source === "unresolvable") {
+    if (hasWfDirFlag) {
+      return {
+        deps: { cwd, wfDir: "", wfDirSource: "none", sessionId, now },
+        warning: null,
+      };
+    }
+    return {
+      error:
+        resolution.reason === "invalid-session-id"
+          ? `CLAUDE_CODE_SESSION_ID="${sanitizeForDisplay(sessionId)}" is not a valid session id; pass --wf-dir <dir>.`
+          : `could not verify that the derived workflow dir is a strict descendant of ${cwd}/${SESSIONS_SUBDIR}; pass --wf-dir <dir>.`,
+    };
+  }
+  return {
+    deps: {
+      cwd,
+      wfDir: resolution.dir,
+      wfDirSource: resolution.source === "env" ? "env" : "derived",
+      sessionId,
+      now,
+    },
+    warning:
+      resolution.source === "env-rejected"
+        ? `DOCUMENT_WORKFLOW_DIR="${sanitizeForDisplay(process.env.DOCUMENT_WORKFLOW_DIR ?? "")}" is not a verified descendant of ${cwd}/${SESSIONS_SUBDIR}; using the session-derived dir.`
+        : null,
+  };
+}
+
+function isExistingAbsoluteDir(path: string): boolean {
+  try {
+    return isAbsolute(path) && statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
 
 export function runWorkflowCli(
   argv: string[],
@@ -158,45 +251,48 @@ function parseArgs(args: string[]): ParsedArgs {
 }
 
 /**
- * Resolve which wfDir this invocation targets: `--wf-dir` (validated against
- * `.tmp/sessions`) wins over `deps.wfDir`. Warns (does not fail) when the
- * resolved dir diverges from the session-derived dir, since a stale pin from
- * before `/clear` is a real, recoverable operator mistake (spec K5 security
- * 15) rather than something the CLI should refuse to run under.
- *
- * An invalid `--wf-dir` is different: the operator named a target, so writing
- * to the default dir instead would silently edit documents they did not ask
- * about (a smoke test once inserted a round into an approved spec this way).
- * That case is an error.
+ * Which wfDir this invocation targets: a --wf-dir flag (validated as a strict
+ * descendant of .tmp/sessions) wins over the resolved `deps.wfDir`. A flag
+ * that differs from the resolved dir is honoured with a warning; an invalid
+ * or empty flag is an error rather than a fallback, since the operator named
+ * a target (a smoke test once inserted a round into an approved spec by
+ * falling back).
  */
 function resolveTargetWfDir(
   flags: Record<string, string>,
   deps: RunWorkflowCliDeps,
 ):
-  | { wfDir: string; warning: string | null; error?: undefined }
+  | {
+      wfDir: string;
+      source: WfDirSource;
+      warning: string | null;
+      error?: undefined;
+    }
   | { error: string } {
-  let wfDir = deps.wfDir;
+  if ("wf-dir" in flags && !flags["wf-dir"]) {
+    return { error: "--wf-dir needs a value" };
+  }
   const flagValue = flags["wf-dir"];
-  if (flagValue) {
-    const candidate = resolve(deps.cwd, flagValue);
-    if (!isStrictlyUnderProjectSubdir(deps.cwd, SESSIONS_SUBDIR, candidate)) {
+  if (!flagValue) {
+    if (deps.wfDirSource === "none") {
       return {
-        error: `--wf-dir "${flagValue}" is not a strict descendant of ${SESSIONS_SUBDIR}; refusing rather than falling back to ${deps.wfDir}`,
+        error:
+          "no workflow dir was resolved for this session; pass --wf-dir <dir>",
       };
     }
-    wfDir = candidate;
+    return { wfDir: deps.wfDir, source: deps.wfDirSource, warning: null };
   }
-
-  if (deps.sessionId && isValidSessionId(deps.sessionId)) {
-    const derived = resolve(deps.cwd, deriveDefaultWorkflowDir(deps.sessionId));
-    if (derived !== wfDir) {
-      return {
-        wfDir,
-        warning: `wfDir (${wfDir}) diverges from the session-derived dir (${derived}) — this may be a stale pin from before /clear; see \`workflow-cli status\``,
-      };
-    }
+  const candidate = resolve(deps.cwd, flagValue);
+  if (!isStrictlyUnderProjectSubdir(deps.cwd, SESSIONS_SUBDIR, candidate)) {
+    return {
+      error: `--wf-dir "${sanitizeForDisplay(flagValue)}" is not a strict descendant of ${SESSIONS_SUBDIR}; refusing rather than falling back`,
+    };
   }
-  return { wfDir, warning: null };
+  const warning =
+    deps.wfDirSource !== "none" && candidate !== deps.wfDir
+      ? `--wf-dir points at ${candidate}, not the resolved dir ${deps.wfDir} (source=${deps.wfDirSource})`
+      : null;
+  return { wfDir: candidate, source: "override", warning };
 }
 
 function approvalStatusLine(content: string): string | null {
@@ -762,38 +858,19 @@ function cmdTriage(
 }
 
 if (import.meta.main) {
-  const cwd = process.cwd();
-  const sessionId = process.env.CLAUDE_SESSION_ID ?? "";
-  const envWfDir = process.env.DOCUMENT_WORKFLOW_DIR;
-  let wfDir: string;
-  if (
-    envWfDir &&
-    isStrictlyUnderProjectSubdir(cwd, SESSIONS_SUBDIR, resolve(cwd, envWfDir))
-  ) {
-    wfDir = resolve(cwd, envWfDir);
-  } else if (sessionId && isValidSessionId(sessionId)) {
-    wfDir = resolve(cwd, deriveDefaultWorkflowDir(sessionId));
+  const argv = process.argv.slice(2);
+  const resolved = resolveCliDeps(argv, new Date());
+  if ("error" in resolved) {
+    process.stderr.write(`workflow-cli: ${resolved.error}\n`);
+    process.exitCode = 1;
   } else {
-    wfDir = resolve(cwd, SESSIONS_SUBDIR);
+    if (resolved.warning) {
+      process.stderr.write(`workflow-cli: ${resolved.warning}\n`);
+    }
+    const result = runWorkflowCli(argv, resolved.deps);
+    if (result.stdout) process.stdout.write(result.stdout);
+    if (result.stderr) process.stderr.write(result.stderr);
+    // Not process.exit(): see docs/decisions/0002 (no-process-exit under hooks/).
+    process.exitCode = result.exitCode;
   }
-  if (!existsSync(wfDir)) {
-    process.stderr.write(
-      `workflow-cli: workflow dir ${wfDir} does not exist; pass --wf-dir explicitly\n`,
-    );
-  }
-  const result = runWorkflowCli(process.argv.slice(2), {
-    cwd,
-    wfDir,
-    sessionId,
-    now: new Date(),
-  });
-  if (result.stdout) process.stdout.write(result.stdout);
-  if (result.stderr) process.stderr.write(result.stderr);
-  // Not process.exit(): this CLI file lives under hooks/ so the repo's
-  // no-process-exit lint rule (guarding against a Claude Code hook process
-  // killing itself mid-flight, docs/decisions/0002) flags it there. Setting
-  // exitCode and letting the event loop drain naturally achieves the same
-  // observable exit status for a standalone CLI invocation without an
-  // abrupt process.exit() call.
-  process.exitCode = result.exitCode;
 }

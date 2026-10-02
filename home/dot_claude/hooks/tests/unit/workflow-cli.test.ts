@@ -11,8 +11,9 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, it } from "node:test";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import {
+  resolveCliDeps,
   runWorkflowCli,
   wouldTouchApprovalStatus,
 } from "../../cli/workflow.ts";
@@ -28,6 +29,7 @@ import {
   buildPlanContent,
   buildPlanNContent,
   computeWorkflowRepoPlanHash,
+  EnvironmentHelper,
   pendingWorkflowRepo,
   seedWorkflow,
 } from "./test-helpers.ts";
@@ -54,6 +56,7 @@ describe("workflow-cli: stamp", () => {
         cwd: wf,
         wfDir: wf,
         sessionId: "test-ses",
+        wfDirSource: "derived",
         now: NOW,
         ledgerPath: ledger,
       },
@@ -84,6 +87,7 @@ describe("workflow-cli: stamp", () => {
         cwd: wf,
         wfDir: wf,
         sessionId: "test-ses",
+        wfDirSource: "derived",
         now: NOW,
         ledgerPath: ledger,
       },
@@ -114,6 +118,7 @@ describe("workflow-cli: stamp", () => {
         cwd: wf,
         wfDir: wf,
         sessionId: "test-ses",
+        wfDirSource: "derived",
         now: NOW,
         ledgerPath: ledger,
       },
@@ -155,6 +160,7 @@ describe("workflow-cli: stamp", () => {
         cwd: wf,
         wfDir: wf,
         sessionId: "test-ses",
+        wfDirSource: "derived",
         now: NOW,
         ledgerPath: ledger,
       },
@@ -181,6 +187,7 @@ describe("workflow-cli: stamp", () => {
         cwd: wf,
         wfDir: wf,
         sessionId: "test-ses",
+        wfDirSource: "derived",
         now: NOW,
         ledgerPath: ledger,
       },
@@ -204,6 +211,7 @@ describe("workflow-cli: --wf-dir validation", () => {
         cwd: wf,
         wfDir: wf,
         sessionId: "test-ses",
+        wfDirSource: "derived",
         now: NOW,
       },
     );
@@ -227,6 +235,7 @@ describe("workflow-cli: round", () => {
       cwd: wf,
       wfDir: wf,
       sessionId: "test-ses",
+      wfDirSource: "derived",
       now: NOW,
     });
     assert.equal(r.exitCode, 0, r.stderr);
@@ -241,6 +250,7 @@ describe("workflow-cli: round", () => {
     cwd: wf,
     wfDir: wf,
     sessionId: "test-ses",
+    wfDirSource: "derived",
     now: NOW,
   });
 
@@ -343,6 +353,7 @@ const deps = (wf: string) => ({
   cwd: wf,
   wfDir: wf,
   sessionId: "test-ses",
+  wfDirSource: "derived",
   now: NOW,
 });
 
@@ -921,6 +932,7 @@ describe("workflow-cli: delta re-review (K6)", () => {
       cwd: wf,
       wfDir: wf,
       sessionId: "test-ses",
+      wfDirSource: "derived",
       now: NOW,
     });
     assert.equal(r.exitCode, 0, r.stderr);
@@ -945,6 +957,7 @@ describe("workflow-cli: delta re-review (K6)", () => {
       cwd: wf,
       wfDir: wf,
       sessionId: "test-ses",
+      wfDirSource: "derived",
       now: NOW,
     });
     assert.equal(r.exitCode, 0, r.stderr);
@@ -973,6 +986,7 @@ describe("workflow-cli: delta re-review (K6)", () => {
         cwd: wf,
         wfDir: wf,
         sessionId: "test-ses",
+        wfDirSource: "derived",
         now: NOW,
         ledgerPath: ledger,
       },
@@ -1000,6 +1014,7 @@ describe("workflow-cli: delta re-review (K6)", () => {
         cwd: wf,
         wfDir: wf,
         sessionId: "test-ses",
+        wfDirSource: "derived",
         now: NOW,
         ledgerPath: ledger,
       },
@@ -1051,6 +1066,7 @@ describe("workflow-cli: delta re-review never exceeds a full round (K6)", () => 
         cwd: wf,
         wfDir: wf,
         sessionId: "test-ses",
+        wfDirSource: "derived",
         now: NOW,
         ledgerPath: ledger,
       },
@@ -1068,7 +1084,13 @@ describe("workflow-cli: triage", () => {
     });
     const r = runWorkflowCli(
       ["triage", "plan-1.md", "--adopted", "3", "--excluded", "1"],
-      { cwd: wf, wfDir: wf, sessionId: "test-ses", now: NOW },
+      {
+        cwd: wf,
+        wfDir: wf,
+        wfDirSource: "derived",
+        sessionId: "test-ses",
+        now: NOW,
+      },
     );
     assert.equal(r.exitCode, 0, r.stderr);
     const doc = readFileSync(join(wf, "plan-1.md"), "utf-8");
@@ -1101,6 +1123,7 @@ describe("workflow-cli: status", () => {
       cwd: wf,
       wfDir: wf,
       sessionId: "test-ses",
+      wfDirSource: "derived",
       now: NOW,
     });
     assert.equal(r.exitCode, 0);
@@ -1121,6 +1144,7 @@ describe("workflow-cli: status", () => {
       cwd: repo,
       wfDir: wf,
       sessionId: "test-ses",
+      wfDirSource: "derived",
       now: NOW,
     });
   }
@@ -1177,5 +1201,88 @@ describe("workflow-cli: status", () => {
       status(repo, wf, "/etc/hosts").stdout,
       /is not gated \(outside the project\)/,
     );
+  });
+});
+
+describe("workflow-cli: resolveCliDeps (spec K3)", () => {
+  const envHelper = new EnvironmentHelper();
+  const NOW = new Date("2026-10-02T00:00:00.000Z");
+  let root: string;
+
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), "cli-deps-")));
+    envHelper.set("CLAUDE_TEST_CWD", undefined);
+    envHelper.set("CLAUDE_PROJECT_DIR", root);
+    envHelper.set("CLAUDE_CODE_SESSION_ID", "abcdef1234567890");
+    envHelper.set("CLAUDE_SESSION_ID", "ffffffff99999999");
+    envHelper.set("DOCUMENT_WORKFLOW_DIR", undefined);
+  });
+
+  afterEach(() => {
+    envHelper.restore();
+  });
+
+  it("derives the dir from CLAUDE_PROJECT_DIR and CLAUDE_CODE_SESSION_ID, ignoring CLAUDE_SESSION_ID", () => {
+    const r = resolveCliDeps(["status"], NOW);
+    assert.ok("deps" in r, JSON.stringify(r));
+    assert.equal(r.deps.cwd, root);
+    assert.equal(r.deps.wfDir, join(root, ".tmp", "sessions", "abcdef12"));
+    assert.equal(r.deps.wfDirSource, "derived");
+  });
+
+  it("reports a startup pin as source env", () => {
+    envHelper.set("DOCUMENT_WORKFLOW_DIR", ".tmp/sessions/pinned00");
+    const r = resolveCliDeps(["status"], NOW);
+    assert.ok("deps" in r);
+    assert.equal(r.deps.wfDir, join(root, ".tmp", "sessions", "pinned00"));
+    assert.equal(r.deps.wfDirSource, "env");
+  });
+
+  it("falls back to the derived dir with a warning when the startup pin is rejected", () => {
+    envHelper.set("DOCUMENT_WORKFLOW_DIR", "../outside");
+    const r = resolveCliDeps(["status"], NOW);
+    assert.ok("deps" in r);
+    assert.equal(r.deps.wfDirSource, "derived");
+    assert.equal(r.deps.wfDir, join(root, ".tmp", "sessions", "abcdef12"));
+    assert.match(
+      r.warning ?? "",
+      /DOCUMENT_WORKFLOW_DIR="\.\.\/outside" is not a verified descendant/,
+    );
+  });
+
+  it("fails without CLAUDE_PROJECT_DIR unless --wf-dir has a value", () => {
+    envHelper.set("CLAUDE_PROJECT_DIR", undefined);
+    for (const argv of [["status"], ["status", "--wf-dir"]]) {
+      const r = resolveCliDeps(argv, NOW);
+      assert.ok("error" in r, argv.join(" "));
+      assert.match(r.error, /CLAUDE_PROJECT_DIR/);
+      assert.match(r.error, /restart Claude Code/);
+    }
+    assert.ok(
+      "deps" in resolveCliDeps(["status", "--wf-dir", ".tmp/sessions/x"], NOW),
+    );
+  });
+
+  it("fails when CLAUDE_PROJECT_DIR is relative or does not exist", () => {
+    for (const value of ["relative/dir", join(root, "missing")]) {
+      envHelper.set("CLAUDE_PROJECT_DIR", value);
+      const r = resolveCliDeps(["status"], NOW);
+      assert.ok("error" in r, value);
+      assert.match(r.error, /CLAUDE_PROJECT_DIR/);
+    }
+  });
+
+  it("fails without CLAUDE_CODE_SESSION_ID unless --wf-dir is given", () => {
+    envHelper.set("CLAUDE_CODE_SESSION_ID", undefined);
+    const r = resolveCliDeps(["status"], NOW);
+    assert.ok("error" in r);
+    assert.match(r.error, /CLAUDE_CODE_SESSION_ID/);
+    assert.match(r.error, /--wf-dir/);
+    const withFlag = resolveCliDeps(
+      ["status", "--wf-dir", ".tmp/sessions/x"],
+      NOW,
+    );
+    assert.ok("deps" in withFlag);
+    assert.equal(withFlag.deps.wfDirSource, "none");
   });
 });
