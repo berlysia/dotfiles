@@ -13,8 +13,8 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { resolve } from "node:path";
+import { getHomeDir } from "../lib/path-utils.ts";
 import {
   formatReport,
   parseHookTimingLines,
@@ -155,7 +155,7 @@ export function runHookTimingCli(
 
 if (import.meta.main) {
   const logDir =
-    process.env.CLAUDE_LOGS_DIR || resolve(homedir(), ".claude", "logs");
+    process.env.CLAUDE_LOGS_DIR || resolve(getHomeDir(), ".claude", "logs");
   const result = runHookTimingCli(process.argv.slice(2), {
     logDir,
     now: new Date(),

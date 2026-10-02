@@ -11,12 +11,12 @@ import {
   writeFileSync,
   writeSync,
 } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { getHomeDir } from "./path-utils.ts";
 
 import { sanitize } from "./redact-secrets.ts";
 
-const HOME = homedir();
+const HOME = getHomeDir();
 
 export const PROJECTS_DIR = join(HOME, ".claude", "projects");
 export const LOGS_DIR = join(HOME, ".claude", "logs", "insights");

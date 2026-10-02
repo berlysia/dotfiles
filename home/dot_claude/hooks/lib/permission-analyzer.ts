@@ -20,8 +20,8 @@ import {
   readFileSync,
   realpathSync,
 } from "node:fs";
-import { homedir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
+import { getHomeDir } from "./path-utils.ts";
 import type { DecisionLogEntry } from "../types/logging-types.ts";
 
 export interface PatternAnalysis {
@@ -69,7 +69,7 @@ export class PermissionAnalyzer {
 
   constructor(logPath?: string) {
     this.logPath =
-      logPath || join(homedir(), ".claude", "logs", "decisions.jsonl");
+      logPath || join(getHomeDir(), ".claude", "logs", "decisions.jsonl");
   }
 
   /**
@@ -434,7 +434,7 @@ export class PermissionAnalyzer {
    */
   private generalizePath(filePath: string): string {
     // ホームディレクトリの置換
-    const homeDir = homedir();
+    const homeDir = getHomeDir();
     let normalized = filePath.replace(homeDir, "~");
 
     // 現在のディレクトリの相対パス化
