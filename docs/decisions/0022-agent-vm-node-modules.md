@@ -23,7 +23,7 @@ ADR-0018 は、repo を host と同じパスで VM に mount する。`node_modu
   - `git-worktree-create`。VM では `attach`、host では `agent-vm node-modules-sync`。
   - `git-worktree-cleanup`。VM では `remove` で git の削除を包む。
 - ヘルパーは chezmoi で VM にだけ配る。ADR-0018 K17 の VM 許可リストに足し、host では無視する。cloud-init と bootstrap の契約（ADR-0021 K9）には触れない。
-- ヘルパーは権限の境界ではなく、正規の経路が偽の一覧や差し替えたパスに誘導されないための柵である（VM のユーザーはもともとパスワードなし sudo を持つ。ADR-0018 R6）。worktree は repo のルートか `<repo>/.git/worktree/` の配下に、パッケージは worktree の配下に限る。mount は root の perl が `O_NOFOLLOW` で開いた fd 経由で張り、mountinfo と device:inode で張った先を確かめる（K6）。
+- ヘルパーは権限の境界ではなく、正規の経路が偽の一覧や差し替えたパスに誘導されないための柵である（VM のユーザーはもともとパスワードなし sudo を持つ。ADR-0018 R6）。worktree は repo のルートか `<repo>/.git/worktree/` の配下に、パッケージは worktree の配下に限る。mount は root の perl が `O_NOFOLLOW` で開いた fd 経由で張り、mountinfo と device:inode で張った先を確かめる（K6）。mount 先の所有者は確かめない。OrbStack の virtiofs は所有者を見ている側の uid の写しとして返し、ファイルの属性として観測できないためである（plan-1 では確かめていたが、root からは 0 に見えて、共有 mount の上では導入から一度も張れていなかった。plan-3 の V26 の実行中に見つかり、`docs/plans/agent-vm/node-modules/plan-4.md` で直した）。
 - mount の有効性は device:inode の一致で判定し、失効していれば張り直す（K9）。自分の mount の行は、mountinfo の root 欄が自分の `data` で終わり、mountpoint が `//deleted` で終わらない行とする。spec は major:minor の一致も条件にしていたが、OrbStack の btrfs では mountinfo の major:minor と stat の st_dev が一致しなかった（実測 0:37 と 0:64）。一致を条件にすると行を見つけられず、mount 中の中身を消す側に倒れるため、条件から外した。
 - launcher の警告は、spec の「is shared」を次のように細かくした。回収を中止しただけ（ヘルパーの終了コード 3）は「kept VM-local node_modules that may be stale」、それ以外は「may be shared」。`agent-vm node-modules-sync` は、machine の記録が無い、止まっている、に加えて、git の外、`orb list` が答えない、lock を取れない、の場合も黙って 0 で終わる（次の起動で収束し、そこで表に出るため）。
 - 起動時の install は自動で行わない。VM の `node_modules` が空で host にある worktree について、1 行で促す（K5）。

@@ -87,6 +87,21 @@ test_stale_mount_is_restored() {
   helper sync "$r" >/dev/null
   check_mounted "$r" "a lost mount is restored"
 }
+test_shared_mount_target_is_mounted() {
+  # The repository shared with the host is virtiofs, which reports the owner as whoever looks (root sees 0).
+  # Only a checkout on virtiofs, inside an agent-vm machine, shows it; CI and macOS skip this test.
+  local base r
+  if [[ "$(findmnt -no FSTYPE -T "${REPO_ROOT:?}" 2>/dev/null)" != virtiofs ]]; then
+    record "SKIP shared-mount check (this checkout is not on virtiofs)"; return 0
+  fi
+  mkdir -p "$REPO_ROOT/.tmp"
+  base=$(mktemp -d "$REPO_ROOT/.tmp/agent-vm-nm-test.XXXXXX"); r="$base/r"; mk_repo "$r"
+  helper sync "$r" >/dev/null 2>&1 || true   # the checks below say what failed
+  check_mounted "$r" "a package on the shared mount is mounted"
+  check_mounted "$r/packages/a" "a nested package on the shared mount is mounted"
+  sudo -n umount -l "$r/node_modules" "$r/packages/a/node_modules" "$r/packages/b/node_modules" 2>/dev/null || true
+  rm -rf --one-file-system "$base"
+}
 test_symlinked_node_modules_is_skipped() {
   local r="$TMP_ROOT/r" out; mk_repo "$r"
   ln -s "$TMP_ROOT" "$r/packages/a/node_modules"

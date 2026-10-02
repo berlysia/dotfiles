@@ -35,7 +35,7 @@ priv() { sudo -n perl -e "$PRIV_PL" -- "$STORE" "$@"; }
 rows() { perl -e "$PRIV_PL" -- "$STORE" rows "$1"; }   # reading mountinfo needs no root
 
 # Everything that needs root. It takes the mount target from the root-owned record, never from the caller, and
-# re-checks the record (key = sha256(path)), the last path component (no symlink) and the target's owner.
+# re-checks the record (key = sha256(path)) and the last path component (no symlink).
 # Containment in the repository is the caller's check.
 PRIV_PL=$(cat <<'PERL'
 use strict; use warnings; use POSIX ();
@@ -118,7 +118,9 @@ if ($op eq 'mount') { # spec K6 steps 2-5, in this one root process
   my ($s, $t) = (fileno $src, fileno $dst);
   (readlink("/proc/self/fd/$s") // '') eq $data or die "the store moved\n";
   (readlink("/proc/self/fd/$t") // '') eq $target or die "$target moved\n";
-  ((stat $dst)[4] // -1) == $uid or die "$target is not owned by the VM user\n";
+  # No owner check on the target: the shared repository is virtiofs, which reports the owner as whoever looks
+  # (root sees 0, the VM user sees itself), so ownership there carries no information (plan-4). The fence is the
+  # O_NOFOLLOW open, the fd path check above and the verification after the mount.
   die "$target is already mounted\n" if grep { $_ eq $target } rows($key);   # no stacking
   my %before = map { $_->[0] => 1 } all_rows($key);
   my @cmd = ('mount', '--no-canonicalize', '--bind', FD_MOUNT ? ("/proc/$$/fd/$s", "/proc/$$/fd/$t") : ($data, $target));
