@@ -1,8 +1,10 @@
-import { strictEqual } from "node:assert";
+import { deepStrictEqual, strictEqual } from "node:assert";
 import { describe, it } from "node:test";
 import {
   checkPattern,
+  matchAnchoredBashAllow,
   matchGitignorePattern,
+  parseBashPattern,
 } from "../../lib/pattern-matcher.ts";
 
 describe("Pattern matching validation", () => {
@@ -202,6 +204,55 @@ describe("Pattern matching validation", () => {
       editResult,
       false,
       "Edit(./**) should reject directory traversal in path",
+    );
+  });
+});
+
+describe("parseBashPattern / matchAnchoredBashAllow (spec K4)", () => {
+  it("parses prefix and exact forms and rejects the rest", () => {
+    deepStrictEqual(parseBashPattern("Bash(pnpm test *)"), {
+      kind: "prefix",
+      value: "pnpm test",
+    });
+    deepStrictEqual(parseBashPattern("Bash(git status)"), {
+      kind: "exact",
+      value: "git status",
+    });
+    strictEqual(parseBashPattern("Bash(**)"), null);
+    strictEqual(parseBashPattern("Bash( *)"), null);
+    strictEqual(parseBashPattern("Bash"), null);
+    strictEqual(parseBashPattern("Read(**)"), null);
+  });
+
+  it("matches only at the start of the simple command", () => {
+    const allow = ["Bash(pnpm *)", "Bash(git status)"];
+    strictEqual(matchAnchoredBashAllow("pnpm test", allow), "Bash(pnpm *)");
+    strictEqual(matchAnchoredBashAllow("pnpm", allow), "Bash(pnpm *)");
+    strictEqual(
+      matchAnchoredBashAllow("git status", allow),
+      "Bash(git status)",
+    );
+    strictEqual(matchAnchoredBashAllow("evil --x pnpm test", allow), null);
+    strictEqual(matchAnchoredBashAllow("pnpmx test", allow), null);
+    strictEqual(matchAnchoredBashAllow("git status -s", allow), null);
+    strictEqual(matchAnchoredBashAllow("ls", ["Bash"]), null);
+    strictEqual(matchAnchoredBashAllow("pnpm test", ["Bash(pnpm *) "]), null);
+  });
+
+  it("leaves checkPattern's deny-side matching as before", async () => {
+    strictEqual(
+      await checkPattern("Bash(pnpm *)", "Bash", {
+        command: "evil --x pnpm test",
+      }),
+      true,
+    );
+    strictEqual(
+      await checkPattern("Bash", "Bash", { command: "anything" }),
+      true,
+    );
+    strictEqual(
+      await checkPattern("Bash(**)", "Bash", { command: "ls" }),
+      false,
     );
   });
 });
