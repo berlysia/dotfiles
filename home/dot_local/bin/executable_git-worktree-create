@@ -73,6 +73,8 @@ if ! common_dir=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/n
     exit 1
 fi
 worktrees_dir="$common_dir/worktree"
+# The main checkout, which owns .git/worktree/ and the agent-vm machine.
+repo_root=$(dirname "$common_dir")
 
 # Create .git/worktree directory if it doesn't exist
 if [[ ! -d "$worktrees_dir" ]]; then
