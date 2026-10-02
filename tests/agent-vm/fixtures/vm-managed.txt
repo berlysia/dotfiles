@@ -35,6 +35,7 @@
 .local/bin/workflow-cli
 .local/bin/git-worktree-create
 .local/bin/git-worktree-cleanup
+.local/bin/agent-vm-node-modules
 .local/bin/claude-task-list-id
 .local/share
 .local/share/private-skills

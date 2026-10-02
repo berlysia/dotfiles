@@ -5,6 +5,7 @@ on:
     branches: [master, main]
     paths:
       - "home/dot_local/bin/executable_agent-vm"
+      - "home/dot_local/bin/executable_agent-vm-node-modules"
       - "home/dot_codex/**"
       - "home/.chezmoiremove"
       - "tests/agent-vm/**"
@@ -21,6 +22,7 @@ on:
     branches: [master, main]
     paths:
       - "home/dot_local/bin/executable_agent-vm"
+      - "home/dot_local/bin/executable_agent-vm-node-modules"
       - "home/dot_codex/**"
       - "home/.chezmoiremove"
       - "tests/agent-vm/**"
@@ -73,3 +75,6 @@ jobs:
       - name: Run template tests
         if: runner.os == 'Linux'
         run: bash tests/agent-vm/run-templates.sh
+      - name: Run node_modules helper tests
+        if: runner.os == 'Linux'
+        run: bash tests/agent-vm/run-node-modules.sh

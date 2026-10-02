@@ -37,6 +37,11 @@ install-packages-*-windows.ps1
 .config/agent-vm
 {{ end }}
 
+# agent-vm-node-modules runs only inside agent-vm machines
+{{ if not (dig "agent_vm" false .) }}
+.local/bin/agent-vm-node-modules
+{{ end }}
+
 # agent-vm machines: bring in only what the VM needs, by target path (docs/decisions/0018-agent-vm-orbstack.md K17).
 {{- if dig "agent_vm" false . }}
 **
@@ -77,6 +82,7 @@ install-packages-*-windows.ps1
 !.local/bin/workflow-cli
 !.local/bin/git-worktree-create
 !.local/bin/git-worktree-cleanup
+!.local/bin/agent-vm-node-modules
 !.local/bin/claude-task-list-id
 !.local/share
 !.local/share/private-skills

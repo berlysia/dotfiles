@@ -62,7 +62,8 @@ test_ignore_excludes_launcher_off_darwin_by_target_path() {
   out=$'\n'"$out"$'\n' # line-anchor both ends ($(...) strips the final newline)
   assert_contains "$out" $'\n.local/bin/agent-vm\n' "launcher ignored by its target path"
   assert_contains "$out" $'\n.config/agent-vm\n' "launcher config ignored by its target path"
-  assert_not_contains "$(render .chezmoiignore '{"chezmoi":{"os":"darwin"}}')" ".local/bin/agent-vm" "deployed on macOS"
+  # Line-anchored: ".local/bin/agent-vm-node-modules" is legitimately ignored on every non-VM host.
+  assert_not_contains $'\n'"$(render .chezmoiignore '{"chezmoi":{"os":"darwin"}}')"$'\n' $'\n.local/bin/agent-vm\n' "deployed on macOS"
 }
 VM_DATA='{"agent_vm":true,"chezmoi":{"os":"linux","kernel":{"osrelease":"6.8.0-orbstack"}}}'
 HOST_LINUX='{"agent_vm":false,"chezmoi":{"os":"linux","kernel":{"osrelease":"6.8.0"}}}'
@@ -89,6 +90,13 @@ test_host_toolchains_are_host_only() {
 test_vm_manages_exactly_the_allowlist() {
   local fx="$TEST_DIR/fixtures/vm-managed.txt"
   assert_eq "$(LC_ALL=C sort -u "$fx")" "$(managed_as "$VM_DATA" | collapse_to_fixture_roots "$fx")" "VM manages exactly the reviewed allowlist (targets and scripts)"
+}
+test_node_modules_helper_is_vm_only() {
+  local vm host
+  vm=$'\n'"$(managed_as "$VM_DATA")"$'\n'
+  host=$'\n'"$(managed_as "$HOST_LINUX")"$'\n'
+  assert_contains "$vm" $'\n.local/bin/agent-vm-node-modules\n' "the VM gets the node_modules helper"
+  assert_not_contains "$host" $'\n.local/bin/agent-vm-node-modules\n' "hosts do not get the node_modules helper"
 }
 test_host_still_manages_host_only_targets() {
   local out; out=$(managed_as "$HOST_LINUX")
