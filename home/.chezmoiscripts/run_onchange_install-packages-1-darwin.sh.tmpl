@@ -32,6 +32,14 @@ cask {{ . | quote }}
 {{ end -}}
 EOF
 
+# Expose only timeout from coreutils; keep BSD tools first on PATH (AI writes BSD-style flags on macOS)
+if command -v gtimeout >/dev/null 2>&1; then
+  if [ -L "$HOME/.local/bin/timeout" ] || [ ! -e "$HOME/.local/bin/timeout" ]; then
+    mkdir -p "$HOME/.local/bin"
+    ln -sf "$(command -v gtimeout)" "$HOME/.local/bin/timeout" # also repairs a dangling link
+  fi
+fi
+
 if command -v starship >/dev/null 2>&1; then
   echo "starship is already installed"
 else
