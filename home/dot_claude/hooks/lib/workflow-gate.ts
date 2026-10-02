@@ -11,12 +11,16 @@
  *
  * The strict regexes and hash function used here are the exact ones the guard
  * judges with, so the diagnosis can never disagree with the gate.
+ *
+ * A document's conditions include the latest approval hash in approvals.log
+ * (spec K8). The log is written only by approval-recorder.
  */
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { basename, resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import { computeDocumentHash, SPEC_NORMALIZERS } from "./document-hash.ts";
 import { sanitizeForDisplay } from "./sanitize-display.ts";
+import { readLatestApprovals } from "./workflow-approval.ts";
 import { listsTarget } from "./workflow-files.ts";
 import { resolveWorkflowPaths } from "./workflow-paths.ts";
 import {
@@ -42,6 +46,7 @@ export interface DocumentDiagnosis {
     planStatus: GateCondition;
     reviewStatus: GateCondition;
     approvalStatus: GateCondition;
+    approvalRecord: GateCondition;
     markerVerdict: GateCondition;
     hashMatch: GateCondition;
   };
@@ -77,6 +82,10 @@ export function evaluateDocument(path: string): DocumentDiagnosis {
         planStatus: { ...empty, expected: "- Plan Status: complete" },
         reviewStatus: { ...empty, expected: "- Review Status: pass" },
         approvalStatus: { ...empty, expected: "- Approval Status: approved" },
+        approvalRecord: {
+          ...empty,
+          expected: "approvals.log records the current hash",
+        },
         markerVerdict: {
           ...empty,
           expected: "<!-- auto-review: verdict=pass; ... -->",
@@ -95,6 +104,14 @@ export function evaluateDocument(path: string): DocumentDiagnosis {
 
   const marker = parseLatestAutoReviewMarker(content);
   const computedHash = computeDocumentHash(content, SPEC_NORMALIZERS);
+  const ledger = readLatestApprovals(dirname(path));
+  const recorded = ledger.readError
+    ? undefined
+    : ledger.latest.get(basename(path))?.hash;
+  const notes = [
+    ledger.ignoredLines > 0 ? `; ignored-lines=${ledger.ignoredLines}` : "",
+    ledger.readError ? "; ledger-unreadable" : "",
+  ].join("");
 
   return {
     path,
@@ -114,6 +131,12 @@ export function evaluateDocument(path: string): DocumentDiagnosis {
         ok: STRICT_APPROVAL_STATUS.test(content),
         foundLine: findStatusLine(content, "Approval"),
         expected: "- Approval Status: approved",
+      },
+      approvalRecord: {
+        ok: recorded === computedHash,
+        foundLine: `recorded=${recorded ? recorded.slice(0, 12) : "none"} current=${computedHash.slice(0, 12)}${notes}`,
+        expected:
+          "approvals.log records the current hash (a human says 承認 in the conversation)",
       },
       markerVerdict: {
         ok: marker?.verdict === "pass",
@@ -148,14 +171,16 @@ export function diagnoseGate(wfDir: string, targetPath: string): GateDiagnosis {
 
   let note: string | undefined;
   if (specOk) {
-    note = `spec.md is approved. The plan-N.md whose ## Files section lists \`${sanitizeForDisplay(targetPath)}\` must also be complete + Review Status: pass + Approval Status: approved, with an auto-review marker whose parent-spec-hash equals the current spec.md hash.`;
+    note = `spec.md is approved. The plan-N.md whose ## Files section lists \`${sanitizeForDisplay(targetPath)}\` must also be complete + Review Status: pass + approved by the user saying 「承認 plan-N.md」 in the conversation (approvals.log then records its current hash), with an auto-review marker whose parent-spec-hash equals the current spec.md hash.`;
   }
 
   let nextAction: string;
   if (firstFailure) {
-    if (firstFailure === primary.conditions.approvalStatus) {
-      nextAction =
-        "A human sets `- Approval Status: approved` (approval is human-only). Run `workflow-cli status` to see the full checklist.";
+    if (
+      firstFailure === primary.conditions.approvalStatus ||
+      firstFailure === primary.conditions.approvalRecord
+    ) {
+      nextAction = `会話で「承認 ${basename(primaryPath)}」と書く（承認は人間の発話でだけ記録される）。Run \`workflow-cli status\` to see the full checklist.`;
     } else if (
       firstFailure === primary.conditions.markerVerdict ||
       firstFailure === primary.conditions.reviewStatus
@@ -168,7 +193,7 @@ export function diagnoseGate(wfDir: string, targetPath: string): GateDiagnosis {
     }
   } else if (specOk) {
     nextAction =
-      "Approve the owning plan-N.md (see note), or `workflow-cli status` for details.";
+      "会話で「承認 plan-N.md」（対象を列挙している plan）と書く。`workflow-cli status <path>` で、どの plan が対象を列挙しているかと、足りない条件を確かめる。";
   } else {
     nextAction = "The gate conditions are satisfied.";
   }
@@ -198,7 +223,18 @@ function findPlanNumberedFiles(wfDir: string): string[] {
 }
 
 /**
- * A document is "approved" when all five gate conditions `evaluateDocument`
+ * Whether a plan-N.md's latest auto-review marker was stamped against the
+ * current spec.md. A missing parent-spec-hash is a mismatch: the plan cannot
+ * prove which spec it was approved against.
+ */
+function parentSpecMatches(planContent: string, specHash: string): boolean {
+  const parent =
+    parseLatestAutoReviewMarker(planContent)?.parentSpecHash ?? null;
+  return parent !== null && parent === specHash;
+}
+
+/**
+ * A document is "approved" when all six gate conditions `evaluateDocument`
  * computes are satisfied. Reusing it (rather than re-deriving the same five
  * checks a second time) keeps this predicate from silently disagreeing with
  * the deny-message diagnosis it shares a module with.
@@ -209,6 +245,7 @@ export function isDocumentApproved(d: DocumentDiagnosis): boolean {
     d.conditions.planStatus.ok &&
     d.conditions.reviewStatus.ok &&
     d.conditions.approvalStatus.ok &&
+    d.conditions.approvalRecord.ok &&
     d.conditions.markerVerdict.ok &&
     d.conditions.hashMatch.ok
   );
@@ -254,8 +291,7 @@ export function isImplementationPhase(
     } catch {
       continue;
     }
-    const marker = parseLatestAutoReviewMarker(planContent);
-    if (!marker || marker.parentSpecHash !== specHash) {
+    if (!parentSpecMatches(planContent, specHash)) {
       continue;
     }
     return true;
@@ -373,12 +409,7 @@ export function evaluateTarget(query: TargetQuery): TargetEvaluation {
     }
     // A missing parent-spec-hash is a conservative deny: the plan cannot
     // prove which spec it was approved against.
-    const marker = parseLatestAutoReviewMarker(planContent);
-    if (
-      !marker ||
-      marker.parentSpecHash === null ||
-      marker.parentSpecHash !== specHash
-    ) {
+    if (!parentSpecMatches(planContent, specHash)) {
       return deny();
     }
     return { kind: "allow", owner: planPath };
@@ -464,6 +495,7 @@ export function formatGateDiagnosis(
     ["Approval Status", d.primary.conditions.approvalStatus],
     ["marker verdict", d.primary.conditions.markerVerdict],
     ["hash match", d.primary.conditions.hashMatch],
+    ["approval", d.primary.conditions.approvalRecord],
   ];
   for (const [name, cond] of order) {
     const mark = cond.ok ? "✓" : "✗";
@@ -479,4 +511,75 @@ export function formatGateDiagnosis(
   }
   lines.push(`Next: ${d.nextAction}`);
   return lines.join("\n");
+}
+
+export interface ApprovalReadiness {
+  /** Every gate condition except the approval itself holds. */
+  ready: boolean;
+  /** Already approved at this exact version (Approval line and ledger agree). */
+  alreadyApproved: boolean;
+  /** The document's current hash, which an approval would record. */
+  hash: string;
+}
+
+/**
+ * Whether a human approval of `docName` (spec.md / plan.md / plan-N.md in
+ * wfDir) would make it pass the gate: Plan Status, Review Status, marker
+ * verdict and marker hash hold, and for plan-N.md the marker was stamped
+ * against the current spec.md (spec K7).
+ */
+export function evaluateApprovalReadiness(
+  wfDir: string,
+  docName: string,
+): ApprovalReadiness {
+  const path = resolve(wfDir, docName);
+  const d = evaluateDocument(path);
+  let hash = "";
+  let parentOk = true;
+  try {
+    const content = readFileSync(path, "utf-8");
+    hash = computeDocumentHash(content, SPEC_NORMALIZERS);
+    if (PLAN_NUMBERED_FILENAME_REGEX.test(docName)) {
+      const specHash = computeDocumentHash(
+        readFileSync(resolve(wfDir, "spec.md"), "utf-8"),
+        SPEC_NORMALIZERS,
+      );
+      parentOk = parentSpecMatches(content, specHash);
+    }
+  } catch {
+    return { ready: false, alreadyApproved: false, hash };
+  }
+  const c = d.conditions;
+  const ready =
+    d.exists &&
+    c.planStatus.ok &&
+    c.reviewStatus.ok &&
+    c.markerVerdict.ok &&
+    c.hashMatch.ok &&
+    parentOk;
+  return {
+    ready,
+    alreadyApproved: c.approvalStatus.ok && c.approvalRecord.ok,
+    hash,
+  };
+}
+
+/**
+ * The documents a bare `承認` could mean: ready for approval and not already
+ * approved at their current version. plan.md is listed in two-layer mode
+ * too if it exists; it is then just another document to approve. A document whose ledger entry was
+ * written but whose Approval line was not rewritten is still listed, so
+ * saying 承認 again completes it (spec K7).
+ */
+export function listApprovalCandidates(wfDir: string): string[] {
+  const names = ["spec.md", "plan.md"].filter((name) =>
+    existsSync(resolve(wfDir, name)),
+  );
+  const planNumbered = findPlanNumberedFiles(wfDir).map((path) =>
+    basename(path),
+  );
+  return [...names, ...planNumbered].filter((name) => {
+    const r = evaluateApprovalReadiness(wfDir, name);
+    return r.ready && !r.alreadyApproved;
+  });
 }

@@ -31,6 +31,7 @@ import {
   computeWorkflowRepoPlanHash,
   EnvironmentHelper,
   pendingWorkflowRepo,
+  recordApprovalsForTest,
   seedWorkflow,
 } from "./test-helpers.ts";
 
@@ -1155,6 +1156,7 @@ describe("workflow-cli: status", () => {
       join(wf, "plan.md"),
       buildPlanContent(approvedWorkflowRepo()),
     );
+    recordApprovalsForTest(wf);
     const r = status(repo, wf, "src/a.ts");
     assert.equal(r.exitCode, 0);
     assert.match(r.stdout, /src\/a\.ts` is allowed by `plan\.md`/);
@@ -1180,6 +1182,7 @@ describe("workflow-cli: status", () => {
         computeWorkflowRepoPlanHash(spec),
       ),
     );
+    recordApprovalsForTest(wf);
     assert.match(
       status(repo, wf, "src/a.ts").stdout,
       /src\/a\.ts` is allowed by `plan-1\.md`/,

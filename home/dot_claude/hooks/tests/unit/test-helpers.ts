@@ -4,7 +4,13 @@
 
 import { deepStrictEqual, strictEqual } from "node:assert";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
@@ -21,6 +27,8 @@ import {
   computeDocumentHash,
   SPEC_NORMALIZERS,
 } from "../../lib/document-hash.ts";
+import { appendApproval } from "../../lib/workflow-approval.ts";
+import { STRICT_APPROVAL_STATUS } from "../../lib/workflow-marker.ts";
 import { deriveDefaultWorkflowDir } from "../../lib/workflow-paths.ts";
 import { writeDocCache } from "../../lib/workflow-review-core.ts";
 
@@ -663,6 +671,33 @@ export function buildPlanNContent(
   return `${baseContent}\n\n<!-- auto-review: verdict=${options.review.verdict}; hash=${hash};${parentField} at=2026-02-19T00:00:00.000Z; reviewers=logic-validator -->`;
 }
 
+/**
+ * Approve every workflow document in `wfDir` whose Approval line says
+ * approved, at its current hash, as approval-recorder would after a human
+ * said `承認` (spec K8). Fixtures that build an approved document call this
+ * so the gate sees a matching ledger entry; tests about a missing or stale
+ * ledger simply do not call it. The hash is computed here independently of
+ * the gate, as an oracle.
+ */
+export function recordApprovalsForTest(wfDir: string): void {
+  for (const name of readdirSync(wfDir)) {
+    if (
+      name !== "spec.md" &&
+      name !== "plan.md" &&
+      !/^plan-[0-9]+\.md$/.test(name)
+    )
+      continue;
+    const content = readFileSync(join(wfDir, name), "utf-8");
+    if (!STRICT_APPROVAL_STATUS.test(content)) continue;
+    appendApproval(wfDir, {
+      doc: name,
+      hash: computeWorkflowRepoPlanHash(content),
+      session: TEST_SESSION_ID,
+      at: "2026-10-02T00:00:00.000Z",
+    });
+  }
+}
+
 /** Fixed relative workflow dir used by fixtures that pin `DOCUMENT_WORKFLOW_DIR` explicitly. */
 export const TEST_WORKFLOW_DIR = ".tmp/sessions/test";
 
@@ -680,6 +715,7 @@ export function createWorkflowRepo(options: WorkflowRepoOptions): string {
     join(repo, TEST_WORKFLOW_DIR, "plan.md"),
     buildPlanContent(options),
   );
+  recordApprovalsForTest(join(repo, TEST_WORKFLOW_DIR));
   return repo;
 }
 

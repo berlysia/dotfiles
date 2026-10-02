@@ -29,6 +29,7 @@ import {
   EnvironmentHelper,
   invokeRun,
   pendingWorkflowRepo,
+  recordApprovalsForTest,
   TEST_SESSION_ID,
   TEST_WORKFLOW_DIR,
   type ReviewMarkerOptions,
@@ -43,6 +44,7 @@ function createSessionWorkflowRepo(
   mkdirSync(join(repo, sessionDir), { recursive: true });
   writeFileSync(join(repo, sessionDir, "research.md"), "research");
   writeFileSync(join(repo, sessionDir, "plan.md"), buildPlanContent(options));
+  recordApprovalsForTest(join(repo, sessionDir));
   return repo;
 }
 
@@ -891,6 +893,7 @@ describe("document-workflow-guard.ts two-layer mode (spec.md + plan-N.md)", () =
       );
       writeFileSync(join(repo, TEST_WORKFLOW_DIR, plan.filename), planContent);
     }
+    recordApprovalsForTest(join(repo, TEST_WORKFLOW_DIR));
     return { repo, specHash };
   }
 

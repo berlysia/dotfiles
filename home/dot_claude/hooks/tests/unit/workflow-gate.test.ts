@@ -2,17 +2,27 @@
 
 import { equal, match, ok } from "node:assert";
 import { test } from "node:test";
-import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   computeDocumentHash,
   SPEC_NORMALIZERS,
 } from "../../lib/document-hash.ts";
+import { appendApproval } from "../../lib/workflow-approval.ts";
 import {
   diagnoseGate,
+  evaluateApprovalReadiness,
   evaluateTarget,
   formatGateDiagnosis,
+  listApprovalCandidates,
 } from "../../lib/workflow-gate.ts";
 import {
   approvedWorkflowRepo,
@@ -20,6 +30,7 @@ import {
   buildPlanNContent,
   computeWorkflowRepoPlanHash,
   pendingWorkflowRepo,
+  recordApprovalsForTest,
 } from "./test-helpers.ts";
 
 function freshWf(): string {
@@ -66,6 +77,7 @@ test("diagnoseGate reports all conditions satisfied for an approved single-layer
     join(wf, "plan.md"),
     `${body}\n\n<!-- auto-review: verdict=pass; hash=${hash}; at=2026-01-01T00:00:00Z; reviewers=logic-validator -->`,
   );
+  recordApprovalsForTest(wf);
   const d = diagnoseGate(wf, join(wf, "..", "src", "a.ts"));
   for (const cond of Object.values(d.primary.conditions)) {
     equal(cond.ok, true);
@@ -73,7 +85,7 @@ test("diagnoseGate reports all conditions satisfied for an approved single-layer
   match(d.nextAction, /satisfied/);
 });
 
-test("diagnoseGate points approval at a human when only approval is pending", () => {
+test("diagnoseGate points approval at a conversational 承認 when only approval is pending", () => {
   const wf = freshWf();
   writeFileSync(join(wf, "research.md"), "x");
   const body = [
@@ -89,7 +101,7 @@ test("diagnoseGate points approval at a human when only approval is pending", ()
   );
   const d = diagnoseGate(wf, join(wf, "..", "src", "a.ts"));
   equal(d.primary.conditions.approvalStatus.ok, false);
-  match(d.nextAction, /human/);
+  match(d.nextAction, /承認 plan\.md/);
 });
 
 test("two-layer diagnosis adds the owning plan-N note once spec.md passes", () => {
@@ -106,6 +118,7 @@ test("two-layer diagnosis adds the owning plan-N note once spec.md passes", () =
     join(wf, "spec.md"),
     `${body}\n\n<!-- auto-review: verdict=pass; hash=${hash}; at=2026-01-01T00:00:00Z -->`,
   );
+  recordApprovalsForTest(wf);
   const d = diagnoseGate(wf, join(wf, "..", "src", "a.ts"));
   equal(d.twoLayer, true);
   ok(d.note && /plan-N\.md/.test(d.note));
@@ -145,6 +158,7 @@ function twoLayerRepo(files: string[], omitParentSpecHash = false) {
       omitParentSpecHash,
     ),
   );
+  recordApprovalsForTest(wf);
   return { repo, wf };
 }
 
@@ -161,6 +175,7 @@ test("evaluateTarget: single-layer approved plan allows and names plan.md", () =
   const wf = freshWf();
   writeFileSync(join(wf, "research.md"), "x");
   writeFileSync(join(wf, "plan.md"), buildPlanContent(approvedWorkflowRepo()));
+  recordApprovalsForTest(wf);
   const e = evaluateTarget({
     wfDir: wf,
     target: "/r/src/a.ts",
@@ -225,4 +240,136 @@ test("evaluateTarget: a plan-N.md without parent-spec-hash denies its listed tar
     }).kind,
     "deny",
   );
+});
+
+test("evaluateTarget: an approved plan without a ledger entry denies, naming the next step", () => {
+  const wf = freshWf();
+  writeFileSync(join(wf, "research.md"), "x");
+  writeFileSync(join(wf, "plan.md"), buildPlanContent(approvedWorkflowRepo()));
+  const e = evaluateTarget({
+    projectRoot: "/r",
+    wfDir: wf,
+    target: "/r/src/a.ts",
+  });
+  equal(e.kind, "deny");
+  if (e.kind !== "deny") return;
+  const record = e.diagnosis.primary.conditions.approvalRecord;
+  equal(record.ok, false);
+  match(record.foundLine ?? "", /^recorded=none current=[0-9a-f]{12}$/);
+  match(e.diagnosis.nextAction, /承認 plan\.md/);
+  match(
+    formatGateDiagnosis(e.diagnosis, "src/a.ts"),
+    /✗ approval \(found: recorded=none/,
+  );
+});
+
+test("evaluateTarget: a ledger entry for an older version does not approve the current one", () => {
+  const wf = freshWf();
+  writeFileSync(join(wf, "research.md"), "x");
+  writeFileSync(join(wf, "plan.md"), buildPlanContent(approvedWorkflowRepo()));
+  appendApproval(wf, {
+    doc: "plan.md",
+    hash: "c".repeat(64),
+    session: "s",
+    at: "t",
+  });
+  appendFileSync(join(wf, "approvals.log"), "garbage\n");
+  const e = evaluateTarget({
+    projectRoot: "/r",
+    wfDir: wf,
+    target: "/r/src/a.ts",
+  });
+  equal(e.kind, "deny");
+  if (e.kind !== "deny") return;
+  match(
+    e.diagnosis.primary.conditions.approvalRecord.foundLine ?? "",
+    /^recorded=cccccccccccc current=[0-9a-f]{12}; ignored-lines=1$/,
+  );
+});
+
+test("evaluateTarget: an unreadable ledger keeps the gate closed", () => {
+  const wf = freshWf();
+  writeFileSync(join(wf, "research.md"), "x");
+  writeFileSync(join(wf, "plan.md"), buildPlanContent(approvedWorkflowRepo()));
+  mkdirSync(join(wf, "approvals.log"));
+  const e = evaluateTarget({
+    projectRoot: "/r",
+    wfDir: wf,
+    target: "/r/src/a.ts",
+  });
+  equal(e.kind, "deny");
+  if (e.kind !== "deny") return;
+  match(
+    e.diagnosis.primary.conditions.approvalRecord.foundLine ?? "",
+    /ledger-unreadable/,
+  );
+});
+
+test("evaluateTarget: the ledger's session is not matched", () => {
+  const wf = freshWf();
+  writeFileSync(join(wf, "research.md"), "x");
+  const plan = buildPlanContent(approvedWorkflowRepo());
+  writeFileSync(join(wf, "plan.md"), plan);
+  appendApproval(wf, {
+    doc: "plan.md",
+    hash: computeDocumentHash(plan, SPEC_NORMALIZERS),
+    session: "another-session",
+    at: "t",
+  });
+  equal(
+    evaluateTarget({ projectRoot: "/r", wfDir: wf, target: "/r/src/a.ts" })
+      .kind,
+    "allow",
+  );
+});
+
+test("evaluateTarget: the Approval line still revokes a recorded approval", () => {
+  const wf = freshWf();
+  writeFileSync(join(wf, "research.md"), "x");
+  writeFileSync(join(wf, "plan.md"), buildPlanContent(approvedWorkflowRepo()));
+  recordApprovalsForTest(wf);
+  const approved = readFileSync(join(wf, "plan.md"), "utf-8");
+  writeFileSync(
+    join(wf, "plan.md"),
+    approved.replace(
+      "- Approval Status: approved",
+      "- Approval Status: pending",
+    ),
+  );
+  equal(
+    evaluateTarget({ projectRoot: "/r", wfDir: wf, target: "/r/src/a.ts" })
+      .kind,
+    "deny",
+  );
+});
+
+test("evaluateApprovalReadiness and listApprovalCandidates: ready means every condition but approval", () => {
+  const wf = freshWf();
+  writeFileSync(join(wf, "research.md"), "x");
+  writeFileSync(join(wf, "plan.md"), buildPlanContent(pendingWorkflowRepo()));
+  equal(evaluateApprovalReadiness(wf, "plan.md").ready, false);
+  equal(listApprovalCandidates(wf).length, 0);
+  writeFileSync(
+    join(wf, "plan.md"),
+    buildPlanContent({
+      planStatus: "complete",
+      approvalStatus: "pending",
+      review: { verdict: "pass" },
+    }),
+  );
+  const r = evaluateApprovalReadiness(wf, "plan.md");
+  equal(r.ready, true);
+  equal(r.alreadyApproved, false);
+  match(r.hash, /^[0-9a-f]{64}$/);
+  equal(listApprovalCandidates(wf).join(","), "plan.md");
+});
+
+test("two-layer: once spec.md passes, the note and next step ask for 承認 of the owning plan-N.md", () => {
+  const wf = freshWf();
+  writeFileSync(join(wf, "research.md"), "x");
+  writeFileSync(join(wf, "spec.md"), buildPlanContent(approvedWorkflowRepo()));
+  recordApprovalsForTest(wf);
+  const d = diagnoseGate(wf, join(wf, "..", "src", "a.ts"));
+  ok(d.note && /承認 plan-N\.md/.test(d.note));
+  match(d.nextAction, /承認 plan-N\.md/);
 });
