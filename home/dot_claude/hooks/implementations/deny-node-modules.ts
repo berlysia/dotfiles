@@ -3,8 +3,8 @@
 import { lstatSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineHook } from "cc-hooks-ts";
-import { extractCommandsStructured } from "../lib/bash-parser.ts";
 import { getCommandFromToolInput } from "../lib/command-parsing.ts";
+import { prepareDenyInput } from "../lib/deny-input.ts";
 import { isExemptReadOnlyCommand } from "../lib/read-only-command.ts";
 import {
   createAskResponse,
@@ -200,12 +200,13 @@ function validateNodeModulesAccess(
 async function analyzeBashCommand(
   command: string,
 ): Promise<BashAnalysisResult> {
-  // Split compound commands and analyze each individually using bash-parser
-  const { individualCommands, parsingMethod } =
-    await extractCommandsStructured(command);
+  // Deny-side reads go through prepareDenyInput: data-only heredoc bodies are
+  // emptied in both the whole text and the fragments (spec K1).
+  const { maskedText, individualCommands, parsingMethod } =
+    await prepareDenyInput(command);
   const commands = individualCommands;
   // Judged once on the whole command; fragments only inherit the result.
-  const readOnlyExempt = isExemptReadOnlyCommand(command, { parsingMethod });
+  const readOnlyExempt = isExemptReadOnlyCommand(maskedText, { parsingMethod });
 
   let hasUnknown = false;
   let unknownCmd = "";
