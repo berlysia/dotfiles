@@ -14,6 +14,8 @@
  * the nearest matching line back to the model); it must never drive a gate
  * decision. Keeping both here, with the judgment form unchanged, is what lets
  * the diagnostic be forgiving without moving any document hash (spec K4).
+ * However, `LENIENT_APPROVED_LINE` is used for the conservative detection of the
+ * deny direction (K9); it is never used to establish an approval (allow).
  */
 
 // Judgment form (unchanged from document-workflow-guard.ts:16-18).
@@ -24,6 +26,13 @@ export const STRICT_APPROVAL_STATUS = /^- Approval Status:\s*approved\s*$/m;
 // Display form (diagnostics only): tolerates a missing hyphen and trailing text.
 export const LENIENT_STATUS_LINE =
   /^\s*-?\s*(Plan|Review|Approval) Status:.*$/gm;
+
+/**
+ * An Approval line that reads as approved, hyphen or not (spec K9). For
+ * refusing writes only: the gate decides approval with the strict form.
+ */
+export const LENIENT_APPROVED_LINE =
+  /^\s*-?\s*Approval Status:\s*approved\b/gim;
 
 const REVIEW_MARKER_REGEX = /<!--\s*auto-review:[^>]*-->/g;
 

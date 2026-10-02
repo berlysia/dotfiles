@@ -1,7 +1,7 @@
 #!/usr/bin/env -S bun run --silent
 
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { basename, resolve } from "node:path";
 import { defineHook } from "cc-hooks-ts";
 import { extractCommandsStructured } from "../lib/bash-parser.ts";
 import { getCommandFromToolInput } from "../lib/command-parsing.ts";
@@ -10,6 +10,9 @@ import { getProjectRoot } from "../lib/project-root.ts";
 import { expandTilde } from "../lib/path-utils.ts";
 import { sanitizeForDisplay } from "../lib/sanitize-display.ts";
 import { appendOffPlanLog } from "../lib/workflow-audit-log.ts";
+import { APPROVALS_LOG } from "../lib/workflow-approval.ts";
+import { resolveWithMissingTail } from "../lib/workflow-fs.ts";
+import { LENIENT_APPROVED_LINE } from "../lib/workflow-marker.ts";
 import { resolveWorkflowPaths } from "../lib/workflow-paths.ts";
 import { resolveWorkflowDir } from "../lib/workflow-resolve.ts";
 import {
@@ -91,6 +94,23 @@ const hook = defineHook({
         });
       }
       const wfDir = resolution.dir;
+
+      // K9: approval is a human utterance recorded by approval-recorder. A
+      // tool write that makes a document read as approved, or touches a
+      // ledger, is refused whatever phase the workflow is in -- the gate
+      // would still hold (K8), but the document would mislead both the
+      // human and the model into thinking it was approved (#221).
+      const approvalWriteReason = checkApprovalWrite(
+        tool_name,
+        tool_input,
+        cwd,
+        projectRoot,
+        wfDir,
+      );
+      if (approvalWriteReason !== null) {
+        return context.json(createDenyResponse(approvalWriteReason));
+      }
+
       const exemptionOf = (path: string) =>
         classifyExemption(resolve(cwd, expandTilde(path)), projectRoot, wfDir);
 
@@ -771,4 +791,117 @@ export default hook;
 if (import.meta.main) {
   const { runHook } = await import("cc-hooks-ts");
   await runHook(hook);
+}
+
+function countApprovedLines(content: string): number {
+  return content.match(LENIENT_APPROVED_LINE)?.length ?? 0;
+}
+
+/** Paths compare without case: macOS's filesystem ignores it and Node's realpath keeps what was typed. */
+function isUnder(path: string, dir: string): boolean {
+  return path.toLowerCase().startsWith(`${dir.toLowerCase()}/`);
+}
+
+/**
+ * Why a Write / Edit / MultiEdit must be refused as an approval write, or
+ * null. Approved Approval lines are counted in their lenient form, so a
+ * hyphen-less `Approval Status: approved` (which the gate's strict form
+ * ignores but a reader would not) is caught, and an old text that merely
+ * quotes such a line does not let the real line be flipped. Paths compare
+ * as realpaths so a symlinked or aliased path into the workflow dir is
+ * judged the same way.
+ */
+function checkApprovalWrite(
+  toolName: string,
+  toolInput: unknown,
+  cwd: string,
+  projectRoot: string,
+  wfDir: string,
+): string | null {
+  // Fail closed: this check runs inside the guard's catch-all, which allows
+  // the call on an exception. A write the guard cannot judge is refused.
+  try {
+    return judgeApprovalWrite(toolName, toolInput, cwd, projectRoot, wfDir);
+  } catch (error) {
+    return `Could not judge whether this write sets approval or touches a ledger (${sanitizeForDisplay(String(error))}); refused.`;
+  }
+}
+
+function judgeApprovalWrite(
+  toolName: string,
+  toolInput: unknown,
+  cwd: string,
+  projectRoot: string,
+  wfDir: string,
+): string | null {
+  if (!isRecord(toolInput)) return null;
+  if (toolName !== "Write" && toolName !== "Edit" && toolName !== "MultiEdit")
+    return null;
+  const filePath = toolInput.file_path;
+  if (typeof filePath !== "string") return null;
+  const target = resolve(cwd, expandTilde(filePath));
+  const realTarget = resolveWithMissingTail(target) ?? target;
+
+  const sessionsDir = resolve(projectRoot, ".tmp", "sessions");
+  const realSessions = resolveWithMissingTail(sessionsDir) ?? sessionsDir;
+  if (
+    basename(realTarget).toLowerCase() === APPROVALS_LOG &&
+    isUnder(realTarget, realSessions)
+  ) {
+    return `${APPROVALS_LOG} is written only by approval-recorder when the user says 承認 in the conversation; tool writes to any session's ledger are refused.`;
+  }
+
+  const realWfDir = resolveWithMissingTail(wfDir) ?? wfDir;
+  if (!isUnder(realTarget, realWfDir) || !/\.md$/i.test(realTarget))
+    return null;
+  let oldContent: string | null = null;
+  try {
+    oldContent = existsSync(target) ? readFileSync(target, "utf-8") : null;
+  } catch {
+    oldContent = null; // unreadable: judge as if new, so an approved write is refused
+  }
+  const newContent = contentAfterWrite(toolName, toolInput, oldContent);
+  if (newContent === null) return null;
+  if (countApprovedLines(newContent) <= countApprovedLines(oldContent ?? ""))
+    return null;
+  return `Approval is recorded only from the user's own words: ask the user to write 「承認 ${basename(target)}」 in the conversation. Writes that set \`Approval Status: approved\` are refused; setting it back to pending (revoking) is allowed.`;
+}
+
+/** The file content a Write / Edit / MultiEdit would leave, or null when it cannot be told. */
+function contentAfterWrite(
+  toolName: string,
+  toolInput: Record<string, unknown>,
+  oldContent: string | null,
+): string | null {
+  if (toolName === "Write") {
+    return typeof toolInput.content === "string" ? toolInput.content : null;
+  }
+  const edits =
+    toolName === "Edit"
+      ? [toolInput]
+      : Array.isArray(toolInput.edits)
+        ? (toolInput.edits as unknown[])
+        : [];
+  let content = oldContent ?? "";
+  for (const edit of edits) {
+    if (
+      !isRecord(edit) ||
+      typeof edit.old_string !== "string" ||
+      typeof edit.new_string !== "string"
+    ) {
+      return null;
+    }
+    const replacement = edit.new_string;
+    if (!content.includes(edit.old_string)) {
+      // The real tool may still match (it normalizes quotes); judge as if the
+      // new text were added, so an approved line in it is counted.
+      content = `${content}\n${replacement}`;
+      continue;
+    }
+    content =
+      edit.replace_all === true
+        ? content.split(edit.old_string).join(replacement)
+        : content.replace(edit.old_string, () => replacement);
+  }
+  return content;
 }
