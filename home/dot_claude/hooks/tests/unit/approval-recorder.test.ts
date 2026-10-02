@@ -108,10 +108,19 @@ describe("approval-recorder (spec K7)", () => {
       buildPlanNContent(REVIEWED, ["src/b.ts"], specHash),
     );
     const before = readFileSync(join(wf, "approvals.log"), "utf-8");
-    const { text } = await say("承認");
+    const { ctx, text } = await say("承認");
     assert.equal(readFileSync(join(wf, "approvals.log"), "utf-8"), before);
     assert.match(text, /承認を待っている文書が 2 件/);
-    assert.match(text, /承認 plan-1\.md/);
+    assert.doesNotMatch(text, /「承認 plan-1\.md」/);
+    const output = ctx.jsonCalls[0] as unknown as {
+      systemMessage: string;
+      hookSpecificOutput: { additionalContext: string };
+    };
+    assert.match(
+      output.hookSpecificOutput.additionalContext,
+      /workflow-cli ask-approval/,
+    );
+    assert.match(output.systemMessage, /approve plan-1\.md plan-2\.md/);
   });
 
   it("records every named document, or none when one of them is not ready", async () => {

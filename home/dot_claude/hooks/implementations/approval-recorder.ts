@@ -31,15 +31,15 @@ import {
 } from "../lib/workflow-gate.ts";
 import { resolveWorkflowDir } from "../lib/workflow-resolve.ts";
 
-function approvalOutput(text: string) {
-  const message = `[approval-recorder] ${text}`;
+/** `userText` is shown to the user when it should differ from what the model reads. */
+function approvalOutput(text: string, userText?: string) {
   return {
     event: "UserPromptSubmit" as const,
     output: {
-      systemMessage: message,
+      systemMessage: `[approval-recorder] ${userText ?? text}`,
       hookSpecificOutput: {
         hookEventName: "UserPromptSubmit" as const,
-        additionalContext: message,
+        additionalContext: `[approval-recorder] ${text}`,
       },
     },
   };
@@ -104,12 +104,19 @@ const hook = defineHook({
         targets = utterance.docs;
       } else {
         targets = listApprovalCandidates(wfDir);
-        if (targets.length !== 1) {
+        if (targets.length === 0) {
           return context.json(
             approvalOutput(
-              targets.length === 0
-                ? "承認を待っている文書が無いので、何も記録していない。"
-                : `承認を待っている文書が ${targets.length} 件あるので、何も記録していない。文書名を付けて ${targets.map((doc) => `「承認 ${doc}」`).join(" / ")} と書いてもらう。`,
+              "承認を待っている文書が無いので、何も記録していない。",
+            ),
+          );
+        }
+        if (targets.length > 1) {
+          const text = `承認を待っている文書が ${targets.length} 件あるので記録していない。\`workflow-cli ask-approval\` を実行し、その出力をそのまま AskUserQuestion に渡して聞き直す。`;
+          return context.json(
+            approvalOutput(
+              text,
+              `${text}質問が出ない場合は \`approve <文書名…>\` と打つ（例: \`approve ${targets.join(" ")}\`）。`,
             ),
           );
         }
