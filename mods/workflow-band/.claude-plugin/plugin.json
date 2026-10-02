@@ -1,0 +1,6 @@
+{
+  "name": "workflow-band",
+  "version": "0.1.0",
+  "description": "Shows the Document Workflow gate (workflow-cli status) in the band above the prompt.",
+  "types": "./types/index.d.ts"
+}
