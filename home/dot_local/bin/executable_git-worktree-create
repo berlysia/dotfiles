@@ -47,6 +47,11 @@ Location:
 EOF
 }
 
+# say_warn <message>: a warning on stderr, printed without interpreting backslashes in the message
+say_warn() {
+    printf '%b⚠️  %s%b\n' "$YELLOW" "$1" "$NC" >&2
+}
+
 # Check for help flag
 if [[ $# -eq 0 ]] || [[ "$1" == "--help" ]] || [[ "$1" == "-h" ]] || [[ "$1" == "help" ]]; then
     if [[ $# -eq 0 ]]; then
@@ -93,4 +98,24 @@ else
 fi
 
 echo -e "${GREEN}✓ Worktree created: $worktree_path${NC}"
+# agent-vm (docs/decisions/0022-agent-vm-node-modules.md): inside a machine, the new worktree gets its VM-local
+# node_modules now rather than at the next launch; on the host, a running machine of this repository is asked to
+# sync. Neither stops the creation: the worktree is there, only its node_modules may still be shared.
+if [[ -e "${AGENT_VM_MARKER:-/etc/agent-vm}" ]]; then
+    if command -v agent-vm-node-modules >/dev/null 2>&1; then
+        nm_status=0
+        agent-vm-node-modules attach "$worktree_path" >/dev/null || nm_status=$?
+        if [[ $nm_status -ne 0 ]]; then
+            # An install there now would put linux packages into the host's worktree
+            nm_wt=$(printf '%q' "$worktree_path")
+            say_warn "node_modules of $nm_wt may be shared with the host (agent-vm-node-modules attach: status $nm_status); do not install there until this succeeds: agent-vm-node-modules attach $nm_wt"
+        fi
+    fi
+elif command -v agent-vm >/dev/null 2>&1; then
+    nm_status=0
+    agent-vm node-modules-sync "$repo_root" || nm_status=$?
+    if [[ $nm_status -ne 0 ]]; then
+        say_warn "the running agent-vm machine may not have VM-local node_modules for $(printf '%q' "$worktree_path") yet (agent-vm node-modules-sync: status $nm_status); the next agent-vm launch syncs it"
+    fi
+fi
 echo -e "${BLUE}💡 To switch to this worktree: cd $worktree_path${NC}"

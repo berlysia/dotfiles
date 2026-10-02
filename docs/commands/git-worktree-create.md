@@ -29,6 +29,14 @@ git-worktree-create --help
 2. **リモートブランチが存在する場合**: リモートブランチをトラッキングするローカルブランチを作成し、worktreeを作成
 3. **ブランチが存在しない場合**: 現在のHEADから新しいブランチを作成し、worktreeを作成
 
+## agent-vm との連携
+
+agent-vm を使う repo では、作った worktree の `node_modules` を VM ローカルに差し替える（`docs/decisions/0022-agent-vm-node-modules.md`）。
+
+- **VM の中**（`/etc/agent-vm` があり、`agent-vm-node-modules` がある）: 作成の後に `agent-vm-node-modules attach <worktree>` を実行する。失敗したら、警告と回復手順を 1 行出す。作成そのものは成功のままである。警告が出ている間は、その worktree で install しない（host の worktree に linux 用のパッケージが入る）。
+- **host**（`agent-vm` がある）: 作成の後に `agent-vm node-modules-sync <repo>` を実行する。この repo の machine が動いていなければ、何もしない。動いていれば、起動中の処理が repo の lock を持っている間（最大で約 5 秒）と VM での sync の間、作成の完了が遅れる。失敗したら、agent-vm の警告に続けて 1 行出す。次の agent-vm の起動で揃う。
+- どちらも無い環境では、今までどおり動く。
+
 ## 使用例
 
 ### 既存ブランチのworktreeを作成

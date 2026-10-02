@@ -7,6 +7,7 @@ on:
       - "home/dot_local/bin/executable_git-worktree-cleanup"
       - "home/dot_local/bin/executable_git-worktree-create"
       - "tests/git-worktree-cleanup/**"
+      - "tests/git-worktree-create/**"
       - ".github/workflows/ci-git-worktree-cleanup.yml"
   pull_request:
     branches: [master, main]
@@ -14,6 +15,7 @@ on:
       - "home/dot_local/bin/executable_git-worktree-cleanup"
       - "home/dot_local/bin/executable_git-worktree-create"
       - "tests/git-worktree-cleanup/**"
+      - "tests/git-worktree-create/**"
       - ".github/workflows/ci-git-worktree-cleanup.yml"
   workflow_dispatch:
 
@@ -40,3 +42,5 @@ jobs:
       # /bin/bash is 3.2 on macOS: the script must run on the stock shell.
       - name: Run git-worktree-cleanup tests
         run: /bin/bash tests/git-worktree-cleanup/run.sh
+      - name: Run git-worktree-create tests
+        run: /bin/bash tests/git-worktree-create/run.sh
