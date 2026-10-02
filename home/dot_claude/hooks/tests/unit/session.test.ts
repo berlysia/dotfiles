@@ -19,7 +19,10 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { isWorkflowActive } from "../../lib/workflow-gate.ts";
 import sessionHook, {
+  auditAnswerRecorderWiring,
+  auditGuardWiring,
   extractGuardMatcher,
+  extractHookMatcher,
   isWorkflowArmedForTesting,
 } from "../../implementations/session.ts";
 import { matcherCoversGuardedTools } from "../../lib/guarded-tools.ts";
@@ -498,6 +501,96 @@ describe("startup summary", () => {
         context.jsonCalls[0].systemMessage.includes(
           "Session start hook failed",
         ),
+      );
+    } finally {
+      process.chdir(previous);
+    }
+  });
+});
+
+describe("answer recorder wiring audit", () => {
+  const envHelper = new EnvironmentHelper();
+  const RECORDER_CMD =
+    "bun ~/.claude/hooks/implementations/approval-answer-recorder.ts";
+  const settingsWith = (matcher: string | undefined) => ({
+    hooks: {
+      PostToolUse: [
+        { matcher: "Other", hooks: [{ command: "bun x/other.ts" }] },
+        {
+          ...(matcher === undefined ? {} : { matcher }),
+          hooks: [{ command: RECORDER_CMD }],
+        },
+      ],
+    },
+  });
+
+  function homeWithSettings(content: string): void {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "audit-home-")));
+    mkdirSync(join(home, ".claude"), { recursive: true });
+    writeFileSync(join(home, ".claude", "settings.json"), content);
+    envHelper.set("HOME", home);
+  }
+
+  afterEach(() => {
+    envHelper.restore();
+  });
+
+  it("extractHookMatcher returns the matching entry's matcher or null", () => {
+    strictEqual(
+      extractHookMatcher(
+        settingsWith("AskUserQuestion"),
+        "PostToolUse",
+        "approval-answer-recorder.ts",
+      ),
+      "AskUserQuestion",
+    );
+    strictEqual(
+      extractHookMatcher(
+        { hooks: { PostToolUse: [] } },
+        "PostToolUse",
+        "approval-answer-recorder.ts",
+      ),
+      null,
+    );
+    strictEqual(
+      extractHookMatcher(null, "PostToolUse", "approval-answer-recorder.ts"),
+      null,
+    );
+  });
+
+  it("reports covers for AskUserQuestion and wildcard matchers", () => {
+    for (const m of ["AskUserQuestion", "", "*"]) {
+      homeWithSettings(JSON.stringify(settingsWith(m)));
+      ok(auditAnswerRecorderWiring().includes("covers"), `matcher ${m}`);
+    }
+  });
+
+  it("reports missing for a wrong matcher or no entry", () => {
+    homeWithSettings(JSON.stringify(settingsWith("AskUserQuestions")));
+    ok(auditAnswerRecorderWiring().includes("missing"));
+    homeWithSettings(JSON.stringify({ hooks: { PostToolUse: [] } }));
+    ok(auditAnswerRecorderWiring().includes("no PostToolUse entry"));
+  });
+
+  it("a broken settings file fails each audit independently", () => {
+    homeWithSettings("{ not json");
+    ok(auditAnswerRecorderWiring().includes("could not audit"));
+    ok(auditGuardWiring().includes("could not audit"));
+  });
+
+  it("the startup summary includes the recorder audit line", async () => {
+    homeWithSettings(JSON.stringify(settingsWith("AskUserQuestion")));
+    envHelper.set("CLAUDE_ENV_FILE", undefined);
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "sess-")));
+    const previous = process.cwd();
+    process.chdir(cwd);
+    try {
+      const context = createSessionStartContext("startup", {
+        session_id: "abcd1234-0000-0000-0000-000000000000",
+      });
+      await invokeRun(sessionHook, context);
+      ok(
+        context.jsonCalls[0].systemMessage.includes("approval-answer-recorder"),
       );
     } finally {
       process.chdir(previous);

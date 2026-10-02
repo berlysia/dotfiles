@@ -5,7 +5,10 @@ import { resolve } from "node:path";
 import { getHomeDir } from "../lib/path-utils.ts";
 import { defineHook } from "cc-hooks-ts";
 import { logEvent } from "../lib/centralized-logging.ts";
-import { matcherCoversGuardedTools } from "../lib/guarded-tools.ts";
+import {
+  matcherCoversGuardedTools,
+  matcherCoversTools,
+} from "../lib/guarded-tools.ts";
 import {
   getDistillHealthNotice,
   getUnreadDigestPreview,
@@ -48,23 +51,42 @@ export function isWorkflowArmedForTesting(
   return existsSync(wfPaths.plan) || existsSync(wfPaths.research);
 }
 
-/** Pull the guard's PreToolUse matcher out of a parsed settings object. */
-export function extractGuardMatcher(settings: unknown): string | null {
-  const entries = (settings as { hooks?: { PreToolUse?: unknown[] } })?.hooks
-    ?.PreToolUse;
+/**
+ * Pull the matcher of the settings entry whose command references `fileName`
+ * under the given hook event.
+ */
+export function extractHookMatcher(
+  settings: unknown,
+  event: string,
+  fileName: string,
+): string | null {
+  const entries = (settings as { hooks?: Record<string, unknown> })?.hooks?.[
+    event
+  ];
   if (!Array.isArray(entries)) return null;
   for (const entry of entries) {
     const e = entry as { matcher?: unknown; hooks?: { command?: unknown }[] };
     const references =
       Array.isArray(e.hooks) &&
       e.hooks.some(
-        (h) =>
-          typeof h?.command === "string" &&
-          h.command.includes("document-workflow-guard.ts"),
+        (h) => typeof h?.command === "string" && h.command.includes(fileName),
       );
-    if (references && typeof e.matcher === "string") return e.matcher;
+    // An entry without a matcher key matches every tool, same as "".
+    if (references) {
+      if (typeof e.matcher === "string") return e.matcher;
+      if (e.matcher === undefined) return "";
+    }
   }
   return null;
+}
+
+/** Pull the guard's PreToolUse matcher out of a parsed settings object. */
+export function extractGuardMatcher(settings: unknown): string | null {
+  return extractHookMatcher(
+    settings,
+    "PreToolUse",
+    "document-workflow-guard.ts",
+  );
 }
 
 /**
@@ -81,7 +103,7 @@ export function extractGuardMatcher(settings: unknown): string | null {
  * Wrapped in its own try/catch so a malformed or unreadable settings file
  * cannot blank out the other four startup-summary points.
  */
-function auditGuardWiring(): string {
+export function auditGuardWiring(): string {
   try {
     if (!existsSync(getGlobalSettingsPath())) {
       return `wiring (${getGlobalSettingsPath()}): file not found; could not audit the guard's PreToolUse matcher.`;
@@ -100,6 +122,37 @@ function auditGuardWiring(): string {
     // `env` block, and unlike Bun, Node sometimes embeds a slice of the
     // offending input in a JSON.parse SyntaxError message.
     return `wiring (${getGlobalSettingsPath()}): could not audit it (${
+      error instanceof Error ? error.name : "unknown"
+    }).`;
+  }
+}
+
+/**
+ * Startup-summary line for the PostToolUse entry that records AskUserQuestion
+ * approval answers. Separate from auditGuardWiring with its own try/catch so
+ * one failing audit cannot take the other down. Coverage is judged by the
+ * shared matcherCoversTools rather than a copy of that logic.
+ */
+export function auditAnswerRecorderWiring(): string {
+  try {
+    if (!existsSync(getGlobalSettingsPath())) {
+      return `wiring (${getGlobalSettingsPath()}): file not found; could not audit the approval-answer-recorder PostToolUse matcher.`;
+    }
+    const parsed = JSON.parse(readFileSync(getGlobalSettingsPath(), "utf-8"));
+    const matcher = extractHookMatcher(
+      parsed,
+      "PostToolUse",
+      "approval-answer-recorder.ts",
+    );
+    if (matcher === null) {
+      return `wiring (${getGlobalSettingsPath()}): no PostToolUse entry references approval-answer-recorder.ts; AskUserQuestion approvals will not be recorded.`;
+    }
+    const coverage = matcherCoversTools(matcher, ["AskUserQuestion"]);
+    return coverage.covered
+      ? `wiring (${getGlobalSettingsPath()}): approval-answer-recorder matcher "${matcher}" covers AskUserQuestion.`
+      : `wiring (${getGlobalSettingsPath()}): approval-answer-recorder matcher "${matcher}" is missing ${coverage.missing.join(", ")}.`;
+  } catch (error) {
+    return `wiring (${getGlobalSettingsPath()}): could not audit approval-answer-recorder (${
       error instanceof Error ? error.name : "unknown"
     }).`;
   }
@@ -178,6 +231,7 @@ const hook = defineHook({
       const messages = [
         "🚀 Claude Code session started. Ready for development!",
         auditGuardWiring(),
+        auditAnswerRecorderWiring(),
       ];
 
       if (resolution.source === "unresolvable") {
