@@ -26,6 +26,12 @@ runs:
         node-version: ${{ inputs.node-version }}
 
     - name: Install dependencies
-      if: inputs.install-deps == 'true'
       shell: bash
-      run: bun install --frozen-lockfile
+      env:
+        INSTALL_DEPS: ${{ inputs.install-deps }}
+      # The condition lives in the shell, not in `if:`, so runners that cannot evaluate composite-step
+      # expressions (actrun) behave the same as GitHub Actions.
+      run: |
+        if [ "${INSTALL_DEPS}" = "true" ]; then
+          bun install --frozen-lockfile
+        fi
