@@ -3,11 +3,13 @@
 import { deepStrictEqual, ok } from "node:assert";
 import {
   lstatSync,
+  mkdirSync,
   mkdtempSync,
   realpathSync,
   rmSync,
   symlinkSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import fileAccessGuardHook, {
@@ -15,6 +17,7 @@ import fileAccessGuardHook, {
   getAllowPatterns,
   isWithinTempRoots,
 } from "../../implementations/file-access-guard.ts";
+import { deriveDefaultWorkflowDir } from "../../lib/workflow-paths.ts";
 import {
   ConsoleCapture,
   createFileSystemMock,
@@ -22,6 +25,7 @@ import {
   defineHook,
   EnvironmentHelper,
   invokeRun,
+  TEST_SESSION_ID,
 } from "./test-helpers.ts";
 
 describe("file-access-guard.ts hook behavior", () => {
@@ -372,6 +376,53 @@ describe("file-access-guard.ts hook behavior", () => {
       ok(
         reason.includes("/home/user/project") || reason.includes("Repository"),
       );
+    });
+  });
+
+  // process.cwd() is the repository the suite runs in (bun run test starts
+  // there); its .tmp/ is gitignored and outside os.tmpdir().
+  describe("workflow dir under the project root (spec K10)", () => {
+    let root: string;
+    beforeEach(() => {
+      mkdirSync(join(process.cwd(), ".tmp"), { recursive: true });
+      root = realpathSync(mkdtempSync(join(process.cwd(), ".tmp", "fag-k10-")));
+      envHelper.set("HOME", mkdtempSync(join(tmpdir(), "fag-home-")));
+      envHelper.set("CLAUDE_TEST_CWD", root);
+      envHelper.set(
+        "CLAUDE_TEST_REPO_ROOT",
+        join(root, ".git", "worktree", "b"),
+      );
+      envHelper.set("DOCUMENT_WORKFLOW_DIR", undefined);
+    });
+    afterEach(() => {
+      rmSync(root, { recursive: true, force: true });
+      envHelper.restore();
+    });
+
+    it("allows writing a doc in the session's workflow dir outside the repo root", async () => {
+      const wfDir = join(root, deriveDefaultWorkflowDir(TEST_SESSION_ID));
+      const ctx = createPreToolUseContextFor(fileAccessGuardHook, "Write", {
+        file_path: join(wfDir, "plan.md"),
+        content: "x",
+      });
+      await invokeRun(fileAccessGuardHook, ctx);
+      ctx.assertSuccess({});
+    });
+
+    it("still denies another session's dir and a prefix look-alike", async () => {
+      const wfDir = join(root, deriveDefaultWorkflowDir(TEST_SESSION_ID));
+      for (const filePath of [
+        join(root, ".tmp", "sessions", "otherses", "plan.md"),
+        `${wfDir}-evil/plan.md`,
+        `${wfDir}/../../../outside.md`,
+      ]) {
+        const ctx = createPreToolUseContextFor(fileAccessGuardHook, "Write", {
+          file_path: filePath,
+          content: "x",
+        });
+        await invokeRun(fileAccessGuardHook, ctx);
+        ctx.assertDeny();
+      }
     });
   });
 
