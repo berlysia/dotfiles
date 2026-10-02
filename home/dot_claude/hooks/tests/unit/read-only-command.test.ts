@@ -176,6 +176,21 @@ describe("isExemptReadOnlyCommand", () => {
       false,
     );
   });
+
+  it("does not exempt an emptied heredoc input (F3b)", () => {
+    for (const text of [
+      "cat <<'EOF' > out.txt\nEOF",
+      "cat <<'EOF'\nEOF",
+      "tee out.txt <<'EOF'\nEOF",
+      "cat -<<'EOF' > out.txt\nEOF",
+    ]) {
+      strictEqual(
+        isExemptReadOnlyCommand(text, { parsingMethod: "tree-sitter" }),
+        false,
+        text,
+      );
+    }
+  });
 });
 
 describe("READ_ONLY_VERBS / ARGUMENT_SCAN_EXEMPT_HEADS", () => {
