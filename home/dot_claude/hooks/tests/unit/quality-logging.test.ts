@@ -1,11 +1,20 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, afterEach, before, beforeEach, describe, it } from "node:test";
 import type { QualityLogEntry } from "../../types/logging-types.ts";
 
 describe("quality logging", () => {
-  const testDir = "/tmp/test-quality-logging";
+  // Unique per run: a fixed path is shared by concurrent test runs, which then
+  // delete each other's quality.jsonl.
+  const testDir = mkdtempSync(join(tmpdir(), "test-quality-logging-"));
   const testLogDir = join(testDir, ".claude", "logs");
   const originalHome = process.env.HOME;
   const originalClaudeLogsDir = process.env.CLAUDE_LOGS_DIR;
