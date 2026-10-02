@@ -88,7 +88,8 @@ jobs:
         run: |
           command -v gtimeout || brew install coreutils
           T=$(mktemp -d)
-          chezmoi execute-template --no-tty < home/.chezmoiscripts/run_onchange_install-packages-1-darwin.sh.tmpl \
+          # --source home so the template sees .chezmoidata (packages.darwin.*)
+          chezmoi --source home execute-template --no-tty < home/.chezmoiscripts/run_onchange_install-packages-1-darwin.sh.tmpl \
             | sed -n '/^# Expose only timeout from coreutils/,/^fi$/p' \
             | HOME="$T" sh
           test -L "$T/.local/bin/timeout"
