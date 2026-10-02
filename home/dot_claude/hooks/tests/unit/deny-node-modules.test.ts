@@ -13,7 +13,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, afterEach, beforeEach, describe, it } from "node:test";
 import { BOUNDARY_DENY_GUIDANCE } from "../../lib/context-helpers.ts";
-import denyNodeModulesHook from "../../implementations/deny-node-modules.ts";
+import denyNodeModulesHook, {
+  DESTRUCTIVE_NODE_MODULES_PATTERNS,
+} from "../../implementations/deny-node-modules.ts";
 import {
   ConsoleCapture,
   createPreToolUseContext,
@@ -279,6 +281,39 @@ describe("deny-node-modules.ts hook behavior", () => {
           `Should allow command: ${command}`,
         );
       }
+    });
+  });
+
+  // Issue #219: with the regex versions these shapes took seconds to minutes.
+  describe("long repeated words", () => {
+    const NM = "node" + "_modules";
+    for (const [name, command] of [
+      ["a repeated cp word", NM + " cp ".repeat(25000)],
+      ["a repeated ls word", NM + " " + "ls ".repeat(33334)],
+    ] as const) {
+      it(`asks for ${name} in linear time`, async () => {
+        const context = createPreToolUseContext("Bash", { command });
+        const start = Date.now();
+        await invokeRun(denyNodeModulesHook, context);
+        const elapsed = Date.now() - start;
+
+        ok(elapsed < 1000, `${elapsed} ms`);
+        context.assertAsk();
+      });
+    }
+
+    // The tree-sitter parse of a long run of redirect characters is itself
+    // quadratic (measured separately from the regexes), so this shape is
+    // judged at the table, which is where the regexes were.
+    it("judges a long run of redirect characters in linear time", () => {
+      const text = NM + " " + ">".repeat(100000);
+      const start = Date.now();
+      const hit = DESTRUCTIVE_NODE_MODULES_PATTERNS.find(
+        ({ operation }) => operation === "overwrite",
+      );
+      ok(hit);
+      strictEqual(hit.pattern.test(text), false);
+      ok(Date.now() - start < 1000);
     });
   });
 

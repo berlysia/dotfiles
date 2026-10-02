@@ -146,6 +146,14 @@ describe("classifyDeletion", () => {
       );
     });
   }
+  it("judges a long repeated verb in linear time", () => {
+    const text = "ls ".repeat(33334);
+    const start = Date.now();
+    for (const { pattern } of buildReadOnlyPatterns()) {
+      strictEqual(pattern.test(text), false);
+    }
+    ok(Date.now() - start < 1000);
+  });
   it("generates exactly the five existing categories", () => {
     strictEqual(
       new Set(buildReadOnlyPatterns().map((p) => p.operation)).size,

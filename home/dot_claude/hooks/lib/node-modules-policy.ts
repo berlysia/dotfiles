@@ -5,21 +5,129 @@ import {
   MOVE_VERBS,
 } from "./destructive-verbs.ts";
 import { READ_ONLY_VERBS, type ReadOnlyCategory } from "./read-only-command.ts";
+import {
+  createLineIndex,
+  createRunEnds,
+  createStartIndex,
+  isWhitespace,
+  onLine,
+  type OracleMatcher,
+  prefixThenOnLine,
+  type TextMatcher,
+} from "./linear-match.ts";
 import { trimSpaces } from "./shell-lex.ts";
 
-/** Keeps the current `(?:^|\s)(<verbs>)\s+.*node_modules` shape per category (deny-node-modules.ts:244-260). */
-export function buildReadOnlyPatterns(): Array<{
-  pattern: RegExp;
-  operation: ReadOnlyCategory;
+const NODE_MODULES = /node_modules/;
+
+/**
+ * One matcher per category, linearly equivalent to
+ * `(?:^|\s)(<verbs>)\s+.*node_modules`. This is the allow side, so a matcher
+ * wider than that regex would let a command through that was denied. Do not
+ * add a regex of the form `X\s+.*Y` / `X.*Y` here; use prefixThenOnLine
+ * (see Issue #219).
+ */
+export function buildReadOnlyPatterns(): ReadonlyArray<{
+  readonly pattern: TextMatcher;
+  readonly operation: ReadOnlyCategory;
 }> {
   const byCategory = new Map<ReadOnlyCategory, string[]>();
   for (const { verb, category } of READ_ONLY_VERBS) {
     byCategory.set(category, [...(byCategory.get(category) ?? []), verb]);
   }
   return [...byCategory].map(([category, verbs]) => ({
-    pattern: new RegExp(`(?:^|\\s)(${verbs.join("|")})\\s+.*node_modules`),
+    pattern: prefixThenOnLine(
+      new RegExp(`(?:^|\\s)(${verbs.join("|")})\\s+`),
+      NODE_MODULES,
+    ),
     operation: category,
   }));
+}
+
+/**
+ * Linear equivalent of `(?:^|\s)cp\s+.*\s+.*node_modules`, where the second
+ * blank run is the first thing after `cp\s+` that the pattern can use.
+ * For a `cp` at the start of the text or after a blank, let [q, r) be the
+ * blank run after it (the first `\s+`), then the pattern matches when
+ * node_modules starts on a line at or after:
+ * - r, if the run has two or more blanks (the second `\s+` ends at r);
+ * - the end of the first later blank run on the line of r (`.*` then `\s+`);
+ * - the end of the blank run that starts at the line terminator ending the
+ *   line of r (a terminator is a blank, and the run may continue on the next
+ *   line).
+ * Later blank runs on the same line only shrink what is left to search, so
+ * the first one is the best. The oracle is test-only (the super-linear
+ * original); see linear-match.ts.
+ */
+export function cpThenNodeModules(): OracleMatcher {
+  return {
+    oracle: /(?:^|\s)cp\s+.*\s+.*node_modules/,
+    test(text) {
+      let at = text.indexOf("cp");
+      if (at === -1) return false;
+      const lines = createLineIndex(text);
+      const modules = createStartIndex(text, NODE_MODULES);
+      const blanks = createStartIndex(text, /\s/);
+      const runEnds = createRunEnds(text);
+      for (; at !== -1; at = text.indexOf("cp", at + 1)) {
+        if (at > 0 && !isWhitespace(text[at - 1])) continue;
+        const q = at + 2;
+        if (!isWhitespace(text[q])) continue;
+        const r = runEnds[q] as number;
+        if (r - q >= 2 && onLine(lines, modules, r)) return true;
+        const lineEnd = lines.lineEnd(r);
+        const laterBlank = blanks.firstAtOrAfter(r);
+        if (
+          laterBlank <= lineEnd &&
+          onLine(lines, modules, runEnds[laterBlank] as number)
+        ) {
+          return true;
+        }
+        if (
+          lineEnd < text.length &&
+          onLine(lines, modules, runEnds[lineEnd] as number)
+        ) {
+          return true;
+        }
+      }
+      return false;
+    },
+  };
+}
+
+/**
+ * Linear equivalent of `>+\s*[^\s]*node_modules`: node_modules starts in a
+ * non-blank token that either contains a `>` before it, or follows (after a
+ * blank run) a `>` that ends the previous token. One left-to-right pass.
+ * The oracle is test-only (the super-linear original); see linear-match.ts.
+ */
+export function redirectToNodeModules(): OracleMatcher {
+  return {
+    oracle: />+\s*[^\s]*node_modules/,
+    test(text) {
+      let tokenStart = 0;
+      let lastGreaterThan = -1;
+      let greaterThanBeforeRun = false;
+      for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (isWhitespace(c)) {
+          if (!isWhitespace(text[i - 1])) {
+            greaterThanBeforeRun = i > 0 && text[i - 1] === ">";
+          }
+          tokenStart = i + 1;
+        } else if (c === ">") {
+          lastGreaterThan = i;
+        } else if (c === "n" && text.startsWith("node_modules", i)) {
+          if (
+            lastGreaterThan >= tokenStart ||
+            (tokenStart > 0 && greaterThanBeforeRun)
+          ) {
+            return true;
+          }
+        }
+      }
+      return false;
+    },
+  };
 }
 
 const BEFORE = "(?:^|[\\s'\"`(;|&{!\\\\/<>])";
