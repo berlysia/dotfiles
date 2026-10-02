@@ -18,30 +18,17 @@
  * one, is not recorded.
  */
 
-import { randomBytes } from "node:crypto";
-import {
-  closeSync,
-  fsyncSync,
-  lstatSync,
-  openSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { resolve } from "node:path";
 import { defineHook } from "cc-hooks-ts";
 import { getProjectRoot } from "../lib/project-root.ts";
+import { parseApprovalUtterance } from "../lib/workflow-approval.ts";
 import {
-  appendApproval,
-  parseApprovalUtterance,
-} from "../lib/workflow-approval.ts";
+  type RecordResult,
+  recordOne,
+} from "../lib/workflow-approval-record.ts";
 import {
   evaluateApprovalReadiness,
-  evaluateDocument,
   listApprovalCandidates,
 } from "../lib/workflow-gate.ts";
-import { setApprovalStatusLine } from "../lib/workflow-marker.ts";
 import { resolveWorkflowDir } from "../lib/workflow-resolve.ts";
 
 function approvalOutput(text: string) {
@@ -59,75 +46,31 @@ function approvalOutput(text: string) {
 }
 
 /**
- * Rewrite the Approval line so a crash never leaves a truncated document:
- * write a uniquely named temp file opened with O_EXCL (it cannot follow a
- * planted symlink or reuse an existing name), keep the document's mode,
- * then rename over the document. A symlinked document is left alone: the
- * hook must not write outside the workflow dir. Returns whether the line
- * was rewritten (false when it already said approved or is missing).
+ * The wording each record state has always had on this route; the shared
+ * lib returns structured results so other routes can word them differently.
  */
-function setApprovalLineApproved(path: string): boolean {
-  const stat = lstatSync(path);
-  if (!stat.isFile()) return false;
-  const content = readFileSync(path, "utf-8");
-  const updated = setApprovalStatusLine(content, "approved");
-  if (updated === null || updated === content) return false;
-  const temp = `${path}.${process.pid}.${randomBytes(4).toString("hex")}.approval-tmp`;
-  const fd = openSync(temp, "wx", stat.mode & 0o777);
-  try {
-    try {
-      writeFileSync(fd, updated);
-      fsyncSync(fd);
-    } finally {
-      closeSync(fd);
-    }
-    renameSync(temp, path);
-  } catch (error) {
-    try {
-      rmSync(temp, { force: true }); // any failure after the temp exists leaves nothing behind
-    } catch {
-      // keep the original error; a leftover temp is named *.approval-tmp and harmless
-    }
-    throw error;
+function describeLegacy(result: RecordResult): string {
+  const { doc, hash } = result;
+  const detail = result.detail ?? "";
+  if (detail === "not-regular-file") {
+    return `${doc} は通常のファイルではない（symlink など）ので承認行を書き換えていない。log には記録したので、利用者が承認行を手で approved にすれば gate は通る。`;
   }
-  return true;
-}
-
-/**
- * Record one document and say what state it ended in. Each document is its
- * own step, so a failure on one still reports the others; a failure after
- * the ledger line was written says so, since the gate then waits only for
- * the Approval line.
- */
-function recordOne(
-  wfDir: string,
-  doc: string,
-  hash: string,
-  session: string,
-  at: string,
-): string {
-  const path = resolve(wfDir, doc);
-  let logged = false;
-  try {
-    appendApproval(wfDir, { doc, hash, session, at });
-    logged = true;
-    if (!lstatSync(path).isFile()) {
-      return `${doc} は通常のファイルではない（symlink など）ので承認行を書き換えていない。log には記録したので、利用者が承認行を手で approved にすれば gate は通る。`;
-    }
-    const rewritten = setApprovalLineApproved(path);
-    const c = evaluateDocument(path).conditions;
-    if (c.approvalRecord.ok && c.approvalStatus.ok) {
-      return rewritten
-        ? `${doc} を hash=${hash.slice(0, 12)} で承認として記録し、承認行を approved に書き換えた。`
-        : `${doc} を hash=${hash.slice(0, 12)} で承認として記録した（承認行は既に approved）。`;
-    }
-    return `${doc} の承認を記録しようとしたが gate の条件がそろっていない（log ${c.approvalRecord.ok ? "済" : "未"}、承認行 ${c.approvalStatus.ok ? "済" : "未"}）。もう一度「承認 ${doc}」と書くか、\`workflow-cli status\` で確認する。`;
-  } catch (error) {
-    const state = logged
+  if (detail === "rewritten") {
+    return `${doc} を hash=${hash.slice(0, 12)} で承認として記録し、承認行を approved に書き換えた。`;
+  }
+  if (detail === "already-approved") {
+    return `${doc} を hash=${hash.slice(0, 12)} で承認として記録した（承認行は既に approved）。`;
+  }
+  if (detail.startsWith("conditions:")) {
+    const logOk = detail.includes("log=ok");
+    const lineOk = detail.includes("line=ok");
+    return `${doc} の承認を記録しようとしたが gate の条件がそろっていない（log ${logOk ? "済" : "未"}、承認行 ${lineOk ? "済" : "未"}）。もう一度「承認 ${doc}」と書くか、\`workflow-cli status\` で確認する。`;
+  }
+  const state =
+    result.state === "loggedOnly"
       ? "log には記録したが、承認行の書き換えに失敗した"
       : "記録できなかった可能性がある";
-    return `${doc}: ${state}（${String(error).slice(0, 120)}）。もう一度「承認 ${doc}」と書くか、\`workflow-cli status\` で確認する。`;
-  }
+  return `${doc}: ${state}（${detail.replace(/^error:/, "")}）。もう一度「承認 ${doc}」と書くか、\`workflow-cli status\` で確認する。`;
 }
 
 /**
@@ -209,7 +152,9 @@ const hook = defineHook({
       }));
       const at = new Date().toISOString();
       const notes = planned.map(({ doc, hash }) =>
-        recordOne(wfDir, doc, hash, context.input.session_id, at),
+        describeLegacy(
+          recordOne(wfDir, doc, hash, context.input.session_id, at),
+        ),
       );
       notes.push(
         "編集する前に文書を読み直す。取り消すには承認行を pending に戻す。",
