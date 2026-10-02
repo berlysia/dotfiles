@@ -54,7 +54,8 @@ Exit codes:
   0  Done. When scanning, worktrees that were kept are normal.
   1  Usage error, a target that cannot be resolved, or the main worktree named as a target.
   2  A target was given and at least one worktree was kept (the reason is printed),
-     including when git refused to remove it.
+     including when git refused to remove it or, inside an agent-vm machine, when
+     its VM-local node_modules could not be detached.
 
 Examples:
   # From the main worktree: remove only the worktree of your own branch
@@ -199,6 +200,25 @@ for ((i = 0; i < wt_count; i++)); do
     fi
 done
 main_phys=${wt_phys[0]}
+
+# Inside an agent-vm machine, each worktree under .git/worktree carries VM-local node_modules mounts
+# (docs/decisions/0022-agent-vm-node-modules.md). git alone would empty the VM-local copy and then fail on the
+# mountpoint, so the helper detaches, runs the removal, and deletes or re-attaches the copy under its lock.
+nm_helper=0
+if [[ -e "${AGENT_VM_MARKER:-/etc/agent-vm}" ]] && command -v agent-vm-node-modules >/dev/null 2>&1; then
+    nm_helper=1
+fi
+# remove_worktree <index>: git worktree remove, through the helper where it owns mounts; output goes to the caller.
+# The helper's own statuses (64 refused, 70 failed, 71 lock) are its EXIT_USAGE / EXIT_RM_FAILED / EXIT_RM_LOCKED in
+# agent-vm-node-modules; with any of them it ran nothing. Otherwise it returns the command's status.
+remove_worktree() {
+    local w=${wt_path[$1]}
+    if [[ $nm_helper -eq 1 && "${wt_phys[$1]}" == "$main_phys/.git/worktree/"* ]]; then
+        agent-vm-node-modules remove "$w" -- git -C "$main_worktree" worktree remove -- "$w"
+    else
+        git -C "$main_worktree" worktree remove -- "$w"
+    fi
+}
 
 # --- fetch ---------------------------------------------------------------------
 offline=false
@@ -543,10 +563,23 @@ for i in ${selected[@]+"${selected[@]}"}; do
         continue
     fi
 
-    if ! err=$(git -C "$main_worktree" worktree remove -- "$worktree" 2>&1); then
-        say "$RED" "✗ git refused to remove it: $err - skipping"
+    rm_status=0
+    err=$(remove_worktree "$i" 2>&1) || rm_status=$?
+    if [[ $rm_status -ne 0 ]]; then
+        # 64, 70 and 71 come only from the helper (git uses 0, 1 and 128); the helper ran nothing for them
+        case "$nm_helper:$rm_status" in
+            1:64) say "$RED" "✗ the node_modules helper refused it: $err - skipping" ;;
+            1:70) say "$RED" "✗ could not detach its VM-local node_modules: $err - skipping" ;;
+            1:71) say "$RED" "✗ another node_modules sync held the lock (try again): $err - skipping" ;;
+            *) say "$RED" "✗ git refused to remove it: $err - skipping" ;;
+        esac
         kept=$((kept + 1))
         continue
+    fi
+    # The helper also warns after a removal (a store it could not delete, a copy it re-attached). Without the helper
+    # the output stays discarded on success, as before.
+    if [[ $nm_helper -eq 1 && -n "$err" ]]; then
+        say "$YELLOW" "⚠️  $err"
     fi
     say "$GREEN" "✓ Removing worktree: $worktree"
     removed=$((removed + 1))

@@ -18,6 +18,8 @@ trap cleanup_tmp EXIT
 unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_PREFIX GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES \
   GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT GIT_NAMESPACE GIT_SSH_COMMAND GIT_SSH GIT_ASKPASS GIT_PROXY_COMMAND GIT_EXEC_PATH
 export GIT_CEILING_DIRECTORIES="$TMP_BASE" HOME="$TMP_BASE/home" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$TMP_BASE/gitconfig" GIT_TERMINAL_PROMPT=0
+# Not an agent-vm machine unless a test says so: inside one, the real helper would mount over the fixtures
+export AGENT_VM_MARKER="$TMP_BASE/no-agent-vm"
 mkdir -p "$HOME"
 git config -f "$GIT_CONFIG_GLOBAL" user.name t
 git config -f "$GIT_CONFIG_GLOBAL" user.email t@t
@@ -713,6 +715,131 @@ test_R12() {
   assert_contains "$OUT" "git refused to remove it" "R12 message"
   assert_contains "$OUT" "stub refusal" "R12 git stderr"
   assert_eq 2 "$STATUS" "R12 exit"
+}
+
+# ---- agent-vm（ADR-0022） ------------------------------------------------------------
+# nm_helper_stub <status>: an agent-vm-node-modules in $TMP_BASE/nm-bin that logs each argument on its own line.
+# With 0 it runs the command after "remove <wt> --", as the real helper does; otherwise it prints a reason and exits
+# with the status without running anything.
+# A second argument is a warning it prints on stderr before running the command (with status 0 only).
+# $TMP_BASE is shared by every test, so each call starts a fresh log.
+nm_helper_stub() {
+  mkdir -p "$TMP_BASE/nm-bin"
+  rm -f "$TMP_BASE/nm.log"
+  {
+    printf '#!/bin/bash\n'
+    printf 'printf "%%s\\n" "$@" >>%q\n' "$TMP_BASE/nm.log"
+    printf 'if [ %d -ne 0 ]; then echo "agent-vm-node-modules: stub status %d" >&2; exit %d; fi\n' "$1" "$1" "$1"
+    if [[ -n "${2:-}" ]]; then printf 'echo %q >&2\n' "$2"; fi
+    printf 'shift 3\nexec "$@"\n'
+  } >"$TMP_BASE/nm-bin/agent-vm-node-modules"
+  chmod +x "$TMP_BASE/nm-bin/agent-vm-node-modules"
+  : >"$TMP_BASE/vm-marker"
+}
+# run_cleanup_vm [args...]: run_cleanup as inside an agent-vm machine with the stub helper
+run_cleanup_vm() {
+  AGENT_VM_MARKER="$TMP_BASE/vm-marker" PATH="$TMP_BASE/nm-bin:$PATH" run_cleanup "$@"
+}
+
+test_N1() {
+  make_repo n1
+  local d
+  d=$(mk_squashed n1 2)
+  nm_helper_stub 0
+  run_cleanup_vm -n n1
+  assert_removed "$d" "N1 removed through the helper"
+  assert_eq "$(printf '%s\n' remove "$d" -- git -C "$REPO" worktree remove -- "$d")" "$(cat "$TMP_BASE/nm.log")" "N1 remove <wt> -- git -C <main> worktree remove -- <wt>"
+  assert_eq 0 "$STATUS" "N1 exit"
+}
+test_N2() {
+  make_repo n2
+  local d
+  d=$(mk_squashed n2 2)
+  nm_helper_stub 70
+  run_cleanup_vm -n n2
+  assert_kept "$d" "N2 kept"
+  assert_contains "$OUT" "could not detach its VM-local node_modules: agent-vm-node-modules: stub status 70 - skipping" "N2 message with the helper's output"
+  assert_eq 2 "$STATUS" "N2 exit"
+}
+test_N3() {
+  make_repo n3
+  local d
+  d=$(mk_squashed n3 2)
+  nm_helper_stub 71
+  run_cleanup_vm -n n3
+  assert_kept "$d" "N3 kept"
+  assert_contains "$OUT" "another node_modules sync held the lock (try again)" "N3 message"
+  assert_eq 2 "$STATUS" "N3 exit"
+}
+test_N4() {
+  make_repo n4
+  local d
+  d=$(mk_squashed n4 2)
+  nm_helper_stub 64
+  run_cleanup_vm -n n4
+  assert_kept "$d" "N4 kept, git is not run directly"
+  assert_contains "$OUT" "the node_modules helper refused it" "N4 message"
+  assert_eq 2 "$STATUS" "N4 exit"
+}
+test_N5() {
+  make_repo n5
+  local d
+  d=$(mk_squashed n5 2)
+  nm_helper_stub 0
+  mkdir -p "$TMP_BASE/stub-git"
+  {
+    printf '#!/bin/bash\n'
+    printf 'case " $* " in *" worktree remove "*) echo "fatal: stub refusal" >&2; exit 128 ;; esac\n'
+    printf 'exec %q "$@"\n' "$REAL_GIT"
+  } >"$TMP_BASE/stub-git/git"
+  chmod +x "$TMP_BASE/stub-git/git"
+  AGENT_VM_MARKER="$TMP_BASE/vm-marker" PATH="$TMP_BASE/nm-bin:$TMP_BASE/stub-git:$PATH" run_cleanup -n n5
+  assert_kept "$d" "N5 kept"
+  assert_contains "$OUT" "git refused to remove it: fatal: stub refusal" "N5 git's refusal through the helper"
+  assert_eq 2 "$STATUS" "N5 exit"
+}
+test_N6() {
+  if command -v agent-vm-node-modules >/dev/null 2>&1; then
+    record "SKIP N6 (agent-vm-node-modules is on the PATH of this machine)"; return 0
+  fi
+  make_repo n6
+  local d
+  d=$(mk_squashed n6 2)
+  : >"$TMP_BASE/vm-marker"
+  AGENT_VM_MARKER="$TMP_BASE/vm-marker" run_cleanup -n n6
+  assert_removed "$d" "N6 inside a machine without the helper, git removes it as before"
+  assert_eq 0 "$STATUS" "N6 exit"
+}
+test_N7() {
+  make_repo n7
+  local d
+  d=$(mk_squashed n7 2)
+  nm_helper_stub 0
+  PATH="$TMP_BASE/nm-bin:$PATH" run_cleanup -n n7
+  assert_removed "$d" "N7 on the host, git removes it as before"
+  assert_no_dir "$TMP_BASE/nm.log" "N7 the helper is not called on the host"
+}
+test_N8() {
+  make_repo n8
+  local d="$BASE/outside"
+  git -C "$REPO" worktree add -q -b out "$d"
+  commit_in "$d" out-1.txt
+  push_branch "$d"
+  squash_merge out
+  nm_helper_stub 0
+  run_cleanup_vm -n out
+  assert_removed "$d" "N8 a worktree outside .git/worktree is removed when named"
+  assert_no_dir "$TMP_BASE/nm.log" "N8 without the helper, which owns no mounts there"
+}
+test_N9() {
+  make_repo n9
+  local d
+  d=$(mk_squashed n9 2)
+  nm_helper_stub 0 "agent-vm-node-modules: could not delete the store 0123456789abcdef; the next sync deletes it"
+  run_cleanup_vm -n n9
+  assert_removed "$d" "N9 removed"
+  assert_contains "$OUT" "could not delete the store 0123456789abcdef; the next sync deletes it" "N9 the helper's warning after a removal is shown"
+  assert_eq 0 "$STATUS" "N9 exit"
 }
 
 # ---- 使用性 ------------------------------------------------------------------------

@@ -69,6 +69,8 @@ git-worktree-cleanup --help
 
 走査で残すのは正常な結果なので 0 です。target 指定で既に消えた target を 1 にするのは、branch 名の打ち間違いと区別できないためです（出力に `git worktree list` で確かめるよう出ます）。
 
+agent-vm の machine の中で、VM ローカルの `node_modules` を外せなかった、lock を取れなかった、ヘルパーが拒否した、のいずれかで残ったときも 2 になる。
+
 ## 使用例
 
 ```bash
@@ -112,6 +114,7 @@ Removed 1, kept 2, outside .git/worktree 0.
 - merged の判定のために、worktree 1 つにつき最大 1 つの dangling commit object を書きます（ref は動かさず、`git gc` で消えます）
 - 削除成功後、`git worktree prune` が自動実行されます
 - git 2.36 以降が必要です（`git worktree list --porcelain -z`）
+- agent-vm の machine の中（`/etc/agent-vm` があり、`agent-vm-node-modules` がある）では、`.git/worktree` 配下の worktree を `agent-vm-node-modules remove <wt> -- git -C <main> worktree remove -- <wt>` で消す。VM ローカルの `node_modules` を外してから消し、失敗したら張り直す（`docs/decisions/0022-agent-vm-node-modules.md`）。外せない、lock を取れない、ヘルパーが拒否した場合は、理由を表示して worktree を残す。消せた後にヘルパーが出した警告（保存先を消せなかった、など）は、黄色で表示する。host では挙動は変わらない。
 
 ### 変更点（2026-10）
 
