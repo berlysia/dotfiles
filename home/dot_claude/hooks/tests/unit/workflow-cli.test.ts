@@ -1,7 +1,15 @@
 #!/usr/bin/env node --test
 
 import { strict as assert } from "node:assert";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
@@ -15,7 +23,14 @@ import {
   ROUND_SELF_CAP,
   type RoundBudgetPhase,
 } from "../../lib/workflow-review-core.ts";
-import { seedWorkflow } from "./test-helpers.ts";
+import {
+  approvedWorkflowRepo,
+  buildPlanContent,
+  buildPlanNContent,
+  computeWorkflowRepoPlanHash,
+  pendingWorkflowRepo,
+  seedWorkflow,
+} from "./test-helpers.ts";
 
 const NOW = new Date("2026-09-10T05:00:00.000Z");
 
@@ -1091,5 +1106,76 @@ describe("workflow-cli: status", () => {
     assert.equal(r.exitCode, 0);
     assert.match(r.stdout, /Document workflow gate/);
     assert.match(r.stdout, /tripwire:/);
+  });
+
+  function statusRepo(): { repo: string; wf: string } {
+    const repo = realpathSync(mkdtempSync(join(tmpdir(), "cli-status-")));
+    const wf = join(repo, ".tmp", "sessions", "x");
+    mkdirSync(wf, { recursive: true });
+    writeFileSync(join(wf, "research.md"), "x");
+    return { repo, wf };
+  }
+
+  function status(repo: string, wf: string, path: string) {
+    return runWorkflowCli(["status", path], {
+      cwd: repo,
+      wfDir: wf,
+      sessionId: "test-ses",
+      now: NOW,
+    });
+  }
+
+  it("status <path> names plan.md when an approved single-layer plan allows the target", () => {
+    const { repo, wf } = statusRepo();
+    writeFileSync(
+      join(wf, "plan.md"),
+      buildPlanContent(approvedWorkflowRepo()),
+    );
+    const r = status(repo, wf, "src/a.ts");
+    assert.equal(r.exitCode, 0);
+    assert.match(r.stdout, /src\/a\.ts` is allowed by `plan\.md`/);
+  });
+
+  it("status <path> shows the blocking diagnosis while the plan is pending", () => {
+    const { repo, wf } = statusRepo();
+    writeFileSync(join(wf, "plan.md"), buildPlanContent(pendingWorkflowRepo()));
+    const r = status(repo, wf, "src/a.ts");
+    assert.match(r.stdout, /src\/a\.ts` is blocked/);
+    assert.match(r.stdout, /✗ Approval Status/);
+  });
+
+  it("status <path> names the owning plan-N.md, or reports an unlisted target, in two-layer mode", () => {
+    const { repo, wf } = statusRepo();
+    const spec = buildPlanContent(approvedWorkflowRepo());
+    writeFileSync(join(wf, "spec.md"), spec);
+    writeFileSync(
+      join(wf, "plan-1.md"),
+      buildPlanNContent(
+        approvedWorkflowRepo(),
+        ["src/a.ts"],
+        computeWorkflowRepoPlanHash(spec),
+      ),
+    );
+    assert.match(
+      status(repo, wf, "src/a.ts").stdout,
+      /src\/a\.ts` is allowed by `plan-1\.md`/,
+    );
+    assert.match(
+      status(repo, wf, "src/b.ts").stdout,
+      /no plan-N\.md lists `.*src\/b\.ts`/,
+    );
+  });
+
+  it("status <path> reports the guard's shortcuts as not gated", () => {
+    const { repo, wf } = statusRepo();
+    writeFileSync(join(wf, "plan.md"), buildPlanContent(pendingWorkflowRepo()));
+    assert.match(
+      status(repo, wf, join(wf, "notes.md")).stdout,
+      /is not gated \(a workflow document\)/,
+    );
+    assert.match(
+      status(repo, wf, "/etc/hosts").stdout,
+      /is not gated \(outside the project\)/,
+    );
   });
 });

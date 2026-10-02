@@ -13,6 +13,7 @@ import { appendOffPlanLog } from "../lib/workflow-audit-log.ts";
 import { resolveWorkflowPaths } from "../lib/workflow-paths.ts";
 import { resolveWorkflowDir } from "../lib/workflow-resolve.ts";
 import {
+  classifyExemption,
   evaluateTarget,
   formatGateDiagnosis,
   isImplementationPhase,
@@ -90,6 +91,8 @@ const hook = defineHook({
         });
       }
       const wfDir = resolution.dir;
+      const exemptionOf = (path: string) =>
+        classifyExemption(resolve(cwd, expandTilde(path)), projectRoot, wfDir);
 
       const wfPaths = resolveWorkflowPaths(wfDir);
       if (!isWorkflowActive(wfPaths, readWorkflowState(wfPaths.state))) {
@@ -123,11 +126,17 @@ const hook = defineHook({
           return context.success({});
         }
 
-        if (areAllTargetsDocumentPaths(cwd, analysis.targets, wfDir)) {
+        const targetCount = analysis.targets.length;
+        if (
+          targetCount > 0 &&
+          analysis.targets.every((t) => exemptionOf(t) === "workflow-document")
+        ) {
           return context.success({});
         }
-
-        if (areAllTargetsOutsideProject(cwd, projectRoot, analysis.targets)) {
+        if (
+          targetCount > 0 &&
+          analysis.targets.every((t) => exemptionOf(t) === "outside-project")
+        ) {
           return context.success({});
         }
 
@@ -181,11 +190,7 @@ const hook = defineHook({
         return context.success({});
       }
 
-      if (isDocumentPath(cwd, targetPath, wfDir)) {
-        return context.success({});
-      }
-
-      if (isOutsideProject(cwd, projectRoot, targetPath)) {
+      if (exemptionOf(targetPath) !== null) {
         return context.success({});
       }
 
@@ -257,62 +262,6 @@ const hook = defineHook({
  */
 function getToolCwd(): string {
   return process.env.CLAUDE_TEST_CWD || process.cwd();
-}
-
-/**
- * Markdown under the workflow directory is a workflow document, never
- * implementation: the directory is session-scoped scratch under `.tmp/`, so
- * nothing written there is deployed or committed. The predicate is stated as a
- * property of the directory rather than as a list of filenames because naming
- * the artifacts individually (plan.md / spec.md / research.md /
- * lessons-learned.md — including P12's out-of-lifecycle writes per spec K7 /
- * DI4 — and plan-N.md) sent every other note the workflow legitimately produces
- * (handoff memos such as NEXT-SESSION.md, plan drafts, split research notes)
- * into the implementation gate, where an unapproved plan denied them.
- *
- * Non-markdown inside the directory stays gated on purpose:
- * `plan-review.cache.json` and `off-plan-writes.log` are hook-managed state, and
- * a tool-driven write to them could forge a cached verdict or rewrite the audit
- * trail the off-plan relaxation depends on.
- */
-function isDocumentPath(cwd: string, path: string, wfDir: string): boolean {
-  const normalized = resolve(cwd, expandTilde(path));
-  return normalized.startsWith(`${wfDir}/`) && normalized.endsWith(".md");
-}
-
-function areAllTargetsDocumentPaths(
-  cwd: string,
-  targets: string[],
-  wfDir: string,
-): boolean {
-  if (targets.length === 0) {
-    return false;
-  }
-  return targets.every((target) => isDocumentPath(cwd, target, wfDir));
-}
-
-function isOutsideProject(
-  toolCwd: string,
-  projectRoot: string,
-  path: string,
-): boolean {
-  const normalized = resolve(toolCwd, expandTilde(path));
-  return (
-    !normalized.startsWith(`${projectRoot}/`) && normalized !== projectRoot
-  );
-}
-
-function areAllTargetsOutsideProject(
-  toolCwd: string,
-  projectRoot: string,
-  targets: string[],
-): boolean {
-  if (targets.length === 0) {
-    return false;
-  }
-  return targets.every((target) =>
-    isOutsideProject(toolCwd, projectRoot, target),
-  );
 }
 
 /** A target the gate does not let through, even under off-plan relaxation. */
@@ -696,7 +645,7 @@ function analyzeSingleCommand(
     // spec K5: `workflow-cli round|stamp|triage <plan-N.md|spec.md>` writes
     // are always a wfDir document write, resolved against wfDir (not cwd) —
     // the CLI's own argument convention takes a bare doc filename. This
-    // makes the classification explicit (isDocumentPath then allows it, same
+    // makes the classification explicit (classifyExemption then allows it, same
     // as a direct Write/Edit to the doc would) rather than leaving the call
     // unclassified and falling through by accident.
     const docTarget = extractWorkflowCliDocTarget(args, wfDir);

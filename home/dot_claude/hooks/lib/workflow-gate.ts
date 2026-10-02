@@ -14,7 +14,7 @@
  */
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 import { computeDocumentHash, SPEC_NORMALIZERS } from "./document-hash.ts";
 import { sanitizeForDisplay } from "./sanitize-display.ts";
 import { listsTarget } from "./workflow-files.ts";
@@ -389,6 +389,63 @@ export function evaluateTarget(query: TargetQuery): TargetEvaluation {
     implementationPhase: isImplementationPhase(query.wfDir, wfPaths, true),
     diagnosis: diagnoseGate(query.wfDir, query.label ?? query.target),
   };
+}
+
+export type Exemption = "workflow-document" | "outside-project";
+
+/**
+ * Targets the guard lets through before asking the gate: markdown under the
+ * workflow dir is a workflow document, never implementation (it is
+ * session-scoped scratch under .tmp/), and paths outside the project are not
+ * this workflow's business. `target` is absolute and lexical, compared with
+ * the lexical projectRoot / wfDir the hooks resolve.
+ *
+ * The predicate is stated as a property of the directory rather than as a
+ * list of filenames because naming the artifacts individually (plan.md /
+ * spec.md / research.md / lessons-learned.md -- including P12's out-of-lifecycle
+ * writes per spec K7 / DI4 -- and plan-N.md) sent every other note the
+ * workflow legitimately produces (handoff memos such as NEXT-SESSION.md, plan
+ * drafts, split research notes) into the implementation gate, where an
+ * unapproved plan denied them.
+ *
+ * Non-markdown inside the directory stays gated on purpose:
+ * `plan-review.cache.json` and `off-plan-writes.log` are hook-managed state, and
+ * a tool-driven write to them could forge a cached verdict or rewrite the audit
+ * trail the off-plan relaxation depends on.
+ */
+export function classifyExemption(
+  target: string,
+  projectRoot: string,
+  wfDir: string,
+): Exemption | null {
+  if (target.startsWith(`${wfDir}/`) && target.endsWith(".md")) {
+    return "workflow-document";
+  }
+  if (!target.startsWith(`${projectRoot}/`) && target !== projectRoot) {
+    return "outside-project";
+  }
+  return null;
+}
+
+/** One line (or the full diagnosis) for `workflow-cli status <path>`. */
+export function formatTargetEvaluation(
+  evaluation: TargetEvaluation,
+  targetLabel: string,
+  docLabel: string,
+): string {
+  switch (evaluation.kind) {
+    case "inactive":
+      return `Document workflow: inactive (no research.md or plan.md in the workflow dir); \`${targetLabel}\` is not gated.`;
+    case "allow":
+      return `Document workflow gate: \`${targetLabel}\` is allowed by \`${basename(evaluation.owner)}\`.`;
+    case "no-plan-owner":
+      if (evaluation.implementationPhase) {
+        return `Document workflow gate: no plan-N.md lists \`${targetLabel}\`; a write is allowed with a warning and recorded in off-plan-writes.log (implementation phase).`;
+      }
+      return formatGateDiagnosis(evaluation.diagnosis, targetLabel, docLabel);
+    case "deny":
+      return formatGateDiagnosis(evaluation.diagnosis, targetLabel, docLabel);
+  }
 }
 
 /** Render a diagnosis as the multi-line text used in a deny reason / `status`. */

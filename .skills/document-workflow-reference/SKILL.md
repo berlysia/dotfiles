@@ -130,7 +130,7 @@ hash 正規化を変更した場合、旧 normalizer で承認済の進行中成
 
 `workflow-cli` は marker / Review Status / Reviewer Outputs 骨格 / intent-triage marker を書く。モデルは hash を転記しない。
 
-- `workflow-cli status [--wf-dir <dir>]`: gate 診断 + tripwire 状態を表示。
+- `workflow-cli status [<path>] [--wf-dir <dir>]`: 引数なしは主文書（plan.md / spec.md）の gate 診断と tripwire 状態。`<path>` を渡すと、そのファイルへの Write / Edit に guard が下す判定（近道で対象外、許可している文書名、off-plan、止まるなら診断）を表示する。`<path>` は CLI を実行した dir 基準。Bash の書き込みのように対象が複数あるときの集合の扱いは表示しない。
 - `workflow-cli round <doc> [--full] [--extend|--self-extend|--reframer-extend --reason "<text>"]`: `## Reviewer Outputs (Round N)` 骨格を marker 直前に挿入し、`.round-baseline` に round 番号と時刻を記録する。Round 2 以降は下記「差分再レビュー」の集合だけを空欄で並べ、carried reviewer は `- verdict: pass (carried from Round N-1)` で埋める。`--full` は常に必須 reviewer 全員の空欄骨格にする。`<doc>` は wfDir 直下のファイル名（`plan.md` など、パス区切りを含まない `.md`）に限る。下記「ラウンド予算」を超える round は拒否する。
 - `workflow-cli stamp <doc> --verdict <pass|needs-work|blocker> --reviewers a+b`: Round N セクションと reviewer 実行証跡（`reviewer-runs.log`）を確認し、揃っていれば厳密形の Review Status と marker を書く。marker には stamp 時点の round 数を `round=N` として書く（marker は hash 計算前に除去されるので hash は動かない）。証跡が無ければ非 0。
 - `workflow-cli triage <doc> --adopted N --excluded M`: intent-triage marker を書く。
