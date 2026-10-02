@@ -26,7 +26,7 @@
     "test:agent-vm": "bash tests/agent-vm/run.sh",
     "test:shell-gate": "bash tests/shell-gate/run.sh",
     "lint:codex": "./scripts/check-codex-config.sh",
-    "lint:oxlint": "oxlint --ignore-pattern '.claude/skills/' --ignore-pattern '.codex/skills/' --ignore-pattern '.skills/' --ignore-pattern 'node_modules/' .",
+    "lint:oxlint": "oxlint --ignore-pattern '.claude/skills/' --ignore-pattern '.codex/skills/' --ignore-pattern '.skills/' --ignore-pattern 'mods/' --ignore-pattern 'node_modules/' .",
     "lint": "npm run format:check && npm run lint:oxlint && npm run lint:shell && npm run lint:actions && npm run lint:codex",
     "check": "npm run test && npm run typecheck && npm run lint",
     "prepare": "./scripts/install-hooks.sh"

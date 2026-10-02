@@ -62,8 +62,9 @@ else
     fi
 fi
 
-# Read component files
-BASE_CONTENT=$(chezmoi execute-template < "${SOURCE_DIR}/dot_claude/.settings.base.json.tmpl")
+# Read component files. --source lets the base template's includeTemplate find
+# .chezmoitemplates/ even when HOME holds no chezmoi config (the smoke test's isolated HOME).
+BASE_CONTENT=$(chezmoi execute-template --source "${SOURCE_DIR}" < "${SOURCE_DIR}/dot_claude/.settings.base.json.tmpl")
 # Static allow list first, then Skill(<name>) entries; duplicates dropped, order kept.
 PERMISSIONS_CONTENT=$(jq --argjson skills "$SKILL_ENTRIES" '
   .allow = (((.allow // []) + $skills) | reduce .[] as $x ([]; if index([$x]) then . else . + [$x] end))

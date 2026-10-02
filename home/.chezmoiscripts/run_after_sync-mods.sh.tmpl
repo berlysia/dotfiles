@@ -1,0 +1,39 @@
+{{ if ne .chezmoi.os "windows" -}}
+#!/bin/bash
+# Sync repo-root mods/ to ~/.claude/mods/. Which folders count as mods, and where they go, are
+# defined once in .chezmoitemplates/claude-mod-names and claude-mods-dir; settings.json's
+# env.CLAUDE_CODE_PLUGIN_DIRS is generated from the same two templates.
+set -euo pipefail
+
+MODS_SOURCE="{{ .chezmoi.workingTree }}/mods"
+# $HOME at run time, not .chezmoi.homeDir at render time: the smoke test runs this under an isolated HOME.
+CLAUDE_MODS="$HOME/{{ includeTemplate "claude-mods-dir" . | trim }}"
+MOD_NAMES=({{ includeTemplate "claude-mod-names" (dict "root" (print .chezmoi.workingTree "/mods")) }})
+
+mkdir -p "$CLAUDE_MODS"
+
+for name in ${MOD_NAMES[@]+"${MOD_NAMES[@]}"}; do
+  # --no-links skips links inside a mod; a mod folder that is itself a link would be followed.
+  test ! -L "$MODS_SOURCE/$name"
+  # Tests run from the repo with `claude plugin test`; the engine writes .claude-plugin/types/ and
+  # tsconfig.json into every mod it loads, so --delete leaves them for a running session.
+  rsync -a --delete --no-links --chmod=go-w \
+    --exclude="*.test.ts" \
+    --exclude="/.claude-plugin/types/" \
+    --exclude="/tsconfig.json" \
+    "$MODS_SOURCE/$name/" "$CLAUDE_MODS/$name/"
+  test -f "$CLAUDE_MODS/$name/.claude-plugin/plugin.json"
+  test -f "$CLAUDE_MODS/$name/hooks/hooks.json"
+done
+
+# A folder no longer in mods/ is no longer a mod: settings.json stops naming it on this apply.
+# ~/.claude/mods is owned by this script, so anything else placed there is removed too. $name is the
+# basename of a glob match under $CLAUDE_MODS: it holds no "/" and the glob skips "." and "..".
+for dest in "$CLAUDE_MODS"/*/; do
+  [ -d "$dest" ] || continue
+  name=$(basename "$dest")
+  case " ${MOD_NAMES[*]-} " in *" $name "*) ;; *) rm -rf "${CLAUDE_MODS:?}/${name:?}" ;; esac
+done
+
+echo "✅ Mods synced to $CLAUDE_MODS: ${MOD_NAMES[*]-none}"
+{{ end -}}

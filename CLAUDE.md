@@ -55,6 +55,12 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
 2. `chezmoi apply` を実行
 3. スキル検索: `apm search <query>`
 
+### Claude Code Mods
+
+- **ソース**: `mods/<name>/`（Mod のそのままの形。名前は `^[a-z0-9][a-z0-9._-]*$`、違反は apply を止める）。何が Mod か・配布先は `home/.chezmoitemplates/claude-mod-names` / `claude-mods-dir` に 1 か所だけ書く
+- **配布**: 引数なしの `chezmoi apply` で `run_after_sync-mods` が `~/.claude/mods/` へ rsync（テストは配布しない）し、settings の `env.CLAUDE_CODE_PLUGIN_DIRS` は自動生成される
+- **開発と検証**: 開発中は `claude --plugin-dir mods/<name>` で hot reload。検証は `claude plugin validate|test mods/<name>`（CI は Mod を検証しない）
+
 ### Hooks Development
 
 フック（`~/.claude/hooks/`）は bun で絶対パス実行（`bun ~/.claude/hooks/implementations/*.ts`）。

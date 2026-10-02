@@ -41,3 +41,7 @@ home/dot_claude/**/*.js
 
 # APM dependencies
 apm_modules/
+
+# Mod engine-generated files
+mods/*/.claude-plugin/types/
+mods/*/tsconfig.json

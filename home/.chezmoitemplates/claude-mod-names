@@ -1,0 +1,12 @@
+{{- /* Mods under .root: folders holding .claude-plugin/plugin.json. The name becomes a path element
+       in settings.json's CLAUDE_CODE_PLUGIN_DIRS (":"-separated) and in rsync targets, so anything
+       outside the allowlist stops the apply rather than being skipped silently. */ -}}
+{{- $names := list -}}
+{{- range glob (print .root "/*/.claude-plugin/plugin.json") -}}
+{{-   $name := base (dir (dir .)) -}}
+{{-   if not (regexMatch "^[a-z0-9][a-z0-9._-]*$" $name) -}}
+{{-     fail (printf "mods/%q: a mod name must match ^[a-z0-9][a-z0-9._-]*$" $name) -}}
+{{-   end -}}
+{{-   $names = append $names $name -}}
+{{- end -}}
+{{- join " " $names -}}

@@ -13,6 +13,13 @@
   "skipAutoPermissionPrompt": true,
   "env": {
     "CLAUDE_CODE_NO_FLICKER": "0"
+    {{- if ne .chezmoi.os "windows" }}
+    {{- $modsDir := print .chezmoi.homeDir "/" (includeTemplate "claude-mods-dir" . | trim) }}
+    {{- $names := includeTemplate "claude-mod-names" (dict "root" (print .chezmoi.workingTree "/mods")) | splitList " " | compact }}
+    {{- if $names }},
+    "CLAUDE_CODE_PLUGIN_DIRS": {{ $dirs := list }}{{ range $names }}{{ $dirs = append $dirs (print $modsDir "/" .) }}{{ end }}{{ join ":" $dirs | toJson }}
+    {{- end }}
+    {{- end }}
   },
   "deniedMcpServers": [
     { "serverName": "plugin:compound-engineering:context7" }
