@@ -19,6 +19,12 @@ import {
   wouldTouchApprovalStatus,
 } from "../../cli/workflow.ts";
 import {
+  appendApproval,
+  buildApprovalQuestions,
+  MAX_DOCS_PER_QUESTION,
+} from "../../lib/workflow-approval.ts";
+import { listApprovalCandidates } from "../../lib/workflow-gate.ts";
+import {
   formatRoundBudgetHeadline,
   ROUND_BUDGET,
   ROUND_REFRAMER_CAP,
@@ -1486,5 +1492,148 @@ describe("workflow-cli: output provenance (spec K5)", () => {
       assert.equal(r.stdout, "");
       assert.match(r.stderr, /bare file name/);
     }
+  });
+});
+
+describe("workflow-cli: ask-approval and approval route", () => {
+  const REVIEWED = {
+    planStatus: "complete",
+    approvalStatus: "pending",
+    review: { verdict: "pass" },
+  } as const;
+
+  function approvalRepo(planCount = 1): {
+    wf: string;
+    specHash: string;
+    planHashes: string[];
+  } {
+    const repo = realpathSync(mkdtempSync(join(tmpdir(), "cli-ask-")));
+    const wf = join(repo, ".tmp", "sessions", "abcd1234");
+    mkdirSync(wf, { recursive: true });
+    const spec = buildPlanContent(REVIEWED);
+    const specHash = computeWorkflowRepoPlanHash(spec);
+    writeFileSync(join(wf, "spec.md"), spec);
+    const planHashes: string[] = [];
+    for (let i = 1; i <= planCount; i++) {
+      // A distinct Files line per plan keeps the hashes distinct.
+      const plan = buildPlanNContent(REVIEWED, [`src/p${i}.ts`], specHash);
+      planHashes.push(computeWorkflowRepoPlanHash(plan));
+      writeFileSync(join(wf, `plan-${i}.md`), plan);
+    }
+    return { wf, specHash, planHashes };
+  }
+
+  const run = (args: string[], wf: string) =>
+    runWorkflowCli(args, {
+      cwd: join(wf, "..", "..", ".."),
+      wfDir: wf,
+      sessionId: "test-ses",
+      wfDirSource: "derived",
+      now: NOW,
+    });
+
+  it("prints the question JSON for the waiting documents", () => {
+    const { wf, specHash, planHashes } = approvalRepo(1);
+    const r = run(["ask-approval"], wf);
+    assert.equal(r.exitCode, 0, r.stderr);
+    assert.deepEqual(JSON.parse(r.stdout), {
+      questions: buildApprovalQuestions([
+        { name: "spec.md", hash: specHash },
+        { name: "plan-1.md", hash: planHashes[0] as string },
+      ]),
+    });
+    assert.match(r.stderr, /\[approval-answer-recorder\]/);
+  });
+
+  it("caps the question at MAX_DOCS_PER_QUESTION and reports the rest", () => {
+    const { wf } = approvalRepo(3); // spec + 3 plans = 4 candidates
+    const r = run(["ask-approval"], wf);
+    assert.equal(r.exitCode, 0, r.stderr);
+    const parsed = JSON.parse(r.stdout) as {
+      questions: { options: { label: string }[] }[];
+    };
+    assert.equal(
+      parsed.questions[0]?.options.length,
+      MAX_DOCS_PER_QUESTION + 1,
+    );
+    assert.match(r.stderr, /残り 1 件/);
+  });
+
+  it("fails when nothing is waiting", () => {
+    const { wf } = approvalRepo(0);
+    writeFileSync(
+      join(wf, "spec.md"),
+      buildPlanContent({ ...REVIEWED, review: { verdict: "needs-work" } }),
+    );
+    const r = run(["ask-approval"], wf);
+    assert.equal(r.exitCode, 1);
+    assert.match(r.stderr, /no documents are waiting for approval/);
+  });
+
+  it("drops a document that stopped being ready after the listing", () => {
+    const { wf, specHash } = approvalRepo(1);
+    assert.deepEqual(listApprovalCandidates(wf), ["spec.md", "plan-1.md"]);
+    writeFileSync(
+      join(wf, "plan-1.md"),
+      buildPlanNContent(
+        { ...REVIEWED, review: { verdict: "needs-work" } },
+        ["src/p1.ts"],
+        specHash,
+      ),
+    );
+    const r = run(["ask-approval"], wf);
+    assert.equal(r.exitCode, 0, r.stderr);
+    const labels = (
+      JSON.parse(r.stdout) as { questions: { options: { label: string }[] }[] }
+    ).questions[0]?.options.map((o) => o.label);
+    assert.deepEqual(labels, ["spec.md", "承認しない"]);
+    writeFileSync(
+      join(wf, "spec.md"),
+      buildPlanContent({ ...REVIEWED, review: { verdict: "needs-work" } }),
+    );
+    assert.equal(run(["ask-approval"], wf).exitCode, 1);
+  });
+
+  it("triage points at ask-approval", () => {
+    const { wf } = approvalRepo(1);
+    const r = run(
+      ["triage", "spec.md", "--adopted", "1", "--excluded", "0"],
+      wf,
+    );
+    assert.equal(r.exitCode, 0, r.stderr);
+    assert.match(r.stdout, /workflow-cli ask-approval/);
+  });
+
+  it("status shows the route of the latest approval per document", () => {
+    const { wf, specHash, planHashes } = approvalRepo(2);
+    const base = { session: "s", at: "2026-10-02T00:00:00.000Z" };
+    appendApproval(wf, { doc: "spec.md", hash: specHash, ...base, via: "ask" });
+    appendApproval(wf, {
+      doc: "plan-1.md",
+      hash: planHashes[0] as string,
+      ...base,
+      via: "utterance",
+    });
+    appendApproval(wf, {
+      doc: "plan-2.md",
+      hash: planHashes[1] as string,
+      ...base,
+    });
+    const r = run(["status"], wf);
+    assert.match(r.stdout, /spec\.md via=ask/);
+    assert.match(r.stdout, /plan-1\.md via=utterance/);
+    assert.match(r.stdout, /plan-2\.md via=unknown/);
+  });
+
+  it("status prints no via line for a document without an approval", () => {
+    const { wf } = approvalRepo(1);
+    const r = run(["status"], wf);
+    assert.doesNotMatch(r.stdout, /via=/);
+  });
+
+  it("usage names ask-approval", () => {
+    const { wf } = approvalRepo(1);
+    const r = run(["bogus"], wf);
+    assert.match(r.stderr, /ask-approval/);
   });
 });

@@ -33,11 +33,18 @@ import { expandTilde } from "../lib/path-utils.ts";
 import { getProjectRoot } from "../lib/project-root.ts";
 import { sanitizeForDisplay } from "../lib/sanitize-display.ts";
 import {
+  buildApprovalQuestions,
+  MAX_DOCS_PER_QUESTION,
+  readLatestApprovals,
+} from "../lib/workflow-approval.ts";
+import {
   classifyExemption,
   diagnoseGate,
+  evaluateApprovalReadiness,
   evaluateTarget,
   formatGateChecklist,
   formatTargetEvaluation,
+  listApprovalCandidates,
 } from "../lib/workflow-gate.ts";
 import { isStrictlyUnderProjectSubdir } from "../lib/workflow-fs.ts";
 import { lastPassMarkerRound } from "../lib/workflow-marker.ts";
@@ -202,9 +209,11 @@ export function runWorkflowCli(
       return cmdStamp(rest, deps);
     case "triage":
       return cmdTriage(rest, deps);
+    case "ask-approval":
+      return cmdAskApproval(rest, deps);
     default:
       return err(
-        `unknown command: ${command ?? "<none>"}\nusage: workflow-cli <status|dir|round|stamp|triage> [doc] [--flags]`,
+        `unknown command: ${command ?? "<none>"}\nusage: workflow-cli <status|dir|round|stamp|triage|ask-approval> [doc] [--flags]`,
       );
   }
 }
@@ -371,6 +380,15 @@ function cmdStatus(
     lines.push("tripwire: armed");
   } else {
     lines.push("tripwire: not yet armed");
+  }
+
+  // The route of the latest recorded approval per document, so a human can
+  // tell an utterance-recorded approval from an AskUserQuestion one.
+  const { latest } = readLatestApprovals(wfDir);
+  for (const [doc, record] of latest) {
+    lines.push(
+      `approval via: ${sanitizeForDisplay(doc)} via=${record.via ?? "unknown"}`,
+    );
   }
 
   return ok(`${lines.join("\n")}\n`, warning);
@@ -905,9 +923,55 @@ function cmdTriage(
 
   writeFileSync(docPath, newContent);
   return ok(
-    `appended intent-triage marker to ${docName}\n${provenanceLines(wfDir, source, docPath)}`,
+    `appended intent-triage marker to ${docName}\nnext: pass the output of \`workflow-cli ask-approval\` to AskUserQuestion to ask for approval\n${provenanceLines(wfDir, source, docPath)}`,
     warning,
   );
+}
+
+// ---------------------------------------------------------------------------
+// ask-approval
+// ---------------------------------------------------------------------------
+
+/**
+ * Print the AskUserQuestion input for the documents waiting for approval.
+ * Hashes are read here, at question time; the PostToolUse recorder rebuilds
+ * the question from the current files and rejects a response that differs, so
+ * a document edited after this call is never recorded at the old hash.
+ */
+function cmdAskApproval(
+  args: string[],
+  deps: RunWorkflowCliDeps,
+): RunWorkflowCliResult {
+  const resolvedDir = resolveTargetWfDir(parseArgs(args).flags, deps);
+  if (resolvedDir.error !== undefined) return err(resolvedDir.error);
+  const { wfDir, warning } = resolvedDir;
+  // The listing and the readiness read are separate disk reads; drop anything
+  // that changed in between rather than ask about it.
+  const ready = listApprovalCandidates(wfDir).flatMap((name) => {
+    const readiness = evaluateApprovalReadiness(wfDir, name);
+    return readiness.ready && !readiness.alreadyApproved
+      ? [{ name, hash: readiness.hash }]
+      : [];
+  });
+  if (ready.length === 0) {
+    return err("no documents are waiting for approval");
+  }
+  const asked = ready.slice(0, MAX_DOCS_PER_QUESTION);
+  const rest = ready.length - asked.length;
+  const notes = [
+    "After the answer, an [approval-answer-recorder] reply confirms the record; if there is none, nothing was recorded. Check with workflow-cli status.",
+  ];
+  if (rest > 0) {
+    notes.push(
+      `残り ${rest} 件は記録の後にもう一度呼ぶと出る (the remaining ${rest} document(s) appear when this is called again after recording).`,
+    );
+  }
+  if (warning) notes.push(warning);
+  return {
+    exitCode: 0,
+    stdout: `${JSON.stringify({ questions: buildApprovalQuestions(asked) })}\n`,
+    stderr: `${notes.join("\n")}\n`,
+  };
 }
 
 if (import.meta.main) {
