@@ -9,11 +9,13 @@ import assert from "node:assert";
 import {
   existsSync,
   mkdirSync,
+  mkdtempSync,
   rmSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { dirname } from "node:path";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import {
   checkClaudeCompanionStatus,
@@ -24,10 +26,13 @@ import {
 
 describe("Claude Companion Detector", () => {
   const originalEnvHome = process.env.HOME;
+  // A fresh HOME per test: a fixed path is shared by concurrent test runs
+  // (another session's suite), which then overwrite each other's daemon.pid.
+  let testHome = "";
 
   beforeEach(() => {
-    // テスト用のHOME環境変数を設定
-    process.env.HOME = "/tmp/test-claude-companion";
+    testHome = mkdtempSync(join(tmpdir(), "test-claude-companion-"));
+    process.env.HOME = testHome;
 
     // テスト用のdaemon.pidファイルを作成
     const pidDir = dirname(getDaemonPidFilePath());
@@ -47,15 +52,12 @@ describe("Claude Companion Detector", () => {
     process.env.HOME = originalEnvHome;
 
     // テストディレクトリをクリーンアップ
-    const testDir = "/tmp/test-claude-companion";
-    if (existsSync(testDir)) {
-      rmSync(testDir, { recursive: true, force: true });
-    }
+    rmSync(testHome, { recursive: true, force: true });
   });
 
   describe("getDaemonPidFilePath", () => {
     it("should return correct daemon.pid file path", () => {
-      const expected = `/tmp/test-claude-companion/.config/claude-companion/logs/daemon.pid`;
+      const expected = `${testHome}/.config/claude-companion/logs/daemon.pid`;
       assert.strictEqual(getDaemonPidFilePath(), expected);
     });
   });
