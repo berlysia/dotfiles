@@ -19,7 +19,7 @@
 
 **禁止**: これらに該当するタスクで、承認前に実装へ着手すること。設計判断を伴うならステップ数が少なくても Document Workflow を使う。
 
-**誤入時**: 直接実行相当なのに research/plan を書いたら自分で消さず、`/document-workflow-reference` の脱出手順どおり削除コマンドをユーザーに提示し実行を依頼する。
+**誤入時**: 直接実行相当なのに research/plan を書いたら自分で消さず、`/document-workflow-reference` の「誤って入った場合の脱出」どおり削除コマンドをユーザーに提示し実行を依頼する。
 
 ## 共通フロー（8 ステップ）
 
@@ -32,8 +32,8 @@
 4. **完成**: 各成果物の `## Approval` を `Plan Status: complete` にする。
 5. **自動レビュー**: `plan-review-automation` が推奨するレビュアーを Agent tool で並列実行する。
    - **5.1 Reviewer Outputs（必須）**: 各 reviewer の verdict + 主指摘 1-2 文を `## Reviewer Outputs (Round N)` に書く。長文の逐語引用はしない。
-   - **帳簿は `workflow-cli` が書く**: `round <doc>`（骨格挿入）→ reviewer 実行 → `stamp <doc> --verdict <pass|needs-work|blocker> --reviewers a+b`。hash は stamp が計算する（**手で転記しない**）。起動証跡（`reviewer-runs.log`）が無いと stamp は通らない。
-   - **5.2 Round 2 以降は差分**: 前 round の非 pass reviewer + `logic-validator` だけ再実行（`round` / `stamp` もこの集合）。Key Decisions / 白紙案を変えたら `round <doc> --full`。全員 pass で軽微指摘のみなら反映後に `stamp --verdict pass`、新 round は起こさない。
+   - **帳簿は `workflow-cli` が書く**: `round <doc>`（骨格挿入）→ reviewer 実行 → `stamp <doc> --verdict <pass|needs-work|blocker> --reviewers a+b`。hash は stamp が計算する（**手で転記しない**）。
+   - **5.2 Round 2 以降は差分**: 前 round の非 pass reviewer + `logic-validator` だけ再実行。Key Decisions / 白紙案を変えたら `round <doc> --full`。全員 pass で軽微指摘のみなら反映後に `stamp --verdict pass`、新 round は起こさない。
    - **5.3 予算**: pass 後 3 round で素の `round` は拒否される。延長は拒否時の案内に従う。延長した周は Executive Summary に承認者別の延長回数と reframer 記録の要約を書き、Round 7 以降は Risks にも書く。詳細は `/document-workflow-reference`「ラウンド予算」。
 6. **インテント整合性トリアージ（必須）**: `/intent-alignment-triage` で、元のオーダーの本義を歪めてスコープを縮める指摘（divergent）を除外する。結果は `workflow-cli triage <doc> --adopted N --excluded M` で記録する。トリアージ前にレビュー結果をユーザーへ提示しない。
 7. **承認**: Executive Summary の直後に `workflow-cli ask-approval` の出力をそのまま AskUserQuestion に渡し、人間が文書を選ぶ。キャンセルされたら議論し、済んだら人間が `approve` と打つ（下記 CRITICAL）。
@@ -48,7 +48,7 @@
 - `spec.md` = 設計承認単位。`plan-N.md` = 実行承認単位（`parent-spec-hash` で spec.md に連鎖）。
 - 承認順: spec.md を complete → pass → 承認してから、各 plan-N.md を同じ手順で独立に承認する。
 - spec.md の hash が動くと全 plan-N.md の `parent-spec-hash` が不一致になり、実装がブロックされる。plan-N.md を再レビュー・再承認する。
-- **ワークフロー成果物は Edit / Write で書く**。Bash の heredoc は中身（`->` / `<hash>` / `eval` 等）を guard が書き込みと誤検出しうる。Edit / Write なら `plan-review-automation` も確実に発火する。
+- **ワークフロー成果物は Edit / Write で書く**。インタプリタの heredoc（`python3 - <<…` など）は guard が書き込みと判定しうる。Edit / Write なら `plan-review-automation` も発火する。
 
 ## 常時必須レビュアー（層別、並列実行）
 
@@ -90,7 +90,7 @@ plan に `## テスト計画 (ISO 25010)` を設け、関連する品質特性�
 
 - hash が動く改訂は再承認が要る。取り消しは承認行を pending に戻す（詳細: reference skill「承認の記録」）。
 - research/spec/plan/plan-N への編集は承認前でも許可される。
-- 実装系書き込み（Write/Edit/NotebookEdit/Bash）は `document-workflow-guard` が制御する。`.tmp/` もプロジェクト内なので対象になる。承認前の使い捨て作業は session の scratchpad か `mktemp -d` の出力先に、リテラルの絶対パスで書く（他 repo・`$HOME`・dotfiles には書かない）。
+- 承認前の使い捨て作業は session の scratchpad か `mktemp -d` の出力先に、リテラルの絶対パスで書く（`.tmp/` も guard の対象。他 repo・`$HOME`・dotfiles には書かない）。
 - 実装フェーズでは、承認済みの三状態 + hash 一致がそろっていれば、どの plan の Files にも無いファイルへの書き込みは deny でなく warn + `off-plan-writes.log` になる。hash drift / parent-spec-hash 不一致 / 未承認は依然 deny。
 
 ## Executive Summary（レビュー依頼時 MANDATORY）
@@ -115,7 +115,7 @@ Experience Delta が Goal の達成に直結しているか自己検証する。
 
 ## Task Completion Protocol
 
-停止前に確認する: 元のタスクが完全に達成されたか / テスト・ビルドが成功しているか / 依頼されたコミットが完了したか。テスト失敗・明確な次手順・明示的なコミット依頼があれば継続する。ユーザーの期待を勝手に下げたり steering を無効化しない。
+停止前に確認する: 元のタスクが完全に達成されたか / テスト・ビルドが成功しているか / 依頼されたコミットが完了したか。テスト失敗・明確な次手順・明示的なコミット依頼があれば継続する。
 
 ## 起動軸（pull / push）
 
