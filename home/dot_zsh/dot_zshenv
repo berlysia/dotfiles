@@ -1,10 +1,10 @@
 # Transitional: shells that inherited ZDOTDIR=$HOME/.zsh read this file instead of ~/.zshenv.
-# Drop ZDOTDIR so zsh reads ~/.zshrc next, then load the real entry. Remove once no process holds ZDOTDIR
-# (see the marker below). The guard stops a loop with a pre-migration ~/.zshenv, which exports
+# Point ZDOTDIR at $HOME (not unset: VSCode and similar adopt the post-.zshenv ZDOTDIR) so zsh reads ~/.zshrc next, then load the real entry. Remove once no process holds the old
+# ZDOTDIR=$HOME/.zsh (see the marker below; ZDOTDIR=$HOME is harmless). The guard stops a loop with a pre-migration ~/.zshenv, which exports
 # ZDOTDIR and sources this file again (possible while an apply is half done).
 [ -n "${_ZSHENV_SHIM:-}" ] && return 0
 _ZSHENV_SHIM=1
-unset ZDOTDIR
+ZDOTDIR=$HOME
 case "${XDG_STATE_HOME:-$HOME/.local/state}" in
   /*) { : >"${XDG_STATE_HOME:-$HOME/.local/state}/zshenv-shim-used"; } 2>/dev/null ;;
 esac
