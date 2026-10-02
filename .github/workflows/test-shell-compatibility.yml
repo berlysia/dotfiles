@@ -55,6 +55,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y zsh bash
 
+      # compinit asks y/n on the tty when fpath has group/other-writable dirs; under
+      # the TTY probes nothing answers and the human zsh hangs until the watchdog.
+      - name: Secure zsh completion dirs on Ubuntu
+        if: runner.os == 'Linux'
+        run: |
+          insecure=$(zsh -fc 'autoload -Uz compaudit; compaudit' 2>/dev/null || true)
+          printf 'compaudit: %s\n' "${insecure:-<none>}"
+          if [ -n "$insecure" ]; then printf '%s\n' "$insecure" | xargs sudo chmod g-w,o-w; fi
+
       - name: Install shells on macOS
         if: runner.os == 'macOS'
         run: |
