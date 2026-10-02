@@ -1,9 +1,11 @@
 #!/usr/bin/env node --test
 
-import { deepStrictEqual, ok } from "node:assert";
+import { deepStrictEqual, ok, rejects, strictEqual } from "node:assert";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import type { ToolSchema } from "cc-hooks-ts";
-import autoApproveHook from "../../implementations/auto-approve.ts";
+import autoApproveHook, {
+  processBashTool,
+} from "../../implementations/auto-approve.ts";
 import { BOUNDARY_DENY_GUIDANCE } from "../../lib/context-helpers.ts";
 import {
   ConsoleCapture,
@@ -192,6 +194,134 @@ describe("auto-approve.ts hook behavior", () => {
 
       // Both commands in the pipe should be allowed
       context.assertAllow();
+    });
+  });
+
+  describe("whole-text allow (spec K1/K2/K4)", () => {
+    const run = async (command: string, allow: string[] = []) => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(allow));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", {
+        command,
+      });
+      await invokeRun(autoApproveHook, context);
+      return context;
+    };
+    // biome-ignore lint/suspicious/noExplicitAny: test context
+    const isAllow = (context: any) =>
+      context.jsonCalls.some(
+        // biome-ignore lint/suspicious/noExplicitAny: hook JSON output
+        (c: any) => c?.hookSpecificOutput?.permissionDecision === "allow",
+      );
+
+    const NOT_ALLOWED: Array<[string, string[]]> = [
+      ["git push --force origin main $(pwd)", []],
+      ["time ls\nzz a", []],
+      ["git push --force origin main <<EOF\nhi\nEOF\nls yy", []],
+      ["zz $(echo hi)", ["Bash(echo *)"]],
+      ["echo `ls \\`zz a\\` pwd`", ["Bash(echo *)"]],
+      ["evil --x pnpm test", ["Bash(pnpm *)"]],
+      ["ls # '\nzz a\n#'", []],
+      ['ls # "\nzz a\n#"', []],
+      ["ls # '\nzz a\necho '", []],
+    ];
+    for (const [command, allow] of NOT_ALLOWED) {
+      it(`does not allow ${JSON.stringify(command)}`, async () => {
+        strictEqual(isAllow(await run(command, allow)), false);
+      });
+    }
+
+    const ALLOWED: Array<[string, string[]]> = [
+      ["ls -la", []],
+      ["git status", []],
+      ["cd x && pnpm test", ["Bash(cd *)", "Bash(pnpm test *)"]],
+      ["grep -rn foo src | head -20", ["Bash(grep *)"]],
+      ["git log --oneline -5 2>/dev/null", []],
+      ["pnpm test 2>&1 | tail -20", ["Bash(pnpm test *)"]],
+      ["sleep 5", ["Bash(echo *)"]],
+      ["ls\npwd", []],
+    ];
+    for (const [command, allow] of ALLOWED) {
+      it(`allows ${JSON.stringify(command)}`, async () => {
+        (await run(command, allow)).assertAllow();
+      });
+    }
+
+    const PASSED: Array<[string, string[]]> = [
+      ["echo $(date)", ["Bash(echo *)"]],
+      ["bash -c 'ls'", ["Bash(bash *)"]],
+      ["timeout 15 pnpm test", ["Bash(timeout *)", "Bash(pnpm *)"]],
+      ["for f in a; do ls; done", []],
+      ["ls > out.txt", []],
+      ["ls; (cd x && ls)", ["Bash(cd *)"]],
+      ["ls &", []],
+      ["FOO=1 pnpm test", ["Bash(pnpm *)"]],
+      ["find . -name x", ["Bash(find *)"]],
+      ["ls # note", []],
+      ["done", []],
+      ["", []],
+    ];
+    for (const [command, allow] of PASSED) {
+      it(`passes ${JSON.stringify(command)}`, async () => {
+        (await run(command, allow)).assertPass();
+      });
+    }
+
+    it("does not infer sed -i past a backslash", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Edit(src/**)"]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", {
+        command: "sed -i s/a/b/ src/utils.ts\\\\ /etc/passwd",
+      });
+      await invokeRun(autoApproveHook, context);
+      strictEqual(isAllow(context), false);
+    });
+
+    it("passes when the allow stage throws", async () => {
+      const result = await processBashTool(
+        { command: "ls -la" },
+        [],
+        [],
+        "/tmp",
+        {
+          classifyBashDeny: async () => ({ type: "clear" }),
+          matchBashAllow: async () => {
+            throw new Error("boom");
+          },
+        },
+      );
+      strictEqual(result.hasPassRequired, true);
+      strictEqual(
+        result.commands.some((c) => c.type === "allow"),
+        false,
+      );
+    });
+
+    it("rejects when the deny stage throws, so the hook's catch denies", async () => {
+      await rejects(
+        processBashTool({ command: "ls -la" }, [], [], "/tmp", {
+          classifyBashDeny: async () => {
+            throw new Error("boom");
+          },
+          matchBashAllow: async (cmd) => ({ type: "pass", command: cmd }),
+        }),
+      );
+    });
+
+    it("judges a fragment once even when the parser and the scan both produce it", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify([]));
+      envHelper.set(
+        "CLAUDE_TEST_DENY",
+        JSON.stringify(["Bash(rm *)", "Bash(chmod *)"]),
+      );
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", {
+        command: "rm dangerous.txt; chmod 777 file.txt",
+      });
+      await invokeRun(autoApproveHook, context);
+      context.assertDeny();
+      const reason =
+        context.jsonCalls[0]?.hookSpecificOutput?.permissionDecisionReason;
+      ok(reason?.includes("(2 commands)"), reason);
     });
   });
 
@@ -529,8 +659,9 @@ describe("auto-approve.ts hook behavior", () => {
         });
         await hook.run(context);
 
-        // Control keywords are transparent; with no allow/deny they result in ask
-        context.assertAsk();
+        // A reserved word alone cannot be split into simple commands (spec K1),
+        // so the allow stage adds a pass and the hook stays silent.
+        context.assertPass();
       }
     });
   });
