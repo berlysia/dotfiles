@@ -15,6 +15,48 @@ prefix_rule(
     justification = "Recursive delete requires human approval",
 )
 
+prefix_rule(
+    pattern = ["sudo"],
+    decision = "forbidden",
+    justification = "No privilege escalation from agents",
+)
+
+prefix_rule(
+    pattern = ["pip"],
+    decision = "forbidden",
+    justification = "Python packages are managed with uv",
+)
+
+prefix_rule(
+    pattern = ["pip3"],
+    decision = "forbidden",
+    justification = "Python packages are managed with uv",
+)
+
+prefix_rule(
+    pattern = ["pipx"],
+    decision = "forbidden",
+    justification = "Python tools are managed with uv / mise",
+)
+
+prefix_rule(
+    pattern = ["poetry"],
+    decision = "forbidden",
+    justification = "Python packages are managed with uv",
+)
+
+prefix_rule(
+    pattern = ["python", "-m", "pip"],
+    decision = "forbidden",
+    justification = "Python packages are managed with uv",
+)
+
+prefix_rule(
+    pattern = ["python3", "-m", "pip"],
+    decision = "forbidden",
+    justification = "Python packages are managed with uv",
+)
+
 # === Safety: destructive git commands ===
 
 prefix_rule(
