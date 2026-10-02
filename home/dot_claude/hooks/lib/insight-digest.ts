@@ -14,6 +14,8 @@ import {
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
+import { sanitize } from "./redact-secrets.ts";
+
 const HOME = homedir();
 
 export const PROJECTS_DIR = join(HOME, ".claude", "projects");
@@ -47,18 +49,6 @@ export const INSIGHT_DELIMITER_PATTERN = new RegExp(
   `${STAR} Insight ${HBAR}+\\s*([\\s\\S]+?)${HBAR}{5,}`,
   "g",
 );
-
-const DEFAULT_REDACT_PATTERNS: RegExp[] = [
-  /sk-(?:ant-)?[A-Za-z0-9_-]{20,}/g,
-  /xox[abprs]-[\w-]{10,}/g,
-  /ghp_[A-Za-z0-9]{20,}/g,
-  /github_pat_[A-Za-z0-9_]{20,}/g,
-  /AKIA[0-9A-Z]{16}/g,
-  /eyJ[\w-]+\.[\w-]+\.[\w-]+/g,
-  /-----BEGIN (?:[A-Z ]*)?PRIVATE KEY-----[\s\S]*?-----END (?:[A-Z ]*)?PRIVATE KEY-----/g,
-  /Authorization:\s*Bearer\s+\S+/gi,
-  /^[A-Z][A-Z0-9_]{2,}=\S+$/gm,
-];
 
 export interface DenyList {
   paths: string[];
@@ -189,26 +179,6 @@ export function getDistillHealthNotice(
   } catch {
     return null;
   }
-}
-
-export function sanitize(
-  text: string,
-  extraPatterns: RegExp[] = [],
-): { text: string; hits: number } {
-  let hits = 0;
-  let result = text;
-  const all = [...DEFAULT_REDACT_PATTERNS, ...extraPatterns];
-  for (const pattern of all) {
-    const flags = pattern.flags.includes("g")
-      ? pattern.flags
-      : `${pattern.flags}g`;
-    const re = new RegExp(pattern.source, flags);
-    result = result.replace(re, () => {
-      hits += 1;
-      return "[REDACTED]";
-    });
-  }
-  return { text: result, hits };
 }
 
 export function normalize(text: string): string {

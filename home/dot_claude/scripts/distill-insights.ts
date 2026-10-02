@@ -27,7 +27,6 @@ import {
   readState,
   readStampMs,
   replaceDigestDistillationSection,
-  sanitize,
   selectStageBInputs,
   shouldUpdateStamp,
   STAGE_B_SAFETY_MARGIN_MS,
@@ -45,6 +44,7 @@ import {
   type StageBOutcome,
   type StageBQueryFn,
 } from "../hooks/lib/insight-digest.ts";
+import { sanitize } from "../hooks/lib/redact-secrets.ts";
 
 function resolveClaudeExecutable(): string | undefined {
   try {
