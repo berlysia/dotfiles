@@ -11,7 +11,7 @@
 // would surface as a deny of an innocent command. When widening the scanner,
 // only add allowed forms; never grow a list of rejected forms.
 
-import { lexStep, type QuoteState } from "./shell-lex.ts";
+import { lexStep, type QuoteState, trimTrailingBlanks } from "./shell-lex.ts";
 
 type ReadOnlyCategory = "list" | "read" | "search" | "navigate" | "info";
 
@@ -97,7 +97,7 @@ export function isExemptReadOnlyCommand(
 function scanWholeCommand(fullCommand: string): boolean {
   // Trailing blanks never change where a word ends. Leading ones are kept so a
   // leading space (or NBSP) fails the head check.
-  const cmd = fullCommand.replace(/[ \t\n]+$/, "");
+  const cmd = trimTrailingBlanks(fullCommand);
   if (cmd === "") return false;
   // Whitespace other than space/tab/newline and control characters are read by
   // the shell as word characters or dropped, so hook and shell can disagree on
@@ -150,7 +150,8 @@ function scanArguments(cmd: string): boolean {
         break;
       default: {
         const unhandled: never = step;
-        return unhandled;
+        void unhandled;
+        return false;
       }
     }
     i = step.next;

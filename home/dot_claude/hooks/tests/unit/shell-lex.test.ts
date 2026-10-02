@@ -1,8 +1,14 @@
 #!/usr/bin/env node --test
 
-import { deepStrictEqual, strictEqual } from "node:assert";
+import { deepStrictEqual, ok, strictEqual } from "node:assert";
 import { describe, it } from "node:test";
-import { isCommentStart, lexStep, skipDollar } from "../../lib/shell-lex.ts";
+import {
+  isCommentStart,
+  lexStep,
+  skipDollar,
+  trimSpaceTab,
+  trimTrailingBlanks,
+} from "../../lib/shell-lex.ts";
 
 describe("lexStep", () => {
   it("reports unquoted operators for the caller to judge", () => {
@@ -108,5 +114,22 @@ describe("skipDollar / isCommentStart", () => {
     strictEqual(isCommentStart("a(#", 2), true);
     strictEqual(isCommentStart("a#", 1), false);
     strictEqual(isCommentStart('"a"#', 3), false);
+  });
+});
+
+describe("trimTrailingBlanks / trimSpaceTab", () => {
+  it("strips the listed blanks only", () => {
+    strictEqual(trimTrailingBlanks("ls \t\n \n"), "ls");
+    strictEqual(trimTrailingBlanks(" ls "), " ls ");
+    strictEqual(trimSpaceTab(" \tls a\t "), "ls a");
+    strictEqual(trimSpaceTab("\nls\n"), "\nls\n");
+  });
+
+  it("runs in linear time on long inner blank runs", () => {
+    const input = `ls${" ".repeat(200000)}b`;
+    const start = Date.now();
+    strictEqual(trimTrailingBlanks(input), input);
+    strictEqual(trimSpaceTab(input), input);
+    ok(Date.now() - start < 200);
   });
 });

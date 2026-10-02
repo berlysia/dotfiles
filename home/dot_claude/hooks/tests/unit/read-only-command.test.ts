@@ -143,6 +143,13 @@ describe("isExemptReadOnlyCommand", () => {
     ok(Date.now() - start < 1000);
   });
 
+  it("scans a long inner blank run in linear time", () => {
+    const cmd = `grep a${" ".repeat(100000)}b f`;
+    const start = Date.now();
+    strictEqual(exempt(cmd), true);
+    ok(Date.now() - start < 1000);
+  });
+
   for (const cmd of EXEMPT_TRUE) {
     it(`true: ${JSON.stringify(cmd)}`, () => {
       strictEqual(exempt(cmd), true);
