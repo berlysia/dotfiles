@@ -24,6 +24,7 @@
     "smoke:provisioning": "./scripts/smoke-provisioning-invariants.sh",
     "lint:actions": "./scripts/lint-actions.sh",
     "test:agent-vm": "bash tests/agent-vm/run.sh",
+    "test:shell-gate": "bash tests/shell-gate/run.sh",
     "lint:codex": "./scripts/check-codex-config.sh",
     "lint:oxlint": "oxlint --ignore-pattern '.claude/skills/' --ignore-pattern '.codex/skills/' --ignore-pattern '.skills/' --ignore-pattern 'node_modules/' .",
     "lint": "npm run format:check && npm run lint:oxlint && npm run lint:shell && npm run lint:actions && npm run lint:codex",

@@ -1,0 +1,7 @@
+#!/bin/sh
+# Test stub for gomi: --version succeeds, --prune is recorded to $GOMI_STUB_LOG
+case "$1" in
+  --version) echo "gomi stub"; exit 0 ;;
+  --prune=*) [ -n "${GOMI_STUB_LOG:-}" ] && echo "$*" >>"$GOMI_STUB_LOG"; exit 0 ;;
+esac
+exit 0
