@@ -14,9 +14,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import hook, {
-  parseApprovalUtterance,
-} from "../../implementations/approval-recorder.ts";
+import hook from "../../implementations/approval-recorder.ts";
 import {
   appendApproval,
   readLatestApprovals,
@@ -44,39 +42,6 @@ const APPROVED: WorkflowRepoOptions = {
   ...REVIEWED,
   approvalStatus: "approved",
 };
-
-describe("parseApprovalUtterance (spec K7)", () => {
-  it("accepts the bare word, document names and a trailing mark", () => {
-    assert.deepEqual(parseApprovalUtterance("承認"), { docs: [] });
-    assert.deepEqual(parseApprovalUtterance("  Approve!  "), { docs: [] });
-    assert.deepEqual(parseApprovalUtterance("承認 plan-2.md spec.md。"), {
-      docs: ["plan-2.md", "spec.md"],
-    });
-    assert.deepEqual(parseApprovalUtterance("承認 plan-2.md plan-2.md"), {
-      docs: ["plan-2.md"],
-    });
-  });
-
-  it("ignores anything else", () => {
-    for (const prompt of [
-      "承認します",
-      "承認、ただし T3 は直して",
-      "approve this?",
-      "plan.md 承認",
-      "承認 notes.md",
-      "承認 PLAN.MD",
-      "/execute-plan 承認",
-      "承認\n追記",
-      "ok",
-    ]) {
-      assert.equal(
-        parseApprovalUtterance(prompt),
-        null,
-        JSON.stringify(prompt),
-      );
-    }
-  });
-});
 
 describe("approval-recorder (spec K7)", () => {
   const envHelper = new EnvironmentHelper();
@@ -220,27 +185,14 @@ describe("approval-recorder (spec K7)", () => {
     assert.equal(readLatestApprovals(wf).latest.has("plan.md"), true);
   });
 
-  it("appends the probe line to a reply for a prompt the user did not type", async () => {
+  it("does not append a probe line to a reply", async () => {
     writeFileSync(join(wf, "plan.md"), buildPlanContent(REVIEWED));
     const { text } = await say("承認", {
       source: "schedule_wakeup",
       prompt_id: "p1",
-      transcript_path: join(repo, "transcript.jsonl"),
     });
-    assert.match(text, /source=schedule_wakeup.*記録していない/);
-    assert.match(text, /probe: source=schedule_wakeup prompt_id=present/);
-    assert.equal(existsSync(join(wf, "approvals.log")), false);
-  });
-
-  it("records the approval even when the probe cannot read the transcript", async () => {
-    writeFileSync(join(wf, "plan.md"), buildPlanContent(REVIEWED));
-    const { text } = await say("承認", {
-      source: "user",
-      prompt_id: "p2",
-      transcript_path: join(repo, "no-such-transcript.jsonl"),
-    });
-    assert.equal(readLatestApprovals(wf).latest.has("plan.md"), true);
-    assert.match(text, /transcript=unreadable/);
+    assert.match(text, /記録していない/);
+    assert.doesNotMatch(text, /probe:/);
   });
 
   it("does not rewrite a document that is a symlink, and leaves no temp file", async () => {

@@ -1,5 +1,9 @@
 /**
- * The tools `document-workflow-guard` evaluates.
+ * The tools `document-workflow-guard` is registered for: the settings matcher
+ * must list every one of them. Write evaluation applies only to the write
+ * tools (Write, Edit, MultiEdit, NotebookEdit, Bash); CronCreate and
+ * ScheduleWakeup are checked on their prompt text alone, as an extension of
+ * K9: a scheduled approval-shaped prompt is refused (issue J).
  *
  * Lives in lib/ rather than in the guard implementation for three reasons:
  * `session.ts` audits it against the settings matcher and must not depend on
@@ -16,6 +20,8 @@ export const GUARDED_TOOLS: ReadonlySet<string> = new Set([
   "MultiEdit",
   "NotebookEdit",
   "Bash",
+  "CronCreate",
+  "ScheduleWakeup",
 ]);
 
 export interface MatcherCoverage {

@@ -15,6 +15,8 @@ import { describe, it } from "node:test";
 import {
   APPROVALS_LOG,
   appendApproval,
+  isApprovalShapedPrompt,
+  parseApprovalUtterance,
   readLatestApprovals,
 } from "../../lib/workflow-approval.ts";
 
@@ -109,5 +111,85 @@ describe("workflow-approval (spec K8)", () => {
     const r = readLatestApprovals(wf);
     assert.equal(r.latest.size, 0);
     assert.match(r.readError ?? "", /EISDIR/);
+  });
+});
+
+describe("parseApprovalUtterance (spec K7)", () => {
+  it("accepts the bare word, document names and a trailing mark", () => {
+    assert.deepEqual(parseApprovalUtterance("承認"), { docs: [] });
+    assert.deepEqual(parseApprovalUtterance("  Approve!  "), { docs: [] });
+    assert.deepEqual(parseApprovalUtterance("承認 plan-2.md spec.md。"), {
+      docs: ["plan-2.md", "spec.md"],
+    });
+    assert.deepEqual(parseApprovalUtterance("承認 plan-2.md plan-2.md"), {
+      docs: ["plan-2.md"],
+    });
+  });
+
+  it("ignores anything else", () => {
+    for (const prompt of [
+      "承認します",
+      "承認、ただし T3 は直して",
+      "approve this?",
+      "plan.md 承認",
+      "承認 notes.md",
+      "承認 PLAN.MD",
+      "/execute-plan 承認",
+      "承認\n追記",
+      "ok",
+    ]) {
+      assert.equal(
+        parseApprovalUtterance(prompt),
+        null,
+        JSON.stringify(prompt),
+      );
+    }
+  });
+});
+
+describe("isApprovalShapedPrompt (issue J: scheduled prompts)", () => {
+  it("is true for what the recorder accepts, in any surrounding whitespace", () => {
+    for (const prompt of [
+      "承認",
+      "承認 plan-99.md",
+      "  Approve!  ",
+      "承認\u3000spec.md。",
+      "承認\n",
+      "承認！",
+      "\uFEFF承認",
+      "\u00A0承認\u2028",
+    ]) {
+      assert.equal(
+        isApprovalShapedPrompt(prompt),
+        true,
+        JSON.stringify(prompt),
+      );
+    }
+  });
+
+  it("is also true when NFKC and format-character removal make it an approval", () => {
+    // The recorder would not record these as typed, but a front-end that
+    // normalizes a fired prompt could turn them into one.
+    assert.equal(isApprovalShapedPrompt("承\u200B認"), true);
+    assert.equal(isApprovalShapedPrompt("ＡＰＰＲＯＶＥ"), true);
+  });
+
+  it("is false for anything else, including non-strings", () => {
+    for (const prompt of [
+      "承認します、ただし…",
+      "J-probe",
+      "承認\nfoo",
+      "",
+      123,
+      null,
+      undefined,
+      { prompt: "承認" },
+    ]) {
+      assert.equal(
+        isApprovalShapedPrompt(prompt),
+        false,
+        JSON.stringify(prompt),
+      );
+    }
   });
 });

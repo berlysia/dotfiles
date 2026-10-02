@@ -428,7 +428,7 @@ describe("startup summary", () => {
     );
     deepStrictEqual(
       matcherCoversGuardedTools("Write|Edit|NotebookEdit|Bash").missing,
-      ["MultiEdit"],
+      ["CronCreate", "MultiEdit", "ScheduleWakeup"],
     );
   });
 

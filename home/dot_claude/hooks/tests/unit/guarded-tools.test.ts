@@ -8,7 +8,15 @@ import {
 } from "../../lib/guarded-tools.ts";
 
 describe("guarded-tools.ts", () => {
-  const ALL = ["Bash", "Edit", "MultiEdit", "NotebookEdit", "Write"];
+  const ALL = [
+    "Bash",
+    "CronCreate",
+    "Edit",
+    "MultiEdit",
+    "NotebookEdit",
+    "ScheduleWakeup",
+    "Write",
+  ];
 
   it("enumerates the tools the guard evaluates", () => {
     deepStrictEqual([...GUARDED_TOOLS].sort(), ALL);
@@ -17,13 +25,15 @@ describe("guarded-tools.ts", () => {
   it("reports the members a matcher does not list", () => {
     deepStrictEqual(matcherCoversGuardedTools("Write|Edit|NotebookEdit|Bash"), {
       covered: false,
-      missing: ["MultiEdit"],
+      missing: ["CronCreate", "MultiEdit", "ScheduleWakeup"],
     });
   });
 
-  it("reports full coverage once MultiEdit is listed", () => {
+  it("reports full coverage once every guarded tool is listed", () => {
     deepStrictEqual(
-      matcherCoversGuardedTools("Write|Edit|MultiEdit|NotebookEdit|Bash"),
+      matcherCoversGuardedTools(
+        "Write|Edit|MultiEdit|NotebookEdit|Bash|CronCreate|ScheduleWakeup",
+      ),
       { covered: true, missing: [] },
     );
   });

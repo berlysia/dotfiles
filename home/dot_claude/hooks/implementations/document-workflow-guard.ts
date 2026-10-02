@@ -15,7 +15,10 @@ import { getProjectRoot } from "../lib/project-root.ts";
 import { expandTilde } from "../lib/path-utils.ts";
 import { sanitizeForDisplay } from "../lib/sanitize-display.ts";
 import { appendOffPlanLog } from "../lib/workflow-audit-log.ts";
-import { APPROVALS_LOG } from "../lib/workflow-approval.ts";
+import {
+  APPROVALS_LOG,
+  isApprovalShapedPrompt,
+} from "../lib/workflow-approval.ts";
 import { resolveWithMissingTail } from "../lib/workflow-fs.ts";
 import { LENIENT_APPROVED_LINE } from "../lib/workflow-marker.ts";
 import { resolveWorkflowPaths } from "../lib/workflow-paths.ts";
@@ -37,7 +40,12 @@ const GUARDED_TOOLS = new Set([
   "MultiEdit",
   "NotebookEdit",
   "Bash",
+  "CronCreate",
+  "ScheduleWakeup",
 ]);
+// Tools that schedule a prompt to fire later. Kept local (not imported from
+// lib/guarded-tools.ts) so the guard's module graph stays unchanged.
+const SCHEDULING_TOOLS = new Set(["CronCreate", "ScheduleWakeup"]);
 export const GUARDED_TOOLS_FOR_TESTING = GUARDED_TOOLS;
 
 /**
@@ -71,6 +79,34 @@ const hook = defineHook({
       const { tool_name, tool_input } = context.input;
       if (!GUARDED_TOOLS.has(tool_name)) {
         return context.success({});
+      }
+
+      // Issue J: a fired scheduled prompt reaches approval-recorder looking
+      // like a typed one (`source` is absent for both in Claude Code
+      // 2.1.287), so the only place to refuse it is when it is scheduled.
+      // Decided on the prompt text alone, before any workflow state is read,
+      // and fail-closed: the outer catch below fails open.
+      if (SCHEDULING_TOOLS.has(tool_name)) {
+        try {
+          const prompt =
+            typeof tool_input === "object" && tool_input !== null
+              ? (tool_input as { prompt?: unknown }).prompt
+              : undefined;
+          if (isApprovalShapedPrompt(prompt)) {
+            return context.json(
+              createDenyResponse(
+                "承認は利用者が会話で打つもので、予約したプロンプトでは記録しない（課題 J）。`承認` / `approve` だけのプロンプトは予約できない。承認が必要なら利用者に会話で打ってもらう",
+              ),
+            );
+          }
+          return context.success({});
+        } catch {
+          return context.json(
+            createDenyResponse(
+              "予約するプロンプトを検査できなかったので予約を止めた（課題 J）。承認は利用者が会話で打つもので、承認が必要なら利用者に会話で打ってもらう",
+            ),
+          );
+        }
       }
 
       const cwd = getToolCwd();

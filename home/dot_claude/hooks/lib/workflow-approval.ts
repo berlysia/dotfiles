@@ -25,6 +25,40 @@ import { join } from "node:path";
 
 export const APPROVALS_LOG = "approvals.log";
 
+// The keyword alone is case-insensitive; document names are not, so a
+// case-insensitive filesystem cannot turn `PLAN.MD` into a ledger key the
+// gate never looks up.
+const UTTERANCE =
+  /^(?:承認|[Aa][Pp][Pp][Rr][Oo][Vv][Ee])((?:[ \t　]+(?:spec\.md|plan\.md|plan-[0-9]+\.md))*)[ \t　]*[。.!！]?$/;
+
+/** The document names in an approval utterance, or null when the prompt is not one. */
+export function parseApprovalUtterance(
+  prompt: string,
+): { docs: string[] } | null {
+  const match = UTTERANCE.exec(prompt.trim());
+  if (!match) return null;
+  const names = (match[1] ?? "")
+    .trim()
+    .split(/[ \t　]+/)
+    .filter(Boolean);
+  return { docs: [...new Set(names)] };
+}
+
+/**
+ * Whether a prompt someone schedules would read as an approval when it
+ * fires. Wider than parseApprovalUtterance on purpose: the prompt is also
+ * checked after NFKC and with format characters (ZWSP, BOM...) removed, so a
+ * front-end that normalizes the fired prompt cannot turn a refused-to-record
+ * text into a recorded one. The extra denials (full-width `ＡＰＰＲＯＶＥ`)
+ * cost nothing: nobody has a reason to schedule them.
+ */
+export function isApprovalShapedPrompt(prompt: unknown): boolean {
+  if (typeof prompt !== "string") return false;
+  if (parseApprovalUtterance(prompt) !== null) return true;
+  const normalized = prompt.normalize("NFKC").replace(/\p{Cf}/gu, "");
+  return parseApprovalUtterance(normalized) !== null;
+}
+
 export interface ApprovalRecord {
   doc: string;
   hash: string;
