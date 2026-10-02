@@ -114,11 +114,49 @@ ADR-0023 Consequences 12 の配備後実測（plan-5 T5 Step 6）で確認した
 
 - 実測: 承認待ちが 0 件のセッションで、`CronCreate`（1 回限り、prompt=`承認`）を 18:42 に予約した。recorder の返答は「承認を待っている文書が無いので、何も記録していない。」で、`source` が `user` 以外のときの分岐（「利用者が打ったものではない（source=…）」、`approval-recorder.ts:162-173`）に入らなかった。発火が予約から来たことは、ジョブが消えていたことと、その時間帯の approval-recorder の発火が 09:42:00Z の 1 件（`stdout_bytes: 298`）だけだったことで確かめた。
 - 推論（未実測）: 分岐のコードから、この経路の `source` は `user` か値なしで届いている。したがって承認待ちが 1 件あるときに model が `CronCreate` で「承認」だけのプロンプトを予約すると、recorder はそれを承認として記録する。ADR-0023 はこれを意図的な迂回（spec R4 の外）として受け入れているが、「`source` で予約のプロンプトを区別できる」という前提は、少なくとも `CronCreate` の経路では成り立たない。
-- 確かめていないこと: `/loop` と `ScheduleWakeup` の経路、`source` が値なしか `user` か。
-- 次の一手: hook-timer か recorder に、入力の `source` を記録させる計装を入れる（hook-timer は今 `session_id` / `tool_name` / `tool_use_id` だけを記録する）。そのうえで `/loop` と `ScheduleWakeup` を測る。
-- 再訪のきっかけ: spec K7（承認の発話の判定）を改訂するとき、`/loop` / `ScheduleWakeup` を実測するとき、Claude Code の UserPromptSubmit の入力に出どころのフィールドが文書化されたとき。
+- 再訪のきっかけ: spec K7（承認の発話の判定）を改訂するとき、Claude Code の UserPromptSubmit の入力に出どころのフィールドが文書化されたとき、Claude Code を更新して下の測定をやり直すとき。
 
-未着手である理由: 実測で判明したばかりで、`source` 以外の手がかり（transcript 上の区別など）があるかを調べていない。
+### 実測の補完（2026-10-02、Claude Code 2.1.287）
+
+計装: hook-timer が入力の `source` / `prompt_id` を記録する（文字列だけを 64 文字で切る）。approval-recorder は承認の形の発話への返答の末尾に `probe:` 行を付ける（`lib/prompt-origin-probe.ts`）。probe は、recorder の実行時点の transcript から `prompt_id` が一致する user 行を探し、その `promptSource` / `turnOrigin` を出す。予約の試行は、承認が記録されないように存在しない文書名を付けた（`承認 plan-99.md`）。`source` の分岐は文書名の分岐より前にあるので、どちらの分岐に入ったかは返答で分かる。M0 だけは素の「承認」で、すべての試行は承認待ち 0 件で行った。
+
+| 試行 | 経路                                         | hook 入力の `source` | `prompt_id` | recorder の分岐                                  | probe（recorder の実行時点）    | transcript の行（後で読んだもの）                                   |
+| ---- | -------------------------------------------- | -------------------- | ----------- | ------------------------------------------------ | ------------------------------- | ------------------------------------------------------------------- |
+| M0   | 利用者がターミナルで「承認」と打つ（対照）   | 値なし               | あり        | 利用者の入力（「承認を待っている文書が無い」）   | `transcript=missing scope=file` | `promptSource: queued` / `turnOrigin: human` / `origin.kind: human` |
+| M1   | `CronCreate` 1 回限り                        | 値なし               | あり        | 利用者の入力（「plan-99.md は…満たしていない」） | `transcript=missing scope=file` | `system` / `scheduled` / `scheduledTaskId` あり                     |
+| M2   | `/loop 1m`（`CronCreate` の繰り返し）        | 値なし               | あり        | 利用者の入力                                     | `transcript=missing scope=file` | `system` / `scheduled` / `scheduledTaskId` あり                     |
+| M3   | `ScheduleWakeup`                             | 値なし               | あり        | 利用者の入力                                     | `transcript=missing scope=file` | `system` / `scheduled` / `scheduledTaskId` あり                     |
+| M4   | `ScheduleWakeup`（承認の形でない `J-probe`） | 値なし               | あり        | （発話でないので recorder は無言）               | （なし）                        | `system` / `scheduled` / `scheduledTaskId` あり                     |
+
+- 「値なし」の根拠: hook-timer の記録は `null` で、同じ発火の approval-recorder は `stderr_bytes: 0` だった。cc-hooks-ts は `source` を picklist で検証するので、文字列以外の値なら parse に失敗して stderr に出る。よって値そのものが無い。hook 入力の `source` と transcript の `promptSource` は別の語彙である
+- 観測から言えること:
+  - 2.1.287 では、利用者が打ったプロンプトと予約が発火させたプロンプトの間で、hook 入力の `source` に差が無い（どちらも値なし）。cc-hooks-ts 2.1.281 の型にある `loop_wakeup` / `schedule_wakeup` は、この版では届かない。ADR-0023 Consequences 12 の「値が無いのは古い Claude Code」という前提は、2.1.287 では成り立たない
+  - `prompt_id` はすべての経路で hook 入力に載り、transcript 行の `promptId` と一致した
+  - transcript 行は予約と利用者の入力を区別する（`turnOrigin: scheduled` と `human`、`origin.kind: human` の有無、`scheduledTaskId` の有無）。ただし recorder の実行時点では、どの経路でもファイル全体に当該行が無かった（`scope=file`）。行の `timestamp` は hook の開始より 20〜30 ms 前だが、書き出しは hook の後である。したがって UserPromptSubmit の hook からは、この区別を読めない
+  - `ScheduleWakeup` は、発火の後で次の `ScheduleWakeup` を呼ばずにターンを閉じると、同じ prompt で約 20 分後に自動で予約し直された（M4 の後と M3 の後に 1 回ずつ。M3 の再発火は 11:26Z に `承認 plan-99.md` として届いた）。`ScheduleWakeup` に「承認」を 1 回渡すと、同じ文面が繰り返し発火しうる。止めるには `ScheduleWakeup` に `stop: true` を渡す
+- 推論（未実測）: 予約の経路で承認待ちが 1 件あれば、素の「承認」は記録される。上の 4 経路はどれも、記録する側の分岐（利用者の入力）に入ったため
+- probe は recorder の実行時点の観測である。判定を別の hook（例: Stop や次の PreToolUse）に置けば transcript の行は書き出された後になりうるが、それは測っていない
+- 次の一手: spec K7 の改訂を別の計画で決める。論点は次のどれを採るか。probe と hook-timer の射影を残すか外すかも、その計画で決める
+  - (a) 予約の迂回を R4 の外として受け入れ続け、ADR-0023 の前提の記述だけを直す
+  - (b) 承認の記録を UserPromptSubmit から、transcript が書き出された後に読める時点へ移す
+  - (c) 承認を発話ではなく、model が出す AskUserQuestion への回答で受け取る。予約したプロンプトは UI に答えられないので、課題 J の経路そのものが無くなる
+
+### AskUserQuestion 案（c）の測定（2026-10-02、Claude Code 2.1.287）
+
+model が入力の `answers` に値（`A`）を先に入れて AskUserQuestion を呼び、利用者には「質問が出たら B を選ぶ」と伝えた。
+
+| 時点                                          | 見えた `answers`  | 出典                                                               |
+| --------------------------------------------- | ----------------- | ------------------------------------------------------------------ |
+| model の tool_use 入力                        | `A`               | transcript                                                         |
+| PreToolUse / PermissionRequest の hook の入力 | `A`（model の値） | `~/.claude/logs/decisions.jsonl`（auto-approve の 3 層とも `ask`） |
+| ツールの結果（`toolUseResult`）               | `B`               | transcript                                                         |
+
+- 観測: `answers` を先に入れても質問の UI は出て（利用者の申告）、結果は利用者が選んだ `B` になった
+- 観測: PreToolUse と PermissionRequest の時点の hook には model が入れた値が見える。この時点で回答を読んで承認を記録すると、model が承認を作れる
+- 推論（未実測）: PostToolUse の `tool_response.answers` は利用者の回答（`B`）である。cc-hooks-ts の型で `AskUserQuestionOutput.answers` は必須で、transcript の結果も `B` だった。hook の入力そのものは記録していない
+- 確かめていないこと:
+  - PermissionRequest が UI なしで通る場合（hook が `allow` を返す、bypassPermissions のモード）に、model の値がそのまま結果になるか。入力の説明は「answers collected by the permission component」で、今回 UI が出たのは、この環境の auto-approve が AskUserQuestion を「User decision tool」として必ず `ask` にしているためかもしれない。そうなら (c) の安全性は permission の設定に依存する
+  - Remote Control 経由のデスクトップアプリで質問の UI が出て、回答が届くか
 
 ## 課題 K: `research.md` が無いことによる deny を、診断が理由として示さない
 
