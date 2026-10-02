@@ -50,25 +50,25 @@ apply は未掲載のスキルを追記するだけで、行を消さない。
 
 ## External
 
-- [ ] apm-usage
-- [ ] ast-grep-practice
-- [ ] difit-review
+- [x] apm-usage
+- [x] ast-grep-practice
+- [x] difit-review
 - [x] doc-coauthoring
 - [x] docx
-- [ ] empirical-prompt-tuning
-- [ ] explainer
-- [ ] explainer-book
-- [ ] first-reader
+- [x] empirical-prompt-tuning
+- [x] explainer
+- [x] explainer-book
+- [x] first-reader
 - [x] frontend-design
 - [x] pdf
 - [x] pptx
-- [ ] react-best-practices
-- [ ] shiori-adopt
-- [ ] shiori-guide
-- [ ] shiori-triage
-- [ ] shiori-workflow
+- [x] react-best-practices
+- [x] shiori-adopt
+- [x] shiori-guide
+- [x] shiori-triage
+- [x] shiori-workflow
 - [x] skill-creator
-- [ ] tanteki
+- [x] tanteki
 - [x] ui-skills
 - [x] web-design-guidelines
 - [x] webapp-testing
