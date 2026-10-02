@@ -48,6 +48,7 @@ import {
   type TokenReading,
 } from "../lib/compaction-testament.ts";
 import { logEvent } from "../lib/centralized-logging.ts";
+import { getProjectRoot } from "../lib/project-root.ts";
 import { COMPACTION_EXTRA_PATTERNS, sanitize } from "../lib/redact-secrets.ts";
 import { realpathInsideWorkflowDir } from "../lib/workflow-fs.ts";
 import { resolveWorkflowDir } from "../lib/workflow-resolve.ts";
@@ -218,22 +219,6 @@ function readUsage(transcriptPath: string): {
 
 function getWorkingDirectory(inputCwd: string | undefined): string {
   return process.env["CLAUDE_TEST_CWD"] || inputCwd || process.cwd();
-}
-
-/**
- * The base the workflow dir and git are resolved from. The hook input `cwd`
- * follows every Bash `cd`, so deriving the workflow dir from it lets the
- * record written by PostToolUse and the read at SessionStart land in
- * different dirs. CLAUDE_PROJECT_DIR stays at the dir the session started in.
- * It also stays there when the session enters a worktree mid-way, so the
- * testament then lives under the original root, not the worktree.
- */
-function getProjectDirectory(inputCwd: string | undefined): string {
-  return (
-    process.env["CLAUDE_TEST_CWD"] ||
-    process.env["CLAUDE_PROJECT_DIR"] ||
-    getWorkingDirectory(inputCwd)
-  );
 }
 
 function getThresholdsFromEnvironment(): Thresholds {
@@ -630,7 +615,7 @@ const hook = defineHook({
     try {
       const input = context.input;
       if (hasAgentId(input)) return context.success({});
-      const projectDir = getProjectDirectory(input.cwd);
+      const projectDir = getProjectRoot(input.cwd);
 
       if (input.hook_event_name === "PostToolUse") {
         const result = handlePostToolUse({
