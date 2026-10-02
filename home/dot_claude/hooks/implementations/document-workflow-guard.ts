@@ -1,40 +1,27 @@
 #!/usr/bin/env -S bun run --silent
 
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineHook } from "cc-hooks-ts";
 import { extractCommandsStructured } from "../lib/bash-parser.ts";
-import { computeDocumentHash, SPEC_NORMALIZERS } from "../lib/document-hash.ts";
 import { getCommandFromToolInput } from "../lib/command-parsing.ts";
 import { createDenyResponse } from "../lib/context-helpers.ts";
 import { getProjectRoot } from "../lib/project-root.ts";
 import { expandTilde } from "../lib/path-utils.ts";
 import { sanitizeForDisplay } from "../lib/sanitize-display.ts";
 import { appendOffPlanLog } from "../lib/workflow-audit-log.ts";
-import { parseFilesPaths } from "../lib/workflow-files.ts";
 import { resolveWorkflowPaths } from "../lib/workflow-paths.ts";
 import { resolveWorkflowDir } from "../lib/workflow-resolve.ts";
 import {
-  type AutoReviewMarker,
-  parseLatestAutoReviewMarker,
-  STRICT_APPROVAL_STATUS,
-  STRICT_PLAN_STATUS,
-  STRICT_REVIEW_STATUS,
-} from "../lib/workflow-marker.ts";
-import {
-  diagnoseGate,
+  evaluateTarget,
   formatGateDiagnosis,
   isImplementationPhase,
+  isWorkflowActive,
+  readWorkflowState,
+  type TargetEvaluation,
 } from "../lib/workflow-gate.ts";
 import "../types/tool-schemas.ts";
 
-// Status regexes and the marker parser now live in the shared workflow-marker
-// module so the guard and plan-review-automation cannot drift (spec K4/N7).
-// Aliased to the original names for a minimal diff at the call sites below.
-const PLAN_STATUS_REGEX = STRICT_PLAN_STATUS;
-const REVIEW_STATUS_REGEX = STRICT_REVIEW_STATUS;
-const APPROVAL_STATUS_REGEX = STRICT_APPROVAL_STATUS;
-const PLAN_NUMBERED_FILENAME_REGEX = /^plan-[0-9]+\.md$/;
 const GUARDED_TOOLS = new Set([
   "Write",
   "Edit",
@@ -66,16 +53,6 @@ function withScratchHint(reason: string): string {
 interface WriteAnalysis {
   isWriteLike: boolean;
   targets: string[];
-}
-
-interface WorkflowState {
-  mode?: string;
-  approved?: boolean;
-}
-
-interface ApprovalCheckResult {
-  approved: boolean;
-  reason?: string;
 }
 
 const hook = defineHook({
@@ -115,19 +92,14 @@ const hook = defineHook({
       const wfDir = resolution.dir;
 
       const wfPaths = resolveWorkflowPaths(wfDir);
-      const state = readWorkflowState(wfPaths.state);
-      const workflowActive = isWorkflowActiveForTesting(wfPaths, state);
-      if (!workflowActive) {
+      if (!isWorkflowActive(wfPaths, readWorkflowState(wfPaths.state))) {
         return context.success({});
       }
 
       const warnOnly = process.env.DOCUMENT_WORKFLOW_WARN_ONLY === "1";
-      const researched = existsSync(wfPaths.research);
       const twoLayer = existsSync(wfPaths.spec);
       const wfDirLabel = sanitizeForDisplay(resolution.relative);
-      const denyReasonSingle = `Document workflow gate: implementation is blocked until \`${wfDirLabel}/research.md\` exists and \`${wfDirLabel}/plan.md\` has \`- Plan Status: complete\`, \`- Review Status: pass\`, \`- Approval Status: approved\`, and \`<!-- auto-review: verdict=pass; hash=... -->\` with a matching hash.`;
-      const denyReasonTwoLayer = `Document workflow gate (two-layer): implementation is blocked until \`${wfDirLabel}/spec.md\` is approved (Plan Status: complete + Review Status: pass + Approval Status: approved + matching hash), AND the plan-N.md whose Files section lists the target file is approved with matching \`parent-spec-hash\` for the current spec.md.`;
-      const denyReason = twoLayer ? denyReasonTwoLayer : denyReasonSingle;
+      const docLabel = `${wfDirLabel}/${twoLayer ? "spec.md" : "plan.md"}`;
       const emptyTargetDenyReason = sanitizeForDisplay(
         "Document workflow gate: this command was classified as write-like but the guard could not determine which files it writes, so it was refused conservatively. Re-run with the target paths written explicitly.",
       );
@@ -159,37 +131,37 @@ const hook = defineHook({
           return context.success({});
         }
 
-        // [].every() is vacuous true. The two shortcuts above
-        // (areAllTargetsDocumentPaths / areAllTargetsOutsideProject) already
-        // refuse an empty target list with `false`, but the checkTarget path
-        // below did not: a write-like command whose targets could not be
-        // extracted fell through `.every()` on an empty array and was
-        // allowed (research.md §10.14). Being classified as write-like with
-        // zero targets means "could not tell what it writes", not "writes
-        // nothing".
-        let reasonForThisCall = denyReason;
-        if (analysis.targets.length === 0) {
-          reasonForThisCall = emptyTargetDenyReason;
-        } else if (researched) {
-          const decisions = analysis.targets.map((target) =>
-            checkTarget(cwd, target, wfDir, wfPaths, twoLayer),
+        // Classified as write-like with zero targets means "could not tell
+        // what it writes", not "writes nothing" (research.md §10.14).
+        let reasonForThisCall = emptyTargetDenyReason;
+        if (analysis.targets.length > 0) {
+          const evaluations = analysis.targets.map((target) =>
+            evaluateTarget({
+              wfDir,
+              target: resolve(cwd, expandTilde(target)),
+              filesBase: cwd,
+              label: target,
+            }),
           );
-          if (decisions.every((d) => d === "allow")) {
-            return context.success({});
-          }
-          if (
-            decisions.every((d) => d === "allow" || d === "no-plan-owner") &&
-            isImplementationPhase(wfDir, wfPaths, twoLayer)
-          ) {
-            for (let i = 0; i < decisions.length; i++) {
-              if (decisions[i] !== "no-plan-owner") continue;
+          const blockedIndex = evaluations.findIndex(isBlocked);
+          if (blockedIndex === -1) {
+            evaluations.forEach((evaluation, i) => {
+              if (evaluation.kind !== "no-plan-owner") return;
               const target = analysis.targets[i] ?? "";
               console.error(
                 `[document-workflow-guard][off-plan] Bash target \`${target}\` is not listed in any plan-N.md Files section; allowed under implementation-phase relaxation. Recorded in \`${wfDirLabel}/off-plan-writes.log\`.`,
               );
               appendOffPlanLog(wfDir, "Bash", target);
-            }
+            });
             return context.success({});
+          }
+          const blocked = evaluations[blockedIndex];
+          if (blocked && isBlocked(blocked)) {
+            reasonForThisCall = formatGateDiagnosis(
+              blocked.diagnosis,
+              sanitizeForDisplay(analysis.targets[blockedIndex] ?? ""),
+              docLabel,
+            );
           }
         }
 
@@ -199,22 +171,6 @@ const hook = defineHook({
           );
           return context.success({});
         }
-
-        // Diagnostic deny (spec K4): when a target is known, replace the fixed
-        // gate text with a per-condition diagnosis so the model can see which
-        // condition failed and on which line (research P4/P5). The empty-target
-        // deny keeps its own message (there is nothing to diagnose against).
-        if (reasonForThisCall !== emptyTargetDenyReason) {
-          const diagTarget = analysis.targets[0] ?? "";
-          const docLabel = `${wfDirLabel}/${twoLayer ? "spec.md" : "plan.md"}`;
-          reasonForThisCall = formatGateDiagnosis(
-            diagnoseGate(wfDir, diagTarget),
-            sanitizeForDisplay(diagTarget),
-            docLabel,
-          );
-        }
-        // Wrapped only here: the emptyTargetDenyReason identity check above
-        // must see the unwrapped string.
         return context.json(
           createDenyResponse(withScratchHint(reasonForThisCall)),
         );
@@ -233,21 +189,24 @@ const hook = defineHook({
         return context.success({});
       }
 
-      if (researched) {
-        const decision = checkTarget(cwd, targetPath, wfDir, wfPaths, twoLayer);
-        if (decision === "allow") {
-          return context.success({});
-        }
-        if (
-          decision === "no-plan-owner" &&
-          isImplementationPhase(wfDir, wfPaths, twoLayer)
-        ) {
-          console.error(
-            `[document-workflow-guard][off-plan] ${tool_name} target \`${targetPath}\` is not listed in any plan-N.md Files section; allowed under implementation-phase relaxation. Recorded in \`${wfDirLabel}/off-plan-writes.log\`.`,
-          );
-          appendOffPlanLog(wfDir, tool_name, targetPath);
-          return context.success({});
-        }
+      const evaluation = evaluateTarget({
+        wfDir,
+        target: resolve(cwd, expandTilde(targetPath)),
+        filesBase: cwd,
+        label: targetPath,
+      });
+      if (evaluation.kind === "allow" || evaluation.kind === "inactive") {
+        return context.success({});
+      }
+      if (
+        evaluation.kind === "no-plan-owner" &&
+        evaluation.implementationPhase
+      ) {
+        console.error(
+          `[document-workflow-guard][off-plan] ${tool_name} target \`${targetPath}\` is not listed in any plan-N.md Files section; allowed under implementation-phase relaxation. Recorded in \`${wfDirLabel}/off-plan-writes.log\`.`,
+        );
+        appendOffPlanLog(wfDir, tool_name, targetPath);
+        return context.success({});
       }
 
       if (warnOnly) {
@@ -257,16 +216,16 @@ const hook = defineHook({
         return context.success({});
       }
 
-      // Diagnostic deny (spec K4): describe which gate condition failed on the
-      // owning document and how to clear it, instead of the fixed gate text.
-      const docLabel = `${wfDirLabel}/${twoLayer ? "spec.md" : "plan.md"}`;
-      const diagnosticReason = formatGateDiagnosis(
-        diagnoseGate(wfDir, targetPath),
-        sanitizeForDisplay(targetPath),
-        docLabel,
-      );
       return context.json(
-        createDenyResponse(withScratchHint(diagnosticReason)),
+        createDenyResponse(
+          withScratchHint(
+            formatGateDiagnosis(
+              evaluation.diagnosis,
+              sanitizeForDisplay(targetPath),
+              docLabel,
+            ),
+          ),
+        ),
       );
     } catch (error) {
       // fail-open is preserved (matching what runHook already does when a
@@ -299,8 +258,6 @@ const hook = defineHook({
 function getToolCwd(): string {
   return process.env.CLAUDE_TEST_CWD || process.cwd();
 }
-
-type WorkflowPaths = ReturnType<typeof resolveWorkflowPaths>;
 
 /**
  * Markdown under the workflow directory is a workflow document, never
@@ -358,194 +315,14 @@ function areAllTargetsOutsideProject(
   );
 }
 
-function readWorkflowState(statePath: string): WorkflowState | null {
-  if (!existsSync(statePath)) {
-    return null;
-  }
-
-  try {
-    const content = readFileSync(statePath, "utf-8");
-    const parsed = JSON.parse(content) as WorkflowState;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Exported so `session.ts`'s local copy of this predicate (armed vs inactive
- * in the startup summary) can be checked for drift against the real thing in
- * `session.test.ts`. No production module imports this export -- `session.ts`
- * keeps its own copy specifically to avoid depending on the module it exists
- * to observe (spec K5).
- */
-export function isWorkflowActiveForTesting(
-  wfPaths: WorkflowPaths,
-  state: WorkflowState | null,
-): boolean {
-  if (state?.mode === "document-workflow") {
-    return true;
-  }
-  return existsSync(wfPaths.plan) || existsSync(wfPaths.research);
-}
-
-function hasApprovedPlan(planPath: string): boolean {
-  if (!existsSync(planPath)) {
-    return false;
-  }
-
-  try {
-    const content = readFileSync(planPath, "utf-8");
-    const hasCompletePlan = PLAN_STATUS_REGEX.test(content);
-    const hasReviewPass = REVIEW_STATUS_REGEX.test(content);
-    const hasHumanApproval = APPROVAL_STATUS_REGEX.test(content);
-    if (!hasCompletePlan || !hasReviewPass || !hasHumanApproval) {
-      return false;
-    }
-
-    const marker = extractLatestAutoReviewMarker(content);
-    if (!marker || marker.verdict !== "pass") {
-      return false;
-    }
-
-    const actualHash = computePlanHash(content);
-    return marker.hash === actualHash;
-  } catch {
-    return false;
-  }
-}
-
-type TargetDecision = "allow" | "no-plan-owner" | "deny-other";
-
-/**
- * Categorize the allowance state for a specific implementation target.
- * - "allow": target is owned by an approved plan (or single-layer plan.md is approved).
- * - "no-plan-owner": two-layer mode only; spec.md is approved but no plan-N.md
- *   Files section lists the target. This represents files discovered during
- *   implementation that haven't been retroactively recorded in any plan yet.
- *   Eligible for warn+log relaxation when implementation phase is active.
- * - "deny-other": all structural failures that must remain strict (spec not
- *   approved, hash drift, parent-spec-hash mismatch, owning plan not approved).
- *   These signal the design or plan is still moving and should not be bypassed.
- */
-function checkTarget(
-  cwd: string,
-  targetPath: string,
-  wfDir: string,
-  wfPaths: WorkflowPaths,
-  twoLayer: boolean,
-): TargetDecision {
-  if (!twoLayer) {
-    return hasApprovedPlan(wfPaths.plan) ? "allow" : "deny-other";
-  }
-
-  // Two-layer mode: verify spec.md approval first.
-  if (!existsSync(wfPaths.spec)) {
-    return "deny-other";
-  }
-  let specContent: string;
-  try {
-    specContent = readFileSync(wfPaths.spec, "utf-8");
-  } catch {
-    return "deny-other";
-  }
-  if (!isContentApproved(specContent)) {
-    return "deny-other";
-  }
-  const specMarker = extractLatestAutoReviewMarker(specContent);
-  if (!specMarker || specMarker.verdict !== "pass") {
-    return "deny-other";
-  }
-  const specHash = computePlanHash(specContent);
-  if (specMarker.hash !== specHash) {
-    return "deny-other";
-  }
-
-  // Find plan-N.md files whose Files section lists the target.
-  const planFiles = findPlanNumberedFiles(wfDir);
-  if (planFiles.length === 0) {
-    return "no-plan-owner";
-  }
-  const normalizedTarget = resolve(cwd, expandTilde(targetPath));
-
-  for (const planPath of planFiles) {
-    let planContent: string;
-    try {
-      planContent = readFileSync(planPath, "utf-8");
-    } catch {
-      continue;
-    }
-    const filesInPlan = parseFilesSection(planContent, cwd);
-    if (!filesInPlan.includes(normalizedTarget)) {
-      continue;
-    }
-
-    if (!isContentApproved(planContent)) {
-      return "deny-other";
-    }
-    const planMarker = extractLatestAutoReviewMarker(planContent);
-    if (!planMarker || planMarker.verdict !== "pass") {
-      return "deny-other";
-    }
-    if (planMarker.hash !== computePlanHash(planContent)) {
-      return "deny-other";
-    }
-    // parent-spec-hash absence = conservative deny (bypass防止)
-    if (planMarker.parentSpecHash === null) {
-      return "deny-other";
-    }
-    if (planMarker.parentSpecHash !== specHash) {
-      return "deny-other";
-    }
-    return "allow";
-  }
-
-  // No plan-N.md owns this target. Eligible for implementation-phase relaxation.
-  return "no-plan-owner";
-}
-
-// appendOffPlanLog moved to lib/workflow-audit-log.ts (plan-2 T4) so
-// workflow-bash-sync.ts's tripwire can share the exact same appender
-// (including its O_NOFOLLOW hardening) without an
-// implementations->implementations import. The log's shape and purpose --
-// discovery trail folded back into plan-N.md before commit -- are documented
-// there now.
-
-function isContentApproved(content: string): boolean {
+/** A target the gate does not let through, even under off-plan relaxation. */
+function isBlocked(
+  evaluation: TargetEvaluation,
+): evaluation is Extract<TargetEvaluation, { kind: "deny" | "no-plan-owner" }> {
   return (
-    PLAN_STATUS_REGEX.test(content) &&
-    REVIEW_STATUS_REGEX.test(content) &&
-    APPROVAL_STATUS_REGEX.test(content)
+    evaluation.kind === "deny" ||
+    (evaluation.kind === "no-plan-owner" && !evaluation.implementationPhase)
   );
-}
-
-/**
- * Enumerate plan-N.md files (where N is one or more digits) directly within wfDir.
- * Strict regex match excludes plan-draft.md, plan-1.md.bak, plan-2-draft.md, etc.
- */
-function findPlanNumberedFiles(wfDir: string): string[] {
-  if (!existsSync(wfDir)) {
-    return [];
-  }
-  try {
-    return readdirSync(wfDir)
-      .filter((name) => PLAN_NUMBERED_FILENAME_REGEX.test(name))
-      .map((name) => resolve(wfDir, name))
-      .sort();
-  } catch {
-    return [];
-  }
-}
-
-/**
- * Parse the `## Files` section of a plan-N.md as fenced code blocks containing
- * one path per line (relative to project root). Path extraction itself lives
- * in lib/workflow-files.ts (shared with review selection, spec K2); this
- * wrapper only adds the realpath resolution the guard needs. Returns absolute
- * paths.
- */
-function parseFilesSection(planContent: string, cwd: string): string[] {
-  return parseFilesPaths(planContent).map((p) => resolve(cwd, expandTilde(p)));
 }
 
 function getTargetFilePath(
@@ -1031,21 +808,6 @@ function stripQuotes(value: string): string {
   }
   return value;
 }
-
-// Delegates to the single shared canonical hash (lib/document-hash.ts) so the
-// guard holds no private copy of the invariant it enforces (spec K4). The
-// call sites keep the original single-arg signature for a minimal diff.
-function computePlanHash(content: string): string {
-  return computeDocumentHash(content, SPEC_NORMALIZERS);
-}
-
-// The marker scanner is shared with plan-review-automation via workflow-marker
-// (spec K4/N7). Re-exported under the original name so existing tests and call
-// sites are unchanged; the returned shape now also carries `designHash`, which
-// the guard's judgment paths (hasApprovedPlan/checkTarget) do not read.
-const extractLatestAutoReviewMarker: (
-  content: string,
-) => AutoReviewMarker | null = parseLatestAutoReviewMarker;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;

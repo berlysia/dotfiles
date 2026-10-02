@@ -2,14 +2,25 @@
 
 import { equal, match, ok } from "node:assert";
 import { test } from "node:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   computeDocumentHash,
   SPEC_NORMALIZERS,
 } from "../../lib/document-hash.ts";
-import { diagnoseGate, formatGateDiagnosis } from "../../lib/workflow-gate.ts";
+import {
+  diagnoseGate,
+  evaluateTarget,
+  formatGateDiagnosis,
+} from "../../lib/workflow-gate.ts";
+import {
+  approvedWorkflowRepo,
+  buildPlanContent,
+  buildPlanNContent,
+  computeWorkflowRepoPlanHash,
+  pendingWorkflowRepo,
+} from "./test-helpers.ts";
 
 function freshWf(): string {
   const wf = mkdtempSync(join(tmpdir(), "gate-"));
@@ -115,4 +126,101 @@ test("formatGateDiagnosis renders the failing condition with a checkmark line", 
   const text = formatGateDiagnosis(d, "src/a.ts");
   match(text, /✗ Review Status/);
   match(text, /Next:/);
+});
+
+/** <repo>/.tmp/sessions/x with research.md, an approved spec.md and plan-1.md listing `files`. */
+function twoLayerRepo(files: string[], omitParentSpecHash = false) {
+  const repo = realpathSync(mkdtempSync(join(tmpdir(), "gate-2layer-")));
+  const wf = join(repo, ".tmp", "sessions", "x");
+  mkdirSync(wf, { recursive: true });
+  writeFileSync(join(wf, "research.md"), "x");
+  const spec = buildPlanContent(approvedWorkflowRepo());
+  writeFileSync(join(wf, "spec.md"), spec);
+  writeFileSync(
+    join(wf, "plan-1.md"),
+    buildPlanNContent(
+      approvedWorkflowRepo(),
+      files,
+      computeWorkflowRepoPlanHash(spec),
+      omitParentSpecHash,
+    ),
+  );
+  return { repo, wf };
+}
+
+test("evaluateTarget: inactive without research.md or plan.md", () => {
+  const wf = freshWf();
+  equal(
+    evaluateTarget({ wfDir: wf, target: join(wf, "a.ts"), filesBase: wf }).kind,
+    "inactive",
+  );
+});
+
+test("evaluateTarget: single-layer approved plan allows and names plan.md", () => {
+  const wf = freshWf();
+  writeFileSync(join(wf, "research.md"), "x");
+  writeFileSync(join(wf, "plan.md"), buildPlanContent(approvedWorkflowRepo()));
+  const e = evaluateTarget({
+    wfDir: wf,
+    target: "/r/src/a.ts",
+    filesBase: "/r",
+  });
+  equal(e.kind, "allow");
+  equal(e.kind === "allow" && e.owner, join(wf, "plan.md"));
+});
+
+test("evaluateTarget: an approved plan without research.md still denies", () => {
+  const wf = freshWf();
+  writeFileSync(join(wf, "plan.md"), buildPlanContent(approvedWorkflowRepo()));
+  equal(
+    evaluateTarget({ wfDir: wf, target: "/r/src/a.ts", filesBase: "/r" }).kind,
+    "deny",
+  );
+});
+
+test("evaluateTarget: single-layer pending plan denies with a diagnosis", () => {
+  const wf = freshWf();
+  writeFileSync(join(wf, "research.md"), "x");
+  writeFileSync(join(wf, "plan.md"), buildPlanContent(pendingWorkflowRepo()));
+  const e = evaluateTarget({
+    wfDir: wf,
+    target: "/r/src/a.ts",
+    filesBase: "/r",
+  });
+  equal(e.kind, "deny");
+  ok(e.kind === "deny" && !e.diagnosis.primary.conditions.approvalStatus.ok);
+});
+
+test("evaluateTarget: two-layer allows a listed target and names its plan-N.md", () => {
+  const { repo, wf } = twoLayerRepo(["src/a.ts"]);
+  const e = evaluateTarget({
+    wfDir: wf,
+    target: join(repo, "src", "a.ts"),
+    filesBase: repo,
+  });
+  equal(e.kind, "allow");
+  equal(e.kind === "allow" && e.owner, join(wf, "plan-1.md"));
+});
+
+test("evaluateTarget: two-layer unlisted target is no-plan-owner during implementation", () => {
+  const { repo, wf } = twoLayerRepo(["src/a.ts"]);
+  const e = evaluateTarget({
+    wfDir: wf,
+    target: join(repo, "src", "b.ts"),
+    filesBase: repo,
+  });
+  equal(e.kind, "no-plan-owner");
+  equal(e.kind === "no-plan-owner" && e.implementationPhase, true);
+});
+
+test("evaluateTarget: a plan-N.md without parent-spec-hash denies its listed target", () => {
+  const { repo, wf } = twoLayerRepo(["src/a.ts"], true);
+  equal(
+    evaluateTarget({
+      wfDir: wf,
+      target: join(repo, "src", "a.ts"),
+      filesBase: repo,
+    }).kind,
+    "deny",
+  );
 });

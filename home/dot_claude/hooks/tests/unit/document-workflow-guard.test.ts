@@ -20,6 +20,7 @@ import {
 import {
   approvedWorkflowRepo,
   buildPlanContent,
+  buildPlanNContent,
   computeWorkflowRepoPlanHash as computePlanHash,
   ConsoleCapture,
   createPreToolUseContextFor,
@@ -868,33 +869,6 @@ describe("document-workflow-guard.ts two-layer mode (spec.md + plan-N.md)", () =
       parentSpecHashOverride?: string;
       omitParentSpecHash?: boolean;
     }>;
-  }
-
-  function buildPlanNContent(
-    options: WorkflowRepoOptions,
-    filesSection: string[],
-    parentSpecHash: string,
-    omitParentSpecHash: boolean,
-  ): string {
-    const reviewStatus = options.review?.verdict ?? "pending";
-    const filesBlock = ["## Files", "", "```", ...filesSection, "```"].join(
-      "\n",
-    );
-    const approval = [
-      "## Approval",
-      `- Plan Status: ${options.planStatus}`,
-      `- Review Status: ${reviewStatus}`,
-      `- Approval Status: ${options.approvalStatus}`,
-    ].join("\n");
-    const baseContent = `${filesBlock}\n\n${approval}`;
-    if (!options.review) {
-      return baseContent;
-    }
-    const hash = options.review.hashOverride ?? computePlanHash(baseContent);
-    const parentField = omitParentSpecHash
-      ? ""
-      : ` parent-spec-hash=${parentSpecHash};`;
-    return `${baseContent}\n\n<!-- auto-review: verdict=${options.review.verdict}; hash=${hash};${parentField} at=2026-02-19T00:00:00.000Z; reviewers=logic-validator -->`;
   }
 
   function createTwoLayerRepo(opts: TwoLayerOptions): {
