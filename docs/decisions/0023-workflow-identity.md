@@ -179,6 +179,8 @@ T2 では PostToolUse の `tool_input.answers` も `B` だった。`tool_respons
 - SessionStart の監査の行が画面に出ない（`systemMessage` の 2 行目以降が表示されていない可能性があるが、確かめていない）。
 - 配備後の確認の手順の欠陥: fixture を作る 1 行は `workflow-cli dir` で wfDir を求めるが、`CLAUDE_PROJECT_DIR` はセッションの中でしか設定されないので、利用者のシェルでは wfDir が得られず中断する。確認では wfDir を直接指定して作った。
 
+この改訂の設計の全文（実測の生の記録、却下した代替案、各ラウンドのレビュー指摘、タスクごとのテスト設計）: `docs/plans/approval-ask/`
+
 ## References
 
 - 設計の全文: `docs/plans/workflow-identity/`（research / spec / plan-1〜5。レビューの記録を含む）
