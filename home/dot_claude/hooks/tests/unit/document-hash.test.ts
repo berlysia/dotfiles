@@ -296,6 +296,18 @@ describe("S2 doc: prescribed-fix convergence rule presence", () => {
       ),
       "utf-8",
     );
+  // The S3 migration runbook is only read when the hash normalizer changes,
+  // so it lives in the skill's references/ next to SKILL.md.
+  const s3MigrationDoc = () =>
+    readFileSync(
+      fileURLToPath(
+        new URL(
+          "../../../../../.skills/document-workflow-reference/references/s3-migration.md",
+          import.meta.url,
+        ),
+      ),
+      "utf-8",
+    );
 
   it("reference skill states the 3-condition AND and no-skip fallback", () => {
     const wf = referenceSkill();
@@ -307,8 +319,8 @@ describe("S2 doc: prescribed-fix convergence rule presence", () => {
     );
   });
 
-  it("reference skill S3 migration runbook includes review-cache invalidation and parity verify", () => {
-    const wf = referenceSkill();
+  it("reference skill's S3 migration doc includes review-cache invalidation and parity verify", () => {
+    const wf = s3MigrationDoc();
     ok(wf.includes("plan-review.cache.json"));
     ok(wf.includes("hash parity") || wf.includes("hash 一致を即検証"));
     ok(wf.includes("実装再開前"));

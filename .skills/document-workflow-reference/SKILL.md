@@ -60,25 +60,7 @@ guard の deny は診断を返す: どの条件（Plan/Review/Approval/marker ve
 
 ## 誤って入った場合の脱出
 
-guard は wfDir に `research.md` または `plan.md` が存在した時点で enforce を始める（`spec.md` 単独では始まらない）。allow には research.md の存在も要り、plan.md が承認済みでも research.md が無ければ `✗ research.md` で deny される。`workflow-state.json` の `mode` も条件だが、現在どの hook も書かない。直接実行相当のタスクに research/plan を書いてしまった場合、承認を経ずに抜ける経路は **wfDir の文書を消すこと** だけである。承認と対称に、消す操作もユーザーに委ねる。
-
-1. routing を誤ったと 1 行で述べ、直接実行相当と判断した条件を含める。**まだ実装しない**。
-2. `workflow-cli dir` の `wfDir=` 行で得たリテラルパスで削除コマンドを提示し、実行を依頼する。プロンプトで `! rm -f ...` と打てば同セッション内で実行できる。
-
-   ```bash
-   rm -f .tmp/sessions/<id8>/research.md .tmp/sessions/<id8>/plan.md .tmp/sessions/<id8>/spec.md .tmp/sessions/<id8>/plan-*.md
-   ```
-
-3. 実行後、次のツール呼び出しから guard と `workflow-bash-sync` は inactive になる。`workflow-cli status` で `plan.md` が missing 扱いになることを確認してから直接実行に戻る。
-4. 残す価値がある内容は会話で要約して引き継ぐ。
-
-機構メモ:
-
-- `research.md` と `plan.md` の**両方**を消す。一方が残ると armed のまま。
-- モデル自身の Bash `rm` も wfDir 配下の `.md` なら通る。ただし `rm "$WF/plan.md"` のようなシェル変数の形は deny される（guard は変数を展開せず cwd 相対で解決する）。`rm -r <wfDir>` も対象が `.md` でないので deny。通る場合もユーザーに委ねるのは、routing 誤りの自己判定を guard の外で単独実行しないため（steering を一方的に無効化しない）。
-- `.tripwire-baseline` などの残りは無害で 7 日で GC される。ただし同セッションで後から workflow に入り直すと、古い `.tripwire-baseline` との差分が 1 回 off-plan として報告される。気になるなら一緒に消す。
-- `/clear` も脱出になる（新 session id で新 wfDir になる）。会話文脈を失う代わりにコマンドは不要。
-- `DOCUMENT_WORKFLOW_WARN_ONLY=1` は脱出ではなく guard 全体の無効化で、起動時 env でしか効かない。routing 誤りの対処に使わない。
+同じセッションのまま承認を経ずに抜ける経路は、wfDir の research.md と plan.md の**両方**を消すことだけ（一方が残ると armed のまま。`/clear` は会話文脈を失う代わりに新しい wfDir になる）。削除コマンドを `wfDir=` のリテラルパスで提示してユーザーに依頼し、guard が通す場合でも自分では消さない。`DOCUMENT_WORKFLOW_WARN_ONLY=1` は脱出ではなく guard 全体の無効化なので使わない。手順と機構メモは [references/escape.md](references/escape.md)。
 
 ## prescribed-fix carry-forward（再レビュー省略）
 
@@ -115,16 +97,7 @@ mechanical-lane を選んだら 4 条件それぞれの判定根拠を plan.md �
 
 ## workflow dir の引き継ぎ
 
-hook は wfDir を hook 入力の `session_id` + cwd から導出するので、環境変数が無くても enforce は効く。次セッションへ引き継ぐとき:
-
-- **`/clear` して同じプロセスで続ける**: `/clear` は新しい session id を発行するので、前セッションの成果物を新 dir へ `cp -a` で複製する。auto-review hash は内容だけから算出されるので承認状態は保たれ、`approvals.log` も移るので同じ版の承認も引き継がれる。`workflow-cli dir` の値をリテラルで貼る（シェル変数を使わないので、空の変数でルートに展開する事故が起きない）:
-
-  ```bash
-  workflow-cli dir   # wfDir=<新しい dir> を確かめる
-  cp -a .tmp/sessions/<旧 id 先頭8桁>/. <wfDir の値>/
-  ```
-
-- **`claude` を起動し直す**: `DOCUMENT_WORKFLOW_DIR=.tmp/sessions/<旧 id 先頭8桁> claude "..."` と起動時 env で pin する。containment を満たさない pin は `env-rejected` として捨てられ導出値が使われる。
+hook は wfDir を `session_id` と cwd から導出する。`/clear` 後は成果物を新 wfDir へ `cp -a` し（宛先は `workflow-cli dir` の値をリテラルで貼り、シェル変数は使わない）、再起動なら `DOCUMENT_WORKFLOW_DIR` で pin する。コマンドは [references/session-handoff.md](references/session-handoff.md)。
 
 ## worktree で Document Workflow を使う
 
@@ -132,14 +105,7 @@ wfDir は Claude Code を起動した dir（`CLAUDE_PROJECT_DIR`）の `.tmp/ses
 
 ## S3 デプロイ移行手順（hash normalizer 変更時）
 
-hash 正規化を変更すると、旧 normalizer で承認済の進行中成果物は marker hash が変わり deny される。新規セッションで以下を実装再開前に完了する:
-
-1. `bun run test` で hash parity（`document-hash.test.ts` の legacy↔new 境界 + `document-workflow-guard.test.ts` の統合経路）が両方緑であることを確認する。
-2. 進行中成果物の `<!-- auto-review: ... -->` の hash を新 normalizer で再算出して書き換える。
-3. `plan-review.cache.json`（plan と同ディレクトリ）を削除して誤 skip を防ぐ。
-4. 1→2→3 完了前に実装を再開しない。
-
-現行設計では正規化を変更しない方針なので、この手順は将来 normalizer を変える場合の備えである。
+hash 正規化を変えると承認済みの進行中成果物が deny される。現行設計では正規化を変えない。変える場合は移行手順を終えるまで実装を再開しない。手順は [references/s3-migration.md](references/s3-migration.md)。
 
 ## workflow-cli サブコマンド
 
