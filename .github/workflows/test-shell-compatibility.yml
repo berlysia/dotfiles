@@ -11,7 +11,10 @@ on:
       - "home/dot_zshenv"
       - ".github/workflows/test-shell-compatibility.yml"
       - ".github/actions/install-chezmoi/**"
-      - ".github/actions/install-chezmoi/**"
+      - "tests/shell-gate/**"
+      - "home/dot_codex/.config.toml"
+      - "home/.chezmoiignore"
+      - "home/.chezmoiscripts/run_onchange_install-packages-1-darwin.sh.tmpl"
   pull_request:
     branches: [master, main]
     paths:
@@ -22,15 +25,19 @@ on:
       - "home/dot_zshenv"
       - ".github/workflows/test-shell-compatibility.yml"
       - ".github/actions/install-chezmoi/**"
-      - ".github/actions/install-chezmoi/**"
+      - "tests/shell-gate/**"
+      - "home/dot_codex/.config.toml"
+      - "home/.chezmoiignore"
+      - "home/.chezmoiscripts/run_onchange_install-packages-1-darwin.sh.tmpl"
   workflow_dispatch: # Allow manual trigger
 
 jobs:
   test:
     strategy:
       matrix:
-        os: [ubuntu-latest]
+        os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
     permissions:
       contents: read
 
@@ -70,3 +77,17 @@ jobs:
           ./home/dot_shell_common/test_suite.sh --pre-apply -v
         env:
           GITHUB_WORKSPACE: ${{ github.workspace }}
+
+      - name: Run shell gate tests
+        run: bash tests/shell-gate/run.sh
+
+      - name: Check macOS timeout exposure
+        if: runner.os == 'macOS'
+        run: |
+          command -v gtimeout || brew install coreutils
+          T=$(mktemp -d)
+          chezmoi execute-template --no-tty < home/.chezmoiscripts/run_onchange_install-packages-1-darwin.sh.tmpl \
+            | sed -n '/^# Expose only timeout from coreutils/,/^fi$/p' \
+            | HOME="$T" sh
+          test -L "$T/.local/bin/timeout"
+          "$T/.local/bin/timeout" 1 true
