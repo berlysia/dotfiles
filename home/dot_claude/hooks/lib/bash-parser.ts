@@ -852,8 +852,10 @@ function extractFromControlStructures(
     processed.add(command);
     const loopBody = forLoopMatch[1];
     // Split loop body commands
+    // Split on ";" alone: the trim below removes the blanks around each piece,
+    // and a /\s*;\s*/ split is quadratic on a long blank run.
     const bodyCommands = loopBody
-      .split(/\s*;\s*/)
+      .split(";")
       .map((cmd) => cmd.trim())
       .filter(Boolean)
       .filter((cmd) => {

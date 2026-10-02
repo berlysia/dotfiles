@@ -582,3 +582,21 @@ describe("collectExecutableTexts (spec K3 (a)(b))", () => {
     );
   });
 });
+
+describe("for-loop body splitting (Issue #219 H)", () => {
+  it("keeps the command list for a body with padded and doubled semicolons", async () => {
+    const command = 'bash -c "for x in a; do echo y ; ls ;; done"';
+    deepStrictEqual(await extractCommandsStructured(command), {
+      individualCommands: ["echo y", "ls", command],
+      originalCommand: command,
+      parsingMethod: "tree-sitter",
+    });
+  });
+
+  it("splits a body with a long blank run in linear time", async () => {
+    const command = `bash -c "for x in a; do echo${" ".repeat(100000)}y; done"`;
+    const start = Date.now();
+    await extractCommandsStructured(command);
+    ok(Date.now() - start < 1000);
+  });
+});

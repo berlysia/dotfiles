@@ -196,4 +196,10 @@ describe("standaloneSymlinkRemovalOperands", () => {
   ];
   for (const cmd of rejected)
     it(`null: ${JSON.stringify(cmd)}`, () => strictEqual(ops(cmd), null));
+
+  it("rejects a long inner blank run in linear time", () => {
+    const start = Date.now();
+    strictEqual(ops("eslint" + " ".repeat(500000) + "x"), null);
+    ok(Date.now() - start < 1000);
+  });
 });
