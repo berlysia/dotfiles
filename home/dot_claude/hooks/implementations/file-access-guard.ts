@@ -113,9 +113,17 @@ function getRepositoryRoot(): string | undefined {
   }
 }
 
+// Bun's os.homedir() keeps returning the startup value after process.env.HOME
+// changes (measured; Node re-reads HOME), so tests that isolate HOME in-process
+// would still read the real ~/.claude/settings.json under `bun test`. Reading
+// HOME first matches what os.homedir() returns on POSIX at startup anyway.
+function getHomeDir(): string {
+  return process.env.HOME || homedir();
+}
+
 function getSettingsFiles(workspaceRoot?: string): SettingsFile[] {
   const settingsFiles: SettingsFile[] = [];
-  const homeDir = homedir();
+  const homeDir = getHomeDir();
 
   // Global settings
   const globalSettingsPath = resolve(homeDir, ".claude", "settings.json");
@@ -438,7 +446,7 @@ function validatePath(
   allowPatterns: string[],
 ): PathValidationResult {
   const absPath = resolvePath(path);
-  const homeDir = homedir();
+  const homeDir = getHomeDir();
 
   // 1. Repository内 → 常に許可
   if (absPath.startsWith(repoRoot)) {
