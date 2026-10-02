@@ -276,11 +276,6 @@ async function checkIndividualCommandWithPattern(
   cmd: string,
   patterns: string[],
 ): Promise<{ matches: boolean; pattern?: string }> {
-  // Check built-in safe commands first
-  if (isSafeBuiltinCommand(cmd)) {
-    return { matches: true, pattern: "Built-in safe command" };
-  }
-
   for (const pattern of patterns) {
     if (!pattern.trim()) continue;
 
@@ -293,20 +288,6 @@ async function checkIndividualCommandWithPattern(
   }
 
   return { matches: false };
-}
-
-/**
- * Check individual command and return matching pattern
- */
-export async function checkIndividualCommandWithMatchedPattern(
-  cmd: string,
-  allowList: string[],
-): Promise<{ matches: boolean; matchedPattern?: string }> {
-  const result = await checkIndividualCommandWithPattern(cmd, allowList);
-  return {
-    matches: result.matches,
-    ...(result.pattern && { matchedPattern: result.pattern }),
-  };
 }
 
 /**
