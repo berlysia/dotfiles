@@ -145,7 +145,7 @@ function isSafeFindCommand(cmd: string): boolean {
 /**
  * Check if a command is safe to auto-approve (built-in safe commands)
  */
-function isSafeBuiltinCommand(cmd: string): boolean {
+export function isSafeBuiltinCommand(cmd: string): boolean {
   const cmdName = cmd.split(/\s+/)[0];
 
   switch (cmdName) {
@@ -276,11 +276,6 @@ async function checkIndividualCommandWithPattern(
   cmd: string,
   patterns: string[],
 ): Promise<{ matches: boolean; pattern?: string }> {
-  // Check built-in safe commands first
-  if (isSafeBuiltinCommand(cmd)) {
-    return { matches: true, pattern: "Built-in safe command" };
-  }
-
   for (const pattern of patterns) {
     if (!pattern.trim()) continue;
 
@@ -293,20 +288,6 @@ async function checkIndividualCommandWithPattern(
   }
 
   return { matches: false };
-}
-
-/**
- * Check individual command and return matching pattern
- */
-export async function checkIndividualCommandWithMatchedPattern(
-  cmd: string,
-  allowList: string[],
-): Promise<{ matches: boolean; matchedPattern?: string }> {
-  const result = await checkIndividualCommandWithPattern(cmd, allowList);
-  return {
-    matches: result.matches,
-    ...(result.pattern && { matchedPattern: result.pattern }),
-  };
 }
 
 /**
@@ -346,14 +327,10 @@ export async function checkPattern(
       return false;
     }
 
-    // Extract the command pattern from Bash(command *)
-    const cmdPattern = pattern.slice(5, -1); // Remove "Bash(" and ")"
-
-    // Reject ** pattern for Bash tool - it's not a valid Bash pattern
+    // Reject ** and an empty prefix for Bash tool - not valid Bash patterns.
     // Bash tool uses command prefixes like "npm *" not file patterns like "**"
-    if (cmdPattern === "**") {
-      return false;
-    }
+    const parsed = parseBashPattern(pattern);
+    if (parsed === null) return false;
 
     // Get the actual command using type guard
     const actualCommand = isBashToolInput(toolName, toolInput)
@@ -361,9 +338,8 @@ export async function checkPattern(
       : "";
 
     // Check if command matches the pattern
-    if (cmdPattern.endsWith(" *")) {
-      const cmdPrefix = cmdPattern.slice(0, -2);
-      if (!cmdPrefix) return false;
+    if (parsed.kind === "prefix") {
+      const cmdPrefix = parsed.value;
 
       // Handle compound commands (&&, ||, ;) - now async
       const { extractCommandsStructured } =
@@ -384,11 +360,13 @@ export async function checkPattern(
 
         // Also check if the prefix appears as a word within the command
         // This catches cases like "timeout 15 pnpm test" matching "pnpm *"
+        // Used for deny-side and other-tool matching only. auto-approve's Bash
+        // allow uses matchAnchoredBashAllow instead.
         if (cmd.includes(` ${cmdPrefix} `) || cmd.endsWith(` ${cmdPrefix}`)) {
           return true;
         }
       }
-    } else if (actualCommand === cmdPattern) {
+    } else if (actualCommand === parsed.value) {
       return true;
     }
 
@@ -449,4 +427,47 @@ export async function checkPattern(
   }
 
   return false;
+}
+
+export type BashPattern = { kind: "prefix" | "exact"; value: string };
+
+/**
+ * The two Bash(...) forms this module reads: `Bash(p *)` (prefix) and `Bash(p)`
+ * (exact). Null for anything else, including `Bash(**)` and an empty prefix.
+ * A bare `Bash` is not a Bash(...) pattern; checkPattern still matches it for
+ * deny through its `pattern === toolName` branch.
+ */
+export function parseBashPattern(pattern: string): BashPattern | null {
+  if (!pattern.startsWith("Bash(") || !pattern.endsWith(")")) return null;
+  const body = pattern.slice(5, -1);
+  if (body === "**") return null;
+  if (body.endsWith(" *")) {
+    const value = body.slice(0, -2);
+    return value ? { kind: "prefix", value } : null;
+  }
+  return { kind: "exact", value: body };
+}
+
+/**
+ * Allow-side matching for one simple command from scanSafeList: anchored at the
+ * start and never re-parsed. Returns the matching pattern or null. Unlike
+ * checkPattern, a prefix that only appears as a later word does not match.
+ */
+export function matchAnchoredBashAllow(
+  simpleCommand: string,
+  allowList: string[],
+): string | null {
+  for (const pattern of allowList) {
+    // Not trimmed, like checkPattern's entry check: `Bash(p *) ` with a
+    // trailing space is not a Bash(...) pattern on either side.
+    const parsed = parseBashPattern(pattern);
+    if (parsed === null) continue;
+    const matches =
+      parsed.kind === "prefix"
+        ? simpleCommand === parsed.value ||
+          simpleCommand.startsWith(`${parsed.value} `)
+        : simpleCommand === parsed.value;
+    if (matches) return pattern;
+  }
+  return null;
 }

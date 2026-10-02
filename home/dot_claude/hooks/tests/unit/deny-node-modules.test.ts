@@ -391,9 +391,10 @@ describe("deny-node-modules.ts boundary behaviour", () => {
     `unlink ${L}`,
     `rm ${L} ${join(root, "c", "node_modules")}`,
     "grep rm node_modules/x",
-    "find x -name rm node_modules",
     "grep -rn unlink node_modules/x",
     "ls node_modules",
+    'grep "a|rm" node_modules/x',
+    'grep -e "rm -rf ${X}" node_modules/x',
   ];
   for (const cmd of successCmds) {
     it(`allows: ${cmd}`, async () => {
@@ -432,6 +433,11 @@ describe("deny-node-modules.ts boundary behaviour", () => {
     "find node_modules -exec env mv {} /tmp \\;",
     "sudo find node_modules -delete",
     "find node_modules -exec echo {} \\; > node_modules/x",
+    "find x -name rm node_modules",
+    "ls node_modules; grep rm node_modules/x",
+    "\\grep rm node_modules/x",
+    // parser returns "fallback" for this input (pinned in bash-parser.test.ts)
+    'grep -e "rm" -e "xargs" node_modules/x',
   ];
   for (const cmd of denyCmds) {
     it(`denies with guidance: ${cmd}`, async () => {
@@ -450,6 +456,20 @@ describe("deny-node-modules.ts boundary behaviour", () => {
   it("does not suggest unlink for find -delete", async () => {
     const reason = reasonOf(await runBash("find node_modules -delete"));
     ok(!reason.includes("unlink"));
+  });
+
+  describe("deny-side superset (spec K3)", () => {
+    it("denies a heredoc-fed shell that removes node_modules", async () => {
+      const context = await runBash("bash <<EOF\nrm -rf node_modules/x\nEOF");
+      context.assertDeny();
+    });
+    it("does not pair a delete word and node_modules from different commands when the AST covers the input", async () => {
+      (await runBash("ls && rm foo && ls node_modules")).assertSuccess({});
+    });
+    // Compound bodies such as `(rm foo; ls node_modules) 2>&1` are already
+    // returned whole by the base fragmentation, so deny-node-modules denies them
+    // today (a pre-existing false positive, F3b). K3 does not change that, and
+    // the "not added whole" guarantee is pinned in bash-parser.test.ts.
   });
 
   const askCmds = [

@@ -6,6 +6,7 @@ import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
 import { defineHook } from "cc-hooks-ts";
 import { extractCommandsStructured } from "../lib/bash-parser.ts";
+import { isExemptReadOnlyCommand } from "../lib/read-only-command.ts";
 import { logDecision } from "../lib/centralized-logging.ts";
 import {
   CONTROL_STRUCTURE_KEYWORDS,
@@ -24,10 +25,12 @@ import { analyzePatternMatches } from "../lib/decision-maker.ts";
 import { normalizePath, normalizePattern } from "../lib/path-utils.ts";
 import {
   matchGitignorePattern,
-  checkIndividualCommandWithMatchedPattern as patternMatcherCheckAllow,
   checkIndividualCommandDenyWithPattern as patternMatcherCheckDeny,
   checkPattern as patternMatcherCheckPattern,
+  isSafeBuiltinCommand,
+  matchAnchoredBashAllow,
 } from "../lib/pattern-matcher.ts";
+import { scanSafeList } from "../lib/safe-command-list.ts";
 import type {
   PermissionDecision,
   SettingsFile,
@@ -347,11 +350,19 @@ function extractPermissionList(
  * Improved bash tool processing with structured return types
  * Uses Tagged Union pattern for better type safety
  */
-async function processBashTool(
+type BashStages = {
+  classifyBashDeny: typeof classifyBashDeny;
+  matchBashAllow: typeof matchBashAllow;
+};
+
+// Exported so tests can replace the stages and exercise the exception paths;
+// the defaults are the real stages.
+export async function processBashTool(
   tool_input: unknown,
   denyList: string[],
   allowList: string[],
   cwd: string | undefined,
+  stages: BashStages = { classifyBashDeny, matchBashAllow },
 ): Promise<BashToolResult> {
   const bashCommand = getCommandFromToolInput("Bash", tool_input) || "";
 
@@ -373,74 +384,93 @@ async function processBashTool(
     };
   }
 
-  const { individualCommands } = await extractCommandsStructured(bashCommand);
-  const extractedCommands = individualCommands;
+  const { individualCommands, parsingMethod } =
+    await extractCommandsStructured(bashCommand);
+  // Judged once on the original text (not the trimmed fragments), because the
+  // shell executes that text; fragments only inherit the result.
+  const readOnlyExempt = isExemptReadOnlyCommand(bashCommand, {
+    parsingMethod,
+  });
+  // The only basis for allow: a split of the whole text (spec K1). The parser's
+  // fragments may miss text the shell runs, so they feed the deny stage only.
+  const simpleCommands = scanSafeList(bashCommand);
+
+  // Each distinct text is judged once (trimmed, first occurrence wins, parser
+  // fragments before scanned commands), so reasons count commands as before.
+  const denyTargets = [
+    ...new Set(
+      [...individualCommands, ...(simpleCommands ?? [])]
+        .map((fragment) => fragment.trim())
+        .filter(Boolean),
+    ),
+  ];
 
   const commands: BashCommandResult[] = [];
-  let hasAskRequired = false;
-  let hasPassRequired = false;
-
-  for (const cmd of extractedCommands) {
-    const trimmedCmd = cmd.trim();
-    if (!trimmedCmd) continue;
-
-    const result = await processBashCommand(trimmedCmd, denyList, allowList);
+  for (const target of denyTargets) {
+    const result = await stages.classifyBashDeny(target, denyList, {
+      readOnlyExempt,
+    });
+    if (result.type === "clear") continue;
     commands.push(result);
-
-    // Check if ask is required (early exit condition)
     if (result.type === "ask") {
-      hasAskRequired = true;
-      break; // Early exit when ask is needed
+      return { commands, hasAskRequired: true, hasPassRequired: false };
     }
+  }
+  if (commands.some((c) => c.type === "deny")) {
+    return { commands, hasAskRequired: false, hasPassRequired: false };
+  }
 
-    // Track if any command requires pass-through
-    if (result.type === "pass") {
-      hasPassRequired = true;
+  try {
+    if (simpleCommands === null) {
+      commands.push({ type: "pass", command: bashCommand });
+    } else {
+      for (const simple of simpleCommands) {
+        commands.push(await stages.matchBashAllow(simple, allowList));
+      }
     }
+  } catch (error) {
+    // Never allow on a failure in the allow stage; the hook stays silent.
+    // Only the error kind is logged: a message may quote the command.
+    console.error(
+      `[auto-approve] allow stage failed: ${error instanceof Error ? error.name : typeof error}`,
+    );
+    commands.push({ type: "pass", command: bashCommand });
   }
 
   return {
     commands,
-    hasAskRequired,
-    hasPassRequired,
+    hasAskRequired: false,
+    hasPassRequired: commands.some((c) => c.type === "pass"),
   };
 }
 
-/**
- * Improved bash command processing with structured return types
- * Uses Tagged Union pattern for better type safety and eliminates string parsing
- */
-async function processBashCommand(
+type DenyStageResult =
+  | Extract<BashCommandResult, { type: "skip" | "ask" | "deny" }>
+  | { type: "clear" };
+
+async function classifyBashDeny(
   cmd: string,
   denyList: string[],
-  allowList: string[],
-): Promise<BashCommandResult> {
-  const trimmedCmd = cmd.trim();
-
+  opts: { readOnlyExempt: boolean },
+): Promise<DenyStageResult> {
   // Skip evaluation for control structure keywords - they are transparent
-  if (CONTROL_STRUCTURE_KEYWORDS.includes(trimmedCmd)) {
+  if (CONTROL_STRUCTURE_KEYWORDS.includes(cmd)) {
     return {
       type: "skip",
-      command: trimmedCmd,
-      reason: `Control structure keyword '${trimmedCmd}'`,
+      command: cmd,
+      reason: `Control structure keyword '${cmd}'`,
     };
   }
 
   // Check for dangerous commands first
-  const dangerResult = checkDangerousCommand(cmd);
-  if (dangerResult.isDangerous) {
-    if (dangerResult.requiresManualReview) {
-      return {
-        type: "ask",
-        command: cmd,
-        reason: dangerResult.reason,
-      };
-    } else {
-      return {
-        type: "deny",
-        command: cmd,
-        reason: dangerResult.reason,
-      };
+  // Skipped only when the whole command is a single read-only invocation whose
+  // arguments are plain text (lib/read-only-command.ts).
+  if (!opts.readOnlyExempt) {
+    const dangerResult = checkDangerousCommand(cmd);
+    if (dangerResult.isDangerous) {
+      return dangerResult.requiresManualReview
+        ? { type: "ask", command: cmd, reason: dangerResult.reason }
+        : { type: "deny", command: cmd, reason: dangerResult.reason };
     }
   }
 
@@ -457,6 +487,56 @@ async function processBashCommand(
     }
   }
 
+  return { type: "clear" };
+}
+
+// Layer 1: Static safe patterns (always allow regardless of allowList)
+// These are read-only commands with no side effects
+const SAFE_BASH_PATTERNS_LAYER1 = [
+  // Information retrieval
+  /^(ls|pwd|echo|cat|head|tail|wc|file|stat|which|type|whereis|basename|dirname|realpath)\s/,
+  /^(ls|pwd|echo|cat|head|tail|wc|file|stat|which|type|whereis|basename|dirname|realpath)$/,
+  // Git read-only operations
+  /^git\s+(status|log|diff|branch|remote|show|describe|tag|rev-parse)(\s|$)/,
+  /^git\s+config\s+--get\s/,
+  // Package information
+  /^(npm|pnpm|yarn|bun)\s+(ls|list|outdated|view|info|why|explain)(\s|$)/,
+];
+
+/** One simple command from scanSafeList; anchored rules only, no re-parse. */
+async function matchBashAllow(
+  cmd: string,
+  allowList: string[],
+): Promise<Extract<BashCommandResult, { type: "allow" | "pass" }>> {
+  const sed = await inferSedInPlaceAllow(cmd);
+  if (sed) return sed;
+  for (const pattern of SAFE_BASH_PATTERNS_LAYER1) {
+    if (pattern.test(cmd)) {
+      return {
+        type: "allow",
+        command: cmd,
+        pattern: "Static safe pattern (Layer 1)",
+      };
+    }
+  }
+  if (allowList.length > 0) {
+    // Only `sleep` reaches here in practice: scanSafeList returns null for a
+    // `find` head, so isSafeBuiltinCommand's find branch is unused on this path.
+    if (isSafeBuiltinCommand(cmd)) {
+      return { type: "allow", command: cmd, pattern: "Built-in safe command" };
+    }
+    const matched = matchAnchoredBashAllow(cmd, allowList);
+    if (matched) return { type: "allow", command: cmd, pattern: matched };
+  }
+  return { type: "pass", command: cmd };
+}
+
+async function inferSedInPlaceAllow(
+  cmd: string,
+): Promise<Extract<BashCommandResult, { type: "allow" }> | null> {
+  // parseSedInPlace splits words without a full shell reading and misreads a
+  // space after a backslash, so it never infers a command containing one.
+  if (cmd.includes("\\")) return null;
   // sed -i コマンドの権限推論チェック
   // Edit/MultiEditが許可されているディレクトリ内のファイルへのsed -iを自動承認
   if (cmd.includes("sed") && cmd.includes("-i")) {
@@ -496,50 +576,7 @@ async function processBashCommand(
     }
   }
 
-  // Layer 1: Static safe patterns (always allow regardless of allowList)
-  // These are read-only commands with no side effects
-  const SAFE_BASH_PATTERNS_LAYER1 = [
-    // Information retrieval
-    /^(ls|pwd|echo|cat|head|tail|wc|file|stat|which|type|whereis|basename|dirname|realpath)\s/,
-    /^(ls|pwd|echo|cat|head|tail|wc|file|stat|which|type|whereis|basename|dirname|realpath)$/,
-    // Git read-only operations
-    /^git\s+(status|log|diff|branch|remote|show|describe|tag|rev-parse)(\s|$)/,
-    /^git\s+config\s+--get\s/,
-    // Package information
-    /^(npm|pnpm|yarn|bun)\s+(ls|list|outdated|view|info|why|explain)(\s|$)/,
-  ];
-
-  for (const pattern of SAFE_BASH_PATTERNS_LAYER1) {
-    if (pattern.test(cmd)) {
-      return {
-        type: "allow",
-        command: cmd,
-        pattern: `Static safe pattern (Layer 1)`,
-      };
-    }
-  }
-
-  // Check allow patterns
-  if (allowList.length > 0) {
-    const allowResult = await patternMatcherCheckAllow(cmd, allowList);
-    if (allowResult.matches && allowResult.matchedPattern) {
-      return {
-        type: "allow",
-        command: cmd,
-        pattern: allowResult.matchedPattern,
-      };
-    } else {
-      return {
-        type: "pass",
-        command: cmd,
-      };
-    }
-  } else {
-    return {
-      type: "pass",
-      command: cmd,
-    };
-  }
+  return null;
 }
 
 async function processOtherTool(

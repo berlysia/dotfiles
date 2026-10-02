@@ -32,13 +32,33 @@ const expect = (value: unknown) => ({
   },
 });
 
+import type { Tree } from "web-tree-sitter";
 import {
+  collectExecutableTexts,
+  type ExtractedCommands,
+  extractBaseCommands,
   extractCommandsStructured,
   parseBashCommand,
 } from "../../lib/bash-parser.ts";
 
 describe("bash-parser", () => {
   describe("extractCommandsStructured", () => {
+    // The read-only exemption tests rely on these inputs reaching the
+    // fallback path (xargs with no command word after it).
+    it("returns fallback for grep with an xargs-named argument (node_modules)", async () => {
+      const result = await extractCommandsStructured(
+        'grep -e "rm" -e "xargs" node_modules/x',
+      );
+      expect(result.parsingMethod).toBe("fallback");
+    });
+
+    it("returns fallback for grep with an xargs-named argument (auto-approve)", async () => {
+      const result = await extractCommandsStructured(
+        'grep -e "rm -rf /" -e "xargs" spec.md',
+      );
+      expect(result.parsingMethod).toBe("fallback");
+    });
+
     it("should separate individual commands from original command", async () => {
       const result = await extractCommandsStructured(
         "echo hello && echo world",
@@ -267,5 +287,298 @@ describe("bash-parser", () => {
       const cmd = result.commands[0];
       expect(cmd?.text).toBe("echo hello");
     });
+  });
+});
+
+describe("extractCommandsStructured: superset for the deny side (spec K3)", () => {
+  // Outputs of extractCommandsStructured before K3 (recorded at d29a171).
+  // extractBaseCommands must keep returning exactly these.
+  const BASE_GOLDEN: Array<[string, ExtractedCommands]> = [
+    [
+      "ls -la",
+      {
+        individualCommands: ["ls -la"],
+        originalCommand: null,
+        parsingMethod: "tree-sitter",
+      },
+    ],
+    [
+      "cd x && pnpm test",
+      {
+        individualCommands: ["cd x", "pnpm test"],
+        originalCommand: "cd x && pnpm test",
+        parsingMethod: "tree-sitter",
+      },
+    ],
+    [
+      "git push --force origin main $(pwd)",
+      {
+        individualCommands: ["pwd"],
+        originalCommand: "git push --force origin main $(pwd)",
+        parsingMethod: "tree-sitter",
+      },
+    ],
+    [
+      "time ls\nzz a",
+      {
+        individualCommands: ["ls"],
+        originalCommand: "time ls\nzz a",
+        parsingMethod: "tree-sitter",
+      },
+    ],
+    [
+      "git push --force origin main <<EOF\nhi\nEOF\nls yy",
+      {
+        individualCommands: ["ls yy"],
+        originalCommand: "git push --force origin main <<EOF\nhi\nEOF\nls yy",
+        parsingMethod: "tree-sitter",
+      },
+    ],
+    [
+      "bash <<EOF\ntouch zz\nEOF",
+      {
+        individualCommands: ["<<EOF"],
+        originalCommand: "bash <<EOF\ntouch zz\nEOF",
+        parsingMethod: "tree-sitter",
+      },
+    ],
+    [
+      "bash -c 'ls; pwd'",
+      {
+        individualCommands: ["ls", "pwd"],
+        originalCommand: "bash -c 'ls; pwd'",
+        parsingMethod: "tree-sitter",
+      },
+    ],
+    [
+      "echo `ls \\`zz a\\` pwd`",
+      {
+        individualCommands: ["ls \\", "pwd"],
+        originalCommand: "echo `ls \\`zz a\\` pwd`",
+        parsingMethod: "tree-sitter",
+      },
+    ],
+    [
+      "for f in a b; do echo $f; done",
+      {
+        individualCommands: ["echo $f"],
+        originalCommand: "for f in a b; do echo $f; done",
+        parsingMethod: "tree-sitter",
+      },
+    ],
+    [
+      "ls; (cd x && ls)",
+      {
+        individualCommands: ["ls", "cd x", "ls"],
+        originalCommand: "ls; (cd x && ls)",
+        parsingMethod: "tree-sitter",
+      },
+    ],
+    [
+      "git commit -m \"$(cat <<'EOF'\nmsg\nEOF\n)\"",
+      {
+        individualCommands: ["cat <<'EOF'\nmsg\nEOF"],
+        originalCommand: "git commit -m \"$(cat <<'EOF'\nmsg\nEOF\n)\"",
+        parsingMethod: "tree-sitter",
+      },
+    ],
+    [
+      "if [ -f x ]; then ls; fi",
+      {
+        individualCommands: ["ls"],
+        originalCommand: "if [ -f x ]; then ls; fi",
+        parsingMethod: "tree-sitter",
+      },
+    ],
+  ];
+
+  for (const [cmd, expected] of BASE_GOLDEN) {
+    it(`extractBaseCommands keeps the pre-K3 fragments: ${JSON.stringify(cmd)}`, async () => {
+      deepStrictEqual(await extractBaseCommands(cmd), expected);
+    });
+    it(`extractCommandsStructured keeps them as a prefix: ${JSON.stringify(cmd)}`, async () => {
+      const full = await extractCommandsStructured(cmd);
+      deepStrictEqual(
+        full.individualCommands.slice(0, expected.individualCommands.length),
+        expected.individualCommands,
+      );
+      strictEqual(full.parsingMethod, expected.parsingMethod);
+      strictEqual(full.originalCommand, expected.originalCommand);
+    });
+  }
+
+  const texts = async (cmd: string) =>
+    (await extractCommandsStructured(cmd)).individualCommands;
+
+  it("adds the outer command around a substitution", async () => {
+    ok(
+      (await texts("git push --force origin main $(pwd)")).includes(
+        "git push --force origin main $(pwd)",
+      ),
+    );
+  });
+
+  it("adds the lines after a meta-command head", async () => {
+    ok((await texts("time ls\nzz a")).includes("zz a"));
+    ok(
+      (await texts(`time ls ${"a".repeat(100001)}\ncp x y`)).includes("cp x y"),
+    );
+  });
+
+  it("adds a heredoc statement whole, and the whole text, when a heredoc is present", async () => {
+    const cmd = "git push --force origin main <<EOF\nhi\nEOF\nls yy";
+    const got = await texts(cmd);
+    ok(got.includes("git push --force origin main <<EOF\nhi\nEOF"));
+    ok(got.includes(cmd));
+  });
+
+  it("adds the whole text for a shell fed by a heredoc, equal to originalCommand", async () => {
+    const cmd = "bash <<EOF\ntouch zz\nEOF";
+    const full = await extractCommandsStructured(cmd);
+    ok(full.individualCommands.includes(cmd));
+    strictEqual(full.originalCommand, cmd);
+  });
+
+  it("adds the whole text for backticks and for a parse error", async () => {
+    const backticks = "echo `ls \\`zz a\\` pwd`";
+    ok((await texts(backticks)).includes(backticks));
+    const unclosed = "ls 'x && zz a";
+    ok((await texts(unclosed)).includes(unclosed));
+  });
+
+  it("does not add the whole text or a compound statement when the AST covers the input", async () => {
+    const plain = await texts("ls && rm foo && pwd");
+    ok(!plain.includes("ls && rm foo && pwd"));
+    // The base fragmentation already returns these compound statements whole
+    // (measured at d29a171; a pre-existing deny-node-modules false positive left
+    // to F3b). What K3 must not do is add them whole again from the AST, while
+    // it does add their inner commands.
+    for (const cmd of [
+      "(rm foo; ls bar) 2>&1",
+      "{ rm foo; ls bar; } > out",
+      "while true; do rm foo; ls bar; done > log",
+    ]) {
+      const added = await collectExecutableTexts(cmd, "tree-sitter");
+      ok(!added.includes(cmd), `${JSON.stringify(cmd)} was added whole`);
+      ok(
+        added.includes("rm foo") && added.includes("ls bar"),
+        JSON.stringify(added),
+      );
+    }
+  });
+});
+
+describe("collectExecutableTexts (spec K3 (a)(b))", () => {
+  it("falls back to the whole text and coarse pieces when the parse returns null", async () => {
+    deepStrictEqual(
+      await collectExecutableTexts(
+        "time ls\ncp x y",
+        "tree-sitter",
+        async () => null,
+      ),
+      ["time ls\ncp x y", "time ls", "cp x y"],
+    );
+  });
+
+  it("falls back the same way when the parse throws", async () => {
+    deepStrictEqual(
+      await collectExecutableTexts("ls && pwd", "tree-sitter", async () => {
+        throw new Error("boom");
+      }),
+      ["ls && pwd", "ls", "pwd"],
+    );
+  });
+
+  it("adds the whole text under fallback parsing", async () => {
+    ok(
+      (await collectExecutableTexts("ls && pwd", "fallback")).includes(
+        "ls && pwd",
+      ),
+    );
+  });
+
+  it("returns plain command statements, outer redirect first, for a covered input", async () => {
+    deepStrictEqual(
+      await collectExecutableTexts("ls 2>&1 && pwd", "tree-sitter"),
+      ["ls 2>&1", "ls", "pwd"],
+    );
+  });
+
+  it("adds the whole text and coarse pieces when only hasError is set", async () => {
+    const fakeTree = {
+      rootNode: { hasError: true, descendantsOfType: () => [] },
+      delete: () => {},
+    } as unknown as Tree;
+    deepStrictEqual(
+      await collectExecutableTexts(
+        "ls && pwd",
+        "tree-sitter",
+        async () => fakeTree,
+      ),
+      ["ls && pwd", "ls", "pwd"],
+    );
+  });
+
+  it("adds only the redirect target of a compound or empty-body statement", async () => {
+    const compound = await collectExecutableTexts(
+      "ls; ( echo x ) > plan.md",
+      "tree-sitter",
+    );
+    ok(compound.includes("> plan.md"), JSON.stringify(compound));
+    ok(!compound.includes("( echo x ) > plan.md"), JSON.stringify(compound));
+    const empty = await collectExecutableTexts("ls; > out.ts", "tree-sitter");
+    ok(empty.includes("> out.ts"), JSON.stringify(empty));
+    const fn = await collectExecutableTexts(
+      "f() { echo x; } > plan.md; f",
+      "tree-sitter",
+    );
+    ok(fn.includes("> plan.md"), JSON.stringify(fn));
+    for (const [cmd, target] of [
+      ["cat <<EOF > plan.md\nx\nEOF", "> plan.md"],
+      ["echo a | tee b > plan.md", "> plan.md"],
+      ["{ echo; } > a.md 2> b.md", "2> b.md"],
+    ]) {
+      const got = await collectExecutableTexts(cmd as string, "tree-sitter");
+      ok(
+        got.includes(target as string),
+        `${JSON.stringify(cmd)}: ${JSON.stringify(got)}`,
+      );
+    }
+    const covered = await collectExecutableTexts(
+      "ls 2>&1 > out",
+      "tree-sitter",
+    );
+    ok(
+      !covered.includes("2>&1") && !covered.includes("> out"),
+      JSON.stringify(covered),
+    );
+  });
+
+  it("is the only parser entry permission-analyzer uses, and no deny-side module imports extractBaseCommands", async () => {
+    const { readdirSync, readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const hooksDir = join(import.meta.dirname, "..", "..");
+    const users: string[] = [];
+    for (const dir of ["lib", "implementations"]) {
+      for (const file of readdirSync(join(hooksDir, dir))) {
+        if (!file.endsWith(".ts") || file === "bash-parser.ts") continue;
+        if (
+          readFileSync(join(hooksDir, dir, file), "utf8").includes(
+            "extractBaseCommands",
+          )
+        ) {
+          users.push(`${dir}/${file}`);
+        }
+      }
+    }
+    deepStrictEqual(users, ["lib/permission-analyzer.ts"]);
+  });
+
+  it("returns nothing for blank input", async () => {
+    deepStrictEqual(await collectExecutableTexts("  \n", "tree-sitter"), []);
+    deepStrictEqual(
+      await collectExecutableTexts("  \n", "tree-sitter", async () => null),
+      [],
+    );
   });
 });

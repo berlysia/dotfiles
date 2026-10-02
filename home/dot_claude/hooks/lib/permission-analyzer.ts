@@ -294,9 +294,11 @@ export class PermissionAnalyzer {
     entryCwd?: string,
   ): Promise<string | null> {
     // 既存のbash-parserを信頼して使用（内部でフォールバック処理済み）
-    const { extractCommandsStructured, extractCommandsDetailed } =
+    // 許可パターンの提案は deny 目的ではないので、上位集合でなく変更前の断片を使う。
+    // 外側の `sh -c …` が入ると analyzeShInvocationSafety が常に unsafe になる。
+    const { extractBaseCommands, extractCommandsDetailed } =
       await import("./bash-parser.ts");
-    const { individualCommands } = await extractCommandsStructured(command);
+    const { individualCommands } = await extractBaseCommands(command);
     const commands = individualCommands;
 
     // sh -c / bash -c / zsh -c / xargs sh -c の場合は安全性を判定して分岐

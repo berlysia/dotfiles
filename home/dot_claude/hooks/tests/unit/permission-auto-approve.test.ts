@@ -2,7 +2,7 @@
 
 import { deepStrictEqual, strictEqual } from "node:assert";
 import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { afterEach, beforeEach, describe, it } from "node:test";
+import { afterEach, beforeEach, describe, it, mock } from "node:test";
 import {
   isProjectScopeSafe,
   isSessionScratchpadSafe,
@@ -113,7 +113,6 @@ describe("permission-auto-approve.ts hook behavior", () => {
       "mkdir dist",
       "touch file.txt",
       // Environment inspection
-      "env",
       "printenv HOME",
       // Port/process inspection
       "lsof -ti:3000",
@@ -362,6 +361,8 @@ describe("permission-auto-approve.ts hook behavior", () => {
       // sqlite3 (can modify/delete data)
       "sqlite3 data/app.db 'DELETE FROM users'",
       "sqlite3 data/app.db 'SELECT * FROM users'",
+      // env runs its arguments; the whole-text split refuses it (spec K1)
+      "env",
     ];
 
     for (const cmd of uncertainCommands) {
@@ -483,7 +484,7 @@ describe("permission-auto-approve.ts hook behavior", () => {
     });
   });
 
-  describe("staticRuleEngine - Commands with ENV_VAR prefix (normalized)", () => {
+  describe("staticRuleEngine - Commands with ENV_VAR prefix", () => {
     const envPrefixedSafeCommands = [
       "BASELINE_YEAR=2023 node --test tests/report.test.ts",
       "NODE_ENV=test pnpm test",
@@ -491,7 +492,7 @@ describe("permission-auto-approve.ts hook behavior", () => {
     ];
 
     for (const cmd of envPrefixedSafeCommands) {
-      it(`should allow after normalization: ${cmd}`, () => {
+      it(`should defer to Layer 2b: ${cmd}`, () => {
         const input: PermissionRequestInput = {
           session_id: "test-session",
           tool_name: "Bash",
@@ -501,8 +502,8 @@ describe("permission-auto-approve.ts hook behavior", () => {
         const result = staticRuleEngine(input);
         strictEqual(
           result.behavior,
-          "allow",
-          `Command "${cmd}" should be allowed after ENV normalization`,
+          "uncertain",
+          `Command "${cmd}" should not be allowed: an assignment can change what the command does (spec K1)`,
         );
       });
     }
@@ -1126,6 +1127,199 @@ describe("staticRuleEngine - known over-rejection cases (integration)", () => {
     deepStrictEqual(result, {
       behavior: "deny",
       source: "dangerous-pattern",
+    });
+  });
+});
+
+describe("staticRuleEngine - Bash allow from the whole-text split (spec K8)", () => {
+  const bash = (command: unknown, cwd = "/home/user/project") =>
+    staticRuleEngine({
+      session_id: "test-session",
+      tool_name: "Bash",
+      tool_input: { command },
+      cwd,
+    });
+
+  // Each of these was allowed before: a pattern anchored at the start matched
+  // the first command, and nothing looked at the rest of the text.
+  const notAllowed: Array<[string, string]> = [
+    ["newline then unknown command", "ls\nzz a"],
+    ["and-list with unknown command", "git status && zz a"],
+    ["command substitution", "echo hi $(zz a)"],
+    ["comment then newline", "ls # x\nzz a"],
+    ["assignment prefix", "BASELINE_YEAR=2023 node --test x"],
+    ["env runs its arguments", "env zz a"],
+    ["cd prefix then newline", "cd x && ls\nzz a"],
+  ];
+  for (const [name, command] of notAllowed) {
+    it(`does not allow: ${name}`, () => {
+      const result = bash(command);
+      strictEqual(result.behavior, "uncertain", JSON.stringify(command));
+    });
+  }
+
+  const allowed = [
+    "ls\npwd",
+    "git status && git diff",
+    "cd x && pnpm test",
+    "pnpm test 2>&1 | tail -20",
+    "cd x",
+    "cd x; git status",
+    "cd /path&&git status",
+    // `dump` comes before `dump-config` in the alternation; the word-end
+    // condition must let the regex backtrack to the longer word.
+    "chezmoi dump-config",
+    "mkdir dist",
+  ];
+  for (const command of allowed) {
+    it(`allows: ${JSON.stringify(command)}`, () => {
+      deepStrictEqual(bash(command), {
+        behavior: "allow",
+        source: "pattern-match",
+      });
+    });
+  }
+
+  it("keeps the quoted-newline eslint form out of allow", () => {
+    strictEqual(bash('eslint " \n" --check').behavior, "uncertain");
+  });
+
+  // Matching only the start of the text read the wrong subcommand when an
+  // option value could move a word boundary; a matched part with anything
+  // beyond plain characters does not count (plan-4 deviation 9).
+  const hiddenSubcommands = [
+    'git -c "a status" push origin',
+    'git -c "x\nstatus" push',
+    'git -C "a log" push -f',
+    'git -c "a status" push 2>&1',
+    "git -C $X status",
+    "node -e'x' -e' --test'",
+    // The shell's word runs past the match (plan-4 deviation 11).
+    'git status"x"',
+    "git status$X",
+    "git status-x",
+    "npx vitest-evil",
+    "npx eslint@evil",
+    "ls-evil",
+    "cat.x",
+    // An allowed redirection stays in the simple command; the shell drops it
+    // from the words, so `\S+` read it as the option value.
+    "git -C 2>&1 log push",
+    "git -c </dev/null status push",
+    "pnpm --filter >/dev/null test publish",
+    // zsh extendedglob expands `^x` and `a#` to file names.
+    "git -C ^x status",
+    "pnpm --filter ^x test",
+    "git -C a# status",
+  ];
+  for (const command of hiddenSubcommands) {
+    it(`does not allow a hidden subcommand: ${JSON.stringify(command)}`, () => {
+      strictEqual(bash(command).behavior, "uncertain");
+    });
+  }
+
+  it("records why it did not allow", () => {
+    // Neither of these two was allowed by the old rule, so no `scan-demoted`.
+    deepStrictEqual(bash("zz $(date)"), {
+      behavior: "uncertain",
+      source: "scan-null",
+    });
+    deepStrictEqual(bash("zz a && ls"), {
+      behavior: "uncertain",
+      source: "scan-mismatch",
+    });
+    // Allowed by the old rule (SAFE_BASH_PATTERNS on the whole text).
+    deepStrictEqual(bash("ls\nzz a"), {
+      behavior: "uncertain",
+      source: "scan-demoted",
+    });
+    // Allowed by the old rule after stripping `cd x &&` / `ENV=1`.
+    deepStrictEqual(bash("cd x && ls\nzz a"), {
+      behavior: "uncertain",
+      source: "scan-demoted",
+    });
+    deepStrictEqual(bash("ENV=1 ls\nzz a"), {
+      behavior: "uncertain",
+      source: "scan-demoted",
+    });
+  });
+
+  it("skips the old-rule replay above 100,000 characters", () => {
+    deepStrictEqual(bash(`ls\nzz ${"a".repeat(100_001)}`), {
+      behavior: "uncertain",
+      source: "scan-mismatch",
+    });
+  });
+
+  it("does not allow and logs only the error kind when the branch throws", () => {
+    const errorLog = mock.method(console, "error", () => {});
+    try {
+      const hostile = {
+        toString(): string {
+          throw new TypeError("ls secret-text");
+        },
+      };
+      deepStrictEqual(bash(hostile), {
+        behavior: "uncertain",
+        source: "scan-error",
+      });
+      strictEqual(errorLog.mock.callCount(), 1);
+      const logged = String(errorLog.mock.calls[0]?.arguments[0]);
+      strictEqual(logged.includes("secret-text"), false);
+      strictEqual(logged.includes("TypeError"), true);
+    } finally {
+      errorLog.mock.restore();
+    }
+  });
+
+  it("keeps the dangerous-pattern deny ahead of the split", () => {
+    deepStrictEqual(bash("ls && rm -rf /"), {
+      behavior: "deny",
+      source: "dangerous-pattern",
+    });
+  });
+
+  it("runs in linear time on long inputs", () => {
+    // Plan-time probe: 19 ms for both; the old `\s+.*--check` takes seconds.
+    const start = Date.now();
+    strictEqual(bash(`eslint${" ".repeat(500_000)}x`).behavior, "uncertain");
+    strictEqual(bash(`ls ${"a".repeat(500_000)}`).behavior, "allow");
+    strictEqual(Date.now() - start < 1000, true);
+  });
+});
+
+describe("staticRuleEngine - project-scope check reads one line only (spec K8 2a)", () => {
+  const bash = (command: string) =>
+    staticRuleEngine({
+      session_id: "test-session",
+      tool_name: "Bash",
+      tool_input: { command },
+      cwd: "/home/user/project",
+    });
+
+  const notAllowed = [
+    "scripts/x.sh\nzz a",
+    "./x.sh\nzz a",
+    "scripts/x.sh\rzz a",
+    "scripts/x.sh\u000bzz a",
+    "scripts/x.sh\fzz a",
+    `scripts/x.sh${String.fromCharCode(0xa0)}zz a`,
+    `scripts/x.sh${String.fromCharCode(0x3000)}zz a`,
+  ];
+  for (const command of notAllowed) {
+    it(`does not allow ${JSON.stringify(command)}`, () => {
+      strictEqual(bash(command).behavior, "uncertain");
+    });
+  }
+
+  it("still allows a cwd-contained script and an allowlisted rm -rf", () => {
+    deepStrictEqual(bash("./scripts/x.sh"), {
+      behavior: "allow",
+      source: "project-scope-safe",
+    });
+    deepStrictEqual(bash("rm -rf dist"), {
+      behavior: "allow",
+      source: "project-scope-safe",
     });
   });
 });

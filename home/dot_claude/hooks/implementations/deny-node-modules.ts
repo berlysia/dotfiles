@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { defineHook } from "cc-hooks-ts";
 import { extractCommandsStructured } from "../lib/bash-parser.ts";
 import { getCommandFromToolInput } from "../lib/command-parsing.ts";
+import { isExemptReadOnlyCommand } from "../lib/read-only-command.ts";
 import {
   createAskResponse,
   createBoundaryDenyResponse,
@@ -203,6 +204,8 @@ async function analyzeBashCommand(
   const { individualCommands, parsingMethod } =
     await extractCommandsStructured(command);
   const commands = individualCommands;
+  // Judged once on the whole command; fragments only inherit the result.
+  const readOnlyExempt = isExemptReadOnlyCommand(command, { parsingMethod });
 
   let hasUnknown = false;
   let unknownCmd = "";
@@ -211,6 +214,7 @@ async function analyzeBashCommand(
   for (const cmd of commands) {
     const result = analyzeIndividualCommand(cmd, {
       fallback: parsingMethod === "fallback",
+      readOnlyExempt,
     });
 
     // If any command should be denied, deny the entire compound command
@@ -266,7 +270,7 @@ function deletionReason(
 
 function analyzeIndividualCommand(
   cmd: string,
-  opts: { fallback: boolean },
+  opts: { fallback: boolean; readOnlyExempt: boolean },
 ): AnalysisResult {
   // If no node_modules reference, always allow
   if (!cmd.toLowerCase().includes("node_modules")) {
@@ -292,7 +296,9 @@ function analyzeIndividualCommand(
     { pattern: /(?:^|\s)(pwd|dirname|basename)/, operation: "path-info" },
   ];
 
-  const verdict = classifyDeletion(cmd, opts);
+  const verdict = classifyDeletion(cmd, {
+    readOnlyExempt: opts.readOnlyExempt,
+  });
   if (verdict === "deny-delete" || verdict === "deny-find") {
     return {
       decision: "deny",
@@ -319,7 +325,7 @@ function analyzeIndividualCommand(
       operation: "unknown",
     };
   }
-  if (!mayAllowAsReadOnly(cmd, opts)) {
+  if (!mayAllowAsReadOnly(cmd, { fallback: opts.fallback })) {
     return {
       decision: "ask",
       reason:

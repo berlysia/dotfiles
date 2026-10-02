@@ -16,6 +16,7 @@ import { isStrictlyUnderProjectSubdir } from "../lib/workflow-fs.ts";
 import { createPermissionRequestAllowResponse } from "../lib/permission-request-helpers.ts";
 import type { PermissionRequestInput } from "../lib/structured-llm-evaluator.ts";
 import { isValidSessionId } from "../lib/workflow-paths.ts";
+import { scanSafeList } from "../lib/safe-command-list.ts";
 
 /**
  * Static decision with source attribution.
@@ -31,7 +32,18 @@ export type StaticDecision =
         | "session-scratchpad-safe";
     }
   | { behavior: "deny"; source: "dangerous-pattern" }
-  | { behavior: "uncertain"; source: "no-match" };
+  | {
+      behavior: "uncertain";
+      // `scan-*` say why the Bash branch did not allow (spec K8); `scan-demoted`
+      // marks inputs the pre-split rule would have allowed, so the decision log
+      // can count how many allows moved to the later layers.
+      source:
+        | "no-match"
+        | "scan-null"
+        | "scan-mismatch"
+        | "scan-error"
+        | "scan-demoted";
+    };
 
 /**
  * Boundary check result for the project-scope allowance path.
@@ -126,7 +138,7 @@ const SAFE_BASH_PATTERNS = [
   /^(vitest|jest|mocha|ava|tap)\b/,
   /^node\s+(-\S+\s+)*--test\b/,
   // Linters and formatters (check mode)
-  /^(eslint|prettier|oxlint|oxfmt|biome)\s+.*--check\b/,
+  /^(eslint|prettier|oxlint|oxfmt|biome)\s.*--check\b/,
   /^(eslint|prettier|oxlint|oxfmt|biome)\s+--check\b/,
   /^tsc\s+--noEmit\b/,
   // Safe directory/file creation
@@ -203,8 +215,12 @@ const PREFILTER_REGEX = /^(rm\s+-rf|rm\s+(-f\s+)?\S|chmod\s+\+x|\S+\.sh(\s|$))/;
  * no POSIX shell metacharacter meaning on its own. The plan omitted `+` in
  * the initial spec; this deviation is documented here so future readers do
  * not reintroduce the regression.
+ *
+ * Only space and tab count as blanks: `\s` would also accept a newline (and
+ * `\r`, `\v`, `\f`, NBSP, U+3000), and the shape checks below read only the
+ * first line, so `scripts/x.sh` + newline + any command would be allowed.
  */
-const SHELL_WHITELIST_REGEX = /^[A-Za-z0-9_./+\s-]+$/;
+const SHELL_WHITELIST_REGEX = /^[A-Za-z0-9_./+ \t-]+$/;
 
 /**
  * Directories under cwd that are allowed as `rm -rf` targets. Deliberately
@@ -220,7 +236,8 @@ const CHMOD_X_ALLOWED_DIRS = [".tmp/", "scripts/"];
 
 /**
  * Normalize a command by stripping known-safe prefixes.
- * This allows the underlying command to be evaluated by SAFE_BASH_PATTERNS.
+ * Used only to replay the pre-split rule for logging (`legacyStaticBashAllow`);
+ * it never decides an allow.
  *
  * Stripped prefixes:
  * - `cd <path> && ` : directory change before actual command
@@ -393,6 +410,102 @@ export function isSessionScratchpadSafe(
   return { safe: true, source: "session-scratchpad-safe" };
 }
 
+/** `cd` with one argument, the shape the pre-split rule stripped (spec K8). */
+const CD_SIMPLE_COMMAND_REGEX = /^cd [^ \t]+$/;
+
+/** Inputs longer than this skip the old-rule replay, which is logging only. */
+const LEGACY_REPLAY_MAX_LENGTH = 100_000;
+
+/**
+ * Characters the matched part may contain. The patterns split words on
+ * blanks, so they read the same words as the shell only where nothing can
+ * move a word boundary: quotes, `\`, `$`, globs (including zsh extendedglob
+ * `^` `#`), and the redirections scanSafeList keeps inside a simple command
+ * (`git -C 2>&1 status push` matched as `status`). An allowlist, so a
+ * character nobody thought of counts as unsafe.
+ */
+const MATCHED_PART_SAFE_CHARS_REGEX = /^[A-Za-z0-9_./:=@+,~ \t-]*$/;
+
+/**
+ * SAFE_BASH_PATTERNS that must also end where the shell ends a word: on a
+ * blank, or before a blank or the end. Their `\b` also breaks at `-` `.` `@`
+ * `:`, so `npx vitest-evil` matched as `vitest`. The condition is part of the
+ * regex (not checked after the match) so that alternations such as
+ * `dump|dump-config` can still backtrack to the longer word.
+ */
+const SAFE_BASH_WORD_PATTERNS = SAFE_BASH_PATTERNS.map(
+  (pattern) =>
+    new RegExp(
+      `(?:${pattern.source})(?:(?<=[ \\t])|(?=[ \\t]|$))`,
+      pattern.flags,
+    ),
+);
+
+function isStaticSafeSimpleCommand(simple: string): boolean {
+  if (CD_SIMPLE_COMMAND_REGEX.test(simple)) return true;
+  // Only the matched part decides: `git -c "a status" push` would otherwise
+  // match as `status`. Quotes after the matched part (`git commit -m 'x'`)
+  // are arguments the pattern does not read.
+  return SAFE_BASH_WORD_PATTERNS.some((pattern) => {
+    const match = pattern.exec(simple);
+    return match !== null && MATCHED_PART_SAFE_CHARS_REGEX.test(match[0]);
+  });
+}
+
+/**
+ * The rule before the whole-text split: SAFE_BASH_PATTERNS on the whole text,
+ * then on the text with `cd x &&` / `FOO=1` stripped. A pattern anchored only
+ * at the start says nothing about the rest of the text, so this never decides
+ * an allow; it only marks `scan-demoted` in the decision log. Remove it with
+ * `normalizeCommand` once the demoted counts have been reviewed after F3b.
+ */
+function legacyStaticBashAllow(cmd: string): boolean {
+  if (SAFE_BASH_PATTERNS.some((pattern) => pattern.test(cmd))) return true;
+  const normalized = normalizeCommand(cmd);
+  return (
+    normalized !== cmd &&
+    SAFE_BASH_PATTERNS.some((pattern) => pattern.test(normalized))
+  );
+}
+
+function evaluateStaticBash(command: unknown, cwd: string): StaticDecision {
+  const rawCommand = String(command);
+  const cmd = rawCommand.trim();
+
+  // 2a. Project scope safe check runs BEFORE dangerous patterns so that the
+  // narrow over-rejection cases (rm -rf .tmp/..., chmod +x scripts/..., etc.)
+  // are not caught by the generic `rm -rf` deny.
+  if (isProjectScopeSafe(cmd, cwd).safe) {
+    return { behavior: "allow", source: "project-scope-safe" };
+  }
+
+  // 2b. Dangerous patterns on the whole text (a superset, like the deny side
+  // of auto-approve).
+  for (const pattern of DANGEROUS_PATTERNS) {
+    if (pattern.test(cmd)) {
+      return { behavior: "deny", source: "dangerous-pattern" };
+    }
+  }
+
+  // 2c. Allow only when the whole text splits into simple commands and each
+  // one is a known-safe shape (spec K8). The scanner gets the raw text: it
+  // trims trailing blanks itself and refuses other whitespace.
+  const simpleCommands = scanSafeList(rawCommand);
+  if (
+    simpleCommands !== null &&
+    simpleCommands.every(isStaticSafeSimpleCommand)
+  ) {
+    return { behavior: "allow", source: "pattern-match" };
+  }
+  if (cmd.length <= LEGACY_REPLAY_MAX_LENGTH && legacyStaticBashAllow(cmd)) {
+    return { behavior: "uncertain", source: "scan-demoted" };
+  }
+  return {
+    behavior: "uncertain",
+    source: simpleCommands === null ? "scan-null" : "scan-mismatch",
+  };
+}
+
 /**
  * Layer 2a: Static rule-based evaluation
  * No injection risk - purely pattern matching
@@ -408,39 +521,15 @@ function staticRuleEngine(input: PermissionRequestInput): StaticDecision {
 
   // 2. Bash command evaluation
   if (toolName === "Bash" && toolInput && "command" in toolInput) {
-    const cmd = String(toolInput.command).trim();
-    const cwd = input.cwd || process.cwd();
-
-    // 2a. Project scope safe check runs BEFORE dangerous patterns so that the
-    // narrow over-rejection cases (rm -rf .tmp/..., chmod +x scripts/..., etc.)
-    // are not caught by the generic `rm -rf` deny.
-    const scopeCheck = isProjectScopeSafe(cmd, cwd);
-    if (scopeCheck.safe) {
-      return { behavior: "allow", source: "project-scope-safe" };
-    }
-
-    // 2b. Dangerous patterns (evaluated against original command)
-    for (const pattern of DANGEROUS_PATTERNS) {
-      if (pattern.test(cmd)) {
-        return { behavior: "deny", source: "dangerous-pattern" };
-      }
-    }
-
-    // 2c. Safe patterns against original command
-    for (const pattern of SAFE_BASH_PATTERNS) {
-      if (pattern.test(cmd)) {
-        return { behavior: "allow", source: "pattern-match" };
-      }
-    }
-
-    // 2d. Safe patterns against normalized command (strips cd prefix, ENV prefix)
-    const normalizedCmd = normalizeCommand(cmd);
-    if (normalizedCmd !== cmd) {
-      for (const pattern of SAFE_BASH_PATTERNS) {
-        if (pattern.test(normalizedCmd)) {
-          return { behavior: "allow", source: "pattern-match" };
-        }
-      }
+    try {
+      return evaluateStaticBash(toolInput.command, input.cwd || process.cwd());
+    } catch (error) {
+      // Never allow on a failure. Only the error kind is logged: a message
+      // may quote the command.
+      console.error(
+        `[permission-auto-approve] static Bash rule failed: ${error instanceof Error ? error.name : typeof error}`,
+      );
+      return { behavior: "uncertain", source: "scan-error" };
     }
   }
 
