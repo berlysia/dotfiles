@@ -11,6 +11,7 @@ import {
   type OracleMatcher,
   type TextMatcher,
 } from "../lib/linear-match.ts";
+import { GUARDED_TOOLS } from "../lib/guarded-tools.ts";
 import { getProjectRoot } from "../lib/project-root.ts";
 import { expandTilde } from "../lib/path-utils.ts";
 import { sanitizeForDisplay } from "../lib/sanitize-display.ts";
@@ -34,19 +35,10 @@ import {
 } from "../lib/workflow-gate.ts";
 import "../types/tool-schemas.ts";
 
-const GUARDED_TOOLS = new Set([
-  "Write",
-  "Edit",
-  "MultiEdit",
-  "NotebookEdit",
-  "Bash",
-  "CronCreate",
-  "ScheduleWakeup",
-]);
-// Tools that schedule a prompt to fire later. Kept local (not imported from
-// lib/guarded-tools.ts) so the guard's module graph stays unchanged.
+// Tools that schedule a prompt to fire later. A set of which kind of branch
+// the guard takes, not of which tools it is registered for (GUARDED_TOOLS), so
+// it lives here.
 const SCHEDULING_TOOLS = new Set(["CronCreate", "ScheduleWakeup"]);
-export const GUARDED_TOOLS_FOR_TESTING = GUARDED_TOOLS;
 
 /**
  * Appended to every deny so a blocked throwaway write learns where it can go.
