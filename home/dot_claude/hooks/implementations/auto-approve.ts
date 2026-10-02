@@ -6,7 +6,7 @@ import { userInfo } from "node:os";
 import { join } from "node:path";
 
 import { defineHook } from "cc-hooks-ts";
-import { extractCommandsStructured } from "../lib/bash-parser.ts";
+import { prepareDenyInput } from "../lib/deny-input.ts";
 import { isExemptReadOnlyCommand } from "../lib/read-only-command.ts";
 import { logDecision } from "../lib/centralized-logging.ts";
 import {
@@ -371,10 +371,17 @@ export async function processBashTool(
 ): Promise<BashToolResult> {
   const bashCommand = getCommandFromToolInput("Bash", tool_input) || "";
 
+  // The allow basis is the split of the raw command only (F3a K1). The deny
+  // side reads prepareDenyInput's maskedText and fragments, where data-only
+  // heredoc bodies are emptied (F3b). Called before the home guard, where the
+  // parser was called before, so a throw rejects to the hook's catch as before.
+  const { maskedText, individualCommands, parsingMethod } =
+    await prepareDenyInput(bashCommand);
+
   // Judged on the whole command before splitting, because splitting loses the
   // `cd` context. `home` comes from this process, never from the command, so a
   // `HOME=...` assignment in an earlier Bash call cannot redirect the check.
-  const homeResult = checkHomeDestruction(bashCommand, {
+  const homeResult = checkHomeDestruction(maskedText, {
     home: getHomeDir(),
     cwd: cwd || process.cwd(),
     user: currentUserName(),
@@ -389,11 +396,9 @@ export async function processBashTool(
     };
   }
 
-  const { individualCommands, parsingMethod } =
-    await extractCommandsStructured(bashCommand);
-  // Judged once on the original text (not the trimmed fragments), because the
-  // shell executes that text; fragments only inherit the result.
-  const readOnlyExempt = isExemptReadOnlyCommand(bashCommand, {
+  // Judged once on the whole text (not the trimmed fragments); fragments only
+  // inherit the result.
+  const readOnlyExempt = isExemptReadOnlyCommand(maskedText, {
     parsingMethod,
   });
   // The only basis for allow: a split of the whole text (spec K1). The parser's

@@ -17,6 +17,9 @@ import {
   invokeRun,
 } from "./test-helpers.ts";
 
+const R = "r" + "m -rf";
+const P = "node" + "_modules";
+
 describe("auto-approve.ts hook behavior", () => {
   const consoleCapture = new ConsoleCapture();
   const envHelper = new EnvironmentHelper();
@@ -1452,3 +1455,55 @@ describe("auto-approve.ts hook behavior", () => {
 });
 
 // Helper function to create auto-approve hook with test logic
+
+describe("data heredoc bodies on the deny stage (F3b)", () => {
+  const typesOf = async (
+    command: string,
+    deny: string[] = [],
+    allow: string[] = [],
+  ) =>
+    (await processBashTool({ command }, deny, allow, "/tmp")).commands.map(
+      (c) => c.type,
+    );
+
+  it("does not run the home guard on a data body", async () => {
+    const types = await typesOf(`cat <<'EOF' > t.ts\n${R} $HOME/x\nEOF`);
+    ok(!types.includes("deny"), JSON.stringify(types));
+  });
+  it("does not ask for a force push written in a data body", async () => {
+    const types = await typesOf(
+      `cat > f.txt <<'EOF'\ngit push --force origin main\nEOF`,
+    );
+    ok(
+      !types.includes("ask") && !types.includes("deny"),
+      JSON.stringify(types),
+    );
+  });
+  it("matches user deny rules on the emptied fragments", async () => {
+    const data = await typesOf(`cat <<'EOF' > f.txt\nrm x\nEOF`, [
+      "Bash(rm *)",
+    ]);
+    ok(!data.includes("deny"), JSON.stringify(data));
+    // A shell heredoc keeps its body, and deny rules still match the statement
+    // itself. The body never was a fragment of its own, so `Bash(rm *)` did
+    // not match it before F3b either.
+    const shell = await typesOf(`bash <<'EOF'\nrm x\nEOF`, ["Bash(bash *)"]);
+    ok(shell.includes("deny"), JSON.stringify(shell));
+  });
+  it("still denies the home guard on a shell body", async () => {
+    const types = await typesOf(`bash <<'EOF'\n${R} $HOME/x\nEOF`);
+    ok(types.includes("deny"), JSON.stringify(types));
+  });
+  it("never allows a heredoc input (spec K4)", async () => {
+    for (const command of [
+      `cat <<'EOF' > out.txt\n${R} ${P}/x\nEOF`,
+      `cat -<<'EOF' > out.txt\nmsg\nEOF`,
+      `tee out.txt <<'EOF'\nx\nEOF`,
+    ]) {
+      // With allow rules that would match cat / tee, so a split of the
+      // emptied text into allowable fragments would show up here.
+      const types = await typesOf(command, [], ["Bash(cat *)", "Bash(tee *)"]);
+      ok(!types.includes("allow"), `${command}: ${JSON.stringify(types)}`);
+    }
+  });
+});
