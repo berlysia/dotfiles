@@ -65,6 +65,8 @@ Worktreeは以下の場所に作成されます：
 <repo-root>/.git/worktree/<branch-name>
 ```
 
+`<repo-root>` は本体の checkout です。linked worktree の中で実行しても、`git rev-parse --git-common-dir` で本体の `.git/worktree/` を求めてそこに作ります。
+
 例：
 
 ```
