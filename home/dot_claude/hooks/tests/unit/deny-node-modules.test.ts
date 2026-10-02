@@ -22,6 +22,9 @@ import {
   invokeRun,
 } from "./test-helpers.ts";
 
+const R = "r" + "m -rf";
+const P = "node" + "_modules";
+
 describe("deny-node-modules.ts hook behavior", () => {
   const consoleCapture = new ConsoleCapture();
   const envHelper = new EnvironmentHelper();
@@ -470,6 +473,40 @@ describe("deny-node-modules.ts boundary behaviour", () => {
     // returned whole by the base fragmentation, so deny-node-modules denies them
     // today (a pre-existing false positive, F3b). K3 does not change that, and
     // the "not added whole" guarantee is pinned in bash-parser.test.ts.
+  });
+
+  describe("data heredoc bodies (F3b)", () => {
+    const silent = [
+      `cat <<'EOF' > out.txt\n${R} ${P}/x\nEOF`,
+      `tee out.txt <<'EOF'\n${R} ${P}/x\nEOF`,
+      `cat > .tmp/msg.txt <<'EOF'\nfix: ${R} ${P}/x\nEOF`,
+      `cat -<<'EOF' > out.txt\n${R} ${P}/x\nEOF`, // "-" folded into the operator
+      `cat <<'EOF' > t.ts\nfind ${P} -delete\nEOF`,
+      `cat <<'EOF' > out.txt\nsee ${P} for details\nEOF`, // was ask
+    ];
+    for (const cmd of silent) {
+      it(`does not judge the body: ${JSON.stringify(cmd)}`, async () => {
+        (await runBash(cmd)).assertSuccess({});
+      });
+    }
+    const denied = [
+      `cat <<'EOF' > ${P}/x\nhello\nEOF`, // the target is still judged
+      `bash <<'EOF'\n${R} ${P}/x\nEOF`,
+      `python3 - <<'EOF'\n# ${R} ${P}/x\nEOF`,
+      `cat <<'EOF' | bash\n${R} ${P}/x\nEOF`,
+      `cat > >(sh) <<'EOF'\n${R} ${P}/x\nEOF`,
+      // $(…) bodies stay judged: bash 3.2 cuts $(…) by paren matching (spec K2 (d))
+      `git commit -m "$(cat <<'EOF'\nfix: ${R} ${P}/x\nEOF\n)"`,
+      // The commit / PR path is a separate spec; git and gh are not consumers.
+      `git commit -F - <<'EOF'\nfix: ${R} ${P}/x\nEOF`,
+      // An option folded into the << token keeps the body (spec K2 (a)).
+      `cat -n<<'EOF' > out.txt\n${R} ${P}/x\nEOF`,
+    ];
+    for (const cmd of denied) {
+      it(`still denies: ${JSON.stringify(cmd)}`, async () => {
+        (await runBash(cmd)).assertDeny();
+      });
+    }
   });
 
   const askCmds = [
