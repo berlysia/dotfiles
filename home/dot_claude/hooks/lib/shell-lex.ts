@@ -1,6 +1,7 @@
 // lib/shell-lex.ts — pure, no I/O, no imports
 //
-// The one character-level reading of Bash/zsh text that the read-only exemption
+// The one character-level reading of Bash/zsh text, plus linear trimming of the
+// same blanks, that the read-only exemption
 // (read-only-command.ts) and the safe-list scanner share. It only says what the
 // character at `i` is in the current quote state. Where to split and what to
 // reject is each caller's policy: the exemption allows a backslash-newline inside
@@ -103,4 +104,24 @@ export function lexStep(cmd: string, i: number, state: QuoteState): LexStep {
       : { kind: "literal", next: end };
   }
   return { kind: "literal", next: i + 1 };
+}
+
+/** Strips trailing spaces, tabs and newlines in linear time (a /[ \t\n]+$/ replace is quadratic on long inner blank runs). */
+export function trimTrailingBlanks(s: string): string {
+  let end = s.length;
+  while (
+    end > 0 &&
+    (s[end - 1] === " " || s[end - 1] === "\t" || s[end - 1] === "\n")
+  )
+    end--;
+  return s.slice(0, end);
+}
+
+/** Strips leading and trailing spaces and tabs in linear time. */
+export function trimSpaceTab(s: string): string {
+  let start = 0;
+  let end = s.length;
+  while (start < end && (s[start] === " " || s[start] === "\t")) start++;
+  while (end > start && (s[end - 1] === " " || s[end - 1] === "\t")) end--;
+  return s.slice(start, end);
 }
