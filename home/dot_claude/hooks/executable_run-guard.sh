@@ -57,11 +57,14 @@ kill_tree() {
 
 sleep_pid=""
 runner_pid=""
-trap '[ -n "$runner_pid" ] && kill_tree "$runner_pid"; [ -n "$sleep_pid" ] && kill "$sleep_pid" 2>/dev/null; exit 2' HUP INT QUIT PIPE TERM
+trap '[ -n "$runner_pid" ] && kill_tree "$runner_pid"; [ -n "$sleep_pid" ] && kill -KILL "$sleep_pid" 2>/dev/null; exit 2' HUP INT QUIT PIPE TERM
 
 # Only this shell kills, and only its own unreaped children, so the pids it
 # signals cannot have been reused. The runner marks completion with a file;
 # its absence when the timer ends means the hook ran out of time.
+# The timer is stopped with KILL, not TERM: a child forked but not yet exec'd
+# into sleep still carries the trap above, which swallows a TERM, so under load
+# a fast hook would otherwise wait out the whole timeout. sleep has no cleanup.
 sleep "$timeout_s" >/dev/null 2>&1 &
 sleep_pid=$!
 
@@ -74,7 +77,7 @@ exec 3<&0
   "$bun_bin" "$impl" >"$work/out" 2>"$work/err"
   rc=$?
   : >"$work/done"
-  kill "$sleep_pid" 2>/dev/null
+  kill -KILL "$sleep_pid" 2>/dev/null
   exit "$rc"
 ) <&3 3<&- &
 runner_pid=$!
