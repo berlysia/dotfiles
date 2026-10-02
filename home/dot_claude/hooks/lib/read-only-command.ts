@@ -79,6 +79,9 @@ type ParsingMethod = "tree-sitter" | "fallback";
 /**
  * `fullCommand` is the whole string handed to the Bash tool, not a fragment the
  * parser split off: the shell reads that text, so that is what must be judged.
+ * Deny-side hooks pass the `maskedText` of `prepareDenyInput` (the whole text
+ * with data-only heredoc bodies emptied). Emptying a body does not make an
+ * input containing a heredoc exempt.
  * True only when it is a single simple command whose head is an exempt
  * read-only command and whose arguments contain no way to run anything.
  */
