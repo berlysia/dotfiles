@@ -13,6 +13,8 @@ import {
 import { createDenyResponse } from "../lib/context-helpers.ts";
 import { expandTilde, getHomeDir } from "../lib/path-utils.ts";
 import { matchGitignorePattern } from "../lib/pattern-matcher.ts";
+import { getProjectRoot } from "../lib/project-root.ts";
+import { resolveWorkflowDir } from "../lib/workflow-resolve.ts";
 import type {
   PathValidationResult,
   SettingsFile,
@@ -61,6 +63,7 @@ const hook = defineHook({
       const settingsFiles = getSettingsFiles(repoRoot);
       const additionalDirs = getAdditionalDirectories(settingsFiles);
       const allowPatterns = getAllowPatterns(settingsFiles, tool_name);
+      const workflowDirRoots = getWorkflowDirRoots(context.input.session_id);
 
       // Extract file paths from tool input
       if (typeof tool_input !== "object" || tool_input === null) {
@@ -79,6 +82,7 @@ const hook = defineHook({
           tool_name,
           additionalDirs,
           allowPatterns,
+          workflowDirRoots,
         );
         if (!validation.isAllowed) {
           return context.json(
@@ -430,12 +434,37 @@ export function isWithinTempRoots(
   }
 }
 
+/**
+ * The session's workflow dir, both as resolved and physically, for the
+ * isWithinTempRoots check. Empty when it cannot be resolved: the hook then
+ * judges paths exactly as before K10.
+ */
+function getWorkflowDirRoots(sessionId: string): string[] {
+  try {
+    const resolution = resolveWorkflowDir({ cwd: getProjectRoot(), sessionId });
+    if (resolution.source === "unresolvable") return [];
+    const roots = [resolution.dir];
+    try {
+      roots.push(realpathSync(resolution.dir));
+    } catch {
+      // Not created yet: the lexical root is all there is to compare with.
+    }
+    return [...new Set(roots)];
+  } catch (error) {
+    console.error(
+      `file-access-guard: workflow dir not resolved: ${String(error)}`,
+    );
+    return [];
+  }
+}
+
 function validatePath(
   path: string,
   repoRoot: string,
   toolName: string,
   additionalDirs: string[],
   allowPatterns: string[],
+  workflowDirRoots: string[],
 ): PathValidationResult {
   const absPath = resolvePath(path);
   const homeDir = getHomeDir();
@@ -461,6 +490,21 @@ function validatePath(
       realpathSync,
       lstatSync,
     )
+  ) {
+    return {
+      isAllowed: true,
+      resolvedPath: absPath,
+    };
+  }
+
+  // 1.6. The session's workflow dir. It stays under the project root even
+  // when the repo root is a linked worktree (spec K10), so it is outside
+  // repoRoot whenever work happens inside a worktree. isWithinTempRoots
+  // already rejects `..`, compares the physical path after resolving the
+  // nearest existing ancestor, and fails closed on dangling symlinks.
+  if (
+    workflowDirRoots.length > 0 &&
+    isWithinTempRoots(rawAbs, workflowDirRoots, realpathSync, lstatSync)
   ) {
     return {
       isAllowed: true,
