@@ -19,7 +19,7 @@ const repoUrl = (p: string) =>
 describe("S1: mechanical-lane routing row", () => {
   const wf = () => readFileSync(rulesUrl("workflow.md"), "utf-8");
 
-  it("workflow.md routing table contains a mechanical-lane row mapping to plan.md-only", () => {
+  it("workflow.md routing list contains a mechanical-lane row mapping to plan.md-only", () => {
     const c = wf();
     ok(c.includes("mechanical-lane"));
     ok(/mechanical-lane[^\n]*plan\.md/.test(c.replace(/\n/g, " ")));

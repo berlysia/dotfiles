@@ -8,14 +8,12 @@
 
 タスク受付時に実行モードを決めてから着手する。
 
-| 条件                                                                   | モード                                |
-| ---------------------------------------------------------------------- | ------------------------------------- |
-| 1-2 ステップ、1-2 ファイル                                             | 直接実行                              |
-| 3-5 ステップ、明確な方針                                               | `/approach-check`                     |
-| 3-5 ステップ + 単一の設計判断                                          | Document Workflow（plan.md のみ）     |
-| mechanical-lane 4 条件 AND 成立（`/document-workflow-reference` 参照） | Document Workflow（plan.md のみ）     |
-| 3-5 ステップ + 複数判断 / 6+ ステップ / 複数サブシステム               | Document Workflow（spec + plan-N）    |
-| Scope Guard 検知                                                       | `/scope-guard` → spec + plan-N に分解 |
+- 1-2 ステップ、1-2 ファイル → 直接実行
+- 3-5 ステップ、明確な方針 → `/approach-check`
+- 3-5 ステップ + 単一の設計判断 → Document Workflow（plan.md のみ）
+- mechanical-lane 4 条件 AND 成立（`/document-workflow-reference` 参照） → Document Workflow（plan.md のみ）
+- 3-5 ステップ + 複数判断 / 6+ ステップ / 複数サブシステム → Document Workflow（spec + plan-N）
+- Scope Guard 検知 → `/scope-guard` → spec + plan-N に分解
 
 **Document Workflow 必須トリガー**（いずれか 1 つ）: ADR planning phase / アーキテクチャ・API 設計・データモデルの変更 / 探索と実装が混在するタスク / ユーザーが計画を要求。
 
