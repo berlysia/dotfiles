@@ -129,4 +129,11 @@ ADR-0023 の配備後実測の作業中に踏んだ。2026-10-02。
 - 影響: 診断が「満たされている」と言うので、利用者も model も次の一手を診断から得られない。`workflow-cli status`（対象なし）も、すべて ✓ の下で 1 行目に「is blocked」と表示する。
 - 対処の候補: `diagnoseGate` が `research.md` の有無を 7 つ目の条件として表示する。または、単層モードで `research.md` を要求するかどうかを見直す（rules/workflow.md の共通フロー step 1 は research.md を書くとしている）。
 
-未着手である理由: 実測の作業中に見つけたもので、どちらの対処にするかを決めていない。
+解消（2026-10-02）: 候補のうち診断に条件を出す側（a）を採った。
+
+- 採用した形: research.md の有無を `researchExists(wfPaths)` の 1 つの述語に寄せ、`evaluateTarget`・`diagnoseGate`（`research` と `active`）・`isImplementationPhase`・`isWorkflowActive` がそれを呼ぶ。`GateDiagnosis.research` に `✓/✗ research.md` の行を持たせ、research.md が無いときはそれを最初の失敗として扱う（`Next:` は research.md を書く指示、二層の plan-N の `note` は出さない）。
+- 判定側の穴も同じ根で塞いだ。`isImplementationPhase` が research.md を見ていなかったため、research.md が無い間は guard の Bash インタプリタ書き込みチェックと tripwire が止まっていた。いまは gate が閉じているものとして扱う。
+- status: 判定を断定するヘッダ（`formatGateDiagnosis`）と、条件のチェックリスト（`formatGateChecklist`）を分けた。対象なしの `status` は「is blocked」と断定せず、中立のヘッダで条件を並べる。二層では plan-N 側を評価しないので、spec.md が通っても allowed とは言えないため。
+- research.md の要求は残した（見直し案（b）は採らない）。要求は共通フロー step 1、root `plan.md` の DW-06、`workflow-gate.test.ts` の「an approved plan without research.md still denies」で固定された意図であり、不具合は要求があることではなく診断に出ないことだった。
+- 見送った再設計: 判定を診断から導く（`evaluateTarget = decide(diagnose(...))`）形。`GateDiagnosis` を plan-N 単位に作り直す必要があり、課題 K の不一致は research.md の 1 条件だけなので範囲に見合わない。着手の条件は、別の条件で判定と診断がずれたとき。
+- 残る穴: 二層の plan-N の条件（未承認、parent-spec-hash の不一致）は、診断では ✓/✗ の行にならず `note` でしか示されない。`workflow-gate.test.ts` の不変条件テストは「✗ 行か `note:` 行があり、satisfied と言わない」までを守り、note の文言が本当の原因を名指ししているかは検証しない。
