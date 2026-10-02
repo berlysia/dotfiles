@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import {
   resolveCliDeps,
@@ -1284,5 +1284,172 @@ describe("workflow-cli: resolveCliDeps (spec K3)", () => {
     );
     assert.ok("deps" in withFlag);
     assert.equal(withFlag.deps.wfDirSource, "none");
+  });
+});
+
+describe("workflow-cli: --wf-dir override (spec K3)", () => {
+  // `dir` reads no document, so a bare <root>/.tmp/sessions/<id> is enough;
+  // seedWorkflow's wf is a plain tmp dir with no project root above it.
+  function sessionsRoot(): { root: string; wf: string } {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "cli-override-")));
+    const wf = join(root, ".tmp", "sessions", "abcdef12");
+    mkdirSync(wf, { recursive: true });
+    return { root, wf };
+  }
+
+  function depsWith(
+    root: string,
+    wf: string,
+    source: "derived" | "env" | "none",
+  ) {
+    return {
+      cwd: root,
+      wfDir: source === "none" ? "" : wf,
+      wfDirSource: source,
+      sessionId: "test-ses",
+      now: NOW,
+    };
+  }
+
+  it("dir --wf-dir reports source=override and warns when it differs from the resolved dir", () => {
+    const { root, wf } = sessionsRoot();
+    const other = join(wf, "..", "other000");
+    mkdirSync(other, { recursive: true });
+    const r = runWorkflowCli(
+      ["dir", "--wf-dir", other],
+      depsWith(root, wf, "derived"),
+    );
+    assert.equal(r.exitCode, 0, r.stderr);
+    assert.equal(r.stdout, `wfDir=${resolve(other)}\nsource=override\n`);
+    assert.match(
+      r.stderr,
+      /--wf-dir points at .*other000, not the resolved dir/,
+    );
+  });
+
+  it("does not warn when --wf-dir names the resolved dir itself", () => {
+    const { root, wf } = sessionsRoot();
+    const r = runWorkflowCli(
+      ["dir", "--wf-dir", wf],
+      depsWith(root, wf, "env"),
+    );
+    assert.equal(r.stderr, "");
+  });
+
+  it("refuses an empty --wf-dir value and a missing resolved dir", () => {
+    const { root, wf } = sessionsRoot();
+    const empty = runWorkflowCli(
+      ["dir", "--wf-dir"],
+      depsWith(root, wf, "derived"),
+    );
+    assert.equal(empty.exitCode, 1);
+    assert.equal(empty.stdout, "");
+    assert.match(empty.stderr, /--wf-dir needs a value/);
+    const none = runWorkflowCli(["dir"], depsWith(root, wf, "none"));
+    assert.equal(none.exitCode, 1);
+    assert.match(none.stderr, /pass --wf-dir/);
+  });
+
+  it("warns when an overridden or pinned dir does not exist, but not for a fresh derived dir", () => {
+    const { root, wf } = sessionsRoot();
+    const missing = join(wf, "..", "missing0");
+    const override = runWorkflowCli(
+      ["dir", "--wf-dir", missing],
+      depsWith(root, wf, "derived"),
+    );
+    assert.equal(override.exitCode, 0);
+    assert.match(
+      override.stderr,
+      /missing0 does not exist \(source=override\)/,
+    );
+    const derived = runWorkflowCli(["dir"], depsWith(root, missing, "derived"));
+    assert.doesNotMatch(derived.stderr, /does not exist/);
+  });
+});
+
+describe("workflow-cli: output provenance (spec K5)", () => {
+  function depsFor(wf: string) {
+    return {
+      cwd: wf,
+      wfDir: wf,
+      wfDirSource: "derived" as const,
+      sessionId: "test-ses",
+      now: NOW,
+    };
+  }
+
+  it("round, stamp and triage end with wfDir=, source= and wrote= lines", () => {
+    const { wf } = seedWorkflow({
+      doc: "plan-1.md",
+      round: 0,
+      ledgerSlugs: ["logic-validator", "scope-justification-reviewer"],
+    });
+    const lastLines = (stdout: string) =>
+      stdout.trimEnd().split("\n").slice(-3);
+    const expected = [
+      `wfDir=${wf}`,
+      "source=derived",
+      `wrote=${join(wf, "plan-1.md")}`,
+    ];
+
+    const round = runWorkflowCli(["round", "plan-1.md"], depsFor(wf));
+    assert.equal(round.exitCode, 0, round.stderr);
+    assert.deepEqual(lastLines(round.stdout), expected);
+
+    const stamp = runWorkflowCli(
+      [
+        "stamp",
+        "plan-1.md",
+        "--verdict",
+        "needs-work",
+        "--reviewers",
+        "logic-validator+scope-justification-reviewer",
+      ],
+      depsFor(wf),
+    );
+    assert.equal(stamp.exitCode, 0, stamp.stderr);
+    assert.deepEqual(lastLines(stamp.stdout), expected);
+
+    const triage = runWorkflowCli(
+      ["triage", "plan-1.md", "--adopted", "1", "--excluded", "0"],
+      depsFor(wf),
+    );
+    assert.equal(triage.exitCode, 0, triage.stderr);
+    assert.deepEqual(lastLines(triage.stdout), expected);
+  });
+
+  it("dir prints exactly the wfDir= and source= lines", () => {
+    const { wf } = seedWorkflow({
+      doc: "plan-1.md",
+      round: 1,
+      ledgerSlugs: [],
+    });
+    const r = runWorkflowCli(["dir"], depsFor(wf));
+    assert.equal(r.exitCode, 0);
+    assert.equal(r.stdout, `wfDir=${wf}\nsource=derived\n`);
+  });
+
+  it("stamp and triage refuse a path and leave stdout empty", () => {
+    const { wf } = seedWorkflow({
+      doc: "plan-1.md",
+      round: 1,
+      ledgerSlugs: ["logic-validator"],
+    });
+    for (const argv of [
+      [
+        "stamp",
+        "../plan-1.md",
+        "--verdict",
+        "pass",
+        "--reviewers",
+        "logic-validator",
+      ],
+      ["triage", "sub/plan-1.md", "--adopted", "1", "--excluded", "0"],
+    ]) {
+      const r = runWorkflowCli(argv, depsFor(wf));
+      assert.equal(r.exitCode, 1, argv.join(" "));
+      assert.equal(r.stdout, "");
+      assert.match(r.stderr, /bare file name/);
+    }
   });
 });
