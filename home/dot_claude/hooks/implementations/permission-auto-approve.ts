@@ -17,6 +17,7 @@ import { createPermissionRequestAllowResponse } from "../lib/permission-request-
 import type { PermissionRequestInput } from "../lib/structured-llm-evaluator.ts";
 import { isValidSessionId } from "../lib/workflow-paths.ts";
 import { scanSafeList } from "../lib/safe-command-list.ts";
+import { prefixThenOnLine, type TextMatcher } from "../lib/linear-match.ts";
 
 /**
  * Static decision with source attribution.
@@ -174,19 +175,21 @@ const SAFE_BASH_PATTERNS = [
 ];
 
 /**
- * Dangerous patterns that should never be auto-approved
+ * Dangerous patterns that should never be auto-approved. Exported for the
+ * differential test (linear-match-equivalence.test.ts). Do not add a regex of
+ * the form `X\s+.*Y` / `X.*Y` here; use prefixThenOnLine (see Issue #219).
  */
-const DANGEROUS_PATTERNS = [
+const DANGEROUS_PATTERNS: ReadonlyArray<TextMatcher> = [
   // Destructive file operations
   /rm\s+(-[rf]+\s+)*\//,
   /rm\s+-rf\b/,
   // Disk operations
-  /\bdd\s+.*if=/,
+  prefixThenOnLine(/\bdd\s+/, /if=/),
   /\bmkfs\b/,
   /\bformat\s+[A-Z]:/i, // Windows format command
   // Remote code execution
-  /curl.*\|\s*(sh|bash|zsh)/,
-  /wget.*\|\s*(sh|bash|zsh)/,
+  prefixThenOnLine(/curl/, /\|\s*(sh|bash|zsh)/),
+  prefixThenOnLine(/wget/, /\|\s*(sh|bash|zsh)/),
   /\beval\b/,
   // System modifications
   /\bsudo\b/,
