@@ -167,7 +167,7 @@ main() {
             printf '%s\n' "typescript" "codex" "shell" "all" "lint"
             ;;
         lint)
-            run_lint "${extra_args[@]}"
+            run_lint ${extra_args[@]+"${extra_args[@]}"}
             ;;
         all)
             local typescript_workflow
@@ -177,14 +177,14 @@ main() {
             codex_workflow="$(workflow_path codex)"
             shell_workflow="$(workflow_path shell)"
 
-            run_workflow "${typescript_workflow}" "${extra_args[@]}"
-            run_workflow "${codex_workflow}" "${extra_args[@]}"
-            run_workflow "${shell_workflow}" "${extra_args[@]}"
+            run_workflow "${typescript_workflow}" ${extra_args[@]+"${extra_args[@]}"}
+            run_workflow "${codex_workflow}" ${extra_args[@]+"${extra_args[@]}"}
+            run_workflow "${shell_workflow}" ${extra_args[@]+"${extra_args[@]}"}
             ;;
         typescript | ts | codex | shell)
             local workflow
             workflow="$(workflow_path "${target}")"
-            run_workflow "${workflow}" "${extra_args[@]}"
+            run_workflow "${workflow}" ${extra_args[@]+"${extra_args[@]}"}
             ;;
         *)
             usage >&2
