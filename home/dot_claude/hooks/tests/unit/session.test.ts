@@ -270,7 +270,7 @@ describe("session.ts hook behavior", () => {
     });
   });
 
-  describe("DOCUMENT_WORKFLOW_DIR resolution", () => {
+  describe("workflow dir resolution", () => {
     const envHelper = new EnvironmentHelper();
     let envFilePath: string;
 
@@ -286,7 +286,7 @@ describe("session.ts hook behavior", () => {
       envHelper.restore();
     });
 
-    it("derives DOCUMENT_WORKFLOW_DIR from session id when not pre-set", async () => {
+    it("derives the workflow dir from the session id and exports neither the dir nor the session id", async () => {
       envHelper.set("DOCUMENT_WORKFLOW_DIR", undefined);
       const ctx = createSessionStartContext("cli");
       ctx.input.session_id = "abcdef1234567890";
@@ -295,62 +295,41 @@ describe("session.ts hook behavior", () => {
 
       const content = readFileSync(envFilePath, "utf-8");
       ok(
-        content.includes(
-          'export DOCUMENT_WORKFLOW_DIR=".tmp/sessions/abcdef12"',
-        ),
-        `Expected derived path, got:\n${content}`,
+        !content.includes("DOCUMENT_WORKFLOW_DIR"),
+        `unexpected export:\n${content}`,
+      );
+      ok(
+        !content.includes("CLAUDE_SESSION_ID"),
+        `unexpected export:\n${content}`,
       );
       const systemMessage = ctx.jsonCalls[0]?.systemMessage ?? "";
-      ok(
-        systemMessage.includes(".tmp/sessions/abcdef12/"),
-        "systemMessage should contain the session-derived workflow directory",
-      );
-      ok(
-        !systemMessage.includes("(user-specified)"),
-        "Derived path should not be labeled as user-specified",
-      );
+      ok(systemMessage.includes(".tmp/sessions/abcdef12/"));
+      ok(!systemMessage.includes("(user-specified)"));
     });
 
-    it("respects pre-set DOCUMENT_WORKFLOW_DIR", async () => {
+    it("shows a startup pin as user-specified without re-exporting it", async () => {
       envHelper.set("DOCUMENT_WORKFLOW_DIR", ".tmp/sessions/4dc42491");
       const ctx = createSessionStartContext("cli");
       ctx.input.session_id = "different-session-id";
 
       await invokeRun(sessionHook, ctx);
 
-      const content = readFileSync(envFilePath, "utf-8");
-      ok(
-        content.includes(
-          'export DOCUMENT_WORKFLOW_DIR=".tmp/sessions/4dc42491"',
-        ),
-        `Expected user-specified path, got:\n${content}`,
-      );
-      ok(
-        !content.includes(
-          'export DOCUMENT_WORKFLOW_DIR=".tmp/sessions/differen',
-        ),
-        "Session-derived path should not be appended when user value is set",
-      );
+      ok(!readFileSync(envFilePath, "utf-8").includes("DOCUMENT_WORKFLOW_DIR"));
       const systemMessage = ctx.jsonCalls[0]?.systemMessage ?? "";
-      ok(
-        systemMessage.includes(".tmp/sessions/4dc42491/ (user-specified)"),
-        "systemMessage should contain the user-specified workflow directory with its label",
-      );
+      ok(systemMessage.includes(".tmp/sessions/4dc42491/ (user-specified)"));
     });
 
-    it("falls back to session id when DOCUMENT_WORKFLOW_DIR is empty", async () => {
+    it("falls back to the session id when DOCUMENT_WORKFLOW_DIR is empty", async () => {
       envHelper.set("DOCUMENT_WORKFLOW_DIR", "");
       const ctx = createSessionStartContext("cli");
       ctx.input.session_id = "fallback1234abcd";
 
       await invokeRun(sessionHook, ctx);
 
-      const content = readFileSync(envFilePath, "utf-8");
       ok(
-        content.includes(
-          'export DOCUMENT_WORKFLOW_DIR=".tmp/sessions/fallback"',
+        (ctx.jsonCalls[0]?.systemMessage ?? "").includes(
+          ".tmp/sessions/fallback/",
         ),
-        `Expected fallback path, got:\n${content}`,
       );
     });
 

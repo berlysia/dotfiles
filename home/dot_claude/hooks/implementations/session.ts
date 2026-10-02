@@ -20,16 +20,6 @@ function getGlobalSettingsPath(): string {
   return resolve(getHomeDir(), ".claude", "settings.json");
 }
 
-// Characters that would break out of the double-quoted shell sink this
-// module writes DOCUMENT_WORKFLOW_DIR through (`export X="${value}"`). See
-// the write site below for why this list, not a general escaper, is correct
-// here.
-const UNSAFE_FOR_DOUBLE_QUOTED_EXPORT = /["`$\\\n]/;
-
-function isSafeForDoubleQuotedExport(value: string): boolean {
-  return !UNSAFE_FOR_DOUBLE_QUOTED_EXPORT.test(value);
-}
-
 function checkSharedTaskList(): string | null {
   const taskListId = process.env.CLAUDE_CODE_TASK_LIST_ID;
   if (taskListId) {
@@ -126,7 +116,7 @@ const hook = defineHook({
       // Log session start using centralized logger
       logEvent("SessionStart", context.input.session_id);
 
-      // Resolve DOCUMENT_WORKFLOW_DIR the same way the guard does (K1/K3),
+      // Resolve the workflow dir the same way the guard does (K1/K3),
       // rather than trusting a pre-set value unconditionally: a pin that
       // escapes .tmp/sessions is rejected here exactly as it is by the guard,
       // so the two cannot silently disagree about which directory is armed.
@@ -140,14 +130,18 @@ const hook = defineHook({
       const userPin = process.env.DOCUMENT_WORKFLOW_DIR;
 
       // Export session info to CLAUDE_ENV_FILE for skills to consume
+      //
+      // The workflow dir and the session id are deliberately not exported
+      // (spec K4). An exported value outlives /clear in the Bash env and
+      // pointed `workflow-cli` and model-written paths at the previous
+      // session's dir (#197). Bash gets them from `workflow-cli dir` and from
+      // CLAUDE_CODE_SESSION_ID, which Claude Code itself keeps current.
       const envFile = process.env.CLAUDE_ENV_FILE;
-      let workflowDirExportSkippedForUnsafeChars = false;
       if (envFile) {
         const transcriptPath = context.input.transcript_path;
         const projectHash = context.input.cwd
           .replace(/\//g, "-")
           .replace(/^-/, "");
-        appendFileSync(envFile, `export CLAUDE_SESSION_ID="${sessionId}"\n`);
         appendFileSync(
           envFile,
           `export CLAUDE_PROJECT_DIR=${shellSingleQuote(cwd)}\n`,
@@ -167,32 +161,6 @@ const hook = defineHook({
             envFile,
             `export CLAUDE_TASK_LIST_ID=${shellSingleQuote(taskListId)}\n`,
           );
-        }
-
-        // decision 6: spec R8 / K8 item 7 leave the *general* unescaped-write
-        // fix for these exports to later work; this is a narrower fail-safe
-        // scoped to the containment path K11 newly opened.
-        // `isStrictlyUnderProjectSubdir` accepts an as-yet-uncreated
-        // descendant, so a value like `.tmp/sessions/x";touch /tmp/x;"` can
-        // reach this point through containment. Rather than escape it
-        // (sanitizeForDisplay is the wrong tool -- its own docstring says it
-        // keeps `$` and is not for structural sinks), a value carrying a
-        // character unsafe for this sink's double quotes is simply not
-        // written, matching how an unresolvable dir is already handled below.
-        // `resolution.relative === null` (the unresolvable case) is folded
-        // into the same "do not write" rule for the same reason: writing the
-        // literal string "null" as the exported value would keep this file's
-        // single export line intact while pointing consumers at a directory
-        // that does not exist.
-        if (resolution.relative !== null) {
-          if (isSafeForDoubleQuotedExport(resolution.relative)) {
-            appendFileSync(
-              envFile,
-              `export DOCUMENT_WORKFLOW_DIR="${resolution.relative}"\n`,
-            );
-          } else {
-            workflowDirExportSkippedForUnsafeChars = true;
-          }
         }
 
         // This block is deliberately NOT wrapped in its own try/catch, unlike
@@ -217,8 +185,8 @@ const hook = defineHook({
         // name the check that failed, not guess at one of them.
         messages.push(
           resolution.reason === "invalid-session-id"
-            ? "[session] the session id is malformed, so no workflow directory could be derived; DOCUMENT_WORKFLOW_DIR is not exported."
-            : `[session] could not verify that the derived workflow directory is a strict descendant of ${cwd}/.tmp/sessions; DOCUMENT_WORKFLOW_DIR is not exported.`,
+            ? "[session] the session id is malformed, so no workflow directory could be derived; the workflow gate is not enforcing."
+            : `[session] could not verify that the derived workflow directory is a strict descendant of ${cwd}/.tmp/sessions; the workflow gate is not enforcing.`,
         );
       } else {
         const sourceLabel =
@@ -235,15 +203,9 @@ const hook = defineHook({
         );
         if (resolution.source === "env-rejected") {
           messages.push(
-            `[session] DOCUMENT_WORKFLOW_DIR="${userPin}" was rejected (not a verified descendant of ${cwd}/.tmp/sessions) and the derived directory is used instead; \`cp -a\` handoffs and other consumers of $DOCUMENT_WORKFLOW_DIR will see ${resolution.relative}, not the pin.`,
+            `[session] DOCUMENT_WORKFLOW_DIR="${userPin}" was rejected (not a verified descendant of ${cwd}/.tmp/sessions) and the derived directory ${resolution.relative} is used instead.`,
           );
         }
-      }
-
-      if (workflowDirExportSkippedForUnsafeChars) {
-        messages.push(
-          "[session] DOCUMENT_WORKFLOW_DIR was not exported to CLAUDE_ENV_FILE: the resolved path contains a character unsafe for its double-quoted shell export.",
-        );
       }
 
       messages.push(
