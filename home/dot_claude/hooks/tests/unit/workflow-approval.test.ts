@@ -379,3 +379,47 @@ describe("approval question (spec K3/K4/K7)", () => {
     );
   });
 });
+
+describe("ledger via field (spec K5)", () => {
+  it("writes via as given", () => {
+    const wf = mkdtempSync(join(tmpdir(), "approvals-"));
+    appendApproval(wf, {
+      doc: "plan.md",
+      hash: H1,
+      session: "s",
+      at: "t",
+      via: "ask",
+    });
+    const line = readFileSync(join(wf, APPROVALS_LOG), "utf-8").trim();
+    assert.deepEqual(JSON.parse(line), {
+      v: 1,
+      doc: "plan.md",
+      hash: H1,
+      session: "s",
+      at: "t",
+      via: "ask",
+    });
+  });
+
+  it("reads via, and treats a missing or unknown via as undefined without ignoring the line", () => {
+    const wf = mkdtempSync(join(tmpdir(), "approvals-"));
+    const base = { v: 1, hash: H1, session: "s", at: "t" };
+    appendFileSync(
+      join(wf, APPROVALS_LOG),
+      [
+        { ...base, doc: "spec.md", via: "utterance" },
+        { ...base, doc: "plan-1.md", via: "ask" },
+        { ...base, doc: "plan-2.md" },
+        { ...base, doc: "plan-3.md", via: "other" },
+      ]
+        .map((r) => `${JSON.stringify(r)}\n`)
+        .join(""),
+    );
+    const r = readLatestApprovals(wf);
+    assert.equal(r.ignoredLines, 0);
+    assert.equal(r.latest.get("spec.md")?.via, "utterance");
+    assert.equal(r.latest.get("plan-1.md")?.via, "ask");
+    assert.equal(r.latest.get("plan-2.md")?.via, undefined);
+    assert.equal(r.latest.get("plan-3.md")?.via, undefined);
+  });
+});

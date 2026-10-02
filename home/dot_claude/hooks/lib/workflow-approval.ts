@@ -59,11 +59,15 @@ export function isApprovalShapedPrompt(prompt: unknown): boolean {
   return parseApprovalUtterance(normalized) !== null;
 }
 
+/** Which route recorded the approval. Audit only; the gate never reads it. */
+export type ApprovalVia = "utterance" | "ask";
+
 export interface ApprovalRecord {
   doc: string;
   hash: string;
   session: string;
   at: string;
+  via?: ApprovalVia;
 }
 
 export interface LatestApprovals {
@@ -136,7 +140,7 @@ function parseRecord(line: string): ApprovalRecord | null {
     return null;
   }
   if (typeof value !== "object" || value === null) return null;
-  const { v, doc, hash, session, at } = value as Record<string, unknown>;
+  const { v, doc, hash, session, at, via } = value as Record<string, unknown>;
   if (v !== 1) return null;
   if (
     typeof doc !== "string" ||
@@ -145,7 +149,9 @@ function parseRecord(line: string): ApprovalRecord | null {
   )
     return null;
   if (typeof hash !== "string" || !HASH_PATTERN.test(hash)) return null;
-  return { doc, hash, session, at };
+  const record: ApprovalRecord = { doc, hash, session, at };
+  if (via === "utterance" || via === "ask") record.via = via;
+  return record;
 }
 
 // --- AskUserQuestion approval question (spec K3 / K4 / K7) ---------------
