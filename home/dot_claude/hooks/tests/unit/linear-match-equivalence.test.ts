@@ -8,6 +8,7 @@
 import { ok, strictEqual } from "node:assert";
 import { describe, it } from "node:test";
 import { DESTRUCTIVE_NODE_MODULES_PATTERNS } from "../../implementations/deny-node-modules.ts";
+import { INTERPRETER_WRITE_INDICATOR_PATTERNS } from "../../implementations/document-workflow-guard.ts";
 import { DANGEROUS_PATTERNS } from "../../implementations/permission-auto-approve.ts";
 import { DANGEROUS_COMMAND_PATTERNS } from "../../lib/command-parsing.ts";
 import { buildReadOnlyPatterns } from "../../lib/node-modules-policy.ts";
@@ -61,6 +62,9 @@ const TABLES: Record<string, OracleMatcher[]> = {
   READ_ONLY_PATTERNS: oraclesOf(
     buildReadOnlyPatterns().map((entry) => entry.pattern),
   ),
+  INTERPRETER_WRITE_INDICATOR_PATTERNS: oraclesOf(
+    INTERPRETER_WRITE_INDICATOR_PATTERNS,
+  ),
 };
 
 /** Verbs of each read-only category, in table order. */
@@ -99,13 +103,17 @@ const ORIGINAL_SOURCES: Record<string, string[]> = {
     `(?:^|\\s)mkdir\\s+.*${NM}`,
     `(?:^|\\s)touch\\s+.*${NM}`,
   ],
+  INTERPRETER_WRITE_INDICATOR_PATTERNS: [
+    "open\\([^)]*['\"][wa]\\+?b?['\"]",
+    "Path\\([^)]*\\)\\.open\\(",
+  ],
   // The construction buildReadOnlyPatterns used before the rewrite, applied to the verb table.
   READ_ONLY_PATTERNS: readOnlyVerbsByCategory().map(
     (verbs) => new RegExp(`(?:^|\\s)(${verbs.join("|")})\\s+.*${NM}`).source,
   ),
 };
 
-const EXPECTED_TOTAL = 24;
+const EXPECTED_TOTAL = 26;
 
 interface RuleSpec {
   source: string;
@@ -307,6 +315,20 @@ const RULES: RuleSpec[] = [
     ["touchx", "x touch", `${NM}/x`],
     [`touch a ${NM}`, `x touch\n${NM}`, `touch  ${NM}`],
   ),
+  spec(
+    "open\\([^)]*['\"][wa]\\+?b?['\"]",
+    ["open(", "'", "w", ")", "x"],
+    ['"', "a", "+", "b", "wb", "'w'", "'a+'", '"wb"', "Path("],
+    ["open(f, 'w')", 'open(f,"wb")', "open(a)\nopen(b, 'a+')", "x open(\n'a'"],
+    { perf: [() => "open(".repeat(20000)] },
+  ),
+  spec(
+    "Path\\([^)]*\\)\\.open\\(",
+    ["Path(", ")", ".open(", "x"],
+    ["open(", "Path()", ".open", "))"],
+    ["Path(x).open(", "Path(a, b).open('w')", "Path().open(", "Path(\n).open("],
+    { perf: [() => "Path(".repeat(20000)] },
+  ),
   ...readOnlyVerbsByCategory().map((verbs) => {
     const head = verbs[0] as string;
     return spec(
@@ -356,6 +378,7 @@ describe("production tables", () => {
     await import("../../implementations/permission-auto-approve.ts");
     await import("../../implementations/deny-node-modules.ts");
     await import("../../lib/node-modules-policy.ts");
+    await import("../../implementations/document-workflow-guard.ts");
   });
 
   it("holds the expected number of linear matchers", () => {
@@ -447,6 +470,26 @@ describe("branch boundary cases", () => {
         [`\u00a0> ${NM}`, true],
         [`> a ${NM}`, false],
         [`>a${NM}`, true],
+      ],
+    ],
+    [
+      "open\\([^)]*['\"][wa]\\+?b?['\"]",
+      [
+        ["open(f, 'w')", true],
+        ["open(f) 'w'", false],
+        ["open(f, 'r')", false],
+        ["open(f, 'w+b')", true],
+        ["open(f, 'wb')", true],
+        ['x open(a) open(b, "a")', true],
+      ],
+    ],
+    [
+      "Path\\([^)]*\\)\\.open\\(",
+      [
+        ["Path(x).open(", true],
+        ["Path(x)).open(", false],
+        ["Path(x) .open(", false],
+        ["Path(a\nb).open(", true],
       ],
     ],
   ];
