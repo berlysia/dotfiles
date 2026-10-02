@@ -1,7 +1,7 @@
 {
   "PreToolUse": [
     {
-      "matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash|CronCreate|ScheduleWakeup",
+      "matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash|CronCreate|ScheduleWakeup|AskUserQuestion",
       "hooks": [
         {
           "type": "command",
@@ -96,6 +96,15 @@
     }
   ],
   "PostToolUse": [
+    {
+      "matcher": "AskUserQuestion",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/approval-answer-recorder.ts"
+        }
+      ]
+    },
     {
       "matcher": "Write|Edit",
       "hooks": [

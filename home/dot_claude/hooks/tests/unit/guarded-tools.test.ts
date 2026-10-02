@@ -1,6 +1,8 @@
 #!/usr/bin/env node --test
 
 import { deepStrictEqual, strictEqual } from "node:assert";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 import {
   GUARDED_TOOLS,
@@ -112,6 +114,43 @@ describe("guarded-tools.ts", () => {
           matcherCoversTools(m, [...GUARDED_TOOLS]),
         );
       }
+    });
+  });
+});
+
+describe("settings template wiring", () => {
+  // The template contains `{{ ... }}` syntax and is not valid JSON, so the
+  // matcher is taken as the nearest `"matcher"` before the hook's file name
+  // (an entry lists its matcher before its commands).
+  const tmpl = readFileSync(
+    fileURLToPath(
+      new URL("../../../.settings.hooks.json.tmpl", import.meta.url),
+    ),
+    "utf-8",
+  );
+
+  function matcherBefore(fileName: string): string {
+    const occurrences = tmpl.split(fileName).length - 1;
+    strictEqual(occurrences, 1, `${fileName} must occur exactly once`);
+    const head = tmpl.slice(0, tmpl.indexOf(fileName));
+    const found = [...head.matchAll(/"matcher":\s*"([^"]*)"/g)].at(-1);
+    if (!found) throw new Error(`no matcher before ${fileName}`);
+    return found[1] as string;
+  }
+
+  it("the guard matcher covers every guarded tool", () => {
+    const matcher = matcherBefore("document-workflow-guard.ts");
+    deepStrictEqual(matcherCoversGuardedTools(matcher), {
+      covered: true,
+      missing: [],
+    });
+  });
+
+  it("the answer recorder matcher covers AskUserQuestion", () => {
+    const matcher = matcherBefore("approval-answer-recorder.ts");
+    deepStrictEqual(matcherCoversTools(matcher, ["AskUserQuestion"]), {
+      covered: true,
+      missing: [],
     });
   });
 });
