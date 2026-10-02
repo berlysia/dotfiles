@@ -19,7 +19,7 @@ interface ParseTree {
 }
 
 interface TreeSitterParser {
-  parse(input: string): ParseTree;
+  parse(input: string): ParseTree | null;
   setLanguage(language: unknown): void;
 }
 
@@ -40,11 +40,16 @@ export interface BashParsingResult {
 }
 
 export interface ExtractedCommands {
-  // 解析された個別コマンド（制御構造やメタコマンドから抽出されたもの）
+  // Texts that may run, for deny-side checks: a superset, not a partition.
+  // auto-approve never derives an allow from these (it allows only through
+  // lib/safe-command-list.ts). Regex-based checks see more text here; checks
+  // that read only the first word rely on the AST pieces and coarse pieces,
+  // not on the whole-text entry.
   individualCommands: string[];
-  // 元の完全なコマンド（複合コマンドの場合）
+  // The whole compound command. It may also appear in individualCommands.
   originalCommand: string | null;
-  // パース方法
+  // From the base fragmentation. A null tree or a tree-sitter init failure
+  // reports "fallback".
   parsingMethod: "tree-sitter" | "fallback";
 }
 
@@ -120,9 +125,40 @@ const CONTROL_KEYWORDS = [
   "while",
 ];
 
-// Tree-sitter state
-let treeSitterInitialized = false;
-let bashParser: TreeSitterParser | null = null;
+// Tree-sitter state: one cached initialization shared by concurrent callers.
+let treeSitterReady: Promise<TreeSitterParser> | null = null;
+
+function ensureTreeSitter(): Promise<TreeSitterParser> {
+  if (treeSitterReady === null) {
+    treeSitterReady = (async () => {
+      // Lazy init web-tree-sitter and bash language
+      // Defer to runtime resolution to avoid bundler issues
+      // biome-ignore lint/suspicious/noExplicitAny: dynamic import from web-tree-sitter requires any
+      const ParserMod: any = await import("web-tree-sitter");
+      const Parser = ParserMod.Parser || ParserMod;
+      if (typeof Parser.init === "function") {
+        await Parser.init();
+      }
+
+      // Resolve WASM path via createRequire to avoid cwd dependency
+      const { createRequire } = await import("node:module");
+      const _require = createRequire(import.meta.url);
+      const wasmPath = _require.resolve(
+        "tree-sitter-bash/tree-sitter-bash.wasm",
+      );
+      const Language = ParserMod.Language || Parser.Language;
+      const BashLang = await Language.load(wasmPath);
+      const parser = new Parser() as TreeSitterParser;
+      parser.setLanguage(BashLang);
+      return parser;
+    })().catch((error: unknown) => {
+      // Let a later call retry instead of caching the failure.
+      treeSitterReady = null;
+      throw error;
+    });
+  }
+  return treeSitterReady;
+}
 
 // Simple command line splitter that respects quoted strings and redirections
 function splitCommandLine(command: string): string[] {
@@ -441,26 +477,7 @@ export async function parseBashCommand(
 async function parseWithTreeSitter(
   command: string,
 ): Promise<BashParsingResult> {
-  if (!treeSitterInitialized) {
-    // Lazy init web-tree-sitter and bash language
-    // Defer to runtime resolution to avoid bundler issues
-    // biome-ignore lint/suspicious/noExplicitAny: dynamic import from web-tree-sitter requires any
-    const ParserMod: any = await import("web-tree-sitter");
-    const Parser = ParserMod.Parser || ParserMod;
-    if (typeof Parser.init === "function") {
-      await Parser.init();
-    }
-
-    // Resolve WASM path via createRequire to avoid cwd dependency
-    const { createRequire } = await import("node:module");
-    const _require = createRequire(import.meta.url);
-    const wasmPath = _require.resolve("tree-sitter-bash/tree-sitter-bash.wasm");
-    const Language = ParserMod.Language || Parser.Language;
-    const BashLang = await Language.load(wasmPath);
-    bashParser = new Parser() as TreeSitterParser;
-    bashParser.setLanguage(BashLang);
-    treeSitterInitialized = true;
-  }
+  const parser = await ensureTreeSitter();
   // If meta-execution is present (sh -c, xargs sh -c, etc.), prefer the existing
   // meta extractor to pull out nested commands for safety analysis
   const metaOnly = extractMetaCommands(command, new Set<string>());
@@ -511,12 +528,12 @@ async function parseWithTreeSitter(
     return { commands: mapped, errors: [], parsingMethod: "tree-sitter" };
   }
 
-  const tree = bashParser?.parse(command);
+  const tree = parser.parse(command);
   if (!tree) {
     return {
       commands: [],
       errors: [{ message: "bashParser not initialized" }],
-      parsingMethod: "tree-sitter",
+      parsingMethod: "fallback",
     };
   }
   const cmds = extractCommandsFromTreeSitter(tree, command);
@@ -923,8 +940,125 @@ function parseSimpleCommandFallback(
   };
 }
 
-// Modern structured command extraction with clear separation of individual vs original commands
+import type { Node as TsNode, Tree as TsTree } from "web-tree-sitter";
+
+type ParseForCollect = (command: string) => Promise<TsTree | null>;
+
+const parseForCollect: ParseForCollect = async (command) => {
+  const parser = await ensureTreeSitter();
+  // TreeSitterParser is this file's narrow view of web-tree-sitter's Parser.
+  return parser.parse(command) as unknown as TsTree | null;
+};
+
+/**
+ * True when a file_redirect is already part of a collected text: inside a
+ * command, or on a redirected_statement whose body is a plain command. Any
+ * other redirect (on a subshell, a brace group, a loop, a function definition,
+ * an empty body, or a heredoc_redirect parent such as `cat <<EOF > p`) is
+ * collected on its own. A redirect may then appear both alone and inside a
+ * collected statement; duplicates only add to the deny side.
+ */
+function isCoveredRedirect(redirect: TsNode): boolean {
+  const parent = redirect.parent;
+  if (parent === null) return false;
+  if (parent.type === "command") return true;
+  return (
+    parent.type === "redirected_statement" &&
+    parent.childForFieldName("body")?.type === "command"
+  );
+}
+
+/** The whole text plus a coarse split, for paths with no usable tree. */
+function wholeAndCoarse(command: string): string[] {
+  const whole = command.trim();
+  if (whole === "") return [];
+  const pieces = whole
+    .split(/[;&|\n]+/)
+    .map((piece) => piece.trim())
+    .filter(Boolean);
+  return [whole, ...pieces];
+}
+
+/**
+ * Texts the shell may run that the base fragmentation can drop (spec K3):
+ * (a) every command node; every redirected_statement whose body is a plain
+ * command (a heredoc statement, `ls 2>&1`); and every other file_redirect on
+ * its own (`( echo x ) > plan.md`, `f() { …; } > plan.md`), so a write target
+ * still reaches the guard while words of different commands are never judged
+ * as one text; and (b) the whole
+ * text when the AST cannot be trusted to cover the input. Without a usable tree
+ * (null, a throw, fallback parsing or a parse error) a coarse split is added
+ * too, for checks that read only the first word. The deny side only grows.
+ */
+export async function collectExecutableTexts(
+  command: string,
+  parsingMethod: ExtractedCommands["parsingMethod"],
+  parse: ParseForCollect = parseForCollect,
+): Promise<string[]> {
+  const whole = command.trim();
+  if (whole === "") return [];
+  let tree: TsTree | null = null;
+  try {
+    tree = await parse(command);
+    if (tree === null) return wholeAndCoarse(command);
+    const texts: string[] = [];
+    for (const node of tree.rootNode.descendantsOfType([
+      "command",
+      "redirected_statement",
+    ])) {
+      if (
+        node.type === "command" ||
+        node.childForFieldName("body")?.type === "command"
+      ) {
+        texts.push(node.text.trim());
+      }
+    }
+    for (const redirect of tree.rootNode.descendantsOfType("file_redirect")) {
+      if (!isCoveredRedirect(redirect)) texts.push(redirect.text.trim());
+    }
+    const nonEmpty = texts.filter(Boolean);
+    if (parsingMethod === "fallback" || tree.rootNode.hasError) {
+      return [...nonEmpty, ...wholeAndCoarse(command)];
+    }
+    const uncovered =
+      tree.rootNode.descendantsOfType([
+        "heredoc_redirect",
+        "herestring_redirect",
+      ]).length > 0 || command.includes("`");
+    return uncovered ? [...nonEmpty, whole] : nonEmpty;
+  } catch (error) {
+    console.error(
+      `[bash-parser] collectExecutableTexts failed: ${error instanceof Error ? error.name : typeof error}`,
+    );
+    return wholeAndCoarse(command);
+  } finally {
+    tree?.delete();
+  }
+}
+
 export async function extractCommandsStructured(
+  command: string,
+): Promise<ExtractedCommands> {
+  const base = await extractBaseCommands(command);
+  const supplement = await collectExecutableTexts(command, base.parsingMethod);
+  const seen = new Set(base.individualCommands.map((c) => c.trim()));
+  const individualCommands = [...base.individualCommands];
+  for (const text of supplement) {
+    if (seen.has(text)) continue;
+    seen.add(text);
+    individualCommands.push(text);
+  }
+  return { ...base, individualCommands };
+}
+
+/**
+ * The pre-K3 fragmentation: a best-effort split that can drop text the shell
+ * runs. Not for deny-side checks (they need extractCommandsStructured, the
+ * superset) and never a basis for allow. Only permission-analyzer's
+ * allow-pattern suggestions use it, because its sh -c analysis needs every
+ * fragment to be an inner command.
+ */
+export async function extractBaseCommands(
   command: string,
 ): Promise<ExtractedCommands> {
   try {

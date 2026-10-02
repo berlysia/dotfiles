@@ -325,6 +325,28 @@ describe("auto-approve.ts hook behavior", () => {
     });
   });
 
+  describe("deny-side superset (spec K3)", () => {
+    const run = async (command: string) => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify([]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", {
+        command,
+      });
+      await invokeRun(autoApproveHook, context);
+      return context;
+    };
+
+    it("asks for a force push wrapped around a substitution", async () => {
+      (await run("git push --force origin main $(pwd)")).assertAsk();
+    });
+
+    it("asks for a force push that carries a heredoc before a later line", async () => {
+      (
+        await run("git push --force origin main <<EOF\nhi\nEOF\nls yy")
+      ).assertAsk();
+    });
+  });
+
   describe("Other tool approval", () => {
     it("should approve Edit tool with allow pattern", async () => {
       envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Edit(**)"]));

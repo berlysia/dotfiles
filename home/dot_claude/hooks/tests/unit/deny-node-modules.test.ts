@@ -458,6 +458,20 @@ describe("deny-node-modules.ts boundary behaviour", () => {
     ok(!reason.includes("unlink"));
   });
 
+  describe("deny-side superset (spec K3)", () => {
+    it("denies a heredoc-fed shell that removes node_modules", async () => {
+      const context = await runBash("bash <<EOF\nrm -rf node_modules/x\nEOF");
+      context.assertDeny();
+    });
+    it("does not pair a delete word and node_modules from different commands when the AST covers the input", async () => {
+      (await runBash("ls && rm foo && ls node_modules")).assertSuccess({});
+    });
+    // Compound bodies such as `(rm foo; ls node_modules) 2>&1` are already
+    // returned whole by the base fragmentation, so deny-node-modules denies them
+    // today (a pre-existing false positive, F3b). K3 does not change that, and
+    // the "not added whole" guarantee is pinned in bash-parser.test.ts.
+  });
+
   const askCmds = [
     "python3 -c 'import shutil; shutil.rmtree(\"node_modules\")'",
     "git clean -fdx node_modules",
