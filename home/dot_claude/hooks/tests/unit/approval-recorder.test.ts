@@ -220,6 +220,29 @@ describe("approval-recorder (spec K7)", () => {
     assert.equal(readLatestApprovals(wf).latest.has("plan.md"), true);
   });
 
+  it("appends the probe line to a reply for a prompt the user did not type", async () => {
+    writeFileSync(join(wf, "plan.md"), buildPlanContent(REVIEWED));
+    const { text } = await say("承認", {
+      source: "schedule_wakeup",
+      prompt_id: "p1",
+      transcript_path: join(repo, "transcript.jsonl"),
+    });
+    assert.match(text, /source=schedule_wakeup.*記録していない/);
+    assert.match(text, /probe: source=schedule_wakeup prompt_id=present/);
+    assert.equal(existsSync(join(wf, "approvals.log")), false);
+  });
+
+  it("records the approval even when the probe cannot read the transcript", async () => {
+    writeFileSync(join(wf, "plan.md"), buildPlanContent(REVIEWED));
+    const { text } = await say("承認", {
+      source: "user",
+      prompt_id: "p2",
+      transcript_path: join(repo, "no-such-transcript.jsonl"),
+    });
+    assert.equal(readLatestApprovals(wf).latest.has("plan.md"), true);
+    assert.match(text, /transcript=unreadable/);
+  });
+
   it("does not rewrite a document that is a symlink, and leaves no temp file", async () => {
     const outside = join(repo, "outside-plan.md");
     writeFileSync(outside, buildPlanContent(REVIEWED));

@@ -13,6 +13,10 @@
  * and only when the user typed it: the input's `source` is "user" or absent
  * (scheduled, polled and SDK prompts carry another value), outside any
  * subagent. ADR-0023 records why an absent `source` is accepted.
+ *
+ * Every reply ends with a probe line (lib/prompt-origin-probe.ts) so that
+ * issue J can measure whether the transcript names a prompt's origin at the
+ * moment this hook runs; the probe never decides anything.
  */
 
 import { randomBytes } from "node:crypto";
@@ -28,6 +32,7 @@ import {
 } from "node:fs";
 import { resolve } from "node:path";
 import { defineHook } from "cc-hooks-ts";
+import { probePromptOrigin } from "../lib/prompt-origin-probe.ts";
 import { getProjectRoot } from "../lib/project-root.ts";
 import { appendApproval } from "../lib/workflow-approval.ts";
 import {
@@ -57,8 +62,8 @@ export function parseApprovalUtterance(
   return { docs: [...new Set(names)] };
 }
 
-function approvalOutput(text: string) {
-  const message = `[approval-recorder] ${text}`;
+function approvalOutput(text: string, probe?: string) {
+  const message = `[approval-recorder] ${text}${probe === undefined ? "" : `\n${probe}`}`;
   return {
     event: "UserPromptSubmit" as const,
     output: {
@@ -159,6 +164,11 @@ const hook = defineHook({
     if (utterance === null) {
       return context.success({});
     }
+    const probe = probePromptOrigin({
+      transcriptPath: context.input.transcript_path,
+      promptId: context.input.prompt_id,
+      source: context.input.source,
+    });
     if (
       context.input.agent_id !== undefined ||
       !isTypedByUser(context.input.source)
@@ -168,6 +178,7 @@ const hook = defineHook({
       return context.json(
         approvalOutput(
           `承認の形のプロンプトを受け取ったが、利用者が打ったものではない（source=${context.input.source ?? "none"}${context.input.agent_id !== undefined ? ", subagent" : ""}）ので記録していない。`,
+          probe,
         ),
       );
     }
@@ -180,6 +191,7 @@ const hook = defineHook({
         return context.json(
           approvalOutput(
             "承認の発話を受け取ったが、この session の workflow dir を解決できないので何も記録していない。",
+            probe,
           ),
         );
       }
@@ -194,6 +206,7 @@ const hook = defineHook({
           return context.json(
             approvalOutput(
               `${notReady.join(", ")} は承認以外の条件（Plan / Review / marker / parent-spec-hash）を満たしていないので、何も記録していない。\`workflow-cli status\` で確認する。`,
+              probe,
             ),
           );
         }
@@ -206,6 +219,7 @@ const hook = defineHook({
               targets.length === 0
                 ? "承認を待っている文書が無いので、何も記録していない。"
                 : `承認を待っている文書が ${targets.length} 件あるので、何も記録していない。文書名を付けて ${targets.map((doc) => `「承認 ${doc}」`).join(" / ")} と書いてもらう。`,
+              probe,
             ),
           );
         }
@@ -225,12 +239,13 @@ const hook = defineHook({
       notes.push(
         "編集する前に文書を読み直す。取り消すには承認行を pending に戻す。",
       );
-      return context.json(approvalOutput(notes.join(" ")));
+      return context.json(approvalOutput(notes.join(" "), probe));
     } catch (error) {
       console.error("[approval-recorder] internal error:", error);
       return context.json(
         approvalOutput(
           `承認の記録中にエラーが起きた（${String(error).slice(0, 200)}）。記録できなかった可能性がある。\`workflow-cli status\` で確認する。`,
+          probe,
         ),
       );
     }
