@@ -185,7 +185,8 @@ test_zdotdir_loop_guard() { # pre-migration ~/.zshenv exports ZDOTDIR and source
   local copy="$TMP_BASE/home_loop" out rc
   cp -R "$FIX_HOME" "$copy"
   printf 'export ZDOTDIR=$HOME/.zsh\n[ -f "$ZDOTDIR/.zshenv" ] && source "$ZDOTDIR/.zshenv"\n' >"$copy/.zshenv"
-  out=$(env -i HOME="$copy" PATH="$SHELL_DIRS:/usr/bin:/bin" TERM=xterm ZDOTDIR="$copy/.zsh" timeout 10 zsh -c 'echo ok' </dev/null 2>/dev/null); rc=$?
+  # shellcheck disable=SC2086 # WATCHDOG is intentionally word-split; it is empty where neither timeout nor gtimeout exists (macOS runners), and the job timeout bounds a regression there
+  out=$(env -i HOME="$copy" PATH="$SHELL_DIRS:/usr/bin:/bin" TERM=xterm ZDOTDIR="$copy/.zsh" $WATCHDOG zsh -c 'echo ok' </dev/null 2>/dev/null); rc=$?
   assert_eq "ok" "$out" "loop guard: shell with pre-migration ~/.zshenv terminates and runs the command"
   assert_eq "0" "$rc" "loop guard: exit 0"
 }
