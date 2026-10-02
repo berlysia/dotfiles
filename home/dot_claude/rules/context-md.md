@@ -11,12 +11,12 @@ per-project ドメイン語彙を AI が事前読込できる単一エントリ�
 ## 配置
 
 - ルート: `${projectRoot}/.tmp/docs/CONTEXT.md` (固定)
-- 既存 `.tmp/` gitignore と `home/dot_claude/rules/developer-experience.md` の WIP docs 規約に乗る (新規 gitignore ルールを各プロジェクトに要求しない)
-- GC 対象外: `home/dot_claude/rules/workflow.md` Session Artifact Retention 節「`.tmp/docs/` は永続扱い」を参照。GC スクリプト (`home/.chezmoiscripts/run_after_gc.sh.tmpl`) は `.tmp/sessions/` の path-prefix のみを対象とする SAFE pattern
+- 既存 `.tmp/` gitignore と `~/.claude/rules/developer-experience.md` の WIP docs 規約に乗る (新規 gitignore ルールを各プロジェクトに要求しない)
+- GC 対象外: `~/.claude/rules/workflow.md` Session Artifact Retention 節「`.tmp/docs/` は永続扱い」を参照。chezmoi の GC スクリプトは `.tmp/sessions/` の path-prefix のみを対象とする SAFE pattern
 
 ## 構造 (3 区分)
 
-CONTEXT.md は以下の 3 区分で構成する。template (`home/dot_claude/templates/context.md.tmpl`) がこの構造を提供する。
+CONTEXT.md は以下の 3 区分で構成する。template (`~/.claude/templates/context.md`) がこの構造を提供する。
 
 1. **Authoritative references** — `@path` で project-side SSoT (`docs/decisions/`, `CONTRIBUTING.md`, `README.md` 等) を index する。各エントリは 1 行要約のみ (要約と本体の drift を最小化、本体は SSoT として参照側を保つ)
 2. **Personal observations** — 個人理解をインライン記述する。grill で得た語彙定義、ステータス遷移、暗黙ルール、自分の暫定理解等。チーム合意化したい内容は `docs/` 配下や ADR へ昇格する
@@ -28,7 +28,7 @@ CONTEXT.md は以下の 3 区分で構成する。template (`home/dot_claude/tem
 - **解決メカニズムは異なる**:
   - CLAUDE.md 内の `@path` は Claude Code が読み込み時に自動展開する system 機構
   - CONTEXT.md 内の `@path` は system 機構の対象外。「人間と AI が共有する表記規約」として AI は session 開始時に CONTEXT.md を Read した後、必要時に明示的に該当 path を Read する
-- **path 種別**: `${projectRoot}` 相対 (例: `@docs/decisions/0001-foo.md`) を基本とする。home 相対 (`@~/`) は機密引き込みリスクのため非推奨
+- **path 種別**: `${projectRoot}` 相対 (例: `@docs/decisions/NNNN-foo.md`) を基本とする。home 相対 (`@~/`) は機密引き込みリスクのため非推奨
 
 ## degraded mode
 
@@ -71,17 +71,17 @@ AI による symlink 自動作成はしない (人間判断を保留する)。ca
 
 ### dog-food 事例
 
-本 dotfiles リポジトリ自体がこのパターンの最初の利用者 (eat-your-own-dog-food)。root `CONTEXT.md` が canonical、`.tmp/docs/CONTEXT.md` が `../../CONTEXT.md` への symlink。詳細は `docs/decisions/0010-context-md-mechanism.md` の Consequences 節および本リポジトリ root の `CONTEXT.md` を参照。
+dotfiles リポジトリ自体がこのパターンの最初の利用者 (eat-your-own-dog-food)。root `CONTEXT.md` を canonical にし、`.tmp/docs/CONTEXT.md` を `../../CONTEXT.md` への symlink にしている。
 
 ## template
 
-- **場所**: `home/dot_claude/templates/context.md.tmpl` (デプロイ先は `~/.claude/templates/context.md`、chezmoi が `.tmpl` を strip)
+- **場所**: `~/.claude/templates/context.md`
 - **初期化**: 開発者が必要なプロジェクトで手動コピーする。自動生成しない (不要プロジェクトへの増殖を回避)
 - **template ヘッダ規約**:
   - commit 禁止: 個人スコープのため `.tmp/` gitignore + template ヘッダ注意書きで二重防御
   - 機密 path 非参照: `@.env*`, `@secrets/`, `@~/.ssh/` 等は CONTEXT.md に書かない (AI が follow して機密を context に取り込むリスク回避)
   - 要約 1 行最小: Authoritative references の要約は 1 行に絞る (本体との drift surface を最小化)
 
-## 関連 ADR
+## 未実装の検討事項
 
-- `docs/decisions/0010-context-md-mechanism.md`: 本機構の判断記録、Defer to subsequent ADR 節で grill skill / context-audit / session-start hook / allowlist 規約 / `.tmpl` 規約棚卸しを列挙
+grill skill / context-audit / session-start hook / allowlist 規約 / `.tmpl` 規約の棚卸しは、後続で判断する。

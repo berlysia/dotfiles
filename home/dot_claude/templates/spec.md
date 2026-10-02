@@ -1,7 +1,6 @@
 # Spec: <feature/change name>
 
-> **Template usage**: 二層モード (spec.md + plan-N.md) の設計層テンプレート。承認後に plan-1.md / plan-2.md ... を切り出す。
-> 単層モード (plan.md のみ) を選択した場合は本テンプレートは使わず、`plan.md` 内に軽量 spec セクション (Goal / Greenfield View / Decisions) を短文で内包する。
+> **Template usage**: 二層モードの設計層。承認後に plan-1.md … を切り出す。単層モードでは使わず、plan.md に Goal / Greenfield View / Decisions を短く書く。
 
 ## Goal
 
@@ -71,18 +70,3 @@
 
 <!-- auto-review: pending -->
 <!-- intent-triage: pending -->
-
----
-
-<!--
-No Placeholders 禁則（spec.md / plan-N.md / 単層 plan.md 共通）
-
-以下を本テンプレート内に残してはならない（実装フェーズ前に全て解消する）:
-- "TBD" / "TODO" / "後で実装" / "fill in details"
-- "適切にエラー処理" / "バリデーションを追加" / "エッジケース対応"
-- "上記と同様" / "Task N と類似"
-- 他タスクで未定義の型・関数・メソッドへの参照
-- 評価語のみの根拠（"シンプル" / "安全" / "リスクが低い" のみで具体的根拠なし）
-
-判定基準に曖昧語を使わない（「正しく」「適切に」「問題なく」→ 具体的な期待値・状態で記述）。
--->

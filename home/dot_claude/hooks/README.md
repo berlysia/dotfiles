@@ -91,7 +91,7 @@ hooks/
 #### allow と deny の判定の分け方
 
 - **allow**: `lib/safe-command-list.ts` の `scanSafeList` が、コマンド全文を単純コマンドに過不足なく分割できたときだけ判定する。区切りは引用符外の `&&` `||` `;` `|` 改行。`$(…)`・バッククォート・heredoc・サブシェル・`{ }`・背景の `&`・`2>&1` `>/dev/null` `2>/dev/null` `</dev/null` 以外のリダイレクト・語頭の `#`・代入の前置・引数を実行する先頭語（`env` `xargs` `find` `timeout` `bash` など）・宣言（`export` など）を含むと分割せず、hook は判定しない（Claude Code 本体の許可ルールと PermissionRequest 層に委ねる）。分割できたら、各単純コマンドが Layer 1・sed -i の推論・allow パターン（先頭からのアンカー付き照合）・組み込みの安全なコマンド（allow list が空でないときの `sleep`）のどれかに当たるときだけ allow。`git commit -m "$(cat <<'EOF' …)"` は hook でも Claude Code 本体の `Bash(git commit *)` でも承認されず、確認が出る
-- **deny / ask**: `lib/deny-input.ts` の `prepareDenyInput`（内部で `lib/bash-parser.ts` の `extractCommandsStructured`）の断片に当てる。断片は実行されうるテキストの上位集合（AST の実行単位。網羅を保証できない入力では全文と、`;` `&` `|` 改行で割った粗い分割片も足す）で、allow の根拠には使わない。deny-node-modules・document-workflow-guard・pattern-matcher の deny も同じ断片を使う。deny 側の hook（deny-node-modules・auto-approve の deny 段・document-workflow-guard）は `prepareDenyInput` を通して読み、cat / tee がデータとして書くだけの heredoc の本文を空にしてから判定する。条件は `lib/heredoc-data.ts` と ADR-0020 の追記（F3b）にあり、判定できない形は本文を残す側に倒している。サブシェルなど複合文の全文の綴りによる誤検知は残る。ほかの hook と LLM evaluator は本文を含む全文を読む。許可ルールの提案ツール（`lib/permission-analyzer.ts`）は、上位集合を足す前の断片（`extractBaseCommands`）を使う
+- **deny / ask**: `lib/deny-input.ts` の `prepareDenyInput`（内部で `lib/bash-parser.ts` の `extractCommandsStructured`）の断片に当てる。断片は実行されうるテキストの上位集合（AST の実行単位。網羅を保証できない入力では全文と、`;` `&` `|` 改行で割った粗い分割片も足す）で、allow の根拠には使わない。deny-node-modules・document-workflow-guard・pattern-matcher の deny も同じ断片を使う。deny 側の hook（deny-node-modules・auto-approve の deny 段・document-workflow-guard）は `prepareDenyInput` を通して読み、cat / tee がデータとして書くだけの heredoc の本文を空にしてから判定する。条件は `lib/heredoc-data.ts` にあり、判定できない形は本文を残す側に倒している。サブシェルなど複合文の全文の綴りによる誤検知は残る。ほかの hook と LLM evaluator は本文を含む全文を読む。許可ルールの提案ツール（`lib/permission-analyzer.ts`）は、上位集合を足す前の断片（`extractBaseCommands`）を使う
 - 字句の読み方（引用符、`\`、`$` の形、語頭の `#`）は `lib/shell-lex.ts` に置き、read-only 除外の判定（`lib/read-only-command.ts`）と allow の分割が共有する
 
 #### 既知の限界
@@ -109,7 +109,7 @@ hooks/
 
 ### document-workflow-guard.ts
 
-Document Workflow の gate を実装系の書き込み（Write / Edit / MultiEdit / NotebookEdit / Bash）で強制する PreToolUse hook。matcher は `lib/guarded-tools.ts` の `GUARDED_TOOLS` と同期する。承認の形のプロンプト（`承認` / `approve` だけなど）を `CronCreate` / `ScheduleWakeup` で予約することも deny する（`lib/workflow-approval.ts` の `isApprovalShapedPrompt`、ADR-0023 の改訂節）。
+Document Workflow の gate を実装系の書き込み（Write / Edit / MultiEdit / NotebookEdit / Bash）で強制する PreToolUse hook。matcher は `lib/guarded-tools.ts` の `GUARDED_TOOLS` と同期する。承認の形のプロンプト（`承認` / `approve` だけなど）を `CronCreate` / `ScheduleWakeup` で予約することも deny する（`lib/workflow-approval.ts` の `isApprovalShapedPrompt`）。
 
 ### permission-auto-approve.ts
 

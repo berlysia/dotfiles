@@ -2,9 +2,7 @@
 
 ## 位置づけ
 
-起動軸（`@~/.claude/rules/workflow.md` の「起動軸（initiation: pull / push）」小節）における **push レーンの安全境界** を定義する。push レーンの住所は **CI/cron のみ**。ローカル対話 session 内の自律実行は恒久的に非提供（`document-workflow-guard` の盲点増幅を避ける）。出力は必ず PR であり、無人実行・有人（または auto-merge）ゲートを課す。
-
-設計記録: `docs/decisions/0011-autonomous-lane-charter.md`
+起動軸（`@~/.claude/rules/workflow.md` の「起動軸（pull / push）」節）における **push レーンの安全境界** を定義する。push レーンの住所は **CI/cron のみ**。ローカル対話 session 内の自律実行は恒久的に非提供（`document-workflow-guard` の盲点増幅を避ける）。出力は必ず PR であり、無人実行・有人（または auto-merge）ゲートを課す。
 
 ## Charter 不変条件（全 AND）
 

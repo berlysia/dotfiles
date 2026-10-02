@@ -41,11 +41,9 @@ Before executing `ExitPlanMode`:
 
 ### 1. Auto-Review via plan-review-automation (Required)
 
-`plan-review-automation` フックが spec.md / plan.md / plan-N.md 編集時に自動トリガーされ、編集対象に応じてレビュアー集合を切り替える:
+手順は `~/.claude/rules/workflow.md` の共通フロー 5 に従う。層ごとの常駐レビュアーと守備範囲:
 
-#### spec 層レビュアー（spec.md 編集時、plan.md-only モード時の plan.md 編集時）
-
-設計層は「何を作るか」「なぜそうするか」の判断を扱うため、設計品質に特化した 4 名を常駐:
+#### spec 層（spec.md、単層の plan.md）
 
 <!-- ssot:spec-reviewers:start -->
 
@@ -56,9 +54,7 @@ Before executing `ExitPlanMode`:
 
 <!-- ssot:spec-reviewers:end -->
 
-#### plan 層レビュアー（二層モードの plan-N.md 編集時）
-
-実行層は設計判断 (spec.md) を前提とした「どう作るか」の手順を扱うため、実行品質に特化した 2 名を常駐 + コンテンツベースで追加選定:
+#### plan 層（二層モードの plan-N.md）
 
 <!-- ssot:plan-reviewers:start -->
 
@@ -67,16 +63,7 @@ Before executing `ExitPlanMode`:
 
 <!-- ssot:plan-reviewers:end -->
 
-`decision-quality-reviewer` / `greenfield-perspective-reviewer` は spec 層で設計判断が決着している前提のため plan 層では常駐させず、必要に応じてコンテンツベースで再選定する。
-
-#### 補足
-
-- SSoT は `plan-review-automation.ts` の `SPEC_REVIEWERS` / `PLAN_REVIEWERS` 定数（ADR-0006 参照）。slug は drift 検知テストで CI レベル同期。責務文（上記日本語）は読み手向け説明として SSoT 化対象外で、表現は手書きで磨いて良い
-- `logic-validator` / `scope-justification-reviewer` は両層に出現（守備範囲が層ごとに異なる）。drift detection は各マーカー区間 × 各定数配列の独立 deepStrictEqual で実施するため、重複 slug を許容する（ADR-0005 / ADR-0006）
-- **追加レビュアー**: spec.md / plan-N.md のキーワードに応じて最大3つ自動選定（英語・日本語対応）
-  - architecture-boundary-analyzer, security-vulnerability-analyzer, data-contract-evolution-evaluator, resilience-analyzer, test-quality-evaluator, deployment-readiness-evaluator
-- フックの推奨に従い、Agent tool で **全レビュアーを並列実行** する
-- **prescribed-fix carry-forward**: needs-work 反映後の再レビュー省略は `workflow.md`「prescribed-fix carry-forward」節の 3 条件 AND（(a)(b) は運用規律、(c) section-scoped design-hash baseline 比較は hook 機械検証）でのみ発動。1 条件でも欠ければ全再レビュー
+plan 層では設計判断が spec 層で決着している前提なので、`decision-quality-reviewer` / `greenfield-perspective-reviewer` は常駐させず、内容に応じて再選定する。追加レビュアー（最大 3 名）は hook が本文のキーワードから選んで推奨する。再レビューを省略できる条件は `/document-workflow-reference`「prescribed-fix carry-forward」にある。
 
 ### 2. External Perspective Review (Optional)
 

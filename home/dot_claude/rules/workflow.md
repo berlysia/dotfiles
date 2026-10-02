@@ -1,8 +1,8 @@
 # Workflow — Operator Guide
 
-これはモデルが Document Workflow を実行するための操作ガイド。行動する順に読む。機構の詳細（hash 3 種の意味、workflow dir の引き継ぎ、S3 移行手順、carry-forward の責務分離、mechanical-lane の全条件、起動軸）は `/document-workflow-reference` skill に分離してある。判断に迷ったらそれを読む。
+モデルが Document Workflow を実行するための操作ガイド。機構の詳細は `/document-workflow-reference` skill にある。判断に迷ったらそれを読む。
 
-成果物の置き場は workflow dir（`<開始時の root>/.tmp/sessions/<session-id 先頭8桁>`。絶対パスは `workflow-cli dir` の `wfDir=`）。hook は hook 入力から自力で導出するので、環境変数が無くても enforce は効く。
+成果物の置き場は workflow dir（`<開始時の root>/.tmp/sessions/<session-id 先頭8桁>`。絶対パスは `workflow-cli dir` の `wfDir=`）。
 
 ## Task Intake Routing
 
@@ -28,31 +28,29 @@
 1. **調査**: 対象コードを深く読み `<wfDir>/research.md` を書く。
 2. **計画**: モードに応じ `plan.md`（単層）または `spec.md` + `plan-1.md`…（二層）を書く。テンプレートは `~/.claude/templates/spec.md` / `plan-execution.md`。
 3. **注釈反復**: ユーザー注釈を反映し、都度「まだ実装しない」を明示する。
-   - **コードベース探索ゲート**: 質問の前に、コードを読めば分かる不明点は自力で解消し、事実と推奨を出す。聞くのはコードだけでは決められない点のみ。
+   - **コードベース探索ゲート**: コードを読めば分かる不明点は質問せず自力で解消し、事実と推奨を出す。聞くのはコードだけでは決められない点のみ。
    - **依存質問の逐次化**: 前の回答に依存する質問は次ラウンドに回す。
-   - 選択肢を出すときは推奨とその理由を 1 行で添える。
+   - 選択肢には推奨とその理由を 1 行で添える。
 4. **完成**: 各成果物の `## Approval` を `Plan Status: complete` にする。
-5. **自動レビュー**: `plan-review-automation` が編集を検知して層別のレビュアー集合を推奨する。**推奨されたレビュアーを Agent tool で並列実行する**。
+5. **自動レビュー**: `plan-review-automation` が推奨するレビュアーを Agent tool で並列実行する。
    - **5.1 Reviewer Outputs（必須）**: 各 reviewer の verdict + 主指摘 1-2 文を `## Reviewer Outputs (Round N)` に書く。長文の逐語引用はしない。
    - **帳簿は `workflow-cli` が書く**: `round <doc>`（骨格挿入）→ reviewer 実行 → `stamp <doc> --verdict <pass|needs-work|blocker> --reviewers a+b`。hash は stamp が計算する（**手で転記しない**）。起動証跡（`reviewer-runs.log`）が無いと stamp は通らない。
    - **5.2 Round 2 以降は差分**: 前 round の非 pass reviewer + `logic-validator` だけ再実行（`round` / `stamp` もこの集合）。Key Decisions / 白紙案を変えたら `round <doc> --full`。全員 pass で軽微指摘のみなら反映後に `stamp --verdict pass`、新 round は起こさない。
-   - **5.3 予算**: pass 後 3 round で素の `round` は拒否。着地見込み（blocker なし・Key Decisions 不変で直せる・指摘が狭まる）があれば Round 6 まで `--self-extend --reason "non-pass N→M; remaining: ..."`。Round 6 で未着地なら `review-reframer` に問題変形を含む 4 択を検討させ `<wfDir>/reframer-review.<doc>` に記録。(a) 続行推奨なら Round 9 まで `--reframer-extend`、他の推奨か Round 9 で未着地なら人間に仰ぐ。Executive Summary に承認者別の延長回数と記録の要約、Round 7 以降は Risks にも書く。人間の指示なら `--extend --reason "<指示>"`。詳細は `/document-workflow-reference`「ラウンド予算」。`## Files` が prose のみなら追加レビュアーなし。
-6. **インテント整合性トリアージ（必須）**: `/intent-alignment-triage` を実行し、元のオーダーの本義を歪めてスコープを縮める指摘（divergent）を除外する。結果は `workflow-cli triage <doc> --adopted N --excluded M` で marker に記録する。トリアージ前にレビュー結果をユーザーへ提示しない。
-7. **承認**: 人間が会話で `承認`（複数なら文書名も）と書く（下記 CRITICAL）。
+   - **5.3 予算**: pass 後 3 round で素の `round` は拒否される。延長は拒否時の案内に従う。延長した周は Executive Summary に承認者別の延長回数と reframer 記録の要約を書き、Round 7 以降は Risks にも書く。詳細は `/document-workflow-reference`「ラウンド予算」。
+6. **インテント整合性トリアージ（必須）**: `/intent-alignment-triage` で、元のオーダーの本義を歪めてスコープを縮める指摘（divergent）を除外する。結果は `workflow-cli triage <doc> --adopted N --excluded M` で記録する。トリアージ前にレビュー結果をユーザーへ提示しない。
+7. **承認**: 人間が会話で `承認`（複数なら文書名も）と書く。
 8. **実装**: 三状態 + hash 一致がそろってから着手する。**着手前にオフロード判定を 1 行宣言する**（`@~/.claude/rules/model-offloading.md`）。
 
 ### ターン終端規則（重要）
 
-「〜します」「走らせます」と宣言したら、そのターン内で実際に実行する。**宣言だけしてツールを呼ばずにターンを閉じない**。レビュアーの結果が全部届いたら、報告して止まらず、その場で次の step に進む。人間の入力を待つ場合は、最終行に「何を待っているか」を書く。
+「〜します」「走らせます」と宣言したら、そのターン内で実際に実行する。**宣言だけしてツールを呼ばずにターンを閉じない**。レビュアーの結果が全部届いたら、報告して止まらず次の step に進む。人間の入力を待つ場合は、最終行に「何を待っているか」を書く。
 
 ## 二層モード（spec + plan-N）
 
-- `spec.md` = 設計承認単位（独立 hash）。`plan-N.md` = 実行承認単位（独立 hash + `parent-spec-hash` 連鎖）。
-- 承認順: spec.md を complete → pass → 承認してから、各 plan-N.md を独立に同手順で承認する。
-- `document-workflow-guard` は実装系書き込み時に、(a) spec.md 三状態 + hash 一致、(b) 対象ファイルが属する plan-N.md 三状態 + hash 一致、(c) plan-N.md の `parent-spec-hash` = 現 spec.md hash、を検証する。いずれか欠けると deny。
-- spec.md を編集して hash が動いたら plan-N.md の `parent-spec-hash` が不一致になり自動で実装ブロックされる。plan-N.md を再レビュー・再承認する。
-- deny された場合、guard は「どの条件が不成立か・見つかった status 行・次の 1 手」を診断で示す。`workflow-cli status` で同じ診断を確認できる。
-- **ワークフロー成果物の書き込みは Edit / Write ツールで行う**。Bash の heredoc の中身（`->` / `<hash>` / `eval` 等）は guard が書き込みと誤検出しうる。Edit / Write はツール種別で判定されるので誤検出がなく、`plan-review-automation` も確実に発火する。
+- `spec.md` = 設計承認単位。`plan-N.md` = 実行承認単位（`parent-spec-hash` で spec.md に連鎖）。
+- 承認順: spec.md を complete → pass → 承認してから、各 plan-N.md を同じ手順で独立に承認する。
+- spec.md の hash が動くと全 plan-N.md の `parent-spec-hash` が不一致になり、実装がブロックされる。plan-N.md を再レビュー・再承認する。
+- **ワークフロー成果物は Edit / Write で書く**。Bash の heredoc は中身（`->` / `<hash>` / `eval` 等）を guard が書き込みと誤検出しうる。Edit / Write なら `plan-review-automation` も確実に発火する。
 
 ## 常時必須レビュアー（層別、並列実行）
 
@@ -76,45 +74,36 @@
 
 <!-- ssot:plan-reviewers:end -->
 
-これらは Agent tool の subagent_type で、Skill ではない。SSoT は `lib/workflow-review-core.ts` の `SPEC_REVIEWERS` / `PLAN_REVIEWERS` で、上の区間と CI で同期される。
-
 ## Alternative Approaches (Greenfield View) — 設計層 MANDATORY
 
-設計層（単層は plan.md、二層は spec.md）に必ず設ける。差分最小案 / 白紙設計案 / 採用案と理由。白紙案には「ゼロから設計したらこの選択になった理由（起源）」を書く。採用理由は具体的根拠（既存テスト・外部契約・計測コスト）に基づく。評価語のみ（「シンプル」「安全」「リスクが低い」）は不可。バグ修正等で差分最小が妥当な場合も両案を比較した形跡を残す。
+設計層（単層は plan.md、二層は spec.md）に差分最小案 / 白紙設計案 / 採用案と理由を必ず書く。白紙案には「ゼロから設計したらこの選択になった理由（起源）」を書く。採用理由は具体的根拠（既存テスト・外部契約・計測コスト）に基づかせ、評価語のみ（「シンプル」「安全」「リスクが低い」）にしない。差分最小が妥当なバグ修正でも両案を比較した形跡を残す。
 
 ## No Placeholders 禁則
 
-実装フェーズ前に全て解消する: "TBD" / "TODO" / "後で実装" / "適切に〜" / "上記と同様" / "Task N と類似" / 他タスクで未定義の型・関数への参照 / 評価語のみの根拠。判定基準に曖昧語（「正しく」「適切に」「問題なく」）を使わず、具体的な期待値・状態で書く。境界値・異常値は具体値を明記する。
+実装フェーズ前に全て解消する: "TBD" / "TODO" / "後で実装" / "適切に〜" / "バリデーションを追加" / "エッジケース対応" / "上記と同様" / "Task N と類似" / 他タスクで未定義の型・関数への参照 / 評価語のみの根拠。判定基準に曖昧語（「正しく」「適切に」「問題なく」）を使わず、具体的な期待値・状態で書く。境界値・異常値は具体値を明記する。
 
 ## テスト計画（ISO 25010）
 
-plan に `## テスト計画 (ISO 25010)` を設け、変更に関連する品質特性を選び、各特性のテスト方法と判定基準を「入力/操作 → 期待結果」形式で書く。最低 1 特性。対象外にした特性は理由を添える。特性選択ガイドは `/document-workflow-reference`。
+plan に `## テスト計画 (ISO 25010)` を設け、関連する品質特性（最低 1 つ）ごとにテスト方法と判定基準を「入力/操作 → 期待結果」形式で書く。対象外にした特性は理由を添える。特性選択ガイドは `/document-workflow-reference`。
 
 ## CRITICAL: 承認は人間のみ
 
 人間が会話で `承認` と書くと hook がその版の hash を `approvals.log` に記録し、gate はこの hash と現在の hash の一致を求める。Claude は `Approval Status: approved` を書かない（guard が deny）。`/execute-plan` は承認ではない。
 
-- hash が動く改訂は再承認が要る。hook の書き換え直後は読み直す。取り消しは承認行を pending に（詳細: reference skill「承認の記録」）
+- hash が動く改訂は再承認が要る。取り消しは承認行を pending に戻す（詳細: reference skill「承認の記録」）。
 - research/spec/plan/plan-N への編集は承認前でも許可される。
-- 実装系書き込み（Write/Edit/NotebookEdit/Bash）は `document-workflow-guard` が enforce で制御する。`.tmp/` もプロジェクト内なので対象になる。承認前の使い捨て作業は session の scratchpad か `mktemp -d` の出力先に、リテラルの絶対パスで書く（他 repo・`$HOME`・dotfiles には書かない）。
-- 実装フェーズでは、承認済み spec + plan の三状態 + hash 一致がそろっていれば、どの plan-N.md の Files にも無いファイルへの書き込みは deny でなく warn + `off-plan-writes.log` に降格する。hash drift / parent-spec-hash 不一致 / 未承認は依然 deny。
+- 実装系書き込み（Write/Edit/NotebookEdit/Bash）は `document-workflow-guard` が制御する。`.tmp/` もプロジェクト内なので対象になる。承認前の使い捨て作業は session の scratchpad か `mktemp -d` の出力先に、リテラルの絶対パスで書く（他 repo・`$HOME`・dotfiles には書かない）。
+- 実装フェーズでは、承認済みの三状態 + hash 一致がそろっていれば、どの plan の Files にも無いファイルへの書き込みは deny でなく warn + `off-plan-writes.log` になる。hash drift / parent-spec-hash 不一致 / 未承認は依然 deny。
 
 ## Executive Summary（レビュー依頼時 MANDATORY）
 
-plan/spec を complete にし、自動レビュー + トリアージが済んだら、承認を依頼する応答の冒頭に必ず提示する。各フィールドは 1-3 行、該当なしは `N/A`。
+自動レビュー + トリアージが済んだら、承認を依頼する応答の冒頭に `## Executive Summary (Review Request)` を置く。各フィールド 1-3 行、該当なしは `N/A`。
 
-```
-## Executive Summary (Review Request)
-- **Goal**: <目的を 1 行>
-- **Proposed Approach**: <採用方針の本質 1-3 行>
-- **Experience Delta**: <変更前→変更後の体験差 1-2 行>
-- **Scope**: <変更予定ファイル/モジュール 最大5件>
-- **Key Decisions**: <採用した判断と却下した代替案 各1-2行>
-- **Risks / Unknowns**: <既知リスク・未検証の前提>
+- **Goal** / **Proposed Approach** / **Experience Delta**（変更前→変更後）/ **Scope**（最大 5 件）
+- **Key Decisions**（採用と却下した代替案）/ **Risks / Unknowns**
 - **Review Status**: verdict / reviewers / hash（auto-review marker から）
-- **Open Questions**: <ユーザー判断を仰ぐ点、なければ N/A>
-- **Next Action**: 会話で `承認`（複数なら文書名も）と書いてください / 追加修正を依頼してください
-```
+- **Open Questions**
+- **Next Action**: 会話で `承認` と書くか、追加修正を依頼する
 
 Experience Delta が Goal の達成に直結しているか自己検証する。自動レビューを通さずに `verdict=pass` と書かない。
 
