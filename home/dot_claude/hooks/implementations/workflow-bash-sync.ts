@@ -42,6 +42,7 @@ import {
   PLAN_NORMALIZERS,
   SPEC_NORMALIZERS,
 } from "../lib/document-hash.ts";
+import { getProjectRoot } from "../lib/project-root.ts";
 import { sanitizeForDisplay } from "../lib/sanitize-display.ts";
 import { appendOffPlanLog } from "../lib/workflow-audit-log.ts";
 import { parseLatestAutoReviewMarker } from "../lib/workflow-marker.ts";
@@ -81,9 +82,10 @@ const hook = defineHook({
       return context.success({});
     }
 
-    const cwd = getWorkingDirectory();
+    const cwd = getToolCwd();
+    const projectRoot = getProjectRoot();
     const resolution = resolveWorkflowDir({
-      cwd,
+      cwd: projectRoot,
       sessionId: context.input.session_id,
     });
     if (resolution.source === "unresolvable") {
@@ -133,7 +135,7 @@ function additionalContextPayload(additionalContext: string) {
   };
 }
 
-function getWorkingDirectory(): string {
+function getToolCwd(): string {
   return process.env.CLAUDE_TEST_CWD || process.cwd();
 }
 

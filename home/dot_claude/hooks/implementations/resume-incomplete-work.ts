@@ -10,6 +10,7 @@ import {
 import { dirname, join } from "node:path";
 import { defineHook } from "cc-hooks-ts";
 import { resolveWorkflowPaths } from "../lib/workflow-paths.ts";
+import { getProjectRoot } from "../lib/project-root.ts";
 import { resolveWorkflowDir } from "../lib/workflow-resolve.ts";
 import "../types/tool-schemas.ts";
 
@@ -117,7 +118,7 @@ function resetRetryCount(): void {
  * session with no active workflow has nothing this check should react to.
  */
 function workflowHasResearch(sessionId: string): boolean {
-  const cwd = process.env.CLAUDE_TEST_CWD || process.cwd();
+  const cwd = getProjectRoot();
   const resolution = resolveWorkflowDir({ cwd, sessionId });
   if (resolution.source === "unresolvable") {
     return false;

@@ -7,6 +7,7 @@ import { extractCommandsStructured } from "../lib/bash-parser.ts";
 import { computeDocumentHash, SPEC_NORMALIZERS } from "../lib/document-hash.ts";
 import { getCommandFromToolInput } from "../lib/command-parsing.ts";
 import { createDenyResponse } from "../lib/context-helpers.ts";
+import { getProjectRoot } from "../lib/project-root.ts";
 import { expandTilde } from "../lib/path-utils.ts";
 import { sanitizeForDisplay } from "../lib/sanitize-display.ts";
 import { appendOffPlanLog } from "../lib/workflow-audit-log.ts";
@@ -86,9 +87,10 @@ const hook = defineHook({
         return context.success({});
       }
 
-      const cwd = getWorkingDirectory();
+      const cwd = getToolCwd();
+      const projectRoot = getProjectRoot();
       const resolution = resolveWorkflowDir({
-        cwd,
+        cwd: projectRoot,
         sessionId: context.input.session_id,
       });
       // The `unresolvable` early return is deliberately not silent here, unlike
@@ -106,7 +108,7 @@ const hook = defineHook({
             systemMessage:
               resolution.reason === "invalid-session-id"
                 ? "[document-workflow-guard] the session id is malformed, so no workflow directory could be derived; the gate is not enforcing for this call."
-                : "[document-workflow-guard] could not verify that the derived workflow directory is a strict descendant of <cwd>/.tmp/sessions; the gate is not enforcing for this call.",
+                : "[document-workflow-guard] could not verify that the derived workflow directory is a strict descendant of <project root>/.tmp/sessions; the gate is not enforcing for this call.",
           },
         });
       }
@@ -153,7 +155,7 @@ const hook = defineHook({
           return context.success({});
         }
 
-        if (areAllTargetsOutsideProject(cwd, analysis.targets)) {
+        if (areAllTargetsOutsideProject(cwd, projectRoot, analysis.targets)) {
           return context.success({});
         }
 
@@ -227,7 +229,7 @@ const hook = defineHook({
         return context.success({});
       }
 
-      if (isOutsideProject(cwd, targetPath)) {
+      if (isOutsideProject(cwd, projectRoot, targetPath)) {
         return context.success({});
       }
 
@@ -289,7 +291,12 @@ const hook = defineHook({
   },
 });
 
-function getWorkingDirectory(): string {
+/**
+ * The cwd at tool-call time, used to resolve relative paths in tool input.
+ * The workflow dir and the inside/outside-project boundary are anchored on
+ * getProjectRoot() instead.
+ */
+function getToolCwd(): string {
   return process.env.CLAUDE_TEST_CWD || process.cwd();
 }
 
@@ -327,16 +334,28 @@ function areAllTargetsDocumentPaths(
   return targets.every((target) => isDocumentPath(cwd, target, wfDir));
 }
 
-function isOutsideProject(cwd: string, path: string): boolean {
-  const normalized = resolve(cwd, expandTilde(path));
-  return !normalized.startsWith(`${cwd}/`) && normalized !== cwd;
+function isOutsideProject(
+  toolCwd: string,
+  projectRoot: string,
+  path: string,
+): boolean {
+  const normalized = resolve(toolCwd, expandTilde(path));
+  return (
+    !normalized.startsWith(`${projectRoot}/`) && normalized !== projectRoot
+  );
 }
 
-function areAllTargetsOutsideProject(cwd: string, targets: string[]): boolean {
+function areAllTargetsOutsideProject(
+  toolCwd: string,
+  projectRoot: string,
+  targets: string[],
+): boolean {
   if (targets.length === 0) {
     return false;
   }
-  return targets.every((target) => isOutsideProject(cwd, target));
+  return targets.every((target) =>
+    isOutsideProject(toolCwd, projectRoot, target),
+  );
 }
 
 function readWorkflowState(statePath: string): WorkflowState | null {

@@ -28,6 +28,7 @@ import {
   isRecordedAgentSlug,
   REVIEWER_SLUGS,
 } from "../lib/workflow-review-core.ts";
+import { getProjectRoot } from "../lib/project-root.ts";
 import { resolveWorkflowDir } from "../lib/workflow-resolve.ts";
 import "../types/tool-schemas.ts";
 
@@ -63,7 +64,7 @@ const hook = defineHook({
       return context.success({});
     }
 
-    const cwd = process.env.CLAUDE_TEST_CWD || process.cwd();
+    const cwd = getProjectRoot();
     const resolution = resolveWorkflowDir({
       cwd,
       sessionId: context.input.session_id,
