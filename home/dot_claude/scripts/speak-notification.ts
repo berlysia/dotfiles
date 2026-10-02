@@ -6,7 +6,6 @@
  * Usage: speak-notification.ts {Notification|Stop|Error} [custom_message]
  */
 
-import { checkClaudeCompanionStatus } from "../lib/claude-companion-detector.ts";
 import {
   cleanupSession,
   createAudioEngine,
@@ -25,16 +24,6 @@ async function main() {
       "Usage: speak-notification.ts {Notification|Stop|Error} [custom_message]",
     );
     process.exit(1);
-  }
-
-  // Check if claude-companion is running - exit early if delegated
-  const companionStatus = await checkClaudeCompanionStatus();
-  if (companionStatus.isRunning) {
-    console.log(
-      `claude-companion is running (PID: ${companionStatus.pid}, Port: ${companionStatus.port})`,
-    );
-    console.log("Notification delegated to claude-companion");
-    process.exit(0);
   }
 
   const { config, session } = await createAudioEngine();

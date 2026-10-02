@@ -15,7 +15,6 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { $ } from "dax";
-import { checkClaudeCompanionStatus } from "./claude-companion-detector.ts";
 import type { NotificationType } from "./notification-messages.ts";
 import { createNotificationMessagesAuto } from "./notification-messages.ts";
 import {
@@ -337,36 +336,6 @@ async function playStaticWav(
 }
 
 // =========================================================================
-// Claude Companion Integration
-// =========================================================================
-
-/**
- * claude-companionが起動している場合の処理をスキップ
- */
-export async function checkAndDelegateToClaude(
-  config: UnifiedVoiceConfig,
-): Promise<NotificationResult | null> {
-  const companionStatus = await checkClaudeCompanionStatus();
-
-  if (companionStatus.isRunning) {
-    const message = `claude-companion is running (PID: ${companionStatus.pid}, Port: ${companionStatus.port}), delegating notification`;
-    logMessage(`SUCCESS: ${message}`, config);
-
-    return {
-      success: true,
-      method: "delegated",
-      message: "Notification delegated to claude-companion",
-    };
-  }
-
-  if (companionStatus.error) {
-    logMessage(`claude-companion check: ${companionStatus.error}`, config);
-  }
-
-  return null; // claude-companionが起動していない場合はnullを返す
-}
-
-// =========================================================================
 // High-level Notification Functions
 // =========================================================================
 
@@ -406,12 +375,6 @@ export async function speakNotification(
   config: UnifiedVoiceConfig,
   session: VoiceSession,
 ): Promise<NotificationResult> {
-  // Check if claude-companion is running and delegate if so
-  const delegationResult = await checkAndDelegateToClaude(config);
-  if (delegationResult) {
-    return delegationResult;
-  }
-
   // Ensure directories exist
   ensureDirectories(config, session);
 
