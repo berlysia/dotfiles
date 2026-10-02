@@ -29,6 +29,7 @@ hash は 3 種あり、いずれも `workflow-cli` が計算して marker に書
 - 名前を付けた承認（`承認 spec.md plan-1.md`）は全か無か: 1 つでも承認以外の条件を満たさなければ何も記録しない。名前なしは、承認待ちがちょうど 1 件のときだけ記録する
 - 承認の後に文書の hash が動く改訂をすると再承認が要る（Reviewer Outputs・marker・チェックボックスは hash に含まれない。`stamp` は Review Status 行を書くので承認後の stamp は再承認を要する）。取り消しは承認行を pending に戻す
 - model の Write / Edit / MultiEdit で承認行を approved にする、または `approvals.log` に書くことは guard が deny する（Bash は対象外）
+- 承認の形のプロンプト（`承認` / `approve` だけなど）を `CronCreate` / `ScheduleWakeup`（`/loop` を含む）で予約することも guard が deny する。予約したプロンプトは UserPromptSubmit で利用者の入力と区別できないため（ADR-0023 の改訂節）
 
 ## K7 連鎖検証（二層）
 

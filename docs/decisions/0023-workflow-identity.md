@@ -74,7 +74,42 @@ V1 の実測（ユーザーが別ターミナルで実施）で、`/clear` の�
     - Remote Control 経由でデスクトップアプリから打った「承認」も、同じ返答だった（hook の発火と返答は実測、どこから打ったかは利用者の申告）。
     - 承認待ちが 1 件（その作業自身の plan.md）の状態で、利用者がターミナルから `approve` と打つと、`approvals.log` が無い状態から 1 行になり、その `hash` は直前に `workflow-cli status` で控えた hash と一致した。承認行は `approved` に書き換わり、gate の 6 条件がすべてそろった（実測）。`[approval-recorder] …` の `systemMessage` が利用者の画面に出た（利用者の申告）。
     - 上の経路で `source` が `user` だったか値なしだったかは、この時点では hook-timer が `source` を記録していなかったので実測できていない。後で hook-timer に記録させて測った結果は followups 課題 J「実測の補完」にある（利用者が打った「承認」も値なし）。
+    - 改訂（2026-10-02 の測定を受けた 2026-10-03 の決定）: 下の「改訂（2026-10-03）」節を参照。この項目の前提のうち「値が無いのは古い Claude Code」は成り立たない。
 13. **文書名なしの「承認」は、承認待ちが 1 件なら別の話題への返事でも記録される**（spec R7）: 記録したら対象・hash・取り消し方を `additionalContext` と `systemMessage` で必ず伝える。
+
+## 改訂（2026-10-03）: 予約したプロンプトの承認（課題 J）
+
+Consequences 12 の前提を訂正し、予約したプロンプトの扱いを決め直す。Consequences 12 の本文は残し、ここに追記する。測定の詳細は `docs/plans/workflow-guard-followups.md` 課題 J の表（M0〜M4）にある。
+
+### 前提の訂正
+
+Consequences 12 は「値が無いのは古い Claude Code」とし、予約したプロンプトを区別できない場合を R4 の外に置いた。Claude Code 2.1.287 の実測では、利用者が打ったプロンプト（M0）も、`CronCreate`・`/loop`・`ScheduleWakeup` の発火（M1〜M4）も、UserPromptSubmit の入力の `source` は値なしで届いた。値が無いのは古いからではなく、この版の通常の状態である。`source` では利用者の入力と予約の発火を区別できない。
+
+### 決定
+
+`document-workflow-guard` が、`CronCreate` と `ScheduleWakeup` の PreToolUse で、`prompt` が承認の形のものを deny する。記録の仕組み（K7）と gate（K8）は変えない。
+
+- KD1: deny は guard に置く。K9 の延長で、承認の発話を model が作ることを止める位置づけである。予約 2 ツールの経路に限った防御で、この経路では recorder が発火時に区別できないので、ほかに層は無い。新しい hook は作らず、guard の `GUARDED_TOOLS` と settings の matcher の同期検査をそのまま使う
+- KD2: wfDir や workflow の状態に関係なく deny する。承認待ちの文書の有無は、予約の時点と発火の時点で変わりうる。判定は文面だけで行い、wfDir の解決の前に置く
+- KD3: `parseApprovalUtterance` を `lib/workflow-approval.ts` に移し、recorder と guard が同じ関数を使う。guard が implementation を import しないため
+- KD7: 判定は recorder より緩める。`parseApprovalUtterance` に加えて、NFKC 正規化と `\p{Cf}`（ZWSP・BOM など）の除去をした文面でも判定し、どちらかが承認の形なら deny する。発火時に Claude Code が文面を変えても拾うためで、緩めた分の誤 deny は許容する
+- KD8: 予約の分岐は fail-closed にする。guard 全体の catch は fail-open なので、分岐は自分の try を持ち、判定中の例外は deny にする。`tool_input` が object でない、または `prompt` が文字列でないときは、予約される文面が無いので allow
+
+根拠（実測）: `prompt: "承認"` の `CronCreate` は、auto-approve の Layer 2a（静的ルール）が allow し、Layer 2b（LLM evaluator）も allow した。後者の理由は「automating personal plan approvals」だった。permission の層は、承認の形のプロンプトの予約を止めるどころか、正当な作業として通している。PreToolUse に `prompt` が載ることは、auto-approve の PreToolUse の記録（`decisions.jsonl`）で確かめた。予約の文面と発火したプロンプトの文面は M1〜M3 で一致した。
+
+却下した案:
+
+- 課題 J の (b)（記録を transcript が書き出された後へ移す）: 公式ドキュメントは transcript の書き出しが遅れうると書き、書き出しの時点を保証しない。`turnOrigin` / `promptSource` は文書にも CHANGELOG にも無い。承認の 1 経路を、文書が否定するタイミングと文書化されていない形式に依拠させることになる
+- 課題 J の (c)（AskUserQuestion の回答で受け取る）: 利用者の操作が変わり（任意の時点で「承認」と打てなくなる）、rules/workflow.md・Executive Summary の Next Action・reference skill・`/execute-plan` の案内が連動して変わる。Remote Control 経由の表示と回答の到達は実測で確かめたので、却下の理由ではない。PostToolUse の `tool_response.answers` は未実測のまま残る
+
+### Consequences
+
+- 利用者自身が打つ `/loop 5m 承認` も deny される。承認は 1 回の発話で済み、繰り返す用途は無い。deny の理由に、会話で打つよう書く
+- 調べていない入口は閉じたと主張しない。`RemoteTrigger`、Monitor の通知、Bash から `claude` を起動する経路である。`RemoteTrigger` がクラウドの別セッションで実行され、本セッションの recorder に届かないというのは推論で、実測していない。Bash 経由は R4 と同列である
+- 発火時の変換が KD7 の正規化の範囲を超えると、予約の時点では拾えない。実測（M1〜M3）では予約と発火の文面に差は無かった
+- 再訪の条件: PreToolUse で文面を見られない入口が見つかったとき、または未調査の入口で承認の形のプロンプトが UserPromptSubmit に届くと分かったとき。そのときは (c) を、PostToolUse の `answers` を実測してから再検討する
+- 計装の扱い（KD4）: recorder の返答に付けていた `probe:` 行（`lib/prompt-origin-probe.ts`）は外した。答えようとした問い（recorder の実行時点で transcript の行が読めるか）に「読めない」と答えが出て、(b) を採らないので再測定の予定も無いため。hook-timer の `source` / `prompt_id` の射影は残す。課題 J の再訪のきっかけ（Claude Code を更新して測定をやり直す）で、`source` に値が入り始めたかを見る手段がこれだけだから。プロンプト本文は残さず、文字列を 64 文字で切る
+- recorder の `source` の判定は残す（KD5）。2.1.287 では区別に使えないが、`user` 以外の値が来たときに記録しない挙動は害が無く、版が上がって値が届けば効く
 
 ## References
 

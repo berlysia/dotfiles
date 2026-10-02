@@ -158,6 +158,18 @@ model が入力の `answers` に値（`A`）を先に入れて AskUserQuestion �
   - PermissionRequest が UI なしで通る場合（hook が `allow` を返す、bypassPermissions のモード）に、model の値がそのまま結果になるか。入力の説明は「answers collected by the permission component」で、今回 UI が出たのは、この環境の auto-approve が AskUserQuestion を「User decision tool」として必ず `ask` にしているためかもしれない。そうなら (c) の安全性は permission の設定に依存する
   - Remote Control 経由のデスクトップアプリで質問の UI が出て、回答が届くか
 
+### 解消（2026-10-03）
+
+採った案: (a) の範囲の追加。記録の仕組みは変えず、`document-workflow-guard` が `CronCreate` / `ScheduleWakeup` の PreToolUse で承認の形の `prompt` を deny する。判断は ADR-0023 の「改訂（2026-10-03）」節にある。
+
+- 計装: approval-recorder の `probe:` 行（`lib/prompt-origin-probe.ts`）は外した。hook-timer の `source` / `prompt_id` の射影は残す。「再訪のきっかけ」の更新後の再測定で、`source` に値が入ったかを見る手段がこれだけだから
+- 調べていない入口: `RemoteTrigger`（クラウドの別セッションで実行されるので本セッションの recorder には届かない、というのは推論で未実測）、Monitor の通知（プロンプトとして届くときに本文が「承認」だけになるかは未実測）、Bash から `claude` を起動する経路（R4 と同じ Bash の迂回）。閉じたとは主張しない
+- (c) の測定の確認できなかった点:
+  - 未確認点 2（UI なしで通る場合に model の値が結果になるか）: 文書から分かったことだけで、実測していない（research §4.4）。公式ドキュメントは、AskUserQuestion はどのモード（bypassPermissions を含む）でも自動承認されず、PreToolUse が `allow` だけを返しても足りず、`updatedInput` と組にする必要があると書く。UI を飛ばせるのは hook が `answers` を自分で返すときで、その値は model の入力ではなく hook が書いた値になる、というのは文書からの推論である
+  - 未確認点 3（Remote Control 経由のデスクトップアプリ）: 本セッションで実測した（2026-10-03、1 試行）。Remote Control を有効にした状態で AskUserQuestion を出すと、デスクトップアプリに質問が表示され、そこからの回答が transcript の `toolUseResult.answers` に届いた。表示と回答元は利用者の申告、結果の値は transcript で確認した
+  - (c) に残る未実測: PostToolUse の `tool_response.answers`。`~/.claude/logs/commands.jsonl` に AskUserQuestion の行は無かった
+- 新たな観測: PreToolUse の時点で、当該プロンプトの transcript 行が読めた（実測、1 件、利用者の入力の経路のみ。`promptSource: typed` / `turnOrigin: human`）。予約の発火の後の PreToolUse では測っていない。公式ドキュメント（hooks の `transcript_path`）は、transcript が非同期に書かれ、hook の発火時点で最新のメッセージを含まないことがあると書いており、この観測は保証されない
+
 ## 課題 K: `research.md` が無いことによる deny を、診断が理由として示さない
 
 ADR-0023 の配備後実測の作業中に踏んだ。2026-10-02。

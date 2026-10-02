@@ -117,12 +117,14 @@ Bash ─▶ workflow-cli ──────────────────�
   - hook が文書を書き換えるので、model が直前に読んだ内容と食い違い、次の Edit が「読み込み後に変更された」で失敗しうる。この場合は読み直せばよいことを ADR に書く
   - 参照: `home/dot_claude/hooks/lib/document-hash.ts:63-72`（承認行の値と帳簿を除外する正規化）
   - 参照: `home/dot_claude/.settings.hooks.json.tmpl:269-291`（既存の UserPromptSubmit 設定）
+  - 改訂（2026-10-03）: ADR-0023 の改訂節を参照。出どころの判定の前提（`source` で予約のプロンプトを区別できる）が 2.1.287 で成り立たないことが分かった
 - **K8: `approvals.log` の形式と gate の条件** — 1 行 1 JSON（JSON Lines）で `{"v":1,"doc":"plan.md","hash":"<sha256>","session":"<session_id>","at":"<ISO>"}`。JSON にするのは文書名・session_id の区切り文字の扱いを `JSON.stringify` に任せるため。読み手は、同じ `doc` の行のうち**最後の行**だけを使う（承認 → 改訂 → 元の版に戻す、で古い承認が復活しない）。`session` は監査用で照合に使わない（task-handoff が旧 wfDir を複製した場合も、文書が同じ版なら承認が引き継がれる。意図した挙動として ADR に書く）。不正な行と、`v` が 1 以外の行は読み飛ばし、読み飛ばした行があれば診断に `ignored-lines=<N>` を出す
   - gate は既存の 5 条件（3 status 行、verdict pass、marker hash 一致）に「その文書の最新の承認 hash = 現在の文書 hash」を加える。承認行の `approved` は表示であると同時に取り消しの手段で、承認行だけを手で `approved` にしても `approvals.log` に一致が無ければ通らない。取り消した（`pending` に戻した）後で人間が承認行を手で `approved` に戻すと、log の最新 hash が現在と一致していれば再発話なしで通る。人間の操作なので意図した挙動とし、ADR に書く（model には K9 によりできない）
   - 不一致のときは「承認が必要になった」時点で診断する（`Recoverable State Must Announce Itself`）。診断は決まった形の行で出す: `approval: recorded=<hash 先頭 12 桁 | none> current=<先頭 12 桁>` と `next: 会話で「承認 <文書名>」と書く`。承認行を自動で `pending` に戻すことはしない（表示の書き換えを hook が勝手に行うと、model の Edit との競合が増えるため。gate の診断で足りる）
   - 参照: `home/dot_claude/hooks/lib/workflow-gate.ts:69-141`（条件の列挙）
 - **K9: model による承認の書き込みを guard で止める** — wfDir の文書への Edit / Write で、旧内容が無い（新規作成）か旧値が `approved` 以外で、新しい `Approval Status:` の値が `approved` のものを deny する。値が変わらない全文書き換えと、`approved` から `pending` への変更（取り消し）は通す。`approvals.log` への Edit / Write は realpath で比べて deny する。位置づけは多層防御: gate の安全性は K8 だけで成り立つ。この deny は、#221 で問題になった「人間が見ていない状態で承認が成立して見える」ことを表示の側でも起こさないために置く。model が承認行を `approved` にできると、gate は止めても文書は承認済みと読め、人間と model の双方を誤誘導する
   - 参照: `home/dot_claude/hooks/cli/workflow.ts:206-211`（CLI 側の同種の保護 `wouldTouchApprovalStatus`）
+  - 改訂（2026-10-03）: ADR-0023 の改訂節を参照。guard は承認の形のプロンプトを `CronCreate` / `ScheduleWakeup` で予約することも止める
 - **K10: file-access-guard は解決済みの wfDir への書き込みを許可する** — K1 で wfDir が session 開始時の root（例: 本体 checkout）に固定されると、worktree の中で作業しているときの repo root（`git rev-parse --show-toplevel` = worktree）の外になる（worktree は `<root>/.git/worktree/<branch>` にあり、`<root>/.tmp/sessions` はその外）。`resolveWorkflowDir` で解決した wfDir だけを許可に加える。同じ経路の拒否は #209 で観測済み（worktree 内での作業時に、repo root の外にある scratchpad への Write が「File is outside repository root」で拒否された）
   - 参照: `home/dot_claude/hooks/implementations/file-access-guard.ts:101-113`（repo root の決め方）
   - 参照: `home/dot_claude/hooks/implementations/file-access-guard.ts:590`（拒否の理由文）
@@ -152,6 +154,7 @@ Bash ─▶ workflow-cli ──────────────────�
 - **R2**: `CLAUDE_CODE_SESSION_ID` は env-vars ページに未掲載で、CHANGELOG にだけ記載がある。値が無いときは `--wf-dir` を要求して失敗する。値が `/clear` 後も古いまま残る場合は #197 と同じ取り違えが起き、これが V1 の失敗条件である → V1 で実測する
 - **R3**: 発話の判定が厳しいので、「承認します、ただし…」は承認にならない → model は承認行を書けない（K9）ので、gate の診断に従って承認の形を利用者に伝える
 - **R4**: model が Bash で `approvals.log` に追記する経路は止めない（Bash の書き込み先の判定には既知の穴がある: docs/plans/workflow-guard-followups.md 課題 A/B）→ 本 gate は不注意な逸脱を止める仕組みで、意図的な迂回への耐性は主張しない（ADR-0013 Consequences 4 と同じ脅威モデル）
+  - 改訂（2026-10-03）: ADR-0023 の改訂節を参照。予約のツールによる経路は R4 の外に置かず、guard が止める。R4 に残るのは Bash の迂回など、調べていない入口である
 - **R5**: サブディレクトリで `claude` を起動すると、そこが root になる → 現行の `process.cwd()` 基準と同じで悪化しない（ADR-0013 Consequences 2）
 - **R6**: 配備前に起動したセッションの Bash env には、旧 SessionStart が export した `DOCUMENT_WORKFLOW_DIR` が残り、K3 の解決で起動時 pin と同じ扱いを受ける。同じセッションには `CLAUDE_PROJECT_DIR` も無いので、CLI は K1 により失敗する（安全側） → 配備後は Claude Code を起動し直す。ADR に書く
 - **R7**: 文書名なしの「承認」は、ユーザーが別の話題への返事として書いた場合にも、承認待ちが 1 件なら記録される → 記録時に `additionalContext` で対象と hash と取り消し方を必ず伝える。発話全体が承認の形に限られるので、文中の「承認」には反応しない

@@ -107,6 +107,10 @@ hooks/
 - deny 側で拾えないもの: `curl … | bash` はパイプの両側が別の断片になり、パイプの規則に当たらない。`export` / `declare`・`[[ ]]`・算術展開の外側のテキストは断片に入らない（中の `$(…)` は入る）。document-workflow-guard は `&>`・`>&`・`&>>`・`3<>`・`2>`・`{fd}>` の先を書き込み先として認識しない
 - 一部の deny 側の正規表現（`command-parsing.ts` と `permission-auto-approve.ts` の `rm` / `dd` / `git push` / `curl … | sh` の規則）は、長い空白の連続や、`dd` / `curl` / `wget` の語を繰り返す入力で後退時間が伸びる。PreToolUse の hook はタイムアウト（既定 600 秒）しても allow にはならず、通常の許可フローに進む。deny-node-modules の `standaloneSymlinkRemovalOperands` の空白の切り詰め（`/^ +| +$/g`）も、長い空白の連続で二乗時間になる（`eslint` + 空白 500,000 個で約 100 秒）。
 
+### document-workflow-guard.ts
+
+Document Workflow の gate を実装系の書き込み（Write / Edit / MultiEdit / NotebookEdit / Bash）で強制する PreToolUse hook。matcher は `lib/guarded-tools.ts` の `GUARDED_TOOLS` と同期する。承認の形のプロンプト（`承認` / `approve` だけなど）を `CronCreate` / `ScheduleWakeup` で予約することも deny する（`lib/workflow-approval.ts` の `isApprovalShapedPrompt`、ADR-0023 の改訂節）。
+
 ### permission-auto-approve.ts
 
 PermissionRequest hook。Claude Code が確認を出す場面で、静的な規則で allow を返す（Layer 2a）。同じ PermissionRequest の LLM evaluator（`permission-llm-evaluator.ts`、Layer 2b）とは並列に走る。
