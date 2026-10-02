@@ -48,3 +48,12 @@ ast-grep = "latest"
 # The source repo is private, so take the public npm package instead of github:.
 # It is our own package with a handful of weekly downloads, so the low-download gate is explicitly approved.
 "npm:@berlysia/shiori" = { version = "0.2.2", allow_low_downloads = true }
+
+# Tools AI agents reach for (article: ai-agent-first dotfiles)
+yq = "4.53.6"
+shfmt = "3.14.1"
+hyperfine = "1.20.0"
+duckdb = "1.5.5"
+"github:boyter/scc" = "4.1.0"
+# rm-compatible trash CLI; not in the mise registry
+"github:babarot/gomi" = "1.6.5"
