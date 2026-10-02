@@ -1,6 +1,6 @@
 #!/bin/bash
 # Install git hooks for this repository
-# Called by: pnpm install (via prepare script)
+# Called by: bun install (via prepare script)
 
 set -euo pipefail
 
@@ -11,7 +11,8 @@ REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || {
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOOKS_SRC="${SCRIPT_DIR}/hooks"
-HOOKS_DEST="${REPO_ROOT}/.git/hooks"
+# --git-path resolves to the common hooks dir; in a worktree .git is a file, not a dir
+HOOKS_DEST=$(git rev-parse --path-format=absolute --git-path hooks)
 
 # Install hooks by copying from source
 for hook in pre-commit pre-push; do

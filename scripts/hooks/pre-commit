@@ -209,8 +209,8 @@ echo
 STAGED_TS_FOR_TYPECHECK=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(ts|tsx)$' || true)
 if [ -n "$STAGED_TS_FOR_TYPECHECK" ]; then
     echo -e "${BLUE}📐 Running TypeScript type check...${NC}"
-    if command -v pnpm &> /dev/null && [ -f "package.json" ] && jq -e '.scripts.typecheck' package.json &> /dev/null; then
-        if ! pnpm typecheck 2>&1 | tail -20; then
+    if command -v bun &> /dev/null && [ -f "package.json" ] && jq -e '.scripts.typecheck' package.json &> /dev/null; then
+        if ! bun run typecheck 2>&1 | tail -20; then
             echo -e "${RED}❌ TypeScript type check failed${NC}"
             EXIT_CODE=1
         else
@@ -244,8 +244,8 @@ done
 if [ "$HOOK_FILES_MODIFIED" = true ] || [ "${FORCE_HOOK_TESTS:-}" = "1" ]; then
     echo -e "${BLUE}🧪 Running hook tests...${NC}"
 
-    if command -v pnpm &> /dev/null && [ -f "${HOOKS_PROJECT_DIR}/package.json" ] && jq -e '.scripts.test' "${HOOKS_PROJECT_DIR}/package.json" &> /dev/null; then
-        if ! (cd "${HOOKS_PROJECT_DIR}" && pnpm test); then
+    if command -v bun &> /dev/null && [ -f "${HOOKS_PROJECT_DIR}/package.json" ] && jq -e '.scripts.test' "${HOOKS_PROJECT_DIR}/package.json" &> /dev/null; then
+        if ! (cd "${HOOKS_PROJECT_DIR}" && bun run test); then
             echo -e "${RED}❌ Hook tests failed!${NC}"
             EXIT_CODE=1
         else

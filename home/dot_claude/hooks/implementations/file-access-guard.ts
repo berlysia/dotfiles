@@ -1,9 +1,9 @@
 #!/usr/bin/env -S bun run --silent
 
 import { execSync } from "node:child_process";
-import { existsSync, readFileSync, realpathSync } from "node:fs";
-import { homedir } from "node:os";
-import { resolve } from "node:path";
+import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { basename, dirname, resolve } from "node:path";
 import { defineHook } from "cc-hooks-ts";
 import {
   formatChezmoiRedirectMessage,
@@ -113,9 +113,17 @@ function getRepositoryRoot(): string | undefined {
   }
 }
 
+// Bun's os.homedir() keeps returning the startup value after process.env.HOME
+// changes (measured; Node re-reads HOME), so tests that isolate HOME in-process
+// would still read the real ~/.claude/settings.json under `bun test`. Reading
+// HOME first matches what os.homedir() returns on POSIX at startup anyway.
+function getHomeDir(): string {
+  return process.env.HOME || homedir();
+}
+
 function getSettingsFiles(workspaceRoot?: string): SettingsFile[] {
   const settingsFiles: SettingsFile[] = [];
-  const homeDir = homedir();
+  const homeDir = getHomeDir();
 
   // Global settings
   const globalSettingsPath = resolve(homeDir, ".claude", "settings.json");
@@ -332,6 +340,104 @@ function resolvePath(path: string): string {
   }
 }
 
+// os.tmpdir() follows $TMPDIR, which a project's .claude/settings.json `env` can
+// override. Accepting only the exact macOS per-user shape keeps a hostile value
+// (`/`, `/var`, `~/.ssh`, the `C/` cache dir, ...) from becoming a writable root.
+const MACOS_USER_TMPDIR_SHAPE = /^\/(private\/)?var\/folders\/[^/]+\/[^/]+\/T$/;
+
+function hasParentSegment(p: string): boolean {
+  return p.split("/").includes("..");
+}
+
+/**
+ * Directories the OS hands out for temporary files: `/tmp` and the per-user
+ * tmpdir, each in literal and realpath form (macOS: /tmp -> /private/tmp,
+ * /var -> /private/var), so a path is recognised however it was spelled.
+ */
+export function collectTempRoots(
+  tmpdir: string,
+  realpath: (p: string) => string,
+): string[] {
+  const roots = new Set<string>(["/tmp"]);
+  const addRealpath = (p: string, accept: (form: string) => boolean): void => {
+    try {
+      const real = realpath(p);
+      if (accept(real)) roots.add(real);
+    } catch {
+      // Only the literal form is kept when the path cannot be resolved.
+    }
+  };
+
+  // /tmp is OS-owned, so its realpath is trusted without a shape check.
+  addRealpath("/tmp", () => true);
+
+  // Checked before resolve(): resolve("") / resolve("tmp") would silently become the cwd.
+  if (tmpdir.startsWith("/") && !hasParentSegment(tmpdir)) {
+    const literal = resolve(tmpdir); // strips the trailing slash macOS $TMPDIR carries
+    const accepted = (form: string): boolean =>
+      MACOS_USER_TMPDIR_SHAPE.test(form);
+    if (accepted(literal)) roots.add(literal);
+    addRealpath(literal, accepted);
+  }
+
+  return [...roots];
+}
+
+function isUnderRoot(p: string, root: string): boolean {
+  return p === root || p.startsWith(`${root}/`);
+}
+
+function isMissingPathError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  return code === "ENOENT" || code === "ENOTDIR";
+}
+
+/**
+ * Whether `absTarget` is provably inside a temp root, both as written and
+ * after following every symlink on the way to where the write would land.
+ *
+ * `..` is rejected outright: bun's realpathSync collapses `sym/..` lexically
+ * (measured), while the OS resolves it through the symlink, so the physical
+ * location cannot be trusted for such inputs. Legitimate scratchpad / mktemp
+ * writes never need `..`.
+ */
+export function isWithinTempRoots(
+  absTarget: string,
+  roots: string[],
+  realpath: (p: string) => string,
+  lstat: (p: string) => { isSymbolicLink(): boolean },
+): boolean {
+  if (!absTarget.startsWith("/") || hasParentSegment(absTarget)) return false;
+  if (!roots.some((root) => isUnderRoot(absTarget, root))) return false;
+
+  // The target may not exist yet (Write creating a file), so resolve the
+  // nearest existing ancestor and re-attach the missing tail.
+  const tail: string[] = [];
+  let current = absTarget;
+  for (;;) {
+    try {
+      const physical = join(realpath(current), ...tail);
+      return roots.some((root) => isUnderRoot(physical, root));
+    } catch (error) {
+      if (!isMissingPathError(error)) return false; // EACCES, ELOOP, ...: fail closed
+    }
+
+    // realpath reports ENOENT for a dangling symlink too; its target is
+    // unknown, so the link could point anywhere.
+    try {
+      lstat(current);
+      return false;
+    } catch (error) {
+      if (!isMissingPathError(error)) return false;
+    }
+
+    const parent = dirname(current);
+    if (parent === current) return false; // reached "/" and it cannot be resolved
+    tail.unshift(basename(current));
+    current = parent;
+  }
+}
+
 function validatePath(
   path: string,
   repoRoot: string,
@@ -340,10 +446,30 @@ function validatePath(
   allowPatterns: string[],
 ): PathValidationResult {
   const absPath = resolvePath(path);
-  const homeDir = homedir();
+  const homeDir = getHomeDir();
 
   // 1. Repository内 → 常に許可
   if (absPath.startsWith(repoRoot)) {
+    return {
+      isAllowed: true,
+      resolvedPath: absPath,
+    };
+  }
+
+  // 1.5. OS の一時ディレクトリ配下 → 許可（システムディレクトリ判定より前）
+  // macOS では os.tmpdir() が /var/folders 配下にあり、/var 一括拒否の後では到達できない。
+  // `..` を保持するため resolvePath を通さず、生の絶対パスで判定する。
+  const rawAbs = path.startsWith("/")
+    ? path
+    : `${process.env.CLAUDE_TEST_CWD || process.cwd()}/${path}`;
+  if (
+    isWithinTempRoots(
+      rawAbs,
+      collectTempRoots(tmpdir(), realpathSync),
+      realpathSync,
+      lstatSync,
+    )
+  ) {
     return {
       isAllowed: true,
       resolvedPath: absPath,
@@ -376,7 +502,7 @@ function validatePath(
   }
 
   // 3. 常に許可する安全なパス
-  const alwaysSafePaths = [join(homeDir, ".claude"), "/tmp", "/var/tmp"];
+  const alwaysSafePaths = [join(homeDir, ".claude"), "/var/tmp"];
   for (const safePath of alwaysSafePaths) {
     if (absPath.startsWith(`${safePath}/`) || absPath === safePath) {
       return {
