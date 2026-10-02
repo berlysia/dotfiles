@@ -3,6 +3,7 @@
  * TypeScript conversion of pattern-matcher.sh
  */
 
+import { posix } from "node:path";
 import type { ToolInput } from "../types/project-types.ts";
 import { isBashToolInput } from "../types/project-types.ts";
 import { getFilePathFromToolInput } from "./command-parsing.ts";
@@ -161,6 +162,73 @@ export function isSafeBuiltinCommand(cmd: string): boolean {
 }
 
 /**
+ * Match one path segment against a pattern whose only wildcard is `*` (zero or
+ * more characters, never crossing a segment). A DP table keeps the cost at
+ * O(text * pattern); a RegExp built from user patterns could backtrack badly.
+ */
+function matchSegment(text: string, pattern: string): boolean {
+  // reachable[j]: pattern[0..j) matches the text prefix consumed so far
+  let reachable: boolean[] = new Array<boolean>(pattern.length + 1).fill(false);
+  reachable[0] = true;
+  for (let j = 0; j < pattern.length; j++) {
+    reachable[j + 1] = reachable[j] === true && pattern[j] === "*";
+  }
+  for (let i = 0; i < text.length; i++) {
+    const next: boolean[] = new Array<boolean>(pattern.length + 1).fill(false);
+    for (let j = 0; j < pattern.length; j++) {
+      const token = pattern[j];
+      if (token === "*") {
+        // `*` consumes nothing (next[j]) or one more character (reachable[j+1])
+        next[j + 1] = next[j] === true || reachable[j + 1] === true;
+      } else {
+        next[j + 1] = reachable[j] === true && token === text[i];
+      }
+    }
+    reachable = next;
+  }
+  return reachable[pattern.length] === true;
+}
+
+/**
+ * Match an absolute path against an absolute pattern containing `*` / `**`.
+ * `**` as a whole segment spans zero or more segments; `*` stays in a segment.
+ * The path is normalized first so `//`, `/./` and `..` cannot dodge a deny
+ * pattern or widen an allow pattern.
+ */
+function matchAbsoluteGlob(filePath: string, pattern: string): boolean {
+  if (!filePath.startsWith("/")) return false;
+  const pathSegments = posix
+    .normalize(filePath)
+    .split("/")
+    .filter((s) => s !== "");
+  const patternSegments = pattern.split("/").filter((s) => s !== "");
+
+  // table[j]: pattern[0..j) matches the path prefix consumed so far
+  let table: boolean[] = new Array<boolean>(patternSegments.length + 1).fill(
+    false,
+  );
+  table[0] = true;
+  for (let j = 0; j < patternSegments.length; j++) {
+    table[j + 1] = table[j] === true && patternSegments[j] === "**";
+  }
+  for (const segment of pathSegments) {
+    const next: boolean[] = new Array<boolean>(patternSegments.length + 1).fill(
+      false,
+    );
+    for (let j = 0; j < patternSegments.length; j++) {
+      const token = patternSegments[j] as string;
+      if (token === "**") {
+        next[j + 1] = next[j] === true || table[j + 1] === true;
+      } else {
+        next[j + 1] = table[j] === true && matchSegment(segment, token);
+      }
+    }
+    table = next;
+  }
+  return table[patternSegments.length] === true;
+}
+
+/**
  * GitIgnore-style pattern matching
  */
 /**
@@ -191,6 +259,12 @@ export function matchGitignorePattern(
   filePath: string | NormalizedPath,
   pattern: string | NormalizedPattern,
 ): boolean {
+  // Absolute wildcard patterns (leading // from normalizePattern is collapsed)
+  const collapsed = pattern.replace(/^\/+/, "/");
+  if (collapsed.startsWith("/") && collapsed.includes("*")) {
+    return matchAbsoluteGlob(filePath, collapsed);
+  }
+
   // Handle directory patterns ending with /
   if (pattern.endsWith("/")) {
     const dirPattern = pattern.slice(0, -1);

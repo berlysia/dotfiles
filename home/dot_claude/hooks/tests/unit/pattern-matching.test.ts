@@ -256,3 +256,70 @@ describe("parseBashPattern / matchAnchoredBashAllow (spec K4)", () => {
     );
   });
 });
+
+describe("matchGitignorePattern: absolute wildcard patterns", () => {
+  const cases: Array<[string, string, boolean]> = [
+    // matches
+    ["/.env", "//**/.env", true],
+    ["/x/.env", "//**/.env", true],
+    ["/x/a/b/.env.production", "//**/.env.production", true],
+    ["/x/.env.prod.local", "//**/.env.*.local", true],
+    ["/mnt/c/.Trash-1000/files/a", "//**/.Trash-*/**", true],
+    ["/home/u/.ssh/id_rsa", "/home/u/.ssh/id_*", true],
+    ["/home/u/.ssh/id_rsa.pub", "/home/u/.ssh/id_*", true],
+    ["/x/.hidden/y", "/x/*/y", true],
+    // non-matches
+    ["/x/ai.env.sh", "//**/.env", false],
+    ["/x/env.sh.tmpl", "//**/.env", false],
+    ["/x/.env.example", "//**/.env", false],
+    ["/x/.env.sample", "//**/.env.*.local", false],
+    ["/x/.env.local.bak", "//**/.env.*.local", false],
+    ["/x/y/z", "/x/*", false],
+    // unchanged behavior
+    ["/tmp", "/tmp/**", true],
+    ["/tmp/a/b", "/tmp/**", true],
+    ["/tmpx/a", "/tmp/**", false],
+    ["/abs/src/a.ts", "src/**", true],
+    ["../x", "./**", false],
+    // path normalization
+    ["/home/u//.ssh/id_rsa", "/home/u/.ssh/id_*", true],
+    ["/home/u/./.ssh/id_rsa", "/home/u/.ssh/id_*", true],
+    ["/tmp/../etc/passwd", "/tmp/**", false],
+    ["/tmp/../etc/passwd", "/etc/**", true],
+    ["tmp/x", "/tmp/**", false],
+    ["../x", "//**", false],
+    ["/x/.env/", "//**/.env", true],
+  ];
+  for (const [path, pattern, expected] of cases) {
+    it(`${JSON.stringify(path)} vs ${JSON.stringify(pattern)} -> ${expected}`, () => {
+      strictEqual(matchGitignorePattern(path, pattern), expected);
+    });
+  }
+
+  // Expected values captured from the implementation before the fix.
+  describe("real trailing /** patterns keep their previous results", () => {
+    const bases = [
+      "/home/u/.claude",
+      "/home/u/.local",
+      "/home/u/workspace",
+      "/home/u/.ssh",
+      "/tmp",
+    ];
+    for (const base of bases) {
+      const pattern = `${base}/**`;
+      it(pattern, () => {
+        strictEqual(matchGitignorePattern(`${base}/a/b`, pattern), true);
+        strictEqual(matchGitignorePattern(base, pattern), true);
+        strictEqual(matchGitignorePattern(`${base}x/a`, pattern), false);
+      });
+    }
+  });
+
+  it("stays fast on long paths with stacked ** (no backtracking blowup)", () => {
+    const longPath = `/${Array(200).fill("a").join("/")}/b`;
+    const start = performance.now();
+    strictEqual(matchGitignorePattern(longPath, "//**/**/**/**/c"), false);
+    const elapsed = performance.now() - start;
+    strictEqual(elapsed < 50, true, `took ${elapsed}ms`);
+  });
+});
