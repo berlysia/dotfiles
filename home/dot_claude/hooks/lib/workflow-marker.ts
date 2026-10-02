@@ -104,3 +104,17 @@ export function lastPassMarkerRound(content: string): number {
   }
   return 0;
 }
+
+/**
+ * The content with its Approval Status line set to `value`, or null when
+ * the document has no such line. Only the first strict-form line is
+ * rewritten -- the one the gate reads.
+ */
+export function setApprovalStatusLine(
+  content: string,
+  value: "approved" | "pending",
+): string | null {
+  const line = /^- Approval Status:.*$/m;
+  if (!line.test(content)) return null;
+  return content.replace(line, `- Approval Status: ${value}`);
+}
