@@ -877,7 +877,7 @@ export function buildSummaryReminder(planPath: string): string {
     "- **Risks / Unknowns**: <既知リスク・未検証の前提・影響範囲の広い箇所>",
     "- **Review Status**: verdict / reviewers / hash from auto-review marker",
     "- **Open Questions**: <ユーザー判断を仰ぎたい点（なければ N/A）>",
-    "- **Next Action**: `Approval Status: approved` にしてください / 追加修正を依頼してください",
+    "- **Next Action**: 会話で `承認`（複数なら文書名つき）と書いてください / 追加修正を依頼してください",
     "",
     "Fill each field from plan.md content. Do NOT skip any field (use N/A if not applicable).",
   ].join("\n");

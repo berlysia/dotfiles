@@ -13,13 +13,22 @@ operator guide（`~/.claude/rules/workflow.md`）は「何をどの順でやる�
 
 - **Plan Status**: `draft` → `complete`（モデルが書く）
 - **Review Status**: `pass` / `needs-work` / `blocker`（`workflow-cli stamp` が厳密形で書く。手で転記しない）
-- **Approval Status**: `pending` → `approved`（**人間のみ**）
+- **Approval Status**: `pending` → `approved`（**人間のみ**。会話で `承認` と書くと hook が記録して書き換える。下記「承認の記録」）
 
 hash は 3 種あり、いずれも `workflow-cli` が計算して marker に書く（モデルは転記しない）:
 
 - **auto-review hash**: 成果物全体の正規化 hash。marker の `hash=` と実ファイルの照合に使う。正規化は marker / intent-triage marker / Reviewer Outputs セクション / Approval Status 値 / チェックボックス状態を除外するので、これらの編集では hash は動かない。**ただし Review Status の値は正規化対象外**なので、needs-work → pass の遷移では hash が動く（`workflow-cli stamp` は Review Status を書いた後の内容で hash を計算するため整合する）。
 - **design-hash**: Key Decisions / Files / Scope / Tasks セクションのみの hash。prescribed-fix carry-forward 判定に使う。
 - **parent-spec-hash**: plan-N.md が指す spec.md の hash。K7 連鎖検証に使う。
+
+## 承認の記録
+
+- 人間が会話で `承認`（複数が承認待ちなら `承認 plan-2.md`）と書くと、`approval-recorder`（UserPromptSubmit）が `<wfDir>/approvals.log` に `{"v":1,"doc","hash","session","at"}` を 1 行追記し、承認行を approved に書き換える。発話の全体がこの形のときだけ反応し、`source` が `user` か無く、サブエージェントの外のときだけ記録する
+- gate の条件は、上の 3 status 行・marker verdict・hash 一致に加えて「log の同じ `doc` の最後の行の hash = 現在の文書 hash」。`session` は照合に使わないので、wfDir を複製しても同じ版の承認は引き継がれる
+- 診断には `approval: recorded=<12 桁 | none> current=<12 桁>` が出る。読み飛ばした行があれば `; ignored-lines=<N>`、log が読めなければ `; ledger-unreadable`（gate は閉じたまま）。次の 1 手は「会話で『承認 <文書名>』と書く」
+- 名前を付けた承認（`承認 spec.md plan-1.md`）は全か無か: 1 つでも承認以外の条件を満たさなければ何も記録しない。名前なしは、承認待ちがちょうど 1 件のときだけ記録する
+- 承認の後に文書の hash が動く改訂をすると再承認が要る（Reviewer Outputs・marker・チェックボックスは hash に含まれない。`stamp` は Review Status 行を書くので承認後の stamp は再承認を要する）。取り消しは承認行を pending に戻す
+- model の Write / Edit / MultiEdit で承認行を approved にする、または `approvals.log` に書くことは guard が deny する（Bash は対象外）
 
 ## K7 連鎖検証（二層）
 
@@ -104,16 +113,18 @@ mechanical-lane を選んだら 4 条件それぞれの判定根拠を plan.md �
 
 hook は wfDir を hook 入力の `session_id` + cwd から導出するので、環境変数が無くても enforce は効く。次セッションへ引き継ぐとき:
 
-- **`/clear` して同じプロセスで続ける**: `/clear` は新しい session id を発行し `.tmp/sessions/<新 id 先頭8桁>` になる。前セッションの成果物を新 dir へ `cp -a` でコピーする。auto-review hash は文書内容のみから算出されるのでパスが変わっても承認状態は保たれる。コピーは必ず空変数ガードとセットで同じ Bash 呼び出し内で行う:
+- **`/clear` して同じプロセスで続ける**: `/clear` は新しい session id を発行し `.tmp/sessions/<新 id 先頭8桁>` になる。前セッションの成果物を新 dir へ `cp -a` でコピーする。auto-review hash は文書内容のみから算出されるのでパスが変わっても承認状態は保たれる。`workflow-cli dir` の `wfDir=` の値をリテラルで貼ってからコピーする（シェル変数を使わないので、空の変数でルートに展開する事故が起きない）。複製すると `approvals.log` も移り、同じ版の文書の承認は引き継がれる:
 
   ```bash
   workflow-cli dir   # wfDir=<新しい dir> を確かめる
   cp -a .tmp/sessions/<旧 id 先頭8桁>/. <wfDir の値>/
   ```
 
-  変数が空のまま `cp` が走ると `cp -a <src>/. /` になりルート直下へ展開する。
-
 - **`claude` を起動し直す**: `DOCUMENT_WORKFLOW_DIR=.tmp/sessions/<旧 id 先頭8桁> claude "..."` と起動時 env で pin する。containment を満たさない pin は `env-rejected` として捨てられ導出値が使われる。
+
+## worktree で Document Workflow を使う
+
+wfDir は Claude Code を起動した dir（`CLAUDE_PROJECT_DIR`）の `.tmp/sessions/<id 先頭8桁>` にあり、worktree に `cd` しても動かない。`workflow-cli dir` で確認する。`## Files` は repo 相対で書けば、worktree の中のファイルにもその worktree の toplevel 基準で一致する。worktree の中で起動したセッションの wfDir はその worktree の中にある。
 
 ## S3 デプロイ移行手順（hash normalizer 変更時）
 
