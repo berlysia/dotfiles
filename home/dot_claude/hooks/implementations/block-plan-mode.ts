@@ -3,6 +3,7 @@
 import { defineHook } from "cc-hooks-ts";
 import { createDenyResponse } from "../lib/context-helpers.ts";
 import { sanitizeForDisplay } from "../lib/sanitize-display.ts";
+import { getProjectRoot } from "../lib/project-root.ts";
 import { resolveWorkflowDir } from "../lib/workflow-resolve.ts";
 
 /**
@@ -19,7 +20,7 @@ const hook = defineHook({
       return context.success({});
     }
 
-    const cwd = process.env.CLAUDE_TEST_CWD || process.cwd();
+    const cwd = getProjectRoot();
     const resolution = resolveWorkflowDir({
       cwd,
       sessionId: context.input.session_id,

@@ -9,13 +9,14 @@ import {
 } from "../lib/workflow-review-core.ts";
 import { realpathInsideWorkflowDir } from "../lib/workflow-fs.ts";
 import { isWorkflowDocumentEdit } from "../lib/workflow-tool-input.ts";
+import { getProjectRoot } from "../lib/project-root.ts";
 import { resolveWorkflowDir } from "../lib/workflow-resolve.ts";
 import "../types/tool-schemas.ts";
 
 const hook = defineHook({
   trigger: { PostToolUse: true },
   run: async (context) => {
-    const cwd = process.env.CLAUDE_TEST_CWD || process.cwd();
+    const cwd = getProjectRoot();
     const resolution = resolveWorkflowDir({
       cwd,
       sessionId: context.input.session_id,
