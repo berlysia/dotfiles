@@ -69,7 +69,11 @@ V1 の実測（ユーザーが別ターミナルで実施）で、`/clear` の�
 9. **K4 の検査テストの許可リストを spec から狭めた**: spec は 4 か所を挙げたが、禁止形を含むのは guard の docstring 2 か所だけだった（session.ts と workflow-resolve.ts は `process.env.…` で禁止形に当たらず、unified-audio-config.ts は走査の対象外）。
 10. **spec K1 の「11 ファイル」と実際に置き換えた 9 ファイルの差**: plan-review-automation と file-access-guard はツール cwd の用途しか持たなかった（file-access-guard は K10 で `getProjectRoot()` を新たに使う）。
 11. **Bash による log への追記は止めない**（spec R4）: 不注意な逸脱を止める仕組みで、意図的な迂回への耐性は主張しない。
-12. **出どころの判定は `source` に頼る**: 公式ドキュメントの UserPromptSubmit の入力には載っていないが、cc-hooks-ts 2.1.281 の型にある `source` が `user` か無いときだけ記録する。値が無い古い Claude Code では予約したプロンプトを区別できない。model が「承認」だけのプロンプトを予約するのは意図的な迂回で R4 の外。サブエージェントの中の発火（`agent_id` あり）も記録しない。実測の結果は、配備後に別のコミットでここに追記する。
+12. **出どころの判定は `source` に頼る**: 公式ドキュメントの UserPromptSubmit の入力には載っていないが、cc-hooks-ts 2.1.281 の型にある `source` が `user` か無いときだけ記録する。値が無い古い Claude Code では予約したプロンプトを区別できない。model が「承認」だけのプロンプトを予約するのは意図的な迂回で R4 の外。サブエージェントの中の発火（`agent_id` あり）も記録しない。配備後の実測（2026-10-02、Claude Code 2.1.287、配備後に起動したセッション 1 つ）:
+    - `CronCreate` で予約した「承認」（承認待ち 0 件）は、`source=…` の分岐に入らず「承認を待っている文書が無い」と返った（実測、1 件。発火が予約から来たことは、ジョブが消えていたことと、その時間帯の recorder の発火がその 1 件だけだったことで確かめた）。この経路の `source` は `user` か値なしで届いている（返答の文面と分岐のコードからの推論）。承認待ちがあれば記録されるというのはコードからの推論で、実測していない。`/loop` と `ScheduleWakeup` は未測定。followups 課題 J で追跡する。
+    - Remote Control 経由でデスクトップアプリから打った「承認」も、同じ返答だった（hook の発火と返答は実測、どこから打ったかは利用者の申告）。
+    - 承認待ちが 1 件（その作業自身の plan.md）の状態で、利用者がターミナルから `approve` と打つと、`approvals.log` が無い状態から 1 行になり、その `hash` は直前に `workflow-cli status` で控えた hash と一致した。承認行は `approved` に書き換わり、gate の 6 条件がすべてそろった（実測）。
+    - hook-timer は入力の `source` を記録しないので、上の経路で `source` が `user` だったか値なしだったかは実測できていない。
 13. **文書名なしの「承認」は、承認待ちが 1 件なら別の話題への返事でも記録される**（spec R7）: 記録したら対象・hash・取り消し方を `additionalContext` と `systemMessage` で必ず伝える。
 
 ## References

@@ -107,3 +107,15 @@ ADR-0013 側には判断と 1-2 行の要約しか置かないため、**証拠�
 - `rules/workflow.md` の Session Artifact Retention は「実装計画（未着手・途中）は `docs/plans/` に移動」と指示しているため、`plan-N.md` の名前のまま移送すると同じ事故が起きる（かつ guard は wfDir スコープなのでそのファイルを workflow 文書として認識しない）。
 
 未着手である理由: 本 plan のレビューで新規に発見したため、原因の切り分けと対処方針の検討がまだ済んでいない。
+
+## 課題 J: `CronCreate` で予約したプロンプトの「承認」を approval-recorder が利用者の入力として扱う
+
+ADR-0023 Consequences 12 の配備後実測（plan-5 T5 Step 6）で確認した。Claude Code 2.1.287、2026-10-02。
+
+- 実測: 承認待ちが 0 件のセッションで、`CronCreate`（1 回限り、prompt=`承認`）を 18:42 に予約した。recorder の返答は「承認を待っている文書が無いので、何も記録していない。」で、`source` が `user` 以外のときの分岐（「利用者が打ったものではない（source=…）」、`approval-recorder.ts:162-173`）に入らなかった。発火が予約から来たことは、ジョブが消えていたことと、その時間帯の approval-recorder の発火が 09:42:00Z の 1 件（`stdout_bytes: 298`）だけだったことで確かめた。
+- 推論（未実測）: 分岐のコードから、この経路の `source` は `user` か値なしで届いている。したがって承認待ちが 1 件あるときに model が `CronCreate` で「承認」だけのプロンプトを予約すると、recorder はそれを承認として記録する。ADR-0023 はこれを意図的な迂回（spec R4 の外）として受け入れているが、「`source` で予約のプロンプトを区別できる」という前提は、少なくとも `CronCreate` の経路では成り立たない。
+- 確かめていないこと: `/loop` と `ScheduleWakeup` の経路、`source` が値なしか `user` か。
+- 次の一手: hook-timer か recorder に、入力の `source` を記録させる計装を入れる（hook-timer は今 `session_id` / `tool_name` / `tool_use_id` だけを記録する）。そのうえで `/loop` と `ScheduleWakeup` を測る。
+- 再訪のきっかけ: spec K7（承認の発話の判定）を改訂するとき、`/loop` / `ScheduleWakeup` を実測するとき、Claude Code の UserPromptSubmit の入力に出どころのフィールドが文書化されたとき。
+
+未着手である理由: 実測で判明したばかりで、`source` 以外の手がかり（transcript 上の区別など）があるかを調べていない。
