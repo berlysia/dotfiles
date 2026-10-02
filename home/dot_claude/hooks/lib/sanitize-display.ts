@@ -26,7 +26,7 @@
  *    would collapse `a$b.ts` onto `ab.ts` and manufacture the display/decision
  *    divergence this codebase is trying to remove.
  *
- * Distinct from `insight-digest.ts`'s `sanitize`, which redacts secrets and
+ * Distinct from `redact-secrets.ts`'s `sanitize`, which redacts secrets and
  * reports a hit count. This one removes structure-breaking characters and
  * returns a bounded string; the two are not interchangeable.
  *

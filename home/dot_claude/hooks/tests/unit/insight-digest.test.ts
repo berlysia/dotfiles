@@ -9,8 +9,8 @@ import {
   hashSessionId,
   INSIGHT_DELIMITER_PATTERN,
   normalize,
-  sanitize,
 } from "../../lib/insight-digest.ts";
+import { sanitize } from "../../lib/redact-secrets.ts";
 
 const STAR = String.fromCharCode(0x2605);
 const HBAR = String.fromCharCode(0x2500);
