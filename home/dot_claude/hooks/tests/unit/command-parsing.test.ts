@@ -217,9 +217,9 @@ describe("Command Parsing Library", () => {
       ["a repeated dd word", "dd if ".repeat(16667)],
     ] as const) {
       it(`judges ${name} in linear time`, () => {
-        const start = Date.now();
+        const start = performance.now();
         strictEqual(checkDangerousCommand(cmd).isDangerous, false);
-        ok(Date.now() - start < 1000);
+        ok(performance.now() - start < 1000);
       });
     }
   });

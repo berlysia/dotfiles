@@ -293,9 +293,9 @@ describe("permission-auto-approve.ts hook behavior", () => {
           tool_input: { command: cmd },
         };
 
-        const start = Date.now();
+        const start = performance.now();
         const result = staticRuleEngine(input);
-        const elapsed = Date.now() - start;
+        const elapsed = performance.now() - start;
         ok(elapsed < 1000, `${elapsed} ms`);
         notStrictEqual(result.behavior, "deny");
       });

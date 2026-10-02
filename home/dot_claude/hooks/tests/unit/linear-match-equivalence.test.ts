@@ -556,9 +556,9 @@ describe("adversarial inputs run in linear time", () => {
         ...genericShapes(rule),
         ...rule.perf.map((make) => make()),
       ]) {
-        const start = Date.now();
+        const start = performance.now();
         matcher.test(shape);
-        const elapsed = Date.now() - start;
+        const elapsed = performance.now() - start;
         ok(
           elapsed < 1000,
           `${elapsed} ms for ${JSON.stringify(shape.slice(0, 40))}`,

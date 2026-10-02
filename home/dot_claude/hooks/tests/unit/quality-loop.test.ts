@@ -247,9 +247,9 @@ describe("runFormat", () => {
     const { root, file } = setup();
     writeFile(join(root, ".oxfmtrc.json"), "{}");
     installBin(root, "oxfmt", "exec sleep 5");
-    const started = Date.now();
+    const started = performance.now();
     const result = runFormat(file, root, 200);
-    ok(Date.now() - started < 3000);
+    ok(performance.now() - started < 3000);
     ok(result?.output.startsWith("oxfmt failed:"));
   });
 

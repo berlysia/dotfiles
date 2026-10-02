@@ -595,8 +595,8 @@ describe("for-loop body splitting (Issue #219 H)", () => {
 
   it("splits a body with a long blank run in linear time", async () => {
     const command = `bash -c "for x in a; do echo${" ".repeat(100000)}y; done"`;
-    const start = Date.now();
+    const start = performance.now();
     await extractCommandsStructured(command);
-    ok(Date.now() - start < 1000);
+    ok(performance.now() - start < 1000);
   });
 });

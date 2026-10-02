@@ -148,11 +148,11 @@ describe("classifyDeletion", () => {
   }
   it("judges a long repeated verb in linear time", () => {
     const text = "ls ".repeat(33334);
-    const start = Date.now();
+    const start = performance.now();
     for (const { pattern } of buildReadOnlyPatterns()) {
       strictEqual(pattern.test(text), false);
     }
-    ok(Date.now() - start < 1000);
+    ok(performance.now() - start < 1000);
   });
   it("generates exactly the five existing categories", () => {
     strictEqual(
@@ -206,8 +206,8 @@ describe("standaloneSymlinkRemovalOperands", () => {
     it(`null: ${JSON.stringify(cmd)}`, () => strictEqual(ops(cmd), null));
 
   it("rejects a long inner blank run in linear time", () => {
-    const start = Date.now();
+    const start = performance.now();
     strictEqual(ops("eslint" + " ".repeat(500000) + "x"), null);
-    ok(Date.now() - start < 1000);
+    ok(performance.now() - start < 1000);
   });
 });

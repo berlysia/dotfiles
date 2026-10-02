@@ -267,10 +267,10 @@ describe("scanSafeList", () => {
   });
 
   it("scans 100,000 characters in linear time", () => {
-    const start = Date.now();
+    const start = performance.now();
     deepStrictEqual(scanSafeList(`ls ${"a".repeat(100000)}`)?.length, 1);
     deepStrictEqual(scanSafeList(`ls${" ".repeat(100000)}b`)?.length, 1);
     deepStrictEqual(scanSafeList(`ls ;${" ;".repeat(50000)}`), null);
-    ok(Date.now() - start < 1000);
+    ok(performance.now() - start < 1000);
   });
 });

@@ -132,13 +132,13 @@ describe("run-guard.sh", () => {
   it("returns within the timeout and kills descendants that hold stdout", () => {
     const pidFile = join(makeTempDir(), "child.pid");
     const dir = fakeBunDir(`sleep 30 &\necho $! >${pidFile}\nwait`);
-    const started = Date.now();
+    const started = performance.now();
     const result = runWrapper(throwingHook, {
       PATH: `${dir}:/usr/bin:/bin`,
       HOME: makeTempDir(),
       RUN_GUARD_TIMEOUT: "1",
     });
-    const elapsed = Date.now() - started;
+    const elapsed = performance.now() - started;
     strictEqual(result.status, 2);
     ok(result.stderr.includes("timed out"), result.stderr);
     ok(elapsed < 10_000, `took ${elapsed}ms`);
@@ -148,13 +148,13 @@ describe("run-guard.sh", () => {
 
   it("does not wait for the timeout when the hook finishes early", () => {
     const dir = fakeBunDir("exit 0");
-    const started = Date.now();
+    const started = performance.now();
     const result = runWrapper(throwingHook, {
       PATH: `${dir}:/usr/bin:/bin`,
       HOME: makeTempDir(),
       RUN_GUARD_TIMEOUT: "30",
     });
-    const elapsed = Date.now() - started;
+    const elapsed = performance.now() - started;
     strictEqual(result.status, 0);
     ok(elapsed < 10_000, `took ${elapsed}ms`);
   });
@@ -191,8 +191,8 @@ describe("run-guard.sh", () => {
     });
     child.stdin.end('{"tool_name":"Bash"}');
     // Wait until the hook is running, so the signal lands on the wrapper's wait.
-    const deadline = Date.now() + 5_000;
-    while (!existsSync(pidFile) && Date.now() < deadline) {
+    const deadline = performance.now() + 5_000;
+    while (!existsSync(pidFile) && performance.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
     ok(existsSync(pidFile), "the hook did not start within 5s");

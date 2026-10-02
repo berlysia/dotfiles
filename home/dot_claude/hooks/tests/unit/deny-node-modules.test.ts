@@ -293,9 +293,9 @@ describe("deny-node-modules.ts hook behavior", () => {
     ] as const) {
       it(`asks for ${name} in linear time`, async () => {
         const context = createPreToolUseContext("Bash", { command });
-        const start = Date.now();
+        const start = performance.now();
         await invokeRun(denyNodeModulesHook, context);
-        const elapsed = Date.now() - start;
+        const elapsed = performance.now() - start;
 
         ok(elapsed < 1000, `${elapsed} ms`);
         context.assertAsk();
@@ -307,13 +307,13 @@ describe("deny-node-modules.ts hook behavior", () => {
     // judged at the table, which is where the regexes were.
     it("judges a long run of redirect characters in linear time", () => {
       const text = NM + " " + ">".repeat(100000);
-      const start = Date.now();
+      const start = performance.now();
       const hit = DESTRUCTIVE_NODE_MODULES_PATTERNS.find(
         ({ operation }) => operation === "overwrite",
       );
       ok(hit);
       strictEqual(hit.pattern.test(text), false);
-      ok(Date.now() - start < 1000);
+      ok(performance.now() - start < 1000);
     });
   });
 
