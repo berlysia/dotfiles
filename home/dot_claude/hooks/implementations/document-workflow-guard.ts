@@ -6,6 +6,11 @@ import { defineHook } from "cc-hooks-ts";
 import { getCommandFromToolInput } from "../lib/command-parsing.ts";
 import { createDenyResponse } from "../lib/context-helpers.ts";
 import { prepareDenyInput } from "../lib/deny-input.ts";
+import {
+  createStartIndex,
+  type OracleMatcher,
+  type TextMatcher,
+} from "../lib/linear-match.ts";
 import { getProjectRoot } from "../lib/project-root.ts";
 import { expandTilde } from "../lib/path-utils.ts";
 import { sanitizeForDisplay } from "../lib/sanitize-display.ts";
@@ -358,33 +363,88 @@ async function analyzeBashWrite(
  */
 const INTERPRETER_NAMES = new Set(["python", "python3", "node", "bun", "deno"]);
 
+const WRITE_MODE_QUOTES = /['"][wa]\+?b?['"]/;
+
+/**
+ * Linear equivalent of `open\([^)]*['"][wa]\+?b?['"]`: an `open(` followed by a
+ * write-mode string literal before the next `)`. The literal itself has no
+ * `)`, so it only has to start before the first `)` at or after the `(`.
+ * The oracle is test-only (the super-linear original); see linear-match.ts.
+ */
+export function openWithWriteMode(): OracleMatcher {
+  return {
+    oracle: /open\([^)]*['"][wa]\+?b?['"]/,
+    test(text) {
+      let at = text.indexOf("open(");
+      if (at === -1) return false;
+      const modes = createStartIndex(text, WRITE_MODE_QUOTES);
+      const closers = createStartIndex(text, /\)/);
+      for (; at !== -1; at = text.indexOf("open(", at + 1)) {
+        const argsStart = at + "open(".length;
+        if (
+          modes.firstAtOrAfter(argsStart) < closers.firstAtOrAfter(argsStart)
+        ) {
+          return true;
+        }
+      }
+      return false;
+    },
+  };
+}
+
+/**
+ * Linear equivalent of `Path\([^)]*\)\.open\(`: the first `)` after a `Path(`
+ * is followed directly by `.open(`.
+ * The oracle is test-only (the super-linear original); see linear-match.ts.
+ */
+export function pathOpen(): OracleMatcher {
+  return {
+    oracle: /Path\([^)]*\)\.open\(/,
+    test(text) {
+      let at = text.indexOf("Path(");
+      if (at === -1) return false;
+      const closers = createStartIndex(text, /\)/);
+      for (; at !== -1; at = text.indexOf("Path(", at + 1)) {
+        const closer = closers.firstAtOrAfter(at + "Path(".length);
+        if (closer !== Infinity && text.startsWith(".open(", closer + 1)) {
+          return true;
+        }
+      }
+      return false;
+    },
+  };
+}
+
 /**
  * Substring/pattern indicators that a script body performs a filesystem (or
  * process-spawning) write. Deliberately narrower than "contains .write(":
  * `sys.stdout.write(...)` / `process.stdout.write(...)` are common in
  * read-only scripts and must not trip this classifier (spec K3 read-only
- * allow case).
+ * allow case). Exported for the differential test
+ * (linear-match-equivalence.test.ts). Do not add a regex of the form
+ * `X\s+.*Y` / `X.*Y` / `X[^)]*Y` here; use a linear matcher (see Issue #219).
  */
-const INTERPRETER_WRITE_INDICATOR_PATTERNS: RegExp[] = [
-  /open\([^)]*['"][wa]\+?b?['"]/, // open(path, 'w'|'a'|'wb'|'ab'|'w+'|'a+')
-  /Path\([^)]*\)\.open\(/,
-  /write_text\s*\(/,
-  /write_bytes\s*\(/,
-  /writeFileSync\s*\(/,
-  /\bwriteFile\s*\(/,
-  /appendFile\s*\(/,
-  /createWriteStream\s*\(/,
-  /fs\.promises/,
-  /Bun\.write/,
-  /Deno\.write/,
-  /os\.remove/,
-  /os\.rename/,
-  /os\.system/,
-  /subprocess/,
-  /shutil\./,
-  /child_process/,
-  /execSync/,
-];
+export const INTERPRETER_WRITE_INDICATOR_PATTERNS: ReadonlyArray<TextMatcher> =
+  [
+    openWithWriteMode(), // open(path, 'w'|'a'|'wb'|'ab'|'w+'|'a+')
+    pathOpen(),
+    /write_text\s*\(/,
+    /write_bytes\s*\(/,
+    /writeFileSync\s*\(/,
+    /\bwriteFile\s*\(/,
+    /appendFile\s*\(/,
+    /createWriteStream\s*\(/,
+    /fs\.promises/,
+    /Bun\.write/,
+    /Deno\.write/,
+    /os\.remove/,
+    /os\.rename/,
+    /os\.system/,
+    /subprocess/,
+    /shutil\./,
+    /child_process/,
+    /execSync/,
+  ];
 
 const HEREDOC_MARKER_REGEX = /<<-?\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?/;
 
