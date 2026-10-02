@@ -1,6 +1,7 @@
 .bashrc
 .bash_profile
 .zshenv
+.zshrc
 .zsh
 .zsh/**
 .shell_common

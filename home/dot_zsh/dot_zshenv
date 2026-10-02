@@ -1,9 +1,12 @@
-# this file does not automatically load
-# load this file from ~/.zshenv
-
-# Load common settings
-if [ -z "$SHELL_COMMON" ]; then
-  SHELL_COMMON="$HOME/.shell_common"
-fi
-
-[ -f "$SHELL_COMMON/init.sh" ] && . "$SHELL_COMMON/init.sh"
+# Transitional: shells that inherited ZDOTDIR=$HOME/.zsh read this file instead of ~/.zshenv.
+# Drop ZDOTDIR so zsh reads ~/.zshrc next, then load the real entry. Remove once no process holds ZDOTDIR
+# (see the marker below). The guard stops a loop with a pre-migration ~/.zshenv, which exports
+# ZDOTDIR and sources this file again (possible while an apply is half done).
+[ -n "${_ZSHENV_SHIM:-}" ] && return 0
+_ZSHENV_SHIM=1
+unset ZDOTDIR
+case "${XDG_STATE_HOME:-$HOME/.local/state}" in
+  /*) { : >"${XDG_STATE_HOME:-$HOME/.local/state}/zshenv-shim-used"; } 2>/dev/null ;;
+esac
+[ -f "$HOME/.zshenv" ] && . "$HOME/.zshenv"
+unset _ZSHENV_SHIM

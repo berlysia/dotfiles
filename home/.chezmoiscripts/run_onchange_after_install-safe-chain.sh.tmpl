@@ -28,9 +28,11 @@ fi
 # but chezmoi manages those files, so we restore them after setup
 echo "Running safe-chain setup..."
 
-# safe-chain resolves the zsh RC via ZDOTDIR (exported in .zshenv, which
-# only zsh reads), so ask zsh for the authoritative location instead of
-# hardcoding it; fall back to the inherited env / $HOME otherwise
+# The zsh RC is ~/.zshrc. Keep asking zsh for the authoritative location so this still
+# works in environments that used ZDOTDIR; fall back to the inherited env / $HOME otherwise.
+# When apply runs from a shell that inherited ZDOTDIR, safe-chain itself may create
+# ~/.zsh/.zshrc: it is not backed up or restored, but .chezmoiremove lists it, so the
+# next apply deletes it.
 zsh_rc_dir="${ZDOTDIR:-$HOME}"
 if command -v zsh &> /dev/null; then
   zsh_rc_dir="$(zsh -c 'printf %s "${ZDOTDIR:-$HOME}"' 2>/dev/null)" || zsh_rc_dir="${ZDOTDIR:-$HOME}"

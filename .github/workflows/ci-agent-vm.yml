@@ -18,6 +18,9 @@ on:
       - "home/.chezmoidata/**"
       - "home/dot_shell_common/agent_vm.sh"
       - "home/dot_shell_common/darwin.sh"
+      - "home/dot_zshenv"
+      - "home/dot_zshrc"
+      - "home/dot_zsh/**"
   pull_request:
     branches: [master, main]
     paths:
@@ -35,6 +38,9 @@ on:
       - "home/.chezmoidata/**"
       - "home/dot_shell_common/agent_vm.sh"
       - "home/dot_shell_common/darwin.sh"
+      - "home/dot_zshenv"
+      - "home/dot_zshrc"
+      - "home/dot_zsh/**"
   workflow_dispatch:
 
 concurrency:

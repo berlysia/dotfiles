@@ -45,7 +45,7 @@ pre_apply_get_bashrc_path() {
 pre_apply_get_zshrc_path() {
     local base_dir
     base_dir=$(pre_apply_get_base_dir)
-    echo "$base_dir/dot_zsh/dot_zshrc"
+    echo "$base_dir/dot_zshrc"
 }
 
 pre_apply_get_shell_common_dir() {
@@ -112,16 +112,7 @@ pre_apply_test_zsh_loading() {
     shell_common_dir=$(pre_apply_get_shell_common_dir)
     
     if [ -f "$zshrc_path" ]; then
-        # For CI environment, set ZDOTDIR
-        if [ -n "$GITHUB_WORKSPACE" ]; then
-            local base_dir
-            base_dir=$(pre_apply_get_base_dir)
-            local zdotdir="$base_dir/dot_zsh"
-            zsh -c "export ZDOTDIR='$zdotdir' && source '$zshrc_path' && [ -n \"\$SHELL_COMMON\" ] && echo 'SUCCESS' || echo 'FAILED'" 2>/dev/null
-        else
-            # Local environment
-            zsh -c "source '$zshrc_path' && [ -n \"\$SHELL_COMMON\" ] && echo 'SUCCESS' || echo 'FAILED'" 2>/dev/null
-        fi
+        zsh -c "source '$zshrc_path' && [ -n \"\$SHELL_COMMON\" ] && echo 'SUCCESS' || echo 'FAILED'" 2>/dev/null
     else
         # Direct test by setting up SHELL_COMMON and sourcing init
         local init_path

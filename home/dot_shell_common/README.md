@@ -32,7 +32,7 @@ This directory contains common shell configuration files that are shared between
 
 The common configuration is loaded from the shell-specific configuration files:
 
-- For zsh: `~/.zsh/dot_zshrc.tmpl`
+- For zsh: `~/.zshrc` (source: `home/dot_zshrc`)
 - For bash: `~/.bash/dot_bashrc`
 
 ### Health Checks

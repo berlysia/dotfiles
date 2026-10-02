@@ -48,6 +48,7 @@ install-packages-*-windows.ps1
 !.bashrc
 !.bash_profile
 !.zshenv
+!.zshrc
 !.zsh
 !.zsh/**
 !.shell_common

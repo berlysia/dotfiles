@@ -5,7 +5,7 @@
     "*.json.tmpl": "json",
     "*.toml.tmpl": "toml",
     "dot_gitconfig.tmpl": "ini",
-    "dot_zshrc.tmpl": "shellscript",
+    "dot_zshrc": "shellscript",
   },
   "typescript.experimental.useTsgo": true
 }

@@ -2,6 +2,17 @@ if [ "$ZSHRC_PROFILE" != "" ]; then
   zmodload zsh/zprof && zprof > /dev/null
 fi
 
+# Branch point: AI-driven shells read only the AI layer and stop here (spec: K1, K2).
+# A missing is_human.sh falls through to the human settings below.
+[ -z "${SHELL_COMMON:-}" ] && SHELL_COMMON="$HOME/.shell_common"
+if [ -f "$SHELL_COMMON/is_human.sh" ]; then
+  . "$SHELL_COMMON/is_human.sh"
+  if ! is_human; then
+    [ -f "$SHELL_COMMON/ai.sh" ] && . "$SHELL_COMMON/ai.sh"
+    return 0
+  fi
+fi
+
 function zsh-profiler() {
   ZSHRC_PROFILE=1 zsh -i -c zprof
 }
@@ -12,7 +23,7 @@ autoload -Uz colors
 colors
 
 autoload -Uz compinit
-compinit
+compinit -d "$HOME/.zsh/.zcompdump"
 
 bindkey -e
 
@@ -30,20 +41,17 @@ setopt share_history
 setopt histignorealldups
 setopt hist_ignore_space
 
-HISTFILE=$ZDOTDIR/.zsh_history
+HISTFILE=$HOME/.zsh/.zsh_history
 HISTSIZE=2000
 SAVEHIST=2000
 
-# Load common settings
-if [ -z "$SHELL_COMMON" ]; then
-  SHELL_COMMON="$HOME/.shell_common"
-fi
-[ -f "$SHELL_COMMON/interactive.sh" ] && source "$SHELL_COMMON/interactive.sh"
+# Human layer (aliases, gomi, fzf, update checkers); after compinit and bindkey
+[ -f "$SHELL_COMMON/human.sh" ] && source "$SHELL_COMMON/human.sh"
 
 if [ "$USE_STARSHIP" = "1" ] && [ "$HAS_STARSHIP" = "1" ]; then
   eval "$(starship init zsh)"
 else
-  [ -f "$ZDOTDIR/prompt.zsh" ] && source "$ZDOTDIR/prompt.zsh"
+  [ -f "$HOME/.zsh/prompt.zsh" ] && source "$HOME/.zsh/prompt.zsh"
 fi
 
 if type fzf &> /dev/null; then
@@ -71,15 +79,12 @@ if type fzf &> /dev/null && [ -f ~/.zsh/functions/fzf-tab-completion.zsh ]; then
   bindkey '^I' fzf_completion
 fi
 
-[ -f "$ZDOTDIR/ni.zsh" ] && source $ZDOTDIR/ni.zsh
+[ -f "$HOME/.zsh/ni.zsh" ] && source "$HOME/.zsh/ni.zsh"
 
 echo -ne "\033]0;$(basename $PWD)\007"
 function chpwd() {
   echo -ne "\033]0;$(basename $PWD)\007"
 }
-
-# Aikido Safe Chain: wrap package managers with malware scanning
-[ -f "$HOME/.safe-chain/scripts/init-posix.sh" ] && source "$HOME/.safe-chain/scripts/init-posix.sh"
 
 if [ -e $HOME/.zshrc.local ]; then
     source $HOME/.zshrc.local

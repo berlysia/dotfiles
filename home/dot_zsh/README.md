@@ -1,11 +1,12 @@
 # Zsh Configuration
 
-This directory contains the Zsh configuration managed by chezmoi.
+`~/.zsh/` holds auxiliary files for zsh (prompt, completion dump, history). The entry points are `~/.zshenv` and `~/.zshrc`, managed by chezmoi as `home/dot_zshenv` and `home/dot_zshrc`.
 
 ## Files
 
-- `dot_zshenv` - Environment variables (loaded first by Zsh)
-- `dot_zshrc` - Interactive shell configuration
+- `../dot_zshenv` - Environment variables (loaded first by Zsh)
+- `../dot_zshrc` - Interactive shell configuration
+- `dot_zshenv` - Transitional only: shells that inherited `ZDOTDIR=$HOME/.zsh` read this instead of `~/.zshenv`. It drops `ZDOTDIR` and loads the real entry
 
 ## Key Features
 
