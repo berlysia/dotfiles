@@ -27,7 +27,15 @@ import {
   writeSync,
 } from "node:fs";
 import { basename, resolve } from "node:path";
-import { diagnoseGate, formatGateDiagnosis } from "../lib/workflow-gate.ts";
+import { expandTilde } from "../lib/path-utils.ts";
+import { sanitizeForDisplay } from "../lib/sanitize-display.ts";
+import {
+  classifyExemption,
+  diagnoseGate,
+  evaluateTarget,
+  formatGateDiagnosis,
+  formatTargetEvaluation,
+} from "../lib/workflow-gate.ts";
 import { isStrictlyUnderProjectSubdir } from "../lib/workflow-fs.ts";
 import { lastPassMarkerRound } from "../lib/workflow-marker.ts";
 import {
@@ -229,14 +237,30 @@ function cmdStatus(
   const wfPaths = resolveWorkflowPaths(wfDir);
   const twoLayer = existsSync(wfPaths.spec);
   const targetArg = positional[0];
-  const target = targetArg
-    ? resolve(wfDir, targetArg)
-    : twoLayer
-      ? wfPaths.spec
-      : wfPaths.plan;
   const docLabel = twoLayer ? "spec.md" : "plan.md";
-  const diagnosis = diagnoseGate(wfDir, target);
-  const lines = [formatGateDiagnosis(diagnosis, target, docLabel)];
+  const lines: string[] = [];
+  if (targetArg) {
+    // The decision the guard makes for a write to this path (#209-2): its
+    // shortcuts first, then the gate. The path is relative to where the CLI
+    // runs, like any shell argument.
+    const target = resolve(deps.cwd, expandTilde(targetArg));
+    const label = sanitizeForDisplay(target);
+    const exemption = classifyExemption(target, deps.cwd, wfDir);
+    lines.push(
+      exemption
+        ? `Document workflow gate: \`${label}\` is not gated (${exemption === "workflow-document" ? "a workflow document" : "outside the project"}).`
+        : formatTargetEvaluation(
+            evaluateTarget({ projectRoot: deps.cwd, wfDir, target }),
+            label,
+            docLabel,
+          ),
+    );
+  } else {
+    const primary = twoLayer ? wfPaths.spec : wfPaths.plan;
+    lines.push(
+      formatGateDiagnosis(diagnoseGate(wfDir, primary), primary, docLabel),
+    );
+  }
 
   if (existsSync(resolve(wfDir, ".tripwire-disabled"))) {
     lines.push("tripwire: disabled (see .tripwire-disabled for the reason)");
