@@ -19,6 +19,9 @@ export type HookTimingRecord = {
   session_id: string | null;
   tool_name: string | null;
   tool_use_id: string | null;
+  // Absent in rows written before these keys existed.
+  source?: string | null;
+  prompt_id?: string | null;
   terminated: string | null;
 };
 

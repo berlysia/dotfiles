@@ -82,6 +82,8 @@ type HookTimingRecord = {
   session_id: string | null;
   tool_name: string | null;
   tool_use_id: string | null;
+  source: string | null;
+  prompt_id: string | null;
   terminated: string | null;
 };
 
@@ -209,9 +211,11 @@ describe("hook-timer.sh", () => {
 
     const record = pollForLastRecord(logDir);
     strictEqual(record.session_id, null);
+    strictEqual(record.source, null);
+    strictEqual(record.prompt_id, null);
   });
 
-  it("records exactly the 13-key schema and never leaks tool_input content", () => {
+  it("records exactly the 15-key schema and never leaks tool_input content", () => {
     const logDir = makeTempDir();
     const input = JSON.stringify({
       session_id: "s3",
@@ -244,10 +248,86 @@ describe("hook-timer.sh", () => {
       "session_id",
       "tool_name",
       "tool_use_id",
+      "source",
+      "prompt_id",
       "terminated",
     ].sort();
     strictEqual(Object.keys(record).sort().join(","), expectedKeys.join(","));
   });
+
+  it("records source and prompt_id strings but never the prompt itself", () => {
+    const logDir = makeTempDir();
+    const input = JSON.stringify({
+      session_id: "s4",
+      source: "schedule_wakeup",
+      prompt_id: "p4",
+      prompt: "SECRET_PROMPT_Y",
+    });
+    runWrapperSync("UserPromptSubmit", "0", "exit 0", {
+      input,
+      env: baseEnv(logDir),
+    });
+    const record = pollForLastRecord(logDir);
+    const rawLine =
+      readFileSync(join(logDir, "hook-timing.jsonl"), "utf8")
+        .trim()
+        .split("\n")
+        .pop() ?? "";
+    strictEqual(record.source, "schedule_wakeup");
+    strictEqual(record.prompt_id, "p4");
+    ok(!rawLine.includes("SECRET_PROMPT_Y"), rawLine);
+  });
+
+  it("records null for object-valued source and prompt_id without leaking them", () => {
+    const logDir = makeTempDir();
+    const input = JSON.stringify({
+      source: { x: "SECRET_OBJ_Z" },
+      prompt_id: { y: "SECRET_OBJ_V" },
+    });
+    runWrapperSync("UserPromptSubmit", "0", "exit 0", {
+      input,
+      env: baseEnv(logDir),
+    });
+    const record = pollForLastRecord(logDir);
+    const rawLine =
+      readFileSync(join(logDir, "hook-timing.jsonl"), "utf8")
+        .trim()
+        .split("\n")
+        .pop() ?? "";
+    strictEqual(record.source, null);
+    strictEqual(record.prompt_id, null);
+    ok(!rawLine.includes("SECRET_OBJ_Z"), rawLine);
+    ok(!rawLine.includes("SECRET_OBJ_V"), rawLine);
+  });
+
+  it("truncates source and prompt_id to 64 characters", () => {
+    const logDir = makeTempDir();
+    const input = JSON.stringify({
+      source: "a".repeat(100),
+      prompt_id: "b".repeat(100),
+    });
+    runWrapperSync("UserPromptSubmit", "0", "exit 0", {
+      input,
+      env: baseEnv(logDir),
+    });
+    const record = pollForLastRecord(logDir);
+    strictEqual(record.source?.length, 64);
+    strictEqual(record.prompt_id?.length, 64);
+  });
+
+  for (const nonObject of ["[]", '"x"', "123", "null"]) {
+    it(`records null source/prompt_id and the full 15 keys for JSON input ${nonObject}`, () => {
+      const logDir = makeTempDir();
+      runWrapperSync("UserPromptSubmit", "0", "exit 0", {
+        input: nonObject,
+        env: baseEnv(logDir),
+      });
+      const record = pollForLastRecord(logDir);
+      strictEqual(record.source, null);
+      strictEqual(record.prompt_id, null);
+      strictEqual(Object.keys(record).length, 15);
+    });
+  }
 
   it("creates the log file with mode 0o600", () => {
     const logDir = makeTempDir();

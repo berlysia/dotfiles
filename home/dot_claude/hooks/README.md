@@ -214,6 +214,8 @@ export default defineHook({
 
 `~/.claude/settings.json` に載る全 command hook は、chezmoi が settings.json を生成する段（`run_onchange_update-settings-json.sh.tmpl` の jq merge）で `hook-timer.sh` に自動的にラップされ、実行 1 回ごとの wall-clock 所要時間が `$CLAUDE_LOGS_DIR/hook-timing.jsonl`（既定 `~/.claude/logs/hook-timing.jsonl`）に 1 行 1 実行で追記される。tmpl 自体は変えないので、新しいフックを追加してもラップは自動的に効く。
 
+記録する識別子は `session_id` / `tool_name` / `tool_use_id` / `source` / `prompt_id` の 5 つだけで、`source` と `prompt_id` は文字列のみ 64 文字で切って残す（プロンプトやツール入出力は残さない）。`source` の語彙は event ごとに違う（UserPromptSubmit は `user` / `schedule_wakeup` など、SessionStart は `startup` / `resume` など）ので、必ず `event` と組で読む。
+
 計測対象は chezmoi が生成する `~/.claude/settings.json` の command hook に限る。次の 2 つは計測されない:
 
 - **プラグインの `hooks/hooks.json`**（例: codex プラグインの SessionStart / SessionEnd / Stop）。ファイルは `claude plugin` CLI が管理するキャッシュで、Claude Code のフック起動に割り込む手段が無い。遅いと疑ったときは、トランスクリプト JSONL の `hook_success` attachment（`command` と `durationMs` を持つ）で個別に確認する。**ただし `hook_success` は stdout/stderr が空でないフックしか記録されないので、記録が無いことは速いことを意味しない**。

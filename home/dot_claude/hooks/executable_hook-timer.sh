@@ -29,8 +29,9 @@ record() { # $1 exit_code|null  $2 terminated-signal|""
     out_b=$(wc -c <"$work/out" 2>/dev/null | tr -d ' ')
     err_b=$(wc -c <"$work/err" 2>/dev/null | tr -d ' ')
     mkdir -p "$log_dir" && log="$log_dir/hook-timing.jsonl" || return 0
-    # Only three identifiers are projected from the hook input; tool_input,
-    # tool_response and prompts never reach the log.
+    # Only five identifiers are projected from the hook input (source and
+    # prompt_id are strings cut to 64 chars); tool_input, tool_response and
+    # prompts never reach the log.
     jq -c -R -s \
       --arg event "$event" --arg is_async "$is_async" --arg cmd "$cmd" \
       --arg start "$start" --arg end "$end" --arg rc "$rec_rc" --arg sig "$rec_sig" \
@@ -45,9 +46,11 @@ record() { # $1 exit_code|null  $2 terminated-signal|""
          stdout_bytes: ($out_b | tonumber? // 0),
          stderr_bytes: ($err_b | tonumber? // null),
          command: $cmd,
-         session_id: ($in | objects | .session_id // null),
-         tool_name: ($in | objects | .tool_name // null),
-         tool_use_id: ($in | objects | .tool_use_id // null),
+         session_id: (($in | objects | .session_id) // null),
+         tool_name: (($in | objects | .tool_name) // null),
+         tool_use_id: (($in | objects | .tool_use_id) // null),
+         source: (($in | objects | .source | strings | .[0:64]) // null),
+         prompt_id: (($in | objects | .prompt_id | strings | .[0:64]) // null),
          terminated: (if $sig == "" then null else $sig end)}' \
       <"$work/in" >>"$log" || return 0
     size=$(wc -c <"$log" | tr -d ' ')
