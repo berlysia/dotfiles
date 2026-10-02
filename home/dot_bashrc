@@ -1,7 +1,22 @@
 # .bashrc - Executed for interactive non-login shells
 
-# Note: We don't exit early for non-interactive shells
-# This allows testing and sourcing from scripts
+# Branch point: AI-driven shells read only the AI layer and stop here (spec: K1, K5).
+# A missing is_human.sh falls through to the human settings below.
+[ -z "${SHELL_COMMON:-}" ] && SHELL_COMMON="$HOME/.shell_common"
+if [ -f "$SHELL_COMMON/is_human.sh" ]; then
+  . "$SHELL_COMMON/is_human.sh"
+  if ! is_human; then
+    # A non-login bash did not pass through init.sh in this process, so give it the AI env here
+    [ "${_SHELL_COMMON_INIT_PID:-}" != "$$" ] && [ -f "$SHELL_COMMON/ai.env.sh" ] && . "$SHELL_COMMON/ai.env.sh"
+    # ai.sh is the interactive AI layer (rm alias). .bash_profile sources .bashrc even for
+    # non-interactive login shells, where bash does not expand aliases; skip it there.
+    case $- in *i*) [ -f "$SHELL_COMMON/ai.sh" ] && . "$SHELL_COMMON/ai.sh" ;; esac
+    return 0
+  fi
+fi
+
+# Note: shells judged as AI-driven read the AI branch above and return.
+# Tests that need the human side must give the shell a TTY (see tests/shell-gate).
 
 # Set BASH_DIR to the location of bash configuration files
 # BASH_DIR="$HOME/.bash"
@@ -19,11 +34,8 @@ shopt -s checkwinsize
 [ -x /usr/bin/lesspipe ] && eval "$(SHELL=/bin/sh lesspipe)"
 
 
-# Load common settings
-if [ -z "$SHELL_COMMON" ]; then
-  SHELL_COMMON="$HOME/.shell_common"
-fi
-[ -f "$SHELL_COMMON/interactive.sh" ] && source "$SHELL_COMMON/interactive.sh"
+# Human layer (aliases, gomi, fzf, update checkers)
+[ -f "$SHELL_COMMON/human.sh" ] && source "$SHELL_COMMON/human.sh"
 
 # Terminal title (if not already set by common init)
 if [[ "$PROMPT_COMMAND" != *"echo -ne"* ]]; then

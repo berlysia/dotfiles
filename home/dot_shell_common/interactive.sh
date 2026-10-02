@@ -1,10 +1,6 @@
 #!/bin/sh
 # Common shell initialization script for both zsh and bash interactive sessions
-
-# Load common aliases
-# shellcheck disable=SC2154
-# shellcheck source=/dev/null
-[ -f "$SHELL_COMMON/aliases.sh" ] && . "$SHELL_COMMON/aliases.sh"
+# shellcheck disable=SC2154 # CURRENT_SHELL and SHELL_COMMON are set by init.sh / the rc preamble
 
 # FZF integration based on shell type
 if type fzf >/dev/null 2>&1; then
@@ -23,12 +19,11 @@ if type fzf >/dev/null 2>&1; then
   fi
 fi
 
-# Update checkers (tools and dotfiles) — skip in Claude Code sessions
-if [ -z "$CLAUDECODE" ]; then
-  # shellcheck source=/dev/null
-  [ -f "$SHELL_COMMON/updates/chezmoi.sh" ] && . "$SHELL_COMMON/updates/chezmoi.sh"
-  # shellcheck source=/dev/null
-  [ -f "$SHELL_COMMON/updates/mise.sh" ] && . "$SHELL_COMMON/updates/mise.sh"
-  # shellcheck source=/dev/null
-  [ -f "$SHELL_COMMON/updates/dotfiles.sh" ] && . "$SHELL_COMMON/updates/dotfiles.sh"
-fi
+# Update checkers (tools and dotfiles); only reached from the human layer (human.sh)
+# shellcheck disable=SC2154
+# shellcheck source=/dev/null
+[ -f "$SHELL_COMMON/updates/chezmoi.sh" ] && . "$SHELL_COMMON/updates/chezmoi.sh"
+# shellcheck source=/dev/null
+[ -f "$SHELL_COMMON/updates/mise.sh" ] && . "$SHELL_COMMON/updates/mise.sh"
+# shellcheck source=/dev/null
+[ -f "$SHELL_COMMON/updates/dotfiles.sh" ] && . "$SHELL_COMMON/updates/dotfiles.sh"

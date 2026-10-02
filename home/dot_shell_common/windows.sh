@@ -1,12 +1,6 @@
 #!/bin/sh
 # Common Windows-specific configuration for all shells (MSYS/MINGW/Cygwin/WSL)
 
-# Windows specific aliases
-alias explorer='explorer.exe'
-alias notepad='notepad.exe'
-alias cmd='cmd.exe /c'
-alias pwsh='powershell.exe -Command'
-
 # SSH agent workaround for Windows
 if [ -z "$SSH_AUTH_SOCK" ]; then
   # For SSH agent forwarding in WSL
@@ -17,7 +11,9 @@ if [ -z "$SSH_AUTH_SOCK" ]; then
     fi
   else
     # MSYS/MINGW/Cygwin SSH agent handling
-    alias ssh='MSYS=winsymlinks:nativestrict ssh'
-    alias ssh-add='MSYS=winsymlinks:nativestrict ssh-add'
+    # Functions, not aliases: this is an env-layer workaround that must also apply to AI shells
+    ssh() { MSYS=winsymlinks:nativestrict command ssh "$@"; }
+    # shellcheck disable=SC3033 # hyphenated function name is accepted by bash/zsh
+    ssh-add() { MSYS=winsymlinks:nativestrict command ssh-add "$@"; }
   fi
 fi
