@@ -139,7 +139,7 @@ const hook = defineHook({
             evaluateTarget({
               wfDir,
               target: resolve(cwd, expandTilde(target)),
-              filesBase: cwd,
+              projectRoot,
               label: target,
             }),
           );
@@ -192,7 +192,7 @@ const hook = defineHook({
       const evaluation = evaluateTarget({
         wfDir,
         target: resolve(cwd, expandTilde(targetPath)),
-        filesBase: cwd,
+        projectRoot,
         label: targetPath,
       });
       if (evaluation.kind === "allow" || evaluation.kind === "inactive") {

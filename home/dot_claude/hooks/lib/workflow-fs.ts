@@ -106,7 +106,7 @@ export function isStrictlyUnderProjectSubdir(
  * skips normalisation gets an answer about a different path than the kernel
  * would open.
  */
-function resolveWithMissingTail(path: string): string | null {
+export function resolveWithMissingTail(path: string): string | null {
   const missing: string[] = [];
   let current = path;
   for (;;) {

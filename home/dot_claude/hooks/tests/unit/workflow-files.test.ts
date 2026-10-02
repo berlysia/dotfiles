@@ -1,8 +1,13 @@
 #!/usr/bin/env node --test
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
+  findRepoToplevel,
   isProseOnlyChange,
+  listsTarget,
   parseFilesPaths,
 } from "../../lib/workflow-files.ts";
 
@@ -52,5 +57,115 @@ describe("workflow-files: isProseOnlyChange", () => {
   it("false when Files is missing or empty (falls back to keyword selection)", () => {
     strictEqual(isProseOnlyChange("# Spec\n\n## Goal\nx\n"), false);
     strictEqual(isProseOnlyChange(doc("# only a comment")), false);
+  });
+});
+
+/**
+ * <root>/.git/ (a real git dir), a linked worktree at <root>/.git/worktree/<name>
+ * whose .git file points at <root>/.git/worktrees/<name>, as git lays it out.
+ */
+function repoWithWorktree() {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "wf-files-")));
+  return { root, worktree: addWorktree(root, "b") };
+}
+
+function addWorktree(root: string, name: string): string {
+  mkdirSync(join(root, ".git", "worktrees", name), { recursive: true });
+  const worktree = join(root, ".git", "worktree", name);
+  mkdirSync(join(worktree, "src"), { recursive: true });
+  writeFileSync(
+    join(worktree, ".git"),
+    `gitdir: ${join(root, ".git", "worktrees", name)}\n`,
+  );
+  return worktree;
+}
+
+describe("workflow-files: findRepoToplevel (spec K2)", () => {
+  it("returns the project root for a file in the main checkout", () => {
+    const { root } = repoWithWorktree();
+    strictEqual(findRepoToplevel(join(root, "src", "a.ts"), root), root);
+  });
+
+  it("returns a linked worktree of the same repository", () => {
+    const { root, worktree } = repoWithWorktree();
+    strictEqual(
+      findRepoToplevel(join(worktree, "src", "a.ts"), root),
+      worktree,
+    );
+  });
+
+  it("accepts a relative gitdir, resolved from the worktree dir", () => {
+    const { root, worktree } = repoWithWorktree();
+    writeFileSync(join(worktree, ".git"), "gitdir: ../../worktrees/b\n");
+    strictEqual(
+      findRepoToplevel(join(worktree, "src", "a.ts"), root),
+      worktree,
+    );
+  });
+
+  it("falls back to the root for a nested clone with its own .git dir", () => {
+    const { root } = repoWithWorktree();
+    mkdirSync(join(root, "vendor", "x", ".git"), { recursive: true });
+    strictEqual(
+      findRepoToplevel(join(root, "vendor", "x", "src", "a.ts"), root),
+      root,
+    );
+  });
+
+  it("rejects a sibling worktree when the session root is itself a worktree", () => {
+    const { root, worktree: b } = repoWithWorktree();
+    const c = addWorktree(root, "c");
+    // b is the session root. Its .git is a file, so no gitdir can point under
+    // <b>/.git/worktrees/; c's gitdir points under <root>/.git/worktrees/.
+    strictEqual(findRepoToplevel(join(c, "src", "a.ts"), b), b);
+    strictEqual(listsTarget(doc("src/a.ts"), join(c, "src", "a.ts"), b), false);
+  });
+
+  it("does not look above the project root", () => {
+    const { root } = repoWithWorktree();
+    const inner = join(root, "pkg");
+    mkdirSync(inner);
+    strictEqual(findRepoToplevel(join(inner, "a.ts"), inner), inner);
+  });
+});
+
+describe("workflow-files: listsTarget (spec K2)", () => {
+  const plan = (block: string) => doc(block);
+
+  it("matches a relative entry against the worktree the target lives in", () => {
+    const { root, worktree } = repoWithWorktree();
+    strictEqual(
+      listsTarget(plan("src/a.ts"), join(worktree, "src", "a.ts"), root),
+      true,
+    );
+    strictEqual(
+      listsTarget(plan("src/a.ts"), join(root, "src", "a.ts"), root),
+      true,
+    );
+  });
+
+  it("does not match the same relative path in a nested clone", () => {
+    const { root } = repoWithWorktree();
+    mkdirSync(join(root, "vendor", "x", ".git"), { recursive: true });
+    strictEqual(
+      listsTarget(
+        plan("src/a.ts"),
+        join(root, "vendor", "x", "src", "a.ts"),
+        root,
+      ),
+      false,
+    );
+  });
+
+  it("compares absolute entries by realpath", () => {
+    const { root } = repoWithWorktree();
+    strictEqual(
+      listsTarget(
+        plan(join(root, "src", "a.ts")),
+        join(root, "src", "a.ts"),
+        root,
+      ),
+      true,
+    );
   });
 });
