@@ -22,6 +22,9 @@ fi
 # shellcheck source=/dev/null
 [ -f "$SHELL_COMMON/is_human.sh" ] && . "$SHELL_COMMON/is_human.sh"
 
+# A human shell may have inherited AI values from an AI-judged parent; env.sh below re-sets EDITOR.
+command -v is_human >/dev/null 2>&1 && is_human && clear_inherited_ai_env
+
 # Load common environment variables
 # shellcheck source=/dev/null # env.sh is rendered from env.sh.tmpl by chezmoi apply
 [ -f "$SHELL_COMMON/env.sh" ] && . "$SHELL_COMMON/env.sh"

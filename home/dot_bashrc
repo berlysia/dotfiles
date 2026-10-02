@@ -15,6 +15,9 @@ if [ -f "$SHELL_COMMON/is_human.sh" ]; then
   fi
 fi
 
+# Human shell: drop AI values inherited from an AI-judged parent (init.sh did it already for login shells; a second pass is a no-op)
+command -v clear_inherited_ai_env >/dev/null 2>&1 && clear_inherited_ai_env
+
 # Note: shells judged as AI-driven read the AI branch above and return.
 # Tests that need the human side must give the shell a TTY (see tests/shell-gate).
 

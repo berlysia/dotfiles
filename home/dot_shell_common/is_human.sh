@@ -16,3 +16,18 @@ is_human() {
   fi
   [ "$_IS_HUMAN" = 1 ]
 }
+
+# Unset ai-env values a human shell inherited from an AI-judged parent (e.g. VSCode's
+# environment resolution runs a TTY-less login shell). Only exact AI values are cleared,
+# so values a human set (PAGER=less) survive; a human's own PAGER=cat is cleared too (accepted).
+clear_inherited_ai_env() {
+  [ "${EDITOR:-}" = true ] && unset EDITOR
+  [ "${VISUAL:-}" = true ] && unset VISUAL
+  [ "${GIT_EDITOR:-}" = true ] && unset GIT_EDITOR
+  [ "${GIT_SEQUENCE_EDITOR:-}" = true ] && unset GIT_SEQUENCE_EDITOR
+  [ "${PAGER:-}" = cat ] && unset PAGER
+  [ "${GIT_PAGER:-}" = cat ] && unset GIT_PAGER
+  [ "${MANPAGER:-}" = cat ] && unset MANPAGER
+  [ "${GIT_TERMINAL_PROMPT:-}" = 0 ] && unset GIT_TERMINAL_PROMPT
+  return 0
+}

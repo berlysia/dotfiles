@@ -174,7 +174,7 @@ test_histfile_under_zsh_dir() {
 test_zdotdir_inherited() { # shells that inherited ZDOTDIR=$HOME/.zsh must still reach ~/.zshrc with ZDOTDIR dropped (T14)
   local ze="ZDOTDIR=$FIX_HOME/.zsh"
   assert_eq "rm=gomi" "$(EXTRA_ENV="$ze" run_clean notty "$STUB_PATH" zsh -i -c alias | normalize_aliases)" "ZDOTDIR inherited: AI aliases == {rm=gomi}"
-  assert_eq "unset" "$(EXTRA_ENV="$ze" run_clean notty "$STUB_PATH" zsh -i -c 'print -r -- @@${ZDOTDIR-unset}@@' | marked)" "ZDOTDIR inherited: ZDOTDIR is unset after startup"
+  assert_eq "$FIX_HOME" "$(EXTRA_ENV="$ze" run_clean notty "$STUB_PATH" zsh -i -c 'print -r -- @@${ZDOTDIR-unset}@@' | marked)" "ZDOTDIR inherited: ZDOTDIR is \$HOME after startup"
 }
 test_zdotdir_inherited_human() {
   local ze="ZDOTDIR=$FIX_HOME/.zsh" out
@@ -197,6 +197,45 @@ test_zdotdir_shim_silent() { # the shim must not print to stderr even when the m
   # shellcheck disable=SC2086 # WATCHDOG is intentionally word-split
   err=$(env -i HOME="$FIX_HOME" PATH="$TMP_BASE/misestub:$SHELL_DIRS:/usr/bin:/bin" TERM=xterm ZDOTDIR="$FIX_HOME/.zsh" XDG_STATE_HOME="$FIX_HOME/nonexistent/state" $WATCHDOG zsh -c true 2>&1 >/dev/null </dev/null)
   assert_eq "" "$err" "shim: empty stderr when marker directory is missing"
+}
+
+test_assert10_human_clears_inherited_ai_env() { # a human shell under an AI-judged parent (e.g. VSCode env resolution) drops the inherited AI values
+  local ai="EDITOR=true VISUAL=true GIT_EDITOR=true GIT_SEQUENCE_EDITOR=true PAGER=cat GIT_PAGER=cat MANPAGER=cat GIT_TERMINAL_PROMPT=0"
+  local label h i v hv probe="echo @@$AI_VARS@@"
+  for label in zsh login-bash bash; do
+    case "$label" in
+      zsh) h=$(EXTRA_ENV="$ai" run_clean tty "$STUB_PATH" zsh -i -c "$probe" | marked) ;;
+      login-bash) h=$(EXTRA_ENV="$ai" run_clean tty "$STUB_PATH" bash -l -i -c "$probe" | marked) ;;
+      bash) h=$(EXTRA_ENV="$ai" run_clean tty "$STUB_PATH" bash -i -c "$probe" | marked) ;;
+    esac
+    assert_contains "$h" "," "A10 $label probe produced output"
+    i=1
+    while IFS= read -r v; do
+      hv=$(printf '%s\n' "$h" | cut -d, -f"$i")
+      assert_eq "differs" "$( [ "$hv" = "$v" ] && echo same || echo differs )" "A10 $label inherited AI value #$i is cleared"
+      i=$((i+1))
+    done <<EOF
+$(printf '%s\n' "$AI_VALUES" | tr , '\n')
+EOF
+  done
+  # a value a human set (PAGER=less) survives
+  assert_eq "less" "$(EXTRA_ENV="$ai PAGER=less" run_clean tty "$STUB_PATH" zsh -i -c 'echo @@$PAGER@@' | marked)" "A10 zsh keeps PAGER=less"
+  assert_eq "less" "$(EXTRA_ENV="$ai PAGER=less" run_clean tty "$STUB_PATH" bash -l -i -c 'echo @@$PAGER@@' | marked)" "A10 login bash keeps PAGER=less"
+  assert_eq "less" "$(EXTRA_ENV="$ai PAGER=less" run_clean tty "$STUB_PATH" bash -i -c 'echo @@$PAGER@@' | marked)" "A10 bash keeps PAGER=less"
+}
+test_assert10_clear_list_matches_ai_env() {
+  local c a
+  c=$(sed -n 's/.*"\${\([A-Z_]*\):-}" = \([^ ]*\) .*/\1=\2/p' "$REPO_ROOT/home/dot_shell_common/is_human.sh" | sort -u)
+  a=$(sed -n "s/^export \([A-Z_][A-Z_]*\)=['\"]\{0,1\}\([^'\"]*\)['\"]\{0,1\}$/\1=\2/p" "$REPO_ROOT/home/dot_shell_common/ai.env.sh" | sort -u)
+  assert_eq "$a" "$c" "A10 clear list == ai.env exports (keys and values)"
+}
+test_assert11_vscode_style_zdotdir() { # VSCode's zsh integration points ZDOTDIR at its own dir and reads ours via USER_ZDOTDIR
+  local vs="$TMP_BASE/vscode" out
+  mkdir -p "$vs"
+  printf '%s\n' 'if [[ -f $USER_ZDOTDIR/.zshenv ]]; then VSCODE_ZDOTDIR=$ZDOTDIR; ZDOTDIR=$USER_ZDOTDIR; . $USER_ZDOTDIR/.zshenv; USER_ZDOTDIR=$ZDOTDIR; ZDOTDIR=$VSCODE_ZDOTDIR; fi' >"$vs/.zshenv"
+  printf '%s\n' 'if [[ -f $USER_ZDOTDIR/.zshrc ]]; then ZDOTDIR=$USER_ZDOTDIR; . $USER_ZDOTDIR/.zshrc; fi' >"$vs/.zshrc"
+  out=$(EXTRA_ENV="ZDOTDIR=$vs USER_ZDOTDIR=$FIX_HOME/.zsh" run_clean tty "$STUB_PATH" zsh -i -c 'printf "\n"; alias' | normalize_aliases)
+  assert_contains "$out" "..=cd .." "A11 VSCode-style ZDOTDIR reaches the human rc"
 }
 
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do
