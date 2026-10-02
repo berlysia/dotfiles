@@ -62,7 +62,15 @@
 [includeIf "gitdir:~/.local/share/mise/"]
   path = ~/.gitconfig-auto
 
+{{ if dig "agent_vm" false . -}}
+{{/* agent-vm has no GitHub token (ADR-0018) and its SSH goes through the forwarded agent, which asks for
+     approval per use. Rewriting fetches to SSH made APM and other https://github.com/ fetches fail or hang
+     there (#194), and git:// is unreachable. Fetch over anonymous HTTPS; only pushes go over SSH. */ -}}
+[url "git@github.com:"]
+    pushInsteadOf = https://github.com/
+{{ else -}}
 [url "git://"]
     insteadOf = https://
 [url "git@github.com:"]
     insteadOf = https://github.com/
+{{ end -}}
