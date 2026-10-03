@@ -7,7 +7,7 @@ if [ -n "$ZSH_VERSION" ]; then
 elif [ -n "$BASH_VERSION" ]; then
   CURRENT_SHELL="bash"
 else
-  CURRENT_SHELL="sh"  # Fallback
+  CURRENT_SHELL="sh" # Fallback
 fi
 
 # Not exported: lets .bashrc tell whether init.sh ran in this very process
@@ -74,13 +74,14 @@ case "$(uname -s)" in
     # WSL detection
     # shellcheck disable=SC2263 # plain grep is wanted; color aliases live in the human layer and are not defined here
     if grep -q microsoft /proc/version 2>/dev/null; then
-      if [ -f "$HOME/.local/bin/wsl2-ssh-agent" ]; then
-        eval "$("$HOME"/.local/bin/wsl2-ssh-agent -powershell-path pwsh.exe)"
+      if [ -x "$HOME/.local/bin/wsl2-ssh-agent" ] && [ -f "$SHELL_COMMON/wsl_ssh_agent.sh" ]; then
+        . "$SHELL_COMMON/wsl_ssh_agent.sh"
+        initialize_wsl_ssh_agent "$HOME/.local/bin/wsl2-ssh-agent"
       fi
       export BROWSER=wslview
     fi
     ;;
-  MINGW*|MSYS*|CYGWIN*)
+  MINGW* | MSYS* | CYGWIN*)
     # Windows
     [ -f "$SHELL_COMMON/windows.sh" ] && . "$SHELL_COMMON/windows.sh"
     ;;

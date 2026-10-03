@@ -1,0 +1,16 @@
+{{- if or (eq .chezmoi.os "darwin") (eq .chezmoi.os "linux") -}}
+#!/bin/sh
+set -eu
+
+# The inventory is local-only. Receivers keep their own private keys and do not need 1Password CLI.
+if [ -f "$HOME/.config/tailnet-ssh/settings.json" ]; then
+  if command -v node >/dev/null 2>&1; then
+    node "$HOME/.local/bin/tailnet-ssh.mts" apply
+  elif [ -x "$HOME/.local/bin/mise" ]; then
+    "$HOME/.local/bin/mise" exec -- node "$HOME/.local/bin/tailnet-ssh.mts" apply
+  else
+    echo "tailnet-ssh: Node.js is required to apply the local SSH settings" >&2
+    exit 1
+  fi
+fi
+{{- end }}

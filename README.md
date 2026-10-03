@@ -15,6 +15,8 @@ depends on [chezmoi](https://github.com/twpayne/chezmoi)
 - `~/.local/bin` will be added to `$PATH`
 - `~/.local/.bin` will be added to `$PATH` , and overwrite this directory with symlink
 
+Tailscale経由のSSHと、公開リポジトリに端末情報を置かない鍵管理は[SSH設定の手順](docs/tailnet-ssh.md)を参照。
+
 ## Local CI
 
 Local workflow verification uses `actrun`, managed by this project's [`mise`](https://mise.jdx.dev/) config.
