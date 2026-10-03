@@ -97,6 +97,19 @@ _.msm
 
 # End of https://www.toptal.com/developers/gitignore/api/macos,linux,windows
 
+# Vim swap files
+*.swp
+*.swo
+*.swn
+.*.sw?
+
+# Emacs auto-save, lock, and session files (backups are covered by *~ above)
+\#*\#
+.#*
+.emacs.desktop
+.emacs.desktop.lock
+auto-save-list/
+
 mise.local.toml
 .env
 .env.local
