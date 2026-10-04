@@ -48,7 +48,7 @@ VM の Claude は、playwright と chrome-devtools の MCP で、VM の中の he
 
 - **Codex では使えない。** VM の Codex にはブラウザの MCP を載せていない（Codex の playwright は `@latest` の指定で、利用頻度が低いため別 issue とした）。ブラウザが要るときは、同じ VM の Claude を使う。
 - **人が画面を見るとき。** mac のブラウザで `http://localhost:<port>` を開く。dev server は既定の loopback bind（`127.0.0.1`）のままでよく、`<machine>.orb.local` は `0.0.0.0` に bind したときにしか届かない。
-- **同じポートの衝突。** 複数の VM が同じポートを使うと、`localhost` は先に bind した machine に届く。ポートを変える。
+- **同じポートの衝突。** 複数の VM が同じポートを使うと、`localhost` は先に bind した machine に届く。先に bind した側のサーバーを止めても、転送は後から bind した machine に移らず応答しなくなる（#207）。machine ごとにポートを変える。
 - **`localhost` の注意。** `localhost` のオリジンはポートをまたいで cookie を共有する。VM の dev server は、`localhost` にログイン済みのセッションを持つ普段のプロファイルでは開かず、シークレットウィンドウなどを使う。host で使うポート（OAuth のコールバックなど）とも重ねない。
 - **ブラウザの置き場。** ブラウザ本体（linux-arm64 の headless shell）は、host に 1 部だけ置き、machine ごとに APFS の clonefile で複製して VM に見せる。VM ごとの増分は apt の依存ライブラリとフォントで、約 35 MB である。
 - **取得。** 取得は `chezmoi apply` が自動で行う。手で行うときは `agent-vm fetch-browsers` を実行し、ストアが使えなくなったときは `--force` で取り直す。ブラウザ本体は `cdn.playwright.dev` から取得し、内容のハッシュは repo に固定していない。取得した直後のハッシュを記録して複製の前に比べるので、検出できるのは取得後の改変だけである（取得元の侵害は防がない）。
