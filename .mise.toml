@@ -5,7 +5,7 @@
 minimum_release_age = "7d"
 
 [tools]
-"github:mizchi/actrun" = "0.29.0"
+"github:mizchi/actrun" = "0.32.0"
 # scripts/lint-shell.sh, the pre-commit hook and CI run this version; lint-shell.sh reads this
 # exact line ("github:koalaman/shellcheck" = "<version>") and ci-shellcheck.yml installs it by
 # this id. Editors use the brew / apt shellcheck from home/.chezmoidata/packages.yaml (not pinned).

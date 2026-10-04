@@ -4,11 +4,11 @@
 # Only go, rust and cargo:/go: backend tools belong here
 # (tests/agent-vm/run-templates.sh checks it).
 [tools]
-go = "1.26.3"
-rust = "1.95.0"
+go = "1.27.1"
+rust = "1.98.1"
 
 # CLI tools (migrated from go install / cargo install)
 "cargo:similarity-ts" = "0.5.0"
-"cargo:zizmor" = "1.25.2"
+"cargo:zizmor" = "1.30.1"
 "go:github.com/syou6162/git-sequential-stage" = "latest"
 "cargo:octorus" = "latest"
