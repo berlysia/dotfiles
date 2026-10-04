@@ -1,6 +1,94 @@
 import { lstatSync, realpathSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
+export interface PathFs {
+  realpath(p: string): string;
+  lstat(p: string): unknown;
+}
+
+const nodeFs: PathFs = { realpath: realpathSync, lstat: lstatSync };
+
+export type ParentSegmentCheck =
+  { ok: true } | { ok: false; kind: "absolute" | "relative" };
+
+/**
+ * An absolute path may not contain `..` at all. A relative path may only
+ * start with `..` segments: from a physical cwd, going up never crosses a
+ * symlink, while `sub/sym/..` resolves differently depending on whether the
+ * opener collapses it lexically or lets the kernel walk it.
+ */
+export function checkParentSegments(path: string): ParentSegmentCheck {
+  const segments = path.split("/");
+  if (path.startsWith("/")) {
+    return segments.includes("..")
+      ? { ok: false, kind: "absolute" }
+      : { ok: true };
+  }
+  let seenName = false;
+  for (const segment of segments) {
+    if (segment === "" || segment === ".") continue;
+    if (segment !== "..") {
+      seenName = true;
+      continue;
+    }
+    if (seenName) return { ok: false, kind: "relative" };
+  }
+  return { ok: true };
+}
+
+export type PhysicalPath =
+  { ok: true; path: string } | { ok: false; code: string };
+
+export function errnoOf(error: unknown): string {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  return typeof code === "string" ? code : "EUNKNOWN";
+}
+
+/**
+ * Where an absolute, `..`-free path lands after every symlink is followed.
+ * A path that does not exist yet resolves through its nearest existing
+ * ancestor. Never throws: anything that prevents the check from running is
+ * returned as a code, so the caller can deny with a reason instead of
+ * crashing.
+ */
+export function resolvePhysicalPath(
+  absPath: string,
+  fs: PathFs = nodeFs,
+): PhysicalPath {
+  if (!absPath.startsWith("/") || absPath.includes("\0")) {
+    return { ok: false, code: "EINVAL" };
+  }
+  if (hasParentSegment(absPath)) {
+    return { ok: false, code: "EPARENT" };
+  }
+  const missing: string[] = [];
+  let current = absPath;
+  for (;;) {
+    try {
+      const real = fs.realpath(current);
+      return {
+        ok: true,
+        path: missing.length === 0 ? real : join(real, ...missing),
+      };
+    } catch (error) {
+      const code = errnoOf(error);
+      if (code !== "ENOENT") return { ok: false, code };
+    }
+    // ENOENT with an entry present means a dangling symlink.
+    try {
+      fs.lstat(current);
+      return { ok: false, code: "EDANGLING" };
+    } catch (error) {
+      const code = errnoOf(error);
+      if (code !== "ENOENT") return { ok: false, code };
+    }
+    const parent = dirname(current);
+    if (parent === current) return { ok: false, code: "ENOENT" };
+    missing.unshift(basename(current));
+    current = parent;
+  }
+}
+
 /**
  * Realpath as much of `path` as exists, then re-append the missing tail.
  *
@@ -15,45 +103,14 @@ import { basename, dirname, join } from "node:path";
  * path would accept `<sessions>/link-to-elsewhere/not-yet` -- lexically inside,
  * really outside.
  *
- * Precondition: `path` is absolute and already lexically normalised (every
- * caller here passes it through `resolve`). Node's `realpathSync` applies `..`
- * lexically before resolving, unlike POSIX `realpath(3)`, so a caller that
- * skips normalisation gets an answer about a different path than the kernel
- * would open.
+ * Also null: a path that is not absolute or contains a `..` segment (Node's
+ * `realpathSync` applies `..` lexically before resolving, unlike POSIX
+ * `realpath(3)`, so the answer would be about a different path than the kernel
+ * would open), and a failed `lstat` of any kind other than `ENOENT`.
  */
 export function resolveWithMissingTail(path: string): string | null {
-  const missing: string[] = [];
-  let current = path;
-  for (;;) {
-    try {
-      const real = realpathSync(current);
-      return missing.length === 0 ? real : join(real, ...missing);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-        return null;
-      }
-    }
-    // ENOENT with an entry present means a dangling symlink: it exists, it just
-    // does not resolve. That is unresolvable, not absent.
-    if (entryExists(current)) {
-      return null;
-    }
-    const parent = dirname(current);
-    if (parent === current) {
-      return null;
-    }
-    missing.unshift(basename(current));
-    current = parent;
-  }
-}
-
-function entryExists(path: string): boolean {
-  try {
-    lstatSync(path);
-    return true;
-  } catch {
-    return false;
-  }
+  const resolved = resolvePhysicalPath(path);
+  return resolved.ok ? resolved.path : null;
 }
 
 export function hasParentSegment(p: string): boolean {
