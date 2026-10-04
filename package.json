@@ -43,7 +43,7 @@
     "@types/node": "26.6.3",
     "knip": "6.12.2",
     "oxfmt": "0.48.0",
-    "oxlint": "1.81.0",
+    "oxlint": "1.85.0",
     "prettier": "3.9.9",
     "typescript": "7.0.2"
   }
