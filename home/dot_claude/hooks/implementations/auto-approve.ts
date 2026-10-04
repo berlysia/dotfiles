@@ -6,6 +6,10 @@ import { userInfo } from "node:os";
 import { join } from "node:path";
 
 import { defineHook } from "cc-hooks-ts";
+import {
+  parserGiveUpMark,
+  parserGiveUpReasonSince,
+} from "../lib/bash-parser.ts";
 import { prepareDenyInput } from "../lib/deny-input.ts";
 import { isExemptReadOnlyCommand } from "../lib/read-only-command.ts";
 import { logDecision } from "../lib/centralized-logging.ts";
@@ -375,8 +379,31 @@ export async function processBashTool(
   // side reads prepareDenyInput's maskedText and fragments, where data-only
   // heredoc bodies are emptied (F3b). Called before the home guard, where the
   // parser was called before, so a throw rejects to the hook's catch as before.
+  // Taken before any parser call. A command the parser stopped analysing is
+  // denied whatever its fragments say (today it is blocked by the 20 s
+  // timeout); coarse fragments alone would let some writes through.
+  const giveUpMark = parserGiveUpMark();
+  const deniedForGiveUp = (): BashToolResult | null => {
+    const reason = parserGiveUpReasonSince(giveUpMark);
+    if (reason === null) return null;
+    // The decision reason quotes `command`; a full over-limit command would
+    // push the reason itself out of what the reader sees.
+    const shown =
+      bashCommand.length > 200
+        ? `${bashCommand.slice(0, 200)}… (${bashCommand.length} characters)`
+        : bashCommand;
+    return {
+      commands: [{ type: "deny", command: shown, reason }],
+      hasAskRequired: false,
+      hasPassRequired: false,
+    };
+  };
   const { maskedText, individualCommands, parsingMethod } =
     await prepareDenyInput(bashCommand);
+  // Before the whole-text home check: both outcomes are a deny, and this one
+  // skips reading a text the parser already refused.
+  const gaveUpOnInput = deniedForGiveUp();
+  if (gaveUpOnInput !== null) return gaveUpOnInput;
 
   // Judged on the whole command before splitting, because splitting loses the
   // `cd` context. `home` comes from this process, never from the command, so a
@@ -420,6 +447,8 @@ export async function processBashTool(
     const result = await stages.classifyBashDeny(target, denyList, {
       readOnlyExempt,
     });
+    const gaveUpOnFragment = deniedForGiveUp();
+    if (gaveUpOnFragment !== null) return gaveUpOnFragment;
     if (result.type === "clear") continue;
     commands.push(result);
     if (result.type === "ask") {
@@ -446,6 +475,9 @@ export async function processBashTool(
     );
     commands.push({ type: "pass", command: bashCommand });
   }
+
+  const gaveUpLate = deniedForGiveUp();
+  if (gaveUpLate !== null) return gaveUpLate;
 
   return {
     commands,
