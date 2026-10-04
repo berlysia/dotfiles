@@ -16,6 +16,7 @@
 - **Typecheck**: `pnpm typecheck`
 - **Lint**: `pnpm lint` or `npx oxlint .`
 - **Format**: `npx oxfmt --write .`
+- **Dev server**: when `PORTLESS_PORT` is set (agent-vm), start it with `portless run <dev command>` and use the URL it prints. Do not pick a port yourself. If `portless` fails, report it instead of starting the server on another port
 
 ## Quality Gates
 
