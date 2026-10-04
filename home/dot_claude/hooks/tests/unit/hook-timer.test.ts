@@ -87,6 +87,22 @@ type HookTimingRecord = {
   terminated: string | null;
 };
 
+/**
+ * Resolves once `path` exists, polling every 10ms for up to `timeoutMs`.
+ * The signal cases wait for a marker the child writes, so the kill timer
+ * starts after the wrapper has taken start_ms and the child is running,
+ * not after a wrapper startup whose length depends on load.
+ */
+async function waitForFile(path: string, timeoutMs = 5000): Promise<void> {
+  const deadline = performance.now() + timeoutMs;
+  while (!existsSync(path)) {
+    if (performance.now() >= deadline) {
+      throw new Error(`${path} did not appear within ${timeoutMs}ms`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 /** Polls `<dir>/hook-timing.jsonl` for its last line, up to 3000ms at 50ms intervals. */
 function pollForLastRecord(
   dir: string,
@@ -343,19 +359,27 @@ describe("hook-timer.sh", () => {
 
   it("records a SIGTERM'd child as terminated with exit_code null", async () => {
     const logDir = makeTempDir();
-    const child = spawn("sh", [wrapper, "PreToolUse", "0", "sleep 5"], {
-      env: baseEnv(logDir),
+    const marker = join(makeTempDir(), "started");
+    const child = spawn(
+      "sh",
+      [wrapper, "PreToolUse", "0", `touch '${marker}'; sleep 5`],
+      { env: baseEnv(logDir) },
+    );
+    const closed = new Promise<{
+      code: number | null;
+      signal: NodeJS.Signals | null;
+    }>((resolve) => {
+      child.on("close", (code, signal) => resolve({ code, signal }));
     });
     child.stdin.write("{}");
     child.stdin.end();
 
-    const result = await new Promise<{
-      code: number | null;
-      signal: NodeJS.Signals | null;
-    }>((resolve) => {
-      setTimeout(() => child.kill("SIGTERM"), 300);
-      child.on("close", (code, signal) => resolve({ code, signal }));
-    });
+    // The wrapper takes start_ms before it runs the child, so once the marker
+    // exists, a kill 300ms later lands at least 300ms after start_ms however
+    // long the wrapper took to start.
+    await waitForFile(marker);
+    setTimeout(() => child.kill("SIGTERM"), 300);
+    const result = await closed;
     strictEqual(result.code, 143);
 
     const record = pollForLastRecord(logDir);
@@ -456,24 +480,32 @@ describe("hook-timer.sh", () => {
     ok(stdoutData.includes("bye"), stdoutData);
   });
 
-  it("escalates to SIGKILL within 2s when the child ignores TERM", async () => {
+  it("escalates to SIGKILL after its 1s grace when the child ignores TERM", async () => {
     const logDir = makeTempDir();
+    const marker = join(makeTempDir(), "trapped");
     const child = spawn(
       "sh",
-      [wrapper, "PreToolUse", "0", 'trap "" TERM; sleep 5'],
+      [wrapper, "PreToolUse", "0", `trap "" TERM; touch '${marker}'; sleep 5`],
       { env: baseEnv(logDir) },
     );
+    const closed = new Promise<{ code: number | null }>((resolve) => {
+      child.on("close", (code) => resolve({ code }));
+    });
     child.stdin.write("{}");
     child.stdin.end();
 
-    const start = performance.now();
-    const result = await new Promise<{ code: number | null }>((resolve) => {
-      setTimeout(() => child.kill("SIGTERM"), 300);
-      child.on("close", (code) => resolve({ code }));
-    });
-    const elapsed = performance.now() - start;
+    // Kill only after the child has ignored TERM; otherwise TERM could reach
+    // it before the trap and end it without exercising the escalation.
+    await waitForFile(marker);
+    const killedAt = performance.now();
+    child.kill("SIGTERM");
+    const result = await closed;
+    const elapsed = performance.now() - killedAt;
     strictEqual(result.code, 143);
-    ok(elapsed < 2000, `elapsed=${elapsed}ms`);
+    // The grace is 10 x `sleep 0.1`, so reaching SIGKILL takes at least 1s.
+    // The upper bound only catches a wrapper that never escalates (the child
+    // sleeps 5s); fork and exec delays under load stay well inside it.
+    ok(elapsed >= 1000 && elapsed < 4000, `elapsed=${elapsed}ms`);
 
     const record = pollForLastRecord(logDir);
     strictEqual(record.terminated, "TERM");
