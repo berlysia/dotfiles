@@ -676,4 +676,83 @@ describe("parser limits (Issue #235)", () => {
     await extractCommandsStructured("ls -la | wc -l");
     strictEqual(parserGiveUpReasonSince(mark), null);
   });
+
+  it("keeps today's fragments under the scan limit", async () => {
+    const mark = parserGiveUpMark();
+    deepStrictEqual(
+      await extractBaseCommands("timeout 10 env A=b xargs sh -c 'echo hi'"),
+      {
+        individualCommands: ["echo hi"],
+        originalCommand: "timeout 10 env A=b xargs sh -c 'echo hi'",
+        parsingMethod: "tree-sitter",
+      },
+    );
+    deepStrictEqual(
+      await extractBaseCommands("echo $(xargs echo a) $(xargs echo b)"),
+      {
+        individualCommands: ["xargs echo b", "echo b", "echo b)"],
+        originalCommand: "echo $(xargs echo a) $(xargs echo b)",
+        parsingMethod: "tree-sitter",
+      },
+    );
+    deepStrictEqual(
+      await extractBaseCommands("ls | xargs -n1 echo | xargs -n1 cat"),
+      {
+        individualCommands: [
+          "ls",
+          "xargs -n1 echo",
+          "-n1 echo",
+          "xargs -n1 cat",
+        ],
+        originalCommand: null,
+        parsingMethod: "tree-sitter",
+      },
+    );
+    strictEqual(parserGiveUpReasonSince(mark), null);
+  });
+
+  for (const [name, command] of [
+    ["a chain of wrapper words", "xargs ".repeat(700)],
+    ["sibling substitutions", `echo ${"$(xargs echo a) ".repeat(500)}`],
+  ] as const) {
+    it(`stops the extractor at the scan limit on ${name}`, async () => {
+      const mark = parserGiveUpMark();
+      const start = performance.now();
+      await extractBaseCommands(command);
+      ok(performance.now() - start < 1000);
+      ok(
+        parserGiveUpReasonSince(mark)?.includes("2,000,000 characters scanned"),
+      );
+    });
+  }
+
+  it("counts the scan across calls made after one mark", async () => {
+    const mark = parserGiveUpMark();
+    await extractBaseCommands(`${"xargs ".repeat(100)}one`);
+    strictEqual(parserGiveUpReasonSince(mark), null);
+    await extractBaseCommands(`${"xargs ".repeat(100)}two`);
+    await extractBaseCommands(`${"xargs ".repeat(100)}three`);
+    ok(parserGiveUpReasonSince(mark)?.includes("2,000,000 characters scanned"));
+  });
+
+  it("prints no debug lines unless BASH_PARSER_DEBUG is set", async () => {
+    const lines: string[] = [];
+    const original = console.error;
+    console.error = (...args: unknown[]) => {
+      lines.push(String(args[0]));
+    };
+    try {
+      await extractCommandsStructured("ls | xargs -n1 echo debug-lines");
+    } finally {
+      console.error = original;
+    }
+    deepStrictEqual(
+      lines.filter(
+        (line) =>
+          line.startsWith("[bash-parser]") ||
+          line.startsWith("[extractMetaCommands]"),
+      ),
+      [],
+    );
+  });
 });
