@@ -709,6 +709,100 @@ test_launch_script_forwards_allowlisted_env_only_when_set() {
   assert_contains "$cmd" 'export CLAUDE_CODE_AUTO_COMPACT_WINDOW=1\ 0\;x; ' "value shell-quoted"
   assert_contains "$cmd" 'export CLAUDE_CODE_MAX_OUTPUT_TOKENS=64000; exec claude' "exported before exec"
 }
+test_launch_script_exports_the_proxy_port_after_the_env_file() {
+  local cmd
+  cmd=$(PROXY_PORT=17305 build_launch_script claude /r /dev/shm/agent-vm.env.x)
+  assert_contains "$cmd" "export PORTLESS_PORT=17305 PORTLESS_HTTPS=0; " "proxy port and no-TLS exported"
+  assert_not_contains "$cmd" "unset PORTLESS" "nothing unset when a port is assigned"
+  local env_at port_at
+  env_at=$(awk -v s="$cmd" 'BEGIN { print index(s, "agent-vm.env.x") }')
+  port_at=$(awk -v s="$cmd" 'BEGIN { print index(s, "PORTLESS_PORT") }')
+  if [[ "$env_at" -gt 0 && "$port_at" -gt "$env_at" ]]; then record "PASS the assignment wins over the env file"; else record "FAIL the assignment wins over the env file ($env_at/$port_at)"; fi
+}
+test_launch_script_without_a_valid_proxy_port_unsets_the_variables() {
+  local cmd v env_at unset_at
+  cmd=$(PROXY_PORT="" build_launch_script claude /r /dev/shm/agent-vm.env.x)
+  assert_contains "$cmd" "unset PORTLESS_PORT PORTLESS_HTTPS; " "an env file value does not survive without an assigned port"
+  assert_not_contains "$cmd" "export PORTLESS" "nothing exported without an assigned port"
+  env_at=$(awk -v s="$cmd" 'BEGIN { print index(s, "agent-vm.env.x") }')
+  unset_at=$(awk -v s="$cmd" 'BEGIN { print index(s, "unset PORTLESS_PORT") }')
+  if [[ "$env_at" -gt 0 && "$unset_at" -gt "$env_at" ]]; then record "PASS the unset comes after the env file"; else record "FAIL the unset comes after the env file ($env_at/$unset_at)"; fi
+  # The whole script is compared: "the value does not appear" would miss a quoted or misplaced embedding, and a short
+  # value such as 80 can appear by chance in a forwarded host knob. The two allowlisted knobs are unset for that reason.
+  unset CLAUDE_CODE_AUTO_COMPACT_WINDOW CLAUDE_CODE_MAX_OUTPUT_TOKENS
+  for v in 041624 80 '17300; touch /tmp/pwned' "\$(id)"; do
+    cmd=$(PROXY_PORT="$v" build_launch_script claude /r "" 2>/dev/null)
+    assert_eq "cd /r; unset PORTLESS_PORT PORTLESS_HTTPS; exec claude" "$cmd" "an invalid PROXY_PORT ('$v') yields only the unset"
+  done
+  cmd=$(PROXY_PORT=$'17300\n17301' build_launch_script claude /r "" 2>/dev/null)
+  assert_eq "cd /r; unset PORTLESS_PORT PORTLESS_HTTPS; exec claude" "$cmd" "a PROXY_PORT with a newline yields only the unset"
+}
+test_notice_proxy_port_names_the_port_on_stderr_only() {
+  local out err
+  err=$(PROXY_PORT=17305 notice_proxy_port 2>&1 >/dev/null)
+  assert_contains "$err" "http://<app>.localhost:17305" "the notice carries the port"
+  assert_contains "$err" "portless run" "the notice names the command"
+  out=$(PROXY_PORT=17305 notice_proxy_port 2>/dev/null)
+  assert_eq "" "$out" "nothing on stdout"
+  err=$(PROXY_PORT="" notice_proxy_port 2>&1)
+  assert_eq "" "$err" "silent without an assigned port"
+}
+test_notice_proxy_port_assignment_shows_a_change_and_a_full_pool() {
+  local err
+  err=$(PROXY_PORT=17301 PROXY_PORT_PREV=17300 notice_proxy_port_assignment agent-a-000000 2>&1)
+  assert_contains "$err" "proxy port for agent-a-000000 changed 17300 -> 17301" "old and new port in fixed positions"
+  assert_contains "$err" "recover: run 'portless proxy stop' in the VM" "the recovery step"
+  err=$(PROXY_PORT=17300 PROXY_PORT_PREV=17300 notice_proxy_port_assignment agent-a-000000 2>&1)
+  assert_eq "" "$err" "silent when the port is kept"
+  err=$(PROXY_PORT=17300 PROXY_PORT_PREV="" notice_proxy_port_assignment agent-a-000000 2>&1)
+  assert_eq "" "$err" "silent on the first assignment"
+  err=$(PROXY_PORT="" PROXY_PORT_PREV=17300 notice_proxy_port_assignment agent-a-000000 2>&1)
+  assert_contains "$err" "changed 17300 -> none" "a port lost to a full pool is a change"
+  assert_contains "$err" "agent-vm rm <repo>" "the full-pool warning names the recovery that frees a slot"
+  err=$(PROXY_PORT="" PROXY_PORT_PREV="" notice_proxy_port_assignment agent-a-000000 2>&1)
+  assert_contains "$err" "do not go through portless" "the full-pool warning says what stops working"
+  assert_not_contains "$err" "changed" "no change line without a previous port"
+}
+test_run_tool_hands_the_port_to_the_session_and_names_it() {
+  local wt repo m err; wt=$(make_dotfiles_fixture); repo=$(make_flow_repo)
+  m=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
+  session_exec() { printf '%s\n' "$2" >"$TMP_ROOT/launch-script"; } # replaces the real orb session in this subshell only
+  err=$( (cd "$repo" && PROXY_PORT=99999 STUB_CHEZMOI_STDOUT="$wt/home" STUB_ORB_LIST_STDOUT="$m running" run_tool claude) 2>&1 >/dev/null) || true
+  assert_eq 17300 "$(read_meta_field "$m" proxy_port)" "the launch records a port"
+  assert_contains "$(cat "$TMP_ROOT/launch-script")" "export PORTLESS_PORT=17300 PORTLESS_HTTPS=0; " "the session receives the recorded port"
+  assert_contains "$err" "localhost:17300" "the launch names the port on stderr"
+  assert_not_contains "$err" "changed" "no change line on the first assignment"
+}
+test_prepare_machine_ignores_proxy_port_from_the_host_environment() {
+  local wt repo m; wt=$(make_dotfiles_fixture); repo=$(make_flow_repo)
+  m=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
+  session_exec() { printf '%s\n' "$2" >"$TMP_ROOT/launch-script"; }
+  assign_proxy_port() { :; } # replaces the assignment in this subshell only: only the clearing in prepare_machine is left
+  (cd "$repo" && PROXY_PORT=17305 PROXY_PORT_PREV=17306 STUB_CHEZMOI_STDOUT="$wt/home" STUB_ORB_LIST_STDOUT="$m running" run_tool claude) >/dev/null 2>&1 || true
+  assert_contains "$(cat "$TMP_ROOT/launch-script")" "unset PORTLESS_PORT PORTLESS_HTTPS; " "a PROXY_PORT from the host environment is not used"
+  assert_not_contains "$(cat "$TMP_ROOT/launch-script")" "export PORTLESS" "nothing exported from the host environment's value"
+}
+test_prewarm_reports_a_changed_port_and_names_no_url() {
+  local wt repo m err; wt=$(make_dotfiles_fixture); repo=$(make_flow_repo)
+  m=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
+  write_machine_meta "$m" "$(cd -P "$repo" && pwd -P)" 17300
+  write_machine_meta agent-other-000000 /tmp/other 17300
+  session_exec() { record "FAIL prewarm must not start a session"; }
+  err=$( (cd "$repo" && STUB_CHEZMOI_STDOUT="$wt/home" STUB_ORB_LIST_STDOUT="$m running" STUB_ORB_STDOUT="v1:old" cmd_prewarm) 2>&1 >/dev/null) || true
+  assert_eq 17301 "$(read_meta_field "$m" proxy_port)" "prewarm moves the machine off the shared port"
+  assert_contains "$err" "changed 17300 -> 17301" "prewarm shows the recovery for the change it made"
+  assert_not_contains "$err" "dev servers: run them" "prewarm does not name a URL to open"
+}
+test_list_shows_only_a_valid_proxy_port() {
+  mkdir -p "$TMP_ROOT/repo-a" "$TMP_ROOT/repo-b" "$TMP_ROOT/repo-c"
+  write_machine_meta agent-a-000000 "$TMP_ROOT/repo-a" 17300
+  write_machine_meta agent-b-000000 "$TMP_ROOT/repo-b"
+  printf 'format=1\nrepo_path=%s\nproxy_port=041624\n' "$TMP_ROOT/repo-c" >"$AGENT_VM_STATE_DIR/machines/agent-c-000000"
+  local rows; rows=$(machine_rows)
+  assert_contains "$rows" "agent-a-000000	present	$TMP_ROOT/repo-a	17300" "4th column is the proxy port"
+  assert_eq "agent-b-000000	present	$TMP_ROOT/repo-b	" "$(printf '%s\n' "$rows" | grep '^agent-b-')" "a record without a port ends in a tab"
+  assert_eq "agent-c-000000	present	$TMP_ROOT/repo-c	" "$(printf '%s\n' "$rows" | grep '^agent-c-')" "an invalid stored value is not shown"
+}
 test_launch_warns_about_unforwarded_claude_code_vars_by_name_only() {
   local err
   # env -u: the suite itself may run inside a Claude Code session, which silences the warning.

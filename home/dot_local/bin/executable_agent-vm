@@ -1551,6 +1551,13 @@ build_launch_script() { # tool repo_root env_file args...
   if [[ -n "$envf" ]]; then
     script+="; set -a; . $(printf '%q' "$envf"); set +a; rm -f $(printf '%q' "$envf")"
   fi
+  # After the env file so the assignment wins over a PORTLESS_PORT stored there. Checked again here because the value
+  # goes into the script unquoted; without a usable port the variables are unset so an env file value cannot linger.
+  if valid_proxy_port "${PROXY_PORT:-}"; then
+    script+="; export PORTLESS_PORT=$PROXY_PORT PORTLESS_HTTPS=0"
+  else
+    script+="; unset PORTLESS_PORT PORTLESS_HTTPS"
+  fi
   # After the env file so a host knob wins over a stale value stored there.
   script+="; $(forward_env_exports)exec $tool"
   if [[ $# -gt 0 ]]; then script+="$(printf ' %q' "$@")"; fi
@@ -1571,13 +1578,36 @@ set_title() {
 
 session_exec() { orb -m "$1" bash -lc "$2"; } # machine script
 
-prepare_machine() { # tool -> sets MACHINE and REPO; leaves the machine bootstrapped
+# Reported from prepare_machine, so prewarm shows it too: a port that moved (spec K12) and a pool with no free slot
+# (spec K4). Only the call that rewrote the record knows the port it replaced. The recovery steps sit at fixed
+# positions after "recover:" and "free one with:".
+notice_proxy_port_assignment() { # machine
+  local prev=${PROXY_PORT_PREV:-} port=${PROXY_PORT:-}
+  if [[ -n "$prev" && "$prev" != "$port" ]]; then
+    step "proxy port for $1 changed $prev -> ${port:-none}; a proxy still running in the VM may listen on $prev, and URLs it prints may be stale. recover: run 'portless proxy stop' in the VM, then start the dev server again"
+  fi
+  if [[ -z "$port" ]]; then
+    step "no free portless proxy port in $PROXY_PORT_MIN-$PROXY_PORT_MAX; dev servers in this machine do not go through portless and can collide with other machines. free one with: agent-vm rm <repo> for a machine you no longer use (agent-vm gc if its repository was deleted)"
+  fi
+}
+
+# Tells the person at the mac which port this machine's dev servers answer on (spec K11). portless picks the name
+# when a dev server starts, so the launcher can only show the port.
+notice_proxy_port() {
+  if [[ -n "${PROXY_PORT:-}" ]]; then
+    step "dev servers: run them with 'portless run <command>'; open http://<app>.localhost:$PROXY_PORT on the mac"
+  fi
+}
+
+prepare_machine() { # tool -> sets MACHINE, REPO, PROXY_PORT and PROXY_PORT_PREV; leaves the machine bootstrapped
   local wt gen hash out
+  PROXY_PORT="" PROXY_PORT_PREV="" # never inherited from the host environment
   check_health
   REPO=$(resolve_repo_root)
   wt=$(resolve_working_tree)
   MACHINE=$(derive_machine_name "$REPO")
-  write_machine_meta "$MACHINE" "$REPO"
+  assign_proxy_port "$MACHINE" "$REPO"
+  notice_proxy_port_assignment "$MACHINE"
   acquire_lock "$MACHINE" 60 || die "timed out waiting for another session of this repo"
   # Steps 4-5: report git-surface changes left by an earlier session (including a crashed one)
   # and catch up on logs it did not get to ingest. Findings are reported, the launch continues.
@@ -1663,6 +1693,7 @@ run_tool() { # tool args...
   prepare_machine "$tool"
   notice_orphan_env "$MACHINE"
   notice_gh_token_expiry "$MACHINE"
+  notice_proxy_port
   nm_sync "$MACHINE" "$REPO" || true
   if [[ "$tool" == codex ]]; then ensure_codex_auth "$MACHINE"; fi
   envf=$(inject_secrets "$MACHINE")
@@ -1778,12 +1809,14 @@ orphaned_env_machines() { # machines whose env file exists but whose repo is gon
   return 0
 }
 
-machine_rows() { # TSV only: machine, state, repo_path (consumed by cmd_list and cmd_gc)
-  local f m
+machine_rows() { # TSV only: machine, state, repo_path, proxy_port (shown only when valid; may be empty). cmd_list prints it; cmd_gc reads columns 1-2
+  local f m p
   for f in "$AGENT_VM_STATE_DIR"/machines/*; do
     [[ -f "$f" && "$f" != *.lock ]] || continue
     m=$(basename "$f")
-    printf '%s\t%s\t%s\n' "$m" "$(machine_state "$m")" "$(read_meta_field "$m" repo_path || true)"
+    p=$(read_meta_field "$m" proxy_port || true)
+    valid_proxy_port "$p" || p=""
+    printf '%s\t%s\t%s\t%s\n' "$m" "$(machine_state "$m")" "$(read_meta_field "$m" repo_path || true)" "$p"
   done
   return 0
 }
