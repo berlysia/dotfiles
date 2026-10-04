@@ -55,3 +55,12 @@ function entryExists(path: string): boolean {
     return false;
   }
 }
+
+export function hasParentSegment(p: string): boolean {
+  return p.split("/").includes("..");
+}
+
+export function isUnderRoot(p: string, root: string): boolean {
+  // "/" is the only normalized root that already ends with a separator.
+  return p === root || p.startsWith(root.endsWith("/") ? root : `${root}/`);
+}

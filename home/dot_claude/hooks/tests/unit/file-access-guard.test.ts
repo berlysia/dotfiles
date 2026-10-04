@@ -14,10 +14,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import fileAccessGuardHook, {
-  collectTempRoots,
   getAllowPatterns,
   isWithinTempRoots,
 } from "../../implementations/file-access-guard.ts";
+import { collectTempRoots } from "../../lib/temp-roots.ts";
 import { deriveDefaultWorkflowDir } from "../../lib/workflow-paths.ts";
 import {
   ConsoleCapture,
