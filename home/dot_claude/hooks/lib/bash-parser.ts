@@ -19,7 +19,12 @@ interface ParseTree {
 }
 
 interface TreeSitterParser {
-  parse(input: string): ParseTree | null;
+  parse(
+    input: string,
+    oldTree?: null,
+    options?: { progressCallback?: () => boolean },
+  ): ParseTree | null;
+  reset(): void;
   setLanguage(language: unknown): void;
 }
 
@@ -112,6 +117,101 @@ const META_COMMANDS = {
   // Removed 'cat', 'head', 'tail' - these are file reading commands, not meta commands
   // Removed 'bun' - bun run/test/install are direct commands, not meta commands
 };
+
+// Limits on what the guards analyse (issue #235). A command over a limit is
+// not analysed further and the hooks deny it; the two character limits depend
+// only on the input, so the verdict is the same on every machine.
+export const MAX_COMMAND_CHARS = 32_000;
+export const MAX_META_SCAN_CHARS = 2_000_000;
+// A backstop inside the length limit: tree-sitter's error recovery is
+// superlinear on some malformed inputs. Wall clock, so load can trip it; the
+// only outcome is a deny.
+const PARSE_BUDGET_MS = 100;
+
+type ParserGiveUpKind = "length" | "scan" | "time";
+
+const GIVE_UP_REASONS: Record<ParserGiveUpKind, string> = {
+  length:
+    "Bash command is longer than 32,000 characters, so the guard does not analyse it and blocks it. Split it into smaller commands.",
+  scan: `Bash command repeats wrapper words (${Object.keys(META_COMMANDS).join(", ")}) or command substitutions too many times on one line for the guard to analyse, quoted text included (over 2,000,000 characters scanned), so it is blocked. Split it into smaller commands or shorter lines.`,
+  time: "Bash command could not be parsed within 100 ms, so the guard blocks it. It probably contains a syntax error; fix it or split it into smaller commands.",
+};
+
+// Every give-up of this process, in order. Never cleared: a hook compares a
+// mark taken before its parser calls, so a missed check fails towards deny
+// only if the hook reads it. The three guard hooks must read it.
+const giveUps: ParserGiveUpKind[] = [];
+// Characters handed to the regex extractor so far in this process.
+let metaScanned = 0;
+// Inputs whose parse was cut; parsing them again would cost the same time.
+const timedOutInputs = new Set<string>();
+
+export interface ParserGiveUpMark {
+  giveUps: number;
+  scanned: number;
+}
+
+export function parserGiveUpMark(): ParserGiveUpMark {
+  return { giveUps: giveUps.length, scanned: metaScanned };
+}
+
+/**
+ * The deny reason when the parser stopped analysing something since `mark`,
+ * or when the extractor scanned more than the limit since `mark` in total
+ * (auto-approve re-extracts every fragment, so no single call need be capped).
+ */
+export function parserGiveUpReasonSince(mark: ParserGiveUpMark): string | null {
+  const since = giveUps.slice(mark.giveUps);
+  for (const kind of ["length", "scan", "time"] as const) {
+    if (since.includes(kind)) return GIVE_UP_REASONS[kind];
+  }
+  if (metaScanned - mark.scanned > MAX_META_SCAN_CHARS) {
+    return GIVE_UP_REASONS.scan;
+  }
+  return null;
+}
+
+/**
+ * The only caller of parser.parse. Returns null when the input is over the
+ * length limit, when the parse was cut (cancelled, threw, or returned after
+ * the budget), or when an earlier parse of the same input was cut.
+ */
+async function parseBounded(command: string): Promise<TsTree | null> {
+  if (command.length > MAX_COMMAND_CHARS) {
+    giveUps.push("length");
+    return null;
+  }
+  if (timedOutInputs.has(command)) {
+    giveUps.push("time");
+    return null;
+  }
+  // An init failure rejects as before; it is not a give-up.
+  const parser = await ensureTreeSitter();
+  const start = performance.now();
+  const overBudget = () => performance.now() - start > PARSE_BUDGET_MS;
+  let tree: TsTree | null = null;
+  try {
+    tree = parser.parse(command, null, {
+      progressCallback: overBudget,
+    }) as unknown as TsTree | null;
+    if (tree !== null && !overBudget()) return tree;
+  } catch {
+    // A wasm abort on a degenerate input; handled as a cut parse below.
+  }
+  // Recorded before the cleanup so a throwing cleanup cannot lose it.
+  timedOutInputs.add(command);
+  giveUps.push("time");
+  try {
+    tree?.delete();
+    // Without a reset the next parse aborts the wasm module.
+    parser.reset();
+  } catch (error) {
+    console.error(
+      `[bash-parser] parser cleanup failed: ${error instanceof Error ? error.name : typeof error}`,
+    );
+  }
+  return null;
+}
 
 // Control structure keywords that should be processed transparently
 const CONTROL_KEYWORDS = [
@@ -464,6 +564,14 @@ export async function parseBashCommand(
   command: string,
   silent = false,
 ): Promise<BashParsingResult> {
+  if (command.length > MAX_COMMAND_CHARS) {
+    giveUps.push("length");
+    return {
+      commands: [],
+      errors: [{ message: "command exceeds the parser's length limit" }],
+      parsingMethod: "fallback",
+    };
+  }
   try {
     return await parseWithTreeSitter(command);
   } catch (error) {
@@ -477,7 +585,7 @@ export async function parseBashCommand(
 async function parseWithTreeSitter(
   command: string,
 ): Promise<BashParsingResult> {
-  const parser = await ensureTreeSitter();
+  await ensureTreeSitter();
   // If meta-execution is present (sh -c, xargs sh -c, etc.), prefer the existing
   // meta extractor to pull out nested commands for safety analysis
   const metaOnly = extractMetaCommands(command, new Set<string>());
@@ -528,7 +636,7 @@ async function parseWithTreeSitter(
     return { commands: mapped, errors: [], parsingMethod: "tree-sitter" };
   }
 
-  const tree = parser.parse(command);
+  const tree = (await parseBounded(command)) as unknown as ParseTree | null;
   if (!tree) {
     return {
       commands: [],
@@ -947,11 +1055,7 @@ import type { Node as TsNode, Tree as TsTree } from "web-tree-sitter";
 // Exported so the deny-side policy (heredoc-data.ts) parses with the same function.
 export type ParseForCollect = (command: string) => Promise<TsTree | null>;
 
-export const parseForCollect: ParseForCollect = async (command) => {
-  const parser = await ensureTreeSitter();
-  // TreeSitterParser is this file's narrow view of web-tree-sitter's Parser.
-  return parser.parse(command) as unknown as TsTree | null;
-};
+export const parseForCollect: ParseForCollect = parseBounded;
 
 /**
  * True when a file_redirect is already part of a collected text: inside a
@@ -1042,6 +1146,14 @@ export async function collectExecutableTexts(
 export async function extractCommandsStructured(
   command: string,
 ): Promise<ExtractedCommands> {
+  if (command.length > MAX_COMMAND_CHARS) {
+    giveUps.push("length");
+    return {
+      individualCommands: wholeAndCoarse(command),
+      originalCommand: null,
+      parsingMethod: "fallback",
+    };
+  }
   const base = await extractBaseCommands(command);
   const supplement = await collectExecutableTexts(command, base.parsingMethod);
   const seen = new Set(base.individualCommands.map((c) => c.trim()));

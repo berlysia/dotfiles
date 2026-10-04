@@ -38,7 +38,11 @@ import {
   type ExtractedCommands,
   extractBaseCommands,
   extractCommandsStructured,
+  MAX_COMMAND_CHARS,
   parseBashCommand,
+  parseForCollect,
+  parserGiveUpMark,
+  parserGiveUpReasonSince,
 } from "../../lib/bash-parser.ts";
 
 describe("bash-parser", () => {
@@ -598,5 +602,78 @@ describe("for-loop body splitting (Issue #219 H)", () => {
     const start = performance.now();
     await extractCommandsStructured(command);
     ok(performance.now() - start < 1000);
+  });
+});
+
+describe("parser limits (Issue #235)", () => {
+  it("does not analyse a command longer than 32,000 characters", async () => {
+    const command = `echo ${"a".repeat(MAX_COMMAND_CHARS - 4)}`;
+    strictEqual(command.length, MAX_COMMAND_CHARS + 1);
+    const mark = parserGiveUpMark();
+    const result = await extractCommandsStructured(command);
+    strictEqual(result.parsingMethod, "fallback");
+    ok(parserGiveUpReasonSince(mark)?.includes("32,000 characters"));
+  });
+
+  it("analyses a command of exactly 32,000 characters as before", async () => {
+    const command = `echo ${"a".repeat(MAX_COMMAND_CHARS - 5)}`;
+    strictEqual(command.length, MAX_COMMAND_CHARS);
+    const mark = parserGiveUpMark();
+    const result = await extractCommandsStructured(command);
+    strictEqual(result.parsingMethod, "tree-sitter");
+    strictEqual(parserGiveUpReasonSince(mark), null);
+  });
+
+  it("records the length limit on the parseBashCommand path too", async () => {
+    const mark = parserGiveUpMark();
+    const result = await parseBashCommand(
+      `xargs ${"a".repeat(MAX_COMMAND_CHARS)}`,
+      true,
+    );
+    deepStrictEqual(result.commands, []);
+    strictEqual(result.parsingMethod, "fallback");
+    ok(parserGiveUpReasonSince(mark)?.includes("32,000 characters"));
+  });
+
+  for (const [name, command] of [
+    ["a long run of redirects", `echo limit-a ${">".repeat(20000)}`],
+    ["repeated subshells", `${"(a) ".repeat(5000)}limit-b`],
+  ] as const) {
+    it(`gives up within the time budget on ${name}`, async () => {
+      const mark = parserGiveUpMark();
+      const start = performance.now();
+      const result = await extractCommandsStructured(command);
+      ok(performance.now() - start < 1000);
+      strictEqual(result.parsingMethod, "fallback");
+      ok(parserGiveUpReasonSince(mark)?.includes("within 100 ms"));
+    });
+  }
+
+  it("keeps the parser usable after a cancelled parse", async () => {
+    strictEqual(
+      await parseForCollect(`echo limit-c ${">".repeat(20000)}`),
+      null,
+    );
+    deepStrictEqual(await extractCommandsStructured("echo after-limit-c"), {
+      individualCommands: ["echo after-limit-c"],
+      originalCommand: null,
+      parsingMethod: "tree-sitter",
+    });
+  });
+
+  it("does not parse an input again after giving up on it", async () => {
+    const command = `echo limit-d ${">".repeat(20000)}`;
+    strictEqual(await parseForCollect(command), null);
+    const mark = parserGiveUpMark();
+    const start = performance.now();
+    strictEqual(await parseForCollect(command), null);
+    ok(performance.now() - start < 50);
+    ok(parserGiveUpReasonSince(mark)?.includes("within 100 ms"));
+  });
+
+  it("reports no reason when nothing gave up", async () => {
+    const mark = parserGiveUpMark();
+    await extractCommandsStructured("ls -la | wc -l");
+    strictEqual(parserGiveUpReasonSince(mark), null);
   });
 });
