@@ -34,7 +34,7 @@
   "dependencies": {
     "@drawio/mcp": "1.2.6",
     "@playwright/mcp": "0.0.75",
-    "@upstash/context7-mcp": "2.2.4",
+    "@upstash/context7-mcp": "4.1.1",
     "chrome-devtools-mcp": "0.25.0",
     "supergateway": "4.0.0"
   },
