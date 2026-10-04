@@ -13,6 +13,24 @@ type = "file"
 url = "https://ui-skills.com/llms.txt"
 refreshPeriod = "168h" # 1 week
 
+{{ if ne .chezmoi.os "windows" }}
+{{/* claude-recall plugin: loads from ~/.claude/skills as claude-recall@skills-dir (no marketplace upstream). */}}
+{{/* Excluded from the skills rsync. Its hooks and MCP entry launch `recall`, so the tarball is pinned by */}}
+{{/* checksum, and its version must match the binary pinned in mise. */}}
+{{- $recallTool := index (include "dot_config/mise/config.toml" | fromToml).tools "github:babarot/claude-recall" }}
+{{- $recallPluginVersion := "1.5.0" }}
+{{- $recallPluginSha256 := "6923106dae0fd63972cf138eb6546caca16508111b89b91e58900b12e706f34f" }}
+{{- if not (and (kindIs "map" $recallTool) (eq (toString (index $recallTool "version")) $recallPluginVersion)) }}
+{{-   fail (printf "claude-recall: mise pins %v but the plugin in .chezmoiexternal.toml.tmpl is %s. recovery: keep the mise entry in table form ({ version = ..., bin = \"recall\" }), set $recallPluginVersion to the mise version and $recallPluginSha256 to the claude-recall-plugin.tar.gz line of `gh release download <version> -R babarot/claude-recall -p checksums.txt -O -`" $recallTool $recallPluginVersion) }}
+{{- end }}
+[".claude/skills/claude-recall"]
+type = "archive"
+url = "https://github.com/babarot/claude-recall/releases/download/{{ $recallPluginVersion }}/claude-recall-plugin.tar.gz"
+stripComponents = 1
+exact = true
+checksum.sha256 = "{{ $recallPluginSha256 }}"
+{{ end }}
+
 {{/* private-skills: personal canon (berlysia-style, berlysia-slide). */}}
 {{/* Cloned via SSH to a holding location, then merged into ~/.claude/skills and */}}
 {{/* ~/.codex/skills by run_after_sync-skills.sh. Public dotfiles stays safe. */}}

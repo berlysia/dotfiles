@@ -44,6 +44,12 @@
       "description": "Hold mise tool updates for 7 days like npm ones (the preset sets minimumReleaseAge for npm only), matching minimum_release_age = \"7d\" in the mise config. Takes effect only for datasources that report release timestamps",
       "matchManagers": ["mise"],
       "minimumReleaseAge": "7 days"
+    },
+    {
+      "description": "claude-recall: the plugin external in home/.chezmoiexternal.toml.tmpl pins its own version and sha256 and fails the templates when they disagree with mise, so a bump needs a hand-edited checksum. Keep it out of the weekly group so that failure blocks only this PR",
+      "matchPackageNames": ["/claude-recall/"],
+      "groupName": "claude-recall",
+      "automerge": false
     }
   ],
   "mise": {

@@ -36,10 +36,11 @@ fi
 # Directories the tools themselves own inside the skills dir. Anchored to the
 # destination root so a skill that happens to contain e.g. `synced/` is still synced.
 # - ui-skills: managed by chezmoi external
+# - claude-recall: Claude Code plugin placed by chezmoi external
 # - .system: Codex built-in skills
 # - synced / .trash: Claude Code's synced (org/Anthropic-provided) skills and its
 #   rotation of previous copies; --delete would otherwise wipe them on every apply
-TOOL_OWNED_EXCLUDE_ARGS=(--exclude="/ui-skills" --exclude="/.system" --exclude="/synced" --exclude="/.trash")
+TOOL_OWNED_EXCLUDE_ARGS=(--exclude="/ui-skills" --exclude="/claude-recall" --exclude="/.system" --exclude="/synced" --exclude="/.trash")
 
 # Sync with --delete, but preserve external/private/tool-owned skills
 rsync -a --delete "${TOOL_OWNED_EXCLUDE_ARGS[@]}" ${EXCLUDE_ARGS[@]+"${EXCLUDE_ARGS[@]}"} ${PRIVATE_EXCLUDE_ARGS[@]+"${PRIVATE_EXCLUDE_ARGS[@]}"} "$SKILLS_SOURCE/" "$CLAUDE_SKILLS/"
