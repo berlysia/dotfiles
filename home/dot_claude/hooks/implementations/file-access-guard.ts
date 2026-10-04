@@ -12,8 +12,10 @@ import {
 } from "../lib/chezmoi-utils.ts";
 import { createDenyResponse } from "../lib/context-helpers.ts";
 import { expandTilde, getHomeDir } from "../lib/path-utils.ts";
+import { hasParentSegment, isUnderRoot } from "../lib/path-containment.ts";
 import { matchGitignorePattern } from "../lib/pattern-matcher.ts";
 import { getProjectRoot } from "../lib/project-root.ts";
+import { collectTempRoots } from "../lib/temp-roots.ts";
 import { resolveWorkflowDir } from "../lib/workflow-resolve.ts";
 import type {
   PathValidationResult,
@@ -334,54 +336,6 @@ function resolvePath(path: string): string {
     const cwd = process.env.CLAUDE_TEST_CWD || process.cwd();
     return resolve(cwd, path);
   }
-}
-
-// os.tmpdir() follows $TMPDIR, which a project's .claude/settings.json `env` can
-// override. Accepting only the exact macOS per-user shape keeps a hostile value
-// (`/`, `/var`, `~/.ssh`, the `C/` cache dir, ...) from becoming a writable root.
-const MACOS_USER_TMPDIR_SHAPE = /^\/(private\/)?var\/folders\/[^/]+\/[^/]+\/T$/;
-
-function hasParentSegment(p: string): boolean {
-  return p.split("/").includes("..");
-}
-
-/**
- * Directories the OS hands out for temporary files: `/tmp` and the per-user
- * tmpdir, each in literal and realpath form (macOS: /tmp -> /private/tmp,
- * /var -> /private/var), so a path is recognised however it was spelled.
- */
-export function collectTempRoots(
-  tmpdir: string,
-  realpath: (p: string) => string,
-): string[] {
-  const roots = new Set<string>(["/tmp"]);
-  const addRealpath = (p: string, accept: (form: string) => boolean): void => {
-    try {
-      const real = realpath(p);
-      if (accept(real)) roots.add(real);
-    } catch {
-      // Only the literal form is kept when the path cannot be resolved.
-    }
-  };
-
-  // /tmp is OS-owned, so its realpath is trusted without a shape check.
-  addRealpath("/tmp", () => true);
-
-  // Checked before resolve(): resolve("") / resolve("tmp") would silently become the cwd.
-  if (tmpdir.startsWith("/") && !hasParentSegment(tmpdir)) {
-    const literal = resolve(tmpdir); // strips the trailing slash macOS $TMPDIR carries
-    const accepted = (form: string): boolean =>
-      MACOS_USER_TMPDIR_SHAPE.test(form);
-    if (accepted(literal)) roots.add(literal);
-    addRealpath(literal, accepted);
-  }
-
-  return [...roots];
-}
-
-function isUnderRoot(p: string, root: string): boolean {
-  // "/" is the only normalized root that already ends with a separator.
-  return p === root || p.startsWith(root.endsWith("/") ? root : `${root}/`);
 }
 
 function isMissingPathError(error: unknown): boolean {
