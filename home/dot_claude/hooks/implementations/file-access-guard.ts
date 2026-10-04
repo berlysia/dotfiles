@@ -1,9 +1,9 @@
 #!/usr/bin/env -S bun run --silent
 
 import { execSync } from "node:child_process";
-import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, resolve } from "node:path";
+import { posix, resolve } from "node:path";
 import { defineHook } from "cc-hooks-ts";
 import {
   formatChezmoiRedirectMessage,
@@ -12,7 +12,13 @@ import {
 } from "../lib/chezmoi-utils.ts";
 import { createDenyResponse } from "../lib/context-helpers.ts";
 import { expandTilde, getHomeDir } from "../lib/path-utils.ts";
-import { hasParentSegment, isUnderRoot } from "../lib/path-containment.ts";
+import {
+  checkParentSegments,
+  errnoOf,
+  hasParentSegment,
+  isUnderRoot,
+  resolvePhysicalPath,
+} from "../lib/path-containment.ts";
 import { matchGitignorePattern } from "../lib/pattern-matcher.ts";
 import { getProjectRoot } from "../lib/project-root.ts";
 import { collectTempRoots } from "../lib/temp-roots.ts";
@@ -76,18 +82,28 @@ const hook = defineHook({
         tool_input as Record<string, unknown>,
       );
 
+      // Physical cwd, resolved once; undefined when it cannot be resolved.
+      const cwdResolved = resolvePhysicalPath(
+        process.env.CLAUDE_TEST_CWD || process.cwd(),
+      );
+      const cwdPhysical = cwdResolved.ok ? cwdResolved.path : undefined;
+
       const ctx: JudgeContext = {
         category: TOOL_CATEGORY[tool_name],
         allowPatterns,
         repoRoot,
         homeDir: getHomeDir(),
-        additionalDirs: additionalDirs.map((addDir) =>
-          resolve(resolvePath(addDir)),
-        ),
+        additionalDirs: additionalDirs.flatMap((addDir) => {
+          if (addDir.startsWith("/")) return [resolve(addDir)];
+          return cwdPhysical === undefined
+            ? []
+            : [resolve(cwdPhysical, addDir)];
+        }),
         tempRoots: collectTempRoots(tmpdir(), realpathSync),
         workflowDirRoots,
         systemPaths: SYSTEM_PATHS,
         caseInsensitive: process.platform === "darwin",
+        cwdPhysical,
       };
 
       // Check each path
@@ -330,34 +346,14 @@ function extractPathsFromBashCommand(command: string): string[] {
   });
 }
 
-function resolvePath(path: string): string {
-  if (path.startsWith("/")) {
-    return path;
-  }
-
-  try {
-    // Use realpathSync to properly resolve relative paths and symlinks
-    return realpathSync(path);
-  } catch {
-    // Fallback if path doesn't exist yet
-    const cwd = process.env.CLAUDE_TEST_CWD || process.cwd();
-    return resolve(cwd, path);
-  }
-}
-
-function isMissingPathError(error: unknown): boolean {
-  const code = (error as NodeJS.ErrnoException | undefined)?.code;
-  return code === "ENOENT" || code === "ENOTDIR";
-}
-
 /**
  * Whether `absTarget` is provably inside a temp root, both as written and
  * after following every symlink on the way to where the write would land.
  *
- * `..` is rejected outright: bun's realpathSync collapses `sym/..` lexically
- * (measured), while the OS resolves it through the symlink, so the physical
- * location cannot be trusted for such inputs. Legitimate scratchpad / mktemp
- * writes never need `..`.
+ * `..` is rejected outright: Node's realpath collapses `sym/..` lexically,
+ * while the OS resolves it through the symlink, so the physical location
+ * cannot be trusted for such inputs. Legitimate scratchpad / mktemp writes
+ * never need `..`.
  */
 export function isWithinTempRoots(
   absTarget: string,
@@ -367,33 +363,8 @@ export function isWithinTempRoots(
 ): boolean {
   if (!absTarget.startsWith("/") || hasParentSegment(absTarget)) return false;
   if (!roots.some((root) => isUnderRoot(absTarget, root))) return false;
-
-  // The target may not exist yet (Write creating a file), so resolve the
-  // nearest existing ancestor and re-attach the missing tail.
-  const tail: string[] = [];
-  let current = absTarget;
-  for (;;) {
-    try {
-      const physical = join(realpath(current), ...tail);
-      return roots.some((root) => isUnderRoot(physical, root));
-    } catch (error) {
-      if (!isMissingPathError(error)) return false; // EACCES, ELOOP, ...: fail closed
-    }
-
-    // realpath reports ENOENT for a dangling symlink too; its target is
-    // unknown, so the link could point anywhere.
-    try {
-      lstat(current);
-      return false;
-    } catch (error) {
-      if (!isMissingPathError(error)) return false;
-    }
-
-    const parent = dirname(current);
-    if (parent === current) return false; // reached "/" and it cannot be resolved
-    tail.unshift(basename(current));
-    current = parent;
-  }
+  const physical = resolvePhysicalPath(absTarget, { realpath, lstat });
+  return physical.ok && roots.some((root) => isUnderRoot(physical.path, root));
 }
 
 /**
@@ -459,10 +430,11 @@ export interface JudgeContext {
   repoRoot: string;
   homeDir: string;
   additionalDirs: string[]; // already absolute, no trailing slash
-  tempRoots: string[]; // T4: read by validatePath (step 1.5). T5: read by judge
-  workflowDirRoots: string[]; // T4: read by validatePath (step 1.6). T5: read by judge
+  tempRoots: string[]; // written and realpath forms (collectTempRoots)
+  workflowDirRoots: string[]; // written and realpath forms
   systemPaths: string[]; // SYSTEM_PATHS in production; tests may narrow it
   caseInsensitive: boolean; // process.platform === "darwin" in production
+  cwdPhysical: string | undefined; // resolvePhysicalPath(CLAUDE_TEST_CWD || process.cwd()), undefined when it cannot be resolved
 }
 
 export interface Judgement {
@@ -471,34 +443,100 @@ export interface Judgement {
   reason?: string;
 }
 
-export function judge(form: string, ctx: JudgeContext): Judgement {
+function stripTrailingSlash(p: string): string {
+  return p.length > 1 && p.endsWith("/") ? p.slice(0, -1) : p;
+}
+
+// No cache: one invocation judges a handful of paths, and module-level state
+// would leak between tests that rebuild symlinks under the same name.
+function realpathOrUndefined(p: string): string | undefined {
+  const resolved = resolvePhysicalPath(p);
+  return resolved.ok ? resolved.path : undefined;
+}
+
+/** Rewrites a realpath(HOME) / realpath(repoRoot) prefix to the written root. */
+function mapToWrittenRoots(form: string, ctx: JudgeContext): string {
+  let best: { real: string; written: string } | undefined;
+  // repoRoot first, so that it wins when both prefixes have the same length.
+  for (const written of [ctx.repoRoot, ctx.homeDir]) {
+    const real = realpathOrUndefined(written);
+    if (real === undefined || real === written || !isUnderRoot(form, real))
+      continue;
+    if (best === undefined || real.length > best.real.length)
+      best = { real, written };
+  }
+  return best === undefined
+    ? form
+    : best.written + form.slice(best.real.length);
+}
+
+// The written root, plus its realpath when judging the physical form. The
+// written value is always kept, so a root that cannot be resolved still counts.
+function rootCandidates(root: string, physical: boolean): string[] {
+  if (!physical) return [root];
+  const real = realpathOrUndefined(root);
+  return real === undefined || real === root ? [root] : [root, real];
+}
+
+export function judge(
+  form: string,
+  ctx: JudgeContext,
+  physical: boolean,
+): Judgement {
   // 1. Repository -> always allowed
   if (isUnderRoot(form, ctx.repoRoot)) {
     return { allowed: true, step: "1-repo" };
   }
 
+  // 1.5. Under an OS temp dir -> allowed, ahead of the system-directory deny.
+  // On macOS os.tmpdir() is under /var/folders, unreachable after the blanket
+  // /var deny. collectTempRoots returns the written and the realpath forms, so
+  // one comparison serves both the lexical and the physical judgement.
+  if (ctx.tempRoots.some((root) => isUnderRoot(form, root))) {
+    return { allowed: true, step: "1.5-temp" };
+  }
+
+  // 1.6. The session's workflow dir. It stays under the project root even
+  // when the repo root is a linked worktree (spec K10), so it is outside
+  // repoRoot whenever work happens inside a worktree.
+  if (ctx.workflowDirRoots.some((root) => isUnderRoot(form, root))) {
+    return { allowed: true, step: "1.6-workflow" };
+  }
+
   // 2. System directories -> always denied (an allow pattern cannot override)
+  const subject = ctx.caseInsensitive ? form.toLowerCase() : form;
   for (const systemPath of ctx.systemPaths) {
-    if (form.startsWith(`${systemPath}/`)) {
-      return {
-        allowed: false,
-        step: "2-system",
-        reason: `Access to system directory '${systemPath}' is always denied for security`,
-      };
+    const candidates = [
+      systemPath,
+      ...(physical ? [realpathOrUndefined(systemPath)] : []),
+    ].filter((c): c is string => c !== undefined);
+    for (const candidate of candidates) {
+      const cmp = ctx.caseInsensitive ? candidate.toLowerCase() : candidate;
+      if (subject.startsWith(`${cmp}/`)) {
+        return {
+          allowed: false,
+          step: "2-system",
+          reason: `Access to system directory '${systemPath}' is always denied for security`,
+        };
+      }
     }
   }
 
   // 3. Always-safe paths
   const alwaysSafePaths = [join(ctx.homeDir, ".claude"), "/var/tmp"];
   for (const safePath of alwaysSafePaths) {
-    if (form.startsWith(`${safePath}/`) || form === safePath) {
+    if (
+      rootCandidates(safePath, physical).some((root) => isUnderRoot(form, root))
+    ) {
       return { allowed: true, step: "3-safe" };
     }
   }
 
   // 4. additionalDirectories: read is automatic, write needs an allow pattern
   for (const addDir of ctx.additionalDirs) {
-    if (isUnderRoot(form, addDir)) {
+    if (
+      rootCandidates(addDir, physical).some((root) => isUnderRoot(form, root))
+    ) {
       if (ctx.category === "read") {
         return { allowed: true, step: "4-additional" };
       }
@@ -511,7 +549,8 @@ export function judge(form: string, ctx: JudgeContext): Judgement {
     }
   }
 
-  // 5. Explicit permissions.allow match
+  // 5. Explicit permissions.allow match. Patterns are never realpath'd: a
+  // symlink the agent can plant must not move the allowed range.
   if (checkAllowPatterns(form, ctx.allowPatterns)) {
     return { allowed: true, step: "5-pattern" };
   }
@@ -546,40 +585,123 @@ export function judge(form: string, ctx: JudgeContext): Judgement {
   };
 }
 
-function validatePath(path: string, ctx: JudgeContext): PathValidationResult {
-  const absPath = resolvePath(path);
+interface DenyFields {
+  message: string;
+  lexical: string;
+  physical?: string;
+  unresolvable?: string;
+  form?: "lexical" | "physical";
+  step: string;
+}
 
-  // 1.5. Under an OS temp dir -> allowed, ahead of the system-directory deny.
-  // On macOS os.tmpdir() is under /var/folders, unreachable after the blanket
-  // /var deny. `..` must survive, so the raw absolute path is used, not absPath.
-  const rawAbs = path.startsWith("/")
-    ? path
-    : `${process.env.CLAUDE_TEST_CWD || process.cwd()}/${path}`;
-
-  // The repository check comes first in the original order; judge repeats it,
-  // so only the temp-root steps need to run before it when the repo misses.
-  if (!isUnderRoot(absPath, ctx.repoRoot)) {
-    if (isWithinTempRoots(rawAbs, ctx.tempRoots, realpathSync, lstatSync)) {
-      return { isAllowed: true, resolvedPath: absPath };
-    }
-
-    // 1.6. The session's workflow dir. It stays under the project root even
-    // when the repo root is a linked worktree (spec K10), so it is outside
-    // repoRoot whenever work happens inside a worktree.
-    if (
-      ctx.workflowDirRoots.length > 0 &&
-      isWithinTempRoots(rawAbs, ctx.workflowDirRoots, realpathSync, lstatSync)
-    ) {
-      return { isAllowed: true, resolvedPath: absPath };
-    }
+function deny(fields: DenyFields): PathValidationResult {
+  const lines = [fields.message, `lexical=${fields.lexical}`];
+  if (fields.physical !== undefined) lines.push(`physical=${fields.physical}`);
+  if (fields.unresolvable !== undefined) {
+    lines.push(`unresolvable=${fields.unresolvable}`);
   }
-
-  const judgement = judge(absPath, ctx);
+  if (fields.form !== undefined) lines.push(`denied-form=${fields.form}`);
+  lines.push(`step=${fields.step}`);
+  if (fields.form === "physical") {
+    lines.push(
+      `hint: the path resolves through a symlink to ${fields.physical}; to allow it, add that location to additionalDirectories or an allow pattern`,
+    );
+  } else if (fields.unresolvable === "EDANGLING") {
+    lines.push(
+      "hint: the path is a symlink whose target does not exist; create the target or remove the link",
+    );
+  } else if (fields.unresolvable === "ELOOP") {
+    lines.push("hint: the path goes through a symlink loop; remove the loop");
+  } else if (fields.unresolvable === "EACCES") {
+    lines.push(
+      "hint: a directory on the path cannot be read; check its permissions",
+    );
+  }
   return {
-    isAllowed: judgement.allowed,
-    resolvedPath: absPath,
-    ...(judgement.reason === undefined ? {} : { reason: judgement.reason }),
+    isAllowed: false,
+    resolvedPath: fields.physical ?? fields.lexical,
+    reason: lines.join("\n"),
   };
+}
+
+function validatePath(path: string, ctx: JudgeContext): PathValidationResult {
+  try {
+    // 1. `..`
+    const parent = checkParentSegments(path);
+    if (!parent.ok) {
+      return deny({
+        message:
+          parent.kind === "absolute"
+            ? "An absolute path may not contain a .. segment. Write the path without .."
+            : "A relative path may only start with .. segments. Collapse the .. or use an absolute path without ..",
+        lexical: path,
+        step: "parent-segment",
+      });
+    }
+
+    // 2. lexical and physical forms
+    const isAbsolute = path.startsWith("/");
+    let lexical: string;
+    if (isAbsolute) {
+      lexical = stripTrailingSlash(posix.normalize(path));
+    } else {
+      if (ctx.cwdPhysical === undefined) {
+        return deny({
+          message: "The working directory cannot be resolved",
+          lexical: path,
+          unresolvable: "ECWD",
+          step: "cwd",
+        });
+      }
+      lexical = resolve(ctx.cwdPhysical, path);
+    }
+    const physical = resolvePhysicalPath(lexical);
+    if (!physical.ok) {
+      return deny({
+        message:
+          "The path cannot be resolved, so where it lands cannot be checked",
+        lexical,
+        unresolvable: physical.code,
+        step: "resolve",
+      });
+    }
+
+    // 3. map realpath(HOME) / realpath(repoRoot) prefixes back to the written form.
+    // A relative path was resolved from the physical cwd, so it gets the same mapping.
+    const physicalForm = mapToWrittenRoots(physical.path, ctx);
+    const lexicalForm = isAbsolute ? lexical : mapToWrittenRoots(lexical, ctx);
+
+    // 4-5. both forms must be allowed. The physical judgement is never skipped:
+    // only it compares the deny list and the roots in their realpath form.
+    const lexicalJudgement = judge(lexicalForm, ctx, false);
+    if (!lexicalJudgement.allowed) {
+      return deny({
+        message: lexicalJudgement.reason ?? "Access is not allowed",
+        lexical: lexicalForm,
+        physical: physicalForm,
+        form: "lexical",
+        step: lexicalJudgement.step,
+      });
+    }
+    const physicalJudgement = judge(physicalForm, ctx, true);
+    if (!physicalJudgement.allowed) {
+      return deny({
+        message: physicalJudgement.reason ?? "Access is not allowed",
+        lexical: lexicalForm,
+        physical: physicalForm,
+        form: "physical",
+        step: physicalJudgement.step,
+      });
+    }
+    return { isAllowed: true, resolvedPath: lexicalForm };
+  } catch (error) {
+    return deny({
+      message: "The path could not be checked",
+      lexical: path,
+      unresolvable: errnoOf(error),
+      step: "exception",
+    });
+  }
 }
 
 function checkAllowPatterns(

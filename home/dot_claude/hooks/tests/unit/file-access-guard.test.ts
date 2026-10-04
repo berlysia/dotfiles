@@ -16,6 +16,8 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import fileAccessGuardHook, {
   getAllowPatterns,
   isWithinTempRoots,
+  judge,
+  type JudgeContext,
 } from "../../implementations/file-access-guard.ts";
 import { collectTempRoots } from "../../lib/temp-roots.ts";
 import { deriveDefaultWorkflowDir } from "../../lib/workflow-paths.ts";
@@ -536,6 +538,237 @@ describe("file-access-guard.ts hook behavior", () => {
     });
   });
 
+  // Real files under process.cwd()/.tmp: outside os.tmpdir(), so the temp-root
+  // step does not decide these cases.
+  describe("lexical and physical forms (spec K1-K3)", () => {
+    let base = "";
+    let repo = "";
+    let outside = "";
+    let home = "";
+
+    beforeEach(() => {
+      mkdirSync(join(process.cwd(), ".tmp"), { recursive: true });
+      base = realpathSync(mkdtempSync(join(process.cwd(), ".tmp", "fag-k1-")));
+      repo = join(base, "repo");
+      outside = join(base, "outside");
+      home = join(base, "home");
+      for (const d of [join(repo, "src"), outside, join(home, ".claude")]) {
+        mkdirSync(d, { recursive: true });
+      }
+      envHelper.set("HOME", home);
+      envHelper.set("CLAUDE_TEST_REPO_ROOT", repo);
+      envHelper.set("CLAUDE_TEST_CWD", join(repo, "src"));
+      envHelper.set("DOCUMENT_WORKFLOW_DIR", undefined);
+    });
+    afterEach(() => {
+      envHelper.restore();
+      rmSync(base, { recursive: true, force: true });
+    });
+
+    const run = async (tool: string, input: Record<string, unknown>) => {
+      const ctx = createPreToolUseContextFor(fileAccessGuardHook, tool, input);
+      await invokeRun(fileAccessGuardHook, ctx);
+      return ctx;
+    };
+    const reasonOf = (ctx: { jsonCalls: any[] }): string =>
+      ctx.jsonCalls[0]?.hookSpecificOutput?.permissionDecisionReason ?? "";
+
+    it("denies an absolute path with .. even when it stays inside the repo", async () => {
+      const ctx = await run("Read", { file_path: `${repo}/src/../README.md` });
+      ctx.assertDeny();
+      ok(reasonOf(ctx).includes("step=parent-segment"));
+    });
+
+    it("denies an absolute path with .. that leaves the repo", async () => {
+      (await run("Read", { file_path: `${repo}/../outside/a` })).assertDeny();
+    });
+
+    it("allows a relative path that starts with ..", async () => {
+      (await run("Read", { file_path: "../README.md" })).assertSuccess({});
+    });
+
+    it("treats ./../x like ../x", async () => {
+      (await run("Read", { file_path: "./../README.md" })).assertSuccess({});
+    });
+
+    it("denies a relative path with .. after a name", async () => {
+      const ctx = await run("Read", { file_path: "a/../b" });
+      ctx.assertDeny();
+      ok(reasonOf(ctx).includes("step=parent-segment"));
+    });
+
+    it("denies a leading .. that lands outside the repo", async () => {
+      (await run("Read", { file_path: "../../outside/a" })).assertDeny();
+    });
+
+    it("denies a symlink in the repo that points outside", async () => {
+      symlinkSync(outside, join(repo, "link"));
+      const ctx = await run("Read", { file_path: join(repo, "link", "a") });
+      ctx.assertDeny();
+      const reason = reasonOf(ctx);
+      ok(reason.includes("denied-form=physical"));
+      ok(reason.includes(`physical=${join(outside, "a")}`));
+      ok(reason.includes(`lexical=${join(repo, "link", "a")}`));
+    });
+
+    it("denies a relative path through a symlink that points outside", async () => {
+      symlinkSync(outside, join(repo, "src", "link"));
+      const ctx = await run("Read", { file_path: "link/a" });
+      ctx.assertDeny();
+      ok(reasonOf(ctx).includes("denied-form=physical"));
+    });
+
+    it("denies a symlink in the repo that points into a system directory", async () => {
+      symlinkSync("/etc", join(repo, "etc-link"));
+      const ctx = await run("Read", {
+        file_path: join(repo, "etc-link", "passwd"),
+      });
+      ctx.assertDeny();
+      const reason = reasonOf(ctx);
+      ok(reason.includes("denied-form=physical"));
+      ok(reason.includes("step=2-system"));
+    });
+
+    it("denies a symlink under ~/.claude that points outside", async () => {
+      symlinkSync(outside, join(home, ".claude", "sym"));
+      const ctx = await run("Read", {
+        file_path: join(home, ".claude", "sym", "a"),
+      });
+      ctx.assertDeny();
+      ok(reasonOf(ctx).includes("denied-form=physical"));
+    });
+
+    it("allows a symlink in the repo that points inside the repo", async () => {
+      symlinkSync(join(repo, "src"), join(repo, "alias"));
+      (
+        await run("Read", { file_path: join(repo, "alias", "a.ts") })
+      ).assertSuccess({});
+    });
+
+    it("allows a symlink under a temp root that points into the repo", async () => {
+      const dir = mkdtempSync(join(realpathSync("/tmp"), "fag-cross-"));
+      try {
+        symlinkSync(join(repo, "src"), join(dir, "into-repo"));
+        (
+          await run("Read", { file_path: join(dir, "into-repo", "a.ts") })
+        ).assertSuccess({});
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it("denies NotebookEdit through a symlink that points outside", async () => {
+      symlinkSync(outside, join(repo, "nb-link"));
+      const ctx = await run("NotebookEdit", {
+        notebook_path: join(repo, "nb-link", "n.ipynb"),
+        new_source: "x",
+      });
+      ctx.assertDeny();
+      ok(reasonOf(ctx).includes("denied-form=physical"));
+    });
+
+    it("denies a relative path when the working directory cannot be resolved", async () => {
+      symlinkSync(join(base, "nowhere"), join(repo, "dangling-cwd"));
+      envHelper.set("CLAUDE_TEST_CWD", join(repo, "dangling-cwd"));
+      const ctx = await run("Read", { file_path: "a.ts" });
+      ctx.assertDeny();
+      ok(reasonOf(ctx).includes("step=cwd"));
+    });
+
+    it("denies a dangling symlink with an unresolvable code", async () => {
+      symlinkSync(join(base, "nowhere"), join(repo, "dangling"));
+      const ctx = await run("Write", {
+        file_path: join(repo, "dangling"),
+        content: "x",
+      });
+      ctx.assertDeny();
+      ok(reasonOf(ctx).includes("unresolvable=EDANGLING"));
+    });
+
+    it("allows a file that does not exist yet", async () => {
+      (
+        await run("Write", {
+          file_path: join(repo, "new", "dir", "f.ts"),
+          content: "x",
+        })
+      ).assertSuccess({});
+    });
+
+    it("normalizes // and /./ in an absolute path", async () => {
+      (await run("Read", { file_path: `${repo}//src/./a.ts` })).assertSuccess(
+        {},
+      );
+    });
+
+    it("does not let an allow pattern override a symlink that leaves its directory", async () => {
+      const allowed = join(base, "allowed");
+      mkdirSync(allowed);
+      symlinkSync(outside, join(allowed, "sym"));
+      writeFileSync(
+        join(home, ".claude", "settings.json"),
+        JSON.stringify({ permissions: { allow: [`Edit(${allowed}/**)`] } }),
+      );
+      (
+        await run("Write", { file_path: join(allowed, "ok.txt"), content: "x" })
+      ).assertSuccess({});
+      const ctx = await run("Write", {
+        file_path: join(allowed, "sym", "x"),
+        content: "x",
+      });
+      ctx.assertDeny();
+      ok(reasonOf(ctx).includes("denied-form=physical"));
+    });
+
+    it("accepts an additional directory that is itself a symlink", async () => {
+      const real = join(base, "extra-real");
+      mkdirSync(real);
+      symlinkSync(real, join(base, "extra"));
+      writeFileSync(
+        join(home, ".claude", "settings.json"),
+        JSON.stringify({ additionalDirectories: [join(base, "extra")] }),
+      );
+      (
+        await run("Read", { file_path: join(base, "extra", "a") })
+      ).assertSuccess({});
+    });
+
+    it("accepts ~/.claude when it is itself a symlink", async () => {
+      rmSync(join(home, ".claude"), { recursive: true });
+      const real = join(base, "claude-real");
+      mkdirSync(real);
+      symlinkSync(real, join(home, ".claude"));
+      (
+        await run("Read", { file_path: join(home, ".claude", "a") })
+      ).assertSuccess({});
+    });
+
+    it("maps the physical form back when the repo root is reached through a symlink", async () => {
+      symlinkSync(repo, join(base, "repo-link"));
+      envHelper.set("CLAUDE_TEST_REPO_ROOT", join(base, "repo-link"));
+      envHelper.set("CLAUDE_TEST_CWD", join(base, "repo-link", "src"));
+      (
+        await run("Read", { file_path: join(base, "repo-link", "src", "a.ts") })
+      ).assertSuccess({});
+      (await run("Read", { file_path: "../README.md" })).assertSuccess({});
+    });
+
+    it("matches a ~ allow pattern when HOME itself is a symlink", async () => {
+      symlinkSync(home, join(base, "home-link"));
+      envHelper.set("HOME", join(base, "home-link"));
+      mkdirSync(join(home, "foo"));
+      writeFileSync(
+        join(home, ".claude", "settings.json"),
+        JSON.stringify({ permissions: { allow: ["Edit(~/foo/**)"] } }),
+      );
+      (
+        await run("Write", {
+          file_path: join(base, "home-link", "foo", "x"),
+          content: "x",
+        })
+      ).assertSuccess({});
+    });
+  });
+
   describe("temp roots (HOME isolated)", () => {
     const TMP = realpathSync("/tmp");
     const MAC_TMPDIR = "/var/folders/ab/cd/T/";
@@ -656,6 +889,51 @@ describe("file-access-guard.ts hook behavior", () => {
       const hook = fileAccessGuardHook;
       const context = createPreToolUseContextFor(hook, "Bash", {
         command: "cat /tmp/../etc/passwd",
+      });
+      await invokeRun(hook, context);
+      context.assertDeny();
+    });
+
+    it("should deny a symlink under /tmp that points outside even with Edit(/tmp/**)", async () => {
+      mkdirSync(join(H, ".claude"), { recursive: true });
+      writeFileSync(
+        join(H, ".claude", "settings.json"),
+        JSON.stringify({ permissions: { allow: ["Edit(/tmp/**)"] } }),
+      );
+      mkdirSync(join(process.cwd(), ".tmp"), { recursive: true });
+      const dir = mkdtempSync(join(TMP, "fag-sym-"));
+      const outsideTmp = mkdtempSync(join(process.cwd(), ".tmp", "fag-out-"));
+      try {
+        symlinkSync(outsideTmp, join(dir, "sym"));
+        const hook = fileAccessGuardHook;
+        const context = createPreToolUseContextFor(hook, "Write", {
+          file_path: join(dir, "sym", "x"),
+          content: "x",
+        });
+        await invokeRun(hook, context);
+        context.assertDeny();
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+        rmSync(outsideTmp, { recursive: true, force: true });
+      }
+    });
+
+    it("should not treat TMPDIR=/run/user/1000 as a temp root", async () => {
+      envHelper.set("TMPDIR", "/run/user/1000");
+      const hook = fileAccessGuardHook;
+      const context = createPreToolUseContextFor(hook, "Write", {
+        file_path: "/run/user/1000/x",
+        content: "x",
+      });
+      await invokeRun(hook, context);
+      context.assertDeny();
+    });
+
+    it("should keep denying /var/tmp (the safe-path entry is unreachable)", async () => {
+      const hook = fileAccessGuardHook;
+      const context = createPreToolUseContextFor(hook, "Write", {
+        file_path: "/var/tmp/x",
+        content: "x",
       });
       await invokeRun(hook, context);
       context.assertDeny();
@@ -1054,3 +1332,51 @@ function isPathWithinRepo(path: string, repoRoot: string): boolean {
 
   return false;
 }
+
+describe("judge: the system-directory deny list", () => {
+  let base = "";
+  beforeEach(() => {
+    mkdirSync(join(process.cwd(), ".tmp"), { recursive: true });
+    base = realpathSync(mkdtempSync(join(process.cwd(), ".tmp", "fag-sys-")));
+    mkdirSync(join(base, "sys-real"));
+    symlinkSync(join(base, "sys-real"), join(base, "sys-link"));
+  });
+  afterEach(() => {
+    rmSync(base, { recursive: true, force: true });
+  });
+
+  const ctxWith = (over: Partial<JudgeContext>): JudgeContext => ({
+    category: "read",
+    allowPatterns: [],
+    repoRoot: "/nonexistent/repo",
+    homeDir: "/nonexistent/home",
+    additionalDirs: [],
+    tempRoots: [],
+    workflowDirRoots: [],
+    systemPaths: [],
+    caseInsensitive: false,
+    cwdPhysical: undefined,
+    ...over,
+  });
+
+  it("denies the real location of a system directory that is a symlink", () => {
+    const ctx = ctxWith({
+      systemPaths: [join(base, "sys-link")],
+      allowPatterns: [`Read(${base}/**)`],
+    });
+    const form = join(base, "sys-real", "x");
+    deepStrictEqual(judge(form, ctx, true).step, "2-system");
+    deepStrictEqual(judge(form, ctx, true).allowed, false);
+    // The lexical judgement does not resolve the list, so it reaches step 5.
+    deepStrictEqual(judge(form, ctx, false).step, "5-pattern");
+  });
+
+  it("compares the deny list case-insensitively when asked to", () => {
+    const ctx = ctxWith({ systemPaths: ["/etc"], caseInsensitive: true });
+    deepStrictEqual(judge("/ETC/x", ctx, false).step, "2-system");
+    deepStrictEqual(
+      judge("/ETC/x", ctxWith({ systemPaths: ["/etc"] }), false).step,
+      "default",
+    );
+  });
+});
