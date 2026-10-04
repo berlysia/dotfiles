@@ -432,7 +432,8 @@ dev server を portless に通す構成（3 節）を、2 台の machine（X は
 
 手順から外れたところ:
 
-- `chezmoi apply` はせず、launcher はこの変更の版を取り出して直接実行した。VM は変更前の dotfiles から作られていて、mise の設定に portless は入っていない。portless は `mise exec portless@0.15.6 --` で動かした。
+- V30〜V32 の間は `chezmoi apply` をせず、launcher はこの変更の版を取り出して直接実行した。VM は変更前の dotfiles から作られていて、mise の設定に portless は入っていなかった。portless は `mise exec portless@0.15.6 --` で動かした。
+- mise の設定からの導入（V33）は、その後に確かめた。mac には、この変更が変える 4 つのファイルだけを apply した（ブランチが master より古く、全体を apply するとほかの変更が巻き戻るため）。VM は Y だけで確かめ、X では確かめていない。
 - V32 は、`/tmp/vx` に repo を作る代わりに、dotfiles の repo の既存の linked worktree（ブランチ `fix/workflow-identity`）で行った。サーバーは自分の cwd を返すものを使った。
 - V31 の手順 5 は、`portless run` を起動し直す代わりに `portless proxy start` を使った。
 - V30 の手順 4 だけを Chrome 本体で行い、V31 の手順 6 はアプリ内ブラウザ（Chromium）で行った。
@@ -454,6 +455,7 @@ dev server を portless に通す構成（3 節）を、2 台の machine（X は
   - `~/.portless/proxy.log` に hosts を含む行は無かった。
   - `portless list` は、起動した 3 つの経路を表示した。
   - mac と両方の VM で、mise が portless 0.15.6 を install でき、`portless --version` は 0.15.6 を返した。
+  - その後、この変更の `~/.config/mise/config.toml` を mac に apply し、Y にはこの変更の dotfiles で bootstrap をやり直した。mac と Y のどちらでも、`mise ls portless` は `portless  0.15.6  ~/.config/mise/config.toml  0.15.6` を返した。Y で portless を外してから `mise install` を実行すると、設定の行だけから 0.15.6 が入った（1.5 秒）。
 
 記録だけの項目:
 
@@ -470,6 +472,6 @@ dev server を portless に通す構成（3 節）を、2 台の machine（X は
 
 - 観測（原因未特定）: `portless proxy stop` は、4 回のうち 3 回、`Failed to stop proxy: ENOENT: no such file or directory, unlink '/home/berlysia/.portless/proxy.pid'` と表示した。その 3 回とも proxy は止まっていて、終了コードは 0 だった。
 - 観測: package.json の `name` が `@berlysia-dotfiles/root` の repo は、`root` という名前になった。
-- 未確認: mise の設定（`portless = "0.15.6"`）から、host と VM に portless が入ること（V33 の `mise ls portless`）。`chezmoi apply` の後に確かめる。
+- 観測: Y の bootstrap の 1 回目は、mac のディスクの空きが無くなって失敗した（launcher は `failed unexpectedly`、続く `orb` は `wait for sconrpc ready event: ... EOF`）。空きを作ってからやり直すと、終了コード 0 で通った。何がディスクを埋めたかは切り分けていない。
 - 未確認: Chrome 本体での cookie の挙動。
 - 未確認: ポートが付け替わった起動での、回復手順の表示。実機では付け替えを起こしていない。
