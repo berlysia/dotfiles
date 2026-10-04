@@ -63,10 +63,83 @@ derive_machine_name() { # repo_root
 
 meta_path() { printf '%s/machines/%s\n' "$AGENT_VM_STATE_DIR" "$1"; }
 
-write_machine_meta() { # machine repo_path
+# portless proxy ports (docs/agent-vm.md, #207): one per machine, so two machines never contend for the port a person
+# opens on the mac. Above 1023 (no sudo in the VM), clear of portless's app range 4000-4999 and fallback 1355, of
+# common dev server ports and of the ephemeral ranges.
+PROXY_PORT_MIN=17300
+PROXY_PORT_MAX=17399
+
+# The one test for a usable proxy port: five digits without a leading zero, inside the range. The digit test comes
+# first because bash arithmetic reads a leading 0 as octal (041624 is 17300; 017308 is an error).
+valid_proxy_port() { # value
+  [[ "$1" =~ ^[1-9][0123456789][0123456789][0123456789][0123456789]$ ]] || return 1
+  [[ "$1" -ge "$PROXY_PORT_MIN" && "$1" -le "$PROXY_PORT_MAX" ]]
+}
+
+# Guards the choice of a proxy port across every machine's record. Held by assign_proxy_port only while the records
+# are read and one is written: no orb call and no other lock under it, and it is released before the repo lock (fd 9)
+# is taken.
+acquire_port_lock() { # max_wait_seconds; holds fd 6 until release_port_lock or process exit
+  local waited=0
+  mkdir -p "$AGENT_VM_STATE_DIR" || return 1
+  { exec 6>"$AGENT_VM_STATE_DIR/ports.lock"; } 2>/dev/null || return 1
+  until perl -MFcntl=:flock -e 'open(my $f, ">&=", 6) or die "fdopen: $!"; flock($f, LOCK_EX | LOCK_NB) or exit 1'; do
+    if [[ "$waited" -ge "$1" ]]; then exec 6>&-; return 1; fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+}
+release_port_lock() { exec 6>&-; }
+
+pick_proxy_port() { # machine -> the port to record, or nothing when every slot is held. Reads only; caller holds the port lock
+  local f m p own="" taken=" "
+  for f in "$AGENT_VM_STATE_DIR"/machines/*; do
+    [[ -f "$f" && "$f" != *.lock ]] || continue
+    m=$(basename "$f")
+    p=$(read_meta_field "$m" proxy_port) || continue
+    valid_proxy_port "$p" || continue
+    if [[ "$m" == "$1" ]]; then own=$p; else taken+="$p "; fi
+  done
+  if [[ -n "$own" && "$taken" != *" $own "* ]]; then printf '%s\n' "$own"; return 0; fi
+  for ((p = PROXY_PORT_MIN; p <= PROXY_PORT_MAX; p++)); do
+    if [[ "$taken" != *" $p "* ]]; then printf '%s\n' "$p"; return 0; fi
+  done
+  return 0 # a full pool is not an error here: the caller sees an empty answer
+}
+
+# machines/<m> records: format=1, repo_path, proxy_port (optional). Keys are only ever added and read_meta_field
+# ignores the ones it does not know; nothing checks this record's format number. The record is rewritten whole on
+# every launch, so a call without the third argument drops proxy_port: assign_proxy_port is the caller that passes a
+# port, and a key added later has to be read back and passed in the same way.
+write_machine_meta() { # machine repo_path [proxy_port]: takes no lock; written whole through a hidden temp file
+  local port_line="" tmp
   case "$2" in *$'\n'*) die "repository path contains a newline; refusing to launch" ;; esac
-  mkdir -p "$AGENT_VM_STATE_DIR/machines"
-  printf 'format=1\nrepo_path=%s\n' "$2" >"$(meta_path "$1")"
+  mkdir -p "$AGENT_VM_STATE_DIR/machines" || return 1
+  if valid_proxy_port "${3:-}"; then port_line="proxy_port=$3"$'\n'; fi
+  # Hidden name: machines/* never lists it. Replaced whole so a concurrent reader never sees a half-written record.
+  tmp=$(mktemp "$AGENT_VM_STATE_DIR/machines/.$1.XXXXXX") || return 1
+  printf 'format=1\nrepo_path=%s\n%s' "$2" "$port_line" >"$tmp" || { rm -f "$tmp"; return 1; }
+  mv "$tmp" "$(meta_path "$1")" || { rm -f "$tmp"; return 1; }
+}
+
+# One assignment: under the port lock, read the port this machine held, pick, write. Sets PROXY_PORT (empty when the
+# pool is full) and PROXY_PORT_PREV (empty when the record held no valid port) only after the record is written, so a
+# port that was not recorded is never announced. Never call it in a subshell: the two globals are its result.
+assign_proxy_port() { # machine repo_path
+  local prev port
+  # Checked before the lock is taken, so the refusal write_machine_meta would make never happens under the lock.
+  case "$2" in *$'\n'*) die "repository path contains a newline; refusing to launch" ;; esac
+  acquire_port_lock 30 || die "could not take the proxy port lock ($AGENT_VM_STATE_DIR/ports.lock): another agent-vm is holding it, or the state directory is not writable"
+  prev=$(read_meta_field "$1" proxy_port) || prev=""
+  valid_proxy_port "$prev" || prev=""
+  port=$(pick_proxy_port "$1")
+  if ! write_machine_meta "$1" "$2" "$port"; then
+    release_port_lock
+    die "could not write the machine record for $1"
+  fi
+  release_port_lock
+  PROXY_PORT=$port
+  PROXY_PORT_PREV=$prev
 }
 
 read_meta_field() { # machine key -> value after the first '=' (unknown keys are ignored)
@@ -102,9 +175,9 @@ check_health() {
   run_with_timeout 3 orb status >/dev/null 2>&1 </dev/null 9>&- || die "OrbStack is not responding. $FAIL_CLOSED_HINT"
 }
 
-# Non-interactive orb call: no lock fd may reach orb (fd 9 repo, fd 8 browser store, fd 7 golden), or a lingering
+# Non-interactive orb call: no lock fd may reach orb (fd 9 repo, fd 8 browser store, fd 7 golden, fd 6 proxy port), or a lingering
 # orb process keeps the lock held after the launcher exits (spec K3).
-orb_q() { orb "$@" </dev/null 9>&- 8>&- 7>&-; }
+orb_q() { orb "$@" </dev/null 9>&- 8>&- 7>&- 6>&-; }
 
 # machine -> its state (running|stopped; "present" for a row without one), or "" when it does not exist.
 # A failed `orb list` dies instead of reading as "absent", which would send a launch into clone-and-discard.
@@ -144,6 +217,7 @@ golden_dir() { printf '%s/golden\n' "$AGENT_VM_STATE_DIR"; }
 
 # Same flock scheme as acquire_lock, on fd 7 (fd 9 is the repo lock, fd 8 the browser store lock). Order: fd 9, then
 # fd 7; fd 8 is taken only after fd 7 is released. `agent-vm golden refresh|rm` take only fd 7 (spec K3).
+# The proxy port lock (fd 6) is taken and released by assign_proxy_port before fd 9, and never held with another lock.
 acquire_golden_lock() { # max_wait_seconds; holds fd 7 until release_golden_lock or process exit
   local waited=0
   mkdir -p "$(golden_dir)" || return 1
@@ -417,7 +491,7 @@ verify_machine_config() { # machine expected_mounts -> 0, or 1 with the reason o
 }
 
 # golden/meta: format=1, cloud_init_hash, contract, state (sealed|updating), staging_hash. Not read with
-# read_meta_field: machines/<m> records are a different schema under the same format number.
+# read_meta_field: machines/<m> records are a different schema under the same format number. Their keys are listed at write_machine_meta.
 golden_meta_field() { # key -> value; exit 1 when the record or the key is absent, 2 when its format is unknown
   local f
   f="$(golden_dir)/meta"
