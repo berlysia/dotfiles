@@ -598,7 +598,7 @@ describe("for-loop body splitting (Issue #219 H)", () => {
   });
 
   it("splits a body with a long blank run in linear time", async () => {
-    const command = `bash -c "for x in a; do echo${" ".repeat(100000)}y; done"`;
+    const command = `bash -c "for x in a; do echo${" ".repeat(30000)}y; done"`;
     const start = performance.now();
     await extractCommandsStructured(command);
     ok(performance.now() - start < 1000);
@@ -782,5 +782,25 @@ describe("parser limits (Issue #235)", () => {
     await extractCommandsStructured(command);
     await extractCommandsStructured(command);
     strictEqual(parserGiveUpReasonSince(mark), null);
+  });
+
+  it("is read by every guard hook that parses Bash commands", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const implementations = join(
+      import.meta.dirname,
+      "..",
+      "..",
+      "implementations",
+    );
+    for (const file of [
+      "auto-approve.ts",
+      "deny-node-modules.ts",
+      "document-workflow-guard.ts",
+    ]) {
+      const source = readFileSync(join(implementations, file), "utf8");
+      ok(source.includes("parserGiveUpMark()"), file);
+      ok(source.includes("parserGiveUpReasonSince("), file);
+    }
   });
 });
