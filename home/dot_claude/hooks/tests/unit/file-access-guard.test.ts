@@ -8,6 +8,7 @@ import {
   realpathSync,
   rmSync,
   symlinkSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -423,6 +424,67 @@ describe("file-access-guard.ts hook behavior", () => {
         await invokeRun(fileAccessGuardHook, ctx);
         ctx.assertDeny();
       }
+    });
+  });
+
+  // The look-alike paths sit outside every temp root on purpose: under /tmp
+  // the temp-root step would allow them whatever the prefix check does.
+  describe("path-segment boundary of allowed roots (HOME isolated)", () => {
+    let home = "";
+
+    beforeEach(() => {
+      home = mkdtempSync(join(realpathSync("/tmp"), "fag-home-"));
+      envHelper.set("HOME", home);
+      envHelper.set("CLAUDE_TEST_REPO_ROOT", "/home/user/project");
+      envHelper.set("CLAUDE_TEST_CWD", "/home/user/project");
+    });
+
+    afterEach(() => {
+      envHelper.restore();
+      rmSync(home, { recursive: true, force: true });
+    });
+
+    const read = async (filePath: string) => {
+      const ctx = createPreToolUseContextFor(fileAccessGuardHook, "Read", {
+        file_path: filePath,
+      });
+      await invokeRun(fileAccessGuardHook, ctx);
+      return ctx;
+    };
+
+    it("denies a sibling whose name starts with the repository root", async () => {
+      (await read("/home/user/project-other/secret.txt")).assertDeny();
+    });
+
+    it("allows the repository root itself", async () => {
+      (await read("/home/user/project")).assertSuccess({});
+    });
+
+    describe("additionalDirectories", () => {
+      beforeEach(() => {
+        mkdirSync(join(home, ".claude"), { recursive: true });
+        writeFileSync(
+          join(home, ".claude", "settings.json"),
+          JSON.stringify({ additionalDirectories: ["/home/user/extra"] }),
+        );
+      });
+
+      it("allows Read inside an additional directory", async () => {
+        (await read("/home/user/extra/notes.md")).assertSuccess({});
+      });
+
+      it("denies a sibling whose name starts with an additional directory", async () => {
+        (await read("/home/user/extra-other/notes.md")).assertDeny();
+      });
+
+      it("allows Read inside an additional directory written with a trailing slash", async () => {
+        writeFileSync(
+          join(home, ".claude", "settings.json"),
+          JSON.stringify({ additionalDirectories: ["/home/user/extra/"] }),
+        );
+        (await read("/home/user/extra/notes.md")).assertSuccess({});
+        (await read("/home/user/extra-other/notes.md")).assertDeny();
+      });
     });
   });
 

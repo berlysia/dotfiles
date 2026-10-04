@@ -380,7 +380,8 @@ export function collectTempRoots(
 }
 
 function isUnderRoot(p: string, root: string): boolean {
-  return p === root || p.startsWith(`${root}/`);
+  // "/" is the only normalized root that already ends with a separator.
+  return p === root || p.startsWith(root.endsWith("/") ? root : `${root}/`);
 }
 
 function isMissingPathError(error: unknown): boolean {
@@ -470,7 +471,7 @@ function validatePath(
   const homeDir = getHomeDir();
 
   // 1. Repository内 → 常に許可
-  if (absPath.startsWith(repoRoot)) {
+  if (isUnderRoot(absPath, repoRoot)) {
     return {
       isAllowed: true,
       resolvedPath: absPath,
@@ -550,8 +551,10 @@ function validatePath(
 
   // 4. additionalDirectoriesのチェック
   for (const addDir of additionalDirs) {
-    const resolvedAddDir = resolvePath(addDir);
-    if (absPath.startsWith(resolvedAddDir)) {
+    // resolve() drops the trailing slash a hand-written setting may carry;
+    // isUnderRoot would otherwise compare against `dir//`.
+    const resolvedAddDir = resolve(resolvePath(addDir));
+    if (isUnderRoot(absPath, resolvedAddDir)) {
       // Read/LSは自動許可、Edit/Writeは要permissions
       if (toolName === "Read" || toolName === "LS") {
         return {
