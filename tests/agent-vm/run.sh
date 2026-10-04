@@ -56,6 +56,150 @@ test_meta_rejects_newline_path() {
   # die exits, so run it in a child process like the other fail-closed tests
   assert_status 1 "newline path rejected" -- bash -c "AGENT_VM_STATE_DIR='$AGENT_VM_STATE_DIR' AGENT_VM_LIB=1 . '$LAUNCHER'; write_machine_meta agent-x-000000 \"\$(printf '/tmp/a\\nb')\""
 }
+test_valid_proxy_port_accepts_only_five_digits_in_range() {
+  local v
+  for v in 17300 17350 17399; do
+    if valid_proxy_port "$v"; then record "PASS $v is a valid proxy port"; else record "FAIL $v is a valid proxy port"; fi
+  done
+  # 017300 and 041624 are octal to bash arithmetic (041624 is 17300); the digit test must reject them first.
+  for v in 17299 17400 "" 0 80 017300 017308 041624 "1730 0" 17300x 18446744073709568916; do
+    if valid_proxy_port "$v" 2>"$TMP_ROOT/valid.err"; then record "FAIL '$v' is not a valid proxy port"; else record "PASS '$v' is not a valid proxy port"; fi
+    assert_eq "" "$(cat "$TMP_ROOT/valid.err")" "no arithmetic error for '$v'"
+  done
+  # A value with a newline never reaches a label: the results file is one line per assertion.
+  if valid_proxy_port $'17300\n' || valid_proxy_port $'\n17300' || valid_proxy_port $'17300\n17301'; then
+    record "FAIL a value with a newline is not a valid proxy port"
+  else
+    record "PASS a value with a newline is not a valid proxy port"
+  fi
+}
+test_meta_third_argument_writes_the_proxy_port() {
+  write_machine_meta agent-a-000000 /tmp/a 17305
+  assert_eq 17305 "$(read_meta_field agent-a-000000 proxy_port)" "proxy_port written from the third argument"
+  assert_eq /tmp/a "$(read_meta_field agent-a-000000 repo_path)" "repo_path still written"
+  assert_eq 1 "$(read_meta_field agent-a-000000 format)" "format still written"
+  write_machine_meta agent-a-000000 /tmp/a
+  assert_eq "" "$(read_meta_field agent-a-000000 proxy_port || true)" "a two-argument rewrite drops proxy_port (the documented contract)"
+  write_machine_meta agent-a-000000 /tmp/a 041624
+  assert_eq "" "$(read_meta_field agent-a-000000 proxy_port || true)" "an invalid third argument writes no proxy_port"
+}
+test_meta_is_replaced_through_a_hidden_temp_file() {
+  write_machine_meta agent-a-000000 /tmp/a 17300
+  assert_eq "" "$(find "$AGENT_VM_STATE_DIR/machines" -name '.agent-a-000000.*')" "no temp file left"
+  ln "$AGENT_VM_STATE_DIR/machines/agent-a-000000" "$TMP_ROOT/held" # a second name for the same file: an in-place write would change what it shows
+  write_machine_meta agent-a-000000 /tmp/a 17301
+  assert_contains "$(cat "$TMP_ROOT/held")" "proxy_port=17300" "the record is replaced, not rewritten in place"
+  assert_eq 17301 "$(read_meta_field agent-a-000000 proxy_port)" "the new record holds the new value"
+  : >"$AGENT_VM_STATE_DIR/machines/.agent-z-000000.abc123"
+  assert_eq "agent-a-000000" "$(machine_rows | cut -f1)" "a leftover temp file is not listed as a machine"
+}
+test_assign_first_machine_gets_the_lowest_slot() {
+  assign_proxy_port agent-a-000000 /tmp/a
+  assert_eq 17300 "$PROXY_PORT" "first machine gets 17300"
+  assert_eq "" "$PROXY_PORT_PREV" "no previous port on the first assignment"
+  assert_eq 17300 "$(read_meta_field agent-a-000000 proxy_port)" "the record holds the port"
+  assert_eq /tmp/a "$(read_meta_field agent-a-000000 repo_path)" "repo_path written"
+}
+test_assign_skips_ports_held_by_other_records() {
+  write_machine_meta agent-b-000000 /tmp/b 17300
+  write_machine_meta agent-c-000000 /tmp/c 17302
+  : >"$AGENT_VM_STATE_DIR/machines/agent-b-000000.lock"
+  assign_proxy_port agent-a-000000 /tmp/a
+  assert_eq 17301 "$PROXY_PORT" "lowest free slot between held ones"
+}
+test_assign_keeps_the_port_across_launches() {
+  write_machine_meta agent-a-000000 /tmp/a 17350
+  assign_proxy_port agent-a-000000 /tmp/a
+  assert_eq 17350 "$PROXY_PORT" "own port kept, not moved to the lowest slot"
+  assert_eq 17350 "$PROXY_PORT_PREV" "previous port reported"
+}
+test_assign_reads_a_record_written_before_this_change() {
+  mkdir -p "$AGENT_VM_STATE_DIR/machines"
+  printf 'format=1\nrepo_path=/tmp/a\n' >"$AGENT_VM_STATE_DIR/machines/agent-a-000000"
+  assign_proxy_port agent-a-000000 /tmp/a
+  assert_eq 17300 "$PROXY_PORT" "a record without proxy_port gets a slot"
+  assert_eq "" "$PROXY_PORT_PREV" "no previous port for an old record"
+}
+test_assign_moves_only_the_launching_machine_off_a_shared_port() {
+  write_machine_meta agent-a-000000 /tmp/a 17300
+  write_machine_meta agent-b-000000 /tmp/b 17300
+  assign_proxy_port agent-a-000000 /tmp/a
+  assert_eq 17301 "$PROXY_PORT" "launching machine moves off a shared port"
+  assert_eq 17300 "$PROXY_PORT_PREV" "the port it held is reported"
+  assert_eq 17300 "$(read_meta_field agent-b-000000 proxy_port)" "the other record is untouched"
+}
+test_assign_ignores_invalid_values_in_any_record() {
+  mkdir -p "$AGENT_VM_STATE_DIR/machines"
+  printf 'format=1\nrepo_path=/tmp/b\nproxy_port=80\n' >"$AGENT_VM_STATE_DIR/machines/agent-b-000000"
+  printf 'format=1\nrepo_path=/tmp/c\nproxy_port=041624\n' >"$AGENT_VM_STATE_DIR/machines/agent-c-000000"
+  printf 'format=1\nrepo_path=/tmp/a\nproxy_port=17400\n' >"$AGENT_VM_STATE_DIR/machines/agent-a-000000"
+  assign_proxy_port agent-a-000000 /tmp/a
+  assert_eq 17300 "$PROXY_PORT" "invalid values hold no slot"
+  assert_eq "" "$PROXY_PORT_PREV" "an invalid own value is not a previous port"
+}
+test_assign_with_a_full_pool_records_no_port() {
+  local p status=0
+  for ((p = 17300; p <= 17399; p++)); do write_machine_meta "agent-p$p-000000" "/tmp/$p" "$p"; done
+  assign_proxy_port agent-a-000000 /tmp/a || status=$?
+  assert_eq 0 "$status" "a full pool is not an error"
+  assert_eq "" "$PROXY_PORT" "no port when the pool is full"
+  assert_eq "" "$(read_meta_field agent-a-000000 proxy_port || true)" "no port recorded"
+  assert_eq /tmp/a "$(read_meta_field agent-a-000000 repo_path)" "the record is still written"
+}
+test_assign_can_take_the_last_slot() {
+  local p
+  for ((p = 17300; p <= 17398; p++)); do write_machine_meta "agent-p$p-000000" "/tmp/$p" "$p"; done
+  assign_proxy_port agent-a-000000 /tmp/a
+  assert_eq 17399 "$PROXY_PORT" "the last slot is usable"
+}
+test_assign_reports_a_lost_port_when_the_pool_is_full() {
+  local p
+  for ((p = 17300; p <= 17399; p++)); do write_machine_meta "agent-p$p-000000" "/tmp/$p" "$p"; done
+  write_machine_meta agent-a-000000 /tmp/a 17300
+  assign_proxy_port agent-a-000000 /tmp/a
+  assert_eq "" "$PROXY_PORT" "no slot left"
+  assert_eq 17300 "$PROXY_PORT_PREV" "the lost port is reported"
+  assert_eq "" "$(read_meta_field agent-a-000000 proxy_port || true)" "no port recorded"
+}
+test_assign_uses_only_the_first_proxy_port_line() {
+  mkdir -p "$AGENT_VM_STATE_DIR/machines"
+  printf 'format=1\nrepo_path=/tmp/b\nproxy_port=17301\nproxy_port=17300\n' >"$AGENT_VM_STATE_DIR/machines/agent-b-000000"
+  assign_proxy_port agent-a-000000 /tmp/a
+  assert_eq 17300 "$PROXY_PORT" "only the first proxy_port line holds a slot"
+}
+test_assign_stops_when_the_port_lock_cannot_be_opened() {
+  mkdir -p "$AGENT_VM_STATE_DIR/ports.lock" # a directory in the lock file's place: exec 6> fails
+  assert_status 1 "an unopenable port lock stops the launch" -- bash -c "AGENT_VM_STATE_DIR='$AGENT_VM_STATE_DIR' AGENT_VM_LIB=1 . '$LAUNCHER'; assign_proxy_port agent-a-000000 /tmp/a"
+  assert_status 1 "no record is written without the lock" -- test -f "$AGENT_VM_STATE_DIR/machines/agent-a-000000"
+}
+test_assign_releases_the_port_lock() {
+  assign_proxy_port agent-a-000000 /tmp/a
+  if { : >&6; } 2>/dev/null; then record "FAIL fd 6 is closed after assign_proxy_port"; else record "PASS fd 6 is closed after assign_proxy_port"; fi
+  local status=0
+  bash -c "AGENT_VM_STATE_DIR='$AGENT_VM_STATE_DIR' AGENT_VM_LIB=1 . '$LAUNCHER'; acquire_port_lock 1" </dev/null >/dev/null 2>&1 || status=$?
+  assert_eq 0 "$status" "port lock is free after assign_proxy_port returns"
+  assert_status 0 "port lock file is outside machine records" -- test -f "$AGENT_VM_STATE_DIR/ports.lock"
+  assert_eq "agent-a-000000" "$(machine_rows | cut -f1)" "ports.lock is not listed as a machine"
+}
+test_port_lock_excludes_a_second_holder_and_is_independent() {
+  bash -c "AGENT_VM_STATE_DIR='$AGENT_VM_STATE_DIR' AGENT_VM_LIB=1 . '$LAUNCHER'; acquire_port_lock 1 && sleep 3" </dev/null &
+  sleep 1
+  local status=0
+  bash -c "AGENT_VM_STATE_DIR='$AGENT_VM_STATE_DIR' AGENT_VM_LIB=1 . '$LAUNCHER'; acquire_port_lock 1" </dev/null >/dev/null 2>&1 || status=$?
+  assert_eq 1 "$status" "a second holder times out while the port lock is held"
+  status=0; try_lock agent-g-000000 || status=$?
+  assert_eq 0 "$status" "repo lock unaffected by the port lock"
+  wait
+}
+test_assign_concurrent_launches_get_distinct_ports() {
+  local i
+  for i in 1 2 3 4 5 6; do
+    bash -c "AGENT_VM_STATE_DIR='$AGENT_VM_STATE_DIR' AGENT_VM_LIB=1 . '$LAUNCHER'; assign_proxy_port agent-m$i-000000 /tmp/m$i" </dev/null >/dev/null 2>&1 &
+  done
+  wait
+  local ports; ports=$(for i in 1 2 3 4 5 6; do read_meta_field "agent-m$i-000000" proxy_port; done | sort -u | wc -l | tr -d ' ')
+  assert_eq 6 "$ports" "six concurrent launches record six distinct ports"
+}
 test_exclude_prefix_on_directory_boundary() {
   mkdir -p "$AGENT_VM_CONFIG_DIR" "$TMP_ROOT/ex/repo" "$TMP_ROOT/ex/repo2"
   printf '# comment\n%s  # trailing comment\n' "$TMP_ROOT/ex/repo" >"$AGENT_VM_CONFIG_DIR/config"
@@ -365,12 +509,14 @@ test_failed_machine_listing_is_an_error_not_absence() {
 }
 test_orb_q_closes_every_lock_fd() {
   orb() { ls /dev/fd >"$TMP_ROOT/fds"; } # replaces the stub for this subshell only
-  exec 7>"$TMP_ROOT/l7" 8>"$TMP_ROOT/l8" 9>"$TMP_ROOT/l9"
+  exec 6>"$TMP_ROOT/l6" 7>"$TMP_ROOT/l7" 8>"$TMP_ROOT/l8" 9>"$TMP_ROOT/l9"
   orb list # positive control: a direct call does see the lock fds, so the listing below can detect a leak
   assert_contains " $(tr '\n' ' ' <"$TMP_ROOT/fds")" " 7 " "control: a direct call inherits fd 7"
+  assert_contains " $(tr '\n' ' ' <"$TMP_ROOT/fds")" " 6 " "control: a direct call inherits fd 6"
   orb_q list
-  exec 7>&- 8>&- 9>&-
+  exec 6>&- 7>&- 8>&- 9>&-
   local fds; fds=" $(tr '\n' ' ' <"$TMP_ROOT/fds")"
+  assert_not_contains "$fds" " 6 " "fd 6 not inherited"
   assert_not_contains "$fds" " 7 " "fd 7 not inherited"
   assert_not_contains "$fds" " 8 " "fd 8 not inherited"
   assert_not_contains "$fds" " 9 " "fd 9 not inherited"
@@ -562,6 +708,100 @@ test_launch_script_forwards_allowlisted_env_only_when_set() {
   cmd=$(CLAUDE_CODE_AUTO_COMPACT_WINDOW='1 0;x' CLAUDE_CODE_MAX_OUTPUT_TOKENS=64000 bash -c "AGENT_VM_LIB=1 . '$LAUNCHER'; build_launch_script claude /r ''" 2>/dev/null)
   assert_contains "$cmd" 'export CLAUDE_CODE_AUTO_COMPACT_WINDOW=1\ 0\;x; ' "value shell-quoted"
   assert_contains "$cmd" 'export CLAUDE_CODE_MAX_OUTPUT_TOKENS=64000; exec claude' "exported before exec"
+}
+test_launch_script_exports_the_proxy_port_after_the_env_file() {
+  local cmd
+  cmd=$(PROXY_PORT=17305 build_launch_script claude /r /dev/shm/agent-vm.env.x)
+  assert_contains "$cmd" "export PORTLESS_PORT=17305 PORTLESS_HTTPS=0; " "proxy port and no-TLS exported"
+  assert_not_contains "$cmd" "unset PORTLESS" "nothing unset when a port is assigned"
+  local env_at port_at
+  env_at=$(awk -v s="$cmd" 'BEGIN { print index(s, "agent-vm.env.x") }')
+  port_at=$(awk -v s="$cmd" 'BEGIN { print index(s, "PORTLESS_PORT") }')
+  if [[ "$env_at" -gt 0 && "$port_at" -gt "$env_at" ]]; then record "PASS the assignment wins over the env file"; else record "FAIL the assignment wins over the env file ($env_at/$port_at)"; fi
+}
+test_launch_script_without_a_valid_proxy_port_unsets_the_variables() {
+  local cmd v env_at unset_at
+  cmd=$(PROXY_PORT="" build_launch_script claude /r /dev/shm/agent-vm.env.x)
+  assert_contains "$cmd" "unset PORTLESS_PORT PORTLESS_HTTPS; " "an env file value does not survive without an assigned port"
+  assert_not_contains "$cmd" "export PORTLESS" "nothing exported without an assigned port"
+  env_at=$(awk -v s="$cmd" 'BEGIN { print index(s, "agent-vm.env.x") }')
+  unset_at=$(awk -v s="$cmd" 'BEGIN { print index(s, "unset PORTLESS_PORT") }')
+  if [[ "$env_at" -gt 0 && "$unset_at" -gt "$env_at" ]]; then record "PASS the unset comes after the env file"; else record "FAIL the unset comes after the env file ($env_at/$unset_at)"; fi
+  # The whole script is compared: "the value does not appear" would miss a quoted or misplaced embedding, and a short
+  # value such as 80 can appear by chance in a forwarded host knob. The two allowlisted knobs are unset for that reason.
+  unset CLAUDE_CODE_AUTO_COMPACT_WINDOW CLAUDE_CODE_MAX_OUTPUT_TOKENS
+  for v in 041624 80 '17300; touch /tmp/pwned' "\$(id)"; do
+    cmd=$(PROXY_PORT="$v" build_launch_script claude /r "" 2>/dev/null)
+    assert_eq "cd /r; unset PORTLESS_PORT PORTLESS_HTTPS; exec claude" "$cmd" "an invalid PROXY_PORT ('$v') yields only the unset"
+  done
+  cmd=$(PROXY_PORT=$'17300\n17301' build_launch_script claude /r "" 2>/dev/null)
+  assert_eq "cd /r; unset PORTLESS_PORT PORTLESS_HTTPS; exec claude" "$cmd" "a PROXY_PORT with a newline yields only the unset"
+}
+test_notice_proxy_port_names_the_port_on_stderr_only() {
+  local out err
+  err=$(PROXY_PORT=17305 notice_proxy_port 2>&1 >/dev/null)
+  assert_contains "$err" "http://<app>.localhost:17305" "the notice carries the port"
+  assert_contains "$err" "portless run" "the notice names the command"
+  out=$(PROXY_PORT=17305 notice_proxy_port 2>/dev/null)
+  assert_eq "" "$out" "nothing on stdout"
+  err=$(PROXY_PORT="" notice_proxy_port 2>&1)
+  assert_eq "" "$err" "silent without an assigned port"
+}
+test_notice_proxy_port_assignment_shows_a_change_and_a_full_pool() {
+  local err
+  err=$(PROXY_PORT=17301 PROXY_PORT_PREV=17300 notice_proxy_port_assignment agent-a-000000 2>&1)
+  assert_contains "$err" "proxy port for agent-a-000000 changed 17300 -> 17301" "old and new port in fixed positions"
+  assert_contains "$err" "recover: run 'portless proxy stop' in the VM" "the recovery step"
+  err=$(PROXY_PORT=17300 PROXY_PORT_PREV=17300 notice_proxy_port_assignment agent-a-000000 2>&1)
+  assert_eq "" "$err" "silent when the port is kept"
+  err=$(PROXY_PORT=17300 PROXY_PORT_PREV="" notice_proxy_port_assignment agent-a-000000 2>&1)
+  assert_eq "" "$err" "silent on the first assignment"
+  err=$(PROXY_PORT="" PROXY_PORT_PREV=17300 notice_proxy_port_assignment agent-a-000000 2>&1)
+  assert_contains "$err" "changed 17300 -> none" "a port lost to a full pool is a change"
+  assert_contains "$err" "agent-vm rm <repo>" "the full-pool warning names the recovery that frees a slot"
+  err=$(PROXY_PORT="" PROXY_PORT_PREV="" notice_proxy_port_assignment agent-a-000000 2>&1)
+  assert_contains "$err" "do not go through portless" "the full-pool warning says what stops working"
+  assert_not_contains "$err" "changed" "no change line without a previous port"
+}
+test_run_tool_hands_the_port_to_the_session_and_names_it() {
+  local wt repo m err; wt=$(make_dotfiles_fixture); repo=$(make_flow_repo)
+  m=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
+  session_exec() { printf '%s\n' "$2" >"$TMP_ROOT/launch-script"; } # replaces the real orb session in this subshell only
+  err=$( (cd "$repo" && PROXY_PORT=99999 STUB_CHEZMOI_STDOUT="$wt/home" STUB_ORB_LIST_STDOUT="$m running" run_tool claude) 2>&1 >/dev/null) || true
+  assert_eq 17300 "$(read_meta_field "$m" proxy_port)" "the launch records a port"
+  assert_contains "$(cat "$TMP_ROOT/launch-script")" "export PORTLESS_PORT=17300 PORTLESS_HTTPS=0; " "the session receives the recorded port"
+  assert_contains "$err" "localhost:17300" "the launch names the port on stderr"
+  assert_not_contains "$err" "changed" "no change line on the first assignment"
+}
+test_prepare_machine_ignores_proxy_port_from_the_host_environment() {
+  local wt repo m; wt=$(make_dotfiles_fixture); repo=$(make_flow_repo)
+  m=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
+  session_exec() { printf '%s\n' "$2" >"$TMP_ROOT/launch-script"; }
+  assign_proxy_port() { :; } # replaces the assignment in this subshell only: only the clearing in prepare_machine is left
+  (cd "$repo" && PROXY_PORT=17305 PROXY_PORT_PREV=17306 STUB_CHEZMOI_STDOUT="$wt/home" STUB_ORB_LIST_STDOUT="$m running" run_tool claude) >/dev/null 2>&1 || true
+  assert_contains "$(cat "$TMP_ROOT/launch-script")" "unset PORTLESS_PORT PORTLESS_HTTPS; " "a PROXY_PORT from the host environment is not used"
+  assert_not_contains "$(cat "$TMP_ROOT/launch-script")" "export PORTLESS" "nothing exported from the host environment's value"
+}
+test_prewarm_reports_a_changed_port_and_names_no_url() {
+  local wt repo m err; wt=$(make_dotfiles_fixture); repo=$(make_flow_repo)
+  m=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
+  write_machine_meta "$m" "$(cd -P "$repo" && pwd -P)" 17300
+  write_machine_meta agent-other-000000 /tmp/other 17300
+  session_exec() { record "FAIL prewarm must not start a session"; }
+  err=$( (cd "$repo" && STUB_CHEZMOI_STDOUT="$wt/home" STUB_ORB_LIST_STDOUT="$m running" STUB_ORB_STDOUT="v1:old" cmd_prewarm) 2>&1 >/dev/null) || true
+  assert_eq 17301 "$(read_meta_field "$m" proxy_port)" "prewarm moves the machine off the shared port"
+  assert_contains "$err" "changed 17300 -> 17301" "prewarm shows the recovery for the change it made"
+  assert_not_contains "$err" "dev servers: run them" "prewarm does not name a URL to open"
+}
+test_list_shows_only_a_valid_proxy_port() {
+  mkdir -p "$TMP_ROOT/repo-a" "$TMP_ROOT/repo-b" "$TMP_ROOT/repo-c"
+  write_machine_meta agent-a-000000 "$TMP_ROOT/repo-a" 17300
+  write_machine_meta agent-b-000000 "$TMP_ROOT/repo-b"
+  printf 'format=1\nrepo_path=%s\nproxy_port=041624\n' "$TMP_ROOT/repo-c" >"$AGENT_VM_STATE_DIR/machines/agent-c-000000"
+  local rows; rows=$(machine_rows)
+  assert_contains "$rows" "agent-a-000000	present	$TMP_ROOT/repo-a	17300" "4th column is the proxy port"
+  assert_eq "agent-b-000000	present	$TMP_ROOT/repo-b	" "$(printf '%s\n' "$rows" | grep '^agent-b-')" "a record without a port ends in a tab"
+  assert_eq "agent-c-000000	present	$TMP_ROOT/repo-c	" "$(printf '%s\n' "$rows" | grep '^agent-c-')" "an invalid stored value is not shown"
 }
 test_launch_warns_about_unforwarded_claude_code_vars_by_name_only() {
   local err

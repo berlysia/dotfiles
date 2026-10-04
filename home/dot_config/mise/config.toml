@@ -37,6 +37,8 @@ yarn = "4.18.1"
 # The package and its author are known, so the low-download gate is explicitly approved.
 "npm:@mizchi/readability" = { version = "0.7.7", allow_low_downloads = true }
 "npm:@openai/codex" = "latest"
+# Per-machine dev server proxy for agent-vm (docs/agent-vm.md, #207); it starts nothing until `portless run` is used.
+portless = "0.15.6"
 "github:k1LoW/mo" = "1.6.8"
 # registry の `deck` は Kong/decK に解決されるため repo 指定が必須
 "github:k1LoW/deck" = "1.24.1"

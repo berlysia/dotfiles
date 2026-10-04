@@ -18,6 +18,7 @@ package manager はプロジェクトの設定（lockfile / `packageManager` フ
 - **Typecheck**: `pnpm run typecheck` / `bun run typecheck`
 - **Lint**: `pnpm run lint` / `bun run lint`
 - **Worktree**: `git-worktree-create <branch>`, `git-worktree-cleanup`
+- **Dev server**: `PORTLESS_PORT` が設定されているとき（agent-vm）は `portless run <dev コマンド>` で起動し、表示された URL を使う。ポートを自分で選ばない。`portless` が失敗するときは、ほかのポートで起動し直さずに報告する
 - **Temp files**: `${projectRoot}/.tmp` (gitignored)
 
 ## Rules (auto-loaded by path match)
