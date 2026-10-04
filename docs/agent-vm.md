@@ -51,6 +51,7 @@ VM の Claude は、playwright と chrome-devtools の MCP で、VM の中の he
   - VM の中で `portless run <dev コマンド>` を実行する。例: `portless run pnpm dev`。
   - linked worktree では、ブランチ名が付いて `http://<branch>.<app>.localhost:<port>` になる。
   - 名前は package.json の `name`、無ければ git の根の名前から決まる。`portless <name> <cmd>` の形はブランチ名を付けないので、worktree では使わない。
+  - スコープ付きの `name` は、スコープが落ちる（`@berlysia-dotfiles/root` は `root` になる）。ブランチ名は、最後の `/` より後ろが付く（`fix/workflow-identity` は `workflow-identity` になる）。
 - **どの URL を開くか。**
   - mac のブラウザで `http://<app>.localhost:<port>` を開く。
   - `<port>` は machine ごとの proxy のポートである。launcher が起動時に 1 行で表示する。後からは、mac で `agent-vm list` を実行し、その machine の行の 4 列目を見る。
@@ -63,13 +64,16 @@ VM の Claude は、playwright と chrome-devtools の MCP で、VM の中の he
   - portless を通せば、人が開くのは machine ごとの proxy のポートだけになり、launcher の割り当てが machine 同士で重なることはない。VM の中のプロセスがほかの machine のポートに直接 bind する場合は防げない（「気をつけること」）。
 - **うまく開けないとき。**
   - launcher が `proxy port for <machine> changed ...` を表示したとき、または表示のポートで開けないときは、VM の中で `portless proxy stop` を実行してから dev server を起動し直す。前に起動した proxy が、古いポートで動き続けていることがある。
+  - `portless proxy stop` は、proxy を止めたのに `Failed to stop proxy: ENOENT ... proxy.pid` と表示することがある（0.15.6 で、4 回のうち 3 回。原因は調べていない）。止まったかどうかは、VM で `ss -ltn | grep <port>` を実行して、待ち受けが無いことで確かめる。
+  - mac の `127.0.0.1:<port>` だけが接続拒否になるときも、同じ手順で戻る。ほかの machine がそのポートを bind してやめた後に起きる（「気をつけること」）。
   - 17300〜17399 の枠がすべて使われていると、launcher が起動のたびに警告を出す。その machine では portless を使わない（手でも起動しない）。使わなくなった machine を `agent-vm rm <repo>` で消すと、枠が空く。
   - mac で同じポートを別のプログラムが使っている場合は、その machine を `agent-vm rm` で作り直す。
 - **気をつけること。**
   - cookie はホスト名で分かれ、ポートでは分かれない。2 台の machine のアプリが同じ名前（`app.localhost`）だと、同じブラウザのプロファイルでは cookie を共有する。片方の VM の dev server が、もう片方の認証の cookie を受け取る。VM の agent を信頼しない前提では、認証の cookie が、信頼しない VM に渡る。認証つきの dev server を複数の machine で開くときは、ブラウザのプロファイルを分けるか、package.json の `name` を machine の間で重ならないものにする。
   - VM の中のプロセスは、ほかの machine の proxy のポートに直接 bind できる。相手の proxy が動いていない間に bind されると、mac のそのポートは bind した VM に届く。相手の machine からは気づけない。確かめられない dev server の URL に、認証情報を入れない。
+  - 奪われる先は、IPv4 と IPv6 で別々に決まる。`127.0.0.1` だけを bind されると、mac の `127.0.0.1:<port>` は bind した VM に届き、`[::1]:<port>` は元の machine の proxy に届く。`<app>.localhost` は `::1` に先に解決されるので、名前で開くときと `127.0.0.1` を直接指すときで、届く先が変わる。bind した側がやめても、mac の `127.0.0.1:<port>` は元の machine に戻らず、接続拒否になる。元の machine の proxy を止めて起動し直すと戻る。
   - `agent-vm list` と VM の `portless list` を突き合わせても、奪われていることは分からない。どちらも奪われた側の正しい情報で、奪われていても一致する。
-  - 開いた先が想定の machine かどうかを確かめる手段は、今は無い。V31 で比べ方が使えると分かったら、ここに書き足す。
+  - 開いた先が想定の machine かどうかは、存在しない名前への応答を比べて確かめる。portless は、知らない名前に、自分の経路の一覧を含む 404 を返す。mac で `curl -sS -H 'Host: nosuch.localhost' http://127.0.0.1:<port>/` と `curl -sS -H 'Host: nosuch.localhost' 'http://[::1]:<port>/'` を実行し、`orb -m <machine> curl -sS -H 'Host: nosuch.localhost' http://127.0.0.1:<port>/` の応答と比べる。違えば、そのポートは別の machine に届いている。同じでも、奪われていない証明にはならない（bind した側が同じ応答を返せば、差は出ない）。
 - **`localhost` の注意。** `localhost` のオリジンはポートをまたいで cookie を共有する。VM の dev server は、`localhost` にログイン済みのセッションを持つ普段のプロファイルでは開かず、シークレットウィンドウなどを使う。host で使うポート（OAuth のコールバックなど）とも重ねない。
 - **ブラウザの置き場。** ブラウザ本体（linux-arm64 の headless shell）は、host に 1 部だけ置き、machine ごとに APFS の clonefile で複製して VM に見せる。VM ごとの増分は apt の依存ライブラリとフォントで、約 35 MB である。
 - **取得。** 取得は `chezmoi apply` が自動で行う。手で行うときは `agent-vm fetch-browsers` を実行し、ストアが使えなくなったときは `--force` で取り直す。ブラウザ本体は `cdn.playwright.dev` から取得し、内容のハッシュは repo に固定していない。取得した直後のハッシュを記録して複製の前に比べるので、検出できるのは取得後の改変だけである（取得元の侵害は防がない）。
@@ -317,6 +321,7 @@ machine を侵害された疑いがある場合、または使わなくなった
     5. X の proxy が止まっている状態で、Y の VM で `python3 -m http.server 17300 --bind 127.0.0.1` を起動する。その後、X の VM で `portless run ...` を起動し直す（X の proxy が起動する）。mac で `curl -sS -H 'Host: vx.localhost:17300' 'http://127.0.0.1:17300/'` を実行し、続けて `orb -m <X の machine 名> curl -sS -H 'Host: vx.localhost:17300' http://127.0.0.1:17300/` を実行する。確かめたら Y の bind を止める（R9）。
     6. X と Y の両方で `"name":"app"` の dir を作って同じように起動し、Chrome で `http://app.localhost:17300/` を開いて開発者ツールで cookie を 1 つ設定する。`http://app.localhost:17301/` を開いたときに、その cookie が送られるかを見る。さらに、Y の dev server が `Set-Cookie: t=1; Domain=localhost` を返す状態で `http://app.localhost:17301/` を開き、その後 `http://app.localhost:17300/` を開いて、`t` が X に送られるかを見る（R10）。
   - 判定: X のポートと Y のポートが異なる。2 と 3 は、`vx` の側が `/tmp/vx` の一覧を、`vy` の側が `/tmp/vy` の一覧を返す。4 は `/tmp/vy` の一覧を返す。どれかが崩れたら不可（spec を改訂する）。
+  - 2 つの一覧はどちらも `package.json` だけで、見分けがつかない。Host を入れ替えた curl（17300 に `vy.localhost`、17301 に `vx.localhost`）も実行し、404 の本文の経路の一覧が、17300 では X のもの、17301 では Y のものであることで見分ける。
   - 記録だけするもの: 5 で R9 が再現したか（mac の応答が Y の一覧になるか）と、X の中から見た応答との比べ方で差が出たか。差が出れば、この比べ方を 3 節の確かめ方に書く。6 の結果と、Domain つきの cookie の結果。
 - **V32（worktree）**
   - 操作:
@@ -420,3 +425,51 @@ repo ごとの machine を golden machine の clone で作る構成（3 節）�
   - VM の Claude から `git-worktree-create v6` を実行すると、保護フックに止められずに終了コード 0 で、6 パッケージ分の mount が張られた。
   - `git-worktree-cleanup v6` は、作成後に commit の無い worktree なので、端末の無い VM の Claude からは確認できずに残した（仕様どおり）。
   - `agent-vm shell` で同じコマンドを実行して確認に `y` と答えると、worktree は消えた。mount の行も、保存先（12 から 6）も残らなかった。
+
+### 2026-10-04 の確認結果（portless、macOS、OrbStack 2.2.3、Ubuntu resolute arm64）
+
+dev server を portless に通す構成（3 節）を、2 台の machine（X は 17300、Y は 17301）で確かめた。V30〜V32 と、V33 の待ち受けアドレスは期待どおりだった。V33 の導入は一部が未確認である。
+
+手順から外れたところ:
+
+- `chezmoi apply` はせず、launcher はこの変更の版を取り出して直接実行した。VM は変更前の dotfiles から作られていて、mise の設定に portless は入っていない。portless は `mise exec portless@0.15.6 --` で動かした。
+- V32 は、`/tmp/vx` に repo を作る代わりに、dotfiles の repo の既存の linked worktree（ブランチ `fix/workflow-identity`）で行った。サーバーは自分の cwd を返すものを使った。
+- V31 の手順 5 は、`portless run` を起動し直す代わりに `portless proxy start` を使った。
+- V30 の手順 4 だけを Chrome 本体で行い、V31 の手順 6 はアプリ内ブラウザ（Chromium）で行った。
+
+確認できた項目:
+
+- launcher: `agent-vm prewarm` で X に 17300、Y に 17301 が割り当てられ、meta に `proxy_port` の行が入った。`agent-vm list` の 4 列目に出て、ポートの無い machine の行は tab で終わった。`agent-vm shell` のセッションには `PORTLESS_PORT=17300` と `PORTLESS_HTTPS=0` が渡り、起動時に `dev servers: ...` の 1 行が表示された。
+- V30:
+  - mac の Chrome で `http://vx.localhost:17300/` が開き、`/tmp/vx` の一覧を返した（R1 は解消）。
+  - `127.0.0.1` と `[::1]` に Host を付けた curl は、どちらも 200 だった。OrbStack は mac の `[::1]:<port>` も転送する。名前での curl も 200 で、接続先は `::1` だった。
+  - mac の `lsof` では、OrbStack が `127.0.0.1:17300` と `[::1]:17300` だけで待ち受けていた（R11 は可）。
+- V31:
+  - `Host: vx.localhost` は 17300 で 200、17301 で 404 だった。`Host: vy.localhost` はその逆だった。404 の経路の一覧は、17300 が X のもの、17301 が Y のものだった。
+  - 両方の VM で 5174 を直接 bind しても、結果は変わらなかった（R12）。
+  - X の proxy を止めても、`vy.localhost:17301` は 200 を返した。
+- V32: `http://root.localhost:17300` が main worktree の dir を、`http://workflow-identity.root.localhost:17300` が linked worktree の dir を、同時に返した。
+- V33:
+  - VM の `ss -ltn` では、proxy は `127.0.0.1:17300` と `[::1]:17300` だけで待ち受けていた。
+  - `~/.portless/proxy.log` に hosts を含む行は無かった。
+  - `portless list` は、起動した 3 つの経路を表示した。
+  - mac と両方の VM で、mise が portless 0.15.6 を install でき、`portless --version` は 0.15.6 を返した。
+
+記録だけの項目:
+
+- R9（奪取）は再現した。
+  - X の proxy が止まっている間に Y が `127.0.0.1:17300` を bind すると、mac の `127.0.0.1:17300` は Y に届いた。
+  - その後 X の proxy を起動すると、mac の `127.0.0.1:17300` は Y に、`[::1]:17300` は X に届いた。
+  - Y が bind をやめると、mac の `127.0.0.1:17300` は接続拒否になった。X の proxy は `127.0.0.1:17300` で待ち受けたままだった。
+  - X の proxy を止めて起動し直すと、`127.0.0.1` と `[::1]` の両方が X に届いた。
+  - 存在しない名前への応答は、奪取の間、mac から（Python の一覧）と X の中から（portless の 404）で違った。この比べ方を 3 節に書いた。
+- R10（cookie）: `app.localhost:17300` で設定した cookie は、`app.localhost:17301` の Y に送られた。Y が返した `Set-Cookie: t=1; Domain=localhost` の cookie は保存されず、X には送られなかった。
+- K11、K6: 起動時の 1 行と `agent-vm list` の 4 列目で、ポートは探さずに分かった。確認は agent が行ったので、人にとっての手間は測っていない。
+
+観測と、未確認の項目:
+
+- 観測（原因未特定）: `portless proxy stop` は、4 回のうち 3 回、`Failed to stop proxy: ENOENT: no such file or directory, unlink '/home/berlysia/.portless/proxy.pid'` と表示した。その 3 回とも proxy は止まっていて、終了コードは 0 だった。
+- 観測: package.json の `name` が `@berlysia-dotfiles/root` の repo は、`root` という名前になった。
+- 未確認: mise の設定（`portless = "0.15.6"`）から、host と VM に portless が入ること（V33 の `mise ls portless`）。`chezmoi apply` の後に確かめる。
+- 未確認: Chrome 本体での cookie の挙動。
+- 未確認: ポートが付け替わった起動での、回復手順の表示。実機では付け替えを起こしていない。
