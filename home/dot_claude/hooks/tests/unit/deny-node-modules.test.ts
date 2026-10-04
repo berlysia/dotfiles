@@ -288,8 +288,8 @@ describe("deny-node-modules.ts hook behavior", () => {
   describe("long repeated words", () => {
     const NM = "node" + "_modules";
     for (const [name, command] of [
-      ["a repeated cp word", NM + " cp ".repeat(25000)],
-      ["a repeated ls word", NM + " " + "ls ".repeat(33334)],
+      ["a repeated cp word", NM + " cp ".repeat(7000)],
+      ["a repeated ls word", NM + " " + "ls ".repeat(9000)],
     ] as const) {
       it(`asks for ${name} in linear time`, async () => {
         const context = createPreToolUseContext("Bash", { command });
@@ -314,6 +314,39 @@ describe("deny-node-modules.ts hook behavior", () => {
       ok(hit);
       strictEqual(hit.pattern.test(text), false);
       ok(performance.now() - start < 1000);
+    });
+
+    // Issue #235: over the parser's length limit the command is not analysed.
+    for (const [name, command] of [
+      ["mentions node_modules", NM + " cp ".repeat(25000)],
+      ["does not mention it", `echo ${"a".repeat(32000)}`],
+    ] as const) {
+      it(`denies a command over the length limit that ${name}`, async () => {
+        const context = createPreToolUseContext("Bash", { command });
+        const start = performance.now();
+        await invokeRun(denyNodeModulesHook, context);
+        const elapsed = performance.now() - start;
+
+        ok(elapsed < 1000, `${elapsed} ms`);
+        context.assertDeny();
+      });
+    }
+
+    // The symlink-removal exemption reads the whole text before the parser
+    // does, so it must not apply to a command over the length limit.
+    it("does not exempt a symlink removal padded over the length limit", async () => {
+      const dir = mkdtempSync(join(tmpdir(), "dnm-limit-"));
+      try {
+        mkdirSync(join(dir, "target"));
+        symlinkSync(join(dir, "target"), join(dir, NM));
+        const context = createPreToolUseContext("Bash", {
+          command: `rm${" ".repeat(100000)}${join(dir, NM)}`,
+        });
+        await invokeRun(denyNodeModulesHook, context);
+        context.assertDeny();
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
     });
   });
 

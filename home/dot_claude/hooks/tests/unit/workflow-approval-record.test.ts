@@ -66,7 +66,7 @@ describe("workflow-approval-record (spec K3/K5/K8)", () => {
       : [];
 
   const response = (
-    answer: string,
+    answer: unknown,
     docs = ["spec.md", "plan-1.md"],
   ): Response => {
     const hashes: Record<string, string> = {
@@ -188,10 +188,6 @@ describe("workflow-approval-record (spec K3/K5/K8)", () => {
           ...r,
           answers: { [APPROVAL_QUESTION_TEXT]: "spec.md", other: "x" },
         }),
-      ],
-      [
-        "answers numeric value",
-        (r) => ({ ...r, answers: { [APPROVAL_QUESTION_TEXT]: 1 } }),
       ],
       ["two questions", (r) => ({ ...r, questions: [q0(r), q0(r)] })],
       [
@@ -318,6 +314,91 @@ describe("workflow-approval-record (spec K3/K5/K8)", () => {
         docs: ["plan-2.md"],
       });
       assert.equal(logLines().length, 0);
+    });
+
+    describe("array answers", () => {
+      it("records a single selection sent as an array", () => {
+        const result = verify(response(["spec.md"]));
+        assert.equal(result.kind, "recorded");
+        assert.deepEqual(
+          logLines().map((l) => [l.doc, l.hash, l.via]),
+          [["spec.md", specHash, "ask"]],
+        );
+      });
+
+      it("records every selection sent as an array", () => {
+        const result = verify(response(["spec.md", "plan-1.md"]));
+        assert.equal(result.kind, "recorded");
+        assert.deepEqual(
+          logLines().map((l) => l.doc),
+          ["spec.md", "plan-1.md"],
+        );
+      });
+
+      it("treats a decline sent as an array as a decline", () => {
+        assert.deepEqual(verify(response(["承認しない"])), { kind: "decline" });
+        assert.equal(logLines().length, 0);
+      });
+
+      it("rejects a decline mixed with a document", () => {
+        assert.deepEqual(verify(response(["spec.md", "承認しない"])), {
+          kind: "malformed",
+        });
+        assert.equal(logLines().length, 0);
+      });
+
+      it("returns free text typed into Other and records nothing", () => {
+        const typed = "回避の案として。 承認 plan-1.md";
+        assert.deepEqual(verify(response([typed])), {
+          kind: "freeText",
+          text: typed,
+        });
+        assert.equal(logLines().length, 0);
+      });
+
+      it("does not split one element on the separator", () => {
+        assert.deepEqual(verify(response(["spec.md, plan-1.md"])), {
+          kind: "freeText",
+          text: "spec.md, plan-1.md",
+        });
+        assert.equal(logLines().length, 0);
+      });
+    });
+
+    describe("answerShape", () => {
+      const shapes: [unknown, string][] = [
+        [1, "number"],
+        [null, "null"],
+        [{}, "object"],
+        [[], "array[0]"],
+        [[1], "array[1] of number"],
+        [["spec.md", 1], "array[2] of number+string"],
+        [[["spec.md"]], "array[1] of array"],
+      ];
+      for (const [value, shape] of shapes) {
+        it(`reports ${shape} and records nothing`, () => {
+          assert.deepEqual(verify(response(value)), {
+            kind: "answerShape",
+            shape,
+            docs: ["spec.md", "plan-1.md"],
+          });
+          assert.equal(logLines().length, 0);
+        });
+      }
+
+      it("stays malformed when the question does not match either", () => {
+        const r = response(1);
+        (r.questions as Record<string, unknown>[])[0]!.header = "確認";
+        assert.deepEqual(verify(r), { kind: "malformed" });
+      });
+
+      it("returns the notes before looking at the answer shape", () => {
+        const r = {
+          ...response(1),
+          annotations: { [APPROVAL_QUESTION_TEXT]: { notes: "ここを直す" } },
+        };
+        assert.deepEqual(verify(r), { kind: "notes", notes: "ここを直す" });
+      });
     });
 
     it("accepts different key order in the questions", () => {

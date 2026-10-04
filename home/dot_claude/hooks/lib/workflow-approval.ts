@@ -260,15 +260,49 @@ export type ApprovalAnswer =
   | { kind: "freeText"; text: string }
   | { kind: "invalid"; reason: "decline-mixed" };
 
-/** multiSelect answers arrive as one string joined with ", ". */
+/**
+ * A multiSelect answer as the client sends it: one string joined with ", ",
+ * or an array with one element per selection. Claude Code 2.1.288-2.1.289
+ * sends both, even within one session.
+ */
+export type AnswerValue = string | readonly string[];
+
+export function isAnswerValue(value: unknown): value is AnswerValue {
+  if (typeof value === "string") return true;
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every((element) => typeof element === "string")
+  );
+}
+
+function typeName(value: unknown): string {
+  if (value === null) return "null";
+  return Array.isArray(value) ? "array" : typeof value;
+}
+
+/** The type of an answer value for a diagnosis. The content is user input and stays out. */
+export function describeAnswerShape(value: unknown): string {
+  if (!Array.isArray(value)) return typeName(value);
+  if (value.length === 0) return "array[0]";
+  const elementTypes = [...new Set(value.map(typeName))].sort();
+  return `array[${value.length}] of ${elementTypes.join("+")}`;
+}
+
+/**
+ * An array is kept element by element: joining it first would let one
+ * element that contains ", " (typed into Other) pass as several selections.
+ * An empty array is no selection and never an approval.
+ */
 export function matchApprovalAnswer(
   expected: readonly ApprovalQuestion[],
-  answerValue: string,
+  answerValue: AnswerValue,
 ): ApprovalAnswer {
   const labels = new Set(expected[0]?.options.map((o) => o.label) ?? []);
-  const parts = answerValue.split(", ");
-  if (!parts.every((p) => labels.has(p))) {
-    return { kind: "freeText", text: answerValue };
+  const parts =
+    typeof answerValue === "string" ? answerValue.split(", ") : answerValue;
+  if (parts.length === 0 || !parts.every((p) => labels.has(p))) {
+    return { kind: "freeText", text: parts.join(", ") };
   }
   const unique = [...new Set(parts)];
   const declined = unique.includes(DECLINE_LABEL);

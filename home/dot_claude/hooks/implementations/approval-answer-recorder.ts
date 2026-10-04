@@ -60,9 +60,16 @@ function describeVerification(result: AnswerVerification): Reply | null {
       };
     case "malformed":
       return {
-        text: `承認の質問の形と違うので記録していない。${RETRY_COMMAND} の出力をそのまま AskUserQuestion に渡してやり直す。`,
+        text: `承認の質問の形と違うので記録していない。${RETRY_COMMAND} の出力をそのまま AskUserQuestion に渡してやり直す。やり直しても同じ返答になったときは、それ以上出し直さず、利用者に \`approve <文書名>\` と打つよう伝える。`,
         userText: `承認の質問の形と違うので記録していない。${RETRY_COMMAND} の出力をそのまま渡してやり直すか、利用者が \`approve <文書名>\` と打つ。`,
       };
+    case "answerShape": {
+      const found = `承認の質問は生成したものと一致したが、回答の形が想定と違う（answers の値: ${result.shape}）ので記録していない。`;
+      return {
+        text: `${found}質問を出し直しても同じ形で届くことがあるので、出し直さず、利用者に \`approve <文書名>\` と打つよう伝える。`,
+        userText: `${found}\`approve ${result.docs.join(" ")}\` と打つと記録できる。`,
+      };
+    }
     case "notCandidate":
       return {
         text: `記録していない。${result.docs.join(", ")} は承認待ちでなくなった（版が変わった、または既に承認済み）。${RETRY_COMMAND} からやり直す。`,

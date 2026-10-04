@@ -2,8 +2,8 @@
 
 // Debug logging helper
 const DEBUG = process.env.BASH_PARSER_DEBUG === "1";
-function _debugLog(...args: unknown[]) {
-  if (DEBUG) console.error(...args);
+function debugLog(message: () => string) {
+  if (DEBUG) console.error(message());
 }
 
 // Tree-sitter node type definition
@@ -19,7 +19,12 @@ interface ParseTree {
 }
 
 interface TreeSitterParser {
-  parse(input: string): ParseTree | null;
+  parse(
+    input: string,
+    oldTree?: null,
+    options?: { progressCallback?: () => boolean },
+  ): ParseTree | null;
+  reset(): void;
   setLanguage(language: unknown): void;
 }
 
@@ -112,6 +117,125 @@ const META_COMMANDS = {
   // Removed 'cat', 'head', 'tail' - these are file reading commands, not meta commands
   // Removed 'bun' - bun run/test/install are direct commands, not meta commands
 };
+
+// Limits on what the guards analyse (issue #235). A command over a limit is
+// not analysed further and the hooks deny it; the two character limits depend
+// only on the input, so the verdict is the same on every machine.
+export const MAX_COMMAND_CHARS = 32_000;
+export const MAX_META_SCAN_CHARS = 2_000_000;
+// A backstop inside the length limit: tree-sitter's error recovery is
+// superlinear on some malformed inputs. Wall clock, so load can trip it; the
+// only outcome is a deny.
+const PARSE_BUDGET_MS = 100;
+
+type ParserGiveUpKind = "length" | "scan" | "time";
+
+const GIVE_UP_REASONS: Record<ParserGiveUpKind, string> = {
+  length:
+    "Bash command is longer than 32,000 characters, so the guard does not analyse it and blocks it. Split it into smaller commands.",
+  scan: `Bash command repeats wrapper words (${Object.keys(META_COMMANDS).join(", ")}) or command substitutions too many times on one line for the guard to analyse, quoted text included (over 2,000,000 characters scanned), so it is blocked. Split it into smaller commands or shorter lines.`,
+  time: "Bash command could not be parsed within 100 ms, so the guard blocks it. It probably contains a syntax error; fix it or split it into smaller commands.",
+};
+
+// Every give-up of this process, in order. Never cleared: a hook compares a
+// mark taken before its parser calls, so a missed check fails towards deny
+// only if the hook reads it. The three guard hooks must read it.
+const giveUps: ParserGiveUpKind[] = [];
+// Characters handed to the regex extractor so far in this process.
+let metaScanned = 0;
+// Inputs whose parse was cut; parsing them again would cost the same time.
+const timedOutInputs = new Set<string>();
+
+export interface ParserGiveUpMark {
+  giveUps: number;
+  scanned: number;
+}
+
+export function parserGiveUpMark(): ParserGiveUpMark {
+  return { giveUps: giveUps.length, scanned: metaScanned };
+}
+
+/**
+ * The deny reason when the parser stopped analysing something since `mark`,
+ * or when the extractor scanned more than the limit since `mark` in total
+ * (auto-approve re-extracts every fragment, so no single call need be capped).
+ */
+export function parserGiveUpReasonSince(mark: ParserGiveUpMark): string | null {
+  const since = giveUps.slice(mark.giveUps);
+  for (const kind of ["length", "scan", "time"] as const) {
+    if (since.includes(kind)) return GIVE_UP_REASONS[kind];
+  }
+  if (metaScanned - mark.scanned > MAX_META_SCAN_CHARS) {
+    return GIVE_UP_REASONS.scan;
+  }
+  return null;
+}
+
+// One per parseBashCommand call, shared by reference with every nested call.
+interface MetaWork {
+  // metaScanned when the call started.
+  start: number;
+  capped: boolean;
+}
+
+/** False when the scan limit is reached: the caller must not scan `text`. */
+function chargeScan(work: MetaWork, text: string): boolean {
+  if (work.capped) return false;
+  metaScanned += text.length;
+  if (metaScanned - work.start > MAX_META_SCAN_CHARS) {
+    markCapped(work);
+    return false;
+  }
+  return true;
+}
+
+function markCapped(work: MetaWork): void {
+  if (work.capped) return;
+  work.capped = true;
+  giveUps.push("scan");
+}
+
+/**
+ * The only caller of parser.parse. Returns null when the input is over the
+ * length limit, when the parse was cut (cancelled, threw, or returned after
+ * the budget), or when an earlier parse of the same input was cut.
+ */
+async function parseBounded(command: string): Promise<TsTree | null> {
+  if (command.length > MAX_COMMAND_CHARS) {
+    giveUps.push("length");
+    return null;
+  }
+  if (timedOutInputs.has(command)) {
+    giveUps.push("time");
+    return null;
+  }
+  // An init failure rejects as before; it is not a give-up.
+  const parser = await ensureTreeSitter();
+  const start = performance.now();
+  const overBudget = () => performance.now() - start > PARSE_BUDGET_MS;
+  let tree: TsTree | null = null;
+  try {
+    tree = parser.parse(command, null, {
+      progressCallback: overBudget,
+    }) as unknown as TsTree | null;
+    if (tree !== null && !overBudget()) return tree;
+  } catch {
+    // A wasm abort on a degenerate input; handled as a cut parse below.
+  }
+  // Recorded before the cleanup so a throwing cleanup cannot lose it.
+  timedOutInputs.add(command);
+  giveUps.push("time");
+  try {
+    tree?.delete();
+    // Without a reset the next parse aborts the wasm module.
+    parser.reset();
+  } catch (error) {
+    console.error(
+      `[bash-parser] parser cleanup failed: ${error instanceof Error ? error.name : typeof error}`,
+    );
+  }
+  return null;
+}
 
 // Control structure keywords that should be processed transparently
 const CONTROL_KEYWORDS = [
@@ -464,25 +588,36 @@ export async function parseBashCommand(
   command: string,
   silent = false,
 ): Promise<BashParsingResult> {
+  if (command.length > MAX_COMMAND_CHARS) {
+    giveUps.push("length");
+    return {
+      commands: [],
+      errors: [{ message: "command exceeds the parser's length limit" }],
+      parsingMethod: "fallback",
+    };
+  }
+  const work: MetaWork = { start: metaScanned, capped: false };
   try {
-    return await parseWithTreeSitter(command);
+    return await parseWithTreeSitter(command, work);
   } catch (error) {
     if (!silent) {
       console.warn(`Tree-sitter parsing failed, using fallback: ${error}`);
     }
-    return parseWithFallback(command);
+    return parseWithFallback(command, work);
   }
 }
 
 async function parseWithTreeSitter(
   command: string,
+  work: MetaWork,
 ): Promise<BashParsingResult> {
-  const parser = await ensureTreeSitter();
+  await ensureTreeSitter();
   // If meta-execution is present (sh -c, xargs sh -c, etc.), prefer the existing
   // meta extractor to pull out nested commands for safety analysis
-  const metaOnly = extractMetaCommands(command, new Set<string>());
-  console.error(
-    `[bash-parser] metaOnly.length: ${metaOnly.length}, commands: ${metaOnly.join(", ")}`,
+  const metaOnly = extractMetaCommands(command, work);
+  debugLog(
+    () =>
+      `[bash-parser] metaOnly.length: ${metaOnly.length}, commands: ${metaOnly.join(", ")}`,
   );
   if (metaOnly.length > 0) {
     // Validate extractMetaCommands result before trusting it
@@ -511,24 +646,26 @@ async function parseWithTreeSitter(
       hasZshCInOriginal &&
       !Array.from(extractedTexts).some((t) => t.includes("zsh"));
 
-    console.error(
-      `[bash-parser] Meta validation - missingXargs: ${missingXargs}, missingBash: ${missingBash}`,
+    debugLog(
+      () =>
+        `[bash-parser] Meta validation - missingXargs: ${missingXargs}, missingBash: ${missingBash}`,
     );
 
     if (missingXargs || missingBash || missingSh || missingZsh) {
       console.warn(
         `extractMetaCommands incomplete (missing: ${[missingXargs && "xargs", missingBash && "bash", missingSh && "sh", missingZsh && "zsh"].filter(Boolean).join(", ")}), falling back to regex parser`,
       );
-      return parseWithFallback(command);
+      return parseWithFallback(command, work);
     }
 
-    console.error(
-      `[bash-parser] Early return from metaOnly with ${mapped.length} commands`,
+    debugLog(
+      () =>
+        `[bash-parser] Early return from metaOnly with ${mapped.length} commands`,
     );
     return { commands: mapped, errors: [], parsingMethod: "tree-sitter" };
   }
 
-  const tree = parser.parse(command);
+  const tree = (await parseBounded(command)) as unknown as ParseTree | null;
   if (!tree) {
     return {
       commands: [],
@@ -539,7 +676,7 @@ async function parseWithTreeSitter(
   const cmds = extractCommandsFromTreeSitter(tree, command);
 
   // Also include commands from command substitutions ($(...) and backticks)
-  const subs = extractCommandSubstitutions(command);
+  const subs = extractCommandSubstitutions(command, work);
   const extra = subs
     .map((t, i) => parseSimpleCommandFallback(t, i + cmds.length, command))
     .filter(Boolean) as SimpleCommand[];
@@ -569,7 +706,7 @@ async function parseWithTreeSitter(
   // If the original command contains xargs/bash but extracted commands don't include them,
   // fall back to the fallback parser
   const shouldValidate = /\b(xargs|bash\s+-c|sh\s+-c|zsh\s+-c)\b/.test(command);
-  console.error(`[bash-parser] shouldValidate: ${shouldValidate}`);
+  debugLog(() => `[bash-parser] shouldValidate: ${shouldValidate}`);
   if (shouldValidate) {
     const extractedCommandNames = new Set(
       cmds.map((c) => c.name).filter(Boolean),
@@ -579,9 +716,12 @@ async function parseWithTreeSitter(
     const hasShC = /\bsh\s+-c\b/.test(command);
     const hasZshC = /\bzsh\s+-c\b/.test(command);
 
-    console.error(`[bash-parser] hasXargs: ${hasXargs}, hasBashC: ${hasBashC}`);
-    console.error(
-      `[bash-parser] extractedCommandNames: ${Array.from(extractedCommandNames).join(", ")}`,
+    debugLog(
+      () => `[bash-parser] hasXargs: ${hasXargs}, hasBashC: ${hasBashC}`,
+    );
+    debugLog(
+      () =>
+        `[bash-parser] extractedCommandNames: ${Array.from(extractedCommandNames).join(", ")}`,
     );
 
     // Check if expected commands are missing from extraction
@@ -590,8 +730,9 @@ async function parseWithTreeSitter(
     const missingSh = hasShC && !extractedCommandNames.has("sh");
     const missingZsh = hasZshC && !extractedCommandNames.has("zsh");
 
-    console.error(
-      `[bash-parser] missingXargs: ${missingXargs}, missingBash: ${missingBash}`,
+    debugLog(
+      () =>
+        `[bash-parser] missingXargs: ${missingXargs}, missingBash: ${missingBash}`,
     );
 
     if (missingXargs || missingBash || missingSh || missingZsh) {
@@ -599,7 +740,7 @@ async function parseWithTreeSitter(
       console.warn(
         `Tree-sitter incomplete extraction detected (missing: ${[missingXargs && "xargs", missingBash && "bash", missingSh && "sh", missingZsh && "zsh"].filter(Boolean).join(", ")}), falling back to regex parser`,
       );
-      return parseWithFallback(command);
+      return parseWithFallback(command, work);
     }
   }
 
@@ -610,7 +751,7 @@ async function parseWithTreeSitter(
   };
 }
 
-function parseWithFallback(command: string): BashParsingResult {
+function parseWithFallback(command: string, work: MetaWork): BashParsingResult {
   const commands: SimpleCommand[] = [];
   const errors: Array<{
     message: string;
@@ -618,7 +759,7 @@ function parseWithFallback(command: string): BashParsingResult {
   }> = [];
 
   try {
-    const extractedCommands = extractCommandsInternal(command);
+    const extractedCommands = extractCommandsInternal(command, work);
 
     for (let i = 0; i < extractedCommands.length; i++) {
       const cmdText = extractedCommands[i] ?? "";
@@ -641,18 +782,19 @@ function parseWithFallback(command: string): BashParsingResult {
   };
 }
 
-function extractCommandsInternal(command: string): string[] {
+function extractCommandsInternal(command: string, work: MetaWork): string[] {
+  // After the scan limit nothing is split further; the hooks deny the command.
+  if (work.capped) return [command];
   const _commands: string[] = [];
-  const processed = new Set<string>();
 
   // Extract commands from meta commands first
-  const metaExtracted = extractMetaCommands(command, processed);
+  const metaExtracted = extractMetaCommands(command, work);
   if (metaExtracted.length > 0) {
     return metaExtracted; // If meta commands found, return only those
   }
 
   // Extract from control structures (for loops, etc.)
-  const controlExtracted = extractFromControlStructures(command, processed);
+  const controlExtracted = extractFromControlStructures(command, work);
   if (controlExtracted.length > 0) {
     return controlExtracted; // If control structures found, return only those
   }
@@ -669,29 +811,28 @@ function extractCommandsInternal(command: string): string[] {
   return basicCommands;
 }
 
-function extractMetaCommands(
-  command: string,
-  processed: Set<string>,
-): string[] {
+function extractMetaCommands(command: string, work: MetaWork): string[] {
   const commands: string[] = [];
+  if (!chargeScan(work, command)) return commands;
 
   // First check if this is a pipeline with meta commands
   const pipelineParts = splitPipelineAndOperators(command);
-  console.error(
-    `[extractMetaCommands] pipelineParts: ${pipelineParts.length} parts`,
+  debugLog(
+    () => `[extractMetaCommands] pipelineParts: ${pipelineParts.length} parts`,
   );
 
   // Process each part of the pipeline for meta commands
   for (let partIndex = 0; partIndex < pipelineParts.length; partIndex++) {
     const part = pipelineParts[partIndex] ?? "";
-    console.error(
-      `[extractMetaCommands] part ${partIndex}: ${part.substring(0, 50)}...`,
+    debugLog(
+      () =>
+        `[extractMetaCommands] part ${partIndex}: ${part.substring(0, 50)}...`,
     );
 
     for (const [metaCmd, patterns] of Object.entries(META_COMMANDS)) {
       if (part.includes(metaCmd)) {
-        console.error(
-          `[extractMetaCommands] Found ${metaCmd} in part ${partIndex}`,
+        debugLog(
+          () => `[extractMetaCommands] Found ${metaCmd} in part ${partIndex}`,
         );
 
         // Special handling for bash/sh/zsh -c to properly extract quoted strings
@@ -704,20 +845,21 @@ function extractMetaCommands(
             const afterCFlag = part.substring(cFlagIndex + 4).trimStart(); // Skip " -c "
             const quoted = extractQuotedString(afterCFlag, 0);
             if (quoted) {
-              console.error(
-                `[extractMetaCommands] Extracted quoted string from ${metaCmd} -c: ${quoted.substring(0, 50)}...`,
+              debugLog(
+                () =>
+                  `[extractMetaCommands] Extracted quoted string from ${metaCmd} -c: ${quoted.substring(0, 50)}...`,
               );
-              processed.add(command);
 
               // Extract commands from the nested command
-              let nestedCommands = extractCommandsInternal(quoted);
-              console.error(
-                `[extractMetaCommands] Nested commands: ${nestedCommands.join(", ")}`,
+              let nestedCommands = extractCommandsInternal(quoted, work);
+              debugLog(
+                () =>
+                  `[extractMetaCommands] Nested commands: ${nestedCommands.join(", ")}`,
               );
 
               // Also check for command substitutions
               nestedCommands = nestedCommands.flatMap((cmd) =>
-                extractCommandSubstitutions(cmd),
+                extractCommandSubstitutions(cmd, work),
               );
 
               // Add pipeline parts before the meta command
@@ -738,8 +880,9 @@ function extractMetaCommands(
                 if (nextPart?.trim()) commands.push(nextPart);
               }
 
-              console.error(
-                `[extractMetaCommands] Returning ${commands.length} commands: ${commands.join(", ")}`,
+              debugLog(
+                () =>
+                  `[extractMetaCommands] Returning ${commands.length} commands: ${commands.join(", ")}`,
               );
               return commands;
             }
@@ -751,22 +894,26 @@ function extractMetaCommands(
           const regex = new RegExp(`\\b${metaCmd}\\s+${pattern.source}`, "g");
           let match: RegExpExecArray | null;
           while ((match = regex.exec(part)) !== null) {
+            if (work.capped) break;
             const extractedCommand = match[1] || match[2] || match[3]; // Handle multiple capture groups
-            console.error(
-              `[extractMetaCommands] Matched pattern, extracted: ${extractedCommand?.substring(0, 50)}...`,
+            debugLog(
+              () =>
+                `[extractMetaCommands] Matched pattern, extracted: ${extractedCommand?.substring(0, 50)}...`,
             );
             if (extractedCommand?.trim()) {
-              processed.add(command);
-
               // Extract commands from the nested command, including backticks
-              let nestedCommands = extractCommandsInternal(extractedCommand);
-              console.error(
-                `[extractMetaCommands] Nested commands: ${nestedCommands.join(", ")}`,
+              let nestedCommands = extractCommandsInternal(
+                extractedCommand,
+                work,
+              );
+              debugLog(
+                () =>
+                  `[extractMetaCommands] Nested commands: ${nestedCommands.join(", ")}`,
               );
 
               // Also check for command substitutions (backticks) in the nested commands
               nestedCommands = nestedCommands.flatMap((cmd) =>
-                extractCommandSubstitutions(cmd),
+                extractCommandSubstitutions(cmd, work),
               );
 
               // Add pipeline parts before the meta command
@@ -787,8 +934,9 @@ function extractMetaCommands(
                 if (nextPart?.trim()) commands.push(nextPart);
               }
 
-              console.error(
-                `[extractMetaCommands] Returning ${commands.length} commands: ${commands.join(", ")}`,
+              debugLog(
+                () =>
+                  `[extractMetaCommands] Returning ${commands.length} commands: ${commands.join(", ")}`,
               );
               return commands;
             }
@@ -798,23 +946,28 @@ function extractMetaCommands(
     }
   }
 
-  console.error(
-    `[extractMetaCommands] No meta commands found, returning empty`,
+  debugLog(
+    () => `[extractMetaCommands] No meta commands found, returning empty`,
   );
   return commands;
 }
 
 // Extract commands from backtick command substitutions
-function extractCommandSubstitutions(command: string): string[] {
+function extractCommandSubstitutions(
+  command: string,
+  work: MetaWork,
+): string[] {
   const commands: string[] = [];
+  if (!chargeScan(work, command)) return [command];
   let match: RegExpExecArray | null;
 
   // Backtick substitutions: `...`
   const backtickRegex = /`([^`]+)`/g;
   while ((match = backtickRegex.exec(command)) !== null) {
+    if (work.capped) break;
     const substitutedCommand = match[1];
     if (substitutedCommand?.trim()) {
-      const subCommands = extractCommandsInternal(substitutedCommand);
+      const subCommands = extractCommandsInternal(substitutedCommand, work);
       commands.push(...subCommands);
     }
   }
@@ -823,9 +976,10 @@ function extractCommandSubstitutions(command: string): string[] {
   // Single-level only (non-nested) to keep it simple
   const dollarParenRegex = /\$\(([^()]+)\)/g;
   while ((match = dollarParenRegex.exec(command)) !== null) {
+    if (work.capped) break;
     const substitutedCommand = match[1];
     if (substitutedCommand?.trim()) {
-      const subCommands = extractCommandsInternal(substitutedCommand);
+      const subCommands = extractCommandsInternal(substitutedCommand, work);
       commands.push(...subCommands);
     }
   }
@@ -840,16 +994,16 @@ function extractCommandSubstitutions(command: string): string[] {
 
 function extractFromControlStructures(
   command: string,
-  processed: Set<string>,
+  work: MetaWork,
 ): string[] {
   const commands: string[] = [];
+  if (!chargeScan(work, command)) return commands;
 
   // Handle for loops: "for x in ...; do ...; done"
   const forLoopMatch = command.match(
     /for\s+\w+\s+in\s+[^;]+;\s*do\s+(.*?);\s*done/s,
   );
   if (forLoopMatch?.[1]) {
-    processed.add(command);
     const loopBody = forLoopMatch[1];
     // Split loop body commands
     // Split on ";" alone: the trim below removes the blanks around each piece,
@@ -947,11 +1101,7 @@ import type { Node as TsNode, Tree as TsTree } from "web-tree-sitter";
 // Exported so the deny-side policy (heredoc-data.ts) parses with the same function.
 export type ParseForCollect = (command: string) => Promise<TsTree | null>;
 
-export const parseForCollect: ParseForCollect = async (command) => {
-  const parser = await ensureTreeSitter();
-  // TreeSitterParser is this file's narrow view of web-tree-sitter's Parser.
-  return parser.parse(command) as unknown as TsTree | null;
-};
+export const parseForCollect: ParseForCollect = parseBounded;
 
 /**
  * True when a file_redirect is already part of a collected text: inside a
@@ -1039,9 +1189,53 @@ export async function collectExecutableTexts(
   }
 }
 
+interface StructuredMemo {
+  result: Promise<ExtractedCommands>;
+  // Give-ups recorded while computing, replayed to callers that reuse it.
+  replay: ParserGiveUpKind[];
+}
+
+// Keyed by the input text. pattern-matcher re-extracts each fragment once per
+// Bash deny pattern; without this the scan total of a hook is multiplied by
+// the number of patterns.
+const structuredMemo = new Map<string, StructuredMemo>();
+
 export async function extractCommandsStructured(
   command: string,
 ): Promise<ExtractedCommands> {
+  const memo = structuredMemo.get(command);
+  if (memo === undefined) {
+    const before = giveUps.length;
+    const created: StructuredMemo = {
+      result: computeStructured(command).then((value) => {
+        created.replay = giveUps.slice(before);
+        return value;
+      }),
+      replay: [],
+    };
+    structuredMemo.set(command, created);
+    try {
+      const value = await created.result;
+      return { ...value, individualCommands: [...value.individualCommands] };
+    } catch (error) {
+      structuredMemo.delete(command);
+      throw error;
+    }
+  }
+  const value = await memo.result;
+  giveUps.push(...memo.replay);
+  return { ...value, individualCommands: [...value.individualCommands] };
+}
+
+async function computeStructured(command: string): Promise<ExtractedCommands> {
+  if (command.length > MAX_COMMAND_CHARS) {
+    giveUps.push("length");
+    return {
+      individualCommands: wholeAndCoarse(command),
+      originalCommand: null,
+      parsingMethod: "fallback",
+    };
+  }
   const base = await extractBaseCommands(command);
   const supplement = await collectExecutableTexts(command, base.parsingMethod);
   const seen = new Set(base.individualCommands.map((c) => c.trim()));

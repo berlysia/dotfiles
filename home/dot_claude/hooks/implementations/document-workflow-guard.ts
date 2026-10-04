@@ -3,6 +3,10 @@
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { defineHook } from "cc-hooks-ts";
+import {
+  parserGiveUpMark,
+  parserGiveUpReasonSince,
+} from "../lib/bash-parser.ts";
 import { getCommandFromToolInput } from "../lib/command-parsing.ts";
 import { createDenyResponse } from "../lib/context-helpers.ts";
 import { prepareDenyInput } from "../lib/deny-input.ts";
@@ -80,6 +84,9 @@ interface WriteAnalysis {
 const hook = defineHook({
   trigger: { PreToolUse: true },
   run: async (context) => {
+    // Taken outside the try: the catch below allows the call on an internal
+    // error, and must not do so for a command the parser stopped analysing.
+    const giveUpMark = parserGiveUpMark();
     try {
       const { tool_name, tool_input } = context.input;
       if (!GUARDED_TOOLS.has(tool_name)) {
@@ -224,6 +231,18 @@ const hook = defineHook({
           wfDir,
           gateClosed,
         );
+        // The fragments of a command the parser stopped analysing are
+        // incomplete, so they cannot show that it writes nothing.
+        const giveUpReason = parserGiveUpReasonSince(giveUpMark);
+        if (giveUpReason !== null) {
+          if (warnOnly) {
+            console.error(
+              "[document-workflow-guard][would-block] Bash: parser limits",
+            );
+            return context.success({});
+          }
+          return context.json(createDenyResponse(giveUpReason));
+        }
         if (!analysis.isWriteLike) {
           return context.success({});
         }
@@ -335,6 +354,13 @@ const hook = defineHook({
         ),
       );
     } catch (error) {
+      const giveUpReason = parserGiveUpReasonSince(giveUpMark);
+      if (
+        giveUpReason !== null &&
+        process.env.DOCUMENT_WORKFLOW_WARN_ONLY !== "1"
+      ) {
+        return context.json(createDenyResponse(giveUpReason));
+      }
       // fail-open is preserved (matching what runHook already does when a
       // throw escapes to it: convert to exit 1). What changes is that the
       // call is no longer allowed silently. context.success() would discard

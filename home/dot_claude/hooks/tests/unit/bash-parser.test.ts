@@ -38,7 +38,11 @@ import {
   type ExtractedCommands,
   extractBaseCommands,
   extractCommandsStructured,
+  MAX_COMMAND_CHARS,
   parseBashCommand,
+  parseForCollect,
+  parserGiveUpMark,
+  parserGiveUpReasonSince,
 } from "../../lib/bash-parser.ts";
 
 describe("bash-parser", () => {
@@ -594,9 +598,209 @@ describe("for-loop body splitting (Issue #219 H)", () => {
   });
 
   it("splits a body with a long blank run in linear time", async () => {
-    const command = `bash -c "for x in a; do echo${" ".repeat(100000)}y; done"`;
+    const command = `bash -c "for x in a; do echo${" ".repeat(30000)}y; done"`;
     const start = performance.now();
     await extractCommandsStructured(command);
     ok(performance.now() - start < 1000);
+  });
+});
+
+describe("parser limits (Issue #235)", () => {
+  it("does not analyse a command longer than 32,000 characters", async () => {
+    const command = `echo ${"a".repeat(MAX_COMMAND_CHARS - 4)}`;
+    strictEqual(command.length, MAX_COMMAND_CHARS + 1);
+    const mark = parserGiveUpMark();
+    const result = await extractCommandsStructured(command);
+    strictEqual(result.parsingMethod, "fallback");
+    ok(parserGiveUpReasonSince(mark)?.includes("32,000 characters"));
+  });
+
+  it("analyses a command of exactly 32,000 characters as before", async () => {
+    const command = `echo ${"a".repeat(MAX_COMMAND_CHARS - 5)}`;
+    strictEqual(command.length, MAX_COMMAND_CHARS);
+    const mark = parserGiveUpMark();
+    const result = await extractCommandsStructured(command);
+    strictEqual(result.parsingMethod, "tree-sitter");
+    strictEqual(parserGiveUpReasonSince(mark), null);
+  });
+
+  it("records the length limit on the parseBashCommand path too", async () => {
+    const mark = parserGiveUpMark();
+    const result = await parseBashCommand(
+      `xargs ${"a".repeat(MAX_COMMAND_CHARS)}`,
+      true,
+    );
+    deepStrictEqual(result.commands, []);
+    strictEqual(result.parsingMethod, "fallback");
+    ok(parserGiveUpReasonSince(mark)?.includes("32,000 characters"));
+  });
+
+  for (const [name, command] of [
+    ["a long run of redirects", `echo limit-a ${">".repeat(20000)}`],
+    ["repeated subshells", `${"(a) ".repeat(5000)}limit-b`],
+  ] as const) {
+    it(`gives up within the time budget on ${name}`, async () => {
+      const mark = parserGiveUpMark();
+      const start = performance.now();
+      const result = await extractCommandsStructured(command);
+      ok(performance.now() - start < 1000);
+      strictEqual(result.parsingMethod, "fallback");
+      ok(parserGiveUpReasonSince(mark)?.includes("within 100 ms"));
+    });
+  }
+
+  it("keeps the parser usable after a cancelled parse", async () => {
+    strictEqual(
+      await parseForCollect(`echo limit-c ${">".repeat(20000)}`),
+      null,
+    );
+    deepStrictEqual(await extractCommandsStructured("echo after-limit-c"), {
+      individualCommands: ["echo after-limit-c"],
+      originalCommand: null,
+      parsingMethod: "tree-sitter",
+    });
+  });
+
+  it("does not parse an input again after giving up on it", async () => {
+    const command = `echo limit-d ${">".repeat(20000)}`;
+    strictEqual(await parseForCollect(command), null);
+    const mark = parserGiveUpMark();
+    const start = performance.now();
+    strictEqual(await parseForCollect(command), null);
+    ok(performance.now() - start < 50);
+    ok(parserGiveUpReasonSince(mark)?.includes("within 100 ms"));
+  });
+
+  it("reports no reason when nothing gave up", async () => {
+    const mark = parserGiveUpMark();
+    await extractCommandsStructured("ls -la | wc -l");
+    strictEqual(parserGiveUpReasonSince(mark), null);
+  });
+
+  it("keeps today's fragments under the scan limit", async () => {
+    const mark = parserGiveUpMark();
+    deepStrictEqual(
+      await extractBaseCommands("timeout 10 env A=b xargs sh -c 'echo hi'"),
+      {
+        individualCommands: ["echo hi"],
+        originalCommand: "timeout 10 env A=b xargs sh -c 'echo hi'",
+        parsingMethod: "tree-sitter",
+      },
+    );
+    deepStrictEqual(
+      await extractBaseCommands("echo $(xargs echo a) $(xargs echo b)"),
+      {
+        individualCommands: ["xargs echo b", "echo b", "echo b)"],
+        originalCommand: "echo $(xargs echo a) $(xargs echo b)",
+        parsingMethod: "tree-sitter",
+      },
+    );
+    deepStrictEqual(
+      await extractBaseCommands("ls | xargs -n1 echo | xargs -n1 cat"),
+      {
+        individualCommands: [
+          "ls",
+          "xargs -n1 echo",
+          "-n1 echo",
+          "xargs -n1 cat",
+        ],
+        originalCommand: null,
+        parsingMethod: "tree-sitter",
+      },
+    );
+    strictEqual(parserGiveUpReasonSince(mark), null);
+  });
+
+  for (const [name, command] of [
+    ["a chain of wrapper words", "xargs ".repeat(700)],
+    ["sibling substitutions", `echo ${"$(xargs echo a) ".repeat(500)}`],
+  ] as const) {
+    it(`stops the extractor at the scan limit on ${name}`, async () => {
+      const mark = parserGiveUpMark();
+      const start = performance.now();
+      await extractBaseCommands(command);
+      ok(performance.now() - start < 1000);
+      ok(
+        parserGiveUpReasonSince(mark)?.includes("2,000,000 characters scanned"),
+      );
+    });
+  }
+
+  it("counts the scan across calls made after one mark", async () => {
+    const mark = parserGiveUpMark();
+    await extractBaseCommands(`${"xargs ".repeat(100)}one`);
+    strictEqual(parserGiveUpReasonSince(mark), null);
+    await extractBaseCommands(`${"xargs ".repeat(100)}two`);
+    await extractBaseCommands(`${"xargs ".repeat(100)}three`);
+    ok(parserGiveUpReasonSince(mark)?.includes("2,000,000 characters scanned"));
+  });
+
+  it("prints no debug lines unless BASH_PARSER_DEBUG is set", async () => {
+    const lines: string[] = [];
+    const original = console.error;
+    console.error = (...args: unknown[]) => {
+      lines.push(String(args[0]));
+    };
+    try {
+      await extractCommandsStructured("ls | xargs -n1 echo debug-lines");
+    } finally {
+      console.error = original;
+    }
+    deepStrictEqual(
+      lines.filter(
+        (line) =>
+          line.startsWith("[bash-parser]") ||
+          line.startsWith("[extractMetaCommands]"),
+      ),
+      [],
+    );
+  });
+
+  it("returns an equal, independent result for a repeated input", async () => {
+    const first = await extractCommandsStructured("echo memo-a; ls memo-a");
+    first.individualCommands.push("mutated by the caller");
+    deepStrictEqual(await extractCommandsStructured("echo memo-a; ls memo-a"), {
+      individualCommands: ["echo memo-a", "ls memo-a"],
+      originalCommand: "echo memo-a; ls memo-a",
+      parsingMethod: "tree-sitter",
+    });
+  });
+
+  it("replays a give-up when a remembered result is reused", async () => {
+    const command = `echo ${"b".repeat(MAX_COMMAND_CHARS)}`;
+    await extractCommandsStructured(command);
+    const mark = parserGiveUpMark();
+    await extractCommandsStructured(command);
+    ok(parserGiveUpReasonSince(mark)?.includes("32,000 characters"));
+  });
+
+  it("does not scan a repeated input again", async () => {
+    const command = `${"xargs ".repeat(100)}memo-c`;
+    await extractCommandsStructured(command);
+    const mark = parserGiveUpMark();
+    await extractCommandsStructured(command);
+    await extractCommandsStructured(command);
+    await extractCommandsStructured(command);
+    strictEqual(parserGiveUpReasonSince(mark), null);
+  });
+
+  it("is read by every guard hook that parses Bash commands", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const implementations = join(
+      import.meta.dirname,
+      "..",
+      "..",
+      "implementations",
+    );
+    for (const file of [
+      "auto-approve.ts",
+      "deny-node-modules.ts",
+      "document-workflow-guard.ts",
+    ]) {
+      const source = readFileSync(join(implementations, file), "utf8");
+      ok(source.includes("parserGiveUpMark()"), file);
+      ok(source.includes("parserGiveUpReasonSince("), file);
+    }
   });
 });

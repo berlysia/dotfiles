@@ -737,6 +737,47 @@ describe("document-workflow-guard.ts hook behavior", () => {
     });
   });
 
+  describe("parser limits (Issue #235)", () => {
+    it("denies a Bash command over the length limit", async () => {
+      const repo = createWorkflowRepo(pendingWorkflowRepo());
+      envHelper.set("CLAUDE_TEST_CWD", repo);
+      const context = createPreToolUseContextFor(hook, "Bash", {
+        command: `echo ${"a".repeat(32000)}`,
+      });
+      await invokeRun(hook, context);
+      context.assertDeny();
+      const reason =
+        context.jsonCalls[0]?.hookSpecificOutput?.permissionDecisionReason;
+      ok(reason?.includes("32,000 characters"), reason);
+    });
+
+    it("denies a write hidden behind an input the parser gives up on", async () => {
+      const repo = createWorkflowRepo(pendingWorkflowRepo());
+      envHelper.set("CLAUDE_TEST_CWD", repo);
+      const context = createPreToolUseContextFor(hook, "Bash", {
+        command: `for f in a; do tee src/a.ts; done; echo ${">".repeat(20000)}`,
+      });
+      const start = performance.now();
+      await invokeRun(hook, context);
+      ok(performance.now() - start < 1000);
+      context.assertDeny();
+      const reason =
+        context.jsonCalls[0]?.hookSpecificOutput?.permissionDecisionReason;
+      ok(reason?.includes("within 100 ms"), reason);
+    });
+
+    it("only warns under DOCUMENT_WORKFLOW_WARN_ONLY", async () => {
+      const repo = createWorkflowRepo(pendingWorkflowRepo());
+      envHelper.set("CLAUDE_TEST_CWD", repo);
+      envHelper.set("DOCUMENT_WORKFLOW_WARN_ONLY", "1");
+      const context = createPreToolUseContextFor(hook, "Bash", {
+        command: `echo ${"c".repeat(32000)}`,
+      });
+      await invokeRun(hook, context);
+      context.assertSuccess({});
+    });
+  });
+
   describe("deny hint for throwaway writes", () => {
     // session 115e2d54 では、プロジェクト外にリテラルパスで書けば通るのに、
     // deny 文が承認手順しか示さなかったため 3 回続けて止まった。
@@ -1657,6 +1698,8 @@ describe("document-workflow-guard.ts AskUserQuestion (spec K4)", () => {
       { answers: {} },
       { answers: "" },
       { answers: null },
+      { answers: { [APPROVAL_QUESTION_TEXT]: ["spec.md"] } },
+      { answers: { [APPROVAL_QUESTION_TEXT]: [] } },
       { annotations: [] },
       { annotations: { x: { notes: "n" } } },
     ]) {

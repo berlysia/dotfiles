@@ -25,6 +25,8 @@ import {
   appendApproval,
   buildApprovalQuestions,
   deepEqualIgnoringKeyOrder,
+  describeAnswerShape,
+  isAnswerValue,
   isApprovalLikeQuestion,
   matchApprovalAnswer,
 } from "./workflow-approval.ts";
@@ -149,6 +151,7 @@ export type AnswerVerification =
   | { kind: "afk" }
   | { kind: "freeText"; text: string }
   | { kind: "malformed" }
+  | { kind: "answerShape"; shape: string; docs: string[] }
   | { kind: "notCandidate"; docs: string[] }
   | { kind: "decline" }
   | { kind: "notes"; notes: string }
@@ -189,6 +192,9 @@ function extractDocNames(question: Record<string, unknown>): string[] | null {
  * state of the documents and must equal the one in the response, so what
  * the user saw was exactly what the mechanism generated, at the hashes that
  * are recorded. Anything that does not fit is reported, never recorded.
+ * The answer may be a string or an array of strings; any other value is
+ * reported as its own outcome, because asking again cannot change the shape
+ * the client sends.
  */
 export function verifyAndRecordApprovalAnswer(
   wfDir: string,
@@ -219,14 +225,10 @@ export function verifyAndRecordApprovalAnswer(
   }
   if (!isPlainObject(answers)) return { kind: "malformed" };
   const answerKeys = Object.keys(answers);
-  const answer = answers[question.question];
-  if (
-    answerKeys.length !== 1 ||
-    answerKeys[0] !== question.question ||
-    typeof answer !== "string"
-  ) {
+  if (answerKeys.length !== 1 || answerKeys[0] !== question.question) {
     return { kind: "malformed" };
   }
+  const answer = answers[question.question];
 
   const docNames = extractDocNames(question);
   if (docNames === null) return { kind: "malformed" };
@@ -256,6 +258,16 @@ export function verifyAndRecordApprovalAnswer(
         return { kind: "notes", notes: entry.notes };
       }
     }
+  }
+
+  // Checked only now, after the question matched what the CLI generates, so
+  // the report can say the question was right and asking again will not help.
+  if (!isAnswerValue(answer)) {
+    return {
+      kind: "answerShape",
+      shape: describeAnswerShape(answer),
+      docs: docNames,
+    };
   }
 
   const matched = matchApprovalAnswer(rebuilt, answer);

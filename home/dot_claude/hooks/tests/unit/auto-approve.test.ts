@@ -6,6 +6,7 @@ import type { ToolSchema } from "cc-hooks-ts";
 import autoApproveHook, {
   processBashTool,
 } from "../../implementations/auto-approve.ts";
+import { parseForCollect } from "../../lib/bash-parser.ts";
 import { BOUNDARY_DENY_GUIDANCE } from "../../lib/context-helpers.ts";
 import {
   ConsoleCapture,
@@ -325,6 +326,72 @@ describe("auto-approve.ts hook behavior", () => {
       const reason =
         context.jsonCalls[0]?.hookSpecificOutput?.permissionDecisionReason;
       ok(reason?.includes("(2 commands)"), reason);
+    });
+  });
+
+  describe("parser limits (Issue #235)", () => {
+    it("denies a command over the length limit without classifying fragments", async () => {
+      let classified = 0;
+      const result = await processBashTool(
+        { command: `ls ${"a".repeat(32000)}` },
+        [],
+        ["Bash(ls *)"],
+        "/tmp",
+        {
+          classifyBashDeny: async () => {
+            classified++;
+            return { type: "clear" };
+          },
+          matchBashAllow: async (cmd) => ({
+            type: "allow",
+            command: cmd,
+            pattern: "Bash(ls *)",
+          }),
+        },
+      );
+      strictEqual(classified, 0);
+      strictEqual(result.commands.length, 1);
+      strictEqual(result.commands[0]?.type, "deny");
+      strictEqual(result.hasAskRequired, false);
+      strictEqual(result.hasPassRequired, false);
+    });
+
+    it("denies when a fragment's re-parse gives up during classification", async () => {
+      const result = await processBashTool(
+        { command: "ls -la" },
+        [],
+        ["Bash(ls *)"],
+        "/tmp",
+        {
+          classifyBashDeny: async () => {
+            await parseForCollect(`echo aa-limit ${">".repeat(20000)}`);
+            return { type: "clear" };
+          },
+          matchBashAllow: async (cmd) => ({
+            type: "allow",
+            command: cmd,
+            pattern: "Bash(ls *)",
+          }),
+        },
+      );
+      deepStrictEqual(
+        result.commands.map((c) => c.type),
+        ["deny"],
+      );
+    });
+
+    it("denies through the hook with the limit as the reason", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Bash(ls *)"]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", {
+        command: `ls ${"b".repeat(32000)}`,
+      });
+      await invokeRun(autoApproveHook, context);
+      context.assertDeny();
+      const reason =
+        context.jsonCalls[0]?.hookSpecificOutput?.permissionDecisionReason;
+      ok(reason?.includes("32,000 characters"), reason);
+      ok((reason?.length ?? 0) < 2000, `${reason?.length} characters`);
     });
   });
 
