@@ -76,16 +76,23 @@ const hook = defineHook({
         tool_input as Record<string, unknown>,
       );
 
+      const ctx: JudgeContext = {
+        category: TOOL_CATEGORY[tool_name],
+        allowPatterns,
+        repoRoot,
+        homeDir: getHomeDir(),
+        additionalDirs: additionalDirs.map((addDir) =>
+          resolve(resolvePath(addDir)),
+        ),
+        tempRoots: collectTempRoots(tmpdir(), realpathSync),
+        workflowDirRoots,
+        systemPaths: SYSTEM_PATHS,
+        caseInsensitive: process.platform === "darwin",
+      };
+
       // Check each path
       for (const filePath of filePaths) {
-        const validation = validatePath(
-          filePath,
-          repoRoot,
-          tool_name,
-          additionalDirs,
-          allowPatterns,
-          workflowDirRoots,
-        );
+        const validation = validatePath(filePath, ctx);
         if (!validation.isAllowed) {
           return context.json(
             createDenyResponse(
@@ -413,174 +420,165 @@ function getWorkflowDirRoots(sessionId: string): string[] {
   }
 }
 
-function validatePath(
-  path: string,
-  repoRoot: string,
-  toolName: string,
-  additionalDirs: string[],
-  allowPatterns: string[],
-  workflowDirRoots: string[],
-): PathValidationResult {
-  const absPath = resolvePath(path);
-  const homeDir = getHomeDir();
+type Category = "read" | "write";
 
-  // 1. Repository内 → 常に許可
-  if (isUnderRoot(absPath, repoRoot)) {
-    return {
-      isAllowed: true,
-      resolvedPath: absPath,
-    };
+// Maps each tool to the kind of access it performs. Bash has no entry: steps 4
+// and 6 skip it and it falls to the default deny, exactly as before.
+// PERMISSION_CATEGORY above answers a different question (which allow-pattern
+// prefix covers a tool); keep the two in step when a tool is added.
+const TOOL_CATEGORY: Record<string, Category> = {
+  Read: "read",
+  NotebookRead: "read",
+  LS: "read",
+  Glob: "read",
+  Grep: "read",
+  Write: "write",
+  Edit: "write",
+  MultiEdit: "write",
+  NotebookEdit: "write",
+};
+
+const SYSTEM_PATHS = [
+  "/etc",
+  "/usr",
+  "/var",
+  "/opt",
+  "/bin",
+  "/sbin",
+  "/lib",
+  "/lib64",
+  "/boot",
+  "/proc",
+  "/sys",
+  "/dev",
+];
+
+export interface JudgeContext {
+  category: Category | undefined;
+  allowPatterns: string[];
+  repoRoot: string;
+  homeDir: string;
+  additionalDirs: string[]; // already absolute, no trailing slash
+  tempRoots: string[]; // T4: read by validatePath (step 1.5). T5: read by judge
+  workflowDirRoots: string[]; // T4: read by validatePath (step 1.6). T5: read by judge
+  systemPaths: string[]; // SYSTEM_PATHS in production; tests may narrow it
+  caseInsensitive: boolean; // process.platform === "darwin" in production
+}
+
+export interface Judgement {
+  allowed: boolean;
+  step: string;
+  reason?: string;
+}
+
+export function judge(form: string, ctx: JudgeContext): Judgement {
+  // 1. Repository -> always allowed
+  if (isUnderRoot(form, ctx.repoRoot)) {
+    return { allowed: true, step: "1-repo" };
   }
 
-  // 1.5. OS の一時ディレクトリ配下 → 許可（システムディレクトリ判定より前）
-  // macOS では os.tmpdir() が /var/folders 配下にあり、/var 一括拒否の後では到達できない。
-  // `..` を保持するため resolvePath を通さず、生の絶対パスで判定する。
-  const rawAbs = path.startsWith("/")
-    ? path
-    : `${process.env.CLAUDE_TEST_CWD || process.cwd()}/${path}`;
-  if (
-    isWithinTempRoots(
-      rawAbs,
-      collectTempRoots(tmpdir(), realpathSync),
-      realpathSync,
-      lstatSync,
-    )
-  ) {
-    return {
-      isAllowed: true,
-      resolvedPath: absPath,
-    };
-  }
-
-  // 1.6. The session's workflow dir. It stays under the project root even
-  // when the repo root is a linked worktree (spec K10), so it is outside
-  // repoRoot whenever work happens inside a worktree. isWithinTempRoots
-  // already rejects `..`, compares the physical path after resolving the
-  // nearest existing ancestor, and fails closed on dangling symlinks.
-  if (
-    workflowDirRoots.length > 0 &&
-    isWithinTempRoots(rawAbs, workflowDirRoots, realpathSync, lstatSync)
-  ) {
-    return {
-      isAllowed: true,
-      resolvedPath: absPath,
-    };
-  }
-
-  // 2. システムディレクトリ → 常に拒否（permissions.allowでも上書き不可）
-  const systemPaths = [
-    "/etc",
-    "/usr",
-    "/var",
-    "/opt",
-    "/bin",
-    "/sbin",
-    "/lib",
-    "/lib64",
-    "/boot",
-    "/proc",
-    "/sys",
-    "/dev",
-  ];
-  for (const systemPath of systemPaths) {
-    if (absPath.startsWith(`${systemPath}/`)) {
+  // 2. System directories -> always denied (an allow pattern cannot override)
+  for (const systemPath of ctx.systemPaths) {
+    if (form.startsWith(`${systemPath}/`)) {
       return {
-        isAllowed: false,
-        resolvedPath: absPath,
+        allowed: false,
+        step: "2-system",
         reason: `Access to system directory '${systemPath}' is always denied for security`,
       };
     }
   }
 
-  // 3. 常に許可する安全なパス
-  const alwaysSafePaths = [join(homeDir, ".claude"), "/var/tmp"];
+  // 3. Always-safe paths
+  const alwaysSafePaths = [join(ctx.homeDir, ".claude"), "/var/tmp"];
   for (const safePath of alwaysSafePaths) {
-    if (absPath.startsWith(`${safePath}/`) || absPath === safePath) {
-      return {
-        isAllowed: true,
-        resolvedPath: absPath,
-      };
+    if (form.startsWith(`${safePath}/`) || form === safePath) {
+      return { allowed: true, step: "3-safe" };
     }
   }
 
-  // 4. additionalDirectoriesのチェック
-  for (const addDir of additionalDirs) {
-    // resolve() drops the trailing slash a hand-written setting may carry;
-    // isUnderRoot would otherwise compare against `dir//`.
-    const resolvedAddDir = resolve(resolvePath(addDir));
-    if (isUnderRoot(absPath, resolvedAddDir)) {
-      // Read/LSは自動許可、Edit/Writeは要permissions
-      if (toolName === "Read" || toolName === "LS") {
-        return {
-          isAllowed: true,
-          resolvedPath: absPath,
-        };
+  // 4. additionalDirectories: read is automatic, write needs an allow pattern
+  for (const addDir of ctx.additionalDirs) {
+    if (isUnderRoot(form, addDir)) {
+      if (ctx.category === "read") {
+        return { allowed: true, step: "4-additional" };
       }
       if (
-        toolName === "Edit" ||
-        toolName === "Write" ||
-        toolName === "MultiEdit"
+        ctx.category === "write" &&
+        checkAllowPatterns(form, ctx.allowPatterns)
       ) {
-        // permissions.allowをチェック
-        if (checkAllowPatterns(absPath, allowPatterns)) {
-          return {
-            isAllowed: true,
-            resolvedPath: absPath,
-          };
-        }
+        return { allowed: true, step: "4-additional" };
       }
     }
   }
 
-  // 5. permissions.allowの明示的マッチ
-  if (checkAllowPatterns(absPath, allowPatterns)) {
-    return {
-      isAllowed: true,
-      resolvedPath: absPath,
-    };
+  // 5. Explicit permissions.allow match
+  if (checkAllowPatterns(form, ctx.allowPatterns)) {
+    return { allowed: true, step: "5-pattern" };
   }
 
-  // 6. Chezmoi handling for dotfiles repository
-  // ホームディレクトリ配下のファイルに対する特別処理
-  if (absPath.startsWith(`${homeDir}/`) && isDotfilesRepository(repoRoot)) {
-    const chezmoiSourcePath = getChezmoiSourcePath(absPath, repoRoot);
+  // 6. Chezmoi handling for the dotfiles repository
+  if (
+    form.startsWith(`${ctx.homeDir}/`) &&
+    isDotfilesRepository(ctx.repoRoot)
+  ) {
+    const chezmoiSourcePath = getChezmoiSourcePath(form, ctx.repoRoot);
 
-    // 6a. 編集操作（Edit/Write/MultiEdit）→ chezmoi管理ファイルならリダイレクト案内
-    const isWriteOperation =
-      toolName === "Edit" ||
-      toolName === "Write" ||
-      toolName === "MultiEdit" ||
-      toolName === "NotebookEdit";
-
-    if (isWriteOperation && chezmoiSourcePath) {
+    // 6a. Writes to a chezmoi-managed file are redirected to its source
+    if (ctx.category === "write" && chezmoiSourcePath) {
       return {
-        isAllowed: false,
-        resolvedPath: absPath,
-        reason: formatChezmoiRedirectMessage(absPath, chezmoiSourcePath),
+        allowed: false,
+        step: "6-chezmoi",
+        reason: formatChezmoiRedirectMessage(form, chezmoiSourcePath),
       };
     }
 
-    // 6b. 読み取り操作（Read/Glob/Grep/LS）→ 許可（chezmoiを意識させない）
-    const isReadOperation =
-      toolName === "Read" ||
-      toolName === "Glob" ||
-      toolName === "Grep" ||
-      toolName === "LS" ||
-      toolName === "NotebookRead";
-
-    if (isReadOperation) {
-      return {
-        isAllowed: true,
-        resolvedPath: absPath,
-      };
+    // 6b. Reads are allowed without exposing chezmoi
+    if (ctx.category === "read") {
+      return { allowed: true, step: "6-chezmoi" };
     }
   }
 
   // Default: deny access outside repository
   return {
-    isAllowed: false,
+    allowed: false,
+    step: "default",
+    reason: "File is outside repository root and not explicitly allowed",
+  };
+}
+
+function validatePath(path: string, ctx: JudgeContext): PathValidationResult {
+  const absPath = resolvePath(path);
+
+  // 1.5. Under an OS temp dir -> allowed, ahead of the system-directory deny.
+  // On macOS os.tmpdir() is under /var/folders, unreachable after the blanket
+  // /var deny. `..` must survive, so the raw absolute path is used, not absPath.
+  const rawAbs = path.startsWith("/")
+    ? path
+    : `${process.env.CLAUDE_TEST_CWD || process.cwd()}/${path}`;
+
+  // The repository check comes first in the original order; judge repeats it,
+  // so only the temp-root steps need to run before it when the repo misses.
+  if (!isUnderRoot(absPath, ctx.repoRoot)) {
+    if (isWithinTempRoots(rawAbs, ctx.tempRoots, realpathSync, lstatSync)) {
+      return { isAllowed: true, resolvedPath: absPath };
+    }
+
+    // 1.6. The session's workflow dir. It stays under the project root even
+    // when the repo root is a linked worktree (spec K10), so it is outside
+    // repoRoot whenever work happens inside a worktree.
+    if (
+      ctx.workflowDirRoots.length > 0 &&
+      isWithinTempRoots(rawAbs, ctx.workflowDirRoots, realpathSync, lstatSync)
+    ) {
+      return { isAllowed: true, resolvedPath: absPath };
+    }
+  }
+
+  const judgement = judge(absPath, ctx);
+  return {
+    isAllowed: judgement.allowed,
     resolvedPath: absPath,
-    reason: `File is outside repository root and not explicitly allowed`,
+    ...(judgement.reason === undefined ? {} : { reason: judgement.reason }),
   };
 }
 
