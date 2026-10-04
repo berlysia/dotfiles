@@ -36,7 +36,8 @@ yarn = "4.18.1"
 # Weekly downloads hover around aube's 1000/week threshold, so installs fail intermittently.
 # The package and its author are known, so the low-download gate is explicitly approved.
 "npm:@mizchi/readability" = { version = "0.7.7", allow_low_downloads = true }
-"npm:@openai/codex" = "latest"
+# Follow Codex releases immediately, without the default seven-day delay.
+"npm:@openai/codex" = { version = "latest", minimum_release_age = "0s" }
 # Per-machine dev server proxy for agent-vm (docs/agent-vm.md, #207); it starts nothing until `portless run` is used.
 portless = "0.15.6"
 "github:k1LoW/mo" = "1.6.8"
