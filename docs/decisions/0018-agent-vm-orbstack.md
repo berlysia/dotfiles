@@ -82,7 +82,7 @@ VM の Claude から playwright と chrome-devtools の MCP を使えるよう�
 - **K18 の帰結（dasel）**: VM は codex の設定のマージのために、ソースの `.mise.toml` を信頼して dasel を入れる。マージを dasel や mise に依存させない作り替えは host にも影響する別の課題とする。ADR-0019 でマージを chezmoi の TOML 関数に移し、VM はソースの `.mise.toml` を信頼しなくなった。
 - **K23〜K28 の影響（ブラウザ）**:
   - `--isolate-network` を付けても、isolated machine 同士は IP で互いに届く（実機で確認、#200 で別に扱う）。docs の記述と食い違う既存の性質で、ブラウザの追加で生じたものではない。VM のブラウザは、ほかの VM が `0.0.0.0` に bind したサービスに届きうる。loopback に bind したサーバーは、loopback の性質上 IP では届かないと考えられるが、VM 間では確かめていない。
-  - mac の `localhost:<port>` は、同じポートを複数の machine が使うと、先に bind した machine に届く。これは OrbStack の転送の既存の性質で、`docs/agent-vm.md` に注意を書いた。
+  - mac の `localhost:<port>` は、同じポートを複数の machine が使うと、先に bind した machine に届く。これは OrbStack の転送の既存の性質で、`docs/agent-vm.md` に注意を書いた。（2026-10-04 追記）launcher が machine ごとに portless の proxy のポートを割り当て、dev server を portless 経由で開くことで、machine 同士が同じポートを取り合うことを避ける。VM がほかの machine のポートに直接 bind する場合には効かない（`docs/plans/agent-vm/portless/spec.md` の R9）
   - VM の Codex にはブラウザの MCP を提供しない。利用頻度が低いため別 issue とし、代わりに同じ VM の Claude を使う。
   - VM の MCP の引数（headless と実行パス）は、host と共有するテンプレートに VM 分岐を入れず、bootstrap の jq の後処理で設定している。
 
@@ -94,6 +94,7 @@ VM の Claude から playwright と chrome-devtools の MCP を使えるよう�
 - `docs/decisions/0021-agent-vm-golden-clone.md` (2026-10-02) — repo 用の machine は `orb create` ではなく、bootstrap 済みの golden machine（`agent-vm-golden`）の clone で作る。K1 の「repo ごとの isolated machine」という境界は変わらない。R5 の初回の待ちは、最初の 1 台（golden の作成）を除いて 6 秒になる
 - #194 (2026-10-02) — R21 の原因は「既定ブランチの解決」ではなく、`https://github.com/` を SSH に書き換える `insteadOf` だった。VM の SSH は転送された agent の承認を毎回要し、承認のない取得は拒否されるか止まる（`git://` への書き換えも VM からは届かない）。VM の `~/.gitconfig` では取得の書き換えを外し、`url."git@github.com:".pushInsteadOf` だけを残す。取得は匿名の HTTPS、push は SSH になり、VM に GitHub の token を置かない方針は変わらない。ただし、上流の frontmatter が読めない `mizchi/explainer` が lockfile のない VM で `apm install` 全体を中止させ、private の `berlysia/shiori` も token なしでは取れないので（#231）、APM の失敗を WARNING に留める扱いは続く
 - `docs/decisions/0022-agent-vm-node-modules.md` (2026-10-02) — VM では、repo の各パッケージの `node_modules` を VM ローカルのディスクへの bind mount に差し替える。repo を同じパスで共有する決定は変わらず、install 物の層だけを machine ごとに分ける。K17 の VM 許可リストに `agent-vm-node-modules` を足した
+- `docs/plans/agent-vm/portless/spec.md` (2026-10-04、#207) — dev server のポートは、VM ごとの portless の proxy で振り分ける。launcher は machine ごとに 17300〜17399 から proxy のポートを 1 つ割り当てて meta（`proxy_port`）に記録し、`PORTLESS_PORT` と `PORTLESS_HTTPS=0` でセッションに渡す。割り当ての台帳は VM がマウントしない `machines/` に置き、proxy は loopback に bind するので、K1 と K23 の境界は変わらない。portless は host と共有の mise の設定で入る（K5 の軽量セットに 1 つ足す）。VM の中のプロセスがほかの machine の proxy のポートに直接 bind して、mac の `localhost` の転送を奪えることは、既存の性質として受け入れた。この変更で、すべての machine のポートが 1 つの範囲に入る。防ぐには host が mac の側の待ち受けを持つ必要があり、常駐の部品を要するので入れていない
 
 ## References
 
