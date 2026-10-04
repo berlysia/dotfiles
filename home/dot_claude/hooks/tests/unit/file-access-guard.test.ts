@@ -460,6 +460,19 @@ describe("file-access-guard.ts hook behavior", () => {
       (await read("/home/user/project")).assertSuccess({});
     });
 
+    it("lets NotebookEdit write inside the repository", async () => {
+      const ctx = createPreToolUseContextFor(
+        fileAccessGuardHook,
+        "NotebookEdit",
+        {
+          notebook_path: "/home/user/project/n.ipynb",
+          new_source: "x",
+        },
+      );
+      await invokeRun(fileAccessGuardHook, ctx);
+      ctx.assertSuccess({});
+    });
+
     describe("additionalDirectories", () => {
       beforeEach(() => {
         mkdirSync(join(home, ".claude"), { recursive: true });
@@ -484,6 +497,41 @@ describe("file-access-guard.ts hook behavior", () => {
         );
         (await read("/home/user/extra/notes.md")).assertSuccess({});
         (await read("/home/user/extra-other/notes.md")).assertDeny();
+      });
+
+      it("denies NotebookEdit inside an additional directory without an Edit pattern", async () => {
+        const ctx = createPreToolUseContextFor(
+          fileAccessGuardHook,
+          "NotebookEdit",
+          {
+            notebook_path: "/home/user/extra/n.ipynb",
+            new_source: "x",
+          },
+        );
+        await invokeRun(fileAccessGuardHook, ctx);
+        ctx.assertDeny();
+      });
+
+      it("denies NotebookEdit outside every allowed root", async () => {
+        const ctx = createPreToolUseContextFor(
+          fileAccessGuardHook,
+          "NotebookEdit",
+          {
+            notebook_path: "/home/user/other/n.ipynb",
+            new_source: "x",
+          },
+        );
+        await invokeRun(fileAccessGuardHook, ctx);
+        ctx.assertDeny();
+      });
+
+      it("lets Glob read inside an additional directory", async () => {
+        const ctx = createPreToolUseContextFor(fileAccessGuardHook, "Glob", {
+          pattern: "*.md",
+          path: "/home/user/extra",
+        });
+        await invokeRun(fileAccessGuardHook, ctx);
+        ctx.assertSuccess({});
       });
     });
   });
