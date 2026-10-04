@@ -26,11 +26,13 @@ brew bundle --verbose --file=- <<EOF
 {{ range .packages.darwin.taps -}}
 tap {{ . | quote }}
 {{ end -}}
+{{- /* Homebrew loads a non-official tap's formula or cask only when it is trusted. A user/repo/name entry
+     is trusted by itself, not through its whole tap, so the tap's other items stay unloaded. */ -}}
 {{ range .packages.darwin.brews -}}
-brew {{ . | quote }}
+brew {{ . | quote }}{{ if eq (len (splitList "/" .)) 3 }}, trusted: true{{ end }}
 {{ end -}}
 {{ range .packages.darwin.casks -}}
-cask {{ . | quote }}
+cask {{ . | quote }}{{ if eq (len (splitList "/" .)) 3 }}, trusted: true{{ end }}
 {{ end -}}
 EOF
 
