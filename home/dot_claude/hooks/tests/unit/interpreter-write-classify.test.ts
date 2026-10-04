@@ -68,6 +68,26 @@ describe("document-workflow-guard.ts: interpreter inline-script write classifica
     ctx.assertDeny();
   });
 
+  it("allows a /tmp literal whose name merely contains two dots", async () => {
+    const repo = createWorkflowRepo(pendingWorkflowRepo());
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+    const ctx = createPreToolUseContextFor(hook, "Bash", {
+      command: `python3 -c "open('/tmp/a..b','w')"`,
+    });
+    await invokeRun(hook, ctx);
+    ctx.assertSuccess({});
+  });
+
+  it("still denies a /tmp literal with a .. segment", async () => {
+    const repo = createWorkflowRepo(pendingWorkflowRepo());
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+    const ctx = createPreToolUseContextFor(hook, "Bash", {
+      command: `python3 -c "open('/tmp/../etc/x','w')"`,
+    });
+    await invokeRun(hook, ctx);
+    ctx.assertDeny();
+  });
+
   it("denies a heredoc write to a workflow doc (wfDir is excluded from scratch)", async () => {
     const repo = createWorkflowRepo(pendingWorkflowRepo());
     envHelper.set("CLAUDE_TEST_CWD", repo);

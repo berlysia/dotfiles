@@ -1,6 +1,6 @@
 #!/usr/bin/env -S bun run --silent
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { defineHook } from "cc-hooks-ts";
 import {
@@ -16,9 +16,11 @@ import {
   type TextMatcher,
 } from "../lib/linear-match.ts";
 import { GUARDED_TOOLS } from "../lib/guarded-tools.ts";
+import { hasParentSegment, isUnderRoot } from "../lib/path-containment.ts";
 import { getProjectRoot } from "../lib/project-root.ts";
 import { expandTilde } from "../lib/path-utils.ts";
 import { sanitizeForDisplay } from "../lib/sanitize-display.ts";
+import { collectTempRoots } from "../lib/temp-roots.ts";
 import { appendOffPlanLog } from "../lib/workflow-audit-log.ts";
 import {
   APPROVALS_LOG,
@@ -605,10 +607,6 @@ function extractQuotedStringLiterals(scriptText: string): string[] {
   return literals;
 }
 
-function isUnderSegmentRoot(target: string, root: string): boolean {
-  return target === root || target.startsWith(`${root}/`);
-}
-
 function stripTrailingSlash(value: string): string {
   return value.length > 1 ? value.replace(/\/+$/, "") : value;
 }
@@ -619,7 +617,7 @@ function stripTrailingSlash(value: string): string {
  * themselves absolute (spec K3).
  */
 function absoluteInterpreterScratchRoots(): string[] {
-  const roots: string[] = ["/tmp"];
+  const roots: string[] = collectTempRoots("", realpathSync);
   for (const envVar of ["CLAUDE_JOB_DIR", "DOCUMENT_WORKFLOW_DIR"]) {
     const value = process.env[envVar]?.trim();
     if (value && value.startsWith("/")) {
@@ -675,20 +673,20 @@ function isPathWithinInterpreterScratch(
   cwd: string,
   wfDir: string,
 ): boolean {
-  if (literal.includes("..")) {
+  if (hasParentSegment(literal)) {
     return false;
   }
   const resolvedAgainstCwd = resolve(cwd, literal);
-  if (isUnderSegmentRoot(resolvedAgainstCwd, wfDir)) {
+  if (isUnderRoot(resolvedAgainstCwd, wfDir)) {
     return false;
   }
   if (literal.startsWith("/")) {
     return absoluteInterpreterScratchRoots().some((root) =>
-      isUnderSegmentRoot(literal, root),
+      isUnderRoot(literal, root),
     );
   }
   return relativeInterpreterScratchRoots().some((root) =>
-    isUnderSegmentRoot(literal, root),
+    isUnderRoot(literal, root),
   );
 }
 

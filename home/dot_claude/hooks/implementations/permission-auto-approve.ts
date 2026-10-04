@@ -12,6 +12,7 @@
 import path from "node:path";
 import { defineHook } from "cc-hooks-ts";
 import { logDecision } from "../lib/centralized-logging.ts";
+import { hasParentSegment } from "../lib/path-containment.ts";
 import { isStrictlyUnderProjectSubdir } from "../lib/workflow-fs.ts";
 import { createPermissionRequestAllowResponse } from "../lib/permission-request-helpers.ts";
 import type { PermissionRequestInput } from "../lib/structured-llm-evaluator.ts";
@@ -28,9 +29,7 @@ export type StaticDecision =
   | {
       behavior: "allow";
       source:
-        | "pattern-match"
-        | "project-scope-safe"
-        | "session-scratchpad-safe";
+        "pattern-match" | "project-scope-safe" | "session-scratchpad-safe";
     }
   | { behavior: "deny"; source: "dangerous-pattern" }
   | {
@@ -387,7 +386,7 @@ export function isSessionScratchpadSafe(
     return { safe: false, reason: "invalid-session-id" };
   }
 
-  if (filePath.split("/").includes("..")) {
+  if (hasParentSegment(filePath)) {
     return { safe: false, reason: "path-traversal" };
   }
 
