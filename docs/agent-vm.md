@@ -474,4 +474,9 @@ dev server を portless に通す構成（3 節）を、2 台の machine（X は
 - 観測: package.json の `name` が `@berlysia-dotfiles/root` の repo は、`root` という名前になった。
 - 観測: Y の bootstrap の 1 回目は、mac のディスクの空きが無くなって失敗した（launcher は `failed unexpectedly`、続く `orb` は `wait for sconrpc ready event: ... EOF`）。空きを作ってからやり直すと、終了コード 0 で通った。何がディスクを埋めたかは切り分けていない。
 - 未確認: Chrome 本体での cookie の挙動。
-- 未確認: ポートが付け替わった起動での、回復手順の表示。実機では付け替えを起こしていない。
+- V30 のやり直し（手順の前提どおり）: この変更を apply した状態で、launcher が開いたセッションの中から、`PORTLESS_PORT` を手で付けずに `portless run` を実行した。Y のポートは 17301 だった。`127.0.0.1`、`[::1]`、名前での curl はどれも 200 で、mac の待ち受けは `127.0.0.1:17301` と `[::1]:17301` だけだった。mac で `open -a "Google Chrome" http://vx.localhost:17301/` を実行すると、VM のサーバーのログに `GET /` の 200 と `GET /favicon.ico` が出た。画面は見ていない。
+- ポートの付け替え（K12）: Y の proxy を 17301 で動かしたまま、別の machine の記録に 17301 を書いてから、Y を起動した。
+  - launcher は `proxy port for agent-shiori-ac9943 changed 17301 -> 17302; ... recover: run 'portless proxy stop' in the VM, then start the dev server again` を表示し、セッションには `PORTLESS_PORT=17302` を渡した。
+  - その状態の `portless run` は、`Proxy is running` と表示して、古い 17301 の URL を出した。新しい `PORTLESS_PORT` は使われなかった。
+  - `portless proxy stop` の後に `portless run` を実行すると、proxy は 17302 で起動した。回復手順は表示のとおりに効いた。
+- `agent-vm rm` で Y を消すと、記録も消え、`agent-vm list` から行が無くなった。
