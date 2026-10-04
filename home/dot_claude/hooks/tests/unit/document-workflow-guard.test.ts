@@ -1657,6 +1657,8 @@ describe("document-workflow-guard.ts AskUserQuestion (spec K4)", () => {
       { answers: {} },
       { answers: "" },
       { answers: null },
+      { answers: { [APPROVAL_QUESTION_TEXT]: ["spec.md"] } },
+      { answers: { [APPROVAL_QUESTION_TEXT]: [] } },
       { annotations: [] },
       { annotations: { x: { notes: "n" } } },
     ]) {

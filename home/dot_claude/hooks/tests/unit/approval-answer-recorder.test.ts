@@ -77,7 +77,7 @@ describe("approval-answer-recorder (spec K2/K3)", () => {
       })),
     );
 
-  const answerResponse = (answer: string, docs?: string[]) => ({
+  const answerResponse = (answer: unknown, docs?: string[]) => ({
     questions: questionsFor(docs),
     answers: { [APPROVAL_QUESTION_TEXT]: answer },
   });
@@ -225,7 +225,41 @@ describe("approval-answer-recorder (spec K2/K3)", () => {
     assert.ok(output);
     assert.match(output.hookSpecificOutput.additionalContext, /形と違う/);
     assert.match(output.hookSpecificOutput.additionalContext, /ask-approval/);
+    assert.match(
+      output.hookSpecificOutput.additionalContext,
+      /それ以上出し直さず/,
+    );
+    assert.match(
+      output.hookSpecificOutput.additionalContext,
+      /approve <文書名>/,
+    );
     assert.match(output.systemMessage, /approve /);
+    assert.equal(logText(), "");
+  });
+
+  it("records an answer sent as an array", async () => {
+    const { text } = await fire(answerResponse(["spec.md"]));
+    assert.match(text, /spec\.md を hash=[0-9a-f]{12} で承認として記録した/);
+    assert.equal(logText().trim().split("\n").length, 1);
+  });
+
+  it("returns free text sent as an array as the user's words", async () => {
+    const { text } = await fire(answerResponse(["やっぱり待って"]));
+    assert.match(text, /やっぱり待って/);
+    assert.match(text, /発言として扱い/);
+    assert.equal(logText(), "");
+  });
+
+  it("reports an unknown answer shape without asking to retry the question", async () => {
+    const { output } = await fire(answerResponse([1]));
+    assert.ok(output);
+    const context = output.hookSpecificOutput.additionalContext;
+    assert.match(context, /回答の形が想定と違う/);
+    assert.match(context, /array\[1\] of number/);
+    assert.match(context, /出し直さず/);
+    assert.match(context, /approve <文書名>/);
+    assert.doesNotMatch(context, /ask-approval/);
+    assert.match(output.systemMessage, /approve spec\.md plan-1\.md/);
     assert.equal(logText(), "");
   });
 

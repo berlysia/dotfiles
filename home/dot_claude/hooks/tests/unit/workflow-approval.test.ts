@@ -19,6 +19,8 @@ import {
   appendApproval,
   buildApprovalQuestions,
   deepEqualIgnoringKeyOrder,
+  describeAnswerShape,
+  isAnswerValue,
   isApprovalLikeQuestion,
   isApprovalShapedPrompt,
   matchApprovalAnswer,
@@ -356,6 +358,73 @@ describe("approval question (spec K3/K4/K7)", () => {
       kind: "freeText",
       text: "spec.md, plan-9.md",
     });
+  });
+
+  it("matchApprovalAnswer takes an array as one selection per element", () => {
+    const expected = buildApprovalQuestions([spec, plan1]);
+    assert.deepEqual(matchApprovalAnswer(expected, ["spec.md"]), {
+      kind: "approve",
+      docs: ["spec.md"],
+    });
+    assert.deepEqual(matchApprovalAnswer(expected, ["spec.md", "plan-1.md"]), {
+      kind: "approve",
+      docs: ["spec.md", "plan-1.md"],
+    });
+    assert.deepEqual(matchApprovalAnswer(expected, ["承認しない"]), {
+      kind: "decline",
+    });
+    assert.deepEqual(matchApprovalAnswer(expected, ["spec.md", "承認しない"]), {
+      kind: "invalid",
+      reason: "decline-mixed",
+    });
+    // One element is one selection: it is not split on ", ".
+    assert.deepEqual(matchApprovalAnswer(expected, ["spec.md, plan-1.md"]), {
+      kind: "freeText",
+      text: "spec.md, plan-1.md",
+    });
+    assert.deepEqual(matchApprovalAnswer(expected, ["spec.md", "あとで直す"]), {
+      kind: "freeText",
+      text: "spec.md, あとで直す",
+    });
+    assert.deepEqual(matchApprovalAnswer(expected, ["spec.md", "spec.md"]), {
+      kind: "approve",
+      docs: ["spec.md"],
+    });
+    // No selection never approves, even if a caller skips isAnswerValue.
+    assert.deepEqual(matchApprovalAnswer(expected, []), {
+      kind: "freeText",
+      text: "",
+    });
+  });
+
+  it("isAnswerValue accepts a string or a non-empty array of strings", () => {
+    for (const ok of ["", "spec.md", ["spec.md"], ["a", "b"]]) {
+      assert.equal(isAnswerValue(ok), true, JSON.stringify(ok));
+    }
+    for (const ng of [
+      [],
+      [1],
+      ["spec.md", 1],
+      [["spec.md"]],
+      1,
+      null,
+      undefined,
+      {},
+    ]) {
+      assert.equal(isAnswerValue(ng), false, JSON.stringify(ng));
+    }
+  });
+
+  it("describeAnswerShape names the type and never the content", () => {
+    assert.equal(describeAnswerShape(1), "number");
+    assert.equal(describeAnswerShape(null), "null");
+    assert.equal(describeAnswerShape({ a: "secret" }), "object");
+    assert.equal(describeAnswerShape([]), "array[0]");
+    assert.equal(
+      describeAnswerShape(["secret", 1]),
+      "array[2] of number+string",
+    );
+    assert.equal(describeAnswerShape([null]), "array[1] of null");
   });
 
   it("deepEqualIgnoringKeyOrder ignores key order only", () => {
