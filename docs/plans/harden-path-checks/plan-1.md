@@ -354,8 +354,7 @@ export interface PathFs {
 const nodeFs: PathFs = { realpath: realpathSync, lstat: lstatSync };
 
 export type ParentSegmentCheck =
-  | { ok: true }
-  | { ok: false; kind: "absolute" | "relative" };
+  { ok: true } | { ok: false; kind: "absolute" | "relative" };
 
 /**
  * An absolute path may not contain `..` at all. A relative path may only
@@ -383,8 +382,7 @@ export function checkParentSegments(path: string): ParentSegmentCheck {
 }
 
 export type PhysicalPath =
-  | { ok: true; path: string }
-  | { ok: false; code: string };
+  { ok: true; path: string } | { ok: false; code: string };
 
 export function errnoOf(error: unknown): string {
   const code = (error as NodeJS.ErrnoException | undefined)?.code;

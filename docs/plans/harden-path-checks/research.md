@@ -193,12 +193,12 @@ Issue の記述（`>`、`ln`、`$VAR`、`~` を拾わない）はすべて再現
 
 ### 5.2 経緯
 
-| commit                                      | 日付       | file-access-guard の matcher |
+| commit | 日付 | file-access-guard の matcher |
 | ------------------------------------------- | ---------- | ---------------------------- | ----- | ----- | ---------- | ------------ | ------------ | --- | ---- | ---- | ------ |
 | `ce65b18`（前身の deny-repository-outside） | 2025-07-14 | `(Read                       | Write | Edit  | MultiEdit  | NotebookRead | NotebookEdit | LS  | Glob | Grep | Bash)` |
-| `e745e80`                                   | 2026-01-06 | `""`（全ツール）             |
-| `b7e4d84`                                   | 2026-01-28 | `Read                        | Write | Edit  | MultiEdit` |
-| `f4d271f`                                   | 2026-06-09 | `Read                        | Write | Edit` |
+| `e745e80` | 2026-01-06 | `""`（全ツール） |
+| `b7e4d84` | 2026-01-28 | `Read                        | Write | Edit  | MultiEdit` |
+| `f4d271f` | 2026-06-09 | `Read                        | Write | Edit` |
 
 - `b7e4d84` の件名は `feat(claude): include repository name in voice notifications`。本文は音声通知の説明だけで、matcher を絞った理由は書かれていない
 - 意図して絞ったのか、別の変更に巻き込まれたのかは、履歴からは分からない

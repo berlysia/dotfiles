@@ -193,8 +193,7 @@ wfDirSource: Exclude<WfDirSource, "override"> | "none";
 
 ```ts
 export type ResolvedCliDeps =
-  | { deps: RunWorkflowCliDeps; warning: string | null }
-  | { error: string };
+  { deps: RunWorkflowCliDeps; warning: string | null } | { error: string };
 
 const RESTART_HINT =
   "restart Claude Code if this session started before the hooks were deployed (and do not rely on the DOCUMENT_WORKFLOW_DIR value the old SessionStart exported), or pass --wf-dir <dir> from the project root.";

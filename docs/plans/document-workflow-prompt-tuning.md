@@ -114,18 +114,20 @@ Document Workflow を構成するスキル群・フック・ワークフロー�
 #### Iteration Log
 
 **Iter 1 (Baseline)**:
+
 | Scenario | Success | Accuracy | steps | duration | retries |
-|---|---|---|---|---|---|
-| S1 | ○ | 100% | 1 | 58s | 0 |
-| S2 | ○ | 100% | 1 | 43s | 0 |
-| S3 | ○ | 100% | 1 | 56s | 0 |
+| -------- | ------- | -------- | ----- | -------- | ------- |
+| S1       | ○       | 100%     | 1     | 58s      | 0       |
+| S2       | ○       | 100%     | 1     | 43s      | 0       |
+| S3       | ○       | 100%     | 1     | 56s      | 0       |
 
 Unclear points: 0. Discretionary fill-ins: ISO8601 timezone, verdict 未指定時の推定, aligned/neutral 境界.
 
 **Iter 2 (Verification — S1 only)**:
+
 | Scenario | Success | Accuracy | steps | duration | retries |
-|---|---|---|---|---|---|
-| S1 | ○ | 100% | 1 | 53s | 0 |
+| -------- | ------- | -------- | ----- | -------- | ------- |
+| S1       | ○       | 100%     | 1     | 53s      | 0       |
 
 #### Failure Pattern Ledger
 
@@ -165,18 +167,20 @@ C02 はメタガイド型スキル。実行者には「アシスタントとし�
 #### Iteration Log
 
 **Iter 1 (Baseline)**:
+
 | Scenario | Success | Accuracy | steps | duration | retries |
-|---|---|---|---|---|---|
-| S1 | ○ | 100% | 1 | 52s | 0 |
-| S2 | ○ | 100% | 2 | 62s | 0 |
-| S3 | ○ | 100% | 1 | 26s | 0 |
+| -------- | ------- | -------- | ----- | -------- | ------- |
+| S1       | ○       | 100%     | 1     | 52s      | 0       |
+| S2       | ○       | 100%     | 2     | 62s      | 0       |
+| S3       | ○       | 100%     | 1     | 26s      | 0       |
 
 Unclear points: 0 (S2 の Task tool 未使用は環境制約、スキルレベルの問題ではない).
 
 **Iter 2 (Verification — S1 only)**:
+
 | Scenario | Success | Accuracy | steps | duration | retries |
-|---|---|---|---|---|---|
-| S1 | ○ | 100% | 1 | 55s | 0 |
+| -------- | ------- | -------- | ----- | -------- | ------- |
+| S1       | ○       | 100%     | 1     | 55s      | 0       |
 
 #### Failure Pattern Ledger
 
@@ -238,25 +242,28 @@ Unclear points: 0 (S2 の Task tool 未使用は環境制約、スキルレベ�
 #### Iteration Log
 
 **Iter 1 (Baseline)**:
+
 | Scenario | Success | Accuracy | steps | duration | retries |
-|---|---|---|---|---|---|
-| S1 | ○ | 100% | 3 | 56s | 0 |
-| S2 | ○ | 100% | 3 | 59s | 0 |
+| -------- | ------- | -------- | ----- | -------- | ------- |
+| S1       | ○       | 100%     | 3     | 56s      | 0       |
+| S2       | ○       | 100%     | 3     | 59s      | 0       |
 
 Unclear points: S2 でテンプレート「明確化対象」欄の粒度指針が plan 不在時に不明確。ただし実行者は正しく対処（intentional flexibility）。
 Discretionary fill-ins: 会話コンテキストの4セクション構造化、plan.md 読み取り指示追加、後続アクション候補。
 
 **Iter 2 (Verification — S1 only)**:
+
 | Scenario | Success | Accuracy | steps | duration | retries |
-|---|---|---|---|---|---|
-| S1 | ○ | 100% | 3 | 59s | 0 |
+| -------- | ------- | -------- | ----- | -------- | ------- |
+| S1       | ○       | 100%     | 3     | 59s      | 0       |
 
 New SKILL.md-level unclear points: 0.
 
 **Iter 3 (Verification — S1 only)**:
+
 | Scenario | Success | Accuracy | steps | duration | retries |
-|---|---|---|---|---|---|
-| S1 | ○ | 100% | 4 | 76s | 0 |
+| -------- | ------- | -------- | ----- | -------- | ------- |
+| S1       | ○       | 100%     | 4     | 76s      | 0       |
 
 New SKILL.md-level unclear points: 0. Steps 3→4 はエージェント探索パス差異によるノイズ（追加 Read/Glob 1回）。
 
@@ -313,25 +320,28 @@ New SKILL.md-level unclear points: 0. Steps 3→4 はエージェント探索パ
 #### Iteration Log
 
 **Iter 1 (Baseline)**:
+
 | Scenario | Success | Accuracy | steps | duration | retries |
-|---|---|---|---|---|---|
-| S1 | ○ | 100% | 1 | 68s | 0 |
-| S2 | ○ | 100% | 1 | 102s | 0 |
+| -------- | ------- | -------- | ----- | -------- | ------- |
+| S1       | ○       | 100%     | 1     | 68s      | 0       |
+| S2       | ○       | 100%     | 1     | 102s     | 0       |
 
 Unclear points: S2 で中間 typecheck エラーの扱いが不明確（「typecheck継続実行」vs「計画逸脱禁止」の緊張）。実行者は「blocking は tests 対象、intermediate typecheck failures は後続タスクで解消予定のため許容」と正しく解釈。
 Discretionary fill-ins: Wiring Checklist 自作（S1）、中間 typecheck 許容判断（S2）、dead wire 検出のデフォルト値チェック追加（S2）。
 
 **Iter 2 (Verification — S1 only)**:
+
 | Scenario | Success | Accuracy | steps | duration | retries |
-|---|---|---|---|---|---|
-| S1 | ○ | 100% | 1 | 65s | 0 |
+| -------- | ------- | -------- | ----- | -------- | ------- |
+| S1       | ○       | 100%     | 1     | 65s      | 0       |
 
 New SKILL.md-level unclear points: 0.
 
 **Iter 3 (Verification — S1 only)**:
+
 | Scenario | Success | Accuracy | steps | duration | retries |
-|---|---|---|---|---|---|
-| S1 | ○ | 100% | 1 | 68s | 0 |
+| -------- | ------- | -------- | ----- | -------- | ------- |
+| S1       | ○       | 100%     | 1     | 68s      | 0       |
 
 New SKILL.md-level unclear points: 0.
 
@@ -410,11 +420,12 @@ C03 はフック（TypeScript 実装）。サブエージェントには「フ�
 #### Iteration Log
 
 **Iter 1 (Baseline)**:
+
 | Scenario | Success | Accuracy | steps | duration | retries |
-|---|---|---|---|---|---|
-| S1 | ○ | 100% | 1 | 32s | 0 |
-| S2 | ○ | 100% | 1 | 26s | 0 |
-| S3 | ○ | 100% | 1 | 24s | 0 |
+| -------- | ------- | -------- | ----- | -------- | ------- |
+| S1       | ○       | 100%     | 1     | 32s      | 0       |
+| S2       | ○       | 100%     | 1     | 26s      | 0       |
+| S3       | ○       | 100%     | 1     | 24s      | 0       |
 
 Hook-output-level unclear points: 1 (Experience Delta field missing from `buildSummaryReminder()` template).
 Non-hook-level discretionary fill-ins: hash computation method, verdict aggregation criteria, research.md prompt inclusion, sub-agent prompt wording, /intent-alignment-triage arguments (all handled by assistant general capability or intentional flexibility).
@@ -423,18 +434,20 @@ S3 sub-agent compensated by adding Experience Delta from workflow.md knowledge, 
 **Diff applied**: Added `Experience Delta` field to `buildSummaryReminder()` template (1 line, matching workflow.md spec).
 
 **Iter 2 (Verification — S3 updated + S1 stability)**:
-| Scenario | Success | Accuracy | steps | duration | retries |
-|---|---|---|---|---|---|
-| S3 (updated) | ○ | 100% | 1 | 26s | 0 |
-| S1 (stability) | ○ | 100% | 1 | 34s | 0 |
+
+| Scenario       | Success | Accuracy | steps | duration | retries |
+| -------------- | ------- | -------- | ----- | -------- | ------- |
+| S3 (updated)   | ○       | 100%     | 1     | 26s      | 0       |
+| S1 (stability) | ○       | 100%     | 1     | 34s      | 0       |
 
 New hook-output-level unclear points: 0. S3 sub-agent reported "特に欠落しているフィールドはない" — Experience Delta gap resolved.
 
 **Iter 3 (Convergence — S2 + S3 new plan)**:
-| Scenario | Success | Accuracy | steps | duration | retries |
-|---|---|---|---|---|---|
-| S2 | ○ | 100% | 1 | 27s | 0 |
-| S3 (new plan) | ○ | 100% | 1 | 23s | 0 |
+
+| Scenario      | Success | Accuracy | steps | duration | retries |
+| ------------- | ------- | -------- | ----- | -------- | ------- |
+| S2            | ○       | 100%     | 1     | 27s      | 0       |
+| S3 (new plan) | ○       | 100%     | 1     | 23s      | 0       |
 
 New hook-output-level unclear points: 0.
 
@@ -520,19 +533,21 @@ C04 はルールファイル（常時コンテキストに存在するマーク�
 #### Iteration Log
 
 **Iter 1 (Baseline)**:
+
 | Scenario | Success | Accuracy | steps | duration | retries |
-|---|---|---|---|---|---|
-| S1 | ○ | 100% | 1 | 100s | 0 |
-| S2 | ○ | 100% | 1 | 79s | 0 |
-| S3 | ○ | 100% | 1 | 57s | 0 |
+| -------- | ------- | -------- | ----- | -------- | ------- |
+| S1       | ○       | 100%     | 1     | 100s     | 0       |
+| S2       | ○       | 100%     | 1     | 79s      | 0       |
+| S3       | ○       | 100%     | 1     | 57s      | 0       |
 
 Unclear points: 0 (actionable). Non-actionable observations: Scope Guard + Document Workflow routing priority (correctly resolved via routing table arrow notation + Note L47), TaskCreate overlap with Document Workflow (intentional flexibility), plan.md template structure (intentional flexibility), hash computation method (cross-component: handled by hooks), triage results placement in Executive Summary (Review Status field への統合が自然), Scope Guard exception scope (natural reading: entire process).
 
 **Iter 2 (Verification — S1 + S2)**:
+
 | Scenario | Success | Accuracy | steps | duration | retries |
-|---|---|---|---|---|---|
-| S1 | ○ | 100% | 1 | 83s | 0 |
-| S2 | ○ | 100% | 1 | 78s | 0 |
+| -------- | ------- | -------- | ----- | -------- | ------- |
+| S1       | ○       | 100%     | 1     | 83s      | 0       |
+| S2       | ○       | 100%     | 1     | 78s      | 0       |
 
 New rule-level unclear points: 0. S2 sub-agent independently detected the auto-review marker `at` field discrepancy (same as Iteration 0 finding), correctly resolved by following hook output.
 
