@@ -29,7 +29,9 @@ export type StaticDecision =
   | {
       behavior: "allow";
       source:
-        "pattern-match" | "project-scope-safe" | "session-scratchpad-safe";
+        | "pattern-match"
+        | "project-scope-safe"
+        | "session-scratchpad-safe";
     }
   | { behavior: "deny"; source: "dangerous-pattern" }
   | {
