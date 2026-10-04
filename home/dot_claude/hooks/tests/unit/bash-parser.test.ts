@@ -755,4 +755,32 @@ describe("parser limits (Issue #235)", () => {
       [],
     );
   });
+
+  it("returns an equal, independent result for a repeated input", async () => {
+    const first = await extractCommandsStructured("echo memo-a; ls memo-a");
+    first.individualCommands.push("mutated by the caller");
+    deepStrictEqual(await extractCommandsStructured("echo memo-a; ls memo-a"), {
+      individualCommands: ["echo memo-a", "ls memo-a"],
+      originalCommand: "echo memo-a; ls memo-a",
+      parsingMethod: "tree-sitter",
+    });
+  });
+
+  it("replays a give-up when a remembered result is reused", async () => {
+    const command = `echo ${"b".repeat(MAX_COMMAND_CHARS)}`;
+    await extractCommandsStructured(command);
+    const mark = parserGiveUpMark();
+    await extractCommandsStructured(command);
+    ok(parserGiveUpReasonSince(mark)?.includes("32,000 characters"));
+  });
+
+  it("does not scan a repeated input again", async () => {
+    const command = `${"xargs ".repeat(100)}memo-c`;
+    await extractCommandsStructured(command);
+    const mark = parserGiveUpMark();
+    await extractCommandsStructured(command);
+    await extractCommandsStructured(command);
+    await extractCommandsStructured(command);
+    strictEqual(parserGiveUpReasonSince(mark), null);
+  });
 });

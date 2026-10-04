@@ -1189,9 +1189,45 @@ export async function collectExecutableTexts(
   }
 }
 
+interface StructuredMemo {
+  result: Promise<ExtractedCommands>;
+  // Give-ups recorded while computing, replayed to callers that reuse it.
+  replay: ParserGiveUpKind[];
+}
+
+// Keyed by the input text. pattern-matcher re-extracts each fragment once per
+// Bash deny pattern; without this the scan total of a hook is multiplied by
+// the number of patterns.
+const structuredMemo = new Map<string, StructuredMemo>();
+
 export async function extractCommandsStructured(
   command: string,
 ): Promise<ExtractedCommands> {
+  const memo = structuredMemo.get(command);
+  if (memo === undefined) {
+    const before = giveUps.length;
+    const created: StructuredMemo = {
+      result: computeStructured(command).then((value) => {
+        created.replay = giveUps.slice(before);
+        return value;
+      }),
+      replay: [],
+    };
+    structuredMemo.set(command, created);
+    try {
+      const value = await created.result;
+      return { ...value, individualCommands: [...value.individualCommands] };
+    } catch (error) {
+      structuredMemo.delete(command);
+      throw error;
+    }
+  }
+  const value = await memo.result;
+  giveUps.push(...memo.replay);
+  return { ...value, individualCommands: [...value.individualCommands] };
+}
+
+async function computeStructured(command: string): Promise<ExtractedCommands> {
   if (command.length > MAX_COMMAND_CHARS) {
     giveUps.push("length");
     return {
