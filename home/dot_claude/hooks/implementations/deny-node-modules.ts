@@ -3,6 +3,11 @@
 import { lstatSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineHook } from "cc-hooks-ts";
+import {
+  MAX_COMMAND_CHARS,
+  parserGiveUpMark,
+  parserGiveUpReasonSince,
+} from "../lib/bash-parser.ts";
 import { getCommandFromToolInput } from "../lib/command-parsing.ts";
 import { prepareDenyInput } from "../lib/deny-input.ts";
 import { isExemptReadOnlyCommand } from "../lib/read-only-command.ts";
@@ -60,7 +65,10 @@ const hook = defineHook({
         const cmd = getCommandFromToolInput("Bash", tool_input) || "";
         // Removing a symlink named node_modules never touches its target, so a
         // standalone, unambiguous rm/unlink of existing symlinks is exempt.
-        const linkOperands = standaloneSymlinkRemovalOperands(cmd);
+        const linkOperands =
+          cmd.length > MAX_COMMAND_CHARS
+            ? null
+            : standaloneSymlinkRemovalOperands(cmd);
         if (linkOperands !== null && linkOperands.every(isSymlinkPath)) {
           return context.success({});
         }
@@ -205,8 +213,15 @@ async function analyzeBashCommand(
 ): Promise<BashAnalysisResult> {
   // Deny-side reads go through prepareDenyInput: data-only heredoc bodies are
   // emptied in both the whole text and the fragments (spec K1).
+  const giveUpMark = parserGiveUpMark();
   const { maskedText, individualCommands, parsingMethod } =
     await prepareDenyInput(command);
+  // A command the parser stopped analysing is denied whether or not its text
+  // mentions node_modules: the fragments below are incomplete for it.
+  const giveUpReason = parserGiveUpReasonSince(giveUpMark);
+  if (giveUpReason !== null) {
+    return { decision: "deny", reason: giveUpReason, operation: "unknown" };
+  }
   const commands = individualCommands;
   // Judged once on the whole command; fragments only inherit the result.
   const readOnlyExempt = isExemptReadOnlyCommand(maskedText, { parsingMethod });
