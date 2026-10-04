@@ -8,7 +8,7 @@
         "@drawio/mcp": "1.2.6",
         "@playwright/mcp": "0.0.75",
         "@upstash/context7-mcp": "4.1.1",
-        "chrome-devtools-mcp": "0.25.0",
+        "chrome-devtools-mcp": "1.10.1",
         "supergateway": "4.0.0",
       },
       "devDependencies": {
@@ -361,7 +361,7 @@
 
     "ccstatusline": ["ccstatusline@2.2.27", "", { "bin": { "ccstatusline": "dist/ccstatusline.js" } }, "sha512-8SqNdSuIaMsrefn4dCrSlBEZ7kE8UZMMa8iy4iv4OMl1INnEtmqzCYMwo7/hzmNrOVC+esFSiCj+T0pUS9HrLQ=="],
 
-    "chrome-devtools-mcp": ["chrome-devtools-mcp@0.25.0", "", { "bin": { "chrome-devtools": "build/src/bin/chrome-devtools.js", "chrome-devtools-mcp": "build/src/bin/chrome-devtools-mcp.js" } }, "sha512-A6Zh3iH+O7lvjhUOQNxbxMy6KJhKnMtVKb+37oy4QcnDp7JEJYKkeqtsw4hFXJG5ISfNTVlaWxKsKLxRdJAAUA=="],
+    "chrome-devtools-mcp": ["chrome-devtools-mcp@1.10.1", "", { "peerDependencies": { "@blackwell-systems/gcf": "^2.2.2", "@toon-format/toon": "^4.1.0" }, "optionalPeers": ["@blackwell-systems/gcf", "@toon-format/toon"], "bin": { "chrome-devtools": "build/src/bin/chrome-devtools.js", "chrome-devtools-mcp": "build/src/bin/chrome-devtools-mcp.js" } }, "sha512-Klw6HWDqHC/XS1JwZldd2r49aUhbUJN9m9Mvcx4SEueIPXtzuQX+QelxAViobv8YUkDZ7HWDrmViR6LeYK0wAw=="],
 
     "cjs-module-lexer": ["cjs-module-lexer@2.2.1", "", {}, "sha512-Ca8swihM+/4yKecYHY52kgJd300hi2lADU/a1RxNTRe+RJ9jvqQlESpbz9DnG9mowez8qwXHB8qYdIUw9e+F5Q=="],
 
