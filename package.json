@@ -36,7 +36,7 @@
     "@playwright/mcp": "0.0.75",
     "@upstash/context7-mcp": "2.2.4",
     "chrome-devtools-mcp": "0.25.0",
-    "supergateway": "3.4.3"
+    "supergateway": "4.0.0"
   },
   "devDependencies": {
     "@mizchi/lsmcp": "0.10.0",
