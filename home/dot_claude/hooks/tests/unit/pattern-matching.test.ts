@@ -2,6 +2,7 @@ import { deepStrictEqual, strictEqual } from "node:assert";
 import { describe, it } from "node:test";
 import {
   checkPattern,
+  isSafeBuiltinCommand,
   matchAnchoredBashAllow,
   matchGitignorePattern,
   parseBashPattern,
@@ -322,4 +323,20 @@ describe("matchGitignorePattern: absolute wildcard patterns", () => {
     const elapsed = performance.now() - start;
     strictEqual(elapsed < 50, true, `took ${elapsed}ms`);
   });
+});
+
+describe("find start path under temp roots", () => {
+  const cases: [string, boolean][] = [
+    ["find /tmp -name x", true],
+    ["find /tmp/a -name x", true],
+    ["find /tmpx/y -name x", false],
+    ["find /tmp/../etc -name x", false],
+    ["find /var/tmp/a -name x", true],
+    ["find /var/tmpx -name x", false],
+  ];
+  for (const [command, expected] of cases) {
+    it(`${command} -> ${expected}`, () => {
+      strictEqual(isSafeBuiltinCommand(command), expected);
+    });
+  }
 });

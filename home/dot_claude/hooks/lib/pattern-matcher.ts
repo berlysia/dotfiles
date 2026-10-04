@@ -3,6 +3,7 @@
  * TypeScript conversion of pattern-matcher.sh
  */
 
+import { realpathSync } from "node:fs";
 import { posix } from "node:path";
 import type { ToolInput } from "../types/project-types.ts";
 import { isBashToolInput } from "../types/project-types.ts";
@@ -13,6 +14,8 @@ import {
   normalizePathForMatching,
   normalizePattern,
 } from "./path-utils.ts";
+import { hasParentSegment, isUnderRoot } from "./path-containment.ts";
+import { collectTempRoots } from "./temp-roots.ts";
 
 /**
  * Result of child command extraction
@@ -127,11 +130,19 @@ function isSafeFindCommand(cmd: string): boolean {
     return true;
   }
 
+  if (startPath.startsWith("/")) {
+    if (hasParentSegment(startPath)) {
+      return false;
+    }
+    const tempRoots = [...collectTempRoots("", realpathSync), "/var/tmp"];
+    if (tempRoots.some((root) => isUnderRoot(startPath, root))) {
+      return true;
+    }
+  }
+
   // Allow specific safe absolute paths
   const safeAbsolutePaths = [
     new RegExp(`^/home/${process.env.USER || "\\w+"}`),
-    /^\/tmp/,
-    /^\/var\/tmp/,
   ];
 
   for (const safePattern of safeAbsolutePaths) {
