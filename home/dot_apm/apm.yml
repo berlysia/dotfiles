@@ -35,5 +35,9 @@ dependencies:
     - mizchi/skills/apm-usage
     - mizchi/skills/ast-grep-practice
     - mizchi/skills/empirical-prompt-tuning
+    - mizchi/skills/formal-methods-reconciler
+    - mizchi/skills/formal-methods-drift-guard
     # The repo root is the dev workspace; skills/tanteki is the packaged skill
     - iwasa-kosui/tanteki/skills/tanteki
+    # The repo root holds the eval workspace; skills/eli5 is the packaged skill
+    - DreambigOu/ELI5/skills/eli5

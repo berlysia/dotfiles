@@ -55,10 +55,13 @@ apply は未掲載のスキルを追記するだけで、行を消さない。
 - [x] difit-review
 - [x] doc-coauthoring
 - [x] docx
+- [x] eli5
 - [x] empirical-prompt-tuning
 - [x] explainer
 - [x] explainer-book
 - [x] first-reader
+- [x] formal-methods-drift-guard
+- [x] formal-methods-reconciler
 - [x] frontend-design
 - [x] pdf
 - [x] pptx
