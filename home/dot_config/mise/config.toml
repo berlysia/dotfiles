@@ -40,9 +40,9 @@ yarn = "4.18.1"
 "npm:@openai/codex" = { version = "latest", minimum_release_age = "0s" }
 # Per-machine dev server proxy for agent-vm (docs/agent-vm.md, #207); it starts nothing until `portless run` is used.
 portless = "0.15.6"
-"github:k1LoW/mo" = "1.6.8"
+"github:k1LoW/mo" = "1.6.9"
 # registry の `deck` は Kong/decK に解決されるため repo 指定が必須
-"github:k1LoW/deck" = "1.24.1"
+"github:k1LoW/deck" = "1.24.2"
 "npm:wrangler" = "latest"
 "npm:@playwright/cli" = "latest"
 "npm:difit" = "latest"
@@ -56,7 +56,7 @@ ast-grep = "latest"
 yq = "4.53.6"
 shfmt = "3.14.1"
 hyperfine = "1.20.0"
-duckdb = "1.5.5"
+duckdb = "1.5.6"
 "github:boyter/scc" = "4.1.0"
 # Cyclomatic / cognitive complexity; not in the mise registry
 "github:moznion/cccc" = "1.7.0"
