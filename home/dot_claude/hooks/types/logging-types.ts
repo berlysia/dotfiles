@@ -48,19 +48,38 @@ export interface QualityLogEntry extends BaseLogEntry {
   file_path?: string;
 }
 
+interface ComplexityFindingLog {
+  path: string;
+  line: number | null;
+  name: string;
+  before: number | null;
+  after: number;
+}
+
+export interface ComplexityLogEntry extends BaseLogEntry {
+  kind: "notice" | "skip" | "disabled";
+  root: string;
+  reason?: "cccc-not-found" | "timeout" | "failed" | "schema" | "state";
+  binary?: string;
+  recovery?: string;
+  findings?: ComplexityFindingLog[];
+}
+
 export type LogEntry =
   | EventLogEntry
   | CommandLogEntry
   | ToolLogEntry
   | DecisionLogEntry
-  | QualityLogEntry;
+  | QualityLogEntry
+  | ComplexityLogEntry;
 
 export type LogCategory =
   | "events"
   | "commands"
   | "tools"
   | "decisions"
-  | "quality";
+  | "quality"
+  | "complexity";
 
 export interface LogManagerConfig {
   logDir: string;
