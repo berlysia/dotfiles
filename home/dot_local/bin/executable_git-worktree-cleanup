@@ -31,7 +31,10 @@ Description:
   - ahead of its origin/<branch>
 
   Removed without asking:
-  - merged into the origin main branch (ancestor, rebase merge or squash merge)
+  - merged into the origin main branch (ancestor, rebase merge or squash merge).
+    When main changed lines next to the branch's changes before the merge, the
+    commits are compared without context lines and the output says "context ignored"
+    (not for a detached HEAD)
 
   Asked (on a terminal; otherwise kept, except where --discard-tmp answers):
   - commits are all on origin but the branch is not detected as merged
@@ -386,11 +389,20 @@ is_in_use() {
     return 1
 }
 
-# is_merged <sha>: sets merged_how to ancestor | rebase | squash.
+# patch_ids_no_context <range>: one patch-id for each non-merge commit in <range>, from diffs taken without
+# context lines. A commit with an empty diff prints nothing.
+patch_ids_no_context() {
+    git -C "$main_worktree" log -p -U0 --no-merges --no-renames --no-color --no-ext-diff --no-textconv --no-show-signature --format='commit %H' "$1" -- 2>/dev/null \
+        | git -C "$main_worktree" patch-id --stable 2>/dev/null | cut -d' ' -f1
+}
+
+# is_merged <sha> [<branch>]: sets merged_how to ancestor | rebase | squash, or to "rebase, context ignored" |
+# "squash, context ignored" when only the comparison without context lines matched. That comparison runs only
+# with a branch: it can take another change for the same one, and a branch keeps the commits when it does.
 # The squash probe writes one dangling commit object (no ref is moved; gc removes it).
 merged_how=""
 is_merged() {
-    local sha=$1 base n c probe
+    local sha=$1 br=${2:-} base n c probe main_ids ids id missing
     merged_how=""
     if [[ -z "$main_ref" ]]; then
         return 1
@@ -431,6 +443,32 @@ is_merged() {
             return 0
             ;;
     esac
+    # git cherry takes patch-ids over three context lines, so a commit replayed onto a main that changed a line
+    # next to its change gets another id. Compare once more without context lines: the same lines added and
+    # removed in the same files count as the same change, wherever in the file they are.
+    if [[ -z "$br" ]]; then
+        return 1
+    fi
+    if ! main_ids=$(patch_ids_no_context "$base..$main_ref") || [[ -z "$main_ids" ]]; then
+        return 1
+    fi
+    if ! ids=$(patch_ids_no_context "$base..$sha"); then
+        return 1
+    fi
+    # grep exits 0 when an id is missing from main, 1 when none is, 2 on an error. A branch of empty commits has
+    # no id: grep then reads one empty line, which matches no id and so counts as missing.
+    missing=0
+    grep -qvxFf <(printf '%s\n' "$main_ids") <<<"$ids" || missing=$?
+    if [[ $missing -eq 1 ]]; then
+        merged_how="rebase, context ignored"
+        return 0
+    fi
+    if id=$(git -C "$main_worktree" diff -U0 --no-renames --no-color --no-ext-diff --no-textconv "$base" "$sha" -- 2>/dev/null \
+        | git -C "$main_worktree" patch-id --stable 2>/dev/null | cut -d' ' -f1) \
+        && [[ -n "$id" ]] && grep -qxF "$id" <<<"$main_ids"; then
+        merged_how="squash, context ignored"
+        return 0
+    fi
     return 1
 }
 
@@ -582,7 +620,7 @@ classify() {
     fi
     if grep -q '^!! ' <<<"$ig"; then
         verdict=ASK_HUMAN; reason="has ignored files in .tmp/ or .entire/"
-        if is_merged "$sha"; then
+        if is_merged "$sha" "$br"; then
             # ASK_TMP: without the ignored files this would be REMOVE, and the merged tip is this worktree's own work.
             # "merged" alone does not show that: a worktree fast-forwarded to main, or to someone else's branch
             # that was merged later, holds nothing of its own but an uncommitted plan.
@@ -603,8 +641,13 @@ classify() {
     if is_fresh "$wt" "$sha"; then
         verdict=ASK_HUMAN; reason="no commits since the worktree was created"; return 0
     fi
-    if is_merged "$sha"; then
-        verdict=REMOVE; reason="merged into $main_name ($merged_how)"; return 0
+    if is_merged "$sha" "$br"; then
+        verdict=REMOVE; reason="merged into $main_name ($merged_how)"
+        if [[ "$merged_how" == *"context ignored" ]]; then
+            printf -v hint '%q' "$br"
+            reason="$reason; branch $hint stays at ${sha:0:12}"
+        fi
+        return 0
     fi
     if ! u=$(git -C "$wt" rev-list --count "$sha" --not --remotes=origin 2>/dev/null); then
         verdict=ASK_HUMAN; reason="cannot count commits not on origin"; return 0

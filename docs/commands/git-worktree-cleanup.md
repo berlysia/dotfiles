@@ -30,22 +30,25 @@ git-worktree-cleanup --help
 
 各 worktree を上から順に評価し、最初に当たった段で確定します。判定に使う git コマンドが失敗したときは、その段の保守側（KEEP か ASK_HUMAN）に倒れます。
 
-| 段  | 条件                                                                                               | 分類                                                                                                                                |
-| --- | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | locked（`git worktree lock`）                                                                      | KEEP                                                                                                                                |
-| 2   | 使用中（自分のプロセスの cwd が worktree 自身かその配下、または実行者の cwd）                      | KEEP                                                                                                                                |
-| 3   | 未 commit の変更・untracked がある                                                                 | KEEP                                                                                                                                |
-| 4   | branch の `origin/<branch>` があり、それより先行している                                           | KEEP                                                                                                                                |
-| 5a  | 使用中を検出できない                                                                               | ASK_HUMAN                                                                                                                           |
-| 5b  | `.tmp/` `.entire/` に ignored ファイルがある                                                       | ASK_TMP（merged、作業開始直後でない、tip がその worktree で作られた、一覧と id を取れた、の全部を満たすとき）。それ以外は ASK_HUMAN |
-| 6   | 作業開始直後（worktree の HEAD reflog が空・読めない、または全 entry が現在の HEAD と同じ commit） | ASK_HUMAN                                                                                                                           |
-| 7   | merged（tip が `origin/<main>` の祖先、rebase merge、squash merge のいずれか）                     | REMOVE                                                                                                                              |
-| 8   | origin のどの ref にも無い commit がある                                                           | ASK_HUMAN                                                                                                                           |
-| 9   | それ以外（commit はすべて origin にあるが merged と判定できない。detached HEAD で未 merge を含む） | ASK                                                                                                                                 |
+| 段  | 条件                                                                                                               | 分類                                                                                                                                |
+| --- | ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | locked（`git worktree lock`）                                                                                      | KEEP                                                                                                                                |
+| 2   | 使用中（自分のプロセスの cwd が worktree 自身かその配下、または実行者の cwd）                                      | KEEP                                                                                                                                |
+| 3   | 未 commit の変更・untracked がある                                                                                 | KEEP                                                                                                                                |
+| 4   | branch の `origin/<branch>` があり、それより先行している                                                           | KEEP                                                                                                                                |
+| 5a  | 使用中を検出できない                                                                                               | ASK_HUMAN                                                                                                                           |
+| 5b  | `.tmp/` `.entire/` に ignored ファイルがある                                                                       | ASK_TMP（merged、作業開始直後でない、tip がその worktree で作られた、一覧と id を取れた、の全部を満たすとき）。それ以外は ASK_HUMAN |
+| 6   | 作業開始直後（worktree の HEAD reflog が空・読めない、または全 entry が現在の HEAD と同じ commit）                 | ASK_HUMAN                                                                                                                           |
+| 7   | merged（tip が `origin/<main>` の祖先、rebase merge、squash merge のいずれか。下の「context を外した比較」を含む） | REMOVE                                                                                                                              |
+| 8   | origin のどの ref にも無い commit がある                                                                           | ASK_HUMAN                                                                                                                           |
+| 9   | それ以外（commit はすべて origin にあるが merged と判定できない。detached HEAD で未 merge を含む）                 | ASK                                                                                                                                 |
 
 - `<main>` は `origin/HEAD`、無ければ `origin/main`、`origin/master` の順で決まる。どれも無ければ merged は常に偽になる
 - detached HEAD では段 4 を評価しない
-- 段 5b の ignored の案内: merged でも `.tmp/sessions/` の spec / plan が `docs/` へ移されていないことがあるため、`(merged: <方式>)` を添えて確認に回す。`status.showUntrackedFiles=no` の設定でも `.tmp/` `.entire/` を検知する
+- context を外した比較: rebase merge と squash merge は、まず `git cherry`（変更行の前後 3 行を含む patch-id）で判定する。当たらないときは、前後の行を外した patch-id で `merge-base..tip` の commit と `merge-base..origin/<main>` の commit を比べ直す。マージの前に main が隣の行を変えていた branch は、こちらで merged になり、出力は `(rebase, context ignored)` / `(squash, context ignored)` になる
+  - この比較は、同じファイルに同じ行を足し引きする commit を、位置が違っても同じとみなす。空白だけの違いも同じとみなす。branch の commit すべてが main に相手を持つときだけ merged になる。取り違えても branch は残り、出力の `branch <名前> stays at <tip>` から `git worktree add <path> <branch>` で戻せる
+  - detached HEAD の worktree には、この比較を使わない。branch が無く、取り違えると commit を指す ref が残らないためである
+- 段 5b の ignored の案内: merged でも `.tmp/sessions/` の spec / plan が `docs/` へ移されていないことがあるため、`(merged: <方式>)` を添えて確認に回す。`<方式>` は `ancestor` `rebase` `squash` と、`rebase, context ignored` `squash, context ignored`。`status.showUntrackedFiles=no` の設定でも `.tmp/` `.entire/` を検知する
   - ASK_TMP では、`.tmp/` `.entire/` のファイルの先頭 20 件と総数、その他の ignored パス（`git status` が畳んだ単位）、一覧の id を理由の直後に出す。一覧の各行は `| ` で始まり、空白を含む名前はシェルのクォート形式で出る
   - id は worktree のパス、branch 名、tip の commit、2 つの一覧から計算する。`.tmp/` `.entire/` のファイルの名前が増減すると変わる。中身の変更と、畳まれた ignored（`node_modules/` など）の中の増減では変わらない。id は一覧が変わっていないことを示すもので、誰かが承認したことを示すものではない。桁数や計算方法が変わった版では、古い出力の id は使えない
   - 片付け方は 3 つ: TTY で `y` と答える / 出力が示した `--discard-tmp=<id> <target>` で再実行する / 中身を移して再実行する
@@ -124,7 +127,7 @@ Removed 1, kept 2, outside .git/worktree 0.
 - `origin` という名前の remote を前提にします（`git-worktree-create` と同じ前提）
 - 作業開始直後かどうかは worktree の HEAD reflog で判定するため、merge 済みの remote branch を `git-worktree-create` で checkout しただけの worktree や、最後に HEAD を動かしてから reflog の期限（既定 90 日）を過ぎた worktree は確認になります。対話で `y` と答えれば消せます
 - 使用中の検出は、Linux では `/proc/*/cwd`、それ以外では `lsof` で、自分のユーザーのプロセスの cwd だけを見ます。main worktree で起動した session が絶対パスで別の worktree を使っている場合や、他のユーザーのプロセスは見えません。そのため段 5・6・8 が主な防御です
-- merged の判定のために、worktree 1 つにつき最大 1 つの dangling commit object を書きます（ref は動かさず、`git gc` で消えます）
+- merged の判定のために、worktree 1 つにつき最大 1 つの dangling commit object を書きます（ref は動かさず、`git gc` で消えます）。context を外した比較は object を書きません
 - 削除成功後、`git worktree prune` が自動実行されます
 - `permission-auto-approve` が静的に allow するのは、`--yes` `--non-interactive` `--help`（と短縮形）、`2>&1` などの redirect、英数字と `_ . / @ + -` だけの target を引数に持つ呼び出しです。`--discard-tmp=<id>`、`--`、引用符つきの target などを含む呼び出しは次の層に回ります。次の層が allow すれば人間の確認なしに実行されます。人間に聞くことは `~/.claude/rules/developer-experience.md` の手順で定めており、機構による保証ではありません
 - `git worktree remove --force` や `rm -rf` を直接呼べば、このツールの判定は通りません
@@ -143,6 +146,7 @@ Removed 1, kept 2, outside .git/worktree 0.
 - `--discard-tmp=<id>` を追加した。`.tmp/` `.entire/` にファイルがある merged worktree を、端末なしで消せる。`--yes` の範囲は変わらない
 - `.tmp/` `.entire/` にファイルがある merged worktree を残すとき、失うファイルの一覧と id を出すようになった。確認待ちの間に一覧が変わると残す
 - `status.showUntrackedFiles=no` の設定で `.tmp/` `.entire/` を検知できず、確認なしに消していたのを直した
+- マージの前に main が隣の行を変えていた branch を、merged と判定するようになった（#269）。出力に `context ignored` と、branch の在りかが付く
 
 ## 関連コマンド
 
