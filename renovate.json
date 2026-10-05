@@ -25,6 +25,16 @@
       "platformAutomerge": true
     },
     {
+      "description": "Update every bun pin in one PR. The version is written in three places that different managers read (packageManager in package.json: npm, bun-version of setup-bun: github-actions, the mise config: mise), so without this the pins land in separate PRs and disagree in between",
+      "matchDepNames": ["bun"],
+      "groupName": "bun"
+    },
+    {
+      "description": "Update zizmor and zizmor-action in one PR. lint-actions.yml passes the mise pin to the action as `version`, and the action only runs versions listed in the digest table bundled at its pinned SHA, so a zizmor bump needs the action bump that knows it",
+      "matchDepNames": ["cargo:zizmor", "zizmorcore/zizmor-action"],
+      "groupName": "zizmor"
+    },
+    {
       "description": "Keep mise cargo: backend versions bare. The preset's rangeStrategy=pin writes cargo range syntax (=1.2.3), which mise rejects as an unsupported semver range; bump updates the bare version in place instead",
       "matchManagers": ["mise"],
       "matchDatasources": ["crate"],

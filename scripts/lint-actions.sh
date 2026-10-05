@@ -40,7 +40,11 @@ echo ""
 # Run zizmor (mimics zizmor-action behavior)
 # The action runs: zizmor --format sarif .github/workflows > results.sarif
 # For local use, we'll use human-readable format
-if zizmor .github/workflows; then
+#
+# --config is explicit because worktrees live under the main checkout's .git/,
+# and zizmor discovers its config from the outermost repository root: without
+# it a worktree is checked against the main checkout's zizmor.yml.
+if zizmor --config zizmor.yml .github/workflows; then
   echo ""
   echo -e "${GREEN}✓ All GitHub Actions workflows passed zizmor checks${NC}"
   exit 0
