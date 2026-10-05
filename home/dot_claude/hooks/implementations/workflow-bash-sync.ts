@@ -70,58 +70,74 @@ const TRIPWIRE_GIT_TIMEOUT_MS = 200;
 const TRIPWIRE_MAX_SHOWN_PATHS = 10;
 const TRIPWIRE_LOG_CAP = 200;
 
-const hook = defineHook({
-  trigger: { PostToolUse: true },
-  run: async (context) => {
-    // Subagent-originated Bash calls are not the main loop's own document
-    // edits and are not what the tripwire is watching for (a subagent cannot
-    // itself have bypassed the gate that governs the main loop's session) --
-    // skip all work rather than pay for a git status + doc scan on every
-    // subagent tool call.
-    if (context.input.agent_id) {
-      return context.success({});
-    }
+type HookEnv = {
+  tripwireGitTimeoutMs: number;
+};
 
-    const cwd = getToolCwd();
-    const projectRoot = getProjectRoot();
-    const resolution = resolveWorkflowDir({
-      cwd: projectRoot,
-      sessionId: context.input.session_id,
-    });
-    if (resolution.source === "unresolvable") {
-      return context.json(
-        additionalContextPayload(
-          "[workflow-bash-sync] could not resolve the workflow directory for this session; skipping doc-sync and tripwire for this call.",
-        ),
-      );
-    }
-    const wfDir = resolution.dir;
-    const wfPaths = resolveWorkflowPaths(wfDir);
-    const workflowActive =
-      existsSync(wfPaths.research) ||
-      existsSync(wfPaths.plan) ||
-      existsSync(wfPaths.spec);
-    if (!workflowActive) {
-      return context.success({});
-    }
+function defaultEnv(): HookEnv {
+  return { tripwireGitTimeoutMs: TRIPWIRE_GIT_TIMEOUT_MS };
+}
 
-    const sections: string[] = [];
-    sections.push(...collectDocRecommendations(wfDir, wfPaths));
-
-    const twoLayer = existsSync(wfPaths.spec);
-    if (!isImplementationPhase(wfDir, wfPaths, twoLayer)) {
-      const tripwireMessage = await checkTripwire(wfDir, cwd);
-      if (tripwireMessage) {
-        sections.push(tripwireMessage);
+export function createHook(getEnv: () => HookEnv = defaultEnv) {
+  return defineHook({
+    trigger: { PostToolUse: true },
+    run: async (context) => {
+      // Subagent-originated Bash calls are not the main loop's own document
+      // edits and are not what the tripwire is watching for (a subagent cannot
+      // itself have bypassed the gate that governs the main loop's session) --
+      // skip all work rather than pay for a git status + doc scan on every
+      // subagent tool call.
+      if (context.input.agent_id) {
+        return context.success({});
       }
-    }
 
-    if (sections.length === 0) {
-      return context.success({});
-    }
-    return context.json(additionalContextPayload(sections.join("\n\n---\n\n")));
-  },
-});
+      const cwd = getToolCwd();
+      const projectRoot = getProjectRoot();
+      const resolution = resolveWorkflowDir({
+        cwd: projectRoot,
+        sessionId: context.input.session_id,
+      });
+      if (resolution.source === "unresolvable") {
+        return context.json(
+          additionalContextPayload(
+            "[workflow-bash-sync] could not resolve the workflow directory for this session; skipping doc-sync and tripwire for this call.",
+          ),
+        );
+      }
+      const wfDir = resolution.dir;
+      const wfPaths = resolveWorkflowPaths(wfDir);
+      const workflowActive =
+        existsSync(wfPaths.research) ||
+        existsSync(wfPaths.plan) ||
+        existsSync(wfPaths.spec);
+      if (!workflowActive) {
+        return context.success({});
+      }
+
+      const sections: string[] = [];
+      sections.push(...collectDocRecommendations(wfDir, wfPaths));
+
+      const twoLayer = existsSync(wfPaths.spec);
+      if (!isImplementationPhase(wfDir, wfPaths, twoLayer)) {
+        const tripwireMessage = await checkTripwire(
+          wfDir,
+          cwd,
+          getEnv().tripwireGitTimeoutMs,
+        );
+        if (tripwireMessage) {
+          sections.push(tripwireMessage);
+        }
+      }
+
+      if (sections.length === 0) {
+        return context.success({});
+      }
+      return context.json(
+        additionalContextPayload(sections.join("\n\n---\n\n")),
+      );
+    },
+  });
+}
 
 function additionalContextPayload(additionalContext: string) {
   return {
@@ -264,6 +280,7 @@ function findPlanNumberedFiles(wfDir: string): string[] {
 async function checkTripwire(
   wfDir: string,
   cwd: string,
+  timeoutMs: number,
 ): Promise<string | null> {
   const disabledPath = resolve(wfDir, ".tripwire-disabled");
   if (existsSync(disabledPath)) {
@@ -285,11 +302,11 @@ async function checkTripwire(
         "-z",
         "-uall",
       ],
-      { timeout: TRIPWIRE_GIT_TIMEOUT_MS, encoding: "utf-8" },
+      { timeout: timeoutMs, encoding: "utf-8" },
     );
     stdout = result.stdout;
   } catch (error) {
-    writeDisabledMarker(disabledPath, describeGitFailure(error));
+    writeDisabledMarker(disabledPath, describeGitFailure(error, timeoutMs));
     return "[workflow-bash-sync] tripwire disabled: `git status` was unavailable or timed out for this repo. Gate-closed off-plan write detection will not run again this session (see `.tripwire-disabled`).";
   }
 
@@ -339,14 +356,14 @@ function isUnderWfDir(absPath: string, wfDir: string): boolean {
   return absPath === wfDir || absPath.startsWith(`${wfDir}/`);
 }
 
-function describeGitFailure(error: unknown): string {
+function describeGitFailure(error: unknown, timeoutMs: number): string {
   if (error && typeof error === "object") {
     const err = error as NodeJS.ErrnoException & { killed?: boolean };
     if (err.code === "ENOENT") {
       return "git binary not found";
     }
     if (err.killed) {
-      return `git status timed out after ${TRIPWIRE_GIT_TIMEOUT_MS}ms`;
+      return `git status timed out after ${timeoutMs}ms`;
     }
     if (typeof err.message === "string") {
       return err.message.slice(0, 500);
@@ -460,6 +477,8 @@ function parsePorcelainMap(output: string): Map<string, string> {
   }
   return map;
 }
+
+const hook = createHook();
 
 export default hook;
 

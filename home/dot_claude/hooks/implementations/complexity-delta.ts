@@ -51,6 +51,7 @@ type HookEnv = {
   stateDir: string;
   pathEnv: string | undefined;
   ccccTimeoutMs: number;
+  gitTimeoutMs: number;
 };
 
 type DisabledReason = "timeout" | "schema";
@@ -80,6 +81,7 @@ function defaultEnv(): HookEnv {
     stateDir: join(getHomeDir(), ".claude", "state", "complexity-delta"),
     pathEnv: process.env.PATH,
     ccccTimeoutMs: DEFAULT_CCCC_TIMEOUT_MS,
+    gitTimeoutMs: GIT_TIMEOUT_MS,
   };
 }
 
@@ -163,13 +165,13 @@ function writeState(statePath: string, state: State): void {
   }
 }
 
-function resolveRoot(cwd: string): string | null {
+function resolveRoot(cwd: string, timeoutMs: number): string | null {
   try {
     const root = execFileSync("git", ["rev-parse", "--show-toplevel"], {
       cwd,
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "ignore"],
-      timeout: GIT_TIMEOUT_MS,
+      timeout: timeoutMs,
     }).trim();
     return root === "" ? null : root;
   } catch {
@@ -413,10 +415,10 @@ export function createHook(getEnv: () => HookEnv = defaultEnv) {
       try {
         const { cwd, session_id: sessionId } = context.input;
         if (!SESSION_ID_PATTERN.test(sessionId)) return context.success({});
-        const root = resolveRoot(cwd);
+        const env = getEnv();
+        const root = resolveRoot(cwd, env.gitTimeoutMs);
         if (root === null) return context.success({});
 
-        const env = getEnv();
         const call: Call = {
           env,
           root,

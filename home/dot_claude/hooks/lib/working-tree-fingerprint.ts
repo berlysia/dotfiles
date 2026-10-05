@@ -246,6 +246,7 @@ export function checkTreeChange(
   stateDir: string,
   sessionId: string,
   cwd: string,
+  deadlineMs: number = DEFAULT_DEADLINE_MS,
 ): TreeChangeResult {
   const path = getBaselinePath(stateDir, sessionId);
   if (path === null) {
@@ -260,7 +261,7 @@ export function checkTreeChange(
   if (!FINGERPRINT_PATTERN.test(baseline)) {
     return { state: "unknown", reason: "malformed baseline" };
   }
-  const current = computeTreeFingerprint(cwd);
+  const current = computeTreeFingerprint(cwd, deadlineMs);
   if (current === null) {
     return { state: "unknown", reason: "fingerprint unavailable" };
   }

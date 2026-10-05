@@ -64,6 +64,14 @@ const GIT_TIMEOUT_MS = 2000;
 const GIT_STATUS_MAX_LINES = 40;
 const SNAPSHOT_UTTERANCES = 5;
 
+type HookEnv = {
+  gitTimeoutMs: number;
+};
+
+function defaultEnv(): HookEnv {
+  return { gitTimeoutMs: GIT_TIMEOUT_MS };
+}
+
 const TESTAMENT_FILE = "testament.md";
 const WRITTEN_FILE = "testament-written.json";
 const STATE_FILE = "testament-state.json";
@@ -410,6 +418,7 @@ function handleStop(input: {
 function runGit(
   cwd: string,
   args: string[],
+  timeoutMs: number,
 ):
   | { ok: true; stdout: string }
   | { ok: false; status: number | null; stderr: string } {
@@ -419,7 +428,7 @@ function runGit(
       ["-c", "core.fsmonitor=false", "-C", cwd, ...args],
       {
         encoding: "utf8",
-        timeout: GIT_TIMEOUT_MS,
+        timeout: timeoutMs,
         stdio: ["ignore", "pipe", "pipe"],
         env: { ...process.env, GIT_OPTIONAL_LOCKS: "0", LC_ALL: "C" },
       },
@@ -442,10 +451,18 @@ type GitContext = {
   insideRepo: boolean;
 };
 
-function classifyGit(cwd: string, snapshotPath: string): GitContext {
-  const inside = runGit(cwd, ["rev-parse", "--is-inside-work-tree"]);
+function classifyGit(
+  cwd: string,
+  snapshotPath: string,
+  timeoutMs: number,
+): GitContext {
+  const inside = runGit(cwd, ["rev-parse", "--is-inside-work-tree"], timeoutMs);
   if (inside.ok) {
-    const ignored = runGit(cwd, ["check-ignore", "-q", snapshotPath]);
+    const ignored = runGit(
+      cwd,
+      ["check-ignore", "-q", snapshotPath],
+      timeoutMs,
+    );
     return { safeToWriteDetails: ignored.ok, insideRepo: true };
   }
   if (inside.status === 128 && inside.stderr.includes("not a git repository")) {
@@ -490,21 +507,32 @@ function handlePreCompact(input: {
   transcriptPath: string;
   trigger: string;
   customInstructions: string | null;
+  // Required, no default: a large default would turn a timeout into a
+  // success and change the privacy classification.
+  gitTimeoutMs: number;
 }): void {
   const paths = resolvePaths(input.projectDir, input.sessionId);
   if (paths === null) return;
   mkdirSync(paths.wfDir, { recursive: true });
   // git must see the same spelling it resolves the repo with.
   const realSnapshot = join(realpathSync(paths.wfDir), SNAPSHOT_FILE);
-  const git = classifyGit(input.projectDir, realSnapshot);
+  const git = classifyGit(input.projectDir, realSnapshot, input.gitTimeoutMs);
 
   let gitBranch: string | null = null;
   let gitStatus: string | null = null;
   if (git.insideRepo) {
-    const branch = runGit(input.projectDir, ["branch", "--show-current"]);
+    const branch = runGit(
+      input.projectDir,
+      ["branch", "--show-current"],
+      input.gitTimeoutMs,
+    );
     if (branch.ok) gitBranch = redact(branch.stdout.trim()) || null;
     if (git.safeToWriteDetails) {
-      const status = runGit(input.projectDir, ["status", "--short"]);
+      const status = runGit(
+        input.projectDir,
+        ["status", "--short"],
+        input.gitTimeoutMs,
+      );
       if (status.ok) {
         gitStatus = redact(
           status.stdout
@@ -604,117 +632,125 @@ function hasAgentId(input: object): boolean {
   return typeof value === "string" && value !== "";
 }
 
-const hook = defineHook({
-  trigger: {
-    PostToolUse: true,
-    Stop: true,
-    PreCompact: true,
-    SessionStart: true,
-  },
-  run: (context) => {
-    try {
-      const input = context.input;
-      if (hasAgentId(input)) return context.success({});
-      const projectDir = getProjectRoot(input.cwd);
+export function createHook(getEnv: () => HookEnv = defaultEnv) {
+  return defineHook({
+    trigger: {
+      PostToolUse: true,
+      Stop: true,
+      PreCompact: true,
+      SessionStart: true,
+    },
+    run: (context) => {
+      try {
+        const input = context.input;
+        if (hasAgentId(input)) return context.success({});
+        const projectDir = getProjectRoot(input.cwd);
 
-      if (input.hook_event_name === "PostToolUse") {
-        const result = handlePostToolUse({
-          sessionId: input.session_id,
-          projectDir,
-          toolCwd: getWorkingDirectory(input.cwd),
-          transcriptPath: input.transcript_path,
-          toolName: input.tool_name,
-          toolInput: input.tool_input,
-        });
+        if (input.hook_event_name === "PostToolUse") {
+          const result = handlePostToolUse({
+            sessionId: input.session_id,
+            projectDir,
+            toolCwd: getWorkingDirectory(input.cwd),
+            transcriptPath: input.transcript_path,
+            toolName: input.tool_name,
+            toolInput: input.tool_input,
+          });
+          if (
+            result.additionalContext === undefined &&
+            result.systemMessage === undefined
+          ) {
+            return context.success({});
+          }
+          return context.json({
+            event: "PostToolUse",
+            output: {
+              ...(result.additionalContext !== undefined
+                ? {
+                    hookSpecificOutput: {
+                      hookEventName: "PostToolUse" as const,
+                      additionalContext: result.additionalContext,
+                    },
+                  }
+                : {}),
+              ...(result.systemMessage !== undefined
+                ? { systemMessage: result.systemMessage }
+                : {}),
+            },
+          });
+        }
+
+        if (input.hook_event_name === "Stop") {
+          const result = handleStop({
+            sessionId: input.session_id,
+            projectDir,
+            transcriptPath: input.transcript_path,
+            stopHookActive: input.stop_hook_active === true,
+          });
+          if (
+            result.reason === undefined &&
+            result.systemMessage === undefined
+          ) {
+            return context.success({});
+          }
+          return context.json({
+            event: "Stop",
+            output: {
+              ...(result.reason !== undefined
+                ? { decision: "block" as const, reason: result.reason }
+                : {}),
+              ...(result.systemMessage !== undefined
+                ? { systemMessage: result.systemMessage }
+                : {}),
+            },
+          });
+        }
+
+        if (input.hook_event_name === "PreCompact") {
+          handlePreCompact({
+            sessionId: input.session_id,
+            projectDir,
+            transcriptPath: input.transcript_path,
+            trigger: input.trigger,
+            customInstructions: input.custom_instructions ?? null,
+            gitTimeoutMs: getEnv().gitTimeoutMs,
+          });
+          return context.success({});
+        }
+
         if (
-          result.additionalContext === undefined &&
-          result.systemMessage === undefined
+          input.hook_event_name === "SessionStart" &&
+          input.source === "compact"
         ) {
-          return context.success({});
+          const additionalContext = handleSessionStartCompact({
+            sessionId: input.session_id,
+            projectDir,
+          });
+          if (additionalContext === null) return context.success({});
+          return context.json({
+            event: "SessionStart",
+            output: {
+              hookSpecificOutput: {
+                hookEventName: "SessionStart" as const,
+                additionalContext,
+              },
+            },
+          });
         }
-        return context.json({
-          event: "PostToolUse",
-          output: {
-            ...(result.additionalContext !== undefined
-              ? {
-                  hookSpecificOutput: {
-                    hookEventName: "PostToolUse" as const,
-                    additionalContext: result.additionalContext,
-                  },
-                }
-              : {}),
-            ...(result.systemMessage !== undefined
-              ? { systemMessage: result.systemMessage }
-              : {}),
-          },
-        });
-      }
 
-      if (input.hook_event_name === "Stop") {
-        const result = handleStop({
-          sessionId: input.session_id,
-          projectDir,
-          transcriptPath: input.transcript_path,
-          stopHookActive: input.stop_hook_active === true,
-        });
-        if (result.reason === undefined && result.systemMessage === undefined) {
-          return context.success({});
-        }
-        return context.json({
-          event: "Stop",
-          output: {
-            ...(result.reason !== undefined
-              ? { decision: "block" as const, reason: result.reason }
-              : {}),
-            ...(result.systemMessage !== undefined
-              ? { systemMessage: result.systemMessage }
-              : {}),
-          },
-        });
-      }
-
-      if (input.hook_event_name === "PreCompact") {
-        handlePreCompact({
-          sessionId: input.session_id,
-          projectDir,
-          transcriptPath: input.transcript_path,
-          trigger: input.trigger,
-          customInstructions: input.custom_instructions ?? null,
-        });
+        return context.success({});
+      } catch (error) {
+        // Never echo transcript or utterance fragments: error text can embed them.
+        const code = (error as { code?: unknown })?.code;
+        console.error(
+          `[compaction-testament] error: ${error instanceof Error ? error.name : "unknown"}${typeof code === "string" ? ` (${code})` : ""}`,
+        );
         return context.success({});
       }
+    },
+  });
+}
 
-      if (
-        input.hook_event_name === "SessionStart" &&
-        input.source === "compact"
-      ) {
-        const additionalContext = handleSessionStartCompact({
-          sessionId: input.session_id,
-          projectDir,
-        });
-        if (additionalContext === null) return context.success({});
-        return context.json({
-          event: "SessionStart",
-          output: {
-            hookSpecificOutput: {
-              hookEventName: "SessionStart" as const,
-              additionalContext,
-            },
-          },
-        });
-      }
-
-      return context.success({});
-    } catch (error) {
-      // Never echo transcript or utterance fragments: error text can embed them.
-      const code = (error as { code?: unknown })?.code;
-      console.error(
-        `[compaction-testament] error: ${error instanceof Error ? error.name : "unknown"}${typeof code === "string" ? ` (${code})` : ""}`,
-      );
-      return context.success({});
-    }
-  },
-});
+const hook = createHook();
 
 export default hook;
 

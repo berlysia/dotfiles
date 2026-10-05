@@ -13,7 +13,9 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import hook from "../../implementations/workflow-bash-sync.ts";
+import defaultHook, {
+  createHook,
+} from "../../implementations/workflow-bash-sync.ts";
 import { deriveDefaultWorkflowDir } from "../../lib/workflow-paths.ts";
 import {
   approvedWorkflowRepo,
@@ -25,6 +27,10 @@ import {
   recordApprovalsForTest,
   TEST_SESSION_ID,
 } from "./test-helpers.ts";
+import { createBlockingGit } from "../support/fake-git.ts";
+
+const PATIENT_TIMEOUT_MS = 10_000;
+const hook = createHook(() => ({ tripwireGitTimeoutMs: PATIENT_TIMEOUT_MS }));
 
 function additionalContextOf(ctx: { jsonCalls: any[] }): string {
   return ctx.jsonCalls.at(-1)?.hookSpecificOutput?.additionalContext ?? "";
@@ -264,5 +270,38 @@ describe("workflow-bash-sync.ts: tripwire (K2)", () => {
       "baseline path must remain a symlink (write refused)",
     );
     strictEqual(readFileSync(decoyTarget, "utf-8"), "not a real baseline");
+  });
+
+  it("disables itself when git status exceeds the production 200ms timeout", async () => {
+    const repo = createGitWorkflowRepo();
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+    // After the fixture: createGitWorkflowRepo runs the real git.
+    const git = createBlockingGit("status");
+    envHelper.set("PATH", `${git.binDir}:${process.env.PATH ?? ""}`);
+    try {
+      const ctx1 = createPostToolUseContextFor(defaultHook, "Bash", {
+        command: "true",
+      });
+      await invokeRun(defaultHook, ctx1);
+      match(additionalContextOf(ctx1), /tripwire disabled/);
+      // The literal 200 pins the production default; do not derive it.
+      match(
+        readFileSync(join(repo, wfRel, ".tripwire-disabled"), "utf-8"),
+        /git status timed out after 200ms/,
+      );
+      const blockedAfterFirst = git.blockedCalls();
+
+      // The latch: the doc recommendation was cached by ctx1 and the disabled
+      // marker skips the tripwire, so the second call reports nothing and does
+      // not run git status again.
+      const ctx2 = createPostToolUseContextFor(defaultHook, "Bash", {
+        command: "true",
+      });
+      await invokeRun(defaultHook, ctx2);
+      strictEqual(ctx2.jsonCalls.length, 0);
+      strictEqual(git.blockedCalls(), blockedAfterFirst);
+    } finally {
+      git.cleanup();
+    }
   });
 });

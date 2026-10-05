@@ -455,13 +455,14 @@ describe("hook-timer.sh", () => {
 
   it("waits for a child that traps TERM before flushing stdout", async () => {
     const logDir = makeTempDir();
+    const marker = join(makeTempDir(), "trapped");
     const child = spawn(
       "sh",
       [
         wrapper,
         "PreToolUse",
         "0",
-        'trap "echo bye; exit 0" TERM; sleep 5 & wait',
+        `trap "echo bye; exit 0" TERM; touch '${marker}'; sleep 5 & wait`,
       ],
       { env: baseEnv(logDir) },
     );
@@ -472,11 +473,14 @@ describe("hook-timer.sh", () => {
     child.stdout.on("data", (chunk) => {
       stdoutData += chunk.toString();
     });
-
-    await new Promise<void>((resolve) => {
-      setTimeout(() => child.kill("SIGTERM"), 300);
+    const closed = new Promise<void>((resolve) => {
       child.on("close", () => resolve());
     });
+
+    // Kill only after the trap is installed; a blind delay can land first.
+    await waitForFile(marker);
+    child.kill("SIGTERM");
+    await closed;
     ok(stdoutData.includes("bye"), stdoutData);
   });
 

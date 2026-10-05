@@ -18,7 +18,10 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import hook from "../../implementations/compaction-testament.ts";
+import defaultHook, {
+  createHook,
+} from "../../implementations/compaction-testament.ts";
+import { createBlockingGit } from "../support/fake-git.ts";
 import { deriveDefaultWorkflowDir } from "../../lib/workflow-paths.ts";
 import {
   createPostToolUseContextFor,
@@ -28,6 +31,9 @@ import {
   EnvironmentHelper,
   invokeRun,
 } from "./test-helpers.ts";
+
+const PATIENT_TIMEOUT_MS = 10_000;
+const hook = createHook(() => ({ gitTimeoutMs: PATIENT_TIMEOUT_MS }));
 import {
   buildRestoreContext,
   buildSnapshot,
@@ -1150,13 +1156,14 @@ describe("compaction-testament hook", () => {
       env: HookEnv,
       transcript: string,
       custom: string | null = null,
+      target = hook,
     ) => {
       const ctx = createPreCompactContext({
         cwd: env.repo,
         transcript_path: transcript,
         custom_instructions: custom,
       });
-      const result = await invokeRun(hook, ctx);
+      const result = await invokeRun(target, ctx);
       return { ctx, result };
     };
     const snapshotOf = (env: HookEnv): string =>
@@ -1210,6 +1217,20 @@ describe("compaction-testament hook", () => {
       writeFileSync(join(env.repo, ".git", "config"), "[[[garbage\n");
       await compact(env, transcriptAt(env, 500_000));
       assert.doesNotMatch(snapshotOf(env), /SECRET-UTTERANCE/);
+    });
+
+    it("treats a git check-ignore over the production 2000ms timeout as not ignored", async () => {
+      const env = setup({ git: true, ignoreTmp: true });
+      const git = createBlockingGit("check-ignore");
+      envHelper.set("PATH", `${git.binDir}:${process.env.PATH ?? ""}`);
+      try {
+        await compact(env, transcriptAt(env, 500_000), null, defaultHook);
+        const snap = snapshotOf(env);
+        assert.doesNotMatch(snap, /SECRET-UTTERANCE/);
+        assert.match(snap, /ignore されていないため省略/);
+      } finally {
+        git.cleanup();
+      }
     });
 
     it("does not write through a symlink at snapshot.md", async () => {

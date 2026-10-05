@@ -17,9 +17,11 @@ import { dirname, join } from "node:path";
 import { after, describe, it } from "node:test";
 import { createHook } from "../../implementations/complexity-delta.ts";
 import type { ComplexityLogEntry } from "../../types/logging-types.ts";
+import { createBlockingGit } from "../support/fake-git.ts";
 import {
   createStopContextFor,
   createUserPromptSubmitContext,
+  EnvironmentHelper,
   invokeRun,
 } from "./test-helpers.ts";
 
@@ -65,11 +67,17 @@ function setup(options: { binInsideRepo?: boolean; timeoutMs?: number } = {}) {
   const callsFile = join(dirname(outputFile), "calls");
   const sessionId = `cd-${process.pid}-${++sessionCounter}`;
   // pathEnv is only where cccc is looked up; git is found through the real PATH.
+  let ccccTimeoutMs = options.timeoutMs ?? PATIENT_TIMEOUT_MS;
   const hook = createHook(() => ({
     stateDir,
     pathEnv: binDir,
-    ccccTimeoutMs: options.timeoutMs ?? PATIENT_TIMEOUT_MS,
+    ccccTimeoutMs,
+    gitTimeoutMs: PATIENT_TIMEOUT_MS,
   }));
+  /** Applies to the next hook call: getEnv is read on every run. */
+  const setTimeoutMs = (ms: number) => {
+    ccccTimeoutMs = ms;
+  };
 
   // Each call appends its arguments as one line, so the file doubles as a counter.
   const script = (body: string) => {
@@ -122,6 +130,7 @@ function setup(options: { binInsideRepo?: boolean; timeoutMs?: number } = {}) {
     binDir,
     respond,
     script,
+    setTimeoutMs,
     calls,
     callLines,
     prompt,
@@ -252,6 +261,7 @@ describe("complexity-delta: when it does nothing", () => {
       stateDir: t.stateDir,
       pathEnv: t.binDir,
       ccccTimeoutMs: PATIENT_TIMEOUT_MS,
+      gitTimeoutMs: PATIENT_TIMEOUT_MS,
     }));
     const ctx = createUserPromptSubmitContext("go");
     Object.assign(ctx.input, { cwd: t.repo, session_id: "../escape" });
@@ -358,6 +368,24 @@ describe("complexity-delta: choosing the binary", () => {
   });
 });
 
+it("uses the injected git timeout to find the repository root", async () => {
+  const t = setup();
+  t.respond(report([fn("f", 24)]));
+  const envHelper = new EnvironmentHelper();
+  const git = createBlockingGit("rev-parse", { delaySeconds: 3 });
+  envHelper.set("PATH", `${git.binDir}:${process.env.PATH ?? ""}`);
+  try {
+    await t.prompt();
+    // The prompt only records a baseline after resolveRoot succeeded.
+    assert.notEqual(t.state().baseline, null);
+    // At least once: the delayed rev-parse was really on the path.
+    assert.ok(git.blockedCalls() >= 1);
+  } finally {
+    envHelper.restore();
+    git.cleanup();
+  }
+});
+
 describe("complexity-delta: giving up", () => {
   it("turns itself off after two consecutive timeouts and says so once", async () => {
     const t = setup({ timeoutMs: 200 });
@@ -385,12 +413,15 @@ describe("complexity-delta: giving up", () => {
   });
 
   it("counts a stop timeout and resets the count on a success", async () => {
-    const t = setup({ timeoutMs: 200 });
+    const t = setup();
     t.respond(report([fn("f", 24)]));
     await t.prompt();
+    // Only the hanging call races the short timeout.
+    t.setTimeoutMs(200);
     t.script("exec sleep 30");
     assert.equal((await t.stop()).jsonCalls.length, 0);
     assert.equal(t.state().timeouts, 1);
+    t.setTimeoutMs(PATIENT_TIMEOUT_MS);
     t.respond(report([fn("f", 24)]));
     await t.prompt();
     assert.equal(t.state().timeouts, 0);

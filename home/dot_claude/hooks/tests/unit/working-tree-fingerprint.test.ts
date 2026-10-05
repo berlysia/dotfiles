@@ -28,6 +28,10 @@ import {
   pruneStaleBaselines,
   saveBaseline,
 } from "../../lib/working-tree-fingerprint.ts";
+import { createBlockingGit } from "../support/fake-git.ts";
+import { EnvironmentHelper } from "./test-helpers.ts";
+
+const PATIENT_DEADLINE_MS = 30_000;
 
 const tempDirs: string[] = [];
 after(() => {
@@ -98,11 +102,15 @@ function baselinePath(stateDir: string, sessionId: string): string {
 
 /** Saves the current fingerprint as the baseline for sessionId "s1". */
 function saveCurrent(stateDir: string, repo: string): void {
-  saveBaseline(stateDir, "s1", computeTreeFingerprint(repo));
+  saveBaseline(
+    stateDir,
+    "s1",
+    computeTreeFingerprint(repo, PATIENT_DEADLINE_MS),
+  );
 }
 
 function stateOf(stateDir: string, repo: string): string {
-  return checkTreeChange(stateDir, "s1", repo).state;
+  return checkTreeChange(stateDir, "s1", repo, PATIENT_DEADLINE_MS).state;
 }
 
 const isRoot = process.getuid?.() === 0;
@@ -198,9 +206,16 @@ describe("checkTreeChange: detection", () => {
     const repo = makeRepo();
     const sub = join(repo, "sub");
     const stateDir = makeTempDir();
-    saveBaseline(stateDir, "s1", computeTreeFingerprint(sub));
+    saveBaseline(
+      stateDir,
+      "s1",
+      computeTreeFingerprint(sub, PATIENT_DEADLINE_MS),
+    );
     writeFileSync(join(repo, "outside.txt"), "x\n");
-    strictEqual(checkTreeChange(stateDir, "s1", sub).state, "changed");
+    strictEqual(
+      checkTreeChange(stateDir, "s1", sub, PATIENT_DEADLINE_MS).state,
+      "changed",
+    );
   });
 
   it("21: handles untracked file names containing a newline", () => {
@@ -222,7 +237,7 @@ describe("checkTreeChange: detection", () => {
     const stateDir = makeTempDir();
     saveCurrent(stateDir, repo);
     symlinkSync("does-not-exist", join(repo, "dangling"));
-    ok(computeTreeFingerprint(repo) !== null);
+    ok(computeTreeFingerprint(repo, PATIENT_DEADLINE_MS) !== null);
     strictEqual(stateOf(stateDir, repo), "changed");
   });
 });
@@ -231,13 +246,16 @@ describe("fail-safe", () => {
   it("10: returns null / unknown outside a git repository", () => {
     const dir = makeTempDir();
     const stateDir = makeTempDir();
-    strictEqual(computeTreeFingerprint(dir), null);
-    strictEqual(checkTreeChange(stateDir, "s1", dir).state, "unknown");
+    strictEqual(computeTreeFingerprint(dir, PATIENT_DEADLINE_MS), null);
+    strictEqual(
+      checkTreeChange(stateDir, "s1", dir, PATIENT_DEADLINE_MS).state,
+      "unknown",
+    );
   });
 
   it("11: returns null for a repository with an unborn HEAD", () => {
     const repo = initRepoWithoutCommit();
-    strictEqual(computeTreeFingerprint(repo), null);
+    strictEqual(computeTreeFingerprint(repo, PATIENT_DEADLINE_MS), null);
   });
 
   it("12: reports unknown when no baseline was saved", () => {
@@ -270,7 +288,7 @@ describe("fail-safe", () => {
     mkdirSync(nested);
     git(nested, "init", "-q");
     writeFileSync(join(nested, "f.txt"), "x\n");
-    strictEqual(computeTreeFingerprint(repo), null);
+    strictEqual(computeTreeFingerprint(repo, PATIENT_DEADLINE_MS), null);
   });
 
   it("16: returns null when the deadline is 0", () => {
@@ -281,7 +299,7 @@ describe("fail-safe", () => {
   it("25: returns null when an untracked file exceeds the size limit", () => {
     const repo = makeRepo();
     writeFileSync(join(repo, "big.bin"), Buffer.alloc(17 * 1024 * 1024));
-    strictEqual(computeTreeFingerprint(repo), null);
+    strictEqual(computeTreeFingerprint(repo, PATIENT_DEADLINE_MS), null);
   });
 
   it("26: returns null when an untracked file cannot be read", (t) => {
@@ -291,7 +309,7 @@ describe("fail-safe", () => {
     }
     const repo = makeRepo();
     writeFileSync(join(repo, "secret.txt"), "x\n", { mode: 0o000 });
-    strictEqual(computeTreeFingerprint(repo), null);
+    strictEqual(computeTreeFingerprint(repo, PATIENT_DEADLINE_MS), null);
   });
 
   it("23: keeps the old baseline (and reports changed) when it cannot be replaced", (t) => {
@@ -313,6 +331,34 @@ describe("fail-safe", () => {
       chmodSync(stateDir, 0o700);
     }
   });
+
+  it("forwards the deadline: checkTreeChange with 0 is unknown despite a valid baseline", () => {
+    const repo = makeRepo();
+    const stateDir = makeTempDir();
+    saveCurrent(stateDir, repo);
+    deepStrictEqual(checkTreeChange(stateDir, "s1", repo, 0), {
+      state: "unknown",
+      reason: "fingerprint unavailable",
+    });
+  });
+
+  it("gives up at the production default deadline when git diff blocks", () => {
+    const repo = makeRepo();
+    const stateDir = makeTempDir();
+    saveCurrent(stateDir, repo);
+    const env = new EnvironmentHelper();
+    const git = createBlockingGit("diff");
+    env.set("PATH", `${git.binDir}:${process.env.PATH ?? ""}`);
+    try {
+      // Three arguments: the production default (2000ms) must expire. The
+      // deadline may run out on the earlier rev-parse calls under load, so
+      // only the result is asserted, not that diff was reached.
+      strictEqual(checkTreeChange(stateDir, "s1", repo).state, "unknown");
+    } finally {
+      env.restore();
+      git.cleanup();
+    }
+  });
 });
 
 describe("state file handling", () => {
@@ -320,9 +366,16 @@ describe("state file handling", () => {
     const repo = makeRepo();
     const base = makeTempDir();
     const stateDir = join(base, "state");
-    saveBaseline(stateDir, "../x", computeTreeFingerprint(repo));
+    saveBaseline(
+      stateDir,
+      "../x",
+      computeTreeFingerprint(repo, PATIENT_DEADLINE_MS),
+    );
     strictEqual(existsSync(join(base, "x.txt")), false);
-    strictEqual(checkTreeChange(stateDir, "../x", repo).state, "unknown");
+    strictEqual(
+      checkTreeChange(stateDir, "../x", repo, PATIENT_DEADLINE_MS).state,
+      "unknown",
+    );
   });
 
   it("18: replaces a symlinked baseline without writing through it", () => {
