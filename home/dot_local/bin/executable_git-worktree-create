@@ -15,7 +15,7 @@ show_help() {
 git-worktree-create - Create a new git worktree in .git/worktree directory
 
 Usage:
-  git-worktree-create <branch-name>
+  git-worktree-create [--no-install] <branch-name>
   git-worktree-create --help
 
 Description:
@@ -26,11 +26,21 @@ Description:
   - If branch exists on remote: Creates local tracking branch and worktree
   - If branch doesn't exist: Creates new branch from current HEAD
 
+  After creating the worktree, installs its dependencies when the package
+  manager is unambiguous and the install cannot rewrite the lockfile:
+  packageManager in package.json first, then the lockfile (pnpm and bun:
+  install --frozen-lockfile, npm: ci). Success is signalled by the line
+  "Dependencies installed". Otherwise the reason and the command to run are
+  printed. Nothing is installed for yarn, for a branch that comes from origin
+  (review its package.json scripts first), or when no package manager can be
+  determined. A failed install does not fail the creation.
+
 Arguments:
   <branch-name>  Name of the branch for the worktree
 
 Options:
-  --help, -h     Show this help message
+  --no-install   Do not install dependencies; show the command instead
+  --help, -h     Show this help message (at any position)
 
 Examples:
   # Create worktree for existing branch
@@ -53,16 +63,153 @@ say_warn() {
     printf '%b⚠️  %s%b\n' "$YELLOW" "$1" "$NC" >&2
 }
 
-# Check for help flag
-if [[ $# -eq 0 ]] || [[ "$1" == "--help" ]] || [[ "$1" == "-h" ]] || [[ "$1" == "help" ]]; then
-    if [[ $# -eq 0 ]]; then
-        echo -e "${RED}Error: Branch name is required${NC}\n"
-    fi
-    show_help
-    exit "$([ $# -eq 0 ] && echo 1 || echo 0)"
-fi
+# say_info <color> <message>: a line on stdout, printed without interpreting backslashes in the message
+say_info() {
+    printf '%b%s%b\n' "$1" "$2" "$NC"
+}
 
-branch_name="$1"
+# resolve_install <dir>: which install the project at <dir> asks for.
+# Sets install_pm (empty when package.json names no package manager and no lockfile does), install_cmd (the command
+# to run, or to show), install_skip (why this script does not run it itself; empty when it may), and
+# install_conflict (the lockfiles found, when two or more package managers have one and package.json names none).
+# A wrong package manager rewrites node_modules, so nothing is guessed: no default, no priority among lockfiles.
+resolve_install() {
+    local dir=$1 declared pm lock found_pms="" found_locks=""
+    install_pm=""
+    install_cmd=()
+    install_skip=""
+    install_conflict=""
+    [[ -f "$dir/package.json" ]] || return 0
+    # One sed and no pipe: under pipefail, a reader that exits early would end this script after the worktree exists
+    declared=$(sed -n '/"packageManager"/{s/.*"packageManager"[[:space:]]*:[[:space:]]*"\([a-z]*\)@.*/\1/p;q;}' "$dir/package.json") || declared=""
+    for lock in pnpm:pnpm-lock.yaml bun:bun.lock bun:bun.lockb npm:package-lock.json npm:npm-shrinkwrap.json yarn:yarn.lock; do
+        pm=${lock%%:*}
+        lock=${lock#*:}
+        [[ -f "$dir/$lock" ]] || continue
+        found_locks="${found_locks:+$found_locks, }$lock"
+        case " $found_pms " in *" $pm "*) ;; *) found_pms="${found_pms:+$found_pms }$pm" ;; esac
+    done
+    case "$declared" in
+    pnpm | bun | npm | yarn) install_pm=$declared ;;
+    *)
+        case "$found_pms" in
+        "") return 0 ;;
+        *" "*)
+            install_conflict=$found_locks
+            return 0
+            ;;
+        *) install_pm=$found_pms ;;
+        esac
+        ;;
+    esac
+    case " $found_pms " in
+    *" $install_pm "*) ;;
+    *)
+        install_cmd=("$install_pm" install)
+        install_skip="$install_pm has no lockfile here, and an install would write one"
+        return 0
+        ;;
+    esac
+    case "$install_pm" in
+    pnpm | bun) install_cmd=("$install_pm" install --frozen-lockfile) ;;
+    npm) install_cmd=(npm ci) ;;
+    yarn)
+        # The flag that keeps the lockfile differs between yarn 1 and later versions, and Plug'n'Play writes outside
+        # node_modules, where the agent-vm mount does not reach
+        install_cmd=(yarn install)
+        install_skip="yarn is not run automatically"
+        ;;
+    esac
+}
+
+# install_dependencies: install what the new worktree asks for, or say why not and what to run.
+# Reads worktree_path, repo_root, install_deps, branch_source, deps_target. Never fails: the worktree exists.
+install_dependencies() {
+    local wt_q cmd_text skip pm_path status=0
+    resolve_install "$worktree_path"
+    [[ -n "$install_pm$install_conflict" ]] || return 0
+    wt_q=$(printf '%q' "$worktree_path")
+    case "$deps_target" in
+    attach-failed) return 0 ;; # the attach warning already says not to install and how to recover
+    no-helper)
+        say_warn "dependencies are not installed in $wt_q (agent-vm-node-modules is missing, so node_modules here is shared with the host); recreate the machine from the host: agent-vm rm $(printf '%q' "$repo_root")"
+        return 0
+        ;;
+    esac
+    if [[ -n "$install_conflict" ]]; then
+        say_warn "dependencies are not installed in $wt_q (found $install_conflict and no packageManager field in package.json); install with the project's package manager"
+        return 0
+    fi
+    cmd_text="${install_cmd[*]}"
+    skip=$install_skip
+    if [[ "$install_deps" != true ]]; then
+        skip="--no-install"
+    elif [[ "$branch_source" == remote ]]; then
+        # Code this checkout has not had before: its package.json scripts are not run by a command that does not look
+        # like an install
+        skip="not run automatically because the branch comes from origin; an install runs the scripts of its package.json, so review them first"
+    fi
+    if [[ -n "$skip" ]]; then
+        say_info "$BLUE" "💡 Dependencies are not installed ($skip). To install them: cd $wt_q && $cmd_text"
+        return 0
+    fi
+    # Resolved before the cd, and only to an absolute path: a relative PATH entry must not pick a file of the branch
+    pm_path=$(command -v "$install_pm") || pm_path=""
+    case "$pm_path" in
+    /*) ;;
+    *)
+        say_warn "dependencies are not installed in $wt_q ($install_pm is not on PATH). Once it is: cd $wt_q && $cmd_text"
+        return 0
+        ;;
+    esac
+    say_info "$BLUE" "📦 Installing dependencies: $cmd_text"
+    (cd "$worktree_path" && "$pm_path" "${install_cmd[@]:1}" </dev/null) || status=$?
+    if [[ $status -eq 0 ]]; then
+        say_info "$GREEN" "✓ Dependencies installed"
+    else
+        say_warn "dependencies are not installed in $wt_q ($cmd_text: status $status); the worktree itself is created. To retry: cd $wt_q && $cmd_text"
+    fi
+}
+
+install_deps=true
+branch_name=""
+if [[ $# -eq 0 ]]; then
+    echo -e "${RED}Error: Branch name is required${NC}\n"
+    show_help
+    exit 1
+fi
+# The word "help" is the help command only as the first argument, as before
+if [[ "$1" == "help" ]]; then
+    show_help
+    exit 0
+fi
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+    --help | -h)
+        show_help
+        exit 0
+        ;;
+    --no-install) install_deps=false ;;
+    -*)
+        # printf, not echo -e: the argument is printed as typed
+        printf '%b%s%b\n\n' "$RED" "Error: Unknown option: $1" "$NC"
+        show_help
+        exit 1
+        ;;
+    *)
+        # Only the first name is used; later ones are ignored, as before
+        if [[ -z "$branch_name" ]]; then
+            branch_name="$1"
+        fi
+        ;;
+    esac
+    shift
+done
+if [[ -z "$branch_name" ]]; then
+    echo -e "${RED}Error: Branch name is required${NC}\n"
+    show_help
+    exit 1
+fi
 
 # Anchor on the common git dir so that running from inside a linked worktree
 # (whose .git is a file) still creates the worktree under the main
@@ -94,22 +241,32 @@ fi
 # Check if branch exists locally
 if git show-ref --verify --quiet "refs/heads/$branch_name"; then
     echo -e "${GREEN}✓ Branch '$branch_name' exists locally${NC}"
+    branch_source=local
     git worktree add "$worktree_path" "$branch_name"
 elif git show-ref --verify --quiet "refs/remotes/origin/$branch_name"; then
     # Branch exists on remote but not locally
     echo -e "${YELLOW}⚠️  Branch '$branch_name' exists on remote, creating local tracking branch${NC}"
+    branch_source=remote
     git worktree add "$worktree_path" -b "$branch_name" "origin/$branch_name"
 else
     # Branch doesn't exist, create new branch from current
     current_branch=$(git branch --show-current)
     echo -e "${BLUE}📝 Creating new branch '$branch_name' from '$current_branch'${NC}"
+    branch_source=new
     git worktree add "$worktree_path" -b "$branch_name"
 fi
 
 echo -e "${GREEN}✓ Worktree created: $worktree_path${NC}"
+# Before the install: a caller that is cut off while it runs still has the path
+say_info "$BLUE" "💡 To switch to this worktree: cd $(printf '%q' "$worktree_path")"
+# Whether an install in the new worktree lands in its own node_modules: "yes", "attach-failed" (warned below), or
+# "no-helper" (inside a machine whose node_modules is still the host's).
+deps_target=yes
 # agent-vm (docs/decisions/0022-agent-vm-node-modules.md): inside a machine, the new worktree gets its VM-local
-# node_modules now rather than at the next launch; on the host, a running machine of this repository is asked to
-# sync. Neither stops the creation: the worktree is there, only its node_modules may still be shared.
+# node_modules now rather than at the next launch, and the install runs after that so it lands in the VM-local one; on
+# the host, the install comes first: the sync makes a running machine create its mount points in this tree, and an
+# install that recreates node_modules afterwards would remove them. Neither stops the creation: the worktree is
+# there, only its node_modules may still be shared or empty.
 if [[ -e "${AGENT_VM_MARKER:-/etc/agent-vm}" ]]; then
     if command -v agent-vm-node-modules >/dev/null 2>&1; then
         nm_status=0
@@ -118,13 +275,19 @@ if [[ -e "${AGENT_VM_MARKER:-/etc/agent-vm}" ]]; then
             # An install there now would put linux packages into the host's worktree
             nm_wt=$(printf '%q' "$worktree_path")
             say_warn "node_modules of $nm_wt may be shared with the host (agent-vm-node-modules attach: status $nm_status); do not install there until this succeeds: agent-vm-node-modules attach $nm_wt"
+            deps_target=attach-failed
+        fi
+    else
+        deps_target=no-helper
+    fi
+    install_dependencies
+else
+    install_dependencies
+    if command -v agent-vm >/dev/null 2>&1; then
+        nm_status=0
+        agent-vm node-modules-sync "$repo_root" || nm_status=$?
+        if [[ $nm_status -ne 0 ]]; then
+            say_warn "the running agent-vm machine may not have VM-local node_modules for $(printf '%q' "$worktree_path") yet (agent-vm node-modules-sync: status $nm_status); the next agent-vm launch syncs it"
         fi
     fi
-elif command -v agent-vm >/dev/null 2>&1; then
-    nm_status=0
-    agent-vm node-modules-sync "$repo_root" || nm_status=$?
-    if [[ $nm_status -ne 0 ]]; then
-        say_warn "the running agent-vm machine may not have VM-local node_modules for $(printf '%q' "$worktree_path") yet (agent-vm node-modules-sync: status $nm_status); the next agent-vm launch syncs it"
-    fi
 fi
-echo -e "${BLUE}💡 To switch to this worktree: cd $worktree_path${NC}"
