@@ -58,5 +58,7 @@ shfmt = "3.14.1"
 hyperfine = "1.20.0"
 duckdb = "1.5.5"
 "github:boyter/scc" = "4.1.0"
+# Cyclomatic / cognitive complexity; not in the mise registry
+"github:moznion/cccc" = "1.7.0"
 # rm-compatible trash CLI; not in the mise registry
 "github:babarot/gomi" = "1.6.5"
