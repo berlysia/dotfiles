@@ -1,3 +1,7 @@
+// Thresholds come from replaying 150 commits of this repository's hooks; see
+// docs/plans/complexity-delta/research.md before changing them.
+const COGNITIVE_THRESHOLD = 25;
+const MIN_RISE = 5;
 const MAX_NESTING_DEPTH = 64;
 
 type FunctionMetric = {
@@ -17,6 +21,14 @@ export type Report = {
 export type Baseline = {
   functions: Record<string, number[]>;
   parseErrorFiles: string[];
+};
+
+export type Finding = {
+  path: string;
+  name: string;
+  line: number | null;
+  before: number | null;
+  after: number;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -98,4 +110,60 @@ export function toBaseline(report: Report): Baseline {
     ),
     parseErrorFiles: report.parseErrorFiles,
   };
+}
+
+function compareText(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/**
+ * Findings for one key. Equal values are cancelled first so that an untouched
+ * function never pairs with a changed one; what remains is paired by rank.
+ */
+function diffKey(before: readonly number[], current: readonly FunctionMetric[]): Finding[] {
+  const remainingBefore = [...before];
+  const changed: FunctionMetric[] = [];
+  for (const metric of current) {
+    const index = remainingBefore.indexOf(metric.cognitive);
+    if (index === -1) {
+      changed.push(metric);
+    } else {
+      remainingBefore.splice(index, 1);
+    }
+  }
+  remainingBefore.sort((a, b) => b - a);
+  changed.sort((a, b) => b.cognitive - a.cognitive || (a.line ?? 0) - (b.line ?? 0));
+
+  const findings: Finding[] = [];
+  changed.forEach((metric, rank) => {
+    const paired = remainingBefore[rank] ?? null;
+    if (metric.cognitive < COGNITIVE_THRESHOLD) return;
+    if (paired !== null && metric.cognitive - paired < MIN_RISE) return;
+    findings.push({
+      path: metric.path,
+      name: metric.name,
+      line: metric.line,
+      before: paired,
+      after: metric.cognitive,
+    });
+  });
+  return findings;
+}
+
+export function diffReports(baseline: Baseline, current: Report): Finding[] {
+  const skipped = new Set([...baseline.parseErrorFiles, ...current.parseErrorFiles]);
+  const findings: Finding[] = [];
+  for (const [key, metrics] of current.byKey) {
+    const compared = metrics.filter((metric) => !skipped.has(metric.path));
+    if (compared.length === 0) continue;
+    findings.push(...diffKey(baseline.functions[key] ?? [], compared));
+  }
+  const rise = (finding: Finding) => finding.after - (finding.before ?? 0);
+  return findings.sort(
+    (a, b) =>
+      rise(b) - rise(a) ||
+      compareText(a.path, b.path) ||
+      compareText(a.name, b.name) ||
+      (a.line ?? 0) - (b.line ?? 0),
+  );
 }

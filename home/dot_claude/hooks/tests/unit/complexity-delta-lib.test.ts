@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { parseCcccOutput, toBaseline } from "../../lib/complexity-delta.ts";
+import {
+  type Baseline,
+  type Finding,
+  diffReports,
+  parseCcccOutput,
+  toBaseline,
+} from "../../lib/complexity-delta.ts";
 
 type Fn = {
   name: unknown;
@@ -106,5 +112,97 @@ describe("parseCcccOutput", () => {
       functions: { "a.ts :: run:method": [1, 3] },
       parseErrorFiles: [],
     });
+  });
+});
+
+const reportOf = (files: unknown[], summary: object = {}) => {
+  const report = parseCcccOutput(output(files, summary));
+  assert.ok(report);
+  return report;
+};
+const baselineOf = (files: unknown[], summary: object = {}): Baseline =>
+  toBaseline(reportOf(files, summary));
+const diff = (before: unknown[], after: unknown[]): Finding[] =>
+  diffReports(baselineOf(before), reportOf(after));
+
+describe("diffReports", () => {
+  const one = (cognitive: number, line = 1) => [file("a.ts", [fn("f", cognitive, line)])];
+
+  it("applies the threshold and the minimum rise at their boundaries", () => {
+    assert.deepEqual(diff(one(24), one(29, 7)), [
+      { path: "a.ts", name: "f", line: 7, before: 24, after: 29 },
+    ]);
+    assert.deepEqual(diff(one(20), one(25)), [
+      { path: "a.ts", name: "f", line: 1, before: 20, after: 25 },
+    ]);
+    assert.deepEqual(diff(one(21), one(25)), []);
+    assert.deepEqual(diff(one(25), one(29)), []);
+    assert.deepEqual(diff(one(19), one(24)), []);
+  });
+
+  it("reports an added function at 25 and not at 24", () => {
+    assert.deepEqual(diff([file("a.ts", [])], one(25)), [
+      { path: "a.ts", name: "f", line: 1, before: null, after: 25 },
+    ]);
+    assert.deepEqual(diff([file("a.ts", [])], one(24)), []);
+  });
+
+  it("reports every function of a file that the baseline does not have as added", () => {
+    assert.deepEqual(diff([], one(40)), [
+      { path: "a.ts", name: "f", line: 1, before: null, after: 40 },
+    ]);
+  });
+
+  it("reports nothing for a function that was removed", () => {
+    assert.deepEqual(diff(one(40), [file("a.ts", [])]), []);
+  });
+
+  it("cancels equal values before pairing, so an untouched sibling is not blamed", () => {
+    const before = [file("a.ts", [fn("<anonymous>", 30, 1), fn("<anonymous>", 2, 2)])];
+    const after = [
+      file("a.ts", [
+        fn("<anonymous>", 40, 1),
+        fn("<anonymous>", 30, 5),
+        fn("<anonymous>", 2, 6),
+      ]),
+    ];
+    assert.deepEqual(diff(before, after), [
+      { path: "a.ts", name: "<anonymous>", line: 1, before: null, after: 40 },
+    ]);
+  });
+
+  it("pairs the remainder by descending rank", () => {
+    const before = [file("a.ts", [fn("run", 30, 1), fn("run", 28, 2)])];
+    const after = [file("a.ts", [fn("run", 33, 1), fn("run", 30, 2)])];
+    assert.deepEqual(diff(before, after), [
+      { path: "a.ts", name: "run", line: 1, before: 28, after: 33 },
+    ]);
+  });
+
+  it("skips files that had a parse error in either measurement", () => {
+    const broken = [file("a.ts", [], { parse_errors: ["x"] })];
+    assert.deepEqual(diff(broken, one(40)), []);
+    assert.deepEqual(
+      diffReports(
+        baselineOf(one(10)),
+        reportOf([file("a.ts", [fn("f", 40)], { parse_errors: ["x"] })]),
+      ),
+      [],
+    );
+  });
+
+  it("orders by rise, then path, name and line", () => {
+    const before = [
+      file("b.ts", [fn("g", 20), fn("h", 20)]),
+      file("a.ts", [fn("z", 20), fn("k", 10)]),
+    ];
+    const after = [
+      file("b.ts", [fn("g", 30, 9), fn("h", 30, 3)]),
+      file("a.ts", [fn("z", 30, 4), fn("k", 40, 2)]),
+    ];
+    assert.deepEqual(
+      diff(before, after).map((f) => `${f.path}:${f.name}`),
+      ["a.ts:k", "a.ts:z", "b.ts:g", "b.ts:h"],
+    );
   });
 });
