@@ -226,6 +226,10 @@
         },
         {
           "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/complexity-delta.ts"
+        },
+        {
+          "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/speak-notification.ts Stop",
           "async": true
         }{{ if dig "only_private" false . }},
@@ -299,6 +303,10 @@
         {
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/completion-gate.ts"
+        },
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/complexity-delta.ts"
         }
       ]
     }
