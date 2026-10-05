@@ -160,6 +160,8 @@ describe("permission-auto-approve.ts hook behavior", () => {
       "bunx oxfmt --check src/",
       // Git worktree management
       "git-worktree-create feat/new-feature",
+      "git-worktree-create --no-install feat/new-feature",
+      "git-worktree-create feat/new-feature --no-install",
       "git-worktree-cleanup",
       // Dev tool execution
       "npx prettier --check src/",

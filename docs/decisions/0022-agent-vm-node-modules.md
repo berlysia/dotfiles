@@ -48,6 +48,17 @@ ADR-0018 は、repo を host と同じパスで VM に mount する。`node_modu
 - **machine 作成時の OrbStack の mount 一覧に `node_modules` を足す**: host 側で宣言でき、machine の設定の検査にも乗る。しかし mount 一覧は作成時に固定され、セッション中に増える worktree に張れない。保存先も host のディスクになり、linux 用の中身が host に置かれる。却下。
 - **launcher が install を自動で実行する**: PM の判定と lifecycle スクリプトの方針は repo ごとに違い、agent の作業と競合する。通知に留める。
 
+## Addendum (2026-10-06): worktree の作成時は install する
+
+`git-worktree-create` は、worktree を作った直後に依存をインストールする。launcher は変えず、起動時の install は引き続き行わない（Decision の「起動時の install は自動で行わない」）。詳細は `docs/commands/git-worktree-create.md` にある。
+
+- **作成時は install を実行する。** 作った worktree で、そのままテストや lint を実行できるようにするためである。実行するのは、PM が一意に決まり、lockfile を書き換えない形で install できる場合に限る。それ以外は、実行しなかった理由と実行すべきコマンドを表示する。
+- **launcher の自動 install を却下した 3 つの理由は、作成時には次のように当てはまらない。**
+  - 「agent の作業と競合する」: 作成直後の worktree では、作業している agent がいない。当てはまらない。
+  - 「PM の判定は repo ごとに違う」: 一意に決まらなければ実行しない。`packageManager` フィールド、次に lockfile で判定し、2 種類以上の lockfile があって宣言も無ければ、何も実行せずに警告する。
+  - 「lifecycle スクリプトの方針は repo ごとに違う」: スクリプトは PM のフラグで方針を上書きしない。依存の script の可否は PM と repo の設定に従う。ルートの `package.json` の script は、手で install する場合と同じく実行される。origin にだけあるブランチでは、初めて持ってくるコードの script を実行しないよう、install を実行せずに提示する。
+- **VM での前提は、`attach` の成功である。** VM では、`attach` が成功した worktree でだけ install する。失敗したとき、ヘルパーが無いときは install しない。差し替えが済む前に install すると、host の worktree に linux 用のパッケージが入るためである。host では install の後に `agent-vm node-modules-sync` を呼ぶ。sync の後に host で `node_modules` を作り直すと、VM の mount が失効するためである。
+
 ## References
 
 - `docs/plans/agent-vm/node-modules/spec.md` / `research.md` / `plan-1.md` / `plan-2.md` / `plan-3.md`

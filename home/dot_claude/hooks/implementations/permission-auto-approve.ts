@@ -169,7 +169,7 @@ const SAFE_BASH_PATTERNS = [
   /^pnpm\s+(biome|oxfmt|oxlint|eslint|prettier|knip|tsc|tsgo|vitest)\b/,
   // Dev tool execution (trusted tools only, not arbitrary packages)
   /^(npx|pnpx|bunx)\s+(--no\s+)?(vitest|jest|prettier|eslint|oxlint|oxfmt|tsc|tsgo|knip|stylelint|biome)\b/,
-  // Git worktree management (custom script)
+  // Git worktree management (custom script; create also installs dependencies, see docs/commands/git-worktree-create.md)
   /^git-worktree-(create|cleanup)\b/,
   // APM (skill package manager, local operations only)
   /^apm\s+(install|search|pack|deps|list|info|update|remove|uninstall|--help|--version)\b/,

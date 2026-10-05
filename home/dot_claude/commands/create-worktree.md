@@ -34,6 +34,21 @@ Creates a new branch with worktree, executes the given task, and optionally crea
 2. **Worktree Setup**
    - Use `git-worktree-create <branch-name>` command
    - Create new worktree under `.git/worktree`
+   - `git-worktree-create` also installs dependencies. Read its output with the table below. Check the lines from the top; the first row that matches decides what to do. Search `dependencies are not installed` case-insensitively.
+
+     | Line in the output                                                               | Meaning                                                                | Action                                                                                                                                                    |
+     | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+     | `✓ Dependencies installed`                                                       | The install at the root exited with status 0                           | Start working                                                                                                                                             |
+     | `do not install there until this succeeds`                                       | The VM-local `node_modules` swap is not done                           | Do not install. Run the recovery step in that warning (`agent-vm-node-modules attach <wt>`); once it succeeds, install with the project's package manager |
+     | `agent-vm-node-modules is missing`                                               | The VM has no helper, so `node_modules` is shared with the host        | Do not install. Tell the user the machine must be recreated from the host                                                                                 |
+     | `dependencies are not installed`, with the reason `the branch comes from origin` | The branch comes from origin, so the install was not run automatically | As the line says, review the branch's `package.json` `scripts` (and `.pnpmfile.cjs`), then run the command shown. Ask the user if unsure                  |
+     | `dependencies are not installed` (anything else)                                 | Nothing was installed                                                  | Follow the line. If it has no command (two kinds of lockfile), ask the user which package manager to use                                                  |
+     | `📦 Installing dependencies` and none of the above                               | The install was cut off partway                                        | Move to the path in the `💡 To switch` line, and run the command from the `📦` line with a longer timeout                                                 |
+     | None of the above                                                                | The script did not start an install                                    | Do not install (not a Node project, or nothing says which package manager)                                                                                |
+     - `✓ Dependencies installed` covers only the install at the root. It does not cover independent packages outside the root, or the VM-side install after creating on the host.
+     - The exit status 0 of `git-worktree-create` means the worktree was created, not that dependencies are installed.
+     - To use the path programmatically, read the (unquoted) value on the `✓ Worktree created:` line. The `💡 To switch` line is for pasting into a shell, so its path is quoted.
+     - If the install is likely to exceed the Bash timeout, create with `git-worktree-create --no-install <branch-name>`, then run the command it shows with a longer timeout.
 
 3. **Task Execution**
    - Move to worktree directory

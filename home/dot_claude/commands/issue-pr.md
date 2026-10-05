@@ -12,7 +12,7 @@ This command uses gh command to fetch a specified GitHub issue, analyzes it, and
 2. Fetch issue details using `gh issue view`
 3. Analyze issue requirements and scope
 4. Create dedicated branch using `git-worktree-create`
-5. Set up development environment
+5. Set up development environment (`git-worktree-create` also installs dependencies; read its output as in the table in Process 2 of `/create-worktree`)
 6. Plan implementation steps
 7. Begin development work
 
