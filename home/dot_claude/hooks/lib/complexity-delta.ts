@@ -1,7 +1,12 @@
+import { createHash } from "node:crypto";
+import { basename, delimiter, isAbsolute, join, relative, sep } from "node:path";
+import { sanitizeForDisplay } from "./sanitize-display.ts";
+
 // Thresholds come from replaying 150 commits of this repository's hooks; see
 // docs/plans/complexity-delta/research.md before changing them.
 const COGNITIVE_THRESHOLD = 25;
 const MIN_RISE = 5;
+const MAX_NOTICE_LINES = 10;
 const MAX_NESTING_DEPTH = 64;
 
 type FunctionMetric = {
@@ -166,4 +171,55 @@ export function diffReports(baseline: Baseline, current: Report): Finding[] {
       compareText(a.name, b.name) ||
       (a.line ?? 0) - (b.line ?? 0),
   );
+}
+
+const NOTICE_HEADER = `[complexity-delta] Cognitive complexity rose this turn (>= ${COGNITIVE_THRESHOLD}, new or +${MIN_RISE}):`;
+
+/** The findings that get a line of their own; the rest are only counted. */
+export function shownFindings(findings: readonly Finding[]): Finding[] {
+  return findings.slice(0, MAX_NOTICE_LINES);
+}
+
+/** The text shown in the UI. Paths and names come from the opened repository. */
+export function formatNotice(findings: readonly Finding[]): string {
+  const lines = shownFindings(findings).map((finding) => {
+    const path = sanitizeForDisplay(finding.path);
+    const where = finding.line === null ? path : `${path}:${finding.line}`;
+    const change =
+      finding.before === null
+        ? `new ${finding.after}`
+        : `${finding.before} → ${finding.after}`;
+    return `  ${where} ${sanitizeForDisplay(finding.name)} ${change}`;
+  });
+  const rest = findings.length - lines.length;
+  if (rest > 0) lines.push(`  ... and ${rest} more`);
+  return [NOTICE_HEADER, ...lines].join("\n");
+}
+
+export function hashNotice(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
+}
+
+/** `<entry>/cccc` for every absolute PATH entry. Relative and empty entries resolve against the opened repository, so they are dropped. */
+export function listCcccCandidates(pathEnv: string | undefined): string[] {
+  if (!pathEnv) return [];
+  return pathEnv
+    .split(delimiter)
+    .filter((entry) => entry !== "" && isAbsolute(entry))
+    .map((entry) => join(entry, "cccc"));
+}
+
+function isInside(root: string, target: string): boolean {
+  const rel = relative(root, target);
+  return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
+}
+
+/**
+ * `realPath` is the resolved candidate. A mise shim resolves to the mise binary,
+ * which may install tools declared by the opened repository; a binary inside the
+ * repository is the repository's own.
+ */
+export function isUsableCccc(realPath: string, excludedRoots: readonly string[]): boolean {
+  if (basename(realPath) === "mise") return false;
+  return !excludedRoots.some((root) => isInside(root, realPath));
 }

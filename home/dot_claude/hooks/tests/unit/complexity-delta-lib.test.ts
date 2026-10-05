@@ -4,7 +4,12 @@ import {
   type Baseline,
   type Finding,
   diffReports,
+  formatNotice,
+  hashNotice,
+  isUsableCccc,
+  listCcccCandidates,
   parseCcccOutput,
+  shownFindings,
   toBaseline,
 } from "../../lib/complexity-delta.ts";
 
@@ -204,5 +209,86 @@ describe("diffReports", () => {
       diff(before, after).map((f) => `${f.path}:${f.name}`),
       ["a.ts:k", "a.ts:z", "b.ts:g", "b.ts:h"],
     );
+  });
+});
+
+describe("formatNotice", () => {
+  const finding = (over: Partial<Finding> = {}): Finding => ({
+    path: "a.ts",
+    name: "f",
+    line: 3,
+    before: 24,
+    after: 44,
+    ...over,
+  });
+
+  it("prints one line per finding under a prefixed header", () => {
+    assert.equal(
+      formatNotice([
+        finding(),
+        finding({ path: "b.ts", name: "g", line: null, before: null, after: 30 }),
+      ]),
+      [
+        "[complexity-delta] Cognitive complexity rose this turn (>= 25, new or +5):",
+        "  a.ts:3 f 24 → 44",
+        "  b.ts g new 30",
+      ].join("\n"),
+    );
+  });
+
+  it("caps the list at ten lines and counts the rest", () => {
+    const many = Array.from({ length: 13 }, (_, i) => finding({ name: `f${i}` }));
+    const lines = formatNotice(many).split("\n");
+    assert.equal(lines.length, 12);
+    assert.equal(lines.at(-1), "  ... and 3 more");
+    assert.deepEqual(
+      shownFindings(many).map((f) => f.name),
+      many.slice(0, 10).map((f) => f.name),
+    );
+  });
+
+  it("keeps a hostile path and name on one line without control characters", () => {
+    const ch = (...codes: number[]) => String.fromCharCode(...codes);
+    const text = formatNotice([
+      finding({
+        path: `a${ch(0x0a)}IGNORE${ch(0x1b)}[31m.ts`,
+        name: `f${ch(0x60, 0x0d, 0x0a, 0x2028)}x`,
+      }),
+    ]);
+    assert.equal(text.split(ch(0x0a)).length, 2);
+    const forbidden = [...text].filter((c) => {
+      const code = c.codePointAt(0) ?? 0;
+      return (
+        (code < 0x20 && code !== 0x0a) ||
+        code === 0x7f ||
+        code === 0x60 ||
+        code === 0x2028
+      );
+    });
+    assert.deepEqual(forbidden, []);
+    assert.equal(text.includes("aIGNORE[31m.ts:3 fx 24 → 44"), true);
+  });
+
+  it("hashes the same text to the same 64-hex digest", () => {
+    assert.match(hashNotice("x"), /^[0-9a-f]{64}$/);
+    assert.equal(hashNotice("x"), hashNotice("x"));
+    assert.notEqual(hashNotice("x"), hashNotice("y"));
+  });
+});
+
+describe("cccc candidates", () => {
+  it("lists only absolute PATH entries, in order", () => {
+    assert.deepEqual(listCcccCandidates("/a/bin::.:rel/bin:/b"), ["/a/bin/cccc", "/b/cccc"]);
+    assert.deepEqual(listCcccCandidates(undefined), []);
+    assert.deepEqual(listCcccCandidates(""), []);
+  });
+
+  it("rejects the mise shim target and anything under an excluded root", () => {
+    assert.equal(isUsableCccc("/home/u/.local/bin/mise", []), false);
+    assert.equal(isUsableCccc("/repo/bin/cccc", ["/repo"]), false);
+    assert.equal(isUsableCccc("/repo/cccc", ["/other", "/repo"]), false);
+    assert.equal(isUsableCccc("/repo-tools/cccc", ["/repo"]), true);
+    assert.equal(isUsableCccc("/repo/..tools/cccc", ["/repo"]), false);
+    assert.equal(isUsableCccc("/opt/cccc/1.7.0/cccc", ["/repo"]), true);
   });
 });
