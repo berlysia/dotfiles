@@ -80,7 +80,7 @@ sed 's/foo/bar/' file.txt            # -iなし（対象外）
 
 #### 主要機能
 
-- `checkFilePermissions(filePaths: string[], allowPatterns: string[]): FilePermissionCheckResult`
+- `checkFilePermissions(filePaths: string[], allowPatterns: string[], ctx: MatchContext): FilePermissionCheckResult`
   - ファイルパスリストと許可パターンリストを受け取る
   - 各ファイルが `Edit(...)` または `MultiEdit(...)` パターンにマッチするかチェック
   - 全ファイルが許可されているか判定
@@ -92,6 +92,8 @@ sed 's/foo/bar/' file.txt            # -iなし（対象外）
 - `./**`: カレントディレクトリ配下すべて
 - `src/**`: srcディレクトリ配下すべて
 - `/absolute/path/**`: 絶対パスパターン
+
+相対パターンは作業ディレクトリ（`ctx.cwd`）を基準にする。
 
 ### 3. auto-approve.ts の拡張
 
@@ -122,6 +124,7 @@ if (cmd.includes("sed") && cmd.includes("-i")) {
     const permResult = checkFilePermissions(
       sedResult.targetFiles,
       editAllowList,
+      ctx,
     );
 
     if (permResult.allFilesPermitted) {

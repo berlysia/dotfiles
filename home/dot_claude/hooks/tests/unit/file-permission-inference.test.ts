@@ -33,12 +33,15 @@ import {
   checkFilePermissions,
 } from "../../lib/file-permission-inference.ts";
 
+const ctx = { cwd: "/repo", home: "/home/u" };
+
 describe("file-permission-inference", () => {
   describe("checkFilePermissions", () => {
     it("should permit file matching Edit pattern", () => {
       const result = checkFilePermissions(
         ["src/utils.ts"],
         ["Edit(./**)", "Bash(git *)"],
+        ctx,
       );
 
       expect(result.allFilesPermitted).toBeTruthy();
@@ -51,6 +54,7 @@ describe("file-permission-inference", () => {
       const result = checkFilePermissions(
         ["src/utils.ts"],
         ["MultiEdit(src/**)", "Bash(git *)"],
+        ctx,
       );
 
       expect(result.allFilesPermitted).toBeTruthy();
@@ -62,6 +66,7 @@ describe("file-permission-inference", () => {
       const result = checkFilePermissions(
         ["src/utils.ts", "src/helper.ts", "lib/index.ts"],
         ["Edit(./**)"],
+        ctx,
       );
 
       expect(result.allFilesPermitted).toBeTruthy();
@@ -75,6 +80,7 @@ describe("file-permission-inference", () => {
       const result = checkFilePermissions(
         ["src/utils.ts", "config.json"],
         ["Edit(src/**)"],
+        ctx,
       );
 
       expect(result.allFilesPermitted).toBeFalsy();
@@ -87,6 +93,7 @@ describe("file-permission-inference", () => {
       const result = checkFilePermissions(
         ["src/utils.ts"],
         ["Bash(git *)", "Read(./**)"],
+        ctx,
       );
 
       expect(result.allFilesPermitted).toBeFalsy();
@@ -99,13 +106,18 @@ describe("file-permission-inference", () => {
       const result = checkFilePermissions(
         ["/home/user/project/src/utils.ts"],
         ["Edit(/home/user/project/**)"],
+        ctx,
       );
 
       expect(result.allFilesPermitted).toBeTruthy();
     });
 
     it("should handle relative paths starting with ./", () => {
-      const result = checkFilePermissions(["./src/utils.ts"], ["Edit(./**)"]);
+      const result = checkFilePermissions(
+        ["./src/utils.ts"],
+        ["Edit(./**)"],
+        ctx,
+      );
 
       expect(result.allFilesPermitted).toBeTruthy();
     });
@@ -114,6 +126,7 @@ describe("file-permission-inference", () => {
       const result = checkFilePermissions(
         ["src/components/Button.tsx"],
         ["Edit(src/**)"],
+        ctx,
       );
 
       expect(result.allFilesPermitted).toBeTruthy();
@@ -123,6 +136,7 @@ describe("file-permission-inference", () => {
       const result = checkFilePermissions(
         ["src/utils.ts", "src/styles.css"],
         ["Edit(src/**)"],
+        ctx,
       );
 
       expect(result.allFilesPermitted).toBeTruthy();
@@ -132,6 +146,7 @@ describe("file-permission-inference", () => {
       const result = checkFilePermissions(
         ["src/allowed.ts", "config/denied.json"],
         ["Edit(src/**)"],
+        ctx,
       );
 
       expect(result.fileResults).toHaveLength(2);
@@ -151,13 +166,14 @@ describe("file-permission-inference", () => {
       const result = checkFilePermissions(
         ["src/deep/nested/path/file.ts"],
         ["Edit(src/**)"],
+        ctx,
       );
 
       expect(result.allFilesPermitted).toBeTruthy();
     });
 
     it("should handle empty file list", () => {
-      const result = checkFilePermissions([], ["Edit(./**)"]);
+      const result = checkFilePermissions([], ["Edit(./**)"], ctx);
 
       expect(result.allFilesPermitted).toBeTruthy();
       expect(result.fileResults).toHaveLength(0);
@@ -167,6 +183,7 @@ describe("file-permission-inference", () => {
       const result = checkFilePermissions(
         ["config/settings.json"],
         ["Edit(src/**)", "Edit(config/**)"],
+        ctx,
       );
 
       expect(result.allFilesPermitted).toBeTruthy();
@@ -174,7 +191,7 @@ describe("file-permission-inference", () => {
     });
 
     it("should handle files in current directory", () => {
-      const result = checkFilePermissions(["README.md"], ["Edit(./**)"]);
+      const result = checkFilePermissions(["README.md"], ["Edit(./**)"], ctx);
 
       expect(result.allFilesPermitted).toBeTruthy();
     });
@@ -185,6 +202,7 @@ describe("file-permission-inference", () => {
       const result = canApproveSedTargets(
         ["src/utils.ts", "src/index.ts"],
         ["Edit(src/**)"],
+        ctx,
       );
 
       expect(result).toBeTruthy();
@@ -194,15 +212,42 @@ describe("file-permission-inference", () => {
       const result = canApproveSedTargets(
         ["src/utils.ts", "config.json"],
         ["Edit(src/**)"],
+        ctx,
       );
 
       expect(result).toBeFalsy();
     });
 
     it("should return false when no Edit patterns", () => {
-      const result = canApproveSedTargets(["file.txt"], ["Bash(git *)"]);
+      const result = canApproveSedTargets(["file.txt"], ["Bash(git *)"], ctx);
 
       expect(result).toBeFalsy();
     });
+  });
+});
+
+describe("relative targets and patterns share cwd", () => {
+  it("does not reach a same-named directory above cwd", () => {
+    const deep = { cwd: "/r/src/proj", home: "/home/u" };
+    strictEqual(
+      canApproveSedTargets(["config/a.json"], ["Edit(src/**)"], deep),
+      false,
+    );
+    strictEqual(
+      canApproveSedTargets(["src/a.ts"], ["Edit(src/**)"], deep),
+      true,
+    );
+  });
+  it("ignores a negated allow pattern", () => {
+    strictEqual(
+      canApproveSedTargets(["src/a.ts"], ["Edit(!node_modules/**)"], ctx),
+      false,
+    );
+  });
+  it("matches a wildcard-free home pattern", () => {
+    strictEqual(
+      canApproveSedTargets(["~/.zshrc"], ["Edit(~/.zshrc)"], ctx),
+      true,
+    );
   });
 });

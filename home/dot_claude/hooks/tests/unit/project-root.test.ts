@@ -1,12 +1,12 @@
 #!/usr/bin/env node --test
 
-import { strict as assert } from "node:assert";
+import { deepStrictEqual, strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, it } from "node:test";
-import { getProjectRoot } from "../../lib/project-root.ts";
+import { createMatchContext, getProjectRoot } from "../../lib/project-root.ts";
 import { shellSingleQuote } from "../../lib/shell-quote.ts";
 import { EnvironmentHelper } from "./test-helpers.ts";
 
@@ -59,4 +59,81 @@ describe("shellSingleQuote", () => {
       assert.equal(result.stdout, value);
     });
   }
+});
+
+describe("createMatchContext", () => {
+  const withEnv = (
+    vars: Record<string, string | undefined>,
+    run: () => void,
+  ) => {
+    const saved = Object.fromEntries(
+      Object.keys(vars).map((k) => [k, process.env[k]]),
+    );
+    for (const [k, v] of Object.entries(vars)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    try {
+      run();
+    } finally {
+      for (const [k, v] of Object.entries(saved)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  };
+
+  it("prefers CLAUDE_TEST_CWD, then the hook input cwd, then process.cwd()", () => {
+    withEnv({ CLAUDE_TEST_CWD: "/t", HOME: "/home/u" }, () => {
+      deepStrictEqual(createMatchContext("/in"), {
+        cwd: "/t",
+        home: "/home/u",
+      });
+    });
+    withEnv({ CLAUDE_TEST_CWD: undefined, HOME: "/home/u" }, () => {
+      deepStrictEqual(createMatchContext("/in"), {
+        cwd: "/in",
+        home: "/home/u",
+      });
+      deepStrictEqual(createMatchContext(), {
+        cwd: process.cwd(),
+        home: "/home/u",
+      });
+    });
+  });
+
+  it("skips a cwd that is not absolute", () => {
+    withEnv({ CLAUDE_TEST_CWD: undefined, HOME: "/home/u" }, () => {
+      deepStrictEqual(createMatchContext("repo"), {
+        cwd: process.cwd(),
+        home: "/home/u",
+      });
+      deepStrictEqual(createMatchContext(""), {
+        cwd: process.cwd(),
+        home: "/home/u",
+      });
+    });
+    withEnv({ CLAUDE_TEST_CWD: "rel", HOME: "/home/u" }, () => {
+      deepStrictEqual(createMatchContext("/in"), {
+        cwd: "/in",
+        home: "/home/u",
+      });
+    });
+  });
+
+  it("does not follow CLAUDE_PROJECT_DIR", () => {
+    withEnv(
+      {
+        CLAUDE_TEST_CWD: undefined,
+        CLAUDE_PROJECT_DIR: "/proj",
+        HOME: "/home/u",
+      },
+      () => {
+        deepStrictEqual(createMatchContext("/in"), {
+          cwd: "/in",
+          home: "/home/u",
+        });
+      },
+    );
+  });
 });

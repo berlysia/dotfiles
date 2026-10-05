@@ -12,6 +12,7 @@
 import path from "node:path";
 import { defineHook } from "cc-hooks-ts";
 import { logDecision } from "../lib/centralized-logging.ts";
+import { isDangerousWritePath } from "../lib/dangerous-write-paths.ts";
 import { hasParentSegment } from "../lib/path-containment.ts";
 import { isStrictlyUnderProjectSubdir } from "../lib/workflow-fs.ts";
 import { createPermissionRequestAllowResponse } from "../lib/permission-request-helpers.ts";
@@ -548,22 +549,8 @@ function staticRuleEngine(input: PermissionRequestInput): StaticDecision {
     );
     const cwd = input.cwd || process.cwd();
 
-    const dangerousPaths = [
-      "/etc/",
-      "/usr/",
-      "/bin/",
-      "/sbin/",
-      "/.ssh/",
-      "/.gnupg/",
-      "/.aws/",
-      "/credentials",
-      "/.env",
-    ];
-
-    for (const dangerous of dangerousPaths) {
-      if (filePath.includes(dangerous)) {
-        return { behavior: "deny", source: "dangerous-pattern" };
-      }
+    if (isDangerousWritePath(filePath)) {
+      return { behavior: "deny", source: "dangerous-pattern" };
     }
 
     // 3a. Session scratchpad: Claude Code's own convention is that this

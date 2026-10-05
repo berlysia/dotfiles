@@ -41,7 +41,7 @@
       "Bash(node --test *)",
       "Edit(**/*.test.*)",
       "Read(**/*.test.*)",
-      "Read(dot_claude/hooks/**)",
+      "Read(home/dot_claude/hooks/**)",
       "Read(~/.local/share/chezmoi/**)",
       "Edit(~/.claude/plans/**)",
       "Bash(npm view *)",

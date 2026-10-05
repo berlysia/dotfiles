@@ -7,6 +7,7 @@
  */
 
 import { matchGitignorePattern } from "./pattern-matcher.ts";
+import type { MatchContext } from "./path-utils.ts";
 
 export interface FilePermissionCheckResult {
   /** 全ファイルが許可されているか */
@@ -43,6 +44,7 @@ interface FileCheckDetail {
 function checkSingleFile(
   filePath: string,
   allowPatterns: string[],
+  ctx: MatchContext,
 ): FileCheckDetail {
   // Edit() または MultiEdit() パターンを抽出
   const editPatterns = allowPatterns.filter(
@@ -68,9 +70,8 @@ function checkSingleFile(
     const pathPattern = match[1];
 
     try {
-      // gitignoreスタイルのパターンマッチング
-      // normalizeを使わず、直接文字列でマッチング
-      if (matchGitignorePattern(filePath, pathPattern)) {
+      // The input is the Edit allow list, so a match always widens permission.
+      if (matchGitignorePattern(filePath, pathPattern, ctx, "grant")) {
         return {
           filePath,
           permitted: true,
@@ -107,13 +108,14 @@ function checkSingleFile(
 export function checkFilePermissions(
   filePaths: string[],
   allowPatterns: string[],
+  ctx: MatchContext,
 ): FilePermissionCheckResult {
   const fileResults: FileCheckDetail[] = [];
   let allFilesPermitted = true;
   let firstDeniedFile: string | undefined;
 
   for (const filePath of filePaths) {
-    const result = checkSingleFile(filePath, allowPatterns);
+    const result = checkSingleFile(filePath, allowPatterns, ctx);
     fileResults.push(result);
 
     if (!result.permitted) {
@@ -141,7 +143,8 @@ export function checkFilePermissions(
 export function canApproveSedTargets(
   filePaths: string[],
   allowPatterns: string[],
+  ctx: MatchContext,
 ): boolean {
-  const result = checkFilePermissions(filePaths, allowPatterns);
+  const result = checkFilePermissions(filePaths, allowPatterns, ctx);
   return result.allFilesPermitted;
 }
