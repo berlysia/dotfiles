@@ -39,23 +39,29 @@ describe("parseCcccOutput", () => {
     const report = parseCcccOutput(
       output([
         file("./a.ts", [
-          { ...fn("outer", 3, 10), children: [fn("<anonymous>", 7, 12, "arrow")] },
+          {
+            ...fn("outer", 3, 10),
+            children: [fn("<anonymous>", 7, 12, "arrow")],
+          },
         ]),
       ]),
     );
     assert.ok(report);
-    assert.deepEqual([...report.byKey.keys()], [
-      "a.ts :: outer:function",
-      "a.ts :: outer:function > <anonymous>:arrow",
-    ]);
-    assert.deepEqual(report.byKey.get("a.ts :: outer:function > <anonymous>:arrow"), [
-      { path: "a.ts", name: "<anonymous>", line: 12, cognitive: 7 },
-    ]);
+    assert.deepEqual(
+      [...report.byKey.keys()],
+      ["a.ts :: outer:function", "a.ts :: outer:function > <anonymous>:arrow"],
+    );
+    assert.deepEqual(
+      report.byKey.get("a.ts :: outer:function > <anonymous>:arrow"),
+      [{ path: "a.ts", name: "<anonymous>", line: 12, cognitive: 7 }],
+    );
   });
 
   it("collects same-key functions into one list", () => {
     const report = parseCcccOutput(
-      output([file("./a.ts", [fn("run", 1, 1, "method"), fn("run", 3, 2, "method")])]),
+      output([
+        file("./a.ts", [fn("run", 1, 1, "method"), fn("run", 3, 2, "method")]),
+      ]),
     );
     assert.deepEqual(
       report?.byKey.get("a.ts :: run:method")?.map((m) => m.cognitive),
@@ -65,7 +71,11 @@ describe("parseCcccOutput", () => {
 
   it("treats a missing kind as empty, a non-integer line as null, and non-array children as none", () => {
     const report = parseCcccOutput(
-      output([file("a.ts", [{ name: "f", cognitive: 2, line: "x", children: "nope" }])]),
+      output([
+        file("a.ts", [
+          { name: "f", cognitive: 2, line: "x", children: "nope" },
+        ]),
+      ]),
     );
     assert.deepEqual(report?.byKey.get("a.ts :: f:"), [
       { path: "a.ts", name: "f", line: null, cognitive: 2 },
@@ -75,7 +85,10 @@ describe("parseCcccOutput", () => {
   it("marks parse-error files from either the file entry or the summary", () => {
     const report = parseCcccOutput(
       output(
-        [file("./bad.ts", [], { parse_errors: ["Expected `,`"] }), file("./ok.ts", [])],
+        [
+          file("./bad.ts", [], { parse_errors: ["Expected `,`"] }),
+          file("./ok.ts", []),
+        ],
         { parse_error_files: ["./other.ts", 7] },
       ),
     );
@@ -110,7 +123,9 @@ describe("parseCcccOutput", () => {
 
   it("turns a report into a baseline of values per key", () => {
     const report = parseCcccOutput(
-      output([file("./a.ts", [fn("run", 1, 1, "method"), fn("run", 3, 2, "method")])]),
+      output([
+        file("./a.ts", [fn("run", 1, 1, "method"), fn("run", 3, 2, "method")]),
+      ]),
     );
     assert.ok(report);
     assert.deepEqual(toBaseline(report), {
@@ -131,7 +146,9 @@ const diff = (before: unknown[], after: unknown[]): Finding[] =>
   diffReports(baselineOf(before), reportOf(after));
 
 describe("diffReports", () => {
-  const one = (cognitive: number, line = 1) => [file("a.ts", [fn("f", cognitive, line)])];
+  const one = (cognitive: number, line = 1) => [
+    file("a.ts", [fn("f", cognitive, line)]),
+  ];
 
   it("applies the threshold and the minimum rise at their boundaries", () => {
     assert.deepEqual(diff(one(24), one(29, 7)), [
@@ -163,7 +180,9 @@ describe("diffReports", () => {
   });
 
   it("cancels equal values before pairing, so an untouched sibling is not blamed", () => {
-    const before = [file("a.ts", [fn("<anonymous>", 30, 1), fn("<anonymous>", 2, 2)])];
+    const before = [
+      file("a.ts", [fn("<anonymous>", 30, 1), fn("<anonymous>", 2, 2)]),
+    ];
     const after = [
       file("a.ts", [
         fn("<anonymous>", 40, 1),
@@ -226,7 +245,13 @@ describe("formatNotice", () => {
     assert.equal(
       formatNotice([
         finding(),
-        finding({ path: "b.ts", name: "g", line: null, before: null, after: 30 }),
+        finding({
+          path: "b.ts",
+          name: "g",
+          line: null,
+          before: null,
+          after: 30,
+        }),
       ]),
       [
         "[complexity-delta] Cognitive complexity rose this turn (>= 25, new or +5):",
@@ -237,7 +262,9 @@ describe("formatNotice", () => {
   });
 
   it("caps the list at ten lines and counts the rest", () => {
-    const many = Array.from({ length: 13 }, (_, i) => finding({ name: `f${i}` }));
+    const many = Array.from({ length: 13 }, (_, i) =>
+      finding({ name: `f${i}` }),
+    );
     const lines = formatNotice(many).split("\n");
     assert.equal(lines.length, 12);
     assert.equal(lines.at(-1), "  ... and 3 more");
@@ -278,7 +305,10 @@ describe("formatNotice", () => {
 
 describe("cccc candidates", () => {
   it("lists only absolute PATH entries, in order", () => {
-    assert.deepEqual(listCcccCandidates("/a/bin::.:rel/bin:/b"), ["/a/bin/cccc", "/b/cccc"]);
+    assert.deepEqual(listCcccCandidates("/a/bin::.:rel/bin:/b"), [
+      "/a/bin/cccc",
+      "/b/cccc",
+    ]);
     assert.deepEqual(listCcccCandidates(undefined), []);
     assert.deepEqual(listCcccCandidates(""), []);
   });

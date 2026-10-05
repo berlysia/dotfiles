@@ -1,5 +1,12 @@
 import { createHash } from "node:crypto";
-import { basename, delimiter, isAbsolute, join, relative, sep } from "node:path";
+import {
+  basename,
+  delimiter,
+  isAbsolute,
+  join,
+  relative,
+  sep,
+} from "node:path";
 import { sanitizeForDisplay } from "./sanitize-display.ts";
 
 // Thresholds come from replaying 150 commits of this repository's hooks; see
@@ -70,22 +77,28 @@ export function parseCcccOutput(raw: string): Report | null {
     if (depth > MAX_NESTING_DEPTH || !isRecord(node)) return false;
     const { name, cognitive } = node;
     if (typeof name !== "string") return false;
-    if (typeof cognitive !== "number" || !Number.isFinite(cognitive)) return false;
+    if (typeof cognitive !== "number" || !Number.isFinite(cognitive))
+      return false;
     const kind = typeof node.kind === "string" ? node.kind : "";
     const line =
-      typeof node.line === "number" && Number.isInteger(node.line) ? node.line : null;
+      typeof node.line === "number" && Number.isInteger(node.line)
+        ? node.line
+        : null;
     const nextChain = [...chain, `${name}:${kind}`];
     const key = `${path} :: ${nextChain.join(" > ")}`;
     const metrics = byKey.get(key) ?? [];
     metrics.push({ path, name, line, cognitive });
     byKey.set(key, metrics);
-    const children: unknown[] = Array.isArray(node.children) ? node.children : [];
+    const children: unknown[] = Array.isArray(node.children)
+      ? node.children
+      : [];
     return children.every((child) => walk(path, child, nextChain, depth + 1));
   };
 
   for (const file of data.files as unknown[]) {
     if (!isRecord(file)) return null;
-    if (typeof file.path !== "string" || !Array.isArray(file.functions)) return null;
+    if (typeof file.path !== "string" || !Array.isArray(file.functions))
+      return null;
     const path = normalizePath(file.path);
     if (Array.isArray(file.parse_errors) && file.parse_errors.length > 0) {
       parseErrorFiles.add(path);
@@ -125,7 +138,10 @@ function compareText(a: string, b: string): number {
  * Findings for one key. Equal values are cancelled first so that an untouched
  * function never pairs with a changed one; what remains is paired by rank.
  */
-function diffKey(before: readonly number[], current: readonly FunctionMetric[]): Finding[] {
+function diffKey(
+  before: readonly number[],
+  current: readonly FunctionMetric[],
+): Finding[] {
   const remainingBefore = [...before];
   const changed: FunctionMetric[] = [];
   for (const metric of current) {
@@ -137,7 +153,9 @@ function diffKey(before: readonly number[], current: readonly FunctionMetric[]):
     }
   }
   remainingBefore.sort((a, b) => b - a);
-  changed.sort((a, b) => b.cognitive - a.cognitive || (a.line ?? 0) - (b.line ?? 0));
+  changed.sort(
+    (a, b) => b.cognitive - a.cognitive || (a.line ?? 0) - (b.line ?? 0),
+  );
 
   const findings: Finding[] = [];
   changed.forEach((metric, rank) => {
@@ -156,7 +174,10 @@ function diffKey(before: readonly number[], current: readonly FunctionMetric[]):
 }
 
 export function diffReports(baseline: Baseline, current: Report): Finding[] {
-  const skipped = new Set([...baseline.parseErrorFiles, ...current.parseErrorFiles]);
+  const skipped = new Set([
+    ...baseline.parseErrorFiles,
+    ...current.parseErrorFiles,
+  ]);
   const findings: Finding[] = [];
   for (const [key, metrics] of current.byKey) {
     const compared = metrics.filter((metric) => !skipped.has(metric.path));
@@ -211,7 +232,10 @@ export function listCcccCandidates(pathEnv: string | undefined): string[] {
 
 function isInside(root: string, target: string): boolean {
   const rel = relative(root, target);
-  return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
+  return (
+    rel === "" ||
+    (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))
+  );
 }
 
 /**
@@ -219,7 +243,10 @@ function isInside(root: string, target: string): boolean {
  * which may install tools declared by the opened repository; a binary inside the
  * repository is the repository's own.
  */
-export function isUsableCccc(realPath: string, excludedRoots: readonly string[]): boolean {
+export function isUsableCccc(
+  realPath: string,
+  excludedRoots: readonly string[],
+): boolean {
   if (basename(realPath) === "mise") return false;
   return !excludedRoots.some((root) => isInside(root, realPath));
 }

@@ -90,13 +90,18 @@ function freshState(root: string): State {
 function isBaseline(value: unknown): value is Baseline {
   if (typeof value !== "object" || value === null) return false;
   const { functions, parseErrorFiles } = value as Record<string, unknown>;
-  if (typeof functions !== "object" || functions === null || Array.isArray(functions)) {
+  if (
+    typeof functions !== "object" ||
+    functions === null ||
+    Array.isArray(functions)
+  ) {
     return false;
   }
   if (!Array.isArray(parseErrorFiles)) return false;
   if (!parseErrorFiles.every((path) => typeof path === "string")) return false;
   return Object.values(functions).every(
-    (values) => Array.isArray(values) && values.every((n) => typeof n === "number"),
+    (values) =>
+      Array.isArray(values) && values.every((n) => typeof n === "number"),
   );
 }
 
@@ -132,7 +137,9 @@ function readState(statePath: string): ReadResult {
   }
   try {
     const parsed: unknown = JSON.parse(raw);
-    return isState(parsed) ? { kind: "ok", state: parsed } : { kind: "invalid" };
+    return isState(parsed)
+      ? { kind: "ok", state: parsed }
+      : { kind: "invalid" };
   } catch {
     return { kind: "invalid" };
   }
@@ -184,7 +191,8 @@ function resolveCccc(env: HookEnv, root: string, cwd: string): string | null {
     .filter((path): path is string => path !== null);
   for (const candidate of listCcccCandidates(env.pathEnv)) {
     const realPath = realpathOrNull(candidate);
-    if (realPath !== null && isUsableCccc(realPath, excludedRoots)) return realPath;
+    if (realPath !== null && isUsableCccc(realPath, excludedRoots))
+      return realPath;
   }
   return null;
 }
@@ -194,20 +202,26 @@ function measure(env: HookEnv, root: string, cwd: string): Outcome {
   if (binary === null) return { kind: "not-found" };
   let stdout: string;
   try {
-    stdout = execFileSync(binary, ["--no-config", "--exclude", ".git/**", "."], {
-      cwd: root,
-      encoding: "utf-8",
-      stdio: ["ignore", "pipe", "ignore"],
-      timeout: env.ccccTimeoutMs,
-      killSignal: "SIGKILL",
-      maxBuffer: CCCC_MAX_BUFFER,
-    });
+    stdout = execFileSync(
+      binary,
+      ["--no-config", "--exclude", ".git/**", "."],
+      {
+        cwd: root,
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "ignore"],
+        timeout: env.ccccTimeoutMs,
+        killSignal: "SIGKILL",
+        maxBuffer: CCCC_MAX_BUFFER,
+      },
+    );
   } catch (error) {
     const timedOut = (error as NodeJS.ErrnoException).code === "ETIMEDOUT";
     return { kind: timedOut ? "timeout" : "failed", binary };
   }
   const report = parseCcccOutput(stdout);
-  return report === null ? { kind: "schema", binary } : { kind: "ok", report, binary };
+  return report === null
+    ? { kind: "schema", binary }
+    : { kind: "ok", report, binary };
 }
 
 /** Anything thrown between measuring and comparing counts as a failed measurement. */
@@ -219,7 +233,13 @@ function attempt<T>(compute: () => T): T | null {
   }
 }
 
-type Call = { env: HookEnv; root: string; cwd: string; statePath: string; sessionId: string };
+type Call = {
+  env: HookEnv;
+  root: string;
+  cwd: string;
+  statePath: string;
+  sessionId: string;
+};
 
 type Step = { state: State; logs: ComplexityLogFields[]; message?: string };
 
@@ -235,12 +255,22 @@ function planFailure(state: State, failure: Failure, call: Call): Step {
     return {
       state: { ...state, timeouts: 0 },
       logs: [
-        { kind: "skip", root, reason: "cccc-not-found", recovery: RECOVERY_NOT_FOUND },
+        {
+          kind: "skip",
+          root,
+          reason: "cccc-not-found",
+          recovery: RECOVERY_NOT_FOUND,
+        },
       ],
     };
   }
   const { binary } = failure;
-  const skip: ComplexityLogFields = { kind: "skip", root, reason: failure.kind, binary };
+  const skip: ComplexityLogFields = {
+    kind: "skip",
+    root,
+    reason: failure.kind,
+    binary,
+  };
   if (failure.kind === "failed") {
     return { state: { ...state, timeouts: 0 }, logs: [skip] };
   }
@@ -249,7 +279,13 @@ function planFailure(state: State, failure: Failure, call: Call): Step {
       state: { ...state, timeouts: 0, disabled: "schema" },
       logs: [
         skip,
-        { kind: "disabled", root, reason: "schema", binary, recovery: statePath },
+        {
+          kind: "disabled",
+          root,
+          reason: "schema",
+          binary,
+          recovery: statePath,
+        },
       ],
       message: `[complexity-delta] cccc output did not match the expected shape (binary: ${binary}). Complexity checks are off for this repository in this session. State file: ${statePath}`,
     };
@@ -262,7 +298,13 @@ function planFailure(state: State, failure: Failure, call: Call): Step {
     state: { ...state, timeouts, disabled: "timeout" },
     logs: [
       skip,
-      { kind: "disabled", root, reason: "timeout", binary, recovery: statePath },
+      {
+        kind: "disabled",
+        root,
+        reason: "timeout",
+        binary,
+        recovery: statePath,
+      },
     ],
     message: `[complexity-delta] cccc exceeded ${call.env.ccccTimeoutMs}ms twice in a row. Complexity checks are off for this repository in this session. State file: ${statePath}`,
   };
@@ -281,7 +323,9 @@ function onPrompt(call: Call): string | undefined {
     logComplexity({ kind: "skip", root, reason: "state" }, sessionId);
   }
   const state =
-    read.kind === "ok" && read.state.root === root ? read.state : freshState(root);
+    read.kind === "ok" && read.state.root === root
+      ? read.state
+      : freshState(root);
   if (state.disabled !== undefined) return undefined;
 
   pruneStaleBaselines(env.stateDir, STATE_MAX_AGE_MS);
@@ -291,13 +335,21 @@ function onPrompt(call: Call): string | undefined {
   if (outcome.kind === "ok") {
     const baseline = attempt(() => toBaseline(outcome.report));
     if (baseline !== null) {
-      return commit({ state: { ...turnStart, baseline, timeouts: 0 }, logs: [] }, call);
+      return commit(
+        { state: { ...turnStart, baseline, timeouts: 0 }, logs: [] },
+        call,
+      );
     }
   }
   const failure: Failure =
-    outcome.kind === "ok" ? { kind: "failed", binary: outcome.binary } : outcome;
+    outcome.kind === "ok"
+      ? { kind: "failed", binary: outcome.binary }
+      : outcome;
   // A stale baseline would turn several turns of change into this turn's finding.
-  return commit(planFailure({ ...turnStart, baseline: null }, failure, call), call);
+  return commit(
+    planFailure({ ...turnStart, baseline: null }, failure, call),
+    call,
+  );
 }
 
 function onStop(call: Call): string | undefined {
@@ -309,7 +361,11 @@ function onStop(call: Call): string | undefined {
   if (read.kind !== "ok") return undefined;
   const { state } = read;
   const { baseline } = state;
-  if (state.root !== root || state.disabled !== undefined || baseline === null) {
+  if (
+    state.root !== root ||
+    state.disabled !== undefined ||
+    baseline === null
+  ) {
     return undefined;
   }
 
@@ -323,13 +379,18 @@ function onStop(call: Call): string | undefined {
       : null;
   if (outcome.kind !== "ok" || notice === null) {
     const failure: Failure =
-      outcome.kind === "ok" ? { kind: "failed", binary: outcome.binary } : outcome;
+      outcome.kind === "ok"
+        ? { kind: "failed", binary: outcome.binary }
+        : outcome;
     return commit(planFailure(state, failure, call), call);
   }
 
   const { findings, text } = notice;
   if (findings.length === 0) {
-    return commit({ state: { ...state, timeouts: 0, shown: null }, logs: [] }, call);
+    return commit(
+      { state: { ...state, timeouts: 0, shown: null }, logs: [] },
+      call,
+    );
   }
   const digest = hashNotice(text);
   if (digest === state.shown) {

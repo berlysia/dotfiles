@@ -84,7 +84,9 @@ function setup(options: { binInsideRepo?: boolean; timeoutMs?: number } = {}) {
     script(`exec cat "${outputFile}"`);
   };
   const callLines = () =>
-    existsSync(callsFile) ? readFileSync(callsFile, "utf-8").trim().split("\n") : [];
+    existsSync(callsFile)
+      ? readFileSync(callsFile, "utf-8").trim().split("\n")
+      : [];
   const calls = () => callLines().length;
 
   const prompt = async (cwd = repo) => {
@@ -99,7 +101,8 @@ function setup(options: { binInsideRepo?: boolean; timeoutMs?: number } = {}) {
     return ctx;
   };
   const statePath = join(stateDir, `${sessionId}.json`);
-  const state = () => JSON.parse(readFileSync(statePath, "utf-8")) as Record<string, unknown>;
+  const state = () =>
+    JSON.parse(readFileSync(statePath, "utf-8")) as Record<string, unknown>;
   const logs = (): ComplexityLogEntry[] => {
     const logDir = process.env.CLAUDE_LOGS_DIR;
     assert.ok(logDir, "run with --import tests/preload-test-env.mjs");
@@ -148,7 +151,9 @@ describe("complexity-delta: notice", () => {
         "  a.ts:5 f 24 → 44",
       ].join("\n"),
     );
-    assert.deepEqual(Object.keys(stopCtx.jsonCalls[0] as object), ["systemMessage"]);
+    assert.deepEqual(Object.keys(stopCtx.jsonCalls[0] as object), [
+      "systemMessage",
+    ]);
 
     const notices = t.logs().filter((entry) => entry.kind === "notice");
     assert.equal(notices.length, 1);
@@ -201,7 +206,9 @@ describe("complexity-delta: notice", () => {
     const t = setup();
     t.respond(report([]));
     await t.prompt();
-    t.respond(report(Array.from({ length: 13 }, (_, i) => fn(`f${i}`, 30, i + 1))));
+    t.respond(
+      report(Array.from({ length: 13 }, (_, i) => fn(`f${i}`, 30, i + 1))),
+    );
     const text = message(await t.stop()) ?? "";
     assert.equal(text.split("\n").at(-1), "  ... and 3 more");
     const [notice] = t.logs().filter((entry) => entry.kind === "notice");
@@ -285,7 +292,10 @@ describe("complexity-delta: when it does nothing", () => {
     writeFileSync(t.statePath, "{not json");
     await t.prompt();
     assert.equal(t.state().version, 1);
-    assert.equal(t.logs().filter((entry) => entry.reason === "state").length, 2);
+    assert.equal(
+      t.logs().filter((entry) => entry.reason === "state").length,
+      2,
+    );
   });
 
   it("writes the state file as 0600 inside a 0700 directory", async () => {
@@ -294,7 +304,10 @@ describe("complexity-delta: when it does nothing", () => {
     await t.prompt();
     assert.equal(statSync(t.statePath).mode & 0o777, 0o600);
     assert.equal(statSync(t.stateDir).mode & 0o777, 0o700);
-    assert.deepEqual(readdirSync(t.stateDir).filter((name) => name.endsWith(".tmp")), []);
+    assert.deepEqual(
+      readdirSync(t.stateDir).filter((name) => name.endsWith(".tmp")),
+      [],
+    );
   });
 });
 
@@ -314,7 +327,10 @@ describe("complexity-delta: choosing the binary", () => {
     t.respond(report([fn("f", 24)]));
     await t.prompt();
     assert.equal(t.calls(), 0);
-    assert.equal(t.logs().some((entry) => entry.reason === "cccc-not-found"), true);
+    assert.equal(
+      t.logs().some((entry) => entry.reason === "cccc-not-found"),
+      true,
+    );
   });
 
   it("does not run a cccc that resolves to a file named mise", async () => {
@@ -323,7 +339,10 @@ describe("complexity-delta: choosing the binary", () => {
     writeFileSync(real, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
     symlinkSync(real, join(t.binDir, "cccc"));
     await t.prompt();
-    assert.equal(t.logs().some((entry) => entry.reason === "cccc-not-found"), true);
+    assert.equal(
+      t.logs().some((entry) => entry.reason === "cccc-not-found"),
+      true,
+    );
   });
 
   it("logs a failed measurement and drops the baseline when cccc exits non-zero", async () => {
@@ -349,7 +368,10 @@ describe("complexity-delta: giving up", () => {
     assert.equal(t.state().baseline, null);
 
     const second = await t.prompt();
-    assert.match(message(second) ?? "", /^\[complexity-delta\] cccc exceeded 200ms twice/);
+    assert.match(
+      message(second) ?? "",
+      /^\[complexity-delta\] cccc exceeded 200ms twice/,
+    );
     assert.equal((message(second) ?? "").includes(t.statePath), true);
     assert.equal(t.state().disabled, "timeout");
     const disabled = t.logs().filter((entry) => entry.kind === "disabled");
@@ -382,7 +404,10 @@ describe("complexity-delta: giving up", () => {
     assert.match(message(ctx) ?? "", /did not match the expected shape/);
     assert.equal((message(ctx) ?? "").includes(join(t.binDir, "cccc")), true);
     assert.equal(t.state().disabled, "schema");
-    assert.equal(t.logs().some((entry) => entry.reason === "schema"), true);
+    assert.equal(
+      t.logs().some((entry) => entry.reason === "schema"),
+      true,
+    );
 
     // Once off, a stop neither measures nor speaks.
     t.respond(report([fn("f", 44)]));
@@ -402,7 +427,10 @@ describe("complexity-delta: giving up", () => {
     t.respond(report([fn("f", 24)]));
     await t.prompt();
     t.respond("[]");
-    assert.match(message(await t.stop()) ?? "", /did not match the expected shape/);
+    assert.match(
+      message(await t.stop()) ?? "",
+      /did not match the expected shape/,
+    );
     assert.equal(t.state().disabled, "schema");
     assert.notEqual(t.state().baseline, null);
     const disabled = t.logs().filter((entry) => entry.kind === "disabled");
