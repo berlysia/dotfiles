@@ -776,7 +776,7 @@ describe("file-access-guard.ts hook behavior", () => {
     let H = "";
 
     beforeEach(() => {
-      // Isolates settings: a real ~/.claude/settings.json may carry Edit(/tmp/**).
+      // Isolates settings: a real ~/.claude/settings.json may carry Edit(//tmp/**).
       H = mkdtempSync(join(TMP, "fag-home-"));
       envHelper.set("HOME", H);
       envHelper.set("CLAUDE_TEST_REPO_ROOT", "/home/user/project");
@@ -895,11 +895,11 @@ describe("file-access-guard.ts hook behavior", () => {
       context.assertDeny();
     });
 
-    it("should deny a symlink under /tmp that points outside even with Edit(/tmp/**)", async () => {
+    it("should deny a symlink under /tmp that points outside even with Edit(//tmp/**)", async () => {
       mkdirSync(join(H, ".claude"), { recursive: true });
       writeFileSync(
         join(H, ".claude", "settings.json"),
-        JSON.stringify({ permissions: { allow: ["Edit(/tmp/**)"] } }),
+        JSON.stringify({ permissions: { allow: ["Edit(//tmp/**)"] } }),
       );
       mkdirSync(join(process.cwd(), ".tmp"), { recursive: true });
       const dir = mkdtempSync(join(TMP, "fag-sym-"));
@@ -1417,7 +1417,7 @@ describe("chezmoi redirection and allow patterns (ADR-0027 invariant)", () => {
     "Edit(~/.config/**)",
     "Edit(~/.local/**)",
     "Edit(~/workspace/**)",
-    "Edit(/tmp/**)",
+    "Edit(//tmp/**)",
   ];
   const ctxFor = (allowPatterns: string[]): JudgeContext => ({
     category: "write",
