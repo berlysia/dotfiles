@@ -27,7 +27,10 @@ if [ -d "${REPO_ROOT}/.github/workflows" ]; then
     if [ "$WORKFLOW_COUNT" -gt 0 ]; then
         echo -e "${BLUE}⚡ Checking GitHub Actions workflows with zizmor...${NC}"
         if command -v zizmor &> /dev/null; then
-            if zizmor "${REPO_ROOT}/.github/workflows"; then
+            # Worktrees live under the main checkout's .git/, and zizmor discovers
+            # its config from the outermost repository root, so without --config
+            # a worktree is checked against the main checkout's zizmor.yml.
+            if zizmor --config "${REPO_ROOT}/zizmor.yml" "${REPO_ROOT}/.github/workflows"; then
                 echo -e "${GREEN}✓ All workflows passed zizmor security checks${NC}"
             else
                 echo -e "${RED}❌ zizmor found security issues in workflows${NC}"
