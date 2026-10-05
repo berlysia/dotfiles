@@ -9,11 +9,12 @@ import type { ToolInput } from "../types/project-types.ts";
 import { isBashToolInput } from "../types/project-types.ts";
 import { getFilePathFromToolInput } from "./command-parsing.ts";
 import {
-  type NormalizedPath,
-  type NormalizedPattern,
-  normalizePathForMatching,
-  normalizePattern,
+  type MatchContext,
+  type MatchKind,
+  resolvePathPattern,
+  resolveTargetPath,
 } from "./path-utils.ts";
+import { ruleNamesFor } from "./permission-rule-names.ts";
 import { hasParentSegment, isUnderRoot } from "./path-containment.ts";
 import { collectTempRoots } from "./temp-roots.ts";
 
@@ -240,118 +241,25 @@ function matchAbsoluteGlob(filePath: string, pattern: string): boolean {
 }
 
 /**
- * GitIgnore-style pattern matching
- */
-/**
- * Match a normalized file path against a normalized pattern (type-safe overload)
- *
- * This overload requires branded types to ensure type safety and prevent
- * accidental mixing of file paths and patterns.
- */
-export function matchGitignorePattern(
-  filePath: NormalizedPath,
-  pattern: NormalizedPattern,
-): boolean;
-
-/**
- * Match a file path against a pattern (backward compatibility overload)
- *
- * This overload accepts plain strings for backward compatibility during migration.
- * New code should use the branded type overload.
- *
- * @deprecated Prefer using the overload with NormalizedPath and NormalizedPattern
+ * Match a tool-supplied path against the text inside a `Tool(...)` permission
+ * rule. Both sides are resolved first (resolvePathPattern, resolveTargetPath)
+ * and compared segment by segment under a literal base, so `..`, `//` and
+ * look-alike directory names cannot widen an allow or dodge a deny.
  */
 export function matchGitignorePattern(
   filePath: string,
   pattern: string,
-): boolean;
-
-export function matchGitignorePattern(
-  filePath: string | NormalizedPath,
-  pattern: string | NormalizedPattern,
+  ctx: MatchContext,
+  kind: MatchKind,
 ): boolean {
-  // Absolute wildcard patterns (leading // from normalizePattern is collapsed)
-  const collapsed = pattern.replace(/^\/+/, "/");
-  if (collapsed.startsWith("/") && collapsed.includes("*")) {
-    return matchAbsoluteGlob(filePath, collapsed);
-  }
-
-  // Handle directory patterns ending with /
-  if (pattern.endsWith("/")) {
-    const dirPattern = pattern.slice(0, -1);
-    return filePath.startsWith(`${dirPattern}/`) || filePath === dirPattern;
-  }
-
-  // Handle ** patterns first (match any number of directories)
-  if (pattern === "**") {
-    // Security check: Reject parent directory traversal
-    // Absolute paths are safe as long as they don't contain directory traversal
-    if (filePath.startsWith("../") || filePath.includes("/../")) {
-      return false;
-    }
-    return true;
-  }
-
-  if (pattern.endsWith("/**")) {
-    const prefix = pattern.slice(0, -3);
-    if (prefix.startsWith("/")) {
-      // Anchored pattern - match from beginning
-      return filePath.startsWith(`${prefix}/`) || filePath === prefix;
-    } else if (prefix === "." || prefix === "") {
-      // Special case for ./** - matches paths within current directory
-      // Security check: Reject parent directory traversal
-      if (filePath.startsWith("../") || filePath.includes("/../")) {
-        return false;
-      }
-      // For ./** pattern, only match relative paths (converted from cwd-relative absolute paths)
-      // Absolute paths outside cwd should not match ./**
-      if (pattern.startsWith("./**") && filePath.startsWith("/")) {
-        return false;
-      }
-      return true;
-    } else {
-      // Not anchored - can match anywhere
-      return filePath.includes(`${prefix}/`) || filePath.includes(prefix);
-    }
-  }
-
-  if (pattern.includes("/**/")) {
-    const [prefix, suffix] = pattern.split("/**/");
-    const prefixPattern = prefix || "";
-    const suffixPattern = suffix || "";
-
-    // Simple check for middle ** patterns
-    if (prefixPattern && suffixPattern) {
-      return (
-        filePath.includes(prefixPattern) && filePath.includes(suffixPattern)
-      );
-    }
-  }
-
-  // Handle patterns starting with /
-  if (pattern.startsWith("/")) {
-    const anchoredPattern = pattern.slice(1);
-    return (
-      filePath === anchoredPattern || filePath.startsWith(`${anchoredPattern}/`)
-    );
-  } else {
-    // Not anchored - can match anywhere in path
-    if (pattern.includes(".")) {
-      // For patterns like *.js, match the filename
-      const basename = filePath.split("/").pop() || "";
-      return new RegExp(`^${pattern.replace(/\*/g, ".*")}$`).test(basename);
-    } else {
-      // For patterns without extension, check each directory level
-      const pathParts = filePath.split("/");
-      for (const part of pathParts) {
-        if (new RegExp(`^${pattern.replace(/\*/g, ".*")}$`).test(part)) {
-          return true;
-        }
-      }
-    }
-  }
-
-  return false;
+  // An empty path would resolve to cwd itself; no caller means that.
+  if (filePath === "") return false;
+  const target = resolveTargetPath(filePath, ctx);
+  return resolvePathPattern(pattern, ctx, kind).some(({ base, glob }) => {
+    if (!isUnderRoot(target, base)) return false;
+    const rest = base === "/" ? target : target.slice(base.length);
+    return matchAbsoluteGlob(rest === "" ? "/" : rest, `/${glob}`);
+  });
 }
 
 /**
@@ -360,6 +268,7 @@ export function matchGitignorePattern(
 async function checkIndividualCommandWithPattern(
   cmd: string,
   patterns: string[],
+  ctx: MatchContext,
 ): Promise<{ matches: boolean; pattern?: string }> {
   for (const pattern of patterns) {
     if (!pattern.trim()) continue;
@@ -367,7 +276,7 @@ async function checkIndividualCommandWithPattern(
     // Create a mock tool input for individual command check
     const mockInput: ToolInput = { command: cmd };
 
-    if (await checkPattern(pattern, "Bash", mockInput)) {
+    if (await checkPattern(pattern, "Bash", mockInput, ctx, "deny")) {
       return { matches: true, pattern };
     }
   }
@@ -384,6 +293,7 @@ async function checkIndividualCommandWithPattern(
 export async function checkIndividualCommandDenyWithPattern(
   cmd: string,
   denyList: string[],
+  ctx: MatchContext,
 ): Promise<{ matches: boolean; matchedPattern?: string }> {
   // Skip built-in safe commands - they should never be denied
   // This prevents the logic error where isSafeBuiltinCommand=true causes denial
@@ -391,7 +301,7 @@ export async function checkIndividualCommandDenyWithPattern(
     return { matches: false };
   }
 
-  const result = await checkIndividualCommandWithPattern(cmd, denyList);
+  const result = await checkIndividualCommandWithPattern(cmd, denyList, ctx);
   return {
     matches: result.matches,
     ...(result.pattern && { matchedPattern: result.pattern }),
@@ -401,10 +311,14 @@ export async function checkIndividualCommandDenyWithPattern(
 /**
  * Check if a pattern matches the tool usage
  */
+export type RuleList = "allow" | "deny";
+
 export async function checkPattern(
   pattern: string,
   toolName: string,
   toolInput: unknown,
+  ctx: MatchContext,
+  list: RuleList,
 ): Promise<boolean> {
   // Handle Bash tool specifically
   if (pattern.startsWith("Bash(") && pattern.endsWith(")")) {
@@ -477,41 +391,22 @@ export async function checkPattern(
     return actualSkill === skillPattern;
   }
 
-  // Handle other tools with file path patterns
-  if (pattern.startsWith(`${toolName}(`)) {
-    // Extract the path pattern
-    const pathPattern = pattern.slice(toolName.length + 1, -1); // Remove "ToolName(" and ")"
-
-    // Get the file path from tool input using helper
+  // File path rules. Write, MultiEdit and NotebookEdit also answer to Edit(...) rules.
+  const ruleNames = ruleNamesFor(toolName);
+  const ruleName = ruleNames.find((name) => pattern.startsWith(`${name}(`));
+  if (ruleName !== undefined) {
+    const pathPattern = pattern.slice(ruleName.length + 1, -1);
     const rawFilePath = getFilePathFromToolInput(toolName, toolInput) || "";
-
-    // If no path is provided and the pattern expects a path, don't match
-    // This allows tools without paths to be handled by smartPassTools logic
-    if (!rawFilePath) {
-      return false;
-    }
-
-    // Normalize path and pattern using utility functions
-    const filePath = normalizePathForMatching(rawFilePath, pathPattern);
-    const normalizedPattern = normalizePattern(pathPattern);
-
-    // GitIgnore-style pattern matching
-    if (pathPattern === "**") {
-      // Use matchGitignorePattern to ensure security checks are applied
-      return matchGitignorePattern(filePath, normalizePattern("**"));
-    } else if (pathPattern.startsWith("!")) {
-      // Negation pattern - should not match
-      const negPattern = pathPattern.slice(1);
-      const normalizedNegPattern = normalizePattern(negPattern);
-      return !matchGitignorePattern(filePath, normalizedNegPattern);
-    } else {
-      return matchGitignorePattern(filePath, normalizedPattern);
-    }
-  } else if (pattern === toolName) {
-    return true;
+    // A tool call without a path cannot match a path rule; smartPassTools handle it.
+    if (!rawFilePath) return false;
+    return matchGitignorePattern(
+      rawFilePath,
+      pathPattern,
+      ctx,
+      list === "allow" ? "grant" : "restrict",
+    );
   }
-
-  return false;
+  return ruleNames.includes(pattern);
 }
 
 export type BashPattern = { kind: "prefix" | "exact"; value: string };

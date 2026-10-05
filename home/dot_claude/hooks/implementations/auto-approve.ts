@@ -18,6 +18,7 @@ import {
   checkDangerousCommand,
   checkHomeDestruction,
   getCommandFromToolInput,
+  getFilePathFromToolInput,
   NO_PAREN_TOOL_NAMES,
 } from "../lib/command-parsing.ts";
 import {
@@ -27,13 +28,16 @@ import {
   createDenyResponse,
 } from "../lib/context-helpers.ts";
 import { analyzePatternMatches } from "../lib/decision-maker.ts";
+import { isDangerousWritePath } from "../lib/dangerous-write-paths.ts";
 import {
   getHomeDir,
-  normalizePath,
-  normalizePattern,
+  type MatchContext,
+  resolveTargetPath,
 } from "../lib/path-utils.ts";
+import { ruleNamesFor } from "../lib/permission-rule-names.ts";
+import { createMatchContext } from "../lib/project-root.ts";
 import {
-  matchGitignorePattern,
+  type RuleList,
   checkIndividualCommandDenyWithPattern as patternMatcherCheckDeny,
   checkPattern as patternMatcherCheckPattern,
   isSafeBuiltinCommand,
@@ -63,6 +67,7 @@ const hook = defineHook({
 
     // Get permission lists
     const { allowList, denyList } = getPermissionLists(tool_name);
+    const matchContext = createMatchContext(context.input.cwd);
 
     try {
       // Process based on tool type
@@ -73,6 +78,7 @@ const hook = defineHook({
           denyList,
           allowList,
           context.input.cwd,
+          matchContext,
         );
         const decision = analyzeBashCommands(
           bashResult.commands,
@@ -120,6 +126,7 @@ const hook = defineHook({
             tool_input,
             denyList,
             allowList,
+            matchContext,
           );
 
           // If there are explicit deny or allow matches, respect them
@@ -164,6 +171,7 @@ const hook = defineHook({
           tool_input,
           denyList,
           allowList,
+          matchContext,
         );
         const decision = analyzePatternMatches(
           otherResult.allowMatches,
@@ -243,15 +251,17 @@ function getPermissionLists(tool_name: string): {
       const denyJson = JSON.parse(process.env.CLAUDE_TEST_DENY || "[]");
 
       const allowList = Array.isArray(allowJson)
-        ? allowJson.filter(
-            (pattern: string) =>
-              pattern === tool_name || pattern.startsWith(`${tool_name}(`),
+        ? allowJson.filter((pattern: string) =>
+            ruleNamesFor(tool_name).some(
+              (name) => pattern === name || pattern.startsWith(`${name}(`),
+            ),
           )
         : [];
       const denyList = Array.isArray(denyJson)
-        ? denyJson.filter(
-            (pattern: string) =>
-              pattern === tool_name || pattern.startsWith(`${tool_name}(`),
+        ? denyJson.filter((pattern: string) =>
+            ruleNamesFor(tool_name).some(
+              (name) => pattern === name || pattern.startsWith(`${name}(`),
+            ),
           )
         : [];
 
@@ -371,6 +381,7 @@ export async function processBashTool(
   denyList: string[],
   allowList: string[],
   cwd: string | undefined,
+  ctx: MatchContext,
   stages: BashStages = { classifyBashDeny, matchBashAllow },
 ): Promise<BashToolResult> {
   const bashCommand = getCommandFromToolInput("Bash", tool_input) || "";
@@ -444,9 +455,12 @@ export async function processBashTool(
 
   const commands: BashCommandResult[] = [];
   for (const target of denyTargets) {
-    const result = await stages.classifyBashDeny(target, denyList, {
-      readOnlyExempt,
-    });
+    const result = await stages.classifyBashDeny(
+      target,
+      denyList,
+      { readOnlyExempt },
+      ctx,
+    );
     const gaveUpOnFragment = deniedForGiveUp();
     if (gaveUpOnFragment !== null) return gaveUpOnFragment;
     if (result.type === "clear") continue;
@@ -464,7 +478,7 @@ export async function processBashTool(
       commands.push({ type: "pass", command: bashCommand });
     } else {
       for (const simple of simpleCommands) {
-        commands.push(await stages.matchBashAllow(simple, allowList));
+        commands.push(await stages.matchBashAllow(simple, allowList, ctx));
       }
     }
   } catch (error) {
@@ -494,6 +508,7 @@ async function classifyBashDeny(
   cmd: string,
   denyList: string[],
   opts: { readOnlyExempt: boolean },
+  ctx: MatchContext,
 ): Promise<DenyStageResult> {
   // Skip evaluation for control structure keywords - they are transparent
   if (CONTROL_STRUCTURE_KEYWORDS.includes(cmd)) {
@@ -518,7 +533,7 @@ async function classifyBashDeny(
 
   // Check deny patterns
   if (denyList.length > 0) {
-    const denyResult = await patternMatcherCheckDeny(cmd, denyList);
+    const denyResult = await patternMatcherCheckDeny(cmd, denyList, ctx);
     if (denyResult.matches && denyResult.matchedPattern) {
       return {
         type: "deny",
@@ -549,8 +564,9 @@ const SAFE_BASH_PATTERNS_LAYER1 = [
 async function matchBashAllow(
   cmd: string,
   allowList: string[],
+  ctx: MatchContext,
 ): Promise<Extract<BashCommandResult, { type: "allow" | "pass" }>> {
-  const sed = await inferSedInPlaceAllow(cmd);
+  const sed = await inferSedInPlaceAllow(cmd, ctx);
   if (sed) return sed;
   for (const pattern of SAFE_BASH_PATTERNS_LAYER1) {
     if (pattern.test(cmd)) {
@@ -575,6 +591,7 @@ async function matchBashAllow(
 
 async function inferSedInPlaceAllow(
   cmd: string,
+  ctx: MatchContext,
 ): Promise<Extract<BashCommandResult, { type: "allow" }> | null> {
   // parseSedInPlace splits words without a full shell reading and misreads a
   // space after a backslash, so it never infers a command containing one.
@@ -605,6 +622,7 @@ async function inferSedInPlaceAllow(
       const permResult = checkFilePermissions(
         sedResult.targetFiles,
         editAllowList,
+        ctx,
       );
 
       if (permResult.allFilesPermitted) {
@@ -626,6 +644,7 @@ async function processOtherTool(
   tool_input: unknown,
   denyList: string[],
   allowList: string[],
+  ctx: MatchContext,
 ): Promise<OtherToolResult> {
   const denyMatches: string[] = [];
   const allowMatches: string[] = [];
@@ -634,7 +653,7 @@ async function processOtherTool(
   for (const pattern of denyList) {
     if (
       pattern.trim() &&
-      (await checkPattern(pattern, tool_name, tool_input))
+      (await checkPattern(pattern, tool_name, tool_input, ctx, "deny"))
     ) {
       denyMatches.push(pattern);
     }
@@ -644,7 +663,8 @@ async function processOtherTool(
   for (const pattern of allowList) {
     if (
       pattern.trim() &&
-      (await checkPattern(pattern, tool_name, tool_input))
+      (await checkPattern(pattern, tool_name, tool_input, ctx, "allow")) &&
+      !isBorrowedEditRuleOnDangerousPath(pattern, tool_name, tool_input, ctx)
     ) {
       allowMatches.push(pattern);
     }
@@ -656,12 +676,38 @@ async function processOtherTool(
   };
 }
 
+/**
+ * Write, MultiEdit and NotebookEdit borrow Edit rules, but an allow here skips
+ * the PermissionRequest layer and its dangerous path check. Leave such a call
+ * unanswered so that layer still sees it. Both the raw value (what that layer
+ * inspects) and the resolved path (catches a relative `.env`) are checked.
+ */
+function isBorrowedEditRuleOnDangerousPath(
+  pattern: string,
+  tool_name: string,
+  tool_input: unknown,
+  ctx: MatchContext,
+): boolean {
+  // Edit never reached the second layer's check (it was already allowed here),
+  // so its outcome stays as it was; only tools that newly borrow Edit rules are held back.
+  if (tool_name === "Edit") return false;
+  if (pattern !== "Edit" && !pattern.startsWith("Edit(")) return false;
+  const raw = getFilePathFromToolInput(tool_name, tool_input) || "";
+  if (!raw) return false;
+  return (
+    isDangerousWritePath(raw) ||
+    isDangerousWritePath(resolveTargetPath(raw, ctx))
+  );
+}
+
 // Pattern matching functions now use shared library imports
 
 async function checkPattern(
   pattern: string,
   tool_name: string,
   tool_input: unknown,
+  ctx: MatchContext,
+  list: RuleList,
 ): Promise<boolean> {
   // Check for invalid Bash(**) pattern and log warning
   if (pattern === "Bash(**)" && tool_name === "Bash") {
@@ -681,7 +727,13 @@ async function checkPattern(
   }
 
   // Use shared pattern checking from pattern-matcher.ts
-  return await patternMatcherCheckPattern(pattern, tool_name, tool_input);
+  return await patternMatcherCheckPattern(
+    pattern,
+    tool_name,
+    tool_input,
+    ctx,
+    list,
+  );
 }
 
 /**
@@ -775,19 +827,6 @@ function analyzeBashCommands(
 }
 
 // analyzePatternMatches function now imported from decision-maker.ts to eliminate duplication
-
-// matchesPathPattern functionality consolidated into pattern-matcher.ts matchGitignorePattern
-// This wrapper handles path normalization and delegates to shared implementation
-function _matchesPathPattern(filePath: string, pattern: string): boolean {
-  // Normalize file path and pattern using utility functions from path-utils.ts
-  const normalizedPath = normalizePath(filePath, { makeAbsolute: true });
-  const normalizedPatternStr = normalizePattern(pattern);
-
-  // Use shared gitignore-style pattern matching from pattern-matcher.ts
-  return matchGitignorePattern(normalizedPath, normalizedPatternStr);
-}
-
-// matchGitignorePattern is now imported from pattern-matcher.ts to eliminate duplication
 
 export default hook;
 

@@ -287,6 +287,7 @@ describe("auto-approve.ts hook behavior", () => {
         [],
         [],
         "/tmp",
+        { cwd: "/test", home: "/home/u" },
         {
           classifyBashDeny: async () => ({ type: "clear" }),
           matchBashAllow: async () => {
@@ -303,12 +304,19 @@ describe("auto-approve.ts hook behavior", () => {
 
     it("rejects when the deny stage throws, so the hook's catch denies", async () => {
       await rejects(
-        processBashTool({ command: "ls -la" }, [], [], "/tmp", {
-          classifyBashDeny: async () => {
-            throw new Error("boom");
+        processBashTool(
+          { command: "ls -la" },
+          [],
+          [],
+          "/tmp",
+          { cwd: "/test", home: "/home/u" },
+          {
+            classifyBashDeny: async () => {
+              throw new Error("boom");
+            },
+            matchBashAllow: async (cmd) => ({ type: "pass", command: cmd }),
           },
-          matchBashAllow: async (cmd) => ({ type: "pass", command: cmd }),
-        }),
+        ),
       );
     });
 
@@ -337,6 +345,7 @@ describe("auto-approve.ts hook behavior", () => {
         [],
         ["Bash(ls *)"],
         "/tmp",
+        { cwd: "/test", home: "/home/u" },
         {
           classifyBashDeny: async () => {
             classified++;
@@ -362,6 +371,7 @@ describe("auto-approve.ts hook behavior", () => {
         [],
         ["Bash(ls *)"],
         "/tmp",
+        { cwd: "/test", home: "/home/u" },
         {
           classifyBashDeny: async () => {
             await parseForCollect(`echo aa-limit ${">".repeat(20000)}`);
@@ -424,13 +434,22 @@ describe("auto-approve.ts hook behavior", () => {
       const hook = autoApproveHook;
 
       const context = createPreToolUseContextFor(autoApproveHook, "Edit", {
-        file_path: "/path/to/file.ts",
+        file_path: "/test/path/to/file.ts",
         old_string: "old",
         new_string: "new",
       });
       await hook.run(context);
 
       context.assertAllow();
+
+      // Edit(**) means <cwd>/**: a path outside the hook input cwd is not covered
+      const outside = createPreToolUseContextFor(autoApproveHook, "Edit", {
+        file_path: "/path/to/file.ts",
+        old_string: "old",
+        new_string: "new",
+      });
+      await hook.run(outside);
+      outside.assertAsk();
     });
 
     it("should deny Write tool with deny pattern", async () => {
@@ -441,12 +460,20 @@ describe("auto-approve.ts hook behavior", () => {
       const hook = autoApproveHook;
 
       const context = createPreToolUseContextFor(autoApproveHook, "Write", {
-        file_path: "/path/to/.env",
+        file_path: "/test/path/to/.env",
         content: "SECRET=value",
       });
       await hook.run(context);
 
       context.assertDeny();
+
+      // Write(**) means <cwd>/**: a path outside the hook input cwd is not denied by it
+      const outside = createPreToolUseContextFor(autoApproveHook, "Write", {
+        file_path: "/path/to/.env",
+        content: "SECRET=value",
+      });
+      await hook.run(outside);
+      outside.assertAsk();
     });
 
     it("should handle Read tool", async () => {
@@ -455,11 +482,18 @@ describe("auto-approve.ts hook behavior", () => {
       const hook = autoApproveHook;
 
       const context = createPreToolUseContextFor(autoApproveHook, "Read", {
-        file_path: "/path/to/README.md",
+        file_path: "/test/path/to/README.md",
       });
       await hook.run(context);
 
       context.assertAllow();
+
+      // Read(**) means <cwd>/**: a path outside the hook input cwd is not covered
+      const outside = createPreToolUseContextFor(autoApproveHook, "Read", {
+        file_path: "/path/to/README.md",
+      });
+      await hook.run(outside);
+      outside.assertAsk();
     });
   });
 
@@ -971,12 +1005,19 @@ describe("auto-approve.ts hook behavior", () => {
       const hook = autoApproveHook;
 
       const context = createPreToolUseContextFor(autoApproveHook, "Read", {
-        file_path: "/path/to/file.txt",
+        file_path: "/test/path/to/file.txt",
       });
       await hook.run(context);
 
-      // Should allow all Read operations
+      // Should allow all Read operations under cwd
       context.assertAllow();
+
+      // Outside the hook input cwd, Read(**) does not apply
+      const outside = createPreToolUseContextFor(autoApproveHook, "Read", {
+        file_path: "/path/to/file.txt",
+      });
+      await hook.run(outside);
+      outside.assertAsk();
     });
 
     it("should accept Edit(**) pattern", async () => {
@@ -987,14 +1028,23 @@ describe("auto-approve.ts hook behavior", () => {
       const hook = autoApproveHook;
 
       const context = createPreToolUseContextFor(autoApproveHook, "Edit", {
-        file_path: "/path/to/file.txt",
+        file_path: "/test/path/to/file.txt",
         old_string: "old",
         new_string: "new",
       });
       await hook.run(context);
 
-      // Should allow all Edit operations
+      // Should allow all Edit operations under cwd
       context.assertAllow();
+
+      // Outside the hook input cwd, Edit(**) does not apply
+      const outside = createPreToolUseContextFor(autoApproveHook, "Edit", {
+        file_path: "/path/to/file.txt",
+        old_string: "old",
+        new_string: "new",
+      });
+      await hook.run(outside);
+      outside.assertAsk();
     });
 
     it("should accept Glob(./**) pattern", async () => {
@@ -1511,7 +1561,7 @@ describe("auto-approve.ts hook behavior", () => {
       envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify([]));
       envHelper.set("CLAUDE_TEST_DENY", JSON.stringify(["Write(**)"]));
       const context = createPreToolUseContextFor(autoApproveHook, "Write", {
-        file_path: "/path/to/.env",
+        file_path: "/test/path/to/.env",
         content: "SECRET=value",
       });
       await invokeRun(autoApproveHook, context);
@@ -1529,9 +1579,12 @@ describe("data heredoc bodies on the deny stage (F3b)", () => {
     deny: string[] = [],
     allow: string[] = [],
   ) =>
-    (await processBashTool({ command }, deny, allow, "/tmp")).commands.map(
-      (c) => c.type,
-    );
+    (
+      await processBashTool({ command }, deny, allow, "/tmp", {
+        cwd: "/test",
+        home: "/home/u",
+      })
+    ).commands.map((c) => c.type);
 
   it("does not run the home guard on a data body", async () => {
     const types = await typesOf(`cat <<'EOF' > t.ts\n${R} $HOME/x\nEOF`);
@@ -1572,5 +1625,148 @@ describe("data heredoc bodies on the deny stage (F3b)", () => {
       const types = await typesOf(command, [], ["Bash(cat *)", "Bash(tee *)"]);
       ok(!types.includes("allow"), `${command}: ${JSON.stringify(types)}`);
     }
+  });
+});
+
+describe("Write is judged by Edit rules and relative patterns anchor at cwd", () => {
+  const envHelper = new EnvironmentHelper();
+  beforeEach(() => {
+    envHelper.set("CLAUDE_TEST_MODE", "1");
+  });
+  afterEach(() => {
+    envHelper.restore();
+  });
+
+  type Verdict = "allow" | "ask" | "deny" | "pass";
+  const rows: Array<
+    [string[], string[], string, Record<string, unknown>, Verdict]
+  > = [
+    [["Edit(/repo/**)"], [], "Write", { file_path: "/repo/a.ts" }, "allow"],
+    [["Edit(/repo/**)"], [], "Write", { file_path: "/repo/.env" }, "ask"],
+    [
+      ["Edit(/repo/**)"],
+      [],
+      "Write",
+      { file_path: "/repo/x/credentials.json" },
+      "ask",
+    ],
+    [
+      ["Edit(/repo/**)"],
+      [],
+      "Write",
+      { file_path: "/repo/.aws/config" },
+      "ask",
+    ],
+    [["Edit(/repo/**)"], [], "Edit", { file_path: "/repo/.env" }, "allow"],
+    [["Edit(./**)"], [], "Write", { file_path: ".env" }, "ask"],
+    [["Write(/repo/**)"], [], "Write", { file_path: "/repo/.env" }, "allow"],
+    [
+      ["Edit(/repo/**)"],
+      ["Edit(/repo/secret/**)"],
+      "Write",
+      { file_path: "/repo/secret/a" },
+      "deny",
+    ],
+    [["Edit(!.git/**)"], [], "Edit", { file_path: "/etc/hosts" }, "ask"],
+    [["Edit(!.git/**)"], [], "Edit", { file_path: "/repo/src/a.ts" }, "ask"],
+    [
+      ["Edit(.tmp/sessions/*/*.md)"],
+      [],
+      "Write",
+      { file_path: "/repo/.tmp/sessions/a/research.md" },
+      "allow",
+    ],
+    [
+      ["Edit(.tmp/sessions/*/*.md)"],
+      [],
+      "Write",
+      { file_path: "/repo/.tmp/sessions/../../x.md" },
+      "ask",
+    ],
+    [
+      ["Edit(.tmp/sessions/*/*.md)"],
+      [],
+      "Write",
+      { file_path: "/other/.tmp/sessions/a/plan.md" },
+      "ask",
+    ],
+    [
+      ["Edit(.tmp/sessions/*/*.md)"],
+      [],
+      "Write",
+      { file_path: "/repo/.tmp/sessions/a/reviewer-runs.log" },
+      "ask",
+    ],
+    [
+      ["Edit(.tmp/sessions/*/*.md)"],
+      [],
+      "Write",
+      { file_path: "/repo/x.tmp/sessions/a/evil.md" },
+      "ask",
+    ],
+    [["Edit(~/**)"], [], "Write", { file_path: "~/.ssh/config" }, "ask"],
+    [
+      ["Edit(/repo/**)"],
+      [],
+      "NotebookEdit",
+      { notebook_path: "/repo/.env" },
+      "ask",
+    ],
+    [
+      ["Edit(/repo/**)"],
+      [],
+      "MultiEdit",
+      { file_path: "/repo/.aws/config" },
+      "ask",
+    ],
+    [["Edit"], [], "Write", { file_path: "/repo/a.ts" }, "allow"],
+    [["Edit"], [], "Write", { file_path: "/repo/.env" }, "ask"],
+    [["Read(./**)"], [], "Read", { file_path: "/repo/src/a.ts" }, "allow"],
+    // Grep is a smartPassTool: with no matching rule the hook gives no decision.
+    [["Grep(./**)"], [], "Grep", { path: "/etc", pattern: "x" }, "pass"],
+  ];
+
+  for (const [allow, deny, tool, input, expected] of rows) {
+    it(`${tool} ${JSON.stringify(input)} with allow ${JSON.stringify(allow)} deny ${JSON.stringify(deny)} -> ${expected}`, async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(allow));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify(deny));
+      const context = createPreToolUseContextFor(
+        autoApproveHook,
+        tool as keyof ToolSchema,
+        input,
+        { cwd: "/repo" },
+      );
+      await invokeRun(autoApproveHook, context);
+      switch (expected) {
+        case "allow":
+          context.assertAllow();
+          break;
+        case "ask":
+          context.assertAsk();
+          break;
+        case "deny":
+          context.assertDeny();
+          break;
+        case "pass":
+          context.assertPass();
+          break;
+      }
+    });
+  }
+
+  it("does not infer sed -i from a relative Edit rule that only matches above cwd", async () => {
+    envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Edit(src/**)"]));
+    envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+    const context = createPreToolUseContextFor(
+      autoApproveHook,
+      "Bash",
+      { command: "sed -i 's/a/b/' config/a.json" },
+      { cwd: "/r/src/proj" },
+    );
+    await invokeRun(autoApproveHook, context);
+    const allowed = context.jsonCalls.some(
+      (call: any) => call?.hookSpecificOutput?.permissionDecision === "allow",
+    );
+    strictEqual(allowed, false);
   });
 });

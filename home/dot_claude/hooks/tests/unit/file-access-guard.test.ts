@@ -1,6 +1,6 @@
 #!/usr/bin/env node --test
 
-import { deepStrictEqual, ok } from "node:assert";
+import { deepStrictEqual, ok, strictEqual } from "node:assert";
 import {
   lstatSync,
   mkdirSync,
@@ -19,6 +19,7 @@ import fileAccessGuardHook, {
   judge,
   type JudgeContext,
 } from "../../implementations/file-access-guard.ts";
+import { getChezmoiSourcePath } from "../../lib/chezmoi-utils.ts";
 import { collectTempRoots } from "../../lib/temp-roots.ts";
 import { deriveDefaultWorkflowDir } from "../../lib/workflow-paths.ts";
 import {
@@ -1356,6 +1357,7 @@ describe("judge: the system-directory deny list", () => {
     systemPaths: [],
     caseInsensitive: false,
     cwdPhysical: undefined,
+    match: { cwd: "/nonexistent/repo", home: "/nonexistent/home" },
     ...over,
   });
 
@@ -1378,5 +1380,109 @@ describe("judge: the system-directory deny list", () => {
       judge("/ETC/x", ctxWith({ systemPaths: ["/etc"] }), false).step,
       "default",
     );
+  });
+});
+
+describe("chezmoi redirection and allow patterns (ADR-0027 invariant)", () => {
+  // Own helper: the file's other envHelper lives inside another describe.
+  const envHelper = new EnvironmentHelper();
+  let base: string;
+  let repo: string;
+  let home: string;
+  beforeEach(() => {
+    mkdirSync(join(process.cwd(), ".tmp"), { recursive: true });
+    base = realpathSync(
+      mkdtempSync(join(process.cwd(), ".tmp", "fag-chezmoi-")),
+    );
+    repo = join(base, "repo");
+    home = join(base, "home");
+    mkdirSync(repo);
+    mkdirSync(home);
+    writeFileSync(join(repo, ".chezmoiroot"), "home\n");
+    envHelper.set("HOME", home);
+  });
+  // "flat": the source sits where getChezmoiSourcePath looks (directly under repoRoot).
+  const useFlatLayout = () => writeFileSync(join(repo, "zshrc"), "# zshrc\n");
+  // "chezmoiroot": this repository's layout; the lookup does not follow .chezmoiroot.
+  const useChezmoirootLayout = () => {
+    mkdirSync(join(repo, "home"));
+    writeFileSync(join(repo, "home", "dot_zshrc"), "# zshrc\n");
+  };
+  afterEach(() => {
+    envHelper.restore();
+    rmSync(base, { recursive: true, force: true });
+  });
+
+  const remainingEditAllows = [
+    "Edit(~/.config/**)",
+    "Edit(~/.local/**)",
+    "Edit(~/workspace/**)",
+    "Edit(/tmp/**)",
+  ];
+  const ctxFor = (allowPatterns: string[]): JudgeContext => ({
+    category: "write",
+    allowPatterns,
+    repoRoot: repo,
+    homeDir: home,
+    additionalDirs: [],
+    tempRoots: [],
+    workflowDirRoots: [],
+    systemPaths: [],
+    caseInsensitive: false,
+    cwdPhysical: undefined,
+    match: { cwd: repo, home },
+  });
+
+  it("flat layout: the lookup finds the source", () => {
+    useFlatLayout();
+    strictEqual(
+      typeof getChezmoiSourcePath(join(home, ".zshrc"), repo),
+      "string",
+    );
+  });
+
+  it("flat layout: redirects an edit of ~/.zshrc when no allow pattern names it", () => {
+    useFlatLayout();
+    const verdict = judge(
+      join(home, ".zshrc"),
+      ctxFor(remainingEditAllows),
+      false,
+    );
+    deepStrictEqual([verdict.allowed, verdict.step], [false, "6-chezmoi"]);
+  });
+
+  it("flat layout: an allow pattern for ~/.zshrc is judged before the redirection", () => {
+    useFlatLayout();
+    const verdict = judge(
+      join(home, ".zshrc"),
+      ctxFor([...remainingEditAllows, "Edit(~/.zshrc)"]),
+      false,
+    );
+    deepStrictEqual([verdict.allowed, verdict.step], [true, "5-pattern"]);
+  });
+
+  it("chezmoiroot layout: the lookup does not find the source", () => {
+    useChezmoirootLayout();
+    strictEqual(getChezmoiSourcePath(join(home, ".zshrc"), repo), undefined);
+  });
+
+  it("chezmoiroot layout: an edit of ~/.zshrc is denied by default when no allow pattern names it", () => {
+    useChezmoirootLayout();
+    const verdict = judge(
+      join(home, ".zshrc"),
+      ctxFor(remainingEditAllows),
+      false,
+    );
+    deepStrictEqual([verdict.allowed, verdict.step], [false, "default"]);
+  });
+
+  it("chezmoiroot layout: an allow pattern for ~/.zshrc lets the edit through", () => {
+    useChezmoirootLayout();
+    const verdict = judge(
+      join(home, ".zshrc"),
+      ctxFor([...remainingEditAllows, "Edit(~/.zshrc)"]),
+      false,
+    );
+    deepStrictEqual([verdict.allowed, verdict.step], [true, "5-pattern"]);
   });
 });

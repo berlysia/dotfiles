@@ -11,7 +11,7 @@ import {
   isDotfilesRepository,
 } from "../lib/chezmoi-utils.ts";
 import { createDenyResponse } from "../lib/context-helpers.ts";
-import { expandTilde, getHomeDir } from "../lib/path-utils.ts";
+import { getHomeDir, type MatchContext } from "../lib/path-utils.ts";
 import {
   checkParentSegments,
   errnoOf,
@@ -20,7 +20,7 @@ import {
   resolvePhysicalPath,
 } from "../lib/path-containment.ts";
 import { matchGitignorePattern } from "../lib/pattern-matcher.ts";
-import { getProjectRoot } from "../lib/project-root.ts";
+import { createMatchContext, getProjectRoot } from "../lib/project-root.ts";
 import { collectTempRoots } from "../lib/temp-roots.ts";
 import { resolveWorkflowDir } from "../lib/workflow-resolve.ts";
 import type {
@@ -88,11 +88,12 @@ const hook = defineHook({
       );
       const cwdPhysical = cwdResolved.ok ? cwdResolved.path : undefined;
 
+      const homeDir = getHomeDir();
       const ctx: JudgeContext = {
         category: TOOL_CATEGORY[tool_name],
         allowPatterns,
         repoRoot,
-        homeDir: getHomeDir(),
+        homeDir,
         additionalDirs: additionalDirs.flatMap((addDir) => {
           if (addDir.startsWith("/")) return [resolve(addDir)];
           return cwdPhysical === undefined
@@ -104,6 +105,7 @@ const hook = defineHook({
         systemPaths: SYSTEM_PATHS,
         caseInsensitive: process.platform === "darwin",
         cwdPhysical,
+        match: { ...createMatchContext(context.input.cwd), home: homeDir },
       };
 
       // Check each path
@@ -435,6 +437,7 @@ export interface JudgeContext {
   systemPaths: string[]; // SYSTEM_PATHS in production; tests may narrow it
   caseInsensitive: boolean; // process.platform === "darwin" in production
   cwdPhysical: string | undefined; // resolvePhysicalPath(CLAUDE_TEST_CWD || process.cwd()), undefined when it cannot be resolved
+  match: MatchContext; // anchors for permission pattern matching; home follows homeDir
 }
 
 export interface Judgement {
@@ -542,7 +545,7 @@ export function judge(
       }
       if (
         ctx.category === "write" &&
-        checkAllowPatterns(form, ctx.allowPatterns)
+        checkAllowPatterns(form, ctx.allowPatterns, ctx.match)
       ) {
         return { allowed: true, step: "4-additional" };
       }
@@ -551,7 +554,7 @@ export function judge(
 
   // 5. Explicit permissions.allow match. Patterns are never realpath'd: a
   // symlink the agent can plant must not move the allowed range.
-  if (checkAllowPatterns(form, ctx.allowPatterns)) {
+  if (checkAllowPatterns(form, ctx.allowPatterns, ctx.match)) {
     return { allowed: true, step: "5-pattern" };
   }
 
@@ -707,21 +710,19 @@ function validatePath(path: string, ctx: JudgeContext): PathValidationResult {
 function checkAllowPatterns(
   filePath: string,
   allowPatterns: string[],
+  match: MatchContext,
 ): boolean {
   for (const pattern of allowPatterns) {
     // Extract path pattern from tool pattern like "Read(path/pattern)"
-    const match = pattern.match(/^[^(]+\((.+)\)$/);
-    if (match?.[1]) {
-      const pathPattern = match[1];
-      if (matchGitignorePattern(filePath, expandTilde(pathPattern))) {
+    const extracted = pattern.match(/^[^(]+\((.+)\)$/);
+    if (extracted?.[1]) {
+      if (matchGitignorePattern(filePath, extracted[1], match, "grant")) {
         return true;
       }
     }
   }
   return false;
 }
-
-// expandTilde function is now imported from path-utils.ts to eliminate duplication
 
 function join(...paths: string[]): string {
   return paths.join("/").replace(/\/+/g, "/");
