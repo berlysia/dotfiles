@@ -80,7 +80,13 @@ const hook = defineHook({
       }
 
       const homeDir = getHomeDir();
-      const roots = createSettingsRoots(context.input.cwd, homeDir);
+      const roots = createSettingsRoots(
+        {
+          cwd: context.input.cwd,
+          transcriptPath: context.input.transcript_path,
+        },
+        homeDir,
+      );
       const settingsFiles = getSettingsFiles(repoRoot, roots);
       const additionalDirs = getAdditionalDirectories(settingsFiles);
       const allowPatterns = getAllowPatterns(settingsFiles, tool_name);

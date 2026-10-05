@@ -17,6 +17,7 @@ import autoApproveHook, {
 } from "../../implementations/auto-approve.ts";
 import { parseForCollect } from "../../lib/bash-parser.ts";
 import { BOUNDARY_DENY_GUIDANCE } from "../../lib/context-helpers.ts";
+import { encodeSessionDirName } from "../../lib/project-root.ts";
 import { sourced } from "../sourced-rules.ts";
 import {
   ConsoleCapture,
@@ -1856,6 +1857,7 @@ describe("a /path rule read from a settings file anchors at its source", () => {
     tool: "Write" | "Edit",
     file_path: string,
     cwd: string,
+    transcript_path?: string,
   ) => {
     const input =
       tool === "Write"
@@ -1863,6 +1865,7 @@ describe("a /path rule read from a settings file anchors at its source", () => {
         : { file_path, old_string: "a", new_string: "b" };
     const context = createPreToolUseContextFor(autoApproveHook, tool, input, {
       cwd,
+      transcript_path,
     });
     await invokeRun(autoApproveHook, context);
     return isDenied(context);
@@ -1890,5 +1893,23 @@ describe("a /path rule read from a settings file anchors at its source", () => {
     );
     strictEqual(await decide("Write", "/x/a", project), false);
     strictEqual(await decide("Write", join(tmpHome, "x", "a"), project), false);
+  });
+  it("moves the anchor into a worktree the transcript directory names", async () => {
+    const worktree = join(project, ".claude", "worktrees", "w");
+    const transcript = join(
+      tmpHome,
+      ".claude",
+      "projects",
+      encodeSessionDirName(worktree),
+      "s.jsonl",
+    );
+    strictEqual(
+      await decide("Write", join(worktree, "sub", "x"), worktree, transcript),
+      true,
+    );
+    strictEqual(
+      await decide("Write", join(project, "sub", "x"), worktree, transcript),
+      false,
+    );
   });
 });

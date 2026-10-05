@@ -308,14 +308,14 @@ export function createPreToolUseContextFor<
   _hook: H,
   tool_name: Name,
   tool_input: Input,
-  overrides: ContextOverrides = {},
+  overrides: ContextOverrides & { transcript_path?: string } = {},
 ): Parameters<H["run"]>[0] & MockHookContext<{ PreToolUse: true }> {
   type Ctx = Parameters<H["run"]>[0];
   const baseInput = {
     hook_event_name: "PreToolUse" as const,
     cwd: overrides.cwd ?? "/test",
     session_id: overrides.session_id ?? TEST_SESSION_ID,
-    transcript_path: "/test/transcript",
+    transcript_path: overrides.transcript_path ?? "/test/transcript",
     tool_name,
     tool_input,
   } as ExtractAllHookInputsForEvent<"PreToolUse">;

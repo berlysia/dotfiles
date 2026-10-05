@@ -73,7 +73,10 @@ const hook = defineHook({
     }
 
     // Get permission lists
-    const roots = createSettingsRoots(context.input.cwd);
+    const roots = createSettingsRoots({
+      cwd: context.input.cwd,
+      transcriptPath: context.input.transcript_path,
+    });
     const { allowList, denyList } = getPermissionLists(tool_name, roots);
     const matchContext = createMatchContext(context.input.cwd);
 

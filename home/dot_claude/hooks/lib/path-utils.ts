@@ -65,7 +65,7 @@ export interface ResolvedPattern {
 // A base and a target only line up when both went through the same
 // normalization, so cwd and home are normalized here too: a deny anchored at
 // "/repo/." would otherwise miss "/repo/.env".
-function normalizeAbsolute(path: string): string {
+export function normalizeAbsolute(path: string): string {
   const stripped = posix.normalize(path).replace(/\/+$/, "");
   return stripped === "" ? "/" : stripped;
 }
