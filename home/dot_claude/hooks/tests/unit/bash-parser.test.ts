@@ -1,6 +1,6 @@
 #!/usr/bin/env -S bun test
 
-import { deepStrictEqual, ok, strictEqual } from "node:assert";
+import { deepStrictEqual, ok, strictEqual, throws } from "node:assert";
 import { describe, it } from "node:test";
 
 // expect関数のヘルパー（node:assertのラッパー）
@@ -35,15 +35,19 @@ const expect = (value: unknown) => ({
 import type { Tree } from "web-tree-sitter";
 import {
   collectExecutableTexts,
+  DEFAULT_PARSE_BUDGET_MS,
   type ExtractedCommands,
   extractBaseCommands,
   extractCommandsStructured,
+  getParseBudgetMs,
   MAX_COMMAND_CHARS,
   parseBashCommand,
   parseForCollect,
   parserGiveUpMark,
   parserGiveUpReasonSince,
+  setParseBudgetMs,
 } from "../../lib/bash-parser.ts";
+import { withParseBudget } from "../support/parse-budget.ts";
 
 describe("bash-parser", () => {
   describe("extractCommandsStructured", () => {
@@ -605,6 +609,37 @@ describe("for-loop body splitting (Issue #219 H)", () => {
   });
 });
 
+describe("parse budget (spec K11)", () => {
+  it("keeps the production default at 100 ms", () => {
+    strictEqual(DEFAULT_PARSE_BUDGET_MS, 100);
+  });
+
+  it("rejects a budget that is negative or not finite", () => {
+    const before = getParseBudgetMs();
+    for (const bad of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      throws(() => setParseBudgetMs(bad), RangeError);
+    }
+    strictEqual(getParseBudgetMs(), before);
+  });
+
+  it("applies a set budget to the next parse", async () => {
+    const before = getParseBudgetMs();
+    setParseBudgetMs(0);
+    try {
+      // Budget 0 cuts any parse, even a short one. The input is unique to
+      // this test because a cut input stays cut for the whole process.
+      strictEqual(await parseForCollect("echo budget-zero-unique"), null);
+    } finally {
+      setParseBudgetMs(before);
+    }
+    strictEqual(getParseBudgetMs(), before);
+  });
+
+  it("runs every test process with the patient budget from the preload", () => {
+    strictEqual(getParseBudgetMs(), 10_000);
+  });
+});
+
 describe("parser limits (Issue #235)", () => {
   it("does not analyse a command longer than 32,000 characters", async () => {
     const command = `echo ${"a".repeat(MAX_COMMAND_CHARS - 4)}`;
@@ -641,9 +676,9 @@ describe("parser limits (Issue #235)", () => {
   ] as const) {
     it(`gives up within the time budget on ${name}`, async () => {
       const mark = parserGiveUpMark();
-      const start = performance.now();
-      const result = await extractCommandsStructured(command);
-      ok(performance.now() - start < 1000);
+      const result = await withParseBudget(0, () =>
+        extractCommandsStructured(command),
+      );
       strictEqual(result.parsingMethod, "fallback");
       ok(parserGiveUpReasonSince(mark)?.includes("within 100 ms"));
     });
@@ -651,7 +686,9 @@ describe("parser limits (Issue #235)", () => {
 
   it("keeps the parser usable after a cancelled parse", async () => {
     strictEqual(
-      await parseForCollect(`echo limit-c ${">".repeat(20000)}`),
+      await withParseBudget(0, () =>
+        parseForCollect(`echo limit-c ${">".repeat(20000)}`),
+      ),
       null,
     );
     deepStrictEqual(await extractCommandsStructured("echo after-limit-c"), {
@@ -663,11 +700,9 @@ describe("parser limits (Issue #235)", () => {
 
   it("does not parse an input again after giving up on it", async () => {
     const command = `echo limit-d ${">".repeat(20000)}`;
-    strictEqual(await parseForCollect(command), null);
+    strictEqual(await withParseBudget(0, () => parseForCollect(command)), null);
     const mark = parserGiveUpMark();
-    const start = performance.now();
     strictEqual(await parseForCollect(command), null);
-    ok(performance.now() - start < 50);
     ok(parserGiveUpReasonSince(mark)?.includes("within 100 ms"));
   });
 

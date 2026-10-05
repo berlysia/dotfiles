@@ -19,6 +19,7 @@ import {
   APPROVAL_QUESTION_TEXT,
   buildApprovalQuestions,
 } from "../../lib/workflow-approval.ts";
+import { withParseBudget } from "../support/parse-budget.ts";
 import {
   computeDocumentHash,
   SPEC_NORMALIZERS,
@@ -757,9 +758,7 @@ describe("document-workflow-guard.ts hook behavior", () => {
       const context = createPreToolUseContextFor(hook, "Bash", {
         command: `for f in a; do tee src/a.ts; done; echo ${">".repeat(20000)}`,
       });
-      const start = performance.now();
-      await invokeRun(hook, context);
-      ok(performance.now() - start < 1000);
+      await withParseBudget(0, () => invokeRun(hook, context));
       context.assertDeny();
       const reason =
         context.jsonCalls[0]?.hookSpecificOutput?.permissionDecisionReason;

@@ -18,6 +18,7 @@ import autoApproveHook, {
 import { parseForCollect } from "../../lib/bash-parser.ts";
 import { BOUNDARY_DENY_GUIDANCE } from "../../lib/context-helpers.ts";
 import { encodeSessionDirName } from "../../lib/project-root.ts";
+import { withParseBudget } from "../support/parse-budget.ts";
 import { sourced } from "../sourced-rules.ts";
 import {
   ConsoleCapture,
@@ -391,7 +392,9 @@ describe("auto-approve.ts hook behavior", () => {
         testRoots,
         {
           classifyBashDeny: async () => {
-            await parseForCollect(`echo aa-limit ${">".repeat(20000)}`);
+            await withParseBudget(0, () =>
+              parseForCollect(`echo aa-limit ${">".repeat(20000)}`),
+            );
             return { type: "clear" };
           },
           matchBashAllow: async (cmd) => ({

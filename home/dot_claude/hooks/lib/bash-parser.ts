@@ -126,7 +126,22 @@ export const MAX_META_SCAN_CHARS = 2_000_000;
 // A backstop inside the length limit: tree-sitter's error recovery is
 // superlinear on some malformed inputs. Wall clock, so load can trip it; the
 // only outcome is a deny.
-const PARSE_BUDGET_MS = 100;
+export const DEFAULT_PARSE_BUDGET_MS = 100;
+// Tests replace the budget through the setter below (a patient value for the
+// whole run, 0 around a parse they mean to cut). Production code never calls
+// it, and a test-layout check under tests/unit/ enforces that.
+let parseBudgetMs = DEFAULT_PARSE_BUDGET_MS;
+
+export function setParseBudgetMs(ms: number): void {
+  if (!Number.isFinite(ms) || ms < 0) {
+    throw new RangeError(`parse budget must be a finite number >= 0: ${ms}`);
+  }
+  parseBudgetMs = ms;
+}
+
+export function getParseBudgetMs(): number {
+  return parseBudgetMs;
+}
 
 type ParserGiveUpKind = "length" | "scan" | "time";
 
@@ -212,7 +227,7 @@ async function parseBounded(command: string): Promise<TsTree | null> {
   // An init failure rejects as before; it is not a give-up.
   const parser = await ensureTreeSitter();
   const start = performance.now();
-  const overBudget = () => performance.now() - start > PARSE_BUDGET_MS;
+  const overBudget = () => performance.now() - start > parseBudgetMs;
   let tree: TsTree | null = null;
   try {
     tree = parser.parse(command, null, {

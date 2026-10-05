@@ -64,3 +64,12 @@ if (!process.env.CLAUDE_LOGS_DIR) {
     }
   });
 }
+
+// lib/bash-parser.ts gives up on a parse after 100ms of wall clock. Under a
+// loaded run that trips on ordinary commands and flips allow into deny, so
+// every test process gets a patient budget. Tests that mean to cut a parse
+// set 0 around that call (tests/support/parse-budget.ts). Imported last: the
+// module has no static runtime imports, so loading it here initialises
+// neither tree-sitter nor logging.
+const { setParseBudgetMs } = await import("../lib/bash-parser.ts");
+setParseBudgetMs(10_000);
