@@ -163,6 +163,13 @@ describe("permission-auto-approve.ts hook behavior", () => {
       "git-worktree-create --no-install feat/new-feature",
       "git-worktree-create feat/new-feature --no-install",
       "git-worktree-cleanup",
+      "git-worktree-cleanup --non-interactive",
+      "git-worktree-cleanup --yes fix/some-branch",
+      // one per entry of ALLOWED_REDIRECTS in lib/safe-command-list.ts: the cleanup pattern lists them itself
+      "git-worktree-cleanup -n 2>&1",
+      "git-worktree-cleanup -n >/dev/null",
+      "git-worktree-cleanup -n 2>/dev/null",
+      "git-worktree-cleanup -n </dev/null",
       // Dev tool execution
       "npx prettier --check src/",
       "pnpx vitest run",
@@ -386,6 +393,22 @@ describe("permission-auto-approve.ts hook behavior", () => {
       "sqlite3 data/app.db 'SELECT * FROM users'",
       // env runs its arguments; the whole-text split refuses it (spec K1)
       "env",
+      // git-worktree-cleanup: only the flags and target shapes listed in the pattern are allowed.
+      // --discard-tmp deletes files git does not track; a person decides (docs/commands/git-worktree-cleanup.md)
+      "git-worktree-cleanup --discard-tmp=0123456789ab fix/some-branch",
+      "git-worktree-cleanup -n --discard-tmp=0123456789ab fix/some-branch",
+      "git-worktree-cleanup fix/some-branch --discard-tmp=0123456789ab",
+      'git-worktree-cleanup --discard-"tmp"=0123456789ab fix/some-branch',
+      "git-worktree-cleanup '--discard-tmp=0123456789ab' fix/some-branch",
+      // a flag the pattern does not list, whatever the script does with it
+      "git-worktree-cleanup --force fix/some-branch",
+      "git-worktree-cleanup -D fix/some-branch",
+      // zsh extendedglob expands ^x to file names
+      "git-worktree-cleanup ^x",
+      // allowed before the pattern listed its arguments; now one more confirmation
+      "git-worktree-cleanup -- fix/some-branch",
+      "git-worktree-cleanup fix/a:b",
+      "git-worktree-cleanup --discard-{tmp,}=0 fix/some-branch",
     ];
 
     for (const cmd of uncertainCommands) {

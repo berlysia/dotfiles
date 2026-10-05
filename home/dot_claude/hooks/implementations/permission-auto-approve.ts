@@ -171,7 +171,15 @@ const SAFE_BASH_PATTERNS = [
   // Dev tool execution (trusted tools only, not arbitrary packages)
   /^(npx|pnpx|bunx)\s+(--no\s+)?(vitest|jest|prettier|eslint|oxlint|oxfmt|tsc|tsgo|knip|stylelint|biome)\b/,
   // Git worktree management (custom script; create also installs dependencies, see docs/commands/git-worktree-create.md)
-  /^git-worktree-(create|cleanup)\b/,
+  /^git-worktree-create\b/,
+  // cleanup: allowed only when every argument is a flag listed here, a redirect scanSafeList keeps in a
+  // simple command, or a target that does not start with `-`. A flag the script gains later, such as
+  // --discard-tmp=<id> (it deletes files git does not track), is then left to the next layer without
+  // a change here. The lookahead keeps the arguments out of the matched part and starts at one
+  // position; its tokens cannot contain the blanks that separate them, so it reads the text once.
+  // Because it reads to the end, legacyStaticBashAllow no longer marks a compound command that
+  // starts with cleanup as scan-demoted.
+  /^git-worktree-cleanup\b(?=(?:[ \t]+(?:--yes|-y|--non-interactive|-n|--help|-h|2>&1|>\/dev\/null|2>\/dev\/null|<\/dev\/null|[A-Za-z0-9_./@+][A-Za-z0-9_./@+-]*))*[ \t]*$)/,
   // APM (skill package manager, local operations only)
   /^apm\s+(install|search|pack|deps|list|info|update|remove|uninstall|--help|--version)\b/,
 ];

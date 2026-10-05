@@ -9,7 +9,7 @@ Remove git worktrees whose work is finished, without touching worktrees that oth
 ## 使用方法
 
 ```bash
-git-worktree-cleanup [--yes | --non-interactive] [--] [<worktree-path | branch>...]
+git-worktree-cleanup [--yes | --non-interactive] [--discard-tmp=<id>]... [--] [<worktree-path | branch>...]
 git-worktree-cleanup --help
 ```
 
@@ -20,52 +20,62 @@ git-worktree-cleanup --help
 ## オプション
 
 - `--yes`, `-y`: 確認のうち「commit がすべて origin にあり、merged と判定できない」ものだけに yes と答える
-- `--non-interactive`, `-n`: 確認せず、確認対象はすべて残す
+- `--non-interactive`, `-n`: 確認せず、確認対象はすべて残す（`--discard-tmp=<id>` が答えるものを除く）
+- `--discard-tmp=<id>`: 名指しした target のうち、分類が ASK_TMP で、ファイル一覧の id が `<id>` と一致するものに yes と答える。繰り返せる。target が無い、id が 12 桁の 16 進数でない、のどちらも終了コード 1。短縮形は無い。offline でも働く
 - `--help`, `-h`: ヘルプを表示
 
-`--yes` と `--non-interactive` は後に書いた方が有効です。stdin が TTY でない場合（パイプ・`</dev/null`・エージェントの Bash 実行など）は `--non-interactive` と同じ動作になります。確認を出すのは TTY のときだけです。
+`--yes` と `--non-interactive` は後に書いた方が有効です。stdin が TTY でない場合（パイプ・`</dev/null`・エージェントの Bash 実行など）は `--non-interactive` と同じ動作になります。確認を出すのは TTY のときだけです。`--discard-tmp=<id>` は TTY の有無に関係なく働きます。
 
 ## 分類
 
 各 worktree を上から順に評価し、最初に当たった段で確定します。判定に使う git コマンドが失敗したときは、その段の保守側（KEEP か ASK_HUMAN）に倒れます。
 
-| 段  | 条件                                                                                               | 分類      |
-| --- | -------------------------------------------------------------------------------------------------- | --------- |
-| 1   | locked（`git worktree lock`）                                                                      | KEEP      |
-| 2   | 使用中（自分のプロセスの cwd が worktree 自身かその配下、または実行者の cwd）                      | KEEP      |
-| 3   | 未 commit の変更・untracked がある                                                                 | KEEP      |
-| 4   | branch の `origin/<branch>` があり、それより先行している                                           | KEEP      |
-| 5   | 使用中を検出できない、または `.tmp/` `.entire/` に ignored ファイルがある                          | ASK_HUMAN |
-| 6   | 作業開始直後（worktree の HEAD reflog が空・読めない、または全 entry が現在の HEAD と同じ commit） | ASK_HUMAN |
-| 7   | merged（tip が `origin/<main>` の祖先、rebase merge、squash merge のいずれか）                     | REMOVE    |
-| 8   | origin のどの ref にも無い commit がある                                                           | ASK_HUMAN |
-| 9   | それ以外（commit はすべて origin にあるが merged と判定できない。detached HEAD で未 merge を含む） | ASK       |
+| 段  | 条件                                                                                               | 分類                                                                                                                                |
+| --- | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | locked（`git worktree lock`）                                                                      | KEEP                                                                                                                                |
+| 2   | 使用中（自分のプロセスの cwd が worktree 自身かその配下、または実行者の cwd）                      | KEEP                                                                                                                                |
+| 3   | 未 commit の変更・untracked がある                                                                 | KEEP                                                                                                                                |
+| 4   | branch の `origin/<branch>` があり、それより先行している                                           | KEEP                                                                                                                                |
+| 5a  | 使用中を検出できない                                                                               | ASK_HUMAN                                                                                                                           |
+| 5b  | `.tmp/` `.entire/` に ignored ファイルがある                                                       | ASK_TMP（merged、作業開始直後でない、tip がその worktree で作られた、一覧と id を取れた、の全部を満たすとき）。それ以外は ASK_HUMAN |
+| 6   | 作業開始直後（worktree の HEAD reflog が空・読めない、または全 entry が現在の HEAD と同じ commit） | ASK_HUMAN                                                                                                                           |
+| 7   | merged（tip が `origin/<main>` の祖先、rebase merge、squash merge のいずれか）                     | REMOVE                                                                                                                              |
+| 8   | origin のどの ref にも無い commit がある                                                           | ASK_HUMAN                                                                                                                           |
+| 9   | それ以外（commit はすべて origin にあるが merged と判定できない。detached HEAD で未 merge を含む） | ASK                                                                                                                                 |
 
 - `<main>` は `origin/HEAD`、無ければ `origin/main`、`origin/master` の順で決まる。どれも無ければ merged は常に偽になる
 - detached HEAD では段 4 を評価しない
-- 段 5 の ignored の案内: merged でも `.tmp/sessions/` の spec / plan が `docs/` へ移されていないことがあるため、`(merged: <方式>)` を添えて確認に回す。中身を確認して TTY で `y` と答えるか、中身を移してから再実行する
+- 段 5b の ignored の案内: merged でも `.tmp/sessions/` の spec / plan が `docs/` へ移されていないことがあるため、`(merged: <方式>)` を添えて確認に回す。`status.showUntrackedFiles=no` の設定でも `.tmp/` `.entire/` を検知する
+  - ASK_TMP では、`.tmp/` `.entire/` のファイルの先頭 20 件と総数、その他の ignored パス（`git status` が畳んだ単位）、一覧の id を理由の直後に出す。一覧の各行は `| ` で始まり、空白を含む名前はシェルのクォート形式で出る
+  - id は worktree のパス、branch 名、tip の commit、2 つの一覧から計算する。`.tmp/` `.entire/` のファイルの名前が増減すると変わる。中身の変更と、畳まれた ignored（`node_modules/` など）の中の増減では変わらない。id は一覧が変わっていないことを示すもので、誰かが承認したことを示すものではない。桁数や計算方法が変わった版では、古い出力の id は使えない
+  - 片付け方は 3 つ: TTY で `y` と答える / 出力が示した `--discard-tmp=<id> <target>` で再実行する / 中身を移して再実行する
+  - 「tip がその worktree で作られた」の判定: HEAD を現在の tip にした reflog entry が、`commit`（amend を含む）か、commit を再生した rebase（`git pull --rebase` を含む）。tip が `git merge` の作った merge commit のときは、merge する前の HEAD で同じ判定をする。fast-forward・reset・checkout・cherry-pick・revert・`git pull` の merge で届いた tip と、reflog が読めない・期限切れ（既定 90 日）の場合は ASK_HUMAN になり、理由に `but its tip was not made in this worktree` が出る
+  - その理由: `origin/<main>` や他人の branch へ fast-forward しただけの worktree、reset で main に戻した worktree も merged と判定され、そこにある `.tmp/` は commit 前の plan でありうる。reflog からの推定で、tip の commit を誰が書いたかは見ない
 - `.tmp/` `.entire/` の 2 つは固定。`node_modules/` は再生成できるので対象外
+- 分類に使うのはこの 2 つだけだが、worktree を消すと ignored ファイルはすべて消える。ASK_TMP の出力は、この 2 つ以外の ignored パスも示す
 
 ## 処分
 
-| 分類      | 対話（TTY あり） | `--non-interactive` / TTY なし | `--yes` | `--yes` かつ offline |
-| --------- | ---------------- | ------------------------------ | ------- | -------------------- |
-| KEEP      | 残す             | 残す                           | 残す    | 残す                 |
-| REMOVE    | 消す             | 消す                           | 消す    | 消す                 |
-| ASK       | 確認             | 残す                           | 消す    | 残す                 |
-| ASK_HUMAN | 確認             | 残す                           | 残す    | 残す                 |
+| 分類      | 対話（TTY あり） | `--non-interactive` / TTY なし | `--yes` | `--yes` かつ offline | `--discard-tmp=<id>` を 1 つでも渡した実行                                                             |
+| --------- | ---------------- | ------------------------------ | ------- | -------------------- | ------------------------------------------------------------------------------------------------------ |
+| KEEP      | 残す             | 残す                           | 残す    | 残す                 | 残す                                                                                                   |
+| REMOVE    | 消す             | 消す                           | 消す    | 消す                 | 消す                                                                                                   |
+| ASK       | 確認             | 残す                           | 消す    | 残す                 | 他の option に従う                                                                                     |
+| ASK_TMP   | 確認             | 残す                           | 残す    | 残す                 | id が一致すれば消す（offline でも）。一致しない ASK_TMP は、その実行ではすべて残す（対話でも聞かない） |
+| ASK_HUMAN | 確認             | 残す                           | 残す    | 残す                 | 他の option に従う                                                                                     |
 
 - `git fetch --prune origin` が失敗したか origin が無い場合（offline）、`--yes` は `--non-interactive` と同じ結果になります。REMOVE は、古い `origin/<main>` に含まれるものは新しい `origin/<main>` にも含まれるので offline でも消します
 - 削除の直前に同じ worktree をもう一度分類し、分類か tip が最初と変わっていれば「state changed since the check」で残します（確認待ちの間に別 session が使い始めた場合を拾う）
-- `git worktree remove` は `--force` なしで呼びます。削除の直前にファイルが増えた場合は git が拒否し、その理由を表示して次へ進みます
+- ASK_TMP では、再分類で id も比べる。確認待ちの間に `.tmp/` `.entire/` のファイルが増減していれば残す
+- `git worktree remove` は `--force` なしで呼びます。削除の直前に ignored でないファイルが増えた場合は git が拒否し、その理由を表示して次へ進みます。ignored なファイルが増えても git は拒否しません
 
 ## 終了コード
 
-| 状況                                                                             | 走査（target なし） | target 指定 |
-| -------------------------------------------------------------------------------- | ------------------- | ----------- |
-| 対象をすべて処理し、残したものが無い                                             | 0                   | 0           |
-| KEEP / ASK / ASK_HUMAN で残した、git が削除を拒否した、offline で ASK を残した   | 0                   | 2           |
-| 未知の option、解決できない target（既に消えたものを含む）、main worktree の指定 | 1                   | 1           |
+| 状況                                                                                                                              | 走査（target なし） | target 指定 |
+| --------------------------------------------------------------------------------------------------------------------------------- | ------------------- | ----------- |
+| 対象をすべて処理し、残したものが無い                                                                                              | 0                   | 0           |
+| KEEP / ASK / ASK_TMP / ASK_HUMAN で残した、git が削除を拒否した、offline で ASK を残した                                          | 0                   | 2           |
+| 未知の option、`--discard-tmp` に target が無い、id の形が違う、解決できない target（既に消えたものを含む）、main worktree の指定 | 1                   | 1           |
 
 走査で残すのは正常な結果なので 0 です。target 指定で既に消えた target を 1 にするのは、branch 名の打ち間違いと区別できないためです（出力に `git worktree list` で確かめるよう出ます）。
 
@@ -82,6 +92,9 @@ git-worktree-cleanup --non-interactive
 
 # 確認のうち --yes が答えてよいものにだけ yes と答える
 git-worktree-cleanup --yes
+
+# 中身を確認した人の答えを受けて、.tmp/ ごと消す（id は残したときの出力にある）
+git-worktree-cleanup --discard-tmp=3f2a9c1b7d04 my-branch
 ```
 
 ### 実行例
@@ -113,6 +126,8 @@ Removed 1, kept 2, outside .git/worktree 0.
 - 使用中の検出は、Linux では `/proc/*/cwd`、それ以外では `lsof` で、自分のユーザーのプロセスの cwd だけを見ます。main worktree で起動した session が絶対パスで別の worktree を使っている場合や、他のユーザーのプロセスは見えません。そのため段 5・6・8 が主な防御です
 - merged の判定のために、worktree 1 つにつき最大 1 つの dangling commit object を書きます（ref は動かさず、`git gc` で消えます）
 - 削除成功後、`git worktree prune` が自動実行されます
+- `permission-auto-approve` が静的に allow するのは、`--yes` `--non-interactive` `--help`（と短縮形）、`2>&1` などの redirect、英数字と `_ . / @ + -` だけの target を引数に持つ呼び出しです。`--discard-tmp=<id>`、`--`、引用符つきの target などを含む呼び出しは次の層に回ります。次の層が allow すれば人間の確認なしに実行されます。人間に聞くことは `~/.claude/rules/developer-experience.md` の手順で定めており、機構による保証ではありません
+- `git worktree remove --force` や `rm -rf` を直接呼べば、このツールの判定は通りません
 - git 2.36 以降が必要です（`git worktree list --porcelain -z`）
 - agent-vm の machine の中（`/etc/agent-vm` があり、`agent-vm-node-modules` がある）では、`.git/worktree` 配下の worktree を `agent-vm-node-modules remove <wt> -- git -C <main> worktree remove -- <wt>` で消す。VM ローカルの `node_modules` を外してから消し、失敗したら張り直す（`docs/decisions/0022-agent-vm-node-modules.md`）。外せない、lock を取れない、ヘルパーが拒否した場合は、理由を表示して worktree を残す。消せた後にヘルパーが出した警告（保存先を消せなかった、など）は、黄色で表示する。host では挙動は変わらない。
 
@@ -125,6 +140,9 @@ Removed 1, kept 2, outside .git/worktree 0.
 - `help`（ハイフンなし）を受けなくなり、target として扱う。ヘルプは `--help` / `-h`
 - `git worktree remove` から `--force` を外したので、git が削除を拒否することがある
 - 終了コード 2（target 指定で残したものがある）を追加した
+- `--discard-tmp=<id>` を追加した。`.tmp/` `.entire/` にファイルがある merged worktree を、端末なしで消せる。`--yes` の範囲は変わらない
+- `.tmp/` `.entire/` にファイルがある merged worktree を残すとき、失うファイルの一覧と id を出すようになった。確認待ちの間に一覧が変わると残す
+- `status.showUntrackedFiles=no` の設定で `.tmp/` `.entire/` を検知できず、確認なしに消していたのを直した
 
 ## 関連コマンド
 
