@@ -346,3 +346,4 @@ PreToolUse の hook に、入力と環境を記録させた。
 - Claude Code の公式ドキュメント「Configure permissions」の「Read and Edit」「Symlinks」「Extend permissions with hooks」（`https://code.claude.com/docs/en/permissions.md`、2026-10-06 に読んだ版）
 - issue は未作成
 - PR #266（この ADR を含む変更）
+- PR #270（Amendment を含む変更）
