@@ -424,14 +424,96 @@ is_fresh() {
     return 0
 }
 
-# classify <index> <sha>: sets verdict (KEEP | REMOVE | ASK | ASK_HUMAN) and reason.
+# tip_made_here <wt>: the current tip was created in this worktree: by a commit, or by a rebase (also through
+# git pull) that replayed commits. A merge commit counts when the commit it was merged into was created here
+# too; with merge.ff=false, merging someone else's branch into an untouched worktree also makes a merge commit.
+# It reads the HEAD reflog, newest first, in runs of entries that left HEAD on the same commit: the oldest entry
+# of a run is the one that brought HEAD there. A fast-forward, a reset, a checkout or a cherry-pick means the
+# tip came from elsewhere, and so does an unreadable or expired reflog. A heuristic: it tells how the tip
+# arrived, not whose commits it holds.
+tip_made_here() {
+    local log line sha prev="" how=""
+    local made='^(commit|(rebase|pull[^:]*) (-i )?\((pick|reword|edit|squash|fixup|continue)\):)'
+    local joined='^merge .*: Merge made by '
+    if ! log=$(git -C "$1" reflog show --format='%H %gs' HEAD -- 2>/dev/null) || [[ -z "$log" ]]; then
+        return 1
+    fi
+    while IFS= read -r line; do
+        sha=${line%% *}
+        if [[ -n "$prev" && "$sha" != "$prev" ]]; then
+            if [[ "$how" =~ $made ]]; then
+                return 0
+            fi
+            # After a merge commit, go on to the run before it: HEAD as it was when the merge was made.
+            if [[ ! "$how" =~ $joined ]]; then
+                return 1
+            fi
+        fi
+        prev=$sha
+        how=${line#* }
+    done <<<"$log"
+    [[ "$how" =~ $made ]]
+}
+
+# What removing an ASK_TMP worktree discards; set by describe_tmp, emptied by every classify.
+tmp_files=""  # ignored files under .tmp/ and .entire/, one per line
+tmp_others="" # other ignored paths, as git status folds them (node_modules/, .env, ...)
+tmp_id=""     # TMP_ID_LEN hex digits over the worktree path, branch, tip and both lists
+TMP_ID_LEN=12
+# describe_tmp <wt> <phys> <branch> <sha>: fills the three variables; fails when git cannot list the files.
+describe_tmp() {
+    local wt=$1 phys=$2 br=$3 sha=$4 all id
+    if ! tmp_files=$(git -C "$wt" -c core.quotePath=false ls-files --others --ignored --exclude-standard -- .tmp .entire 2>/dev/null) \
+        || [[ -z "$tmp_files" ]] \
+        || ! all=$(git -C "$wt" -c core.quotePath=false status --porcelain --ignored --untracked-files=normal 2>/dev/null); then
+        tmp_files=""
+        return 1
+    fi
+    # git quotes a path with special characters, so the two directories can follow a double quote.
+    tmp_others=$(sed -n 's/^!! //p' <<<"$all" | grep -v -e '^"\{0,1\}\.tmp/' -e '^"\{0,1\}\.entire/' || true)
+    if ! id=$(printf '%s\n%s\n%s\n%s\n%s\n' "$phys" "$br" "$sha" "$tmp_files" "$tmp_others" | git -C "$wt" hash-object --stdin 2>/dev/null); then
+        tmp_files=""
+        tmp_others=""
+        return 1
+    fi
+    tmp_id=${id:0:TMP_ID_LEN}
+}
+# print_capped <lines>: the first 20 lines and how many more there are. Every line starts with "| ", and a
+# name with blanks is shell-quoted, so that a file name cannot pass for a line of this script's own output.
+print_capped() {
+    local n line shown=0
+    n=$(grep -c '' <<<"$1")
+    while IFS= read -r line && [[ $shown -lt 20 ]]; do
+        if [[ "$line" == *[[:space:]]* ]]; then
+            printf -v line '%q' "$line"
+        fi
+        printf '     | %s\n' "$line"
+        shown=$((shown + 1))
+    done <<<"$1"
+    if [[ "$n" -gt 20 ]]; then
+        echo "     ... and $((n - 20)) more"
+    fi
+}
+print_tmp_files() {
+    echo "   $(grep -c '' <<<"$tmp_files") ignored files in .tmp/ or .entire/ (id $tmp_id):"
+    print_capped "$tmp_files"
+    if [[ -n "$tmp_others" ]]; then
+        echo "   other ignored paths that go with the worktree:"
+        print_capped "$tmp_others"
+    fi
+}
+
+# classify <index> <sha>: sets verdict (KEEP | REMOVE | ASK | ASK_TMP | ASK_HUMAN) and reason.
 # The first matching stage decides; a failing git command falls to that stage's conservative verdict.
 verdict=""
 reason=""
 classify() {
     local i=$1 sha=$2
     local wt=${wt_path[$i]} br=${wt_branch[$i]} phys=${wt_phys[$i]}
-    local st ig a u
+    local st ig a u hint
+    tmp_files=""
+    tmp_others=""
+    tmp_id=""
 
     if [[ "${wt_locked[$i]}" -eq 1 ]]; then
         verdict=KEEP; reason="locked"; return 0
@@ -456,13 +538,27 @@ classify() {
     if [[ "$cwd_unknown" == true ]]; then
         verdict=ASK_HUMAN; reason="cannot detect whether it is in use"; return 0
     fi
-    if ! ig=$(git -C "$wt" status --porcelain --ignored -- .tmp .entire 2>/dev/null); then
+    # --untracked-files=normal: with status.showUntrackedFiles=no git would list no ignored files at all.
+    if ! ig=$(git -C "$wt" status --porcelain --ignored --untracked-files=normal -- .tmp .entire 2>/dev/null); then
         verdict=ASK_HUMAN; reason="cannot inspect .tmp/ and .entire/"; return 0
     fi
     if grep -q '^!! ' <<<"$ig"; then
         verdict=ASK_HUMAN; reason="has ignored files in .tmp/ or .entire/"
         if is_merged "$sha"; then
-            reason="$reason (merged: $merged_how); check them, then answer y on a terminal or move them and re-run"
+            # ASK_TMP: without the ignored files this would be REMOVE, and the merged tip is this worktree's own work.
+            # "merged" alone does not show that: a worktree fast-forwarded to main, or to someone else's branch
+            # that was merged later, holds nothing of its own but an uncommitted plan.
+            if is_fresh "$wt" "$sha"; then
+                reason="$reason (merged: $merged_how); check them, then answer y on a terminal or move them and re-run"
+            elif ! tip_made_here "$wt"; then
+                reason="$reason (merged: $merged_how), but its tip was not made in this worktree; check them, then answer y on a terminal or move them and re-run"
+            elif describe_tmp "$wt" "$phys" "$br" "$sha"; then
+                verdict=ASK_TMP
+                printf -v hint '%q' "${br:-$wt}"
+                reason="$reason (merged: $merged_how); check them, then answer y on a terminal, re-run with --discard-tmp=$tmp_id $hint, or move them and re-run"
+            else
+                reason="$reason (merged: $merged_how); check them, then answer y on a terminal or move them and re-run"
+            fi
         fi
         return 0
     fi
@@ -500,6 +596,8 @@ confirm_delete() {
             fi
             if [[ "$kind" == ASK ]]; then
                 echo "Delete anyway? (y/N) n [--yes, offline] - skipping"
+            elif [[ "$kind" == ASK_TMP ]]; then
+                echo "Delete anyway? (y/N) n [--yes does not answer this; see the --discard-tmp command above] - skipping"
             else
                 echo "Delete anyway? (y/N) n [--yes does not answer this; run it on a terminal] - skipping"
             fi
@@ -532,6 +630,7 @@ for i in ${selected[@]+"${selected[@]}"}; do
     first_sha=${wt_head[$i]}
     classify "$i" "$first_sha"
     first_verdict=$verdict
+    first_tmp_id=$tmp_id
 
     case "$verdict" in
         KEEP)
@@ -544,7 +643,10 @@ for i in ${selected[@]+"${selected[@]}"}; do
             ;;
         *)
             say "$YELLOW" "⚠️  $reason"
-            if ! confirm_delete "$verdict"; then
+            if [[ "$verdict" == ASK_TMP ]]; then
+                print_tmp_files
+            fi
+            if ! confirm_delete "$verdict" "$tmp_id"; then
                 kept=$((kept + 1))
                 continue
             fi
@@ -557,7 +659,9 @@ for i in ${selected[@]+"${selected[@]}"}; do
         now_sha=""
     fi
     classify "$i" "${now_sha:-$first_sha}"
-    if [[ "$now_sha" != "$first_sha" ]] || { [[ "$verdict" != "$first_verdict" ]] && [[ "$verdict" != REMOVE ]]; }; then
+    # For ASK_TMP the answer was about one list of files; a different list is a different question.
+    if [[ "$now_sha" != "$first_sha" ]] || { [[ "$verdict" != "$first_verdict" ]] && [[ "$verdict" != REMOVE ]]; } \
+        || { [[ "$verdict" == ASK_TMP ]] && [[ "$tmp_id" != "$first_tmp_id" ]]; }; then
         say "$RED" "✗ state changed since the check - skipping"
         kept=$((kept + 1))
         continue

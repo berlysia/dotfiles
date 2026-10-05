@@ -145,6 +145,18 @@ run_cleanup_in() {
   OUT=$(cd "$dir" && bash "$CLEANUP" "$@" </dev/null 2>&1) && STATUS=0 || STATUS=$?
 }
 
+# add_tmp <worktree> [n]: n ignored files under .tmp/sessions/x (default 1)
+add_tmp() {
+  local i=1
+  mkdir -p "$1/.tmp/sessions/x"
+  while [[ $i -le ${2:-1} ]]; do
+    printf 'plan\n' >"$1/.tmp/sessions/x/plan-$i.md"
+    i=$((i + 1))
+  done
+}
+# tmp_id_of: the id in the first "--discard-tmp=<id>" of $OUT (empty when there is none)
+tmp_id_of() { sed -n 's/.*--discard-tmp=\([0-9a-f]\{12\}\) .*/\1/p' <<<"$OUT" | head -n 1; }
+
 # Runs inside a pipeline element (so the cd stays local): script(1) gives the cleanup a pty.
 tty_run() {
   local log=$1
@@ -327,6 +339,8 @@ test_F10() {
   assert_contains "$OUT" ".tmp/" "F10 mentions .tmp"
   assert_contains "$OUT" "(merged: squash)" "F10 merged note"
   assert_contains "$OUT" "answer y on a terminal" "F10 guidance"
+  assert_contains "$OUT" "re-run with --discard-tmp=" "F10 next step"
+  assert_contains "$OUT" "see the --discard-tmp command above" "F10 --yes answer points at it"
 }
 
 test_F11() {
@@ -572,6 +586,76 @@ test_F26() {
   assert_contains "$OUT" "no origin main branch to compare with" "F26 reason"
 }
 
+test_F27() {
+  make_repo f27
+  local d id
+  d=$(mk_squashed sq 2)
+  add_tmp "$d" 2
+  mkdir -p "$d/node_modules/p"
+  printf 'x\n' >"$d/node_modules/p/index.js"
+  run_cleanup -n sq
+  id=$(tmp_id_of)
+  assert_kept "$d" "F27 kept"
+  assert_eq 2 "$STATUS" "F27 exit"
+  assert_eq 12 "${#id}" "F27 id is 12 hex digits"
+  assert_contains "$OUT" "2 ignored files in .tmp/ or .entire/ (id $id):" "F27 count and id"
+  assert_contains "$OUT" ".tmp/sessions/x/plan-1.md" "F27 lists file 1"
+  assert_contains "$OUT" ".tmp/sessions/x/plan-2.md" "F27 lists file 2"
+  assert_contains "$OUT" "re-run with --discard-tmp=$id sq," "F27 next step"
+  assert_contains "$OUT" "other ignored paths that go with the worktree:" "F27 others heading"
+  assert_contains "$OUT" "node_modules/" "F27 others listed"
+}
+
+test_F28() {
+  make_repo f28
+  local d
+  d=$(mk_squashed sq 2)
+  add_tmp "$d" 25
+  run_cleanup -n sq
+  assert_contains "$OUT" "25 ignored files in .tmp/ or .entire/" "F28 count"
+  assert_contains "$OUT" "... and 5 more" "F28 cut at 20"
+  rm "$d"/.tmp/sessions/x/plan-2[1-5].md
+  run_cleanup -n sq
+  assert_contains "$OUT" "20 ignored files in .tmp/ or .entire/" "F28 count at the limit"
+  assert_not_contains "$OUT" "more" "F28 no cut at 20"
+}
+
+test_F29() {
+  make_repo f29
+  local d
+  d=$(mk_squashed sq 2)
+  add_tmp "$d" 1
+  run_cleanup_tty y "" sq
+  if [[ "$SKIPPED" == 1 ]]; then return 0; fi
+  assert_removed "$d" "F29 removed on tty y"
+  assert_contains "$OUT" ".tmp/sessions/x/plan-1.md" "F29 lists before the prompt"
+}
+
+# shellcheck disable=SC2016 # the branch name holds a literal $( ) on purpose
+test_F39() {
+  make_repo f39
+  local d id
+  d=$(mk_squashed 'we$(id)rd' 2)
+  add_tmp "$d" 1
+  printf 'x\n' >"$d/.tmp/日本語.md"
+  run_cleanup -n 'we$(id)rd'
+  id=$(tmp_id_of)
+  assert_contains "$OUT" "re-run with --discard-tmp=$id we\\\$\\(id\\)rd," "F39 branch name quoted for the shell"
+  assert_contains "$OUT" ".tmp/日本語.md" "F39 non-ASCII name readable"
+}
+
+test_F43() {
+  make_repo f43
+  local d
+  d=$(mk_squashed sq 2)
+  add_tmp "$d" 1
+  printf 'x\n' >"$d/.tmp/note re-run with --discard-tmp=0123456789ab other, now.md"
+  run_cleanup -n sq
+  assert_contains "$OUT" "     | .tmp/sessions/x/plan-1.md" "F43 every listed name follows a bar"
+  assert_contains "$OUT" "     | .tmp/note\\ re-run\\ with\\ --discard-tmp=0123456789ab\\ other\\,\\ now.md" "F43 a name with blanks is shell-quoted"
+  assert_eq 1 "$(grep -c 're-run with --discard-tmp=' <<<"$OUT")" "F43 one line reads as the command to re-run"
+}
+
 # ---- 信頼性 ----------------------------------------------------------------------
 test_R1() {
   make_repo r1
@@ -726,6 +810,30 @@ test_R12() {
   assert_contains "$OUT" "git refused to remove it" "R12 message"
   assert_contains "$OUT" "stub refusal" "R12 git stderr"
   assert_eq 2 "$STATUS" "R12 exit"
+}
+
+test_R15() {
+  make_repo r15
+  local d
+  d=$(mk_squashed sq 2)
+  add_tmp "$d" 1
+  git config -f "$GIT_CONFIG_GLOBAL" status.showUntrackedFiles no
+  run_cleanup -n
+  git config -f "$GIT_CONFIG_GLOBAL" --unset status.showUntrackedFiles
+  assert_kept "$d" "R15 kept: .tmp/ is seen with status.showUntrackedFiles=no"
+  assert_contains "$OUT" ".tmp/sessions/x/plan-1.md" "R15 lists the file"
+}
+
+test_R14() {
+  make_repo r14
+  local d
+  d=$(mk_squashed sq 2)
+  add_tmp "$d" 1
+  run_cleanup_tty y "printf 'late\n' >$d/.tmp/sessions/x/late.md" sq
+  if [[ "$SKIPPED" == 1 ]]; then return 0; fi
+  assert_kept "$d" "R14 kept: a file was added while the prompt waited"
+  assert_contains "$OUT" "state changed since the check" "R14 message"
+  assert_eq 2 "$STATUS" "R14 exit"
 }
 
 # ---- agent-vm（ADR-0022） ------------------------------------------------------------
