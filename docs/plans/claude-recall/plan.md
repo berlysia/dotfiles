@@ -13,11 +13,11 @@
 
 ## Architecture
 
-| 部品 | 置き場所 | 配布経路 |
-| --- | --- | --- |
-| `recall` バイナリ 1.5.0 | mise installs（PATH は `mise activate` が通す） | `home/dot_config/mise/config.toml` の `"github:babarot/claude-recall" = { version = "1.5.0", bin = "recall" }` |
+| 部品                                              | 置き場所                                                                          | 配布経路                                                                                                                   |
+| ------------------------------------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `recall` バイナリ 1.5.0                           | mise installs（PATH は `mise activate` が通す）                                   | `home/dot_config/mise/config.toml` の `"github:babarot/claude-recall" = { version = "1.5.0", bin = "recall" }`             |
 | plugin（MCP / SessionEnd hook / `/recall` skill） | `~/.claude/skills/claude-recall/` → `claude-recall@skills-dir` として読み込まれる | `home/.chezmoiexternal.toml.tmpl` の archive external。版と sha256 を固定し、mise の版と食い違えばテンプレートで fail する |
-| skills の rsync からの保護 | `run_after_sync-skills` の `TOOL_OWNED_EXCLUDE_ARGS` | `--exclude="/claude-recall"` を足す（Claude と Codex の両 rsync が同じ配列を使う） |
+| skills の rsync からの保護                        | `run_after_sync-skills` の `TOOL_OWNED_EXCLUDE_ARGS`                              | `--exclude="/claude-recall"` を足す（Claude と Codex の両 rsync が同じ配列を使う）                                         |
 
 配布範囲: macOS・Linux ホストと agent-vm。Windows は対象外（external を `ne .chezmoi.os "windows"` で囲む。Windows 向けのバイナリ asset もない）。
 
@@ -105,6 +105,7 @@ checksum.sha256 = "{{ $recallPluginSha256 }}"
 ```
 
 確認:
+
 - `chezmoi execute-template < home/.chezmoiexternal.toml.tmpl | grep -A6 claude-recall` → URL に `/1.5.0/` が入り、`stripComponents = 1` と sha256 が出る
 - `chezmoi apply --dry-run -v ~/.claude/skills/claude-recall` → `.claude-plugin/plugin.json`、`.mcp.json`、`hooks/hooks.json`、`skills/recall/SKILL.md` の 4 ファイルが `~/.claude/skills/claude-recall/` の直下に出る
 - `tests/agent-vm/run-templates.sh` → 終了コード 0（VM と host の両データで external テンプレートが評価できる）。キャッシュが空でも `chezmoi managed --refresh-externals=never` は archive を取りに行き、中身を列挙して終了コード 0 になることを、使い捨ての source で実測済み（research.md）。ここで失敗したら T3 以降に進まない
@@ -117,6 +118,7 @@ checksum.sha256 = "{{ $recallPluginSha256 }}"
 - 配列に `--exclude="/claude-recall"` を足す
 
 確認:
+
 - `./scripts/smoke-chezmoi-scripts.sh` → 終了コード 0。既存 fixture は exclude の効果を見ないので、これは描画と実行が壊れていないことの確認にとどまる
 - exclude が効くことは、テスト計画の「apply を 2 回」で確認する
 
@@ -194,30 +196,37 @@ checksum.sha256 = "{{ $recallPluginSha256 }}"
 ## Reviewer Outputs (Round 1)
 
 ### logic-validator
+
 - verdict: needs-work
 - 主指摘: 「plugin は実行コードを含まない」が不正確（hooks.json / .mcp.json が起動コマンドを定義する）。T3 の smoke 確認が未確定の記述で、exclude の効果も検証しない。`.version` 参照は table 形式の前提に依存する。
 
 ### scope-justification-reviewer
+
 - verdict: pass
 - 主指摘: 全タスクが目的に直結している。T3 の smoke パスの曖昧さと `refreshPeriod` の理由が未記載である点だけが軽微な指摘。
 
 ### decision-quality-reviewer
+
 - verdict: needs-work
 - 主指摘: checksum を固定しない判断は保守性を優先して供給網のリスクを落としており、年齢ゲートの迂回と合わさって防御層が二つとも消える。版のずれ防止と checksum の固定は両立できる。
 
 ### greenfield-perspective-reviewer
+
 - verdict: needs-work
 - 主指摘: hook と MCP の `recall` の PATH 解決が未検証で、SessionEnd hook による取り込みを実セッションで確認していない。skills-dir で読み込まれなかったときの撤退先がない。
 
 ### architecture-boundary-analyzer
+
 - verdict: needs-work
 - 主指摘: ui-skills は `type = "file"` の先例で archive の先例ではない。`stripComponents` を plan 段階で確定すべき。agent-vm と Windows への配布の扱いが未記載。
 
 ### data-contract-evolution-evaluator
+
 - verdict: needs-work
 - 主指摘: vault.db のスキーマ移行とダウングレードの経路が未定義で、初回取り込み前と版上げ前のバックアップ手順がない。hook の無言失敗が JSONL 喪失につながる。
 
 ### deployment-readiness-evaluator
+
 - verdict: needs-work
 - 主指摘: hook の PATH 依存、agent-vm 配布の未記載、テンプレートが table 形式やキー不在で全ホストの apply を止める脆さ、ロールバック手順の欠如。
 
@@ -233,30 +242,37 @@ checksum.sha256 = "{{ $recallPluginSha256 }}"
 ## Reviewer Outputs (Round 2)
 
 ### logic-validator
+
 - verdict: pass
 - 主指摘: T2 テンプレートを execute-template で実測し、table / 文字列 / キー不在の分岐が意図どおりと確認。軽微: fail 文面に table 形式の前提を足す、vault.db の有無確認を apply より前に置く。
 
 ### scope-justification-reviewer
+
 - verdict: pass
 - 主指摘: 追加分（checksum 固定、agent-vm / Windows、ロールバック）はすべて根拠があり、スコープの逸脱はない。
 
 ### decision-quality-reviewer
+
 - verdict: pass
 - 主指摘: 版ずれの防止と checksum の固定を両立し、支配軸と整合した。
 
 ### greenfield-perspective-reviewer
+
 - verdict: needs-work
 - 主指摘: `claude -p` 後の件数の増加は SessionEnd の証拠として弱い。撤退ゲートが T4 の手順に入っていない。agent-vm の PATH 未検証を明記すべき。
 
 ### architecture-boundary-analyzer
+
 - verdict: needs-work
 - 主指摘: キャッシュが空のとき `--refresh-externals=never` で archive を評価できるかが未確認。ci-agent-vm の paths に external テンプレートがない。
 
 ### data-contract-evolution-evaluator
+
 - verdict: pass
 - 主指摘: 導入を止める blocker はない。バックアップのファイル名の日付と、版上げの手順を Risks に足すとよい。
 
 ### deployment-readiness-evaluator
+
 - verdict: needs-work
 - 主指摘: 版ずれの fail が Renovate の週次 group PR 全体を止める。archive を空キャッシュで評価できるかが未確認。バイナリ側の完全性が非対称なことを明記すべき。
 
@@ -266,34 +282,42 @@ checksum.sha256 = "{{ $recallPluginSha256 }}"
 ## Reviewer Outputs (Round 3)
 
 ### logic-validator
+
 - verdict: pass
 - 主指摘: `recall search` は上流 README に実在する。T3b のルールと paths の追加は既存の構造と整合し、新しい矛盾はない。
 
 ### greenfield-perspective-reviewer
+
 - verdict: pass
 - 主指摘: Round 2 の 3 指摘（agent-vm の PATH、probe による SessionEnd 確認、撤退ゲート）はすべて閉じた。
 
 ### architecture-boundary-analyzer
+
 - verdict: pass
 - 主指摘: 空キャッシュの実測と CI paths の追加で閉じた。軽微: `automerge: false` はこの repo では初めて使う。
 
 ### deployment-readiness-evaluator
+
 - verdict: pass
 - 主指摘: Round 2 の 6 指摘はすべて閉じた。`/claude-recall/` が他の名前にも当たりうる点は軽微。
 
 ### security-vulnerability-analyzer
+
 - verdict: needs-work
 - 主指摘: Web UI に Host / Origin の検証が見当たらず、起動中は DNS rebinding で読まれうる。vault.db のファイル権限が未確認。MCP の結果を auto-approve しない方針を書くべき。
 
 ### scope-justification-reviewer
+
 - verdict: pass (carried from Round 2)
 - 主指摘: Round 2 で pass、再実行なし
 
 ### decision-quality-reviewer
+
 - verdict: pass (carried from Round 2)
 - 主指摘: Round 2 で pass、再実行なし
 
 ### data-contract-evolution-evaluator
+
 - verdict: pass (carried from Round 2)
 - 主指摘: Round 2 で pass、再実行なし
 
@@ -303,34 +327,42 @@ checksum.sha256 = "{{ $recallPluginSha256 }}"
 ## Reviewer Outputs (Round 4)
 
 ### logic-validator
+
 - verdict: pass
 - 主指摘: SQLite は -wal / -shm に本体の権限を引き継ぐので、chmod 600 の主張は成り立つ。軽微: 初回作成から chmod までの窓、バックアップの権限、`[::1]` の扱い（反映済み）。
 
 ### security-vulnerability-analyzer
+
 - verdict: pass
 - 主指摘: Round 3 の 5 件は閉じた。軽微: skill から起動した UI の停止、probe 後の stat 再確認、版上げ時のバイナリ sha の照合（反映済み）。
 
 ### greenfield-perspective-reviewer
+
 - verdict: pass (carried from Round 3)
 - 主指摘: Round 3 で pass、再実行なし
 
 ### architecture-boundary-analyzer
+
 - verdict: pass (carried from Round 3)
 - 主指摘: Round 3 で pass、再実行なし
 
 ### deployment-readiness-evaluator
+
 - verdict: pass (carried from Round 3)
 - 主指摘: Round 3 で pass、再実行なし
 
 ### scope-justification-reviewer
+
 - verdict: pass (carried from Round 3)
 - 主指摘: Round 3 で pass、再実行なし
 
 ### decision-quality-reviewer
+
 - verdict: pass (carried from Round 3)
 - 主指摘: Round 3 で pass、再実行なし
 
 ### data-contract-evolution-evaluator
+
 - verdict: pass (carried from Round 3)
 - 主指摘: Round 3 で pass、再実行なし
 
