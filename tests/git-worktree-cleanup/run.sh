@@ -1251,6 +1251,192 @@ test_U3() {
   assert_kept "$d" "U3 keep kept"
 }
 
+# ---- context drift (#269): main changed a line near the branch's change before the merge ----
+
+# put_lines <dir> <file> <message> <line>...: one commit that rewrites <file> with the given lines
+put_lines() {
+  local d=$1 f=$2 m=$3
+  shift 3
+  printf '%s\n' "$@" >"$d/$f"
+  git -C "$d" add -- "$f"
+  git -C "$d" commit -qm "$m"
+}
+# seed_lines: main gets lines.txt (l1..l9), pushed, so that a branch and main can change different lines of it.
+seed_lines() {
+  put_lines "$REPO" lines.txt "seed lines" l1 l2 l3 l4 l5 l6 l7 l8 l9
+  git -C "$REPO" push -q origin main 2>/dev/null
+}
+# main_moves_near: on origin main, l3 becomes L3. That is two lines above the place where mk_inserting inserts:
+# a context line of that hunk, and far enough for the two changes to merge without a conflict.
+main_moves_near() {
+  merger_update
+  put_lines "$MERGER" lines.txt "main moves near" l1 l2 L3 l4 l5 l6 l7 l8 l9
+  git -C "$MERGER" push -q origin main 2>/dev/null
+}
+# mk_inserting <branch> <line>: worktree with a commit that inserts <line> after l5 and a commit that adds a
+# file; pushed. Call seed_lines first. Prints the path.
+mk_inserting() {
+  local d
+  d=$(wt "$1")
+  put_lines "$d" lines.txt "insert $2" l1 l2 l3 l4 l5 "$2" l6 l7 l8 l9
+  commit_in "$d" "$1.txt"
+  push_branch "$d"
+  echo "$d"
+}
+# merger_replay <branch> [n]: cherry-pick the branch's first n commits (default: all) onto the merger's HEAD
+merger_replay() {
+  local c
+  for c in $(git -C "$MERGER" rev-list --reverse "origin/main..origin/$1" | head -n "${2:-1000}"); do
+    git -C "$MERGER" cherry-pick "$c" >/dev/null 2>&1
+  done
+}
+# merger_publish <branch>: push the merger's main and delete the branch on origin, as a merged PR leaves it
+merger_publish() {
+  git -C "$MERGER" push -q origin main 2>/dev/null
+  git -C "$MERGER" push -q origin --delete "$1" 2>/dev/null
+}
+
+test_D1() {
+  make_repo d1
+  seed_lines
+  local d
+  d=$(mk_inserting rb new)
+  main_moves_near
+  rebase_merge rb
+  run_cleanup -n
+  assert_removed "$d" "D1 removed"
+  assert_contains "$OUT" "merged into main (rebase, context ignored)" "D1 how"
+  assert_contains "$OUT" "; branch rb stays at $(git -C "$REPO" rev-parse --short=12 rb)" "D1 where the commits are"
+}
+
+# The shape of #242: the branch was rebased somewhere else, got one more commit, and was merged with a merge commit.
+test_D2() {
+  make_repo d2
+  seed_lines
+  local d
+  d=$(mk_inserting moved new)
+  main_moves_near
+  merger_update
+  git -C "$MERGER" checkout -q -b moved main
+  merger_replay moved
+  commit_in "$MERGER" later.txt
+  git -C "$MERGER" checkout -q main
+  git -C "$MERGER" merge -q --no-ff -m "merge moved" moved >/dev/null 2>&1
+  merger_publish moved
+  run_cleanup -n
+  assert_removed "$d" "D2 removed"
+  assert_contains "$OUT" "merged into main (rebase, context ignored)" "D2 how"
+}
+
+test_D3() {
+  make_repo d3
+  seed_lines
+  local d
+  d=$(mk_inserting sq new)
+  main_moves_near
+  squash_merge sq
+  run_cleanup -n
+  assert_removed "$d" "D3 removed"
+  assert_contains "$OUT" "merged into main (squash, context ignored)" "D3 how"
+}
+
+# Only the first of the two commits reached main.
+test_D4() {
+  make_repo d4
+  seed_lines
+  local d
+  d=$(mk_inserting part new)
+  main_moves_near
+  merger_update
+  merger_replay part 1
+  merger_publish part
+  run_cleanup -n
+  assert_kept "$d" "D4 kept"
+  assert_not_contains "$OUT" "merged into main" "D4 not merged"
+  assert_contains "$OUT" "2 commits not on origin" "D4 reason"
+}
+
+# Main got another line at the same place, and the same new file.
+test_D5() {
+  make_repo d5
+  seed_lines
+  local d
+  d=$(mk_inserting other new-a)
+  main_moves_near
+  put_lines "$MERGER" lines.txt "insert new-b" l1 l2 L3 l4 l5 new-b l6 l7 l8 l9
+  commit_in "$MERGER" other.txt
+  merger_publish other
+  run_cleanup -n
+  assert_kept "$d" "D5 kept"
+  assert_not_contains "$OUT" "merged into main" "D5 not merged"
+  assert_contains "$OUT" "2 commits not on origin" "D5 reason"
+}
+
+# A branch whose only commit changes nothing has no patch-id; "every id is on main" must not hold vacuously.
+test_D6() {
+  make_repo d6
+  seed_lines
+  local d
+  d=$(wt empty)
+  git -C "$d" commit -q --allow-empty -m empty
+  push_branch "$d"
+  main_moves_near
+  git -C "$MERGER" push -q origin --delete empty 2>/dev/null
+  run_cleanup -n
+  assert_kept "$d" "D6 kept"
+  assert_not_contains "$OUT" "merged into main" "D6 not merged"
+  assert_contains "$OUT" "1 commits not on origin" "D6 reason"
+}
+
+# With files in .tmp/, the context-free verdict reaches ASK_TMP and its id works.
+test_D7() {
+  make_repo d7
+  seed_lines
+  local d id
+  d=$(mk_inserting rb new)
+  main_moves_near
+  rebase_merge rb
+  add_tmp "$d"
+  run_cleanup -n
+  assert_kept "$d" "D7 kept"
+  assert_contains "$OUT" "(merged: rebase, context ignored)" "D7 merged note"
+  id=$(tmp_id_of)
+  run_cleanup --discard-tmp="$id" rb
+  assert_removed "$d" "D7 removed with the id"
+}
+
+# A detached HEAD has no branch to keep its commits, so the comparison without context lines is not used for it.
+test_D8() {
+  make_repo d8
+  seed_lines
+  local d
+  d=$(mk_inserting det new)
+  git -C "$d" checkout -q --detach
+  main_moves_near
+  rebase_merge det
+  run_cleanup -n
+  assert_kept "$d" "D8 kept"
+  assert_not_contains "$OUT" "merged into main" "D8 not merged"
+  assert_contains "$OUT" "2 commits not on origin" "D8 reason"
+}
+
+# A known limit (docs): the same line added to the same file at another place counts as the same change.
+# When the comparison learns to tell the two apart, this test turns around: the worktree is then kept.
+test_D9() {
+  make_repo d9
+  seed_lines
+  local d
+  d=$(wt same)
+  put_lines "$d" lines.txt "insert new" l1 l2 l3 l4 l5 new l6 l7 l8 l9
+  push_branch "$d"
+  merger_update
+  put_lines "$MERGER" lines.txt "insert new elsewhere" l1 new l2 l3 l4 l5 l6 l7 l8 l9
+  merger_publish same
+  run_cleanup -n
+  assert_removed "$d" "D9 removed"
+  assert_contains "$OUT" "merged into main (rebase, context ignored)" "D9 how"
+}
+
 # ---- runner --------------------------------------------------------------------------
 run_one() {
   local t=$1 rc
