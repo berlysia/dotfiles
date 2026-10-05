@@ -57,6 +57,10 @@ function normalizePath(path: string): string {
  * change must turn into a logged skip, not an exception in every project.
  */
 export function parseCcccOutput(raw: string): Report | null {
+  // A tree with no supported source files makes cccc exit 0 with nothing on
+  // stdout ("no matching files found" goes to stderr). That is a measurement
+  // of zero functions, not a contract change.
+  if (raw.trim() === "") return { byKey: new Map(), parseErrorFiles: [] };
   let data: unknown;
   try {
     data = JSON.parse(raw);

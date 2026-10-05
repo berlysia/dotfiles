@@ -397,6 +397,16 @@ describe("complexity-delta: giving up", () => {
     assert.equal(t.state().disabled, undefined);
   });
 
+  it("stays on and silent in a repository with no supported source files", async () => {
+    const t = setup();
+    t.respond("");
+    assert.equal(message(await t.prompt()), undefined);
+    assert.equal(t.state().disabled, undefined);
+    assert.notEqual(t.state().baseline, null);
+    assert.equal(message(await t.stop()), undefined);
+    assert.equal(t.state().disabled, undefined);
+  });
+
   it("turns itself off at once when the output has an unexpected shape", async () => {
     const t = setup();
     t.respond(JSON.stringify({ files: "changed" }));

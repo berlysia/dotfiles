@@ -95,6 +95,14 @@ describe("parseCcccOutput", () => {
     assert.deepEqual(report?.parseErrorFiles, ["bad.ts", "other.ts"]);
   });
 
+  it("reads empty output as a tree without functions", () => {
+    for (const raw of ["", "\n"]) {
+      const report = parseCcccOutput(raw);
+      assert.equal(report?.byKey.size, 0, JSON.stringify(raw));
+      assert.deepEqual(report?.parseErrorFiles, []);
+    }
+  });
+
   it("returns null for anything that does not match the contract", () => {
     const cases: string[] = [
       "not json",
