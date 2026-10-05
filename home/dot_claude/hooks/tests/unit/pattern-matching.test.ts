@@ -6,9 +6,10 @@ import {
   matchAnchoredBashAllow,
   matchGitignorePattern,
   parseBashPattern,
+  ruleContext,
 } from "../../lib/pattern-matcher.ts";
 
-const ctx = { cwd: "/repo", home: "/home/u" };
+const ctx = { cwd: "/repo", home: "/home/u", settingsRoot: "/proj" };
 
 describe("Pattern matching validation", () => {
   it("should reject Bash(**) pattern", async () => {
@@ -412,29 +413,29 @@ describe("matchGitignorePattern: absolute wildcard patterns", () => {
     ["/x/a/b/.env.production", "//**/.env.production", true],
     ["/x/.env.prod.local", "//**/.env.*.local", true],
     ["/mnt/c/.Trash-1000/files/a", "//**/.Trash-*/**", true],
-    ["/home/u/.ssh/id_rsa", "/home/u/.ssh/id_*", true],
-    ["/home/u/.ssh/id_rsa.pub", "/home/u/.ssh/id_*", true],
-    ["/x/.hidden/y", "/x/*/y", true],
+    ["/home/u/.ssh/id_rsa", "//home/u/.ssh/id_*", true],
+    ["/home/u/.ssh/id_rsa.pub", "//home/u/.ssh/id_*", true],
+    ["/x/.hidden/y", "//x/*/y", true],
     // non-matches
     ["/x/ai.env.sh", "//**/.env", false],
     ["/x/env.sh.tmpl", "//**/.env", false],
     ["/x/.env.example", "//**/.env", false],
     ["/x/.env.sample", "//**/.env.*.local", false],
     ["/x/.env.local.bak", "//**/.env.*.local", false],
-    ["/x/y/z", "/x/*", false],
+    ["/x/y/z", "//x/*", false],
     // unchanged behavior
-    ["/tmp", "/tmp/**", true],
-    ["/tmp/a/b", "/tmp/**", true],
-    ["/tmpx/a", "/tmp/**", false],
+    ["/tmp", "//tmp/**", true],
+    ["/tmp/a/b", "//tmp/**", true],
+    ["/tmpx/a", "//tmp/**", false],
     ["/abs/src/a.ts", "src/**", false],
     ["/repo/src/a.ts", "src/**", true],
     ["../x", "./**", false],
     // path normalization
-    ["/home/u//.ssh/id_rsa", "/home/u/.ssh/id_*", true],
-    ["/home/u/./.ssh/id_rsa", "/home/u/.ssh/id_*", true],
-    ["/tmp/../etc/passwd", "/tmp/**", false],
-    ["/tmp/../etc/passwd", "/etc/**", true],
-    ["tmp/x", "/tmp/**", false],
+    ["/home/u//.ssh/id_rsa", "//home/u/.ssh/id_*", true],
+    ["/home/u/./.ssh/id_rsa", "//home/u/.ssh/id_*", true],
+    ["/tmp/../etc/passwd", "//tmp/**", false],
+    ["/tmp/../etc/passwd", "//etc/**", true],
+    ["tmp/x", "//tmp/**", false],
     ["../x", "//**", true],
     ["/x/.env/", "//**/.env", true],
   ];
@@ -454,7 +455,7 @@ describe("matchGitignorePattern: absolute wildcard patterns", () => {
       "/tmp",
     ];
     for (const base of bases) {
-      const pattern = `${base}/**`;
+      const pattern = `/${base}/**`;
       it(pattern, () => {
         strictEqual(
           matchGitignorePattern(`${base}/a/b`, pattern, ctx, "grant"),
@@ -545,11 +546,11 @@ describe("matchGitignorePattern follows the documented Claude Code rules", () =>
 
   it("matches a wildcard-free absolute or home pattern exactly", () => {
     strictEqual(
-      matchGitignorePattern("/etc/passwd", "/etc/passwd", ctx, "restrict"),
+      matchGitignorePattern("/etc/passwd", "//etc/passwd", ctx, "restrict"),
       true,
     );
     strictEqual(
-      matchGitignorePattern("/etc/passwd/x", "/etc/passwd", ctx, "restrict"),
+      matchGitignorePattern("/etc/passwd/x", "//etc/passwd", ctx, "restrict"),
       false,
     );
     strictEqual(
@@ -592,14 +593,18 @@ describe("matchGitignorePattern follows the documented Claude Code rules", () =>
         false,
       );
       strictEqual(
-        matchGitignorePattern(escaping, "/etc/**", ctx, "restrict"),
+        matchGitignorePattern(escaping, "//etc/**", ctx, "restrict"),
         true,
       );
     }
   });
 
   it("matches a deny when cwd or home is not normalized", () => {
-    const dirty = { cwd: "/repo/.", home: "/home//u" };
+    const dirty = {
+      cwd: "/repo/.",
+      home: "/home//u",
+      settingsRoot: "/proj",
+    };
     strictEqual(
       matchGitignorePattern("/repo/.env", "./.env", dirty, "restrict"),
       true,
@@ -616,7 +621,7 @@ describe("matchGitignorePattern follows the documented Claude Code rules", () =>
       matchGitignorePattern(
         "/etc/x",
         "./**",
-        { cwd: "/", home: "/home/u" },
+        { cwd: "/", home: "/home/u", settingsRoot: "/proj" },
         "grant",
       ),
       true,
@@ -652,7 +657,7 @@ describe("checkPattern rule names and negation", () => {
     );
     strictEqual(
       await checkPattern(
-        "Edit(/etc/**)",
+        "Edit(//etc/**)",
         "Write",
         { file_path: "/etc/hosts", content: "x" },
         ctx,
@@ -710,8 +715,8 @@ describe("checkPattern rule names and negation", () => {
     );
   });
   it("keeps reading a rule without a closing parenthesis the way it did", async () => {
-    // slice(…, -1) drops the last character whatever it is: "Edit(/etc/**" is read as "/etc/*".
-    const rule = "Edit(/etc/**";
+    // slice(…, -1) drops the last character whatever it is: "Edit(//etc/**" is read as "//etc/*".
+    const rule = "Edit(//etc/**";
     strictEqual(
       await checkPattern(
         rule,
@@ -731,6 +736,102 @@ describe("checkPattern rule names and negation", () => {
         "deny",
       ),
       false,
+    );
+  });
+});
+
+describe("a /path rule anchors at the settings root of its source", () => {
+  const project = {
+    cwd: "/repo/inner",
+    home: "/home/u",
+    settingsRoot: "/repo",
+  };
+  const user = {
+    cwd: "/repo",
+    home: "/home/u",
+    settingsRoot: "/home/u/.claude",
+  };
+  const write = (file_path: string) => ({ file_path, content: "x" });
+
+  it("denies Edit and Write under <project>/sub for a project deny Edit(/sub/**)", async () => {
+    strictEqual(
+      await checkPattern(
+        "Edit(/sub/**)",
+        "Edit",
+        { file_path: "/repo/sub/x" },
+        project,
+        "deny",
+      ),
+      true,
+    );
+    strictEqual(
+      await checkPattern(
+        "Edit(/sub/**)",
+        "Write",
+        write("/repo/sub/x"),
+        project,
+        "deny",
+      ),
+      true,
+    );
+  });
+  it("does not match /sub/x or <cwd>/sub/x for that rule", async () => {
+    for (const path of ["/sub/x", "/repo/inner/sub/x", "/repo/subx/x"]) {
+      strictEqual(
+        await checkPattern(
+          "Edit(/sub/**)",
+          "Write",
+          write(path),
+          project,
+          "deny",
+        ),
+        false,
+        path,
+      );
+    }
+  });
+  it("matches ~/.claude/x for a user rule /x/**, and neither /x nor ~/x", async () => {
+    for (const list of ["allow", "deny"] as const) {
+      strictEqual(
+        await checkPattern(
+          "Edit(/x/**)",
+          "Write",
+          write("/home/u/.claude/x/a"),
+          user,
+          list,
+        ),
+        true,
+      );
+      for (const path of ["/x/a", "/home/u/x/a"]) {
+        strictEqual(
+          await checkPattern("Edit(/x/**)", "Write", write(path), user, list),
+          false,
+          path,
+        );
+      }
+    }
+  });
+  it("keeps //x filesystem-absolute whatever the settings root is", async () => {
+    for (const at of [project, user]) {
+      strictEqual(
+        await checkPattern(
+          "Edit(//etc/**)",
+          "Write",
+          write("/etc/hosts"),
+          at,
+          "deny",
+        ),
+        true,
+      );
+    }
+  });
+  it("builds the rule context from a sourced rule", () => {
+    deepStrictEqual(
+      ruleContext(
+        { cwd: "/repo", home: "/home/u" },
+        { rule: "Edit(/sub/**)", settingsRoot: "/proj" },
+      ),
+      { cwd: "/repo", home: "/home/u", settingsRoot: "/proj" },
     );
   });
 });

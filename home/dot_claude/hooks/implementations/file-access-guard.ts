@@ -19,11 +19,22 @@ import {
   isUnderRoot,
   resolvePhysicalPath,
 } from "../lib/path-containment.ts";
-import { matchGitignorePattern } from "../lib/pattern-matcher.ts";
-import { createMatchContext, getProjectRoot } from "../lib/project-root.ts";
+import {
+  matchGitignorePattern,
+  ruleContext,
+  type SourcedRule,
+} from "../lib/pattern-matcher.ts";
+import {
+  createMatchContext,
+  createSettingsRoots,
+  getProjectRoot,
+  type SettingsRoots,
+} from "../lib/project-root.ts";
+import { listSettingsSources } from "../lib/settings-sources.ts";
 import { collectTempRoots } from "../lib/temp-roots.ts";
 import { resolveWorkflowDir } from "../lib/workflow-resolve.ts";
 import type {
+  LoadedSettings,
   PathValidationResult,
   SettingsFile,
 } from "../types/project-types.ts";
@@ -68,7 +79,9 @@ const hook = defineHook({
         return context.success({});
       }
 
-      const settingsFiles = getSettingsFiles(repoRoot);
+      const homeDir = getHomeDir();
+      const roots = createSettingsRoots(context.input.cwd, homeDir);
+      const settingsFiles = getSettingsFiles(repoRoot, roots);
       const additionalDirs = getAdditionalDirectories(settingsFiles);
       const allowPatterns = getAllowPatterns(settingsFiles, tool_name);
       const workflowDirRoots = getWorkflowDirRoots(context.input.session_id);
@@ -88,7 +101,6 @@ const hook = defineHook({
       );
       const cwdPhysical = cwdResolved.ok ? cwdResolved.path : undefined;
 
-      const homeDir = getHomeDir();
       const ctx: JudgeContext = {
         category: TOOL_CATEGORY[tool_name],
         allowPatterns,
@@ -144,50 +156,36 @@ function getRepositoryRoot(): string | undefined {
   }
 }
 
-function getSettingsFiles(workspaceRoot?: string): SettingsFile[] {
-  const settingsFiles: SettingsFile[] = [];
-  const homeDir = getHomeDir();
-
-  // Global settings
-  const globalSettingsPath = resolve(homeDir, ".claude", "settings.json");
-  if (existsSync(globalSettingsPath)) {
+// Permissions live in settings.json; there is no separate permissions.json to read.
+function getSettingsFiles(
+  workspaceRoot: string | undefined,
+  roots: SettingsRoots,
+): LoadedSettings[] {
+  const loaded: LoadedSettings[] = [];
+  for (const source of listSettingsSources(roots, workspaceRoot)) {
+    // Local settings are not read by this hook.
+    if (source.kind === "local") continue;
+    if (!existsSync(source.path)) continue;
     try {
-      const content = readFileSync(globalSettingsPath, "utf-8");
-      settingsFiles.push(JSON.parse(content) as SettingsFile);
+      loaded.push({
+        settings: JSON.parse(
+          readFileSync(source.path, "utf-8"),
+        ) as SettingsFile,
+        settingsRoot: source.settingsRoot,
+      });
     } catch {
       // Ignore parse errors
     }
   }
-
-  // Note: permissions are now integrated in settings.json
-  // No need to read a separate permissions.json file
-
-  // Workspace settings
-  if (workspaceRoot) {
-    const workspaceSettingsPath = resolve(
-      workspaceRoot,
-      ".claude",
-      "settings.json",
-    );
-    if (existsSync(workspaceSettingsPath)) {
-      try {
-        const content = readFileSync(workspaceSettingsPath, "utf-8");
-        settingsFiles.push(JSON.parse(content) as SettingsFile);
-      } catch {
-        // Ignore parse errors
-      }
-    }
-  }
-
-  return settingsFiles;
+  return loaded;
 }
 
-function getAdditionalDirectories(settingsFiles: SettingsFile[]): string[] {
+function getAdditionalDirectories(loaded: LoadedSettings[]): string[] {
   const directories: string[] = [];
 
-  for (const file of settingsFiles) {
-    if (Array.isArray(file.additionalDirectories)) {
-      directories.push(...file.additionalDirectories);
+  for (const { settings } of loaded) {
+    if (Array.isArray(settings.additionalDirectories)) {
+      directories.push(...settings.additionalDirectories);
     }
   }
 
@@ -212,10 +210,10 @@ const PERMISSION_CATEGORY: Record<string, string> = {
 };
 
 export function getAllowPatterns(
-  settingsFiles: SettingsFile[],
+  loaded: LoadedSettings[],
   toolName: string,
-): string[] {
-  const patterns: string[] = [];
+): SourcedRule[] {
+  const patterns: SourcedRule[] = [];
 
   // 自身のツール名も残すことで、既存の Grep(...) 等の設定を失効させない
   const acceptedNames = new Set([toolName]);
@@ -224,8 +222,8 @@ export function getAllowPatterns(
     acceptedNames.add(category);
   }
 
-  for (const file of settingsFiles) {
-    const allowList = file.permissions?.allow;
+  for (const { settings, settingsRoot } of loaded) {
+    const allowList = settings.permissions?.allow;
     if (Array.isArray(allowList)) {
       // Filter patterns for this tool and the category that covers it
       const toolPatterns = allowList.filter((pattern) =>
@@ -233,7 +231,7 @@ export function getAllowPatterns(
           (name) => pattern === name || pattern.startsWith(`${name}(`),
         ),
       );
-      patterns.push(...toolPatterns);
+      for (const rule of toolPatterns) patterns.push({ rule, settingsRoot });
     }
   }
 
@@ -428,7 +426,7 @@ const SYSTEM_PATHS = [
 
 export interface JudgeContext {
   category: Category | undefined;
-  allowPatterns: string[];
+  allowPatterns: SourcedRule[];
   repoRoot: string;
   homeDir: string;
   additionalDirs: string[]; // already absolute, no trailing slash
@@ -709,14 +707,21 @@ function validatePath(path: string, ctx: JudgeContext): PathValidationResult {
 
 function checkAllowPatterns(
   filePath: string,
-  allowPatterns: string[],
+  allowPatterns: SourcedRule[],
   match: MatchContext,
 ): boolean {
-  for (const pattern of allowPatterns) {
+  for (const sourced of allowPatterns) {
     // Extract path pattern from tool pattern like "Read(path/pattern)"
-    const extracted = pattern.match(/^[^(]+\((.+)\)$/);
+    const extracted = sourced.rule.match(/^[^(]+\((.+)\)$/);
     if (extracted?.[1]) {
-      if (matchGitignorePattern(filePath, extracted[1], match, "grant")) {
+      if (
+        matchGitignorePattern(
+          filePath,
+          extracted[1],
+          ruleContext(match, sourced),
+          "grant",
+        )
+      ) {
         return true;
       }
     }

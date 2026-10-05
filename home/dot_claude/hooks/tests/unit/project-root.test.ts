@@ -1,12 +1,16 @@
 #!/usr/bin/env node --test
 
-import { deepStrictEqual, strict as assert } from "node:assert";
+import { deepStrictEqual, strict as assert, strictEqual } from "node:assert";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, it } from "node:test";
-import { createMatchContext, getProjectRoot } from "../../lib/project-root.ts";
+import {
+  createMatchContext,
+  createSettingsRoots,
+  getProjectRoot,
+} from "../../lib/project-root.ts";
 import { shellSingleQuote } from "../../lib/shell-quote.ts";
 import { EnvironmentHelper } from "./test-helpers.ts";
 
@@ -61,28 +65,25 @@ describe("shellSingleQuote", () => {
   }
 });
 
-describe("createMatchContext", () => {
-  const withEnv = (
-    vars: Record<string, string | undefined>,
-    run: () => void,
-  ) => {
-    const saved = Object.fromEntries(
-      Object.keys(vars).map((k) => [k, process.env[k]]),
-    );
-    for (const [k, v] of Object.entries(vars)) {
+const withEnv = (vars: Record<string, string | undefined>, run: () => void) => {
+  const saved = Object.fromEntries(
+    Object.keys(vars).map((k) => [k, process.env[k]]),
+  );
+  for (const [k, v] of Object.entries(vars)) {
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
+  try {
+    run();
+  } finally {
+    for (const [k, v] of Object.entries(saved)) {
       if (v === undefined) delete process.env[k];
       else process.env[k] = v;
     }
-    try {
-      run();
-    } finally {
-      for (const [k, v] of Object.entries(saved)) {
-        if (v === undefined) delete process.env[k];
-        else process.env[k] = v;
-      }
-    }
-  };
+  }
+};
 
+describe("createMatchContext", () => {
   it("prefers CLAUDE_TEST_CWD, then the hook input cwd, then process.cwd()", () => {
     withEnv({ CLAUDE_TEST_CWD: "/t", HOME: "/home/u" }, () => {
       deepStrictEqual(createMatchContext("/in"), {
@@ -135,5 +136,57 @@ describe("createMatchContext", () => {
         });
       },
     );
+  });
+});
+
+describe("createSettingsRoots", () => {
+  const clean = {
+    CLAUDE_TEST_CWD: undefined,
+    CLAUDE_PROJECT_DIR: undefined,
+    HOME: "/home/u",
+  };
+  it("anchors user rules at <home>/.claude", () => {
+    withEnv(clean, () => {
+      strictEqual(createSettingsRoots("/in").user, "/home/u/.claude");
+      strictEqual(createSettingsRoots("/in", "/other").user, "/other/.claude");
+    });
+  });
+  it("prefers CLAUDE_TEST_CWD, then CLAUDE_PROJECT_DIR, then the hook input cwd, then process.cwd()", () => {
+    withEnv(
+      { ...clean, CLAUDE_TEST_CWD: "/t", CLAUDE_PROJECT_DIR: "/p" },
+      () => {
+        strictEqual(createSettingsRoots("/in").project, "/t");
+      },
+    );
+    withEnv({ ...clean, CLAUDE_PROJECT_DIR: "/p" }, () => {
+      strictEqual(createSettingsRoots("/in").project, "/p");
+    });
+    withEnv(clean, () => {
+      strictEqual(createSettingsRoots("/in").project, "/in");
+      strictEqual(createSettingsRoots().project, process.cwd());
+    });
+  });
+  it("skips a candidate that is not absolute", () => {
+    withEnv(
+      { ...clean, CLAUDE_TEST_CWD: "rel", CLAUDE_PROJECT_DIR: "." },
+      () => {
+        strictEqual(createSettingsRoots("/in").project, "/in");
+        strictEqual(createSettingsRoots().project, process.cwd());
+      },
+    );
+    withEnv({ ...clean, CLAUDE_TEST_CWD: "", CLAUDE_PROJECT_DIR: "" }, () => {
+      strictEqual(createSettingsRoots("repo").project, process.cwd());
+      strictEqual(createSettingsRoots("/in").project, "/in");
+    });
+  });
+  it("returns an absolute candidate as written; the resolver normalizes it", () => {
+    withEnv({ ...clean, CLAUDE_PROJECT_DIR: "/p/" }, () => {
+      strictEqual(createSettingsRoots("/in").project, "/p/");
+    });
+  });
+  it("does not check the home it is given, like ~/ rules", () => {
+    withEnv(clean, () => {
+      strictEqual(createSettingsRoots("/in", "rel").user, "rel/.claude");
+    });
   });
 });

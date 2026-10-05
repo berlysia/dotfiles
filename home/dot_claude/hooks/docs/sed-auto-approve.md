@@ -80,7 +80,7 @@ sed 's/foo/bar/' file.txt            # -iなし（対象外）
 
 #### 主要機能
 
-- `checkFilePermissions(filePaths: string[], allowPatterns: string[], ctx: MatchContext): FilePermissionCheckResult`
+- `checkFilePermissions(filePaths: string[], allowPatterns: SourcedRule[], ctx: MatchContext): FilePermissionCheckResult`
   - ファイルパスリストと許可パターンリストを受け取る
   - 各ファイルが `Edit(...)` または `MultiEdit(...)` パターンにマッチするかチェック
   - 全ファイルが許可されているか判定
@@ -91,7 +91,8 @@ sed 's/foo/bar/' file.txt            # -iなし（対象外）
 
 - `./**`: カレントディレクトリ配下すべて
 - `src/**`: srcディレクトリ配下すべて
-- `/absolute/path/**`: 絶対パスパターン
+- `//absolute/path/**`: 絶対パスパターン（`//` で始める）
+- `/path/**`: 規則の出どころを基準にするパターン（ユーザー設定は `~/.claude`、プロジェクトとローカルの設定はセッションを起動したディレクトリ）
 
 相対パターンは作業ディレクトリ（`ctx.cwd`）を基準にする。
 
@@ -113,8 +114,8 @@ if (cmd.includes("sed") && cmd.includes("-i")) {
     sedResult.targetFiles.length > 0
   ) {
     // Edit/MultiEditパターンを取得
-    const editPermissions = getPermissionLists("Edit");
-    const multiEditPermissions = getPermissionLists("MultiEdit");
+    const editPermissions = getPermissionLists("Edit", roots);
+    const multiEditPermissions = getPermissionLists("MultiEdit", roots);
     const editAllowList = [
       ...editPermissions.allowList,
       ...multiEditPermissions.allowList,

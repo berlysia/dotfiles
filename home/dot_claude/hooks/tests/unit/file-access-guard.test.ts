@@ -20,8 +20,10 @@ import fileAccessGuardHook, {
   type JudgeContext,
 } from "../../implementations/file-access-guard.ts";
 import { getChezmoiSourcePath } from "../../lib/chezmoi-utils.ts";
+import type { SourcedRule } from "../../lib/pattern-matcher.ts";
 import { collectTempRoots } from "../../lib/temp-roots.ts";
 import { deriveDefaultWorkflowDir } from "../../lib/workflow-paths.ts";
+import { sourced } from "../sourced-rules.ts";
 import {
   ConsoleCapture,
   createFileSystemMock,
@@ -707,7 +709,7 @@ describe("file-access-guard.ts hook behavior", () => {
       symlinkSync(outside, join(allowed, "sym"));
       writeFileSync(
         join(home, ".claude", "settings.json"),
-        JSON.stringify({ permissions: { allow: [`Edit(${allowed}/**)`] } }),
+        JSON.stringify({ permissions: { allow: [`Edit(/${allowed}/**)`] } }),
       );
       (
         await run("Write", { file_path: join(allowed, "ok.txt"), content: "x" })
@@ -944,56 +946,90 @@ describe("file-access-guard.ts hook behavior", () => {
   describe("getAllowPatterns category resolution", () => {
     const settings = [
       {
-        permissions: {
-          allow: [
-            "Edit(~/workspace/**)",
-            "Read(~/workspace/**)",
-            "Grep(~/notes/**)",
-            "Bash(git status)",
-          ],
+        settings: {
+          permissions: {
+            allow: [
+              "Edit(~/workspace/**)",
+              "Read(~/workspace/**)",
+              "Grep(~/notes/**)",
+              "Bash(git status)",
+            ],
+          },
         },
+        settingsRoot: "/r",
       },
     ];
 
     it("should let Edit patterns cover Write", () => {
-      deepStrictEqual(getAllowPatterns(settings, "Write"), [
-        "Edit(~/workspace/**)",
-      ]);
+      deepStrictEqual(
+        getAllowPatterns(settings, "Write").map(({ rule }) => rule),
+        ["Edit(~/workspace/**)"],
+      );
     });
 
     it("should let Edit patterns cover NotebookEdit and MultiEdit", () => {
-      deepStrictEqual(getAllowPatterns(settings, "NotebookEdit"), [
-        "Edit(~/workspace/**)",
-      ]);
-      deepStrictEqual(getAllowPatterns(settings, "MultiEdit"), [
-        "Edit(~/workspace/**)",
-      ]);
+      deepStrictEqual(
+        getAllowPatterns(settings, "NotebookEdit").map(({ rule }) => rule),
+        ["Edit(~/workspace/**)"],
+      );
+      deepStrictEqual(
+        getAllowPatterns(settings, "MultiEdit").map(({ rule }) => rule),
+        ["Edit(~/workspace/**)"],
+      );
     });
 
     it("should let Read patterns cover Glob", () => {
-      deepStrictEqual(getAllowPatterns(settings, "Glob"), [
-        "Read(~/workspace/**)",
-      ]);
+      deepStrictEqual(
+        getAllowPatterns(settings, "Glob").map(({ rule }) => rule),
+        ["Read(~/workspace/**)"],
+      );
     });
 
     it("should keep tool-specific patterns alongside the category pattern", () => {
-      deepStrictEqual(getAllowPatterns(settings, "Grep"), [
-        "Read(~/workspace/**)",
-        "Grep(~/notes/**)",
-      ]);
+      deepStrictEqual(
+        getAllowPatterns(settings, "Grep").map(({ rule }) => rule),
+        ["Read(~/workspace/**)", "Grep(~/notes/**)"],
+      );
     });
 
     it("should not let Write patterns leak into Edit", () => {
-      const legacy = [{ permissions: { allow: ["Write(~/legacy/**)"] } }];
-      deepStrictEqual(getAllowPatterns(legacy, "Edit"), []);
-      deepStrictEqual(getAllowPatterns(legacy, "Write"), [
-        "Write(~/legacy/**)",
-      ]);
+      const legacy = [
+        {
+          settings: { permissions: { allow: ["Write(~/legacy/**)"] } },
+          settingsRoot: "/r",
+        },
+      ];
+      deepStrictEqual(
+        getAllowPatterns(legacy, "Edit").map(({ rule }) => rule),
+        [],
+      );
+      deepStrictEqual(
+        getAllowPatterns(legacy, "Write").map(({ rule }) => rule),
+        ["Write(~/legacy/**)"],
+      );
     });
 
     it("should not grant Edit patterns to reading tools", () => {
-      deepStrictEqual(getAllowPatterns(settings, "Read"), [
-        "Read(~/workspace/**)",
+      deepStrictEqual(
+        getAllowPatterns(settings, "Read").map(({ rule }) => rule),
+        ["Read(~/workspace/**)"],
+      );
+    });
+
+    it("tags each rule with the settings root of the file it came from", () => {
+      const loaded = [
+        {
+          settings: { permissions: { allow: ["Edit(/a/**)"] } },
+          settingsRoot: "/home/u/.claude",
+        },
+        {
+          settings: { permissions: { allow: ["Edit(/b/**)"] } },
+          settingsRoot: "/started/here",
+        },
+      ];
+      deepStrictEqual(getAllowPatterns(loaded, "Write"), [
+        { rule: "Edit(/a/**)", settingsRoot: "/home/u/.claude" },
+        { rule: "Edit(/b/**)", settingsRoot: "/started/here" },
       ]);
     });
   });
@@ -1364,13 +1400,24 @@ describe("judge: the system-directory deny list", () => {
   it("denies the real location of a system directory that is a symlink", () => {
     const ctx = ctxWith({
       systemPaths: [join(base, "sys-link")],
-      allowPatterns: [`Read(${base}/**)`],
+      allowPatterns: sourced([`Read(/${base}/**)`]),
     });
     const form = join(base, "sys-real", "x");
     deepStrictEqual(judge(form, ctx, true).step, "2-system");
     deepStrictEqual(judge(form, ctx, true).allowed, false);
     // The lexical judgement does not resolve the list, so it reaches step 5.
     deepStrictEqual(judge(form, ctx, false).step, "5-pattern");
+  });
+
+  it("reads a /path allow from the settings root of its source", () => {
+    const ctx = ctxWith({
+      allowPatterns: sourced(["Read(/x/**)"], join(base, "root")),
+    });
+    deepStrictEqual(
+      judge(join(base, "root", "x", "a"), ctx, false).step,
+      "5-pattern",
+    );
+    deepStrictEqual(judge(join(base, "x", "a"), ctx, false).allowed, false);
   });
 
   it("compares the deny list case-insensitively when asked to", () => {
@@ -1419,7 +1466,7 @@ describe("chezmoi redirection and allow patterns (ADR-0027 invariant)", () => {
     "Edit(~/workspace/**)",
     "Edit(//tmp/**)",
   ];
-  const ctxFor = (allowPatterns: string[]): JudgeContext => ({
+  const ctxFor = (allowPatterns: SourcedRule[]): JudgeContext => ({
     category: "write",
     allowPatterns,
     repoRoot: repo,
@@ -1445,7 +1492,7 @@ describe("chezmoi redirection and allow patterns (ADR-0027 invariant)", () => {
     useFlatLayout();
     const verdict = judge(
       join(home, ".zshrc"),
-      ctxFor(remainingEditAllows),
+      ctxFor(sourced(remainingEditAllows)),
       false,
     );
     deepStrictEqual([verdict.allowed, verdict.step], [false, "6-chezmoi"]);
@@ -1455,7 +1502,7 @@ describe("chezmoi redirection and allow patterns (ADR-0027 invariant)", () => {
     useFlatLayout();
     const verdict = judge(
       join(home, ".zshrc"),
-      ctxFor([...remainingEditAllows, "Edit(~/.zshrc)"]),
+      ctxFor(sourced([...remainingEditAllows, "Edit(~/.zshrc)"])),
       false,
     );
     deepStrictEqual([verdict.allowed, verdict.step], [true, "5-pattern"]);
@@ -1470,7 +1517,7 @@ describe("chezmoi redirection and allow patterns (ADR-0027 invariant)", () => {
     useChezmoirootLayout();
     const verdict = judge(
       join(home, ".zshrc"),
-      ctxFor(remainingEditAllows),
+      ctxFor(sourced(remainingEditAllows)),
       false,
     );
     deepStrictEqual([verdict.allowed, verdict.step], [false, "default"]);
@@ -1480,7 +1527,7 @@ describe("chezmoi redirection and allow patterns (ADR-0027 invariant)", () => {
     useChezmoirootLayout();
     const verdict = judge(
       join(home, ".zshrc"),
-      ctxFor([...remainingEditAllows, "Edit(~/.zshrc)"]),
+      ctxFor(sourced([...remainingEditAllows, "Edit(~/.zshrc)"])),
       false,
     );
     deepStrictEqual([verdict.allowed, verdict.step], [true, "5-pattern"]);

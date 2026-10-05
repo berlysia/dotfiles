@@ -19,7 +19,11 @@ const projectSettings = JSON.parse(
 
 const allow = [...userSettings.allow, ...projectSettings.permissions.allow];
 const deny = [...userSettings.deny, ...projectSettings.permissions.deny];
-const ctx = { cwd: "/home/u/.local/share/chezmoi", home: "/home/u" };
+const ctx = {
+  cwd: "/home/u/.local/share/chezmoi",
+  home: "/home/u",
+  settingsRoot: "/home/u/.local/share/chezmoi",
+};
 
 async function matched(
   list: RuleList,
@@ -138,7 +142,11 @@ describe("settings entries after the matcher change", () => {
   }
 
   it("allows workflow documents by the cwd-relative rule alone", async () => {
-    const elsewhere = { cwd: "/mnt/c/proj", home: "/home/u" };
+    const elsewhere = {
+      cwd: "/mnt/c/proj",
+      home: "/home/u",
+      settingsRoot: "/mnt/c/proj",
+    };
     const rule = "Edit(.tmp/sessions/*/*.md)";
     const hit = (path: string) =>
       checkPattern(rule, "Write", { file_path: path }, elsewhere, "allow");
