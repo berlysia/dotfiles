@@ -18,6 +18,7 @@ import { getHomeDir } from "./path-utils.ts";
 import type {
   BaseLogEntry,
   CommandLogEntry,
+  ComplexityLogEntry,
   DecisionLogEntry,
   EventLogEntry,
   LogCategory,
@@ -236,6 +237,19 @@ class CentralizedLogger {
     this.writeLog("quality", entry);
   }
 
+  logComplexity(
+    fields: Omit<ComplexityLogEntry, keyof BaseLogEntry>,
+    sessionId?: string,
+  ): void {
+    const entry: ComplexityLogEntry = {
+      ...this.createBaseEntry(),
+      ...fields,
+      ...(sessionId && { session_id: sessionId }),
+    };
+
+    this.writeLog("complexity", entry);
+  }
+
   /**
    * 決定ログを記録
    */
@@ -317,6 +331,16 @@ export function logQuality(
   filePath?: string,
 ): void {
   getLogger().logQuality(source, lintTool, errorOutput, sessionId, filePath);
+}
+
+/**
+ * 便利関数：複雑度の通知と計測の省略のログ
+ */
+export function logComplexity(
+  fields: Omit<ComplexityLogEntry, keyof BaseLogEntry>,
+  sessionId?: string,
+): void {
+  getLogger().logComplexity(fields, sessionId);
 }
 
 /**
