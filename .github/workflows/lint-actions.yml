@@ -8,10 +8,14 @@ on:
     paths:
       - ".github/workflows/**"
       - ".github/actions/**"
+      - "zizmor.yml"
+      - "home/dot_config/mise/conf.d/host-toolchains.toml"
   pull_request:
     paths:
       - ".github/workflows/**"
       - ".github/actions/**"
+      - "zizmor.yml"
+      - "home/dot_config/mise/conf.d/host-toolchains.toml"
   workflow_dispatch:
 
 permissions: {}
@@ -39,14 +43,33 @@ jobs:
     name: zizmor
     runs-on: ubuntu-latest
     permissions:
-      security-events: write
       contents: read
-      actions: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
+      # Local `lint:actions` runs the mise-pinned zizmor; use the same version
+      # here so a Renovate bump of the pin is checked by the version it installs.
+      # A version the pinned action does not know yet fails the job on purpose.
+      - name: Read zizmor version from mise config
+        id: zizmor-version
+        env:
+          MISE_CONFIG: home/dot_config/mise/conf.d/host-toolchains.toml
+        run: |
+          version=$(sed -n 's/^"cargo:zizmor" = "\([0-9][0-9.]*\)"$/\1/p' "$MISE_CONFIG")
+          if [[ -z "$version" ]]; then
+            echo "::error file=${MISE_CONFIG}::cargo:zizmor is not pinned to an exact version"
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      # advanced-security (SARIF) makes zizmor exit 0 even with findings.
+      # Findings are triaged in zizmor.yml, so fail the job and annotate instead.
       - name: Run zizmor
         uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
+        with:
+          version: ${{ steps.zizmor-version.outputs.version }}
+          advanced-security: false
+          annotations: true
