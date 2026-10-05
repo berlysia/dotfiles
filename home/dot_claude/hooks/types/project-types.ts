@@ -68,6 +68,12 @@ export interface SettingsFile {
   [key: string]: unknown;
 }
 
+/** A settings file's content plus the directory its `/path` permission rules anchor at. */
+export interface LoadedSettings {
+  settings: SettingsFile;
+  settingsRoot: string;
+}
+
 /**
  * Result of command analysis
  */

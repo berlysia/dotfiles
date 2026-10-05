@@ -6,7 +6,11 @@
  * 許可パターンにマッチするかを判定する。
  */
 
-import { matchGitignorePattern } from "./pattern-matcher.ts";
+import {
+  matchGitignorePattern,
+  ruleContext,
+  type SourcedRule,
+} from "./pattern-matcher.ts";
 import type { MatchContext } from "./path-utils.ts";
 
 export interface FilePermissionCheckResult {
@@ -38,17 +42,17 @@ interface FileCheckDetail {
  * ファイルパスが許可パターンにマッチするかチェック
  *
  * @param filePath - チェック対象のファイルパス
- * @param allowPatterns - 許可パターンのリスト（例: ["Edit(./**)", "Edit(**\/*.ts)"]）
+ * @param allowPatterns - 許可パターンのリスト。各規則は、/path の基準（settingsRoot）と組になっている
  * @returns チェック結果
  */
 function checkSingleFile(
   filePath: string,
-  allowPatterns: string[],
+  allowPatterns: SourcedRule[],
   ctx: MatchContext,
 ): FileCheckDetail {
   // Edit() または MultiEdit() パターンを抽出
   const editPatterns = allowPatterns.filter(
-    (p) => p.startsWith("Edit(") || p.startsWith("MultiEdit("),
+    ({ rule }) => rule.startsWith("Edit(") || rule.startsWith("MultiEdit("),
   );
 
   // パターンがない場合は拒否
@@ -61,21 +65,29 @@ function checkSingleFile(
   }
 
   // 各パターンに対してマッチングを試みる
-  for (const pattern of editPatterns) {
+  for (const sourced of editPatterns) {
     // "Edit(" または "MultiEdit(" を除去して内部のパターンを取得
     const match =
-      pattern.match(/^Edit\((.+)\)$/) || pattern.match(/^MultiEdit\((.+)\)$/);
+      sourced.rule.match(/^Edit\((.+)\)$/) ||
+      sourced.rule.match(/^MultiEdit\((.+)\)$/);
     if (!match || !match[1]) continue;
 
     const pathPattern = match[1];
 
     try {
       // The input is the Edit allow list, so a match always widens permission.
-      if (matchGitignorePattern(filePath, pathPattern, ctx, "grant")) {
+      if (
+        matchGitignorePattern(
+          filePath,
+          pathPattern,
+          ruleContext(ctx, sourced),
+          "grant",
+        )
+      ) {
         return {
           filePath,
           permitted: true,
-          matchedPattern: pattern,
+          matchedPattern: sourced.rule,
         };
       }
     } catch {}
@@ -107,7 +119,7 @@ function checkSingleFile(
  */
 export function checkFilePermissions(
   filePaths: string[],
-  allowPatterns: string[],
+  allowPatterns: SourcedRule[],
   ctx: MatchContext,
 ): FilePermissionCheckResult {
   const fileResults: FileCheckDetail[] = [];
@@ -142,7 +154,7 @@ export function checkFilePermissions(
  */
 export function canApproveSedTargets(
   filePaths: string[],
-  allowPatterns: string[],
+  allowPatterns: SourcedRule[],
   ctx: MatchContext,
 ): boolean {
   const result = checkFilePermissions(filePaths, allowPatterns, ctx);

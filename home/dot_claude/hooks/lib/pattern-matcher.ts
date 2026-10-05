@@ -11,6 +11,7 @@ import { getFilePathFromToolInput } from "./command-parsing.ts";
 import {
   type MatchContext,
   type MatchKind,
+  type RuleContext,
   resolvePathPattern,
   resolveTargetPath,
 } from "./path-utils.ts";
@@ -240,6 +241,20 @@ function matchAbsoluteGlob(filePath: string, pattern: string): boolean {
   return table[patternSegments.length] === true;
 }
 
+/** A permission rule plus the directory its `/path` form anchors at. */
+export interface SourcedRule {
+  rule: string;
+  settingsRoot: string;
+}
+
+/** The context one rule is matched under. The only place a RuleContext is built. */
+export function ruleContext(
+  match: MatchContext,
+  sourced: SourcedRule,
+): RuleContext {
+  return { ...match, settingsRoot: sourced.settingsRoot };
+}
+
 /**
  * Match a tool-supplied path against the text inside a `Tool(...)` permission
  * rule. Both sides are resolved first (resolvePathPattern, resolveTargetPath)
@@ -249,7 +264,7 @@ function matchAbsoluteGlob(filePath: string, pattern: string): boolean {
 export function matchGitignorePattern(
   filePath: string,
   pattern: string,
-  ctx: MatchContext,
+  ctx: RuleContext,
   kind: MatchKind,
 ): boolean {
   // An empty path would resolve to cwd itself; no caller means that.
@@ -267,17 +282,25 @@ export function matchGitignorePattern(
  */
 async function checkIndividualCommandWithPattern(
   cmd: string,
-  patterns: string[],
+  patterns: SourcedRule[],
   ctx: MatchContext,
 ): Promise<{ matches: boolean; pattern?: string }> {
-  for (const pattern of patterns) {
-    if (!pattern.trim()) continue;
+  for (const sourced of patterns) {
+    if (!sourced.rule.trim()) continue;
 
     // Create a mock tool input for individual command check
     const mockInput: ToolInput = { command: cmd };
 
-    if (await checkPattern(pattern, "Bash", mockInput, ctx, "deny")) {
-      return { matches: true, pattern };
+    if (
+      await checkPattern(
+        sourced.rule,
+        "Bash",
+        mockInput,
+        ruleContext(ctx, sourced),
+        "deny",
+      )
+    ) {
+      return { matches: true, pattern: sourced.rule };
     }
   }
 
@@ -292,7 +315,7 @@ async function checkIndividualCommandWithPattern(
  */
 export async function checkIndividualCommandDenyWithPattern(
   cmd: string,
-  denyList: string[],
+  denyList: SourcedRule[],
   ctx: MatchContext,
 ): Promise<{ matches: boolean; matchedPattern?: string }> {
   // Skip built-in safe commands - they should never be denied
@@ -317,7 +340,7 @@ export async function checkPattern(
   pattern: string,
   toolName: string,
   toolInput: unknown,
-  ctx: MatchContext,
+  ctx: RuleContext,
   list: RuleList,
 ): Promise<boolean> {
   // Handle Bash tool specifically

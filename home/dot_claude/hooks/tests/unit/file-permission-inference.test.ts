@@ -33,6 +33,8 @@ import {
   checkFilePermissions,
 } from "../../lib/file-permission-inference.ts";
 
+import { sourced } from "../sourced-rules.ts";
+
 const ctx = { cwd: "/repo", home: "/home/u" };
 
 describe("file-permission-inference", () => {
@@ -40,7 +42,7 @@ describe("file-permission-inference", () => {
     it("should permit file matching Edit pattern", () => {
       const result = checkFilePermissions(
         ["src/utils.ts"],
-        ["Edit(./**)", "Bash(git *)"],
+        sourced(["Edit(./**)", "Bash(git *)"]),
         ctx,
       );
 
@@ -53,7 +55,7 @@ describe("file-permission-inference", () => {
     it("should permit file matching MultiEdit pattern", () => {
       const result = checkFilePermissions(
         ["src/utils.ts"],
-        ["MultiEdit(src/**)", "Bash(git *)"],
+        sourced(["MultiEdit(src/**)", "Bash(git *)"]),
         ctx,
       );
 
@@ -65,7 +67,7 @@ describe("file-permission-inference", () => {
     it("should permit all files when all match", () => {
       const result = checkFilePermissions(
         ["src/utils.ts", "src/helper.ts", "lib/index.ts"],
-        ["Edit(./**)"],
+        sourced(["Edit(./**)"]),
         ctx,
       );
 
@@ -79,7 +81,7 @@ describe("file-permission-inference", () => {
     it("should deny when one file does not match", () => {
       const result = checkFilePermissions(
         ["src/utils.ts", "config.json"],
-        ["Edit(src/**)"],
+        sourced(["Edit(src/**)"]),
         ctx,
       );
 
@@ -92,7 +94,7 @@ describe("file-permission-inference", () => {
     it("should deny when no Edit patterns exist", () => {
       const result = checkFilePermissions(
         ["src/utils.ts"],
-        ["Bash(git *)", "Read(./**)"],
+        sourced(["Bash(git *)", "Read(./**)"]),
         ctx,
       );
 
@@ -105,17 +107,28 @@ describe("file-permission-inference", () => {
     it("should handle absolute paths", () => {
       const result = checkFilePermissions(
         ["/home/user/project/src/utils.ts"],
-        ["Edit(/home/user/project/**)"],
+        sourced(["Edit(//home/user/project/**)"]),
         ctx,
       );
 
       expect(result.allFilesPermitted).toBeTruthy();
     });
 
+    it("anchors a /path Edit rule at the settings root of its source", () => {
+      const rules = sourced(["Edit(/src/**)"], "/started/here");
+      expect(
+        checkFilePermissions(["/started/here/src/a.ts"], rules, ctx)
+          .allFilesPermitted,
+      ).toBeTruthy();
+      expect(
+        checkFilePermissions(["/src/a.ts"], rules, ctx).allFilesPermitted,
+      ).toBeFalsy();
+    });
+
     it("should handle relative paths starting with ./", () => {
       const result = checkFilePermissions(
         ["./src/utils.ts"],
-        ["Edit(./**)"],
+        sourced(["Edit(./**)"]),
         ctx,
       );
 
@@ -125,7 +138,7 @@ describe("file-permission-inference", () => {
     it("should handle wildcards in patterns", () => {
       const result = checkFilePermissions(
         ["src/components/Button.tsx"],
-        ["Edit(src/**)"],
+        sourced(["Edit(src/**)"]),
         ctx,
       );
 
@@ -135,7 +148,7 @@ describe("file-permission-inference", () => {
     it("should handle mixed file extensions", () => {
       const result = checkFilePermissions(
         ["src/utils.ts", "src/styles.css"],
-        ["Edit(src/**)"],
+        sourced(["Edit(src/**)"]),
         ctx,
       );
 
@@ -145,7 +158,7 @@ describe("file-permission-inference", () => {
     it("should provide detailed results for each file", () => {
       const result = checkFilePermissions(
         ["src/allowed.ts", "config/denied.json"],
-        ["Edit(src/**)"],
+        sourced(["Edit(src/**)"]),
         ctx,
       );
 
@@ -165,7 +178,7 @@ describe("file-permission-inference", () => {
     it("should match pattern with multiple directory levels", () => {
       const result = checkFilePermissions(
         ["src/deep/nested/path/file.ts"],
-        ["Edit(src/**)"],
+        sourced(["Edit(src/**)"]),
         ctx,
       );
 
@@ -173,7 +186,7 @@ describe("file-permission-inference", () => {
     });
 
     it("should handle empty file list", () => {
-      const result = checkFilePermissions([], ["Edit(./**)"], ctx);
+      const result = checkFilePermissions([], sourced(["Edit(./**)"]), ctx);
 
       expect(result.allFilesPermitted).toBeTruthy();
       expect(result.fileResults).toHaveLength(0);
@@ -182,7 +195,7 @@ describe("file-permission-inference", () => {
     it("should try multiple patterns until match", () => {
       const result = checkFilePermissions(
         ["config/settings.json"],
-        ["Edit(src/**)", "Edit(config/**)"],
+        sourced(["Edit(src/**)", "Edit(config/**)"]),
         ctx,
       );
 
@@ -191,7 +204,11 @@ describe("file-permission-inference", () => {
     });
 
     it("should handle files in current directory", () => {
-      const result = checkFilePermissions(["README.md"], ["Edit(./**)"], ctx);
+      const result = checkFilePermissions(
+        ["README.md"],
+        sourced(["Edit(./**)"]),
+        ctx,
+      );
 
       expect(result.allFilesPermitted).toBeTruthy();
     });
@@ -201,7 +218,7 @@ describe("file-permission-inference", () => {
     it("should return true when all files permitted", () => {
       const result = canApproveSedTargets(
         ["src/utils.ts", "src/index.ts"],
-        ["Edit(src/**)"],
+        sourced(["Edit(src/**)"]),
         ctx,
       );
 
@@ -211,7 +228,7 @@ describe("file-permission-inference", () => {
     it("should return false when any file denied", () => {
       const result = canApproveSedTargets(
         ["src/utils.ts", "config.json"],
-        ["Edit(src/**)"],
+        sourced(["Edit(src/**)"]),
         ctx,
       );
 
@@ -219,7 +236,11 @@ describe("file-permission-inference", () => {
     });
 
     it("should return false when no Edit patterns", () => {
-      const result = canApproveSedTargets(["file.txt"], ["Bash(git *)"], ctx);
+      const result = canApproveSedTargets(
+        ["file.txt"],
+        sourced(["Bash(git *)"]),
+        ctx,
+      );
 
       expect(result).toBeFalsy();
     });
@@ -230,23 +251,27 @@ describe("relative targets and patterns share cwd", () => {
   it("does not reach a same-named directory above cwd", () => {
     const deep = { cwd: "/r/src/proj", home: "/home/u" };
     strictEqual(
-      canApproveSedTargets(["config/a.json"], ["Edit(src/**)"], deep),
+      canApproveSedTargets(["config/a.json"], sourced(["Edit(src/**)"]), deep),
       false,
     );
     strictEqual(
-      canApproveSedTargets(["src/a.ts"], ["Edit(src/**)"], deep),
+      canApproveSedTargets(["src/a.ts"], sourced(["Edit(src/**)"]), deep),
       true,
     );
   });
   it("ignores a negated allow pattern", () => {
     strictEqual(
-      canApproveSedTargets(["src/a.ts"], ["Edit(!node_modules/**)"], ctx),
+      canApproveSedTargets(
+        ["src/a.ts"],
+        sourced(["Edit(!node_modules/**)"]),
+        ctx,
+      ),
       false,
     );
   });
   it("matches a wildcard-free home pattern", () => {
     strictEqual(
-      canApproveSedTargets(["~/.zshrc"], ["Edit(~/.zshrc)"], ctx),
+      canApproveSedTargets(["~/.zshrc"], sourced(["Edit(~/.zshrc)"]), ctx),
       true,
     );
   });

@@ -26,6 +26,7 @@ import sessionHook, {
   isWorkflowArmedForTesting,
 } from "../../implementations/session.ts";
 import { matcherCoversGuardedTools } from "../../lib/guarded-tools.ts";
+import { encodeSessionDirName } from "../../lib/project-root.ts";
 import { resolveWorkflowPaths } from "../../lib/workflow-paths.ts";
 import {
   createSessionStartContext,
@@ -505,6 +506,98 @@ describe("startup summary", () => {
     } finally {
       process.chdir(previous);
     }
+  });
+});
+
+describe("transcript directory name audit", () => {
+  const envHelper = new EnvironmentHelper();
+  const NOTICE = "does not match the name derived from the startup directory";
+
+  beforeEach(() => {
+    envHelper.set("CLAUDE_ENV_FILE", undefined);
+    envHelper.set("DOCUMENT_WORKFLOW_DIR", undefined);
+    envHelper.set("DOCUMENT_WORKFLOW_WARN_ONLY", undefined);
+    envHelper.set("CLAUDE_CODE_TASK_LIST_ID", undefined);
+  });
+  afterEach(() => {
+    envHelper.restore();
+  });
+
+  const startupMessage = async (
+    source: string,
+    cwd: string,
+    transcript_path: string,
+  ): Promise<string> => {
+    const context = createSessionStartContext(source, { cwd, transcript_path });
+    await invokeRun(sessionHook, context);
+    return context.jsonCalls[0].systemMessage;
+  };
+  const transcriptFor = (root: string) =>
+    `/home/u/.claude/projects/${encodeSessionDirName(root)}/s.jsonl`;
+
+  it("says nothing when the transcript directory is named after the startup cwd", async () => {
+    const message = await startupMessage(
+      "startup",
+      "/work/my.proj",
+      transcriptFor("/work/my.proj"),
+    );
+    ok(!message.includes(NOTICE));
+  });
+  it("reports a transcript directory that is not named after the startup cwd", async () => {
+    const message = await startupMessage(
+      "startup",
+      "/work/my.proj",
+      "/home/u/.claude/projects/work-my.proj/s.jsonl",
+    );
+    ok(message.includes(NOTICE));
+    ok(
+      message.includes(
+        '[session] the transcript directory name "work-my.proj" does not match the name derived from the startup directory "/work/my.proj"',
+      ),
+    );
+    ok(message.includes("0027-permission-path-pattern-semantics.md"));
+  });
+  it("compares the normalized startup cwd", async () => {
+    const message = await startupMessage(
+      "startup",
+      "/work/my.proj/",
+      transcriptFor("/work/my.proj"),
+    );
+    ok(!message.includes(NOTICE));
+  });
+  it("escapes control characters in the values it prints", async () => {
+    const message = await startupMessage(
+      "startup",
+      "/work/a\nb",
+      "/home/u/.claude/projects/x/s.jsonl",
+    );
+    ok(message.includes('"/work/a\\nb"'));
+  });
+  it("checks only at startup", async () => {
+    for (const source of ["resume", "clear", "compact", "fork"]) {
+      const message = await startupMessage(
+        source,
+        "/work/my.proj",
+        "/home/u/.claude/projects/other/s.jsonl",
+      );
+      ok(!message.includes(NOTICE), source);
+    }
+  });
+  it("skips a cwd or a transcript path that is not absolute", async () => {
+    ok(
+      !(
+        await startupMessage(
+          "startup",
+          "rel",
+          "/home/u/.claude/projects/x/s.jsonl",
+        )
+      ).includes(NOTICE),
+    );
+    ok(
+      !(
+        await startupMessage("startup", "/work/my.proj", "projects/x/s.jsonl")
+      ).includes(NOTICE),
+    );
   });
 });
 

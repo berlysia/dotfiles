@@ -1,8 +1,8 @@
 #!/usr/bin/env -S bun run --silent
 
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
-import { getHomeDir } from "../lib/path-utils.ts";
+import { basename, dirname, isAbsolute, resolve } from "node:path";
+import { getHomeDir, normalizeAbsolute } from "../lib/path-utils.ts";
 import { defineHook } from "cc-hooks-ts";
 import { logEvent } from "../lib/centralized-logging.ts";
 import {
@@ -13,7 +13,7 @@ import {
   getDistillHealthNotice,
   getUnreadDigestPreview,
 } from "../lib/insight-digest.ts";
-import { getProjectRoot } from "../lib/project-root.ts";
+import { encodeSessionDirName, getProjectRoot } from "../lib/project-root.ts";
 import { shellSingleQuote } from "../lib/shell-quote.ts";
 import { resolveWorkflowPaths } from "../lib/workflow-paths.ts";
 import { resolveWorkflowDir } from "../lib/workflow-resolve.ts";
@@ -159,6 +159,29 @@ export function auditAnswerRecorderWiring(): string {
 }
 
 /**
+ * Hooks find the session's primary working directory by comparing candidate
+ * paths against the name of the transcript directory (createSettingsRoots).
+ * That naming rule is not documented. Right after startup the primary working
+ * directory is the hook input cwd, so the two names can be compared here; a
+ * mismatch means the comparison finds nothing for this session. Unlike the
+ * wiring audits above this returns null when there is nothing to report. It
+ * only sees the characters in the startup path, so a change to how some other
+ * character is encoded goes unnoticed.
+ */
+function auditTranscriptDirName(input: {
+  source: string;
+  cwd: string;
+  transcript_path: string;
+}): string | null {
+  if (input.source !== "startup") return null;
+  if (!isAbsolute(input.cwd) || !isAbsolute(input.transcript_path)) return null;
+  const actual = basename(dirname(input.transcript_path));
+  if (actual === encodeSessionDirName(normalizeAbsolute(input.cwd)))
+    return null;
+  return `[session] the transcript directory name ${JSON.stringify(actual)} does not match the name derived from the startup directory ${JSON.stringify(input.cwd)}. Hooks read project-settings /path permission rules against the startup directory after this session enters a worktree. See "本体と合わせていない点" in docs/decisions/0027-permission-path-pattern-semantics.md.`;
+}
+
+/**
  * Session management hooks
  * Handles SessionStart events using centralized logging
  */
@@ -192,6 +215,8 @@ const hook = defineHook({
       const envFile = process.env.CLAUDE_ENV_FILE;
       if (envFile) {
         const transcriptPath = context.input.transcript_path;
+        // Not the transcript directory name: this replaces "/" only.
+        // encodeSessionDirName is the rule Claude Code uses for that name.
         const projectHash = context.input.cwd
           .replace(/\//g, "-")
           .replace(/^-/, "");
@@ -270,6 +295,11 @@ const hook = defineHook({
         messages.push(
           `cwd mismatch: context.input.cwd=${context.input.cwd} but the project root is ${cwd}.`,
         );
+      }
+
+      const transcriptDirNotice = auditTranscriptDirName(context.input);
+      if (transcriptDirNotice) {
+        messages.push(transcriptDirNotice);
       }
 
       if (taskListWarning) {

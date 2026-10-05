@@ -45,6 +45,14 @@ export interface MatchContext {
   home: string;
 }
 
+/**
+ * MatchContext plus the directory a `/path` rule anchors at. The directory
+ * depends on where the rule was defined, so this is built per rule.
+ */
+export interface RuleContext extends MatchContext {
+  settingsRoot: string;
+}
+
 /** grant: a match widens permission (allow list). restrict: a match narrows it (deny list). */
 export type MatchKind = "grant" | "restrict";
 
@@ -57,7 +65,7 @@ export interface ResolvedPattern {
 // A base and a target only line up when both went through the same
 // normalization, so cwd and home are normalized here too: a deny anchored at
 // "/repo/." would otherwise miss "/repo/.env".
-function normalizeAbsolute(path: string): string {
+export function normalizeAbsolute(path: string): string {
   const stripped = posix.normalize(path).replace(/\/+$/, "");
   return stripped === "" ? "/" : stripped;
 }
@@ -74,22 +82,24 @@ export function resolveTargetPath(raw: string, ctx: MatchContext): string {
 }
 
 /**
- * Resolve a permission path pattern (the text inside `Tool(...)`). `//x` and
- * `/x` are read from the filesystem root, `~/x` from home and everything else
- * from cwd; relative patterns follow the depth rules Claude Code documents for
- * them. A bare name matches at any depth; a
+ * Resolve a permission path pattern (the text inside `Tool(...)`). `//x` is
+ * read from the filesystem root, `/x` from the directory of the settings
+ * source that defined the rule (ctx.settingsRoot), `~/x` from home and
+ * everything else from cwd; relative patterns follow the depth rules Claude
+ * Code documents for them. A bare name matches at any depth; a
  * single directory (`src/**`) matches only `<cwd>/src` for grant and at any
  * depth under cwd for restrict. An empty array matches nothing.
  */
 export function resolvePathPattern(
   body: string,
-  ctx: MatchContext,
+  ctx: RuleContext,
   kind: MatchKind,
 ): ResolvedPattern[] {
   // Claude Code gives `!` no meaning in allow rules; the deny carve-out is not implemented.
   if (body.startsWith("!")) return [];
   const home = normalizeAbsolute(ctx.home);
   const cwd = normalizeAbsolute(ctx.cwd);
+  const settingsRoot = normalizeAbsolute(ctx.settingsRoot);
 
   if (body === "") return [];
   if (body === "~")
@@ -99,17 +109,21 @@ export function resolvePathPattern(
     // while a deny rule still guards that exact path. A glob cannot express
     // "..", so the folded path is guarded as a literal.
     if (kind === "grant") return [];
-    const anchored = body.startsWith("/")
+    const anchored = body.startsWith("//")
       ? body
-      : body.startsWith("~/")
-        ? `${home}/${body.slice(2)}`
-        : `${cwd}/${body}`;
+      : body.startsWith("/")
+        ? `${settingsRoot}${body}`
+        : body.startsWith("~/")
+          ? `${home}/${body.slice(2)}`
+          : `${cwd}/${body}`;
     return [{ base: normalizeAbsolute(anchored), glob: "" }];
   }
 
   const pattern = body.endsWith("/") ? `${body}**` : body;
-  if (pattern.startsWith("/"))
+  if (pattern.startsWith("//"))
     return [{ base: "/", glob: pattern.replace(/^\/+/, "") }];
+  if (pattern.startsWith("/"))
+    return [{ base: settingsRoot, glob: pattern.slice(1) }];
   if (pattern.startsWith("~/")) return [{ base: home, glob: pattern.slice(2) }];
   if (pattern.startsWith("./")) return [{ base: cwd, glob: pattern.slice(2) }];
 

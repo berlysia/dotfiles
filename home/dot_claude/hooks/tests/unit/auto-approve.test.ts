@@ -1,6 +1,15 @@
 #!/usr/bin/env node --test
 
 import { deepStrictEqual, ok, rejects, strictEqual } from "node:assert";
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import type { ToolSchema } from "cc-hooks-ts";
 import autoApproveHook, {
@@ -8,6 +17,8 @@ import autoApproveHook, {
 } from "../../implementations/auto-approve.ts";
 import { parseForCollect } from "../../lib/bash-parser.ts";
 import { BOUNDARY_DENY_GUIDANCE } from "../../lib/context-helpers.ts";
+import { encodeSessionDirName } from "../../lib/project-root.ts";
+import { sourced } from "../sourced-rules.ts";
 import {
   ConsoleCapture,
   createFileSystemMock,
@@ -17,6 +28,8 @@ import {
   EnvironmentHelper,
   invokeRun,
 } from "./test-helpers.ts";
+
+const testRoots = { user: "/home/u/.claude", project: "/test" };
 
 const R = "r" + "m -rf";
 const P = "node" + "_modules";
@@ -284,10 +297,11 @@ describe("auto-approve.ts hook behavior", () => {
     it("passes when the allow stage throws", async () => {
       const result = await processBashTool(
         { command: "ls -la" },
-        [],
-        [],
+        sourced([]),
+        sourced([]),
         "/tmp",
         { cwd: "/test", home: "/home/u" },
+        testRoots,
         {
           classifyBashDeny: async () => ({ type: "clear" }),
           matchBashAllow: async () => {
@@ -306,10 +320,11 @@ describe("auto-approve.ts hook behavior", () => {
       await rejects(
         processBashTool(
           { command: "ls -la" },
-          [],
-          [],
+          sourced([]),
+          sourced([]),
           "/tmp",
           { cwd: "/test", home: "/home/u" },
+          testRoots,
           {
             classifyBashDeny: async () => {
               throw new Error("boom");
@@ -342,10 +357,11 @@ describe("auto-approve.ts hook behavior", () => {
       let classified = 0;
       const result = await processBashTool(
         { command: `ls ${"a".repeat(32000)}` },
-        [],
-        ["Bash(ls *)"],
+        sourced([]),
+        sourced(["Bash(ls *)"]),
         "/tmp",
         { cwd: "/test", home: "/home/u" },
+        testRoots,
         {
           classifyBashDeny: async () => {
             classified++;
@@ -368,10 +384,11 @@ describe("auto-approve.ts hook behavior", () => {
     it("denies when a fragment's re-parse gives up during classification", async () => {
       const result = await processBashTool(
         { command: "ls -la" },
-        [],
-        ["Bash(ls *)"],
+        sourced([]),
+        sourced(["Bash(ls *)"]),
         "/tmp",
         { cwd: "/test", home: "/home/u" },
+        testRoots,
         {
           classifyBashDeny: async () => {
             await parseForCollect(`echo aa-limit ${">".repeat(20000)}`);
@@ -1580,10 +1597,14 @@ describe("data heredoc bodies on the deny stage (F3b)", () => {
     allow: string[] = [],
   ) =>
     (
-      await processBashTool({ command }, deny, allow, "/tmp", {
-        cwd: "/test",
-        home: "/home/u",
-      })
+      await processBashTool(
+        { command },
+        sourced(deny),
+        sourced(allow),
+        "/tmp",
+        { cwd: "/test", home: "/home/u" },
+        testRoots,
+      )
     ).commands.map((c) => c.type);
 
   it("does not run the home guard on a data body", async () => {
@@ -1641,28 +1662,28 @@ describe("Write is judged by Edit rules and relative patterns anchor at cwd", ()
   const rows: Array<
     [string[], string[], string, Record<string, unknown>, Verdict]
   > = [
-    [["Edit(/repo/**)"], [], "Write", { file_path: "/repo/a.ts" }, "allow"],
-    [["Edit(/repo/**)"], [], "Write", { file_path: "/repo/.env" }, "ask"],
+    [["Edit(//repo/**)"], [], "Write", { file_path: "/repo/a.ts" }, "allow"],
+    [["Edit(//repo/**)"], [], "Write", { file_path: "/repo/.env" }, "ask"],
     [
-      ["Edit(/repo/**)"],
+      ["Edit(//repo/**)"],
       [],
       "Write",
       { file_path: "/repo/x/credentials.json" },
       "ask",
     ],
     [
-      ["Edit(/repo/**)"],
+      ["Edit(//repo/**)"],
       [],
       "Write",
       { file_path: "/repo/.aws/config" },
       "ask",
     ],
-    [["Edit(/repo/**)"], [], "Edit", { file_path: "/repo/.env" }, "allow"],
+    [["Edit(//repo/**)"], [], "Edit", { file_path: "/repo/.env" }, "allow"],
     [["Edit(./**)"], [], "Write", { file_path: ".env" }, "ask"],
-    [["Write(/repo/**)"], [], "Write", { file_path: "/repo/.env" }, "allow"],
+    [["Write(//repo/**)"], [], "Write", { file_path: "/repo/.env" }, "allow"],
     [
-      ["Edit(/repo/**)"],
-      ["Edit(/repo/secret/**)"],
+      ["Edit(//repo/**)"],
+      ["Edit(//repo/secret/**)"],
       "Write",
       { file_path: "/repo/secret/a" },
       "deny",
@@ -1706,14 +1727,14 @@ describe("Write is judged by Edit rules and relative patterns anchor at cwd", ()
     ],
     [["Edit(~/**)"], [], "Write", { file_path: "~/.ssh/config" }, "ask"],
     [
-      ["Edit(/repo/**)"],
+      ["Edit(//repo/**)"],
       [],
       "NotebookEdit",
       { notebook_path: "/repo/.env" },
       "ask",
     ],
     [
-      ["Edit(/repo/**)"],
+      ["Edit(//repo/**)"],
       [],
       "MultiEdit",
       { file_path: "/repo/.aws/config" },
@@ -1724,6 +1745,25 @@ describe("Write is judged by Edit rules and relative patterns anchor at cwd", ()
     [["Read(./**)"], [], "Read", { file_path: "/repo/src/a.ts" }, "allow"],
     // Grep is a smartPassTool: with no matching rule the hook gives no decision.
     [["Grep(./**)"], [], "Grep", { path: "/etc", pattern: "x" }, "pass"],
+    // A /path rule with no settings file behind it anchors where the session started.
+    [[], ["Edit(/sub/**)"], "Edit", { file_path: "/repo/sub/x" }, "deny"],
+    [[], ["Edit(/sub/**)"], "Write", { file_path: "/repo/sub/x" }, "deny"],
+    [
+      ["Edit(//repo/**)"],
+      ["Edit(/sub/**)"],
+      "Write",
+      { file_path: "/repo/sub/x" },
+      "deny",
+    ],
+    [
+      ["Edit(//sub/**)"],
+      ["Edit(/sub/**)"],
+      "Write",
+      { file_path: "/sub/x" },
+      "allow",
+    ],
+    [["Edit(/sub/**)"], [], "Write", { file_path: "/repo/sub/x" }, "allow"],
+    [["Edit(/sub/**)"], [], "Write", { file_path: "/sub/x" }, "ask"],
   ];
 
   for (const [allow, deny, tool, input, expected] of rows) {
@@ -1768,5 +1808,108 @@ describe("Write is judged by Edit rules and relative patterns anchor at cwd", ()
       (call: any) => call?.hookSpecificOutput?.permissionDecision === "allow",
     );
     strictEqual(allowed, false);
+  });
+});
+
+describe("a /path rule read from a settings file anchors at its source", () => {
+  const envHelper = new EnvironmentHelper();
+  const startedIn = process.cwd();
+  let scratch: string | undefined;
+  let tmpHome: string;
+  let project: string;
+
+  beforeEach(() => {
+    scratch = realpathSync(mkdtempSync(join(tmpdir(), "aa-anchor-")));
+    tmpHome = join(scratch, "home");
+    project = join(scratch, "proj");
+    mkdirSync(join(tmpHome, ".claude"), { recursive: true });
+    mkdirSync(join(project, ".claude"), { recursive: true });
+    mkdirSync(join(project, "inner"));
+    writeFileSync(
+      join(tmpHome, ".claude", "settings.json"),
+      JSON.stringify({ permissions: { deny: ["Edit(/x/**)"] } }),
+    );
+    writeFileSync(
+      join(project, ".claude", "settings.json"),
+      JSON.stringify({ permissions: { deny: ["Edit(/sub/**)"] } }),
+    );
+    envHelper.set("HOME", tmpHome);
+    envHelper.set("CLAUDE_TEST_MODE", undefined);
+    envHelper.set("CLAUDE_TEST_CWD", undefined);
+    envHelper.set("CLAUDE_PROJECT_DIR", project);
+    process.chdir(project);
+  });
+  afterEach(() => {
+    process.chdir(startedIn);
+    envHelper.restore();
+    // scratch is the mkdtemp result, never the real home.
+    if (scratch) rmSync(scratch, { recursive: true, force: true });
+    scratch = undefined;
+  });
+
+  // biome-ignore lint/suspicious/noExplicitAny: test context
+  const isDenied = (context: any) =>
+    context.jsonCalls.some(
+      // biome-ignore lint/suspicious/noExplicitAny: hook JSON output
+      (c: any) => c?.hookSpecificOutput?.permissionDecision === "deny",
+    );
+  const decide = async (
+    tool: "Write" | "Edit",
+    file_path: string,
+    cwd: string,
+    transcript_path?: string,
+  ) => {
+    const input =
+      tool === "Write"
+        ? { file_path, content: "x" }
+        : { file_path, old_string: "a", new_string: "b" };
+    const context = createPreToolUseContextFor(autoApproveHook, tool, input, {
+      cwd,
+      transcript_path,
+    });
+    await invokeRun(autoApproveHook, context);
+    return isDenied(context);
+  };
+
+  it("denies Edit and Write under <project>/sub for the project rule /sub/**", async () => {
+    strictEqual(
+      await decide("Write", join(project, "sub", "x"), project),
+      true,
+    );
+    strictEqual(await decide("Edit", join(project, "sub", "x"), project), true);
+  });
+  it("keeps that anchor when the hook input cwd has moved", async () => {
+    const inner = join(project, "inner");
+    strictEqual(await decide("Write", join(project, "sub", "x"), inner), true);
+    strictEqual(await decide("Write", join(inner, "sub", "x"), inner), false);
+  });
+  it("does not deny /sub/x for the project rule", async () => {
+    strictEqual(await decide("Write", "/sub/x", project), false);
+  });
+  it("denies <home>/.claude/x/a for the user rule /x/**, and neither /x/a nor <home>/x/a", async () => {
+    strictEqual(
+      await decide("Write", join(tmpHome, ".claude", "x", "a"), project),
+      true,
+    );
+    strictEqual(await decide("Write", "/x/a", project), false);
+    strictEqual(await decide("Write", join(tmpHome, "x", "a"), project), false);
+  });
+  it("moves the anchor into a worktree the transcript directory names", async () => {
+    const worktree = join(project, ".claude", "worktrees", "w");
+    const transcript = join(
+      tmpHome,
+      ".claude",
+      "projects",
+      encodeSessionDirName(worktree),
+      "s.jsonl",
+    );
+    strictEqual(
+      await decide("Write", join(worktree, "sub", "x"), worktree, transcript),
+      true,
+    );
+    strictEqual(
+      await decide("Write", join(project, "sub", "x"), worktree, transcript),
+      false,
+    );
   });
 });

@@ -3,7 +3,6 @@
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { userInfo } from "node:os";
-import { join } from "node:path";
 
 import { defineHook } from "cc-hooks-ts";
 import {
@@ -35,16 +34,24 @@ import {
   resolveTargetPath,
 } from "../lib/path-utils.ts";
 import { ruleNamesFor } from "../lib/permission-rule-names.ts";
-import { createMatchContext } from "../lib/project-root.ts";
+import {
+  createMatchContext,
+  createSettingsRoots,
+  type SettingsRoots,
+} from "../lib/project-root.ts";
 import {
   type RuleList,
   checkIndividualCommandDenyWithPattern as patternMatcherCheckDeny,
   checkPattern as patternMatcherCheckPattern,
   isSafeBuiltinCommand,
   matchAnchoredBashAllow,
+  ruleContext,
+  type SourcedRule,
 } from "../lib/pattern-matcher.ts";
+import { listSettingsSources } from "../lib/settings-sources.ts";
 import { scanSafeList } from "../lib/safe-command-list.ts";
 import type {
+  LoadedSettings,
   PermissionDecision,
   SettingsFile,
 } from "../types/project-types.ts";
@@ -66,7 +73,11 @@ const hook = defineHook({
     }
 
     // Get permission lists
-    const { allowList, denyList } = getPermissionLists(tool_name);
+    const roots = createSettingsRoots({
+      cwd: context.input.cwd,
+      transcriptPath: context.input.transcript_path,
+    });
+    const { allowList, denyList } = getPermissionLists(tool_name, roots);
     const matchContext = createMatchContext(context.input.cwd);
 
     try {
@@ -79,6 +90,7 @@ const hook = defineHook({
           allowList,
           context.input.cwd,
           matchContext,
+          roots,
         );
         const decision = analyzeBashCommands(
           bashResult.commands,
@@ -240,9 +252,12 @@ interface OtherToolResult {
   allowMatches: string[];
 }
 
-function getPermissionLists(tool_name: string): {
-  allowList: string[];
-  denyList: string[];
+function getPermissionLists(
+  tool_name: string,
+  roots: SettingsRoots,
+): {
+  allowList: SourcedRule[];
+  denyList: SourcedRule[];
 } {
   if (process.env.CLAUDE_TEST_MODE === "1") {
     // Test mode
@@ -265,14 +280,23 @@ function getPermissionLists(tool_name: string): {
           )
         : [];
 
-      return { allowList, denyList };
+      // No settings file is behind these rules, so they anchor like rules
+      // passed on the command line: where the session started.
+      const fromEnv = (rule: string): SourcedRule => ({
+        rule,
+        settingsRoot: roots.project,
+      });
+      return {
+        allowList: allowList.map(fromEnv),
+        denyList: denyList.map(fromEnv),
+      };
     } catch {
       return { allowList: [], denyList: [] };
     }
   } else {
     // Normal mode - get from settings files
     const workspaceRoot = getWorkspaceRoot();
-    const settingsFiles = getSettingsFiles(workspaceRoot);
+    const settingsFiles = getSettingsFiles(workspaceRoot, roots);
     const allowList = extractPermissionList("allow", settingsFiles);
     const denyList = extractPermissionList("deny", settingsFiles);
 
@@ -300,69 +324,41 @@ function getWorkspaceRoot(): string | undefined {
   }
 }
 
-function getSettingsFiles(workspaceRoot?: string): SettingsFile[] {
-  const settingsFiles: SettingsFile[] = [];
-
-  // Global settings
-  const globalSettingsPath = join(getHomeDir(), ".claude", "settings.json");
-  if (existsSync(globalSettingsPath)) {
+function getSettingsFiles(
+  workspaceRoot: string | undefined,
+  roots: SettingsRoots,
+): LoadedSettings[] {
+  const loaded: LoadedSettings[] = [];
+  for (const source of listSettingsSources(roots, workspaceRoot)) {
+    if (!existsSync(source.path)) continue;
     try {
-      const content = readFileSync(globalSettingsPath, "utf-8");
-      settingsFiles.push(JSON.parse(content) as SettingsFile);
+      loaded.push({
+        settings: JSON.parse(
+          readFileSync(source.path, "utf-8"),
+        ) as SettingsFile,
+        settingsRoot: source.settingsRoot,
+      });
     } catch {
       // Ignore parse errors
     }
   }
-
-  // Workspace settings
-  if (workspaceRoot) {
-    const workspaceSettingsPath = join(
-      workspaceRoot,
-      ".claude",
-      "settings.json",
-    );
-    if (existsSync(workspaceSettingsPath)) {
-      try {
-        const content = readFileSync(workspaceSettingsPath, "utf-8");
-        settingsFiles.push(JSON.parse(content) as SettingsFile);
-      } catch {
-        // Ignore parse errors
-      }
-    }
-
-    // Workspace local settings (overrides workspace settings)
-    const workspaceLocalSettingsPath = join(
-      workspaceRoot,
-      ".claude",
-      "settings.local.json",
-    );
-    if (existsSync(workspaceLocalSettingsPath)) {
-      try {
-        const content = readFileSync(workspaceLocalSettingsPath, "utf-8");
-        settingsFiles.push(JSON.parse(content) as SettingsFile);
-      } catch {
-        // Ignore parse errors
-      }
-    }
-  }
-
-  return settingsFiles;
+  return loaded;
 }
 
 function extractPermissionList(
   type: "allow" | "deny",
-  settingsFiles: SettingsFile[],
-): string[] {
-  const patterns: string[] = [];
+  loaded: LoadedSettings[],
+): SourcedRule[] {
+  const rules: SourcedRule[] = [];
 
-  for (const file of settingsFiles) {
-    const list = file.permissions?.[type];
+  for (const { settings, settingsRoot } of loaded) {
+    const list = settings.permissions?.[type];
     if (Array.isArray(list)) {
-      patterns.push(...list);
+      for (const rule of list) rules.push({ rule, settingsRoot });
     }
   }
 
-  return patterns;
+  return rules;
 }
 
 /**
@@ -378,10 +374,11 @@ type BashStages = {
 // the defaults are the real stages.
 export async function processBashTool(
   tool_input: unknown,
-  denyList: string[],
-  allowList: string[],
+  denyList: SourcedRule[],
+  allowList: SourcedRule[],
   cwd: string | undefined,
   ctx: MatchContext,
+  roots: SettingsRoots,
   stages: BashStages = { classifyBashDeny, matchBashAllow },
 ): Promise<BashToolResult> {
   const bashCommand = getCommandFromToolInput("Bash", tool_input) || "";
@@ -478,7 +475,9 @@ export async function processBashTool(
       commands.push({ type: "pass", command: bashCommand });
     } else {
       for (const simple of simpleCommands) {
-        commands.push(await stages.matchBashAllow(simple, allowList, ctx));
+        commands.push(
+          await stages.matchBashAllow(simple, allowList, ctx, roots),
+        );
       }
     }
   } catch (error) {
@@ -506,7 +505,7 @@ type DenyStageResult =
 
 async function classifyBashDeny(
   cmd: string,
-  denyList: string[],
+  denyList: SourcedRule[],
   opts: { readOnlyExempt: boolean },
   ctx: MatchContext,
 ): Promise<DenyStageResult> {
@@ -563,10 +562,11 @@ const SAFE_BASH_PATTERNS_LAYER1 = [
 /** One simple command from scanSafeList; anchored rules only, no re-parse. */
 async function matchBashAllow(
   cmd: string,
-  allowList: string[],
+  allowList: SourcedRule[],
   ctx: MatchContext,
+  roots: SettingsRoots,
 ): Promise<Extract<BashCommandResult, { type: "allow" | "pass" }>> {
-  const sed = await inferSedInPlaceAllow(cmd, ctx);
+  const sed = await inferSedInPlaceAllow(cmd, ctx, roots);
   if (sed) return sed;
   for (const pattern of SAFE_BASH_PATTERNS_LAYER1) {
     if (pattern.test(cmd)) {
@@ -583,7 +583,10 @@ async function matchBashAllow(
     if (isSafeBuiltinCommand(cmd)) {
       return { type: "allow", command: cmd, pattern: "Built-in safe command" };
     }
-    const matched = matchAnchoredBashAllow(cmd, allowList);
+    const matched = matchAnchoredBashAllow(
+      cmd,
+      allowList.map(({ rule }) => rule),
+    );
     if (matched) return { type: "allow", command: cmd, pattern: matched };
   }
   return { type: "pass", command: cmd };
@@ -592,6 +595,7 @@ async function matchBashAllow(
 async function inferSedInPlaceAllow(
   cmd: string,
   ctx: MatchContext,
+  roots: SettingsRoots,
 ): Promise<Extract<BashCommandResult, { type: "allow" }> | null> {
   // parseSedInPlace splits words without a full shell reading and misreads a
   // space after a backslash, so it never infers a command containing one.
@@ -610,8 +614,8 @@ async function inferSedInPlaceAllow(
       sedResult.targetFiles.length > 0
     ) {
       // Edit/MultiEditパターンを取得（Bashツールの許可リストとは別）
-      const editPermissions = getPermissionLists("Edit");
-      const multiEditPermissions = getPermissionLists("MultiEdit");
+      const editPermissions = getPermissionLists("Edit", roots);
+      const multiEditPermissions = getPermissionLists("MultiEdit", roots);
       const editAllowList = [
         ...editPermissions.allowList,
         ...multiEditPermissions.allowList,
@@ -642,31 +646,36 @@ async function inferSedInPlaceAllow(
 async function processOtherTool(
   tool_name: string,
   tool_input: unknown,
-  denyList: string[],
-  allowList: string[],
+  denyList: SourcedRule[],
+  allowList: SourcedRule[],
   ctx: MatchContext,
 ): Promise<OtherToolResult> {
   const denyMatches: string[] = [];
   const allowMatches: string[] = [];
 
   // Check deny patterns first
-  for (const pattern of denyList) {
+  for (const sourced of denyList) {
     if (
-      pattern.trim() &&
-      (await checkPattern(pattern, tool_name, tool_input, ctx, "deny"))
+      sourced.rule.trim() &&
+      (await checkPattern(sourced, tool_name, tool_input, ctx, "deny"))
     ) {
-      denyMatches.push(pattern);
+      denyMatches.push(sourced.rule);
     }
   }
 
   // Check allow patterns
-  for (const pattern of allowList) {
+  for (const sourced of allowList) {
     if (
-      pattern.trim() &&
-      (await checkPattern(pattern, tool_name, tool_input, ctx, "allow")) &&
-      !isBorrowedEditRuleOnDangerousPath(pattern, tool_name, tool_input, ctx)
+      sourced.rule.trim() &&
+      (await checkPattern(sourced, tool_name, tool_input, ctx, "allow")) &&
+      !isBorrowedEditRuleOnDangerousPath(
+        sourced.rule,
+        tool_name,
+        tool_input,
+        ctx,
+      )
     ) {
-      allowMatches.push(pattern);
+      allowMatches.push(sourced.rule);
     }
   }
 
@@ -703,12 +712,13 @@ function isBorrowedEditRuleOnDangerousPath(
 // Pattern matching functions now use shared library imports
 
 async function checkPattern(
-  pattern: string,
+  sourced: SourcedRule,
   tool_name: string,
   tool_input: unknown,
   ctx: MatchContext,
   list: RuleList,
 ): Promise<boolean> {
+  const pattern = sourced.rule;
   // Check for invalid Bash(**) pattern and log warning
   if (pattern === "Bash(**)" && tool_name === "Bash") {
     console.warn(
@@ -731,7 +741,7 @@ async function checkPattern(
     pattern,
     tool_name,
     tool_input,
-    ctx,
+    ruleContext(ctx, sourced),
     list,
   );
 }
