@@ -14,7 +14,7 @@ show_help() {
 git-worktree-cleanup - Remove git worktrees whose work is finished
 
 Usage:
-  git-worktree-cleanup [--yes | --non-interactive] [--] [<worktree-path | branch>...]
+  git-worktree-cleanup [--yes | --non-interactive] [--discard-tmp=<id>]... [--] [<worktree-path | branch>...]
   git-worktree-cleanup --help
 
 Description:
@@ -33,11 +33,13 @@ Description:
   Removed without asking:
   - merged into the origin main branch (ancestor, rebase merge or squash merge)
 
-  Asked (on a terminal only; otherwise kept):
+  Asked (on a terminal; otherwise kept, except where --discard-tmp answers):
   - commits are all on origin but the branch is not detected as merged
     (--yes answers these)
   - commits exist that are not on origin (--yes does not answer these)
-  - files in .tmp/ or .entire/ (--yes does not answer these)
+  - files in .tmp/ or .entire/ (--yes does not answer these). When the worktree is
+    merged and its tip was made in it (a commit, a rebase, or a merge commit on top
+    of one), the files and an id are printed, and --discard-tmp=<id> answers for it
   - no commits since the worktree was created (--yes does not answer these)
   - it cannot be checked whether the worktree is in use (--yes does not answer these)
 
@@ -45,6 +47,11 @@ Options:
   --yes, -y              Answer the questions that --yes may answer with "yes"
   --non-interactive, -n  Never ask; keep every worktree that would be asked about
                          (default when stdin is not a TTY)
+  --discard-tmp=<id>     Answer "yes" for the named target whose listed files in .tmp/ or
+                         .entire/ have this id. The id is printed with the list and changes
+                         when the files change. Needs at least one target; may be repeated.
+                         Works with --yes and --non-interactive, and when fetching fails.
+                         Use it after someone has decided the listed files are not needed.
   --help, -h             Show this help message
 
   --yes answers only the questions about worktrees whose commits are all on origin but not detected as merged. Worktrees with commits not on origin, with files in .tmp/ or .entire/, with no commits since the worktree was created, or that cannot be checked for use, are asked only on a terminal and are kept by --yes.
@@ -52,7 +59,8 @@ Options:
 
 Exit codes:
   0  Done. When scanning, worktrees that were kept are normal.
-  1  Usage error, a target that cannot be resolved, or the main worktree named as a target.
+  1  Usage error (including --discard-tmp without a target or with a malformed id),
+     a target that cannot be resolved, or the main worktree named as a target.
   2  A target was given and at least one worktree was kept (the reason is printed),
      including when git refused to remove it or, inside an agent-vm machine, when
      its VM-local node_modules could not be detached.
@@ -78,6 +86,8 @@ EOF
 
 # How confirmation prompts are answered: ask | yes | no
 answer_mode=ask
+# Ids given with --discard-tmp=<id>; each one answers for the worktree whose listed files have that id
+discard_ids=()
 targets=()
 
 while [[ $# -gt 0 ]]; do
@@ -91,6 +101,16 @@ while [[ $# -gt 0 ]]; do
             ;;
         --non-interactive|-n)
             answer_mode=no
+            ;;
+        --discard-tmp=*)
+            discard_id=${1#--discard-tmp=}
+            # 12 is TMP_ID_LEN, which is defined with describe_tmp below.
+            if [[ ! "$discard_id" =~ ^[0-9a-f]{12}$ ]]; then
+                printf '%b%s%b\n' "$RED" "--discard-tmp needs the id printed with the worktree's file list: $1" "$NC" >&2
+                echo "Run 'git-worktree-cleanup --help' for usage." >&2
+                exit 1
+            fi
+            discard_ids+=("$discard_id")
             ;;
         --)
             shift
@@ -111,6 +131,13 @@ while [[ $# -gt 0 ]]; do
     esac
     shift
 done
+
+# Someone answered about particular worktrees, so an id never applies to a scan.
+if [[ ${#discard_ids[@]} -gt 0 && ${#targets[@]} -eq 0 ]]; then
+    printf '%b%s%b\n' "$RED" "--discard-tmp needs the worktrees named as targets" "$NC" >&2
+    echo "Run 'git-worktree-cleanup --help' for usage." >&2
+    exit 1
+fi
 
 # Without a terminal, read would hit EOF and abort the script under set -e,
 # so fall back to the safe answer.
@@ -503,6 +530,17 @@ print_tmp_files() {
     fi
 }
 
+# id_given <id>: the id was passed with --discard-tmp
+id_given() {
+    local id
+    for id in ${discard_ids[@]+"${discard_ids[@]}"}; do
+        if [[ "$id" == "$1" ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
 # classify <index> <sha>: sets verdict (KEEP | REMOVE | ASK | ASK_TMP | ASK_HUMAN) and reason.
 # The first matching stage decides; a failing git command falls to that stage's conservative verdict.
 verdict=""
@@ -585,9 +623,18 @@ classify() {
     return 0
 }
 
-# confirm_delete <verdict>: return 0 when deletion is confirmed
+# confirm_delete <verdict> [<tmp id>]: return 0 when deletion is confirmed
 confirm_delete() {
-    local kind=$1
+    local kind=$1 id=${2:-}
+    # Offline too: like REMOVE, a newer origin main still contains what the stale one contains.
+    if [[ "$kind" == ASK_TMP ]] && id_given "$id"; then
+        echo "Delete anyway? (y/N) y [--discard-tmp=$id]"
+        return 0
+    fi
+    if [[ "$kind" == ASK_TMP && ${#discard_ids[@]} -gt 0 ]]; then
+        echo "Delete anyway? (y/N) n [no --discard-tmp id matches this list; the files changed or the id is another worktree's] - skipping"
+        return 1
+    fi
     case "$answer_mode" in
         yes)
             if [[ "$kind" == ASK && "$offline" != true ]]; then

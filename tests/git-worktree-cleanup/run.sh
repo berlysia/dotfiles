@@ -631,6 +631,239 @@ test_F29() {
   assert_contains "$OUT" ".tmp/sessions/x/plan-1.md" "F29 lists before the prompt"
 }
 
+test_F30() {
+  make_repo f30
+  local d id
+  d=$(mk_squashed sq 2)
+  add_tmp "$d" 1
+  run_cleanup -n sq
+  id=$(tmp_id_of)
+  run_cleanup -n "--discard-tmp=$id" sq
+  assert_removed "$d" "F30 removed"
+  assert_eq 0 "$STATUS" "F30 exit"
+  assert_contains "$OUT" "[--discard-tmp=$id]" "F30 answer"
+  assert_contains "$OUT" ".tmp/sessions/x/plan-1.md" "F30 record of what was discarded"
+}
+
+test_F31() {
+  make_repo f31
+  local d id
+  d=$(mk_squashed sq 2)
+  add_tmp "$d" 1
+  run_cleanup -n sq
+  id=$(tmp_id_of)
+  run_cleanup "--discard-tmp=$id"
+  assert_eq 1 "$STATUS" "F31 exit without a target"
+  assert_kept "$d" "F31 kept without a target"
+  assert_contains "$OUT" "--discard-tmp needs the worktrees named as targets" "F31 message"
+  run_cleanup --discard-tmp=xyz sq
+  assert_eq 1 "$STATUS" "F31 exit with a malformed id"
+  assert_contains "$OUT" "--discard-tmp needs the id printed with the worktree's file list" "F31 malformed message"
+  run_cleanup --discard-tmp sq
+  assert_eq 1 "$STATUS" "F31 exit without an id"
+  assert_kept "$d" "F31 kept"
+}
+
+test_F32() {
+  make_repo f32
+  local d
+  d=$(mk_pushed pushed 1)
+  add_tmp "$d" 1
+  run_cleanup --yes --discard-tmp=0123456789ab pushed
+  assert_kept "$d" "F32 unmerged kept"
+  assert_eq 2 "$STATUS" "F32 exit"
+  assert_not_contains "$OUT" "re-run with --discard-tmp=" "F32 no id offered"
+  assert_not_contains "$OUT" "(y/N) y" "F32 nothing answered yes"
+}
+
+test_F33() {
+  make_repo f33
+  local d
+  d=$(wt fresh)
+  add_tmp "$d" 1
+  run_cleanup -n --discard-tmp=0123456789ab fresh
+  assert_kept "$d" "F33 just created kept"
+  assert_eq 2 "$STATUS" "F33 exit"
+  assert_not_contains "$OUT" "re-run with --discard-tmp=" "F33 no id offered"
+}
+
+test_F34() {
+  make_repo f34
+  local d id
+  d=$(mk_squashed sq 2)
+  mkdir -p "$d/.entire"
+  printf 'x\n' >"$d/.entire/log"
+  run_cleanup -n sq
+  id=$(tmp_id_of)
+  assert_contains "$OUT" ".entire/log" "F34 lists .entire"
+  run_cleanup -n "--discard-tmp=$id" sq
+  assert_removed "$d" "F34 removed"
+}
+
+test_F35() {
+  make_repo f35
+  local a b wip ida idb
+  a=$(mk_squashed sq-a 2)
+  b=$(mk_squashed sq-b 2)
+  add_tmp "$a" 1
+  add_tmp "$b" 1
+  wip=$(wt wip)
+  commit_in "$wip" wip-1.txt
+  run_cleanup -n sq-a sq-b
+  ida=$(sed -n 's/.*--discard-tmp=\([0-9a-f]\{12\}\) sq-a,.*/\1/p' <<<"$OUT")
+  idb=$(sed -n 's/.*--discard-tmp=\([0-9a-f]\{12\}\) sq-b,.*/\1/p' <<<"$OUT")
+  if [[ "$ida" != "$idb" ]]; then record "PASS F35 ids differ per worktree"; else record "FAIL F35 ids differ per worktree ($ida)"; fi
+  run_cleanup -n "--discard-tmp=$ida" sq-a sq-b wip
+  assert_removed "$a" "F35 sq-a removed"
+  assert_kept "$b" "F35 sq-b kept: its id was not given"
+  assert_kept "$wip" "F35 wip kept"
+  assert_eq 2 "$STATUS" "F35 exit"
+  assert_contains "$OUT" "no --discard-tmp id matches this list" "F35 mismatch message"
+  run_cleanup -n "--discard-tmp=$ida" "--discard-tmp=$idb" sq-b
+  assert_removed "$b" "F35 sq-b removed with its own id among several"
+}
+
+test_F36() {
+  make_repo f36
+  local d id
+  d=$(mk_squashed sq 2)
+  add_tmp "$d" 1
+  run_cleanup -n sq
+  id=$(tmp_id_of)
+  printf 'later\n' >"$d/.tmp/sessions/x/later.md"
+  run_cleanup -n "--discard-tmp=$id" sq
+  assert_kept "$d" "F36 kept: a file was added after the id was printed"
+  assert_eq 2 "$STATUS" "F36 exit"
+  assert_contains "$OUT" "no --discard-tmp id matches this list" "F36 message"
+  assert_contains "$OUT" ".tmp/sessions/x/later.md" "F36 lists the new file"
+}
+
+test_F37() {
+  make_repo f37
+  local d id
+  d=$(mk_pushed ff 1)
+  ff_merge ff
+  add_tmp "$d" 1
+  run_cleanup -n ff
+  id=$(tmp_id_of)
+  assert_contains "$OUT" "(merged: ancestor)" "F37 how"
+  run_cleanup -n "--discard-tmp=$id" ff
+  assert_removed "$d" "F37 ancestor with its own commit removed"
+}
+
+test_F38() {
+  make_repo f38
+  local d
+  d=$(wt plan-only)
+  mk_pushed other 1 >/dev/null
+  ff_merge other
+  sync_repo
+  git -C "$d" merge -q --ff-only origin/main
+  add_tmp "$d" 1
+  run_cleanup -n --discard-tmp=0123456789ab plan-only
+  assert_kept "$d" "F38 fast-forwarded worktree with only a plan kept"
+  assert_contains "$OUT" "(merged: ancestor)" "F38 how"
+  assert_not_contains "$OUT" "re-run with --discard-tmp=" "F38 no id offered"
+}
+
+test_F40() {
+  make_repo f40
+  local d
+  d=$(mk_pushed ff 1)
+  ff_merge ff
+  mk_pushed other 1 >/dev/null
+  squash_merge other
+  sync_repo
+  git -C "$d" reset -q --hard origin/main
+  add_tmp "$d" 1
+  run_cleanup -n --discard-tmp=0123456789ab ff
+  assert_kept "$d" "F40 kept: reset to main after its commit, then only a plan"
+  assert_contains "$OUT" "(merged: ancestor)" "F40 how"
+  assert_not_contains "$OUT" "re-run with --discard-tmp=" "F40 no id offered"
+}
+
+test_F41() {
+  make_repo f41
+  local d
+  d=$(wt mine)
+  mk_pushed other 2 >/dev/null
+  sync_repo
+  git -C "$d" merge -q --ff-only origin/other
+  squash_merge other
+  add_tmp "$d" 1
+  run_cleanup -n --discard-tmp=0123456789ab mine
+  assert_kept "$d" "F41 kept: fast-forwarded to someone else's branch, then only a plan"
+  assert_contains "$OUT" "(merged: squash), but its tip was not made in this worktree" "F41 how and why no id"
+  assert_not_contains "$OUT" "re-run with --discard-tmp=" "F41 no id offered"
+}
+
+test_F44() {
+  make_repo f44
+  local d
+  d=$(wt mine)
+  mk_pushed other 2 >/dev/null
+  sync_repo
+  # What a plain "git merge" does under merge.ff=false: a merge commit even where a fast-forward was possible.
+  git -C "$d" merge -q --no-ff -m "merge other" origin/other
+  squash_merge other
+  add_tmp "$d" 1
+  run_cleanup -n --discard-tmp=0123456789ab mine
+  assert_kept "$d" "F44 kept: a merge commit over someone else's branch, then only a plan"
+  assert_contains "$OUT" "but its tip was not made in this worktree" "F44 why no id"
+  assert_not_contains "$OUT" "re-run with --discard-tmp=" "F44 no id offered"
+}
+
+test_F45() {
+  make_repo f45
+  local d id
+  d=$(mk_pushed topic 1)
+  mk_pushed other 1 >/dev/null
+  squash_merge other
+  sync_repo
+  git -C "$d" merge -q --no-ff -m "merge main" origin/main
+  push_branch "$d"
+  squash_merge topic
+  add_tmp "$d" 1
+  run_cleanup -n topic
+  id=$(tmp_id_of)
+  assert_eq 12 "${#id}" "F45 id offered: main merged into the worktree's own commit"
+  run_cleanup -n "--discard-tmp=$id" topic
+  assert_removed "$d" "F45 removed"
+}
+
+test_F46() {
+  make_repo f46
+  local d id
+  d=$(mk_pushed topic 1)
+  mk_pushed other 1 >/dev/null
+  squash_merge other
+  git -C "$d" pull -q --rebase origin main 2>/dev/null
+  git -C "$d" push -q -f origin HEAD 2>/dev/null
+  squash_merge topic
+  add_tmp "$d" 1
+  run_cleanup -n topic
+  id=$(tmp_id_of)
+  assert_eq 12 "${#id}" "F46 id offered: the tip was replayed by git pull --rebase in this worktree"
+}
+
+test_F42() {
+  make_repo f42
+  local d id
+  d=$(mk_pushed topic 2)
+  mk_pushed other 1 >/dev/null
+  ff_merge other
+  sync_repo
+  git -C "$d" rebase -q origin/main
+  git -C "$d" push -q -f origin HEAD 2>/dev/null
+  squash_merge topic
+  add_tmp "$d" 1
+  run_cleanup -n topic
+  id=$(tmp_id_of)
+  assert_eq 12 "${#id}" "F42 id offered: the tip was replayed by a rebase in this worktree"
+  run_cleanup -n "--discard-tmp=$id" topic
+  assert_removed "$d" "F42 removed"
+}
+
 # shellcheck disable=SC2016 # the branch name holds a literal $( ) on purpose
 test_F39() {
   make_repo f39
@@ -810,6 +1043,20 @@ test_R12() {
   assert_contains "$OUT" "git refused to remove it" "R12 message"
   assert_contains "$OUT" "stub refusal" "R12 git stderr"
   assert_eq 2 "$STATUS" "R12 exit"
+}
+
+test_R13() {
+  make_repo r13
+  local d id
+  d=$(mk_squashed sq 2)
+  add_tmp "$d" 1
+  sync_repo
+  git -C "$REPO" remote set-url origin "$BASE/missing.git"
+  run_cleanup -n sq
+  id=$(tmp_id_of)
+  run_cleanup -n "--discard-tmp=$id" sq
+  assert_contains "$OUT" "Could not fetch origin" "R13 offline notice"
+  assert_removed "$d" "R13 removed offline"
 }
 
 test_R15() {
@@ -992,6 +1239,7 @@ test_U2() {
   assert_contains "$OUT" "removes nothing more than --non-interactive" "U2 offline"
   assert_contains "$OUT" "Exit codes" "U2 exit codes section"
   assert_contains "$OUT" "  2  " "U2 exit code 2"
+  assert_contains "$OUT" "--discard-tmp=<id>" "U2 discard-tmp"
 }
 
 test_U3() {
