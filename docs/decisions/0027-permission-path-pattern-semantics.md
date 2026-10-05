@@ -171,4 +171,4 @@ issue は未作成である。
 - ADR-0023（workflow dir と project root）
 - Claude Code の公式ドキュメント「Configure permissions」の「Read and Edit」「Symlinks」「Extend permissions with hooks」（`https://code.claude.com/docs/en/permissions.md`、2026-10-06 に読んだ版）
 - issue は未作成
-- PR は未作成
+- PR #266（この ADR を含む変更）
