@@ -133,7 +133,7 @@ agent-vm の launcher は、起動時に install を実行しない。作成時�
 agent-vm を使う repo では、作った worktree の `node_modules` を VM ローカルに差し替える（`docs/decisions/0022-agent-vm-node-modules.md`）。
 
 - **VM の中**（`/etc/agent-vm` があり、`agent-vm-node-modules` がある）: 作成の後に `agent-vm-node-modules attach <worktree>` を実行する。失敗したら、警告と回復手順を 1 行出す。作成そのものは成功のままである。警告が出ている間は、その worktree で install しない（host の worktree に linux 用のパッケージが入る）。
-  - `attach` が成功したら、依存をインストールする（終了コード 0。ヘルパーは、対象のパッケージを 1 つでも取りこぼすと 0 以外で終わる）。mount された `node_modules` に対する install でも、mount は保たれる。
+  - `attach` が成功したら、依存をインストールする（終了コード 0。ヘルパーは、対象のパッケージを 1 つでも取りこぼすと 0 以外で終わる）。mount された `node_modules` に対する `npm ci`、`pnpm install --force`、`bun install --force` で mount が保たれることは、実機で確かめてある（`docs/agent-vm.md` の V28）。ここで実行する `--frozen-lockfile` の形そのものは、VM の実機では確かめていない。
   - `attach` が失敗したら、install しない。既存の警告が回復手順を出すので、依存に関する行は足さない。lockfile が 2 種類ある場合の警告も出さない。
   - `agent-vm-node-modules` が無ければ、install しない。`package.json` から PM か lockfile が見つかる worktree に限り、理由と回復手順（host での `agent-vm rm <repo>`）を警告する。`--no-install` を付けていても、install を勧めない。
 - **host**（`agent-vm` がある）: 依存をインストールした後に、`agent-vm node-modules-sync <repo>` を実行する。この repo の machine が動いていなければ、何もしない。動いていれば、起動中の処理が repo の lock を持っている間（最大で約 5 秒）と VM での sync の間、作成の完了が遅れる。失敗したら、agent-vm の警告に続けて 1 行出す。次の agent-vm の起動で揃う。sync の成否は install に影響しない。
