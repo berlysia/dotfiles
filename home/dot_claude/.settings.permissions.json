@@ -158,6 +158,7 @@
     "Bash(pnpm prettier *)",
     "Agent",
     "BashOutput",
+    "Edit(.git/worktree/**)",
     "Edit(.tmp/sessions/*/*.md)",
     "Edit(//tmp/**)",
     "Edit(~/.config/**)",

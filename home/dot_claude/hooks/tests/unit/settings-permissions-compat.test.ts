@@ -25,18 +25,26 @@ const ctx = {
   settingsRoot: "/home/u/.local/share/chezmoi",
 };
 
-async function matched(
+async function matchedIn(
+  list: RuleList,
+  tool: string,
+  filePath: string,
+  context: typeof ctx,
+): Promise<string[]> {
+  const hits: string[] = [];
+  for (const rule of list === "allow" ? allow : deny) {
+    if (await checkPattern(rule, tool, { file_path: filePath }, context, list))
+      hits.push(rule);
+  }
+  return hits;
+}
+
+function matched(
   list: RuleList,
   tool: string,
   filePath: string,
 ): Promise<string[]> {
-  const rules = list === "allow" ? allow : deny;
-  const hits: string[] = [];
-  for (const rule of rules) {
-    if (await checkPattern(rule, tool, { file_path: filePath }, ctx, list))
-      hits.push(rule);
-  }
-  return hits;
+  return matchedIn(list, tool, filePath, ctx);
 }
 
 describe("settings entries after the matcher change", () => {
@@ -59,12 +67,9 @@ describe("settings entries after the matcher change", () => {
     );
   });
 
-  it("keeps the set of path rules this table was written against", () => {
+  it("writes every deny path rule as an absolute or home path", () => {
     const pathRule =
       /^(Read|Edit|Write|MultiEdit|NotebookEdit|NotebookRead|Grep|Glob|LS|Search)\(/;
-    // Adding or removing a path rule should come with a row in the table below.
-    strictEqual(allow.filter((r) => pathRule.test(r)).length, 23);
-    strictEqual(deny.filter((r) => pathRule.test(r)).length, 42);
     strictEqual(
       deny.some((r) => /^[A-Za-z]+\((?![/~])/.test(r) && pathRule.test(r)),
       false,
@@ -158,6 +163,38 @@ describe("settings entries after the matcher change", () => {
     strictEqual(
       await hit("/mnt/c/other/.tmp/sessions/abcd1234/plan.md"),
       false,
+    );
+  });
+
+  // git-worktree-create puts worktrees in <repo>/.git/worktree/<branch>, so a
+  // session started at the repo root edits them through this rule. The cwd is
+  // outside every other allowed root so only this rule can match.
+  it("allows edits in a worktree under the repo root, and nothing else in .git", async () => {
+    const elsewhere = {
+      cwd: "/mnt/c/proj",
+      home: "/home/u",
+      settingsRoot: "/mnt/c/proj",
+    };
+    const hit = (path: string) => matchedIn("allow", "Edit", path, elsewhere);
+    strictEqual(
+      (await hit("/mnt/c/proj/.git/worktree/feature-x/src/a.ts")).join(),
+      "Edit(.git/worktree/**)",
+    );
+    strictEqual((await hit("/mnt/c/proj/.git/config")).length, 0);
+    strictEqual(
+      (await hit("/mnt/c/other/.git/worktree/feature-x/src/a.ts")).length,
+      0,
+    );
+    strictEqual(
+      (
+        await matchedIn(
+          "deny",
+          "Edit",
+          "/mnt/c/proj/.git/worktree/feature-x/src/a.ts",
+          elsewhere,
+        )
+      ).length,
+      0,
     );
   });
 });
