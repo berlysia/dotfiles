@@ -179,7 +179,7 @@ stamp は Round N の要求集合を Round N-1 の verdict から再計算する
 
 ## 記録の移し方
 
-作業の終わりに、決まった節を恒久の文書へ移し、spec・research・plan は残さない。移す作業は計画の最後のタスクにする。節と行き先の表、最後のタスクの書き方、`docs/plans/` に置くもの、作業ツリーに無い記録の指し方は [references/record-migration.md](references/record-migration.md) にある。計画の最後のタスクを書くとき、作業を終えるときに読む。
+作業の終わりに、決まった節を恒久の文書へ移し、spec・research・plan は残さない。移す作業は計画の最後のタスクにする。節と行き先の表、最後のタスクの書き方、残件を書く時点、`docs/plans/` に置くもの、作業ツリーに無い記録の指し方は [references/record-migration.md](references/record-migration.md) にある。計画の最後のタスクを書くとき、作業を終えるとき、応答に残件が出たときに読む。
 
 ## prose だけの変更での追加レビュアー
 
