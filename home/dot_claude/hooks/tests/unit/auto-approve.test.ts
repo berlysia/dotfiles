@@ -4,6 +4,7 @@ import { deepStrictEqual, ok, rejects, strictEqual } from "node:assert";
 import {
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   realpathSync,
   rmSync,
   writeFileSync,
@@ -255,7 +256,6 @@ describe("auto-approve.ts hook behavior", () => {
     const ALLOWED: Array<[string, string[]]> = [
       ["ls -la", []],
       ["git status", []],
-      ["cd x && pnpm test", ["Bash(cd *)", "Bash(pnpm test *)"]],
       ["grep -rn foo src | head -20", ["Bash(grep *)"]],
       ["git log --oneline -5 2>/dev/null", []],
       ["pnpm test 2>&1 | tail -20", ["Bash(pnpm test *)"]],
@@ -275,6 +275,8 @@ describe("auto-approve.ts hook behavior", () => {
       ["for f in a; do ls; done", []],
       ["ls > out.txt", []],
       ["ls; (cd x && ls)", ["Bash(cd *)"]],
+      // cwd changes make the words unresolvable for the hold check (spec K4 principle 3)
+      ["cd x && pnpm test", ["Bash(cd *)", "Bash(pnpm test *)"]],
       ["ls &", []],
       ["FOO=1 pnpm test", ["Bash(pnpm *)"]],
       ["find . -name x", ["Bash(find *)"]],
@@ -1725,9 +1727,10 @@ describe("Write is judged by Edit rules and relative patterns anchor at cwd", ()
       { file_path: "/repo/.aws/config" },
       "ask",
     ],
-    [["Edit(//repo/**)"], [], "Edit", { file_path: "/repo/.env" }, "allow"],
+    // A dot path is held: core's own rules decide (spec K1).
+    [["Edit(//repo/**)"], [], "Edit", { file_path: "/repo/.env" }, "pass"],
     [["Edit(./**)"], [], "Write", { file_path: ".env" }, "ask"],
-    [["Write(//repo/**)"], [], "Write", { file_path: "/repo/.env" }, "allow"],
+    [["Write(//repo/**)"], [], "Write", { file_path: "/repo/.env" }, "pass"],
     [
       ["Edit(//repo/**)"],
       ["Edit(//repo/secret/**)"],
@@ -1742,7 +1745,7 @@ describe("Write is judged by Edit rules and relative patterns anchor at cwd", ()
       [],
       "Write",
       { file_path: "/repo/.tmp/sessions/a/research.md" },
-      "allow",
+      "pass",
     ],
     [
       ["Edit(.tmp/sessions/*/*.md)"],
@@ -1989,4 +1992,101 @@ describe("auto-approve - git prefix forms (spec K7 Goal check)", () => {
       strictEqual(isAllow(context), false);
     });
   }
+});
+
+describe("auto-approve - hold (spec K1)", () => {
+  const envHelper = new EnvironmentHelper();
+  let home = "";
+  beforeEach(() => {
+    envHelper.set("CLAUDE_TEST_MODE", "1");
+    home = realpathSync(mkdtempSync(join(tmpdir(), "aa-hold-home-"))); // a mkdtemp home, not the real HOME
+    envHelper.set("HOME", home);
+    envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+  });
+  afterEach(() => {
+    envHelper.restore();
+    rmSync(home, { recursive: true, force: true });
+  });
+  const run = async (
+    tool: string,
+    input: Record<string, unknown>,
+    allow: string[],
+    deny: string[] = [],
+  ) => {
+    envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(allow));
+    envHelper.set("CLAUDE_TEST_DENY", JSON.stringify(deny));
+    const context = createPreToolUseContextFor(autoApproveHook, tool, input, {
+      cwd: "/w/p",
+    });
+    await invokeRun(autoApproveHook, context);
+    return context;
+  };
+
+  it("passes instead of allowing an Edit to a dot path covered by an allow rule", async () => {
+    const context = await run(
+      "Edit",
+      { file_path: "/w/p/.claude/settings.json" },
+      ["Edit(//w/p/**)"],
+    );
+    strictEqual(isAllow(context), false);
+    strictEqual(context.jsonCalls.length, 0);
+  });
+  it("still allows an Edit to a plain path", async () => {
+    strictEqual(
+      isAllow(
+        await run("Edit", { file_path: "/w/p/src/a.ts" }, ["Edit(//w/p/**)"]),
+      ),
+      true,
+    );
+  });
+  it("keeps a deny when the path also holds", async () => {
+    const context = await run(
+      "Edit",
+      { file_path: "/w/p/.git/config" },
+      ["Edit(//w/p/**)"],
+      ["Edit(//**/.git/config)"],
+    );
+    strictEqual(
+      context.jsonCalls.at(-1)?.hookSpecificOutput?.permissionDecision,
+      "deny",
+    );
+  });
+  it("passes instead of allowing Bash that writes to a dot path, including sed -i", async () => {
+    strictEqual(
+      isAllow(
+        await run("Bash", { command: "tee .claude/x.json" }, ["Bash(tee *)"]),
+      ),
+      false,
+    );
+    strictEqual(
+      isAllow(
+        await run("Bash", { command: "sed -i s/a/b/ .claude/x.json" }, [
+          "Edit(//w/p/**)",
+        ]),
+      ),
+      false,
+    );
+  });
+  it("logs one decision per call", async () => {
+    const sessionId = `hold-log-${process.pid}-${Date.now()}`;
+    envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Edit(//w/p/**)"]));
+    const context = createPreToolUseContextFor(
+      autoApproveHook,
+      "Edit",
+      { file_path: "/w/p/.claude/settings.json" },
+      { cwd: "/w/p", session_id: sessionId },
+    );
+    await invokeRun(autoApproveHook, context);
+    // preload-test-env.mjs points CLAUDE_LOGS_DIR at a mkdtemp directory (centralized-logging.ts:37, :58).
+    const lines = readFileSync(
+      join(process.env["CLAUDE_LOGS_DIR"] ?? "", "decisions.jsonl"),
+      "utf8",
+    )
+      .split("\n")
+      .filter((line) => line.includes(sessionId))
+      .map((line) => JSON.parse(line) as { decision: string; reason: string });
+    strictEqual(lines.length, 1);
+    strictEqual(lines[0]?.decision, "pass");
+    strictEqual(lines[0]?.reason.startsWith("held: "), true);
+  });
 });

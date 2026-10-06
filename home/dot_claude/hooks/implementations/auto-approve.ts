@@ -9,6 +9,11 @@ import {
   parserGiveUpMark,
   parserGiveUpReasonSince,
 } from "../lib/bash-parser.ts";
+import {
+  assessAutoApprovalHold,
+  HELD_PREFIX,
+  holdContextFromInput,
+} from "../lib/auto-approval-hold.ts";
 import { prepareDenyInput } from "../lib/deny-input.ts";
 import { isExemptReadOnlyCommand } from "../lib/read-only-command.ts";
 import { logDecision } from "../lib/centralized-logging.ts";
@@ -81,6 +86,40 @@ const hook = defineHook({
     });
     const { allowList, denyList } = getPermissionLists(tool_name, roots);
     const matchContext = createMatchContext(context.input.cwd);
+    const holdContext = holdContextFromInput(context.input.cwd);
+
+    // Core protects some paths with `ask` rules that an allow from this hook would override, so an
+    // allow is only issued after the hold check. A hold is logged as the one decision of the call.
+    const logUnlessHeld = async (decision: {
+      decision: PermissionDecision;
+      reason: string;
+    }): Promise<boolean> => {
+      if (decision.decision === "allow") {
+        const held = await assessAutoApprovalHold(
+          tool_name,
+          tool_input,
+          holdContext,
+        );
+        if (held.hold) {
+          logDecision(
+            tool_name,
+            "pass",
+            `${HELD_PREFIX}${held.reason}`,
+            context.input.session_id,
+            tool_input,
+          );
+          return true;
+        }
+      }
+      logDecision(
+        tool_name,
+        decision.decision,
+        decision.reason,
+        context.input.session_id,
+        tool_input,
+      );
+      return false;
+    };
 
     try {
       // Process based on tool type
@@ -100,14 +139,7 @@ const hook = defineHook({
           bashResult.hasPassRequired,
         );
 
-        // Log the decision using centralized logger
-        logDecision(
-          tool_name,
-          decision.decision,
-          decision.reason,
-          context.input.session_id,
-          tool_input,
-        );
+        if (await logUnlessHeld(decision)) return context.success({});
 
         if (decision.decision === "deny") {
           return context.json(
@@ -157,13 +189,7 @@ const hook = defineHook({
               otherResult.denyMatches,
             );
 
-            logDecision(
-              tool_name,
-              decision.decision,
-              decision.reason,
-              context.input.session_id,
-              tool_input,
-            );
+            if (await logUnlessHeld(decision)) return context.success({});
 
             if (decision.decision === "deny") {
               return context.json(createBoundaryDenyResponse(decision.reason));
@@ -196,14 +222,7 @@ const hook = defineHook({
           otherResult.denyMatches,
         );
 
-        // Log the decision using centralized logger
-        logDecision(
-          tool_name,
-          decision.decision,
-          decision.reason,
-          context.input.session_id,
-          tool_input,
-        );
+        if (await logUnlessHeld(decision)) return context.success({});
 
         if (decision.decision === "deny") {
           return context.json(createBoundaryDenyResponse(decision.reason));
