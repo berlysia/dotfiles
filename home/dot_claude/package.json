@@ -10,5 +10,8 @@
     "dax": "0.50.0",
     "tree-sitter-bash": "0.25.1",
     "web-tree-sitter": "0.27.0"
+  },
+  "devDependencies": {
+    "ignore": "7.0.5"
   }
 }
