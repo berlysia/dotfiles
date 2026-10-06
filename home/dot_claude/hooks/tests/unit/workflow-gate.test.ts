@@ -29,6 +29,7 @@ import {
   isImplementationPhase,
   listApprovalCandidates,
   resolveSpecContext,
+  summarizePlans,
 } from "../../lib/workflow-gate.ts";
 import { resolveWorkflowPaths } from "../../lib/workflow-paths.ts";
 import {
@@ -891,4 +892,69 @@ test("implementationPhaseBasis: none, delegated-only, approved", () => {
     ),
     "approved",
   );
+});
+
+test("summarizePlans: marks a delegated plan and keeps blockedBy for the rest", () => {
+  const { repo, wf } = delegatedRepo(
+    ["src/"],
+    [
+      { name: "plan-1.md", files: ["src/a.ts"] },
+      { name: "plan-2.md", files: ["other/b.ts"] },
+      { name: "plan-3.md", files: ["lib/c.ts"], approved: true },
+    ],
+  );
+  const byName = new Map(summarizePlans(wf, repo).map((p) => [p.name, p]));
+  equal(byName.get("plan-1.md")?.via, "delegation");
+  equal(byName.get("plan-1.md")?.blockedBy, undefined);
+  equal(
+    byName.get("plan-2.md")?.blockedBy,
+    "Approval Status (delegation: outside-scope)",
+  );
+  equal(byName.get("plan-3.md")?.via, undefined);
+  equal(byName.get("plan-3.md")?.blockedBy, undefined);
+});
+
+test("summarizePlans: without a project root it reports as before", () => {
+  const { wf } = delegatedRepo(
+    ["src/"],
+    [{ name: "plan-1.md", files: ["src/a.ts"] }],
+  );
+  equal(summarizePlans(wf)[0]?.blockedBy, "Approval Status");
+});
+
+test("listApprovalCandidates: a delegated plan is not asked about", () => {
+  const { repo, wf } = delegatedRepo(
+    ["src/"],
+    [
+      { name: "plan-1.md", files: ["src/a.ts"] },
+      { name: "plan-2.md", files: ["other/b.ts"] },
+    ],
+  );
+  equal(listApprovalCandidates(wf, repo).join(","), "plan-2.md");
+  equal(listApprovalCandidates(wf).join(","), "plan-1.md,plan-2.md");
+});
+
+test("diagnoseGate: under delegation it does not tell the user to approve each plan", () => {
+  const on = delegatedRepo(
+    ["src/"],
+    [{ name: "plan-1.md", files: ["src/a.ts"] }],
+  );
+  const off = delegatedRepo(
+    ["src/"],
+    [{ name: "plan-1.md", files: ["src/a.ts"] }],
+    { delegate: false },
+  );
+  const delegated = diagnoseGate(on.wf, "x", on.repo);
+  match(delegated.note ?? "", /delegates its plan-N\.md/);
+  ok(!/must also be/.test(delegated.note ?? ""));
+  ok(!/approve plan-N\.md/.test(delegated.nextAction));
+  match(delegated.nextAction, /workflow-cli status/);
+
+  for (const d of [
+    diagnoseGate(off.wf, "x", off.repo),
+    diagnoseGate(on.wf, "x"),
+  ]) {
+    match(d.note ?? "", /must also be/);
+    match(d.nextAction, /approve plan-N\.md/);
+  }
 });

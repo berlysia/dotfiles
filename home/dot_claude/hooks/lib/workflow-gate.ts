@@ -177,7 +177,11 @@ function researchExists(
  * document that must clear (plan.md single-layer, spec.md two-layer) and, in
  * two-layer mode once the spec passes, the owning plan-N.md requirement.
  */
-export function diagnoseGate(wfDir: string, targetPath: string): GateDiagnosis {
+export function diagnoseGate(
+  wfDir: string,
+  targetPath: string,
+  projectRoot?: string,
+): GateDiagnosis {
   const wfPaths = resolveWorkflowPaths(wfDir);
   const hasResearch = researchExists(wfPaths);
   const active = hasResearch || existsSync(wfPaths.plan);
@@ -191,10 +195,14 @@ export function diagnoseGate(wfDir: string, targetPath: string): GateDiagnosis {
 
   const firstFailure = Object.values(primary.conditions).find((c) => !c.ok);
   const specOk = twoLayer && !firstFailure;
+  const delegating =
+    specOk && resolveSpecContext(wfDir, projectRoot).delegation !== null;
 
   let note: string | undefined;
   if (specOk && hasResearch) {
-    note = `spec.md is approved. The plan-N.md whose ## Files section lists \`${sanitizeForDisplay(targetPath)}\` must also be complete + Review Status: pass + approved by the user, either by choosing it in the question from \`workflow-cli ask-approval\` or by saying \`approve plan-N.md\` in the conversation (approvals.log then records its current hash), with an auto-review marker whose parent-spec-hash equals the current spec.md hash.`;
+    note = delegating
+      ? `spec.md is approved and delegates its plan-N.md. The plan-N.md whose ## Files section lists \`${sanitizeForDisplay(targetPath)}\` clears without its own approval once it is complete + Review Status: pass, its marker's parent-spec-hash equals the current spec.md hash, and every ## Files entry lies within spec.md's ## Scope and touches no protected path. A plan-N.md that does not meet this needs the user's approval.`
+      : `spec.md is approved. The plan-N.md whose ## Files section lists \`${sanitizeForDisplay(targetPath)}\` must also be complete + Review Status: pass + approved by the user, either by choosing it in the question from \`workflow-cli ask-approval\` or by saying \`approve plan-N.md\` in the conversation (approvals.log then records its current hash), with an auto-review marker whose parent-spec-hash equals the current spec.md hash.`;
   }
 
   let nextAction: string;
@@ -218,8 +226,9 @@ export function diagnoseGate(wfDir: string, targetPath: string): GateDiagnosis {
         "Set the missing status line to its exact strict form (see `expected`), or run `workflow-cli status` for the checklist.";
     }
   } else if (specOk) {
-    nextAction =
-      "`workflow-cli ask-approval` で承認の質問を出すか、会話で `approve plan-N.md`（対象を列挙している plan）と打つ。`workflow-cli status <path>` で、どの plan が対象を列挙しているかと、足りない条件を確かめる。";
+    nextAction = delegating
+      ? "`workflow-cli status` で各 plan-N.md の状態を見る。`✓ (delegated)` は委任で通っている。`✗` はその行が示す条件を満たす。委任の条件から外れる plan-N.md は、`workflow-cli ask-approval` で利用者の承認を得る。"
+      : "`workflow-cli ask-approval` で承認の質問を出すか、会話で `approve plan-N.md`（対象を列挙している plan）と打つ。`workflow-cli status <path>` で、どの plan が対象を列挙しているかと、足りない条件を確かめる。";
   } else {
     nextAction = "The gate conditions are satisfied.";
   }
@@ -503,7 +512,11 @@ export function evaluateTarget(query: TargetQuery): TargetEvaluation {
   }
   const deny = (): TargetEvaluation => ({
     kind: "deny",
-    diagnosis: diagnoseGate(query.wfDir, query.label ?? query.target),
+    diagnosis: diagnoseGate(
+      query.wfDir,
+      query.label ?? query.target,
+      query.projectRoot,
+    ),
   });
   if (!researchExists(wfPaths)) {
     return deny();
@@ -568,7 +581,11 @@ export function evaluateTarget(query: TargetQuery): TargetEvaluation {
     basis === "approved" ||
     (basis === "delegated-only" &&
       targetWithinScope(ctx.specContent, query.target, query.projectRoot));
-  const diagnosis = diagnoseGate(query.wfDir, query.label ?? query.target);
+  const diagnosis = diagnoseGate(
+    query.wfDir,
+    query.label ?? query.target,
+    query.projectRoot,
+  );
   if (basis === "delegated-only" && !relaxable) {
     diagnosis.note = `Only delegated plan-N.md files are in effect, and \`${sanitizeForDisplay(query.label ?? query.target)}\` is outside spec.md's ## Scope or under a protected path. List it in a plan-N.md and have the user approve that plan.`;
   }
@@ -658,6 +675,8 @@ export interface PlanSummary {
   name: string;
   /** The first condition the plan does not meet; absent when it clears. */
   blockedBy?: string;
+  /** Present when the plan clears by the spec's delegation rather than its own approval. */
+  via?: "delegation";
 }
 
 /**
@@ -666,36 +685,24 @@ export interface PlanSummary {
  * missing or not the current spec.md hash. spec.md's own conditions are not
  * part of this; `diagnoseGate` reports those.
  */
-export function summarizePlans(wfDir: string): PlanSummary[] {
-  let specHash: string | undefined;
-  try {
-    specHash = computeDocumentHash(
-      readFileSync(resolveWorkflowPaths(wfDir).spec, "utf-8"),
-      SPEC_NORMALIZERS,
-    );
-  } catch {
-    specHash = undefined;
-  }
+export function summarizePlans(
+  wfDir: string,
+  projectRoot?: string,
+): PlanSummary[] {
+  const ctx = resolveSpecContext(wfDir, projectRoot);
   const planNumber = (path: string) =>
     Number(/([0-9]+)\.md$/.exec(path)?.[1] ?? 0);
-
   return findPlanNumberedFiles(wfDir)
     .sort((a, b) => planNumber(a) - planNumber(b))
-    .map((planPath) => {
+    .map((planPath): PlanSummary => {
       const name = basename(planPath);
-      const unmet = documentConditionRows(evaluateDocument(planPath)).find(
-        ([, condition]) => !condition.ok,
-      );
-      if (unmet) return { name, blockedBy: unmet[0] };
-      let content = "";
-      try {
-        content = readFileSync(planPath, "utf-8");
-      } catch {
-        content = "";
+      const planClass = classifyPlan(planPath, ctx);
+      if (planClass.kind === "blocked") {
+        return { name, blockedBy: planClass.blockedBy };
       }
-      return specHash !== undefined && parentSpecMatches(content, specHash)
-        ? { name }
-        : { name, blockedBy: "parent-spec-hash" };
+      return planClass.kind === "delegated"
+        ? { name, via: "delegation" }
+        : { name };
     });
 }
 
@@ -795,15 +802,23 @@ export function evaluateApprovalReadiness(
  * written but whose Approval line was not rewritten is still listed, so
  * saying 承認 again completes it (spec K7).
  */
-export function listApprovalCandidates(wfDir: string): string[] {
+export function listApprovalCandidates(
+  wfDir: string,
+  projectRoot?: string,
+): string[] {
   const names = ["spec.md", "plan.md"].filter((name) =>
     existsSync(resolve(wfDir, name)),
   );
   const planNumbered = findPlanNumberedFiles(wfDir).map((path) =>
     basename(path),
   );
+  const ctx = resolveSpecContext(wfDir, projectRoot);
   return [...names, ...planNumbered].filter((name) => {
     const r = evaluateApprovalReadiness(wfDir, name);
-    return r.ready && !r.alreadyApproved;
+    if (!r.ready || r.alreadyApproved) return false;
+    return !(
+      PLAN_NUMBERED_FILENAME_REGEX.test(name) &&
+      classifyPlan(resolve(wfDir, name), ctx).kind === "delegated"
+    );
   });
 }

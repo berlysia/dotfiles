@@ -35,6 +35,7 @@ import {
   approvedWorkflowRepo,
   buildPlanContent,
   buildPlanNContent,
+  buildSpecWithScope,
   computeWorkflowRepoPlanHash,
   EnvironmentHelper,
   pendingWorkflowRepo,
@@ -1264,6 +1265,44 @@ describe("workflow-cli: status", () => {
       "plan: plan-1.md ✓",
       "plan: plan-2.md ✗ Plan Status",
       "plan: plan-10.md ✗ parent-spec-hash",
+    ]);
+  });
+
+  it("status marks a plan-N.md that clears by delegation", () => {
+    const { repo, wf } = statusRepo();
+    const spec = buildSpecWithScope(approvedWorkflowRepo(), ["src/"]);
+    const specHash = computeWorkflowRepoPlanHash(spec);
+    writeFileSync(join(wf, "spec.md"), spec);
+    writeFileSync(
+      join(wf, "plan-1.md"),
+      buildPlanNContent(
+        { ...approvedWorkflowRepo(), approvalStatus: "pending" },
+        ["src/a.ts"],
+        specHash,
+      ),
+    );
+    writeFileSync(
+      join(wf, "plan-2.md"),
+      buildPlanNContent(
+        { ...approvedWorkflowRepo(), approvalStatus: "pending" },
+        ["other/b.ts"],
+        specHash,
+      ),
+    );
+    recordApprovalsForTest(wf, { delegateSpec: true });
+    const r = runWorkflowCli(["status"], {
+      cwd: repo,
+      wfDir: wf,
+      sessionId: "test-ses",
+      wfDirSource: "derived",
+      now: NOW,
+    });
+    const planLines = r.stdout
+      .split("\n")
+      .filter((line) => line.startsWith("plan: "));
+    assert.deepEqual(planLines, [
+      "plan: plan-1.md ✓ (delegated)",
+      "plan: plan-2.md ✗ Approval Status (delegation: outside-scope)",
     ]);
   });
 

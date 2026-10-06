@@ -368,7 +368,7 @@ function cmdStatus(
     // plan-N.md side is not evaluated here, so even a passing spec.md does
     // not mean a write is allowed.
     const primary = twoLayer ? wfPaths.spec : wfPaths.plan;
-    const diagnosis = diagnoseGate(wfDir, primary);
+    const diagnosis = diagnoseGate(wfDir, primary, deps.cwd);
     lines.push(
       `Document workflow gate${twoLayer ? " (two-layer)" : ""}: conditions on \`${sanitizeForDisplay(docLabel)}\`:`,
       formatGateChecklist(diagnosis),
@@ -376,10 +376,13 @@ function cmdStatus(
     // The plan-N.md side, one line each, so the reader can tell which plans
     // are ready without asking about a path.
     if (twoLayer) {
-      for (const plan of summarizePlans(wfDir)) {
-        lines.push(
-          `plan: ${plan.name} ${plan.blockedBy ? `✗ ${plan.blockedBy}` : "✓"}`,
-        );
+      for (const plan of summarizePlans(wfDir, deps.cwd)) {
+        const mark = plan.blockedBy
+          ? `✗ ${plan.blockedBy}`
+          : plan.via === "delegation"
+            ? "✓ (delegated)"
+            : "✓";
+        lines.push(`plan: ${plan.name} ${mark}`);
       }
     }
   }
@@ -957,7 +960,7 @@ function cmdAskApproval(
   const { wfDir, warning } = resolvedDir;
   // The listing and the readiness read are separate disk reads; drop anything
   // that changed in between rather than ask about it.
-  const ready = listApprovalCandidates(wfDir).flatMap((name) => {
+  const ready = listApprovalCandidates(wfDir, deps.cwd).flatMap((name) => {
     const readiness = evaluateApprovalReadiness(wfDir, name);
     return readiness.ready && !readiness.alreadyApproved
       ? [{ name, hash: readiness.hash }]
