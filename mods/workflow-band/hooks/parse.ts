@@ -2,6 +2,7 @@ import type {
   GateCheck,
   PlanState,
   WfDirSource,
+  WorkflowFailure,
   WorkflowSnapshot,
 } from "../types";
 
@@ -67,6 +68,34 @@ export function parseDir(stdout: string): {
   const source: WfDirSource =
     raw === "derived" || raw === "env" || raw === "override" ? raw : "unknown";
   return { wfDir, source };
+}
+
+/**
+ * One finished `workflow-cli status` and `workflow-cli dir` as what the band
+ * draws. A status that failed or could not be read becomes a failure, so the
+ * cause is shown instead of an empty band.
+ */
+export function toSnapshot(
+  status: { exitCode: number | null; stdout: string; stderr: string },
+  dir: { stdout: string },
+): WorkflowSnapshot | WorkflowFailure {
+  if (status.exitCode !== 0) {
+    return {
+      error: `workflow-cli status exited ${status.exitCode}: ${status.stderr.trim() || status.stdout.trim()}`,
+    };
+  }
+  const parsed = parseStatus(status.stdout);
+  if (!parsed) {
+    return {
+      error: `workflow-cli status output not recognised: ${status.stdout.split("\n")[0] ?? ""}`,
+    };
+  }
+  const warning = status.stderr.trim();
+  return {
+    ...parsed,
+    ...parseDir(dir.stdout),
+    ...(warning ? { warning } : {}),
+  };
 }
 
 /** Nothing has been written into the workflow dir yet: the band has nothing to say. */

@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# workflow-band-preview: prints the workflow-band Mod's band without a Claude
+# Code session. The logic is the Mod's own preview.ts, deployed with the Mod at
+# ~/.claude/mods/workflow-band/ (mods/workflow-band/ in source).
+exec bun run --silent "${HOME}/.claude/mods/workflow-band/preview.ts" "$@"

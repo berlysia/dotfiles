@@ -2,16 +2,8 @@ import { atom, read, update } from "claude-code";
 import type { EngineInterface, Register } from "claude-code";
 
 import type { WorkflowFailure, WorkflowSnapshot } from "../types";
-import {
-  arePlansReady,
-  isComplete,
-  isIdle,
-  parseDir,
-  parseStatus,
-  planNumber,
-  shortName,
-  truncate,
-} from "./parse";
+import { layoutBand } from "./layout";
+import { toSnapshot } from "./parse";
 
 const snapshot = atom(
   { plugin: "workflow-band", key: "snapshot" } as const,
@@ -46,23 +38,7 @@ async function readSnapshot(
       runWorkflowCli($, ["status"]),
       runWorkflowCli($, ["dir"]),
     ]);
-    if (status.exitCode !== 0) {
-      return {
-        error: `workflow-cli status exited ${status.exitCode}: ${status.stderr.trim() || status.stdout.trim()}`,
-      };
-    }
-    const parsed = parseStatus(status.stdout);
-    if (!parsed) {
-      return {
-        error: `workflow-cli status output not recognised: ${status.stdout.split("\n")[0] ?? ""}`,
-      };
-    }
-    const warning = status.stderr.trim();
-    return {
-      ...parsed,
-      ...parseDir(dir.stdout),
-      ...(warning ? { warning } : {}),
-    };
+    return toSnapshot(status, dir);
   } catch (error) {
     // workflow-cli missing from PATH, or timed out.
     return {
@@ -112,69 +88,29 @@ export const register: Register = (on) => {
 
   on("ui.render", { component: "AbovePrompt" }, async ($, e, next) => {
     const current = await read($, snapshot);
-    if (e.props.hasSurvey || current === null) return next(e);
+    const rows = layoutBand(current, {
+      columns: e.props.bodyColumns - 2,
+      maxRows: e.props.maxRows,
+    });
+    if (e.props.hasSurvey || rows === null) return next(e);
 
     const { Box, Text } = $.ui.resolve(e);
-    const columns = e.props.bodyColumns - 2;
-    if ("error" in current) {
-      return (
-        <Box paddingX={1}>
-          <Text color="red">{truncate(`WF ${current.error}`, columns)}</Text>
-        </Box>
-      );
-    }
-    if (isIdle(current)) return next(e);
-
-    // With every condition met the checklist collapses to one mark. In
-    // two-layer mode a green spec.md does not mean writes are allowed, so
-    // the plan-N.md side is drawn next to it and `Next:` stays until those
-    // clear too. A warning always gets its line.
-    const complete = isComplete(current);
-    const plansReady = arePlansReady(current);
-    const settled = complete && (!current.twoLayer || plansReady);
-    const secondLine = current.warning
-      ? { color: "yellow", text: `⚠ ${current.warning}` }
-      : current.next && !settled
-        ? { color: undefined, text: `Next: ${current.next}` }
-        : null;
-
     return (
       <Box flexDirection="column" paddingX={1}>
-        <Box flexDirection="row">
-          <Text bold color="cyan">
-            WF{" "}
-          </Text>
-          <Text>{current.doc} </Text>
-          {current.source === "env" ? (
-            <Text color="yellow">[pinned] </Text>
-          ) : null}
-          {complete ? (
-            <Text color="green">{"✓ "}</Text>
-          ) : (
-            current.checks.map((check) => (
-              <Text key={check.name} color={check.ok ? "green" : "red"}>
-                {`${check.ok ? "✓" : "✗"}${shortName(check.name)} `}
+        {rows.map((row, rowIndex) => (
+          <Box key={rowIndex} flexDirection="row">
+            {row.map((segment, index) => (
+              <Text
+                key={index}
+                color={segment.color}
+                bold={segment.bold}
+                dimColor={segment.dim}
+              >
+                {segment.text}
               </Text>
-            ))
-          )}
-          {current.twoLayer ? <Text dimColor>{"· plan "}</Text> : null}
-          {!current.twoLayer ? null : current.plans.length === 0 ? (
-            <Text dimColor>none yet</Text>
-          ) : plansReady ? (
-            <Text color="green">{`✓${current.plans.length}`}</Text>
-          ) : (
-            current.plans.map((plan) => (
-              <Text key={plan.name} color={plan.blockedBy ? "red" : "green"}>
-                {`${planNumber(plan.name)}${plan.blockedBy ? `✗${shortName(plan.blockedBy)}` : "✓"} `}
-              </Text>
-            ))
-          )}
-        </Box>
-        {secondLine && e.props.maxRows >= 2 ? (
-          <Text dimColor={!current.warning} color={secondLine.color}>
-            {truncate(secondLine.text, columns)}
-          </Text>
-        ) : null}
+            ))}
+          </Box>
+        ))}
       </Box>
     );
   });
