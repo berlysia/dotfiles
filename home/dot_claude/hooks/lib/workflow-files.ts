@@ -17,15 +17,15 @@ const PROSE_EXTENSIONS = [".md", ".mdx", ".markdown", ".txt", ".rst", ".adoc"];
  * internal whitespace is dropped whole (conservative: a malformed block must
  * not partially authorize writes in the guard).
  */
-export function parseFilesPaths(planContent: string): string[] {
-  const sections = planContent.split(/^##\s+/m);
-  const filesSection = sections.find((s) =>
-    /^Files\s*$/m.test(s.split("\n")[0] ?? ""),
+function parseSectionPaths(content: string, heading: string): string[] {
+  const sections = content.split(/^##\s+/m);
+  const section = sections.find(
+    (s) => (s.split("\n")[0] ?? "").trim() === heading,
   );
-  if (!filesSection) return [];
-  const sectionBody = filesSection.replace(/^Files\s*\n/, "");
+  if (!section) return [];
+  const body = section.slice(section.indexOf("\n") + 1);
   const collected: string[] = [];
-  for (const match of sectionBody.matchAll(/^```[^\n]*\n([\s\S]*?)\n```/gm)) {
+  for (const match of body.matchAll(/^```[^\n]*\n([\s\S]*?)\n```/gm)) {
     const block = match[1];
     if (block === undefined) continue;
     const blockPaths: string[] = [];
@@ -42,6 +42,38 @@ export function parseFilesPaths(planContent: string): string[] {
     if (blockValid) collected.push(...blockPaths);
   }
   return collected;
+}
+
+export function parseFilesPaths(planContent: string): string[] {
+  return parseSectionPaths(planContent, "Files");
+}
+
+/** The question from `workflow-cli ask-approval` shows every entry, so the count is capped. */
+export const MAX_SCOPE_ENTRIES = 16;
+
+export type ScopeParse =
+  | { valid: true; entries: string[] }
+  | { valid: false; reason: "empty" | "too-many" | "invalid-entry" };
+
+/**
+ * spec.md's `## Scope`: the paths a delegated plan-N.md may write. An entry
+ * ending in `/` is a directory, any other entry a file. One entry that could
+ * reach outside the checkout invalidates the whole section.
+ */
+export function parseScope(specContent: string): ScopeParse {
+  const entries = parseSectionPaths(specContent, "Scope");
+  if (entries.length === 0) return { valid: false, reason: "empty" };
+  if (entries.length > MAX_SCOPE_ENTRIES) {
+    return { valid: false, reason: "too-many" };
+  }
+  const escapes = (entry: string) =>
+    entry.startsWith("/") ||
+    entry.startsWith("~") ||
+    entry === "./" ||
+    entry.split("/").includes("..");
+  return entries.some(escapes)
+    ? { valid: false, reason: "invalid-entry" }
+    : { valid: true, entries };
 }
 
 /**

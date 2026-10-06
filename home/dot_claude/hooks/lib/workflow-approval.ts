@@ -62,12 +62,16 @@ export function isApprovalShapedPrompt(prompt: unknown): boolean {
 /** Which route recorded the approval. Audit only; the gate never reads it. */
 export type ApprovalVia = "utterance" | "ask";
 
+/** What a spec.md approval hands over. Only spec.md lines carry it. */
+export type ApprovalDelegate = "plans-in-scope";
+
 export interface ApprovalRecord {
   doc: string;
   hash: string;
   session: string;
   at: string;
   via?: ApprovalVia;
+  delegate?: ApprovalDelegate;
 }
 
 export interface LatestApprovals {
@@ -140,7 +144,10 @@ function parseRecord(line: string): ApprovalRecord | null {
     return null;
   }
   if (typeof value !== "object" || value === null) return null;
-  const { v, doc, hash, session, at, via } = value as Record<string, unknown>;
+  const { v, doc, hash, session, at, via, delegate } = value as Record<
+    string,
+    unknown
+  >;
   if (v !== 1) return null;
   if (
     typeof doc !== "string" ||
@@ -151,6 +158,7 @@ function parseRecord(line: string): ApprovalRecord | null {
   if (typeof hash !== "string" || !HASH_PATTERN.test(hash)) return null;
   const record: ApprovalRecord = { doc, hash, session, at };
   if (via === "utterance" || via === "ask") record.via = via;
+  if (delegate === "plans-in-scope") record.delegate = delegate;
   return record;
 }
 

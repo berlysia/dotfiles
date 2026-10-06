@@ -7,8 +7,10 @@ import { describe, it } from "node:test";
 import {
   findRepoToplevel,
   isProseOnlyChange,
+  MAX_SCOPE_ENTRIES,
   listsTarget,
   parseFilesPaths,
+  parseScope,
 } from "../../lib/workflow-files.ts";
 
 const doc = (block: string) =>
@@ -167,5 +169,55 @@ describe("workflow-files: listsTarget (spec K2)", () => {
       ),
       true,
     );
+  });
+});
+
+describe("parseScope", () => {
+  const spec = (block: string) =>
+    `# Spec\n\n## Scope\n\n\`\`\`\n${block}\n\`\`\`\n\n## Key Decisions\n`;
+
+  it("returns the entries of a valid Scope", () => {
+    deepStrictEqual(parseScope(spec("src/\nlib/a.ts")), {
+      valid: true,
+      entries: ["src/", "lib/a.ts"],
+    });
+  });
+
+  it("is invalid without a Scope section or with no entry", () => {
+    deepStrictEqual(parseScope("# Spec\n\n## Key Decisions\n"), {
+      valid: false,
+      reason: "empty",
+    });
+    deepStrictEqual(parseScope(spec("# only a comment")), {
+      valid: false,
+      reason: "empty",
+    });
+  });
+
+  it("one bad entry invalidates the whole Scope", () => {
+    for (const bad of ["/etc/", "~/x/", "src/../lib/", "./", "/"]) {
+      deepStrictEqual(parseScope(spec(`src/\n${bad}`)), {
+        valid: false,
+        reason: "invalid-entry",
+      });
+    }
+  });
+
+  it("allows MAX_SCOPE_ENTRIES entries and rejects one more", () => {
+    const rows = (n: number) =>
+      Array.from({ length: n }, (_, i) => `d${i}/`).join("\n");
+    strictEqual(MAX_SCOPE_ENTRIES, 16);
+    strictEqual(parseScope(spec(rows(16))).valid, true);
+    deepStrictEqual(parseScope(spec(rows(17))), {
+      valid: false,
+      reason: "too-many",
+    });
+  });
+
+  it("does not read ## Files as Scope", () => {
+    deepStrictEqual(parseScope("## Files\n\n```\nsrc/a.ts\n```\n"), {
+      valid: false,
+      reason: "empty",
+    });
   });
 });

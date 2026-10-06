@@ -58,6 +58,47 @@ describe("workflow-approval (spec K8)", () => {
     assert.equal(r.readError, undefined);
   });
 
+  it("keeps delegate only when it is the known value", () => {
+    const wf = mkdtempSync(join(tmpdir(), "approvals-"));
+    appendApproval(wf, {
+      doc: "spec.md",
+      hash: H1,
+      session: "s",
+      at: "t1",
+      via: "ask",
+      delegate: "plans-in-scope",
+    });
+    assert.equal(
+      readLatestApprovals(wf).latest.get("spec.md")?.delegate,
+      "plans-in-scope",
+    );
+
+    appendFileSync(
+      join(wf, APPROVALS_LOG),
+      `${JSON.stringify({ v: 1, doc: "spec.md", hash: H1, session: "s", at: "t2", delegate: "everything" })}\n`,
+    );
+    const r = readLatestApprovals(wf);
+    assert.equal(r.latest.get("spec.md")?.delegate, undefined);
+    assert.equal(r.latest.get("spec.md")?.at, "t2");
+    assert.equal(r.ignoredLines, 0);
+  });
+
+  it("a later line without delegate turns the delegation off", () => {
+    const wf = mkdtempSync(join(tmpdir(), "approvals-"));
+    appendApproval(wf, {
+      doc: "spec.md",
+      hash: H1,
+      session: "s",
+      at: "t1",
+      delegate: "plans-in-scope",
+    });
+    appendApproval(wf, { doc: "spec.md", hash: H1, session: "s", at: "t2" });
+    assert.equal(
+      readLatestApprovals(wf).latest.get("spec.md")?.delegate,
+      undefined,
+    );
+  });
+
   it("skips malformed lines and other versions, and counts them", () => {
     const wf = mkdtempSync(join(tmpdir(), "approvals-"));
     appendFileSync(
