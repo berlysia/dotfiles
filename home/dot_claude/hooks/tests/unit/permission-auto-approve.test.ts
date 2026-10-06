@@ -4,6 +4,7 @@ import { deepStrictEqual, strictEqual } from "node:assert";
 import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, it, mock } from "node:test";
 import {
+  decideStatic,
   isProjectScopeSafe,
   isSessionScratchpadSafe,
   normalizeCommand,
@@ -103,11 +104,6 @@ describe("permission-auto-approve.ts hook behavior", () => {
       "git -C /home/user/project add .",
       "git -C /home/user/project commit -m 'test'",
       "git -C /home/user/project rm old-file.ts",
-      // Git with -c key=value prefix (config override)
-      "git -c commit.gpgsign=false commit -m 'test'",
-      "git -c commit.gpgsign=false pull --rebase",
-      "git -c commit.gpgsign=false rebase --continue",
-      "git -C /home/user/project -c core.autocrlf=false add .",
       // Safe directory/file creation
       "mkdir -p src/components",
       "mkdir dist",
@@ -1354,6 +1350,68 @@ describe("staticRuleEngine - git prefix forms (spec K7 Goal check)", () => {
     strictEqual(
       bash("git --no-replace-objects log").behavior === "allow",
       false,
+    );
+  });
+});
+
+describe("staticRuleEngine - git global options (spec K4 principle 1)", () => {
+  const bash = (command: string) =>
+    staticRuleEngine({
+      session_id: "s",
+      tool_name: "Bash",
+      tool_input: { command },
+      cwd: "/home/user/project",
+    });
+  it("does not allow -c, alone or together with -C", () => {
+    for (const command of [
+      "git -c commit.gpgsign=false commit -m 'test'",
+      "git -c commit.gpgsign=false pull --rebase",
+      "git -c commit.gpgsign=false rebase --continue",
+      "git -C /home/user/project -c core.autocrlf=false add .",
+    ]) {
+      strictEqual(bash(command).behavior === "allow", false, command);
+    }
+  });
+  it("still allows -C alone", () => {
+    strictEqual(bash("git -C /home/user/project status").behavior, "allow");
+    strictEqual(bash("git -C /home/user/project add .").behavior, "allow");
+  });
+  it("does not allow a config write behind -C", () => {
+    strictEqual(
+      bash("git -C /home/user/project config --global user.name x").behavior ===
+        "allow",
+      false,
+    );
+  });
+});
+
+describe("decideStatic - hold (spec K1)", () => {
+  const input = (file_path: string) => ({
+    session_id: "s",
+    tool_name: "Edit",
+    tool_input: { file_path },
+    cwd: "/home/user/project",
+  });
+  it("does not allow an Edit to a dot path under cwd", async () => {
+    const result = await decideStatic(
+      input("/home/user/project/.claude/x.json"),
+    );
+    strictEqual(result.behavior, "uncertain");
+    strictEqual(
+      result.behavior === "uncertain" && (result.heldReason?.length ?? 0) > 0,
+      true,
+    );
+  });
+  it("still allows an Edit to a plain path under cwd", async () => {
+    strictEqual(
+      (await decideStatic(input("/home/user/project/src/a.ts"))).behavior,
+      "allow",
+    );
+  });
+  it("keeps the deny for a dangerous path", async () => {
+    strictEqual(
+      (await decideStatic(input("/home/user/project/.env"))).behavior,
+      "deny",
     );
   });
 });

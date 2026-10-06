@@ -11,6 +11,11 @@
 
 import path from "node:path";
 import { defineHook } from "cc-hooks-ts";
+import {
+  assessAutoApprovalHold,
+  HELD_PREFIX,
+  holdContextFromInput,
+} from "../lib/auto-approval-hold.ts";
 import { logDecision } from "../lib/centralized-logging.ts";
 import { isDangerousWritePath } from "../lib/dangerous-write-paths.ts";
 import { hasParentSegment } from "../lib/path-containment.ts";
@@ -46,6 +51,8 @@ export type StaticDecision =
         | "scan-mismatch"
         | "scan-error"
         | "scan-demoted";
+      // Set when an allow was turned into a hold (spec K1): the decision belongs to a human.
+      heldReason?: string;
     };
 
 /**
@@ -118,10 +125,10 @@ const SAFE_BASH_PATTERNS = [
   /^(ls|pwd|echo|cat|head|tail|wc|file|stat|which|type|whereis|basename|dirname|realpath)\b/,
   // Read-only comparison / delay (no side effects)
   /^(diff|cmp|sleep)\b/,
-  // Git read-only operations (with optional -C <path> / -c key=value prefixes)
-  /^git\s+(-[cC]\s+\S+\s+)*(status|log|diff|branch|remote|show|describe|tag|rev-parse|config\s+--get|ls-files|shortlog|blame)\b/,
-  // Git local write operations (with optional -C <path> / -c key=value prefixes)
-  /^git\s+(-[cC]\s+\S+\s+)*(add|commit|stash|checkout|switch|fetch|pull|cherry-pick|rebase|merge|rm)\b/,
+  // Git read-only operations (with an optional -C <path> prefix; -c is not allowed because it can set core.* commands)
+  /^git\s+(-C\s+\S+\s+)*(status|log|diff|branch|remote|show|describe|tag|rev-parse|config\s+--get|ls-files|shortlog|blame)\b/,
+  // Git local write operations (with an optional -C <path> prefix; -c is not allowed because it can set core.* commands)
+  /^git\s+(-C\s+\S+\s+)*(add|commit|stash|checkout|switch|fetch|pull|cherry-pick|rebase|merge|rm)\b/,
   // Package information
   /^(npm|pnpm|yarn|bun)\s+(ls|list|outdated|view|info|why|explain)\b/,
   // Development tools (no side effects)
@@ -589,6 +596,22 @@ function staticRuleEngine(input: PermissionRequestInput): StaticDecision {
   return { behavior: "uncertain", source: "no-match" };
 }
 
+// An allow from the static rules is lowered to uncertain when the hold check names the input.
+export async function decideStatic(
+  input: PermissionRequestInput,
+): Promise<StaticDecision> {
+  const result = staticRuleEngine(input);
+  if (result.behavior !== "allow") return result;
+  const held = await assessAutoApprovalHold(
+    input.tool_name,
+    input.tool_input,
+    holdContextFromInput(input.cwd),
+  );
+  return held.hold
+    ? { behavior: "uncertain", source: "no-match", heldReason: held.reason }
+    : result;
+}
+
 const hook = defineHook({
   trigger: {
     PermissionRequest: true,
@@ -597,7 +620,18 @@ const hook = defineHook({
     const input = context.input as unknown as PermissionRequestInput;
     const { tool_name, tool_input, session_id } = input;
 
-    const staticResult = staticRuleEngine(input);
+    const staticResult = await decideStatic(input);
+
+    if (staticResult.behavior === "uncertain" && staticResult.heldReason) {
+      logDecision(
+        tool_name,
+        "pass",
+        `${HELD_PREFIX}${staticResult.heldReason} (Layer 2a)`,
+        session_id,
+        tool_input,
+      );
+      return context.success({});
+    }
 
     if (staticResult.behavior === "allow") {
       logDecision(
