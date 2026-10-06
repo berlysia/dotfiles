@@ -5,6 +5,7 @@ import { describe, it } from "node:test";
 import {
   EVALUATOR_QUERY_OPTIONS,
   parseLLMResponse,
+  reasonToSkipLLM,
   SYSTEM_PROMPT,
 } from "../../implementations/permission-llm-evaluator.ts";
 
@@ -96,6 +97,60 @@ describe("SYSTEM_PROMPT deletion policy", () => {
     ok(SYSTEM_PROMPT.includes("never cite reversibility as a reason to ALLOW"));
     ok(
       !SYSTEM_PROMPT.includes("ALLOW if removing project files (not rm -rf /)"),
+    );
+  });
+});
+
+describe("reasonToSkipLLM (spec K1, K4 principle 2)", () => {
+  const input = (tool_name: string, tool_input: unknown) => ({
+    session_id: "s",
+    tool_name,
+    tool_input,
+    cwd: "/home/user/project",
+  });
+  const bash = (command: string) => reasonToSkipLLM(input("Bash", { command }));
+  it("skips any command that names git", async () => {
+    for (const command of [
+      "git push origin main",
+      "cd sub && git status",
+      "command git log",
+      "timeout 10 git fetch",
+      "nice -n 5 git gc",
+      "/usr/bin/git log",
+    ]) {
+      strictEqual(await bash(command), "skipped-llm: git-head", command);
+    }
+  });
+  it("skips commands that set GIT_* variables, preferring git-env", async () => {
+    for (const command of [
+      "GIT_PAGER=cat git log",
+      "export GIT_PAGER=cat",
+      "env -i GIT_PAGER=cat make",
+      "declare -x GIT_PAGER=cat",
+    ]) {
+      strictEqual(await bash(command), "skipped-llm: git-env", command);
+    }
+  });
+  it("holds Edit to a dot path", async () => {
+    const reason = await reasonToSkipLLM(
+      input("Edit", { file_path: "/home/user/project/.claude/x.json" }),
+    );
+    strictEqual(reason?.startsWith("held: "), true);
+  });
+  it("lets other commands reach the LLM", async () => {
+    strictEqual(await bash("pnpm install"), null);
+    strictEqual(await bash("ls src"), null);
+    strictEqual(
+      await reasonToSkipLLM(
+        input("Edit", { file_path: "/home/user/project/src/a.ts" }),
+      ),
+      null,
+    );
+  });
+  it("holds a dot fragment without treating it as git-head", async () => {
+    strictEqual(
+      (await bash("cat .gitignore-notes"))?.startsWith("held: "),
+      true,
     );
   });
 });

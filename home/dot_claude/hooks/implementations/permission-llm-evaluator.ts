@@ -14,6 +14,12 @@ import {
   createAudioEngine,
   sendSystemNotification,
 } from "../../lib/unified-audio-engine.ts";
+import {
+  assessAutoApprovalHold,
+  HELD_PREFIX,
+  holdContextFromInput,
+  SKIPPED_LLM_PREFIX,
+} from "../lib/auto-approval-hold.ts";
 import { logDecision } from "../lib/centralized-logging.ts";
 import {
   createPermissionRequestAllowResponse,
@@ -275,6 +281,35 @@ async function evaluateWithLLM(
   }
 }
 
+// Assignments to GIT_* names, directly or through export/declare -x/typeset -x.
+const GIT_ENV =
+  /(?:^|[\s;&|(])(?:GIT_[A-Za-z0-9_]*=|(?:export|declare\s+-x|typeset\s+-x)\s+(?:-\S+\s+)*GIT_)/;
+// The word `git` anywhere in the text, so wrappers and the parser's blind spots cannot hide it.
+const GIT_WORD = /(?:^|[^A-Za-z0-9_.-])git(?![A-Za-z0-9_.-])/;
+
+// Why this request must reach a human without the LLM judging it, or null. The LLM is not called
+// for these, whatever it would answer: git can run commands through its config and environment, and
+// a hold means core's own protection is the decision to keep.
+export async function reasonToSkipLLM(
+  input: PermissionRequestInput,
+): Promise<string | null> {
+  // The git checks come first: both outcomes leave the decision to a human, and a command that
+  // names git (`cd sub && git status`) is reported under the more specific reason.
+  if (input.tool_name === "Bash") {
+    const command = String(
+      (input.tool_input as { command?: unknown } | null)?.command ?? "",
+    );
+    if (GIT_ENV.test(command)) return `${SKIPPED_LLM_PREFIX}git-env`;
+    if (GIT_WORD.test(command)) return `${SKIPPED_LLM_PREFIX}git-head`;
+  }
+  const held = await assessAutoApprovalHold(
+    input.tool_name,
+    input.tool_input,
+    holdContextFromInput(input.cwd),
+  );
+  return held.hold ? `${HELD_PREFIX}${held.reason}` : null;
+}
+
 const hook = defineHook({
   trigger: {
     PermissionRequest: true,
@@ -290,6 +325,18 @@ const hook = defineHook({
         tool_name,
         "ask",
         `User decision tool - skipping LLM evaluation, requires user confirmation (Layer 2b)`,
+        session_id,
+        tool_input,
+      );
+      return context.success({});
+    }
+
+    const skipReason = await reasonToSkipLLM(input);
+    if (skipReason !== null) {
+      logDecision(
+        tool_name,
+        "pass",
+        `${skipReason} (Layer 2b)`,
         session_id,
         tool_input,
       );
