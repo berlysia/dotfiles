@@ -32,7 +32,7 @@ import {
   createSessionStartContext,
   EnvironmentHelper,
   invokeRun,
-} from "./test-helpers.ts";
+} from "../support/test-helpers.ts";
 
 describe("session.ts hook behavior", () => {
   let testDir: string;

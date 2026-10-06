@@ -50,15 +50,14 @@ The following implementations still need unit tests:
 ### Run All Unit Tests
 
 ```bash
-# Using npm script
-npm run test:unit
-
-# Direct execution
-./dot_claude/hooks/tests/unit/run-tests.sh
+# All unit tests
+bun run test
 
 # Individual test file
-node --test dot_claude/hooks/tests/unit/session.test.ts
+node --import ./home/dot_claude/hooks/tests/preload-test-env.mjs --test home/dot_claude/hooks/tests/unit/session.test.ts
 ```
+
+Wall-clock (perf) tests live in `tests/perf/` and run with `bun run test:perf`; see the "node:test のスイート（unit / perf）" section of `tests/README_TESTING.md`.
 
 ### Test Output
 

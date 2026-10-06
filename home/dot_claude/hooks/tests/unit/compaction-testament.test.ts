@@ -30,7 +30,7 @@ import {
   createStopContextFor,
   EnvironmentHelper,
   invokeRun,
-} from "./test-helpers.ts";
+} from "../support/test-helpers.ts";
 
 const PATIENT_TIMEOUT_MS = 10_000;
 const hook = createHook(() => ({ gitTimeoutMs: PATIENT_TIMEOUT_MS }));

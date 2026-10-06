@@ -40,7 +40,7 @@ import {
   writeDocCache,
 } from "../../lib/workflow-review-core.ts";
 import type { AutoReviewMarker } from "../../lib/workflow-marker.ts";
-import { seedCache } from "./test-helpers.ts";
+import { seedCache } from "../support/test-helpers.ts";
 
 describe("workflow-review-core: reviewer roster slugs", () => {
   it("SPEC_REVIEWERS carries the 4 design-layer slugs in order", () => {

@@ -3,7 +3,7 @@
 import { ok, strictEqual } from "node:assert";
 import { describe, it } from "node:test";
 import blockTsxHook from "../../implementations/block-tsx.ts";
-import { createPreToolUseContext, invokeRun } from "./test-helpers.ts";
+import { createPreToolUseContext, invokeRun } from "../support/test-helpers.ts";
 
 describe("block-tsx.ts extended patterns", () => {
   // Helper to create a test context with proper typing

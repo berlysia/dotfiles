@@ -1,6 +1,6 @@
 #!/usr/bin/env node --test
 
-import { deepStrictEqual, ok, strictEqual } from "node:assert";
+import { deepStrictEqual, strictEqual } from "node:assert";
 import { describe, it } from "node:test";
 import {
   CONTROL_STRUCTURE_KEYWORDS,
@@ -203,25 +203,6 @@ describe("Command Parsing Library", () => {
       strictEqual(result.requiresManualReview, false);
       strictEqual(result.reason, "");
     });
-
-    // Issue #219: these shapes took tens of seconds with the regex versions.
-    for (const [name, cmd] of [
-      [
-        "a long blank run inside rm -r -f",
-        "rm " + " ".repeat(5000) + "-r -f x",
-      ],
-      [
-        "a long blank run after git push",
-        "git push " + " ".repeat(100000) + "x",
-      ],
-      ["a repeated dd word", "dd if ".repeat(16667)],
-    ] as const) {
-      it(`judges ${name} in linear time`, () => {
-        const start = performance.now();
-        strictEqual(checkDangerousCommand(cmd).isDangerous, false);
-        ok(performance.now() - start < 1000);
-      });
-    }
   });
 
   describe("checkCommandPattern", () => {

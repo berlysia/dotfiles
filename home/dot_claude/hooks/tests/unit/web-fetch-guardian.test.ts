@@ -8,7 +8,7 @@ import {
   defineHook,
   EnvironmentHelper,
   invokeRun,
-} from "./test-helpers.ts";
+} from "../support/test-helpers.ts";
 
 describe("web-fetch-guardian.ts hook behavior", () => {
   const consoleCapture = new ConsoleCapture();

@@ -14,7 +14,7 @@ import {
   EnvironmentHelper,
   invokeRun,
   TEST_SESSION_ID,
-} from "./test-helpers.ts";
+} from "../support/test-helpers.ts";
 
 describe("workflow dir anchors on CLAUDE_PROJECT_DIR, not the tool cwd", () => {
   const envHelper = new EnvironmentHelper();

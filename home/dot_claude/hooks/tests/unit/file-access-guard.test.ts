@@ -32,7 +32,7 @@ import {
   EnvironmentHelper,
   invokeRun,
   TEST_SESSION_ID,
-} from "./test-helpers.ts";
+} from "../support/test-helpers.ts";
 
 describe("file-access-guard.ts hook behavior", () => {
   const consoleCapture = new ConsoleCapture();

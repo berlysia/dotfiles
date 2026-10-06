@@ -26,7 +26,7 @@ import {
   invokeRun,
   recordApprovalsForTest,
   TEST_SESSION_ID,
-} from "./test-helpers.ts";
+} from "../support/test-helpers.ts";
 import { createBlockingGit } from "../support/fake-git.ts";
 
 const PATIENT_TIMEOUT_MS = 10_000;

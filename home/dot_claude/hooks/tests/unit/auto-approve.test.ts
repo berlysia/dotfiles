@@ -28,7 +28,7 @@ import {
   defineHook,
   EnvironmentHelper,
   invokeRun,
-} from "./test-helpers.ts";
+} from "../support/test-helpers.ts";
 
 const testRoots = { user: "/home/u/.claude", project: "/test" };
 

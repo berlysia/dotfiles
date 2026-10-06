@@ -146,14 +146,6 @@ describe("classifyDeletion", () => {
       );
     });
   }
-  it("judges a long repeated verb in linear time", () => {
-    const text = "ls ".repeat(33334);
-    const start = performance.now();
-    for (const { pattern } of buildReadOnlyPatterns()) {
-      strictEqual(pattern.test(text), false);
-    }
-    ok(performance.now() - start < 1000);
-  });
   it("generates exactly the five existing categories", () => {
     strictEqual(
       new Set(buildReadOnlyPatterns().map((p) => p.operation)).size,
@@ -204,10 +196,4 @@ describe("standaloneSymlinkRemovalOperands", () => {
   ];
   for (const cmd of rejected)
     it(`null: ${JSON.stringify(cmd)}`, () => strictEqual(ops(cmd), null));
-
-  it("rejects a long inner blank run in linear time", () => {
-    const start = performance.now();
-    strictEqual(ops("eslint" + " ".repeat(500000) + "x"), null);
-    ok(performance.now() - start < 1000);
-  });
 });

@@ -1,6 +1,6 @@
 #!/usr/bin/env node --test
 
-import { deepStrictEqual, ok, strictEqual } from "node:assert";
+import { deepStrictEqual, strictEqual } from "node:assert";
 import { describe, it } from "node:test";
 import {
   isCommentStart,
@@ -126,14 +126,6 @@ describe("trimTrailingBlanks / trimSpaceTab", () => {
     strictEqual(trimSpaceTab(" \tls a\t "), "ls a");
     strictEqual(trimSpaceTab("\nls\n"), "\nls\n");
   });
-
-  it("runs in linear time on long inner blank runs", () => {
-    const input = `ls${" ".repeat(200000)}b`;
-    const start = performance.now();
-    strictEqual(trimTrailingBlanks(input), input);
-    strictEqual(trimSpaceTab(input), input);
-    ok(performance.now() - start < 200);
-  });
 });
 
 describe("trimSpaces", () => {
@@ -145,12 +137,5 @@ describe("trimSpaces", () => {
 
   it("leaves tabs and Unicode spaces to the shell", () => {
     strictEqual(trimSpaces(" \t\u00a0x\u00a0\t "), "\t\u00a0x\u00a0\t");
-  });
-
-  it("trims a long inner blank run in linear time", () => {
-    const input = "x" + " ".repeat(500000) + "y";
-    const start = performance.now();
-    strictEqual(trimSpaces(input), input);
-    ok(performance.now() - start < 200);
   });
 });

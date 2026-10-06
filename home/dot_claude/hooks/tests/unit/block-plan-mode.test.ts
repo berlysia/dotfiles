@@ -11,7 +11,7 @@ import {
   EnvironmentHelper,
   invokeRun,
   MockHookContext,
-} from "./test-helpers.ts";
+} from "../support/test-helpers.ts";
 
 function createContext(
   toolName: string,

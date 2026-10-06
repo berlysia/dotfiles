@@ -136,20 +136,6 @@ describe("isExemptReadOnlyCommand", () => {
     });
   }
 
-  it("scans 100,000 characters in linear time", () => {
-    const cmd = `grep ${"a".repeat(100000)}`;
-    const start = performance.now();
-    strictEqual(exempt(cmd), true);
-    ok(performance.now() - start < 1000);
-  });
-
-  it("scans a long inner blank run in linear time", () => {
-    const cmd = `grep a${" ".repeat(100000)}b f`;
-    const start = performance.now();
-    strictEqual(exempt(cmd), true);
-    ok(performance.now() - start < 1000);
-  });
-
   for (const cmd of EXEMPT_TRUE) {
     it(`true: ${JSON.stringify(cmd)}`, () => {
       strictEqual(exempt(cmd), true);

@@ -12,7 +12,7 @@ import {
   EnvironmentHelper,
   invokeRun,
   TEST_SESSION_ID,
-} from "./test-helpers.ts";
+} from "../support/test-helpers.ts";
 
 function setupWfDir(): { cwd: string; wfDir: string } {
   const cwd = realpathSync(mkdtempSync(join(tmpdir(), "spsa-")));

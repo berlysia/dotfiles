@@ -12,7 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { createUserPromptSubmitContext } from "./test-helpers.ts";
+import { createUserPromptSubmitContext } from "../support/test-helpers.ts";
 
 describe("user-prompt-logger.ts hook behavior", () => {
   let testDir: string;

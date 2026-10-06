@@ -10,7 +10,7 @@ import {
   invokeRun,
   pendingWorkflowRepo,
   TEST_WORKFLOW_DIR,
-} from "./test-helpers.ts";
+} from "../support/test-helpers.ts";
 
 describe("document-workflow-guard.ts: interpreter inline-script write classification (spec K3)", () => {
   const envHelper = new EnvironmentHelper();

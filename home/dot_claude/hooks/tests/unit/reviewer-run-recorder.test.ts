@@ -14,7 +14,7 @@ import {
   invokeRun,
   pendingWorkflowRepo,
   TEST_WORKFLOW_DIR,
-} from "./test-helpers.ts";
+} from "../support/test-helpers.ts";
 
 describe("reviewer-run-recorder.ts", () => {
   const envHelper = new EnvironmentHelper();

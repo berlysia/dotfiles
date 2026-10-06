@@ -10,7 +10,7 @@ import {
   createUserPromptSubmitContext,
   EnvironmentHelper,
   invokeRun,
-} from "./test-helpers.ts";
+} from "../support/test-helpers.ts";
 
 const COUNTER_PATH = join(process.cwd(), ".tmp", ".resume-incomplete-retries");
 

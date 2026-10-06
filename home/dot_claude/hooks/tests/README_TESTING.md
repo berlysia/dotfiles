@@ -17,6 +17,13 @@
 - **`../scripts/all_tests.sh`** - 全テスト実行スクリプト
 - **`../scripts/test-with-types.sh`** - 型チェック付きテスト
 
+## node:test のスイート（unit / perf）
+
+- `bun run test`: `tests/unit/*.test.ts` を並列に実行する。completion gate と pre-commit が実行するのはこれだけで、経過時間を assert するテストは置かない（`tests/unit/test-layout.test.ts` が検査する）
+- `bun run test:perf`: `tests/perf/*.test.ts` をファイルごとに直列で実行する。ReDoS などの線形時間ガードと、ラッパーの実時間の検証を置く。CI（`ci-typescript.yml`）と `bun run check` が実行する
+- unit と perf が共有する helper は `tests/support/` に置く（`*.test.ts` にしない）
+- テストのプロセスでは bash-parser の解析予算が 10 秒になる（`preload-test-env.mjs`）。本番の 100 ms で測るテストは `tests/perf/parse-budget.test.ts` に置く
+
 ## テスト実行方法
 
 ### 基本実行

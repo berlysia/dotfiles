@@ -14,7 +14,7 @@ import {
   getProjectRoot,
 } from "../../lib/project-root.ts";
 import { shellSingleQuote } from "../../lib/shell-quote.ts";
-import { EnvironmentHelper } from "./test-helpers.ts";
+import { EnvironmentHelper } from "../support/test-helpers.ts";
 
 describe("getProjectRoot", () => {
   const envHelper = new EnvironmentHelper();

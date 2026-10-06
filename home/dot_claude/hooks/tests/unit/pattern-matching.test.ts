@@ -469,21 +469,6 @@ describe("matchGitignorePattern: absolute wildcard patterns", () => {
       });
     }
   });
-
-  it("stays fast on long paths with stacked ** (no backtracking blowup)", () => {
-    const longPath = `/${Array(200).fill("a").join("/")}/b`;
-    const start = performance.now();
-    strictEqual(
-      matchGitignorePattern(longPath, "//**/**/**/**/c", ctx, "grant"),
-      false,
-    );
-    strictEqual(
-      matchGitignorePattern(`/repo${longPath}`, ".env", ctx, "restrict"),
-      false,
-    );
-    const elapsed = performance.now() - start;
-    strictEqual(elapsed < 50, true, `took ${elapsed}ms`);
-  });
 });
 
 describe("find start path under temp roots", () => {

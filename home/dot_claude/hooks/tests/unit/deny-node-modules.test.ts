@@ -13,16 +13,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, afterEach, beforeEach, describe, it } from "node:test";
 import { BOUNDARY_DENY_GUIDANCE } from "../../lib/context-helpers.ts";
-import denyNodeModulesHook, {
-  DESTRUCTIVE_NODE_MODULES_PATTERNS,
-} from "../../implementations/deny-node-modules.ts";
+import denyNodeModulesHook from "../../implementations/deny-node-modules.ts";
 import {
   ConsoleCapture,
   createPreToolUseContext,
   defineHook,
   EnvironmentHelper,
   invokeRun,
-} from "./test-helpers.ts";
+} from "../support/test-helpers.ts";
 
 const R = "r" + "m -rf";
 const P = "node" + "_modules";
@@ -287,35 +285,6 @@ describe("deny-node-modules.ts hook behavior", () => {
   // Issue #219: with the regex versions these shapes took seconds to minutes.
   describe("long repeated words", () => {
     const NM = "node" + "_modules";
-    for (const [name, command] of [
-      ["a repeated cp word", NM + " cp ".repeat(7000)],
-      ["a repeated ls word", NM + " " + "ls ".repeat(9000)],
-    ] as const) {
-      it(`asks for ${name} in linear time`, async () => {
-        const context = createPreToolUseContext("Bash", { command });
-        const start = performance.now();
-        await invokeRun(denyNodeModulesHook, context);
-        const elapsed = performance.now() - start;
-
-        ok(elapsed < 1000, `${elapsed} ms`);
-        context.assertAsk();
-      });
-    }
-
-    // The tree-sitter parse of a long run of redirect characters is itself
-    // quadratic (measured separately from the regexes), so this shape is
-    // judged at the table, which is where the regexes were.
-    it("judges a long run of redirect characters in linear time", () => {
-      const text = NM + " " + ">".repeat(100000);
-      const start = performance.now();
-      const hit = DESTRUCTIVE_NODE_MODULES_PATTERNS.find(
-        ({ operation }) => operation === "overwrite",
-      );
-      ok(hit);
-      strictEqual(hit.pattern.test(text), false);
-      ok(performance.now() - start < 1000);
-    });
-
     // Issue #235: over the parser's length limit the command is not analysed.
     for (const [name, command] of [
       ["mentions node_modules", NM + " cp ".repeat(25000)],
@@ -323,11 +292,8 @@ describe("deny-node-modules.ts hook behavior", () => {
     ] as const) {
       it(`denies a command over the length limit that ${name}`, async () => {
         const context = createPreToolUseContext("Bash", { command });
-        const start = performance.now();
         await invokeRun(denyNodeModulesHook, context);
-        const elapsed = performance.now() - start;
 
-        ok(elapsed < 1000, `${elapsed} ms`);
         context.assertDeny();
       });
     }

@@ -9,12 +9,13 @@ PermissionRequest の決定ログを分析し、不要な ask 判定を削減す
 
 ## 対象ファイルと役割
 
-| Layer | ファイル (chezmoi管理)                                              | 役割                                                         |
-| ----- | ------------------------------------------------------------------- | ------------------------------------------------------------ |
-| 0/1   | `home/dot_claude/.settings.permissions.json`                        | Claude Code組み込みのallowリスト（MCP, Skill, ファイルパス） |
-| 2a    | `home/dot_claude/hooks/implementations/permission-auto-approve.ts`  | 静的ルール（正規表現パターンマッチ）                         |
-| 2b    | `home/dot_claude/hooks/implementations/permission-llm-evaluator.ts` | LLM評価（SYSTEM_PROMPT）                                     |
-| Test  | `home/dot_claude/hooks/tests/unit/permission-auto-approve.test.ts`  | Layer 2aのユニットテスト                                     |
+| Layer       | ファイル (chezmoi管理)                                              | 役割                                                                                          |
+| ----------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| 0/1         | `home/dot_claude/.settings.permissions.json`                        | Claude Code組み込みのallowリスト（MCP, Skill, ファイルパス）                                  |
+| 2a          | `home/dot_claude/hooks/implementations/permission-auto-approve.ts`  | 静的ルール（正規表現パターンマッチ）                                                          |
+| 2b          | `home/dot_claude/hooks/implementations/permission-llm-evaluator.ts` | LLM評価（SYSTEM_PROMPT）                                                                      |
+| Test        | `home/dot_claude/hooks/tests/unit/permission-auto-approve.test.ts`  | Layer 2aのユニットテスト                                                                      |
+| Test (perf) | `home/dot_claude/hooks/tests/perf/permission-auto-approve.test.ts`  | 線形時間のガード。単一ファイルの実行では走らないので、変更後は `bun run test:perf` も実行する |
 
 ## ワークフロー
 

@@ -8,7 +8,7 @@ import {
   defineHook,
   EnvironmentHelper,
   invokeRun,
-} from "./test-helpers.ts";
+} from "../support/test-helpers.ts";
 
 describe("ask-user-question-notification.ts hook behavior", () => {
   let consoleCapture: ConsoleCapture;

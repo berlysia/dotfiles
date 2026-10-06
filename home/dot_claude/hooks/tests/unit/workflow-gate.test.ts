@@ -34,7 +34,7 @@ import {
   computeWorkflowRepoPlanHash,
   pendingWorkflowRepo,
   recordApprovalsForTest,
-} from "./test-helpers.ts";
+} from "../support/test-helpers.ts";
 
 function freshWf(): string {
   const wf = mkdtempSync(join(tmpdir(), "gate-"));

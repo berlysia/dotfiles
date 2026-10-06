@@ -29,7 +29,7 @@ import {
   saveBaseline,
 } from "../../lib/working-tree-fingerprint.ts";
 import { createBlockingGit } from "../support/fake-git.ts";
-import { EnvironmentHelper } from "./test-helpers.ts";
+import { EnvironmentHelper } from "../support/test-helpers.ts";
 
 const PATIENT_DEADLINE_MS = 30_000;
 

@@ -64,6 +64,11 @@ jobs:
       - name: Run tests
         run: bun run test
 
+      # Wall-clock assertions (ReDoS guards, wrapper timing) live here so that
+      # the completion gate and pre-commit, which run `test`, never race them.
+      - name: Run perf tests
+        run: bun run test:perf
+
       # format:check はリポジトリ全体が対象で paths フィルタと両立しないため
       # ci-format.yml に分離した。ここは TS スコープの lint のみを担う。
       - name: Lint check

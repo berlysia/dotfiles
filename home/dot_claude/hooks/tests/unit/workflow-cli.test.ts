@@ -40,7 +40,7 @@ import {
   pendingWorkflowRepo,
   recordApprovalsForTest,
   seedWorkflow,
-} from "./test-helpers.ts";
+} from "../support/test-helpers.ts";
 
 const NOW = new Date("2026-09-10T05:00:00.000Z");
 

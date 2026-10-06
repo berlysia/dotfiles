@@ -21,7 +21,7 @@ import {
   isWorkflowDocumentPath,
   resolveWorkflowPaths,
 } from "../../lib/workflow-paths.ts";
-import { EnvironmentHelper } from "./test-helpers.ts";
+import { EnvironmentHelper } from "../support/test-helpers.ts";
 
 describe("workflow-paths.ts", () => {
   const envHelper = new EnvironmentHelper();

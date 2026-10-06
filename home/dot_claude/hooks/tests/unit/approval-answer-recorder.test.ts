@@ -30,7 +30,7 @@ import {
   invokeRun,
   TEST_SESSION_ID,
   type WorkflowRepoOptions,
-} from "./test-helpers.ts";
+} from "../support/test-helpers.ts";
 
 const REVIEWED: WorkflowRepoOptions = {
   planStatus: "complete",

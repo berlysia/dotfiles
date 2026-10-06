@@ -40,7 +40,7 @@ import {
   TEST_WORKFLOW_DIR,
   type ReviewMarkerOptions,
   type WorkflowRepoOptions,
-} from "./test-helpers.ts";
+} from "../support/test-helpers.ts";
 
 function createSessionWorkflowRepo(
   sessionDir: string,

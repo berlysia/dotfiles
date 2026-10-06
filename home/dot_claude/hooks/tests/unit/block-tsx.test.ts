@@ -10,7 +10,7 @@ import {
   defineHook,
   EnvironmentHelper,
   invokeRun,
-} from "./test-helpers.ts";
+} from "../support/test-helpers.ts";
 
 describe("block-tsx.ts hook behavior", () => {
   const consoleCapture = new ConsoleCapture();

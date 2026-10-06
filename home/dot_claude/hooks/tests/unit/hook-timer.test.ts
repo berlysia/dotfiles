@@ -7,165 +7,23 @@
 // signal mid-execution.
 
 import { deepStrictEqual, ok, strictEqual } from "node:assert";
-import { execSync, spawn, spawnSync } from "node:child_process";
-import {
-  chmodSync,
-  existsSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  symlinkSync,
-  writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { spawn } from "node:child_process";
+import { readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { after, describe, it } from "node:test";
-import { fileURLToPath } from "node:url";
+import {
+  baseEnv,
+  buildMinimalBinDir,
+  cleanupTempDirs,
+  makeTempDir,
+  pollForLastRecord,
+  pollUntilEmpty,
+  runWrapperSync,
+  waitForFile,
+  wrapper,
+} from "../support/hook-timer-helpers.ts";
 
-// Elapsed-time assertions use performance.now(): Date.now() follows the wall
-// clock, which WSL2 time sync can step mid-test (seen as elapsed=3836ms for a
-// test node itself timed at 1312ms).
-
-const here = dirname(fileURLToPath(import.meta.url));
-const wrapper = join(here, "..", "..", "executable_hook-timer.sh");
-
-// Every temp dir is removed by the absolute path mkdtempSync returned.
-const tempDirs: string[] = [];
-after(() => {
-  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
-});
-
-function makeTempDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), "hook-timer-test-"));
-  tempDirs.push(dir);
-  return dir;
-}
-
-/** Blocks the current thread for `ms` without spawning a process. */
-function sleepSync(ms: number): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
-
-/** A directory holding only symlinks to the named real binaries. */
-function buildMinimalBinDir(names: string[]): string {
-  const dir = makeTempDir();
-  for (const name of names) {
-    const real = execSync(`command -v ${name}`, { shell: "/bin/sh" })
-      .toString()
-      .trim();
-    symlinkSync(real, join(dir, name));
-  }
-  return dir;
-}
-
-/** A directory holding a fake executable named `name` with the given sh body. */
-function fakeBinDir(name: string, body: string): string {
-  const dir = makeTempDir();
-  const bin = join(dir, name);
-  writeFileSync(bin, `#!/bin/sh\n${body}\n`);
-  chmodSync(bin, 0o755);
-  return dir;
-}
-
-type HookTimingRecord = {
-  ts: string;
-  start_ms: number | null;
-  duration_ms: number | null;
-  event: string;
-  async: boolean;
-  exit_code: number | null;
-  stdout_bytes: number;
-  stderr_bytes: number | null;
-  command: string;
-  session_id: string | null;
-  tool_name: string | null;
-  tool_use_id: string | null;
-  source: string | null;
-  prompt_id: string | null;
-  terminated: string | null;
-};
-
-/**
- * Resolves once `path` exists, polling every 10ms for up to `timeoutMs`.
- * The signal cases wait for a marker the child writes, so the kill timer
- * starts after the wrapper has taken start_ms and the child is running,
- * not after a wrapper startup whose length depends on load.
- */
-async function waitForFile(path: string, timeoutMs = 5000): Promise<void> {
-  const deadline = performance.now() + timeoutMs;
-  while (!existsSync(path)) {
-    if (performance.now() >= deadline) {
-      throw new Error(`${path} did not appear within ${timeoutMs}ms`);
-    }
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-}
-
-/** Polls `<dir>/hook-timing.jsonl` for its last line, up to 3000ms at 50ms intervals. */
-function pollForLastRecord(
-  dir: string,
-  timeoutMs = 3000,
-  intervalMs = 50,
-): HookTimingRecord {
-  const logPath = join(dir, "hook-timing.jsonl");
-  const deadline = performance.now() + timeoutMs;
-  let lines: string[] = [];
-  while (performance.now() < deadline) {
-    if (existsSync(logPath)) {
-      const content = readFileSync(logPath, "utf8");
-      lines = content.split("\n").filter((l) => l.length > 0);
-      if (lines.length > 0) break;
-    }
-    sleepSync(intervalMs);
-  }
-  if (lines.length === 0) {
-    throw new Error(`no record appeared in ${logPath} within ${timeoutMs}ms`);
-  }
-  return JSON.parse(lines[lines.length - 1]);
-}
-
-/**
- * Polls until `dir` is empty, up to `timeoutMs`, and returns what remains.
- * The wrapper creates its scratch dir before exiting and only the detached
- * recorder removes it, so "empty" can only be reached by the cleanup under test.
- */
-function pollUntilEmpty(
-  dir: string,
-  timeoutMs = 3500,
-  intervalMs = 50,
-): string[] {
-  const deadline = performance.now() + timeoutMs;
-  let entries = readdirSync(dir);
-  while (entries.length > 0 && performance.now() < deadline) {
-    sleepSync(intervalMs);
-    entries = readdirSync(dir);
-  }
-  return entries;
-}
-
-function runWrapperSync(
-  event: string,
-  isAsync: "0" | "1",
-  cmd: string,
-  opts: {
-    input: string;
-    env: Record<string, string | undefined>;
-    timeout?: number;
-  },
-) {
-  return spawnSync("sh", [wrapper, event, isAsync, cmd], {
-    input: opts.input,
-    encoding: "utf8",
-    env: opts.env,
-    timeout: opts.timeout ?? 10_000,
-  });
-}
-
-function baseEnv(logDir: string): Record<string, string | undefined> {
-  return { ...process.env, CLAUDE_LOGS_DIR: logDir };
-}
+after(cleanupTempDirs);
 
 describe("hook-timer.sh", () => {
   it("forwards stdin to stdout byte for byte and exits 0", () => {
@@ -357,59 +215,6 @@ describe("hook-timer.sh", () => {
     strictEqual(mode, 0o600);
   });
 
-  it("records a SIGTERM'd child as terminated with exit_code null", async () => {
-    const logDir = makeTempDir();
-    const marker = join(makeTempDir(), "started");
-    const child = spawn(
-      "sh",
-      [wrapper, "PreToolUse", "0", `touch '${marker}'; sleep 5`],
-      { env: baseEnv(logDir) },
-    );
-    const closed = new Promise<{
-      code: number | null;
-      signal: NodeJS.Signals | null;
-    }>((resolve) => {
-      child.on("close", (code, signal) => resolve({ code, signal }));
-    });
-    child.stdin.write("{}");
-    child.stdin.end();
-
-    // The wrapper takes start_ms before it runs the child, so once the marker
-    // exists, a kill 300ms later lands at least 300ms after start_ms however
-    // long the wrapper took to start.
-    await waitForFile(marker);
-    setTimeout(() => child.kill("SIGTERM"), 300);
-    const result = await closed;
-    strictEqual(result.code, 143);
-
-    const record = pollForLastRecord(logDir);
-    strictEqual(record.terminated, "TERM");
-    strictEqual(record.exit_code, null);
-    ok(
-      typeof record.duration_ms === "number" &&
-        record.duration_ms >= 250 &&
-        record.duration_ms < 2000,
-      `duration_ms=${record.duration_ms}`,
-    );
-  });
-
-  it("does not block on a slow jq (recording is detached)", () => {
-    const logDir = makeTempDir();
-    const slowJqDir = fakeBinDir("jq", "sleep 3");
-    const env = {
-      ...baseEnv(logDir),
-      PATH: `${slowJqDir}:${process.env.PATH}`,
-    };
-    const start = performance.now();
-    const result = runWrapperSync("PreToolUse", "0", "true", {
-      input: "{}",
-      env,
-    });
-    const elapsed = performance.now() - start;
-    strictEqual(result.status, 0);
-    ok(elapsed < 1500, `elapsed=${elapsed}ms`);
-  });
-
   it("leaves no scratch dir behind (with jq available)", () => {
     const logDir = makeTempDir();
     const tmpDir = makeTempDir();
@@ -482,37 +287,6 @@ describe("hook-timer.sh", () => {
     child.kill("SIGTERM");
     await closed;
     ok(stdoutData.includes("bye"), stdoutData);
-  });
-
-  it("escalates to SIGKILL after its 1s grace when the child ignores TERM", async () => {
-    const logDir = makeTempDir();
-    const marker = join(makeTempDir(), "trapped");
-    const child = spawn(
-      "sh",
-      [wrapper, "PreToolUse", "0", `trap "" TERM; touch '${marker}'; sleep 5`],
-      { env: baseEnv(logDir) },
-    );
-    const closed = new Promise<{ code: number | null }>((resolve) => {
-      child.on("close", (code) => resolve({ code }));
-    });
-    child.stdin.write("{}");
-    child.stdin.end();
-
-    // Kill only after the child has ignored TERM; otherwise TERM could reach
-    // it before the trap and end it without exercising the escalation.
-    await waitForFile(marker);
-    const killedAt = performance.now();
-    child.kill("SIGTERM");
-    const result = await closed;
-    const elapsed = performance.now() - killedAt;
-    strictEqual(result.code, 143);
-    // The grace is 10 x `sleep 0.1`, so reaching SIGKILL takes at least 1s.
-    // The upper bound only catches a wrapper that never escalates (the child
-    // sleeps 5s); fork and exec delays under load stay well inside it.
-    ok(elapsed >= 1000 && elapsed < 4000, `elapsed=${elapsed}ms`);
-
-    const record = pollForLastRecord(logDir);
-    strictEqual(record.terminated, "TERM");
   });
 
   it("leaves the child's own status and stdout unchanged when CLAUDE_LOGS_DIR is unwritable", () => {

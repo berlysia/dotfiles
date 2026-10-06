@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, it } from "node:test";
 import { resolveWorkflowDir } from "../../lib/workflow-resolve.ts";
-import { EnvironmentHelper } from "./test-helpers.ts";
+import { EnvironmentHelper } from "../support/test-helpers.ts";
 
 describe("workflow-resolve.ts", () => {
   const env = new EnvironmentHelper();
