@@ -3,6 +3,7 @@
   "extends": ["github>berlysia/renovate-config"],
   "prHourlyLimit": 0,
   "schedule": ["* * * * 1"],
+  "automergeStrategy": "merge-commit",
   "packageRules": [
     {
       "description": "Auto-merge non-major GitHub Actions updates",
