@@ -2,7 +2,16 @@ import { atom, read, update } from "claude-code";
 import type { EngineInterface, Register } from "claude-code";
 
 import type { WorkflowFailure, WorkflowSnapshot } from "../types";
-import { isIdle, parseDir, parseStatus, shortName, truncate } from "./parse";
+import {
+  arePlansReady,
+  isComplete,
+  isIdle,
+  parseDir,
+  parseStatus,
+  planNumber,
+  shortName,
+  truncate,
+} from "./parse";
 
 const snapshot = atom(
   { plugin: "workflow-band", key: "snapshot" } as const,
@@ -116,14 +125,16 @@ export const register: Register = (on) => {
     }
     if (isIdle(current)) return next(e);
 
-    // Without a target, `status` evaluates spec.md alone in two-layer mode;
-    // say so rather than let a green spec.md read as "writes are allowed".
-    const docLabel = current.twoLayer
-      ? `${current.doc} (plan-N not shown)`
-      : current.doc;
+    // With every condition met the checklist collapses to one mark. In
+    // two-layer mode a green spec.md does not mean writes are allowed, so
+    // the plan-N.md side is drawn next to it and `Next:` stays until those
+    // clear too. A warning always gets its line.
+    const complete = isComplete(current);
+    const plansReady = arePlansReady(current);
+    const settled = complete && (!current.twoLayer || plansReady);
     const secondLine = current.warning
       ? { color: "yellow", text: `⚠ ${current.warning}` }
-      : current.next
+      : current.next && !settled
         ? { color: undefined, text: `Next: ${current.next}` }
         : null;
 
@@ -133,15 +144,31 @@ export const register: Register = (on) => {
           <Text bold color="cyan">
             WF{" "}
           </Text>
-          <Text>{docLabel} </Text>
+          <Text>{current.doc} </Text>
           {current.source === "env" ? (
             <Text color="yellow">[pinned] </Text>
           ) : null}
-          {current.checks.map((check) => (
-            <Text key={check.name} color={check.ok ? "green" : "red"}>
-              {`${check.ok ? "✓" : "✗"}${shortName(check.name)} `}
-            </Text>
-          ))}
+          {complete ? (
+            <Text color="green">{"✓ "}</Text>
+          ) : (
+            current.checks.map((check) => (
+              <Text key={check.name} color={check.ok ? "green" : "red"}>
+                {`${check.ok ? "✓" : "✗"}${shortName(check.name)} `}
+              </Text>
+            ))
+          )}
+          {current.twoLayer ? <Text dimColor>{"· plan "}</Text> : null}
+          {!current.twoLayer ? null : current.plans.length === 0 ? (
+            <Text dimColor>none yet</Text>
+          ) : plansReady ? (
+            <Text color="green">{`✓${current.plans.length}`}</Text>
+          ) : (
+            current.plans.map((plan) => (
+              <Text key={plan.name} color={plan.blockedBy ? "red" : "green"}>
+                {`${planNumber(plan.name)}${plan.blockedBy ? `✗${shortName(plan.blockedBy)}` : "✓"} `}
+              </Text>
+            ))
+          )}
         </Box>
         {secondLine && e.props.maxRows >= 2 ? (
           <Text dimColor={!current.warning} color={secondLine.color}>

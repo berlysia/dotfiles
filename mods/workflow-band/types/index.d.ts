@@ -6,6 +6,13 @@ export type GateCheck = {
   detail?: string;
 };
 
+export type PlanState = {
+  /** `plan-N.md`. */
+  name: string;
+  /** The first condition the plan does not meet, as workflow-cli names it; absent when it clears. */
+  blockedBy?: string;
+};
+
 /** Where workflow-cli took the workflow dir from (`workflow-cli dir`'s `source=`). */
 export type WfDirSource = "derived" | "env" | "override" | "unknown";
 
@@ -14,6 +21,8 @@ export type WorkflowSnapshot = {
   doc: string;
   twoLayer: boolean;
   checks: GateCheck[];
+  /** Two-layer mode: every plan-N.md in number order. Empty in single-layer mode. */
+  plans: PlanState[];
   note?: string;
   next?: string;
   tripwire?: string;
