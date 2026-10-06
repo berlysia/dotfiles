@@ -139,6 +139,32 @@ describe("settings entries after the matcher change", () => {
       true,
     ],
     ["allow", "Read", "/home/u/.local/share/chezmoi/src/a.ts", true, true],
+    // ~/.local is allowed only for the chezmoi source, not deployed files or tools
+    [
+      "allow",
+      "Edit",
+      "/home/u/.local/share/chezmoi/home/dot_zshrc",
+      true,
+      true,
+    ],
+    ["allow", "Edit", "/home/u/.local/bin/agent-vm", false, true],
+    [
+      "allow",
+      "Edit",
+      "/home/u/.local/share/mise/installs/x/bin/y",
+      false,
+      true,
+    ],
+    // git config and hooks can run commands, so no repo's are editable
+    ["deny", "Edit", "/home/u/.local/share/chezmoi/.git/config", true, false],
+    ["deny", "Edit", "/home/u/workspace/p/.git/hooks/pre-commit", true, false],
+    [
+      "deny",
+      "Edit",
+      "/home/u/.local/share/chezmoi/.git/worktree/feature-x/src/a.ts",
+      false,
+      false,
+    ],
   ];
   for (const [list, tool, path, expected] of rows) {
     it(`${list} ${tool} ${path} -> ${expected ? "matches" : "no match"}`, async () => {
