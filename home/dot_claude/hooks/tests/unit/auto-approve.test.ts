@@ -35,6 +35,13 @@ import {
 
 const testRoots = { user: "/home/u/.claude", project: "/test" };
 
+// biome-ignore lint/suspicious/noExplicitAny: test context
+const isAllow = (context: any) =>
+  context.jsonCalls.some(
+    // biome-ignore lint/suspicious/noExplicitAny: hook JSON output
+    (c: any) => c?.hookSpecificOutput?.permissionDecision === "allow",
+  );
+
 const R = "r" + "m -rf";
 const P = "node" + "_modules";
 
@@ -228,13 +235,6 @@ describe("auto-approve.ts hook behavior", () => {
       await invokeRun(autoApproveHook, context);
       return context;
     };
-    // biome-ignore lint/suspicious/noExplicitAny: test context
-    const isAllow = (context: any) =>
-      context.jsonCalls.some(
-        // biome-ignore lint/suspicious/noExplicitAny: hook JSON output
-        (c: any) => c?.hookSpecificOutput?.permissionDecision === "allow",
-      );
-
     const NOT_ALLOWED: Array<[string, string[]]> = [
       ["git push --force origin main $(pwd)", []],
       ["time ls\nzz a", []],
@@ -1959,4 +1959,34 @@ describe("a /path rule read from a settings file anchors at its source", () => {
       false,
     );
   });
+});
+
+describe("auto-approve - git prefix forms (spec K7 Goal check)", () => {
+  const envHelper = new EnvironmentHelper();
+  beforeEach(() => {
+    envHelper.set("CLAUDE_TEST_MODE", "1");
+  });
+  afterEach(() => {
+    envHelper.restore();
+  });
+
+  for (const command of [
+    "git -c color.ui=never status",
+    "git -C /w/p -c color.ui=never status",
+    "GIT_PAGER=cat git log",
+    "git --no-replace-objects log",
+  ]) {
+    it(`does not allow: ${command}`, async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify([]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+      const context = createPreToolUseContextFor(
+        autoApproveHook,
+        "Bash",
+        { command },
+        { cwd: "/w/p" },
+      );
+      await invokeRun(autoApproveHook, context);
+      strictEqual(isAllow(context), false);
+    });
+  }
 });

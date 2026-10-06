@@ -1340,3 +1340,20 @@ describe("staticRuleEngine - project-scope check reads one line only (spec K8 2a
     });
   });
 });
+
+describe("staticRuleEngine - git prefix forms (spec K7 Goal check)", () => {
+  const bash = (command: string) =>
+    staticRuleEngine({
+      session_id: "s",
+      tool_name: "Bash",
+      tool_input: { command },
+      cwd: "/home/user/project",
+    });
+  it("does not allow a GIT_* prefix or a long global option", () => {
+    strictEqual(bash("GIT_PAGER=cat git log").behavior === "allow", false);
+    strictEqual(
+      bash("git --no-replace-objects log").behavior === "allow",
+      false,
+    );
+  });
+});
