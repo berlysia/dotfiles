@@ -1231,6 +1231,59 @@ describe("workflow-cli: status", () => {
     );
   });
 
+  it("status without a target lists each plan-N.md with its first unmet condition in two-layer mode", () => {
+    const { repo, wf } = statusRepo();
+    const spec = buildPlanContent(approvedWorkflowRepo());
+    const specHash = computeWorkflowRepoPlanHash(spec);
+    writeFileSync(join(wf, "spec.md"), spec);
+    writeFileSync(
+      join(wf, "plan-1.md"),
+      buildPlanNContent(approvedWorkflowRepo(), ["src/a.ts"], specHash),
+    );
+    writeFileSync(
+      join(wf, "plan-2.md"),
+      buildPlanNContent(pendingWorkflowRepo(), ["src/b.ts"], specHash),
+    );
+    // Approved in every way of its own, but stamped against another spec.
+    writeFileSync(
+      join(wf, "plan-10.md"),
+      buildPlanNContent(approvedWorkflowRepo(), ["src/c.ts"], "0".repeat(64)),
+    );
+    recordApprovalsForTest(wf);
+    const r = runWorkflowCli(["status"], {
+      cwd: repo,
+      wfDir: wf,
+      sessionId: "test-ses",
+      wfDirSource: "derived",
+      now: NOW,
+    });
+    const planLines = r.stdout
+      .split("\n")
+      .filter((line) => line.startsWith("plan: "));
+    assert.deepEqual(planLines, [
+      "plan: plan-1.md ✓",
+      "plan: plan-2.md ✗ Plan Status",
+      "plan: plan-10.md ✗ parent-spec-hash",
+    ]);
+  });
+
+  it("status without a target prints no plan line in single-layer mode", () => {
+    const { repo, wf } = statusRepo();
+    writeFileSync(
+      join(wf, "plan.md"),
+      buildPlanContent(approvedWorkflowRepo()),
+    );
+    recordApprovalsForTest(wf);
+    const r = runWorkflowCli(["status"], {
+      cwd: repo,
+      wfDir: wf,
+      sessionId: "test-ses",
+      wfDirSource: "derived",
+      now: NOW,
+    });
+    assert.doesNotMatch(r.stdout, /^plan: /m);
+  });
+
   it("status <path> reports the guard's shortcuts as not gated", () => {
     const { repo, wf } = statusRepo();
     writeFileSync(join(wf, "plan.md"), buildPlanContent(pendingWorkflowRepo()));

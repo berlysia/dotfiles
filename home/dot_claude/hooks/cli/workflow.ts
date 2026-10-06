@@ -45,6 +45,7 @@ import {
   formatGateChecklist,
   formatTargetEvaluation,
   listApprovalCandidates,
+  summarizePlans,
 } from "../lib/workflow-gate.ts";
 import { isStrictlyUnderProjectSubdir } from "../lib/workflow-fs.ts";
 import { lastPassMarkerRound } from "../lib/workflow-marker.ts";
@@ -372,6 +373,15 @@ function cmdStatus(
       `Document workflow gate${twoLayer ? " (two-layer)" : ""}: conditions on \`${sanitizeForDisplay(docLabel)}\`:`,
       formatGateChecklist(diagnosis),
     );
+    // The plan-N.md side, one line each, so the reader can tell which plans
+    // are ready without asking about a path.
+    if (twoLayer) {
+      for (const plan of summarizePlans(wfDir)) {
+        lines.push(
+          `plan: ${plan.name} ${plan.blockedBy ? `✗ ${plan.blockedBy}` : "✓"}`,
+        );
+      }
+    }
   }
 
   if (existsSync(resolve(wfDir, ".tripwire-disabled"))) {

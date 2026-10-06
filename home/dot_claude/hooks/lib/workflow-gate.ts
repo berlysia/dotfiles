@@ -507,6 +507,66 @@ export function formatTargetEvaluation(
   }
 }
 
+/** A document's conditions under the names and in the order a checklist shows them. */
+function documentConditionRows(
+  d: DocumentDiagnosis,
+): [string, GateCondition][] {
+  return [
+    ["Plan Status", d.conditions.planStatus],
+    ["Review Status", d.conditions.reviewStatus],
+    ["Approval Status", d.conditions.approvalStatus],
+    ["marker verdict", d.conditions.markerVerdict],
+    ["hash match", d.conditions.hashMatch],
+    ["approval", d.conditions.approvalRecord],
+  ];
+}
+
+export interface PlanSummary {
+  /** `plan-N.md`. */
+  name: string;
+  /** The first condition the plan does not meet; absent when it clears. */
+  blockedBy?: string;
+}
+
+/**
+ * Each plan-N.md in number order with the first thing that keeps it from
+ * allowing a write: one of its own conditions, or a parent-spec-hash that is
+ * missing or not the current spec.md hash. spec.md's own conditions are not
+ * part of this; `diagnoseGate` reports those.
+ */
+export function summarizePlans(wfDir: string): PlanSummary[] {
+  let specHash: string | undefined;
+  try {
+    specHash = computeDocumentHash(
+      readFileSync(resolveWorkflowPaths(wfDir).spec, "utf-8"),
+      SPEC_NORMALIZERS,
+    );
+  } catch {
+    specHash = undefined;
+  }
+  const planNumber = (path: string) =>
+    Number(/([0-9]+)\.md$/.exec(path)?.[1] ?? 0);
+
+  return findPlanNumberedFiles(wfDir)
+    .sort((a, b) => planNumber(a) - planNumber(b))
+    .map((planPath) => {
+      const name = basename(planPath);
+      const unmet = documentConditionRows(evaluateDocument(planPath)).find(
+        ([, condition]) => !condition.ok,
+      );
+      if (unmet) return { name, blockedBy: unmet[0] };
+      let content = "";
+      try {
+        content = readFileSync(planPath, "utf-8");
+      } catch {
+        content = "";
+      }
+      return specHash !== undefined && parentSpecMatches(content, specHash)
+        ? { name }
+        : { name, blockedBy: "parent-spec-hash" };
+    });
+}
+
 /**
  * The condition rows, `note:` and `Next:` lines of a diagnosis, with no verdict
  * on the gate. Callers that know the gate is closed put a blocked header on it
@@ -517,12 +577,7 @@ export function formatGateChecklist(d: GateDiagnosis): string {
   const lines: string[] = [];
   const order: [string, GateCondition][] = [
     ["research.md", d.research],
-    ["Plan Status", d.primary.conditions.planStatus],
-    ["Review Status", d.primary.conditions.reviewStatus],
-    ["Approval Status", d.primary.conditions.approvalStatus],
-    ["marker verdict", d.primary.conditions.markerVerdict],
-    ["hash match", d.primary.conditions.hashMatch],
-    ["approval", d.primary.conditions.approvalRecord],
+    ...documentConditionRows(d.primary),
   ];
   for (const [name, cond] of order) {
     const mark = cond.ok ? "✓" : "✗";
