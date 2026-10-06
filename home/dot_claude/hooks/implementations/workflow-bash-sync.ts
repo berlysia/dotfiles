@@ -118,7 +118,7 @@ export function createHook(getEnv: () => HookEnv = defaultEnv) {
       sections.push(...collectDocRecommendations(wfDir, wfPaths));
 
       const twoLayer = existsSync(wfPaths.spec);
-      if (!isImplementationPhase(wfDir, wfPaths, twoLayer)) {
+      if (!isImplementationPhase(wfDir, wfPaths, twoLayer, projectRoot)) {
         const tripwireMessage = await checkTripwire(
           wfDir,
           cwd,

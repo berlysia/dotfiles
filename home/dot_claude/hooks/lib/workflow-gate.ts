@@ -25,6 +25,7 @@ import {
   listsTarget,
   parseScope,
   planFilesWithinScope,
+  targetWithinScope,
 } from "./workflow-files.ts";
 import { resolveWorkflowPaths } from "./workflow-paths.ts";
 import {
@@ -386,41 +387,38 @@ export function isImplementationPhase(
   wfDir: string,
   wfPaths: ReturnType<typeof resolveWorkflowPaths>,
   twoLayer: boolean,
+  projectRoot: string,
 ): boolean {
-  if (!researchExists(wfPaths)) {
-    return false;
-  }
+  return (
+    implementationPhaseBasis(wfDir, wfPaths, twoLayer, projectRoot) !== "none"
+  );
+}
+
+export type PhaseBasis = "none" | "approved" | "delegated-only";
+
+/** What the implementation phase rests on: a plan the user approved, or only delegated ones. */
+export function implementationPhaseBasis(
+  wfDir: string,
+  wfPaths: ReturnType<typeof resolveWorkflowPaths>,
+  twoLayer: boolean,
+  projectRoot: string,
+  /** Pass the context already resolved for this decision so spec.md is read once. */
+  ctx: SpecContext = resolveSpecContext(wfDir, projectRoot),
+): PhaseBasis {
+  if (!researchExists(wfPaths)) return "none";
   if (!twoLayer) {
-    return isDocumentApproved(evaluateDocument(wfPaths.plan));
+    return isDocumentApproved(evaluateDocument(wfPaths.plan))
+      ? "approved"
+      : "none";
   }
-
-  if (!isDocumentApproved(evaluateDocument(wfPaths.spec))) {
-    return false;
-  }
-  let specContent: string;
-  try {
-    specContent = readFileSync(wfPaths.spec, "utf-8");
-  } catch {
-    return false;
-  }
-  const specHash = computeDocumentHash(specContent, SPEC_NORMALIZERS);
-
+  if (!isDocumentApproved(evaluateDocument(wfPaths.spec))) return "none";
+  let delegated = false;
   for (const planPath of findPlanNumberedFiles(wfDir)) {
-    if (!isDocumentApproved(evaluateDocument(planPath))) {
-      continue;
-    }
-    let planContent: string;
-    try {
-      planContent = readFileSync(planPath, "utf-8");
-    } catch {
-      continue;
-    }
-    if (!parentSpecMatches(planContent, specHash)) {
-      continue;
-    }
-    return true;
+    const { kind } = classifyPlan(planPath, ctx);
+    if (kind === "approved") return "approved";
+    if (kind === "delegated") delegated = true;
   }
-  return false;
+  return delegated ? "delegated-only" : "none";
 }
 
 export interface WorkflowState {
@@ -456,10 +454,21 @@ export function isWorkflowActive(
 
 export type TargetEvaluation =
   | { kind: "inactive" }
-  | { kind: "allow"; owner: string }
+  | { kind: "allow"; owner: string; basis: "approved" }
+  | {
+      kind: "allow";
+      owner: string;
+      /** Cleared by the spec's delegation, not by the user's approval of this plan. */
+      basis: "delegated";
+      planName: string;
+      planHash: string;
+      specHash: string;
+    }
   | {
       kind: "no-plan-owner";
       implementationPhase: boolean;
+      /** Whether the guard may let the write through with a warning. */
+      relaxable: boolean;
       diagnosis: GateDiagnosis;
     }
   | { kind: "deny"; diagnosis: GateDiagnosis };
@@ -501,23 +510,19 @@ export function evaluateTarget(query: TargetQuery): TargetEvaluation {
   }
   if (!existsSync(wfPaths.spec)) {
     return isDocumentApproved(evaluateDocument(wfPaths.plan))
-      ? { kind: "allow", owner: wfPaths.plan }
+      ? { kind: "allow", owner: wfPaths.plan, basis: "approved" }
       : deny();
   }
 
   if (!isDocumentApproved(evaluateDocument(wfPaths.spec))) {
     return deny();
   }
-  let specHash: string;
-  try {
-    specHash = computeDocumentHash(
-      readFileSync(wfPaths.spec, "utf-8"),
-      SPEC_NORMALIZERS,
-    );
-  } catch {
+  const ctx = resolveSpecContext(query.wfDir, query.projectRoot);
+  if (ctx.specHash === null) {
     return deny();
   }
 
+  let delegatedOwner: { path: string; planHash: string } | undefined;
   for (const planPath of findPlanNumberedFiles(query.wfDir)) {
     let planContent: string;
     try {
@@ -528,21 +533,50 @@ export function evaluateTarget(query: TargetQuery): TargetEvaluation {
     if (!listsTarget(planContent, query.target, query.projectRoot)) {
       continue;
     }
-    if (!isDocumentApproved(evaluateDocument(planPath))) {
-      return deny();
+    const planClass = classifyPlan(planPath, ctx);
+    if (planClass.kind === "approved") {
+      return { kind: "allow", owner: planPath, basis: "approved" };
     }
-    // A missing parent-spec-hash is a conservative deny: the plan cannot
-    // prove which spec it was approved against.
-    if (!parentSpecMatches(planContent, specHash)) {
-      return deny();
+    if (planClass.kind === "blocked") {
+      // The first plan listing the target decides, as before. A blocked
+      // plan after a delegated one is passed over while looking for a plan
+      // the user approved.
+      if (delegatedOwner === undefined) return deny();
+      continue;
     }
-    return { kind: "allow", owner: planPath };
+    delegatedOwner ??= { path: planPath, planHash: planClass.planHash };
+  }
+  if (delegatedOwner !== undefined) {
+    return {
+      kind: "allow",
+      owner: delegatedOwner.path,
+      basis: "delegated",
+      planName: basename(delegatedOwner.path),
+      planHash: delegatedOwner.planHash,
+      specHash: ctx.specHash,
+    };
   }
 
+  const basis = implementationPhaseBasis(
+    query.wfDir,
+    wfPaths,
+    true,
+    query.projectRoot,
+    ctx,
+  );
+  const relaxable =
+    basis === "approved" ||
+    (basis === "delegated-only" &&
+      targetWithinScope(ctx.specContent, query.target, query.projectRoot));
+  const diagnosis = diagnoseGate(query.wfDir, query.label ?? query.target);
+  if (basis === "delegated-only" && !relaxable) {
+    diagnosis.note = `Only delegated plan-N.md files are in effect, and \`${sanitizeForDisplay(query.label ?? query.target)}\` is outside spec.md's ## Scope or under a protected path. List it in a plan-N.md and have the user approve that plan.`;
+  }
   return {
     kind: "no-plan-owner",
-    implementationPhase: isImplementationPhase(query.wfDir, wfPaths, true),
-    diagnosis: diagnoseGate(query.wfDir, query.label ?? query.target),
+    implementationPhase: basis !== "none",
+    relaxable,
+    diagnosis,
   };
 }
 
@@ -592,9 +626,11 @@ export function formatTargetEvaluation(
     case "inactive":
       return `Document workflow: inactive (no research.md or plan.md in the workflow dir); \`${targetLabel}\` is not gated.`;
     case "allow":
-      return `Document workflow gate: \`${targetLabel}\` is allowed by \`${basename(evaluation.owner)}\`.`;
+      return evaluation.basis === "delegated"
+        ? `Document workflow gate: \`${targetLabel}\` is allowed by \`${basename(evaluation.owner)}\` through the spec's delegation (the user has not approved this plan itself).`
+        : `Document workflow gate: \`${targetLabel}\` is allowed by \`${basename(evaluation.owner)}\`.`;
     case "no-plan-owner":
-      if (evaluation.implementationPhase) {
+      if (evaluation.relaxable) {
         return `Document workflow gate: no plan-N.md lists \`${targetLabel}\`; a write is allowed with a warning and recorded in off-plan-writes.log (implementation phase).`;
       }
       return formatGateDiagnosis(evaluation.diagnosis, targetLabel, docLabel);

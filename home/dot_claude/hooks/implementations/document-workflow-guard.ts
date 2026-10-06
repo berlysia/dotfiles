@@ -35,7 +35,7 @@ import {
   classifyExemption,
   evaluateTarget,
   formatGateDiagnosis,
-  isImplementationPhase,
+  implementationPhaseBasis,
   isWorkflowActive,
   readWorkflowState,
   type TargetEvaluation,
@@ -224,7 +224,13 @@ const hook = defineHook({
         // per-target check below, so hard-blocking every interpreter
         // invocation regardless of approval would add friction without
         // preventing anything the gate still protects.
-        const gateClosed = !isImplementationPhase(wfDir, wfPaths, twoLayer);
+        //
+        // The check opens only on a plan the user approved: an inline
+        // script's targets are not matched against the Scope or the protected
+        // paths, so delegation alone must not lift it.
+        const gateClosed =
+          implementationPhaseBasis(wfDir, wfPaths, twoLayer, projectRoot) !==
+          "approved";
         const analysis = await analyzeBashWrite(
           command,
           cwd,
@@ -324,10 +330,7 @@ const hook = defineHook({
       if (evaluation.kind === "allow" || evaluation.kind === "inactive") {
         return context.success({});
       }
-      if (
-        evaluation.kind === "no-plan-owner" &&
-        evaluation.implementationPhase
-      ) {
+      if (evaluation.kind === "no-plan-owner" && evaluation.relaxable) {
         console.error(
           `[document-workflow-guard][off-plan] ${tool_name} target \`${targetPath}\` is not listed in any plan-N.md Files section; allowed under implementation-phase relaxation. Recorded in \`${wfDirLabel}/off-plan-writes.log\`.`,
         );
@@ -398,7 +401,7 @@ function isBlocked(
 ): evaluation is Extract<TargetEvaluation, { kind: "deny" | "no-plan-owner" }> {
   return (
     evaluation.kind === "deny" ||
-    (evaluation.kind === "no-plan-owner" && !evaluation.implementationPhase)
+    (evaluation.kind === "no-plan-owner" && !evaluation.relaxable)
   );
 }
 

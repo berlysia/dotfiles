@@ -28,6 +28,7 @@ import {
   approvedWorkflowRepo,
   buildPlanContent,
   buildPlanNContent,
+  buildSpecWithScope,
   computeWorkflowRepoPlanHash as computePlanHash,
   ConsoleCapture,
   createPreToolUseContextFor,
@@ -1374,6 +1375,47 @@ describe("document-workflow-guard.ts two-layer mode (spec.md + plan-N.md)", () =
       });
       await invokeRun(hook, context);
       context.assertDeny();
+    });
+
+    it("keeps the interpreter-write check while only delegated plans are in effect", async () => {
+      const repo = mkdtempSync(
+        join(tmpdir(), "document-workflow-guard-deleg-"),
+      );
+      const wf = join(repo, TEST_WORKFLOW_DIR);
+      mkdirSync(wf, { recursive: true });
+      writeFileSync(join(wf, "research.md"), "research");
+      const spec = buildSpecWithScope(approvedWorkflowRepo(), ["src/"]);
+      writeFileSync(join(wf, "spec.md"), spec);
+      writeFileSync(
+        join(wf, "plan-1.md"),
+        buildPlanNContent(
+          { ...approvedWorkflowRepo(), approvalStatus: "pending" },
+          ["src/a.ts"],
+          computePlanHash(spec),
+        ),
+      );
+      recordApprovalsForTest(wf, { delegateSpec: true });
+      envHelper.set("CLAUDE_TEST_CWD", repo);
+
+      const write = createPreToolUseContextFor(hook, "Write", {
+        file_path: "src/a.ts",
+        content: "const a = 1;",
+      });
+      await invokeRun(hook, write);
+      write.assertSuccess({});
+
+      const offPlanOutside = createPreToolUseContextFor(hook, "Write", {
+        file_path: "other/c.ts",
+        content: "const c = 1;",
+      });
+      await invokeRun(hook, offPlanOutside);
+      offPlanOutside.assertDeny();
+
+      const interpreter = createPreToolUseContextFor(hook, "Bash", {
+        command: `python3 - <<'EOF'\nopen('src/a.ts', 'w').write('x')\nEOF`,
+      });
+      await invokeRun(hook, interpreter);
+      interpreter.assertDeny();
     });
 
     it("denies a Write for an approved plan without research.md and names the missing file", async () => {

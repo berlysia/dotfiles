@@ -24,6 +24,8 @@ import {
   evaluateApprovalReadiness,
   evaluateTarget,
   formatGateDiagnosis,
+  formatTargetEvaluation,
+  implementationPhaseBasis,
   isImplementationPhase,
   listApprovalCandidates,
   resolveSpecContext,
@@ -272,6 +274,7 @@ test("evaluateTarget: two-layer unlisted target is no-plan-owner during implemen
   });
   equal(e.kind, "no-plan-owner");
   equal(e.kind === "no-plan-owner" && e.implementationPhase, true);
+  equal(e.kind === "no-plan-owner" && e.relaxable, true);
 });
 
 test("evaluateTarget: a plan-N.md without parent-spec-hash denies its listed target", () => {
@@ -429,14 +432,14 @@ test("isImplementationPhase is false without research.md, single-layer and two-l
   );
   recordApprovalsForTest(single);
   equal(
-    isImplementationPhase(single, resolveWorkflowPaths(single), false),
+    isImplementationPhase(single, resolveWorkflowPaths(single), false, single),
     false,
   );
 
-  const { wf } = twoLayerRepo(["src/a.ts"]);
-  equal(isImplementationPhase(wf, resolveWorkflowPaths(wf), true), true);
+  const { repo, wf } = twoLayerRepo(["src/a.ts"]);
+  equal(isImplementationPhase(wf, resolveWorkflowPaths(wf), true, repo), true);
   unlinkSync(join(wf, "research.md"));
-  equal(isImplementationPhase(wf, resolveWorkflowPaths(wf), true), false);
+  equal(isImplementationPhase(wf, resolveWorkflowPaths(wf), true, repo), false);
 });
 
 // Invariant: whenever the gate is closed (deny, or no-plan-owner outside the
@@ -508,8 +511,7 @@ for (const withResearch of [true, false]) {
       }
       const e = evaluateTarget({ wfDir: wf, target, projectRoot: repo });
       const closed =
-        e.kind === "deny" ||
-        (e.kind === "no-plan-owner" && !e.implementationPhase);
+        e.kind === "deny" || (e.kind === "no-plan-owner" && !e.relaxable);
       if (!closed) {
         return;
       }
@@ -687,4 +689,206 @@ test("resolveSpecContext: delegation is off when the Scope is invalid or the roo
   equal(resolveSpecContext(wf, repo).delegation, null);
   const valid = delegatedRepo(["src/"], []);
   equal(resolveSpecContext(valid.wf, undefined).delegation, null);
+});
+
+test("evaluateTarget: a delegated plan allows its listed target and says so", () => {
+  const { repo, wf } = delegatedRepo(
+    ["src/"],
+    [{ name: "plan-1.md", files: ["src/a.ts"] }],
+  );
+  const e = evaluateTarget({
+    wfDir: wf,
+    target: join(repo, "src", "a.ts"),
+    projectRoot: repo,
+  });
+  equal(e.kind, "allow");
+  ok(e.kind === "allow" && e.basis === "delegated");
+  ok(
+    e.kind === "allow" && e.basis === "delegated" && e.planName === "plan-1.md",
+  );
+  ok(
+    e.kind === "allow" &&
+      e.basis === "delegated" &&
+      /^[0-9a-f]{64}$/.test(e.planHash),
+  );
+  ok(
+    e.kind === "allow" &&
+      e.basis === "delegated" &&
+      /^[0-9a-f]{64}$/.test(e.specHash),
+  );
+});
+
+test("evaluateTarget: without delegation the same plan denies", () => {
+  const { repo, wf } = delegatedRepo(
+    ["src/"],
+    [{ name: "plan-1.md", files: ["src/a.ts"] }],
+    { delegate: false },
+  );
+  equal(
+    evaluateTarget({
+      wfDir: wf,
+      target: join(repo, "src", "a.ts"),
+      projectRoot: repo,
+    }).kind,
+    "deny",
+  );
+});
+
+test("evaluateTarget: a human-approved plan allows with basis approved", () => {
+  const { repo, wf } = twoLayerRepo(["src/a.ts"]);
+  const e = evaluateTarget({
+    wfDir: wf,
+    target: join(repo, "src", "a.ts"),
+    projectRoot: repo,
+  });
+  ok(e.kind === "allow" && e.basis === "approved");
+});
+
+test("evaluateTarget: an approved plan wins over a delegated one for the same target", () => {
+  const { repo, wf } = delegatedRepo(
+    ["src/"],
+    [
+      { name: "plan-1.md", files: ["src/a.ts"] },
+      { name: "plan-2.md", files: ["src/a.ts"], approved: true },
+    ],
+  );
+  const e = evaluateTarget({
+    wfDir: wf,
+    target: join(repo, "src", "a.ts"),
+    projectRoot: repo,
+  });
+  ok(e.kind === "allow" && e.basis === "approved");
+  equal(e.kind === "allow" && e.owner, join(wf, "plan-2.md"));
+});
+
+test("evaluateTarget: a delegated first plan allows even when a later plan listing the target is blocked", () => {
+  const { repo, wf } = delegatedRepo(
+    ["src/"],
+    [
+      { name: "plan-1.md", files: ["src/a.ts"] },
+      { name: "plan-2.md", files: ["other/x.ts", "src/a.ts"] },
+    ],
+  );
+  const e = evaluateTarget({
+    wfDir: wf,
+    target: join(repo, "src", "a.ts"),
+    projectRoot: repo,
+  });
+  ok(e.kind === "allow" && e.basis === "delegated");
+  equal(e.kind === "allow" && e.owner, join(wf, "plan-1.md"));
+});
+
+test("formatTargetEvaluation: says when a write clears by delegation", () => {
+  const { repo, wf } = delegatedRepo(
+    ["src/"],
+    [{ name: "plan-1.md", files: ["src/a.ts"] }],
+  );
+  const e = evaluateTarget({
+    wfDir: wf,
+    target: join(repo, "src", "a.ts"),
+    projectRoot: repo,
+  });
+  match(
+    formatTargetEvaluation(e, "src/a.ts", "spec.md"),
+    /allowed by `plan-1\.md` through the spec's delegation/,
+  );
+  const approved = twoLayerRepo(["src/a.ts"]);
+  const a = evaluateTarget({
+    wfDir: approved.wf,
+    target: join(approved.repo, "src", "a.ts"),
+    projectRoot: approved.repo,
+  });
+  ok(!/delegation/.test(formatTargetEvaluation(a, "src/a.ts", "spec.md")));
+});
+
+test("evaluateTarget: a blocked first plan still denies, as before", () => {
+  const { repo, wf } = delegatedRepo(
+    ["src/"],
+    [
+      { name: "plan-1.md", files: ["other/x.ts", "src/a.ts"] },
+      { name: "plan-2.md", files: ["src/a.ts"], approved: true },
+    ],
+  );
+  equal(
+    evaluateTarget({
+      wfDir: wf,
+      target: join(repo, "src", "a.ts"),
+      projectRoot: repo,
+    }).kind,
+    "deny",
+  );
+});
+
+test("off-plan under delegation only: relaxed inside the Scope, denied outside", () => {
+  const { repo, wf } = delegatedRepo(
+    ["src/", "home/"],
+    [{ name: "plan-1.md", files: ["src/a.ts"] }],
+  );
+  const at = (rel: string) =>
+    evaluateTarget({ wfDir: wf, target: join(repo, rel), projectRoot: repo });
+  const inside = at("src/b.ts");
+  const outside = at("other/c.ts");
+  const protectedPath = at("home/dot_claude/x.ts");
+  ok(
+    inside.kind === "no-plan-owner" &&
+      inside.implementationPhase &&
+      inside.relaxable,
+  );
+  ok(
+    outside.kind === "no-plan-owner" &&
+      outside.implementationPhase &&
+      !outside.relaxable,
+  );
+  ok(protectedPath.kind === "no-plan-owner" && !protectedPath.relaxable);
+  ok(
+    outside.kind === "no-plan-owner" &&
+      /## Scope/.test(outside.diagnosis.note ?? ""),
+  );
+});
+
+test("off-plan with a human-approved plan: relaxed everywhere, as before", () => {
+  const { repo, wf } = delegatedRepo(
+    ["src/"],
+    [
+      { name: "plan-1.md", files: ["src/a.ts"] },
+      { name: "plan-2.md", files: ["lib/z.ts"], approved: true },
+    ],
+  );
+  const e = evaluateTarget({
+    wfDir: wf,
+    target: join(repo, "other", "c.ts"),
+    projectRoot: repo,
+  });
+  ok(e.kind === "no-plan-owner" && e.relaxable);
+});
+
+test("implementationPhaseBasis: none, delegated-only, approved", () => {
+  const basisOf = (r: { repo: string; wf: string }) =>
+    implementationPhaseBasis(r.wf, resolveWorkflowPaths(r.wf), true, r.repo);
+  equal(
+    basisOf(
+      delegatedRepo(["src/"], [{ name: "plan-1.md", files: ["src/a.ts"] }], {
+        delegate: false,
+      }),
+    ),
+    "none",
+  );
+  equal(
+    basisOf(
+      delegatedRepo(["src/"], [{ name: "plan-1.md", files: ["src/a.ts"] }]),
+    ),
+    "delegated-only",
+  );
+  equal(
+    basisOf(
+      delegatedRepo(
+        ["src/"],
+        [
+          { name: "plan-1.md", files: ["src/a.ts"] },
+          { name: "plan-2.md", files: ["lib/z.ts"], approved: true },
+        ],
+      ),
+    ),
+    "approved",
+  );
 });
