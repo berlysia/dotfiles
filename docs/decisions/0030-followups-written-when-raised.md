@@ -140,4 +140,4 @@ Codex の案 1、白紙設計の案 2、外部調査の案 A は、別々に「�
 - `docs/decisions/0029-workflow-records-move-into-adr.md`（K1 の表、K3 の `docs/plans/` の定義と出口）
 - `git show a250c0de38:docs/plans/followup-capture.md`（出発点だった文書）
 - `docs/plans/followup-capture-followups.md`（この作業が範囲の外に回した課題）
-- 実装: PR #277（merge commit `23d54f6285`）
+- 実装: PR #277

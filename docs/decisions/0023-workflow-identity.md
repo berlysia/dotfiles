@@ -207,4 +207,4 @@ ADR-0028 で、承認の質問に 2 問目を足した。
 - 設計の全文: `git show 52dc6fd447:docs/plans/workflow-identity/`（research / spec / plan-1〜5。レビューの記録を含む）
 - `docs/decisions/0013-workflow-dir-session-derivation.md`（Open observation items 1 を本 ADR で解消）
 - Issue #197 / #221 / #209 / #216
-- 実装: PR #234（merge commit `0b27589528`）
+- 実装: ブランチ `fix/workflow-identity`（PR で master に取り込む）

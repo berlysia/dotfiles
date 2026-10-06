@@ -109,4 +109,4 @@ spec の番号とは途中からずれる。spec の K5 がこの ADR の K6、K
 - `docs/decisions/0011-autonomous-lane-charter.md`（誤りの費用の非対称、自律レーンの条項）
 - `docs/decisions/0023-workflow-identity.md`（承認を人間に限る機構）
 - `docs/plans/workflow-guard-followups.md` の課題 L（hash の正規化が次の行を落とす件）
-- 実装: PR #274（merge commit `71b0c7c3f8`）
+- 実装: ブランチ `feat/plan-delegation`（PR で master に取り込む）
