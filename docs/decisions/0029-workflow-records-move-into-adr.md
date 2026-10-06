@@ -161,4 +161,4 @@ git grep -h -o -E '(52dc6fd447:)?docs/plans/[A-Za-z0-9._/-]+' -- . ':!docs/plans
 - `docs/decisions/0025-deployed-docs-self-contained.md`（参照先にしか無い内容を移す判断、付属文書の置き場）
 - `docs/decisions/0008-document-workflow-feedback.md`（読めなくなった参照の例）
 - 掃除の commit: `52dc6fd447`
-- 実装: ブランチ `docs/workflow-record-retention`
+- 実装: PR #275（merge commit `46383645f1`）
