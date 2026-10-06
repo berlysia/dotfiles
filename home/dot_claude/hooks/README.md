@@ -128,8 +128,11 @@ PreToolUse の `auto-approve`、PermissionRequest の 2a（`permission-auto-appr
 - 考え方: フックは本体の protected paths を広げない。本体が `ask` にするパス（`.git`、`.claude`、dot のパス、`bunfig.toml`、chezmoi のソースの git 設定など）を、フックの allow が上書きしない。例外は、実体を確かめた linked worktree（`<repo>/.git/worktree/…`）の内側だけで、そこでは `lib/write-protection.ts` の protected 名の一覧（`CORE_PROTECTED_SOURCE` に出典と版）で判定する。fs の失敗や解釈できない入力は hold に倒す
 - 1 と 2 の違い: PreToolUse と 2a では、hold は allow を pass に下げるだけで deny と ask には触れない。2b では、hold と `git` を名指すコマンドの skip は LLM を呼ばず、LLM が何と判定したかに関わらず人間の確認に残す
 - 決定ログの理由の語彙（`decision` はどれも `pass`）: `held: <理由>`（hold）、`skipped-llm: git-head` / `skipped-llm: git-env`（2b の skip）。2a で hold になった入力は、通常の `uncertain` が `ask` で記録されるのと違い、`pass`（`held:`）で記録される。これは「人間に判断を残した」記録で、`permission-analyzer` は allow の候補に数えない
-- Bash の判定: parse の失敗、`$` / `` ` `` / `{` を含む語、`cd` / `pushd` / `popd`、全文に dot のパスの断片や protected 名が現れる形は hold。過大に判定しても、本体の allow 規則が覆うコマンド（`Bash(git commit *)` など）は確認なしで通る
+- Bash の判定: parse の失敗、`$` / `` ` `` / `{` / `*` / `?` / `[` / `~` を含む語、`cd` / `pushd` / `popd`、短いオプションにくっついたパス（`-o.claude/x`、`sed -i.bak` も含む）、書き込み先を実行時に決めるコマンド（`xargs`、`sh -c`、`eval`、action 付きの `find`、エスケープ付きの `printf` など）、全文に dot のパスの断片や protected 名が現れる形は hold。過大に判定しても、本体の allow 規則が覆うコマンド（`Bash(git commit *)` など）は確認なしで通る
+- 書き込み系のツールは、ツールが実際に書くフィールド（NotebookEdit は `notebook_path`、Edit / Write / MultiEdit は `file_path`）だけを見る。ほかのパスのキーが一緒にあるとき、`~` で始まるとき、相対パスの途中に `..` があるときは hold
+- Bash の判定は best-effort で、境界ではない。字句の判定はシェルの展開を追いきれず、レビューは新しい形を見つけ続ける。追加は「フック固有の承認の根拠から、protected なパスへの書き込みが自動承認される」と確かめられた形に限る。コマンドの形によらず書き込みを止める境界は、OS のサンドボックス（Claude Code の sandbox）にある。dotfiles の repo は作業そのもの（`chezmoi apply` で home に配る）がサンドボックスとぶつかるため、この repo では残余を許容している
 - 残余のリスク:
+  - ラッパーの後ろの、書き込み先を実行時に決めるコマンド（`command sh -c …` など）は、単純コマンドの名前だけを見る判定から漏れうる（2026-10-06 の自動レビューの指摘。要約のみで、個別の形は未検証）
   - インタプリタ（`python -c`、`node -e` など）が実行時に文字列からパスを組み立てる形は、静的な判定では見えない。防げるのは、本体の allow 規則が覆わない範囲に限られる
   - 引用符で分割した `git`（`g''it`）は 2b の skip を外れ、LLM の評価に届きうる（PreToolUse と 2a は `git` で始まる形しか allow しない）
   - `$`、`{`、`cd` を含む Bash は一律に hold になり、本体の allow 規則が覆わないものは確認が出る
