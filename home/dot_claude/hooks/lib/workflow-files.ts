@@ -154,3 +154,130 @@ export function listsTarget(
     return resolveWithMissingTail(absolute) === realTarget;
   });
 }
+
+const PROTECTED_LEADING: readonly (readonly string[])[] = [
+  ["docs", "decisions"],
+  [".skills"],
+  [".github", "workflows"],
+];
+const PROTECTED_DIR_NAMES = new Set([".claude", "dot_claude"]);
+const PROTECTED_FILE_NAMES = new Set(["claude.md", "agents.md", "context.md"]);
+
+/**
+ * Whether a path is one a delegated plan-N.md may never write: the approval
+ * mechanism, the decision records and the instructions the model follows.
+ * Judged on the resolved path relative to its checkout, without case, so a
+ * symlink or a differently-cased spelling does not get around it. null when
+ * the path cannot be resolved; the caller must not treat that as "not
+ * protected".
+ */
+export function isProtectedPath(
+  absolute: string,
+  projectRoot: string,
+  kind: "file" | "dir",
+): boolean | null {
+  const real = resolveWithMissingTail(resolve(absolute));
+  const realRoot = resolveWithMissingTail(resolve(projectRoot));
+  if (real === null || realRoot === null) return null;
+  const toplevel = findRepoToplevel(real, realRoot);
+  if (real === toplevel) return false;
+  // Resolved out of the checkout (a symlink to somewhere else): the rules
+  // below are about paths inside it, so this is "cannot tell", not "no".
+  if (!real.startsWith(`${toplevel}/`)) return null;
+  const segments = real
+    .slice(toplevel.length + 1)
+    .toLowerCase()
+    .split("/");
+  if (
+    PROTECTED_LEADING.some((prefix) =>
+      prefix.every((s, i) => segments[i] === s),
+    )
+  ) {
+    return true;
+  }
+  const dirSegments = kind === "dir" ? segments : segments.slice(0, -1);
+  if (dirSegments.some((s) => PROTECTED_DIR_NAMES.has(s))) return true;
+  if (kind === "dir") return false;
+  return PROTECTED_FILE_NAMES.has(
+    (segments.at(-1) ?? "").replace(/\.tmpl$/, ""),
+  );
+}
+
+function scopeContains(
+  entries: readonly string[],
+  realTarget: string,
+  base: string,
+): boolean {
+  return entries.some((entry) => {
+    const real = resolveWithMissingTail(resolve(base, entry));
+    if (real === null) return false;
+    return entry.endsWith("/")
+      ? realTarget.startsWith(`${real}/`)
+      : realTarget === real;
+  });
+}
+
+export type ScopeVerdict =
+  | { ok: true }
+  | {
+      ok: false;
+      reason:
+        | "scope-invalid"
+        | "no-files"
+        | "outside-scope"
+        | "protected"
+        | "unresolvable";
+    };
+
+/** Whether every `## Files` entry of a plan-N.md lies within spec.md's `## Scope` and none is protected. */
+export function planFilesWithinScope(
+  planContent: string,
+  specContent: string,
+  projectRoot: string,
+): ScopeVerdict {
+  const scope = parseScope(specContent);
+  if (!scope.valid) return { ok: false, reason: "scope-invalid" };
+  const realRoot = resolveWithMissingTail(resolve(projectRoot));
+  if (realRoot === null) return { ok: false, reason: "unresolvable" };
+  const files = parseFilesPaths(planContent);
+  if (files.length === 0) return { ok: false, reason: "no-files" };
+  for (const entry of files) {
+    // `resolve` would fold `..` lexically, which is not the path the kernel
+    // opens when a component before it is a symlink.
+    if (
+      entry.startsWith("/") ||
+      entry.startsWith("~") ||
+      entry.split("/").includes("..")
+    ) {
+      return { ok: false, reason: "outside-scope" };
+    }
+    const real = resolveWithMissingTail(resolve(realRoot, entry));
+    if (real === null) return { ok: false, reason: "unresolvable" };
+    const isProtected = isProtectedPath(real, realRoot, "file");
+    if (isProtected === null) return { ok: false, reason: "unresolvable" };
+    if (isProtected) return { ok: false, reason: "protected" };
+    if (!scopeContains(scope.entries, real, realRoot)) {
+      return { ok: false, reason: "outside-scope" };
+    }
+  }
+  return { ok: true };
+}
+
+/** Whether one write target lies within spec.md's `## Scope` and is not protected. */
+export function targetWithinScope(
+  specContent: string,
+  target: string,
+  projectRoot: string,
+): boolean {
+  const scope = parseScope(specContent);
+  if (!scope.valid) return false;
+  const realTarget = resolveWithMissingTail(resolve(target));
+  const realRoot = resolveWithMissingTail(resolve(projectRoot));
+  if (realTarget === null || realRoot === null) return false;
+  if (isProtectedPath(realTarget, realRoot, "file") !== false) return false;
+  return scopeContains(
+    scope.entries,
+    realTarget,
+    findRepoToplevel(realTarget, realRoot),
+  );
+}

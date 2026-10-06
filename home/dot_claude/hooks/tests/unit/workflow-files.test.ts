@@ -1,16 +1,25 @@
 #!/usr/bin/env node --test
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
-import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
   findRepoToplevel,
   isProseOnlyChange,
+  isProtectedPath,
   MAX_SCOPE_ENTRIES,
   listsTarget,
   parseFilesPaths,
   parseScope,
+  planFilesWithinScope,
+  targetWithinScope,
 } from "../../lib/workflow-files.ts";
 
 const doc = (block: string) =>
@@ -219,5 +228,172 @@ describe("parseScope", () => {
       valid: false,
       reason: "empty",
     });
+  });
+});
+
+describe("isProtectedPath", () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "wf-prot-")));
+  const file = (rel: string) => isProtectedPath(join(root, rel), root, "file");
+
+  it("classifies file paths by the rules of spec K4", () => {
+    const cases: [string, boolean][] = [
+      ["docs/decisions/0001-x.md", true],
+      ["docs/plans/x.md", false],
+      [".skills/foo/SKILL.md", true],
+      [".github/workflows/ci.yml", true],
+      [".github/CODEOWNERS", false],
+      ["home/dot_claude/hooks/lib/a.ts", true],
+      ["a/.claude/b.json", true],
+      ["HOME/DOT_CLAUDE/x.ts", true],
+      ["lib/CLAUDE.md", true],
+      ["home/dot_codex/AGENTS.md", true],
+      ["CONTEXT.md", true],
+      ["templates/context.md.tmpl", true],
+      ["src/dot_claude", false],
+      ["src/claude.ts", false],
+      ["lib2/a.ts", false],
+    ];
+    for (const [rel, expected] of cases) {
+      strictEqual(file(rel), expected, rel);
+    }
+  });
+
+  it("counts the last segment for a directory entry", () => {
+    strictEqual(
+      isProtectedPath(join(root, "home/dot_claude"), root, "dir"),
+      true,
+    );
+    strictEqual(isProtectedPath(join(root, "src"), root, "dir"), false);
+  });
+
+  it("follows a symlink before judging", () => {
+    mkdirSync(join(root, "home", "dot_claude"), { recursive: true });
+    symlinkSync(join(root, "home", "dot_claude"), join(root, "home", "x"));
+    strictEqual(file("home/x/a.ts"), true);
+  });
+
+  it("returns null when the path cannot be resolved", () => {
+    symlinkSync(join(root, "nowhere"), join(root, "dangling"));
+    strictEqual(file("dangling/a.ts"), null);
+  });
+
+  it("returns null, not false, when a symlink leads out of the checkout", () => {
+    const outside = realpathSync(mkdtempSync(join(tmpdir(), "wf-outside-")));
+    symlinkSync(outside, join(root, "ext"));
+    strictEqual(file("ext/settings.json"), null);
+  });
+
+  it("is false for the checkout root itself", () => {
+    strictEqual(isProtectedPath(root, root, "dir"), false);
+  });
+});
+
+describe("planFilesWithinScope", () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "wf-scope-")));
+  const spec = (block: string) => `## Scope\n\n\`\`\`\n${block}\n\`\`\`\n`;
+  const plan = (block: string) => `## Files\n\n\`\`\`\n${block}\n\`\`\`\n`;
+  const verdict = (scope: string, files: string) =>
+    planFilesWithinScope(plan(files), spec(scope), root);
+
+  it("accepts files under a directory entry and an exact file entry", () => {
+    deepStrictEqual(verdict("src/\nlib/a.ts", "src/x/new.ts\nlib/a.ts"), {
+      ok: true,
+    });
+  });
+
+  it("does not treat lib/ as a prefix of lib2/", () => {
+    deepStrictEqual(verdict("lib/", "lib2/a.ts"), {
+      ok: false,
+      reason: "outside-scope",
+    });
+  });
+
+  it("is case-sensitive for Scope, unlike the protected-path rule", () => {
+    deepStrictEqual(verdict("src/", "SRC/a.ts"), {
+      ok: false,
+      reason: "outside-scope",
+    });
+  });
+
+  it("rejects one file outside the Scope", () => {
+    deepStrictEqual(verdict("src/", "src/a.ts\nother/b.ts"), {
+      ok: false,
+      reason: "outside-scope",
+    });
+  });
+
+  it("rejects absolute, ~ and .. entries in Files", () => {
+    deepStrictEqual(verdict("src/", `${root}/src/a.ts`), {
+      ok: false,
+      reason: "outside-scope",
+    });
+    deepStrictEqual(verdict("src/", "~/src/a.ts"), {
+      ok: false,
+      reason: "outside-scope",
+    });
+    deepStrictEqual(verdict("src/", "src/sub/../a.ts"), {
+      ok: false,
+      reason: "outside-scope",
+    });
+  });
+
+  it("does not delegate a file reached through a symlink that leaves the checkout", () => {
+    const outside = realpathSync(mkdtempSync(join(tmpdir(), "wf-outside-")));
+    symlinkSync(outside, join(root, "ext"));
+    deepStrictEqual(verdict("ext/", "ext/settings.json"), {
+      ok: false,
+      reason: "unresolvable",
+    });
+  });
+
+  it("rejects a protected file even when the Scope covers it", () => {
+    deepStrictEqual(verdict("home/", "home/dot_claude/hooks/a.ts"), {
+      ok: false,
+      reason: "protected",
+    });
+  });
+
+  it("reports an empty Files section and an invalid Scope", () => {
+    deepStrictEqual(planFilesWithinScope("# no files\n", spec("src/"), root), {
+      ok: false,
+      reason: "no-files",
+    });
+    deepStrictEqual(verdict("/etc/", "src/a.ts"), {
+      ok: false,
+      reason: "scope-invalid",
+    });
+  });
+
+  it("reports a Files entry that cannot be resolved", () => {
+    symlinkSync(join(root, "nowhere"), join(root, "dangling"));
+    deepStrictEqual(verdict("dangling/", "dangling/a.ts"), {
+      ok: false,
+      reason: "unresolvable",
+    });
+  });
+});
+
+describe("targetWithinScope", () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "wf-target-")));
+  const spec = "## Scope\n\n```\nsrc/\nhome/\n```\n";
+
+  it("is true inside the Scope and false outside or under a protected path", () => {
+    strictEqual(targetWithinScope(spec, join(root, "src", "b.ts"), root), true);
+    strictEqual(
+      targetWithinScope(spec, join(root, "other", "c.ts"), root),
+      false,
+    );
+    strictEqual(
+      targetWithinScope(spec, join(root, "home", "dot_claude", "x.ts"), root),
+      false,
+    );
+  });
+
+  it("resolves the Scope against the worktree the target lives in", () => {
+    const worktree = addWorktree(root, "b");
+    strictEqual(
+      targetWithinScope(spec, join(worktree, "src", "b.ts"), root),
+      true,
+    );
   });
 });
