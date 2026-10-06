@@ -374,7 +374,10 @@ cmd_fetch_browsers() { # [--force] [--from-apply <working tree>]  (spec K2)
       bunx "playwright@$pw" install --only-shell chromium) >"$log" 2>&1 9>&- 8>&-; then
     rm -rf "$build"; fetch_fail "$id" "playwright install failed (see $log)"; return 1
   fi
-  bin=$(cd "$build" && find . -path './chromium_headless_shell-*/chrome-linux/headless_shell' -type f 2>/dev/null) || bin=""
+  # playwright >= 1.64 installs the Chrome for Testing build (chrome-headless-shell-linux-arm64/chrome-headless-shell);
+  # older ones the chromium build (chrome-linux/headless_shell). The VM only sees the stable bin/headless_shell link.
+  bin=$(cd "$build" && find . \( -path './chromium_headless_shell-*/chrome-linux/headless_shell' \
+    -o -path './chromium_headless_shell-*/chrome-headless-shell-linux-arm64/chrome-headless-shell' \) -type f 2>/dev/null) || bin=""
   bin=${bin#./}
   if [[ -z "$bin" || "$bin" == *$'\n'* ]] || ! file "$build/$bin" 2>/dev/null | grep -q 'ELF 64-bit.*aarch64'; then
     rm -rf "$build"; fetch_fail "$id" "the downloaded browser is not a single linux-arm64 ELF"; return 1
