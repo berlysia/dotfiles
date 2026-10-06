@@ -21,6 +21,7 @@ import {
   realpathSync,
 } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
+import { HELD_PREFIX, SKIPPED_LLM_PREFIX } from "./auto-approval-hold.ts";
 import { getHomeDir } from "./path-utils.ts";
 import type { DecisionLogEntry } from "../types/logging-types.ts";
 
@@ -148,6 +149,16 @@ export class PermissionAnalyzer {
 
             // 決定ログエントリのみを対象とする
             if ("decision" in entry && "tool_name" in entry) {
+              // A hold or an LLM skip is a decision left to a human, not a pass that an allow
+              // rule could replace. Dropping it here keeps it out of the maxEntries window too.
+              if (
+                entry.decision === "pass" &&
+                typeof entry.reason === "string" &&
+                (entry.reason.startsWith(HELD_PREFIX) ||
+                  entry.reason.startsWith(SKIPPED_LLM_PREFIX))
+              ) {
+                continue;
+              }
               allEntries.push(entry);
             }
           } catch (error) {

@@ -34,7 +34,7 @@ bun run home/dot_claude/scripts/update-auto-approve.ts --dry-run --verbose --sin
 スクリプト出力に加え、以下の手動分析も行う：
 
 1. `~/.claude/logs/decisions.jsonl` と ローテーション分（`.jsonl.YYYY-MM-DDTHH-MM-SS`）を読む
-2. `decision: "ask"` のエントリを抽出
+2. `decision: "ask"` のエントリを抽出（`held:` / `skipped-llm:` で始まる `reason` の `pass` は人間に判断を残した記録なので集計の対象外。`permission-analyzer` も読み飛ばす）
 3. ツール種別ごとに分類:
    - **正常な ask**: `AskUserQuestion`, `ExitPlanMode` → 改善不要
    - **MCP ツール**: `mcp__*` → Layer 0/1 の allow 追加候補
