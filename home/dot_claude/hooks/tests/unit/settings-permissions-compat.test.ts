@@ -200,6 +200,21 @@ describe("settings entries after the matcher change", () => {
       true,
       false,
     ],
+    // per-run work dirs from mktemp -d land in the macOS per-user $TMPDIR, so
+    // /var stays denied except /var/folders, whose T/ is mode 700 per user
+    ["allow", "Read", "/var/folders/ab/xyz/T/tmp.abc/a.txt", true, false],
+    ["allow", "Edit", "/var/folders/ab/xyz/T/tmp.abc/a.txt", true, false],
+    [
+      "allow",
+      "Write",
+      "/private/var/folders/ab/xyz/T/tmp.abc/a.txt",
+      true,
+      false,
+    ],
+    ["deny", "Edit", "/var/folders/ab/xyz/T/tmp.abc/a.txt", false, true],
+    ["allow", "Edit", "/var/folders/ab/xyz/C/com.example/a", false, false],
+    ["deny", "Edit", "/var/log/system.log", true, true],
+    ["deny", "Edit", "/var/db/sudo/ts/u", true, true],
     // a .git file is a gitdir pointer; retargeting it brings another config and
     // hooks. Only worktree pointers are named: a submodule's .git file has the
     // same name as a .git directory, and Claude Code's gitignore-style Edit
