@@ -133,8 +133,37 @@ export function redirectToNodeModules(): OracleMatcher {
 const BEFORE = "(?:^|[\\s'\"`(;|&{!\\\\/<>])";
 const AFTER = "(?=$|[\\s'\"`);|&<>])";
 const DELETE_WORD = new RegExp(
-  `${BEFORE}(?:${[...DELETE_VERBS].join("|")})${AFTER}`,
+  `${BEFORE}(${[...DELETE_VERBS].join("|")})${AFTER}`,
 );
+
+/**
+ * The delete word DELETE_WORD matches in `cmd`, for the deny reason only.
+ * It does not look for node_modules: call it after classifyDeletion said
+ * "deny-delete".
+ */
+export function findDeleteWord(cmd: string): string | null {
+  return DELETE_WORD.exec(cmd.toLowerCase())?.[1] ?? null;
+}
+
+/**
+ * What is true of `cmd` when classifyDeletion returned `verdict`, shown as
+ * `Matched:`. Kept next to the rules it describes; review it when
+ * classifyDeletion or findIsDestructive changes.
+ */
+export function describeDeletionMatch(
+  cmd: string,
+  verdict: "deny-delete" | "deny-find",
+): string {
+  if (verdict === "deny-find") {
+    return "find with -delete, or with an exec flag followed by a delete or move word, in a command that mentions node_modules";
+  }
+  // classifyDeletion tested the same regex, so a word is always found; the
+  // fallback keeps the function total without a second path for the caller.
+  const word = findDeleteWord(cmd);
+  return word === null
+    ? "a delete word in a command that mentions node_modules, quoted text included"
+    : `the word "${word}" in a command that mentions node_modules, quoted text included`;
+}
 // Spec K2 lists newline / $( / backtick / <( / >(; ; & | ( ) { } are added so that a compound
 // command the parser failed to split never gets the read-only head exemption.
 const NOT_SIMPLE = /\n|\$\(|`|<\(|>\(|[;&|(){}]/;

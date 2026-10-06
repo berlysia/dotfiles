@@ -109,11 +109,20 @@ export function rmRecursiveForceThen(tail: RegExp): OracleMatcher {
   };
 }
 
-interface DangerousPattern {
-  readonly pattern: TextMatcher;
-  readonly reason: string;
-  readonly requiresReview: boolean;
-}
+type DangerousPattern =
+  | {
+      readonly pattern: TextMatcher;
+      readonly reason: string;
+      readonly requiresReview: true;
+    }
+  | {
+      readonly pattern: TextMatcher;
+      readonly reason: string;
+      readonly requiresReview: false;
+      // What is true of the text whenever this rule fires, shown as `Matched:`.
+      // Review it when `pattern` changes.
+      readonly trigger: string;
+    };
 
 // Exported for the differential test (linear-match-equivalence.test.ts).
 // Do not add a regex of the form `X\s+.*Y` / `X.*Y` here; use prefixThenOnLine
@@ -125,24 +134,37 @@ export const DANGEROUS_COMMAND_PATTERNS: ReadonlyArray<DangerousPattern> = [
     pattern: rmRecursiveForceThen(/[{$]/),
     reason: "rm -rf with variable substitution is too dangerous",
     requiresReview: false,
+    trigger:
+      'the text "rm" followed by -r and -f style options and a word that starts with "$" or "{", quoted text included',
   },
   {
     // Match rm with recursive and force flags, targeting system directories (immediate deny)
     pattern: rmRecursiveForceThen(/\//),
     reason: "Dangerous system deletion",
     requiresReview: false,
+    trigger:
+      'the text "rm" followed by -r and -f style options and a word that starts with "/", quoted text included',
   },
   {
     pattern: /sudo\s+rm/,
     reason: "Sudo deletion command",
     requiresReview: false,
+    trigger:
+      'the text "sudo" followed by whitespace and "rm", quoted text included',
   },
   {
     pattern: prefixThenOnLine(/dd\s+/, /\/dev\//),
     reason: "Disk operation",
     requiresReview: false,
+    trigger:
+      'the text "dd" followed by whitespace and, later, "/dev/", quoted text included',
   },
-  { pattern: /mkfs/, reason: "Filesystem creation", requiresReview: false },
+  {
+    pattern: /mkfs/,
+    reason: "Filesystem creation",
+    requiresReview: false,
+    trigger: 'the text "mkfs", quoted text included',
+  },
   {
     pattern: prefixThenOnLine(/(curl|wget)/, /\|\s*(sh|bash|zsh|fish|dash)/),
     reason: "Piped shell execution",
@@ -222,6 +244,8 @@ export const DANGEROUS_COMMAND_PATTERNS: ReadonlyArray<DangerousPattern> = [
     pattern: /gh\s+repo\s+delete\b/,
     reason: "Deleting repository is irreversible",
     requiresReview: false,
+    trigger:
+      'the words "gh repo delete" separated by whitespace, quoted text included',
   },
   {
     pattern: /gh\s+repo\s+archive\b/,
@@ -244,6 +268,8 @@ export const DANGEROUS_COMMAND_PATTERNS: ReadonlyArray<DangerousPattern> = [
     pattern: /npm\s+unpublish\b/,
     reason: "Unpublishing can break dependent packages",
     requiresReview: false,
+    trigger:
+      'the words "npm unpublish" separated by whitespace, quoted text included',
   },
   {
     pattern: /npm\s+deprecate\b/,
@@ -269,17 +295,15 @@ export function checkDangerousCommand(cmd: string): {
   isDangerous: boolean;
   requiresManualReview: boolean;
   reason: string;
+  trigger?: string | undefined;
 } {
-  for (const {
-    pattern,
-    reason,
-    requiresReview,
-  } of DANGEROUS_COMMAND_PATTERNS) {
-    if (pattern.test(cmd)) {
+  for (const entry of DANGEROUS_COMMAND_PATTERNS) {
+    if (entry.pattern.test(cmd)) {
       return {
         isDangerous: true,
-        requiresManualReview: requiresReview,
-        reason,
+        requiresManualReview: entry.requiresReview,
+        reason: entry.reason,
+        trigger: entry.requiresReview ? undefined : entry.trigger,
       };
     }
   }

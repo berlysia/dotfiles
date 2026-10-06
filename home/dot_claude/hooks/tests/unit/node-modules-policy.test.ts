@@ -3,6 +3,8 @@ import { describe, it } from "node:test";
 import {
   buildReadOnlyPatterns,
   classifyDeletion,
+  describeDeletionMatch,
+  findDeleteWord,
   mayAllowAsReadOnly,
   standaloneSymlinkRemovalOperands as ops,
 } from "../../lib/node-modules-policy.ts";
@@ -196,4 +198,55 @@ describe("standaloneSymlinkRemovalOperands", () => {
   ];
   for (const cmd of rejected)
     it(`null: ${JSON.stringify(cmd)}`, () => strictEqual(ops(cmd), null));
+});
+
+describe("findDeleteWord", () => {
+  it("returns the delete word classifyDeletion reacts to", () => {
+    strictEqual(findDeleteWord("rm -rf node_modules"), "rm");
+    strictEqual(
+      findDeleteWord('git commit -m "unlink node_modules"'),
+      "unlink",
+    );
+    strictEqual(findDeleteWord("RM -rf NODE_MODULES"), "rm");
+  });
+  it("returns null when no delete word stands as a word", () => {
+    strictEqual(findDeleteWord("ls node_modules/form"), null);
+    strictEqual(findDeleteWord(""), null);
+  });
+  // Holds for commands that mention node_modules and have no find: without
+  // node_modules classifyDeletion returns null whatever the words are.
+  it("agrees with classifyDeletion on deny-delete for commands that mention node_modules", () => {
+    const inputs = [
+      "rm node_modules",
+      "grep rm node_modules/x",
+      'echo "shred" node_modules',
+      "truncate -s0 node_modules/x",
+      "rmdir node_modules",
+      "ls node_modules/form",
+      "cat node_modules/x",
+      "confirm node_modules",
+    ];
+    for (const cmd of inputs) {
+      strictEqual(
+        findDeleteWord(cmd) !== null,
+        classifyDeletion(cmd, { readOnlyExempt: false }) === "deny-delete",
+        cmd,
+      );
+    }
+  });
+});
+
+describe("describeDeletionMatch", () => {
+  it("names the delete word for deny-delete", () => {
+    strictEqual(
+      describeDeletionMatch("grep rm node_modules/x", "deny-delete"),
+      'the word "rm" in a command that mentions node_modules, quoted text included',
+    );
+  });
+  it("states the find condition for deny-find", () => {
+    strictEqual(
+      describeDeletionMatch("find node_modules -delete", "deny-find"),
+      "find with -delete, or with an exec flag followed by a delete or move word, in a command that mentions node_modules",
+    );
+  });
 });

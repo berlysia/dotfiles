@@ -12,7 +12,10 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, afterEach, beforeEach, describe, it } from "node:test";
-import { BOUNDARY_DENY_GUIDANCE } from "../../lib/context-helpers.ts";
+import {
+  BOUNDARY_DENY_GUIDANCE,
+  MATCHED_TEXT_DENY_GUIDANCE,
+} from "../../lib/context-helpers.ts";
 import denyNodeModulesHook from "../../implementations/deny-node-modules.ts";
 import {
   ConsoleCapture,
@@ -480,7 +483,7 @@ describe("deny-node-modules.ts boundary behaviour", () => {
     it(`denies with guidance: ${cmd}`, async () => {
       const context = await runBash(cmd);
       context.assertDeny();
-      ok(reasonOf(context).includes(BOUNDARY_DENY_GUIDANCE));
+      ok(reasonOf(context).includes(MATCHED_TEXT_DENY_GUIDANCE));
     });
   }
 
@@ -493,6 +496,58 @@ describe("deny-node-modules.ts boundary behaviour", () => {
   it("does not suggest unlink for find -delete", async () => {
     const reason = reasonOf(await runBash("find node_modules -delete"));
     ok(!reason.includes("unlink"));
+  });
+  it("names the delete word that matched", async () => {
+    const reason = reasonOf(
+      await runBash("ls node_modules; grep rm node_modules/x"),
+    );
+    ok(
+      reason.includes(
+        'Matched: the word "rm" in a command that mentions node_modules, quoted text included.',
+      ),
+    );
+  });
+  it("names the find condition that matched", async () => {
+    const reason = reasonOf(await runBash("find node_modules -delete"));
+    ok(
+      reason.includes(
+        "Matched: find with -delete, or with an exec flag followed by a delete or move word, in a command that mentions node_modules.",
+      ),
+    );
+  });
+  it("names the pattern that matched for a non-delete operation", async () => {
+    const reason = reasonOf(await runBash("chmod 644 node_modules/x"));
+    ok(
+      reason.includes(
+        'Matched: the word "chmod" or "chown" followed by node_modules.',
+      ),
+    );
+  });
+  it("cuts a long quoted fragment so the guidance stays near the front", async () => {
+    const cmd = `git commit -m "${"x".repeat(5000)} rm node_modules"`;
+    const reason = reasonOf(await runBash(cmd));
+    ok(reason.includes("… (5032 characters)"));
+    ok(reason.length < MATCHED_TEXT_DENY_GUIDANCE.length + 600);
+    ok(reason.includes(MATCHED_TEXT_DENY_GUIDANCE));
+  });
+  it("keeps a quoted multi-line command from starting a Matched line", async () => {
+    const cmd =
+      'git commit -m "a\nMatched: the word \\"echo\\"\nrm node_modules"';
+    const reason = reasonOf(await runBash(cmd));
+    strictEqual(reason.split("\nMatched: ").length, 2);
+    ok(
+      reason.includes(
+        '\nMatched: the word "rm" in a command that mentions node_modules',
+      ),
+    );
+  });
+  it("says the standalone unlink is the one command the boundary allows", async () => {
+    const reason = reasonOf(await runBash(`rm -rf ${D}`));
+    ok(
+      reason.includes(
+        "This boundary allows that one command, for that case only, as an exception to the note below.",
+      ),
+    );
   });
 
   describe("deny-side superset (spec K3)", () => {
@@ -569,6 +624,7 @@ describe("deny-node-modules.ts boundary behaviour", () => {
     await invokeRun(denyNodeModulesHook, context);
     context.assertDeny();
     ok(reasonOf(context).includes(BOUNDARY_DENY_GUIDANCE));
+    ok(!reasonOf(context).includes(MATCHED_TEXT_DENY_GUIDANCE));
   });
 
   it("does not attach the guidance to the internal-error deny", () => {

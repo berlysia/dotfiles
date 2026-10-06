@@ -16,7 +16,10 @@ import autoApproveHook, {
   processBashTool,
 } from "../../implementations/auto-approve.ts";
 import { parseForCollect } from "../../lib/bash-parser.ts";
-import { BOUNDARY_DENY_GUIDANCE } from "../../lib/context-helpers.ts";
+import {
+  BOUNDARY_DENY_GUIDANCE,
+  MATCHED_TEXT_DENY_GUIDANCE,
+} from "../../lib/context-helpers.ts";
 import { encodeSessionDirName } from "../../lib/project-root.ts";
 import { withParseBudget } from "../support/parse-budget.ts";
 import { sourced } from "../sourced-rules.ts";
@@ -1564,6 +1567,47 @@ describe("auto-approve.ts hook behavior", () => {
       await invokeRun(autoApproveHook, context);
       context.assertDeny();
       ok(reasonOf(context).includes(BOUNDARY_DENY_GUIDANCE));
+      ok(!reasonOf(context).includes(MATCHED_TEXT_DENY_GUIDANCE));
+    });
+
+    it("says what a dangerous-command deny matched and gives the matched-text guidance", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify([]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", {
+        command: 'git commit -m "mkfs notes"',
+      });
+      await invokeRun(autoApproveHook, context);
+      context.assertDeny();
+      ok(
+        reasonOf(context).includes(
+          '→ Filesystem creation\nMatched: the text "mkfs", quoted text included.',
+        ),
+      );
+      ok(reasonOf(context).includes(MATCHED_TEXT_DENY_GUIDANCE));
+    });
+
+    it("keeps the plain guidance when a settings rule is among the denies", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify([]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify(["Bash(rm *)"]));
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", {
+        command: 'rm dangerous.txt; git commit -m "mkfs notes"',
+      });
+      await invokeRun(autoApproveHook, context);
+      context.assertDeny();
+      ok(reasonOf(context).includes(BOUNDARY_DENY_GUIDANCE));
+      ok(!reasonOf(context).includes(MATCHED_TEXT_DENY_GUIDANCE));
+    });
+
+    it("cuts a long quoted fragment so the guidance stays near the front", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify([]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", {
+        command: `git commit -m "${"x".repeat(5000)} mkfs"`,
+      });
+      await invokeRun(autoApproveHook, context);
+      context.assertDeny();
+      ok(reasonOf(context).includes("characters)"));
+      ok(reasonOf(context).length < MATCHED_TEXT_DENY_GUIDANCE.length + 600);
     });
 
     it("appends the guidance to a smart-pass tool deny", async () => {

@@ -25,6 +25,8 @@ import {
   createAskResponse,
   createBoundaryDenyResponse,
   createDenyResponse,
+  createMatchedTextDenyResponse,
+  shortenForReason,
 } from "../lib/context-helpers.ts";
 import { analyzePatternMatches } from "../lib/decision-maker.ts";
 import { isDangerousWritePath } from "../lib/dangerous-write-paths.ts";
@@ -108,7 +110,11 @@ const hook = defineHook({
         );
 
         if (decision.decision === "deny") {
-          return context.json(createBoundaryDenyResponse(decision.reason));
+          return context.json(
+            decision.matchedText
+              ? createMatchedTextDenyResponse(decision.reason)
+              : createBoundaryDenyResponse(decision.reason),
+          );
         } else if (decision.decision === "ask") {
           return context.json(createAskResponse(decision.reason));
         } else if (decision.decision === "allow") {
@@ -233,7 +239,13 @@ const hook = defineHook({
  */
 type BashCommandResult =
   | { type: "allow"; command: string; pattern: string }
-  | { type: "deny"; command: string; reason: string; pattern?: string }
+  | {
+      type: "deny";
+      command: string;
+      reason: string;
+      pattern?: string;
+      matched?: string | undefined;
+    }
   | { type: "pass"; command: string }
   | { type: "skip"; command: string; reason: string }
   | { type: "ask"; command: string; reason: string };
@@ -526,7 +538,12 @@ async function classifyBashDeny(
     if (dangerResult.isDangerous) {
       return dangerResult.requiresManualReview
         ? { type: "ask", command: cmd, reason: dangerResult.reason }
-        : { type: "deny", command: cmd, reason: dangerResult.reason };
+        : {
+            type: "deny",
+            command: cmd,
+            reason: dangerResult.reason,
+            matched: dangerResult.trigger,
+          };
     }
   }
 
@@ -754,7 +771,7 @@ function analyzeBashCommands(
   commands: BashCommandResult[],
   hasAskRequired: boolean,
   _hasPassRequired: boolean,
-): { decision: PermissionDecision; reason: string } {
+): { decision: PermissionDecision; reason: string; matchedText?: boolean } {
   // Ask takes precedence
   if (hasAskRequired) {
     const askCommand = commands.find((cmd) => cmd.type === "ask");
@@ -774,15 +791,20 @@ function analyzeBashCommands(
       .map((cmd) => {
         if (cmd.pattern) {
           return `"${cmd.command}" → blocked by ${cmd.pattern}`;
-        } else {
-          return `"${cmd.command}" → ${cmd.reason}`;
         }
+        if (cmd.matched) {
+          return `"${shortenForReason(cmd.command)}" → ${cmd.reason}\nMatched: ${cmd.matched}.`;
+        }
+        return `"${cmd.command}" → ${cmd.reason}`;
       })
-      .join(", ");
+      // A Matched line ends its detail, so the next detail starts a new line.
+      .join(deniedCommands.some((cmd) => cmd.matched) ? "\n" : ", ");
 
     return {
       decision: "deny",
       reason: `Blocked by security rules (${deniedCommands.length} commands): ${denyDetails}`,
+      // Reshaping is offered only when every denied fragment is a spelling match.
+      matchedText: deniedCommands.every((cmd) => cmd.matched !== undefined),
     };
   }
 

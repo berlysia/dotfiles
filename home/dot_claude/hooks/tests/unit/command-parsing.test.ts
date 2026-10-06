@@ -203,6 +203,24 @@ describe("Command Parsing Library", () => {
       strictEqual(result.requiresManualReview, false);
       strictEqual(result.reason, "");
     });
+
+    it("returns the trigger with a deny verdict and none otherwise", () => {
+      strictEqual(
+        checkDangerousCommand('git commit -m "mkfs notes"').trigger,
+        'the text "mkfs", quoted text included',
+      );
+      strictEqual(
+        checkDangerousCommand("rm -r a /b -f").trigger,
+        'the text "rm" followed by -r and -f style options and a word that starts with "/", quoted text included',
+      );
+      // The tail may sit on the next line, so the trigger does not say "same line".
+      strictEqual(
+        checkDangerousCommand("rm -rf\n/x").trigger,
+        'the text "rm" followed by -r and -f style options and a word that starts with "/", quoted text included',
+      );
+      strictEqual(checkDangerousCommand("git push --force").trigger, undefined);
+      strictEqual(checkDangerousCommand("ls").trigger, undefined);
+    });
   });
 
   describe("checkCommandPattern", () => {

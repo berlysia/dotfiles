@@ -15,11 +15,14 @@ import {
   createAskResponse,
   createBoundaryDenyResponse,
   createDenyResponse,
+  createMatchedTextDenyResponse,
+  shortenForReason,
 } from "../lib/context-helpers.ts";
 import {
   buildReadOnlyPatterns,
   classifyDeletion,
   cpThenNodeModules,
+  describeDeletionMatch,
   mayAllowAsReadOnly,
   redirectToNodeModules,
   standaloneSymlinkRemovalOperands,
@@ -76,7 +79,13 @@ const hook = defineHook({
 
         switch (bashResult.decision) {
           case "deny":
-            return context.json(createBoundaryDenyResponse(bashResult.reason));
+            // Only a deny that quotes a `Matched:` line gets the matched-text
+            // guidance; the parser give-up deny carries none.
+            return context.json(
+              bashResult.matched
+                ? createMatchedTextDenyResponse(bashResult.reason)
+                : createBoundaryDenyResponse(bashResult.reason),
+            );
           case "ask":
             return context.json(createAskResponse(bashResult.reason));
           case "allow":
@@ -129,12 +138,14 @@ interface AnalysisResult {
   decision: Decision;
   reason: string;
   operation?: string;
+  matched?: string | undefined;
 }
 
 interface BashAnalysisResult {
   decision: Decision;
   reason: string;
   operation?: string;
+  matched?: string | undefined;
 }
 
 async function extractFilePath(
@@ -238,10 +249,12 @@ async function analyzeBashCommand(
 
     // If any command should be denied, deny the entire compound command
     if (result.decision === "deny") {
+      const matchedLine = result.matched ? `\nMatched: ${result.matched}.` : "";
       return {
         decision: "deny",
-        reason: `Destructive operation detected: ${cmd}\n${result.reason}`,
+        reason: `Destructive operation detected: ${result.matched ? shortenForReason(cmd) : cmd}\n${result.reason}${matchedLine}`,
         operation: result.operation || "unknown",
+        matched: result.matched,
       };
     }
 
@@ -283,7 +296,7 @@ function deletionReason(
       .split(/\s+/)
       .some((w) => w.endsWith("node_modules"));
   return targetsLink
-    ? `${base}. If you created this node_modules symlink yourself, remove it with a standalone \`unlink <absolute path>\` command.`
+    ? `${base}. If you created this node_modules symlink yourself, remove it with a standalone \`unlink <absolute path>\` command. This boundary allows that one command, for that case only, as an exception to the note below.`
     : base;
 }
 
@@ -291,28 +304,44 @@ function deletionReason(
  * Destructive operations - clear deny. Exported for the differential test
  * (linear-match-equivalence.test.ts). Do not add a regex of the form
  * `X\s+.*Y` / `X.*Y` here; use prefixThenOnLine (see Issue #219).
+ * `trigger` is shown as `Matched:`; review it when `pattern` changes. The
+ * prefix `\s+` also matches a line break, so it never says "same line".
  */
 export const DESTRUCTIVE_NODE_MODULES_PATTERNS: ReadonlyArray<{
   readonly pattern: TextMatcher;
   readonly operation: string;
+  readonly trigger: string;
 }> = [
   {
     pattern: prefixThenOnLine(/(?:^|\s)mv\s+/, /node_modules/),
     operation: "move",
+    trigger: 'the word "mv" followed by node_modules',
   },
-  { pattern: cpThenNodeModules(), operation: "copy-to" },
-  { pattern: redirectToNodeModules(), operation: "overwrite" },
+  {
+    pattern: cpThenNodeModules(),
+    operation: "copy-to",
+    trigger: 'the word "cp" followed later by node_modules',
+  },
+  {
+    pattern: redirectToNodeModules(),
+    operation: "overwrite",
+    trigger:
+      'the character ">" followed by node_modules in the same or the next word, quoted text included',
+  },
   {
     pattern: prefixThenOnLine(/(?:^|\s)(chmod|chown)\s+/, /node_modules/),
     operation: "permission",
+    trigger: 'the word "chmod" or "chown" followed by node_modules',
   },
   {
     pattern: prefixThenOnLine(/(?:^|\s)mkdir\s+/, /node_modules/),
     operation: "create",
+    trigger: 'the word "mkdir" followed by node_modules',
   },
   {
     pattern: prefixThenOnLine(/(?:^|\s)touch\s+/, /node_modules/),
     operation: "create",
+    trigger: 'the word "touch" followed by node_modules',
   },
 ];
 
@@ -339,16 +368,22 @@ function analyzeIndividualCommand(
       decision: "deny",
       reason: deletionReason(cmd, verdict),
       operation: "delete",
+      matched: describeDeletionMatch(cmd, verdict),
     };
   }
 
   // Check for destructive operations first
-  for (const { pattern, operation } of DESTRUCTIVE_NODE_MODULES_PATTERNS) {
+  for (const {
+    pattern,
+    operation,
+    trigger,
+  } of DESTRUCTIVE_NODE_MODULES_PATTERNS) {
     if (pattern.test(cmd)) {
       return {
         decision: "deny",
         reason: `${operation} operation not allowed on node_modules`,
         operation,
+        matched: trigger,
       };
     }
   }
