@@ -18,6 +18,10 @@ on:
       # 未実行の workflow を success 扱いにするため、ここに無いと tmpl のみを
       # 変更した PR で当該テストが一度も走らないまま green になる。
       - "home/dot_claude/.settings.hooks.json.tmpl"
+      # unit / perf のテストがラッパーを実行し、preload が全テストの予算と
+      # 環境を決める。ここに無いと、これらだけを変更した PR でテストが走らない。
+      - "home/dot_claude/hooks/executable_*.sh"
+      - "home/dot_claude/hooks/tests/**/*.mjs"
   pull_request:
     branches: [master, main]
     paths:
@@ -35,6 +39,10 @@ on:
       # 未実行の workflow を success 扱いにするため、ここに無いと tmpl のみを
       # 変更した PR で当該テストが一度も走らないまま green になる。
       - "home/dot_claude/.settings.hooks.json.tmpl"
+      # unit / perf のテストがラッパーを実行し、preload が全テストの予算と
+      # 環境を決める。ここに無いと、これらだけを変更した PR でテストが走らない。
+      - "home/dot_claude/hooks/executable_*.sh"
+      - "home/dot_claude/hooks/tests/**/*.mjs"
   workflow_dispatch:
 
 concurrency:
