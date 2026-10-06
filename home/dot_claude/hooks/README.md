@@ -98,7 +98,7 @@ hooks/
 
 `Bash(p *)` の allow は先頭語と前方一致しか見ない。次は allow ルールの範囲の問題で、hook では塞いでいない。**引数でコマンドを実行する先頭語や、任意のスクリプトを実行する先頭語の allow ルールを足さない。**
 
-- git が別のコマンドを実行する、またはファイルを書く形: `git -c alias.x='!…' x`、`git rebase --exec`、`git fetch --upload-pack`。`git log` / `git diff` / `git show` の `--output=<path>` は Layer 1 にも当たる
+- git が別のコマンドを実行する、またはファイルを書く形: `git -c alias.x='!…' x`、`git rebase --exec`、`git fetch --upload-pack`。フックの静的な規則は `-c` を通さないが、本体の allow 規則（`Bash(git commit *)` など）が通す形はフックでは止めない。`git log` / `git diff` / `git show` の `--output=<path>` は Layer 1 にも当たる
 - 書き込みと状態の変更: `tee`、`sort -o`、`printf -v`、`cd`（同じ呼び出しの後続のコマンドの作業ディレクトリが変わる）
 - 任意のスクリプトの実行: `pnpm run`、`bun run`、`node --test`、`bunx prettier --plugin`
 - sed -i の推論はスクリプトを検査しない。GNU sed の `e` / `w` は、対象ファイルが Edit 許可に当たれば allow になる（macOS の BSD sed に `e` は無い）
@@ -116,9 +116,24 @@ Document Workflow の gate を実装系の書き込み（Write / Edit / MultiEdi
 PermissionRequest hook。Claude Code が確認を出す場面で、静的な規則で allow を返す（Layer 2a）。同じ PermissionRequest の LLM evaluator（`permission-llm-evaluator.ts`、Layer 2b）とは並列に走る。
 
 - Bash は、auto-approve と同じ `scanSafeList` で全文を分割できて、各単純コマンドが `SAFE_BASH_PATTERNS` か `cd <1 語>` に当たるときだけ allow。一致した部分に英数字と `_ . / : = @ + , ~ -`・空白・タブ以外の文字（引用符、`\`、`$`、glob、リダイレクトなど）があるとき、また一致した部分が shell の語の切れ目で終わらないとき（`npx vitest-evil`、`ls-evil`）は当たったとみなさない（`git -c "a status" push` を `status` と、`npx vitest-evil` を `vitest` と読まないため）。そのため `pnpm test:unit` のようなコロンつきのスクリプト名の短縮形は allow しない（`pnpm run test:unit` は allow）。代入の前置（`FOO=1 cmd`）と `env` は allow しない
+- `SAFE_BASH_PATTERNS` の git は、`git` の直後の大域オプションに `-C <dir>` だけを許す（`-c`、`--no-replace-objects` などの長いオプション、`GIT_*` の代入の前置は allow しない）。`-C` を通すのは global の `safe.bareRepository=explicit` に依存している
 - `SAFE_BASH_PATTERNS` は auto-approve の Layer 1 とは別の集合で、より広い（git の書き込み系、`pnpm run`、`chezmoi apply` など）。PermissionRequest は本体が確認を出す場面でだけ走る層なので、PreToolUse の Layer 1 より広く取っている
 - allow しなかった理由は決定ログの `source` に残る: `scan-demoted`（分割前の規則なら allow だった入力。ほかの理由より優先する）、`scan-null`（分割できない）、`scan-mismatch`（当たらない単純コマンドがある）、`scan-error`（例外）
-- 既知の限界: `SAFE_BASH_PATTERNS` は引数を検査しない（`git -c core.fsmonitor=… status`、`git rebase`、`pnpm run`、`npm install` の postinstall、`chezmoi apply`、`mkdir` / `touch`）。`-c` の値そのものがコマンドになる設定（`git -c core.fsmonitor=… status`、`core.pager`、`core.sshCommand`）と、`node --require=<file> --test` も通る。`cd <dir>` の後の `pnpm test` は `<dir>` の package.json のスクリプトを実行する。project-scope の判定は cwd 配下の `.sh` を引数を検査せずに allow する。`/` を含まない `x.sh` は cwd のファイルとして判定するが、shell は PATH から探す（PATH に `.` が無ければ実害はない）。Edit / Write の path 判定は cwd との前方一致で、`..` を正規化しない
+- 既知の限界: `SAFE_BASH_PATTERNS` は引数を検査しない（`git rebase`、`pnpm run`、`npm install` の postinstall、`chezmoi apply`、`mkdir` / `touch`）。`node --require=<file> --test` も通る。`cd <dir>` の後の `pnpm test` は `<dir>` の package.json のスクリプトを実行する。project-scope の判定は cwd 配下の `.sh` を引数を検査せずに allow する。`/` を含まない `x.sh` は cwd のファイルとして判定するが、shell は PATH から探す（PATH に `.` が無ければ実害はない）。Edit / Write の path 判定は cwd との前方一致で、`..` を正規化しない
+
+### 自動承認の hold（`lib/auto-approval-hold.ts`）
+
+PreToolUse の `auto-approve`、PermissionRequest の 2a（`permission-auto-approve`）と 2b（`permission-llm-evaluator`）は、allow を返す直前に `assessAutoApprovalHold` で入力を確かめる。hold になった入力は allow にせず、人間（または本体の規則）の判断に残す。
+
+- 考え方: フックは本体の protected paths を広げない。本体が `ask` にするパス（`.git`、`.claude`、dot のパス、`bunfig.toml`、chezmoi のソースの git 設定など）を、フックの allow が上書きしない。例外は、実体を確かめた linked worktree（`<repo>/.git/worktree/…`）の内側だけで、そこでは `lib/write-protection.ts` の protected 名の一覧（`CORE_PROTECTED_SOURCE` に出典と版）で判定する。fs の失敗や解釈できない入力は hold に倒す
+- 1 と 2 の違い: PreToolUse と 2a では、hold は allow を pass に下げるだけで deny と ask には触れない。2b では、hold と `git` を名指すコマンドの skip は LLM を呼ばず、LLM が何と判定したかに関わらず人間の確認に残す
+- 決定ログの理由の語彙（`decision` はどれも `pass`）: `held: <理由>`（hold）、`skipped-llm: git-head` / `skipped-llm: git-env`（2b の skip）。2a で hold になった入力は、通常の `uncertain` が `ask` で記録されるのと違い、`pass`（`held:`）で記録される。これは「人間に判断を残した」記録で、`permission-analyzer` は allow の候補に数えない
+- Bash の判定: parse の失敗、`$` / `` ` `` / `{` を含む語、`cd` / `pushd` / `popd`、全文に dot のパスの断片や protected 名が現れる形は hold。過大に判定しても、本体の allow 規則が覆うコマンド（`Bash(git commit *)` など）は確認なしで通る
+- 残余のリスク:
+  - インタプリタ（`python -c`、`node -e` など）が実行時に文字列からパスを組み立てる形は、静的な判定では見えない。防げるのは、本体の allow 規則が覆わない範囲に限られる
+  - 引用符で分割した `git`（`g''it`）は 2b の skip を外れ、LLM の評価に届きうる（PreToolUse と 2a は `git` で始まる形しか allow しない）
+  - `$`、`{`、`cd` を含む Bash は一律に hold になり、本体の allow 規則が覆わないものは確認が出る
+  - セッションを protected 名の一覧に無い機微な dot ディレクトリ（`~/.ssh` など）で始めた場合、その中の語には dot の規則が効かない
 
 ### 設定例
 
