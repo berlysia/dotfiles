@@ -52,4 +52,4 @@ plan をやめる、または軽くする場合、次の役目の置き場を決
 - `docs/decisions/0029-workflow-records-move-into-adr.md`（plan を commit しない決定、plan の計測）
 - `home/dot_claude/templates/plan-execution.md`（plan に書くことを求めている内容）
 - `home/dot_claude/rules/model-offloading.md`（委譲の条件）
-- `docs/plans/followup-capture.md`（残件の保存。plan をやめる場合、残件と「計画から外れた点」の置き場が plan の外に要る）
+- `docs/decisions/0030-followups-written-when-raised.md`（残件の入口。「計画から外れた点」の置き場は未解決のまま）
