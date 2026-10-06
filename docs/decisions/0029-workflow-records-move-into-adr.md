@@ -28,6 +28,11 @@ Document Workflow の成果物（spec・research・plan）は `.tmp/sessions/` �
 - 計画を残す commit は、master に直接か merge commit で入っている。直近 40 件に squash merge は無い。commit を指す参照は、この運用が続く限り辿れる。
 - 逆の例として、ADR-0008 の References は `.tmp/sessions/85f6f6e4/spec.md` などを指している。GC の対象なので、今は読めない参照である。
 
+確かめていない前提が 2 つある。
+
+- 困りごとを「作業ツリーの量」と仮定した。`git grep` の雑音や一覧の見通しが主な困りごとだったのかは、確かめていない。
+- spec と research を作業ツリーで検索する利用がどれだけあったかは、測っていない。
+
 同じ内容を 2 つの文書が持つと片方だけが古くなる、という観察は、このリポジトリで繰り返し出ている（ADR-0013 の「証拠を 2 つの永続文書へ同じ粒度で書くと片方だけが腐る」、ADR-0025 K2 の「参照先にしか基準や手順がない参照は、内容を配置される文書へ移す」）。
 ADR が骨子だけを書いて全文を計画に預ける形は、この観察に反していた。
 
@@ -66,6 +71,7 @@ ADR が骨子だけを書いて全文を計画に預ける形は、この観察�
   - 書き換え方は 4 通りに固定した。ファイルを指す参照は、パスの前に `git show 52dc6fd447:` を付ける。ディレクトリを指す参照は、同じ接頭辞を付けて末尾を `/` にする。先頭のパスの後ろに名前を並べる行は、先頭のパスだけを書き換える（後ろの名前は、先頭がファイルなら同じディレクトリ、先頭がディレクトリならその配下を指す）。`CONTEXT.md` の `@path` は、`@` を外してコマンドの形にする（`@path` は作業ツリーのファイルを読む規約のため）。
   - 残した 7 ファイル: `workflow-guard-followups.md`、`hook-target-diagnostics-followups.md`、`insight-digest-hardening-followups.md`、`git-write-protection/follow-ups.md`、`unmanaged-file-drift-detection.md`、`scratchpad-gc/research.md`、`greenfield-reviewer-observation.md`。残りの 90 ファイルを消した。
   - 順序は、参照を書き換える、検証する、ファイルを消す、検証する、とした。書き換えと削除は別の commit で、どの commit でも参照が指す先が存在する。
+  - 書き換えの前に、前提を 2 つ確かめた。`52dc6fd447` が origin/master にあること（`git merge-base --is-ancestor 52dc6fd447 origin/master`）と、`docs/plans/` がその commit の時点から変わっていないこと（`git diff --quiet 52dc6fd447 -- docs/plans`）である。後者により、参照が指す内容は書き換え前の作業ツリーと同じである。
 
 - **K6: 書き換えの完了は、一度きりの検証で判定した。常設の検査は入れない。** 判定基準は 3 つである。`docs/plans/` の外にある `git show 52dc6fd447:docs/plans/<path>` が 36 件で、すべて `git cat-file -e` が終了コード 0 を返すこと。後ろに並ぶ `.md` の名前が、定めた指す先に存在すること。`52dc6fd447:` の付かない `docs/plans/<path>` が、作業ツリーにあるパスだけを指すこと。
 
@@ -74,6 +80,8 @@ ADR が骨子だけを書いて全文を計画に預ける形は、この観察�
   - `document-workflow-reference` skill の付属文書 `references/record-migration.md`（新規）: K1 の表、最後のタスクの書き方、`docs/plans/` に置くもの、K4 の記法。SKILL.md から案内する。
   - `rules/developer-experience.md` の Knowledge Management: K4 の文。検査があるとは書かない（この規則はほかのプロジェクトにも配置され、そこには検査が無い）。
   - `templates/plan-execution.md`: Tasks の末尾に「記録を移す」タスクの枠。規則を覚えているかに頼らず、計画の手順に入れるためである。
+  - `rules/workflow.md` には予算テストがある（上限 12,288 バイト）。書き換えで 11,501 バイトから 11,937 バイトになり、残りは 351 バイトである。このため `workflow.md` には要点だけを置き、表と細目は付属文書に置いた。
+  - 配置される文書には、ADR 番号とこのリポジトリのパスを書かない（ADR-0025 K2）。hash の例は `<commit>` と書き、実在の hash を書かない。
 
 - **K8: 書き込み先の大半が保護対象なので、委任を使わなかった。** ADR、規則、テンプレート、skill、`CONTEXT.md` は保護対象で、plan を人間が承認した。
 
@@ -112,6 +120,39 @@ ADR が骨子だけを書いて全文を計画に預ける形は、この観察�
 - 作業ツリーに戻す: `git checkout 52dc6fd447 -- docs/plans/<path>`
 - shallow clone では、先に `git fetch --unshallow` が要る。
 - 参照を別の形へ移すときは、`git show 52dc6fd447:` という固定の接頭辞を置換の手掛かりにできる。
+
+## 書き換えの検証に使ったコマンド
+
+一度きりの検証で使った。常設の検査を再検討するとき、または参照を別の形へ移すときの出発点になる。どれもリポジトリのルートで実行する。
+
+件数と存在の確認（K6 の 1 つ目）。期待は、1 行目と 2 行目がどちらも `36`、3 つ目は出力なしである。
+
+```bash
+git grep -h -o -E 'git show 52dc6fd447:docs/plans/[A-Za-z0-9._/-]+' -- . ':!docs/plans' | wc -l
+git grep -h -o -E '52dc6fd447:docs/plans/' -- . ':!docs/plans' | wc -l
+git grep -h -o -E 'git show 52dc6fd447:docs/plans/[A-Za-z0-9._/-]+' -- . ':!docs/plans' \
+  | sed -e 's/^git show //' -e 's/[.]$//' \
+  | while IFS= read -r ref; do git cat-file -e "$ref" || printf 'MISSING %s\n' "$ref"; done
+```
+
+この ADR 自身が「過去の計画の読み方」に例を 2 件持つので、この ADR を含めて数えると `38` になる。
+
+作業ツリーに無いパスを指す参照が無いことの確認（K6 の 3 つ目）。期待は出力なしである。
+
+```bash
+git grep -h -o -E '(52dc6fd447:)?docs/plans/[A-Za-z0-9._/-]+' -- . ':!docs/plans' ':!.skills/adr-session' ':!home/dot_claude/hooks/tests' \
+  | grep -v -E '^52dc6fd447:' \
+  | sed -e 's/[.]$//' | sort -u \
+  | while IFS= read -r p; do [ -e "$p" ] || printf 'DANGLING %s\n' "$p"; done
+```
+
+この確認には限界がある。`docs/plans/` の中のファイルは見ない。また、`docs/plans/` で始まらない名前（同じディレクトリの隣を `spec.md` のように指す書き方）は拾わない。Consequences の「計画から外れた点」は、この限界から漏れたものである。
+
+## 削除を取り消す方法
+
+- 1 つのファイルだけ戻す: `git checkout 52dc6fd447 -- docs/plans/<path>`
+- 削除の全体を取り消す: `git revert 79c446d`（90 ファイルと `.oxfmtignore` の 2 行が戻る）
+- 参照の書き換えも取り消す: 削除を先に取り消してから `git revert ae20bcf`。削除を残したまま書き換えだけを取り消すと、参照が存在しないパスを指す。
 
 ## References
 
