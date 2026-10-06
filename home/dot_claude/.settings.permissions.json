@@ -80,7 +80,6 @@
     "Bash(git rebase *)",
     "Bash(git cherry-pick *)",
     "Bash(git rm *)",
-    "Bash(git -c *)",
     "Bash(gh pr list *)",
     "Bash(gh pr view *)",
     "Bash(gh pr diff *)",
@@ -298,10 +297,11 @@
     "Read(~/.ssh/**)",
     "Edit(//**/.git/config)",
     "Edit(//**/.git/config.worktree)",
-    "Edit(//**/.git/worktrees/*/config.worktree)",
+    "Edit(//**/.git/commondir)",
     "Edit(//**/.git/hooks/**)",
-    "Edit(//**/.git/modules/**/config)",
-    "Edit(//**/.git/modules/**/hooks/**)",
+    "Edit(//**/.git/info/attributes)",
+    "Edit(//**/.git/worktrees/**)",
+    "Edit(//**/.git/modules/**)",
     "Edit(//**/.git/worktree/*/.git)",
     "Read(//**/.env)",
     "Read(//**/.env.local)",
@@ -315,5 +315,11 @@
     "Read(//**/.env.test)",
     "Read(~/.local/share/Trash/**)",
     "Read(//**/.Trash-*/**)"
+  ],
+  "ask": [
+    "Edit(~/.gitconfig*)",
+    "Edit(~/.config/git/**)",
+    "Edit(~/.local/share/chezmoi/home/*dot_gitconfig*)",
+    "Edit(~/.local/share/chezmoi/home/*dot_config/*git/**)"
   ]
 }

@@ -3,7 +3,12 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
+import {
+  assessAutoApprovalHold,
+  buildHoldContext,
+} from "../../lib/auto-approval-hold.ts";
 import { checkPattern, type RuleList } from "../../lib/pattern-matcher.ts";
+import { coreDecision } from "../support/core-match.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "../../../../..");
@@ -12,7 +17,7 @@ const userSettings = JSON.parse(
     resolve(repoRoot, "home/dot_claude/.settings.permissions.json"),
     "utf-8",
   ),
-) as { allow: string[]; deny: string[] };
+) as { allow: string[]; deny: string[]; ask?: string[] };
 const projectSettings = JSON.parse(
   readFileSync(resolve(repoRoot, ".claude/settings.json"), "utf-8"),
 ) as { permissions: { allow: string[]; deny: string[] } };
@@ -282,5 +287,132 @@ describe("settings entries after the matcher change", () => {
       ).length,
       0,
     );
+  });
+});
+
+const coreEnv = {
+  home: "/home/u",
+  cwd: "/home/u/workspace/p",
+  settingsDir: "/home/u/.claude",
+};
+const coreRules = {
+  deny: userSettings.deny ?? [],
+  ask: userSettings.ask ?? [],
+  allow: userSettings.allow ?? [],
+};
+const chezmoi = "/home/u/.local/share/chezmoi";
+
+describe("settings evaluated as Claude Code would (spec K6, K7)", () => {
+  const table: Array<[string, "deny" | "ask" | "allow" | "none"]> = [
+    // deny floor
+    [`${chezmoi}/.git/config`, "deny"],
+    [`${chezmoi}/.git/config.worktree`, "deny"],
+    [`${chezmoi}/.git/commondir`, "deny"],
+    [`${chezmoi}/.git/hooks/pre-commit`, "deny"],
+    [`${chezmoi}/.git/info/attributes`, "deny"],
+    [`${chezmoi}/.git/worktrees/x/commondir`, "deny"],
+    [`${chezmoi}/.git/worktrees/x/config.worktree`, "deny"],
+    [`${chezmoi}/.git/modules/sub/config`, "deny"],
+    [`${chezmoi}/.git/modules/sub/hooks/post-checkout`, "deny"],
+    [`${chezmoi}/.git/worktree/feat/.git`, "deny"],
+    // A gitfile under a branch name with "/" is not in the deny floor; plan-1 holds it (K3, 2b).
+    [`${chezmoi}/.git/worktree/feat/x/.git`, "allow"],
+    // ask
+    ["/home/u/.gitconfig", "ask"],
+    ["/home/u/.gitconfig_gpg_ssh", "ask"],
+    ["/home/u/.config/git/config", "ask"],
+    ["/home/u/.config/git/attributes", "ask"],
+    [`${chezmoi}/home/dot_gitconfig.tmpl`, "ask"],
+    [`${chezmoi}/home/private_dot_config/git/config`, "ask"],
+    // allow stays
+    [`${chezmoi}/.git/worktree/feat/src/a.ts`, "allow"],
+    [`${chezmoi}/home/dot_zshrc`, "allow"],
+    ["/home/u/.config/mise/config.toml", "allow"],
+  ];
+  for (const [path, expected] of table) {
+    it(`${path} -> ${expected}`, () => {
+      strictEqual(coreDecision("Edit", path, coreRules, coreEnv), expected);
+    });
+  }
+  it("does not let .git/worktrees/** cover .git/worktree/", () => {
+    strictEqual(
+      coreRules.deny.some((r) => r === "Edit(//**/.git/worktrees/**)"),
+      true,
+    );
+    strictEqual(
+      coreDecision(
+        "Edit",
+        `${chezmoi}/.git/worktree/feat/src/a.ts`,
+        coreRules,
+        coreEnv,
+      ),
+      "allow",
+    );
+  });
+  it("keeps every path the old deny rules covered (inclusion)", () => {
+    const oldDeny = [
+      "Edit(//**/.git/config)",
+      "Edit(//**/.git/config.worktree)",
+      "Edit(//**/.git/worktrees/*/config.worktree)",
+      "Edit(//**/.git/hooks/**)",
+      "Edit(//**/.git/modules/**/config)",
+      "Edit(//**/.git/modules/**/hooks/**)",
+      "Edit(//**/.git/worktree/*/.git)",
+    ];
+    for (const [path] of table) {
+      const old = coreDecision(
+        "Edit",
+        path,
+        { deny: oldDeny, ask: [], allow: [] },
+        coreEnv,
+      );
+      if (old === "deny") {
+        strictEqual(
+          coreDecision("Edit", path, coreRules, coreEnv),
+          "deny",
+          path,
+        );
+      }
+    }
+  });
+  it("holds in the hooks every path the ask rules cover (ask ⊆ hold)", async () => {
+    // home "/home/u" has no .chezmoiroot here, so buildHoldContext falls back to the ask-rule
+    // path; this pins that chezmoiSource string. The ask paths themselves hold on their dot
+    // segments (.gitconfig, .config, .local), so the chezmoi-source rule is tested in plan-1 T1
+    // with a dot-free chezmoiSource, not here.
+    const holdCtx = buildHoldContext({
+      cwd: "/home/u/workspace/p",
+      home: "/home/u",
+    });
+    strictEqual(holdCtx.chezmoiSource, `${chezmoi}/home`);
+    for (const [path, expected] of table) {
+      if (expected !== "ask") continue;
+      strictEqual(
+        (await assessAutoApprovalHold("Edit", { file_path: path }, holdCtx))
+          .hold,
+        true,
+        path,
+      );
+    }
+  });
+  it("holds in the hooks the nested gitfile that the deny floor does not cover", async () => {
+    // Any hold reason will do: this pins the outcome, not the worktree check (plan-1 T2 tests that).
+    const holdCtx = buildHoldContext({
+      cwd: "/home/u/workspace/p",
+      home: "/home/u",
+    });
+    strictEqual(
+      (
+        await assessAutoApprovalHold(
+          "Edit",
+          { file_path: `${chezmoi}/.git/worktree/feat/x/.git` },
+          holdCtx,
+        )
+      ).hold,
+      true,
+    );
+  });
+  it("no longer allows Bash(git -c *)", () => {
+    strictEqual(coreRules.allow.includes("Bash(git -c *)"), false);
   });
 });

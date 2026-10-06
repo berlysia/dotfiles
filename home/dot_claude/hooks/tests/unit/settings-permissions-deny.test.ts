@@ -37,6 +37,10 @@ const requiredDeny = [
   "Read(//**/.env.test)",
   "Read(~/.local/share/Trash/**)",
   "Read(//**/.Trash-*/**)",
+  "Edit(//**/.git/commondir)",
+  "Edit(//**/.git/info/attributes)",
+  "Edit(//**/.git/worktrees/**)",
+  "Edit(//**/.git/modules/**)",
 ];
 
 test("deny contains every rule required by spec 制限", () => {
