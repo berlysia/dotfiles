@@ -89,11 +89,20 @@ describe("classifyWriteTarget", () => {
   let scratch = "";
   let repo = "";
   let wt = "";
+  // The fixture git must not read the developer's global config: commit signing there would
+  // wait on a signing agent and time the test out.
   const git = (...args: string[]) =>
     execFileSync(
       "git",
       ["-c", "user.name=t", "-c", "user.email=t@t", ...args],
-      { stdio: "ignore" },
+      {
+        stdio: "ignore",
+        env: {
+          ...process.env,
+          GIT_CONFIG_GLOBAL: "/dev/null",
+          GIT_CONFIG_NOSYSTEM: "1",
+        },
+      },
     );
   const kind = (
     p: string,
