@@ -177,6 +177,10 @@ stamp は Round N の要求集合を Round N-1 の verdict から再計算する
 
 周のラウンド数が 3 以上で素の `round` は拒否され、6 以上は `review-reframer` の判断、9 以上は人間の指示でだけ延長できる。拒否時の案内が次の手を示す。延長の条件、reframer の起動と記録、裏付け検査、log 形式、受容した限界、再評価トリガーは [references/round-budget.md](references/round-budget.md) にある。Round 3 を超えて延長するとき、reframer を呼ぶときに読む。
 
+## 記録の移し方
+
+作業の終わりに、決まった節を恒久の文書へ移し、spec・research・plan は残さない。移す作業は計画の最後のタスクにする。節と行き先の表、最後のタスクの書き方、`docs/plans/` に置くもの、作業ツリーに無い記録の指し方は [references/record-migration.md](references/record-migration.md) にある。計画の最後のタスクを書くとき、作業を終えるときに読む。
+
 ## prose だけの変更での追加レビュアー
 
 `## Files`（`~/.claude/hooks/lib/workflow-files.ts` の `parseFilesPaths`、guard と同じパーサ）のパスが 1 件以上あり、全件の拡張子（末尾の `.tmpl` は外して判定）が `.md` / `.mdx` / `.markdown` / `.txt` / `.rst` / `.adoc` なら、full round の推奨にキーワード選定の追加レビュアーを付けず、推奨文に skip の理由を 1 行出す。必須 reviewer は変わらない。Files が無い・空ならキーワード選定に戻る。spec.md は Files を持たないので常にキーワード選定になる。コードを触るのに Files に書き漏れがあると prose と判定されるので、推奨文は Files の補正を促す。
