@@ -103,7 +103,7 @@ const hook = defineHook({
         }
         targets = utterance.docs;
       } else {
-        targets = listApprovalCandidates(wfDir);
+        targets = listApprovalCandidates(wfDir, getProjectRoot());
         if (targets.length === 0) {
           return context.json(
             approvalOutput(

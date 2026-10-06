@@ -16,6 +16,8 @@ import {
   APPROVALS_LOG,
   APPROVAL_QUESTION_TEXT,
   DECLINE_DESCRIPTION,
+  DELEGATE_NO_DESCRIPTION,
+  DELEGATION_QUESTION_TEXT,
   appendApproval,
   buildApprovalQuestions,
   deepEqualIgnoringKeyOrder,
@@ -24,6 +26,7 @@ import {
   isApprovalLikeQuestion,
   isApprovalShapedPrompt,
   matchApprovalAnswer,
+  matchDelegationAnswer,
   parseApprovalUtterance,
   readLatestApprovals,
 } from "../../lib/workflow-approval.ts";
@@ -297,6 +300,50 @@ describe("approval question (spec K3/K4/K7)", () => {
       isApprovalLikeQuestion(buildApprovalQuestions([plan2, spec, plan1])),
       true,
     );
+  });
+
+  it("adds the delegation question after the approval question", () => {
+    const rows = [
+      { entry: "src/", protected: false },
+      { entry: "home/dot_claude/", protected: true },
+    ];
+    const questions = buildApprovalQuestions([spec], rows);
+    assert.equal(questions.length, 2);
+    assert.deepEqual(questions[0], buildApprovalQuestions([spec])[0]);
+    assert.deepEqual(questions[1], {
+      question: DELEGATION_QUESTION_TEXT,
+      header: "委任",
+      multiSelect: false,
+      options: [
+        { label: "委任しない", description: DELEGATE_NO_DESCRIPTION },
+        {
+          label: "委任する",
+          description:
+            "Scope: src/, home/dot_claude/（委任の対象外）。レビューを通った plan-N.md は承認を待たずに実装へ進む",
+        },
+      ],
+    });
+    assert.equal(isApprovalLikeQuestion([questions[1]]), true);
+  });
+
+  it("refuses a delegation question without spec.md or without a row that can be delegated", () => {
+    const delegable = [{ entry: "src/", protected: false }];
+    assert.throws(() => buildApprovalQuestions([plan1], delegable));
+    assert.throws(() =>
+      buildApprovalQuestions(
+        [spec],
+        [{ entry: "home/dot_claude/", protected: true }],
+      ),
+    );
+    assert.throws(() => buildApprovalQuestions([spec], []));
+  });
+
+  it("matchDelegationAnswer reads only the two labels", () => {
+    assert.equal(matchDelegationAnswer("委任する"), "delegate");
+    assert.equal(matchDelegationAnswer("委任しない"), "keep");
+    assert.equal(matchDelegationAnswer("あとで"), "other");
+    assert.equal(matchDelegationAnswer(["委任する"]), "other");
+    assert.equal(matchDelegationAnswer(undefined), "other");
   });
 
   it("isApprovalLikeQuestion is true for approval-looking questions", () => {

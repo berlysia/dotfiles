@@ -1268,6 +1268,29 @@ describe("workflow-cli: status", () => {
     ]);
   });
 
+  it("status says whether delegation is active", () => {
+    const statusOf = (delegateSpec: boolean) => {
+      const { repo, wf } = statusRepo();
+      writeFileSync(
+        join(wf, "spec.md"),
+        buildSpecWithScope(approvedWorkflowRepo(), ["src/"]),
+      );
+      recordApprovalsForTest(wf, { delegateSpec });
+      return runWorkflowCli(["status"], {
+        cwd: repo,
+        wfDir: wf,
+        sessionId: "test-ses",
+        wfDirSource: "derived",
+        now: NOW,
+      }).stdout;
+    };
+    assert.match(
+      statusOf(true),
+      /^delegation: active \(.*spec\.md.*Approval Status/m,
+    );
+    assert.match(statusOf(false), /^delegation: none$/m);
+  });
+
   it("status marks a plan-N.md that clears by delegation", () => {
     const { repo, wf } = statusRepo();
     const spec = buildSpecWithScope(approvedWorkflowRepo(), ["src/"]);
@@ -1635,6 +1658,60 @@ describe("workflow-cli: ask-approval and approval route", () => {
       ]),
     });
     assert.match(r.stderr, /\[approval-answer-recorder\]/);
+  });
+
+  it("adds the delegation question when spec.md has a Scope that can be delegated", () => {
+    const { wf } = approvalRepo(0);
+    const spec = buildSpecWithScope(REVIEWED, ["src/", "home/dot_claude/"]);
+    writeFileSync(join(wf, "spec.md"), spec);
+    const r = run(["ask-approval"], wf);
+    assert.equal(r.exitCode, 0, r.stderr);
+    assert.deepEqual(JSON.parse(r.stdout), {
+      questions: buildApprovalQuestions(
+        [{ name: "spec.md", hash: computeWorkflowRepoPlanHash(spec) }],
+        [
+          { entry: "src/", protected: false },
+          { entry: "home/dot_claude/", protected: true },
+        ],
+      ),
+    });
+    assert.match(r.stderr, /2 問目は委任の選択/);
+    assert.match(r.stderr, /project root: /);
+  });
+
+  it("asks only the approval question when spec.md is not among the documents", () => {
+    const { wf } = approvalRepo(0);
+    const spec = buildSpecWithScope(approvedWorkflowRepo(), ["lib/"]);
+    writeFileSync(join(wf, "spec.md"), spec);
+    writeFileSync(
+      join(wf, "plan-1.md"),
+      buildPlanNContent(
+        REVIEWED,
+        ["src/p1.ts"],
+        computeWorkflowRepoPlanHash(spec),
+      ),
+    );
+    recordApprovalsForTest(wf);
+    const r = run(["ask-approval"], wf);
+    assert.equal(r.exitCode, 0, r.stderr);
+    const parsed = JSON.parse(r.stdout) as {
+      questions: { options: { label: string }[] }[];
+    };
+    assert.equal(parsed.questions.length, 1);
+    assert.equal(parsed.questions[0]?.options[0]?.label, "plan-1.md");
+  });
+
+  it("asks only the approval question when every Scope row is protected", () => {
+    const { wf } = approvalRepo(0);
+    writeFileSync(
+      join(wf, "spec.md"),
+      buildSpecWithScope(REVIEWED, ["home/dot_claude/"]),
+    );
+    const r = run(["ask-approval"], wf);
+    assert.equal(
+      (JSON.parse(r.stdout) as { questions: unknown[] }).questions.length,
+      1,
+    );
   });
 
   it("caps the question at MAX_DOCS_PER_QUESTION and reports the rest", () => {

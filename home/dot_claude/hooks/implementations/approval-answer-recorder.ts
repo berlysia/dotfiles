@@ -140,6 +140,8 @@ const hook = defineHook({
           resolution.dir,
           toolResponse,
           context.input.session_id,
+          new Date(),
+          getProjectRoot(),
         ),
       );
       if (reply === null) return context.success({});

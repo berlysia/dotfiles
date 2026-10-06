@@ -51,6 +51,11 @@ export function parseFilesPaths(planContent: string): string[] {
 /** The question from `workflow-cli ask-approval` shows every entry, so the count is capped. */
 export const MAX_SCOPE_ENTRIES = 16;
 
+// The question from `workflow-cli ask-approval` shows each entry as written,
+// so an entry may only use characters and a length that read unambiguously.
+const SCOPE_ENTRY_PATTERN = /^[A-Za-z0-9._/@+-]+$/;
+const MAX_SCOPE_ENTRY_LENGTH = 120;
+
 export type ScopeParse =
   | { valid: true; entries: string[] }
   | { valid: false; reason: "empty" | "too-many" | "invalid-entry" };
@@ -66,12 +71,19 @@ export function parseScope(specContent: string): ScopeParse {
   if (entries.length > MAX_SCOPE_ENTRIES) {
     return { valid: false, reason: "too-many" };
   }
-  const escapes = (entry: string) =>
-    entry.startsWith("/") ||
-    entry.startsWith("~") ||
-    entry === "./" ||
-    entry.split("/").includes("..");
-  return entries.some(escapes)
+  const unsafe = (entry: string) => {
+    if (entry.length > MAX_SCOPE_ENTRY_LENGTH) return true;
+    if (!SCOPE_ENTRY_PATTERN.test(entry)) return true;
+    // A directory entry ends in "/", which leaves one trailing empty
+    // segment; every other segment must name something.
+    const segments = entry.split("/");
+    const named = entry.endsWith("/") ? segments.slice(0, -1) : segments;
+    return (
+      named.length === 0 ||
+      named.some((s) => s === "" || s === "." || s === "..")
+    );
+  };
+  return entries.some(unsafe)
     ? { valid: false, reason: "invalid-entry" }
     : { valid: true, entries };
 }
@@ -159,6 +171,8 @@ const PROTECTED_LEADING: readonly (readonly string[])[] = [
   ["docs", "decisions"],
   [".skills"],
   [".github", "workflows"],
+  [".git"],
+  [".tmp", "sessions"],
 ];
 const PROTECTED_DIR_NAMES = new Set([".claude", "dot_claude"]);
 const PROTECTED_FILE_NAMES = new Set(["claude.md", "agents.md", "context.md"]);
@@ -203,13 +217,24 @@ export function isProtectedPath(
   );
 }
 
+/**
+ * A Scope entry's path, when no component of it is a symlink. A link could
+ * point the entry at the checkout root or another directory, and a directory
+ * inside the Scope could be swapped for one after the approval; either way
+ * the entry would cover more than the user was shown. `base` is a realpath.
+ */
+function resolveScopeEntry(base: string, entry: string): string | null {
+  const lexical = resolve(base, entry);
+  return resolveWithMissingTail(lexical) === lexical ? lexical : null;
+}
+
 function scopeContains(
   entries: readonly string[],
   realTarget: string,
   base: string,
 ): boolean {
   return entries.some((entry) => {
-    const real = resolveWithMissingTail(resolve(base, entry));
+    const real = resolveScopeEntry(base, entry);
     if (real === null) return false;
     return entry.endsWith("/")
       ? realTarget.startsWith(`${real}/`)
@@ -280,4 +305,35 @@ export function targetWithinScope(
     realTarget,
     findRepoToplevel(realTarget, realRoot),
   );
+}
+
+export interface ScopeRow {
+  entry: string;
+  /** Delegation never covers this row (or it could not be resolved). */
+  protected: boolean;
+}
+
+/**
+ * The `## Scope` rows as the delegation question shows them. null when the
+ * Scope is invalid or no row can be delegated: there is nothing to offer.
+ */
+export function scopeRowsForOffer(
+  specContent: string,
+  projectRoot: string,
+): ScopeRow[] | null {
+  const scope = parseScope(specContent);
+  if (!scope.valid) return null;
+  const realRoot = resolveWithMissingTail(resolve(projectRoot));
+  if (realRoot === null) return null;
+  const rows = scope.entries.map((entry) => ({
+    entry,
+    protected:
+      resolveScopeEntry(realRoot, entry) === null ||
+      isProtectedPath(
+        resolve(realRoot, entry),
+        realRoot,
+        entry.endsWith("/") ? "dir" : "file",
+      ) !== false,
+  }));
+  return rows.every((row) => row.protected) ? null : rows;
 }

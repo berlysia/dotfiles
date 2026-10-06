@@ -28,6 +28,7 @@ import {
   implementationPhaseBasis,
   isImplementationPhase,
   listApprovalCandidates,
+  resolveDelegationOffer,
   resolveSpecContext,
   summarizePlans,
 } from "../../lib/workflow-gate.ts";
@@ -957,4 +958,38 @@ test("diagnoseGate: under delegation it does not tell the user to approve each p
     match(d.note ?? "", /must also be/);
     match(d.nextAction, /approve plan-N\.md/);
   }
+});
+
+test("resolveDelegationOffer: the rows of the current spec.md, or null without one", () => {
+  const { repo, wf } = delegatedRepo(["src/", "home/dot_claude/"], []);
+  equal(
+    JSON.stringify(resolveDelegationOffer(wf, repo)),
+    JSON.stringify([
+      { entry: "src/", protected: false },
+      { entry: "home/dot_claude/", protected: true },
+    ]),
+  );
+  equal(resolveDelegationOffer(freshWf(), repo), null);
+});
+
+test("no-plan-owner carries what the implementation phase rests on", () => {
+  const delegated = delegatedRepo(
+    ["src/"],
+    [{ name: "plan-1.md", files: ["src/a.ts"] }],
+  );
+  const e = evaluateTarget({
+    wfDir: delegated.wf,
+    target: join(delegated.repo, "src", "b.ts"),
+    projectRoot: delegated.repo,
+  });
+  ok(e.kind === "no-plan-owner" && e.phaseBasis === "delegated-only");
+  ok(e.kind === "no-plan-owner" && /^[0-9a-f]{64}$/.test(e.specHash));
+
+  const approved = twoLayerRepo(["src/a.ts"]);
+  const a = evaluateTarget({
+    wfDir: approved.wf,
+    target: join(approved.repo, "src", "b.ts"),
+    projectRoot: approved.repo,
+  });
+  ok(a.kind === "no-plan-owner" && a.phaseBasis === "approved");
 });

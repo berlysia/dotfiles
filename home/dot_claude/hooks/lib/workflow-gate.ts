@@ -25,7 +25,9 @@ import {
   listsTarget,
   parseScope,
   planFilesWithinScope,
+  scopeRowsForOffer,
   targetWithinScope,
+  type ScopeRow,
 } from "./workflow-files.ts";
 import { resolveWorkflowPaths } from "./workflow-paths.ts";
 import {
@@ -306,6 +308,24 @@ export function resolveSpecContext(
   };
 }
 
+/**
+ * What `workflow-cli ask-approval` offers and the recorder verifies against:
+ * both call this, so the question shown and the question expected cannot
+ * differ.
+ */
+export function resolveDelegationOffer(
+  wfDir: string,
+  projectRoot: string,
+): ScopeRow[] | null {
+  let specContent: string;
+  try {
+    specContent = readFileSync(resolveWorkflowPaths(wfDir).spec, "utf-8");
+  } catch {
+    return null;
+  }
+  return scopeRowsForOffer(specContent, projectRoot);
+}
+
 export type PlanClass =
   | { kind: "approved" }
   | { kind: "delegated"; planHash: string }
@@ -476,6 +496,10 @@ export type TargetEvaluation =
   | {
       kind: "no-plan-owner";
       implementationPhase: boolean;
+      /** What the implementation phase rests on, so the caller can tell a delegated-only relaxation apart. */
+      phaseBasis: PhaseBasis;
+      /** The spec.md version this was decided against. */
+      specHash: string;
       /** Whether the guard may let the write through with a warning. */
       relaxable: boolean;
       diagnosis: GateDiagnosis;
@@ -592,6 +616,8 @@ export function evaluateTarget(query: TargetQuery): TargetEvaluation {
   return {
     kind: "no-plan-owner",
     implementationPhase: basis !== "none",
+    phaseBasis: basis,
+    specHash: ctx.specHash,
     relaxable,
     diagnosis,
   };

@@ -13,6 +13,7 @@ import {
   closeSync,
   constants as fsConstants,
   openSync,
+  readFileSync,
   writeSync,
 } from "node:fs";
 import { resolve } from "node:path";
@@ -47,19 +48,15 @@ import { resolve } from "node:path";
  */
 const UNEXPANDED_TOKEN_REGEX = /\$/;
 
-export function appendOffPlanLog(
+/** One `write` on an O_APPEND | O_NOFOLLOW descriptor. Best-effort: false when it could not be written. */
+function appendAuditLine(
   wfDir: string,
-  toolName: string,
-  target: string,
-): void {
+  fileName: string,
+  line: string,
+): boolean {
   try {
-    const logPath = resolve(wfDir, "off-plan-writes.log");
-    const pathField = UNEXPANDED_TOKEN_REGEX.test(target)
-      ? `raw-token:${JSON.stringify(target)}`
-      : JSON.stringify(target);
-    const entry = `${new Date().toISOString()}\ttool=${toolName}\tpath=${pathField}\n`;
     const fd = openSync(
-      logPath,
+      resolve(wfDir, fileName),
       fsConstants.O_WRONLY |
         fsConstants.O_CREAT |
         fsConstants.O_APPEND |
@@ -67,11 +64,109 @@ export function appendOffPlanLog(
       0o600,
     );
     try {
-      writeSync(fd, entry);
+      writeSync(fd, line);
+    } finally {
+      closeSync(fd);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function appendOffPlanLog(
+  wfDir: string,
+  toolName: string,
+  target: string,
+): void {
+  const pathField = UNEXPANDED_TOKEN_REGEX.test(target)
+    ? `raw-token:${JSON.stringify(target)}`
+    : JSON.stringify(target);
+  appendAuditLine(
+    wfDir,
+    "off-plan-writes.log",
+    `${new Date().toISOString()}\ttool=${toolName}\tpath=${pathField}\n`,
+  );
+}
+
+export const DELEGATION_USES_LOG = "delegation-uses.log";
+/** How the user takes a delegation back; kept on every line so it is found where the use is. */
+const DELEGATION_REVOKE =
+  "set the `- Approval Status:` line of spec.md back to pending";
+
+export interface DelegationUse {
+  planName: string;
+  planHash: string;
+  specHash: string;
+}
+
+export interface DelegationUseRecord {
+  /** This plan version had not been recorded under this spec version. */
+  first: boolean;
+  /** The line is in the log (already there, or just written). */
+  written: boolean;
+}
+
+/**
+ * Append one line under `key` unless a line with that key is already there.
+ * A log that cannot be read counts as "not recorded": a repeated notice is
+ * the lesser failure, and `written` lets the caller say the record could not
+ * be kept.
+ */
+function recordOnce(wfDir: string, key: string): DelegationUseRecord {
+  try {
+    const fd = openSync(
+      resolve(wfDir, DELEGATION_USES_LOG),
+      fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW,
+    );
+    try {
+      if (readFileSync(fd, "utf-8").includes(key)) {
+        return { first: false, written: true };
+      }
     } finally {
       closeSync(fd);
     }
   } catch {
-    // best-effort; do not block the tool call on logging errors
+    // Missing or unreadable: record and report.
   }
+  const written = appendAuditLine(
+    wfDir,
+    DELEGATION_USES_LOG,
+    `${new Date().toISOString()}${key}revoke=${JSON.stringify(DELEGATION_REVOKE)}\n`,
+  );
+  return { first: true, written };
+}
+
+/**
+ * Record that a write cleared by the spec's delegation, once per plan-N.md
+ * version under a spec.md version.
+ */
+export function recordDelegationUse(
+  wfDir: string,
+  use: DelegationUse,
+): DelegationUseRecord {
+  return recordOnce(
+    wfDir,
+    `\tplan=${JSON.stringify(use.planName)}\tplan-hash=${use.planHash}\tspec-hash=${use.specHash}\t`,
+  );
+}
+
+export interface DelegatedOffPlanWrite {
+  /** The write target as an absolute path, so the key does not depend on the tool's cwd. */
+  target: string;
+  specHash: string;
+}
+
+/**
+ * Record a write that no plan-N.md lists and that was let through while only
+ * delegated plans were in effect, once per target under a spec.md version.
+ */
+export function recordDelegatedOffPlanWrite(
+  wfDir: string,
+  write: DelegatedOffPlanWrite,
+): DelegationUseRecord {
+  return recordOnce(
+    wfDir,
+    `\toff-plan=${JSON.stringify(write.target)}\tspec-hash=${write.specHash}\t`,
+  );
 }

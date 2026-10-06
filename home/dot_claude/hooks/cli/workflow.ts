@@ -45,6 +45,8 @@ import {
   formatGateChecklist,
   formatTargetEvaluation,
   listApprovalCandidates,
+  resolveDelegationOffer,
+  resolveSpecContext,
   summarizePlans,
 } from "../lib/workflow-gate.ts";
 import { isStrictlyUnderProjectSubdir } from "../lib/workflow-fs.ts";
@@ -393,6 +395,14 @@ function cmdStatus(
     lines.push("tripwire: armed");
   } else {
     lines.push("tripwire: not yet armed");
+  }
+
+  if (twoLayer) {
+    lines.push(
+      resolveSpecContext(wfDir, deps.cwd).delegation !== null
+        ? `delegation: active (a plan-N.md within spec.md's ## Scope clears without its own approval; to revoke, set the \`- Approval Status:\` line of ${sanitizeForDisplay(resolve(wfDir, "spec.md"))} back to pending)`
+        : "delegation: none",
+    );
   }
 
   // The route of the latest recorded approval per document, so a human can
@@ -979,10 +989,21 @@ function cmdAskApproval(
       `残り ${rest} 件は記録の後にもう一度呼ぶと出る (the remaining ${rest} document(s) appear when this is called again after recording).`,
     );
   }
+  const offer = asked.some(({ name }) => name === "spec.md")
+    ? resolveDelegationOffer(wfDir, deps.cwd)
+    : null;
+  if (offer !== null) {
+    notes.push(
+      "2 問目は委任の選択。1 問目で spec.md を選んだときだけ、その答えが記録される。2 問とも出力のまま AskUserQuestion に渡す。",
+      // The recorder rebuilds the question from its own project root; a
+      // mismatch shows up as a "malformed" reply, and this is where to look.
+      `project root: ${deps.cwd}`,
+    );
+  }
   if (warning) notes.push(warning);
   return {
     exitCode: 0,
-    stdout: `${JSON.stringify({ questions: buildApprovalQuestions(asked) })}\n`,
+    stdout: `${JSON.stringify({ questions: buildApprovalQuestions(asked, offer ?? undefined) })}\n`,
     stderr: `${notes.join("\n")}\n`,
   };
 }

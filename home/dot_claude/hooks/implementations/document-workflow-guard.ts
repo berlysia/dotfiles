@@ -21,7 +21,12 @@ import { getProjectRoot } from "../lib/project-root.ts";
 import { expandTilde } from "../lib/path-utils.ts";
 import { sanitizeForDisplay } from "../lib/sanitize-display.ts";
 import { collectTempRoots } from "../lib/temp-roots.ts";
-import { appendOffPlanLog } from "../lib/workflow-audit-log.ts";
+import {
+  appendOffPlanLog,
+  DELEGATION_USES_LOG,
+  recordDelegatedOffPlanWrite,
+  recordDelegationUse,
+} from "../lib/workflow-audit-log.ts";
 import {
   APPROVALS_LOG,
   isApprovalLikeQuestion,
@@ -281,6 +286,7 @@ const hook = defineHook({
           );
           const blockedIndex = evaluations.findIndex(isBlocked);
           if (blockedIndex === -1) {
+            const delegatedOffPlan: DelegatedOffPlan[] = [];
             evaluations.forEach((evaluation, i) => {
               if (evaluation.kind !== "no-plan-owner") return;
               const target = analysis.targets[i] ?? "";
@@ -288,8 +294,25 @@ const hook = defineHook({
                 `[document-workflow-guard][off-plan] Bash target \`${target}\` is not listed in any plan-N.md Files section; allowed under implementation-phase relaxation. Recorded in \`${wfDirLabel}/off-plan-writes.log\`.`,
               );
               appendOffPlanLog(wfDir, "Bash", target);
+              if (evaluation.phaseBasis === "delegated-only") {
+                delegatedOffPlan.push({
+                  target: resolve(cwd, expandTilde(target)),
+                  label: target,
+                  specHash: evaluation.specHash,
+                });
+              }
             });
-            return context.success({});
+            // The first-use notice comes first so the off-plan one cannot bury it.
+            const notices = [
+              delegationNotice(wfDir, wfDirLabel, evaluations),
+              delegatedOffPlanNotice(wfDir, wfDirLabel, delegatedOffPlan),
+            ].filter((notice): notice is string => notice !== null);
+            return notices.length === 0
+              ? context.success({})
+              : context.json({
+                  event: "PreToolUse",
+                  output: { systemMessage: notices.join("\n") },
+                });
           }
           const blocked = evaluations[blockedIndex];
           if (blocked && isBlocked(blocked)) {
@@ -328,14 +351,38 @@ const hook = defineHook({
         label: targetPath,
       });
       if (evaluation.kind === "allow" || evaluation.kind === "inactive") {
-        return context.success({});
+        const notice = delegationNotice(wfDir, wfDirLabel, [evaluation]);
+        return notice === null
+          ? context.success({})
+          : context.json({
+              event: "PreToolUse",
+              output: { systemMessage: notice },
+            });
       }
       if (evaluation.kind === "no-plan-owner" && evaluation.relaxable) {
         console.error(
           `[document-workflow-guard][off-plan] ${tool_name} target \`${targetPath}\` is not listed in any plan-N.md Files section; allowed under implementation-phase relaxation. Recorded in \`${wfDirLabel}/off-plan-writes.log\`.`,
         );
         appendOffPlanLog(wfDir, tool_name, targetPath);
-        return context.success({});
+        const notice = delegatedOffPlanNotice(
+          wfDir,
+          wfDirLabel,
+          evaluation.phaseBasis === "delegated-only"
+            ? [
+                {
+                  target: resolve(cwd, expandTilde(targetPath)),
+                  label: targetPath,
+                  specHash: evaluation.specHash,
+                },
+              ]
+            : [],
+        );
+        return notice === null
+          ? context.success({})
+          : context.json({
+              event: "PreToolUse",
+              output: { systemMessage: notice },
+            });
       }
 
       if (warnOnly) {
@@ -403,6 +450,64 @@ function isBlocked(
     evaluation.kind === "deny" ||
     (evaluation.kind === "no-plan-owner" && !evaluation.relaxable)
   );
+}
+
+/**
+ * A write that clears by the spec's delegation is one the user did not
+ * approve plan by plan. Say so the first time each plan-N.md version is used
+ * under a spec.md version, with how to take the delegation back. null when
+ * there is nothing new to say.
+ */
+function delegationNotice(
+  wfDir: string,
+  wfDirLabel: string,
+  evaluations: readonly TargetEvaluation[],
+): string | null {
+  const used: string[] = [];
+  let unrecorded = false;
+  for (const evaluation of evaluations) {
+    if (evaluation.kind !== "allow" || evaluation.basis !== "delegated") {
+      continue;
+    }
+    const record = recordDelegationUse(wfDir, evaluation);
+    if (!record.first) continue;
+    if (!record.written) unrecorded = true;
+    used.push(
+      `${evaluation.planName} (hash=${evaluation.planHash.slice(0, 12)})`,
+    );
+  }
+  if (used.length === 0) return null;
+  const logLabel = `${wfDirLabel}/${DELEGATION_USES_LOG}`;
+  const recordLabel = unrecorded
+    ? `記録できなかった（${logLabel} に書けない。この通知は書き込みのたびに出る）`
+    : `記録: ${logLabel}`;
+  return `[document-workflow-guard] 委任で通した最初の書き込み: ${used.join(", ")}。この plan は利用者が個別に承認していない（spec.md の委任による）。取り消すには ${wfDirLabel}/spec.md の \`- Approval Status:\` の行を pending に戻す。${recordLabel}`;
+}
+
+interface DelegatedOffPlan {
+  /** Absolute path: the key for "already said", independent of the tool's cwd. */
+  target: string;
+  /** The target as the tool call named it, for display. */
+  label: string;
+  specHash: string;
+}
+
+/**
+ * Under delegation alone, a write no plan-N.md lists rests on no plan the
+ * user saw. Say so once per target under a spec.md version; every such write
+ * is still in off-plan-writes.log.
+ */
+function delegatedOffPlanNotice(
+  wfDir: string,
+  wfDirLabel: string,
+  writes: readonly DelegatedOffPlan[],
+): string | null {
+  const fresh = writes.filter(
+    ({ target, specHash }) =>
+      recordDelegatedOffPlanWrite(wfDir, { target, specHash }).first,
+  );
+  if (fresh.length === 0) return null;
+  return `[document-workflow-guard] どの plan-N.md にも無いファイルへの書き込みを、委任だけの実装フェーズで通した: ${fresh.map(({ label }) => sanitizeForDisplay(label)).join(", ")}（spec.md の Scope の内側）。利用者が承認した plan に基づかない書き込みである。同じファイルへの以後の書き込みは知らせない。記録: ${wfDirLabel}/off-plan-writes.log`;
 }
 
 function getTargetFilePath(
@@ -1012,6 +1117,12 @@ function judgeApprovalWrite(
     isUnder(realTarget, realSessions)
   ) {
     return `${APPROVALS_LOG} is written only by approval-recorder (the user says 承認 / approve in the conversation) and approval-answer-recorder (the user answers the AskUserQuestion that \`workflow-cli ask-approval\` generates); tool writes to any session's ledger are refused.`;
+  }
+  if (
+    basename(realTarget).toLowerCase() === DELEGATION_USES_LOG &&
+    isUnder(realTarget, realSessions)
+  ) {
+    return `${DELEGATION_USES_LOG} is written only by document-workflow-guard when a write clears by the spec's delegation; tool writes to it are refused.`;
   }
 
   const realWfDir = resolveWithMissingTail(wfDir) ?? wfDir;

@@ -19,6 +19,7 @@ import {
   parseFilesPaths,
   parseScope,
   planFilesWithinScope,
+  scopeRowsForOffer,
   targetWithinScope,
 } from "../../lib/workflow-files.ts";
 
@@ -212,6 +213,46 @@ describe("parseScope", () => {
     }
   });
 
+  it("rejects entries with characters or lengths that could mislead the question", () => {
+    const bad = [
+      "src/​hidden/",
+      "src/‮txt.exe",
+      "ドキュメント/",
+      "a,b/",
+      "src/（委任の対象外）",
+      `${"a".repeat(120)}/`,
+    ];
+    for (const entry of bad) {
+      deepStrictEqual(parseScope(spec(`src/\n${entry}`)), {
+        valid: false,
+        reason: "invalid-entry",
+      });
+    }
+    strictEqual(parseScope(spec(`${"a".repeat(119)}/`)).valid, true);
+    strictEqual(parseScope(spec("pkg/@scope/a+b_c-d.e/")).valid, true);
+  });
+
+  it("rejects entries whose segments are empty or a lone dot", () => {
+    for (const entry of [
+      ".//",
+      "././",
+      "./src/",
+      "src/./a/",
+      "src//a/",
+      ".",
+      "src/.",
+    ]) {
+      deepStrictEqual(parseScope(spec(`lib/\n${entry}`)), {
+        valid: false,
+        reason: "invalid-entry",
+      });
+    }
+    strictEqual(
+      parseScope(spec(".config/\nsrc/.env.example\na.b/")).valid,
+      true,
+    );
+  });
+
   it("allows MAX_SCOPE_ENTRIES entries and rejects one more", () => {
     const rows = (n: number) =>
       Array.from({ length: n }, (_, i) => `d${i}/`).join("\n");
@@ -256,6 +297,15 @@ describe("isProtectedPath", () => {
     for (const [rel, expected] of cases) {
       strictEqual(file(rel), expected, rel);
     }
+  });
+
+  it("protects the repository's own state and the workflow dirs", () => {
+    strictEqual(file(".git/config"), true);
+    strictEqual(file(".git/hooks/pre-commit"), true);
+    strictEqual(file(".tmp/sessions/abcd1234/approvals.log"), true);
+    strictEqual(file(".tmp/sessions/abcd1234/delegation-uses.log"), true);
+    strictEqual(file(".tmp/docs/note.md"), false);
+    strictEqual(file("src/.gitkeep"), false);
   });
 
   it("counts the last segment for a directory entry", () => {
@@ -395,5 +445,85 @@ describe("targetWithinScope", () => {
       targetWithinScope(spec, join(worktree, "src", "b.ts"), root),
       true,
     );
+  });
+});
+
+describe("Scope entries that pass through a symlink", () => {
+  const spec = (block: string) => `## Scope\n\n\`\`\`\n${block}\n\`\`\`\n`;
+  const plan = (block: string) => `## Files\n\n\`\`\`\n${block}\n\`\`\`\n`;
+
+  it("a link to the checkout root is not a Scope", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "wf-link-")));
+    mkdirSync(join(root, "src"));
+    symlinkSync(root, join(root, "link"));
+    deepStrictEqual(
+      planFilesWithinScope(plan("link/src/a.ts"), spec("link/"), root),
+      { ok: false, reason: "outside-scope" },
+    );
+    strictEqual(
+      targetWithinScope(spec("link/"), join(root, "src", "a.ts"), root),
+      false,
+    );
+    deepStrictEqual(scopeRowsForOffer(spec("src/\nlink/"), root), [
+      { entry: "src/", protected: false },
+      { entry: "link/", protected: true },
+    ]);
+  });
+
+  it("an entry swapped for a symlink after approval stops matching", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "wf-swap-")));
+    mkdirSync(join(root, "src"));
+    const scope = spec("src/gen/");
+    strictEqual(
+      targetWithinScope(scope, join(root, "src", "gen", "a.ts"), root),
+      true,
+    );
+    symlinkSync(root, join(root, "src", "gen"));
+    strictEqual(
+      targetWithinScope(scope, join(root, "other", "x.ts"), root),
+      false,
+    );
+    strictEqual(
+      targetWithinScope(scope, join(root, "src", "gen", "a.ts"), root),
+      false,
+    );
+  });
+});
+
+describe("scopeRowsForOffer", () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "wf-offer-")));
+  const spec = (block: string) => `## Scope\n\n\`\`\`\n${block}\n\`\`\`\n`;
+
+  it("marks protected rows and keeps the order", () => {
+    deepStrictEqual(
+      scopeRowsForOffer(
+        spec("src/\nhome/dot_claude/\nCONTEXT.md\nlib/a.ts"),
+        root,
+      ),
+      [
+        { entry: "src/", protected: false },
+        { entry: "home/dot_claude/", protected: true },
+        { entry: "CONTEXT.md", protected: true },
+        { entry: "lib/a.ts", protected: false },
+      ],
+    );
+  });
+
+  it("is null when every row is protected or the Scope is invalid", () => {
+    strictEqual(
+      scopeRowsForOffer(spec("docs/decisions/\n.skills/"), root),
+      null,
+    );
+    strictEqual(scopeRowsForOffer(spec(".tmp/sessions/"), root), null);
+    strictEqual(scopeRowsForOffer(spec("/etc/"), root), null);
+    strictEqual(scopeRowsForOffer("# no scope\n", root), null);
+  });
+
+  it("treats a row that cannot be resolved as protected", () => {
+    symlinkSync(join(root, "nowhere"), join(root, "dangling"));
+    deepStrictEqual(scopeRowsForOffer(spec("src/\ndangling/"), root), [
+      { entry: "src/", protected: false },
+      { entry: "dangling/", protected: true },
+    ]);
   });
 });

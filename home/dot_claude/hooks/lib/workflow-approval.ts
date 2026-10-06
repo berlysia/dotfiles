@@ -180,6 +180,22 @@ export const HASH_PREFIX_LENGTH = 12;
 export const MAX_DOCS_PER_QUESTION = 3;
 export const WORKFLOW_DOC_NAME = /^(spec|plan|plan-[1-9][0-9]*)\.md$/;
 
+// The second question, asked only together with spec.md. Its text starts
+// with APPROVAL_QUESTION_PREFIX so isApprovalLikeQuestion holds for it alone.
+export const DELEGATION_QUESTION_TEXT =
+  "Document Workflow の承認（委任）: spec.md の Scope に収まる plan-N.md を、個別の承認なしで実装へ進めますか";
+export const DELEGATE_NO_DESCRIPTION = "plan-N.md は 1 つずつ承認する";
+const DELEGATION_HEADER = "委任";
+const DELEGATE_NO_LABEL = "委任しない";
+const DELEGATE_YES_LABEL = "委任する";
+const SCOPE_ROW_EXCLUDED = "（委任の対象外）";
+
+/** One `## Scope` row as the caller judged it; this module does no file access. */
+export interface DelegationScopeRow {
+  entry: string;
+  protected: boolean;
+}
+
 export interface ApprovalDoc {
   name: string;
   hash: string;
@@ -191,13 +207,14 @@ export interface ApprovalOption {
 export interface ApprovalQuestion {
   question: string;
   header: string;
-  multiSelect: true;
+  multiSelect: boolean;
   options: ApprovalOption[];
 }
 
 /** Keeps the input order. Throws instead of silently truncating or fixing the list. */
 export function buildApprovalQuestions(
   docs: readonly ApprovalDoc[],
+  delegation?: readonly DelegationScopeRow[],
 ): ApprovalQuestion[] {
   if (docs.length < 1 || docs.length > MAX_DOCS_PER_QUESTION) {
     throw new Error(
@@ -212,20 +229,61 @@ export function buildApprovalQuestions(
     if (names.has(name)) throw new Error(`duplicate document: ${name}`);
     names.add(name);
   }
-  return [
-    {
-      question: APPROVAL_QUESTION_TEXT,
-      header: APPROVAL_HEADER,
-      multiSelect: true,
-      options: [
-        ...docs.map(({ name, hash }) => ({
-          label: name,
-          description: `${HASH_PREFIX}${hash.slice(0, HASH_PREFIX_LENGTH)}`,
-        })),
-        { label: DECLINE_LABEL, description: DECLINE_DESCRIPTION },
-      ],
-    },
-  ];
+  const approval: ApprovalQuestion = {
+    question: APPROVAL_QUESTION_TEXT,
+    header: APPROVAL_HEADER,
+    multiSelect: true,
+    options: [
+      ...docs.map(({ name, hash }) => ({
+        label: name,
+        description: `${HASH_PREFIX}${hash.slice(0, HASH_PREFIX_LENGTH)}`,
+      })),
+      { label: DECLINE_LABEL, description: DECLINE_DESCRIPTION },
+    ],
+  };
+  if (delegation === undefined) return [approval];
+  if (!names.has("spec.md")) {
+    throw new Error(
+      "the delegation question is asked only together with spec.md",
+    );
+  }
+  return [approval, buildDelegationQuestion(delegation)];
+}
+
+function buildDelegationQuestion(
+  rows: readonly DelegationScopeRow[],
+): ApprovalQuestion {
+  if (rows.length < 1 || rows.every((row) => row.protected)) {
+    throw new Error(
+      "the delegation question needs a Scope row that can be delegated",
+    );
+  }
+  const listed = rows
+    .map((row) =>
+      row.protected ? `${row.entry}${SCOPE_ROW_EXCLUDED}` : row.entry,
+    )
+    .join(", ");
+  return {
+    question: DELEGATION_QUESTION_TEXT,
+    header: DELEGATION_HEADER,
+    multiSelect: false,
+    options: [
+      { label: DELEGATE_NO_LABEL, description: DELEGATE_NO_DESCRIPTION },
+      {
+        label: DELEGATE_YES_LABEL,
+        description: `Scope: ${listed}。レビューを通った plan-N.md は承認を待たずに実装へ進む`,
+      },
+    ],
+  };
+}
+
+export type DelegationAnswer = "delegate" | "keep" | "other";
+
+/** The answer to the delegation question. Anything but the two labels is "other". */
+export function matchDelegationAnswer(value: unknown): DelegationAnswer {
+  if (value === DELEGATE_YES_LABEL) return "delegate";
+  if (value === DELEGATE_NO_LABEL) return "keep";
+  return "other";
 }
 
 /**

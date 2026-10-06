@@ -46,7 +46,11 @@ import { getProjectRoot } from "../lib/project-root.ts";
 import { sanitizeForDisplay } from "../lib/sanitize-display.ts";
 import { appendOffPlanLog } from "../lib/workflow-audit-log.ts";
 import { parseLatestAutoReviewMarker } from "../lib/workflow-marker.ts";
-import { isImplementationPhase } from "../lib/workflow-gate.ts";
+import {
+  implementationPhaseBasis,
+  resolveSpecContext,
+} from "../lib/workflow-gate.ts";
+import { targetWithinScope } from "../lib/workflow-files.ts";
 import {
   getWorkflowDocumentType,
   resolveWorkflowPaths,
@@ -118,15 +122,29 @@ export function createHook(getEnv: () => HookEnv = defaultEnv) {
       sections.push(...collectDocRecommendations(wfDir, wfPaths));
 
       const twoLayer = existsSync(wfPaths.spec);
-      if (!isImplementationPhase(wfDir, wfPaths, twoLayer, projectRoot)) {
+      // The tripwire rests only on a plan the user approved. Under
+      // delegation alone it keeps watching, and treats changes inside the
+      // spec's Scope as the delegated plans' own. One context serves both
+      // the phase decision and the Scope match, so they read the same spec.
+      const ctx = resolveSpecContext(wfDir, projectRoot);
+      const basis = implementationPhaseBasis(
+        wfDir,
+        wfPaths,
+        twoLayer,
+        projectRoot,
+        ctx,
+      );
+      if (basis !== "approved") {
         const tripwireMessage = await checkTripwire(
           wfDir,
           cwd,
           getEnv().tripwireGitTimeoutMs,
+          basis === "delegated-only"
+            ? (absolutePath) =>
+                targetWithinScope(ctx.specContent, absolutePath, projectRoot)
+            : undefined,
         );
-        if (tripwireMessage) {
-          sections.push(tripwireMessage);
-        }
+        if (tripwireMessage) sections.push(tripwireMessage);
       }
 
       if (sections.length === 0) {
@@ -281,6 +299,7 @@ async function checkTripwire(
   wfDir: string,
   cwd: string,
   timeoutMs: number,
+  isExpected?: (absolutePath: string) => boolean,
 ): Promise<string | null> {
   const disabledPath = resolve(wfDir, ".tripwire-disabled");
   if (existsSync(disabledPath)) {
@@ -332,9 +351,13 @@ async function checkTripwire(
     return null;
   }
 
-  const outside = changedRelPaths.filter(
-    (relPath) => !isUnderWfDir(resolve(cwd, relPath), wfDir),
-  );
+  const outside = changedRelPaths.filter((relPath) => {
+    const absolutePath = resolve(cwd, relPath);
+    return (
+      !isUnderWfDir(absolutePath, wfDir) &&
+      !(isExpected?.(absolutePath) ?? false)
+    );
+  });
   if (outside.length === 0) {
     return null;
   }
@@ -349,7 +372,11 @@ async function checkTripwire(
   const remaining = outside.length - shown.length;
   const moreLine = remaining > 0 ? `\n… ${remaining} more` : "";
 
-  return `[workflow-bash-sync] tripwire: gate-closed repo changes outside the workflow dir were detected and recorded in \`off-plan-writes.log\`:\n${shown.join("\n")}${moreLine}`;
+  const heading =
+    isExpected === undefined
+      ? "tripwire: gate-closed repo changes outside the workflow dir were detected and recorded in `off-plan-writes.log`:"
+      : "tripwire: repo changes outside spec.md's ## Scope were detected while only delegated plans are in effect, and recorded in `off-plan-writes.log`:";
+  return `[workflow-bash-sync] ${heading}\n${shown.join("\n")}${moreLine}`;
 }
 
 function isUnderWfDir(absPath: string, wfDir: string): boolean {
