@@ -70,7 +70,7 @@
 
 ## 参照
 
-- 設計と判断: `spec.md`（K1〜K8、Risks、Phase 1 で意図的に提供しない体験）
-- 実験の事実: `research.md`（U1、H11: フックの allow が本体の protected paths を消していた）
-- 受け入れ: `acceptance.md`
+- 設計と判断: `git show 52dc6fd447:docs/plans/git-write-protection/spec.md`（K1〜K8、Risks、Phase 1 で意図的に提供しない体験）
+- 実験の事実: `git show 52dc6fd447:docs/plans/git-write-protection/research.md`（U1、H11: フックの allow が本体の protected paths を消していた）
+- 受け入れ: `git show 52dc6fd447:docs/plans/git-write-protection/acceptance.md`
 - 残余のリスク: `home/dot_claude/hooks/README.md`「自動承認の hold」

@@ -90,7 +90,7 @@ ADR: `docs/decisions/0010-context-md-mechanism.md`
 - 件数は `scripts/lint-shell.sh` で数える。`shellcheck a.sh b.sh ...` のように複数ファイルをまとめて渡すと、渡したファイルどうしの source が解決され、1 ファイルずつ検査するエディタや CI より少なく出る
 - shellcheck の版は `.mise.toml` の `github:koalaman/shellcheck` で固定し、`scripts/lint-shell.sh`・pre-commit・CI がその版を使う（版が違えば lint-shell.sh は終了コード 2 で止まる）。template（`*.sh.tmpl`）は darwin・linux・linux-wsl の 3 通りに描画して検査する。初めて使う手元と、Renovate が版を上げた後は `mise install github:koalaman/shellcheck` を実行する
 - CI と pre-commit は全 severity で落とす（info / style も含む）。`.shellcheckrc` の `shell=bash` は `#!/bin/sh` の shebang より優先されるので、通常の lint では bashism を検出しない。`dot_shell_common/` は zsh からも source されるため、bashism を入れない
-- 経緯: @docs/plans/shellcheck-zero/plan.md の Implementation Notes
+- 経緯: `git show 52dc6fd447:docs/plans/shellcheck-zero/plan.md` の Implementation Notes
 
 ## Open questions
 

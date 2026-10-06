@@ -8,7 +8,7 @@ accepted (2026-10-06)
 
 二層モードでは、spec を承認した後も、plan-N を書くたびに承認待ちで実装が止まる。
 2026-10-06 に `.tmp/sessions/*/approvals.log`（直近 7 日分）を数えたところ、二層の 6 セッションで plan-N の承認が 10 回あった。
-集計は `docs/plans/plan-delegation/research.md` の「承認記録の集計」にある。
+集計は `git show 52dc6fd447:docs/plans/plan-delegation/research.md` の「承認記録の集計」にある。
 plan-N の個別承認が問題を見つけた回数の記録は無い。
 
 依頼は「一定の状態を満たしたら人間の承認なしに先へ進む方法」だった。
@@ -19,7 +19,7 @@ plan-N の個別承認が問題を見つけた回数の記録は無い。
 review verdict、triage の件数、Reviewer Outputs は model が書く値で、承認の代わりにできない（ADR-0023）。
 使えるのは、人間が事前に下した決定と、hook がパスから計算できる事実の 2 種類である。
 
-設計の全文とレビューの記録は `docs/plans/plan-delegation/` にある。
+設計の全文とレビューの記録は `git show 52dc6fd447:docs/plans/plan-delegation/` にある。
 
 ## Decision
 
@@ -104,7 +104,7 @@ spec の番号とは途中からずれる。spec の K5 がこの ADR の K6、K
 
 ## References
 
-- 設計の全文: `docs/plans/plan-delegation/`（research、spec、plan-1 から plan-3。レビューの記録を含む）
+- 設計の全文: `git show 52dc6fd447:docs/plans/plan-delegation/`（research、spec、plan-1 から plan-3。レビューの記録を含む）
 - `docs/decisions/0006-document-workflow-two-layer.md`（継承案の却下）
 - `docs/decisions/0011-autonomous-lane-charter.md`（誤りの費用の非対称、自律レーンの条項）
 - `docs/decisions/0023-workflow-identity.md`（承認を人間に限る機構）
