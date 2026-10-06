@@ -5,11 +5,21 @@ import {
   type BashAssessment,
   type BashHoldContext,
 } from "./bash-write-hold.ts";
-import { getFilePathFromToolInput } from "./command-parsing.ts";
 import { createMatchContext, getProjectRoot } from "./project-root.ts";
-import { classifyWriteTarget, nodeHoldFs } from "./write-protection.ts";
+import {
+  classifyWriteTarget,
+  hasInnerParentSegment,
+  nodeHoldFs,
+} from "./write-protection.ts";
 
 const WRITE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
+const PATH_KEYS = ["file_path", "path", "notebook_path"] as const;
+
+// The field a write tool actually writes. getFilePathFromToolInput takes the first key present,
+// so a harmless file_path could mask the notebook_path NotebookEdit writes.
+function writtenPathKey(toolName: string): (typeof PATH_KEYS)[number] {
+  return toolName === "NotebookEdit" ? "notebook_path" : "file_path";
+}
 
 export type HoldDecision =
   | { hold: true; reason: string; bash?: BashAssessment }
@@ -78,8 +88,20 @@ async function assess(
       : { hold: true, reason: bash.reason, bash };
   }
   if (!WRITE_TOOLS.has(toolName)) return { hold: false };
-  const raw = getFilePathFromToolInput(toolName, toolInput);
-  if (!raw) return { hold: true, reason: `${toolName} input without a path` };
+  const input = (toolInput ?? {}) as Record<string, unknown>;
+  const key = writtenPathKey(toolName);
+  const raw = input[key];
+  if (typeof raw !== "string" || raw === "")
+    return { hold: true, reason: `${toolName} input without a path` };
+  // A second path-like key leaves it unclear which one the tool writes.
+  if (PATH_KEYS.some((other) => other !== key && other in input))
+    return { hold: true, reason: `${toolName} input with several path keys` };
+  // `~` is not expanded here, so resolving it against cwd would judge a different file.
+  if (raw.startsWith("~"))
+    return { hold: true, reason: `${toolName} path starts with ~` };
+  // resolve() folds `..` lexically, which is wrong when the segment before it is a symlink.
+  if (!isAbsolute(raw) && hasInnerParentSegment(raw))
+    return { hold: true, reason: `${toolName} path has an inner ..` };
   const target = classifyWriteTarget(
     isAbsolute(raw) ? raw : resolve(ctx.cwd, raw),
     ctx,

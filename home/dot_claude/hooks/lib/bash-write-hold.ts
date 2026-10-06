@@ -10,6 +10,7 @@ import {
   CORE_PROTECTED_NON_DOT,
   classifyWriteTarget,
   type HoldContext,
+  hasInnerParentSegment,
   untrustedBaseReason,
 } from "./write-protection.ts";
 
@@ -104,10 +105,6 @@ function textReason(command: string, ctx: BashHoldContext): string | null {
   const masked = maskProjectRoot(maskWorktreeContent(command, ctx), ctx);
   const joined = masked.replace(/\\\n/g, "").replace(/['"\\]/g, "");
   return fragmentReason(masked) ?? fragmentReason(joined);
-}
-
-function hasInnerParentSegment(word: string): boolean {
-  return word.split("/").some((seg, i) => i > 0 && seg === "..");
 }
 
 function unquote(word: string): string {

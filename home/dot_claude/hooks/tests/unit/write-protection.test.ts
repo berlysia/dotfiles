@@ -124,6 +124,24 @@ describe("classifyWriteTarget", () => {
       strictEqual(kind(join(wt, rel)), "worktree-content", rel);
     }
   });
+  it("finds the worktree when a character before it changes length on lower-casing", () => {
+    // U+0130 lower-cases to two code units; an index taken on the lower-cased copy then slices
+    // the original one unit too far and the real worktree is no longer recognised.
+    const oddRepo = join(scratch, "\u0130", "repo");
+    mkdirSync(join(scratch, "\u0130"));
+    git("init", "-q", oddRepo);
+    git("-C", oddRepo, "commit", "-q", "--allow-empty", "-m", "init");
+    const oddWt = join(oddRepo, ".git", "worktree", "feat", "y");
+    git("-C", oddRepo, "worktree", "add", "-q", oddWt, "-b", "feat/y");
+    strictEqual(kind(join(oddWt, "src/a.ts")), "worktree-content");
+    // The same shape without a verifiable worktree still holds.
+    strictEqual(
+      kind(
+        join(scratch, "\u0130", "none", ".git", "worktree", "f", "src/a.ts"),
+      ),
+      "hold",
+    );
+  });
   it("holds protected names inside the worktree, whatever the case", () => {
     for (const rel of [
       ".git",

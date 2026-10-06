@@ -112,6 +112,56 @@ describe("assessAutoApprovalHold", () => {
       true,
     );
   });
+  it("reads the field each write tool writes and holds ambiguous inputs", async () => {
+    const holds = async (tool: string, input: unknown) =>
+      (await assessAutoApprovalHold(tool, input, ctx("/w/p"))).hold;
+    // NotebookEdit writes notebook_path; the harmless file_path must not mask it.
+    strictEqual(
+      await holds("NotebookEdit", {
+        file_path: "/w/p/src/a.ts",
+        notebook_path: "/w/p/.vscode/a.ipynb",
+      }),
+      true,
+    );
+    strictEqual(
+      await holds("Edit", {
+        file_path: "/w/p/src/a.ts",
+        notebook_path: "/w/p/src/b.ipynb",
+      }),
+      true,
+    );
+    strictEqual(
+      await holds("Edit", { file_path: "/w/p/src/a.ts", path: "/w/p/x" }),
+      true,
+    );
+    // The field the tool does not write is not a substitute for the missing one.
+    strictEqual(await holds("Edit", { notebook_path: "/w/p/src/a.ts" }), true);
+    strictEqual(await holds("NotebookEdit", { file_path: "/w/p/a.ts" }), true);
+    strictEqual(await holds("Edit", { file_path: 42 }), true);
+    strictEqual(
+      await holds("NotebookEdit", { notebook_path: "/w/p/src/a.ipynb" }),
+      false,
+    );
+  });
+  it("holds a write path that starts with ~", async () => {
+    strictEqual(
+      (
+        await assessAutoApprovalHold(
+          "Edit",
+          { file_path: "~/notes.txt" },
+          ctx("/w/p"),
+        )
+      ).hold,
+      true,
+    );
+  });
+  it("holds a relative path with an inner .. segment only", async () => {
+    const holds = async (file_path: string) =>
+      (await assessAutoApprovalHold("Edit", { file_path }, ctx("/w/p"))).hold;
+    strictEqual(await holds("sub/link/../x.txt"), true);
+    strictEqual(await holds("../x.txt"), false);
+    strictEqual(await holds("src/a.ts"), false);
+  });
   it("routes Bash to the command check", async () => {
     strictEqual(
       (

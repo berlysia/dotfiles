@@ -136,6 +136,14 @@ export interface ClassifyOptions {
 }
 
 const WORKTREE_DIR = "/.git/worktree/";
+// APFS compares names without case, so match case-insensitively. The index must come from the
+// original string: lower-casing first changes the length of some characters (U+0130) and shifts it.
+const WORKTREE_DIR_PATTERN = /\/\.git\/worktree\//i;
+
+// A `..` after the first segment folds a name that may be a symlink (`link/../x` is not `x`).
+export function hasInnerParentSegment(word: string): boolean {
+  return word.split("/").some((seg, i) => i > 0 && seg === "..");
+}
 
 type Probe = "absent" | "file" | "other" | "error";
 function probe(fs: HoldFs, p: string): Probe {
@@ -149,7 +157,7 @@ function probe(fs: HoldFs, p: string): Probe {
 
 // The worktree root W when every K3 condition holds, else null (callers then hold).
 function findVerifiedWorktree(path: string, fs: HoldFs): string | null {
-  const at = path.toLowerCase().indexOf(WORKTREE_DIR);
+  const at = WORKTREE_DIR_PATTERN.exec(path)?.index ?? -1;
   if (at < 0) return null;
   const base = path.slice(0, at + WORKTREE_DIR.length);
   const repoGit = path.slice(0, at + "/.git".length);
