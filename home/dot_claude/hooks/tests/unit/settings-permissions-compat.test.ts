@@ -226,22 +226,34 @@ describe("settings entries after the matcher change", () => {
   // git-worktree-create puts worktrees in <repo>/.git/worktree/<branch>, so a
   // session started at the repo root edits them through this rule. The cwd is
   // outside every other allowed root so only this rule can match.
-  it("allows edits in a worktree under the repo root, and nothing else in .git", async () => {
+  // Relative patterns follow the tool cwd, and a subagent working in a worktree
+  // has the worktree as its cwd, so the rule is written from the filesystem root
+  // to match from the repo root and from inside the worktree alike.
+  for (const cwd of ["/mnt/c/proj", "/mnt/c/proj/.git/worktree/feature-x"]) {
+    it(`allows edits in a worktree under the repo root from ${cwd}`, async () => {
+      const elsewhere = { cwd, home: "/home/u", settingsRoot: cwd };
+      strictEqual(
+        (
+          await matchedIn(
+            "allow",
+            "Edit",
+            "/mnt/c/proj/.git/worktree/feature-x/src/a.ts",
+            elsewhere,
+          )
+        ).join(),
+        "Edit(//**/.git/worktree/**)",
+      );
+    });
+  }
+
+  it("allows nothing else in .git, and denies nothing in a worktree's files", async () => {
     const elsewhere = {
       cwd: "/mnt/c/proj",
       home: "/home/u",
       settingsRoot: "/mnt/c/proj",
     };
     const hit = (path: string) => matchedIn("allow", "Edit", path, elsewhere);
-    strictEqual(
-      (await hit("/mnt/c/proj/.git/worktree/feature-x/src/a.ts")).join(),
-      "Edit(.git/worktree/**)",
-    );
     strictEqual((await hit("/mnt/c/proj/.git/config")).length, 0);
-    strictEqual(
-      (await hit("/mnt/c/other/.git/worktree/feature-x/src/a.ts")).length,
-      0,
-    );
     strictEqual(
       (
         await matchedIn(
