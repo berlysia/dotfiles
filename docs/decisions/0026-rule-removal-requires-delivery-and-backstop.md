@@ -78,7 +78,7 @@ ADR-0025 の ENFORCED は「hook・CLI が同じ文面を出すか、機械的�
 
 - 改訂の対象: `docs/decisions/0025-deployed-docs-self-contained.md`
 - 置き場の根拠: `docs/decisions/0011-autonomous-lane-charter.md`
-- 経緯（57 件の規則表、レビューの記録）: `docs/plans/rule-inventory/`（research.md / spec.md / plan-1.md）
+- 経緯（57 件の規則表、レビューの記録）: `git show 52dc6fd447:docs/plans/rule-inventory/`（research.md / spec.md / plan-1.md）
 - 実装:
   - `home/dot_claude/rules/workflow.md`
   - `.skills/test-design/SKILL.md`

@@ -52,7 +52,7 @@ When proposing to record something (an ADR, a doc, a plan moved to `docs/`), lis
 - Final docs: `docs/` (tracked), `docs/decisions/` (ADRs)
 - Use `/verify-doc` for document self-consistency checks
 - MEMORY.md: record pitfalls/lessons only, not what's in CLAUDE.md
-- Committed docs must only link to git-tracked files
+- Committed docs link to git-tracked files. A record that is no longer in the tree is cited as `git show <commit>:<path>`, and only when that commit is reachable from the default branch
 
 ## Git Worktree Convention
 

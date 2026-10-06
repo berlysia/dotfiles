@@ -9,8 +9,8 @@ import {
 } from "node:path";
 import { sanitizeForDisplay } from "./sanitize-display.ts";
 
-// Thresholds come from replaying 150 commits of this repository's hooks; see
-// docs/plans/complexity-delta/research.md before changing them.
+// Thresholds come from replaying 150 commits of this repository's hooks; run
+// git show 52dc6fd447:docs/plans/complexity-delta/research.md before changing them.
 const COGNITIVE_THRESHOLD = 25;
 const MIN_RISE = 5;
 const MAX_NOTICE_LINES = 10;

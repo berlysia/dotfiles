@@ -10,7 +10,7 @@ mac 上で `claude` / `codex` はそのまま host のホームディレクト�
 
 OrbStack の通常の machine（isolated 指定なし）は `/Users` 全体への読み書きと、`mac` コマンドによる host コマンド実行を持ち、これらを選択的に無効化できない。隔離を機構として持たせるには、通常 machine ではなく isolated machine（`--isolated --isolate-network --forward-ssh-agent`）を使う必要がある。
 
-設計の全文は `docs/plans/agent-vm/spec.md`（K1〜K16、7 名 × 8 ラウンドのレビューと intent triage を経て verdict=pass）と、それに続く plan-1〜plan-4（各 5〜7 名 × 複数ラウンドで verdict=pass）にある。ここには骨子と、却下した代替案を記す。
+設計の全文は `git show 52dc6fd447:docs/plans/agent-vm/spec.md`（K1〜K16、7 名 × 8 ラウンドのレビューと intent triage を経て verdict=pass）と、それに続く plan-1〜plan-4（各 5〜7 名 × 複数ラウンドで verdict=pass）にある。ここには骨子と、却下した代替案を記す。
 
 ## Decision
 
@@ -46,7 +46,7 @@ OrbStack の通常の machine（isolated 指定なし）は `/Users` 全体へ�
 
 ### VM のブラウザ（K23〜K28、2026-10-01 追記）
 
-VM の Claude から playwright と chrome-devtools の MCP を使えるようにする（`docs/plans/agent-vm/vm-browsers/spec.md` の K1〜K6）。VM から host へ向かう通信路は増やさず、VM ごとの容量増は dpkg の Installed-Size の合計で 40 MB 以下に収める。
+VM の Claude から playwright と chrome-devtools の MCP を使えるようにする（`git show 52dc6fd447:docs/plans/agent-vm/vm-browsers/spec.md` の K1〜K6）。VM から host へ向かう通信路は増やさず、VM ごとの容量増は dpkg の Installed-Size の合計で 40 MB 以下に収める。
 
 - **K23**（spec K1）: ブラウザは VM の中で headless で動かし、host のブラウザは操作させない。人の閲覧は既存の host から VM への `localhost` 転送で行う。VM から host への通信路は作らない。
 - **K24**（spec K2）: ブラウザ本体（linux-arm64 の headless shell）は、host の 0700 のストアに `@playwright/mcp` の版ごとに 1 部だけ置く。取得は `agent-vm fetch-browsers` が行い、`chezmoi apply`（darwin のみ）が呼ぶ。取得物のハッシュは repo に固定せず、取得直後の記録を複製の前に比べる方式（TOFU）にとどめる。
@@ -82,24 +82,24 @@ VM の Claude から playwright と chrome-devtools の MCP を使えるよう�
 - **K18 の帰結（dasel）**: VM は codex の設定のマージのために、ソースの `.mise.toml` を信頼して dasel を入れる。マージを dasel や mise に依存させない作り替えは host にも影響する別の課題とする。ADR-0019 でマージを chezmoi の TOML 関数に移し、VM はソースの `.mise.toml` を信頼しなくなった。
 - **K23〜K28 の影響（ブラウザ）**:
   - `--isolate-network` を付けても、isolated machine 同士は IP で互いに届く（実機で確認、#200 で別に扱う）。docs の記述と食い違う既存の性質で、ブラウザの追加で生じたものではない。VM のブラウザは、ほかの VM が `0.0.0.0` に bind したサービスに届きうる。loopback に bind したサーバーは、loopback の性質上 IP では届かないと考えられるが、VM 間では確かめていない。
-  - mac の `localhost:<port>` は、同じポートを複数の machine が使うと、先に bind した machine に届く。これは OrbStack の転送の既存の性質で、`docs/agent-vm.md` に注意を書いた。（2026-10-04 追記）launcher が machine ごとに portless の proxy のポートを割り当て、dev server を portless 経由で開くことで、machine 同士が同じポートを取り合うことを避ける。VM がほかの machine のポートに直接 bind する場合には効かない（`docs/plans/agent-vm/portless/spec.md` の R9）
+  - mac の `localhost:<port>` は、同じポートを複数の machine が使うと、先に bind した machine に届く。これは OrbStack の転送の既存の性質で、`docs/agent-vm.md` に注意を書いた。（2026-10-04 追記）launcher が machine ごとに portless の proxy のポートを割り当て、dev server を portless 経由で開くことで、machine 同士が同じポートを取り合うことを避ける。VM がほかの machine のポートに直接 bind する場合には効かない（`git show 52dc6fd447:docs/plans/agent-vm/portless/spec.md` の R9）
   - VM の Codex にはブラウザの MCP を提供しない。利用頻度が低いため別 issue とし、代わりに同じ VM の Claude を使う。
   - VM の MCP の引数（headless と実行パス）は、host と共有するテンプレートに VM 分岐を入れず、bootstrap の jq の後処理で設定している。
 
 ## Amended by
 
-- `docs/plans/dependency-update-paths/spec.md` (2026-10-01) — K22 の script は `run_after_10-install-apm-skills`（ADR-0017 の 10- 帯）になった。K22 本文の「ターゲット名と内容は変わらない」はこの改名で上書きされる。VM では APM の失敗を marker にせず WARNING に留める。R21 の状態では apm 0.31 が exit 1 を返し、verifier が毎回の bootstrap を止めるためである
-- `docs/plans/dependency-update-paths/spec.md` (2026-10-01) — K5 の軽量セットはテンプレートの条件分岐ではなくファイルの配置で実現するようにした。host 専用のツールチェーンは `~/.config/mise/conf.d/host-toolchains.toml` に分け、VM には配置しない。これに伴い K17 の allowlist のうち mise だけはディレクトリ単位（`!.config/mise/**`）からファイル単位（`!.config/mise/config.toml`）になった。`.chezmoiignore` の除外（`!`）は後続の無視行より優先されるので、同じディレクトリの一部だけを VM から外すにはファイル単位で戻すしかない
-- `docs/plans/agent-vm-gh-token/spec.md` (2026-10-01) — gh の token は K7（全 VM 共通の長期 token は注入しない）の例外として、repo ごとの fine-grained PAT を tool の起動時に `GH_TOKEN` で注入する。token は repo ごとに分かれ、権限は pull_requests / issues の write と contents / actions の read に絞る。残るリスクは、VM の中の agent が期限（Personal 90 日、Formal 30 日）まで token を読めることである。R21 は bootstrap の話なので変わらない
+- `git show 52dc6fd447:docs/plans/dependency-update-paths/spec.md` (2026-10-01) — K22 の script は `run_after_10-install-apm-skills`（ADR-0017 の 10- 帯）になった。K22 本文の「ターゲット名と内容は変わらない」はこの改名で上書きされる。VM では APM の失敗を marker にせず WARNING に留める。R21 の状態では apm 0.31 が exit 1 を返し、verifier が毎回の bootstrap を止めるためである
+- `git show 52dc6fd447:docs/plans/dependency-update-paths/spec.md` (2026-10-01) — K5 の軽量セットはテンプレートの条件分岐ではなくファイルの配置で実現するようにした。host 専用のツールチェーンは `~/.config/mise/conf.d/host-toolchains.toml` に分け、VM には配置しない。これに伴い K17 の allowlist のうち mise だけはディレクトリ単位（`!.config/mise/**`）からファイル単位（`!.config/mise/config.toml`）になった。`.chezmoiignore` の除外（`!`）は後続の無視行より優先されるので、同じディレクトリの一部だけを VM から外すにはファイル単位で戻すしかない
+- `git show 52dc6fd447:docs/plans/agent-vm-gh-token/spec.md` (2026-10-01) — gh の token は K7（全 VM 共通の長期 token は注入しない）の例外として、repo ごとの fine-grained PAT を tool の起動時に `GH_TOKEN` で注入する。token は repo ごとに分かれ、権限は pull_requests / issues の write と contents / actions の read に絞る。残るリスクは、VM の中の agent が期限（Personal 90 日、Formal 30 日）まで token を読めることである。R21 は bootstrap の話なので変わらない
 - `docs/decisions/0021-agent-vm-golden-clone.md` (2026-10-02) — repo 用の machine は `orb create` ではなく、bootstrap 済みの golden machine（`agent-vm-golden`）の clone で作る。K1 の「repo ごとの isolated machine」という境界は変わらない。R5 の初回の待ちは、最初の 1 台（golden の作成）を除いて 6 秒になる
 - #194 (2026-10-02) — R21 の原因は「既定ブランチの解決」ではなく、`https://github.com/` を SSH に書き換える `insteadOf` だった。VM の SSH は転送された agent の承認を毎回要し、承認のない取得は拒否されるか止まる（`git://` への書き換えも VM からは届かない）。VM の `~/.gitconfig` では取得の書き換えを外し、`url."git@github.com:".pushInsteadOf` だけを残す。取得は匿名の HTTPS、push は SSH になり、VM に GitHub の token を置かない方針は変わらない。ただし、上流の frontmatter が読めない `mizchi/explainer` が lockfile のない VM で `apm install` 全体を中止させ、private の `berlysia/shiori` も token なしでは取れないので（#231）、APM の失敗を WARNING に留める扱いは続く
 - `docs/decisions/0022-agent-vm-node-modules.md` (2026-10-02) — VM では、repo の各パッケージの `node_modules` を VM ローカルのディスクへの bind mount に差し替える。repo を同じパスで共有する決定は変わらず、install 物の層だけを machine ごとに分ける。K17 の VM 許可リストに `agent-vm-node-modules` を足した
-- `docs/plans/agent-vm/portless/spec.md` (2026-10-04、#207) — dev server のポートは、VM ごとの portless の proxy で振り分ける。launcher は machine ごとに 17300〜17399 から proxy のポートを 1 つ割り当てて meta（`proxy_port`）に記録し、`PORTLESS_PORT` と `PORTLESS_HTTPS=0` でセッションに渡す。割り当ての台帳は VM がマウントしない `machines/` に置き、proxy は loopback に bind するので、K1 と K23 の境界は変わらない。portless は host と共有の mise の設定で入る（K5 の軽量セットに 1 つ足す）。VM の中のプロセスがほかの machine の proxy のポートに直接 bind して、mac の `localhost` の転送を奪えることは、既存の性質として受け入れた。この変更で、すべての machine のポートが 1 つの範囲に入る。防ぐには host が mac の側の待ち受けを持つ必要があり、常駐の部品を要するので入れていない
+- `git show 52dc6fd447:docs/plans/agent-vm/portless/spec.md` (2026-10-04、#207) — dev server のポートは、VM ごとの portless の proxy で振り分ける。launcher は machine ごとに 17300〜17399 から proxy のポートを 1 つ割り当てて meta（`proxy_port`）に記録し、`PORTLESS_PORT` と `PORTLESS_HTTPS=0` でセッションに渡す。割り当ての台帳は VM がマウントしない `machines/` に置き、proxy は loopback に bind するので、K1 と K23 の境界は変わらない。portless は host と共有の mise の設定で入る（K5 の軽量セットに 1 つ足す）。VM の中のプロセスがほかの machine の proxy のポートに直接 bind して、mac の `localhost` の転送を奪えることは、既存の性質として受け入れた。この変更で、すべての machine のポートが 1 つの範囲に入る。防ぐには host が mac の側の待ち受けを持つ必要があり、常駐の部品を要するので入れていない
 
 ## References
 
-- `docs/plans/agent-vm/spec.md` / `research.md` / `plan-1.md` / `plan-2.md` / `plan-3.md` / `plan-4.md`
-- `docs/plans/agent-vm/vm-browsers/`（K23〜K28 の spec / research / plan-1〜3）
+- `git show 52dc6fd447:docs/plans/agent-vm/spec.md` / `research.md` / `plan-1.md` / `plan-2.md` / `plan-3.md` / `plan-4.md`
+- `git show 52dc6fd447:docs/plans/agent-vm/vm-browsers/`（K23〜K28 の spec / research / plan-1〜3）
 - `docs/agent-vm.md`（導入ガイド、mac 実機検証項目 V1〜V23）
 - `home/dot_local/bin/executable_agent-vm`, `agent-vm/cloud-init.yaml`, `agent-vm/bootstrap.sh`, `home/dot_shell_common/agent_vm.sh`
 - https://docs.orbstack.dev/machines/isolated

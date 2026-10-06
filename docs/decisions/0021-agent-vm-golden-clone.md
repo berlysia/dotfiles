@@ -12,7 +12,7 @@ ADR-0018 は Docker container 案を、ツールチェイン一式を image と�
 
 OrbStack 2.2.3 では、`orb clone` は copy-on-write で 1 秒未満で終わり、clone 直後のディスク使用量は 16 kB だった。一方で、clone 先は複製元の設定（`isolated`・`isolate_network`・`forward_ssh_agent`・`mounts`）をすべて受け継ぎ、clone の時点では mount を指定できない。設定は `orb config set machine.<m>.mounts` で clone 先の起動前に差し替えられる（いずれも実測）。
 
-設計の全文は `docs/plans/agent-vm/golden-clone/spec.md`（K1〜K12、R1〜R8）にある。ここには骨子と、却下した代替案を記す。
+設計の全文は `git show 52dc6fd447:docs/plans/agent-vm/golden-clone/spec.md`（K1〜K12、R1〜R8）にある。ここには骨子と、却下した代替案を記す。
 
 ## Decision
 
@@ -62,7 +62,7 @@ OrbStack 2.2.3 では、`orb clone` は copy-on-write で 1 秒未満で終わ�
 
 ## References
 
-- `docs/plans/agent-vm/golden-clone/`（`spec.md` / `research.md` / `plan-1.md` / `plan-2.md`）
+- `git show 52dc6fd447:docs/plans/agent-vm/golden-clone/`（`spec.md` / `research.md` / `plan-1.md` / `plan-2.md`）
 - `home/dot_local/bin/executable_agent-vm`
 - `agent-vm/golden-seal.sh`
 - `docs/decisions/0018-agent-vm-orbstack.md`

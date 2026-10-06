@@ -6,7 +6,7 @@ accepted (2026-09-10)
 
 ## Context
 
-Opus 5 を Document Workflow の下で動かすと、計画フェーズが総ターンの 70〜98% を占め、レビューが収束せず、必須 step が抜け、ゲートが閉じたまま固着するか逆に素通りする、という報告が続いた。2026-09-10 に `~/.claude/projects/**/*.jsonl` 1,075 セッションを横断計測し、Opus 5 main loop でワークフローが実働した 26 セッションを Fable 5 の 2 セッションと比較した。観測された失敗は 8 パターンに分かれる（`docs/plans/document-workflow-overhaul/research.md` §2）。
+Opus 5 を Document Workflow の下で動かすと、計画フェーズが総ターンの 70〜98% を占め、レビューが収束せず、必須 step が抜け、ゲートが閉じたまま固着するか逆に素通りする、という報告が続いた。2026-09-10 に `~/.claude/projects/**/*.jsonl` 1,075 セッションを横断計測し、Opus 5 main loop でワークフローが実働した 26 セッションを Fable 5 の 2 セッションと比較した。観測された失敗は 8 パターンに分かれる（`git show 52dc6fd447:docs/plans/document-workflow-overhaul/research.md` §2）。
 
 - 環境固有（Fable でも同率以上）: 「〜します」と宣言してツールを呼ばずにターンを閉じる（8/12 セッション、ユーザー催促 24 回）、レビュー非収束と文書肥大（hook 1 本の修正で計画文書 448KB、Round 11）、hook 出力の再注入（`plan-review-automation` が 1 セッション 439 回 ≈ 150k tokens、実レビューは 35 回）
 - Opus 5 固有: plan/spec を `python3 - <<'PY'` で書き換える強い選好（plan 編集の 13〜86%、Fable は 0〜7%）。これが `Write|Edit|NotebookEdit` にしか掛からない PostToolUse hook 群と、固定コマンド列しか見ない guard の Bash 分類器に噛み合い、「文書を書くとレビュー自動化が発火せず、実装は逆に素通りする」双方向の破れを生んでいた。deny 文は固定文で原因を示さず、ハイフン 1 つの書式差で数日固着した例もある
@@ -15,7 +15,7 @@ Opus 5 を Document Workflow の下で動かすと、計画フェーズが総タ
 
 ## Decision
 
-設計の全文は `docs/plans/document-workflow-overhaul/spec.md`（K1〜K10、7 名 × 3 ラウンドのレビューと intent triage を経て verdict=pass）にある。ここでは決定の骨子と、却下した代替案を記す。
+設計の全文は `git show 52dc6fd447:docs/plans/document-workflow-overhaul/spec.md`（K1〜K10、7 名 × 3 ラウンドのレビューと intent triage を経て verdict=pass）にある。ここでは決定の骨子と、却下した代替案を記す。
 
 ### 1. 帳簿は `workflow-cli` が書き、reviewer の実行は台帳で裏付ける（K5）
 
@@ -86,7 +86,7 @@ K6 は「round ≥ 2 は前 round で needs-work / blocker だった reviewer �
 - 却下: 追加 reviewer の blocker で全員再実行に戻さない案。1 ラウンドあたりの reviewer を減らす方向で、ユーザーが選んだ「ラウンド数を減らす」と軸が異なる。予算の機構化で blocker の連鎖も Round 3 で人間に回る
 - 受容したリスク: `--extend` の指示元と、周の起点になる pass marker（`stamp --verdict pass` は各 reviewer の verdict 行と突き合わせない）は prompt 統制のまま。偽の pass はレビューを打ち切って人間の承認に回す向きに働き、予算が防ぐ「人間に見せずに回り続ける」経路にはならない。再評価トリガーは、log に人間の指示に対応しない reason が 1 件、または非 pass が残るのに pass marker が付いた事例 1 件
 - 同日に解消: カタログをローカル agent に置き換え（performance / code-simplicity はローカルに agent 定義が無いため外した。観点が不要と判断したのではなく、戻すなら agent 定義を先に作る。K9 の code-simplicity-reviewer 追加はこれで取り消し）。compound-engineering の現行版は該当 agent を subagent として提供しない。3 つのロースターの各 slug がローカル定義を持つことをテストで固定。台帳は記録された subagent_type の plugin 名前空間を外して照合するので、同名の plugin agent の実行も当該 reviewer として数える（受容した挙動。照合を完全一致にするのは stamp にも及ぶため別オーダー）
-- 経緯と観測の詳細: `docs/plans/workflow-review-budget/`（research / spec / plan-1 と、集計レポート `evidence/review-cost-report.md`）
+- 経緯と観測の詳細: `git show 52dc6fd447:docs/plans/workflow-review-budget/`（research / spec / plan-1 と、集計レポート `evidence/review-cost-report.md`）
 
 ## Amendment (2026-10-01): 自己延長を Round 6 まで、reframer 判断の延長を Round 9 まで認め、問題変形は人間に回す
 
@@ -101,13 +101,13 @@ K6 は「round ≥ 2 は前 round で needs-work / blocker だった reviewer �
 - 却下: 予算を 9 に上げて文言だけで運用する案（延長の事実も承認者も残らない。文言だけの予算は 3/9 文書で破られていた）。reframer 判断の延長に上限を設けない案（モデル / reframer の判断だけで回り続ける経路に歯止めがなくなる）。Agent tool の `model` 引数でモデルを指定する案（ユーザー指示に反し、モデル名が各所に散る）
 - 受容した限界（重要度順）: (1) 人間抜きで Round 7〜9 を進める根拠は記録ファイルと起動記録で、記録ファイルはメインループが書く。推奨の書き換え、空に近い入力での起動、別文書向けの起動、節の書き直し、台帳の偽造は検知できない。承認依頼の Executive Summary に記録ファイルのパスと要約を載せることを必須にし、人間の確認経路とする。(2) `human` 行は人間の承認を証明しない。(3) 着地見込みの判定は機械検証しない。(4) reason 形式の確認は目視。(5) Round 7〜9 は「Fable が判断するならさらにセルフエクステンドを選んでも良い」というユーザー指示を、続行の判断に限って reframer に委ねると解釈したもので、当初のオーダー本文「6 ラウンドまで」を越える。(6) 上位モデルを当てる効果は未検証
 - 再評価トリガー: 周は到達した最大の段階で 1 つに分類する。次のいずれかで見直す。自己延長止まりの周が Round 6 までに pass せず reframer に回った例が 2 件（K3 の条件か自己延長の上限）/ reframer 判断の周が Round 9 までに pass しなかった例が 2 件（reframer 判断の延長をやめるか上限を見直す）/ reason 形式を外れた例が 1 件（形式の機械検査）/ reframer を起動できず人間に回った例が 2 件（エージェント定義のモデル指定）/ 記録ファイルと reframer の出力が食い違った例が 1 件（`--reframer-extend` を廃止）/ 正当な記録があるのに `--reframer-extend` が拒否された例が 2 件（検査を減らす）
-- 経緯: この Amendment 自体の plan は予算 3 のもとで Round 7 まで回った（Round 6・7 は人間の指示による `--extend`）。Round 3 以降は途中のユーザー指示（上位モデルでの検討、reframer 判断の延長、モデル名を引数に書かない）で Key Decisions が変わり、全員を回す周が続いた。0/4 の観測は差分再レビューの周が前提で、設計そのものが動く周は別に数える必要がある。research と plan（Reviewer Outputs 全 7 round を含む）は `docs/plans/round-budget-reframer/` に置いた
+- 経緯: この Amendment 自体の plan は予算 3 のもとで Round 7 まで回った（Round 6・7 は人間の指示による `--extend`）。Round 3 以降は途中のユーザー指示（上位モデルでの検討、reframer 判断の延長、モデル名を引数に書かない）で Key Decisions が変わり、全員を回す周が続いた。0/4 の観測は差分再レビューの周が前提で、設計そのものが動く周は別に数える必要がある。research と plan（Reviewer Outputs 全 7 round を含む）は `git show 52dc6fd447:docs/plans/round-budget-reframer/` に置いた
 
 ## References
 
-- `docs/plans/document-workflow-overhaul/research.md` — 失敗パターン P1〜P8 と根本原因
-- `docs/plans/document-workflow-overhaul/spec.md` — K1〜K10、Risks、Reviewer Outputs（3 ラウンド）
-- `docs/plans/document-workflow-overhaul/plan-1.md` / `plan-2.md` / `plan-3.md` — 実行層
-- `docs/plans/document-workflow-overhaul/evidence/` — hook 注入テキスト棚卸し、成果物品質監査、コードマップ
+- `git show 52dc6fd447:docs/plans/document-workflow-overhaul/research.md` — 失敗パターン P1〜P8 と根本原因
+- `git show 52dc6fd447:docs/plans/document-workflow-overhaul/spec.md` — K1〜K10、Risks、Reviewer Outputs（3 ラウンド）
+- `git show 52dc6fd447:docs/plans/document-workflow-overhaul/plan-1.md` / `plan-2.md` / `plan-3.md` — 実行層
+- `git show 52dc6fd447:docs/plans/document-workflow-overhaul/evidence/` — hook 注入テキスト棚卸し、成果物品質監査、コードマップ
 - `docs/plans/workflow-guard-followups.md` — 課題 A/B/D の扱い
 - `docs/decisions/0001-document-workflow.md`, `0006-document-workflow-two-layer.md`, `0013-workflow-dir-session-derivation.md`

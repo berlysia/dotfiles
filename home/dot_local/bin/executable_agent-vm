@@ -1331,7 +1331,7 @@ accept_git_main() { # [repo] -> 0 nothing left to report / nothing done, 3 somet
 }
 
 # --- gh token (agent-vm env gh) ---------------------------------------------------------------
-# A per-repo fine-grained PAT reaches the VM as GH_TOKEN through the repo env file (spec: docs/plans/agent-vm-gh-token).
+# A per-repo fine-grained PAT reaches the VM as GH_TOKEN through the repo env file (spec: git show 52dc6fd447:docs/plans/agent-vm-gh-token/).
 # AGENT_VM_LIB is set only while the tests source this file (a prefix assignment to `.`); remember it so the
 # test-only overrides (AGENT_VM_NOW, AGENT_VM_TTY) work in the tests and nowhere else.
 GH_TEST_MODE=${AGENT_VM_LIB:+1}

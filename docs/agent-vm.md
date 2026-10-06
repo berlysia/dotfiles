@@ -411,7 +411,7 @@ repo ごとの machine を golden machine の clone で作る構成（3 節）�
 試験用の repo は、空白を含むパス（`.../nm check`）に置いた npm workspace である（ルートが `typescript` 7.0.2 と `oxlint` 1.86.0、`packages/a` が衝突する `typescript` 6.0.3）。
 
 - V24、V25（plan-1 の T0）: fd 経由の mount は成功し、device:inode は一致した。mountinfo の root 欄は `/scon/containers/<id>/rootfs/var/lib/agent-vm/node_modules/<key>/data` の形で、major:minor（0:37）は stat の st_dev（0:64）と一致しなかった。このため、自分の mount の判定は major:minor を使わず、root 欄の末尾一致で行う（ADR-0022）。
-- V26 の準備で、ヘルパーの差し替えが一度も成立していなかったことが分かった。共有 mount（virtiofs）は所有者を見ている側の uid の写しとして返し（VM で `chown` しても変わらない）、root の perl による mount 先の所有者の検査が必ず失敗していた。検査を外して直した（ADR-0022、`docs/plans/agent-vm/node-modules/plan-4.md`）。以下は直した後の結果である。
+- V26 の準備で、ヘルパーの差し替えが一度も成立していなかったことが分かった。共有 mount（virtiofs）は所有者を見ている側の uid の写しとして返し（VM で `chown` しても変わらない）、root の perl による mount 先の所有者の検査が必ず失敗していた。検査を外して直した（ADR-0022、`git show 52dc6fd447:docs/plans/agent-vm/node-modules/plan-4.md`）。以下は直した後の結果である。
 - V26:
   - host で `node_modules` を消して作り直しても、mountinfo の行は `//deleted` にならず、元のパスのまま残った。続く `agent-vm node-modules-sync` は終了コード 0 で、失効を検出して張り直した。張り直した後、`node_modules` の device:inode は保存先の `data` と一致した。
   - host で worktree を足して sync すると、mount と保存先が 2 つずつ増えた。host で `git worktree remove` すると、VM の行は元のパスのまま残った。次の sync（終了コード 0）で外れ、保存先も回収された（4 から 2）。

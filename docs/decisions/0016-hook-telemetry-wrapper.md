@@ -6,7 +6,7 @@ accepted (2026-09-28)
 
 ## Context
 
-どのフックがツール呼び出しをどれだけ遅くしているかを、体感でなく数字で追いたい。既存の計器はどれもこの問いに答えられなかった（`docs/plans/hook-telemetry/research.md`）。
+どのフックがツール呼び出しをどれだけ遅くしているかを、体感でなく数字で追いたい。既存の計器はどれもこの問いに答えられなかった（`git show 52dc6fd447:docs/plans/hook-telemetry/research.md`）。
 
 - トランスクリプト JSONL の `hook_success` は `command` と `durationMs` を持つ。ただし stdout / stderr が空でないフックしか記録しない。実測では、Bash 1 回あたり PreToolUse に 7 本以上マッチしているのに、記録は 3 本だった。PostToolUse は全滅していた。これを集計すると標本が偏る
 - OTEL の `claude_code.hook` span の `duration_ms` は、イベントにマッチした全フックの合計値で、フック単位の内訳が無い。beta の環境変数が必要で、対話 CLI では org の allowlisting も要る
@@ -16,7 +16,7 @@ accepted (2026-09-28)
 
 ## Decision
 
-設計の全文は `docs/plans/hook-telemetry/plan.md`（K0〜K9、5 名 × 3 ラウンドのレビューと intent triage を経て verdict=pass）にある。ここには骨子と、却下した代替案を記す。
+設計の全文は `git show 52dc6fd447:docs/plans/hook-telemetry/plan.md`（K0〜K9、5 名 × 3 ラウンドのレビューと intent triage を経て verdict=pass）にある。ここには骨子と、却下した代替案を記す。
 
 ### 1. 計測点はプロセス境界の外に置き、settings.json 生成時に機械的に包む（K1）
 
@@ -60,7 +60,7 @@ accepted (2026-09-28)
 
 ## References
 
-- `docs/plans/hook-telemetry/plan.md` / `research.md`
+- `git show 52dc6fd447:docs/plans/hook-telemetry/plan.md` / `research.md`
 - `home/dot_claude/hooks/executable_hook-timer.sh`, `home/dot_claude/hooks/lib/hook-timing-report.ts`, `home/dot_claude/hooks/cli/hook-timing.ts`
 - `home/.chezmoiscripts/run_onchange_update-settings-json.sh.tmpl`
 - https://code.claude.com/docs/en/hooks.md（並列実行、timeout、`async`）
