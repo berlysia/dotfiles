@@ -9,26 +9,30 @@ import assert from "node:assert";
 import {
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { createUnifiedVoiceConfig } from "../../../lib/unified-audio-config.ts";
 import { logMessage } from "../../../lib/unified-audio-engine.ts";
 
 describe("Log Rotation", () => {
-  const testDir = "/tmp/test-log-rotation";
-  const testLogDir = join(testDir, ".claude", "log");
+  // A fresh dir per test: a fixed path was shared with any suite running
+  // at the same time (another worktree's completion gate) and they deleted
+  // each other's logs.
+  let testDir = "";
+  let testLogDir = "";
   const originalHome = process.env.HOME;
 
   beforeEach(() => {
+    testDir = mkdtempSync(join(tmpdir(), "test-log-rotation-"));
+    testLogDir = join(testDir, ".claude", "log");
     process.env.HOME = testDir;
-    if (existsSync(testDir)) {
-      rmSync(testDir, { recursive: true, force: true });
-    }
     mkdirSync(testLogDir, { recursive: true });
   });
 
