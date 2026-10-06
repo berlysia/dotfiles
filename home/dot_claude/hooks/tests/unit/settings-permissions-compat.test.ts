@@ -67,6 +67,21 @@ describe("settings entries after the matcher change", () => {
     );
   });
 
+  // Claude Code itself reads these deny rules with gitignore semantics, where a
+  // pattern that names a directory also covers everything under it. This hook's
+  // matcher does not, so the table below cannot catch it: a deny on .git (or on
+  // .git/worktree or one worktree) silently blocks every edit in worktrees.
+  it("denies no directory that holds worktrees", () => {
+    strictEqual(
+      deny
+        .filter((r) => /^Edit\(.*\/\.git(\/worktree(\/\*)?)?\)$/.test(r))
+        // a worktree's own .git is a file (the gitdir pointer), not a directory
+        .filter((r) => !/\/\.git\/worktree\/\*\/\.git\)$/.test(r))
+        .join("\n"),
+      "",
+    );
+  });
+
   it("writes every deny path rule as an absolute or home path", () => {
     const pathRule =
       /^(Read|Edit|Write|MultiEdit|NotebookEdit|NotebookRead|Grep|Glob|LS|Search)\(/;
@@ -180,7 +195,10 @@ describe("settings entries after the matcher change", () => {
       true,
       false,
     ],
-    // a .git file is a gitdir pointer; retargeting it brings another config and hooks
+    // a .git file is a gitdir pointer; retargeting it brings another config and
+    // hooks. Only worktree pointers are named: a submodule's .git file has the
+    // same name as a .git directory, and Claude Code's gitignore-style Edit
+    // rules would then deny everything inside every .git directory.
     [
       "deny",
       "Edit",
@@ -188,7 +206,6 @@ describe("settings entries after the matcher change", () => {
       true,
       false,
     ],
-    ["deny", "Edit", "/home/u/workspace/p/vendor/sub/.git", true, false],
     [
       "deny",
       "Edit",

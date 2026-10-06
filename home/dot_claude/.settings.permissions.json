@@ -302,7 +302,7 @@
     "Edit(//**/.git/hooks/**)",
     "Edit(//**/.git/modules/**/config)",
     "Edit(//**/.git/modules/**/hooks/**)",
-    "Edit(//**/.git)",
+    "Edit(//**/.git/worktree/*/.git)",
     "Read(//**/.env)",
     "Read(//**/.env.local)",
     "Read(//**/.env.*.local)",
