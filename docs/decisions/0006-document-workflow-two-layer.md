@@ -134,6 +134,17 @@ ADR-0005 は「コードが消費する slug 識別子の SSoT 区間にのみ�
 - **hook 起動後 race の accept**: K12 read-snapshot は hook 単一実行内 TOCTOU を防ぐが、hook 完了後の編集は次回 Write 時の K7 連鎖検証で検出される設計とし、明示的な記録を残す
 - **drift 検知 CI の拡張**: 本 ADR で `SPEC_REVIEWERS` / `PLAN_REVIEWERS` の両マーカー区間 × 両定数配列 = 4 通りの drift assertion が必要になる。`plan-review-automation.test.ts` の `doc drift detection (integration boundary)` describe block を拡張
 
+## Amendment (2026-10-06): plan-N の承認を委任できる
+
+ADR-0028 で、人間が spec の承認時に選ぶと、spec の `## Scope` に収まる plan-N が個別の承認なしで gate を通るようにした。
+
+これは Rejected alternatives の Option B とは違う。
+plan-N は自分の marker の hash と `parent-spec-hash` を持ち続け、省くのは plan-N の承認の記録だけである。
+Option B を退けた理由（plan の独立性が失われる）は当たらない。
+
+ただし、spec を改訂すると、全 plan-N の委任が同時に無効になる。
+人間が改訂後の spec を承認し直すまで、委任で通っていた plan-N は止まる。
+
 ## Open observation items
 
 - **二層モード採用率**: デプロイ後の最初の N=5 セッションで、二層モード (spec + plan-N.md) と単層モード (plan.md のみ) の選択頻度を観測する。routing 表が機械的判定に十分かを評価

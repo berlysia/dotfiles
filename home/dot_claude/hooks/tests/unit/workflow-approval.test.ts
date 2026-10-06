@@ -16,6 +16,8 @@ import {
   APPROVALS_LOG,
   APPROVAL_QUESTION_TEXT,
   DECLINE_DESCRIPTION,
+  DELEGATE_NO_DESCRIPTION,
+  DELEGATION_QUESTION_TEXT,
   appendApproval,
   buildApprovalQuestions,
   deepEqualIgnoringKeyOrder,
@@ -24,6 +26,7 @@ import {
   isApprovalLikeQuestion,
   isApprovalShapedPrompt,
   matchApprovalAnswer,
+  matchDelegationAnswer,
   parseApprovalUtterance,
   readLatestApprovals,
 } from "../../lib/workflow-approval.ts";
@@ -56,6 +59,47 @@ describe("workflow-approval (spec K8)", () => {
     assert.equal(r.latest.get("spec.md")?.hash, H1);
     assert.equal(r.ignoredLines, 0);
     assert.equal(r.readError, undefined);
+  });
+
+  it("keeps delegate only when it is the known value", () => {
+    const wf = mkdtempSync(join(tmpdir(), "approvals-"));
+    appendApproval(wf, {
+      doc: "spec.md",
+      hash: H1,
+      session: "s",
+      at: "t1",
+      via: "ask",
+      delegate: "plans-in-scope",
+    });
+    assert.equal(
+      readLatestApprovals(wf).latest.get("spec.md")?.delegate,
+      "plans-in-scope",
+    );
+
+    appendFileSync(
+      join(wf, APPROVALS_LOG),
+      `${JSON.stringify({ v: 1, doc: "spec.md", hash: H1, session: "s", at: "t2", delegate: "everything" })}\n`,
+    );
+    const r = readLatestApprovals(wf);
+    assert.equal(r.latest.get("spec.md")?.delegate, undefined);
+    assert.equal(r.latest.get("spec.md")?.at, "t2");
+    assert.equal(r.ignoredLines, 0);
+  });
+
+  it("a later line without delegate turns the delegation off", () => {
+    const wf = mkdtempSync(join(tmpdir(), "approvals-"));
+    appendApproval(wf, {
+      doc: "spec.md",
+      hash: H1,
+      session: "s",
+      at: "t1",
+      delegate: "plans-in-scope",
+    });
+    appendApproval(wf, { doc: "spec.md", hash: H1, session: "s", at: "t2" });
+    assert.equal(
+      readLatestApprovals(wf).latest.get("spec.md")?.delegate,
+      undefined,
+    );
   });
 
   it("skips malformed lines and other versions, and counts them", () => {
@@ -256,6 +300,50 @@ describe("approval question (spec K3/K4/K7)", () => {
       isApprovalLikeQuestion(buildApprovalQuestions([plan2, spec, plan1])),
       true,
     );
+  });
+
+  it("adds the delegation question after the approval question", () => {
+    const rows = [
+      { entry: "src/", protected: false },
+      { entry: "home/dot_claude/", protected: true },
+    ];
+    const questions = buildApprovalQuestions([spec], rows);
+    assert.equal(questions.length, 2);
+    assert.deepEqual(questions[0], buildApprovalQuestions([spec])[0]);
+    assert.deepEqual(questions[1], {
+      question: DELEGATION_QUESTION_TEXT,
+      header: "委任",
+      multiSelect: false,
+      options: [
+        { label: "委任しない", description: DELEGATE_NO_DESCRIPTION },
+        {
+          label: "委任する",
+          description:
+            "Scope: src/, home/dot_claude/（委任の対象外）。レビューを通った plan-N.md は承認を待たずに実装へ進む",
+        },
+      ],
+    });
+    assert.equal(isApprovalLikeQuestion([questions[1]]), true);
+  });
+
+  it("refuses a delegation question without spec.md or without a row that can be delegated", () => {
+    const delegable = [{ entry: "src/", protected: false }];
+    assert.throws(() => buildApprovalQuestions([plan1], delegable));
+    assert.throws(() =>
+      buildApprovalQuestions(
+        [spec],
+        [{ entry: "home/dot_claude/", protected: true }],
+      ),
+    );
+    assert.throws(() => buildApprovalQuestions([spec], []));
+  });
+
+  it("matchDelegationAnswer reads only the two labels", () => {
+    assert.equal(matchDelegationAnswer("委任する"), "delegate");
+    assert.equal(matchDelegationAnswer("委任しない"), "keep");
+    assert.equal(matchDelegationAnswer("あとで"), "other");
+    assert.equal(matchDelegationAnswer(["委任する"]), "other");
+    assert.equal(matchDelegationAnswer(undefined), "other");
   });
 
   it("isApprovalLikeQuestion is true for approval-looking questions", () => {

@@ -187,3 +187,21 @@ ADR-0023 の配備後実測の作業中に踏んだ。2026-10-02。
 - research.md の要求は残した（見直し案（b）は採らない）。要求は共通フロー step 1、root `plan.md` の DW-06、`workflow-gate.test.ts` の「an approved plan without research.md still denies」で固定された意図であり、不具合は要求があることではなく診断に出ないことだった。
 - 見送った再設計: 判定を診断から導く（`evaluateTarget = decide(diagnose(...))`）形。`GateDiagnosis` を plan-N 単位に作り直す必要があり、課題 K の不一致は research.md の 1 条件だけなので範囲に見合わない。着手の条件は、別の条件で判定と診断がずれたとき。
 - 残る穴: 二層の plan-N の条件（未承認、parent-spec-hash の不一致）は、診断では ✓/✗ の行にならず `note` でしか示されない。`workflow-gate.test.ts` の不変条件テストは「✗ 行か `note:` 行があり、satisfied と言わない」までを守り、note の文言が本当の原因を名指ししているかは検証しない。
+
+## 課題 L: 承認行の値が空のとき、hash の正規化が次の行を落とす
+
+ADR-0028 のレビュー中に報告され、2026-10-06 に再現を確かめた。
+
+- 実測: `computeDocumentHash(content, SPEC_NORMALIZERS)` は、承認行が `- Approval Status:`（値なし）または空白だけのとき、その次の行を hash から落とす。次の行だけが違う 2 つの文書が、同じ hash になる。
+
+  | 承認行                            | 次の行が `LINE-A` | 次の行が `LINE-B` |
+  | --------------------------------- | ----------------- | ----------------- |
+  | `- Approval Status: pending`      | `3ff5ee5089d0`    | `9345699391c4`    |
+  | `- Approval Status:`              | `ddc8b939f327`    | `ddc8b939f327`    |
+  | `- Approval Status: `（空白のみ） | `ddc8b939f327`    | `ddc8b939f327`    |
+
+- 原因: `home/dot_claude/hooks/lib/document-hash.ts` の正規化 `c.replace(/^(- Approval Status:)\s*.*$/m, "$1")` で、`\s*` が改行に一致する。値が空だと行末の改行を越え、続く `.*` が次の行を取り込む。
+- 推論（未実測）: 承認の迂回には使いにくい。承認が記録されると承認行に `approved` が入り、次の行が hash に戻るので、記録した hash と合わなくなって gate が閉じる。テンプレートどおりの文書では、承認行の次は空行と marker なので害が出ない。
+- 確認: 承認行を書き換える側（`home/dot_claude/hooks/lib/workflow-marker.ts` の `setApprovalStatusLine`）の正規表現は `/^- Approval Status:.*$/m` で、`\s*` を含まない。値が空の文書を承認しても、次の行は消えない。次の行を落とすのは hash の正規化の側だけである。
+- 修正の案: `\s*` を `[ \t]*` にする。
+- 再訪のきっかけ: hash の正規化を変えると、承認済みの進行中の文書がすべて deny される。reference skill の「S3 デプロイ移行手順」を伴う作業になる。他の理由で正規化を変えるときに、合わせて直す。

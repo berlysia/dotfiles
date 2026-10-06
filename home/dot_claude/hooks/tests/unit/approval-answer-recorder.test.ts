@@ -18,12 +18,14 @@ import hook from "../../implementations/approval-answer-recorder.ts";
 import {
   APPROVALS_LOG,
   APPROVAL_QUESTION_TEXT,
+  DELEGATION_QUESTION_TEXT,
   buildApprovalQuestions,
 } from "../../lib/workflow-approval.ts";
 import { deriveDefaultWorkflowDir } from "../../lib/workflow-paths.ts";
 import {
   buildPlanContent,
   buildPlanNContent,
+  buildSpecWithScope,
   computeWorkflowRepoPlanHash,
   createPostToolUseContext,
   EnvironmentHelper,
@@ -121,6 +123,25 @@ describe("approval-answer-recorder (spec K2/K3)", () => {
     );
     assert.equal(output.hookSpecificOutput.hookEventName, "PostToolUse");
     assert.match(logText(), /"doc":"spec\.md"/);
+  });
+
+  it("records the delegation chosen in the second question", async () => {
+    const spec = buildSpecWithScope(REVIEWED, ["src/"]);
+    writeFileSync(join(wf, "spec.md"), spec);
+    const questions = buildApprovalQuestions(
+      [{ name: "spec.md", hash: computeWorkflowRepoPlanHash(spec) }],
+      [{ entry: "src/", protected: false }],
+    );
+    const { output } = await fire({
+      questions,
+      answers: {
+        [APPROVAL_QUESTION_TEXT]: "spec.md",
+        [DELEGATION_QUESTION_TEXT]: "委任する",
+      },
+    });
+    assert.ok(output);
+    assert.match(output.systemMessage, /Scope に収まる plan-N\.md を委任/);
+    assert.match(logText(), /"delegate":"plans-in-scope"/);
   });
 
   it("reads tool_response only, never tool_input", async () => {

@@ -17,6 +17,7 @@ import { beforeEach, describe, it } from "node:test";
 import {
   APPROVALS_LOG,
   APPROVAL_QUESTION_TEXT,
+  DELEGATION_QUESTION_TEXT,
   buildApprovalQuestions,
   readLatestApprovals,
 } from "../../lib/workflow-approval.ts";
@@ -28,6 +29,7 @@ import {
 import {
   buildPlanContent,
   buildPlanNContent,
+  buildSpecWithScope,
   computeWorkflowRepoPlanHash,
   type WorkflowRepoOptions,
 } from "../support/test-helpers.ts";
@@ -488,5 +490,176 @@ describe("workflow-approval-record (spec K3/K5/K8)", () => {
         "spec.md は記録できなかった（何も書いていない）。`workflow-cli status` で確認する",
       );
     });
+  });
+});
+
+describe("workflow-approval-record: delegation question (spec K6)", () => {
+  let repo: string;
+  let wf: string;
+  let specHash: string;
+  const rows = [{ entry: "src/", protected: false }];
+
+  beforeEach(() => {
+    repo = realpathSync(mkdtempSync(join(tmpdir(), "approval-deleg-")));
+    wf = join(repo, ".tmp", "sessions", "abcd1234");
+    mkdirSync(wf, { recursive: true });
+    const spec = buildSpecWithScope(REVIEWED, ["src/"]);
+    specHash = computeWorkflowRepoPlanHash(spec);
+    writeFileSync(join(wf, "spec.md"), spec);
+  });
+
+  const response = (
+    docAnswer: unknown,
+    delegationAnswer?: unknown,
+    withSecondQuestion = true,
+  ): Record<string, unknown> => ({
+    questions: buildApprovalQuestions(
+      [{ name: "spec.md", hash: specHash }],
+      withSecondQuestion ? rows : undefined,
+    ),
+    answers: {
+      [APPROVAL_QUESTION_TEXT]: docAnswer,
+      ...(delegationAnswer === undefined
+        ? {}
+        : { [DELEGATION_QUESTION_TEXT]: delegationAnswer }),
+    },
+  });
+  const verify = (r: unknown) =>
+    verifyAndRecordApprovalAnswer(wf, r, "sess", new Date(), repo);
+  const lines = (): Record<string, unknown>[] => {
+    const path = join(wf, "approvals.log");
+    if (!existsSync(path)) return [];
+    return readFileSync(path, "utf-8")
+      .split("\n")
+      .filter((line) => line !== "")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+  };
+
+  it("records the delegation on the spec.md line", () => {
+    const r = verify(response("spec.md", "委任する"));
+    assert.equal(r.kind, "recorded");
+    assert.equal(r.kind === "recorded" && r.results[0]?.delegated, true);
+    assert.deepEqual(
+      lines().map((l) => [l.doc, l.hash, l.via, l.delegate]),
+      [["spec.md", specHash, "ask", "plans-in-scope"]],
+    );
+  });
+
+  it("records the approval without delegation when the user keeps per-plan approval", () => {
+    const r = verify(response("spec.md", "委任しない"));
+    assert.equal(r.kind, "recorded");
+    assert.equal(r.kind === "recorded" && r.results[0]?.delegated, undefined);
+    assert.deepEqual(
+      lines().map((l) => l.delegate),
+      [undefined],
+    );
+  });
+
+  it("records nothing when the user declines, whatever the second answer", () => {
+    assert.deepEqual(verify(response("承認しない", "委任する")), {
+      kind: "decline",
+    });
+    assert.deepEqual(verify(response("承認しない", "あとで決める")), {
+      kind: "decline",
+    });
+    assert.equal(lines().length, 0);
+  });
+
+  it("treats a typed second answer as a remark and records nothing", () => {
+    const r = verify(response("spec.md", "あとで決める"));
+    assert.deepEqual(r, { kind: "freeText", text: "あとで決める" });
+    assert.equal(lines().length, 0);
+  });
+
+  const malformed: [string, () => unknown][] = [
+    [
+      "the second question was dropped",
+      () => response("spec.md", undefined, false),
+    ],
+    ["the second answer is missing", () => response("spec.md")],
+    [
+      "the second answer is not a string",
+      () => response("spec.md", ["委任する"]),
+    ],
+    [
+      "the delegation description was edited",
+      () => {
+        const r = response("spec.md", "委任する");
+        const questions = structuredClone(r.questions) as {
+          options: { description: string }[];
+        }[];
+        const option = questions[1]?.options[1];
+        if (option) option.description = "Scope: src/";
+        return { ...r, questions };
+      },
+    ],
+    [
+      "the two delegation labels were swapped",
+      () => {
+        const r = response("spec.md", "委任しない");
+        const questions = structuredClone(r.questions) as {
+          options: unknown[];
+        }[];
+        questions[1]?.options.reverse();
+        return { ...r, questions };
+      },
+    ],
+    [
+      "a third question was added",
+      () => {
+        const r = response("spec.md", "委任する");
+        const questions = r.questions as unknown[];
+        return { ...r, questions: [...questions, questions[1]] };
+      },
+    ],
+  ];
+  for (const [name, build] of malformed) {
+    it(`malformed: ${name}`, () => {
+      assert.deepEqual(verify(build()), { kind: "malformed" });
+      assert.equal(lines().length, 0);
+    });
+  }
+
+  it("is malformed without a project root, because the offer cannot be rebuilt", () => {
+    assert.deepEqual(
+      verifyAndRecordApprovalAnswer(
+        wf,
+        response("spec.md", "委任する"),
+        "sess",
+      ),
+      { kind: "malformed" },
+    );
+    assert.equal(lines().length, 0);
+  });
+
+  it("reports a document that is not waiting before it looks at the answer keys", () => {
+    const r = {
+      questions: buildApprovalQuestions([
+        { name: "spec.md", hash: specHash },
+        { name: "plan-1.md", hash: specHash },
+      ]),
+      answers: { "some other text": "spec.md" },
+    };
+    assert.deepEqual(verify(r), { kind: "notCandidate", docs: ["plan-1.md"] });
+    assert.equal(lines().length, 0);
+  });
+
+  it("is malformed when the Scope changed after the question was built", () => {
+    const r = response("spec.md", "委任する");
+    writeFileSync(
+      join(wf, "spec.md"),
+      buildSpecWithScope(REVIEWED, ["src/", "lib/"]),
+    );
+    assert.deepEqual(verify(r), { kind: "malformed" });
+    assert.equal(lines().length, 0);
+  });
+
+  it("describes a delegated record", () => {
+    const r = verify(response("spec.md", "委任する"));
+    assert.ok(r.kind === "recorded" && r.results[0]);
+    assert.match(
+      describeRecordResult(r.results[0]),
+      /spec\.md を hash=[0-9a-f]{12} で承認として記録した（Scope に収まる plan-N\.md を委任）/,
+    );
   });
 });

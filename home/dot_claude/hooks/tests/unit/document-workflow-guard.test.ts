@@ -28,6 +28,7 @@ import {
   approvedWorkflowRepo,
   buildPlanContent,
   buildPlanNContent,
+  buildSpecWithScope,
   computeWorkflowRepoPlanHash as computePlanHash,
   ConsoleCapture,
   createPreToolUseContextFor,
@@ -1371,6 +1372,118 @@ describe("document-workflow-guard.ts two-layer mode (spec.md + plan-N.md)", () =
       envHelper.set("CLAUDE_TEST_CWD", repo);
       const context = createPreToolUseContextFor(hook, "Bash", {
         command: `python3 - <<'EOF'\nopen('src/a.ts', 'w').write('x')\nEOF`,
+      });
+      await invokeRun(hook, context);
+      context.assertDeny();
+    });
+
+    function delegatedGuardRepo(): string {
+      const repo = mkdtempSync(
+        join(tmpdir(), "document-workflow-guard-deleg-"),
+      );
+      const wf = join(repo, TEST_WORKFLOW_DIR);
+      mkdirSync(wf, { recursive: true });
+      writeFileSync(join(wf, "research.md"), "research");
+      const spec = buildSpecWithScope(approvedWorkflowRepo(), ["src/"]);
+      writeFileSync(join(wf, "spec.md"), spec);
+      writeFileSync(
+        join(wf, "plan-1.md"),
+        buildPlanNContent(
+          { ...approvedWorkflowRepo(), approvalStatus: "pending" },
+          ["src/a.ts"],
+          computePlanHash(spec),
+        ),
+      );
+      recordApprovalsForTest(wf, { delegateSpec: true });
+      envHelper.set("CLAUDE_TEST_CWD", repo);
+      return repo;
+    }
+
+    it("tells the user once when a Write first clears by delegation", async () => {
+      const repo = delegatedGuardRepo();
+      const first = createPreToolUseContextFor(hook, "Write", {
+        file_path: "src/a.ts",
+        content: "const a = 1;",
+      });
+      await invokeRun(hook, first);
+      const notice = first.jsonCalls[0].systemMessage;
+      ok(/plan-1\.md \(hash=[0-9a-f]{12}\)/.test(notice), notice);
+      ok(
+        /spec\.md の `- Approval Status:` の行を pending に戻す/.test(notice),
+        notice,
+      );
+      ok(/記録: .*delegation-uses\.log/.test(notice), notice);
+      strictEqual(first.jsonCalls[0].hookSpecificOutput, undefined);
+      ok(
+        /\tplan="plan-1\.md"\t/.test(
+          readFileSync(
+            join(repo, TEST_WORKFLOW_DIR, "delegation-uses.log"),
+            "utf-8",
+          ),
+        ),
+      );
+
+      const second = createPreToolUseContextFor(hook, "Write", {
+        file_path: "src/a.ts",
+        content: "const a = 2;",
+      });
+      await invokeRun(hook, second);
+      second.assertSuccess({});
+    });
+
+    it("tells the user when a Bash write first clears by delegation", async () => {
+      delegatedGuardRepo();
+      const context = createPreToolUseContextFor(hook, "Bash", {
+        command: "echo x > src/a.ts",
+      });
+      await invokeRun(hook, context);
+      const notice = context.jsonCalls[0].systemMessage;
+      ok(/plan-1\.md \(hash=[0-9a-f]{12}\)/.test(notice), notice);
+      strictEqual(context.jsonCalls[0].hookSpecificOutput, undefined);
+    });
+
+    it("tells the user about an off-plan write inside the Scope under delegation alone", async () => {
+      delegatedGuardRepo();
+      const context = createPreToolUseContextFor(hook, "Write", {
+        file_path: "src/b.ts",
+        content: "const b = 1;",
+      });
+      await invokeRun(hook, context);
+      const notice = context.jsonCalls[0].systemMessage;
+      ok(/src\/b\.ts/.test(notice), notice);
+      ok(/off-plan-writes\.log/.test(notice), notice);
+      strictEqual(context.jsonCalls[0].hookSpecificOutput, undefined);
+
+      const again = createPreToolUseContextFor(hook, "Write", {
+        file_path: "src/b.ts",
+        content: "const b = 2;",
+      });
+      await invokeRun(hook, again);
+      again.assertSuccess({});
+    });
+
+    it("keeps the Scope limit and the interpreter-write check while only delegated plans are in effect", async () => {
+      delegatedGuardRepo();
+      const offPlanOutside = createPreToolUseContextFor(hook, "Write", {
+        file_path: "other/c.ts",
+        content: "const c = 1;",
+      });
+      await invokeRun(hook, offPlanOutside);
+      offPlanOutside.assertDeny();
+
+      const interpreter = createPreToolUseContextFor(hook, "Bash", {
+        command: `python3 - <<'EOF'\nopen('src/a.ts', 'w').write('x')\nEOF`,
+      });
+      await invokeRun(hook, interpreter);
+      interpreter.assertDeny();
+    });
+
+    it("refuses a tool write to delegation-uses.log", async () => {
+      const repo = createWorkflowRepo(approvedWorkflowRepo());
+      envHelper.set("CLAUDE_TEST_CWD", repo);
+      const context = createPreToolUseContextFor(hook, "Write", {
+        file_path: join(repo, TEST_WORKFLOW_DIR, "delegation-uses.log"),
+        content: "x",
       });
       await invokeRun(hook, context);
       context.assertDeny();

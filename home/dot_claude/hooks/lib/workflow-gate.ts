@@ -21,7 +21,14 @@ import { basename, dirname, resolve } from "node:path";
 import { computeDocumentHash, SPEC_NORMALIZERS } from "./document-hash.ts";
 import { sanitizeForDisplay } from "./sanitize-display.ts";
 import { readLatestApprovals } from "./workflow-approval.ts";
-import { listsTarget } from "./workflow-files.ts";
+import {
+  listsTarget,
+  parseScope,
+  planFilesWithinScope,
+  scopeRowsForOffer,
+  targetWithinScope,
+  type ScopeRow,
+} from "./workflow-files.ts";
 import { resolveWorkflowPaths } from "./workflow-paths.ts";
 import {
   LENIENT_STATUS_LINE,
@@ -172,7 +179,11 @@ function researchExists(
  * document that must clear (plan.md single-layer, spec.md two-layer) and, in
  * two-layer mode once the spec passes, the owning plan-N.md requirement.
  */
-export function diagnoseGate(wfDir: string, targetPath: string): GateDiagnosis {
+export function diagnoseGate(
+  wfDir: string,
+  targetPath: string,
+  projectRoot?: string,
+): GateDiagnosis {
   const wfPaths = resolveWorkflowPaths(wfDir);
   const hasResearch = researchExists(wfPaths);
   const active = hasResearch || existsSync(wfPaths.plan);
@@ -186,10 +197,14 @@ export function diagnoseGate(wfDir: string, targetPath: string): GateDiagnosis {
 
   const firstFailure = Object.values(primary.conditions).find((c) => !c.ok);
   const specOk = twoLayer && !firstFailure;
+  const delegating =
+    specOk && resolveSpecContext(wfDir, projectRoot).delegation !== null;
 
   let note: string | undefined;
   if (specOk && hasResearch) {
-    note = `spec.md is approved. The plan-N.md whose ## Files section lists \`${sanitizeForDisplay(targetPath)}\` must also be complete + Review Status: pass + approved by the user, either by choosing it in the question from \`workflow-cli ask-approval\` or by saying \`approve plan-N.md\` in the conversation (approvals.log then records its current hash), with an auto-review marker whose parent-spec-hash equals the current spec.md hash.`;
+    note = delegating
+      ? `spec.md is approved and delegates its plan-N.md. The plan-N.md whose ## Files section lists \`${sanitizeForDisplay(targetPath)}\` clears without its own approval once it is complete + Review Status: pass, its marker's parent-spec-hash equals the current spec.md hash, and every ## Files entry lies within spec.md's ## Scope and touches no protected path. A plan-N.md that does not meet this needs the user's approval.`
+      : `spec.md is approved. The plan-N.md whose ## Files section lists \`${sanitizeForDisplay(targetPath)}\` must also be complete + Review Status: pass + approved by the user, either by choosing it in the question from \`workflow-cli ask-approval\` or by saying \`approve plan-N.md\` in the conversation (approvals.log then records its current hash), with an auto-review marker whose parent-spec-hash equals the current spec.md hash.`;
   }
 
   let nextAction: string;
@@ -213,8 +228,9 @@ export function diagnoseGate(wfDir: string, targetPath: string): GateDiagnosis {
         "Set the missing status line to its exact strict form (see `expected`), or run `workflow-cli status` for the checklist.";
     }
   } else if (specOk) {
-    nextAction =
-      "`workflow-cli ask-approval` で承認の質問を出すか、会話で `approve plan-N.md`（対象を列挙している plan）と打つ。`workflow-cli status <path>` で、どの plan が対象を列挙しているかと、足りない条件を確かめる。";
+    nextAction = delegating
+      ? "`workflow-cli status` で各 plan-N.md の状態を見る。`✓ (delegated)` は委任で通っている。`✗` はその行が示す条件を満たす。委任の条件から外れる plan-N.md は、`workflow-cli ask-approval` で利用者の承認を得る。"
+      : "`workflow-cli ask-approval` で承認の質問を出すか、会話で `approve plan-N.md`（対象を列挙している plan）と打つ。`workflow-cli status <path>` で、どの plan が対象を列挙しているかと、足りない条件を確かめる。";
   } else {
     nextAction = "The gate conditions are satisfied.";
   }
@@ -254,6 +270,116 @@ function parentSpecMatches(planContent: string, specHash: string): boolean {
   return parent !== null && parent === specHash;
 }
 
+export interface SpecContext {
+  /** null when spec.md cannot be read. */
+  specHash: string | null;
+  specContent: string;
+  /** Present when the user's approval of the current spec.md delegates its plan-N.md. */
+  delegation: { projectRoot: string } | null;
+}
+
+/**
+ * Read spec.md once for every plan-N.md decision. Delegation holds only while
+ * spec.md itself clears the gate, so reverting its Approval line turns it off
+ * even though the ledger line stays.
+ */
+export function resolveSpecContext(
+  wfDir: string,
+  projectRoot: string | undefined,
+): SpecContext {
+  const specPath = resolveWorkflowPaths(wfDir).spec;
+  let specContent: string;
+  try {
+    specContent = readFileSync(specPath, "utf-8");
+  } catch {
+    return { specHash: null, specContent: "", delegation: null };
+  }
+  const specHash = computeDocumentHash(specContent, SPEC_NORMALIZERS);
+  const ledger = readLatestApprovals(wfDir);
+  const delegated =
+    !ledger.readError &&
+    ledger.latest.get(basename(specPath))?.delegate === "plans-in-scope" &&
+    isDocumentApproved(evaluateDocument(specPath)) &&
+    parseScope(specContent).valid;
+  return {
+    specHash,
+    specContent,
+    delegation: delegated && projectRoot !== undefined ? { projectRoot } : null,
+  };
+}
+
+/**
+ * What `workflow-cli ask-approval` offers and the recorder verifies against:
+ * both call this, so the question shown and the question expected cannot
+ * differ.
+ */
+export function resolveDelegationOffer(
+  wfDir: string,
+  projectRoot: string,
+): ScopeRow[] | null {
+  let specContent: string;
+  try {
+    specContent = readFileSync(resolveWorkflowPaths(wfDir).spec, "utf-8");
+  } catch {
+    return null;
+  }
+  return scopeRowsForOffer(specContent, projectRoot);
+}
+
+export type PlanClass =
+  | { kind: "approved" }
+  | { kind: "delegated"; planHash: string }
+  | { kind: "blocked"; blockedBy: string };
+
+const APPROVAL_ROWS = new Set(["Approval Status", "approval"]);
+
+/**
+ * The one place that decides whether a plan-N.md clears: approved by the
+ * user, cleared by the spec's delegation, or blocked by its first unmet
+ * condition. Callers check spec.md's own approval separately.
+ */
+export function classifyPlan(planPath: string, ctx: SpecContext): PlanClass {
+  const diagnosis = evaluateDocument(planPath);
+  let content = "";
+  try {
+    content = readFileSync(planPath, "utf-8");
+  } catch {
+    content = "";
+  }
+  const parentOk =
+    ctx.specHash !== null && parentSpecMatches(content, ctx.specHash);
+  const rows = documentConditionRows(diagnosis);
+  const unmet = rows.find(([, condition]) => !condition.ok);
+  if (!unmet) {
+    return parentOk
+      ? { kind: "approved" }
+      : { kind: "blocked", blockedBy: "parent-spec-hash" };
+  }
+  if (ctx.delegation === null || !diagnosis.exists) {
+    return { kind: "blocked", blockedBy: unmet[0] };
+  }
+  const unmetReview = rows.find(
+    ([name, condition]) => !APPROVAL_ROWS.has(name) && !condition.ok,
+  );
+  if (unmetReview) return { kind: "blocked", blockedBy: unmetReview[0] };
+  if (!parentOk) return { kind: "blocked", blockedBy: "parent-spec-hash" };
+  const verdict = planFilesWithinScope(
+    content,
+    ctx.specContent,
+    ctx.delegation.projectRoot,
+  );
+  if (!verdict.ok) {
+    return {
+      kind: "blocked",
+      blockedBy: `${unmet[0]} (delegation: ${verdict.reason})`,
+    };
+  }
+  return {
+    kind: "delegated",
+    planHash: computeDocumentHash(content, SPEC_NORMALIZERS),
+  };
+}
+
 /**
  * A document is "approved" when all six gate conditions `evaluateDocument`
  * computes are satisfied. Reusing it (rather than re-deriving the same five
@@ -290,41 +416,38 @@ export function isImplementationPhase(
   wfDir: string,
   wfPaths: ReturnType<typeof resolveWorkflowPaths>,
   twoLayer: boolean,
+  projectRoot: string,
 ): boolean {
-  if (!researchExists(wfPaths)) {
-    return false;
-  }
+  return (
+    implementationPhaseBasis(wfDir, wfPaths, twoLayer, projectRoot) !== "none"
+  );
+}
+
+export type PhaseBasis = "none" | "approved" | "delegated-only";
+
+/** What the implementation phase rests on: a plan the user approved, or only delegated ones. */
+export function implementationPhaseBasis(
+  wfDir: string,
+  wfPaths: ReturnType<typeof resolveWorkflowPaths>,
+  twoLayer: boolean,
+  projectRoot: string,
+  /** Pass the context already resolved for this decision so spec.md is read once. */
+  ctx: SpecContext = resolveSpecContext(wfDir, projectRoot),
+): PhaseBasis {
+  if (!researchExists(wfPaths)) return "none";
   if (!twoLayer) {
-    return isDocumentApproved(evaluateDocument(wfPaths.plan));
+    return isDocumentApproved(evaluateDocument(wfPaths.plan))
+      ? "approved"
+      : "none";
   }
-
-  if (!isDocumentApproved(evaluateDocument(wfPaths.spec))) {
-    return false;
-  }
-  let specContent: string;
-  try {
-    specContent = readFileSync(wfPaths.spec, "utf-8");
-  } catch {
-    return false;
-  }
-  const specHash = computeDocumentHash(specContent, SPEC_NORMALIZERS);
-
+  if (!isDocumentApproved(evaluateDocument(wfPaths.spec))) return "none";
+  let delegated = false;
   for (const planPath of findPlanNumberedFiles(wfDir)) {
-    if (!isDocumentApproved(evaluateDocument(planPath))) {
-      continue;
-    }
-    let planContent: string;
-    try {
-      planContent = readFileSync(planPath, "utf-8");
-    } catch {
-      continue;
-    }
-    if (!parentSpecMatches(planContent, specHash)) {
-      continue;
-    }
-    return true;
+    const { kind } = classifyPlan(planPath, ctx);
+    if (kind === "approved") return "approved";
+    if (kind === "delegated") delegated = true;
   }
-  return false;
+  return delegated ? "delegated-only" : "none";
 }
 
 export interface WorkflowState {
@@ -360,10 +483,25 @@ export function isWorkflowActive(
 
 export type TargetEvaluation =
   | { kind: "inactive" }
-  | { kind: "allow"; owner: string }
+  | { kind: "allow"; owner: string; basis: "approved" }
+  | {
+      kind: "allow";
+      owner: string;
+      /** Cleared by the spec's delegation, not by the user's approval of this plan. */
+      basis: "delegated";
+      planName: string;
+      planHash: string;
+      specHash: string;
+    }
   | {
       kind: "no-plan-owner";
       implementationPhase: boolean;
+      /** What the implementation phase rests on, so the caller can tell a delegated-only relaxation apart. */
+      phaseBasis: PhaseBasis;
+      /** The spec.md version this was decided against. */
+      specHash: string;
+      /** Whether the guard may let the write through with a warning. */
+      relaxable: boolean;
       diagnosis: GateDiagnosis;
     }
   | { kind: "deny"; diagnosis: GateDiagnosis };
@@ -398,30 +536,30 @@ export function evaluateTarget(query: TargetQuery): TargetEvaluation {
   }
   const deny = (): TargetEvaluation => ({
     kind: "deny",
-    diagnosis: diagnoseGate(query.wfDir, query.label ?? query.target),
+    diagnosis: diagnoseGate(
+      query.wfDir,
+      query.label ?? query.target,
+      query.projectRoot,
+    ),
   });
   if (!researchExists(wfPaths)) {
     return deny();
   }
   if (!existsSync(wfPaths.spec)) {
     return isDocumentApproved(evaluateDocument(wfPaths.plan))
-      ? { kind: "allow", owner: wfPaths.plan }
+      ? { kind: "allow", owner: wfPaths.plan, basis: "approved" }
       : deny();
   }
 
   if (!isDocumentApproved(evaluateDocument(wfPaths.spec))) {
     return deny();
   }
-  let specHash: string;
-  try {
-    specHash = computeDocumentHash(
-      readFileSync(wfPaths.spec, "utf-8"),
-      SPEC_NORMALIZERS,
-    );
-  } catch {
+  const ctx = resolveSpecContext(query.wfDir, query.projectRoot);
+  if (ctx.specHash === null) {
     return deny();
   }
 
+  let delegatedOwner: { path: string; planHash: string } | undefined;
   for (const planPath of findPlanNumberedFiles(query.wfDir)) {
     let planContent: string;
     try {
@@ -432,21 +570,56 @@ export function evaluateTarget(query: TargetQuery): TargetEvaluation {
     if (!listsTarget(planContent, query.target, query.projectRoot)) {
       continue;
     }
-    if (!isDocumentApproved(evaluateDocument(planPath))) {
-      return deny();
+    const planClass = classifyPlan(planPath, ctx);
+    if (planClass.kind === "approved") {
+      return { kind: "allow", owner: planPath, basis: "approved" };
     }
-    // A missing parent-spec-hash is a conservative deny: the plan cannot
-    // prove which spec it was approved against.
-    if (!parentSpecMatches(planContent, specHash)) {
-      return deny();
+    if (planClass.kind === "blocked") {
+      // The first plan listing the target decides, as before. A blocked
+      // plan after a delegated one is passed over while looking for a plan
+      // the user approved.
+      if (delegatedOwner === undefined) return deny();
+      continue;
     }
-    return { kind: "allow", owner: planPath };
+    delegatedOwner ??= { path: planPath, planHash: planClass.planHash };
+  }
+  if (delegatedOwner !== undefined) {
+    return {
+      kind: "allow",
+      owner: delegatedOwner.path,
+      basis: "delegated",
+      planName: basename(delegatedOwner.path),
+      planHash: delegatedOwner.planHash,
+      specHash: ctx.specHash,
+    };
   }
 
+  const basis = implementationPhaseBasis(
+    query.wfDir,
+    wfPaths,
+    true,
+    query.projectRoot,
+    ctx,
+  );
+  const relaxable =
+    basis === "approved" ||
+    (basis === "delegated-only" &&
+      targetWithinScope(ctx.specContent, query.target, query.projectRoot));
+  const diagnosis = diagnoseGate(
+    query.wfDir,
+    query.label ?? query.target,
+    query.projectRoot,
+  );
+  if (basis === "delegated-only" && !relaxable) {
+    diagnosis.note = `Only delegated plan-N.md files are in effect, and \`${sanitizeForDisplay(query.label ?? query.target)}\` is outside spec.md's ## Scope or under a protected path. List it in a plan-N.md and have the user approve that plan.`;
+  }
   return {
     kind: "no-plan-owner",
-    implementationPhase: isImplementationPhase(query.wfDir, wfPaths, true),
-    diagnosis: diagnoseGate(query.wfDir, query.label ?? query.target),
+    implementationPhase: basis !== "none",
+    phaseBasis: basis,
+    specHash: ctx.specHash,
+    relaxable,
+    diagnosis,
   };
 }
 
@@ -496,9 +669,11 @@ export function formatTargetEvaluation(
     case "inactive":
       return `Document workflow: inactive (no research.md or plan.md in the workflow dir); \`${targetLabel}\` is not gated.`;
     case "allow":
-      return `Document workflow gate: \`${targetLabel}\` is allowed by \`${basename(evaluation.owner)}\`.`;
+      return evaluation.basis === "delegated"
+        ? `Document workflow gate: \`${targetLabel}\` is allowed by \`${basename(evaluation.owner)}\` through the spec's delegation (the user has not approved this plan itself).`
+        : `Document workflow gate: \`${targetLabel}\` is allowed by \`${basename(evaluation.owner)}\`.`;
     case "no-plan-owner":
-      if (evaluation.implementationPhase) {
+      if (evaluation.relaxable) {
         return `Document workflow gate: no plan-N.md lists \`${targetLabel}\`; a write is allowed with a warning and recorded in off-plan-writes.log (implementation phase).`;
       }
       return formatGateDiagnosis(evaluation.diagnosis, targetLabel, docLabel);
@@ -526,6 +701,8 @@ export interface PlanSummary {
   name: string;
   /** The first condition the plan does not meet; absent when it clears. */
   blockedBy?: string;
+  /** Present when the plan clears by the spec's delegation rather than its own approval. */
+  via?: "delegation";
 }
 
 /**
@@ -534,36 +711,24 @@ export interface PlanSummary {
  * missing or not the current spec.md hash. spec.md's own conditions are not
  * part of this; `diagnoseGate` reports those.
  */
-export function summarizePlans(wfDir: string): PlanSummary[] {
-  let specHash: string | undefined;
-  try {
-    specHash = computeDocumentHash(
-      readFileSync(resolveWorkflowPaths(wfDir).spec, "utf-8"),
-      SPEC_NORMALIZERS,
-    );
-  } catch {
-    specHash = undefined;
-  }
+export function summarizePlans(
+  wfDir: string,
+  projectRoot?: string,
+): PlanSummary[] {
+  const ctx = resolveSpecContext(wfDir, projectRoot);
   const planNumber = (path: string) =>
     Number(/([0-9]+)\.md$/.exec(path)?.[1] ?? 0);
-
   return findPlanNumberedFiles(wfDir)
     .sort((a, b) => planNumber(a) - planNumber(b))
-    .map((planPath) => {
+    .map((planPath): PlanSummary => {
       const name = basename(planPath);
-      const unmet = documentConditionRows(evaluateDocument(planPath)).find(
-        ([, condition]) => !condition.ok,
-      );
-      if (unmet) return { name, blockedBy: unmet[0] };
-      let content = "";
-      try {
-        content = readFileSync(planPath, "utf-8");
-      } catch {
-        content = "";
+      const planClass = classifyPlan(planPath, ctx);
+      if (planClass.kind === "blocked") {
+        return { name, blockedBy: planClass.blockedBy };
       }
-      return specHash !== undefined && parentSpecMatches(content, specHash)
-        ? { name }
-        : { name, blockedBy: "parent-spec-hash" };
+      return planClass.kind === "delegated"
+        ? { name, via: "delegation" }
+        : { name };
     });
 }
 
@@ -663,15 +828,23 @@ export function evaluateApprovalReadiness(
  * written but whose Approval line was not rewritten is still listed, so
  * saying 承認 again completes it (spec K7).
  */
-export function listApprovalCandidates(wfDir: string): string[] {
+export function listApprovalCandidates(
+  wfDir: string,
+  projectRoot?: string,
+): string[] {
   const names = ["spec.md", "plan.md"].filter((name) =>
     existsSync(resolve(wfDir, name)),
   );
   const planNumbered = findPlanNumberedFiles(wfDir).map((path) =>
     basename(path),
   );
+  const ctx = resolveSpecContext(wfDir, projectRoot);
   return [...names, ...planNumbered].filter((name) => {
     const r = evaluateApprovalReadiness(wfDir, name);
-    return r.ready && !r.alreadyApproved;
+    if (!r.ready || r.alreadyApproved) return false;
+    return !(
+      PLAN_NUMBERED_FILENAME_REGEX.test(name) &&
+      classifyPlan(resolve(wfDir, name), ctx).kind === "delegated"
+    );
   });
 }

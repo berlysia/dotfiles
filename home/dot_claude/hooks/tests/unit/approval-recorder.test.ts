@@ -24,6 +24,7 @@ import { deriveDefaultWorkflowDir } from "../../lib/workflow-paths.ts";
 import {
   buildPlanContent,
   buildPlanNContent,
+  buildSpecWithScope,
   computeWorkflowRepoPlanHash,
   createUserPromptSubmitContext,
   EnvironmentHelper,
@@ -121,6 +122,26 @@ describe("approval-recorder (spec K7)", () => {
       /workflow-cli ask-approval/,
     );
     assert.match(output.systemMessage, /approve plan-1\.md plan-2\.md/);
+  });
+
+  it("a bare approval skips a plan that already clears by delegation", async () => {
+    const spec = buildSpecWithScope(APPROVED, ["src/"]);
+    writeFileSync(join(wf, "spec.md"), spec);
+    const specHash = computeWorkflowRepoPlanHash(spec);
+    writeFileSync(
+      join(wf, "plan-1.md"),
+      buildPlanNContent(REVIEWED, ["src/a.ts"], specHash),
+    );
+    writeFileSync(
+      join(wf, "plan-2.md"),
+      buildPlanNContent(REVIEWED, ["other/b.ts"], specHash),
+    );
+    recordApprovalsForTest(wf, { delegateSpec: true });
+    const { text } = await say("承認");
+    assert.match(text, /plan-2\.md を hash=[0-9a-f]{12} で承認として記録/);
+    const { latest } = readLatestApprovals(wf);
+    assert.equal(latest.has("plan-1.md"), false);
+    assert.equal(latest.get("spec.md")?.delegate, "plans-in-scope");
   });
 
   it("records every named document, or none when one of them is not ready", async () => {

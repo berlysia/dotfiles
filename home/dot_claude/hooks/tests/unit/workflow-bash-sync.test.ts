@@ -4,6 +4,7 @@ import { match, ok, strictEqual } from "node:assert";
 import {
   existsSync,
   lstatSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   symlinkSync,
@@ -19,6 +20,9 @@ import defaultHook, {
 import { deriveDefaultWorkflowDir } from "../../lib/workflow-paths.ts";
 import {
   approvedWorkflowRepo,
+  buildPlanNContent,
+  buildSpecWithScope,
+  computeWorkflowRepoPlanHash,
   createGitWorkflowRepo,
   createPostToolUseContextFor,
   draftPlanRepo,
@@ -232,6 +236,47 @@ describe("workflow-bash-sync.ts: tripwire (K2)", () => {
       !existsSync(logPath) ||
         !/Bash-tripwire/.test(readFileSync(logPath, "utf-8")),
     );
+  });
+
+  it("reports changes outside the Scope, and protected ones inside it, while only delegated plans are in effect", async () => {
+    const repo = createGitWorkflowRepo(approvedWorkflowRepo());
+    const wf = join(repo, deriveDefaultWorkflowDir(TEST_SESSION_ID));
+    unlinkSync(join(wf, "plan.md"));
+    const spec = buildSpecWithScope(approvedWorkflowRepo(), ["src/", "home/"]);
+    writeFileSync(join(wf, "spec.md"), spec);
+    writeFileSync(
+      join(wf, "plan-1.md"),
+      buildPlanNContent(
+        { ...approvedWorkflowRepo(), approvalStatus: "pending" },
+        ["src/a.ts"],
+        computeWorkflowRepoPlanHash(spec),
+      ),
+    );
+    recordApprovalsForTest(wf, { delegateSpec: true });
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+
+    const arm = createPostToolUseContextFor(hook, "Bash", { command: "true" });
+    await invokeRun(hook, arm);
+
+    writeFileSync(join(repo, "src", "a.ts"), "export const a = 1;\n");
+    mkdirSync(join(repo, "other"));
+    writeFileSync(join(repo, "other", "leaked.ts"), "export const x = 1;\n");
+    mkdirSync(join(repo, "home", "dot_claude"), { recursive: true });
+    writeFileSync(
+      join(repo, "home", "dot_claude", "x.ts"),
+      "export const y = 1;\n",
+    );
+    const ctx = createPostToolUseContextFor(hook, "Bash", { command: "true" });
+    await invokeRun(hook, ctx);
+
+    const tripwire =
+      additionalContextOf(ctx)
+        .split("\n\n---\n\n")
+        .find((section) => section.includes("tripwire")) ?? "";
+    match(tripwire, /outside spec\.md's ## Scope/);
+    match(tripwire, /other\/leaked\.ts/);
+    match(tripwire, /home\/dot_claude\/x\.ts/);
+    ok(!/src\/a\.ts/.test(tripwire), tripwire);
   });
 
   it("disables itself when git is unavailable and does not repeat the notice", async () => {

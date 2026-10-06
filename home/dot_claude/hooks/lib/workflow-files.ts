@@ -17,15 +17,15 @@ const PROSE_EXTENSIONS = [".md", ".mdx", ".markdown", ".txt", ".rst", ".adoc"];
  * internal whitespace is dropped whole (conservative: a malformed block must
  * not partially authorize writes in the guard).
  */
-export function parseFilesPaths(planContent: string): string[] {
-  const sections = planContent.split(/^##\s+/m);
-  const filesSection = sections.find((s) =>
-    /^Files\s*$/m.test(s.split("\n")[0] ?? ""),
+function parseSectionPaths(content: string, heading: string): string[] {
+  const sections = content.split(/^##\s+/m);
+  const section = sections.find(
+    (s) => (s.split("\n")[0] ?? "").trim() === heading,
   );
-  if (!filesSection) return [];
-  const sectionBody = filesSection.replace(/^Files\s*\n/, "");
+  if (!section) return [];
+  const body = section.slice(section.indexOf("\n") + 1);
   const collected: string[] = [];
-  for (const match of sectionBody.matchAll(/^```[^\n]*\n([\s\S]*?)\n```/gm)) {
+  for (const match of body.matchAll(/^```[^\n]*\n([\s\S]*?)\n```/gm)) {
     const block = match[1];
     if (block === undefined) continue;
     const blockPaths: string[] = [];
@@ -42,6 +42,50 @@ export function parseFilesPaths(planContent: string): string[] {
     if (blockValid) collected.push(...blockPaths);
   }
   return collected;
+}
+
+export function parseFilesPaths(planContent: string): string[] {
+  return parseSectionPaths(planContent, "Files");
+}
+
+/** The question from `workflow-cli ask-approval` shows every entry, so the count is capped. */
+export const MAX_SCOPE_ENTRIES = 16;
+
+// The question from `workflow-cli ask-approval` shows each entry as written,
+// so an entry may only use characters and a length that read unambiguously.
+const SCOPE_ENTRY_PATTERN = /^[A-Za-z0-9._/@+-]+$/;
+const MAX_SCOPE_ENTRY_LENGTH = 120;
+
+export type ScopeParse =
+  | { valid: true; entries: string[] }
+  | { valid: false; reason: "empty" | "too-many" | "invalid-entry" };
+
+/**
+ * spec.md's `## Scope`: the paths a delegated plan-N.md may write. An entry
+ * ending in `/` is a directory, any other entry a file. One entry that could
+ * reach outside the checkout invalidates the whole section.
+ */
+export function parseScope(specContent: string): ScopeParse {
+  const entries = parseSectionPaths(specContent, "Scope");
+  if (entries.length === 0) return { valid: false, reason: "empty" };
+  if (entries.length > MAX_SCOPE_ENTRIES) {
+    return { valid: false, reason: "too-many" };
+  }
+  const unsafe = (entry: string) => {
+    if (entry.length > MAX_SCOPE_ENTRY_LENGTH) return true;
+    if (!SCOPE_ENTRY_PATTERN.test(entry)) return true;
+    // A directory entry ends in "/", which leaves one trailing empty
+    // segment; every other segment must name something.
+    const segments = entry.split("/");
+    const named = entry.endsWith("/") ? segments.slice(0, -1) : segments;
+    return (
+      named.length === 0 ||
+      named.some((s) => s === "" || s === "." || s === "..")
+    );
+  };
+  return entries.some(unsafe)
+    ? { valid: false, reason: "invalid-entry" }
+    : { valid: true, entries };
 }
 
 /**
@@ -121,4 +165,175 @@ export function listsTarget(
       : resolve(toplevel, expanded);
     return resolveWithMissingTail(absolute) === realTarget;
   });
+}
+
+const PROTECTED_LEADING: readonly (readonly string[])[] = [
+  ["docs", "decisions"],
+  [".skills"],
+  [".github", "workflows"],
+  [".git"],
+  [".tmp", "sessions"],
+];
+const PROTECTED_DIR_NAMES = new Set([".claude", "dot_claude"]);
+const PROTECTED_FILE_NAMES = new Set(["claude.md", "agents.md", "context.md"]);
+
+/**
+ * Whether a path is one a delegated plan-N.md may never write: the approval
+ * mechanism, the decision records and the instructions the model follows.
+ * Judged on the resolved path relative to its checkout, without case, so a
+ * symlink or a differently-cased spelling does not get around it. null when
+ * the path cannot be resolved; the caller must not treat that as "not
+ * protected".
+ */
+export function isProtectedPath(
+  absolute: string,
+  projectRoot: string,
+  kind: "file" | "dir",
+): boolean | null {
+  const real = resolveWithMissingTail(resolve(absolute));
+  const realRoot = resolveWithMissingTail(resolve(projectRoot));
+  if (real === null || realRoot === null) return null;
+  const toplevel = findRepoToplevel(real, realRoot);
+  if (real === toplevel) return false;
+  // Resolved out of the checkout (a symlink to somewhere else): the rules
+  // below are about paths inside it, so this is "cannot tell", not "no".
+  if (!real.startsWith(`${toplevel}/`)) return null;
+  const segments = real
+    .slice(toplevel.length + 1)
+    .toLowerCase()
+    .split("/");
+  if (
+    PROTECTED_LEADING.some((prefix) =>
+      prefix.every((s, i) => segments[i] === s),
+    )
+  ) {
+    return true;
+  }
+  const dirSegments = kind === "dir" ? segments : segments.slice(0, -1);
+  if (dirSegments.some((s) => PROTECTED_DIR_NAMES.has(s))) return true;
+  if (kind === "dir") return false;
+  return PROTECTED_FILE_NAMES.has(
+    (segments.at(-1) ?? "").replace(/\.tmpl$/, ""),
+  );
+}
+
+/**
+ * A Scope entry's path, when no component of it is a symlink. A link could
+ * point the entry at the checkout root or another directory, and a directory
+ * inside the Scope could be swapped for one after the approval; either way
+ * the entry would cover more than the user was shown. `base` is a realpath.
+ */
+function resolveScopeEntry(base: string, entry: string): string | null {
+  const lexical = resolve(base, entry);
+  return resolveWithMissingTail(lexical) === lexical ? lexical : null;
+}
+
+function scopeContains(
+  entries: readonly string[],
+  realTarget: string,
+  base: string,
+): boolean {
+  return entries.some((entry) => {
+    const real = resolveScopeEntry(base, entry);
+    if (real === null) return false;
+    return entry.endsWith("/")
+      ? realTarget.startsWith(`${real}/`)
+      : realTarget === real;
+  });
+}
+
+export type ScopeVerdict =
+  | { ok: true }
+  | {
+      ok: false;
+      reason:
+        | "scope-invalid"
+        | "no-files"
+        | "outside-scope"
+        | "protected"
+        | "unresolvable";
+    };
+
+/** Whether every `## Files` entry of a plan-N.md lies within spec.md's `## Scope` and none is protected. */
+export function planFilesWithinScope(
+  planContent: string,
+  specContent: string,
+  projectRoot: string,
+): ScopeVerdict {
+  const scope = parseScope(specContent);
+  if (!scope.valid) return { ok: false, reason: "scope-invalid" };
+  const realRoot = resolveWithMissingTail(resolve(projectRoot));
+  if (realRoot === null) return { ok: false, reason: "unresolvable" };
+  const files = parseFilesPaths(planContent);
+  if (files.length === 0) return { ok: false, reason: "no-files" };
+  for (const entry of files) {
+    // `resolve` would fold `..` lexically, which is not the path the kernel
+    // opens when a component before it is a symlink.
+    if (
+      entry.startsWith("/") ||
+      entry.startsWith("~") ||
+      entry.split("/").includes("..")
+    ) {
+      return { ok: false, reason: "outside-scope" };
+    }
+    const real = resolveWithMissingTail(resolve(realRoot, entry));
+    if (real === null) return { ok: false, reason: "unresolvable" };
+    const isProtected = isProtectedPath(real, realRoot, "file");
+    if (isProtected === null) return { ok: false, reason: "unresolvable" };
+    if (isProtected) return { ok: false, reason: "protected" };
+    if (!scopeContains(scope.entries, real, realRoot)) {
+      return { ok: false, reason: "outside-scope" };
+    }
+  }
+  return { ok: true };
+}
+
+/** Whether one write target lies within spec.md's `## Scope` and is not protected. */
+export function targetWithinScope(
+  specContent: string,
+  target: string,
+  projectRoot: string,
+): boolean {
+  const scope = parseScope(specContent);
+  if (!scope.valid) return false;
+  const realTarget = resolveWithMissingTail(resolve(target));
+  const realRoot = resolveWithMissingTail(resolve(projectRoot));
+  if (realTarget === null || realRoot === null) return false;
+  if (isProtectedPath(realTarget, realRoot, "file") !== false) return false;
+  return scopeContains(
+    scope.entries,
+    realTarget,
+    findRepoToplevel(realTarget, realRoot),
+  );
+}
+
+export interface ScopeRow {
+  entry: string;
+  /** Delegation never covers this row (or it could not be resolved). */
+  protected: boolean;
+}
+
+/**
+ * The `## Scope` rows as the delegation question shows them. null when the
+ * Scope is invalid or no row can be delegated: there is nothing to offer.
+ */
+export function scopeRowsForOffer(
+  specContent: string,
+  projectRoot: string,
+): ScopeRow[] | null {
+  const scope = parseScope(specContent);
+  if (!scope.valid) return null;
+  const realRoot = resolveWithMissingTail(resolve(projectRoot));
+  if (realRoot === null) return null;
+  const rows = scope.entries.map((entry) => ({
+    entry,
+    protected:
+      resolveScopeEntry(realRoot, entry) === null ||
+      isProtectedPath(
+        resolve(realRoot, entry),
+        realRoot,
+        entry.endsWith("/") ? "dir" : "file",
+      ) !== false,
+  }));
+  return rows.every((row) => row.protected) ? null : rows;
 }

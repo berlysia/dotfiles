@@ -47,6 +47,7 @@
 
 - `spec.md` = 設計承認単位。`plan-N.md` = 実行承認単位（`parent-spec-hash` で spec.md に連鎖）。
 - 承認順: spec.md を complete → pass → 承認してから、各 plan-N.md を同じ手順で独立に承認する。
+- 委任: spec.md の承認の質問に 2 問目が出たら、利用者が委任を選べる。選ぶと、spec の `## Scope` に収まる plan-N.md は承認を待たずに通る（`workflow-cli status` の `✓ (delegated)`）。条件は reference skill「委任」。
 - spec.md の hash が動くと全 plan-N.md の `parent-spec-hash` が不一致になり、実装がブロックされる。plan-N.md を再レビュー・再承認する。
 - **ワークフロー成果物は Edit / Write で書く**。インタプリタの heredoc（`python3 - <<…` など）は guard が書き込みと判定しうる。Edit / Write なら `plan-review-automation` も発火する。
 
@@ -92,6 +93,7 @@ plan に `## テスト計画 (ISO 25010)` を設け、関連する品質特性�
 - research/spec/plan/plan-N への編集は承認前でも許可される。
 - 承認前の使い捨て作業は session の scratchpad か `mktemp -d` の出力先に、リテラルの絶対パスで書く（`.tmp/` も guard の対象。他 repo・`$HOME`・dotfiles には書かない）。
 - 実装フェーズでは、承認済みの三状態 + hash 一致がそろっていれば、どの plan の Files にも無いファイルへの書き込みは deny でなく warn + `off-plan-writes.log` になる。hash drift / parent-spec-hash 不一致 / 未承認は依然 deny。
+- 委任を記録するのは利用者の回答だけ。Claude は 2 問目の `answers` も入れない。
 
 ## Executive Summary（レビュー依頼時 MANDATORY）
 

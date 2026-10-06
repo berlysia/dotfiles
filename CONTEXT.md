@@ -36,7 +36,7 @@ ADR: `docs/decisions/0010-context-md-mechanism.md`
 - **三状態承認**: 各成果物は `Plan Status` (draft/complete) + `Review Status` (pending/pass/needs-work/blocker) + `Approval Status` (pending/approved、人間のみ) の三状態を満たすと実装可能
 - **hash 機構**:
   - `auto-review hash`: 成果物全体のハッシュ (marker と実ファイルの照合)
-  - `design-hash`: Key Decisions / Files / Tasks セクションのみのハッシュ (carry-forward 判定)
+  - `design-hash`: Key Decisions / Files / Scope / Tasks セクションのみのハッシュ (carry-forward 判定)
   - `parent-spec-hash`: plan-N.md が指す spec.md のハッシュ (K7 連鎖検証)
 - **K7 連鎖検証**: `document-workflow-guard` hook が実装系書き込み時に (a) spec.md 三状態 + hash 一致、(b) 対象ファイルが属する plan-N.md 三状態 + hash 一致、(c) plan-N.md の parent-spec-hash と現 spec.md hash 一致、を検証。いずれか欠けると conservative deny
 - **off-plan-writes 緩和**: 実装フェーズで Files セクション外への書き込みが、spec + plan の三状態 + hash 一致を満たしていれば deny ではなく warn + `<wfDir>/off-plan-writes.log` に降格
@@ -55,6 +55,13 @@ ADR: `docs/decisions/0010-context-md-mechanism.md`
   - **診断 deny**: guard の deny は「不成立条件・見つかった status 行・次の 1 手」。`lib/workflow-gate.ts` の `diagnoseGate` を CLI `status` と共有
   - **pointer**: 同一 round 内の 2 回目以降の推奨は ≤160B。全文は `## Reviewer Outputs (Round N)` 数が増えた最初の変更でのみ
   - **operator guide / reference skill**: `rules/workflow.md`（≤12KB、行動順）と `.skills/document-workflow-reference/SKILL.md`（機構仕様）の分離
+- **ADR-0028 で追加された語彙（2026-10-06）**:
+  - **委任 (delegation)**: 人間が spec の承認時に選ぶと、spec の `## Scope` に収まる plan-N.md が自分の承認なしで gate を通る。記録は `approvals.log` の spec.md の行の `delegate: "plans-in-scope"`
+  - **`## Scope`**: spec.md に書く、委任された plan-N.md が書き込んでよいパスの一覧。行の文字・長さ・形に制限があり、違反があると全体が無効
+  - **保護対象**: Scope に書いても委任されないパス（承認機構の実装、設定、決定記録、model が従う指示）。`lib/workflow-files.ts` の定数
+  - **classifyPlan**: plan-N.md を `approved` / `delegated` / `blocked` に分ける gate の関数。書き込みの判定、診断、`status` がこれを読む
+  - **委任だけの実装フェーズ (delegated-only)**: 人間が承認した plan-N.md が無く、委任で通る plan だけがある状態。off-plan の緩和は Scope 内に限り、インタプリタ書き込みの検査と tripwire は残る
+  - **delegation-uses.log**: 委任で通した書き込みを、利用者に知らせた記録。重複して知らせないための状態でもある
 
 ### Chezmoi 用語
 

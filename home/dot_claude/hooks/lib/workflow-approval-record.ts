@@ -18,8 +18,12 @@ import {
 } from "node:fs";
 import { resolve } from "node:path";
 import {
+  type ApprovalDelegate,
+  type ApprovalQuestion,
   type ApprovalVia,
+  APPROVAL_QUESTION_TEXT,
   DECLINE_LABEL,
+  DELEGATION_QUESTION_TEXT,
   WORKFLOW_DOC_NAME,
   MAX_DOCS_PER_QUESTION,
   appendApproval,
@@ -29,11 +33,13 @@ import {
   isAnswerValue,
   isApprovalLikeQuestion,
   matchApprovalAnswer,
+  matchDelegationAnswer,
 } from "./workflow-approval.ts";
 import {
   evaluateApprovalReadiness,
   evaluateDocument,
   listApprovalCandidates,
+  resolveDelegationOffer,
 } from "./workflow-gate.ts";
 import { setApprovalStatusLine } from "./workflow-marker.ts";
 
@@ -80,6 +86,8 @@ export interface RecordResult {
   hash: string;
   /** Machine-readable note on how the state came about. */
   detail?: string;
+  /** Present when this record also delegates the spec's plan-N.md. */
+  delegated?: true;
 }
 
 /**
@@ -95,11 +103,19 @@ export function recordOne(
   session: string,
   at: string,
   via: ApprovalVia,
+  delegate?: ApprovalDelegate,
 ): RecordResult {
   const path = resolve(wfDir, doc);
   let logged = false;
   try {
-    appendApproval(wfDir, { doc, hash, session, at, via });
+    appendApproval(wfDir, {
+      doc,
+      hash,
+      session,
+      at,
+      via,
+      ...(delegate === undefined ? {} : { delegate }),
+    });
     logged = true;
     if (!lstatSync(path).isFile()) {
       return { doc, state: "loggedOnly", hash, detail: "not-regular-file" };
@@ -112,6 +128,7 @@ export function recordOne(
         state: "recorded",
         hash,
         detail: rewritten ? "rewritten" : "already-approved",
+        ...(delegate === undefined ? {} : { delegated: true as const }),
       };
     }
     return {
@@ -138,7 +155,9 @@ export function describeRecordResult(result: RecordResult): string {
   const { doc, hash } = result;
   switch (result.state) {
     case "recorded":
-      return `${doc} を hash=${hash.slice(0, 12)} で承認として記録した`;
+      return `${doc} を hash=${hash.slice(0, 12)} で承認として記録した${
+        result.delegated ? "（Scope に収まる plan-N.md を委任）" : ""
+      }`;
     case "loggedOnly":
       return `${doc} は log には記録したが承認行の書き換えに失敗した。\`workflow-cli status\` で確認する`;
     case "failed":
@@ -201,6 +220,7 @@ export function verifyAndRecordApprovalAnswer(
   toolResponse: unknown,
   session: string,
   now: Date = new Date(),
+  projectRoot?: string,
 ): AnswerVerification {
   const r = isPlainObject(toolResponse) ? toolResponse : undefined;
   if (!isApprovalLikeQuestion(r?.questions)) return { kind: "notApproval" };
@@ -216,7 +236,11 @@ export function verifyAndRecordApprovalAnswer(
     return { kind: "malformed" };
   }
   const { questions, answers, annotations } = r;
-  if (!Array.isArray(questions) || questions.length !== 1) {
+  if (
+    !Array.isArray(questions) ||
+    questions.length < 1 ||
+    questions.length > 2
+  ) {
     return { kind: "malformed" };
   }
   const question = questions[0];
@@ -224,26 +248,28 @@ export function verifyAndRecordApprovalAnswer(
     return { kind: "malformed" };
   }
   if (!isPlainObject(answers)) return { kind: "malformed" };
-  const answerKeys = Object.keys(answers);
-  if (answerKeys.length !== 1 || answerKeys[0] !== question.question) {
-    return { kind: "malformed" };
-  }
-  const answer = answers[question.question];
 
   const docNames = extractDocNames(question);
   if (docNames === null) return { kind: "malformed" };
 
-  const candidates = new Set(listApprovalCandidates(wfDir));
+  const candidates = new Set(listApprovalCandidates(wfDir, projectRoot));
   const missing = docNames.filter((d) => !candidates.has(d));
   if (missing.length > 0) return { kind: "notCandidate", docs: missing };
 
   const hashes = new Map(
     docNames.map((d) => [d, evaluateApprovalReadiness(wfDir, d).hash]),
   );
-  let rebuilt;
+  // The same call `workflow-cli ask-approval` makes, so the offer expected
+  // here is the offer that was shown.
+  const offer =
+    projectRoot !== undefined && docNames.includes("spec.md")
+      ? resolveDelegationOffer(wfDir, projectRoot)
+      : null;
+  let rebuilt: ApprovalQuestion[];
   try {
     rebuilt = buildApprovalQuestions(
       docNames.map((name) => ({ name, hash: hashes.get(name) ?? "" })),
+      offer ?? undefined,
     );
   } catch {
     return { kind: "malformed" };
@@ -251,6 +277,16 @@ export function verifyAndRecordApprovalAnswer(
   if (!deepEqualIgnoringKeyOrder(rebuilt, questions)) {
     return { kind: "malformed" };
   }
+
+  // One answer per question, keyed by the question text.
+  const expectedKeys = rebuilt.map((q) => q.question);
+  if (
+    Object.keys(answers).length !== expectedKeys.length ||
+    !expectedKeys.every((key) => Object.hasOwn(answers, key))
+  ) {
+    return { kind: "malformed" };
+  }
+  const answer = answers[APPROVAL_QUESTION_TEXT];
 
   if (isPlainObject(annotations)) {
     for (const entry of Object.values(annotations)) {
@@ -279,11 +315,30 @@ export function verifyAndRecordApprovalAnswer(
     case "invalid":
       return { kind: "malformed" };
     case "approve": {
+      // The delegation answer counts only once the approval itself stands.
+      let delegate = false;
+      if (rebuilt.length === 2) {
+        const delegationAnswer = answers[DELEGATION_QUESTION_TEXT];
+        if (typeof delegationAnswer !== "string") return { kind: "malformed" };
+        const delegation = matchDelegationAnswer(delegationAnswer);
+        if (delegation === "other") {
+          return { kind: "freeText", text: delegationAnswer };
+        }
+        delegate = delegation === "delegate";
+      }
       const at = now.toISOString();
       return {
         kind: "recorded",
         results: matched.docs.map((doc) =>
-          recordOne(wfDir, doc, hashes.get(doc) ?? "", session, at, "ask"),
+          recordOne(
+            wfDir,
+            doc,
+            hashes.get(doc) ?? "",
+            session,
+            at,
+            "ask",
+            delegate && doc === "spec.md" ? "plans-in-scope" : undefined,
+          ),
         ),
       };
     }
