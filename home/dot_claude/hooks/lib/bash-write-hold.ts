@@ -24,14 +24,36 @@ export interface BashAssessment {
 }
 
 const SEP = String.raw`[\s"'=:/(){}<>|;&,]`;
-// A "." that starts a path segment and is followed by a name character.
+// A "." that starts a path segment and is followed by a name character. A short option with an
+// attached value (`-o.claude/x`) puts the path right behind the option letters, so a "." that
+// directly follows a word-initial `-` plus letters counts as well.
 const DOT_FRAGMENT = new RegExp(
-  String.raw`(?:^|${SEP})\.(?![./]|${SEP}|$)`,
+  String.raw`(?:^|${SEP})(?:-[A-Za-z]+)?\.(?![./]|${SEP}|$)`,
   "i",
 );
 const CHEZMOI_GIT_SOURCE = /dot_gitconfig|dot_config\/[^\s/]*git(?:[\s/"']|$)/i;
-// Forms whose words cannot be pinned down statically.
-const UNRESOLVED = /[$`{]/;
+// Forms whose words cannot be pinned down statically: variable, command and brace expansion, plus
+// glob (`*`, `?`, `[`) and tilde expansion, where the shell picks the real path at run time.
+const UNRESOLVED = /[$`{*?[~]/;
+// Commands that run or build other commands from data, so their write targets are chosen at run time.
+const RUNTIME_COMMANDS = new Set([
+  "xargs",
+  "parallel",
+  "sh",
+  "bash",
+  "zsh",
+  "dash",
+  "eval",
+  "exec",
+  "source",
+  ".",
+]);
+const FIND_ACTION = /^-(?:exec|execdir|ok|okdir|delete|fprint|fprintf|fls)$/;
+// env -C/--chdir changes the cwd and -S/--split-string re-parses a string into a command.
+const ENV_RUNTIME_OPTION = /^(?:-[A-Za-z]*[CS]|--chdir|--split-string)/;
+// Escapes that printf/echo -e decode into characters the static text never shows.
+const ESCAPE_SEQUENCE = /\\[0-7xuU]/;
+const RUNTIME_REASON = "runtime-derived write target";
 const CWD_CHANGERS = new Set(["cd", "pushd", "popd"]);
 const REDIRECT_OP = /^\d*(?:>>|>\||>&|&>>|&>|>|<)\s*/;
 // Absolute path words that reach into a .git/worktree/ directory.
@@ -99,6 +121,8 @@ function pathWordsOf(cmd: SimpleCommand): string[] {
     if (!arg.startsWith("-")) words.push(arg);
     else if (arg.includes("="))
       words.push(unquote(arg.slice(arg.indexOf("=") + 1)));
+    // `-ofile`: the text after the 2-char option may be a path (`--long` options are excluded).
+    else if (!arg.startsWith("--") && arg.length > 2) words.push(arg.slice(2));
   }
   for (const r of cmd.redirections) {
     if (r.startsWith("<<")) continue; // heredocs carry no write target
@@ -106,6 +130,18 @@ function pathWordsOf(cmd: SimpleCommand): string[] {
     if (target !== "" && target !== "/dev/null") words.push(target);
   }
   return words;
+}
+
+function buildsTargetsAtRunTime(cmd: SimpleCommand): boolean {
+  const name = (cmd.name ?? "").split("/").pop() ?? "";
+  const args = cmd.args.map(unquote);
+  if (RUNTIME_COMMANDS.has(name)) return true;
+  if (name === "find") return args.some((arg) => FIND_ACTION.test(arg));
+  if (name === "env") return args.some((arg) => ENV_RUNTIME_OPTION.test(arg));
+  const decodesEscapes =
+    name === "printf" ||
+    (name === "echo" && args.some((arg) => /^-[A-Za-z]*e/.test(arg)));
+  return decodesEscapes && args.some((arg) => ESCAPE_SEQUENCE.test(arg));
 }
 
 async function syntaxErrorOrGiveUp(command: string): Promise<boolean> {
@@ -132,6 +168,8 @@ export async function assessBashCommand(
     return { reason: `unparsed command (${gaveUp ?? "syntax"})`, commands };
   if (commands.some((c) => CWD_CHANGERS.has(c.name ?? "")))
     return { reason: "cwd changes before the words", commands };
+  if (commands.some(buildsTargetsAtRunTime))
+    return { reason: RUNTIME_REASON, commands };
   const text = textReason(command, ctx);
   if (text) return { reason: text, commands };
   for (const cmd of commands) {

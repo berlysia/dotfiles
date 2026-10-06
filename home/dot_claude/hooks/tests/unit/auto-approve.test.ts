@@ -1489,7 +1489,7 @@ describe("auto-approve.ts hook behavior", () => {
       context.assertSuccess();
     });
 
-    it("should allow sed -i with backup extension", async () => {
+    it("should hold sed -i with an attached backup suffix", async () => {
       envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify(["Edit(src/**)"]));
       envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
 
@@ -1498,7 +1498,7 @@ describe("auto-approve.ts hook behavior", () => {
       });
       await invokeRun(autoApproveHook, context);
 
-      context.assertAllow();
+      context.assertPass();
     });
 
     it("should not interfere with regular sed (without -i)", async () => {

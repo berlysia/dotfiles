@@ -72,6 +72,45 @@ describe("assessBashCommand", () => {
       strictEqual(await held(cmd), true, cmd);
     }
   });
+  it("holds glob and tilde expansion", async () => {
+    for (const cmd of ["cat ?claude/x", "cat ~/notes.txt", "ls src/*.ts"]) {
+      strictEqual(await held(cmd), true, cmd);
+    }
+    strictEqual(await held("ls src"), false);
+  });
+  it("holds a short option with an attached path", async () => {
+    strictEqual(await held("sort -o.claude/x in.txt"), true);
+    strictEqual(await held("sort -oout/.git/x in.txt"), true);
+    strictEqual(await held("ls -la"), false);
+    strictEqual(await held("git log -n5"), false);
+  });
+  it("holds commands whose write targets are derived at run time", async () => {
+    for (const cmd of [
+      "xargs ls",
+      'sh -c "ls"',
+      "/bin/bash script.sh",
+      "eval ls",
+      "exec ls",
+      "source env.sh",
+      ". env.sh",
+      "find . -name a -delete",
+      "find . -exec ls {}",
+      "env -C sub ls",
+      "env --chdir=sub ls",
+      "env -S 'ls -l'",
+      "printf '\\x41' > a.txt",
+      "printf '\\101' > a.txt",
+      "echo -e 'a\\u0041' > a.txt",
+    ]) {
+      const result = await assessBashCommand(cmd, ctx());
+      strictEqual(result.reason !== null, true, cmd);
+    }
+    const reason = (await assessBashCommand("xargs ls", ctx())).reason;
+    strictEqual(reason, "runtime-derived write target");
+    strictEqual(await held("find . -name a"), false);
+    strictEqual(await held("echo hi"), false);
+    strictEqual(await held("printf 'hi\\n'"), false);
+  });
   it("holds names split by quotes or backslashes", async () => {
     for (const cmd of [
       "cat bunfig.to'ml'",
@@ -180,11 +219,20 @@ describe("assessBashCommand - a project root under a dot directory", () => {
 describe("assessBashCommand - verified worktrees", () => {
   let scratch = "";
   let wt = "";
+  // The fixture git must not read the developer's global config: commit signing there would
+  // wait on a signing agent and time the test out.
   const git = (...args: string[]) =>
     execFileSync(
       "git",
       ["-c", "user.name=t", "-c", "user.email=t@t", ...args],
-      { stdio: "ignore" },
+      {
+        stdio: "ignore",
+        env: {
+          ...process.env,
+          GIT_CONFIG_GLOBAL: "/dev/null",
+          GIT_CONFIG_NOSYSTEM: "1",
+        },
+      },
     );
   beforeEach(() => {
     scratch = realpathSync(mkdtempSync(join(tmpdir(), "bwh-wt-")));
