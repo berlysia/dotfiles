@@ -158,6 +158,37 @@ describe("settings entries after the matcher change", () => {
     // git config and hooks can run commands, so no repo's are editable
     ["deny", "Edit", "/home/u/.local/share/chezmoi/.git/config", true, false],
     ["deny", "Edit", "/home/u/workspace/p/.git/hooks/pre-commit", true, false],
+    ["deny", "Edit", "/home/u/workspace/p/.git/config.worktree", true, false],
+    [
+      "deny",
+      "Edit",
+      "/home/u/workspace/p/.git/worktrees/feature-x/config.worktree",
+      true,
+      false,
+    ],
+    [
+      "deny",
+      "Edit",
+      "/home/u/workspace/p/.git/modules/sub/config",
+      true,
+      false,
+    ],
+    [
+      "deny",
+      "Edit",
+      "/home/u/workspace/p/.git/modules/sub/hooks/post-checkout",
+      true,
+      false,
+    ],
+    // a .git file is a gitdir pointer; retargeting it brings another config and hooks
+    [
+      "deny",
+      "Edit",
+      "/home/u/.local/share/chezmoi/.git/worktree/feature-x/.git",
+      true,
+      false,
+    ],
+    ["deny", "Edit", "/home/u/workspace/p/vendor/sub/.git", true, false],
     [
       "deny",
       "Edit",
