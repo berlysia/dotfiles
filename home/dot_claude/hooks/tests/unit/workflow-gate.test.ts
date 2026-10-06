@@ -19,18 +19,21 @@ import {
 } from "../../lib/document-hash.ts";
 import { appendApproval } from "../../lib/workflow-approval.ts";
 import {
+  classifyPlan,
   diagnoseGate,
   evaluateApprovalReadiness,
   evaluateTarget,
   formatGateDiagnosis,
   isImplementationPhase,
   listApprovalCandidates,
+  resolveSpecContext,
 } from "../../lib/workflow-gate.ts";
 import { resolveWorkflowPaths } from "../../lib/workflow-paths.ts";
 import {
   approvedWorkflowRepo,
   buildPlanContent,
   buildPlanNContent,
+  buildSpecWithScope,
   computeWorkflowRepoPlanHash,
   pendingWorkflowRepo,
   recordApprovalsForTest,
@@ -516,3 +519,172 @@ for (const withResearch of [true, false]) {
     });
   }
 }
+
+interface DelegPlan {
+  name: string;
+  files: string[];
+  approved?: boolean;
+}
+
+function delegatedRepo(
+  scope: string[],
+  plans: DelegPlan[],
+  options: { delegate?: boolean } = {},
+) {
+  const repo = realpathSync(mkdtempSync(join(tmpdir(), "gate-deleg-")));
+  const wf = join(repo, ".tmp", "sessions", "x");
+  mkdirSync(wf, { recursive: true });
+  writeFileSync(join(wf, "research.md"), "x");
+  const spec = buildSpecWithScope(approvedWorkflowRepo(), scope);
+  writeFileSync(join(wf, "spec.md"), spec);
+  for (const plan of plans) {
+    const base = approvedWorkflowRepo();
+    writeFileSync(
+      join(wf, plan.name),
+      buildPlanNContent(
+        plan.approved ? base : { ...base, approvalStatus: "pending" },
+        plan.files,
+        computeWorkflowRepoPlanHash(spec),
+      ),
+    );
+  }
+  recordApprovalsForTest(wf, { delegateSpec: options.delegate ?? true });
+  return { repo, wf };
+}
+
+test("classifyPlan: a reviewed plan within the Scope is delegated", () => {
+  const { repo, wf } = delegatedRepo(
+    ["src/"],
+    [{ name: "plan-1.md", files: ["src/a.ts"] }],
+  );
+  const ctx = resolveSpecContext(wf, repo);
+  equal(ctx.delegation !== null, true);
+  equal(classifyPlan(join(wf, "plan-1.md"), ctx).kind, "delegated");
+});
+
+test("classifyPlan: without the delegate flag the plan waits for approval", () => {
+  const { repo, wf } = delegatedRepo(
+    ["src/"],
+    [{ name: "plan-1.md", files: ["src/a.ts"] }],
+    { delegate: false },
+  );
+  const c = classifyPlan(join(wf, "plan-1.md"), resolveSpecContext(wf, repo));
+  equal(c.kind, "blocked");
+  equal(c.kind === "blocked" && c.blockedBy, "Approval Status");
+});
+
+test("classifyPlan: a human-approved plan is approved, with or without delegation", () => {
+  const { repo, wf } = delegatedRepo(
+    ["src/"],
+    [{ name: "plan-1.md", files: ["other/a.ts"], approved: true }],
+  );
+  equal(
+    classifyPlan(join(wf, "plan-1.md"), resolveSpecContext(wf, repo)).kind,
+    "approved",
+  );
+});
+
+test("classifyPlan: outside the Scope or on a protected path falls back to approval", () => {
+  const { repo, wf } = delegatedRepo(
+    ["src/", "home/"],
+    [
+      { name: "plan-1.md", files: ["other/a.ts"] },
+      { name: "plan-2.md", files: ["home/dot_claude/x.ts"] },
+    ],
+  );
+  const ctx = resolveSpecContext(wf, repo);
+  const c1 = classifyPlan(join(wf, "plan-1.md"), ctx);
+  const c2 = classifyPlan(join(wf, "plan-2.md"), ctx);
+  equal(
+    c1.kind === "blocked" && c1.blockedBy,
+    "Approval Status (delegation: outside-scope)",
+  );
+  equal(
+    c2.kind === "blocked" && c2.blockedBy,
+    "Approval Status (delegation: protected)",
+  );
+});
+
+test("classifyPlan: a plan that has not passed review is never delegated", () => {
+  const { repo, wf } = delegatedRepo(["src/"], []);
+  const spec = readFileSync(join(wf, "spec.md"), "utf-8");
+  writeFileSync(
+    join(wf, "plan-1.md"),
+    buildPlanNContent(
+      pendingWorkflowRepo(),
+      ["src/a.ts"],
+      computeWorkflowRepoPlanHash(spec),
+    ),
+  );
+  const c = classifyPlan(join(wf, "plan-1.md"), resolveSpecContext(wf, repo));
+  equal(c.kind, "blocked");
+  ok(c.kind === "blocked" && !c.blockedBy.startsWith("Approval"));
+});
+
+test("resolveSpecContext: delegation is off when the spec.md approval line is pending", () => {
+  const { repo, wf } = delegatedRepo(
+    ["src/"],
+    [{ name: "plan-1.md", files: ["src/a.ts"] }],
+  );
+  const specPath = join(wf, "spec.md");
+  writeFileSync(
+    specPath,
+    readFileSync(specPath, "utf-8").replace(
+      "- Approval Status: approved",
+      "- Approval Status: pending",
+    ),
+  );
+  equal(resolveSpecContext(wf, repo).delegation, null);
+});
+
+test("resolveSpecContext: delegation is off once the spec.md body changes", () => {
+  const { repo, wf } = delegatedRepo(
+    ["src/"],
+    [{ name: "plan-1.md", files: ["src/a.ts"] }],
+  );
+  const specPath = join(wf, "spec.md");
+  writeFileSync(
+    specPath,
+    readFileSync(specPath, "utf-8").replace("src/", "src/\nlib/"),
+  );
+  const ctx = resolveSpecContext(wf, repo);
+  equal(ctx.delegation, null);
+  const c = classifyPlan(join(wf, "plan-1.md"), ctx);
+  equal(c.kind === "blocked" && c.blockedBy, "Approval Status");
+});
+
+test("resolveSpecContext: delegation is off when approvals.log cannot be read", () => {
+  const { repo, wf } = delegatedRepo(
+    ["src/"],
+    [{ name: "plan-1.md", files: ["src/a.ts"] }],
+  );
+  unlinkSync(join(wf, "approvals.log"));
+  mkdirSync(join(wf, "approvals.log"));
+  equal(resolveSpecContext(wf, repo).delegation, null);
+});
+
+test("classifyPlan: a plan without parent-spec-hash is not delegated", () => {
+  const { repo, wf } = delegatedRepo(["src/"], []);
+  const spec = readFileSync(join(wf, "spec.md"), "utf-8");
+  writeFileSync(
+    join(wf, "plan-1.md"),
+    buildPlanNContent(
+      { ...approvedWorkflowRepo(), approvalStatus: "pending" },
+      ["src/a.ts"],
+      computeWorkflowRepoPlanHash(spec),
+      true,
+    ),
+  );
+  const c = classifyPlan(join(wf, "plan-1.md"), resolveSpecContext(wf, repo));
+  equal(c.kind === "blocked" && c.blockedBy, "parent-spec-hash");
+});
+
+test("resolveSpecContext: delegation is off when the Scope is invalid or the root is unknown", () => {
+  const { repo, wf } = delegatedRepo(
+    ["/etc/"],
+    [{ name: "plan-1.md", files: ["src/a.ts"] }],
+  );
+  equal(resolveSpecContext(wf, repo).delegation, null);
+  const valid = delegatedRepo(["src/"], []);
+  equal(resolveSpecContext(valid.wf, undefined).delegation, null);
+});

@@ -671,15 +671,38 @@ export function buildPlanNContent(
   return `${baseContent}\n\n<!-- auto-review: verdict=${options.review.verdict}; hash=${hash};${parentField} at=2026-02-19T00:00:00.000Z; reviewers=logic-validator -->`;
 }
 
+/** A spec.md body with a `## Scope` section, in the shape `buildPlanContent` produces. */
+export function buildSpecWithScope(
+  options: WorkflowRepoOptions,
+  scope: string[],
+): string {
+  const reviewStatus = options.review?.verdict ?? "pending";
+  const scopeBlock = ["## Scope", "", "```", ...scope, "```"].join("\n");
+  const approval = [
+    "## Approval",
+    `- Plan Status: ${options.planStatus}`,
+    `- Review Status: ${reviewStatus}`,
+    `- Approval Status: ${options.approvalStatus}`,
+  ].join("\n");
+  const base = `${scopeBlock}\n\n${approval}`;
+  if (!options.review) return base;
+  const hash = options.review.hashOverride ?? computeWorkflowRepoPlanHash(base);
+  return `${base}\n\n<!-- auto-review: verdict=${options.review.verdict}; hash=${hash}; at=2026-02-19T00:00:00.000Z; reviewers=logic-validator -->`;
+}
+
 /**
  * Approve every workflow document in `wfDir` whose Approval line says
  * approved, at its current hash, as approval-recorder would after a human
  * said `承認` (spec K8). Fixtures that build an approved document call this
  * so the gate sees a matching ledger entry; tests about a missing or stale
  * ledger simply do not call it. The hash is computed here independently of
- * the gate, as an oracle.
+ * the gate, as an oracle. `delegateSpec` marks the spec.md line as one that
+ * delegates its plan-N.md files.
  */
-export function recordApprovalsForTest(wfDir: string): void {
+export function recordApprovalsForTest(
+  wfDir: string,
+  options: { delegateSpec?: boolean } = {},
+): void {
   for (const name of readdirSync(wfDir)) {
     if (
       name !== "spec.md" &&
@@ -694,6 +717,9 @@ export function recordApprovalsForTest(wfDir: string): void {
       hash: computeWorkflowRepoPlanHash(content),
       session: TEST_SESSION_ID,
       at: "2026-10-02T00:00:00.000Z",
+      ...(options.delegateSpec && name === "spec.md"
+        ? { delegate: "plans-in-scope" as const }
+        : {}),
     });
   }
 }

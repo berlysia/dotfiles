@@ -21,7 +21,11 @@ import { basename, dirname, resolve } from "node:path";
 import { computeDocumentHash, SPEC_NORMALIZERS } from "./document-hash.ts";
 import { sanitizeForDisplay } from "./sanitize-display.ts";
 import { readLatestApprovals } from "./workflow-approval.ts";
-import { listsTarget } from "./workflow-files.ts";
+import {
+  listsTarget,
+  parseScope,
+  planFilesWithinScope,
+} from "./workflow-files.ts";
 import { resolveWorkflowPaths } from "./workflow-paths.ts";
 import {
   LENIENT_STATUS_LINE,
@@ -252,6 +256,98 @@ function parentSpecMatches(planContent: string, specHash: string): boolean {
   const parent =
     parseLatestAutoReviewMarker(planContent)?.parentSpecHash ?? null;
   return parent !== null && parent === specHash;
+}
+
+export interface SpecContext {
+  /** null when spec.md cannot be read. */
+  specHash: string | null;
+  specContent: string;
+  /** Present when the user's approval of the current spec.md delegates its plan-N.md. */
+  delegation: { projectRoot: string } | null;
+}
+
+/**
+ * Read spec.md once for every plan-N.md decision. Delegation holds only while
+ * spec.md itself clears the gate, so reverting its Approval line turns it off
+ * even though the ledger line stays.
+ */
+export function resolveSpecContext(
+  wfDir: string,
+  projectRoot: string | undefined,
+): SpecContext {
+  const specPath = resolveWorkflowPaths(wfDir).spec;
+  let specContent: string;
+  try {
+    specContent = readFileSync(specPath, "utf-8");
+  } catch {
+    return { specHash: null, specContent: "", delegation: null };
+  }
+  const specHash = computeDocumentHash(specContent, SPEC_NORMALIZERS);
+  const ledger = readLatestApprovals(wfDir);
+  const delegated =
+    !ledger.readError &&
+    ledger.latest.get(basename(specPath))?.delegate === "plans-in-scope" &&
+    isDocumentApproved(evaluateDocument(specPath)) &&
+    parseScope(specContent).valid;
+  return {
+    specHash,
+    specContent,
+    delegation: delegated && projectRoot !== undefined ? { projectRoot } : null,
+  };
+}
+
+export type PlanClass =
+  | { kind: "approved" }
+  | { kind: "delegated"; planHash: string }
+  | { kind: "blocked"; blockedBy: string };
+
+const APPROVAL_ROWS = new Set(["Approval Status", "approval"]);
+
+/**
+ * The one place that decides whether a plan-N.md clears: approved by the
+ * user, cleared by the spec's delegation, or blocked by its first unmet
+ * condition. Callers check spec.md's own approval separately.
+ */
+export function classifyPlan(planPath: string, ctx: SpecContext): PlanClass {
+  const diagnosis = evaluateDocument(planPath);
+  let content = "";
+  try {
+    content = readFileSync(planPath, "utf-8");
+  } catch {
+    content = "";
+  }
+  const parentOk =
+    ctx.specHash !== null && parentSpecMatches(content, ctx.specHash);
+  const rows = documentConditionRows(diagnosis);
+  const unmet = rows.find(([, condition]) => !condition.ok);
+  if (!unmet) {
+    return parentOk
+      ? { kind: "approved" }
+      : { kind: "blocked", blockedBy: "parent-spec-hash" };
+  }
+  if (ctx.delegation === null || !diagnosis.exists) {
+    return { kind: "blocked", blockedBy: unmet[0] };
+  }
+  const unmetReview = rows.find(
+    ([name, condition]) => !APPROVAL_ROWS.has(name) && !condition.ok,
+  );
+  if (unmetReview) return { kind: "blocked", blockedBy: unmetReview[0] };
+  if (!parentOk) return { kind: "blocked", blockedBy: "parent-spec-hash" };
+  const verdict = planFilesWithinScope(
+    content,
+    ctx.specContent,
+    ctx.delegation.projectRoot,
+  );
+  if (!verdict.ok) {
+    return {
+      kind: "blocked",
+      blockedBy: `${unmet[0]} (delegation: ${verdict.reason})`,
+    };
+  }
+  return {
+    kind: "delegated",
+    planHash: computeDocumentHash(content, SPEC_NORMALIZERS),
+  };
 }
 
 /**
