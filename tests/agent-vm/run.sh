@@ -2233,10 +2233,12 @@ test_run_bounded_stops_a_hung_command() {
   assert_status 0 "a quick command passes through" -- run_bounded 5 true
 }
 
-fetch_stubs() { # npm/bunx/file stubs for cmd_fetch_browsers; $1 = playwright version npm reports
+fetch_stubs() { # npm/bunx/file stubs for cmd_fetch_browsers; $1 = playwright version npm reports, $2 = "array" for npm >= 12's shape
   mkdir -p "$TMP_ROOT/bin" "$TMP_ROOT/wt"; BUNX_LOG="$TMP_ROOT/bunx.log"; : >"$BUNX_LOG"
   printf '{"dependencies":{"@playwright/mcp":"0.0.75"}}\n' >"$TMP_ROOT/wt/package.json"
-  printf '#!/bin/sh\nprintf %%s %s\n' "'{\"playwright\":\"$1\",\"playwright-core\":\"$1\"}'" >"$TMP_ROOT/bin/npm"
+  local deps="{\"playwright\":\"$1\",\"playwright-core\":\"$1\"}"
+  if [[ "${2:-}" == array ]]; then deps="[$deps]"; fi
+  printf '#!/bin/sh\nprintf %%s %s\n' "'$deps'" >"$TMP_ROOT/bin/npm"
   cat >"$TMP_ROOT/bin/bunx" <<EOF
 #!/bin/sh
 { printf 'bunx %s\n' "\$*"; env | grep -E '^(PLAYWRIGHT_|HTTPS_PROXY=|NO_PROXY=|EVIL=)' | sort; } >>"$BUNX_LOG"
@@ -2276,6 +2278,11 @@ test_fetch_force_replaces_an_existing_store() {
   cmd_fetch_browsers --force --from-apply "$TMP_ROOT/wt" >/dev/null 2>&1 || true
   assert_eq "elf" "$(cat "$AGENT_VM_STATE_DIR/browser-store/mcp-0.0.75/chromium_headless_shell-1224/chrome-linux/headless_shell")" "--force replaces the store"
   assert_eq "" "$(ls "$AGENT_VM_STATE_DIR/build")" "no leftovers in build/"
+}
+test_fetch_reads_the_array_npm_12_prints() {
+  fetch_stubs 1.61.0-alpha-1778188671000 array
+  cmd_fetch_browsers --from-apply "$TMP_ROOT/wt" >/dev/null 2>&1 || true
+  assert_status 0 "store published from an array-shaped npm view" -- test -d "$AGENT_VM_STATE_DIR/browser-store/mcp-0.0.75"
 }
 test_fetch_refuses_a_range_version() {
   fetch_stubs '^1.61.0'

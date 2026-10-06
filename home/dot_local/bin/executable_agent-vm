@@ -360,7 +360,12 @@ cmd_fetch_browsers() { # [--force] [--from-apply <working tree>]  (spec K2)
   # Same clean cwd and allowlisted env as the install, so a .npmrc or mise config in the caller's cwd does not apply.
   meta=$(cd "$AGENT_VM_STATE_DIR/build" && run_bounded "$view_limit" env -i "${FETCH_ENV[@]}" \
     npm view "@playwright/mcp@${id#mcp-}" dependencies --json 2>/dev/null 9>&- 8>&-) || { fetch_fail "$id" "npm view failed"; return 1; }
-  pw=$(printf '%s' "$meta" | perl -MJSON::PP -0777 -ne 'print decode_json($_)->{playwright} // ""' 2>/dev/null) || pw=""
+  # npm >= 12 prints an array even for one exact version; older npm prints the object. Entries that
+  # disagree on the playwright version leave pw empty, so the check below refuses them.
+  pw=$(printf '%s' "$meta" | perl -MJSON::PP -0777 -ne '
+    my $d = decode_json($_);
+    my %v = map { (ref $_ eq "HASH" ? $_->{playwright} // "" : "") => 1 } (ref $d eq "ARRAY" ? @$d : ($d));
+    print((keys %v) == 1 ? (keys %v)[0] : "")' 2>/dev/null) || pw=""
   [[ "$pw" =~ ^[0-9][0-9A-Za-z.+-]*$ ]] || { fetch_fail "$id" "@playwright/mcp now gives playwright a range or no version"; return 1; }
   build=$(mktemp -d "$AGENT_VM_STATE_DIR/build/store.XXXXXX") || { fetch_fail "$id" "no build dir"; return 1; }
   log="$(store_dir)/.fetch.log"
