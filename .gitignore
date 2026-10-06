@@ -42,6 +42,9 @@ home/dot_claude/**/*.js
 # APM dependencies
 apm_modules/
 
+# plan-review-automation writes its cache next to the edited document, which can be outside the workflow dir
+plan-review.cache.json
+
 # Mod engine-generated files
 mods/*/.claude-plugin/types/
 mods/*/tsconfig.json
