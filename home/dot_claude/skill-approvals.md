@@ -47,6 +47,7 @@ apply は未掲載のスキルを追記するだけで、行を消さない。
 - [x] update-docs
 - [x] verify-doc
 - [x] visualize
+- [x] visual-eli
 
 ## External
 
@@ -55,7 +56,6 @@ apply は未掲載のスキルを追記するだけで、行を消さない。
 - [x] difit-review
 - [x] doc-coauthoring
 - [x] docx
-- [x] eli5
 - [x] empirical-prompt-tuning
 - [x] explainer
 - [x] explainer-book
