@@ -25,7 +25,7 @@ Document Workflow の成果物（spec・research・plan）は `.tmp/sessions/` �
 - `docs/plans/` には、終わった作業の成果物と、これからの作業の記録（持ち越した課題の一覧、未着手の調査）が同じ場所にあった。
 - 保存の規則は `rules/workflow.md` の Session Artifact Retention 節の 1 文、リンクの規則は `rules/developer-experience.md` の 1 文だけだった。どちらも根拠を書いた ADR が無く、commit `a0790fc`（2026-04-23）と `d1b0254`（2026-03-09）で入った。何を残すかの判断は、計画を残す commit の本文に毎回書かれていた。
 - `docs/plans/` のファイルの存在を読む hook・CI・スクリプトは無い。`.skills/adr-session/` は `plan:` の frontmatter を前提にした記述を持つが、その形の ADR は 1 本も無い。
-- 計画を残す commit は、master に直接か merge commit で入っている。直近 40 件に squash merge は無い。commit を指す参照は、この運用が続く限り辿れる。
+- 計画を残す commit は、master に直接か merge commit で入っている。直近 40 件に squash merge は無い。commit を指す参照は、この運用が続く限り辿れる。この運用は、ADR-0031 で制約にした。
 - 逆の例として、ADR-0008 の References は `.tmp/sessions/85f6f6e4/spec.md` などを指している。GC の対象なので、今は読めない参照である。
 
 確かめていない前提が 2 つある。
@@ -100,7 +100,7 @@ ADR が骨子だけを書いて全文を計画に預ける形は、この観察�
 
 - **戻らない損失がある（R1）。** これからの作業は spec・research・plan を commit しないので、指す先の commit ができない。ADR へ移さなかった内容は、7 日の GC の後どこにも残らない。機械的な照合は無い。歯止めは、移す節を表で固定すること、表に当たらない内容の受け皿（5 行目）、最後のタスクが原本の見出しの一覧と行き先を commit の本文に書くこと、人間が ADR の差分を読むことである。抜けに気づいて原本から拾い直せるのは、GC までの 7 日の間だけである。
 - **レビューと承認の経過が残らない（R2）。** plan 層の Reviewer Outputs と Approval は、これからの作業では永久に残らない。レビューの経過は決定の根拠ではないので受け入れた。承認の記録（`approvals.log`）はこれまでも残していない。
-- **commit 参照が辿れなくなりうる（R3）。** master の履歴を書き換えた場合である。検出する仕組みは入れていない。`52dc6fd447` が origin/master にあることは、書き換えの前に確かめた。
+- **commit 参照が辿れなくなりうる（R3）。** master の履歴を書き換えた場合である。検出する仕組みは入れていない。`52dc6fd447` が origin/master にあることは、書き換えの前に確かめた。PR を squash で取り込んだ場合も、その PR の中の commit は同じく辿れなくなる。PR の取り込みを merge commit に限る決定は、ADR-0031 にある。
 - **検索の範囲が変わる（R4）。** `git grep` で過去の spec と research が当たらなくなる。既存分は下の「過去の計画の読み方」の方法で検索できるが、これからの作業の spec と research には同じ手段が無い。検索に掛かるのは、ADR と commit の本文である。
 - **ADR を書かない作業の決定は commit の本文に分かれ、一覧が無い（R5）。** `git log --grep='^decision'` で拾える。
 - **ほかのプロジェクトにも効く（R6）。** 規則は `~/.claude/rules/` に配置される。ADR も Contextual Commits も使わないプロジェクトのために、行き先の順序を規則の文に書き、テンプレートのタスクは書き換えてよい枠にした。
