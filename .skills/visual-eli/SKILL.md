@@ -84,8 +84,27 @@ Rules for an HTML file:
 - One self-contained file: inline CSS and JavaScript, no build step. Use inline SVG for structure, Canvas for many moving elements, and three.js only for a shape that is truly three-dimensional.
 - Motion needs controls: a step button, play and pause, or a slider. The first frame must make sense on its own. Never make a figure that only auto-plays, because the reader has to follow one step at a time.
 - You cannot see the page, so guard against the common ways it goes unreadable: set an explicit background and text colour, use a font size of at least 14px, and fit the figure in a 1000px-wide window without horizontal scrolling.
-- Libraries: load them only from `https://cdn.jsdelivr.net/npm/<package>@<x.y.z>/`, with an exact version. Write no other network traffic into the page: no `fetch`, XHR, WebSocket, remote images, or remote fonts, and never put source material into a URL.
-- three.js: put one inline `<script type="importmap">` in the `<head>`, before any module script, that maps `"three"` to `https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js` and `"three/addons/"` to `https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/`. After it, write one inline `<script type="module">` that imports `three` and `three/addons/controls/OrbitControls.js`. Give the renderer an explicit size and call `controls.update()` in the render loop. three.js draws no text, so label axes and parts with HTML elements placed over the canvas.
+- Network: the page may load exactly two files, the two three.js files in the block below, and only for a three-dimensional figure. Load no other library, addon, or file from the network, because a file without a hash in that block is not verified. The import map names only those two files, so importing any other three.js addon fails. Write no other network traffic into the page: no `fetch`, XHR, WebSocket, remote images, or remote fonts, and never put source material into a URL.
+- three.js: copy this block into the `<head>`, before any module script, character for character. It pins the version and makes the browser check each file against its hash (Subresource Integrity), so a file that was changed on the server is not run. A browser too old to know import map integrity skips the check and loads the files anyway. Never retype, shorten, or reformat the hashes.
+
+  ```html
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/controls/OrbitControls.js": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js"
+      },
+      "integrity": {
+        "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js": "sha384-61S/Nu32S3E5+n+KpCOTb2eRYps6fVKm+9Gz1QBvSePFthb46f063Aa/qe/lykFZ",
+        "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js": "sha384-qlO/ZugKPxAQUAvTlQoo0QECzxJIJySZmCF/DHdb2Xn/hHndFwX/vfUAC9Hbk6LP"
+      }
+    }
+  </script>
+  ```
+
+  After it, write one inline `<script type="module">` whose import declarations name only `three` and `three/addons/controls/OrbitControls.js`, followed by the figure code. Use static import declarations, never dynamic `import()`, so that a failed load stops the script before its first statement runs. Give the renderer an explicit size and call `controls.update()` in the render loop. three.js draws no text, so label axes and parts with HTML elements placed over the canvas.
+
+- Put a visible note in the `<body>` of a three.js page, before the module script, in the user's language. It says that the 3D library could not be loaded, that the reader should check the network connection, and that if the note stays they should tell whoever made the figure. Remove the note in the first statement of the module script. If the network or the hash check fails, the script never runs and the note stays, so the reader can tell.
 - Without a network, inline SVG and Canvas still work. A three.js figure does not: tell the user it needs the network instead of replacing it with a flat diagram.
 - What goes into the page: only the labels, values, and one-line captions the figure shows. Never embed whole files or lines the figure does not use. Replace tokens, keys, passwords, and values of environment variables with `***`.
 - Text taken from source material enters the page by one of two routes. Written directly into HTML or SVG markup: change `&`, `<`, `>`, and `"` to `&amp;`, `&lt;`, `&gt;`, and `&quot;`. Held as data in a script: write it as a JSON string with every `<` written as its JSON Unicode escape (a backslash followed by `u003c`), and put it on the page with `textContent` or an SVG text node, without HTML-escaping it. Never use `innerHTML`.
@@ -127,7 +146,7 @@ Length: stop when the walk-through has covered every arrow or step in the figure
 - Every concept has its real term attached, and every tool name, command, and programming word is explained where it first appears.
 - ASCII sketch: the code block contains no full-width and no box-drawing characters.
 - Mermaid: the block starts with the diagram type, and every edge (or every period of a `timeline`) has a label.
-- HTML file: the file exists at the path given in the reply, the reply contains no HTML source, and motion has controls.
+- HTML file: the file exists at the path given in the reply, the reply contains no HTML source, and motion has controls. A three.js page contains the importmap block unchanged and the load-failure note.
 
 ## Example: a figure in the reply
 
@@ -167,6 +186,8 @@ Figure: /home/user/project/.tmp/visual-eli/bubble-sort.html
 ```
 
 Then: say what the bars stand for and what the Step button does, walk one pass using the labels shown in the figure ("compare", "swap", "sorted"), explain why it is slow on long lists, mark the simplification (real programs use faster sorting algorithms), and point to the next question. The reply never contains the HTML source.
+
+To change the three.js version, replace the version number in all four URLs of the importmap block in the HTML file rules and recompute both hashes together. Compute each hash with `curl -s <URL> | openssl dgst -sha384 -binary | openssl base64 -A` and prefix it with `sha384-`. Before changing the version, read the first lines of the new `three.module.js` and `OrbitControls.js`: every file they import needs its own entry in both maps, and the rule that the page loads exactly two files must be updated to match. Afterwards, open one three-dimensional figure and confirm that it draws.
 
 ---
 
