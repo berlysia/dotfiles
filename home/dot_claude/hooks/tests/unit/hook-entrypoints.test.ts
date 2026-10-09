@@ -11,6 +11,7 @@ const ENTRY_POINTS = [
   "../../implementations/permission-auto-approve.ts",
   "../../implementations/document-workflow-guard.ts",
   "../../implementations/auto-approve.ts",
+  "../../implementations/home-destruction-guard.ts",
 ];
 
 describe("hook entry points load", () => {

@@ -1,3 +1,5 @@
+{{- $aa := dig "claude_hooks" "auto_approval" true . -}}
+{{- $priv := dig "only_private" false . -}}
 {
   "PreToolUse": [
     {
@@ -24,13 +26,22 @@
         {
           "type": "command",
           "command": "echo '{\"event\":\"PreToolUse\",\"output\":{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"Current time: '\"$(date '+%F %H:%M:%S')\"'\"}}}'"
-        },
+        }{{ if $aa }},
         {
           "type": "command",
           "command": "sh {{ .chezmoi.homeDir }}/.claude/hooks/run-guard.sh {{ .chezmoi.homeDir }}/.claude/hooks/implementations/auto-approve.ts || exit 2"
+        }{{ end }}
+      ]
+    },{{ if not $aa }}
+    {
+      "matcher": "Bash",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "sh {{ .chezmoi.homeDir }}/.claude/hooks/run-guard.sh {{ .chezmoi.homeDir }}/.claude/hooks/implementations/home-destruction-guard.ts || exit 2"
         }
       ]
-    },
+    },{{ end }}
     {
       "matcher": "Read|Write|Edit|NotebookEdit",
       "hooks": [
@@ -310,11 +321,11 @@
         }
       ]
     }
-  ],
+  ]{{ if or $aa $priv }},
   "PermissionRequest": [
     {
       "matcher": "",
-      "hooks": [
+      "hooks": [{{ if $aa }}
         {
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/permission-auto-approve.ts"
@@ -322,7 +333,7 @@
         {
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/permission-llm-evaluator.ts"
-        }{{ if dig "only_private" false . }},
+        }{{ end }}{{ if and $aa $priv }},{{ end }}{{ if $priv }}
         {
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/discord-notification.ts",
@@ -335,5 +346,5 @@
         }{{ end }}
       ]
     }
-  ]
+  ]{{ end }}
 }

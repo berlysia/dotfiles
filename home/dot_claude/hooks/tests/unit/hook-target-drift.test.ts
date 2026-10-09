@@ -16,6 +16,8 @@ const PREFIX = "{{ .chezmoi.homeDir }}/.claude/hooks/implementations/";
 // JSON 構造を解釈せず全文走査する。chezmoi でレンダリングすると
 // `{{ if dig "only_private" false . }}` が片枝に潰れ、gate 内の 2 実装が
 // 参照集合から落ちる（spec K1）。全文走査ならどの枝の参照も等しく拾う。
+// 条件分岐は `only_private` のほかに `claude_hooks.auto_approval` にもある
+// （auto-approve 系 3 実装と home-destruction-guard は互いに排他の枝に置かれる）。
 const REF = /\.claude\/hooks\/implementations\/([^"'\s/]+)\.ts/g;
 const TS_REF = /[^"'\s]*\.ts(?=[\s"'])/g;
 

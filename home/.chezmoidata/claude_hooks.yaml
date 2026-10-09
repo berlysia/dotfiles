@@ -1,0 +1,9 @@
+# Switch for the auto-approval hooks (docs/decisions/0020, appendix of 2026-10-10).
+# false: auto-approve.ts, permission-auto-approve.ts and permission-llm-evaluator.ts
+#        are not registered, and home-destruction-guard.ts is registered instead.
+# true (or key missing): the three hooks are registered, the guard is not.
+#
+# The experiment runs until 2026-10-24. To roll back: set auto_approval to true,
+# then run `chezmoi apply` (no arguments) from a terminal.
+claude_hooks:
+  auto_approval: false
