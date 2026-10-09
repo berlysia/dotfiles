@@ -16,6 +16,7 @@ import {
   createBoundaryDenyResponse,
   createDenyResponse,
   createMatchedTextDenyResponse,
+  formatAskReason,
   shortenForReason,
 } from "../lib/context-helpers.ts";
 import {
@@ -270,7 +271,11 @@ async function analyzeBashCommand(
   if (hasUnknown) {
     return {
       decision: "ask",
-      reason: `Unknown node_modules operation requires approval: ${unknownCmd}`,
+      reason: formatAskReason(
+        "Unknown node_modules operation requires approval",
+        "Command",
+        [unknownCmd],
+      ),
       operation: "unknown",
     };
   }

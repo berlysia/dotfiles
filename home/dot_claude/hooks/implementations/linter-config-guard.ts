@@ -2,7 +2,7 @@
 
 import { basename } from "node:path";
 import { defineHook } from "cc-hooks-ts";
-import { createAskResponse } from "../lib/context-helpers.ts";
+import { createAskResponse, formatAskReason } from "../lib/context-helpers.ts";
 import "../types/tool-schemas.ts";
 
 /**
@@ -72,9 +72,13 @@ const hook = defineHook({
     if (isProtectedFile(filePath)) {
       return context.json(
         createAskResponse(
-          `${basename(filePath)} is a protected linter/formatter config file.\n` +
-            "Agent modifications to linter configs can weaken code quality rules.\n" +
-            "Allow this edit only if the user explicitly requested it.",
+          formatAskReason(
+            "Protected linter/formatter config file.\n" +
+              "Agent modifications to linter configs can weaken code quality rules.\n" +
+              "Allow this edit only if the user explicitly requested it.",
+            "File",
+            [basename(filePath)],
+          ),
         ),
       );
     }

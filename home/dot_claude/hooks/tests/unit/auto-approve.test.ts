@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import type { ToolSchema } from "cc-hooks-ts";
 import autoApproveHook, {
+  analyzeBashCommands,
   processBashTool,
 } from "../../implementations/auto-approve.ts";
 import { parseForCollect } from "../../lib/bash-parser.ts";
@@ -1633,6 +1634,57 @@ describe("auto-approve.ts hook behavior", () => {
       await invokeRun(autoApproveHook, context);
       context.assertDeny();
       ok(reasonOf(context).includes(BOUNDARY_DENY_GUIDANCE));
+    });
+  });
+
+  describe("ask reason shape", () => {
+    const reasonOf = (context: { jsonCalls: any[] }): string =>
+      context.jsonCalls[0].hookSpecificOutput?.permissionDecisionReason || "";
+
+    it("puts the rule's message first and the command on a Command line", async () => {
+      envHelper.set("CLAUDE_TEST_ALLOW", JSON.stringify([]));
+      envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
+      const context = createPreToolUseContextFor(autoApproveHook, "Bash", {
+        command: "git branch -D feature/x",
+      });
+      await invokeRun(autoApproveHook, context);
+      strictEqual(
+        context.jsonCalls[0].hookSpecificOutput?.permissionDecision,
+        "ask",
+      );
+      strictEqual(
+        reasonOf(context),
+        "Force delete branch (-D) ignores unmerged status\nCommand: git branch -D feature/x",
+      );
+    });
+
+    it("lists control keywords one per Command line", () => {
+      const result = analyzeBashCommands(
+        [
+          { type: "skip", command: "then", reason: "control keyword" },
+          { type: "skip", command: "fi", reason: "control keyword" },
+        ],
+        false,
+        false,
+      );
+      strictEqual(result.decision, "ask");
+      strictEqual(
+        result.reason,
+        "Only control structure keywords present, no allow patterns defined\nCommand: then\nCommand: fi",
+      );
+    });
+
+    it("lists the commands of the fallback ask one per Command line", () => {
+      const result = analyzeBashCommands(
+        [{ type: "ask", command: "custom-tool --flag", reason: "r" }],
+        false,
+        false,
+      );
+      strictEqual(result.decision, "ask");
+      strictEqual(
+        result.reason,
+        "Manual review required: no permission patterns configured\nCommand: custom-tool --flag",
+      );
     });
   });
 });

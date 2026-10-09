@@ -86,7 +86,8 @@ export function createMatchedTextDenyResponse(
 const REASON_QUOTE_LIMIT = 200;
 
 /**
- * A command quoted in a deny reason that carries a `Matched:` line. Line
+ * A piece of tool input quoted in a reason: the command in a deny reason that
+ * carries a `Matched:` line, and every input line of an ask reason. Line
  * breaks become a literal `\n` so the quote cannot start a line that reads
  * like the guard's own, and a quote long enough to push the rest of the
  * reason out of view is cut. Unlike sanitizeForDisplay, the spelling is kept.
@@ -98,6 +99,27 @@ export function shortenForReason(text: string): string {
   return oneLine.length > REASON_QUOTE_LIMIT
     ? `${oneLine.slice(0, REASON_QUOTE_LIMIT)}… (${oneLine.length} characters)`
     : oneLine;
+}
+
+type AskInputLabel = "Command" | "File";
+
+/**
+ * The reason of an ask: the fixed message first, then one `<label>: <input>`
+ * line per piece of tool input. Build every ask reason that shows tool input
+ * with this, so the dialog reads the same whichever hook raised it and a
+ * count keyed on the start of the message keeps working. Each input goes
+ * through shortenForReason, so it stays on its own line and a long one cannot
+ * push the message out of view.
+ */
+export function formatAskReason(
+  message: string,
+  label: AskInputLabel,
+  inputs: readonly string[],
+): string {
+  return [
+    message,
+    ...inputs.map((input) => `${label}: ${shortenForReason(input)}`),
+  ].join("\n");
 }
 
 /**

@@ -31,6 +31,7 @@ import {
   createBoundaryDenyResponse,
   createDenyResponse,
   createMatchedTextDenyResponse,
+  formatAskReason,
   shortenForReason,
 } from "../lib/context-helpers.ts";
 import { analyzePatternMatches } from "../lib/decision-maker.ts";
@@ -786,7 +787,7 @@ async function checkPattern(
  * Analyze structured bash command results using Tagged Union pattern
  * Provides better type safety than string parsing approach
  */
-function analyzeBashCommands(
+export function analyzeBashCommands(
   commands: BashCommandResult[],
   hasAskRequired: boolean,
   _hasPassRequired: boolean,
@@ -797,7 +798,7 @@ function analyzeBashCommands(
     return {
       decision: "ask",
       reason: askCommand?.reason
-        ? `Command '${askCommand.command}': ${askCommand.reason}`
+        ? formatAskReason(askCommand.reason, "Command", [askCommand.command])
         : "Manual review required for dangerous command",
     };
   }
@@ -835,12 +836,13 @@ function analyzeBashCommands(
   if (nonSkippedCommands.length === 0) {
     // Only control structure keywords are present
     const skippedCommands = commands.filter((cmd) => cmd.type === "skip");
-    const skippedDetails = skippedCommands
-      .map((cmd) => `"${cmd.command}"`)
-      .join(", ");
     return {
       decision: "ask",
-      reason: `Only control structure keywords present (${skippedCommands.length} keywords): ${skippedDetails}, no allow patterns defined`,
+      reason: formatAskReason(
+        "Only control structure keywords present, no allow patterns defined",
+        "Command",
+        skippedCommands.map((cmd) => cmd.command),
+      ),
     };
   }
 
@@ -868,12 +870,13 @@ function analyzeBashCommands(
   }
 
   // Fallback ask case - provide details about what commands need review
-  const allCommands = nonSkippedCommands
-    .map((cmd) => `"${cmd.command}"`)
-    .join(", ");
   return {
     decision: "ask",
-    reason: `Manual review required for commands (${nonSkippedCommands.length} commands): ${allCommands} - no permission patterns configured`,
+    reason: formatAskReason(
+      "Manual review required: no permission patterns configured",
+      "Command",
+      nonSkippedCommands.map((cmd) => cmd.command),
+    ),
   };
 }
 

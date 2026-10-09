@@ -5,6 +5,7 @@ import {
   MATCHED_TEXT_DENY_GUIDANCE,
   createBoundaryDenyResponse,
   createMatchedTextDenyResponse,
+  formatAskReason,
   shortenForReason,
 } from "../../lib/context-helpers.ts";
 
@@ -105,5 +106,45 @@ describe("shortenForReason", () => {
     const separators =
       String.fromCodePoint(0x2028) + String.fromCodePoint(0x2029);
     strictEqual(shortenForReason(`a${separators}b`), "a\\n\\nb");
+  });
+});
+
+describe("formatAskReason", () => {
+  it("puts the message first and the input on a labelled line", () => {
+    strictEqual(
+      formatAskReason(
+        "Force delete branch (-D) ignores unmerged status",
+        "Command",
+        ["git branch -D feature/x"],
+      ),
+      "Force delete branch (-D) ignores unmerged status\nCommand: git branch -D feature/x",
+    );
+  });
+  it("gives each input its own line", () => {
+    strictEqual(
+      formatAskReason("M", "Command", ["then", "fi"]),
+      "M\nCommand: then\nCommand: fi",
+    );
+  });
+  it("is the message alone when there is no input", () => {
+    strictEqual(formatAskReason("M", "Command", []), "M");
+  });
+  it("keeps a multi-line message and uses the File label", () => {
+    strictEqual(
+      formatAskReason("first\nsecond", "File", ["tsconfig.json"]),
+      "first\nsecond\nFile: tsconfig.json",
+    );
+  });
+  it("keeps an input on one line so it cannot start a line that reads like a label", () => {
+    strictEqual(
+      formatAskReason("M", "Command", ["a\nCommand: b"]),
+      "M\nCommand: a\\nCommand: b",
+    );
+  });
+  it("cuts an input longer than 200 characters and states its length", () => {
+    strictEqual(
+      formatAskReason("M", "Command", ["a".repeat(201)]),
+      `M\nCommand: ${"a".repeat(200)}… (201 characters)`,
+    );
   });
 });

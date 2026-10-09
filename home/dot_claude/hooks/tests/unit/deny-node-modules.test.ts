@@ -672,6 +672,26 @@ describe("deny-node-modules.ts boundary behaviour", () => {
     });
   }
 
+  it("puts the asked fragment on a Command line after the message", async () => {
+    strictEqual(
+      reasonOf(await runBash("custom-tool node_modules/file")),
+      "Unknown node_modules operation requires approval\nCommand: custom-tool node_modules/file",
+    );
+  });
+
+  it("keeps a multi-line asked fragment on one line", async () => {
+    const reason = reasonOf(
+      await runBash("python3 -c 'import os\nos.listdir(\"node_modules\")'"),
+    );
+    ok(
+      reason.startsWith(
+        "Unknown node_modules operation requires approval\nCommand: ",
+      ),
+      reason,
+    );
+    strictEqual(reason.split("\n").length, 2, reason);
+  });
+
   it("keeps the guidance on file-tool denies", async () => {
     const context = createPreToolUseContext("Write", {
       file_path: join(root, "a", "node_modules", "x"),
