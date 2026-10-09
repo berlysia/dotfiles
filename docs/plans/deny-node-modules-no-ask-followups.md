@@ -1,34 +1,14 @@
 # deny-node-modules が ask を返さなくなった後の残件
 
-未着手。実装とコミットは `refactor/deny-node-modules-no-ask` にあり、配備していない。最初の一手は、このブランチを作業ツリーのブランチに取り込んで配備することである。
+2026-10-10 に master へ取り込んで配備し、配備の後の確認を済ませた（結果は ADR-0020 の追記の「配備の後の確認」）。残っているのは下の各節である。
 
 決定、理由、受容したリスク、見直す条件は、[ADR-0020](../decisions/0020-boundary-deny-rephrase.md) の追記（deny-node-modules は ask を返さない、2026-10-10）にある。
 
-## 配備の後の確認
+## 配備から 2 週間の計数（2026-10-24 まで）
 
-`chezmoi apply` の後、次の 9 つを 1 つずつ Bash で実行する。それぞれについて、`~/.claude/logs/hook-timing.jsonl` の `deny-node-modules` の行の `stdout_bytes` と、トランスクリプトの `permissionDecision` の判定元（`rule` / `classifier` / `subcommandResults` / `user_temporary` / `hook`）を記録する。
+`xargs`・`find`・`node_modules/.bin/<tool>` のコマンドについて、トランスクリプト（`~/.claude/projects/**/*.jsonl`）の `permissionDecision` の `reasonType` が `user_temporary` になった回数を数える。`user_temporary` は、人間への確認になったという意味である。増えていたら、ADR-0020 の追記の「見直す条件」(3) に従って、該当する許可規則を戻す。戻し方もそこにある。
 
-無出力を期待するもの（どれも読み取りだけ）:
-
-- `echo "=== node_modules ==="`
-- `readlink -f node_modules/typescript`
-- `/home/berlysia/.local/share/chezmoi/node_modules/.bin/tsc --version`
-- `node_modules/.bin/tsc --version`
-- `jq -n '"node_modules" | test("node_modules")'`
-
-deny を期待するもの（deny されるので、何も書き込まれない）:
-
-- `echo x | tee /tmp/node_modules-probe.txt`
-- `sort -o /tmp/out-probe node_modules/typescript/package.json`
-
-許可規則を外した後の判定元を見るもの:
-
-- `find . -maxdepth 1 -name package.json`
-- `echo a | xargs echo`
-
-結果の読み方: 判定元が `user_temporary` なら、人間への確認になっている。無出力を期待した 5 つのどれか、または `xargs` / `find` の 2 つがそうなったときは、ADR-0020 の追記の「見直す条件」に従う。許可規則の戻し方もそこにある。配備から 2 週間、同じ判定元を `xargs`・`find`・`.bin` のコマンドについて数え、確認が増えていないかを見る。
-
-確認が済んだら、ADR-0020 の追記の「検証待ち」を、結果に書き換える。
+配備の直後（2026-10-10）は、`find . -maxdepth 1 -name package.json` と `node_modules/.bin/tsc --version` が `classifier`、`echo a | xargs echo` が `subcommandResults` で、確認は出なかった。
 
 ## deny に足す候補（まだ足していない）
 

@@ -74,7 +74,7 @@ agent が `rm $W/node_modules`（自分で張った symlink の削除）を `den
   - **範囲**: deny・allow・pass の理由文と、入力を含まない ask の文言（`No patterns matched` など）は変えていない。deny 側には、メッセージの後ろにラベルの行（`Command:`、`File:`、`Path:`、`Requested URL:`）を置く形が約 12 箇所ある。並びは ask と同じだが、切り詰めも 1 行化もしておらず、ラベルの行の前に空行がある
   - **却下した案**: 入力を先に書く形（下の計測のキーが先頭から外れ、長い入力でメッセージが後ろに押し出される）。メッセージと入力を 1 行に書く形（入力が長いと 1 行が長くなる）。5 箇所をその場で書き換えるだけにする（形を決める場所が 5 つのまま残る）。応答を作る `createAskResponse` がメッセージと入力を別々に受け取るか、`formatAskReason` の戻り値に印を付けた型だけを受け取る形（入力の無い ask のための入口がもう 1 つ要り、対象の 5 箇所の外も書き換えることになる）
   - **計測への影響**: 上の追記（ask の範囲、2026-10-09）の計器は、`Unknown node_modules operation requires approval` で始まる理由文を数える。メッセージを先頭に置いたので、そのまま使える。2026-10-10 より前の理由文は同じ行に `: <コマンド>` が続き、後の理由文は次の行に `Command: <コマンド>` が続く
-- **追記（deny-node-modules は ask を返さない、2026-10-10）**: `deny-node-modules` は、Bash のコマンドに deny か、判定なしのどちらかだけを返すようにした。ask は返さない。状態は検証待ちである。この追記を書いた時点では配備しておらず、配備の後の確認は済んでいない（手順は `docs/plans/deny-node-modules-no-ask-followups.md`）
+- **追記（deny-node-modules は ask を返さない、2026-10-10）**: `deny-node-modules` は、Bash のコマンドに deny か、判定なしのどちらかだけを返すようにした。ask は返さない。2026-10-10 に配備し、配備の後の確認は期待どおりだった（下の「配備の後の確認」）
   - **決定**: `node_modules` の文字を含む断片は、既存の deny の規則に当たれば deny、当たらなければ判定なしにする。ask を返していた 3 つの分岐（未知の操作、削除・移動の語を持たない `find -exec`、fallback パースの複合断片）を無くした。既存の deny の規則と判定の順序は変えていない。ask と allow を分けるためだけにあったコード（`isNonModifyingShape`、read-only 動詞の表 `READ_ONLY_VERBS` とそこから作る照合、`mayAllowAsReadOnly`、`classifyDeletion` の `ask-find`）を消した
   - **理由**: この環境は auto mode で動いている（設定の `defaultMode` が `auto`）。hook が判定を出さず、許可規則にも当たらないコマンドは、分類器が判定する。hook が ask を返すと、分類器を経ずに人間への確認になる。ask は字面の判定で、文字を組み立てれば反応しない。2026-09-24〜10-09 に ask になった 124 件のコマンドに、`node_modules` の中身を削除・上書きするものは見当たらず、ask が変更を止めた事例は観測されていない（確認に人間がどう答えたかは測っていない）
   - **線引きの基準**: deny は、変更する綴りに当たったときだけ返る。誤って deny になっても、理由文と案内がモデルに返り、人間の手は止まらない。ask は、言及があるだけで返り、モデルに何も教えずに、そのたびに人間の手を止める
@@ -86,6 +86,13 @@ agent が `rm $W/node_modules`（自分で張った symlink の削除）を `den
   - **却下した案**: ask を残して、黙る形を足していく（`printf -v` や `echo` のように、形ごとに引数が実行されないか・後続に渡らないかを調べ続けることになり、最大の分類であるインタプリタの本文は ask のまま残る）。`Bash(tee *)`、`Bash(sort *)`、`Bash(uniq *)` の許可規則を外す（すべての綴りを覆えるが、`| sort | uniq | tee` はよく使う形で、どれだけ使っているかを測っていない）
   - **見直す条件**: (1) `node_modules` の中身を変えるコマンドが、許可規則か分類器を通って実行された事例が出たら、その綴りを deny に足すか、該当するコマンドの許可規則を外す。(2) 配備の後の確認で、無出力を期待したコマンドが人間への確認になったら、原因（分類器の判定か、別の hook か）を調べて、この決定を見直す。(3) `xargs`、`find`、`node_modules/.bin/<tool>` で人間への確認が増えたら、該当する許可規則を戻す（`.settings.permissions.json` に `"Bash(find *)",` と `"Bash(xargs *)",`、または `.bin` の 10 行を戻して `chezmoi apply` する）。増えたかどうかは、トランスクリプトの `permissionDecision` の判定元が `user_temporary` になった回数で数える
   - **計測**: 2026-09-24〜10-09 に ask になった 124 件のコマンドを、変更前後の hook に通した。ask 78 / deny 7 / 無出力 39 が、ask 0 / deny 7 / 無出力 117 になった。117 は hook が黙る件数で、人間への確認が減る件数ではない。標本は変更前に ask になったコマンドで、偏りがある。足した 3 つの deny に当たる過去のコマンドは無い
+  - **配備の後の確認（2026-10-10）**: 9 つのコマンドを 1 回の Bash 呼び出しに 1 つずつ実行し、`~/.claude/logs/hook-timing.jsonl` の `deny-node-modules` の行の `stdout_bytes` と、トランスクリプトの `permissionDecision` の `reasonType` を記録した。このセッションの `permissionMode` は、トランスクリプトに `auto` と記録されている。人間への確認（`user_temporary`）は 0 件で、PermissionRequest の hook は 1 度も起動しなかった
+    - **hook が無出力（0 バイト）だった 5 つ**: `echo "=== node_modules ==="` と `jq -n '"node_modules" | test("node_modules")'` の判定元は `hook`（`auto-approve` の allow）。`readlink -f node_modules/typescript` は `subcommandResults`。`node_modules/.bin/tsc --version` は、相対パスでも絶対パスでも `classifier`
+    - **deny になった 2 つ**: `echo x | tee /tmp/node_modules-probe.txt`（1325 バイト）と `sort -o /tmp/out-probe node_modules/typescript/package.json`（1384 バイト）。判定元は `hook` の reject
+    - **許可規則を外した 2 つ**: `find . -maxdepth 1 -name package.json` は `classifier`、`echo a | xargs echo` は `subcommandResults`
+    - **見直す条件との対応**: (2) は発火していない。(3) は、配備から 2 週間の計数で判断する（手順は `docs/plans/deny-node-modules-no-ask-followups.md`）
+    - **この確認が示さないこと**: どれも 1 回ずつの観測である。分類器が通したのは読み取りだけで、変更する綴りを分類器がどう判定するかは確かめていない（「受容したリスク」は変わらない）。`subcommandResults` が、`xargs` の許可規則が無い `echo a | xargs echo` を何を根拠に通したかは調べていない
+    - **足す基準 (3) についての観測**: `auto-approve` は、上の `sort -o` のコマンドに allow ではなく pass（`held: node_modules/typescript/package.json: dot segment .bun`）を返した。`tee` のコマンドには allow を返した。基準 (3) の実測（`sort -o node_modules/a/f /tmp/in`）とはパスが違う
 
 ## References
 
