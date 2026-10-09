@@ -830,3 +830,71 @@ describe("wire output (subprocess)", () => {
     );
   });
 });
+
+describe("auto-mode experiment notice", () => {
+  const envHelper = new EnvironmentHelper();
+  const dirs: string[] = [];
+  afterEach(() => {
+    envHelper.restore();
+    for (const dir of dirs.splice(0))
+      rmSync(dir, { recursive: true, force: true });
+  });
+
+  function homeWithSettings(settings: unknown): string {
+    const home = mkdtempSync(join(tmpdir(), "session-experiment-home-"));
+    dirs.push(home);
+    mkdirSync(join(home, ".claude", "logs", "auto-mode-experiment"), {
+      recursive: true,
+    });
+    writeFileSync(
+      join(home, ".claude", "settings.json"),
+      JSON.stringify(settings),
+    );
+    envHelper.set("HOME", home);
+    envHelper.set("CLAUDE_ENV_FILE", undefined);
+    return home;
+  }
+
+  async function systemMessageAtStart(): Promise<string> {
+    const cwd = mkdtempSync(join(tmpdir(), "session-experiment-cwd-"));
+    dirs.push(cwd);
+    const before = process.cwd();
+    process.chdir(cwd);
+    try {
+      const ctx = createSessionStartContext("startup", {
+        session_id: "abcd1234-0000-0000-0000-000000000000",
+      });
+      await invokeRun(sessionHook, ctx);
+      return ctx.jsonCalls[0].systemMessage;
+    } finally {
+      process.chdir(before);
+    }
+  }
+
+  it("shows the notice while the guard is registered", async () => {
+    homeWithSettings({
+      hooks: {
+        PreToolUse: [
+          {
+            hooks: [
+              { command: "sh x implementations/home-destruction-guard.ts" },
+            ],
+          },
+        ],
+      },
+    });
+    ok(
+      (await systemMessageAtStart()).includes(
+        "[auto-mode experiment] cannot read the deployment time",
+      ),
+    );
+  });
+
+  it("adds no notice when the guard is not registered", async () => {
+    homeWithSettings({ hooks: {} });
+    strictEqual(
+      (await systemMessageAtStart()).includes("[auto-mode experiment]"),
+      false,
+    );
+  });
+});

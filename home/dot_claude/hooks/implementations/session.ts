@@ -10,6 +10,10 @@ import {
   matcherCoversTools,
 } from "../lib/guarded-tools.ts";
 import {
+  experimentNotices,
+  readExperimentState,
+} from "../lib/auto-mode-experiment.ts";
+import {
   getDistillHealthNotice,
   getUnreadDigestPreview,
 } from "../lib/insight-digest.ts";
@@ -312,6 +316,14 @@ const hook = defineHook({
       const distillHealth = getDistillHealthNotice();
       if (distillHealth) {
         messages.push(distillHealth);
+      }
+
+      // The reader touches the filesystem; a failure there must not drop the
+      // notices gathered above.
+      try {
+        messages.push(...experimentNotices(Date.now(), readExperimentState()));
+      } catch (error) {
+        console.error(`auto-mode experiment notice failed: ${error}`);
       }
 
       // SessionStart では cc-hooks-ts の success() が messageForUser を破棄する
