@@ -17,6 +17,7 @@ import {
   MATCHED_TEXT_DENY_GUIDANCE,
 } from "../../lib/context-helpers.ts";
 import denyNodeModulesHook from "../../implementations/deny-node-modules.ts";
+import { withParseBudget } from "../support/parse-budget.ts";
 import {
   ConsoleCapture,
   createPreToolUseContext,
@@ -300,6 +301,21 @@ describe("deny-node-modules.ts hook behavior", () => {
         context.assertDeny();
       });
     }
+
+    // A parse cut by the time budget leaves the fragments incomplete, so the
+    // command is denied even though nothing in it touches node_modules. The
+    // input is used nowhere else in this file: a cut input stays cut.
+    it("denies a command whose parse exceeds the time budget", async () => {
+      const context = createPreToolUseContext("Bash", {
+        command: "ls time-give-up-probe/",
+      });
+      await withParseBudget(0, () => invokeRun(denyNodeModulesHook, context));
+
+      context.assertDeny();
+      const reason =
+        context.jsonCalls[0]?.hookSpecificOutput?.permissionDecisionReason;
+      ok(reason?.includes("within 100 ms"), reason);
+    });
 
     // The symlink-removal exemption reads the whole text before the parser
     // does, so it must not apply to a command over the length limit.
