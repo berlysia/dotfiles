@@ -35,8 +35,13 @@ worktree や scratchpad に `node_modules` の symlink を張る操作が ask �
 
 - 再検討の条件: 数え直しの 14 日間で、1 つの先頭語が 5 件以上あれば、その先頭語だけの形を `isNonModifyingShape` に足すことを検討する。足す条件は ADR-0020 の追記にある。
 
-## 観測: Bash の PermissionRequest で LLM evaluator が動いていない
+## 観測: LLM evaluator は Bash の PermissionRequest の 6 割で呼ばれない
 
-この作業の残件ではなく、調査中に見つけた別の問題である。
+この作業の残件ではなく、調査中に見つけた事実である。不具合ではなく、設計どおりの動作である。
 
-`~/.claude/logs/hook-timing.jsonl`（2026-10-06〜10-09）の Bash の PermissionRequest 22 件は、`permission-llm-evaluator` がすべて約 100ms・無出力で終わっていた。`reasonToSkipLLM` の git 判定か hold（`dot path in command text`、`cwd changes before the words`、`unresolved word`）で LLM を呼ばずに人間へ回している。ADR-0020 の「evaluator がベストエフォートで補う」は、Bash ではこの期間ほぼ働いていない。hold が意図どおりかは未確認である。
+`permission-llm-evaluator` の `reasonToSkipLLM` は、コマンドに `git` の語があるとき（`skipped-llm: git-head`）と、自動承認の hold に当たるとき（`held: dot path in command text` / `cwd changes before the words` / `unresolved word`）に、LLM を呼ばずに人間へ回す。タイムアウトではなく早期終了で、約 100ms・終了コード 0 で終わる。
+
+`~/.claude/logs/decisions.jsonl` の 2026-10-05〜10-09 では、Bash の PermissionRequest のうち LLM が許可したものが 16 件、早期終了が 26 件（`git-head` 15、hold 11）だった。
+
+- ADR-0020 の「evaluator がベストエフォートで補う」は、`git clean` には当てはまらない。`git` の語があるので LLM は呼ばれず、人間が判断する。
+- hold の 3 条件がそれぞれ意図どおりの範囲に効いているかは確かめていない。確認が多いと感じたら、`decisions.jsonl` の `held:` の行を理由ごとに数えるところから始める。
