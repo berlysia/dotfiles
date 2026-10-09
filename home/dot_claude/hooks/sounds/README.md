@@ -26,6 +26,8 @@ Claude${EventType}.wav
 | `PermissionRequest` | `ClaudePermissionRequest.wav` | Permission request              |
 | `AskUserQuestion`   | `ClaudeAskUserQuestion.wav`   | User input required             |
 
+A Notification hook event picks its sound from `notification_type`: `permission_prompt` uses `PermissionRequest`, `idle_prompt` and `elicitation_dialog` use `AskUserQuestion`, and anything else uses `Notification`.
+
 ### Special Files
 
 | File Name    | Description                                |
