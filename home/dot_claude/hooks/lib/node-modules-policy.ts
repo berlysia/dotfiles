@@ -180,6 +180,44 @@ export function mayAllowAsReadOnly(
   return !(opts.fallback && NOT_SIMPLE.test(cmd.toLowerCase()));
 }
 
+const PATH_WORD = "(?!-)[A-Za-z0-9_@.\\/+:=,-]+";
+const SED_LINES = "\\d+(?:,\\d+)?p";
+// The whole fragment, single spaces only: `sed -n`, one print-lines script,
+// then plain path words. No `.*`, so matching stays linear (see Issue #219).
+const SED_PRINT = new RegExp(
+  `^sed -n (?:${SED_LINES}|'${SED_LINES}'|"${SED_LINES}") ${PATH_WORD}(?: ${PATH_WORD})*$`,
+);
+// The tools that .settings.permissions.json allows under this spelling. Keep
+// the two lists equal: for any other name the hook's ask is the only brake.
+const LOCAL_BIN_TOOLS = ["tsc", "oxfmt", "eslint", "prettier", "oxlint"];
+const LOCAL_BIN_HEAD = new RegExp(
+  `^(?:\\.\\/)?node_modules\\/\\.bin\\/(?:${LOCAL_BIN_TOOLS.join("|")})(?= |$)`,
+);
+
+/** The head runs one of those tools and nothing after it names node_modules. */
+function isLocalBinRun(cmd: string): boolean {
+  const head = LOCAL_BIN_HEAD.exec(cmd);
+  if (head === null) return false;
+  return cmd.toLowerCase().indexOf("node_modules", head[0].length) === -1;
+}
+
+/**
+ * True only for fragments whose spelling does not make node_modules a target:
+ * `sed -n <N[,M]>p <paths>` prints lines, and `node_modules/.bin/<tool> …`
+ * runs an installed tool without naming the directory again. The hook then
+ * gives no decision, so Claude Code's own rules and auto-approve still judge
+ * the command. Only add allowed shapes here; every other form returns false
+ * and keeps the ask. echo and printf are left out on purpose: `printf -v`
+ * evaluates a subscript, and echo can hand the path to a later command.
+ * Accepted gap: a matching fragment no longer makes the whole command ask, so
+ * `node_modules/.bin/tsc --listFiles | xargs rm` is not caught, the same as
+ * `bunx tsc --listFiles | xargs rm` (ADR-0020, addendum of 2026-10-09).
+ */
+export function isNonModifyingShape(cmd: string): boolean {
+  const trimmed = trimSpaces(cmd);
+  return SED_PRINT.test(trimmed) || isLocalBinRun(trimmed);
+}
+
 /** Drops every quote and backslash so `-ex''ec`, `"-exec"` and `\rm` compare as the bare word, then takes the basename. */
 function baseName(word: string): string {
   const bare = word.replace(/['"\\]/g, "");

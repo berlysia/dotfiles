@@ -23,6 +23,7 @@ import {
   classifyDeletion,
   cpThenNodeModules,
   describeDeletionMatch,
+  isNonModifyingShape,
   mayAllowAsReadOnly,
   redirectToNodeModules,
   standaloneSymlinkRemovalOperands,
@@ -401,6 +402,17 @@ function analyzeIndividualCommand(
       reason:
         "Compound command fragment under fallback parsing requires approval",
       operation: "unknown",
+    };
+  }
+
+  // Printing file lines or running an installed tool does not make
+  // node_modules a target. No decision is given, so the regular permission
+  // path still judges the command.
+  if (isNonModifyingShape(cmd)) {
+    return {
+      decision: "allow",
+      reason: "does not target node_modules",
+      operation: "non-modifying",
     };
   }
 

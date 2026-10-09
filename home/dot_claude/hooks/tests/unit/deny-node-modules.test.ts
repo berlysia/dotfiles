@@ -616,6 +616,62 @@ describe("deny-node-modules.ts boundary behaviour", () => {
     });
   }
 
+  const silentCmds = [
+    "sed -n 400,450p node_modules/nodemon/lib/monitor/run.js",
+    "sed -n '1,200p' node_modules/a.d.ts",
+    "cd /w; sed -n 1,5p node_modules/a.js; ls test",
+    "sed -n 1,5p node_modules/a.js | head -3",
+    "node_modules/.bin/tsc --noEmit -p tsconfig.json",
+    "./node_modules/.bin/oxfmt --check a.md 2>&1 | tail -5",
+    // Accepted: the hook reads spelling only. Without the .bin head these get
+    // no decision today either; the head's ask was the only reason they asked.
+    // `tsc --listFiles` prints paths under node_modules, so this one deletes
+    // there; `bunx tsc --listFiles | xargs rm -rf` gets no decision today.
+    "node_modules/.bin/tsc --listFiles | xargs rm -rf",
+    'node_modules/.bin/tsc --noEmit && rm -rf "$(echo node_)modules"',
+  ];
+  for (const cmd of silentCmds) {
+    it(`gives no decision: ${cmd}`, async () => {
+      (await runBash(cmd)).assertSuccess({});
+    });
+  }
+
+  const stillAskCmds = [
+    "sed -n '1w node_modules/x' a.js",
+    "sed -i 1d node_modules/a.js",
+    "sed -n 1,5p node_modules/a.js | tee node_modules/b",
+    "sed -n 1,5p node_modules/a.js 2>/dev/null",
+    'echo "=== node_modules ==="',
+    "echo node_modules | xargs rm -rf",
+    "printf -v 'a[$(ln -sf x node_modules/y)]' z",
+    "/w/node_modules/.bin/tsc --noEmit",
+    "node_modules/.bin/rimraf dist",
+    "node_modules/.bin/prettier --write node_modules/a.js",
+    "node_modules/.bin/tsc --noEmit; python3 -c 'import shutil; shutil.rmtree(\"node_modules\")'",
+  ];
+  for (const cmd of stillAskCmds) {
+    it(`still asks: ${cmd}`, async () => {
+      const context = await runBash(cmd);
+      strictEqual(
+        context.jsonCalls[0].hookSpecificOutput?.permissionDecision,
+        "ask",
+      );
+    });
+  }
+
+  const stillDenyCmds = [
+    "sed -n 1,5p node_modules/a.js > node_modules/b",
+    "node_modules/.bin/tsc > node_modules/out.txt",
+    "node_modules/.bin/tsc --noEmit && rm -rf node_modules",
+    "echo x > node_modules/f",
+    "echo rm node_modules",
+  ];
+  for (const cmd of stillDenyCmds) {
+    it(`still denies: ${cmd}`, async () => {
+      (await runBash(cmd)).assertDeny();
+    });
+  }
+
   it("keeps the guidance on file-tool denies", async () => {
     const context = createPreToolUseContext("Write", {
       file_path: join(root, "a", "node_modules", "x"),

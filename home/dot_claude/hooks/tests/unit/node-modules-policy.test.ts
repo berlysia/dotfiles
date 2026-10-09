@@ -5,6 +5,7 @@ import {
   classifyDeletion,
   describeDeletionMatch,
   findDeleteWord,
+  isNonModifyingShape,
   mayAllowAsReadOnly,
   standaloneSymlinkRemovalOperands as ops,
 } from "../../lib/node-modules-policy.ts";
@@ -249,4 +250,73 @@ describe("describeDeletionMatch", () => {
       "find with -delete, or with an exec flag followed by a delete or move word, in a command that mentions node_modules",
     );
   });
+});
+
+describe("isNonModifyingShape", () => {
+  const YES = [
+    "sed -n 400,450p node_modules/nodemon/lib/monitor/run.js",
+    "sed -n 7p node_modules/a.js",
+    "sed -n '1,200p' node_modules/@notionhq/client/build/src/Client.d.ts",
+    'sed -n "3,4p" node_modules/a.js node_modules/b.js',
+    "sed -n 1,5p node_modules/.pnpm/a@1.0.0/node_modules/a/index.js",
+    "  sed -n 1,5p node_modules/a.js  ",
+    "node_modules/.bin/tsc",
+    "node_modules/.bin/tsc --noEmit -p tsconfig.json",
+    "./node_modules/.bin/oxfmt --check a.md 2>&1",
+    "node_modules/.bin/tsc --outDir dist > out.log",
+    'node_modules/.bin/eslint "src/**/*.ts"',
+  ];
+  const NO = [
+    // sed: anything but `-n <lines>p <plain paths>` keeps the ask
+    "sed -n '1w node_modules/x' a.js",
+    "sed -n '1,5p;1w x' node_modules/a.js",
+    "sed -n 1,5p -i node_modules/a.js",
+    "sed -n -i 1,5p node_modules/a.js",
+    "sed -i 1d node_modules/a.js",
+    "sed 1,5p node_modules/a.js",
+    "sed -n 1,5p",
+    "sed -n 1,5p node_modules/a.js > out",
+    "sed -n 1,5p node_modules/a.js | tee x",
+    "sed -n 1,5p 'node_modules/a b.js'",
+    "sed -n 1,5p $D/node_modules/a.js",
+    "sed -n 1,5p\tnode_modules/a.js",
+    "sed -n 1,5p node_modules/a.js\nrm x",
+    "/bin/sed -n 1,5p node_modules/a.js",
+    // local tool: a second mention, or any head but a relative .bin/<name>, keeps the ask
+    "node_modules/.bin/prettier --write node_modules/a.js",
+    "node_modules/.bin/tsc --outDir node_modules/x",
+    "node_modules/.bin/tsc > node_modules/out.txt",
+    "/w/node_modules/.bin/tsc --noEmit",
+    "../node_modules/.bin/tsc --noEmit",
+    "packages/a/node_modules/.bin/tsc --noEmit",
+    "node_modules/.bin/",
+    "node_modules/.bin/../../evil",
+    "node_modules/.bin/a/../../evil",
+    "node_modules/.bin/.hidden",
+    '"node_modules/.bin/tsc" --noEmit',
+    "node_modules/.bin/tsc\t--noEmit",
+    "node_modules/.bin/tsc\nrm x",
+    "node_modules/.pnpm/a/node_modules/.bin/tsc",
+    "X=1 node_modules/.bin/tsc",
+    "xargs node_modules/.bin/prettier --check",
+    // only the five tools that have an allow rule; the later mention is compared in lower case
+    "node_modules/.bin/rimraf dist",
+    "./node_modules/.bin/esbuild",
+    "node_modules/.bin/tscx --noEmit",
+    "node_modules/.bin/tsc --outDir NODE_MODULES/x",
+    // echo / printf are not a shape: printf -v evaluates a subscript, echo can feed a later command
+    'echo "=== node_modules ==="',
+    "echo node_modules",
+    "printf -v 'a[$(ln -sf x node_modules/y)]' z",
+  ];
+  for (const cmd of YES) {
+    it(`true: ${JSON.stringify(cmd)}`, () => {
+      strictEqual(isNonModifyingShape(cmd), true);
+    });
+  }
+  for (const cmd of NO) {
+    it(`false: ${JSON.stringify(cmd)}`, () => {
+      strictEqual(isNonModifyingShape(cmd), false);
+    });
+  }
 });
