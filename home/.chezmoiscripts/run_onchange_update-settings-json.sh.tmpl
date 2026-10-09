@@ -13,7 +13,7 @@
 # (onepassword / exec / output / secret) を入れないこと。includeTemplate は
 # chezmoi status / diff でも評価されるため、dry-run で秘密取得や外部コマンド
 # 実行が走るようになる。
-# Hash: {{ includeTemplate "dot_claude/.settings.base.json.tmpl" . | sha256sum }}{{ includeTemplate "dot_claude/.settings.permissions.json" . | sha256sum }}{{ includeTemplate "dot_claude/.settings.hooks.json.tmpl" . | sha256sum }}{{ include (print .chezmoi.sourceDir "/dot_claude/skill-approvals.md") | sha256sum }}{{ include (print .chezmoi.workingTree "/scripts/skill-inventory.sh") | sha256sum }}{{ include (print .chezmoi.sourceDir "/.chezmoiexternal.toml.tmpl") | sha256sum }}{{ glob (print .chezmoi.workingTree "/.skills/*") }}{{ glob (print .chezmoi.sourceDir "/dot_claude/commands/*.md") }}{{ glob (print .chezmoi.homeDir "/.local/share/private-skills/*") }}{{ $apmLock := print .chezmoi.homeDir "/.apm/apm.lock.yaml" }}{{ with stat $apmLock }}{{ if not .isDir }}{{ include $apmLock | sha256sum }}{{ end }}{{ end }}{{ $allowMarker := print .chezmoi.homeDir "/.claude/.skill-allow-failed" }}{{ with stat $allowMarker }}{{ if not .isDir }}{{ include $allowMarker | sha256sum }}{{ end }}{{ end }}
+# Hash: {{ includeTemplate "dot_claude/.settings.base.json.tmpl" . | sha256sum }}{{ includeTemplate "dot_claude/.settings.permissions.json" . | sha256sum }}{{ includeTemplate "dot_claude/.settings.hooks.json.tmpl" . | sha256sum }}{{ include (print .chezmoi.sourceDir "/dot_claude/skill-approvals.md") | sha256sum }}{{ include (print .chezmoi.workingTree "/scripts/skill-inventory.sh") | sha256sum }}{{ include (print .chezmoi.sourceDir "/.chezmoiexternal.toml.tmpl") | sha256sum }}{{ glob (print .chezmoi.workingTree "/.skills/*") }}{{ glob (print .chezmoi.sourceDir "/dot_claude/commands/*.md") }}{{ glob (print .chezmoi.homeDir "/.local/share/private-skills/*") }}{{ $apmLock := print .chezmoi.homeDir "/.apm/apm.lock.yaml" }}{{ with stat $apmLock }}{{ if not .isDir }}{{ include $apmLock | sha256sum }}{{ end }}{{ end }}{{ $allowMarker := print .chezmoi.homeDir "/.claude/.skill-allow-failed" }}{{ with stat $allowMarker }}{{ if not .isDir }}{{ include $allowMarker | sha256sum }}{{ end }}{{ end }}{{ $deployedAt := print .chezmoi.homeDir "/.claude/logs/auto-mode-experiment/deployed-at" }}{{ with stat $deployedAt }}{{ .type }}{{ .size }}{{ .modTime }}{{ end }}
 #
 # 上の第 4 項以降は skill-inventory.sh allow の入力 (Skill(...) 許可の計算元)。
 # skill-approvals.md・inventory スクリプト・供給源の一覧 (.skills / commands /
@@ -31,6 +31,7 @@ BACKUP_FILE="${TARGET_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
 SOURCE_DIR="{{ .chezmoi.sourceDir }}"
 
 {{ template "record-provisioning-failure.sh" . }}
+{{ template "sync-experiment-deployed-at.sh" . }}
 
 # Skill(...) allow entries come from scripts/skill-inventory.sh (checklist md +
 # supplier directories). This script runs before ~/.claude is deployed, so a
@@ -98,6 +99,7 @@ if [[ ! -f "$TARGET_FILE" ]]; then
     # enabledPlugins will be populated by claude plugin install
     echo "$TEMPLATE_CONTENT" | jq '.' > "$TARGET_FILE"
     echo "~/.claude/settings.json created successfully"
+    sync_experiment_deployed_at "$HOOKS_CONTENT"
     exit 0
 fi
 
@@ -109,6 +111,7 @@ if ! jq empty "$TARGET_FILE" 2>/dev/null; then
     echo "Replacing with template content..."
     echo "$TEMPLATE_CONTENT" | jq '.' > "$TARGET_FILE"
     echo "~/.claude/settings.json replaced successfully"
+    sync_experiment_deployed_at "$HOOKS_CONTENT"
     exit 0
 fi
 
@@ -147,6 +150,7 @@ if diff -q "$TARGET_FILE" "$TEMP_FILE" >/dev/null 2>&1; then
     echo "No changes to ~/.claude/settings.json"
     rm "$TEMP_FILE"
     rm "$BACKUP_FILE"
+    sync_experiment_deployed_at "$HOOKS_CONTENT"
     exit 0
 fi
 
@@ -163,6 +167,7 @@ mv "$TEMP_FILE" "$TARGET_FILE"
 if [[ -f "$TARGET_FILE" ]] && jq empty "$TARGET_FILE" 2>/dev/null; then
     rm "$BACKUP_FILE"
     echo "~/.claude/settings.json updated successfully"
+    sync_experiment_deployed_at "$HOOKS_CONTENT"
 else
     echo "Error: Update may have failed. Backup preserved at $BACKUP_FILE"
     exit 1
