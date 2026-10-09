@@ -148,7 +148,7 @@ describe("deny-node-modules.ts hook behavior", () => {
       }
     });
 
-    it("should ask for unknown operations", async () => {
+    it("should give no decision for unknown operations", async () => {
       const hook = denyNodeModulesHook;
 
       const context = createPreToolUseContext("Bash", {
@@ -156,11 +156,7 @@ describe("deny-node-modules.ts hook behavior", () => {
       });
       await hook.run(context);
 
-      // Should return ask response
-      strictEqual(context.jsonCalls.length, 1);
-      const askReason =
-        context.jsonCalls[0].hookSpecificOutput?.permissionDecisionReason || "";
-      ok(askReason.includes("Unknown node_modules operation"));
+      context.assertSuccess({});
     });
 
     it("should handle compound commands correctly", async () => {
@@ -571,7 +567,7 @@ describe("deny-node-modules.ts boundary behaviour", () => {
       `cat > .tmp/msg.txt <<'EOF'\nfix: ${R} ${P}/x\nEOF`,
       `cat -<<'EOF' > out.txt\n${R} ${P}/x\nEOF`, // "-" folded into the operator
       `cat <<'EOF' > t.ts\nfind ${P} -delete\nEOF`,
-      `cat <<'EOF' > out.txt\nsee ${P} for details\nEOF`, // was ask
+      `cat <<'EOF' > out.txt\nsee ${P} for details\nEOF`,
     ];
     for (const cmd of silent) {
       it(`does not judge the body: ${JSON.stringify(cmd)}`, async () => {
@@ -598,64 +594,47 @@ describe("deny-node-modules.ts boundary behaviour", () => {
     }
   });
 
-  const askCmds = [
+  // The hook only denies. These get no decision: the permission rules and,
+  // in auto mode, the classifier judge them. Several of them would change
+  // node_modules (sed -i, rsync --delete, an interpreter's rmtree, a path
+  // handed to xargs). They are listed to pin a known gap in the deny rules,
+  // not to say the commands are safe.
+  const silentCmds = [
     "python3 -c 'import shutil; shutil.rmtree(\"node_modules\")'",
     "git clean -fdx node_modules",
     "rsync -a --delete empty/ node_modules/",
     "/bin/ls node_modules",
     "\\ls node_modules",
     "find node_modules -exec echo {} \\;",
-  ];
-  for (const cmd of askCmds) {
-    it(`asks: ${cmd}`, async () => {
-      const context = await runBash(cmd);
-      strictEqual(
-        context.jsonCalls[0].hookSpecificOutput?.permissionDecision,
-        "ask",
-      );
-    });
-  }
-
-  const silentCmds = [
     "sed -n 400,450p node_modules/nodemon/lib/monitor/run.js",
-    "sed -n '1,200p' node_modules/a.d.ts",
-    "cd /w; sed -n 1,5p node_modules/a.js; ls test",
     "sed -n 1,5p node_modules/a.js | head -3",
-    "node_modules/.bin/tsc --noEmit -p tsconfig.json",
-    "./node_modules/.bin/oxfmt --check a.md 2>&1 | tail -5",
-    // Accepted: the hook reads spelling only. Without the .bin head these get
-    // no decision today either; the head's ask was the only reason they asked.
-    // `tsc --listFiles` prints paths under node_modules, so this one deletes
-    // there; `bunx tsc --listFiles | xargs rm -rf` gets no decision today.
-    "node_modules/.bin/tsc --listFiles | xargs rm -rf",
-    'node_modules/.bin/tsc --noEmit && rm -rf "$(echo node_)modules"',
-  ];
-  for (const cmd of silentCmds) {
-    it(`gives no decision: ${cmd}`, async () => {
-      (await runBash(cmd)).assertSuccess({});
-    });
-  }
-
-  const stillAskCmds = [
     "sed -n '1w node_modules/x' a.js",
     "sed -i 1d node_modules/a.js",
-    "sed -n 1,5p node_modules/a.js | tee node_modules/b",
-    "sed -n 1,5p node_modules/a.js 2>/dev/null",
-    'echo "=== node_modules ==="',
-    "echo node_modules | xargs rm -rf",
-    "printf -v 'a[$(ln -sf x node_modules/y)]' z",
+    "cd /w; sed -n 1,5p node_modules/a.js; ls test",
+    "node_modules/.bin/tsc --noEmit -p tsconfig.json",
+    "./node_modules/.bin/oxfmt --check a.md 2>&1 | tail -5",
     "/w/node_modules/.bin/tsc --noEmit",
     "node_modules/.bin/rimraf dist",
     "node_modules/.bin/prettier --write node_modules/a.js",
+    "node_modules/.bin/tsc --listFiles | xargs rm -rf",
+    'node_modules/.bin/tsc --noEmit && rm -rf "$(echo node_)modules"',
     "node_modules/.bin/tsc --noEmit; python3 -c 'import shutil; shutil.rmtree(\"node_modules\")'",
+    'echo "=== node_modules ==="',
+    "echo node_modules | xargs rm -rf",
+    "printf -v 'a[$(ln -sf x node_modules/y)]' z",
+    "jq -c 'select(.reason|test(\"node_modules\"))'",
+    'grep -n "DESTRUCTIVE_NODE_MODULES_PATTERNS" -r lib',
+    "ln -s /w/node_modules /tmp/x/node_modules",
+    "python3 -c 'import os\nos.listdir(\"node_modules\")'",
+    "sort node_modules/list.txt",
+    "sort -n -r node_modules/list.txt",
+    "ls node_modules | tee /tmp/list.txt",
+    "ls node_modules | sort -o /tmp/out",
+    "ls node_modules | uniq",
   ];
-  for (const cmd of stillAskCmds) {
-    it(`still asks: ${cmd}`, async () => {
-      const context = await runBash(cmd);
-      strictEqual(
-        context.jsonCalls[0].hookSpecificOutput?.permissionDecision,
-        "ask",
-      );
+  for (const cmd of silentCmds) {
+    it(`gives no decision: ${JSON.stringify(cmd)}`, async () => {
+      (await runBash(cmd)).assertSuccess({});
     });
   }
 
@@ -672,24 +651,45 @@ describe("deny-node-modules.ts boundary behaviour", () => {
     });
   }
 
-  it("puts the asked fragment on a Command line after the message", async () => {
-    strictEqual(
-      reasonOf(await runBash("custom-tool node_modules/file")),
-      "Unknown node_modules operation requires approval\nCommand: custom-tool node_modules/file",
+  // tee, sort -o and uniq <in> <out> write a file they name, like a redirect.
+  // A mere mention after the word is denied too (the last entry of each group).
+  const writeDenyCmds = [
+    "echo x | tee node_modules/a/index.js",
+    "tee -a node_modules/x.log",
+    "sed -n 1,5p node_modules/a.js | tee node_modules/b",
+    "tee /tmp/node_modules-report.txt",
+    "sort -o node_modules/a/f /tmp/in",
+    "sort --output=node_modules/a/f /tmp/in",
+    "sort -uo node_modules/a/f /tmp/in",
+    "sort --out=node_modules/a/f /tmp/in",
+    "sort -o /tmp/out node_modules/list.txt",
+    "uniq in.txt node_modules/out",
+    "uniq node_modules/list.txt",
+  ];
+  for (const cmd of writeDenyCmds) {
+    it(`denies a write through tee, sort or uniq: ${cmd}`, async () => {
+      (await runBash(cmd)).assertDeny();
+    });
+  }
+
+  it("names tee as what matched", async () => {
+    const reason = reasonOf(
+      await runBash("echo x | tee node_modules/a/index.js"),
+    );
+    ok(
+      reason.includes('Matched: the word "tee" followed by node_modules.'),
+      reason,
     );
   });
 
-  it("keeps a multi-line asked fragment on one line", async () => {
-    const reason = reasonOf(
-      await runBash("python3 -c 'import os\nos.listdir(\"node_modules\")'"),
-    );
+  it("names sort with an output option as what matched", async () => {
+    const reason = reasonOf(await runBash("sort -o node_modules/a/f /tmp/in"));
     ok(
-      reason.startsWith(
-        "Unknown node_modules operation requires approval\nCommand: ",
+      reason.includes(
+        'Matched: the word "sort" followed by node_modules, with a -o or --output option.',
       ),
       reason,
     );
-    strictEqual(reason.split("\n").length, 2, reason);
   });
 
   it("keeps the guidance on file-tool denies", async () => {

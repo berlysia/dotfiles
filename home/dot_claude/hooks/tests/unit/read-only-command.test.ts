@@ -7,7 +7,6 @@ import { DELETE_VERBS, MOVE_VERBS } from "../../lib/destructive-verbs.ts";
 import {
   ARGUMENT_SCAN_EXEMPT_HEADS,
   isExemptReadOnlyCommand,
-  READ_ONLY_VERBS,
 } from "../../lib/read-only-command.ts";
 
 const NBSP = " ";
@@ -179,34 +178,11 @@ describe("isExemptReadOnlyCommand", () => {
   });
 });
 
-describe("READ_ONLY_VERBS / ARGUMENT_SCAN_EXEMPT_HEADS", () => {
-  it("READ_ONLY_VERBS lists exactly the current 16 verbs", () => {
-    deepStrictEqual(
-      READ_ONLY_VERBS.map((v) => v.verb),
-      [
-        "ls",
-        "ll",
-        "la",
-        "cat",
-        "head",
-        "tail",
-        "less",
-        "more",
-        "grep",
-        "find",
-        "locate",
-        "cd",
-        "file",
-        "stat",
-        "du",
-        "wc",
-      ],
-    );
-  });
-
-  it("ARGUMENT_SCAN_EXEMPT_HEADS is a subset of READ_ONLY_VERBS", () => {
-    const verbs = new Set(READ_ONLY_VERBS.map((v) => v.verb));
-    for (const head of ARGUMENT_SCAN_EXEMPT_HEADS) ok(verbs.has(head), head);
+describe("ARGUMENT_SCAN_EXEMPT_HEADS", () => {
+  it("leaves out the heads that can run a command or cannot be checked", () => {
+    for (const head of ["find", "less", "more", "ll", "la"]) {
+      ok(!ARGUMENT_SCAN_EXEMPT_HEADS.has(head), head);
+    }
   });
 
   // The hand-written set is a lower bound, not exhaustive.

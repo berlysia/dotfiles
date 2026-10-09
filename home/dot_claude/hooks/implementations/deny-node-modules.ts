@@ -12,21 +12,17 @@ import { getCommandFromToolInput } from "../lib/command-parsing.ts";
 import { prepareDenyInput } from "../lib/deny-input.ts";
 import { isExemptReadOnlyCommand } from "../lib/read-only-command.ts";
 import {
-  createAskResponse,
   createBoundaryDenyResponse,
   createDenyResponse,
   createMatchedTextDenyResponse,
-  formatAskReason,
   shortenForReason,
 } from "../lib/context-helpers.ts";
 import {
-  buildReadOnlyPatterns,
   classifyDeletion,
   cpThenNodeModules,
   describeDeletionMatch,
-  isNonModifyingShape,
-  mayAllowAsReadOnly,
   redirectToNodeModules,
+  sortOutputThenNodeModules,
   standaloneSymlinkRemovalOperands,
 } from "../lib/node-modules-policy.ts";
 import { prefixThenOnLine, type TextMatcher } from "../lib/linear-match.ts";
@@ -40,10 +36,11 @@ import {
 import "../types/tool-schemas.ts";
 
 /**
- * Control access to node_modules directories with 3-stage analysis
- * - ALLOW: Read-only operations (ls, cat, cd, etc.)
- * - ASK: Unknown operations requiring approval
- * - DENY: Destructive operations (rm, mv, write redirects, etc.)
+ * Keeps node_modules from being modified.
+ * - DENY: destructive operations on it (rm, mv, write redirects, etc.) and
+ *   file-tool writes under it
+ * - no decision: everything else. Permission rules and, in auto mode, the
+ *   classifier judge the command; this hook does not ask
  * Converted from deny-node-modules-write.ts using cc-hooks-ts
  */
 const hook = defineHook({
@@ -65,7 +62,7 @@ const hook = defineHook({
     }
 
     try {
-      // Special handling for Bash commands with 3-stage analysis
+      // Bash commands are judged per fragment of the parsed command
       if (tool_name === "Bash") {
         const cmd = getCommandFromToolInput("Bash", tool_input) || "";
         // Removing a symlink named node_modules never touches its target, so a
@@ -88,8 +85,6 @@ const hook = defineHook({
                 ? createMatchedTextDenyResponse(bashResult.reason)
                 : createBoundaryDenyResponse(bashResult.reason),
             );
-          case "ask":
-            return context.json(createAskResponse(bashResult.reason));
           case "allow":
             return context.success({});
         }
@@ -134,7 +129,7 @@ interface NodeModulesValidationResult {
   reason?: string;
 }
 
-type Decision = "deny" | "allow" | "ask";
+type Decision = "deny" | "allow";
 
 interface AnalysisResult {
   decision: Decision;
@@ -177,10 +172,6 @@ async function extractFilePath(
       (tool_input as import("cc-hooks-ts").ToolSchema["NotebookEdit"]["input"])
         .notebook_path || null
     );
-  }
-  if (tool_name === "Bash") {
-    const cmd = getCommandFromToolInput("Bash", tool_input) || "";
-    return await extractPathFromBashCommand(cmd);
   }
   return null;
 }
@@ -239,15 +230,9 @@ async function analyzeBashCommand(
   // Judged once on the whole command; fragments only inherit the result.
   const readOnlyExempt = isExemptReadOnlyCommand(maskedText, { parsingMethod });
 
-  let hasUnknown = false;
-  let unknownCmd = "";
-
   // Check each command individually
   for (const cmd of commands) {
-    const result = analyzeIndividualCommand(cmd, {
-      fallback: parsingMethod === "fallback",
-      readOnlyExempt,
-    });
+    const result = analyzeIndividualCommand(cmd, { readOnlyExempt });
 
     // If any command should be denied, deny the entire compound command
     if (result.decision === "deny") {
@@ -259,31 +244,11 @@ async function analyzeBashCommand(
         matched: result.matched,
       };
     }
-
-    // Track unknown commands
-    if (result.decision === "ask") {
-      hasUnknown = true;
-      unknownCmd = cmd;
-    }
   }
 
-  // If no denies but has unknown, ask
-  if (hasUnknown) {
-    return {
-      decision: "ask",
-      reason: formatAskReason(
-        "Unknown node_modules operation requires approval",
-        "Command",
-        [unknownCmd],
-      ),
-      operation: "unknown",
-    };
-  }
-
-  // All commands are allowed
   return {
     decision: "allow",
-    reason: "Read-only operations permitted",
+    reason: "No destructive operation on node_modules",
   };
 }
 
@@ -349,22 +314,32 @@ export const DESTRUCTIVE_NODE_MODULES_PATTERNS: ReadonlyArray<{
     operation: "create",
     trigger: 'the word "touch" followed by node_modules',
   },
+  {
+    pattern: prefixThenOnLine(/(?:^|\s)tee\s+/, /node_modules/),
+    operation: "write",
+    trigger: 'the word "tee" followed by node_modules',
+  },
+  {
+    pattern: sortOutputThenNodeModules(),
+    operation: "write",
+    trigger:
+      'the word "sort" followed by node_modules, with a -o or --output option',
+  },
+  {
+    pattern: prefixThenOnLine(/(?:^|\s)uniq\s+/, /node_modules/),
+    operation: "write",
+    trigger: 'the word "uniq" followed by node_modules',
+  },
 ];
 
 function analyzeIndividualCommand(
   cmd: string,
-  opts: { fallback: boolean; readOnlyExempt: boolean },
+  opts: { readOnlyExempt: boolean },
 ): AnalysisResult {
   // If no node_modules reference, always allow
   if (!cmd.toLowerCase().includes("node_modules")) {
     return { decision: "allow", reason: "No node_modules reference" };
   }
-
-  // Read-only operations - clear allow
-  const readOnlyPatterns = [
-    ...buildReadOnlyPatterns(),
-    { pattern: /(?:^|\s)(pwd|dirname|basename)/, operation: "path-info" },
-  ];
 
   const verdict = classifyDeletion(cmd, {
     readOnlyExempt: opts.readOnlyExempt,
@@ -378,7 +353,6 @@ function analyzeIndividualCommand(
     };
   }
 
-  // Check for destructive operations first
   for (const {
     pattern,
     operation,
@@ -394,64 +368,12 @@ function analyzeIndividualCommand(
     }
   }
 
-  if (verdict === "ask-find") {
-    return {
-      decision: "ask",
-      reason: "find with -exec on node_modules requires approval",
-      operation: "unknown",
-    };
-  }
-  if (!mayAllowAsReadOnly(cmd, { fallback: opts.fallback })) {
-    return {
-      decision: "ask",
-      reason:
-        "Compound command fragment under fallback parsing requires approval",
-      operation: "unknown",
-    };
-  }
-
-  // Printing file lines or running an installed tool does not make
-  // node_modules a target. No decision is given, so the regular permission
-  // path still judges the command.
-  if (isNonModifyingShape(cmd)) {
-    return {
-      decision: "allow",
-      reason: "does not target node_modules",
-      operation: "non-modifying",
-    };
-  }
-
-  // Check for read-only operations
-  for (const { pattern, operation } of readOnlyPatterns) {
-    if (pattern.test(cmd)) {
-      return {
-        decision: "allow",
-        reason: `${operation} operation is safe`,
-        operation,
-      };
-    }
-  }
-
-  // Unknown operation - ask for approval
+  // Not a destructive spelling: no decision. Asking here would send the
+  // command to a person instead of the permission rules and the classifier.
   return {
-    decision: "ask",
-    reason: "Unknown operation on node_modules requires approval",
-    operation: "unknown",
+    decision: "allow",
+    reason: "No destructive operation on node_modules",
   };
-}
-
-async function extractPathFromBashCommand(
-  command: string,
-): Promise<string | null> {
-  // Use the new analysis system to determine if command affects node_modules
-  const result = await analyzeBashCommand(command);
-
-  // If the command involves node_modules in any way, return dummy path to trigger processing
-  if (result.decision !== "allow" || command.includes("node_modules")) {
-    return "node_modules";
-  }
-
-  return null;
 }
 
 export default hook;

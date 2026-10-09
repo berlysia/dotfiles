@@ -23,7 +23,6 @@ import {
 import {
   entriesWithSpec,
   NM,
-  readOnlyVerbsByCategory,
   RM_HEAD,
   RULES,
   SPEC_BY_SOURCE,
@@ -62,18 +61,16 @@ const ORIGINAL_SOURCES: Record<string, string[]> = {
     `(?:^|\\s)(chmod|chown)\\s+.*${NM}`,
     `(?:^|\\s)mkdir\\s+.*${NM}`,
     `(?:^|\\s)touch\\s+.*${NM}`,
+    `(?:^|\\s)tee\\s+.*${NM}`,
+    `(?:^|\\s)uniq\\s+.*${NM}`,
   ],
   INTERPRETER_WRITE_INDICATOR_PATTERNS: [
     "open\\([^)]*['\"][wa]\\+?b?['\"]",
     "Path\\([^)]*\\)\\.open\\(",
   ],
-  // The construction buildReadOnlyPatterns used before the rewrite, applied to the verb table.
-  READ_ONLY_PATTERNS: readOnlyVerbsByCategory().map(
-    (verbs) => new RegExp(`(?:^|\\s)(${verbs.join("|")})\\s+.*${NM}`).source,
-  ),
 };
 
-const EXPECTED_TOTAL = 26;
+const EXPECTED_TOTAL = 23;
 
 describe("production tables", () => {
   it("loads each owner module", async () => {

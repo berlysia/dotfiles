@@ -3,8 +3,6 @@ import { INTERPRETER_WRITE_INDICATOR_PATTERNS } from "../../implementations/docu
 import { DANGEROUS_PATTERNS } from "../../implementations/permission-auto-approve.ts";
 import { DANGEROUS_COMMAND_PATTERNS } from "../../lib/command-parsing.ts";
 import type { OracleMatcher, TextMatcher } from "../../lib/linear-match.ts";
-import { buildReadOnlyPatterns } from "../../lib/node-modules-policy.ts";
-import { READ_ONLY_VERBS } from "../../lib/read-only-command.ts";
 import { WS_CORE } from "../__fixtures__/same-language.ts";
 
 // The local Bash guard rejects the literal, so build it.
@@ -32,22 +30,10 @@ export const TABLES: Record<string, OracleMatcher[]> = {
   DESTRUCTIVE_NODE_MODULES_PATTERNS: oraclesOf(
     DESTRUCTIVE_NODE_MODULES_PATTERNS.map((entry) => entry.pattern),
   ),
-  READ_ONLY_PATTERNS: oraclesOf(
-    buildReadOnlyPatterns().map((entry) => entry.pattern),
-  ),
   INTERPRETER_WRITE_INDICATOR_PATTERNS: oraclesOf(
     INTERPRETER_WRITE_INDICATOR_PATTERNS,
   ),
 };
-
-/** Verbs of each read-only category, in table order. */
-export function readOnlyVerbsByCategory(): string[][] {
-  const byCategory = new Map<string, string[]>();
-  for (const { verb, category } of READ_ONLY_VERBS) {
-    byCategory.set(category, [...(byCategory.get(category) ?? []), verb]);
-  }
-  return [...byCategory.values()];
-}
 
 export interface RuleSpec {
   source: string;
@@ -250,6 +236,18 @@ export const RULES: RuleSpec[] = [
     [`touch a ${NM}`, `x touch\n${NM}`, `touch  ${NM}`],
   ),
   spec(
+    `(?:^|\\s)tee\\s+.*${NM}`,
+    ["tee", NM, "x"],
+    ["teex", "x tee", `${NM}/x`],
+    [`tee a ${NM}`, `x tee\n${NM}`, `tee  ${NM}`],
+  ),
+  spec(
+    `(?:^|\\s)uniq\\s+.*${NM}`,
+    ["uniq", NM, "x"],
+    ["uniqx", "x uniq", `${NM}/x`],
+    [`uniq a ${NM}`, `x uniq\n${NM}`, `uniq  ${NM}`],
+  ),
+  spec(
     "open\\([^)]*['\"][wa]\\+?b?['\"]",
     ["open(", "'", "w", ")", "x"],
     ['"', "a", "+", "b", "wb", "'w'", "'a+'", '"wb"', "Path("],
@@ -263,15 +261,6 @@ export const RULES: RuleSpec[] = [
     ["Path(x).open(", "Path(a, b).open('w')", "Path().open(", "Path(\n).open("],
     { perf: [() => "Path(".repeat(20000)] },
   ),
-  ...readOnlyVerbsByCategory().map((verbs) => {
-    const head = verbs[0] as string;
-    return spec(
-      new RegExp(`(?:^|\\s)(${verbs.join("|")})\\s+.*${NM}`).source,
-      [head, NM, "x"],
-      [...verbs.slice(1), `${head}x`, `x ${head}`, `${NM}/x`],
-      [`${head} ${NM}/x`, `${head}  x ${NM}`, `x ${head}\n${NM}`],
-    );
-  }),
 ];
 
 export const SPEC_BY_SOURCE = new Map(RULES.map((rule) => [rule.source, rule]));

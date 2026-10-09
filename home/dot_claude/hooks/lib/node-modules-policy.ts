@@ -4,7 +4,6 @@ import {
   FIND_EXEC_FLAGS,
   MOVE_VERBS,
 } from "./destructive-verbs.ts";
-import { READ_ONLY_VERBS, type ReadOnlyCategory } from "./read-only-command.ts";
 import {
   createLineIndex,
   createRunEnds,
@@ -18,30 +17,6 @@ import {
 import { trimSpaces } from "./shell-lex.ts";
 
 const NODE_MODULES = /node_modules/;
-
-/**
- * One matcher per category, linearly equivalent to
- * `(?:^|\s)(<verbs>)\s+.*node_modules`. This is the allow side, so a matcher
- * wider than that regex would let a command through that was denied. Do not
- * add a regex of the form `X\s+.*Y` / `X.*Y` here; use prefixThenOnLine
- * (see Issue #219).
- */
-export function buildReadOnlyPatterns(): ReadonlyArray<{
-  readonly pattern: TextMatcher;
-  readonly operation: ReadOnlyCategory;
-}> {
-  const byCategory = new Map<ReadOnlyCategory, string[]>();
-  for (const { verb, category } of READ_ONLY_VERBS) {
-    byCategory.set(category, [...(byCategory.get(category) ?? []), verb]);
-  }
-  return [...byCategory].map(([category, verbs]) => ({
-    pattern: prefixThenOnLine(
-      new RegExp(`(?:^|\\s)(${verbs.join("|")})\\s+`),
-      NODE_MODULES,
-    ),
-    operation: category,
-  }));
-}
 
 /**
  * Linear equivalent of `(?:^|\s)cp\s+.*\s+.*node_modules`, where the second
@@ -130,6 +105,21 @@ export function redirectToNodeModules(): OracleMatcher {
   };
 }
 
+// `--o` covers `--output` and the abbreviations getopt accepts (`--out=`).
+const SORT_OUTPUT_OPTION = /(?:^|\s)(?:-[A-Za-z]*o|--o)/;
+
+/**
+ * `sort` followed by node_modules, with an output option anywhere in the
+ * fragment: `sort -o <file>` writes the file it names. The option is not tied
+ * to the path, so `sort -o /tmp/out node_modules/x` matches too.
+ */
+export function sortOutputThenNodeModules(): TextMatcher {
+  const sortThenModules = prefixThenOnLine(/(?:^|\s)sort\s+/, NODE_MODULES);
+  return {
+    test: (text) => sortThenModules.test(text) && SORT_OUTPUT_OPTION.test(text),
+  };
+}
+
 const BEFORE = "(?:^|[\\s'\"`(;|&{!\\\\/<>])";
 const AFTER = "(?=$|[\\s'\"`);|&<>])";
 const DELETE_WORD = new RegExp(
@@ -164,59 +154,6 @@ export function describeDeletionMatch(
     ? "a delete word in a command that mentions node_modules, quoted text included"
     : `the word "${word}" in a command that mentions node_modules, quoted text included`;
 }
-// Spec K2 lists newline / $( / backtick / <( / >(; ; & | ( ) { } are added so that a compound
-// command the parser failed to split never gets the read-only head exemption.
-const NOT_SIMPLE = /\n|\$\(|`|<\(|>\(|[;&|(){}]/;
-
-/**
- * Whether the hook may apply its read-only allow patterns to this individual command.
- * In fallback parsing the "individual command" may still be a compound fragment
- * (`ls x; python3 -c '…rmtree…'`), so a read-only verb anywhere in it proves nothing.
- */
-export function mayAllowAsReadOnly(
-  cmd: string,
-  opts: { fallback: boolean },
-): boolean {
-  return !(opts.fallback && NOT_SIMPLE.test(cmd.toLowerCase()));
-}
-
-const PATH_WORD = "(?!-)[A-Za-z0-9_@.\\/+:=,-]+";
-const SED_LINES = "\\d+(?:,\\d+)?p";
-// The whole fragment, single spaces only: `sed -n`, one print-lines script,
-// then plain path words. No `.*`, so matching stays linear (see Issue #219).
-const SED_PRINT = new RegExp(
-  `^sed -n (?:${SED_LINES}|'${SED_LINES}'|"${SED_LINES}") ${PATH_WORD}(?: ${PATH_WORD})*$`,
-);
-// The tools that .settings.permissions.json allows under this spelling. Keep
-// the two lists equal: for any other name the hook's ask is the only brake.
-const LOCAL_BIN_TOOLS = ["tsc", "oxfmt", "eslint", "prettier", "oxlint"];
-const LOCAL_BIN_HEAD = new RegExp(
-  `^(?:\\.\\/)?node_modules\\/\\.bin\\/(?:${LOCAL_BIN_TOOLS.join("|")})(?= |$)`,
-);
-
-/** The head runs one of those tools and nothing after it names node_modules. */
-function isLocalBinRun(cmd: string): boolean {
-  const head = LOCAL_BIN_HEAD.exec(cmd);
-  if (head === null) return false;
-  return cmd.toLowerCase().indexOf("node_modules", head[0].length) === -1;
-}
-
-/**
- * True only for fragments whose spelling does not make node_modules a target:
- * `sed -n <N[,M]>p <paths>` prints lines, and `node_modules/.bin/<tool> …`
- * runs an installed tool without naming the directory again. The hook then
- * gives no decision, so Claude Code's own rules and auto-approve still judge
- * the command. Only add allowed shapes here; every other form returns false
- * and keeps the ask. echo and printf are left out on purpose: `printf -v`
- * evaluates a subscript, and echo can hand the path to a later command.
- * Accepted gap: a matching fragment no longer makes the whole command ask, so
- * `node_modules/.bin/tsc --listFiles | xargs rm` is not caught, the same as
- * `bunx tsc --listFiles | xargs rm` (ADR-0020, addendum of 2026-10-09).
- */
-export function isNonModifyingShape(cmd: string): boolean {
-  const trimmed = trimSpaces(cmd);
-  return SED_PRINT.test(trimmed) || isLocalBinRun(trimmed);
-}
 
 /** Drops every quote and backslash so `-ex''ec`, `"-exec"` and `\rm` compare as the bare word, then takes the basename. */
 function baseName(word: string): string {
@@ -242,7 +179,7 @@ function findIsDestructive(findArgs: string[]): boolean {
 export function classifyDeletion(
   cmd: string,
   opts: { readOnlyExempt: boolean },
-): "deny-delete" | "deny-find" | "ask-find" | null {
+): "deny-delete" | "deny-find" | null {
   const lower = cmd.toLowerCase();
   if (!lower.includes("node_modules")) return null;
   // Split on shell punctuation as well as whitespace so `$(find`, `-delete;` and `'true;mv` yield bare words.
@@ -258,7 +195,7 @@ export function classifyDeletion(
   );
   if (findWithExec && findIsDestructive(findArgs)) return "deny-find";
   if (DELETE_WORD.test(lower) && !opts.readOnlyExempt) return "deny-delete";
-  return findWithExec ? "ask-find" : null;
+  return null;
 }
 
 const ALLOWED_COMMAND = /^[A-Za-z0-9_\/.@+=:,\- ]+$/;

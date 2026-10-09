@@ -13,37 +13,10 @@
 
 import { lexStep, type QuoteState, trimTrailingBlanks } from "./shell-lex.ts";
 
-type ReadOnlyCategory = "list" | "read" | "search" | "navigate" | "info";
-
-export type { ReadOnlyCategory };
-
-export const READ_ONLY_VERBS: ReadonlyArray<{
-  verb: string;
-  category: ReadOnlyCategory;
-}> = [
-  { verb: "ls", category: "list" },
-  { verb: "ll", category: "list" },
-  { verb: "la", category: "list" },
-  { verb: "cat", category: "read" },
-  { verb: "head", category: "read" },
-  { verb: "tail", category: "read" },
-  { verb: "less", category: "read" },
-  { verb: "more", category: "read" },
-  { verb: "grep", category: "search" },
-  { verb: "find", category: "search" },
-  { verb: "locate", category: "search" },
-  { verb: "cd", category: "navigate" },
-  { verb: "file", category: "info" },
-  { verb: "stat", category: "info" },
-  { verb: "du", category: "info" },
-  { verb: "wc", category: "info" },
-];
-
 /**
  * Heads whose arguments are never run or written by the command itself.
- * Listed explicitly (not derived from READ_ONLY_VERBS) so that adding a verb to
- * the table does not silently exempt it; a verb added here must have no option
- * that executes or writes.
+ * Listed explicitly, so a head is exempt only by a deliberate entry; a head
+ * added here must have no option that executes or writes.
  *
  * Left out on purpose: `find` (`-exec` and friends, which `-ex$'e'c` or a
  * globbed file name can hide from the spelling), `less` / `more` (`+<cmd>` and

@@ -30,14 +30,14 @@ describe("deny-node-modules.ts hook behavior", () => {
       ["a repeated cp word", NM + " cp ".repeat(7000)],
       ["a repeated ls word", NM + " " + "ls ".repeat(9000)],
     ] as const) {
-      it(`asks for ${name} in linear time`, async () => {
+      it(`gives no decision for ${name} in linear time`, async () => {
         const context = createPreToolUseContext("Bash", { command });
         const start = performance.now();
         await invokeRun(denyNodeModulesHook, context);
         const elapsed = performance.now() - start;
 
         ok(elapsed < 1000, `${elapsed} ms`);
-        context.assertAsk();
+        context.assertSuccess({});
       });
     }
 

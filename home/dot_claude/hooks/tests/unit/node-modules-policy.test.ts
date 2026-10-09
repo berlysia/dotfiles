@@ -1,18 +1,15 @@
-import { deepStrictEqual, ok, strictEqual } from "node:assert";
+import { deepStrictEqual, strictEqual } from "node:assert";
 import { describe, it } from "node:test";
 import {
-  buildReadOnlyPatterns,
   classifyDeletion,
   describeDeletionMatch,
   findDeleteWord,
-  isNonModifyingShape,
-  mayAllowAsReadOnly,
+  sortOutputThenNodeModules,
   standaloneSymlinkRemovalOperands as ops,
 } from "../../lib/node-modules-policy.ts";
 import {
   ARGUMENT_SCAN_EXEMPT_HEADS,
   isExemptReadOnlyCommand,
-  READ_ONLY_VERBS,
 } from "../../lib/read-only-command.ts";
 
 // `cmd` is the whole Bash command, as in the hook.
@@ -82,10 +79,6 @@ const DENY_FIND: string[] = [
   "find node_modules -exec${IFS}rm {} +",
   "find node_modules -exec sh -c 'rm -rf ${x}' _ {} \\;",
 ];
-const ASK_FIND: string[] = [
-  'find node_modules -exec python3 -c "import shutil,sys;shutil.rmtree(sys.argv[1])" {} \\;',
-  "find node_modules -exec echo {} \\;",
-];
 const NOT_DELETION: string[] = [
   "grep -rn unlink node_modules/x",
   "grep rm node_modules/x",
@@ -94,6 +87,9 @@ const NOT_DELETION: string[] = [
   "ls node_modules",
   'grep "a|rm" node_modules/x',
   'grep -e "rm -rf ${X}" node_modules/x',
+  // find with an exec flag and no delete or move word is not a deletion
+  'find node_modules -exec python3 -c "import shutil,sys;shutil.rmtree(sys.argv[1])" {} \\;',
+  "find node_modules -exec echo {} \\;",
 ];
 
 describe("classifyDeletion", () => {
@@ -106,9 +102,6 @@ describe("classifyDeletion", () => {
     it(`deny-find: ${cmd}`, () =>
       strictEqual(classify(cmd, false), "deny-find"));
   }
-  for (const cmd of ASK_FIND) {
-    it(`ask-find: ${cmd}`, () => strictEqual(classify(cmd, false), "ask-find"));
-  }
   for (const cmd of NOT_DELETION) {
     it(`null: ${cmd}`, () => strictEqual(classify(cmd, false), null));
   }
@@ -118,43 +111,34 @@ describe("classifyDeletion", () => {
       "deny-find",
     );
   });
-  it("mayAllowAsReadOnly refuses compound fragments only under fallback", () => {
-    strictEqual(
-      mayAllowAsReadOnly("ls x; python3 -c 'shutil.rmtree(\"node_modules\")'", {
-        fallback: true,
-      }),
-      false,
-    );
-    strictEqual(
-      mayAllowAsReadOnly("ls node_modules", { fallback: true }),
-      true,
-    );
-    strictEqual(
-      mayAllowAsReadOnly("ls x; ls node_modules", { fallback: false }),
-      true,
-    );
-  });
-  for (const { verb } of READ_ONLY_VERBS) {
+  // Heads that read like read-only commands. Only the exempt ones skip the
+  // delete-word check; find, less, more, ll and la are left out on purpose.
+  const READ_ONLY_LOOKING_HEADS = [
+    "ls",
+    "ll",
+    "la",
+    "cat",
+    "head",
+    "tail",
+    "less",
+    "more",
+    "grep",
+    "find",
+    "locate",
+    "cd",
+    "file",
+    "stat",
+    "du",
+    "wc",
+  ];
+  for (const verb of READ_ONLY_LOOKING_HEADS) {
     it(`read-only head exemption covers only exempt heads: ${verb}`, () => {
       strictEqual(
         classify(`${verb} node_modules/rm`, false),
         ARGUMENT_SCAN_EXEMPT_HEADS.has(verb) ? null : "deny-delete",
       );
     });
-    it(`generated read-only regex matches ${verb}`, () => {
-      ok(
-        buildReadOnlyPatterns().some((p) =>
-          p.pattern.test(`${verb} node_modules/x`),
-        ),
-      );
-    });
   }
-  it("generates exactly the five existing categories", () => {
-    strictEqual(
-      new Set(buildReadOnlyPatterns().map((p) => p.operation)).size,
-      5,
-    );
-  });
 });
 
 describe("standaloneSymlinkRemovalOperands", () => {
@@ -252,71 +236,33 @@ describe("describeDeletionMatch", () => {
   });
 });
 
-describe("isNonModifyingShape", () => {
+describe("sortOutputThenNodeModules", () => {
+  const matcher = sortOutputThenNodeModules();
   const YES = [
-    "sed -n 400,450p node_modules/nodemon/lib/monitor/run.js",
-    "sed -n 7p node_modules/a.js",
-    "sed -n '1,200p' node_modules/@notionhq/client/build/src/Client.d.ts",
-    'sed -n "3,4p" node_modules/a.js node_modules/b.js',
-    "sed -n 1,5p node_modules/.pnpm/a@1.0.0/node_modules/a/index.js",
-    "  sed -n 1,5p node_modules/a.js  ",
-    "node_modules/.bin/tsc",
-    "node_modules/.bin/tsc --noEmit -p tsconfig.json",
-    "./node_modules/.bin/oxfmt --check a.md 2>&1",
-    "node_modules/.bin/tsc --outDir dist > out.log",
-    'node_modules/.bin/eslint "src/**/*.ts"',
+    "sort -o node_modules/a/f /tmp/in",
+    "sort --output=node_modules/a/f /tmp/in",
+    "sort -uo node_modules/a/f /tmp/in",
+    "sort --out=node_modules/a/f /tmp/in",
+    "sort -o /tmp/out node_modules/list.txt",
+    "cat x | sort -o node_modules/f",
   ];
   const NO = [
-    // sed: anything but `-n <lines>p <plain paths>` keeps the ask
-    "sed -n '1w node_modules/x' a.js",
-    "sed -n '1,5p;1w x' node_modules/a.js",
-    "sed -n 1,5p -i node_modules/a.js",
-    "sed -n -i 1,5p node_modules/a.js",
-    "sed -i 1d node_modules/a.js",
-    "sed 1,5p node_modules/a.js",
-    "sed -n 1,5p",
-    "sed -n 1,5p node_modules/a.js > out",
-    "sed -n 1,5p node_modules/a.js | tee x",
-    "sed -n 1,5p 'node_modules/a b.js'",
-    "sed -n 1,5p $D/node_modules/a.js",
-    "sed -n 1,5p\tnode_modules/a.js",
-    "sed -n 1,5p node_modules/a.js\nrm x",
-    "/bin/sed -n 1,5p node_modules/a.js",
-    // local tool: a second mention, or any head but a relative .bin/<name>, keeps the ask
-    "node_modules/.bin/prettier --write node_modules/a.js",
-    "node_modules/.bin/tsc --outDir node_modules/x",
-    "node_modules/.bin/tsc > node_modules/out.txt",
-    "/w/node_modules/.bin/tsc --noEmit",
-    "../node_modules/.bin/tsc --noEmit",
-    "packages/a/node_modules/.bin/tsc --noEmit",
-    "node_modules/.bin/",
-    "node_modules/.bin/../../evil",
-    "node_modules/.bin/a/../../evil",
-    "node_modules/.bin/.hidden",
-    '"node_modules/.bin/tsc" --noEmit',
-    "node_modules/.bin/tsc\t--noEmit",
-    "node_modules/.bin/tsc\nrm x",
-    "node_modules/.pnpm/a/node_modules/.bin/tsc",
-    "X=1 node_modules/.bin/tsc",
-    "xargs node_modules/.bin/prettier --check",
-    // only the five tools that have an allow rule; the later mention is compared in lower case
-    "node_modules/.bin/rimraf dist",
-    "./node_modules/.bin/esbuild",
-    "node_modules/.bin/tscx --noEmit",
-    "node_modules/.bin/tsc --outDir NODE_MODULES/x",
-    // echo / printf are not a shape: printf -v evaluates a subscript, echo can feed a later command
-    'echo "=== node_modules ==="',
-    "echo node_modules",
-    "printf -v 'a[$(ln -sf x node_modules/y)]' z",
+    "sort node_modules/list.txt",
+    "sort -n -r node_modules/list.txt",
+    "sort -t: -k2 node_modules/list.txt",
+    "ls node_modules | sort -o /tmp/out",
+    "sort -o /tmp/out /tmp/in",
+    "sortx -o node_modules/f",
+    "sort -o x\nls node_modules",
   ];
   for (const cmd of YES) {
     it(`true: ${JSON.stringify(cmd)}`, () => {
-      strictEqual(isNonModifyingShape(cmd), true);
+      strictEqual(matcher.test(cmd), true);
     });
   }
   for (const cmd of NO) {
     it(`false: ${JSON.stringify(cmd)}`, () => {
-      strictEqual(isNonModifyingShape(cmd), false);
+      strictEqual(matcher.test(cmd), false);
     });
   }
 });
