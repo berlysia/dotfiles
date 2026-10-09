@@ -152,6 +152,10 @@ const GIVE_UP_REASONS: Record<ParserGiveUpKind, string> = {
   time: "Bash command could not be parsed within 100 ms, so the guard blocks it. It probably contains a syntax error; fix it or split it into smaller commands.",
 };
 
+/** The give-up texts, for callers that classify a deny reason after the fact. */
+export const PARSER_GIVE_UP_REASON_TEXTS: readonly string[] =
+  Object.values(GIVE_UP_REASONS);
+
 // Every give-up of this process, in order. Never cleared: a hook compares a
 // mark taken before its parser calls, so a missed check fails towards deny
 // only if the hook reads it. The three guard hooks must read it.
