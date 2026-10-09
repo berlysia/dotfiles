@@ -36,6 +36,7 @@ export interface UnifiedVoiceConfig {
 
   // 動作設定
   behavior: {
+    voiceEnabled: boolean;
     fallbackToStatic: boolean;
     systemNotifications: boolean;
     cleanupOnExit: boolean;

@@ -13,7 +13,8 @@
   "defaultMode": "auto",
   "skipAutoPermissionPrompt": true,
   "env": {
-    "CLAUDE_CODE_NO_FLICKER": "0"
+    "CLAUDE_CODE_NO_FLICKER": "0",
+    "CLAUDE_VOICE_ENABLED": "false"
     {{- if ne .chezmoi.os "windows" }}
     {{- $modsDir := print .chezmoi.homeDir "/" (includeTemplate "claude-mods-dir" . | trim) }}
     {{- $names := includeTemplate "claude-mod-names" (dict "root" (print .chezmoi.workingTree "/mods")) | splitList " " | compact }}

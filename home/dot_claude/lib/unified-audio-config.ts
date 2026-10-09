@@ -19,6 +19,11 @@ function detectPlatform(): Platform {
   return "linux";
 }
 
+// 未設定は有効として扱う。変数を知らない環境で通知が黙って消えないようにするため
+function isVoiceEnabled(value: string | undefined): boolean {
+  return value !== "false" && value !== "0";
+}
+
 // 統一設定の作成
 export function createUnifiedVoiceConfig(): UnifiedVoiceConfig {
   const homeDir = homedir();
@@ -44,6 +49,7 @@ export function createUnifiedVoiceConfig(): UnifiedVoiceConfig {
     },
 
     behavior: {
+      voiceEnabled: isVoiceEnabled(process.env.CLAUDE_VOICE_ENABLED),
       fallbackToStatic: true,
       systemNotifications: platform === "linux" || platform === "wsl",
       cleanupOnExit: true,

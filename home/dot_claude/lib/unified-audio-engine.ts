@@ -312,6 +312,39 @@ function getStaticSoundPath(
   return join(config.paths.soundsDir, fileName);
 }
 
+const DEFAULT_SOUND_TYPE = "Notification";
+
+// 読み上げは文で通知の種類を伝えるが、静的 WAV は音色でしか区別できないので種類ごとに分ける。
+// Record にしてあるのは、通知種別が増えたときに対応を決めるまで型検査で止めるため
+const NOTIFICATION_SOUND_TYPES: Record<NotificationType, EventType> = {
+  permission_prompt: "PermissionRequest",
+  idle_prompt: "AskUserQuestion",
+  elicitation_dialog: "AskUserQuestion",
+  auth_success: DEFAULT_SOUND_TYPE,
+};
+
+export function resolveNotificationSoundType(
+  notificationType: NotificationType | undefined,
+): EventType {
+  if (!notificationType) return DEFAULT_SOUND_TYPE;
+  return NOTIFICATION_SOUND_TYPES[notificationType] ?? DEFAULT_SOUND_TYPE;
+}
+
+/**
+ * 種別専用の WAV が無ければ ClaudeNotification.wav を使う。
+ * 全種類の音を用意していない環境でも、通知が無音にならないようにするため。
+ */
+export function resolveStaticSoundFile(
+  type: EventType,
+  config: UnifiedVoiceConfig,
+): string | null {
+  const candidates = [
+    getStaticSoundPath(type, config),
+    getStaticSoundPath(DEFAULT_SOUND_TYPE, config),
+  ];
+  return candidates.find((soundFile) => existsSync(soundFile)) ?? null;
+}
+
 async function playStaticWav(
   wavFile: string,
   config: UnifiedVoiceConfig,
@@ -353,14 +386,17 @@ async function executeFallbackNotification(
   }
 
   // Play main event sound
-  const fallbackFile = getStaticSoundPath(eventType, config);
+  const fallbackFile = resolveStaticSoundFile(eventType, config);
 
-  if (existsSync(fallbackFile)) {
+  if (fallbackFile) {
     logMessage(`Using fallback static WAV: ${fallbackFile}`, config);
     const success = await playStaticWav(fallbackFile, config);
     return { success, method: "static" };
   } else {
-    logMessage(`WARNING: No fallback WAV found: ${fallbackFile}`, config);
+    logMessage(
+      `WARNING: No fallback WAV found: ${getStaticSoundPath(eventType, config)}`,
+      config,
+    );
     return {
       success: false,
       method: "none",
@@ -375,6 +411,15 @@ export async function speakNotification(
   config: UnifiedVoiceConfig,
   session: VoiceSession,
 ): Promise<NotificationResult> {
+  // 合成・再生・静的 WAV へのフォールバックはすべてこの関数を通るので、ここで止めれば音は出ない
+  if (!config.behavior.voiceEnabled) {
+    logMessage(
+      `Muted by CLAUDE_VOICE_ENABLED, skipped ${eventType}: ${text}`,
+      config,
+    );
+    return { success: false, method: "none" };
+  }
+
   // Ensure directories exist
   ensureDirectories(config, session);
 
@@ -481,7 +526,7 @@ export async function handleNotification(
   });
   return await speakNotification(
     messages.voice,
-    "Notification",
+    resolveNotificationSoundType(options?.notificationType),
     config,
     session,
   );
