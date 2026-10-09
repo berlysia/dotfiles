@@ -93,6 +93,27 @@ agent が `rm $W/node_modules`（自分で張った symlink の削除）を `den
     - **見直す条件との対応**: (2) は発火していない。(3) は、配備から 2 週間の計数で判断する（手順は `docs/plans/deny-node-modules-no-ask-followups.md`）
     - **この確認が示さないこと**: どれも 1 回ずつの観測である。分類器が通したのは読み取りだけで、変更する綴りを分類器がどう判定するかは確かめていない（「受容したリスク」は変わらない）。`subcommandResults` が、`xargs` の許可規則が無い `echo a | xargs echo` を何を根拠に通したかは調べていない
     - **足す基準 (3) についての観測**: `auto-approve` は、上の `sort -o` のコマンドに allow ではなく pass（`held: node_modules/typescript/package.json: dot segment .bun`）を返した。`tee` のコマンドには allow を返した。基準 (3) の実測（`sort -o node_modules/a/f /tmp/in`）とはパスが違う
+- **追記（自動承認の hook を止めて auto mode を観察する、2026-10-10）**: 自動承認の hook 3 つ（`auto-approve.ts`、`permission-auto-approve.ts`、`permission-llm-evaluator.ts`）を 2026-10-24 まで止めて、allow も deny も ask も auto mode に任せたときに何が起きるかを観察する。コードとテストは残した。利用者の意図は、「人間が手をかけたくないから自動承認の仕組みを作ったので、auto mode がその役目を果たすなら重なっている」である
+  - **決定**: 3 つの hook の登録を、chezmoi のデータ `claude_hooks.auto_approval`（`home/.chezmoidata/claude_hooks.yaml`）で出し分ける。`false` の間は 3 つを登録せず、代わりに `home-destruction-guard.ts` を登録する。項目が無いときは `true`（3 つを登録する）として扱う。設定の許可規則は変えない。戻すかどうかを決める件数の閾値は置かない
+  - **理由**: auto mode では、hook が allow を返すと分類器は呼ばれず、hook が ask を返すと分類器を経ずに人間への確認になる。2026-10-08〜10-09 の 1,766 件では、Bash 850 件のうち hook の allow は 46 件で、611 件は分類器が判定していた。Bash 以外の 916 件では、439 件を hook が通していた。auto mode がある前提では、hook の allow と ask は分類器の仕事を先取りしている
+  - **止まるもの**: 危険コマンドの表の deny（`mkfs`、`dd … /dev/`、変数や `/` 始まりの `rm -rf`、`sudo rm`、`gh repo delete`、`npm unpublish`）と ask（`git push --force`、`git reset --hard`、`git branch -D`、`gh pr merge`、`npm publish` など）。設定の deny 規則を parser の断片ごとに照合して返す deny。LLM evaluator の deny。`~/.claude/logs/decisions.jsonl` への書き込み（`update-auto-approve` skill と `analyze-permissions` は、止めている間は新しいデータを得られない）
+  - **残すもの**: ホームディレクトリの再帰削除・移動の deny。`checkHomeDestruction` の呼び出しは `auto-approve.ts` の 1 か所だけで、設定の deny 規則は `rm * ~` などの字面しか覆わないので、独立した hook にした。`auto-approve.ts` は 1 行も変えていない。2 つの hook が同じコマンドに同じ判定を返すことは、テスト（`home-destruction-guard.test.ts`）で検査する
+  - **計器**: トランスクリプトの `permissionDecision` と、止めた `auto-approve.ts` への通し直し。`permissionDecision` が記録されるのは 2026-10-08T08:00Z 以降だけで、基準値は約 1.7 日ぶんしか無い。前後の期間を比べる代わりに、実験中の各ツール呼び出しを止めた hook に子プロセスで渡し、「hook なら何と言ったか」を「実際の判定元」と並べる（`scripts/auto-mode-experiment-report.ts`）
+  - **知らせ**: セッション開始時に、状態を持たない 3 つを出す。予定の日（2026-10-12、10-17、10-24）を過ぎて報告が無ければ、報告が作られるまで毎回、未作成であることとコマンドを出す。報告があれば、hook なら deny だった呼び出しのうち実行された件数と止められた件数を出す。2026-10-25 からは、期日を過ぎたことと戻し方を出す。報告は人が作る
+  - **却下した案**: 登録の行を消して `hook-target-drift` のテストに例外を足す（戻す手順が 2 つになり、戻し忘れると孤児の実装を検出しなくなる）。`auto-approve.ts` を登録したままホームだけ判定するモードを足す（止めたはずの hook が、設定の読み込みとログの書き込みを続ける）。home guard を共通の関数に抽出する（`auto-approve.ts` は 2026-09-24 の事故の防御コードで、本 ADR の K6 が変えないと決めている）
+  - **報告を自動で作る形を採らなかった理由**: 2 つの形を設計し、どちらもレビューが収束しなかった。systemd の user timer は、値を戻したときに timer を止める手順、`ExecStart` での `bun` の解決、遅れて動いたときの扱い、日付の二重管理、無人の実行の資源の上限が要る。セッション開始時に切り離した子プロセスで作る形は、失敗した後の再起動の歯止め、実行中の印、配備の時刻の排他の作成、起動するプロセスの環境、状態のファイルの検証が要る。どちらも、セッションをまたいで残る状態を持ち、切り替えの値を戻してもその状態は消えない。「1 つの値で戻せる、2 週間の実験」という前提と合わない。切り離した子プロセスが hook とセッションの終了後も動くことは、`claude -p` で実測した（hook が 18:11:30Z に起動し、セッションが 18:11:37Z に終わり、子プロセスが 18:11:57Z に完了）
+  - **受容したリスク**: 分類器が危険コマンドをどう判定するかは確かめていない。確かめるために流すこともしていない。hook なら deny だった呼び出しが実行されても、気づくのは次に報告を作ったときである。auto mode でないセッション（2026-09-26 以降の 131 セッション中 21）では、hook が通していたものが人間への確認になる。guard が動かないと、すべての Bash が止まる（ほかの guard と同じ起動の形）。同じ利用者として動くプロセスは、知らせが読むファイルを書き換えて知らせを止められる。分類器の reject がトランスクリプトにどう残るかは、Claude Code の文書に無く、基準の期間には 1 件も無い
+  - **分類器の環境の記述**: 利用者の設定の `autoMode.environment` は、特定の repo（`berlysia/eslint-config`）を信頼する記述で、全プロジェクトに効いていた。利用者が、組み込みの既定（`"$defaults"`）と、個人のヘルパーの 1 行に書き換える。これは実験の状態ではなく恒久の修正で、切り替えの値を戻しても戻さない。この repo の管理には入れていない
+  - **見直す条件**: 2026-10-24 の報告を見て、3 つとも戻すか、止めたままにするか、deny だけ戻すかを利用者が決める。そのとき、上の追記の `tee`・`sort -o`・`uniq` の deny と、`xargs`・`find` の許可規則の削除も見直す（前者は `auto-approve` が allow を返すことを前提にしている）。報告で、hook なら deny だった呼び出しが実行されていたと分かったとき、または分類器の reject や人間への確認で作業が進まないと分かったときは、その場で利用者に報告し、戻すかどうかは利用者が決める
+  - **計画から外れた点**: (1) 設定を統合するスクリプトの Hash の行に、`deployed-at` の「有無と中身」を入れると設計したが、実装は中身を読まず、`stat` の種類・大きさ・更新時刻を入れた。この行は `chezmoi status` と `chezmoi diff` でも評価されるので、中身を読む形は、その場所に FIFO や大きなファイルがあると chezmoi のコマンドが止まる。作成・削除・書き直しで Hash が動く、という目的は同じである。(2) `sync-experiment-deployed-at.test.ts` の「有効な値」の固定値を、計画の `2026-10-10T01:00:00Z` から `2026-10-01T01:00:00Z` に変えた。計画の値は、実装した時点の実際の時計（UTC で 2026-10-09）より後で、bash の関数が正しく「未来なので書き直す」と判定した。実装ではなく、固定値が実際の時計に依っていた
+- **追記（deny して別の方法に誘導する候補は足さない、2026-10-10）**: ask をやめて判定なしにした綴りのうち、deny して別の方法を示す候補が 3 つあった。評価して、どれも足さないと決めた
+  - **足してよい条件**: 理由文で、次にどうすればよいかを示せること。候補ごとに 3 つを確かめる。(1) その操作の代わりに、決まった方法があるか。(2) その方法で、モデルはやりたかったことを果たせるか。(3) deny の理由文に、具体的なコマンドの形まで書けるか。示せないなら、判定なしのまま分類器に任せる
+  - **標本**: トランスクリプトの `hook_success` attachment のうち、理由文が `Unknown node_modules operation requires approval` で始まるもの。2026-09-24〜10-09 で 140 件を得た。上の追記の 124 件とは一致せず、差の原因は突き止めていない。hook を開発していたセッションのコマンドが多く、偏りがある
+  - **`node_modules/.bin/<tool>` を `bunx <tool>` へ**: 足さない。(2) を満たさない場合がある。`bunx` は、ツールが cwd か祖先に入っていればそれを使う（eslint で、ローカル 10.11.0、`bunx` 10.11.0、最新 10.12.0 を実測）。入っていなければ、最新版を取得して実行する（空のディレクトリの `bunx tsc` と、この repo の `bunx eslint` で実測）。案内に従うと、固定していない版を実行する経路ができる。断片の先頭語が `.bin` のツールだった 26 件のうち、約 9 件は pnpm のプロジェクトで、10 件は絶対パス（別のプロジェクトや子パッケージの `.bin`）だった。この綴りに害は無く、今は分類器が通す
+  - **`ln -s … node_modules` を `git-worktree-create` へ**: 足さない。16 件のうち、リンクの置き先が scratchpad や tmp のコピーだったものが 15 件で、そこには代わりの方法が無い。git worktree が置き先だった 1 件は 2026-09-28 で、`git-worktree-create` が worktree の中で依存を入れるようになった 2026-10-06 より前である
+  - **`sed -i … node_modules/…` をパッケージマネージャでの入れ直しへ**: 足さない。`node_modules` の中へ実際に書き込むコマンドは、標本に 0 件だった。`sed -i` の 2 件は、パターンの文字列に `node_modules` があるだけで、書き込み先は別のファイルだった。(2) も弱い。一時的に書き換えて調べる、という目的は入れ直しでは果たせない
+  - **見直す条件**: 置き先が `.git/worktree/` の下である `node_modules` の symlink を張るコマンドが、2026-10-06 より後に観測されたら、置き先が worktree のときだけ deny して `cd <worktree> && <パッケージマネージャ> install --frozen-lockfile` を案内する規則を検討する。worktree に張った symlink の下で install すると、リンク越しに共有の実体へ書き込むからである。`node_modules` の中へ書き込む Bash のコマンドが観測されたときも見直す
+  - **足すときの置き方**: 誘導の deny は、`block-tsx` と同じく `createDenyResponse` で返し、`Suggestion:` に具体的なコマンドの形を書く。`createBoundaryDenyResponse` と `createMatchedTextDenyResponse` は使わない。これらが付ける案内は、別のコマンドでの再試行を禁じるので、誘導と矛盾する（K1）
 
 ## References
 
@@ -105,3 +126,8 @@ agent が `rm $W/node_modules`（自分で張った symlink の削除）を `den
 - `home/dot_claude/hooks/implementations/permission-llm-evaluator.ts`
 - `home/dot_claude/.settings.hooks.json.tmpl`
 - `home/dot_claude/hooks/tests/unit/destructive-verbs-drift.test.ts`
+- `home/.chezmoidata/claude_hooks.yaml`
+- `home/dot_claude/hooks/implementations/home-destruction-guard.ts`
+- `home/dot_claude/hooks/lib/auto-mode-experiment.ts`
+- `home/dot_claude/scripts/auto-mode-experiment-report.ts`
+- `home/.chezmoitemplates/sync-experiment-deployed-at.sh`
