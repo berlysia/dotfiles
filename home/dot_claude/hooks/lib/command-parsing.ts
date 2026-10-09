@@ -153,11 +153,13 @@ export const DANGEROUS_COMMAND_PATTERNS: ReadonlyArray<DangerousPattern> = [
       'the text "sudo" followed by whitespace and "rm", quoted text included',
   },
   {
-    pattern: prefixThenOnLine(/dd\s+/, /\/dev\//),
+    // `\b` keeps words that merely end in "dd" (`ssh-add`, `git add`, `ldd`)
+    // out, as the same rule in permission-auto-approve.ts does.
+    pattern: prefixThenOnLine(/\bdd\s+/, /\/dev\//),
     reason: "Disk operation",
     requiresReview: false,
     trigger:
-      'the text "dd" followed by whitespace and, later, "/dev/", quoted text included',
+      'the word "dd" followed by whitespace and, later, "/dev/", quoted text included',
   },
   {
     pattern: /mkfs/,

@@ -40,7 +40,7 @@ const ORIGINAL_SOURCES: Record<string, string[]> = {
   DANGEROUS_COMMAND_PATTERNS: [
     "rm\\s+(?=.*(?:-[fr]*r|--recursive))(?=.*(?:-[rf]*f|--force)).*\\s+[{$]",
     "rm\\s+(?=.*(?:-[fr]*r|--recursive))(?=.*(?:-[rf]*f|--force)).*\\s+\\/",
-    "dd\\s+.*\\/dev\\/",
+    "\\bdd\\s+.*\\/dev\\/",
     "(curl|wget).*\\|\\s*(sh|bash|zsh|fish|dash)",
     "git\\s+push\\s+.*--force\\b",
     "git\\s+push\\s+.*-f\\b",

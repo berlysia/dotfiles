@@ -99,10 +99,10 @@ export const RULES: RuleSpec[] = [
     },
   ),
   spec(
-    "dd\\s+.*\\/dev\\/",
+    "\\bdd\\s+.*\\/dev\\/",
     ["dd", "/dev/", "x"],
-    ["if=", "dd if=/dev/zero", "/dev"],
-    ["dd if=/dev/zero", "dd  of=/dev/sda", "ldd x /dev/y", "dd \n/dev/"],
+    ["if=", "dd if=/dev/zero", "/dev", "ldd", "ssh-add", "-dd"],
+    ["dd if=/dev/zero", "dd  of=/dev/sda", "x dd y /dev/z", "dd \n/dev/"],
     { perf: [() => "dd if ".repeat(16667)] },
   ),
   spec(

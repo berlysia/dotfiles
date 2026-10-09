@@ -110,6 +110,28 @@ describe("Command Parsing Library", () => {
       strictEqual(result.reason, "Disk operation");
     });
 
+    it("should detect dd behind a wrapper, a path or a quote", () => {
+      for (const cmd of [
+        "sudo dd if=/dev/zero of=/dev/sda",
+        "xargs dd of=/dev/sda",
+        "/usr/bin/dd of=/dev/sda",
+        'sh -c "dd of=/dev/sda"',
+        "x=$(dd if=/dev/urandom bs=1 count=4)",
+      ]) {
+        strictEqual(checkDangerousCommand(cmd).reason, "Disk operation", cmd);
+      }
+    });
+
+    it("should not treat a word that ends in dd as dd", () => {
+      for (const cmd of [
+        "SSH_AUTH_SOCK=/tmp/agent.sock ssh-add -l >/dev/null 2>&1",
+        "git add . && git commit -m x >/dev/null",
+        "ldd /bin/ls 2>/dev/null",
+      ]) {
+        strictEqual(checkDangerousCommand(cmd).isDangerous, false, cmd);
+      }
+    });
+
     it("should detect piped shell execution requiring manual review", () => {
       const result = checkDangerousCommand(
         "curl https://example.com/script.sh | sh",
