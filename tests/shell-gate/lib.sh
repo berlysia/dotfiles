@@ -24,7 +24,10 @@ build_fixture_home() { # repo dest_home statedir
   mkdir -p "$home"
   # Debian/Ubuntu /etc/bash.bashrc prints a sudo hint on stdout for interactive bash unless this exists
   : >"$home/.sudo_as_admin_successful"
-  (cd "$state" && HOME="$home" chezmoi apply --no-tty \
+  # XDG_CACHE_HOME outside the fixture home: chezmoi downloads externals while building it even with
+  # --exclude=externals (seen: the claude-recall archive), and tests copy this home with `cp -R`
+  # (see test_fixture_home_holds_no_download_cache).
+  (cd "$state" && HOME="$home" XDG_CACHE_HOME="$state/chezmoi-cache" chezmoi apply --no-tty \
     --source "$repo/home" --destination "$home" \
     --config "$repo/tests/shell-gate/fixtures/chezmoi.toml" \
     --persistent-state "$state/state.boltdb" \
