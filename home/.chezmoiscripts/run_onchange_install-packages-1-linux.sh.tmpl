@@ -5,6 +5,23 @@
 
 set -euo pipefail
 
+{{ template "run-installer.sh" . }}
+
+# link_debian_name DEBIAN_COMMAND USUAL_NAME: Ubuntu ships bat / fd as batcat / fdfind.
+link_debian_name() {
+  local src
+  if command -v "$2" >/dev/null 2>&1; then
+    echo "$2 is already installed"
+    return 0
+  fi
+  if ! src="$(command -v "$1")"; then
+    echo "$1 is missing after the apt install" >&2
+    return 1
+  fi
+  echo "create symlink for $2"
+  ln -sfn "$src" ~/.local/bin/"$2" # -f replaces a dangling link left by an earlier run
+}
+
 sudo apt-get update
 sudo apt-get install -y {{ range .packages.linux.apt }} {{.}}{{ end }}
 
@@ -13,29 +30,17 @@ if command -v mise >/dev/null 2>&1; then
   echo "mise is already installed"
 else
   echo "install mise"
-  curl https://mise.run | sh
+  run_installer https://mise.run
 fi
 
-# symlink batcat to bat
-if command -v bat >/dev/null 2>&1; then
-  echo "bat is already installed"
-else
-  echo "create symlink for bat"
-  ln -s "$(command -v batcat)" ~/.local/bin/bat
-fi
-
-if command -v fd >/dev/null 2>&1; then
-  echo "fd-find is already installed"
-else
-  echo "create symlink for fd"
-  ln -s "$(command -v fdfind)" ~/.local/bin/fd
-fi
+link_debian_name batcat bat
+link_debian_name fdfind fd
 
 if command -v starship >/dev/null 2>&1; then
   echo "starship is already installed"
 else
   echo "install starship"
-  curl -sS https://starship.rs/install.sh | sh -s -- --yes --bin-dir ~/.local/bin
+  run_installer https://starship.rs/install.sh --yes --bin-dir ~/.local/bin
 fi
 
 {{ end -}}
