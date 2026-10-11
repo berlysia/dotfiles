@@ -15,6 +15,8 @@ on:
       - "tests/shell-gate/**"
       - "home/dot_codex/.config.toml"
       - "home/.chezmoiignore"
+      # The fixture home is built with chezmoi apply, which reads the externals.
+      - "home/.chezmoiexternal.toml.tmpl"
       - "home/.chezmoiscripts/run_onchange_install-packages-1-darwin.sh.tmpl"
   pull_request:
     branches: [master, main]
@@ -30,6 +32,8 @@ on:
       - "tests/shell-gate/**"
       - "home/dot_codex/.config.toml"
       - "home/.chezmoiignore"
+      # The fixture home is built with chezmoi apply, which reads the externals.
+      - "home/.chezmoiexternal.toml.tmpl"
       - "home/.chezmoiscripts/run_onchange_install-packages-1-darwin.sh.tmpl"
   workflow_dispatch: # Allow manual trigger
 

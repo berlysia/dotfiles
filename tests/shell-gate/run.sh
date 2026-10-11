@@ -95,9 +95,15 @@ test_assert7_no_title_escape() {
   assert_not_contains "$(run_clean notty "$STUB_PATH" zsh -i -c true)" "$esc" "A7 zsh AI output has no ]0;"
   assert_not_contains "$(run_clean notty "$STUB_PATH" bash -l -i -c true)" "$esc" "A7 login bash AI output has no ]0;"
 }
+test_fixture_home_holds_no_download_cache() {
+  # chezmoi names its cached downloads after the URL; a redirected release asset gives a path over
+  # macOS's 1024-byte limit, and `cp -R` of the fixture home then fails (A8 and the loop guard copy it).
+  assert_eq "" "$(find "$FIX_HOME" -name httpcache)" "fixture home holds no chezmoi download cache"
+}
 test_assert8_missing_is_human() {
   local copy="$TMP_BASE/home8" v
-  cp -R "$FIX_HOME" "$copy" && rm -f "$copy/.shell_common/is_human.sh"
+  cp -R "$FIX_HOME" "$copy" || { record "FAIL A8 fixture home copy"; return 0; }
+  rm -f "$copy/.shell_common/is_human.sh"
   v=$(FIX_HOME=$copy run_clean notty "$STUB_PATH" zsh -i -c 'echo EDITOR=$EDITOR; alias .. >/dev/null 2>&1 && echo HAS_DOTDOT')
   assert_not_contains "$v" "EDITOR=true" "A8 zsh falls to human (env)"
   assert_contains "$v" "HAS_DOTDOT" "A8 zsh falls to human (alias)"
@@ -183,7 +189,7 @@ test_zdotdir_inherited_human() {
 }
 test_zdotdir_loop_guard() { # pre-migration ~/.zshenv exports ZDOTDIR and sources the shim again; the guard must stop the loop
   local copy="$TMP_BASE/home_loop" out rc
-  cp -R "$FIX_HOME" "$copy"
+  cp -R "$FIX_HOME" "$copy" || { record "FAIL loop guard: fixture home copy"; return 0; }
   printf 'export ZDOTDIR=$HOME/.zsh\n[ -f "$ZDOTDIR/.zshenv" ] && source "$ZDOTDIR/.zshenv"\n' >"$copy/.zshenv"
   # shellcheck disable=SC2086 # WATCHDOG is intentionally word-split; it is empty where neither timeout nor gtimeout exists (macOS runners), and the job timeout bounds a regression there
   out=$(env -i HOME="$copy" PATH="$SHELL_DIRS:/usr/bin:/bin" TERM=xterm ZDOTDIR="$copy/.zsh" $WATCHDOG zsh -c 'echo ok' </dev/null 2>/dev/null); rc=$?
