@@ -11,7 +11,7 @@ const settings = JSON.parse(
     join(repoRoot, "home/dot_claude/.settings.permissions.json"),
     "utf8",
   ),
-) as { allow: string[]; deny: string[] };
+) as { allow: string[]; ask: string[]; deny: string[] };
 
 const requiredDeny = [
   "Bash(sudo:*)",
@@ -25,6 +25,15 @@ const requiredDeny = [
   "Bash(pipx:*)",
   "Bash(poetry:*)",
   "Read(~/.ssh/**)",
+  "Read(~/.local/share/Trash/**)",
+  "Read(//**/.Trash-*/**)",
+  "Edit(//**/.git/commondir)",
+  "Edit(//**/.git/info/attributes)",
+  "Edit(//**/.git/worktrees/**)",
+  "Edit(//**/.git/modules/**)",
+];
+
+const envReadRules = [
   "Read(//**/.env)",
   "Read(//**/.env.local)",
   "Read(//**/.env.*.local)",
@@ -35,13 +44,18 @@ const requiredDeny = [
   "Read(//**/.env.staging)",
   "Read(//**/.env.preview)",
   "Read(//**/.env.test)",
-  "Read(~/.local/share/Trash/**)",
-  "Read(//**/.Trash-*/**)",
-  "Edit(//**/.git/commondir)",
-  "Edit(//**/.git/info/attributes)",
-  "Edit(//**/.git/worktrees/**)",
-  "Edit(//**/.git/modules/**)",
 ];
+
+test("ask contains every .env Read rule", () => {
+  const missing = envReadRules.filter((rule) => !settings.ask.includes(rule));
+  assert.deepStrictEqual(missing, []);
+});
+
+// deny is evaluated before ask, so a rule left in deny would silently keep the hard block.
+test("no .env Read rule remains in deny", () => {
+  const leftover = settings.deny.filter((rule) => /^Read\(.*\.env/.test(rule));
+  assert.deepStrictEqual(leftover, []);
+});
 
 test("deny contains every rule required by spec 制限", () => {
   const missing = requiredDeny.filter((rule) => !settings.deny.includes(rule));
@@ -50,35 +64,44 @@ test("deny contains every rule required by spec 制限", () => {
 
 // Approximation via node's matchesGlob: "//" in a Claude Code rule means an absolute path, so
 // drop one leading "/" and match against absolute sample paths. Not Claude Code's own matcher.
-const absoluteReadGlobs = settings.deny
-  .map((rule) => /^Read\((.*)\)$/.exec(rule)?.[1])
-  .filter((glob): glob is string => glob !== undefined && glob.startsWith("//"))
-  .map((glob) => glob.slice(1));
+const absoluteReadGlobs = (rules: string[]) =>
+  rules
+    .map((rule) => /^Read\((.*)\)$/.exec(rule)?.[1])
+    .filter(
+      (glob): glob is string => glob !== undefined && glob.startsWith("//"),
+    )
+    .map((glob) => glob.slice(1));
+const denyGlobs = absoluteReadGlobs(settings.deny);
+const askGlobs = absoluteReadGlobs(settings.ask);
 
-test("no Read deny matches .env.example or .env.sample", () => {
+test("no Read deny or ask matches .env.example or .env.sample", () => {
   const samples = [
     "/proj/.env.example",
     "/proj/.env.sample",
     "/a/b/.env.example",
   ];
-  const blocking = absoluteReadGlobs.filter((glob) =>
+  const blocking = [...denyGlobs, ...askGlobs].filter((glob) =>
     samples.some((p) => matchesGlob(p, glob)),
   );
   assert.deepStrictEqual(
     blocking,
     [],
-    "spec keeps .env.example / .env.sample readable",
+    "spec keeps .env.example / .env.sample readable without a prompt",
   );
 });
 
-test("absolute-path Read denies match secrets outside the cwd", () => {
-  const targets = [
-    "/tmp/x/.env",
-    "/home/u/proj/.env.production",
-    "/mnt/x/.Trash-1000/f",
-  ];
+test("absolute-path Read asks match .env files outside the cwd", () => {
+  const targets = ["/tmp/x/.env", "/home/u/proj/.env.production"];
   const unmatched = targets.filter(
-    (p) => !absoluteReadGlobs.some((glob) => matchesGlob(p, glob)),
+    (p) => !askGlobs.some((glob) => matchesGlob(p, glob)),
+  );
+  assert.deepStrictEqual(unmatched, []);
+});
+
+test("absolute-path Read denies match the trash outside the cwd", () => {
+  const targets = ["/mnt/x/.Trash-1000/f"];
+  const unmatched = targets.filter(
+    (p) => !denyGlobs.some((glob) => matchesGlob(p, glob)),
   );
   assert.deepStrictEqual(unmatched, []);
 });

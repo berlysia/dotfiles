@@ -301,6 +301,14 @@
     "Edit(//**/.git/worktrees/**)",
     "Edit(//**/.git/modules/**)",
     "Edit(//**/.git/worktree/*/.git)",
+    "Read(~/.local/share/Trash/**)",
+    "Read(//**/.Trash-*/**)"
+  ],
+  "ask": [
+    "Edit(~/.gitconfig*)",
+    "Edit(~/.config/git/**)",
+    "Edit(~/.local/share/chezmoi/home/*dot_gitconfig*)",
+    "Edit(~/.local/share/chezmoi/home/*dot_config/*git/**)",
     "Read(//**/.env)",
     "Read(//**/.env.local)",
     "Read(//**/.env.*.local)",
@@ -310,14 +318,6 @@
     "Read(//**/.env.prod)",
     "Read(//**/.env.staging)",
     "Read(//**/.env.preview)",
-    "Read(//**/.env.test)",
-    "Read(~/.local/share/Trash/**)",
-    "Read(//**/.Trash-*/**)"
-  ],
-  "ask": [
-    "Edit(~/.gitconfig*)",
-    "Edit(~/.config/git/**)",
-    "Edit(~/.local/share/chezmoi/home/*dot_gitconfig*)",
-    "Edit(~/.local/share/chezmoi/home/*dot_config/*git/**)"
+    "Read(//**/.env.test)"
   ]
 }

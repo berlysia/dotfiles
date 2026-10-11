@@ -3,6 +3,7 @@ import { ok, strictEqual } from "node:assert";
 import {
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   realpathSync,
   rmSync,
   writeFileSync,
@@ -14,13 +15,17 @@ import autoApproveHook from "../../implementations/auto-approve.ts";
 import { decideStatic } from "../../implementations/permission-auto-approve.ts";
 import { reasonToSkipLLM } from "../../implementations/permission-llm-evaluator.ts";
 import {
+  assessAutoApprovalHold,
+  buildHoldContext,
+} from "../../lib/auto-approval-hold.ts";
+import {
   createPreToolUseContextFor,
   EnvironmentHelper,
   invokeRun,
 } from "../support/test-helpers.ts";
 
-// Inputs that every hook must keep away from auto-approval (spec K7). The first four paths are the
-// same ones the `ask` rules in .settings.permissions.json name; plan-2 compares them with the rules.
+// Inputs that every hook must keep away from auto-approval (spec K7). The Edit and Read rows
+// labelled "ask" name paths the `ask` rules in .settings.permissions.json cover.
 const CWD = "/w/p";
 
 describe("hold invariants across the three hooks", () => {
@@ -87,13 +92,28 @@ describe("hold invariants across the three hooks", () => {
       tool: "Bash",
       input: { command: "echo x > .vscode/a.json" },
     },
+    {
+      label: "ask Read .env",
+      tool: "Read",
+      input: { file_path: `${CWD}/.env` },
+    },
+    {
+      label: "ask Read .env.*.local outside cwd",
+      tool: "Read",
+      input: { file_path: "/etc/app/.env.prod.local" },
+    },
   ];
 
   it("PreToolUse never allows them, even with broad allow rules", async () => {
     for (const { label, tool, input } of inputs()) {
       envHelper.set(
         "CLAUDE_TEST_ALLOW",
-        JSON.stringify(["Edit(//**)", "Bash(tee *)", "Bash(echo *)"]),
+        JSON.stringify([
+          "Edit(//**)",
+          "Read(//**)",
+          "Bash(tee *)",
+          "Bash(echo *)",
+        ]),
       );
       envHelper.set("CLAUDE_TEST_DENY", JSON.stringify([]));
       const context = createPreToolUseContextFor(
@@ -134,6 +154,32 @@ describe("hold invariants across the three hooks", () => {
         cwd: CWD,
       });
       ok(reason?.startsWith("held: "), `${label}: ${reason}`);
+    }
+  });
+});
+
+describe("Read ask rules and the hold list", () => {
+  const settings = JSON.parse(
+    readFileSync(
+      join(import.meta.dirname, "../../../.settings.permissions.json"),
+      "utf8",
+    ),
+  ) as { ask: string[] };
+  const readAskRules = settings.ask.filter((rule) => rule.startsWith("Read("));
+
+  it("has the ten .env rules", () => {
+    strictEqual(readAskRules.length, 10);
+  });
+  // A rule of another shape (a directory glob, a home-relative path) is not covered by a
+  // name check; this fails so that the hold is extended together with the rule.
+  it("every Read ask rule is //**/<name> and its name is held", async () => {
+    const ctx = buildHoldContext({ cwd: "/w/p", home: "/home/u" });
+    for (const rule of readAskRules) {
+      const name = /^Read\(\/\/\*\*\/([^/]+)\)$/.exec(rule)?.[1];
+      ok(name !== undefined, `unexpected shape: ${rule}`);
+      const file_path = `/w/p/${name.replaceAll("*", "x")}`;
+      const held = await assessAutoApprovalHold("Read", { file_path }, ctx);
+      ok(held.hold, rule);
     }
   });
 });
