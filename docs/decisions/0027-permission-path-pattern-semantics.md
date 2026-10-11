@@ -242,6 +242,19 @@ PreToolUse の hook の判定は、権限の規則を飛ばさない。
 hook が allow を返しても、本体の deny と ask の規則は別に評価される。
 hook が呼び出しを止めた場合（exit 2）は、allow の規則より優先される。
 
+設定の ask 規則と hook の関係を、2026-10-11 に Claude Code 2.1.296 で確かめた。
+計測には、scratchpad に置いた無害なファイルと、`--settings` で渡した規則と hook を使った。
+ファイルのパスは `Read(//tmp/**)` の allow に一致していた。allow に一致しないパスでは測っていない。
+
+- 自動承認の hook を登録していないとき、ask 規則に一致する Read は、対話のセッションで確認を出し、`claude -p` では拒否になる。
+- PermissionRequest の hook（`permission-auto-approve`）だけを登録すると、ask 規則に一致する Read は `claude -p` で読める。hook の判定のログには Read への allow が残った。PermissionRequest の hook の allow は、ask 規則の確認を抑える。
+- 上の段落の「hook が allow を返しても ask の規則は別に評価される」は、公式ドキュメントが PreToolUse の hook について書いていることである。PermissionRequest の hook については記載が無い。PreToolUse の hook の allow だけで確認が抑えられるかは、測っていない。
+- ask 規則と deny 規則は、symlink を Read したとき、リンク先のパスにも照合される。規則をリンク先だけに掛けて symlink を Read させると、ask 規則でも deny 規則でも拒否になった（`claude -p`、自動承認の hook は未登録）。
+- `.env` 系の Read を hold するようにした後、3 つの hook（`auto-approve`、`permission-auto-approve`、`permission-llm-evaluator`）を登録した `claude -p` で、ask 規則に一致する `.env` の Read は拒否になった。判定のログには 3 つの hook の `held:` が残り、allow は無かった。同じ条件で `.env.example` は読め、`auto-approve` の allow が残った。3 つを同時に登録したので、hold が無いときにどの hook の allow が効くかは、この計測からは分からない。
+
+これらは、設定の ask 規則についての計測である。
+下の「未確認の事実」にある、PreToolUse の hook が返す `ask` とは別のものである。
+
 ### 未確認の事実
 
 `claude -p` で、PreToolUse の `ask` が拒否になるかどうか。
