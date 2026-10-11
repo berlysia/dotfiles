@@ -120,7 +120,6 @@ describe("settings entries after the matcher change", () => {
     ["allow", "Edit", "/home/u/.config/x/y", true, true],
     ["allow", "Edit", "/home/u/workspace/p/src/a.ts", true, true],
     ["deny", "Edit", "/etc/hosts", true, true],
-    ["deny", "Read", "/home/u/p/.env", true, true],
     ["deny", "Read", "/home/u/.ssh/id_rsa", true, true],
     // Edit is no longer allowed everywhere
     ["allow", "Edit", "/etc/hosts", false, true],
@@ -332,6 +331,24 @@ describe("settings evaluated as Claude Code would (spec K6, K7)", () => {
   for (const [path, expected] of table) {
     it(`${path} -> ${expected}`, () => {
       strictEqual(coreDecision("Edit", path, coreRules, coreEnv), expected);
+    });
+  }
+  const readTable: Array<[string, "deny" | "ask" | "allow" | "none"]> = [
+    // .env files prompt wherever they are; ask wins over the Read(./**) allow
+    ["/home/u/workspace/p/.env", "ask"],
+    ["/home/u/workspace/p/apps/web/.env.local", "ask"],
+    ["/home/u/workspace/p/.env.prod.local", "ask"],
+    ["/etc/app/.env.production", "ask"],
+    // names outside the ten rules keep their previous outcome
+    ["/home/u/workspace/p/.env.example", "allow"],
+    ["/home/u/workspace/p/ai.env.sh", "allow"],
+    // the other secret reads stay denied
+    ["/home/u/.ssh/id_rsa", "deny"],
+    ["/home/u/.local/share/Trash/files/a", "deny"],
+  ];
+  for (const [path, expected] of readTable) {
+    it(`Read ${path} -> ${expected}`, () => {
+      strictEqual(coreDecision("Read", path, coreRules, coreEnv), expected);
     });
   }
   it("does not let .git/worktrees/** cover .git/worktree/", () => {

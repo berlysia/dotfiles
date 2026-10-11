@@ -13,6 +13,62 @@ import {
 } from "./write-protection.ts";
 
 const WRITE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
+
+// The file names the Read `ask` rules in .settings.permissions.json name. An allow from a hook
+// skips the prompt those rules ask for, so a Read of one is held. hold-invariants.test.ts fails
+// when a Read ask rule is added without a matching name here.
+const ASK_RULE_READ_NAMES = new Set([
+  ".env",
+  ".env.local",
+  ".env.development",
+  ".env.dev",
+  ".env.production",
+  ".env.prod",
+  ".env.staging",
+  ".env.preview",
+  ".env.test",
+]);
+// Read(//**/.env.*.local)
+const ASK_RULE_READ_LOCAL = /^\.env\..*\.local$/;
+
+function isAskRuleReadName(name: string): boolean {
+  return ASK_RULE_READ_NAMES.has(name) || ASK_RULE_READ_LOCAL.test(name);
+}
+
+// Any segment counts, not only the last: a gitignore-style rule can also match what lies under
+// a directory of that name, and holding more than the rules cover only withholds an auto-approval.
+function hasAskRuleReadName(path: string): boolean {
+  return path.split("/").some(isAskRuleReadName);
+}
+
+// Core matches its rules against the target of a symlink as well (measured, ADR-0027), so the
+// resolved path is judged too. A path that does not exist has no other name; write-protection.ts
+// reads the same two codes as "absent".
+function resolvedOrSame(path: string, ctx: BashHoldContext): string {
+  try {
+    return ctx.fs.realpath(path);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ENOTDIR") return path;
+    throw error;
+  }
+}
+
+function assessRead(toolInput: unknown, ctx: BashHoldContext): HoldDecision {
+  const raw = (toolInput as { file_path?: unknown } | null)?.file_path;
+  if (typeof raw !== "string" || raw === "") return { hold: false };
+  // `~` is not expanded here and resolve() folds `..` lexically, so the file judged could differ
+  // from the file read. The write tools are held for the same two reasons below.
+  if (raw.startsWith("~"))
+    return { hold: true, reason: "Read path starts with ~" };
+  if (raw.split("/").includes(".."))
+    return { hold: true, reason: "Read path has a .. segment" };
+  const lexical = isAbsolute(raw) ? raw : resolve(ctx.cwd, raw);
+  return hasAskRuleReadName(lexical) ||
+    hasAskRuleReadName(resolvedOrSame(lexical, ctx))
+    ? { hold: true, reason: "Read of a file an ask rule names" }
+    : { hold: false };
+}
 const PATH_KEYS = ["file_path", "path", "notebook_path"] as const;
 
 // The field a write tool actually writes. getFilePathFromToolInput takes the first key present,
@@ -87,6 +143,7 @@ async function assess(
       ? { hold: false, bash }
       : { hold: true, reason: bash.reason, bash };
   }
+  if (toolName === "Read") return assessRead(toolInput, ctx);
   if (!WRITE_TOOLS.has(toolName)) return { hold: false };
   const input = (toolInput ?? {}) as Record<string, unknown>;
   const key = writtenPathKey(toolName);
