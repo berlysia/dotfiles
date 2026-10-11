@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -103,6 +104,89 @@ describe("assessAutoApprovalHold", () => {
           ctx("/w/p"),
         )
       ).hold,
+      false,
+    );
+  });
+  it("holds a Read of a file the ask rules name", async () => {
+    for (const file_path of [
+      "/w/p/.env",
+      "/w/p/apps/web/.env.local",
+      "/etc/app/.env.production",
+      "/w/p/.env.prod.local",
+      "/w/p/.env.development",
+      "/w/p/.env.dev",
+      "/w/p/.env.prod",
+      "/w/p/.env.staging",
+      "/w/p/.env.preview",
+      "/w/p/.env.test",
+      ".env",
+      // a directory with one of the names
+      "/w/p/.env/secret.txt",
+    ]) {
+      strictEqual(
+        (await assessAutoApprovalHold("Read", { file_path }, ctx("/w/p"))).hold,
+        true,
+        file_path,
+      );
+    }
+  });
+  it("holds a Read through a symlink to a file the ask rules name", async () => {
+    mkdirSync(join(home, "real"));
+    writeFileSync(join(home, "real/.env"), "PROBE_KEY=dummy-not-a-secret\n");
+    symlinkSync(join(home, "real/.env"), join(home, "link.txt"));
+    symlinkSync(join(home, "real"), join(home, "linkdir"));
+    for (const file_path of [
+      join(home, "link.txt"),
+      // a symlinked parent directory; the last segment is still .env
+      join(home, "linkdir/.env"),
+    ]) {
+      strictEqual(
+        (await assessAutoApprovalHold("Read", { file_path }, ctx("/w/p"))).hold,
+        true,
+        file_path,
+      );
+    }
+  });
+  it("holds a Read whose path it cannot judge as written", async () => {
+    for (const file_path of ["~/link.txt", "/w/p/a/../b.txt", "../b.txt"]) {
+      strictEqual(
+        (await assessAutoApprovalHold("Read", { file_path }, ctx("/w/p"))).hold,
+        true,
+        file_path,
+      );
+    }
+  });
+  it("does not hold a Read under a path that is not a directory", async () => {
+    writeFileSync(join(home, "a.txt"), "x\n");
+    strictEqual(
+      (
+        await assessAutoApprovalHold(
+          "Read",
+          { file_path: join(home, "a.txt/x") },
+          ctx("/w/p"),
+        )
+      ).hold,
+      false,
+    );
+  });
+  it("does not hold a Read of a name outside the ask rules", async () => {
+    for (const file_path of [
+      "/w/p/.env.example",
+      "/w/p/.env.sample",
+      "/w/p/.env.local.bak",
+      "/w/p/ai.env.sh",
+      "/w/p/.envrc",
+      "/w/p/env",
+      "/w/p/.env.d/readme.md",
+    ]) {
+      strictEqual(
+        (await assessAutoApprovalHold("Read", { file_path }, ctx("/w/p"))).hold,
+        false,
+        file_path,
+      );
+    }
+    strictEqual(
+      (await assessAutoApprovalHold("Read", {}, ctx("/w/p"))).hold,
       false,
     );
   });
