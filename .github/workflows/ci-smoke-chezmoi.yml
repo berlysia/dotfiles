@@ -7,6 +7,7 @@ on:
       - "home/.chezmoiscripts/**"
       - "home/.chezmoitemplates/**"
       - "tests/smoke/**"
+      - "tests/install-packages/**"
       - "scripts/smoke-chezmoi-scripts.sh"
       - ".github/workflows/ci-smoke-chezmoi.yml"
       - ".github/actions/install-chezmoi/**"
@@ -24,6 +25,7 @@ on:
       - "home/.chezmoiscripts/**"
       - "home/.chezmoitemplates/**"
       - "tests/smoke/**"
+      - "tests/install-packages/**"
       - "scripts/smoke-chezmoi-scripts.sh"
       - ".github/workflows/ci-smoke-chezmoi.yml"
       - ".github/actions/install-chezmoi/**"
@@ -74,3 +76,6 @@ jobs:
 
       - name: Run provisioning invariants
         run: ./scripts/smoke-provisioning-invariants.sh
+
+      - name: Run install-packages tests
+        run: bash tests/install-packages/run.sh
