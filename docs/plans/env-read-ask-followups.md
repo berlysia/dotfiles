@@ -24,10 +24,8 @@ scratchpad に、ダミーの 1 行（`PROBE_KEY=dummy-not-a-secret`）を書い
 
 ## 測っていないこと
 
-- バックグラウンドの subagent で、ask 規則に一致する Read がどうなるか。
 - Read の規則が Grep と Glob に効くか。公式ドキュメントは、可能な範囲で適用すると書く。2.1.296 のセッションには Grep のツールが無く、測れなかった。ツールがある版で、deny 規則と ask 規則のそれぞれを測る。今の deny が Grep を止めていたなら、ask への移動で、hook が登録されているときに Grep だけ緩む。hold は Grep と Glob を見ていない。
 - agent-vm の中での挙動。VM は同じ設定と hook を持ち込む。
-- PreToolUse の hook の allow だけで、ask 規則の確認が抑えられるか。hold が allow を止めるので、今の構成では測れない。
 
 ## ask 規則を足すとき
 
