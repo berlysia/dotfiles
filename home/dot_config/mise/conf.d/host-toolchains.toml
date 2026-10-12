@@ -5,7 +5,7 @@
 # (tests/agent-vm/run-templates.sh checks it).
 [tools]
 go = "1.27.1"
-rust = "1.98.1"
+rust = "1.99.0"
 
 # CLI tools (migrated from go install / cargo install)
 "cargo:similarity-ts" = "0.5.0"
