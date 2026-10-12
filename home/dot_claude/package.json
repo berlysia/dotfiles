@@ -12,6 +12,6 @@
     "web-tree-sitter": "0.27.0"
   },
   "devDependencies": {
-    "ignore": "7.0.5"
+    "ignore": "7.0.12"
   }
 }
