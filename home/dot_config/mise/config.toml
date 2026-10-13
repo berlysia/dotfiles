@@ -55,7 +55,7 @@ ast-grep = "latest"
 # Tools AI agents reach for (article: ai-agent-first dotfiles)
 yq = "4.54.1"
 shfmt = "3.14.1"
-hyperfine = "1.20.0"
+hyperfine = "1.21.0"
 duckdb = "1.5.6"
 "github:boyter/scc" = "4.1.0"
 # Cyclomatic / cognitive complexity; not in the mise registry
