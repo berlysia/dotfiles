@@ -81,6 +81,7 @@ Rules for an ASCII sketch:
 Rules for an HTML file:
 
 - The page holds the figure: the drawing, its labels, a legend, controls, and one line of caption for the step being shown. The full explanation stays in the reply. Text on the page may be in the user's language.
+- Words outside the drawing: the heading, the caption line, notices, helper text, control labels, and any other text the page shows outside the drawing and its legend. Before writing the page, load the `stop-describing-ui` skill with the Skill tool and run its checklist on each of these strings. Three limits hold. First, the checklist changes wording only: every other rule in this skill wins over it, and an icon it asks for is inline SVG or a Unicode character, never a file. Second, it shortens the caption line and the load-failure note of a three.js page but never removes them, and the note keeps all three things it says. Third, it does not touch the drawing or the legend: the legend is left as it is, and the labels on boxes, arrows, axes, and moving parts follow "Label every box, arrow, axis, and moving part" in Step 2. If the skill cannot be loaded, write the page without it.
 - One self-contained file: inline CSS and JavaScript, no build step. Use inline SVG for structure, Canvas for many moving elements, and three.js only for a shape that is truly three-dimensional.
 - Motion needs controls: a step button, play and pause, or a slider. The first frame must make sense on its own. Never make a figure that only auto-plays, because the reader has to follow one step at a time.
 - You cannot see the page, so guard against the common ways it goes unreadable: set an explicit background and text colour, use a font size of at least 14px, and fit the figure in a 1000px-wide window without horizontal scrolling.
@@ -146,7 +147,7 @@ Length: stop when the walk-through has covered every arrow or step in the figure
 - Every concept has its real term attached, and every tool name, command, and programming word is explained where it first appears.
 - ASCII sketch: the code block contains no full-width and no box-drawing characters.
 - Mermaid: the block starts with the diagram type, and every edge (or every period of a `timeline`) has a label.
-- HTML file: the file exists at the path given in the reply, the reply contains no HTML source, and motion has controls. A three.js page contains the importmap block unchanged and the load-failure note.
+- HTML file: the file exists at the path given in the reply, the reply contains no HTML source, and motion has controls. A three.js page contains the importmap block unchanged and the load-failure note. The words outside the drawing went through the `stop-describing-ui` checklist, unless the skill could not be loaded.
 
 ## Example: a figure in the reply
 
