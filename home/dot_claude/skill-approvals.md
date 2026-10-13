@@ -76,3 +76,4 @@ apply は未掲載のスキルを追記するだけで、行を消さない。
 - [x] web-design-guidelines
 - [x] webapp-testing
 - [x] xlsx
+- [x] stop-describing-ui
