@@ -187,3 +187,152 @@ describe("applyOps", () => {
     );
   });
 });
+
+describe("applyOps update", () => {
+  const OTHER = "L-aaaaaaaaaaaa";
+  it("changes only the body, bumps seen and updated, records evidence", () => {
+    const r = applyOps(
+      file([entry(1)]),
+      [{ op: "update", id: entry(1).id, body: "new body", evidence: "ev" }],
+      ctx(),
+    );
+    ok(r.ok);
+    const e = r.value.file.entries[0];
+    strictEqual(e?.body, "new body");
+    strictEqual(e?.title, "title 1");
+    strictEqual(e?.seen, 2);
+    strictEqual(e?.updated, "2026-10-15");
+    deepStrictEqual(r.value.evidence, [`update ${entry(1).id}: ev`]);
+  });
+  it("only bumps seen when title and body are omitted", () => {
+    const r = applyOps(
+      file([entry(1)]),
+      [{ op: "update", id: entry(1).id, evidence: "ev" }],
+      ctx(),
+    );
+    ok(r.ok);
+    const e = r.value.file.entries[0];
+    strictEqual(e?.seen, 2);
+    strictEqual(e?.body, "body 1");
+    strictEqual(e?.title, "title 1");
+  });
+  it("rejects an unknown id, a bad title, empty evidence and a URL body", () => {
+    const base = file([entry(1)]);
+    for (const op of [
+      { op: "update" as const, id: OTHER, body: "b", evidence: "e" },
+      { op: "update" as const, id: entry(1).id, title: "#x", evidence: "e" },
+      { op: "update" as const, id: entry(1).id, body: "b", evidence: "" },
+      {
+        op: "update" as const,
+        id: entry(1).id,
+        body: "see https://example.com",
+        evidence: "e",
+      },
+    ]) {
+      strictEqual(applyOps(base, [op], ctx()).ok, false);
+    }
+  });
+  it("flattens newlines and redacts secrets in evidence", () => {
+    const r = applyOps(
+      file([entry(1)]),
+      [
+        {
+          op: "update",
+          id: entry(1).id,
+          evidence:
+            "line1\nline2 token=ghp_abcdefghijklmnopqrstuvwxyz0123456789",
+        },
+      ],
+      ctx(),
+    );
+    ok(r.ok);
+    const line = r.value.evidence[0] ?? "";
+    ok(!line.includes("\n"));
+    ok(line.includes("[REDACTED]"));
+    ok(!line.includes("ghp_abc"));
+  });
+  it("rejects update and remove on the same id", () => {
+    strictEqual(
+      applyOps(
+        file([entry(1)]),
+        [
+          { op: "update", id: entry(1).id, evidence: "e" },
+          { op: "remove", id: entry(1).id, reason: "r" },
+        ],
+        ctx(),
+      ).ok,
+      false,
+    );
+  });
+  it("rejects an add whose heading matches an updated entry", () => {
+    strictEqual(
+      applyOps(
+        file([entry(1)]),
+        [
+          { op: "update", id: entry(1).id, evidence: "e" },
+          { op: "add", title: "title 1", body: "b", evidence: "e" },
+        ],
+        ctx(),
+      ).ok,
+      false,
+    );
+  });
+  it("rejects an update whose new title collides with another entry", () => {
+    strictEqual(
+      applyOps(
+        file([entry(1), entry(2)]),
+        [{ op: "update", id: entry(1).id, title: "Title 2", evidence: "e" }],
+        ctx(),
+      ).ok,
+      false,
+    );
+  });
+  it("keeps an updated entry out of the eviction candidates", () => {
+    const full = Array.from({ length: MAX_ENTRIES }, (_, i) =>
+      entry(i + 1, { seen: 5, updated: "2026-10-10" }),
+    );
+    full[0] = entry(1, { seen: 1, updated: "2026-01-01" }); // 追い出し候補の筆頭
+    const r = applyOps(
+      file(full),
+      [
+        { op: "update", id: entry(1).id, evidence: "e" },
+        { op: "add", title: "new", body: "b", evidence: "e" },
+      ],
+      ctx(),
+    );
+    ok(r.ok);
+    ok(!r.value.evictedIds.includes(entry(1).id));
+    strictEqual(r.value.evictedIds.length, 1);
+  });
+  it("drops a remove of a droppable missing id and applies the rest", () => {
+    const r = applyOps(
+      file([]),
+      [
+        { op: "remove", id: OTHER, reason: "r" },
+        { op: "add", title: "t", body: "b", evidence: "e" },
+      ],
+      { ...ctx(), droppableIds: new Set([OTHER]) },
+    );
+    ok(r.ok);
+    strictEqual(r.value.droppedCount, 1);
+    strictEqual(r.value.file.entries.length, 1);
+    strictEqual(r.value.removedIds.length, 0);
+  });
+  it("drops an update of a droppable missing id", () => {
+    const r = applyOps(
+      file([]),
+      [{ op: "update", id: OTHER, body: "b", evidence: "e" }],
+      { ...ctx(), droppableIds: new Set([OTHER]) },
+    );
+    ok(r.ok);
+    strictEqual(r.value.droppedCount, 1);
+  });
+  it("rejects a missing id that is not droppable", () => {
+    const r = applyOps(
+      file([]),
+      [{ op: "update", id: OTHER, body: "b", evidence: "e" }],
+      { ...ctx(), droppableIds: new Set(["L-bbbbbbbbbbbb"]) },
+    );
+    strictEqual(r.ok, false);
+  });
+});
