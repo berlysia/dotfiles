@@ -48,6 +48,7 @@ apply は未掲載のスキルを追記するだけで、行を消さない。
 - [x] verify-doc
 - [x] visualize
 - [x] visual-eli
+- [x] learnings
 
 ## External
 
