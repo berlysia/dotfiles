@@ -1,16 +1,21 @@
-import { ok, strictEqual } from "node:assert";
+import { deepStrictEqual, ok, strictEqual } from "node:assert";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { buildSessionLearningsContext } from "../../lib/agent-learnings/claude/session-context.ts";
+import {
+  buildSessionLearningsContext,
+  buildWorkerSpawnSpec,
+  enqueueSessionEnd,
+} from "../../lib/agent-learnings/claude/session-context.ts";
 import { runGit } from "../../lib/agent-learnings/core/git.ts";
 import {
   initStore,
   defaultStoreDir,
 } from "../../lib/agent-learnings/core/store.ts";
 import { writeInboxRequest } from "../../lib/agent-learnings/core/inbox.ts";
+import { countJobs } from "../../lib/agent-learnings/core/queue.ts";
 
 describe("buildSessionLearningsContext", () => {
   it("returns null without a store, drains the inbox and renders after", async () => {
@@ -64,5 +69,105 @@ describe("buildSessionLearningsContext", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe("enqueueSessionEnd", () => {
+  const SID = "0f0e0d0c-0000-4000-8000-000000000001";
+  function withRepo(
+    fn: (ctx: { repo: string; home: string; root: string }) => void,
+  ): void {
+    const root = mkdtempSync(join(tmpdir(), "agent-learnings-sessionend-"));
+    try {
+      const repo = join(root, "repo");
+      const home = join(root, "home");
+      execFileSync("git", ["init", "-q", repo]);
+      execFileSync("git", [
+        "-C",
+        repo,
+        "remote",
+        "add",
+        "origin",
+        "https://github.com/foo/bar.git",
+      ]);
+      fn({ repo, home, root });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+  const input = (cwd: string) => ({
+    session_id: SID,
+    transcript_path: "/home/x/.claude/projects/p/s.jsonl",
+    cwd,
+    reason: "other",
+  });
+
+  it("does nothing without a store", () =>
+    withRepo(({ repo, home }) => {
+      let spawned = 0;
+      enqueueSessionEnd(input(repo), {
+        home,
+        runGit,
+        env: {},
+        spawn: () => void spawned++,
+      });
+      strictEqual(spawned, 0);
+    }));
+  it("does nothing in a worker session", () =>
+    withRepo(({ repo, home }) => {
+      const store = defaultStoreDir(home);
+      initStore(store, runGit);
+      let spawned = 0;
+      enqueueSessionEnd(input(repo), {
+        home,
+        runGit,
+        env: { AGENT_LEARNINGS_WORKER: "1" },
+        spawn: () => void spawned++,
+      });
+      strictEqual(spawned, 0);
+      strictEqual(countJobs(store).queue, 0);
+    }));
+  it("does nothing outside a git repo", () =>
+    withRepo(({ root, home }) => {
+      initStore(defaultStoreDir(home), runGit);
+      let spawned = 0;
+      enqueueSessionEnd(input(root), {
+        home,
+        runGit,
+        env: {},
+        spawn: () => void spawned++,
+      });
+      strictEqual(spawned, 0);
+    }));
+  it("enqueues and starts the worker once for a repo with an origin", () =>
+    withRepo(({ repo, home }) => {
+      const store = defaultStoreDir(home);
+      initStore(store, runGit);
+      const spawned: string[] = [];
+      enqueueSessionEnd(input(repo), {
+        home,
+        runGit,
+        env: {},
+        spawn: (h) => void spawned.push(h),
+      });
+      strictEqual(countJobs(store).queue, 1);
+      deepStrictEqual(spawned, [home]);
+    }));
+});
+
+describe("buildWorkerSpawnSpec", () => {
+  it("passes only the allowlisted env, one fixed argument, the worker cwd, detached", () => {
+    const spec = buildWorkerSpawnSpec("/h", {
+      CLAUDECODE: "1",
+      CLAUDE_CODE_PLUGIN_DIRS: "/p",
+      PATH: "/bin",
+      HOME: "/h",
+    });
+    strictEqual(spec.command, process.execPath);
+    deepStrictEqual(spec.args, ["/h/.claude/scripts/learnings-worker.ts"]);
+    deepStrictEqual(spec.env, { PATH: "/bin", HOME: "/h" });
+    strictEqual(spec.cwd, "/h/.local/share/agent-learnings/.state/worker-cwd");
+    strictEqual(spec.detached, true);
+    strictEqual(spec.stdio, "ignore");
   });
 });

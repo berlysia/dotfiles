@@ -77,6 +77,14 @@ describe(
           ok(timeGroup, "the Current time hook stays registered");
           strictEqual(timeGroup.hooks.length, on ? 2 : 1);
 
+          // 常に登録する（only_private / auto_approval の条件の外）。終了を待たせない
+          const sessionEnd = hooks["SessionEnd"] ?? [];
+          deepStrictEqual(names(sessionEnd), ["learnings-session-end"]);
+          strictEqual(
+            (sessionEnd[0]?.hooks[0] as { async?: boolean }).async,
+            true,
+          );
+
           const guardGroup = hooks["PreToolUse"]?.find((g) =>
             names([g]).includes("home-destruction-guard"),
           );
