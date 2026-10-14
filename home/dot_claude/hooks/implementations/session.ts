@@ -17,8 +17,15 @@ import {
   getDistillHealthNotice,
   getUnreadDigestPreview,
 } from "../lib/insight-digest.ts";
-import { buildSessionLearningsContext } from "../lib/agent-learnings/claude/session-context.ts";
+import { getLearningsHealthNotice } from "../lib/agent-learnings/claude/health.ts";
+import {
+  buildSessionLearningsContext,
+  kickWorkerIfQueued,
+  spawnWorker,
+} from "../lib/agent-learnings/claude/session-context.ts";
+import { isWorkerSession } from "../lib/agent-learnings/claude/worker-guard.ts";
 import { runGit } from "../lib/agent-learnings/core/git.ts";
+import { defaultStoreDir } from "../lib/agent-learnings/core/store.ts";
 import { encodeSessionDirName, getProjectRoot } from "../lib/project-root.ts";
 import { shellSingleQuote } from "../lib/shell-quote.ts";
 import { resolveWorkflowPaths } from "../lib/workflow-paths.ts";
@@ -348,6 +355,25 @@ const hook = defineHook({
         });
       } catch (error) {
         console.error(`agent-learnings context failed: ${error}`);
+      }
+      // 取りこぼしたジョブの worker を起こし、異常があれば 1 行知らせる。
+      // どれも失敗は stderr に 1 行出して続ける。worker のセッションでは何もしない
+      if (!isWorkerSession(process.env)) {
+        try {
+          kickWorkerIfQueued(getHomeDir(), { spawn: spawnWorker });
+        } catch (error) {
+          console.error(`agent-learnings worker start failed: ${error}`);
+        }
+        try {
+          const learningsHealth = getLearningsHealthNotice({
+            store: defaultStoreDir(getHomeDir()),
+            now: new Date(),
+            runGit,
+          });
+          if (learningsHealth) messages.push(learningsHealth);
+        } catch (error) {
+          console.error(`agent-learnings health notice failed: ${error}`);
+        }
       }
       return context.json({
         event: "SessionStart",

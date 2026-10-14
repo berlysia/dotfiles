@@ -5,7 +5,7 @@ import { loadRedactList } from "../../insight-digest.ts";
 import { drainInbox } from "../core/inbox.ts";
 import type { RunGit } from "../core/git.ts";
 import { COMMON_KEY } from "../core/learnings-file.ts";
-import { enqueueJob } from "../core/queue.ts";
+import { countJobs, enqueueJob } from "../core/queue.ts";
 import { renderLearnings } from "../core/render.ts";
 import { resolveRepoKey } from "../core/repo-key.ts";
 import {
@@ -27,7 +27,10 @@ export async function buildSessionLearningsContext(input: {
   home: string;
   runGit: RunGit;
   now: Date;
+  env?: Readonly<Record<string, string | undefined>>; // 既定は process.env
 }): Promise<string | null> {
+  // worker が起動した Claude のセッションには学びを渡さず、reads.log も書かない
+  if (isWorkerSession(input.env ?? process.env)) return null;
   const store = defaultStoreDir(input.home);
   if (!existsSync(join(store, ".git"))) return null;
   const repoKey = resolveRepoKey(input.cwd, input.runGit);
@@ -146,4 +149,18 @@ export function enqueueSessionEnd(
   if (result.status !== "enqueued") return result.status;
   deps.spawn(deps.home);
   return "enqueued";
+}
+
+// 取りこぼし（SessionEnd の worker 起動が失敗した・worker が落ちた）を拾う。
+// queue か processing にジョブがあるときだけ worker を起動する（lock で 1 つだけが進む）
+export function kickWorkerIfQueued(
+  home: string,
+  deps: { spawn: (home: string) => void },
+): boolean {
+  const store = defaultStoreDir(home);
+  if (!existsSync(join(store, ".git"))) return false;
+  const jobs = countJobs(store);
+  if (jobs.queue + jobs.processing === 0) return false;
+  deps.spawn(home);
+  return true;
 }

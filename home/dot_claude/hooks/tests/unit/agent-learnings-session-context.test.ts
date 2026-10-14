@@ -1,6 +1,6 @@
 import { deepStrictEqual, ok, strictEqual } from "node:assert";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -8,6 +8,7 @@ import {
   buildSessionLearningsContext,
   buildWorkerSpawnSpec,
   enqueueSessionEnd,
+  kickWorkerIfQueued,
 } from "../../lib/agent-learnings/claude/session-context.ts";
 import { runGit } from "../../lib/agent-learnings/core/git.ts";
 import {
@@ -15,7 +16,11 @@ import {
   defaultStoreDir,
 } from "../../lib/agent-learnings/core/store.ts";
 import { writeInboxRequest } from "../../lib/agent-learnings/core/inbox.ts";
-import { countJobs } from "../../lib/agent-learnings/core/queue.ts";
+import {
+  claimJob,
+  countJobs,
+  enqueueJob,
+} from "../../lib/agent-learnings/core/queue.ts";
 
 describe("buildSessionLearningsContext", () => {
   it("returns null without a store, drains the inbox and renders after", async () => {
@@ -170,4 +175,79 @@ describe("buildWorkerSpawnSpec", () => {
     strictEqual(spec.detached, true);
     strictEqual(spec.stdio, "ignore");
   });
+});
+
+describe("worker session exclusion and worker restart at SessionStart", () => {
+  function withHome(
+    fn: (ctx: { repo: string; home: string; store: string }) => Promise<void>,
+  ): Promise<void> {
+    const root = mkdtempSync(join(tmpdir(), "agent-learnings-sessionstart-"));
+    const repo = join(root, "repo");
+    const home = join(root, "home");
+    execFileSync("git", ["init", "-q", repo]);
+    execFileSync("git", [
+      "-C",
+      repo,
+      "remote",
+      "add",
+      "origin",
+      "https://github.com/foo/bar.git",
+    ]);
+    const store = defaultStoreDir(home);
+    initStore(store, runGit);
+    return fn({ repo, home, store }).finally(() =>
+      rmSync(root, { recursive: true, force: true }),
+    );
+  }
+  const SID = "0f0e0d0c-0000-4000-8000-000000000001";
+  const job = {
+    sessionId: SID,
+    transcriptPath: "/t.jsonl",
+    cwd: "/c",
+    repoKey: "github.com/foo/bar",
+    reason: "other",
+  };
+
+  it("returns null in a worker session and writes no reads.log", () =>
+    withHome(async ({ repo, home, store }) => {
+      writeInboxRequest(
+        store,
+        {
+          op: "add",
+          repoKey: "github.com/foo/bar",
+          title: "t",
+          body: "b を使う",
+          reader: "codex",
+        },
+        new Date(),
+      );
+      const out = await buildSessionLearningsContext({
+        cwd: repo,
+        home,
+        runGit,
+        now: new Date(),
+        env: { AGENT_LEARNINGS_WORKER: "1" },
+      });
+      strictEqual(out, null);
+      strictEqual(existsSync(join(store, ".state/reads.log")), false);
+    }));
+  it("starts the worker only when a job is queued or processing", () =>
+    withHome(async ({ home, store }) => {
+      let spawned = 0;
+      const spawn = () => void spawned++;
+      kickWorkerIfQueued(home, { spawn });
+      strictEqual(spawned, 0);
+      enqueueJob(store, job, new Date());
+      kickWorkerIfQueued(home, { spawn });
+      strictEqual(spawned, 1);
+      ok(claimJob(store, { tried: new Set(), now: new Date() }));
+      kickWorkerIfQueued(home, { spawn });
+      strictEqual(spawned, 2); // processing だけが残っている
+    }));
+  it("does nothing without a store", () =>
+    withHome(async ({ home }) => {
+      let spawned = 0;
+      kickWorkerIfQueued(`${home}-none`, { spawn: () => void spawned++ });
+      strictEqual(spawned, 0);
+    }));
 });
