@@ -34,6 +34,13 @@ export type StorePaths = {
   rejected: string;
   readsLog: string;
   codexReadsLog: string;
+  queue: string;
+  processing: string;
+  failed: string;
+  processed: string;
+  runsLog: string;
+  workerLock: string;
+  workerCwd: string;
 };
 
 export function storePaths(store: string): StorePaths {
@@ -50,7 +57,28 @@ export function storePaths(store: string): StorePaths {
     rejected: join(state, "rejected"),
     readsLog: join(state, "reads.log"),
     codexReadsLog: join(codex, "reads.log"),
+    queue: join(state, "queue"),
+    processing: join(state, "processing"),
+    failed: join(state, "failed"),
+    processed: join(state, "processed.json"),
+    runsLog: join(state, "runs.log"),
+    workerLock: join(state, "worker.lock"),
+    workerCwd: join(state, "worker-cwd"),
   };
+}
+
+// plan-1 で作った store には無い、queue 系のディレクトリを足す（enqueue と worker の開始時に呼ぶ）
+export function ensureStateDirs(store: string): void {
+  const paths = storePaths(store);
+  for (const dir of [
+    paths.state,
+    paths.queue,
+    paths.processing,
+    paths.failed,
+    paths.workerCwd,
+  ]) {
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+  }
 }
 
 export function defaultStoreDir(home: string): string {
@@ -129,6 +157,7 @@ export function initStore(
     ]) {
       mkdirSync(dir, { recursive: true, mode: 0o700 });
     }
+    ensureStateDirs(store);
     chmodSync(store, 0o700);
     let created = false;
     if (!existsSync(join(store, ".git"))) {

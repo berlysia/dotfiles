@@ -18,9 +18,11 @@ import { runGit } from "../../lib/agent-learnings/core/git.ts";
 import {
   appendReadLog,
   commitStore,
+  ensureStateDirs,
   initStore,
   readLearnings,
   repoFilePath,
+  storePaths,
   writeLearnings,
 } from "../../lib/agent-learnings/core/store.ts";
 
@@ -44,6 +46,26 @@ describe("initStore", () => {
       strictEqual(readFileSync(join(store, ".gitignore"), "utf8"), ".state/\n");
       ok(existsSync(join(store, ".git")));
       ok(existsSync(join(store, ".state", "codex", "inbox")));
+    });
+  });
+});
+
+describe("ensureStateDirs", () => {
+  it("creates the queue directories at 0700, for new and existing stores", () => {
+    withStore((store) => {
+      ok(initStore(store, runGit).ok);
+      const paths = storePaths(store);
+      for (const dir of [
+        paths.queue,
+        paths.processing,
+        paths.failed,
+        paths.workerCwd,
+      ]) {
+        strictEqual(statSync(dir).mode & 0o777, 0o700);
+      }
+      rmSync(paths.queue, { recursive: true });
+      ensureStateDirs(store);
+      strictEqual(statSync(paths.queue).mode & 0o777, 0o700);
     });
   });
 });
