@@ -75,7 +75,10 @@ export function writeFileSyncAtomic(
   renameSync(tmp, path);
 }
 
-const gitArgs = (store: string, args: readonly string[]): string[] => [
+export const storeGitArgs = (
+  store: string,
+  args: readonly string[],
+): string[] => [
   "--git-dir",
   join(store, ".git"),
   "--work-tree",
@@ -97,13 +100,13 @@ export function commitStore(
 ): { ok: true; committed: boolean } | { ok: false; reason: string } {
   if (!existsSync(join(store, ".git")))
     return { ok: false, reason: "no git repository" };
-  if (!runGit(gitArgs(store, ["add", "-A", "--", "."]), store).ok)
+  if (!runGit(storeGitArgs(store, ["add", "-A", "--", "."]), store).ok)
     return { ok: false, reason: "commit failed" };
-  const status = runGit(gitArgs(store, ["status", "--porcelain"]), store);
+  const status = runGit(storeGitArgs(store, ["status", "--porcelain"]), store);
   if (!status.ok) return { ok: false, reason: "commit failed" };
   if (status.stdout === "") return { ok: true, committed: false };
   const commit = runGit(
-    gitArgs(store, [...AUTHOR, "commit", "-q", "-m", message]),
+    storeGitArgs(store, [...AUTHOR, "commit", "-q", "-m", message]),
     store,
   );
   return commit.ok

@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# agent-learnings: thin wrapper around cli/learnings.ts. Codex and Claude both
+# call it from PATH; the real logic lives at ~/.claude/hooks/cli/learnings.ts
+# (home/dot_claude/hooks/cli/learnings.ts in source).
+exec bun run --silent "${HOME}/.claude/hooks/cli/learnings.ts" "$@"

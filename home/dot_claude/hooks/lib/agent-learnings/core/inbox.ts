@@ -90,7 +90,7 @@ export function writeInboxRequest(
 }
 
 // Codex は .state/codex の中を書き換えられるので、symlink を辿って store の外を触らないよう確かめる
-function inboxDirsSafe(store: string): boolean {
+export function inboxDirsSafe(store: string): boolean {
   const { codex, inbox } = storePaths(store);
   const uid = process.getuid?.();
   for (const dir of [codex, inbox]) {
