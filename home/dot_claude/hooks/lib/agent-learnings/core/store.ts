@@ -296,8 +296,9 @@ export function writeLearnings(
   }
 }
 
-const READS_LOG_MAX_BYTES = 1024 * 1024;
+const LOG_MAX_BYTES = 1024 * 1024;
 
+// `show` の呼び出し記録を 1 行足す。回転はしない（worker が lock の中で rotateLogs で行う）
 export function appendReadLog(
   path: string,
   record: { at: Date; reader: string; repoKey: string },
@@ -307,14 +308,6 @@ export function appendReadLog(
       record.reader === "claude" || record.reader === "codex"
         ? record.reader
         : "unknown";
-    try {
-      const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
-      const size = fstatSync(fd).size;
-      closeSync(fd);
-      if (size > READS_LOG_MAX_BYTES) renameSync(path, `${path}.1`);
-    } catch {
-      // 無ければ新しく作る
-    }
     const fd = openSync(
       path,
       constants.O_WRONLY |
@@ -333,5 +326,24 @@ export function appendReadLog(
     }
   } catch {
     // 記録できなくても show は成功させる
+  }
+}
+
+// 1MB を超えた runs.log・reads.log・codex/reads.log を `.1` に回す。store lock の中から呼ぶ
+export function rotateLogs(store: string): void {
+  const paths = storePaths(store);
+  for (const path of [paths.runsLog, paths.readsLog, paths.codexReadsLog]) {
+    try {
+      const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+      let size: number;
+      try {
+        size = fstatSync(fd).size;
+      } finally {
+        closeSync(fd);
+      }
+      if (size > LOG_MAX_BYTES) renameSync(path, `${path}.1`);
+    } catch {
+      // 無いログは回さない
+    }
   }
 }

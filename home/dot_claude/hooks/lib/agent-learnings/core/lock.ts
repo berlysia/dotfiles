@@ -6,6 +6,7 @@ import {
   renameSync,
   statSync,
   unlinkSync,
+  utimesSync,
   writeSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -16,6 +17,10 @@ export type LockResult<T> =
 
 const STALE_MS = 10 * 60_000;
 const POLL_MS = 50;
+const DEFAULT_LOCK_NAME = "lock";
+
+// lockName の既定は store 全体の `lock`、staleMs の既定は 10 分
+export type LockOptions = { lockName?: string; staleMs?: number };
 
 const errorCode = (error: unknown): string | undefined =>
   (error as NodeJS.ErrnoException).code;
@@ -24,8 +29,9 @@ export function isStale(
   content: string,
   mtimeMs: number,
   nowMs: number,
+  opts: LockOptions = {},
 ): boolean {
-  if (nowMs - mtimeMs > STALE_MS) return true;
+  if (nowMs - mtimeMs > (opts.staleMs ?? STALE_MS)) return true;
   const match = /^(\d+) (\d+)$/.exec(content);
   if (!match) return false; // 読めない内容は mtime だけで判定する
   try {
@@ -37,8 +43,12 @@ export function isStale(
 }
 
 // 観測した内容 observed の lock を奪う。奪えたら true（呼び出し側が作り直す）
-export function stealIfStale(stateDir: string, observed: string): boolean {
-  const lock = join(stateDir, "lock");
+export function stealIfStale(
+  stateDir: string,
+  observed: string,
+  opts: LockOptions = {},
+): boolean {
+  const lock = join(stateDir, opts.lockName ?? DEFAULT_LOCK_NAME);
   const stale = `${lock}.stale.${Math.random().toString(16).slice(2, 10).padEnd(8, "0")}`;
   try {
     renameSync(lock, stale);
@@ -69,12 +79,30 @@ export function stealIfStale(stateDir: string, observed: string): boolean {
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
+// 自分の pid が持っている lock の mtime を今にする（長く保持する lock を奪われないため）。
+// 他のプロセスの lock や無い lock は触らない
+export function touchLock(
+  stateDir: string,
+  opts: Pick<LockOptions, "lockName"> = {},
+): boolean {
+  const lock = join(stateDir, opts.lockName ?? DEFAULT_LOCK_NAME);
+  try {
+    const match = /^(\d+) (\d+)$/.exec(readFileSync(lock, "utf8"));
+    if (!match || Number(match[1]) !== process.pid) return false;
+    const now = new Date();
+    utimesSync(lock, now, now);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function withStoreLock<T>(
   stateDir: string,
-  opts: { waitMs: number },
+  opts: { waitMs: number } & LockOptions,
   fn: () => T | Promise<T>,
 ): Promise<LockResult<T>> {
-  const lock = join(stateDir, "lock");
+  const lock = join(stateDir, opts.lockName ?? DEFAULT_LOCK_NAME);
   const deadline = Date.now() + opts.waitMs;
   for (;;) {
     const content = `${process.pid} ${Date.now()}`;
@@ -107,8 +135,8 @@ export async function withStoreLock<T>(
     try {
       const observed = readFileSync(lock, "utf8");
       if (
-        isStale(observed, statSync(lock).mtimeMs, Date.now()) &&
-        stealIfStale(stateDir, observed)
+        isStale(observed, statSync(lock).mtimeMs, Date.now(), opts) &&
+        stealIfStale(stateDir, observed, opts)
       )
         continue;
     } catch (error) {

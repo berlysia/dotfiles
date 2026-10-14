@@ -9,6 +9,7 @@ import {
   rmSync,
   statSync,
   symlinkSync,
+  truncateSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -22,6 +23,7 @@ import {
   initStore,
   readLearnings,
   repoFilePath,
+  rotateLogs,
   storePaths,
   writeLearnings,
 } from "../../lib/agent-learnings/core/store.ts";
@@ -161,6 +163,41 @@ describe("appendReadLog", () => {
       });
       chmodSync(join(store, ".state"), 0o700);
       ok(root.length > 0);
+    });
+  });
+});
+
+describe("log rotation", () => {
+  it("appendReadLog never rotates; rotateLogs rotates the three logs over 1MB", () => {
+    withStore((store) => {
+      initStore(store, runGit);
+      const paths = storePaths(store);
+      const big = 1024 * 1024 + 1;
+      for (const path of [paths.runsLog, paths.readsLog, paths.codexReadsLog]) {
+        writeFileSync(path, "");
+        truncateSync(path, big);
+      }
+      appendReadLog(paths.readsLog, {
+        at: new Date(),
+        reader: "claude",
+        repoKey: "github.com/a/b",
+      });
+      ok(!existsSync(`${paths.readsLog}.1`));
+      rotateLogs(store);
+      for (const path of [paths.runsLog, paths.readsLog, paths.codexReadsLog]) {
+        ok(existsSync(`${path}.1`), path);
+        ok(!existsSync(path), path);
+      }
+    });
+  });
+  it("leaves small logs alone", () => {
+    withStore((store) => {
+      initStore(store, runGit);
+      const paths = storePaths(store);
+      writeFileSync(paths.runsLog, "x\n");
+      rotateLogs(store);
+      ok(existsSync(paths.runsLog));
+      ok(!existsSync(`${paths.runsLog}.1`));
     });
   });
 });
