@@ -40,6 +40,7 @@ import {
 } from "../lib/agent-learnings/core/learnings-file.ts";
 import { withStoreLock } from "../lib/agent-learnings/core/lock.ts";
 import { applyOps, type LearningOp } from "../lib/agent-learnings/core/ops.ts";
+import { countJobs, summarizeRuns } from "../lib/agent-learnings/core/queue.ts";
 import { renderLearnings } from "../lib/agent-learnings/core/render.ts";
 import {
   isValidRepoKey,
@@ -657,6 +658,15 @@ function runStatus(deps: RunLearningsCliDeps): RunLearningsCliResult {
       );
     }
   }
+
+  const jobs = countJobs(store);
+  lines.push(
+    `queue: ${jobs.queue} processing: ${jobs.processing} failed: ${jobs.failed}`,
+  );
+  const runs = summarizeRuns(store, deps.now, 14);
+  lines.push(
+    `worker (14d): applied ${runs.applied} skipped ${runs.skipped} rejected ${runs.rejected} failed ${runs.failed}`,
+  );
 
   const reads = countReads([paths.readsLog, paths.codexReadsLog], deps.now);
   lines.push(

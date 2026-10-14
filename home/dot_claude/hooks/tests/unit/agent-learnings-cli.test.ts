@@ -17,6 +17,10 @@ import {
 } from "../../cli/learnings.ts";
 import { runGit } from "../../lib/agent-learnings/core/git.ts";
 import { writeInboxRequest } from "../../lib/agent-learnings/core/inbox.ts";
+import {
+  appendRunLog,
+  enqueueJob,
+} from "../../lib/agent-learnings/core/queue.ts";
 
 async function withEnv(
   fn: (deps: RunLearningsCliDeps, root: string) => Promise<void>,
@@ -338,5 +342,34 @@ describe("runLearningsCli", () => {
         ).exitCode,
         1,
       );
+    }));
+  it("status reports queue counts and the worker's recent results", () =>
+    withEnv(async (deps) => {
+      strictEqual((await runLearningsCli(["init"], deps)).exitCode, 0);
+      const sessionId = "0f0e0d0c-0000-4000-8000-000000000001";
+      enqueueJob(
+        store(deps),
+        {
+          sessionId,
+          transcriptPath: "/t.jsonl",
+          cwd: "/c",
+          repoKey: "github.com/foo/bar",
+          reason: "other",
+        },
+        deps.now,
+      );
+      appendRunLog(store(deps), {
+        schemaVersion: 1,
+        at: "2026-10-14T00:00:00.000Z",
+        sessionId,
+        result: "rejected",
+        opsApplied: 0,
+        opsDropped: 0,
+        reason: "response rejected",
+      });
+      const r = await runLearningsCli(["status"], deps);
+      strictEqual(r.exitCode, 0);
+      ok(r.stdout.includes("queue: 1"), r.stdout);
+      ok(r.stdout.includes("rejected 1"), r.stdout);
     }));
 });

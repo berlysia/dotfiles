@@ -142,6 +142,28 @@ export function commitStore(
     : { ok: false, reason: "commit failed" };
 }
 
+// push していない commit のうち最も古いものの時刻。upstream が無ければ null
+export function oldestUnpushedCommitTime(
+  store: string,
+  runGit: RunGit,
+): Date | null {
+  const upstream = runGit(
+    storeGitArgs(store, ["rev-parse", "--abbrev-ref", "@{u}"]),
+    store,
+  );
+  if (!upstream.ok) return null;
+  const log = runGit(
+    storeGitArgs(store, ["log", "@{u}..HEAD", "--format=%ct"]),
+    store,
+  );
+  if (!log.ok || log.stdout === "") return null;
+  const times = log.stdout
+    .split("\n")
+    .map(Number)
+    .filter((n) => Number.isFinite(n));
+  return times.length === 0 ? null : new Date(Math.min(...times) * 1000);
+}
+
 export function initStore(
   store: string,
   runGit: RunGit,
