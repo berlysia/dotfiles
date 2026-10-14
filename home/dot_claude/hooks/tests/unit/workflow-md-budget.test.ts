@@ -16,11 +16,12 @@ const referenceSkill = join(
   ".skills/document-workflow-reference/SKILL.md",
 );
 
-// The measured size after removing text that hooks, the CLI, the reference
-// skill or ADRs already carry (about 11KB), plus 1KB of headroom rounded up to
-// a whole KB. workflow.md is loaded in every session; the previous 13KB budget
-// had been reached, so keep the ceiling close to the actual size.
-const BUDGET_BYTES = 12 * 1024;
+// workflow.md is loaded in every session, so keep the ceiling close to the
+// actual size. ADR-0025 trimmed it to about 11KB under a 12KB ceiling; ADR-0032
+// raised the ceiling back to 13KB for the throwaway-script routing line, which
+// must be read when a task starts and so cannot live in the reference skill.
+// Raising it again needs its own reason recorded in an ADR.
+const BUDGET_BYTES = 13 * 1024;
 
 test("workflow.md stays within the operator-guide budget (K8)", () => {
   ok(existsSync(workflowMd), "workflow.md must exist");

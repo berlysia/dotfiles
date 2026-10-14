@@ -4,6 +4,8 @@
 
 proposed
 
+ADR-0032 が改訂した: P3（test fixture 共通化規約）を廃止し、Deferred-2 (P11) を閉じた。plan にコード本体を書かなくなったため。
+
 ## Context
 
 my-secretary セッション (08535ebf) のフィードバックファイル `document-workflow-feedback-08535ebf.md` で提案された 13 件 (P1〜P13) のうち、本セッション (85f6f6e4) で採用した 7 件 (P1 / P3 / P9 / P10 / P12 軽量パス MVP / P13 + plan-1 T1〜T9 / plan-2 T1〜T3) は plan-1 / plan-2 で実装された。本 ADR は **deferred とした改善案** を構造的に記録し、将来採用検討時の出発点を残す。
@@ -26,6 +28,8 @@ my-secretary セッション (08535ebf) のフィードバックファイル `do
 **再評価条件**: spec/plan で「想像で関数名を書く」失敗パターンが Round 5 以降の複数セッションで再発した場合（具体閾値: 同一 my-secretary 系プロジェクトで 3 セッション連続で同種の指摘）。
 
 ### Deferred-2: P11 — TDD Step 3 compilable check
+
+**closed（ADR-0032）**: plan-N.md がコード本体を持たなくなり、typecheck する対象が無くなった。
 
 **概要**: plan-N の Tasks セクションから fenced TypeScript code block を抽出し、scratch dir に書き出して `bun run typecheck` を走らせる。型エラーがあれば警告。
 

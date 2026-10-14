@@ -14,8 +14,7 @@ const CHECKLIST_LINES = [
   "Self-audit checklist:",
   "[ ] 参照する既存関数 / API / SQL は実コードを Read 済みか?",
   "[ ] 外部ライブラリの挙動は公式 source / doc で確認済みか?",
-  "[ ] テスト fixture (silentLogger 等) の出処を inline / 共通化で明記したか?",
-  "[ ] TDD Step 3 はコメント placeholder ではなく compilable な擬似コードか?",
+  "[ ] plan にテストや実装のコード本体を書いていないか? (公開する型・形式のスキーマ・セキュリティ上の正確な式は、理由を添えて書いてよい)",
   "[ ] Implementation Notes に逃がす内容は spec/plan 本文に書くべきものでないか?",
   "[ ] 「Phase 1 で意図的に提供しない」項目は代替経路を実コードで確認したか?",
 ];

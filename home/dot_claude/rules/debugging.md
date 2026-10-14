@@ -56,7 +56,7 @@ Step-by-step verification process:
 
 ## Use logic-validator Proactively
 
-**When to use**: Catch assumption-based reasoning before it leads to wrong fixes.
+**When to use**: Catch assumption-based reasoning before it leads to wrong fixes. Not for throwaway scripts run in the scratchpad and discarded, where rerunning is the cheaper check, unless they delete, push, bill, or write outside the scratchpad.
 
 **Symptoms of assumption-based reasoning**:
 

@@ -14,8 +14,9 @@
 - mechanical-lane 4 条件 AND 成立（`/document-workflow-reference` 参照） → Document Workflow（plan.md のみ）
 - 3-5 ステップ + 複数判断 / 6+ ステップ / 複数サブシステム → Document Workflow（spec + plan-N）
 - Scope Guard 検知 → `/scope-guard` → spec + plan-N に分解
+- 書き捨てのスクリプト（scratchpad で実行し、出力を読んで捨てる集計・調査）→ すぐ実行し、Document Workflow・レビュアー・logic-validator を通さない。削除・push・課金・scratchpad 外への書き込みを伴うものは除く。LLM 呼び出しなど実行に費用がかかるものは 1〜3 件で試してから全件を流し、結果をファイルに残す。
 
-**Document Workflow 必須トリガー**（いずれか 1 つ）: ADR planning phase / アーキテクチャ・API 設計・データモデルの変更 / 探索と実装が混在するタスク / ユーザーが計画を要求。
+**Document Workflow 必須トリガー**（いずれか 1 つ）: ADR planning phase / アーキテクチャ・API 設計・データモデルの変更 / 探索と実装（リポジトリに残る実装）が混在するタスク / ユーザーが計画を要求。
 
 **禁止**: これらに該当するタスクで、承認前に実装へ着手すること。設計判断を伴うならステップ数が少なくても Document Workflow を使う。
 

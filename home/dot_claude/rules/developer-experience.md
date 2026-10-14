@@ -22,7 +22,7 @@ When the user's problem description already specifies the cause and location, go
 
 ## Decision Transparency
 
-When changing approach mid-task:
+When changing approach mid-task (not inside a throwaway script run in the scratchpad and discarded; rewriting and rerunning it is enough):
 
 1. **MUST use logic-validator agent** to verify the reasoning
 2. Explain validation results and new plan before proceeding
@@ -30,7 +30,7 @@ When changing approach mid-task:
 
 ## Evidence-Based Decisions
 
-Always gather evidence (read files, run tests, check actual state) before making decisions. Use **logic-validator** proactively to catch assumption-based reasoning.
+Always gather evidence (read files, run tests, check actual state) before making decisions. Use **logic-validator** proactively to catch assumption-based reasoning. For a throwaway script run in the scratchpad and discarded, running it and reading the output is the evidence; do not add logic-validator, unless it deletes, pushes, bills, or writes outside the scratchpad (see the Task Intake Routing in `rules/workflow.md`).
 
 ## Structured Decision Requests
 

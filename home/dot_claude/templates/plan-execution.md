@@ -22,58 +22,37 @@ tests/feature/example.test.ts
 
 ## Tasks
 
-各タスクは 2-5 分のバイトサイズステップに分解する。コード変更タスクは TDD scaffold を含む。
+plan に書くのは、実行するまで分からない決定だけにする。実行すれば分かること（コードの書き方、テストの書き方、コマンドの出力）は、実装者がテストを走らせて確かめる。
+
+- **書く**: 振る舞いの契約（入出力、形式、終了コード、エラーの意味、空や上限の扱い、テストが依存する環境の前提）、不変条件（セキュリティ、並行性、データの保全。手段そのものが決定なら手段まで）、テストケース（入力 → 期待）、タスクの分割と順序、触るファイルと参照
+- **書かない**: 実装コードとテストコードの本体、fixture の定義、実行コマンドと期待出力の逐語、コミットの手順、内部の関数分割と命名
+- **例外**: コードが決定そのもののとき（公開する型やシグネチャ、ファイル形式のスキーマ、セキュリティ上の正確な式）はコードで書いてよい。ブロックの直前に「なぜコードで固定するか」を 1 行書く
+
+レビュアーはこの境界で読む。契約・不変条件・テストケースの抜けは指摘の対象、plan 内のコードの細部は対象外。
 
 ### T1: <タスク名>
 
+<このタスクの目的を 1 行で>
+
 **Files:**
 
-- 編集: `src/path/to/file.ts:123-145`
+- 編集: `src/path/to/file.ts`
 - テスト: `tests/path/to/file.test.ts`
 - 参照: `src/lib/dependency.ts:50-65` (再利用する既存関数 / 設計判断の根拠) — P1: 各 Task に最低 1 件の参照行を必須化。引用が無ければ想像補完とみなす
 
-- [ ] **Step 1: 失敗するテストを書く**
+**契約・不変条件**（該当するものだけ）:
 
-前置: 依存 fixture (例: `silentLogger`, `fakeAdapter`) は以下のいずれかで明示する (P3: fixture 名だけ書いて定義を省くと ReferenceError が再発する)。
+- <例: 入力ファイルが存在しなければ終了コード 2 で、stderr に path を出す>
+- <例: inbox 配下の symlink は辿らない>
 
-- (a) プロジェクトの共通 fixture ディレクトリに集約済の場合は、その import 文を書く
-- (b) 共通化していない場合はテストファイル冒頭に inline 定義式を完全に含める (関数本体まで省略しない)
+**テストケース**:
 
-```ts
-import { strict as assert } from "node:assert";
-// fixture は (a) import / (b) inline 定義のいずれか
-const silentLogger = { log: () => {}, error: () => {} }; // (b) inline 定義例
+- 入力: <具体値> → 期待: <具体的な結果>
+- 入力: <境界値・異常値> → 期待: <具体的な結果>
 
-test("specific behavior", () => {
-  const result = func(input);
-  assert.deepStrictEqual(result, expected);
-});
-```
+**完了条件**: <どのテストが pass すれば終わりか>
 
-- [ ] **Step 2: テストを実行して失敗を確認**
-
-実行: `pnpm run test tests/path/to/file.test.ts`（bun プロジェクトでは `bun run test ...`）
-期待: FAIL with "func is not defined"
-
-- [ ] **Step 3: 最小実装を書く**
-
-```ts
-export function func(input: Input): Output {
-  return expected;
-}
-```
-
-- [ ] **Step 4: テストを実行して通過を確認**
-
-実行: `pnpm run test tests/path/to/file.test.ts`（bun プロジェクトでは `bun run test ...`）
-期待: PASS
-
-- [ ] **Step 5: コミット**
-
-```bash
-git add src/path/to/file.ts tests/path/to/file.test.ts
-git commit -m "feat(scope): description"
-```
+- [ ] T1 完了
 
 ### T<最後>: 記録を移す
 

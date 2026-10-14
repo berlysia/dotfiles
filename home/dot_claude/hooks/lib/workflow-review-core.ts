@@ -619,6 +619,12 @@ export interface RecommendationOptions {
 
 const POINTER_MAX_BYTES = 160;
 
+// Steers reviewers toward contracts and test design; code details written
+// inside a plan are verified by tests after implementation, so they should not
+// decide the verdict. Full text only: the pointer output has a byte budget.
+const REVIEW_FOCUS_LINE =
+  "Reviewer briefs: ask for gaps in contracts, invariants, and test cases (input → expected) and in the task split. Do not let code details inside the plan (syntax, regexes, paths) decide the verdict; tests catch those after implementation.";
+
 /**
  * K6 pointer: emitted instead of the full recommendation when the document's
  * round count has not advanced since the last full-text emission. Kept under
@@ -760,6 +766,7 @@ export function buildRecommendation(
     ...recommended.map(
       (r, i) => `${i + 1}. subagent_type: ${r.subagentType} — ${r.description}`,
     ),
+    REVIEW_FOCUS_LINE,
   );
 
   if (roundPlan.kind === "full" && isProseOnlyChange(planContent)) {

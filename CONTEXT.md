@@ -54,7 +54,7 @@ ADR: `docs/decisions/0010-context-md-mechanism.md`
   - **tripwire**: gate 閉時の repo 内書換を rolling `git status` baseline で事後検知。`.tripwire-baseline` / `.tripwire-disabled`
   - **診断 deny**: guard の deny は「不成立条件・見つかった status 行・次の 1 手」。`lib/workflow-gate.ts` の `diagnoseGate` を CLI `status` と共有
   - **pointer**: 同一 round 内の 2 回目以降の推奨は ≤160B。全文は `## Reviewer Outputs (Round N)` 数が増えた最初の変更でのみ
-  - **operator guide / reference skill**: `rules/workflow.md`（≤12KB、行動順）と `.skills/document-workflow-reference/SKILL.md`（機構仕様）の分離
+  - **operator guide / reference skill**: `rules/workflow.md`（≤13KB、行動順）と `.skills/document-workflow-reference/SKILL.md`（機構仕様）の分離
 - **ADR-0028 で追加された語彙（2026-10-06）**:
   - **委任 (delegation)**: 人間が spec の承認時に選ぶと、spec の `## Scope` に収まる plan-N.md が自分の承認なしで gate を通る。記録は `approvals.log` の spec.md の行の `delegate: "plans-in-scope"`
   - **`## Scope`**: spec.md に書く、委任された plan-N.md が書き込んでよいパスの一覧。行の文字・長さ・形に制限があり、違反があると全体が無効

@@ -4,6 +4,8 @@
 
 accepted (2026-09-10)
 
+`workflow.md` の上限（決定 7 の ≤12KB）は、ADR-0032 が 13KB に改めた。
+
 ## Context
 
 Opus 5 を Document Workflow の下で動かすと、計画フェーズが総ターンの 70〜98% を占め、レビューが収束せず、必須 step が抜け、ゲートが閉じたまま固着するか逆に素通りする、という報告が続いた。2026-09-10 に `~/.claude/projects/**/*.jsonl` 1,075 セッションを横断計測し、Opus 5 main loop でワークフローが実働した 26 セッションを Fable 5 の 2 セッションと比較した。観測された失敗は 8 パターンに分かれる（`git show 52dc6fd447:docs/plans/document-workflow-overhaul/research.md` §2）。

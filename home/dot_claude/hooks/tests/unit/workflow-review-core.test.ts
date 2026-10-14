@@ -397,6 +397,51 @@ describe("workflow-review-core: buildRecommendation delta (K6)", () => {
   });
 });
 
+describe("workflow-review-core: review focus line", () => {
+  const FOCUS = "Reviewer briefs: ask for gaps in contracts, invariants";
+
+  function countOccurrences(text: string, needle: string): number {
+    return text.split(needle).length - 1;
+  }
+
+  it("appears once after the recommended list and before 'After reviews' on a first change", () => {
+    const result = buildRecommendation(
+      "/tmp/wf/spec.md",
+      null,
+      "## Goal\nDesign a new module",
+    );
+    strictEqual(countOccurrences(result, FOCUS), 1);
+    const listEnd = result.indexOf(
+      "4. subagent_type: greenfield-perspective-reviewer",
+    );
+    const focus = result.indexOf(FOCUS);
+    const afterReviews = result.indexOf("After reviews, update");
+    ok(listEnd >= 0 && listEnd < focus);
+    ok(focus < afterReviews);
+  });
+
+  it("appears once in the full text of a delta round", () => {
+    const result = buildRecommendation(
+      "/tmp/wf/spec.md",
+      null,
+      docWithRound(1, ALL_SPEC_PASS_BUT_SCOPE),
+    );
+    ok(result.includes("Carried from Round 1"));
+    strictEqual(countOccurrences(result, FOCUS), 1);
+  });
+
+  it("is absent from the pointer output for a second change in the same round", () => {
+    const result = buildRecommendation(
+      "/tmp/wf/spec.md",
+      null,
+      specWithRounds(1),
+      { fullTextEmittedForRound: 1 },
+    );
+    ok(!result.includes(FOCUS));
+    ok(!result.includes("Reviewer briefs"));
+  });
+});
+
 describe("workflow-review-core: isCompleteAndChanged (K10)", () => {
   it("fires only when the post-write doc is complete and hash changed", () => {
     const wf = seedCache("spec.md", "oldhash");
