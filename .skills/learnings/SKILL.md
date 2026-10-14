@@ -26,14 +26,23 @@ description: 作業中に得た「次のセッションでも役立つ事実」�
 ## コマンド
 
 ```bash
-agent-learnings show                       # 今の repo の学びと共通の学びを表示する
+agent-learnings show --reader claude       # 今の repo の学びと共通の学びを表示する（Codex は --reader codex）
 agent-learnings add --title=<見出し> --body=<本文>
 agent-learnings remove <id>                # 学びの id（L-…）で消す
-agent-learnings status                     # 未取り込みの依頼、未 commit、読み込み回数などを見る
+agent-learnings status                     # 未取り込みの依頼、未 commit、queue と worker の状態、読み込み回数などを見る
 agent-learnings path                       # 今の repo の学びファイルのパス
 ```
 
 値が `-` で始まると引数の解析が別の引数と読むため、`--title=…` `--body=…` のように `=` でつなぐ。
+
+## セッション終了時の自動整理
+
+Claude のセッションが終わると、worker が会話を読み直して学びを追加・更新・削除する。手で `add` しなくても、出来事に結びつく学びは残る。結果は store の git の commit（題は `learnings: session <session id の先頭 8 桁> (<repo>)`、本文に根拠）で辿れ、誤っていれば `remove` で消すか `git revert` で戻す。worker は repo の学びだけを書き、common.md は書かない。
+
+`agent-learnings status` の読み方:
+
+- `queue: <n> processing: <n> failed: <n>`: 整理待ち、処理中、3 回失敗して止まったジョブの数。`failed` が 0 でなければセッション開始時にも 1 行で知らされる。`queue` が 24 時間以上減らないときも同じ
+- `worker (14d): applied <n> skipped <n> rejected <n> failed <n>`: 直近 14 日の worker の結果。`applied` は適用または変更なし、`skipped` は利用者の発言が 3 回未満など、`rejected` は LLM の応答を検査で拒否した回数、`failed` は処理に失敗した回数。`rejected` や `failed` が多いときは `.state/runs.log` に理由が 1 行ずつ残っている
 
 ## 本文の制約
 
