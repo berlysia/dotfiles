@@ -20,7 +20,10 @@ args = ['@mizchi/readability@latest', '--mcp']
 command = 'npx'
 
 [sandbox_workspace_write]
-writable_roots = ['__CHEZMOI_HOME__/.cache/mise']
+writable_roots = [
+  '__CHEZMOI_HOME__/.cache/mise',
+  '__CHEZMOI_HOME__/.local/share/agent-learnings/.state/codex',
+]
 
 [shell_environment_policy]
 include_only = [

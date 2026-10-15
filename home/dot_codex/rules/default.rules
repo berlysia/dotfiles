@@ -104,6 +104,36 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = ["agent-learnings", "show"],
+    decision = "allow",
+    justification = "Reads per-repository learnings",
+)
+
+prefix_rule(
+    pattern = ["agent-learnings", "add"],
+    decision = "allow",
+    justification = "Records a learning through the sandboxed inbox",
+)
+
+prefix_rule(
+    pattern = ["agent-learnings", "remove"],
+    decision = "allow",
+    justification = "Removes a learning through the sandboxed inbox",
+)
+
+prefix_rule(
+    pattern = ["agent-learnings", "status"],
+    decision = "allow",
+    justification = "Shows the learnings store health",
+)
+
+prefix_rule(
+    pattern = ["agent-learnings", "path"],
+    decision = "allow",
+    justification = "Prints the learnings file path",
+)
+
+prefix_rule(
     pattern = ["npx", "biome"],
     decision = "allow",
     justification = "Biome linting/formatting is always safe",

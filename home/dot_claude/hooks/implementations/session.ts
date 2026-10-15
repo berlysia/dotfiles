@@ -17,6 +17,15 @@ import {
   getDistillHealthNotice,
   getUnreadDigestPreview,
 } from "../lib/insight-digest.ts";
+import { getLearningsHealthNotice } from "../lib/agent-learnings/claude/health.ts";
+import {
+  buildSessionLearningsContext,
+  kickWorkerIfQueued,
+  spawnWorker,
+} from "../lib/agent-learnings/claude/session-context.ts";
+import { isWorkerSession } from "../lib/agent-learnings/claude/worker-guard.ts";
+import { runGit } from "../lib/agent-learnings/core/git.ts";
+import { defaultStoreDir } from "../lib/agent-learnings/core/store.ts";
 import { encodeSessionDirName, getProjectRoot } from "../lib/project-root.ts";
 import { shellSingleQuote } from "../lib/shell-quote.ts";
 import { resolveWorkflowPaths } from "../lib/workflow-paths.ts";
@@ -191,7 +200,7 @@ function auditTranscriptDirName(input: {
  */
 const hook = defineHook({
   trigger: { SessionStart: true },
-  run: (context) => {
+  run: async (context) => {
     try {
       // Log session start using centralized logger
       logEvent("SessionStart", context.input.session_id);
@@ -334,9 +343,51 @@ const hook = defineHook({
       //  docs/plans/hook-target-diagnostics-followups.md の「課題 A」節）。
       // なお context.json の event は trigger 宣言に対して型検査され、ランタイムの
       // hook_event_name とは結び付かない。複数イベント trigger に変える場合は注意。
+      // 学びはモデルに渡す必要があるので、UI だけの systemMessage ではなく
+      // hookSpecificOutput.additionalContext で返す。
+      let learningsContext: string | null = null;
+      try {
+        learningsContext = await buildSessionLearningsContext({
+          cwd,
+          home: getHomeDir(),
+          runGit,
+          now: new Date(),
+        });
+      } catch (error) {
+        console.error(`agent-learnings context failed: ${error}`);
+      }
+      // 取りこぼしたジョブの worker を起こし、異常があれば 1 行知らせる。
+      // どれも失敗は stderr に 1 行出して続ける。worker のセッションでは何もしない
+      if (!isWorkerSession(process.env)) {
+        try {
+          kickWorkerIfQueued(getHomeDir(), { spawn: spawnWorker });
+        } catch (error) {
+          console.error(`agent-learnings worker start failed: ${error}`);
+        }
+        try {
+          const learningsHealth = getLearningsHealthNotice({
+            store: defaultStoreDir(getHomeDir()),
+            now: new Date(),
+            runGit,
+          });
+          if (learningsHealth) messages.push(learningsHealth);
+        } catch (error) {
+          console.error(`agent-learnings health notice failed: ${error}`);
+        }
+      }
       return context.json({
         event: "SessionStart",
-        output: { systemMessage: messages.join("\n") },
+        output: {
+          systemMessage: messages.join("\n"),
+          ...(learningsContext
+            ? {
+                hookSpecificOutput: {
+                  hookEventName: "SessionStart" as const,
+                  additionalContext: learningsContext,
+                },
+              }
+            : {}),
+        },
       });
     } catch (error) {
       // K5a: an escaping exception must be reported through systemMessage,

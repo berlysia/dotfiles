@@ -257,6 +257,18 @@
       ]
     }
   ],
+  "SessionEnd": [
+    {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/learnings-session-end.ts",
+          "async": true
+        }
+      ]
+    }
+  ],
   "PreCompact": [
     {
       "matcher": "",
@@ -264,6 +276,11 @@
         {
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/compaction-testament.ts"
+        },
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/learnings-session-end.ts",
+          "async": true
         }
       ]
     }

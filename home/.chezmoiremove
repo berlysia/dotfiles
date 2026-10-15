@@ -1,3 +1,4 @@
 .config/ccstatusline/settings.litellm.json
 .codex/.merge-config.ts
 .zsh/.zshrc
+.claude/commands/record-learnings.md

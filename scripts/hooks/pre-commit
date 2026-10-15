@@ -182,7 +182,10 @@ if [ -n "$STAGED_RULES_FILES" ]; then
         for file in $STAGED_RULES_FILES; do
             if [ -f "$file" ]; then
                 echo "  Checking: $file"
-                if ! codex execpolicy check "$file" 2>&1; then
+                # codex execpolicy check takes the rules file via --rules and needs a
+                # command to evaluate; `true` is a placeholder, so a parse error in the
+                # rules file is what makes it fail.
+                if ! codex execpolicy check --rules "$file" -- true >/dev/null; then
                     RULES_FAILED=true
                 fi
             fi

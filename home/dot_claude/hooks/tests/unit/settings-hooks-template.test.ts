@@ -77,6 +77,32 @@ describe(
           ok(timeGroup, "the Current time hook stays registered");
           strictEqual(timeGroup.hooks.length, on ? 2 : 1);
 
+          // 常に登録する（only_private / auto_approval の条件の外）。終了を待たせない
+          const sessionEnd = hooks["SessionEnd"] ?? [];
+          deepStrictEqual(names(sessionEnd), ["learnings-session-end"]);
+          strictEqual(
+            (sessionEnd[0]?.hooks[0] as { async?: boolean }).async,
+            true,
+          );
+
+          // compaction-testament は同期で compact を待たせ、learnings は待たせない
+          const preCompact = hooks["PreCompact"] ?? [];
+          deepStrictEqual(names(preCompact), [
+            "compaction-testament",
+            "learnings-session-end",
+          ]);
+          strictEqual(
+            (preCompact[0]?.hooks[1] as { async?: boolean }).async,
+            true,
+          );
+          // ほかのイベント（PostToolUse など毎回走るもの）には登録しない
+          deepStrictEqual(
+            Object.keys(hooks).filter((event) =>
+              names(hooks[event] ?? []).includes("learnings-session-end"),
+            ),
+            ["SessionEnd", "PreCompact"],
+          );
+
           const guardGroup = hooks["PreToolUse"]?.find((g) =>
             names([g]).includes("home-destruction-guard"),
           );
