@@ -37,12 +37,27 @@ agent-learnings path                       # 今の repo の学びファイル�
 
 ## セッション終了時の自動整理
 
-Claude のセッションが終わると、worker が会話を読み直して学びを追加・更新・削除する。手で `add` しなくても、出来事に結びつく学びは残る。結果は store の git の commit（題は `learnings: session <session id の先頭 8 桁> (<repo>)`、本文に根拠）で辿れ、誤っていれば `remove` で消すか `git revert` で戻す。worker は repo の学びだけを書き、common.md は書かない。
+Claude のセッションが終わると、worker が会話を読み直して学びを追加・更新・削除する。手で `add` しなくても、出来事に結びつく学びは残る。結果は store の git の commit（題は `learnings: session <session id の先頭 8 桁> (<repo>)`、本文に根拠）で辿れ、誤っていれば `remove` で消すか `git revert` で戻す。worker が common.md を書くのは次の「共通の学びへの昇格」だけ。
 
 `agent-learnings status` の読み方:
 
 - `queue: <n> processing: <n> failed: <n>`: 整理待ち、処理中、3 回失敗して止まったジョブの数。`failed` が 0 でなければセッション開始時にも 1 行で知らされる。`queue` が 24 時間以上減らないときも同じ
 - `worker (14d): applied <n> skipped <n> rejected <n> failed <n>`: 直近 14 日の worker の結果。`applied` は適用または変更なし、`skipped` は利用者の発言が 3 回未満など、`rejected` は LLM の応答を検査で拒否した回数、`failed` は処理に失敗した回数。`rejected` や `failed` が多いときは `.state/runs.log` に理由が 1 行ずつ残っている
+
+## 共通の学びへの昇格
+
+2 つ以上のリポジトリで同じ学びが出ると、worker が自動で common.md（全リポジトリで読まれる共通の学び）へ移す。移った学びは、リポジトリ名・パス・組織名を含まない一般的な形に書き直され、元の項目は消える。リポジトリ名が本文に残っているものや、元の項目と内容がほとんど重ならないものは機械検査で拒否される。
+
+昇格させたくないリポジトリは、store の `no-promote` に 1 行 1 パターンで書く。
+
+- `local/*`（origin の無いリポジトリ）は常に昇格しない。ファイルから消しても効く
+- client や private のリポジトリは、リポジトリのキーを書き足す（例: `github.com/acme-corp/*`）。`*` は `/` を含む任意の文字列に一致する
+- `#` で始まる行と空行は無視される
+- ファイルが読めない・16KB を超える・200 行を超える・200 字を超える行があるときは、安全のため昇格がすべて止まる。`agent-learnings status` に `no-promote:` の行が出るので、直す
+
+人が自分の判断で移すときは、人が端末から `agent-learnings promote <id>`（現在のリポジトリの学びの id）を実行する。内容が表示され、y と答えると common.md へ移る。エージェントからは使えない。
+
+誤った昇格は store の `git log` で commit（題が `learnings: session …` か `learnings: promote …`、本文に `promote <新しい id> <- <元の id> (<リポジトリ>)`）を探し、`git revert` で戻せる。戻した組は、後のセッションでまた昇格しうる。防ぎたいリポジトリは `no-promote` に書く。
 
 ## 本文の制約
 
@@ -55,7 +70,7 @@ Claude のセッションが終わると、worker が会話を読み直して学
 
 ## 人が端末から実行する操作
 
-`add --common`（全 repo に効く学び）、`rekey`（キーの付け替え）、`init`（store の初期化）は、人が端末から実行する。エージェントからは使えない。必要なときは利用者に実行を頼む。
+`add --common`（全 repo に効く学び）、`promote`（共通の学びへの昇格）、`rekey`（キーの付け替え）、`init`（store の初期化）は、人が端末から実行する。エージェントからは使えない。必要なときは利用者に実行を頼む。
 
 ## Codex から使うとき
 
