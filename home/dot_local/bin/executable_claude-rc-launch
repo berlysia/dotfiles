@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# Start `claude remote-control` for one project listed in ~/.config/claude-rc/projects.
+# Called by claude-rc@<name>.service. Exit 64 = configuration error (systemd won't retry).
+set -euo pipefail
+
+name="${1:?usage: claude-rc-launch <name>}"
+list="${CLAUDE_RC_PROJECTS:-$HOME/.config/claude-rc/projects}"
+
+[[ -f "$list" ]] || {
+  echo "claude-rc: project list not found: $list" >&2
+  exit 64
+}
+
+line="$(awk -v n="$name" '$0 !~ /^[[:space:]]*(#|$)/ && $1 == n { print; exit }' "$list")"
+[[ -n "$line" ]] || {
+  echo "claude-rc: '$name' is not in $list" >&2
+  exit 64
+}
+
+read -r _ dir spawn extra <<<"$line"
+dir="${dir/#\~/$HOME}"
+spawn="${spawn:-worktree}"
+[[ "$spawn" == "-" ]] && spawn=worktree
+
+[[ -d "$dir" ]] || {
+  echo "claude-rc: directory not found: $dir" >&2
+  exit 64
+}
+case "$spawn" in
+worktree | same-dir | session) ;;
+*)
+  echo "claude-rc: unknown spawn mode '$spawn' (worktree|same-dir|session)" >&2
+  exit 64
+  ;;
+esac
+
+if [[ "$spawn" == "worktree" ]] && ! git -C "$dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  echo "claude-rc: $dir is not a git repository; falling back to same-dir" >&2
+  spawn=same-dir
+fi
+
+cd "$dir"
+# shellcheck disable=SC2086  # $extra is intentionally word-split into flags
+exec claude remote-control \
+  --spawn "$spawn" \
+  --remote-control-session-name-prefix "$name" \
+  ${extra:-}

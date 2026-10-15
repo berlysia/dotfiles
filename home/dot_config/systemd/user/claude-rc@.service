@@ -1,0 +1,20 @@
+[Unit]
+Description=Claude Code Remote Control server (%i)
+# Give up after 5 failed starts in 10 minutes (e.g. untrusted workspace) instead of looping.
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+Type=exec
+Environment=PATH=%h/.local/bin:%h/.local/share/mise/shims:/usr/local/bin:/usr/bin:/bin
+ExecStart=%h/.local/bin/claude-rc-launch %i
+Restart=always
+RestartSec=15
+RestartPreventExitStatus=64
+# Without a TTY the status screen redraws onto stdout once a second (~175 lines/min),
+# including session titles and prompt text. Errors (e.g. "Workspace not trusted")
+# and claude-rc-launch's own messages go to stderr, which stays in the journal.
+StandardOutput=null
+
+[Install]
+WantedBy=default.target

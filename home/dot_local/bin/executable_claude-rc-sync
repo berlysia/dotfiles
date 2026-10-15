@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Make running claude-rc@*.service instances match ~/.config/claude-rc/projects.
+#   claude-rc-sync          enable/start listed projects, disable/stop unlisted ones
+#   claude-rc-sync status   show state of every instance
+set -euo pipefail
+
+list="${CLAUDE_RC_PROJECTS:-$HOME/.config/claude-rc/projects}"
+wants="$HOME/.config/systemd/user/default.target.wants"
+
+listed=()
+if [[ -f "$list" ]]; then
+  while read -r n _; do
+    if [[ ! "$n" =~ ^[A-Za-z0-9._-]+$ ]]; then
+      echo "skip: invalid name '$n' (use letters, digits, . _ -)" >&2
+      continue
+    fi
+    listed+=("$n")
+  done < <(awk '$0 !~ /^[[:space:]]*(#|$)/ { print $1 }' "$list")
+fi
+
+enabled=()
+for f in "$wants"/claude-rc@*.service; do
+  [[ -e "$f" ]] || continue
+  n="${f##*/claude-rc@}"
+  enabled+=("${n%.service}")
+done
+
+if [[ "${1:-}" == "status" ]]; then
+  for n in $(printf '%s\n' "${listed[@]}" "${enabled[@]}" | sort -u); do
+    printf '%-24s %s\n' "$n" "$(systemctl --user is-active "claude-rc@$n.service" || true)"
+  done
+  exit 0
+fi
+
+systemctl --user daemon-reload
+
+for n in "${enabled[@]}"; do
+  if [[ ! " ${listed[*]} " == *" $n "* ]]; then
+    echo "remove: $n"
+    systemctl --user disable --now "claude-rc@$n.service"
+  fi
+done
+for n in "${listed[@]}"; do
+  echo "ensure: $n"
+  systemctl --user enable "claude-rc@$n.service" >/dev/null 2>&1
+  systemctl --user reset-failed "claude-rc@$n.service" 2>/dev/null || true
+  systemctl --user start "claude-rc@$n.service"
+done
