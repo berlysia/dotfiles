@@ -12,6 +12,10 @@ store の `git log` と `agent-learnings status` で次を数え、定数（40 �
 - Codex の読み込み回数（AGENTS.md の指示が守られているか）
 - 昇格の件数と、昇格した文の妥当さ
 
+## PreCompact で worker が動くかの実機確認
+
+PreCompact hook の登録は `~/.claude/settings.json` で確かめた。実際の compact の後に worker が動いたかは、まだ見ていない。長いセッションで compact が起きたら、セッションが続いているうちに、そのセッションの行が `runs.log` に増えているかを見る。ほかのセッションの hook が worker を起こしても行は増えるので、これは状況証拠にとどまる。確定させたいなら、worker を起こした契機を `runs.log` に記録することを検討する。
+
 ## runs.log の `llm failed` に理由を残すか
 
 運用の初期に 3 件が 2 秒のうちに続けて失敗し、原因が分からなかった。reason は固定の文言にしてある（LLM や transcript の文字列を入れないため）。SDK の結果の `subtype` のような、固定の集合から選べる値を足せるか検討する。
