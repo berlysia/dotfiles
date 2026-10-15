@@ -11,6 +11,10 @@ ExecStart=%h/.local/bin/claude-rc-launch %i
 Restart=always
 RestartSec=15
 RestartPreventExitStatus=64
+# Without a TTY the status screen redraws onto stdout once a second (~175 lines/min),
+# including session titles and prompt text. Errors (e.g. "Workspace not trusted")
+# and claude-rc-launch's own messages go to stderr, which stays in the journal.
+StandardOutput=null
 
 [Install]
 WantedBy=default.target
