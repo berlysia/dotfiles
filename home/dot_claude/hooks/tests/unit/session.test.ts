@@ -34,6 +34,15 @@ import {
   invokeRun,
 } from "../support/test-helpers.ts";
 
+// An empty HOME under `root`. The hook reads (and drains) the agent-learnings
+// store under HOME and may start its worker, so tests must not see the real one;
+// with no store the payload keeps its default shape (systemMessage only).
+function isolatedHome(root: string): string {
+  const home = join(root, "home");
+  mkdirSync(home, { recursive: true });
+  return realpathSync(home);
+}
+
 describe("session.ts hook behavior", () => {
   let testDir: string;
   let logDir: string;
@@ -201,6 +210,9 @@ describe("session.ts hook behavior", () => {
       envHelper.set("CLAUDE_ENV_FILE", envFilePath);
       envHelper.set("CLAUDE_CODE_TASK_LIST_ID", undefined);
       envHelper.set("DOCUMENT_WORKFLOW_DIR", undefined);
+      // The hook reads and drains the agent-learnings store under HOME and may
+      // start its worker; keep the real store out of these tests.
+      envHelper.set("HOME", isolatedHome(testDir));
     });
 
     afterEach(() => {
@@ -229,12 +241,6 @@ describe("session.ts hook behavior", () => {
     });
 
     it("T2: payload key set is systemMessage only (allowlist)", async () => {
-      // agent-learnings の store が HOME にあると hookSpecificOutput が加わるので、
-      // store の無い HOME で既定のキー集合を確かめる
-      envHelper.set(
-        "HOME",
-        realpathSync(mkdtempSync(join(tmpdir(), "session-home-"))),
-      );
       const ctx = createSessionStartContext("cli");
       ctx.input.session_id = "abcdef1234567890";
 
@@ -290,6 +296,7 @@ describe("session.ts hook behavior", () => {
       appendFileSync(envFilePath, "");
       envHelper.set("CLAUDE_ENV_FILE", envFilePath);
       envHelper.set("CLAUDE_CODE_TASK_LIST_ID", undefined);
+      envHelper.set("HOME", isolatedHome(testDir));
     });
 
     afterEach(() => {
@@ -380,6 +387,7 @@ describe("session.ts hook behavior", () => {
 
 describe("startup summary", () => {
   const envHelper = new EnvironmentHelper();
+  let homeRoot: string;
 
   beforeEach(() => {
     // Baseline reset. Individual `it`s below set only what they need to
@@ -391,10 +399,13 @@ describe("startup summary", () => {
     envHelper.set("DOCUMENT_WORKFLOW_DIR", undefined);
     envHelper.set("DOCUMENT_WORKFLOW_WARN_ONLY", undefined);
     envHelper.set("CLAUDE_CODE_TASK_LIST_ID", undefined);
+    homeRoot = mkdtempSync(join(tmpdir(), "session-summary-"));
+    envHelper.set("HOME", isolatedHome(homeRoot));
   });
 
   afterEach(() => {
     envHelper.restore();
+    rmSync(homeRoot, { recursive: true, force: true });
   });
 
   it("shows the resolution even when CLAUDE_ENV_FILE is unset", async () => {
@@ -518,15 +529,19 @@ describe("startup summary", () => {
 describe("transcript directory name audit", () => {
   const envHelper = new EnvironmentHelper();
   const NOTICE = "does not match the name derived from the startup directory";
+  let homeRoot: string;
 
   beforeEach(() => {
     envHelper.set("CLAUDE_ENV_FILE", undefined);
     envHelper.set("DOCUMENT_WORKFLOW_DIR", undefined);
     envHelper.set("DOCUMENT_WORKFLOW_WARN_ONLY", undefined);
     envHelper.set("CLAUDE_CODE_TASK_LIST_ID", undefined);
+    homeRoot = mkdtempSync(join(tmpdir(), "session-transcript-"));
+    envHelper.set("HOME", isolatedHome(homeRoot));
   });
   afterEach(() => {
     envHelper.restore();
+    rmSync(homeRoot, { recursive: true, force: true });
   });
 
   const startupMessage = async (
