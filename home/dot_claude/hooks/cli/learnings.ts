@@ -25,6 +25,7 @@ import {
   renameSync,
 } from "node:fs";
 import { join } from "node:path";
+import { createInterface } from "node:readline/promises";
 import { parseArgs } from "node:util";
 import {
   inboxDirsSafe,
@@ -39,7 +40,9 @@ import {
   type LearningsFile,
 } from "../lib/agent-learnings/core/learnings-file.ts";
 import { withStoreLock } from "../lib/agent-learnings/core/lock.ts";
+import { readNoPromote } from "../lib/agent-learnings/core/no-promote.ts";
 import { applyOps, type LearningOp } from "../lib/agent-learnings/core/ops.ts";
+import { promoteManually } from "../lib/agent-learnings/core/promote.ts";
 import { countJobs, summarizeRuns } from "../lib/agent-learnings/core/queue.ts";
 import { renderLearnings } from "../lib/agent-learnings/core/render.ts";
 import {
@@ -71,6 +74,8 @@ export interface RunLearningsCliDeps {
   agentEnv: boolean; // エージェントの実行環境を示す環境変数がある
   lockWaitMs: number;
   runGit: RunGit;
+  // 昇格の確認。message を見せて、利用者が y と答えたときだけ true を返す
+  confirm: (message: string) => Promise<boolean>;
 }
 export interface RunLearningsCliResult {
   exitCode: number;
@@ -90,6 +95,7 @@ const USAGE = [
   "  add --title=T --body=B [--common]",
   "  remove <id>",
   "  status",
+  "  promote <id>    (human only)",
   "  init            (human only)",
   "  rekey <old> <new>  (human only)",
   "",
@@ -100,7 +106,7 @@ const REQUEST_NAME = /^\d+-R-[0-9a-f]{12}\.json$/;
 const READS_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 const READS_TAIL_BYTES = 1024 * 1024;
 const HUMAN_ONLY_MESSAGE =
-  "この操作は人が端末から実行する（--common、URL を含む本文、rekey、init）。エージェントからは実行できない\n";
+  "この操作は人が端末から実行する（--common、URL を含む本文、promote、rekey、init）。エージェントからは実行できない\n";
 
 const done = (
   exitCode: number,
@@ -387,6 +393,121 @@ async function runRemove(
     `${requestId}\n`,
     "依頼として受け付けた。次の Claude のセッション開始時に反映される。common.md の項目はこの経路では消せない\n",
   );
+}
+
+async function runPromote(
+  args: readonly string[],
+  deps: RunLearningsCliDeps,
+): Promise<RunLearningsCliResult> {
+  const { positionals } = parseArgs({
+    args: [...args],
+    options: {},
+    allowPositionals: true,
+    strict: true,
+  });
+  const id = positionals[0];
+  if (positionals.length !== 1 || id === undefined || !ID_PATTERN.test(id)) {
+    return fail(
+      `promote には現在の repo の学びの id（L-…）を 1 つ渡す\n${USAGE}`,
+    );
+  }
+  const store = defaultStoreDir(deps.home);
+  if (!storeExists(store)) return fail("store が無い");
+  const repoKey = resolveRepoKey(deps.cwd, deps.runGit);
+  if (repoKey === null) return fail("git リポジトリの中で実行する");
+  const newId = (): string => `L-${randomBytes(6).toString("hex")}`;
+
+  // 確認は lock の外で取る（人の入力を待つ間、ほかの書き込みを止めない）
+  const previewRepo = readLearnings(store, repoKey);
+  const previewCommon = readLearnings(store, COMMON_KEY);
+  if (!previewRepo.ok) return fail(previewRepo.reason);
+  if (!previewCommon.ok) return fail(previewCommon.reason);
+  const shown = previewRepo.value.entries.find((entry) => entry.id === id);
+  if (shown === undefined)
+    return fail(
+      `${id} は現在の repo のファイルに無い（common.md の項目は移せない）`,
+    );
+  const preview = promoteManually({
+    repoKey,
+    today: todayOf(deps.now),
+    repoFile: previewRepo.value,
+    common: previewCommon.value,
+    noPromote: readNoPromote(store),
+    id,
+    newId,
+  });
+  if (!preview.ok) return fail(preview.reason);
+  const approved = await deps.confirm(
+    [
+      "次の学びを共通の学び（全リポジトリで読まれる）へ移す:",
+      `  ${shown.title}`,
+      `  ${shown.body}`,
+      ...preview.value.warnings.map((warning) => `警告: ${warning}`),
+      "移す場合は y を入力する [y/N]: ",
+    ].join("\n"),
+  );
+  if (!approved) return fail("移さなかった");
+
+  const paths = storePaths(store);
+  const extraRedact = loadRedactList(
+    join(deps.home, ".claude/insight-distill-redact.txt"),
+  );
+  const locked = await withStoreLock(
+    paths.state,
+    { waitMs: deps.lockWaitMs },
+    (): RunLearningsCliResult => {
+      applyInboxLocked(store, {
+        today: todayOf(deps.now),
+        runGit: deps.runGit,
+        extraRedact,
+      });
+      const repo = readLearnings(store, repoKey);
+      const common = readLearnings(store, COMMON_KEY);
+      if (!repo.ok) return fail(repo.reason);
+      if (!common.ok) return fail(common.reason);
+      const current = repo.value.entries.find((entry) => entry.id === id);
+      if (
+        current === undefined ||
+        current.title !== shown.title ||
+        current.body !== shown.body
+      )
+        return fail(`${id} が確認の後に変わった。やり直す`);
+      const moved = promoteManually({
+        repoKey,
+        today: todayOf(deps.now),
+        repoFile: repo.value,
+        common: common.value,
+        noPromote: readNoPromote(store),
+        id,
+        newId,
+      });
+      if (!moved.ok) return fail(moved.reason);
+      // 書く順は common → 現在の repo。途中で落ちると重複が残る側に倒れる
+      const wroteCommon = writeLearnings(store, moved.value.common);
+      if (!wroteCommon.ok) return fail(wroteCommon.reason);
+      const wroteRepo = writeLearnings(store, moved.value.repoFile);
+      if (!wroteRepo.ok) return fail(wroteRepo.reason);
+      const commonId = moved.value.commonId;
+      const committed = commitStore(
+        store,
+        commitMessage(
+          `learnings: promote ${id} -> ${commonId} (${repoKey})`,
+          moved.value.commitLines,
+          [],
+        ),
+        deps.runGit,
+      );
+      if (!committed.ok)
+        return done(
+          3,
+          `${commonId}\n`,
+          `学びは移したが commit に失敗した: ${committed.reason}\n`,
+        );
+      return done(0, `${commonId}\n`);
+    },
+  );
+  if (locked.ok) return locked.value;
+  return fail("store の lock を取れなかった", 2);
 }
 
 async function runRekey(
@@ -687,6 +808,11 @@ function runStatus(deps: RunLearningsCliDeps): RunLearningsCliResult {
       // common.md が無いなど
     }
   }
+  const noPromote = readNoPromote(store);
+  if (!noPromote.ok)
+    lines.push(
+      `no-promote: ${noPromote.reason}（no-promote を直すまで昇格しない）`,
+    );
   lines.push(
     readOnly.length > 0
       ? `read-only: ${readOnly.join(", ")}`
@@ -721,6 +847,9 @@ export async function runLearningsCli(
           ? done(0, `${store}\n`)
           : fail(initialized.reason);
       }
+      case "promote":
+        if (!humanOnly) return fail(HUMAN_ONLY_MESSAGE.trimEnd());
+        return await runPromote(rest, deps);
       case "rekey":
         if (!humanOnly) return fail(HUMAN_ONLY_MESSAGE.trimEnd());
         return await runRekey(rest, deps);
@@ -730,6 +859,17 @@ export async function runLearningsCli(
   } catch (error) {
     // parseArgs の未知の引数など。使い方を添えて 1 で終わる
     return fail(`${errorMessage(error)}\n${USAGE}`);
+  }
+}
+
+// stderr に見せて stdin から 1 行読む。y 以外はすべて「移さない」
+async function confirmOnTty(message: string): Promise<boolean> {
+  const rl = createInterface({ input: process.stdin, output: process.stderr });
+  try {
+    const answer = await rl.question(message);
+    return answer.trim().toLowerCase() === "y";
+  } finally {
+    rl.close();
   }
 }
 
@@ -743,6 +883,7 @@ if (import.meta.main) {
     agentEnv: Object.keys(process.env).some((name) => AGENT_ENV.test(name)),
     lockWaitMs: 10_000,
     runGit,
+    confirm: confirmOnTty,
   });
   if (result.stdout) process.stdout.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);

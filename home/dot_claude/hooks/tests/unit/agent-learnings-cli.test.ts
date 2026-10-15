@@ -1,4 +1,4 @@
-import { ok, strictEqual } from "node:assert";
+import { deepStrictEqual, ok, strictEqual } from "node:assert";
 import { execFileSync } from "node:child_process";
 import {
   chmodSync,
@@ -16,6 +16,7 @@ import {
   type RunLearningsCliDeps,
 } from "../../cli/learnings.ts";
 import { runGit } from "../../lib/agent-learnings/core/git.ts";
+import { parseLearningsFile } from "../../lib/agent-learnings/core/learnings-file.ts";
 import { writeInboxRequest } from "../../lib/agent-learnings/core/inbox.ts";
 import {
   appendRunLog,
@@ -46,6 +47,7 @@ async function withEnv(
     agentEnv: false,
     lockWaitMs: 200,
     runGit,
+    confirm: async () => true,
   };
   try {
     await fn(deps, root);
@@ -372,4 +374,188 @@ describe("runLearningsCli", () => {
       ok(r.stdout.includes("queue: 1"), r.stdout);
       ok(r.stdout.includes("rejected 1"), r.stdout);
     }));
+
+  describe("promote", () => {
+    const addOne = async (
+      deps: RunLearningsCliDeps,
+      body = "update=none keeps files",
+    ): Promise<string> =>
+      (
+        await runLearningsCli(
+          ["add", "--title", "cp flag", "--body", body],
+          deps,
+        )
+      ).stdout.trim();
+    const entryIds = (path: string): string[] => {
+      const parsed = parseLearningsFile(readFileSync(path, "utf8"));
+      return parsed.ok ? parsed.value.entries.map((e) => e.id) : [];
+    };
+    const paths = async (deps: RunLearningsCliDeps) => ({
+      repo: (await runLearningsCli(["path"], deps)).stdout.trim(),
+      common: (await runLearningsCli(["path", "--common"], deps)).stdout.trim(),
+    });
+
+    it("moves a repo entry to common.md after a y confirmation and commits once", () =>
+      withEnv(async (deps) => {
+        await runLearningsCli(["init"], deps);
+        const id = await addOne(deps);
+        const messages: string[] = [];
+        const r = await runLearningsCli(["promote", id], {
+          ...deps,
+          confirm: async (message) => {
+            messages.push(message);
+            return true;
+          },
+        });
+        strictEqual(r.exitCode, 0);
+        ok(/^L-[0-9a-f]{12}\n$/.test(r.stdout));
+        const commonId = r.stdout.trim();
+        const p = await paths(deps);
+        deepStrictEqual(entryIds(p.repo), []);
+        deepStrictEqual(entryIds(p.common), [commonId]);
+        strictEqual(messages.length, 1);
+        ok(messages[0]?.includes("update=none keeps files"));
+        const log = execFileSync("git", [
+          "-C",
+          store(deps),
+          "log",
+          "-1",
+          "--format=%s",
+        ])
+          .toString()
+          .trim();
+        strictEqual(
+          log,
+          `learnings: promote ${id} -> ${commonId} (github.com/foo/bar)`,
+        );
+      }));
+    it("warns about a repo name part in the text but still asks", () =>
+      withEnv(async (deps) => {
+        await runLearningsCli(["init"], deps);
+        const id = await addOne(deps, "this is what we do in foo");
+        const messages: string[] = [];
+        const r = await runLearningsCli(["promote", id], {
+          ...deps,
+          confirm: async (message) => {
+            messages.push(message);
+            return true;
+          },
+        });
+        strictEqual(r.exitCode, 0);
+        ok(messages[0]?.includes("repo 名"));
+      }));
+    it("changes nothing and exits 1 when the answer is not y", () =>
+      withEnv(async (deps) => {
+        await runLearningsCli(["init"], deps);
+        const id = await addOne(deps);
+        const head = execFileSync("git", [
+          "-C",
+          store(deps),
+          "rev-parse",
+          "HEAD",
+        ]).toString();
+        const r = await runLearningsCli(["promote", id], {
+          ...deps,
+          confirm: async () => false,
+        });
+        strictEqual(r.exitCode, 1);
+        deepStrictEqual(entryIds((await paths(deps)).repo), [id]);
+        strictEqual(
+          execFileSync("git", [
+            "-C",
+            store(deps),
+            "rev-parse",
+            "HEAD",
+          ]).toString(),
+          head,
+        );
+      }));
+    it("is human-only: no TTY or an agent environment exits 1 without asking", () =>
+      withEnv(async (deps) => {
+        await runLearningsCli(["init"], deps);
+        const id = await addOne(deps);
+        let asked = 0;
+        const confirm = async () => {
+          asked += 1;
+          return true;
+        };
+        for (const over of [{ isTty: false }, { agentEnv: true }]) {
+          const r = await runLearningsCli(["promote", id], {
+            ...deps,
+            ...over,
+            confirm,
+          });
+          strictEqual(r.exitCode, 1);
+        }
+        strictEqual(asked, 0);
+        deepStrictEqual(entryIds((await paths(deps)).repo), [id]);
+      }));
+    it("exits 1 for an unknown id and for an id that lives in common.md", () =>
+      withEnv(async (deps) => {
+        await runLearningsCli(["init"], deps);
+        const commonId = (
+          await runLearningsCli(
+            ["add", "--common", "--title", "c", "--body", "b"],
+            deps,
+          )
+        ).stdout.trim();
+        strictEqual(
+          (await runLearningsCli(["promote", "L-ffffffffffff"], deps)).exitCode,
+          1,
+        );
+        strictEqual(
+          (await runLearningsCli(["promote", commonId], deps)).exitCode,
+          1,
+        );
+        strictEqual(
+          (await runLearningsCli(["promote", "R-1"], deps)).exitCode,
+          1,
+        );
+      }));
+    it("exits 1 when the current repo matches no-promote", () =>
+      withEnv(async (deps) => {
+        await runLearningsCli(["init"], deps);
+        const id = await addOne(deps);
+        writeFileSync(
+          join(store(deps), "no-promote"),
+          "local/*\ngithub.com/foo/*\n",
+        );
+        const r = await runLearningsCli(["promote", id], deps);
+        strictEqual(r.exitCode, 1);
+        deepStrictEqual(entryIds((await paths(deps)).repo), [id]);
+      }));
+    it("exits 2 when a live process holds the lock", () =>
+      withEnv(async (deps) => {
+        await runLearningsCli(["init"], deps);
+        const id = await addOne(deps);
+        writeFileSync(
+          join(store(deps), ".state/lock"),
+          `${process.pid} ${Date.now()}`,
+        );
+        strictEqual((await runLearningsCli(["promote", id], deps)).exitCode, 2);
+      }));
+    it("status says promotion is stopped when no-promote is oversized", () =>
+      withEnv(async (deps) => {
+        await runLearningsCli(["init"], deps);
+        writeFileSync(
+          join(store(deps), "no-promote"),
+          `# ${"x".repeat(17 * 1024)}`,
+        );
+        const r = await runLearningsCli(["status"], deps);
+        strictEqual(r.exitCode, 0);
+        ok(
+          r.stdout
+            .split("\n")
+            .some(
+              (l) => l.startsWith("no-promote:") && l.includes("昇格しない"),
+            ),
+        );
+        writeFileSync(join(store(deps), "no-promote"), "local/*\n");
+        ok(
+          !(await runLearningsCli(["status"], deps)).stdout.includes(
+            "no-promote:",
+          ),
+        );
+      }));
+  });
 });
