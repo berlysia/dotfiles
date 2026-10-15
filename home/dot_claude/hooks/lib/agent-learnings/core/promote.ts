@@ -406,9 +406,10 @@ export function promoteManually(
   const source = input.repoFile.entries.find((e) => e.id === input.id);
   if (!source)
     return rejected(`${input.id} is not an entry of the current repo`);
-  const titleCheck = validateTitle(source.title, { allowUrl: false });
+  // 人が端末で確認して移すので、`add --common` と同じく URL を許す。ほかの検査は worker と同じ
+  const titleCheck = validateTitle(source.title, { allowUrl: true });
   if (!titleCheck.ok) return rejected(`title: ${titleCheck.reason}`);
-  const bodyCheck = validateBody(source.body, { allowUrl: false });
+  const bodyCheck = validateBody(source.body, { allowUrl: true });
   if (!bodyCheck.ok) return rejected(`body: ${bodyCheck.reason}`);
 
   const repoFile = structuredClone(input.repoFile);

@@ -385,6 +385,19 @@ describe("promoteManually", () => {
     strictEqual(r.value.common.entries[0]?.seen, 8);
     ok(r.value.commitLines[0]?.startsWith("promote merge "));
   });
+  it("allows a URL in the body, since a person decides a manual promotion", () => {
+    const r = manual({
+      repoFile: file(B, [
+        entry(2, {
+          title: "t",
+          body: "詳細は https://example.com/docs を参照",
+          repos: [B],
+        }),
+      ]),
+    });
+    ok(r.ok);
+    ok(r.value.common.entries[0]?.body.includes("https://example.com/docs"));
+  });
   it("warns, without rejecting, when the text carries a repo name part", () => {
     const r = manual({
       repoFile: file(B, [
