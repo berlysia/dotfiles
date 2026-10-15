@@ -213,7 +213,7 @@ async function processJob(run: Run, job: QueueJob): Promise<void> {
   if (basename(job.transcriptPath) !== `${job.sessionId}.jsonl`)
     return retry("failed", "session mismatch");
   const allowed = checkTranscript(job.transcriptPath, projectsDir);
-  if (!allowed.ok) return retry("failed", "transcript not allowed");
+  if (!allowed.ok) return retry("failed", `transcript ${allowed.reason}`);
   // 縮約の前に取ったサイズ。処理中に伸びたかの比較に使う（伸びを見逃さない側に倒れる）
   const sizeBefore = allowed.value.size;
   if (!isValidRepoKey(job.repoKey)) return retry("failed", "repo mismatch");

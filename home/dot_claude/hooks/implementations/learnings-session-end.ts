@@ -3,21 +3,25 @@
 import { defineHook } from "cc-hooks-ts";
 import { runGit } from "../lib/agent-learnings/core/git.ts";
 import {
-  enqueueSessionEnd,
+  enqueueSessionJob,
+  jobInputFromHook,
   spawnWorker,
 } from "../lib/agent-learnings/claude/session-context.ts";
 import { getHomeDir } from "../lib/path-utils.ts";
 
 /**
- * SessionEnd hook: queue the finished session for the agent-learnings worker
- * and start the worker without waiting for it. Registered with `"async": true`.
- * A failure is reported on stderr and never blocks the session from ending.
+ * SessionEnd / PreCompact hook: queue the session for the agent-learnings
+ * worker and start the worker without waiting for it. Registered with
+ * `"async": true`. A failure is reported on stderr and never blocks the session.
+ *
+ * The file keeps its "session-end" name because the settings template and its
+ * test refer to it by that name.
  */
 const hook = defineHook({
-  trigger: { SessionEnd: true },
+  trigger: { SessionEnd: true, PreCompact: true },
   run: (context) => {
     try {
-      enqueueSessionEnd(context.input, {
+      enqueueSessionJob(jobInputFromHook(context.input), {
         home: getHomeDir(),
         runGit,
         env: process.env,

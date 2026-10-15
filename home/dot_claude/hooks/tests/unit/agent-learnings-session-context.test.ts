@@ -7,13 +7,15 @@ import { describe, it } from "node:test";
 import {
   buildSessionLearningsContext,
   buildWorkerSpawnSpec,
-  enqueueSessionEnd,
+  enqueueSessionJob,
+  jobInputFromHook,
   kickWorkerIfQueued,
 } from "../../lib/agent-learnings/claude/session-context.ts";
 import { runGit } from "../../lib/agent-learnings/core/git.ts";
 import {
   initStore,
   defaultStoreDir,
+  storePaths,
 } from "../../lib/agent-learnings/core/store.ts";
 import { writeInboxRequest } from "../../lib/agent-learnings/core/inbox.ts";
 import {
@@ -77,7 +79,7 @@ describe("buildSessionLearningsContext", () => {
   });
 });
 
-describe("enqueueSessionEnd", () => {
+describe("enqueueSessionJob", () => {
   const SID = "0f0e0d0c-0000-4000-8000-000000000001";
   function withRepo(
     fn: (ctx: { repo: string; home: string; root: string }) => void,
@@ -110,7 +112,7 @@ describe("enqueueSessionEnd", () => {
   it("does nothing without a store", () =>
     withRepo(({ repo, home }) => {
       let spawned = 0;
-      enqueueSessionEnd(input(repo), {
+      enqueueSessionJob(input(repo), {
         home,
         runGit,
         env: {},
@@ -123,7 +125,7 @@ describe("enqueueSessionEnd", () => {
       const store = defaultStoreDir(home);
       initStore(store, runGit);
       let spawned = 0;
-      enqueueSessionEnd(input(repo), {
+      enqueueSessionJob(input(repo), {
         home,
         runGit,
         env: { AGENT_LEARNINGS_WORKER: "1" },
@@ -136,7 +138,7 @@ describe("enqueueSessionEnd", () => {
     withRepo(({ root, home }) => {
       initStore(defaultStoreDir(home), runGit);
       let spawned = 0;
-      enqueueSessionEnd(input(root), {
+      enqueueSessionJob(input(root), {
         home,
         runGit,
         env: {},
@@ -144,12 +146,25 @@ describe("enqueueSessionEnd", () => {
       });
       strictEqual(spawned, 0);
     }));
+  it("records the compact reason on the queued job", () =>
+    withRepo(({ repo, home }) => {
+      const store = defaultStoreDir(home);
+      initStore(store, runGit);
+      enqueueSessionJob(
+        { ...input(repo), reason: "compact" },
+        { home, runGit, env: {}, spawn: () => {} },
+      );
+      const job = JSON.parse(
+        readFileSync(join(storePaths(store).queue, `${SID}.json`), "utf8"),
+      );
+      strictEqual(job.reason, "compact");
+    }));
   it("enqueues and starts the worker once for a repo with an origin", () =>
     withRepo(({ repo, home }) => {
       const store = defaultStoreDir(home);
       initStore(store, runGit);
       const spawned: string[] = [];
-      enqueueSessionEnd(input(repo), {
+      enqueueSessionJob(input(repo), {
         home,
         runGit,
         env: {},
@@ -158,6 +173,26 @@ describe("enqueueSessionEnd", () => {
       strictEqual(countJobs(store).queue, 1);
       deepStrictEqual(spawned, [home]);
     }));
+});
+
+describe("jobInputFromHook", () => {
+  const base = { session_id: "s", transcript_path: "/t.jsonl", cwd: "/c" };
+  it("uses the fixed compact reason for PreCompact", () => {
+    deepStrictEqual(
+      jobInputFromHook({ ...base, hook_event_name: "PreCompact" }),
+      { ...base, reason: "compact" },
+    );
+  });
+  it("keeps the SessionEnd reason", () => {
+    deepStrictEqual(
+      jobInputFromHook({
+        ...base,
+        hook_event_name: "SessionEnd",
+        reason: "logout",
+      }),
+      { ...base, reason: "logout" },
+    );
+  });
 });
 
 describe("buildWorkerSpawnSpec", () => {

@@ -20,17 +20,29 @@ export type ReducedTranscript = {
   firstLineHash: string; // ファイル 1 行目（改行を除く）の sha256。空ファイルは空文字列の sha256
   restarted: boolean; // fromOffset が使えず 0 から読んだ
 };
+// 断った理由は固定の文言だけにする。fs のエラー文にはパスが入りうるので、runs.log まで流さない
+export type TranscriptRejection =
+  | "not a regular file"
+  | "not a .jsonl file"
+  | "outside projects"
+  | "unreadable"
+  | "replaced";
 export type TranscriptResult<T> =
   | { ok: true; value: T }
-  | { ok: false; reason: string };
+  | { ok: false; reason: TranscriptRejection };
 
-export const TRANSCRIPT_MAX_BYTES = 20 * 1024 * 1024;
+// 1 回に読む範囲の上限。ファイル全体の大きさでは断らず、超えたら末尾のこの範囲だけを読む
+export const TRANSCRIPT_READ_MAX_BYTES = 20 * 1024 * 1024;
+// 1 行目のハッシュを取るために読む上限
+const FIRST_LINE_MAX_BYTES = 1024 * 1024;
 export const TRANSCRIPT_MAX_CHARS = 60_000;
 const USER_MAX = 2_000;
 const ASSISTANT_MAX = 1_000;
 const ERROR_MAX = 200;
 
-const fail = (reason: string): { ok: false; reason: string } => ({
+const fail = (
+  reason: TranscriptRejection,
+): { ok: false; reason: TranscriptRejection } => ({
   ok: false,
   reason,
 });
@@ -69,13 +81,14 @@ function openTranscript(
   try {
     const opened = fstatSync(fd);
     const now = statSync(real);
-    if (!opened.isFile() || opened.dev !== now.dev || opened.ino !== now.ino)
-      throw new Error("replaced");
-    if (opened.size > TRANSCRIPT_MAX_BYTES) throw new Error("too large");
+    if (!opened.isFile() || opened.dev !== now.dev || opened.ino !== now.ino) {
+      closeSync(fd);
+      return fail("replaced");
+    }
     return { ok: true, value: { fd, size: opened.size } };
-  } catch (error) {
+  } catch {
     closeSync(fd);
-    return fail((error as Error).message);
+    return fail("unreadable");
   }
 }
 
@@ -90,11 +103,12 @@ export function checkTranscript(
   return { ok: true, value: { size: opened.value.size } };
 }
 
-function readAll(fd: number, size: number): Buffer {
-  const buffer = Buffer.alloc(size);
+// fd の position から length バイトを読む。短く読めたとき（読んでいる間に truncate された）は読めた分だけ返す
+function readAt(fd: number, position: number, length: number): Buffer {
+  const buffer = Buffer.alloc(length);
   let read = 0;
-  while (read < size) {
-    const n = readSync(fd, buffer, read, size - read, read);
+  while (read < length) {
+    const n = readSync(fd, buffer, read, length - read, position + read);
     if (n === 0) break;
     read += n;
   }
@@ -178,45 +192,82 @@ function assistantTexts(entry: Record<string, unknown>): string[] {
   );
 }
 
+// 読むのは 1 行目（1MB まで）、fromOffset の直前 1 バイト、窓（readMaxBytes + 1 バイトまで）だけ
+function readRegion(
+  fd: number,
+  size: number,
+  fromOffset: number,
+  readMaxBytes: number,
+): {
+  region: string;
+  endOffset: number;
+  firstLineHash: string;
+  restarted: boolean;
+} {
+  const head = readAt(fd, 0, Math.min(size, FIRST_LINE_MAX_BYTES));
+  const headNewline = head.indexOf(0x0a);
+  const firstLineHash = createHash("sha256")
+    .update(headNewline < 0 ? head : head.subarray(0, headNewline))
+    .digest("hex");
+
+  const offsetUsable =
+    Number.isInteger(fromOffset) &&
+    fromOffset >= 0 &&
+    fromOffset <= size &&
+    (fromOffset === 0 || readAt(fd, fromOffset - 1, 1)[0] === 0x0a);
+  const start = offsetUsable ? fromOffset : 0;
+  const restarted = !offsetUsable;
+
+  // 窓が start より後ろなら、直前が改行かを見るために 1 バイト前から読む
+  const windowStart = Math.max(start, size - readMaxBytes);
+  const trimmed = windowStart > start;
+  const raw = trimmed
+    ? readAt(fd, windowStart - 1, size - windowStart + 1)
+    : readAt(fd, start, size - start);
+  const body = trimmed ? raw.subarray(1) : raw;
+  const bodyBase = trimmed ? windowStart : start;
+
+  // 窓の本体の最後の改行の直後まで。無ければ（書きかけの巨大な行など）位置を進めない
+  const lastNewline = body.lastIndexOf(0x0a);
+  if (lastNewline < 0)
+    return { region: "", endOffset: start, firstLineHash, restarted };
+  const endOffset = bodyBase + lastNewline + 1;
+
+  let regionStart = bodyBase;
+  if (trimmed && raw[0] !== 0x0a) {
+    // 窓が行の途中から始まる。その行は捨てて、次の行から読む
+    regionStart = bodyBase + body.indexOf(0x0a) + 1;
+  }
+  const region =
+    regionStart >= endOffset
+      ? ""
+      : body
+          .subarray(regionStart - bodyBase, endOffset - bodyBase)
+          .toString("utf8");
+  return { region, endOffset, firstLineHash, restarted };
+}
+
 export function reduceTranscript(opts: {
   transcriptPath: string;
   projectsDir: string;
   fromOffset: number;
   extraRedact: readonly RegExp[];
+  readMaxBytes?: number; // 既定は TRANSCRIPT_READ_MAX_BYTES。テストが境界を小さく作るために使う
 }): TranscriptResult<ReducedTranscript> {
   const opened = openTranscript(opts.transcriptPath, opts.projectsDir);
   if (!opened.ok) return opened;
-  let buffer: Buffer;
+  let read: ReturnType<typeof readRegion>;
   try {
-    buffer = readAll(opened.value.fd, opened.value.size);
+    read = readRegion(
+      opened.value.fd,
+      opened.value.size,
+      opts.fromOffset,
+      opts.readMaxBytes ?? TRANSCRIPT_READ_MAX_BYTES,
+    );
   } finally {
     closeSync(opened.value.fd);
   }
-
-  const firstNewline = buffer.indexOf(0x0a);
-  const firstLine = buffer.subarray(
-    0,
-    firstNewline < 0 ? buffer.length : firstNewline,
-  );
-  const firstLineHash = createHash("sha256").update(firstLine).digest("hex");
-  // 最後の改行より後ろ（書きかけの行）は読まない
-  const endOffset = buffer.lastIndexOf(0x0a) + 1;
-
-  let start = opts.fromOffset;
-  let restarted = false;
-  if (
-    !Number.isInteger(start) ||
-    start < 0 ||
-    start > buffer.length ||
-    (start > 0 && buffer[start - 1] !== 0x0a)
-  ) {
-    start = 0;
-    restarted = true;
-  }
-  const region =
-    start >= endOffset
-      ? ""
-      : buffer.subarray(start, endOffset).toString("utf8");
+  const { region, endOffset, firstLineHash, restarted } = read;
 
   const fragments: string[] = [];
   let userTurns = 0;
@@ -261,7 +312,7 @@ export function reduceTranscript(opts: {
     value: {
       text,
       userTurns,
-      endOffset: Math.max(endOffset, start),
+      endOffset,
       firstLineHash,
       restarted,
     },

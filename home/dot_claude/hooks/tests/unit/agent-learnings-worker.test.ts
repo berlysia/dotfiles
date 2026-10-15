@@ -83,7 +83,7 @@ type World = {
   repo: string;
   transcriptPath: (sid?: string) => string;
   writeTranscript: (lines: string[], sid?: string) => void;
-  enqueue: (sid?: string) => void;
+  enqueue: (sid?: string, reason?: string) => void;
   prompts: string[];
   queryFor: (
     respond: (call: number, prompt: string) => string | Promise<string>,
@@ -121,7 +121,7 @@ async function withWorld(fn: (w: World) => Promise<void>): Promise<void> {
       transcriptPath,
       writeTranscript: (lines, sid = SID) =>
         writeFileSync(transcriptPath(sid), `${lines.join("\n")}\n`),
-      enqueue: (sid = SID) => {
+      enqueue: (sid = SID, reason = "other") => {
         const r = enqueueJob(
           store,
           {
@@ -129,7 +129,7 @@ async function withWorld(fn: (w: World) => Promise<void>): Promise<void> {
             transcriptPath: transcriptPath(sid),
             cwd: repo,
             repoKey: KEY,
-            reason: "other",
+            reason,
           },
           new Date(),
         );
@@ -456,7 +456,15 @@ describe("runWorker job validation", () => {
       );
       await runWorker(w.deps(w.queryFor(() => fenced([]))));
       strictEqual(w.prompts.length, 0);
-      strictEqual(w.runs()[0]?.reason, "transcript not allowed");
+      strictEqual(w.runs()[0]?.reason, "transcript outside projects");
+    }));
+  it("records a missing transcript as unreadable without the path", async () =>
+    withWorld(async (w) => {
+      w.enqueue();
+      await runWorker(w.deps(w.queryFor(() => fenced([]))));
+      strictEqual(w.prompts.length, 0);
+      strictEqual(w.runs()[0]?.reason, "transcript unreadable");
+      strictEqual(w.runs()[0]?.result, "failed");
     }));
   it("rejects a job whose cwd resolves to another repo key", async () =>
     withWorld(async (w) => {
@@ -555,6 +563,20 @@ describe("runWorker locking and re-enqueue", () => {
       });
       await runWorker(w.deps(q));
       deepNames(names(storePaths(w.store).queue), [`${SID}.json`]);
+    }));
+  it("re-enqueues a compact job with the same reason when the transcript grew", async () =>
+    withWorld(async (w) => {
+      w.writeTranscript(utterances("x", 3));
+      w.enqueue(SID, "compact");
+      const q = w.queryFor(() => {
+        appendFileSync(w.transcriptPath(), `${user("more")}\n`);
+        return fenced([]);
+      });
+      await runWorker(w.deps(q));
+      const queued = JSON.parse(
+        readFileSync(join(storePaths(w.store).queue, `${SID}.json`), "utf8"),
+      );
+      strictEqual(queued.reason, "compact");
     }));
   it("does not re-enqueue for an unterminated trailing line that did not change", async () =>
     withWorld(async (w) => {

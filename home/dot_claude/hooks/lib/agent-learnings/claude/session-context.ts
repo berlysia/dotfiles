@@ -105,16 +105,46 @@ export function spawnWorker(home: string): void {
   child.unref();
 }
 
-export type SessionEndInput = {
+export type SessionJobInput = {
   session_id: string;
   transcript_path: string;
   cwd: string;
   reason: string;
 };
 
-// SessionEnd でジョブを queue に入れ、入れられたら worker を 1 回起動する
-export function enqueueSessionEnd(
-  input: SessionEndInput,
+// PreCompact の入力には reason が無い。ジョブの reason は記録するだけで絞り込みには使わないので固定の文言にする
+export const COMPACT_REASON = "compact";
+
+// hook の入力（SessionEnd か PreCompact）からジョブの入力を作る。
+// 型の根拠: claude-agent-sdk の PreCompactHookInput = BaseHookInput & { trigger, custom_instructions }
+export function jobInputFromHook(
+  input:
+    | {
+        hook_event_name: "SessionEnd";
+        session_id: string;
+        transcript_path: string;
+        cwd: string;
+        reason: string;
+      }
+    | {
+        hook_event_name: "PreCompact";
+        session_id: string;
+        transcript_path: string;
+        cwd: string;
+      },
+): SessionJobInput {
+  return {
+    session_id: input.session_id,
+    transcript_path: input.transcript_path,
+    cwd: input.cwd,
+    reason:
+      input.hook_event_name === "PreCompact" ? COMPACT_REASON : input.reason,
+  };
+}
+
+// SessionEnd と PreCompact でジョブを queue に入れ、入れられたら worker を 1 回起動する
+export function enqueueSessionJob(
+  input: SessionJobInput,
   deps: {
     home: string;
     runGit: RunGit;
@@ -151,7 +181,7 @@ export function enqueueSessionEnd(
   return "enqueued";
 }
 
-// 取りこぼし（SessionEnd の worker 起動が失敗した・worker が落ちた）を拾う。
+// 取りこぼし（SessionEnd / PreCompact の worker 起動が失敗した・worker が落ちた）を拾う。
 // queue か processing にジョブがあるときだけ worker を起動する（lock で 1 つだけが進む）
 export function kickWorkerIfQueued(
   home: string,

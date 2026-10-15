@@ -85,6 +85,24 @@ describe(
             true,
           );
 
+          // compaction-testament は同期で compact を待たせ、learnings は待たせない
+          const preCompact = hooks["PreCompact"] ?? [];
+          deepStrictEqual(names(preCompact), [
+            "compaction-testament",
+            "learnings-session-end",
+          ]);
+          strictEqual(
+            (preCompact[0]?.hooks[1] as { async?: boolean }).async,
+            true,
+          );
+          // ほかのイベント（PostToolUse など毎回走るもの）には登録しない
+          deepStrictEqual(
+            Object.keys(hooks).filter((event) =>
+              names(hooks[event] ?? []).includes("learnings-session-end"),
+            ),
+            ["SessionEnd", "PreCompact"],
+          );
+
           const guardGroup = hooks["PreToolUse"]?.find((g) =>
             names([g]).includes("home-destruction-guard"),
           );

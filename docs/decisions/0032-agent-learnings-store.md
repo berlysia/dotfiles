@@ -54,9 +54,11 @@ accepted (2026-10-15)
 - 1 ファイル 40 項目。超えたら `seen` の少ない順、`updated` の古い順に追い出す
 - lock は store 全体で 1 つ。pid が死んでいるか、10 分より古ければ奪う。奪うときは退避して内容を照合し、違えば `link` で戻す
 
-### 自動の整理（SessionEnd）
+### 自動の整理（SessionEnd・PreCompact）
 
-- SessionEnd hook（`async`）がジョブを queue に入れ、worker を detached で起動する。SessionStart も queue を見て worker を起こす
+- SessionEnd hook と PreCompact hook（どちらも `async`）がジョブを queue に入れ、worker を detached で起動する。SessionStart も queue を見て worker を起こす
+- PreCompact で起こすのは、compact を挟む長いセッションで、前回の位置からの差分を細かく整理するため。worker は独自のシステムプロンプトで LLM を呼ぶので、本体のセッションの prompt cache は効かない
+- transcript は、前回の位置から最後の改行までを読む。1 回に読むのは末尾の 20MB までで、ファイル全体の大きさでは断らない。縮約は末尾 6 万字だけを残す
 - worker は transcript を縮約する。入れるのは利用者が打った発言・assistant の本文・`is_error` の tool_result だけ。ほかの tool_result（ファイルの中身や Web ページ）は入れない
 - 縮約に redaction をかけ、隔離した LLM（sonnet）に操作の列を作らせる。LLM は `tools: []`・`settingSources: []`・`strictMcpConfig`・`plugins: []`・`persistSession: false`・常に拒否する `canUseTool`・1 回 0.5 USD の上限で呼ぶ。環境変数は名前を列挙した許可リストだけを渡す
 - 再帰の防止は二重。worker の Claude は hooks を読み込まず、読み込まれても `AGENT_LEARNINGS_WORKER=1` で hook が何もしない
@@ -100,13 +102,14 @@ accepted (2026-10-15)
 - **漏えい**: redaction は best-effort。store のファイル名と `repos` は、どの repo で作業したかを表す。`no-promote` は `local/*` 以外は既定で開いていて、利用者が private や client の repo を書き足すまでは昇格しうる
 - **origin の自己申告**: 悪意ある repo が他の repo の origin を名乗れば、その repo の学びを読み込み（漏えい）、書き込みで汚せる。手元で開く repo を信頼する前提
 - **Codex の inbox**: Codex が書ける inbox は、検査と open の間にディレクトリを差し替えられうる。名前の昇順で前に来る未知の版の依頼を 200 件以上置かれると、正しい依頼が取り込まれない。どちらも Codex が乗っ取られていることが前提
-- **運用**: SessionEnd の後に worker が殺されれば、次の SessionStart が拾う。定数（40 項目・8KB・3 回・200 件・Jaccard 0.2 など）は調整用で、点検で見直す。origin が変わると学びファイルが孤立し、`rekey` で付け替える（自動では検知しない）。クラッシュ後の再処理で `seen` が余分に増えうる
+- **運用**: SessionEnd の後に worker が殺されれば、次の SessionStart が拾う。定数（40 項目・8KB・3 回・200 件・Jaccard 0.2 など）は調整用で、点検で見直す。origin が変わると学びファイルが孤立し、`rekey` で付け替える（自動では検知しない）。クラッシュ後の再処理で `seen` が余分に増えうる。前回の位置から末尾までが 20MB を超えると、窓より前は読まずに処理済みになる。上限を超える 1 行が末尾にあるあいだは `skipped` が続く
 - **配置**: Codex の経路は、CLI の実体が `~/.claude/hooks/cli/learnings.ts` にあるので、`~/.claude/` 配下に物理的に依存する
 
 ### 実機で分かったこと
 
 - Codex の `default.rules` で `allow` に一致したコマンドは、確認なしになるだけでなく sandbox の外で動いた。Codex の `add` は inbox を通らず CLI が直接 store に書く。Codex の sandbox 自体は効いていて（store への直接の書き込みは `Read-only file system` で失敗した）、`--common` は拒否された。CLI が自分で検査するので、この形を受け入れた。inbox は、rules に一致しない呼び方で sandbox の中から呼ばれたときの受け皿として残る
 - transcript では tool_result の行も `type: "user"` で記録される。利用者の発言の数え方は compaction-testament の判定に揃えた
+- transcript のファイル全体が 20MB を超えると断る作りだったため、長いセッションは途中から整理されなくなった（14 日で失敗 58 回のうち 55 回）。断った理由も 1 つの文言にまとめていたので、原因を記録から読めなかった。上限を読む範囲に移し、理由をパスを含まない固定の文言で分けて記録するようにした
 - 本物の sonnet は、短いセッションには空の操作列を返し、失敗から修正を含むセッションには evidence 付きの学びを返した。同じ transcript でも回ごとに返る学びが揺れる
 - 本物の store の複製で、別の repo にある学びと同じ学びを含むセッションを処理すると、sonnet は `promote` を返し、common に一般化した文で入った
 - 運用の初期に、LLM の呼び出しが 2 秒のうちに 3 件続けて失敗した。再試行で処理されたが、runs.log の reason は固定の文言だけで、原因は分からない
