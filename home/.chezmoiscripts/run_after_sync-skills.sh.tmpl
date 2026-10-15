@@ -42,9 +42,14 @@ fi
 #   rotation of previous copies; --delete would otherwise wipe them on every apply
 TOOL_OWNED_EXCLUDE_ARGS=(--exclude="/ui-skills" --exclude="/claude-recall" --exclude="/.system" --exclude="/synced" --exclude="/.trash")
 
-# Sync with --delete, but preserve external/private/tool-owned skills
-rsync -a --delete "${TOOL_OWNED_EXCLUDE_ARGS[@]}" ${EXCLUDE_ARGS[@]+"${EXCLUDE_ARGS[@]}"} ${PRIVATE_EXCLUDE_ARGS[@]+"${PRIVATE_EXCLUDE_ARGS[@]}"} "$SKILLS_SOURCE/" "$CLAUDE_SKILLS/"
-rsync -a --delete "${TOOL_OWNED_EXCLUDE_ARGS[@]}" ${EXCLUDE_ARGS[@]+"${EXCLUDE_ARGS[@]}"} ${PRIVATE_EXCLUDE_ARGS[@]+"${PRIVATE_EXCLUDE_ARGS[@]}"} "$SKILLS_SOURCE/" "$CODEX_SKILLS/"
+# Sync with --delete, but preserve external/private/tool-owned skills.
+# --no-perms --executability: git records only the executable bit, so that is
+# the only mode the source owns. Plain -a (--perms) would also copy .skills/'s
+# directory mode onto the destination root, which chezmoi manages as the parent
+# of its externals; a mismatch stops the next apply with "has changed since
+# chezmoi last wrote it?". Group/other bits of synced entries follow the umask.
+rsync -a --no-perms --executability --delete "${TOOL_OWNED_EXCLUDE_ARGS[@]}" ${EXCLUDE_ARGS[@]+"${EXCLUDE_ARGS[@]}"} ${PRIVATE_EXCLUDE_ARGS[@]+"${PRIVATE_EXCLUDE_ARGS[@]}"} "$SKILLS_SOURCE/" "$CLAUDE_SKILLS/"
+rsync -a --no-perms --executability --delete "${TOOL_OWNED_EXCLUDE_ARGS[@]}" ${EXCLUDE_ARGS[@]+"${EXCLUDE_ARGS[@]}"} ${PRIVATE_EXCLUDE_ARGS[@]+"${PRIVATE_EXCLUDE_ARGS[@]}"} "$SKILLS_SOURCE/" "$CODEX_SKILLS/"
 
 # Overlay private skills (sourced from private repo via chezmoi external).
 # Use --delete inside each skill dir but keep other skills untouched.

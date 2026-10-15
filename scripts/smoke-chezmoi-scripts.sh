@@ -14,6 +14,9 @@
 #   4. Execute the rendered script under the same isolated HOME.
 #   5. Pass if exit code is 0; fail with a stderr dump of the rendered
 #      script otherwise.
+#   6. If the scenario has a verify.sh, run it under the same HOME after a
+#      successful script; a non-zero exit fails the scenario. Use it for
+#      effects the exit code cannot show (file modes, contents).
 
 set -euo pipefail
 
@@ -86,8 +89,14 @@ for script_dir in "${SMOKE_ROOT}"/*/; do
     fi
 
     if HOME="$smoke_home" bash "$rendered"; then
-      echo -e "${GREEN}✓ PASS${NC}"
-      PASS_COUNT=$((PASS_COUNT + 1))
+      verify_script="${scenario_dir}verify.sh"
+      if [[ -f "$verify_script" ]] && ! HOME="$smoke_home" bash "$verify_script"; then
+        echo -e "${RED}✗ FAIL (verify.sh failed)${NC}"
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+      else
+        echo -e "${GREEN}✓ PASS${NC}"
+        PASS_COUNT=$((PASS_COUNT + 1))
+      fi
     else
       exit_code=$?
       echo -e "${RED}✗ FAIL (rendered script exited with ${exit_code})${NC}"
