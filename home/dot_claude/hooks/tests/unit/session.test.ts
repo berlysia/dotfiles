@@ -229,6 +229,12 @@ describe("session.ts hook behavior", () => {
     });
 
     it("T2: payload key set is systemMessage only (allowlist)", async () => {
+      // agent-learnings の store が HOME にあると hookSpecificOutput が加わるので、
+      // store の無い HOME で既定のキー集合を確かめる
+      envHelper.set(
+        "HOME",
+        realpathSync(mkdtempSync(join(tmpdir(), "session-home-"))),
+      );
       const ctx = createSessionStartContext("cli");
       ctx.input.session_id = "abcdef1234567890";
 
