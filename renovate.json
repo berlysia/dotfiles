@@ -4,6 +4,19 @@
   "prHourlyLimit": 0,
   "schedule": ["* * * * 1"],
   "automergeStrategy": "merge-commit",
+  "customManagers": [
+    {
+      "description": "Pin of the claude-recall plugin tarball in home/.chezmoiexternal.toml.tmpl: version and sha256 sit on two adjacent lines and are updated together. The sha256 is taken from the release's checksums.txt. tests/agent-vm/run-templates.sh applies this matchString to the template, so reformatting those two lines fails the tests instead of silently stopping the updates",
+      "customType": "regex",
+      "managerFilePatterns": ["/(^|/)home/\\.chezmoiexternal\\.toml\\.tmpl$/"],
+      "matchStrings": [
+        "\\$recallPluginVersion := \"(?<currentValue>[^\"]+)\" }}\\n\\{\\{- \\$recallPluginSha256 := \"(?<currentDigest>[0-9a-f]{64})\""
+      ],
+      "depNameTemplate": "claude-recall-plugin",
+      "packageNameTemplate": "babarot/claude-recall",
+      "datasourceTemplate": "github-release-attachments"
+    }
+  ],
   "packageRules": [
     {
       "description": "Auto-merge non-major GitHub Actions updates",
@@ -47,10 +60,14 @@
       "minimumReleaseAge": "7 days"
     },
     {
-      "description": "claude-recall: the plugin external in home/.chezmoiexternal.toml.tmpl pins its own version and sha256 and fails the templates when they disagree with mise, so a bump needs a hand-edited checksum. Keep it out of the weekly group so that failure blocks only this PR",
+      "description": "claude-recall: Renovate updates the mise version and the plugin external in home/.chezmoiexternal.toml.tmpl (version and sha256, see customManagers) in this one PR. The 7 day wait is repeated here because the mise rule above is limited to the mise manager, so without it the template dep takes a newer release than mise and the guard in the template fails the PR. The guard stays for the cases where only one of the two lands. Keep it out of the weekly group so a failure blocks only this PR, and off automerge: merging is what accepts the new release",
       "matchPackageNames": ["/claude-recall/"],
       "groupName": "claude-recall",
-      "automerge": false
+      "minimumReleaseAge": "7 days",
+      "automerge": false,
+      "prBodyNotes": [
+        "The plugin version and sha256 in `home/.chezmoiexternal.toml.tmpl` were copied by Renovate from the release's `checksums.txt`. Nobody has reviewed what this release contains: merging this PR accepts it. The `agent-vm tests` job checks the sha256 against the downloaded tarball and against `checksums.txt`."
+      ]
     }
   ],
   "mise": {

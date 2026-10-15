@@ -138,6 +138,152 @@ test_fetch_browsers_script_is_darwin_only() {
   assert_contains "$(render "$t" '{"chezmoi":{"os":"darwin"}}')" "agent-vm\" fetch-browsers" "renders the fetch on darwin"
 }
 
+# claude-recall plugin pin: Renovate's customManager rewrites the version and sha256 lines of the external, and
+# the checks below keep that wiring, the pinned tarball and the merge gate from drifting apart silently.
+RENOVATE_JSON="$REPO_ROOT/renovate.json"
+EXTERNAL_TMPL="$SRC/.chezmoiexternal.toml.tmpl"
+# Applies the customManager's matchString to the template source the way Renovate does (a RegExp here, RE2 there;
+# lookaround and backreferences are rejected so the two agree). Prints `ERR <reason>` lines, or `PIN <version> <sha256>`.
+recall_pin_probe() { # renovate_json external_tmpl mise_config
+  node - "$1" "$2" "$3" <<'JS'
+const fs = require("node:fs");
+const [renovatePath, tmplPath, misePath] = process.argv.slice(2);
+const err = (m) => console.log(`ERR ${m}`);
+const cfg = JSON.parse(fs.readFileSync(renovatePath, "utf8"));
+const mgrs = (cfg.customManagers || []).filter((m) => m.depNameTemplate === "claude-recall-plugin");
+if (mgrs.length !== 1) { err(`expected exactly 1 customManager for claude-recall-plugin, found ${mgrs.length}`); process.exit(0); }
+const m = mgrs[0];
+const target = "home/.chezmoiexternal.toml.tmpl";
+const patternHits = (m.managerFilePatterns || []).some((p) => {
+  const body = /^\/(.*)\/$/.exec(p);
+  return body ? new RegExp(body[1]).test(target) : p === target;
+});
+if (!patternHits) err(`managerFilePatterns does not match ${target}`);
+if (m.packageNameTemplate !== "babarot/claude-recall") err(`packageNameTemplate is ${m.packageNameTemplate}`);
+if (m.datasourceTemplate !== "github-release-attachments") err(`datasourceTemplate is ${m.datasourceTemplate}`);
+if (!Array.isArray(m.matchStrings) || m.matchStrings.length !== 1) { err("expected exactly 1 matchString"); process.exit(0); }
+const source = m.matchStrings[0];
+if (/\(\?[=!]|\(\?<[=!]|\\[1-9]/.test(source)) err("matchString uses lookaround or a backreference (RE2 differs from RegExp)");
+const matches = [...fs.readFileSync(tmplPath, "utf8").matchAll(new RegExp(source, "gm"))];
+if (matches.length !== 1) { err(`matchString matched ${matches.length} times in the template, expected 1`); process.exit(0); }
+const { currentValue, currentDigest } = matches[0].groups || {};
+if (!/^[0-9a-f]{64}$/.test(currentDigest || "")) err(`currentDigest is not 64 lowercase hex: ${currentDigest}`);
+const mise = /"github:babarot\/claude-recall"\s*=\s*\{[^}]*version\s*=\s*"([^"]+)"/.exec(fs.readFileSync(misePath, "utf8"));
+if (!mise) err("mise entry for github:babarot/claude-recall not found");
+else if (mise[1] !== currentValue) err(`currentValue ${currentValue} differs from the mise version ${mise[1]}`);
+console.log(`PIN ${currentValue} ${currentDigest}`);
+JS
+}
+test_renovate_regex_extracts_recall_plugin_pin() {
+  require_file "$RENOVATE_JSON" || return 0
+  require_file "$EXTERNAL_TMPL" || return 0
+  command -v node >/dev/null || { record "FAIL renovate customManager check needs node"; return 0; }
+  local out line bad=0
+  out=$(recall_pin_probe "$RENOVATE_JSON" "$EXTERNAL_TMPL" "$MISE_SHARED" 2>&1) || out="ERR probe crashed: $out"
+  while IFS= read -r line; do
+    case "$line" in ERR*) record "FAIL renovate customManager for the claude-recall plugin pin (${line#ERR })"; bad=1 ;; esac
+  done <<<"$out"
+  [[ "$bad" -eq 0 ]] && record "PASS renovate customManager extracts the claude-recall plugin version and sha256"
+  return 0
+}
+# Without these, Renovate would still open the PR but the two deps could pick different versions (the 7 day wait
+# is a mise-only rule) or the PR could merge itself.
+test_renovate_recall_rule_keeps_the_merge_gate_and_the_wait() {
+  require_file "$RENOVATE_JSON" || return 0
+  command -v node >/dev/null || { record "FAIL renovate rule check needs node"; return 0; }
+  local out line bad=0
+  out=$(node - "$RENOVATE_JSON" <<'JS' 2>&1
+const fs = require("node:fs");
+const err = (m) => console.log(`ERR ${m}`);
+const rules = JSON.parse(fs.readFileSync(process.argv[2], "utf8")).packageRules || [];
+const recall = rules.filter((r) => r.groupName === "claude-recall");
+if (recall.length !== 1) { err(`expected exactly 1 claude-recall rule, found ${recall.length}`); process.exit(0); }
+const miseWait = rules.filter((r) => JSON.stringify(r.matchManagers) === '["mise"]' && r.minimumReleaseAge !== undefined);
+if (miseWait.length !== 1) { err(`expected exactly 1 mise rule with minimumReleaseAge, found ${miseWait.length}`); process.exit(0); }
+const r = recall[0];
+if (r.automerge !== false) err("claude-recall rule must set automerge: false");
+if (r.minimumReleaseAge === undefined || r.minimumReleaseAge !== miseWait[0].minimumReleaseAge) err(`claude-recall minimumReleaseAge (${r.minimumReleaseAge}) must equal the mise rule's (${miseWait[0].minimumReleaseAge})`);
+if (typeof r.prBodyNotes === "undefined" || (Array.isArray(r.prBodyNotes) && r.prBodyNotes.length === 0)) err("claude-recall rule must set prBodyNotes");
+const matchers = [];
+for (const p of r.matchPackageNames || []) {
+  if (p.startsWith("!") || p.includes("*") && !/^\/.*\/$/.test(p)) { err(`unsupported matchPackageNames pattern: ${p}`); continue; }
+  const body = /^\/(.*)\/$/.exec(p);
+  matchers.push(body ? (n) => new RegExp(body[1]).test(n) : (n) => n === p);
+}
+for (const name of ["github:babarot/claude-recall", "claude-recall-plugin"]) {
+  if (!matchers.some((f) => f(name))) err(`matchPackageNames does not match ${name}`);
+}
+JS
+) || out="ERR probe crashed: $out"
+  while IFS= read -r line; do
+    case "$line" in ERR*) record "FAIL renovate claude-recall rule (${line#ERR })"; bad=1 ;; esac
+  done <<<"$out"
+  [[ "$bad" -eq 0 ]] && record "PASS renovate claude-recall rule keeps automerge off, the shared wait and covers both deps"
+  return 0
+}
+# Fresh cache and state so the archive is always downloaded and its checksum verified, even when other tests
+# already filled the shared cache. Fetch failures are FAILs on purpose: a skipped check pins nothing.
+test_recall_plugin_tarball_matches_pinned_sha256() {
+  local dir="$TMP_BASE/recall-tarball" out err status=0
+  mkdir -p "$dir"
+  out=$(chezmoi managed --source "$SRC" --destination "$dir/dst" --config "$dir/chezmoi.toml" \
+    --cache "$dir/cache" --persistent-state "$dir/state.boltdb" --refresh-externals=never \
+    --include externals --override-data "$HOST_LINUX" 2>"$dir/stderr") || status=$?
+  err=$(head -c 400 "$dir/stderr")
+  if [[ "$status" -eq 0 && "$out" == *".claude/skills/claude-recall"* ]]; then
+    record "PASS the pinned claude-recall plugin tarball downloads and matches its sha256"
+  elif [[ "$err" == *"SHA256 mismatch"* ]]; then
+    record "FAIL claude-recall plugin tarball differs from the pinned sha256 (the sha256 in .chezmoiexternal.toml.tmpl does not match the release asset): $err"
+  else
+    record "FAIL could not fetch the claude-recall plugin tarball (network or rate limit, exit $status): $err"
+  fi
+}
+# Renovate falls back to hashing the downloaded asset when it cannot find the current digest in checksums.txt,
+# so a pin written by Renovate is not proof that upstream published it. Compare with what upstream published.
+test_recall_plugin_sha256_is_listed_in_upstream_checksums() {
+  local version sha sums listed
+  require_file "$EXTERNAL_TMPL" || return 0
+  # Read with its own pattern, not the customManager's: this check must hold even when the customManager is wrong.
+  version=$(sed -nE 's/^\{\{- [$]recallPluginVersion := "([^"]+)" \}\}$/\1/p' "$EXTERNAL_TMPL")
+  sha=$(sed -nE 's/^\{\{- [$]recallPluginSha256 := "([0-9a-f]{64})" \}\}$/\1/p' "$EXTERNAL_TMPL")
+  if [[ -z "$version" || -z "$sha" ]]; then record "FAIL could not read the pinned claude-recall version and sha256 from the template"; return 0; fi
+  if ! sums=$(curl -fsSL --max-time 30 "https://github.com/babarot/claude-recall/releases/download/$version/checksums.txt" 2>&1); then
+    record "FAIL could not fetch checksums.txt for claude-recall $version (network or rate limit): ${sums:0:200}"; return 0
+  fi
+  listed=$(awk '$2 == "claude-recall-plugin.tar.gz" {print $1}' <<<"$sums")
+  if [[ "$listed" == "$sha" ]]; then
+    record "PASS the pinned claude-recall plugin sha256 is the one upstream lists in checksums.txt for $version"
+  else
+    record "FAIL the pinned claude-recall plugin sha256 differs from upstream checksums.txt for $version (pinned: $sha / upstream: ${listed:-no claude-recall-plugin.tar.gz line})"
+  fi
+}
+# The guard compares the mise version and the template version as strings. Both sides must carry the upstream tag
+# verbatim (Renovate writes the tag as-is), so a `v` on one side only has to stop the apply.
+test_recall_guard_accepts_matching_tags_and_rejects_mixed_ones() {
+  local n=0 mise_v tmpl_v expect dir out status
+  while read -r mise_v tmpl_v expect; do
+    n=$((n + 1)); dir="$TMP_BASE/guard-$n"
+    mkdir -p "$dir"; (cd "$SRC" && tar cf - --exclude=node_modules .) | tar xf - -C "$dir" # node_modules holds dangling workspace links
+    sed -E '/"github:babarot\/claude-recall"/ s/version = "[^"]*"/version = "'"$mise_v"'"/' "$dir/dot_config/mise/config.toml" >"$dir/mise.new" && mv "$dir/mise.new" "$dir/dot_config/mise/config.toml"
+    sed -E 's/([$]recallPluginVersion := ")[^"]*(")/\1'"$tmpl_v"'\2/' "$dir/.chezmoiexternal.toml.tmpl" >"$dir/ext.new" && mv "$dir/ext.new" "$dir/.chezmoiexternal.toml.tmpl"
+    if ! grep -qF "version = \"$mise_v\"" "$dir/dot_config/mise/config.toml" || ! grep -qF "\$recallPluginVersion := \"$tmpl_v\"" "$dir/.chezmoiexternal.toml.tmpl"; then
+      record "FAIL guard case mise=$mise_v template=$tmpl_v: rewriting the versions failed"; continue
+    fi
+    status=0
+    out=$(chezmoi execute-template --source "$dir" --override-data "$HOST_LINUX" <"$dir/.chezmoiexternal.toml.tmpl" 2>&1) || status=$?
+    if [[ "$expect" == ok ]]; then
+      assert_eq "0" "$status" "guard accepts mise=$mise_v template=$tmpl_v"
+    else
+      assert_eq "1" "$status" "guard rejects mise=$mise_v template=$tmpl_v"
+      assert_contains "$out" "claude-recall: mise pins" "guard names the mismatch for mise=$mise_v template=$tmpl_v"
+    fi
+  done <<'CASES'
+v1.8.2 v1.8.2 ok
+1.8.2 v1.8.2 reject
+v1.8.2 1.8.2 reject
+CASES
+}
+
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do
   ( "$t" ) </dev/null || record "FAIL $t (test aborted)"
 done
