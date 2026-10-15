@@ -19,7 +19,7 @@ describe("preprocessText", () => {
   it("redacts secrets", () => {
     ok(
       preprocessText(
-        "token=ghp_abcdefghijklmnopqrstuvwxyz0123456789",
+        "token=ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
         [],
       ).includes("[REDACTED]"),
     );

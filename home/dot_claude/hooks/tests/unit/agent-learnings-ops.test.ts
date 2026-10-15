@@ -241,7 +241,7 @@ describe("applyOps update", () => {
           op: "update",
           id: entry(1).id,
           evidence:
-            "line1\nline2 token=ghp_abcdefghijklmnopqrstuvwxyz0123456789",
+            "line1\nline2 token=ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
         },
       ],
       ctx(),
@@ -250,7 +250,7 @@ describe("applyOps update", () => {
     const line = r.value.evidence[0] ?? "";
     ok(!line.includes("\n"));
     ok(line.includes("[REDACTED]"));
-    ok(!line.includes("ghp_abc"));
+    ok(!line.includes("ghp_AAA"));
   });
   it("rejects update and remove on the same id", () => {
     strictEqual(

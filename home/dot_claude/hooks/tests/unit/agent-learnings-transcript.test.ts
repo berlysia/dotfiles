@@ -114,12 +114,12 @@ describe("reduceTranscript content", () => {
     withProjects(({ projects, file }) => {
       writeFileSync(
         file,
-        `${user("use token=ghp_abcdefghijklmnopqrstuvwxyz0123456789 now")}\n`,
+        `${user("use token=ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA now")}\n`,
       );
       const r = reduce(file, projects);
       ok(r.ok);
       ok(r.value.text.includes("[REDACTED]"));
-      ok(!r.value.text.includes("ghp_abcdefghijklmnopqrstuvwxyz0123456789"));
+      ok(!r.value.text.includes("ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"));
     });
   });
   it("applies the caller's extra redaction patterns", () => {
