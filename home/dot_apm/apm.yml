@@ -41,3 +41,5 @@ dependencies:
     - iwasa-kosui/tanteki/skills/tanteki
     # Pinned to the commit whose SKILL.md was read. To update: read the upstream diff, then replace the hash
     - artouc/stop-describing-ui/skills/stop-describing-ui#251a859f6e40645030e1ae69fa4b501c851eac9c
+    # Pinned to the commit whose SKILL.md and scripts were read. To update: read the upstream diff, then replace the hash
+    - MaryCache/imozuru/skills/imozuru#bfd99e5e72d8e8ec3297a71fafa1eafbb49787b2
