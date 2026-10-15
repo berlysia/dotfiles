@@ -2,6 +2,7 @@ import { deepStrictEqual, ok, strictEqual } from "node:assert";
 import { describe, it } from "node:test";
 import {
   applyOps,
+  evictEntries,
   MAX_ENTRIES,
   type OpsContext,
 } from "../../lib/agent-learnings/core/ops.ts";
@@ -334,5 +335,34 @@ describe("applyOps update", () => {
       { ...ctx(), droppableIds: new Set(["L-bbbbbbbbbbbb"]) },
     );
     strictEqual(r.ok, false);
+  });
+});
+
+describe("evictEntries", () => {
+  it("returns the entries untouched while under the limit", () => {
+    const entries = [entry(1), entry(2)];
+    const r = evictEntries(entries, new Set(), 2);
+    deepStrictEqual(r.entries, entries);
+    deepStrictEqual(r.evictedIds, []);
+  });
+  it("evicts the lowest seen first, then the oldest updated, then the earliest position", () => {
+    const entries = [
+      entry(1, { seen: 2, updated: "2026-10-01" }),
+      entry(2, { seen: 1, updated: "2026-10-05" }),
+      entry(3, { seen: 1, updated: "2026-10-02" }),
+      entry(4, { seen: 1, updated: "2026-10-02" }),
+    ];
+    const r = evictEntries(entries, new Set(), 1);
+    deepStrictEqual(r.evictedIds, [entry(3).id, entry(4).id, entry(2).id]);
+    deepStrictEqual(
+      r.entries.map((e) => e.id),
+      [entry(1).id],
+    );
+  });
+  it("never evicts a protected id, even when that leaves the file over the limit", () => {
+    const entries = [entry(1), entry(2), entry(3)];
+    const r = evictEntries(entries, new Set([entry(1).id, entry(2).id]), 1);
+    deepStrictEqual(r.evictedIds, [entry(3).id]);
+    strictEqual(r.entries.length, 2);
   });
 });

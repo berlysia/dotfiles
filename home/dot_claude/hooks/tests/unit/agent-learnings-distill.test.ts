@@ -97,6 +97,9 @@ describe("prompts", () => {
       "evidence",
       "400",
       "CLAUDE.md",
+      "promote",
+      "matchId",
+      "other-repo-learnings",
     ])
       ok(system.includes(needle), needle);
   });
@@ -107,14 +110,39 @@ describe("prompts", () => {
       today: "2026-10-15",
       repoLearnings: hostile,
       commonLearnings: hostile,
+      otherRepoLearnings: hostile,
       transcript: hostile,
     });
-    for (const tag of ["repo-learnings", "common-learnings", "transcript"]) {
+    for (const tag of [
+      "repo-learnings",
+      "common-learnings",
+      "other-repo-learnings",
+      "transcript",
+    ]) {
       strictEqual(count(prompt, `<${tag}>`), 1, `open ${tag}`);
       strictEqual(count(prompt, `</${tag}>`), 1, `close ${tag}`);
     }
-    strictEqual(count(prompt, "<"), 6);
+    strictEqual(count(prompt, "<"), 8);
     ok(prompt.includes("2026-10-15"));
+  });
+  it("leaves the other-repo-learnings tag empty when there are no candidates", () => {
+    const prompt = buildUserPrompt({
+      today: "2026-10-15",
+      repoLearnings: "r",
+      commonLearnings: "c",
+      otherRepoLearnings: "",
+      transcript: "t",
+    });
+    ok(prompt.includes("<other-repo-learnings>\n\n</other-repo-learnings>"));
+  });
+  it("system prompt tells the model how to promote and what not to do", () => {
+    const system = buildSystemPrompt();
+    for (const needle of [
+      "at most 3",
+      "repository name",
+      "never update or remove",
+    ])
+      ok(system.includes(needle), needle);
   });
 });
 

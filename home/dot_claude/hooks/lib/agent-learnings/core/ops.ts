@@ -46,6 +46,32 @@ export type OpsResult =
     }
   | { ok: false; reason: string };
 
+// 上限を超えた分を、守る id 以外から seen の少ない順（同数なら updated の古い順、
+// それも同じなら位置の早い順）に追い出す。applyOps と昇格が同じ規則を使う
+export function evictEntries(
+  entries: readonly LearningEntry[],
+  protectedIds: ReadonlySet<string>,
+  limit: number,
+): { entries: LearningEntry[]; evictedIds: string[] } {
+  const excess = entries.length - limit;
+  if (excess <= 0) return { entries: [...entries], evictedIds: [] };
+  const candidates = entries
+    .map((entry, position) => ({ entry, position }))
+    .filter(({ entry }) => !protectedIds.has(entry.id))
+    .sort(
+      (a, b) =>
+        a.entry.seen - b.entry.seen ||
+        a.entry.updated.localeCompare(b.entry.updated) ||
+        a.position - b.position,
+    )
+    .slice(0, excess);
+  const drop = new Set(candidates.map((c) => c.entry.id));
+  return {
+    entries: entries.filter((e) => !drop.has(e.id)),
+    evictedIds: candidates.map((c) => c.entry.id),
+  };
+}
+
 const fail = (reason: string): OpsResult => ({ ok: false, reason });
 
 // 全部か無しか。どれか 1 つでも不正なら何も適用しない
@@ -181,23 +207,9 @@ export function applyOps(
     }
   }
 
-  const evictedIds: string[] = [];
-  const excess = next.entries.length - MAX_ENTRIES;
-  if (excess > 0) {
-    const candidates = next.entries
-      .map((entry, position) => ({ entry, position }))
-      .filter(({ entry }) => !touched.has(entry.id))
-      .sort(
-        (a, b) =>
-          a.entry.seen - b.entry.seen ||
-          a.entry.updated.localeCompare(b.entry.updated) ||
-          a.position - b.position,
-      )
-      .slice(0, excess);
-    const drop = new Set(candidates.map((c) => c.entry.id));
-    for (const c of candidates) evictedIds.push(c.entry.id);
-    next.entries = next.entries.filter((e) => !drop.has(e.id));
-  }
+  const evicted = evictEntries(next.entries, touched, MAX_ENTRIES);
+  next.entries = evicted.entries;
+  const evictedIds = evicted.evictedIds;
 
   return {
     ok: true,

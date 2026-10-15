@@ -13,7 +13,16 @@
 
 import { randomBytes } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import {
+  closeSync,
+  constants,
+  existsSync,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+} from "node:fs";
 import { basename, join } from "node:path";
 import {
   buildUserPrompt,
@@ -30,14 +39,24 @@ import { runGit as realRunGit } from "../hooks/lib/agent-learnings/core/git.ts";
 import { applyInboxLocked } from "../hooks/lib/agent-learnings/core/inbox.ts";
 import {
   COMMON_KEY,
+  parseLearningsFile,
   serializeLearningsFile,
+  type LearningsFile,
 } from "../hooks/lib/agent-learnings/core/learnings-file.ts";
-import { parseLlmOps } from "../hooks/lib/agent-learnings/core/llm-ops.ts";
+import {
+  checkOpGroups,
+  parseLlmOps,
+} from "../hooks/lib/agent-learnings/core/llm-ops.ts";
 import {
   touchLock,
   withStoreLock,
 } from "../hooks/lib/agent-learnings/core/lock.ts";
+import { readNoPromote } from "../hooks/lib/agent-learnings/core/no-promote.ts";
 import { applyOps } from "../hooks/lib/agent-learnings/core/ops.ts";
+import {
+  applyPromotes,
+  buildCandidates,
+} from "../hooks/lib/agent-learnings/core/promote.ts";
 import {
   appendRunLog,
   claimJob,
@@ -54,6 +73,7 @@ import {
 } from "../hooks/lib/agent-learnings/core/queue.ts";
 import {
   isValidRepoKey,
+  keyToFileName,
   resolveRepoKey,
 } from "../hooks/lib/agent-learnings/core/repo-key.ts";
 import {
@@ -119,6 +139,65 @@ function logRun(
   } catch {
     // 実行記録に失敗しても整理は続ける
   }
+}
+
+// 昇格の候補にする他の repo のファイル。ファイル 1 行目の key から求めたファイル名が実際の
+// ファイル名と一致し、format 1 で読めるものだけを使う（違うものは候補から外すだけ）
+function readOtherRepoFiles(
+  store: string,
+  currentKey: string,
+): Map<string, LearningsFile> {
+  const others = new Map<string, LearningsFile>();
+  const reposDir = storePaths(store).repos;
+  let names: string[];
+  try {
+    if (!lstatSync(reposDir).isDirectory()) return others;
+    names = readdirSync(reposDir).filter((name) => name.endsWith(".md"));
+  } catch {
+    return others;
+  }
+  for (const name of names) {
+    try {
+      const fd = openSync(
+        join(reposDir, name),
+        constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+      );
+      let text: string;
+      try {
+        if (!fstatSync(fd).isFile()) continue;
+        text = readFileSync(fd, "utf8");
+      } finally {
+        closeSync(fd);
+      }
+      const parsed = parseLearningsFile(text);
+      if (!parsed.ok || parsed.value.readOnly) continue;
+      const { key } = parsed.value;
+      if (
+        key === currentKey ||
+        !isValidRepoKey(key) ||
+        keyToFileName(key) !== name
+      )
+        continue;
+      others.set(key, parsed.value);
+    } catch {
+      // 読めないファイルは候補に入れない
+    }
+  }
+  return others;
+}
+
+// lock の中で読み直す。読めなくなったファイルは外す（その matchId の昇格は捨てられる）
+function rereadOtherRepoFiles(
+  store: string,
+  keys: Iterable<string>,
+): Map<string, LearningsFile> {
+  const others = new Map<string, LearningsFile>();
+  for (const key of keys) {
+    const file = readLearnings(store, key);
+    if (file.ok && !file.value.readOnly && file.value.key === key)
+      others.set(key, file.value);
+  }
+  return others;
 }
 
 // ジョブの検査・縮約・LLM・適用。ジョブの終わり方（complete / fail / release）はここで決める
@@ -187,9 +266,19 @@ async function processJob(run: Run, job: QueueJob): Promise<void> {
     logRun(run, job, "failed", "learnings file unreadable");
     return;
   }
-  // LLM に見せた repo の id。common の id は入れない（common は worker が書かない）
+  // LLM に見せた repo の id
   const shownIds = new Set(repoFile.value.entries.map((e) => e.id));
   const today = deps.now().toISOString().slice(0, 10);
+  // 昇格の候補（lock の外で読む。見せた候補の id を覚えておき、lock の中で照合する）
+  const noPromote = readNoPromote(store);
+  const otherFiles = readOtherRepoFiles(store, job.repoKey);
+  const candidateKeys = [...otherFiles.keys()];
+  const candidates = buildCandidates({
+    repoKey: job.repoKey,
+    others: otherFiles,
+    noPromote,
+  });
+  const newId = (): string => `L-${randomBytes(6).toString("hex")}`;
 
   const answer = await runDistill({
     queryFn: deps.queryFn,
@@ -197,6 +286,7 @@ async function processJob(run: Run, job: QueueJob): Promise<void> {
       today,
       repoLearnings: serializeLearningsFile(repoFile.value),
       commonLearnings: serializeLearningsFile(commonFile.value),
+      otherRepoLearnings: candidates.text,
       transcript: transcript.text,
     }),
     cwd: storePaths(store).workerCwd,
@@ -225,23 +315,62 @@ async function processJob(run: Run, job: QueueJob): Promise<void> {
       });
       const current = readLearnings(store, job.repoKey);
       if (!current.ok || current.value.readOnly) return { kind: "unreadable" };
+      const common = readLearnings(store, COMMON_KEY);
+      if (!common.ok || common.value.readOnly) return { kind: "unreadable" };
+      const others = rereadOtherRepoFiles(store, candidateKeys);
+
+      // どれかが拒否なら、どのファイルも書かずに応答全体を拒否する
+      const groups = checkOpGroups(
+        parsed.ops,
+        parsed.promotes,
+        candidates.ids,
+        deps.extraRedact,
+      );
+      if (!groups.ok) return { kind: "ops-rejected" };
       const result = applyOps(current.value, parsed.ops, {
         today,
         repoKey: job.repoKey,
-        newId: () => `L-${randomBytes(6).toString("hex")}`,
+        newId,
         rules: { allowUrl: false },
         extraRedact: deps.extraRedact,
         droppableIds: shownIds,
       });
       if (!result.ok) return { kind: "ops-rejected" };
       const next = result.value;
+      const promoted = applyPromotes({
+        repoKey: job.repoKey,
+        today,
+        repoFile: next.file,
+        others,
+        common: common.value,
+        noPromote,
+        ops: parsed.promotes,
+        newId,
+        extraRedact: deps.extraRedact,
+        droppableIds: new Set([...shownIds, ...candidates.ids]),
+        shownCandidateIds: candidates.ids,
+      });
+      if (!promoted.ok)
+        return {
+          kind: promoted.kind === "read-only" ? "unreadable" : "ops-rejected",
+        };
+      const promo = promoted.value;
+
+      // 書く順は common → 他の repo → 現在の repo。途中で落ちると重複が残る側に倒れる
+      const writes: LearningsFile[] = [];
+      if (promo.appliedCount > 0) writes.push(promo.common);
+      writes.push(...promo.changedOthers.values());
       if (
-        serializeLearningsFile(next.file) !==
+        serializeLearningsFile(promo.repoFile) !==
         serializeLearningsFile(current.value)
-      ) {
-        if (!writeLearnings(store, next.file).ok) return { kind: "unreadable" };
+      )
+        writes.push(promo.repoFile);
+      for (const file of writes)
+        if (!writeLearnings(store, file).ok) return { kind: "unreadable" };
+      if (writes.length > 0) {
         const body = [
           ...next.evidence,
+          ...promo.commitLines,
           ...(next.evictedIds.length > 0
             ? [`evicted: ${next.evictedIds.join(", ")}`]
             : []),
@@ -265,8 +394,8 @@ async function processJob(run: Run, job: QueueJob): Promise<void> {
       completeJob(store, job.sessionId);
       return {
         kind: "applied",
-        applied: parsed.ops.length - next.droppedCount,
-        dropped: next.droppedCount,
+        applied: parsed.ops.length - next.droppedCount + promo.appliedCount,
+        dropped: next.droppedCount + promo.droppedCount,
       };
     },
   );

@@ -29,6 +29,7 @@ import { runGit } from "../../lib/agent-learnings/core/git.ts";
 import { writeInboxRequest } from "../../lib/agent-learnings/core/inbox.ts";
 import {
   COMMON_KEY,
+  serializeLearningsFile,
   type LearningEntry,
 } from "../../lib/agent-learnings/core/learnings-file.ts";
 import { withStoreLock } from "../../lib/agent-learnings/core/lock.ts";
@@ -678,6 +679,178 @@ describe("runWorker batch and single-instance", () => {
       await runWorker(w.deps(w.queryFor(() => fenced([]))));
       for (const path of [paths.runsLog, paths.readsLog, paths.codexReadsLog])
         ok(existsSync(`${path}.1`), path);
+    }));
+});
+
+describe("runWorker promotion", () => {
+  const OTHER = "github.com/org-a/alpha-service";
+  const PTITLE = "Avoid overwriting files with cp";
+  const PBODY =
+    "Pass the update=none flag to cp so existing files are never overwritten.";
+  const sharedEntry = (n: number, over: Partial<LearningEntry> = {}) => ({
+    ...entry(n),
+    title: PTITLE,
+    body: PBODY,
+    seen: 2,
+    repos: [OTHER],
+    ...over,
+  });
+  const X = sharedEntry(0x71);
+  const promoteOp = (over: Record<string, unknown> = {}) => ({
+    op: "promote",
+    matchId: X.id,
+    title: PTITLE,
+    body: PBODY,
+    evidence: "the same cp fix came up again",
+    ...over,
+  });
+  const putFile = (w: World, key: string, entries: LearningEntry[]): void => {
+    ok(
+      writeLearnings(w.store, { format: 1, key, readOnly: false, entries }).ok,
+    );
+  };
+  const run = async (
+    w: World,
+    respond: (call: number, prompt: string) => string | Promise<string>,
+  ) => {
+    w.writeTranscript(utterances("x", 3));
+    w.enqueue();
+    return runWorker(w.deps(w.queryFor(respond)));
+  };
+  const lastCommit = (w: World): string =>
+    execFileSync("git", ["-C", w.store, "log", "-1", "--format=%B"]).toString();
+
+  it("promotes a learning from another repo into common.md in one commit", async () =>
+    withWorld(async (w) => {
+      putFile(w, OTHER, [X]);
+      const before = w.commits();
+      await run(w, () => fenced([promoteOp()]));
+      const common = entriesOf(w, COMMON_KEY);
+      strictEqual(common.length, 1);
+      strictEqual(common[0]?.title, PTITLE);
+      strictEqual(common[0]?.seen, 3);
+      strictEqual(entriesOf(w, OTHER).length, 0);
+      strictEqual(w.commits(), before + 1);
+      ok(
+        lastCommit(w).includes(
+          `promote ${common[0]?.id} <- ${X.id} (${OTHER})`,
+        ),
+      );
+      strictEqual(w.runs()[0]?.result, "applied");
+      strictEqual(w.runs()[0]?.opsApplied, 1);
+      ok(w.prompts[0]?.includes(X.id));
+      ok(!w.prompts[0]?.includes(OTHER), "the candidate list names no repo");
+    }));
+  it("commits an add and a promote together and counts both", async () =>
+    withWorld(async (w) => {
+      putFile(w, OTHER, [X]);
+      const before = w.commits();
+      await run(w, () => fenced([addOp(), promoteOp()]));
+      strictEqual(entriesOf(w).length, 1);
+      strictEqual(entriesOf(w, COMMON_KEY).length, 1);
+      strictEqual(w.commits(), before + 1);
+      strictEqual(w.runs()[0]?.opsApplied, 2);
+      const message = lastCommit(w);
+      ok(message.includes("add L-") && message.includes("promote L-"));
+    }));
+  it("neither shows nor accepts candidates from a repo that matches no-promote", async () =>
+    withWorld(async (w) => {
+      writeFileSync(
+        join(w.store, "no-promote"),
+        "local/*\ngithub.com/org-a/*\n",
+      );
+      putFile(w, OTHER, [X]);
+      await run(w, () => fenced([promoteOp()]));
+      ok(!w.prompts[0]?.includes(X.id));
+      strictEqual(w.runs()[0]?.reason, "ops rejected");
+      strictEqual(entriesOf(w, OTHER).length, 1);
+      strictEqual(entriesOf(w, COMMON_KEY).length, 0);
+    }));
+  it("stops every promotion when no-promote is unreadable but still applies adds", async () =>
+    withWorld(async (w) => {
+      writeFileSync(join(w.store, "no-promote"), "x/*\n".repeat(300));
+      putFile(w, OTHER, [X]);
+      await run(w, () => fenced([addOp()]));
+      ok(!w.prompts[0]?.includes(X.id));
+      strictEqual(entriesOf(w).length, 1);
+      strictEqual(w.runs()[0]?.result, "applied");
+    }));
+  it("rejects the whole response when a promote leaks a repo name, so the add is not written either", async () =>
+    withWorld(async (w) => {
+      putFile(w, OTHER, [X]);
+      const before = w.commits();
+      await run(w, () =>
+        fenced([
+          addOp(),
+          promoteOp({ body: `${PBODY} Seen in alpha-service.` }),
+        ]),
+      );
+      strictEqual(w.runs()[0]?.reason, "ops rejected");
+      strictEqual(entriesOf(w).length, 0);
+      strictEqual(entriesOf(w, OTHER).length, 1);
+      strictEqual(w.commits(), before);
+    }));
+  it("rejects a remove of a candidate id", async () =>
+    withWorld(async (w) => {
+      putFile(w, OTHER, [X]);
+      await run(w, () => fenced([{ op: "remove", id: X.id, reason: "wrong" }]));
+      strictEqual(w.runs()[0]?.reason, "ops rejected");
+      strictEqual(entriesOf(w, OTHER).length, 1);
+    }));
+  it("drops a promote whose source a human removed while the LLM was running", async () =>
+    withWorld(async (w) => {
+      putFile(w, OTHER, [X]);
+      await run(w, () => {
+        putFile(w, OTHER, []);
+        return fenced([promoteOp()]);
+      });
+      const last = w.runs()[0];
+      strictEqual(last?.result, "applied");
+      strictEqual(last?.opsDropped, 1);
+      strictEqual(last?.opsApplied, 0);
+      strictEqual(entriesOf(w, COMMON_KEY).length, 0);
+      strictEqual(names(storePaths(w.store).queue).length, 0);
+    }));
+  it("drops a promote whose own entry was evicted by the same response's add", async () =>
+    withWorld(async (w) => {
+      const full = Array.from({ length: 40 }, (_, i) => ({
+        ...entry(0x100 + i),
+        seen: 5,
+      }));
+      const oldest = { ...entry(0x100), seen: 1, updated: "2026-01-01" };
+      full[0] = oldest;
+      putFile(w, KEY, full);
+      putFile(w, OTHER, [X]);
+      await run(w, () => fenced([addOp(), promoteOp({ id: oldest.id })]));
+      const last = w.runs()[0];
+      strictEqual(last?.result, "applied");
+      strictEqual(last?.opsApplied, 1);
+      strictEqual(last?.opsDropped, 1);
+      ok(!entriesOf(w).some((e) => e.id === oldest.id));
+      strictEqual(entriesOf(w).length, 40);
+      strictEqual(entriesOf(w, OTHER).length, 1);
+      strictEqual(entriesOf(w, COMMON_KEY).length, 0);
+    }));
+  it("ignores other-repo files in a newer format or whose key does not match the file name", async () =>
+    withWorld(async (w) => {
+      const repos = storePaths(w.store).repos;
+      writeFileSync(
+        join(repos, "future.md"),
+        "<!-- agent-learnings format: 2; key: github.com/x/y -->\n\n# Learnings: github.com/x/y\n",
+      );
+      writeFileSync(
+        join(repos, "wrong-name.md"),
+        serializeLearningsFile({
+          format: 1,
+          key: OTHER,
+          readOnly: false,
+          entries: [X],
+        }),
+      );
+      const result = await run(w, () => fenced([]));
+      strictEqual(result.status, "done");
+      ok(!w.prompts[0]?.includes(X.id));
+      strictEqual(w.runs()[0]?.result, "applied");
     }));
 });
 

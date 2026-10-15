@@ -1,6 +1,9 @@
 import { deepStrictEqual, ok, strictEqual } from "node:assert";
 import { describe, it } from "node:test";
-import { parseLlmOps } from "../../lib/agent-learnings/core/llm-ops.ts";
+import {
+  checkOpGroups,
+  parseLlmOps,
+} from "../../lib/agent-learnings/core/llm-ops.ts";
 
 const ID = "L-0123456789ab";
 const wrap = (ops: unknown[], extra: Record<string, unknown> = {}): string =>
@@ -49,15 +52,6 @@ describe("parseLlmOps", () => {
       JSON.stringify({ schemaVersion: 1, ops: [], extra: 1 }),
       JSON.stringify({ schemaVersion: 1 }),
       wrap([{ op: "rename", id: ID }]),
-      wrap([
-        {
-          op: "promote",
-          matchId: ID,
-          title: "t",
-          body: "b",
-          evidence: "e",
-        },
-      ]),
       wrap([{ op: "add", title: "t", body: "b" }]),
       wrap([{ op: "remove", id: ID, reason: "r", extra: 1 }]),
       wrap([{ op: "remove", id: 123, reason: "r" }]),
@@ -87,5 +81,115 @@ describe("parseLlmOps", () => {
     });
     strictEqual(parseLlmOps(wrap([1, 2, 3, 4, 5, 6].map(remove))).ok, false);
     ok(parseLlmOps(wrap([1, 2, 3, 4, 5].map(remove))).ok);
+  });
+});
+
+describe("parseLlmOps promote", () => {
+  const MATCH = "L-aaaaaaaaaaaa";
+  const promote = (over: Record<string, unknown> = {}) => ({
+    op: "promote",
+    matchId: MATCH,
+    title: "t",
+    body: "b",
+    evidence: "e",
+    ...over,
+  });
+  it("splits add and promote into separate groups", () => {
+    const r = parseLlmOps(wrap([add(), promote()]));
+    ok(r.ok);
+    deepStrictEqual(r.ops, [add()]);
+    deepStrictEqual(r.promotes, [promote()]);
+  });
+  it("accepts an optional id", () => {
+    const r = parseLlmOps(wrap([promote({ id: ID })]));
+    ok(r.ok);
+    strictEqual(r.promotes[0]?.id, ID);
+  });
+  it("rejects extra keys, a missing matchId, a null id and malformed ids", () => {
+    for (const bad of [
+      promote({ extra: 1 }),
+      { op: "promote", title: "t", body: "b", evidence: "e" },
+      promote({ id: null }),
+      promote({ id: "L-XYZ" }),
+      promote({ matchId: "L-XYZ" }),
+      promote({ matchId: 1 }),
+      promote({ evidence: undefined }),
+    ])
+      strictEqual(parseLlmOps(wrap([bad])).ok, false, JSON.stringify(bad));
+  });
+  it("allows 3 promotes and rejects 4", () => {
+    const n = (i: number) => promote({ matchId: `L-00000000000${i}` });
+    ok(parseLlmOps(wrap([1, 2, 3].map(n))).ok);
+    strictEqual(parseLlmOps(wrap([1, 2, 3, 4].map(n))).ok, false);
+  });
+  it("counts promotes in the 20-op limit", () => {
+    const ops = [
+      ...Array.from({ length: 19 }, (_, i) => add(i)),
+      promote(),
+      promote({ matchId: "L-bbbbbbbbbbbb" }),
+    ];
+    strictEqual(parseLlmOps(wrap(ops)).ok, false);
+  });
+});
+
+describe("checkOpGroups", () => {
+  const MATCH = "L-aaaaaaaaaaaa";
+  const OWN = "L-cccccccccccc";
+  const promotes = [
+    {
+      op: "promote" as const,
+      matchId: MATCH,
+      id: OWN,
+      title: "Shared Heading",
+      body: "b",
+      evidence: "e",
+    },
+  ];
+  const candidates = new Set([MATCH, "L-dddddddddddd"]);
+  const check = (ops: Parameters<typeof checkOpGroups>[0]) =>
+    checkOpGroups(ops, promotes, candidates, []);
+  it("accepts unrelated ops", () => {
+    ok(
+      check([
+        { op: "add", title: "other", body: "b", evidence: "e" },
+        { op: "update", id: "L-eeeeeeeeeeee", evidence: "e" },
+      ]).ok,
+    );
+  });
+  it("rejects update or remove of a promote's matchId or id", () => {
+    strictEqual(check([{ op: "remove", id: MATCH, reason: "r" }]).ok, false);
+    strictEqual(
+      check([{ op: "update", id: OWN, body: "b", evidence: "e" }]).ok,
+      false,
+    );
+  });
+  it("rejects update or remove of any shown candidate id", () => {
+    strictEqual(
+      check([{ op: "update", id: "L-dddddddddddd", body: "b", evidence: "e" }])
+        .ok,
+      false,
+    );
+    strictEqual(
+      check([{ op: "remove", id: "L-dddddddddddd", reason: "r" }]).ok,
+      false,
+    );
+  });
+  it("rejects an add whose heading matches a promote's after normalization", () => {
+    strictEqual(
+      check([
+        { op: "add", title: "shared   heading", body: "b", evidence: "e" },
+      ]).ok,
+      false,
+    );
+  });
+  it("does nothing without promotes", () => {
+    ok(
+      checkOpGroups(
+        [{ op: "remove", id: MATCH, reason: "r" }],
+        [],
+        candidates,
+        [],
+      ).ok,
+    );
   });
 });
