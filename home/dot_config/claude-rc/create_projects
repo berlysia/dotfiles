@@ -1,0 +1,13 @@
+# claude remote-control servers, one per line. Apply changes with: claude-rc-sync
+#
+#   <name>  <path>  [spawn]  [extra flags for `claude remote-control`...]
+#
+# name   : service instance name / session name prefix (letters, digits, . _ -)
+# spawn  : worktree (default) | same-dir | session   ("-" = default)
+#          worktree falls back to same-dir when <path> is not a git repository
+# extra  : e.g. --permission-mode acceptEdits   --capacity 4   --chrome
+#
+# The directory must be trusted in Claude Code first (run `claude` there once).
+#
+# my-secretary  ~/workspace/my-secretary
+# my-app        ~/workspace/my-app        same-dir

@@ -1,0 +1,20 @@
+{{ if eq .chezmoi.os "linux" -}}
+#!/bin/bash
+# Let systemd pick up changes to claude-rc@.service. Runs on every apply:
+# daemon-reload is idempotent and cheap (ADR-0017 K2). It deliberately does
+# not enable or restart instances: which projects listen for Remote Control is
+# per-machine (~/.config/claude-rc/projects, create-only) and each directory
+# must be trusted in Claude Code first, and a restart would drop live remote
+# sessions. Failures exit 0 so the remaining run_after_ scripts still run
+# (ADR-0017 R1).
+set -uo pipefail
+if ! systemctl --user show-environment >/dev/null 2>&1; then
+    echo "[claude-rc] WARNING: no systemd user instance; Remote Control servers cannot be managed" >&2
+    echo "[claude-rc] recovery: enable systemd (WSL2: add '[boot]' and 'systemd=true' to /etc/wsl.conf, then run 'wsl.exe --shutdown' from Windows), then run 'chezmoi apply'" >&2
+    exit 0
+fi
+if ! systemctl --user daemon-reload; then
+    echo "[claude-rc] WARNING: systemctl --user daemon-reload failed" >&2
+fi
+exit 0
+{{ end -}}
