@@ -77,6 +77,37 @@ Claude Code は、`WorktreeCreate` hook を定義するとそれで既定の wor
 - 判別できない入力（JSON として読めない、`hook_event_name` が無い）が cleanup の entry に来たら exit 0 にする。`WorktreeRemove` 宛てでも exit 0 になる（Claude Code が読めない JSON を送ることは想定しない）。
 - stderr に出す文字列から除く制御文字は C0（`\n` 以外）と `\x7f`。C1（`\x80-\x9f`）と U+2028/2029 は除かない。
 
+## 根拠にした計測（2026-10-15）
+
+- hook 無しの remote-control worktree spawn は `.claude/worktrees/bridge-<id>`、ブランチ `worktree-bridge-<id>`、起点は origin/master（cwd のブランチではない）、`locked`。サーバーの再起動で worktree とブランチが消え、空の `.claude/worktrees/` が残った。
+- hook が `<git-common-dir>/worktree/…` に `git worktree add` してパスを返すと、`.git` の下でも受け入れられた（`Refusing to use … as an isolation worktree` にならない）。入力は `name` と `cwd`（起動した repo）。
+- subagent の `isolation: "worktree"` は name が `agent-<16進>`。`SubagentStop` の `agent_id` は name から `agent-` を除いたもの、`cwd` は worktree のパス。`WorktreeRemove` は呼ばれない。
+- `git worktree add -b` / `git branch` で作ったブランチの reflog は `branch: Created from <起点>` の 1 件で、続く `worktree add` は reflog を足さない。
+- ignored ファイルだけがある worktree は `--force` なしの `git worktree remove` で消える。`git -C <common-dir>` は `safe.bareRepository=explicit` で拒否される（メインの worktree を cwd にする）。
+- 置き場が既にあって `worktree add` が失敗しても、git は管理用ディレクトリも登録も残さない。同じ名前の `git branch` は `already exists` で原子的に失敗する。
+
+## 展開後の確認（2026-10-15）
+
+| 確認                                                      | 結果                                                                                                                                                                                                                                                                       |
+| --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `claude --worktree probe -p`                              | `<repo>/.git/worktree/worktree-probe` に作られた                                                                                                                                                                                                                           |
+| 何も変更しない subagent（`isolation: "worktree"`）        | 終了後に worktree もブランチも残らなかった                                                                                                                                                                                                                                 |
+| workflow agent（`isolation: "worktree"`）                 | **未達**。name が `wf_<run id>-<n>` の形で `worktree-wf_…` に作られ、`SubagentStop` が探すブランチ名（`worktree-agent-<agent_id>`）に当たらず残った。`-p` の session が workflow の完了を待たずに終わったため、workflow agent に `SubagentStop` が来るか自体は未確認（R2） |
+| `git-worktree-cleanup --non-interactive`                  | hook が作った worktree を分類し、消さずに残した                                                                                                                                                                                                                            |
+| 対話 session（`claude --worktree probe2` を何もせず終了） | `WorktreeCreate` / `WorktreeRemove` とも exit 0、worktree とブランチが消えた                                                                                                                                                                                               |
+| `chezmoi apply`（本番反映）                               | settings.json の hooks 以外は変わらず、3 イベントが timer 越しに入った。配置済みの claude-rc は中身が変わらなかった                                                                                                                                                        |
+| 動いている `claude-rc@dotfiles`                           | settings を起動時に読む。反映直後の session は `.claude/worktrees/` に作られ、再起動後は `.git/worktree/worktree-bridge-…`（起点 origin/master）に作られた                                                                                                                 |
+| remote-control の session をアプリで終える                | **未達**。`WorktreeRemove` は呼ばれず、変更の無い worktree とブランチが残った。その後サーバーを再起動しても呼ばれなかった。session がつながったままの停止は未確認（R6）                                                                                                    |
+
+未達の 2 件の次の手は `docs/plans/claude-worktree-hook-followups.md` にある。
+
+## 計画から外れた点
+
+- 計画では並列の `worktree add` が git の lock で競合することを想定していた。4 並列 × 20 回で再現したのは別の競合で、並行する add が作りかけの管理用ディレクトリを読んで失敗した（`failed to read .git/worktrees/<x>/commondir`）。やり直しは「`add` が失敗し、自分のブランチを巻き戻せたとき 1 回だけ」で、エラー文言では絞らない。
+- 作成するパス（common dir）に制御文字があれば作成を失敗にした。spec に無い防御で、stdout のパスを 1 行に保つため。
+- `safe.bareRepository=explicit` の環境では、bare のディレクトリを直接 cwd にすると git が拒否するので `not-git` になる。`bare-repo` になるのは bare の linked worktree を cwd にしたとき。
+- `chezmoi apply` を umask 022 のシェルから行うと、配る file のモードが 644/755 になる。後で umask 002 のシェルから apply すると、chezmoi が「変更された」とみなして確認を求め、TTY が無いと apply ごと止まる（後続の `run_after_` も実行されない）。Claude から apply するときは `umask 002` を付ける。
+
 ## hook 契約への依存と確認手順
 
 Claude Code を更新した後や、片付けが空振りしているように見えるときに、使い捨ての repo で確かめる。hook を `claude --settings <一時ファイル>` で足し、`~/.claude/settings.json` は変えない。
