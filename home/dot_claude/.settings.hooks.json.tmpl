@@ -269,6 +269,39 @@
       ]
     }
   ],
+  "WorktreeCreate": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/worktree-create.ts",
+          "timeout": 240
+        }
+      ]
+    }
+  ],
+  "WorktreeRemove": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/worktree-cleanup.ts",
+          "timeout": 240
+        }
+      ]
+    }
+  ],
+  "SubagentStop": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/worktree-cleanup.ts",
+          "timeout": 240
+        }
+      ]
+    }
+  ],
   "PreCompact": [
     {
       "matcher": "",

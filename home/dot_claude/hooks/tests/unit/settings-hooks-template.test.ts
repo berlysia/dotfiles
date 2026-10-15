@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
+import { DEADLINE_MS } from "../../lib/claude-worktree-git.ts";
 
 const TMPL = fileURLToPath(
   new URL("../../../.settings.hooks.json.tmpl", import.meta.url),
@@ -112,5 +113,38 @@ describe(
         });
       }
     }
+  },
+);
+
+describe(
+  "settings hooks template: worktree hooks",
+  { skip: !hasChezmoi && "chezmoi is not on PATH" },
+  () => {
+    it("E04: worktree events map to their entries with timeout 240 and the canonical command", () => {
+      const hooks = render(true, false) as unknown as Record<
+        string,
+        { hooks: { command: string; timeout?: number }[] }[]
+      >;
+      const expected: Record<string, string> = {
+        WorktreeCreate: "worktree-create",
+        WorktreeRemove: "worktree-cleanup",
+        SubagentStop: "worktree-cleanup",
+      };
+      for (const [event, entry] of Object.entries(expected)) {
+        const registered = (hooks[event] ?? []).flatMap((g) => g.hooks);
+        strictEqual(registered.length, 1, event);
+        const hook = registered[0];
+        ok(hook, event);
+        ok(
+          new RegExp(
+            `^bun /\\S+/\\.claude/hooks/implementations/${entry}\\.ts$`,
+          ).test(hook.command),
+          `${event}: ${hook.command}`,
+        );
+        strictEqual(hook.timeout, 240, event);
+      }
+      // The lib's own deadline must leave room inside the hook timeout.
+      ok(DEADLINE_MS < 240 * 1000, `DEADLINE_MS=${DEADLINE_MS}`);
+    });
   },
 );

@@ -1,9 +1,27 @@
 import assert from "node:assert/strict";
-import { existsSync, lstatSync, mkdirSync, rmSync, symlinkSync } from "node:fs";
+import {
+  appendFileSync,
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
-import { createWorktree } from "../../lib/claude-worktree.ts";
-import type { CreateResult } from "../../lib/claude-worktree.ts";
+import {
+  cleanupSubagentWorktree,
+  createWorktree,
+  removeWorktree,
+} from "../../lib/claude-worktree.ts";
+import type {
+  CreateResult,
+  RemoveResult,
+  SubagentCleanupResult,
+} from "../../lib/claude-worktree.ts";
+import { DEADLINE_MS } from "../../lib/claude-worktree-git.ts";
 import type { Deps } from "../../lib/claude-worktree-git.ts";
 import {
   GIT_FAILURE,
@@ -494,4 +512,571 @@ describe("createWorktree: concurrency", () => {
       assert.deepEqual(failures, []);
     },
   );
+});
+
+// ---------------------------------------------------------------------------
+// removeWorktree (K4, K5)
+// ---------------------------------------------------------------------------
+
+function remove(
+  repo: Repo,
+  worktreePath: string,
+  deps?: Deps,
+  cwd = repo.dir,
+): RemoveResult {
+  return removeWorktree({ worktreePath, cwd }, deps);
+}
+
+function expectRemoved(
+  result: RemoveResult,
+): Extract<RemoveResult, { ok: true }> {
+  assert.equal(result.ok, true, JSON.stringify(result));
+  if (!result.ok) throw new Error("unreachable");
+  return result;
+}
+
+function expectRemoveFail(
+  result: RemoveResult,
+  reason: Extract<RemoveResult, { ok: false }>["reason"],
+): Extract<RemoveResult, { ok: false }> {
+  assert.equal(result.ok, false, JSON.stringify(result));
+  if (result.ok) throw new Error("unreachable");
+  assert.equal(result.reason, reason, result.message);
+  return result;
+}
+
+function makeWorktree(repo: Repo, name: string): string {
+  return expectOk(create(repo, name)).path;
+}
+
+function commitIn(dir: string, file: string): void {
+  writeFileSync(join(dir, file), `${file}\n`);
+  git(dir, "add", "--", file);
+  git(dir, "commit", "-q", "-m", `add ${file}`);
+}
+
+// Moves a branch tip to a new commit without going through the code under test.
+function moveTip(repo: Repo, branch: string): void {
+  const moved = git(
+    repo.dir,
+    "commit-tree",
+    "HEAD^{tree}",
+    "-p",
+    "HEAD",
+    "-m",
+    "moved",
+  );
+  git(repo.dir, "update-ref", `refs/heads/${branch}`, moved);
+}
+
+describe("removeWorktree: K4 judgement and branch handling", () => {
+  it("C28: removes an untouched worktree and its branch with a CAS on the old sha", () => {
+    const repo = createRepo(temp);
+    const path = makeWorktree(repo, "clean");
+    const { deps, calls } = interceptGit();
+    const result = expectRemoved(remove(repo, path, deps));
+    assert.equal(result.removed, true);
+    assert.equal(result.keptBranch, undefined);
+    assert.equal(existsSync(path), false);
+    assert.equal(branchExists(repo, "worktree-clean"), false);
+    const cas = calls.find((call) => call.args[0] === "update-ref");
+    assert.deepEqual(cas?.args, [
+      "update-ref",
+      "-d",
+      "refs/heads/worktree-clean",
+      repo.baseSha,
+    ]);
+    assert.equal(
+      calls.some(
+        (call) => call.args[0] === "worktree" && call.args[1] === "prune",
+      ),
+      false,
+    );
+  });
+
+  it("C29: a commit in the worktree removes the worktree but keeps the branch", () => {
+    const repo = createRepo(temp);
+    const path = makeWorktree(repo, "worked");
+    commitIn(path, "w.txt");
+    const result = expectRemoved(remove(repo, path));
+    assert.equal(result.removed, true);
+    assert.deepEqual(result.keptBranch, {
+      name: "worktree-worked",
+      reason: "reflog-not-single-creation",
+    });
+    assert.equal(existsSync(path), false);
+    assert.equal(branchExists(repo, "worktree-worked"), true);
+  });
+
+  it("C30: a branch reset back to its creation commit is still work", () => {
+    const repo = createRepo(temp);
+    const path = makeWorktree(repo, "reset");
+    commitIn(path, "w.txt");
+    git(path, "reset", "-q", "--hard", "HEAD~1");
+    const result = expectRemoved(remove(repo, path));
+    assert.equal(result.keptBranch?.reason, "reflog-not-single-creation");
+    assert.equal(branchExists(repo, "worktree-reset"), true);
+  });
+
+  it("C30: a worktree created with reflogs disabled keeps its branch", () => {
+    const repo = createRepo(temp);
+    git(repo.dir, "config", "core.logAllRefUpdates", "false");
+    const path = makeWorktree(repo, "nolog");
+    const result = expectRemoved(remove(repo, path));
+    assert.equal(result.keptBranch?.reason, "reflog-not-single-creation");
+    assert.equal(branchExists(repo, "worktree-nolog"), true);
+  });
+
+  it("C31: detached HEAD with a commit is unexpected-head and nothing is removed", () => {
+    const repo = createRepo(temp);
+    const path = makeWorktree(repo, "detached");
+    git(path, "checkout", "-q", "--detach");
+    commitIn(path, "d.txt");
+    expectRemoveFail(remove(repo, path), "unexpected-head");
+    assert.equal(existsSync(path), true);
+    assert.equal(branchExists(repo, "worktree-detached"), true);
+  });
+
+  it("C31: another branch checked out in the worktree is unexpected-head", () => {
+    const repo = createRepo(temp);
+    const path = makeWorktree(repo, "switched");
+    git(path, "checkout", "-q", "-b", "other-work");
+    commitIn(path, "o.txt");
+    expectRemoveFail(remove(repo, path), "unexpected-head");
+    assert.equal(existsSync(path), true);
+    assert.equal(branchExists(repo, "other-work"), true);
+  });
+
+  it("C31: a branch that disagrees with the directory name is unexpected-head", () => {
+    const repo = createRepo(temp);
+    const path = makeWorktree(repo, "mismatch");
+    git(path, "checkout", "-q", "-B", "worktree-other");
+    expectRemoveFail(remove(repo, path), "unexpected-head");
+    assert.equal(existsSync(path), true);
+    assert.equal(branchExists(repo, "worktree-mismatch"), true);
+  });
+
+  it("C32: a tip moved after the judgement is not deleted (cas-missed)", () => {
+    const repo = createRepo(temp);
+    const path = makeWorktree(repo, "racy");
+    const { deps } = interceptGit([
+      {
+        match: ["update-ref", "-d"],
+        before: () => moveTip(repo, "worktree-racy"),
+      },
+    ]);
+    const result = expectRemoved(remove(repo, path, deps));
+    assert.equal(result.removed, true);
+    assert.equal(result.keptBranch?.reason, "cas-missed");
+    assert.equal(existsSync(path), false);
+    assert.equal(branchExists(repo, "worktree-racy"), true);
+  });
+});
+
+describe("removeWorktree: what may be removed", () => {
+  it("C33: anything outside the managed worktree-* directories is refused", () => {
+    const repo = createRepo(temp);
+    const managedDir = join(repo.commonDir, "worktree");
+    const victim = makeWorktree(repo, "victim");
+
+    const humanFeat = join(managedDir, "feat", "x");
+    git(repo.dir, "worktree", "add", "-q", "-b", "feat/x", humanFeat);
+    const preHook = join(repo.dir, ".claude", "worktrees", "x");
+    git(repo.dir, "worktree", "add", "-q", "-b", "claude-x", preHook);
+    const plain = join(managedDir, "plain");
+    git(repo.dir, "worktree", "add", "-q", "-b", "plain-b", plain);
+    const nested = join(managedDir, "worktree-nest", "inner");
+    git(repo.dir, "worktree", "add", "-q", "-b", "nested-b", nested);
+    const external = addLinkedWorktree(temp, repo, "external-b");
+    const link = join(managedDir, "worktree-link");
+    symlinkSync(external, link);
+
+    const cases: { label: string; path: string }[] = [
+      { label: "main worktree", path: repo.dir },
+      { label: "human feat/x", path: humanFeat },
+      { label: "pre-hook .claude/worktrees", path: preHook },
+      { label: "managed dir without worktree- prefix", path: plain },
+      { label: "one level too deep", path: nested },
+      { label: "symlink to an unmanaged worktree", path: link },
+      {
+        label: "dot-dot segment",
+        path: `${managedDir}/worktree-victim/../worktree-victim`,
+      },
+      { label: "relative path", path: "worktree-victim" },
+    ];
+    for (const { label, path } of cases) {
+      const result = remove(repo, path);
+      assert.equal(result.ok, false, `${label}: ${JSON.stringify(result)}`);
+      if (!result.ok) {
+        assert.equal(result.reason, "outside-managed-dirs", label);
+      }
+    }
+    const registered = listedPaths(repo);
+    for (const path of [
+      repo.dir,
+      humanFeat,
+      preHook,
+      plain,
+      nested,
+      external,
+      victim,
+    ]) {
+      assert.ok(existsSync(path), `${path} still exists`);
+      assert.ok(registered.includes(path), `${path} still registered`);
+    }
+    for (const branch of [
+      "feat/x",
+      "claude-x",
+      "plain-b",
+      "nested-b",
+      "external-b",
+      "worktree-victim",
+    ]) {
+      assert.equal(branchExists(repo, branch), true, branch);
+    }
+  });
+
+  it("C34: an existing unregistered path outside the managed dir is outside-managed-dirs", () => {
+    const repo = createRepo(temp);
+    const stray = temp.make("cwt-stray-");
+    expectRemoveFail(remove(repo, stray), "outside-managed-dirs");
+    assert.ok(existsSync(stray));
+  });
+
+  it("C35: an unregistered directory in the managed location is not-registered", () => {
+    const repo = createRepo(temp);
+    const stray = join(repo.commonDir, "worktree", "worktree-stray");
+    mkdirSync(stray, { recursive: true });
+    expectRemoveFail(remove(repo, stray), "not-registered");
+    assert.ok(existsSync(stray));
+  });
+
+  it("C36: a missing, unregistered path is ok with removed: false, in or out of the managed dir", () => {
+    const repo = createRepo(temp);
+    const inside = join(repo.commonDir, "worktree", "worktree-ghost");
+    const outside = join(temp.make("cwt-gone-"), "nothing-here");
+    for (const path of [inside, outside]) {
+      const result = expectRemoved(remove(repo, path));
+      assert.equal(result.removed, false);
+      assert.equal(result.keptBranch, undefined);
+    }
+  });
+
+  it("C37: removing the same path twice succeeds both times", () => {
+    const repo = createRepo(temp);
+    const path = makeWorktree(repo, "twice");
+    assert.equal(expectRemoved(remove(repo, path)).removed, true);
+    const again = expectRemoved(remove(repo, path));
+    assert.equal(again.removed, false);
+    assert.equal(again.keptBranch, undefined);
+  });
+
+  it("C44: a worktree of another repository is outside the cwd repo's managed dirs", () => {
+    const repoA = createRepo(temp);
+    const repoB = createRepo(temp);
+    const path = makeWorktree(repoA, "foreign");
+    expectRemoveFail(
+      remove(repoA, path, undefined, repoB.dir),
+      "outside-managed-dirs",
+    );
+    assert.ok(existsSync(path));
+    assert.equal(branchExists(repoA, "worktree-foreign"), true);
+  });
+});
+
+describe("removeWorktree: prunable, failures and the deadline", () => {
+  it("C38: a managed prunable registration is left with its branch", () => {
+    const repo = createRepo(temp);
+    const path = makeWorktree(repo, "gone");
+    rmSync(path, { recursive: true });
+    const result = expectRemoved(remove(repo, path));
+    assert.equal(result.removed, false);
+    assert.deepEqual(result.keptBranch, {
+      name: "worktree-gone",
+      reason: "prunable",
+    });
+    assert.ok(listedPaths(repo).includes(path));
+    assert.equal(branchExists(repo, "worktree-gone"), true);
+  });
+
+  it("C39: another prunable registration survives a removal", () => {
+    const repo = createRepo(temp);
+    const away = join(temp.make("cwt-away-"), "away");
+    git(repo.dir, "worktree", "add", "-q", "-b", "away-b", away);
+    rmSync(away, { recursive: true });
+    const path = makeWorktree(repo, "target");
+    expectRemoved(remove(repo, path));
+    assert.equal(existsSync(path), false);
+    assert.ok(listedPaths(repo).includes(away));
+    assert.match(git(repo.dir, "worktree", "list", "--porcelain"), /prunable/);
+  });
+
+  it("C40: a worktree locked by a human stays, with its branch", () => {
+    const repo = createRepo(temp);
+    const path = makeWorktree(repo, "locked");
+    git(repo.dir, "worktree", "lock", path);
+    expectRemoveFail(remove(repo, path), "path-remains");
+    assert.ok(existsSync(path));
+    assert.equal(branchExists(repo, "worktree-locked"), true);
+  });
+
+  it("C41: a failed remove that left no path is ok with remove-incomplete", () => {
+    const repo = createRepo(temp);
+    const path = makeWorktree(repo, "partial");
+    const { deps } = interceptGit([
+      {
+        match: ["worktree", "remove"],
+        before: () => rmSync(path, { recursive: true }),
+        replace: GIT_FAILURE,
+      },
+    ]);
+    const result = expectRemoved(remove(repo, path, deps));
+    assert.equal(result.removed, true);
+    assert.deepEqual(result.keptBranch, {
+      name: "worktree-partial",
+      reason: "remove-incomplete",
+    });
+    assert.equal(branchExists(repo, "worktree-partial"), true);
+  });
+
+  it("C42: running out of deadline before the remove leaves the path", () => {
+    const repo = createRepo(temp);
+    const path = makeWorktree(repo, "late");
+    let clock = 0;
+    const { deps, calls } = interceptGit(
+      [
+        {
+          match: ["rev-parse", "--verify"],
+          after: () => {
+            clock = DEADLINE_MS + 1;
+          },
+        },
+      ],
+      { now: () => clock },
+    );
+    expectRemoveFail(remove(repo, path, deps), "path-remains");
+    assert.ok(existsSync(path));
+    assert.equal(branchExists(repo, "worktree-late"), true);
+    assert.equal(
+      calls.some(
+        (call) => call.args[0] === "worktree" && call.args[1] === "remove",
+      ),
+      false,
+    );
+  });
+
+  it(
+    "C43: a read-only directory inside makes the remove fail and the path stays",
+    { skip: isRoot && "root ignores directory permissions" },
+    () => {
+      const repo = createRepo(temp);
+      const path = makeWorktree(repo, "rodir");
+      const sub = join(path, "sub");
+      mkdirSync(sub);
+      writeFileSync(join(sub, "f.txt"), "f\n");
+      try {
+        chmodSync(sub, 0o555);
+        expectRemoveFail(remove(repo, path), "path-remains");
+      } finally {
+        chmodSync(sub, 0o755);
+      }
+      assert.ok(existsSync(path));
+      assert.equal(branchExists(repo, "worktree-rodir"), true);
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// cleanupSubagentWorktree (K6)
+// ---------------------------------------------------------------------------
+
+const AGENT = "a278c2e632b92ee6c";
+
+function cleanup(
+  repo: Repo,
+  agentId: string,
+  deps?: Deps,
+  cwd = repo.dir,
+): SubagentCleanupResult {
+  return cleanupSubagentWorktree({ agentId, cwd }, deps);
+}
+
+function makeAgentWorktree(repo: Repo, agentId = AGENT): string {
+  return makeWorktree(repo, `agent-${agentId}`);
+}
+
+describe("cleanupSubagentWorktree", () => {
+  it("C45: an untouched worktree is removed with its branch", () => {
+    const repo = createRepo(temp);
+    const path = makeAgentWorktree(repo);
+    assert.deepEqual(cleanup(repo, AGENT), { action: "removed" });
+    assert.equal(existsSync(path), false);
+    assert.equal(branchExists(repo, `worktree-agent-${AGENT}`), false);
+  });
+
+  it("C45: a worktree holding only ignored files is removed", () => {
+    const repo = createRepo(temp);
+    appendFileSync(join(repo.commonDir, "info", "exclude"), "ignored.txt\n");
+    const path = makeAgentWorktree(repo);
+    writeFileSync(join(path, "ignored.txt"), "x\n");
+    assert.deepEqual(cleanup(repo, AGENT), { action: "removed" });
+    assert.equal(existsSync(path), false);
+  });
+
+  it("C46: an untracked file keeps the worktree (has-changes)", () => {
+    const repo = createRepo(temp);
+    const path = makeAgentWorktree(repo);
+    writeFileSync(join(path, "new.txt"), "x\n");
+    assert.deepEqual(cleanup(repo, AGENT), {
+      action: "kept",
+      detail: "has-changes",
+    });
+    assert.ok(existsSync(path));
+  });
+
+  it("C46: a commit keeps the worktree and branch", () => {
+    const repo = createRepo(temp);
+    const path = makeAgentWorktree(repo);
+    commitIn(path, "c.txt");
+    const result = cleanup(repo, AGENT);
+    assert.equal(result.action, "kept");
+    if (result.action === "kept") {
+      assert.ok(
+        ["tip-moved", "reflog-not-single-creation"].includes(result.detail),
+        result.detail,
+      );
+    }
+    assert.ok(existsSync(path));
+    assert.equal(branchExists(repo, `worktree-agent-${AGENT}`), true);
+  });
+
+  it("C47: no matching worktree is none", () => {
+    const repo = createRepo(temp);
+    const path = makeAgentWorktree(repo, "bbbb");
+    assert.deepEqual(cleanup(repo, AGENT), { action: "none" });
+    assert.ok(existsSync(path));
+  });
+
+  it("C47: the same result from inside the worktree or from the main worktree", () => {
+    const inside = createRepo(temp);
+    const insidePath = makeAgentWorktree(inside);
+    assert.deepEqual(cleanup(inside, AGENT, undefined, insidePath), {
+      action: "removed",
+    });
+    assert.equal(existsSync(insidePath), false);
+
+    const main = createRepo(temp);
+    const mainPath = makeAgentWorktree(main);
+    assert.deepEqual(cleanup(main, AGENT, undefined, main.dir), {
+      action: "removed",
+    });
+    assert.equal(existsSync(mainPath), false);
+  });
+
+  it("C48: a malformed agent_id is none and touches nothing", () => {
+    const repo = createRepo(temp);
+    const path = makeAgentWorktree(repo);
+    for (const agentId of ["../x", "a".repeat(65), ""]) {
+      assert.deepEqual(cleanup(repo, agentId), { action: "none" }, agentId);
+    }
+    assert.ok(existsSync(path));
+  });
+
+  it("C48: a cwd that is not a git repository, or a bare one, is none", () => {
+    const plain = temp.make("cwt-plain-");
+    assert.deepEqual(cleanupSubagentWorktree({ agentId: AGENT, cwd: plain }), {
+      action: "none",
+    });
+    const { linkedDir } = createBareWithLinkedWorktree(temp);
+    assert.deepEqual(
+      cleanupSubagentWorktree({ agentId: AGENT, cwd: linkedDir }),
+      { action: "none" },
+    );
+  });
+
+  it("C49: a matched worktree whose HEAD is another branch is none", () => {
+    const repo = createRepo(temp);
+    const path = makeAgentWorktree(repo);
+    const { deps } = interceptGit([
+      {
+        match: ["symbolic-ref"],
+        replace: { ok: true, stdout: "refs/heads/somewhere-else" },
+      },
+    ]);
+    assert.deepEqual(cleanup(repo, AGENT, deps), { action: "none" });
+    assert.ok(existsSync(path));
+  });
+
+  it("C50: prunable, deadline and status failures are kept as git-failed", () => {
+    const prunableRepo = createRepo(temp);
+    const gone = makeAgentWorktree(prunableRepo);
+    rmSync(gone, { recursive: true });
+    assert.deepEqual(cleanup(prunableRepo, AGENT), {
+      action: "kept",
+      detail: "git-failed",
+    });
+    assert.equal(branchExists(prunableRepo, `worktree-agent-${AGENT}`), true);
+
+    const lateRepo = createRepo(temp);
+    const latePath = makeAgentWorktree(lateRepo);
+    let clock = 0;
+    const late = interceptGit(
+      [
+        {
+          match: ["rev-parse", "--path-format=absolute"],
+          after: () => {
+            clock = DEADLINE_MS + 1;
+          },
+        },
+      ],
+      { now: () => clock },
+    );
+    assert.deepEqual(cleanup(lateRepo, AGENT, late.deps), {
+      action: "kept",
+      detail: "git-failed",
+    });
+    assert.ok(existsSync(latePath));
+
+    const statusRepo = createRepo(temp);
+    const statusPath = makeAgentWorktree(statusRepo);
+    const failing = interceptGit([{ match: ["status"], replace: GIT_FAILURE }]);
+    assert.deepEqual(cleanup(statusRepo, AGENT, failing.deps), {
+      action: "kept",
+      detail: "git-failed",
+    });
+    assert.ok(existsSync(statusPath));
+  });
+
+  it("C51: a failing remove is kept as remove-failed and the branch stays", () => {
+    const repo = createRepo(temp);
+    const path = makeAgentWorktree(repo);
+    const { deps } = interceptGit([
+      { match: ["worktree", "remove"], replace: GIT_FAILURE },
+    ]);
+    assert.deepEqual(cleanup(repo, AGENT, deps), {
+      action: "kept",
+      detail: "remove-failed",
+    });
+    assert.ok(existsSync(path));
+    assert.equal(branchExists(repo, `worktree-agent-${AGENT}`), true);
+  });
+
+  it("C52: a CAS miss after the remove reports removed with the kept branch", () => {
+    const repo = createRepo(temp);
+    const path = makeAgentWorktree(repo);
+    const { deps, calls } = interceptGit([
+      {
+        match: ["update-ref", "-d"],
+        before: () => moveTip(repo, `worktree-agent-${AGENT}`),
+      },
+    ]);
+    assert.deepEqual(cleanup(repo, AGENT, deps), {
+      action: "removed",
+      keptBranch: { name: `worktree-agent-${AGENT}`, reason: "cas-missed" },
+    });
+    assert.equal(existsSync(path), false);
+    assert.equal(branchExists(repo, `worktree-agent-${AGENT}`), true);
+    const cas = calls.find((call) => call.args[0] === "update-ref");
+    assert.equal(cas?.args[3], repo.baseSha);
+  });
 });
