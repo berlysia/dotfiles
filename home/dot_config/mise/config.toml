@@ -65,5 +65,6 @@ duckdb = "1.5.6"
 # Session archive with MCP search (claude-recall). Every release was under a week old when it was
 # added, so minimum_release_age hid them all; pinning an exact version, which the gate does not
 # filter, was a deliberate choice to take it anyway. Keep the table form: the plugin external in
-# .chezmoiexternal.toml.tmpl reads .version from it and fails the apply if the two disagree.
+# .chezmoiexternal.toml.tmpl reads .version from it and fails the apply if the two disagree. Renovate
+# updates both in one PR (customManagers in renovate.json).
 "github:babarot/claude-recall" = { version = "1.7.2", bin = "recall" }
