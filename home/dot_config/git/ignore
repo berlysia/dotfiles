@@ -125,3 +125,4 @@ mise.local.toml
 CLAUDE.local.md
 
 .tmp
+.playwright-mcp
