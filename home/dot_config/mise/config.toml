@@ -18,7 +18,7 @@ credential_command = "gh auth token"
 
 [tools]
 actionlint = "1.7.12"
-bun = "1.4.2"
+bun = "1.4.3"
 deno = "2.9.7"
 direnv = "2.37.1"
 fzf = "0.74.4" # Fuzzy finder - migrated from chezmoi external
