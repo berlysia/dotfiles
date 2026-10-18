@@ -36,14 +36,14 @@
   "dependencies": {
     "@drawio/mcp": "1.6.3",
     "@playwright/mcp": "0.0.83",
-    "@upstash/context7-mcp": "4.1.1",
+    "@upstash/context7-mcp": "4.3.0",
     "chrome-devtools-mcp": "1.10.1",
     "supergateway": "4.1.0"
   },
   "devDependencies": {
     "@mizchi/lsmcp": "0.10.0",
     "@types/node": "26.6.5",
-    "knip": "6.39.0",
+    "knip": "6.41.0",
     "oxfmt": "0.72.0",
     "oxlint": "1.87.0",
     "prettier": "3.9.10",
