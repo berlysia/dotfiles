@@ -116,21 +116,36 @@ run_list() {
   STDOUT=$(bash "$SCRIPT" list "${1:-$CASE/skills}" 2>"$CASE/err") && RC=0 || RC=$?
   STDERR=$(<"$CASE/err")
 }
-run_sync() {
-  STDOUT=$(GITHUB_REPOSITORY=berlysia/dotfiles GH_TOKEN=x GITHUB_STEP_SUMMARY="$CASE/summary" \
-    bash "$SCRIPT" sync "$CASE/skills" "$@" 2>"$CASE/err") && RC=0 || RC=$?
+# capture_split <command...>: runs the command, then moves the stdout lines that start with
+# "dashboard " into DASH, so that every expected STDOUT of the per-skill lines stays as it was.
+capture_split() {
+  local raw
+  raw=$("$@" 2>"$CASE/err") && RC=0 || RC=$?
   STDERR=$(<"$CASE/err")
+  DASH=$(grep '^dashboard ' <<<"$raw" || true)
+  STDOUT=$(grep -v '^dashboard ' <<<"$raw" || true)
+}
+run_sync() {
+  GITHUB_REPOSITORY=berlysia/dotfiles GH_TOKEN=x GITHUB_STEP_SUMMARY="$CASE/summary" \
+    capture_split bash "$SCRIPT" sync "$CASE/skills" "$@"
   SUMMARY=""
   if [[ -f $CASE/summary ]]; then SUMMARY=$(<"$CASE/summary"); fi
 }
 
-count_calls() { awk -v p="$1" 'index($0, p) { n++ } END { print n + 0 }' "$CASE/log"; }
-call_no() { awk -v p="$1" 'index($0, p) { sub(/:$/, "", $2); print $2; exit }' "$CASE/log"; }
+# The Dashboard is written through $WORK/dashboard.md and reopened with `gh issue reopen`; an
+# individual Issue is never reopened. count_calls / call_no / writes / body_of skip these calls and
+# dash_calls / dash_body see only them.
+count_calls() { awk -v p="$1" 'index($0, "dashboard.md") || index($0, "gh issue reopen") { next } index($0, p) { n++ } END { print n + 0 }' "$CASE/log"; }
+call_no() { awk -v p="$1" 'index($0, "dashboard.md") || index($0, "gh issue reopen") { next } index($0, p) { sub(/:$/, "", $2); print $2; exit }' "$CASE/log"; }
 writes() {
-  awk 'index($0, "gh issue create") || index($0, "gh issue edit") || index($0, "gh issue close") ||
+  awk 'index($0, "dashboard.md") || index($0, "gh issue reopen") { next }
+       index($0, "gh issue create") || index($0, "gh issue edit") || index($0, "gh issue close") ||
        index($0, "gh issue comment") || index($0, "gh label create") { n++ } END { print n + 0 }' "$CASE/log"
 }
 body_of() { cat "$CASE/stub/bodies/$(call_no "$1")"; }
+dash_calls() { awk -v p="$1" '(index($0, "dashboard.md") || index($0, "gh issue reopen")) && index($0, p) { n++ } END { print n + 0 }' "$CASE/log"; }
+dash_call_no() { awk -v p="$1" '(index($0, "dashboard.md") || index($0, "gh issue reopen")) && index($0, p) { sub(/:$/, "", $2); print $2; exit }' "$CASE/log"; }
+dash_body() { cat "$CASE/stub/bodies/$(dash_call_no "$1")"; }
 # every title (argv), body and comment written during the case is free of '@'
 assert_no_at() {
   local content
@@ -277,6 +292,29 @@ test_list_real_skills_dir() {
       (.repo | test("^[A-Za-z0-9][A-Za-z0-9_.-]*$")) and (.path | test("^[A-Za-z0-9_.][A-Za-z0-9_./-]*$")) and
       (.commit | test("^[0-9a-f]{40}$")) and (.license | test("^[A-Za-z0-9.+-]+$")))' <<<"$STDOUT")" \
     "list real .skills: every field passes its check"
+}
+
+# =================================================================================================
+# helpers (the split between individual Issues and the Dashboard)
+# =================================================================================================
+fake_sync() {
+  printf '%s\n' \
+    'CALL 1: gh issue create -R x --body-file /w/dashboard.md' \
+    'CALL 2: gh issue reopen 5' \
+    'CALL 3: gh issue create -R x --body-file /w/body.md' >>"$CASE/log"
+  printf 'open a\ndashboard create\n'
+}
+test_helpers_separate_dashboard_calls() {
+  new_case
+  capture_split fake_sync
+  assert_eq 1 "$(writes)" "helpers: writes skips the Dashboard calls"
+  assert_eq 1 "$(count_calls 'gh issue create')" "helpers: count_calls skips the Dashboard calls"
+  assert_eq 3 "$(call_no 'gh issue create')" "helpers: call_no skips the Dashboard calls"
+  assert_eq 2 "$(dash_calls 'gh issue')" "helpers: dash_calls counts create and reopen"
+  assert_eq 1 "$(dash_calls 'gh issue reopen')" "helpers: dash_calls counts reopen"
+  assert_eq 1 "$(dash_call_no 'gh issue create')" "helpers: dash_call_no finds the Dashboard create"
+  assert_eq "open a" "$STDOUT" "helpers: STDOUT keeps the per-skill lines"
+  assert_eq "dashboard create" "$DASH" "helpers: DASH holds the dashboard line"
 }
 
 # =================================================================================================
@@ -679,6 +717,441 @@ test_sync_compare_without_file_list_fails() {
   set_compare '{"status": "ahead"}'
   run_sync
   assert_eq "fail imozuru" "$STDOUT" "ahead without files: fail"
+}
+
+# =================================================================================================
+# dashboard
+# =================================================================================================
+# auth_issue <number json> <state> <closedAt|""> <body> <author login | null | none>
+auth_issue() {
+  jq -cn --argjson n "$1" --arg s "$2" --arg c "$3" --arg b "$4" --arg a "$5" \
+    '{number: $n, state: $s, closedAt: (if $c == "" then null else $c end), body: $b, title: "t"}
+     + (if $a == "none" then {} elif $a == "null" then {author: null} else {author: {login: $a, is_bot: true}} end)'
+}
+BOT=app/github-actions
+dash_issue() { auth_issue "$1" "$2" "$3" "$4" "$BOT"; }
+# prime: imozuru changed with the open Issue #5; runs once to learn the Dashboard body this state
+# builds (BUILT), then clears the log so that the next run_sync starts from call 1.
+prime() {
+  std_case
+  INDIV=$(issue_obj 5 OPEN "" "$(marker imozuru "$BASE" "$HEAD")")
+  set_issues "$INDIV"
+  run_sync
+  BUILT=$(dash_body 'gh issue create')
+  : >"$CASE/log"
+  rm -rf "$CASE/stub/bodies"
+}
+row_of() { grep -F -- "| \`$2\` |" <<<"$1" || true; }
+# kept_sync [--dry-run]: run_sync, but the Dashboard body built in the throwaway directory is copied
+# to $CASE/kept.md (the only way to see the body of a dry run).
+kept_sync_inner() {
+  (
+    # shellcheck source=/dev/null
+    source "$SCRIPT"
+    cleanup() {
+      # shellcheck disable=SC2154 # WORK is set by cmd_sync in the sourced script
+      cp -- "$WORK/dashboard.md" "$CASE/kept.md" 2>/dev/null || true
+      rm -rf -- "$WORK"
+    }
+    cmd_sync "$CASE/skills" "$@"
+  )
+}
+kept_sync() {
+  rm -f "$CASE/kept.md"
+  GITHUB_REPOSITORY=berlysia/dotfiles GH_TOKEN=x GITHUB_STEP_SUMMARY="$CASE/summary" \
+    capture_split kept_sync_inner "$@"
+}
+dash_argv() { grep -e dashboard.md -e 'gh issue reopen' "$CASE/log" || true; }
+
+test_dash_four_states_and_bad_records() {
+  new_case
+  set_labels '[{"name":"upstream-sync"}]'
+  add_skill aaa o1 r1 skills/a "$BASE" "$HEAD" "$(cmp_json ahead "$(files_json skills/a/x.md)")"
+  add_skill bbb o2 r2 skills/b "$BASE" "$HEAD" "$(cmp_json ahead "$(files_json skills/b/x.md)")"
+  add_skill ccc o3 r3 skills/c "$BASE" "$HEAD" "$(cmp_json identical '[]')"
+  add_skill ddd o4 r4 skills/d "$BASE" "$HEAD" "$(cmp_json identical '[]')"
+  route "repos/o4/r4/compare/$BASE...$HEAD" 404 'Not Found'
+  mkdir -p "$CASE/skills/bad"
+  printf 'MIT\n' >"$CASE/skills/bad/LICENSE"
+  write_skill -x "$(valid_line o r skills/x "$BASE" MIT)"
+  set_issues "$(issue_obj 5 OPEN "" "$(marker aaa "$BASE" "$HEAD")")" \
+    "$(issue_obj 7 CLOSED 2026-10-01T00:00:00Z "$(marker bbb "$BASE" "$HEAD")")"
+  run_sync
+  assert_eq "dashboard create" "$DASH" "dash states: create"
+  assert_eq 1 "$RC" "dash states: exit 1"
+  local body
+  body=$(dash_body 'gh issue create')
+  assert_eq '| `aaa` | `o1/r1` の `skills/a` | 変更あり | #5 |
+| `bad` | - | 失敗: LICENSE exists but SKILL.md has no '"'Derived from'"' line |  |
+| `bbb` | `o2/r2` の `skills/b` | 見送り | #7 |
+| `ccc` | `o3/r3` の `skills/c` | 最新 |  |
+| `ddd` | `o4/r4` の `skills/d` | 失敗: upstream compare failed (HTTP 404) |  |' "$(grep '^| `' <<<"$body")" "dash states: five rows by name"
+  assert_contains "$body" $'\n名前が規約外のスキル 1 件' "dash states: invalid name count"
+  assert_eq '<!-- upstream-sync dashboard -->' "$(head -n1 <<<"$body")" "dash states: marker first"
+  assert_contains "$(<"$CASE/log")" 'upstream-sync\ dashboard' "dash states: title"
+  assert_no_at "dash states"
+  assert_body_by_file "dash states"
+}
+test_dash_closed_number_follows_closed_at() {
+  std_case
+  set_issues "$(issue_obj 8 CLOSED 2026-10-01T00:00:00Z "$(marker imozuru "$OLD" "$HEAD")")" \
+    "$(issue_obj 9 CLOSED 2026-09-01T00:00:00Z "$(marker imozuru "$BASE" "$OLD")")"
+  run_sync
+  assert_eq "noop imozuru" "$STDOUT" "closed numbers: dismissed"
+  assert_contains "$(row_of "$(dash_body 'gh issue create')" imozuru)" "| 見送り | #8 |" "closed numbers: #8 by closedAt, not by size"
+}
+test_dash_failure_of_one_skill_stays_on_its_row() {
+  new_case
+  set_labels '[{"name":"upstream-sync"}]'
+  add_skill aaa o1 r1 skills/a "$BASE" "$HEAD" "$(cmp_json ahead "$(files_json skills/a/x.md)")"
+  add_skill bbb o2 r2 skills/b "$BASE" "$HEAD" "$(cmp_json ahead "$(files_json skills/b/x.md)")"
+  route "repos/o1/r1/compare/$BASE...$HEAD" 404 'Not Found'
+  run_sync
+  local body n
+  body=$(dash_body 'gh issue create')
+  n=$(call_no 'gh issue create')
+  assert_eq "| \`bbb\` | \`o2/r2\` の \`skills/b\` | 変更あり | #$((100 + n)) |" "$(row_of "$body" bbb)" "reason reset: B row has no reason of A"
+  assert_contains "$(row_of "$body" aaa)" "失敗: upstream compare failed (HTTP 404)" "reason reset: A row has its reason"
+}
+test_dash_only_invalid_names() {
+  new_case
+  set_labels '[{"name":"upstream-sync"}]'
+  write_skill -x "$(valid_line o r skills/x "$BASE" MIT)"
+  run_sync
+  assert_eq "dashboard create" "$DASH" "only invalid names: create"
+  assert_eq 1 "$RC" "only invalid names: exit 1"
+  local body
+  body=$(dash_body 'gh issue create')
+  assert_eq 0 "$(grep -c '^| `' <<<"$body" || true)" "only invalid names: empty table"
+  assert_contains "$body" "名前が規約外のスキル 1 件" "only invalid names: count line"
+  assert_contains "$body" "|---|---|---|---|" "only invalid names: header kept"
+}
+test_dash_issue_number_of_a_new_issue() {
+  std_case
+  run_sync
+  assert_eq "open imozuru" "$STDOUT" "new issue: stdout"
+  assert_eq "dashboard create" "$DASH" "new issue: dashboard create"
+  local n
+  n=$(call_no 'gh issue create')
+  assert_contains "$(row_of "$(dash_body 'gh issue create')" imozuru)" "| 変更あり | #$((100 + n)) |" "new issue: number from the create output"
+}
+test_dash_unparsable_create_output() {
+  local out
+  for out in 'https://github.com/o/r/issues/12abc' 'https://github.com/o/r/issues/' \
+    $'https://github.com/o/r/issues/5\nhttps://github.com/o/r/issues/6' '@x https://github.com/o/r/issues/5'; do
+    std_case
+    printf '%s' "$out" >"$CASE/stub/create_out"
+    run_sync
+    assert_contains "$(row_of "$(dash_body 'gh issue create')" imozuru)" "| 変更あり | 番号不明 |" "create output '${out%%$'\n'*}...': unknown"
+  done
+  std_case
+  printf '%s\n' 'https://github.com/o/r/issues/5' >"$CASE/stub/create_out"
+  run_sync
+  assert_contains "$(row_of "$(dash_body 'gh issue create')" imozuru)" "| 変更あり | #5 |" "create output with a trailing newline: #5"
+}
+test_dash_invalid_owner_is_a_failed_row() {
+  std_case
+  write_skill badowner "$(valid_line 'o@x' r skills/x "$BASE" MIT)"
+  run_sync
+  assert_eq "dashboard create" "$DASH" "owner with @: dashboard is still written"
+  local body
+  body=$(dash_body 'gh issue create')
+  assert_eq '| `badowner` | - | 失敗: owner/repo is not allowed |  |' "$(row_of "$body" badowner)" "owner with @: failed row, no upstream"
+  assert_not_contains "$body" "@" "owner with @: no @ in the body"
+  assert_no_at "owner with @"
+}
+test_dash_dry_run_shows_planned() {
+  std_case
+  kept_sync --dry-run
+  assert_eq "dashboard create" "$DASH" "dry-run body: create"
+  assert_contains "$(row_of "$(<"$CASE/kept.md")" imozuru)" "| 変更あり | 作成予定 |" "dry-run body: planned"
+  assert_eq 0 "$(writes)" "dry-run body: no writes"
+}
+test_dash_issue_list_asks_for_author() {
+  std_case
+  run_sync
+  local line
+  line=$(grep 'gh issue list' "$CASE/log")
+  assert_contains "$line" 'closedAt\,body\,author' "issue list: --json has author"
+}
+
+test_dash_live_326_shape_is_not_a_dashboard() {
+  std_case
+  set_issues "$(dash_issue 326 OPEN "" "$(marker imozuru "$BASE" "$HEAD")")"
+  run_sync
+  assert_eq "noop imozuru" "$STDOUT" "326 shape: the skill is judged as before"
+  assert_eq "dashboard create" "$DASH" "326 shape: a new dashboard"
+  assert_eq 0 "$(writes)" "326 shape: no write to the individual Issue"
+  assert_eq 1 "$(dash_calls 'gh issue create')" "326 shape: one dashboard create"
+  assert_eq 0 "$(dash_calls 'gh issue edit 326')" "326 shape: 326 not edited as a dashboard"
+}
+test_dash_noop_when_body_is_the_same() {
+  prime
+  set_issues "$INDIV" "$(dash_issue 20 OPEN "" "$BUILT")"
+  run_sync
+  assert_eq "dashboard noop" "$DASH" "same body: noop"
+  assert_eq 0 "$(dash_calls 'gh issue')" "same body: no dashboard write"
+  assert_eq 0 "$RC" "same body: exit 0"
+}
+test_dash_noop_ignores_crlf_and_trailing_newlines() {
+  prime
+  set_issues "$INDIV" "$(dash_issue 20 OPEN "" "${BUILT//$'\n'/$'\r\n'}"$'\r\n\r\n')"
+  run_sync
+  assert_eq "dashboard noop" "$DASH" "CRLF and extra newline: noop"
+}
+test_dash_update_when_edited_by_a_human() {
+  prime
+  set_issues "$INDIV" "$(dash_issue 20 OPEN "" "<!-- upstream-sync dashboard -->
+edited by a human")"
+  run_sync
+  assert_eq "dashboard update" "$DASH" "edited body: update"
+  assert_eq 1 "$(dash_calls 'gh issue edit 20')" "edited body: one edit"
+  assert_eq "$BUILT" "$(dash_body 'gh issue edit 20')" "edited body: the built body is written"
+}
+test_dash_candidates_need_the_bot_author() {
+  prime
+  local a
+  for a in berlysia app/github-actions-x github-actions null none; do
+    set_issues "$INDIV" "$(auth_issue 20 OPEN "" "$BUILT" "$a")"
+    : >"$CASE/log"
+    run_sync
+    assert_eq "dashboard create" "$DASH" "author '$a': not a candidate"
+    assert_eq 0 "$(dash_calls 'gh issue edit 20')" "author '$a': never written"
+  done
+  set_issues "$INDIV" "$(auth_issue 20 OPEN "" "$BUILT" berlysia)" "$(dash_issue 21 OPEN "" "$BUILT")"
+  : >"$CASE/log"
+  run_sync
+  assert_eq "dashboard noop" "$DASH" "a human's marker next to the bot's dashboard: no duplicate"
+}
+test_dash_human_closed_marker_is_not_reopened() {
+  prime
+  set_issues "$INDIV" "$(auth_issue 20 CLOSED 2026-10-01T00:00:00Z "$BUILT" berlysia)"
+  run_sync
+  assert_eq 0 "$(dash_calls 'gh issue reopen')" "human closed: no reopen"
+  assert_eq "dashboard create" "$DASH" "human closed: create"
+}
+test_dash_marker_must_be_exact_at_the_start() {
+  prime
+  local b
+  for b in " $BUILT" $'\n'"$BUILT" "<!-- upstream-sync dashboard -->x"; do
+    set_issues "$INDIV" "$(dash_issue 20 OPEN "" "$b")"
+    : >"$CASE/log"
+    run_sync
+    assert_eq "dashboard create" "$DASH" "marker variant '${b:0:12}': not a candidate"
+  done
+}
+test_dash_two_open_dashboards_fail() {
+  prime
+  set_issues "$INDIV" "$(dash_issue 20 OPEN "" "$BUILT")" "$(dash_issue 21 OPEN "" "$BUILT")"
+  run_sync
+  assert_eq "noop imozuru" "$STDOUT" "two dashboards: skills are done"
+  assert_eq "dashboard fail" "$DASH" "two dashboards: fail"
+  assert_eq 0 "$(dash_calls 'gh issue')" "two dashboards: nothing written"
+  assert_contains "$STDERR" "dashboard: more than one open dashboard" "two dashboards: stderr"
+  assert_eq 1 "$RC" "two dashboards: exit 1"
+}
+test_dash_reopen_the_latest_closed() {
+  prime
+  set_issues "$INDIV" "$(dash_issue 30 CLOSED 2026-09-01T00:00:00Z "<!-- upstream-sync dashboard -->
+old")" "$(dash_issue 31 CLOSED 2026-10-01T00:00:00Z "<!-- upstream-sync dashboard -->
+old")"
+  run_sync
+  assert_eq "dashboard reopen" "$DASH" "closed dashboards: reopen"
+  assert_eq 1 "$(dash_calls 'gh issue reopen 31')" "closed dashboards: the newest closedAt"
+  assert_eq 0 "$(dash_calls 'gh issue reopen 30')" "closed dashboards: not the older one"
+  assert_eq 1 "$(dash_calls 'gh issue edit 31')" "closed dashboards: then the body is compared and written"
+}
+test_dash_reopen_without_edit_when_same() {
+  prime
+  set_issues "$INDIV" "$(dash_issue 31 CLOSED 2026-10-01T00:00:00Z "$BUILT")"
+  run_sync
+  assert_eq "dashboard reopen" "$DASH" "closed, same body: reopen"
+  assert_eq 1 "$(dash_calls 'gh issue reopen')" "closed, same body: one reopen"
+  assert_eq 0 "$(dash_calls 'gh issue edit')" "closed, same body: no edit"
+  assert_eq 0 "$RC" "closed, same body: exit 0"
+}
+test_dash_individual_issues_are_never_reopened() {
+  std_case
+  set_issues "$(dash_issue 5 CLOSED 2026-10-01T00:00:00Z "$(marker imozuru "$BASE" "$HEAD")")"
+  run_sync
+  assert_eq 0 "$(dash_calls 'gh issue reopen')" "closed individual: no reopen"
+  assert_eq "dashboard create" "$DASH" "closed individual: dashboard create"
+}
+test_dash_reopen_failure_does_not_create() {
+  prime
+  set_issues "$INDIV" "$(dash_issue 31 CLOSED 2026-10-01T00:00:00Z "$BUILT")"
+  set_fail 'gh issue reopen'
+  run_sync
+  assert_eq "dashboard fail" "$DASH" "reopen fails: fail"
+  assert_eq 0 "$(dash_calls 'gh issue create')" "reopen fails: no create"
+  assert_eq 1 "$RC" "reopen fails: exit 1"
+}
+test_dash_edit_failure_after_reopen() {
+  prime
+  set_issues "$INDIV" "$(dash_issue 31 CLOSED 2026-10-01T00:00:00Z "<!-- upstream-sync dashboard -->
+old")"
+  set_fail 'gh issue edit'
+  run_sync
+  assert_eq "dashboard fail" "$DASH" "reopen ok, edit fails: fail"
+  assert_eq 1 "$(dash_calls 'gh issue reopen')" "reopen ok, edit fails: reopen was done"
+  assert_eq 1 "$RC" "reopen ok, edit fails: exit 1"
+}
+test_dash_edit_failure_keeps_individual_issues() {
+  prime
+  add_skill other o r skills/o "$BASE" "$HEAD" "$(cmp_json ahead "$(files_json skills/o/a.md)")"
+  set_issues "$INDIV" "$(dash_issue 20 OPEN "" "<!-- upstream-sync dashboard -->
+old")"
+  set_fail 'gh issue edit 20'
+  run_sync
+  assert_eq 1 "$(count_calls 'gh issue create')" "dashboard edit fails: the individual Issue was created first"
+  assert_eq "dashboard fail" "$DASH" "dashboard edit fails: fail"
+  assert_eq 1 "$RC" "dashboard edit fails: exit 1"
+}
+test_dash_gh_stderr_stays_out() {
+  local kind
+  for kind in create edit reopen label; do
+    prime
+    printf 'gh: @claude ghp_AAAA (HTTP 500)\n' >"$CASE/stub/fail_msg"
+    case $kind in
+      create) set_fail 'gh issue create' ;;
+      edit)
+        set_issues "$INDIV" "$(dash_issue 20 OPEN "" "<!-- upstream-sync dashboard -->
+old")"
+        set_fail 'gh issue edit'
+        ;;
+      reopen)
+        set_issues "$INDIV" "$(dash_issue 20 CLOSED 2026-10-01T00:00:00Z "$BUILT")"
+        set_fail 'gh issue reopen'
+        ;;
+      label)
+        set_labels '[]'
+        set_fail 'gh label create'
+        ;;
+    esac
+    run_sync
+    assert_eq "dashboard fail" "$DASH" "$kind failure: fail"
+    assert_contains "$STDERR" "dashboard: $(if [[ $kind == label ]]; then echo 'label setup'; else echo "dashboard $kind"; fi) failed (HTTP 500)" "$kind failure: fixed text with the status"
+    assert_not_contains "$STDERR$SUMMARY$STDOUT$DASH" "@claude" "$kind failure: no @claude"
+    assert_not_contains "$STDERR$SUMMARY$STDOUT$DASH" "ghp_" "$kind failure: no token text"
+  done
+}
+test_dash_does_not_disturb_the_skill_decisions() {
+  std_case
+  run_sync
+  local plain=$STDOUT
+  set_issues "$(dash_issue 20 OPEN "" "<!-- upstream-sync dashboard -->
+x")"
+  run_sync
+  assert_eq "$plain" "$STDOUT" "open dashboard: the skill's action is the same"
+  set_issues "$(dash_issue 20 CLOSED 2026-10-01T00:00:00Z "<!-- upstream-sync dashboard -->
+x")"
+  run_sync
+  assert_eq "$plain" "$STDOUT" "closed dashboard: the skill's action is the same"
+}
+
+test_dash_list_unavailable_fails() {
+  std_case
+  add_skill other o r skills/o "$BASE" "$HEAD" "$(cmp_json ahead "$(files_json skills/o/a.md)")"
+  jq -cn '[range(0; 200) | {number: (. + 1), state: "CLOSED", closedAt: "2026-01-01T00:00:00Z", body: "x"}]' >"$CASE/stub/issues.json"
+  run_sync
+  assert_eq $'fail imozuru\nfail other' "$STDOUT" "200 issues: skills fail"
+  assert_eq "dashboard fail" "$DASH" "200 issues: dashboard fail after them"
+  assert_eq 0 "$(dash_calls 'gh issue')" "200 issues: no dashboard write"
+  assert_contains "$STDERR" "dashboard: issue list is not available" "200 issues: reason"
+  assert_eq 1 "$RC" "200 issues: exit 1"
+  std_case
+  set_fail 'gh issue list'
+  run_sync
+  assert_eq "dashboard fail" "$DASH" "list fails: dashboard fail"
+  assert_eq 0 "$(dash_calls 'gh issue')" "list fails: no dashboard write"
+  assert_eq 1 "$RC" "list fails: exit 1"
+}
+test_dash_dry_run_decides_but_writes_nothing() {
+  std_case
+  set_labels '[]'
+  run_sync --dry-run
+  assert_eq "dashboard create" "$DASH" "dry-run: create"
+  assert_eq 0 "$(writes)" "dry-run: no writes"
+  assert_eq 0 "$(count_calls 'gh label')" "dry-run: no label call"
+  assert_eq 0 "$(dash_calls 'gh issue')" "dry-run: no dashboard write"
+  set_issues "$(dash_issue 31 CLOSED 2026-10-01T00:00:00Z "<!-- upstream-sync dashboard -->
+old")"
+  run_sync --dry-run
+  assert_eq "dashboard reopen" "$DASH" "dry-run closed: reopen"
+  assert_eq 0 "$(dash_calls 'gh issue reopen')" "dry-run closed: no reopen call"
+}
+test_dash_list_has_no_dashboard_line() {
+  std_case
+  run_list
+  assert_not_contains "$STDOUT" "dashboard" "list: no dashboard line"
+  assert_eq 0 "$RC" "list: exit 0"
+}
+test_dash_upstream_text_stays_out() {
+  std_case
+  local pre=skills/imozuru/
+  set_compare "$(jq -cn --arg pre "$pre" '{status: "ahead", files: [{filename: ($pre + "@claude-SENTINEL.md"), status: "added"}],
+    commits: [{sha: "1", commit: {message: "@claude-SENTINEL"}}]}')"
+  add_skill aaa o1 r1 skills/a "$BASE" "$HEAD" "$(cmp_json identical '[]')"
+  route "repos/o1/r1/compare/$BASE...$HEAD" 404 '@claude-SENTINEL'
+  run_sync
+  assert_eq "dashboard create" "$DASH" "sentinel: dashboard written"
+  local body argv
+  body=$(dash_body 'gh issue create')
+  argv=$(dash_argv)
+  assert_not_contains "$body" "@" "sentinel: no @ in the body"
+  assert_not_contains "$body" "SENTINEL" "sentinel: no upstream text in the body"
+  assert_not_contains "$body" "$HEAD" "sentinel: no SHA in the body"
+  assert_not_contains "$argv" "@" "sentinel: no @ in the dashboard argv"
+  assert_not_contains "$argv" "SENTINEL" "sentinel: no upstream text in the dashboard argv"
+  assert_not_contains "$argv" "$HEAD" "sentinel: no SHA in the dashboard argv"
+  assert_not_contains "$STDERR$SUMMARY" "SENTINEL" "sentinel: not in stderr or summary"
+}
+
+# ---- gates: the pure functions, called from a sourced copy of the script --------------------------
+test_dash_gate_reason_text() {
+  new_case
+  local out
+  out=$( (source "$SCRIPT"; dashboard_reason_text 'upstream compare failed (HTTP 404)') )
+  assert_eq 'upstream compare failed (HTTP 404)' "$out" "reason text: plain text passes"
+  for r in 'x @claude' 'a|b' 'a`b'; do
+    out=$( (source "$SCRIPT"; dashboard_reason_text "$r") )
+    assert_eq '理由を表示できません' "$out" "reason text '$r': replaced"
+  done
+}
+test_dash_gate_forbidden_character() {
+  new_case
+  local rc=0 f="$CASE/body.txt"
+  printf '%s\n%s\n' '<!-- upstream-sync dashboard -->' 'mail a@b' >"$f"
+  (source "$SCRIPT"; dashboard_has_forbidden 'upstream-sync dashboard' "$f") || rc=$?
+  assert_eq 0 "$rc" "gate: @ in the body"
+  printf '%s\n' '{"skill":"s","upstream":"o/r","path":"p","state":"changed","issue":"planned","reason":""}' >"$CASE/results.jsonl"
+  (source "$SCRIPT"; render_dashboard "$CASE/results.jsonl" 0) >"$CASE/clean.md"
+  rc=0
+  (source "$SCRIPT"; dashboard_has_forbidden 'a@b' "$CASE/clean.md") || rc=$?
+  assert_eq 0 "$rc" "gate: @ in the title"
+  rc=0
+  (source "$SCRIPT"; dashboard_has_forbidden 'upstream-sync dashboard' "$CASE/clean.md") || rc=$?
+  assert_eq 1 "$rc" "gate: a built body passes"
+}
+test_dash_render_cases() {
+  new_case
+  printf '%s\n' \
+    '{"skill":"b","upstream":"o/r","path":"p","state":"dismissed","issue":"","reason":""}' \
+    '{"skill":"a","upstream":"o/r","path":"p","state":"changed","issue":"unknown","reason":""}' \
+    '{"skill":"c","upstream":"","path":"","state":"failed","issue":"","reason":"x|y @z"}' >"$CASE/results.jsonl"
+  local body
+  body=$( (source "$SCRIPT"; render_dashboard "$CASE/results.jsonl" 0) )
+  assert_eq '| `a` | `o/r` の `p` | 変更あり | 番号不明 |
+| `b` | `o/r` の `p` | 見送り | 番号不明 |
+| `c` | - | 失敗: 理由を表示できません |  |' "$(grep '^| `' <<<"$body")" "render: unknown numbers and a reason outside the set"
+  assert_not_contains "$body" "名前が規約外" "render: no invalid-name line for 0"
+}
+test_dash_sourcing_has_no_effect() {
+  new_case
+  local out
+  out=$( (source "$SCRIPT") 2>&1 )
+  assert_eq "" "$out" "source: no output"
+  assert_eq 0 "$(wc -l <"$CASE/log")" "source: no gh call"
 }
 
 # =================================================================================================

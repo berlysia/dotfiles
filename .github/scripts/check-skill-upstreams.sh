@@ -35,8 +35,14 @@
 # except SHAs and file names that pass a whole-string character gate (evaluated in jq, one
 # element at a time); no "@" is ever written; gh stderr is kept in a file and only its HTTP
 # status number is used; stderr and the job summary carry only skill names, fixed text, SHAs and
-# status numbers. No `set -x`. Output is limited to Issue open / edit / comment / close and one
-# label; the repository is never written.
+# status numbers. No `set -x`. Output is limited to Issue open / edit / comment / close / reopen
+# and one label; the repository is never written.
+#
+# The dashboard Issue (one per repository, found by author + a marker at the start of its body)
+# is built only from per-skill result records: validated skill names, owner/repo/path, fixed state
+# names, the fixed reason texts above and Issue numbers. No SHA and no upstream text is in it, and
+# a last gate refuses to write a title or body that holds "@" or a reason outside a plain
+# character set. A failed dashboard write fails the job; the dashboard is never read back as state.
 
 # shellcheck disable=SC2016 # backticks and $ in single quotes are literal markdown, regex and jq text
 set -euo pipefail
@@ -69,14 +75,20 @@ usage() {
 RECORDS=""
 COLLECT_FAILED=0
 BAD_NAMES=()
+BAD_REASONS=()
+INVALID_NAME_COUNT=0
 
 # skill_error <label> <reason>: label is the skill name, or <invalid-name> so that a hostile
-# directory name never reaches the log.
+# directory name never reaches the log. BAD_REASONS[i] is the reason of BAD_NAMES[i]; a skill whose
+# name is not allowed is only counted.
 skill_error() {
   printf '%s: %s\n' "$1" "$2" >&2
   COLLECT_FAILED=1
   if [[ $1 != '<invalid-name>' ]]; then
     BAD_NAMES+=("$1")
+    BAD_REASONS+=("$2")
+  else
+    INVALID_NAME_COUNT=$((INVALID_NAME_COUNT + 1))
   fi
 }
 
@@ -201,8 +213,28 @@ ISSUE_FILTER='
     | { number: ($i.number | tostring), state: ($i.state // ""), closedAt: ($i.closedAt // ""),
         base: $m.base, head: $m.head }
   ] as $all
+  | ([ $all[] | select(.state == "CLOSED") ] | sort_by(.closedAt) | last) as $c
   | { opens: [ $all[] | select(.state == "OPEN") ],
-      closed_head: ([ $all[] | select(.state == "CLOSED") ] | sort_by(.closedAt) | last | (.head // null)) }
+      closed_head: ($c.head // null),
+      closed_number: ($c.number // null) }
+'
+
+# Dashboard Issues: the author is the Actions bot and the body starts with the dashboard marker.
+# A person with write access can add the label and the marker, so the author is the part that counts.
+# Input: the issue list. --arg bot: the author login.
+# shellcheck disable=SC2016 # jq variable, not shell
+DASH_FILTER='
+  [ .[]
+    | . as $i
+    | (if (.body | type) == "string" then .body else "" end) as $b
+    | ($i.author | if type == "object" then .login else null end | if type == "string" then . else "" end) as $login
+    | select($login == $bot)
+    | select($b | test("\\A<!-- upstream-sync dashboard -->(\\r?\\n|\\z)"))
+    | select(($i.number | tostring) | test("\\A[0-9]+\\z"))
+    | { number: ($i.number | tostring), state: ($i.state // ""), closedAt: ($i.closedAt // ""), body: $b }
+  ] as $all
+  | { opens: [ $all[] | select(.state == "OPEN") | { number, body } ],
+      closed: ([ $all[] | select(.state == "CLOSED") ] | sort_by(.closedAt) | last | if . == null then null else { number, body } end) }
 '
 
 # Which compare files are inputs to take in, and which names may be shown.
@@ -232,6 +264,18 @@ REPO=""
 ISSUES_FILE=""
 LABEL_READY=0
 ACTION=fail
+RESULTS_FILE=""
+RESULT_STATE=failed
+RESULT_ISSUE=""
+RESULT_REASON=""
+ISSUES_FAIL_REASON=""
+DASH_ACTION=fail
+DASH_BOT=app/github-actions
+DASH_TITLE="upstream-sync dashboard"
+DASH_MARKER="<!-- upstream-sync dashboard -->"
+# The only characters a failure reason may show in the dashboard; the reasons are fixed texts.
+REASON_RE="^[A-Za-z0-9 .,;:'()/_-]+\$"
+ISSUE_URL_RE='^https://[A-Za-z0-9.-]+/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/issues/([0-9]+)$'
 API_STATUS=""
 WRITE_STATUS=""
 FAILURES=0
@@ -261,7 +305,9 @@ summary() {
 }
 
 # fail_reason <skill> <fixed text>: skill is a validated name; the text never holds upstream data.
+# The last text is also what the dashboard shows for the skill (RESULT_REASON).
 fail_reason() {
+  RESULT_REASON=$2
   printf '%s: %s\n' "$1" "$2" >&2
   summary "- $1: $2"
 }
@@ -276,10 +322,11 @@ api_get() {
   return 1
 }
 
-# gh_write <gh args...>: a gh call that writes. On failure WRITE_STATUS holds the status.
+# gh_write <gh args...>: a gh call that writes. On failure WRITE_STATUS holds the status. The
+# stdout (the URL of a created Issue) is kept in $WORK/write.out and only read by issue_number_from_out.
 gh_write() {
   WRITE_STATUS=""
-  if gh "$@" >/dev/null 2>"$WORK/write.err"; then
+  if gh "$@" >"$WORK/write.out" 2>"$WORK/write.err"; then
     return 0
   fi
   WRITE_STATUS=$(http_status "$WORK/write.err")
@@ -301,6 +348,18 @@ ensure_label() {
       --description "Upstream of a derived skill changed" || return 1
   fi
   LABEL_READY=1
+}
+
+# issue_number_from_out: RESULT_ISSUE = the number in the URL `gh issue create` printed, or unknown.
+# The whole output must be one URL ending in /issues/<digits>; anything else is not trusted.
+issue_number_from_out() {
+  local out
+  out=$(<"$WORK/write.out")
+  if [[ $out =~ $ISSUE_URL_RE ]]; then
+    RESULT_ISSUE=${BASH_REMATCH[1]}
+  else
+    RESULT_ISSUE=unknown
+  fi
 }
 
 # build_body <skill> <owner> <repo> <path> <base> <head> <judge file> -> stdout
@@ -355,7 +414,9 @@ apply_action() {
         --label "$LABEL" --body-file "$WORK/body.md"; then
         ACTION=fail
         fail_reason "$skill" "issue create failed (HTTP $WRITE_STATUS)"
+        return 0
       fi
+      issue_number_from_out
       ;;
     update)
       build_body "$skill" "$owner" "$repo" "$path" "$base" "$head" "$WORK/judge.json" >"$WORK/body.md"
@@ -381,11 +442,15 @@ apply_action() {
   esac
 }
 
-# process_skill <skill> <owner> <repo> <path> <base>: sets ACTION to open|update|close|noop|fail.
+# process_skill <skill> <owner> <repo> <path> <base>: sets ACTION to open|update|close|noop|fail
+# and the result record fields RESULT_STATE / RESULT_ISSUE / RESULT_REASON for the dashboard.
 process_skill() {
   local skill=$1 owner=$2 repo=$3 path=$4 base=$5
-  local n_open open_num="" open_base="" open_head="" closed_head branch head status changed
+  local n_open open_num="" open_base="" open_head="" closed_head closed_num branch head status changed
   ACTION=fail
+  RESULT_STATE=failed
+  RESULT_ISSUE=""
+  RESULT_REASON=""
 
   if ! jq --arg s "$skill" "$ISSUE_FILTER" "$ISSUES_FILE" >"$WORK/state.json" 2>/dev/null; then
     fail_reason "$skill" "cannot read the issue list"
@@ -393,6 +458,7 @@ process_skill() {
   fi
   n_open=$(jq -r '.opens | length' "$WORK/state.json")
   closed_head=$(jq -r '.closed_head // ""' "$WORK/state.json")
+  closed_num=$(jq -r '.closed_number // ""' "$WORK/state.json")
   if ((n_open > 1)); then
     fail_reason "$skill" "more than one open issue; close all but one"
     return 0
@@ -471,6 +537,8 @@ process_skill() {
       fail_reason "$skill" "refusing to write a marker with a non-SHA value"
       return 0
     fi
+    RESULT_STATE=changed
+    RESULT_ISSUE=$open_num
     if ((n_open == 1)); then
       if [[ $open_base == "$base" && $open_head == "$head" ]]; then
         ACTION=noop
@@ -479,10 +547,14 @@ process_skill() {
       fi
     elif [[ $closed_head == "$head" ]]; then
       ACTION=noop
+      RESULT_STATE=dismissed
+      RESULT_ISSUE=$closed_num
     else
       ACTION=open
+      RESULT_ISSUE=planned
     fi
   else
+    RESULT_STATE=current
     if ((n_open == 1)); then
       ACTION=close
     else
@@ -491,6 +563,160 @@ process_skill() {
   fi
 
   apply_action "$skill" "$owner" "$repo" "$path" "$base" "$head" "$open_num"
+  if [[ $ACTION == fail ]]; then
+    RESULT_STATE=failed
+    RESULT_ISSUE=""
+  fi
+}
+
+# ---- dashboard -----------------------------------------------------------------------------------
+
+# write_result <skill> <owner/repo> <path> <state> <issue> <reason>: one line of $RESULTS_FILE. The
+# reason is kept only for a failed skill.
+write_result() {
+  local reason=""
+  if [[ $4 == failed ]]; then reason=$6; fi
+  jq -cn --arg skill "$1" --arg upstream "$2" --arg path "$3" --arg state "$4" --arg issue "$5" --arg reason "$reason" \
+    '{skill: $skill, upstream: $upstream, path: $path, state: $state, issue: $issue, reason: $reason}' >>"$RESULTS_FILE"
+}
+
+# dashboard_reason_text <reason>: the reason as it may be shown, or a fixed text when it holds a
+# character outside the plain set (the reasons are fixed texts, so this does not fire normally).
+dashboard_reason_text() {
+  if [[ $1 =~ $REASON_RE ]]; then
+    printf '%s' "$1"
+  else
+    printf '理由を表示できません'
+  fi
+}
+
+# dashboard_has_forbidden <title> <body file>: exit 0 when the title or the body holds "@". An
+# unreadable body counts as forbidden.
+dashboard_has_forbidden() {
+  local rc=0
+  if [[ $1 == *'@'* ]]; then
+    return 0
+  fi
+  grep -q -F -- '@' "$2" || rc=$?
+  [[ $rc -ne 1 ]]
+}
+
+# render_dashboard <results.jsonl> <invalid_name_count> -> stdout: the body. Same input, same body:
+# no time, no run id, no SHA (the records have no field for one).
+render_dashboard() {
+  local results=$1 invalid=$2 skill up_repo path state issue reason up status ref sep=$'\037'
+  printf '%s\n' "$DASH_MARKER"
+  printf '派生スキルの上流の状態です。毎週の実行で本文を作り直すため、手で編集しても次の実行で戻ります。先頭の行は消さないでください。見送るときは個別 Issue を閉じます。\n\n'
+  printf '| スキル | 上流 | 状態 | Issue |\n|---|---|---|---|\n'
+  while IFS=$sep read -r skill up_repo path state issue reason; do
+    [[ -n $skill ]] || continue
+    if [[ -n $up_repo ]]; then up="\`$up_repo\` の \`$path\`"; else up='-'; fi
+    ref=""
+    case $state in
+      current) status=最新 ;;
+      changed)
+        status=変更あり
+        if [[ $issue == planned ]]; then
+          ref=作成予定
+        elif [[ $issue =~ $NUM_RE ]]; then
+          ref="#$issue"
+        else
+          ref=番号不明
+        fi
+        ;;
+      dismissed)
+        status=見送り
+        if [[ $issue =~ $NUM_RE ]]; then ref="#$issue"; else ref=番号不明; fi
+        ;;
+      *) status="失敗: $(dashboard_reason_text "$reason")" ;;
+    esac
+    printf '| `%s` | %s | %s | %s |\n' "$skill" "$up" "$status" "$ref"
+  done < <(jq -rs --arg sep "$sep" 'sort_by(.skill) | .[] | [.skill, .upstream, .path, .state, (.issue // ""), (.reason // "")] | join($sep)' "$results")
+  if ((invalid > 0)); then
+    printf '\n名前が規約外のスキル %s 件\n' "$invalid"
+  fi
+}
+
+# same_body <file>: the dashboard body we built equals the file, ignoring CR and trailing newlines.
+same_body() {
+  local have want
+  have=$(tr -d '\r' <"$1")
+  want=$(tr -d '\r' <"$WORK/dashboard.md")
+  [[ $have == "$want" ]]
+}
+
+# sync_dashboard: after every skill. Sets DASH_ACTION to create|reopen|update|noop|fail. With
+# --dry-run it decides the action and writes nothing.
+sync_dashboard() {
+  local issues_ok=$1 n_open n_closed num="" current="$WORK/dashboard-current.md"
+  DASH_ACTION=fail
+  if ((issues_ok == 0)); then
+    # Without the list a dashboard cannot be found, and a second one would be created.
+    fail_reason dashboard "issue list is not available"
+    return 0
+  fi
+  render_dashboard "$RESULTS_FILE" "$INVALID_NAME_COUNT" >"$WORK/dashboard.md"
+  if dashboard_has_forbidden "$DASH_TITLE" "$WORK/dashboard.md"; then
+    fail_reason dashboard "dashboard body contains a forbidden character"
+    return 0
+  fi
+  if ! jq --arg bot "$DASH_BOT" "$DASH_FILTER" "$ISSUES_FILE" >"$WORK/dash.json" 2>/dev/null; then
+    fail_reason dashboard "cannot read the issue list"
+    return 0
+  fi
+  n_open=$(jq -r '.opens | length' "$WORK/dash.json")
+  n_closed=$(jq -r 'if .closed == null then 0 else 1 end' "$WORK/dash.json")
+
+  if ((n_open > 1)); then
+    fail_reason dashboard "more than one open dashboard; close all but one"
+    return 0
+  fi
+  if ((n_open == 1)); then
+    num=$(jq -r '.opens[0].number' "$WORK/dash.json")
+    jq -r '.opens[0].body' "$WORK/dash.json" >"$current"
+    if same_body "$current"; then DASH_ACTION=noop; else DASH_ACTION=update; fi
+  elif ((n_closed == 1)); then
+    num=$(jq -r '.closed.number' "$WORK/dash.json")
+    jq -r '.closed.body' "$WORK/dash.json" >"$current"
+    DASH_ACTION=reopen
+  else
+    DASH_ACTION=create
+  fi
+  if ((DRY_RUN == 1)); then
+    return 0
+  fi
+
+  case $DASH_ACTION in
+    create)
+      if ! ensure_label; then
+        DASH_ACTION=fail
+        fail_reason dashboard "label setup failed (HTTP $WRITE_STATUS)"
+        return 0
+      fi
+      if ! gh_write issue create -R "$REPO" --title "$DASH_TITLE" --label "$LABEL" --body-file "$WORK/dashboard.md"; then
+        DASH_ACTION=fail
+        fail_reason dashboard "dashboard create failed (HTTP $WRITE_STATUS)"
+      fi
+      ;;
+    reopen)
+      # A failed reopen must not fall through to create: the next run tries the reopen again.
+      if ! gh_write issue reopen "$num" -R "$REPO"; then
+        DASH_ACTION=fail
+        fail_reason dashboard "dashboard reopen failed (HTTP $WRITE_STATUS)"
+        return 0
+      fi
+      if ! same_body "$current" && ! gh_write issue edit "$num" -R "$REPO" --body-file "$WORK/dashboard.md"; then
+        DASH_ACTION=fail
+        fail_reason dashboard "dashboard edit failed (HTTP $WRITE_STATUS)"
+      fi
+      ;;
+    update)
+      if ! gh_write issue edit "$num" -R "$REPO" --body-file "$WORK/dashboard.md"; then
+        DASH_ACTION=fail
+        fail_reason dashboard "dashboard edit failed (HTTP $WRITE_STATUS)"
+      fi
+      ;;
+  esac
 }
 
 cmd_sync() {
@@ -515,12 +741,16 @@ cmd_sync() {
   WORK=$(mktemp -d)
   trap cleanup EXIT
 
+  RESULTS_FILE="$WORK/results.jsonl"
+  : >"$RESULTS_FILE"
   collect_records "$skills_dir"
-  local bad skill owner repo path commit sorted n_issues
+  local bad skill owner repo path commit sorted n_issues i
   summary "## skill-upstreams sync"
-  for bad in "${BAD_NAMES[@]+"${BAD_NAMES[@]}"}"; do
+  for ((i = 0; i < ${#BAD_NAMES[@]}; i++)); do
+    bad=${BAD_NAMES[i]}
     printf 'fail %s\n' "$bad"
     summary "- $bad: fail (invalid record)"
+    write_result "$bad" "" "" failed "" "${BAD_REASONS[i]}"
     FAILURES=$((FAILURES + 1))
   done
   if ((COLLECT_FAILED != 0 && ${#BAD_NAMES[@]} == 0)); then
@@ -531,17 +761,20 @@ cmd_sync() {
   ISSUES_FILE="$WORK/issues.json"
   local issues_ok=1
   if ! gh issue list -R "$REPO" --label "$LABEL" --state all --limit "$ISSUE_LIMIT" \
-    --json number,state,closedAt,body >"$ISSUES_FILE" 2>"$WORK/issues.err"; then
-    fail_reason "all" "issue list failed (HTTP $(http_status "$WORK/issues.err"))"
+    --json number,state,closedAt,body,author >"$ISSUES_FILE" 2>"$WORK/issues.err"; then
+    ISSUES_FAIL_REASON="issue list failed (HTTP $(http_status "$WORK/issues.err"))"
+    fail_reason "all" "$ISSUES_FAIL_REASON"
     issues_ok=0
   else
     n_issues=$(jq -r 'if type == "array" then length else -1 end' "$ISSUES_FILE" 2>/dev/null || echo -1)
     if ((n_issues < 0)); then
-      fail_reason "all" "issue list is not a JSON array"
+      ISSUES_FAIL_REASON="issue list is not a JSON array"
+      fail_reason "all" "$ISSUES_FAIL_REASON"
       issues_ok=0
     elif ((n_issues >= ISSUE_LIMIT)); then
       # Matching issues may have been cut off: a duplicate would be opened.
-      fail_reason "all" "issue list reached the $ISSUE_LIMIT-item limit"
+      ISSUES_FAIL_REASON="issue list reached the $ISSUE_LIMIT-item limit"
+      fail_reason "all" "$ISSUES_FAIL_REASON"
       issues_ok=0
     fi
   fi
@@ -550,15 +783,26 @@ cmd_sync() {
     [[ -n $skill ]] || continue
     if ((issues_ok == 0)); then
       ACTION=fail
+      RESULT_STATE=failed
+      RESULT_ISSUE=""
+      RESULT_REASON=$ISSUES_FAIL_REASON
     else
       process_skill "$skill" "$owner" "$repo" "$path" "$commit"
     fi
     printf '%s %s\n' "$ACTION" "$skill"
     summary "- $skill: $ACTION"
+    write_result "$skill" "$owner/$repo" "$path" "$RESULT_STATE" "$RESULT_ISSUE" "$RESULT_REASON"
     if [[ $ACTION == fail ]]; then
       FAILURES=$((FAILURES + 1))
     fi
   done < <(printf '%s' "$sorted" | jq -r '.[] | [.skill, .owner, .repo, .path, .commit] | @tsv')
+
+  sync_dashboard "$issues_ok"
+  printf 'dashboard %s\n' "$DASH_ACTION"
+  summary "- dashboard: $DASH_ACTION"
+  if [[ $DASH_ACTION == fail ]]; then
+    FAILURES=$((FAILURES + 1))
+  fi
 
   if ((FAILURES > 0)); then
     exit 1
@@ -567,11 +811,14 @@ cmd_sync() {
 
 # ---- main ----------------------------------------------------------------------------------------
 
-[[ $# -ge 1 ]] || usage
-cmd=$1
-shift
-case $cmd in
-  list) cmd_list "$@" ;;
-  sync) cmd_sync "$@" ;;
-  *) usage ;;
-esac
+# Only when run directly: the tests source this file to call the pure functions above.
+if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
+  [[ $# -ge 1 ]] || usage
+  cmd=$1
+  shift
+  case $cmd in
+    list) cmd_list "$@" ;;
+    sync) cmd_sync "$@" ;;
+    *) usage ;;
+  esac
+fi
