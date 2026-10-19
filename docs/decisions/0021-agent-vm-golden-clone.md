@@ -60,6 +60,10 @@ OrbStack 2.2.3 では、`orb clone` は copy-on-write で 1 秒未満で終わ�
 16. 識別子: clone 先の machine-id は、空にした `/etc/machine-id` から初回起動で作られる（実測。2 台の clone で別の値になった）。first boot の扱いで失敗する unit は増えない（失敗する 2 つは既存の machine と同じ）。golden に SSH の host key は無い（image に sshd が無い）。cloud-init の instance は clone 先でも golden の名前のまま 1 つで、per-instance の module は再実行されない（実測、R2 は顕在化していない）
 17. 失敗時の扱い: `orb clone` が失敗しても、名前で machine を消さない（同名の machine を誤って消さないため）。sentinel が残り、次の起動が回収する。golden の作成直後の検査が恒常的に落ちる環境（OrbStack の設定の扱いが変わった場合など）では、起動のたびに golden の作り直しを試みて同じところで止まる。止まるたびに回復手順（`agent-vm golden rm` または `AGENT_VM=off`）を示す。`agent-vm golden rm` は `cmd_rm` と同じく確認を求める
 
+## Amended by
+
+- `docs/decisions/0034-agent-vm-opt-in.md` (2026-10-19) — VM 経由は opt-in になり、`AGENT_VM` は廃止した（ADR-0018 K10 の改訂）。R1 と 17 項の回復手順の `AGENT_VM=off` は、「agent-vm を通さずに `claude` / `codex` を直接打つ」と読み替える
+
 ## References
 
 - `git show 52dc6fd447:docs/plans/agent-vm/golden-clone/`（`spec.md` / `research.md` / `plan-1.md` / `plan-2.md`）

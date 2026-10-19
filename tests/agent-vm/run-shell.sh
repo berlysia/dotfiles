@@ -20,26 +20,31 @@ shell_flags() { # shell -> extra argv to insert before -c
   case "$1" in zsh) printf '%s\n' -f ;; esac
 }
 
-check_shell() { # shell
-  local sh=$1 log
-  log="$TMP_BASE/$sh.log"
-  : >"$log"
+check_case() { # shell script expected-log description
+  local sh=$1 script=$2 expected=$3 desc=$4 log="$TMP_BASE/$1.log"
   local -a flags=(); IFS=' ' read -r -a flags <<<"$(shell_flags "$sh")"
-  STUB_LOG="$log" "$sh" ${flags[@]+"${flags[@]}"} -c ". '$FUNCS'; claude -p hi; codex; AGENT_VM=off claude --version"
-  assert_contains "$(cat "$log")" "agent-vm claude -p hi" "$sh: claude goes through agent-vm"
-  assert_contains "$(cat "$log")" "agent-vm codex" "$sh: codex goes through agent-vm"
-  assert_contains "$(cat "$log")" "claude --version" "$sh: AGENT_VM=off runs host claude"
-  assert_not_contains "$(cat "$log")" "agent-vm claude --version" "$sh: AGENT_VM=off bypasses agent-vm"
+  : >"$log"
+  STUB_LOG="$log" "$sh" ${flags[@]+"${flags[@]}"} -c ". '$FUNCS'; $script"
+  assert_eq "$expected" "$(cat "$log")" "$sh: $desc"
 }
-check_without_launcher() { # shell: without agent-vm on PATH the functions are not defined
+check_shell() { # shell
+  local sh=$1
+  check_case "$sh" "claude -p hi" "claude -p hi" "claude is the host binary"
+  check_case "$sh" "codex --help" "codex --help" "codex is the host binary"
+  check_case "$sh" "vclaude -p hi" "agent-vm claude -p hi" "vclaude goes through agent-vm"
+  check_case "$sh" "vcodex" "agent-vm codex" "vcodex goes through agent-vm"
+  check_case "$sh" "AGENT_VM=on claude --version" "claude --version" "AGENT_VM is ignored by claude"
+  check_case "$sh" "AGENT_VM=off vclaude --version" "agent-vm claude --version" "AGENT_VM is ignored by vclaude"
+}
+check_without_launcher() { # shell: without agent-vm on PATH vclaude / vcodex are not defined
   local sh=$1 log bin
   log="$TMP_BASE/$sh-nolauncher.log"
   bin="$TMP_BASE/bin-$sh"
   mkdir -p "$bin"; cp "$TEST_DIR/stubs/claude" "$bin/claude"
   : >"$log"
   local -a flags=(); IFS=' ' read -r -a flags <<<"$(shell_flags "$sh")"
-  STUB_LOG="$log" PATH="$bin:/usr/bin:/bin" "$sh" ${flags[@]+"${flags[@]}"} -c ". '$FUNCS'; claude -p hi"
-  assert_eq "claude -p hi" "$(cat "$log")" "$sh: no launcher -> plain claude"
+  STUB_LOG="$log" PATH="$bin:/usr/bin:/bin" "$sh" ${flags[@]+"${flags[@]}"} -c ". '$FUNCS'; if command -v vclaude >/dev/null; then echo 'vclaude defined' >>\"\$STUB_LOG\"; fi; claude -p hi"
+  assert_eq "claude -p hi" "$(cat "$log")" "$sh: no launcher -> vclaude undefined, plain claude"
 }
 
 check_shell bash
