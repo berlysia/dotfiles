@@ -53,6 +53,7 @@ apply は未掲載のスキルを追記するだけで、行を消さない。
 - [x] koncise
 - [x] tanteki
 - [x] yomiyasu
+- [x] ja-fact-preservation
 
 ## External
 
