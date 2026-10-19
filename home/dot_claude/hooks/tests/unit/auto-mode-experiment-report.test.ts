@@ -480,12 +480,16 @@ describe("parseArgs", () => {
 });
 
 describe("replayOne", () => {
-  it("runs auto-approve.ts in isolation and leaves the real decisions log alone", async () => {
+  // The verdict is asserted in tests/perf/auto-mode-replay.test.ts: the child
+  // process does not get the preload, so it parses under the production
+  // 100 ms budget and can give up and deny when the parallel unit run loads
+  // the CPU. Only the isolation is checked here.
+  it("leaves the real decisions log alone", async () => {
     const real = join(homedir(), ".claude", "logs", "decisions.jsonl");
     const before = existsSync(real) ? statSync(real) : null;
     const dir = mkdtempSync(join(tmpdir(), "replay-test-"));
     try {
-      const outcome = await replayOne({
+      await replayOne({
         id: "toolu_test",
         name: "Bash",
         input: { command: "ls" },
@@ -493,10 +497,6 @@ describe("replayOne", () => {
         sessionId: "s1",
         transcriptPath: join(dir, "t.jsonl"),
       });
-      ok(
-        ["allow", "pass"].includes(outcome.verdict.kind),
-        outcome.verdict.kind,
-      );
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
