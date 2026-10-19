@@ -244,4 +244,4 @@ map.md を下の書式で作り、**問い**と、答えるのに要る**主張*
 - 有料の論文を回避する手段（海賊版サイト等）は使わない。届かなかったものとして報告する
 - 落とした原文は手元で読むための写し。再配布はしない
 
-Derived from [MaryCache/imozuru](https://github.com/MaryCache/imozuru) (`skills/imozuru`) at commit `bfd99e5` (MIT). See `LICENSE` in this directory.
+Derived from [MaryCache/imozuru](https://github.com/MaryCache/imozuru) (`skills/imozuru`) at commit `bfd99e5e72d8e8ec3297a71fafa1eafbb49787b2` (MIT). See `LICENSE` in this directory.

@@ -192,4 +192,4 @@ To change the three.js version, replace the version number in all four URLs of t
 
 ---
 
-Derived from [DreambigOu/ELI5](https://github.com/DreambigOu/ELI5) at commit `a766623` (MIT). See `LICENSE` in this directory.
+Derived from [DreambigOu/ELI5](https://github.com/DreambigOu/ELI5) (`skills/eli5`) at commit `a766623b062331fdde53467001379b4ddf3acc2f` (MIT). See `LICENSE` in this directory.

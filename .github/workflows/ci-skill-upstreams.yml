@@ -1,0 +1,44 @@
+name: skill-upstreams Tests
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - ".skills/**"
+      - ".github/scripts/check-skill-upstreams.sh"
+      - "tests/check-skill-upstreams/**"
+      - ".github/workflows/ci-skill-upstreams.yml"
+      - ".github/workflows/skill-upstreams.yml"
+      - ".github/workflows/status-check.yml"
+  pull_request:
+    branches: [master, main]
+    paths:
+      - ".skills/**"
+      - ".github/scripts/check-skill-upstreams.sh"
+      - "tests/check-skill-upstreams/**"
+      - ".github/workflows/ci-skill-upstreams.yml"
+      - ".github/workflows/skill-upstreams.yml"
+      - ".github/workflows/status-check.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: skill-upstreams tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The tests use a stub gh and never reach the network or any secret.
+      - name: Run skill-upstreams tests
+        run: bash tests/check-skill-upstreams/run.sh
+      # Fails when a derived skill's "Derived from" line or LICENSE is missing or malformed.
+      - name: Check derived skill records
+        run: bash .github/scripts/check-skill-upstreams.sh list .skills

@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# Test stub standing in for the real gh. Records every call, copies the content of --body-file at
+# call time, and answers from files that tests/check-skill-upstreams/run.sh writes per case.
+#
+# STUB_DIR  routes     tab-separated "<api path>\t<status>\t<file>"; the last line for a path wins.
+#                      status 200 prints the file; any other status prints "gh: <file content> (HTTP <status>)" to
+#                      stderr and exits 1. A path with no route is a 404.
+#           issues.json answer to `gh issue list` (default [])
+#           labels.json answer to `gh label list` (default [])
+#           fail        one substring per line; a call whose argv contains one of them fails with exit 1
+#           bodies/<n>  content of the --body-file of call n
+# STUB_LOG  one line per call: "CALL <n>: gh <argv, %q-quoted>"
+# shellcheck disable=SC2154 # STUB_DIR and STUB_LOG are exported by tests/check-skill-upstreams/run.sh
+set -u
+n=$(($(wc -l <"$STUB_LOG") + 1))
+line=gh
+for arg in "$@"; do
+  line+=" $(printf '%q' "$arg")"
+done
+printf 'CALL %s: %s\n' "$n" "$line" >>"$STUB_LOG"
+
+mkdir -p "$STUB_DIR/bodies"
+prev=""
+for arg in "$@"; do
+  if [[ $prev == --body-file ]]; then
+    cp -- "$arg" "$STUB_DIR/bodies/$n"
+  fi
+  prev=$arg
+done
+
+if [[ -f $STUB_DIR/fail ]]; then
+  while IFS= read -r pattern || [[ -n $pattern ]]; do
+    if [[ -n $pattern && $line == *"$pattern"* ]]; then
+      echo "gh: injected failure ::error::x (HTTP 500)" >&2
+      exit 1
+    fi
+  done <"$STUB_DIR/fail"
+fi
+
+case ${1:-} in
+  api)
+    route=""
+    if [[ -f $STUB_DIR/routes ]]; then
+      route=$(ROUTE_PATH=${2:-} awk -F'\t' '$1 == ENVIRON["ROUTE_PATH"] { r = $2 "\t" $3 } END { if (r != "") print r }' "$STUB_DIR/routes")
+    fi
+    if [[ -z $route ]]; then
+      echo "gh: Not Found (HTTP 404)" >&2
+      exit 1
+    fi
+    status=${route%%$'\t'*}
+    file=${route#*$'\t'}
+    if [[ $status == 200 ]]; then
+      cat -- "$file"
+      exit 0
+    fi
+    printf 'gh: %s (HTTP %s)\n' "$(cat -- "$file")" "$status" >&2
+    exit 1
+    ;;
+  issue)
+    case ${2:-} in
+      list)
+        if [[ -f $STUB_DIR/issues.json ]]; then cat "$STUB_DIR/issues.json"; else echo '[]'; fi
+        ;;
+      create) echo "https://github.com/stub/stub/issues/99" ;;
+    esac
+    ;;
+  label)
+    case ${2:-} in
+      list)
+        if [[ -f $STUB_DIR/labels.json ]]; then cat "$STUB_DIR/labels.json"; else echo '[]'; fi
+        ;;
+    esac
+    ;;
+esac
+exit 0
