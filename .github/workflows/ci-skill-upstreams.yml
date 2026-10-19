@@ -7,6 +7,8 @@ on:
       - ".skills/**"
       - ".github/scripts/check-skill-upstreams.sh"
       - "tests/check-skill-upstreams/**"
+      - ".github/scripts/check-skill-refs.sh"
+      - "tests/check-skill-refs/**"
       - ".github/workflows/ci-skill-upstreams.yml"
       - ".github/workflows/skill-upstreams.yml"
       - ".github/workflows/status-check.yml"
@@ -16,6 +18,8 @@ on:
       - ".skills/**"
       - ".github/scripts/check-skill-upstreams.sh"
       - "tests/check-skill-upstreams/**"
+      - ".github/scripts/check-skill-refs.sh"
+      - "tests/check-skill-refs/**"
       - ".github/workflows/ci-skill-upstreams.yml"
       - ".github/workflows/skill-upstreams.yml"
       - ".github/workflows/status-check.yml"
@@ -42,3 +46,9 @@ jobs:
       # Fails when a derived skill's "Derived from" line or LICENSE is missing or malformed.
       - name: Check derived skill records
         run: bash .github/scripts/check-skill-upstreams.sh list .skills
+      # Pure bash on the checked-out files: no network, no secret.
+      - name: Run skill-refs tests
+        run: bash tests/check-skill-refs/run.sh
+      # Fails on a broken cross-skill reference, a role skill outside its allowlist, or a stray symlink.
+      - name: Check skill references
+        run: bash .github/scripts/check-skill-refs.sh .skills
