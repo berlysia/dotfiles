@@ -98,15 +98,22 @@ plan に `## テスト計画 (ISO 25010)` を設け、関連する品質特性�
 
 ## Executive Summary（レビュー依頼時 MANDATORY）
 
-自動レビュー + トリアージが済んだら、承認を依頼する応答の冒頭に `## Executive Summary (Review Request)` を置く。各フィールド 1-3 行、該当なしは `N/A`。
+自動レビュー + トリアージが済んだら、承認を依頼する応答の冒頭に `## Executive Summary (Review Request)` を置く。どの項目も文書（と元のオーダー）の記述から写し、無い主張を足さない。無ければ `N/A`。先頭の 5 項目は、この順に前の項目を受けて 1-2 行ずつ書く。
 
-- **Goal** / **Proposed Approach** / **Experience Delta**（変更前→変更後）/ **Scope**（最大 5 件）
-- **Key Decisions**（採用と却下した代替案）/ **Risks / Unknowns**
+- **前提**: plan-N.md は親 spec の K-id / Scope、spec.md と単層 plan.md は元のオーダーの引用
+- **目指す状態**: Goal（plan-N.md は担う K の完了像）
+- **今の状態**: research.md で観察した現状
+- **やり方**: 方針と Tasks の順、途中の確認点
+- **確かめ方**: テスト計画の「入力 → 期待結果」の主なもの（spec.md は選んだ品質特性）
+
+続けて各 1-3 行:
+
+- **Scope**（最大 5 件）/ **Key Decisions**（採用と却下した代替案）/ **Risks / Unknowns**
 - **Review Status**: verdict / reviewers / hash（auto-review marker から）
 - **Open Questions**
 - **Next Action**: 続けて出す承認の質問で文書を選ぶ / 議論したいときは Esc でキャンセルしてチャットし、済んだら `approve` / 追加修正を依頼する
 
-Experience Delta が Goal の達成に直結しているか自己検証する。自動レビューを通さずに `verdict=pass` と書かない。
+確かめ方の各行が目指す状態のどれを確かめるかを自己検証する。自動レビューを通さずに `verdict=pass` と書かない。
 
 ## Scope Guard
 

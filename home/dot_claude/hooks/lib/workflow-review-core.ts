@@ -876,9 +876,12 @@ export function buildSummaryReminder(planPath: string): string {
     "You MUST present the following Executive Summary format in your next response to the user:",
     "",
     "## Executive Summary (Review Request)",
-    "- **Goal**: <plan.md の目的を 1 行で>",
-    "- **Proposed Approach**: <採用する方針の本質を 1-3 行で>",
-    "- **Experience Delta**: <この変更で体験がどう変わるか。変更前→変更後の具体的な違いを 1-2 行で>",
+    "- **前提**: <plan-N.md は親 spec の K-id / Scope、spec.md と単層 plan.md は元のオーダーの引用>",
+    "- **目指す状態**: <Goal。plan-N.md は担う K の完了像>",
+    "- **今の状態**: <research.md で観察した現状>",
+    "- **やり方**: <方針と Tasks の順、途中の確認点>",
+    "- **確かめ方**: <テスト計画の「入力 → 期待結果」の主なもの。spec.md は選んだ品質特性>",
+    "(先頭の 5 項目はこの順に、前の項目を受けて 1-2 行ずつ書く)",
     "- **Scope**: <変更予定ファイル/モジュールを最大5件>",
     "- **Key Decisions**: <採用した設計判断と、却下した代替案を1-2行ずつ>",
     "- **Risks / Unknowns**: <既知リスク・未検証の前提・影響範囲の広い箇所>",
@@ -886,7 +889,7 @@ export function buildSummaryReminder(planPath: string): string {
     "- **Open Questions**: <ユーザー判断を仰ぎたい点（なければ N/A）>",
     "- **Next Action**: 続けて出す承認の質問で文書を選んでください / 議論したいときは Esc でキャンセルしてチャットし、済んだら `approve` / 追加修正を依頼してください",
     "",
-    "Fill each field from plan.md content. Do NOT skip any field (use N/A if not applicable).",
+    "Copy each field from the document and the original order; 無い主張を足さない. Do NOT skip any field (use N/A if not applicable).",
   ].join("\n");
 }
 

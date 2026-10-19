@@ -414,6 +414,39 @@ describe("isReviewCompletePendingApproval", () => {
 });
 
 describe("buildSummaryReminder", () => {
+  const EXPECTED_LABELS = [
+    "前提",
+    "目指す状態",
+    "今の状態",
+    "やり方",
+    "確かめ方",
+    "Scope",
+    "Key Decisions",
+    "Risks / Unknowns",
+    "Review Status",
+    "Open Questions",
+    "Next Action",
+  ];
+
+  // Repo root = five levels up from this test file's directory.
+  const workflowMdPath = fileURLToPath(
+    new URL(
+      "../../../../../home/dot_claude/rules/workflow.md",
+      import.meta.url,
+    ),
+  );
+  const workflowSummarySection = (): string => {
+    const md = readFileSync(workflowMdPath, "utf-8");
+    const start = md.indexOf("## Executive Summary");
+    const end = md.indexOf("\n## ", start + 1);
+    return md.slice(start, end === -1 ? undefined : end);
+  };
+  const lineStartingWith = (text: string, label: string): string => {
+    const line = text.split("\n").find((l) => l.includes(`**${label}**`));
+    ok(line !== undefined, `line for ${label} not found`);
+    return line;
+  };
+
   it("includes MANDATORY instruction and Executive Summary template", () => {
     const result = buildSummaryReminder("/tmp/sessions/abc/plan.md");
     ok(result.includes("MANDATORY"));
@@ -421,17 +454,76 @@ describe("buildSummaryReminder", () => {
     ok(result.includes("/tmp/sessions/abc/plan.md"));
   });
 
-  it("includes all required fields from workflow.md template", () => {
+  it("lists the 11 labels in the narrative order", () => {
     const result = buildSummaryReminder("/tmp/plan.md");
-    ok(result.includes("**Goal**"));
-    ok(result.includes("**Proposed Approach**"));
-    ok(result.includes("**Experience Delta**"));
-    ok(result.includes("**Scope**"));
-    ok(result.includes("**Key Decisions**"));
-    ok(result.includes("**Risks / Unknowns**"));
-    ok(result.includes("**Review Status**"));
-    ok(result.includes("**Open Questions**"));
-    ok(result.includes("**Next Action**"));
+    const indices = EXPECTED_LABELS.map((label) =>
+      result.indexOf(`**${label}**`),
+    );
+    for (const [i, index] of indices.entries()) {
+      ok(index >= 0, `missing label: ${EXPECTED_LABELS[i]}`);
+      if (i > 0) {
+        ok(index > indices[i - 1]!, `out of order: ${EXPECTED_LABELS[i]}`);
+      }
+    }
+  });
+
+  it("does not contain the retired Goal / Proposed Approach / Experience Delta labels", () => {
+    const result = buildSummaryReminder("/tmp/plan.md");
+    ok(!result.includes("**Goal**"));
+    ok(!result.includes("**Proposed Approach**"));
+    ok(!result.includes("**Experience Delta**"));
+  });
+
+  it("carries the per-layer source words in both the hook output and workflow.md", () => {
+    const sources: Record<string, string[]> = {
+      前提: ["親 spec", "オーダー"],
+      目指す状態: ["Goal", "K"],
+      確かめ方: ["入力 → 期待", "品質特性"],
+    };
+    const hook = buildSummaryReminder("/tmp/plan.md");
+    const md = workflowSummarySection();
+    for (const [label, words] of Object.entries(sources)) {
+      for (const [name, text] of [
+        ["hook", hook],
+        ["workflow.md", md],
+      ] as const) {
+        const line = lineStartingWith(text, label);
+        for (const word of words) {
+          ok(line.includes(word), `${name} ${label} line lacks ${word}`);
+        }
+      }
+    }
+  });
+
+  it("tells the model to copy from the document and not to add claims", () => {
+    const result = buildSummaryReminder("/tmp/plan.md");
+    ok(result.includes("無い主張を足さない"));
+    ok(result.includes("N/A"));
+  });
+
+  it("keeps the Review Status and Next Action lines unchanged", () => {
+    const result = buildSummaryReminder("/tmp/plan.md");
+    strictEqual(
+      lineStartingWith(result, "Review Status"),
+      "- **Review Status**: verdict / reviewers / hash from auto-review marker",
+    );
+    strictEqual(
+      lineStartingWith(result, "Next Action"),
+      "- **Next Action**: 続けて出す承認の質問で文書を選んでください / 議論したいときは Esc でキャンセルしてチャットし、済んだら `approve` / 追加修正を依頼してください",
+    );
+  });
+
+  it("does not use wording that reads as already approved", () => {
+    ok(!buildSummaryReminder("/tmp/plan.md").includes("approved"));
+  });
+
+  it("matches the label sequence of the workflow.md Executive Summary section", () => {
+    // Every bold span in the section is an item label, so an extra or a
+    // leftover label (e.g. a retired **Goal**) breaks the equality.
+    const labels = [
+      ...workflowSummarySection().matchAll(/\*\*([^*]+)\*\*/g),
+    ].map((m) => m[1]);
+    deepStrictEqual(labels, EXPECTED_LABELS);
   });
 });
 
