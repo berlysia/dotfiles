@@ -26,10 +26,13 @@ refreshPeriod = "168h" # 1 week
 {{- if not (and (kindIs "map" $recallTool) (eq (toString (index $recallTool "version")) $recallPluginVersion)) }}
 {{-   fail (printf "claude-recall: mise pins %v but the plugin in .chezmoiexternal.toml.tmpl is %s. recovery: Renovate's claude-recall PR should change both this file and the mise entry, so check that the PR has both. If one is missing, keep the mise entry in table form ({ version = ..., bin = \"recall\" }), set $recallPluginVersion to the mise version and $recallPluginSha256 to the claude-recall-plugin.tar.gz line of `gh release download <version> -R babarot/claude-recall -p checksums.txt -O -`" $recallTool $recallPluginVersion) }}
 {{- end }}
+{{/* stripComponents = 0 relies on home/.chezmoiversion (2.73.2): from 2.73.2 chezmoi ignores the tarball's ./ */}}
+{{/* entry, so there is no leading component to strip. Older chezmoi needed 1 (7eb1e5f) and stops with */}}
+{{/* "inconsistent state" at 0; 1 on 2.73.2 or later silently drops .mcp.json and misplaces the rest. */}}
 [".claude/skills/claude-recall"]
 type = "archive"
 url = "https://github.com/babarot/claude-recall/releases/download/{{ $recallPluginVersion }}/claude-recall-plugin.tar.gz"
-stripComponents = 1
+stripComponents = 0
 exact = true
 checksum.sha256 = "{{ $recallPluginSha256 }}"
 {{ end }}
