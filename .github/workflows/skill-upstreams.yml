@@ -1,0 +1,33 @@
+name: skill-upstreams Sync
+
+# Opens, updates and closes one Issue per derived skill whose upstream changed. Detection only:
+# the merge of upstream changes is done by a person in a session they start.
+on:
+  schedule:
+    - cron: "0 0 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    name: sync upstream changes
+    # A manual run from another branch would rewrite Issues with an unmerged script.
+    if: github.repository == 'berlysia/dotfiles' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    concurrency:
+      group: skill-upstreams-sync
+      cancel-in-progress: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Sync upstream changes to Issues
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/check-skill-upstreams.sh sync .skills

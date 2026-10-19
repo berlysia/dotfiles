@@ -182,4 +182,4 @@ tanteki、yomiyasu、japanese-tech-writing と同時に使うときは、事実�
 
 ---
 
-Derived from [ayghri/i-have-adhd](https://github.com/ayghri/i-have-adhd) at commit `839872f` (MIT). See `LICENSE` in this directory.
+Derived from [ayghri/i-have-adhd](https://github.com/ayghri/i-have-adhd) (`skills/i-have-adhd`) at commit `839872f9d1cd634fed642b4589ce7226199cc15f` (MIT). See `LICENSE` in this directory.
