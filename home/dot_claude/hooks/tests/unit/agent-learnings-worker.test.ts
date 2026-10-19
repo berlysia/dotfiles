@@ -25,7 +25,7 @@ import type {
   DistillMessage,
   DistillQueryFn,
 } from "../../lib/agent-learnings/claude/distill.ts";
-import { runGit } from "../../lib/agent-learnings/core/git.ts";
+import { patientRunGit as runGit } from "../support/patient-git.ts";
 import { writeInboxRequest } from "../../lib/agent-learnings/core/inbox.ts";
 import {
   COMMON_KEY,
@@ -109,7 +109,8 @@ async function withWorld(fn: (w: World) => Promise<void>): Promise<void> {
     ]);
     mkdirSync(join(home, ".claude/projects/p"), { recursive: true });
     const store = defaultStoreDir(home);
-    ok(initStore(store, runGit).ok);
+    const init = initStore(store, runGit);
+    ok(init.ok, init.ok ? "" : init.reason);
     const prompts: string[] = [];
     const transcriptPath = (sid = SID): string =>
       join(home, ".claude/projects/p", `${sid}.jsonl`);
