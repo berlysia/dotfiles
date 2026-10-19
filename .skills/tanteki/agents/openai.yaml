@@ -1,0 +1,4 @@
+interface:
+  display_name: "tanteki"
+  short_description: "構成を検査してから各節を執筆し、意味と静的検査で日本語を短く明確にする"
+  default_prompt: "$tanteki を使い、構成を検査してから、この資料に基づく日本語文書を各節に適した形で執筆してください。"

@@ -51,6 +51,8 @@ apply は未掲載のスキルを追記するだけで、行を消さない。
 - [x] visual-eli
 - [x] learnings
 - [x] koncise
+- [x] tanteki
+- [x] yomiyasu
 
 ## External
 
@@ -74,7 +76,6 @@ apply は未掲載のスキルを追記するだけで、行を消さない。
 - [x] shiori-triage
 - [x] shiori-workflow
 - [x] skill-creator
-- [x] tanteki
 - [x] ui-skills
 - [x] web-design-guidelines
 - [x] webapp-testing

@@ -10,3 +10,7 @@ pnpm-lock.yaml
 bun.lock
 package-lock.json
 yarn.lock
+
+# Verbatim upstream copies: formatting them would mix formatter noise into diffs when pulling upstream updates
+.skills/tanteki/
+.skills/yomiyasu/
