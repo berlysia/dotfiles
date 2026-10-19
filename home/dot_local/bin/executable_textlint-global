@@ -23,6 +23,7 @@ TEXTLINT_HOME="${TEXTLINT_HOME:-$HOME/.config/textlint}"
 TEXTLINT_BIN="$TEXTLINT_HOME/node_modules/.bin/textlint"
 TEXTLINT_CONFIG="$TEXTLINT_HOME/.textlintrc.json"
 STATE_FILE="$TEXTLINT_HOME/.install-state"
+STATE_LOCK_FILE="$TEXTLINT_HOME/.install-state.lock"
 # Printed with a literal "~" so the user's own shell expands it.
 RECOVER="chezmoi apply ~/.config/textlint ~/.chezmoiscripts/10-install-textlint-deps.sh"
 
@@ -32,11 +33,16 @@ if [[ ! -x "$TEXTLINT_BIN" ]]; then
     exit 2
 fi
 
-# Stale runtime: package.json was redeployed but the last install of it did
-# not succeed (the installer copies package.json to .install-state only on
-# success; run_after_10-install-textlint-deps.sh.tmpl is its only writer).
+# Stale runtime: package.json or bun.lock was redeployed but the last install of
+# them did not succeed (the installer copies package.json to .install-state and
+# bun.lock to .install-state.lock only on success;
+# run_after_10-install-textlint-deps.sh.tmpl is their only writer).
 # Recovery is running that installer (RECOVER); a manual bun install does not
 # write the state, so it would leave the warning in place.
+# Stale means: .install-state differs from the deployed package.json or is
+# missing; or a deployed bun.lock exists and .install-state.lock differs from it
+# or is missing. With no deployed bun.lock (e.g. TEXTLINT_HOME points elsewhere)
+# the lock is not compared.
 # Any mismatch, a missing state or a failed read counts as stale. Without cmp
 # the state is unknown rather than stale, so that case gets its own warning.
 # The checks run inside `if` conditions so that no failure in them, including a
@@ -45,9 +51,18 @@ if [[ -f "$TEXTLINT_HOME/package.json" ]]; then
     if ! command -v cmp >/dev/null 2>&1; then
         echo "textlint: WARNING cannot check the runtime at $TEXTLINT_HOME against its package.json: cmp is not on PATH" >&2
         echo "Fix: put cmp (diffutils) on PATH" >&2
-    elif ! cmp -s "$TEXTLINT_HOME/package.json" "$STATE_FILE" 2>/dev/null; then
-        echo "textlint: WARNING runtime at $TEXTLINT_HOME is older than its package.json" >&2
-        echo "Recover with: $RECOVER" >&2
+    else
+        stale=false
+        if ! cmp -s "$TEXTLINT_HOME/package.json" "$STATE_FILE" 2>/dev/null; then
+            stale=true
+        elif [[ -f "$TEXTLINT_HOME/bun.lock" ]] \
+            && ! cmp -s "$TEXTLINT_HOME/bun.lock" "$STATE_LOCK_FILE" 2>/dev/null; then
+            stale=true
+        fi
+        if [[ "$stale" == true ]]; then
+            echo "textlint: WARNING runtime at $TEXTLINT_HOME is older than its package.json / bun.lock" >&2
+            echo "Recover with: $RECOVER" >&2
+        fi
     fi
 fi
 

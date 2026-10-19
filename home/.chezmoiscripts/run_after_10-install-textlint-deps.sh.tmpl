@@ -12,13 +12,18 @@
 # Exit code is 0 even when the install fails so the remaining run_after_
 # scripts still run. The failure surfaces where it costs something: the
 # ~/.local/bin/textlint-global wrapper exits 2 when the binary is missing and warns
-# when .install-state no longer matches the deployed package.json.
-# .install-state is a byte copy of the package.json that last installed
-# successfully; this script is its only writer. The wrapper
-# (home/dot_local/bin/executable_textlint-global) only reads it, comparing with
+# when the install state no longer matches the deployed package.json / bun.lock.
+# .install-state is a byte copy of the package.json and .install-state.lock a byte
+# copy of the bun.lock that last installed successfully; this script is their
+# only writer (lock first, package.json second). The wrapper
+# (home/dot_local/bin/executable_textlint-global) only reads them, comparing with
 # cmp, and treats any mismatch, absence or read error as stale; without cmp it
 # reports the state as unknown, not stale. The wrapper's "Recover with" command
 # runs this script through chezmoi, so this is the one place the state is fixed.
+#
+# --frozen-lockfile: the install must match the committed bun.lock, so the
+# tree that skills (tanteki) link into is the reviewed one. If it fails because
+# bun.lock and package.json disagree, regenerate bun.lock in the chezmoi source.
 #
 # --ignore-scripts: no package in this tree needs a lifecycle script today,
 # and a text linter has no business running one at install time.
@@ -30,8 +35,16 @@ log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $1"
 }
 
-TEXTLINT_DIR="$HOME/.config/textlint"
+# CHEZMOI_TEXTLINT_INSTALL_DIR overrides the install dir (tests only). It is a
+# different name from the wrapper's TEXTLINT_HOME so that a TEXTLINT_HOME set in
+# a shell rc never moves where apply installs. Non-absolute or empty values are
+# ignored.
+case "${CHEZMOI_TEXTLINT_INSTALL_DIR:-}" in
+    /*) TEXTLINT_DIR="$CHEZMOI_TEXTLINT_INSTALL_DIR" ;;
+    *) TEXTLINT_DIR="$HOME/.config/textlint" ;;
+esac
 STATE_FILE="$TEXTLINT_DIR/.install-state"
+STATE_LOCK_FILE="$TEXTLINT_DIR/.install-state.lock"
 
 if [ ! -f "$TEXTLINT_DIR/package.json" ]; then
     log "No package.json at $TEXTLINT_DIR, skipping textlint deps install."
@@ -50,20 +63,31 @@ if ! command -v bun &> /dev/null; then
 fi
 
 log "Installing textlint dependencies in $TEXTLINT_DIR..."
-if (cd "$TEXTLINT_DIR" && bun install --ignore-scripts 2>&1); then
+if (cd "$TEXTLINT_DIR" && bun install --frozen-lockfile --ignore-scripts 2>&1); then
     log "textlint dependencies are in sync" "SUCCESS"
     # Write via a sibling temp file and rename, as record-provisioning-failure.sh
     # does for the install-failure markers, so a half-written copy never reads as "stale".
+    # The temp files live in the install dir so mv stays on one filesystem.
+    # Lock first: a crash in between leaves .install-state stale, never fresh.
+    # Without a bun.lock the wrapper does not compare locks, so drop any old
+    # lock copy instead of failing the whole state write.
+    lock_tmp="${STATE_LOCK_FILE}.tmp.$$"
     state_tmp="${STATE_FILE}.tmp.$$"
-    if cp "$TEXTLINT_DIR/package.json" "$state_tmp" \
+    if { if [ -f "$TEXTLINT_DIR/bun.lock" ]; then
+            cp "$TEXTLINT_DIR/bun.lock" "$lock_tmp" && mv -f "$lock_tmp" "$STATE_LOCK_FILE"
+        else
+            rm -f "$STATE_LOCK_FILE"
+        fi; } \
+        && cp "$TEXTLINT_DIR/package.json" "$state_tmp" \
         && mv -f "$state_tmp" "$STATE_FILE"; then
         :
     else
-        rm -f "$state_tmp"
-        log "Could not write $STATE_FILE; the wrapper will report the runtime as stale" "WARNING"
+        rm -f "$lock_tmp" "$state_tmp"
+        log "Could not write $STATE_FILE / $STATE_LOCK_FILE; the wrapper will report the runtime as stale" "WARNING"
     fi
 else
     log "bun install failed in $TEXTLINT_DIR (see output above)" "ERROR"
+    log "If bun.lock and package.json do not match, regenerate bun.lock in the chezmoi source (home/dot_config/textlint)" "ERROR"
     log "Recover with: chezmoi apply ~/.config/textlint ~/.chezmoiscripts/10-install-textlint-deps.sh" "ERROR"
 fi
 

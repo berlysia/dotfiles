@@ -37,7 +37,5 @@ dependencies:
     - mizchi/skills/empirical-prompt-tuning
     - mizchi/skills/formal-methods-reconciler
     - mizchi/skills/formal-methods-drift-guard
-    # The repo root is the dev workspace; skills/tanteki is the packaged skill
-    - iwasa-kosui/tanteki/skills/tanteki
     # Pinned to the commit whose SKILL.md was read. To update: read the upstream diff, then replace the hash
     - artouc/stop-describing-ui/skills/stop-describing-ui#251a859f6e40645030e1ae69fa4b501c851eac9c
