@@ -1,0 +1,526 @@
+#!/bin/sh
+# dotfiles-sync-doctor: keep `chezmoi update` from stopping halfway through a rebase because commit signing
+# (1Password SSH agent) is unavailable, and repair the repository when it did stop.
+#
+#   check      (default) print the state of the source repo; exit 1 on a rebase/merge in progress, a signing
+#              failure while signing is enabled, or a missing hooks.update.pre
+#   preflight  called by hooks.update.pre; exit 1 only when `chezmoi update` would stop in a rebase
+#   fix        finish a stopped rebase (never unsigned) and run `chezmoi apply`
+#
+# Why: `chezmoi update` runs `git pull --autostash --rebase`. With unpushed commits that rebase re-creates (and
+# signs) them, and a failed signature leaves the source repo stopped mid-rebase. Without unpushed commits the pull
+# fast-forwards and needs no signature, so only "ahead > 0 and cannot sign" is worth stopping for.
+#
+# Diagnostics for the person go to stderr; a line starting with "fix:" is the next step to run, and "skip:" is an
+# alternative bypass. stdout only carries the state shown by `check`.
+# Environment: DOTFILES_SYNC_DOCTOR_SIGN_TIMEOUT (seconds, default 60) bounds every call that talks to the agent.
+# Plain POSIX sh on purpose: it must run under macOS's stock shell and without GNU `timeout`.
+
+PROG=dotfiles-sync-doctor
+WORK=
+LIM_SEQ=0
+LIM_RC=0
+LIM_TIMEOUT=0
+CUR_PIDF=
+CUR_RCF=
+REBASE_STARTED=0
+REPO=
+REPO_ERR=
+
+say() { printf '%s\n' "$*"; }
+err() { printf '%s\n' "$*" >&2; }
+warn() { err "$PROG: $*"; }
+
+SIGN_TIMEOUT=${DOTFILES_SYNC_DOCTOR_SIGN_TIMEOUT:-60}
+case $SIGN_TIMEOUT in
+'' | *[!0-9]*) SIGN_TIMEOUT=60 ;;
+esac
+[ "$SIGN_TIMEOUT" -gt 0 ] || SIGN_TIMEOUT=60
+
+# ---- temp dir and cleanup ------------------------------------------------------------------------------------------
+# One 0700 directory holds the key, the signing payload, the .sig and the signer's output. It is removed after every
+# probe and again on exit.
+ensure_work() {
+  [ -n "$WORK" ] && return 0
+  WORK=$(mktemp -d "${TMPDIR:-/tmp}/dotfiles-sync-doctor.XXXXXX" 2>/dev/null) || {
+    WORK=
+    return 1
+  }
+}
+release_work() {
+  [ -n "$WORK" ] && rm -rf "$WORK"
+  WORK=
+}
+
+# stop_limited: stop the process started by run_limited. TERM first, KILL after 1 second. Only that process is
+# signalled; its descendants may survive (they hold no pipe of ours, so they cannot block us).
+stop_limited() {
+  [ -n "$CUR_PIDF" ] || return 0
+  _lp=$(cat "$CUR_PIDF" 2>/dev/null) || _lp=
+  [ -n "$_lp" ] || return 0
+  kill -TERM "$_lp" 2>/dev/null
+  _i=0
+  while [ ! -s "$CUR_RCF" ] && [ "$_i" -lt 10 ]; do
+    sleep 0.1
+    _i=$((_i + 1))
+  done
+  [ -s "$CUR_RCF" ] || kill -KILL "$_lp" 2>/dev/null
+  return 0
+}
+
+# shellcheck disable=SC2329 # invoked through trap
+cleanup() {
+  release_work
+}
+
+# shellcheck disable=SC2329 # invoked through trap
+on_signal() {
+  stop_limited
+  if [ "$REBASE_STARTED" = 1 ]; then
+    if rebase_active; then
+      err "fix: $PROG fix"
+    else
+      warn "interrupted after the rebase finished; apply has not run"
+      err "fix: chezmoi apply"
+    fi
+  fi
+  exit "$1"
+}
+
+trap cleanup EXIT
+trap 'on_signal 130' INT
+trap 'on_signal 143' TERM
+
+# run_limited <seconds> <outfile> <command> [args...]
+# Runs the command in the background with stdin from /dev/null and stdout/stderr in <outfile> (no pipes, so a
+# descendant that keeps the output open cannot hang us), and waits at most <seconds>. Sets LIM_RC (exit status; 124
+# on timeout) and LIM_TIMEOUT (1 on timeout). A wrapper subshell records the command's pid and exit status in files.
+run_limited() {
+  _secs=$1
+  _out=$2
+  shift 2
+  LIM_SEQ=$((LIM_SEQ + 1))
+  CUR_PIDF=$WORK/pid.$LIM_SEQ
+  CUR_RCF=$WORK/rc.$LIM_SEQ
+  (
+    "$@" </dev/null >"$_out" 2>&1 &
+    echo $! >"$CUR_PIDF"
+    wait $!
+    echo $? >"$CUR_RCF"
+  ) </dev/null >/dev/null 2>&1 &
+  _i=0
+  _max=$((_secs * 10))
+  LIM_TIMEOUT=0
+  while [ ! -s "$CUR_RCF" ]; do
+    if [ "$_i" -ge "$_max" ]; then
+      LIM_TIMEOUT=1
+      stop_limited
+      break
+    fi
+    sleep 0.1
+    _i=$((_i + 1))
+  done
+  if [ "$LIM_TIMEOUT" = 1 ]; then
+    LIM_RC=124
+  else
+    LIM_RC=$(cat "$CUR_RCF")
+  fi
+  CUR_PIDF=
+  CUR_RCF=
+}
+
+# ---- repository state ------------------------------------------------------------------------------------------------
+resolve_repo() {
+  REPO=
+  command -v chezmoi >/dev/null 2>&1 || {
+    REPO_ERR="chezmoi not found"
+    return 1
+  }
+  _src=$(chezmoi source-path 2>/dev/null) || _src=
+  [ -n "$_src" ] || {
+    REPO_ERR="chezmoi source-path failed"
+    return 1
+  }
+  REPO=$(git -C "$_src" rev-parse --show-toplevel 2>/dev/null) || REPO=
+  [ -n "$REPO" ] || {
+    REPO_ERR="$_src is not inside a git repository"
+    return 1
+  }
+}
+
+git_path() {
+  _p=$(git -C "$REPO" rev-parse --git-path "$1" 2>/dev/null) || return 1
+  case $_p in
+  /*) printf '%s\n' "$_p" ;;
+  *) printf '%s/%s\n' "$REPO" "$_p" ;;
+  esac
+}
+
+rebase_active() {
+  [ -d "$(git_path rebase-merge)" ] || [ -d "$(git_path rebase-apply)" ]
+}
+
+# detect_op sets OP to none, merge or rebase
+detect_op() {
+  if [ -f "$(git_path MERGE_HEAD)" ]; then
+    OP=merge
+  elif rebase_active; then
+    OP=rebase
+  else
+    OP=none
+  fi
+}
+
+# load_tracking sets TRACK to ok, detached, noupstream or error (and UPSTREAM / AHEAD / BEHIND when ok). It reads
+# local refs only; nothing is fetched.
+load_tracking() {
+  AHEAD=0
+  BEHIND=0
+  UPSTREAM=
+  git -C "$REPO" symbolic-ref -q HEAD >/dev/null 2>&1 || {
+    TRACK=detached
+    return
+  }
+  UPSTREAM=$(git -C "$REPO" rev-parse --abbrev-ref '@{u}' 2>/dev/null) || {
+    TRACK=noupstream
+    return
+  }
+  _c=$(git -C "$REPO" rev-list --left-right --count '@{u}...HEAD' 2>/dev/null) || {
+    TRACK=error
+    return
+  }
+  BEHIND=${_c%%[!0-9]*}
+  AHEAD=${_c##*[!0-9]}
+  case $BEHIND$AHEAD in
+  '' | *[!0-9]*)
+    TRACK=error
+    return
+    ;;
+  esac
+  TRACK=ok
+}
+
+conflict_files() {
+  git -C "$REPO" diff --name-only --diff-filter=U 2>/dev/null
+}
+
+# ---- signing -------------------------------------------------------------------------------------------------------
+# signing_state sets SIGN_STATE to one of:
+#   off      commit.gpgsign is not true
+#   notssh   gpg.format is not ssh (not checked)
+#   nokey    user.signingkey is unset (not checked)
+#   unknown  could not run the probe (no temp dir)
+#   ok       the signer produced a signature
+#   failed   it did not (SIGN_REASON program|agent, SIGN_DETAIL = first line of its output)
+# The signer and key come from `git config` in the source repo, the same values the rebase itself would use.
+signing_state() {
+  SIGN_REASON=
+  SIGN_DETAIL=
+  SIGN_PROG=
+  _g=$(git -C "$REPO" config --bool commit.gpgsign 2>/dev/null) || _g=
+  if [ "$_g" != true ]; then
+    SIGN_STATE=off
+    return
+  fi
+  SIGN_FORMAT=$(git -C "$REPO" config gpg.format 2>/dev/null) || SIGN_FORMAT=
+  [ -n "$SIGN_FORMAT" ] || SIGN_FORMAT=openpgp
+  if [ "$SIGN_FORMAT" != ssh ]; then
+    SIGN_STATE=notssh
+    return
+  fi
+  SIGN_PROG=$(git -C "$REPO" config gpg.ssh.program 2>/dev/null) || SIGN_PROG=
+  [ -n "$SIGN_PROG" ] || SIGN_PROG=ssh-keygen
+  _key=$(git -C "$REPO" config user.signingkey 2>/dev/null) || _key=
+  if [ -z "$_key" ]; then
+    SIGN_STATE=nokey
+    return
+  fi
+  _found=1
+  case $SIGN_PROG in
+  */*) [ -x "$SIGN_PROG" ] || _found=0 ;;
+  *) command -v "$SIGN_PROG" >/dev/null 2>&1 || _found=0 ;;
+  esac
+  if [ "$_found" = 0 ]; then
+    SIGN_STATE=failed
+    SIGN_REASON=program
+    SIGN_DETAIL="signer not found or not executable: $SIGN_PROG"
+    return
+  fi
+  if ! ensure_work; then
+    SIGN_STATE=unknown
+    return
+  fi
+  # A fixed payload: nothing from the repository or the outside world is signed.
+  printf 'dotfiles-sync-doctor signing probe\n' >"$WORK/payload"
+  _lit=0
+  case $_key in
+  key::* | ssh-*)
+    _lit=1
+    (umask 077 && printf '%s\n' "${_key#key::}" >"$WORK/key")
+    _kf=$WORK/key
+    ;;
+  \~/*) _kf=$HOME/${_key#\~/} ;;
+  *) _kf=$_key ;;
+  esac
+  # Arguments are the ones git passes: -Y sign -n git -f <key> [-U] <buffer>
+  if [ "$_lit" = 1 ]; then
+    run_limited "$SIGN_TIMEOUT" "$WORK/sign.out" "$SIGN_PROG" -Y sign -n git -f "$_kf" -U "$WORK/payload"
+  else
+    run_limited "$SIGN_TIMEOUT" "$WORK/sign.out" "$SIGN_PROG" -Y sign -n git -f "$_kf" "$WORK/payload"
+  fi
+  if [ "$LIM_TIMEOUT" = 1 ]; then
+    SIGN_STATE=failed
+    SIGN_REASON=agent
+    SIGN_DETAIL="timed out after ${SIGN_TIMEOUT}s"
+  elif [ "$LIM_RC" = 0 ]; then
+    SIGN_STATE=ok
+  else
+    SIGN_STATE=failed
+    case $LIM_RC in
+    126 | 127) SIGN_REASON=program ;;
+    *) SIGN_REASON=agent ;;
+    esac
+    SIGN_DETAIL=$(head -n 1 "$WORK/sign.out" 2>/dev/null) || SIGN_DETAIL=
+    [ -n "$SIGN_DETAIL" ] || SIGN_DETAIL="signer exited with status $LIM_RC"
+  fi
+  release_work
+}
+
+report_sign_failure() {
+  warn "commit signing failed: $SIGN_DETAIL"
+  if [ "$SIGN_REASON" = program ]; then
+    err "fix: check gpg.ssh.program ($SIGN_PROG)"
+  else
+    err "fix: start and unlock 1Password (Settings > Developer > Use the SSH agent)"
+  fi
+}
+
+# commit_rescheduled_pick: when a pick failed at the commit step (signing), git leaves its result staged and keeps
+# the same pick at the head of the todo, and `git rebase --continue` then refuses ("you have staged changes").
+# Committing the staged result with the pick's message and author (signed per config) lets the continue drop the
+# rescheduled pick as already applied. Returns 1 when that commit fails; nothing to do for a normal stop.
+commit_rescheduled_pick() {
+  _done=$(git_path rebase-merge/done)
+  _todo=$(git_path rebase-merge/git-rebase-todo)
+  _dl=$(tail -n 1 "$_done" 2>/dev/null) || _dl=
+  _tl=$(head -n 1 "$_todo" 2>/dev/null) || _tl=
+  case $_dl in
+  'pick '*) ;;
+  *) return 0 ;;
+  esac
+  [ "$_dl" = "$_tl" ] || return 0
+  git -C "$REPO" diff --cached --quiet 2>/dev/null && return 0
+  _rest=${_dl#pick }
+  COMMIT_OUT=$(GIT_EDITOR=true git -C "$REPO" commit -q -C "${_rest%% *}" 2>&1)
+}
+
+# ---- commands ------------------------------------------------------------------------------------------------------
+cmd_preflight() {
+  if ! resolve_repo; then
+    warn "preflight skipped: $REPO_ERR"
+    return 0
+  fi
+  detect_op
+  case $OP in
+  rebase)
+    warn "a rebase is in progress in $REPO; chezmoi update would fail"
+    err "fix: $PROG fix"
+    return 1
+    ;;
+  merge)
+    warn "a merge is in progress in $REPO; chezmoi update would fail"
+    err "fix: resolve or abort the merge in $REPO"
+    return 1
+    ;;
+  esac
+  load_tracking
+  case $TRACK in
+  detached)
+    warn "preflight skipped: HEAD is detached"
+    return 0
+    ;;
+  noupstream)
+    warn "preflight skipped: the current branch has no upstream"
+    return 0
+    ;;
+  error)
+    warn "preflight skipped: could not compare with the upstream"
+    return 0
+    ;;
+  esac
+  [ "$AHEAD" -gt 0 ] || return 0
+  signing_state
+  case $SIGN_STATE in
+  off | ok) return 0 ;;
+  notssh)
+    warn "preflight skipped: gpg.format is not ssh, signing was not checked"
+    return 0
+    ;;
+  nokey)
+    warn "preflight skipped: user.signingkey is not set, signing was not checked"
+    return 0
+    ;;
+  unknown)
+    warn "preflight skipped: could not create a temporary directory"
+    return 0
+    ;;
+  esac
+  report_sign_failure
+  err "skip: DOTFILES_SYNC_DOCTOR_SKIP=1 chezmoi update"
+  return 1
+}
+
+cmd_check() {
+  _fail=0
+  if resolve_repo; then
+    say "source repo: $REPO"
+    detect_op
+    case $OP in
+    none) say "operation: none" ;;
+    rebase)
+      say "operation: rebase in progress"
+      warn "a rebase is in progress in $REPO"
+      err "fix: $PROG fix"
+      _fail=1
+      ;;
+    merge)
+      say "operation: merge in progress"
+      warn "a merge is in progress in $REPO"
+      err "fix: resolve or abort the merge in $REPO"
+      _fail=1
+      ;;
+    esac
+    load_tracking
+    case $TRACK in
+    ok) say "tracking: $UPSTREAM ahead $AHEAD behind $BEHIND (local refs, not fetched)" ;;
+    detached) say "tracking: not checked (HEAD is detached)" ;;
+    noupstream) say "tracking: not checked (no upstream)" ;;
+    *) say "tracking: not checked (comparison failed)" ;;
+    esac
+    # The agent line is informational: reaching the agent does not mean the signer can sign.
+    if command -v ssh-add >/dev/null 2>&1 && ensure_work; then
+      run_limited "$SIGN_TIMEOUT" "$WORK/agent.out" ssh-add -l
+      release_work
+      if [ "$LIM_TIMEOUT" = 1 ]; then
+        say "ssh agent: not reachable (timed out; informational)"
+      elif [ "$LIM_RC" = 0 ] || [ "$LIM_RC" = 1 ]; then
+        say "ssh agent: reachable (informational)"
+      else
+        say "ssh agent: not reachable (informational)"
+      fi
+    else
+      say "ssh agent: not checked (ssh-add unavailable)"
+    fi
+    signing_state
+    case $SIGN_STATE in
+    ok) say "signing: ok" ;;
+    off) say "signing: not needed (commit.gpgsign is not true)" ;;
+    notssh) say "signing: not checked (gpg.format=$SIGN_FORMAT)" ;;
+    nokey) say "signing: not checked (user.signingkey is not set)" ;;
+    unknown) say "signing: not checked (no temporary directory)" ;;
+    failed)
+      say "signing: FAILED ($SIGN_DETAIL)"
+      report_sign_failure
+      _fail=1
+      ;;
+    esac
+  else
+    say "source repo: not found ($REPO_ERR)"
+  fi
+  if command -v chezmoi >/dev/null 2>&1 && _cfg=$(chezmoi cat-config 2>/dev/null); then
+    if printf '%s\n' "$_cfg" | grep -Eq '^[[:space:]]*\[hooks\.update\.pre\]'; then
+      say "update hook: installed"
+    else
+      say "update hook: MISSING"
+      warn "hooks.update.pre is not in the chezmoi config"
+      err "fix: chezmoi init"
+      _fail=1
+    fi
+  else
+    say "update hook: not checked (chezmoi cat-config failed)"
+  fi
+  return "$_fail"
+}
+
+cmd_fix() {
+  if ! resolve_repo; then
+    warn "$REPO_ERR"
+    return 1
+  fi
+  detect_op
+  case $OP in
+  none)
+    cmd_check
+    return
+    ;;
+  merge)
+    warn "a merge is in progress in $REPO"
+    err "fix: resolve or abort the merge in $REPO"
+    return 1
+    ;;
+  esac
+  _files=$(conflict_files)
+  if [ -n "$_files" ]; then
+    warn "unresolved conflicts in $REPO:"
+    printf '%s\n' "$_files" >&2
+    err "fix: resolve the conflicts, git add them, then run $PROG fix"
+    return 1
+  fi
+  # Never fall back to an unsigned commit: with commit.gpgsign=true that would put an unsigned commit on master.
+  signing_state
+  if [ "$SIGN_STATE" = failed ]; then
+    report_sign_failure
+    return 1
+  fi
+  _stash_before=$(git -C "$REPO" rev-parse -q --verify refs/stash 2>/dev/null) || _stash_before=
+  REBASE_STARTED=1
+  if ! commit_rescheduled_pick; then
+    warn "committing the stopped pick failed:"
+    printf '%s\n' "$COMMIT_OUT" >&2
+    err "fix: $PROG fix"
+    return 1
+  fi
+  if _out=$(GIT_EDITOR=true git -C "$REPO" rebase --continue 2>&1); then
+    _rebase_ok=1
+  else
+    _rebase_ok=0
+  fi
+  if [ "$_rebase_ok" = 0 ] || rebase_active; then
+    warn "git rebase --continue stopped again:"
+    printf '%s\n' "$_out" >&2
+    err "fix: $PROG fix"
+    return 1
+  fi
+  say "rebase: finished"
+  _stash_after=$(git -C "$REPO" rev-parse -q --verify refs/stash 2>/dev/null) || _stash_after=
+  _files=$(conflict_files)
+  if [ "$_stash_before" != "$_stash_after" ] || [ -n "$_files" ]; then
+    warn "the autostash did not reapply cleanly; apply was not run"
+    err "fix: git -C $REPO stash pop"
+    err "fix: chezmoi apply"
+    return 1
+  fi
+  if chezmoi apply; then
+    say "apply: done"
+    return 0
+  else
+    _rc=$?
+  fi
+  err "fix: chezmoi apply"
+  return "$_rc"
+}
+
+if [ "$#" -gt 1 ]; then
+  err "usage: $PROG [check|preflight|fix]"
+  exit 2
+fi
+case ${1-check} in
+check) cmd_check ;;
+preflight) cmd_preflight ;;
+fix) cmd_fix ;;
+*)
+  err "usage: $PROG [check|preflight|fix]"
+  exit 2
+  ;;
+esac
+exit $?
