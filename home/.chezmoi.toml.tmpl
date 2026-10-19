@@ -5,6 +5,15 @@
 {{- end }}
 {{- end }}
 
+# Pin the modes chezmoi deploys so they do not depend on the umask of the shell that runs apply
+# (Claude's Bash has 022, login shells have 002). A mismatch makes the next apply ask
+# "has changed since chezmoi last wrote it?" and stop without a TTY.
+# Not 0o002: chezmoi chmods files to 0666 &^ umask but creates directories with mkdir(0777 &^ umask),
+# which the process umask trims again, so a 022 shell would leave 755 against a recorded 775.
+# Assumes the process umask is within 022 (000/002/020/022); under 077 directories shrink and
+# non-private_ files widen to 644. Files that run scripts create still follow the process umask.
+umask = 0o022
+
 [data]
 only_private = {{ has .chezmoi.hostname (list "CITRINE" "BIXBITE") }}
 agent_vm = {{ stat "/etc/agent-vm" | not | not }}
