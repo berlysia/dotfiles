@@ -12,8 +12,6 @@ lint で外す規則: bold_label_list、excess_list、sentence_end_repetition
 
 ## 2. それでも直すもの
 
-- 発言者、作業した人、担当を引き受けた人の取り違え（domains/business.md 2章）。
-- 元にない決定、ToDo、「決定なし」の記載。担当が書かれていないことを「担当未定」と決めること。
 
 ## 3. 長さと省略
 
