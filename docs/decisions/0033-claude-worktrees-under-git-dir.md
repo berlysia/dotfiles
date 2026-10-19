@@ -106,7 +106,7 @@ Claude Code は、`WorktreeCreate` hook を定義するとそれで既定の wor
 - 計画では並列の `worktree add` が git の lock で競合することを想定していた。4 並列 × 20 回で再現したのは別の競合で、並行する add が作りかけの管理用ディレクトリを読んで失敗した（`failed to read .git/worktrees/<x>/commondir`）。やり直しは「`add` が失敗し、自分のブランチを巻き戻せたとき 1 回だけ」で、エラー文言では絞らない。
 - 作成するパス（common dir）に制御文字があれば作成を失敗にした。spec に無い防御で、stdout のパスを 1 行に保つため。
 - `safe.bareRepository=explicit` の環境では、bare のディレクトリを直接 cwd にすると git が拒否するので `not-git` になる。`bare-repo` になるのは bare の linked worktree を cwd にしたとき。
-- `chezmoi apply` を umask 022 のシェルから行うと、配る file のモードが 644/755 になる。後で umask 002 のシェルから apply すると、chezmoi が「変更された」とみなして確認を求め、TTY が無いと apply ごと止まる（後続の `run_after_` も実行されない）。Claude から apply するときは `umask 002` を付ける。
+- `chezmoi apply` を umask 022 のシェルから行うと、配る file のモードが 644/755 になる。後で umask 002 のシェルから apply すると、chezmoi が「変更された」とみなして確認を求め、TTY が無いと apply ごと止まる（後続の `run_after_` も実行されない）。その後、`home/.chezmoi.toml.tmpl` の `umask = 0o022` で chezmoi が書くエントリーのモードを固定したので、`umask 002` の前置きは要らない。run script が作るファイル（rsync で同期する skill など）は、引き続きシェルの umask に従う。
 
 ## hook 契約への依存と確認手順
 
