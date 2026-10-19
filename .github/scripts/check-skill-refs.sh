@@ -51,7 +51,7 @@ ROLE_ALLOWED_PREFIXES=(tanteki/references/ tanteki/scripts/ yomiyasu/references/
 # Entry skills and the 構成 value each must declare. This is the one place the list lives.
 ENTRY_MODES=(koncise=動かす tanteki=動かす yomiyasu=動かさない japanese-tech-writing=動かさない)
 # Role names each entry's "役割:" line must list, joined with +. This is the one place the sets live.
-ENTRY_ROLES=(koncise=ja-fact-preservation tanteki=ja-fact-preservation+ja-doc-profile+ja-structure+ja-check yomiyasu=ja-fact-preservation+ja-doc-profile japanese-tech-writing=ja-fact-preservation+ja-structure)
+ENTRY_ROLES=(koncise=ja-fact-preservation tanteki=ja-fact-preservation+ja-doc-profile+ja-structure+ja-check yomiyasu=ja-fact-preservation+ja-doc-profile+ja-structure+ja-check japanese-tech-writing=ja-fact-preservation+ja-structure)
 # Entries whose references/ must not mention ROLE_BACKREF_NAME
 ROLE_BACKREF_ENTRIES=(tanteki yomiyasu)
 ROLE_BACKREF_NAME=ja-doc-profile
