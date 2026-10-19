@@ -23,6 +23,7 @@ apply は未掲載のスキルを追記するだけで、行を消さない。
 - [x] docs-audit
 - [x] document-workflow-reference
 - [x] execute-plan
+- [x] imozuru
 - [x] insight-digest
 - [x] intent-alignment-triage
 - [x] issue-pr
@@ -79,4 +80,3 @@ apply は未掲載のスキルを追記するだけで、行を消さない。
 - [x] webapp-testing
 - [x] xlsx
 - [x] stop-describing-ui
-- [x] imozuru
