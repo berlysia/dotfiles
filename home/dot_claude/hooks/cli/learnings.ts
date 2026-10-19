@@ -88,6 +88,8 @@ export interface RunLearningsCliResult {
 // 必要があり、権限の照合に見える。
 const AGENT_ENV = /^(CLAUDECODE|CLAUDE_CODE_.*|CODEX_SANDBOX.*|AI_AGENT)$/;
 
+const REPO_KEY_SHAPE = "host/owner/repo（例: github.com/berlysia/awai）";
+
 const USAGE = [
   "usage: agent-learnings <command>",
   "  show [--cwd DIR] [--reader NAME]",
@@ -98,6 +100,7 @@ const USAGE = [
   "  promote <id>    (human only)",
   "  init            (human only)",
   "  rekey <old> <new>  (human only)",
+  `                     キーは ${REPO_KEY_SHAPE}。path が出すファイル名ではない`,
   "",
 ].join("\n");
 
@@ -510,6 +513,38 @@ async function runPromote(
   return fail("store の lock を取れなかった", 2);
 }
 
+// `path` prints the file name, not the key, so the file name is the value people
+// most often pass back. Its slug cannot be reversed ("-" may have been "/"), so
+// read the key from the header of the file the name points at.
+function describeBadRepoKey(
+  label: string,
+  value: string,
+  store: string,
+): string {
+  const lines = [`${label} が ${REPO_KEY_SHAPE} の形ではない: ${value}`];
+  if (value.endsWith(".md")) {
+    const key = value.includes("/")
+      ? null
+      : readRepoKeyFromFile(join(store, "repos", value));
+    lines.push(
+      key === null
+        ? "ファイル名ではなく、ファイルの 1 行目の key: に書かれたキーを渡す"
+        : `ファイル名ではなくキーを渡す: ${key}`,
+    );
+  }
+  return lines.join("\n");
+}
+
+function readRepoKeyFromFile(path: string): string | null {
+  try {
+    const header = readFileSync(path, "utf8").split("\n", 1)[0] ?? "";
+    const key = /;\s*key:\s*(\S+)\s*-->/.exec(header)?.[1];
+    return key !== undefined && isValidRepoKey(key) ? key : null;
+  } catch {
+    return null;
+  }
+}
+
 async function runRekey(
   args: readonly string[],
   deps: RunLearningsCliDeps,
@@ -528,9 +563,15 @@ async function runRekey(
   ) {
     return fail(`rekey <old> <new>\n${USAGE}`);
   }
-  if (!isValidRepoKey(oldKey) || !isValidRepoKey(newKey) || oldKey === newKey)
-    return fail("キーが不正、または同じ");
   const store = defaultStoreDir(deps.home);
+  for (const [label, key] of [
+    ["<old>", oldKey],
+    ["<new>", newKey],
+  ] as const) {
+    if (!isValidRepoKey(key))
+      return fail(describeBadRepoKey(label, key, store));
+  }
+  if (oldKey === newKey) return fail(`<old> と <new> が同じ: ${oldKey}`);
   if (!storeExists(store)) return fail("store が無い");
   const oldPath = repoFilePath(store, oldKey);
   const newPath = repoFilePath(store, newKey);
