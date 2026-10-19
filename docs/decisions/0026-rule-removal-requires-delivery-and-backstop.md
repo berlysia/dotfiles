@@ -8,6 +8,8 @@ ADR-0025 の K5（ENFORCED の定義）を改訂する。
 
 Consequences 3 の「予算の定数は 12KB のまま」は、ADR-0032 が覆した（上限を 13KB に戻した）。
 
+Decision で「残した」とした Executive Summary の書式は、ADR-0035 が中身を改訂した（workflow.md に残す理由は変わらない）。
+
 ## Context
 
 ADR-0025 の後、規則そのものを棚卸しした。調べたのは `rules/workflow.md` の 40 件と、参照 skill（`document-workflow-reference`）の 17 件である。
