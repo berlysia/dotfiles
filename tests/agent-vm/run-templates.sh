@@ -223,19 +223,57 @@ JS
 }
 # Fresh cache and state so the archive is always downloaded and its checksum verified, even when other tests
 # already filled the shared cache. Fetch failures are FAILs on purpose: a skipped check pins nothing.
+# The file set must match the upstream layout exactly: Claude Code loads the plugin only from these paths,
+# and a wrong stripComponents or a change in chezmoi's tar handling drops .mcp.json without any error.
+# The expected set is what the upstream claude-recall-plugin.tar.gz holds (1.5.0 and 1.7.2 alike).
+RECALL_PLUGIN_FILES=".claude/skills/claude-recall/.claude-plugin/plugin.json
+.claude/skills/claude-recall/.mcp.json
+.claude/skills/claude-recall/hooks/hooks.json
+.claude/skills/claude-recall/skills/recall/SKILL.md"
 test_recall_plugin_tarball_matches_pinned_sha256() {
-  local dir="$TMP_BASE/recall-tarball" out err status=0
+  local dir="$TMP_BASE/recall-tarball" out err status=0 actual missing extra
   mkdir -p "$dir"
   out=$(chezmoi managed --source "$SRC" --destination "$dir/dst" --config "$dir/chezmoi.toml" \
     --cache "$dir/cache" --persistent-state "$dir/state.boltdb" --refresh-externals=never \
-    --include externals --override-data "$HOST_LINUX" 2>"$dir/stderr") || status=$?
+    --include externals --exclude dirs --override-data "$HOST_LINUX" 2>"$dir/stderr") || status=$?
   err=$(head -c 400 "$dir/stderr")
-  if [[ "$status" -eq 0 && "$out" == *".claude/skills/claude-recall"* ]]; then
-    record "PASS the pinned claude-recall plugin tarball downloads and matches its sha256"
+  actual=$(grep '^\.claude/skills/claude-recall/' <<<"$out" | sort || true)
+  missing=$(comm -23 <(sort <<<"$RECALL_PLUGIN_FILES") <(printf '%s\n' "$actual") | paste -sd ' ' -)
+  extra=$(comm -13 <(sort <<<"$RECALL_PLUGIN_FILES") <(printf '%s\n' "$actual" | grep . || true) | paste -sd ' ' -)
+  if [[ "$status" -eq 0 && ( -n "$missing" || -n "$extra" ) ]]; then
+    record "FAIL claude-recall plugin layout differs from upstream (missing: ${missing:-none} / extra: ${extra:-none}). Check stripComponents in .chezmoiexternal.toml.tmpl against the chezmoi version, and whether the upstream tarball changed its layout"
+  elif [[ "$status" -eq 0 ]]; then
+    record "PASS the pinned claude-recall plugin tarball downloads, matches its sha256 and lands in the upstream layout"
   elif [[ "$err" == *"SHA256 mismatch"* ]]; then
     record "FAIL claude-recall plugin tarball differs from the pinned sha256 (the sha256 in .chezmoiexternal.toml.tmpl does not match the release asset): $err"
   else
     record "FAIL could not fetch the claude-recall plugin tarball (network or rate limit, exit $status): $err"
+  fi
+}
+# home/.chezmoiversion and stripComponents = 0 in the claude-recall external are a pair: below 2.73.2 that
+# external stops with "inconsistent state", so the floor must stay. Compared numerically, not as strings.
+CHEZMOI_VERSION_FLOOR="2.73.2"
+chezmoi_version_file_meets_floor() { # file floor
+  local v
+  [[ -f "$1" ]] || return 1
+  v=$(tr -d '[:space:]' <"$1")
+  v=${v#v}
+  [[ "$v" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]] || return 1
+  local -a a b
+  IFS=. read -ra a <<<"$v"
+  IFS=. read -ra b <<<"$2"
+  local i
+  for i in 0 1 2; do
+    ((10#${a[i]:-0} > 10#${b[i]:-0})) && return 0
+    ((10#${a[i]:-0} < 10#${b[i]:-0})) && return 1
+  done
+  return 0
+}
+test_chezmoiversion_keeps_the_floor_for_the_recall_layout() {
+  if chezmoi_version_file_meets_floor "$SRC/.chezmoiversion" "$CHEZMOI_VERSION_FLOOR"; then
+    record "PASS home/.chezmoiversion requires chezmoi $CHEZMOI_VERSION_FLOOR or later"
+  else
+    record "FAIL home/.chezmoiversion is missing or below $CHEZMOI_VERSION_FLOOR; the claude-recall external (stripComponents = 0) needs it"
   fi
 }
 # Renovate falls back to hashing the downloaded asset when it cannot find the current digest in checksums.txt,
