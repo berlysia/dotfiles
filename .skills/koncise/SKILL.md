@@ -175,6 +175,8 @@ rewrite でも、変えないこと、足さないこと、消さないこと、
 
 tanteki、yomiyasu、japanese-tech-writing と同時に使うときは、事実と意味を変えない規則（この文書の「変えないこと」と、各スキルの同じ趣旨の節）を優先する。表記と文体はそれぞれのスキルに任せる。koncise が決めるのは、構成と順序（何を先に、何を後ろへ置くか）だけである。
 
+1 つの依頼で、ほかの入口も順に指定されているときは、`../ja-structure/SKILL.md` を読む。このスキルは機械の検査を持たないので、最後でなければ検査を走らせない。最後で、重ねた入口に tanteki か yomiyasu があるときは、`../ja-check/SKILL.md` を読み、検査の段を行う。
+
 ---
 
 Derived from [ayghri/i-have-adhd](https://github.com/ayghri/i-have-adhd) (`skills/i-have-adhd`) at commit `839872f9d1cd634fed642b4589ce7226199cc15f` (MIT). See `LICENSE` in this directory.
