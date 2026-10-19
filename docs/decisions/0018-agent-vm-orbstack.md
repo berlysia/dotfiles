@@ -26,7 +26,7 @@ OrbStack の通常の machine（isolated 指定なし）は `/Users` 全体へ�
 - **K7**: Claude・Codex とも machine ごとに初回ログインし、認証は VM の中にだけ置く。長期 token の注入も、認証の VM 間共有も行わない。
 - **K8**: git の SSH 認証・署名は agent forwarding だけで行い、gitconfig は変更しない。
 - **K9**: セッションログは常時 outbox に置き、起動時・終了時・`agent-vm sync` で host に取り込む。取り込みは追記専用を前提にした検証を伴う。
-- **K10**: 既定で VM を経由し、opt-out（`AGENT_VM=off`、`~/.config/agent-vm/config`）は host 側にしか置けない。OrbStack が使えない・応答しないときは host に自動で切り替えず、fail closed する。
+- **K10**: 既定で VM を経由し、opt-out（`AGENT_VM=off`、`~/.config/agent-vm/config`）は host 側にしか置けない。OrbStack が使えない・応答しないときは host に自動で切り替えず、fail closed する。（2026-10-19、ADR-0034 で opt-in に改訂）
 - **K11・K12**: host 側ファイルは darwin にのみ配布する。OrbStack は Homebrew cask で宣言管理する。
 - **K13**: repo は VM から rw で mount されるため、`.git/hooks` や `.git/config` の実行系設定を VM が書き換える余地が残る。launcher は起動・終了のたびにこれらのスナップショットを取り、差分を検知・報告する。人間が `agent-vm accept-git` で `.git/hooks` 直下のファイルの内容を確認して承認した場合に限り、その項目の baseline を更新する。
 - **K14**: machine の一覧・掃除（`list` / `gc` / `rm`）を提供する。
@@ -95,6 +95,7 @@ VM の Claude から playwright と chrome-devtools の MCP を使えるよう�
 - #194 (2026-10-02) — R21 の原因は「既定ブランチの解決」ではなく、`https://github.com/` を SSH に書き換える `insteadOf` だった。VM の SSH は転送された agent の承認を毎回要し、承認のない取得は拒否されるか止まる（`git://` への書き換えも VM からは届かない）。VM の `~/.gitconfig` では取得の書き換えを外し、`url."git@github.com:".pushInsteadOf` だけを残す。取得は匿名の HTTPS、push は SSH になり、VM に GitHub の token を置かない方針は変わらない。ただし、上流の frontmatter が読めない `mizchi/explainer` が lockfile のない VM で `apm install` 全体を中止させ、private の `berlysia/shiori` も token なしでは取れないので（#231）、APM の失敗を WARNING に留める扱いは続く
 - `docs/decisions/0022-agent-vm-node-modules.md` (2026-10-02) — VM では、repo の各パッケージの `node_modules` を VM ローカルのディスクへの bind mount に差し替える。repo を同じパスで共有する決定は変わらず、install 物の層だけを machine ごとに分ける。K17 の VM 許可リストに `agent-vm-node-modules` を足した
 - `git show 52dc6fd447:docs/plans/agent-vm/portless/spec.md` (2026-10-04、#207) — dev server のポートは、VM ごとの portless の proxy で振り分ける。launcher は machine ごとに 17300〜17399 から proxy のポートを 1 つ割り当てて meta（`proxy_port`）に記録し、`PORTLESS_PORT` と `PORTLESS_HTTPS=0` でセッションに渡す。割り当ての台帳は VM がマウントしない `machines/` に置き、proxy は loopback に bind するので、K1 と K23 の境界は変わらない。portless は host と共有の mise の設定で入る（K5 の軽量セットに 1 つ足す）。VM の中のプロセスがほかの machine の proxy のポートに直接 bind して、mac の `localhost` の転送を奪えることは、既存の性質として受け入れた。この変更で、すべての machine のポートが 1 つの範囲に入る。防ぐには host が mac の側の待ち受けを持つ必要があり、常駐の部品を要するので入れていない
+- `docs/decisions/0034-agent-vm-opt-in.md` (2026-10-19) — K10 の「既定で VM を経由する」を opt-in に改めた。素の `claude` / `codex` は host で動き、VM で動かすには `vclaude` / `vcodex`（`agent-vm claude|codex`）と打つ。`AGENT_VM` は廃止した。K10 後半の fail closed と `~/.config/agent-vm/config` の除外は、launcher を通る起動にだけ効く。既定の host 実行は K13 の git 面検査と R8 の保護の外にある
 
 ## References
 

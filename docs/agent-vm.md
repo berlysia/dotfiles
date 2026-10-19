@@ -2,7 +2,9 @@
 
 ## 1. 何をするか
 
-`agent-vm` は、mac 上で `claude` / `codex` を打ったときに、その repo 専用の OrbStack isolated machine の中でツールを起動する仕組みである。
+`agent-vm` は、mac 上で `vclaude` / `vcodex` を打ったときに、その repo 専用の OrbStack isolated machine の中でツールを起動する仕組みである。
+素の `claude` / `codex` は agent-vm を通らず、host でそのまま動く。
+VM で動かすかどうかは、打つコマンド名で選ぶ（`docs/decisions/0034-agent-vm-opt-in.md`）。
 
 isolated machine は `--isolated --isolate-network --forward-ssh-agent` で作られる。
 host のホームディレクトリ全体や、`mac` コマンドによる host 操作には到達できない。
@@ -25,7 +27,12 @@ VM に入るのは `.chezmoiignore` の VM ブロックに載ったものだけ�
 
 ## 3. 普段の使い方
 
-repo の中で `claude` または `codex` と打つだけでよい。打鍵は変わらない。
+VM で動かしたいときは、repo の中で `vclaude` または `vcodex` と打つ。引数はそのまま `claude` / `codex` に渡る。
+`agent-vm claude` / `agent-vm codex` も同じ動作である。
+素の `claude` / `codex` は host で動き、VM には入らない。
+
+以前の版からの移行では、`chezmoi apply` の後に新しいシェルを開く。
+すでに開いているシェルには、古い `claude()` / `codex()` 関数が残っていて、素の `claude` / `codex` が VM に入ってしまう。
 
 初めてその repo で起動したときだけ、machine の作成を待つ。
 進捗は段階ごとに 1 行ずつ表示される。
@@ -169,27 +176,31 @@ agent-vm env gh [--repo OWNER/REPO] [--vault Personal|Formal]
 1. `https://github.com/settings/personal-access-tokens` で、状態ファイルの `pat_name` の PAT を削除する。
 2. 状態ファイルが無いときは、env ファイルの `GH_TOKEN=op://<vault>/<id>/credential` の id の item を開く。title（`agent-vm-gh <PAT 名>`）から PAT の名前が分かる。
 
-## 5. host で動かしたいとき
+## 5. VM で動かすか、host で動かすか
 
-1 回だけ host で動かすには `AGENT_VM=off claude`（または `codex`）と打つ。
+入口は 3 つの契約で決まる。
 
-常にその repo を host で動かしたい場合は、`~/.config/agent-vm/config` に repo の絶対パスを 1 行 1 パスで書く。`#` 以降はコメントとして無視される。
+- (a) 素の `claude` / `codex` は常に host の実行ファイルで、agent-vm を通らない。host で動かしたいときは、そのまま打つ。
+- (b) `vclaude` / `vcodex` と `agent-vm claude|codex` は同じ契約で、agent-vm の判定に従う。通常は VM で起動し、repo の外と (c) の一覧に載った repo では host で動く。異常があれば止まる（6 節）。
+- (c) `~/.config/agent-vm/config` は、(b) で起動しても host で動かす repo の一覧である。(b) にだけ効き、素の `claude` / `codex` には関係しない。
+
+(c) には repo の絶対パスを 1 行 1 パスで書く。`#` 以降はコメントとして無視される。
 このファイルは host にだけ置く。repo の中に置かないのは、VM が書ける場所に隔離の解除設定を置かせないためである。
 
 exclude に載せた repo では、隔離だけでなく、6 節の git 面検査とログの取り込みも行われない。host でそのまま `git` や `claude` を動かすのと同じ状態になる。
 
-起動が終了コード 1 で止まったときも、`AGENT_VM=off` を付ければ host に切り替えられる（6 節を参照）。
+環境変数 `AGENT_VM` は廃止した。設定しても無視される。
 
 ## 6. 終了時の表示と復旧
 
 ### 終了コード
 
-| コード | 意味                                                                                                                                                                                                                                                                  |
-| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1      | 起動を止めた。OrbStack が応答しない、`.git` が壊れている、以前 VM で使った repo の `.git` が消えている、repo の外で `agent-vm shell` を実行した、など。host には切り替わらない。これは意図した挙動であり、host で動かすかどうかは `AGENT_VM=off` を付けて自分で選ぶ。 |
-| 3      | セッション中に `.git/hooks` や `.git/config` の実行系設定など、host で git を使ったときに実行される面が変わっていた。                                                                                                                                                 |
-| 4      | セッションログの一部が host 側の記録と食い違っていて、取り込めなかった。                                                                                                                                                                                              |
-| 5      | 終了処理のロックを取れず、ログ取り込みと git 面検査を省略した。                                                                                                                                                                                                       |
+| コード | 意味                                                                                                                                                                                                                                                                                               |
+| ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1      | 起動を止めた。OrbStack が応答しない、`.git` が壊れている、以前 VM で使った repo の `.git` が消えている、repo の外で `agent-vm shell` を実行した、など。host には切り替わらない。これは意図した挙動であり、host で動かすかどうかは、agent-vm を通さずに `claude` / `codex` を直接打って自分で選ぶ。 |
+| 3      | セッション中に `.git/hooks` や `.git/config` の実行系設定など、host で git を使ったときに実行される面が変わっていた。                                                                                                                                                                              |
+| 4      | セッションログの一部が host 側の記録と食い違っていて、取り込めなかった。                                                                                                                                                                                                                           |
+| 5      | 終了処理のロックを取れず、ログ取り込みと git 面検査を省略した。                                                                                                                                                                                                                                    |
 
 コード 3 と 4 は、内容そのものは失われていない。ツールの起動と終了は正常に完了している。
 
@@ -209,14 +220,18 @@ exclude に載せた repo では、隔離だけでなく、6 節の git 面検�
 - VM の中で手で `chezmoi apply` すると、次の bootstrap まで音声通知の hook と除外した MCP が戻る。戻したくなければ `agent-vm rm` で作り直す。
 - VM の中で user スコープや codex の設定に足した MCP は、dotfiles の変更後の bootstrap で取り除かれる（Claude の project スコープは残る）。
 
-agent-vm 自体が想定外のエラーで止まったとき（OrbStack の不調を含む）は、その場は `AGENT_VM=off` で host に切り替えて作業を続けられる。machine を作り直したい場合は `agent-vm rm` で削除し、次回起動時に作り直す。
+agent-vm 自体が想定外のエラーで止まったとき（OrbStack の不調を含む）は、その場は agent-vm を通さずに `claude` / `codex` を直接打って、host で作業を続けられる。machine を作り直したい場合は `agent-vm rm` で削除し、次回起動時に作り直す。
 
 `.git` が壊れた repo、または以前 VM で使った repo の `.git` が消えている場合だけは host に切り替わらず止まる。
-git が失敗したことも、`.git` が消えていることも、それ自体は「repo の外にいる証拠」にならない。VM が `.git` を壊した可能性を否定できないので、host での実行を続けさせないほうが安全である。この場合に host で動かすには `AGENT_VM=off` を明示する。
+git が失敗したことも、`.git` が消えていることも、それ自体は「repo の外にいる証拠」にならない。VM が `.git` を壊した可能性を否定できないので、host での実行を続けさせないほうが安全である。この場合に host で動かすには、agent-vm を通さずに `claude` / `codex` を直接打つ。
 
 ## 7. 気をつけること
 
 - **VM セッション中は、その repo で host の git を使わない。** git 面検査は起動時と終了時にしか走らないので、セッション中に host で git を使うと、検査の前に改変された設定が実行されうる。ターミナルタイトルが `[vm:<machine>] <repo>` に変わっている間は VM セッション中である。
+- **VM で使った repo を host で使うときは、VM が書き換えたファイルを自分で確かめる。** 素の `claude` / `codex` や git を host で動かすと、VM が書き換えたファイルを、host が検査なしで読み、実行しうる。確かめる手順は 2 つに分かれる。
+  - **`.git/hooks` と `.git/config` の実行系設定**: VM セッションの終了時の報告（終了コード 3）を確かめてから、host で使う。終了コード 3 が守るのは、この `.git` の面だけである。
+  - **repo 内で host が読み、実行しうるファイル**（`.claude/` 配下全体、`.mcp.json`、`CLAUDE.md`、`.envrc`、`.vscode/tasks.json` など）: launcher は検査しない。VM セッションの後、host で素の `claude` / `codex` を開く前に、`git status --ignored` と `git diff` で自分で確かめる。`.claude/settings.local.json` のように gitignore されたファイルは `git diff` に出ないので、`--ignored` を使う。
+  - 後者を自動で検知する仕組みは無い。確かめ忘れは、残っているリスクである。
 - `agent-vm env adopt <machine>` は、孤立した env ファイルが「移動前の同じ repo」のものかどうかを確認しない。記録された repo path が存在しないというだけで孤立と判定する。引き継ぐかどうかは自分で判断する。
 - mac のクリップボードにある画像は VM に貼り付けられない。画像は repo 内に保存してパスで渡す（repo は host と同じパスで mount されているので、そのまま VM からも読める）。
 - VM の `~/.gitconfig` は、GitHub の取得を SSH に書き換えない。`https://github.com/` の取得は匿名の HTTPS のまま行い、push だけを `pushInsteadOf` で SSH（転送された agent）にする。取得まで SSH に書き換えると、agent の承認が毎回要り、APM などの取得が失敗するか止まるため（#194）。そのため、VM の中では private のリポジトリを `https://github.com/` の URL で取得できない。private のリポジトリは `git@github.com:` の URL を直接使う（private-skills はこの形）。

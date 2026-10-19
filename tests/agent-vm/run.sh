@@ -216,14 +216,14 @@ test_health_fails_closed_when_orb_hangs() {
   out=$(STUB_ORB_SLEEP=5 bash -c "AGENT_VM_LIB=1 . '$LAUNCHER'; check_health" 2>&1) || status=$?
   end=$(date +%s)
   assert_eq 1 "$status" "hung orb fails"
-  assert_contains "$out" "AGENT_VM=off" "guidance printed"
+  assert_contains "$out" "not through agent-vm" "guidance printed"
   if [[ $((end - start)) -le 4 ]]; then record "PASS gives up within ~3s"; else record "FAIL gives up within ~3s ($((end - start))s)"; fi
 }
 test_health_fails_when_orb_missing() {
   local out status=0
   out=$(PATH="/usr/bin:/bin" bash -c "AGENT_VM_LIB=1 . '$LAUNCHER'; check_health" 2>&1) || status=$?
   assert_eq 1 "$status" "missing orb fails"
-  assert_contains "$out" "AGENT_VM=off" "guidance printed"
+  assert_contains "$out" "not through agent-vm" "guidance printed"
 }
 test_working_tree_resolved_from_chezmoi_source_path() {
   local wt="$TMP_ROOT/dotfiles"; mkdir -p "$wt/home" && git -C "$wt" init -q
@@ -253,7 +253,7 @@ test_broken_git_dir_fails_closed_instead_of_running_on_the_host() {
   local status=0 out; out=$(cd "$repo" && STUB_CHEZMOI_STDOUT="$wt/home" bash "$LAUNCHER" claude </dev/null 2>&1) || status=$?
   assert_eq 1 "$status" "broken repo -> refuse"
   assert_contains "$out" "not inside a usable git repository" "refused by the repository check itself"
-  assert_contains "$out" "AGENT_VM=off" "hint printed"
+  assert_contains "$out" "not through agent-vm" "hint printed"
   assert_not_contains "$(cat "$STUB_LOG")" "claude" "host claude never executed"
 }
 test_git_file_worktree_marker_counts_as_a_repo() {
@@ -272,6 +272,8 @@ test_known_repo_with_deleted_git_dir_is_refused() {
   local status=0 out; out=$(cd "$repo" && GIT_CEILING_DIRECTORIES="$TMP_ROOT" bash "$LAUNCHER" claude </dev/null 2>&1) || status=$?
   assert_eq 1 "$status" "a previously used repo whose .git vanished -> refuse"
   assert_contains "$out" ".git is missing" "names the reason"
+  assert_contains "$out" "not through agent-vm" "host fallback guidance printed"
+  assert_contains "${out%%not through agent-vm*}" "Check the repository" "repository check comes before the host fallback"
   assert_not_contains "$(cat "$STUB_LOG")" "claude" "host claude never executed"
 }
 test_unreadable_record_fails_closed_outside_a_repo() {
@@ -321,7 +323,7 @@ test_unexpected_failure_prints_the_host_hint() {
   local wt repo; wt=$(make_golden_fixture); repo=$(make_flow_repo)
   local out; out=$(cd "$repo" && STUB_CHEZMOI_STDOUT="$wt/home" STUB_ORB_FAIL_ON="create" bash "$LAUNCHER" claude </dev/null 2>&1) || true
   assert_contains "$out" "failed unexpectedly" "ERR trap fired"
-  assert_contains "$out" "AGENT_VM=off" "hint on an unexpected failure"
+  assert_contains "$out" "not through agent-vm" "hint on an unexpected failure"
 }
 test_bootstrap_failure_prints_the_host_hint() {
   local wt repo m; wt=$(make_dotfiles_fixture); repo=$(make_flow_repo)
@@ -452,7 +454,7 @@ test_mount_paths_with_separators_are_refused() {
   assert_status 0 "plain paths pass" -- check_mount_paths /a/b "/with space/c"
   local err; err=$( (check_mount_paths "/a,b") 2>&1 || true)
   assert_contains "$err" "/a,b" "message names the path"
-  assert_contains "$err" "AGENT_VM=off" "message gives the host fallback"
+  assert_contains "$err" "not through agent-vm" "message gives the host fallback"
 }
 test_vm_mounts_browsers_destination_is_what_bootstrap_checks() {
   # bootstrap's claude_keep decides on the presence of BROWSERS_ROOT; the golden keeps the browser MCP entries for
@@ -561,7 +563,7 @@ test_clone_with_unswapped_mounts_is_deleted_not_started() {
   local status=0 err; err=$(STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" ensure_machine agent-c-000000 /repo/path "$wt" 2>&1) || status=$?
   assert_eq 1 "$status" "refused"
   assert_contains "$err" "OrbStack" "message names OrbStack (and its version when available)"
-  assert_contains "$err" "AGENT_VM=off" "message gives the host fallback"
+  assert_contains "$err" "not through agent-vm" "message gives the host fallback"
   assert_contains "$(cat "$STUB_LOG")" "orb delete -f agent-c-000000" "clone deleted"
   assert_not_contains "$(cat "$STUB_LOG")" "orb start agent-c-000000" "never started"
   assert_status 1 "sentinel cleared once deleted" -- test -e "$AGENT_VM_STATE_DIR/creating/agent-c-000000"

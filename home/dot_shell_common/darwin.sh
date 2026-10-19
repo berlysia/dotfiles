@@ -38,6 +38,6 @@ EOF
   launchctl load -w ~/Library/LaunchAgents/com.1password.SSH_AUTH_SOCK.plist
 fi
 
-# agent-vm: route claude / codex into the per-repository OrbStack machine
+# agent-vm: vclaude / vcodex run claude / codex in the per-repository OrbStack machine
 # shellcheck disable=SC2154
 [ -f "$SHELL_COMMON/agent_vm.sh" ] && . "$SHELL_COMMON/agent_vm.sh"

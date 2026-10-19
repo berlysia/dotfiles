@@ -164,7 +164,7 @@ is_excluded() { # repo_root; config: one absolute path per line, '#' starts a co
   return 1
 }
 
-FAIL_CLOSED_HINT="to run on the host instead: AGENT_VM=off claude"
+FAIL_CLOSED_HINT="to run on the host instead, run claude / codex directly (not through agent-vm)"
 
 run_with_timeout() { # seconds cmd... (macOS has no timeout(1); perl alarm is standard)
   perl -e 'alarm shift; exec @ARGV or exit 127' "$@"
@@ -1676,8 +1676,8 @@ host_reason() { # -> why the tool should run on the host; empty when it should r
     local status=0
     known=$(known_repo_containing_cwd) || status=$?
     case "$status" in
-      0) die ".git is missing in $known, which ran in an agent-vm machine before; refusing to run on the host. Check the repository, then: agent-vm rm $known (or AGENT_VM=off to override)" ;;
-      2) die "cannot read agent-vm record $known; refusing to run on the host. Remove or fix it (agent-vm list shows records), or use AGENT_VM=off to override" ;;
+      0) die ".git is missing in $known, which ran in an agent-vm machine before; refusing to run on the host. Check the repository, then: agent-vm rm $known (or run claude / codex directly, not through agent-vm, to override)" ;;
+      2) die "cannot read agent-vm record $known; refusing to run on the host. Remove or fix it (agent-vm list shows records), or run claude / codex directly (not through agent-vm) to override" ;;
     esac
     echo "not inside a git repository"
     return 0
