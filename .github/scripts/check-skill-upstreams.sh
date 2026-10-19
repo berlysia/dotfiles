@@ -700,6 +700,8 @@ sync_dashboard() {
       ;;
     reopen)
       # A failed reopen must not fall through to create: the next run tries the reopen again.
+      # Reopening sends subscribers a state-change notification and keeps a pin a person set
+      # (seen on #329, 2026-10-19); it only happens after a person closed the dashboard.
       if ! gh_write issue reopen "$num" -R "$REPO"; then
         DASH_ACTION=fail
         fail_reason dashboard "dashboard reopen failed (HTTP $WRITE_STATUS)"
