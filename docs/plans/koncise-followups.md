@@ -25,4 +25,6 @@ yomiyasu（[nanaism/yomiyasu](https://github.com/nanaism/yomiyasu) の `79d15a6`
 - 出力: 「書き手に確かめたい点」の上限が yomiyasu は 2 点、koncise は 3 点
 - 検査の順: yomiyasu は検査（`yomiyasu_check.py`）の後に本文を 1 字でも変えたら、検査をやり直すよう求める。記録を `.yomiyasu/` に書く
 
-koncise を先にかけ、その出力に yomiyasu をかける順にすれば、yomiyasu は koncise が決めた節と手順を原文として保つので、上の 4 点のうち始めの 2 点と検査の順は解ける（この順での試しはまだ）。yomiyasu を入れないなら、「併用」節から名前を外す。
+koncise を先にかけ、その出力に yomiyasu をかける順にすれば、yomiyasu は koncise が決めた節と手順を原文として保つので、上の 4 点のうち始めの 2 点と検査の順は解ける。各 1 回の試しでは、この順でも逆の順でも、先にかけたスキルの直しは残った。
+
+yomiyasu は自己管理にして、文章スキルを役割別に分ける作業の中で扱う（`docs/plans/writing-skills-by-role.md`）。「併用」節の書き方は、そこで決まった役割の分け方に合わせて直す。
