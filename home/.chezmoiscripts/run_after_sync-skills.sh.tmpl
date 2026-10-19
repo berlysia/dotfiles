@@ -23,6 +23,30 @@ if [ -f "$HOME/.apm/apm.lock.yaml" ]; then
   done < <(grep '^  - \.claude/skills/' "$HOME/.apm/apm.lock.yaml" | sed 's|^  - \.claude/skills/||')
 fi
 
+# A name in both the apm lock and .skills is excluded above, so the handcrafted
+# copy is silently never deployed (e.g. a machine that has not yet run
+# `apm uninstall -g` after a skill moved from apm to .skills). Warn when that
+# actually happens, with the recovery step as a greppable `recover:` field.
+# Each lock entry lists its deployed top-level skill dirs; `virtual_path` gives
+# the declaration to uninstall. Bundles have none, so they get the fixed text.
+if [ -f "$HOME/.apm/apm.lock.yaml" ]; then
+  while IFS=$'\t' read -r skill_name declaration; do
+    [ -d "$SKILLS_SOURCE/$skill_name" ] || continue
+    if [ -n "$declaration" ]; then
+      recover="apm uninstall -g $declaration"
+    else
+      recover="remove it from ~/.apm/apm.lock.yaml with apm uninstall -g"
+    fi
+    echo "WARNING: skill '$skill_name' is in both .skills and the apm lock; the .skills copy is not synced. recover: $recover" >&2
+  done < <(awk '
+    function flush(  i) { for (i = 1; i <= n; i++) print names[i] "\t" decl; n = 0 }
+    /^- repo_url: / { flush(); decl = ""; repo = substr($0, 13); next }
+    /^  virtual_path: / { decl = repo "/" substr($0, 17); next }
+    /^  - \.claude\/skills\/[^\/]+$/ { names[++n] = substr($0, 20) }
+    END { flush() }
+  ' "$HOME/.apm/apm.lock.yaml" | sort -u)
+fi
+
 # Also exclude private skill names so the --delete pass below doesn't wipe them
 PRIVATE_EXCLUDE_ARGS=()
 if [ -d "$PRIVATE_SKILLS_SOURCE" ]; then
