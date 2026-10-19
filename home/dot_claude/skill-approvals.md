@@ -83,3 +83,5 @@ apply は未掲載のスキルを追記するだけで、行を消さない。
 - [x] xlsx
 - [x] stop-describing-ui
 - [x] ja-doc-profile
+- [x] ja-structure
+- [x] ja-check

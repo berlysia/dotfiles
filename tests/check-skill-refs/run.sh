@@ -44,18 +44,34 @@ skill() {
   esac
 }
 
-# entry_md <name> <mode> <body>: valid entry SKILL.md (title, C2 block, body). tanteki and yomiyasu
-# list ja-doc-profile as well, as ENTRY_ROLES in the script requires.
+# Conditional-read sentences of koncise and japanese-tech-writing (ENTRY_COND_ROLES in the script).
+COND_KONCISE='1 つの依頼で、ほかの入口も順に指定されているときは、`../ja-structure/SKILL.md` を読む。最後で、重ねた入口に tanteki か yomiyasu があるときは、`../ja-check/SKILL.md` を読み、検査の段を行う。'
+COND_JTW='このスキルが最後で、重ねた入口に tanteki か yomiyasu があるときは、`../ja-check/SKILL.md` を読み、検査の段を行う。'
+
+# entry_md <name> <mode> <body>: valid entry SKILL.md (title, C2 block, body). The "役割:" line holds
+# the always-read roles of ENTRY_ROLES in the script; koncise and japanese-tech-writing also get
+# their conditional-read sentence after the body.
 entry_md() {
-  local roles=ja-fact-preservation
-  [[ -d "$S/ja-fact-preservation" ]] || skill ja-fact-preservation
+  local roles=ja-fact-preservation need="" cond="" r
   case "$1" in
     tanteki | yomiyasu)
-      [[ -d "$S/ja-doc-profile" ]] || skill ja-doc-profile
-      roles="ja-fact-preservation, ja-doc-profile"
+      roles="ja-fact-preservation, ja-doc-profile, ja-structure, ja-check"
+      need="ja-doc-profile ja-structure ja-check"
+      ;;
+    japanese-tech-writing)
+      roles="ja-fact-preservation, ja-structure"
+      need="ja-structure ja-check"
+      cond="$COND_JTW"
+      ;;
+    koncise)
+      need="ja-structure ja-check"
+      cond="$COND_KONCISE"
       ;;
   esac
-  printf '# %s\n\n役割: %s\n構成: %s\n%s\n\n%s\n' "$1" "$roles" "$2" "$FACT_LINE" "$3" >"$S/$1/SKILL.md"
+  for r in ja-fact-preservation $need; do
+    [[ -d "$S/$r" ]] || skill "$r"
+  done
+  printf '# %s\n\n役割: %s\n構成: %s\n%s\n\n%s\n\n%s\n' "$1" "$roles" "$2" "$FACT_LINE" "$3" "$cond" >"$S/$1/SKILL.md"
 }
 
 # raw_skill <name> <content>: SKILL.md written as is (for C2 fixtures)
@@ -282,15 +298,17 @@ test_tool_owned_symlink() {
 }
 
 # ---- (3) C2 lines of entry skills ----------------------------------------------------------------
-c2_ok=$'# koncise\n\n役割: ja-fact-preservation\n構成: 動かす\n'"$FACT_LINE"
+c2_ok=$'# koncise\n\n役割: ja-fact-preservation\n構成: 動かす\n'"$FACT_LINE"$'\n\n'"$COND_KONCISE"
 test_c2_valid_entries() {
   new_case
   skill ja-fact-preservation
-  raw_skill koncise "$c2_ok"
   skill ja-doc-profile
-  raw_skill tanteki $'---\nname: tanteki\n---\n\n# tanteki\n\n役割: ja-fact-preservation, ja-doc-profile\n構成: 動かす\n'"$FACT_LINE"
-  raw_skill yomiyasu $'# y\n\n役割: ja-doc-profile、`ja-fact-preservation`\n構成: 動かさない\n'"$FACT_LINE"
-  raw_skill japanese-tech-writing $'# j\n役割: ja-fact-preservation\n構成: 動かさない\n'"$FACT_LINE"
+  skill ja-structure
+  skill ja-check
+  raw_skill koncise "$c2_ok"
+  raw_skill tanteki $'---\nname: tanteki\n---\n\n# tanteki\n\n役割: ja-fact-preservation, ja-doc-profile, ja-structure, ja-check\n構成: 動かす\n'"$FACT_LINE"
+  raw_skill yomiyasu $'# y\n\n役割: ja-doc-profile、`ja-fact-preservation`、ja-structure ja-check\n構成: 動かさない\n'"$FACT_LINE"
+  raw_skill japanese-tech-writing $'# j\n役割: ja-fact-preservation, ja-structure\n構成: 動かさない\n'"$FACT_LINE"$'\n\n'"$COND_JTW"
   run_s
   assert_eq 0 "$RC" "valid entries exit 0 ($STDERR)"
 }
@@ -318,11 +336,13 @@ test_c2_role_set_per_entry() {
   new_case
   skill ja-fact-preservation
   skill ja-doc-profile
+  skill ja-structure
+  skill ja-check
   raw_skill koncise $'# k\n\n役割: ja-fact-preservation, ja-doc-profile\n構成: 動かす\n'"$FACT_LINE"
   run_s
   assert_eq 1 "$RC" "koncise listing ja-doc-profile exits 1"
   assert_contains "$STDERR" 'koncise/SKILL.md: role line lists ja-doc-profile, which this entry must not list' "extra role is reported"
-  raw_skill koncise $'# k\n\n役割: ja-fact-preservation\n構成: 動かす\n'"$FACT_LINE"
+  raw_skill koncise "$c2_ok"
   raw_skill tanteki $'# t\n\n役割: ja-fact-preservation\n構成: 動かす\n'"$FACT_LINE"
   run_s
   assert_eq 1 "$RC" "tanteki without ja-doc-profile exits 1"
@@ -330,7 +350,7 @@ test_c2_role_set_per_entry() {
   raw_skill tanteki $'# t\n\n役割: ja-doc-profile\n構成: 動かす\n'"$FACT_LINE"
   run_s
   assert_eq 1 "$RC" "tanteki without ja-fact-preservation exits 1"
-  raw_skill tanteki $'# t\n\n役割: ja-fact-preservation, ja-doc-profile\n構成: 動かす\n'"$FACT_LINE"
+  raw_skill tanteki $'# t\n\n役割: ja-fact-preservation, ja-doc-profile, ja-structure, ja-check\n構成: 動かす\n'"$FACT_LINE"
   run_s
   assert_eq 0 "$RC" "each entry with its own role set exits 0 ($STDERR)"
 }
@@ -407,6 +427,128 @@ test_c2_names_from_scope() {
   mkdir -p "$CASE/names/koncise"
   run_s --names-from "$CASE/names"
   assert_eq 1 "$RC" "entry inside --names-from is checked"
+}
+
+# ---- (3) role sets and conditional reads, per entry -----------------------------------------------
+# edit_skill <name> <from> <to>: replace the first <from> in the entry's SKILL.md with <to>
+edit_skill() {
+  local f="$S/$1/SKILL.md" c
+  c=$(<"$f")
+  printf '%s\n' "${c/"$2"/"$3"}" >"$f"
+}
+# all_entries: the four entries, valid, with the roles they need
+all_entries() {
+  new_case
+  skill koncise
+  skill tanteki
+  skill yomiyasu
+  skill japanese-tech-writing
+}
+test_entry_roles_valid() {
+  all_entries
+  run_s
+  assert_eq 0 "$RC" "all four entries with their role sets exit 0 ($STDERR)"
+}
+test_jtw_role_line_without_structure() {
+  all_entries
+  edit_skill japanese-tech-writing '役割: ja-fact-preservation, ja-structure' '役割: ja-fact-preservation'
+  run_s
+  assert_eq 1 "$RC" "japanese-tech-writing without ja-structure on the role line exits 1"
+  assert_contains "$STDERR" 'japanese-tech-writing/SKILL.md: role line does not list ja-structure' "missing ja-structure is reported"
+}
+test_koncise_role_line_with_structure() {
+  all_entries
+  edit_skill koncise '役割: ja-fact-preservation' '役割: ja-fact-preservation, ja-structure'
+  run_s
+  assert_eq 1 "$RC" "koncise listing ja-structure on the role line exits 1"
+  assert_contains "$STDERR" 'koncise/SKILL.md: role line lists ja-structure, which this entry must not list' "extra ja-structure is reported"
+}
+test_yomiyasu_role_line_without_check() {
+  all_entries
+  edit_skill yomiyasu '役割: ja-fact-preservation, ja-doc-profile, ja-structure, ja-check' '役割: ja-fact-preservation, ja-doc-profile, ja-structure'
+  run_s
+  assert_eq 1 "$RC" "yomiyasu without ja-check on the role line exits 1"
+  assert_contains "$STDERR" 'yomiyasu/SKILL.md: role line does not list ja-check' "missing ja-check is reported"
+}
+test_koncise_cond_sentence_removed() {
+  all_entries
+  edit_skill koncise "$COND_KONCISE" ''
+  run_s
+  assert_eq 1 "$RC" "koncise without the conditional sentence exits 1"
+  assert_contains "$STDERR" 'koncise/SKILL.md: no ../ja-structure/SKILL.md reference outside the role line' "missing ja-structure reference is reported"
+  assert_contains "$STDERR" 'koncise/SKILL.md: no ../ja-check/SKILL.md reference outside the role line' "missing ja-check reference is reported"
+}
+test_koncise_cond_role_renamed() {
+  all_entries
+  edit_skill koncise '../ja-check/SKILL.md' '../ja-nothing/SKILL.md'
+  run_s
+  assert_eq 1 "$RC" "koncise pointing at a role that does not exist exits 1"
+  assert_contains "$STDERR" 'koncise/SKILL.md: no ../ja-check/SKILL.md reference outside the role line' "renamed role is reported as a missing reference"
+}
+test_jtw_cond_sentence_removed() {
+  all_entries
+  edit_skill japanese-tech-writing "$COND_JTW" ''
+  run_s
+  assert_eq 1 "$RC" "japanese-tech-writing without the ja-check sentence exits 1"
+  assert_contains "$STDERR" 'japanese-tech-writing/SKILL.md: no ../ja-check/SKILL.md reference outside the role line' "missing ja-check reference is reported"
+}
+test_cond_reference_in_fence_or_quote() {
+  all_entries
+  edit_skill japanese-tech-writing "$COND_JTW" $'```\n'"$COND_JTW"$'\n```'
+  run_s
+  assert_eq 1 "$RC" "a conditional reference only inside a code fence exits 1"
+  all_entries
+  edit_skill japanese-tech-writing "$COND_JTW" "> $COND_JTW"
+  run_s
+  assert_eq 1 "$RC" "a conditional reference only inside a quote exits 1"
+  all_entries
+  edit_skill japanese-tech-writing "$COND_JTW" "$COND_JTW"$'\n\n```\n'"$COND_JTW"$'\n```'
+  run_s
+  assert_eq 0 "$RC" "a conditional reference outside a fence is enough even if a fenced copy exists ($STDERR)"
+}
+
+# ---- role skills may not point at entries or other roles ------------------------------------------
+test_check_role_references() {
+  all_entries
+  file ja-check/SKILL.md 'see ../yomiyasu/references/audience.md'
+  file yomiyasu/references/audience.md x
+  run_s
+  assert_eq 0 "$RC" "ja-check -> yomiyasu/references/ exits 0 ($STDERR)"
+  file ja-check/SKILL.md 'see ../yomiyasu/SKILL.md'
+  run_s
+  assert_eq 1 "$RC" "ja-check -> yomiyasu/SKILL.md exits 1"
+  file ja-check/SKILL.md 'see ../ja-structure/SKILL.md'
+  run_s
+  assert_eq 1 "$RC" "ja-check -> ja-structure/SKILL.md exits 1"
+}
+test_structure_role_references() {
+  all_entries
+  file ja-structure/SKILL.md 'see ../ja-check/SKILL.md'
+  run_s
+  assert_eq 1 "$RC" "ja-structure -> ja-check/SKILL.md exits 1"
+  file ja-structure/SKILL.md 'see ../ja-doc-profile/SKILL.md'
+  run_s
+  assert_eq 1 "$RC" "ja-structure -> ja-doc-profile/SKILL.md exits 1"
+  file ja-structure/SKILL.md 'see ../ja-fact-preservation/SKILL.md'
+  run_s
+  assert_eq 0 "$RC" "ja-structure -> ja-fact-preservation/SKILL.md exits 0 ($STDERR)"
+}
+
+# ---- (5) references must not name any role but ja-fact-preservation -------------------------------
+test_references_backref_names() {
+  all_entries
+  file yomiyasu/references/doc-types/manual.md 'ja-fact-preservation の足さないこと'
+  run_s
+  assert_eq 0 "$RC" "references naming ja-fact-preservation exit 0 ($STDERR)"
+  file yomiyasu/references/doc-types/manual.md 'ja-structure'
+  run_s
+  assert_eq 1 "$RC" "yomiyasu/references mentioning ja-structure exits 1"
+  assert_contains "$STDERR" 'yomiyasu/references/doc-types/manual.md: entry references must not mention ja-structure' "ja-structure backref is reported"
+  file yomiyasu/references/doc-types/manual.md 'plain'
+  file tanteki/references/lint.md 'ja-check'
+  run_s
+  assert_eq 1 "$RC" "tanteki/references mentioning ja-check exits 1"
+  assert_contains "$STDERR" 'tanteki/references/lint.md: entry references must not mention ja-check' "ja-check backref is reported"
 }
 
 # ---- runner --------------------------------------------------------------------------------------
