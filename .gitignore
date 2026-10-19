@@ -48,3 +48,6 @@ plan-review.cache.json
 # Mod engine-generated files
 mods/*/.claude-plugin/types/
 mods/*/tsconfig.json
+
+# Python bytecode (from running the skills' scripts locally)
+__pycache__/
