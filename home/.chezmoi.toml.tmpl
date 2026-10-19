@@ -11,3 +11,25 @@ agent_vm = {{ stat "/etc/agent-vm" | not | not }}
 
 [onepassword]
 prompt = false
+
+# Stop `chezmoi update` before its rebase when commit signing is unavailable (dotfiles-sync-doctor preflight).
+# Fail-open: a missing executable, DOTFILES_SYNC_DOCTOR_SKIP=1 (exactly), or any status other than 0/1 lets update run.
+[hooks.update.pre]
+command = "sh"
+args = [
+  "-c",
+  '''
+if [ "${DOTFILES_SYNC_DOCTOR_SKIP-}" = 1 ]; then
+  echo 'dotfiles-sync-doctor: skipped by DOTFILES_SYNC_DOCTOR_SKIP' >&2
+  exit 0
+fi
+doctor="$HOME/.local/bin/dotfiles-sync-doctor"
+[ -x "$doctor" ] || exit 0
+"$doctor" preflight
+rc=$?
+[ "$rc" -eq 0 ] && exit 0
+[ "$rc" -eq 1 ] && exit 1
+echo "dotfiles-sync-doctor: preflight ended with status $rc; continuing without it" >&2
+exit 0
+''',
+]

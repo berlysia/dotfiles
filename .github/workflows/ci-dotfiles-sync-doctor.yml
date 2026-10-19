@@ -1,0 +1,50 @@
+name: dotfiles-sync-doctor Tests
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - "home/dot_local/bin/executable_dotfiles-sync-doctor"
+      - "home/.chezmoi.toml.tmpl"
+      - "tests/dotfiles-sync-doctor/**"
+      - ".github/workflows/ci-dotfiles-sync-doctor.yml"
+      - ".github/actions/install-chezmoi/**"
+  pull_request:
+    branches: [master, main]
+    paths:
+      - "home/dot_local/bin/executable_dotfiles-sync-doctor"
+      - "home/.chezmoi.toml.tmpl"
+      - "tests/dotfiles-sync-doctor/**"
+      - ".github/workflows/ci-dotfiles-sync-doctor.yml"
+      - ".github/actions/install-chezmoi/**"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: dotfiles-sync-doctor tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The hook section of the tests runs the real chezmoi; without it the section fails on CI (CI=true) instead of skipping.
+      - name: Install chezmoi
+        uses: ./.github/actions/install-chezmoi
+        with:
+          install-dir: "$HOME/.local/bin"
+          add-to-path: "true"
+      # /bin/bash is 3.2 on macOS, and macOS has no `timeout`: the script and the tests must run on the stock tools.
+      - name: Run dotfiles-sync-doctor tests
+        run: /bin/bash tests/dotfiles-sync-doctor/run.sh
