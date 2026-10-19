@@ -69,10 +69,15 @@ if (cd "$TEXTLINT_DIR" && bun install --frozen-lockfile --ignore-scripts 2>&1); 
     # does for the install-failure markers, so a half-written copy never reads as "stale".
     # The temp files live in the install dir so mv stays on one filesystem.
     # Lock first: a crash in between leaves .install-state stale, never fresh.
+    # Without a bun.lock the wrapper does not compare locks, so drop any old
+    # lock copy instead of failing the whole state write.
     lock_tmp="${STATE_LOCK_FILE}.tmp.$$"
     state_tmp="${STATE_FILE}.tmp.$$"
-    if cp "$TEXTLINT_DIR/bun.lock" "$lock_tmp" \
-        && mv -f "$lock_tmp" "$STATE_LOCK_FILE" \
+    if { if [ -f "$TEXTLINT_DIR/bun.lock" ]; then
+            cp "$TEXTLINT_DIR/bun.lock" "$lock_tmp" && mv -f "$lock_tmp" "$STATE_LOCK_FILE"
+        else
+            rm -f "$STATE_LOCK_FILE"
+        fi; } \
         && cp "$TEXTLINT_DIR/package.json" "$state_tmp" \
         && mv -f "$state_tmp" "$STATE_FILE"; then
         :
