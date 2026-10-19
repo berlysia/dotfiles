@@ -345,6 +345,39 @@ describe("runLearningsCli", () => {
         1,
       );
     }));
+  it("rekey says which key is wrong and what shape a key has", () =>
+    withEnv(async (deps) => {
+      await runLearningsCli(["init"], deps);
+      await runLearningsCli(["add", "--title", "t", "--body", "b"], deps);
+      const usage = await runLearningsCli(["rekey"], deps);
+      ok(usage.stderr.includes("host/owner/repo"));
+
+      // `path` prints a file name; passing it back is the likely mistake
+      const path = (await runLearningsCli(["path"], deps)).stdout.trim();
+      const fileName = await runLearningsCli(
+        ["rekey", path.slice(path.lastIndexOf("/") + 1), "github.com/foo/baz"],
+        deps,
+      );
+      strictEqual(fileName.exitCode, 1);
+      ok(fileName.stderr.includes("<old>"));
+      ok(fileName.stderr.includes("ファイル名"));
+      ok(fileName.stderr.includes("github.com/foo/bar"));
+
+      const badNew = await runLearningsCli(
+        ["rekey", "github.com/foo/bar", "baz"],
+        deps,
+      );
+      strictEqual(badNew.exitCode, 1);
+      ok(badNew.stderr.includes("<new>"));
+      ok(badNew.stderr.includes("host/owner/repo"));
+
+      const same = await runLearningsCli(
+        ["rekey", "github.com/foo/bar", "github.com/foo/bar"],
+        deps,
+      );
+      strictEqual(same.exitCode, 1);
+      ok(same.stderr.includes("同じ"));
+    }));
   it("status reports queue counts and the worker's recent results", () =>
     withEnv(async (deps) => {
       strictEqual((await runLearningsCli(["init"], deps)).exitCode, 0);
