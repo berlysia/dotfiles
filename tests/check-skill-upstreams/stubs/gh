@@ -7,6 +7,8 @@
 #                      stderr and exits 1. A path with no route is a 404.
 #           issues.json answer to `gh issue list` (default [])
 #           labels.json answer to `gh label list` (default [])
+#           create_out  printed by `gh issue create` as is (default: .../issues/<100 + call number>)
+#           fail_msg    stderr of an injected failure (default: gh: injected failure ::error::x (HTTP 500))
 #           fail        one substring per line; a call whose argv contains one of them fails with exit 1
 #           bodies/<n>  content of the --body-file of call n
 # STUB_LOG  one line per call: "CALL <n>: gh <argv, %q-quoted>"
@@ -31,7 +33,7 @@ done
 if [[ -f $STUB_DIR/fail ]]; then
   while IFS= read -r pattern || [[ -n $pattern ]]; do
     if [[ -n $pattern && $line == *"$pattern"* ]]; then
-      echo "gh: injected failure ::error::x (HTTP 500)" >&2
+      if [[ -f $STUB_DIR/fail_msg ]]; then cat -- "$STUB_DIR/fail_msg" >&2; else echo "gh: injected failure ::error::x (HTTP 500)" >&2; fi
       exit 1
     fi
   done <"$STUB_DIR/fail"
@@ -61,7 +63,10 @@ case ${1:-} in
       list)
         if [[ -f $STUB_DIR/issues.json ]]; then cat "$STUB_DIR/issues.json"; else echo '[]'; fi
         ;;
-      create) echo "https://github.com/stub/stub/issues/99" ;;
+      create)
+        if [[ -f $STUB_DIR/create_out ]]; then cat "$STUB_DIR/create_out"; else echo "https://github.com/stub/stub/issues/$((100 + n))"; fi
+        ;;
+      reopen) ;;
     esac
     ;;
   label)
