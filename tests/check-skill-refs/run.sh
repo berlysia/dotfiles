@@ -44,10 +44,18 @@ skill() {
   esac
 }
 
-# entry_md <name> <mode> <body>: valid entry SKILL.md (title, C2 block, body)
+# entry_md <name> <mode> <body>: valid entry SKILL.md (title, C2 block, body). tanteki and yomiyasu
+# list ja-doc-profile as well, as ENTRY_ROLES in the script requires.
 entry_md() {
+  local roles=ja-fact-preservation
   [[ -d "$S/ja-fact-preservation" ]] || skill ja-fact-preservation
-  printf '# %s\n\n役割: ja-fact-preservation\n構成: %s\n%s\n\n%s\n' "$1" "$2" "$FACT_LINE" "$3" >"$S/$1/SKILL.md"
+  case "$1" in
+    tanteki | yomiyasu)
+      [[ -d "$S/ja-doc-profile" ]] || skill ja-doc-profile
+      roles="ja-fact-preservation, ja-doc-profile"
+      ;;
+  esac
+  printf '# %s\n\n役割: %s\n構成: %s\n%s\n\n%s\n' "$1" "$roles" "$2" "$FACT_LINE" "$3" >"$S/$1/SKILL.md"
 }
 
 # raw_skill <name> <content>: SKILL.md written as is (for C2 fixtures)
@@ -279,9 +287,9 @@ test_c2_valid_entries() {
   new_case
   skill ja-fact-preservation
   raw_skill koncise "$c2_ok"
-  raw_skill tanteki $'---\nname: tanteki\n---\n\n# tanteki\n\n役割: ja-fact-preservation\n構成: 動かす\n'"$FACT_LINE"
-  raw_skill yomiyasu $'# y\n\n役割: ja-fact-preservation, ja-notation\n構成: 動かさない\n'"$FACT_LINE"
-  skill ja-notation
+  skill ja-doc-profile
+  raw_skill tanteki $'---\nname: tanteki\n---\n\n# tanteki\n\n役割: ja-fact-preservation, ja-doc-profile\n構成: 動かす\n'"$FACT_LINE"
+  raw_skill yomiyasu $'# y\n\n役割: ja-doc-profile、`ja-fact-preservation`\n構成: 動かさない\n'"$FACT_LINE"
   raw_skill japanese-tech-writing $'# j\n役割: ja-fact-preservation\n構成: 動かさない\n'"$FACT_LINE"
   run_s
   assert_eq 0 "$RC" "valid entries exit 0 ($STDERR)"
@@ -305,6 +313,46 @@ test_c2_role_line_content() {
   run_s
   assert_eq 1 "$RC" "役割 line without ja-fact-preservation exits 1"
   assert_contains "$STDERR" 'role line does not list ja-fact-preservation' "wrong role is reported"
+}
+test_c2_role_set_per_entry() {
+  new_case
+  skill ja-fact-preservation
+  skill ja-doc-profile
+  raw_skill koncise $'# k\n\n役割: ja-fact-preservation, ja-doc-profile\n構成: 動かす\n'"$FACT_LINE"
+  run_s
+  assert_eq 1 "$RC" "koncise listing ja-doc-profile exits 1"
+  assert_contains "$STDERR" 'koncise/SKILL.md: role line lists ja-doc-profile, which this entry must not list' "extra role is reported"
+  raw_skill koncise $'# k\n\n役割: ja-fact-preservation\n構成: 動かす\n'"$FACT_LINE"
+  raw_skill tanteki $'# t\n\n役割: ja-fact-preservation\n構成: 動かす\n'"$FACT_LINE"
+  run_s
+  assert_eq 1 "$RC" "tanteki without ja-doc-profile exits 1"
+  assert_contains "$STDERR" 'tanteki/SKILL.md: role line does not list ja-doc-profile' "missing role is reported"
+  raw_skill tanteki $'# t\n\n役割: ja-doc-profile\n構成: 動かす\n'"$FACT_LINE"
+  run_s
+  assert_eq 1 "$RC" "tanteki without ja-fact-preservation exits 1"
+  raw_skill tanteki $'# t\n\n役割: ja-fact-preservation, ja-doc-profile\n構成: 動かす\n'"$FACT_LINE"
+  run_s
+  assert_eq 0 "$RC" "each entry with its own role set exits 0 ($STDERR)"
+}
+test_entry_references_no_backref() {
+  new_case
+  skill tanteki
+  file yomiyasu/references/doc-types/manual.md 'plain text'
+  skill yomiyasu
+  run_s
+  assert_eq 0 "$RC" "entry references without ja-doc-profile exit 0 ($STDERR)"
+  file yomiyasu/references/doc-types/manual.md 'see ja-doc-profile'
+  run_s
+  assert_eq 1 "$RC" "yomiyasu/references mentioning ja-doc-profile exits 1"
+  assert_contains "$STDERR" 'yomiyasu/references/doc-types/manual.md: entry references must not mention ja-doc-profile' "backref is reported"
+  file yomiyasu/references/doc-types/manual.md 'plain text'
+  file tanteki/references/types/runbook.md 'ja-doc-profile'
+  run_s
+  assert_eq 1 "$RC" "tanteki/references mentioning ja-doc-profile exits 1"
+  file tanteki/references/types/runbook.md 'plain text'
+  file tanteki/SKILL.md-notes.txt 'ja-doc-profile'
+  run_s
+  assert_eq 0 "$RC" "a non-md or non-references file is not checked ($STDERR)"
 }
 test_c2_mode_mismatch() {
   new_case
