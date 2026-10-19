@@ -16,15 +16,11 @@ LLM を持たない決定的スクリプトなので、`rules/autonomous-lane.md
 ## マージ後の確認
 
 - 最初の cron 実行（月曜 09:00 JST）のあと、Actions の結果を見る。失敗したときに GitHub の通知が届く設定かも確かめる
-- `workflow_dispatch` で `skill-upstreams Sync` を 1 回実行し、Dashboard Issue ができることと、表の見た目（4 状態の行と #326・#327 へのリンク）を実物で見る
-- 続けて 2 回目を実行し、stdout の `dashboard` 行が `dashboard noop` になることを見る（GitHub が本文の改行を変えて返しても毎回 `update` にならない）
-- Dashboard を 1 回、手で pin する。pin が `GITHUB_TOKEN` 以外の操作で済むことを確かめる（スクリプトは pin しない）
-- Dashboard を手で閉じて次の実行を待ち、開き直されること、pin が残るか、購読者に通知が飛ぶかを見る
 
 ## 閉じた個別 Issue が 200 件の上限に近づいたとき
 
 `skill-upstreams Sync` は `upstream-sync` ラベルの Issue を 1 回の `gh issue list --limit 200` で全件読む。
-閉じた個別 Issue は増え続け、Dashboard も 1 件ぶん数に入る。200 件に達すると個別 Issue も Dashboard も止まり、job の失敗だけが残る（今は 2 件）。
+閉じた個別 Issue は増え続け、Dashboard も 1 件ぶん数に入る。200 件に達すると個別 Issue も Dashboard も止まり、job の失敗だけが残る（今は Dashboard を含めて 3 件）。
 
 決めること:
 
