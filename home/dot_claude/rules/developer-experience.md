@@ -18,7 +18,7 @@ Prefer `git ls-files` over broad Glob patterns to avoid noise from `node_modules
 
 ## Proportional Exploration
 
-When the user's problem description already specifies the cause and location, go directly to the fix. Reserve deep exploration for genuinely unclear problems.
+When the user's problem description already specifies the cause and location, go directly to that location, confirm the symptom and cause there (see 利用者の提案の扱い in `~/.claude/CLAUDE.md`), then fix. Reserve deep exploration for genuinely unclear problems.
 
 ## Decision Transparency
 
