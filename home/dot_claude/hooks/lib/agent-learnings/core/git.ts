@@ -23,32 +23,37 @@ function gitEnv(): Record<string, string> {
 }
 
 // 他人の repo の .git/config を読むことがあるので、プログラムを起動しうる設定を無効にする。
-export const runGit: RunGit = (args, cwd) => {
-  try {
-    const out = execFileSync(
-      "git",
-      [
-        "-c",
-        "core.fsmonitor=false",
-        "-c",
-        "core.hooksPath=/dev/null",
-        "-c",
-        "commit.gpgsign=false",
-        "-c",
-        "tag.gpgsign=false",
-        ...args,
-      ],
-      {
-        cwd,
-        timeout: 5_000,
-        maxBuffer: 1024 * 1024,
-        env: gitEnv(),
-        stdio: ["ignore", "pipe", "ignore"],
-      },
-    );
-    return { ok: true, stdout: out.toString("utf8").trimEnd() };
-  } catch (error) {
-    const status = (error as { status?: number | null }).status;
-    return { ok: false, status: typeof status === "number" ? status : null };
-  }
-};
+// 上限を引数にしているのは、並列で負荷の高いテスト実行が本番の上限に縛られないようにするため
+export const createRunGit =
+  (timeoutMs: number): RunGit =>
+  (args, cwd) => {
+    try {
+      const out = execFileSync(
+        "git",
+        [
+          "-c",
+          "core.fsmonitor=false",
+          "-c",
+          "core.hooksPath=/dev/null",
+          "-c",
+          "commit.gpgsign=false",
+          "-c",
+          "tag.gpgsign=false",
+          ...args,
+        ],
+        {
+          cwd,
+          timeout: timeoutMs,
+          maxBuffer: 1024 * 1024,
+          env: gitEnv(),
+          stdio: ["ignore", "pipe", "ignore"],
+        },
+      );
+      return { ok: true, stdout: out.toString("utf8").trimEnd() };
+    } catch (error) {
+      const status = (error as { status?: number | null }).status;
+      return { ok: false, status: typeof status === "number" ? status : null };
+    }
+  };
+
+export const runGit: RunGit = createRunGit(5_000);
