@@ -372,8 +372,10 @@ test("exception set: a violation outside the set is reported", () => {
 // Repository-wide application
 // ---------------------------------------------------------------------------
 
-// The ADR cleanup (plan-3) must empty these sets; each entry is a violation the
-// cleanup has not fixed yet. Names are file names under docs/decisions/.
+// Every ADR meets these checks, so the sets are empty. An entry is a known
+// violation allowed until it is fixed; a listed file that no longer violates, or
+// does not exist, fails the test so the sets only shrink. Names are file names
+// under docs/decisions/.
 const ADR_HEADING_EXCEPTIONS: ReadonlySet<string> = new Set<string>([]);
 const ADR_SESSION_PATH_EXCEPTIONS: ReadonlySet<string> = new Set<string>([]);
 const ADR_MISSING_PATH_EXCEPTIONS: ReadonlySet<string> = new Set<string>([]);
@@ -439,13 +441,13 @@ function assertAdrExceptions(
   deepEqual(problems, []);
 }
 
-test("(a) ADR headings are the fixed set (exceptions: ADRs not yet cleaned up)", () => {
+test("(a) ADR headings are the fixed set (exceptions must shrink)", () => {
   assertAdrExceptions(ADR_HEADING_EXCEPTIONS, (_path, text) =>
     checkAdrHeadings(text),
   );
 });
 
-test("(b) ADRs do not reference .tmp/sessions/ (exceptions: ADRs not yet cleaned up)", () => {
+test("(b) ADRs do not reference .tmp/sessions/ (exceptions must shrink)", () => {
   assertAdrExceptions(ADR_SESSION_PATH_EXCEPTIONS, (_path, text) =>
     checkSessionPaths(text),
   );
@@ -463,7 +465,7 @@ test("(c) no tracked text file references an ADR by line number", () => {
   deepEqual(hits, []);
 });
 
-test("(d) ADRs reference existing paths (exceptions: ADRs not yet cleaned up)", () => {
+test("(d) ADRs reference existing paths (exceptions must shrink)", () => {
   const exists = createPathExists(tracked);
   assertAdrExceptions(ADR_MISSING_PATH_EXCEPTIONS, (path, text) =>
     checkMissingPaths(path, text, exists),
@@ -485,7 +487,7 @@ test("(d) docs other than ADRs reference only existing paths (no exceptions)", (
   deepEqual(hits, []);
 });
 
-test("(e) ADRs do not reference source files by line number (exceptions: ADRs not yet cleaned up)", () => {
+test("(e) ADRs do not reference source files by line number (exceptions must shrink)", () => {
   assertAdrExceptions(ADR_SOURCE_LINE_REF_EXCEPTIONS, (_path, text) =>
     checkSourceLineRefs(text),
   );
