@@ -11,4 +11,6 @@ hook は wfDir を hook 入力の `session_id` + cwd から導出するので、
   cp -a .tmp/sessions/<旧 id 先頭8桁>/. <wfDir の値>/
   ```
 
+  `cp -a` は `archive/` も複製するが、arm を決めるのは新しい wfDir の直下のファイルだけなので、複製された `archive/` は無害である。
+
 - **`claude` を起動し直す**: `DOCUMENT_WORKFLOW_DIR=.tmp/sessions/<旧 id 先頭8桁> claude "..."` と起動時 env で pin する。containment を満たさない pin は `env-rejected` として捨てられ導出値が使われる。

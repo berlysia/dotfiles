@@ -32,6 +32,8 @@ ADR を書かない作業では、表の「ADR の…」を「commit の本文�
 
 workflow dir に `followups/` があれば、中のファイルを、名前を変えずに `docs/plans/` へ移す。表の 4 行目の行き先に、移したファイルを書く。
 
+移して commit した後、次の Document Workflow を同じセッションで始めるときは、`workflow-cli reset` で wfDir 直下を `archive/<日時>/` へ退避する。手順は [escape.md](escape.md)（dry-run の出力を AskUserQuestion で見せ、承諾後に `--confirm` で実行する）。`followups/` にファイルが残っていると reset は拒否するので、先に `docs/plans/` へ移す。`/clear` で新しいセッションにするなら reset は要らない。
+
 ## 残件を書く時点
 
 残件は、今の作業では扱わないと決めた課題である。やり残し、作業中の発見や着想、使ってみて分かった違和感の 3 種類がある。

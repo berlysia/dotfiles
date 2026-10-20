@@ -3,10 +3,14 @@
 import { strict as assert } from "node:assert";
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
+  renameSync,
+  symlinkSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -23,7 +27,12 @@ import {
   buildApprovalQuestions,
   MAX_DOCS_PER_QUESTION,
 } from "../../lib/workflow-approval.ts";
-import { listApprovalCandidates } from "../../lib/workflow-gate.ts";
+import {
+  isWorkflowActive,
+  listApprovalCandidates,
+  readWorkflowState,
+} from "../../lib/workflow-gate.ts";
+import { resolveWorkflowPaths } from "../../lib/workflow-paths.ts";
 import {
   formatRoundBudgetHeadline,
   ROUND_BUDGET,
@@ -1804,5 +1813,495 @@ describe("workflow-cli: ask-approval and approval route", () => {
     const { wf } = approvalRepo(1);
     const r = run(["bogus"], wf);
     assert.match(r.stderr, /ask-approval/);
+  });
+});
+
+describe("workflow-cli: reset", () => {
+  const RESET_NOW = new Date("2026-10-20T01:02:03.004Z");
+  const STAMP_DIR = "20261020T010203004Z";
+  const SESSION_ID = "test-ses";
+
+  function resetRepo(): { repo: string; wf: string } {
+    const repo = realpathSync(mkdtempSync(join(tmpdir(), "cli-reset-")));
+    const wf = join(repo, ".tmp", "sessions", "abcd1234");
+    mkdirSync(wf, { recursive: true });
+    return { repo, wf };
+  }
+
+  function reset(
+    repo: string,
+    wf: string,
+    args: string[],
+    extra: Partial<Parameters<typeof runWorkflowCli>[1]> = {},
+  ) {
+    return runWorkflowCli(["reset", ...args], {
+      cwd: repo,
+      wfDir: wf,
+      sessionId: SESSION_ID,
+      wfDirSource: "derived",
+      now: RESET_NOW,
+      ...extra,
+    });
+  }
+
+  function cli(repo: string, wf: string, args: string[]) {
+    return runWorkflowCli(args, {
+      cwd: repo,
+      wfDir: wf,
+      sessionId: SESSION_ID,
+      wfDirSource: "derived",
+      now: RESET_NOW,
+    });
+  }
+
+  /** The seven-entry layout of a finished single-layer flow. */
+  function seedFlow(wf: string): void {
+    writeFileSync(join(wf, "research.md"), "research");
+    writeFileSync(join(wf, "plan.md"), buildPlanContent(pendingWorkflowRepo()));
+    writeFileSync(join(wf, "plan-1.md"), "plan one");
+    writeFileSync(join(wf, "approvals.log"), "ledger\n");
+    writeFileSync(join(wf, "reviewer-runs.log"), "runs\n");
+    writeFileSync(join(wf, ".tripwire-baseline"), "baseline\n");
+    writeFileSync(
+      join(wf, "workflow-state.json"),
+      JSON.stringify({ mode: "document-workflow" }),
+    );
+  }
+
+  /** Names and contents of every entry directly under dir (directories as `<dir>`). */
+  function snapshot(dir: string): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const name of readdirSync(dir).sort()) {
+      const st = lstatSync(join(dir, name));
+      out[name] = st.isSymbolicLink()
+        ? "<link>"
+        : st.isDirectory()
+          ? "<dir>"
+          : readFileSync(join(dir, name), "utf-8");
+    }
+    return out;
+  }
+
+  function tokenOf(stdout: string): string {
+    const m = stdout.match(/^confirm token: ([0-9a-f]{12})$/m);
+    assert.ok(m?.[1], `no token in:\n${stdout}`);
+    return m[1];
+  }
+
+  const EXPECTED_ORDER = [
+    "plan.md",
+    "plan-1.md",
+    "research.md",
+    "workflow-state.json",
+    ".tripwire-baseline",
+    "approvals.log",
+    "reviewer-runs.log",
+  ];
+
+  it("dry-run lists entries in archive order and changes nothing", () => {
+    const { repo, wf } = resetRepo();
+    seedFlow(wf);
+    const before = snapshot(wf);
+    const r = reset(repo, wf, []);
+    assert.equal(r.exitCode, 0);
+    const lines = r.stdout.split("\n");
+    const listed = lines.filter((l) => EXPECTED_ORDER.includes(l));
+    assert.deepEqual(listed, EXPECTED_ORDER);
+    assert.match(
+      r.stdout,
+      /would archive to: .*\/archive\/20261020T010203004Z/,
+    );
+    assert.match(r.stdout, /garbage-collected \(7 days/);
+    assert.match(r.stdout, /workflow-cli reset --confirm [0-9a-f]{12}/);
+    assert.deepEqual(snapshot(wf), before);
+    assert.ok(!existsSync(join(wf, "archive")));
+  });
+
+  it("--confirm with the dry-run token archives all entries and disarms the workflow", () => {
+    const { repo, wf } = resetRepo();
+    seedFlow(wf);
+    const token = tokenOf(reset(repo, wf, []).stdout);
+    const r = reset(repo, wf, ["--confirm", token]);
+    assert.equal(r.exitCode, 0, r.stderr);
+    assert.match(r.stdout, /archived to: .*archive\/20261020T010203004Z/);
+    assert.deepEqual(readdirSync(wf), ["archive"]);
+    assert.deepEqual(
+      readdirSync(join(wf, "archive", STAMP_DIR)).sort(),
+      [...EXPECTED_ORDER].sort(),
+    );
+    assert.equal(
+      readFileSync(join(wf, "archive", STAMP_DIR, "approvals.log"), "utf-8"),
+      "ledger\n",
+    );
+    const paths = resolveWorkflowPaths(wf);
+    assert.equal(
+      isWorkflowActive(paths, readWorkflowState(paths.state)),
+      false,
+    );
+    // plan-N enumeration is not exported; status lists plans only in two-layer
+    // mode, so check that no spec/plan-N is picked up and the plan.md line fails.
+    const status = cli(repo, wf, ["status"]);
+    assert.doesNotMatch(status.stdout, /plan: plan-1\.md/);
+    assert.match(status.stdout, /conditions on `plan\.md`/);
+    assert.match(status.stdout, /✗ Approval Status \(missing/);
+  });
+
+  it("hook-written ledgers created after the dry-run do not change the token", () => {
+    const { repo, wf } = resetRepo();
+    seedFlow(wf);
+    const token = tokenOf(reset(repo, wf, []).stdout);
+    writeFileSync(join(wf, ".tripwire-baseline"), "rebuilt\n");
+    writeFileSync(join(wf, "off-plan-writes.log"), "one line\n");
+    const r = reset(repo, wf, ["--confirm", token]);
+    assert.equal(r.exitCode, 0, r.stderr);
+    assert.deepEqual(readdirSync(wf), ["archive"]);
+  });
+
+  it("rejects a wrong token and leaves the dir untouched", () => {
+    const { repo, wf } = resetRepo();
+    seedFlow(wf);
+    const before = snapshot(wf);
+    const r = reset(repo, wf, ["--confirm", "000000000000"]);
+    assert.equal(r.exitCode, 1);
+    assert.match(r.stderr, /changed since the dry-run/);
+    assert.deepEqual(snapshot(wf), before);
+  });
+
+  it("rejects the old token after a document is added", () => {
+    const { repo, wf } = resetRepo();
+    seedFlow(wf);
+    const token = tokenOf(reset(repo, wf, []).stdout);
+    writeFileSync(join(wf, "extra.md"), "x");
+    const before = snapshot(wf);
+    const r = reset(repo, wf, ["--confirm", token]);
+    assert.equal(r.exitCode, 1);
+    assert.match(r.stderr, /changed since the dry-run/);
+    assert.deepEqual(snapshot(wf), before);
+  });
+
+  it("shows approval state and changes the token when approval is withdrawn", () => {
+    const { repo, wf } = resetRepo();
+    writeFileSync(join(wf, "plan.md"), buildPlanContent(pendingWorkflowRepo()));
+    const notApproved = reset(repo, wf, []);
+    assert.match(notApproved.stdout, /^plan\.md: not approved$/m);
+    writeFileSync(
+      join(wf, "plan.md"),
+      buildPlanContent(approvedWorkflowRepo()),
+    );
+    recordApprovalsForTest(wf);
+    const approved = reset(repo, wf, []);
+    assert.match(approved.stdout, /^plan\.md: approved$/m);
+    assert.notEqual(tokenOf(approved.stdout), tokenOf(notApproved.stdout));
+  });
+
+  it("reports the implementation phase and the token follows it", () => {
+    const { repo, wf } = resetRepo();
+    writeFileSync(join(wf, "research.md"), "research");
+    writeFileSync(
+      join(wf, "plan.md"),
+      buildPlanContent(approvedWorkflowRepo()),
+    );
+    recordApprovalsForTest(wf);
+    const yes = reset(repo, wf, []);
+    assert.match(yes.stdout, /^implementation phase: yes$/m);
+    // Withdraw the approval record only; the file name set is unchanged.
+    unlinkSync(join(wf, "approvals.log"));
+    const no = reset(repo, wf, []);
+    assert.match(no.stdout, /^implementation phase: no$/m);
+    assert.notEqual(tokenOf(yes.stdout), tokenOf(no.stdout));
+  });
+
+  it("a plan.md rewritten after reset is not approved", () => {
+    const { repo, wf } = resetRepo();
+    const content = buildPlanContent(approvedWorkflowRepo());
+    writeFileSync(join(wf, "research.md"), "research");
+    writeFileSync(join(wf, "plan.md"), content);
+    recordApprovalsForTest(wf);
+    const token = tokenOf(reset(repo, wf, []).stdout);
+    assert.equal(reset(repo, wf, ["--confirm", token]).exitCode, 0);
+    writeFileSync(join(wf, "plan.md"), content);
+    const after = reset(repo, wf, []);
+    assert.match(after.stdout, /^plan\.md: not approved$/m);
+  });
+
+  it("does not carry round budget or reviewer runs into the next flow", () => {
+    const { repo, wf } = resetRepo();
+    const body = (rounds: number) =>
+      [
+        "## Goal",
+        "g",
+        ...Array.from({ length: rounds }, (_, i) =>
+          [
+            `## Reviewer Outputs (Round ${i + 1})`,
+            "",
+            "### logic-validator",
+            "- verdict: ",
+            "",
+          ].join("\n"),
+        ),
+        "## Approval",
+        "- Plan Status: complete",
+        "- Review Status: pending",
+        "- Approval Status: pending",
+      ].join("\n");
+    writeFileSync(join(wf, "plan.md"), body(2));
+    writeFileSync(
+      join(wf, ".round-baseline"),
+      `2\t${RESET_NOW.toISOString()}\n`,
+    );
+    writeFileSync(
+      join(wf, "reviewer-runs.log"),
+      `${SESSION_ID}\tlogic-validator\t${RESET_NOW.toISOString()}\n`,
+    );
+    const token = tokenOf(reset(repo, wf, []).stdout);
+    assert.equal(reset(repo, wf, ["--confirm", token]).exitCode, 0);
+
+    writeFileSync(join(wf, "plan.md"), body(0));
+    const round = cli(repo, wf, ["round", "plan.md"]);
+    assert.equal(round.exitCode, 0, round.stderr);
+    assert.match(
+      readFileSync(join(wf, "plan.md"), "utf-8"),
+      /## Reviewer Outputs \(Round 1\)/,
+    );
+    const stamp = cli(repo, wf, [
+      "stamp",
+      "plan.md",
+      "--verdict",
+      "pass",
+      "--reviewers",
+      "logic-validator",
+    ]);
+    assert.equal(stamp.exitCode, 1);
+    assert.match(stamp.stderr, /logic-validator/);
+  });
+
+  it("keeps an earlier archive and adds a new one", () => {
+    const { repo, wf } = resetRepo();
+    mkdirSync(join(wf, "archive", "20261019T000000000Z"), { recursive: true });
+    writeFileSync(join(wf, "archive", "20261019T000000000Z", "old.md"), "old");
+    writeFileSync(join(wf, "plan.md"), "p");
+    const token = tokenOf(reset(repo, wf, []).stdout);
+    assert.equal(reset(repo, wf, ["--confirm", token]).exitCode, 0);
+    assert.equal(
+      readFileSync(
+        join(wf, "archive", "20261019T000000000Z", "old.md"),
+        "utf-8",
+      ),
+      "old",
+    );
+    assert.deepEqual(readdirSync(join(wf, "archive", STAMP_DIR)), ["plan.md"]);
+  });
+
+  it("refuses when archive is a file", () => {
+    const { repo, wf } = resetRepo();
+    writeFileSync(join(wf, "archive"), "not a dir");
+    writeFileSync(join(wf, "plan.md"), "p");
+    const before = snapshot(wf);
+    const r = reset(repo, wf, []);
+    assert.equal(r.exitCode, 1);
+    assert.deepEqual(snapshot(wf), before);
+  });
+
+  it("refuses when archive is a symlink and leaves the target alone", () => {
+    const { repo, wf } = resetRepo();
+    const outside = join(repo, "outside");
+    mkdirSync(outside);
+    symlinkSync(outside, join(wf, "archive"));
+    writeFileSync(join(wf, "plan.md"), "p");
+    const r = reset(repo, wf, []);
+    assert.equal(r.exitCode, 1);
+    assert.deepEqual(readdirSync(outside), []);
+    assert.ok(existsSync(join(wf, "plan.md")));
+  });
+
+  it("says nothing to reset when only archive remains or the dir is missing", () => {
+    const { repo, wf } = resetRepo();
+    mkdirSync(join(wf, "archive"));
+    const only = reset(repo, wf, []);
+    assert.equal(only.exitCode, 0);
+    assert.match(only.stdout, /nothing to reset/);
+    const missing = join(repo, ".tmp", "sessions", "ffff0000");
+    const gone = reset(repo, missing, [], { wfDir: missing });
+    assert.equal(gone.exitCode, 0);
+    assert.match(gone.stdout, /nothing to reset/);
+    assert.ok(!existsSync(missing));
+    const confirmed = reset(repo, wf, ["--confirm", "abcdef012345"]);
+    assert.match(confirmed.stdout, /nothing to reset/);
+    assert.deepEqual(readdirSync(join(wf, "archive")), []);
+  });
+
+  it("refuses a followups/ with files, in dry-run and with --confirm", () => {
+    const { repo, wf } = resetRepo();
+    mkdirSync(join(wf, "followups"));
+    writeFileSync(join(wf, "followups", "todo.md"), "t");
+    writeFileSync(join(wf, "plan.md"), "p");
+    const before = snapshot(wf);
+    for (const args of [[], ["--confirm", "abcdef012345"]]) {
+      const r = reset(repo, wf, args);
+      assert.equal(r.exitCode, 1);
+      assert.match(r.stderr, /followups\/ has 1 file\(s\)/);
+    }
+    assert.deepEqual(snapshot(wf), before);
+  });
+
+  it("counts nested followups files and a symlink without following it", () => {
+    const { repo, wf } = resetRepo();
+    mkdirSync(join(wf, "followups", "sub"), { recursive: true });
+    writeFileSync(join(wf, "followups", "sub", "x.md"), "x");
+    const nested = reset(repo, wf, []);
+    assert.equal(nested.exitCode, 1);
+    assert.match(nested.stderr, /followups\/ has 1 file\(s\)/);
+
+    const second = resetRepo();
+    const outside = join(second.repo, "outside");
+    mkdirSync(outside);
+    writeFileSync(join(outside, "a.md"), "a");
+    writeFileSync(join(outside, "b.md"), "b");
+    mkdirSync(join(second.wf, "followups"));
+    symlinkSync(outside, join(second.wf, "followups", "link"));
+    const linked = reset(second.repo, second.wf, []);
+    assert.equal(linked.exitCode, 1);
+    assert.match(linked.stderr, /followups\/ has 1 file\(s\)/);
+  });
+
+  it("archives an empty followups/ together with the rest", () => {
+    const { repo, wf } = resetRepo();
+    mkdirSync(join(wf, "followups"));
+    writeFileSync(join(wf, "plan.md"), "p");
+    const token = tokenOf(reset(repo, wf, []).stdout);
+    assert.equal(reset(repo, wf, ["--confirm", token]).exitCode, 0);
+    assert.deepEqual(readdirSync(join(wf, "archive", STAMP_DIR)).sort(), [
+      "followups",
+      "plan.md",
+    ]);
+  });
+
+  it("moves a symlink entry as a link and leaves its target alone", () => {
+    const { repo, wf } = resetRepo();
+    const outside = join(repo, "outside");
+    mkdirSync(outside);
+    writeFileSync(join(outside, "keep.txt"), "keep");
+    symlinkSync(outside, join(wf, "ext"));
+    const token = tokenOf(reset(repo, wf, []).stdout);
+    assert.equal(reset(repo, wf, ["--confirm", token]).exitCode, 0);
+    assert.ok(
+      lstatSync(join(wf, "archive", STAMP_DIR, "ext")).isSymbolicLink(),
+    );
+    assert.equal(readFileSync(join(outside, "keep.txt"), "utf-8"), "keep");
+  });
+
+  it("archives a dotfile-only dir as one entry", () => {
+    const { repo, wf } = resetRepo();
+    writeFileSync(join(wf, ".round-baseline"), "1\tx\n");
+    const token = tokenOf(reset(repo, wf, []).stdout);
+    assert.equal(reset(repo, wf, ["--confirm", token]).exitCode, 0);
+    assert.deepEqual(readdirSync(join(wf, "archive", STAMP_DIR)), [
+      ".round-baseline",
+    ]);
+  });
+
+  it("stops at a failed rename and reports what moved", () => {
+    const { repo, wf } = resetRepo();
+    seedFlow(wf);
+    const token = tokenOf(reset(repo, wf, []).stdout);
+    let calls = 0;
+    const r = reset(repo, wf, ["--confirm", token], {
+      renameEntry: (from, to) => {
+        calls += 1;
+        if (calls === 3) throw new Error("EXDEV simulated");
+        renameSync(from, to);
+      },
+    });
+    assert.equal(r.exitCode, 1);
+    assert.match(r.stderr, /plan\.md, plan-1\.md/);
+    assert.match(r.stderr, /failed on research\.md/);
+    assert.deepEqual(readdirSync(join(wf, "archive", STAMP_DIR)).sort(), [
+      "plan-1.md",
+      "plan.md",
+    ]);
+    assert.ok(existsSync(join(wf, "research.md")));
+    assert.ok(existsSync(join(wf, "approvals.log")));
+  });
+
+  it("refuses when the archive destination already exists", () => {
+    const { repo, wf } = resetRepo();
+    writeFileSync(join(wf, "plan.md"), "p");
+    const token = tokenOf(reset(repo, wf, []).stdout);
+    mkdirSync(join(wf, "archive", STAMP_DIR), { recursive: true });
+    const r = reset(repo, wf, ["--confirm", token]);
+    assert.equal(r.exitCode, 1);
+    assert.ok(existsSync(join(wf, "plan.md")));
+  });
+
+  it("refuses a --wf-dir that is another session's dir", () => {
+    const { repo, wf } = resetRepo();
+    const other = join(repo, ".tmp", "sessions", "99999999");
+    mkdirSync(other);
+    writeFileSync(join(other, "plan.md"), "p");
+    const r = reset(repo, wf, ["--wf-dir", other]);
+    assert.equal(r.exitCode, 1);
+    assert.match(r.stderr, /only acts on this session's workflow dir/);
+    assert.deepEqual(readdirSync(other), ["plan.md"]);
+  });
+
+  it("accepts --wf-dir equal to the session dir before or after --confirm", () => {
+    const { repo, wf } = resetRepo();
+    writeFileSync(join(wf, "plan.md"), "p");
+    const token = tokenOf(reset(repo, wf, ["--wf-dir", wf]).stdout);
+    const first = reset(repo, wf, ["--wf-dir", wf, "--confirm", token]);
+    assert.equal(first.exitCode, 0, first.stderr);
+    writeFileSync(join(wf, "plan.md"), "p");
+    // A fresh timestamp: the first run already took this run's archive dir.
+    const second = reset(repo, wf, ["--confirm", token, "--wf-dir", wf], {
+      now: new Date("2026-10-20T02:00:00.000Z"),
+    });
+    assert.equal(second.exitCode, 0, second.stderr);
+  });
+
+  it("rejects a --wf-dir outside .tmp/sessions with the usual error", () => {
+    const { repo, wf } = resetRepo();
+    const r = reset(repo, wf, ["--wf-dir", repo]);
+    assert.equal(r.exitCode, 1);
+    assert.match(r.stderr, /not a strict descendant/);
+  });
+
+  it("refuses a deep DOCUMENT_WORKFLOW_DIR pin", () => {
+    const { repo, wf } = resetRepo();
+    const deep = join(wf, "archive", "x");
+    mkdirSync(deep, { recursive: true });
+    writeFileSync(join(deep, "plan.md"), "p");
+    const r = reset(repo, deep, [], { wfDirSource: "env" });
+    assert.equal(r.exitCode, 1);
+    assert.match(r.stderr, /only acts on a \.tmp\/sessions\/<id> directory/);
+    assert.ok(existsSync(join(deep, "plan.md")));
+  });
+
+  it("refuses a workflow dir that is itself a symlink", () => {
+    const { repo } = resetRepo();
+    const real = join(repo, "real");
+    mkdirSync(real);
+    writeFileSync(join(real, "plan.md"), "p");
+    const link = join(repo, ".tmp", "sessions", "11112222");
+    symlinkSync(real, link);
+    const r = reset(repo, link, []);
+    assert.equal(r.exitCode, 1);
+    assert.ok(existsSync(join(real, "plan.md")));
+  });
+
+  it("rejects extra positional arguments and a valueless --confirm", () => {
+    const { repo, wf } = resetRepo();
+    writeFileSync(join(wf, "plan.md"), "p");
+    const extra = reset(repo, wf, ["foo"]);
+    assert.equal(extra.exitCode, 1);
+    assert.match(extra.stderr, /unexpected argument/);
+    assert.equal(reset(repo, wf, ["--confirm"]).exitCode, 1);
+    assert.ok(existsSync(join(wf, "plan.md")));
+  });
+
+  it("is listed in the usage of an unknown command", () => {
+    const { repo, wf } = resetRepo();
+    const r = cli(repo, wf, ["nope"]);
+    assert.equal(r.exitCode, 1);
+    assert.match(r.stderr, /reset/);
   });
 });

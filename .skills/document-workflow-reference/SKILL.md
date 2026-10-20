@@ -102,7 +102,7 @@ guard の deny は診断を返す: どの条件（Plan/Review/Approval/marker ve
 
 ## 誤って入った場合の脱出
 
-同じセッションのまま承認を経ずに抜ける経路は、wfDir の research.md と plan.md の**両方**を消すことだけ（一方が残ると armed のまま。`/clear` は会話文脈を失う代わりに新しい wfDir になる）。削除コマンドを `wfDir=` のリテラルパスで提示してユーザーに依頼し、guard が通す場合でも自分では消さない。`DOCUMENT_WORKFLOW_WARN_ONLY=1` は脱出ではなく guard 全体の無効化なので使わない。手順と機構メモは [references/escape.md](references/escape.md)。
+同じセッションのまま承認を経ずに抜ける経路は、wfDir 直下の research.md と plan.md の**両方**を外すこと（一方が残ると armed のまま。`/clear` は会話文脈を失う代わりに新しい wfDir になる）。`workflow-cli reset` が直下を `archive/<日時>/` へ退避する。モデルは dry-run の出力（承認状態・対象・7 日の注記）を AskUserQuestion で見せ、承諾後に出力どおりの `workflow-cli reset --confirm <トークン>` を実行する。守りの主は退避による可逆性で、トークンは確認の質問と一覧を結びつけるだけであり、同意の証明ではない。`followups/` にファイルがあると拒否される。`DOCUMENT_WORKFLOW_WARN_ONLY=1` は脱出ではなく guard 全体の無効化なので使わない。手順と機構メモは [references/escape.md](references/escape.md)。
 
 ## prescribed-fix carry-forward（再レビュー省略）
 
@@ -179,7 +179,7 @@ stamp は Round N の要求集合を Round N-1 の verdict から再計算する
 
 ## 記録の移し方
 
-作業の終わりに、決まった節を恒久の文書へ移し、spec・research・plan は残さない。移す作業は計画の最後のタスクにする。節と行き先の表、最後のタスクの書き方、残件を書く時点、`docs/plans/` に置くもの、作業ツリーに無い記録の指し方は [references/record-migration.md](references/record-migration.md) にある。計画の最後のタスクを書くとき、作業を終えるとき、応答に残件が出たときに読む。
+作業の終わりに、決まった節を恒久の文書へ移し、spec・research・plan は残さない。移す作業は計画の最後のタスクにする。移して commit した後、次のフローを同じセッションで始めるときは `workflow-cli reset` で直下を退避する（`followups/` が残っていると拒否される）。節と行き先の表、最後のタスクの書き方、残件を書く時点、`docs/plans/` に置くもの、作業ツリーに無い記録の指し方は [references/record-migration.md](references/record-migration.md) にある。計画の最後のタスクを書くとき、作業を終えるとき、応答に残件が出たときに読む。
 
 ## prose だけの変更での追加レビュアー
 

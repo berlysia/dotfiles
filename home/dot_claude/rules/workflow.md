@@ -20,7 +20,7 @@
 
 **禁止**: これらに該当するタスクで、承認前に実装へ着手すること。設計判断を伴うならステップ数が少なくても Document Workflow を使う。
 
-**誤入時**: 直接実行相当なのに research/plan を書いたら自分で消さず、`/document-workflow-reference` の「誤って入った場合の脱出」どおり削除コマンドをユーザーに提示し実行を依頼する。
+**誤入時**: 直接実行相当なのに research/plan を書いたら、`/document-workflow-reference` の「誤って入った場合の脱出」どおり、`workflow-cli reset` の一覧（承認状態・対象）を AskUserQuestion で見せて確認を取り、承諾後に `--confirm` で wfDir 直下を退避する。
 
 ## 共通フロー（8 ステップ）
 
