@@ -71,3 +71,7 @@ CPK-C108 の `notes/prose-style.md` に、癖のカタログが `berlysia-writin
 ## ADR-0028: 委任の質問の既定の選択
 
 AskUserQuestion の画面で、2 問目の既定の選択がどうなるかを確かめていない（「委任しない」を先頭に置いた）。実機で確かめる。
+
+## ADR-0032（plan の粒度）: 自己点検の文面のテスト
+
+`spec-plan-self-audit` のチェックリストの文面（plan にコード本体を書いていないか、など）を確かめるテストを足す。

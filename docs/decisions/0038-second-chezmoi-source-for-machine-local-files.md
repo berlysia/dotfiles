@@ -26,7 +26,7 @@ accepted (2026-10-20)
 2. gateway セッション用の plugin は `~/.config/claude-local/plugins/<名前>/` に置き、`claude()` が `--mcp-config` と同じ条件で、直下の各ディレクトリを名前順に `--plugin-dir` で付ける。
 3. このリポジトリには、2 の読み込み経路と、置き場所の規約だけを書く。中身（社内の値、plugin の中身、照合の規則）は 2 つ目の source に置く。
 
-## 却下した案
+## 却下した代替案
 
 - このリポジトリに混ぜる: 公開できない値が public の履歴に入る。
 - 個人の非公開スキル用の external（private-skills）に入れる: 個人の正典と業務の情報が混ざる。
@@ -37,11 +37,8 @@ accepted (2026-10-20)
 
 - `~/.config/claude-local/plugins/` に置いた plugin は、検証なしでそのまま読み込まれる。このディレクトリは利用者本人が管理する（2 つ目の source の push 権限を持つ者が、このマシンでの実行権限を持つのと同じ）。
 - 2 つ目の source とこのリポジトリは、ファイル単位では管理対象が重ならない。親ディレクトリ（`~/.config`、`~/.local/bin`）は両方に出るが、どちらも `exact_` にしない。
-- `claude()` の振る舞いは `tests/claude-wrapper/` で確かめる（gateway 変数が無いときは今までどおり素通し）。
 - 社内固有の決定・照合規則・計測値は、2 つ目の source の README にある。このリポジトリには書かない。
 
 ## References
 
-- `home/dot_shell_common/functions.sh`（`claude()`）
-- `tests/claude-wrapper/run.sh`
 - `docs/llm-gateway-sessions.md`

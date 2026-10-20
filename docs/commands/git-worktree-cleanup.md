@@ -134,6 +134,21 @@ Removed 1, kept 2, outside .git/worktree 0.
 - git 2.36 以降が必要です（`git worktree list --porcelain -z`）
 - agent-vm の machine の中（`/etc/agent-vm` があり、`agent-vm-node-modules` がある）では、`.git/worktree` 配下の worktree を `agent-vm-node-modules remove <wt> -- git -C <main> worktree remove -- <wt>` で消す。VM ローカルの `node_modules` を外してから消し、失敗したら張り直す（`docs/decisions/0022-agent-vm-node-modules.md`）。外せない、lock を取れない、ヘルパーが拒否した場合は、理由を表示して worktree を残す。消せた後にヘルパーが出した警告（保存先を消せなかった、など）は、黄色で表示する。host では挙動は変わらない。
 
+## Claude Code の worktree hook の確認手順
+
+hook（`WorktreeCreate` / `WorktreeRemove` / `SubagentStop`）は、`<repo>/.git/worktree/worktree-<name>` に worktree を作り、変更が無ければ片付ける（ADR-0033）。Claude Code を更新した後や、片付けが空振りしているように見えるときに、使い捨ての repo で確かめる。hook は `claude --settings <一時ファイル>` で足し、`~/.claude/settings.json` は変えない。
+
+1. `claude --settings <tmp> --worktree probe -p 'pwd'` を実行する。`<repo>/.git/worktree/worktree-probe` が返る（stdout の契約）
+2. 何も変更させない Agent を `isolation: "worktree"` で 1 回呼ぶ指示を `claude --settings <tmp> -p` に渡す。終了後に worktree もブランチも残らない（`SubagentStop` の `agent_id` と name の対応）
+3. 2 で残るなら、`SubagentStop` の入力（`agent_id`、`cwd`）と `WorktreeCreate` の `name` を記録する hook を足して、対応が変わっていないかを見る
+
+### 手で片付けるとき
+
+- hook の登録を外した後に残った `.git/worktree/worktree-*`: `git worktree list` で探し、`git worktree remove <path>` と `git branch -D worktree-<name>` で消す
+- hook を入れる前の `<repo>/.claude/worktrees/*`: hook 無しで作られたものは `locked` が付いているので、`git worktree remove -f -f <path>` と `git branch -D worktree-<name>` で消す
+- `branch-exists` で作成が失敗する: 前の作成が強制終了で途中まで進んだ残骸のことがある。`git branch --list worktree-<name>` と `git log worktree-<name>` で中身が無いことを確かめてから `git branch -D worktree-<name>` する
+- prunable な登録が残る: `git worktree prune`。リポジトリ全体が対象になるので、外付けドライブの worktree が見えていることを確かめてから実行する
+
 ## 関連コマンド
 
 - `git-worktree-create`: 新しい worktree を作成
