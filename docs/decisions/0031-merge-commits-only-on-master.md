@@ -27,7 +27,7 @@ accepted (2026-10-07)
 
 - グローバルの規則は、性質だけを書いている。`home/dot_claude/rules/developer-experience.md:55` は、作業ツリーに無い記録を `git show <commit>:<path>` で指してよいのは、その commit が既定のブランチから辿れるときだけ、と定める。取り込み方には触れていない。
 - ADR-0029 は、PR の中の commit の hash を既に 4 つ書いている。`43e1949`、`caaa4fa`、`79c446d`、`ae20bcf` は、どれも PR #275（ADR-0029 自身の PR）に属する（`gh api repos/berlysia/dotfiles/commits/<hash>/pulls`、2026-10-07）。`52dc6fd447` は PR に属さず、master に直接入った。PR #275 は merge commit で入ったので、4 つはいま辿れる。
-- ADR-0029 の Context（`docs/decisions/0029-workflow-records-move-into-adr.md:28`）は、直近 40 件に squash merge が無いという観察を書くだけで、制約としては決めていない。
+- ADR-0029 の Context（`docs/decisions/0029-workflow-records-move-into-adr.md`）は、直近 40 件に squash merge が無いという観察を書くだけで、制約としては決めていない。
 - グローバルの規則、テンプレート、skill の SKILL.md に、取り込み方を前提にした記述は無い（`squash`、`merge commit`、`--merge`、`rebase` の grep。当たったのは、一般的な助言と force push の説明だけである）。
 
 ### 取り込み方の現状（2026-10-07）
@@ -74,7 +74,7 @@ gh api "repos/berlysia/dotfiles/rulesets/rule-suites?ref=refs/heads/master" --jq
   - PR 番号を後から書くことは、これと独立に許す。取り込み方に依存しない。
   - ブランチ名は書かない。マージしたブランチは自動で消える。
   - PR の中の commit は、書く時点では master から辿れない。`developer-experience.md:55` の「既定のブランチから辿れるときだけ」は、取り込みの後に満たされる。書いた人は、取り込みの後に `git merge-base --is-ancestor <hash> origin/master` の終了コード 0 で確かめる。ADR-0029 K4 が定める確認と同じコマンドで、時点だけが取り込みの後になる。辿れなかったときは、PR 番号に書き換える PR を出す。
-  - 参照: `docs/decisions/0029-workflow-records-move-into-adr.md:66`（K4。作業ツリーに無い記録を commit で指す決定）
+  - 参照: `docs/decisions/0029-workflow-records-move-into-adr.md`（K4。作業ツリーに無い記録を commit で指す決定）
 
 - **K2: PR の取り込みは merge commit に限る。** K1 から従う。PR の中の commit の hash は、PR の commit の列が master に残るときだけ成り立つ。
   - squash は、PR の commit を 1 つの新しい commit に置き換える。rebase での取り込みは、commit を作り直すので hash が変わる。どちらも、PR の中の hash を master に残さない。rebase は、リポジトリの設定で既に無効である（`allow_rebase_merge=false`）。
@@ -92,7 +92,7 @@ gh api "repos/berlysia/dotfiles/rulesets/rule-suites?ref=refs/heads/master" --jq
   - `CLAUDE.md` には書かない。リポジトリの設定が、選べる取り込み方を 1 つにする。
   - 設定の変更は git の履歴に残らない。値、変更した日、戻し方、現在の値を読むコマンドを、この ADR に書く（下の「取り込み方の設定の読み方と戻し方」）。
   - リポジトリの設定: 2026-10-07 に、`allow_squash_merge` を `true` から `false` にした。
-  - 参照: `docs/decisions/0029-workflow-records-move-into-adr.md:28`（取り込み方を観察として書いているだけの現状）
+  - 参照: `docs/decisions/0029-workflow-records-move-into-adr.md` の Context（取り込み方を観察として書いているだけの現状）
 
 - **K4: 機構が効くことを、当てた直後に、害のない PR で試した。**
   - 試しの対象は、残件のファイル（`docs/plans/merge-commit-only-followups.md`）を足すだけの PR である。どちらの結果でも、入る変更が望んだ変更で、この PR の中の commit を指す参照は無い。

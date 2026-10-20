@@ -11,7 +11,7 @@ ADR-0029 の作業（PR #275）の終わりに、利用者が挙げた論点だ�
 
 ### 現行の入口と出口
 
-- 残件の行き先は、ADR-0029 K1 の表の 4 行目「範囲の外として次に回した課題 → `docs/plans/` の持ち越した課題の一覧」である（`docs/decisions/0029-workflow-records-move-into-adr.md:48`）。
+- 残件の行き先は、ADR-0029 K1 の表の「範囲の外として次に回した課題」の行（行き先は `docs/plans/` の持ち越した課題の一覧）である。
 - 書く時点は「計画の最後のタスク」の 1 回だけである（同 `:53`、`.skills/document-workflow-reference/references/record-migration.md:24`、`home/dot_claude/templates/plan-execution.md:78-93`、`home/dot_claude/rules/workflow.md:116`）。
 - ADR-0029 K1 が計画の外の手順にしなかった理由は、ADR と規則の文書が保護対象で、承認済みの計画の Files に載っていないと書けないことである（同 `:55`）。`docs/plans/` は保護対象ではない（`home/dot_claude/hooks/tests/unit/workflow-files.test.ts:282` の `["docs/plans/x.md", false]`）。
 - `docs/plans/` に置くものは、ADR-0029 K3 が 2 種類に決めている。持ち越した課題の一覧（`<主題>-followups.md`）と、未着手の作業の出発点である（同 `:60-64`）。
@@ -21,7 +21,7 @@ ADR-0029 の作業（PR #275）の終わりに、利用者が挙げた論点だ�
 
 ### 2026-10-07 の事例
 
-- 「記録を移す」タスクの commit（`43e1949`）は、4 行目を「該当なし」と書いた。
+- 「記録を移す」タスクの commit（`43e1949`）は、「範囲の外として次に回した課題」の行を「該当なし」と書いた。
 - 残件 3 つは、その後の完了報告と会話の中で出た。保存の手段は、チャットに書いた起動プロンプトだけだった。
 - 利用者の説明（2026-10-07）:
   - 3 つのうち「移す手順の見直し」と「残件を保存する仕組み」は、やり残しである。
@@ -93,7 +93,7 @@ Codex の案 1、白紙設計の案 2、外部調査の案 A は、別々に「�
   - 回収の文は 3 か所（テンプレート、「最後のタスクの書き方」、「残件を書く時点」）に入り、どれも同じ文意である。テンプレートは最後のタスクを実行する場所、ほかの 2 つは説明の場所である。直すときは 3 か所を揃える。
   - research.md の節にしないのは、行き先が分かれるためである。research の事実は ADR の Context へ、残件は `docs/plans/` へ行く。
   - workflow dir は 7 日で消える。承認に至らずに作業をやめるときは、やめる前に `followups/` の中身を `docs/plans/` へ移す。
-  - 参照: `docs/decisions/0029-workflow-records-move-into-adr.md:60-64`（K3）
+  - 参照: `docs/decisions/0029-workflow-records-move-into-adr.md`（K3）
   - 参照: `home/dot_claude/templates/plan-execution.md:87-89`（最後のタスクの Step 1）
 
 - **K5: この作業に含めないものを、残件として書く。**
@@ -106,7 +106,7 @@ Codex の案 1、白紙設計の案 2、外部調査の案 A は、別々に「�
   - ADR-0029 の「最後のタスクで移す」は、原本の節を移す手順として残る。足すのは、残件の入口だけである。案内が無いと、ADR-0029 だけを読んだ人には、最後のタスクが唯一の入口に見える。
   - 配置される文書（`workflow.md`、`record-migration.md`、`SKILL.md`、テンプレート）には ADR 番号を書かない。
   - `docs/plans/` という置き場は、配置される文書に既に書かれている。ほかのプロジェクトのために、reference に読み替えの 1 文を足す（R6）。
-  - 参照: `docs/decisions/0029-workflow-records-move-into-adr.md:85`（配置される文書に ADR 番号を書かない）
+  - 参照: `docs/decisions/0029-workflow-records-move-into-adr.md`（K7。配置される文書に ADR 番号を書かない）
   - 参照: `home/dot_claude/rules/workflow.md:116`（`docs/plans/` を書いている既存の文）
 
 ## 却下した代替案
