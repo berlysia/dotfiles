@@ -16,10 +16,8 @@
 import {
   closeSync,
   constants as fsConstants,
-  lstatSync,
   mkdirSync,
   openSync,
-  readFileSync,
   writeSync,
 } from "node:fs";
 import { resolve } from "node:path";
@@ -33,7 +31,6 @@ import { resolveWorkflowDir } from "../lib/workflow-resolve.ts";
 import "../types/tool-schemas.ts";
 
 const LEDGER_FILENAME = "reviewer-runs.log";
-const LEDGER_MAX_LINES = 200;
 
 /**
  * The reviewer slug set and the "is this launch ledgered" rule live in
@@ -82,11 +79,16 @@ const hook = defineHook({
 });
 
 /**
- * Append one line to `<wfDir>/reviewer-runs.log`, keeping only the most
- * recent `LEDGER_MAX_LINES` entries (FIFO cap). Refuses to follow a
- * symlinked ledger path (mirrors `workflow-bash-sync.ts`'s tripwire baseline
- * hardening) and is best-effort throughout: a ledger write failure must not
- * surface to the model or block the Agent call it is recording.
+ * Append one line to `<wfDir>/reviewer-runs.log` with a single write on an
+ * O_APPEND descriptor. Reviewers launched in one message run this hook as
+ * concurrent processes; O_APPEND makes each line land intact, where a
+ * read-modify-write of the whole file would let one process overwrite
+ * another's line. The ledger is not capped: it is per-session, `stamp` reads
+ * only the lines at or after the round baseline, and trimming would need the
+ * rewrite this avoids. O_NOFOLLOW refuses a symlinked ledger path (mirrors
+ * `workflow-bash-sync.ts`'s tripwire baseline hardening). Best-effort
+ * throughout: a ledger write failure must not surface to the model or block
+ * the Agent call it is recording.
  */
 function appendReviewerRun(wfDir: string, line: string): void {
   try {
@@ -95,54 +97,22 @@ function appendReviewerRun(wfDir: string, line: string): void {
     // best-effort; fall through and let the open() below fail if it must
   }
 
-  const logPath = resolve(wfDir, LEDGER_FILENAME);
-  const existing = readExistingLinesSafely(logPath);
-  if (existing === null) {
-    return; // symlinked ledger: refuse rather than write through it
-  }
-
-  const all = [...existing, line];
-  const capped =
-    all.length > LEDGER_MAX_LINES
-      ? all.slice(all.length - LEDGER_MAX_LINES)
-      : all;
-
   try {
     const fd = openSync(
-      logPath,
+      resolve(wfDir, LEDGER_FILENAME),
       fsConstants.O_WRONLY |
         fsConstants.O_CREAT |
-        fsConstants.O_TRUNC |
+        fsConstants.O_APPEND |
         fsConstants.O_NOFOLLOW,
       0o600,
     );
     try {
-      writeSync(fd, `${capped.join("\n")}\n`);
+      writeSync(fd, `${line}\n`);
     } finally {
       closeSync(fd);
     }
   } catch {
     // best-effort
-  }
-}
-
-/** Returns `[]` when the ledger does not exist yet, `null` when it is a symlink. */
-function readExistingLinesSafely(path: string): string[] | null {
-  let st: ReturnType<typeof lstatSync> | null;
-  try {
-    st = lstatSync(path);
-  } catch {
-    return [];
-  }
-  if (st.isSymbolicLink()) {
-    return null;
-  }
-  try {
-    return readFileSync(path, "utf-8")
-      .split("\n")
-      .filter((l) => l.length > 0);
-  } catch {
-    return [];
   }
 }
 
