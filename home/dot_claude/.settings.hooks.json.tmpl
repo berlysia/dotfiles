@@ -184,6 +184,26 @@
           "async": true
         }
       ]
+    },
+    {
+      "matcher": "Bash|AskUserQuestion",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/commit-sign-failure-ask.ts"
+        }
+      ]
+    }
+  ],
+  "PostToolUseFailure": [
+    {
+      "matcher": "Bash",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/commit-sign-failure-ask.ts"
+        }
+      ]
     }
   ],
   "SessionStart": [
@@ -230,6 +250,10 @@
         {
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/completion-gate.ts"
+        },
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/commit-sign-failure-ask.ts"
         },
         {
           "type": "command",
