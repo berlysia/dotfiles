@@ -32,6 +32,8 @@ When changing approach mid-task (not inside a throwaway script run in the scratc
 
 Always gather evidence (read files, run tests, check actual state) before making decisions. Use **logic-validator** proactively to catch assumption-based reasoning. For a throwaway script run in the scratchpad and discarded, running it and reading the output is the evidence; do not add logic-validator, unless it deletes, pushes, bills, or writes outside the scratchpad (see the Task Intake Routing in `rules/workflow.md`).
 
+Do not write steps that assume someone will run them tomorrow or later. The session has no way to resume itself on a later day, so such a step silently becomes the user's chore. When a check depends on time passing, either schedule it to run automatically or replace it with a check that can run now (e.g. use a past date that exercises the same path).
+
 ## Structured Decision Requests
 
 ```
