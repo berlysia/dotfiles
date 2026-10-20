@@ -6,12 +6,12 @@ This directory contains custom slash commands for Claude Code to enhance develop
 
 ### /analyze-permissions
 
-Analyzes Claude permission settings across all workspace projects and generates specific update recommendations for `settings.json.tmpl`.
+Analyzes Claude permission settings across all workspace projects and generates specific update recommendations for `home/dot_claude/.settings.permissions.json`.
 
 **Features:**
 
 - Scans all `.claude/settings.local.json` files in workspace
-- Compares findings with current `settings.json.tmpl`
+- Compares findings with current `home/dot_claude/.settings.permissions.json`
 - Categorizes commands into ADD, MODIFY, REMOVE, and KEEP
 - Generates actionable update recommendations with line numbers
 - Creates comprehensive analysis report

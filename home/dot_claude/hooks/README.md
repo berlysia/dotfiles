@@ -2,57 +2,6 @@
 
 このディレクトリには、Claude Codeのフックスクリプト（TypeScript実装）が含まれています。
 
-## ディレクトリ構造
-
-```
-hooks/
-├── implementations/              # Hook実装スクリプト（TypeScript）
-│   ├── auto-approve.ts          # 自動承認スクリプト
-│   ├── deny-repository-outside.ts  # リポジトリ外アクセス制限
-│   ├── block-tsx.ts             # tsx/ts-node実行制限
-│   ├── deny-node-modules.ts     # node_modules書き込み制限
-│   ├── block-package-json-tsx.ts   # package.json tsx制限
-│   ├── web-fetch-guardian.ts    # WebFetch制限
-│   ├── command-logger.ts        # コマンド実行ログ
-│   ├── session.ts               # セッション管理
-│   ├── notification.ts          # 通知処理
-│   ├── speak-notification.ts    # 音声通知
-│   └── user-prompt-logger.ts    # プロンプトログ
-├── lib/                         # 共有ライブラリ（TypeScript）
-│   ├── bash-parser.ts           # Bashコマンド構造解析
-│   ├── centralized-logging.ts   # 統合ロギング
-│   ├── chezmoi-utils.ts         # chezmoi関連ユーティリティ
-│   ├── command-parsing.ts       # コマンド解析・危険コマンド検出
-│   ├── context-helpers.ts       # コンテキストヘルパー
-│   ├── decision-maker.ts        # 判定ロジック
-│   ├── file-permission-inference.ts # ファイルパーミッション推論
-│   ├── git-context.ts           # Git リポジトリ情報管理
-│   ├── path-utils.ts            # パス操作ユーティリティ
-│   ├── pattern-matcher.ts       # パターンマッチング
-│   ├── permission-analyzer.ts   # パーミッション分析
-│   ├── permission-request-helpers.ts # パーミッション要求ヘルパー
-│   ├── risk-assessment.ts       # リスク評価
-│   ├── sed-parser.ts            # sedコマンド解析
-│   └── structured-llm-evaluator.ts # LLM評価ロジック
-├── utilities/                   # スタンドアロンツール
-│   └── generate-stats.ts        # 統計レポート生成
-├── types/                       # 型定義
-│   ├── project-types.ts           # Hook型定義
-│   └── tool-schemas.ts          # ツールスキーマ
-├── tests/                       # テストスイート
-│   ├── integration/             # 統合テスト
-│   ├── unit/                    # 単体テスト
-│   └── README_TESTING.md        # テスト実行ガイド
-├── scripts/                     # 実行用シェルスクリプト
-│   ├── all_tests.sh             # 全テスト実行
-│   ├── ci_test.sh               # CI用テスト
-│   └── test-with-types.sh       # 型チェック付きテスト
-├── sounds/                      # 通知音ファイル
-├── common.json.tmpl             # hook設定テンプレート
-├── README.md                    # このファイル
-└── SAMPLE.md                    # Hook I/Oリファレンス
-```
-
 ## 主要なHook実装
 
 ### auto-approve.ts
@@ -132,7 +81,7 @@ PreToolUse の `auto-approve`、PermissionRequest の 2a（`permission-auto-appr
 - 書き込み系のツールは、ツールが実際に書くフィールド（NotebookEdit は `notebook_path`、Edit / Write / MultiEdit は `file_path`）だけを見る。ほかのパスのキーが一緒にあるとき、`~` で始まるとき、相対パスの途中に `..` があるときは hold
 - Bash の判定は best-effort で、境界ではない。字句の判定はシェルの展開を追いきれず、レビューは新しい形を見つけ続ける。追加は「フック固有の承認の根拠から、protected なパスへの書き込みが自動承認される」と確かめられた形に限る。コマンドの形によらず書き込みを止める境界は、OS のサンドボックス（Claude Code の sandbox）にある。dotfiles の repo は作業そのもの（`chezmoi apply` で home に配る）がサンドボックスとぶつかるため、この repo では残余を許容している
 - 残余のリスク:
-  - ラッパーの後ろの、書き込み先を実行時に決めるコマンド（`command sh -c …` など）は、単純コマンドの名前だけを見る判定から漏れうる（2026-10-06 の自動レビューの指摘。要約のみで、個別の形は未検証）
+  - ラッパーの後ろの、書き込み先を実行時に決めるコマンド（`command sh -c …` など）は、単純コマンドの名前だけを見る判定から漏れうる（個別の形は未検証）
   - インタプリタ（`python -c`、`node -e` など）が実行時に文字列からパスを組み立てる形は、静的な判定では見えない。防げるのは、本体の allow 規則が覆わない範囲に限られる
   - 引用符で分割した `git`（`g''it`）は 2b の skip を外れ、LLM の評価に届きうる（PreToolUse と 2a は `git` で始まる形しか allow しない）
   - `$`、`{`、`cd` を含む Bash は一律に hold になり、本体の allow 規則が覆わないものは確認が出る
@@ -159,7 +108,7 @@ PreToolUse の `auto-approve`、PermissionRequest の 2a（`permission-auto-appr
 }
 ```
 
-**注意**: パターン構文は `Bash(command *)` 形式を使用します（旧 `:*` 形式は非推奨）。
+**注意**: パターン構文は `Bash(command *)` 形式を使用します。
 安全のため、`git *` や `npm *` のような広範なワイルドカードは避け、個別のサブコマンドを指定してください。
 
 ## 技術仕様
@@ -173,25 +122,23 @@ PreToolUse の `auto-approve`、PermissionRequest の 2a（`permission-auto-appr
 ### 依存関係管理
 
 - **Package Manager**: bun
-- **Location**: プロジェクトルート (`/home/berlysia/.local/share/chezmoi/`)
+- **定義**: `~/.claude/package.json`（`~/.claude/` で `bun install`）
 
 ### Hook設定
 
-- **設定ファイル**: `common.json.tmpl` (chezmoi管理)
+- **設定ファイル**: `~/.claude/settings.json` の `hooks`（chezmoi が分割した設定から生成する）
 - **実行パス**: `{{ .chezmoi.homeDir }}/.claude/hooks/implementations/`
 
 ## テスト
 
 ```bash
-# 型チェック付き全テスト実行
-./scripts/test-with-types.sh
-
-# 統合テスト実行
-./tests/integration/run-ts-hook-tests.sh
-
-# CI環境でのテスト
-./scripts/ci_test.sh
+# リポジトリルートから実行する
+bun run test        # unit テスト
+bun run test:perf   # perf テスト
+bun run typecheck   # 型チェック
 ```
+
+テストの書き方と構成は `tests/README_TESTING.md` を参照。
 
 ## 開発
 
@@ -199,8 +146,8 @@ PreToolUse の `auto-approve`、PermissionRequest の 2a（`permission-auto-appr
 
 1. `implementations/` に TypeScript ファイルを作成
 2. `cc-hooks-ts` の `defineHook` を使用
-3. `common.json.tmpl` に設定を追加
-4. テストケースを `tests/` に追加
+3. `.settings.hooks.json.tmpl` に設定を追加
+4. テストケースを `tests/unit/` に追加
 
 ### 例: 新しいHook実装
 
@@ -256,10 +203,6 @@ hook-timing --json                   # {byHook, blocking} をJSONで出力（jq�
 
 - **フック別**: label（`implementations/<name>.ts` から取れなければ `inline:` + コマンド先頭40文字）ごとの count / p50 / p95 / max / 合計ms、および stderr の最大バイト数（出力肥大の傾向を追う手がかり）。
 - **イベント別のブロック時間**: 同一イベントのフックは並列実行されるため、1回の発火でツール呼び出しが実際に待った時間は、その発火にマッチした sync フックの duration の**最大値**であり、合計ではない。この表の p50 / p95 / max はその最大値の分布。`topBottleneck` はどのフックが最大値を最も多く占めたか。`async: true` のフックはツール呼び出しをブロックしないため、この表に含まれない。
-
-### generate-stats.ts
-
-コマンド実行統計の生成とレポート出力
 
 ## トラブルシューティング
 

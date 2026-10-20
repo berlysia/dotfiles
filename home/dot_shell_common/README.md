@@ -4,27 +4,11 @@ This directory contains common shell configuration files that are shared between
 
 ## Structure
 
-### Core Configuration Files
+- `init.sh` is the common entry point for both shells. It detects the current shell and sources the other files in this directory (PATH, aliases, functions, environment variables, tool integrations, and per-OS settings).
+- `test_suite.sh` is the testing and health check system. `core/` holds its engine (8 test categories), reporter, and validators, and `adapters/` holds the environment-specific adapters.
+- `executable_doctor` is deployed as `doctor`, a thin wrapper around `test_suite.sh` that supplies default arguments.
 
-- `init.sh` - Common entry point for both shells
-- `path.sh` - Common PATH configuration
-- `aliases.sh` - Common aliases
-- `functions.sh` - Common shell functions
-- `env.sh` - Common environment variables
-- `tools.sh` - Common tool integrations (mise, opam, etc.)
-- `darwin.sh` - macOS-specific common settings
-- `linux.sh` - Linux-specific common settings
-- `windows.sh` - Windows-specific common settings
-
-### Testing Suite
-
-- `test_suite.sh` - Comprehensive testing and health check system
-- `executable_doctor` - Legacy wrapper for backward compatibility
-- `core/` - Core testing infrastructure
-  - `test_engine.sh` - Main test engine with 8 categories
-  - `reporter.sh` - Test reporting and output formatting
-  - `validator.sh` - Validation utilities
-- `adapters/` - Environment-specific adapter pattern
+Use `git ls-files home/dot_shell_common` for the file list.
 
 ## Usage
 
@@ -33,7 +17,7 @@ This directory contains common shell configuration files that are shared between
 The common configuration is loaded from the shell-specific configuration files:
 
 - For zsh: `~/.zshrc` (source: `home/dot_zshrc`)
-- For bash: `~/.bash/dot_bashrc`
+- For bash: `~/.bashrc`
 
 ### Health Checks
 

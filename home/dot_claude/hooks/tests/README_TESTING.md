@@ -1,265 +1,52 @@
 # Claude Code Hooks Testing
 
-このディレクトリには、Claude Code TypeScript Hook実装の包括的なテストスイートが含まれています。
+Claude Code の TypeScript Hook 実装のテスト。`node:test` と `node:assert` で書き、リポジトリルートから実行する。パスはリポジトリルート相対で書く。
 
 ## テストファイル構成
 
-### メインテストスイート
-
-- **`integration/run-ts-hook-tests.sh`** - TypeScript Hook統合テスト
-- **`integration/test-data/`** - テストデータファイル（JSON）
-- **`unit/`** - 単体テスト（未実装）
-- **`precommit/test_fast.sh`** - Pre-commitテスト
-
-### CI/CD関連
-
-- **`../scripts/ci_test.sh`** - CI/CD環境での実行用スクリプト
-- **`../scripts/all_tests.sh`** - 全テスト実行スクリプト
-- **`../scripts/test-with-types.sh`** - 型チェック付きテスト
+- `home/dot_claude/hooks/tests/unit/` - 単体テスト（`*.test.ts`）
+- `home/dot_claude/hooks/tests/perf/` - 実時間・線形時間のテスト（`*.test.ts`）
+- `home/dot_claude/hooks/tests/support/` - unit と perf が共有する helper（`*.test.ts` にしない）
+- `home/dot_claude/hooks/tests/__fixtures__/` - テストが読む固定データ
+- `home/dot_claude/hooks/tests/preload-test-env.mjs` - 全テストプロセスの前に読み込む環境の準備
 
 ## node:test のスイート（unit / perf）
 
-- `bun run test`: `tests/unit/*.test.ts` を並列に実行する。completion gate と pre-commit が実行するのはこれだけで、経過時間を assert するテストは置かない（`tests/unit/test-layout.test.ts` が検査する）
-- `bun run test:perf`: `tests/perf/*.test.ts` をファイルごとに直列で実行する。ReDoS などの線形時間ガードと、ラッパーの実時間の検証を置く。CI（`ci-typescript.yml`）と `bun run check` が実行する
-- unit と perf が共有する helper は `tests/support/` に置く（`*.test.ts` にしない）
-- テストのプロセスでは bash-parser の解析予算が 10 秒になる（`preload-test-env.mjs`）。本番の 100 ms で測るテストは `tests/perf/parse-budget.test.ts` に置く
+- `bun run test`: `home/dot_claude/hooks/tests/unit/*.test.ts` を並列に実行する。completion gate と pre-commit が実行するのはこれだけで、経過時間を assert するテストは置かない（`home/dot_claude/hooks/tests/unit/test-layout.test.ts` が検査する）
+- `bun run test:perf`: `home/dot_claude/hooks/tests/perf/*.test.ts` をファイルごとに直列で実行する。ReDoS などの線形時間ガードと、ラッパーの実時間の検証を置く。CI（`ci-typescript.yml`）と `bun run check` が実行する
+- unit と perf が共有する helper は `home/dot_claude/hooks/tests/support/` に置く（`*.test.ts` にしない）
+- テストのプロセスでは bash-parser の解析予算が 10 秒になる（`preload-test-env.mjs`）。本番の 100 ms で測るテストは `home/dot_claude/hooks/tests/perf/parse-budget.test.ts` に置く
+
+`preload-test-env.mjs` は、テストファイルごとに `CLAUDE_LOGS_DIR` を使い捨てのディレクトリへ向ける（hook のログが開発者の `~/.claude/logs/` に書かれないようにするため）。また git が hook に渡す `GIT_DIR` などの変数を消す（pre-commit から実行したとき、テストが起動する `git` がコミット中のリポジトリを書き換えないようにするため）。
 
 ## テスト実行方法
 
-### 基本実行
+```bash
+# unit テスト
+bun run test
+
+# perf テスト
+bun run test:perf
+
+# 型チェック
+bun run typecheck
+
+# unit・perf・型チェック・lint をまとめて
+bun run check
+
+# 個別のテストファイル
+node --import ./home/dot_claude/hooks/tests/preload-test-env.mjs --test home/dot_claude/hooks/tests/unit/session.test.ts
+```
+
+### 個別 Hook の手動実行
 
 ```bash
-# 型チェック付き全テスト実行（推奨）
-../scripts/test-with-types.sh
-
-# 統合テストのみ実行
-./integration/run-ts-hook-tests.sh
-
-# CI環境での実行
-../scripts/ci_test.sh
-```
-
-### 個別Hook実行テスト
-
-```bash
-# auto-approve.tsのテスト
-echo '{"tool_name": "Bash", "tool_input": {"command": "git status"}}' | bun ../implementations/auto-approve.ts
-
-# block-tsx.tsのテスト
-echo '{"tool_name": "Bash", "tool_input": {"command": "npx tsx script.ts"}}' | bun ../implementations/block-tsx.ts
-```
-
-## テスト対象Hook実装
-
-### TypeScript化済みHook
-
-- ✅ **auto-approve.ts** - コマンド自動承認/拒否
-- ✅ **block-tsx.ts** - tsx/ts-node実行制限
-- ✅ **deny-node-modules.ts** - node_modules書き込み制限
-- ✅ **block-package-json-tsx.ts** - package.json tsx制限
-- ✅ **deny-repository-outside.ts** - リポジトリ外アクセス制限
-- ✅ **web-fetch-guardian.ts** - WebFetch制限
-- ✅ **command-logger.ts** - コマンド実行ログ
-- ✅ **auto-format.ts** - ファイル自動フォーマット
-- ✅ **session.ts** - セッション管理
-- ✅ **notification.ts** - 通知処理
-- ✅ **speak-notification.ts** - 音声通知
-- ✅ **user-prompt-logger.ts** - プロンプトログ
-
-## テスト機能
-
-### パターンマッチングテスト
-
-- ✅ Allow/Denyパターンの基本動作
-- ✅ 単一コマンドのマッチング
-- ✅ GitIgnore形式パターン
-- ✅ 複合コマンド処理（&&, ||, ;, |）
-
-### ラッパーコマンド検出テスト
-
-- ✅ `timeout` コマンド内の子コマンド検出
-- ✅ `time` コマンド内の子コマンド検出
-- ✅ `npx/pnpx/bunx` コマンド内の子コマンド検出
-- ✅ `xargs` コマンド内の子コマンド検出
-- ✅ `find -exec` 内の子コマンド検出
-
-### セキュリティ機能テスト
-
-- ✅ 危険なコマンドの検出とブロック
-- ✅ 全コマンド明示的許可の要求
-- ✅ 1つでもDenyされた場合のブロック
-- ✅ 許可されていないコマンドのパススルー
-
-### TypeScript型安全性テスト
-
-- ✅ cc-hooks-ts framework統合
-- ✅ 型推論の正確性
-- ✅ コンパイル時エラーチェック
-- ✅ 実行時型検証
-
-## テスト環境
-
-### 技術仕様
-
-- **Runtime**: Bun (主), Node.js (互換)
-- **型チェッカー**: tsc (TypeScript 7 native)
-- **テストフレームワーク**: Bash + JSON test data
-- **設定管理**: chezmoi template system
-
-### 環境変数
-
-- `HOOKS_DIR` - テスト対象Hook実装ディレクトリ
-- `TEST_DATA_DIR` - テストデータディレクトリ
-- `CI_MODE=1` - CI環境モード（詳細出力）
-
-## テストデータファイル
-
-### integration/test-data/
-
-```
-test-data/
-├── auto-approve-allow.json          # 承認パターンテストデータ
-├── block-tsx-package-json-*.json    # package.json tsx制限テスト
-├── block-tsx-tsnode-*.json          # tsx/tsnode制限テスト
-├── deny-node-modules-*.json         # node_modules制限テスト
-└── [hook-name]-[scenario].json      # 各Hookのテストシナリオ
-```
-
-### テストデータ形式
-
-```json
-{
-  "tool_name": "Bash",
-  "tool_input": {
-    "command": "git status"
-  },
-  "session_id": "test-session",
-  "expected_behavior": "allow|deny|ask"
-}
-```
-
-## テスト結果の読み方
-
-### 成功時
-
-```
-✅ Testing auto-approve.ts...
-✅ All TypeScript Hook tests passed!
-🎉 Hook system is working correctly.
-```
-
-### 型チェック成功
-
-```
-🔍 Phase 1: Type Checking
-==========================
-Type checking: Hook type definitions... PASS
-Type checking: Common hook utilities... PASS
-```
-
-### 失敗時
-
-```
-❌ Testing block-tsx.ts...
-FAIL (expected allow, got deny)
-❌ Some TypeScript Hook tests failed!
-```
-
-## パフォーマンス基準
-
-- **型チェック**: 全ファイル3秒以内
-- **統合テスト**: 全Hook実行10秒以内
-- **個別テスト**: Hook単体100ms以内
-- **メモリ使用量**: テストスイート実行で50MB以内
-
-## トラブルシューティング
-
-### よくある問題
-
-1. **型エラー**
-
-   ```bash
-   # 型チェック実行（TypeScript 7 native tsc。tsconfig.json 検出時はファイル直接指定不可のため引数なしで実行）
-   npx tsc --noEmit
-   ```
-
-2. **依存関係エラー**
-
-   ```bash
-   # プロジェクトルートから実行
-   cd /home/berlysia/.local/share/chezmoi
-   echo '{}' | bun dot_claude/hooks/implementations/auto-approve.ts
-   ```
-
-3. **テストデータ不正**
-   ```bash
-   # JSONファイルの検証
-   jq . integration/test-data/auto-approve-allow.json
-   ```
-
-### デバッグ方法
-
-```bash
-# 詳細デバッグ出力
-bash -x ./integration/run-ts-hook-tests.sh
-
-# 個別Hookデバッグ
-DEBUG=1 echo '{"tool_name": "Bash", "tool_input": {"command": "ls"}}' | bun ../implementations/auto-approve.ts
+echo '{"tool_name": "Bash", "tool_input": {"command": "git status"}}' | bun home/dot_claude/hooks/implementations/auto-approve.ts
 ```
 
 ## 新しいテストの追加
 
-### 統合テストケース追加
-
-1. `integration/test-data/` に JSONテストデータを作成
-2. `integration/run-ts-hook-tests.sh` にテストケースを追加
-3. 期待される動作を明確に指定
-
-### テストデータ例
-
-```json
-{
-  "description": "新機能のテスト",
-  "tool_name": "Bash",
-  "tool_input": {
-    "command": "new-command --option"
-  },
-  "session_id": "test-new-feature",
-  "expected_exit_code": 0,
-  "expected_output_contains": "success"
-}
-```
-
-### 単体テストの追加
-
-```bash
-# tests/unit/ 配下に新しいテストスクリプトを作成
-# 例: tests/unit/test_pattern_matching.sh
-```
-
-## CI/CD統合
-
-### GitHub Actions例
-
-```yaml
-- name: Run TypeScript Hook Tests
-  run: |
-    cd dot_claude/hooks
-    ./scripts/test-with-types.sh
-```
-
-### Pre-commit統合
-
-```bash
-# .git/hooks/pre-commit に設定
-./dot_claude/hooks/tests/precommit/test_fast.sh
-```
-
-## パフォーマンス監視
-
-テスト実行時間とメモリ使用量を定期的に監視し、回帰防止を行います。
-
-```bash
-# パフォーマンステスト実行
-time ./scripts/test-with-types.sh
-```
+1. 既存のテストで似た形のものを探して、構成を合わせる
+2. `home/dot_claude/hooks/tests/unit/<対象>.test.ts` に書く。経過時間を測るものは `home/dot_claude/hooks/tests/perf/` に置く
+3. unit と perf で共有する helper は `home/dot_claude/hooks/tests/support/` に置く
+4. 構成の書き方は `home/dot_claude/hooks/tests/unit/README.md` を参照

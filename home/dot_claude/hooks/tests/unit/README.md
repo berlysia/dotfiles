@@ -1,53 +1,10 @@
 # Hook Implementations Unit Tests
 
-This directory contains unit tests for the Claude Code hook implementations using Node.js built-in test runner (`node:test`) and assertion library (`node:assert`).
+Claude Code の hook 実装の単体テスト。Node.js 組み込みの test runner（`node:test`）と `node:assert` を使う。
 
-## Test Coverage
-
-The following implementations have unit tests:
-
-### ✅ Tested Components
-
-1. **session.test.ts** - Tests for SessionStart event logging
-   - Log entry structure validation
-   - Directory creation handling
-   - Error scenarios
-   - Hook context simulation
-
-2. **command-logger.test.ts** - Tests for PostToolUse event logging
-   - Bash command logging to history and structured logs
-   - Edit/Write tool logging
-   - Log file format validation
-   - Error handling
-
-3. **notification.test.ts** - Tests for Stop/Notification/Error events
-   - Event type handling
-   - Parallel execution behavior
-   - Audio notification messages
-   - Cleanup behavior
-
-4. **user-prompt-logger.test.ts** - Tests for UserPromptSubmit event logging
-   - Log entry structure
-   - Directory creation
-   - Error scenarios
-   - Concurrent write handling
-
-### 🔄 Components Needing Tests
-
-The following implementations still need unit tests:
-
-- `auto-approve.ts` - Complex pattern matching logic
-- `auto-format.ts` - File formatting automation
-- `block-package-json-tsx.ts` - File modification blocking
-- `block-tsx.ts` - TSX file blocking
-- `deny-node-modules.ts` - Node modules access control
-- `deny-repository-outside.ts` - Repository boundary enforcement
-- `speak-notification.ts` - VoiceVox audio notifications
-- `web-fetch-guardian.ts` - Web fetch security
+テスト対象は `home/dot_claude/hooks/implementations/` と `home/dot_claude/hooks/lib/` の実装。
 
 ## Running Tests
-
-### Run All Unit Tests
 
 ```bash
 # All unit tests
@@ -57,16 +14,7 @@ bun run test
 node --import ./home/dot_claude/hooks/tests/preload-test-env.mjs --test home/dot_claude/hooks/tests/unit/session.test.ts
 ```
 
-Wall-clock (perf) tests live in `tests/perf/` and run with `bun run test:perf`; see the "node:test のスイート（unit / perf）" section of `tests/README_TESTING.md`.
-
-### Test Output
-
-Tests provide:
-
-- ✅ Pass/fail status for each test file
-- Total test count and results
-- Detailed failure information when tests fail
-- Colorized output for better readability
+実時間を測る（perf）テストは `home/dot_claude/hooks/tests/perf/` に置き、`bun run test:perf` で実行する。詳細は `home/dot_claude/hooks/tests/README_TESTING.md` の「node:test のスイート（unit / perf）」を参照。
 
 ## Test Structure
 
@@ -102,12 +50,6 @@ describe("component behavior", () => {
 3. **File System Simulation** - Tests use temporary directories to simulate file operations
 4. **Context Mocking** - Hook context objects are simulated to test success/error paths
 5. **Parallel Operations** - Tests verify that async operations execute correctly in parallel
-
-## Coverage Goals
-
-- **Current Coverage**: ~33% of implementations have tests (4/12 files)
-- **Target Coverage**: 80%+ for all critical hook implementations
-- **Focus Areas**: Error handling, edge cases, concurrent operations
 
 ## Contributing
 

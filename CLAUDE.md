@@ -32,7 +32,7 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
 - **グローバル設定**: `${projectRoot}/home/dot_claude/CLAUDE.md` → `~/.claude/CLAUDE.md`
   - 編集する場合は `${projectRoot}/home/dot_claude/CLAUDE.md` を変更してから `chezmoi apply` を実行
 
-- **Settings.json分割管理**: `.settings.base.json`, `.settings.permissions.json`, `.settings.hooks.json.tmpl`, `.settings.plugins.json` → `run_onchange_update-settings-json.sh.tmpl` で jq 統合
+- **Settings.json分割管理**: `.settings.base.json.tmpl`, `.settings.permissions.json`, `.settings.hooks.json.tmpl` → `run_onchange_update-settings-json.sh.tmpl` で jq 統合
   - **重要**: hooks変更は `.settings.hooks.json.tmpl` を編集 → `chezmoi apply`
   - `enabledPlugins` は `claude plugin` CLI が管理、settings.json 更新時に保持
 

@@ -96,17 +96,16 @@ This repository includes comprehensive Claude Code configuration with:
 
 `~/.claude/settings.json` is managed by splitting it into multiple files:
 
-- **`.settings.base.json`**: Core settings (model, language, statusLine, alwaysThinkingEnabled, etc.)
+- **`.settings.base.json.tmpl`**: Core settings (model, language, statusLine, alwaysThinkingEnabled, etc.)
 - **`.settings.permissions.json`**: Permission settings (allow/deny)
 - **`.settings.hooks.json.tmpl`**: Hooks configuration (dynamically generated with chezmoi variables)
-- **`.settings.plugins.json`**: Plugin configuration (enabledPlugins)
 
 These files are automatically merged by `run_onchange_update-settings-json.sh.tmpl` during `chezmoi apply`.
 
 **Important notes:**
 
 - To modify hooks configuration, edit `.settings.hooks.json.tmpl` and run `chezmoi apply`
-- Existing `enabledPlugins` settings are preserved (user manual changes are not overwritten)
+- `enabledPlugins` is managed by the `claude plugin` CLI; existing values are preserved on merge (see Plugin Management)
 
 ### ~/.claude.json Automatic Management
 
@@ -119,12 +118,7 @@ These files are automatically merged by `run_onchange_update-settings-json.sh.tm
 - Auto-updates `mcpServers`, `preferredNotifChannel`, and `defaultMode`
 - Creates backup before changes and shows diff
 
-**Managed MCP servers:**
-
-- `@mizchi/readability` - Web page content extraction
-- `chrome-devtools-mcp` - Chrome DevTools automation
-- `@playwright/mcp` - Browser automation
-- `@upstash/context7-mcp` - Documentation search
+The managed MCP servers are defined in the template of `run_onchange_update-claude-json.sh.tmpl`.
 
 **To update versions:** Edit `package.json` dependencies and run `chezmoi apply`
 
@@ -150,21 +144,17 @@ Both layers coexist in `~/.claude/skills/` directory.
 
 ### Plugin Management
 
-Plugins are managed declaratively through `.settings.plugins.json`:
+Plugins and marketplaces are declared in `home/.chezmoidata/claude_plugins.yaml`. `chezmoi apply` installs and removes them to match the declaration (`run_onchange_install-claude-plugins-8.sh.tmpl`).
 
-**After `chezmoi apply`:**
-
-- `show-missing-plugins.sh` detects missing plugins
-- Displays marketplace registration commands (if needed)
-- Shows plugin installation commands to run in Claude Code IDE
-
-**Syncing plugin changes back to dotfiles:**
+**Auditing and syncing:**
 
 ```bash
+# Compare declared plugins (YAML) with the actual state of the claude CLI
+~/.claude/scripts/show-missing-plugins.sh
+
+# Print YAML generated from the installed plugins and diff it against the declaration
 ~/.claude/scripts/sync-enabled-plugins.sh
 ```
-
-This exports current `enabledPlugins` from `~/.claude/settings.json` to dotfiles for version control.
 
 ### Using in Other Projects
 
@@ -183,4 +173,4 @@ See [docs/external-usage.md](docs/external-usage.md) for detailed documentation.
 
 ### Skills Included
 
-See `.skills/` directory for available skills. Key skills include setup-claude-skills-for-web, commit-conventions, react-hooks, and logic-validation.
+See `.skills/` directory for available skills.

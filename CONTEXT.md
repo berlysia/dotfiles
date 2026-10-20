@@ -18,7 +18,7 @@ ADR: `docs/decisions/0010-context-md-mechanism.md`
 
 ## Authoritative references
 
-- @docs/decisions/ — 全 ADR (0001-0010)。Document Workflow / hooks 体系 / レビュアー SSoT / mechanical-lane / CONTEXT.md 機構
+- @docs/decisions/ — 全 ADR。Document Workflow / hooks 体系 / レビュアー SSoT / mechanical-lane / CONTEXT.md 機構ほか
 - @CLAUDE.md — このプロジェクト固有 CLAUDE.md (chezmoi / hooks / skills 管理規約)
 - @home/dot_claude/CLAUDE.md — グローバル CLAUDE.md (デプロイ先 `~/.claude/CLAUDE.md`)
 - @home/dot_claude/rules/workflow.md — Document Workflow Protocol、Task Routing、Session Artifact Retention
@@ -47,7 +47,7 @@ ADR: `docs/decisions/0010-context-md-mechanism.md`
   - spec 層 4 名: logic-validator + scope-justification-reviewer + decision-quality-reviewer + greenfield-perspective-reviewer
   - plan 層 2 名 + コンテンツベース: logic-validator + scope-justification-reviewer + content-selected (architecture-boundary-analyzer / security-vulnerability-analyzer / data-contract-evolution-evaluator / test-quality-evaluator / 等から最大 3 名)
   - SSoT は `SPEC_REVIEWERS` / `PLAN_REVIEWERS` 定数（実体は `lib/workflow-review-core.ts`、`plan-review-automation.ts` が re-export）
-- **ADR-0015 で追加された語彙（2026-09-10）**:
+- **ADR-0015 の語彙**:
   - **workflow-cli**: `status` / `round` / `stamp` / `triage` で Review Status・marker・Reviewer Outputs 骨格・triage marker を書く CLI。モデルは hash を転記しない。Approval 行には触れない
   - **reviewer-runs.log**: `reviewer-run-recorder`（PostToolUse `Agent`）が書く reviewer 起動台帳。`stamp` は必須 reviewer の証跡が無いと通らない
   - **workflow-bash-sync**: PostToolUse `Bash` で wfDir 文書の内容 hash 差分を検知して推奨を出す hook。subagent 由来（`agent_id` あり）は対象外
@@ -55,7 +55,7 @@ ADR: `docs/decisions/0010-context-md-mechanism.md`
   - **診断 deny**: guard の deny は「不成立条件・見つかった status 行・次の 1 手」。`lib/workflow-gate.ts` の `diagnoseGate` を CLI `status` と共有
   - **pointer**: 同一 round 内の 2 回目以降の推奨は ≤160B。全文は `## Reviewer Outputs (Round N)` 数が増えた最初の変更でのみ
   - **operator guide / reference skill**: `rules/workflow.md`（≤13KB、行動順）と `.skills/document-workflow-reference/SKILL.md`（機構仕様）の分離
-- **ADR-0028 で追加された語彙（2026-10-06）**:
+- **ADR-0028 の語彙**:
   - **委任 (delegation)**: 人間が spec の承認時に選ぶと、spec の `## Scope` に収まる plan-N.md が自分の承認なしで gate を通る。記録は `approvals.log` の spec.md の行の `delegate: "plans-in-scope"`
   - **`## Scope`**: spec.md に書く、委任された plan-N.md が書き込んでよいパスの一覧。行の文字・長さ・形に制限があり、違反があると全体が無効
   - **保護対象**: Scope に書いても委任されないパス（承認機構の実装、設定、決定記録、model が従う指示）。`lib/workflow-files.ts` の定数
@@ -74,7 +74,7 @@ ADR: `docs/decisions/0010-context-md-mechanism.md`
 
 ### Hooks 体系
 
-- `~/.claude/hooks/implementations/` 配下に約 26 個の TypeScript hook
+- `~/.claude/hooks/implementations/` 配下の TypeScript hook
 - bun で絶対パス実行 (`bun ~/.claude/hooks/implementations/*.ts`)
 - 主要依存: `cc-hooks-ts` (フック定義ヘルパー) / `@anthropic-ai/claude-agent-sdk` (LLM 評価)
 - 主要 hook: `document-workflow-guard` / `plan-review-automation` / `permission-auto-approve` / `workflow-bash-sync`
@@ -90,11 +90,10 @@ ADR: `docs/decisions/0010-context-md-mechanism.md`
 - 件数は `scripts/lint-shell.sh` で数える。`shellcheck a.sh b.sh ...` のように複数ファイルをまとめて渡すと、渡したファイルどうしの source が解決され、1 ファイルずつ検査するエディタや CI より少なく出る
 - shellcheck の版は `.mise.toml` の `github:koalaman/shellcheck` で固定し、`scripts/lint-shell.sh`・pre-commit・CI がその版を使う（版が違えば lint-shell.sh は終了コード 2 で止まる）。template（`*.sh.tmpl`）は darwin・linux・linux-wsl の 3 通りに描画して検査する。初めて使う手元と、Renovate が版を上げた後は `mise install github:koalaman/shellcheck` を実行する
 - CI と pre-commit は全 severity で落とす（info / style も含む）。`.shellcheckrc` の `shell=bash` は `#!/bin/sh` の shebang より優先されるので、通常の lint では bashism を検出しない。`dot_shell_common/` は zsh からも source されるため、bashism を入れない
-- 経緯: `git show 52dc6fd447:docs/plans/shellcheck-zero/plan.md` の Implementation Notes
 
 ## Open questions
 
 - **ADR-0010 Defer 節 5 項目の優先順位**: grill skill (Socratic 質問発火による未定義語検出) が次に自然な拡張だが、context-audit (R1 参照腐敗の検出) も実害が薄いわりに価値が高い。実運用で先に困る方を優先するのが筋
-- **`.tmpl` 規約棚卸しの timing**: `templates/spec.md` / `plan-execution.md` は literal copy 用なのに拡張子なし、本件 `context.md.tmpl` だけ `.tmpl` を採用した理由を後日整理する必要 (architecture-strategist の F-A1 residual note 由来)
+- **`.tmpl` 規約棚卸しの timing**: `templates/spec.md` / `plan-execution.md` は literal copy 用なのに拡張子なし、本件 `context.md.tmpl` だけ `.tmpl` を採用した理由を後日整理する必要
 - **mechanical-lane criteria の運用実績**: ADR-0009 導入後の使用頻度と誤判定発生率を観測したい (運用ログから measurable proxy が取れるか未確認)
 - **CONTEXT.md maturity の measurable proxy**: `docs/decisions/` の ADR 数 / CLAUDE.md の定義語数 / 本ファイル内の定義語数、のいずれが maturity の代理指標として適切か (会話で言及した仮説の検証)
