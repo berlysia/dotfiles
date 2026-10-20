@@ -93,6 +93,12 @@ C の設計原則（chezmoi ネイティブを使い独自の削除ロジック�
 - 深いネスト（親ディレクトリの 1 エントリとして）
 - ソースが削除された managed ファイル（実環境の 14 件がこれ）
 
+## 2026-10-21 追記: source の履歴から見る検査
+
+このうち「ソースが削除された managed ファイル」は、配置先を見ずに git の履歴から検出するようになった。`tests/chezmoiremove-coverage.test.mjs` が、`home/` から消えた（名前の変更を含む）source の target が `home/.chezmoiremove` に無ければ commit 時と CI で失敗する。逆に、`.chezmoiremove` の行が今配っている target（dir の行ならその配下）や external、run script が書く場所に当たっても失敗する。上の「managed なパスと衝突すると `inconsistent state` で apply 全体が停止」はこれで commit 前に止まる。
+
+残るのは、履歴から辿れない残骸（ADR-0002 の移行前の層のような、source の外で作られたもの）と、ignore の行を足す前に配ったファイルで、配置先を見るこの文書の方式でしか見つからない。
+
 ## 検査対象を `~/.claude/` に限る理由
 
 `~/.codex/` / `~/.config/` / `~/.shell_common/` も `home/dot_*/` → deploy 先という同型構造を持ち、原理的に同じ蓄積が起こり得る。調査起点が `~/.claude/hooks/` の運用問題であり他ルートでの実害は未調査のため、対象拡大は実害の観測を待つ。
