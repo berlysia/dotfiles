@@ -16,3 +16,4 @@
 .claude/lib/plugin-utils.ts
 .claude/hooks/implementations/permission-request-notification.ts
 .claude/hooks/tests/unit/test-helpers.ts
+.zsh/README.md
