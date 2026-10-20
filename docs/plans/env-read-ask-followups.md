@@ -9,7 +9,7 @@
 
 次のどちらかの後に、下の手順をやり直す。
 
-- Claude Code を更新した後。hook の allow と ask 規則の関係は公式ドキュメントに無く、2.1.296 での計測に依存している。
+- Claude Code を更新した後。hook の allow と ask 規則の関係は公式ドキュメントに無く、計測に依存している。
 - `home/.chezmoidata/claude_hooks.yaml` の `claude_hooks.auto_approval` を `true` に戻した後。
 
 ### 手順
@@ -24,7 +24,7 @@ scratchpad に、ダミーの 1 行（`PROBE_KEY=dummy-not-a-secret`）を書い
 
 ## 測っていないこと
 
-- Read の規則が Grep と Glob に効くか。公式ドキュメントは、可能な範囲で適用すると書く。2.1.296 のセッションには Grep のツールが無く、測れなかった。ツールがある版で、deny 規則と ask 規則のそれぞれを測る。今の deny が Grep を止めていたなら、ask への移動で、hook が登録されているときに Grep だけ緩む。hold は Grep と Glob を見ていない。
+- Read の規則が Grep と Glob に効くか。公式ドキュメントは、可能な範囲で適用すると書く。Grep のツールが無い版では測れない。ツールがある版で、deny 規則と ask 規則のそれぞれを測る。今の deny が Grep を止めていたなら、ask への移動で、hook が登録されているときに Grep だけ緩む。hold は Grep と Glob を見ていない。
 - agent-vm の中での挙動。VM は同じ設定と hook を持ち込む。
 
 ## ask 規則を足すとき

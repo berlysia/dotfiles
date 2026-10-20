@@ -15,12 +15,12 @@ LLM を持たない決定的スクリプトなので、`rules/autonomous-lane.md
 
 ## マージ後の確認
 
-- 最初の cron 実行（月曜 09:00 JST）のあと、Actions の結果を見る。失敗したときに GitHub の通知が届く設定かも確かめる
+- 最初の cron 実行（2026-10-26 月曜 09:00 JST）のあと、Actions の結果を見る。確かめたら、この節を消す。失敗したときに GitHub の通知が届く設定かも確かめる
 
 ## 閉じた個別 Issue が 200 件の上限に近づいたとき
 
 `skill-upstreams Sync` は `upstream-sync` ラベルの Issue を 1 回の `gh issue list --limit 200` で全件読む。
-閉じた個別 Issue は増え続け、Dashboard も 1 件ぶん数に入る。200 件に達すると個別 Issue も Dashboard も止まり、job の失敗だけが残る（今は Dashboard を含めて 3 件）。
+閉じた個別 Issue は増え続け、Dashboard も 1 件ぶん数に入る。200 件に達すると個別 Issue も Dashboard も止まり、job の失敗だけが残る。
 
 決めること:
 

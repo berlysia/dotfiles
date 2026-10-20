@@ -1,31 +1,25 @@
 # 管理外ファイルの蓄積検出（未着手）
 
-chezmoi が managed 外のファイルを刈らないため、所有ディレクトリにレガシー層が蓄積する問題への対処。2 ラウンドのレビュー（各 5-7 名）で設計が 2 回反転し、未解決事項が残ったため実装を見送った。
-
-実測はすべて 2026-08-18 時点。関連コミット: `3065dce`（課題 B、`run_onchange` の Hash 修正）。
+chezmoi が managed 外のファイルを刈らないため、所有ディレクトリにレガシー層が蓄積する問題への対処。設計が反転し、未解決事項が残ったため実装は見送っている。
 
 ## 発端
 
-`~/.claude/hooks/` に 2025 年 8-9 月のレガシー層が 132 件蓄積していた（`scripts/` 68、`tests/` 34、`lib/` 9 ほか）。ソース側に `scripts/` ディレクトリ自体が存在せず、ADR-0002 の TypeScript 移行前の残骸だった。参照ゼロを個別確認した上で人手で削除済み。
-
-`chezmoi apply` を何度実行しても管理外ファイルは残るため、リネーム・削除・ディレクトリ再編のたびに層が積もる。「apply が成功した」は「デプロイ済みの状態が正しい」を意味しない。
+`~/.claude/hooks/` に、ソース側に存在しない `scripts/` などのレガシー層（ADR-0002 の TypeScript 移行前の残骸）が蓄積しうる。`chezmoi apply` を何度実行しても管理外ファイルは残るため、リネーム・削除・ディレクトリ再編のたびに層が積もる。「apply が成功した」は「デプロイ済みの状態が正しい」を意味しない。
 
 ## 確定した事実
 
 ### スコープ設定が本質的な難所
 
-`~/.claude` 配下の管理外は約 15,800 件で、`node_modules` 6475 / `file-history` 3034 / `projects` 2031 / `session-env` 1860 / `plugins` 1816 など**大半が正当な実行時状態**。「管理外 = 陳腐化」とする検出器はノイズ 99.9% になり、`home/dot_claude/rules/code-quality.md` の `## Recoverable State Must Announce Itself`「正常時に鳴る警告は読み手に無視することを学習させる」に正面から反する。
+`~/.claude` 配下の管理外は、`node_modules` / `file-history` / `projects` / `session-env` / `plugins` など**大半が正当な実行時状態**。「管理外 = 陳腐化」とする検出器はほぼ常にノイズになり、`home/dot_claude/rules/code-quality.md` の `## Recoverable State Must Announce Itself`「正常時に鳴る警告は読み手に無視することを学習させる」に正面から反する。
 
 所有ディレクトリを positive に列挙する必要がある。候補は `agents` / `commands` / `hooks` / `lib` / `rules` / `scripts` / `templates` の 7 つで、これは「`~/.claude/` 直下で managed ファイルを 1 件以上持つディレクトリから `skills` を除いたもの」と完全に一致する（`skills/` は `.skills/` からの rsync と APM install で正当に管理外）。
-
-現況（`chezmoi unmanaged` 基準）: `agents/` 6、`scripts/` 4、`commands/` 2、`lib/` 2、`hooks/` 1（`logs` ディレクトリ）、`rules/` 0、`templates/` 0。未 deploy は全ディレクトリで 0 件。
 
 ### `chezmoi unmanaged` の意味論
 
 - `chezmoi unmanaged [path]...` がネイティブに存在し、手組みの集合差（`chezmoi managed` × `find` の差）と全 7 ディレクトリで結果が一致する
 - **管理外ディレクトリの中には降りない。** ディレクトリを 1 エントリとして返す。`--include=files` を付けるとそのディレクトリエントリが除外され、配下が丸ごと不可視になる（`hooks/logs` が `--include=files` で 0 件、無指定で 1 件）。削除した 132 件も管理外ディレクトリ配下にあり、`--include=files` では取り逃がす
 - **複数パスを渡すと、1 つでも不在なら全体が無音になる。** 存在する側の結果も出力されない（rc=1）。`-k` / `--keep-going` を付けると rc=0 になるが**出力はゼロのまま**で、成功を装って何も報告しない状態になる。ディレクトリごとにループすれば正常に動く
-- **`.chezmoiignore` に該当するパスは構造的に報告されない。** 所有ディレクトリ配下で `chezmoi ignored` に入るパスは 47 件あり、これらは managed ディレクトリの中にあっても ignored 判定で走査から外れる。現時点で実在するものは 0 件だが、ignore パターン追加前に deploy されたファイルは永久に不可視
+- **`.chezmoiignore` に該当するパスは構造的に報告されない。** 所有ディレクトリ配下で `chezmoi ignored` に入るパスは、managed ディレクトリの中にあっても ignored 判定で走査から外れる。ignore パターン追加前に deploy されたファイルは永久に不可視
 - 入れ子実行（`run_after_` の内側から呼ぶ）は安全。rc=0、デッドロックなし。一方 `chezmoi apply` の入れ子は `timeout obtaining persistent state lock` で確実にデッドロックする
 
 ### `.chezmoiremove` の意味論
@@ -40,8 +34,8 @@ chezmoi が managed 外のファイルを刈らないため、所有ディレク
 
 - chezmoi は属性 prefix を剥がした名前で辞書順ソートする。数字は英字より前に来るため `run_after_99-...` は `run_after_gc` / `run_after_sync-skills` より**先**に走る。最後に置くなら `zz-` 等
 - 非ゼロ終了すると `chezmoi apply` 全体が exit 1 になり、後続の `run_after_` も実行されない。参照実装は `run_after_10-install-hook-deps.sh.tmpl`（`set -e` を使わず `exit 0` を保ち、失敗は marker に記録して末尾の `run_after_zz-verify-provisioning.sh.tmpl` が非ゼロ終了に変換する）、反例は `run_after_gc.sh.tmpl`（`set -euo pipefail`）
-- `$CHEZMOI_EXECUTABLE` / `$CHEZMOI_SOURCE_DIR` / `$CHEZMOI_DEST_DIR` / `$CHEZMOI_CONFIG_FILE` は v2.71.1 で実際に export される。本リポジトリの既存スクリプトは 1 つも使っていない
-- **素の `chezmoi` を呼ぶと source は素の config から、dest は環境変数から解決され、食い違う。** 結果は「0 行」ではなく「もっともらしい間違った 201 行」になる。`--source` / `--destination` だけでは不十分で、`[data]` を含む config 自体が再解決されるため `--config "$CHEZMOI_CONFIG_FILE"` も要る
+- `$CHEZMOI_EXECUTABLE` / `$CHEZMOI_SOURCE_DIR` / `$CHEZMOI_DEST_DIR` / `$CHEZMOI_CONFIG_FILE` は `run_` スクリプトに export される。本リポジトリの既存スクリプトは 1 つも使っていない
+- **素の `chezmoi` を呼ぶと source は素の config から、dest は環境変数から解決され、食い違う。** 結果は「0 行」ではなく「もっともらしい間違った出力」になる。`--source` / `--destination` だけでは不十分で、`[data]` を含む config 自体が再解決されるため `--config "$CHEZMOI_CONFIG_FILE"` も要る
 - cwd は destDir。`chezmoi unmanaged` の相対パス引数は cwd 基準で解決されるため、絶対パスを使うべき
 
 ## 未解決の設計判断
@@ -82,22 +76,21 @@ C の設計原則（chezmoi ネイティブを使い独自の削除ロジック�
 
 ### 7. `~/.claude/` 直下の managed 層
 
-`.claude/CLAUDE.md` / `README-permissions.md` / `insight-distill-deny.txt` / `insight-distill-redact.txt` / `package.json` は managed だが、`.claude/` ルート自体は所有ディレクトリではないため、ここに落ちた残骸は検出対象外になる。実際にルート直下の管理外 52 件の中に `debug_session.js` / `exact_package.json` / `permissions.json.backup-2025-09-14T08-32-17` / `plugin-dependencies.json` が実在する。
+`.claude/CLAUDE.md` / `README-permissions.md` / `insight-distill-deny.txt` / `insight-distill-redact.txt` / `package.json` は managed だが、`.claude/` ルート自体は所有ディレクトリではないため、ここに落ちた残骸は検出対象外になる。ルート直下の管理外には、過去の作業で落ちた単発のファイルが混ざる。
 
 ## 検出できることが確認済みのケース
 
-以下は `chezmoi unmanaged` で正しく検出される（レビューで構成して確認）。
+以下は `chezmoi unmanaged` で正しく検出される。
 
 - managed サブディレクトリ内の残骸
 - 壊れた symlink
 - 深いネスト（親ディレクトリの 1 エントリとして）
-- ソースが削除された managed ファイル（実環境の 14 件がこれ）
 
-## 2026-10-21 追記: source の履歴から見る検査
+## source の履歴から見る検査との分担
 
-このうち「ソースが削除された managed ファイル」は、配置先を見ずに git の履歴から検出するようになった。`tests/chezmoiremove-coverage.test.mjs` が、`home/` から消えた（名前の変更を含む）source の target が `home/.chezmoiremove` に無ければ commit 時と CI で失敗する。逆に、`.chezmoiremove` の行が今配っている target（dir の行ならその配下）や external、run script が書く場所に当たっても失敗する。上の「managed なパスと衝突すると `inconsistent state` で apply 全体が停止」はこれで commit 前に止まる。
+ソースが削除された managed ファイルは、配置先を見ずに git の履歴から検出する。`tests/chezmoiremove-coverage.test.mjs` が、`home/` から消えた（名前の変更を含む）source の target が `home/.chezmoiremove` に無ければ commit 時と CI で失敗する。逆に、`.chezmoiremove` の行が今配っている target（dir の行ならその配下）や external、run script が書く場所に当たっても失敗する。上の「managed なパスと衝突すると `inconsistent state` で apply 全体が停止」はこれで commit 前に止まる。
 
-残るのは、履歴から辿れない残骸（ADR-0002 の移行前の層のような、source の外で作られたもの）と、ignore の行を足す前に配ったファイルで、配置先を見るこの文書の方式でしか見つからない。
+この文書の方式でしか見つからないのは、履歴から辿れない残骸（ADR-0002 の移行前の層のような、source の外で作られたもの）と、ignore の行を足す前に配ったファイルである。
 
 ## 検査対象を `~/.claude/` に限る理由
 

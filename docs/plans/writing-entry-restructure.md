@@ -1,6 +1,6 @@
 # 日本語の文章スキルの入口を、目的ごとの名前に組み直すか決める
 
-文章スキルを役割と入口の 2 層に分けた（`docs/decisions/0036-japanese-writing-skills-roles-and-entries.md`）。そのとき、入口の名前と形は今のまま（koncise、tanteki、yomiyasu、japanese-tech-writing）にした。組み直す案は、使って不便が出たときに別の作業として扱う。
+文章スキルは役割と入口の 2 層に分かれており、入口の名前と形は今のまま（koncise、tanteki、yomiyasu、japanese-tech-writing）にしてある（`docs/decisions/0036-japanese-writing-skills-roles-and-entries.md`）。組み直す案は、使って不便が出たときに別の作業として扱う。
 
 ## 案
 

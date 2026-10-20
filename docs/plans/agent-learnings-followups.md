@@ -14,11 +14,11 @@ store の `git log` と `agent-learnings status` で次を数え、定数（40 �
 
 ## PreCompact で worker が動くかの実機確認
 
-PreCompact hook の登録は `~/.claude/settings.json` で確かめた。実際の compact の後に worker が動いたかは、まだ見ていない。長いセッションで compact が起きたら、セッションが続いているうちに、そのセッションの行が `runs.log` に増えているかを見る。ほかのセッションの hook が worker を起こしても行は増えるので、これは状況証拠にとどまる。確定させたいなら、worker を起こした契機を `runs.log` に記録することを検討する。
+PreCompact の後に worker が動いたかは、まだ見ていない。長いセッションで compact が起きたら、セッションが続いているうちに、そのセッションの行が `runs.log` に増えているかを見る。ほかのセッションの hook が worker を起こしても行は増えるので、これは状況証拠にとどまる。確定させたいなら、worker を起こした契機を `runs.log` に記録することを検討する。
 
 ## runs.log の `llm failed` に理由を残すか
 
-運用の初期に 3 件が 2 秒のうちに続けて失敗し、原因が分からなかった。reason は固定の文言にしてある（LLM や transcript の文字列を入れないため）。SDK の結果の `subtype` のような、固定の集合から選べる値を足せるか検討する。
+`llm failed` の reason は固定の文言にしてある（LLM や transcript の文字列を入れないため）。SDK の結果の `subtype` のような、固定の集合から選べる値を足せるか検討する。
 
 ## Codex の会話からの自動抽出
 
@@ -34,4 +34,4 @@ Entire を導入した場合、その checkpoint を worker の入力アダプ�
 
 ## 削除済みの lessons-learned への古い参照
 
-`home/dot_claude/rules/autonomous-lane.md` と `docs/plans/workflow-guard-followups.md` が、ADR-0008 で削除した lessons-learned と抽出の仕組みに触れている。
+`home/dot_claude/rules/autonomous-lane.md` の Phase 2 hardening が、ADR-0008 で削除した `lessons-learned.md` を永続状態ファイルの例として挙げている。例として意図して残しているのか、古い参照なのかを確かめ、後者なら現存するファイルに直す。

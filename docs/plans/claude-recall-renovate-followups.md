@@ -4,7 +4,7 @@ Renovate が claude-recall の mise の版と、`home/.chezmoiexternal.toml.tmpl
 
 ## 最初の実際の bump PR で確かめる
 
-ローカルの Renovate CLI（44.126.0）の dry-run では、両方の dep が同じ版を選び、テンプレートの sha256 が上流の `checksums.txt` の値に更新された。hosted の Renovate App が同じように動くかは、まだ確かめていない。
+ローカルの Renovate CLI の dry-run では、両方の dep が同じ版を選び、テンプレートの sha256 が上流の `checksums.txt` の値に更新された。hosted の Renovate App が同じように動くかは、まだ確かめていない。
 
 次の `renovate/claude-recall` の PR で、次の 2 点を見る。
 
@@ -15,7 +15,7 @@ Renovate が claude-recall の mise の版と、`home/.chezmoiexternal.toml.tmpl
 
 ## auto-fix ワークフローが claude-recall の PR で動かなかった理由
 
-PR #296 が CI で落ちたとき、`auto-fix-dependencies.yml` は起動した（run `38688669815`）。しかし `Get PR information` の段階で skip 判定になり、Claude は動かなかった。PR を特定できなかったのか、bot の PR と判定されなかったのかは、まだ調べていない。
+claude-recall の PR が CI で落ちたとき、`auto-fix-dependencies.yml` は起動した（調べる入口は run `38688669815`）。しかし `Get PR information` の段階で skip 判定になり、Claude は動かなかった。PR を特定できなかったのか、bot の PR と判定されなかったのかは、まだ調べていない。
 
 調べること:
 

@@ -2,14 +2,12 @@
 
 元のチェックアウトで起動したセッションが、`git-worktree-create` で作ったワークツリーに `EnterWorktree(path)` で入ると、Document Workflow の成果物を書けなくなる。対策を決めて入れたら、このファイルを消す。
 
-## 起きたこと
-
-2026-10-19、writing-skills-by-role の作業で起きた。
+## 起きること
 
 - `workflow-cli dir` の wfDir は、起動した dir（`CLAUDE_PROJECT_DIR`）の `.tmp/sessions/<id>` に固定される（`document-workflow-reference` の「worktree で Document Workflow を使う」）
-- EnterWorktree 中のセッションは、元のチェックアウトへの Write を拒まれ、research.md を書けなかった
-- `ExitWorktree(keep)` で起動した dir に戻り、ワークツリーのファイルは絶対パスで編集して回避した
-- 利用者の指摘: ツールの使い方そのものを制限しないと、同じことがまた起きる
+- EnterWorktree 中のセッションは、元のチェックアウトへの Write を拒まれ、research.md を書けない
+- 回避: `ExitWorktree(keep)` で起動した dir に戻り、ワークツリーのファイルは絶対パスで編集する
+- ツールの使い方そのものを制限しないと、同じことがまた起きる
 
 ## 対策の候補
 

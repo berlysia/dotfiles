@@ -1,6 +1,6 @@
 # ほかのマシンで、tanteki を apm の管理から外す
 
-tanteki は apm で入れていたが、`.skills/tanteki/` に取り込んで自分で持つ形にした（#335、`docs/decisions/0036-japanese-writing-skills-roles-and-entries.md`）。このマシンでは移し終えた。ほかのマシンでは、次の `chezmoi apply` の前に手で移す必要がある。
+tanteki は `.skills/tanteki/` に取り込んで自分で持つ形にしてある（`docs/decisions/0036-japanese-writing-skills-roles-and-entries.md`）。apm で入れたままのマシンでは、次の `chezmoi apply` の前に手で移す必要がある。
 
 同期の警告に出る `recover:` の 1 行だけでは足りない。apm が追跡していない `node_modules` が残っていると、`apm uninstall` が止まるためである。
 

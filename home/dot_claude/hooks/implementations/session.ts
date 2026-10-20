@@ -339,8 +339,9 @@ const hook = defineHook({
       // (additionalClaudeContext しか読まない)。加えて素の stdout は hook_success
       // attachment として Claude のモデル入力に注入されるため、ユーザー向け通知には
       // 使えない。systemMessage は UI に表示され、モデル入力には入らない唯一のチャネル
-      // （Claude Code 2.1.234 の binary 実測。再検証手順は
-      //  docs/plans/hook-target-diagnostics-followups.md の「課題 A」節）。
+      // なので、digest のプレビューのような他プロジェクト由来の内容もここで返す。
+      // 入力に入らない保証は Claude Code の binary 実測に依るため、Claude Code を
+      // 更新したら hook_system_message が変換テーブルで注入されない扱いのままか確かめる。
       // なお context.json の event は trigger 宣言に対して型検査され、ランタイムの
       // hook_event_name とは結び付かない。複数イベント trigger に変える場合は注意。
       // 学びはモデルに渡す必要があるので、UI だけの systemMessage ではなく

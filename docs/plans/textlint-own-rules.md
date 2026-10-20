@@ -2,7 +2,7 @@
 
 グローバル textlint（`textlint-global`）と tanteki の検査は、依存の置き場だけが共通で、検査を走らせる仕組みと設定は別々にある。これを 1 つの仕組みにまとめ、tanteki の独自ルールは上流の写しではなく、自分で解釈し直したルールとして持つ。片付いたら、このファイルを消す。
 
-## 今の状態（#335 の merge 後）
+## 今の状態
 
 - 共通にしたもの: 依存。tanteki の依存は `home/dot_config/textlint/package.json` と `bun.lock` に入っており、`.skills/tanteki/node_modules` は `~/.config/textlint/node_modules` への相対 symlink である（`docs/decisions/0036-japanese-writing-skills-roles-and-entries.md`）
 - 別々のもの:
@@ -17,7 +17,7 @@
 
 ## 前提: 文章スキルの役割分け（ADR-0036）との関係
 
-ADR-0036 では、「検査の道具は作り直さず、上流の派生のまま持つ」と決めている。根拠は、ルールが約 24KB あること、上流で tests 11 本を通していること、週次の追跡で上流の修正を知れることである。この構想はその決定を覆すので、別の spec で扱い、決まったら ADR-0036 を改訂する ADR を書く。
+ADR-0036 では、「検査の道具は作り直さず、上流の派生のまま持つ」と決めている。根拠は、ルールの量、上流で tests を通していること、週次の追跡で上流の修正を知れることである。この構想はその決定を覆すので、別の spec で扱い、決まったら ADR-0036 を改訂する ADR を書く。
 
 検査の手順の持ち主は、役割スキルの `ja-check`（textlint 系と yomiyasu 系の検査の分担と手順を持つ）である。統合した後も `ja-check` が持つ見込みである。
 
