@@ -85,3 +85,4 @@ apply は未掲載のスキルを追記するだけで、行を消さない。
 - [x] ja-doc-profile
 - [x] ja-structure
 - [x] ja-check
+- [x] ja-notation
