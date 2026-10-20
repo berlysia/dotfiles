@@ -374,9 +374,7 @@ test("exception set: a violation outside the set is reported", () => {
 
 // The ADR cleanup (plan-3) must empty these sets; each entry is a violation the
 // cleanup has not fixed yet. Names are file names under docs/decisions/.
-const ADR_HEADING_EXCEPTIONS: ReadonlySet<string> = new Set<string>([
-  "0036-japanese-writing-skills-roles-and-entries.md",
-]);
+const ADR_HEADING_EXCEPTIONS: ReadonlySet<string> = new Set<string>([]);
 const ADR_SESSION_PATH_EXCEPTIONS: ReadonlySet<string> = new Set<string>([]);
 const ADR_MISSING_PATH_EXCEPTIONS: ReadonlySet<string> = new Set<string>([]);
 const ADR_SOURCE_LINE_REF_EXCEPTIONS: ReadonlySet<string> = new Set<string>([]);
