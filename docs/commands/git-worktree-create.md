@@ -121,7 +121,7 @@ install は、checkout したブランチのルートの `package.json` の scri
 
 ### launcher との違い
 
-agent-vm の launcher は、起動時に install を実行しない。作成時だけ実行するのは、launcher の自動 install を却下した理由が、作成直後の worktree には当てはまらないためである。作業している agent がいなくて競合せず、PM は一意に決まらなければ実行せず、script の方針は PM と repo の設定に従う。詳細は `docs/decisions/0022-agent-vm-node-modules.md` の Addendum にある。
+agent-vm の launcher は、起動時に install を実行しない。作成時だけ実行するのは、launcher の自動 install を却下した理由が、作成直後の worktree には当てはまらないためである。作業している agent がいなくて競合せず、PM は一意に決まらなければ実行せず、script の方針は PM と repo の設定に従う。詳細は `docs/decisions/0022-agent-vm-node-modules.md` の Amendments にある。
 
 ### 制限
 

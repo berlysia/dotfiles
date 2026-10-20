@@ -185,6 +185,8 @@ agent-vm env gh [--repo OWNER/REPO] [--vault Personal|Formal]
 
 exclude に載せた repo では、隔離だけでなく、6 節の git 面検査とログの取り込みも行われない。host でそのまま `git` や `claude` を動かすのと同じ状態になる。
 
+VM 経由の入口を `vclaude` / `vcodex` に変えた後は、`chezmoi apply` の後に新しいシェルを開く。開いたままのシェルには古い `claude()` 関数が残る。
+
 ## 6. 終了時の表示と復旧
 
 ### 終了コード

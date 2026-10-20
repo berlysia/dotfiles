@@ -375,9 +375,6 @@ test("exception set: a violation outside the set is reported", () => {
 // The ADR cleanup (plan-3) must empty these sets; each entry is a violation the
 // cleanup has not fixed yet. Names are file names under docs/decisions/.
 const ADR_HEADING_EXCEPTIONS: ReadonlySet<string> = new Set<string>([
-  "0018-agent-vm-orbstack.md",
-  "0021-agent-vm-golden-clone.md",
-  "0022-agent-vm-node-modules.md",
   "0023-workflow-identity.md",
   "0027-permission-path-pattern-semantics.md",
   "0029-workflow-records-move-into-adr.md",

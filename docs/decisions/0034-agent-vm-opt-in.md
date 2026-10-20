@@ -10,7 +10,7 @@ ADR-0018 K10 は、mac で素の `claude` / `codex` を打つと既定で repo �
 
 利用者はこれを opt-in に変えると決めた。素の `claude` / `codex` は host で動かし、VM で動かしたいときだけ明示して使う。入口の形は、利用者が専用のラッパー（`vclaude` / `vcodex`）を選んだ。
 
-`AGENT_VM` を読むのはシェル関数（`home/dot_shell_common/agent_vm.sh`）だけで、launcher（`home/dot_local/bin/executable_agent-vm`）は案内文に `AGENT_VM=off` と書いていただけだった。そのため変更はシェルの入口と案内文と文書に閉じ、launcher の判定は変えずに済む。
+`AGENT_VM` を読むのはシェル関数だけで、launcher は案内文に `AGENT_VM=off` と書いていただけだった。そのため変更はシェルの入口と案内文と文書に閉じ、launcher の判定は変えずに済む。
 
 ## Decision
 
@@ -37,12 +37,9 @@ ADR-0018 K10 は、mac で素の `claude` / `codex` を打つと既定で repo �
 - **R3**: 隔離を打鍵ゼロで得る、という ADR-0018 Decision 冒頭の価値を明示的に手放す。
 - **R4**: 契約 (a) は、シェル関数で `claude` を上書きしないことだけで成り立つ。利用者が別の alias や PATH で `claude` を launcher に向けた場合は対象外である。
 - ADR-0021 の R1 と 17 項にある回復手順の `AGENT_VM=off` は、「agent-vm を通さずに `claude` / `codex` を直接打つ」と読み替える。
-- 移行: `chezmoi apply` の後に新しいシェルを開く。開いたままのシェルには古い `claude()` 関数が残る。
 
 ## References
 
 - `docs/decisions/0018-agent-vm-orbstack.md`（K10、K13、R8）
 - `docs/decisions/0021-agent-vm-golden-clone.md`（R1、17 項）
 - `docs/agent-vm.md`（5 節、6 節、7 節）
-- `home/dot_shell_common/agent_vm.sh`, `home/dot_local/bin/executable_agent-vm`
-- `tests/agent-vm/run-shell.sh`, `tests/agent-vm/run.sh`

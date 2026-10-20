@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # agent-vm golden seal: runs inside the golden machine after its bootstrap, right before it is stopped and cloned.
 # Called by the host launcher (home/dot_local/bin/executable_agent-vm, ensure_golden) with no arguments.
-# Design: docs/decisions/0020-agent-vm-golden-clone.md (spec K6, K7, K12).
+# Design: docs/decisions/0021-agent-vm-golden-clone.md (spec K6, K7, K12).
 # shellcheck disable=SC2088 # "~/" appears only in error text shown to the user, never as a path
 set -euo pipefail
 
