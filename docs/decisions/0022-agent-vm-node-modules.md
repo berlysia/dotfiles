@@ -40,7 +40,7 @@ ADR-0018 は、repo を host と同じパスで VM に mount する。`node_modu
 - `git worktree add` / `remove` を直接使うと、次の起動まで差し替えが追従しない。VM で直接 add した worktree でそのまま install すると、host の worktree に linux 用のパッケージが入る。規約上、worktree の作成と削除は 2 つのツールに限る。
 - このリリースより前に、VM の install で host の `node_modules` が上書きされた repo は、host で install をやり直すまで壊れたままである。自動検出はしない。
 - 1 つの worktree で差し替えるパッケージは 500 件までである。
-- 実機での確認項目は `docs/agent-vm.md` 9 節の V24〜V29 である。結果は同じ節の確認結果に記録する。
+- 実機で確かめる観点は `docs/agent-vm.md` 9 節の V24〜V29 である。
 
 ## Alternatives
 

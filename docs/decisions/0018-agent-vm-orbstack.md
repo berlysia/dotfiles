@@ -101,6 +101,6 @@ VM の Claude から playwright と chrome-devtools の MCP を使えるよう�
 
 - `git show 52dc6fd447:docs/plans/agent-vm/spec.md` / `research.md` / `plan-1.md` / `plan-2.md` / `plan-3.md` / `plan-4.md`
 - `git show 52dc6fd447:docs/plans/agent-vm/vm-browsers/`（K23〜K28 の spec / research / plan-1〜3）
-- `docs/agent-vm.md`（導入ガイド、mac 実機検証項目 V1〜V23）
+- `docs/agent-vm.md`（導入ガイド、mac 実機での確認項目 V1〜V33）
 - `home/dot_local/bin/executable_agent-vm`, `agent-vm/cloud-init.yaml`, `agent-vm/bootstrap.sh`, `home/dot_shell_common/agent_vm.sh`
 - https://docs.orbstack.dev/machines/isolated

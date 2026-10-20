@@ -38,7 +38,7 @@ yarn = "4.18.1"
 "npm:@mizchi/readability" = { version = "0.7.7", allow_low_downloads = true }
 # Follow Codex releases immediately, without the default seven-day delay.
 "npm:@openai/codex" = { version = "latest", minimum_release_age = "0s" }
-# Per-machine dev server proxy for agent-vm (docs/agent-vm.md, #207); it starts nothing until `portless run` is used.
+# Per-machine dev server proxy for agent-vm (docs/agent-vm.md, section 3 "VM でブラウザを使う"); it starts nothing until `portless run` is used.
 portless = "0.15.7"
 "github:k1LoW/mo" = "1.6.9"
 # registry の `deck` は Kong/decK に解決されるため repo 指定が必須

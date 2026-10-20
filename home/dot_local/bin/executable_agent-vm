@@ -63,7 +63,7 @@ derive_machine_name() { # repo_root
 
 meta_path() { printf '%s/machines/%s\n' "$AGENT_VM_STATE_DIR" "$1"; }
 
-# portless proxy ports (docs/agent-vm.md, #207): one per machine, so two machines never contend for the port a person
+# portless proxy ports (docs/agent-vm.md, section 3 "VM でブラウザを使う"): one per machine, so two machines never contend for the port a person
 # opens on the mac. Above 1023 (no sudo in the VM), clear of portless's app range 4000-4999 and fallback 1355, of
 # common dev server ports and of the ephemeral ranges.
 PROXY_PORT_MIN=17300
