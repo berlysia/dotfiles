@@ -71,7 +71,7 @@ spec.md の Risks R1-R11 を、本 ADR の時点で受け入れた残余とし�
 - **R1**: `10-` と `zz-` の間にある `run_after_` が hard fail すると（`gc` は `set -euo pipefail`）、verifier に届かず、その apply では root-deps の失敗も報告されない。marker は残るので次の clean な apply で報告される。ADR-0014 が受け入れたものと同じ条件である
 - **R2**: `mise install` の失敗は WARNING だけで marker を書かない。bun が入らないと `10-install-hook-deps` と `10-install-root-deps` は「bun not found」の WARNING で skip し、verifier も何も報告しない。今回の事故と同じ「失敗が apply の終了コードに現れない」形がツールチェーン層に残る。緩和しているのは、install が毎回再試行されること（K2）と WARNING が apply のたびに出ることだけである
 - **R3**: safe-chain のバイナリが無い状態で `run_onchange_after_install-safe-chain` が exit 0 で skip すると、ハッシュが記録され、config が次に変わるまで再試行されない。発生するのは mise install が safe-chain の導入に失敗した場合に限られ、そのとき R2 の WARNING が出る。復旧手段は `safe-chain setup` の手動実行である
-- **R4**: 改名で古い名前への参照が残りうる。`docs/plans/unmanaged-file-drift-detection.md` と textlint installer のコメントは更新した。ADR-0014 と `docs/research/hook-deps-install-investigation.md` は当時の記録なので書き換えない
+- **R4**: 改名で古い名前への参照が残りうる。`docs/plans/unmanaged-file-drift-detection.md` と textlint installer のコメントは更新した。ADR-0014 は当時の記録なので書き換えない
 - **R5**: 詰まった状態のマシンに変更が届いても、変更後の ASCII 順フェーズには 7b が無いのでファイル配置は止まらない。chezmoi state に残る旧 7/7b のハッシュ記録は、同じ内容のスクリプトがもう存在しないので参照されない
 - **R6**: apply ごとに約 0.03-0.14s が増える。ADR-0014 が受け入れた hook-deps の約 80-90ms と同じ桁である
 - **R7**: `00-install-mise-tools` は mise 本体が無いと exit 1 で終わり、verifier を含む以降の `run_after_` をすべて止める。旧 script 7 と同じ判断を引き継ぐが、旧来は全エントリの配置まで止めていたので、止まる範囲は狭くなる。mise 本体の不在は bootstrap が終わっていないことを意味し、chezmoi 自身のエラー出力で即座に目に見える

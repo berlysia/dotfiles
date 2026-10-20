@@ -18,7 +18,7 @@ accepted (2026-09-05)
 
 ### 1. install を配置後フェーズの単一無条件スクリプトへ統合する（KD1-KD3）
 
-hook 依存の install 責務を `run_after_` フェーズの単一スクリプトに統合する。`run_after_` は全 target 配置後に走ることが保証されている相であり、ここに置く限り「その apply が更新した package.json」を必ず読める。`00-` と `zz-` の 2 つのプレフィックスは本機構専用に予約し、他のスクリプトに使わせない。
+hook 依存の install 責務を `run_after_` フェーズの単一スクリプトに統合する。`run_after_` は全 target 配置後に走ることが保証されている相であり、ここに置く限り「その apply が更新した package.json」を必ず読める。`00-` と `zz-` の 2 つのプレフィックスは本機構専用に予約し、他のスクリプトに使わせない。順序を先頭の prefix で与えるのは、chezmoi が target 名の辞書順で実行するためである。名前の末尾の連番（`install-packages-0`、`install-claude-plugins-8` など）は同じ stem の中でしか順序を与えず、stem が違えば `install-c` < `install-p` のように stem の綴りで決まる。先頭の数字は英小文字より必ず前に並ぶ。
 
 ### 2. fail-loud は末尾の verifier に分離する（KD4）
 
@@ -64,7 +64,6 @@ source 側の `home/dot_claude` を bun workspace（root `package.json` の `wor
 
 ## References
 
-- `docs/research/hook-deps-install-investigation.md` — 本 ADR の根拠となった実測の手順と生の結果（順序の再現実験、bunfig の探索範囲、mise bootstrap のコスト、`minimumReleaseAge` の効き方）
 - `home/.chezmoiscripts/run_after_00-install-hook-deps.sh.tmpl` — 本 ADR の installer 実装（旧 `run_after_ensure-hook-deps.sh.tmpl` の改名・改修）
 - `home/.chezmoiscripts/run_after_zz-verify-hook-deps.sh.tmpl` — fail-loud を担う verifier 実装
 - `home/dot_claude/private_bunfig.toml.tmpl` — デプロイ先 `~/.claude/bunfig.toml` を root から verbatim 生成するテンプレート
