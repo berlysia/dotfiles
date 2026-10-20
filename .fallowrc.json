@@ -1,0 +1,16 @@
+{
+  "entry": [
+    "home/dot_claude/hooks/implementations/*.ts",
+    "home/dot_claude/scripts/*.ts"
+  ],
+  "ignorePatterns": ["mods/**", "docs/**", "tests/**", "home/dot_local/**"],
+  "ignoreDependencies": [
+    "@mizchi/lsmcp",
+    "@drawio/mcp",
+    "@playwright/mcp",
+    "@upstash/context7-mcp",
+    "chrome-devtools-mcp",
+    "supergateway",
+    "tree-sitter-bash"
+  ]
+}

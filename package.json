@@ -45,7 +45,7 @@
   "devDependencies": {
     "@mizchi/lsmcp": "0.10.0",
     "@types/node": "26.6.5",
-    "knip": "6.41.0",
+    "fallow": "3.32.0",
     "oxfmt": "0.72.0",
     "oxlint": "1.87.0",
     "typescript": "7.0.2"
