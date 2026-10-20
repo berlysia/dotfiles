@@ -173,7 +173,7 @@ rewrite でも、変えないこと、足さないこと、消さないこと、
 
 ## 併用
 
-tanteki、yomiyasu、japanese-tech-writing と同時に使うときは、事実と意味を変えない規則（この文書の「変えないこと」と、各スキルの同じ趣旨の節）を優先する。表記と文体はそれぞれのスキルに任せる。koncise が決めるのは、構成と順序（何を先に、何を後ろへ置くか）だけである。
+tanteki、yomiyasu、japanese-tech-writing と同時に使うときは、事実と意味を変えない規則（`ja-fact-preservation` の規則）を、ほかのどの規則よりも優先する。koncise は表記と文体を決めず、重ねたほかの入口（と、それが読む `ja-notation`）に任せる。koncise が決めるのは、構成と順序（何を先に、何を後ろへ置くか）だけである。
 
 1 つの依頼で、ほかの入口も順に指定されているときは、`../ja-structure/SKILL.md` を読む。このスキルは機械の検査を持たないので、最後でなければ検査を走らせない。最後で、重ねた入口に tanteki か yomiyasu があるときは、`../ja-check/SKILL.md` を読み、検査の段を行う。
 

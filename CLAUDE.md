@@ -40,7 +40,7 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
   - **管理対象MCP**: @mizchi/readability, chrome-devtools-mcp, @playwright/mcp, @upstash/context7-mcp, @drawio/mcp
 
 - **プラグイン管理**: `home/.chezmoidata/claude_plugins.yaml` で宣言管理 → `chezmoi apply` で自動インストール/削除
-- **グローバル textlint**: `home/dot_config/textlint/`（package.json + `.textlintrc.json`）→ `~/.config/textlint/`。`run_after_10-install-textlint-deps.sh.tmpl` が apply 末尾で `bun install --ignore-scripts`。`~/.local/bin/textlint-global` ラッパがどこからでも同 config で実行（`--text "..."` / `-` で stdin）。rule 追加は package.json と `.textlintrc.json` を編集 → `chezmoi apply`
+- **グローバル textlint**: `home/dot_config/textlint/`（package.json + `.textlintrc.json`）→ `~/.config/textlint/`。`run_after_10-install-textlint-deps.sh.tmpl` が apply 末尾で `bun install --frozen-lockfile --ignore-scripts`（`bun.lock` を追跡）。tanteki の textlint の依存もここに入る（`.skills/tanteki/node_modules` は `~/.config/textlint/node_modules` への相対 symlink）。`~/.local/bin/textlint-global` ラッパがどこからでも同 config で実行（`--text "..."` / `-` で stdin）。rule 追加は package.json と `.textlintrc.json` を編集 → `chezmoi apply`
 
 ### Claude Code Skills Management
 
