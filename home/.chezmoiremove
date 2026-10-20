@@ -4,3 +4,14 @@
 .claude/commands/record-learnings.md
 .claude/hooks/implementations/lessons-learned-extractor.ts
 .claude/hooks/implementations/stop-reflection.ts
+.claude/hooks/implementations/linter-config-guard.ts
+.claude/hooks/lib/prompt-origin-probe.ts
+.claude/lib/claude-companion-detector.ts
+.claude/hooks/implementations/validate-plan-guard.ts
+.claude/agents/change-conservatism-reviewer.md
+.claude/RTK.md
+.codex/RTK.md
+.claude/hooks/rtk-rewrite.sh
+.local/bin/add-skill
+.claude/lib/plugin-utils.ts
+.claude/hooks/implementations/permission-request-notification.ts
