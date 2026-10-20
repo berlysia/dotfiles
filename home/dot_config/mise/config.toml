@@ -17,7 +17,6 @@ minimum_release_age = "7d"
 credential_command = "gh auth token"
 
 [tools]
-actionlint = "1.7.12"
 bun = "1.4.3"
 deno = "2.9.7"
 direnv = "2.38.2"
@@ -58,6 +57,10 @@ shfmt = "3.14.1"
 hyperfine = "1.21.0"
 duckdb = "1.5.6"
 "github:boyter/scc" = "4.1.0"
+# GitHub Actions linter (replaces actionlint and zizmor). Shared config because the
+# claude-action-bootstrap skill relies on it in other repos; not in the mise registry, hence
+# github:. Renovate must not automerge it (renovate.json): a new version can add default rules.
+"github:jdx/jactionlint" = "2.2.0"
 # Cyclomatic / cognitive complexity; not in the mise registry
 "github:moznion/cccc" = "1.8.0"
 # rm-compatible trash CLI; not in the mise registry

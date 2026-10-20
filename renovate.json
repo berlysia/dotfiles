@@ -44,11 +44,6 @@
       "groupName": "bun"
     },
     {
-      "description": "Update zizmor and zizmor-action in one PR. lint-actions.yml passes the mise pin to the action as `version`, and the action only runs versions listed in the digest table bundled at its pinned SHA, so a zizmor bump needs the action bump that knows it",
-      "matchDepNames": ["cargo:zizmor", "zizmorcore/zizmor-action"],
-      "groupName": "zizmor"
-    },
-    {
       "description": "Keep mise cargo: backend versions bare. The preset's rangeStrategy=pin writes cargo range syntax (=1.2.3), which mise rejects as an unsupported semver range; bump updates the bare version in place instead",
       "matchManagers": ["mise"],
       "matchDatasources": ["crate"],
@@ -58,6 +53,11 @@
       "description": "Hold mise tool updates for 7 days like npm ones (the preset sets minimumReleaseAge for npm only), matching minimum_release_age = \"7d\" in the mise config. Takes effect only for datasources that report release timestamps",
       "matchManagers": ["mise"],
       "minimumReleaseAge": "7 days"
+    },
+    {
+      "description": "jactionlint is a young linter (2026-10) and a minor release can add default rules that fail CI on unchanged workflows. The preset's :automergeMinor would otherwise merge mise minor/patch bumps on its own, so keep this one for a human to merge after reading the CI result. Must stay after the mise rules above: packageRules later in the list win",
+      "matchPackageNames": ["/jactionlint/"],
+      "automerge": false
     },
     {
       "description": "claude-recall: Renovate updates the mise version and the plugin external in home/.chezmoiexternal.toml.tmpl (version and sha256, see customManagers) in this one PR. The 7 day wait is repeated here because the mise rule above is limited to the mise manager, so without it the template dep takes a newer release than mise and the guard in the template fails the PR. The guard stays for the cases where only one of the two lands. Keep it out of the weekly group so a failure blocks only this PR, and off automerge: merging is what accepts the new release",

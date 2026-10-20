@@ -37,7 +37,8 @@ runs:
       # "$HOME/.local/bin"), never from event data such as a PR title or branch name, so no attacker-controlled
       # text reaches GITHUB_PATH. A fork PR that edits the workflow could change it, but could equally run any
       # command directly, so writing it to GITHUB_PATH adds no capability.
-      run: | # zizmor: ignore[github-env]
+      # jactionlint ignore=github-env
+      run: |
         if [ "${ADD_TO_PATH}" = "true" ]; then
           dir="${INSTALL_DIR/#\~/$HOME}"
           dir="${dir/#\$HOME/$HOME}"

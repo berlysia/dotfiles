@@ -9,6 +9,5 @@ rust = "1.99.0"
 
 # CLI tools (migrated from go install / cargo install)
 "cargo:similarity-ts" = "0.5.0"
-"cargo:zizmor" = "1.30.1"
 "go:github.com/syou6162/git-sequential-stage" = "latest"
 "cargo:octorus" = "latest"
