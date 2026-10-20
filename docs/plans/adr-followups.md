@@ -43,3 +43,31 @@ CPK-C108 の `notes/prose-style.md` に、癖のカタログが `berlysia-writin
 
 - 変更の後の 5 セッションで `docs/scripts/workflow-session-audit.mjs` を回し、Reviewer Outputs と intent-triage の欠落が 0 件で、推奨の注入量が round 数 × 2KB 以下であることを確かめる
 - ラウンド予算: 新しい実質の指摘が Round 4 以降で 0/4 という標本は小さい。設計そのものが動く周は、差分の再レビューの周と分けて数える
+
+## ADR-0027 の未対応の課題
+
+- symlink: `auto-approve` の allow は解決先を見ない
+- `!` の付いた deny の除外を hook が行わない
+- Read の規則を Glob、Grep、LS に当てていない（パスを取り出す関数が、Glob では `pattern` だけを返し、LS では何も返さない）
+- 一致する規則が無いときに `ask` を返す動作。allow の外では `claude -p` の Edit と Write が通らない見込み
+- 危険なパスの扱いが Edit と Write で違う
+- `file-access-guard` の判定の順序（D6 の不変条件）をテストで固定する
+- 別のセッションの workflow dir の文書を Write で上書きできる
+- chezmoi の誘導がこのリポジトリで働いていない。source の場所を repo の直下で探し、`.chezmoiroot`（`home`）を見ない
+- hook が読む設定ファイルの集合を本体に合わせる（サブディレクトリからの起動、worktree のローカル設定、`--settings`、CLI のフラグ、managed settings、`CLAUDE_CONFIG_DIR`）
+- worktree に入った後、基準が本体と合わなくなる場面（追加の作業ディレクトリへの `cd`、対話で外への `cd` が承認された場合、subagent や再開したセッションで名前が合わない場合）で、基準を本体に合わせる。案は PostToolUse で `EnterWorktree` の結果を記録すること。場面が実際に起きたら検討する
+
+## ADR-0027 の未確認の事実
+
+- `claude -p` で PreToolUse の `ask` が拒否になるか。確かめたら ADR-0027 の Amendments に足す
+- managed settings の `/x` の基準
+- `--settings` に JSON の文字列で渡した規則の基準
+- `/cd` の後の基準と `transcript_path` の名前（`claude -p` では `/cd` を使えない）
+- 長いパスでの名前の切り詰め、symlink からの起動、再開、subagent、入れ子の `EnterWorktree`
+- 対話で、worktree に入った後に外へ `cd` した結果
+- 追加の作業ディレクトリへ `cd` した場面での本体の基準
+- `///x` や `/../x` の本体の読み方と、worktree に入った後の元の checkout への `sed -i` の扱い
+
+## ADR-0028: 委任の質問の既定の選択
+
+AskUserQuestion の画面で、2 問目の既定の選択がどうなるかを確かめていない（「委任しない」を先頭に置いた）。実機で確かめる。
