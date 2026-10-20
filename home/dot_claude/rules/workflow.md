@@ -121,7 +121,7 @@ plan に `## テスト計画 (ISO 25010)` を設け、関連する品質特性�
 
 ## Session Artifact Retention
 
-`.tmp/sessions/` は 7 日超で GC される。作業の終わりに、決まった節（決定、却下した案、リスク、根拠の計測、計画から外れた点）を恒久文書へ移し、spec・research・plan は残さない。行き先は、ADR を持つプロジェクトでは ADR、持たなければ commit の本文とし、どちらも合わなければそのプロジェクトの記録の慣習に従う。移す作業は計画の最後のタスクにする。`docs/plans/` には今後やることだけを置き、片付いたら消す。節と行き先の表は `/document-workflow-reference` の「記録の移し方」にある。`.tmp/docs/` は GC 対象外（永続）。
+`.tmp/sessions/` は 7 日超で GC される。作業の終わりに、決まった節（決定、却下した案、リスク）を恒久文書へ移し、spec・research・plan は残さない。行き先は、ADR を持つプロジェクトでは ADR、持たなければ commit の本文とし、どちらも合わなければそのプロジェクトの記録の慣習に従う。移す作業は計画の最後のタスクにする。`docs/plans/` には今後やることだけを置き、片付いたら消す。節と行き先の表は `/document-workflow-reference` の「記録の移し方」にある。`.tmp/docs/` は GC 対象外（永続）。
 
 ## Task Completion Protocol
 
