@@ -2,3 +2,5 @@
 .codex/.merge-config.ts
 .zsh/.zshrc
 .claude/commands/record-learnings.md
+.claude/hooks/implementations/lessons-learned-extractor.ts
+.claude/hooks/implementations/stop-reflection.ts
