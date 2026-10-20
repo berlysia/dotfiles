@@ -11,11 +11,6 @@
 # Patterns below match target paths (`.zsh/...`), not source names
 # (`dot_zsh/...`); a source-named line never matches anything.
 
-# Zsh configuration notes: kept beside the source for GitHub readers, never
-# deployed. Ignore does not remove a copy already deployed, and it also
-# overrides .chezmoiremove, so old copies of ~/.zsh/README.md are left as is.
-.zsh/README.md
-
 # Zsh completion cache files
 .zsh/.zcompdump*
 
