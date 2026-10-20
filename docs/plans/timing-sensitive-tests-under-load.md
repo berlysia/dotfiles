@@ -6,6 +6,7 @@
 - `agent-learnings-queue.test.ts`: `initStore` が失敗する（`completeJob removes the job everywhere`）
 - worktree の `C12: creating the same name twice reuses the worktree`
 - `complexity-delta` の `stays silent on a second stop with the same findings and logs once`
+- worktree の `C26: four different names in parallel all succeed, 20 times`（load average 15 前後で、worktree のテストファイルだけを実行しても 72 秒かかって落ちた）
 
 completion-gate はこの失敗で停止を止める。出力の抜粋は成功した行だけを示すことがあり、どのテストが落ちたかは `npm test` を全件実行して `✖` を探さないと分からなかった。
 
