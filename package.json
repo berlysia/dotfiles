@@ -10,7 +10,7 @@
   ],
   "type": "module",
   "scripts": {
-    "test": "node --import ./home/dot_claude/hooks/tests/preload-test-env.mjs --test home/dot_claude/hooks/tests/unit/*.test.ts tests/tailnet-ssh.test.mjs",
+    "test": "node --import ./home/dot_claude/hooks/tests/preload-test-env.mjs --test home/dot_claude/hooks/tests/unit/*.test.ts tests/tailnet-ssh.test.mjs tests/chezmoiremove-coverage.test.mjs",
     "test:perf": "node --import ./home/dot_claude/hooks/tests/preload-test-env.mjs --test --test-concurrency=1 home/dot_claude/hooks/tests/perf/*.test.ts",
     "typecheck": "tsc --noEmit",
     "format": "oxfmt --ignore-path .oxfmtignore . && prettier --write '**/*.{yml,yaml}' --ignore-unknown",

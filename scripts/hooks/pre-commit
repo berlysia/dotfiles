@@ -261,4 +261,38 @@ else
     echo -e "${GREEN}✓ No hook files modified, skipping tests${NC}"
 fi
 
+echo
+
+#
+# 7. .chezmoiremove coverage
+#
+# A target whose source file is removed stays on every machine that applied it
+# unless home/.chezmoiremove lists it. The full `bun run test` above already
+# includes this test, so it only runs here when that suite was skipped.
+# Additions count too: restoring a removed file while its .chezmoiremove line
+# remains would delete the restored file on every apply.
+CHEZMOIREMOVE_INPUTS_CHANGED=false
+if [ -n "$(git diff --cached --name-only --diff-filter=ADR -- home/)" ]; then
+    CHEZMOIREMOVE_INPUTS_CHANGED=true
+fi
+for file in $STAGED_FILES; do
+    case "$file" in
+        home/.chezmoiremove | home/.chezmoiignore | home/.chezmoiexternal.toml.tmpl | \
+            tests/chezmoiremove-coverage.test.mjs | tests/lib/chezmoiremove-coverage.mjs)
+            CHEZMOIREMOVE_INPUTS_CHANGED=true
+            break
+            ;;
+    esac
+done
+
+if [ "$CHEZMOIREMOVE_INPUTS_CHANGED" = true ] && [ "$HOOK_FILES_MODIFIED" != true ] && [ "${FORCE_HOOK_TESTS:-}" != "1" ]; then
+    echo -e "${BLUE}🧹 Checking .chezmoiremove coverage...${NC}"
+    if ! (cd "${REPO_ROOT}" && node --import ./home/dot_claude/hooks/tests/preload-test-env.mjs --test tests/chezmoiremove-coverage.test.mjs); then
+        echo -e "${RED}❌ .chezmoiremove coverage check failed (see the lines to add above)${NC}"
+        EXIT_CODE=1
+    else
+        echo -e "${GREEN}✓ .chezmoiremove covers removed source files${NC}"
+    fi
+fi
+
 exit "$EXIT_CODE"

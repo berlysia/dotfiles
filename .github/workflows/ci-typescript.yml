@@ -22,6 +22,11 @@ on:
       # 環境を決める。ここに無いと、これらだけを変更した PR でテストが走らない。
       - "home/dot_claude/hooks/executable_*.sh"
       - "home/dot_claude/hooks/tests/**/*.mjs"
+      # chezmoiremove-coverage.test.mjs が home/ の追加・削除・名前の変更を
+      # 履歴から見る。paths フィルタは削除だけを選べないので home/ 全体を入れる。
+      - "home/**"
+      - "tests/chezmoiremove-coverage.test.mjs"
+      - "tests/lib/**"
   pull_request:
     branches: [master, main]
     paths:
@@ -43,6 +48,11 @@ on:
       # 環境を決める。ここに無いと、これらだけを変更した PR でテストが走らない。
       - "home/dot_claude/hooks/executable_*.sh"
       - "home/dot_claude/hooks/tests/**/*.mjs"
+      # chezmoiremove-coverage.test.mjs が home/ の追加・削除・名前の変更を
+      # 履歴から見る。paths フィルタは削除だけを選べないので home/ 全体を入れる。
+      - "home/**"
+      - "tests/chezmoiremove-coverage.test.mjs"
+      - "tests/lib/**"
   workflow_dispatch:
 
 concurrency:
@@ -62,6 +72,9 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # chezmoiremove-coverage.test.mjs walks the whole history for deleted
+          # source files, and fails under CI=true on a shallow clone.
+          fetch-depth: 0
 
       - name: Setup Node.js with bun
         uses: ./.github/actions/setup-node-bun
