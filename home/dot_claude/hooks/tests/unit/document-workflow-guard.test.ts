@@ -140,6 +140,43 @@ describe("document-workflow-guard.ts hook behavior", () => {
     context.assertSuccess({});
   });
 
+  // K6 of the reset plan: `workflow-cli reset` is not a round/stamp/triage
+  // document write, so it stays unclassified and is allowed. Pinned here so a
+  // future change that classifies CLI subcommands differently is noticed.
+  for (const [label, buildCommand] of [
+    ["--confirm only", () => "workflow-cli reset --confirm abcdef012345"],
+    ["no arguments", () => "workflow-cli reset"],
+    [
+      "--wf-dir and --confirm",
+      (repo: string) =>
+        `workflow-cli reset --wf-dir ${join(repo, TEST_WORKFLOW_DIR)} --confirm abcdef012345`,
+    ],
+  ] as const) {
+    it(`does not deny \`workflow-cli reset\` (${label}) while the plan is pending`, async () => {
+      const repo = createWorkflowRepo(pendingWorkflowRepo());
+      envHelper.set("CLAUDE_TEST_CWD", repo);
+
+      const context = createPreToolUseContextFor(hook, "Bash", {
+        command: buildCommand(repo),
+      });
+
+      await invokeRun(hook, context);
+      context.assertSuccess({});
+    });
+  }
+
+  it("still denies `rm -r <wfDir>` while the plan is pending (control for the reset cases)", async () => {
+    const repo = createWorkflowRepo(pendingWorkflowRepo());
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+
+    const context = createPreToolUseContextFor(hook, "Bash", {
+      command: `rm -r ${join(repo, TEST_WORKFLOW_DIR)}`,
+    });
+
+    await invokeRun(hook, context);
+    context.assertDeny();
+  });
+
   it("classifies a `bun .../cli/workflow.ts round <doc>` invocation the same way", async () => {
     const repo = createWorkflowRepo(pendingWorkflowRepo());
     envHelper.set("CLAUDE_TEST_CWD", repo);

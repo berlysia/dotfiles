@@ -17,18 +17,23 @@
  * environment; `runWorkflowCli` itself stays pure.
  */
 
+import { createHash } from "node:crypto";
 import {
   appendFileSync,
   closeSync,
   constants as fsConstants,
   existsSync,
+  lstatSync,
+  mkdirSync,
   openSync,
+  readdirSync,
   readFileSync,
+  renameSync,
   statSync,
   writeFileSync,
   writeSync,
 } from "node:fs";
-import { basename, isAbsolute, resolve } from "node:path";
+import { basename, dirname, isAbsolute, resolve } from "node:path";
 import { expandTilde } from "../lib/path-utils.ts";
 import { getProjectRoot } from "../lib/project-root.ts";
 import { sanitizeForDisplay } from "../lib/sanitize-display.ts";
@@ -44,6 +49,7 @@ import {
   evaluateTarget,
   formatGateChecklist,
   formatTargetEvaluation,
+  isImplementationPhase,
   listApprovalCandidates,
   resolveDelegationOffer,
   resolveSpecContext,
@@ -100,6 +106,8 @@ export interface RunWorkflowCliDeps {
   now: Date;
   /** Test-only override for the ledger path; defaults to `<wfDir>/reviewer-runs.log`. */
   ledgerPath?: string | undefined;
+  /** Test-only override for `reset`'s rename, so a mid-way failure can be injected; defaults to `renameSync`. */
+  renameEntry?: ((from: string, to: string) => void) | undefined;
 }
 
 export interface RunWorkflowCliResult {
@@ -214,9 +222,11 @@ export function runWorkflowCli(
       return cmdTriage(rest, deps);
     case "ask-approval":
       return cmdAskApproval(rest, deps);
+    case "reset":
+      return cmdReset(rest, deps);
     default:
       return err(
-        `unknown command: ${command ?? "<none>"}\nusage: workflow-cli <status|dir|round|stamp|triage|ask-approval> [doc] [--flags]`,
+        `unknown command: ${command ?? "<none>"}\nusage: workflow-cli <status|dir|round|stamp|triage|ask-approval|reset> [doc] [--flags]`,
       );
   }
 }
@@ -1006,6 +1016,219 @@ function cmdAskApproval(
     stdout: `${JSON.stringify({ questions: buildApprovalQuestions(asked, offer ?? undefined) })}\n`,
     stderr: `${notes.join("\n")}\n`,
   };
+}
+
+// ---------------------------------------------------------------------------
+// reset
+// ---------------------------------------------------------------------------
+
+/** Documents first, so a failure part-way leaves ledgers without documents (the unapproved side), not the reverse. */
+const RESET_DOCUMENT_ORDER = ["plan.md", "spec.md"];
+const RESET_TRAILING_DOCUMENTS = ["research.md", "workflow-state.json"];
+const RESET_PLAN_NUMBERED_REGEX = /^plan-([0-9]+)\.md$/;
+
+interface ResetEntry {
+  name: string;
+  kind: "f" | "d" | "l";
+}
+
+function orderResetEntries(entries: ResetEntry[]): ResetEntry[] {
+  const rank = (name: string): number => {
+    const fixed = RESET_DOCUMENT_ORDER.indexOf(name);
+    if (fixed !== -1) return fixed;
+    if (RESET_PLAN_NUMBERED_REGEX.test(name))
+      return RESET_DOCUMENT_ORDER.length;
+    const trailing = RESET_TRAILING_DOCUMENTS.indexOf(name);
+    if (trailing !== -1) return RESET_DOCUMENT_ORDER.length + 1 + trailing;
+    return Number.MAX_SAFE_INTEGER;
+  };
+  const planNumber = (name: string): number =>
+    Number(RESET_PLAN_NUMBERED_REGEX.exec(name)?.[1] ?? 0);
+  return [...entries].sort((a, b) => {
+    const byRank = rank(a.name) - rank(b.name);
+    if (byRank !== 0) return byRank;
+    if (RESET_PLAN_NUMBERED_REGEX.test(a.name)) {
+      return planNumber(a.name) - planNumber(b.name);
+    }
+    return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+  });
+}
+
+/** Regular files and symlinks under `dir`, counted with lstat so a symlink is one item and never followed. */
+function countFollowupItems(dir: string): number {
+  let count = 0;
+  for (const name of readdirSync(dir)) {
+    const path = resolve(dir, name);
+    const stat = lstatSync(path);
+    if (stat.isDirectory()) {
+      count += countFollowupItems(path);
+    } else {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+/**
+ * Move everything directly under the session's workflow dir into
+ * `archive/<UTC timestamp>/` so the next Document Workflow starts blank. Every
+ * reader of workflow state (guard, session summary, bash tripwire, status)
+ * looks only at the top level, so a rename is enough to disarm them and keeps
+ * the old records for the 7-day GC window. No entry list is kept here, so new
+ * ledger files are covered without a change.
+ *
+ * Without `--confirm` it only reports; `--confirm` takes a token computed from
+ * the document set and approval state. The token ties the user's confirmation
+ * to what was shown; it is not proof of consent (the formula is public).
+ * Hook-written ledgers are left out of it because `workflow-bash-sync` writes
+ * some right after the dry-run's own Bash call.
+ */
+function cmdReset(
+  args: string[],
+  deps: RunWorkflowCliDeps,
+): RunWorkflowCliResult {
+  const { positional, flags } = parseArgs(args);
+  if (positional.length > 0) {
+    return err(
+      `unexpected argument: ${sanitizeForDisplay(positional[0] ?? "")}`,
+    );
+  }
+  if ("confirm" in flags && !flags["confirm"]) {
+    return err("--confirm needs a value");
+  }
+  const resolvedDir = resolveTargetWfDir(flags, deps);
+  if (resolvedDir.error !== undefined) return err(resolvedDir.error);
+  const { wfDir, warning } = resolvedDir;
+  if (wfDir !== deps.wfDir) {
+    return err(`reset only acts on this session's workflow dir: ${deps.wfDir}`);
+  }
+  if (dirname(wfDir) !== resolve(deps.cwd, SESSIONS_SUBDIR)) {
+    return err("reset only acts on a .tmp/sessions/<id> directory");
+  }
+
+  let wfStat;
+  try {
+    wfStat = lstatSync(wfDir);
+  } catch {
+    return ok("nothing to reset\n", warning);
+  }
+  if (!wfStat.isDirectory()) {
+    return err(`workflow dir is not a plain directory: ${wfDir}`);
+  }
+
+  const archiveRoot = resolve(wfDir, "archive");
+  try {
+    if (!lstatSync(archiveRoot).isDirectory()) {
+      return err(`${archiveRoot} exists and is not a directory`);
+    }
+  } catch {
+    // no archive yet
+  }
+
+  const entries: ResetEntry[] = orderResetEntries(
+    readdirSync(wfDir)
+      .filter((name) => name !== "archive")
+      .map((name): ResetEntry => {
+        const stat = lstatSync(resolve(wfDir, name));
+        return {
+          name,
+          kind: stat.isSymbolicLink() ? "l" : stat.isDirectory() ? "d" : "f",
+        };
+      }),
+  );
+
+  const followups = entries.find((e) => e.name === "followups");
+  if (followups?.kind === "d") {
+    const count = countFollowupItems(resolve(wfDir, "followups"));
+    if (count > 0) {
+      return err(
+        `followups/ has ${count} file(s); move them to docs/plans/ first (see record-migration), or move them out by hand if this was a mistaken entry`,
+      );
+    }
+  }
+  if (entries.length === 0) {
+    return ok("nothing to reset\n", warning);
+  }
+
+  const approvalLines = entries
+    .filter(
+      (e) =>
+        e.kind === "f" &&
+        (RESET_DOCUMENT_ORDER.includes(e.name) ||
+          RESET_PLAN_NUMBERED_REGEX.test(e.name)),
+    )
+    .map(
+      (e) =>
+        `${e.name}: ${evaluateApprovalReadiness(wfDir, e.name).alreadyApproved ? "approved" : "not approved"}`,
+    );
+  const wfPaths = resolveWorkflowPaths(wfDir);
+  const phaseLine = `implementation phase: ${
+    isImplementationPhase(wfDir, wfPaths, existsSync(wfPaths.spec), deps.cwd)
+      ? "yes"
+      : "no"
+  }`;
+  const tokenInput = [
+    wfDir,
+    ...entries
+      .filter((e) => e.name.endsWith(".md") || e.kind === "d")
+      .map((e) => `${e.kind} ${e.name}`),
+    ...approvalLines,
+    phaseLine,
+  ].join("\n");
+  const token = createHash("sha256")
+    .update(tokenInput)
+    .digest("hex")
+    .slice(0, 12);
+  const stamp = deps.now.toISOString().replace(/[-:.]/g, "");
+  const archiveDir = resolve(archiveRoot, stamp);
+  const names = entries.map((e) => sanitizeForDisplay(e.name));
+
+  const confirm = flags["confirm"];
+  if (confirm === undefined) {
+    const lines = [
+      `would archive to: ${archiveDir}`,
+      ...approvalLines,
+      phaseLine,
+      ...names,
+      "archived entries are lost when the session dir is garbage-collected (7 days after its last change)",
+      `confirm token: ${token}`,
+      `after confirming with the user, run: workflow-cli reset --confirm ${token}`,
+    ];
+    return ok(`${lines.join("\n")}\n`, warning);
+  }
+  if (confirm !== token) {
+    return err(
+      "the workflow dir changed since the dry-run; run workflow-cli reset again",
+    );
+  }
+
+  try {
+    mkdirSync(archiveRoot, { recursive: true });
+    mkdirSync(archiveDir);
+  } catch (e) {
+    return err(
+      `cannot create ${archiveDir}: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
+  const rename = deps.renameEntry ?? renameSync;
+  const moved: string[] = [];
+  for (const entry of entries) {
+    try {
+      rename(resolve(wfDir, entry.name), resolve(archiveDir, entry.name));
+      moved.push(sanitizeForDisplay(entry.name));
+    } catch (e) {
+      return err(
+        `reset stopped part-way. archived to ${archiveDir}: ${moved.join(", ") || "(none)"}\nfailed on ${sanitizeForDisplay(entry.name)}: ${e instanceof Error ? e.message : String(e)}\nthe remaining entries were not moved`,
+      );
+    }
+  }
+  const lines = [
+    `archived to: ${archiveDir}`,
+    ...approvalLines,
+    ...moved,
+    "kept until the session dir is garbage-collected (7 days after its last change); restore by moving entries back by hand",
+  ];
+  return ok(`${lines.join("\n")}\n`, warning);
 }
 
 if (import.meta.main) {
