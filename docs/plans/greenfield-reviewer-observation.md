@@ -1,19 +1,21 @@
 # Followup: greenfield-perspective-reviewer 観測ログ蓄積
 
-ADR-0004 で「Open observation items」として残した観測項目を、実運用で蓄積・振り返るための準備タスク。現状は「N≥5 plan で behavior を観察する」と書いてあるだけで、観測の記録方法・保存場所・振り返りのトリガーが決まっていない。
+greenfield-perspective-reviewer が incremental bias を抑えたかを、実運用の plan で観測して判定するための項目と記録方法を決めるタスク。ADR-0004 は達成の判定法をこの文書に委ねている。観測の記録方法・保存場所・振り返りのトリガーはまだ決まっていない。
 
 ## 観測項目
 
-- plan.md `Alternative Approaches (Greenfield View)` セクションが「白紙案 = 差分最小案」と機械的に記述されているか
-- greenfield reviewer の output 傾向（全肯定／全否定／指摘 1〜3 割の想定レンジ）
-- intent-alignment-triage で aligned 分類された割合
-- behavior tuning が必要な兆候（極端な挙動）
+デプロイ後の最初の N 個（N ≥ 5）の Document Workflow の plan を対象にする。
+
+- plan の `Alternative Approaches (Greenfield View)` が「白紙案 = 差分最小案」と機械的に書かれていないか。両案が異なる内容で比べられているか
+- greenfield reviewer の出力の傾向。全肯定が続けば検出力の不足、全否定が続けばノイズの過多。想定は 1〜3 割が指摘で、残りは肯定
+- 指摘が intent-alignment-triage で aligned になる割合。極端に低ければ役割が合っておらず、極端に高ければ scope-justification-reviewer との重複を疑う
+- 想定の範囲を外れたら、指示文の修正か運用の見直しをする
 
 ## 決めること
 
 - 記録の最小スキーマ（plan へのリンク、reviewer output の verdict、triage 後の adopted/excluded 件数）
 - 保存場所（`docs/observations/`、`.tmp/`、既存 ADR への追記のどれか）
-- N=5 達成時の振り返り（ADR-0004 の追記か新 ADR か）
+- N=5 達成時の振り返り（ADR-0004 の Amendments に足すか、新しい ADR にするか）
 
 ## 判断軸
 

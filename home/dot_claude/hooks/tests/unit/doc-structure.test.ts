@@ -375,14 +375,6 @@ test("exception set: a violation outside the set is reported", () => {
 // The ADR cleanup (plan-3) must empty these sets; each entry is a violation the
 // cleanup has not fixed yet. Names are file names under docs/decisions/.
 const ADR_HEADING_EXCEPTIONS: ReadonlySet<string> = new Set<string>([
-  "0001-document-workflow.md",
-  "0002-hooks-typescript-bun.md",
-  "0003-document-workflow-enforce.md",
-  "0004-greenfield-perspective-reviewer.md",
-  "0005-always-on-reviewers-ssot.md",
-  "0006-document-workflow-two-layer.md",
-  "0007-superpowers-process-discipline.md",
-  "0009-document-workflow-mechanical-lane.md",
   "0010-context-md-mechanism.md",
   "0011-autonomous-lane-charter.md",
   "0012-berlysia-writing-hub-skill.md",
@@ -402,8 +394,6 @@ const ADR_HEADING_EXCEPTIONS: ReadonlySet<string> = new Set<string>([
   "0038-second-chezmoi-source-for-machine-local-files.md",
 ]);
 const ADR_SESSION_PATH_EXCEPTIONS: ReadonlySet<string> = new Set<string>([
-  "0008-document-workflow-feedback.md",
-  "0009-document-workflow-mechanical-lane.md",
   "0010-context-md-mechanism.md",
   "0013-workflow-dir-session-derivation.md",
   "0017-provisioning-after-deploy.md",

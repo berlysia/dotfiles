@@ -2,11 +2,7 @@
 
 ## Status
 
-Accepted
-
-## Date
-
-2026-02-18
+Accepted (2026-02-18)
 
 ## Context
 

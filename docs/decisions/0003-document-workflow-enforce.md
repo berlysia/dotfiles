@@ -4,32 +4,22 @@
 
 accepted
 
+[ADR-0013](0013-workflow-dir-session-derivation.md) が、enforce の前提だった「`DOCUMENT_WORKFLOW_DIR` が hook プロセスへ届く」ことを訂正した（pin 起動していないセッションでは guard が無言で skip していた）。enforce するという本 ADR の決定は変わらない。
+
 ## Context
 
-Document Workflow Guard was introduced in ADR-0001 with `DOCUMENT_WORKFLOW_WARN_ONLY=1` for a staged rollout. The guard prevents implementation before plan approval by intercepting Write/Edit/Bash tool calls.
+Document Workflow Guard は ADR-0001 で、段階導入のため `DOCUMENT_WORKFLOW_WARN_ONLY=1` つきで入れた。guard は Write/Edit/Bash の呼び出しを横取りして、plan 承認前の実装を防ぐ。
 
-Migration criteria were: no false positives observed during warn-only period.
-
-## Analysis
-
-- The guard has been in warn-only mode since initial deployment (session 2b557062, 2026-03-09)
-- `[would-block]` messages were output to stderr via `console.error()` but were not persisted to any log file, making retrospective analysis impossible
-- Unit tests (19 cases) pass fully, covering: pending/approved plans, auto-review marker validation, hash verification, Bash write detection, session-specific workflow directories, and warn-only mode
-- A test environment issue was discovered: `DOCUMENT_WORKFLOW_DIR` env var leaks from Claude Code sessions into `node --test`, causing 8 test failures. Fixed by clearing the env var in `beforeEach`
-- The guard logic is well-tested and the implementation is sound
+移行の条件は、warn-only の期間に誤検知が観測されないこと。warn-only 期間の `[would-block]` は stderr にしか出ず、ログに残らなかったため、事後の分析はできなかった。代わりに、単体テストが承認前後の plan、auto-review marker、hash 検証、Bash 書き込み検出、セッション別 workflow ディレクトリを網羅して通ることを根拠に、解除条件を満たしたと判断した。
 
 ## Decision
 
-Migrate to enforce mode by removing `DOCUMENT_WORKFLOW_WARN_ONLY=1` from the hook command in `.settings.hooks.json.tmpl`.
+hook コマンドから `DOCUMENT_WORKFLOW_WARN_ONLY=1` を外し、enforce mode に移す。
 
-Keep the `DOCUMENT_WORKFLOW_WARN_ONLY` code path in the implementation for future staged rollouts of other projects.
+将来ほかのプロジェクトで段階導入するため、実装の `DOCUMENT_WORKFLOW_WARN_ONLY` の経路は残す。
 
 ## Consequences
 
-- Plan-unapproved implementations will be blocked (deny response) instead of warned
-- The `DOCUMENT_WORKFLOW_WARN_ONLY` env var can still be used for temporary debugging
-- New sessions will pick up enforce mode after `chezmoi apply`
-
-## Amended by
-
-- `docs/decisions/0013-workflow-dir-session-derivation.md` (2026-09-04) — enforce モードは「`DOCUMENT_WORKFLOW_DIR` が hook プロセスへ届く」ことを暗黙の前提にしていたが、その配送は Bash 実行環境にしか届いておらず、pin 起動していないセッションでは guard が無言 skip していた（実測: 2026-07-28 以降 deny ゼロ）。ADR-0013 がその前提を訂正する。enforce するという本 ADR の決定自体は不変
+- plan 未承認の実装は警告でなく deny される
+- `DOCUMENT_WORKFLOW_WARN_ONLY` は、一時的なデバッグに引き続き使える
+- 新しいセッションは `chezmoi apply` の後に enforce mode になる
