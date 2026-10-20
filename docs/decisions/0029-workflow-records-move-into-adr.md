@@ -4,6 +4,8 @@
 
 accepted (2026-10-07)
 
+K1 の表のうち研究、計画、受け皿の行は、ADR-0039 が改めた。
+
 ## Context
 
 Document Workflow の成果物（spec・research・plan）は `.tmp/sessions/` に書かれ、7 日で GC される。
