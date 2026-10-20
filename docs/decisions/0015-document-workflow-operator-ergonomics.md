@@ -17,37 +17,29 @@ Opus 5 を Document Workflow の下で動かすと、計画フェーズが総タ
 
 ## Decision
 
-設計の全文は `git show 52dc6fd447:docs/plans/document-workflow-overhaul/spec.md`（K1〜K10、7 名 × 3 ラウンドのレビューと intent triage を経て verdict=pass）にある。ここでは決定の骨子と、却下した代替案を記す。
+設計の全文は `git show 52dc6fd447:docs/plans/document-workflow-overhaul/spec.md`（K1〜K10）にある。ここでは決定の骨子を記す。
 
 ### 1. 帳簿は `workflow-cli` が書き、reviewer の実行は台帳で裏付ける（K5）
 
 `workflow-cli {status,round,stamp,triage}` が Review Status 行・auto-review marker（hash / design-hash / parent-spec-hash）・`## Reviewer Outputs (Round N)` 骨格・intent-triage marker を書く。モデルは hash を転記しない。`stamp` は `reviewer-run-recorder`（PostToolUse `Agent`）が `<wfDir>/reviewer-runs.log` に記録した必須 reviewer の起動証跡が揃わないと非 0 で終了する。CLI は Approval 行に触れる変更を拒否する（承認は人間のみ、ADR-0001 不変）。
 
-**却下**: 状態を文書外の JSON に移す白紙案。guard の判定・テスト・進行中成果物が文書内 marker を読む前提で、全経路の書き換えになる。marker を CLI が書けば転記ミスは消え、白紙案の利益はほぼ得られる。
-
 ### 2. 文書変更の検知は tool 経路でなく内容 hash で行う（K1）
 
-`workflow-bash-sync`（PostToolUse `Bash`）が wfDir 内 spec.md / plan.md / plan-N.md の hash を per-doc cache と比較し、変化した文書に `plan-review-automation` と同じ推奨を出す。判定の実体は `lib/workflow-review-core.ts` の `canSkip` / `buildRecommendation` に 1 本化し、両 hook が同じ関数を呼ぶ。subagent 由来の Bash（`agent_id` あり）は早期 return する。実測で subagent Bash は親の 4 倍発火しており、この gate が無いと 79s/セッションの追加コストになる。
-
-**却下**: 既存の PostToolUse Bash hook（`command-logger` 等）に fold する案。それらは `async: true` で `additionalContext` を運べない。
+`workflow-bash-sync`（PostToolUse `Bash`）が wfDir 内 spec.md / plan.md / plan-N.md の hash を per-doc cache と比較し、変化した文書に `plan-review-automation` と同じ推奨を出す。判定の実体は 1 箇所にまとめ、両 hook が同じ判定を呼ぶ。subagent 由来の Bash（`agent_id` あり）は早期 return する。実測で subagent Bash は親の 4 倍発火しており、この gate が無いと 79s/セッションの追加コストになる。
 
 ### 3. gate 閉時の書換は tripwire で事後検知し、インタプリタ書込は狭い条件で事前 deny する（K2/K3）
 
-承認前に repo 内ファイルが変わると、`workflow-bash-sync` が `git --no-optional-locks -c core.fsmonitor= status --porcelain -z -uall` の rolling baseline 差分で検知し、`off-plan-writes.log` に記録して告知する（200ms 予算、超過で `.tripwire-disabled` を残して一度だけ告知）。加えて `python|node|bun|deno` の inline script に書込指標があり、書込先が scratch root 外か証明不能なら guard が保守的に deny する。scratch root の判定は segment 境界比較で、wfDir 内パスは scratch から除外する（台帳を最安の unblock として書かせない）。
-
-**却下**: 「書込先が証明できない限り deny」。解析用スクリプトを誤 deny し、deny を誤読して言い換え再送する失敗（P4）を再生産する。narrow な事前 deny + tripwire の二層で取りこぼしを拾う。
+承認前に repo 内ファイルが変わると、`workflow-bash-sync` が `git status` の rolling baseline 差分で検知し、`off-plan-writes.log` に記録して告知する（200ms 予算、超過で `.tripwire-disabled` を残して一度だけ告知）。加えて `python|node|bun|deno` の inline script に書込指標があり、書込先が scratch root 外か証明不能なら guard が保守的に deny する。scratch root の判定は segment 境界比較で、wfDir 内パスは scratch から除外する（台帳を最安の unblock として書かせない）。
 
 ### 4. deny は診断にし、判定 regex と hash 正規化は変えない（K4）
 
-deny 理由を「どの条件が不成立か・見つかった status 行・期待する厳密形・次の 1 手」に置き換える。`lib/workflow-gate.ts` の `diagnoseGate` を guard と `workflow-cli status` が共有する。ハイフン欠落などの近似行は寛容 regex で**表示専用**に拾い、判定の厳密 regex（`lib/workflow-marker.ts` の `STRICT_*`）と `lib/document-hash.ts` の正規化は一切変えない。
+deny 理由を「どの条件が不成立か・見つかった status 行・期待する厳密形・次の 1 手」に置き換える。診断は guard と `workflow-cli status` が共有する。ハイフン欠落などの近似行は寛容 regex で**表示専用**に拾い、判定の厳密 regex と hash の正規化は一切変えない。
 
-**却下**: `Review Status` を正規化対象に加える案。既承認文書の hash が動き、旧 normalizer で承認済みの進行中成果物が自己ロックする（S3 型移行が必要になる）。レビューで blocker として 2 名が指摘し、設計側で除去した。
+### 5. レビュー推奨は (文書, round) ごとに 1 回、以後は pointer。round ≥ 2 は差分で再レビューする（K6/K10）
 
-### 5. レビュー推奨は (文書, round) ごとに 1 回、以後は pointer（K6/K10）
+推奨全文は文書の `## Reviewer Outputs (Round N)` 数が cache の記録を超えた最初の変更で出し、それ以外は ≤160B の pointer にする。`spec-plan-self-audit` と `spec-plan-placeholder-scan` は「書込後の文書が complete かつ hash が変わった」ときだけ発火する。
 
-推奨全文は文書の `## Reviewer Outputs (Round N)` 数が cache の `fullTextEmittedForRound` を超えた最初の変更で出し、それ以外は ≤160B の pointer にする。round ≥ 2 は「前 round で needs-work / blocker だった reviewer のみ再確認」、round ≥ 3 で未収束なら「人間へエスカレーションし、指示なく Round 4 を始めない」を含める。`spec-plan-self-audit` と `spec-plan-placeholder-scan` は「書込後の文書が complete かつ hash が変わった」ときだけ発火する。
-
-**却下**: `Plan Status` でゲートする案。実測では complete 化がセッションの 5% 時点に起き、以後の 95% で節約ゼロだった。
+round ≥ 2 の再実行は `logic-validator` + 前 round で非 pass の reviewer + 前 round に居ない必須 reviewer で、推奨・`round` 骨格・`stamp` が同じ判定を共有する。残りは骨格に `pass (carried from Round N)` と書く。前 round が無い・verdict が空欄・blocker がある・`round --full` のいずれかなら全員に戻す。`stamp` が要求するのは再実行のうち必須 reviewer の分だけで、内容選定 reviewer は推奨するが必須にしない（差分 round が full round より厳しくならないようにするため）。
 
 ### 6. 宣言だけで止まる Stop を差し戻す（K7）
 
@@ -55,61 +47,64 @@ deny 理由を「どの条件が不成立か・見つかった status 行・期�
 
 ### 7. `workflow.md` を operator guide に絞り、機構仕様を skill に分離する（K8/K9）
 
-`~/.claude/rules/workflow.md` はモデルが行動する順の ≤12KB ガイドに書き直す。SSoT marker 区間（`<!-- ssot:*-reviewers:start/end -->`）は残し drift テストを維持する。hash 3 種の意味・DOCUMENT_WORKFLOW_DIR 引き継ぎ・S3 移行手順・carry-forward の責務分離・mechanical-lane 4 条件・ISO 25010 ガイド・`workflow-cli` 仕様は `.skills/document-workflow-reference/SKILL.md` に移す。ADR-0005/0006/0009 由来の不変条件テストは「機構が文書化され発見可能」を守るものなので、参照先を skill に向け直した。verdict 語彙は `pass/needs-work/blocker` に統一し、`code-simplicity-reviewer` を catalog に追加し、内部設計コードの hook 出力への漏れを除去した。
+`~/.claude/rules/workflow.md` はモデルが行動する順の ≤12KB のガイドに書き直す。SSoT marker 区間（`<!-- ssot:*-reviewers:start/end -->`）は残し drift テストを維持する。hash 3 種の意味・DOCUMENT_WORKFLOW_DIR 引き継ぎ・S3 移行手順・carry-forward の責務分離・mechanical-lane 4 条件・ISO 25010 ガイド・`workflow-cli` 仕様は `.skills/document-workflow-reference/SKILL.md` に移す。ADR-0005/0006/0009 由来の不変条件テストは、機構が文書化され発見可能であることを守るものなので、参照先を skill に向け直した。verdict 語彙は `pass/needs-work/blocker` に統一し、内部設計コードの hook 出力への漏れを除去した。reviewer のカタログはローカル agent 定義を持つものに限る（定義の無い performance / code-simplicity は、観点が不要と判断したのではなく外した。戻すなら agent 定義を先に作る）。
 
 ### 8. 本 ADR の位置づけ
 
 ADR-0001（human-only approval、hook enforcement）、ADR-0003（enforce 既定）、ADR-0006（二層 hash 連鎖）、ADR-0009（mechanical-lane は amendment）、ADR-0013（wfDir は session_id 導出）はいずれも維持する。本 ADR はそれらの上に「帳簿と検知を機構側へ移す」層を足す amendment であり、supersede しない。`docs/plans/workflow-guard-followups.md` の課題 A/B/D は tripwire と Bash 対称化で事後検知の対象になり、課題 D（Bash 経由の spec/plan 編集が hook を迂回する）は解消した。
 
+### 9. ラウンド予算は機構が数え、延長の承認者ごとに段階を分ける
+
+周（最後の `verdict=pass` marker から数えたラウンド）のラウンド数で段階を決める。0〜2 は制限なし、3〜5 はモデル判断の `--self-extend`、6〜8 は reframer 判断の `--reframer-extend`、9 以上は人間の `--extend` だけで、`round` は段階を超えると拒否する。周の起点は stamp が marker に書く `round=N` で、承認後の再レビューは新しい周になる。6 と 9 は予算 3 の刻みに揃えた設計値で、収束分析に基づく値ではない。延長は `round-extensions.log` に承認者列（`human` / `self` / `reframer`）つきで残り、`--extend` は「人間の指示」の意味のまま残す。
+
+- 「着地見込み」（blocker なし / Key Decisions を変えずに直せる / 指摘が狭まっている）は prompt 上の基準で、機械判定しない。機械的に拒否するのは `--self-extend` / `--reframer-extend` と `--full` の併用だけ
+- 6 round で着地しない周は、問題の変形を選択肢に含めた検討を `review-reframer`（上位モデル、frontmatter の `model:` 1 行でだけ指定）に任せる。Agent tool の引数や CLI のフラグ・案内文にモデル名を書かない。reframer の推奨が (b) 変形 / (c) 現状で承認 / (d) 取り下げなら、スコープ・承認・オーダーそのものに関わるのでモデルも reframer も選ばず人間に回す。周内の相談は 1 回
+- reframer の結果は文書の外の `<wfDir>/reframer-review.<doc>` に記録する。文書内の節にすると stamp 後の追記で文書 hash が変わり、hash の正規化に節の除去を足す必要がある
+- `--reframer-extend` は、記録ファイルの最後の節と、`reviewer-run-recorder` が記録した `review-reframer` の起動記録で裏付ける
+- plan.md / plan-N.md の `## Files` が prose だけなら、full round の推奨に追加 reviewer を付けない。必須 reviewer の構成と差分再レビューの規則は変えない
+
+## 却下した代替案
+
+- **状態を文書外の JSON に移す白紙案**（K5）: guard の判定・テスト・進行中成果物が文書内 marker を読む前提で、全経路の書き換えになる。marker を CLI が書けば転記ミスは消え、白紙案の利益はほぼ得られる
+- **既存の PostToolUse Bash hook（`command-logger` 等）に fold する**（K1）: それらは `async: true` で `additionalContext` を運べない
+- **書込先が証明できない限り deny**（K3）: 解析用スクリプトを誤 deny し、deny を誤読して言い換え再送する失敗（P4）を再生産する。narrow な事前 deny + tripwire の二層で取りこぼしを拾う
+- **`Review Status` を hash の正規化対象に加える**（K4）: 既承認文書の hash が動き、旧 normalizer で承認済みの進行中成果物が自己ロックする（S3 型移行が必要になる）
+- **`Plan Status` でレビュー推奨をゲートする**（K6）: 実測では complete 化がセッションの 5% 時点に起き、以後の 95% で節約ゼロだった
+- **`stamp` の Round 1 baseline に wfDir の mtime を使う**: cache / baseline / 台帳自身の書込で mtime が前進し、直前の正当な reviewer 実行を弾く。session 全体の窓とした
+- **追加 reviewer の blocker で全員再実行に戻す**（予算）: 1 ラウンドあたりの reviewer を減らす方向で、「ラウンド数を減らす」と軸が異なる
+- **予算を 9 に上げて文言だけで運用する / reframer 判断の延長に上限を設けない**: 前者は延長の事実も承認者も残らず、文言だけの予算は 3/9 文書で破られていた。後者はモデル / reframer の判断だけで回り続ける経路に歯止めがなくなる
+- **Agent tool の `model` 引数でモデルを指定する**: モデル名が各所に散る
+- **非 pass 数で収束を測る**: 差分再レビューでは数が構造的に減るため計器として粗い
+
 ## Consequences
 
-- モデルは hash を転記せず、deny の原因と次の 1 手を読める。Bash で文書を書いてもレビュー自動化が動く。reviewer 未起動のまま pass を書けない
-- 推奨の再注入は実測ベースで約 87% 減る見込み（35 round × 1.5KB + 404 × 146B ≈ 83KB）。受入基準は変更後 5 セッションで `docs/scripts/workflow-session-audit.mjs` を回し、Reviewer Outputs / intent-triage の欠落 0、推奨注入量が round 数 × 2KB 以下
+- モデルは hash を転記せず、deny の原因と次の 1 手を読める。Bash で文書を書いてもレビュー自動化が動く。reviewer 未起動のまま pass を書けない。推奨の再注入は約 87% 減る見込み
 - 受容したリスク: `Approval Status: approved` の書込は prompt 統制のまま（研究で自己承認 0/20、単一ユーザー環境）。reviewer 台帳は session 単位で文書単位ではない（過剰許容側の fail-open、再評価トリガー「台帳通過後に無関係文書へ verdict が付いた事例 1 件」）。tripwire は ignore 済みパス・repo 外・nested repo・`git` 不在が盲点（主ゲートは guard）
-- `stamp` の Round 1 baseline は session 全体の窓とする。wfDir mtime を使う案は cache / baseline / 台帳自身の書込で mtime が前進し、直前の正当な reviewer 実行を弾くため採らなかった
-- 実装は 4 コミット（`128e08f` / `2801abb` / `4065170` / `3d599a4`）。全 1264 テストと typecheck を pre-commit で通している。`chezmoi apply` は別途実行する
-- `stop-reflection.ts` の `messageForUser` は Stop での到達先を実機確認するまで変更しない。intent-triage marker の guard 必須化は warn 表示に留め、deny 昇格は「warn 後に triage 無しで承認へ進んだ事例 2 件」を再評価トリガーとする
+- carried の再検証は機械判定しない。Key Decisions・白紙案を変える修正で `--full` を使うかは operator の規律に任せ、回帰の見張りとして `logic-validator` は毎 round 回す
+- `stop-reflection` の `messageForUser` は Stop での到達先を実機確認するまで変更しない。intent-triage marker の guard 必須化は warn 表示に留め、deny 昇格は「warn 後に triage 無しで承認へ進んだ事例 2 件」を再評価トリガーとする
+- ラウンド予算の受容した限界（重要度順）: (1) 人間抜きで Round 7〜9 を進める根拠は記録ファイルと起動記録で、記録ファイルはメインループが書く。推奨の書き換え、空に近い入力での起動、別文書向けの起動、節の書き直し、台帳の偽造は検知できない。承認依頼の Executive Summary に記録ファイルのパスと要約を載せることを必須にし、人間の確認経路とする。(2) `human` 行は人間の承認を証明しない。`stamp --verdict pass` は各 reviewer の verdict 行と突き合わせないので、偽の pass はありうるが、レビューを打ち切って人間の承認に回す向きに働くため「人間に見せずに回り続ける」経路にはならない。(3) 着地見込みの判定は機械検証しない。(4) reason 形式の確認は目視。(5) Round 7〜9 は「Fable が判断するならさらにセルフエクステンドを選んでも良い」というユーザー指示を、続行の判断に限って reframer に委ねると解釈したもので、当初のオーダー本文「6 ラウンドまで」を越える。(6) 上位モデルを当てる効果は未検証で、理由の主軸はユーザー指示と、6 round の修正に引きずられない新しいコンテキストで枠組みを見直させること
+- ラウンド予算の再評価トリガー（周は到達した最大の段階で 1 つに分類する）: 自己延長止まりの周が Round 6 までに pass せず reframer に回った例が 2 件（自己延長の上限を見直す）/ reframer 判断の周が Round 9 までに pass しなかった例が 2 件（reframer 判断の延長をやめるか上限を見直す）/ 人間の指示に対応しない reason が 1 件、または非 pass が残るのに pass marker が付いた事例 1 件 / reason 形式を外れた例が 1 件（形式の機械検査）/ reframer を起動できず人間に回った例が 2 件（エージェント定義のモデル指定）/ 記録ファイルと reframer の出力が食い違った例が 1 件（`--reframer-extend` を廃止）/ 正当な記録があるのに `--reframer-extend` が拒否された例が 2 件（検査を減らす）
+- reviewer 台帳は記録された subagent_type の plugin 名前空間を外して照合するので、同名の plugin agent の実行も当該 reviewer として数える（受容した挙動。完全一致にすると `stamp` にも及ぶ）
 
-## Amendment (2026-09-24): 差分再レビューを機構に揃える
+## Amendments
 
-K6 は「round ≥ 2 は前 round で needs-work / blocker だった reviewer だけ再確認」と決めていたが、K5 の `stamp` は毎 round 必須 reviewer 全員の起動証跡を要求し、推奨テキスト冒頭も「ALL を並列実行」と指示していた。意図と機構が食い違っていたため、実運用では毎 round 全員が回っていた（CPK-C108 `c93da47d` は 6 round で reviewer 延べ約 40 回。Round 4〜6 はいずれも 7 名中 needs-work が 1 名以下）。
+### 2026-09-24: 差分再レビューを機構に揃える
 
-- `planRoundReviewers`（`lib/workflow-review-core.ts`）を推奨・`round` 骨格・`stamp` の共通の判定にした。rerun は `logic-validator` + 前 round で非 pass の reviewer + 前 round に居ない必須 reviewer。残りは carried として骨格に `pass (carried from Round N)` で書く。前 round が無い・verdict が空欄・blocker がある・`round --full` のいずれかなら全員に戻す
-- `stamp` が要求するのは rerun のうち必須 reviewer の分だけ。内容選定 reviewer は Round 1 と同じく推奨はするが必須にしない。差分 round が full round より厳しくならないようにするため
-- 受容したリスク: carried の再検証は機械判定しない。Key Decisions・白紙案を変える修正で `--full` を使うかは operator の規律に任せる。回帰の見張りとして `logic-validator` は毎 round 回す
-- リプレイ（変更後の 7 文書、Round 2 以降）: 必須 reviewer の起動回数は round あたり 4 名から 1〜2 名に減る。見積もりの詳細は当該コミットのメッセージに記す
+K6 は「round ≥ 2 は前 round で非 pass の reviewer だけ再確認」と決めていたが、K5 の `stamp` は毎 round 必須 reviewer 全員の証跡を要求し、推奨テキストも「ALL を並列実行」と指示していたため、毎 round 全員が回っていた（CPK-C108 の 1 文書で 6 round、reviewer 延べ約 40 回。Round 4〜6 はいずれも 7 名中 needs-work が 1 名以下）。推奨・骨格・`stamp` が同じ判定を共有する形に揃えた。変えた後の決定は Decision 5 にある。
 
-## Amendment (2026-09-28): ラウンド予算を機構に移し、prose 変更では追加レビュアーを付けない
+### 2026-09-28: ラウンド予算を機構に移し、prose 変更では追加レビュアーを付けない
 
-差分再レビューの後も検証フェーズは長かった。reviewer 台帳のある 7 セッション・9 文書を集計すると、新しい実質指摘があった文書の割合は Round 1 で 8/8、Round 2 で 5/8、Round 3 で 3/7、Round 4 以降で 0/4 だった。K6 の「Round 3 で未収束なら人間へエスカレーションし、指示なく Round 4 を始めない」は推奨文の文言だけで、3/9 文書が Round 4 以降に進んでいた。reviewer はすでに全員 sonnet で、reviewer subagent の入力トークンはセッション総コストの概ね 12〜27% にとどまる。残りの大半はラウンドごとにメインループが報告を読み、文書を直し、帳簿を回す部分と見られ、支配変数はラウンド数だった。また、`selectReviewers` は本文のキーワード 1 つで追加 reviewer を選ぶため、`SKILL.md` を 1 ファイル直すだけの plan にも architecture / security / resilience が推奨されていた（`permission`・`timeout`・`モジュール` に一致）。
+差分再レビューの後も検証フェーズは長かった。reviewer 台帳のある 7 セッション・9 文書で、新しい実質指摘があった文書の割合は Round 1 で 8/8、Round 2 で 5/8、Round 3 で 3/7、Round 4 以降で 0/4。K6 の「Round 3 で未収束なら人間へエスカレーション」は推奨文の文言だけで、3/9 文書が Round 4 以降に進んでいた。reviewer は全員 sonnet で、reviewer の入力トークンはセッション総コストの概ね 12〜27% にとどまり、支配変数はラウンド数だった。また追加 reviewer が本文のキーワード 1 つで選ばれ、`SKILL.md` を 1 ファイル直すだけの plan にも architecture / security / resilience が推奨されていた。ラウンド数の機構化は Decision 9 の段階に引き継がれ、`## Files` が prose だけなら追加 reviewer を付けない規則と、ローカル agent に置き換えたカタログは Decision 5・7 にある。
 
-- `workflow-cli round` は、最後の `verdict=pass` marker から数えた周のラウンド数が 3 以上なら拒否する。周の起点は stamp が marker に書く `round=N` で、承認後の再レビューは新しい周になる。続行は人間の指示があるときだけ `--extend --reason` で、`round-extensions.log` に残る
-- plan.md / plan-N.md の `## Files` が prose だけなら、full round の推奨に追加 reviewer を付けない。パーサは guard と共有する（`lib/workflow-files.ts`）。必須 reviewer の構成と差分再レビューの規則は変えない
-- 却下: 追加 reviewer の blocker で全員再実行に戻さない案。1 ラウンドあたりの reviewer を減らす方向で、ユーザーが選んだ「ラウンド数を減らす」と軸が異なる。予算の機構化で blocker の連鎖も Round 3 で人間に回る
-- 受容したリスク: `--extend` の指示元と、周の起点になる pass marker（`stamp --verdict pass` は各 reviewer の verdict 行と突き合わせない）は prompt 統制のまま。偽の pass はレビューを打ち切って人間の承認に回す向きに働き、予算が防ぐ「人間に見せずに回り続ける」経路にはならない。再評価トリガーは、log に人間の指示に対応しない reason が 1 件、または非 pass が残るのに pass marker が付いた事例 1 件
-- 同日に解消: カタログをローカル agent に置き換え（performance / code-simplicity はローカルに agent 定義が無いため外した。観点が不要と判断したのではなく、戻すなら agent 定義を先に作る。K9 の code-simplicity-reviewer 追加はこれで取り消し）。compound-engineering の現行版は該当 agent を subagent として提供しない。3 つのロースターの各 slug がローカル定義を持つことをテストで固定。台帳は記録された subagent_type の plugin 名前空間を外して照合するので、同名の plugin agent の実行も当該 reviewer として数える（受容した挙動。照合を完全一致にするのは stamp にも及ぶため別オーダー）
-- 経緯と観測の詳細: `git show 52dc6fd447:docs/plans/workflow-review-budget/`（research / spec / plan-1 と、集計レポート `evidence/review-cost-report.md`）
+### 2026-10-01: 自己延長を Round 6 まで、reframer 判断の延長を Round 9 まで認め、問題変形は人間に回す
 
-## Amendment (2026-10-01): 自己延長を Round 6 まで、reframer 判断の延長を Round 9 まで認め、問題変形は人間に回す
-
-予算 3 を超えるたびに人間の許可を待つと、着地寸前の周でも止まる。ユーザーの判断として、着地見込みがあればモデルが Round 6 まで自分で延長してよく、それでも着地しなければ問題の変形を選択肢に含めた検討をサブエージェントに任せることにした。サブエージェントは上位モデル（Fable）で動かし、その判断が「現在の枠組みのまま続行」なら Round 9 まで延長してよいとした。上の Amendment (2026-09-28) の観測「Round 4 以降で新しい実質指摘があった文書は 0/4」は把握したうえで、その逆向きに上限を広げている。標本は 4 と小さく、以下の再評価トリガーで観測する。
-
-- 周のラウンド数で段階を決める: 0〜2 は制限なし、3〜5 はモデル判断の `--self-extend`、6〜8 は reframer 判断の `--reframer-extend`、9 以上は人間の `--extend` だけ。6 と 9 は予算 3 の刻みに揃えた設計値で、ユーザーの指定値でも収束分析に基づく値でもない。段階判定・許可表・見出し・案内文・log 整形は `lib/workflow-review-core.ts` の純粋関数にまとめ、CLI の拒否と推奨テキストの通知が同じ関数を使う
-- 延長の承認者ごとにフラグを分け、`round-extensions.log` に承認者列（`human` / `self` / `reframer`）を足した。`--extend` は「人間の指示」の意味のまま残す。上の受容したリスクの再評価トリガー（人間の指示に対応しない reason）はこの意味に依存しているため
-- 「着地見込み」は prompt 上の基準（blocker なし / Key Decisions を変えずに直せる / 指摘が狭まっている）にとどめ、機械判定しない。非 pass 数で収束を測る案は、差分再レビューでは数が構造的に減るため計器として粗く、採らなかった。機械的に拒否するのは、判定に計器の妥当性が要らない `--self-extend` / `--reframer-extend` と `--full` の併用だけ
-- 変形を検討する役は `home/dot_claude/agents/review-reframer.md` として定義し、モデルは frontmatter の `model:` 1 行でだけ指定する。Agent tool の引数や CLI のフラグ・定数・案内文にモデル名を書かない（ユーザー指示。既存の reviewer もすべて frontmatter でモデルを決めている）。上位モデルを当てる理由の主軸はユーザー指示で、6 round の修正に引きずられない新しいコンテキストで枠組みを見直させることが狙い。上位モデルの必要性そのものは未検証
-- reframer の結果は文書の中ではなく `<wfDir>/reframer-review.<doc>` に記録する。文書内に節として書く案は、stamp 後の追記で文書 hash が変わるため hash の正規化に節の除去を足す必要があり、除去の終端条件や fenced code 内の見出しの誤検出という新しい境界問題を hash の中核に持ち込むので退けた。既存の帳簿（`reviewer-runs.log` / `round-extensions.log` / `.round-baseline`）も文書外にある
-- `--reframer-extend` は、記録ファイルの最後の節（周の入り口の round、`agent`、推奨 `(a)` の完全一致）と、`reviewer-run-recorder` が記録した `review-reframer` の起動記録（Round N の baseline 以降）で裏付ける。推奨が (b) 変形 / (c) 現状で承認 / (d) 取り下げなら、スコープ・承認・オーダーそのものに関わるので、モデルも reframer も選ばず人間に回す。周内の相談は 1 回
-- 却下: 予算を 9 に上げて文言だけで運用する案（延長の事実も承認者も残らない。文言だけの予算は 3/9 文書で破られていた）。reframer 判断の延長に上限を設けない案（モデル / reframer の判断だけで回り続ける経路に歯止めがなくなる）。Agent tool の `model` 引数でモデルを指定する案（ユーザー指示に反し、モデル名が各所に散る）
-- 受容した限界（重要度順）: (1) 人間抜きで Round 7〜9 を進める根拠は記録ファイルと起動記録で、記録ファイルはメインループが書く。推奨の書き換え、空に近い入力での起動、別文書向けの起動、節の書き直し、台帳の偽造は検知できない。承認依頼の Executive Summary に記録ファイルのパスと要約を載せることを必須にし、人間の確認経路とする。(2) `human` 行は人間の承認を証明しない。(3) 着地見込みの判定は機械検証しない。(4) reason 形式の確認は目視。(5) Round 7〜9 は「Fable が判断するならさらにセルフエクステンドを選んでも良い」というユーザー指示を、続行の判断に限って reframer に委ねると解釈したもので、当初のオーダー本文「6 ラウンドまで」を越える。(6) 上位モデルを当てる効果は未検証
-- 再評価トリガー: 周は到達した最大の段階で 1 つに分類する。次のいずれかで見直す。自己延長止まりの周が Round 6 までに pass せず reframer に回った例が 2 件（K3 の条件か自己延長の上限）/ reframer 判断の周が Round 9 までに pass しなかった例が 2 件（reframer 判断の延長をやめるか上限を見直す）/ reason 形式を外れた例が 1 件（形式の機械検査）/ reframer を起動できず人間に回った例が 2 件（エージェント定義のモデル指定）/ 記録ファイルと reframer の出力が食い違った例が 1 件（`--reframer-extend` を廃止）/ 正当な記録があるのに `--reframer-extend` が拒否された例が 2 件（検査を減らす）
-- 経緯: この Amendment 自体の plan は予算 3 のもとで Round 7 まで回った（Round 6・7 は人間の指示による `--extend`）。Round 3 以降は途中のユーザー指示（上位モデルでの検討、reframer 判断の延長、モデル名を引数に書かない）で Key Decisions が変わり、全員を回す周が続いた。0/4 の観測は差分再レビューの周が前提で、設計そのものが動く周は別に数える必要がある。research と plan（Reviewer Outputs 全 7 round を含む）は `git show 52dc6fd447:docs/plans/round-budget-reframer/` に置いた
+予算 3 を超えるたびに人間の許可を待つと、着地寸前の周でも止まる。ユーザーの判断として、着地見込みがあればモデルが Round 6 まで自分で延長してよく、それでも着地しなければ問題の変形を選択肢に含めた検討を上位モデルのサブエージェントに任せ、その判断が「現在の枠組みのまま続行」なら Round 9 まで延長してよいとした。上の観測「Round 4 以降で新しい実質指摘があった文書は 0/4」は把握したうえで、その逆向きに上限を広げている。標本は 4 と小さく、Consequences の再評価トリガーで観測する。段階と記録の仕組みは Decision 9 にある。
 
 ## References
 
 - `git show 52dc6fd447:docs/plans/document-workflow-overhaul/research.md` — 失敗パターン P1〜P8 と根本原因
-- `git show 52dc6fd447:docs/plans/document-workflow-overhaul/spec.md` — K1〜K10、Risks、Reviewer Outputs（3 ラウンド）
-- `git show 52dc6fd447:docs/plans/document-workflow-overhaul/plan-1.md` / `plan-2.md` / `plan-3.md` — 実行層
-- `git show 52dc6fd447:docs/plans/document-workflow-overhaul/evidence/` — hook 注入テキスト棚卸し、成果物品質監査、コードマップ
+- `git show 52dc6fd447:docs/plans/document-workflow-overhaul/spec.md` — K1〜K10、Risks
+- `git show 52dc6fd447:docs/plans/workflow-review-budget/` — ラウンド予算の観測（集計レポートを含む）
+- `git show 52dc6fd447:docs/plans/round-budget-reframer/` — 段階的延長と reframer の計画
 - `docs/plans/workflow-guard-followups.md` — 課題 A/B/D の扱い
 - `docs/decisions/0001-document-workflow.md`, `0006-document-workflow-two-layer.md`, `0013-workflow-dir-session-derivation.md`

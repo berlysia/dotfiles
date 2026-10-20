@@ -375,13 +375,6 @@ test("exception set: a violation outside the set is reported", () => {
 // The ADR cleanup (plan-3) must empty these sets; each entry is a violation the
 // cleanup has not fixed yet. Names are file names under docs/decisions/.
 const ADR_HEADING_EXCEPTIONS: ReadonlySet<string> = new Set<string>([
-  "0010-context-md-mechanism.md",
-  "0011-autonomous-lane-charter.md",
-  "0012-berlysia-writing-hub-skill.md",
-  "0013-workflow-dir-session-derivation.md",
-  "0014-hook-deps-install-phase.md",
-  "0015-document-workflow-operator-ergonomics.md",
-  "0017-provisioning-after-deploy.md",
   "0018-agent-vm-orbstack.md",
   "0021-agent-vm-golden-clone.md",
   "0022-agent-vm-node-modules.md",
@@ -394,9 +387,6 @@ const ADR_HEADING_EXCEPTIONS: ReadonlySet<string> = new Set<string>([
   "0038-second-chezmoi-source-for-machine-local-files.md",
 ]);
 const ADR_SESSION_PATH_EXCEPTIONS: ReadonlySet<string> = new Set<string>([
-  "0010-context-md-mechanism.md",
-  "0013-workflow-dir-session-derivation.md",
-  "0017-provisioning-after-deploy.md",
   "0018-workflow-gate-no-in-project-scratch-exemption.md",
   "0023-workflow-identity.md",
   "0024-skill-approval-checklist.md",
@@ -407,9 +397,6 @@ const ADR_SESSION_PATH_EXCEPTIONS: ReadonlySet<string> = new Set<string>([
   "0037-workflow-reset-archives-workflow-dir.md",
 ]);
 const ADR_MISSING_PATH_EXCEPTIONS: ReadonlySet<string> = new Set<string>([
-  "0010-context-md-mechanism.md",
-  "0014-hook-deps-install-phase.md",
-  "0017-provisioning-after-deploy.md",
   "0020-boundary-deny-rephrase.md",
   "0025-deployed-docs-self-contained.md",
   "0028-plan-delegation.md",
@@ -417,8 +404,6 @@ const ADR_MISSING_PATH_EXCEPTIONS: ReadonlySet<string> = new Set<string>([
   "0031-merge-commits-only-on-master.md",
 ]);
 const ADR_SOURCE_LINE_REF_EXCEPTIONS: ReadonlySet<string> = new Set<string>([
-  "0010-context-md-mechanism.md",
-  "0013-workflow-dir-session-derivation.md",
   "0029-workflow-records-move-into-adr.md",
   "0030-followups-written-when-raised.md",
 ]);

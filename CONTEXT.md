@@ -93,7 +93,7 @@ ADR: `docs/decisions/0010-context-md-mechanism.md`
 
 ## Open questions
 
-- **ADR-0010 Defer 節 5 項目の優先順位**: grill skill (Socratic 質問発火による未定義語検出) が次に自然な拡張だが、context-audit (R1 参照腐敗の検出) も実害が薄いわりに価値が高い。実運用で先に困る方を優先するのが筋
+- **ADR-0010 の Defer 節（grill skill / context-audit / session-start hook / allowlist 規約）の優先順位**: grill skill (Socratic 質問発火による未定義語検出) が次に自然な拡張だが、context-audit (R1 参照腐敗の検出) も実害が薄いわりに価値が高い。実運用で先に困る方を優先するのが筋
 - **`.tmpl` 規約棚卸しの timing**: `templates/spec.md` / `plan-execution.md` は literal copy 用なのに拡張子なし、本件 `context.md.tmpl` だけ `.tmpl` を採用した理由を後日整理する必要
 - **mechanical-lane criteria の運用実績**: ADR-0009 導入後の使用頻度と誤判定発生率を観測したい (運用ログから measurable proxy が取れるか未確認)
 - **CONTEXT.md maturity の measurable proxy**: `docs/decisions/` の ADR 数 / CLAUDE.md の定義語数 / 本ファイル内の定義語数、のいずれが maturity の代理指標として適切か (会話で言及した仮説の検証)

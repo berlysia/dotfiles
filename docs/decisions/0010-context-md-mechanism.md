@@ -13,22 +13,9 @@ aihero.dev /grill-with-docs (2026-06-09 会話) を起点に、dotfiles プロ�
 - CONTEXT.md 不在のプロジェクトでも従来通り動作 (degraded mode 必須)
 - 軽量 MVP 重視、重い投資 (skill / hook / 検出機構 / 規約 SSoT 化) は subsequent ADR に defer
 
-## Analysis
-
-検討した代替案:
-
-- **A. プロジェクトルート直下 `.context.md`**: 視認性最大、AI path 解決最短だが、各プロジェクト側の `.gitignore` 編集要求が「侵入しない」本義に反するため reject
-- **B. 完全外部化 `~/.claude/projects/<repo-hash>/CONTEXT.md`**: 責務境界純度は最高だが、`<repo-hash>` 解決コスト + `ls` で発見できない視認性劣化のため reject (劣化は subsequent ADR で再評価可)
-- **C. ハイブリッド `.tmp/docs/CONTEXT.md` + `@path` 薄い index**【採用】
-
-採用根拠:
-
-- 既存 `.tmp/` gitignore 規約に乗る (新規 gitignore ルール不要)
-- 既存 `@path` 自動ロード規約と見た目同型 (新規 syntax 不要)
-- `pwd` 配下で `tree .tmp/` 一発で発見可能 (人間 UX 確保)
-- B 案の劣化点 (`<hash>` 解決コスト、`ls` で発見不能) を回避
-
 ## Decision
+
+位置は C 案（`.tmp/docs/CONTEXT.md` + `@path` の薄い index）。既存の `.tmp/` gitignore 規約と `@path` 自動ロード規約に乗るので、新規の gitignore ルールも新規 syntax も要らない。`pwd` 配下で `tree .tmp/` 一発で見つかり、B 案の劣化点（`<hash>` 解決コスト、`ls` で発見不能）も避けられる。
 
 ### K1: ルート位置を `.tmp/docs/CONTEXT.md` に固定
 
@@ -49,7 +36,7 @@ CONTEXT.md 不在時は grill 相当の事前確認機能はオフ、Document Wo
 
 ### K4: `.tmp/docs/` は GC 対象外
 
-`.tmp/sessions/` のみ 7日 GC。GC スクリプト (`home/.chezmoiscripts/run_after_gc.sh.tmpl:28-35`) は `.tmp/sessions/` の path-prefix を `find -mindepth 1 -maxdepth 1 -type d -mtime +7` で対象とする SAFE pattern (a) であることを spec 段階で確認済 — `.tmp/docs/` は構造的に GC 対象外。
+GC の対象は `.tmp` 配下のセッション用ディレクトリだけで、7 日を超えたものを消す。GC スクリプトはそのディレクトリの path-prefix を固定して `find -mindepth 1 -maxdepth 1 -type d -mtime +7` で対象とする SAFE pattern なので、`.tmp/docs/` は構造的に GC 対象外。
 
 `workflow.md` の Session Artifact Retention 節に「`.tmp/docs/` は永続扱い」を明文化済。
 
@@ -61,7 +48,7 @@ template 内部規約: commit 禁止ヘッダ / 機密 path 非参照 / 要約 1
 
 ### K6: grill skill / context-audit hook は本 ADR スコープ外
 
-本 ADR の MVP は「位置の固定 + 参照規約 + degraded mode + template 提供 + 規約明文化」のみ。実装位置は `home/dot_claude/skills/` / `home/dot_claude/hooks/implementations/` に予約。
+本 ADR の MVP は「位置の固定 + 参照規約 + degraded mode + template 提供 + 規約明文化」のみ。
 
 ## Consequences
 
@@ -70,7 +57,7 @@ template 内部規約: commit 禁止ヘッダ / 機密 path 非参照 / 要約 1
 - プロジェクトのファイル構造に侵入ゼロで導入可能 (新規 gitignore / CI ルール / コミット対象ファイルを各プロジェクトに要求しない)
 - 既存 `@path` 規約・`.tmp/` gitignore に乗るため新規 syntax を増やさない
 - degraded mode により CONTEXT.md 不在プロジェクトでも従来通り動作
-- 仕様 SSoT (`~/.claude/rules/context-md.md`) 1 ファイルの編集で仕様変更が完結
+- 仕様 SSoT (`~/.claude/rules/context-md.md`) 1 ファイルの編集で仕様変更が完結。AI 指示は `CLAUDE.md` の Per-Project Context セクション、初期化 template は `templates/context.md.tmpl`、`.tmp/docs/` 永続の規約は `workflow.md` の Session Artifact Retention 節
 
 ### Negative / 残るリスク (MVP 範囲で許容)
 
@@ -80,17 +67,13 @@ template 内部規約: commit 禁止ヘッダ / 機密 path 非参照 / 要約 1
 
 ### Defer to subsequent ADR
 
-- **/grill skill** の実装 (Socratic 質問による未定義語の検出と CONTEXT.md 追記)
-- **context-audit** による参照腐敗検出 hook
-- **session-start hook** での CONTEXT.md 自動 Read 保証 (R2 強化)
-- **allowlist/denylist の rule SSoT 化** (R6 強化)
-- **`templates/` 配下の `.tmpl` 規約棚卸し** (`spec.md`, `plan-execution.md` 等の既存 pass-through ファイルとの命名規約整合、architecture-strategist 由来)
+/grill skill、context-audit hook（R1 対策）、session-start hook（R2 対策）、allowlist/denylist の rule SSoT 化（R6 対策）、`templates/` 配下の `.tmpl` 規約の棚卸しは、この ADR では決めず、後続の ADR で扱う。未実装の一覧は `rules/context-md.md` の「未実装の検討事項」、優先順位と `.tmpl` 棚卸しの時期は `CONTEXT.md` の Open questions が持つ。
+
+## 却下した代替案
+
+- **A. プロジェクトルート直下 `.context.md`**: 視認性は最大で AI の path 解決も最短だが、各プロジェクト側の `.gitignore` 編集を要求し、「侵入しない」本義に反する
+- **B. 完全外部化 `~/.claude/projects/<repo-hash>/CONTEXT.md`**: 責務境界は最も純粋だが、`<repo-hash>` の解決コストと、`ls` で見つからない視認性の劣化がある。劣化は後続の ADR で再評価できる
 
 ## References
 
-- `home/dot_claude/rules/context-md.md` — 本機構の仕様 SSoT
-- `home/dot_claude/CLAUDE.md` — Per-Project Context セクションでの AI 指示
-- `home/dot_claude/templates/context.md.tmpl` — 初期化 template
-- `home/dot_claude/rules/workflow.md` Session Artifact Retention 節 — `.tmp/docs/` 永続規約
-- `home/.chezmoiscripts/run_after_gc.sh.tmpl:28-35` — GC SAFE pattern 根拠
 - 元の議論: aihero.dev /grill-with-docs (2026-06-09 会話)

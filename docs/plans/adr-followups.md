@@ -29,3 +29,17 @@ Deferred-2 と Deferred-7 は閉じたので載せない。
 - **Deferred-4（セッションをまたぐ記憶）**: 教訓をセッションの外に置き、プロジェクトをまたいで引き継ぐ。見直すのは、別のプロジェクトでも Document Workflow を使い、2 つ以上で同じ失敗の型が出たとき。lessons-learned は撤去したので、前提から見直す
 - **Deferred-5（未使用の定数）**: `workflow-paths.ts` の `plan-review.md` / `plan-review.json` の定数を、別ファイルへの記録に使う。見直すのは、Reviewer Outputs が長くなり、本文の半分以上を占める状態が続いたとき
 - **Deferred-6（HMAC による改ざんの検知）**: Deferred-4 を実装するときに合わせて判断する。または、教訓に当たるファイルが外部のストレージに移り、書き手が複数になったとき。対象が無ければ閉じる
+
+## ADR-0012: 癖のカタログの一般化を明記する
+
+CPK-C108 の `notes/prose-style.md` に、癖のカタログが `berlysia-writing` の `quirks.md` へ一般化されたことを書く。それまで、2 つのファイルの食い違いを検知する仕組みは無い。
+
+## ADR-0013 の観測項目
+
+- `env-rejected` が起動時のサマリに出るか。出るなら、pin の書き方の誤りか、ADR-0013 の Consequences 2（サブディレクトリから起動したときの縮退）が実際に起きている
+- `unresolvable` がツールを呼ぶたびに出続けるか。出続けるなら、ADR-0013 の Consequences 3 の kill-switch か、session id の形の違反を疑う。正常時にも鳴る警告に近づくので、頻度が分かったら `docs/plans/workflow-guard-followups.md` の課題 H の設計の入力にする
+
+## ADR-0015 の受入基準と観測
+
+- 変更の後の 5 セッションで `docs/scripts/workflow-session-audit.mjs` を回し、Reviewer Outputs と intent-triage の欠落が 0 件で、推奨の注入量が round 数 × 2KB 以下であることを確かめる
+- ラウンド予算: 新しい実質の指摘が Round 4 以降で 0/4 という標本は小さい。設計そのものが動く周は、差分の再レビューの周と分けて数える

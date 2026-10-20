@@ -16,13 +16,11 @@ accepted (2026-09-28)
 
 ## Decision
 
-設計の全文は `git show 52dc6fd447:docs/plans/hook-telemetry/plan.md`（K0〜K9、5 名 × 3 ラウンドのレビューと intent triage を経て verdict=pass）にある。ここには骨子と、却下した代替案を記す。
+設計の全文は `git show 52dc6fd447:docs/plans/hook-telemetry/plan.md`（K0〜K9）にある。ここには骨子を記す。
 
 ### 1. 計測点はプロセス境界の外に置き、settings.json 生成時に機械的に包む（K1）
 
 `run_onchange_update-settings-json.sh.tmpl` の jq が、全 `type: "command"` の hook を `sh ~/.claude/hooks/hook-timer.sh <Event> <async 0|1> '<元の command>'` に書き換える。`.settings.hooks.json.tmpl` は変更しない。こうすると、新しく追加したフックも計測から漏れない。`hook-target-drift.test.ts` の全文走査と `session.ts` の `command.includes("document-workflow-guard.ts")` による配線監査も、そのまま通る。
-
-**却下**: tmpl の各行を手で書き換える案。30 行近い重複が生じるうえ、ラップし忘れた新しいフックが計測から静かに欠ける。
 
 ### 2. ラッパーはフックの判定に一切影響させない（K2〜K4）
 
@@ -37,11 +35,9 @@ accepted (2026-09-28)
 
 1 秒で打ち切るのは、子が TERM を無視した場合に備えるためである。その場合、Claude Code が SIGKILL に切り替えたときに死ぬのはラッパーだけで、子は孤児として残る。
 
-**却下**: プロセスグループ単位の kill（`set -m`）。dash は tty が無いと job control を有効にできず、wait が 5 秒ブロックした。zsh はオプションの変更自体を拒否した。
-
 ### 4. 集計は並列実行を前提にする（K7）
 
-`hook-timing` CLI（`hooks/cli/hook-timing.ts` → `hooks/lib/hook-timing-report.ts`）は 2 つの表を出す。
+`hook-timing` CLI は 2 つの表を出す。
 
 - フック別: count / p50 / p95 / max / total / stderr の最大バイト数
 - イベント別のブロック時間: 同期フックの duration の最大値。最大値を最も多く占めたフックも併記する
@@ -58,10 +54,13 @@ accepted (2026-09-28)
 - ログ `~/.claude/logs/hook-timing.jsonl` は 10MB を超えたら `.1` に 1 世代だけ退避する。`centralized-logging` の回転は TS 側の仕組みなので、shell のラッパーからは使えない
 - macOS の `date` は `%N` を解釈しないので、その場合は perl で時刻を取る。この分岐は、偽の `date` を使ったテストでしか確かめていない（macOS 実機では未検証）
 
+## 却下した代替案
+
+- **tmpl の各行を手で書き換える**（K1）: 30 行近い重複が生じるうえ、ラップし忘れた新しいフックが計測から静かに欠ける
+- **プロセスグループ単位の kill（`set -m`）**（K9）: dash は tty が無いと job control を有効にできず、wait が 5 秒ブロックした。zsh はオプションの変更自体を拒否した
+
 ## References
 
 - `git show 52dc6fd447:docs/plans/hook-telemetry/plan.md` / `research.md`
-- `home/dot_claude/hooks/executable_hook-timer.sh`, `home/dot_claude/hooks/lib/hook-timing-report.ts`, `home/dot_claude/hooks/cli/hook-timing.ts`
-- `home/.chezmoiscripts/run_onchange_update-settings-json.sh.tmpl`
 - https://code.claude.com/docs/en/hooks.md（並列実行、timeout、`async`）
 - https://code.claude.com/docs/en/monitoring-usage.md（OTEL `claude_code.hook` span）
