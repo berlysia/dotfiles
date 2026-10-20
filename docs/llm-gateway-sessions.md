@@ -112,7 +112,6 @@ gateway セッションでは、次の 2 つを行ってから本物の `claude`
 
 キーだけがあって BASE_URL が無いシェルで `ANTHROPIC_AUTH_TOKEN` を渡すと、gateway のキーが既定の Anthropic API に Bearer として送られる。
 BASE_URL も揃っているときだけ渡すことで、これを避ける。
-この条件は statusline が gateway セッションを判定する条件 (BASE_URL と認証トークンの組) とも整合する。
 
 ### 関数として実装した理由
 
@@ -123,7 +122,7 @@ BASE_URL も揃っているときだけ渡すことで、これを避ける。
 
 ### gateway セッションにならない起動経路
 
-非対話の `ope -g claude -p ...` が認証エラーになり、statusline も gateway 用の表示にならない。
+非対話の `ope -g claude -p ...` が認証エラーになる。
 原因は、`ope -g` の非対話経路が `op run -- "$@"` でバイナリを直接実行し、`claude()` を通らないため `ANTHROPIC_AUTH_TOKEN` が渡らないことである。
 対処は `ope -gi claude ...` を使うことである (`"$SHELL" -i -c` 経由で関数が使われる)。
 
@@ -165,8 +164,8 @@ JSON が無い場合のスキップは、何も表示されずに行われる。
 
 ## statusline
 
-gateway セッションでは `${ANTHROPIC_BASE_URL:+${ANTHROPIC_AUTH_TOKEN:+...}}` の条件で gateway 用の設定 `settings.gateway.json` が選ばれる。
-この設定は、Claude.ai ログインでしか意味を持たない利用量ウィジェット (リセットタイマー、セッションの使用量、週次の使用量) を隠す。
+個人側の statusline は 1 つで、gateway のときも切り替えない。
+gateway の残予算など gateway 用の表示は、機械ごとの層 (ADR-0038 の 2 つ目の source) が、その層の起動ラッパーから `--settings` で statusline のコマンドを差し替えて出す。
 
-予算ウィジェット `home/dot_config/ccstatusline/executable_litellm-budget.sh` は、gateway が LiteLLM の場合にだけ機能する。
-`$ANTHROPIC_BASE_URL/user/info` を叩いて LiteLLM の応答形からキーの残り予算を読むため、LiteLLM 以外の gateway では何も表示されない。
+その層は `~/.config/ccstatusline/settings.json` の形 (ccstatusline の `version: 4` と `lines`) と、ccstatusline の場所 (`~/.claude/node_modules/ccstatusline/dist/ccstatusline.js`) に依存する。
+これらを変えるときは、その層を先に更新してから個人側を更新する。
