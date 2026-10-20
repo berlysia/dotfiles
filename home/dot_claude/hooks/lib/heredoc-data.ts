@@ -19,7 +19,7 @@ import { type ParseForCollect, parseForCollect } from "./bash-parser.ts";
 
 // Every entry carries the reason it has no path that runs its input or
 // arguments as code, with the version that was checked. Adding one also adds
-// it to the ADR-0020 addendum (spec K2). If false positives on plain arguments
+// it to the F3b amendment of ADR-0020. If false positives on plain arguments
 // (not heredoc bodies) are observed, revisit the word-role model in spec
 // "Alternative Approaches" instead of growing these lists.
 

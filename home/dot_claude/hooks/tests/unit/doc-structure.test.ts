@@ -375,7 +375,6 @@ test("exception set: a violation outside the set is reported", () => {
 // The ADR cleanup (plan-3) must empty these sets; each entry is a violation the
 // cleanup has not fixed yet. Names are file names under docs/decisions/.
 const ADR_HEADING_EXCEPTIONS: ReadonlySet<string> = new Set<string>([
-  "0023-workflow-identity.md",
   "0027-permission-path-pattern-semantics.md",
   "0029-workflow-records-move-into-adr.md",
   "0031-merge-commits-only-on-master.md",
@@ -384,18 +383,12 @@ const ADR_HEADING_EXCEPTIONS: ReadonlySet<string> = new Set<string>([
   "0038-second-chezmoi-source-for-machine-local-files.md",
 ]);
 const ADR_SESSION_PATH_EXCEPTIONS: ReadonlySet<string> = new Set<string>([
-  "0018-workflow-gate-no-in-project-scratch-exemption.md",
-  "0023-workflow-identity.md",
-  "0024-skill-approval-checklist.md",
-  "0025-deployed-docs-self-contained.md",
   "0027-permission-path-pattern-semantics.md",
   "0028-plan-delegation.md",
   "0029-workflow-records-move-into-adr.md",
   "0037-workflow-reset-archives-workflow-dir.md",
 ]);
 const ADR_MISSING_PATH_EXCEPTIONS: ReadonlySet<string> = new Set<string>([
-  "0020-boundary-deny-rephrase.md",
-  "0025-deployed-docs-self-contained.md",
   "0028-plan-delegation.md",
   "0029-workflow-records-move-into-adr.md",
   "0031-merge-commits-only-on-master.md",

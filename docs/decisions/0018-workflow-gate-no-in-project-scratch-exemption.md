@@ -6,13 +6,7 @@ accepted (2026-09-30)
 
 ## Context
 
-Document Workflow の plan が未承認の間、`document-workflow-guard` は実装系の書き込みを deny する。あるセッションで、承認待ちの間に chezmoi の `run_onchange_` の挙動を確かめる使い捨ての実験を試み、次の 3 回が続けて deny された。
-
-| #   | コマンド（要旨）                                            | guard が見た target   |
-| --- | ----------------------------------------------------------- | --------------------- |
-| 1   | `bash -c 'P=$(mktemp -d); mkdir -p "$P/src" …'`             | `$P/src`              |
-| 2   | `P=$PWD/.tmp/onchange-probe-$(date +%s); mkdir -p "$P/src"` | `$P/src`              |
-| 3   | `cd <repo>/.tmp && mkdir -p onchange-probe2/src && …`       | `onchange-probe2/src` |
+Document Workflow の plan が未承認の間、`document-workflow-guard` は実装系の書き込みを deny する。承認待ちの間に使い捨ての実験を試みたセッションで、`P=$(mktemp -d); mkdir -p "$P/src"`、`P=$PWD/.tmp/probe-$(date +%s); mkdir -p "$P/src"`、`cd <repo>/.tmp && mkdir -p probe/src` の 3 回が続けて deny された。
 
 guard が target を判定するのは、shell が展開する前の文字列に対してである。`$P` は展開されず、`cd` は追跡されない。どちらもそのまま cwd 相対で解決されるので、プロジェクト内と判定される。
 
@@ -24,13 +18,7 @@ guard が target を判定するのは、shell が展開する前の文字列に
 
 ### 1. プロジェクト内（`.tmp/` を含む）に scratch の免除を開けない
 
-最初の案は「`.tmp/`（`.tmp/sessions/` を除く）を免除する」だった。この案で 5 ラウンドのレビューを行い、判定方式を 3 回変えた。
-
-1. 危ない文字と形を列挙して拒否する
-2. 許可する文字の集合を決める
-3. 許可するコマンドと形だけを通す
-
-どの方式でも、塞いだあとに次の抜け道が見つかった。見つかった抜け道は、原因によって 2 つの系統に分かれる。
+最初の案は「`.tmp/`（`.tmp/sessions` を除く）を免除する」だった。危ない形を列挙して拒否する、許可する文字の集合を決める、許可するコマンドと形だけを通す、と判定方式を 3 回変えたが、どの方式でも塞いだあとに次の抜け道が見つかった。抜け道は、原因によって 2 つの系統に分かれる。
 
 **parser 系**: `lib/bash-parser.ts` の `individualCommands` は `string[]` を返し、代入・演算子・グループ化の情報を落とす。
 
@@ -47,7 +35,7 @@ guard が target を判定するのは、shell が展開する前の文字列に
 - `ln`/`cp -l` で hardlink を作れる
 - `.tmp/l/../x` は、`resolve` が文字列の上で `..` を畳むのに対して、カーネルは symlink を辿ってから `..` を解決する。この差でずれる
 
-`.tmp/sessions/` には、承認状態を支える hook の状態が入っている。`plan-review.cache.json`、`off-plan-writes.log`、`reviewer-runs.log` である。`.tmp/` の第 1 階層には retry カウンタもある。免除が漏れると、これらが改竄されたり削除されたりする。
+`.tmp/sessions` には、承認状態を支える hook の状態が入っている。`plan-review.cache.json`、`off-plan-writes.log`、`reviewer-runs.log` である。`.tmp/` の第 1 階層には retry カウンタもある。免除が漏れると、これらが改竄されたり削除されたりする。
 
 免除の範囲を専用の狭いディレクトリに絞っても、状況は変わらない。parser 系の抜け道は target の文字列だけで成り立つので、狭いディレクトリに見える文字列なら通ってしまう。リンク系はリンクを置く場所を選ばない。
 
@@ -71,15 +59,13 @@ hint の内容は次のとおりである。
 
 hint には発火条件を付けない。deny が起きるのは承認前だけなので、常に付けてもノイズにならない。条件を持たなければ、条件判定の漏れも起きない。
 
-連結するのは `createDenyResponse` に渡す直前である。空 target の判定は理由文の文字列の同一性で行っているので、それより前で連結すると判定が壊れる。また `sanitizeForDisplay` には通さない。通すとバッククォートが消える。
+連結するのは deny 応答を作る直前にする。空 target の判定は理由文の文字列の同一性で行っているので、それより前で連結すると判定が壊れる。診断の整形関数は `workflow-cli status` と共用なので、変えない。
 
-`formatGateDiagnosis` は `workflow-cli status` と共用なので、変えない。
-
-### 3. 規約を `rules/workflow.md` に書き、予算を 13KB に上げる
+### 3. 規約を `rules/workflow.md` に書き、予算を上げる
 
 承認前の置き場の規約を、`rules/workflow.md` の「CRITICAL: 承認は人間のみ」節にある guard の行に 1 文追記する。この規約は gate が閉じている間だけの例外である。そこで、CLAUDE.md の Temp files の行（一般の規約）は変えず、gate を説明している operator guide 側に置く。
 
-追記すると `workflow.md` は 12515 bytes になり、`workflow-md-budget.test.ts` の上限 12KB を超える。既存の関係ない行を縮めて収めることはせず、上限を 13KB に上げる。この予算は、常時ロードされるコンテキストを削減する目的（36KB から 12KB）で設けたものであり、1KB の引き上げはその意図を損なわない。
+追記すると `workflow.md` は予算テストの上限 12KB を超える。既存の関係ない行を縮めて収めることはせず、上限を 13KB に上げる。この予算は、常時ロードされるコンテキストを削減する目的で設けたものであり、1KB の引き上げはその意図を損なわない。
 
 `SCRATCH_HINT` と規約の文は同じ内容を二重に持つので、互いを参照するコメントを置く。
 
@@ -88,7 +74,7 @@ hint には発火条件を付けない。deny が起きるのは承認前だけ�
 - 承認前は、引き続き `.tmp/` を Bash からも Write からも使えない。scratch は scratchpad か `mktemp -d` の中で行う
 - 発端の 3 件の書き方（`$P` や `cd` を使う形）は今も deny される。hint を読み、`mktemp -d` の出力をリテラルで書き直せば通る
 - gate の判定は変えていない。既存の allow と deny の集合は変わらない
-- 常時ロードされる `workflow.md` は約 240 bytes 増える
+- 常時ロードされる `workflow.md` が少し増える
 - 将来プロジェクト内の scratch を再検討するときは、この ADR の抜け道の一覧が出発点になる。parser を構造化するなら、それを spec として独立に起こし、リンク系は別の手当てとして扱うこと
 
 ## References

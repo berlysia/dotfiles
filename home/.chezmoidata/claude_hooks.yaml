@@ -1,4 +1,4 @@
-# Switch for the auto-approval hooks (docs/decisions/0020, appendix of 2026-10-10).
+# Switch for the auto-approval hooks (docs/decisions/0020, amendment of 2026-10-10 on stopping them).
 # false: auto-approve.ts, permission-auto-approve.ts and permission-llm-evaluator.ts
 #        are not registered, and home-destruction-guard.ts is registered instead.
 # true (or key missing): the three hooks are registered, the guard is not.

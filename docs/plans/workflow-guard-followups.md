@@ -147,3 +147,7 @@ model が入力の `answers` に値（`A`）を先に入れて AskUserQuestion �
 - 承認行を書き換える側（`lib/workflow-marker.ts` の `setApprovalStatusLine`）の正規表現は `/^- Approval Status:.*$/m` で、`\s*` を含まない。値が空の文書を承認しても、次の行は消えない。次の行を落とすのは hash の正規化の側だけである。
 - 修正の案: `\s*` を `[ \t]*` にする。
 - 再訪のきっかけ: hash の正規化を変えると、承認済みの進行中の文書がすべて deny される。reference skill の「S3 デプロイ移行手順」を伴う作業になる。他の理由で正規化を変えるときに、合わせて直す。
+
+## 課題 M: SessionStart の監査の行が画面に出ない
+
+SessionStart の監査の行が画面に出ない。AskUserQuestion の PostToolUse の登録も `/hooks` の表示に出なかった。監査の関数を直接呼ぶと guard と recorder の両方が covers を返し、recorder は実際に記録した。`systemMessage` の 2 行目以降が表示されていない可能性があるが、確かめていない。
