@@ -22,7 +22,7 @@ base と overlay の `__CHEZMOI_HOME__` は、ホームディレクトリの絶�
 - `features` は非推奨のキーとして出力に出さない。
 - それ以外の最上位キーは、今のファイルにあればその値が残り、無ければ base の値になる。
 - 出力は TOML を読み込んで書き直すので、コメントとキーの順は残らない。値は保たれる。
-- すべての `[profiles.*]` から `sandbox_mode` と `approval_policy` を取り除く。codex（0.130.0 で確認）は有効な profile の値を最上位の値より優先し、`-p` は最上位の `profile` が無くても profile を選べるため、残すと強制キーを上書きできてしまう（#198）。profile の他のキーと `profile` 自体は残る。
+- すべての `[profiles.*]` から `sandbox_mode` と `approval_policy` を取り除く。codex は有効な profile の値を最上位の値より優先し、`-p` は最上位の `profile` が無くても profile を選べるため、残すと強制キーを上書きできてしまう。profile の他のキーと `profile` 自体は残る。
   - 強制キーのうち他の 5 つは、codex の profile に書けないキーなので対象にしない。
   - 新しい codex の `--profile` が重ねる `<name>.config.toml` と、強制キーに入っていない `default_permissions` は、この合成では制御できていない（未確認の穴として #198 に記録）。
 
@@ -44,21 +44,3 @@ VM では apply の後に `agent-vm/vm-codex-config.tmpl` が許可リスト外�
 TOML のタイムゾーンを持たない日付・時刻・日時（ローカル日付、ローカル時刻、ローカル日時）は、apply のたびに実行環境のタイムゾーンの分だけずれる。`~/.codex/config.toml` にはこれらを書かない。タイムゾーン付きの日時は保たれる。
 
 これは chezmoi の `fromToml` と `toToml` の往復で起きる挙動で、`scripts/test-codex-config-merge.sh` の M9 が現状の挙動を固定している。chezmoi 側が直ればこのテストが失敗して知らせる。
-
-## 初めてこの仕組みで apply する前に
-
-出力の書式が変わり（キーの順、下位の表の見出しの字下げ）、コメントが消える。値は変わらない。初回の前に退避しておく。
-
-```bash
-cp -p ~/.codex/config.toml ~/.codex/config.toml.before-modify
-```
-
-退避したファイルは、不要になったら削除する。
-
-## 元に戻すとき
-
-1. この仕組みを入れたコミットを `git revert` する。`private_config.toml.tmpl` と `private_dot_merge-config.ts` が戻り、`.chezmoiremove` の `.codex/.merge-config.ts` の行も消える。
-2. 退避したファイルを `~/.codex/config.toml` に戻す。
-3. `chezmoi apply` を実行する。
-
-戻したあとの合成は dasel と bun を使う。dasel を `.mise.toml` から外すコミットの後であれば、そのコミットも revert して dasel を戻す必要がある。

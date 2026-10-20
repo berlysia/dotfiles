@@ -51,15 +51,6 @@ gateway セッションだけで使う plugin は、`~/.config/claude-local/plug
 社内固有の値を持つので、別の chezmoi source (private リポジトリ、config と state を分けたもの) が持つことがある。
 その場合も、このリポジトリから見た置き場所と読み込み方は変わらない。
 
-### 旧形式からの移行
-
-`~/.env.1password.local` で `ANTHROPIC_AUTH_TOKEN=op://...` を直接 export していた場合は、その行を `LLM_GATEWAY_API_KEY=` の行に **置き換える**。
-両方は残さない。
-両方あると、`claude()` が `LLM_GATEWAY_API_KEY` の値で `ANTHROPIC_AUTH_TOKEN` を上書きするため、古い行は意味を持たないまま紛らわしく残る。
-
-旧形式のままでも gateway への接続自体は動くが、ラッパーが gateway セッションと認識しないので MCP は付かない。
-互換のための shim は用意していない。
-
 ## 仕組み
 
 `home/dot_shell_common/functions.sh` の `claude()` 関数が `claude` コマンドを包む。
@@ -68,7 +59,7 @@ gateway セッションだけで使う plugin は、`~/.config/claude-local/plug
 - **`LLM_GATEWAY_API_KEY`**：gateway のキー。`~/.env.1password.local` に置き、`ope` が 1Password から注入する
 - **`ANTHROPIC_BASE_URL`**：gateway の URL
 
-gateway セッションでは、次の 2 つを行ってから本物の `claude` を起動する。
+gateway セッションでは、次の 3 つを行ってから本物の `claude` を起動する。
 
 1. キーを `ANTHROPIC_AUTH_TOKEN` として `claude` プロセスにだけ渡す (Claude Code はこの名前でキーを読む)
 2. `~/.config/claude-local/gateway-mcp.json` があれば `--mcp-config=<そのパス>` を先頭に付け、gateway 経由の MCP サーバーを追加する
@@ -95,7 +86,6 @@ gateway セッションでは、次の 2 つを行ってから本物の `claude`
 
 また、サブコマンド (`mcp list` など) はルートオプションを後置で受け付けない (`claude mcp list --mcp-config FILE` は unknown option になる)。
 したがって、`=` 形式で **引数の先頭** に付けるのが、サブコマンド一覧を持たずにすべての呼び出しで通る唯一の形になる。
-この挙動は Claude Code 2.1.284 で確認した。
 将来ルートオプションの先頭配置が受け付けられなくなった場合は、`claude mcp list` などがエラーになって表面化する。
 エラーを出さずに壊れることはない。
 
@@ -104,9 +94,6 @@ gateway セッションでは、次の 2 つを行ってから本物の `claude`
 `ANTHROPIC_AUTH_TOKEN="$LLM_GATEWAY_API_KEY" command claude "$@"` の形は、その 1 コマンドの環境にだけ値を置く。
 呼び出し元のシェルには `ANTHROPIC_AUTH_TOKEN` が残らない (zsh / bash / sh で確認済み)。
 キーは本来の役割の名前 (`LLM_GATEWAY_API_KEY`) で持ち、Claude Code 向けの名前は起動時に作る値として扱う。
-
-`claude()` は POSIX sh 記法で書かれている。
-`local` が使えないため一時変数を作ると呼び出し元にリークしうるので、変数を作らずパスを 2 回書いている。
 
 ### `ANTHROPIC_BASE_URL` も条件に含める理由
 
@@ -156,11 +143,6 @@ JSON が無い場合のスキップは、何も表示されずに行われる。
 そこで `claude` を呼ぶと gateway のキーが ZAI 側に渡る。
 宛先の照合には社内 URL が要り公開リポジトリには置けないので、ゲートには入れていない。
 なお `claude-zai` 自体は bash の非対話スクリプトで、`functions.sh` を読まないため `claude()` を通らない。
-
-### 専用コマンドへの移行
-
-非対話の `ope -g claude` や bash 環境で gateway セッションを使う必要が生じたら、関数ではなく専用コマンド (例: `claude-gateway`) に移行する。
-このコマンドが `op run` による env 注入から `claude` の起動までをまとめて行う形にすれば、起動経路に依らずトークンが渡り、上の制限のうち関数が読まれるかどうかに起因するものは構造的になくなる。
 
 ## statusline
 

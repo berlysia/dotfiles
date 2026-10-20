@@ -134,20 +134,6 @@ Removed 1, kept 2, outside .git/worktree 0.
 - git 2.36 以降が必要です（`git worktree list --porcelain -z`）
 - agent-vm の machine の中（`/etc/agent-vm` があり、`agent-vm-node-modules` がある）では、`.git/worktree` 配下の worktree を `agent-vm-node-modules remove <wt> -- git -C <main> worktree remove -- <wt>` で消す。VM ローカルの `node_modules` を外してから消し、失敗したら張り直す（`docs/decisions/0022-agent-vm-node-modules.md`）。外せない、lock を取れない、ヘルパーが拒否した場合は、理由を表示して worktree を残す。消せた後にヘルパーが出した警告（保存先を消せなかった、など）は、黄色で表示する。host では挙動は変わらない。
 
-### 変更点（2026-10）
-
-- `--yes` が答える範囲が狭まった。従来は確認対象をすべて消したが、今は「commit がすべて origin にあり、merged と判定できない」ものだけを消す
-- `--non-interactive` が squash merge / rebase merge 済みの worktree を消すようになった（`.tmp/` `.entire/` に何も無い場合）
-- stash 検査を廃止した（worktree を消しても stash は残るため）
-- 引数なしの走査が `.git/worktree/` 配下に限られた。規約外の worktree は target で指定する
-- `help`（ハイフンなし）を受けなくなり、target として扱う。ヘルプは `--help` / `-h`
-- `git worktree remove` から `--force` を外したので、git が削除を拒否することがある
-- 終了コード 2（target 指定で残したものがある）を追加した
-- `--discard-tmp=<id>` を追加した。`.tmp/` `.entire/` にファイルがある merged worktree を、端末なしで消せる。`--yes` の範囲は変わらない
-- `.tmp/` `.entire/` にファイルがある merged worktree を残すとき、失うファイルの一覧と id を出すようになった。確認待ちの間に一覧が変わると残す
-- `status.showUntrackedFiles=no` の設定で `.tmp/` `.entire/` を検知できず、確認なしに消していたのを直した
-- マージの前に main が隣の行を変えていた branch を、merged と判定するようになった（#269）。出力に `context ignored` と、branch の在りかが付く
-
 ## 関連コマンド
 
 - `git-worktree-create`: 新しい worktree を作成
