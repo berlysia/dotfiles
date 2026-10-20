@@ -7,6 +7,9 @@
 - worktree の `C12: creating the same name twice reuses the worktree`
 - `complexity-delta` の `stays silent on a second stop with the same findings and logs once`
 - worktree の `C26: four different names in parallel all succeed, 20 times`（load average 15 前後で、worktree のテストファイルだけを実行しても 72 秒かかって落ちた）
+- 2026-10-21 に追加で見つかった 2 件（どちらも単体では通った）:
+  - `agent-learnings-cli.test.ts` の `add and remove refuse a read-only file with exit 1`（全件では 5.6 秒かかって落ち、単体では 0.2 秒で通った）
+  - `tests/tailnet-ssh.test.mjs` の `applySettings` から呼ぶ `ssh-keygen -y` が `spawnSync ... ETIMEDOUT`
 
 completion-gate はこの失敗で停止を止める。出力の抜粋は成功した行だけを示すことがあり、どのテストが落ちたかは `npm test` を全件実行して `✖` を探さないと分からなかった。
 
