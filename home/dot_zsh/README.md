@@ -4,9 +4,9 @@
 
 ## Files
 
-- `home/dot_zshenv` - Environment variables (loaded first by Zsh)
-- `home/dot_zshrc` - Interactive shell configuration
-- `home/dot_zsh/dot_zshenv` - Transitional only: shells that inherited `ZDOTDIR=$HOME/.zsh` read this instead of `~/.zshenv`. It drops `ZDOTDIR` and loads the real entry
+- `../dot_zshenv` - Environment variables (loaded first by Zsh)
+- `../dot_zshrc` - Interactive shell configuration
+- `dot_zshenv` - Transitional only: shells that inherited `ZDOTDIR=$HOME/.zsh` read this instead of `~/.zshenv`. It drops `ZDOTDIR` and loads the real entry
 
 ## Key Features
 
