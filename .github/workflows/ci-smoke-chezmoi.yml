@@ -55,6 +55,7 @@ jobs:
     # ubuntu-22.04 reaches end of support (~2027), migrate this job to a
     # bash:5.1 Docker container in a separate PR.
     runs-on: ubuntu-26.04
+    timeout-minutes: 10
 
     steps:
       - name: Checkout repository

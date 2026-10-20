@@ -16,6 +16,7 @@ jobs:
     # A manual run from another branch would rewrite Issues with an unmerged script.
     if: github.repository == 'berlysia/dotfiles' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       issues: write
