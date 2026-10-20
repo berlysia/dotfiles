@@ -26,6 +26,8 @@ koncise と yomiyasu を 1 つの文書に重ねて試したところ、次の 4
 
 利用者は、規則を役割ごとに 1 つの自作スキルへ集め、4 スキルは入口にする形（役割と入口の 2 層）を選んだ。検査は、tanteki の textlint と yomiyasu の照合の両方を持ち、役割を分けることを選んだ。
 
+前例として、koncise と imozuru は上流から派生して `.skills/` で自分で持っていた。tanteki は上流 `e9c4ae749fbe1b35cb740d9e7e0e00a00a0cb42b`（配備中だったのは `bcf2b1d`）、yomiyasu は上流 `79d15a621751cb7ad3bea556832209e9112e575f` を写した。写したのは上流の配布物（`skills/<名前>/`）だけで、tests、ベンチマーク、README、yomiyasu の hook と Codex の plugin 登録は写していない。
+
 元の残件は `git show 92aeaa1:docs/plans/writing-skills-by-role.md` と `git show 92aeaa1:docs/plans/koncise-followups.md` にある。
 
 ## Decision
@@ -69,12 +71,12 @@ koncise と yomiyasu を 1 つの文書に重ねて試したところ、次の 4
 
 ### 発火
 
-役割スキルには `disable-model-invocation: true` を付け、入口からの参照か、名前での依頼でだけ使う。Codex はこの欄を読まないので、description で止める。入口の発火の条件は変えない（tanteki と japanese-tech-writing は自動、koncise と yomiyasu は名前で呼ばれたときだけ）。`pr-description` と hub（berlysia-writing）は japanese-tech-writing を名前で読むので、名前と自動の発火を保つ。
+役割スキルには `disable-model-invocation: true` を付け、入口からの参照か、名前での依頼でだけ使う。この欄を付けるとスキルの一覧に載らないが、入口からはパスで読める。Codex はこの欄を読まないので、description で止める。入口の発火の条件は変えない（tanteki と japanese-tech-writing は自動、koncise と yomiyasu は名前で呼ばれたときだけ）。`pr-description` と hub（berlysia-writing）は japanese-tech-writing を名前で読むので、名前と自動の発火を保つ。
 
 ### tanteki の依存
 
 - textlint の依存は、グローバル textlint のランタイム（`home/dot_config/textlint/` → `~/.config/textlint/`）に置く。`bun.lock` を追跡し、`bun install --frozen-lockfile --ignore-scripts` で入れる。上流の `package.json` と `package-lock.json` はスキルから外し、信頼する版の記録を 1 つにする
-- `.skills/tanteki/node_modules` は `../../../.config/textlint/node_modules` への相対 symlink として追跡する。配備先の `~/.claude/skills/tanteki/` と `~/.codex/skills/tanteki/` から見て、`~/.config/textlint/node_modules` を指す。ホームから 3 階層の場所に配る前提である
+- `.skills/tanteki/node_modules` は `../../../.config/textlint/node_modules` への相対 symlink として追跡する。スキルの同期は `rsync -a --delete` で、配備先で入れた `node_modules` は次の同期で消えるため、依存は同期の外に置いた。配備先の `~/.claude/skills/tanteki/` と `~/.codex/skills/tanteki/` から見て、`~/.config/textlint/node_modules` を指す。ホームから 3 階層の場所に配る前提である
 - リポジトリと CI では、symlink の先が無い（dangling）ことを許す。tanteki の lint は配備先でだけ走らせる
 - `check-skill-refs.sh` の `--names-from` は、symlink の検査も絞る
 
@@ -115,7 +117,7 @@ tanteki（`iwasa-kosui/tanteki`）、yomiyasu（`nanaism/yomiyasu`）、koncise�
 - 取り込みの PR では、付表を見直し、変わったファイルの振り分けを確かめる
 - 付表に無い上流ファイルは、既定で入口に残す。役割へ移すかは人が決め、付表に行を足す
 
-`.oxfmtignore` に載せた tanteki と yomiyasu は、上流の写しに、文書化した編集を重ねたものである。整形で上流との差を広げないために、整形の対象から外している。
+`.oxfmtignore` に載せた tanteki と yomiyasu は、上流の写しに、文書化した編集を重ねたものである。整形で上流との差を広げないために、整形の対象から外している。外す前は、整形をかけると 38 ファイルに差が出た。
 
 ### 契約と検査
 
@@ -174,7 +176,7 @@ yomiyasu → koncise の順の「1 行目が読み手の行動か成果」は、
 | koncise | 13987    | 27567    | 1.97 | koncise 14160、`ja-fact-preservation` 13407                  |
 | tanteki | 54754    | 149495   | 2.73 | tanteki 自身 56166、役割 5 つ 54502、`slop-catalog.md` 38827 |
 
-目安は移行の前の 2 倍だった。tanteki は超えた。増えた分は、役割にまとめた規則と共有の一覧を tanteki も読む分で、tanteki 自身のファイルは移行の前とほぼ同じである。利用者は、今のまま受け入れることを選んだ。実際に読んだ量は、tanteki の 2 回で 81434 と 149495 だった（1 回目は一覧を読まなかった）。
+目安は、入口ごとに移行の前の 2 倍とした（移行の前でも tanteki は koncise の約 3.9 倍読むので、入口をまたいだ比べはしない）。tanteki は超えた。増えた分は、役割にまとめた規則と共有の一覧を tanteki も読む分で、tanteki 自身のファイルは移行の前とほぼ同じである。利用者は、今のまま受け入れることを選んだ。実際に読んだ量は、tanteki の 2 回で 81434 と 149495 だった（1 回目は一覧を読まなかった）。
 
 koncise の単体の出力を移行の前後で比べると、本文の差は同じ版を 2 回走らせたときの揺れと同じ程度だった（揺れ 2 組で 322 行、前後 4 組で 578 行）。加わったのは、読んだ役割の行である。
 
@@ -185,7 +187,7 @@ koncise の単体の出力を移行の前後で比べると、本文の差は同
 - 役割の分け方
   - koncise の手順を分ける、節を移す、位置を示す、列挙を絞る規則は、`ja-structure` に集めず koncise に残した。tanteki の構成の資料も tanteki に残した。どれも構成を動かす入口の固有の規則である
   - `ja-doc-profile` は対応表と共通の判断だけを持ち、種類の一覧は tanteki と yomiyasu に残した。一覧は道具（textlint の種類ごとの設定、yomiyasu の資料）と結びつくため
-  - `ja-notation` は定型句、評価語、比喩の一覧だけを共有し、整形は入口に残した。koncise の定型句と装飾の規則は koncise に残り、koncise は `ja-notation` を読まない
+  - `ja-notation` は定型句、評価語、比喩の一覧だけを共有し、整形は入口に残した。yomiyasu の照合の道具は `slop-catalog.md` を読まず、`references/lists/` の語の一覧だけを読むので、一覧の共有は道具に影響しない。koncise の定型句と装飾の規則は koncise に残り、koncise は `ja-notation` を読まない
   - 一覧の本体は yomiyasu に残し、`ja-notation` は写しを持たずに章の見出しで範囲を指す。上流の写しを役割へ移すと、上流との差が大きくなるため。yomiyasu が同じ skills の dir にあることが前提になる
   - 役割の範囲は、原文か資料のある作業である。japanese-tech-writing の原文の無い執筆の規則（節をまとめる、脇道を脚注へ移す）は japanese-tech-writing に残し、原文の無い執筆でだけ効く
 - 「食い違いを解く」の読み方: 規則の持ち主を 1 つにすることではなく、重ねた順ごとに、どちらの規則が勝つかが 1 つに決まることとした
