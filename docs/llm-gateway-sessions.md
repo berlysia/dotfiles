@@ -142,11 +142,11 @@ bash で `ope -gl` した後も env が残らない。
 JSON が無い場合のスキップは、何も表示されずに行われる。
 対処は、`~/.config/claude-local/gateway-mcp.json` の存在とパス、`LLM_GATEWAY_API_KEY` が設定されていることを確認することである。
 
-`/mcp` に出るが状態が `needs-auth` のときは、gateway が認証ヘッダーを受け付けていない。
-gateway によって受け付けるヘッダー名が違い、`Authorization: Bearer …` だけを受け付けるものもある。
-ヘッダーを直しても `needs-auth` が続くときは、Claude Code が `~/.claude/mcp-needs-auth-cache.json` にそのサーバーの判定を覚えている。
-そのサーバーの項目だけを消すと、次の起動で接続し直す。
-接続できてもツールが 1 つも出ないときは、MCP の `tools/list` が空を返しており、gateway 側のキーの権限や設定の問題である。
+`/mcp` に出るが状態が `needs-auth` のときは、その MCP サーバーが gateway のキーとは別に、利用者ごとの OAuth（外部サービスへの同意）を求めている。
+`/mcp` でそのサーバーを選び、Authenticate からブラウザで同意する。
+このとき gateway のキーは `Authorization` 以外のヘッダー（gateway が決めたもの）で送り、`Authorization` は Claude Code が OAuth で得たトークンを入れる欄として空けておく。
+`Authorization` を設定でキーに埋めると、gateway は通るが外部サービスのトークンが無く、接続できても `tools/list` が空になる。
+サーバーが OAuth を使うかは、認証なしで呼んだ 401 の `WWW-Authenticate` が指す `/.well-known/oauth-protected-resource/…` で分かる。
 
 ### gateway のキーが別のホストに送られる
 
