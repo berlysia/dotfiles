@@ -12,9 +12,18 @@ Use project formatter (biome/prettier/oxfmt as configured). Enforced by PostTool
   - Synchronous/pure: `getUserName`, `calculateTotal`, `formatDate`
 - Types: PascalCase interfaces (`UserProfile` not `IUserProfile`)
 
+## 書き分け
+
+> コードには How、テストコードには What、コミットログには Why、コードコメントには Why not を書こう
+> — 和田卓人（t-wada）
+
+- **コミットの本文に Why**: なぜこの変更をしたか（意図・決定・制約）は commit の本文に書く（Contextual Commits の action lines。`developer-experience.md`）
+- **コメントに Why not**: コードを読んで自然に浮かぶ別のやり方を、なぜ取らなかったかを書く
+- **今の姿と経緯を分ける**: コメント・README・設計文書・計画には、今そうなっていることを書く。いつ何があったか（日付つきの観察、変更の経緯、以前の状態）は経緯の記録にまとめる。経緯の記録は commit の本文、ADR、文書の経緯の節（日付つきで書き、後から書き換えない）
+
 ## Comments
 
-- **WHYを説明**: コードの理由・背景・制約を記述する
+- **Why not を書く**: 別のやり方を取らなかった理由・背景・制約を記述する（「書き分け」）
 - **型システム尊重**: TypeScript型定義から自明な情報はコメントで重複しない
 - **ビジネスロジック重視**: ドメイン知識・設計決定・トレードオフの説明に集中
 - **差分ではなく現状を説明する**: 変更適用後のコードが何をしているかに対して説明する
