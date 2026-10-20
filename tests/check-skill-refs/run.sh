@@ -54,7 +54,11 @@ COND_JTW='このスキルが最後で、重ねた入口に tanteki か yomiyasu 
 entry_md() {
   local roles=ja-fact-preservation need="" cond="" r
   case "$1" in
-    tanteki | yomiyasu)
+    tanteki)
+      roles="ja-fact-preservation, ja-doc-profile, ja-structure, ja-notation, ja-check"
+      need="ja-doc-profile ja-structure ja-notation ja-check"
+      ;;
+    yomiyasu)
       roles="ja-fact-preservation, ja-doc-profile, ja-structure, ja-check"
       need="ja-doc-profile ja-structure ja-check"
       ;;
@@ -304,9 +308,10 @@ test_c2_valid_entries() {
   skill ja-fact-preservation
   skill ja-doc-profile
   skill ja-structure
+  skill ja-notation
   skill ja-check
   raw_skill koncise "$c2_ok"
-  raw_skill tanteki $'---\nname: tanteki\n---\n\n# tanteki\n\n役割: ja-fact-preservation, ja-doc-profile, ja-structure, ja-check\n構成: 動かす\n'"$FACT_LINE"
+  raw_skill tanteki $'---\nname: tanteki\n---\n\n# tanteki\n\n役割: ja-fact-preservation, ja-doc-profile, ja-structure, ja-notation, ja-check\n構成: 動かす\n'"$FACT_LINE"
   raw_skill yomiyasu $'# y\n\n役割: ja-doc-profile、`ja-fact-preservation`、ja-structure ja-check\n構成: 動かさない\n'"$FACT_LINE"
   raw_skill japanese-tech-writing $'# j\n役割: ja-fact-preservation, ja-structure\n構成: 動かさない\n'"$FACT_LINE"$'\n\n'"$COND_JTW"
   run_s
@@ -337,6 +342,7 @@ test_c2_role_set_per_entry() {
   skill ja-fact-preservation
   skill ja-doc-profile
   skill ja-structure
+  skill ja-notation
   skill ja-check
   raw_skill koncise $'# k\n\n役割: ja-fact-preservation, ja-doc-profile\n構成: 動かす\n'"$FACT_LINE"
   run_s
@@ -350,7 +356,7 @@ test_c2_role_set_per_entry() {
   raw_skill tanteki $'# t\n\n役割: ja-doc-profile\n構成: 動かす\n'"$FACT_LINE"
   run_s
   assert_eq 1 "$RC" "tanteki without ja-fact-preservation exits 1"
-  raw_skill tanteki $'# t\n\n役割: ja-fact-preservation, ja-doc-profile, ja-structure, ja-check\n構成: 動かす\n'"$FACT_LINE"
+  raw_skill tanteki $'# t\n\n役割: ja-fact-preservation, ja-doc-profile, ja-structure, ja-notation, ja-check\n構成: 動かす\n'"$FACT_LINE"
   run_s
   assert_eq 0 "$RC" "each entry with its own role set exits 0 ($STDERR)"
 }
