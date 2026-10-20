@@ -54,13 +54,9 @@ COND_JTW='このスキルが最後で、重ねた入口に tanteki か yomiyasu 
 entry_md() {
   local roles=ja-fact-preservation need="" cond="" r
   case "$1" in
-    tanteki)
+    tanteki | yomiyasu)
       roles="ja-fact-preservation, ja-doc-profile, ja-structure, ja-notation, ja-check"
       need="ja-doc-profile ja-structure ja-notation ja-check"
-      ;;
-    yomiyasu)
-      roles="ja-fact-preservation, ja-doc-profile, ja-structure, ja-check"
-      need="ja-doc-profile ja-structure ja-check"
       ;;
     japanese-tech-writing)
       roles="ja-fact-preservation, ja-structure, ja-notation"
@@ -312,7 +308,7 @@ test_c2_valid_entries() {
   skill ja-check
   raw_skill koncise "$c2_ok"
   raw_skill tanteki $'---\nname: tanteki\n---\n\n# tanteki\n\n役割: ja-fact-preservation, ja-doc-profile, ja-structure, ja-notation, ja-check\n構成: 動かす\n'"$FACT_LINE"
-  raw_skill yomiyasu $'# y\n\n役割: ja-doc-profile、`ja-fact-preservation`、ja-structure ja-check\n構成: 動かさない\n'"$FACT_LINE"
+  raw_skill yomiyasu $'# y\n\n役割: ja-doc-profile、`ja-fact-preservation`、ja-structure ja-notation ja-check\n構成: 動かさない\n'"$FACT_LINE"
   raw_skill japanese-tech-writing $'# j\n役割: ja-fact-preservation, ja-structure, ja-notation\n構成: 動かさない\n'"$FACT_LINE"$'\n\n'"$COND_JTW"
   run_s
   assert_eq 0 "$RC" "valid entries exit 0 ($STDERR)"
@@ -471,7 +467,7 @@ test_koncise_role_line_with_structure() {
 }
 test_yomiyasu_role_line_without_check() {
   all_entries
-  edit_skill yomiyasu '役割: ja-fact-preservation, ja-doc-profile, ja-structure, ja-check' '役割: ja-fact-preservation, ja-doc-profile, ja-structure'
+  edit_skill yomiyasu '役割: ja-fact-preservation, ja-doc-profile, ja-structure, ja-notation, ja-check' '役割: ja-fact-preservation, ja-doc-profile, ja-structure, ja-notation'
   run_s
   assert_eq 1 "$RC" "yomiyasu without ja-check on the role line exits 1"
   assert_contains "$STDERR" 'yomiyasu/SKILL.md: role line does not list ja-check' "missing ja-check is reported"
