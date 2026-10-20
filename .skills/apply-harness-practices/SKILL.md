@@ -99,7 +99,7 @@ MVH Checklist の各項目について、Phase 1 の結果（ユーザーレベ�
 ### ユーザーレベルで実装済み
 - [x] PostToolUse品質ループ — ~/.claude/settings.json で全プロジェクトに適用中
 - [x] Stop Hook品質ゲート — completion-gate で実装済み
-- [x] PreToolUse Safety Gates — file-access-guard, linter-config-guard で実装済み
+- [x] PreToolUse Safety Gates — file-access-guard で実装済み
 
 > **Note**: ユーザーレベル設定は全プロジェクトに自動適用されます。
 > チーム開発でプロジェクトにも追加する場合、同じ hook が二重実行されるため、
