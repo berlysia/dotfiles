@@ -177,6 +177,23 @@ const SAFE_BASH_PATTERNS = [
   /^pnpm\s+(biome|oxfmt|oxlint|eslint|prettier|knip|tsc|tsgo|vitest)\b/,
   // Dev tool execution (trusted tools only, not arbitrary packages)
   /^(npx|pnpx|bunx)\s+(--no\s+)?(vitest|jest|prettier|eslint|oxlint|oxfmt|tsc|tsgo|knip|stylelint|biome)\b/,
+  // fallow: not in the tool lists above, whose `\b` ends the match and ignores the subcommand
+  // (`fallow fix` rewrites files, `watch` stays resident, `similar-code` downloads a model). Only the
+  // read-only subcommands, and then only arguments of plain words that are not an option writing a file:
+  // a quoted `"--save-baseline"` is not a plain word, so it is left to the next layer, not read as a flag.
+  // The write options come from `fallow <subcommand> --help`; any option fallow adds later still passes
+  // as a plain word, which the short subcommand list keeps small.
+  new RegExp(
+    String.raw`^(?:(?:npx|pnpx|bunx)[ \t]+(?:--no[ \t]+)?|pnpm[ \t]+)fallow[ \t]+(?:dead-code|dupes|health|audit|list|explain)` +
+      String.raw`(?=(?:[ \t]+(?:2>&1|>/dev/null|2>/dev/null|</dev/null|(?!(?:--(?:save-baseline|save-regression-baseline|save-snapshot|output-file|sarif-file|mark-viewed)(?![A-Za-z0-9_./@+-])|-[A-Za-z]*o))[A-Za-z0-9_./@+=-]+))*[ \t]*$)`,
+  ),
+  // jactionlint: allowed only when every argument is an option listed here with a value from the list
+  // (--fix, --baseline-write, --init-config and --migrate-* write files; --shellcheck=CMD, --pyflakes=CMD
+  // and --ruff=CMD run a command; -c reads another config; a file argument or a Go template value is free-form).
+  // --min-severity takes error|warn|info (`jactionlint --help`).
+  new RegExp(
+    String.raw`^jactionlint(?=(?:[ \t]+(?:2>&1|>/dev/null|2>/dev/null|</dev/null|--format(?:=|[ \t]+)(?:text|oneline|json|jsonl|sarif|gcc|github|summary)|--profile(?:=|[ \t]+)(?:default|correctness|pedantic)|--min-severity(?:=|[ \t]+)(?:error|warn|info)|--online(?:=cache)?|--no-online|--diff|--show-fix-status|--no-color))*[ \t]*$)`,
+  ),
   // Git worktree management (custom script; create also installs dependencies, see docs/commands/git-worktree-create.md)
   /^git-worktree-create\b/,
   // cleanup: allowed only when every argument is a flag listed here, a redirect scanSafeList keeps in a
