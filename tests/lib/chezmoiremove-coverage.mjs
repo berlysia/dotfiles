@@ -338,11 +338,18 @@ export function loadRepoInputs(root) {
 }
 
 // One call for all sources: `chezmoi target-path` fails on missing files and
-// is slow to start. Absolute paths make the result independent of cwd.
+// is slow to start. `--source` points chezmoi at this checkout (it reads
+// .chezmoiroot from there); without it chezmoi uses the configured source
+// dir and rejects every path from a worktree or another clone.
 export function chezmoiTargetPaths(root, sourcePaths) {
   const output = execFileSync(
     "chezmoi",
-    ["target-path", ...sourcePaths.map((source) => join(root, source))],
+    [
+      "--source",
+      root,
+      "target-path",
+      ...sourcePaths.map((source) => join(root, source)),
+    ],
     { cwd: root, encoding: "utf8" },
   );
   return lines(output);

@@ -288,7 +288,7 @@ done
 if [ "$CHEZMOIREMOVE_INPUTS_CHANGED" = true ] && [ "$HOOK_FILES_MODIFIED" != true ] && [ "${FORCE_HOOK_TESTS:-}" != "1" ]; then
     echo -e "${BLUE}🧹 Checking .chezmoiremove coverage...${NC}"
     if ! (cd "${REPO_ROOT}" && node --import ./home/dot_claude/hooks/tests/preload-test-env.mjs --test tests/chezmoiremove-coverage.test.mjs); then
-        echo -e "${RED}❌ .chezmoiremove coverage check failed (see the lines to add above)${NC}"
+        echo -e "${RED}❌ .chezmoiremove coverage check failed (the test output above names the lines to add or remove)${NC}"
         EXIT_CODE=1
     else
         echo -e "${GREEN}✓ .chezmoiremove covers removed source files${NC}"
