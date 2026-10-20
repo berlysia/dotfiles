@@ -25,11 +25,6 @@ dot_claude/dot_last-insight-digest-acked
 **/node_modules
 **/node_modules/**
 
-# Z.ai - only on allowed machines
-{{ if not (dig "only_private" false .) }}
-dot_local/bin/executable_claude-zai
-{{ end }}
-
 # Windows専用ファイル - Windows以外では無視
 {{ if ne .chezmoi.os "windows" }}
 Documents

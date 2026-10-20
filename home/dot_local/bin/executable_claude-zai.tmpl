@@ -1,3 +1,8 @@
+{{- /* Renders empty on machines without only_private, and chezmoi removes an
+empty target, so the wrapper is deployed only to the allowed machines and is
+cleaned up from the others on apply. A .chezmoiignore line would only stop
+deploying it, not remove copies already there. */ -}}
+{{- if dig "only_private" false . -}}
 #!/usr/bin/env bash
 
 set -euo pipefail
@@ -73,3 +78,4 @@ export ANTHROPIC_DEFAULT_SONNET_MODEL="glm-4.7"
 export ANTHROPIC_DEFAULT_OPUS_MODEL="glm-4.7"
 
 exec claude "$@"
+{{- end }}
