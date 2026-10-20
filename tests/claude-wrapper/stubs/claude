@@ -1,0 +1,7 @@
+#!/bin/sh
+# Test double for the claude binary: prints each received argument on its own line,
+# then whether ANTHROPIC_AUTH_TOKEN reached the process.
+for arg in "$@"; do
+  printf 'arg=%s\n' "$arg"
+done
+if [ -n "${ANTHROPIC_AUTH_TOKEN:-}" ]; then echo "token=set"; else echo "token=unset"; fi

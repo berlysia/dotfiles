@@ -28,6 +28,7 @@
     "test:dotfiles-sync-doctor": "bash tests/dotfiles-sync-doctor/run.sh",
     "test:install-packages": "bash tests/install-packages/run.sh",
     "test:shell-gate": "bash tests/shell-gate/run.sh",
+    "test:claude-wrapper": "bash tests/claude-wrapper/run.sh",
     "lint:codex": "./scripts/check-codex-config.sh",
     "lint:oxlint": "oxlint --ignore-pattern '.claude/skills/' --ignore-pattern '.codex/skills/' --ignore-pattern '.skills/' --ignore-pattern 'mods/' --ignore-pattern 'node_modules/' .",
     "lint": "npm run format:check && npm run lint:oxlint && npm run lint:shell && npm run lint:actions && npm run lint:codex",

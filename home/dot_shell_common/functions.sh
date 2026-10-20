@@ -202,7 +202,9 @@ oplg()  { ope -gl; }
 # by `ope -gi claude` from ~/.env.1password.local). Claude Code reads the key as
 # ANTHROPIC_AUTH_TOKEN, so it is handed over only to the claude process, and
 # gateway MCP servers that use the same key are attached when the machine has a
-# local config for them. Without a base URL the key is not passed on, so it is
+# local config for them. Machine-local plugins (each directory, or symlink to one,
+# directly under ~/.config/claude-local/plugins) are attached the same way, in name
+# order, ahead of the MCP config. Without a base URL the key is not passed on, so it is
 # never sent to the default Anthropic API. See docs/llm-gateway-sessions.md.
 claude() {
 	if [ -z "$LLM_GATEWAY_API_KEY" ] || [ -z "$ANTHROPIC_BASE_URL" ]; then
@@ -214,6 +216,15 @@ claude() {
 		# arguments, and only a leading root option is accepted by every subcommand.
 		set -- --mcp-config="$HOME/.config/claude-local/gateway-mcp.json" "$@"
 	fi
+	# find + sort instead of a glob: an unmatched glob is an error in zsh but a
+	# literal in bash, and nullglob would have to be toggled in the user's shell.
+	# Iterating in reverse order and prepending yields name order in argv.
+	local plugin_dir
+	while IFS= read -r plugin_dir; do
+		[ -d "$plugin_dir" ] && set -- --plugin-dir="$plugin_dir" "$@"
+	done <<EOF_PLUGINS
+$(find "$HOME/.config/claude-local/plugins" -mindepth 1 -maxdepth 1 2>/dev/null | LC_ALL=C sort -r)
+EOF_PLUGINS
 	ANTHROPIC_AUTH_TOKEN="$LLM_GATEWAY_API_KEY" command claude "$@"
 }
 

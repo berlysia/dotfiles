@@ -43,6 +43,14 @@ gateway の URL、MCP サーバー名、`op://` 参照は公開リポジトリ�
 JSON を置くかどうかが、そのマシンで gateway の MCP を使うかどうかの意思表示になる。
 JSON が無ければ MCP の追加だけがスキップされ、キーの受け渡しは行われる。
 
+gateway セッションだけで使う plugin は、`~/.config/claude-local/plugins/<名前>/` に plugin のディレクトリごと置く。
+直下の各ディレクトリ (ディレクトリへの symlink を含む) が、名前順に `--plugin-dir` で読み込まれる。
+このディレクトリは利用者本人が管理するもので、置いた plugin は検証なしでそのまま読み込まれる。
+
+`~/.env.1password.local`、`gateway-mcp.json`、`plugins/` はこのリポジトリが管理しないファイルである。
+社内固有の値を持つので、別の chezmoi source (private リポジトリ、config と state を分けたもの) が持つことがある。
+その場合も、このリポジトリから見た置き場所と読み込み方は変わらない。
+
 ### 旧形式からの移行
 
 `~/.env.1password.local` で `ANTHROPIC_AUTH_TOKEN=op://...` を直接 export していた場合は、その行を `LLM_GATEWAY_API_KEY=` の行に **置き換える**。
@@ -64,6 +72,7 @@ gateway セッションでは、次の 2 つを行ってから本物の `claude`
 
 1. キーを `ANTHROPIC_AUTH_TOKEN` として `claude` プロセスにだけ渡す (Claude Code はこの名前でキーを読む)
 2. `~/.config/claude-local/gateway-mcp.json` があれば `--mcp-config=<そのパス>` を先頭に付け、gateway 経由の MCP サーバーを追加する
+3. `~/.config/claude-local/plugins/` の直下にディレクトリがあれば、名前順に `--plugin-dir=<そのパス>` をさらに先頭に付ける
 
 どちらかの環境変数が欠ければ、何もせず `command claude` に素通しする。
 
@@ -132,6 +141,12 @@ bash で `ope -gl` した後も env が残らない。
 原因は、JSON が無いか、`LLM_GATEWAY_API_KEY` が空で認証ヘッダーが空展開されているかのどちらかである。
 JSON が無い場合のスキップは、何も表示されずに行われる。
 対処は、`~/.config/claude-local/gateway-mcp.json` の存在とパス、`LLM_GATEWAY_API_KEY` が設定されていることを確認することである。
+
+`/mcp` に出るが状態が `needs-auth` のときは、gateway が認証ヘッダーを受け付けていない。
+gateway によって受け付けるヘッダー名が違い、`Authorization: Bearer …` だけを受け付けるものもある。
+ヘッダーを直しても `needs-auth` が続くときは、Claude Code が `~/.claude/mcp-needs-auth-cache.json` にそのサーバーの判定を覚えている。
+そのサーバーの項目だけを消すと、次の起動で接続し直す。
+接続できてもツールが 1 つも出ないときは、MCP の `tools/list` が空を返しており、gateway 側のキーの権限や設定の問題である。
 
 ### gateway のキーが別のホストに送られる
 
