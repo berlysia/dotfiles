@@ -63,8 +63,8 @@ entry_md() {
       need="ja-doc-profile ja-structure ja-check"
       ;;
     japanese-tech-writing)
-      roles="ja-fact-preservation, ja-structure"
-      need="ja-structure ja-check"
+      roles="ja-fact-preservation, ja-structure, ja-notation"
+      need="ja-structure ja-notation ja-check"
       cond="$COND_JTW"
       ;;
     koncise)
@@ -313,7 +313,7 @@ test_c2_valid_entries() {
   raw_skill koncise "$c2_ok"
   raw_skill tanteki $'---\nname: tanteki\n---\n\n# tanteki\n\n役割: ja-fact-preservation, ja-doc-profile, ja-structure, ja-notation, ja-check\n構成: 動かす\n'"$FACT_LINE"
   raw_skill yomiyasu $'# y\n\n役割: ja-doc-profile、`ja-fact-preservation`、ja-structure ja-check\n構成: 動かさない\n'"$FACT_LINE"
-  raw_skill japanese-tech-writing $'# j\n役割: ja-fact-preservation, ja-structure\n構成: 動かさない\n'"$FACT_LINE"$'\n\n'"$COND_JTW"
+  raw_skill japanese-tech-writing $'# j\n役割: ja-fact-preservation, ja-structure, ja-notation\n構成: 動かさない\n'"$FACT_LINE"$'\n\n'"$COND_JTW"
   run_s
   assert_eq 0 "$RC" "valid entries exit 0 ($STDERR)"
 }
