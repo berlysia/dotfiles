@@ -1,6 +1,4 @@
-# File types that oxfmt cannot format (handled by prettier instead)
-*.yml
-*.yaml
+# File types that oxfmt does not format
 *.toml
 *.sh
 *.tmpl
@@ -14,3 +12,6 @@ yarn.lock
 # Verbatim upstream copies: formatting them would mix formatter noise into diffs when pulling upstream updates
 .skills/tanteki/
 .skills/yomiyasu/
+
+# Digit-1 template notation makes oxfmt fail with a syntax error
+.skills/claude-action-bootstrap/assets/workflows/auto-fix-dependencies.yml

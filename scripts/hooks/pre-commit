@@ -49,8 +49,8 @@ STAGED_ALL_FILES=$(git diff --cached --name-only --diff-filter=ACM || true)
 # 対象ファイル集合とフォーマッタのフラグをここで再定義してはならない。
 # かつては `--ignore-path .oxfmtignore` を欠いた独自の oxfmt 呼び出しをしており、
 # CI の format:check と対象が 17 ファイルずれた結果、その隙間に整形違反が
-# 入り込んだ (.skills/japanese-tech-writing/SKILL.md)。prettier が担当する
-# yml/yaml に至っては commit 時に一度も検査されていなかった。
+# 入り込んだ (.skills/japanese-tech-writing/SKILL.md)。
+# yml/yaml も同じ oxfmt の呼び出しで整形され、commit 時に検査される。
 #
 # リポジトリ全体を整形することで、staged 以外の経路で混入した違反や
 # フォーマッタのバージョン更新による drift も同じ commit で解消される
