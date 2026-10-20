@@ -2,7 +2,7 @@
 
 ## Formatting
 
-Use project formatter (biome/prettier/oxfmt as configured). Enforced by PostToolUse hook.
+Use project formatter (oxfmt/biome/prettier as configured). Enforced by PostToolUse hook.
 
 ## Naming
 
@@ -79,7 +79,7 @@ Do not implement backward compatibility, fallbacks, or migration shims unless ex
 - Minimal dependencies, prefer built-ins
 - Respect existing architecture, maintain unidirectional dependency graph
 - Record significant decisions in ADRs (`docs/decisions/`)
-- Abstract repeated patterns, use `similarity-ts` for detection, `knip` for cleaning
+- Abstract repeated patterns, use `similarity-ts` for detection, `fallow` for cleaning
 
 ## Testing
 
