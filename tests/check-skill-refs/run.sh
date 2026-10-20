@@ -55,12 +55,12 @@ entry_md() {
   local roles=ja-fact-preservation need="" cond="" r
   case "$1" in
     tanteki | yomiyasu)
-      roles="ja-fact-preservation, ja-doc-profile, ja-structure, ja-check"
-      need="ja-doc-profile ja-structure ja-check"
+      roles="ja-fact-preservation, ja-doc-profile, ja-structure, ja-notation, ja-check"
+      need="ja-doc-profile ja-structure ja-notation ja-check"
       ;;
     japanese-tech-writing)
-      roles="ja-fact-preservation, ja-structure"
-      need="ja-structure ja-check"
+      roles="ja-fact-preservation, ja-structure, ja-notation"
+      need="ja-structure ja-notation ja-check"
       cond="$COND_JTW"
       ;;
     koncise)
@@ -304,11 +304,12 @@ test_c2_valid_entries() {
   skill ja-fact-preservation
   skill ja-doc-profile
   skill ja-structure
+  skill ja-notation
   skill ja-check
   raw_skill koncise "$c2_ok"
-  raw_skill tanteki $'---\nname: tanteki\n---\n\n# tanteki\n\n役割: ja-fact-preservation, ja-doc-profile, ja-structure, ja-check\n構成: 動かす\n'"$FACT_LINE"
-  raw_skill yomiyasu $'# y\n\n役割: ja-doc-profile、`ja-fact-preservation`、ja-structure ja-check\n構成: 動かさない\n'"$FACT_LINE"
-  raw_skill japanese-tech-writing $'# j\n役割: ja-fact-preservation, ja-structure\n構成: 動かさない\n'"$FACT_LINE"$'\n\n'"$COND_JTW"
+  raw_skill tanteki $'---\nname: tanteki\n---\n\n# tanteki\n\n役割: ja-fact-preservation, ja-doc-profile, ja-structure, ja-notation, ja-check\n構成: 動かす\n'"$FACT_LINE"
+  raw_skill yomiyasu $'# y\n\n役割: ja-doc-profile、`ja-fact-preservation`、ja-structure ja-notation ja-check\n構成: 動かさない\n'"$FACT_LINE"
+  raw_skill japanese-tech-writing $'# j\n役割: ja-fact-preservation, ja-structure, ja-notation\n構成: 動かさない\n'"$FACT_LINE"$'\n\n'"$COND_JTW"
   run_s
   assert_eq 0 "$RC" "valid entries exit 0 ($STDERR)"
 }
@@ -337,6 +338,7 @@ test_c2_role_set_per_entry() {
   skill ja-fact-preservation
   skill ja-doc-profile
   skill ja-structure
+  skill ja-notation
   skill ja-check
   raw_skill koncise $'# k\n\n役割: ja-fact-preservation, ja-doc-profile\n構成: 動かす\n'"$FACT_LINE"
   run_s
@@ -350,7 +352,7 @@ test_c2_role_set_per_entry() {
   raw_skill tanteki $'# t\n\n役割: ja-doc-profile\n構成: 動かす\n'"$FACT_LINE"
   run_s
   assert_eq 1 "$RC" "tanteki without ja-fact-preservation exits 1"
-  raw_skill tanteki $'# t\n\n役割: ja-fact-preservation, ja-doc-profile, ja-structure, ja-check\n構成: 動かす\n'"$FACT_LINE"
+  raw_skill tanteki $'# t\n\n役割: ja-fact-preservation, ja-doc-profile, ja-structure, ja-notation, ja-check\n構成: 動かす\n'"$FACT_LINE"
   run_s
   assert_eq 0 "$RC" "each entry with its own role set exits 0 ($STDERR)"
 }
@@ -465,7 +467,7 @@ test_koncise_role_line_with_structure() {
 }
 test_yomiyasu_role_line_without_check() {
   all_entries
-  edit_skill yomiyasu '役割: ja-fact-preservation, ja-doc-profile, ja-structure, ja-check' '役割: ja-fact-preservation, ja-doc-profile, ja-structure'
+  edit_skill yomiyasu '役割: ja-fact-preservation, ja-doc-profile, ja-structure, ja-notation, ja-check' '役割: ja-fact-preservation, ja-doc-profile, ja-structure, ja-notation'
   run_s
   assert_eq 1 "$RC" "yomiyasu without ja-check on the role line exits 1"
   assert_contains "$STDERR" 'yomiyasu/SKILL.md: role line does not list ja-check' "missing ja-check is reported"
@@ -549,6 +551,78 @@ test_references_backref_names() {
   run_s
   assert_eq 1 "$RC" "tanteki/references mentioning ja-check exits 1"
   assert_contains "$STDERR" 'tanteki/references/lint.md: entry references must not mention ja-check' "ja-check backref is reported"
+}
+
+# ---- ja-notation: role line, backref, references, catalog headings ---------------------------------
+test_jtw_role_line_without_notation() {
+  all_entries
+  edit_skill japanese-tech-writing '役割: ja-fact-preservation, ja-structure, ja-notation' '役割: ja-fact-preservation, ja-structure'
+  run_s
+  assert_eq 1 "$RC" "japanese-tech-writing without ja-notation on the role line exits 1"
+  assert_contains "$STDERR" 'japanese-tech-writing/SKILL.md: role line does not list ja-notation' "missing ja-notation is reported"
+}
+test_koncise_role_line_with_notation() {
+  all_entries
+  edit_skill koncise '役割: ja-fact-preservation' '役割: ja-fact-preservation, ja-notation'
+  run_s
+  assert_eq 1 "$RC" "koncise listing ja-notation on the role line exits 1"
+  assert_contains "$STDERR" 'koncise/SKILL.md: role line lists ja-notation, which this entry must not list' "extra ja-notation is reported"
+}
+test_entry_references_mention_notation() {
+  all_entries
+  file yomiyasu/references/doc-types/promo.md 'see ja-notation'
+  run_s
+  assert_eq 1 "$RC" "yomiyasu/references mentioning ja-notation exits 1"
+  assert_contains "$STDERR" 'yomiyasu/references/doc-types/promo.md: entry references must not mention ja-notation' "ja-notation backref is reported"
+}
+test_notation_reference_targets() {
+  local t want
+  for t in yomiyasu/SKILL.md:1 tanteki/SKILL.md:1 ja-structure/SKILL.md:1 yomiyasu/references/slop-catalog.md:0 yomiyasu/references/../../x.md:1; do
+    all_entries
+    file yomiyasu/references/slop-catalog.md $'## 1. a'
+    file x.md 'x'
+    skill ja-notation $'## 共有の一覧\n\n- 「a」\n\nsee `../'"${t%:*}"'`'
+    want="${t##*:}"
+    run_s
+    assert_eq "$want" "$RC" "ja-notation pointing at ${t%:*} exits $want ($STDERR)"
+  done
+}
+test_notation_dir_removed() {
+  all_entries
+  rm -rf "${S:?}/ja-notation"
+  run_s
+  assert_eq 1 "$RC" "ja-notation dir removed while entries list it exits 1"
+  assert_contains "$STDERR" 'role skill "ja-notation" does not exist' "missing ja-notation is reported"
+}
+# setup_notation_fixture: all entries plus the real ja-notation SKILL.md and slop-catalog.md
+setup_notation_fixture() {
+  all_entries
+  mkdir -p "$S/yomiyasu/references"
+  cp "$REPO_ROOT/.skills/ja-notation/SKILL.md" "$S/ja-notation/SKILL.md"
+  cp "$REPO_ROOT/.skills/yomiyasu/references/slop-catalog.md" "$S/yomiyasu/references/slop-catalog.md"
+}
+test_notation_headings_match() {
+  setup_notation_fixture
+  run_s
+  assert_eq 0 "$RC" "real ja-notation and slop-catalog headings exit 0 ($STDERR)"
+}
+test_notation_heading_rewritten() {
+  setup_notation_fixture
+  edit_catalog '## 8. 成り立たない比喩と、残してよい比喩' '## 8. 成り立たない比喩と残してよい比喩'
+  run_s
+  assert_eq 1 "$RC" "a rewritten catalog heading exits 1"
+  assert_contains "$STDERR" 'ja-notation/SKILL.md: chapter heading name #8 in the shared-list section is not a heading of yomiyasu/references/slop-catalog.md' "rewritten heading is reported"
+}
+test_notation_heading_renumbered_ok() {
+  setup_notation_fixture
+  edit_catalog '## 8. 成り立たない' '## 12. 成り立たない'
+  run_s
+  assert_eq 0 "$RC" "a renumbered heading with the same name exits 0 ($STDERR)"
+}
+edit_catalog() {
+  local f="$S/yomiyasu/references/slop-catalog.md" c
+  c=$(<"$f")
+  printf '%s\n' "${c/"$1"/"$2"}" >"$f"
 }
 
 # ---- runner --------------------------------------------------------------------------------------
