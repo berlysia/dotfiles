@@ -7,6 +7,11 @@ idiomatic_version_file_enable_tools = ["node"]
 experimental = true
 minimum_release_age = "7d"
 
+[settings.self_update]
+# Auto updates fall back to minimum_release_age above, so mise itself also waits 7d.
+# To take a fresh release sooner, run `mise self-update <VERSION>`, which skips the age gate.
+auto = true
+
 [settings.github]
 # gh keeps its token in the OS keyring, so hosts.yml has no oauth_token and
 # gh_cli_tokens finds nothing; ask gh directly. Private repos need the token,
