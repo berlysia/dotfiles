@@ -125,26 +125,64 @@ function projectHasStopHooks(): boolean {
 // reads as a failure, so leave ample room.
 const CHECK_MAX_BUFFER = 64 * 1024 * 1024;
 
-export function runCheck(command: string, label: string): string | null {
+const DEFAULT_CHECK_TIMEOUT_MS = 120000;
+
+function outputText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (Buffer.isBuffer(value)) return value.toString("utf-8");
+  return "";
+}
+
+/**
+ * The text the gate shows for a failed check. A timeout is told apart from a
+ * failure because execSync kills the child at the limit and the output so far
+ * says nothing about whether the code is right: the model must not "fix" code
+ * for it. Decided by `code`, never by the message, since a timed-out
+ * spawnSync error can carry other words. Pure: importing this file runs nothing.
+ */
+export function describeCheckFailure(
+  error: unknown,
+  label: string,
+  timeoutMs: number,
+): string {
+  const err = (typeof error === "object" && error !== null ? error : {}) as {
+    stdout?: unknown;
+    stderr?: unknown;
+    code?: unknown;
+  };
+  if (err.code === "ENOBUFS") {
+    return `${label} failed: output exceeded ${CHECK_MAX_BUFFER} bytes (ENOBUFS); the run was cut off, not judged`;
+  }
+  // stdout last: test runners print the failure summary at the end of stdout,
+  // and the tail below would otherwise show only stderr.
+  const output = (outputText(err.stderr) + outputText(err.stdout)).trim();
+  const tail = output.split("\n").slice(-20).join("\n");
+  if (err.code === "ETIMEDOUT") {
+    return [
+      `${label} timed out after ${timeoutMs / 1000} s: the run was cut off, not judged`,
+      "This is not a code failure. Do not change code because of it. Check for leftover test or git processes and for machine load, then run the check once more. If it times out again, report that to the user instead of retrying.",
+      "Child processes of the cut-off run may still be running.",
+      `Output until the cut-off (last 20 lines):\n${tail}`,
+    ].join("\n");
+  }
+  return `${label} failed:\n${tail}`;
+}
+
+export function runCheck(
+  command: string,
+  label: string,
+  timeoutMs: number = DEFAULT_CHECK_TIMEOUT_MS,
+): string | null {
   try {
     execSync(command, {
       encoding: "utf-8",
-      timeout: 120000,
+      timeout: timeoutMs,
       maxBuffer: CHECK_MAX_BUFFER,
       stdio: ["pipe", "pipe", "pipe"],
     });
     return null;
   } catch (error: unknown) {
-    const err = error as { stdout?: string; stderr?: string; code?: string };
-    if (err.code === "ENOBUFS") {
-      return `${label} failed: output exceeded ${CHECK_MAX_BUFFER} bytes (ENOBUFS); the run was cut off, not judged`;
-    }
-    // stdout last: test runners print the failure summary at the end of stdout,
-    // and the tail below would otherwise show only stderr.
-    const output = ((err.stderr || "") + (err.stdout || "")).trim();
-    const lines = output.split("\n");
-    const tail = lines.slice(-20).join("\n");
-    return `${label} failed:\n${tail}`;
+    return describeCheckFailure(error, label, timeoutMs);
   }
 }
 
