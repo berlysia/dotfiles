@@ -147,6 +147,16 @@ function packageScriptProblems(pkg: {
       if (!scripts[name]?.includes(glob)) problems.push(`${name}: ${glob}`);
     }
   }
+  // Only `test` turns the git shim on; the others clear it so a value leaked
+  // from the caller cannot reach them.
+  if (!/(^|\s)CLAUDE_TEST_FORBID_GIT=1\s/.test(scripts["test"] ?? "")) {
+    problems.push("test: CLAUDE_TEST_FORBID_GIT=1");
+  }
+  for (const name of ["test:perf", "test:heavy"]) {
+    if (!/(^|\s)CLAUDE_TEST_FORBID_GIT=\s/.test(scripts[name] ?? "")) {
+      problems.push(`${name}: empty CLAUDE_TEST_FORBID_GIT=`);
+    }
+  }
   const steps = (scripts["check"] ?? "").split("&&").map((s) => s.trim());
   const order = [
     "npm run test",
@@ -279,6 +289,26 @@ describe("heavy suite wiring (spec K5)", () => {
       },
     };
     ok(packageScriptProblems(swapped).length > 0);
+    const shimInHeavy = {
+      scripts: {
+        ...pkg.scripts,
+        "test:heavy": (pkg.scripts["test:heavy"] ?? "").replace(
+          "CLAUDE_TEST_FORBID_GIT=",
+          "CLAUDE_TEST_FORBID_GIT=1",
+        ),
+      },
+    };
+    ok(packageScriptProblems(shimInHeavy).length > 0);
+    const shimMissing = {
+      scripts: {
+        ...pkg.scripts,
+        test: (pkg.scripts["test"] ?? "").replace(
+          "CLAUDE_TEST_FORBID_GIT=1 ",
+          "",
+        ),
+      },
+    };
+    ok(packageScriptProblems(shimMissing).length > 0);
     const noGlob = {
       scripts: { ...pkg.scripts, "test:heavy": "node --test" },
     };

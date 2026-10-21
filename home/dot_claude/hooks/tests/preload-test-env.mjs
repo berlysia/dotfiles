@@ -16,6 +16,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { enableGitShim } from "./support/git-shim.mjs";
 
 // Git exports repository-local variables to hooks (GIT_DIR, GIT_INDEX_FILE,
 // ...). When the test suite runs from the pre-commit hook, every `git` a test
@@ -63,6 +64,13 @@ if (!process.env.CLAUDE_LOGS_DIR) {
       // Best-effort cleanup; leftover temp dirs are harmless.
     }
   });
+}
+
+// Only `bun run test` (the unit suite) sets this, and only to exactly "1".
+// perf and heavy clear it, so a value leaked from the caller does not reach
+// them. See support/git-shim.mjs.
+if (process.env.CLAUDE_TEST_FORBID_GIT === "1") {
+  enableGitShim(process.env, process.argv[1] ?? "");
 }
 
 // lib/bash-parser.ts gives up on a parse after 100ms of wall clock. Under a
