@@ -1,6 +1,5 @@
 import { strict as assert } from "node:assert";
-import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -15,12 +14,12 @@ const REPO_ROOT = fileURLToPath(new URL("../../../../../", import.meta.url));
 const IMPL_DIR = "home/dot_claude/hooks/implementations/";
 const ENTRYPOINT = /^if \(import\.meta\.main\) \{/m;
 
+// The directory listing, not `git ls-files`: unit tests must not start git
+// (tests/README_TESTING.md), and chezmoi deploys what is on disk, tracked or not.
 function implementationFiles(): string[] {
-  const output = execFileSync("git", ["ls-files", "--", `${IMPL_DIR}*.ts`], {
-    cwd: REPO_ROOT,
-    encoding: "utf-8",
-  });
-  return output.split("\n").filter((line) => line.length > 0);
+  return readdirSync(join(REPO_ROOT, IMPL_DIR), { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".ts"))
+    .map((entry) => `${IMPL_DIR}${entry.name}`);
 }
 
 describe("hook implementations entrypoint", () => {
