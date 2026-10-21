@@ -17,14 +17,74 @@ runs:
     # Inputs are not shell-expanded, so a caller's "$HOME/.local/bin" arrives as that literal text. Expand a
     # leading $HOME or ~ here; otherwise chezmoi lands in a directory literally named "$HOME" under the checkout
     # and PATH gets a relative entry, which breaks anything that resolves chezmoi's path (e.g. a symlink to it).
+    #
+    # The script stays inline rather than in a .github/scripts file: jactionlint only inspects `run:`, so moving
+    # it out would hide the download from the linter instead of fixing it. tests/install-chezmoi.test.mjs
+    # extracts this run body and executes it with a stub curl.
+    # The sha256 check from the release's checksums.txt covers integrity (corruption, a tampered path, a swapped
+    # tarball), not authorship: it does not prove twpayne/chezmoi built the release. Nothing is written to the
+    # install dir until the check has passed.
     - name: Install chezmoi
       shell: bash
       env:
         INSTALL_DIR: ${{ inputs.install-dir }}
+        CHEZMOI_VERSION: "2.73.2"
       run: |
+        set -euo pipefail
         dir="${INSTALL_DIR/#\~/$HOME}"
         dir="${dir/#\$HOME/$HOME}"
-        sh -c "$(curl -fsLS https://get.chezmoi.io)" -- -b "${dir}"
+
+        tarball=""
+        fail() {
+          echo "::error::install-chezmoi: $1 failed${tarball:+ for ${tarball}}: $2"
+          exit 1
+        }
+
+        version_re='^[0-9]+\.[0-9]+\.[0-9]+$'
+        [[ "${CHEZMOI_VERSION}" =~ ${version_re} ]] || fail version "CHEZMOI_VERSION must be x.y.z, got '${CHEZMOI_VERSION}'"
+
+        case "$(uname -s)" in
+          Linux) os=linux ;;
+          Darwin) os=darwin ;;
+          *) fail platform "unsupported OS '$(uname -s)'" ;;
+        esac
+        case "$(uname -m)" in
+          x86_64) arch=amd64 ;;
+          aarch64 | arm64) arch=arm64 ;;
+          *) fail platform "unsupported architecture '$(uname -m)'" ;;
+        esac
+
+        tarball="chezmoi_${CHEZMOI_VERSION}_${os}_${arch}.tar.gz"
+        checksums="chezmoi_${CHEZMOI_VERSION}_checksums.txt"
+        base_url="https://github.com/twpayne/chezmoi/releases/download/v${CHEZMOI_VERSION}"
+
+        work="$(mktemp -d)"
+        trap 'rm -rf -- "${work}"' EXIT
+
+        for file in "${tarball}" "${checksums}"; do
+          curl --proto '=https' --proto-redir '=https' -fsSL -o "${work}/${file}" "${base_url}/${file}" \
+            || fail download "could not fetch ${base_url}/${file}"
+        done
+
+        # Exact match on the file name field: "<tarball>.sbom.json" must not count as the tarball's line.
+        awk -v name="${tarball}" '$2 == name' "${work}/${checksums}" > "${work}/expected.sha256"
+        lines="$(wc -l < "${work}/expected.sha256" | tr -d ' ')"
+        [ "${lines}" = "1" ] || fail "checksum line" "expected exactly 1 line for ${tarball} in ${checksums}, found ${lines}"
+
+        if command -v sha256sum > /dev/null 2>&1; then
+          verify=(sha256sum -c)
+        elif command -v shasum > /dev/null 2>&1; then
+          verify=(shasum -a 256 -c)
+        else
+          fail checksum "neither sha256sum nor shasum is available"
+        fi
+        (cd "${work}" && "${verify[@]}" expected.sha256) || fail checksum "sha256 of ${tarball} does not match ${checksums}"
+
+        tar -xzf "${work}/${tarball}" -C "${work}" chezmoi || fail extract "no chezmoi member in ${tarball}"
+
+        mkdir -p "${dir}"
+        install -m 0755 "${work}/chezmoi" "${dir}/chezmoi"
+        "${dir}/chezmoi" --version
 
     - name: Add to PATH
       shell: bash

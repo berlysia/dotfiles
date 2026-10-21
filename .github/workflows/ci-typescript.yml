@@ -27,6 +27,10 @@ on:
       - "home/**"
       - "tests/chezmoiremove-coverage.test.mjs"
       - "tests/lib/**"
+      # install-chezmoi.test.mjs runs the action's install script and checks its Renovate wiring.
+      - "renovate.json"
+      - ".github/actions/install-chezmoi/**"
+      - "tests/install-chezmoi.test.mjs"
   pull_request:
     branches: [master, main]
     paths:
@@ -53,6 +57,10 @@ on:
       - "home/**"
       - "tests/chezmoiremove-coverage.test.mjs"
       - "tests/lib/**"
+      # install-chezmoi.test.mjs runs the action's install script and checks its Renovate wiring.
+      - "renovate.json"
+      - ".github/actions/install-chezmoi/**"
+      - "tests/install-chezmoi.test.mjs"
   workflow_dispatch:
 
 concurrency:

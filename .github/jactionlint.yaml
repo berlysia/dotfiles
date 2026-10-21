@@ -18,6 +18,3 @@ ignores:
   - rule: agentic-actions
     file: .github/workflows/auto-fix-dependencies.yml
     reason: "ADR-0011 autonomous lane by design: fork exclusion, bot author check, persist-credentials false, environment-scoped secret. No-merge and no-design-surface are prompt-enforced only (autonomous-lane.md, Phase 1 limitation); revisit when the autonomous types grow"
-  - rule: unverified-download
-    file: .github/actions/install-chezmoi/action.yml
-    reason: "curl | sh of an unpinned installer is a real risk; fixing it reworks every job using this action, tracked in docs/plans/chezmoi-install-verification.md. The ignore covers the whole file, so revisit it whenever this file is edited"
