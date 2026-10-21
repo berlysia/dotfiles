@@ -1,21 +1,12 @@
 import { deepStrictEqual, ok, strictEqual } from "node:assert";
 import { execFileSync } from "node:child_process";
-import {
-  chmodSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
   runLearningsCli,
   type RunLearningsCliDeps,
 } from "../../cli/learnings.ts";
-import { runGit } from "../../lib/agent-learnings/core/git.ts";
 import { parseLearningsFile } from "../../lib/agent-learnings/core/learnings-file.ts";
 import { writeInboxRequest } from "../../lib/agent-learnings/core/inbox.ts";
 import {
@@ -23,41 +14,7 @@ import {
   enqueueJob,
 } from "../../lib/agent-learnings/core/queue.ts";
 
-async function withEnv(
-  fn: (deps: RunLearningsCliDeps, root: string) => Promise<void>,
-): Promise<void> {
-  const root = mkdtempSync(join(tmpdir(), "agent-learnings-cli-"));
-  const repo = join(root, "repo");
-  execFileSync("git", ["init", "-q", repo]);
-  execFileSync("git", [
-    "-C",
-    repo,
-    "remote",
-    "add",
-    "origin",
-    "https://github.com/foo/bar.git",
-  ]);
-  mkdirSync(join(root, "home"));
-  const deps: RunLearningsCliDeps = {
-    cwd: repo,
-    home: join(root, "home"),
-    now: new Date("2026-10-15T00:00:00Z"),
-    readerEnv: undefined,
-    isTty: true,
-    agentEnv: false,
-    lockWaitMs: 200,
-    runGit,
-    confirm: async () => true,
-  };
-  try {
-    await fn(deps, root);
-  } finally {
-    chmodSync(root, 0o700);
-    rmSync(root, { recursive: true, force: true });
-  }
-}
-const store = (deps: RunLearningsCliDeps) =>
-  join(deps.home, ".local/share/agent-learnings");
+import { store, withEnv } from "../support/agent-learnings-cli-fixture.ts";
 
 describe("runLearningsCli", () => {
   it("show prints nothing and exits 0 before init", () =>
@@ -212,7 +169,6 @@ describe("runLearningsCli", () => {
         },
         new Date(),
       );
-      const started = Date.now();
       strictEqual(
         (
           await runLearningsCli(["add", "--title", "t", "--body", "b"], {
@@ -222,7 +178,6 @@ describe("runLearningsCli", () => {
         ).exitCode,
         0,
       );
-      ok(Date.now() - started < 3_000);
       ok((await runLearningsCli(["show"], deps)).stdout.includes("from inbox"));
     }));
   it("refuses add and remove on a read-only file, add outside a repo, and allows add --common outside a repo for a human", () =>

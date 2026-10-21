@@ -16,7 +16,7 @@
 
 ## 同じ理由で落ちうるもの
 
-次の unit テストは、5 秒版の `runGit` をプロセス内で使っている。落ちた記録はない。上の worker のテストと同じ形で落ちたら、`patientRunGit` に替える。
+次の 7 ファイルは、5 秒版の `runGit` をプロセス内で使っていて、上の worker のテストと同じ理由で落ちうる。git を起動するので、heavy（`tests/heavy/`、直列で実行する）へ移した。落ちた記録はない。
 
 - `agent-learnings-cli.test.ts`
 - `agent-learnings-health.test.ts`
@@ -25,6 +25,10 @@
 - `agent-learnings-repo-key.test.ts`
 - `agent-learnings-session-context.test.ts`
 - `agent-learnings-store.test.ts`
+
+見張る条件: heavy で、上の worker のテストと同じ形（`initStore` が `ok: false` を返す）で落ちたら、`patientRunGit` に替える。`bun run test` から外れたので、落ちるのは CI と `bun run test:heavy` になる。
+
+`complexity-delta.test.ts` も git を起動するので heavy へ移した。「未対策で落ちたもの」の項目を参照。
 
 ## 未対策で落ちたもの
 

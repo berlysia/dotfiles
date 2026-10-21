@@ -26,6 +26,7 @@ on:
       # 履歴から見る。paths フィルタは削除だけを選べないので home/ 全体を入れる。
       - "home/**"
       - "tests/chezmoiremove-coverage.test.mjs"
+      - "tests/heavy/**"
       - "tests/lib/**"
       # install-chezmoi.test.mjs runs the action's install script and checks its Renovate wiring.
       - "renovate.json"
@@ -56,6 +57,7 @@ on:
       # 履歴から見る。paths フィルタは削除だけを選べないので home/ 全体を入れる。
       - "home/**"
       - "tests/chezmoiremove-coverage.test.mjs"
+      - "tests/heavy/**"
       - "tests/lib/**"
       # install-chezmoi.test.mjs runs the action's install script and checks its Renovate wiring.
       - "renovate.json"
@@ -98,6 +100,11 @@ jobs:
       # the completion gate and pre-commit, which run `test`, never race them.
       - name: Run perf tests
         run: bun run test:perf
+
+      # Tests that start git or are slow under load. They run serially here and
+      # not in `test`, so the completion gate and pre-commit never wait on them.
+      - name: Run heavy tests
+        run: bun run test:heavy
 
       # format:check はリポジトリ全体が対象で paths フィルタと両立しないため
       # ci-format.yml に分離した。ここは TS スコープの lint のみを担う。

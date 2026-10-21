@@ -1,14 +1,11 @@
 import { ok, strictEqual } from "node:assert";
 import {
   existsSync,
-  mkdtempSync,
   readFileSync,
-  rmSync,
   statSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
@@ -18,15 +15,10 @@ import {
   withStoreLock,
 } from "../../lib/agent-learnings/core/lock.ts";
 
-async function withTempDir(fn: (dir: string) => Promise<void>): Promise<void> {
-  const dir = mkdtempSync(join(tmpdir(), "agent-learnings-lock-"));
-  try {
-    await fn(dir);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
-const DEAD_PID = 2 ** 22 + 12345; // Linux の pid_max の上限を超えるので存在しない
+import {
+  DEAD_PID,
+  withTempDir,
+} from "../support/agent-learnings-lock-fixture.ts";
 
 describe("withStoreLock", () => {
   it("runs fn and removes the lock", () =>
@@ -130,7 +122,7 @@ describe("touchLock", () => {
       writeFileSync(lock, `${process.pid} 1`);
       utimesSync(lock, old, old);
       strictEqual(touchLock(dir, { lockName: "worker.lock" }), true);
-      ok(Date.now() - statSync(lock).mtimeMs < 5_000);
+      ok(statSync(lock).mtimeMs > old.getTime());
 
       writeFileSync(lock, `${DEAD_PID} 1`);
       utimesSync(lock, old, old);

@@ -327,20 +327,6 @@ describe("file-access-guard.ts hook behavior", () => {
     });
   });
 
-  describe("no repository scenario", () => {
-    it("should allow operations when not in a repository", async () => {
-      process.env.CLAUDE_TEST_REPO_ROOT = "";
-      const hook = fileAccessGuardHook;
-
-      const context = createPreToolUseContextFor(hook, "Read", {
-        file_path: "/tmp/test.txt",
-      });
-      await invokeRun(hook, context);
-
-      context.assertSuccess({});
-    });
-  });
-
   describe("error handling", () => {
     it("should handle missing file_path", async () => {
       process.env.CLAUDE_TEST_REPO_ROOT = "/home/user/project";

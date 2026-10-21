@@ -3,7 +3,6 @@ import {
   copyFileSync,
   existsSync,
   chmodSync,
-  mkdtempSync,
   mkdirSync,
   readFileSync,
   rmSync,
@@ -11,7 +10,6 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { hostname, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test, { after } from "node:test";
 import { spawnSync, execFileSync } from "node:child_process";
@@ -26,53 +24,21 @@ import {
   generateLocalKey,
   localKeyPath,
 } from "../home/dot_local/bin/executable_tailnet-ssh.mts";
+import { createTailnetFixture } from "./lib/tailnet-ssh-fixture.mjs";
 
-const keyDirectory = mkdtempSync(join(tmpdir(), "tailnet-ssh-test-keys-"));
-after(() => rmSync(keyDirectory, { recursive: true, force: true }));
-const testKeys = new Map();
-function key(number) {
-  if (!testKeys.has(number)) {
-    const file = join(keyDirectory, `test-${number}`);
-    execFileSync("ssh-keygen", [
-      "-q",
-      "-t",
-      "ed25519",
-      "-N",
-      "",
-      "-C",
-      "",
-      "-f",
-      file,
-    ]);
-    testKeys.set(number, readFileSync(`${file}.pub`, "utf8").trim());
-  }
-  return testKeys.get(number);
-}
-function installTestKey(home, number) {
-  const publicKey = key(number);
-  const target = localKeyPath(home, publicKey);
-  mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
-  copyFileSync(join(keyDirectory, `test-${number}`), target);
-  chmodSync(target, 0o600);
-  writeFileSync(`${target}.pub`, `${publicKey}\n`, { mode: 0o600 });
-}
-
-function settings() {
-  return {
-    clientPublicKey: key(1),
-    identityMode: "local",
-    authorizedKeys: [key(1), key(2)],
-    hosts: [{ name: "example", hostname: "example.invalid", user: "example" }],
-  };
-}
-
-function fixture(t) {
-  const home = mkdtempSync(join(tmpdir(), "tailnet-ssh-test-"));
-  t.after(() => rmSync(home, { recursive: true, force: true }));
-  mkdirSync(join(home, ".ssh"));
-  installTestKey(home, 1);
-  return home;
-}
+const fx = createTailnetFixture();
+after(() => fx.cleanup());
+const {
+  keyDirectory,
+  key,
+  installTestKey,
+  settings,
+  fixture,
+  scenario,
+  authorize,
+  identity,
+  authorized,
+} = fx;
 
 test("the distributed TypeScript helper imports settings outside the repository", (t) => {
   const home = fixture(t);
@@ -284,145 +250,6 @@ test("unmanaged defaults cannot override tailnet local-key selection or lose the
   assert.match(other, /^forwardagent yes$/m);
 });
 
-function scenario(t, { rotation = false, receivers = 1 } = {}) {
-  const homes = Array.from({ length: receivers + 1 }, () => fixture(t));
-  const initialKeys = homes.map((_, index) => key(index + 1));
-  const desiredKeys = homes.map((_, index) =>
-    key(rotation ? index + 4 : index + 1),
-  );
-  const inventory = {
-    version: 3,
-    vault: "Example",
-    machines: homes.map((_, index) => {
-      return {
-        name: index ? `receiver${index}` : "controller",
-        hostname: index ? `receiver${index}.invalid` : "controller.invalid",
-        user: "example",
-        platform: process.platform,
-        localHostname: index ? `receiver${index}` : hostname(),
-        publicKey: desiredKeys[index],
-        keyFingerprint: fingerprint(desiredKeys[index]),
-        previousKeys: rotation
-          ? [
-              {
-                publicKey: initialKeys[index],
-                keyFingerprint: fingerprint(initialKeys[index]),
-              },
-            ]
-          : [],
-      };
-    }),
-  };
-  const hosts = inventory.machines.map(({ name, hostname, user }) => ({
-    name,
-    hostname,
-    user,
-  }));
-  homes.forEach((home, index) => {
-    installTestKey(home, index + 1);
-    installTestKey(home, rotation ? index + 4 : index + 1);
-    applySettings(home, {
-      clientPublicKey: initialKeys[index],
-      authorizedKeys: initialKeys,
-      hosts,
-    });
-  });
-  const model = {
-    home: homes[0],
-    homes,
-    inventory,
-    initialKeys,
-    desiredKeys,
-    uploads: [],
-    probes: [],
-    unavailable: new Set(),
-    beforeUpload: undefined,
-    beforeRead: undefined,
-  };
-  model.run = (command, args, options) => {
-    if (command === "op") {
-      assert.ok(args.includes("--format") && args.includes("json"));
-      const label = args[args.indexOf("--fields") + 1];
-      assert.ok(
-        label === "label=notesPlain",
-        "only the public-key inventory may be requested",
-      );
-      return JSON.stringify({
-        value: JSON.stringify(inventory),
-      });
-    }
-    assert.equal(command, "ssh");
-    assert.ok(args.includes("StrictHostKeyChecking=yes"));
-    assert.ok(args.includes("ForwardAgent=no"));
-    assert.ok(
-      args.includes("IdentityAgent=none") ||
-        model.inventory.machines[0].previousKeys.some(
-          (key) => key.legacyAgent === true,
-        ),
-    );
-    const target = inventory.machines.findIndex((machine) =>
-      args.includes(`${machine.user}@${machine.hostname}`),
-    );
-    assert.ok(target >= 0);
-    const home = homes[target];
-    const offered = args.flatMap((arg, index) =>
-      arg === "-i"
-        ? [
-            readFileSync(
-              args[index + 1].endsWith(".pub")
-                ? args[index + 1]
-                : `${args[index + 1]}.pub`,
-              "utf8",
-            ).trim(),
-          ]
-        : [],
-    );
-    const authorized = readFileSync(join(home, ".ssh/authorized_keys"), "utf8");
-    assert.ok(
-      offered.some(
-        (key) => !model.unavailable.has(key) && authorized.includes(key),
-      ),
-      "no offered key can authenticate",
-    );
-    if (args.at(-1) === "true") {
-      model.probes.push({ target, offered });
-      return "";
-    }
-    if (options.input) {
-      assert.ok(!options.input.includes("BEGIN OPENSSH PRIVATE KEY"));
-      const payload = JSON.parse(options.input);
-      model.beforeUpload?.(target, payload);
-      model.uploads.push({ target, payload });
-    } else model.beforeRead?.(target);
-    // Execute the actual snapshot reader / installer in a separate fixture home.
-    const result = spawnSync("/bin/sh", ["-c", args.at(-1)], {
-      input: options.input,
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        HOME: home,
-        PATH: `${dirname(process.execPath)}:${process.env.PATH}`,
-      },
-    });
-    if (result.status !== 0) throw new Error(result.stderr);
-    return result.stdout;
-  };
-  return model;
-}
-
-function authorize(model) {
-  const plan = syncFrom1Password(model.home, model.run);
-  return () => syncFrom1Password(model.home, model.run, plan.digest);
-}
-
-function identity(home) {
-  return readFileSync(join(home, ".ssh/tailnet-login.pub"), "utf8").trim();
-}
-
-function authorized(home) {
-  return readFileSync(join(home, ".ssh/authorized_keys"), "utf8");
-}
-
 test("a key substituted on a receiver is rejected before any machine changes", (t) => {
   const model = scenario(t);
   writeFileSync(join(model.homes[1], ".ssh/tailnet-login.pub"), key(9));
@@ -503,28 +330,6 @@ test("private-key fields and SSH Key item references are rejected in the shared 
   assert.equal(model.uploads.length, 0);
 });
 
-test("the one-time migration uses the old agent without copying its private keys and switches entirely to local files", (t) => {
-  const model = scenario(t, { rotation: true });
-  model.inventory.machines.forEach((machine, index) => {
-    machine.previousKeys[0].legacyAgent = true;
-    rmSync(localKeyPath(model.homes[index], model.initialKeys[index]));
-  });
-  authorize(model)();
-  assert.deepEqual(model.homes.map(identity), model.desiredKeys);
-  model.homes.forEach((home, index) => {
-    assert.ok(!existsSync(localKeyPath(home, model.initialKeys[index])));
-    assert.match(
-      readFileSync(join(home, ".ssh/config"), "utf8"),
-      /IdentityAgent none/,
-    );
-    const input = JSON.parse(
-      readFileSync(join(home, ".config/tailnet-ssh/settings.json"), "utf8"),
-    );
-    assert.equal(input.identityMode, "local");
-    assert.ok(!authorized(home).includes(model.initialKeys[index]));
-  });
-});
-
 test("an unknown controller identity is never used to contact receivers", (t) => {
   const model = scenario(t);
   writeFileSync(join(model.home, ".ssh/tailnet-login.pub"), key(9));
@@ -601,48 +406,6 @@ test("unregistered managed keys are removed, never retained or propagated during
   }
   for (const { payload } of model.uploads)
     assert.ok(!payload.settings.authorizedKeys.includes(key(9)));
-});
-
-test("failed new local-key authentication preserves old identities and can be retried", (t) => {
-  const model = scenario(t, { rotation: true });
-  const apply = authorize(model);
-  model.unavailable.add(key(4));
-  assert.throws(apply, /no offered key can authenticate/);
-  assert.deepEqual(model.homes.map(identity), model.initialKeys);
-  model.homes.forEach((home) => assert.ok(authorized(home).includes(key(1))));
-  model.unavailable.clear();
-  authorize(model)();
-  assert.deepEqual(model.homes.map(identity), model.desiredKeys);
-  model.homes.forEach((home) => assert.ok(!authorized(home).includes(key(1))));
-});
-
-test("a partial final phase remains retryable even when a receiver has removed the old controller key", (t) => {
-  const model = scenario(t, { rotation: true, receivers: 2 });
-  const apply = authorize(model);
-  model.beforeUpload = (target, payload) => {
-    if (target === 2 && payload.settings.clientPublicKey === key(6))
-      throw new Error("receiver disconnected");
-  };
-  assert.throws(apply, /receiver disconnected/);
-  assert.equal(identity(model.home), key(1));
-  assert.equal(identity(model.homes[1]), key(5));
-  assert.ok(!authorized(model.homes[1]).includes(key(1)));
-  model.beforeUpload = undefined;
-  authorize(model)();
-  assert.deepEqual(model.homes.map(identity), model.desiredKeys);
-  assert.ok(
-    model.probes.every(
-      ({ offered }) => offered.length === 1 && offered[0] === key(4),
-    ),
-  );
-  for (const home of model.homes) {
-    for (const old of model.initialKeys)
-      assert.ok(!authorized(home).includes(old));
-    const stored = JSON.parse(
-      readFileSync(join(home, ".config/tailnet-ssh/settings.json"), "utf8"),
-    );
-    assert.deepEqual(stored.authorizedKeys, model.desiredKeys);
-  }
 });
 
 test("malformed markers on any receiver abort before local or remote updates", (t) => {

@@ -2,30 +2,16 @@ import { ok, strictEqual } from "node:assert";
 import { execFileSync } from "node:child_process";
 import {
   appendFileSync,
-  chmodSync,
   existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
   readFileSync,
-  rmSync,
   statSync,
   truncateSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import {
-  runWorker,
-  type WorkerDeps,
-} from "../../../scripts/learnings-worker.ts";
-import type {
-  DistillMessage,
-  DistillQueryFn,
-} from "../../lib/agent-learnings/claude/distill.ts";
-import { patientRunGit as runGit } from "../support/patient-git.ts";
+import { runWorker } from "../../../scripts/learnings-worker.ts";
 import { writeInboxRequest } from "../../lib/agent-learnings/core/inbox.ts";
 import {
   COMMON_KEY,
@@ -36,162 +22,28 @@ import { withStoreLock } from "../../lib/agent-learnings/core/lock.ts";
 import {
   enqueueJob,
   readProcessed,
-  type RunLogLine,
 } from "../../lib/agent-learnings/core/queue.ts";
 import {
-  defaultStoreDir,
-  initStore,
   readLearnings,
   repoFilePath,
   storePaths,
   writeLearnings,
 } from "../../lib/agent-learnings/core/store.ts";
 
-const KEY = "github.com/a/b";
-const SID = "0f0e0d0c-0000-4000-8000-000000000001";
-const sidN = (n: number): string =>
-  `0f0e0d0c-0000-4000-8000-${n.toString(16).padStart(12, "0")}`;
-const user = (text: string): string =>
-  JSON.stringify({ type: "user", message: { content: text } });
-const utterances = (prefix: string, n: number): string[] =>
-  Array.from({ length: n }, (_, i) => user(`${prefix}${i + 1}`));
-const fenced = (ops: unknown[]): string =>
-  `\`\`\`json\n${JSON.stringify({ schemaVersion: 1, ops })}\n\`\`\``;
-const addOp = (
-  title = "Use bunfig preload",
-  body = "Put it in bunfig.toml.",
-) => ({
-  op: "add",
-  title,
-  body,
-  evidence: "the user corrected the preload location",
-});
-const entry = (n: number): LearningEntry => ({
-  id: `L-${n.toString(16).padStart(12, "0")}`,
-  title: `existing ${n}`,
-  body: `existing body ${n}`,
-  seen: 1,
-  repos: [KEY],
-  updated: "2026-10-01",
-  extra: [],
-});
-
-type World = {
-  root: string;
-  home: string;
-  store: string;
-  repo: string;
-  transcriptPath: (sid?: string) => string;
-  writeTranscript: (lines: string[], sid?: string) => void;
-  enqueue: (sid?: string, reason?: string) => void;
-  prompts: string[];
-  queryFor: (
-    respond: (call: number, prompt: string) => string | Promise<string>,
-  ) => DistillQueryFn;
-  deps: (queryFn: DistillQueryFn, over?: Partial<WorkerDeps>) => WorkerDeps;
-  runs: () => RunLogLine[];
-  commits: () => number;
-};
-
-async function withWorld(fn: (w: World) => Promise<void>): Promise<void> {
-  const root = mkdtempSync(join(tmpdir(), "agent-learnings-worker-"));
-  try {
-    const home = join(root, "home");
-    const repo = join(root, "repo");
-    execFileSync("git", ["init", "-q", repo]);
-    execFileSync("git", [
-      "-C",
-      repo,
-      "remote",
-      "add",
-      "origin",
-      "https://github.com/a/b.git",
-    ]);
-    mkdirSync(join(home, ".claude/projects/p"), { recursive: true });
-    const store = defaultStoreDir(home);
-    const init = initStore(store, runGit);
-    ok(init.ok, init.ok ? "" : init.reason);
-    const prompts: string[] = [];
-    const transcriptPath = (sid = SID): string =>
-      join(home, ".claude/projects/p", `${sid}.jsonl`);
-    const world: World = {
-      root,
-      home,
-      store,
-      repo,
-      transcriptPath,
-      writeTranscript: (lines, sid = SID) =>
-        writeFileSync(transcriptPath(sid), `${lines.join("\n")}\n`),
-      enqueue: (sid = SID, reason = "other") => {
-        const r = enqueueJob(
-          store,
-          {
-            sessionId: sid,
-            transcriptPath: transcriptPath(sid),
-            cwd: repo,
-            repoKey: KEY,
-            reason,
-          },
-          new Date(),
-        );
-        ok(r.status === "enqueued");
-      },
-      prompts,
-      queryFor: (respond) => {
-        let call = 0;
-        return (args) => {
-          prompts.push(args.prompt);
-          const n = call++;
-          return (async function* (): AsyncGenerator<DistillMessage> {
-            yield {
-              type: "result",
-              subtype: "success",
-              result: await respond(n, args.prompt),
-            };
-          })();
-        };
-      },
-      deps: (queryFn, over = {}) => ({
-        home,
-        store,
-        now: () => new Date(),
-        queryFn,
-        runGit,
-        claudePath: undefined,
-        extraRedact: [],
-        env: {},
-        lockWaitMs: 300,
-        ...over,
-      }),
-      runs: () => {
-        try {
-          return readFileSync(storePaths(store).runsLog, "utf8")
-            .split("\n")
-            .filter((line) => line !== "")
-            .map((line) => JSON.parse(line) as RunLogLine);
-        } catch {
-          return [];
-        }
-      },
-      commits: () =>
-        Number(
-          execFileSync("git", ["-C", store, "rev-list", "--count", "HEAD"])
-            .toString()
-            .trim(),
-        ),
-    };
-    await fn(world);
-  } finally {
-    chmodSync(root, 0o700);
-    rmSync(root, { recursive: true, force: true });
-  }
-}
-const names = (dir: string): string[] => readdirSync(dir).sort();
-const entriesOf = (w: World, key = KEY) => {
-  const r = readLearnings(w.store, key);
-  ok(r.ok);
-  return r.value.entries;
-};
+import {
+  KEY,
+  SID,
+  addOp,
+  entriesOf,
+  entry,
+  fenced,
+  names,
+  sidN,
+  user,
+  utterances,
+  withWorld,
+  type World,
+} from "../support/agent-learnings-worker-fixture.ts";
 
 describe("runWorker happy path", () => {
   it("applies an add, commits with evidence, records the position", async () =>
@@ -676,7 +528,6 @@ describe("runWorker batch and single-instance", () => {
         statuses.join(),
       );
       strictEqual(ages.length, 1);
-      ok((ages[0] ?? Infinity) < 5_000);
     }));
   it("does nothing in a worker session", async () =>
     withWorld(async (w) => {
