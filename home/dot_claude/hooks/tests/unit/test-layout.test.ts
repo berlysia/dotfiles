@@ -13,6 +13,7 @@ const self = fileURLToPath(import.meta.url);
 
 // Built by concatenation so this file does not match its own searches.
 const SETTER = "setParse" + "BudgetMs";
+const DATE_BOUND = new RegExp("Date" + "\\.now\\(\\)\\s*-[^;\\n]*<");
 const ELAPSED = new RegExp("performance" + "\\.now\\(\\)\\s*-");
 
 function walk(dir: string, skip: (path: string) => boolean): string[] {
@@ -48,6 +49,20 @@ describe("test layout (spec K9)", () => {
       .filter((path) => ELAPSED.test(readFileSync(path, "utf8")))
       .map((path) => relative(testsDir, path));
     strictEqual(offenders.join("\n"), "");
+  });
+
+  it("keeps Date.now() elapsed upper bounds (same line, `<`) out of tests/unit", () => {
+    const offenders = readTextFiles(here, ".test.ts")
+      .filter(({ text }) => text.split("\n").some((l) => DATE_BOUND.test(l)))
+      .map(({ path }) => relative(testsDir, path));
+    strictEqual(offenders.join("\n"), "");
+    const sample = "ok(" + "Date.now() - started < 3_000);";
+    ok(DATE_BOUND.test(sample));
+    // A lower bound ("> ...", "was not refreshed") is not an upper bound.
+    ok(!DATE_BOUND.test("ok(" + "Date.now() - started > 20 * 60_000);"));
+    ok(
+      !DATE_BOUND.test("const old = new Date(" + "Date.now() - 11 * 60_000);"),
+    );
   });
 
   it("runs every test process with the patient parse budget from the preload", () => {

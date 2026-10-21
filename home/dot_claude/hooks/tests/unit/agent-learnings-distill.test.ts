@@ -146,7 +146,7 @@ describe("prompts", () => {
   });
 });
 
-const run = (queryFn: DistillQueryFn, timeoutMs = 1_000) =>
+const run = (queryFn: DistillQueryFn, timeoutMs = 30_000) =>
   runDistill({
     queryFn,
     userPrompt: "u",
