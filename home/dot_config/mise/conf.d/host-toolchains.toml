@@ -4,7 +4,7 @@
 # Only go, rust and cargo:/go: backend tools belong here
 # (tests/agent-vm/run-templates.sh checks it).
 [tools]
-go = "1.27.2"
+go = "1.27.3"
 rust = "1.99.0"
 
 # CLI tools (migrated from go install / cargo install)
