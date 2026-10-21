@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
-# Wrapper script for zizmor to match CI behavior
-# Mimics: .github/workflows/lint-actions.yml (zizmor job)
+# Local counterpart of .github/workflows/lint-actions.yml (jactionlint job)
 
 set -euo pipefail
 
@@ -11,12 +10,12 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-echo "Running zizmor on GitHub Actions workflows..."
+echo "Running jactionlint on GitHub Actions workflows..."
 
-# Check if zizmor is installed
-if ! command -v zizmor &> /dev/null; then
-  echo -e "${RED}Error: zizmor is not installed${NC}"
-  echo "Install with: mise install cargo-zizmor"
+# jactionlint comes from PATH (the mise global config pins it), like CI's pinned install.
+if ! command -v jactionlint &> /dev/null; then
+  echo -e "${RED}Error: jactionlint is not installed${NC}"
+  echo "Install with: mise install"
   exit 1
 fi
 
@@ -37,16 +36,13 @@ fi
 echo "Found $WORKFLOW_COUNT workflow file(s) to check"
 echo ""
 
-# Run zizmor (mimics zizmor-action behavior)
-# The action runs: zizmor --format sarif .github/workflows > results.sarif
-# For local use, we'll use human-readable format
-#
-# --config is explicit because worktrees live under the main checkout's .git/,
-# and zizmor discovers its config from the outermost repository root: without
-# it a worktree is checked against the main checkout's zizmor.yml.
-if zizmor --config zizmor.yml .github/workflows; then
+# --config-file is explicit because worktrees live under the main checkout's
+# .git/, and config discovery can pick up the main checkout's
+# .github/jactionlint.yaml instead of this worktree's. Output stays in the
+# human-readable text format; CI uses --format github.
+if jactionlint --config-file .github/jactionlint.yaml; then
   echo ""
-  echo -e "${GREEN}✓ All GitHub Actions workflows passed zizmor checks${NC}"
+  echo -e "${GREEN}✓ All GitHub Actions workflows passed jactionlint checks${NC}"
   exit 0
 else
   echo ""

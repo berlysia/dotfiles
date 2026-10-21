@@ -57,23 +57,15 @@ if [[ -n "${REPO_SLUG}" ]]; then
   fi
 fi
 
-# 5. actionlint
-if command -v actionlint >/dev/null 2>&1; then
-  ACTIONLINT_VERSION=$(actionlint -version 2>&1 | head -n1)
-  report_pass "actionlint: ${ACTIONLINT_VERSION}"
+# 5. jactionlint (workflow syntax + security lint in one binary)
+if command -v jactionlint >/dev/null 2>&1; then
+  JACTIONLINT_VERSION=$(jactionlint --version 2>&1 | head -n1)
+  report_pass "jactionlint: ${JACTIONLINT_VERSION}"
 else
-  report_fail "actionlint: not installed" "mise use -g actionlint@latest"
+  report_fail "jactionlint: not installed" "mise use -g github:jdx/jactionlint@2.2.0"
 fi
 
-# 6. zizmor
-if command -v zizmor >/dev/null 2>&1; then
-  ZIZMOR_VERSION=$(zizmor --version 2>&1 | head -n1)
-  report_pass "zizmor: ${ZIZMOR_VERSION}"
-else
-  report_fail "zizmor: not installed" "mise use -g zizmor@latest (or cargo install zizmor)"
-fi
-
-# 7. Informational: auto-merge state (NOT a hard prerequisite)
+# 6. Informational: auto-merge state (NOT a hard prerequisite)
 if [[ -n "${REPO_SLUG}" ]]; then
   AUTO_MERGE=$(gh api "repos/${REPO_SLUG}" --jq '.allow_auto_merge' 2>/dev/null || echo "unknown")
   echo

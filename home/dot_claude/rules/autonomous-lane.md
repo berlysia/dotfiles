@@ -46,7 +46,7 @@ C2「無人 merge 禁止」/ C3「設計面非接触」は、現状 **CI プロ�
 
 Phase 1 はこの 1 型のみ。新規自律型の追加・能動 discovery 心臓（cron triage）は Phase 2 以降。
 
-**Phase 2 移行トリガー**: format 自動修正 / knip dead-code 削除 等の新規自律型候補が実際に発生した時点。型ごとに C1/C2/C3 適合 + injection 面評価（上記 named invariant）をして個別追加する。
+**Phase 2 移行トリガー**: format 自動修正 / fallow による dead-code 削除 等の新規自律型候補が実際に発生した時点。型ごとに C1/C2/C3 適合 + injection 面評価（上記 named invariant）をして個別追加する。
 
 ## Phase 2 hardening（記録のみ、Phase 1 では実装しない）
 

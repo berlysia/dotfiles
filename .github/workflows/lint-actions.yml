@@ -8,40 +8,27 @@ on:
     paths:
       - ".github/workflows/**"
       - ".github/actions/**"
-      - "zizmor.yml"
-      - "home/dot_config/mise/conf.d/host-toolchains.toml"
+      - ".github/jactionlint.yaml"
+      - "home/dot_config/mise/config.toml"
   pull_request:
     paths:
       - ".github/workflows/**"
       - ".github/actions/**"
-      - "zizmor.yml"
-      - "home/dot_config/mise/conf.d/host-toolchains.toml"
+      - ".github/jactionlint.yaml"
+      - "home/dot_config/mise/config.toml"
   workflow_dispatch:
 
 permissions: {}
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  actionlint:
-    name: actionlint
+  jactionlint:
+    name: jactionlint
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Run actionlint
-        uses: reviewdog/action-actionlint@419a49378266e892f40c773b4f2fc6de9aa87499 # v1.80.4
-        with:
-          reporter: github-pr-review
-          fail_level: error
-
-  zizmor:
-    name: zizmor
-    runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -50,26 +37,70 @@ jobs:
         with:
           persist-credentials: false
 
-      # Local `lint:actions` runs the mise-pinned zizmor; use the same version
-      # here so a Renovate bump of the pin is checked by the version it installs.
-      # A version the pinned action does not know yet fails the job on purpose.
-      - name: Read zizmor version from mise config
-        id: zizmor-version
+      # Local `lint:actions` and pre-push run the mise-pinned jactionlint; install the same
+      # version here. config.toml can be edited by a PR, so only a bare x.y.z reaches the
+      # next step: anything else (missing line, extra words) fails the job.
+      - name: Read jactionlint version from mise config
+        id: jactionlint-version
         env:
-          MISE_CONFIG: home/dot_config/mise/conf.d/host-toolchains.toml
+          MISE_CONFIG: home/dot_config/mise/config.toml
         run: |
-          version=$(sed -n 's/^"cargo:zizmor" = "\([0-9][0-9.]*\)"$/\1/p' "$MISE_CONFIG")
-          if [[ -z "$version" ]]; then
-            echo "::error file=${MISE_CONFIG}::cargo:zizmor is not pinned to an exact version"
+          version=$(sed -n 's/^"github:jdx\/jactionlint" = "\([^"]*\)"$/\1/p' "$MISE_CONFIG")
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error file=${MISE_CONFIG}::github:jdx/jactionlint is not pinned to an exact x.y.z version"
             exit 1
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
-      # advanced-security (SARIF) makes zizmor exit 0 even with findings.
-      # Findings are triaged in zizmor.yml, so fail the job and annotate instead.
-      - name: Run zizmor
-        uses: zizmorcore/zizmor-action@85b2b9fb8e3325e7a23d7d0a9d7ba5ae0f999e3e # v0.7.1
+      - name: Install mise and the pinned jactionlint (a failure here is setup, not lint)
+        uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
         with:
-          version: ${{ steps.zizmor-version.outputs.version }}
-          advanced-security: false
-          annotations: true
+          version: 2026.10.15
+          install: true
+          install_args: github:jdx/jactionlint@${{ steps.jactionlint-version.outputs.version }}
+          cache: false
+          github_token: ${{ github.token }}
+
+      # Exit 0 is clean, 1 is findings, anything else is a tool failure. The token is for the
+      # online checks only; when the API fails jactionlint skips the lookups and still exits
+      # 0 or 1, which the next step reports.
+      # mise exec names the version: install_args only installs the tool, and without a
+      # version in the repo's .mise.toml the jactionlint shim stops with "No version is set".
+      - name: Run jactionlint
+        timeout-minutes: 5
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          JACTIONLINT_VERSION: ${{ steps.jactionlint-version.outputs.version }}
+        run: |
+          mise exec "github:jdx/jactionlint@${JACTIONLINT_VERSION}" -- \
+            jactionlint --config-file .github/jactionlint.yaml --format github \
+            --online-report="$RUNNER_TEMP/jactionlint-online.json"
+
+      # Never fails the job. Only an allowlisted status and a digits-only count are printed:
+      # the report's free-text fields could carry "::" workflow commands.
+      - name: Report online check coverage
+        if: always()
+        env:
+          ONLINE_REPORT: ${{ runner.temp }}/jactionlint-online.json
+        run: |
+          unreadable='jactionlint online checks: the result could not be read, so online findings may be missing.'
+          status=$(jq -r '.status | strings' "$ONLINE_REPORT" 2>/dev/null || true)
+          skipped=$(jq -r '.skippedLookups | numbers | floor | tostring' "$ONLINE_REPORT" 2>/dev/null || true)
+          case "$status" in
+            complete)
+              exit 0
+              ;;
+            incomplete)
+              if [[ "$skipped" =~ ^[0-9]+$ ]]; then
+                msg="jactionlint online checks: status ${status}, ${skipped} lookups skipped, so online findings may be missing."
+              else
+                msg="jactionlint online checks: status ${status}, so online findings may be missing."
+              fi
+              ;;
+            *)
+              msg="$unreadable"
+              ;;
+          esac
+          echo "::warning::${msg}"
+          echo "$msg" >> "$GITHUB_STEP_SUMMARY"
+          exit 0

@@ -1,0 +1,23 @@
+# Shared by CI (.github/workflows/lint-actions.yml), scripts/lint-actions.sh and
+# scripts/hooks/pre-push; each passes --config-file because a worktree lives under the
+# main checkout's .git/ and automatic discovery can pick up the main checkout's file.
+#
+# Every ignore is a rule + file pair; a rule-wide ignore would hide the same finding in
+# workflows added later. Ignores can be added in a PR, so review is the check on them.
+online: true
+ignores:
+  - rule: dangerous-triggers
+    file: .github/workflows/status-check.yml
+    reason: "workflow_run with read-only permissions (actions: read, statuses: write), never checks out the PR, only aggregates CI results"
+  - rule: dangerous-triggers
+    file: .github/workflows/auto-fix-dependencies.yml
+    reason: "workflow_run limited to dependency bot PRs; the author is checked before checkout"
+  - rule: dangerous-triggers
+    file: .github/workflows/claude.yml
+    reason: "issue_comment runs only when sender.login is the repository owner (environment claude-manual); the comment body is untrusted input to Claude but only the owner can write it, and the job has no write permission on the repository"
+  - rule: agentic-actions
+    file: .github/workflows/auto-fix-dependencies.yml
+    reason: "ADR-0011 autonomous lane by design: fork exclusion, bot author check, persist-credentials false, environment-scoped secret. No-merge and no-design-surface are prompt-enforced only (autonomous-lane.md, Phase 1 limitation); revisit when the autonomous types grow"
+  - rule: unverified-download
+    file: .github/actions/install-chezmoi/action.yml
+    reason: "curl | sh of an unpinned installer is a real risk; fixing it reworks every job using this action, tracked in docs/plans/chezmoi-install-verification.md. The ignore covers the whole file, so revisit it whenever this file is edited"

@@ -14,7 +14,7 @@ description: Policy-enforcing installer that deploys hardened Claude Code Action
 
 - **対象**: berlysia 自身が admin を持つ個人 repo のみ。他者への配布 / 公開ツール化は想定しない
 - **攻撃者モデル**: なし（自己適用）。prompt injection のリスクは「自分の repo に自分で誤設定を書き込む」程度に限定
-- **担保**: `actionlint` + `zizmor` を **hard prerequisite** とし、展開後の workflow に構文違反 / GitHub Actions SAST 違反がないことを機械検証する。owner id ピン留め / bot type 二重判定 / drift hash 比較等の追加防御は採用しない
+- **担保**: `jactionlint`（構文検証と GitHub Actions の SAST を 1 本で行う）を **hard prerequisite** とし、展開後の workflow に構文違反 / SAST 違反がないことを機械検証する。owner id ピン留め / bot type 二重判定 / drift hash 比較等の追加防御は採用しない
 
 ## Prerequisites
 
@@ -26,14 +26,13 @@ bash ~/.claude/skills/claude-action-bootstrap/scripts/verify-prerequisites.sh
 
 検証対象（スクリプトが内部で実施）:
 
-| 項目       | 判定                                       | fail 時の remediation                    |
-| ---------- | ------------------------------------------ | ---------------------------------------- |
-| gh CLI     | `command -v gh`                            | `mise use -g gh@latest`                  |
-| gh auth    | `gh auth status`                           | `gh auth login`                          |
-| repository | `gh repo view --json nameWithOwner` が通る | target repo のルートで再実行             |
-| admin 権限 | `.permissions.admin == true`               | admin を取得するか別 repo で再実行       |
-| actionlint | `command -v actionlint`                    | `mise use -g actionlint@latest`          |
-| zizmor     | `command -v zizmor`                        | `mise use -g zizmor@latest` または cargo |
+| 項目        | 判定                                       | fail 時の remediation                      |
+| ----------- | ------------------------------------------ | ------------------------------------------ |
+| gh CLI      | `command -v gh`                            | `mise use -g gh@latest`                    |
+| gh auth     | `gh auth status`                           | `gh auth login`                            |
+| repository  | `gh repo view --json nameWithOwner` が通る | target repo のルートで再実行               |
+| admin 権限  | `.permissions.admin == true`               | admin を取得するか別 repo で再実行         |
+| jactionlint | `command -v jactionlint`                   | `mise use -g github:jdx/jactionlint@2.2.0` |
 
 **informational（スクリプトは表示するが判定しない）**:
 
@@ -66,7 +65,7 @@ Bootstrap Progress:
 - [ ] Step 3: claude.yml 展開（mandatory）
 - [ ] Step 4: auto-fix-dependencies.yml 展開（optional）
 - [ ] Step 5: Environments + Secrets 設定 → verify-secrets.sh が exit 0
-- [ ] Step 6: actionlint + zizmor 検証
+- [ ] Step 6: jactionlint 検証
 - [ ] Step 7: 動作確認
 ```
 
@@ -205,23 +204,25 @@ AUTOFIX_ENV= \
 
 repo-level の警告は fail 扱いではない（env-scoped secret が優先されるため）。
 
-### Step 6: 展開後検証（`actionlint` + `zizmor`）
+### Step 6: 展開後検証（`jactionlint`）
 
-**actionlint は finding 0 件を必須要件とする。zizmor は下記の既知 finding を除いて 0 件を必須要件とする。**
+**finding は下記の既知の表の分を除いて 0 件を必須要件とする。**
 
 ```bash
-# 1. actionlint で構文検証（0 件必須）
-actionlint .github/workflows/claude.yml .github/workflows/auto-fix-dependencies.yml
-
-# 2. zizmor で GitHub Actions SAST
-zizmor .github/workflows/claude.yml .github/workflows/auto-fix-dependencies.yml
+# target repo のルートで実行する。検査対象は展開した 2 本だけ（既定の設定、online）。
+# ほかの workflow の finding はこのスキルの要件に含めない
+jactionlint .github/workflows/claude.yml .github/workflows/auto-fix-dependencies.yml
 ```
 
-**既知で許容する zizmor finding**:
+下の表は、このスキルの 2 本の workflow の trigger の設計に限った許容であり、ほかの workflow の同じ検出を許すものではない。target repo の `jactionlint` 設定に `ignores` を足すときも、rule とファイルの組で、理由を書く。
 
-| Finding                     | 対象ファイル                          | 許容根拠                                                                                                                                                                                                                                                                                     |
-| --------------------------- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `dangerous-triggers` (high) | `auto-fix-dependencies.yml` L13 `on:` | `workflow_run` は CI 完了後の失敗時起動と secret アクセスの両立に必須。Asset は `sameRepo && !isFork` による fork 除外、`allowed_bots` による author allowlist、checkout `persist-credentials: false` による credentials 混入防止を**すべて内包**しており、この trade-off を前提に受け入れる |
+**既知で許容する finding（3 件）**:
+
+| Rule                 | 対象ファイル                         | 許容根拠                                                                                                                                                                                                                                                                            |
+| -------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dangerous-triggers` | `auto-fix-dependencies.yml` の `on:` | target repo では、`workflow_run` を、CI 失敗後に secret つきで起動するために使う。起動は `sameRepo && !isFork` による fork 除外、`allowed_bots` による author allowlist を通った依存 bot の PR に限り、checkout は `persist-credentials: false` で credentials を残さない           |
+| `dangerous-triggers` | `claude.yml` の `on:`                | target repo では、`issue_comment` の起動を `{{ALLOWED_SENDERS}}` に入れた sender に限る。コメント本文は Claude への未信頼の入力だが、書けるのは allowlist の sender だけで、job の権限は読み取りに限る（`contents: read`）。secret は `{{MANUAL_ENV_NAME}}` の environment に閉じる |
+| `agentic-actions`    | `auto-fix-dependencies.yml`          | target repo では、依存 bot の PR の CI 修正を自律で行う設計であり、fork 除外、bot の author 判定、`persist-credentials: false`、environment 限定の secret を asset が内包する。merge しない指示は prompt による統制にとどまる。自律で扱う型を増やすときは見直す                     |
 
 **これら以外に high/critical finding が出た場合**:
 
@@ -266,7 +267,7 @@ sed -i 's/Bash(pnpm \*)/Bash(bun *)/g; s/pnpm, npm/bun, npm/g; s/update lockfile
   .github/workflows/auto-fix-dependencies.yml
 ```
 
-書き換え後は **Step 6 の `actionlint` + `zizmor` を再実行** して構文・SAST を再確認する。
+書き換え後は **Step 6 の `jactionlint` を再実行** して構文・SAST を再確認する。
 
 ## Decision Notes
 
@@ -274,8 +275,9 @@ sed -i 's/Bash(pnpm \*)/Bash(bun *)/g; s/pnpm, npm/bun, npm/g; s/update lockfile
 - **fork 除外は固定 ON**: 個人 public repo でも fork PR は存在し得るため、`sameRepo && !isFork` の除外はハードコード。改変禁止コメント付き
 - **SHA pin は renovate に委ねる**: asset 内の `anthropics/claude-code-action@<SHA>` は本 skill 側の renovate で更新される。ターゲット repo に renovate が入っていない場合は、本 skill を再適用する運用か、ターゲット repo 側にも renovate を導入する
 - **脅威モデルは自己適用のみ**: 他者への配布・公開ツール化を想定しない。owner id ピン留め、bot `user.type` 二重判定、sender id workflow 埋込、drift hash 比較等は採用しない。将来 public / team 配布に拡張する場合は threat model を再評価する
-- **`zizmor` を hard prerequisite に維持する理由**: 現時点の自己適用脅威モデル範囲外（script injection / pull_request_target の危険パターン等）も SAST で機械的に担保する前倒し投資
-- **`workflow_run` の `dangerous-triggers` 許容**: `workflow_run` は「CI 失敗時に secret つきで auto-fix を起動する」設計に必須（fork PR 由来の workflow では secret が取れない / `pull_request` では CI 完了待ちができない）。この trigger の本質的リスク（PR head HEAD からの任意コード実行導線）は Asset 側で (1) `sameRepo && !isFork` による fork 除外、(2) `allowed_bots` による author allowlist、(3) checkout `persist-credentials: false` を**ハードコードとして内包**することで閉じる。この 3 防御ラインを前提に zizmor の `dangerous-triggers` finding は Step 6 で既知許容する
+- **`jactionlint` を hard prerequisite に維持する理由**: 現時点の自己適用脅威モデル範囲外（script injection / pull_request_target の危険パターン等）も SAST で機械的に担保する前倒し投資。構文検証と SAST を 1 本にまとめ、版は `mise use -g github:jdx/jactionlint@2.2.0` で固定する（`latest` は使わない）
+- **`workflow_run` の `dangerous-triggers` 許容**: `workflow_run` は「CI 失敗時に secret つきで auto-fix を起動する」設計に必須（fork PR 由来の workflow では secret が取れない / `pull_request` では CI 完了待ちができない）。この trigger の本質的リスク（PR head HEAD からの任意コード実行導線）は Asset 側で (1) `sameRepo && !isFork` による fork 除外、(2) `allowed_bots` による author allowlist、(3) checkout `persist-credentials: false` を**ハードコードとして内包**することで閉じる。この 3 防御ラインを前提に jactionlint の `dangerous-triggers` finding は Step 6 で既知許容する
+- **asset に `timeout-minutes` と `concurrency` を持たせる理由**: jactionlint が job の timeout 未設定を指摘するため、`claude.yml` は 60 分、`auto-fix-dependencies.yml` は 30 分を置く。値は見積もりであり、発火して実行が打ち切られたら上げる。`claude.yml` の `concurrency` は issue か PR の番号（無ければ `run_id`）で group し、`cancel-in-progress: false` にする。同じ issue や PR への連続コメントで先行の実行を中断せず、待ちの実行は後のものに置き換わる。`auto-fix-dependencies.yml` の既存の `concurrency`（`head_sha` 単位）は変えない
 
 ## Assets
 

@@ -231,6 +231,25 @@ describe("permission-auto-approve.ts hook behavior", () => {
       "apm deps info --help",
       "apm install --help",
       "apm --version",
+      // knip (existing tool-list entry)
+      "bunx knip",
+      // fallow: only the read-only subcommands
+      "bunx fallow dead-code",
+      "npx fallow dupes",
+      "pnpx fallow health",
+      "bunx --no fallow audit --base main",
+      "pnpm fallow list",
+      "bunx fallow explain unused-export",
+      "bunx fallow dead-code 2>&1",
+      // jactionlint: only the listed read-only options
+      "jactionlint",
+      "jactionlint --format github",
+      "jactionlint --format=github",
+      "jactionlint --profile pedantic --no-online",
+      "jactionlint --online=cache",
+      "jactionlint --min-severity warn",
+      "jactionlint --diff --no-color --show-fix-status",
+      "jactionlint 2>&1",
     ];
 
     for (const cmd of safeCommands) {
@@ -384,6 +403,51 @@ describe("permission-auto-approve.ts hook behavior", () => {
       "git-worktree-cleanup -- fix/some-branch",
       "git-worktree-cleanup fix/a:b",
       "git-worktree-cleanup --discard-{tmp,}=0 fix/some-branch",
+      // fallow: a subcommand outside the read-only list, a missing subcommand, or another package name
+      "bunx fallow fix",
+      "bunx fallow",
+      "bunx fallow watch",
+      "bunx fallow similar-code",
+      "bunx fallow security",
+      "bunx fallow-x dead-code",
+      "bunx fallowx dead-code",
+      // fallow: options of the allowed subcommands that write files (found in `fallow <subcommand> --help`)
+      "bunx fallow dead-code --save-baseline base.json",
+      "bunx fallow dead-code --save-baseline=base.json",
+      "bunx fallow dupes --save-regression-baseline",
+      "bunx fallow health --save-snapshot",
+      "bunx fallow dead-code --output-file out.txt",
+      "bunx fallow dead-code --output-file=out.txt",
+      "bunx fallow dead-code -o out.txt",
+      "bunx fallow dead-code --sarif-file out.sarif",
+      "bunx fallow health --mark-viewed src/a.ts",
+      // fallow: a quoted write option would hide from a token check
+      'bunx fallow dead-code "--save-baseline" base.json',
+      "bunx fallow dead-code --save-'baseline' base.json",
+      // concatenation and substitution (scanSafeList splits or refuses them)
+      "jactionlint; git push origin main",
+      'bunx fallow dead-code --base "$(git push origin main)"',
+      "bunx fallow dead-code --base `git push origin main`",
+      // jactionlint: rewriting options, option-run commands, other config, files, free-form values
+      "jactionlint --fix",
+      "jactionlint --format github --fix",
+      "jactionlint --baseline-write",
+      "jactionlint --baseline-write x",
+      "jactionlint --baseline-write=x",
+      "jactionlint --init-config",
+      "jactionlint --migrate-ignores",
+      "jactionlint --migrate-config",
+      "jactionlint --shellcheck=sh",
+      "jactionlint --pyflakes=sh",
+      "jactionlint --ruff=sh",
+      "jactionlint -c x.yaml",
+      "jactionlint --config-file=x.yaml",
+      "jactionlint-x",
+      "jactionlint a.yml",
+      "jactionlint --format '{{.Message}}'",
+      "jactionlint --profile evil",
+      "jactionlint --min-severity evil",
+      "jactionlint --online=strict",
     ];
 
     for (const cmd of uncertainCommands) {

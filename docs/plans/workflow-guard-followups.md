@@ -34,11 +34,11 @@ production コードで `process.env.CLAUDE_TEST_CWD` を読むファイルの�
 
 ## 課題 F: 死んだコードの削除
 
-対象は `lib/workflow-paths.ts` の派生関数（`getPlanPath` 等）、`getWorkflowDir` / `getWorkflowDirRelative` のシム 2 本、`knip.json` の `-public` tag。強制力が無い理由は次の 3 点である。
+対象は `lib/workflow-paths.ts` の派生関数（`getPlanPath` 等）、`getWorkflowDir` / `getWorkflowDirRelative` のシム 2 本、`@public` の JSDoc タグ（fallow は標準で尊重する）。強制力が無い理由は次の 3 点である。
 
-1. `knip` は CI に配線されていない（`.github/` に `knip` の言及が無い）。
-2. `workflow-paths.test.ts` が一族全体を import しているため、テストが死んだコードを緑で保護している。`bunx knip --no-progress` はシム 2 本も派生関数も報告しない。
-3. `home/.chezmoiscripts/run_after_gc.sh.tmpl` が最大週 1 回 `bunx knip` をローカル実行する。報告のみでゲートではない。`set -euo pipefail` によりパイプの終了コードは knip のものになり、検出時は「knip reported issues」と出る。
+1. `fallow` は CI に配線されていない（`.github/` に `fallow` の言及が無い）。
+2. `workflow-paths.test.ts` が一族全体を import しているため、テストが死んだコードを緑で保護している。`bunx fallow dead-code` はシム 2 本も派生関数も報告しない。
+3. `home/.chezmoiscripts/run_after_gc.sh.tmpl` が最大週 1 回 `bunx fallow dead-code` をローカル実行する。報告のみでゲートではない。終了コードは 0（clean）、1（検出あり）、それ以外（実行失敗）に書き分けて出す。
 
 ## 課題 G: GC が guard を無言で disarm する経路
 

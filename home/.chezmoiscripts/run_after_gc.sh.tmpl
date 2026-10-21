@@ -3,7 +3,7 @@
 # Periodic garbage collection:
 #   1. Remove .tmp/sessions/ older than 7 days
 #   2. CLAUDE.md path integrity check
-#   3. Run knip for dead code detection
+#   3. Run fallow for dead code detection
 # Runs at most once every 7 days.
 
 set -euo pipefail
@@ -61,16 +61,20 @@ if [ -f "$CLAUDE_MD" ]; then
     fi
 fi
 
-# --- 3. knip dead code detection ---
+# --- 3. fallow dead code detection ---
 if [ -f "$PROJECT_ROOT/package.json" ]; then
     if command -v bun &>/dev/null; then
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [GC] Running knip..."
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [GC] Running fallow..."
         cd "$PROJECT_ROOT"
-        if ! bunx knip --no-progress 2>&1 | tail -20; then
-            echo "[$(date '+%Y-%m-%d %H:%M:%S')] [GC] knip reported issues (see above)"
-        else
-            echo "[$(date '+%Y-%m-%d %H:%M:%S')] [GC] knip: clean"
-        fi
+        # fallow exits 0 (clean), 1 (issues found) or 2+ (failed to run). A pipe to
+        # tail would hide that code, so capture the output and the code separately.
+        fallow_output=$(bunx fallow dead-code 2>&1) && fallow_rc=0 || fallow_rc=$?
+        printf '%s\n' "$fallow_output" | tail -20
+        case "$fallow_rc" in
+            0) echo "[$(date '+%Y-%m-%d %H:%M:%S')] [GC] fallow: clean" ;;
+            1) echo "[$(date '+%Y-%m-%d %H:%M:%S')] [GC] fallow reported issues (see above)" ;;
+            *) echo "[$(date '+%Y-%m-%d %H:%M:%S')] [GC] fallow failed (exit $fallow_rc)" ;;
+        esac
     fi
 fi
 

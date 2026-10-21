@@ -82,7 +82,7 @@ ADR: `docs/decisions/0010-context-md-mechanism.md`
 ### GC スクリプト (R3/K4 根拠)
 
 - `home/.chezmoiscripts/run_after_gc.sh.tmpl`
-- 動作 3 段階: (1) `.tmp/sessions/` 7日 GC (SAFE pattern: `SESSIONS_DIR` hardcoded + `find -mindepth 1 -maxdepth 1 -type d -mtime +7`) / (2) CLAUDE.md path integrity check (`@~/`, `${projectRoot}/` パスの存在確認) / (3) knip dead code 検出
+- 動作 3 段階: (1) `.tmp/sessions/` 7日 GC (SAFE pattern: `SESSIONS_DIR` hardcoded + `find -mindepth 1 -maxdepth 1 -type d -mtime +7`) / (2) CLAUDE.md path integrity check (`@~/`, `${projectRoot}/` パスの存在確認) / (3) fallow dead code 検出
 - `.tmp/docs/` は構造的に対象外 (SAFE pattern (a))
 
 ### shellcheck の数え方

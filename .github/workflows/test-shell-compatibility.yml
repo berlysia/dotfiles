@@ -37,6 +37,10 @@ on:
       - "home/.chezmoiscripts/run_onchange_install-packages-1-darwin.sh.tmpl"
   workflow_dispatch: # Allow manual trigger
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     strategy:
@@ -98,6 +102,7 @@ jobs:
 
       - name: Check macOS timeout exposure
         if: runner.os == 'macOS'
+        shell: bash
         run: |
           command -v gtimeout || brew install coreutils
           T=$(mktemp -d)
