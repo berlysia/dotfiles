@@ -64,12 +64,16 @@ jobs:
       # Exit 0 is clean, 1 is findings, anything else is a tool failure. The token is for the
       # online checks only; when the API fails jactionlint skips the lookups and still exits
       # 0 or 1, which the next step reports.
+      # mise exec names the version: install_args only installs the tool, and without a
+      # version in the repo's .mise.toml the jactionlint shim stops with "No version is set".
       - name: Run jactionlint
         timeout-minutes: 5
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          JACTIONLINT_VERSION: ${{ steps.jactionlint-version.outputs.version }}
         run: |
-          jactionlint --config-file .github/jactionlint.yaml --format github \
+          mise exec "github:jdx/jactionlint@${JACTIONLINT_VERSION}" -- \
+            jactionlint --config-file .github/jactionlint.yaml --format github \
             --online-report="$RUNNER_TEMP/jactionlint-online.json"
 
       # Never fails the job. Only an allowlisted status and a digits-only count are printed:
