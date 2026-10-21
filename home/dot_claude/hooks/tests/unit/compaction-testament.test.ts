@@ -1,28 +1,17 @@
 #!/usr/bin/env node --test
 
 import { strict as assert } from "node:assert";
-import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import {
   chmodSync,
   existsSync,
-  mkdirSync,
-  mkdtempSync,
   readFileSync,
-  rmSync,
   statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import defaultHook, {
-  createHook,
-} from "../../implementations/compaction-testament.ts";
-import { createBlockingGit } from "../support/fake-git.ts";
-import { deriveDefaultWorkflowDir } from "../../lib/workflow-paths.ts";
 import {
   createPostToolUseContextFor,
   createPreCompactContext,
@@ -32,8 +21,26 @@ import {
   invokeRun,
 } from "../support/test-helpers.ts";
 
-const PATIENT_TIMEOUT_MS = 10_000;
-const hook = createHook(() => ({ gitTimeoutMs: PATIENT_TIMEOUT_MS }));
+import {
+  HOOK_FIXTURE_TOKENS,
+  INITIAL,
+  additionalContextOf,
+  anchorHookOnProjectDir,
+  assistantLine,
+  hook,
+  installHookEnv,
+  post,
+  readStateFile,
+  recordPath,
+  restoreHookEnv,
+  setupHookEnv,
+  sha256Hex,
+  transcriptAt,
+  writeState,
+  writeTestament,
+  writeTestamentInput,
+  type HookEnv,
+} from "../support/compaction-testament-fixture.ts";
 import {
   buildRestoreContext,
   buildSnapshot,
@@ -63,37 +70,10 @@ const fixtureText = readFileSync(
 );
 
 const TH: Thresholds = { triggerAt: 867_000, updateAt: 927_000 };
-const INITIAL: TestamentState = {
-  version: 1,
-  stage: 0,
-  stopBlocked: false,
-  usageMissStreak: 0,
-  degradedNotified: false,
-};
 const state = (over: Partial<TestamentState> = {}): TestamentState => ({
   ...INITIAL,
   ...over,
 });
-
-const assistantLine = (
-  usage: { i: number; c: number; r: number },
-  over: Record<string, unknown> = {},
-  msgOver: Record<string, unknown> = {},
-): string =>
-  JSON.stringify({
-    type: "assistant",
-    isSidechain: false,
-    message: {
-      model: "m",
-      usage: {
-        input_tokens: usage.i,
-        cache_creation_input_tokens: usage.c,
-        cache_read_input_tokens: usage.r,
-      },
-      ...msgOver,
-    },
-    ...over,
-  });
 
 describe("readContextTokens (K1)", () => {
   it("sums the three input-side usage fields of the last main-chain assistant", () => {
@@ -670,127 +650,13 @@ describe("buildTestamentRequest (K6)", () => {
 
 // --- hook-level (IO layer) -------------------------------------------------
 
-const HOOK_FIXTURE_TOKENS = 94048;
-const sha256Hex = (data: string | Buffer): string =>
-  createHash("sha256").update(data).digest("hex");
-
-type HookEnv = { repo: string; wfDir: string; tdir: string };
-
 describe("compaction-testament hook", () => {
   const envHelper = new EnvironmentHelper();
   const dirs: string[] = [];
 
-  beforeEach(() => {
-    envHelper.set("DOCUMENT_WORKFLOW_DIR", undefined);
-    envHelper.set("CLAUDE_CODE_AUTO_COMPACT_WINDOW", undefined);
-    // A developer-level global excludes file may already ignore `.tmp`, which
-    // would make the "not ignored" fixtures unreproducible.
-    envHelper.set("GIT_CONFIG_GLOBAL", "/dev/null");
-    envHelper.set("GIT_CONFIG_NOSYSTEM", "1");
-    // Keep the hook away from the real ~/.claude/settings.json.
-    const cfg = mkdtempSync(join(tmpdir(), "ct-cfg-"));
-    dirs.push(cfg);
-    envHelper.set("XDG_CONFIG_HOME", join(cfg, "xdg"));
-    envHelper.set("CLAUDE_CONFIG_DIR", cfg);
-  });
-
-  afterEach(() => {
-    envHelper.restore();
-    for (const d of dirs.splice(0)) {
-      try {
-        chmodSync(join(d, ".tmp", "sessions", "test-ses"), 0o700);
-      } catch {
-        // not every dir has a workflow dir
-      }
-      rmSync(d, { recursive: true, force: true });
-    }
-  });
-
-  function setup(opts: { git?: boolean; ignoreTmp?: boolean } = {}): HookEnv {
-    const repo = mkdtempSync(join(tmpdir(), "ct-repo-"));
-    const tdir = mkdtempSync(join(tmpdir(), "ct-tr-"));
-    dirs.push(repo, tdir);
-    if (opts.git) {
-      execFileSync("git", ["init", "-q"], { cwd: repo });
-      if (opts.ignoreTmp) writeFileSync(join(repo, ".gitignore"), ".tmp\n");
-    }
-    const wfDir = join(repo, deriveDefaultWorkflowDir("test-session"));
-    mkdirSync(wfDir, { recursive: true });
-    envHelper.set("CLAUDE_TEST_CWD", repo);
-    return { repo, wfDir, tdir };
-  }
-
-  const transcriptAt = (env: HookEnv, tokens: number | null): string => {
-    const path = join(env.tdir, "t.jsonl");
-    const lines = [
-      JSON.stringify({
-        type: "user",
-        isSidechain: false,
-        message: {
-          role: "user",
-          content: "SECRET-UTTERANCE sk-ant-" + "a".repeat(30),
-        },
-      }),
-    ];
-    if (tokens !== null)
-      lines.push(assistantLine({ i: 1, c: 0, r: tokens - 1 }));
-    writeFileSync(path, lines.join("\n") + "\n");
-    return path;
-  };
-
-  const writeState = (env: HookEnv, over: Partial<TestamentState>): void =>
-    writeFileSync(
-      join(env.wfDir, "testament-state.json"),
-      JSON.stringify({ ...INITIAL, ...over }),
-    );
-  const readStateFile = (env: HookEnv): TestamentState =>
-    parseState(
-      existsSync(join(env.wfDir, "testament-state.json"))
-        ? readFileSync(join(env.wfDir, "testament-state.json"), "utf8")
-        : null,
-    );
-  const recordPath = (env: HookEnv): string =>
-    join(env.wfDir, "testament-written.json");
-  const writeTestament = (
-    env: HookEnv,
-    body: string,
-    tokens: number | null,
-    recordedSha: string = sha256Hex(body),
-  ): void => {
-    writeFileSync(join(env.wfDir, "testament.md"), body);
-    writeFileSync(
-      recordPath(env),
-      JSON.stringify({ version: 1, sha256: recordedSha, tokens }),
-    );
-  };
-
-  const post = async (
-    env: HookEnv,
-    transcript: string,
-    tool: "Write" | "Bash" = "Bash",
-    toolInput: Record<string, unknown> = { command: "true" },
-    over: { agent_id?: string } = {},
-  ) => {
-    const ctx = createPostToolUseContextFor(
-      hook,
-      tool,
-      toolInput as never,
-      {},
-      { cwd: env.repo, ...over },
-    );
-    (ctx.input as { transcript_path: string }).transcript_path = transcript;
-    const result = await invokeRun(hook, ctx);
-    return {
-      ctx,
-      result: result as { payload?: { event: string; output: any } },
-    };
-  };
-  const writeTestamentInput = {
-    file_path: ".tmp/sessions/test-ses/testament.md",
-    content: "ignored",
-  };
-  const additionalContextOf = (ctx: { jsonCalls: any[] }): string =>
-    ctx.jsonCalls.at(-1)?.hookSpecificOutput?.additionalContext ?? "";
+  beforeEach(() => installHookEnv(envHelper, dirs));
+  afterEach(() => restoreHookEnv(envHelper, dirs));
+  const setup = (): HookEnv => setupHookEnv(envHelper, dirs);
 
   describe("PostToolUse", () => {
     it("records a testament Write (relative path) with sha256 and fixture tokens", async () => {
@@ -1092,41 +958,8 @@ describe("compaction-testament hook", () => {
     // A Bash `cd` moves the session cwd that every later hook receives, so the
     // workflow dir must not be derived from it. The drift target below is the
     // workflow dir itself, as observed on a real device.
-    const anchorOnProjectDir = (env: HookEnv): void => {
-      envHelper.set("CLAUDE_TEST_CWD", undefined);
-      envHelper.set("CLAUDE_PROJECT_DIR", env.repo);
-    };
-
-    it("restores the testament after the session cwd drifts into a subdir", async () => {
-      const env = setup();
-      anchorOnProjectDir(env);
-      writeFileSync(join(env.wfDir, "testament.md"), "DRIFT-SURVIVOR");
-      const postCtx = createPostToolUseContextFor(
-        hook,
-        "Write",
-        { file_path: join(env.wfDir, "testament.md"), content: "ignored" },
-        {},
-        { cwd: env.repo },
-      );
-      (postCtx.input as { transcript_path: string }).transcript_path =
-        transcriptAt(env, 100_000);
-      await invokeRun(hook, postCtx);
-      assert.ok(existsSync(recordPath(env)));
-
-      await invokeRun(
-        hook,
-        createPreCompactContext({
-          cwd: env.wfDir,
-          transcript_path: transcriptAt(env, 100_000),
-        }),
-      );
-      const startCtx = createSessionStartContext("compact", { cwd: env.wfDir });
-      await invokeRun(hook, startCtx);
-
-      assert.match(additionalContextOf(startCtx), /DRIFT-SURVIVOR/);
-      assert.equal(existsSync(recordPath(env)), false);
-      assert.equal(existsSync(join(env.wfDir, ".tmp")), false);
-    });
+    const anchorOnProjectDir = (env: HookEnv): void =>
+      anchorHookOnProjectDir(envHelper, env);
 
     it("resolves a relative testament path against the drifted cwd", async () => {
       const env = setup();
@@ -1152,97 +985,6 @@ describe("compaction-testament hook", () => {
   });
 
   describe("PreCompact", () => {
-    const compact = async (
-      env: HookEnv,
-      transcript: string,
-      custom: string | null = null,
-      target = hook,
-    ) => {
-      const ctx = createPreCompactContext({
-        cwd: env.repo,
-        transcript_path: transcript,
-        custom_instructions: custom,
-      });
-      const result = await invokeRun(target, ctx);
-      return { ctx, result };
-    };
-    const snapshotOf = (env: HookEnv): string =>
-      readFileSync(join(env.wfDir, "snapshot.md"), "utf8");
-
-    it("replaces an old snapshot, never blocks, and writes mode 0600", async () => {
-      const env = setup({ git: true, ignoreTmp: true });
-      writeFileSync(join(env.wfDir, "snapshot.md"), "OLD");
-      const { ctx } = await compact(env, transcriptAt(env, 500_000));
-      ctx.assertSuccess({});
-      assert.doesNotMatch(snapshotOf(env), /OLD/);
-      assert.equal(
-        statSync(join(env.wfDir, "snapshot.md")).mode & 0o777,
-        0o600,
-      );
-    });
-
-    it("includes redacted utterances and instructions when the dir is ignored", async () => {
-      const env = setup({ git: true, ignoreTmp: true });
-      await compact(
-        env,
-        transcriptAt(env, 500_000),
-        "keep API_KEY=hunter2 safe",
-      );
-      const snap = snapshotOf(env);
-      assert.match(snap, /SECRET-UTTERANCE/);
-      assert.doesNotMatch(snap, /sk-ant-a{30}/);
-      assert.doesNotMatch(snap, /hunter2/);
-    });
-
-    it("includes utterances outside any git repository", async () => {
-      const env = setup();
-      await compact(env, transcriptAt(env, 500_000));
-      assert.match(snapshotOf(env), /SECRET-UTTERANCE/);
-    });
-
-    it("omits utterances, instructions and file names when not ignored", async () => {
-      const env = setup({ git: true });
-      writeFileSync(join(env.repo, "untracked-file-name.txt"), "x");
-      await compact(env, transcriptAt(env, 500_000), "CUSTOM-INSTR");
-      const snap = snapshotOf(env);
-      assert.doesNotMatch(
-        snap,
-        /SECRET-UTTERANCE|CUSTOM-INSTR|untracked-file-name/,
-      );
-      assert.match(snap, /ignore されていないため省略/);
-    });
-
-    it("treats a broken git dir (non not-a-repo failure) as not ignored", async () => {
-      const env = setup({ git: true, ignoreTmp: true });
-      writeFileSync(join(env.repo, ".git", "config"), "[[[garbage\n");
-      await compact(env, transcriptAt(env, 500_000));
-      assert.doesNotMatch(snapshotOf(env), /SECRET-UTTERANCE/);
-    });
-
-    it("treats a git check-ignore over the production 2000ms timeout as not ignored", async () => {
-      const env = setup({ git: true, ignoreTmp: true });
-      const git = createBlockingGit("check-ignore");
-      envHelper.set("PATH", `${git.binDir}:${process.env.PATH ?? ""}`);
-      try {
-        await compact(env, transcriptAt(env, 500_000), null, defaultHook);
-        const snap = snapshotOf(env);
-        assert.doesNotMatch(snap, /SECRET-UTTERANCE/);
-        assert.match(snap, /ignore されていないため省略/);
-      } finally {
-        git.cleanup();
-      }
-    });
-
-    it("does not write through a symlink at snapshot.md", async () => {
-      const env = setup({ git: true, ignoreTmp: true });
-      const target = join(env.tdir, "victim.txt");
-      writeFileSync(target, "UNTOUCHED");
-      symlinkSync(target, join(env.wfDir, "snapshot.md"));
-      await compact(env, transcriptAt(env, 500_000));
-      assert.equal(readFileSync(target, "utf8"), "UNTOUCHED");
-      assert.equal(statSync(join(env.wfDir, "snapshot.md")).isFile(), true);
-    });
-
     it("does nothing for subagents", async () => {
       const env = setup();
       const ctx = createPreCompactContext({ cwd: env.repo });
