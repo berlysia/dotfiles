@@ -1,54 +1,69 @@
 packages:
   darwin:
-    taps:
-      - "k1Low/tap"
+    taps: []
+    # Tools that mise can pin (see ~/.config/mise/config.toml) belong there, not here.
+    # chezmoi is not listed: README installs it into ~/.local/bin on every OS.
     brews:
+      # shell and everyday CLI
       - "age"
-      - "aria2"
       - "bat"
-      - "emacs"
+      - "curl"
       - "fd"
-      - "fdk-aac"
-      - "ffmpeg"
-      - "gcc"
       - "gh"
       - "ghq"
       - "git"
+      - "git-secrets"
+      - "gnupg"
       - "jq"
-      - "mkcert"
+      - "mas"
       - "mise"
+      - "mkcert"
       - "nkf"
-      - "readline"
-      - "ripgrep"
-      - "webp"
-      - "wget"
-      - "xz"
-      - "zsh"
-      - "openssl"
-      - "gawk"
-      - "grep"
-      - "gnu-sed"
-      - "coreutils"
-      - "terminal-notifier"
+      - "p7zip"
       - "patchutils"
+      - "ripgrep"
+      - "terminal-notifier"
+      - "unzip"
+      - "wget"
+      - "zsh"
+      # GNU variants (installed with the g prefix; only timeout is exposed unprefixed)
+      - "coreutils"
+      - "gawk"
+      - "gnu-sed"
+      - "grep"
+      # development
+      - "act"
+      - "clingo"
+      - "emacs"
+      - "lychee"
       - "shellcheck"
+      - "zizmor"
+      # media
+      - "aria2"
+      - "ffmpeg"
+      - "imagemagick"
       - "sox"
-      - "k1Low/tap/mo"
+      - "whisper.cpp"
     casks:
+      # apps
       - "1password"
       - "coteditor"
       - "dropbox"
       - "firefox"
-      - "font-moralerspace"
       - "google-chrome"
       - "google-chrome@canary"
       - "raycast"
-      - "visual-studio-code"
+      - "slack"
       - "vlc"
+      # development
+      - "1password-cli"
+      - "aws-vault-binary"
       - "iterm2"
-      - "ghostty"
       - "karabiner-elements"
       - "orbstack"
+      - "visual-studio-code"
+      # fonts
+      - "font-moralerspace"
   linux:
     apt:
       - "age"
