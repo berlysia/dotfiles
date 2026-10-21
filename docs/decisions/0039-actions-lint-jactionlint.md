@@ -79,8 +79,9 @@ mise の `github:` backend は、GitHub API の digest で checksum を確かめ
 
 - jactionlint はプロジェクト開始から約 2 週間の若いツールで、作者は mise と同じ jdx である（この repo はすでに mise と mise-action を信頼している）。新しい default ルールが誤検出したら、`.github/jactionlint.yaml` の `ignores` に rule と file で足して黙らせられる
 - jactionlint の release や attestation の障害で mise install が落ちると、Actions の lint 全体が止まる。これは許容した
-- jactionlint ごと戻すときは、commit `ci(lint): replace actionlint and zizmor with jactionlint` と `feat(skills): ...`（bootstrap スキル）を revert し、この ADR を superseded にして理由を足す。workflow の修正（`ci(workflows): ...`）は残してよい。actionlint 1.7.12 と zizmor 1.30.1 でも、修正後の workflow は修正前と同じ結果になる
+- jactionlint ごと戻すときは、commit `ci(lint): replace actionlint and zizmor with jactionlint`、`fix(ci): run jactionlint through mise exec with the pinned version`、`feat(skills): ...`（bootstrap スキル）を revert し、この ADR を superseded にして理由を足す。workflow の修正（`ci(workflows): ...`）は残してよい。actionlint 1.7.12 と zizmor 1.30.1 でも、修正後の workflow は修正前と同じ結果になる
 - asset（bootstrap スキル）と repo の workflow の `timeout-minutes` と `concurrency` の値は手で二重に持っており、揃っているかを確かめる仕組みは無い
 - claude.yml の concurrency は待ちの実行を 1 つしか持たないので、1 つの issue で作業中に 3 回以上メンションすると間の待ちは消える
 - fallow は knip と未使用 export の数え方が違う（2026-10-21: knip は export 42・type 12、fallow は export 46・type 2）。`ignoreExportsUsedInFile` を有効にすると export 7・type 2 で knip から離れたので使わない。knip の「Unlisted binaries」に当たる検査は fallow に無い
-- PR 上の CI で jactionlint の job が通ること、崩した workflow で job が落ちることは、この ADR の時点では未確認（push 前）
+- CI の job は、mise-action の `install_args` で jactionlint を入れたうえで、`mise exec "github:jdx/jactionlint@<版>"` で呼ぶ。`install_args` は版を選ばないので、shim から呼ぶと「No version is set」で止まる（`ci-shellcheck.yml` が shim で動くのは、shellcheck が repo の `.mise.toml` に載っているから）
+- PR #348 の CI で jactionlint の job が通り、online の検査は `complete` だった（2026-10-21）。崩した workflow で job が落ちることは、CI では確かめていない（ローカルの `lint:actions` と pre-push で確かめた）
