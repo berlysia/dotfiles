@@ -23,7 +23,7 @@ accepted (2026-10-21)
 3. knip を fallow 3.32.0 に替える（`.fallowrc.json`）。gc は fallow の終了コードで clean / 検出あり / 失敗（終了コード N）を書き分け、失敗でも gc は止めない
 4. Actions の lint は jactionlint 1 本にし、CI・`bun run lint:actions`・pre-push が同じ版と同じ設定（`.github/jactionlint.yaml`、`online: true`）を使う。CI の actionlint と zizmor の job、`zizmor.yml`、`cargo:zizmor` の固定、renovate の zizmor グループを消す
 5. jactionlint の版は `home/dot_config/mise/config.toml`（ホストと agent-vm で共有）に 1 か所だけ固定する。CI はこの行を読み、`x.y.z` の形に完全に合う値だけを mise-action に渡す
-6. jactionlint default の検出 29 件を、24 件直し 5 件を理由つきで無視する（下の表）
+6. jactionlint default の検出 29 件を、25 件直し 4 件を理由つきで無視する（下の表）
 7. 自動承認（`permission-auto-approve.ts`）は fallow と jactionlint を読むだけの使い方に限り、許可リストで判定する。`.settings.permissions.json` には足さない
 
 ### jactionlint が zizmor を置き換えられる根拠
@@ -40,7 +40,7 @@ accepted (2026-10-21)
 | dangerous-triggers        | `auto-fix-dependencies.yml`                  | 無視。bot の PR だけ、checkout の前に作者を確かめる                                                                                                                                                                       |
 | dangerous-triggers        | `claude.yml`                                 | 無視。実行は `sender.login == 'berlysia'` の場合だけ、environment は `claude-manual`、repo への書き込み権限なし。コメントの本文は Claude への信頼できない入力で、書けるのが持ち主だけであることがこの無視の前提           |
 | agentic-actions           | `auto-fix-dependencies.yml`                  | 無視。ADR-0011 の自律レーンが意図した設計。job は書き込み権限を持ち、merge しないことと設計面に触れないことはプロンプトの指示で守っているだけ（autonomous-lane の「Phase 1 の限界」）。自律の型を広げるときは無視を見直す |
-| unverified-download       | `.github/actions/install-chezmoi/action.yml` | 無視。`curl \| sh` の危険は実在する。直す作業は `docs/plans/chezmoi-install-verification.md`。無視はファイル全体に効くので、このファイルを編集したら見直す                                                                |
+| unverified-download       | `.github/actions/install-chezmoi/action.yml` | 直した。固定した版の tarball を同じ release の `checksums.txt` と照合してから置く（Amendments）                                                                                                                           |
 | missing-timeout           | 16 job                                       | 直す（下の値）                                                                                                                                                                                                            |
 | concurrency-limits        | 7 workflow                                   | 直す。pull_request の実行だけ cancel、push・schedule・workflow_run・issue 系は止めない                                                                                                                                    |
 | pipeline-without-pipefail | `test-shell-compatibility.yml`               | 直す（`shell: bash`）                                                                                                                                                                                                     |
@@ -85,3 +85,16 @@ mise の `github:` backend は、GitHub API の digest で checksum を確かめ
 - fallow は knip と未使用 export の数え方が違う（2026-10-21: knip は export 42・type 12、fallow は export 46・type 2）。`ignoreExportsUsedInFile` を有効にすると export 7・type 2 で knip から離れたので使わない。knip の「Unlisted binaries」に当たる検査は fallow に無い
 - CI の job は、mise-action の `install_args` で jactionlint を入れたうえで、`mise exec "github:jdx/jactionlint@<版>"` で呼ぶ。`install_args` は版を選ばないので、shim から呼ぶと「No version is set」で止まる（`ci-shellcheck.yml` が shim で動くのは、shellcheck が repo の `.mise.toml` に載っているから）
 - PR #348 の CI で jactionlint の job が通り、online の検査は `complete` だった（2026-10-21）。崩した workflow で job が落ちることは、CI では確かめていない（ローカルの `lint:actions` と pre-push で確かめた）
+- install-chezmoi の照合が守るのは完全性（破損、経路上の改ざん、tarball だけの差し替え）で、真正性は守らない。twpayne/chezmoi の release 資産そのものの差し替えは検知できない
+- chezmoi の版を固定したので、新しい release での退行は Renovate の PR まで CI が検知しない。action だけを変える PR では ci-agent-vm と validate-codex-config が走らない
+
+## Amendments
+
+### 2026-10-21: install-chezmoi の `unverified-download` を直した
+
+- 無視していた `unverified-download` を直し、無視を消した。get.chezmoi.io の installer も `checksums.txt` との照合はしていたので、変わったのは、取得したスクリプトを実行しないこと、版を固定すること、新しい版は人が merge して受け入れることである
+- 版は action の install step の `env` に 1 か所だけ置く。`home/.chezmoiversion`（apply の下限）とは意味が違うので統合せず、固定版が下限を下回らないことをテストで守る。初期の 2.73.2 は公開から 4 日で、7 日待ちの方針の例外とした（下限が 2.73.2 のため）
+- tarball 名に完全一致する `checksums.txt` の行がちょうど 1 行あることを確かめてから `sha256sum -c`（無ければ `shasum -a 256 -c`）で照合し、通るまで `install-dir` に書かない。script は `run:` に残す（jactionlint は `run:` しか見ない）
+- Renovate は regex の customManager で版を上げ、専用の group、7 日待ち、automerge なしとする。merge することが新しい release を受け入れることだから（claude-recall と同じ扱い）。preset の `:automergeMinor` を打ち消すので、この rule は packageRules の最後に置く
+- 却下: mise（`install-dir` に実体を置く入力の契約を満たさず、版を置く場所がホストの chezmoi を替える）、cosign（runner に無く、入れる取得が同じ検出を生む）、tarball の digest を OS/arch ごとに固定する（同時に更新する配線が要る）
+- 保留: `gh attestation verify`（真正性を足せる。再開するのは真正性を求める要件が出たとき。fail-closed にし、すべての実行経路に `attestation` を持つ gh と token を要求する）、`checksums.txt` の digest の固定（再開するのは、Renovate が版と一緒に digest を更新できると確かめられたとき）
