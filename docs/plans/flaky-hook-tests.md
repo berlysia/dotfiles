@@ -25,3 +25,7 @@
 - `agent-learnings-repo-key.test.ts`
 - `agent-learnings-session-context.test.ts`
 - `agent-learnings-store.test.ts`
+
+## 未対策で落ちたもの
+
+- `tests/unit/complexity-delta.test.ts` の「uses the injected git timeout to find the repository root」: Stop hook の全体実行で 1 回落ちた（10.3 秒、`t.state()` の state ファイルが無く ENOENT）。state ファイルは baseline を記録したときに書かれるので、`resolveRoot` が成功する前に prompt が終わったと読める。このテストは git の上限を `PATIENT_TIMEOUT_MS` にしてあり、rev-parse は 3 秒遅らせてある。どの上限に当たったかは確かめていない。単独で 3 回流すと 3 回とも通った
