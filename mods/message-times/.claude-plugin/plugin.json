@@ -1,0 +1,6 @@
+{
+  "name": "message-times",
+  "version": "0.1.0",
+  "description": "Shows when each prompt and reply in the transcript was stored, dim under its row.",
+  "types": "./types/index.d.ts"
+}
