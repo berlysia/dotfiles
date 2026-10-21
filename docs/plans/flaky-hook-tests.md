@@ -29,3 +29,4 @@
 ## 未対策で落ちたもの
 
 - `tests/unit/complexity-delta.test.ts` の「uses the injected git timeout to find the repository root」: Stop hook の全体実行で 1 回落ちた（10.3 秒、`t.state()` の state ファイルが無く ENOENT）。state ファイルは baseline を記録したときに書かれるので、`resolveRoot` が成功する前に prompt が終わったと読める。このテストは git の上限を `PATIENT_TIMEOUT_MS` にしてあり、rev-parse は 3 秒遅らせてある。どの上限に当たったかは確かめていない。単独で 3 回流すと 3 回とも通った
+- `tests/unit/agent-learnings-cli.test.ts`: 全体実行で 2 回、別のテストで落ちた。1 回目は 443 行目で `exitCode` が 3（期待 0）。2 回目は Stop hook の実行で、「applies a pending inbox request on the next add without waiting on its own lock」の 216 行目で同じく 3（6.5 秒）。exit 3 が何の失敗かは確かめていない。どちらも同じセッションで `chezmoi apply` と `agent-learnings add` を実行した後だった。単独で 3 回流すと 3 回とも 25 件通った。上の一覧のとおり、`patientRunGit` に替えるかを決める候補
