@@ -10,11 +10,14 @@ Claude Code の hook 実装の単体テスト。Node.js 組み込みの test run
 # All unit tests
 bun run test
 
+# heavy tests (tests that start git, and tests that are slow under load)
+bun run test:heavy
+
 # Individual test file
 node --import ./home/dot_claude/hooks/tests/preload-test-env.mjs --test home/dot_claude/hooks/tests/unit/session.test.ts
 ```
 
-実時間を測る（perf）テストは `home/dot_claude/hooks/tests/perf/` に置き、`bun run test:perf` で実行する。詳細は `home/dot_claude/hooks/tests/README_TESTING.md` の「node:test のスイート（unit / perf）」を参照。
+実時間を測る（perf）テストは `home/dot_claude/hooks/tests/perf/` に置き、`bun run test:perf` で実行する。git を起動するテストと負荷に弱いテストは `home/dot_claude/hooks/tests/heavy/` に置き、`bun run test:heavy` で実行する。unit のテストは git を起動しない。詳細は `home/dot_claude/hooks/tests/README_TESTING.md` の「node:test のスイート（unit / perf / heavy）」を参照。
 
 ## Test Structure
 

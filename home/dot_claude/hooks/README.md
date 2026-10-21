@@ -135,6 +135,7 @@ PreToolUse の `auto-approve`、PermissionRequest の 2a（`permission-auto-appr
 # リポジトリルートから実行する
 bun run test        # unit テスト
 bun run test:perf   # perf テスト
+bun run test:heavy  # heavy テスト（git を起動するテストと負荷に弱いテスト）
 bun run typecheck   # 型チェック
 ```
 
