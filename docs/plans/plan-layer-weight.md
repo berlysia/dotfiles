@@ -45,4 +45,4 @@ plan をやめる、または軽くする場合、次の役目の置き場を決
 - `home/dot_claude/templates/plan-execution.md`（plan に書くことを求めている内容）
 - `home/dot_claude/rules/model-offloading.md`（委譲の条件）
 - `docs/decisions/0030-followups-written-when-raised.md`（残件の入口）
-- `docs/decisions/0039-what-an-adr-records.md`（計画から外れた点の振り分け）
+- `docs/decisions/0040-what-an-adr-records.md`（計画から外れた点の振り分け）

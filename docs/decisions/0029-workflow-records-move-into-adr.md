@@ -4,7 +4,7 @@
 
 accepted (2026-10-07)
 
-K1 の表のうち研究、計画、受け皿の行は、ADR-0039 が改めた。
+K1 の表のうち研究、計画、受け皿の行は、ADR-0040 が改めた。
 
 ## Context
 
@@ -26,7 +26,7 @@ ADR が骨子だけを書いて全文を計画に預ける形は、この観察�
 
 ## Decision
 
-- **K1: 作業の終わりに、決まった節を恒久文書へ移す。spec・research・plan は commit しない。** 行き先の原則は次のとおりである。spec の Key Decisions、却下した案、Risks は ADR の Decision / Consequences へ。research の決定を支える事実は ADR の Context へ。範囲の外として次に回した課題は `docs/plans/` の持ち越した課題の一覧へ。Tasks、Files、テストケース、Reviewer Outputs、Approval、Scope は残さない。plan の節の行き先は ADR-0039 が改めた。節ごとの表は document-workflow-reference skill の記録の移し方にある。単層モードの `plan.md` は spec と plan を兼ねるので、両方の行を当てる。
+- **K1: 作業の終わりに、決まった節を恒久文書へ移す。spec・research・plan は commit しない。** 行き先の原則は次のとおりである。spec の Key Decisions、却下した案、Risks は ADR の Decision / Consequences へ。research の決定を支える事実は ADR の Context へ。範囲の外として次に回した課題は `docs/plans/` の持ち越した課題の一覧へ。Tasks、Files、テストケース、Reviewer Outputs、Approval、Scope は残さない。plan の節の行き先は ADR-0040 が改めた。節ごとの表は document-workflow-reference skill の記録の移し方にある。単層モードの `plan.md` は spec と plan を兼ねるので、両方の行を当てる。
   - 移す作業は計画の最後のタスクとして行う（二層モードでは、最後に実行する plan-N）。計画の外の手順にしないのは、ADR と規則の文書が保護対象で、承認済みの計画の Files に載っていないと書けないためである。
   - 最後のタスクの commit の本文に、原本の `##` 見出しの一覧と、各行の「移した先の文書と節」または「該当なし」を書く。
   - 最後のタスクの後に出る残件の入口は、ADR-0030 で足した。
@@ -89,5 +89,5 @@ ADR が骨子だけを書いて全文を計画に預ける形は、この観察�
 
 - ADR-0013（同じ証拠を 2 つの永続文書に書かない判断）
 - ADR-0025（参照先にしか無い内容を移す判断、付属文書の置き場）
-- ADR-0030（残件の入口）、ADR-0031（PR の取り込みを merge commit に限る）、ADR-0039（ADR に書くもの）
+- ADR-0030（残件の入口）、ADR-0031（PR の取り込みを merge commit に限る）、ADR-0040（ADR に書くもの）
 - 掃除の commit: `52dc6fd447`
