@@ -60,6 +60,10 @@
 
 Document Workflow の gate を実装系の書き込み（Write / Edit / MultiEdit / NotebookEdit / Bash）で強制する PreToolUse hook。matcher は `lib/guarded-tools.ts` の `GUARDED_TOOLS` と同期する。承認の形のプロンプト（`承認` / `approve` だけなど）を `CronCreate` / `ScheduleWakeup` で予約することも deny する（`lib/workflow-approval.ts` の `isApprovalShapedPrompt`）。
 
+### commit-sign-failure-ask.ts
+
+commit を作る git コマンド（`commit` / `merge` / `cherry-pick` / `revert` / `rebase` / `pull` / `am`、`chezmoi update`）の署名失敗を出力の文言（`fatal: failed to write commit object` など）で検知し、署名を直せず止まることになるなら AskUserQuestion で聞くよう文脈に入れる。PostToolUse(Bash|AskUserQuestion)・PostToolUseFailure(Bash)・Stop の 1 つの定義で受ける。検知すると `~/.claude/state/commit-sign-failure/<session_id>` にマーカーを書き（subagent の失敗も同じ session_id）、main loop の Stop が 1 回だけ差し戻す。`--no-gpg-sign` は止めない。判定と文言は `lib/commit-sign-failure.ts`。注入する文言は固定で、ツール出力を含めない。
+
 ### permission-auto-approve.ts
 
 PermissionRequest hook。Claude Code が確認を出す場面で、静的な規則で allow を返す（Layer 2a）。同じ PermissionRequest の LLM evaluator（`permission-llm-evaluator.ts`、Layer 2b）とは並列に走る。
