@@ -70,6 +70,9 @@ runs:
         awk -v name="${tarball}" '$2 == name' "${work}/${checksums}" > "${work}/expected.sha256"
         lines="$(wc -l < "${work}/expected.sha256" | tr -d ' ')"
         [ "${lines}" = "1" ] || fail "checksum line" "expected exactly 1 line for ${tarball} in ${checksums}, found ${lines}"
+        # Not left to `sha256sum -c`: the Darwin sha256sum only warns about a malformed line and exits 0.
+        grep -Eq '^[0-9a-f]{64} ' "${work}/expected.sha256" \
+          || fail checksum "the ${tarball} line in ${checksums} does not start with a 64-digit hex sha256"
 
         if command -v sha256sum > /dev/null 2>&1; then
           verify=(sha256sum -c)
