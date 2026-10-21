@@ -177,6 +177,11 @@ export default defineHook({
 表示され Claude のモデル入力には入らない。`hookSpecificOutput.additionalContext` は
 逆にモデル入力へ入る。
 
+### hook 実装の落とし穴
+
+- **`UserPromptSubmit` は subagent の完了通知でも発火する**。利用者の発言だけでなく、subagent の結果が main loop に届くたびにも走る。「利用者が発言したらマーカーを消す」設計にすると、subagent が残した状態を main loop が読む前に消えてしまう。状態を消す契機は、hook 自身が見届けられる出来事（AskUserQuestion を出した、Stop で差し戻した、など）に置く。
+- **コマンドの失敗が `PostToolUseFailure` に来るとは限らない**。`git commit ...; git log` のように後ろへコマンドをつなぐと、終了コードは最後のコマンドのものになり、結果は `is_error: false` で `PostToolUse` に届く。失敗を拾う hook は `PostToolUseFailure` だけに頼らず、`PostToolUse` でも出力の文言を見る。
+
 ## ユーティリティ
 
 ### Hook telemetry
