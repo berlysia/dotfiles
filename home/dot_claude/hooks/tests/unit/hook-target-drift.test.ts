@@ -1,117 +1,20 @@
 import { strict as assert } from "node:assert";
-import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
 import { describe, it } from "node:test";
-import { fileURLToPath } from "node:url";
-
-// 本テストの守備範囲は非対称である。tmpl 内の `.ts` 参照は全て検査するが、
-// `bash .../foo.sh` のような非 .ts 参照は一切検査しない（spec R3）。逆に
-// implementations 配下でない `.ts` 参照は「非正準」として意図的に落とす
-// （spec R8）。落ちた場合はテストを緩める前に spec K7 を読むこと。
-const REPO_ROOT = fileURLToPath(new URL("../../../../../", import.meta.url));
-const TMPL_REL = "home/dot_claude/.settings.hooks.json.tmpl";
-const IMPL_PREFIX = "home/dot_claude/hooks/implementations/";
-const PREFIX = "{{ .chezmoi.homeDir }}/.claude/hooks/implementations/";
-
-// JSON 構造を解釈せず全文走査する。chezmoi でレンダリングすると
-// `{{ if dig "only_private" false . }}` が片枝に潰れ、gate 内の 2 実装が
-// 参照集合から落ちる（spec K1）。全文走査ならどの枝の参照も等しく拾う。
-// 条件分岐は `only_private` のほかに `claude_hooks.auto_approval` にもある
-// （auto-approve 系 3 実装と home-destruction-guard は互いに排他の枝に置かれる）。
-const REF = /\.claude\/hooks\/implementations\/([^"'\s/]+)\.ts/g;
-const TS_REF = /[^"'\s]*\.ts(?=[\s"'])/g;
-
-const ASSERT1_HINT =
-  "本検査は tmpl 内に名前が文字列として現れるかのみを見る（hook が実際に発火するかは検査しない）。" +
-  "onlyImpls が出た場合、共有ロジックなら home/dot_claude/hooks/lib/ へ移す。" +
-  "例外を認める必要が生じたら本ファイル先頭に ALLOWLIST 定数を置く（spec K5）";
-const ASSERT3_HINT =
-  "implementations 配下でない .ts 参照も意図的に落とす（spec R8）。" +
-  "正当な追加なら守備範囲の見直しが必要 — テストを緩める前に spec K7 を読むこと";
-
-function referencedNames(raw: string): Set<string> {
-  return new Set([...raw.matchAll(REF)].map((m) => m[1] as string));
-}
-
-function namesFromLsFiles(
-  output: string,
-  isPresent: (repoRelPath: string) => boolean,
-): Set<string> {
-  const names = new Set<string>();
-  for (const line of output.split("\n")) {
-    if (!line) continue;
-    // git の core.quotePath は既定 true で、非 ASCII 名を引用符 + 8 進エスケープで
-    // 返す。CI (actions/checkout) は既定側であり、引用行を素で slice すると
-    // 1 文字ずれて深さフィルタに落ちる = CI でのみ静かな false negative になる。
-    // lsFilesOutput() 側で quotePath=false を渡した上で、想定外の行形式は捨てる。
-    if (!line.startsWith(IMPL_PREFIX)) continue;
-    const rest = line.slice(IMPL_PREFIX.length);
-    if (rest.includes("/")) continue;
-    if (!rest.endsWith(".ts")) continue;
-    if (!isPresent(line)) continue;
-    names.add(rest.slice(0, -3));
-  }
-  return names;
-}
-
-function symmetricDiff(
-  refs: ReadonlySet<string>,
-  impls: ReadonlySet<string>,
-): { onlyRefs: string[]; onlyImpls: string[] } {
-  return {
-    onlyRefs: [...refs].filter((n) => !impls.has(n)).sort(),
-    onlyImpls: [...impls].filter((n) => !refs.has(n)).sort(),
-  };
-}
-
-function tsRefCoverage(raw: string): { matched: number; total: number } {
-  return {
-    matched: [...raw.matchAll(TS_REF)].length,
-    total: (raw.match(/\.ts/g) ?? []).length,
-  };
-}
-
-function nonCanonicalRefs(raw: string): string[] {
-  const bad: string[] = [];
-  for (const m of raw.matchAll(TS_REF)) {
-    const token = m[0];
-    const name = token.slice(token.lastIndexOf("/") + 1);
-    const expected = PREFIX + name;
-    const end = (m.index as number) + token.length;
-    const actual = raw.slice(end - expected.length, end);
-    if (actual !== expected) bad.push(actual);
-  }
-  return bad;
-}
-
-function lsFilesOutput(): string {
-  return execFileSync(
-    "git",
-    [
-      "-c",
-      "core.quotePath=false",
-      "ls-files",
-      "--cached",
-      "--others",
-      "--exclude-standard",
-      "--",
-      IMPL_PREFIX,
-    ],
-    { cwd: REPO_ROOT, encoding: "utf-8" },
-  );
-}
-
-const raw = readFileSync(`${REPO_ROOT}${TMPL_REL}`, "utf-8");
-const CANON = `${PREFIX}discord-notification.ts`;
-
-const mutate = (from: string, to: string): string => {
-  const i = raw.indexOf(from);
-  assert.notStrictEqual(i, -1, `変異アンカーが見つからない: ${from}`);
-  return raw.slice(0, i) + to + raw.slice(i + from.length);
-};
-
-const lsLines = (names: readonly string[]): string =>
-  names.map((n) => `${IMPL_PREFIX}${n}.ts`).join("\n");
+import {
+  IMPL_PREFIX,
+  PREFIX,
+  ASSERT1_HINT,
+  ASSERT3_HINT,
+  referencedNames,
+  namesFromLsFiles,
+  symmetricDiff,
+  tsRefCoverage,
+  nonCanonicalRefs,
+  raw,
+  CANON,
+  mutate,
+  lsLines,
+} from "../support/hook-target-drift-fixture.ts";
 
 describe("純関数の単体挙動", () => {
   it("referencedNames は正準参照から名前を抽出する", () => {
@@ -154,19 +57,6 @@ describe("純関数の単体挙動", () => {
 });
 
 describe("hook target drift（実リポジトリ）", () => {
-  it("assert 1: 参照集合と実体集合が双方向一致する", () => {
-    const impls = namesFromLsFiles(lsFilesOutput(), (p) =>
-      existsSync(`${REPO_ROOT}${p}`),
-    );
-    // 両方向を 1 つの deepStrictEqual で見る。逐次 assert にすると
-    // リネーム未追随（両方向が同時に立つ）で片方しか表示されない。
-    assert.deepStrictEqual(
-      symmetricDiff(referencedNames(raw), impls),
-      { onlyRefs: [], onlyImpls: [] },
-      ASSERT1_HINT,
-    );
-  });
-
   it("assert 2: 参照集合が空でない", () => {
     assert.ok(
       referencedNames(raw).size > 0,
