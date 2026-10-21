@@ -12,6 +12,7 @@
   "scripts": {
     "test": "node --import ./home/dot_claude/hooks/tests/preload-test-env.mjs --test home/dot_claude/hooks/tests/unit/*.test.ts tests/tailnet-ssh.test.mjs tests/chezmoiremove-coverage.test.mjs tests/install-chezmoi.test.mjs",
     "test:perf": "node --import ./home/dot_claude/hooks/tests/preload-test-env.mjs --test --test-concurrency=1 home/dot_claude/hooks/tests/perf/*.test.ts",
+    "test:heavy": "node --import ./home/dot_claude/hooks/tests/preload-test-env.mjs --test --test-concurrency=1 home/dot_claude/hooks/tests/heavy/*.test.ts tests/heavy/*.test.mjs",
     "typecheck": "tsc --noEmit",
     "format": "oxfmt --ignore-path .oxfmtignore .",
     "format:check": "oxfmt --check --ignore-path .oxfmtignore .",
@@ -32,7 +33,7 @@
     "lint:codex": "./scripts/check-codex-config.sh",
     "lint:oxlint": "oxlint --ignore-pattern '.claude/skills/' --ignore-pattern '.codex/skills/' --ignore-pattern '.skills/' --ignore-pattern 'mods/' --ignore-pattern 'node_modules/' .",
     "lint": "npm run format:check && npm run lint:oxlint && npm run lint:shell && npm run lint:actions && npm run lint:codex",
-    "check": "npm run test && npm run test:perf && npm run typecheck && npm run lint",
+    "check": "npm run test && npm run test:perf && npm run test:heavy && npm run typecheck && npm run lint",
     "prepare": "./scripts/install-hooks.sh"
   },
   "dependencies": {

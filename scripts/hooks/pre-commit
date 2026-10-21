@@ -267,10 +267,17 @@ echo
 # 7. .chezmoiremove coverage
 #
 # A target whose source file is removed stays on every machine that applied it
-# unless home/.chezmoiremove lists it. The full `bun run test` above already
-# includes this test, so it only runs here when that suite was skipped.
-# Additions count too: restoring a removed file while its .chezmoiremove line
-# remains would delete the restored file on every apply.
+# unless home/.chezmoiremove lists it. Additions count too: restoring a removed
+# file while its .chezmoiremove line remains would delete the restored file on
+# every apply.
+#
+# The check is split in two files. tests/chezmoiremove-coverage.test.mjs holds
+# the pure-function cases, which the full `bun run test` above already runs, so
+# it runs here only when that suite was skipped. tests/heavy/ holds the cases
+# that read the real repository through git. `bun run test` does not include
+# them, so they run here whenever an input changed, whatever step 6 did.
+# CLAUDE_TEST_FORBID_GIT='' keeps a git shim leaked from a parent environment
+# from failing them.
 CHEZMOIREMOVE_INPUTS_CHANGED=false
 if [ -n "$(git diff --cached --name-only --diff-filter=ADR -- home/)" ]; then
     CHEZMOIREMOVE_INPUTS_CHANGED=true
@@ -278,20 +285,30 @@ fi
 for file in $STAGED_FILES; do
     case "$file" in
         home/.chezmoiremove | home/.chezmoiignore | home/.chezmoiexternal.toml.tmpl | \
-            tests/chezmoiremove-coverage.test.mjs | tests/lib/chezmoiremove-coverage.mjs)
+            tests/chezmoiremove-coverage.test.mjs | tests/heavy/chezmoiremove-coverage.test.mjs | \
+            tests/lib/chezmoiremove-coverage.mjs)
             CHEZMOIREMOVE_INPUTS_CHANGED=true
             break
             ;;
     esac
 done
 
-if [ "$CHEZMOIREMOVE_INPUTS_CHANGED" = true ] && [ "$HOOK_FILES_MODIFIED" != true ] && [ "${FORCE_HOOK_TESTS:-}" != "1" ]; then
+if [ "$CHEZMOIREMOVE_INPUTS_CHANGED" = true ]; then
     echo -e "${BLUE}🧹 Checking .chezmoiremove coverage...${NC}"
-    if ! (cd "${REPO_ROOT}" && node --import ./home/dot_claude/hooks/tests/preload-test-env.mjs --test tests/chezmoiremove-coverage.test.mjs); then
+    CHEZMOIREMOVE_OK=true
+    if [ "$HOOK_FILES_MODIFIED" != true ] && [ "${FORCE_HOOK_TESTS:-}" != "1" ]; then
+        if ! (cd "${REPO_ROOT}" && node --import ./home/dot_claude/hooks/tests/preload-test-env.mjs --test tests/chezmoiremove-coverage.test.mjs); then
+            CHEZMOIREMOVE_OK=false
+        fi
+    fi
+    if ! (cd "${REPO_ROOT}" && CLAUDE_TEST_FORBID_GIT='' node --import ./home/dot_claude/hooks/tests/preload-test-env.mjs --test tests/heavy/chezmoiremove-coverage.test.mjs); then
+        CHEZMOIREMOVE_OK=false
+    fi
+    if [ "$CHEZMOIREMOVE_OK" = true ]; then
+        echo -e "${GREEN}✓ .chezmoiremove covers removed source files${NC}"
+    else
         echo -e "${RED}❌ .chezmoiremove coverage check failed (the test output above names the lines to add or remove)${NC}"
         EXIT_CODE=1
-    else
-        echo -e "${GREEN}✓ .chezmoiremove covers removed source files${NC}"
     fi
 fi
 
