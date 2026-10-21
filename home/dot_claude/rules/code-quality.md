@@ -85,4 +85,5 @@ Do not implement backward compatibility, fallbacks, or migration shims unless ex
 
 - Follow t-wada's TDD style (strict Red-Green-Refactor)
 - Grep existing tests for similar patterns before writing new ones
+- Code started through an entrypoint (hooks, CLIs) has at least one test that launches it as a process, so the entrypoint wiring is exercised; unit tests of the exported functions pass even when the entrypoint never runs
 - Tests must pass before commits
