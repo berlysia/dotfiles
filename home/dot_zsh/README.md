@@ -17,6 +17,15 @@
 - **Tool integrations**: fzf, mise, direnv, etc.
 - **Local overrides**: `~/.zshrc.local` for machine-specific settings
 
+## History Search
+
+`Ctrl-R` uses fzf's standard shell integration. Each space-separated search term must match a contiguous substring: `cd chezmoi` matches `cd ~/.local/share/chezmoi`.
+
+- Commands appear newest first; press `Ctrl-R` again to toggle relevance sorting.
+- Duplicate commands appear once, and selecting a multi-line command restores the complete command.
+- Press `Ctrl-/` to toggle line wrapping for long commands.
+- Override `FZF_CTRL_R_OPTS` in `~/.zshrc.local` to customize history search.
+
 ## Custom Prompt
 
 The configuration includes a feature-rich prompt with:

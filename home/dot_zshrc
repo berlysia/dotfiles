@@ -1,5 +1,5 @@
 if [ "$ZSHRC_PROFILE" != "" ]; then
-  zmodload zsh/zprof && zprof > /dev/null
+  zmodload zsh/zprof && zprof >/dev/null
 fi
 
 # Branch point: AI-driven shells read only the AI layer and stop here (spec: K1, K2).
@@ -54,27 +54,14 @@ else
   [ -f "$HOME/.zsh/prompt.zsh" ] && source "$HOME/.zsh/prompt.zsh"
 fi
 
-if type fzf &> /dev/null; then
-  function fzf-history-selection() {
-    local selected=""
-
-    if [[ -n "$LBUFFER" ]]; then
-      selected=`history 0 | fzf --query $LBUFFER | awk '{ $1=""; sub(/^[ \t]+/, ""); print }'`
-    else
-      selected=`history 0 | fzf | awk '{ $1=""; sub(/^[ \t]+/, ""); print }'`
-    fi
-
-    BUFFER=`[ ${#selected} -gt 0 ] && echo $selected || echo $BUFFER`
-    CURSOR=$#BUFFER
-    zle reset-prompt
-  }
-
-  zle -N fzf-history-selection
-  bindkey '^R' fzf-history-selection
+if type fzf &>/dev/null; then
+  # Match each query term as a substring; show recent commands first.
+  FZF_CTRL_R_OPTS="--exact --no-sort ${FZF_CTRL_R_OPTS:-}"
+  FZF_CTRL_T_COMMAND= FZF_ALT_C_COMMAND= source <(fzf --zsh)
 fi
 
 # zsh-specific FZF tab completion
-if type fzf &> /dev/null && [ -f ~/.zsh/functions/fzf-tab-completion.zsh ]; then
+if type fzf &>/dev/null && [ -f ~/.zsh/functions/fzf-tab-completion.zsh ]; then
   source ~/.zsh/functions/fzf-tab-completion.zsh
   bindkey '^I' fzf_completion
 fi
@@ -87,7 +74,7 @@ function chpwd() {
 }
 
 if [ -e $HOME/.zshrc.local ]; then
-    source $HOME/.zshrc.local
+  source $HOME/.zshrc.local
 fi
 
 if [[ "$TERM_PROGRAM" == "vscode" ]]; then
