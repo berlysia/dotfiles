@@ -1,5 +1,6 @@
 #!/bin/bash
 # Git pre-push hook
+# - GitHub Actions workflow lint with jactionlint
 # - Secret detection with gitleaks (full repository scan)
 
 set -euo pipefail
@@ -19,26 +20,26 @@ REPO_ROOT=$(git rev-parse --show-toplevel)
 EXIT_CODE=0
 
 #
-# 1. GitHub Actions Security Check (zizmor)
+# 1. GitHub Actions Check (jactionlint)
 #
 if [ -d "${REPO_ROOT}/.github/workflows" ]; then
     WORKFLOW_COUNT=$(find "${REPO_ROOT}/.github/workflows" -type f \( -name "*.yml" -o -name "*.yaml" \) | wc -l)
 
     if [ "$WORKFLOW_COUNT" -gt 0 ]; then
-        echo -e "${BLUE}⚡ Checking GitHub Actions workflows with zizmor...${NC}"
-        if command -v zizmor &> /dev/null; then
-            # Worktrees live under the main checkout's .git/, and zizmor discovers
-            # its config from the outermost repository root, so without --config
-            # a worktree is checked against the main checkout's zizmor.yml.
-            if zizmor --config "${REPO_ROOT}/zizmor.yml" "${REPO_ROOT}/.github/workflows"; then
-                echo -e "${GREEN}✓ All workflows passed zizmor security checks${NC}"
+        echo -e "${BLUE}⚡ Checking GitHub Actions workflows with jactionlint...${NC}"
+        if command -v jactionlint &> /dev/null; then
+            # Worktrees live under the main checkout's .git/, and config discovery
+            # can pick up the main checkout's jactionlint.yaml, so pass --config-file.
+            # The checked directory is the repository, not the cwd, hence the cd.
+            if (cd "${REPO_ROOT}" && jactionlint --config-file "${REPO_ROOT}/.github/jactionlint.yaml"); then
+                echo -e "${GREEN}✓ All workflows passed jactionlint checks${NC}"
             else
-                echo -e "${RED}❌ zizmor found security issues in workflows${NC}"
+                echo -e "${RED}❌ jactionlint found issues in workflows${NC}"
                 EXIT_CODE=1
             fi
         else
-            echo -e "${YELLOW}⚠ zizmor not installed, skipping workflow security check${NC}"
-            echo -e "${YELLOW}  Install: mise install cargo-zizmor${NC}"
+            echo -e "${YELLOW}⚠ jactionlint not installed, skipping workflow check${NC}"
+            echo -e "${YELLOW}  Install: mise install${NC}"
         fi
     fi
 fi

@@ -54,11 +54,11 @@ production コードで `process.env.CLAUDE_TEST_CWD` を読むのは次の **7 
 
 ## 課題 F: 死んだコードの削除
 
-対象は派生 8 関数（`getPlanPath` 等）、`getWorkflowDir` / `getWorkflowDirRelative` のシム 2 本、`knip.json` の `-public` tag。強制力が無い理由は次の 3 点である。
+対象は派生 8 関数（`getPlanPath` 等）、`getWorkflowDir` / `getWorkflowDirRelative` のシム 2 本、`@public` の JSDoc タグ（fallow は標準で尊重する）。強制力が無い理由は次の 3 点である。
 
-1. `knip` は CI に配線されていない。`grep -rn "knip" .github/` はヒット 0。
-2. `home/dot_claude/hooks/tests/unit/workflow-paths.test.ts:6-23` が一族全体を import しているため、テストが死んだコードを緑で保護している。実測: `bunx knip --no-progress` の出力は `Unused exported types (1) WorkflowDirUnresolvableReason` のみで、シム 2 本も派生関数も報告されない。
-3. `home/.chezmoiscripts/run_after_gc.sh.tmpl:64-75` が最大週 1 回 `bunx knip` をローカル実行する。これは報告のみでゲートではない。（2026-09-24 訂正: 以前「`| tail -20` の終了コードで常に clean になる」と書いていたが誤り。同スクリプト 9 行目の `set -euo pipefail` によりパイプの終了コードは knip のものになり、検出時は「knip reported issues」と出る。）
+1. `fallow` は CI に配線されていない。`grep -rn "fallow" .github/` はヒット 0。
+2. `home/dot_claude/hooks/tests/unit/workflow-paths.test.ts:6-23` が一族全体を import しているため、テストが死んだコードを緑で保護している。実測（2026-10-21、fallow 3.32.0）: `bunx fallow dead-code` の `Unused type exports` は 2 件（`Normalizer` ほか）で、シム 2 本も派生関数も報告されない。
+3. `home/.chezmoiscripts/run_after_gc.sh.tmpl` が最大週 1 回 `bunx fallow dead-code` をローカル実行する。これは報告のみでゲートではない。終了コードは 0（clean）、1（検出あり）、それ以外（実行失敗）に書き分けて出す。
 
 加えて、`document-workflow-guard.ts` の未使用 import `isWorkflowDocument` の除去は spec.md の K8 項目 6 に含まれていたが、plan-2 の `25a3aac` で既に解消済みである（実測: 同ファイルに `isWorkflowDocument` は 1 件も残っていない）。本課題からは除外する。
 

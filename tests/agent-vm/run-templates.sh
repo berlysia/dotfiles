@@ -41,6 +41,8 @@ test_mise_shared_set_has_no_host_toolchains() {
   assert_contains "$out" '"github:microsoft/apm"' "apm stays in the shared set (the VM installs skills)"
   # run_onchange_after_install-safe-chain hashes only config.toml (spec K7)
   assert_contains "$out" '"github:AikidoSec/safe-chain"' "safe-chain stays in config.toml"
+  # lint-actions.yml reads this line with sed and the claude-action-bootstrap skill relies on the tool in other repos
+  assert_contains "$out" '"github:jdx/jactionlint" = "' "jactionlint stays in the shared set (host and agent-vm)"
 }
 test_mise_host_only_file_holds_only_toolchain_bound_tools() {
   local keys bad

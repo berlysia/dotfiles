@@ -53,7 +53,7 @@ context: inherit
 2. **CLAUDE.md / AGENTS.md**: 有無、行数、内容（ポインタ型 or 説明型）
 3. **Hooks設定**: `.claude/settings.json` と `.claude/settings.local.json` の両方を確認。settings.local.json は gitignore された個人設定の場合がある — チーム共有か個人レベルかを判断に含める
 4. **リンター**: biome.json, oxlint の設定, .eslintrc\*, ruff.toml, .golangci.yml, clippy.toml 等
-5. **フォーマッター**: prettier, biome, black/ruff format, gofmt, rustfmt 等
+5. **フォーマッター**: oxfmt, prettier, biome, black/ruff format, gofmt, rustfmt 等
 6. **Pre-commit**: .husky/, lefthook.yml, .pre-commit-config.yaml
 7. **テスト**: テストランナー設定、テストファイルの存在
 8. **ADR**: docs/decisions/, docs/adr/
@@ -148,9 +148,12 @@ hooks は全レイヤーで独立実行されるため、プロジェクトに�
 
 | 項目           | 推奨ツール                          |
 | -------------- | ----------------------------------- |
-| リンター       | Oxlint（高速）+ Biome               |
-| フォーマッター | Biome format または Prettier        |
+| リンター       | Oxlint                              |
+| フォーマッター | oxfmt                               |
 | 型チェック     | tsc --noEmit（TypeScript 7 native） |
+| bundler        | tsdown（ライブラリを配るとき）      |
+| dead code      | fallow                              |
+| Actions lint   | jactionlint                         |
 | Pre-commit     | lefthook または husky + lint-staged |
 
 PostToolUse hooks 例:
@@ -159,7 +162,7 @@ PostToolUse hooks 例:
 {
   "type": "command",
   "event": "PostToolUse",
-  "command": "biome check --write $CLAUDE_FILE_PATH 2>&1 | head -20",
+  "command": "oxfmt $CLAUDE_FILE_PATH 2>&1 | head -20",
   "matcher": { "tool_name": "Edit|Write|MultiEdit" }
 }
 ```

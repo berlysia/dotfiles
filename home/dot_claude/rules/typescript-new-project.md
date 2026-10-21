@@ -9,8 +9,12 @@
 - **Package manager**: `pnpm`
   - Must use `minimalReleaseAge` with value means 1 week in minutes at least
 - **Linting**: `oxlint`
-- **Formatting**: `prettier`
-- **Cleaning**: `knip`
+- **Formatting**: `oxfmt`
+- **Bundling**: `tsdown` (when distributing a library)
+- **Dead code**: `fallow`
+  - When moving from knip and using it as a gate, compare detections before and after the move (unused exports are counted differently)
+- **GitHub Actions lint**: `jactionlint` (default profile; replaces both actionlint and zizmor)
+- **Version pinning**: pin npm tools in devDependencies to exact versions. Pin jactionlint in mise as `"github:jdx/jactionlint"` with an exact version; it is a young tool, so a human adopts updates after checking CI results
 
 ## Testing
 
