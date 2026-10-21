@@ -318,3 +318,37 @@ describe("heavy suite wiring (spec K5)", () => {
     ok(preCommitProblems(withoutRun).length > 0);
   });
 });
+
+// Support files are shared by unit, perf and heavy files. A module-level
+// variable or hook registration there would couple the suites through shared
+// state, so support holds fixture-building functions and constants only.
+function supportStateProblems(text: string): string[] {
+  return text
+    .split("\n")
+    .filter((line) => /^(let\s|(after|afterEach|beforeEach)\()/.test(line));
+}
+
+describe("support files hold no state (spec K2)", () => {
+  it("has no top-level let or after/afterEach/beforeEach registration", () => {
+    const offenders = readTextFiles(join(testsDir, "support"), ".ts").flatMap(
+      ({ path, text }) =>
+        supportStateProblems(text).map(
+          (l) => `${relative(testsDir, path)}: ${l}`,
+        ),
+    );
+    strictEqual(offenders.join("\n"), "");
+  });
+
+  it("reports a top-level let and a top-level hook registration", () => {
+    ok(supportStateProblems("let cache = 1;\n").length > 0);
+    ok(supportStateProblems("after(() => {\n  cleanup();\n});\n").length > 0);
+    ok(supportStateProblems("afterEach(() => cleanup());\n").length > 0);
+    ok(supportStateProblems("beforeEach(() => setup());\n").length > 0);
+    strictEqual(
+      supportStateProblems(
+        "export function make() {\n  let local = 1;\n  return local;\n}\n",
+      ).length,
+      0,
+    );
+  });
+});
