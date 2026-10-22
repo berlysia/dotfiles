@@ -569,6 +569,35 @@ export async function handleError(
 // System Notifications
 // =========================================================================
 
+// Upper bound for waiting on the notifier launcher. A launcher that has not
+// returned by then (e.g. notify-send blocked on a missing D-Bus session) must
+// not stall the hook; the child is abandoned rather than awaited.
+const SYSTEM_NOTIFICATION_LAUNCH_TIMEOUT_MS = 2000;
+
+type LaunchOutcome = "launched" | "timeout";
+
+// Why not fire-and-forget `.spawn()`: hooks end with process.exit(0) right
+// after run() returns, which can kill the launcher before it has exec'd.
+async function awaitLauncher(
+  launcher: PromiseLike<unknown>,
+  timeoutMs: number,
+): Promise<LaunchOutcome> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const launched = Promise.resolve(launcher).then(() => "launched" as const);
+  // After a timeout the launcher may still reject; keep that from surfacing
+  // as an unhandled rejection.
+  launched.catch(() => {});
+  const timedOut = new Promise<"timeout">((resolve) => {
+    timer = setTimeout(() => resolve("timeout"), timeoutMs);
+    timer.unref();
+  });
+  try {
+    return await Promise.race([launched, timedOut]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function sendSystemNotification(
   message: string,
   config: UnifiedVoiceConfig,
@@ -578,6 +607,7 @@ export async function sendSystemNotification(
   const escapedMessage = message.replace(/'/g, "'\\''");
 
   try {
+    let outcome: LaunchOutcome;
     if (config.system.platform === "wsl") {
       // WSL: wsl-notify-send.exe takes a single message argument
       // @see https://github.com/stuartleeks/wsl-notify-send
@@ -587,12 +617,25 @@ export async function sendSystemNotification(
 
       // Use bash -c to handle nohup and redirects properly
       const cmd = `nohup '${wslNotifySendPath}' --category '${wslDistroName}' '${fullMessage}' >/dev/null 2>&1 &`;
-      $`bash -c ${cmd}`.spawn();
+      outcome = await awaitLauncher(
+        $`bash -c ${cmd}`.quiet(),
+        SYSTEM_NOTIFICATION_LAUNCH_TIMEOUT_MS,
+      );
     } else {
       // Non-WSL Linux: Use notify-send directly
-      $`notify-send 'Claude Code' ${escapedMessage}`.spawn();
+      outcome = await awaitLauncher(
+        $`notify-send 'Claude Code' ${escapedMessage}`.quiet(),
+        SYSTEM_NOTIFICATION_LAUNCH_TIMEOUT_MS,
+      );
     }
-    logMessage(`System notification sent: ${message}`, config);
+    if (outcome === "timeout") {
+      logMessage(
+        `Failed to send system notification: ${message} (launcher did not return within ${SYSTEM_NOTIFICATION_LAUNCH_TIMEOUT_MS}ms)`,
+        config,
+      );
+    } else {
+      logMessage(`System notification sent: ${message}`, config);
+    }
   } catch {
     logMessage(`Failed to send system notification: ${message}`, config);
   }
