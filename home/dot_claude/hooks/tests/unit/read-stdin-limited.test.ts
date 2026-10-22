@@ -33,8 +33,16 @@ describe("readStdinLimited", () => {
   });
   it("returns null when the stream never closes (watchdog)", async () => {
     const s = new FakeStream();
-    strictEqual(await readStdinLimited(100, 20, asStream(s)), null);
-    strictEqual(s.destroyed, true);
+    // The watchdog timer is unref'd, and the fake stream holds no handle, so
+    // nothing keeps the loop alive: Node 22's test runner cancels the test
+    // when the loop drains. A ref'd timer stands in for the real stdin.
+    const keepAlive = setTimeout(() => {}, 1000);
+    try {
+      strictEqual(await readStdinLimited(100, 20, asStream(s)), null);
+      strictEqual(s.destroyed, true);
+    } finally {
+      clearTimeout(keepAlive);
+    }
   });
   it("returns null on a stream error", async () => {
     const s = new FakeStream();
