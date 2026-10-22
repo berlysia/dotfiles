@@ -57,7 +57,7 @@ merge と `chezmoi apply` の後、`agent-learnings show --grep=zzz-nomatch` が
 
 ## Codex の hook の名前
 
-Codex の `/hooks` で、配った hook が「No name hook」と表示された。`~/.codex/hooks.json`（`home/dot_codex/hooks.json.tmpl`）に、Codex が表示に使う名前の項目（公式ドキュメントの `statusMessage` など）を足す。command の文字列を変えなければ信頼はそのまま残る（codex-cli 0.163.0 で、信頼が command の文字列に結びつくことを確かめた）。項目を足すと hook の hash が変わり、信頼し直しが要る可能性がある
+Codex の `/hooks` で、配った hook が「No name hook」と表示された。`~/.codex/hooks.json`（`home/dot_codex/hooks.json.tmpl`）に、Codex が表示に使う名前の項目（公式ドキュメントの `statusMessage` など）を足す。codex-cli 0.163.0 では、script の中身を変えても信頼は残った。設定の項目を足したときに信頼し直しが要るかは確かめていないので、足した後に Codex の `/hooks` で状態を見る
 
 ## `appendReadLog` の書き込みの硬さ
 
