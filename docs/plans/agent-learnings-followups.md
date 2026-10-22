@@ -62,22 +62,3 @@ merge と `chezmoi apply` の後、`agent-learnings show --grep=zzz-nomatch` が
 ## 開始時の記録の確認
 
 場面の注入・注入の記録・feedback は Claude と Codex の両方で配備後に確かめたが、開始時の経路は配備の後のセッションの開始でしか見られない。次のセッションの開始時に、`injections.log` に `kind: session`・`reader: claude` の行（trigger は `session` か `untagged`）が描画した件数だけ増えるか、注入文の末尾に「他に N 件」の行と `--at=session` の案内が付くかを見る。確認のために返した評価（L-17458db07f49 の `mistimed` と、Codex からの `helpful`）が 2026-11-05 まで集計に残る
-
-## 今ある学びへの場面のタグ付けの残り
-
-エージェントが 4 つの repo の学びに `cmd:` と `path:` を付けた（dotfiles 7、awai 3、kanbun-annotation 13、llm-dashboard 1）。次は人が端末から `agent-learnings tag <id> --on=…` で付けるかを決める（エージェントの `tag` は common に効かず、worker の制限を超える場面を付けられない）。
-
-- common の学びへの案: L-66afc72df7e5 `cmd:gh pr`、L-d347b5788800 `cmd:git commit`、L-3bfed1178154 `cmd:gh pr`、L-d8c5fd075c67 `cmd:gh pr`
-- worker の制限で付けられなかった案（dotfiles）: L-2382ffdafb25 `cmd:git-worktree-cleanup`、L-8d312d5577f5 `cmd:jactionlint`、L-fc841b5b637b `cmd:wsl-notify-send`、L-75fef329b3ce（`cmd:pkill -f` は文法に合わないので `cmd:pkill`）
-- 同じく（awai）: L-41f0edba35d5（`cmd:systemctl --user` は文法に合わないので `cmd:systemctl`）
-- 同じく（llm-dashboard）: L-304370823cf8 `path:vite.config.ts`（1 階層の prefix）
-- 語の検査で外した案（llm-dashboard）: L-e581c567bb7d `cmd:git commit`（本文に `git commit` の句が無い）
-
-開始時の量（開始時に流れる学びの数、`show --on=session` の省略）:
-
-- dotfiles: 40 件で 24 件省略 → 33 件で 16 件省略。付けなかった学びの多くが方針や進め方で、場面に結びつかない
-- kanbun-annotation: 39 件で 23 件省略 → 26 件で 10 件省略
-- awai: 19 件で 4 件省略 → 16 件で省略なし
-- llm-dashboard: 10 件 → 9 件、省略なし
-
-8KB に収まらない残り（spec R12）は、rules への移し替えか、開始時に見出しだけを流す索引の形で扱うかを、注入の記録と feedback が溜まってから決める。止めた repo、利用者が断った repo、適用の直前に増えて対象外にした学びは無い。
