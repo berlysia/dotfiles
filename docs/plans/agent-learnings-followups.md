@@ -60,3 +60,9 @@ merge と `chezmoi apply` の後、`agent-learnings show --grep=zzz-nomatch` が
 ## `appendReadLog` の書き込みの硬さ
 
 `core/store.ts` の既存の `appendReadLog` は `O_NONBLOCK` と通常ファイルの確認を持たない。書き先の `reads.log` が FIFO に差し替えられると、開く時点で止まりうる。新しい `appendLogLines`（注入と評価のログ）は `O_NONBLOCK`・`fstat` の通常ファイル確認・4MB の上限を持つので、`appendReadLog` も同じ書き方に揃えるか、`appendLogLines` へ寄せる。
+
+## 注入の記録と feedback の配備後の確認
+
+配備後に、`cmd:git status` を一時的に付けた学びで確かめた。`injections.log` に `kind: pre`・`trigger: cmd:git status` の行が入り、`feedback <id> mistimed --at=pre` は受理され（`reader: claude`）、記録の無い `--at=fail` は exit 1 になった。`status` に injections・feedback・retag の行が出た。確認のために返した `mistimed` 1 件（L-17458db07f49）が 14 日の集計に残る。次は配備直後には確かめられなかった。
+
+- **開始時の記録**: 次のセッションの開始時に、`injections.log` に `kind: session` の行（trigger は `session` か `untagged`）が描画した件数だけ増えるか。注入文の末尾に `--at=session` の案内が付くか
