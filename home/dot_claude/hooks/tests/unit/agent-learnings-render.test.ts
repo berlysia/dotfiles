@@ -134,6 +134,70 @@ describe("renderLearnings", () => {
   });
 });
 
+describe("renderLearnings sceneOnlyCount", () => {
+  const SCENE_LINE =
+    "他に 2 件は、コマンドやファイルの場面で出る（agent-learnings show --on=… で読める）";
+  it("adds the fixed line before the remove hint and after sections", () => {
+    const out =
+      renderLearnings({
+        repo: f("k/a/b", [e(1, 1, "2026-10-01")]),
+        common: null,
+        repoPath: "/r",
+        commonPath: "/c",
+        sceneOnlyCount: 2,
+      }) ?? "";
+    const lines = out.split("\n");
+    strictEqual(lines.at(-2), SCENE_LINE);
+    ok(lines.at(-1)?.includes("agent-learnings remove"));
+    ok(out.indexOf("t1") < out.indexOf(SCENE_LINE));
+  });
+  it("is not null when only the line remains", () => {
+    const out = renderLearnings({
+      repo: f("k/a/b", []),
+      common: null,
+      repoPath: "/r",
+      commonPath: "/c",
+      sceneOnlyCount: 2,
+    });
+    ok(out?.startsWith("[agent-learnings]"));
+    ok(out?.includes(SCENE_LINE));
+    ok(out?.includes("agent-learnings remove"));
+  });
+  it("adds nothing for 0 and keeps null for empty input", () => {
+    const base = {
+      repo: f("k/a/b", []),
+      common: null,
+      repoPath: "/r",
+      commonPath: "/c",
+    };
+    strictEqual(renderLearnings({ ...base, sceneOnlyCount: 0 }), null);
+    ok(
+      !(
+        renderLearnings({
+          ...base,
+          repo: f("k/a/b", [e(1, 1, "2026-10-01")]),
+          sceneOnlyCount: 0,
+        }) ?? ""
+      ).includes("他に"),
+    );
+  });
+  it("puts the omitted line of a section before the scene line", () => {
+    const many = Array.from({ length: 40 }, (_, i) =>
+      e(i, 1, "2026-10-01", `${"あ".repeat(100)} ${i}`),
+    );
+    const out =
+      renderLearnings({
+        repo: f("k/a/b", many),
+        common: null,
+        repoPath: "/r",
+        commonPath: "/c",
+        sceneOnlyCount: 2,
+      }) ?? "";
+    ok(out.includes("件省略"));
+    ok(out.indexOf("件省略") < out.indexOf(SCENE_LINE));
+  });
+});
+
 describe("renderSituation", () => {
   const sel = (entries: LearningEntry[]) =>
     entries.map((entry) => ({

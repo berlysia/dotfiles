@@ -62,6 +62,8 @@ export function renderLearnings(input: {
   commonPath: string;
   // 絞り込み済みの出力では、既定の案内（`--grep` で探せる）が自分自身を指してしまう
   omittedHint?: string;
+  // 開始時の絞りで外れた、場面だけを持つ項目の数。件数だけを固定の文で知らせる
+  sceneOnlyCount?: number;
 }): string | null {
   const omittedHint = input.omittedHint ?? DEFAULT_OMITTED_HINT;
   const repoSection = renderSection(
@@ -74,8 +76,16 @@ export function renderLearnings(input: {
     input.common,
     omittedHint,
   );
-  if (repoSection === null && commonSection === null) return null;
-  return [NOTICE, repoSection, commonSection, REMOVE_HINT]
+  const sceneOnlyCount = input.sceneOnlyCount ?? 0;
+  if (repoSection === null && commonSection === null && sceneOnlyCount < 1)
+    return null;
+  // 項目の文字は混ぜない（再検査の外に注入の経路を作らない）。
+  // 並びは 節 → 各節の省略の行 → この行 → 削除の案内
+  const sceneLine =
+    sceneOnlyCount >= 1
+      ? `他に ${sceneOnlyCount} 件は、コマンドやファイルの場面で出る（agent-learnings show --on=… で読める）`
+      : null;
+  return [NOTICE, repoSection, commonSection, sceneLine, REMOVE_HINT]
     .filter((part) => part !== null)
     .join("\n");
 }

@@ -1,8 +1,17 @@
 import { deepStrictEqual, ok, strictEqual } from "node:assert";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 import {
   buildSessionLearningsContext,
@@ -14,6 +23,7 @@ import {
   initStore,
   defaultStoreDir,
   storePaths,
+  writeLearnings,
 } from "../../lib/agent-learnings/core/store.ts";
 import { writeInboxRequest } from "../../lib/agent-learnings/core/inbox.ts";
 import {
@@ -71,6 +81,135 @@ describe("buildSessionLearningsContext", () => {
           '"reader":"claude"',
         ),
       );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("buildSessionLearningsContext start-time filter", () => {
+  const entry = (n: number, extra: Array<[string, string]>) => ({
+    id: `L-${n.toString(16).padStart(12, "0")}`,
+    title: `title ${n}`,
+    body: `body ${n}`,
+    seen: 1,
+    repos: ["github.com/foo/bar"],
+    updated: "2026-10-01",
+    extra,
+  });
+  async function startContext(
+    repoEntries: ReturnType<typeof entry>[],
+    commonEntries: ReturnType<typeof entry>[] = [],
+  ) {
+    const root = mkdtempSync(join(tmpdir(), "agent-learnings-startfilter-"));
+    try {
+      const repo = join(root, "repo");
+      const home = join(root, "home");
+      execFileSync("git", ["init", "-q", repo]);
+      execFileSync("git", [
+        "-C",
+        repo,
+        "remote",
+        "add",
+        "origin",
+        "https://github.com/foo/bar.git",
+      ]);
+      const store = defaultStoreDir(home);
+      initStore(store, runGit);
+      for (const [key, entries] of [
+        ["github.com/foo/bar", repoEntries],
+        ["common", commonEntries],
+      ] as const)
+        ok(
+          writeLearnings(store, { format: 1, key, readOnly: false, entries })
+            .ok,
+        );
+      return await buildSessionLearningsContext({
+        cwd: repo,
+        home,
+        runGit,
+        now: new Date(),
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  it("shows no-on, session and invalid-on entries and counts the scene-only ones", async () => {
+    const out =
+      (await startContext([
+        entry(1, []),
+        entry(2, [["on", "session"]]),
+        entry(3, [["on", "cmd:git commit"]]),
+        entry(4, [["on", "bogus!!"]]),
+      ])) ?? "";
+    ok(out.includes("title 1"));
+    ok(out.includes("title 2"));
+    ok(!out.includes("title 3"));
+    ok(out.includes("title 4"));
+    ok(out.includes("他に 1 件は、コマンドやファイルの場面で出る"));
+  });
+  it("has no scene line when nothing was filtered out", async () => {
+    const out = (await startContext([entry(1, [])])) ?? "";
+    ok(!out.includes("他に"));
+  });
+  it("is not null when the only entry is scene-only", async () => {
+    const out =
+      (await startContext([entry(1, [["on", "cmd:git commit"]])])) ?? "";
+    ok(out.startsWith("[agent-learnings]"));
+    ok(out.includes("他に 1 件は"));
+    ok(out.includes("agent-learnings remove"));
+    ok(!out.includes("title 1"));
+  });
+  it("shows a common entry whose only trigger is a path prefix", async () => {
+    const out =
+      (await startContext([], [entry(1, [["on", "path:mods/x/"]])])) ?? "";
+    ok(out.includes("title 1"));
+  });
+});
+
+describe("session.ts SessionStart state GC", () => {
+  it("removes scene state older than 7 days and keeps newer files", () => {
+    const root = mkdtempSync(join(tmpdir(), "agent-learnings-gc-"));
+    try {
+      const repoRoot = join(
+        dirname(fileURLToPath(import.meta.url)),
+        "../../../../..",
+      );
+      const dir = join(root, ".claude/state/agent-learnings");
+      mkdirSync(dir, { recursive: true, mode: 0o700 });
+      const old = join(dir, "sess-old.injected");
+      const fresh = join(dir, "sess-new.injected");
+      writeFileSync(old, "");
+      writeFileSync(fresh, "");
+      const day = 24 * 60 * 60;
+      const nowSec = Date.now() / 1000;
+      utimesSync(old, nowSec - 8 * day, nowSec - 8 * day);
+      utimesSync(fresh, nowSec - 6 * day, nowSec - 6 * day);
+      writeFileSync(join(root, "envfile"), "");
+      const env = { ...process.env, HOME: root };
+      delete env.DOCUMENT_WORKFLOW_DIR;
+      delete env.CLAUDE_LOGS_DIR;
+      env.CLAUDE_ENV_FILE = join(root, "envfile");
+      execFileSync(
+        "bun",
+        [join(repoRoot, "home/dot_claude/hooks/implementations/session.ts")],
+        {
+          cwd: repoRoot,
+          input: JSON.stringify({
+            hook_event_name: "SessionStart",
+            cwd: repoRoot,
+            session_id: "abcdef1234567890",
+            transcript_path: "/tmp/fake-transcript.jsonl",
+            source: "startup",
+          }),
+          encoding: "utf-8",
+          env,
+          timeout: 30_000,
+        },
+      );
+      strictEqual(existsSync(old), false);
+      strictEqual(existsSync(fresh), true);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

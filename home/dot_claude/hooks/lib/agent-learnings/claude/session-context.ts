@@ -4,10 +4,11 @@ import { join } from "node:path";
 import { loadRedactList } from "../../insight-digest.ts";
 import { drainInbox } from "../core/inbox.ts";
 import type { RunGit } from "../core/git.ts";
-import { COMMON_KEY } from "../core/learnings-file.ts";
+import { COMMON_KEY, type LearningsFile } from "../core/learnings-file.ts";
 import { countJobs, enqueueJob } from "../core/queue.ts";
 import { renderLearnings } from "../core/render.ts";
 import { resolveRepoKey } from "../core/repo-key.ts";
+import { filterByTrigger, type Trigger } from "../core/triggers.ts";
 import {
   appendReadLog,
   commonFilePath,
@@ -19,6 +20,8 @@ import {
 } from "../core/store.ts";
 import { buildWorkerEnv } from "./worker-env.ts";
 import { isWorkerSession } from "./worker-guard.ts";
+
+const SESSION: Trigger = { kind: "session" };
 
 // SessionStart で Claude の文脈へ渡す学び。store が無い・repo の外なら null。
 // Codex が inbox に置いた依頼はここで取り込む（lock が取れなければ飛ばす）。
@@ -45,11 +48,24 @@ export async function buildSessionLearningsContext(input: {
     ),
   });
 
-  const repo = readLearnings(store, repoKey);
-  const common = readLearnings(store, COMMON_KEY);
+  // 開始時は `on` が無い学びと `session` の学びだけ（show --on=session と同じ関数）。
+  // 外れた分は場面だけを持つ学び（無効な `on` は絞りに残る）で、件数だけを知らせる
+  const sessionOnly = (file: LearningsFile | null) => {
+    if (file === null) return { file: null, dropped: 0 };
+    const entries = filterByTrigger(file.entries, file.key, SESSION);
+    return {
+      file: { ...file, entries },
+      dropped: file.entries.length - entries.length,
+    };
+  };
+  const repoRead = readLearnings(store, repoKey);
+  const commonRead = readLearnings(store, COMMON_KEY);
+  const repo = sessionOnly(repoRead.ok ? repoRead.value : null);
+  const common = sessionOnly(commonRead.ok ? commonRead.value : null);
   const rendered = renderLearnings({
-    repo: repo.ok ? repo.value : null,
-    common: common.ok ? common.value : null,
+    repo: repo.file,
+    common: common.file,
+    sceneOnlyCount: repo.dropped + common.dropped,
     repoPath: repoFilePath(store, repoKey),
     commonPath: commonFilePath(store),
   });
