@@ -92,7 +92,8 @@ const REPO_KEY_SHAPE = "host/owner/repo（例: github.com/berlysia/awai）";
 
 const USAGE = [
   "usage: agent-learnings <command>",
-  "  show [--cwd DIR] [--reader NAME]",
+  "  show [--cwd DIR] [--reader NAME] [--grep=WORD]... [--id L-…]...",
+  "                   --grep は見出し・本文・id の部分一致（大文字小文字を区別しない、複数で AND）。--id は複数で OR",
   "  path [--common]",
   "  add --title=T --body=B [--common]",
   "  remove <id>",
@@ -131,38 +132,145 @@ function storeExists(store: string): boolean {
   return existsSync(join(store, ".git"));
 }
 
+const MAX_FILTER_FLAGS = 8;
+const MAX_GREP_LENGTH = 100;
+const FILTERED_OMITTED_HINT = "語を足して絞り込める";
+
+interface ShowArgs {
+  cwd: string | undefined;
+  reader: string | undefined;
+  greps: readonly string[]; // 小文字化済み
+  ids: readonly string[];
+}
+
+// 不正な値はエージェントの入力そのもの。parseArgs の例外文にも値が入りうるので、
+// 診断は固定の文言に落とし、渡された値を stderr に返さない。
+function parseShowArgs(
+  args: readonly string[],
+): { ok: true; value: ShowArgs } | { ok: false; message: string } {
+  let values;
+  try {
+    ({ values } = parseArgs({
+      args: [...args],
+      options: {
+        cwd: { type: "string" },
+        reader: { type: "string" },
+        grep: { type: "string", multiple: true },
+        id: { type: "string", multiple: true },
+      },
+      strict: true,
+    }));
+  } catch {
+    return { ok: false, message: "show の引数が不正" };
+  }
+  const greps = values.grep ?? [];
+  const ids = values.id ?? [];
+  if (
+    greps.length > MAX_FILTER_FLAGS ||
+    greps.some((word) => word.length === 0 || word.length > MAX_GREP_LENGTH)
+  )
+    return {
+      ok: false,
+      message: `--grep は ${MAX_FILTER_FLAGS} 個まで、1 語は 1〜${MAX_GREP_LENGTH} 字。\`-\` で始まる語は --grep=WORD の形で渡す`,
+    };
+  if (ids.length > MAX_FILTER_FLAGS || ids.some((id) => !ID_PATTERN.test(id)))
+    return {
+      ok: false,
+      message: `--id は ${MAX_FILTER_FLAGS} 個まで、L- と 12 桁の 16 進数`,
+    };
+  return {
+    ok: true,
+    value: {
+      cwd: values.cwd,
+      reader: values.reader,
+      greps: greps.map((word) => word.toLowerCase()),
+      ids,
+    },
+  };
+}
+
+// 語は見出し・本文・id をつないだ 1 つの文字列に対して照合する。語ごとに別の
+// フィールドに当たってよい（AND）。正規表現にしないのは、エージェントの入力を
+// そのまま RegExp に渡さないため
+function filterEntries(file: LearningsFile, show: ShowArgs): LearningsFile {
+  return {
+    ...file,
+    entries: file.entries.filter((entry) => {
+      if (show.ids.length > 0 && !show.ids.includes(entry.id)) return false;
+      const haystack = `${entry.title} ${entry.body} ${entry.id}`.toLowerCase();
+      return show.greps.every((word) => haystack.includes(word));
+    }),
+  };
+}
+
 function runShow(
   args: readonly string[],
   deps: RunLearningsCliDeps,
 ): RunLearningsCliResult {
+  // 引数の誤りは try の外で exit 1 にする。中に置くと catch が exit 0 にして、
+  // --grep を知らない古い CLI の「空の出力」と見分けがつかなくなる
+  const parsed = parseShowArgs(args);
+  if (!parsed.ok) return fail(`${parsed.message}\n${USAGE}`);
+  const show = parsed.value;
+  const filtered = show.greps.length > 0 || show.ids.length > 0;
   try {
-    const { values } = parseArgs({
-      args: [...args],
-      options: { cwd: { type: "string" }, reader: { type: "string" } },
-      strict: true,
-    });
     const store = defaultStoreDir(deps.home);
     if (!storeExists(store)) return done(0);
-    const repoKey = resolveRepoKey(values.cwd ?? deps.cwd, deps.runGit);
+    const repoKey = resolveRepoKey(show.cwd ?? deps.cwd, deps.runGit);
     if (repoKey === null) return done(0);
 
-    const repo = readLearnings(store, repoKey);
-    const common = readLearnings(store, COMMON_KEY);
+    const repoRead = readLearnings(store, repoKey);
+    const commonRead = readLearnings(store, COMMON_KEY);
+    const repoPath = repoFilePath(store, repoKey);
+    const commonPath = commonFilePath(store);
+    const repo = repoRead.ok
+      ? filtered
+        ? filterEntries(repoRead.value, show)
+        : repoRead.value
+      : null;
+    const common = commonRead.ok
+      ? filtered
+        ? filterEntries(commonRead.value, show)
+        : commonRead.value
+      : null;
+
+    if (filtered) {
+      const matched =
+        (repo?.entries.length ?? 0) + (common?.entries.length ?? 0);
+      if (matched === 0) {
+        const unreadable = [
+          ...(repoRead.ok ? [] : [repoPath]),
+          ...(commonRead.ok ? [] : [commonPath]),
+        ];
+        return done(
+          0,
+          "",
+          unreadable.length > 0
+            ? `学びファイルを読めなかった（${unreadable.join(" / ")}）\n`
+            : `一致する学びが無い（全文: ${repoPath} / ${commonPath}）\n`,
+        );
+      }
+    }
     const rendered = renderLearnings({
-      repo: repo.ok ? repo.value : null,
-      common: common.ok ? common.value : null,
-      repoPath: repoFilePath(store, repoKey),
-      commonPath: commonFilePath(store),
+      repo,
+      common,
+      repoPath,
+      commonPath,
+      ...(filtered ? { omittedHint: FILTERED_OMITTED_HINT } : {}),
     });
 
-    const paths = storePaths(store);
-    const reader = readerOf(deps, values.reader);
-    // 記録は学びの件数にかかわらず行う。Codex は .state/codex の中にしか書けない
-    appendReadLog(reader === "codex" ? paths.codexReadsLog : paths.readsLog, {
-      at: deps.now,
-      reader,
-      repoKey,
-    });
+    // 絞り込みは数えない。reads は「開始時に show したか」の指標で、検索の回数で
+    // 増えると AGENTS.md が守られているかを判断できなくなる
+    if (!filtered) {
+      const paths = storePaths(store);
+      const reader = readerOf(deps, show.reader);
+      // 記録は学びの件数にかかわらず行う。Codex は .state/codex の中にしか書けない
+      appendReadLog(reader === "codex" ? paths.codexReadsLog : paths.readsLog, {
+        at: deps.now,
+        reader,
+        repoKey,
+      });
+    }
     return done(0, rendered === null ? "" : `${rendered}\n`);
   } catch (error) {
     return done(0, "", `agent-learnings show failed: ${errorMessage(error)}\n`);
@@ -867,6 +975,18 @@ export async function runLearningsCli(
   deps: RunLearningsCliDeps,
 ): Promise<RunLearningsCliResult> {
   const [command, ...rest] = argv;
+  // human-only の判定より前に見る。エージェントも promote などの使い方を読めるように。
+  // 見るのは argv[0] と argv[1] だけ。後ろまで探すと `--title --help` のように
+  // 値の位置にある語を help と誤認して、書き込みの引数エラーを飲み込む
+  if (
+    command === undefined ||
+    command === "help" ||
+    command === "--help" ||
+    command === "-h" ||
+    rest[0] === "--help" ||
+    rest[0] === "-h"
+  )
+    return done(0, USAGE);
   const humanOnly = deps.isTty && !deps.agentEnv;
   try {
     switch (command) {

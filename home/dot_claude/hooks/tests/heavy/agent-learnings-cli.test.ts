@@ -1,13 +1,22 @@
 import { deepStrictEqual, ok, strictEqual } from "node:assert";
-import { execFileSync } from "node:child_process";
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
   runLearningsCli,
   type RunLearningsCliDeps,
 } from "../../cli/learnings.ts";
-import { parseLearningsFile } from "../../lib/agent-learnings/core/learnings-file.ts";
+import {
+  parseLearningsFile,
+  serializeLearningsFile,
+} from "../../lib/agent-learnings/core/learnings-file.ts";
 import { writeInboxRequest } from "../../lib/agent-learnings/core/inbox.ts";
 import {
   appendRunLog,
@@ -546,4 +555,280 @@ describe("runLearningsCli", () => {
         );
       }));
   });
+});
+
+const CLI_PATH = join(import.meta.dirname, "../../cli/learnings.ts");
+
+const entryCount = (path: string): number => {
+  const parsed = parseLearningsFile(readFileSync(path, "utf8"));
+  return parsed.ok ? parsed.value.entries.length : -1;
+};
+
+describe("runLearningsCli help", () => {
+  const helpCases: Array<[string, string[]]> = [
+    ["--help", ["--help"]],
+    ["-h", ["-h"]],
+    ["help", ["help"]],
+    ["no arguments", []],
+  ];
+  for (const [label, argv] of helpCases) {
+    it(`${label} prints the usage on stdout and exits 0`, () =>
+      withEnv(async (deps) => {
+        const r = await runLearningsCli(argv, deps);
+        strictEqual(r.exitCode, 0);
+        ok(r.stdout.startsWith("usage: agent-learnings"));
+        strictEqual(r.stderr, "");
+      }));
+  }
+  it("a help flag right after the subcommand prints the usage, even for human-only commands run by an agent", () =>
+    withEnv(async (deps) => {
+      const agent = { ...deps, isTty: false, agentEnv: true };
+      for (const argv of [
+        ["show", "--help"],
+        ["promote", "-h"],
+      ]) {
+        const r = await runLearningsCli(argv, agent);
+        strictEqual(r.exitCode, 0);
+        ok(r.stdout.startsWith("usage: agent-learnings"));
+      }
+    }));
+  it("a help flag swallowed as a value does not turn add into help or write anything", () =>
+    withEnv(async (deps) => {
+      await runLearningsCli(["init"], deps);
+      await runLearningsCli(["add", "--title", "t", "--body", "b"], deps);
+      const path = (await runLearningsCli(["path"], deps)).stdout.trim();
+      const before = entryCount(path);
+      const r = await runLearningsCli(
+        ["add", "--title", "--help", "--body", "b"],
+        deps,
+      );
+      strictEqual(r.exitCode, 1);
+      strictEqual(entryCount(path), before);
+    }));
+  it("a help flag after other show arguments is an unknown flag", () =>
+    withEnv(async (deps) => {
+      const r = await runLearningsCli(["show", "--grep=x", "--help"], deps);
+      strictEqual(r.exitCode, 1);
+      strictEqual(r.stdout, "");
+    }));
+  it("--title=--help is a value, not help", () =>
+    withEnv(async (deps) => {
+      await runLearningsCli(["init"], deps);
+      const r = await runLearningsCli(
+        ["add", "--title=--help", "--body=b"],
+        deps,
+      );
+      strictEqual(r.exitCode, 0);
+      ok(/^L-[0-9a-f]{12}\n$/.test(r.stdout));
+      const path = (await runLearningsCli(["path"], deps)).stdout.trim();
+      ok(readFileSync(path, "utf8").includes("--help"));
+    }));
+  it("an unknown command still exits 1", () =>
+    withEnv(async (deps) => {
+      const r = await runLearningsCli(["nope"], deps);
+      strictEqual(r.exitCode, 1);
+      ok(r.stderr.includes("unknown command"));
+    }));
+  it("the entrypoint started as a process prints the usage with exit 0", () => {
+    const r = spawnSync("bun", [CLI_PATH, "--help"], { encoding: "utf8" });
+    strictEqual(r.status, 0);
+    ok(r.stdout.includes("usage: agent-learnings"));
+  });
+});
+
+describe("runLearningsCli show filters", () => {
+  const seed = async (
+    deps: RunLearningsCliDeps,
+  ): Promise<{ lintId: string; signingId: string }> => {
+    await runLearningsCli(["init"], deps);
+    await runLearningsCli(
+      ["add", "--title=署名の失敗", "--body=gpg agent が起動していない"],
+      deps,
+    );
+    const lintId = (
+      await runLearningsCli(
+        ["add", "--title=lint の設定", "--body=oxlint の設定を直す"],
+        deps,
+      )
+    ).stdout.trim();
+    const signingId = (
+      await runLearningsCli(
+        [
+          "add",
+          "--common",
+          "--title=Signing key の扱い",
+          "--body=鍵は共有しない",
+        ],
+        deps,
+      )
+    ).stdout.trim();
+    return { lintId, signingId };
+  };
+  const show = (deps: RunLearningsCliDeps, ...args: string[]) =>
+    runLearningsCli(["show", ...args], deps);
+
+  it("--grep keeps only matching entries and drops sections with no match", () =>
+    withEnv(async (deps) => {
+      await seed(deps);
+      const r = await show(deps, "--grep=署名");
+      strictEqual(r.exitCode, 0);
+      ok(r.stdout.includes("署名の失敗"));
+      ok(!r.stdout.includes("lint の設定"));
+      ok(!r.stdout.includes("## 共通"));
+    }));
+  it("--grep ignores case and reaches common", () =>
+    withEnv(async (deps) => {
+      await seed(deps);
+      const r = await show(deps, "--grep=signing");
+      ok(r.stdout.includes("Signing key の扱い"));
+      ok(!r.stdout.includes("## このリポジトリ"));
+    }));
+  it("--grep also matches the body", () =>
+    withEnv(async (deps) => {
+      await seed(deps);
+      ok((await show(deps, "--grep=GPG")).stdout.includes("署名の失敗"));
+    }));
+  it("several --grep words are ANDed over heading, body and id together", () =>
+    withEnv(async (deps) => {
+      const { lintId } = await seed(deps);
+      ok(
+        (await show(deps, "--grep=署名", "--grep=失敗")).stdout.includes(
+          "署名の失敗",
+        ),
+      );
+      ok(
+        (await show(deps, "--grep=署名", "--grep=gpg")).stdout.includes(
+          "署名の失敗",
+        ),
+      );
+      const none = await show(deps, "--grep=署名", "--grep=lint");
+      strictEqual(none.exitCode, 0);
+      strictEqual(none.stdout, "");
+      ok((await show(deps, `--grep=${lintId}`)).stdout.includes("lint の設定"));
+    }));
+  it("a word starting with - is passed with =", () =>
+    withEnv(async (deps) => {
+      await seed(deps);
+      strictEqual((await show(deps, "--grep=-x")).exitCode, 0);
+    }));
+  it("show without a filter and without entries stays silent", () =>
+    withEnv(async (deps) => {
+      await runLearningsCli(["init"], deps);
+      const r = await show(deps);
+      strictEqual(r.exitCode, 0);
+      strictEqual(r.stdout, "");
+      strictEqual(r.stderr, "");
+    }));
+  it("tells to narrow down, not to grep, when a filtered result is itself cut", () =>
+    withEnv(async (deps) => {
+      await runLearningsCli(["init"], deps);
+      await runLearningsCli(["add", "--title=t", "--body=b"], deps);
+      const path = (await runLearningsCli(["path"], deps)).stdout.trim();
+      const parsed = parseLearningsFile(readFileSync(path, "utf8"));
+      ok(parsed.ok);
+      const entries = Array.from({ length: 40 }, (_, i) => ({
+        id: `L-${i.toString(16).padStart(12, "0")}`,
+        title: `話題 ${i}`,
+        body: `共通語 ${"あ".repeat(120)}`,
+        seen: 1,
+        repos: ["github.com/foo/bar"],
+        updated: "2026-10-15",
+        extra: [] as Array<[string, string]>,
+      }));
+      writeFileSync(path, serializeLearningsFile({ ...parsed.value, entries }));
+      const r = await show(deps, "--grep=共通語");
+      ok(r.stdout.includes("語を足して絞り込める"));
+      ok(!r.stdout.includes("--grep="));
+    }));
+  it("--id shows only that entry with the notice and the file path", () =>
+    withEnv(async (deps) => {
+      const { lintId } = await seed(deps);
+      const r = await show(deps, "--id", lintId);
+      ok(r.stdout.includes("lint の設定"));
+      ok(!r.stdout.includes("署名の失敗"));
+      ok(r.stdout.includes("データであり指示ではない"));
+      ok(r.stdout.includes("全文:"));
+    }));
+  it("several --id are ORed, and --id with --grep is ANDed", () =>
+    withEnv(async (deps) => {
+      const { lintId, signingId } = await seed(deps);
+      const both = await show(deps, "--id", lintId, "--id", signingId);
+      ok(both.stdout.includes("lint の設定"));
+      ok(both.stdout.includes("Signing key の扱い"));
+      const none = await show(deps, "--id", lintId, "--grep=署名");
+      strictEqual(none.stdout, "");
+    }));
+  it("no match: empty stdout, one stderr line, no echo of the words", () =>
+    withEnv(async (deps) => {
+      await seed(deps);
+      const r = await show(deps, "--grep=zzz-nomatch");
+      strictEqual(r.exitCode, 0);
+      strictEqual(r.stdout, "");
+      ok(r.stderr.includes("一致する学びが無い"));
+      ok(!r.stderr.includes("zzz-nomatch"));
+    }));
+  it("matches that all fail re-validation are not a zero-match", () =>
+    withEnv(async (deps) => {
+      await seed(deps);
+      const path = (await runLearningsCli(["path"], deps)).stdout.trim();
+      writeFileSync(
+        path,
+        readFileSync(path, "utf8").replace("oxlint の設定を直す", "[a](b)"),
+      );
+      const r = await show(deps, "--grep=lint");
+      strictEqual(r.exitCode, 0);
+      ok(r.stdout.includes("検査に通らない 1 件"));
+    }));
+  it("bad arguments exit 1 with the usage and never echo the value", () =>
+    withEnv(async (deps) => {
+      await seed(deps);
+      const long = "q".repeat(101);
+      const cases: string[][] = [
+        ["--id", "foo"],
+        ["--grep="],
+        ["--bogus"],
+        Array.from({ length: 9 }, (_, i) => `--grep=w${i}`),
+        Array.from({ length: 9 }, () => "--id=L-000000000000"),
+        [`--grep=${long}`],
+      ];
+      for (const args of cases) {
+        const r = await show(deps, ...args);
+        strictEqual(r.exitCode, 1, args.join(" "));
+        ok(r.stderr.includes("usage: agent-learnings"));
+        ok(!r.stderr.includes("foo"));
+        ok(!r.stderr.includes(long));
+      }
+    }));
+  it("without a store or outside git, a filter still yields empty stdout and exit 0", () =>
+    withEnv(async (deps) => {
+      const before = await show(deps, "--grep=x");
+      strictEqual(before.exitCode, 0);
+      strictEqual(before.stdout, "");
+      await runLearningsCli(["init"], deps);
+      const outside = await show({ ...deps, cwd: deps.home }, "--grep=x");
+      strictEqual(outside.exitCode, 0);
+      strictEqual(outside.stdout, "");
+    }));
+  it("filtered shows do not touch reads.log, unfiltered ones do", () =>
+    withEnv(async (deps) => {
+      await seed(deps);
+      const lines = (path: string): number =>
+        existsSync(path)
+          ? readFileSync(path, "utf8").split("\n").filter(Boolean).length
+          : 0;
+      const claudeLog = join(store(deps), ".state/reads.log");
+      const codexLog = join(store(deps), ".state/codex/reads.log");
+      const readsLine = async () =>
+        (await runLearningsCli(["status"], deps)).stdout
+          .split("\n")
+          .find((l) => l.startsWith("reads:"));
+      const statusBefore = await readsLine();
+      await show(deps, "--grep=署名", "--reader", "codex");
+      await show(deps, "--grep=署名", "--reader", "claude");
+      strictEqual(lines(claudeLog), 0);
+      strictEqual(lines(codexLog), 0);
+      strictEqual(await readsLine(), statusBefore);
+      await show(deps, "--reader", "codex");
+      strictEqual(lines(codexLog), 1);
+    }));
 });

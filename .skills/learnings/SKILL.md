@@ -27,13 +27,17 @@ description: 作業中に得た「次のセッションでも役立つ事実」�
 
 ```bash
 agent-learnings show --reader claude       # 今の repo の学びと共通の学びを表示する（Codex は --reader codex）
+agent-learnings show --reader claude --grep=<語>   # 語を含む学びだけを表示する（複数で AND、大文字小文字を区別しない。見出し・本文・id が対象）
+agent-learnings show --reader claude --id <id>     # id（L-…）の学びだけを表示する（複数で OR）
 agent-learnings add --title=<見出し> --body=<本文>
 agent-learnings remove <id>                # 学びの id（L-…）で消す
 agent-learnings status                     # 未取り込みの依頼、未 commit、queue と worker の状態、読み込み回数などを見る
 agent-learnings path                       # 今の repo の学びファイルのパス
 ```
 
-値が `-` で始まると引数の解析が別の引数と読むため、`--title=…` `--body=…` のように `=` でつなぐ。
+値が `-` で始まると引数の解析が別の引数と読むため、`--title=…` `--body=…` `--grep=…` のように `=` でつなぐ。
+
+開始時の表示は件数が多いと途中で省略される（`…（N 件省略）`）。省略された学びや特定の話題の学びは `show --grep=<語>` で探す。絞り込みの `show` は読み込み回数（`status` の `reads:`）に数えない。一致が無いときは stdout が空で、stderr に `一致する学びが無い` と出る。`--grep` と `--id` を合わせると両方を満たす項目だけが出る。`--grep` は 8 個まで、1 語 100 字まで。
 
 ## セッション終了時の自動整理
 
