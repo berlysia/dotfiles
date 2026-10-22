@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import realHook, {
   formatStopFailureLogMessage,
   notifyStopFailure,
+  shouldSendPermissionPromptToast,
 } from "../../implementations/speak-notification.ts";
 import {
   ConsoleCapture,
@@ -528,5 +529,78 @@ describe("StopFailure hook definition", () => {
     ok(trigger["StopFailure"]);
     ok(trigger["Stop"]);
     ok(trigger["Notification"]);
+  });
+});
+
+describe("shouldSendPermissionPromptToast", () => {
+  const base = {
+    platform: "wsl" as const,
+    notificationType: "permission_prompt",
+    WT_SESSION: "abc",
+    TMUX: undefined as string | undefined,
+    TERM_PROGRAM: undefined as string | undefined,
+  };
+
+  it("wsl + Windows Terminal: leaves the toast to the OSC 777 of Claude Code itself", () => {
+    strictEqual(shouldSendPermissionPromptToast(base), false);
+  });
+
+  it("wsl without WT_SESSION (VS Code etc.): sends", () => {
+    strictEqual(
+      shouldSendPermissionPromptToast({ ...base, WT_SESSION: "" }),
+      true,
+    );
+  });
+
+  it("wsl inside tmux: sends", () => {
+    strictEqual(
+      shouldSendPermissionPromptToast({
+        ...base,
+        TMUX: "/tmp/tmux-1000/default,1,0",
+      }),
+      true,
+    );
+  });
+
+  it("wsl VS Code opened from Windows Terminal: sends", () => {
+    strictEqual(
+      shouldSendPermissionPromptToast({ ...base, TERM_PROGRAM: "vscode" }),
+      true,
+    );
+  });
+
+  it("linux: sends", () => {
+    strictEqual(
+      shouldSendPermissionPromptToast({ ...base, platform: "linux" }),
+      true,
+    );
+  });
+
+  it("darwin without WT_SESSION: sends", () => {
+    strictEqual(
+      shouldSendPermissionPromptToast({
+        ...base,
+        platform: "darwin",
+        WT_SESSION: "",
+      }),
+      true,
+    );
+  });
+
+  it("idle_prompt: does not send (unchanged)", () => {
+    strictEqual(
+      shouldSendPermissionPromptToast({
+        ...base,
+        notificationType: "idle_prompt",
+      }),
+      false,
+    );
+  });
+
+  it("empty notification type: does not send (unchanged)", () => {
+    strictEqual(
+      shouldSendPermissionPromptToast({ ...base, notificationType: "" }),
+      false,
+    );
   });
 });

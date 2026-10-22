@@ -90,7 +90,8 @@ packages:
       - "Git.Git"
       - "Microsoft.VisualStudioCode"
       - "Microsoft.PowerShell"
-      - "Microsoft.WindowsTerminal"
+      # Preview, not stable: OSC 777 (toast from the terminal) exists only in Preview
+      - "Microsoft.WindowsTerminal.Preview"
       - "7zip.7zip"
       - "JesseDuffield.Lazygit"
       - "BurntSushi.ripgrep.GNU"
