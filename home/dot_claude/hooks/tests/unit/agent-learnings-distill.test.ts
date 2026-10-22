@@ -135,6 +135,18 @@ describe("prompts", () => {
     });
     ok(prompt.includes("<other-repo-learnings>\n\n</other-repo-learnings>"));
   });
+  it("system prompt explains on, retagging, dropping on and the default", () => {
+    const system = buildSystemPrompt();
+    for (const needle of [
+      '"on"',
+      "cmd:git commit",
+      "path:*.test.ts",
+      'change the "on" of a learning that already exists',
+      'omit "on", its "on" is removed',
+      'omit "on" (it is then shown at the start of every session)',
+    ])
+      ok(system.includes(needle), needle);
+  });
   it("system prompt tells the model how to promote and what not to do", () => {
     const system = buildSystemPrompt();
     for (const needle of [

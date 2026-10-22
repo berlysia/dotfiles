@@ -7,6 +7,8 @@ import {
 import type { LearningEntry, LearningsFile } from "./learnings-file.ts";
 import { matchesNoPromote, type NoPromoteResult } from "./no-promote.ts";
 import { evictEntries, MAX_ENTRIES } from "./ops.ts";
+import { retagEntry } from "./retag.ts";
+import { NO_TRIGGERS, readOn, stripForCommon } from "./triggers.ts";
 
 // 公開する形式（spec の契約）。`id` を省くと「このセッションで初めて得た学び」で、
 // 現在の repo のファイルには何も書かずに common へ入れる
@@ -36,6 +38,10 @@ export const CANDIDATE_BODY_CHARS = 120;
 export const MIN_OVERLAP_PERCENT = 20;
 
 const EVIDENCE_MAX = 200;
+// 不正な値も含めて `on` を持つ項目（場面を持つ項目は LLM の昇格の対象にしない。昇格で `on` を
+// 引き継げば場面付きの学びが全 repo へ広がり、引き継がなければ全 repo の開始時に流れてしまう）
+const hasOn = (entry: LearningEntry): boolean =>
+  entry.extra.some(([key]) => key === "on");
 const ID_PATTERN = /^L-[0-9a-f]{12}$/;
 
 // --- repo 名の検査 -------------------------------------------------------
@@ -110,7 +116,7 @@ export function buildCandidates(input: {
   for (const file of input.others.values()) {
     if (file.readOnly || file.key === input.repoKey) continue;
     if (matchesNoPromote(patterns, file.key)) continue;
-    entries.push(...file.entries);
+    entries.push(...file.entries.filter((e) => !hasOn(e)));
   }
   // sort は安定。updated が同じなら読んだ順のまま
   const chosen = entries
@@ -196,6 +202,8 @@ export type PromoteResult =
         commitLines: string[];
         appliedCount: number;
         droppedCount: number;
+        // `on` を持つ項目を指していたので書き込みから外した promote の、その項目の id
+        skippedIds: string[];
       };
     }
   | PromoteFailure;
@@ -226,6 +234,7 @@ export function applyPromotes(input: PromoteInput): PromoteResult {
       commitLines: [],
       appliedCount: 0,
       droppedCount: 0,
+      skippedIds: [],
     },
   };
   if (input.ops.length === 0) return unchanged;
@@ -248,6 +257,7 @@ export function applyPromotes(input: PromoteInput): PromoteResult {
   }
 
   const resolved: Resolved[] = [];
+  const skippedIds: string[] = [];
   let droppedCount = 0;
   for (const op of input.ops) {
     const title = preprocessText(op.title, input.extraRedact);
@@ -304,6 +314,12 @@ export function applyPromotes(input: PromoteInput): PromoteResult {
     ]);
     if (!overlapsEnough([title, body], sources))
       return rejected("content overlap below the threshold");
+    // 検査は全 op に行ったうえで、`on` を持つ項目を指す promote だけを書き込みから外す
+    const withOn = [match.entry, ...(own ? [own] : [])].filter(hasOn);
+    if (withOn.length > 0) {
+      skippedIds.push(...withOn.map((e) => e.id));
+      continue;
+    }
     resolved.push({ op, title, body, evidence, match, own });
   }
 
@@ -318,7 +334,9 @@ export function applyPromotes(input: PromoteInput): PromoteResult {
     }
     return copy;
   };
-  const commitLines: string[] = [];
+  const commitLines: string[] = skippedIds.map(
+    (id) => `skip promote ${id}: has on`,
+  );
   const protectedIds = new Set<string>();
 
   for (const r of resolved) {
@@ -365,6 +383,7 @@ export function applyPromotes(input: PromoteInput): PromoteResult {
       commitLines,
       appliedCount: resolved.length,
       droppedCount,
+      skippedIds,
     },
   };
 }
@@ -414,6 +433,18 @@ export function promoteManually(
 
   const repoFile = structuredClone(input.repoFile);
   const common = structuredClone(input.common);
+  // `on` は common で意味を持つものだけ引き継ぐ（`path:<prefix>` は repo ごとのパスなので外す。
+  // 空になる `on` と不正な `on` は外し、開始時に流れる項目として移す）
+  const sourceOn = readOn(source);
+  const carriedExtra =
+    sourceOn.state === "absent"
+      ? source.extra
+      : retagEntry(
+          source,
+          sourceOn.state === "valid"
+            ? stripForCommon(sourceOn.triggers)
+            : NO_TRIGGERS,
+        ).entry.extra;
   const write = writeToCommon(
     common,
     {
@@ -422,7 +453,7 @@ export function promoteManually(
       seen: source.seen,
       repos: [...source.repos],
       updated: input.today,
-      extra: source.extra.map(([k, v]): [string, string] => [k, v]),
+      extra: carriedExtra.map(([k, v]): [string, string] => [k, v]),
     },
     input.today,
     input.newId,

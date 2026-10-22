@@ -1,4 +1,4 @@
-import { ok, strictEqual } from "node:assert";
+import { deepStrictEqual, ok, strictEqual } from "node:assert";
 import { execFileSync } from "node:child_process";
 import {
   existsSync,
@@ -276,4 +276,62 @@ describe("inbox", () => {
       });
       strictEqual(r.applied, 1);
     }));
+  describe("on", () => {
+    const drain = (store: string) =>
+      drainInbox(store, {
+        today: "2026-10-15",
+        runGit,
+        waitMs: 0,
+        extraRedact: [],
+      });
+    const send = (store: string, on?: string[]) =>
+      writeInboxRequest(
+        store,
+        {
+          op: "add",
+          repoKey: KEY,
+          title: "t",
+          body: "b",
+          reader: "codex",
+          ...(on === undefined ? {} : { on }),
+        },
+        new Date(),
+      );
+    const reasons = (store: string): string =>
+      readFileSync(join(storePaths(store).rejected, "reasons.log"), "utf8");
+    const entries = (store: string) => {
+      const file = readLearnings(store, KEY);
+      ok(file.ok);
+      return file.value.entries;
+    };
+
+    it("takes a request whose on passes the worker restriction", () =>
+      withStore(async (store) => {
+        send(store, ["cmd:git commit"]);
+        strictEqual((await drain(store)).applied, 1);
+        deepStrictEqual(entries(store)[0]?.extra, [["on", "cmd:git commit"]]);
+      }));
+    it("rejects a request with a restricted on and adds nothing", () =>
+      withStore(async (store) => {
+        send(store, ["cmd:git"]);
+        const r = await drain(store);
+        strictEqual(r.rejected, 1);
+        ok(reasons(store).includes("worker-restricted"));
+        strictEqual(entries(store).length, 0);
+      }));
+    it("never writes the value of a bad on into reasons.log", () =>
+      withStore(async (store) => {
+        send(store, ["\u001b[31mx"]);
+        strictEqual((await drain(store)).rejected, 1);
+        const log = reasons(store);
+        ok(log.includes("bad-grammar"));
+        ok(!log.includes("31mx") && !log.includes("u001b"));
+      }));
+    it("still takes a request without on", () =>
+      withStore(async (store) => {
+        send(store);
+        strictEqual((await drain(store)).applied, 1);
+        deepStrictEqual(entries(store)[0]?.extra, []);
+      }));
+  });
 });

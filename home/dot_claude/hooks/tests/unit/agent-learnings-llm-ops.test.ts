@@ -193,3 +193,56 @@ describe("checkOpGroups", () => {
     );
   });
 });
+
+describe("parseLlmOps with on", () => {
+  const upd = (on: unknown) => ({
+    op: "update",
+    id: ID,
+    evidence: "e",
+    on,
+  });
+  it("accepts on for add and update within the worker restriction", () => {
+    const r = parseLlmOps(
+      wrap([{ ...add(), on: ["cmd:git commit"] }, upd(["cmd:git push"])]),
+    );
+    ok(r.ok);
+    strictEqual(r.ops.length, 2);
+    const first = r.ops[0];
+    ok(first?.op === "add" && first.on?.length === 1);
+    const second = r.ops[1];
+    ok(second?.op === "update" && second.on?.length === 1);
+    ok(second.title === undefined && second.body === undefined);
+  });
+  it("keeps ops without on free of an on key", () => {
+    const r = parseLlmOps(wrap([add()]));
+    ok(r.ok);
+    deepStrictEqual(r.ops[0], add());
+  });
+  it("rejects the whole response for a restricted or malformed on", () => {
+    for (const on of [
+      ["cmd:git"],
+      "cmd:git commit",
+      [1],
+      ["path:*.ts"],
+      ["a", "b"],
+    ]) {
+      strictEqual(parseLlmOps(wrap([{ ...add(), on }])).ok, false);
+      strictEqual(parseLlmOps(wrap([upd(on)])).ok, false);
+    }
+  });
+  it("rejects on in a promote", () => {
+    const promote = {
+      op: "promote",
+      matchId: "L-aaaaaaaaaaaa",
+      title: "t",
+      body: "b",
+      evidence: "e",
+      on: ["session"],
+    };
+    strictEqual(parseLlmOps(wrap([promote])).ok, false);
+  });
+  it("counts an on-only update toward the 20 op limit", () => {
+    const ops = Array.from({ length: 21 }, () => upd(["session"]));
+    strictEqual(parseLlmOps(wrap(ops)).ok, false);
+  });
+});

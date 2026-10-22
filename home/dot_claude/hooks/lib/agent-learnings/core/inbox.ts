@@ -17,6 +17,7 @@ import type { RunGit } from "./git.ts";
 import { applyOps, type LearningOp } from "./ops.ts";
 import { isValidRepoKey } from "./repo-key.ts";
 import { withStoreLock } from "./lock.ts";
+import { parseTriggers } from "./triggers.ts";
 import {
   commitStore,
   readLearnings,
@@ -26,7 +27,14 @@ import {
 } from "./store.ts";
 
 export type InboxRequest =
-  | { op: "add"; repoKey: string; title: string; body: string; reader: string }
+  | {
+      op: "add";
+      repoKey: string;
+      title: string;
+      body: string;
+      reader: string;
+      on?: string[];
+    }
   | { op: "remove"; repoKey: string; id: string; reader: string };
 // 依頼ファイル: { schemaVersion: 1, requestId, requestedAt, ...InboxRequest }
 export type DrainResult = {
@@ -79,6 +87,7 @@ export function writeInboxRequest(
           title: request.title,
           body: request.body,
           reader: request.reader,
+          ...(request.on === undefined ? {} : { on: request.on }),
         }
       : { ...base, id: request.id, reader: request.reader };
   writeFileSyncAtomic(
@@ -194,12 +203,29 @@ function validateRequest(
     if (typeof json.title !== "string" || typeof json.body !== "string") {
       return { ok: false, reason: "invalid fields" };
     }
+    // 外れた `on` は `on` だけを落として取り込まず、依頼ごと rejected に回す。
+    // 理由は固定の語だけで、入力の値は書かない
+    const rawOn = json.on;
+    let on: Extract<LearningOp, { op: "add" }>["on"];
+    if (rawOn !== undefined) {
+      const parsed = Array.isArray(rawOn)
+        ? parseTriggers(rawOn, "worker")
+        : ({ ok: false, error: "bad-grammar" } as const);
+      if (!parsed.ok) return { ok: false, reason: parsed.error };
+      on = parsed.value;
+    }
     return {
       ok: true,
       requestId,
       reader,
       repoKey,
-      op: { op: "add", title: json.title, body: json.body, evidence },
+      op: {
+        op: "add",
+        title: json.title,
+        body: json.body,
+        evidence,
+        ...(on === undefined ? {} : { on }),
+      },
     };
   }
   if (typeof json.id !== "string" || !ENTRY_ID_PATTERN.test(json.id))

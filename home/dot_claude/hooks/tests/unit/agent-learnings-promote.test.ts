@@ -497,3 +497,110 @@ describe("buildCandidates", () => {
     ok(c.ids.has(many[200]?.id ?? ""));
   });
 });
+
+describe("promotion and on", () => {
+  const onEntry = (n: number, on: string, over: Partial<LearningEntry> = {}) =>
+    entry(n, { extra: [["on", on]], ...over });
+  it("buildCandidates leaves out entries with an on key, even an invalid one", () => {
+    const c = buildCandidates({
+      repoKey: B,
+      others: new Map([
+        [
+          A,
+          file(A, [
+            onEntry(3, "cmd:git commit"),
+            onEntry(4, "<bad>"),
+            entry(5, { title: "plain" }),
+          ]),
+        ],
+      ]),
+      noPromote: open_,
+    });
+    deepStrictEqual([...c.ids], [idOf(5)]);
+  });
+  it("applyPromotes skips a promote that points at an entry with on, and keeps the rest", () => {
+    const X2 = onEntry(7, "cmd:git commit", {
+      title: X.title,
+      body: X.body,
+      repos: [A],
+    });
+    const r = applyPromotes(
+      input({
+        others: new Map([[A, file(A, [X, X2])]]),
+        ops: [
+          promoteOp({ id: Y.id }),
+          promoteOp({ matchId: X2.id, title: X.title, body: X.body }),
+        ],
+        shownCandidateIds: new Set([X.id, X2.id]),
+      }),
+    );
+    ok(r.ok);
+    strictEqual(r.value.appliedCount, 1);
+    deepStrictEqual(r.value.skippedIds, [X2.id]);
+    ok(r.value.commitLines.includes(`skip promote ${X2.id}: has on`));
+    ok(r.value.changedOthers.get(A)?.entries.some((e) => e.id === X2.id));
+  });
+  it("applyPromotes skips when the own entry has on", () => {
+    const Y2 = onEntry(8, "session", { repos: [B] });
+    const r = applyPromotes(
+      input({
+        repoFile: file(B, [Y2]),
+        ops: [promoteOp({ id: Y2.id })],
+      }),
+    );
+    ok(r.ok);
+    strictEqual(r.value.appliedCount, 0);
+    deepStrictEqual(r.value.skippedIds, [Y2.id]);
+    strictEqual(r.value.repoFile.entries.length, 1);
+  });
+  it("applyPromotes still rejects the whole response for an invalid op next to a skip", () => {
+    const X2 = onEntry(7, "cmd:git commit", { title: X.title, body: X.body });
+    const r = applyPromotes(
+      input({
+        others: new Map([[A, file(A, [X, X2])]]),
+        ops: [
+          promoteOp({ matchId: X2.id, title: X.title, body: X.body }),
+          promoteOp({ id: Y.id, evidence: "" }),
+        ],
+        shownCandidateIds: new Set([X.id, X2.id]),
+      }),
+    );
+    strictEqual(r.ok, false);
+  });
+  it("promoteManually strips path prefixes from on and keeps the rest", () => {
+    const src = onEntry(2, "cmd:git commit,path:mods/x/", {
+      title: "t",
+      body: "b",
+      repos: [B],
+    });
+    const r = promoteManually({
+      repoKey: B,
+      today: "2026-10-15",
+      repoFile: file(B, [src]),
+      common: file("common", []),
+      noPromote: open_,
+      id: src.id,
+      newId: () => idOf(0x700),
+    });
+    ok(r.ok);
+    deepStrictEqual(r.value.common.entries[0]?.extra, [
+      ["on", "cmd:git commit"],
+    ]);
+  });
+  it("promoteManually drops an on that becomes empty or is invalid", () => {
+    for (const on of ["path:mods/x/", "<bad>"]) {
+      const src = onEntry(2, on, { title: "t", body: "b", repos: [B] });
+      const r = promoteManually({
+        repoKey: B,
+        today: "2026-10-15",
+        repoFile: file(B, [src]),
+        common: file("common", []),
+        noPromote: open_,
+        id: src.id,
+        newId: () => idOf(0x700),
+      });
+      ok(r.ok);
+      deepStrictEqual(r.value.common.entries[0]?.extra, []);
+    }
+  });
+});

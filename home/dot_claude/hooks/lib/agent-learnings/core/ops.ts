@@ -5,20 +5,39 @@ import {
   validateTitle,
   type TextRules,
 } from "./entry-text.ts";
-import type { LearningEntry, LearningsFile } from "./learnings-file.ts";
+import {
+  COMMON_KEY,
+  type LearningEntry,
+  type LearningsFile,
+} from "./learnings-file.ts";
+import { retagEntry } from "./retag.ts";
+import {
+  allowedInCommon,
+  formatTriggers,
+  NO_TRIGGERS,
+  type ValidatedTriggers,
+} from "./triggers.ts";
 
 export const MAX_ENTRIES = 40;
 const EVIDENCE_MAX = 200;
 const ID_PATTERN = /^L-[0-9a-f]{12}$/;
 
 export type LearningOp =
-  | { op: "add"; title: string; body: string; evidence: string }
+  | {
+      op: "add";
+      title: string;
+      body: string;
+      evidence: string;
+      on?: ValidatedTriggers;
+    }
   | {
       op: "update";
       id: string;
       title?: string;
       body?: string;
       evidence: string;
+      // 渡せば付け替える（空なら外す）。文を変える update で渡さなければ外れる
+      on?: ValidatedTriggers;
     }
   | { op: "remove"; id: string; reason: string };
 export type OpsContext = {
@@ -119,6 +138,12 @@ export function applyOps(
       if (!bodyCheck.ok) return fail(`body: ${bodyCheck.reason}`);
       if (ev.length < 1 || ev.length > EVIDENCE_MAX)
         return fail("evidence length");
+      if (
+        file.key === COMMON_KEY &&
+        op.on !== undefined &&
+        !allowedInCommon(op.on)
+      )
+        return fail("path-prefix is not allowed in common");
 
       const heading = normalizeHeading(title);
       const existing = next.entries.find(
@@ -127,6 +152,7 @@ export function applyOps(
       if (existing) {
         if (targetIds.has(existing.id))
           return fail("add and another op on the same id");
+        // この add は本文を変えないので、既存の `on` は変えず渡された `on` は捨てる
         existing.seen += 1;
         existing.updated = ctx.today;
         touched.add(existing.id);
@@ -143,7 +169,10 @@ export function applyOps(
           seen: 1,
           repos: ctx.repoKey === null ? [] : [ctx.repoKey],
           updated: ctx.today,
-          extra: [],
+          extra:
+            op.on !== undefined && op.on.length > 0
+              ? [["on", formatTriggers(op.on)]]
+              : [],
         };
         next.entries.push(created);
         touched.add(id);
@@ -163,8 +192,16 @@ export function applyOps(
       const ev = preprocessText(op.evidence, ctx.extraRedact);
       if (ev.length < 1 || ev.length > EVIDENCE_MAX)
         return fail("evidence length");
+      if (
+        file.key === COMMON_KEY &&
+        op.on !== undefined &&
+        !allowedInCommon(op.on)
+      )
+        return fail("path-prefix is not allowed in common");
+      let title = target.title;
+      let body = target.body;
       if (op.title !== undefined) {
-        const title = preprocessText(op.title, ctx.extraRedact);
+        title = preprocessText(op.title, ctx.extraRedact);
         const titleCheck = validateTitle(title, ctx.rules);
         if (!titleCheck.ok) return fail(`title: ${titleCheck.reason}`);
         const heading = normalizeHeading(title);
@@ -175,19 +212,38 @@ export function applyOps(
           addHeadings.has(heading)
         )
           return fail("title collides with another heading");
-        target.title = title;
       }
       if (op.body !== undefined) {
-        const body = preprocessText(op.body, ctx.extraRedact);
+        body = preprocessText(op.body, ctx.extraRedact);
         const bodyCheck = validateBody(body, ctx.rules);
         if (!bodyCheck.ok) return fail(`body: ${bodyCheck.reason}`);
-        target.body = body;
       }
-      target.seen += 1;
-      target.updated = ctx.today;
+      const textChanged = title !== target.title || body !== target.body;
+      const at = next.entries.findIndex((e) => e.id === target.id);
       touched.add(target.id);
       updatedIds.push(target.id);
+
+      if (!textChanged && op.on !== undefined) {
+        // 場面だけの付け替えは seen と updated を動かさない
+        const retagged = retagEntry(target, op.on, ev);
+        next.entries[at] = retagged.entry;
+        if (retagged.line !== null) evidence.push(retagged.line);
+        continue;
+      }
+      target.title = title;
+      target.body = body;
+      target.seen += 1;
+      target.updated = ctx.today;
       evidence.push(`update ${target.id}: ${ev}`);
+      if (textChanged) {
+        // 文を変えたら、渡されなければ `on` を外す（人が付けた広い場面に書き換えた文を載せない）
+        const retagged =
+          op.on !== undefined
+            ? retagEntry(target, op.on, ev)
+            : retagEntry(target, NO_TRIGGERS, "updated by worker");
+        next.entries[at] = retagged.entry;
+        if (retagged.line !== null) evidence.push(retagged.line);
+      }
     } else {
       if (!ID_PATTERN.test(op.id)) return fail("invalid id");
       const at = next.entries.findIndex((e) => e.id === op.id);

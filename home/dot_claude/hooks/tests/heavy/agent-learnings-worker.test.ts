@@ -1,4 +1,4 @@
-import { ok, strictEqual } from "node:assert";
+import { deepStrictEqual, ok, strictEqual } from "node:assert";
 import { execFileSync } from "node:child_process";
 import {
   appendFileSync,
@@ -72,6 +72,52 @@ describe("runWorker happy path", () => {
       strictEqual(runs[0]?.opsApplied, 1);
       strictEqual(names(storePaths(w.store).queue).length, 0);
       strictEqual(names(storePaths(w.store).processing).length, 0);
+    }));
+  it("puts retag and untag lines from on-changing updates into the commit body", async () =>
+    withWorld(async (w) => {
+      const file = readLearnings(w.store, KEY);
+      ok(file.ok);
+      file.value.format = 1;
+      file.value.entries = [
+        { ...entry(1), extra: [["on", "cmd:git commit"]] },
+        { ...entry(2), extra: [["on", "cmd:git push"]] },
+      ];
+      ok(writeLearnings(w.store, file.value).ok);
+      w.writeTranscript(utterances("hello ", 3));
+      w.enqueue();
+      const q = w.queryFor(() =>
+        fenced([
+          {
+            op: "update",
+            id: entry(1).id,
+            on: ["cmd:git tag"],
+            evidence: "ev1",
+          },
+          { op: "update", id: entry(2).id, body: "rewritten", evidence: "ev2" },
+        ]),
+      );
+      strictEqual((await runWorker(w.deps(q))).status, "done");
+      const log = execFileSync("git", [
+        "-C",
+        w.store,
+        "log",
+        "-1",
+        "--format=%b",
+      ]).toString();
+      ok(
+        log.includes(
+          `retag ${entry(1).id}: cmd:git commit -> cmd:git tag (ev1)`,
+        ),
+        log,
+      );
+      ok(
+        log.includes(`untag ${entry(2).id}: cmd:git push (updated by worker)`),
+        log,
+      );
+      const after = entriesOf(w);
+      strictEqual(after[0]?.seen, 1);
+      strictEqual(after[0]?.updated, "2026-10-01");
+      deepStrictEqual(after[1]?.extra, []);
     }));
   it("skips with fewer than 3 user turns without calling the LLM or recording a position", async () =>
     withWorld(async (w) => {

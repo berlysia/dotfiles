@@ -5,7 +5,12 @@ import {
   evictEntries,
   MAX_ENTRIES,
   type OpsContext,
+  type OpsResult,
 } from "../../lib/agent-learnings/core/ops.ts";
+import {
+  parseTriggers,
+  type ValidatedTriggers,
+} from "../../lib/agent-learnings/core/triggers.ts";
 import type {
   LearningEntry,
   LearningsFile,
@@ -364,5 +369,172 @@ describe("evictEntries", () => {
     const r = evictEntries(entries, new Set([entry(1).id, entry(2).id]), 1);
     deepStrictEqual(r.evictedIds, [entry(3).id]);
     strictEqual(r.entries.length, 2);
+  });
+});
+
+describe("applyOps with on", () => {
+  const trigs = (...values: string[]): ValidatedTriggers => {
+    const r = parseTriggers(values, "human");
+    ok(r.ok);
+    return r.value;
+  };
+  const extraOn = (e: LearningEntry | undefined): string | undefined =>
+    e?.extra.find(([k]) => k === "on")?.[1];
+  const withOn = (n: number, on: string, over: Partial<LearningEntry> = {}) =>
+    entry(n, { extra: [["on", on]], seen: 3, ...over });
+
+  it("writes on for a new add", () => {
+    const r = applyOps(
+      file([]),
+      [
+        {
+          op: "add",
+          title: "t",
+          body: "b",
+          evidence: "e",
+          on: trigs("cmd:git commit"),
+        },
+      ],
+      ctx(),
+    );
+    ok(r.ok);
+    strictEqual(extraOn(r.value.file.entries[0]), "cmd:git commit");
+  });
+  it("drops on for an add that only bumps seen", () => {
+    const r = applyOps(
+      file([withOn(1, "cmd:git commit")]),
+      [
+        {
+          op: "add",
+          title: "title 1",
+          body: "x",
+          evidence: "e",
+          on: trigs("session"),
+        },
+      ],
+      ctx(),
+    );
+    ok(r.ok);
+    strictEqual(extraOn(r.value.file.entries[0]), "cmd:git commit");
+    strictEqual(r.value.file.entries[0]?.seen, 4);
+  });
+  it("rejects path-prefix in common but allows a suffix", () => {
+    const common = { ...file([]), key: "common" };
+    const add = (on: ValidatedTriggers): OpsResult =>
+      applyOps(
+        common,
+        [{ op: "add", title: "t", body: "b", evidence: "e", on }],
+        { ...ctx(), repoKey: null },
+      );
+    strictEqual(add(trigs("path:mods/x/")).ok, false);
+    ok(add(trigs("path:*.test.ts")).ok);
+  });
+  it("retags with on only, leaving seen and updated alone", () => {
+    const r = applyOps(
+      file([withOn(1, "cmd:git commit")]),
+      [
+        {
+          op: "update",
+          id: entry(1).id,
+          evidence: "ev",
+          on: trigs("cmd:git push"),
+        },
+      ],
+      ctx(),
+    );
+    ok(r.ok);
+    const e = r.value.file.entries[0];
+    strictEqual(extraOn(e), "cmd:git push");
+    strictEqual(e?.seen, 3);
+    strictEqual(e?.updated, "2026-10-01");
+    deepStrictEqual(r.value.evidence, [
+      `retag ${entry(1).id}: cmd:git commit -> cmd:git push (ev)`,
+    ]);
+    deepStrictEqual(r.value.updatedIds, [entry(1).id]);
+  });
+  it("treats whitespace-only text differences as unchanged", () => {
+    const r = applyOps(
+      file([withOn(1, "cmd:git commit", { body: "body 1" })]),
+      [
+        {
+          op: "update",
+          id: entry(1).id,
+          body: "  body 1 ",
+          evidence: "ev",
+          on: trigs("session"),
+        },
+      ],
+      ctx(),
+    );
+    ok(r.ok);
+    strictEqual(r.value.file.entries[0]?.seen, 3);
+    strictEqual(extraOn(r.value.file.entries[0]), "session");
+  });
+  it("update without on and without text change keeps the old behaviour", () => {
+    const r = applyOps(
+      file([withOn(1, "cmd:git commit")]),
+      [{ op: "update", id: entry(1).id, evidence: "ev" }],
+      ctx(),
+    );
+    ok(r.ok);
+    strictEqual(r.value.file.entries[0]?.seen, 4);
+    strictEqual(extraOn(r.value.file.entries[0]), "cmd:git commit");
+  });
+  it("drops on when the text changes and on is not passed", () => {
+    const r = applyOps(
+      file([withOn(1, "cmd:git commit")]),
+      [{ op: "update", id: entry(1).id, body: "new body", evidence: "ev" }],
+      ctx(),
+    );
+    ok(r.ok);
+    strictEqual(extraOn(r.value.file.entries[0]), undefined);
+    strictEqual(r.value.file.entries[0]?.seen, 4);
+    deepStrictEqual(r.value.evidence, [
+      `update ${entry(1).id}: ev`,
+      `untag ${entry(1).id}: cmd:git commit (updated by worker)`,
+    ]);
+  });
+  it("drops an invalid on and reports it as invalid", () => {
+    const r = applyOps(
+      file([withOn(1, "<script>")]),
+      [{ op: "update", id: entry(1).id, body: "new body", evidence: "ev" }],
+      ctx(),
+    );
+    ok(r.ok);
+    strictEqual(extraOn(r.value.file.entries[0]), undefined);
+    ok(
+      r.value.evidence.includes(
+        `untag ${entry(1).id}: invalid (updated by worker)`,
+      ),
+    );
+  });
+  it("changes text and on together", () => {
+    const r = applyOps(
+      file([withOn(1, "cmd:git commit")]),
+      [
+        {
+          op: "update",
+          id: entry(1).id,
+          body: "new body",
+          evidence: "ev",
+          on: trigs("cmd:git push"),
+        },
+      ],
+      ctx(),
+    );
+    ok(r.ok);
+    const e = r.value.file.entries[0];
+    strictEqual(e?.body, "new body");
+    strictEqual(extraOn(e), "cmd:git push");
+    strictEqual(e?.seen, 4);
+  });
+  it("leaves a no-on entry alone when text changes without on", () => {
+    const r = applyOps(
+      file([entry(1)]),
+      [{ op: "update", id: entry(1).id, body: "new body", evidence: "ev" }],
+      ctx(),
+    );
+    ok(r.ok);
+    deepStrictEqual(r.value.evidence, [`update ${entry(1).id}: ev`]);
   });
 });

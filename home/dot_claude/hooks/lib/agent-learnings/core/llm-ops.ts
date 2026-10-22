@@ -1,6 +1,7 @@
 import { normalizeHeading, preprocessText } from "./entry-text.ts";
 import type { LearningOp } from "./ops.ts";
 import { MAX_PROMOTES_PER_RESPONSE, type PromoteOp } from "./promote.ts";
+import { parseTriggers, type ValidatedTriggers } from "./triggers.ts";
 
 export const MAX_LLM_OPS = 20;
 export const MAX_LLM_REMOVES = 5;
@@ -32,6 +33,17 @@ function hasKeys(
 
 type ParsedOp = LearningOp | PromoteOp;
 
+// `on` は worker の制限で検査する。外れたら応答全体を拒否する（null を返す）
+function parseOn(
+  value: Record<string, unknown>,
+): { ok: true; on: ValidatedTriggers | undefined } | { ok: false } {
+  if (!("on" in value)) return { ok: true, on: undefined };
+  const raw = value["on"];
+  if (!Array.isArray(raw)) return { ok: false };
+  const parsed = parseTriggers(raw, "worker");
+  return parsed.ok ? { ok: true, on: parsed.value } : { ok: false };
+}
+
 function parseOp(value: unknown): ParsedOp | null {
   if (!isRecord(value)) return null;
   const str = (key: string): string | null => {
@@ -40,20 +52,36 @@ function parseOp(value: unknown): ParsedOp | null {
   };
   switch (value["op"]) {
     case "add": {
-      if (!hasKeys(value, ["op", "title", "body", "evidence"])) return null;
+      if (!hasKeys(value, ["op", "title", "body", "evidence"], ["on"]))
+        return null;
       const title = str("title");
       const body = str("body");
       const evidence = str("evidence");
       if (title === null || body === null || evidence === null) return null;
-      return { op: "add", title, body, evidence };
+      const on = parseOn(value);
+      if (!on.ok) return null;
+      return {
+        op: "add",
+        title,
+        body,
+        evidence,
+        ...(on.on === undefined ? {} : { on: on.on }),
+      };
     }
     case "update": {
-      if (!hasKeys(value, ["op", "id", "evidence"], ["title", "body"]))
+      if (!hasKeys(value, ["op", "id", "evidence"], ["title", "body", "on"]))
         return null;
       const id = str("id");
       const evidence = str("evidence");
       if (id === null || !ID_PATTERN.test(id) || evidence === null) return null;
-      const op: LearningOp = { op: "update", id, evidence };
+      const on = parseOn(value);
+      if (!on.ok) return null;
+      const op: LearningOp = {
+        op: "update",
+        id,
+        evidence,
+        ...(on.on === undefined ? {} : { on: on.on }),
+      };
       for (const key of ["title", "body"] as const) {
         if (key in value) {
           const v = str(key);
