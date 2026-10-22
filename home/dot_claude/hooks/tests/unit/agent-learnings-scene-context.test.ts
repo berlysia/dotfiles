@@ -208,6 +208,17 @@ describe("buildSceneContext injection records", () => {
     });
     ok(text?.split("\n").at(-1)?.includes("--at=pre"));
   });
+  it("writes reader claude on the record line", () => {
+    const home = setup([entry(1, "cmd:git commit")]);
+    ok(
+      buildSceneContext({
+        ...base(home),
+        kind: "pre",
+        command: "git commit",
+      }),
+    );
+    strictEqual(injectionsOf(home)[0]?.reader, "claude");
+  });
   it("records one line per injected learning with the matched trigger, and none for a suppressed repeat", () => {
     const home = setup([entry(1, "cmd:git commit"), entry(2, "cmd:git")]);
     const input = {

@@ -31,6 +31,15 @@ const RECORD_ID = /^L-[0-9a-f]{12}$/;
 const KINDS: readonly InjectionKind[] = ["pre", "fail", "path"];
 const STATE_FILE = /^(.+)\.(injected|cache)$/;
 
+// 場面の注入を行うエージェントの種類。state の置き場・注入の記録の reader がこの 1 つの型を使う
+export type SceneReader = "claude" | "codex";
+export const SCENE_STATE_READERS: readonly SceneReader[] = ["claude", "codex"];
+
+// reader ごとに state を分ける。Codex の sandbox は自分の state の下しか書けず、
+// Claude の state を書き換えられないようにするため
+export const sceneStateDir = (home: string, reader: SceneReader): string =>
+  join(home, `.${reader}/state/agent-learnings`);
+
 export type SceneCacheEntry = {
   cwd: string;
   repoKey: string;

@@ -318,7 +318,9 @@ export function feedbackLogPathFor(
   return reader === "codex" ? paths.codexFeedbackLog : paths.feedbackLog;
 }
 
-// 読む対象の決定はここ 1 か所（plan-5 で Codex の注入の記録を足すときはここに足す）
+// 読む対象の決定はここ 1 か所。Claude と Codex の注入は同じファイルに書く（行の reader で区別する）。
+// Codex の sandbox は `.state/` を書けず、hook は sandbox の外で走るので、Codex のエージェントは
+// このファイルに行を足せない。別ファイルにすると受理の根拠が増えるだけで守りは変わらない
 export function injectionLogPaths(store: string): string[] {
   return [storePaths(store).injectionsLog];
 }

@@ -1,4 +1,5 @@
 import { isValidRepoKey } from "./repo-key.ts";
+import { SCENE_STATE_READERS, type SceneReader } from "./scene-state.ts";
 import { formatTriggers, parseTriggers } from "./triggers.ts";
 
 // 注入の記録（injections.log）と評価（feedback.log）の行の形・検査・集計。
@@ -7,8 +8,9 @@ import { formatTriggers, parseTriggers } from "./triggers.ts";
 
 export type RecordKind = "session" | "pre" | "fail" | "path";
 export type Verdict = "helpful" | "mistimed" | "wrong";
-export type FeedbackReader = "claude" | "codex" | "unknown";
+export type FeedbackReader = SceneReader | "unknown";
 
+// reader は配備前に書かれた行には無い。claude・codex 以外の値は読む側が「無い」として扱う
 export type InjectionLine = {
   v: 1;
   at: string;
@@ -16,6 +18,7 @@ export type InjectionLine = {
   id: string;
   kind: RecordKind;
   trigger: string;
+  reader?: SceneReader;
 };
 export type FeedbackLine = {
   v: 1;
@@ -51,6 +54,7 @@ export const formatInjectionLine = (record: InjectionLine): string =>
     id: record.id,
     kind: record.kind,
     trigger: record.trigger,
+    ...(record.reader === undefined ? {} : { reader: record.reader }),
   })}\n`;
 
 export const formatFeedbackLine = (record: FeedbackLine): string =>
@@ -99,7 +103,18 @@ function checkInjection(raw: Record<string, unknown>): InjectionLine | null {
   if (!isRecordedId(id)) return null;
   if (!isRecordKind(kind)) return null;
   if (!isRecordedTrigger(trigger)) return null;
-  return { v: 1, at, repoKey, id, kind, trigger };
+  // 知らない値の reader は行ごと捨てず、reader 無しとして読む（配備前の行と同じ扱い）
+  const reader = raw["reader"];
+  const known = (SCENE_STATE_READERS as readonly unknown[]).includes(reader);
+  return {
+    v: 1,
+    at,
+    repoKey,
+    id,
+    kind,
+    trigger,
+    ...(known ? { reader: reader as SceneReader } : {}),
+  };
 }
 
 function checkFeedback(raw: Record<string, unknown>): FeedbackLine | null {
@@ -116,8 +131,14 @@ function checkFeedback(raw: Record<string, unknown>): FeedbackLine | null {
     !(READERS as readonly string[]).includes(reader)
   )
     return null;
+  // 評価の行の reader は評価した側の reader で、注入の行の reader とは別の意味
   return {
-    ...base,
+    v: 1,
+    at: base.at,
+    repoKey: base.repoKey,
+    id: base.id,
+    kind: base.kind,
+    trigger: base.trigger,
     reader: reader as FeedbackReader,
     verdict: verdict as Verdict,
   };
@@ -179,11 +200,20 @@ const inWindow = (at: string, now: Date): boolean => {
   return age >= 0 && age <= WINDOW_MS;
 };
 
-// 同じ組で窓の中の最新の行（同時刻なら後ろの行）
+// 同じ組で窓の中の最新の行（同時刻なら後ろの行）。
+// reader が claude・codex の評価は、同じ reader の行か reader の無い行（配備前の古い行）だけで受理する。
+// unknown（人が端末から打った）は reader を問わない。reader 省略は unknown と同じ
 export function findAcceptingInjection(
   injections: readonly InjectionLine[],
-  query: { repoKey: string; id: string; kind: RecordKind; now: Date },
+  query: {
+    repoKey: string;
+    id: string;
+    kind: RecordKind;
+    now: Date;
+    reader?: FeedbackReader;
+  },
 ): InjectionLine | null {
+  const reader = query.reader ?? "unknown";
   let best: InjectionLine | null = null;
   for (const line of injections) {
     if (
@@ -191,6 +221,12 @@ export function findAcceptingInjection(
       line.id !== query.id ||
       line.kind !== query.kind ||
       !inWindow(line.at, query.now)
+    )
+      continue;
+    if (
+      reader !== "unknown" &&
+      line.reader !== undefined &&
+      line.reader !== reader
     )
       continue;
     if (best === null || atMs(line.at) >= atMs(best.at)) best = line;

@@ -136,7 +136,7 @@ if (import.meta.main) {
     if (raw !== null) {
       const output = run(JSON.parse(raw), {
         home: getHomeDir(),
-        runGit: createRunGit(1000),
+        runGit: createRunGit(1000, { isolateGlobalConfig: true }),
         now: new Date(),
         env: process.env,
       });

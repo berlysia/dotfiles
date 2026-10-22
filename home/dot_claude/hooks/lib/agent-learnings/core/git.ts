@@ -7,7 +7,7 @@ export type RunGit = (args: readonly string[], cwd: string) => GitResult;
 
 const ENV_ALLOW = ["PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "USER"] as const;
 
-function gitEnv(): Record<string, string> {
+function gitEnv(isolateGlobalConfig: boolean): Record<string, string> {
   const env: Record<string, string> = {};
   for (const name of ENV_ALLOW) {
     const value = process.env[name];
@@ -19,13 +19,19 @@ function gitEnv(): Record<string, string> {
     GIT_CONFIG_NOSYSTEM: "1",
     GIT_OPTIONAL_LOCKS: "0",
     GIT_TERMINAL_PROMPT: "0",
+    ...(isolateGlobalConfig ? { GIT_CONFIG_GLOBAL: "/dev/null" } : {}),
   };
 }
 
 // 他人の repo の .git/config を読むことがあるので、プログラムを起動しうる設定を無効にする。
 // 上限を引数にしているのは、並列で負荷の高いテスト実行が本番の上限に縛られないようにするため
+// isolateGlobalConfig は場面の注入の git 用: sandbox の中のエージェントが書ける global 設定
+// （~/.gitconfig 等）を読ませない。store の commit は global 設定の author を使うので既定は false
 export const createRunGit =
-  (timeoutMs: number): RunGit =>
+  (
+    timeoutMs: number,
+    options: { isolateGlobalConfig?: boolean } = {},
+  ): RunGit =>
   (args, cwd) => {
     try {
       const out = execFileSync(
@@ -45,7 +51,7 @@ export const createRunGit =
           cwd,
           timeout: timeoutMs,
           maxBuffer: 1024 * 1024,
-          env: gitEnv(),
+          env: gitEnv(options.isolateGlobalConfig === true),
           stdio: ["ignore", "pipe", "ignore"],
         },
       );

@@ -319,6 +319,20 @@ function runShow(
         ? filterShow(commonRead.value, show)
         : commonRead.value
       : null;
+    // 開始時の絞り（--on=session だけ）で外れた、場面だけを持つ学びの件数。
+    // 開始時の注入（claude/session-context.ts）と同じく、件数だけを 1 行で知らせる
+    const sessionOnly =
+      show.on?.kind === "session" &&
+      show.greps.length === 0 &&
+      show.ids.length === 0;
+    const sceneOnlyCount = sessionOnly
+      ? (repoRead.ok && repo !== null
+          ? repoRead.value.entries.length - repo.entries.length
+          : 0) +
+        (commonRead.ok && common !== null
+          ? commonRead.value.entries.length - common.entries.length
+          : 0)
+      : 0;
 
     const recordRead = (): void => {
       if (!countsAsRead) return;
@@ -335,7 +349,7 @@ function runShow(
     if (filtered) {
       const matched =
         (repo?.entries.length ?? 0) + (common?.entries.length ?? 0);
-      if (matched === 0) {
+      if (matched === 0 && sceneOnlyCount === 0) {
         recordRead();
         const unreadable = [
           ...(repoRead.ok ? [] : [repoPath]),
@@ -356,6 +370,7 @@ function runShow(
       repoPath,
       commonPath,
       ...(filtered ? { omittedHint: FILTERED_OMITTED_HINT } : {}),
+      ...(sceneOnlyCount > 0 ? { sceneOnlyCount } : {}),
     });
 
     // --grep・--id と session 以外の --on は数えない。検索の回数で増えると
@@ -1260,6 +1275,12 @@ function runFeedback(
       "feedback の引数が不正（feedback <id> <helpful|mistimed|wrong> --at=<session|pre|fail|path>）",
     );
   const { id, verdict, kind } = parsed.value;
+  // Codex は開始時と失敗の直後の注入を記録しない。「記録が無い」と区別して知らせる
+  if (
+    deps.feedbackReader === "codex" &&
+    (kind === "session" || kind === "fail")
+  )
+    return fail("Codex の開始時と失敗の直後は記録していないので評価できない");
   const store = defaultStoreDir(deps.home);
   if (!storeExists(store)) return fail("store が未初期化");
   const repoKey = resolveRepoKey(deps.cwd, deps.runGit);
@@ -1270,6 +1291,7 @@ function runFeedback(
     id,
     kind,
     now: deps.now,
+    reader: deps.feedbackReader,
   });
   if (accepted === null) {
     const rotated = injectionLogPaths(store).some((path) =>

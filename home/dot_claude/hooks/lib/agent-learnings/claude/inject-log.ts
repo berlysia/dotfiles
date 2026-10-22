@@ -13,7 +13,7 @@ export function recordClaudeInjections(
   },
 ): boolean {
   try {
-    return recordInjections(store, record);
+    return recordInjections(store, { ...record, reader: "claude" });
   } catch {
     return false;
   }

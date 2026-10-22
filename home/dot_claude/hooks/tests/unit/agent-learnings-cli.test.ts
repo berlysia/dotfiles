@@ -30,6 +30,7 @@ import {
   LOG_HARD_MAX_BYTES,
   LOG_MAX_BYTES,
   storePaths,
+  writeLearnings,
 } from "../../lib/agent-learnings/core/store.ts";
 
 // 実 git は使わない（unit は CLAUDE_TEST_FORBID_GIT=1）。repoKey は cwd ごとの偽の origin から決める
@@ -116,6 +117,37 @@ const put = (path: string, ...lines: string[]) =>
 const read = (path: string) =>
   existsSync(path) ? readFileSync(path, "utf8") : "";
 
+describe("agent-learnings show --on=session", () => {
+  it("tells how many scene-only learnings were left out", async () => {
+    const { deps, store } = setup();
+    ok(
+      writeLearnings(store, {
+        format: 1,
+        key: REPO,
+        readOnly: false,
+        entries: [
+          {
+            id: ID,
+            title: "scene only",
+            body: "b",
+            seen: 1,
+            repos: [REPO],
+            updated: "2026-10-01",
+            extra: [["on", "cmd:git commit"]],
+          },
+        ],
+      }).ok,
+    );
+    const r = await runLearningsCli(["show", "--on=session"], deps);
+    strictEqual(r.exitCode, 0);
+    ok(
+      r.stdout.includes("他に 1 件は、コマンドやファイルの場面で出る"),
+      r.stdout,
+    );
+    ok(!r.stdout.includes("scene only"));
+  });
+});
+
 describe("agent-learnings feedback", () => {
   it("accepts a recorded (repo, id, kind) and writes reader and the recorded trigger", async () => {
     const { deps, paths } = setup();
@@ -133,6 +165,48 @@ describe("agent-learnings feedback", () => {
     strictEqual(written["trigger"], "cmd:git commit");
     strictEqual(written["repoKey"], REPO);
     strictEqual(written["verdict"], "mistimed");
+  });
+  it("rejects a codex feedback whose only injection record is claude's, and accepts codex's", async () => {
+    const { deps, paths } = setup({ feedbackReader: "codex" });
+    put(
+      paths.injectionsLog,
+      formatInjectionLine(injection({ reader: "claude" })),
+    );
+    const rejected = await runLearningsCli(
+      ["feedback", ID, "helpful", "--at=pre"],
+      deps,
+    );
+    strictEqual(rejected.exitCode, 1);
+    put(
+      paths.injectionsLog,
+      formatInjectionLine(injection({ reader: "codex" })),
+    );
+    const accepted = await runLearningsCli(
+      ["feedback", ID, "helpful", "--at=pre"],
+      deps,
+    );
+    strictEqual(accepted.exitCode, 0);
+    ok(read(paths.codexFeedbackLog).includes('"reader":"codex"'));
+  });
+  it("tells codex that session and fail are not recorded, before matching", async () => {
+    for (const at of ["session", "fail"]) {
+      const { deps, paths } = setup({ feedbackReader: "codex" });
+      put(
+        paths.injectionsLog,
+        formatInjectionLine(injection({ kind: at as "session" | "fail" })),
+      );
+      const r = await runLearningsCli(
+        ["feedback", ID, "helpful", `--at=${at}`],
+        deps,
+      );
+      strictEqual(r.exitCode, 1);
+      ok(
+        r.stderr.includes("Codex の開始時と失敗の直後は記録していない"),
+        r.stderr,
+      );
+      ok(!r.stderr.includes("注入の記録が無い"));
+      strictEqual(read(paths.codexFeedbackLog), "");
+    }
   });
   it("rejects a kind that has no injection record, and writes nothing", async () => {
     const { deps, paths } = setup();

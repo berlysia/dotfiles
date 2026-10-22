@@ -168,6 +168,86 @@ describe("findAcceptingInjection", () => {
   });
 });
 
+describe("injection reader", () => {
+  it("round-trips a reader and omits the key when undefined", () => {
+    for (const reader of ["claude", "codex"] as const) {
+      const i = inj({ reader });
+      const text = formatInjectionLine(i);
+      strictEqual(JSON.parse(text).reader, reader);
+      deepStrictEqual(parseInjectionLines(text), { lines: [i], unknown: 0 });
+    }
+    ok(!("reader" in JSON.parse(formatInjectionLine(inj()))));
+  });
+  it("reads lines without a reader, and treats unknown reader values as absent without dropping the line", () => {
+    const base = JSON.parse(formatInjectionLine(inj()));
+    for (const reader of ["human", 123, null, "unknown"]) {
+      const parsed = parseInjectionLines(
+        `${JSON.stringify({ ...base, reader })}\n`,
+      );
+      strictEqual(parsed.unknown, 0);
+      strictEqual(parsed.lines.length, 1);
+      deepStrictEqual(parsed.lines[0], inj());
+    }
+    strictEqual(
+      parseInjectionLines(formatInjectionLine(inj())).lines[0]?.reader,
+      undefined,
+    );
+  });
+  it("lets the feedback reader win over an injection reader field", () => {
+    const text = `${JSON.stringify({
+      ...JSON.parse(formatFeedbackLine(fb("wrong", { reader: "codex" }))),
+    })}\n`;
+    strictEqual(parseFeedbackLines(text).lines[0]?.reader, "codex");
+  });
+});
+
+describe("findAcceptingInjection by reader", () => {
+  const q = { repoKey: REPO, id: ID, kind: "pre" as RecordKind, now: NOW };
+  it("matches the same reader or reader-less lines for claude/codex", () => {
+    strictEqual(
+      findAcceptingInjection([inj({ reader: "claude" })], {
+        ...q,
+        reader: "codex",
+      }),
+      null,
+    );
+    ok(
+      findAcceptingInjection([inj({ reader: "codex" })], {
+        ...q,
+        reader: "codex",
+      }),
+    );
+    ok(findAcceptingInjection([inj()], { ...q, reader: "codex" }));
+    ok(findAcceptingInjection([inj()], { ...q, reader: "claude" }));
+    strictEqual(
+      findAcceptingInjection([inj({ reader: "codex" })], {
+        ...q,
+        reader: "claude",
+      }),
+      null,
+    );
+  });
+  it("accepts any reader for an unknown feedback reader", () => {
+    for (const reader of ["claude", "codex", undefined] as const)
+      ok(
+        findAcceptingInjection([inj(reader ? { reader } : {})], {
+          ...q,
+          reader: "unknown",
+        }),
+      );
+  });
+  it("picks the newest line among the lines the reader may use", () => {
+    const lines = [
+      inj({ ago: 1, trigger: "cmd:git commit", reader: "codex" }),
+      inj({ ago: 0.1, trigger: "cmd:git", reader: "claude" }),
+    ];
+    strictEqual(
+      findAcceptingInjection(lines, { ...q, reader: "codex" })?.trigger,
+      "cmd:git commit",
+    );
+  });
+});
+
 describe("summarizeMetrics", () => {
   const three = [
     inj({ ago: 3 }),

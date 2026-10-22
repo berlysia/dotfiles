@@ -14,6 +14,7 @@ import {
   type RecordKind,
 } from "./metrics.ts";
 import { isValidRepoKey } from "./repo-key.ts";
+import type { SceneReader } from "./scene-state.ts";
 import {
   LOG_HARD_MAX_BYTES,
   LOG_MAX_BYTES,
@@ -122,6 +123,7 @@ export function recordInjections(
     repoKey: string;
     kind: RecordKind;
     items: ReadonlyArray<{ id: string; trigger: string }>;
+    reader: SceneReader;
   },
 ): boolean {
   try {
@@ -138,6 +140,7 @@ export function recordInjections(
           id: i.id,
           kind: record.kind,
           trigger: i.trigger,
+          reader: record.reader,
         }),
       )
       .join("");
