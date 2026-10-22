@@ -104,6 +104,12 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = ["pnpm", "dev"],
+    decision = "allow",
+    justification = "Starts the project's dev server",
+)
+
+prefix_rule(
     pattern = ["agent-learnings", "show"],
     decision = "allow",
     justification = "Reads per-repository learnings",
