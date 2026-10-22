@@ -44,6 +44,36 @@ export function hasRunningBackgroundTasks(input: unknown): boolean {
   );
 }
 
+export interface PermissionPromptToastInput {
+  platform: "darwin" | "linux" | "wsl";
+  notificationType: string | undefined;
+  WT_SESSION: string | undefined;
+  TMUX: string | undefined;
+  TERM_PROGRAM: string | undefined;
+}
+
+/**
+ * permission_prompt で hook 発のトーストを送るか。
+ *
+ * Windows Terminal Preview のタブでは Claude Code 本体が OSC 777 で同じ場面の
+ * 通知を出すので、重ねて送らない。platform だけで止めると VS Code・tmux・ssh で
+ * 許可待ちの通知が 0 個になるため、本体の OSC 777 が届く見込みのある条件
+ * (WT_SESSION あり、tmux の外、VS Code ではない) がそろうときだけ止める。
+ * WT_SESSION からは安定版と Preview も allowOSC777 の有無も分からないので、
+ * それらの環境での 0 個は受け入れている (WINDOWS.md)。
+ */
+export function shouldSendPermissionPromptToast(
+  input: PermissionPromptToastInput,
+): boolean {
+  if (input.notificationType !== "permission_prompt") return false;
+  const osc777Likely =
+    input.platform === "wsl" &&
+    !!input.WT_SESSION &&
+    !input.TMUX &&
+    input.TERM_PROGRAM !== "vscode";
+  return !osc777Likely;
+}
+
 const STOP_FAILURE_LOG_MAX_LENGTH = 500;
 
 /**
@@ -134,12 +164,26 @@ const hook = defineHook({
                 notificationMessage,
               });
               // permission_prompt の場合はシステム通知も併用して気付きやすくする
-              if (notificationType === "permission_prompt") {
+              if (
+                shouldSendPermissionPromptToast({
+                  platform: config.system.platform,
+                  notificationType,
+                  WT_SESSION: process.env.WT_SESSION,
+                  TMUX: process.env.TMUX,
+                  TERM_PROGRAM: process.env.TERM_PROGRAM,
+                })
+              ) {
                 const messages = await createNotificationMessagesAuto(
                   "Notification",
                   { notificationType },
                 );
                 await sendSystemNotification(messages.system, config);
+              } else if (notificationType === "permission_prompt") {
+                // 本文は外部入力を含みうるので書かない
+                logMessage(
+                  "System notification skipped: permission_prompt is shown by Windows Terminal (OSC 777)",
+                  config,
+                );
               }
               // Notificationイベント時のみクリーンアップ
               await cleanupOldFiles(config);

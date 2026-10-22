@@ -75,7 +75,9 @@ TEMPLATE_CONTENT=$(cat << EOF
     }
   },
   "installMethod": "native",
-  "preferredNotifChannel": "terminal_bell",
+  "preferredNotifChannel": {{/*
+    WSL only: Windows Terminal Preview shows OSC 777 as a toast, and "auto" does not resolve to it, so ask for the ghostty (OSC 777) channel explicitly.
+  */}}{{ if and (eq .chezmoi.os "linux") (.chezmoi.kernel.osrelease | lower | contains "microsoft") }}"ghostty"{{ else }}"terminal_bell"{{ end }},
   "defaultMode": "allowEdits"
 }
 EOF
