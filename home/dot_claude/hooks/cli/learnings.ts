@@ -74,6 +74,7 @@ import {
   defaultStoreDir,
   initStore,
   readLearnings,
+  readLogTail,
   repoFilePath,
   storeGitArgs,
   storePaths,
@@ -1130,47 +1131,13 @@ function runGit_mv(
   }
 }
 
-// 末尾 1MB だけを読む。Codex が書き換えられるファイルなので symlink・FIFO を辿らない
-function readTail(path: string): string | null {
-  let fd: number;
-  try {
-    fd = openSync(
-      path,
-      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
-    );
-  } catch {
-    return null;
-  }
-  try {
-    const stat = fstatSync(fd);
-    if (!stat.isFile()) return null;
-    const length = Math.min(stat.size, READS_TAIL_BYTES);
-    const buffer = Buffer.alloc(length);
-    let offset = 0;
-    while (offset < length) {
-      const n = readSync(
-        fd,
-        buffer,
-        offset,
-        length - offset,
-        stat.size - length + offset,
-      );
-      if (n === 0) break;
-      offset += n;
-    }
-    return buffer.subarray(0, offset).toString("utf8");
-  } finally {
-    closeSync(fd);
-  }
-}
-
 function countReads(
   paths: readonly string[],
   now: Date,
 ): Record<"claude" | "codex" | "unknown", number> {
   const counts = { claude: 0, codex: 0, unknown: 0 };
   for (const path of paths) {
-    const tail = readTail(path);
+    const tail = readLogTail(path, READS_TAIL_BYTES);
     if (tail === null) continue;
     for (const line of tail.split("\n")) {
       if (line === "") continue;
@@ -1193,7 +1160,7 @@ function countReads(
 function countUnknownVersions(inbox: string, names: readonly string[]): number {
   let unknown = 0;
   for (const name of names.slice(0, 200)) {
-    const text = readTail(join(inbox, name));
+    const text = readLogTail(join(inbox, name), READS_TAIL_BYTES);
     if (text === null) continue;
     try {
       const parsed = JSON.parse(text) as { schemaVersion?: unknown };

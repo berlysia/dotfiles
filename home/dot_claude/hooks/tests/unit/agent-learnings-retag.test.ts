@@ -6,6 +6,7 @@ import type {
 } from "../../lib/agent-learnings/core/learnings-file.ts";
 import {
   applyRetag,
+  countRetagLines,
   parseRetagFile,
   planRetag,
   policyFor,
@@ -265,5 +266,19 @@ describe("applyRetag", () => {
     const r = applyRetag(moved, [op(1, "session")], human, expectsOf(planned));
     ok(!r.ok);
     strictEqual(r.reason, "missing");
+  });
+});
+
+describe("countRetagLines", () => {
+  it("counts the lines retagEntry produces", () => {
+    const retagged = retagEntry(entry(1, "cmd:git"), trigs("cmd:npm"));
+    const untagged = retagEntry(entry(2, "cmd:git"), trigs());
+    ok(retagged.line !== null && untagged.line !== null);
+    deepStrictEqual(
+      countRetagLines(
+        `subject\n\n${retagged.line}\n${untagged.line}\nnoise retag L-x\n`,
+      ),
+      { retag: 1, untag: 1 },
+    );
   });
 });

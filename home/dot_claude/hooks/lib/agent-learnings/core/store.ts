@@ -8,6 +8,7 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  readSync,
   realpathSync,
   renameSync,
   writeFileSync,
@@ -23,6 +24,7 @@ import {
   type Parsed,
 } from "./learnings-file.ts";
 import { keyToFileName } from "./repo-key.ts";
+import type { FeedbackReader } from "./metrics.ts";
 
 export type StorePaths = {
   store: string;
@@ -34,6 +36,9 @@ export type StorePaths = {
   rejected: string;
   readsLog: string;
   codexReadsLog: string;
+  injectionsLog: string;
+  feedbackLog: string;
+  codexFeedbackLog: string;
   queue: string;
   processing: string;
   failed: string;
@@ -57,6 +62,10 @@ export function storePaths(store: string): StorePaths {
     rejected: join(state, "rejected"),
     readsLog: join(state, "reads.log"),
     codexReadsLog: join(codex, "reads.log"),
+    injectionsLog: join(state, "injections.log"),
+    feedbackLog: join(state, "feedback.log"),
+    // Codex の sandbox が書ける側。Claude 側の feedback.log を Codex が書き換えられないように分ける
+    codexFeedbackLog: join(codex, "feedback.log"),
     queue: join(state, "queue"),
     processing: join(state, "processing"),
     failed: join(state, "failed"),
@@ -296,7 +305,106 @@ export function writeLearnings(
   }
 }
 
-const LOG_MAX_BYTES = 1024 * 1024;
+export const LOG_MAX_BYTES = 1024 * 1024;
+// 回転されないまま増え続けても、ここで書き込みを止めてディスクを埋めさせない
+export const LOG_HARD_MAX_BYTES = 4 * 1024 * 1024;
+
+// 書き先の決定はここ 1 か所
+export function feedbackLogPathFor(
+  store: string,
+  reader: FeedbackReader,
+): string {
+  const paths = storePaths(store);
+  return reader === "codex" ? paths.codexFeedbackLog : paths.feedbackLog;
+}
+
+// 読む対象の決定はここ 1 か所（plan-5 で Codex の注入の記録を足すときはここに足す）
+export function injectionLogPaths(store: string): string[] {
+  return [storePaths(store).injectionsLog];
+}
+
+// 1 回の write で複数行を書く。先頭に改行を 1 つ足すのは、前の write が行の途中で切れていても
+// 次の行がその断片と融合しないため（空行は読む側が捨てる）。失敗は例外にせず false
+export function appendLogLines(
+  path: string,
+  text: string,
+  write: (fd: number, data: Buffer) => number = (fd, data) =>
+    writeSync(fd, data),
+): boolean {
+  let fd: number;
+  try {
+    fd = openSync(
+      path,
+      constants.O_WRONLY |
+        constants.O_APPEND |
+        constants.O_CREAT |
+        constants.O_NOFOLLOW |
+        constants.O_NONBLOCK,
+      0o600,
+    );
+  } catch {
+    return false;
+  }
+  try {
+    const stat = fstatSync(fd);
+    if (!stat.isFile() || stat.size >= LOG_HARD_MAX_BYTES) return false;
+    const data = Buffer.from(`\n${text}`, "utf8");
+    return write(fd, data) === data.length;
+  } catch {
+    return false;
+  } finally {
+    try {
+      closeSync(fd);
+    } catch {
+      // 閉じられなくても記録の成否には関係しない
+    }
+  }
+}
+
+// 末尾 maxBytes だけを読む。Codex が書き換えられるファイルなので symlink・FIFO を辿らない
+export function readLogTailInfo(
+  path: string,
+  maxBytes: number,
+): { text: string; truncated: boolean } | null {
+  let fd: number;
+  try {
+    fd = openSync(
+      path,
+      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+    );
+  } catch {
+    return null;
+  }
+  try {
+    const stat = fstatSync(fd);
+    if (!stat.isFile()) return null;
+    const length = Math.min(stat.size, maxBytes);
+    const buffer = Buffer.alloc(length);
+    let offset = 0;
+    while (offset < length) {
+      const n = readSync(
+        fd,
+        buffer,
+        offset,
+        length - offset,
+        stat.size - length + offset,
+      );
+      if (n === 0) break;
+      offset += n;
+    }
+    return {
+      text: buffer.subarray(0, offset).toString("utf8"),
+      truncated: stat.size > maxBytes,
+    };
+  } catch {
+    return null;
+  } finally {
+    closeSync(fd);
+  }
+}
+
+export const readLogTail = (path: string, maxBytes: number): string | null =>
+  readLogTailInfo(path, maxBytes)?.text ?? null;
 
 // `show` の呼び出し記録を 1 行足す。回転はしない（worker が lock の中で rotateLogs で行う）
 export function appendReadLog(
@@ -332,12 +440,25 @@ export function appendReadLog(
 // 1MB を超えた runs.log・reads.log・codex/reads.log を `.1` に回す。store lock の中から呼ぶ
 export function rotateLogs(store: string): void {
   const paths = storePaths(store);
-  for (const path of [paths.runsLog, paths.readsLog, paths.codexReadsLog]) {
+  for (const path of [
+    paths.runsLog,
+    paths.readsLog,
+    paths.codexReadsLog,
+    paths.injectionsLog,
+    paths.feedbackLog,
+    paths.codexFeedbackLog,
+  ]) {
     try {
-      const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+      // FIFO を開いて worker が lock を握ったまま止まらないよう O_NONBLOCK と通常ファイルの確認を付ける
+      const fd = openSync(
+        path,
+        constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+      );
       let size: number;
       try {
-        size = fstatSync(fd).size;
+        const stat = fstatSync(fd);
+        if (!stat.isFile()) continue;
+        size = stat.size;
       } finally {
         closeSync(fd);
       }

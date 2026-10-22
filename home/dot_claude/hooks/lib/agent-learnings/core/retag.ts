@@ -44,6 +44,23 @@ function withOn(entry: LearningEntry, on: ValidatedTriggers): LearningEntry {
   return { ...entry, extra };
 }
 
+// 付け替えの記録の行頭。status の集計（countRetagLines）が同じ定数で数える
+export const RETAG_LINE_PREFIX = "retag ";
+export const UNTAG_LINE_PREFIX = "untag ";
+
+export function countRetagLines(text: string): {
+  retag: number;
+  untag: number;
+} {
+  let retag = 0;
+  let untag = 0;
+  for (const line of text.split("\n")) {
+    if (line.startsWith(`${RETAG_LINE_PREFIX}L-`)) retag += 1;
+    else if (line.startsWith(`${UNTAG_LINE_PREFIX}L-`)) untag += 1;
+  }
+  return { retag, untag };
+}
+
 // `on` が空なら外す。無い `on` を外す呼び出しは行を返さない（変わらないため）
 export function retagEntry(
   entry: LearningEntry,
@@ -56,12 +73,14 @@ export function retagEntry(
     const absent = readOn(entry).state === "absent";
     return {
       entry: withOn(entry, on),
-      line: absent ? null : `untag ${entry.id}: ${current}${suffix}`,
+      line: absent
+        ? null
+        : `${UNTAG_LINE_PREFIX}${entry.id}: ${current}${suffix}`,
     };
   }
   return {
     entry: withOn(entry, on),
-    line: `retag ${entry.id}: ${current} -> ${formatTriggers(on)}${suffix}`,
+    line: `${RETAG_LINE_PREFIX}${entry.id}: ${current} -> ${formatTriggers(on)}${suffix}`,
   };
 }
 
