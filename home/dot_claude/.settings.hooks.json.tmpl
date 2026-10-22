@@ -355,6 +355,18 @@
       ]
     }
   ],
+  "StopFailure": [
+    {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/speak-notification.ts StopFailure",
+          "async": true
+        }
+      ]
+    }
+  ],
   "UserPromptSubmit": [
     {
       "matcher": "",

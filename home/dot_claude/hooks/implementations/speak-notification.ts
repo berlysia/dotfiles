@@ -19,6 +19,7 @@ import {
   handleStop,
   logMessage,
   sendSystemNotification,
+  speakNotification,
 } from "../../lib/unified-audio-engine.ts";
 import { logEvent } from "../lib/centralized-logging.ts";
 
@@ -43,13 +44,56 @@ export function hasRunningBackgroundTasks(input: unknown): boolean {
   );
 }
 
+const STOP_FAILURE_LOG_MAX_LENGTH = 500;
+
+/**
+ * StopFailure の events.jsonl 用メッセージ。
+ *
+ * error / error_details は API 由来の文字列なので、改行を潰して長さを抑える。
+ * last_assistant_message は会話内容を含みうるため、ここでは決して読まない。
+ */
+export function formatStopFailureLogMessage(input: unknown): string {
+  const { error, error_details } =
+    typeof input === "object" && input !== null
+      ? (input as { error?: unknown; error_details?: unknown })
+      : ({} as { error?: unknown; error_details?: unknown });
+  const errorPart = `error=${typeof error === "string" ? error : "unknown"}`;
+  const message =
+    typeof error_details === "string" && error_details !== ""
+      ? `${errorPart} details=${error_details}`
+      : errorPart;
+  return message.replace(/[\r\n]+/g, " ").slice(0, STOP_FAILURE_LOG_MAX_LENGTH);
+}
+
+export interface StopFailureDeps {
+  speak: (text: string, type: "Error") => Promise<unknown>;
+  notifySystem: (text: string) => Promise<unknown>;
+  getMessages: () => Promise<{ voice: string; system: string }>;
+}
+
+/**
+ * StopFailure の通知。音声が失敗してもデスクトップ通知は止めないため allSettled。
+ * 通知文は Error テンプレートのみから作り、payload の値は混ぜない。
+ */
+export async function notifyStopFailure(deps: StopFailureDeps): Promise<void> {
+  const messages = await deps.getMessages();
+  await Promise.allSettled([
+    deps.speak(messages.voice, "Error"),
+    deps.notifySystem(messages.system),
+  ]);
+}
+
 const hook = defineHook({
   trigger: {
     Notification: true,
     Stop: true,
+    StopFailure: true,
   },
   run: async (context) => {
-    const eventType = context.input.hook_event_name as "Notification" | "Stop";
+    const eventType = context.input.hook_event_name as
+      | "Notification"
+      | "Stop"
+      | "StopFailure";
     const sessionId = context.input.session_id;
     // Extract notification_type and message from Notification events
     // @see https://code.claude.com/docs/en/hooks#notification
@@ -73,7 +117,13 @@ const hook = defineHook({
       // 並列実行で高速化
       await Promise.allSettled([
         // ログ記録
-        logEvent(eventType, sessionId),
+        logEvent(
+          eventType,
+          sessionId,
+          eventType === "StopFailure"
+            ? formatStopFailureLogMessage(context.input)
+            : undefined,
+        ),
 
         // 音声通知
         (async () => {
@@ -104,6 +154,14 @@ const hook = defineHook({
               }
               await handleStop(config, session);
               break;
+            case "StopFailure":
+              await notifyStopFailure({
+                speak: (text, type) =>
+                  speakNotification(text, type, config, session),
+                notifySystem: (text) => sendSystemNotification(text, config),
+                getMessages: () => createNotificationMessagesAuto("Error"),
+              });
+              break;
             default:
               await handleNotification(config, session);
               break;
@@ -113,7 +171,7 @@ const hook = defineHook({
 
       // Stop/SubagentStop events should not return messageForUser to avoid duplicate messages
       // (prompt hook will also generate a response)
-      if (eventType === "Stop") {
+      if (eventType === "Stop" || eventType === "StopFailure") {
         return context.success({});
       }
       return context.success({

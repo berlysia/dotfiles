@@ -148,3 +148,30 @@ describe(
     });
   },
 );
+
+describe(
+  "settings hooks template: StopFailure",
+  { skip: !hasChezmoi && "chezmoi is not on PATH" },
+  () => {
+    for (const onlyPrivate of [true, false]) {
+      it(`StopFailure notifies through speak-notification only (only_private=${onlyPrivate})`, () => {
+        const hooks = render(true, onlyPrivate) as unknown as Record<
+          string,
+          { matcher?: string; hooks: { command: string; async?: boolean }[] }[]
+        >;
+        const groups = hooks["StopFailure"] ?? [];
+        strictEqual(groups.length, 1);
+        strictEqual(groups[0]?.matcher, "");
+        strictEqual(groups[0]?.hooks.length, 1);
+        const entry = groups[0]?.hooks[0];
+        ok(
+          /^bun \/\S+\/\.claude\/hooks\/implementations\/speak-notification\.ts StopFailure$/.test(
+            entry?.command ?? "",
+          ),
+          entry?.command,
+        );
+        strictEqual(entry?.async, true);
+      });
+    }
+  },
+);

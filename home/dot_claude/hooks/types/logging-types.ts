@@ -17,6 +17,7 @@ export interface EventLogEntry extends BaseLogEntry {
     | "Notification"
     | "PermissionRequest"
     | "Stop"
+    | "StopFailure"
     | "Error";
   message?: string;
 }

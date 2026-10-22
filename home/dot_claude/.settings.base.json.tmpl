@@ -14,7 +14,8 @@
   "skipAutoPermissionPrompt": true,
   "env": {
     "CLAUDE_CODE_NO_FLICKER": "0",
-    "CLAUDE_VOICE_ENABLED": "false"
+    "CLAUDE_VOICE_ENABLED": "false",
+    "CLAUDE_STREAM_IDLE_TIMEOUT_MS": "600000"
     {{- if ne .chezmoi.os "windows" }}
     {{- $modsDir := print .chezmoi.homeDir "/" (includeTemplate "claude-mods-dir" . | trim) }}
     {{- $names := includeTemplate "claude-mod-names" (dict "root" (print .chezmoi.workingTree "/mods")) | splitList " " | compact }}

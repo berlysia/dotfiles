@@ -2,6 +2,10 @@
 
 import { deepStrictEqual, ok, strictEqual } from "node:assert";
 import { afterEach, beforeEach, describe, it } from "node:test";
+import realHook, {
+  formatStopFailureLogMessage,
+  notifyStopFailure,
+} from "../../implementations/speak-notification.ts";
 import {
   ConsoleCapture,
   createFileSystemMock,
@@ -428,3 +432,101 @@ function generateMessage(eventType: string, input: any): string {
       return "イベントが発生しました";
   }
 }
+
+describe("formatStopFailureLogMessage", () => {
+  it("includes error and details", () => {
+    strictEqual(
+      formatStopFailureLogMessage({
+        error: "server_error",
+        error_details: "stream idle",
+      }),
+      "error=server_error details=stream idle",
+    );
+  });
+
+  it("omits details when absent", () => {
+    strictEqual(
+      formatStopFailureLogMessage({ error: "rate_limit" }),
+      "error=rate_limit",
+    );
+  });
+
+  it("falls back to error=unknown", () => {
+    strictEqual(formatStopFailureLogMessage({}), "error=unknown");
+    strictEqual(formatStopFailureLogMessage({ error: 5 }), "error=unknown");
+    strictEqual(formatStopFailureLogMessage(null), "error=unknown");
+  });
+
+  it("replaces newlines with spaces", () => {
+    strictEqual(
+      formatStopFailureLogMessage({
+        error: "server_error",
+        error_details: "a\nb",
+      }),
+      "error=server_error details=a b",
+    );
+  });
+
+  it("truncates to 500 characters", () => {
+    strictEqual(
+      formatStopFailureLogMessage({
+        error: "x",
+        error_details: "y".repeat(1000),
+      }).length,
+      500,
+    );
+  });
+
+  it("never includes last_assistant_message", () => {
+    const message = formatStopFailureLogMessage({
+      error: "server_error",
+      last_assistant_message: "SECRET",
+    });
+    ok(!message.includes("SECRET"));
+  });
+});
+
+describe("notifyStopFailure", () => {
+  const messages = { voice: "V", system: "S" };
+
+  it("speaks once as Error and notifies the desktop once", async () => {
+    const spoken: [string, string][] = [];
+    const notified: string[] = [];
+    await notifyStopFailure({
+      speak: async (text, type) => {
+        spoken.push([text, type]);
+      },
+      notifySystem: async (text) => {
+        notified.push(text);
+      },
+      getMessages: async () => messages,
+    });
+    deepStrictEqual(spoken, [["V", "Error"]]);
+    deepStrictEqual(notified, ["S"]);
+  });
+
+  it("still notifies the desktop when speak rejects", async () => {
+    const notified: string[] = [];
+    await notifyStopFailure({
+      speak: async () => {
+        throw new Error("voice down");
+      },
+      notifySystem: async (text) => {
+        notified.push(text);
+      },
+      getMessages: async () => messages,
+    });
+    deepStrictEqual(notified, ["S"]);
+  });
+});
+
+describe("StopFailure hook definition", () => {
+  it("hook triggers include StopFailure, Stop and Notification", () => {
+    const trigger = (
+      realHook as unknown as { trigger: Record<string, unknown> }
+    ).trigger;
+    ok(trigger["StopFailure"]);
+    ok(trigger["Stop"]);
+    ok(trigger["Notification"]);
+  });
+});
