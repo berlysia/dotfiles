@@ -1,0 +1,216 @@
+@x/ok:test: noise log 0
+@x/ok:test: noise log 1
+@x/ok:test: noise log 2
+@x/ok:test: noise log 3
+@x/ok:test: noise log 4
+@x/ok:test: noise log 5
+@x/ok:test: noise log 6
+@x/ok:test: noise log 7
+@x/ok:test: noise log 8
+@x/ok:test: noise log 9
+@x/ok:test: noise log 10
+@x/ok:test: noise log 11
+@x/ok:test: noise log 12
+@x/ok:test: noise log 13
+@x/ok:test: noise log 14
+@x/ok:test: noise log 15
+@x/ok:test: noise log 16
+@x/ok:test: noise log 17
+@x/ok:test: noise log 18
+@x/ok:test: noise log 19
+@x/ok:test: noise log 20
+@x/ok:test: noise log 21
+@x/ok:test: noise log 22
+@x/ok:test: noise log 23
+@x/ok:test: noise log 24
+@x/ok:test: noise log 25
+@x/ok:test: noise log 26
+@x/ok:test: noise log 27
+@x/ok:test: noise log 28
+@x/ok:test: noise log 29
+@x/bad:test: 
+@x/bad:test: [1m[46m RUN [49m[22m [36mv4.0.18 [39m[90m/work/fx[39m
+@x/bad:test: 
+@x/bad:test: [90mstdout[2m | b.test.ts[2m > [22m[2msuite[2m > [22m[2mpasses 0
+@x/bad:test: [22m[39mnoise log [33m0[39m
+@x/bad:test: 
+@x/bad:test: [90mstdout[2m | b.test.ts[2m > [22m[2msuite[2m > [22m[2mpasses 1
+@x/bad:test: [22m[39mnoise log [33m1[39m
+@x/bad:test: 
+@x/bad:test: [90mstdout[2m | b.test.ts[2m > [22m[2msuite[2m > [22m[2mpasses 2
+@x/bad:test: [22m[39mnoise log [33m2[39m
+@x/bad:test: 
+@x/bad:test: [90mstdout[2m | b.test.ts[2m > [22m[2msuite[2m > [22m[2mpasses 3
+@x/bad:test: [22m[39mnoise log [33m3[39m
+@x/bad:test: 
+@x/bad:test: [90mstdout[2m | b.test.ts[2m > [22m[2msuite[2m > [22m[2mpasses 4
+@x/bad:test: [22m[39mnoise log [33m4[39m
+@x/bad:test: 
+@x/bad:test: [90mstdout[2m | b.test.ts[2m > [22m[2msuite[2m > [22m[2mpasses 5
+@x/bad:test: [22m[39mnoise log [33m5[39m
+@x/bad:test: 
+@x/bad:test: [90mstdout[2m | b.test.ts[2m > [22m[2msuite[2m > [22m[2mpasses 6
+@x/bad:test: [22m[39mnoise log [33m6[39m
+@x/bad:test: 
+@x/bad:test: [90mstdout[2m | b.test.ts[2m > [22m[2msuite[2m > [22m[2mpasses 7
+@x/bad:test: [22m[39mnoise log [33m7[39m
+@x/bad:test: 
+@x/bad:test: [90mstdout[2m | b.test.ts[2m > [22m[2msuite[2m > [22m[2mpasses 8
+@x/bad:test: [22m[39mnoise log [33m8[39m
+@x/bad:test: 
+@x/bad:test: [90mstdout[2m | b.test.ts[2m > [22m[2msuite[2m > [22m[2mpasses 9
+@x/bad:test: [22m[39mnoise log [33m9[39m
+@x/bad:test: 
+@x/bad:test: [90mstdout[2m | b.test.ts[2m > [22m[2msuite[2m > [22m[2mpasses 10
+@x/bad:test: [22m[39mnoise log [33m10[39m
+@x/bad:test: 
+@x/bad:test: [90mstdout[2m | b.test.ts[2m > [22m[2msuite[2m > [22m[2mpasses 11
+@x/bad:test: [22m[39mnoise log [33m11[39m
+@x/bad:test: 
+@x/bad:test: [90mstdout[2m | b.test.ts[2m > [22m[2msuite[2m > [22m[2mpasses 12
+@x/bad:test: [22m[39mnoise log [33m12[39m
+@x/bad:test: 
+@x/bad:test: [90mstdout[2m | b.test.ts[2m > [22m[2msuite[2m > [22m[2mpasses 13
+@x/bad:test: [22m[39mnoise log [33m13[39m
+@x/bad:test: 
+@x/bad:test: [90mstdout[2m | b.test.ts[2m > [22m[2msuite[2m > [22m[2mpasses 14
+@x/bad:test: [22m[39mnoise log [33m14[39m
+@x/bad:test: 
+@x/bad:test: [90mstdout[2m | b.test.ts[2m > [22m[2msuite[2m > [22m[2mpasses 15
+@x/bad:test: [22m[39mnoise log [33m15[39m
+@x/bad:test: 
+@x/bad:test: [90mstdout[2m | b.test.ts[2m > [22m[2msuite[2m > [22m[2mpasses 16
+@x/bad:test: [22m[39mnoise log [33m16[39m
+@x/bad:test: 
+@x/bad:test: [90mstdout[2m | b.test.ts[2m > [22m[2msuite[2m > [22m[2mpasses 17
+@x/bad:test: [22m[39mnoise log [33m17[39m
+@x/bad:test: 
+@x/bad:test: [90mstdout[2m | b.test.ts[2m > [22m[2msuite[2m > [22m[2mpasses 18
+@x/bad:test: [22m[39mnoise log [33m18[39m
+@x/bad:test: 
+@x/bad:test: [90mstdout[2m | b.test.ts[2m > [22m[2msuite[2m > [22m[2mpasses 19
+@x/bad:test: [22m[39mnoise log [33m19[39m
+@x/bad:test: 
+@x/bad:test: [90mstdout[2m | b.test.ts[2m > [22m[2msuite[2m > [22m[2mpasses 20
+@x/bad:test: [22m[39mnoise log [33m20[39m
+@x/bad:test: 
+@x/bad:test: [90mstdout[2m | b.test.ts[2m > [22m[2msuite[2m > [22m[2mpasses 21
+@x/bad:test: [22m[39mnoise log [33m21[39m
+@x/bad:test: 
+@x/bad:test: [90mstdout[2m | b.test.ts[2m > [22m[2msuite[2m > [22m[2mpasses 22
+@x/bad:test: [22m[39mnoise log [33m22[39m
+@x/bad:test: 
+@x/bad:test: [90mstdout[2m | b.test.ts[2m > [22m[2msuite[2m > [22m[2mpasses 23
+@x/bad:test: [22m[39mnoise log [33m23[39m
+@x/bad:test: 
+@x/bad:test: [90mstdout[2m | b.test.ts[2m > [22m[2msuite[2m > [22m[2mpasses 24
+@x/bad:test: [22m[39mnoise log [33m24[39m
+@x/bad:test: 
+@x/bad:test: [90mstdout[2m | b.test.ts[2m > [22m[2msuite[2m > [22m[2mpasses 25
+@x/bad:test: [22m[39mnoise log [33m25[39m
+@x/bad:test: 
+@x/bad:test: [90mstdout[2m | b.test.ts[2m > [22m[2msuite[2m > [22m[2mpasses 26
+@x/bad:test: [22m[39mnoise log [33m26[39m
+@x/bad:test: 
+@x/bad:test: [90mstdout[2m | b.test.ts[2m > [22m[2msuite[2m > [22m[2mpasses 27
+@x/bad:test: [22m[39mnoise log [33m27[39m
+@x/bad:test: 
+@x/bad:test: [90mstdout[2m | b.test.ts[2m > [22m[2msuite[2m > [22m[2mpasses 28
+@x/bad:test: [22m[39mnoise log [33m28[39m
+@x/bad:test: 
+@x/bad:test: [90mstdout[2m | b.test.ts[2m > [22m[2msuite[2m > [22m[2mpasses 29
+@x/bad:test: [22m[39mnoise log [33m29[39m
+@x/bad:test: 
+@x/bad:test:  [31m❯[39m b.test.ts [2m([22m[2m32 tests[22m[2m | [22m[31m2 failed[39m[2m)[22m[32m 14[2mms[22m[39m
+@x/bad:test:      [32m✓[39m passes 0[32m 1[2mms[22m[39m
+@x/bad:test:      [32m✓[39m passes 1[32m 0[2mms[22m[39m
+@x/bad:test:      [32m✓[39m passes 2[32m 0[2mms[22m[39m
+@x/bad:test:      [32m✓[39m passes 3[32m 0[2mms[22m[39m
+@x/bad:test:      [32m✓[39m passes 4[32m 0[2mms[22m[39m
+@x/bad:test:      [32m✓[39m passes 5[32m 0[2mms[22m[39m
+@x/bad:test:      [32m✓[39m passes 6[32m 0[2mms[22m[39m
+@x/bad:test:      [32m✓[39m passes 7[32m 1[2mms[22m[39m
+@x/bad:test:      [32m✓[39m passes 8[32m 0[2mms[22m[39m
+@x/bad:test:      [32m✓[39m passes 9[32m 0[2mms[22m[39m
+@x/bad:test:      [32m✓[39m passes 10[32m 0[2mms[22m[39m
+@x/bad:test:      [32m✓[39m passes 11[32m 0[2mms[22m[39m
+@x/bad:test:      [32m✓[39m passes 12[32m 0[2mms[22m[39m
+@x/bad:test:      [32m✓[39m passes 13[32m 0[2mms[22m[39m
+@x/bad:test:      [32m✓[39m passes 14[32m 0[2mms[22m[39m
+@x/bad:test:      [32m✓[39m passes 15[32m 0[2mms[22m[39m
+@x/bad:test:      [32m✓[39m passes 16[32m 0[2mms[22m[39m
+@x/bad:test:      [32m✓[39m passes 17[32m 0[2mms[22m[39m
+@x/bad:test:      [32m✓[39m passes 18[32m 0[2mms[22m[39m
+@x/bad:test:      [32m✓[39m passes 19[32m 0[2mms[22m[39m
+@x/bad:test:      [32m✓[39m passes 20[32m 0[2mms[22m[39m
+@x/bad:test:      [32m✓[39m passes 21[32m 0[2mms[22m[39m
+@x/bad:test:      [32m✓[39m passes 22[32m 0[2mms[22m[39m
+@x/bad:test:      [32m✓[39m passes 23[32m 0[2mms[22m[39m
+@x/bad:test:      [32m✓[39m passes 24[32m 0[2mms[22m[39m
+@x/bad:test:      [32m✓[39m passes 25[32m 0[2mms[22m[39m
+@x/bad:test:      [32m✓[39m passes 26[32m 0[2mms[22m[39m
+@x/bad:test:      [32m✓[39m passes 27[32m 0[2mms[22m[39m
+@x/bad:test:      [32m✓[39m passes 28[32m 0[2mms[22m[39m
+@x/bad:test:      [32m✓[39m passes 29[32m 0[2mms[22m[39m
+@x/bad:test: [31m     [31m×[31m compares objects[39m[32m 6[2mms[22m[39m
+@x/bad:test: [31m     [31m×[31m throws[39m[32m 1[2mms[22m[39m
+@x/bad:test: 
+@x/bad:test: [31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 2 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+@x/bad:test: 
+@x/bad:test: [41m[1m FAIL [22m[49m b.test.ts[2m > [22msuite[2m > [22mcompares objects
+@x/bad:test: [31m[1mAssertionError[22m: expected { a: 1, b: [ 1, 2 ] } to deeply equal { a: 1, b: [ 1, 3 ] }[39m
+@x/bad:test: 
+@x/bad:test: [32m- Expected[39m
+@x/bad:test: [31m+ Received[39m
+@x/bad:test: 
+@x/bad:test: [2m  {[22m
+@x/bad:test: [2m    "a": 1,[22m
+@x/bad:test: [2m    "b": [[22m
+@x/bad:test: [2m      1,[22m
+@x/bad:test: [32m-     3,[39m
+@x/bad:test: [31m+     2,[39m
+@x/bad:test: [2m    ],[22m
+@x/bad:test: [2m  }[22m
+@x/bad:test: 
+@x/bad:test: [36m [2m❯[22m b.test.ts:[2m4:64[22m[39m
+@x/bad:test:     [90m  2| [39m[34mdescribe[39m([32m"suite"[39m[33m,[39m () [33m=>[39m {
+@x/bad:test:     [90m  3| [39m  for (let i = 0; i < 30; i++) test(`passes ${i}`, () => { console.log…
+@x/bad:test:     [90m  4| [39m  test("compares objects", () => { expect({ a: 1, b: [1, 2] }).toEqual…
+@x/bad:test:     [90m   | [39m                                                               [31m^[39m
+@x/bad:test:     [90m  5| [39m  test("throws", () => { throw new TypeError("boom: x is undefined"); …
+@x/bad:test:     [90m  6| [39m})[33m;[39m
+@x/bad:test: 
+@x/bad:test: [31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯[22m[39m
+@x/bad:test: 
+@x/bad:test: [41m[1m FAIL [22m[49m b.test.ts[2m > [22msuite[2m > [22mthrows
+@x/bad:test: [31m[1mTypeError[22m: boom: x is undefined[39m
+@x/bad:test: [36m [2m❯[22m b.test.ts:[2m5:32[22m[39m
+@x/bad:test:     [90m  3| [39m  for (let i = 0; i < 30; i++) test(`passes ${i}`, () => { console.log…
+@x/bad:test:     [90m  4| [39m  test("compares objects", () => { expect({ a: 1, b: [1, 2] }).toEqual…
+@x/bad:test:     [90m  5| [39m  test("throws", () => { throw new TypeError("boom: x is undefined"); …
+@x/bad:test:     [90m   | [39m                               [31m^[39m
+@x/bad:test:     [90m  6| [39m})[33m;[39m
+@x/bad:test:     [90m  7| [39m
+@x/bad:test: 
+@x/bad:test: [31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯[22m[39m
+@x/bad:test: 
+@x/bad:test: 
+@x/bad:test: [2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+@x/bad:test: [2m      Tests [22m [1m[31m2 failed[39m[22m[2m | [22m[1m[32m30 passed[39m[22m[90m (32)[39m
+@x/bad:test: [2m   Start at [22m 09:42:36
+@x/bad:test: [2m   Duration [22m 234ms[2m (transform 36ms, setup 0ms, import 53ms, tests 14ms, environment 0ms)[22m
+@x/bad:test: 
+@x/bad:test:  ELIFECYCLE  Test failed. See above for more details.
+@x/aest:  ELIFECYCLE  Test failed. See above for more details.
+@x/best:  ELIFECYCLE  Test failed. See above for more details.
+@x/cest:  ELIFECYCLE  Test failed. See above for more details.
+@x/dest:  ELIFECYCLE  Test failed. See above for more details.
+@x/eest:  ELIFECYCLE  Test failed. See above for more details.
+@x/fest:  ELIFECYCLE  Test failed. See above for more details.
+
+ Tasks:    10 successful, 18 total
+Cached:    8 cached, 18 total
+  Time:    23.377s 
+Failed:    @x/bad#test
+
+ ELIFECYCLE  Test failed. See above for more details.

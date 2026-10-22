@@ -10,9 +10,8 @@ load average が 10 を超えるマシンで `npm test` を全件実行すると
 - `complexity-delta` の `stays silent on a second stop with the same findings and logs once`
 - `tests/tailnet-ssh.test.mjs`: `applySettings` から呼ぶ `ssh-keygen -y` が `spawnSync ... ETIMEDOUT`
 
-completion-gate はこの失敗で停止を止める。出力の抜粋は成功した行だけを示すことがあり、どのテストが落ちたかは `npm test` を全件実行して `✖` を探さないと分からない。
+completion-gate はこの失敗で停止を止める。
 
 やること:
 
 - 固定の待ち時間（3,000 ms など）を、負荷に耐える形（期限の延長、条件の待ち方）に直すか、並列度を下げる。
-- completion-gate の抜粋に、落ちたテストの名前を必ず含める。
