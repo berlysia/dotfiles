@@ -22,11 +22,11 @@ import {
   hasMarker,
   isChezmoiUpdateCommand,
   isCommitCreatingCommand,
-  isSafeSessionId,
   STOP_REASON,
   writeMarker,
 } from "../lib/commit-sign-failure.ts";
 import { getHomeDir } from "../lib/path-utils.ts";
+import { isSafeSessionId } from "../lib/session-id.ts";
 import "../types/tool-schemas.ts";
 
 function defaultMarkerDir(): string {

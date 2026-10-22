@@ -17,6 +17,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { gitSubcommand, splitCommand } from "./command-words.ts";
+import { isSafeSessionId } from "./session-id.ts";
 
 export const HOOK_ID = "[commit-sign-failure-ask]";
 
@@ -46,69 +48,6 @@ const COMMIT_CREATING_SUBCOMMANDS = new Set([
   "pull",
   "am",
 ]);
-
-/**
- * Splits at unquoted `&&` `||` `;` `|` `&` and newlines, then each part into
- * words with quotes removed. Quote-aware so that `echo "a; git commit"` is one
- * part; no expansion is attempted.
- */
-function splitCommand(command: string): string[][] {
-  const parts: string[][] = [];
-  let words: string[] = [];
-  let word = "";
-  let inWord = false;
-  let quote: "'" | '"' | null = null;
-
-  const endWord = () => {
-    if (inWord) words.push(word);
-    word = "";
-    inWord = false;
-  };
-  const endPart = () => {
-    endWord();
-    if (words.length > 0) parts.push(words);
-    words = [];
-  };
-
-  for (let i = 0; i < command.length; i++) {
-    const ch = command[i] as string;
-    if (quote) {
-      if (ch === quote) quote = null;
-      else if (ch === "\\" && quote === '"' && i + 1 < command.length) {
-        word += command[++i];
-      } else word += ch;
-      continue;
-    }
-    if (ch === "'" || ch === '"') {
-      quote = ch;
-      inWord = true;
-    } else if (ch === "\\" && i + 1 < command.length) {
-      word += command[++i];
-      inWord = true;
-    } else if (ch === " " || ch === "\t") {
-      endWord();
-    } else if (ch === ";" || ch === "|" || ch === "&" || ch === "\n") {
-      endPart();
-    } else {
-      word += ch;
-      inWord = true;
-    }
-  }
-  endPart();
-  return parts;
-}
-
-function gitSubcommand(words: string[]): string | undefined {
-  if (words[0] !== "git") return undefined;
-  let i = 1;
-  while (i < words.length) {
-    const w = words[i] as string;
-    if (w === "-C" || w === "-c") i += 2;
-    else if (w.startsWith("-")) i += 1;
-    else return w;
-  }
-  return undefined;
-}
 
 /** True when any part of the command can create a commit (or runs `chezmoi update`). */
 export function isCommitCreatingCommand(command: string): boolean {
@@ -167,12 +106,6 @@ export const STOP_REASON = `${HOOK_ID} このセッション（subagent を含�
 // --- marker store ---------------------------------------------------------
 
 const MARKER_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
-
-export function isSafeSessionId(sessionId: string): boolean {
-  return SESSION_ID_PATTERN.test(sessionId);
-}
-
 /** Returns false (never throws) when the marker could not be written. */
 export function writeMarker(
   dir: string,

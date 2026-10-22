@@ -1,5 +1,10 @@
 import { validateBody, validateTitle } from "./entry-text.ts";
 import type { LearningEntry, LearningsFile } from "./learnings-file.ts";
+import {
+  INJECTION_MAX_BYTES,
+  type Candidate,
+  type InjectionKind,
+} from "./select.ts";
 
 export const SECTION_BUDGET_BYTES = 8 * 1024;
 
@@ -73,4 +78,38 @@ export function renderLearnings(input: {
   return [NOTICE, repoSection, commonSection, REMOVE_HINT]
     .filter((part) => part !== null)
     .join("\n");
+}
+
+// コマンドやファイルの直前・失敗の直後に流す文。URL を含む本文は人が端末から add した
+// 学びだけで、最も効く瞬間には流さない（allowUrl: false）。on の値は出さない。
+// items の bytes は、先頭の項目に注意書きの分を足してあり、合計が text のバイト数と一致する
+export function renderSituation(
+  selected: readonly Candidate[],
+  // 描画は kind によらない。呼び出し側の対応（記録の kind）を型で揃えるために受け取る
+  _kind: InjectionKind,
+  remainingBytes: number,
+): { text: string | null; items: Array<{ id: string; bytes: number }> } {
+  const budget = Math.min(INJECTION_MAX_BYTES, remainingBytes);
+  const rules = { allowUrl: false };
+  const lines: string[] = [];
+  const items: Array<{ id: string; bytes: number }> = [];
+  let used = Buffer.byteLength(NOTICE);
+  for (const { entry } of selected) {
+    if (
+      !validateTitle(entry.title, rules).ok ||
+      !validateBody(entry.body, rules).ok
+    )
+      continue;
+    const line = `- [${entry.id}] ${entry.title}: ${entry.body}`;
+    const lineBytes = Buffer.byteLength(line) + 1;
+    if (used + lineBytes > budget) break;
+    items.push({
+      id: entry.id,
+      bytes: items.length === 0 ? used + lineBytes : lineBytes,
+    });
+    used += lineBytes;
+    lines.push(line);
+  }
+  if (lines.length === 0) return { text: null, items: [] };
+  return { text: [NOTICE, ...lines].join("\n"), items };
 }

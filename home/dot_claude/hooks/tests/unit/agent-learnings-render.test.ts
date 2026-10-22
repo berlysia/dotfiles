@@ -1,7 +1,8 @@
-import { ok, strictEqual } from "node:assert";
+import { deepStrictEqual, ok, strictEqual } from "node:assert";
 import { describe, it } from "node:test";
 import {
   renderLearnings,
+  renderSituation,
   SECTION_BUDGET_BYTES,
 } from "../../lib/agent-learnings/core/render.ts";
 import type {
@@ -130,5 +131,72 @@ describe("renderLearnings", () => {
       }) ?? "";
     ok(!out.includes("<system>"));
     ok(out.includes("検査に通らない 1 件"));
+  });
+});
+
+describe("renderSituation", () => {
+  const sel = (entries: LearningEntry[]) =>
+    entries.map((entry) => ({
+      entry,
+      fileKey: "k/a/b",
+      trigger: { kind: "session" as const },
+    }));
+  it("starts with the same notice as the session start and lists items", () => {
+    const start = renderLearnings({
+      repo: f("k/a/b", [e(1, 1, "2026-10-01")]),
+      common: null,
+      repoPath: "/r",
+      commonPath: "/c",
+    }) as string;
+    const out = renderSituation(sel([e(1, 1, "2026-10-01")]), "pre", 16384);
+    ok(out.text?.startsWith(start.split("\n")[0] as string));
+    ok(out.text?.includes("- [L-000000000001] t1: body 1"));
+    strictEqual(out.items.length, 1);
+  });
+  it("drops items with a markdown link or a URL", () => {
+    const out = renderSituation(
+      sel([
+        e(1, 1, "2026-10-01", "see [x](y)"),
+        e(2, 1, "2026-10-01", "see https://example.com/a"),
+        e(3, 1, "2026-10-01", "plain"),
+      ]),
+      "pre",
+      16384,
+    );
+    deepStrictEqual(
+      out.items.map((i) => i.id),
+      ["L-000000000003"],
+    );
+    ok(!out.text?.includes("example.com"));
+  });
+  it("returns null text when nothing fits the remaining bytes", () => {
+    const out = renderSituation(
+      sel([e(1, 1, "2026-10-01", "x".repeat(380))]),
+      "pre",
+      384,
+    );
+    strictEqual(out.text, null);
+    deepStrictEqual(out.items, []);
+  });
+  it("caps the text at 2048 bytes and item bytes add up to the text size", () => {
+    const entries = [1, 2, 3].map((n) =>
+      e(n, 1, "2026-10-01", "あ".repeat(400)),
+    );
+    const out = renderSituation(sel(entries), "pre", 16384);
+    ok(out.text !== null);
+    ok(Buffer.byteLength(out.text) <= 2048);
+    strictEqual(out.items.length, 1);
+    strictEqual(
+      out.items.reduce((sum, i) => sum + i.bytes, 0),
+      Buffer.byteLength(out.text),
+    );
+  });
+  it("does not print the on values", () => {
+    const withOn = {
+      ...e(1, 1, "2026-10-01"),
+      extra: [["on", "cmd:git commit"]] as Array<[string, string]>,
+    };
+    const out = renderSituation(sel([withOn]), "pre", 16384);
+    ok(!out.text?.includes("cmd:git"));
   });
 });
