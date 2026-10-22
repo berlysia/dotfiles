@@ -25,9 +25,23 @@ export type ObservedWindow = {
   resetsAt: number;
 };
 
+/** The allowed values live in arrays so a reader of a stored forecast validates against them. */
+export const FORECAST_STATUSES = [
+  "unknown",
+  "exhausted",
+  "runs_out",
+  "spare",
+] as const;
+export const FORECAST_REASONS = [
+  "no_data",
+  "expired",
+  "stale",
+  "insufficient_data",
+] as const;
+
 export type UsageForecast = {
-  status: "unknown" | "exhausted" | "runs_out" | "spare";
-  reason: "no_data" | "expired" | "stale" | "insufficient_data" | null;
+  status: (typeof FORECAST_STATUSES)[number];
+  reason: (typeof FORECAST_REASONS)[number] | null;
   averagePeriodMs: number;
   observedMs: number;
   ratePerHour: number | null;

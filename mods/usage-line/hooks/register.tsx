@@ -1,8 +1,9 @@
 import type { EngineInterface, Register } from "claude-code";
 import type { Timer } from "claude-code";
 import { type RateLimitSample, type RateLimitWindow } from "./forecast";
-import { formatLine } from "./format";
 import { buildLineInput } from "./line";
+import { lineFilePath } from "./line-file";
+import type { ForecastFile } from "./status-input";
 import {
   collectWindows,
   decode,
@@ -19,17 +20,14 @@ const KEY_PREFIX = "samples:v1:";
 // 75-157 ms in the field test, too slow to pay on every recorded measure.
 const REREAD_INTERVAL_MS = 600_000;
 
-// `plugin` and `key` must be literals for `$.state`, so the ref lives here.
-const lineRef = { plugin: "usage-line", key: "line" } as const;
-
 type UsageState = {
   /** Every session's samples; the own key is the memory copy, which wins. */
   byKey: Map<string, RateLimitSample[]>;
   /** Survives a session id change, so the same reading is not recorded twice. */
   lastRecorded: Partial<Record<RateLimitWindow, RateLimitSample>>;
-  contextPercent: number | null;
   timer: Timer | null;
   loggedReject: boolean;
+  loggedWriteReject: boolean;
   loaded: boolean;
   lastRereadAt: number | null;
 };
@@ -38,9 +36,9 @@ function createState(): UsageState {
   return {
     byKey: new Map(),
     lastRecorded: {},
-    contextPercent: null,
     timer: null,
     loggedReject: false,
+    loggedWriteReject: false,
     loaded: false,
     lastRereadAt: null,
   };
@@ -50,12 +48,43 @@ function createState(): UsageState {
 // module (a closure inside `register` makes the module fail to load), so every
 // helper below takes `$` and the state as arguments.
 
-async function publishLine(
+/**
+ * Hands the forecasts to statusline.ts, which draws the line. Only windows
+ * that have a latest sample are written; the file is written every time (its
+ * `at` moves) so the reader can tell the mod is alive.
+ */
+async function writeForecastFile(
   $: EngineInterface,
-  line: string | undefined,
+  state: UsageState,
+  input: ReturnType<typeof buildLineInput>,
+  now: number,
 ): Promise<void> {
-  // null, not undefined: a PluginState value stays JSON.
-  await $.state.set(lineRef, line ?? null);
+  const path = lineFilePath(
+    {
+      XDG_RUNTIME_DIR: await $.env.get("XDG_RUNTIME_DIR"),
+      TMPDIR: await $.env.get("TMPDIR"),
+    },
+    await $.session.id(),
+  );
+  if (path === null) return;
+  const windows: ForecastFile["windows"] = {};
+  for (const window of ["five_hour", "seven_day"] as const) {
+    const { latest, forecast } = input.windows[window];
+    if (latest === null) continue;
+    windows[window] = { resetsAt: latest.resetsAt, forecast };
+  }
+  const file: ForecastFile = { v: 1, at: now, windows };
+  try {
+    await $.fs.write(path, JSON.stringify(file));
+  } catch (error) {
+    if (!state.loggedWriteReject) {
+      state.loggedWriteReject = true;
+      $.ui.log(
+        `usage-line: could not write forecast file: ${error instanceof Error ? error.message : String(error)}`,
+        { to: "debug" },
+      );
+    }
+  }
 }
 
 /**
@@ -111,11 +140,7 @@ async function rebuildLine(
 ): Promise<void> {
   const now = await $.clock.now();
   const merged = mergeAll(state.byKey);
-  const line = formatLine(
-    buildLineInput(merged, state.contextPercent, now),
-    now,
-  );
-  await publishLine($, line);
+  await writeForecastFile($, state, buildLineInput(merged, null, now), now);
   state.timer?.cancel();
   state.timer = null;
   const wakeAt = nextWakeAt(merged, now);
@@ -125,7 +150,7 @@ async function rebuildLine(
 async function recordMeasure(
   $: EngineInterface,
   state: UsageState,
-  e: { context: { percent?: number | null }; rateLimits: unknown },
+  e: { rateLimits: unknown },
 ): Promise<void> {
   const now = await $.clock.now();
   let didLoad = false;
@@ -135,7 +160,6 @@ async function recordMeasure(
     state.loaded = true;
     didLoad = true;
   }
-  state.contextPercent = e.context.percent ?? null;
 
   const due = collectWindows(e.rateLimits).filter((observed) =>
     isRecordDue(state.lastRecorded[observed.window], observed, now),
@@ -184,7 +208,7 @@ export const register: Register = (on) => {
       state.loaded = true;
       await rebuildLine($, state);
     } catch {
-      // The line is a convenience; the session goes on without it.
+      // The forecast file is a convenience; the session goes on without it.
     }
     return result;
   });
@@ -197,22 +221,5 @@ export const register: Register = (on) => {
       // As above.
     }
     return result;
-  });
-
-  on("ui.render", { component: "PromptHint" }, async ($, e, next) => {
-    try {
-      const { value: line } = await $.state.get(lineRef);
-      if (typeof line !== "string" || line === "") return await next(e);
-      const tail = e.props.tail;
-      return await next({
-        ...e,
-        props: {
-          ...e.props,
-          tail: tail === undefined || tail === "" ? line : `${tail}  ${line}`,
-        },
-      });
-    } catch {
-      return next(e);
-    }
   });
 };

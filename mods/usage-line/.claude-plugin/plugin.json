@@ -1,6 +1,5 @@
 {
   "name": "usage-line",
   "version": "0.1.0",
-  "description": "Shows context use, the 5-hour and weekly rate-limit use, and when each would reach 100%, on one line under the prompt.",
-  "types": "./types/index.d.ts"
+  "description": "Records rate-limit use across sessions and hands the 5-hour and weekly forecasts to statusline.ts, which draws context, use and when each window would reach 100% as a status line command."
 }
