@@ -121,12 +121,12 @@ test("exhausted shows no forecast; 99.96 truncates to 99.9", async () => {
   ).toBe("5h 42.0% 予想 70.0% (reset 16:00)");
 });
 
-test("unknown shows only the usage, for every reason", async () => {
+test("unknown shows the usage marked 計測中, for every reason", async () => {
   for (const reason of ["unknown", "insufficient_data", "stale"] as const) {
     const f =
       reason === "unknown" ? { status: "unknown" as const } : { reason };
     expect(formatLine(input(null, line("five_hour", 42, f), none), now)).toBe(
-      "5h 42.0% (reset 16:00)",
+      "5h 42.0% 計測中 (reset 16:00)",
     );
   }
 });
@@ -163,7 +163,7 @@ test("expired windows are omitted", async () => {
 test("a note on the newest sample appears only past the staleness limit", async () => {
   const at = (age: number) => line("five_hour", 42, {}, now - age);
   expect(formatLine(input(null, at(MAX_OBSERVATION_AGE_MS), none), now)).toBe(
-    "5h 42.0% (reset 16:00)",
+    "5h 42.0% 計測中 (reset 16:00)",
   );
   const stale = formatLine(
     input(null, at(MAX_OBSERVATION_AGE_MS + 1), none),
@@ -171,7 +171,7 @@ test("a note on the newest sample appears only past the staleness limit", async 
   );
   const sampledAt = now - MAX_OBSERVATION_AGE_MS - 1;
   const clock = `${String(new Date(sampledAt).getHours()).padStart(2, "0")}:${String(new Date(sampledAt).getMinutes()).padStart(2, "0")}`;
-  expect(stale).toBe(`5h 42.0% (reset 16:00) │ ${clock} 時点`);
+  expect(stale).toBe(`5h 42.0% 計測中 (reset 16:00) │ ${clock} 時点`);
 });
 
 test("an exhausted window alone still gets the note", async () => {
@@ -206,5 +206,5 @@ test("ctx is omitted when null", async () => {
       input(null, line("five_hour", 42, { status: "unknown" }), none),
       now,
     ),
-  ).toBe("5h 42.0% (reset 16:00)");
+  ).toBe("5h 42.0% 計測中 (reset 16:00)");
 });

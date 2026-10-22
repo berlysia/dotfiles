@@ -49,7 +49,7 @@ const render = (s: unknown, f: unknown) =>
 
 test("stdin only: usage and context, no forecast", async () => {
   expect(render(stdin, undefined)).toBe(
-    `ctx 9.0% │ 5h 3.0% (reset ${clock(R5 * 1000)}) │ 週 13.0% (reset ${WEEKDAYS[new Date(R7 * 1000).getDay()]} ${clock(R7 * 1000)})`,
+    `ctx 9.0% │ 5h 3.0% 計測中 (reset ${clock(R5 * 1000)}) │ 週 13.0% 計測中 (reset ${WEEKDAYS[new Date(R7 * 1000).getDay()]} ${clock(R7 * 1000)})`,
   );
 });
 

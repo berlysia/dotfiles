@@ -82,7 +82,7 @@ function withSeven(runtime, content) {
 }
 
 const LINE =
-  /^ctx 9\.0% │ 5h 3\.0% \(reset \d{2}:\d{2}\) │ 週 13\.0% \(reset . \d{2}:\d{2}\)\n$/u;
+  /^ctx 9\.0% │ 5h 3\.0% 計測中 \(reset \d{2}:\d{2}\) │ 週 13\.0% 計測中 \(reset . \d{2}:\d{2}\)\n$/u;
 
 test("stdin only: usage and context, exit 0, quiet stderr", () => {
   const runtime = freshRuntimeDir();

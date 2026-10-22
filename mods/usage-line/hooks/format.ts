@@ -59,8 +59,11 @@ function formatWindow(
     case "spare":
       return `${label} ${used} 予想 ${formatPercent(forecast.projectedUsedPercent ?? latest.usedPercent)} ${reset}`;
     case "exhausted":
-    case "unknown":
       return `${label} ${used} ${reset}`;
+    // No forecast yet (too few samples, none from the mod, or gone stale): say so
+    // rather than leave the usage looking like a finished estimate.
+    case "unknown":
+      return `${label} ${used} 計測中 ${reset}`;
   }
 }
 
