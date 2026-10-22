@@ -10,7 +10,6 @@ import {
   parseTriggers,
   readOn,
   type TriggerError,
-  type TriggerMode,
   type ValidatedTriggers,
 } from "./triggers.ts";
 
@@ -84,30 +83,10 @@ export function retagEntry(
   };
 }
 
-// --- 方針 -------------------------------------------------------------------
+// --- 上限 -------------------------------------------------------------------
 
-declare const policyBrand: unique symbol;
-// 作れるのは policyFor だけ（矛盾した組み合わせを型で作らせない）
-export type RetagPolicy = {
-  readonly mode: TriggerMode;
-  readonly scope: "repo-only" | "repo-and-common";
-  readonly requireExpect: boolean;
-  readonly maxLines: number;
-  readonly [policyBrand]: true;
-};
-
-export function policyFor(mode: TriggerMode): RetagPolicy {
-  return (
-    mode === "human"
-      ? {
-          mode,
-          scope: "repo-and-common",
-          requireExpect: true,
-          maxLines: 200,
-        }
-      : { mode, scope: "repo-only", requireExpect: false, maxLines: 200 }
-  ) as RetagPolicy;
-}
+// --from-file の 1 回あたりの行数の上限
+const MAX_RETAG_LINES = 200;
 
 export type RetagOp = { id: string; on: ValidatedTriggers };
 
@@ -124,13 +103,10 @@ export type ParseRetagResult =
   | { ok: false; error: "too-many-lines" };
 
 // 1 行 `<id>\t<on>`。行の内容は結果に含めない
-export function parseRetagFile(
-  text: string,
-  policy: RetagPolicy,
-): ParseRetagResult {
+export function parseRetagFile(text: string): ParseRetagResult {
   const lines = text.split("\n");
   if (lines[lines.length - 1] === "") lines.pop();
-  if (lines.filter((l) => l !== "").length > policy.maxLines)
+  if (lines.filter((l) => l !== "").length > MAX_RETAG_LINES)
     return { ok: false, error: "too-many-lines" };
   const ops: RetagOp[] = [];
   const seen = new Set<string>();
@@ -146,10 +122,7 @@ export function parseRetagFile(
       return { ok: false, line: at, error: "bad-line" };
     if (seen.has(id)) return { ok: false, line: at, error: "duplicate-id" };
     seen.add(id);
-    const parsed = parseTriggers(
-      onText === "" ? [] : onText.split(","),
-      policy.mode,
-    );
+    const parsed = parseTriggers(onText === "" ? [] : onText.split(","));
     if (!parsed.ok) return { ok: false, line: at, error: parsed.error };
     ops.push({ id, on: parsed.value });
   }
@@ -176,21 +149,18 @@ export type PlannedRetag = {
 };
 export type PlanRetagResult =
   | { ok: true; planned: PlannedRetag[] }
-  | { ok: false; error: "common-not-allowed" | "missing"; count: number };
+  | { ok: false; error: "missing"; count: number };
 
 const rawOn = (entry: LearningEntry): string | null => {
   const values = entry.extra.filter(([key]) => key === "on");
   return values.length === 0 ? null : JSON.stringify(values.map(([, v]) => v));
 };
 
-// repo-only でも common を見るのは、common の id を「無い」ではなく「許されない」と区別するため
 export function planRetag(
   files: { repo: LearningsFile; common: LearningsFile | null },
   ops: readonly RetagOp[],
-  policy: RetagPolicy,
 ): PlanRetagResult {
   const planned: PlannedRetag[] = [];
-  let commonHits = 0;
   let missing = 0;
   for (const op of ops) {
     const inRepo = files.repo.entries.find((e) => e.id === op.id);
@@ -200,10 +170,6 @@ export function planRetag(
     const found = inRepo ?? inCommon;
     if (!found) {
       missing += 1;
-      continue;
-    }
-    if (inCommon && policy.scope === "repo-only") {
-      commonHits += 1;
       continue;
     }
     const on = readOn(found);
@@ -228,8 +194,6 @@ export function planRetag(
       },
     });
   }
-  if (commonHits > 0)
-    return { ok: false, error: "common-not-allowed", count: commonHits };
   if (missing > 0) return { ok: false, error: "missing", count: missing };
   return { ok: true, planned };
 }
@@ -242,7 +206,6 @@ export type ApplyRetagResult =
       ok: false;
       reason:
         | "read-only"
-        | "common-not-allowed"
         | "path-prefix-in-common"
         | "expect-required"
         | "changed"
@@ -255,7 +218,8 @@ export type ApplyRetagResult =
 export function applyRetag(
   file: LearningsFile,
   ops: readonly RetagOp[],
-  policy: RetagPolicy,
+  // 渡されたときだけ、計画した時点との食い違い（changed）を検査する。確認の待ち時間が
+  // ある経路（人の確認）が渡し、計画から適用までを 1 つの lock で行う経路は渡さない
   expects?: readonly RetagExpect[],
 ): ApplyRetagResult {
   const fail = (
@@ -263,14 +227,10 @@ export function applyRetag(
   ): ApplyRetagResult => ({ ok: false, reason });
   if (file.readOnly) return fail("read-only");
   const isCommon = file.key === COMMON_KEY;
-  if (isCommon && policy.scope === "repo-only")
-    return fail("common-not-allowed");
   if (new Set(ops.map((o) => o.id)).size !== ops.length)
     return fail("duplicate-id");
   if (isCommon && !ops.every((o) => allowedInCommon(o.on)))
     return fail("path-prefix-in-common");
-  if (policy.requireExpect && expects === undefined)
-    return fail("expect-required");
 
   const entries = file.entries.map((e) => e);
   const lines: string[] = [];
@@ -278,8 +238,8 @@ export function applyRetag(
     const at = entries.findIndex((e) => e.id === op.id);
     const target = entries[at];
     if (target === undefined) return fail("missing");
-    if (policy.requireExpect) {
-      const expect = expects?.find((x) => x.id === op.id);
+    if (expects !== undefined) {
+      const expect = expects.find((x) => x.id === op.id);
       if (expect === undefined) return fail("expect-required");
       if (
         expect.on !== rawOn(target) ||

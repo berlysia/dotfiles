@@ -33,14 +33,14 @@ function hasKeys(
 
 type ParsedOp = LearningOp | PromoteOp;
 
-// `on` は worker の制限で検査する。外れたら応答全体を拒否する（null を返す）
+// `on` は文法で検査する。外れたら応答全体を拒否する（null を返す）
 function parseOn(
   value: Record<string, unknown>,
 ): { ok: true; on: ValidatedTriggers | undefined } | { ok: false } {
   if (!("on" in value)) return { ok: true, on: undefined };
   const raw = value["on"];
   if (!Array.isArray(raw)) return { ok: false };
-  const parsed = parseTriggers(raw, "worker");
+  const parsed = parseTriggers(raw);
   return parsed.ok ? { ok: true, on: parsed.value } : { ok: false };
 }
 

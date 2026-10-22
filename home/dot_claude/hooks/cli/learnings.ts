@@ -48,18 +48,15 @@ import {
   countRetagLines,
   parseRetagFile,
   planRetag,
-  policyFor,
   type PlannedRetag,
   type RetagExpect,
   type RetagOp,
-  type RetagPolicy,
 } from "../lib/agent-learnings/core/retag.ts";
 import {
   filterByTrigger,
   formatTriggers,
   parseTriggers,
   type Trigger,
-  type TriggerMode,
   type ValidatedTriggers,
 } from "../lib/agent-learnings/core/triggers.ts";
 import { countJobs, summarizeRuns } from "../lib/agent-learnings/core/queue.ts";
@@ -129,12 +126,19 @@ export interface RunLearningsCliResult {
 // 必要があり、権限の照合に見える。
 const AGENT_ENV = /^(CLAUDECODE|CLAUDE_CODE_.*|CODEX_SANDBOX.*|AI_AGENT)$/;
 
-// 人の操作かの判定はここ 1 か所。曖昧なときは "worker"（制限の厳しい側）
-export function resolveCallerMode(
+// 人の操作かの判定はここ 1 か所。曖昧なときは人ではない扱いにする。人だけの操作
+// （--common、promote、rekey、init）は拒否し、tag では確認を省く（省いても付けられる
+// 範囲は人と同じなので、曖昧さが広げるものは無い）。環境からの推定で、証明ではない
+export function isHumanCaller(
   deps: Pick<RunLearningsCliDeps, "isTty" | "agentEnv">,
-): TriggerMode {
-  return deps.isTty && !deps.agentEnv ? "human" : "worker";
+): boolean {
+  return deps.isTty && !deps.agentEnv;
 }
+
+type Actor = "human" | "agent";
+const actorOf = (
+  deps: Pick<RunLearningsCliDeps, "isTty" | "agentEnv">,
+): Actor => (isHumanCaller(deps) ? "human" : "agent");
 
 const REPO_KEY_SHAPE = "host/owner/repo（例: github.com/berlysia/awai）";
 
@@ -145,14 +149,14 @@ const USAGE = [
   "                   --grep は見出し・本文・id の部分一致（大文字小文字を区別しない、複数で AND）。--id は複数で OR",
   "  path [--common]",
   "  add --title=T --body=B [--common] [--on=TRIGGER]...",
-  "                   --on は最大 4 個。session / cmd:<語> <語> / path:<部分>/<部分>/ / path:*.<a>.<b>（広い場面は人が tag で付ける）",
+  "                   --on は最大 4 個。session / cmd:<語> <語> / path:<部分>/<部分>/ / path:*.<a>.<b>",
   "  remove <id>",
   "  feedback <id> <helpful|mistimed|wrong> --at=<session|pre|fail|path>",
   "                   注入された学びが場面に合っていたかを返す（直近 14 日に出た組だけ受け付ける）",
   "  status",
   "  tag <id> --on=TRIGGER... | tag <id> --on= | tag --from-file PATH",
   "                   on を付け替える（--on= は外す）。--from-file は 1 行 `<id>\\t<on を , でつないだ値>`（最大 200 行、64KB）",
-  "                   人は全 trigger を /dev/tty の確認つきで common にも付けられる。エージェントは repo の学びに限り、add --on と同じ制限",
+  "                   repo の学びにも common の学びにも付けられる（common には path:<部分>/ は付けられない）。人は /dev/tty の確認つき、エージェントは確認なし",
   "  promote <id>    (human only)",
   "  init            (human only)",
   "  rekey <old> <new>  (human only)",
@@ -222,7 +226,7 @@ function parseShowArgs(
   }
   let on: Trigger | undefined;
   if (values.on !== undefined) {
-    const parsedOn = parseTriggers(values.on, "human");
+    const parsedOn = parseTriggers(values.on);
     if (!parsedOn.ok)
       return { ok: false, message: `--on が不正（${parsedOn.error}）` };
     const only = parsedOn.value[0];
@@ -402,10 +406,13 @@ function commitMessage(
   subject: string,
   evidence: readonly string[],
   evictedIds: readonly string[],
+  // 付け替えと add は誰の操作かを残す（環境からの推定）。worker と inbox は題で分かる
+  actor?: Actor,
 ): string {
   const lines = [
     ...evidence,
     ...evictedIds.map((id) => `evict ${id}: over the entry cap`),
+    ...(actor === undefined ? [] : [`actor: ${actor}`]),
   ];
   return lines.length === 0 ? subject : `${subject}\n\n${lines.join("\n")}`;
 }
@@ -434,12 +441,10 @@ async function runAdd(
   });
   if (values.title === undefined || values.body === undefined)
     return fail(`--title と --body が要る\n${USAGE}`);
-  const humanOnly = resolveCallerMode(deps) === "human";
-  // 人が実行しても worker の検査を通す。add は許可リストにあり、人の判定を破られると
-  // 後ろに止めるものが無い。広い場面は人が tag で付ける
+  const humanOnly = isHumanCaller(deps);
   let on: ValidatedTriggers | undefined;
   if (values.on !== undefined) {
-    const parsedOn = parseTriggers(values.on, "worker");
+    const parsedOn = parseTriggers(values.on);
     if (!parsedOn.ok) return fail(`--on が不正（${parsedOn.error}）`);
     on = parsedOn.value;
   }
@@ -497,6 +502,7 @@ async function runAdd(
           `learnings: add ${id} (${fileKey})`,
           applied.value.evidence,
           applied.value.evictedIds,
+          actorOf(deps),
         ),
         deps.runGit,
       );
@@ -721,6 +727,7 @@ function writeRetagged(
   ops: readonly RetagOp[],
   deps: RunLearningsCliDeps,
 ): RunLearningsCliResult {
+  // files は common → repo の順（groupRetag）。1 つの lock の中で両方を書く
   for (const file of files) {
     const written = writeLearnings(store, file);
     if (!written.ok) return fail(written.reason);
@@ -731,7 +738,7 @@ function writeRetagged(
       : `learnings: retag ${ops.length} entries`;
   const committed = commitStore(
     store,
-    commitMessage(subject, lines, []),
+    commitMessage(subject, lines, [], actorOf(deps)),
     deps.runGit,
   );
   const stdout = lines.length === 0 ? "" : `${lines.join("\n")}\n`;
@@ -764,7 +771,7 @@ async function runTag(
     return fail(`tag の引数が不正\n${USAGE}`);
   }
   const { values, positionals } = parsed;
-  const policy: RetagPolicy = policyFor(resolveCallerMode(deps));
+  const human = isHumanCaller(deps);
 
   let ops: RetagOp[];
   if (values["from-file"] !== undefined) {
@@ -772,7 +779,7 @@ async function runTag(
       return fail(`--from-file は id・--on と同時に使えない\n${USAGE}`);
     const read = readBoundedFile(values["from-file"]);
     if (!read.ok) return fail(FROM_FILE_UNREADABLE);
-    const fileOps = parseRetagFile(read.text, policy);
+    const fileOps = parseRetagFile(read.text);
     if (!fileOps.ok)
       return fail(
         "line" in fileOps
@@ -789,7 +796,7 @@ async function runTag(
       return fail(`--on が要る（外すときは --on=）\n${USAGE}`);
     const onValues =
       values.on.length === 1 && values.on[0] === "" ? [] : values.on;
-    const parsedOn = parseTriggers(onValues, policy.mode);
+    const parsedOn = parseTriggers(onValues);
     // id と値は出さず、固定の語だけを返す
     if (!parsedOn.ok) return fail(`--on が不正（${parsedOn.error}）`);
     ops = [{ id, on: parsedOn.value }];
@@ -815,49 +822,32 @@ async function runTag(
   const lockFailed = (): RunLearningsCliResult =>
     fail("store の lock を取れなかった", 2);
 
-  if (policy.mode === "worker") {
-    // 計画と適用を同じ lock の中で行う（確認も expect の比較もしない）
-    const locked = await withStoreLock(
-      paths.state,
-      { waitMs: deps.lockWaitMs },
-      (): RunLearningsCliResult => {
-        applyInboxLocked(store, {
-          today: todayOf(deps.now),
-          runGit: deps.runGit,
-          extraRedact,
-        });
-        const files = readBoth();
-        if (!files.ok) return fail(files.reason);
-        const plan = planRetag(files, ops, policy);
-        if (!plan.ok) return fail(`${plan.error}（${plan.count} 件）`);
-        const applied = applyRetag(files.repo, ops, policy);
-        if (!applied.ok) return fail(applyFailureMessage(applied.reason));
-        return writeRetagged(store, [applied.file], applied.lines, ops, deps);
-      },
+  // 人もエージェントも同じ流れ。違いは確認だけ: 人は lock の外で /dev/tty の確認を取り、
+  // 確認の前に作った expect で適用時の食い違いを検知する。エージェントは確認の待ち時間が
+  // 無く、計画から適用までを 1 つの lock の中で行うので expect は要らない
+  let confirmed: { planned: readonly PlannedRetag[] } | null = null;
+  if (human) {
+    const preview = readBoth();
+    if (!preview.ok) return fail(preview.reason);
+    const plan = planRetag(preview, ops);
+    if (!plan.ok) return fail(`${plan.error}（${plan.count} 件）`);
+    for (const group of groupRetag(preview, plan.planned, ops)) {
+      const dry = applyRetag(group.file, group.ops, group.expects);
+      if (!dry.ok) return fail(applyFailureMessage(dry.reason));
+    }
+    const approved = await deps.confirm(
+      [
+        "次の学びの on を付け替える:",
+        ...plan.planned.map(
+          (p) =>
+            `  ${p.id}  ${p.title === "invalid" ? "（不正な見出し）" : p.title}  ${describeCurrent(p.currentOn)} -> ${p.nextOn.length === 0 ? "なし（外す）" : formatTriggers(p.nextOn)}${p.fileKey === COMMON_KEY ? "  [common]" : ""}`,
+        ),
+        "付け替える場合は y を入力する [y/N]: ",
+      ].join("\n"),
     );
-    return locked.ok ? locked.value : lockFailed();
+    if (!approved) return fail("付け替えなかった");
+    confirmed = { planned: plan.planned };
   }
-
-  // 人: 確認は lock の外、適用は lock の中で読み直して expect と比べる
-  const preview = readBoth();
-  if (!preview.ok) return fail(preview.reason);
-  const plan = planRetag(preview, ops, policy);
-  if (!plan.ok) return fail(`${plan.error}（${plan.count} 件）`);
-  for (const group of groupRetag(preview, plan.planned, ops)) {
-    const dry = applyRetag(group.file, group.ops, policy, group.expects);
-    if (!dry.ok) return fail(applyFailureMessage(dry.reason));
-  }
-  const approved = await deps.confirm(
-    [
-      "次の学びの on を付け替える:",
-      ...plan.planned.map(
-        (p) =>
-          `  ${p.id}  ${p.title === "invalid" ? "（不正な見出し）" : p.title}  ${describeCurrent(p.currentOn)} -> ${p.nextOn.length === 0 ? "なし（外す）" : formatTriggers(p.nextOn)}${p.fileKey === COMMON_KEY ? "  [common]" : ""}`,
-      ),
-      "付け替える場合は y を入力する [y/N]: ",
-    ].join("\n"),
-  );
-  if (!approved) return fail("付け替えなかった");
 
   const locked = await withStoreLock(
     paths.state,
@@ -870,23 +860,29 @@ async function runTag(
       });
       const files = readBoth();
       if (!files.ok) return fail(files.reason);
-      const again = planRetag(files, ops, policy);
-      // 対象が消えた・別のファイルへ移った場合も確認の後の変更として扱う
-      if (
-        !again.ok ||
-        again.planned.some(
-          (p) => plan.planned.find((q) => q.id === p.id)?.fileKey !== p.fileKey,
+      const again = planRetag(files, ops);
+      if (confirmed === null) {
+        if (!again.ok) return fail(`${again.error}（${again.count} 件）`);
+      } else {
+        const before = confirmed.planned;
+        // 対象が消えた・別のファイルへ移った場合も確認の後の変更として扱う
+        if (
+          !again.ok ||
+          again.planned.some(
+            (p) => before.find((q) => q.id === p.id)?.fileKey !== p.fileKey,
+          )
         )
-      )
-        return fail(RETAG_CHANGED);
+          return fail(RETAG_CHANGED);
+      }
+      const planned = confirmed?.planned ?? (again.ok ? again.planned : []);
+      // 全ファイルの applyRetag が通ったときだけ書く（片方の失敗で何も書かない）
       const written: LearningsFile[] = [];
       const lines: string[] = [];
-      for (const group of groupRetag(files, plan.planned, ops)) {
+      for (const group of groupRetag(files, planned, ops)) {
         const applied = applyRetag(
           group.file,
           group.ops,
-          policy,
-          group.expects,
+          confirmed === null ? undefined : group.expects,
         );
         if (!applied.ok) return fail(applyFailureMessage(applied.reason));
         written.push(applied.file);
@@ -1504,7 +1500,7 @@ export async function runLearningsCli(
     rest[0] === "-h"
   )
     return done(0, USAGE);
-  const humanOnly = resolveCallerMode(deps) === "human";
+  const humanOnly = isHumanCaller(deps);
   try {
     switch (command) {
       case "show":

@@ -72,7 +72,7 @@ export const formatFeedbackLine = (record: FeedbackLine): string =>
 export function isRecordedTrigger(value: unknown): value is string {
   if (typeof value !== "string") return false;
   if (value === UNTAGGED) return true;
-  const parsed = parseTriggers([value], "human");
+  const parsed = parseTriggers([value]);
   return (
     parsed.ok &&
     parsed.value.length === 1 &&

@@ -966,19 +966,26 @@ describe("runLearningsCli on and tag", () => {
       ok(!r.stderr.includes("Evil"));
       ok(r.stderr.includes("usage: agent-learnings"));
     }));
-  it("add --on uses the worker grammar for humans and agents alike", () =>
+  it("add --on takes a one-word cmd and records on and actor for humans and agents", () =>
     withEnv(async (deps) => {
       await run(deps, "init");
-      for (const d of [deps, worker(deps)]) {
-        const narrow = await run(
+      for (const [d, actor] of [
+        [deps, "human"],
+        [worker(deps), "agent"],
+      ] as const) {
+        const broad = await run(
           d,
           "add",
-          "--title=a",
+          "--title",
+          `broad ${actor}`,
           "--body=b",
           "--on=cmd:git",
         );
-        strictEqual(narrow.exitCode, 1);
-        ok(narrow.stderr.includes("worker-restricted"));
+        strictEqual(broad.exitCode, 0);
+        strictEqual(await onOf(deps, broad.stdout.trim()), "cmd:git");
+        const body = gitLog(deps, "%b");
+        ok(body.includes("on: cmd:git"), body);
+        ok(body.includes(`actor: ${actor}`), body);
         const five = await run(
           d,
           "add",
@@ -991,15 +998,6 @@ describe("runLearningsCli on and tag", () => {
         strictEqual(five.exitCode, 1);
         ok(five.stderr.includes("too-many"));
       }
-      const good = await run(
-        deps,
-        "add",
-        "--title=ok",
-        "--body=b",
-        "--on=cmd:git commit",
-      );
-      strictEqual(good.exitCode, 0);
-      strictEqual(await onOf(deps, good.stdout.trim()), "cmd:git commit");
     }));
   it("human add --common refuses path-prefix but accepts path-suffix", () =>
     withEnv(async (deps) => {
@@ -1045,7 +1043,7 @@ describe("runLearningsCli on and tag", () => {
       strictEqual(gitLog(deps, "%s"), `learnings: retag ${id}`);
       ok(gitLog(deps, "%b").includes(`retag ${id}`));
     }));
-  it("agent tag refuses a one-word cmd and common ids", () =>
+  it("agent tag sets a broad on on a repo entry and a common entry", () =>
     withEnv(async (deps) => {
       await run(deps, "init");
       const id = await addEntry(deps, "t");
@@ -1053,14 +1051,72 @@ describe("runLearningsCli on and tag", () => {
         await run(deps, "add", "--common", "--title=c", "--body=b")
       ).stdout.trim();
       const agent = worker(deps);
-      const narrow = await run(agent, "tag", id, "--on=cmd:git");
-      strictEqual(narrow.exitCode, 1);
-      ok(narrow.stderr.includes("worker-restricted"));
-      ok(!narrow.stderr.includes(id));
-      const blocked = await run(agent, "tag", common, "--on=cmd:git commit");
-      strictEqual(blocked.exitCode, 1);
-      ok(blocked.stderr.includes("common-not-allowed"));
+      const repoTag = await run(agent, "tag", id, "--on=cmd:jactionlint");
+      strictEqual(repoTag.exitCode, 0);
+      strictEqual(await onOf(deps, id), "cmd:jactionlint");
+      const commonTag = await run(agent, "tag", common, "--on=cmd:gh pr");
+      strictEqual(commonTag.exitCode, 0);
+      strictEqual(await onOf(deps, common), "cmd:gh pr");
+      const body = gitLog(deps, "%b");
+      ok(body.includes(`retag ${common}: none -> cmd:gh pr`), body);
+      ok(body.includes("actor: agent"), body);
+    }));
+  it("agent tag refuses a path prefix on a common entry", () =>
+    withEnv(async (deps) => {
+      await run(deps, "init");
+      const common = (
+        await run(deps, "add", "--common", "--title=c", "--body=b")
+      ).stdout.trim();
+      const r = await run(worker(deps), "tag", common, "--on=path:mods/x");
+      strictEqual(r.exitCode, 1);
+      ok(
+        r.stderr.includes("common の学びに path: の接頭辞は付けられない"),
+        r.stderr,
+      );
       strictEqual(await onOf(deps, common), undefined);
+    }));
+  it(
+    "agent tag --from-file writes repo and common entries in one commit, or neither",
+    withTmp((dir) =>
+      withEnv(async (deps) => {
+        await run(deps, "init");
+        const a = await addEntry(deps, "a");
+        const c = (
+          await run(deps, "add", "--common", "--title=c", "--body=b")
+        ).stdout.trim();
+        const agent = worker(deps);
+        const headBefore = gitLog(deps, "%H");
+        const file = join(dir, "ops.tsv");
+        writeFileSync(file, `${a}\tcmd:git\n${c}\tcmd:gh pr\n`);
+        const missing = join(dir, "missing.tsv");
+        writeFileSync(
+          missing,
+          `${a}\tcmd:git\n${c}\tcmd:gh pr\nL-ffffffffffff\tsession\n`,
+        );
+        strictEqual(
+          (await run(agent, "tag", "--from-file", missing)).exitCode,
+          1,
+        );
+        strictEqual(gitLog(deps, "%H"), headBefore);
+        strictEqual(await onOf(deps, a), undefined);
+        strictEqual(await onOf(deps, c), undefined);
+        strictEqual((await run(agent, "tag", "--from-file", file)).exitCode, 0);
+        strictEqual(gitLog(deps, "%s"), "learnings: retag 2 entries");
+        strictEqual(await onOf(deps, a), "cmd:git");
+        strictEqual(await onOf(deps, c), "cmd:gh pr");
+      }),
+    ),
+  );
+  it("agent tag --on= removes a broad on and records untag", () =>
+    withEnv(async (deps) => {
+      await run(deps, "init");
+      const id = await addEntry(deps, "t");
+      const agent = worker(deps);
+      await run(agent, "tag", id, "--on=cmd:git");
+      const r = await run(agent, "tag", id, "--on=");
+      strictEqual(r.exitCode, 0);
+      strictEqual(await onOf(deps, id), undefined);
+      ok(gitLog(deps, "%b").includes(`untag ${id}: cmd:git`));
     }));
   it(
     "agent tag --from-file applies two entries in one commit without confirming",
@@ -1149,6 +1205,7 @@ describe("runLearningsCli on and tag", () => {
       const yes = await run(deps, "tag", id, "--on=cmd:git");
       strictEqual(yes.exitCode, 0);
       strictEqual(await onOf(deps, id), "cmd:git");
+      ok(gitLog(deps, "%b").includes("actor: human"));
     }));
   it("human tag --on= removes on and records untag", () =>
     withEnv(async (deps) => {

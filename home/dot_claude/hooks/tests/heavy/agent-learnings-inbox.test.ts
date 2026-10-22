@@ -305,19 +305,27 @@ describe("inbox", () => {
       return file.value.entries;
     };
 
-    it("takes a request whose on passes the worker restriction", () =>
+    it("takes a request with a two-word cmd", () =>
       withStore(async (store) => {
         send(store, ["cmd:git commit"]);
         strictEqual((await drain(store)).applied, 1);
         deepStrictEqual(entries(store)[0]?.extra, [["on", "cmd:git commit"]]);
       }));
-    it("rejects a request with a restricted on and adds nothing", () =>
+    it("takes a request with a broad on and records it in the commit body", () =>
       withStore(async (store) => {
-        send(store, ["cmd:git"]);
-        const r = await drain(store);
-        strictEqual(r.rejected, 1);
-        ok(reasons(store).includes("worker-restricted"));
-        strictEqual(entries(store).length, 0);
+        send(store, ["path:vite.config.ts", "cmd:git"]);
+        strictEqual((await drain(store)).applied, 1);
+        deepStrictEqual(entries(store)[0]?.extra, [
+          ["on", "path:vite.config.ts/,cmd:git"],
+        ]);
+        const body = execFileSync(
+          "git",
+          ["-C", store, "log", "-1", "--format=%B"],
+          {
+            encoding: "utf8",
+          },
+        );
+        ok(body.includes("on: path:vite.config.ts/,cmd:git"), body);
       }));
     it("never writes the value of a bad on into reasons.log", () =>
       withStore(async (store) => {

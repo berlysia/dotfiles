@@ -201,9 +201,9 @@ describe("parseLlmOps with on", () => {
     evidence: "e",
     on,
   });
-  it("accepts on for add and update within the worker restriction", () => {
+  it("accepts on for add and update", () => {
     const r = parseLlmOps(
-      wrap([{ ...add(), on: ["cmd:git commit"] }, upd(["cmd:git push"])]),
+      wrap([{ ...add(), on: ["cmd:git"] }, upd(["path:.claude/x"])]),
     );
     ok(r.ok);
     strictEqual(r.ops.length, 2);
@@ -218,14 +218,8 @@ describe("parseLlmOps with on", () => {
     ok(r.ok);
     deepStrictEqual(r.ops[0], add());
   });
-  it("rejects the whole response for a restricted or malformed on", () => {
-    for (const on of [
-      ["cmd:git"],
-      "cmd:git commit",
-      [1],
-      ["path:*.ts"],
-      ["a", "b"],
-    ]) {
+  it("rejects the whole response for a malformed on", () => {
+    for (const on of ["cmd:git commit", [1], ["cmd:Git"], ["a", "b"]]) {
       strictEqual(parseLlmOps(wrap([{ ...add(), on }])).ok, false);
       strictEqual(parseLlmOps(wrap([upd(on)])).ok, false);
     }

@@ -13,20 +13,12 @@ declare const validatedBrand: unique symbol;
 export type ValidatedTriggers = readonly Trigger[] & {
   readonly [validatedBrand]: true;
 };
-export type TriggerMode = "human" | "worker";
-export type TriggerError = "bad-grammar" | "too-many" | "worker-restricted";
+export type TriggerError = "bad-grammar" | "too-many";
 export type Situation =
   | { kind: "cmd"; words: readonly string[] }
   | { kind: "path"; relPath: string };
 
 export const MAX_TRIGGERS = 4;
-// worker が `path:<prefix>` に使えない先頭の部分（設定や権限の書き換えの直前は人だけ）
-export const WORKER_FORBIDDEN_PREFIX_HEADS: readonly string[] = [
-  ".git",
-  ".github",
-  ".claude",
-  ".codex",
-];
 
 const WORD = /^[a-z0-9][a-z0-9._-]{0,39}$/;
 const PREFIX_CHARS = /^[A-Za-z0-9._/-]{1,80}$/;
@@ -65,24 +57,6 @@ function parseOne(raw: unknown): Trigger | null {
   return null;
 }
 
-function workerAllows(trigger: Trigger): boolean {
-  switch (trigger.kind) {
-    case "session":
-      return true;
-    case "cmd":
-      return trigger.words.length === 2;
-    case "path-prefix": {
-      const parts = trigger.prefix.split("/");
-      return (
-        parts.length >= 2 &&
-        !WORKER_FORBIDDEN_PREFIX_HEADS.includes(parts[0] ?? "")
-      );
-    }
-    case "path-suffix":
-      return trigger.suffix.split(".").length - 1 >= 2;
-  }
-}
-
 export function formatTriggers(triggers: readonly Trigger[]): string {
   return triggers
     .map((t) => {
@@ -100,9 +74,9 @@ export function formatTriggers(triggers: readonly Trigger[]): string {
     .join(",");
 }
 
+// 文法（語の形・4 個まで・重複の除去）だけを検査する。誰が付けるかでは制限しない
 export function parseTriggers(
   values: readonly unknown[],
-  mode: TriggerMode,
 ): { ok: true; value: ValidatedTriggers } | { ok: false; error: TriggerError } {
   const parsed: Trigger[] = [];
   for (const raw of values) {
@@ -118,8 +92,6 @@ export function parseTriggers(
     return true;
   });
   if (unique.length > MAX_TRIGGERS) return { ok: false, error: "too-many" };
-  if (mode === "worker" && !unique.every(workerAllows))
-    return { ok: false, error: "worker-restricted" };
   return { ok: true, value: brand(unique) };
 }
 
@@ -134,7 +106,7 @@ export function readOn(entry: LearningEntry): OnState {
   const values = entry.extra.filter(([key]) => key === "on");
   if (values.length === 0) return { state: "absent" };
   if (values.length > 1) return { state: "invalid" };
-  const parsed = parseTriggers((values[0]?.[1] ?? "").split(","), "human");
+  const parsed = parseTriggers((values[0]?.[1] ?? "").split(","));
   return parsed.ok
     ? { state: "valid", triggers: parsed.value }
     : { state: "invalid" };

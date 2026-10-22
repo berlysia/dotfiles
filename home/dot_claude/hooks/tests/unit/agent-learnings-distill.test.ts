@@ -147,6 +147,14 @@ describe("prompts", () => {
     ])
       ok(system.includes(needle), needle);
   });
+  it("system prompt allows a one-word cmd and the broad paths", () => {
+    const system = buildSystemPrompt();
+    ok(system.includes("shown on every invocation of that command"));
+    ok(system.includes('"cmd:git"'));
+    ok(system.includes('"path:vite.config.ts"'));
+    ok(!system.includes("is not allowed"));
+    ok(!system.includes('not ".git"'));
+  });
   it("system prompt tells the model how to promote and what not to do", () => {
     const system = buildSystemPrompt();
     for (const needle of [

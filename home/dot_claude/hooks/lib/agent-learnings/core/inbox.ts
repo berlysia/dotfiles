@@ -209,7 +209,7 @@ function validateRequest(
     let on: Extract<LearningOp, { op: "add" }>["on"];
     if (rawOn !== undefined) {
       const parsed = Array.isArray(rawOn)
-        ? parseTriggers(rawOn, "worker")
+        ? parseTriggers(rawOn)
         : ({ ok: false, error: "bad-grammar" } as const);
       if (!parsed.ok) return { ok: false, reason: parsed.error };
       on = parsed.value;

@@ -37,6 +37,7 @@ export type LearningOp =
       body?: string;
       evidence: string;
       // 渡せば付け替える（空なら外す）。文を変える update で渡さなければ外れる
+      // （文と場面の食い違いを防ぐため。付け直すなら文と一緒に渡す）
       on?: ValidatedTriggers;
     }
   | { op: "remove"; id: string; reason: string };
@@ -178,6 +179,10 @@ export function applyOps(
         touched.add(id);
         addedIds.push(id);
         evidence.push(`add ${id}: ${ev}`);
+        // 場面は学びの本体にしか残らないので、付けた値を commit の本文にも残す。
+        // 見出しが既存と重なる分岐は渡された `on` を使わないので、ここにだけ足す
+        if (op.on !== undefined && op.on.length > 0)
+          evidence.push(`on: ${formatTriggers(op.on)}`);
       }
     } else if (op.op === "update") {
       if (!ID_PATTERN.test(op.id)) return fail("invalid id");
@@ -236,7 +241,9 @@ export function applyOps(
       target.updated = ctx.today;
       evidence.push(`update ${target.id}: ${ev}`);
       if (textChanged) {
-        // 文を変えたら、渡されなければ `on` を外す（人が付けた広い場面に書き換えた文を載せない）
+        // 文を変えたら、渡されなければ `on` を外す。場面は旧い文に対して付けたものなので、
+        // 書き換えた文に載せたままにすると、文と場面が食い違ったまま注入される。
+        // 残したいなら文と一緒に `on` を渡す（誰が付けた場面かでは区別しない）
         const retagged =
           op.on !== undefined
             ? retagEntry(target, op.on, ev)

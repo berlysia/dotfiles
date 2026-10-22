@@ -374,7 +374,7 @@ describe("evictEntries", () => {
 
 describe("applyOps with on", () => {
   const trigs = (...values: string[]): ValidatedTriggers => {
-    const r = parseTriggers(values, "human");
+    const r = parseTriggers(values);
     ok(r.ok);
     return r.value;
   };
@@ -399,6 +399,48 @@ describe("applyOps with on", () => {
     );
     ok(r.ok);
     strictEqual(extraOn(r.value.file.entries[0]), "cmd:git commit");
+  });
+  it("records the on value in the evidence of a new add only", () => {
+    const fresh = applyOps(
+      file([]),
+      [
+        {
+          op: "add",
+          title: "t",
+          body: "b",
+          evidence: "e",
+          on: trigs("cmd:git", "path:.claude/x"),
+        },
+      ],
+      ctx(),
+    );
+    ok(fresh.ok);
+    deepStrictEqual(fresh.value.evidence, [
+      `add ${fresh.value.addedIds[0]}: e`,
+      "on: cmd:git,path:.claude/x/",
+    ]);
+    const noOn = applyOps(
+      file([]),
+      [{ op: "add", title: "t", body: "b", evidence: "e" }],
+      ctx(),
+    );
+    ok(noOn.ok);
+    strictEqual(noOn.value.evidence.length, 1);
+    const dup = applyOps(
+      file([withOn(1, "cmd:git commit")]),
+      [
+        {
+          op: "add",
+          title: "title 1",
+          body: "x",
+          evidence: "e",
+          on: trigs("session"),
+        },
+      ],
+      ctx(),
+    );
+    ok(dup.ok);
+    ok(!dup.value.evidence.some((line) => line.startsWith("on:")));
   });
   it("drops on for an add that only bumps seen", () => {
     const r = applyOps(

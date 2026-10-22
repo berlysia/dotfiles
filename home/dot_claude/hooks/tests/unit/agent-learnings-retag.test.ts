@@ -9,7 +9,6 @@ import {
   countRetagLines,
   parseRetagFile,
   planRetag,
-  policyFor,
   retagEntry,
   type RetagExpect,
   type RetagOp,
@@ -37,7 +36,7 @@ const file = (key: string, entries: LearningEntry[]): LearningsFile => ({
   entries,
 });
 const trigs = (...values: string[]): ValidatedTriggers => {
-  const r = parseTriggers(values, "human");
+  const r = parseTriggers(values);
   ok(r.ok);
   return r.value;
 };
@@ -45,35 +44,10 @@ const op = (n: number, ...values: string[]): RetagOp => ({
   id: id(n),
   on: trigs(...values),
 });
-const human = policyFor("human");
-const worker = policyFor("worker");
 const expectsOf = (r: ReturnType<typeof planRetag>): RetagExpect[] => {
   ok(r.ok);
   return r.planned.map((p) => p.expect);
 };
-
-describe("policyFor", () => {
-  it("fixes the two policies", () => {
-    deepStrictEqual(
-      { ...human },
-      {
-        mode: "human",
-        scope: "repo-and-common",
-        requireExpect: true,
-        maxLines: 200,
-      },
-    );
-    deepStrictEqual(
-      { ...worker },
-      {
-        mode: "worker",
-        scope: "repo-only",
-        requireExpect: false,
-        maxLines: 200,
-      },
-    );
-  });
-});
 
 describe("retagEntry", () => {
   it("keeps seen and updated and writes retag / untag lines", () => {
@@ -119,29 +93,26 @@ describe("retagEntry", () => {
 
 describe("parseRetagFile", () => {
   it("parses entries and drops the empty on", () => {
-    const r = parseRetagFile(
-      `${id(1)}\tcmd:git commit\n\n${id(2)}\t\n`,
-      worker,
-    );
+    const r = parseRetagFile(`${id(1)}\tcmd:git commit\n\n${id(2)}\t\n`);
     ok(r.ok);
     strictEqual(r.ops.length, 2);
     strictEqual(r.ops[1]?.on.length, 0);
   });
   it("reports the line number without the content", () => {
-    const r = parseRetagFile(`${id(1)}\tsession\n\n${id(2)}\tcmd:\n`, human);
+    const r = parseRetagFile(`${id(1)}\tsession\n\n${id(2)}\tcmd:\n`);
     deepStrictEqual(r, { ok: false, line: 3, error: "bad-grammar" });
     ok(!JSON.stringify(r).includes("cmd:"));
   });
   it("rejects a duplicate id at its second line", () => {
-    const r = parseRetagFile(`${id(1)}\tsession\n${id(1)}\tsession\n`, human);
+    const r = parseRetagFile(`${id(1)}\tsession\n${id(1)}\tsession\n`);
     ok(!r.ok && "line" in r);
     strictEqual(r.line, 2);
   });
-  it("applies the worker restriction", () => {
-    const r = parseRetagFile(`${id(1)}\tcmd:git\n`, worker);
-    ok(!r.ok);
-    strictEqual(r.error, "worker-restricted");
-    ok(parseRetagFile(`${id(1)}\tcmd:git\n`, human).ok);
+  it("accepts the broad forms for every caller", () => {
+    const r = parseRetagFile(
+      `${id(1)}\tcmd:git\n${id(2)}\tpath:.claude/settings.json,path:*.ts\n`,
+    );
+    ok(r.ok);
   });
   it("rejects malformed lines", () => {
     for (const text of [
@@ -149,13 +120,13 @@ describe("parseRetagFile", () => {
       `x\tsession\n`,
       `${id(1)}\ta\tb\n`,
     ])
-      ok(!parseRetagFile(text, human).ok, text);
+      ok(!parseRetagFile(text).ok, text);
   });
-  it("rejects more lines than the policy allows", () => {
+  it("rejects more than 200 lines", () => {
     const lines = (n: number): string =>
       Array.from({ length: n }, (_, i) => `${id(i)}\tsession`).join("\n");
-    ok(parseRetagFile(lines(200), worker).ok);
-    deepStrictEqual(parseRetagFile(lines(201), worker), {
+    ok(parseRetagFile(lines(200)).ok);
+    deepStrictEqual(parseRetagFile(lines(201)), {
       ok: false,
       error: "too-many-lines",
     });
@@ -166,24 +137,25 @@ describe("planRetag", () => {
   const repo = file(KEY, [entry(1, "<bad>"), entry(2, "cmd:git commit")]);
   const common = file("common", [entry(9)]);
   it("plans current values and flags an invalid one", () => {
-    const r = planRetag({ repo, common }, [op(1, "session"), op(2)], human);
+    const r = planRetag({ repo, common }, [op(1, "session"), op(2)]);
     ok(r.ok);
     strictEqual(r.planned[0]?.currentOn, "invalid");
     strictEqual(r.planned[1]?.currentOn, "cmd:git commit");
     strictEqual(r.planned[0]?.fileKey, KEY);
   });
-  it("finds common ids for humans", () => {
-    const r = planRetag({ repo, common }, [op(9, "session")], human);
+  it("finds common ids for every caller", () => {
+    const r = planRetag({ repo, common }, [op(9, "session")]);
     ok(r.ok);
     strictEqual(r.planned[0]?.fileKey, "common");
   });
-  it("refuses common ids and missing ids under repo-only", () => {
-    deepStrictEqual(planRetag({ repo, common }, [op(9, "session")], worker), {
-      ok: false,
-      error: "common-not-allowed",
-      count: 1,
-    });
-    deepStrictEqual(planRetag({ repo, common }, [op(7, "session")], worker), {
+  it("plans a broad trigger on a common id", () => {
+    const r = planRetag({ repo, common }, [op(9, "cmd:gh pr")]);
+    ok(r.ok);
+    strictEqual(r.planned[0]?.fileKey, "common");
+    strictEqual(r.planned[0]?.nextOn.length, 1);
+  });
+  it("reports missing ids", () => {
+    deepStrictEqual(planRetag({ repo, common }, [op(7, "session")]), {
       ok: false,
       error: "missing",
       count: 1,
@@ -191,7 +163,7 @@ describe("planRetag", () => {
   });
   it("flags a title that fails validation", () => {
     const bad = file(KEY, [{ ...entry(1), title: "#bad" }]);
-    const r = planRetag({ repo: bad, common: null }, [op(1)], human);
+    const r = planRetag({ repo: bad, common: null }, [op(1)]);
     ok(r.ok);
     strictEqual(r.planned[0]?.title, "invalid");
   });
@@ -200,7 +172,7 @@ describe("planRetag", () => {
 describe("applyRetag", () => {
   const repo = file(KEY, [entry(1, "cmd:git commit"), entry(2)]);
   it("writes on and leaves seen and updated", () => {
-    const r = applyRetag(repo, [op(1, "cmd:git push")], worker);
+    const r = applyRetag(repo, [op(1, "cmd:git push")]);
     ok(r.ok);
     const e = r.file.entries[0];
     strictEqual(e?.seen, 3);
@@ -208,62 +180,43 @@ describe("applyRetag", () => {
     deepStrictEqual(e?.extra, [["on", "cmd:git push"]]);
     strictEqual(r.lines.length, 1);
   });
-  it("refuses a common file under the worker policy", () => {
-    const r = applyRetag(
-      file("common", [entry(1)]),
-      [op(1, "session")],
-      worker,
-    );
-    ok(!r.ok);
-    strictEqual(r.reason, "common-not-allowed");
+  it("applies a broad trigger to a common file without expects", () => {
+    const r = applyRetag(file("common", [entry(1)]), [op(1, "cmd:gh pr")]);
+    ok(r.ok);
+    deepStrictEqual(r.file.entries[0]?.extra, [["on", "cmd:gh pr"]]);
   });
-  it("requires expects for humans", () => {
-    const r = applyRetag(repo, [op(1, "session")], human);
-    ok(!r.ok);
-    strictEqual(r.reason, "expect-required");
+  it("applies without comparing when expects are not given", () => {
+    const changed = file(KEY, [
+      { ...entry(1, "cmd:git commit"), body: "rewritten" },
+    ]);
+    ok(applyRetag(changed, [op(1, "session")]).ok);
   });
   it("refuses a path prefix in common and a read-only file", () => {
     const c = file("common", [entry(1)]);
     const ops = [op(1, "path:mods/x/")];
-    const planned = planRetag({ repo: file(KEY, []), common: c }, ops, human);
-    const r = applyRetag(c, ops, human, expectsOf(planned));
+    const r = applyRetag(c, ops);
     ok(!r.ok);
     strictEqual(r.reason, "path-prefix-in-common");
-    const ro = applyRetag({ ...repo, readOnly: true }, [op(1)], worker);
+    const ro = applyRetag({ ...repo, readOnly: true }, [op(1)]);
     ok(!ro.ok);
   });
   it("refuses when the entry changed after planning", () => {
-    const planned = planRetag(
-      { repo, common: null },
-      [op(1, "session")],
-      human,
-    );
+    const planned = planRetag({ repo, common: null }, [op(1, "session")]);
     const changed = file(KEY, [
       { ...entry(1, "cmd:git commit"), body: "rewritten" },
       entry(2),
     ]);
-    const r = applyRetag(
-      changed,
-      [op(1, "session")],
-      human,
-      expectsOf(planned),
-    );
+    const r = applyRetag(changed, [op(1, "session")], expectsOf(planned));
     ok(!r.ok);
     strictEqual(r.reason, "changed");
     const onChanged = file(KEY, [entry(1, "cmd:git push"), entry(2)]);
-    ok(
-      !applyRetag(onChanged, [op(1, "session")], human, expectsOf(planned)).ok,
-    );
-    ok(applyRetag(repo, [op(1, "session")], human, expectsOf(planned)).ok);
+    ok(!applyRetag(onChanged, [op(1, "session")], expectsOf(planned)).ok);
+    ok(applyRetag(repo, [op(1, "session")], expectsOf(planned)).ok);
   });
   it("refuses when the entry moved to another file", () => {
-    const planned = planRetag(
-      { repo, common: null },
-      [op(1, "session")],
-      human,
-    );
+    const planned = planRetag({ repo, common: null }, [op(1, "session")]);
     const moved = file(KEY, [entry(2)]);
-    const r = applyRetag(moved, [op(1, "session")], human, expectsOf(planned));
+    const r = applyRetag(moved, [op(1, "session")], expectsOf(planned));
     ok(!r.ok);
     strictEqual(r.reason, "missing");
   });

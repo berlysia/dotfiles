@@ -41,9 +41,9 @@ If a learning is the same as an existing one in <repo-learnings>, use "update" w
 
 "add" and "update" may carry "on": an array of up to 4 strings saying when the learning should be shown. Without "on" a learning is shown at the start of every session. The only values you may use are:
 - "session": show at the start of a session;
-- "cmd:<word> <word>": show just before a command starts with these two words, for example "cmd:git commit" (one word such as "cmd:git" is not allowed; a word is lowercase letters, digits, "." "_" "-");
-- "path:<dir>/<dir>/": show just before a file under that directory is edited, with at least two path parts, for example "path:mods/workflow-band/" (not ".git", ".github", ".claude", ".codex", and not a single top-level directory);
-- "path:*<suffix>": show just before a file with that ending is edited, only when the suffix has at least two dots, for example "path:*.test.ts".
+- "cmd:<word>" or "cmd:<word> <word>": show just before a command that starts with this one word or these two words, for example "cmd:git commit" or "cmd:git" (a word is lowercase letters, digits, "." "_" "-"). A one-word "cmd:" is shown on every invocation of that command, so use it only when the learning applies to the command's usage as a whole; prefer the two-word form when it applies to one subcommand;
+- "path:<dir>/": show just before a file under that directory is edited, for example "path:mods/workflow-band/", "path:vite.config.ts" or "path:.github/workflows" (any directory, including ones that start with "." such as ".claude");
+- "path:*<suffix>": show just before a file with that ending is edited, the suffix has one or more dots, for example "path:*.ts" or "path:*.test.ts".
 You can also change the "on" of a learning that already exists in <repo-learnings> with an "update" that has "id", "on" and "evidence" and no title or body. When you change the title or body of a learning in an "update" and omit "on", its "on" is removed, so pass "on" again to keep it. "promote" never carries "on". If you are unsure when a learning applies, omit "on" (it is then shown at the start of every session). Example: {"op":"add","title":"...","body":"...","on":["cmd:git commit"],"evidence":"..."}.
 
 Limits for every title and body you write:
