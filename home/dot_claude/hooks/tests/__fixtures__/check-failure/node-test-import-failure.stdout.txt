@@ -1,0 +1,139 @@
+noise log 0
+noise log 1
+noise log 2
+noise log 3
+noise log 4
+noise log 5
+noise log 6
+noise log 7
+noise log 8
+noise log 9
+noise log 10
+noise log 11
+noise log 12
+noise log 13
+noise log 14
+noise log 15
+noise log 16
+noise log 17
+noise log 18
+noise log 19
+noise log 20
+noise log 21
+noise log 22
+noise log 23
+noise log 24
+noise log 25
+noise log 26
+noise log 27
+noise log 28
+noise log 29
+▶ suite
+  ✔ passes 0 (0.928286ms)
+  ✔ passes 1 (0.1501ms)
+  ✔ passes 2 (0.080278ms)
+  ✔ passes 3 (0.105012ms)
+  ✔ passes 4 (0.107811ms)
+  ✔ passes 5 (0.095669ms)
+  ✔ passes 6 (0.094807ms)
+  ✔ passes 7 (0.088114ms)
+  ✔ passes 8 (0.154571ms)
+  ✔ passes 9 (0.1843ms)
+  ✔ passes 10 (0.085073ms)
+  ✔ passes 11 (0.057657ms)
+  ✔ passes 12 (0.066684ms)
+  ✔ passes 13 (0.086852ms)
+  ✔ passes 14 (0.104932ms)
+  ✔ passes 15 (0.040879ms)
+  ✔ passes 16 (0.03951ms)
+  ✔ passes 17 (0.037487ms)
+  ✔ passes 18 (0.036448ms)
+  ✔ passes 19 (0.036534ms)
+  ✔ passes 20 (0.035511ms)
+  ✔ passes 21 (0.04096ms)
+  ✔ passes 22 (0.038099ms)
+  ✔ passes 23 (0.023724ms)
+  ✔ passes 24 (0.034131ms)
+  ✔ passes 25 (0.022345ms)
+  ✔ passes 26 (0.019357ms)
+  ✔ passes 27 (0.041874ms)
+  ✔ passes 28 (0.037274ms)
+  ✔ passes 29 (0.036583ms)
+  ✖ compares objects (1.160486ms)
+  ✖ throws (0.04965ms)
+✖ suite (5.822328ms)
+node:internal/modules/esm/resolve:272
+    throw new ERR_MODULE_NOT_FOUND(
+          ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/work/fx/modnf/missing.mjs' imported from /work/fx/modnf/d.test.mjs
+    at finalizeResolution (node:internal/modules/esm/resolve:272:11)
+    at moduleResolve (node:internal/modules/esm/resolve:879:10)
+    at defaultResolve (node:internal/modules/esm/resolve:1006:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:705:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:725:38)
+    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:763:56)
+    at #resolve (node:internal/modules/esm/loader:687:17)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:607:35)
+    at ModuleJob.syncLink (node:internal/modules/esm/module_job:276:33)
+    at ModuleJob.link (node:internal/modules/esm/module_job:381:17) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///work/fx/modnf/missing.mjs'
+}
+
+Node.js v24.22.1
+✖ d.test.mjs (22.905048ms)
+ℹ tests 33
+ℹ suites 1
+ℹ pass 30
+ℹ fail 3
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 50.404384
+
+✖ failing tests:
+
+test at a.test.mjs:5:3
+✖ compares objects (1.160486ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    {
+      a: 1,
+      b: [
+        1,
+  +     2
+  -     3
+      ]
+    }
+  
+      at TestContext.<anonymous> (file:///work/fx/modnf/a.test.mjs:5:43)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: { a: 1, b: [ 1, 2 ] },
+    expected: { a: 1, b: [ 1, 3 ] },
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at a.test.mjs:6:3
+✖ throws (0.04965ms)
+  TypeError [Error]: boom: x is undefined
+      at TestContext.<anonymous> (file:///work/fx/modnf/a.test.mjs:6:32)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:974:7)
+
+test at d.test.mjs:1:1
+✖ d.test.mjs (22.905048ms)
+  'test failed'

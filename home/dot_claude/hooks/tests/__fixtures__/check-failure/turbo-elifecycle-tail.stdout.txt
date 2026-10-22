@@ -1,0 +1,20 @@
+@x/skam-screenshot:test: 
+@x/skam-screenshot:test: [2m Test Files [22m [1m[32m3 passed[39m[22m[90m (4)[39m
+@x/skam-screenshot:test: [2m      Tests [22m [1m[32m23 passed[39m[22m[90m (23)[39m
+@x/skam-screenshot:test: [2m     Errors [22m [1m[31m1 error[39m[22m
+@x/skam-screenshot:test: [2m   Start at [22m 19:12:21
+@x/skam-screenshot:test: [2m   Duration [22m 22.54s[2m (transform 8.25s, setup 0ms, import 6.15s, tests 1.18s, environment 0ms)[22m
+@x/skam-screenshot:test: 
+@x/skam-web-component:test:  ELIFECYCLE  Test failed. See above for more details.
+@x/skam-screenshot:test:  ELIFECYCLE  Test failed. See above for more details.
+@x/skam-canvas-renderer:test:  ELIFECYCLE  Test failed. See above for more details.
+@x/skam:test:  ELIFECYCLE  Test failed. See above for more details.
+@x/integration-tests:test:  ELIFECYCLE  Test failed. See above for more details.
+@x/skam-html-renderer:test:  ELIFECYCLE  Test failed. See above for more details.
+
+ Tasks:    8 successful, 18 total
+Cached:    8 cached, 18 total
+  Time:    35.827s 
+Failed:    @x/pkg#test
+
+ ELIFECYCLE  Test failed. See above for more details.
