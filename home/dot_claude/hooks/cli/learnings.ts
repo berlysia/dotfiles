@@ -23,9 +23,9 @@ import {
   readFileSync,
   readSync,
   renameSync,
+  writeSync,
 } from "node:fs";
 import { join } from "node:path";
-import { createInterface } from "node:readline/promises";
 import { parseArgs } from "node:util";
 import {
   inboxDirsSafe,
@@ -43,6 +43,24 @@ import { withStoreLock } from "../lib/agent-learnings/core/lock.ts";
 import { readNoPromote } from "../lib/agent-learnings/core/no-promote.ts";
 import { applyOps, type LearningOp } from "../lib/agent-learnings/core/ops.ts";
 import { promoteManually } from "../lib/agent-learnings/core/promote.ts";
+import {
+  applyRetag,
+  parseRetagFile,
+  planRetag,
+  policyFor,
+  type PlannedRetag,
+  type RetagExpect,
+  type RetagOp,
+  type RetagPolicy,
+} from "../lib/agent-learnings/core/retag.ts";
+import {
+  filterByTrigger,
+  formatTriggers,
+  parseTriggers,
+  type Trigger,
+  type TriggerMode,
+  type ValidatedTriggers,
+} from "../lib/agent-learnings/core/triggers.ts";
 import { countJobs, summarizeRuns } from "../lib/agent-learnings/core/queue.ts";
 import { renderLearnings } from "../lib/agent-learnings/core/render.ts";
 import {
@@ -74,7 +92,7 @@ export interface RunLearningsCliDeps {
   agentEnv: boolean; // エージェントの実行環境を示す環境変数がある
   lockWaitMs: number;
   runGit: RunGit;
-  // 昇格の確認。message を見せて、利用者が y と答えたときだけ true を返す
+  // 昇格と人の tag の確認。message を見せて、利用者が y と答えたときだけ true を返す
   confirm: (message: string) => Promise<boolean>;
 }
 export interface RunLearningsCliResult {
@@ -88,16 +106,28 @@ export interface RunLearningsCliResult {
 // 必要があり、権限の照合に見える。
 const AGENT_ENV = /^(CLAUDECODE|CLAUDE_CODE_.*|CODEX_SANDBOX.*|AI_AGENT)$/;
 
+// 人の操作かの判定はここ 1 か所。曖昧なときは "worker"（制限の厳しい側）
+export function resolveCallerMode(
+  deps: Pick<RunLearningsCliDeps, "isTty" | "agentEnv">,
+): TriggerMode {
+  return deps.isTty && !deps.agentEnv ? "human" : "worker";
+}
+
 const REPO_KEY_SHAPE = "host/owner/repo（例: github.com/berlysia/awai）";
 
 const USAGE = [
   "usage: agent-learnings <command>",
   "  show [--cwd DIR] [--reader NAME] [--grep=WORD]... [--id L-…]...",
+  "                   --on=TRIGGER は on がその trigger に等しい項目だけ（session は on の無い項目も含む）",
   "                   --grep は見出し・本文・id の部分一致（大文字小文字を区別しない、複数で AND）。--id は複数で OR",
   "  path [--common]",
-  "  add --title=T --body=B [--common]",
+  "  add --title=T --body=B [--common] [--on=TRIGGER]...",
+  "                   --on は最大 4 個。session / cmd:<語> <語> / path:<部分>/<部分>/ / path:*.<a>.<b>（広い場面は人が tag で付ける）",
   "  remove <id>",
   "  status",
+  "  tag <id> --on=TRIGGER... | tag <id> --on= | tag --from-file PATH",
+  "                   on を付け替える（--on= は外す）。--from-file は 1 行 `<id>\\t<on を , でつないだ値>`（最大 200 行、64KB）",
+  "                   人は全 trigger を /dev/tty の確認つきで common にも付けられる。エージェントは repo の学びに限り、add --on と同じ制限",
   "  promote <id>    (human only)",
   "  init            (human only)",
   "  rekey <old> <new>  (human only)",
@@ -141,6 +171,7 @@ interface ShowArgs {
   reader: string | undefined;
   greps: readonly string[]; // 小文字化済み
   ids: readonly string[];
+  on: Trigger | undefined;
 }
 
 // 不正な値はエージェントの入力そのもの。parseArgs の例外文にも値が入りうるので、
@@ -157,11 +188,23 @@ function parseShowArgs(
         reader: { type: "string" },
         grep: { type: "string", multiple: true },
         id: { type: "string", multiple: true },
+        on: { type: "string", multiple: true },
       },
       strict: true,
     }));
   } catch {
     return { ok: false, message: "show の引数が不正" };
+  }
+  let on: Trigger | undefined;
+  if (values.on !== undefined) {
+    const parsedOn = parseTriggers(values.on, "human");
+    if (!parsedOn.ok)
+      return { ok: false, message: `--on が不正（${parsedOn.error}）` };
+    const only = parsedOn.value[0];
+    // 重複をまとめた後に 1 個でなければ複数指定。show は trigger 1 個で絞る
+    if (only === undefined || parsedOn.value.length !== 1)
+      return { ok: false, message: "--on は trigger を 1 個だけ渡す" };
+    on = only;
   }
   const greps = values.grep ?? [];
   const ids = values.id ?? [];
@@ -185,6 +228,7 @@ function parseShowArgs(
       reader: values.reader,
       greps: greps.map((word) => word.toLowerCase()),
       ids,
+      on,
     },
   };
 }
@@ -203,6 +247,17 @@ function filterEntries(file: LearningsFile, show: ShowArgs): LearningsFile {
   };
 }
 
+// grep・id の絞り込みの後に trigger の絞り込みを重ねる（AND）
+function filterShow(file: LearningsFile, show: ShowArgs): LearningsFile {
+  const byText = filterEntries(file, show);
+  return show.on === undefined
+    ? byText
+    : {
+        ...byText,
+        entries: filterByTrigger(byText.entries, file.key, show.on),
+      };
+}
+
 function runShow(
   args: readonly string[],
   deps: RunLearningsCliDeps,
@@ -212,7 +267,13 @@ function runShow(
   const parsed = parseShowArgs(args);
   if (!parsed.ok) return fail(`${parsed.message}\n${USAGE}`);
   const show = parsed.value;
-  const filtered = show.greps.length > 0 || show.ids.length > 0;
+  const filtered =
+    show.greps.length > 0 || show.ids.length > 0 || show.on !== undefined;
+  // reads は「開始時に show したか」の指標。開始時と同じ全件（または session の絞り込み）だけ数える
+  const countsAsRead =
+    show.greps.length === 0 &&
+    show.ids.length === 0 &&
+    (show.on === undefined || show.on.kind === "session");
   try {
     const store = defaultStoreDir(deps.home);
     if (!storeExists(store)) return done(0);
@@ -225,19 +286,32 @@ function runShow(
     const commonPath = commonFilePath(store);
     const repo = repoRead.ok
       ? filtered
-        ? filterEntries(repoRead.value, show)
+        ? filterShow(repoRead.value, show)
         : repoRead.value
       : null;
     const common = commonRead.ok
       ? filtered
-        ? filterEntries(commonRead.value, show)
+        ? filterShow(commonRead.value, show)
         : commonRead.value
       : null;
+
+    const recordRead = (): void => {
+      if (!countsAsRead) return;
+      const paths = storePaths(store);
+      const reader = readerOf(deps, show.reader);
+      // 記録は学びの件数にかかわらず行う。Codex は .state/codex の中にしか書けない
+      appendReadLog(reader === "codex" ? paths.codexReadsLog : paths.readsLog, {
+        at: deps.now,
+        reader,
+        repoKey,
+      });
+    };
 
     if (filtered) {
       const matched =
         (repo?.entries.length ?? 0) + (common?.entries.length ?? 0);
       if (matched === 0) {
+        recordRead();
         const unreadable = [
           ...(repoRead.ok ? [] : [repoPath]),
           ...(commonRead.ok ? [] : [commonPath]),
@@ -259,18 +333,9 @@ function runShow(
       ...(filtered ? { omittedHint: FILTERED_OMITTED_HINT } : {}),
     });
 
-    // 絞り込みは数えない。reads は「開始時に show したか」の指標で、検索の回数で
-    // 増えると AGENTS.md が守られているかを判断できなくなる
-    if (!filtered) {
-      const paths = storePaths(store);
-      const reader = readerOf(deps, show.reader);
-      // 記録は学びの件数にかかわらず行う。Codex は .state/codex の中にしか書けない
-      appendReadLog(reader === "codex" ? paths.codexReadsLog : paths.readsLog, {
-        at: deps.now,
-        reader,
-        repoKey,
-      });
-    }
+    // --grep・--id と session 以外の --on は数えない。検索の回数で増えると
+    // AGENTS.md が守られているかを判断できなくなる
+    recordRead();
     return done(0, rendered === null ? "" : `${rendered}\n`);
   } catch (error) {
     return done(0, "", `agent-learnings show failed: ${errorMessage(error)}\n`);
@@ -323,12 +388,21 @@ async function runAdd(
       title: { type: "string" },
       body: { type: "string" },
       common: { type: "boolean" },
+      on: { type: "string", multiple: true },
     },
     strict: true,
   });
   if (values.title === undefined || values.body === undefined)
     return fail(`--title と --body が要る\n${USAGE}`);
-  const humanOnly = deps.isTty && !deps.agentEnv;
+  const humanOnly = resolveCallerMode(deps) === "human";
+  // 人が実行しても worker の検査を通す。add は許可リストにあり、人の判定を破られると
+  // 後ろに止めるものが無い。広い場面は人が tag で付ける
+  let on: ValidatedTriggers | undefined;
+  if (values.on !== undefined) {
+    const parsedOn = parseTriggers(values.on, "worker");
+    if (!parsedOn.ok) return fail(`--on が不正（${parsedOn.error}）`);
+    on = parsedOn.value;
+  }
   if (values.common && !humanOnly) return fail(HUMAN_ONLY_MESSAGE.trimEnd());
 
   const store = defaultStoreDir(deps.home);
@@ -358,7 +432,13 @@ async function runAdd(
       const file = readLearnings(store, fileKey);
       if (!file.ok) return fail(file.reason);
       const ops: LearningOp[] = [
-        { op: "add", title, body, evidence: "manual add" },
+        {
+          op: "add",
+          title,
+          body,
+          evidence: "manual add",
+          ...(on === undefined ? {} : { on }),
+        },
       ];
       const applied = applyOps(file.value, ops, {
         today: todayOf(deps.now),
@@ -399,7 +479,14 @@ async function runAdd(
     return fail("store に書き込めない（inbox は repo の学びだけを受け付ける）");
   const requestId = writeInboxRequest(
     store,
-    { op: "add", repoKey, title, body, reader: inboxReader(deps) },
+    {
+      op: "add",
+      repoKey,
+      title,
+      body,
+      reader: inboxReader(deps),
+      ...(values.on === undefined ? {} : { on: values.on }),
+    },
     deps.now,
   );
   return done(
@@ -504,6 +591,271 @@ async function runRemove(
     `${requestId}\n`,
     "依頼として受け付けた。次の Claude のセッション開始時に反映される。common.md の項目はこの経路では消せない\n",
   );
+}
+
+const FROM_FILE_MAX_BYTES = 64 * 1024;
+const FROM_FILE_UNREADABLE =
+  "--from-file を読めない（通常ファイルで 64KB 以下、symlink・FIFO は不可）";
+const RETAG_CHANGED = "確認の後に変わった。やり直す";
+
+// O_NOFOLLOW は最後の要素の symlink だけを防ぐ（途中のディレクトリの symlink は辿る）。
+// 人とエージェントが指定したパスを読むだけなので受け入れる。FIFO は O_NONBLOCK で開いて
+// fstat で弾く。上限の 1 バイト先までで読み止め、全体を読み込まない
+function readBoundedFile(
+  path: string,
+): { ok: true; text: string } | { ok: false } {
+  let fd: number;
+  try {
+    fd = openSync(
+      path,
+      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+    );
+  } catch {
+    return { ok: false };
+  }
+  try {
+    const stat = fstatSync(fd);
+    if (!stat.isFile() || stat.size > FROM_FILE_MAX_BYTES) return { ok: false };
+    const buffer = Buffer.alloc(FROM_FILE_MAX_BYTES + 1);
+    let total = 0;
+    while (total < buffer.length) {
+      const n = readSync(fd, buffer, total, buffer.length - total, null);
+      if (n === 0) break;
+      total += n;
+    }
+    if (total > FROM_FILE_MAX_BYTES) return { ok: false };
+    return { ok: true, text: buffer.subarray(0, total).toString("utf8") };
+  } catch {
+    return { ok: false };
+  } finally {
+    closeSync(fd);
+  }
+}
+
+function applyFailureMessage(reason: string): string {
+  switch (reason) {
+    case "changed":
+      return RETAG_CHANGED;
+    case "read-only":
+      return "読み取り専用のファイルには付けられない（未対応の format）";
+    case "path-prefix-in-common":
+      return "common の学びに path: の接頭辞は付けられない";
+    default:
+      return reason;
+  }
+}
+
+type RetagGroup = {
+  file: LearningsFile;
+  ops: RetagOp[];
+  expects: RetagExpect[];
+};
+
+// 書く順は common → 現在の repo（promote と同じ。途中で落ちても重複側に倒れる）
+function groupRetag(
+  files: { repo: LearningsFile; common: LearningsFile },
+  planned: readonly PlannedRetag[],
+  ops: readonly RetagOp[],
+): RetagGroup[] {
+  const groups: RetagGroup[] = [];
+  for (const file of [files.common, files.repo]) {
+    const mine = planned.filter((p) => p.fileKey === file.key);
+    if (mine.length === 0) continue;
+    const ids = new Set(mine.map((p) => p.id));
+    groups.push({
+      file,
+      ops: ops.filter((op) => ids.has(op.id)),
+      expects: mine.map((p) => p.expect),
+    });
+  }
+  return groups;
+}
+
+const describeCurrent = (value: string): string =>
+  value === "" ? "なし" : value === "invalid" ? "（不正な値）" : value;
+
+function writeRetagged(
+  store: string,
+  files: readonly LearningsFile[],
+  lines: readonly string[],
+  ops: readonly RetagOp[],
+  deps: RunLearningsCliDeps,
+): RunLearningsCliResult {
+  for (const file of files) {
+    const written = writeLearnings(store, file);
+    if (!written.ok) return fail(written.reason);
+  }
+  const subject =
+    ops.length === 1
+      ? `learnings: retag ${ops[0]?.id ?? ""}`
+      : `learnings: retag ${ops.length} entries`;
+  const committed = commitStore(
+    store,
+    commitMessage(subject, lines, []),
+    deps.runGit,
+  );
+  const stdout = lines.length === 0 ? "" : `${lines.join("\n")}\n`;
+  if (!committed.ok)
+    return done(
+      3,
+      stdout,
+      `on は付け替えたが commit に失敗した: ${committed.reason}\n`,
+    );
+  return done(0, stdout);
+}
+
+async function runTag(
+  args: readonly string[],
+  deps: RunLearningsCliDeps,
+): Promise<RunLearningsCliResult> {
+  let parsed;
+  try {
+    parsed = parseArgs({
+      args: [...args],
+      options: {
+        on: { type: "string", multiple: true },
+        "from-file": { type: "string" },
+      },
+      allowPositionals: true,
+      strict: true,
+    });
+  } catch {
+    // parseArgs の例外文には渡された値が入りうる
+    return fail(`tag の引数が不正\n${USAGE}`);
+  }
+  const { values, positionals } = parsed;
+  const policy: RetagPolicy = policyFor(resolveCallerMode(deps));
+
+  let ops: RetagOp[];
+  if (values["from-file"] !== undefined) {
+    if (positionals.length > 0 || values.on !== undefined)
+      return fail(`--from-file は id・--on と同時に使えない\n${USAGE}`);
+    const read = readBoundedFile(values["from-file"]);
+    if (!read.ok) return fail(FROM_FILE_UNREADABLE);
+    const fileOps = parseRetagFile(read.text, policy);
+    if (!fileOps.ok)
+      return fail(
+        "line" in fileOps
+          ? `--from-file の ${fileOps.line} 行目が不正（${fileOps.error}）`
+          : `--from-file が長すぎる（${fileOps.error}）`,
+      );
+    ops = fileOps.ops;
+    if (ops.length === 0) return fail("--from-file に付け替える行が無い");
+  } else {
+    const id = positionals[0];
+    if (positionals.length !== 1 || id === undefined || !ID_PATTERN.test(id))
+      return fail(`tag には学びの id（L-…）を 1 つ渡す\n${USAGE}`);
+    if (values.on === undefined)
+      return fail(`--on が要る（外すときは --on=）\n${USAGE}`);
+    const onValues =
+      values.on.length === 1 && values.on[0] === "" ? [] : values.on;
+    const parsedOn = parseTriggers(onValues, policy.mode);
+    // id と値は出さず、固定の語だけを返す
+    if (!parsedOn.ok) return fail(`--on が不正（${parsedOn.error}）`);
+    ops = [{ id, on: parsedOn.value }];
+  }
+
+  const store = defaultStoreDir(deps.home);
+  if (!storeExists(store)) return fail("store が無い");
+  const repoKey = resolveRepoKey(deps.cwd, deps.runGit);
+  if (repoKey === null) return fail("git リポジトリの中で実行する");
+  const paths = storePaths(store);
+  const extraRedact = loadRedactList(
+    join(deps.home, ".claude/insight-distill-redact.txt"),
+  );
+  const readBoth = ():
+    | { ok: true; repo: LearningsFile; common: LearningsFile }
+    | { ok: false; reason: string } => {
+    const repo = readLearnings(store, repoKey);
+    if (!repo.ok) return { ok: false, reason: repo.reason };
+    const common = readLearnings(store, COMMON_KEY);
+    if (!common.ok) return { ok: false, reason: common.reason };
+    return { ok: true, repo: repo.value, common: common.value };
+  };
+  const lockFailed = (): RunLearningsCliResult =>
+    fail("store の lock を取れなかった", 2);
+
+  if (policy.mode === "worker") {
+    // 計画と適用を同じ lock の中で行う（確認も expect の比較もしない）
+    const locked = await withStoreLock(
+      paths.state,
+      { waitMs: deps.lockWaitMs },
+      (): RunLearningsCliResult => {
+        applyInboxLocked(store, {
+          today: todayOf(deps.now),
+          runGit: deps.runGit,
+          extraRedact,
+        });
+        const files = readBoth();
+        if (!files.ok) return fail(files.reason);
+        const plan = planRetag(files, ops, policy);
+        if (!plan.ok) return fail(`${plan.error}（${plan.count} 件）`);
+        const applied = applyRetag(files.repo, ops, policy);
+        if (!applied.ok) return fail(applyFailureMessage(applied.reason));
+        return writeRetagged(store, [applied.file], applied.lines, ops, deps);
+      },
+    );
+    return locked.ok ? locked.value : lockFailed();
+  }
+
+  // 人: 確認は lock の外、適用は lock の中で読み直して expect と比べる
+  const preview = readBoth();
+  if (!preview.ok) return fail(preview.reason);
+  const plan = planRetag(preview, ops, policy);
+  if (!plan.ok) return fail(`${plan.error}（${plan.count} 件）`);
+  for (const group of groupRetag(preview, plan.planned, ops)) {
+    const dry = applyRetag(group.file, group.ops, policy, group.expects);
+    if (!dry.ok) return fail(applyFailureMessage(dry.reason));
+  }
+  const approved = await deps.confirm(
+    [
+      "次の学びの on を付け替える:",
+      ...plan.planned.map(
+        (p) =>
+          `  ${p.id}  ${p.title === "invalid" ? "（不正な見出し）" : p.title}  ${describeCurrent(p.currentOn)} -> ${p.nextOn.length === 0 ? "なし（外す）" : formatTriggers(p.nextOn)}${p.fileKey === COMMON_KEY ? "  [common]" : ""}`,
+      ),
+      "付け替える場合は y を入力する [y/N]: ",
+    ].join("\n"),
+  );
+  if (!approved) return fail("付け替えなかった");
+
+  const locked = await withStoreLock(
+    paths.state,
+    { waitMs: deps.lockWaitMs },
+    (): RunLearningsCliResult => {
+      applyInboxLocked(store, {
+        today: todayOf(deps.now),
+        runGit: deps.runGit,
+        extraRedact,
+      });
+      const files = readBoth();
+      if (!files.ok) return fail(files.reason);
+      const again = planRetag(files, ops, policy);
+      // 対象が消えた・別のファイルへ移った場合も確認の後の変更として扱う
+      if (
+        !again.ok ||
+        again.planned.some(
+          (p) => plan.planned.find((q) => q.id === p.id)?.fileKey !== p.fileKey,
+        )
+      )
+        return fail(RETAG_CHANGED);
+      const written: LearningsFile[] = [];
+      const lines: string[] = [];
+      for (const group of groupRetag(files, plan.planned, ops)) {
+        const applied = applyRetag(
+          group.file,
+          group.ops,
+          policy,
+          group.expects,
+        );
+        if (!applied.ok) return fail(applyFailureMessage(applied.reason));
+        written.push(applied.file);
+        lines.push(...applied.lines);
+      }
+      return writeRetagged(store, written, lines, ops, deps);
+    },
+  );
+  return locked.ok ? locked.value : lockFailed();
 }
 
 async function runPromote(
@@ -987,7 +1339,7 @@ export async function runLearningsCli(
     rest[0] === "-h"
   )
     return done(0, USAGE);
-  const humanOnly = deps.isTty && !deps.agentEnv;
+  const humanOnly = resolveCallerMode(deps) === "human";
   try {
     switch (command) {
       case "show":
@@ -1008,6 +1360,8 @@ export async function runLearningsCli(
           ? done(0, `${store}\n`)
           : fail(initialized.reason);
       }
+      case "tag":
+        return await runTag(rest, deps);
       case "promote":
         if (!humanOnly) return fail(HUMAN_ONLY_MESSAGE.trimEnd());
         return await runPromote(rest, deps);
@@ -1023,14 +1377,29 @@ export async function runLearningsCli(
   }
 }
 
-// stderr に見せて stdin から 1 行読む。y 以外はすべて「移さない」
-async function confirmOnTty(message: string): Promise<boolean> {
-  const rl = createInterface({ input: process.stdin, output: process.stderr });
+// 質問も答えも制御端末（/dev/tty）を通す。stdin を読むと `yes |` で通せてしまう。
+// 制御端末が無い（detached の子プロセスなど）か開けなければ false
+export async function confirmOnDevTty(message: string): Promise<boolean> {
+  let fd: number;
   try {
-    const answer = await rl.question(message);
-    return answer.trim().toLowerCase() === "y";
+    fd = openSync("/dev/tty", constants.O_RDWR);
+  } catch {
+    return false;
+  }
+  try {
+    writeSync(fd, message);
+    const buffer = Buffer.alloc(64);
+    let answer = "";
+    while (!answer.includes("\n") && answer.length < 64) {
+      const n = readSync(fd, buffer, 0, buffer.length, null);
+      if (n === 0) break;
+      answer += buffer.subarray(0, n).toString("utf8");
+    }
+    return answer.split("\n")[0]?.trim().toLowerCase() === "y";
+  } catch {
+    return false;
   } finally {
-    rl.close();
+    closeSync(fd);
   }
 }
 
@@ -1044,7 +1413,7 @@ if (import.meta.main) {
     agentEnv: Object.keys(process.env).some((name) => AGENT_ENV.test(name)),
     lockWaitMs: 10_000,
     runGit,
-    confirm: confirmOnTty,
+    confirm: confirmOnDevTty,
   });
   if (result.stdout) process.stdout.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);

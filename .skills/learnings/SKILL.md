@@ -29,7 +29,9 @@ description: 作業中に得た「次のセッションでも役立つ事実」�
 agent-learnings show --reader claude       # 今の repo の学びと共通の学びを表示する（Codex は --reader codex）
 agent-learnings show --reader claude --grep=<語>   # 語を含む学びだけを表示する（複数で AND、大文字小文字を区別しない。見出し・本文・id が対象）
 agent-learnings show --reader claude --id <id>     # id（L-…）の学びだけを表示する（複数で OR）
-agent-learnings add --title=<見出し> --body=<本文>
+agent-learnings show --reader claude --on=<trigger>  # on がその trigger に等しい学びだけを表示する（session は on の無い学びも含む）
+agent-learnings add --title=<見出し> --body=<本文> [--on=<trigger>]...   # on は最大 4 個
+agent-learnings tag <id> --on=<trigger>...  # 学びの on を付け替える（--on= で外す）。--from-file <path> で 1 行 `<id>` `<TAB>` `<on を , でつないだ値>` を最大 200 行まとめて付け替える
 agent-learnings remove <id>                # 学びの id（L-…）で消す
 agent-learnings status                     # 未取り込みの依頼、未 commit、queue と worker の状態、読み込み回数などを見る
 agent-learnings path                       # 今の repo の学びファイルのパス
@@ -38,6 +40,19 @@ agent-learnings path                       # 今の repo の学びファイル�
 値が `-` で始まると引数の解析が別の引数と読むため、`--title=…` `--body=…` `--grep=…` のように `=` でつなぐ。
 
 開始時の表示は件数が多いと途中で省略される（`…（N 件省略）`）。省略された学びや特定の話題の学びは `show --grep=<語>` で探す。絞り込みの `show` は読み込み回数（`status` の `reads:`）に数えない。一致が無いときは stdout が空で、stderr に `一致する学びが無い` と出る。`--grep` と `--id` を合わせると両方を満たす項目だけが出る。`--grep` は 8 個まで、1 語 100 字まで。
+
+## 場面の指定（on）
+
+学びには `on` で「どの場面で効くか」を付けられる。付けない学びは今までどおり開始時に全件が表示される（迷ったら付けない）。
+
+- `session`: 開始時
+- `cmd:<語>` または `cmd:<語> <語>`: 単純コマンドの先頭 1 語または 2 語（`cmd:git commit`）
+- `path:<部分>/<部分>/`: その接頭辞のパス（`path:mods/x/`）。common の学びには付けても無視される
+- `path:*<接尾辞>`: パスの末尾（`path:*.test.ts`）
+
+エージェントが `add --on` と `tag` で付けられるのは範囲が狭いものだけ。1 語の `cmd:`、部分が 1 つの `path:`、`.github` `.claude` `.codex` `.git` の下、`.` を 1 つしか含まない `path:*` は拒否される。`tag` は現在の repo の学びだけで、common の学びの付け替えと広い場面は人が端末から行う（`/dev/tty` の確認が出る）。
+
+`show --on=session` は、`on` の無い学び、`session` を持つ学び、文法に合わない `on` を持つ学びを含む。付け替えは `seen` と `updated` を動かさず、store の commit の本文に `retag <id>: <今> -> <新>` / `untag <id>: <今>` として残るので、`git revert` で戻せる。
 
 ## セッション終了時の自動整理
 
@@ -74,7 +89,7 @@ Claude のセッションが終わると、worker が会話を読み直して学
 
 ## 人が端末から実行する操作
 
-`add --common`（全 repo に効く学び）、`promote`（共通の学びへの昇格）、`rekey`（キーの付け替え）、`init`（store の初期化）は、人が端末から実行する。エージェントからは使えない。必要なときは利用者に実行を頼む。
+`add --common`（全 repo に効く学び）、広い場面や common の学びへの `tag`、`promote`（共通の学びへの昇格）、`rekey`（キーの付け替え）、`init`（store の初期化）は、人が端末から実行する。エージェントからは使えない。必要なときは利用者に実行を頼む。
 
 ## Codex から使うとき
 

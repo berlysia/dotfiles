@@ -1,12 +1,16 @@
 import { deepStrictEqual, ok, strictEqual } from "node:assert";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import {
   chmodSync,
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
+  rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
@@ -831,4 +835,444 @@ describe("runLearningsCli show filters", () => {
       await show(deps, "--reader", "codex");
       strictEqual(lines(codexLog), 1);
     }));
+});
+
+describe("runLearningsCli on and tag", () => {
+  const worker = (deps: RunLearningsCliDeps): RunLearningsCliDeps => ({
+    ...deps,
+    isTty: false,
+  });
+  const run = (deps: RunLearningsCliDeps, ...args: string[]) =>
+    runLearningsCli(args, deps);
+  const readFile = async (deps: RunLearningsCliDeps, common = false) => {
+    const path = (
+      await run(deps, "path", ...(common ? ["--common"] : []))
+    ).stdout.trim();
+    const parsed = parseLearningsFile(readFileSync(path, "utf8"));
+    if (!parsed.ok) throw new Error("unparsable");
+    return { path, file: parsed.value };
+  };
+  const entryOf = async (deps: RunLearningsCliDeps, id: string) => {
+    for (const common of [false, true]) {
+      try {
+        const entry = (await readFile(deps, common)).file.entries.find(
+          (e) => e.id === id,
+        );
+        if (entry !== undefined) return entry;
+      } catch {
+        // その側のファイルがまだ無い
+      }
+    }
+    throw new Error("no entry");
+  };
+  const onOf = async (deps: RunLearningsCliDeps, id: string) =>
+    (await entryOf(deps, id)).extra.find(([k]) => k === "on")?.[1];
+  const addEntry = async (
+    deps: RunLearningsCliDeps,
+    title: string,
+    ...extra: string[]
+  ): Promise<string> =>
+    (
+      await run(deps, "add", `--title=${title}`, "--body=本文", ...extra)
+    ).stdout.trim();
+  const gitLog = (deps: RunLearningsCliDeps, format: string): string =>
+    execFileSync("git", ["-C", store(deps), "log", "-1", `--format=${format}`])
+      .toString()
+      .trim();
+  const readsLines = (deps: RunLearningsCliDeps): number => {
+    const path = join(store(deps), ".state/reads.log");
+    return existsSync(path)
+      ? readFileSync(path, "utf8").split("\n").filter(Boolean).length
+      : 0;
+  };
+  const writeEntry = async (
+    deps: RunLearningsCliDeps,
+    id: string,
+    change: (body: string) => string,
+  ): Promise<void> => {
+    const { path, file } = await readFile(deps);
+    writeFileSync(
+      path,
+      serializeLearningsFile({
+        ...file,
+        entries: file.entries.map((e) =>
+          e.id === id ? { ...e, body: change(e.body) } : e,
+        ),
+      }),
+    );
+  };
+  const withTmp = (fn: (dir: string) => Promise<void>) => async () => {
+    const dir = mkdtempSync(join(tmpdir(), "agent-learnings-tag-"));
+    try {
+      await fn(dir);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+
+  it("show --on keeps entries with that exact trigger, ANDed with --grep", () =>
+    withEnv(async (deps) => {
+      await run(deps, "init");
+      const commit = await addEntry(deps, "署名", "--on=cmd:git commit");
+      await addEntry(deps, "広い", "--on=cmd:git commit,session");
+      const generic = await addEntry(deps, "別", "--on=cmd:git push");
+      const plain = await addEntry(deps, "無印");
+      const shown = (await run(deps, "show", "--on=cmd:git commit")).stdout;
+      ok(shown.includes(commit));
+      ok(!shown.includes(generic) && !shown.includes(plain));
+      const both = (
+        await run(deps, "show", "--on=cmd:git commit", "--grep=署名")
+      ).stdout;
+      ok(both.includes(commit) && !both.includes("広い"));
+      // 1 語の cmd:git は cmd:git commit を含まない（等値）
+      const wide = await run(deps, "show", "--on=cmd:git");
+      ok(!wide.stdout.includes(commit));
+    }));
+  it("show --on=session includes entries without on and with invalid on, and counts as a read", () =>
+    withEnv(async (deps) => {
+      await run(deps, "init");
+      const plain = await addEntry(deps, "無印");
+      const narrow = await addEntry(deps, "限定", "--on=cmd:git commit");
+      const broken = await addEntry(deps, "壊れ");
+      const { path, file } = await readFile(deps);
+      writeFileSync(
+        path,
+        serializeLearningsFile({
+          ...file,
+          entries: file.entries.map((e) =>
+            e.id === broken ? { ...e, extra: [["on", "<script>"]] } : e,
+          ),
+        }),
+      );
+      const before = readsLines(deps);
+      const shown = (await run(deps, "show", "--on=session")).stdout;
+      ok(shown.includes(plain) && shown.includes(broken));
+      ok(!shown.includes(narrow));
+      strictEqual(readsLines(deps), before + 1);
+    }));
+  it("show --on=cmd:… does not touch reads.log", () =>
+    withEnv(async (deps) => {
+      await run(deps, "init");
+      await addEntry(deps, "限定", "--on=cmd:git commit");
+      const before = readsLines(deps);
+      await run(deps, "show", "--on=cmd:git commit");
+      strictEqual(readsLines(deps), before);
+    }));
+  it("show --on=Evil exits 1 without echoing the value", () =>
+    withEnv(async (deps) => {
+      await run(deps, "init");
+      const r = await run(deps, "show", "--on=Evil");
+      strictEqual(r.exitCode, 1);
+      ok(!r.stderr.includes("Evil"));
+      ok(r.stderr.includes("usage: agent-learnings"));
+    }));
+  it("add --on uses the worker grammar for humans and agents alike", () =>
+    withEnv(async (deps) => {
+      await run(deps, "init");
+      for (const d of [deps, worker(deps)]) {
+        const narrow = await run(
+          d,
+          "add",
+          "--title=a",
+          "--body=b",
+          "--on=cmd:git",
+        );
+        strictEqual(narrow.exitCode, 1);
+        ok(narrow.stderr.includes("worker-restricted"));
+        const five = await run(
+          d,
+          "add",
+          "--title=a",
+          "--body=b",
+          ...["session", "cmd:a b", "cmd:c d", "cmd:e f", "cmd:g h"].map(
+            (v) => `--on=${v}`,
+          ),
+        );
+        strictEqual(five.exitCode, 1);
+        ok(five.stderr.includes("too-many"));
+      }
+      const good = await run(
+        deps,
+        "add",
+        "--title=ok",
+        "--body=b",
+        "--on=cmd:git commit",
+      );
+      strictEqual(good.exitCode, 0);
+      strictEqual(await onOf(deps, good.stdout.trim()), "cmd:git commit");
+    }));
+  it("human add --common refuses path-prefix but accepts path-suffix", () =>
+    withEnv(async (deps) => {
+      await run(deps, "init");
+      const common = (on: string) =>
+        run(deps, "add", "--common", "--title=c", "--body=b", `--on=${on}`);
+      strictEqual((await common("path:mods/x/")).exitCode, 1);
+      const suffix = await common("path:*.test.ts");
+      strictEqual(suffix.exitCode, 0);
+    }));
+  it("add --on reaches the inbox when the store lock cannot be taken", () =>
+    withEnv(async (deps) => {
+      await run(deps, "init");
+      const lock = join(store(deps), ".state/lock");
+      // lock を作れない状態にして inbox 経路へ落とす
+      if (existsSync(lock)) rmSync(lock, { recursive: true, force: true });
+      chmodSync(join(store(deps), ".state"), 0o500);
+      const r = await run(
+        worker(deps),
+        "add",
+        "--title=in",
+        "--body=b",
+        "--on=cmd:git commit",
+      );
+      chmodSync(join(store(deps), ".state"), 0o700);
+      if (process.getuid?.() === 0) return;
+      strictEqual(r.exitCode, 0);
+      ok(r.stdout.startsWith("R-"));
+    }));
+
+  it("agent tag sets on without moving seen or updated, with retag in stdout and commit", () =>
+    withEnv(async (deps) => {
+      await run(deps, "init");
+      const id = await addEntry(deps, "t");
+      const before = await entryOf(deps, id);
+      const r = await run(worker(deps), "tag", id, "--on=cmd:git push");
+      strictEqual(r.exitCode, 0);
+      ok(r.stdout.includes(`retag ${id}: none -> cmd:git push`));
+      const after = await entryOf(deps, id);
+      strictEqual(after.seen, before.seen);
+      strictEqual(after.updated, before.updated);
+      strictEqual(await onOf(deps, id), "cmd:git push");
+      strictEqual(gitLog(deps, "%s"), `learnings: retag ${id}`);
+      ok(gitLog(deps, "%b").includes(`retag ${id}`));
+    }));
+  it("agent tag refuses a one-word cmd and common ids", () =>
+    withEnv(async (deps) => {
+      await run(deps, "init");
+      const id = await addEntry(deps, "t");
+      const common = (
+        await run(deps, "add", "--common", "--title=c", "--body=b")
+      ).stdout.trim();
+      const agent = worker(deps);
+      const narrow = await run(agent, "tag", id, "--on=cmd:git");
+      strictEqual(narrow.exitCode, 1);
+      ok(narrow.stderr.includes("worker-restricted"));
+      ok(!narrow.stderr.includes(id));
+      const blocked = await run(agent, "tag", common, "--on=cmd:git commit");
+      strictEqual(blocked.exitCode, 1);
+      ok(blocked.stderr.includes("common-not-allowed"));
+      strictEqual(await onOf(deps, common), undefined);
+    }));
+  it(
+    "agent tag --from-file applies two entries in one commit without confirming",
+    withTmp((dir) =>
+      withEnv(async (deps) => {
+        await run(deps, "init");
+        const a = await addEntry(deps, "a");
+        const b = await addEntry(deps, "b");
+        const file = join(dir, "ops.tsv");
+        writeFileSync(file, `${a}\tcmd:git commit\n\n${b}\tsession\n`);
+        let asked = 0;
+        const agent = {
+          ...worker(deps),
+          confirm: async () => (asked++, true),
+        };
+        const r = await run(agent, "tag", "--from-file", file);
+        strictEqual(r.exitCode, 0);
+        strictEqual(asked, 0);
+        strictEqual(gitLog(deps, "%s"), "learnings: retag 2 entries");
+        const body = gitLog(deps, "%b");
+        ok(body.includes(`retag ${a}`) && body.includes(`retag ${b}`));
+        strictEqual(await onOf(deps, b), "session");
+      }),
+    ),
+  );
+  it(
+    "tag --from-file rejects 201 lines, a bad line, an unknown id, a symlink, a FIFO and a 65KB file",
+    withTmp((dir) =>
+      withEnv(async (deps) => {
+        await run(deps, "init");
+        const a = await addEntry(deps, "a");
+        const agent = worker(deps);
+        const headBefore = gitLog(deps, "%H");
+        const tryFile = async (name: string, text: string) => {
+          const path = join(dir, name);
+          writeFileSync(path, text);
+          return run(agent, "tag", "--from-file", path);
+        };
+        const ids = Array.from(
+          { length: 201 },
+          (_, i) => `L-${i.toString(16).padStart(12, "0")}\tsession`,
+        );
+        const many = await tryFile("many", ids.join("\n"));
+        strictEqual(many.exitCode, 1);
+        ok(many.stderr.includes("too-many-lines"));
+        const bad = await tryFile("bad", `${a}\tsession\n${a}\tcmd:\n`);
+        strictEqual(bad.exitCode, 1);
+        ok(bad.stderr.includes("2 行目") && !bad.stderr.includes("cmd:"));
+        const unknown = await tryFile(
+          "unknown",
+          `${a}\tsession\nL-ffffffffffff\tsession\n`,
+        );
+        strictEqual(unknown.exitCode, 1);
+        ok(!unknown.stderr.includes("L-ffffffffffff"));
+        const real = join(dir, "real");
+        writeFileSync(real, `${a}\tsession\n`);
+        symlinkSync(real, join(dir, "link"));
+        strictEqual(
+          (await run(agent, "tag", "--from-file", join(dir, "link"))).exitCode,
+          1,
+        );
+        const fifo = join(dir, "fifo");
+        execFileSync("mkfifo", [fifo]);
+        strictEqual((await run(agent, "tag", "--from-file", fifo)).exitCode, 1);
+        const big = await tryFile("big", "x".repeat(65 * 1024));
+        strictEqual(big.exitCode, 1);
+        strictEqual(await onOf(deps, a), undefined);
+        strictEqual(gitLog(deps, "%H"), headBefore);
+      }),
+    ),
+  );
+  it("human tag writes after y and changes nothing after n", () =>
+    withEnv(async (deps) => {
+      await run(deps, "init");
+      const id = await addEntry(deps, "t");
+      const messages: string[] = [];
+      const no = await run(
+        { ...deps, confirm: async (m) => (messages.push(m), false) },
+        "tag",
+        id,
+        "--on=cmd:git",
+      );
+      strictEqual(no.exitCode, 1);
+      strictEqual(await onOf(deps, id), undefined);
+      ok(messages[0]?.includes(`${id}  t  なし -> cmd:git`));
+      const yes = await run(deps, "tag", id, "--on=cmd:git");
+      strictEqual(yes.exitCode, 0);
+      strictEqual(await onOf(deps, id), "cmd:git");
+    }));
+  it("human tag --on= removes on and records untag", () =>
+    withEnv(async (deps) => {
+      await run(deps, "init");
+      const id = await addEntry(deps, "t", "--on=cmd:git commit");
+      const r = await run(deps, "tag", id, "--on=");
+      strictEqual(r.exitCode, 0);
+      strictEqual(await onOf(deps, id), undefined);
+      ok(gitLog(deps, "%b").includes(`untag ${id}: cmd:git commit`));
+    }));
+  it("human tag can tag a common entry with a non-prefix trigger only", () =>
+    withEnv(async (deps) => {
+      await run(deps, "init");
+      const common = (
+        await run(deps, "add", "--common", "--title=c", "--body=b")
+      ).stdout.trim();
+      strictEqual(
+        (await run(deps, "tag", common, "--on=path:mods/x/")).exitCode,
+        1,
+      );
+      strictEqual((await run(deps, "tag", common, "--on=cmd:git")).exitCode, 0);
+      strictEqual(await onOf(deps, common), "cmd:git");
+    }));
+  it(
+    "human tag --from-file refuses when the target changed during the confirmation",
+    withTmp((dir) =>
+      withEnv(async (deps) => {
+        await run(deps, "init");
+        const id = await addEntry(deps, "t");
+        const file = join(dir, "ops.tsv");
+        writeFileSync(file, `${id}\tcmd:git\n`);
+        const r = await run(
+          {
+            ...deps,
+            confirm: async () => {
+              await writeEntry(deps, id, (body) => `${body} 追記`);
+              return true;
+            },
+          },
+          "tag",
+          "--from-file",
+          file,
+        );
+        strictEqual(r.exitCode, 1);
+        ok(r.stderr.includes("確認の後に変わった"));
+        strictEqual(await onOf(deps, id), undefined);
+      }),
+    ),
+  );
+  it("human confirmation shows 不正な値 and never the raw invalid on", () =>
+    withEnv(async (deps) => {
+      await run(deps, "init");
+      const id = await addEntry(deps, "t");
+      const { path, file } = await readFile(deps);
+      writeFileSync(
+        path,
+        serializeLearningsFile({
+          ...file,
+          entries: file.entries.map((e) => ({
+            ...e,
+            extra: [["on", "<script>"]],
+          })),
+        }),
+      );
+      const messages: string[] = [];
+      await run(
+        { ...deps, confirm: async (m) => (messages.push(m), false) },
+        "tag",
+        id,
+        "--on=cmd:git",
+      );
+      ok(messages[0]?.includes("（不正な値）"));
+      ok(!messages[0]?.includes("<script>"));
+    }));
+  it("tag with a bad --on says only the fixed word", () =>
+    withEnv(async (deps) => {
+      await run(deps, "init");
+      const id = await addEntry(deps, "t");
+      const r = await run(worker(deps), "tag", id, "--on=cmd:Evil");
+      strictEqual(r.exitCode, 1);
+      ok(r.stderr.includes("bad-grammar"));
+      ok(!r.stderr.includes("Evil") && !r.stderr.includes(id));
+    }));
+
+  const confirmChild = (dir: string): string => {
+    const path = join(dir, "child.ts");
+    writeFileSync(
+      path,
+      `import { confirmOnDevTty } from ${JSON.stringify(CLI_PATH)};\n` +
+        `const r = await confirmOnDevTty("q? ");\n` +
+        `process.stdout.write("RESULT:" + r + "\\n");\n`,
+    );
+    return path;
+  };
+  it(
+    "the real confirmOnDevTty returns false without a controlling terminal even when stdin says y",
+    withTmp(async (dir) => {
+      const child = spawn("bun", [confirmChild(dir)], {
+        detached: true,
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      let out = "";
+      child.stdout.on("data", (d) => (out += d));
+      child.stdin.write("y\n");
+      child.stdin.end();
+      await new Promise((resolve) => child.on("close", resolve));
+      ok(out.includes("RESULT:false"), out);
+    }),
+  );
+  it(
+    "the real confirmOnDevTty returns true when a terminal answers y",
+    {
+      skip:
+        spawnSync("script", ["--version"]).status === null
+          ? "script is not installed"
+          : false,
+    },
+    withTmp(async (dir) => {
+      const r = spawnSync(
+        "script",
+        ["-qc", `bun ${confirmChild(dir)}`, "/dev/null"],
+        { input: "y\n", encoding: "utf8", timeout: 20_000 },
+      );
+      ok(r.stdout.includes("RESULT:true"), `${r.stdout} ${r.stderr}`);
+    }),
+  );
 });
