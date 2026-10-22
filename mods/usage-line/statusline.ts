@@ -79,7 +79,7 @@ async function main(): Promise<void> {
   const [
     { lineFilePath },
     { buildStatusInput, isForecastFileReadable },
-    { formatLine },
+    { formatLine, PLACEHOLDER_LINE },
   ] = await Promise.all([
     import("./hooks/line-file"),
     import("./hooks/status-input"),
@@ -103,8 +103,9 @@ async function main(): Promise<void> {
       : null;
   const file =
     path === null ? undefined : readForecastFile(path, isForecastFileReadable);
-  const line = formatLine(buildStatusInput(stdin, file, now), now);
-  if (line !== undefined) process.stdout.write(`${line}\n`);
+  const line =
+    formatLine(buildStatusInput(stdin, file, now), now) ?? PLACEHOLDER_LINE;
+  process.stdout.write(`${line}\n`);
 }
 
 try {

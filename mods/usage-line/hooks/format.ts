@@ -14,6 +14,15 @@ const LABELS: Record<RateLimitWindow, string> = {
 };
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
 
+/**
+ * Shown while the status line has nothing yet: Claude Code sends rate limits only
+ * after the first response, and an empty output would make ccstatusline drop the line.
+ */
+export const PLACEHOLDER_LINE = [
+  "ctx --",
+  ...WINDOWS.map((w) => `${LABELS[w]} --`),
+].join(SEPARATOR);
+
 // Local fields, no Intl: the mod's runtime is not promised to carry time zone data.
 function formatClock(ms: number): string {
   const date = new Date(ms);

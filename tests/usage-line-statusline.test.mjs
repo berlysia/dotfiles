@@ -100,12 +100,12 @@ test("a fresh forecast file adds the forecast", () => {
   assert.match(result.stdout, /予想 20\.5%/);
 });
 
-test("not json and {} print nothing and exit 0", () => {
+test("nothing to show (not json, {}, before the first response) prints the placeholder", () => {
   const runtime = freshRuntimeDir();
-  for (const input of ["not json", "{}", ""]) {
+  for (const input of ["not json", "{}", "", '{"session_id":"s-1"}']) {
     const result = run(input, { XDG_RUNTIME_DIR: runtime });
     assert.equal(result.status, 0);
-    assert.equal(result.stdout, "");
+    assert.equal(result.stdout, "ctx -- │ 5h -- │ 週 --\n");
     assert.equal(result.stderr, "");
   }
 });
