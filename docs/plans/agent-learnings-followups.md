@@ -40,32 +40,32 @@ Entire を導入した場合、その checkpoint を worker の入力アダプ�
 
 merge と `chezmoi apply` の後、`agent-learnings show --grep=zzz-nomatch` が stderr に `一致する学びが無い` を出すことで、新しい CLI が配られたかを確かめる。Codex でも同じコマンドを 1 回実行し、stderr の行がエージェントに見えるかを確かめる。見えなければ AGENTS.md の Learnings 節に「出力が空なら一致なし」と書き足す。
 
-## 学びを流す場面と形
+## 開始時の 8KB に収まらない学び
 
-開始時の注入は 8KB で切られ、このリポジトリでは 39 件（全文 19.9KB）の半分以上が流れない。並び順は `seen` の多い順だが、`seen` はほとんどの項目で 1 のため、実際には新しい順になっている。次の 3 つを、点検の数字を見てから判断する。
+場面のタグを付けた後も、dotfiles（33 件で 16 件省略）と kanbun-annotation（26 件で 10 件省略）の開始時は 8KB に収まらない。残っているのは、方針や進め方の学びで、コマンドやパスに結びつかない（ADR-0042 R12）。次のどちらかを、注入の記録と feedback が溜まってから決める。
 
-- **場面ごとに流す**: 学びに `on` のメタ（例: `claude:SessionStart`、`bash:git-commit`、`bash:gh-pr`）を足し、`show --on=…` で絞れるようにする。Claude 側は PreToolUse でコマンドの先頭を見て、該当する学びを `additionalContext` で渡す。失敗の直後（PostToolUse）に渡す形も検討する。`on` は決まった語彙から worker が選び、自由な文字列や正規表現にはしない（注入の経路と照合の壊れやすさを増やさないため）。Codex にコマンドの直前を捉える仕組みがあるかは未確認で、無ければ AGENTS.md の指示で `show --on=…` を呼ぶ形になる。規模は spec と plan に分ける大きさ
-- **開始時は索引を流す**: 上位の数件だけ全文、残りは `- [id] 見出し` の 1 行にする。見出しだけなら 39 件で 4.3KB で、全件の存在を知らせられる。本文は `show --id` で引く
+- **開始時は索引を流す**: 上位の数件だけ全文、残りは `- [id] 見出し` の 1 行にする。本文は `show --id` で引く
 - **rules へ移す**: 毎回効かせたい学びは、学びの側でピン留めせず、人が rules や CLAUDE.md へ移す。学びは確かめる前の候補の置き場にとどめる
 
-点検では、コマンドや場面に結びつく学びの割合と、rules へ移す候補（利用者の方針として記録された項目など）を数える。
+## 場面の注入の上限の見直し
 
-## 場面の注入の暫定値と開始時の行
+1 回 3 件・2KB、1 セッション 12 件・16KB の上限（ADR-0042 K6）は暫定の値。`agent-learnings status` の `injections (14d)` と、セッションごとの場面の state（`~/.claude/state/agent-learnings/<session>.injected`）の行数で、上限に当たった回数を数えて直す。
 
-コマンド直前の注入は、配備後に `cmd:git status` を一時的に付けた学びで確かめた。1 回目の `git status` で文脈に入り、2 回目は重複の抑止で入らなかった。hook の所要は 9 回で p50 34ms、p95 81ms だった。次の 2 つは配備直後には確かめられなかった。
+## reader の無い注入の記録を受理から外す（2026-11-05 以降）
 
-- **1 回 3 件・2KB、1 セッション 12 件・16KB の上限と、重複の抑止**: 注入が 1 件しか起きておらず、上限に届くかを判断できない。注入の記録（`injections.log`）が入った後、場面ごとの注入数とセッションの合計を数えて、上限に当たった回数を見る。直すなら spec を改訂する
-- **開始時の「他に N 件」の行**: 次のセッションの開始時に出る。場面だけの学びが 0 件の今は、`0 件` の行が出るかを見る
+注入の記録に reader を足したのは 2026-10-22 の配備から。それより前の記録は reader を持たず、評価の受理の根拠として、どの reader の評価でも受け付けている（ADR-0042 の受け入れたリスク）。14 日の窓から古い記録が出る 2026-11-05 以降に、評価の reader が `claude` か `codex` のときは reader の無い記録を受理の根拠から外す。
+
+## Codex の hook の名前
+
+Codex の `/hooks` で、配った hook が「No name hook」と表示された。`~/.codex/hooks.json`（`home/dot_codex/hooks.json.tmpl`）に、Codex が表示に使う名前の項目（公式ドキュメントの `statusMessage` など）を足す。command の文字列を変えなければ信頼はそのまま残る（codex-cli 0.163.0 で、信頼が command の文字列に結びつくことを確かめた）。項目を足すと hook の hash が変わり、信頼し直しが要る可能性がある
 
 ## `appendReadLog` の書き込みの硬さ
 
 `core/store.ts` の既存の `appendReadLog` は `O_NONBLOCK` と通常ファイルの確認を持たない。書き先の `reads.log` が FIFO に差し替えられると、開く時点で止まりうる。新しい `appendLogLines`（注入と評価のログ）は `O_NONBLOCK`・`fstat` の通常ファイル確認・4MB の上限を持つので、`appendReadLog` も同じ書き方に揃えるか、`appendLogLines` へ寄せる。
 
-## 注入の記録と feedback の配備後の確認
+## 開始時の記録の確認
 
-配備後に、`cmd:git status` を一時的に付けた学びで確かめた。`injections.log` に `kind: pre`・`trigger: cmd:git status` の行が入り、`feedback <id> mistimed --at=pre` は受理され（`reader: claude`）、記録の無い `--at=fail` は exit 1 になった。`status` に injections・feedback・retag の行が出た。確認のために返した `mistimed` 1 件（L-17458db07f49）が 14 日の集計に残る。次は配備直後には確かめられなかった。
-
-- **開始時の記録**: 次のセッションの開始時に、`injections.log` に `kind: session` の行（trigger は `session` か `untagged`）が描画した件数だけ増えるか。注入文の末尾に `--at=session` の案内が付くか
+場面の注入・注入の記録・feedback は Claude と Codex の両方で配備後に確かめたが、開始時の経路は配備の後のセッションの開始でしか見られない。次のセッションの開始時に、`injections.log` に `kind: session`・`reader: claude` の行（trigger は `session` か `untagged`）が描画した件数だけ増えるか、注入文の末尾に「他に N 件」の行と `--at=session` の案内が付くかを見る。確認のために返した評価（L-17458db07f49 の `mistimed` と、Codex からの `helpful`）が 2026-11-05 まで集計に残る
 
 ## 今ある学びへの場面のタグ付けの残り
 
