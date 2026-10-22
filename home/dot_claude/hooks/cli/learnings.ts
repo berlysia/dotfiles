@@ -45,6 +45,7 @@ import { applyOps, type LearningOp } from "../lib/agent-learnings/core/ops.ts";
 import { promoteManually } from "../lib/agent-learnings/core/promote.ts";
 import {
   applyRetag,
+  countRetagLines,
   parseRetagFile,
   planRetag,
   policyFor,
@@ -62,6 +63,23 @@ import {
   type ValidatedTriggers,
 } from "../lib/agent-learnings/core/triggers.ts";
 import { countJobs, summarizeRuns } from "../lib/agent-learnings/core/queue.ts";
+import {
+  detectFeedbackReader,
+  findAcceptingInjection,
+  formatReviewLine,
+  isRecordKind,
+  isRecordedId,
+  WINDOW_MS,
+  type FeedbackReader,
+  type RecordKind,
+  type Verdict,
+} from "../lib/agent-learnings/core/metrics.ts";
+import {
+  fullLogs,
+  loadInjections,
+  loadMetrics,
+  recordFeedback,
+} from "../lib/agent-learnings/core/metrics-log.ts";
 import { renderLearnings } from "../lib/agent-learnings/core/render.ts";
 import {
   isValidRepoKey,
@@ -72,7 +90,9 @@ import {
   commitStore,
   commonFilePath,
   defaultStoreDir,
+  feedbackLogPathFor,
   initStore,
+  injectionLogPaths,
   readLearnings,
   readLogTail,
   repoFilePath,
@@ -91,6 +111,8 @@ export interface RunLearningsCliDeps {
   readerEnv: string | undefined;
   isTty: boolean; // stdin と stdout の両方が TTY
   agentEnv: boolean; // エージェントの実行環境を示す環境変数がある
+  // feedback の reader。入口で detectFeedbackReader(Object.keys(process.env)) から決める
+  feedbackReader: FeedbackReader;
   lockWaitMs: number;
   runGit: RunGit;
   // 昇格と人の tag の確認。message を見せて、利用者が y と答えたときだけ true を返す
@@ -125,6 +147,8 @@ const USAGE = [
   "  add --title=T --body=B [--common] [--on=TRIGGER]...",
   "                   --on は最大 4 個。session / cmd:<語> <語> / path:<部分>/<部分>/ / path:*.<a>.<b>（広い場面は人が tag で付ける）",
   "  remove <id>",
+  "  feedback <id> <helpful|mistimed|wrong> --at=<session|pre|fail|path>",
+  "                   注入された学びが場面に合っていたかを返す（直近 14 日に出た組だけ受け付ける）",
   "  status",
   "  tag <id> --on=TRIGGER... | tag <id> --on= | tag --from-file PATH",
   "                   on を付け替える（--on= は外す）。--from-file は 1 行 `<id>\\t<on を , でつないだ値>`（最大 200 行、64KB）",
@@ -1180,6 +1204,157 @@ function listNames(dir: string, pattern: RegExp): string[] {
   }
 }
 
+const VERDICTS: readonly Verdict[] = ["helpful", "mistimed", "wrong"];
+const isVerdict = (value: string): value is Verdict =>
+  (VERDICTS as readonly string[]).includes(value);
+
+// 引数は評価する側（エージェント）の入力そのもの。parseArgs の例外文にも値が入りうるので、
+// 診断は固定の文言に落とし、渡された値を stdout にも stderr にも返さない
+function parseFeedbackArgs(args: readonly string[]):
+  | {
+      ok: true;
+      value: { id: string; verdict: Verdict; kind: RecordKind };
+    }
+  | { ok: false } {
+  let parsed;
+  try {
+    parsed = parseArgs({
+      args: [...args],
+      options: { at: { type: "string", multiple: true } },
+      allowPositionals: true,
+      strict: true,
+    });
+  } catch {
+    return { ok: false };
+  }
+  const { values, positionals } = parsed;
+  const [id, verdict] = positionals;
+  const at = values.at;
+  if (
+    positionals.length !== 2 ||
+    id === undefined ||
+    verdict === undefined ||
+    at === undefined ||
+    at.length !== 1
+  )
+    return { ok: false };
+  const kind = at[0];
+  if (
+    !isRecordedId(id) ||
+    !isVerdict(verdict) ||
+    kind === undefined ||
+    !isRecordKind(kind)
+  )
+    return { ok: false };
+  return { ok: true, value: { id, verdict, kind } };
+}
+
+// 注入の記録がある (repoKey, id, kind) だけを受け付ける。学びは読まず、lock も取らない
+function runFeedback(
+  args: readonly string[],
+  deps: RunLearningsCliDeps,
+): RunLearningsCliResult {
+  const parsed = parseFeedbackArgs(args);
+  if (!parsed.ok)
+    return fail(
+      "feedback の引数が不正（feedback <id> <helpful|mistimed|wrong> --at=<session|pre|fail|path>）",
+    );
+  const { id, verdict, kind } = parsed.value;
+  const store = defaultStoreDir(deps.home);
+  if (!storeExists(store)) return fail("store が未初期化");
+  const repoKey = resolveRepoKey(deps.cwd, deps.runGit);
+  if (repoKey === null) return fail("repo を解決できない");
+
+  const accepted = findAcceptingInjection(loadInjections(store).lines, {
+    repoKey,
+    id,
+    kind,
+    now: deps.now,
+  });
+  if (accepted === null) {
+    const rotated = injectionLogPaths(store).some((path) =>
+      existsSync(`${path}.1`),
+    );
+    return fail(
+      "注入の記録が無い（直近 14 日にこの repo でこの場面に出た学びだけを評価できる）" +
+        (rotated ? "\n直近の回転で記録が .1 に移った可能性がある" : ""),
+    );
+  }
+  const line = {
+    v: 1 as const,
+    at: deps.now.toISOString(),
+    reader: deps.feedbackReader,
+    repoKey,
+    id,
+    verdict,
+    kind,
+    trigger: accepted.trigger,
+  };
+  if (!recordFeedback(store, line)) {
+    const target = feedbackLogPathFor(store, deps.feedbackReader);
+    const full = fullLogs(store).some(
+      (name) => join(storePaths(store).state, name) === target,
+    );
+    return fail(
+      full
+        ? "記録のログが上限に達している（agent-learnings status で確かめる）"
+        : "記録できなかった",
+    );
+  }
+  return done(0, `記録した: ${id} ${verdict} --at=${kind}\n`);
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// 付け替えの数。store の git ログの本文から数える（付随の行なので失敗は ? に畳む）
+function retagStatusLine(store: string, deps: RunLearningsCliDeps): string {
+  const since = new Date(deps.now.getTime() - WINDOW_MS).toISOString();
+  const log = deps.runGit(
+    storeGitArgs(store, ["log", `--since=${since}`, "--format=%B"]),
+    store,
+  );
+  if (!log.ok) return "retag (14d): ?";
+  const counts = countRetagLines(log.stdout);
+  return `retag (14d): ${counts.retag} untag (14d): ${counts.untag}`;
+}
+
+function metricsStatusLines(
+  store: string,
+  deps: RunLearningsCliDeps,
+): string[] {
+  const lines: string[] = [];
+  const metrics = loadMetrics(store, deps.now);
+  const { injections, feedback } = metrics;
+  let injectionLine = `injections (14d): session ${injections.session} pre ${injections.pre} fail ${injections.fail} path ${injections.path}`;
+  if (metrics.injectionsUnknown > 0)
+    injectionLine += ` unknown ${metrics.injectionsUnknown}`;
+  // 末尾 1MB で切って読み、かつ最古が窓より新しいときだけ、窓が短くなっていると知らせる
+  if (metrics.injectionsTruncated && metrics.oldestInjectionAt !== null) {
+    const span = deps.now.getTime() - Date.parse(metrics.oldestInjectionAt);
+    if (span >= 0 && span < WINDOW_MS)
+      injectionLine += ` (covers ${Math.floor(span / DAY_MS)}d)`;
+  }
+  lines.push(injectionLine);
+  let feedbackLine = `feedback (14d): helpful ${feedback.helpful} mistimed ${feedback.mistimed} wrong ${feedback.wrong}`;
+  if (metrics.feedbackUnknown > 0)
+    feedbackLine += ` unknown ${metrics.feedbackUnknown}`;
+  lines.push(feedbackLine);
+  for (const item of metrics.review) {
+    const reviewLine = formatReviewLine(item);
+    if (reviewLine !== null) lines.push(reviewLine);
+  }
+  if (metrics.reviewCount > metrics.review.length)
+    lines.push(`review: 他 ${metrics.reviewCount - metrics.review.length} 件`);
+  lines.push(retagStatusLine(store, deps));
+  // 回転されず書けなくなったログ。手で退避する手順を grep できる形で運ぶ
+  const state = storePaths(store).state;
+  for (const name of fullLogs(store)) {
+    const path = join(state, name);
+    lines.push(`log full: ${name} fix=mv ${path} ${path}.1`);
+  }
+  return lines;
+}
+
 function runStatus(deps: RunLearningsCliDeps): RunLearningsCliResult {
   const store = defaultStoreDir(deps.home);
   if (!storeExists(store))
@@ -1261,6 +1436,7 @@ function runStatus(deps: RunLearningsCliDeps): RunLearningsCliResult {
   lines.push(
     `reads: claude: ${reads.claude} codex: ${reads.codex} unknown: ${reads.unknown}`,
   );
+  lines.push(...metricsStatusLines(store, deps));
 
   const readOnly: string[] = [];
   const candidates = [
@@ -1317,6 +1493,8 @@ export async function runLearningsCli(
         return await runAdd(rest, deps);
       case "remove":
         return await runRemove(rest, deps);
+      case "feedback":
+        return runFeedback(rest, deps);
       case "status":
         return runStatus(deps);
       case "init": {
@@ -1378,6 +1556,7 @@ if (import.meta.main) {
     readerEnv: process.env["AGENT_LEARNINGS_READER"],
     isTty: process.stdin.isTTY === true && process.stdout.isTTY === true,
     agentEnv: Object.keys(process.env).some((name) => AGENT_ENV.test(name)),
+    feedbackReader: detectFeedbackReader(Object.keys(process.env)),
     lockWaitMs: 10_000,
     runGit,
     confirm: confirmOnDevTty,

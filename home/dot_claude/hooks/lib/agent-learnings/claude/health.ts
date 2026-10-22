@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { RunGit } from "../core/git.ts";
+import { fullLogs, loadMetrics } from "../core/metrics-log.ts";
 import { countJobs } from "../core/queue.ts";
 import { oldestUnpushedCommitTime } from "../core/store.ts";
 
@@ -30,6 +31,14 @@ export function getLearningsHealthNotice(input: {
     input.now.getTime() - oldest.getTime() > UNPUSHED_STALE_MS
   )
     problems.push("7 日より古い未 push の commit");
+  // 集計の失敗で既存の知らせまで落とさない。失敗したら 2 つを足さない側に倒す
+  try {
+    const { reviewCount } = loadMetrics(input.store, input.now);
+    if (reviewCount > 0) problems.push(`見直す候補 ${reviewCount} 件`);
+    if (fullLogs(input.store).length > 0) problems.push("記録のログが上限");
+  } catch {
+    // 指標の読み込みは知らせの本題ではない
+  }
   if (problems.length === 0) return null;
   return `[agent-learnings] ${problems.join("、")}。対処: agent-learnings status`;
 }

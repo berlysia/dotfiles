@@ -128,6 +128,12 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = ["agent-learnings", "feedback"],
+    decision = "allow",
+    justification = "Records whether an injected learning fit the moment",
+)
+
+prefix_rule(
     pattern = ["agent-learnings", "status"],
     decision = "allow",
     justification = "Shows the learnings store health",

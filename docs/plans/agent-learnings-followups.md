@@ -56,3 +56,7 @@ merge と `chezmoi apply` の後、`agent-learnings show --grep=zzz-nomatch` が
 
 - **1 回 3 件・2KB、1 セッション 12 件・16KB の上限と、重複の抑止**: 注入が 1 件しか起きておらず、上限に届くかを判断できない。注入の記録（`injections.log`）が入った後、場面ごとの注入数とセッションの合計を数えて、上限に当たった回数を見る。直すなら spec を改訂する
 - **開始時の「他に N 件」の行**: 次のセッションの開始時に出る。場面だけの学びが 0 件の今は、`0 件` の行が出るかを見る
+
+## `appendReadLog` の書き込みの硬さ
+
+`core/store.ts` の既存の `appendReadLog` は `O_NONBLOCK` と通常ファイルの確認を持たない。書き先の `reads.log` が FIFO に差し替えられると、開く時点で止まりうる。新しい `appendLogLines`（注入と評価のログ）は `O_NONBLOCK`・`fstat` の通常ファイル確認・4MB の上限を持つので、`appendReadLog` も同じ書き方に揃えるか、`appendLogLines` へ寄せる。

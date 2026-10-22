@@ -33,6 +33,7 @@ agent-learnings show --reader claude --on=<trigger>  # on がその trigger に�
 agent-learnings add --title=<見出し> --body=<本文> [--on=<trigger>]...   # on は最大 4 個
 agent-learnings tag <id> --on=<trigger>...  # 学びの on を付け替える（--on= で外す）。--from-file <path> で 1 行 `<id>` `<TAB>` `<on を , でつないだ値>` を最大 200 行まとめて付け替える
 agent-learnings remove <id>                # 学びの id（L-…）で消す
+agent-learnings feedback <id> <helpful|mistimed|wrong> --at=<session|pre|fail|path>   # 注入された学びの評価を返す
 agent-learnings status                     # 未取り込みの依頼、未 commit、queue と worker の状態、読み込み回数などを見る
 agent-learnings path                       # 今の repo の学びファイルのパス
 ```
@@ -64,6 +65,18 @@ Claude では、`on` が当たった学びが次の場面で文脈に数行だ�
 `path:` の限界: Bash（`sed -i`、リダイレクトなど）によるファイルの書き換えでは出ない。repo の中の symlink を辿った先のパスも照合しない（realpath は取らない）。この注入は hook の失敗で作業を止めない（失敗したら何も出さない）。
 
 `show --on=session` は、`on` の無い学び、`session` を持つ学び、文法に合わない `on` を持つ学びを含む。付け替えは `seen` と `updated` を動かさず、store の commit の本文に `retag <id>: <今> -> <新>` / `untag <id>: <今>` として残るので、`git revert` で戻せる。
+
+## 注入への評価（feedback）
+
+注入された文の末尾に `場違いなら \`agent-learnings feedback <id> mistimed --at=<kind>\`、役立てば \`helpful\`` の 1 行が付く。`<id>` は注入された項目の id（`L-…`）に、`<kind>` は文に付いている値に置き換えて実行する。評価は次の 3 つから選ぶ。
+
+- `helpful`: この場面で役立った
+- `mistimed`: 内容は正しいが、今言われても困る（場面の付け方が合っていない）
+- `wrong`: 内容が誤り、または古い
+
+評価できるのは、直近 14 日にこの repo でその場面（`--at`）に注入された学びだけ。注入の記録が無い組は exit 1 で断られる。reader（`claude` / `codex` / `unknown`）は環境変数からの自己申告で、偽れる。指標であって監査の記録ではない。
+
+`agent-learnings status` の `review: <id>（mistimed M wrong W / N <kind>; <trigger> <回数>, …）<repoKey>` は、同じ場面で 3 回以上注入され、半数以上が `mistimed` か `wrong` だった学び。`mistimed` が多ければ回数の多い trigger を `tag` で外す・直す手がかり、`wrong` が多ければ学びを `remove` する手がかりになる。`tag` はその repo の中で実行する。
 
 ## セッション終了時の自動整理
 

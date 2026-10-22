@@ -3,7 +3,7 @@ import { isAbsolute, join } from "node:path";
 import { isSafeSessionId } from "../../session-id.ts";
 import type { RunGit } from "../core/git.ts";
 import { COMMON_KEY } from "../core/learnings-file.ts";
-import { renderSituation } from "../core/render.ts";
+import { feedbackHint, renderSituation } from "../core/render.ts";
 import { resolveRepoKey } from "../core/repo-key.ts";
 import {
   cmdSituations,
@@ -22,6 +22,7 @@ import {
 } from "../core/scene-state.ts";
 import { selectInjectable, type InjectionKind } from "../core/select.ts";
 import { defaultStoreDir, readLearnings } from "../core/store.ts";
+import { recordClaudeInjections } from "./inject-log.ts";
 import { isWorkerSession } from "./worker-guard.ts";
 
 export const MAIN_AGENT = "main";
@@ -112,7 +113,12 @@ export function buildSceneContext(
       kind,
       agent,
     });
-    const rendered = renderSituation(selected, kind, remainingBytes);
+    const rendered = renderSituation(
+      selected,
+      kind,
+      remainingBytes,
+      feedbackHint(kind),
+    );
     if (rendered.text === null) return null;
 
     // 文を返す前に記録する。書けなければ出さない（上限と重複抑止が外れるより、出さない方を選ぶ）
@@ -127,6 +133,13 @@ export function buildSceneContext(
       )
         return null;
     }
+    // 記録は指標で安全の仕組みではない。書けなくても文は返す
+    recordClaudeInjections(store, {
+      at: input.now,
+      repoKey: repo.repoKey,
+      kind,
+      items: rendered.items,
+    });
     return rendered.text;
   } catch {
     return null;

@@ -59,6 +59,7 @@
     "Bash(agent-learnings show)",
     "Bash(agent-learnings add *)",
     "Bash(agent-learnings remove *)",
+    "Bash(agent-learnings feedback *)",
     "Bash(agent-learnings status)",
     "Bash(agent-learnings path *)",
     "Bash(agent-learnings path)",

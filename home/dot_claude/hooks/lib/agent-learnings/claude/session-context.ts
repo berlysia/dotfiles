@@ -6,7 +6,7 @@ import { drainInbox } from "../core/inbox.ts";
 import type { RunGit } from "../core/git.ts";
 import { COMMON_KEY, type LearningsFile } from "../core/learnings-file.ts";
 import { countJobs, enqueueJob } from "../core/queue.ts";
-import { renderLearnings } from "../core/render.ts";
+import { feedbackHint, renderLearningsDetailed } from "../core/render.ts";
 import { resolveRepoKey } from "../core/repo-key.ts";
 import { filterByTrigger, type Trigger } from "../core/triggers.ts";
 import {
@@ -18,6 +18,7 @@ import {
   repoFilePath,
   storePaths,
 } from "../core/store.ts";
+import { recordClaudeInjections } from "./inject-log.ts";
 import { buildWorkerEnv } from "./worker-env.ts";
 import { isWorkerSession } from "./worker-guard.ts";
 
@@ -62,21 +63,28 @@ export async function buildSessionLearningsContext(input: {
   const commonRead = readLearnings(store, COMMON_KEY);
   const repo = sessionOnly(repoRead.ok ? repoRead.value : null);
   const common = sessionOnly(commonRead.ok ? commonRead.value : null);
-  const rendered = renderLearnings({
+  const rendered = renderLearningsDetailed({
     repo: repo.file,
     common: common.file,
     sceneOnlyCount: repo.dropped + common.dropped,
     repoPath: repoFilePath(store, repoKey),
     commonPath: commonFilePath(store),
+    hint: feedbackHint("session"),
   });
-  if (rendered !== null) {
-    appendReadLog(storePaths(store).readsLog, {
-      at: input.now,
-      reader: "claude",
-      repoKey,
-    });
-  }
-  return rendered;
+  if (rendered === null) return null;
+  appendReadLog(storePaths(store).readsLog, {
+    at: input.now,
+    reader: "claude",
+    repoKey,
+  });
+  // 記録は指標で安全の仕組みではない。書けなくても文は返す
+  recordClaudeInjections(store, {
+    at: input.now,
+    repoKey,
+    kind: "session",
+    items: rendered.shown,
+  });
+  return rendered.text;
 }
 
 export type WorkerSpawnSpec = {

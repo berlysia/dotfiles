@@ -1276,3 +1276,78 @@ describe("runLearningsCli on and tag", () => {
     }),
   );
 });
+
+describe("agent-learnings feedback as a process", () => {
+  const FB_ID = "L-000000000001";
+  const FB_NOW = new Date();
+  // 親の環境を継承しない。エージェント判定の変数は各ケースが明示したものだけにする
+  const childEnv = (home: string, extra: Record<string, string>) => ({
+    PATH: process.env["PATH"] ?? "",
+    HOME: home,
+    ...extra,
+  });
+  const runFeedback = (
+    deps: RunLearningsCliDeps,
+    extra: Record<string, string>,
+  ) =>
+    spawnSync("bun", [CLI_PATH, "feedback", FB_ID, "mistimed", "--at=pre"], {
+      cwd: deps.cwd,
+      env: childEnv(deps.home, extra),
+      encoding: "utf8",
+    });
+  const prepare = async (deps: RunLearningsCliDeps) => {
+    strictEqual((await runLearningsCli(["init"], deps)).exitCode, 0);
+    const injections = join(store(deps), ".state/injections.log");
+    writeFileSync(
+      injections,
+      `${JSON.stringify({
+        v: 1,
+        at: FB_NOW.toISOString(),
+        repoKey: "github.com/foo/bar",
+        id: FB_ID,
+        kind: "pre",
+        trigger: "cmd:git commit",
+      })}\n`,
+    );
+  };
+  const claudeLog = (deps: RunLearningsCliDeps) =>
+    join(store(deps), ".state/feedback.log");
+  const codexLog = (deps: RunLearningsCliDeps) =>
+    join(store(deps), ".state/codex/feedback.log");
+  const cases: Array<{
+    name: string;
+    env: Record<string, string>;
+    reader: "claude" | "codex" | "unknown";
+  }> = [
+    { name: "CLAUDECODE", env: { CLAUDECODE: "1" }, reader: "claude" },
+    { name: "AI_AGENT=codex", env: { AI_AGENT: "codex" }, reader: "codex" },
+    {
+      name: "AI_AGENT and CLAUDECODE: CLAUDECODE wins",
+      env: { AI_AGENT: "1", CLAUDECODE: "1" },
+      reader: "claude",
+    },
+    {
+      name: "CODEX_SANDBOX and CLAUDECODE: the sandbox wins",
+      env: { CODEX_SANDBOX: "seatbelt", CLAUDECODE: "1" },
+      reader: "codex",
+    },
+    { name: "no agent variable", env: {}, reader: "unknown" },
+    {
+      name: "the real Claude Code shape",
+      env: { AI_AGENT: "claude-code_x", CLAUDECODE: "1" },
+      reader: "claude",
+    },
+  ];
+  for (const c of cases) {
+    it(`reader ${c.reader} for ${c.name}`, () =>
+      withEnv(async (deps) => {
+        await prepare(deps);
+        const r = runFeedback(deps, c.env);
+        strictEqual(r.status, 0, r.stderr);
+        const path = c.reader === "codex" ? codexLog(deps) : claudeLog(deps);
+        ok(readFileSync(path, "utf8").includes(`"reader":"${c.reader}"`));
+        const other = c.reader === "codex" ? claudeLog(deps) : codexLog(deps);
+        strictEqual(existsSync(other), false);
+      }));
+  }
+});

@@ -1,5 +1,13 @@
 import { deepStrictEqual, ok, strictEqual } from "node:assert";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
@@ -12,8 +20,11 @@ import {
   COMMON_KEY,
   type LearningEntry,
 } from "../../lib/agent-learnings/core/learnings-file.ts";
+import { parseInjectionLines } from "../../lib/agent-learnings/core/metrics.ts";
 import {
   defaultStoreDir,
+  ensureStateDirs,
+  storePaths,
   writeLearnings,
 } from "../../lib/agent-learnings/core/store.ts";
 
@@ -38,6 +49,7 @@ function setup(entries: LearningEntry[], common: LearningEntry[] = []) {
   const store = defaultStoreDir(home);
   mkdirSync(join(store, ".git"), { recursive: true });
   mkdirSync(join(store, "repos"), { mode: 0o700 });
+  ensureStateDirs(store);
   ok(
     writeLearnings(store, { format: 1, key: KEY, readOnly: false, entries }).ok,
   );
@@ -180,4 +192,78 @@ describe("buildSceneContext", () => {
       Buffer.byteLength(text),
     );
   });
+});
+
+describe("buildSceneContext injection records", () => {
+  const injectionsOf = (home: string) =>
+    parseInjectionLines(
+      readFileSync(storePaths(defaultStoreDir(home)).injectionsLog, "utf8"),
+    ).lines;
+  it("ends the text with the feedback hint for the kind", () => {
+    const home = setup([entry(1, "cmd:git commit")]);
+    const text = buildSceneContext({
+      ...base(home),
+      kind: "pre",
+      command: "git commit",
+    });
+    ok(text?.split("\n").at(-1)?.includes("--at=pre"));
+  });
+  it("records one line per injected learning with the matched trigger, and none for a suppressed repeat", () => {
+    const home = setup([entry(1, "cmd:git commit"), entry(2, "cmd:git")]);
+    const input = {
+      ...base(home),
+      kind: "pre" as const,
+      command: "git commit -m x",
+    };
+    ok(buildSceneContext(input));
+    const lines = injectionsOf(home);
+    strictEqual(lines.length, 2);
+    deepStrictEqual(
+      lines.map((l) => [l.id, l.kind, l.trigger, l.repoKey]).sort(),
+      [
+        ["L-000000000001", "pre", "cmd:git commit", KEY],
+        ["L-000000000002", "pre", "cmd:git", KEY],
+      ],
+    );
+    strictEqual(buildSceneContext(input), null);
+    strictEqual(injectionsOf(home).length, 2);
+  });
+  it("still returns the text when injections.log is a symlink", () => {
+    const home = setup([entry(1, "cmd:git commit")]);
+    const paths = storePaths(defaultStoreDir(home));
+    mkdirSync(paths.state, { recursive: true });
+    const target = join(home, "target.log");
+    symlinkSync(target, paths.injectionsLog);
+    ok(
+      buildSceneContext({ ...base(home), kind: "pre", command: "git commit" }),
+    );
+    strictEqual(existsSync(target), false);
+  });
+  it(
+    "returns the text and keeps .injected when .state is read-only",
+    { skip: process.getuid?.() === 0 },
+    () => {
+      const home = setup([entry(1, "cmd:git commit")]);
+      const paths = storePaths(defaultStoreDir(home));
+      mkdirSync(paths.state, { recursive: true });
+      chmodSync(paths.state, 0o500);
+      try {
+        const input = {
+          ...base(home),
+          kind: "pre" as const,
+          command: "git commit",
+        };
+        ok(buildSceneContext(input)?.includes("title 1"));
+        ok(
+          readFileSync(
+            join(sceneStateDir(home), "sess1.injected"),
+            "utf8",
+          ).includes("L-000000000001"),
+        );
+        strictEqual(buildSceneContext(input), null);
+      } finally {
+        chmodSync(paths.state, 0o700);
+      }
+    },
+  );
 });

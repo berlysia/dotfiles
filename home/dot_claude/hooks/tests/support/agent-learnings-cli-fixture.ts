@@ -29,6 +29,7 @@ export async function withEnv(
     readerEnv: undefined,
     isTty: true,
     agentEnv: false,
+    feedbackReader: "unknown",
     lockWaitMs: 200,
     runGit,
     confirm: async () => true,
