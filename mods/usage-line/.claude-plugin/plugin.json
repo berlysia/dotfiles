@@ -1,0 +1,6 @@
+{
+  "name": "usage-line",
+  "version": "0.1.0",
+  "description": "Shows context use, the 5-hour and weekly rate-limit use, and when each would reach 100%, on one line under the prompt.",
+  "types": "./types/index.d.ts"
+}
