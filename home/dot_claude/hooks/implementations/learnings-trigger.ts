@@ -3,6 +3,7 @@
 import { buildSceneContext } from "../lib/agent-learnings/claude/scene-context.ts";
 import { createRunGit, type RunGit } from "../lib/agent-learnings/core/git.ts";
 import { getHomeDir } from "../lib/path-utils.ts";
+import { readStdinLimited } from "../lib/read-stdin-limited.ts";
 
 /**
  * PreToolUse (Bash / Edit / Write / MultiEdit / NotebookEdit) and
@@ -99,40 +100,9 @@ export function run(input: unknown, deps: TriggerDeps): TriggerOutput | null {
   }
 }
 
-// stdin を 1MB まで読む。超過・エラー・watchdog は null（何も出さない）。
-// timer は unref し、終わったら必ず消す
-function readStdin(): Promise<string | null> {
-  return new Promise((resolve) => {
-    const chunks: Buffer[] = [];
-    let size = 0;
-    let settled = false;
-    const finish = (value: string | null) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      process.stdin.removeAllListeners("data");
-      process.stdin.removeAllListeners("end");
-      process.stdin.removeAllListeners("error");
-      if (value === null) process.stdin.destroy();
-      resolve(value);
-    };
-    const timer = setTimeout(() => finish(null), WATCHDOG_MS);
-    timer.unref();
-    process.stdin.on("data", (chunk: Buffer) => {
-      size += chunk.length;
-      if (size > MAX_STDIN_BYTES) return finish(null);
-      chunks.push(chunk);
-    });
-    process.stdin.on("end", () =>
-      finish(Buffer.concat(chunks).toString("utf8")),
-    );
-    process.stdin.on("error", () => finish(null));
-  });
-}
-
 if (import.meta.main) {
   try {
-    const raw = await readStdin();
+    const raw = await readStdinLimited(MAX_STDIN_BYTES, WATCHDOG_MS);
     if (raw !== null) {
       const output = run(JSON.parse(raw), {
         home: getHomeDir(),

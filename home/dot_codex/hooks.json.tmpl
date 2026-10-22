@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^(Bash|apply_patch)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/codex-learnings-trigger.ts",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

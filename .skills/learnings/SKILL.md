@@ -122,6 +122,8 @@ Codex の sandbox は store 本体に書き込めない。そのため `add` と
 - このとき出力されるのは `R-` で始まる依頼 id で、学びの id（`L-`）ではない。`remove` には使えない
 - 依頼は Claude 側で再検査され、通らなければ拒否される。理由は `agent-learnings status` が案内する場所に残る
 - inbox 経由では common.md の項目を消せない
+- Codex でも `on` が当たった学びがコマンドの直前と `apply_patch` の直前に出る。失敗の直後と開始時の注入は記録しないので、その場面の `feedback`（`--at=fail`・`--at=session`）は受理されない
+- Codex で hook を有効にするには、Codex の `/hooks` で `codex-learnings-trigger.ts` の hook を信頼する必要がある（信頼するまで場面の学びは出ない）
 
 ## 読むときの注意
 

@@ -13,6 +13,8 @@ export const REPO_ROOT = fileURLToPath(
   new URL("../../../../../", import.meta.url),
 );
 export const TMPL_REL = "home/dot_claude/.settings.hooks.json.tmpl";
+// Codex の hook 登録も同じ implementations を指す。参照元として一緒に走査する
+export const CODEX_TMPL_REL = "home/dot_codex/hooks.json.tmpl";
 export const IMPL_PREFIX = "home/dot_claude/hooks/implementations/";
 export const PREFIX = "{{ .chezmoi.homeDir }}/.claude/hooks/implementations/";
 
@@ -87,7 +89,9 @@ export function nonCanonicalRefs(raw: string): string[] {
   return bad;
 }
 
-export const raw = readFileSync(`${REPO_ROOT}${TMPL_REL}`, "utf-8");
+export const raw = [TMPL_REL, CODEX_TMPL_REL]
+  .map((rel) => readFileSync(`${REPO_ROOT}${rel}`, "utf-8"))
+  .join("\n");
 export const CANON = `${PREFIX}discord-notification.ts`;
 
 export const mutate = (from: string, to: string): string => {

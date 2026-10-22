@@ -17,8 +17,11 @@ import {
   getDistillHealthNotice,
   getUnreadDigestPreview,
 } from "../lib/insight-digest.ts";
-import { sceneStateDir } from "../lib/agent-learnings/claude/scene-context.ts";
-import { gcSceneState } from "../lib/agent-learnings/core/scene-state.ts";
+import {
+  gcSceneState,
+  SCENE_STATE_READERS,
+  sceneStateDir,
+} from "../lib/agent-learnings/core/scene-state.ts";
 import { getLearningsHealthNotice } from "../lib/agent-learnings/claude/health.ts";
 import {
   buildSessionLearningsContext,
@@ -367,10 +370,15 @@ const hook = defineHook({
         } catch (error) {
           console.error(`agent-learnings worker start failed: ${error}`);
         }
-        try {
-          gcSceneState(sceneStateDir(getHomeDir()), new Date());
-        } catch (error) {
-          console.error(`agent-learnings scene state gc failed: ${error}`);
+        // reader ごとに state の置き場が違う。片方の失敗でもう片方を止めない
+        for (const reader of SCENE_STATE_READERS) {
+          try {
+            gcSceneState(sceneStateDir(getHomeDir(), reader), new Date());
+          } catch (error) {
+            console.error(
+              `agent-learnings scene state gc failed (${reader}): ${error}`,
+            );
+          }
         }
         try {
           const learningsHealth = getLearningsHealthNotice({

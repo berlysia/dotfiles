@@ -11,16 +11,14 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
-import {
-  buildSceneContext,
-  sceneStateDir,
-} from "../../lib/agent-learnings/claude/scene-context.ts";
+import { buildSceneContext } from "../../lib/agent-learnings/claude/scene-context.ts";
 import type { RunGit } from "../../lib/agent-learnings/core/git.ts";
 import {
   COMMON_KEY,
   type LearningEntry,
 } from "../../lib/agent-learnings/core/learnings-file.ts";
 import { parseInjectionLines } from "../../lib/agent-learnings/core/metrics.ts";
+import { sceneStateDir } from "../../lib/agent-learnings/core/scene-state.ts";
 import {
   defaultStoreDir,
   ensureStateDirs,
@@ -181,7 +179,7 @@ describe("buildSceneContext", () => {
     });
     ok(text);
     const lines = readFileSync(
-      join(sceneStateDir(home), "sess1.injected"),
+      join(sceneStateDir(home, "claude"), "sess1.injected"),
       "utf8",
     )
       .trim()
@@ -267,7 +265,7 @@ describe("buildSceneContext injection records", () => {
         ok(buildSceneContext(input)?.includes("title 1"));
         ok(
           readFileSync(
-            join(sceneStateDir(home), "sess1.injected"),
+            join(sceneStateDir(home, "claude"), "sess1.injected"),
             "utf8",
           ).includes("L-000000000001"),
         );

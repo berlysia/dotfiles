@@ -9,7 +9,7 @@ import {
   appendCache,
   ensureSceneDir,
 } from "../../lib/agent-learnings/core/scene-state.ts";
-import { sceneStateDir } from "../../lib/agent-learnings/claude/scene-context.ts";
+import { sceneStateDir } from "../../lib/agent-learnings/core/scene-state.ts";
 import {
   bashInput,
   learning,
@@ -30,7 +30,7 @@ after(() => removeWorld(world));
 
 describe("learnings-trigger process latency", () => {
   it(`p95 over ${RUNS} runs with 40 entries and a warm cache is <= ${P95_LIMIT_MS} ms`, () => {
-    const stateDir = sceneStateDir(world.home);
+    const stateDir = sceneStateDir(world.home, "claude");
     ok(ensureSceneDir(stateDir));
     const cwd = realpathSync(world.repo);
     const samples: number[] = [];

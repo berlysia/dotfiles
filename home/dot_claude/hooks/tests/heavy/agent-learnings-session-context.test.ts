@@ -169,23 +169,26 @@ describe("buildSessionLearningsContext start-time filter", () => {
 });
 
 describe("session.ts SessionStart state GC", () => {
-  it("removes scene state older than 7 days and keeps newer files", () => {
+  it("removes scene state older than 7 days under both the claude and codex state dirs", () => {
     const root = mkdtempSync(join(tmpdir(), "agent-learnings-gc-"));
     try {
       const repoRoot = join(
         dirname(fileURLToPath(import.meta.url)),
         "../../../../..",
       );
-      const dir = join(root, ".claude/state/agent-learnings");
-      mkdirSync(dir, { recursive: true, mode: 0o700 });
-      const old = join(dir, "sess-old.injected");
-      const fresh = join(dir, "sess-new.injected");
-      writeFileSync(old, "");
-      writeFileSync(fresh, "");
       const day = 24 * 60 * 60;
       const nowSec = Date.now() / 1000;
-      utimesSync(old, nowSec - 8 * day, nowSec - 8 * day);
-      utimesSync(fresh, nowSec - 6 * day, nowSec - 6 * day);
+      const files = (["claude", "codex"] as const).map((reader) => {
+        const dir = join(root, `.${reader}/state/agent-learnings`);
+        mkdirSync(dir, { recursive: true, mode: 0o700 });
+        const old = join(dir, "sess-old.injected");
+        const fresh = join(dir, "sess-new.injected");
+        writeFileSync(old, "");
+        writeFileSync(fresh, "");
+        utimesSync(old, nowSec - 8 * day, nowSec - 8 * day);
+        utimesSync(fresh, nowSec - 6 * day, nowSec - 6 * day);
+        return { old, fresh };
+      });
       writeFileSync(join(root, "envfile"), "");
       const env = { ...process.env, HOME: root };
       delete env.DOCUMENT_WORKFLOW_DIR;
@@ -208,8 +211,10 @@ describe("session.ts SessionStart state GC", () => {
           timeout: 30_000,
         },
       );
-      strictEqual(existsSync(old), false);
-      strictEqual(existsSync(fresh), true);
+      for (const { old, fresh } of files) {
+        strictEqual(existsSync(old), false);
+        strictEqual(existsSync(fresh), true);
+      }
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

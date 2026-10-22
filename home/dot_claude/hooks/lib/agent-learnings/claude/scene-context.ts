@@ -2,15 +2,11 @@ import { feedbackHint } from "../core/render.ts";
 import type { RunGit } from "../core/git.ts";
 import { injectScene } from "../core/scene-inject.ts";
 import { cmdSituations, pathSituation } from "../core/scene.ts";
-import { sceneStateDir as coreSceneStateDir } from "../core/scene-state.ts";
+import { sceneStateDir } from "../core/scene-state.ts";
 import { defaultStoreDir } from "../core/store.ts";
 import { isWorkerSession } from "./worker-guard.ts";
 
 export const MAIN_AGENT = "main";
-
-// 既存の呼び出し（SessionStart の GC・テスト）のための Claude 側の別名
-export const sceneStateDir = (home: string): string =>
-  coreSceneStateDir(home, "claude");
 
 export type SceneEvent =
   | { kind: "pre" | "fail"; command: string }
@@ -33,7 +29,7 @@ export function buildSceneContext(
     if (isWorkerSession(input.env ?? process.env)) return null;
     const agent = input.agentId ?? MAIN_AGENT;
     return injectScene({
-      stateDir: sceneStateDir(input.home),
+      stateDir: sceneStateDir(input.home, "claude"),
       store: defaultStoreDir(input.home),
       cwd: input.cwd,
       sessionId: input.sessionId,

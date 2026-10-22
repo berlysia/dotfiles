@@ -1,0 +1,5 @@
+{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "true"}, "cwd": "/tmp/tmp.rDYMsACDRn", "session_id": "01a16273-26c8-76f1-9229-5417cafa289a"}
+{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "false"}, "cwd": "/tmp/tmp.rDYMsACDRn", "session_id": "01a16273-26c8-76f1-9229-5417cafa289a"}
+{"hook_event_name": "PreToolUse", "tool_name": "apply_patch", "tool_input": {"command": "*** Begin Patch\n*** Delete File: /tmp/tmp.rDYMsACDRn/a.txt\n*** Add File: /tmp/tmp.rDYMsACDRn/a.txt\n+bye\n*** End Patch"}, "cwd": "/tmp/tmp.rDYMsACDRn", "session_id": "01a16273-26c8-76f1-9229-5417cafa289a"}
+{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "cat a.txt"}, "cwd": "/tmp/tmp.rDYMsACDRn", "session_id": "01a16273-26c8-76f1-9229-5417cafa289a"}
+{"hook_event_name": "PreToolUse", "tool_name": "apply_patch", "tool_input": {"command": "*** Begin Patch\n*** Update File: /tmp/tmp.rDYMsACDRn/a.txt\n@@\n-hello\n+bye\n*** End Patch"}, "cwd": "/tmp/tmp.rDYMsACDRn", "session_id": "01a16273-26c8-76f1-9229-5417cafa289a"}
