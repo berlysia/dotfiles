@@ -55,10 +55,6 @@ merge と `chezmoi apply` の後、`agent-learnings show --grep=zzz-nomatch` が
 
 注入の記録に reader を足したのは 2026-10-22 の配備から。それより前の記録は reader を持たず、評価の受理の根拠として、どの reader の評価でも受け付けている（ADR-0042 の受け入れたリスク）。14 日の窓から古い記録が出る 2026-11-05 以降に、評価の reader が `claude` か `codex` のときは reader の無い記録を受理の根拠から外す。
 
-## Codex の hook の名前
-
-Codex の `/hooks` で、配った hook が「No name hook」と表示された。`~/.codex/hooks.json`（`home/dot_codex/hooks.json.tmpl`）に、Codex が表示に使う名前の項目（公式ドキュメントの `statusMessage` など）を足す。codex-cli 0.163.0 では、script の中身を変えても信頼は残った。設定の項目を足したときに信頼し直しが要るかは確かめていないので、足した後に Codex の `/hooks` で状態を見る
-
 ## `appendReadLog` の書き込みの硬さ
 
 `core/store.ts` の既存の `appendReadLog` は `O_NONBLOCK` と通常ファイルの確認を持たない。書き先の `reads.log` が FIFO に差し替えられると、開く時点で止まりうる。新しい `appendLogLines`（注入と評価のログ）は `O_NONBLOCK`・`fstat` の通常ファイル確認・4MB の上限を持つので、`appendReadLog` も同じ書き方に揃えるか、`appendLogLines` へ寄せる。
