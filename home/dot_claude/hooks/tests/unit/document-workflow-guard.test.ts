@@ -7,14 +7,18 @@ import {
   mkdtempSync,
   readFileSync,
   realpathSync,
+  rmSync,
   symlinkSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import documentWorkflowGuardHook from "../../implementations/document-workflow-guard.ts";
+import documentWorkflowGuardHook, {
+  judgeDeliveryPolicyWrite,
+} from "../../implementations/document-workflow-guard.ts";
+import { buildDeliveryPolicyQuestion } from "../../lib/delivery-policy.ts";
 import {
   buildApprovalQuestionText,
   buildApprovalQuestions,
@@ -1943,5 +1947,211 @@ describe("document-workflow-guard.ts AskUserQuestion (spec K4)", () => {
         { session_id: "../bad" },
       )
     ).assertDeny();
+  });
+});
+
+describe("document-workflow-guard.ts delivery-policy protection", () => {
+  const envHelper = new EnvironmentHelper();
+  const hook = documentWorkflowGuardHook;
+  const home = userInfo().homedir;
+  const cleanups: string[] = [];
+
+  beforeEach(() => {
+    const repo = realpathSync(createWorkflowRepo(pendingWorkflowRepo()));
+    cleanups.push(repo);
+    envHelper.set("DOCUMENT_WORKFLOW_DIR", TEST_WORKFLOW_DIR);
+    envHelper.set("CLAUDE_TEST_CWD", repo);
+  });
+  afterEach(() => {
+    envHelper.restore();
+    for (const dir of cleanups.splice(0)) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  async function call(tool: string, input: unknown) {
+    const ctx = createPreToolUseContextFor(hook, tool as never, input);
+    await invokeRun(hook, ctx);
+    return ctx;
+  }
+
+  it("denies Write / Edit / MultiEdit / NotebookEdit into the ledger, the hooks, settings and the wrapper", async () => {
+    (
+      await call("Write", {
+        file_path: `${home}/.claude/state/delivery-policy/ledger.jsonl`,
+        content: "x",
+      })
+    ).assertDeny();
+    (
+      await call("Edit", {
+        file_path: "~/.claude/hooks/lib/delivery-policy.ts",
+        old_string: "a",
+        new_string: "b",
+      })
+    ).assertDeny();
+    (
+      await call("MultiEdit", {
+        file_path: "~/.claude/settings.json",
+        edits: [{ old_string: "a", new_string: "b" }],
+      })
+    ).assertDeny();
+    (
+      await call("NotebookEdit", {
+        notebook_path: "~/.local/bin/delivery-policy",
+        new_source: "x",
+      })
+    ).assertDeny();
+  });
+
+  it("denies the config and dependencies the wrapper's bun reads", async () => {
+    (
+      await call("Write", { file_path: "~/.bunfig.toml", content: "x" })
+    ).assertDeny();
+    (
+      await call("Edit", {
+        file_path: "~/.claude/node_modules/cc-hooks-ts/index.ts",
+        old_string: "a",
+        new_string: "b",
+      })
+    ).assertDeny();
+    (
+      await call("Write", {
+        file_path: "~/.config/mise/config.toml",
+        content: "x",
+      })
+    ).assertDeny();
+  });
+
+  it("judges a symlinked target by where it leads, and refuses a dangling one", () => {
+    const fakeHome = realpathSync(
+      mkdtempSync(join(tmpdir(), "dp-guard-home-")),
+    );
+    const elsewhere = realpathSync(
+      mkdtempSync(join(tmpdir(), "dp-guard-else-")),
+    );
+    cleanups.push(fakeHome, elsewhere);
+    mkdirSync(join(fakeHome, ".claude", "state", "delivery-policy"), {
+      recursive: true,
+    });
+    symlinkSync(
+      join(fakeHome, ".claude", "state", "delivery-policy"),
+      join(elsewhere, "link"),
+    );
+    ok(
+      judgeDeliveryPolicyWrite(
+        "Write",
+        { file_path: join(elsewhere, "link", "ledger.jsonl") },
+        elsewhere,
+        fakeHome,
+      ) !== null,
+    );
+    symlinkSync(join(fakeHome, "nowhere", "x"), join(elsewhere, "dangling"));
+    ok(
+      judgeDeliveryPolicyWrite(
+        "Write",
+        { file_path: join(elsewhere, "dangling") },
+        elsewhere,
+        fakeHome,
+      ) !== null,
+    );
+    strictEqual(
+      judgeDeliveryPolicyWrite(
+        "Write",
+        { file_path: join(elsewhere, "plain.txt") },
+        elsewhere,
+        fakeHome,
+      ),
+      null,
+    );
+  });
+
+  it("denies a path that expands against HOME when HOME is changed", () => {
+    const fakeHome = realpathSync(
+      mkdtempSync(join(tmpdir(), "dp-guard-home-")),
+    );
+    cleanups.push(fakeHome);
+    envHelper.set("HOME", "/tmp/not-the-home");
+    ok(
+      judgeDeliveryPolicyWrite(
+        "Write",
+        { file_path: join(fakeHome, ".claude/hooks/x.ts") },
+        "/",
+        fakeHome,
+      ) !== null,
+    );
+    ok(
+      judgeDeliveryPolicyWrite(
+        "Write",
+        { file_path: "~/.claude/hooks/x.ts" },
+        "/",
+        fakeHome,
+      ) !== null,
+    );
+  });
+
+  it("denies Bash that writes the ledger however the path is spelled", async () => {
+    const user = userInfo().username;
+    for (const command of [
+      "echo x >> ~/.claude/state/delivery-policy/ledger.jsonl",
+      "echo x >> $HOME/.claude/state/delivery-policy/ledger.jsonl",
+      `echo x >> /home/${user}/.claude/state/delivery-policy/ledger.jsonl`,
+      "~/.local/bin/delivery-policy show; echo x >> ~/.claude/state/delivery-policy/ledger.jsonl",
+    ]) {
+      (await call("Bash", { command })).assertDeny();
+    }
+  });
+
+  it("lets show, ask and merge <N> through, and nothing else that names the wrapper", async () => {
+    (
+      await call("Bash", { command: "~/.local/bin/delivery-policy merge 12" })
+    ).assertSuccess({});
+    (
+      await call("Bash", { command: "~/.local/bin/delivery-policy show" })
+    ).assertSuccess({});
+    (
+      await call("Bash", { command: "~/.local/bin/delivery-policy ask" })
+    ).assertSuccess({});
+    for (const command of [
+      "~/.local/bin/delivery-policy merge 12 > /tmp/o",
+      "~/.local/bin/delivery-policy merge 12 extra",
+      "~/.local/bin/delivery-policy merge 0",
+      "~/.local/bin/delivery-policy merge 12; ls",
+      "cat ~/.local/bin/delivery-policy",
+    ]) {
+      (await call("Bash", { command })).assertDeny();
+    }
+  });
+
+  it("does not touch a command that only contains the word", async () => {
+    (
+      await call("Bash", {
+        command:
+          "bun test home/dot_claude/hooks/tests/unit/delivery-policy.test.ts",
+      })
+    ).assertSuccess({});
+  });
+
+  it("denies a Delivery policy question that carries answers or annotations, allows one without", async () => {
+    const questions = buildDeliveryPolicyQuestion(
+      "a/b",
+      "https://github.com/a/b",
+    );
+    const key = (questions[0] as { question: string }).question;
+    (
+      await call("AskUserQuestion", { questions, answers: { [key]: "merge" } })
+    ).assertDeny();
+    (
+      await call("AskUserQuestion", { questions, annotations: {} })
+    ).assertDeny();
+    (await call("AskUserQuestion", { questions })).assertSuccess({});
+  });
+
+  it("denies when judging throws", async () => {
+    const input = {
+      get file_path(): string {
+        throw new Error("boom");
+      },
+    };
+    (await call("Write", input)).assertDeny();
   });
 });

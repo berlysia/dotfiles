@@ -14,6 +14,7 @@ import {
   type DecisionRow,
   type PreflightFacts,
 } from "../../lib/ask-preflight.ts";
+import { buildDeliveryPolicyQuestion } from "../../lib/delivery-policy.ts";
 import { buildApprovalQuestions } from "../../lib/workflow-approval.ts";
 
 function ask(question: string, labels: string[] = ["A", "B"], extra = {}) {
@@ -121,6 +122,17 @@ describe("judgeAskPreflight: what passes", () => {
     assert.deepEqual(judgeAskPreflight(facts({ questions })), {
       kind: "pass",
       reason: "approval-question",
+    });
+  });
+
+  it("passes a Delivery policy question built by delivery-policy ask", () => {
+    const questions = buildDeliveryPolicyQuestion(
+      "berlysia/dotfiles",
+      "https://github.com/berlysia/dotfiles",
+    );
+    assert.deepEqual(judgeAskPreflight(facts({ questions })), {
+      kind: "pass",
+      reason: "delivery-policy-question",
     });
   });
 

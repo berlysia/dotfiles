@@ -124,6 +124,11 @@
         {
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/approval-answer-recorder.ts"
+        },
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/delivery-policy-recorder.ts",
+          "timeout": 15
         }
       ]
     },
