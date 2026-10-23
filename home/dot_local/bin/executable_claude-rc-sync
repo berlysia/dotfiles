@@ -2,6 +2,11 @@
 # Make running claude-rc@*.service instances match ~/.config/claude-rc/projects.
 #   claude-rc-sync          enable/start listed projects, disable/stop unlisted ones
 #   claude-rc-sync status   show state of every instance
+#   claude-rc-sync restart [name...]
+#                           restart listed instances (all listed when no name is given)
+#                           to pick up edited flags or a new claude binary. Their live
+#                           sessions drop; the server resumes the main-directory session at
+#                           start and a worktree session when it next gets a message
 set -euo pipefail
 
 list="${CLAUDE_RC_PROJECTS:-$HOME/.config/claude-rc/projects}"
@@ -29,6 +34,45 @@ if [[ "${1:-}" == "status" ]]; then
   for n in $(printf '%s\n' "${listed[@]}" "${enabled[@]}" | sort -u); do
     printf '%-24s %s\n' "$n" "$(systemctl --user is-active "claude-rc@$n.service" || true)"
   done
+  exit 0
+fi
+
+if [[ "${1:-}" == "restart" ]]; then
+  shift
+  targets=("$@")
+  ((${#targets[@]})) || targets=("${listed[@]}")
+  for n in "${targets[@]}"; do
+    # Without this check systemd would instantiate the template for a typo and
+    # claude-rc-launch would only report it in the journal.
+    if [[ ! " ${listed[*]} " == *" $n "* ]]; then
+      echo "claude-rc-sync: '$n' is not in $list" >&2
+      exit 1
+    fi
+  done
+  systemctl --user daemon-reload
+  units=()
+  self=""
+  for n in "${targets[@]}"; do
+    unit="claude-rc@$n.service"
+    systemctl --user reset-failed "$unit" 2>/dev/null || true
+    # Spawned sessions live in the unit's cgroup, so restarting it from one of
+    # them kills this script before a blocking restart returns.
+    if grep -qF "/$unit" /proc/self/cgroup 2>/dev/null; then
+      self="$unit"
+    else
+      units+=("$unit")
+    fi
+  done
+  # One call lets systemd stop the servers in parallel; each takes up to ~40s to
+  # wind down its sessions, so restarting them one by one adds up to minutes.
+  if ((${#units[@]})); then
+    echo "restart: ${units[*]}"
+    systemctl --user restart "${units[@]}"
+  fi
+  if [[ -n "$self" ]]; then
+    echo "restart: $self (queued last; this shell runs inside it and will be killed)"
+    systemctl --user restart --no-block "$self"
+  fi
   exit 0
 fi
 
