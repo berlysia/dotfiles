@@ -22,8 +22,8 @@ auto = true
 credential_command = "gh auth token"
 
 [tools]
-bun = "1.4.3"
-deno = "2.9.7"
+bun = "1.4.4"
+deno = "2.9.8"
 direnv = "2.38.2"
 fzf = "0.74.5" # Fuzzy finder - migrated from chezmoi external
 gitleaks = "8.30.1"
