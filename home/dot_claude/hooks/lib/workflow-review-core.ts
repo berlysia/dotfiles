@@ -834,6 +834,20 @@ export function isReviewCompletePendingApproval(
   return true;
 }
 
+/**
+ * The rules for writing the approval summary, in one place. The review hook's
+ * reminder and `workflow-cli ask-approval` both print these lines, so the rule
+ * cannot drift between the two. Fixed text only: nothing from a document may be
+ * interpolated into it.
+ */
+export const APPROVAL_SUMMARY_RULE_LINES: readonly string[] = [
+  "要約の読み手は何も覚えていない（自分の最後の発言さえ確かでない）と仮定し、要約だけで読めるように書く。事実は文書・オーダー・オーダー以降の利用者の発言・この session のレビューと triage の出力から写して足さず、作業ツリー・ブランチ・session-id は書く直前に確かめる。",
+  "前提は毎回、古い順に書く: どの作業か（文書の題・作業ツリー・ブランチ・session-id 先頭 8 桁）、オーダーの引用か親 spec の決定、オーダー以降に文書を直させた発言（1 件 1 行、原文から）、それを今の本文のどこにどう反映したか。どの項目も『変わりません』で済ませない。",
+  "『進めて』のような中身の無い発言は引かず、長い発言は要点の 1 文を原文から抜いて省いた所を…とする。該当が無ければ無いと、発言が session に残っていなければ確認できないと書き（圧縮の要約は引かない）、環境の値が取れなければ題だけ書く。",
+  "K-id・タスク番号・関数名などの ID は、指す中身（文書の定義か、読んで確かめた働き）を添え、性質や保証は書かない。確かめていなければ ID を出さず文書の言葉で書き、行に収まらなければ ID を減らす（Key Decisions の理由は減らさない）。",
+  "Key Decisions は決定ごとに 1-2 行で 5 件まで、採用と却下それぞれの理由を書く。レビューで変えた点の指摘の中身と、triage で除外した指摘とその理由は、それぞれ別の 1-2 行に書く（多ければ主なものと件数）。",
+];
+
 export function buildSummaryReminder(planPath: string): string {
   return [
     "[plan-review-automation] Review complete (verdict=pass). MANDATORY: Present Executive Summary to user before requesting approval.",
@@ -843,20 +857,21 @@ export function buildSummaryReminder(planPath: string): string {
     "You MUST present the following Executive Summary format in your next response to the user:",
     "",
     "## Executive Summary (Review Request)",
-    "- **前提**: <plan-N.md は親 spec の K-id / Scope、spec.md と単層 plan.md は元のオーダーの引用>",
+    "- **前提**: <どの作業か（文書の題・作業ツリー・ブランチ・session-id）→ spec.md と単層 plan.md は元のオーダーの引用、plan-N.md は親 spec の K-id / Scope → オーダー以降の発言と、その反映>",
     "- **目指す状態**: <Goal。plan-N.md は担う K の完了像>",
     "- **今の状態**: <research.md で観察した現状>",
     "- **やり方**: <方針と Tasks の順、途中の確認点>",
     "- **確かめ方**: <テスト計画の「入力 → 期待結果」の主なもの。spec.md は選んだ品質特性>",
-    "(先頭の 5 項目はこの順に、前の項目を受けて 1-2 行ずつ書く)",
+    "(先頭の 5 項目はこの順に、前の項目を受けて書く。前提以外は 1-2 行ずつ)",
     "- **Scope**: <変更予定ファイル/モジュールを最大5件>",
-    "- **Key Decisions**: <採用した設計判断と、却下した代替案を1-2行ずつ>",
+    "- **Key Decisions**: <決定ごとに 1-2 行で 5 件まで、採用と却下した代替案、それぞれの理由。レビューで変えた点と triage で除外した指摘は別の行>",
     "- **Risks / Unknowns**: <既知リスク・未検証の前提・影響範囲の広い箇所>",
     "- **Review Status**: verdict / reviewers / hash from auto-review marker",
     "- **Open Questions**: <ユーザー判断を仰ぎたい点（なければ N/A）>",
     "- **Next Action**: 続けて出す承認の質問で文書を選んでください / 議論したいときは Esc でキャンセルしてチャットし、済んだら `approve` / 追加修正を依頼してください",
     "",
-    "Copy each field from the document and the original order; 無い主張を足さない. Do NOT skip any field (use N/A if not applicable).",
+    ...APPROVAL_SUMMARY_RULE_LINES,
+    "無い項目は N/A と書く。",
   ].join("\n");
 }
 
