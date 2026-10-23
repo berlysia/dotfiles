@@ -1,6 +1,8 @@
 ---
 name: visual-eli
 description: "Explain a topic, piece of code, concept, or error for one fixed reader: a visually-oriented high school student who reasons logically and is curious. Leads with a figure chosen to fit the idea (a table, a Mermaid diagram, an ASCII sketch, or a local HTML page with SVG, Canvas, or 3D when the idea is spatial or moves), walks the cause-and-effect chain without skipping steps, names the real terms, and marks every simplification. Use when the user says 'ELI5', 'explain like I'm', 'dumb it down', 'break this down', 'simplify this', 'かみくだいて', '噛み砕いて', '図解して', '図で説明して', '高校生でも分かるように', or invokes /visual-eli. Do NOT use when the user names a different audience (a manager, a child, a specific person) or wants a document, a crash course, or a tutorial as the deliverable — use explainer for those."
+requires-skills: [stop-describing-ui]
+requires-skills-before: ["Write(**/*.html)"]
 ---
 
 # visual-eli

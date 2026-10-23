@@ -1,0 +1,2 @@
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: /home/user/.claude/skills/pr-description\n\n# PR body guide\n\nBody trimmed for the fixture."}]},"sessionId":"fixture0"}
+{"type":"user","isMeta":null,"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_fixture","content":"Base directory for this skill: /home/user/.claude/skills/koncise\n\n# not a load"}]},"sessionId":"fixture0"}
