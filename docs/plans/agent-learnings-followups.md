@@ -59,6 +59,17 @@ merge と `chezmoi apply` の後、`agent-learnings show --grep=zzz-nomatch` が
 
 `core/store.ts` の既存の `appendReadLog` は `O_NONBLOCK` と通常ファイルの確認を持たない。書き先の `reads.log` が FIFO に差し替えられると、開く時点で止まりうる。新しい `appendLogLines`（注入と評価のログ）は `O_NONBLOCK`・`fstat` の通常ファイル確認・4MB の上限を持つので、`appendReadLog` も同じ書き方に揃えるか、`appendLogLines` へ寄せる。
 
+## SessionStart の所要時間の退行を知らせる
+
+health 通知の性能テスト（`tests/perf/agent-learnings-health.test.ts`）は、CI の runner で測れる量だけを見る。4MB/1MB の比と、p95 250 ms の退行の上限である。利用者の機械での SessionStart の所要時間は、CI では見ていない。行あたりの費用が runner によって約 2.2〜2.9 倍未満に上がる退行も、CI を通る。
+
+その時間は `~/.claude/logs/hook-timing.jsonl` に残り、`hook-timing` で集計できる。ただし、閾値を超えても知らせは出ない。標本も少ない（2026-10-23 時点で `session.ts` は 6 件、p50 63 ms、p95 309 ms）。
+
+やること:
+
+- 標本が増えてから、`session.ts` の SessionStart の所要時間の分布を見る。
+- 予算を超えたときに知らせる仕組みを作るかを決める。予算は、その分布から決める。
+
 ## 開始時の記録の確認
 
 場面の注入・注入の記録・feedback は Claude と Codex の両方で配備後に確かめたが、開始時の経路は配備の後のセッションの開始でしか見られない。次のセッションの開始時に、`injections.log` に `kind: session`・`reader: claude` の行（trigger は `session` か `untagged`）が描画した件数だけ増えるか、注入文の末尾に「他に N 件」の行と `--at=session` の案内が付くかを見る。確認のために返した評価（L-17458db07f49 の `mistimed` と、Codex からの `helpful`）が 2026-11-05 まで集計に残る
