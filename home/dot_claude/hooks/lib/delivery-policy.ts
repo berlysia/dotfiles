@@ -293,7 +293,8 @@ export function createGh(cwd: string): Gh {
           cwd,
           encoding: "utf8",
           maxBuffer: 16 * 1024 * 1024,
-          timeout: options?.timeoutMs ?? 30_000,
+          // execFile throws ERR_OUT_OF_RANGE for a non-integer timeout.
+          timeout: Math.max(1, Math.floor(options?.timeoutMs ?? 30_000)),
           env: {
             ...process.env,
             GH_PROMPT_DISABLED: "1",

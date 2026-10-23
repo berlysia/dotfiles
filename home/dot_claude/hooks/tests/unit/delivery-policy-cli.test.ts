@@ -399,6 +399,21 @@ describe("delivery-policy CLI", () => {
     assert.ok(timeouts.some((t) => t !== undefined && t < 10_000));
   });
 
+  it("per-call timeouts are positive integers even when the monotonic clock has fractions", async () => {
+    // performance.now() returns fractional milliseconds; execFile rejects a
+    // non-integer timeout with ERR_OUT_OF_RANGE, which ended a real run with 40.
+    record("merge");
+    world.checkRuns = [
+      { name: "status-check", status: "IN_PROGRESS", conclusion: null },
+    ];
+    mono = 1000.617;
+    ghCost = 9000.383;
+    assert.equal(await run("merge", "5"), 10);
+    assert.ok(timeouts.length > 0);
+    for (const t of timeouts)
+      assert.ok(t !== undefined && Number.isInteger(t) && t >= 1, `${t}`);
+  });
+
   it("a wait that started exactly 20 minutes ago is 12; one second less is 10", async () => {
     record("merge");
     world.checkRuns = [];
