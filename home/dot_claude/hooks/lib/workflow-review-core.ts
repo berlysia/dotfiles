@@ -19,6 +19,11 @@ import {
   PLAN_NORMALIZERS,
   SPEC_NORMALIZERS,
 } from "./document-hash.ts";
+import {
+  type ExtensionApprover,
+  formatExtensionLogLine,
+  sanitizeExtensionReason,
+} from "./round-extension-log.ts";
 import { isProseOnlyChange } from "./workflow-files.ts";
 import {
   type AutoReviewMarker,
@@ -93,8 +98,8 @@ export type RoundBudgetPhase =
   | "reframer-review"
   | "human-only";
 
-/** Who took responsibility for continuing past a cap; recorded in the log. */
-export type ExtensionApprover = "human" | "self" | "reframer";
+export type { ExtensionApprover };
+export { formatExtensionLogLine, sanitizeExtensionReason };
 
 /**
  * Phase of the review cycle from the number of rounds already used in it.
@@ -172,9 +177,11 @@ export function formatRoundBudgetGuidance(
   switch (phase) {
     case "self-extendable":
       return [
-        "Continue only if a landing is in sight: (1) the latest round has no blocker verdict, (2) the remaining findings can be fixed without changing Key Decisions or the Alternatives section, (3) the findings are narrower than the previous round's (fewer non-pass reviewers, or the same count with more localized findings rather than a recurrence).",
-        `If so, run \`workflow-cli round ${docName} --self-extend --reason "non-pass N→M; remaining: <summary>"\` (up to Round ${ROUND_SELF_CAP}).`,
-        `Otherwise present the Executive Summary with unresolved findings and ask the human. Only if the human tells you to continue, run \`workflow-cli round ${docName} --extend --reason "<their instruction>"\`.`,
+        "Continue on your own judgment; the human is not asked at this stage. Record why with a cause:",
+        "landing = the remaining findings can be fixed without changing Key Decisions or the Alternatives section; not-narrowing = the findings are not narrower than the previous round's (fewer non-pass reviewers, or more localized findings rather than a recurrence); blocker = the latest verdict is blocker; kd-changed = Key Decisions or the Alternatives section changed since the last round (use with --full).",
+        "The CLI checks blocker against the latest verdict and kd-changed against the sections; landing and not-narrowing are taken as you state them.",
+        `Run \`workflow-cli round ${docName} --self-extend --cause <landing|kd-changed|blocker|not-narrowing> --reason "non-pass N→M; remaining: <summary>"\` (up to Round ${ROUND_SELF_CAP}).`,
+        `Only if the human has told you to continue, \`workflow-cli round ${docName} --extend --reason "<their instruction>"\` also works.`,
       ].join(" ");
     case "reframer-review": {
       const recordFile = getReframerReviewFileName(docName);
@@ -192,46 +199,6 @@ export function formatRoundBudgetGuidance(
         `Only if the human tells you to continue, run \`workflow-cli round ${docName} --extend --reason "<their instruction>"\`.`,
       ].join(" ");
   }
-}
-
-function isSeparatorOrControl(code: number): boolean {
-  return (
-    code <= 0x1f ||
-    (code >= 0x7f && code <= 0x9f) ||
-    code === 0x2028 ||
-    code === 0x2029
-  );
-}
-
-const EXTENSION_REASON_MAX_LENGTH = 500;
-
-/**
- * Keep an extension reason on one log line. The reason is free text that may
- * echo document content, so control characters and line separators become a
- * single space each (no column or line forgery), then the text is trimmed and
- * capped. Guards the 1-line / 5-column shape only, not the approver column's
- * truthfulness.
- */
-export function sanitizeExtensionReason(reason: string): string {
-  let flattened = "";
-  for (const char of reason) {
-    flattened += isSeparatorOrControl(char.codePointAt(0) ?? 0) ? " " : char;
-  }
-  return flattened.trim().slice(0, EXTENSION_REASON_MAX_LENGTH).trim();
-}
-
-/**
- * One `round-extensions.log` line: `<ISO8601>\t<doc>\t<round>\t<approver>\t<reason>`.
- * The approver sits before the free-text reason so the reason stays last.
- */
-export function formatExtensionLogLine(entry: {
-  at: Date;
-  doc: string;
-  round: number;
-  approver: ExtensionApprover;
-  reason: string;
-}): string {
-  return `${entry.at.toISOString()}\t${entry.doc}\t${entry.round}\t${entry.approver}\t${sanitizeExtensionReason(entry.reason)}`;
 }
 
 /**

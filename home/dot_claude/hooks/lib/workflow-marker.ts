@@ -127,3 +127,24 @@ export function setApprovalStatusLine(
   if (!line.test(content)) return null;
   return content.replace(line, `- Approval Status: ${value}`);
 }
+
+/**
+ * The newest auto-review marker after the last `verdict=pass` marker (the
+ * current review cycle), or null when the cycle has none. A marker without
+ * `round=` still counts: only the position after the last pass matters.
+ */
+export function latestMarkerAfterLastPass(
+  content: string,
+): AutoReviewMarker | null {
+  const markers = content.match(REVIEW_MARKER_REGEX) ?? [];
+  let lastPassIndex = -1;
+  for (let i = markers.length - 1; i >= 0; i--) {
+    if (/\bverdict=pass\b/.test(markers[i] ?? "")) {
+      lastPassIndex = i;
+      break;
+    }
+  }
+  const latest = markers[markers.length - 1];
+  if (markers.length - 1 <= lastPassIndex || latest === undefined) return null;
+  return parseLatestAutoReviewMarker(latest);
+}

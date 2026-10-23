@@ -32,6 +32,7 @@ import {
   listApprovalCandidates,
   readWorkflowState,
 } from "../../lib/workflow-gate.ts";
+import { computeDecisionSectionsHash } from "../../lib/design-baseline.ts";
 import { resolveWorkflowPaths } from "../../lib/workflow-paths.ts";
 import {
   formatRoundBudgetHeadline,
@@ -282,7 +283,8 @@ describe("workflow-cli: round", () => {
     assert.equal(r.exitCode, 1);
     assert.ok(r.stderr.includes(formatRoundBudgetHeadline("self-extendable")));
     assert.match(r.stderr, /--extend --reason/);
-    assert.match(r.stderr, /--self-extend --reason/);
+    assert.match(r.stderr, /--self-extend --cause/);
+    assert.doesNotMatch(r.stderr, /ask the human/);
     assert.doesNotMatch(
       readFileSync(join(wf, "plan-1.md"), "utf-8"),
       /Round 4/,
@@ -357,7 +359,10 @@ describe("workflow-cli: round", () => {
       /## Reviewer Outputs \(Round 4\)/,
     );
     const log = readFileSync(join(wf, "round-extensions.log"), "utf-8");
-    assert.match(log, /^2026-.*\tplan-1\.md\t4\thuman\tuser: continue once$/m);
+    assert.match(
+      log,
+      /^2026-.*\tplan-1\.md\t4\thuman\tuser: continue once\t-$/m,
+    );
   });
 });
 
@@ -377,6 +382,8 @@ const deps = (wf: string) => ({
 
 const runRound = (wf: string, ...args: string[]) =>
   runWorkflowCli(["round", PLAN, ...args], deps(wf));
+
+const SELF_LANDING = ["--self-extend", "--cause", "landing"] as const;
 
 const readDoc = (wf: string) => readFileSync(join(wf, PLAN), "utf-8");
 const readLog = (wf: string) => {
@@ -448,7 +455,7 @@ function seedReframed(seed: ReframedSeed): string {
 type Call = "plain" | "self" | "reframer" | "human";
 const CALL_ARGS: Record<Call, string[]> = {
   plain: [],
-  self: ["--self-extend", "--reason", "x"],
+  self: ["--self-extend", "--cause", "landing", "--reason", "x"],
   reframer: ["--reframer-extend", "--reason", "x"],
   human: ["--extend", "--reason", "x"],
 };
@@ -512,9 +519,10 @@ describe("workflow-cli: staged round budget matrix", () => {
             assert.doesNotMatch(r.stdout, /extended beyond/);
           } else {
             const approver = APPROVER_OF[call];
+            const cause = call === "self" ? "landing" : "-";
             assert.match(
               log.trimEnd().split("\n").at(-1) ?? "",
-              new RegExp(`\\t${round + 1}\\t${approver}\\tx$`),
+              new RegExp(`\\t${round + 1}\\t${approver}\\tx\\t${cause}$`),
             );
           }
         } else {
@@ -538,7 +546,14 @@ describe("workflow-cli: extension wording and logging", () => {
   it("self extension names the budget and self cap, logs `self`", () => {
     const wf = seedReframed({ round: ROUND_BUDGET });
     const reason = "non-pass 2→1; remaining: x";
-    const r = runRound(wf, "--self-extend", "--reason", reason);
+    const r = runRound(
+      wf,
+      "--self-extend",
+      "--cause",
+      "not-narrowing",
+      "--reason",
+      reason,
+    );
     assert.equal(r.exitCode, 0, r.stderr);
     assert.ok(
       r.stdout.includes(
@@ -549,7 +564,7 @@ describe("workflow-cli: extension wording and logging", () => {
     assert.match(
       readLog(wf),
       new RegExp(
-        `^\\d{4}-\\d{2}-\\d{2}T.*\\tplan-1\\.md\\t4\\tself\\t${reason}$`,
+        `^\\d{4}-\\d{2}-\\d{2}T.*\\tplan-1\\.md\\t4\\tself\\t${reason}\\tnot-narrowing$`,
         "m",
       ),
     );
@@ -570,7 +585,7 @@ describe("workflow-cli: extension wording and logging", () => {
     );
     assert.match(
       readLog(wf),
-      /\t7\treframer\treframer: \(a\) x; rejected: y$/m,
+      /\t7\treframer\treframer: \(a\) x; rejected: y\t-$/m,
     );
   });
 
@@ -583,14 +598,28 @@ describe("workflow-cli: extension wording and logging", () => {
     assert.ok(r.stderr.includes("reframer-review.plan-1.md"));
   });
 
-  it("flattens a multi-line reason into one 5-column log line", () => {
+  it("flattens a multi-line reason into one 6-column log line", () => {
     const wf = seedReframed({ round: ROUND_BUDGET });
-    const r = runRound(wf, "--self-extend", "--reason", "a\tb\nc");
+    const r = runRound(wf, ...SELF_LANDING, "--reason", "a\tb\nc");
     assert.equal(r.exitCode, 0, r.stderr);
     const lines = readLog(wf).trimEnd().split("\n");
     assert.equal(lines.length, 1);
-    assert.match(lines[0] ?? "", /\t4\tself\ta b c$/);
-    assert.equal((lines[0] ?? "").split("\t").length, 5);
+    assert.match(lines[0] ?? "", /\t4\tself\ta b c\tlanding$/);
+    assert.equal((lines[0] ?? "").split("\t").length, 6);
+  });
+
+  it("keeps the log to 6 columns for NEL, CRLF and tab inside the reason", () => {
+    const wf = seedReframed({ round: ROUND_BUDGET });
+    const r = runRound(
+      wf,
+      ...SELF_LANDING,
+      "--reason",
+      "a\u0085b\r\nc\td\u2028e",
+    );
+    assert.equal(r.exitCode, 0, r.stderr);
+    const lines = readLog(wf).trimEnd().split("\n");
+    assert.equal(lines.length, 1);
+    assert.equal((lines[0] ?? "").split("\t").length, 6);
   });
 });
 
@@ -695,26 +724,26 @@ describe("workflow-cli: cycle resets and the per-cycle consultation round", () =
   });
   it("3 rounds in cycle: --self-extend works after a pass", () => {
     const wf = seedReframed({ round: 6, passRound: 3 });
-    const r = runRound(wf, "--self-extend", "--reason", "x");
+    const r = runRound(wf, ...SELF_LANDING, "--reason", "x");
     assert.equal(r.exitCode, 0, r.stderr);
-    assert.match(readLog(wf), /\t7\tself\tx$/m);
+    assert.match(readLog(wf), /\t7\tself\tx\tlanding$/m);
   });
   it("5 rounds in cycle: --self-extend works after a pass", () => {
     const wf = seedReframed({ round: 8, passRound: 3 });
-    const r = runRound(wf, "--self-extend", "--reason", "x");
+    const r = runRound(wf, ...SELF_LANDING, "--reason", "x");
     assert.equal(r.exitCode, 0, r.stderr);
-    assert.match(readLog(wf), /\t9\tself\tx$/m);
+    assert.match(readLog(wf), /\t9\tself\tx\tlanding$/m);
   });
   it("6 in cycle: self is refused, a reframer extension citing round pass+6 works", () => {
     const wf = seedReframed({ round: 9, passRound: 3, sectionRound: 9 });
-    const self = runRound(wf, "--self-extend", "--reason", "x");
+    const self = runRound(wf, ...SELF_LANDING, "--reason", "x");
     assert.equal(self.exitCode, 1);
     assert.ok(
       self.stderr.includes(`Round self cap reached (${ROUND_SELF_CAP})`),
     );
     const r = runRound(wf, "--reframer-extend", "--reason", "x");
     assert.equal(r.exitCode, 0, r.stderr);
-    assert.match(readLog(wf), /\t10\treframer\tx$/m);
+    assert.match(readLog(wf), /\t10\treframer\tx\t-$/m);
   });
   it("6 in cycle: a section from the previous cycle's entry round is refused", () => {
     const wf = seedReframed({
@@ -794,16 +823,16 @@ describe("workflow-cli: argument validation for round", () => {
     );
     assert.match(r.stderr, /use only one of/);
   });
-  it("refuses --self-extend / --reframer-extend with --full", () => {
+  it("refuses --self-extend --full on plan-N.md (no decision sections) and --reframer-extend with --full", () => {
     const self = runRound(
       seedReframed({ round: 3 }),
-      "--self-extend",
+      ...SELF_LANDING,
       "--full",
       "--reason",
       "x",
     );
     assert.equal(self.exitCode, 1);
-    assert.match(self.stderr, /cannot be combined with --full/);
+    assert.match(self.stderr, /--full/);
     const reframer = runRound(
       seedReframed({ round: 6, sectionRound: 6 }),
       "--reframer-extend",
@@ -821,21 +850,19 @@ describe("workflow-cli: argument validation for round", () => {
       0,
     );
   });
-  it("fixes the order of checks: flag count, --full, reason, then phase", () => {
+  it("fixes the order of checks: flag count, cause and --full, reason, then phase", () => {
     const wf3 = seedReframed({ round: 3 });
     assert.match(
       runRound(wf3, "--self-extend", "--extend").stderr,
       /use only one of/,
     );
-    assert.match(
-      runRound(wf3, "--self-extend", "--full").stderr,
-      /cannot be combined with --full/,
-    );
+    assert.match(runRound(wf3, "--self-extend", "--full").stderr, /--cause/);
+    assert.match(runRound(wf3, ...SELF_LANDING, "--full").stderr, /--full/);
     for (const round of [2, 9]) {
       const wf = seedReframed({ round });
       assert.match(
-        runRound(wf, "--self-extend", "--full", "--reason", "x").stderr,
-        /cannot be combined with --full/,
+        runRound(wf, ...SELF_LANDING, "--full", "--reason", "x").stderr,
+        /--full/,
       );
     }
     assert.match(
@@ -852,16 +879,344 @@ describe("workflow-cli: argument validation for round", () => {
   it("refuses empty or whitespace-only reasons on every extension flag", () => {
     const wf = seedReframed({ round: 3 });
     const attempts: string[][] = [
-      ["--self-extend"],
-      ["--self-extend", "--reason", "   "],
+      [...SELF_LANDING],
+      [...SELF_LANDING, "--reason", "   "],
       ["--extend", "--reason", "   "],
-      ["--self-extend", "--reason", "\n"],
+      [...SELF_LANDING, "--reason", "\n"],
     ];
     for (const args of attempts) {
       const r = runRound(wf, ...args);
       assert.equal(r.exitCode, 1, args.join(" "));
       assert.match(r.stderr, /--reason/);
     }
+  });
+});
+
+const KD_OLD = "- K1: original decision";
+const KD_NEW = "- K1: changed decision";
+
+const roundHeadings = (rounds: number) =>
+  Array.from(
+    { length: rounds },
+    (_, i) => `## Reviewer Outputs (Round ${i + 1})\n`,
+  ).join("\n");
+
+const reviewMarker = (verdict: string, round: number) =>
+  `<!-- auto-review: verdict=${verdict}; hash=x; round=${round}; at=z; reviewers=a -->`;
+
+const decisionDoc = (kd: string, rounds: number, markers: string[] = []) =>
+  [
+    "## Key Decisions",
+    kd,
+    "",
+    "## Alternative Approaches (Greenfield View)",
+    "- alt",
+    "",
+    roundHeadings(rounds),
+    "## Approval",
+    "- Plan Status: complete",
+    "- Review Status: pending",
+    "- Approval Status: pending",
+    "",
+    ...markers,
+    "",
+  ].join("\n");
+
+const hashOf = (doc: string) => {
+  const hash = computeDecisionSectionsHash(doc);
+  assert.ok(hash !== null);
+  return hash;
+};
+
+const SPEC = "spec.md";
+
+/** A spec.md whose cycle has `rounds` rounds; baseline names the KD text recorded at the last round. */
+function seedSpec(options: {
+  rounds: number;
+  kd?: string;
+  markers?: string[];
+  baselineKd?: string | null;
+  doc?: string;
+}): string {
+  const wf = mkdtempSync(join(tmpdir(), "workflow-cause-"));
+  const doc = options.doc ?? SPEC;
+  const content = decisionDoc(
+    options.kd ?? KD_OLD,
+    options.rounds,
+    options.markers ?? [],
+  );
+  writeFileSync(join(wf, doc), content);
+  if (options.baselineKd !== null && options.baselineKd !== undefined) {
+    writeFileSync(
+      join(wf, ".design-baseline"),
+      `${doc}\t${options.rounds}\t${hashOf(decisionDoc(options.baselineKd, 0))}\n`,
+    );
+  }
+  return wf;
+}
+
+const runSpec = (wf: string, ...args: string[]) =>
+  runWorkflowCli(["round", SPEC, ...args], deps(wf));
+const baselineLines = (wf: string) => {
+  const p = join(wf, ".design-baseline");
+  return existsSync(p)
+    ? readFileSync(p, "utf-8").trimEnd().split("\n").filter(Boolean)
+    : [];
+};
+const NEEDS_WORK = [reviewMarker("needs-work", 3)];
+
+describe("workflow-cli: round --cause", () => {
+  it("accepts a landing self-extension and records cause and baseline", () => {
+    const wf = seedSpec({ rounds: 3, markers: NEEDS_WORK, baselineKd: KD_OLD });
+    const r = runSpec(wf, ...SELF_LANDING, "--reason", "x");
+    assert.equal(r.exitCode, 0, r.stderr);
+    assert.match(readLog(wf), /\tspec\.md\t4\tself\tx\tlanding$/m);
+    const lines = baselineLines(wf);
+    assert.equal(lines.length, 2);
+    assert.match(
+      lines.at(-1) ?? "",
+      new RegExp(`^spec\\.md\t4\t${hashOf(decisionDoc(KD_OLD, 0))}$`),
+    );
+  });
+
+  it("refuses a bare round in the self stage with guidance that never says to ask the human", () => {
+    const wf = seedSpec({ rounds: 3, markers: NEEDS_WORK, baselineKd: KD_OLD });
+    const r = runSpec(wf);
+    assert.equal(r.exitCode, 1);
+    assert.doesNotMatch(r.stderr, /ask the human/);
+    assert.match(r.stderr, /--self-extend --cause/);
+  });
+
+  it("recovers from the pre-change invocation: refuses with the four causes and writes nothing", () => {
+    const wf = seedSpec({ rounds: 3, markers: NEEDS_WORK, baselineKd: KD_OLD });
+    const before = baselineLines(wf).length;
+    const r = runSpec(wf, "--self-extend", "--reason", "x");
+    assert.equal(r.exitCode, 1);
+    assert.match(r.stderr, /--cause/);
+    for (const cause of ["landing", "kd-changed", "blocker", "not-narrowing"]) {
+      assert.ok(r.stderr.includes(cause), cause);
+    }
+    assert.match(r.stderr, /--reason/);
+    assert.equal(readLog(wf), "");
+    assert.equal(baselineLines(wf).length, before);
+    assert.doesNotMatch(readFileSync(join(wf, SPEC), "utf-8"), /Round 4/);
+  });
+
+  it("refuses an unknown cause", () => {
+    const wf = seedSpec({ rounds: 3, markers: NEEDS_WORK, baselineKd: KD_OLD });
+    const r = runSpec(wf, "--self-extend", "--cause", "foo", "--reason", "x");
+    assert.equal(r.exitCode, 1);
+    assert.match(r.stderr, /foo/);
+  });
+
+  it("refuses --extend and --reframer-extend that carry --cause", () => {
+    const wf = seedSpec({ rounds: 3, markers: NEEDS_WORK, baselineKd: KD_OLD });
+    for (const flag of ["--extend", "--reframer-extend"]) {
+      const r = runSpec(wf, flag, "--cause", "landing", "--reason", "x");
+      assert.equal(r.exitCode, 1, flag);
+      assert.match(r.stderr, /--cause/);
+    }
+    assert.equal(readLog(wf), "");
+  });
+
+  it("refuses a landing cause when the latest verdict is blocker, writing nothing", () => {
+    const wf = seedSpec({
+      rounds: 3,
+      markers: [reviewMarker("blocker", 3)],
+      baselineKd: KD_OLD,
+    });
+    const r = runSpec(wf, ...SELF_LANDING, "--reason", "x");
+    assert.equal(r.exitCode, 1);
+    assert.match(r.stderr, /blocker/);
+    assert.equal(readLog(wf), "");
+    assert.equal(baselineLines(wf).length, 1);
+  });
+
+  it("accepts blocker with --full when the decision sections also changed", () => {
+    const wf = seedSpec({
+      rounds: 3,
+      kd: KD_NEW,
+      markers: [reviewMarker("blocker", 3)],
+      baselineKd: KD_OLD,
+    });
+    const r = runSpec(
+      wf,
+      "--self-extend",
+      "--cause",
+      "blocker",
+      "--full",
+      "--reason",
+      "x",
+    );
+    assert.equal(r.exitCode, 0, r.stderr);
+    assert.match(readLog(wf), /\tblocker$/m);
+  });
+
+  it("accepts kd-changed with --full and moves the baseline to the new hash", () => {
+    const wf = seedSpec({
+      rounds: 3,
+      kd: KD_NEW,
+      markers: NEEDS_WORK,
+      baselineKd: KD_OLD,
+    });
+    const r = runSpec(
+      wf,
+      "--self-extend",
+      "--cause",
+      "kd-changed",
+      "--full",
+      "--reason",
+      "x",
+    );
+    assert.equal(r.exitCode, 0, r.stderr);
+    assert.match(
+      baselineLines(wf).at(-1) ?? "",
+      new RegExp(`\\t${hashOf(decisionDoc(KD_NEW, 0))}$`),
+    );
+    assert.match(readFileSync(join(wf, SPEC), "utf-8"), /Round 4/);
+  });
+
+  it("refuses landing after the decision sections changed, leaving the baseline alone", () => {
+    const wf = seedSpec({
+      rounds: 3,
+      kd: KD_NEW,
+      markers: NEEDS_WORK,
+      baselineKd: KD_OLD,
+    });
+    const r = runSpec(wf, ...SELF_LANDING, "--reason", "x");
+    assert.equal(r.exitCode, 1);
+    assert.match(r.stderr, /kd-changed/);
+    assert.equal(baselineLines(wf).length, 1);
+    assert.equal(readLog(wf), "");
+  });
+
+  it("refuses kd-changed when only whitespace changed", () => {
+    const wf = seedSpec({
+      rounds: 3,
+      kd: `${KD_OLD}   \n\n`,
+      markers: NEEDS_WORK,
+      baselineKd: KD_OLD,
+    });
+    const r = runSpec(
+      wf,
+      "--self-extend",
+      "--cause",
+      "kd-changed",
+      "--reason",
+      "x",
+    );
+    assert.equal(r.exitCode, 1);
+  });
+
+  it("with no baseline line, accepts kd-changed --full as a claim and starts the baseline", () => {
+    const wf = seedSpec({
+      rounds: 3,
+      kd: KD_NEW,
+      markers: NEEDS_WORK,
+      baselineKd: null,
+    });
+    const r = runSpec(
+      wf,
+      "--self-extend",
+      "--cause",
+      "kd-changed",
+      "--full",
+      "--reason",
+      "x",
+    );
+    assert.equal(r.exitCode, 0, r.stderr);
+    assert.equal(baselineLines(wf).length, 1);
+  });
+
+  it("an unreadable baseline line refuses kd-changed with the recovery steps, but landing passes", () => {
+    const wf = seedSpec({ rounds: 3, markers: NEEDS_WORK, baselineKd: null });
+    writeFileSync(join(wf, ".design-baseline"), "spec.md\tbroken\n");
+    const refused = runSpec(
+      wf,
+      "--self-extend",
+      "--cause",
+      "kd-changed",
+      "--reason",
+      "x",
+    );
+    assert.equal(refused.exitCode, 1);
+    assert.match(refused.stderr, /\.design-baseline/);
+    assert.match(refused.stderr, /delete/);
+    assert.equal(runSpec(wf, ...SELF_LANDING, "--reason", "x").exitCode, 0);
+  });
+
+  it("a bare round inside the budget records a baseline line and an unchanged .round-baseline format", () => {
+    const wf = seedSpec({ rounds: 1, baselineKd: null });
+    const r = runSpec(wf);
+    assert.equal(r.exitCode, 0, r.stderr);
+    assert.equal(baselineLines(wf).length, 1);
+    assert.match(
+      readFileSync(join(wf, ".round-baseline"), "utf-8"),
+      /^2\t\d{4}-/m,
+    );
+    assert.equal(readLog(wf), "");
+  });
+
+  it("--self-extend --cause inside the budget validates the cause but writes no extension row", () => {
+    const wf = seedSpec({ rounds: 1, baselineKd: KD_OLD });
+    assert.equal(runSpec(wf, ...SELF_LANDING, "--reason", "x").exitCode, 0);
+    assert.equal(readLog(wf), "");
+    const bad = runSpec(wf, "--self-extend", "--cause", "foo", "--reason", "x");
+    assert.equal(bad.exitCode, 1);
+  });
+
+  it("--extend and --reframer-extend writes a baseline line (spec.md)", () => {
+    const wf = seedSpec({ rounds: 3, markers: NEEDS_WORK, baselineKd: KD_OLD });
+    assert.equal(runSpec(wf, "--extend", "--reason", "x").exitCode, 0);
+    assert.equal(baselineLines(wf).length, 2);
+    assert.match(readLog(wf), /\thuman\tx\t-$/m);
+  });
+
+  it("never writes .design-baseline for plan-N.md, on any path", () => {
+    const wf = seedReframed({ round: 3 });
+    assert.equal(runRound(wf, "--extend", "--reason", "x").exitCode, 0);
+    const within = seedReframed({ round: 1 });
+    assert.equal(runRound(within).exitCode, 0);
+    const self = seedReframed({ round: 3 });
+    assert.equal(runRound(self, ...SELF_LANDING, "--reason", "x").exitCode, 0);
+    const reframer = seedReframed({ round: 6, sectionRound: 6 });
+    assert.equal(
+      runRound(reframer, "--reframer-extend", "--reason", "x").exitCode,
+      0,
+    );
+    for (const dir of [wf, within, self, reframer]) {
+      assert.equal(existsSync(join(dir, ".design-baseline")), false);
+    }
+  });
+
+  it("a failing baseline write keeps the round and explains the recovery on stderr", () => {
+    const wf = seedSpec({ rounds: 3, markers: NEEDS_WORK, baselineKd: null });
+    mkdirSync(join(wf, ".design-baseline"));
+    const r = runSpec(wf, ...SELF_LANDING, "--reason", "x");
+    assert.equal(r.exitCode, 0, r.stderr);
+    assert.match(r.stderr, /\.design-baseline/);
+    assert.match(r.stderr, /kd-changed/);
+    assert.match(readFileSync(join(wf, SPEC), "utf-8"), /Round 4/);
+  });
+
+  it("a failing extension-log write keeps the round and says the count will be one short", () => {
+    const wf = seedSpec({ rounds: 3, markers: NEEDS_WORK, baselineKd: KD_OLD });
+    mkdirSync(join(wf, "round-extensions.log"));
+    const r = runSpec(wf, ...SELF_LANDING, "--reason", "x");
+    assert.equal(r.exitCode, 0, r.stderr);
+    assert.match(r.stderr, /round-extensions\.log|延長の記録|extension/);
+    assert.match(readFileSync(join(wf, SPEC), "utf-8"), /Round 4/);
+  });
+
+  it("a rejected round after an accepted one leaves the baseline lines as they were", () => {
+    const wf = seedSpec({
+      rounds: 3,
+      kd: KD_NEW,
+      markers: NEEDS_WORK,
+      baselineKd: KD_OLD,
+    });
+    runSpec(wf, ...SELF_LANDING, "--reason", "x");
+    assert.equal(baselineLines(wf).length, 1);
   });
 });
 
@@ -1667,6 +2022,89 @@ describe("workflow-cli: ask-approval and approval route", () => {
       ]),
     });
     assert.match(r.stderr, /\[approval-answer-recorder\]/);
+  });
+
+  const EXT_AT = "2026-10-01T00:00:00.000Z";
+  const extLog = [
+    `${EXT_AT}\tspec.md\t4\thuman\told reason`,
+    `${EXT_AT}\tspec.md\t5\tself\tfive columns`,
+    `${EXT_AT}\tspec.md\t6\tself\tr\tblocker`,
+    `${EXT_AT}\tspec.md\t7\tself\tr\tlanding`,
+    `${EXT_AT}\tspec.md\t8\treframer\tr\t-`,
+    "",
+    `${EXT_AT}\tspec.md\t9\tself\tr\tlanding\textra`,
+    `${EXT_AT}\tspec.md\t10\tself\tr\t-`,
+    `${EXT_AT}\tspec.md\t11\thuman\tr\tlanding`,
+    `${EXT_AT}\tplan-1.md\t4\tself\tr\tlanding`,
+  ].join("\n");
+  const SPEC_LINE =
+    "spec.md: 延長: human 1 / self 3（landing 1、kd-changed 0、blocker 1、not-narrowing 0、不明 1）/ reframer 1";
+
+  it("ask-approval prints the extension counts on stderr only, leaving stdout byte-identical", () => {
+    const { wf } = approvalRepo(1);
+    const without = run(["ask-approval"], wf);
+    assert.doesNotMatch(without.stderr, /延長:/);
+    writeFileSync(join(wf, "round-extensions.log"), extLog);
+    const withLog = run(["ask-approval"], wf);
+    assert.equal(withLog.exitCode, 0, withLog.stderr);
+    assert.equal(withLog.stdout, without.stdout);
+    assert.ok(withLog.stderr.includes(SPEC_LINE), withLog.stderr);
+    assert.ok(
+      withLog.stderr.includes(
+        "plan-1.md: 延長: human 0 / self 1（landing 1、kd-changed 0、blocker 0、not-narrowing 0、不明 0）/ reframer 0",
+      ),
+      withLog.stderr,
+    );
+  });
+
+  it("counts only rows above the document's last pass round", () => {
+    const { wf } = approvalRepo(0);
+    writeFileSync(join(wf, "round-extensions.log"), extLog);
+    const spec = readFileSync(join(wf, "spec.md"), "utf-8");
+    writeFileSync(
+      join(wf, "spec.md"),
+      `${spec}\n<!-- auto-review: verdict=pass; hash=x; round=7; at=z; reviewers=a -->\n`,
+    );
+    const r = run(["status"], wf);
+    assert.ok(
+      r.stdout.includes(
+        "spec.md: 延長: human 0 / self 0（landing 0、kd-changed 0、blocker 0、not-narrowing 0、不明 0）/ reframer 1",
+      ),
+      r.stdout,
+    );
+  });
+
+  it("status prints the same counts on stdout and ignores broken rows", () => {
+    const { wf } = approvalRepo(1);
+    assert.doesNotMatch(run(["status"], wf).stdout, /延長:/);
+    writeFileSync(join(wf, "round-extensions.log"), extLog);
+    const r = run(["status"], wf);
+    assert.equal(r.exitCode, 0, r.stderr);
+    assert.ok(r.stdout.includes(SPEC_LINE), r.stdout);
+    assert.ok(r.stdout.includes("plan-1.md: 延長:"), r.stdout);
+  });
+
+  it("prints no counts line when the log has no extension for the document", () => {
+    const { wf } = approvalRepo(1);
+    writeFileSync(join(wf, "round-extensions.log"), "\n\ngarbage\n");
+    const r = run(["status"], wf);
+    assert.equal(r.exitCode, 0);
+    assert.doesNotMatch(r.stdout, /延長:/);
+  });
+
+  it("does not change the gate verdict or the approval records when the log is rewritten", () => {
+    const { wf } = approvalRepo(1);
+    const before = run(["status"], wf).stdout;
+    writeFileSync(join(wf, "round-extensions.log"), extLog);
+    writeFileSync(join(wf, ".design-baseline"), "spec.md\tbroken\n");
+    const after = run(["status"], wf).stdout;
+    assert.equal(
+      after
+        .split("\n")
+        .filter((l) => !l.includes("延長:"))
+        .join("\n"),
+      before,
+    );
   });
 
   it("adds the delegation question when spec.md has a Scope that can be delegated", () => {
