@@ -169,6 +169,16 @@ describe("delivery-policy-recorder", () => {
     assert.deepEqual(ledgerLines(), []);
   });
 
+  it("records when annotations carry no notes (the client sends annotations on plain answers)", async () => {
+    for (const annotations of [{}, { q: { preview: "p" } }]) {
+      await fire({ ...answered("merge"), annotations });
+    }
+    assert.deepEqual(
+      ledgerLines().map((l) => JSON.parse(l).scope),
+      ["merge", "merge"],
+    );
+  });
+
   it("does not record when the question names another repo than the cwd's", async () => {
     const other = questions("someone/else");
     const { output } = await fire({

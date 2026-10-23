@@ -193,3 +193,39 @@ exit 1
     });
   },
 );
+
+// The guard ran its hook before module-level consts further down the file were
+// initialized (top-level await), so every Edit was refused with a
+// ReferenceError. Unit tests import the module fully first and cannot see it.
+const GUARD = join(HOOKS_DIR, "implementations", "document-workflow-guard.ts");
+
+describe(
+  "document-workflow-guard entry",
+  { skip: !hasBun && "bun is not on PATH" },
+  () => {
+    it("does not refuse an ordinary Edit when started as a process", () => {
+      const dir = freshDir("dp-guard-cwd-");
+      const input = {
+        session_id: "s",
+        transcript_path: join(dir, "t.jsonl"),
+        cwd: dir,
+        hook_event_name: "PreToolUse",
+        tool_use_id: "t1",
+        tool_name: "Edit",
+        tool_input: {
+          file_path: join(dir, "README.md"),
+          old_string: "a",
+          new_string: "b",
+        },
+      };
+      const r = spawnSync("bun", [GUARD], {
+        cwd: HOOKS_DIR,
+        input: JSON.stringify(input),
+        encoding: "utf8",
+      });
+      assert.equal(r.status, 0, r.stderr);
+      assert.doesNotMatch(r.stdout, /"permissionDecision":"deny"/, r.stdout);
+      assert.doesNotMatch(r.stdout, /ReferenceError/, r.stdout);
+    });
+  },
+);

@@ -1083,11 +1083,6 @@ function dedupe(values: string[]): string[] {
 
 export default hook;
 
-if (import.meta.main) {
-  const { runHook } = await import("cc-hooks-ts");
-  await runHook(hook);
-}
-
 const DELIVERY_POLICY_WRITE_TOOLS = new Set([
   "Write",
   "Edit",
@@ -1327,4 +1322,11 @@ function contentAfterWrite(
         : content.replace(edit.old_string, () => replacement);
   }
   return content;
+}
+
+// Kept last: top-level await pauses module evaluation here, so every
+// module-level const the hook reads must already be initialized.
+if (import.meta.main) {
+  const { runHook } = await import("cc-hooks-ts");
+  await runHook(hook);
 }
