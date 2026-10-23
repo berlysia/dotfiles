@@ -9,6 +9,7 @@ import {
   missing,
   object,
   prepareState,
+  RECEIPTS_DIR,
 } from "./state.ts";
 
 export const CHECKER_VERSION_FILES = [
@@ -44,18 +45,26 @@ export type Verification = {
   status: "ready" | "missing" | "stale" | "needs-review" | "draft" | "excluded";
   hash: string;
   receipt: Receipt | null;
+  // Set when the receipt file exists but cannot be parsed; a new check
+  // overwrites it.
+  corrupt?: true;
 };
 
 function receiptPath(stateDir: string, file: string): string {
-  return join(stateDir, "receipts", `${digest(realpathSync(file))}.json`);
+  return join(stateDir, RECEIPTS_DIR, `${digest(realpathSync(file))}.json`);
 }
 
-function loadReceipt(stateDir: string, file: string): Receipt | null {
+function loadReceipt(
+  stateDir: string,
+  file: string,
+): Receipt | null | "corrupt" {
   let value: unknown;
   try {
     value = JSON.parse(readFileSync(receiptPath(stateDir, file), "utf8"));
   } catch (error) {
     if (missing(error)) return null;
+    // Unreadable content is recoverable by a new check; I/O errors are not.
+    if (error instanceof SyntaxError) return "corrupt";
     fail(error);
   }
   if (
@@ -71,7 +80,7 @@ function loadReceipt(stateDir: string, file: string): Receipt | null {
     (value.review !== null && typeof value.review !== "string") ||
     !["checked", "draft", "excluded"].includes(String(value.disposition))
   ) {
-    throw new Error("日本語検査の記録が不正です。");
+    return "corrupt";
   }
   return value as unknown as Receipt;
 }
@@ -82,6 +91,8 @@ export function verify(
 ): Verification {
   const hash = digest(readFileSync(file));
   const receipt = loadReceipt(stateDir, file);
+  if (receipt === "corrupt")
+    return { status: "stale", hash, receipt: null, corrupt: true };
   if (!receipt) return { status: "missing", hash, receipt };
   if (
     receipt.documentHash !== hash ||

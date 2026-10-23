@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import {
+  chmodSync,
   linkSync,
+  lstatSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -23,9 +28,17 @@ import { main, parseArguments } from "../../../japanese-check/cli.ts";
 import { paragraphs, proseLines } from "../../../japanese-check/markdown.ts";
 import {
   CHECKER_VERSION_FILES,
+  recordCheck,
   verify,
 } from "../../../japanese-check/receipts.ts";
-import { digest } from "../../../japanese-check/state.ts";
+import {
+  atomicJson,
+  defaultStateDir,
+  digest,
+  prepareState,
+  StateDirError,
+} from "../../../japanese-check/state.ts";
+import type { StateOps } from "../../../japanese-check/state.ts";
 import { tracked } from "../../../japanese-check/tracking.ts";
 import {
   createTokenizer,
@@ -300,7 +313,7 @@ describe("Japanese checker CLI", () => {
         ],
         { stateDir },
       );
-      assert.deepEqual(tracked("artifact-session", stateDir), [artifact]);
+      assert.deepEqual(tracked("artifact-session", stateDir).paths, [artifact]);
       assert.equal(verify(artifact, stateDir).status, "ready");
       writeFileSync(artifact, "artifact-v2");
       assert.equal(verify(artifact, stateDir).status, "stale");
@@ -396,5 +409,186 @@ describe("japanese-check module boundaries", () => {
   it("hashes state.ts but not tracking.ts into the checker version", () => {
     assert.ok(CHECKER_VERSION_FILES.includes("state.ts"));
     assert.ok(!CHECKER_VERSION_FILES.includes("tracking.ts"));
+  });
+});
+
+describe("japanese-check state directory", () => {
+  const root = mkdtempSync(join(tmpdir(), "japanese-check-state-"));
+  after(() => rmSync(root, { recursive: true, force: true }));
+  let number = 0;
+  const own = process.getuid?.();
+  function fresh(): string {
+    const dir = join(root, `case-${++number}`);
+    mkdirSync(dir);
+    return dir;
+  }
+  const real: StateOps = {
+    lstat: (path) => lstatSync(path),
+    chmod: (path, mode) => chmodSync(path, mode),
+    uid: own,
+  };
+  function kindOf(action: () => void): string {
+    try {
+      action();
+    } catch (error) {
+      if (error instanceof StateDirError) return error.kind;
+      throw error;
+    }
+    return "none";
+  }
+  function mode(path: string): number {
+    return lstatSync(path).mode & 0o777;
+  }
+
+  it("creates a missing directory as 0700 and writes receipts as 0600", () => {
+    const stateDir = join(fresh(), "state");
+    const file = join(root, "doc.md");
+    writeFileSync(file, "文書です。\n");
+    recordCheck(file, digest("文書です。\n"), "文書です。\n", 0, stateDir);
+    assert.equal(mode(stateDir), 0o700);
+    assert.equal(mode(join(stateDir, "receipts")), 0o700);
+    const [name] = readdirSync(join(stateDir, "receipts"));
+    assert.equal(mode(join(stateDir, "receipts", name ?? "")), 0o600);
+  });
+
+  it("tightens an own directory with mode 0755", () => {
+    const stateDir = join(fresh(), "state");
+    mkdirSync(stateDir);
+    chmodSync(stateDir, 0o755);
+    prepareState(stateDir);
+    assert.equal(mode(stateDir), 0o700);
+  });
+
+  it("rejects a symlink, a regular file and a foreign owner", () => {
+    const dir = fresh();
+    const target = join(dir, "target");
+    mkdirSync(target);
+    symlinkSync(target, join(dir, "link"));
+    assert.equal(
+      kindOf(() => prepareState(join(dir, "link"))),
+      "symlink",
+    );
+    writeFileSync(join(dir, "plain"), "x");
+    assert.equal(
+      kindOf(() => prepareState(join(dir, "plain"))),
+      "not-directory",
+    );
+    assert.equal(
+      kindOf(() => prepareState(target, { ...real, uid: (own ?? 0) + 1 })),
+      "owner",
+    );
+  });
+
+  it("reports io when chmod fails or the directory changes after chmod", () => {
+    const stateDir = join(fresh(), "state");
+    mkdirSync(stateDir);
+    chmodSync(stateDir, 0o755);
+    const denied = Object.assign(new Error("denied"), { code: "EPERM" });
+    assert.equal(
+      kindOf(() =>
+        prepareState(stateDir, {
+          ...real,
+          chmod: () => {
+            throw denied;
+          },
+        }),
+      ),
+      "io",
+    );
+    const swapped = (second: () => ReturnType<StateOps["lstat"]>): StateOps => {
+      let calls = 0;
+      return {
+        ...real,
+        lstat: (path) => (++calls === 2 ? second() : lstatSync(path)),
+      };
+    };
+    chmodSync(stateDir, 0o755);
+    assert.equal(
+      kindOf(() =>
+        prepareState(
+          stateDir,
+          swapped(() => ({
+            isSymbolicLink: () => true,
+            isDirectory: () => false,
+            uid: own ?? 0,
+            mode: 0o700,
+          })),
+        ),
+      ),
+      "symlink",
+    );
+    chmodSync(stateDir, 0o755);
+    assert.equal(
+      kindOf(() =>
+        prepareState(
+          stateDir,
+          swapped(() => {
+            throw Object.assign(new Error("gone"), { code: "ENOENT" });
+          }),
+        ),
+      ),
+      "io",
+    );
+  });
+
+  it("leaves no temporary file when rename fails and never reuses an existing one", () => {
+    const dir = fresh();
+    mkdirSync(join(dir, "target"));
+    assert.throws(() => atomicJson(join(dir, "target"), { a: 1 }));
+    assert.deepEqual(
+      readdirSync(dir).filter((name) => name.endsWith(".tmp")),
+      [],
+    );
+    writeFileSync(join(dir, "fixed.json.tmp"), "kept");
+    assert.throws(
+      () => atomicJson(join(dir, "fixed.json"), { a: 1 }, (p) => `${p}.tmp`),
+      (error: unknown) =>
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        error.code === "EEXIST",
+    );
+    assert.equal(readFileSync(join(dir, "fixed.json.tmp"), "utf8"), "kept");
+  });
+
+  it("derives the default directory from HOME, not from the cwd", () => {
+    const home = process.env.HOME;
+    const cwd = process.cwd();
+    process.env.HOME = "/x/h";
+    try {
+      const results: string[] = [];
+      for (const dir of [fresh(), fresh()]) {
+        process.chdir(dir);
+        results.push(defaultStateDir());
+      }
+      assert.deepEqual(results, [
+        "/x/h/.claude/state/japanese-check",
+        "/x/h/.claude/state/japanese-check",
+      ]);
+    } finally {
+      process.chdir(cwd);
+      if (home === undefined) delete process.env.HOME;
+      else process.env.HOME = home;
+    }
+  });
+
+  it("exits with 2 from the CLI when the default directory is a symlink", () => {
+    const home = fresh();
+    const target = join(home, "elsewhere");
+    mkdirSync(target);
+    mkdirSync(join(home, ".claude", "state"), { recursive: true });
+    symlinkSync(target, join(home, ".claude", "state", "japanese-check"));
+    const file = join(home, "doc.md");
+    writeFileSync(file, "文書です。\n");
+    const cli = fileURLToPath(
+      new URL("../../../japanese-check/cli.ts", import.meta.url),
+    );
+    const result = spawnSync(
+      process.execPath,
+      [cli, "track", file, "--session", "s"],
+      { encoding: "utf8", env: { ...process.env, HOME: home } },
+    );
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /置き場を使えない（symlink）/u);
   });
 });
