@@ -22,6 +22,16 @@
       ]
     },
     {
+      "matcher": "Bash|Write",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/skill-requires-gate.ts",
+          "timeout": 5
+        }
+      ]
+    },
+    {
       "matcher": "Write|Edit|NotebookEdit",
       "hooks": [
         {

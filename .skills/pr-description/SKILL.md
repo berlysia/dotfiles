@@ -1,6 +1,8 @@
 ---
 name: pr-description
 description: PR のタイトルと本文を、レビューする人の問いに diff に現れない情報で答える形で書くための規範。書く手順（事実の一覧、節への割り当て、確認の突き合わせ）、節のカタログ、規模の目安、確認したことの書き方、言語の決め方、提出前チェックを定める。PR を作る・本文を書き直すとき（`gh pr create`、`gh pr edit`、`/create-pr`、会話中の「PR 出して」）に使う。commit メッセージ（`/commit` を使う）や issue 本文には使わない。
+requires-skills: [tanteki, japanese-tech-writing, koncise]
+requires-skills-before: ["Bash(gh pr create)", "Bash(gh pr edit)"]
 ---
 
 # PR 本文の書き方
