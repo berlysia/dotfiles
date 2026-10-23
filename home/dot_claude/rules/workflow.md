@@ -125,7 +125,7 @@ plan に `## テスト計画 (ISO 25010)` を設け、関連する品質特性�
 
 ## Task Completion Protocol
 
-停止前に確認する: 元のタスクが完全に達成されたか / テスト・ビルドが成功しているか / 依頼されたコミットが完了したか / 応答に出た残件を保存したか。テスト失敗・明確な次手順・明示的なコミット依頼があれば継続する。残件は、自分が書いたものも利用者が挙げたものも、応答を閉じる前に `docs/plans/`（承認前は workflow dir の `followups/`）へ書き、書いた先を知らせる（`/document-workflow-reference`「記録の移し方」）。
+停止前に確認する: 元のタスクが完全に達成されたか / テスト・ビルドが成功しているか / 完了の範囲（developer-experience.md Delivery Policy）まで進んだか / 応答に出た残件を保存したか。テスト失敗・明確な次手順・範囲までの残りがあれば継続する。残件は、自分が書いたものも利用者が挙げたものも、応答を閉じる前に `docs/plans/`（承認前は workflow dir の `followups/`）へ書き、書いた先を知らせる（`/document-workflow-reference`「記録の移し方」）。
 
 ## 起動軸（pull / push）
 
