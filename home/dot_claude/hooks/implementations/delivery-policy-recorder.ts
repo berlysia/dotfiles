@@ -29,6 +29,16 @@ import { deepEqualIgnoringKeyOrder } from "../lib/workflow-approval.ts";
 const PREFIX = "[delivery-policy-recorder]";
 const RESPONSE_KEYS = new Set(["questions", "answers", "annotations"]);
 
+function hasNotes(annotations: unknown): boolean {
+  if (typeof annotations !== "object" || annotations === null) return false;
+  return Object.values(annotations).some(
+    (entry) =>
+      typeof entry === "object" &&
+      entry !== null &&
+      typeof (entry as { notes?: unknown }).notes === "string",
+  );
+}
+
 export interface RecorderDeps {
   /** The passwd home, or null when it could not be determined. Never read from the environment. */
   home: string | null;
@@ -65,7 +75,10 @@ export async function recordDeliveryPolicyAnswer(
         "回答が選択肢ではなく自由記述だった。発言として扱い、内容に答える",
     };
   }
-  if (Object.hasOwn(r, "annotations")) {
+  // The client sends `annotations` on plain answers too (e.g. previews), so
+  // only a string `notes` means the user wrote something beside the choice.
+  // Same test as the Document Workflow approval recorder.
+  if (hasNotes(r.annotations)) {
     return {
       kind: "skip",
       reason: "回答に annotations（notes）が付いていた。先にその指摘を扱う",
