@@ -154,7 +154,7 @@ hash 正規化を変えると承認済みの進行中成果物が deny される
 `workflow-cli` は marker / Review Status / Reviewer Outputs 骨格 / intent-triage marker を書く。
 
 - `workflow-cli status [<path>] [--wf-dir <dir>]`: 引数なしは主文書（plan.md / spec.md）の gate 診断と tripwire 状態。二層モードでは plan-N.md ごとに `plan: plan-N.md ✓`、委任で通っていれば `plan: plan-N.md ✓ (delegated)`、または最初に満たしていない条件を添えた `plan: plan-N.md ✗ <条件>` の行も出す（`parent-spec-hash` の不一致を含む）。委任の条件から外れた plan は `✗ Approval Status (delegation: <理由>)` になる。`delegation: active` / `delegation: none` の行で、委任が有効かどうかも出す。`<path>` を渡すと、そのファイルへの Write / Edit に guard が下す判定（近道で対象外、許可している文書名、off-plan、止まるなら診断）を表示する。`<path>` は CLI を実行した dir 基準。Bash のように対象が複数あるときの集合の扱いは表示しない。承認の記録がある文書ごとに `approval via: <doc> via=<utterance|ask|unknown>` の行も出す。
-- `workflow-cli round <doc> [--full] [--extend|--self-extend|--reframer-extend --reason "<text>"]`: `## Reviewer Outputs (Round N)` 骨格を marker 直前に挿入し、`.round-baseline` に round 番号と時刻を記録する。Round 2 以降は下記「差分再レビュー」の集合だけを空欄で並べ、carried reviewer は `- verdict: pass (carried from Round N-1)` で埋める。`--full` は必須 reviewer 全員の空欄骨格にする。`<doc>` は wfDir 直下のファイル名（パス区切りを含まない `.md`）に限る。下記「ラウンド予算」を超える round は拒否する。
+- `workflow-cli round <doc> [--full] [--extend|--self-extend --cause <landing|kd-changed|blocker|not-narrowing>|--reframer-extend --reason "<text>"]`: `## Reviewer Outputs (Round N)` 骨格を marker 直前に挿入し、`.round-baseline` に round 番号と時刻を、設計の節（Key Decisions と Alternative Approaches）を持つ文書では `.design-baseline` にその節の hash を記録する。Round 2 以降は下記「差分再レビュー」の集合だけを空欄で並べ、carried reviewer は `- verdict: pass (carried from Round N-1)` で埋める。`--full` は必須 reviewer 全員の空欄骨格にする。`<doc>` は wfDir 直下のファイル名（パス区切りを含まない `.md`）に限る。下記「ラウンド予算」を超える round は拒否する。
 - `workflow-cli stamp <doc> --verdict <pass|needs-work|blocker> --reviewers a+b`: Round N セクションと reviewer 実行証跡（`reviewer-runs.log`）を確認し、揃っていれば厳密形の Review Status と marker を書く。marker には `round=N` を書く（marker は hash 計算前に除去されるので hash は動かない）。証跡が無ければ非 0。
 - `workflow-cli triage <doc> --adopted N --excluded M`: intent-triage marker を書く。成功時は次の一手として `ask-approval` を出す。
 - `workflow-cli ask-approval [--wf-dir <dir>]`: 承認待ち（Plan complete・Review pass・hash 一致・未承認）の文書を先頭 3 件まで選び、`{"questions":[...]}` を標準出力に出す。そのまま AskUserQuestion に渡す。記録の返答の確認方法と、残りの件数は標準エラーに出る。承認待ちが 0 件なら非 0 で終わる。候補に spec.md があり、委任できる Scope の行があるときは、質問が 2 つになる（上記「委任」）。委任で通っている plan-N.md は候補に出ない。
@@ -175,7 +175,7 @@ stamp は Round N の要求集合を Round N-1 の verdict から再計算する
 
 周のラウンド数 = 現在の `## Reviewer Outputs (Round N)` 数 − 最後の `verdict=pass` marker の `round=` 値（pass marker が無い、または `round=` の無い旧 marker しか無ければ 0。差が負なら 0）。承認後の再レビュー（parent-spec-hash のずれによる plan-N.md の再承認など）は新しい周として予算を持つ。stamp を挟まない `round` の連打は周のラウンド数を増やすだけ。
 
-周のラウンド数が 3 以上で素の `round` は拒否され、6 以上は `review-reframer` の判断、9 以上は人間の指示でだけ延長できる。拒否時の案内が次の手を示す。延長の条件、reframer の起動と記録、裏付け検査、log 形式、受容した限界、再評価トリガーは [references/round-budget.md](references/round-budget.md) にある。Round 3 を超えて延長するとき、reframer を呼ぶときに読む。
+周のラウンド数が 3 以上で素の `round` は拒否される。3〜5 は人間に聞かず `--self-extend --cause <値>` で延長でき（cause のうち `blocker` と `kd-changed` は CLI が確かめる）、6 以上は `review-reframer` の判断、9 以上は人間の指示でだけ延長できる。承認の質問を出すときと `status` で、今の周の延長の回数が承認者別・cause 別に出る。拒否時の案内が次の手を示す。延長の条件、reframer の起動と記録、裏付け検査、log 形式、受容した限界、再評価トリガーは [references/round-budget.md](references/round-budget.md) にある。Round 3 を超えて延長するとき、reframer を呼ぶときに読む。
 
 ## 記録の移し方
 

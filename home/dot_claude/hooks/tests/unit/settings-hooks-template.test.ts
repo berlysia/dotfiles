@@ -175,3 +175,58 @@ describe(
     }
   },
 );
+
+describe(
+  "settings hooks template: ask-preflight",
+  { skip: !hasChezmoi && "chezmoi is not on PATH" },
+  () => {
+    for (const autoApproval of [true, false] as const) {
+      it(`PreToolUse(AskUserQuestion) and UserPromptSubmit run the same fail-open command (auto_approval=${autoApproval})`, () => {
+        const hooks = render(autoApproval, false) as unknown as Record<
+          string,
+          {
+            matcher?: string;
+            hooks: { command: string; timeout?: number }[];
+          }[]
+        >;
+        const pre = (hooks["PreToolUse"] ?? []).filter((g) =>
+          g.hooks.some((h) => h.command.includes("ask-preflight")),
+        );
+        strictEqual(pre.length, 1);
+        strictEqual(pre[0]?.matcher, "AskUserQuestion");
+        const prompt = (hooks["UserPromptSubmit"] ?? []).flatMap((g) =>
+          g.hooks.filter((h) => h.command.includes("ask-preflight")),
+        );
+        strictEqual(prompt.length, 1);
+        const preHook = pre[0]?.hooks[0];
+        ok(preHook);
+        strictEqual(pre[0]?.hooks.length, 1);
+        strictEqual(preHook.command, prompt[0]?.command);
+        ok(
+          /^bun \/\S+\/\.claude\/hooks\/implementations\/ask-preflight\.ts$/.test(
+            preHook.command,
+          ),
+          preHook.command,
+        );
+        ok(!preHook.command.includes("run-guard.sh"));
+        ok(!preHook.command.includes("|| exit 2"));
+        ok(
+          typeof preHook.timeout === "number" && preHook.timeout <= 10,
+          String(preHook.timeout),
+        );
+        strictEqual(prompt[0]?.timeout, preHook.timeout);
+      });
+    }
+
+    it("leaves the guard and the approval recorder wired as before", () => {
+      const hooks = render(true, false);
+      ok(names(hooks["PreToolUse"]).includes("document-workflow-guard"));
+      const guard = hooks["PreToolUse"]?.find((g) =>
+        g.hooks.some((h) => h.command.includes("document-workflow-guard")),
+      );
+      ok(guard?.matcher?.includes("AskUserQuestion"));
+      ok(guard?.hooks[0]?.command.includes("|| exit 2"));
+      ok(names(hooks["UserPromptSubmit"]).includes("approval-recorder"));
+    });
+  },
+);

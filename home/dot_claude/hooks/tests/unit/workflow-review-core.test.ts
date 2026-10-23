@@ -638,10 +638,14 @@ describe("workflow-review-core: round budget wording", () => {
     );
   });
 
-  it("self-extendable guidance offers --self-extend and --extend only", () => {
+  it("self-extendable guidance tells the operator to self-extend with a cause, without asking the human", () => {
     const text = formatRoundBudgetGuidance("self-extendable", "plan.md");
-    ok(text.includes("--self-extend --reason"));
-    ok(text.includes("--extend --reason"));
+    ok(text.includes("--self-extend --cause"));
+    for (const cause of ["landing", "kd-changed", "blocker", "not-narrowing"]) {
+      ok(text.includes(cause), `missing: ${cause}`);
+    }
+    ok(text.includes("--reason"));
+    ok(!text.includes("ask the human"));
     ok(!text.includes("--reframer-extend"));
   });
 
@@ -705,9 +709,26 @@ describe("workflow-review-core: extension log helpers", () => {
         round: 4,
         approver: "self",
         reason: "a\tb\nc",
+        cause: "landing",
       }),
-      `${at.toISOString()}\tplan.md\t4\tself\ta b c`,
+      `${at.toISOString()}\tplan.md\t4\tself\ta b c\tlanding`,
     );
+  });
+
+  it("formatExtensionLogLine writes - as the cause of a non-self approver", () => {
+    const at = new Date("2026-10-01T00:00:00.000Z");
+    for (const approver of ["human", "reframer"] as const) {
+      strictEqual(
+        formatExtensionLogLine({
+          at,
+          doc: "plan.md",
+          round: 4,
+          approver,
+          reason: "r",
+        }),
+        `${at.toISOString()}\tplan.md\t4\t${approver}\tr\t-`,
+      );
+    }
   });
 });
 
@@ -818,7 +839,8 @@ describe("workflow-review-core: staged round budget notice", () => {
     it(`rounds(${n}) offers a self extension`, () => {
       const text = notice(`## Goal\nx\n${roundsN(n)}\n${nw(n)}`);
       ok(text.includes(`Round budget reached (${ROUND_BUDGET})`));
-      ok(text.includes("--self-extend --reason"));
+      ok(text.includes("--self-extend --cause"));
+      ok(!text.includes("ask the human"));
       ok(!text.includes("Round self cap reached"));
     });
   }

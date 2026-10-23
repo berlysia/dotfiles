@@ -4,6 +4,7 @@ import { deepStrictEqual, equal, strictEqual } from "node:assert";
 import { test } from "node:test";
 import {
   LENIENT_STATUS_LINE,
+  latestMarkerAfterLastPass,
   lastPassMarkerRound,
   parseLatestAutoReviewMarker,
   STRICT_APPROVAL_STATUS,
@@ -81,4 +82,47 @@ test("lastPassMarkerRound returns 0 without a pass marker or when the pass marke
     0,
   );
   strictEqual(lastPassMarkerRound("no markers"), 0);
+});
+
+const marker = (verdict: string, extra = "") =>
+  `<!-- auto-review: verdict=${verdict}; hash=h${verdict}; ${extra}at=x -->`;
+
+test("latestMarkerAfterLastPass returns the newest marker after the last pass", () => {
+  const content = [
+    marker("pass", "round=3; "),
+    marker("needs-work", "round=4; "),
+    marker("blocker", "round=5; "),
+  ].join("\n");
+  equal(latestMarkerAfterLastPass(content)?.verdict, "blocker");
+});
+
+test("latestMarkerAfterLastPass ignores a blocker from a previous cycle", () => {
+  const content = [
+    marker("blocker", "round=1; "),
+    marker("pass", "round=2; "),
+    marker("needs-work", "round=3; "),
+  ].join("\n");
+  equal(latestMarkerAfterLastPass(content)?.verdict, "needs-work");
+});
+
+test("latestMarkerAfterLastPass returns null when nothing follows the last pass", () => {
+  equal(
+    latestMarkerAfterLastPass(
+      [marker("blocker", "round=1; "), marker("pass", "round=2; ")].join("\n"),
+    ),
+    null,
+  );
+  equal(latestMarkerAfterLastPass("no markers"), null);
+});
+
+test("latestMarkerAfterLastPass returns an old marker that has no round=", () => {
+  const content = [marker("pass", "round=2; "), marker("blocker")].join("\n");
+  equal(latestMarkerAfterLastPass(content)?.verdict, "blocker");
+});
+
+test("latestMarkerAfterLastPass scans the whole document when there is no pass", () => {
+  equal(
+    latestMarkerAfterLastPass(marker("needs-work", "round=1; "))?.verdict,
+    "needs-work",
+  );
 });

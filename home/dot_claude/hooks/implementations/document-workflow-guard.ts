@@ -3,6 +3,7 @@
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { defineHook } from "cc-hooks-ts";
+import { hasPrefilledAnswer } from "../lib/ask-user-question-input.ts";
 import {
   parserGiveUpMark,
   parserGiveUpReasonSince,
@@ -73,13 +74,6 @@ function withScratchHint(reason: string): string {
 
 const ASK_PREFILLED_DENY =
   "承認の質問の回答は利用者が選ぶもので、`answers` / `annotations` を model が入れることはできない。`workflow-cli ask-approval` の出力をそのまま AskUserQuestion に渡す";
-
-/** `answers` or `annotations` is present and not undefined. */
-function hasPrefilledAnswer(toolInput: unknown): boolean {
-  if (typeof toolInput !== "object" || toolInput === null) return false;
-  const input = toolInput as { answers?: unknown; annotations?: unknown };
-  return input.answers !== undefined || input.annotations !== undefined;
-}
 
 interface WriteAnalysis {
   isWriteLike: boolean;

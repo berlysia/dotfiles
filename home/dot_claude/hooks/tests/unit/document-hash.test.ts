@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import {
   computeDesignHash,
   computeDocumentHash,
+  extractSectionBody,
   PLAN_NORMALIZERS,
   SPEC_NORMALIZERS,
   stripReviewerOutputsSections,
@@ -324,5 +325,56 @@ describe("S2 doc: prescribed-fix convergence rule presence", () => {
     ok(wf.includes("plan-review.cache.json"));
     ok(wf.includes("hash parity") || wf.includes("hash 一致を即検証"));
     ok(wf.includes("実装再開前"));
+  });
+});
+
+describe("approval hashes are pinned (the design-baseline work must not move them)", () => {
+  const fixture = [
+    "## Files",
+    "- a.ts",
+    "",
+    "## Key Decisions",
+    "- K1: x",
+    "",
+    "## Alternative Approaches (Greenfield View)",
+    "- y",
+    "",
+    "## Scope",
+    "- s",
+    "",
+    "## Tasks",
+    "- [x] T1",
+    "",
+    "## Reviewer Outputs (Round 1)",
+    "### a",
+    "",
+    "## Approval",
+    "- Approval Status: approved",
+    "",
+    "<!-- auto-review: verdict=pass; hash=abc -->",
+    "",
+  ].join("\n");
+
+  it("computeDesignHash keeps its pre-change value", () => {
+    strictEqual(
+      computeDesignHash(fixture),
+      "a40589111146ba33c6f098b51411c6288369df16c3442010851ef535edaac395",
+    );
+  });
+
+  it("computeDocumentHash keeps its pre-change value", () => {
+    strictEqual(
+      computeDocumentHash(fixture, SPEC_NORMALIZERS),
+      "2ba67fa9397005898d165661e69cd4664459bb8e436c24116f86fbeba195bc01",
+    );
+    strictEqual(
+      computeDocumentHash(fixture, PLAN_NORMALIZERS),
+      "2ba67fa9397005898d165661e69cd4664459bb8e436c24116f86fbeba195bc01",
+    );
+  });
+
+  it("exports extractSectionBody", () => {
+    strictEqual(extractSectionBody(fixture, "Scope"), "- s");
+    strictEqual(extractSectionBody(fixture, "Nope"), null);
   });
 });

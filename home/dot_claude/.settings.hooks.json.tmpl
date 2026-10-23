@@ -12,6 +12,16 @@
       ]
     },
     {
+      "matcher": "AskUserQuestion",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/ask-preflight.ts",
+          "timeout": 5
+        }
+      ]
+    },
+    {
       "matcher": "Write|Edit|NotebookEdit",
       "hooks": [
         {
@@ -403,6 +413,11 @@
         {
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/approval-recorder.ts"
+        },
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/ask-preflight.ts",
+          "timeout": 5
         },
         {
           "type": "command",

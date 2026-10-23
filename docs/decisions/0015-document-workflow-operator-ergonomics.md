@@ -6,6 +6,8 @@ accepted (2026-09-10)
 
 `workflow.md` の上限（決定 7 の ≤12KB）は、ADR-0032 が 13KB に改めた。
 
+Decision 9 の自己延長段（周の round 数 3〜5）で着地の見込みが無いときに人間に聞く経路は、ADR-0043 が改めた（人間に聞かず、理由の種類を記録して延長する）。
+
 ## Context
 
 Opus 5 を Document Workflow の下で動かすと、計画フェーズが総ターンの 70〜98% を占め、レビューが収束せず、必須 step が抜け、ゲートが閉じたまま固着するか逆に素通りする、という報告が続いた。2026-09-10 に `~/.claude/projects/**/*.jsonl` 1,075 セッションを横断計測し、Opus 5 main loop でワークフローが実働した 26 セッションを Fable 5 の 2 セッションと比較した。観測された失敗は 8 パターンに分かれる（`git show 52dc6fd447:docs/plans/document-workflow-overhaul/research.md` §2）。

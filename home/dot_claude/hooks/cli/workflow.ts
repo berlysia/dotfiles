@@ -34,7 +34,18 @@ import {
   writeSync,
 } from "node:fs";
 import { basename, dirname, isAbsolute, resolve } from "node:path";
+import {
+  appendDesignBaseline,
+  computeDecisionSectionsHash,
+  decideRoundExtension,
+  readDesignBaseline,
+} from "../lib/design-baseline.ts";
 import { expandTilde } from "../lib/path-utils.ts";
+import {
+  formatExtensionTally,
+  parseExtensionLog,
+  tallyExtensions,
+} from "../lib/round-extension-log.ts";
 import { getProjectRoot } from "../lib/project-root.ts";
 import { sanitizeForDisplay } from "../lib/sanitize-display.ts";
 import {
@@ -56,7 +67,10 @@ import {
   summarizePlans,
 } from "../lib/workflow-gate.ts";
 import { isStrictlyUnderProjectSubdir } from "../lib/workflow-fs.ts";
-import { lastPassMarkerRound } from "../lib/workflow-marker.ts";
+import {
+  lastPassMarkerRound,
+  latestMarkerAfterLastPass,
+} from "../lib/workflow-marker.ts";
 import {
   getWorkflowDocumentType,
   resolveWorkflowPaths,
@@ -342,6 +356,29 @@ function normalizersFor(documentType: WorkflowDocumentType) {
   return documentType === "plan-numbered" ? PLAN_NORMALIZERS : SPEC_NORMALIZERS;
 }
 
+/**
+ * The extension-count line for one document's current cycle, or null when
+ * there is none. Read failures give null: the count is information for the
+ * approver, so a missing log or document must not fail `status` or
+ * `ask-approval`.
+ */
+function extensionCountLine(wfDir: string, docName: string): string | null {
+  let rows: ReturnType<typeof parseExtensionLog>;
+  let docContent: string;
+  try {
+    rows = parseExtensionLog(
+      readFileSync(resolve(wfDir, "round-extensions.log"), "utf-8"),
+    );
+    docContent = readFileSync(resolve(wfDir, docName), "utf-8");
+  } catch {
+    return null;
+  }
+  const line = formatExtensionTally(
+    tallyExtensions(rows, docName, lastPassMarkerRound(docContent)),
+  );
+  return line === null ? null : `${docName}: ${line}`;
+}
+
 // ---------------------------------------------------------------------------
 // status
 // ---------------------------------------------------------------------------
@@ -385,6 +422,8 @@ function cmdStatus(
       `Document workflow gate${twoLayer ? " (two-layer)" : ""}: conditions on \`${sanitizeForDisplay(docLabel)}\`:`,
       formatGateChecklist(diagnosis),
     );
+    const primaryCount = extensionCountLine(wfDir, docLabel);
+    if (primaryCount !== null) lines.push(primaryCount);
     // The plan-N.md side, one line each, so the reader can tell which plans
     // are ready without asking about a path.
     if (twoLayer) {
@@ -395,6 +434,8 @@ function cmdStatus(
             ? "✓ (delegated)"
             : "✓";
         lines.push(`plan: ${plan.name} ${mark}`);
+        const planCount = extensionCountLine(wfDir, plan.name);
+        if (planCount !== null) lines.push(planCount);
       }
     }
   }
@@ -597,15 +638,10 @@ function cmdRound(
     );
   }
   const approver = requested[0] ?? null;
-  if (approver !== null && approver !== "human" && flags["full"] === "true") {
+  const full = flags["full"] === "true";
+  if (approver === "reframer" && full) {
     return err(
-      `--${approver === "self" ? "self-extend" : "reframer-extend"} cannot be combined with --full: changing Key Decisions is outside the self/reframer mandate; ask the human for --extend`,
-    );
-  }
-  const reason = sanitizeExtensionReason(flags["reason"] ?? "");
-  if (approver !== null && reason === "") {
-    return err(
-      `--${approver === "human" ? "extend" : `${approver}-extend`} requires --reason "<why>"`,
+      "--reframer-extend cannot be combined with --full: changing Key Decisions is outside the reframer mandate; ask the human for --extend",
     );
   }
 
@@ -613,6 +649,37 @@ function cmdRound(
   // after approval gets a fresh budget while unstamped `round` calls keep
   // counting against it (spec K1).
   const phase = getRoundBudgetPhase(getRoundsInCycle(oldContent));
+  // Hash once: the comparison and the baseline append must see the same value.
+  const decisionHash =
+    documentType === "plan-numbered"
+      ? null
+      : computeDecisionSectionsHash(oldContent);
+  const decision = decideRoundExtension({
+    documentType,
+    stage:
+      phase === "open"
+        ? "within-budget"
+        : phase === "self-extendable"
+          ? "self-extendable"
+          : "beyond",
+    approver,
+    cause: flags["cause"],
+    full,
+    latestVerdict: latestMarkerAfterLastPass(oldContent)?.verdict ?? null,
+    baseline: readDesignBaseline(wfDir, docName),
+    currentHash: decisionHash,
+  });
+  if (!decision.ok) {
+    return err(`refusing: ${docName}: ${decision.message}`);
+  }
+
+  const reason = sanitizeExtensionReason(flags["reason"] ?? "");
+  if (approver !== null && reason === "") {
+    return err(
+      `--${approver === "human" ? "extend" : `${approver}-extend`} requires --reason "<why>"`,
+    );
+  }
+
   if (phase !== "open") {
     if (approver === null || !isExtensionAllowed(phase, approver)) {
       return err(
@@ -627,10 +694,9 @@ function cmdRound(
     }
   }
 
-  const roundPlan: RoundReviewerPlan =
-    flags["full"] === "true"
-      ? { kind: "full" }
-      : planRoundReviewers(oldContent, documentType, currentRound);
+  const roundPlan: RoundReviewerPlan = full
+    ? { kind: "full" }
+    : planRoundReviewers(oldContent, documentType, currentRound);
 
   const skeletonLines = [`## Reviewer Outputs (Round ${nextRound})`, ""];
   const rerun =
@@ -665,15 +731,31 @@ function cmdRound(
   writeFileSync(docPath, newContent);
   appendRoundBaseline(wfDir, nextRound, deps.now);
 
+  const warnings: string[] = [];
   // Below the budget an extension flag is unnecessary, so nothing is logged
   // or announced: the log stays a record of actual overruns.
   let extensionNote = "";
   if (phase !== "open" && approver !== null) {
-    appendFileSync(
-      resolve(wfDir, "round-extensions.log"),
-      `${formatExtensionLogLine({ at: deps.now, doc: docName, round: nextRound, approver, reason })}\n`,
-    );
+    try {
+      appendFileSync(
+        resolve(wfDir, "round-extensions.log"),
+        `${formatExtensionLogLine({ at: deps.now, doc: docName, round: nextRound, approver, reason, cause: decision.cause })}\n`,
+      );
+    } catch {
+      warnings.push(
+        "could not write round-extensions.log (延長の記録を書けなかった): the extension count shown at approval will be one short. The gate and approval are not affected.",
+      );
+    }
     extensionNote = `${EXTENSION_NOTES[approver]}\n`;
+  }
+  if (decisionHash !== null) {
+    try {
+      appendDesignBaseline(wfDir, docName, nextRound, decisionHash);
+    } catch {
+      warnings.push(
+        `could not write .design-baseline (baseline を書けなかった): the next round's kd-changed check may be off. Deleting this document's line in ${resolve(wfDir, ".design-baseline")} returns it to the no-record state.`,
+      );
+    }
   }
 
   const summary =
@@ -682,7 +764,7 @@ function cmdRound(
       : `re-run: all always-on reviewers${currentRound > 0 ? " (full round)" : ""}`;
   return ok(
     `inserted "## Reviewer Outputs (Round ${nextRound})" into ${docName}\n${summary}\n${extensionNote}${provenanceLines(wfDir, source, docPath)}`,
-    warning,
+    [warning, ...warnings].filter(Boolean).join("\n") || null,
   );
 }
 
@@ -998,6 +1080,11 @@ function cmdAskApproval(
     notes.push(
       `残り ${rest} 件は記録の後にもう一度呼ぶと出る (the remaining ${rest} document(s) appear when this is called again after recording).`,
     );
+  }
+  // stderr only: stdout is the exact question the approval recorder matches.
+  for (const { name } of asked) {
+    const countLine = extensionCountLine(wfDir, name);
+    if (countLine !== null) notes.push(countLine);
   }
   const offer = asked.some(({ name }) => name === "spec.md")
     ? resolveDelegationOffer(wfDir, deps.cwd)

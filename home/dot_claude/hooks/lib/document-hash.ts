@@ -141,5 +141,6 @@ export {
   computeDocumentHash,
   computeDesignHash,
   stripReviewerOutputsSections,
+  extractSectionBody,
   countReviewerOutputsRounds,
 };
