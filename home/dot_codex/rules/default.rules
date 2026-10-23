@@ -110,6 +110,48 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = ["bun", "run", "test"],
+    decision = "allow",
+    justification = "Running tests is always safe",
+)
+
+prefix_rule(
+    pattern = ["bun", "test"],
+    decision = "allow",
+    justification = "Running tests is always safe",
+)
+
+prefix_rule(
+    pattern = ["bun", "run", "typecheck"],
+    decision = "allow",
+    justification = "Type checking is always safe",
+)
+
+prefix_rule(
+    pattern = ["bun", "run", "lint"],
+    decision = "allow",
+    justification = "Linting is always safe",
+)
+
+prefix_rule(
+    pattern = ["bun", "run", "lint:fix"],
+    decision = "allow",
+    justification = "Applying lint autofixes is as safe as formatting",
+)
+
+prefix_rule(
+    pattern = ["bun", "run", "format"],
+    decision = "allow",
+    justification = "Formatting with the project's formatter is always safe",
+)
+
+prefix_rule(
+    pattern = ["bun", "run", "format:check"],
+    decision = "allow",
+    justification = "Read-only format check",
+)
+
+prefix_rule(
     pattern = ["agent-learnings", "show"],
     decision = "allow",
     justification = "Reads per-repository learnings",
@@ -161,6 +203,26 @@ prefix_rule(
     pattern = ["npx", "shellcheck"],
     decision = "allow",
     justification = "Shellcheck is always safe",
+)
+
+prefix_rule(
+    pattern = ["npx", "oxfmt"],
+    decision = "allow",
+    justification = "Oxfmt formatting is always safe",
+)
+
+# === Allow: package metadata and lockfile installs ===
+
+prefix_rule(
+    pattern = ["npm", "view"],
+    decision = "allow",
+    justification = "Read-only registry metadata lookup",
+)
+
+prefix_rule(
+    pattern = ["bun", "install", "--frozen-lockfile", "--ignore-scripts"],
+    decision = "allow",
+    justification = "Installs exactly what the lockfile pins without running lifecycle scripts",
 )
 
 # === Allow: read-only git commands ===
@@ -254,5 +316,3 @@ prefix_rule(
     decision = "allow",
     justification = "Read-only chezmoi template data",
 )
-prefix_rule(pattern=["bun", "run", "test"], decision="allow")
-prefix_rule(pattern=["bun", "run", "typecheck"], decision="allow")
