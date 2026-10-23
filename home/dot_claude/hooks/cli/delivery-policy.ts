@@ -503,8 +503,10 @@ async function runMerge(
   // gh cannot carry one run past the Bash tool's default 2-minute timeout
   // (which would print neither a code nor a reason).
   const gh: Gh = async (args) => {
-    const remaining = deadline - deps.monotonic();
-    if (remaining <= 0) throw new DeadlineError();
+    // The monotonic clock has fractional milliseconds, and execFile rejects a
+    // timeout that is not an integer, so the remaining time is floored here.
+    const remaining = Math.floor(deadline - deps.monotonic());
+    if (remaining < 1) throw new DeadlineError();
     return deps.gh(args, {
       timeoutMs: Math.min(PER_CALL_TIMEOUT_MS, remaining),
     });
