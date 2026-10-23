@@ -1,0 +1,251 @@
+{
+  "schema": 1,
+  "recordedOn": "2026-10-23",
+  "shas": {
+    "dotfiles": "282708ebd614e0f6bf671f335eb985ac864a84eb",
+    "blog": "0d013602b45e4fffdaf68bbf0ea253501805c5ff",
+    "c108": null
+  },
+  "visibility": {
+    "dotfiles": "PUBLIC",
+    "blog": "PUBLIC"
+  },
+  "c108Consent": {
+    "answer": "no",
+    "date": null
+  },
+  "rules": {
+    "tanteki": [
+      "max-ten",
+      "no-doubled-conjunctive-particle-ga",
+      "no-doubled-conjunction",
+      "no-double-negative-ja",
+      "no-doubled-joshi",
+      "sentence-length",
+      "no-dropping-the-ra",
+      "no-mix-dearu-desumasu",
+      "no-nfd",
+      "no-invalid-control-character",
+      "no-zero-width-spaces",
+      "no-kangxi-radicals",
+      "no-ai-jargon",
+      "no-opaque-compound",
+      "no-vague-action",
+      "stock-boundary",
+      "table-cell-length"
+    ],
+    "yomiyasu": [
+      "bold_label_list",
+      "bold_not_rendered",
+      "count_declaration",
+      "dash_decoration",
+      "dash_insertion",
+      "dash_list_ending",
+      "emoji_prohibited",
+      "excess_bold",
+      "excess_list",
+      "fragment_run",
+      "heading_colon",
+      "instruction_residue",
+      "meta_filler",
+      "meta_intro",
+      "metaphor_verb",
+      "negative_parallelism",
+      "negative_parallelism_density",
+      "pause_comma",
+      "redundant_bracket",
+      "sentence_end_repetition",
+      "short_mochiron",
+      "short_summary_heading",
+      "slop_vocabulary",
+      "summary_restatement",
+      "trailing_colon",
+      "translated_term"
+    ]
+  },
+  "enabledRulesByType": {
+    "design-doc": [
+      "max-ten",
+      "no-doubled-conjunctive-particle-ga",
+      "no-doubled-conjunction",
+      "no-double-negative-ja",
+      "no-doubled-joshi",
+      "sentence-length",
+      "no-dropping-the-ra",
+      "no-mix-dearu-desumasu",
+      "no-nfd",
+      "no-invalid-control-character",
+      "no-zero-width-spaces",
+      "no-kangxi-radicals",
+      "no-ai-jargon",
+      "no-opaque-compound",
+      "no-vague-action",
+      "stock-boundary",
+      "table-cell-length"
+    ],
+    "prd": [
+      "max-ten",
+      "no-doubled-conjunctive-particle-ga",
+      "no-doubled-conjunction",
+      "no-double-negative-ja",
+      "no-doubled-joshi",
+      "sentence-length",
+      "no-dropping-the-ra",
+      "no-mix-dearu-desumasu",
+      "no-nfd",
+      "no-invalid-control-character",
+      "no-zero-width-spaces",
+      "no-kangxi-radicals",
+      "no-ai-jargon",
+      "no-opaque-compound",
+      "no-vague-action",
+      "stock-boundary",
+      "table-cell-length"
+    ],
+    "adr": [
+      "max-ten",
+      "no-doubled-conjunctive-particle-ga",
+      "no-doubled-conjunction",
+      "no-double-negative-ja",
+      "no-doubled-joshi",
+      "sentence-length",
+      "no-dropping-the-ra",
+      "no-mix-dearu-desumasu",
+      "no-nfd",
+      "no-invalid-control-character",
+      "no-zero-width-spaces",
+      "no-kangxi-radicals",
+      "no-ai-jargon",
+      "no-opaque-compound",
+      "no-vague-action",
+      "stock-boundary",
+      "table-cell-length"
+    ],
+    "rfc": [
+      "max-ten",
+      "no-doubled-conjunctive-particle-ga",
+      "no-doubled-conjunction",
+      "no-double-negative-ja",
+      "no-doubled-joshi",
+      "sentence-length",
+      "no-dropping-the-ra",
+      "no-mix-dearu-desumasu",
+      "no-nfd",
+      "no-invalid-control-character",
+      "no-zero-width-spaces",
+      "no-kangxi-radicals",
+      "no-ai-jargon",
+      "no-opaque-compound",
+      "no-vague-action",
+      "stock-boundary",
+      "table-cell-length"
+    ],
+    "stock": [
+      "max-ten",
+      "no-doubled-conjunctive-particle-ga",
+      "no-doubled-conjunction",
+      "no-double-negative-ja",
+      "no-doubled-joshi",
+      "sentence-length",
+      "no-dropping-the-ra",
+      "no-mix-dearu-desumasu",
+      "no-nfd",
+      "no-invalid-control-character",
+      "no-zero-width-spaces",
+      "no-kangxi-radicals",
+      "no-ai-jargon",
+      "no-opaque-compound",
+      "no-vague-action",
+      "stock-boundary",
+      "table-cell-length"
+    ],
+    "flow": [
+      "max-ten",
+      "no-doubled-conjunctive-particle-ga",
+      "no-doubled-conjunction",
+      "no-double-negative-ja",
+      "no-doubled-joshi",
+      "sentence-length",
+      "no-dropping-the-ra",
+      "no-mix-dearu-desumasu",
+      "no-nfd",
+      "no-invalid-control-character",
+      "no-zero-width-spaces",
+      "no-kangxi-radicals",
+      "no-ai-jargon",
+      "no-opaque-compound",
+      "no-vague-action",
+      "table-cell-length"
+    ],
+    "record": [
+      "max-ten",
+      "no-doubled-conjunctive-particle-ga",
+      "no-doubled-conjunction",
+      "no-double-negative-ja",
+      "no-doubled-joshi",
+      "sentence-length",
+      "no-dropping-the-ra",
+      "no-mix-dearu-desumasu",
+      "no-nfd",
+      "no-invalid-control-character",
+      "no-zero-width-spaces",
+      "no-kangxi-radicals",
+      "no-ai-jargon",
+      "no-opaque-compound",
+      "no-vague-action",
+      "table-cell-length"
+    ]
+  },
+  "tools": {
+    "tanteki": {
+      "version": "10.0.4",
+      "identicalToRecordedSha": true
+    },
+    "yomiyasu": {
+      "version": "2.0.2",
+      "identicalToRecordedSha": true
+    },
+    "textlintLock": {
+      "identicalToRecordedSha": true,
+      "installedVersionsMatch": true
+    }
+  },
+  "blogExtract": {
+    "version": "1",
+    "limits": ["nested-jsx", "embedded-expressions"]
+  },
+  "population": {
+    "a-doc": {
+      "count": 95,
+      "bytes": 685089
+    },
+    "b": {
+      "count": 78,
+      "bytes": 613164
+    },
+    "pairs": 135,
+    "a-pr": 20,
+    "c108": {
+      "count": 9,
+      "bytes": 445550
+    },
+    "blog": {
+      "count": 6,
+      "bytes": 68924
+    },
+    "blogExcludedByUser": 0,
+    "nonRegularMode": 0,
+    "tooLarge": 0
+  },
+  "preflight": {
+    "ancestorConfigIgnored": true,
+    "yomiyasuLeavesNoState": true,
+    "yomiyasuRunsIsolated": true
+  },
+  "auxiliaryCheckPassed": true,
+  "checkTiming": {
+    "medianMs": 11886,
+    "node": "v24.22.1",
+    "cpuGeneration": "13th Gen Intel"
+  }
+}
