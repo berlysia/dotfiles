@@ -74,6 +74,10 @@ workflow.md は常時ロードされるので、予算テスト（`workflow-md-b
 
 変えた決定は K3（出どころを 4 つと環境の事実にし、用語の説明を足してよいとした）である。K6〜K12 を足した。K5 の一致の対象は、K12 で注記を加えた 3 か所に広がった。K1・K2・K4 は変えない。
 
+### 2026-10-23: `ask-approval` の stdout を変えた
+
+K11 の「stdout は変えない」は、この ADR の計画の範囲での制約だった。並列の作業を見分けるため、ADR-0023 の 2026-10-23 の改訂で、承認の質問（stdout）に作業の識別と文書の題を載せた。注記（stderr）は K11 のとおり固定文のままで、文書から取った文字列を補間しない。
+
 ## References
 
 - 改訂の対象: `docs/decisions/0026-rule-removal-requires-delivery-and-backstop.md`

@@ -18,9 +18,16 @@
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
-import { computeDocumentHash, SPEC_NORMALIZERS } from "./document-hash.ts";
+import {
+  applyNormalizers,
+  computeDocumentHash,
+  SPEC_NORMALIZERS,
+} from "./document-hash.ts";
 import { sanitizeForDisplay } from "./sanitize-display.ts";
-import { readLatestApprovals } from "./workflow-approval.ts";
+import {
+  extractDocumentTitle,
+  readLatestApprovals,
+} from "./workflow-approval.ts";
 import {
   listsTarget,
   parseScope,
@@ -777,6 +784,8 @@ export interface ApprovalReadiness {
   alreadyApproved: boolean;
   /** The document's current hash, which an approval would record. */
   hash: string;
+  /** The H1 of the same normalized text the hash covers; null when absent or unreadable. */
+  title: string | null;
 }
 
 /**
@@ -792,10 +801,12 @@ export function evaluateApprovalReadiness(
   const path = resolve(wfDir, docName);
   const d = evaluateDocument(path);
   let hash = "";
+  let title: string | null = null;
   let parentOk = true;
   try {
     const content = readFileSync(path, "utf-8");
     hash = computeDocumentHash(content, SPEC_NORMALIZERS);
+    title = extractDocumentTitle(applyNormalizers(content, SPEC_NORMALIZERS));
     if (PLAN_NUMBERED_FILENAME_REGEX.test(docName)) {
       const specHash = computeDocumentHash(
         readFileSync(resolve(wfDir, "spec.md"), "utf-8"),
@@ -804,7 +815,7 @@ export function evaluateApprovalReadiness(
       parentOk = parentSpecMatches(content, specHash);
     }
   } catch {
-    return { ready: false, alreadyApproved: false, hash };
+    return { ready: false, alreadyApproved: false, hash, title: null };
   }
   const c = d.conditions;
   const ready =
@@ -818,6 +829,7 @@ export function evaluateApprovalReadiness(
     ready,
     alreadyApproved: c.approvalStatus.ok && c.approvalRecord.ok,
     hash,
+    title,
   };
 }
 

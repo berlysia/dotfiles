@@ -10,8 +10,9 @@
  * come back. `session` is audit only and never matched, so a wfDir copied by
  * task-handoff keeps its approvals for unchanged documents.
  *
- * A leaf module (node builtins only): the document hash is computed by the
- * gate, which is the only reader.
+ * A leaf-like module: it depends on node builtins and on the leaf
+ * sanitize-display.ts (the display projection of approval text). The
+ * document hash is computed by the gate, which is the only reader.
  */
 
 import {
@@ -21,7 +22,8 @@ import {
   readFileSync,
   writeSync,
 } from "node:fs";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
+import { sanitizeForDisplay } from "./sanitize-display.ts";
 
 export const APPROVALS_LOG = "approvals.log";
 
@@ -168,9 +170,9 @@ function parseRecord(line: string): ApprovalRecord | null {
 // whole by the recorder, so what the user sees is only ever what the
 // mechanism produced. Everything here is pure.
 
-export const APPROVAL_QUESTION_TEXT =
-  "Document Workflow の承認: 承認する文書にチェックを付けてください（議論したいときは Esc）";
 export const APPROVAL_QUESTION_PREFIX = "Document Workflow の承認";
+const APPROVAL_QUESTION_BODY =
+  "承認する文書にチェックを付けてください（議論したいときは Esc）";
 export const APPROVAL_HEADER = "承認";
 export const DECLINE_LABEL = "承認しない";
 export const DECLINE_DESCRIPTION = "今は承認しない（何を直すか伝える）";
@@ -199,6 +201,136 @@ export interface DelegationScopeRow {
 export interface ApprovalDoc {
   name: string;
   hash: string;
+  /** The document's H1 (see extractDocumentTitle), or null when it has none. */
+  title: string | null;
+}
+
+/**
+ * Where the approval is for, as shown in the question text. Both parts come
+ * from the workflow dir path (describeApprovalWorkflow), so the CLI and the
+ * recorder derive the same value from the same wfDir.
+ */
+export interface ApprovalWorkflow {
+  tree: string | null;
+  id: string | null;
+}
+
+const MAX_TITLE_CODE_POINTS = 60;
+const MAX_IDENTITY_CODE_POINTS = 256;
+const ELLIPSIS = "…";
+const SPACE_RUNS = /[\p{Cc}\p{Zs}\p{Zl}\p{Zp}]+/gu;
+const TITLE_BRACKETS = /[「」]/gu;
+const IDENTITY_PARENS = /[（）]/gu;
+
+/**
+ * Project text that came from a document or a path onto something that can
+ * be shown inside the approval question without breaking out of it. Order
+ * matters: (1) runs of whitespace/separators become one space so words split
+ * by a newline do not fuse when control characters are removed; (2)
+ * sanitizeForDisplay removes backticks, format/bidi/default-ignorable
+ * characters; (3) `strip` removes the caller's delimiter characters; (4) NFC,
+ * after removal, so characters made adjacent by removal compose and the
+ * output is a fixed point of NFC (a client that returns it NFC-normalized
+ * still matches); (5) spaces collapse and trim; (6) over `maxCodePoints`
+ * code points, keep the first max-1, trim, and append an ellipsis.
+ */
+export function projectApprovalText(
+  raw: string,
+  maxCodePoints: number,
+  strip?: RegExp,
+): string {
+  let text = sanitizeForDisplay(raw.replace(SPACE_RUNS, " "));
+  if (strip !== undefined) text = text.replace(strip, "");
+  text = text.normalize("NFC").replace(/ {2,}/g, " ").trim();
+  const points = [...text];
+  if (points.length <= maxCodePoints) return text;
+  const cut = points
+    .slice(0, maxCodePoints - 1)
+    .join("")
+    .trimEnd();
+  return `${cut}${ELLIPSIS}`.normalize("NFC");
+}
+
+function projectIdentity(raw: string): string | null {
+  const projected = projectApprovalText(
+    raw,
+    MAX_IDENTITY_CODE_POINTS,
+    IDENTITY_PARENS,
+  );
+  return projected === "" ? null : projected;
+}
+
+/**
+ * The work tree name and workflow id of a workflow dir
+ * (`<tree>/.tmp/sessions/<id>`). The tree is known only for that exact
+ * shape; a deeper pin or a missing `.tmp` yields null rather than a guess.
+ */
+export function describeApprovalWorkflow(wfDir: string): ApprovalWorkflow {
+  const id = projectIdentity(basename(wfDir));
+  const sessions = dirname(wfDir);
+  const dotTmp = dirname(sessions);
+  const tree =
+    basename(sessions) === "sessions" && basename(dotTmp) === ".tmp"
+      ? projectIdentity(basename(dirname(dotTmp)))
+      : null;
+  return { tree, id };
+}
+
+/** The question text; the fixed prefix is always first. */
+export function buildApprovalQuestionText(workflow: ApprovalWorkflow): string {
+  const { tree, id } = workflow;
+  const where =
+    tree !== null && id !== null
+      ? `（${tree} / ${id}）`
+      : tree !== null
+        ? `（${tree}）`
+        : id !== null
+          ? `（${id}）`
+          : "";
+  return `${APPROVAL_QUESTION_PREFIX}${where}: ${APPROVAL_QUESTION_BODY}`;
+}
+
+/**
+ * The first H1 of a workflow document, projected for display, or null.
+ * Pass normalized content (the text the document hash is computed from), so
+ * the title cannot come from a region the hash ignores. Headings inside
+ * code fences are skipped; a `## ` line outside fences ends the search, so
+ * later sections never supply a title.
+ */
+export function extractDocumentTitle(normalizedContent: string): string | null {
+  const text = normalizedContent.startsWith("\uFEFF")
+    ? normalizedContent.slice(1)
+    : normalizedContent;
+  let fence: { char: string; count: number } | null = null;
+  for (const rawLine of text.split("\n")) {
+    const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
+    if (fence !== null) {
+      const closer = /^(`{3,}|~{3,})[ \t]*$/.exec(line)?.[1];
+      if (
+        closer !== undefined &&
+        closer[0] === fence.char &&
+        closer.length >= fence.count
+      ) {
+        fence = null;
+      }
+      continue;
+    }
+    const opener = /^(`{3,}|~{3,})/.exec(line)?.[1];
+    if (opener !== undefined) {
+      fence = { char: opener[0] ?? "`", count: opener.length };
+      continue;
+    }
+    if (line.startsWith("## ")) return null;
+    if (line.startsWith("# ")) {
+      const title = projectApprovalText(
+        line.slice(2),
+        MAX_TITLE_CODE_POINTS,
+        TITLE_BRACKETS,
+      );
+      return title === "" ? null : title;
+    }
+  }
+  return null;
 }
 export interface ApprovalOption {
   label: string;
@@ -214,6 +346,7 @@ export interface ApprovalQuestion {
 /** Keeps the input order. Throws instead of silently truncating or fixing the list. */
 export function buildApprovalQuestions(
   docs: readonly ApprovalDoc[],
+  workflow: ApprovalWorkflow,
   delegation?: readonly DelegationScopeRow[],
 ): ApprovalQuestion[] {
   if (docs.length < 1 || docs.length > MAX_DOCS_PER_QUESTION) {
@@ -230,13 +363,15 @@ export function buildApprovalQuestions(
     names.add(name);
   }
   const approval: ApprovalQuestion = {
-    question: APPROVAL_QUESTION_TEXT,
+    question: buildApprovalQuestionText(workflow),
     header: APPROVAL_HEADER,
     multiSelect: true,
     options: [
-      ...docs.map(({ name, hash }) => ({
+      ...docs.map(({ name, hash, title }) => ({
         label: name,
-        description: `${HASH_PREFIX}${hash.slice(0, HASH_PREFIX_LENGTH)}`,
+        description: `${HASH_PREFIX}${hash.slice(0, HASH_PREFIX_LENGTH)}${
+          title === null ? "" : ` 「${title}」`
+        }`,
       })),
       { label: DECLINE_LABEL, description: DECLINE_DESCRIPTION },
     ],

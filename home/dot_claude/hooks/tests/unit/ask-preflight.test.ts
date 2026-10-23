@@ -114,9 +114,10 @@ describe("judgeAskPreflight: what passes", () => {
   });
 
   it("passes an approval question built by ask-approval (header 承認)", () => {
-    const questions = buildApprovalQuestions([
-      { name: "spec.md", hash: "a".repeat(64) },
-    ]);
+    const questions = buildApprovalQuestions(
+      [{ name: "spec.md", hash: "a".repeat(64), title: null }],
+      { tree: null, id: null },
+    );
     assert.deepEqual(judgeAskPreflight(facts({ questions })), {
       kind: "pass",
       reason: "approval-question",

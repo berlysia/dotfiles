@@ -16,7 +16,8 @@ import { basename, join } from "node:path";
 import { beforeEach, describe, it } from "node:test";
 import {
   APPROVALS_LOG,
-  APPROVAL_QUESTION_TEXT,
+  buildApprovalQuestionText,
+  describeApprovalWorkflow,
   DELEGATION_QUESTION_TEXT,
   buildApprovalQuestions,
   readLatestApprovals,
@@ -42,6 +43,17 @@ const REVIEWED: WorkflowRepoOptions = {
 
 type Response = Record<string, unknown>;
 
+/** A reviewed spec whose H1 is inside the hashed text, so the marker still matches. */
+function reviewedSpecWithTitle(title: string): string {
+  const withoutMarker = buildPlanContent(REVIEWED).replace(
+    /\n\n<!-- auto-review:.*-->$/,
+    "",
+  );
+  const body = `# ${title}\n\n${withoutMarker}`;
+  const hash = computeWorkflowRepoPlanHash(body);
+  return `${body}\n\n<!-- auto-review: verdict=pass; hash=${hash}; at=2026-02-19T00:00:00.000Z; reviewers=logic-validator -->`;
+}
+
 describe("workflow-approval-record (spec K3/K5/K8)", () => {
   let wf: string;
   let specHash: string;
@@ -58,6 +70,9 @@ describe("workflow-approval-record (spec K3/K5/K8)", () => {
     plan1Hash = computeWorkflowRepoPlanHash(plan1);
     writeFileSync(join(wf, "plan-1.md"), plan1);
   });
+
+  const questionKey = () =>
+    buildApprovalQuestionText(describeApprovalWorkflow(wf));
 
   const logLines = (): Record<string, unknown>[] =>
     existsSync(join(wf, APPROVALS_LOG))
@@ -77,9 +92,14 @@ describe("workflow-approval-record (spec K3/K5/K8)", () => {
     };
     return {
       questions: buildApprovalQuestions(
-        docs.map((name) => ({ name, hash: hashes[name] ?? specHash })),
+        docs.map((name) => ({
+          name,
+          hash: hashes[name] ?? specHash,
+          title: null,
+        })),
+        describeApprovalWorkflow(wf),
       ),
-      answers: { [APPROVAL_QUESTION_TEXT]: answer },
+      answers: { [questionKey()]: answer },
     };
   };
 
@@ -188,7 +208,7 @@ describe("workflow-approval-record (spec K3/K5/K8)", () => {
         "answers two keys",
         (r) => ({
           ...r,
-          answers: { [APPROVAL_QUESTION_TEXT]: "spec.md", other: "x" },
+          answers: { [questionKey()]: "spec.md", other: "x" },
         }),
       ],
       ["two questions", (r) => ({ ...r, questions: [q0(r), q0(r)] })],
@@ -271,7 +291,7 @@ describe("workflow-approval-record (spec K3/K5/K8)", () => {
         "answer mixes decline",
         (r) => ({
           ...r,
-          answers: { [APPROVAL_QUESTION_TEXT]: "spec.md, 承認しない" },
+          answers: { [questionKey()]: "spec.md, 承認しない" },
         }),
       ],
     ];
@@ -286,7 +306,7 @@ describe("workflow-approval-record (spec K3/K5/K8)", () => {
       it(`malformed: label ${JSON.stringify(label)}`, () => {
         const r = base();
         (options(r)[0] as Record<string, unknown>).label = label;
-        r.answers = { [APPROVAL_QUESTION_TEXT]: label };
+        r.answers = { [questionKey()]: label };
         assert.deepEqual(verify(r), { kind: "malformed" });
         assert.equal(logLines().length, 0);
       });
@@ -296,7 +316,7 @@ describe("workflow-approval-record (spec K3/K5/K8)", () => {
       const label = `../${basename(wf)}/spec.md`;
       const r = base();
       (options(r)[0] as Record<string, unknown>).label = label;
-      r.answers = { [APPROVAL_QUESTION_TEXT]: label };
+      r.answers = { [questionKey()]: label };
       assert.deepEqual(verify(r), { kind: "malformed" });
       assert.equal(logLines().length, 0);
     });
@@ -397,7 +417,7 @@ describe("workflow-approval-record (spec K3/K5/K8)", () => {
       it("returns the notes before looking at the answer shape", () => {
         const r = {
           ...response(1),
-          annotations: { [APPROVAL_QUESTION_TEXT]: { notes: "ここを直す" } },
+          annotations: { [questionKey()]: { notes: "ここを直す" } },
         };
         assert.deepEqual(verify(r), { kind: "notes", notes: "ここを直す" });
       });
@@ -422,13 +442,61 @@ describe("workflow-approval-record (spec K3/K5/K8)", () => {
 
     it("accepts a different document order", () => {
       const r = {
-        questions: buildApprovalQuestions([
-          { name: "plan-1.md", hash: plan1Hash },
-          { name: "spec.md", hash: specHash },
-        ]),
-        answers: { [APPROVAL_QUESTION_TEXT]: "spec.md, plan-1.md" },
+        questions: buildApprovalQuestions(
+          [
+            { name: "plan-1.md", hash: plan1Hash, title: null },
+            { name: "spec.md", hash: specHash, title: null },
+          ],
+          describeApprovalWorkflow(wf),
+        ),
+        answers: { [questionKey()]: "spec.md, plan-1.md" },
       };
       assert.equal(verify(r).kind, "recorded");
+    });
+
+    it("rejects the pre-identity fixed question text as the answer key", () => {
+      const r = base();
+      r.answers = {
+        "Document Workflow の承認: 承認する文書にチェックを付けてください（議論したいときは Esc）":
+          "spec.md",
+      };
+      assert.deepEqual(verify(r), { kind: "malformed" });
+      assert.equal(logLines().length, 0);
+    });
+
+    it("rejects a question built for another workflow dir", () => {
+      const other = join(wf, "..", "ffff0000");
+      const r = {
+        questions: buildApprovalQuestions(
+          [{ name: "spec.md", hash: specHash, title: null }],
+          describeApprovalWorkflow(other),
+        ),
+        answers: {
+          [buildApprovalQuestionText(describeApprovalWorkflow(other))]:
+            "spec.md",
+        },
+      };
+      assert.deepEqual(verify(r), { kind: "malformed" });
+      assert.equal(logLines().length, 0);
+    });
+
+    it("records when the question carries the document title, and rejects it once the H1 changes", () => {
+      const spec = reviewedSpecWithTitle("Spec: X");
+      writeFileSync(join(wf, "spec.md"), spec);
+      const hash = computeWorkflowRepoPlanHash(spec);
+      const asked = {
+        questions: buildApprovalQuestions(
+          [{ name: "spec.md", hash, title: "Spec: X" }],
+          describeApprovalWorkflow(wf),
+        ),
+        answers: { [questionKey()]: "spec.md" },
+      };
+      const edited = reviewedSpecWithTitle("Spec: Y");
+      writeFileSync(join(wf, "spec.md"), edited);
+      assert.deepEqual(verify(asked), { kind: "malformed" });
+      assert.equal(logLines().length, 0);
+      writeFileSync(join(wf, "spec.md"), spec);
+      assert.equal(verify(asked).kind, "recorded");
     });
 
     it("returns decline and logs nothing", () => {
@@ -439,7 +507,7 @@ describe("workflow-approval-record (spec K3/K5/K8)", () => {
     it("returns notes and logs nothing", () => {
       const r = {
         ...response("spec.md"),
-        annotations: { [APPROVAL_QUESTION_TEXT]: { notes: "ここ直して" } },
+        annotations: { [questionKey()]: { notes: "ここ直して" } },
       };
       assert.deepEqual(verify(r), { kind: "notes", notes: "ここ直して" });
       assert.equal(logLines().length, 0);
@@ -508,17 +576,21 @@ describe("workflow-approval-record: delegation question (spec K6)", () => {
     writeFileSync(join(wf, "spec.md"), spec);
   });
 
+  const questionKey = () =>
+    buildApprovalQuestionText(describeApprovalWorkflow(wf));
+
   const response = (
     docAnswer: unknown,
     delegationAnswer?: unknown,
     withSecondQuestion = true,
   ): Record<string, unknown> => ({
     questions: buildApprovalQuestions(
-      [{ name: "spec.md", hash: specHash }],
+      [{ name: "spec.md", hash: specHash, title: null }],
+      describeApprovalWorkflow(wf),
       withSecondQuestion ? rows : undefined,
     ),
     answers: {
-      [APPROVAL_QUESTION_TEXT]: docAnswer,
+      [questionKey()]: docAnswer,
       ...(delegationAnswer === undefined
         ? {}
         : { [DELEGATION_QUESTION_TEXT]: delegationAnswer }),
@@ -534,6 +606,16 @@ describe("workflow-approval-record: delegation question (spec K6)", () => {
       .filter((line) => line !== "")
       .map((line) => JSON.parse(line) as Record<string, unknown>);
   };
+
+  it("keeps the two question keys distinct even for a tree named 委任", () => {
+    const [first, second] = buildApprovalQuestions(
+      [{ name: "spec.md", hash: specHash, title: null }],
+      { tree: "委任", id: null },
+      rows,
+    );
+    assert.notEqual(first?.question, second?.question);
+    assert.equal(second?.question, DELEGATION_QUESTION_TEXT);
+  });
 
   it("records the delegation on the spec.md line", () => {
     const r = verify(response("spec.md", "委任する"));
@@ -634,10 +716,13 @@ describe("workflow-approval-record: delegation question (spec K6)", () => {
 
   it("reports a document that is not waiting before it looks at the answer keys", () => {
     const r = {
-      questions: buildApprovalQuestions([
-        { name: "spec.md", hash: specHash },
-        { name: "plan-1.md", hash: specHash },
-      ]),
+      questions: buildApprovalQuestions(
+        [
+          { name: "spec.md", hash: specHash, title: null },
+          { name: "plan-1.md", hash: specHash, title: null },
+        ],
+        describeApprovalWorkflow(wf),
+      ),
       answers: { "some other text": "spec.md" },
     };
     assert.deepEqual(verify(r), { kind: "notCandidate", docs: ["plan-1.md"] });

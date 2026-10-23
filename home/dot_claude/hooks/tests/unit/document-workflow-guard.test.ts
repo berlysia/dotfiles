@@ -16,7 +16,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import documentWorkflowGuardHook from "../../implementations/document-workflow-guard.ts";
 import {
-  APPROVAL_QUESTION_TEXT,
+  buildApprovalQuestionText,
   buildApprovalQuestions,
 } from "../../lib/workflow-approval.ts";
 import { withParseBudget } from "../support/parse-budget.ts";
@@ -1813,8 +1813,13 @@ describe("document-workflow-guard.ts AskUserQuestion (spec K4)", () => {
     return ctx;
   }
 
+  const WORKFLOW = { tree: "wt-a", id: "ab6d64e3" };
+  const QUESTION_KEY = buildApprovalQuestionText(WORKFLOW);
   const approvalQuestions = () =>
-    buildApprovalQuestions([{ name: "spec.md", hash: H }]);
+    buildApprovalQuestions(
+      [{ name: "spec.md", hash: H, title: null }],
+      WORKFLOW,
+    );
 
   const generalQuestions = () => [
     {
@@ -1832,7 +1837,7 @@ describe("document-workflow-guard.ts AskUserQuestion (spec K4)", () => {
     repoWith(pendingWorkflowRepo());
     const ctx = await ask({
       questions: approvalQuestions(),
-      answers: { [APPROVAL_QUESTION_TEXT]: "spec.md" },
+      answers: { [QUESTION_KEY]: "spec.md" },
     });
     ctx.assertDeny();
     const reason: string =
@@ -1847,8 +1852,8 @@ describe("document-workflow-guard.ts AskUserQuestion (spec K4)", () => {
       { answers: {} },
       { answers: "" },
       { answers: null },
-      { answers: { [APPROVAL_QUESTION_TEXT]: ["spec.md"] } },
-      { answers: { [APPROVAL_QUESTION_TEXT]: [] } },
+      { answers: { [QUESTION_KEY]: ["spec.md"] } },
+      { answers: { [QUESTION_KEY]: [] } },
       { annotations: [] },
       { annotations: { x: { notes: "n" } } },
     ]) {
@@ -1933,7 +1938,7 @@ describe("document-workflow-guard.ts AskUserQuestion (spec K4)", () => {
       await ask(
         {
           questions: approvalQuestions(),
-          answers: { [APPROVAL_QUESTION_TEXT]: "spec.md" },
+          answers: { [QUESTION_KEY]: "spec.md" },
         },
         { session_id: "../bad" },
       )
