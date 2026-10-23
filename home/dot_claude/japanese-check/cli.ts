@@ -5,14 +5,9 @@ import { calques, check, lint, newFacts, outline, terms } from "./analyze.ts";
 import type { Genre } from "./analyze.ts";
 import { paragraphs, proseLines } from "./markdown.ts";
 import { createTokenizer } from "./tokenizer.ts";
-import {
-  defaultStateDir,
-  digest,
-  recordCheck,
-  recordDecision,
-  track,
-  verify,
-} from "./receipts.ts";
+import { defaultStateDir, digest } from "./state.ts";
+import { recordCheck, recordDecision, verify } from "./receipts.ts";
+import { track } from "./tracking.ts";
 
 const commands = new Set([
   "check",

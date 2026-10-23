@@ -1,36 +1,31 @@
-import { createHash, randomUUID } from "node:crypto";
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  realpathSync,
-  renameSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { readFileSync, realpathSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  atomicJson,
+  defaultStateDir,
+  digest,
+  fail,
+  missing,
+  object,
+  prepareState,
+} from "./state.ts";
 
-export function digest(value: string | Buffer): string {
-  return createHash("sha256").update(value).digest("hex");
-}
-
-export function defaultStateDir(cwd = process.cwd()): string {
-  const start = resolve(cwd);
-  for (let dir = start; ; dir = dirname(dir)) {
-    if (existsSync(join(dir, ".git")))
-      return join(dir, ".tmp", "japanese-check");
-    if (dirname(dir) === dir) return join(start, ".tmp", "japanese-check");
-  }
-}
+export const CHECKER_VERSION_FILES = [
+  "analyze.ts",
+  "markdown.ts",
+  "tokenizer.ts",
+  "state.ts",
+  "receipts.ts",
+  "cli.ts",
+];
 
 export function checkerVersion(): string {
   const root = dirname(fileURLToPath(import.meta.url));
   return digest(
-    ["analyze.ts", "markdown.ts", "tokenizer.ts", "receipts.ts", "cli.ts"]
-      .map((name) => readFileSync(join(root, name), "utf8"))
-      .join("\n"),
+    CHECKER_VERSION_FILES.map((name) =>
+      readFileSync(join(root, name), "utf8"),
+    ).join("\n"),
   );
 }
 
@@ -50,38 +45,6 @@ export type Verification = {
   hash: string;
   receipt: Receipt | null;
 };
-
-function object(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function missing(error: unknown): boolean {
-  return object(error) && error.code === "ENOENT";
-}
-
-function fail(error: unknown): never {
-  console.error("[japanese-check receipts]", error);
-  throw error;
-}
-
-function prepareState(stateDir: string): void {
-  mkdirSync(stateDir, { recursive: true, mode: 0o700 });
-  try {
-    writeFileSync(join(stateDir, ".gitignore"), "*\n", {
-      flag: "wx",
-      mode: 0o600,
-    });
-  } catch (error) {
-    if (!object(error) || error.code !== "EEXIST") fail(error);
-  }
-}
-
-function atomicJson(path: string, data: unknown): void {
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  const temp = `${path}.${randomUUID()}.tmp`;
-  writeFileSync(temp, JSON.stringify(data), { mode: 0o600 });
-  renameSync(temp, path);
-}
 
 function receiptPath(stateDir: string, file: string): string {
   return join(stateDir, "receipts", `${digest(realpathSync(file))}.json`);
@@ -199,84 +162,4 @@ export function recordDecision(
   };
   atomicJson(receiptPath(stateDir, file), receipt);
   return verify(file, stateDir);
-}
-
-function sessionDir(session: string, stateDir: string): string {
-  // Session IDs are hashed, never interpreted as paths.
-  return join(stateDir, "sessions", digest(session));
-}
-
-export function track(
-  file: string,
-  session: string,
-  stateDir = defaultStateDir(),
-): void {
-  prepareState(stateDir);
-  const path = realpathSync(file);
-  atomicJson(
-    join(sessionDir(session, stateDir), "documents", `${digest(path)}.json`),
-    { path },
-  );
-}
-
-export function tracked(
-  session: string,
-  stateDir = defaultStateDir(),
-): string[] {
-  const dir = join(sessionDir(session, stateDir), "documents");
-  let names: string[];
-  try {
-    names = readdirSync(dir);
-  } catch (error) {
-    if (missing(error)) return [];
-    fail(error);
-  }
-  return names
-    .filter((name) => name.endsWith(".json"))
-    .map((name) => {
-      const value: unknown = JSON.parse(readFileSync(join(dir, name), "utf8"));
-      if (!object(value) || typeof value.path !== "string")
-        throw new Error("文書の追跡記録が不正です。");
-      return value.path;
-    })
-    .filter((file) => {
-      try {
-        return statSync(file).isFile();
-      } catch (error) {
-        if (missing(error)) return false;
-        fail(error);
-      }
-    });
-}
-
-export function baseline(
-  session: string,
-  files: string[],
-  stateDir = defaultStateDir(),
-): Record<string, string> {
-  prepareState(stateDir);
-  const path = join(sessionDir(session, stateDir), "baseline.json");
-  let value: unknown;
-  try {
-    value = JSON.parse(readFileSync(path, "utf8"));
-  } catch (error) {
-    if (!missing(error)) fail(error);
-    const hashes = Object.fromEntries(
-      files.map((file) => [file, digest(readFileSync(file))]),
-    );
-    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-    try {
-      writeFileSync(path, JSON.stringify(hashes), { flag: "wx", mode: 0o600 });
-    } catch (writeError) {
-      if (!object(writeError) || writeError.code !== "EEXIST") fail(writeError);
-      return baseline(session, files, stateDir);
-    }
-    return hashes;
-  }
-  if (
-    !object(value) ||
-    !Object.values(value).every((hash) => typeof hash === "string")
-  )
-    throw new Error("文書の開始状態が不正です。");
-  return value as Record<string, string>;
 }

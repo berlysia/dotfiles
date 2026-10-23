@@ -3,11 +3,13 @@ import {
   linkSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { after, describe, it, mock } from "node:test";
 import {
   calques,
@@ -19,7 +21,12 @@ import {
 } from "../../../japanese-check/analyze.ts";
 import { main, parseArguments } from "../../../japanese-check/cli.ts";
 import { paragraphs, proseLines } from "../../../japanese-check/markdown.ts";
-import { digest, tracked, verify } from "../../../japanese-check/receipts.ts";
+import {
+  CHECKER_VERSION_FILES,
+  verify,
+} from "../../../japanese-check/receipts.ts";
+import { digest } from "../../../japanese-check/state.ts";
+import { tracked } from "../../../japanese-check/tracking.ts";
 import {
   createTokenizer,
   decodeTokens,
@@ -347,5 +354,47 @@ describe("Japanese checker CLI", () => {
     } finally {
       output.mock.restore();
     }
+  });
+});
+
+describe("japanese-check module boundaries", () => {
+  const dir = fileURLToPath(
+    new URL("../../../japanese-check/", import.meta.url),
+  );
+  const files = readdirSync(dir).filter((name) => name.endsWith(".ts"));
+
+  function specifiers(source: string): string[] {
+    const found: string[] = [];
+    const pattern =
+      /(?:\bimport|\bexport)\s+(?:type\s+)?(?:[^"';]*?\sfrom\s+)?["']([^"']+)["']|\bimport\s*\(\s*["']([^"']+)["']\s*\)/gu;
+    for (const match of source.matchAll(pattern))
+      found.push(match[1] ?? match[2] ?? "");
+    return found;
+  }
+
+  // tokenizer.ts loads the sudachi dictionary package lazily; it is the one
+  // declared dependency, not a path into another directory.
+  it("imports only node: built-ins, sudachi and sibling files", () => {
+    assert.ok(files.length > 0);
+    for (const name of files) {
+      for (const specifier of specifiers(readFileSync(join(dir, name), "utf8")))
+        assert.match(
+          specifier,
+          /^(?:node:|sudachi$|\.\/[^/]+\.ts$)/u,
+          `${name}: ${specifier}`,
+        );
+    }
+  });
+
+  it("keeps receipts.ts and tracking.ts independent of each other", () => {
+    const of = (name: string) =>
+      specifiers(readFileSync(join(dir, name), "utf8"));
+    assert.ok(!of("receipts.ts").includes("./tracking.ts"));
+    assert.ok(!of("tracking.ts").includes("./receipts.ts"));
+  });
+
+  it("hashes state.ts but not tracking.ts into the checker version", () => {
+    assert.ok(CHECKER_VERSION_FILES.includes("state.ts"));
+    assert.ok(!CHECKER_VERSION_FILES.includes("tracking.ts"));
   });
 });

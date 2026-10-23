@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import {
+  existsSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -7,17 +9,18 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { after, describe, it } from "node:test";
-import { gate } from "../../implementations/japanese-document-gate.ts";
+import { gate } from "../../lib/japanese-document-gate/gate.ts";
 import {
   checkerVersion,
-  digest,
   recordCheck,
   recordDecision,
-  track,
   verify,
 } from "../../../japanese-check/receipts.ts";
+import { digest } from "../../../japanese-check/state.ts";
+import { track } from "../../../japanese-check/tracking.ts";
 
 describe("Japanese document receipts and completion gate", () => {
   const root = mkdtempSync(join(tmpdir(), "japanese-document-gate-"));
@@ -278,5 +281,48 @@ describe("Japanese document receipts and completion gate", () => {
     assert.ok(saved.includes(checkerVersion()));
     track(f.file, "../../untrusted-session", f.stateDir);
     assert.equal(readdirSync(join(f.stateDir, "sessions")).length, 1);
+  });
+});
+
+describe("japanese-document-gate entry", () => {
+  const entry = fileURLToPath(
+    new URL("../../implementations/japanese-document-gate.ts", import.meta.url),
+  );
+  const dir = mkdtempSync(join(tmpdir(), "japanese-document-gate-entry-"));
+  after(() => rmSync(dir, { recursive: true, force: true }));
+
+  function launch(stdin: string) {
+    // The default state dir is found by walking up to a `.git`; refuse to run
+    // where that would land in a real repository.
+    for (let d = dir; ; d = dirname(d)) {
+      assert.equal(existsSync(join(d, ".git")), false, `.git above ${dir}`);
+      if (dirname(d) === d) break;
+    }
+    return spawnSync("bun", [entry], {
+      input: stdin,
+      encoding: "utf8",
+      cwd: dir,
+      env: { ...process.env, HOME: dir },
+      timeout: 15000,
+    });
+  }
+
+  it("prints {} for a Stop event with nothing tracked", () => {
+    const result = launch(
+      JSON.stringify({ hook_event_name: "Stop", session_id: "s", cwd: dir }),
+    );
+    assert.equal(result.status, 0);
+    assert.equal(result.stdout, "{}\n");
+  });
+
+  it("reports a systemMessage when the input is not JSON", () => {
+    const result = launch("not json");
+    assert.equal(result.status, 0);
+    const lines = result.stdout.split("\n").filter(Boolean);
+    assert.equal(lines.length, 1);
+    const output: unknown = JSON.parse(lines[0] ?? "");
+    assert.ok(
+      output && typeof output === "object" && "systemMessage" in output,
+    );
   });
 });
