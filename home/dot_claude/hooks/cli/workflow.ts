@@ -93,6 +93,7 @@ import {
   parseLatestReframerReview,
   planRoundReviewers,
   REFRAMER_AGENT,
+  APPROVAL_SUMMARY_RULE_LINES,
   ROUND_BUDGET,
   ROUND_REFRAMER_CAP,
   ROUND_SELF_CAP,
@@ -1098,6 +1099,9 @@ function cmdAskApproval(
     );
   }
   if (warning) notes.push(warning);
+  // Last on purpose: the model reads the end of stderr right before it writes
+  // the summary. Fixed text, so nothing from a document can reach it.
+  notes.push(...APPROVAL_SUMMARY_RULE_LINES);
   return {
     exitCode: 0,
     stdout: `${JSON.stringify({ questions: buildApprovalQuestions(asked, offer ?? undefined) })}\n`,

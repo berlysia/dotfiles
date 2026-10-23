@@ -20,8 +20,10 @@ const referenceSkill = join(
 // actual size. ADR-0025 trimmed it to about 11KB under a 12KB ceiling; ADR-0032
 // raised the ceiling back to 13KB for the throwaway-script routing line, which
 // must be read when a task starts and so cannot live in the reference skill.
-// Raising it again needs its own reason recorded in an ADR.
-const BUDGET_BYTES = 13 * 1024;
+// Raising it again needs its own reason recorded in an ADR. The extra 256
+// bytes carry the approval-summary rule to the flow where the summary is
+// written before `ask-approval` runs; the record is in ADR-0035's Amendments.
+const BUDGET_BYTES = 13 * 1024 + 256;
 
 test("workflow.md stays within the operator-guide budget (K8)", () => {
   ok(existsSync(workflowMd), "workflow.md must exist");

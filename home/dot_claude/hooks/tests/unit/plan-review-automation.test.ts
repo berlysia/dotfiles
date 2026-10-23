@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
+import { APPROVAL_SUMMARY_RULE_LINES } from "../../lib/workflow-review-core.ts";
 import {
   ALWAYS_ON_REVIEWERS,
   PLAN_NORMALIZERS,
@@ -495,10 +496,77 @@ describe("buildSummaryReminder", () => {
     }
   });
 
-  it("tells the model to copy from the document and not to add claims", () => {
+  it("prints the shared rule lines in order, and N/A", () => {
     const result = buildSummaryReminder("/tmp/plan.md");
-    ok(result.includes("無い主張を足さない"));
+    let from = 0;
+    for (const line of APPROVAL_SUMMARY_RULE_LINES) {
+      const at = result.indexOf(line, from);
+      ok(at >= 0, `missing or out of order: ${line.slice(0, 20)}`);
+      from = at + line.length;
+    }
     ok(result.includes("N/A"));
+  });
+
+  it("keeps each rule line short and free of repo-internal references", () => {
+    const banned = [
+      /ADR-\d{4}/,
+      /docs\/decisions\//,
+      /home\/dot_claude\//,
+      /home\/\.chezmoi/,
+      /\.skills\//,
+    ];
+    for (const line of APPROVAL_SUMMARY_RULE_LINES) {
+      ok(line.length <= 150, `${line.length} chars: ${line}`);
+      ok(line.split("。").length - 1 <= 2, `too many sentences: ${line}`);
+      for (const re of banned) ok(!re.test(line), `${re} in: ${line}`);
+    }
+    strictEqual(APPROVAL_SUMMARY_RULE_LINES.length, 5);
+  });
+
+  it("asks for the work, the post-order remarks and decision reasons in the template", () => {
+    const result = buildSummaryReminder("/tmp/plan.md");
+    const premise = lineStartingWith(result, "前提");
+    ok(
+      premise.includes("どの作業か") && premise.includes("オーダー以降の発言"),
+    );
+    ok(premise.includes("親 spec") && premise.includes("オーダー"));
+    const decisions = lineStartingWith(result, "Key Decisions");
+    ok(decisions.includes("決定ごとに") && decisions.includes("除外"));
+  });
+
+  // Each marker word must be in workflow.md's summary section and, unless it is
+  // workflow.md only, in the shared rule line named by `line` (0-based).
+  const MARKERS: { word: string; line: number | null }[] = [
+    { word: "最後の発言さえ", line: 0 },
+    { word: "どの作業か", line: 1 },
+    { word: "中身", line: 3 },
+    { word: "除外した指摘", line: 4 },
+    { word: "決定ごとに", line: 4 },
+    { word: "注記を読み", line: null },
+  ];
+  it("keeps workflow.md and the shared rule lines in step through marker words", () => {
+    const md = workflowSummarySection();
+    for (const { word, line } of MARKERS) {
+      ok(md.includes(word), `workflow.md lacks ${word}`);
+      if (line !== null) {
+        ok(
+          (APPROVAL_SUMMARY_RULE_LINES[line] as string).includes(word),
+          `rule line ${line + 1} lacks ${word}`,
+        );
+      }
+    }
+  });
+
+  it("keeps repo-internal references out of the workflow.md summary section", () => {
+    const md = workflowSummarySection();
+    for (const re of [
+      /ADR-\d{4}/,
+      /docs\/decisions\//,
+      /home\/dot_claude\//,
+      /\.skills\//,
+    ]) {
+      ok(!re.test(md), `${re} in workflow.md summary section`);
+    }
   });
 
   it("keeps the Review Status and Next Action lines unchanged", () => {

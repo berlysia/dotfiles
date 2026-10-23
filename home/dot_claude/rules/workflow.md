@@ -98,7 +98,7 @@ plan に `## テスト計画 (ISO 25010)` を設け、関連する品質特性�
 
 ## Executive Summary（レビュー依頼時 MANDATORY）
 
-自動レビュー + トリアージが済んだら、承認を依頼する応答の冒頭に `## Executive Summary (Review Request)` を置く。どの項目も文書（と元のオーダー）の記述から写し、無い主張を足さない。無ければ `N/A`。先頭の 5 項目は、この順に前の項目を受けて 1-2 行ずつ書く。
+自動レビュー + トリアージが済んだら `workflow-cli ask-approval` の注記を読み、承認依頼の冒頭に `## Executive Summary (Review Request)` を置く。読み手は自分の最後の発言さえ覚えていないと仮定する。事実は文書・オーダー・利用者の発言・レビューの出力から写して足さず、無ければ `N/A`。前提は毎回どの作業かから書き、ID に中身を、決定に理由と除外した指摘を添える。先頭の 5 項目は、この順に前を受けて書く（前提以外は 1-2 行）。
 
 - **前提**: plan-N.md は親 spec の K-id / Scope、spec.md と単層 plan.md は元のオーダーの引用
 - **目指す状態**: Goal（plan-N.md は担う K の完了像）
@@ -106,7 +106,7 @@ plan に `## テスト計画 (ISO 25010)` を設け、関連する品質特性�
 - **やり方**: 方針と Tasks の順、途中の確認点
 - **確かめ方**: テスト計画の「入力 → 期待結果」の主なもの（spec.md は選んだ品質特性）
 
-続けて各 1-3 行:
+続けて各 1-3 行（Key Decisions は決定ごとに 1-2 行で最大 5 件）:
 
 - **Scope**（最大 5 件）/ **Key Decisions**（採用と却下した代替案）/ **Risks / Unknowns**
 - **Review Status**: verdict / reviewers / hash（auto-review marker から）
