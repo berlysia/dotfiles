@@ -159,6 +159,20 @@ test_role_to_fact_preservation() {
   run_s
   assert_eq 0 "$RC" "role -> ja-fact-preservation/SKILL.md exits 0 ($STDERR)"
 }
+test_role_to_human_documents() {
+  new_case
+  skill ja-x 'see ../ja-check/references/human-documents.md'
+  skill ja-check
+  file ja-check/references/human-documents.md 'steps'
+  run_s
+  assert_eq 0 "$RC" "role -> ja-check/references/human-documents.md exits 0 ($STDERR)"
+  new_case
+  skill ja-x 'see ../ja-check/references/natural-japanese.md'
+  skill ja-check
+  file ja-check/references/natural-japanese.md 'other'
+  run_s
+  assert_eq 1 "$RC" "role -> other ja-check reference exits 1"
+}
 test_role_to_role() {
   new_case
   skill ja-x 'see ../ja-y/SKILL.md'
