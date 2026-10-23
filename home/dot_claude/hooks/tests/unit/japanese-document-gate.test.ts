@@ -20,6 +20,7 @@ import { after, describe, it, mock } from "node:test";
 import { gate } from "../../lib/japanese-document-gate/gate.ts";
 import type { GateDeps } from "../../lib/japanese-document-gate/gate.ts";
 import {
+  autoTrackable,
   gitDocumentCandidates,
   inWorkflowDir,
 } from "../../lib/japanese-document-gate/discovery.ts";
@@ -1325,5 +1326,275 @@ describe("japanese-document-gate recovery, attribution, exclusion and publicatio
         else process.env.HOME = saved;
       }
     });
+  });
+});
+
+describe("autoTrackable (temporary directories are not tracked automatically)", () => {
+  const scratch = mkdtempSync(join("/tmp", "japanese-auto-track-"));
+  after(() => rmSync(scratch, { recursive: true, force: true }));
+  const roots = { tmp: ["/tmp"], home: "/home/u" };
+  // 実在する日本語の文書を、指定した絶対パスに作る。
+  const doc = (dir: string, name = "a.md") => {
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, name);
+    writeFileSync(file, "人が読むための説明です。\n");
+    return file;
+  };
+
+  it("excludes a document under /tmp when the cwd is elsewhere", () => {
+    const file = doc(join(scratch, "x"));
+    assert.equal(autoTrackable(file, "/work/repo", roots), false);
+  });
+
+  it("keeps a document when the cwd is inside, equal to, or under the temp root", () => {
+    const file = doc(join(scratch, "repo"), "doc.md");
+    assert.equal(autoTrackable(file, scratch, roots), true);
+    assert.equal(autoTrackable(file, join(scratch, "repo"), roots), true);
+    const other = doc(join(scratch, "y"));
+    assert.equal(autoTrackable(other, join(scratch, "x"), roots), true);
+    assert.equal(autoTrackable(other, "/tmp", roots), true);
+  });
+
+  it("keeps a document under a non-first root that overlaps the cwd", () => {
+    const file = doc(join(scratch, "dot-tmp"));
+    const r = { tmp: ["/tmp", join(scratch, "dot-tmp")], home: "/home/u" };
+    // 先頭の /tmp は cwd が外なので外す。2 つ目だけでは外れないことを見る。
+    assert.equal(
+      autoTrackable(file, "/work/repo", {
+        tmp: [r.tmp[1] ?? ""],
+        home: r.home,
+      }),
+      false,
+    );
+    assert.equal(
+      autoTrackable(file, scratch, {
+        tmp: ["/nonexistent", scratch],
+        home: "/home/u",
+      }),
+      true,
+    );
+  });
+
+  it("does not apply the overlap rule to the first root", () => {
+    const file = doc(join(scratch, "x"));
+    assert.equal(
+      autoTrackable(file, "/work/repo", {
+        tmp: ["/tmp", "/home"],
+        home: "/home/u",
+      }),
+      false,
+    );
+  });
+
+  it("applies the overlap rule to later roots (home ancestor is kept)", () => {
+    const file = doc("/var/tmp/japanese-auto-track-probe");
+    try {
+      assert.equal(
+        autoTrackable(file, "/work/repo", {
+          tmp: ["/nonexistent", "/var/tmp"],
+          home: "/var",
+        }),
+        true,
+      );
+      assert.equal(
+        autoTrackable(file, "/work/repo", {
+          tmp: ["/nonexistent", "/var/tmp/"],
+          home: "/home/u",
+        }),
+        false,
+      );
+    } finally {
+      rmSync("/var/tmp/japanese-auto-track-probe", {
+        recursive: true,
+        force: true,
+      });
+    }
+  });
+
+  it("ignores unusable roots and falls back to /tmp alone", () => {
+    const file = doc(join(scratch, "x"));
+    for (const bad of ["/", "", "tmp"]) {
+      assert.equal(
+        autoTrackable(file, "/work/repo", {
+          tmp: ["/tmp", bad],
+          home: "/home/u",
+        }),
+        false,
+      );
+    }
+    const outside = doc(
+      join(scratch, "..", "japanese-auto-track-outside"),
+      "o.md",
+    );
+    try {
+      assert.equal(
+        autoTrackable(outside, "/work/repo", {
+          tmp: ["/nonexistent", "/"],
+          home: "/home/u",
+        }),
+        true,
+      );
+    } finally {
+      rmSync(join(scratch, "..", "japanese-auto-track-outside"), {
+        recursive: true,
+        force: true,
+      });
+    }
+  });
+
+  it("does not use an unusable home for the overlap rule", () => {
+    const file = doc("/var/tmp/japanese-auto-track-home");
+    try {
+      for (const home of ["/", "", "relative"]) {
+        assert.equal(
+          autoTrackable(file, "/work/repo", {
+            tmp: ["/nonexistent", "/var/tmp"],
+            home,
+          }),
+          false,
+        );
+      }
+    } finally {
+      rmSync("/var/tmp/japanese-auto-track-home", {
+        recursive: true,
+        force: true,
+      });
+    }
+  });
+
+  it("excludes the home directory's documents when home is under the temp root (accepted limit)", () => {
+    const home = join(scratch, "home");
+    const file = doc(home, "n.md");
+    assert.equal(
+      autoTrackable(file, "/work/repo", { tmp: ["/tmp"], home }),
+      false,
+    );
+  });
+
+  it("compares by path segment and resolves dot segments", () => {
+    // /tmpfoo は /tmp の下ではない（区切りの / を含めて比べる）。作らずに
+    // 判定だけ確かめるため、roots の側を /tmp にして近い名前の root と比べる。
+    const near = `${scratch}-near`;
+    const file = doc(near);
+    try {
+      assert.equal(
+        autoTrackable(file, "/work/repo", { tmp: [scratch], home: "/home/u" }),
+        true,
+      );
+    } finally {
+      rmSync(near, { recursive: true, force: true });
+    }
+    const dots = doc("/var/tmp/japanese-auto-track-dots");
+    try {
+      const viaDots = "/tmp/../var/tmp/japanese-auto-track-dots/a.md";
+      assert.equal(autoTrackable(viaDots, "/work/repo", roots), true);
+      assert.equal(dots.endsWith("a.md"), true);
+    } finally {
+      rmSync("/var/tmp/japanese-auto-track-dots", {
+        recursive: true,
+        force: true,
+      });
+    }
+  });
+
+  it("returns false when the document itself is not trackable", () => {
+    assert.equal(
+      autoTrackable("/work/repo/missing.md", "/work/repo", roots),
+      false,
+    );
+  });
+});
+
+describe("autoTrackable through the gate", () => {
+  const scratch = mkdtempSync(join("/tmp", "japanese-auto-gate-"));
+  after(() => rmSync(scratch, { recursive: true, force: true }));
+  const cwd = "/work/repo";
+  let n = 0;
+  function setup() {
+    const key = String(++n);
+    const stateDir = join(scratch, `state-${key}`);
+    const file = join(scratch, `${key}.md`);
+    const content = "人が読むための説明です。\n";
+    writeFileSync(file, content);
+    let candidates: Candidates = { ok: true, paths: [] };
+    const deps: GateDeps = {
+      stateDir,
+      candidates: () => candidates,
+      now: () => 0,
+    };
+    const input = (
+      event: string,
+      tool: string,
+      args: Record<string, unknown>,
+      extra: Record<string, unknown> = {},
+    ) => ({
+      hook_event_name: event,
+      session_id: `s-${key}`,
+      cwd,
+      tool_name: tool,
+      tool_input: args,
+      ...extra,
+    });
+    return {
+      file,
+      content,
+      stateDir,
+      deps,
+      input,
+      session: `s-${key}`,
+      setCandidates: (value: Candidates) => {
+        candidates = value;
+      },
+    };
+  }
+
+  it("does not track a Write to a temp document, but track and Stop still block it", () => {
+    const s = setup();
+    gate(s.input("PostToolUse", "Write", { file_path: s.file }), s.deps);
+    assert.deepEqual(tracked(s.session, s.stateDir).paths, []);
+    track(s.file, s.session, s.stateDir);
+    const stop = gate(s.input("Stop", "", {}), s.deps);
+    assert.equal(stop?.decision, "block");
+  });
+
+  it("denies publishing an unchecked temp document and passes once checked", () => {
+    for (const command of [
+      (f: string) => `gh pr create --body-file '${f}'`,
+      (f: string) => `git commit -F '${f}'`,
+    ]) {
+      const s = setup();
+      const input = () =>
+        s.input("PreToolUse", "Bash", { command: command(s.file) });
+      assert.ok(
+        JSON.stringify(gate(input(), s.deps)).includes(
+          '"permissionDecision":"deny"',
+        ),
+      );
+      recordCheck(s.file, digest(s.content), s.content, 0, s.stateDir);
+      assert.ok(
+        !JSON.stringify(gate(input(), s.deps)).includes(
+          '"permissionDecision":"deny"',
+        ),
+      );
+    }
+  });
+
+  it("does not claim a temp document that appears between a Bash call's Pre and Post", () => {
+    const s = setup();
+    gate(
+      s.input("PreToolUse", "Bash", { command: "true" }, { tool_use_id: "t1" }),
+      s.deps,
+    );
+    s.setCandidates({ ok: true, paths: [s.file] });
+    gate(
+      s.input(
+        "PostToolUse",
+        "Bash",
+        { command: "true" },
+        { tool_use_id: "t1" },
+      ),
+      s.deps,
+    );
+    assert.deepEqual(tracked(s.session, s.stateDir).paths, []);
   });
 });

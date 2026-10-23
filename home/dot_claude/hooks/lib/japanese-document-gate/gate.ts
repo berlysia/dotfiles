@@ -20,7 +20,12 @@ import {
   tracked,
   writeMark,
 } from "../../../japanese-check/tracking.ts";
-import { fileTargets, inWorkflowDir, trackableDocument } from "./discovery.ts";
+import {
+  autoTrackable,
+  fileTargets,
+  inWorkflowDir,
+  trackableDocument,
+} from "./discovery.ts";
 import type { Candidates } from "./discovery.ts";
 import { analyzePublication } from "./publication.ts";
 import { object } from "./shared.ts";
@@ -74,7 +79,7 @@ function attributeBashWrites(
     return "[japanese-document-gate] この Bash 呼び出しで書かれた日本語文書を特定できませんでした（呼び出しの識別子か git の一覧が得られない）。Bash で日本語文書を書いたなら、node ~/.claude/japanese-check/cli.ts track <文書> --session <session_id> で追跡に加えてください。この知らせはセッションに 1 回だけ出ます。";
   }
   for (const file of new Set([...after.paths, ...Object.keys(snapshot)])) {
-    if (!trackableDocument(file, cwd)) continue;
+    if (!autoTrackable(file, cwd)) continue;
     let current: string;
     try {
       current = digest(readFileSync(file));
@@ -186,7 +191,7 @@ function evaluate(input: unknown, deps: GateDeps): Output | null {
   }
   if (event === "PostToolUse") {
     for (const file of fileTargets(tool, args, input.cwd)) {
-      if (trackableDocument(file, input.cwd)) track(file, session, stateDir);
+      if (autoTrackable(file, input.cwd)) track(file, session, stateDir);
     }
   }
   const analysis =
