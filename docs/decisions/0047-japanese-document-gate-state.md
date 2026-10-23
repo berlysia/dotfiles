@@ -37,6 +37,6 @@ accepted (2026-10-23)
 - 限界は `.skills/ja-check/references/human-documents.md` に書いた。主なものは次のとおりである
   - 1 回のコマンドの実行中に他者が同じ文書を変えると、自分の変更として追跡する
   - ゲートは自己申告で、故障を起こせば通れる
-  - `bash -c`・`eval`・スクリプトの中の公開と、`.tmp/sessions/` の下の本文ファイルは見ない
+  - `bash -c`、`eval`、スクリプトの中の公開と、workflow dir の下の本文ファイルは見ない
 - 検査記録は消さないので、検査した文書の数だけ増える
 - 観測していない Codex の挙動は [docs/plans/japanese-document-gate-followups.md](../plans/japanese-document-gate-followups.md) に残した
