@@ -254,3 +254,4 @@ prefix_rule(
     decision = "allow",
     justification = "Read-only chezmoi template data",
 )
+prefix_rule(pattern=["bun", "run", "test"], decision="allow")
