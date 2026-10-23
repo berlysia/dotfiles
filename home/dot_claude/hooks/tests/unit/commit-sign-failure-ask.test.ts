@@ -13,6 +13,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { createHook } from "../../implementations/commit-sign-failure-ask.ts";
+import { signFailureMarkerDir } from "../../lib/commit-sign-failure.ts";
+import { getHomeDir } from "../../lib/path-utils.ts";
 import {
   createPostToolUseContextFor,
   createStopContextFor,
@@ -350,5 +352,14 @@ describe("commit-sign-failure-ask.ts: persisted (truncated) output", () => {
     );
     await invokeRun(hook, ctx);
     ok(!JSON.stringify(ctx.jsonCalls).includes("[commit-sign-failure-ask]"));
+  });
+});
+
+describe("signFailureMarkerDir", () => {
+  it("is the dir the hook writes to, shared with ask-preflight", () => {
+    strictEqual(
+      signFailureMarkerDir(),
+      join(getHomeDir(), ".claude", "state", "commit-sign-failure"),
+    );
   });
 });

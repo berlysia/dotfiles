@@ -13,7 +13,6 @@
  */
 
 import { readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
 import { defineHook } from "cc-hooks-ts";
 import {
   buildSignFailureContext,
@@ -22,16 +21,12 @@ import {
   hasMarker,
   isChezmoiUpdateCommand,
   isCommitCreatingCommand,
+  signFailureMarkerDir,
   STOP_REASON,
   writeMarker,
 } from "../lib/commit-sign-failure.ts";
-import { getHomeDir } from "../lib/path-utils.ts";
 import { isSafeSessionId } from "../lib/session-id.ts";
 import "../types/tool-schemas.ts";
-
-function defaultMarkerDir(): string {
-  return join(getHomeDir(), ".claude", "state", "commit-sign-failure");
-}
 
 // Large Bash output reaches hooks cut to its first 30000 chars (stderr merged
 // in), with the full text in the file at persistedOutputPath. A pre-commit run
@@ -54,7 +49,7 @@ function stringField(value: unknown, key: string): string | undefined {
   return typeof field === "string" ? field : undefined;
 }
 
-export function createHook(getMarkerDir: () => string = defaultMarkerDir) {
+export function createHook(getMarkerDir: () => string = signFailureMarkerDir) {
   return defineHook({
     trigger: { PostToolUse: true, PostToolUseFailure: true, Stop: true },
     run: (context) => {

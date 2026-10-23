@@ -18,6 +18,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { gitSubcommand, splitCommand } from "./command-words.ts";
+import { getHomeDir } from "./path-utils.ts";
 import { isSafeSessionId } from "./session-id.ts";
 
 export const HOOK_ID = "[commit-sign-failure-ask]";
@@ -104,6 +105,11 @@ export function buildSignFailureContext(args: {
 export const STOP_REASON = `${HOOK_ID} このセッション（subagent を含む）で commit の署名が失敗した記録が残っている。署名を直せず、このまま止まることになるなら、AskUserQuestion で「署名を直して再試行 / この操作だけ --no-gpg-sign で再実行 / ここで止める」を聞く。すでに解決したなら、解決したと書いて終えてよい。`;
 
 // --- marker store ---------------------------------------------------------
+
+/** Where this hook's markers live; ask-preflight reads the same dir to stand aside. */
+export function signFailureMarkerDir(): string {
+  return join(getHomeDir(), ".claude", "state", "commit-sign-failure");
+}
 
 const MARKER_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 /** Returns false (never throws) when the marker could not be written. */
