@@ -52,7 +52,7 @@ disable-model-invocation: true
 
 - 最後でない入口は、機械の検査を走らせない。
 - 最後の入口が、重ねた入口のうち機械の検査を持つもの（tanteki の textlint、yomiyasu の check）の検査を、まとめて 1 回の段として走らせる。段の中身と順は `ja-check` が決める。
-- 重ねた入口に tanteki も yomiyasu も含まれないときは、機械の検査がない。`../ja-fact-preservation/SKILL.md` の「返す前の確認」だけを行う。
+- 重ねた入口に tanteki も yomiyasu も含まれないときは、入口固有の機械検査はない。人が読む文書の TS 製の必須検査は、常時規則から読む `../ja-check/references/human-documents.md` に従って行う。`../ja-fact-preservation/SKILL.md` の「返す前の確認」も行う。
 
 ## 共通の決まり
 

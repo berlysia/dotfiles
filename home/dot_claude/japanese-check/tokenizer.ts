@@ -1,0 +1,92 @@
+export interface Token {
+  surface: string;
+  normalized: string;
+  pos: string[];
+  start: number;
+  end: number;
+}
+export type Tokenizer = (text: string) => Token[];
+
+function record(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function comparable(text: string): string {
+  return text.normalize("NFKC").toLowerCase();
+}
+
+function comparableInput(text: string) {
+  let value = "";
+  const offsets: Array<{ start: number; end: number }> = [];
+  // A combining sequence must normalize together, while offsets still refer
+  // to the original UTF-16 text. The engine may change case and symbol width.
+  for (const { segment, index } of new Intl.Segmenter("ja", {
+    granularity: "grapheme",
+  }).segment(text)) {
+    const normalized = comparable(segment);
+    value += normalized;
+    for (let i = 0; i < normalized.length; i++) {
+      offsets.push({ start: index, end: index + segment.length });
+    }
+  }
+  return { value, offsets };
+}
+
+export function decodeTokens(json: string, text: string): Token[] {
+  const data: unknown = JSON.parse(json);
+  if (!Array.isArray(data))
+    throw new Error("Sudachi の出力が配列ではありません。");
+  let cursor = 0;
+  let originalEnd = 0;
+  const input = comparableInput(text);
+  const result = data.map((item: unknown) => {
+    if (
+      !record(item) ||
+      typeof item.surface !== "string" ||
+      !item.surface ||
+      typeof item.normalized_form !== "string" ||
+      !Array.isArray(item.poses) ||
+      !item.poses.every((part: unknown) => typeof part === "string")
+    ) {
+      throw new Error("Sudachi の形態素データが不正です。");
+    }
+    const surface = comparable(item.surface);
+    const found = input.value.indexOf(surface, cursor);
+    const start = input.offsets[found]?.start;
+    const end = input.offsets[found + surface.length - 1]?.end;
+    if (
+      found < 0 ||
+      start === undefined ||
+      end === undefined ||
+      start < originalEnd ||
+      input.value.slice(cursor, found).trim()
+    ) {
+      throw new Error("Sudachi の形態素と入力位置を対応できません。");
+    }
+    cursor = found + surface.length;
+    originalEnd = end;
+    return {
+      surface: text.slice(start, end),
+      normalized: item.normalized_form,
+      pos: item.poses as string[],
+      start,
+      end,
+    };
+  });
+  if (input.value.slice(cursor).trim())
+    throw new Error("Sudachi が入力の末尾を解析していません。");
+  return result;
+}
+
+export async function createTokenizer(): Promise<Tokenizer> {
+  // Lazy import keeps structural commands independent of the large dictionary.
+  const { tokenize, TokenizeMode } = await import("sudachi");
+  const cache = new Map<string, Token[]>();
+  return (text) => {
+    const cached = cache.get(text);
+    if (cached) return cached;
+    const tokens = decodeTokens(tokenize(text, TokenizeMode.C), text);
+    cache.set(text, tokens);
+    return tokens;
+  };
+}
