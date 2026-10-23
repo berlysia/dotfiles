@@ -256,9 +256,10 @@ describe(
         [
           "approval question",
           preInput(newSessionId(), {
-            questions: buildApprovalQuestions([
-              { name: "spec.md", hash: "a".repeat(64) },
-            ]),
+            questions: buildApprovalQuestions(
+              [{ name: "spec.md", hash: "a".repeat(64), title: null }],
+              { tree: null, id: null },
+            ),
           }),
         ],
         ["push", preInput(newSessionId(), question("main に push しますか"))],

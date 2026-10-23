@@ -17,7 +17,8 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import hook from "../../implementations/approval-answer-recorder.ts";
 import {
   APPROVALS_LOG,
-  APPROVAL_QUESTION_TEXT,
+  buildApprovalQuestionText,
+  describeApprovalWorkflow,
   DELEGATION_QUESTION_TEXT,
   buildApprovalQuestions,
 } from "../../lib/workflow-approval.ts";
@@ -76,12 +77,17 @@ describe("approval-answer-recorder (spec K2/K3)", () => {
       docs.map((name) => ({
         name,
         hash: name === "spec.md" ? specHash : plan1Hash,
+        title: null,
       })),
+      describeApprovalWorkflow(wf),
     );
+
+  const questionKey = () =>
+    buildApprovalQuestionText(describeApprovalWorkflow(wf));
 
   const answerResponse = (answer: unknown, docs?: string[]) => ({
     questions: questionsFor(docs),
-    answers: { [APPROVAL_QUESTION_TEXT]: answer },
+    answers: { [questionKey()]: answer },
   });
 
   const logText = () =>
@@ -129,13 +135,20 @@ describe("approval-answer-recorder (spec K2/K3)", () => {
     const spec = buildSpecWithScope(REVIEWED, ["src/"]);
     writeFileSync(join(wf, "spec.md"), spec);
     const questions = buildApprovalQuestions(
-      [{ name: "spec.md", hash: computeWorkflowRepoPlanHash(spec) }],
+      [
+        {
+          name: "spec.md",
+          hash: computeWorkflowRepoPlanHash(spec),
+          title: null,
+        },
+      ],
+      describeApprovalWorkflow(wf),
       [{ entry: "src/", protected: false }],
     );
     const { output } = await fire({
       questions,
       answers: {
-        [APPROVAL_QUESTION_TEXT]: "spec.md",
+        [questionKey()]: "spec.md",
         [DELEGATION_QUESTION_TEXT]: "委任する",
       },
     });
@@ -146,7 +159,7 @@ describe("approval-answer-recorder (spec K2/K3)", () => {
 
   it("reads tool_response only, never tool_input", async () => {
     const decline = await fire(answerResponse("承認しない"), {
-      input: { answers: { [APPROVAL_QUESTION_TEXT]: "spec.md, plan-1.md" } },
+      input: { answers: { [questionKey()]: "spec.md, plan-1.md" } },
     });
     assert.match(decline.text, /承認しなかった/);
     assert.equal(logText(), "");
@@ -229,7 +242,7 @@ describe("approval-answer-recorder (spec K2/K3)", () => {
   it("returns the notes and records nothing", async () => {
     const { text } = await fire({
       ...answerResponse("spec.md"),
-      annotations: { [APPROVAL_QUESTION_TEXT]: { notes: "ここ直して" } },
+      annotations: { [questionKey()]: { notes: "ここ直して" } },
     });
     assert.match(text, /ここ直して/);
     assert.equal(logText(), "");
@@ -294,10 +307,11 @@ describe("approval-answer-recorder (spec K2/K3)", () => {
       ),
     );
     const { text } = await fire({
-      questions: buildApprovalQuestions([
-        { name: "plan-2.md", hash: plan1Hash },
-      ]),
-      answers: { [APPROVAL_QUESTION_TEXT]: "plan-2.md" },
+      questions: buildApprovalQuestions(
+        [{ name: "plan-2.md", hash: plan1Hash, title: null }],
+        describeApprovalWorkflow(wf),
+      ),
+      answers: { [questionKey()]: "plan-2.md" },
     });
     assert.match(text, /承認待ちでなくなった/);
     assert.equal(logText(), "");

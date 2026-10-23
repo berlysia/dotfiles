@@ -50,6 +50,7 @@ import { getProjectRoot } from "../lib/project-root.ts";
 import { sanitizeForDisplay } from "../lib/sanitize-display.ts";
 import {
   buildApprovalQuestions,
+  describeApprovalWorkflow,
   MAX_DOCS_PER_QUESTION,
   readLatestApprovals,
 } from "../lib/workflow-approval.ts";
@@ -1066,7 +1067,7 @@ function cmdAskApproval(
   const ready = listApprovalCandidates(wfDir, deps.cwd).flatMap((name) => {
     const readiness = evaluateApprovalReadiness(wfDir, name);
     return readiness.ready && !readiness.alreadyApproved
-      ? [{ name, hash: readiness.hash }]
+      ? [{ name, hash: readiness.hash, title: readiness.title }]
       : [];
   });
   if (ready.length === 0) {
@@ -1104,7 +1105,7 @@ function cmdAskApproval(
   notes.push(...APPROVAL_SUMMARY_RULE_LINES);
   return {
     exitCode: 0,
-    stdout: `${JSON.stringify({ questions: buildApprovalQuestions(asked, offer ?? undefined) })}\n`,
+    stdout: `${JSON.stringify({ questions: buildApprovalQuestions(asked, describeApprovalWorkflow(wfDir), offer ?? undefined) })}\n`,
     stderr: `${notes.join("\n")}\n`,
   };
 }

@@ -414,6 +414,63 @@ test("evaluateApprovalReadiness and listApprovalCandidates: ready means every co
   equal(listApprovalCandidates(wf).join(","), "plan.md");
 });
 
+test("evaluateApprovalReadiness: title comes from the normalized text the hash covers", () => {
+  const wf = freshWf();
+  const reviewed = buildPlanContent({
+    planStatus: "complete",
+    approvalStatus: "pending",
+    review: { verdict: "pass" },
+  });
+  const content = `# Spec: Z\n\n${reviewed}`;
+  writeFileSync(join(wf, "plan.md"), content);
+  const r = evaluateApprovalReadiness(wf, "plan.md");
+  equal(r.title, "Spec: Z");
+  equal(r.hash, computeDocumentHash(content, SPEC_NORMALIZERS));
+  // The marker hash covers the document without the H1, so the gate is not ready.
+  equal(r.ready, false);
+  equal(r.alreadyApproved, false);
+});
+
+test("evaluateApprovalReadiness: title is null when the document is unreadable or has no H1", () => {
+  const wf = freshWf();
+  equal(evaluateApprovalReadiness(wf, "plan.md").title, null);
+  writeFileSync(
+    join(wf, "plan.md"),
+    buildPlanContent({
+      planStatus: "complete",
+      approvalStatus: "pending",
+      review: { verdict: "pass" },
+    }),
+  );
+  equal(evaluateApprovalReadiness(wf, "plan.md").title, null);
+});
+
+test("evaluateApprovalReadiness: plan-N.md readable but spec.md not: hash computed, title null", () => {
+  const wf = freshWf();
+  const plan = `# Plan: Y\n\n${buildPlanContent({
+    planStatus: "complete",
+    approvalStatus: "pending",
+    review: { verdict: "pass" },
+  })}`;
+  writeFileSync(join(wf, "plan-1.md"), plan);
+  const r = evaluateApprovalReadiness(wf, "plan-1.md");
+  equal(r.title, null);
+  equal(r.hash, computeDocumentHash(plan, SPEC_NORMALIZERS));
+  equal(r.ready, false);
+});
+
+test("evaluateApprovalReadiness: an H1 only inside a Reviewer Outputs section is not a title", () => {
+  const wf = freshWf();
+  writeFileSync(
+    join(wf, "plan.md"),
+    `## Reviewer Outputs (Round 1)\n# x\n\n${buildPlanContent({
+      planStatus: "complete",
+      approvalStatus: "pending",
+    })}`,
+  );
+  equal(evaluateApprovalReadiness(wf, "plan.md").title, null);
+});
+
 test("two-layer: once spec.md passes, the note and next step ask for 承認 of the owning plan-N.md", () => {
   const wf = freshWf();
   writeFileSync(join(wf, "research.md"), "x");

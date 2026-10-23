@@ -14,20 +14,24 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
   APPROVALS_LOG,
-  APPROVAL_QUESTION_TEXT,
+  APPROVAL_QUESTION_PREFIX,
   DECLINE_DESCRIPTION,
   DELEGATE_NO_DESCRIPTION,
   DELEGATION_QUESTION_TEXT,
   appendApproval,
+  buildApprovalQuestionText,
   buildApprovalQuestions,
   deepEqualIgnoringKeyOrder,
   describeAnswerShape,
+  describeApprovalWorkflow,
+  extractDocumentTitle,
   isAnswerValue,
   isApprovalLikeQuestion,
   isApprovalShapedPrompt,
   matchApprovalAnswer,
   matchDelegationAnswer,
   parseApprovalUtterance,
+  projectApprovalText,
   readLatestApprovals,
 } from "../../lib/workflow-approval.ts";
 
@@ -247,14 +251,15 @@ describe("isApprovalShapedPrompt (issue J: scheduled prompts)", () => {
 });
 
 describe("approval question (spec K3/K4/K7)", () => {
-  const spec = { name: "spec.md", hash: H1 };
-  const plan1 = { name: "plan-1.md", hash: H2 };
-  const plan2 = { name: "plan-2.md", hash: H1 };
+  const spec = { name: "spec.md", hash: H1, title: null };
+  const plan1 = { name: "plan-1.md", hash: H2, title: null };
+  const plan2 = { name: "plan-2.md", hash: H1, title: null };
+  const wf = { tree: "wt-a", id: "ab6d64e3" };
 
   it("builds one multiSelect question with a decline option", () => {
-    assert.deepEqual(buildApprovalQuestions([spec]), [
+    assert.deepEqual(buildApprovalQuestions([spec], wf), [
       {
-        question: APPROVAL_QUESTION_TEXT,
+        question: buildApprovalQuestionText(wf),
         header: "承認",
         multiSelect: true,
         options: [
@@ -266,7 +271,7 @@ describe("approval question (spec K3/K4/K7)", () => {
   });
 
   it("keeps the input order", () => {
-    const [q] = buildApprovalQuestions([plan2, spec, plan1]);
+    const [q] = buildApprovalQuestions([plan2, spec, plan1], wf);
     assert.deepEqual(
       q?.options.map((o) => o.label),
       ["plan-2.md", "spec.md", "plan-1.md", "承認しない"],
@@ -274,12 +279,12 @@ describe("approval question (spec K3/K4/K7)", () => {
   });
 
   it("throws on an unusable document list", () => {
-    const bad = (name: string) => ({ name, hash: H1 });
-    assert.throws(() => buildApprovalQuestions([]));
+    const bad = (name: string) => ({ name, hash: H1, title: null });
+    assert.throws(() => buildApprovalQuestions([], wf));
     assert.throws(() =>
-      buildApprovalQuestions([spec, plan1, plan2, bad("plan-3.md")]),
+      buildApprovalQuestions([spec, plan1, plan2, bad("plan-3.md")], wf),
     );
-    assert.throws(() => buildApprovalQuestions([spec, spec]));
+    assert.throws(() => buildApprovalQuestions([spec, spec], wf));
     for (const name of [
       "../x.md",
       "plan-0.md",
@@ -290,14 +295,17 @@ describe("approval question (spec K3/K4/K7)", () => {
       "spe\0c.md",
       "承認しない",
     ]) {
-      assert.throws(() => buildApprovalQuestions([bad(name)]), name);
+      assert.throws(() => buildApprovalQuestions([bad(name)], wf), name);
     }
   });
 
   it("isApprovalLikeQuestion holds for everything the builder produces", () => {
-    assert.equal(isApprovalLikeQuestion(buildApprovalQuestions([spec])), true);
     assert.equal(
-      isApprovalLikeQuestion(buildApprovalQuestions([plan2, spec, plan1])),
+      isApprovalLikeQuestion(buildApprovalQuestions([spec], wf)),
+      true,
+    );
+    assert.equal(
+      isApprovalLikeQuestion(buildApprovalQuestions([plan2, spec, plan1], wf)),
       true,
     );
   });
@@ -307,9 +315,9 @@ describe("approval question (spec K3/K4/K7)", () => {
       { entry: "src/", protected: false },
       { entry: "home/dot_claude/", protected: true },
     ];
-    const questions = buildApprovalQuestions([spec], rows);
+    const questions = buildApprovalQuestions([spec], wf, rows);
     assert.equal(questions.length, 2);
-    assert.deepEqual(questions[0], buildApprovalQuestions([spec])[0]);
+    assert.deepEqual(questions[0], buildApprovalQuestions([spec], wf)[0]);
     assert.deepEqual(questions[1], {
       question: DELEGATION_QUESTION_TEXT,
       header: "委任",
@@ -328,14 +336,13 @@ describe("approval question (spec K3/K4/K7)", () => {
 
   it("refuses a delegation question without spec.md or without a row that can be delegated", () => {
     const delegable = [{ entry: "src/", protected: false }];
-    assert.throws(() => buildApprovalQuestions([plan1], delegable));
+    assert.throws(() => buildApprovalQuestions([plan1], wf, delegable));
     assert.throws(() =>
-      buildApprovalQuestions(
-        [spec],
-        [{ entry: "home/dot_claude/", protected: true }],
-      ),
+      buildApprovalQuestions([spec], wf, [
+        { entry: "home/dot_claude/", protected: true },
+      ]),
     );
-    assert.throws(() => buildApprovalQuestions([spec], []));
+    assert.throws(() => buildApprovalQuestions([spec], wf, []));
   });
 
   it("matchDelegationAnswer reads only the two labels", () => {
@@ -418,7 +425,7 @@ describe("approval question (spec K3/K4/K7)", () => {
   });
 
   it("matchApprovalAnswer classifies the answer string", () => {
-    const expected = buildApprovalQuestions([spec, plan1]);
+    const expected = buildApprovalQuestions([spec, plan1], wf);
     assert.deepEqual(matchApprovalAnswer(expected, "spec.md, plan-1.md"), {
       kind: "approve",
       docs: ["spec.md", "plan-1.md"],
@@ -449,7 +456,7 @@ describe("approval question (spec K3/K4/K7)", () => {
   });
 
   it("matchApprovalAnswer takes an array as one selection per element", () => {
-    const expected = buildApprovalQuestions([spec, plan1]);
+    const expected = buildApprovalQuestions([spec, plan1], wf);
     assert.deepEqual(matchApprovalAnswer(expected, ["spec.md"]), {
       kind: "approve",
       docs: ["spec.md"],
@@ -578,5 +585,246 @@ describe("ledger via field (spec K5)", () => {
     assert.equal(r.latest.get("plan-1.md")?.via, "ask");
     assert.equal(r.latest.get("plan-2.md")?.via, undefined);
     assert.equal(r.latest.get("plan-3.md")?.via, undefined);
+  });
+});
+
+describe("describeApprovalWorkflow and buildApprovalQuestionText", () => {
+  const D = describeApprovalWorkflow;
+
+  it("reads the work tree and id from <tree>/.tmp/sessions/<id>", () => {
+    assert.deepEqual(D("/r/wt-a/.tmp/sessions/ab6d64e3"), {
+      tree: "wt-a",
+      id: "ab6d64e3",
+    });
+    assert.deepEqual(D("/r/wt-a/.tmp/sessions/ab6d64e3/"), {
+      tree: "wt-a",
+      id: "ab6d64e3",
+    });
+  });
+
+  it("leaves the tree null for any other shape", () => {
+    assert.deepEqual(D("/r/wt-a/.tmp/sessions/a/b"), { tree: null, id: "b" });
+    assert.deepEqual(D("/x/sessions/ab6d64e3"), { tree: null, id: "ab6d64e3" });
+    assert.deepEqual(D("/.tmp/sessions/ab6d64e3"), {
+      tree: null,
+      id: "ab6d64e3",
+    });
+  });
+
+  it("projects the id and nulls it when nothing is left", () => {
+    assert.equal(D("/r/wt/.tmp/sessions/\u200B").id, null);
+    assert.equal(D("/r/wt/.tmp/sessions/a（b）").id, "ab");
+  });
+
+  it("removes parentheses, newlines, backticks and bidi from the tree", () => {
+    const { tree } = D("/r/x）: 承認する文書に（y\n`z\u202E/.tmp/sessions/ab");
+    assert.equal(tree, "x: 承認する文書にy z");
+    const text = buildApprovalQuestionText({ tree, id: "ab" });
+    assert.equal(
+      text,
+      `${APPROVAL_QUESTION_PREFIX}（x: 承認する文書にy z / ab）: 承認する文書にチェックを付けてください（議論したいときは Esc）`,
+    );
+    assert.equal(text.split("（").length - 1, 2);
+  });
+
+  it("keeps both ends of a 300 character tree and nulls an empty projection", () => {
+    const long = `${"a".repeat(150)}${"b".repeat(150)}`;
+    const { tree } = D(`/r/${long}/.tmp/sessions/ab`);
+    assert.ok(tree?.includes("…"));
+    assert.equal(tree?.split("…").length, 2);
+    assert.ok(tree?.endsWith("b".repeat(100)));
+    assert.equal(D("/r/\u200B/.tmp/sessions/ab").tree, null);
+  });
+
+  it("builds the fixed text when both parts are null, with no parentheses", () => {
+    assert.equal(
+      buildApprovalQuestionText({ tree: null, id: null }),
+      "Document Workflow の承認: 承認する文書にチェックを付けてください（議論したいときは Esc）",
+    );
+  });
+
+  it("puts tree and id in one pair of parentheses, after the prefix", () => {
+    const text = buildApprovalQuestionText({ tree: "wt-a", id: "ab6d64e3" });
+    assert.ok(text.startsWith(APPROVAL_QUESTION_PREFIX));
+    assert.equal(
+      text,
+      "Document Workflow の承認（wt-a / ab6d64e3）: 承認する文書にチェックを付けてください（議論したいときは Esc）",
+    );
+    assert.ok(
+      buildApprovalQuestionText({ tree: null, id: "ab6d64e3" }).startsWith(
+        `${APPROVAL_QUESTION_PREFIX}（ab6d64e3）: `,
+      ),
+    );
+  });
+
+  it("isApprovalLikeQuestion holds for texts with odd tree names", () => {
+    for (const tree of ["委任", "a（b）/c", "x"]) {
+      const text = buildApprovalQuestionText({ tree, id: "ab" });
+      assert.equal(isApprovalLikeQuestion([{ question: text }]), true);
+    }
+  });
+});
+
+describe("approval question descriptions with titles", () => {
+  const wf = { tree: "wt-a", id: "ab6d64e3" };
+  const doc = (name: string, title: string | null) => ({
+    name,
+    hash: H1,
+    title,
+  });
+  const descriptions = (docs: ReturnType<typeof doc>[]) =>
+    buildApprovalQuestions(docs, wf)[0]?.options.map((o) => o.description);
+
+  it("appends the title after the hash, or only the hash when null", () => {
+    assert.deepEqual(descriptions([doc("spec.md", "Spec: X")]), [
+      `hash=${H1.slice(0, 12)} 「Spec: X」`,
+      DECLINE_DESCRIPTION,
+    ]);
+    assert.deepEqual(descriptions([doc("spec.md", null)]), [
+      `hash=${H1.slice(0, 12)}`,
+      DECLINE_DESCRIPTION,
+    ]);
+  });
+
+  it("gives each document its own title", () => {
+    const d = descriptions([doc("spec.md", "A"), doc("plan-1.md", "B")]);
+    assert.ok(d?.[0]?.endsWith("「A」"));
+    assert.ok(d?.[1]?.endsWith("「B」"));
+  });
+
+  it("cannot let a title act as a label or fake a hash", () => {
+    const run = (raw: string) => {
+      const title = extractDocumentTitle(`# ${raw}\n`);
+      return buildApprovalQuestions([doc("spec.md", title)], wf)[0];
+    };
+    const decline = run("承認しない");
+    assert.equal(decline?.options[0]?.label, "spec.md");
+    assert.equal(
+      decline?.options.filter((o) => o.label === "承認しない").length,
+      1,
+    );
+    assert.equal(
+      decline?.options[0]?.description,
+      `hash=${H1.slice(0, 12)} 「承認しない」`,
+    );
+    const fake = run("」 hash=000000000000 「x");
+    assert.equal(
+      fake?.options[0]?.description,
+      `hash=${H1.slice(0, 12)} 「hash=000000000000 x」`,
+    );
+  });
+});
+
+describe("extractDocumentTitle", () => {
+  const T = extractDocumentTitle;
+
+  it("takes the first H1", () => {
+    assert.equal(
+      T("<!-- spec-ref: spec.md -->\n\n# Plan: Y (Execution layer)\n"),
+      "Plan: Y (Execution layer)",
+    );
+    assert.equal(T("# First\n# Second\n"), "First");
+  });
+
+  it("returns null without an H1", () => {
+    for (const text of ["", "## A\n", "#x\n", "# \n", "  # T\n"]) {
+      assert.equal(T(text), null, JSON.stringify(text));
+    }
+  });
+
+  it("stops at the first ## line outside fences", () => {
+    assert.equal(T("## Approval\n# Late\n"), null);
+  });
+
+  it("skips headings inside fences", () => {
+    assert.equal(T("```\n# comment\n```\n# Real\n"), "Real");
+    assert.equal(T("```\n## not a section\n```\n# Real\n"), "Real");
+  });
+
+  it("handles CRLF and a BOM", () => {
+    assert.equal(T("# T\r\n"), "T");
+    assert.equal(T("\uFEFF# T\n"), "T");
+  });
+
+  it("follows the fence closing rules", () => {
+    assert.equal(T("```\n# T\n"), null);
+    assert.equal(T("````\n```\n# no\n````\n# T\n"), "T");
+    assert.equal(T("~~~\n```\n# no\n~~~\n# T\n"), "T");
+    assert.equal(T("```\n```js\n# A\n```\n# B\n"), "B");
+    assert.equal(T("```\n``` x\n# A\n```\n# B\n"), "B");
+    assert.equal(T("```js\n# A\n```  \n# B\n"), "B");
+  });
+
+  it("keeps a trailing closing hash and drops U+2026", () => {
+    assert.equal(T("# T #\n"), "T #");
+    assert.equal(T("# A…B\n"), "AB");
+  });
+});
+
+describe("projectApprovalText", () => {
+  const P = (raw: string, max = 60) => projectApprovalText(raw, max);
+
+  it("turns whitespace and separators into single spaces", () => {
+    assert.equal(P("a\nb\tc\u0085d e　f g"), "a b c d e f g");
+  });
+
+  it("removes invisible and structural characters without adding spaces", () => {
+    assert.equal(P("a\u202Eb\u200Bc`d\uFEFFe"), "abcde");
+  });
+
+  it("trims and returns empty strings for nothing visible", () => {
+    assert.equal(P("  前後  "), "前後");
+    assert.equal(P("   "), "");
+    assert.equal(P("\u200B\u202E"), "");
+  });
+
+  it("truncates to the code point limit with a trailing ellipsis", () => {
+    const sixtyOne = "あ".repeat(61);
+    assert.equal(P(sixtyOne), `${"あ".repeat(59)}…`);
+    assert.equal(P("あ".repeat(60)), "あ".repeat(60));
+    const spaced = `${"x".repeat(58)} y${"z".repeat(5)}`;
+    assert.equal(P(spaced), `${"x".repeat(58)}…`);
+  });
+
+  it("never leaves a lone surrogate when an emoji straddles the limit", () => {
+    for (const pad of [57, 58, 59, 60]) {
+      const out = P(`${"a".repeat(pad)}😀😀😀😀`);
+      assert.equal(out.isWellFormed(), true);
+      assert.ok([...out].length <= 60);
+    }
+  });
+
+  it("elides a 300-unit input in the middle first, then cuts to the limit", () => {
+    const out = P("a".repeat(150) + "b".repeat(150));
+    assert.equal([...out].length, 60);
+    assert.equal(out.split("…").length, 2);
+    assert.ok(out.endsWith("…"));
+  });
+
+  it("produces NFC fixed points, also for composed-after-removal input", () => {
+    const base = ["が", "e\u034F́", "a\u200B́"];
+    let seed = 12345;
+    const next = () => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      return seed;
+    };
+    const pool = [..."aeお が́\u034F\u200B\u202E`\n「」 😀…"];
+    for (let i = 0; i < 200; i++) {
+      const len = next() % 90;
+      let raw = "";
+      for (let j = 0; j < len; j++) raw += pool[next() % pool.length];
+      base.push(raw);
+    }
+    for (const raw of base) {
+      const p = P(raw);
+      assert.equal(p.normalize("NFC"), p);
+      assert.equal(p, p.trim());
+      if (!p.endsWith("…")) assert.equal(P(p), p);
+    }
+  });
+
+  it("removes the caller's strip characters before composing and collapsing", () => {
+    const out = projectApprovalText("a 「 」 b", 60, /[「」]/gu);
+    assert.equal(out, "a b");
   });
 });

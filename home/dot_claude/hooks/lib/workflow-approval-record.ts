@@ -21,7 +21,6 @@ import {
   type ApprovalDelegate,
   type ApprovalQuestion,
   type ApprovalVia,
-  APPROVAL_QUESTION_TEXT,
   DECLINE_LABEL,
   DELEGATION_QUESTION_TEXT,
   WORKFLOW_DOC_NAME,
@@ -30,6 +29,7 @@ import {
   buildApprovalQuestions,
   deepEqualIgnoringKeyOrder,
   describeAnswerShape,
+  describeApprovalWorkflow,
   isAnswerValue,
   isApprovalLikeQuestion,
   matchApprovalAnswer,
@@ -256,8 +256,11 @@ export function verifyAndRecordApprovalAnswer(
   const missing = docNames.filter((d) => !candidates.has(d));
   if (missing.length > 0) return { kind: "notCandidate", docs: missing };
 
+  const readiness = new Map(
+    docNames.map((d) => [d, evaluateApprovalReadiness(wfDir, d)]),
+  );
   const hashes = new Map(
-    docNames.map((d) => [d, evaluateApprovalReadiness(wfDir, d).hash]),
+    docNames.map((d) => [d, readiness.get(d)?.hash ?? ""]),
   );
   // The same call `workflow-cli ask-approval` makes, so the offer expected
   // here is the offer that was shown.
@@ -268,7 +271,12 @@ export function verifyAndRecordApprovalAnswer(
   let rebuilt: ApprovalQuestion[];
   try {
     rebuilt = buildApprovalQuestions(
-      docNames.map((name) => ({ name, hash: hashes.get(name) ?? "" })),
+      docNames.map((name) => ({
+        name,
+        hash: hashes.get(name) ?? "",
+        title: readiness.get(name)?.title ?? null,
+      })),
+      describeApprovalWorkflow(wfDir),
       offer ?? undefined,
     );
   } catch {
@@ -286,7 +294,7 @@ export function verifyAndRecordApprovalAnswer(
   ) {
     return { kind: "malformed" };
   }
-  const answer = answers[APPROVAL_QUESTION_TEXT];
+  const answer = answers[rebuilt[0]?.question ?? ""];
 
   if (isPlainObject(annotations)) {
     for (const entry of Object.values(annotations)) {
