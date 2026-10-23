@@ -135,7 +135,7 @@ function newTokenCount(diffText) {
 }
 
 // 改稿の組の候補を作る。(a) のパスに触れた非マージの commit のうち、同じパスの前後で追加と
-// 削除の両方があり、追加と削除の合計が 40 行以下の組の全部。research の 64 件の条件のうち、
+// 削除の両方があり、追加と削除の合計が 40 行以下の組の全部。言い回しだけの改稿に絞る条件のうち、
 // type の制限（docs・style・refactor・fix）と「追加行に新しい語が無い」を外した件数も数える。
 export function listRevisionPairs(dir, sha, docPaths) {
   const pathSet = new Set(docPaths);
@@ -281,12 +281,13 @@ export function buildInventory({ dotfiles, blog, cpk, full = false }) {
     sha,
     aDocs.map((e) => e.path),
   );
-  const research = (p) => RESEARCH_TYPES.has(p.type) && p.newTokens === 0;
+  const wordingOnly = (p) => RESEARCH_TYPES.has(p.type) && p.newTokens === 0;
   result.pairs = {
     total: pairs.length,
     files: new Set(pairs.map((p) => p.path)).size,
-    researchConditions: pairs.filter(research).length,
-    researchFiles: new Set(pairs.filter(research).map((p) => p.path)).size,
+    wordingOnlyConditions: pairs.filter(wordingOnly).length,
+    wordingOnlyFiles: new Set(pairs.filter(wordingOnly).map((p) => p.path))
+      .size,
     breakdown: {
       withoutTypeRestriction: pairs.filter((p) => p.newTokens === 0).length,
       withoutNewTokenCondition: pairs.filter((p) => RESEARCH_TYPES.has(p.type))

@@ -24,10 +24,10 @@ export const BLOG_EXTRACT_VERSION = "1";
 export const BLOG_EXTRACT_LIMITS = ["nested-jsx", "embedded-expressions"];
 
 // 区分の文書がこの数に満たないとき、その区分の「当たり 0 件」を採否の根拠にしない。
-// 1〜2 件の文書の偶然の 0 件で規則を外さない最小の線。plan-5 も同じ値を使う。
+// 1〜2 件の文書の偶然の 0 件で規則を外さない最小の線。規則の採否を決めるときも同じ値を使う。
 export const SMALL_STRATUM_THRESHOLD = 3;
 
-// 1 文書の上限（spec K5 の入力の上限と同じ）。
+// 1 文書の上限。japanese-check が読む入力の上限と同じ 256 KB。
 export const MAX_DOCUMENT_BYTES = 256 * 1024;
 
 export const CHILD_TIMEOUT_MS = 60_000;
@@ -771,7 +771,7 @@ export function validateMeta(meta) {
         );
         return e.length === 0;
       },
-      // 測定の前の確かめ（plan-2 T4）。祖先の設定が効かないこと、yomiyasu が状態を残さないこと、
+      // 測定の前の確かめ。祖先の設定が効かないこと、yomiyasu が状態を残さないこと、
       // `python3 -I` で動くこと。
       preflight: (v) => {
         const e = [];
@@ -1032,7 +1032,7 @@ export function validateRow(file, row, meta) {
   return ["file: unknown"];
 }
 
-// ---- 結果の読み取りと集計（T5 で使う） ----
+// ---- 結果の読み取りと集計（tests/ja-baseline.test.mjs が使う） ----
 
 export function parseJsonl(text) {
   return text

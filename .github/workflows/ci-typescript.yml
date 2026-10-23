@@ -29,7 +29,7 @@ on:
       - "tests/heavy/**"
       - "tests/lib/**"
       # ja-baseline.test.mjs が結果のスキーマを検査する。ここに無いと、結果だけを直す PR で
-      # テストが走らないまま通り、plan-4・5 が結果を根拠にする前提が崩れる。
+      # テストが走らないまま通り、規則を移すときに旧の結果と突き合わせる前提が崩れる。
       - "tests/ja-baseline/**"
       - "tests/ja-baseline.test.mjs"
       # install-chezmoi.test.mjs runs the action's install script and checks its Renovate wiring.
@@ -64,7 +64,7 @@ on:
       - "tests/heavy/**"
       - "tests/lib/**"
       # ja-baseline.test.mjs が結果のスキーマを検査する。ここに無いと、結果だけを直す PR で
-      # テストが走らないまま通り、plan-4・5 が結果を根拠にする前提が崩れる。
+      # テストが走らないまま通り、規則を移すときに旧の結果と突き合わせる前提が崩れる。
       - "tests/ja-baseline/**"
       - "tests/ja-baseline.test.mjs"
       # install-chezmoi.test.mjs runs the action's install script and checks its Renovate wiring.

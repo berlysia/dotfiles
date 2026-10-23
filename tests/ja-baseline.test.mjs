@@ -633,7 +633,7 @@ test("集計: 分母は走行に成功し、その規則が有効だった文書
   );
 });
 
-// ---- 結果のファイル（tests/ja-baseline/）の検査（plan-2 T5） ----
+// ---- 結果のファイル（tests/ja-baseline/）の検査 ----
 
 const RESULT_DIR = new URL("./ja-baseline/", import.meta.url);
 const readResult = (name) => readFileSync(new URL(name, RESULT_DIR), "utf8");

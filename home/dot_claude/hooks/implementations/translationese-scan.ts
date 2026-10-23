@@ -213,7 +213,7 @@ function readOldList(listPath: string): OldListRead {
   }
 }
 
-// 旧の形（配列、kind なし）を新の項目へ変える薄い変換。切り替え（plan-9）で消す。
+// 旧の形（配列、kind なし）を新の項目へ変える薄い変換。hook の読み先を data/words.json に移すときに消す。
 // すでにある欄は変えず、項目の並べ替えも除外もしない
 export function toNewShape(parsed: unknown): unknown {
   if (Array.isArray(parsed)) {

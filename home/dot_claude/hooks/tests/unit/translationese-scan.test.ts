@@ -118,7 +118,7 @@ function loadOldList(raw: unknown) {
   return { entries: validated.entries, compiled, notices, parse: validated };
 }
 
-describe("translationese-words.json (old list, T1 data)", () => {
+describe("translationese-words.json (old list)", () => {
   const loaded = loadOldList(repoList);
 
   it("is an array whose every entry satisfies the field rules", () => {
@@ -161,7 +161,7 @@ describe("translationese-words.json (old list, T1 data)", () => {
     }
   });
 
-  it("every entry has at least one nonExample (K6 shape), including the three added in T1", () => {
+  it("every entry has at least one nonExample, including 肌で, 道具立て and 手触り", () => {
     for (const raw of repoList as { word: string; nonExamples?: string[] }[]) {
       ok(
         Array.isArray(raw.nonExamples) && raw.nonExamples.length >= 1,
