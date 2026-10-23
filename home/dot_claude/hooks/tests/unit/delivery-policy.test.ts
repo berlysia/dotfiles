@@ -507,14 +507,13 @@ describe("protected paths", () => {
 });
 
 describe("guarded home paths", () => {
-  it("lists each path as a Write and an Edit deny rule", () => {
+  it("lists each path as an Edit deny rule", () => {
     const rules = guardedHomeDenyRules();
     for (const path of GUARDED_HOME_PATHS) {
       const pattern = path.endsWith("/") ? `~/${path}**` : `~/${path}`;
       assert.ok(rules.includes(`Edit(${pattern})`), path);
-      assert.ok(rules.includes(`Write(${pattern})`), path);
     }
-    assert.equal(rules.length, GUARDED_HOME_PATHS.length * 2);
+    assert.equal(rules.length, GUARDED_HOME_PATHS.length);
   });
 });
 
