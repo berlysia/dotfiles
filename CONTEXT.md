@@ -91,12 +91,6 @@ ADR: `docs/decisions/0010-context-md-mechanism.md`
 - shellcheck の版は `.mise.toml` の `github:koalaman/shellcheck` で固定し、`scripts/lint-shell.sh`・pre-commit・CI がその版を使う（版が違えば lint-shell.sh は終了コード 2 で止まる）。template（`*.sh.tmpl`）は darwin・linux・linux-wsl の 3 通りに描画して検査する。初めて使う手元と、Renovate が版を上げた後は `mise install github:koalaman/shellcheck` を実行する
 - CI と pre-commit は全 severity で落とす（info / style も含む）。`.shellcheckrc` の `shell=bash` は `#!/bin/sh` の shebang より優先されるので、通常の lint では bashism を検出しない。`dot_shell_common/` は zsh からも source されるため、bashism を入れない
 
-## Delivery policy
-
-済んだ作業をどこまで進めるか。書き換えてよいのは利用者の回答だけ。意味は `~/.claude/rules/developer-experience.md` の Delivery Policy。
-
-- 完了の範囲: merge (2026-10-23)
-
 ## Open questions
 
 - **ADR-0010 の Defer 節（grill skill / context-audit / session-start hook / allowlist 規約）の優先順位**: grill skill (Socratic 質問発火による未定義語検出) が次に自然な拡張だが、context-audit (R1 参照腐敗の検出) も実害が薄いわりに価値が高い。実運用で先に困る方を優先するのが筋

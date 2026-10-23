@@ -14,14 +14,13 @@ per-project ドメイン語彙を AI が事前読込できる単一エントリ�
 - 既存 `.tmp/` gitignore と `~/.claude/rules/developer-experience.md` の WIP docs 規約に乗る (新規 gitignore ルールを各プロジェクトに要求しない)
 - GC 対象外: `~/.claude/rules/workflow.md` Session Artifact Retention 節「`.tmp/docs/` は永続扱い」を参照。chezmoi の GC スクリプトは `.tmp/sessions/` の path-prefix のみを対象とする SAFE pattern
 
-## 構造 (4 区分)
+## 構造 (3 区分)
 
-CONTEXT.md は以下の 4 区分で構成する。template (`~/.claude/templates/context.md`) がこの構造を提供する。
+CONTEXT.md は以下の 3 区分で構成する。template (`~/.claude/templates/context.md`) がこの構造を提供する。
 
 1. **Authoritative references** — `@path` で project-side SSoT (`docs/decisions/`, `CONTRIBUTING.md`, `README.md` 等) を index する。各エントリは 1 行要約のみ (要約と本体の drift を最小化、本体は SSoT として参照側を保つ)
 2. **Personal observations** — 個人理解をインライン記述する。grill で得た語彙定義、ステータス遷移、暗黙ルール、自分の暫定理解等。チーム合意化したい内容は `docs/` 配下や ADR へ昇格する
 3. **Open questions** — チーム確認用 TODO。確認後は Authoritative references (合意済の場合) または Personal observations (自分の解釈の場合) に移動する
-4. **Delivery policy** — 済んだ作業をどこまで進めるか (`完了の範囲: commit | pr | merge` と記録日の 1 行)。書き換えてよいのは利用者の AskUserQuestion の回答だけ。worktree からは main checkout のものを読む。意味と読み方は `~/.claude/rules/developer-experience.md` の Delivery Policy。個人の運用の方針であり、チームには強制しない。消えたら次の完了時に聞き直す
 
 ## 参照解決規約 (`@path`)
 
@@ -77,7 +76,7 @@ dotfiles リポジトリ自体がこのパターンの最初の利用者 (eat-yo
 ## template
 
 - **場所**: `~/.claude/templates/context.md`
-- **初期化**: 開発者が必要なプロジェクトで手動コピーする。自動生成しない (不要プロジェクトへの増殖を回避)。例外は Delivery policy だけで、利用者が範囲を答えたとき、`.tmp/` が gitignore されていれば template を写して作る (されていなければ書かずに伝える)
+- **初期化**: 開発者が必要なプロジェクトで手動コピーする。自動生成しない (不要プロジェクトへの増殖を回避)
 - **template ヘッダ規約**:
   - commit 禁止: 個人スコープのため `.tmp/` gitignore + template ヘッダ注意書きで二重防御
   - 機密 path 非参照: `@.env*`, `@secrets/`, `@~/.ssh/` 等は CONTEXT.md に書かない (AI が follow して機密を context に取り込むリスク回避)

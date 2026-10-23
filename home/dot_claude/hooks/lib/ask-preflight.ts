@@ -13,6 +13,7 @@ import {
   extractQuestionTexts,
   hasPrefilledAnswer,
 } from "./ask-user-question-input.ts";
+import { isDeliveryPolicyQuestion } from "./delivery-policy.ts";
 import { isApprovalLikeQuestion } from "./workflow-approval.ts";
 
 export const PREFLIGHT_REASON =
@@ -122,6 +123,7 @@ export type PassReason =
   | "subagent"
   | "approval-candidates"
   | "approval-question"
+  | "delivery-policy-question"
   | "prefilled-answer"
   | "judge-failed"
   | "too-long"
@@ -148,6 +150,9 @@ export function judgeAskPreflight(facts: PreflightFacts): PreflightVerdict {
     const questions = (facts.toolInput as { questions?: unknown } | null)
       ?.questions;
     if (isApprovalLikeQuestion(questions)) return pass("approval-question");
+    if (isDeliveryPolicyQuestion(questions)) {
+      return pass("delivery-policy-question");
+    }
     if (hasPrefilledAnswer(facts.toolInput)) return pass("prefilled-answer");
     const texts = extractQuestionTexts(facts.toolInput);
     if (texts === null) return pass("judge-failed");

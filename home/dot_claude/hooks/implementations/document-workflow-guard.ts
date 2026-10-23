@@ -1,7 +1,7 @@
 #!/usr/bin/env -S bun run --silent
 
 import { existsSync, readFileSync, realpathSync } from "node:fs";
-import { basename, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { defineHook } from "cc-hooks-ts";
 import { hasPrefilledAnswer } from "../lib/ask-user-question-input.ts";
 import {
@@ -10,6 +10,13 @@ import {
 } from "../lib/bash-parser.ts";
 import { getCommandFromToolInput } from "../lib/command-parsing.ts";
 import { createDenyResponse } from "../lib/context-helpers.ts";
+import {
+  GUARDED_HOME_PATHS,
+  isDeliveryPolicyQuestion,
+  judgeDeliveryPolicyBash,
+  namesDeliveryPolicyPath,
+  passwdHome,
+} from "../lib/delivery-policy.ts";
 import { prepareDenyInput } from "../lib/deny-input.ts";
 import {
   createStartIndex,
@@ -17,7 +24,11 @@ import {
   type TextMatcher,
 } from "../lib/linear-match.ts";
 import { GUARDED_TOOLS } from "../lib/guarded-tools.ts";
-import { hasParentSegment, isUnderRoot } from "../lib/path-containment.ts";
+import {
+  hasParentSegment,
+  isUnderRoot,
+  resolveWithMissingTail as resolvePhysical,
+} from "../lib/path-containment.ts";
 import { getProjectRoot } from "../lib/project-root.ts";
 import { expandTilde } from "../lib/path-utils.ts";
 import { sanitizeForDisplay } from "../lib/sanitize-display.ts";
@@ -75,6 +86,9 @@ function withScratchHint(reason: string): string {
 const ASK_PREFILLED_DENY =
   "承認の質問の回答は利用者が選ぶもので、`answers` / `annotations` を model が入れることはできない。`workflow-cli ask-approval` の出力をそのまま AskUserQuestion に渡す";
 
+const DELIVERY_POLICY_ASK_DENY =
+  "Delivery policy の質問の回答は利用者が選ぶもので、`answers` / `annotations` を model が入れることはできない。`~/.local/bin/delivery-policy ask` の出力をそのまま AskUserQuestion に渡す";
+
 interface WriteAnalysis {
   isWriteLike: boolean;
   targets: string[];
@@ -105,6 +119,12 @@ const hook = defineHook({
             hasPrefilledAnswer(tool_input)
           ) {
             return context.json(createDenyResponse(ASK_PREFILLED_DENY));
+          }
+          if (
+            isDeliveryPolicyQuestion(questions) &&
+            hasPrefilledAnswer(tool_input)
+          ) {
+            return context.json(createDenyResponse(DELIVERY_POLICY_ASK_DENY));
           }
           return context.success({});
         } catch {
@@ -158,6 +178,19 @@ const hook = defineHook({
 
       const cwd = getToolCwd();
       const projectRoot = getProjectRoot();
+
+      // The delivery-policy ledger and the code that decides on it are
+      // protected whatever the workflow state is, and before the workflow
+      // dir is resolved: an unresolvable dir returns below without enforcing.
+      const deliveryPolicyReason = checkDeliveryPolicyAccess(
+        tool_name,
+        tool_input,
+        cwd,
+      );
+      if (deliveryPolicyReason !== null) {
+        return context.json(createDenyResponse(deliveryPolicyReason));
+      }
+
       const resolution = resolveWorkflowDir({
         cwd: projectRoot,
         sessionId: context.input.session_id,
@@ -1053,6 +1086,128 @@ export default hook;
 if (import.meta.main) {
   const { runHook } = await import("cc-hooks-ts");
   await runHook(hook);
+}
+
+const DELIVERY_POLICY_WRITE_TOOLS = new Set([
+  "Write",
+  "Edit",
+  "MultiEdit",
+  "NotebookEdit",
+]);
+
+/**
+ * Why a call must be refused for touching the delivery-policy ledger, the
+ * code that decides on it, or the config that code runs under, or null.
+ * Fails closed: a call the guard cannot judge is refused, and the outer
+ * catch-all of this hook would otherwise allow it.
+ */
+function checkDeliveryPolicyAccess(
+  toolName: string,
+  toolInput: unknown,
+  cwd: string,
+): string | null {
+  try {
+    if (toolName === "Bash") {
+      const command = getCommandFromToolInput("Bash", toolInput) || "";
+      if (!namesDeliveryPolicyPath(command)) return null;
+      return firstReason(deliveryPolicyHomes(), (home) =>
+        judgeDeliveryPolicyBash(command, home),
+      );
+    }
+    if (!DELIVERY_POLICY_WRITE_TOOLS.has(toolName)) return null;
+    return firstReason(deliveryPolicyHomes(), (home) =>
+      judgeDeliveryPolicyWrite(toolName, toolInput, cwd, home),
+    );
+  } catch (error) {
+    return `Could not judge whether this call touches the delivery-policy ledger or its code (${sanitizeForDisplay(String(error))}); refused.`;
+  }
+}
+
+/**
+ * Both the environment's HOME and the passwd home are judged: the deny side
+ * only widens. With neither known the call cannot be judged and is refused.
+ */
+function deliveryPolicyHomes(): string[] {
+  const candidates = [process.env.HOME, passwdHome()];
+  const homes = [
+    ...new Set(
+      candidates.filter(
+        (h): h is string =>
+          typeof h === "string" && h.startsWith("/") && h.length > 1,
+      ),
+    ),
+  ];
+  if (homes.length === 0)
+    throw new Error("no home directory could be determined");
+  return homes;
+}
+
+function firstReason(
+  homes: readonly string[],
+  judge: (home: string) => string | null,
+): string | null {
+  for (const home of homes) {
+    const reason = judge(home);
+    if (reason !== null) return reason;
+  }
+  return null;
+}
+
+function isGuardedHomeTarget(candidate: string, guarded: string): boolean {
+  const lower = candidate.toLowerCase();
+  const root = guarded.toLowerCase();
+  return lower === root || lower.startsWith(`${root}/`);
+}
+
+/**
+ * Write / Edit / MultiEdit / NotebookEdit into GUARDED_HOME_PATHS. The
+ * target is judged lexically and by realpath (symlinks followed, the missing
+ * tail kept), and `~` is expanded against the passwd home as well as the
+ * environment's, so neither a symlink nor a changed HOME moves a write out
+ * of the list. A path that cannot be resolved (a dangling or looping
+ * symlink) is refused: that is the shape of a symlink planted to point at
+ * a guarded file that does not exist yet.
+ */
+export function judgeDeliveryPolicyWrite(
+  toolName: string,
+  toolInput: unknown,
+  cwd: string,
+  home: string,
+): string | null {
+  if (!DELIVERY_POLICY_WRITE_TOOLS.has(toolName) || !isRecord(toolInput)) {
+    return null;
+  }
+  const filePath =
+    toolName === "NotebookEdit" ? toolInput.notebook_path : toolInput.file_path;
+  if (typeof filePath !== "string") return null;
+
+  const guarded = new Set<string>();
+  for (const entry of GUARDED_HOME_PATHS) {
+    const lexical = join(home, entry.replace(/\/$/, ""));
+    guarded.add(lexical);
+    const real = resolvePhysical(lexical);
+    if (real !== null) guarded.add(real);
+  }
+
+  const expansions = new Set([
+    filePath.startsWith("~/") ? join(home, filePath.slice(2)) : filePath,
+    expandTilde(filePath),
+  ]);
+  for (const expanded of expansions) {
+    const absolute = resolve(cwd, expanded);
+    const real = resolvePhysical(absolute);
+    if (real === null) {
+      return `The target ${sanitizeForDisplay(filePath)} cannot be resolved (a dangling or looping symlink?), so it cannot be shown to stay outside the delivery-policy ledger and code; refused.`;
+    }
+    for (const candidate of [absolute, real]) {
+      for (const root of guarded) {
+        if (isGuardedHomeTarget(candidate, root)) {
+          return `${sanitizeForDisplay(filePath)} is part of the delivery-policy ledger, its code, or the config that code runs under. Tool writes to it are refused; the ledger is written only by delivery-policy-recorder from the user's answer, and the code is delivered by chezmoi apply from the source repository.`;
+        }
+      }
+    }
+  }
+  return null;
 }
 
 function countApprovedLines(content: string): number {

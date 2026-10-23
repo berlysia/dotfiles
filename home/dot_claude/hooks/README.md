@@ -60,6 +60,10 @@
 
 Document Workflow の gate を実装系の書き込み（Write / Edit / MultiEdit / NotebookEdit / Bash）で強制する PreToolUse hook。matcher は `lib/guarded-tools.ts` の `GUARDED_TOOLS` と同期する。承認の形のプロンプト（`承認` / `approve` だけなど）を `CronCreate` / `ScheduleWakeup` で予約することも deny する（`lib/workflow-approval.ts` の `isApprovalShapedPrompt`）。
 
+### delivery-policy-recorder.ts
+
+`~/.local/bin/delivery-policy ask` が出す質問への回答を、repo ごとの台帳 `~/.claude/state/delivery-policy/ledger.jsonl` に記録する PostToolUse(AskUserQuestion) hook。`tool_response` だけを読み、hook 自身が cwd の repo から作り直した質問と一致し、答えが `commit` / `pr` / `merge` のどれかのときだけ追記する。subagent の呼び出し、afk の時間切れ、自由記述、notes 付き、gh の失敗は記録せず、理由を `[delivery-policy-recorder]` の 1 行で出す。台帳への書き込みは `document-workflow-guard.ts` が拒否する（Write / Edit 系は書き先の実体で、Bash はパスを含むコマンドで）。判定と台帳の読み書きは `lib/delivery-policy.ts`。
+
 ### commit-sign-failure-ask.ts
 
 commit を作る git コマンド（`commit` / `merge` / `cherry-pick` / `revert` / `rebase` / `pull` / `am`、`chezmoi update`）の署名失敗を出力の文言（`fatal: failed to write commit object` など）で検知し、署名を直せず止まることになるなら AskUserQuestion で聞くよう文脈に入れる。PostToolUse(Bash|AskUserQuestion)・PostToolUseFailure(Bash)・Stop の 1 つの定義で受ける。検知すると `~/.claude/state/commit-sign-failure/<session_id>` にマーカーを書き（subagent の失敗も同じ session_id）、main loop の Stop が 1 回だけ差し戻す。`--no-gpg-sign` は止めない。判定と文言は `lib/commit-sign-failure.ts`。注入する文言は固定で、ツール出力を含めない。

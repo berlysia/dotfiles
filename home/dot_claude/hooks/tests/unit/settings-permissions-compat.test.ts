@@ -326,7 +326,8 @@ describe("settings evaluated as Claude Code would (spec K6, K7)", () => {
     // allow stays
     [`${chezmoi}/.git/worktree/feat/src/a.ts`, "allow"],
     [`${chezmoi}/home/dot_zshrc`, "allow"],
-    ["/home/u/.config/mise/config.toml", "allow"],
+    // ~/.config/mise/ is denied since the delivery-policy wrapper's bun reads it
+    ["/home/u/.config/mise/config.toml", "deny"],
   ];
   for (const [path, expected] of table) {
     it(`${path} -> ${expected}`, () => {

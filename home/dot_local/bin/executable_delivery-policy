@@ -1,0 +1,44 @@
+#!/bin/bash
+# delivery-policy: wrapper around hooks/cli/delivery-policy.ts.
+# Deployed by chezmoi at ~/.local/bin/delivery-policy.
+#
+# The allow rule `Bash(~/.local/bin/delivery-policy *)` skips the permission
+# classifier, so nothing an agent can steer is trusted here: not HOME, not PATH,
+# not the cwd (a bunfig.toml or .mise.toml there would run code), not the rest
+# of the environment. The home comes from the passwd database, the cwd moves to
+# the deployed hooks dir (which agents cannot write), and bun starts with a
+# fixed environment. The original cwd goes to the CLI as --cwd, where it only
+# selects the repo gh resolves.
+# The shebang is an absolute path and PATH is reset before the first command,
+# because `env bash` and the lookups below (getent, id, cut) would otherwise
+# resolve through the caller's PATH.
+set -euo pipefail
+PATH=/usr/bin:/bin
+export PATH
+
+user="$(id -un)"
+home=""
+if command -v getent >/dev/null 2>&1; then
+  home="$(getent passwd "$user" | cut -d: -f6)"
+elif command -v dscl >/dev/null 2>&1; then
+  home="$(dscl . -read "/Users/$user" NFSHomeDirectory | sed 's/^NFSHomeDirectory: //')"
+fi
+case "$home" in
+  /*) ;;
+  *)
+    echo "delivery-policy: 40: cannot determine the home directory from the passwd database" >&2
+    exit 40
+    ;;
+esac
+
+original_cwd="$PWD"
+cd "$home/.claude/hooks" || {
+  echo "delivery-policy: 40: $home/.claude/hooks is missing" >&2
+  exit 40
+}
+
+exec env -i \
+  HOME="$home" \
+  PATH="$home/.local/share/mise/shims:/usr/bin:/bin" \
+  LANG="C.UTF-8" \
+  bun run --silent "$home/.claude/hooks/cli/delivery-policy.ts" --cwd "$original_cwd" "$@"
