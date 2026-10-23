@@ -146,3 +146,4 @@ japanese-tech-writing は `ja-notation` を常に読むので、一覧は japane
 - 上流: [iwasa-kosui/tanteki](https://github.com/iwasa-kosui/tanteki)、[nanaism/yomiyasu](https://github.com/nanaism/yomiyasu)、`ayghri/i-have-adhd`
 - 自律レーンの憲章: `rules/autonomous-lane.md`
 - 元の残件: `git show 92aeaa1:docs/plans/writing-skills-by-role.md`、`git show 92aeaa1:docs/plans/koncise-followups.md`
+- 名指しの直訳語の一覧と、それを照合する hook: ADR-0045
