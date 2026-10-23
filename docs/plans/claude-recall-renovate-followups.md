@@ -13,6 +13,10 @@ Renovate が claude-recall の mise の版と、`home/.chezmoiexternal.toml.tmpl
 
 確かめたら、この節を消す。含まれていなければ、PR はテンプレートのガードで落ちる（手で直す手順はガードのエラーメッセージにある）。その場合は、Renovate の PR のログで `claude-recall-plugin` の dep が抽出されたかを調べる。
 
+v1.12.0 の PR（`renovate/claude-recall`、run `39873074066`）では、`agent-vm tests (ubuntu-latest)` が次のメッセージで落ちた。原因は確かめていない。
+
+> FAIL claude-recall plugin layout differs from upstream (missing: .claude/skills/claude-recall/skills/recall/SKILL.md / extra: .claude/skills/claude-recall/hooks/i18n.ts .claude/skills/claude-recall/hooks/recall.ts .claude/skills/claude-recall/hooks/register.tsx .claude/skills/claude-recall/tsconfig.json .claude/skills/claude-recall/types/index.d.ts). Check stripComponents in .chezmoiexternal.toml.tmpl against the chezmoi version, and whether the upstream tarball changed its layout
+
 ## auto-fix ワークフローが claude-recall の PR で動かなかった理由
 
 claude-recall の PR が CI で落ちたとき、`auto-fix-dependencies.yml` は起動した（調べる入口は run `38688669815`）。しかし `Get PR information` の段階で skip 判定になり、Claude は動かなかった。PR を特定できなかったのか、bot の PR と判定されなかったのかは、まだ調べていない。
