@@ -3,6 +3,7 @@
 ## Language
 
 - Japanese for discussion, English for code
+- 日本語の成果物（リポジトリに残る Markdown、PR・commit・Issue の本文）を書くときは、直訳語の一覧 `~/.claude/skills/ja-notation/references/translationese-words.json` を読み、当たる語を使わない。読み方と直し方は ja-notation の SKILL.md に従う。Document Workflow の文書とチャットの返答は対象外。hook が直訳語を警告したら直す。利用者が新しく直訳語を名指ししたら、一覧に足すよう提案する
 
 ## Workflow
 

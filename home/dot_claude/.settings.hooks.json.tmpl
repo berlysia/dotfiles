@@ -137,6 +137,11 @@
         {
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/unicode-corruption-guard.ts"
+        },
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/translationese-scan.ts",
+          "timeout": 5
         }
       ]
     },
@@ -178,6 +183,11 @@
         {
           "type": "command",
           "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/workflow-bash-sync.ts"
+        },
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/translationese-scan.ts",
+          "timeout": 5
         },
         {
           "type": "command",
