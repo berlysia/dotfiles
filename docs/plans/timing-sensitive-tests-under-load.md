@@ -9,6 +9,7 @@ load average が 10 を超えるマシンで `npm test` を全件実行すると
 - worktree の `C26: four different names in parallel all succeed, 20 times`（高負荷では worktree のテストファイルだけを実行しても長くかかって落ちる）
 - `complexity-delta` の `stays silent on a second stop with the same findings and logs once`
 - `tests/tailnet-ssh.test.mjs`: `applySettings` から呼ぶ `ssh-keygen -y` が `spawnSync ... ETIMEDOUT`
+- `system-notification-launch.test.ts`: `a notify-send that hangs is abandoned after the cap` で、子プロセスが 5,000 ms 以内に終わらない（`child took 5143ms`、load average 13.84 のとき）。単体で 3 回、全件で 1 回流すと通った
 
 completion-gate はこの失敗で停止を止める。
 
