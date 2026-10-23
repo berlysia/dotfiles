@@ -8,14 +8,12 @@ Renovate が claude-recall の mise の版と、`home/.chezmoiexternal.toml.tmpl
 
 次の `renovate/claude-recall` の PR で、次の 2 点を見る。
 
-- diff に `home/.chezmoiexternal.toml.tmpl` の 2 行（版と sha256）が含まれている。
+- diff に `home/.chezmoiexternal.toml.tmpl` の 2 行（版と sha256）が含まれている。v1.12.0 の PR #317 で含まれていた。
 - `agent-vm tests (ubuntu-latest)` が通る。
 
 確かめたら、この節を消す。含まれていなければ、PR はテンプレートのガードで落ちる（手で直す手順はガードのエラーメッセージにある）。その場合は、Renovate の PR のログで `claude-recall-plugin` の dep が抽出されたかを調べる。
 
-v1.12.0 の PR（`renovate/claude-recall`、run `39873074066`）では、`agent-vm tests (ubuntu-latest)` が次のメッセージで落ちた。原因は確かめていない。
-
-> FAIL claude-recall plugin layout differs from upstream (missing: .claude/skills/claude-recall/skills/recall/SKILL.md / extra: .claude/skills/claude-recall/hooks/i18n.ts .claude/skills/claude-recall/hooks/recall.ts .claude/skills/claude-recall/hooks/register.tsx .claude/skills/claude-recall/tsconfig.json .claude/skills/claude-recall/types/index.d.ts). Check stripComponents in .chezmoiexternal.toml.tmpl against the chezmoi version, and whether the upstream tarball changed its layout
+PR #317 の `agent-vm tests (ubuntu-latest)` は `claude-recall plugin layout differs from upstream` で落ちた。原因は、展開の検査が 1.7.2 の tarball の 4 ファイルを固定の一覧で持っていたことで、v1.12.0 の tarball は `skills/` をやめて `hooks/register.tsx` などの module を持つ。chezmoi は tarball どおりに展開していた。検査の期待値を pin した tarball の一覧から作るように直したので、#317 を rebase して ubuntu が通るのを確かめたら、この節を消す。
 
 ## auto-fix ワークフローが claude-recall の PR で動かなかった理由
 
