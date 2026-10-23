@@ -116,7 +116,16 @@ export function lint(lines: ProseLine[], genre?: Genre): Finding[] {
   return result;
 }
 
-const motionVerbs = new Set(["拾う", "引く", "通る", "効く", "響く", "足す"]);
+// Sudachi normalizes inflections of 効く to 利く.
+const motionVerbs = new Set([
+  "拾う",
+  "引く",
+  "通る",
+  "効く",
+  "利く",
+  "響く",
+  "足す",
+]);
 const placeNouns = new Set(["入口", "入り口", "受け口", "口"]);
 
 export function calques(lines: ProseLine[], tokenize: Tokenizer): Finding[] {

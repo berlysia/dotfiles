@@ -50,7 +50,7 @@ JSON に次の情報をまとめて出す。原文と最終稿は別ファイル
 
 用途を絞る場合だけ、`check` の代わりに `lint`、`calques`、`outline`、`terms`、`paragraphs`、`newfacts` を使える。`lint` は文字列の検出規則だけを実行する。`calques`、`terms`、`newfacts` と、まとめて見る `check` は Sudachi を使う。`--genre` は check/lint、`--source` は check/newfacts でだけ使える。出力は常に JSON で、`--json` は不要。
 
-終了コードは 0 が検査実行成功（候補ありも含む）、2 が引数・入力・依存・解析のエラー。エラーは stderr に出し、不完全な検査結果を成功として返さない。本文の書き換えや記録の自動保存はしない。
+終了コードは 0 が検査実行成功（候補ありも含む）、2 が引数・入力・依存・解析のエラー。エラーは stderr に出し、不完全な検査結果を成功として返さない。本文は書き換えない。check のハッシュ記録、review の判断記録、verify の照合、フックとの接続は `human-documents.md` に従う。verify は未検査・古い記録・未判断・草稿を終了コード1で示す。`--no-record` は check の記録を残さない。
 
 ## 対象と判断
 

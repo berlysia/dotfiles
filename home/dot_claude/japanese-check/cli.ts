@@ -5,6 +5,14 @@ import { calques, check, lint, newFacts, outline, terms } from "./analyze.ts";
 import type { Genre } from "./analyze.ts";
 import { paragraphs, proseLines } from "./markdown.ts";
 import { createTokenizer } from "./tokenizer.ts";
+import {
+  defaultStateDir,
+  digest,
+  recordCheck,
+  recordDecision,
+  track,
+  verify,
+} from "./receipts.ts";
 
 const commands = new Set([
   "check",
@@ -14,9 +22,14 @@ const commands = new Set([
   "terms",
   "paragraphs",
   "newfacts",
+  "verify",
+  "review",
+  "defer",
+  "exclude",
+  "track",
 ]);
 const usage =
-  "node cli.ts <check|lint|calques|outline|terms|paragraphs|newfacts> <file.md> [--source original.md] [--genre tech|business|essay]";
+  "node cli.ts <check|lint|calques|outline|terms|paragraphs|newfacts|verify|review|defer|exclude|track> <file> [--source original.md] [--genre tech|business|essay] [--artifact document.pdf] [--hash SHA256 --reason TEXT] [--session ID] [--no-record]";
 
 export function parseArguments(args: string[]) {
   const [command, ...rest] = args;
@@ -24,10 +37,22 @@ export function parseArguments(args: string[]) {
   let file: string | undefined;
   let source: string | undefined;
   let genre: Genre | undefined;
+  const extra: Record<string, string> = {};
+  let noRecord = false;
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i];
     if (arg === undefined) continue;
-    if (arg === "--source" || arg === "--genre") {
+    if (arg === "--no-record") {
+      if (noRecord) throw new Error("--no-record は1回だけ指定してください。");
+      noRecord = true;
+    } else if (
+      ["--artifact", "--hash", "--reason", "--session"].includes(arg)
+    ) {
+      const value = rest[++i];
+      if (!value || value.startsWith("--") || extra[arg] !== undefined)
+        throw new Error(`${arg} の指定が不正です。`);
+      extra[arg] = value;
+    } else if (arg === "--source" || arg === "--genre") {
       const value = rest[++i];
       if (!value || value.startsWith("--"))
         throw new Error(`${arg} の値が必要です。`);
@@ -55,19 +80,67 @@ export function parseArguments(args: string[]) {
     throw new Error("--genre は check/lint で使います。");
   if (source && resolve(source) === resolve(file))
     throw new Error("原文と最終稿は別ファイルにしてください。");
-  return { command, file, source, genre };
+  if ((noRecord || extra["--artifact"]) && command !== "check")
+    throw new Error("--no-record/--artifact は check で使います。");
+  const decision = ["review", "defer", "exclude"].includes(command);
+  if (
+    decision &&
+    (!/^[0-9a-f]{64}$/u.test(extra["--hash"] ?? "") ||
+      !extra["--reason"]?.trim())
+  )
+    throw new Error("判断には --hash と --reason が必要です。");
+  if (!decision && (extra["--hash"] || extra["--reason"]))
+    throw new Error("--hash/--reason は review/defer/exclude で使います。");
+  if (command === "track" && !extra["--session"])
+    throw new Error("track には --session が必要です。");
+  if (extra["--session"] && command !== "check" && command !== "track")
+    throw new Error("--session は check/track で使います。");
+  if (noRecord && extra["--session"])
+    throw new Error("--no-record と --session は併用できません。");
+  return { command, file, source, genre, extra, noRecord };
 }
 
-export async function main(args: string[]): Promise<void> {
+export async function main(
+  args: string[],
+  options: { stateDir?: string } = {},
+): Promise<void> {
   if (args.length === 1 && args[0] === "--help") {
     console.log(usage);
     return;
   }
-  const { command, file, source, genre } = parseArguments(args);
+  const { command, file, source, genre, extra, noRecord } =
+    parseArguments(args);
+  const stateDir = options.stateDir ?? defaultStateDir();
+  if (["verify", "review", "defer", "exclude", "track"].includes(command)) {
+    if (command === "track") track(file, extra["--session"] ?? "", stateDir);
+    const result = ["review", "defer", "exclude"].includes(command)
+      ? recordDecision(
+          file,
+          extra["--hash"] ?? "",
+          extra["--reason"] ?? "",
+          command === "review"
+            ? "checked"
+            : command === "defer"
+              ? "draft"
+              : "excluded",
+          stateDir,
+        )
+      : verify(file, stateDir);
+    console.log(JSON.stringify(result, null, 2));
+    if (
+      command === "verify" &&
+      result.status !== "ready" &&
+      result.status !== "excluded"
+    )
+      process.exitCode = 1;
+    return;
+  }
   // Read inputs before loading the dictionary so invalid paths fail promptly.
   const markdown = readFileSync(file, "utf8");
   const original =
     source === undefined ? undefined : readFileSync(source, "utf8");
+  const target = extra["--artifact"] ?? file;
+  const targetHash = digest(readFileSync(target));
   if (source) {
     const sourceStat = statSync(source);
     const finalStat = statSync(file);
@@ -82,9 +155,27 @@ export async function main(args: string[]): Promise<void> {
   else if (command === "lint") result = lint(lines, genre);
   else {
     const tokenize = await createTokenizer();
-    if (command === "check")
-      result = check(markdown, tokenize, genre, original);
-    else if (command === "calques") result = calques(lines, tokenize);
+    if (command === "check") {
+      const report = check(markdown, tokenize, genre, original);
+      if (noRecord) result = { ...report, verification: null };
+      else {
+        // A receipt is minted only by a completed full check, never by lint.
+        if (digest(readFileSync(file, "utf8")) !== digest(markdown))
+          throw new Error("検査中に本文が変更されました。");
+        const verification = recordCheck(
+          target,
+          targetHash,
+          markdown,
+          report.findings.length +
+            report.calques.length +
+            (report.newFacts?.length ?? 0),
+          stateDir,
+          original === undefined ? null : digest(original),
+        );
+        if (extra["--session"]) track(target, extra["--session"], stateDir);
+        result = { ...report, verification };
+      }
+    } else if (command === "calques") result = calques(lines, tokenize);
     else if (command === "terms") result = terms(lines, tokenize);
     else {
       if (original === undefined) throw new Error("比較する原文がありません。");

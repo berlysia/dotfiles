@@ -19,6 +19,7 @@ import {
 } from "../../../japanese-check/analyze.ts";
 import { main, parseArguments } from "../../../japanese-check/cli.ts";
 import { paragraphs, proseLines } from "../../../japanese-check/markdown.ts";
+import { digest, tracked, verify } from "../../../japanese-check/receipts.ts";
 import {
   createTokenizer,
   decodeTokens,
@@ -144,6 +145,11 @@ describe("Sudachi-backed Japanese review", () => {
     assert.ok(findings.every((item) => item.line !== 3));
   });
 
+  it("finds inflected 効く even when the dictionary normalizes its spelling", async () => {
+    const findings = calques(proseLines("薬が効いた。"), await tokenizer);
+    assert.ok(findings.some((item) => item.text === "効い"));
+  });
+
   it("identifies first use while leaving explanation correctness to the reader", async () => {
     const found = terms(
       proseLines(
@@ -213,6 +219,10 @@ describe("Japanese checker CLI", () => {
       ["check", "a.md", "--source", "a.md"],
       ["outline", "a.md", "--source", "b.md"],
       ["check", "a.md", "--source", "b.md", "--source", "c.md"],
+      ["lint", "a.md", "--artifact", "a.pdf"],
+      ["check", "a.md", "--session", "session", "--no-record"],
+      ["review", "a.md", "--hash", "invalid", "--reason", "理由"],
+      ["review", "a.md", "--hash", "0".repeat(64)],
     ]) {
       assert.throws(() => parseArguments(args));
     }
@@ -234,6 +244,62 @@ describe("Japanese checker CLI", () => {
       output.mock.restore();
     }
     await assert.rejects(main(["check", join(dir, "missing.md")]));
+  });
+
+  it("supports an unrecorded check and requires explicit review of actual findings", async () => {
+    const file = join(dir, "candidate.md");
+    const content = "データを拾った。\n";
+    const stateDir = join(dir, "candidate-state");
+    writeFileSync(file, content);
+    const output = mock.method(console, "log", () => {});
+    try {
+      await main(["check", file, "--no-record"], { stateDir });
+      assert.equal(verify(file, stateDir).status, "missing");
+      await main(["check", file], { stateDir });
+      assert.equal(verify(file, stateDir).status, "needs-review");
+      await main(
+        [
+          "review",
+          file,
+          "--hash",
+          digest(content),
+          "--reason",
+          "処理名として資料に定義されているため残す",
+        ],
+        { stateDir },
+      );
+      assert.equal(verify(file, stateDir).status, "ready");
+    } finally {
+      output.mock.restore();
+    }
+  });
+
+  it("tracks the final artifact instead of the extracted text", async () => {
+    const file = join(dir, "extracted.md");
+    const artifact = join(dir, "document.pdf");
+    const stateDir = join(dir, "artifact-state");
+    writeFileSync(file, "文書を確認する。\n");
+    writeFileSync(artifact, "artifact-v1");
+    const output = mock.method(console, "log", () => {});
+    try {
+      await main(
+        [
+          "check",
+          file,
+          "--artifact",
+          artifact,
+          "--session",
+          "artifact-session",
+        ],
+        { stateDir },
+      );
+      assert.deepEqual(tracked("artifact-session", stateDir), [artifact]);
+      assert.equal(verify(artifact, stateDir).status, "ready");
+      writeFileSync(artifact, "artifact-v2");
+      assert.equal(verify(artifact, stateDir).status, "stale");
+    } finally {
+      output.mock.restore();
+    }
   });
 
   it("rejects malformed analyzer output instead of silently skipping analysis", () => {
@@ -261,7 +327,9 @@ describe("Japanese checker CLI", () => {
     writeFileSync(final, "利用者は9人。\n");
     const output = mock.method(console, "log", () => {});
     try {
-      await main(["check", final, "--source", source]);
+      await main(["check", final, "--source", source], {
+        stateDir: join(dir, "state"),
+      });
       const data: unknown = JSON.parse(
         String(output.mock.calls[0]?.arguments[0]),
       );
