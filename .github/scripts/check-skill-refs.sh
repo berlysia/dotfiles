@@ -56,7 +56,10 @@ export LC_ALL=C
 shopt -s dotglob nullglob
 
 TOOL_OWNED=(ui-skills claude-recall .system synced .trash)
-ROLE_ALLOWED_EXACT=(ja-fact-preservation/SKILL.md)
+# ja-check/references/human-documents.md is read straight from the CLAUDE.md rule, outside any
+# entry skill, so it is allowed here until the role/entry split is revisited
+# (docs/plans/ja-skills-role-relations.md).
+ROLE_ALLOWED_EXACT=(ja-fact-preservation/SKILL.md ja-check/references/human-documents.md)
 ROLE_ALLOWED_PREFIXES=(tanteki/references/ tanteki/scripts/ yomiyasu/references/ yomiyasu/scripts/)
 # Entry skills and the 構成 value each must declare. This is the one place the list lives.
 ENTRY_MODES=(koncise=動かす tanteki=動かす yomiyasu=動かさない japanese-tech-writing=動かさない)

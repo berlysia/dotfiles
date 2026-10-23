@@ -5,14 +5,9 @@ import { calques, check, lint, newFacts, outline, terms } from "./analyze.ts";
 import type { Genre } from "./analyze.ts";
 import { paragraphs, proseLines } from "./markdown.ts";
 import { createTokenizer } from "./tokenizer.ts";
-import {
-  defaultStateDir,
-  digest,
-  recordCheck,
-  recordDecision,
-  track,
-  verify,
-} from "./receipts.ts";
+import { defaultStateDir, digest, StateDirError } from "./state.ts";
+import { recordCheck, recordDecision, verify } from "./receipts.ts";
+import { track } from "./tracking.ts";
 
 const commands = new Set([
   "check",
@@ -190,6 +185,13 @@ if (
   import.meta.url === pathToFileURL(resolve(process.argv[1])).href
 ) {
   main(process.argv.slice(2)).catch((error: unknown) => {
+    if (error instanceof StateDirError) {
+      console.error(
+        `[japanese-check] 置き場を使えない（${error.kind}）: ${error.message}`,
+      );
+      process.exitCode = 2;
+      return;
+    }
     console.error(
       `japanese-check: ${error instanceof Error ? error.message : String(error)}`,
     );
