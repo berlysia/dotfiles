@@ -223,34 +223,185 @@ JS
   [[ "$bad" -eq 0 ]] && record "PASS renovate claude-recall rule keeps automerge off, the shared wait and covers both deps"
   return 0
 }
+# The layout test compares chezmoi's result with the file list of the pinned tarball itself, so an upstream
+# change of the layout (files added, dropped or renamed) does not fail it. A wrong stripComponents or a change
+# in chezmoi's tar handling still does: that is what drops .mcp.json or shifts files one level up without any error.
+# The expected set comes from the tarball (fetched with curl, bytes checked against the pinned sha256) and not
+# from chezmoi's cache: the cache key is chezmoi's internal format, and depending on it is the same fragility
+# that e251f54e removed.
+# This test does not vouch for what the tarball contains (hook commands, the .mcp.json launch command, what
+# register.tsx does). That stays with the human who merges the automerge-off Renovate PR.
+RECALL_DIR=.claude/skills/claude-recall
+# This repo depends on these three paths: the recall MCP server is declared in .mcp.json, the SessionEnd import
+# hook and its modules in hooks/hooks.json, and Claude Code recognises the directory as a plugin by
+# .claude-plugin/plugin.json. They must exist in the tarball and in the extracted result.
+RECALL_REQUIRED_FILES=".claude-plugin/plugin.json .mcp.json hooks/hooks.json"
+# Prints the paths chezmoi should place for the regular files of a tar listing (leading ./ removed, under
+# $RECALL_DIR), or fails with the reason on stderr. Takes `tar -t` and `tar -tv` of the same archive: the type is
+# the first character of the -tv line, the name comes from the -t line of the same number (-tv adds link targets
+# to the name). Only the first character is read because GNU tar and bsdtar format the rest differently.
+# Entries that are not regular files or directories, absolute names and `..` elements fail instead of being
+# dropped, so a tarball cannot silently hide an entry from the comparison.
+recall_expected_paths() { # tar_t_listing tar_tv_listing
+  local names=$1 verbose=$2 name line type rel out="" n_names n_verbose
+  n_names=$(printf '%s\n' "$names" | awk 'END{print NR}')
+  n_verbose=$(printf '%s\n' "$verbose" | awk 'END{print NR}')
+  if [[ "$n_names" != "$n_verbose" ]]; then
+    printf 'tar -t has %s lines but tar -tv has %s (a name with a newline?)\n' "$n_names" "$n_verbose" >&2; return 1
+  fi
+  while IFS= read -r name <&3 && IFS= read -r line <&4; do
+    case "$name" in /*) printf 'absolute path in the tarball: %s\n' "$name" >&2; return 1 ;; esac
+    case "/$name/" in */../*) printf 'path with a .. element in the tarball: %s\n' "$name" >&2; return 1 ;; esac
+    type=${line:0:1}
+    case "$type" in
+      d) continue ;;
+      -) ;;
+      *) printf "tarball entry that is neither a regular file nor a directory (type '%s'): %s\n" "$type" "$name" >&2; return 1 ;;
+    esac
+    rel=${name#./}
+    out+="$RECALL_DIR/$rel"$'\n'
+  done 3<<<"$names" 4<<<"$verbose"
+  if [[ -z "$out" ]]; then printf 'the tarball holds no regular files\n' >&2; return 1; fi
+  printf '%s' "$out"
+}
+# Prints one line per side that lacks required files (nothing when all are present). Takes the tarball's files
+# (before .chezmoiignore) and the actual set (chezmoi's result), both as lists of paths under $RECALL_DIR.
+recall_required_report() { # expected_paths actual_paths
+  local f missing_tar="" missing_out=""
+  for f in $RECALL_REQUIRED_FILES; do
+    grep -qxF -- "$RECALL_DIR/$f" <<<"$1" || missing_tar+=" $f"
+    grep -qxF -- "$RECALL_DIR/$f" <<<"$2" || missing_out+=" $f"
+  done
+  [[ -z "$missing_tar" ]] || printf 'claude-recall plugin tarball lacks required file(s):%s. Upstream dropped it; check that the plugin still works without it and revisit RECALL_REQUIRED_FILES in tests/agent-vm/run-templates.sh\n' "$missing_tar"
+  [[ -z "$missing_out" ]] || printf 'chezmoi did not place required claude-recall file(s):%s (extraction or ignore error: check stripComponents in .chezmoiexternal.toml.tmpl, the chezmoi version and .chezmoiignore)\n' "$missing_out"
+}
+sha256_of() { # file
+  if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi
+}
 # Fresh cache and state so the archive is always downloaded and its checksum verified, even when other tests
 # already filled the shared cache. Fetch failures are FAILs on purpose: a skipped check pins nothing.
-# The file set must match the upstream layout exactly: Claude Code loads the plugin only from these paths,
-# and a wrong stripComponents or a change in chezmoi's tar handling drops .mcp.json without any error.
-# The expected set is what the upstream claude-recall-plugin.tar.gz holds (1.5.0 and 1.7.2 alike).
-RECALL_PLUGIN_FILES=".claude/skills/claude-recall/.claude-plugin/plugin.json
-.claude/skills/claude-recall/.mcp.json
-.claude/skills/claude-recall/hooks/hooks.json
-.claude/skills/claude-recall/skills/recall/SKILL.md"
 test_recall_plugin_tarball_matches_pinned_sha256() {
-  local dir="$TMP_BASE/recall-tarball" out err status=0 actual missing extra
+  local dir="$TMP_BASE/recall-tarball" out err status=0 actual missing extra url sha tar_t tar_tv expected tarball_files ignored reason line
+  local -a chezmoi_args
   mkdir -p "$dir"
-  out=$(chezmoi managed --source "$SRC" --destination "$dir/dst" --config "$dir/chezmoi.toml" \
-    --cache "$dir/cache" --persistent-state "$dir/state.boltdb" --refresh-externals=never \
-    --include externals --exclude dirs --override-data "$HOST_LINUX" 2>"$dir/stderr") || status=$?
+  chezmoi_args=(--source "$SRC" --destination "$dir/dst" --config "$dir/chezmoi.toml"
+    --cache "$dir/cache" --persistent-state "$dir/state.boltdb" --refresh-externals=never --override-data "$HOST_LINUX")
+  out=$(chezmoi managed "${chezmoi_args[@]}" --include externals --exclude dirs 2>"$dir/stderr") || status=$?
   err=$(head -c 400 "$dir/stderr")
-  actual=$(grep '^\.claude/skills/claude-recall/' <<<"$out" | sort || true)
-  missing=$(comm -23 <(sort <<<"$RECALL_PLUGIN_FILES") <(printf '%s\n' "$actual") | paste -sd ' ' -)
-  extra=$(comm -13 <(sort <<<"$RECALL_PLUGIN_FILES") <(printf '%s\n' "$actual" | grep . || true) | paste -sd ' ' -)
-  if [[ "$status" -eq 0 && ( -n "$missing" || -n "$extra" ) ]]; then
-    record "FAIL claude-recall plugin layout differs from upstream (missing: ${missing:-none} / extra: ${extra:-none}). Check stripComponents in .chezmoiexternal.toml.tmpl against the chezmoi version, and whether the upstream tarball changed its layout"
-  elif [[ "$status" -eq 0 ]]; then
-    record "PASS the pinned claude-recall plugin tarball downloads, matches its sha256 and lands in the upstream layout"
-  elif [[ "$err" == *"SHA256 mismatch"* ]]; then
-    record "FAIL claude-recall plugin tarball differs from the pinned sha256 (the sha256 in .chezmoiexternal.toml.tmpl does not match the release asset): $err"
-  else
-    record "FAIL could not fetch the claude-recall plugin tarball (network or rate limit, exit $status): $err"
+  if [[ "$status" -ne 0 ]]; then
+    if [[ "$err" == *"SHA256 mismatch"* ]]; then
+      record "FAIL claude-recall plugin tarball differs from the pinned sha256 (the sha256 in .chezmoiexternal.toml.tmpl does not match the release asset): $err"
+    else
+      record "FAIL could not fetch the claude-recall plugin tarball (network or rate limit, exit $status): $err"
+    fi
+    return 0
   fi
+  actual=$(grep "^$RECALL_DIR/" <<<"$out" | LC_ALL=C sort || true)
+
+  # The URL is taken from the rendered template as is (not rebuilt from the version), the sha256 with the same
+  # pattern as the checksums test below.
+  url=$(chezmoi execute-template --source "$SRC" --override-data "$HOST_LINUX" <"$EXTERNAL_TMPL" 2>/dev/null \
+    | awk -v h="[\"$RECALL_DIR\"]" '$0 == h {on = 1; next} /^\[/ {on = 0} on && /^url = / {gsub(/^url = "|"$/, ""); print; exit}') || true
+  sha=$(sed -nE 's/^\{\{- [$]recallPluginSha256 := "([0-9a-f]{64})" \}\}$/\1/p' "$EXTERNAL_TMPL")
+  if [[ -z "$url" || -z "$sha" ]]; then
+    record "FAIL could not read the claude-recall plugin tarball url (${url:-none}) and pinned sha256 (${sha:-none}) from the template"; return 0
+  fi
+  if ! err=$(curl -fsSL --max-time 30 --retry 2 -o "$dir/plugin.tar.gz" "$url" 2>&1); then
+    record "FAIL could not fetch the claude-recall plugin tarball for the expected file list (network or rate limit): ${err:0:200}"; return 0
+  fi
+  if [[ "$(sha256_of "$dir/plugin.tar.gz")" != "$sha" ]]; then
+    record "FAIL the claude-recall plugin tarball fetched for the expected file list differs from the pinned sha256 (pinned: $sha / fetched: $(sha256_of "$dir/plugin.tar.gz"))"; return 0
+  fi
+  if ! tar_t=$(tar -tzf "$dir/plugin.tar.gz" 2>&1) || ! tar_tv=$(tar -tvzf "$dir/plugin.tar.gz" 2>&1); then
+    record "FAIL could not list the claude-recall plugin tarball: ${tar_t:0:200}"; return 0
+  fi
+  if ! expected=$(recall_expected_paths "$tar_t" "$tar_tv" 2>&1); then
+    record "FAIL claude-recall plugin tarball cannot give an expected file list: $expected"; return 0
+  fi
+  expected=$(LC_ALL=C sort <<<"$expected")
+  # The tarball side of the required check uses the list before ignores, so a file left out by .chezmoiignore is
+  # reported as an extraction-side miss and not as one that upstream dropped.
+  tarball_files=$expected
+  # Which files chezmoi leaves out (.chezmoiignore) is asked of chezmoi, not copied into this test.
+  if ! ignored=$(chezmoi ignored "${chezmoi_args[@]}" 2>"$dir/ignored-stderr"); then
+    record "FAIL chezmoi ignored failed, so the expected claude-recall files cannot be narrowed: $(head -c 300 "$dir/ignored-stderr")"; return 0
+  fi
+  ignored=$(grep "^$RECALL_DIR/" <<<"$ignored" || true)
+  if [[ -n "$ignored" ]]; then
+    expected=$(grep -vxF -f <(printf '%s\n' "$ignored") <<<"$expected" || true)
+  fi
+
+  # Both checks always run so that one failure does not hide the other.
+  reason=$(recall_required_report "$tarball_files" "$actual")
+  if [[ -n "$reason" ]]; then
+    while IFS= read -r line; do record "FAIL $line"; done <<<"$reason"
+  fi
+  missing=$(comm -23 <(printf '%s\n' "$expected") <(printf '%s\n' "$actual") | paste -sd ' ' -)
+  extra=$(comm -13 <(printf '%s\n' "$expected") <(printf '%s\n' "$actual" | grep . || true) | paste -sd ' ' -)
+  if [[ -n "$missing" || -n "$extra" ]]; then
+    record "FAIL claude-recall plugin layout differs from the pinned tarball (missing: ${missing:-none} / extra: ${extra:-none}). Check stripComponents in .chezmoiexternal.toml.tmpl and the chezmoi version"
+  elif [[ -z "$reason" ]]; then
+    record "PASS the pinned claude-recall plugin tarball downloads, matches its sha256 and lands as its own file list says"
+  fi
+}
+# Fixed inputs for the two pure functions, in GNU tar -tv form (the CI also runs this on macOS with bsdtar, whose
+# first character per entry is the same type letter).
+tv_line() { printf '%s 0/0 0 2026-01-01 00:00 %s\n' "$1" "$2"; } # mode name
+recall_listing_t() { printf '%s\n' "$@"; }
+test_recall_expected_paths_from_fixed_listings() {
+  local t tv out expect="$RECALL_DIR/.claude-plugin/plugin.json
+$RECALL_DIR/.mcp.json
+$RECALL_DIR/hooks/hooks.json
+$RECALL_DIR/skills/recall/SKILL.md"
+  t=$(recall_listing_t ./ ./.claude-plugin/ ./.claude-plugin/plugin.json ./.mcp.json ./hooks/hooks.json ./skills/recall/SKILL.md)
+  tv=$(tv_line drwxr-xr-x ./; tv_line drwxr-xr-x ./.claude-plugin/; tv_line -rw-r--r-- ./.claude-plugin/plugin.json
+    tv_line -rw-r--r-- ./.mcp.json; tv_line -rw-r--r-- ./hooks/hooks.json; tv_line -rw-r--r-- ./skills/recall/SKILL.md)
+  out=$(recall_expected_paths "$t" "$tv" 2>&1) || out="rejected: $out"
+  assert_eq "$expect" "$out" "expected paths: the 1.7.2 layout gives its 4 files"
+
+  t=$(recall_listing_t .claude-plugin/plugin.json .mcp.json hooks/hooks.json skills/recall/SKILL.md)
+  tv=$(tv_line -rw-r--r-- .claude-plugin/plugin.json; tv_line -rw-r--r-- .mcp.json; tv_line -rw-r--r-- hooks/hooks.json; tv_line -rw-r--r-- skills/recall/SKILL.md)
+  out=$(recall_expected_paths "$t" "$tv" 2>&1) || out="rejected: $out"
+  assert_eq "$expect" "$out" "expected paths: names without a leading ./ give the same set"
+
+  t=$(recall_listing_t a/foo..bar)
+  tv=$(tv_line -rw-r--r-- a/foo..bar)
+  out=$(recall_expected_paths "$t" "$tv" 2>&1) || out="rejected: $out"
+  assert_eq "$RECALL_DIR/a/foo..bar" "$out" "expected paths: foo..bar is a name, not a .. element"
+}
+expect_recall_paths_rejected() { # label needle t_listing tv_listing
+  local out
+  if out=$(recall_expected_paths "$3" "$4" 2>&1); then
+    record "FAIL expected paths: $1 was accepted (output: $out)"
+  else
+    assert_contains "$out" "$2" "expected paths: $1 is rejected with its name"
+  fi
+}
+test_recall_expected_paths_rejects_unsafe_listings() {
+  expect_recall_paths_rejected "a symlink" "evil-link" "$(recall_listing_t ./ok ./evil-link)" "$(tv_line -rw-r--r-- ./ok; tv_line lrwxrwxrwx './evil-link -> /etc/passwd')"
+  expect_recall_paths_rejected "a hardlink" "hard" "$(recall_listing_t ./ok ./hard)" "$(tv_line -rw-r--r-- ./ok; tv_line hrw-r--r-- './hard link to ./ok')"
+  expect_recall_paths_rejected "../x" "../x" "$(recall_listing_t ../x)" "$(tv_line -rw-r--r-- ../x)"
+  expect_recall_paths_rejected "a/../../x" "a/../../x" "$(recall_listing_t a/../../x)" "$(tv_line -rw-r--r-- a/../../x)"
+  expect_recall_paths_rejected "/etc/x" "/etc/x" "$(recall_listing_t /etc/x)" "$(tv_line -rw-r--r-- /etc/x)"
+  expect_recall_paths_rejected "listings of different lengths" "lines" "$(recall_listing_t ./a ./b)" "$(tv_line -rw-r--r-- ./a)"
+  expect_recall_paths_rejected "a listing with directories only" "no regular files" "$(recall_listing_t ./ ./d/)" "$(tv_line drwxr-xr-x ./; tv_line drwxr-xr-x ./d/)"
+}
+test_recall_required_report_names_the_side_that_lacks_a_file() {
+  local all="" f out
+  for f in $RECALL_REQUIRED_FILES; do all+="$RECALL_DIR/$f"$'\n'; done
+  assert_eq "" "$(recall_required_report "$all" "$all")" "required files: nothing reported when both sides hold them"
+
+  out=$(recall_required_report "$all" "$(grep -vxF "$RECALL_DIR/.mcp.json" <<<"$all")")
+  assert_contains "$out" "did not place required claude-recall file(s): .mcp.json" "required files: a file missing from the result is named on the extraction side"
+  assert_eq "1" "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "required files: that is one line"
+
+  out=$(recall_required_report "$(grep -vxF "$RECALL_DIR/hooks/hooks.json" <<<"$all")" "$all")
+  assert_contains "$out" "tarball lacks required file(s): hooks/hooks.json" "required files: a file missing from the tarball is named on the upstream side"
+  assert_not_contains "$out" "did not place" "required files: the extraction side stays quiet then"
+
+  out=$(recall_required_report "" "")
+  assert_eq "2" "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "required files: three missing files still give one line per side"
+  assert_contains "$out" ".claude-plugin/plugin.json .mcp.json hooks/hooks.json" "required files: all missing files are in the line"
 }
 # home/.chezmoiversion and stripComponents = 0 in the claude-recall external are a pair: below 2.73.2 that
 # external stops with "inconsistent state", so the floor must stay. Compared numerically, not as strings.
