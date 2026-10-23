@@ -66,10 +66,24 @@ describe("settings entries after the matcher change", () => {
     strictEqual(allow.includes("Edit(.tmp/sessions/*/*.md)"), true);
     strictEqual(allow.includes("Read(home/dot_claude/hooks/**)"), true);
     strictEqual(allow.includes("Read(dot_claude/hooks/**)"), false);
-    strictEqual(
-      allow.some((r) => r.startsWith("Write(")),
-      false,
+  });
+
+  // Claude Code checks file tools against Edit(...) rules only and warns at
+  // startup that Write(...) / NotebookEdit(...) rules never match.
+  it("has no Write or NotebookEdit rule that Claude Code would ignore", () => {
+    const lists = {
+      "user allow": userSettings.allow,
+      "user deny": userSettings.deny,
+      "user ask": userSettings.ask ?? [],
+      "project allow": projectSettings.permissions.allow,
+      "project deny": projectSettings.permissions.deny,
+    };
+    const ignored = Object.entries(lists).flatMap(([name, rules]) =>
+      rules
+        .filter((r) => /^(Write|NotebookEdit)\(/.test(r))
+        .map((r) => `${name}: ${r}`),
     );
+    strictEqual(ignored.join("\n"), "");
   });
 
   // Claude Code itself reads these deny rules with gitignore semantics, where a

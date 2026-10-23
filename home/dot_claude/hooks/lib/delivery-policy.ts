@@ -546,10 +546,12 @@ export const GUARDED_HOME_PATHS: readonly string[] = [
   ".claude/tsconfig.json",
 ];
 
+// Edit(...) alone covers Write: Claude Code never consults Write(...) rules
+// (see permission-rule-names.ts) and warns about them at startup.
 export function guardedHomeDenyRules(): string[] {
-  return GUARDED_HOME_PATHS.flatMap((path) => {
+  return GUARDED_HOME_PATHS.map((path) => {
     const pattern = path.endsWith("/") ? `~/${path}**` : `~/${path}`;
-    return [`Edit(${pattern})`, `Write(${pattern})`];
+    return `Edit(${pattern})`;
   });
 }
 

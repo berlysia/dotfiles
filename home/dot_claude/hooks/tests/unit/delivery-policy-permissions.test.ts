@@ -27,7 +27,7 @@ describe("settings permissions for delivery-policy", () => {
     );
   });
 
-  it("denies Edit and Write for every guarded home path the guard refuses", () => {
+  it("denies Edit for every guarded home path the guard refuses", () => {
     const missing = guardedHomeDenyRules().filter(
       (rule) => !PERMISSIONS.deny.includes(rule),
     );
