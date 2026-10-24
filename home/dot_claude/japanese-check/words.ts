@@ -34,6 +34,43 @@ export const WORD_KINDS = [
 export const WORD_ACTIONS = ["fix", "review"] as const;
 export const WORD_MATCHES = ["regex", "lemma"] as const;
 
+// 検証が読む欄。照合の結果に使う欄は検査器のハッシュに入れ、使わない欄は入れない
+// （入れないものは、壊して検証が項目を飛ばすようになってもハッシュが動かない）。
+export const WORD_FIELDS = [
+  "word",
+  "kind",
+  "action",
+  "match",
+  "pattern",
+  "lemmas",
+  "pos",
+  "allow",
+  "fix",
+  "chapter",
+  "origin",
+  "english",
+  "examples",
+  "nonExamples",
+] as const;
+export const HASHED_WORD_FIELDS = [
+  "word",
+  "kind",
+  "action",
+  "match",
+  "pattern",
+  "lemmas",
+  "pos",
+  "allow",
+  "fix",
+  "chapter",
+] as const;
+export const UNHASHED_WORD_FIELDS = [
+  "origin",
+  "english",
+  "examples",
+  "nonExamples",
+] as const;
+
 export type WordKind = (typeof WORD_KINDS)[number];
 export type WordAction = (typeof WORD_ACTIONS)[number];
 export type WordMatch = (typeof WORD_MATCHES)[number];

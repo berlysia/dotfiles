@@ -1,0 +1,80 @@
+{
+  "schema": 1,
+  "rows": [
+    {
+      "id": "design",
+      "label": "設計の文書（ADR、Design Doc、PRD、RFC、仕様書）",
+      "signals": [
+        "ADR、Design Doc、PRD、RFC、仕様書を書く依頼",
+        "決定、理由、代替案、前提を並べる文書"
+      ],
+      "structure": "business",
+      "action": false,
+      "genre": "tech",
+      "stockBoundary": true
+    },
+    {
+      "id": "procedure",
+      "label": "手順書、Runbook、作業依頼、確認依頼",
+      "signals": [
+        "読み手が上から順に動く文書",
+        "手順の並びや条項番号がある本文"
+      ],
+      "structure": "business",
+      "action": true,
+      "genre": "business",
+      "stockBoundary": false
+    },
+    {
+      "id": "report",
+      "label": "議事録、調査報告、インシデント記録、週報",
+      "signals": ["起きたことや調べた結果を読み手に伝える文書"],
+      "structure": "business",
+      "action": false,
+      "genre": "business",
+      "stockBoundary": false
+    },
+    {
+      "id": "caller",
+      "label": "呼び出し元のスキルが構成を持つ文書（PR、Issue、commit の本文）",
+      "signals": ["呼び出し元のスキルが本文の構成を決めている"],
+      "structure": "caller",
+      "action": false,
+      "stockBoundary": false
+    },
+    {
+      "id": "book",
+      "label": "書籍の章、技術記事、解説",
+      "signals": ["章や記事として読み物にする依頼", "解説や技術記事の草稿"],
+      "structure": "book",
+      "action": false,
+      "genre": "tech",
+      "stockBoundary": false
+    },
+    {
+      "id": "essay",
+      "label": "エッセイ、ブログ",
+      "signals": ["書き手の語りと視点を残す文章"],
+      "structure": "keep",
+      "action": false,
+      "genre": "essay",
+      "stockBoundary": false
+    },
+    {
+      "id": "rewrite-default",
+      "label": "種類が決まらない改稿",
+      "signals": ["既存の文書を直す依頼で、種類を決める手がかりが無い"],
+      "structure": "keep",
+      "action": false,
+      "stockBoundary": false
+    },
+    {
+      "id": "compose-default",
+      "label": "種類が決まらない新規",
+      "signals": ["新しく書く依頼で、種類を決める手がかりが無い"],
+      "structure": "business",
+      "action": false,
+      "stockBoundary": false
+    }
+  ]
+}

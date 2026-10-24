@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
+  cpSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -33,10 +34,12 @@ import { getHomeDir } from "../../lib/path-utils.ts";
 import { main } from "../../../japanese-check/cli.ts";
 import {
   checkerVersion,
+  clearCheckerVersionCache,
   recordCheck,
   recordDecision,
   verify,
 } from "../../../japanese-check/receipts.ts";
+import type { DependencyEntry } from "../../../japanese-check/deps.ts";
 import { defaultStateDir, digest } from "../../../japanese-check/state.ts";
 import {
   readMark,
@@ -85,14 +88,26 @@ describe("Japanese document receipts and completion gate", () => {
     const notice = gate(f.input("PostToolUse"), f.deps);
     assert.ok(JSON.stringify(notice).includes("missing"));
     assert.equal(gate(f.input("Stop"), f.deps)?.decision, "block");
-    recordCheck(f.file, digest(f.content), f.content, 0, f.stateDir);
+    recordCheck({
+      file: f.file,
+      expectedHash: digest(f.content),
+      body: f.content,
+      candidates: 0,
+      stateDir: f.stateDir,
+    });
     assert.equal(gate(f.input("Stop"), f.deps), null);
   });
 
   it("invalidates receipts when the body changes, including after review", () => {
     const f = fixture();
     track(f.file, f.session, f.stateDir);
-    recordCheck(f.file, digest(f.content), f.content, 1, f.stateDir);
+    recordCheck({
+      file: f.file,
+      expectedHash: digest(f.content),
+      body: f.content,
+      candidates: 1,
+      stateDir: f.stateDir,
+    });
     assert.equal(verify(f.file, f.stateDir).status, "needs-review");
     recordDecision(
       f.file,
@@ -131,7 +146,13 @@ describe("Japanese document receipts and completion gate", () => {
         ),
       /先に/u,
     );
-    recordCheck(f.file, digest(f.content), f.content, 2, f.stateDir);
+    recordCheck({
+      file: f.file,
+      expectedHash: digest(f.content),
+      body: f.content,
+      candidates: 2,
+      stateDir: f.stateDir,
+    });
     assert.equal(verify(f.file, f.stateDir).status, "needs-review");
     assert.throws(
       () =>
@@ -139,14 +160,27 @@ describe("Japanese document receipts and completion gate", () => {
       /理由/u,
     );
     assert.throws(
-      () => recordCheck(f.file, digest("違う内容"), f.content, 0, f.stateDir),
+      () =>
+        recordCheck({
+          file: f.file,
+          expectedHash: digest("違う内容"),
+          body: f.content,
+          candidates: 0,
+          stateDir: f.stateDir,
+        }),
       /変更/u,
     );
   });
 
   it("preserves an existing decision only for the exact same checked body", () => {
     const f = fixture();
-    recordCheck(f.file, digest(f.content), f.content, 1, f.stateDir);
+    recordCheck({
+      file: f.file,
+      expectedHash: digest(f.content),
+      body: f.content,
+      candidates: 1,
+      stateDir: f.stateDir,
+    });
     recordDecision(
       f.file,
       digest(f.content),
@@ -155,12 +189,23 @@ describe("Japanese document receipts and completion gate", () => {
       f.stateDir,
     );
     assert.equal(
-      recordCheck(f.file, digest(f.content), f.content, 1, f.stateDir).status,
+      recordCheck({
+        file: f.file,
+        expectedHash: digest(f.content),
+        body: f.content,
+        candidates: 1,
+        stateDir: f.stateDir,
+      }).status,
       "ready",
     );
     assert.equal(
-      recordCheck(f.file, digest(f.content), "別の抽出テキスト", 1, f.stateDir)
-        .status,
+      recordCheck({
+        file: f.file,
+        expectedHash: digest(f.content),
+        body: "別の抽出テキスト",
+        candidates: 1,
+        stateDir: f.stateDir,
+      }).status,
       "needs-review",
     );
     recordDecision(
@@ -171,14 +216,14 @@ describe("Japanese document receipts and completion gate", () => {
       f.stateDir,
     );
     assert.equal(
-      recordCheck(
-        f.file,
-        digest(f.content),
-        "別の抽出テキスト",
-        1,
-        f.stateDir,
-        digest("別の原文"),
-      ).status,
+      recordCheck({
+        file: f.file,
+        expectedHash: digest(f.content),
+        body: "別の抽出テキスト",
+        candidates: 1,
+        stateDir: f.stateDir,
+        comparisonHash: digest("別の原文"),
+      }).status,
       "needs-review",
     );
   });
@@ -187,13 +232,13 @@ describe("Japanese document receipts and completion gate", () => {
     const f = fixture();
     const artifact = join(root, `artifact-${number}.pdf`);
     writeFileSync(artifact, "binary-version-one");
-    recordCheck(
-      artifact,
-      digest("binary-version-one"),
-      f.content,
-      0,
-      f.stateDir,
-    );
+    recordCheck({
+      file: artifact,
+      expectedHash: digest("binary-version-one"),
+      body: f.content,
+      candidates: 0,
+      stateDir: f.stateDir,
+    });
     assert.equal(verify(artifact, f.stateDir).status, "ready");
     writeFileSync(artifact, "binary-version-two");
     assert.equal(verify(artifact, f.stateDir).status, "stale");
@@ -313,7 +358,13 @@ describe("Japanese document receipts and completion gate", () => {
 
   it("stores hashes and reasons instead of source text, and hashes session ids", () => {
     const f = fixture();
-    recordCheck(f.file, digest(f.content), f.content, 0, f.stateDir);
+    recordCheck({
+      file: f.file,
+      expectedHash: digest(f.content),
+      body: f.content,
+      candidates: 0,
+      stateDir: f.stateDir,
+    });
     const paths = readdirSync(join(f.stateDir, "receipts"));
     assert.equal(paths.length, 1);
     const saved = readFileSync(
@@ -321,7 +372,7 @@ describe("Japanese document receipts and completion gate", () => {
       "utf8",
     );
     assert.ok(!saved.includes(f.content.trim()));
-    assert.ok(saved.includes(checkerVersion()));
+    assert.ok(saved.includes(checkerVersion().hash));
     track(f.file, "../../untrusted-session", f.stateDir);
     assert.equal(readdirSync(join(f.stateDir, "sessions")).length, 1);
   });
@@ -439,7 +490,13 @@ describe("japanese-document-gate recovery, attribution, exclusion and publicatio
       const s = setup();
       const file = s.document("a.md");
       track(file, s.session, s.stateDir);
-      recordCheck(file, digest(readFileSync(file)), "x", 0, s.stateDir);
+      recordCheck({
+        file,
+        expectedHash: digest(readFileSync(file)),
+        body: "x",
+        candidates: 0,
+        stateDir: s.stateDir,
+      });
       const [name] = readdirSync(join(s.stateDir, "receipts"));
       writeFileSync(join(s.stateDir, "receipts", name ?? ""), "{");
       const result = verify(file, s.stateDir);
@@ -451,7 +508,13 @@ describe("japanese-document-gate recovery, attribution, exclusion and publicatio
         String(stop?.reason),
         /記録が壊れている（check で作り直せる）/u,
       );
-      recordCheck(file, digest(readFileSync(file)), "x", 0, s.stateDir);
+      recordCheck({
+        file,
+        expectedHash: digest(readFileSync(file)),
+        body: "x",
+        candidates: 0,
+        stateDir: s.stateDir,
+      });
       assert.equal(verify(file, s.stateDir).status, "ready");
     });
 
@@ -657,7 +720,13 @@ describe("japanese-document-gate recovery, attribution, exclusion and publicatio
     it("keeps every state directory 0700 and every file 0600", () => {
       const s = setup();
       const a = s.document("a.md");
-      recordCheck(a, digest(readFileSync(a)), "x", 1, s.stateDir);
+      recordCheck({
+        file: a,
+        expectedHash: digest(readFileSync(a)),
+        body: "x",
+        candidates: 1,
+        stateDir: s.stateDir,
+      });
       track(a, s.session, s.stateDir);
       s.setCandidates({ ok: true, paths: [] });
       gate(s.bash("PreToolUse", "t1"), s.deps);
@@ -902,7 +971,13 @@ describe("japanese-document-gate recovery, attribution, exclusion and publicatio
     it("lets a checked body file through", () => {
       const s = setup();
       const file = s.document("body.md");
-      recordCheck(file, digest(readFileSync(file)), "x", 0, s.stateDir);
+      recordCheck({
+        file,
+        expectedHash: digest(readFileSync(file)),
+        body: "x",
+        candidates: 0,
+        stateDir: s.stateDir,
+      });
       const command = "gh pr create --title x --body-file body.md";
       assert.equal(
         gate(s.input("PreToolUse", "Bash", { command }), s.deps),
@@ -947,7 +1022,13 @@ describe("japanese-document-gate recovery, attribution, exclusion and publicatio
       const s = setup();
       const good = s.document("good.md");
       track(good, s.session, s.stateDir);
-      recordCheck(good, digest(readFileSync(good)), "x", 0, s.stateDir);
+      recordCheck({
+        file: good,
+        expectedHash: digest(readFileSync(good)),
+        body: "x",
+        candidates: 0,
+        stateDir: s.stateDir,
+      });
       const documents = join(
         s.stateDir,
         "sessions",
@@ -984,7 +1065,13 @@ describe("japanese-document-gate recovery, attribution, exclusion and publicatio
       assert.equal(post(s, a), null);
       writeFileSync(a, "編集した日本語の文書です。\n");
       assert.ok(textOf(post(s, a)).includes("a.md"));
-      recordCheck(a, digest(readFileSync(a)), "x", 0, s.stateDir);
+      recordCheck({
+        file: a,
+        expectedHash: digest(readFileSync(a)),
+        body: "x",
+        candidates: 0,
+        stateDir: s.stateDir,
+      });
       assert.equal(post(s, a), null);
       assert.equal(readMark(s.session, "pending-notice", s.stateDir), null);
       writeFileSync(a, "もう一度編集した日本語です。\n");
@@ -1017,7 +1104,13 @@ describe("japanese-document-gate recovery, attribution, exclusion and publicatio
       const s = setup();
       const file = s.document("b\tc\nd.md");
       track(file, s.session, s.stateDir);
-      recordCheck(file, digest(readFileSync(file)), "x", 0, s.stateDir);
+      recordCheck({
+        file,
+        expectedHash: digest(readFileSync(file)),
+        body: "x",
+        candidates: 0,
+        stateDir: s.stateDir,
+      });
       const [name] = readdirSync(join(s.stateDir, "receipts"));
       writeFileSync(join(s.stateDir, "receipts", name ?? ""), "{");
       const text = textOf(gate(s.stop(), s.deps));
@@ -1142,7 +1235,13 @@ describe("japanese-document-gate recovery, attribution, exclusion and publicatio
         const b = s.document("b.md");
         track(a, s.session, s.stateDir);
         track(b, s.session, s.stateDir);
-        recordCheck(a, digest(readFileSync(a)), "x", 0, s.stateDir);
+        recordCheck({
+          file: a,
+          expectedHash: digest(readFileSync(a)),
+          body: "x",
+          candidates: 0,
+          stateDir: s.stateDir,
+        });
         const receipts = join(s.stateDir, "receipts");
         const [name] = readdirSync(receipts);
         chmodSync(join(receipts, name ?? ""), 0o000);
@@ -1212,7 +1311,13 @@ describe("japanese-document-gate recovery, attribution, exclusion and publicatio
     it("removes old *.tmp files but never receipts", () => {
       const s = setup();
       const a = s.document("a.md");
-      recordCheck(a, digest(readFileSync(a)), "x", 0, s.stateDir);
+      recordCheck({
+        file: a,
+        expectedHash: digest(readFileSync(a)),
+        body: "x",
+        candidates: 0,
+        stateDir: s.stateDir,
+      });
       const receipts = join(s.stateDir, "receipts");
       const [receipt] = readdirSync(receipts);
       writeFileSync(join(receipts, "leftover.tmp"), "");
@@ -1570,7 +1675,13 @@ describe("autoTrackable through the gate", () => {
           '"permissionDecision":"deny"',
         ),
       );
-      recordCheck(s.file, digest(s.content), s.content, 0, s.stateDir);
+      recordCheck({
+        file: s.file,
+        expectedHash: digest(s.content),
+        body: s.content,
+        candidates: 0,
+        stateDir: s.stateDir,
+      });
       assert.ok(
         !JSON.stringify(gate(input(), s.deps)).includes(
           '"permissionDecision":"deny"',
@@ -1596,5 +1707,185 @@ describe("autoTrackable through the gate", () => {
       s.deps,
     );
     assert.deepEqual(tracked(s.session, s.stateDir).paths, []);
+  });
+});
+
+describe("gate with a checker that is missing a part", () => {
+  const checkerSource = fileURLToPath(
+    new URL("../../../japanese-check/", import.meta.url),
+  );
+  const root = mkdtempSync(join(tmpdir(), "japanese-gate-incomplete-"));
+  after(() => rmSync(root, { recursive: true, force: true }));
+  let number = 0;
+  const content = "人が読むための説明です。\n";
+
+  function fixture(absent = "absent-grammar") {
+    const key = String(++number);
+    const dir = join(root, `case-${key}`, "japanese-check");
+    cpSync(checkerSource, dir, { recursive: true });
+    const pkg = join(dir, "node_modules", "sudachi");
+    mkdirSync(pkg, { recursive: true });
+    writeFileSync(
+      join(pkg, "package.json"),
+      JSON.stringify({ name: "sudachi", version: "9.9.9", main: "index.js" }),
+    );
+    writeFileSync(join(pkg, "index.js"), "module.exports = {};\n");
+    const stateDir = join(root, `state-${key}`);
+    const session = `session-${key}`;
+    const documents = (count: number) =>
+      Array.from({ length: count }, (_, i) => {
+        const file = join(root, `doc-${key}-${i}.md`);
+        writeFileSync(file, content);
+        return file;
+      });
+    let deps: DependencyEntry[] = [
+      { name: "sudachi", group: "analyzer" },
+      { name: absent, group: "grammar" },
+    ];
+    const gateDeps: GateDeps = {
+      stateDir,
+      candidates: () => ({ ok: true, paths: [] }),
+      now: () => 0,
+      verify: (file, state) => verify(file, state, { dir, deps }),
+    };
+    const input = (event: string, tool = "Write", file = "") => ({
+      hook_event_name: event,
+      session_id: session,
+      cwd: root,
+      tool_name: tool,
+      tool_input: { file_path: file },
+    });
+    const record = (file: string) =>
+      recordCheck({
+        file,
+        expectedHash: digest(content),
+        body: content,
+        candidates: 0,
+        stateDir,
+        dir,
+        deps,
+      });
+    clearCheckerVersionCache();
+    return {
+      dir,
+      stateDir,
+      session,
+      documents,
+      gateDeps,
+      input,
+      record,
+      setAbsent: (name: string) => {
+        deps = [
+          { name: "sudachi", group: "analyzer" },
+          { name, group: "grammar" },
+        ];
+      },
+    };
+  }
+
+  it("treats a ready document as pending and names the missing part", () => {
+    const f = fixture();
+    const [file] = f.documents(1) as [string];
+    track(file, f.session, f.stateDir);
+    assert.equal(f.record(file).status, "ready");
+    const stop = gate(f.input("Stop"), f.gateDeps);
+    assert.equal(stop?.decision, "block");
+    assert.match(
+      String(stop?.reason),
+      /検査器の部品が欠けている（absent-grammar）/u,
+    );
+    assert.match(String(stop?.reason), /chezmoi apply/u);
+  });
+
+  it("announces the same missing set once and again when the names change", () => {
+    const f = fixture();
+    const [file] = f.documents(1) as [string];
+    track(file, f.session, f.stateDir);
+    f.record(file);
+    const first = gate(f.input("PostToolUse", "Write", file), f.gateDeps);
+    assert.ok(JSON.stringify(first).includes("absent-grammar"));
+    assert.equal(gate(f.input("PostToolUse", "Write", file), f.gateDeps), null);
+    f.setAbsent("another-part");
+    f.record(file);
+    const third = gate(f.input("PostToolUse", "Write", file), f.gateDeps);
+    assert.ok(JSON.stringify(third).includes("another-part"));
+  });
+
+  it("leaves draft and excluded documents as they were", () => {
+    const f = fixture();
+    const [draft, excluded] = f.documents(2) as [string, string];
+    for (const file of [draft, excluded]) track(file, f.session, f.stateDir);
+    f.record(draft);
+    f.record(excluded);
+    recordDecision(draft, digest(content), "草稿", "draft", f.stateDir, {
+      dir: f.dir,
+      deps: [
+        { name: "sudachi", group: "analyzer" },
+        { name: "absent-grammar", group: "grammar" },
+      ],
+    });
+    recordDecision(
+      excluded,
+      digest(content),
+      "対象外",
+      "excluded",
+      f.stateDir,
+      {
+        dir: f.dir,
+        deps: [
+          { name: "sudachi", group: "analyzer" },
+          { name: "absent-grammar", group: "grammar" },
+        ],
+      },
+    );
+    assert.equal(gate(f.input("Stop"), f.gateDeps), null);
+  });
+
+  it("reports a throwing verification as unreadable for ready, excluded and draft alike", () => {
+    const f = fixture();
+    const [ready, excluded, draft] = f.documents(3) as [string, string, string];
+    for (const file of [ready, excluded, draft]) {
+      track(file, f.session, f.stateDir);
+      f.record(file);
+    }
+    const options = {
+      dir: f.dir,
+      deps: [
+        { name: "sudachi", group: "analyzer" },
+        { name: "absent-grammar", group: "grammar" },
+      ] as DependencyEntry[],
+    };
+    recordDecision(
+      excluded,
+      digest(content),
+      "対象外",
+      "excluded",
+      f.stateDir,
+      options,
+    );
+    recordDecision(
+      draft,
+      digest(content),
+      "草稿",
+      "draft",
+      f.stateDir,
+      options,
+    );
+    const errors = mock.method(console, "error", () => {});
+    try {
+      const stop = gate(f.input("Stop"), {
+        ...f.gateDeps,
+        verify: () => {
+          throw new Error("boom");
+        },
+      });
+      assert.equal(stop?.decision, "block");
+      assert.equal(
+        String(stop?.reason).match(/記録を読めなかった/gu)?.length,
+        3,
+      );
+    } finally {
+      errors.mock.restore();
+    }
   });
 });
