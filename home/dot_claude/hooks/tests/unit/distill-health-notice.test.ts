@@ -7,6 +7,7 @@ import {
   rmSync,
   utimesSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -23,7 +24,7 @@ const MARGIN_MS = 60_000;
 function withTempPaths(
   fn: (paths: { markerPath: string; stampPath: string }) => void,
 ): void {
-  const dir = mkdtempSync(join(tmpdir(), "distill-health-test-"));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "distill-health-test-")));
   try {
     fn({
       markerPath: join(dir, "last-run-failed"),

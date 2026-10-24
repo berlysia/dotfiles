@@ -1,7 +1,13 @@
 #!/usr/bin/env node --test
 
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  realpathSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
@@ -37,7 +43,9 @@ describe("delivery-policy-recorder", () => {
   let repoView: string;
 
   beforeEach(() => {
-    home = mkdtempSync(join(tmpdir(), "delivery-policy-recorder-"));
+    home = realpathSync(
+      mkdtempSync(join(tmpdir(), "delivery-policy-recorder-")),
+    );
     ghCalls = [];
     ghStatus = 0;
     repoView = VIEW;

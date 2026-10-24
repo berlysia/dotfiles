@@ -1,7 +1,7 @@
 #!/usr/bin/env node --test
 
 import { deepStrictEqual, ok, strictEqual } from "node:assert";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
@@ -15,7 +15,7 @@ describe("voice mute (CLAUDE_VOICE_ENABLED)", () => {
   let testDir = "";
 
   beforeEach(() => {
-    testDir = mkdtempSync(join(tmpdir(), "test-voice-mute-"));
+    testDir = realpathSync(mkdtempSync(join(tmpdir(), "test-voice-mute-")));
   });
 
   afterEach(() => {

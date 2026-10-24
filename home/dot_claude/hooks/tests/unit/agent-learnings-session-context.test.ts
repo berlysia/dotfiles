@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -87,7 +88,7 @@ describe("buildSessionLearningsContext injection records", () => {
     return { ok: false, status: 1 };
   };
   function setup(entries: LearningEntry[]) {
-    const home = mkdtempSync(join(tmpdir(), "session-context-"));
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "session-context-")));
     roots.push(home);
     const store = defaultStoreDir(home);
     mkdirSync(join(store, ".git"), { recursive: true });

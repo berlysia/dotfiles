@@ -8,6 +8,7 @@ import {
   rmSync,
   symlinkSync,
   utimesSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -72,7 +73,7 @@ function isAlive(pid) {
 }
 
 function scratch() {
-  return mkdtempSync(join(tmpdir(), "ja-baseline-test-"));
+  return realpathSync(mkdtempSync(join(tmpdir(), "ja-baseline-test-")));
 }
 
 // ---- ブログの本文の取り出し ----

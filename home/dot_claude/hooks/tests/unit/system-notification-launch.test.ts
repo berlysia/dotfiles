@@ -12,6 +12,7 @@ import {
   readFileSync,
   rmSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -75,7 +76,7 @@ function runChild(
 
 describe("sendSystemNotification launch", () => {
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), "sysnotify-"));
+    dir = realpathSync(mkdtempSync(join(tmpdir(), "sysnotify-")));
     binDir = join(dir, "bin");
     mkdirSync(binDir);
   });

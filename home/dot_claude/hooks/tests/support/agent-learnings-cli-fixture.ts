@@ -1,7 +1,13 @@
 // Shared by heavy/agent-learnings-cli.test.ts and perf/agent-learnings-cli.test.ts.
 // withEnv() runs `git init`: only heavy and perf import this file.
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  realpathSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type RunLearningsCliDeps } from "../../cli/learnings.ts";
@@ -10,7 +16,9 @@ import { runGit } from "../../lib/agent-learnings/core/git.ts";
 export async function withEnv(
   fn: (deps: RunLearningsCliDeps, root: string) => Promise<void>,
 ): Promise<void> {
-  const root = mkdtempSync(join(tmpdir(), "agent-learnings-cli-"));
+  const root = realpathSync(
+    mkdtempSync(join(tmpdir(), "agent-learnings-cli-")),
+  );
   const repo = join(root, "repo");
   execFileSync("git", ["init", "-q", repo]);
   execFileSync("git", [

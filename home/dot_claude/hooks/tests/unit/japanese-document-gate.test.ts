@@ -53,7 +53,9 @@ import { shellSingleQuote } from "../../lib/shell-quote.ts";
 const itUnlessRoot = { skip: process.getuid?.() === 0 };
 
 describe("Japanese document receipts and completion gate", () => {
-  const root = mkdtempSync(join(tmpdir(), "japanese-document-gate-"));
+  const root = realpathSync(
+    mkdtempSync(join(tmpdir(), "japanese-document-gate-")),
+  );
   after(() => rmSync(root, { recursive: true, force: true }));
   let number = 0;
   function fixture() {
@@ -383,7 +385,9 @@ describe("japanese-document-gate entry", () => {
   const entry = fileURLToPath(
     new URL("../../implementations/japanese-document-gate.ts", import.meta.url),
   );
-  const dir = mkdtempSync(join(tmpdir(), "japanese-document-gate-entry-"));
+  const dir = realpathSync(
+    mkdtempSync(join(tmpdir(), "japanese-document-gate-entry-")),
+  );
   after(() => rmSync(dir, { recursive: true, force: true }));
 
   function launch(stdin: string) {
@@ -1728,7 +1732,9 @@ describe("gate with a checker that is missing a part", () => {
   const checkerSource = fileURLToPath(
     new URL("../../../japanese-check/", import.meta.url),
   );
-  const root = mkdtempSync(join(tmpdir(), "japanese-gate-incomplete-"));
+  const root = realpathSync(
+    mkdtempSync(join(tmpdir(), "japanese-gate-incomplete-")),
+  );
   after(() => rmSync(root, { recursive: true, force: true }));
   let number = 0;
   const content = "人が読むための説明です。\n";

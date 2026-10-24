@@ -11,6 +11,7 @@ import {
   readFileSync,
   rmSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -75,7 +76,7 @@ export function installHookEnv(
   envHelper.set("GIT_CONFIG_GLOBAL", "/dev/null");
   envHelper.set("GIT_CONFIG_NOSYSTEM", "1");
   // Keep the hook away from the real ~/.claude/settings.json.
-  const cfg = mkdtempSync(join(tmpdir(), "ct-cfg-"));
+  const cfg = realpathSync(mkdtempSync(join(tmpdir(), "ct-cfg-")));
   dirs.push(cfg);
   envHelper.set("XDG_CONFIG_HOME", join(cfg, "xdg"));
   envHelper.set("CLAUDE_CONFIG_DIR", cfg);
@@ -106,8 +107,8 @@ export function setupHookEnv(
   dirs: string[],
   prepareRepo?: (repo: string) => void,
 ): HookEnv {
-  const repo = mkdtempSync(join(tmpdir(), "ct-repo-"));
-  const tdir = mkdtempSync(join(tmpdir(), "ct-tr-"));
+  const repo = realpathSync(mkdtempSync(join(tmpdir(), "ct-repo-")));
+  const tdir = realpathSync(mkdtempSync(join(tmpdir(), "ct-tr-")));
   dirs.push(repo, tdir);
   prepareRepo?.(repo);
   const wfDir = join(repo, deriveDefaultWorkflowDir("test-session"));

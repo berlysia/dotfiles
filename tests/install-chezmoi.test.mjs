@@ -12,6 +12,7 @@ import {
   readFileSync,
   rmSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
@@ -247,7 +248,9 @@ esac
 function makeWorld({
   version = readPinnedVersion(readRepoFile(ACTION_PATH)),
 } = {}) {
-  const root = mkdtempSync(join(tmpdir(), "install-chezmoi-test-"));
+  const root = realpathSync(
+    mkdtempSync(join(tmpdir(), "install-chezmoi-test-")),
+  );
   const bin = join(root, "bin");
   const fixtures = join(root, "fixtures");
   const pack = join(root, "pack");

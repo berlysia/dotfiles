@@ -1,5 +1,11 @@
 import { deepStrictEqual, ok, strictEqual } from "node:assert";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  realpathSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -15,7 +21,7 @@ import { parseInjectionLines } from "../../lib/agent-learnings/core/metrics.ts";
 import { storePaths } from "../../lib/agent-learnings/core/store.ts";
 
 const withStore = (fn: (store: string) => void): void => {
-  const root = mkdtempSync(join(tmpdir(), "al-mlog-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "al-mlog-")));
   try {
     const store = join(root, "store");
     mkdirSync(join(store, ".state", "codex"), { recursive: true });

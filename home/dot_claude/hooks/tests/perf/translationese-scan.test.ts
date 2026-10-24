@@ -9,6 +9,7 @@ import {
   readFileSync,
   rmSync,
   symlinkSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -70,7 +71,7 @@ describe("translationese-scan time bounds", () => {
 
 describe("translationese-scan as a process, worst-case inputs", () => {
   function setup() {
-    const home = mkdtempSync(join(tmpdir(), "tscan-perf-"));
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "tscan-perf-")));
     const target = join(home, WORD_LIST_RELATIVE_PATH);
     mkdirSync(join(target, ".."), { recursive: true });
     copyFileSync(REPO_LIST, target);

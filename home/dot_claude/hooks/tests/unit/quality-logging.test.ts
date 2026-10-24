@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,7 +15,9 @@ import type { QualityLogEntry } from "../../types/logging-types.ts";
 describe("quality logging", () => {
   // Unique per run: a fixed path is shared by concurrent test runs, which then
   // delete each other's quality.jsonl.
-  const testDir = mkdtempSync(join(tmpdir(), "test-quality-logging-"));
+  const testDir = realpathSync(
+    mkdtempSync(join(tmpdir(), "test-quality-logging-")),
+  );
   const testLogDir = join(testDir, ".claude", "logs");
   const originalHome = process.env.HOME;
   const originalClaudeLogsDir = process.env.CLAUDE_LOGS_DIR;

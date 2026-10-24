@@ -429,7 +429,9 @@ describe("japanese-check module boundaries", () => {
 });
 
 describe("japanese-check state directory", () => {
-  const root = mkdtempSync(join(tmpdir(), "japanese-check-state-"));
+  const root = realpathSync(
+    mkdtempSync(join(tmpdir(), "japanese-check-state-")),
+  );
   after(() => rmSync(root, { recursive: true, force: true }));
   let number = 0;
   const own = process.getuid?.();
@@ -616,7 +618,9 @@ describe("japanese-check state directory", () => {
 });
 
 describe("check --profile", () => {
-  const dir = mkdtempSync(join(tmpdir(), "japanese-check-profile-"));
+  const dir = realpathSync(
+    mkdtempSync(join(tmpdir(), "japanese-check-profile-")),
+  );
   after(() => rmSync(dir, { recursive: true, force: true }));
   let number = 0;
   // 110 characters: over the tech limit (100) and the business limit (80), under
@@ -726,7 +730,9 @@ describe("check --profile", () => {
 });
 
 describe("receipt profile fields", () => {
-  const dir = mkdtempSync(join(tmpdir(), "japanese-check-receipt-profile-"));
+  const dir = realpathSync(
+    mkdtempSync(join(tmpdir(), "japanese-check-receipt-profile-")),
+  );
   after(() => rmSync(dir, { recursive: true, force: true }));
   let number = 0;
   const content = "データを拾った。\n";
@@ -879,7 +885,9 @@ describe("checker version", () => {
   const checkerSource = fileURLToPath(
     new URL("../../../japanese-check/", import.meta.url),
   );
-  const root = mkdtempSync(join(tmpdir(), "japanese-check-version-"));
+  const root = realpathSync(
+    mkdtempSync(join(tmpdir(), "japanese-check-version-")),
+  );
   after(() => rmSync(root, { recursive: true, force: true }));
   let number = 0;
 
@@ -1049,7 +1057,9 @@ describe("receipts with a checker that is missing a part", () => {
   const checkerSource = fileURLToPath(
     new URL("../../../japanese-check/", import.meta.url),
   );
-  const root = mkdtempSync(join(tmpdir(), "japanese-check-incomplete-"));
+  const root = realpathSync(
+    mkdtempSync(join(tmpdir(), "japanese-check-incomplete-")),
+  );
   after(() => rmSync(root, { recursive: true, force: true }));
   let number = 0;
 

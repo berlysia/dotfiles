@@ -7,6 +7,7 @@ import {
   rmSync,
   symlinkSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -209,7 +210,9 @@ describe("isGuardRegistered", () => {
 
 describe("readExperimentState", () => {
   function withHome(fn: (home: string, dir: string) => void): void {
-    const home = mkdtempSync(join(tmpdir(), "auto-mode-experiment-test-"));
+    const home = realpathSync(
+      mkdtempSync(join(tmpdir(), "auto-mode-experiment-test-")),
+    );
     try {
       mkdirSync(experimentDir(home), { recursive: true });
       mkdirSync(join(home, ".claude"), { recursive: true });

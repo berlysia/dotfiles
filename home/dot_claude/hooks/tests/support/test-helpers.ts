@@ -10,6 +10,7 @@ import {
   readdirSync,
   readFileSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -734,7 +735,9 @@ export const TEST_WORKFLOW_DIR = ".tmp/sessions/test";
  * resolve to this directory instead of the session-derived one.
  */
 export function createWorkflowRepo(options: WorkflowRepoOptions): string {
-  const repo = mkdtempSync(join(tmpdir(), "document-workflow-guard-"));
+  const repo = realpathSync(
+    mkdtempSync(join(tmpdir(), "document-workflow-guard-")),
+  );
   mkdirSync(join(repo, TEST_WORKFLOW_DIR), { recursive: true });
   writeFileSync(join(repo, TEST_WORKFLOW_DIR, "research.md"), "research");
   writeFileSync(
@@ -769,7 +772,7 @@ export function approvedWorkflowRepo(): WorkflowRepoOptions {
  * resolve it without any env setup.
  */
 export function draftPlanRepo(sessionId: string = TEST_SESSION_ID): string {
-  const repo = mkdtempSync(join(tmpdir(), "draft-plan-"));
+  const repo = realpathSync(mkdtempSync(join(tmpdir(), "draft-plan-")));
   const wfRel = deriveDefaultWorkflowDir(sessionId);
   mkdirSync(join(repo, wfRel), { recursive: true });
   writeFileSync(
@@ -790,7 +793,7 @@ export function createGitWorkflowRepo(
   options: WorkflowRepoOptions = pendingWorkflowRepo(),
   sessionId: string = TEST_SESSION_ID,
 ): string {
-  const repo = mkdtempSync(join(tmpdir(), "git-workflow-"));
+  const repo = realpathSync(mkdtempSync(join(tmpdir(), "git-workflow-")));
   execFileSync("git", ["init", "-q"], { cwd: repo });
   execFileSync("git", ["config", "user.email", "test@example.com"], {
     cwd: repo,
@@ -833,7 +836,7 @@ export function seedWorkflow(options: SeedWorkflowOptions): {
   wf: string;
   ledger: string;
 } {
-  const wf = mkdtempSync(join(tmpdir(), "workflow-cli-"));
+  const wf = realpathSync(mkdtempSync(join(tmpdir(), "workflow-cli-")));
   const sessionId = options.sessionId ?? "test-ses";
 
   if (/^plan-\d+\.md$/.test(options.doc)) {
@@ -911,7 +914,7 @@ export function seedWorkflow(options: SeedWorkflowOptions): {
  * `planHash` for `docName`, for `isCompleteAndChanged` tests (plan-3 T5).
  */
 export function seedCache(docName: string, planHash: string): string {
-  const wf = mkdtempSync(join(tmpdir(), "cache-seed-"));
+  const wf = realpathSync(mkdtempSync(join(tmpdir(), "cache-seed-")));
   writeDocCache(wf, docName, {
     planHash,
     recommendedAt: new Date().toISOString(),

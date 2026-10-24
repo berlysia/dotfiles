@@ -51,7 +51,9 @@ function createSessionWorkflowRepo(
   sessionDir: string,
   options: WorkflowRepoOptions,
 ): string {
-  const repo = mkdtempSync(join(tmpdir(), "document-workflow-guard-session-"));
+  const repo = realpathSync(
+    mkdtempSync(join(tmpdir(), "document-workflow-guard-session-")),
+  );
   mkdirSync(join(repo, sessionDir), { recursive: true });
   writeFileSync(join(repo, sessionDir, "research.md"), "research");
   writeFileSync(join(repo, sessionDir, "plan.md"), buildPlanContent(options));
@@ -63,7 +65,9 @@ function buildRepoWithReview(
   base: WorkflowRepoOptions,
   review: ReviewMarkerOptions | undefined,
 ): string {
-  const repo = mkdtempSync(join(tmpdir(), "document-workflow-guard-"));
+  const repo = realpathSync(
+    mkdtempSync(join(tmpdir(), "document-workflow-guard-")),
+  );
   mkdirSync(join(repo, TEST_WORKFLOW_DIR), { recursive: true });
   const complete = { ...base, review };
   writeFileSync(join(repo, TEST_WORKFLOW_DIR, "research.md"), "research");
@@ -376,7 +380,9 @@ describe("document-workflow-guard.ts hook behavior", () => {
   });
 
   it("does not enforce when workflow artifacts do not exist", async () => {
-    const repo = mkdtempSync(join(tmpdir(), "document-workflow-guard-plain-"));
+    const repo = realpathSync(
+      mkdtempSync(join(tmpdir(), "document-workflow-guard-plain-")),
+    );
     envHelper.set("CLAUDE_TEST_CWD", repo);
 
     const context = createPreToolUseContextFor(hook, "Write", {
@@ -455,7 +461,9 @@ describe("document-workflow-guard.ts hook behavior", () => {
   });
 
   it("does not enforce when .tmp/plan.md exists but DOCUMENT_WORKFLOW_DIR points elsewhere", async () => {
-    const repo = mkdtempSync(join(tmpdir(), "document-workflow-guard-"));
+    const repo = realpathSync(
+      mkdtempSync(join(tmpdir(), "document-workflow-guard-")),
+    );
     // Create leftover .tmp/plan.md from a previous session
     mkdirSync(join(repo, ".tmp"), { recursive: true });
     writeFileSync(
@@ -545,8 +553,8 @@ describe("document-workflow-guard.ts hook behavior", () => {
     });
 
     it("does not activate when default .tmp has no artifacts but session dir does", async () => {
-      const repo = mkdtempSync(
-        join(tmpdir(), "document-workflow-guard-session-"),
+      const repo = realpathSync(
+        mkdtempSync(join(tmpdir(), "document-workflow-guard-session-")),
       );
       const sessionDir = ".tmp/sessions/abcd1234";
       mkdirSync(join(repo, sessionDir), { recursive: true });
@@ -568,8 +576,8 @@ describe("document-workflow-guard.ts hook behavior", () => {
     });
 
     it("does not block when session dir has no artifacts", async () => {
-      const repo = mkdtempSync(
-        join(tmpdir(), "document-workflow-guard-session-"),
+      const repo = realpathSync(
+        mkdtempSync(join(tmpdir(), "document-workflow-guard-session-")),
       );
       envHelper.set("CLAUDE_TEST_CWD", repo);
       envHelper.set("DOCUMENT_WORKFLOW_DIR", ".tmp/sessions/empty1234");
@@ -600,7 +608,9 @@ describe("document-workflow-guard.ts hook behavior", () => {
   });
 
   it("blocks Write when review marker is pass but review status line is pending", async () => {
-    const repo = mkdtempSync(join(tmpdir(), "document-workflow-guard-"));
+    const repo = realpathSync(
+      mkdtempSync(join(tmpdir(), "document-workflow-guard-")),
+    );
     mkdirSync(join(repo, TEST_WORKFLOW_DIR), { recursive: true });
     writeFileSync(join(repo, TEST_WORKFLOW_DIR, "research.md"), "research");
     envHelper.set("CLAUDE_TEST_CWD", repo);
@@ -965,7 +975,9 @@ describe("document-workflow-guard.ts two-layer mode (spec.md + plan-N.md)", () =
     repo: string;
     specHash: string;
   } {
-    const repo = mkdtempSync(join(tmpdir(), "document-workflow-guard-2layer-"));
+    const repo = realpathSync(
+      mkdtempSync(join(tmpdir(), "document-workflow-guard-2layer-")),
+    );
     mkdirSync(join(repo, TEST_WORKFLOW_DIR), { recursive: true });
     writeFileSync(join(repo, TEST_WORKFLOW_DIR, "research.md"), "research");
     const specContent = buildPlanContent(opts.spec);
@@ -1419,8 +1431,8 @@ describe("document-workflow-guard.ts two-layer mode (spec.md + plan-N.md)", () =
     });
 
     function delegatedGuardRepo(): string {
-      const repo = mkdtempSync(
-        join(tmpdir(), "document-workflow-guard-deleg-"),
+      const repo = realpathSync(
+        mkdtempSync(join(tmpdir(), "document-workflow-guard-deleg-")),
       );
       const wf = join(repo, TEST_WORKFLOW_DIR);
       mkdirSync(wf, { recursive: true });

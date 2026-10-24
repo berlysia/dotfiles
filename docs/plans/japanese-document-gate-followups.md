@@ -13,12 +13,3 @@ Codex 0.163.0 では、Bash の PreToolUse・PostToolUse と Stop の入力を�
 - Stop で `{decision: "block"}` を返したときと、`systemMessage` を返したときに、Codex が利用者にどう見せるか。フックは故障の知らせを stderr にも出すが、Codex がそれを表示するかも分かっていない
 
 確かめ方: 一時的な `CODEX_HOME` に入力を書き出すだけのフックを置き、`codex exec --dangerously-bypass-hook-trust` で apply_patch を 1 回使わせる。Stop の扱いは、block を返すフックで同じように試す。
-
-## macOS の symlink で起きる不具合を lint で防ぐ
-
-macOS の `/tmp` と `/var` は `/private` の下への symlink で、次の 2 つの書き方はそこで外れる。
-
-- メイン判定を `import.meta.url === pathToFileURL(process.argv[1]).href` で書く。Node はエントリの URL を realpath にするので、この比較は一致しない。CLI は何もせずに 0 で終わる。`import.meta.main` を使う。同じ形が `.skills/tanteki/scripts/lint.mjs` と `tests/lib/ja-baseline/extract.mjs` に残っている
-- テストのフィクスチャを `mkdtempSync(join(tmpdir(), ...))` で作り、realpath で記録されたパスと文字列で比べると一致しない。`realpathSync` で包む
-
-決めること: どの道具で書くか（oxlint に当たる規則があるか、ast-grep を入れるか）。2 つ目は `mkdtempSync(join(tmpdir()` の 222 か所のうち 73 か所しか包んでおらず、比べないテストでは包まなくてよい。一律に禁じるか、記録と比べるテストに限るかを決める。

@@ -9,6 +9,7 @@ import {
   rmSync,
   symlinkSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -902,7 +903,9 @@ describe("runLearningsCli on and tag", () => {
     );
   };
   const withTmp = (fn: (dir: string) => Promise<void>) => async () => {
-    const dir = mkdtempSync(join(tmpdir(), "agent-learnings-tag-"));
+    const dir = realpathSync(
+      mkdtempSync(join(tmpdir(), "agent-learnings-tag-")),
+    );
     try {
       await fn(dir);
     } finally {

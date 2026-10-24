@@ -1,12 +1,14 @@
 // Shared by unit/agent-learnings-lock.test.ts and perf/agent-learnings-lock.test.ts.
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 export async function withTempDir(
   fn: (dir: string) => Promise<void>,
 ): Promise<void> {
-  const dir = mkdtempSync(join(tmpdir(), "agent-learnings-lock-"));
+  const dir = realpathSync(
+    mkdtempSync(join(tmpdir(), "agent-learnings-lock-")),
+  );
   try {
     await fn(dir);
   } finally {

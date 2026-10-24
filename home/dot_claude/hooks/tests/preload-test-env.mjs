@@ -13,7 +13,7 @@
 // centralized-logging.ts reads CLAUDE_LOGS_DIR (an override in the same
 // shape as DOCUMENT_WORKFLOW_DIR) at module load time, so this must run
 // before that module is first imported by anything in the test file.
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { enableGitShim } from "./support/git-shim.mjs";
@@ -52,7 +52,9 @@ for (const name of [
 delete process.env.CLAUDE_PROJECT_DIR;
 
 if (!process.env.CLAUDE_LOGS_DIR) {
-  const dir = mkdtempSync(join(tmpdir(), "claude-hooks-test-logs-"));
+  const dir = realpathSync(
+    mkdtempSync(join(tmpdir(), "claude-hooks-test-logs-")),
+  );
   process.env.CLAUDE_LOGS_DIR = dir;
 
   // Each `node --test` child process gets its own dir (see comment above);

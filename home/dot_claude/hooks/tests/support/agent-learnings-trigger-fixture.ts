@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,7 +36,7 @@ export const learning = (n: number, on: string): LearningEntry => ({
 export type World = { root: string; home: string; repo: string };
 
 export function makeWorld(entries: LearningEntry[]): World {
-  const root = mkdtempSync(join(tmpdir(), "trigger-hook-proc-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "trigger-hook-proc-")));
   const home = join(root, "home");
   const repo = join(root, "repo");
   mkdirSync(home);

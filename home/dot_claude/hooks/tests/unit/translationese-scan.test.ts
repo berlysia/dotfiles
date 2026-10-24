@@ -843,7 +843,7 @@ describe("translationese-scan.ts as a process", () => {
   }
 
   it("prints the warning for a Write containing a named word", () => {
-    const procHome = mkdtempSync(join(tmpdir(), "tscan-proc-"));
+    const procHome = realpathSync(mkdtempSync(join(tmpdir(), "tscan-proc-")));
     try {
       installList(procHome, null);
       const input = {
@@ -868,7 +868,7 @@ describe("translationese-scan.ts as a process", () => {
   });
 
   it("prints the warning for a Codex apply_patch, LF and CRLF", () => {
-    const procHome = mkdtempSync(join(tmpdir(), "tscan-proc-"));
+    const procHome = realpathSync(mkdtempSync(join(tmpdir(), "tscan-proc-")));
     try {
       installList(procHome, null);
       const patch = [

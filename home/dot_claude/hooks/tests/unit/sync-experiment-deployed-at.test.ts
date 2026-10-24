@@ -12,6 +12,7 @@ import {
   statSync,
   symlinkSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -58,7 +59,9 @@ function run(home: string, hooksJson: string) {
   );
 }
 function withHome(fn: (home: string, dir: string, file: string) => void): void {
-  const home = mkdtempSync(join(tmpdir(), "sync-deployed-at-test-"));
+  const home = realpathSync(
+    mkdtempSync(join(tmpdir(), "sync-deployed-at-test-")),
+  );
   const dir = join(home, EXPERIMENT_DIR_FROM_HOME);
   try {
     fn(home, dir, join(dir, DEPLOYED_AT_FILE));

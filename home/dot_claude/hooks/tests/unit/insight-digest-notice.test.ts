@@ -1,7 +1,7 @@
 #!/usr/bin/env -S bun test
 
 import { ok, strictEqual } from "node:assert";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -17,7 +17,7 @@ import {
 function withTempPaths(
   fn: (paths: { digestPath: string; ackPath: string }) => void,
 ): void {
-  const dir = mkdtempSync(join(tmpdir(), "insight-notice-test-"));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "insight-notice-test-")));
   try {
     fn({
       digestPath: join(dir, "insight-digest.md"),

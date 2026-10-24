@@ -8,6 +8,7 @@ import {
   rmSync,
   symlinkSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -26,7 +27,9 @@ const checkerSource = fileURLToPath(
 );
 
 describe("bounded safe read", () => {
-  const root = mkdtempSync(join(tmpdir(), "japanese-check-safe-read-"));
+  const root = realpathSync(
+    mkdtempSync(join(tmpdir(), "japanese-check-safe-read-")),
+  );
   after(() => rmSync(root, { recursive: true, force: true }));
 
   it("returns the bytes of a regular file", () => {
@@ -74,7 +77,9 @@ describe("bounded safe read", () => {
 });
 
 describe("dependency lookup", () => {
-  const root = mkdtempSync(join(tmpdir(), "japanese-check-deps-"));
+  const root = realpathSync(
+    mkdtempSync(join(tmpdir(), "japanese-check-deps-")),
+  );
   after(() => rmSync(root, { recursive: true, force: true }));
   let number = 0;
 

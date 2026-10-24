@@ -1,6 +1,12 @@
 import { ok, strictEqual } from "node:assert";
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+  realpathSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -17,7 +23,9 @@ const SID = "0f0e0d0c-0000-4000-8000-000000000001";
 const NOW = new Date("2026-10-15T12:00:00Z");
 
 function withStore(fn: (store: string, root: string) => void): void {
-  const root = mkdtempSync(join(tmpdir(), "agent-learnings-health-"));
+  const root = realpathSync(
+    mkdtempSync(join(tmpdir(), "agent-learnings-health-")),
+  );
   try {
     const store = join(root, "s");
     ok(initStore(store, runGit).ok);

@@ -9,6 +9,7 @@ import {
   rmSync,
   truncateSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -67,7 +68,7 @@ after(() => {
 });
 
 function setup(over: Partial<RunLearningsCliDeps> = {}) {
-  const home = mkdtempSync(join(tmpdir(), "al-cli-unit-"));
+  const home = realpathSync(mkdtempSync(join(tmpdir(), "al-cli-unit-")));
   roots.push(home);
   const store = defaultStoreDir(home);
   mkdirSync(join(store, ".git"), { recursive: true });
@@ -348,7 +349,10 @@ describe("agent-learnings feedback", () => {
   });
   it("exits 1 when the store does not exist or the repo cannot be resolved", async () => {
     const { deps } = setup();
-    const noStore = { ...deps, home: mkdtempSync(join(tmpdir(), "al-empty-")) };
+    const noStore = {
+      ...deps,
+      home: realpathSync(mkdtempSync(join(tmpdir(), "al-empty-"))),
+    };
     roots.push(noStore.home);
     strictEqual(
       (await runLearningsCli(["feedback", ID, "helpful", "--at=pre"], noStore))

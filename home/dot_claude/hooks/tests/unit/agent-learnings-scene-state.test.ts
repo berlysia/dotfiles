@@ -9,6 +9,7 @@ import {
   symlinkSync,
   utimesSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -26,7 +27,7 @@ import { selectInjectable } from "../../lib/agent-learnings/core/select.ts";
 
 const roots: string[] = [];
 const tmp = (): string => {
-  const dir = mkdtempSync(join(tmpdir(), "scene-state-"));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "scene-state-")));
   roots.push(dir);
   return dir;
 };

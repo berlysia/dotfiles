@@ -7,6 +7,7 @@ import {
   readFileSync,
   rmSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -87,7 +88,7 @@ describe("delivery-policy CLI", () => {
   let ghCost: number;
 
   beforeEach(() => {
-    home = mkdtempSync(join(tmpdir(), "delivery-policy-cli-"));
+    home = realpathSync(mkdtempSync(join(tmpdir(), "delivery-policy-cli-")));
     world = freshWorld();
     calls = [];
     out = "";

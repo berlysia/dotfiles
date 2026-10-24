@@ -18,6 +18,7 @@ import {
   rmSync,
   writeFileSync,
   chmodSync,
+  realpathSync,
 } from "node:fs";
 import { writeSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -48,7 +49,7 @@ exit 1
  * removing what it made, when any step fails.
  */
 export function installGitShim(env, testFile) {
-  const dir = mkdtempSync(join(tmpdir(), "claude-git-shim-"));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "claude-git-shim-")));
   try {
     chmodSync(dir, 0o700);
     const record = join(dir, RECORD_NAME);

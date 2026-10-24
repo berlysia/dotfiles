@@ -16,7 +16,7 @@
 // fresh process and that machine. Read that latency from
 // ~/.claude/logs/hook-timing.jsonl with the `hook-timing` command.
 import { ok } from "node:assert";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
@@ -73,7 +73,7 @@ const states: Array<{ name: string; content: (line: string) => string }> = [
 
 type Timing = { p50: number; p95: number };
 
-const root = mkdtempSync(join(tmpdir(), "al-health-perf-"));
+const root = realpathSync(mkdtempSync(join(tmpdir(), "al-health-perf-")));
 after(() => rmSync(root, { recursive: true, force: true }));
 
 function measure(name: string, content: (line: string) => string): Timing {

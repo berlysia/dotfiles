@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+  realpathSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
@@ -213,7 +219,9 @@ describe("profiles validation", () => {
 });
 
 describe("profiles loading", () => {
-  const root = mkdtempSync(join(tmpdir(), "japanese-check-profiles-"));
+  const root = realpathSync(
+    mkdtempSync(join(tmpdir(), "japanese-check-profiles-")),
+  );
   after(() => rmSync(root, { recursive: true, force: true }));
   let number = 0;
   function copy(content: string | Buffer): string {

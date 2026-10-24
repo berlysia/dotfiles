@@ -946,7 +946,7 @@ function seedSpec(options: {
   baselineKd?: string | null;
   doc?: string;
 }): string {
-  const wf = mkdtempSync(join(tmpdir(), "workflow-cause-"));
+  const wf = realpathSync(mkdtempSync(join(tmpdir(), "workflow-cause-")));
   const doc = options.doc ?? SPEC;
   const content = decisionDoc(
     options.kd ?? KD_OLD,

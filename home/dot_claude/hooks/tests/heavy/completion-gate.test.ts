@@ -7,13 +7,16 @@ import {
   readFileSync,
   rmSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
 import { runCheck } from "../../implementations/completion-gate.ts";
 
-const workDir = mkdtempSync(join(tmpdir(), "completion-gate-heavy-"));
+const workDir = realpathSync(
+  mkdtempSync(join(tmpdir(), "completion-gate-heavy-")),
+);
 const strayPids = new Set<number>();
 after(() => {
   for (const pid of strayPids) {

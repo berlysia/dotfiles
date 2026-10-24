@@ -6,6 +6,7 @@ import {
   rmSync,
   truncateSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -30,7 +31,7 @@ after(() => {
   for (const dir of roots) rmSync(dir, { recursive: true, force: true });
 });
 function makeStore() {
-  const root = mkdtempSync(join(tmpdir(), "al-health-unit-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "al-health-unit-")));
   roots.push(root);
   const store = join(root, "s");
   mkdirSync(join(store, ".git"), { recursive: true });

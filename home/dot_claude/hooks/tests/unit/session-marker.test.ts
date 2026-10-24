@@ -12,6 +12,7 @@ import {
   symlinkSync,
   utimesSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -26,7 +27,7 @@ const HOUR = 60 * 60 * 1000;
 const roots: string[] = [];
 
 function freshRoot(): string {
-  const root = mkdtempSync(join(tmpdir(), "session-marker-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "session-marker-")));
   roots.push(root);
   return root;
 }

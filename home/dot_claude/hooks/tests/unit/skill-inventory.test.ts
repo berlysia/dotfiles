@@ -9,6 +9,7 @@ import {
   readdirSync,
   readFileSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -40,7 +41,7 @@ interface RunResult {
 }
 
 function makeEnv(rootName = "skill-inv-"): Env {
-  const root = mkdtempSync(join(tmpdir(), rootName));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), rootName)));
   const env: Env = {
     root,
     mdDir: join(root, "md"),

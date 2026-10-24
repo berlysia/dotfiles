@@ -1,5 +1,12 @@
 import { ok, strictEqual } from "node:assert";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  statSync,
+  realpathSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -12,7 +19,9 @@ import { NOW, SID, input } from "../support/agent-learnings-queue-fixture.ts";
 
 describe("ensureStateDirs / enqueueJob", () => {
   it("creates queue directories for a plan-1 shaped store", () => {
-    const root = mkdtempSync(join(tmpdir(), "agent-learnings-queue-"));
+    const root = realpathSync(
+      mkdtempSync(join(tmpdir(), "agent-learnings-queue-")),
+    );
     try {
       const store = join(root, "s");
       const paths = storePaths(store);

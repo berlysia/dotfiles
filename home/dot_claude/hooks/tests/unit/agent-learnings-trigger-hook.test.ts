@@ -1,5 +1,5 @@
 import { deepStrictEqual, ok, strictEqual } from "node:assert";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
@@ -30,7 +30,7 @@ const entry = (n: number, on: string): LearningEntry => ({
 });
 
 function setup(entries: LearningEntry[]) {
-  const home = mkdtempSync(join(tmpdir(), "trigger-hook-"));
+  const home = realpathSync(mkdtempSync(join(tmpdir(), "trigger-hook-")));
   roots.push(home);
   const store = defaultStoreDir(home);
   mkdirSync(join(store, ".git"), { recursive: true });

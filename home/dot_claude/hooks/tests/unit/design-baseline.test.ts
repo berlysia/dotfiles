@@ -1,7 +1,13 @@
 #!/usr/bin/env node --test
 
 import { strict as assert } from "node:assert";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+  realpathSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -123,7 +129,7 @@ describe("parseDesignBaseline", () => {
 
 describe("design-baseline file IO", () => {
   it("appends one line per call and reads the last back", () => {
-    const wf = mkdtempSync(join(tmpdir(), "design-baseline-"));
+    const wf = realpathSync(mkdtempSync(join(tmpdir(), "design-baseline-")));
     assert.deepEqual(readDesignBaseline(wf, "spec.md"), { kind: "missing" });
     appendDesignBaseline(wf, "spec.md", 1, H1);
     appendDesignBaseline(wf, "spec.md", 2, H2);
@@ -138,25 +144,25 @@ describe("design-baseline file IO", () => {
   });
 
   it("throws when the path cannot be appended (a directory in its place)", () => {
-    const wf = mkdtempSync(join(tmpdir(), "design-baseline-"));
+    const wf = realpathSync(mkdtempSync(join(tmpdir(), "design-baseline-")));
     mkdirSync(join(wf, ".design-baseline"));
     assert.throws(() => appendDesignBaseline(wf, "spec.md", 1, H1));
   });
 
   it("refuses a doc name outside the allowed forms", () => {
-    const wf = mkdtempSync(join(tmpdir(), "design-baseline-"));
+    const wf = realpathSync(mkdtempSync(join(tmpdir(), "design-baseline-")));
     assert.throws(() => appendDesignBaseline(wf, "../x.md", 1, H1));
     assert.throws(() => appendDesignBaseline(wf, "spec.md", 1, "short"));
   });
 
   it("treats an unreadable path as unreadable, not missing", () => {
-    const wf = mkdtempSync(join(tmpdir(), "design-baseline-"));
+    const wf = realpathSync(mkdtempSync(join(tmpdir(), "design-baseline-")));
     mkdirSync(join(wf, ".design-baseline"));
     assert.deepEqual(readDesignBaseline(wf, "spec.md"), { kind: "unreadable" });
   });
 
   it("does not write when nothing is appended", () => {
-    const wf = mkdtempSync(join(tmpdir(), "design-baseline-"));
+    const wf = realpathSync(mkdtempSync(join(tmpdir(), "design-baseline-")));
     writeFileSync(join(wf, ".design-baseline"), "");
     assert.deepEqual(readDesignBaseline(wf, "spec.md"), { kind: "missing" });
   });

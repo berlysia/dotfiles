@@ -10,6 +10,7 @@ import {
   readFileSync,
   rmSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -80,7 +81,9 @@ export type World = {
 export async function withWorld(
   fn: (w: World) => Promise<void>,
 ): Promise<void> {
-  const root = mkdtempSync(join(tmpdir(), "agent-learnings-worker-"));
+  const root = realpathSync(
+    mkdtempSync(join(tmpdir(), "agent-learnings-worker-")),
+  );
   try {
     const home = join(root, "home");
     const repo = join(root, "repo");

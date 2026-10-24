@@ -8,6 +8,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,7 +22,7 @@ describe("command-logger.ts hook behavior", () => {
 
   beforeEach(() => {
     // Create test directory
-    testDir = mkdtempSync(join(tmpdir(), "command-logger-test-"));
+    testDir = realpathSync(mkdtempSync(join(tmpdir(), "command-logger-test-")));
     claudeDir = join(testDir, ".claude");
     commandHistoryFile = join(claudeDir, "command_history.log");
     toolUsageFile = join(claudeDir, "tool_usage.jsonl");

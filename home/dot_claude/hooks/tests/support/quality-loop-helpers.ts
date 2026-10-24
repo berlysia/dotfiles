@@ -4,6 +4,7 @@ import {
   mkdtempSync,
   rmSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -18,7 +19,7 @@ export function cleanupTempDirs(): void {
 }
 
 export function makeDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), "ql-"));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "ql-")));
   tempDirs.push(dir);
   return dir;
 }

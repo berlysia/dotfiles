@@ -13,6 +13,7 @@ import {
   readFileSync,
   rmSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -82,7 +83,7 @@ const permissionPrompt = {
 
 describe("speak-notification permission_prompt toast wiring", () => {
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), "permtoast-"));
+    dir = realpathSync(mkdtempSync(join(tmpdir(), "permtoast-")));
     mkdirSync(join(dir, "bin"));
     const fakeBash = join(dir, "bin", "bash");
     writeFileSync(fakeBash, "#!/bin/sh\nexit 0\n");

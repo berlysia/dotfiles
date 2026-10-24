@@ -12,6 +12,7 @@ import {
   rmSync,
   symlinkSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -27,7 +28,7 @@ const HOOK = join(
 );
 const dirs: string[] = [];
 const tempDir = () => {
-  const dir = mkdtempSync(join(tmpdir(), "skill-requires-gate-"));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "skill-requires-gate-")));
   dirs.push(dir);
   return dir;
 };
