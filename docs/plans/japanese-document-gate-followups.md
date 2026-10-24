@@ -13,3 +13,11 @@ Codex 0.163.0 では、Bash の PreToolUse・PostToolUse と Stop の入力を�
 - Stop で `{decision: "block"}` を返したときと、`systemMessage` を返したときに、Codex が利用者にどう見せるか。フックは故障の知らせを stderr にも出すが、Codex がそれを表示するかも分かっていない
 
 確かめ方: 一時的な `CODEX_HOME` に入力を書き出すだけのフックを置き、`codex exec --dangerously-bypass-hook-trust` で apply_patch を 1 回使わせる。Stop の扱いは、block を返すフックで同じように試す。
+
+## macOS でだけ落ちる単体テスト
+
+`home/dot_claude/hooks/tests/unit/japanese-document-gate.test.ts` の 8 件（「workflow directory exclusion」「Bash attribution」など）は、macOS で実行すると落ちる。Linux の CI では通る。
+
+`tmpdir()` が `/var/folders/...` を返す一方で、追跡の記録には realpath の `/private/var/folders/...` が入る。テストは `tmpdir()` の形のパスを期待しているので一致しない。
+
+直し方の候補: フィクスチャの根を作った直後に `realpathSync` で揃える。確かめ方: macOS で `npm run test` を流し、この 8 件が通ること。

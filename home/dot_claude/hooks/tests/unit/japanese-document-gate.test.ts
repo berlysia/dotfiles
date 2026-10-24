@@ -9,6 +9,7 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   lutimesSync,
@@ -1514,6 +1515,16 @@ describe("autoTrackable (temporary directories are not tracked automatically)", 
         force: true,
       });
     }
+  });
+
+  // macOS では /tmp が /private/tmp への symlink で、scratchpad は
+  // /private/tmp/... の形で渡ってくる。Linux では両者が一致する。
+  it("excludes a document under the resolved /tmp with the default roots", () => {
+    const file = realpathSync(
+      doc(join(scratch, "x", "scratchpad"), "notes.md"),
+    );
+    assert.equal(autoTrackable(file, "/work/repo"), false);
+    assert.equal(autoTrackable(file, realpathSync(scratch)), true);
   });
 
   it("ignores unusable roots and falls back to /tmp alone", () => {
