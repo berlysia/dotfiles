@@ -425,7 +425,10 @@ describe("japanese-document-gate entry", () => {
 });
 
 describe("japanese-document-gate recovery, attribution, exclusion and publication", () => {
-  const root = mkdtempSync(join(tmpdir(), "japanese-document-gate-more-"));
+  // 追跡は realpath で記録するので、macOS の /var → /private/var をここで揃える。
+  const root = realpathSync(
+    mkdtempSync(join(tmpdir(), "japanese-document-gate-more-")),
+  );
   after(() => rmSync(root, { recursive: true, force: true }));
   let number = 0;
 

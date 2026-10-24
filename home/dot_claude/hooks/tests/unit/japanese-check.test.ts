@@ -9,6 +9,7 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -245,7 +246,8 @@ describe("Sudachi-backed Japanese review", () => {
 });
 
 describe("Japanese checker CLI", () => {
-  const dir = mkdtempSync(join(tmpdir(), "japanese-check-"));
+  // 追跡は realpath で記録するので、macOS の /var → /private/var をここで揃える。
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "japanese-check-")));
   after(() => rmSync(dir, { recursive: true, force: true }));
 
   it("rejects missing input, unknown arguments and ambiguous source options", () => {
