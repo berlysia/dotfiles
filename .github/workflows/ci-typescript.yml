@@ -28,6 +28,10 @@ on:
       - "tests/chezmoiremove-coverage.test.mjs"
       - "tests/heavy/**"
       - "tests/lib/**"
+      # ja-baseline.test.mjs が結果のスキーマを検査する。ここに無いと、結果だけを直す PR で
+      # テストが走らないまま通り、規則を移すときに旧の結果と突き合わせる前提が崩れる。
+      - "tests/ja-baseline/**"
+      - "tests/ja-baseline.test.mjs"
       # install-chezmoi.test.mjs runs the action's install script and checks its Renovate wiring.
       - "renovate.json"
       - ".github/actions/install-chezmoi/**"
@@ -59,6 +63,10 @@ on:
       - "tests/chezmoiremove-coverage.test.mjs"
       - "tests/heavy/**"
       - "tests/lib/**"
+      # ja-baseline.test.mjs が結果のスキーマを検査する。ここに無いと、結果だけを直す PR で
+      # テストが走らないまま通り、規則を移すときに旧の結果と突き合わせる前提が崩れる。
+      - "tests/ja-baseline/**"
+      - "tests/ja-baseline.test.mjs"
       # install-chezmoi.test.mjs runs the action's install script and checks its Renovate wiring.
       - "renovate.json"
       - ".github/actions/install-chezmoi/**"

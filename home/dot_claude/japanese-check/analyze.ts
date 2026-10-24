@@ -1,8 +1,8 @@
 import { paragraphs, proseLines } from "./markdown.ts";
 import type { ProseLine } from "./markdown.ts";
 import type { Tokenizer } from "./tokenizer.ts";
+import type { Genre } from "./types.ts";
 
-export type Genre = "tech" | "business" | "essay";
 export interface Finding {
   rule: string;
   line: number;

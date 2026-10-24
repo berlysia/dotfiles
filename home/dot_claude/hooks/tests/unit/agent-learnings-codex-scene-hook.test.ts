@@ -133,6 +133,15 @@ describe("codex scene-hook run", () => {
     );
     strictEqual(lines[0]?.kind, "path");
   });
+  it("reads a patch header with trailing whitespace as the path without it (accepted limit)", () => {
+    // 末尾が空白のファイル名はそのとおりには追跡されない。見出しの規則は patch-paths.ts の 1 か所
+    const { home, repo } = setup([entry(1, "path:mods/x/a.ts")]);
+    const out = run(
+      patch(repo, `*** Update File: ${repo}/mods/x/a.ts \n@@\n-a\n+b`),
+      deps(home),
+    );
+    ok(context(out)?.includes("title 1"));
+  });
   it("does not let paths outside the toplevel eat the 16-path cap", () => {
     const { home, repo } = setup([entry(1, "path:mods/x/")]);
     const outside = Array.from(

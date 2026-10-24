@@ -39,4 +39,24 @@ describe("gitDocumentCandidates with the real git", () => {
       paths: [],
     });
   });
+
+  it("judges temp-root exclusion from the original cwd, not the repository root", () => {
+    const repo = join(root, "repo-roots");
+    mkdirSync(join(repo, "sub", "t"), { recursive: true });
+    mkdirSync(join(repo, "other"), { recursive: true });
+    execFileSync("git", ["init", "-q", repo]);
+    writeFileSync(join(repo, "sub", "t", "a.md"), "日本語の文書です。\n");
+    writeFileSync(join(repo, "keep.md"), "日本語の文書です。\n");
+    const roots = { tmp: [join(repo, "sub", "t")], home: "/home/u" };
+    // 基点が元の cwd（<repo>/other）なら <repo>/sub/t の下は除外される。
+    // root を基点にすると <repo> が <repo>/sub/t の祖先になり除外されない。
+    const result = gitDocumentCandidates(
+      join(repo, "other"),
+      spawnGit,
+      1000,
+      undefined,
+      roots,
+    );
+    assert.deepEqual(result, { ok: true, paths: [join(repo, "keep.md")] });
+  });
 });

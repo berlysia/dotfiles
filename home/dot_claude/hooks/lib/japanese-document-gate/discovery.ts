@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { basename, extname, resolve } from "node:path";
+import { homedir, tmpdir } from "node:os";
+import { basename, extname, isAbsolute, resolve } from "node:path";
 import { patchTargetPaths } from "../agent-learnings/codex/patch-paths.ts";
 
 const JAPANESE = /[\u3040-\u30ff\u3400-\u9fff]/u;
@@ -55,9 +56,56 @@ export function documentCandidate(file: string): boolean {
 }
 
 // The path is normalised against the hook's cwd before the workflow-dir test.
+// 公開の本文（--body-file / -F）と明示の追跡（track）は一時 dir でも対象にする。
+// 自動追跡だけを一時 dir から外すので、述語を autoTrackable と分けている。
 export function trackableDocument(file: string, cwd: string): boolean {
   const absolute = resolve(cwd, file);
   return !inWorkflowDir(absolute) && documentCandidate(absolute);
+}
+
+export type AutoTrackRoots = { tmp: string[]; home: string };
+
+function usableRoot(path: string): string | null {
+  if (path === "" || !isAbsolute(path)) return null;
+  const resolved = resolve(path);
+  return resolved === "/" ? null : resolved;
+}
+
+function within(path: string, root: string): boolean {
+  return path === root || path.startsWith(`${root}/`);
+}
+
+// 一時 dir の下の本文は、書いただけでは納品物とは限らない（見本、下書き）。
+// 自動追跡（Write・Edit・apply_patch、Bash の前後の差分、git の一覧）から外す。
+// cwd がその根の下にあるときは、そこが作業場所なので外さない。
+// 先頭の根（/tmp）以外は、cwd かホームと重なるなら外さない（TMPDIR が
+// ホームや作業場所を含む構成で、普通の文書まで消さないため）。
+// realpath は取らない: 除外は手間を省く仕組みで、安全の境界ではない。
+export function autoTrackable(
+  file: string,
+  cwd: string,
+  roots?: AutoTrackRoots,
+): boolean {
+  if (!trackableDocument(file, cwd)) return false;
+  const effective = roots ?? {
+    tmp: ["/tmp", tmpdir()],
+    home: homedir(),
+  };
+  const absolute = resolve(cwd, file);
+  const base = resolve(cwd);
+  const home = usableRoot(effective.home);
+  for (const [index, raw] of effective.tmp.entries()) {
+    const root = usableRoot(raw);
+    if (root === null || !within(absolute, root)) continue;
+    if (within(base, root)) continue;
+    if (index > 0) {
+      const overlaps = (other: string) =>
+        within(root, other) || within(other, root);
+      if (overlaps(base) || (home !== null && overlaps(home))) continue;
+    }
+    return false;
+  }
+  return true;
 }
 
 export const spawnGit: RunGit = (args, timeoutMs) => {
@@ -84,6 +132,7 @@ export function gitDocumentCandidates(
   run: RunGit,
   deadlineMs = 1000,
   clock: () => number = () => performance.now(),
+  roots?: AutoTrackRoots,
 ): Candidates {
   // Non-repository documents are covered by explicit file tools and track.
   const started = clock();
@@ -128,7 +177,7 @@ export function gitDocumentCandidates(
     const row = rows[i];
     if (!row || row.length < 4) continue;
     const file = resolve(root, row.slice(3));
-    if (trackableDocument(file, root)) paths.push(file);
+    if (autoTrackable(file, cwd, roots)) paths.push(file);
     if (/^[RC]|^ [RC]/u.test(row)) i++;
   }
   return { ok: true, paths };

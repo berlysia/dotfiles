@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
+  cpSync,
   linkSync,
   lstatSync,
   mkdirSync,
@@ -28,9 +29,24 @@ import { main, parseArguments } from "../../../japanese-check/cli.ts";
 import { paragraphs, proseLines } from "../../../japanese-check/markdown.ts";
 import {
   CHECKER_VERSION_FILES,
+  checkerVersion,
+  clearCheckerVersionCache,
   recordCheck,
+  recordDecision,
   verify,
 } from "../../../japanese-check/receipts.ts";
+import type { Receipt } from "../../../japanese-check/receipts.ts";
+import {
+  HASHED_PROFILE_FIELDS,
+  PROFILE_FIELDS,
+  UNHASHED_PROFILE_FIELDS,
+} from "../../../japanese-check/profiles.ts";
+import {
+  HASHED_WORD_FIELDS,
+  UNHASHED_WORD_FIELDS,
+  WORD_FIELDS,
+} from "../../../japanese-check/words.ts";
+import type { DependencyEntry } from "../../../japanese-check/deps.ts";
 import {
   atomicJson,
   defaultStateDir,
@@ -40,6 +56,7 @@ import {
 } from "../../../japanese-check/state.ts";
 import type { StateOps } from "../../../japanese-check/state.ts";
 import { tracked } from "../../../japanese-check/tracking.ts";
+import { findDependency } from "../../../japanese-check/deps.ts";
 import {
   createTokenizer,
   decodeTokens,
@@ -128,7 +145,9 @@ describe("Japanese review rules", () => {
 });
 
 describe("Sudachi-backed Japanese review", () => {
-  const tokenizer = createTokenizer();
+  const sudachi = findDependency("sudachi");
+  assert.ok(sudachi.ok);
+  const tokenizer = createTokenizer(sudachi.entry);
 
   it("preserves original spelling and positions when Sudachi changes ASCII case or width", async () => {
     const tokenize = await tokenizer;
@@ -385,15 +404,15 @@ describe("japanese-check module boundaries", () => {
     return found;
   }
 
-  // tokenizer.ts loads the sudachi dictionary package lazily; it is the one
-  // declared dependency, not a path into another directory.
-  it("imports only node: built-ins, sudachi and sibling files", () => {
+  // tokenizer.ts loads the dictionary package by the resolved file path that
+  // deps.ts found, so no file names the package in an import.
+  it("imports only node: built-ins and sibling files", () => {
     assert.ok(files.length > 0);
     for (const name of files) {
       for (const specifier of specifiers(readFileSync(join(dir, name), "utf8")))
         assert.match(
           specifier,
-          /^(?:node:|sudachi$|\.\/[^/]+\.ts$)/u,
+          /^(?:node:|\.\/[^/]+\.ts$)/u,
           `${name}: ${specifier}`,
         );
     }
@@ -404,11 +423,6 @@ describe("japanese-check module boundaries", () => {
       specifiers(readFileSync(join(dir, name), "utf8"));
     assert.ok(!of("receipts.ts").includes("./tracking.ts"));
     assert.ok(!of("tracking.ts").includes("./receipts.ts"));
-  });
-
-  it("hashes state.ts but not tracking.ts into the checker version", () => {
-    assert.ok(CHECKER_VERSION_FILES.includes("state.ts"));
-    assert.ok(!CHECKER_VERSION_FILES.includes("tracking.ts"));
   });
 });
 
@@ -444,7 +458,13 @@ describe("japanese-check state directory", () => {
     const stateDir = join(fresh(), "state");
     const file = join(root, "doc.md");
     writeFileSync(file, "文書です。\n");
-    recordCheck(file, digest("文書です。\n"), "文書です。\n", 0, stateDir);
+    recordCheck({
+      file,
+      expectedHash: digest("文書です。\n"),
+      body: "文書です。\n",
+      candidates: 0,
+      stateDir,
+    });
     assert.equal(mode(stateDir), 0o700);
     assert.equal(mode(join(stateDir, "receipts")), 0o700);
     const [name] = readdirSync(join(stateDir, "receipts"));
@@ -590,5 +610,592 @@ describe("japanese-check state directory", () => {
     );
     assert.equal(result.status, 2);
     assert.match(result.stderr, /置き場を使えない（symlink）/u);
+  });
+});
+
+describe("check --profile", () => {
+  const dir = mkdtempSync(join(tmpdir(), "japanese-check-profile-"));
+  after(() => rmSync(dir, { recursive: true, force: true }));
+  let number = 0;
+  // 110 characters: over the tech limit (100) and the business limit (80), under
+  // the essay limit (120).
+  const longSentence = `${"あ".repeat(109)}。\n`;
+
+  function fresh(content: string) {
+    const key = ++number;
+    const file = join(dir, `doc-${key}.md`);
+    writeFileSync(file, content);
+    return { file, stateDir: join(dir, `state-${key}`), content };
+  }
+  async function run(
+    args: string[],
+    stateDir: string,
+  ): Promise<Record<string, unknown>> {
+    const output = mock.method(console, "log", () => {});
+    try {
+      await main(args, { stateDir });
+      return JSON.parse(String(output.mock.calls[0]?.arguments[0]));
+    } finally {
+      output.mock.restore();
+    }
+  }
+  const flagged = (report: Record<string, unknown>) =>
+    Array.isArray(report.findings) &&
+    report.findings.some(
+      (item: { rule?: string }) => item.rule === "long-sentence",
+    );
+
+  it("leaves the output without --profile exactly as it was", async () => {
+    const doc = fresh(longSentence);
+    const report = await run(["check", doc.file, "--no-record"], doc.stateDir);
+    assert.ok(!("profile" in report));
+    assert.ok(flagged(report));
+  });
+
+  it("uses the row's genre and reports the profile", async () => {
+    const doc = fresh(longSentence);
+    const report = await run(
+      ["check", doc.file, "--profile", "design", "--no-record"],
+      doc.stateDir,
+    );
+    assert.deepEqual(report.profile, { id: "design" });
+    assert.ok(flagged(report));
+    const withReader = await run(
+      [
+        "check",
+        doc.file,
+        "--profile",
+        "design",
+        "--reader",
+        "adhd",
+        "--no-record",
+      ],
+      doc.stateDir,
+    );
+    assert.deepEqual(withReader.profile, { id: "design", reader: "adhd" });
+  });
+
+  it("takes --genre only when the row has no genre", async () => {
+    const doc = fresh(longSentence);
+    const caller = await run(
+      [
+        "check",
+        doc.file,
+        "--profile",
+        "caller",
+        "--genre",
+        "essay",
+        "--no-record",
+      ],
+      doc.stateDir,
+    );
+    assert.ok(!flagged(caller));
+    const design = await run(
+      [
+        "check",
+        doc.file,
+        "--profile",
+        "design",
+        "--genre",
+        "essay",
+        "--no-record",
+      ],
+      doc.stateDir,
+    );
+    assert.ok(flagged(design));
+  });
+
+  it("exits with an error for unusable combinations", async () => {
+    const doc = fresh("文書です。\n");
+    for (const args of [
+      ["check", doc.file, "--reader", "adhd"],
+      ["check", doc.file, "--profile", "design", "--reader", "x"],
+      ["lint", doc.file, "--profile", "design"],
+      ["check", doc.file, "--profile", "design", "--profile", "book"],
+    ]) {
+      assert.throws(() => parseArguments(args), args.join(" "));
+    }
+    await assert.rejects(
+      main(["check", doc.file, "--profile", "nope"], {
+        stateDir: doc.stateDir,
+      }),
+    );
+  });
+});
+
+describe("receipt profile fields", () => {
+  const dir = mkdtempSync(join(tmpdir(), "japanese-check-receipt-profile-"));
+  after(() => rmSync(dir, { recursive: true, force: true }));
+  let number = 0;
+  const content = "データを拾った。\n";
+
+  function fresh() {
+    const key = ++number;
+    const file = join(dir, `doc-${key}.md`);
+    writeFileSync(file, content);
+    return { file, stateDir: join(dir, `state-${key}`) };
+  }
+  async function check(
+    doc: { file: string; stateDir: string },
+    ...extra: string[]
+  ) {
+    const output = mock.method(console, "log", () => {});
+    try {
+      await main(["check", doc.file, ...extra], { stateDir: doc.stateDir });
+    } finally {
+      output.mock.restore();
+    }
+    return verify(doc.file, doc.stateDir);
+  }
+  function decide(
+    doc: { file: string; stateDir: string },
+    command: "review" | "defer",
+  ) {
+    return recordDecision(
+      doc.file,
+      digest(content),
+      "理由",
+      command === "review" ? "checked" : "draft",
+      doc.stateDir,
+    );
+  }
+  const rawReceipt = (doc: { stateDir: string }) => {
+    const folder = join(doc.stateDir, "receipts");
+    const [name] = readdirSync(folder);
+    return JSON.parse(readFileSync(join(folder, name ?? ""), "utf8"));
+  };
+
+  it("writes the three fields only for a --profile check, never null", async () => {
+    const withProfile = fresh();
+    const result = await check(
+      withProfile,
+      "--profile",
+      "design",
+      "--reader",
+      "adhd",
+    );
+    assert.equal(result.receipt?.profileId, "design");
+    assert.equal(result.receipt?.reader, "adhd");
+    assert.match(result.receipt?.profileHash ?? "", /^[0-9a-f]{64}$/u);
+    const plain = fresh();
+    await check(plain);
+    const raw = rawReceipt(plain);
+    for (const key of ["profileId", "reader", "profileHash"])
+      assert.ok(!(key in raw), key);
+  });
+
+  it("keeps the fields on a review and drops them on a deferral", async () => {
+    const reviewed = fresh();
+    await check(reviewed, "--profile", "design");
+    const afterReview = decide(reviewed, "review");
+    assert.equal(afterReview.receipt?.profileId, "design");
+    assert.ok(afterReview.receipt?.profileHash);
+    const deferred = fresh();
+    await check(deferred, "--profile", "design");
+    const afterDefer = decide(deferred, "defer");
+    const raw = rawReceipt(deferred);
+    assert.equal(afterDefer.status, "draft");
+    for (const key of ["profileId", "reader", "profileHash"])
+      assert.ok(!(key in raw), key);
+  });
+
+  it("carries a review over only to a check with the same profile", async () => {
+    const doc = fresh();
+    await check(doc);
+    decide(doc, "review");
+    assert.equal(verify(doc.file, doc.stateDir).status, "ready");
+    assert.equal(
+      (await check(doc, "--profile", "design")).status,
+      "needs-review",
+    );
+    decide(doc, "review");
+    assert.equal((await check(doc, "--profile", "design")).status, "ready");
+    assert.equal((await check(doc)).status, "needs-review");
+  });
+
+  it("does not carry a review to another row that resolves to the same list and genre", async () => {
+    const doc = fresh();
+    await check(doc, "--profile", "compose-default", "--genre", "business");
+    decide(doc, "review");
+    const same = await check(
+      doc,
+      "--profile",
+      "compose-default",
+      "--genre",
+      "business",
+    );
+    assert.equal(same.status, "ready");
+    const other = await check(doc, "--profile", "report");
+    assert.equal(other.status, "needs-review");
+    assert.equal(
+      other.receipt?.profileHash,
+      same.receipt?.profileHash,
+      "the lists are identical, so only the row id tells them apart",
+    );
+  });
+
+  it("treats malformed profile fields as a broken receipt and null as absent", async () => {
+    const hash = "a".repeat(64);
+    const cases: Array<[Record<string, unknown>, boolean]> = [
+      [{ profileId: "design", profileHash: 5 }, true],
+      [{ profileId: "Bad Id", profileHash: hash }, true],
+      [{ reader: "adhd" }, true],
+      [{ profileId: "design" }, true],
+      [{ profileHash: hash }, true],
+      [{ profileId: "design", profileHash: hash, reader: "other" }, true],
+      [{ profileId: null, reader: null, profileHash: null }, false],
+      [{ profileId: "design", profileHash: hash, reader: "adhd" }, false],
+    ];
+    for (const [fields, broken] of cases) {
+      const doc = fresh();
+      await check(doc);
+      const folder = join(doc.stateDir, "receipts");
+      const [name] = readdirSync(folder);
+      const path = join(folder, name ?? "");
+      writeFileSync(
+        path,
+        JSON.stringify({
+          ...JSON.parse(readFileSync(path, "utf8")),
+          ...fields,
+        }),
+      );
+      const result = verify(doc.file, doc.stateDir);
+      assert.equal(result.corrupt === true, broken, JSON.stringify(fields));
+    }
+  });
+
+  it("reads a receipt of the older shape that has none of the fields", async () => {
+    const doc = fresh();
+    await check(doc);
+    const receipt: Receipt = rawReceipt(doc);
+    assert.equal(receipt.schema, 1);
+    assert.equal(verify(doc.file, doc.stateDir).receipt?.schema, 1);
+  });
+});
+
+describe("checker version", () => {
+  const checkerSource = fileURLToPath(
+    new URL("../../../japanese-check/", import.meta.url),
+  );
+  const root = mkdtempSync(join(tmpdir(), "japanese-check-version-"));
+  after(() => rmSync(root, { recursive: true, force: true }));
+  let number = 0;
+
+  function copy() {
+    const dir = join(root, `case-${++number}`, "japanese-check");
+    cpSync(checkerSource, dir, { recursive: true });
+    clearCheckerVersionCache();
+    return dir;
+  }
+  function fakeSudachi(dir: string) {
+    const pkg = join(dir, "node_modules", "sudachi");
+    mkdirSync(pkg, { recursive: true });
+    writeFileSync(
+      join(pkg, "package.json"),
+      JSON.stringify({ name: "sudachi", version: "9.9.9", main: "index.js" }),
+    );
+    writeFileSync(join(pkg, "index.js"), "module.exports = {};\n");
+  }
+  const hashOf = (dir: string, deps: readonly DependencyEntry[] = []) => {
+    clearCheckerVersionCache();
+    return checkerVersion({ dir, deps });
+  };
+  const rewriteJson = (
+    path: string,
+    change: (value: Record<string, unknown>) => void,
+  ) => {
+    const value = JSON.parse(readFileSync(path, "utf8"));
+    change(value);
+    writeFileSync(path, JSON.stringify(value));
+  };
+
+  it("lists every non-test .ts file of the directory and the two data files", () => {
+    const names = readdirSync(checkerSource).filter((n) => n.endsWith(".ts"));
+    for (const name of names)
+      assert.ok(CHECKER_VERSION_FILES.includes(name), name);
+    assert.ok(CHECKER_VERSION_FILES.includes("data/words.json"));
+    assert.ok(CHECKER_VERSION_FILES.includes("data/profiles.json"));
+  });
+
+  it("ignores fields that do not shape the result and follows those that do", () => {
+    const dir = copy();
+    const base = hashOf(dir).hash;
+    const words = join(dir, "data", "words.json");
+    const profiles = join(dir, "data", "profiles.json");
+    rewriteJson(words, (v) => {
+      const entries = v.entries as Array<Record<string, unknown>>;
+      entries[0] = { ...entries[0], examples: ["別の例"], origin: "別の出自" };
+    });
+    rewriteJson(profiles, (v) => {
+      const rows = v.rows as Array<Record<string, unknown>>;
+      rows[0] = { ...rows[0], label: "別の見出し", signals: ["別の手がかり"] };
+    });
+    assert.equal(hashOf(dir).hash, base);
+    rewriteJson(words, (v) => {
+      const entries = v.entries as Array<Record<string, unknown>>;
+      entries[0] = { ...entries[0], pattern: "(?:別の)" };
+    });
+    const afterPattern = hashOf(dir).hash;
+    assert.notEqual(afterPattern, base);
+    rewriteJson(profiles, (v) => {
+      const rows = v.rows as Array<Record<string, unknown>>;
+      rows[0] = { ...rows[0], structure: "book" };
+    });
+    assert.notEqual(hashOf(dir).hash, afterPattern);
+  });
+
+  it("falls back to the raw bytes of a data file that is not valid JSON", () => {
+    const dir = copy();
+    const base = hashOf(dir);
+    writeFileSync(join(dir, "data", "profiles.json"), "{ broken");
+    const broken = hashOf(dir);
+    assert.deepEqual(broken.missing, []);
+    assert.notEqual(broken.hash, base.hash);
+  });
+
+  it("names missing parts without throwing and gives the same hash every time", () => {
+    const dir = copy();
+    rmSync(join(dir, "tracking.ts"));
+    rmSync(join(dir, "data", "words.json"));
+    const first = hashOf(dir);
+    assert.deepEqual([...first.missing].sort(), [
+      "data/words.json",
+      "tracking.ts",
+    ]);
+    assert.equal(hashOf(dir).hash, first.hash);
+  });
+
+  it("treats an unreadable part and an oversized part as missing", () => {
+    const dir = copy();
+    const denied = checkerVersion({
+      dir,
+      deps: [],
+      read: (path) =>
+        path.endsWith("state.ts")
+          ? { ok: false, reason: "error" }
+          : { ok: true, bytes: Buffer.from("x") },
+    });
+    assert.deepEqual(denied.missing, ["state.ts"]);
+    writeFileSync(join(dir, "analyze.ts"), "a".repeat(1024 * 1024 + 1));
+    assert.deepEqual(hashOf(dir).missing, ["analyze.ts"]);
+  });
+
+  it("includes the dependency version and reports a missing dependency", () => {
+    const dir = copy();
+    const deps: DependencyEntry[] = [{ name: "sudachi", group: "analyzer" }];
+    const without = hashOf(dir, deps);
+    assert.deepEqual(without.missing, ["sudachi"]);
+    fakeSudachi(dir);
+    const withPackage = hashOf(dir, deps);
+    assert.deepEqual(withPackage.missing, []);
+    assert.notEqual(withPackage.hash, without.hash);
+  });
+
+  it("hashes its own directory by default, wherever the copy sits", () => {
+    const dir = copy();
+    const script = join(dir, "..", "print-version.mjs");
+    writeFileSync(
+      script,
+      `import { checkerVersion } from ${JSON.stringify(join(dir, "receipts.ts"))};\nconsole.log(JSON.stringify(checkerVersion()));\n`,
+    );
+    const result = spawnSync(process.execPath, [script], {
+      encoding: "utf8",
+      cwd: tmpdir(),
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const printed = JSON.parse(result.stdout) as { hash: string };
+    assert.equal(
+      printed.hash,
+      hashOf(dir, [{ name: "sudachi", group: "analyzer" }]).hash,
+    );
+  });
+
+  it("splits the validated fields into hashed and unhashed ones exactly", () => {
+    assert.deepEqual(
+      [...HASHED_WORD_FIELDS, ...UNHASHED_WORD_FIELDS].sort(),
+      [...WORD_FIELDS].sort(),
+    );
+    assert.deepEqual(
+      [...HASHED_PROFILE_FIELDS, ...UNHASHED_PROFILE_FIELDS].sort(),
+      [...PROFILE_FIELDS].sort(),
+    );
+    // Fields that matching and resolveModules read are all hashed.
+    for (const field of [
+      "word",
+      "kind",
+      "action",
+      "match",
+      "pattern",
+      "lemmas",
+      "pos",
+      "allow",
+      "fix",
+    ])
+      assert.ok(
+        (HASHED_WORD_FIELDS as readonly string[]).includes(field),
+        field,
+      );
+    for (const field of ["id", "structure", "action", "genre", "stockBoundary"])
+      assert.ok(
+        (HASHED_PROFILE_FIELDS as readonly string[]).includes(field),
+        field,
+      );
+  });
+});
+
+describe("receipts with a checker that is missing a part", () => {
+  const checkerSource = fileURLToPath(
+    new URL("../../../japanese-check/", import.meta.url),
+  );
+  const root = mkdtempSync(join(tmpdir(), "japanese-check-incomplete-"));
+  after(() => rmSync(root, { recursive: true, force: true }));
+  let number = 0;
+
+  // One analyzer package is present; the grammar one never is.
+  const deps: DependencyEntry[] = [
+    { name: "sudachi", group: "analyzer" },
+    { name: "absent-grammar", group: "grammar" },
+  ];
+  const completeDeps: DependencyEntry[] = [deps[0] as DependencyEntry];
+
+  function fixture(content = "データを拾った。\n") {
+    const key = ++number;
+    const dir = join(root, `case-${key}`, "japanese-check");
+    cpSync(checkerSource, dir, { recursive: true });
+    const pkg = join(dir, "node_modules", "sudachi");
+    mkdirSync(pkg, { recursive: true });
+    writeFileSync(
+      join(pkg, "package.json"),
+      JSON.stringify({ name: "sudachi", version: "9.9.9", main: "index.js" }),
+    );
+    writeFileSync(join(pkg, "index.js"), "module.exports = {};\n");
+    const file = join(root, `doc-${key}.md`);
+    writeFileSync(file, content);
+    clearCheckerVersionCache();
+    return { dir, file, content, stateDir: join(root, `state-${key}`) };
+  }
+  const record = (
+    f: ReturnType<typeof fixture>,
+    options: { candidates: number; deps: DependencyEntry[] },
+  ) =>
+    recordCheck({
+      file: f.file,
+      expectedHash: digest(f.content),
+      body: f.content,
+      candidates: options.candidates,
+      stateDir: f.stateDir,
+      dir: f.dir,
+      deps: options.deps,
+    });
+
+  it("marks a ready document as incomplete when a dependency group is absent", () => {
+    const f = fixture();
+    const result = record(f, { candidates: 0, deps });
+    assert.equal(result.status, "ready");
+    assert.equal(result.checkerIncomplete, true);
+    assert.deepEqual(result.checkerMissing, ["absent-grammar"]);
+    const whole = verify(f.file, f.stateDir, {
+      dir: f.dir,
+      deps: completeDeps,
+    });
+    assert.equal(whole.status, "stale");
+    assert.equal(whole.checkerIncomplete, undefined);
+  });
+
+  it("turns a deferral made without the parts into stale once they are back", () => {
+    const f = fixture();
+    record(f, { candidates: 1, deps });
+    recordDecision(f.file, digest(f.content), "草稿", "draft", f.stateDir, {
+      dir: f.dir,
+      deps,
+    });
+    assert.equal(
+      verify(f.file, f.stateDir, { dir: f.dir, deps: completeDeps }).status,
+      "stale",
+    );
+  });
+
+  it("does not carry a review recorded under an incomplete checker", () => {
+    const f = fixture();
+    record(f, { candidates: 1, deps });
+    const reviewed = recordDecision(
+      f.file,
+      digest(f.content),
+      "残す",
+      "checked",
+      f.stateDir,
+      { dir: f.dir, deps },
+    );
+    assert.equal(reviewed.status, "ready");
+    assert.equal(record(f, { candidates: 1, deps }).status, "needs-review");
+  });
+
+  it("carries a review only while the number of candidates stays the same", () => {
+    const f = fixture();
+    record(f, { candidates: 1, deps: completeDeps });
+    recordDecision(f.file, digest(f.content), "残す", "checked", f.stateDir, {
+      dir: f.dir,
+      deps: completeDeps,
+    });
+    assert.equal(
+      record(f, { candidates: 1, deps: completeDeps }).status,
+      "ready",
+    );
+    assert.equal(
+      record(f, { candidates: 2, deps: completeDeps }).status,
+      "needs-review",
+    );
+  });
+});
+
+describe("japanese-check import closure", () => {
+  const dir = fileURLToPath(
+    new URL("../../../japanese-check/", import.meta.url),
+  );
+  const staticImport =
+    /(?:\bimport|\bexport)\s+(?:type\s+)?(?:[^"';]*?\sfrom\s+)?["']([^"']+)["']/gu;
+  const forbidden = new Set(["tokenizer.ts", "analyze.ts", "cli.ts"]);
+
+  function closure(roots: string[]): Set<string> {
+    const seen = new Set<string>();
+    const queue = [...roots];
+    while (queue.length > 0) {
+      const name = queue.pop() as string;
+      if (seen.has(name)) continue;
+      seen.add(name);
+      const source = readFileSync(join(dir, name), "utf8");
+      for (const match of source.matchAll(staticImport)) {
+        const specifier = match[1] ?? "";
+        // A type-only import is erased and loads nothing.
+        if (/^\s*import\s+type\b/u.test(match[0])) continue;
+        if (specifier.startsWith("./")) queue.push(specifier.slice(2));
+        else assert.ok(specifier.startsWith("node:"), `${name}: ${specifier}`);
+      }
+    }
+    return seen;
+  }
+
+  it("keeps the tokenizer, analyzer, cli and sudachi out of what hooks and CI import", () => {
+    const reached = closure([
+      "words.ts",
+      "profiles.ts",
+      "types.ts",
+      "deps.ts",
+      "safe-read.ts",
+      "receipts.ts",
+      "state.ts",
+      "tracking.ts",
+    ]);
+    for (const name of forbidden) assert.ok(!reached.has(name), name);
+  });
+
+  it("has a single computed import(), in tokenizer.ts", () => {
+    const computed = /import\(\s*[^"'\s)]/gu;
+    for (const name of readdirSync(dir).filter((n) => n.endsWith(".ts"))) {
+      const count = [
+        ...readFileSync(join(dir, name), "utf8").matchAll(computed),
+      ].length;
+      assert.equal(count, name === "tokenizer.ts" ? 1 : 0, name);
+    }
   });
 });

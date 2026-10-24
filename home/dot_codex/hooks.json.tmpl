@@ -22,15 +22,25 @@
         ]
       }
     ],
-    "PostToolUse": [{
-      "matcher": "^(Bash|apply_patch|Write|Edit|MultiEdit)$",
-      "hooks": [{
-        "type": "command",
-        "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/japanese-document-gate.ts",
-        "timeout": 10,
-        "statusMessage": "Japanese documents: detect unchecked changes"
-      }]
-    }],
+    "PostToolUse": [
+      {
+        "matcher": "^(Bash|apply_patch|Write|Edit|MultiEdit)$",
+        "hooks": [{
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/japanese-document-gate.ts",
+          "timeout": 10,
+          "statusMessage": "Japanese documents: detect unchecked changes"
+        }]
+      },
+      {
+        "matcher": "^(Bash|apply_patch|Write|Edit)$",
+        "hooks": [{
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/translationese-scan.ts",
+          "timeout": 5
+        }]
+      }
+    ],
     "Stop": [{
       "hooks": [{
         "type": "command",

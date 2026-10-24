@@ -20,7 +20,12 @@ import {
   tracked,
   writeMark,
 } from "../../../japanese-check/tracking.ts";
-import { fileTargets, inWorkflowDir, trackableDocument } from "./discovery.ts";
+import {
+  autoTrackable,
+  fileTargets,
+  inWorkflowDir,
+  trackableDocument,
+} from "./discovery.ts";
 import type { Candidates } from "./discovery.ts";
 import { analyzePublication } from "./publication.ts";
 import { object } from "./shared.ts";
@@ -31,6 +36,8 @@ const CLI = "node ~/.claude/japanese-check/cli.ts";
 
 export interface GateDeps {
   stateDir?: string;
+  // Replaceable so a test can make verification throw; the default is receipts.ts.
+  verify?: (file: string, stateDir: string) => Verification;
   candidates: (cwd: string) => Candidates;
   now: () => number;
 }
@@ -74,7 +81,7 @@ function attributeBashWrites(
     return "[japanese-document-gate] この Bash 呼び出しで書かれた日本語文書を特定できませんでした（呼び出しの識別子か git の一覧が得られない）。Bash で日本語文書を書いたなら、node ~/.claude/japanese-check/cli.ts track <文書> --session <session_id> で追跡に加えてください。この知らせはセッションに 1 回だけ出ます。";
   }
   for (const file of new Set([...after.paths, ...Object.keys(snapshot)])) {
-    if (!trackableDocument(file, cwd)) continue;
+    if (!autoTrackable(file, cwd)) continue;
     let current: string;
     try {
       current = digest(readFileSync(file));
@@ -107,14 +114,30 @@ function exampleTarget(file: string): string {
 function noticeDigest(pending: Pending[]): string {
   return digest(
     JSON.stringify(
-      pending.map((item) => [item.file, item.status, item.hash]).sort(),
+      pending
+        .map((item) => [
+          item.file,
+          item.status,
+          item.hash,
+          item.checkerIncomplete ? (item.checkerMissing ?? []).join(",") : null,
+        ])
+        .sort(),
     ),
   );
 }
 
-function verifyOne(file: string, stateDir: string): Pending {
+function missingNames(item: Verification): string {
+  const names = (item.checkerMissing ?? []).join(", ");
+  return names.length > 40 ? `${names.slice(0, 40)}…` : names;
+}
+
+function verifyOne(
+  file: string,
+  stateDir: string,
+  run: (file: string, stateDir: string) => Verification,
+): Pending {
   try {
-    return { file, ...verify(file, stateDir) };
+    return { file, ...run(file, stateDir) };
   } catch (error) {
     console.error("[japanese-document-gate] verify failed:", file, error);
     return {
@@ -186,7 +209,7 @@ function evaluate(input: unknown, deps: GateDeps): Output | null {
   }
   if (event === "PostToolUse") {
     for (const file of fileTargets(tool, args, input.cwd)) {
-      if (trackableDocument(file, input.cwd)) track(file, session, stateDir);
+      if (autoTrackable(file, input.cwd)) track(file, session, stateDir);
     }
   }
   const analysis =
@@ -222,12 +245,15 @@ function evaluate(input: unknown, deps: GateDeps): Output | null {
     removedCorrupt > 0 ? `壊れた追跡項目を ${removedCorrupt} 件消した。` : "";
   const pending = paths
     .filter((file) => !inWorkflowDir(file))
-    .map((file) => verifyOne(file, stateDir))
+    .map((file) => verifyOne(file, stateDir, deps.verify ?? verify))
     .filter(
       (item) =>
-        item.status !== "ready" &&
-        item.status !== "excluded" &&
-        (publishing || item.status !== "draft"),
+        // A receipt written by a checker with missing parts is no proof that
+        // every rule ran, so a ready document stays pending until they are back.
+        (item.status === "ready" && item.checkerIncomplete === true) ||
+        (item.status !== "ready" &&
+          item.status !== "excluded" &&
+          (publishing || item.status !== "draft")),
     );
   const postContext = (...parts: Array<string | null>) => {
     const text = parts.filter(Boolean).join("\n");
@@ -260,6 +286,10 @@ function evaluate(input: unknown, deps: GateDeps): Output | null {
             : item.corrupt
               ? " 記録が壊れている（check で作り直せる）"
               : ""
+        }${
+          item.checkerIncomplete
+            ? ` 検査器の部品が欠けている（${missingNames(item)}）。引数なしの chezmoi apply で配り直してから check する`
+            : ""
         }`,
     );
   const target = exampleTarget(pending[0]?.file ?? "");
