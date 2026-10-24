@@ -1,3 +1,5 @@
+import { pathToFileURL } from "node:url";
+
 export interface Token {
   surface: string;
   normalized: string;
@@ -78,14 +80,29 @@ export function decodeTokens(json: string, text: string): Token[] {
   return result;
 }
 
-export async function createTokenizer(): Promise<Tokenizer> {
+// `entry` is the resolved file of the sudachi package found by deps.ts, so the
+// file that was checked is the file that gets loaded. Importing by the bare name
+// would let Node resolve it from elsewhere (a cwd, a parent directory).
+export async function createTokenizer(entry: string): Promise<Tokenizer> {
   // Lazy import keeps structural commands independent of the large dictionary.
-  const { tokenize, TokenizeMode } = await import("sudachi");
+  const loaded: unknown = await import(pathToFileURL(entry).href);
+  if (
+    !record(loaded) ||
+    typeof loaded.tokenize !== "function" ||
+    !record(loaded.TokenizeMode) ||
+    typeof loaded.TokenizeMode.C !== "number"
+  )
+    throw new Error("Sudachi の読み込み口が想定と違います。");
+  const sudachiTokenize = loaded.tokenize as (
+    input: string,
+    mode: number,
+  ) => string;
+  const modeC = loaded.TokenizeMode.C;
   const cache = new Map<string, Token[]>();
   return (text) => {
     const cached = cache.get(text);
     if (cached) return cached;
-    const tokens = decodeTokens(tokenize(text, TokenizeMode.C), text);
+    const tokens = decodeTokens(sudachiTokenize(text, modeC), text);
     cache.set(text, tokens);
     return tokens;
   };
