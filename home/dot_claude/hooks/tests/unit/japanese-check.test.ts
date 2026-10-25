@@ -27,6 +27,7 @@ import {
   terms,
 } from "../../../japanese-check/analyze.ts";
 import { main, parseArguments } from "../../../japanese-check/cli.ts";
+import { parseMarker } from "../../../japanese-check/keep.ts";
 import {
   keepComments,
   paragraphs,
@@ -1241,7 +1242,7 @@ describe("keep markers", () => {
   let number = 0;
   const KEEP = "ja-check-keep";
   const mark = (rule: string, text: string, reason = "字義どおり") =>
-    `<!-- ${KEEP} ${rule} ${text} -- ${reason} -->`;
+    `<!-- ${KEEP} ${rule} -- ${text} ${reason} -->`;
 
   interface Report {
     findings: Array<{ rule: string; line: number; text: string }>;
@@ -1394,32 +1395,106 @@ describe("keep markers", () => {
       assert.equal(candidates(report), 2);
     });
 
-    it("reports a marker without a reason and keeps the candidate", async () => {
-      for (const marker of [
-        `<!-- ${KEEP} translation-candidate 足す -->`,
-        `<!-- ${KEEP} translation-candidate 足す --   -->`,
+    it("reports a malformed marker and keeps the candidate", async () => {
+      for (const body of [
+        `${KEEP} translation-candidate -- 足す`,
+        `${KEEP} translation-candidate 足す -- 字義どおり`,
+        `${KEEP}`,
+        `${KEEP} translation-candidate -- ""  理由`,
       ]) {
-        const { report } = await checked(`数を足す。${marker}\n`);
-        assert.deepEqual(report.kept, []);
-        assert.equal(report.keepIssues.length, 1);
-        assert.match(report.keepIssues[0]?.problem ?? "", /理由が無い/u);
-        assert.equal(candidates(report), 2);
+        const { report } = await checked(`数を足す。<!-- ${body} -->\n`);
+        assert.deepEqual(report.kept, [], body);
+        assert.equal(report.keepIssues.length, 1, body);
+        assert.equal(candidates(report), 2, body);
       }
     });
 
-    it("reports a marker that lacks the rule or the text", async () => {
-      for (const marker of [
-        `<!-- ${KEEP} -->`,
-        `<!-- ${KEEP} translation-candidate -->`,
-        `<!-- ${KEEP} translation-candidate -- 理由 -->`,
-        `<!-- ${KEEP} translation-candidate "" -- 理由 -->`,
-        `<!-- ${KEEP} translation-candidate "足す -- 理由 -->`,
-      ]) {
-        const { report } = await checked(`数を足す。${marker}\n`);
-        assert.deepEqual(report.kept, [], marker);
-        assert.equal(report.keepIssues.length, 1, marker);
-        assert.equal(candidates(report), 2, marker);
-      }
+    it("reports the first error of a marker with the fixed wording", () => {
+      const problem = (body: string) => {
+        const parsed = parseMarker(body);
+        assert.ok(parsed && !parsed.ok, body);
+        return parsed.problem;
+      };
+      const R = "translation-candidate";
+      const cases: Array<[string, string]> = [
+        [`${KEEP}`, "規則が書かれていない"],
+        [`${KEEP}   `, "規則が書かれていない"],
+        [`${KEEP} -- 足す 理由`, "規則が書かれていない"],
+        [`${KEEP} ${R} long-sentence -- 足す x`, "`--` の前は規則 1 語だけ"],
+        [`${KEEP} ${R} 足す -- 字義どおり`, "`--` の前は規則 1 語だけ"],
+        [`${KEEP} ${R}`, "`--` が無い"],
+        [`${KEEP} ${R} 足す 字義どおり`, "`--` が無い"],
+        [`${KEEP} ${R} --`, "対象の文字列が書かれていない"],
+        [`${KEEP} ${R} --   `, "対象の文字列が書かれていない"],
+        [`${KEEP} ${R} -- "" 字義どおり`, "対象の文字列が書かれていない"],
+        [`${KEEP} ${R} -- "  " 字義どおり`, "対象の文字列が書かれていない"],
+        [`${KEEP} ${R} -- "型の 関係 字義どおり`, "引用が閉じていない"],
+        [`${KEEP} ${R} -- "足す"字義どおり`, "引用の後ろに空白が無い"],
+        [`${KEEP} ${R} -- 足す`, "理由が無い"],
+        [`${KEEP} ${R} -- 足す   `, "理由が無い"],
+        [`${KEEP} ${R} -- "型の 関係"`, "理由が無い"],
+        // A full-width space is an ordinary character, not a separator.
+        [`${KEEP} ${R} -- 足す\u3000字義どおり`, "理由が無い"],
+      ];
+      for (const [body, expected] of cases)
+        assert.equal(problem(body), expected, body);
+    });
+
+    it("reads text and reason from the original string after the first --", () => {
+      const read = (body: string) => {
+        const parsed = parseMarker(body);
+        assert.ok(parsed?.ok, body);
+        return [parsed.rule, parsed.text, parsed.reason];
+      };
+      const R = "translation-candidate";
+      assert.deepEqual(read(`${KEEP} ${R} -- 足す 字義どおり`), [
+        R,
+        "足す",
+        "字義どおり",
+      ]);
+      // Later -- belong to the reason.
+      assert.deepEqual(read(`${KEEP} ${R} -- 足す 字義どおり -- 補足`), [
+        R,
+        "足す",
+        "字義どおり -- 補足",
+      ]);
+      // Several spaces and tabs around the words read like one.
+      assert.deepEqual(read(`  ${KEEP}  \t ${R}   --  足す  理由 `), [
+        R,
+        "足す",
+        "理由",
+      ]);
+      // Spaces inside quotes and inside the reason are kept.
+      assert.deepEqual(read(`${KEEP} ${R} -- "型の  関係" 字義  どおり`), [
+        R,
+        "型の  関係",
+        "字義  どおり",
+      ]);
+      // A reason may start with a quote; it is not interpreted.
+      assert.deepEqual(read(`${KEEP} ${R} -- 足す "字義どおり"`), [
+        R,
+        "足す",
+        '"字義どおり"',
+      ]);
+      assert.deepEqual(read(`${KEEP} ${R} -- 足す ref-1 note="字義どおり"`), [
+        R,
+        "足す",
+        'ref-1 note="字義どおり"',
+      ]);
+      // A full-width space stays inside the unquoted text.
+      assert.deepEqual(read(`${KEEP} ${R} -- 足す\u3000す 理由`), [
+        R,
+        "足す\u3000す",
+        "理由",
+      ]);
+    });
+
+    it("does not treat other comments as markers", () => {
+      assert.equal(parseMarker("ja-check-keepers a -- b c"), null);
+      assert.equal(parseMarker("ordinary note"), null);
+      assert.equal(parseMarker(`x ${KEEP} a -- b c`), null);
+      // The keyword must end at a space or tab, not a full-width space.
+      assert.equal(parseMarker(`${KEEP}\u3000a -- b c`), null);
     });
 
     it("does not keep a candidate of another rule on the same line", async () => {
@@ -1463,8 +1538,8 @@ describe("keep markers", () => {
       assert.equal(candidates(report), 2);
     });
 
-    it("takes a shiori-style reason as it is", async () => {
-      const reason = 'shiori: JA-1 reason="字義どおり"';
+    it("takes an opaque reason as it is", async () => {
+      const reason = 'ref-1 note="字義どおり"';
       const { report } = await checked(
         `数を足す。${mark("translation-candidate", "足す", reason)}\n`,
       );
