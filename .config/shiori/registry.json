@@ -1,0 +1,7 @@
+{
+  "JA-1": {
+    "reason": "範囲の外を示す否定で、言い換えると範囲が分からなくなる",
+    "target": "docs/decisions/0048-japanese-check-keep-markers.md",
+    "kind": "intentional"
+  }
+}

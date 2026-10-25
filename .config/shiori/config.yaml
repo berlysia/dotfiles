@@ -1,0 +1,15 @@
+# ja-check-keep markers in Markdown are tracked in registry.json.
+# shiori skips dot directories unless a pattern names them, so .skills/ is listed on its own.
+scan:
+  patterns:
+    - "**/*.md"
+    - ".skills/**/*.md"
+candidates:
+  ja-check:
+    # A custom directive is off unless keep is true.
+    keep: true
+    _matchers:
+      keep:
+        pattern: "\\bja-check-keep\\s+(.*)"
+        rules: csv
+        separator: "--"
