@@ -4,6 +4,8 @@
 // computed by two slightly different procedures.
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { MANIFEST } from "./codes.mjs";
+import { collectModules } from "./tla-modules.mjs";
 import { HARNESS_VERSION } from "./version.mjs";
 
 export function sha256Bytes(bytes) {
@@ -24,6 +26,35 @@ export function declaredFiles(check) {
   return [check.model, check.cfg, ...check.imports].filter(Boolean);
 }
 
+// What a check pulls in beyond its declared files: for tla, the sibling modules
+// the model reaches. Everything that needs "the files of a check" (the digest,
+// --inspect, the pre-run check) goes through here.
+export function modulesOf(check, repoRoot) {
+  if (check.kind !== "tla") return { modules: [], usesIo: null, errors: [] };
+  try {
+    return collectModules({ modelAbs: check.model.abs, repoRoot });
+  } catch (error) {
+    return {
+      modules: [],
+      usesIo: null,
+      errors: [
+        {
+          code: MANIFEST.MISSING_FILE,
+          message: `cannot scan the modules of ${check.id}: ${error.message}`,
+        },
+      ],
+    };
+  }
+}
+
+// Manifest errors found while collecting modules, for every check. Callers
+// stop before computing a digest or running anything when this is not empty.
+export function moduleErrors(loaded) {
+  return loaded.manifest.checks.flatMap(
+    (check) => modulesOf(check, loaded.repoRoot).errors,
+  );
+}
+
 // Lines are "<name>\t<sha256>\n". The first two names are positional
 // (harness, manifest) so a file called "harness" or "manifest" cannot be
 // confused with them: file rows start at line 3 and always carry a
@@ -31,7 +62,10 @@ export function declaredFiles(check) {
 export function computeDigest(loaded, harnessVersion = HARNESS_VERSION) {
   const rows = new Map();
   for (const check of loaded.manifest.checks) {
-    for (const file of declaredFiles(check)) rows.set(file.rel, file.abs);
+    const { modules, errors } = modulesOf(check, loaded.repoRoot);
+    if (errors.length > 0) throw new Error(errors[0].message);
+    for (const file of [...declaredFiles(check), ...modules])
+      rows.set(file.rel, file.abs);
   }
   const lines = [
     `harness\t${harnessVersion}`,

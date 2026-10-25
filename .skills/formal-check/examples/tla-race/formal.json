@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "checks": [
+    {
+      "id": "atomic-never-over-cap",
+      "kind": "tla",
+      "model": "Atomic.tla",
+      "cfg": "Atomic.cfg",
+      "property": "NeverOverCap",
+      "expect": "hold",
+      "role": "contract",
+      "brokenBy": "racy-over-cap",
+      "note": "example with no implementation behind it, so nothing to cover",
+      "sync": { "covers": [] }
+    },
+    {
+      "id": "racy-over-cap",
+      "kind": "tla",
+      "model": "Racy.tla",
+      "cfg": "Racy.cfg",
+      "property": "NeverOverCap",
+      "expect": "violate",
+      "role": "broken-variant"
+    }
+  ]
+}

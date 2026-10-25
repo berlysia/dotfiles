@@ -7,7 +7,7 @@
 import { performance } from "node:perf_hooks";
 import { MANIFEST, PRE_RUN, RUN } from "./lib/codes.mjs";
 import { ADAPTERS } from "./lib/adapters/index.mjs";
-import { computeDigest } from "./lib/hash.mjs";
+import { computeDigest, moduleErrors } from "./lib/hash.mjs";
 import { buildInspect } from "./lib/inspect.mjs";
 import { loadManifest } from "./lib/manifest.mjs";
 import { shutdown } from "./lib/proc.mjs";
@@ -26,14 +26,15 @@ const USAGE =
   "usage: run.mjs <formal.json> [--json] [--explore] [--expect-digest <sha256>]\n" +
   "       run.mjs <formal.json> --inspect [--json]";
 
-// Children get SIGKILL on their whole group before we leave, so an interrupted
-// run does not leave model processes behind.
+// Children get SIGKILL on their whole group before we leave, and temp dirs are
+// removed, so an interrupted run leaves neither model processes nor files.
 function onSignal() {
   shutdown();
   process.exit(2);
 }
 process.on("SIGINT", onSignal);
 process.on("SIGTERM", onSignal);
+process.on("SIGHUP", onSignal);
 
 function parseArgv(argv) {
   const options = {
@@ -81,7 +82,7 @@ function emit(text, exitCode) {
 async function runChecks(loaded, explore) {
   const { checks } = loaded.manifest;
   const runtime = resolveRuntime(process.env);
-  const availability = checkAvailability(
+  const availability = await checkAvailability(
     [...new Set(checks.map((c) => c.kind))],
     runtime,
   );
@@ -141,7 +142,7 @@ async function observe(check, availability, ctx) {
     return {
       ok: false,
       error: {
-        code: RUN.RUNTIME_NOT_IMPLEMENTED,
+        code: RUN.INTERNAL_ERROR,
         message: `no adapter for kind "${check.kind}"`,
       },
     };
@@ -179,10 +180,10 @@ async function main() {
   if (options.inspect) {
     let inspect;
     try {
-      inspect = buildInspect(loaded);
+      inspect = buildInspect(loaded, resolveRuntime(process.env));
     } catch (error) {
       inspect = {
-        ...buildInspect({ ok: false, errors: [] }),
+        ...buildInspect({ ok: false, errors: [] }, resolveRuntime(process.env)),
         manifestErrors: [
           { code: MANIFEST.MISSING_FILE, message: error.message },
         ],
@@ -196,9 +197,18 @@ async function main() {
   }
 
   let report;
+  // Sibling TLA+ modules are read by TLC, so a bad one (outside the model's
+  // dir, a Java binary next to the model) stops the run before any digest is
+  // computed or any check starts.
+  const preRunErrors = loaded.ok ? moduleErrors(loaded) : [];
   if (!loaded.ok) {
     report = buildReport({
       manifestErrors: loaded.errors,
+      explore: options.explore,
+    });
+  } else if (preRunErrors.length > 0) {
+    report = buildReport({
+      manifestErrors: preRunErrors,
       explore: options.explore,
     });
   } else if (
