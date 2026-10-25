@@ -627,7 +627,7 @@ check_command_with_deps "cargo" "optional" "Rust package manager" "Comes with Ru
 # Development Tools
 print_status "header" "Development Tools"
 check_command "starship" "recommended" "Cross-shell prompt" "curl -sS https://starship.rs/install.sh | sh"
-check_command "gh" "optional" "GitHub CLI" "apt install gh / brew install gh"
+check_command "gh" "optional" "GitHub CLI" "mise install gh / apt install gh"
 check_command "rg" "recommended" "Ripgrep search" "apt install ripgrep / brew install ripgrep"
 check_command "fd" "optional" "Find alternative" "apt install fd-find / brew install fd"
 check_command "fzf" "optional" "Fuzzy finder" "apt install fzf / brew install fzf"

@@ -355,7 +355,7 @@ test_development_tools() {
     
     # Development Tools
     check_command "starship" "recommended" "Cross-shell prompt" "curl -sS https://starship.rs/install.sh | sh" "$TEST_CATEGORY_DEVELOPMENT"
-    check_command "gh" "optional" "GitHub CLI" "apt install gh / brew install gh" "$TEST_CATEGORY_DEVELOPMENT"
+    check_command "gh" "optional" "GitHub CLI" "mise install gh / apt install gh" "$TEST_CATEGORY_DEVELOPMENT"
     check_command "rg" "recommended" "Ripgrep search" "apt install ripgrep / brew install ripgrep" "$TEST_CATEGORY_TOOLS"
     check_command "fd" "optional" "Find alternative" "apt install fd-find / brew install fd" "$TEST_CATEGORY_TOOLS"
     check_command "fzf" "optional" "Fuzzy finder" "apt install fzf / brew install fzf" "$TEST_CATEGORY_TOOLS"
