@@ -67,7 +67,7 @@
 | pr、article、incident、proposal、minutes、manual、slides | する | 返す |
 | mail | する。宛先が社外なら下の表の社外の列 | 返す |
 | paper、formal | しない | 文脈にない穴だけ返す |
-| promo | しない | 新しい問いは出さない。根拠のない誇張だけを doc-types/promo.md 2章どおり「書き手に確かめたい点」で尋ねる |
+| promo | しない | 新しい問いは出さない。根拠のない誇張だけを doc-types/promo.md 2章どおり「筆者に確かめたい点」で尋ねる |
 | essay | しない | 出さない |
 | 種類を決めない | する。宛先は分からないものとして社外の列 | 返す |
 
