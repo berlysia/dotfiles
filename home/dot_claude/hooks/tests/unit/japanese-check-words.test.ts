@@ -93,6 +93,31 @@ describe("data/words.json", () => {
       }
     }
   });
+
+  it("no example, nonExample or fix hits another entry", () => {
+    ok(parsed.ok);
+    const { compiled } = compileEntries(parsed.entries);
+    strictEqual(compiled.length, parsed.entries.length);
+    for (const [i, e] of parsed.entries.entries()) {
+      const fields = {
+        examples: e.examples,
+        nonExamples: e.nonExamples,
+        fix: [e.fix],
+      };
+      for (const [field, texts] of Object.entries(fields)) {
+        for (const text of texts) {
+          for (const [j, o] of compiled.entries()) {
+            if (j === i) continue;
+            strictEqual(
+              findHits(text, [o]).total,
+              0,
+              `${e.word}.${field}: 「${text}」 hits ${o.word}`,
+            );
+          }
+        }
+      }
+    }
+  });
 });
 
 describe("boundaries", () => {
