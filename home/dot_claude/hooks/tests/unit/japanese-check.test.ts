@@ -24,8 +24,11 @@ import {
   lint,
   newFacts,
   outline,
+  splitSentences,
   terms,
 } from "../../../japanese-check/analyze.ts";
+import type { OutlineEntry } from "../../../japanese-check/analyze.ts";
+import { splitSentencesReference } from "../support/split-sentences-reference.ts";
 import { main, parseArguments } from "../../../japanese-check/cli.ts";
 import { parseMarker } from "../../../japanese-check/keep.ts";
 import {
@@ -127,6 +130,295 @@ describe("Japanese prose extraction", () => {
       ],
     );
     assert.equal(outline(rows)[1]?.text, "一文目。");
+  });
+});
+
+// Rows of the spec table. `sentences` is the expected split; the long inputs
+// state only the count and the first and last sentence (timing is in tests/perf).
+interface SentenceCase {
+  input: string;
+  sentences?: string[];
+  count?: number;
+  first?: string;
+  last?: string;
+}
+
+const SENTENCE_CASES: SentenceCase[] = [
+  { input: "一文目。", sentences: ["一文目。"] },
+  { input: "一文目。二文目。", sentences: ["一文目。", "二文目。"] },
+  { input: "A。B。C。", sentences: ["A。", "B。", "C。"] },
+  { input: "記号の無い段落", sentences: ["記号の無い段落"] },
+  { input: "A。B", sentences: ["A。", "B"] },
+  { input: "一文目。\n二文目。", sentences: ["一文目。", "二文目。"] },
+  { input: "本当？！そうだ。", sentences: ["本当？！", "そうだ。"] },
+  {
+    input: "彼は「はい。」と言った。",
+    sentences: ["彼は「はい。」と言った。"],
+  },
+  { input: "A。「B。」C。", sentences: ["A。", "「B。」C。"] },
+  { input: "「行く。」次の文。", sentences: ["「行く。」次の文。"] },
+  { input: "「行く。」と言った。", sentences: ["「行く。」と言った。"] },
+  {
+    input: "「〜。」という指摘もある。",
+    sentences: ["「〜。」という指摘もある。"],
+  },
+  { input: "「行く。」は誤りだ。", sentences: ["「行く。」は誤りだ。"] },
+  {
+    input: "「行く。」とても大事だ。",
+    sentences: ["「行く。」とても大事だ。"],
+  },
+  { input: "「行く。」。", sentences: ["「行く。」。"] },
+  { input: "（「はい。」）次の文。", sentences: ["（「はい。」）次の文。"] },
+  {
+    input: "一文目。\n「引用。」と書いた。",
+    sentences: ["一文目。", "「引用。」と書いた。"],
+  },
+  { input: "A。 B。", sentences: ["A。", "B。"] },
+  { input: "「A。）B。", sentences: ["「A。）B。"] },
+  { input: "『A。』B。", sentences: ["『A。』B。"] },
+  { input: "」A。", sentences: ["」A。"] },
+  { input: "！？", sentences: ["！？"] },
+  { input: "A．B．", sentences: ["A．B．"] },
+  { input: "　　", sentences: [] },
+  { input: " \n 　", sentences: [] },
+  { input: "（注。）本文。", sentences: ["（注。）本文。"] },
+  {
+    input: "彼は（「はい。」と）言った。",
+    sentences: ["彼は（「はい。」と）言った。"],
+  },
+  { input: "A。」」B。", sentences: ["A。」」", "B。"] },
+  { input: "「閉じない。次。", sentences: ["「閉じない。次。"] },
+  // Half-width parentheses are not counted: an intended limit (spec K8).
+  { input: "English (note!) here.", sentences: ["English (note!", ") here."] },
+  { input: "A。」！」。B。", sentences: ["A。」！」。", "B。"] },
+  { input: "A。 」B。", sentences: ["A。", "」B。"] },
+  { input: "」".repeat(100_000), count: 1, first: "」".repeat(100_000) },
+  { input: "「".repeat(100_000), count: 1, first: "「".repeat(100_000) },
+  {
+    input: `。${"」".repeat(100_000)}`,
+    count: 1,
+    first: `。${"」".repeat(100_000)}`,
+  },
+  { input: "。".repeat(100_000), count: 1, first: "。".repeat(100_000) },
+  { input: "A。".repeat(50_000), count: 50_000, first: "A。", last: "A。" },
+  {
+    input: "「B。」".repeat(30_000),
+    count: 1,
+    first: "「B。」".repeat(30_000),
+  },
+  {
+    input: "A「B。」".repeat(30_000),
+    count: 1,
+    first: "A「B。」".repeat(30_000),
+  },
+];
+
+function sentenceShape(item: SentenceCase) {
+  if (item.sentences) {
+    return {
+      count: item.sentences.length,
+      first: item.sentences[0],
+      last: item.sentences.at(-1),
+    };
+  }
+  return {
+    count: item.count,
+    first: item.first,
+    last: item.last ?? item.first,
+  };
+}
+
+function stripSpaces(text: string): string {
+  return [...text].filter((char) => char.trim() !== "").join("");
+}
+
+describe("splitSentences", () => {
+  it("splits every row of the spec table as specified", () => {
+    for (const item of SENTENCE_CASES) {
+      const result = splitSentences(item.input);
+      const shape = sentenceShape(item);
+      const label = JSON.stringify(item.input.slice(0, 40));
+      if (item.sentences) {
+        assert.deepEqual(result, item.sentences, label);
+      } else {
+        assert.equal(result.length, shape.count, label);
+        assert.equal(result[0], shape.first, label);
+        assert.equal(result.at(-1), shape.last, label);
+      }
+    }
+  });
+
+  it("agrees with the naive reference on every string of up to 5 characters", () => {
+    const alphabet = [
+      "A",
+      "。",
+      "！",
+      "？",
+      "「",
+      "」",
+      "『",
+      "』",
+      "（",
+      "）",
+      "\n",
+      " ",
+      "　",
+    ];
+    let checked = 0;
+    const visit = (prefix: string, remaining: number) => {
+      const actual = splitSentences(prefix);
+      assert.deepEqual(
+        actual,
+        splitSentencesReference(prefix),
+        JSON.stringify(prefix),
+      );
+      assert.equal(stripSpaces(actual.join("")), stripSpaces(prefix));
+      for (const sentence of actual) {
+        assert.ok(sentence !== "" && sentence === sentence.trim());
+      }
+      checked += 1;
+      if (remaining === 0) return;
+      for (const char of alphabet) visit(prefix + char, remaining - 1);
+    };
+    visit("", 5);
+    assert.equal(checked, 402_234);
+  });
+});
+
+describe("outline paragraph entries", () => {
+  const markdown =
+    "# 手順\n\n一文目。\n二文目。\n\n- 項目。\n| 用語 | 説明 |\n| --- | --- |\n";
+
+  function paragraphEntries(entries: OutlineEntry[]) {
+    return entries.flatMap((entry) =>
+      entry.kind === "paragraph" ? [entry] : [],
+    );
+  }
+
+  it("adds last and sentences to paragraphs and leaves other entries as they were", () => {
+    const entries = outline(proseLines(markdown));
+    assert.deepEqual(entries[1], {
+      line: 3,
+      kind: "paragraph",
+      text: "一文目。",
+      last: "二文目。",
+      sentences: 2,
+    });
+    for (const entry of entries.filter((item) => item.kind !== "paragraph")) {
+      assert.deepEqual(Object.keys(entry), ["line", "kind", "text"]);
+    }
+    assert.equal(entries.length, 4);
+  });
+
+  it("keeps the long-sentence findings of the previous implementation", () => {
+    // Measured on the implementation at the base commit before this change:
+    // a 110-character sentence at line 1 and the same one at line 4.
+    const sentence = `${"あ".repeat(55)}、${"い".repeat(53)}。`;
+    const rows = proseLines(`${sentence}\n\n短い。\n${sentence}\n`);
+    assert.deepEqual(
+      lint(rows, "tech")
+        .filter((item) => item.rule === "long-sentence")
+        .map((item) => [item.line, item.column]),
+      [
+        [1, 1],
+        [4, 1],
+      ],
+    );
+  });
+
+  it("gives every row of the spec table its text, last and sentences", () => {
+    const cases = SENTENCE_CASES.filter(
+      (item) => !item.sentences || item.sentences.length > 0,
+    );
+    const entries = paragraphEntries(
+      outline(proseLines(cases.map((item) => item.input).join("\n\n"))),
+    );
+    assert.equal(entries.length, cases.length);
+    cases.forEach((item, index) => {
+      const entry = entries[index];
+      assert.ok(entry);
+      const shape = sentenceShape(item);
+      const label = JSON.stringify(item.input.slice(0, 40));
+      assert.deepEqual(
+        Object.keys(entry),
+        ["line", "kind", "text", "last", "sentences"],
+        label,
+      );
+      assert.equal(entry.sentences, shape.count, label);
+      assert.equal(entry.text, shape.first, label);
+      assert.equal(entry.last, shape.count === 1 ? null : shape.last, label);
+      if (entry.sentences === 0) {
+        assert.equal(entry.text, "");
+        assert.equal(entry.last, null);
+      }
+      if (entry.sentences === 1) assert.equal(entry.last, null);
+      if (entry.sentences >= 2) assert.notEqual(entry.last, null);
+      if (entry.sentences >= 1) assert.notEqual(entry.text, "");
+    });
+  });
+
+  it("reports a blank paragraph as zero sentences and serializes last as null", () => {
+    const [entry] = outline([{ line: 1, text: " ", kind: "paragraph" }]);
+    assert.ok(entry && entry.kind === "paragraph");
+    assert.equal(entry.sentences, 0);
+    assert.equal(entry.text, "");
+    assert.equal(entry.last, null);
+    assert.match(JSON.stringify(entry), /"last":null/u);
+    assert.deepEqual(splitSentences(" \n　"), []);
+  });
+
+  it("takes text and last from the paragraph body, including multi-line paragraphs", () => {
+    const rows = proseLines(
+      "一文目。\n二文目。\n三文目。\n\n「引用。」と書いた。次。\n",
+    );
+    const bodies = paragraphs(rows);
+    for (const entry of paragraphEntries(outline(rows))) {
+      const body = bodies.find((block) => block.line === entry.line);
+      assert.ok(body);
+      assert.ok(body.text.includes(entry.text));
+      if (entry.last !== null) assert.ok(body.text.includes(entry.last));
+    }
+  });
+});
+
+describe("outline CLI process", () => {
+  const dir = realpathSync(
+    mkdtempSync(join(tmpdir(), "japanese-check-outline-")),
+  );
+  after(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("prints last and sentences for paragraphs and leaves the input file alone", () => {
+    const home = join(dir, "home");
+    mkdirSync(home);
+    const file = join(dir, "doc.md");
+    const content = "一文目。二文目。\n\n「行く。」次の文。\n";
+    writeFileSync(file, content);
+    const cli = fileURLToPath(
+      new URL("../../../japanese-check/cli.ts", import.meta.url),
+    );
+    const result = spawnSync(process.execPath, [cli, "outline", file], {
+      encoding: "utf8",
+      env: { ...process.env, HOME: home },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const entries: unknown = JSON.parse(result.stdout);
+    assert.deepEqual(entries, [
+      {
+        line: 1,
+        kind: "paragraph",
+        text: "一文目。",
+        last: "二文目。",
+        sentences: 2,
+      },
+      {
+        line: 3,
+        kind: "paragraph",
+        text: "「行く。」次の文。",
+        last: null,
+        sentences: 1,
+      },
+    ]);
+    assert.equal(readFileSync(file, "utf8"), content);
   });
 });
 
@@ -235,6 +527,13 @@ describe("Sudachi-backed Japanese review", () => {
       ),
       [],
     );
+  });
+
+  it("check() carries the same outline as outline() and keeps schemaVersion 1", async () => {
+    const markdown = "# 手順\n\n一文目。\n二文目。\n\n「行く。」次の文。\n";
+    const result = check(markdown, await tokenizer);
+    assert.deepEqual(result.outline, outline(proseLines(markdown)));
+    assert.equal(result.schemaVersion, 1);
   });
 
   it("does not claim that unchanged words prove unchanged meaning", async () => {

@@ -151,15 +151,74 @@ export function calques(lines: ProseLine[], tokenize: Tokenizer): Finding[] {
   return result;
 }
 
-export function outline(lines: ProseLine[]) {
-  return paragraphs(lines).map((block) => ({
-    line: block.line,
-    kind: block.kind,
-    text:
-      block.kind === "paragraph"
-        ? (block.text.match(/^[\s\S]*?[。！？!?]/u)?.[0] ?? block.text)
-        : block.text,
-  }));
+const SENTENCE_END_MARKS = new Set(["。", "！", "？", "!", "?"]);
+const OPENING_BRACKETS = new Set(["「", "『", "（"]);
+const CLOSING_BRACKETS = new Set(["」", "』", "）"]);
+
+// One forward pass over a paragraph. The per-line regex used by `long-sentence`
+// is not reused: it cuts "はい。」" into "はい。" and "」", so `last` would
+// become a lone closing bracket. Sentences are sliced out of the original string
+// by index and trimmed with String.prototype.trim only; a trailing-whitespace
+// regex such as /\s+$/ is quadratic on long runs of spaces.
+export function splitSentences(text: string): string[] {
+  const sentences: string[] = [];
+  let start = 0;
+  let offset = 0;
+  let depth = 0;
+  // True after a depth-0 end mark, while closers and further end marks are
+  // still being absorbed into the sentence that mark ended.
+  let absorbing = false;
+  const cutAt = (end: number) => {
+    const sentence = text.slice(start, end).trim();
+    if (sentence !== "") sentences.push(sentence);
+    start = end;
+  };
+  for (const char of text) {
+    if (absorbing) {
+      if (CLOSING_BRACKETS.has(char) || SENTENCE_END_MARKS.has(char)) {
+        offset += char.length;
+        continue;
+      }
+      cutAt(offset);
+      absorbing = false;
+    }
+    if (OPENING_BRACKETS.has(char)) depth += 1;
+    else if (CLOSING_BRACKETS.has(char)) depth = Math.max(0, depth - 1);
+    else if (SENTENCE_END_MARKS.has(char) && depth === 0) absorbing = true;
+    offset += char.length;
+  }
+  cutAt(text.length);
+  return sentences;
+}
+
+// Split by `kind` so that headings, list items and table rows keep the plain
+// {line, kind, text} shape: an always-present `last: null` there would look like
+// "a paragraph with one sentence". The type only constrains this file (the CLI
+// prints `unknown`), so the JSON shape itself is pinned by the unit tests.
+export type OutlineEntry =
+  | {
+      line: number;
+      kind: "paragraph";
+      text: string;
+      last: string | null;
+      sentences: number;
+    }
+  | { line: number; kind: "heading" | "list" | "table"; text: string };
+
+export function outline(lines: ProseLine[]): OutlineEntry[] {
+  return paragraphs(lines).map((block): OutlineEntry => {
+    if (block.kind !== "paragraph") {
+      return { line: block.line, kind: block.kind, text: block.text };
+    }
+    const sentences = splitSentences(block.text);
+    return {
+      line: block.line,
+      kind: "paragraph",
+      text: sentences[0] ?? "",
+      last: sentences.length >= 2 ? (sentences.at(-1) ?? null) : null,
+      sentences: sentences.length,
+    };
+  });
 }
 
 export function terms(lines: ProseLine[], tokenize: Tokenizer): Term[] {
