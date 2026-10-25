@@ -4,6 +4,8 @@
 
 accepted (2026-10-23)
 
+D5 のうち必須の context の条件の一文は、2026-10-25 の Amendments で改めた（Bot が付けた commit status も数える）。
+
 ## Context
 
 Claude Code の Bash ツールの説明文には `Commit or push only when the user asks.` があり、オーダーの「片付いたら」を「PR は頼まれていない」と読んで commit で止まることが多かった。PR #367 で、済んだ作業をどこまで進めるか（`commit` / `pr` / `merge`）を repo ごとに `.tmp/docs/CONTEXT.md` に記録する Delivery Policy を入れた。
@@ -57,3 +59,40 @@ Claude Code の Bash ツールの説明文には `Commit or push only when the u
 - 台帳の `v` を上げるときは、新しい版を読める CLI を先に配り、書く hook を後に配る。古い CLI は未知の `v` を無効な行として扱い、merge を止める。
 - 他の project の `.tmp/docs/CONTEXT.md` に PR #367 の `## Delivery policy` が残っていても、読まれない。
 - delivery-policy 自身を変える PR は保護パスに当たるので、このラッパーでは merge できない。人間か従来の `gh pr merge` で merge する。
+
+## Amendments
+
+### 2026-10-25: Bot が付けた commit status を必須の context として数える
+
+D5 の「check-run で SUCCESS・NEUTRAL・SKIPPED のどれか。commit status は gh の token で書けるので数えない」という一文を、次のように改めた。判定の表の順序、ほかの条件、終了コードは変えていない。
+
+- `integration_id` の無い必須の context は、check run に加えて、creator の型が `Bot` と完全一致する commit status でも満たせる。creator が `User` などの Bot 以外の型か null の commit status は、判定に数えない（pass、fail、pending のどれにもしない）。
+- `integration_id` の付いた必須の context は、commit status では満たさない。commit status からは投稿した App の ID を読めないためである。一致する check run が来るまで待つ。
+- commit status の state は大文字に揃えて比べる。`SUCCESS` は pass、`PENDING` と `EXPECTED` は pending、`FAILURE` と `ERROR` は fail、それ以外は pending とする。
+- 1 つの context について、一致する check run と数える commit status を合わせる。どれかが fail なら fail、どれかが pending なら pending、1 件も無ければ pending とする。GraphQL の `status.contexts` は context ごとに最新の 1 件だけを返す。
+- 待つときの理由は次の 4 種類に分けた。
+  - まだ終わっていない
+  - App に固定されている
+  - Bot 以外の commit status しか無い
+  - 報告が無い
+
+**きっかけ**: dotfiles の唯一の必須 context `status-check` は commit status だった。`status-check.yml` が `statuses: write` で付けている。この ADR は Consequences で `status-check` を check-run として書いていたが、実際とは違った。そのためラッパーは一度も merge できず、待ちの exit 10 を繰り返した。
+
+**creator の型を数える根拠**: agent が使う gh の token は OAuth App の token（`gho_`）である。2026-10-25 にこの token で、status を 1 件付けた（id 57195279968）。context は `delivery-policy-creator-probe` である。付けた先は merge 済みの commit `1e358b674d16260634f85bf383b14bf021873b0d` である。REST の `creator.type` も GraphQL の `creator.__typename` も `User`（login `berlysia`）だった。同じ commit の `status-check` は `Bot`（`github-actions`）だった。gh の token で付けた status は、Bot として数えられない。そのため D5 が commit status を外した理由は、creator が Bot のものには当たらない。
+
+**却下した案**:
+
+- すべての commit status を数える。agent の gh の token で `success` を付ければ、merge の条件を満たせてしまう。
+- creator を github-actions の Bot に限る。限れば、status を付けるほかの App の経路は閉じる。しかし最も手軽な経路（下の受け入れた限界の 1 つ目）は github-actions 名義なので閉じない。外部の CI の App が付ける status も数えられなくなる。
+- `status-check.yml` が check run を出すように変え、ラッパーは変えない。dotfiles の症状は消えるが、commit status を必須にするほかの repo では同じ症状が残る。
+
+**受け入れた限界**:
+
+- agent は SSH の push で、別の branch に `statuses: write` の workflow を置ける。その workflow は github-actions 名義で、任意の sha に任意の context の status を付けられる。PR の diff の保護パス（`.github/`）は、別の branch への push を見ない。この経路は `checks: write` で同名の check run を作れるので、改める前の判定でも開いていた。閉じる手段は ruleset で workflow の変更を人間に限ることで、未実施である（`docs/plans/workflow-push-restriction.md`）。
+- 保証の強さに差がある。check run は `integration_id` で投稿した App を固定できるが、commit status は creator の型しか見られない。そのため、commit status で満たす必須の context の保証は、App に固定した check run より弱い。弱さの内訳は 2 つある。投稿元の App を特定できないこと、repo に入った任意の Bot と GITHUB_TOKEN の workflow が数えられることである。status だけを付けられる App（`checks: write` を持たないもの）は、偽れる主体として新しく加わった。
+- `integration_id` の付いた必須の context に commit status しか付かない repo では、20 分待って exit 12 で止まる。待ちの理由の文言で原因は分かる。
+- Bot の `SUCCESS` の後に User が同名の status を付けると、最新の 1 件が User になる。ラッパーは待ち続け、20 分後に exit 12 で止まる。
+- `mergeStateStatus` が `CLEAN` かどうかは、GitHub が User の status でも必須の context を満たしたと見るので、偽りへの備えにならない。偽りを防ぐのは、ラッパーの creator の判定だけである。
+- 前提として、agent が手にする token は `gho_` である。GitHub App の user-to-server の token（`ghu_`）で付けた status の creator は Bot になりうる。
+
+**拡張点**: 数える creator を login か `databaseId` の allowlist で絞る。今は入れていない。

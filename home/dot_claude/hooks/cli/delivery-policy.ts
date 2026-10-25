@@ -42,6 +42,7 @@ import {
   type RepoInfo,
   type RequiredContext,
   resolveRepo,
+  type StatusContext,
   waitsPath,
 } from "../lib/delivery-policy.ts";
 
@@ -126,7 +127,7 @@ const PR_QUERY =
 const SHA_QUERY =
   "query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){headRefOid}}}";
 const CHECKS_QUERY =
-  "query($owner:String!,$name:String!,$sha:GitObjectID!){repository(owner:$owner,name:$name){object(oid:$sha){... on Commit{checkSuites(first:100){nodes{app{databaseId} checkRuns(first:100){nodes{name status conclusion}}}}}}}}";
+  "query($owner:String!,$name:String!,$sha:GitObjectID!){repository(owner:$owner,name:$name){object(oid:$sha){... on Commit{status{contexts{context state creator{__typename}}} checkSuites(first:100){nodes{app{databaseId} checkRuns(first:100){nodes{name status conclusion}}}}}}}}";
 
 function parseJson(text: string, what: string): unknown {
   try {
@@ -325,18 +326,25 @@ async function readRequiredContexts(
   return mergeRequiredContexts(fromRuleset, classic);
 }
 
-async function readCheckRuns(
+interface CommitChecks {
+  checkRuns: CheckRun[];
+  statusContexts: StatusContext[];
+}
+
+/** Check runs and commit statuses of one sha, from a single query so they describe the same commit. */
+async function readCommitChecks(
   gh: Gh,
   repo: RepoInfo,
   sha: string,
-): Promise<CheckRun[]> {
+): Promise<CommitChecks> {
   const data = await ghGraphql(
     gh,
     CHECKS_QUERY,
     { ...splitRepo(repo), sha },
     "reading the check runs",
   );
-  const suites = dig(data, "repository", "object", "checkSuites", "nodes");
+  const commit = dig(data, "repository", "object");
+  const suites = dig(commit, "checkSuites", "nodes");
   if (!Array.isArray(suites)) {
     throw new FetchError("the check runs answered an unexpected shape");
   }
@@ -360,7 +368,33 @@ async function readCheckRuns(
       });
     }
   }
-  return runs;
+
+  // A commit with no status at all answers `status: null`; a missing key means
+  // the query was not understood, which must not read as "no statuses".
+  if (typeof commit !== "object" || commit === null || !("status" in commit)) {
+    throw new FetchError("the commit statuses answered an unexpected shape");
+  }
+  const status = (commit as Record<string, unknown>).status;
+  const contexts = status === null ? [] : dig(status, "contexts");
+  if (!Array.isArray(contexts)) {
+    throw new FetchError("the commit statuses answered an unexpected shape");
+  }
+  const statusContexts: StatusContext[] = contexts.map((node) => {
+    const context = dig(node, "context");
+    const state = dig(node, "state");
+    if (typeof context !== "string" || typeof state !== "string") {
+      throw new FetchError("a commit status answered an unexpected shape");
+    }
+    // A missing creator only makes this one status uncounted; failing here
+    // would stop every merge for the sake of a status nobody requires.
+    const creatorType = dig(node, "creator", "__typename");
+    return {
+      context,
+      state,
+      creatorType: typeof creatorType === "string" ? creatorType : "",
+    };
+  });
+  return { checkRuns: runs, statusContexts };
 }
 
 async function readChangedFiles(
@@ -547,7 +581,11 @@ async function runMerge(
         repo,
         pr.baseRefName,
       );
-      const checkRuns = await readCheckRuns(gh, repo, baseSha);
+      const { checkRuns, statusContexts } = await readCommitChecks(
+        gh,
+        repo,
+        baseSha,
+      );
       const files = await readChangedFiles(gh, repo, prNumber, pr.changedFiles);
 
       const after = await readHeadSha(gh, repo, prNumber);
@@ -566,6 +604,7 @@ async function runMerge(
         files,
         requiredContexts,
         checkRuns,
+        statusContexts,
       };
       const decision = decideMerge(state);
       if (decision.kind === "stop") {

@@ -433,21 +433,76 @@ function classifyCheckRun(run: CheckRun): CheckOutcome {
     : "fail";
 }
 
+/** One entry of GraphQL `status.contexts`: the latest status per context name. */
+export interface StatusContext {
+  context: string;
+  state: string;
+  /** `creator.__typename`, or "" when GitHub gave none. */
+  creatorType: string;
+}
+
+// Only a Bot creator is counted: the agent's gh token is an OAuth App token,
+// so a status it writes has a User creator. Counting every status would let it
+// satisfy a required context by posting `success` itself.
+const COUNTED_CREATOR_TYPE = "Bot";
+
+function classifyStatusState(state: string): CheckOutcome {
+  switch (state.toUpperCase()) {
+    case "SUCCESS":
+      return "pass";
+    case "FAILURE":
+    case "ERROR":
+      return "fail";
+    default:
+      return "pending";
+  }
+}
+
+interface ContextOutcome {
+  outcome: CheckOutcome;
+  /** Set only when the outcome is pending. */
+  reason: string;
+}
+
 function outcomeOfContext(
   required: RequiredContext,
   runs: readonly CheckRun[],
-): CheckOutcome {
-  const matching = runs.filter(
+  statuses: readonly StatusContext[],
+): ContextOutcome {
+  const name = required.context;
+  const matchingRuns = runs.filter(
     (r) =>
-      r.name === required.context &&
+      r.name === name &&
       (required.integrationId === undefined ||
         r.appId === required.integrationId),
   );
-  if (matching.length === 0) return "pending";
-  const outcomes = matching.map(classifyCheckRun);
-  if (outcomes.includes("fail")) return "fail";
-  if (outcomes.includes("pending")) return "pending";
-  return "pass";
+  // A status carries no app id, so it cannot satisfy a context pinned to an app.
+  const namedStatuses = statuses.filter((s) => s.context === name);
+  const pinned = required.integrationId !== undefined;
+  const countedStatuses = pinned
+    ? []
+    : namedStatuses.filter((s) => s.creatorType === COUNTED_CREATOR_TYPE);
+
+  const outcomes = [
+    ...matchingRuns.map(classifyCheckRun),
+    ...countedStatuses.map((s) => classifyStatusState(s.state)),
+  ];
+  if (outcomes.includes("fail")) return { outcome: "fail", reason: "" };
+  if (outcomes.includes("pending")) {
+    return {
+      outcome: "pending",
+      reason: `required check ${name} is not finished`,
+    };
+  }
+  if (outcomes.length > 0) return { outcome: "pass", reason: "" };
+
+  const reason =
+    pinned && namedStatuses.length > 0
+      ? `required check ${name} is pinned to app ${required.integrationId}; a commit status does not count`
+      : namedStatuses.length > 0
+        ? `required check ${name} has only a commit status from a non-Bot creator, which does not count`
+        : `required check ${name} has not been reported`;
+  return { outcome: "pending", reason };
 }
 
 // --- protected paths -------------------------------------------------------
@@ -623,6 +678,7 @@ export interface MergeState {
   files: readonly ChangedFile[];
   requiredContexts: readonly RequiredContext[];
   checkRuns: readonly CheckRun[];
+  statusContexts: readonly StatusContext[];
 }
 
 export type StopCode = 20 | 30 | 40;
@@ -696,17 +752,14 @@ export function decideMerge(state: MergeState): MergeDecision {
   }
   const outcomes = state.requiredContexts.map((required) => ({
     required,
-    outcome: outcomeOfContext(required, state.checkRuns),
+    ...outcomeOfContext(required, state.checkRuns, state.statusContexts),
   }));
   const failed = outcomes.find((o) => o.outcome === "fail");
   if (failed)
     return stop(30, `required check ${failed.required.context} failed`);
   const pending = outcomes.find((o) => o.outcome === "pending");
   if (pending) {
-    return {
-      kind: "wait",
-      reason: `required check ${pending.required.context} is not finished`,
-    };
+    return { kind: "wait", reason: pending.reason };
   }
 
   if (pr.mergeStateStatus === "UNKNOWN") {

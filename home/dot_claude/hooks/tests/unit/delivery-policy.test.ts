@@ -32,6 +32,7 @@ import {
   type Ledger,
   type MergeState,
   type RepoInfo,
+  type StatusContext,
 } from "../../lib/delivery-policy.ts";
 
 const REPO: RepoInfo = {
@@ -74,6 +75,7 @@ function passingState(overrides: Partial<MergeState> = {}): MergeState {
         appId: 15368,
       },
     ],
+    statusContexts: [],
     ...overrides,
   };
 }
@@ -432,7 +434,16 @@ describe("decideMerge table", () => {
       }),
     );
     assert.deepEqual(soft, { kind: "merge" });
-    // commit statuses are not check-runs: nothing is reported, so it waits
+    // a commit status from a non-Bot creator is not reported by anyone we trust
+    const userOnly = decideMerge(
+      passingState({
+        checkRuns: [],
+        statusContexts: [
+          { context: "status-check", state: "SUCCESS", creatorType: "User" },
+        ],
+      }),
+    );
+    assert.equal(userOnly.kind, "wait");
     const none = decideMerge(passingState({ checkRuns: [] }));
     assert.equal(none.kind, "wait");
     // the required context pins the app; a run from another app does not count
@@ -450,6 +461,131 @@ describe("decideMerge table", () => {
       }),
     );
     assert.deepEqual(pinnedOk, { kind: "merge" });
+  });
+});
+
+describe("commit statuses", () => {
+  const status = (
+    state: string,
+    creatorType = "Bot",
+    context = "status-check",
+  ): StatusContext => ({ context, state, creatorType });
+  const decide = (
+    statusContexts: StatusContext[],
+    overrides: Partial<MergeState> = {},
+  ) =>
+    decideMerge(passingState({ checkRuns: [], statusContexts, ...overrides }));
+  const checkRun = (
+    conclusion: string | null,
+    name = "status-check",
+  ): CheckRun => ({
+    name,
+    status: conclusion === null ? "IN_PROGRESS" : "COMPLETED",
+    conclusion,
+    appId: 15368,
+  });
+  const NOT_REPORTED = "required check status-check has not been reported";
+  const NOT_FINISHED = "required check status-check is not finished";
+  const NON_BOT =
+    "required check status-check has only a commit status from a non-Bot creator, which does not count";
+  const PINNED =
+    "required check status-check is pinned to app 15368; a commit status does not count";
+
+  it("a Bot's SUCCESS status merges, in any case", () => {
+    assert.deepEqual(decide([status("SUCCESS")]), { kind: "merge" });
+    assert.deepEqual(decide([status("success")]), { kind: "merge" });
+  });
+
+  it("a creator that is not exactly Bot waits and says so", () => {
+    for (const type of [
+      "User",
+      "Mannequin",
+      "Organization",
+      "EnterpriseUserAccount",
+      "bot",
+      "",
+    ]) {
+      assert.deepEqual(decide([status("SUCCESS", type)]), {
+        kind: "wait",
+        reason: NON_BOT,
+      });
+    }
+  });
+
+  it("a non-Bot FAILURE does not stop, it waits", () => {
+    assert.equal(decide([status("FAILURE", "User")]).kind, "wait");
+  });
+
+  it("PENDING, EXPECTED and unknown states wait as not finished", () => {
+    for (const state of ["PENDING", "EXPECTED", "WEIRD", "", " SUCCESS"]) {
+      assert.deepEqual(decide([status(state)]), {
+        kind: "wait",
+        reason: NOT_FINISHED,
+      });
+    }
+  });
+
+  it("FAILURE and ERROR from a Bot stop with 30", () => {
+    for (const state of ["FAILURE", "ERROR"]) {
+      assert.deepEqual(decide([status(state)]), {
+        kind: "stop",
+        code: 30,
+        reason: "required check status-check failed",
+      });
+    }
+  });
+
+  it("a context name must match exactly", () => {
+    for (const context of ["Status-Check", "status-check ", "other"]) {
+      assert.deepEqual(decide([status("SUCCESS", "Bot", context)]), {
+        kind: "wait",
+        reason: NOT_REPORTED,
+      });
+    }
+  });
+
+  it("nothing reported waits as not reported", () => {
+    assert.deepEqual(decide([]), { kind: "wait", reason: NOT_REPORTED });
+  });
+
+  it("a context pinned to an app never takes a commit status", () => {
+    const requiredContexts = [
+      { context: "status-check", integrationId: 15368 },
+    ];
+    for (const type of ["Bot", "User"]) {
+      assert.deepEqual(
+        decide([status("SUCCESS", type)], { requiredContexts }),
+        {
+          kind: "wait",
+          reason: PINNED,
+        },
+      );
+    }
+  });
+
+  it("a check run and a commit status for one context are combined", () => {
+    const both = (run: CheckRun, st: StatusContext) =>
+      decideMerge(passingState({ checkRuns: [run], statusContexts: [st] }));
+    assert.deepEqual(both(checkRun("SUCCESS"), status("SUCCESS")), {
+      kind: "merge",
+    });
+    const failed = both(checkRun("SUCCESS"), status("FAILURE"));
+    assert.equal(failed.kind === "stop" && failed.code, 30);
+    assert.equal(both(checkRun(null), status("SUCCESS")).kind, "wait");
+    assert.deepEqual(both(checkRun("NEUTRAL"), status("SUCCESS")), {
+      kind: "merge",
+    });
+  });
+
+  it("each required context may be satisfied by a different kind", () => {
+    const d = decideMerge(
+      passingState({
+        requiredContexts: [{ context: "a" }, { context: "b" }],
+        checkRuns: [checkRun("SUCCESS", "a")],
+        statusContexts: [status("SUCCESS", "Bot", "b")],
+      }),
+    );
+    assert.deepEqual(d, { kind: "merge" });
   });
 });
 
