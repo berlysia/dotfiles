@@ -46,7 +46,7 @@ report_marker "$HOME/.claude/.root-deps-install-failed" "root-deps" \
 
 report_marker "$HOME/.claude/.apm-skills-install-failed" "apm-skills" \
     "APM skills were not installed; ~/.claude/skills and ~/.agents/skills may not match ~/.apm/apm.yml." \
-    "mise install github:microsoft/apm && apm install -g"
+    "mise install apm && apm install -g"
 
 report_marker "$HOME/.claude/.skill-allow-failed" "skill-allow" \
     "The Skill permission list could not be computed; the previous Skill(...) permissions in ~/.claude/settings.json were kept." \
