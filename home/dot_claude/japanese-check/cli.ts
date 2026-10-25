@@ -1,6 +1,16 @@
 import { readFileSync, statSync } from "node:fs";
-import { resolve } from "node:path";
-import { calques, check, lint, newFacts, outline, terms } from "./analyze.ts";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  buildReviewEntries,
+  calques,
+  check,
+  lint,
+  newFacts,
+  outline,
+  terms,
+} from "./analyze.ts";
+import type { ReviewEntry } from "./analyze.ts";
 import { checkDependencies, DependencyMissingError } from "./deps.ts";
 import type { DependencyGroup } from "./deps.ts";
 import { matchKeeps } from "./keep.ts";
@@ -11,6 +21,7 @@ import { readFileBounded } from "./safe-read.ts";
 import { MAX_SECRETS_BYTES, scanSecrets } from "./secrets.ts";
 import { defaultStateDir, digest, StateDirError } from "./state.ts";
 import { track } from "./tracking.ts";
+import { MAX_LIST_BYTES, parseWordList } from "./words.ts";
 import { GENRES, READERS } from "./types.ts";
 import type { Genre, Reader } from "./types.ts";
 
@@ -168,9 +179,37 @@ async function loadTokenizer(
   };
 }
 
+const READ_FAILURES = {
+  missing: "ファイルが無い",
+  "not-file": "通常のファイルでない",
+  "too-large": `${MAX_LIST_BYTES / 1024} KB を超える`,
+  error: "読み込みに失敗した",
+} as const;
+
+// The review entries of the word list, in list order. `problems` is empty only
+// when the file was read and every entry passed validation: a check made with
+// less than the whole list must not be recorded as a complete one.
+function loadReview(path: string): {
+  review: ReviewEntry[];
+  problems: string[];
+} {
+  const read = readFileBounded(path, MAX_LIST_BYTES);
+  if (!read.ok) return { review: [], problems: [READ_FAILURES[read.reason]] };
+  const parsed = parseWordList(read.bytes.toString("utf8"));
+  if (!parsed.ok) return { review: [], problems: [parsed.reason] };
+  const built = buildReviewEntries(parsed.entries);
+  return {
+    review: built.review,
+    problems: [...parsed.notices, ...built.notices],
+  };
+}
+
+const defaultWordListPath = () =>
+  join(dirname(fileURLToPath(import.meta.url)), "data/words.json");
+
 export async function main(
   args: string[],
-  options: { stateDir?: string } = {},
+  options: { stateDir?: string; wordListPath?: string } = {},
 ): Promise<void> {
   if (args.length === 1 && args[0] === "--help") {
     console.log(usage);
@@ -242,8 +281,21 @@ export async function main(
     const tokenize = await loadTokenizer(
       selected ? ["analyzer", "grammar"] : ["analyzer"],
     );
+    const { review, problems } = loadReview(
+      options.wordListPath ?? defaultWordListPath(),
+    );
     if (command === "check") {
-      const report = check(markdown, tokenize, effectiveGenre, original);
+      const report = check(
+        markdown,
+        tokenize,
+        review,
+        effectiveGenre,
+        original,
+      );
+      if (problems.length > 0)
+        report.limitations.push(
+          `語の一覧を読めなかった（${problems.join("、")}）。読めた項目だけで照合した。`,
+        );
       const keeps = matchKeeps(keepComments(markdown), [
         ...report.findings,
         ...report.calques,
@@ -252,7 +304,7 @@ export async function main(
       const profileOutput = selected
         ? { profile: { id: selected.id, ...(reader ? { reader } : {}) } }
         : {};
-      if (noRecord)
+      if (noRecord || problems.length > 0)
         result = {
           ...report,
           ...keepOutput,
@@ -290,8 +342,11 @@ export async function main(
         if (extra["--session"]) track(target, extra["--session"], stateDir);
         result = { ...report, ...keepOutput, ...profileOutput, verification };
       }
-    } else if (command === "calques") result = calques(lines, tokenize);
-    else if (command === "terms") result = terms(lines, tokenize);
+    } else if (command === "calques") {
+      if (problems.length > 0)
+        console.error(`語の一覧を読めなかった（${problems.join("、")}）。`);
+      result = calques(lines, tokenize, review);
+    } else if (command === "terms") result = terms(lines, tokenize);
     else {
       if (original === undefined)
         throw new CliError("比較する原文がありません。");
