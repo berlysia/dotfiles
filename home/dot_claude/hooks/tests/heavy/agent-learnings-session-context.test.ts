@@ -8,6 +8,7 @@ import {
   rmSync,
   utimesSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -34,7 +35,9 @@ import {
 
 describe("buildSessionLearningsContext", () => {
   it("returns null without a store, drains the inbox and renders after", async () => {
-    const root = mkdtempSync(join(tmpdir(), "agent-learnings-session-"));
+    const root = realpathSync(
+      mkdtempSync(join(tmpdir(), "agent-learnings-session-")),
+    );
     try {
       const repo = join(root, "repo");
       const home = join(root, "home");
@@ -101,7 +104,9 @@ describe("buildSessionLearningsContext start-time filter", () => {
     repoEntries: ReturnType<typeof entry>[],
     commonEntries: ReturnType<typeof entry>[] = [],
   ) {
-    const root = mkdtempSync(join(tmpdir(), "agent-learnings-startfilter-"));
+    const root = realpathSync(
+      mkdtempSync(join(tmpdir(), "agent-learnings-startfilter-")),
+    );
     try {
       const repo = join(root, "repo");
       const home = join(root, "home");
@@ -170,7 +175,9 @@ describe("buildSessionLearningsContext start-time filter", () => {
 
 describe("session.ts SessionStart state GC", () => {
   it("removes scene state older than 7 days under both the claude and codex state dirs", () => {
-    const root = mkdtempSync(join(tmpdir(), "agent-learnings-gc-"));
+    const root = realpathSync(
+      mkdtempSync(join(tmpdir(), "agent-learnings-gc-")),
+    );
     try {
       const repoRoot = join(
         dirname(fileURLToPath(import.meta.url)),
@@ -226,7 +233,9 @@ describe("enqueueSessionJob", () => {
   function withRepo(
     fn: (ctx: { repo: string; home: string; root: string }) => void,
   ): void {
-    const root = mkdtempSync(join(tmpdir(), "agent-learnings-sessionend-"));
+    const root = realpathSync(
+      mkdtempSync(join(tmpdir(), "agent-learnings-sessionend-")),
+    );
     try {
       const repo = join(root, "repo");
       const home = join(root, "home");
@@ -321,7 +330,9 @@ describe("worker session exclusion and worker restart at SessionStart", () => {
   function withHome(
     fn: (ctx: { repo: string; home: string; store: string }) => Promise<void>,
   ): Promise<void> {
-    const root = mkdtempSync(join(tmpdir(), "agent-learnings-sessionstart-"));
+    const root = realpathSync(
+      mkdtempSync(join(tmpdir(), "agent-learnings-sessionstart-")),
+    );
     const repo = join(root, "repo");
     const home = join(root, "home");
     execFileSync("git", ["init", "-q", repo]);

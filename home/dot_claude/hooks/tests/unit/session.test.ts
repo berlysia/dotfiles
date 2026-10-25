@@ -53,7 +53,7 @@ describe("session.ts hook behavior", () => {
     // Date.now() はプロセス間で一意でない。並行実行時に同名ディレクトリを共有し、
     // 片方の afterEach の rmSync が他方の env-file を実行中に削除して ENOENT を起こす
     // （実測: 4 プロセス並行で 32/32 失敗）。mkdtemp は OS が一意性を保証する。
-    testDir = mkdtempSync(join(tmpdir(), "session-test-"));
+    testDir = realpathSync(mkdtempSync(join(tmpdir(), "session-test-")));
     logDir = join(testDir, ".config", "claude-companion", "logs");
     logFile = join(logDir, "hooks.jsonl");
     mkdirSync(logDir, { recursive: true });
@@ -399,7 +399,7 @@ describe("startup summary", () => {
     envHelper.set("DOCUMENT_WORKFLOW_DIR", undefined);
     envHelper.set("DOCUMENT_WORKFLOW_WARN_ONLY", undefined);
     envHelper.set("CLAUDE_CODE_TASK_LIST_ID", undefined);
-    homeRoot = mkdtempSync(join(tmpdir(), "session-summary-"));
+    homeRoot = realpathSync(mkdtempSync(join(tmpdir(), "session-summary-")));
     envHelper.set("HOME", isolatedHome(homeRoot));
   });
 
@@ -536,7 +536,7 @@ describe("transcript directory name audit", () => {
     envHelper.set("DOCUMENT_WORKFLOW_DIR", undefined);
     envHelper.set("DOCUMENT_WORKFLOW_WARN_ONLY", undefined);
     envHelper.set("CLAUDE_CODE_TASK_LIST_ID", undefined);
-    homeRoot = mkdtempSync(join(tmpdir(), "session-transcript-"));
+    homeRoot = realpathSync(mkdtempSync(join(tmpdir(), "session-transcript-")));
     envHelper.set("HOME", isolatedHome(homeRoot));
   });
   afterEach(() => {
@@ -756,7 +756,7 @@ describe("wire output (subprocess)", () => {
   let tmp: string;
 
   beforeEach(() => {
-    tmp = mkdtempSync(join(tmpdir(), "session-wire-"));
+    tmp = realpathSync(mkdtempSync(join(tmpdir(), "session-wire-")));
     const digestDir = join(tmp, ".claude", "logs", "insights");
     mkdirSync(digestDir, { recursive: true });
     writeFileSync(
@@ -862,7 +862,9 @@ describe("auto-mode experiment notice", () => {
   });
 
   function homeWithSettings(settings: unknown): string {
-    const home = mkdtempSync(join(tmpdir(), "session-experiment-home-"));
+    const home = realpathSync(
+      mkdtempSync(join(tmpdir(), "session-experiment-home-")),
+    );
     dirs.push(home);
     mkdirSync(join(home, ".claude", "logs", "auto-mode-experiment"), {
       recursive: true,
@@ -877,7 +879,9 @@ describe("auto-mode experiment notice", () => {
   }
 
   async function systemMessageAtStart(): Promise<string> {
-    const cwd = mkdtempSync(join(tmpdir(), "session-experiment-cwd-"));
+    const cwd = realpathSync(
+      mkdtempSync(join(tmpdir(), "session-experiment-cwd-")),
+    );
     dirs.push(cwd);
     const before = process.cwd();
     process.chdir(cwd);

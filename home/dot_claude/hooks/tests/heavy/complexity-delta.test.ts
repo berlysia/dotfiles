@@ -11,6 +11,7 @@ import {
   symlinkSync,
   utimesSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -30,7 +31,9 @@ after(() => {
   for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
 });
 function makeTempDir(label: string): string {
-  const dir = mkdtempSync(join(tmpdir(), `complexity-delta-${label}-`));
+  const dir = realpathSync(
+    mkdtempSync(join(tmpdir(), `complexity-delta-${label}-`)),
+  );
   tempDirs.push(dir);
   return dir;
 }

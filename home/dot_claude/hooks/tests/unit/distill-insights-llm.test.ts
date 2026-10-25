@@ -7,6 +7,7 @@ import {
   readFileSync,
   statSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -37,7 +38,7 @@ interface SandboxPaths {
 }
 
 function makeSandbox(): SandboxPaths {
-  const dir = mkdtempSync(join(tmpdir(), "distill-llm-test-"));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "distill-llm-test-")));
   return {
     dir,
     jsonl: join(dir, "insights.jsonl"),

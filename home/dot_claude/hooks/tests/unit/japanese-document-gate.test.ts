@@ -9,6 +9,7 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   lutimesSync,
@@ -52,7 +53,9 @@ import { shellSingleQuote } from "../../lib/shell-quote.ts";
 const itUnlessRoot = { skip: process.getuid?.() === 0 };
 
 describe("Japanese document receipts and completion gate", () => {
-  const root = mkdtempSync(join(tmpdir(), "japanese-document-gate-"));
+  const root = realpathSync(
+    mkdtempSync(join(tmpdir(), "japanese-document-gate-")),
+  );
   after(() => rmSync(root, { recursive: true, force: true }));
   let number = 0;
   function fixture() {
@@ -382,7 +385,9 @@ describe("japanese-document-gate entry", () => {
   const entry = fileURLToPath(
     new URL("../../implementations/japanese-document-gate.ts", import.meta.url),
   );
-  const dir = mkdtempSync(join(tmpdir(), "japanese-document-gate-entry-"));
+  const dir = realpathSync(
+    mkdtempSync(join(tmpdir(), "japanese-document-gate-entry-")),
+  );
   after(() => rmSync(dir, { recursive: true, force: true }));
 
   function launch(stdin: string) {
@@ -424,7 +429,10 @@ describe("japanese-document-gate entry", () => {
 });
 
 describe("japanese-document-gate recovery, attribution, exclusion and publication", () => {
-  const root = mkdtempSync(join(tmpdir(), "japanese-document-gate-more-"));
+  // 追跡は realpath で記録するので、macOS の /var → /private/var をここで揃える。
+  const root = realpathSync(
+    mkdtempSync(join(tmpdir(), "japanese-document-gate-more-")),
+  );
   after(() => rmSync(root, { recursive: true, force: true }));
   let number = 0;
 
@@ -1516,6 +1524,16 @@ describe("autoTrackable (temporary directories are not tracked automatically)", 
     }
   });
 
+  // macOS では /tmp が /private/tmp への symlink で、scratchpad は
+  // /private/tmp/... の形で渡ってくる。Linux では両者が一致する。
+  it("excludes a document under the resolved /tmp with the default roots", () => {
+    const file = realpathSync(
+      doc(join(scratch, "x", "scratchpad"), "notes.md"),
+    );
+    assert.equal(autoTrackable(file, "/work/repo"), false);
+    assert.equal(autoTrackable(file, realpathSync(scratch)), true);
+  });
+
   it("ignores unusable roots and falls back to /tmp alone", () => {
     const file = doc(join(scratch, "x"));
     for (const bad of ["/", "", "tmp"]) {
@@ -1714,7 +1732,9 @@ describe("gate with a checker that is missing a part", () => {
   const checkerSource = fileURLToPath(
     new URL("../../../japanese-check/", import.meta.url),
   );
-  const root = mkdtempSync(join(tmpdir(), "japanese-gate-incomplete-"));
+  const root = realpathSync(
+    mkdtempSync(join(tmpdir(), "japanese-gate-incomplete-")),
+  );
   after(() => rmSync(root, { recursive: true, force: true }));
   let number = 0;
   const content = "人が読むための説明です。\n";

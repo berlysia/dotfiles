@@ -378,7 +378,10 @@ describe("file-access-guard.ts hook behavior", () => {
     beforeEach(() => {
       mkdirSync(join(process.cwd(), ".tmp"), { recursive: true });
       root = realpathSync(mkdtempSync(join(process.cwd(), ".tmp", "fag-k10-")));
-      envHelper.set("HOME", mkdtempSync(join(tmpdir(), "fag-home-")));
+      envHelper.set(
+        "HOME",
+        realpathSync(mkdtempSync(join(tmpdir(), "fag-home-"))),
+      );
       envHelper.set("CLAUDE_TEST_CWD", root);
       envHelper.set(
         "CLAUDE_TEST_REPO_ROOT",

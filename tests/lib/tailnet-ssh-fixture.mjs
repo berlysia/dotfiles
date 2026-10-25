@@ -7,6 +7,7 @@ import {
   readFileSync,
   rmSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -22,7 +23,9 @@ import {
 // The key store is a factory: each test file creates its own and removes it in
 // its own after(), so the two files share no module state.
 export function createTailnetFixture() {
-  const keyDirectory = mkdtempSync(join(tmpdir(), "tailnet-ssh-test-keys-"));
+  const keyDirectory = realpathSync(
+    mkdtempSync(join(tmpdir(), "tailnet-ssh-test-keys-")),
+  );
   const testKeys = new Map();
   function key(number) {
     if (!testKeys.has(number)) {
@@ -63,7 +66,7 @@ export function createTailnetFixture() {
   }
 
   function fixture(t) {
-    const home = mkdtempSync(join(tmpdir(), "tailnet-ssh-test-"));
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "tailnet-ssh-test-")));
     t.after(() => rmSync(home, { recursive: true, force: true }));
     mkdirSync(join(home, ".ssh"));
     installTestKey(home, 1);

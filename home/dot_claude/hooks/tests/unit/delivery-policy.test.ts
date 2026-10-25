@@ -7,6 +7,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -80,7 +81,7 @@ function passingState(overrides: Partial<MergeState> = {}): MergeState {
 describe("ledger", () => {
   let home: string;
   beforeEach(() => {
-    home = mkdtempSync(join(tmpdir(), "delivery-policy-lib-"));
+    home = realpathSync(mkdtempSync(join(tmpdir(), "delivery-policy-lib-")));
   });
   afterEach(() => {
     rmSync(home, { recursive: true, force: true });

@@ -1,7 +1,7 @@
 #!/usr/bin/env node --test
 
 import { match, strictEqual } from "node:assert";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
@@ -69,7 +69,9 @@ describe("workflow-bash-sync.ts: wfDir resolution", () => {
   });
 
   it("emits a one-line notice when the session id is malformed (unresolvable)", async () => {
-    const repo = mkdtempSync(join(tmpdir(), "workflow-bash-sync-"));
+    const repo = realpathSync(
+      mkdtempSync(join(tmpdir(), "workflow-bash-sync-")),
+    );
     envHelper.set("CLAUDE_TEST_CWD", repo);
     const ctx = createPostToolUseContextFor(
       hook,
@@ -83,7 +85,9 @@ describe("workflow-bash-sync.ts: wfDir resolution", () => {
   });
 
   it("does nothing when no workflow document exists yet", async () => {
-    const repo = mkdtempSync(join(tmpdir(), "workflow-bash-sync-"));
+    const repo = realpathSync(
+      mkdtempSync(join(tmpdir(), "workflow-bash-sync-")),
+    );
     envHelper.set("CLAUDE_TEST_CWD", repo);
     const ctx = createPostToolUseContextFor(hook, "Bash", { command: "true" });
     await invokeRun(hook, ctx);

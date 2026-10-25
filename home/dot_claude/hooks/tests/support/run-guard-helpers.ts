@@ -1,5 +1,11 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+  realpathSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -24,7 +30,7 @@ export function cleanupTempDirs(): void {
 }
 
 export function makeTempDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), "run-guard-test-"));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "run-guard-test-")));
   tempDirs.push(dir);
   return dir;
 }

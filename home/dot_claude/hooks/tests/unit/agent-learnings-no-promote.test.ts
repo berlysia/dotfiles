@@ -5,6 +5,7 @@ import {
   rmSync,
   symlinkSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,7 +16,9 @@ import {
 } from "../../lib/agent-learnings/core/no-promote.ts";
 
 function withStore(fn: (store: string) => void): void {
-  const store = mkdtempSync(join(tmpdir(), "agent-learnings-nopromote-"));
+  const store = realpathSync(
+    mkdtempSync(join(tmpdir(), "agent-learnings-nopromote-")),
+  );
   try {
     fn(store);
   } finally {

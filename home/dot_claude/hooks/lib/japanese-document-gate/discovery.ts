@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, extname, isAbsolute, resolve } from "node:path";
 import { patchTargetPaths } from "../agent-learnings/codex/patch-paths.ts";
@@ -71,6 +71,19 @@ function usableRoot(path: string): string | null {
   return resolved === "/" ? null : resolved;
 }
 
+function withRealpaths(paths: string[]): string[] {
+  const result = [...paths];
+  for (const path of paths) {
+    try {
+      const real = realpathSync(path);
+      if (!result.includes(real)) result.push(real);
+    } catch {
+      // 存在しない根は元の形だけで足りる（前方一致の対象が無い）。
+    }
+  }
+  return result;
+}
+
 function within(path: string, root: string): boolean {
   return path === root || path.startsWith(`${root}/`);
 }
@@ -80,7 +93,10 @@ function within(path: string, root: string): boolean {
 // cwd がその根の下にあるときは、そこが作業場所なので外さない。
 // 先頭の根（/tmp）以外は、cwd かホームと重なるなら外さない（TMPDIR が
 // ホームや作業場所を含む構成で、普通の文書まで消さないため）。
-// realpath は取らない: 除外は手間を省く仕組みで、安全の境界ではない。
+// 対象パスの realpath は取らない: 除外は手間を省く仕組みで、安全の境界ではない。
+// 既定の根は元の形と realpath を両方並べる。macOS の /tmp は /private/tmp への
+// symlink で、パスはどちらの形でも渡ってくる。/private/tmp は 2 つ目以降の根に
+// なるが、cwd やホームと重なることはないので、先頭の根と同じく外れる。
 export function autoTrackable(
   file: string,
   cwd: string,
@@ -88,7 +104,7 @@ export function autoTrackable(
 ): boolean {
   if (!trackableDocument(file, cwd)) return false;
   const effective = roots ?? {
-    tmp: ["/tmp", tmpdir()],
+    tmp: withRealpaths(["/tmp", tmpdir()]),
     home: homedir(),
   };
   const absolute = resolve(cwd, file);

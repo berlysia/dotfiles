@@ -8,6 +8,7 @@ import {
   rmSync,
   symlinkSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -128,7 +129,9 @@ describe("secret shape scan", () => {
 });
 
 describe("secrets subcommand", () => {
-  const root = mkdtempSync(join(tmpdir(), "japanese-check-secrets-"));
+  const root = realpathSync(
+    mkdtempSync(join(tmpdir(), "japanese-check-secrets-")),
+  );
   after(() => rmSync(root, { recursive: true, force: true }));
   const source = fileURLToPath(
     new URL("../../../japanese-check/", import.meta.url),

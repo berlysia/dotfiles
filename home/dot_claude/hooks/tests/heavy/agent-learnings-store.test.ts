@@ -11,6 +11,7 @@ import {
   symlinkSync,
   truncateSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -29,7 +30,9 @@ import {
 } from "../../lib/agent-learnings/core/store.ts";
 
 function withStore(fn: (store: string, root: string) => void): void {
-  const root = mkdtempSync(join(tmpdir(), "agent-learnings-store-"));
+  const root = realpathSync(
+    mkdtempSync(join(tmpdir(), "agent-learnings-store-")),
+  );
   try {
     fn(join(root, "agent-learnings"), root);
   } finally {

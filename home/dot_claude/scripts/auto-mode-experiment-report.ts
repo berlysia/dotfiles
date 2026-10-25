@@ -22,6 +22,7 @@ import {
   renameSync,
   rmSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
@@ -286,7 +287,7 @@ export async function replayOne(call: {
   sessionId: string;
   transcriptPath: string;
 }): Promise<{ verdict: ReplayVerdict; held: boolean }> {
-  const dir = mkdtempSync(join(tmpdir(), "auto-mode-replay-"));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "auto-mode-replay-")));
   try {
     const hookPath = fileURLToPath(
       new URL("../hooks/implementations/auto-approve.ts", import.meta.url),

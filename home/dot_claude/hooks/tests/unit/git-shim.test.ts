@@ -12,6 +12,7 @@ import {
   rmSync,
   chmodSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
@@ -23,7 +24,7 @@ const preload = join(import.meta.dirname, "..", "preload-test-env.mjs");
 const basePath =
   process.env.CLAUDE_TEST_ORIGINAL_PATH ?? process.env.PATH ?? "";
 
-const scratch = mkdtempSync(join(tmpdir(), "git-shim-test-"));
+const scratch = realpathSync(mkdtempSync(join(tmpdir(), "git-shim-test-")));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 
 let counter = 0;

@@ -8,6 +8,7 @@ import {
   readFileSync,
   symlinkSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -40,7 +41,7 @@ const H2 = "b".repeat(64);
 
 describe("workflow-approval (spec K8)", () => {
   it("appends one JSON line per approval", () => {
-    const wf = mkdtempSync(join(tmpdir(), "approvals-"));
+    const wf = realpathSync(mkdtempSync(join(tmpdir(), "approvals-")));
     appendApproval(wf, {
       doc: "plan.md",
       hash: H1,
@@ -54,7 +55,7 @@ describe("workflow-approval (spec K8)", () => {
   });
 
   it("uses only the last line for each document, so a revert does not revive an old approval", () => {
-    const wf = mkdtempSync(join(tmpdir(), "approvals-"));
+    const wf = realpathSync(mkdtempSync(join(tmpdir(), "approvals-")));
     appendApproval(wf, { doc: "plan.md", hash: H1, session: "s", at: "t1" });
     appendApproval(wf, { doc: "plan.md", hash: H2, session: "s", at: "t2" });
     appendApproval(wf, { doc: "spec.md", hash: H1, session: "s", at: "t3" });
@@ -66,7 +67,7 @@ describe("workflow-approval (spec K8)", () => {
   });
 
   it("keeps delegate only when it is the known value", () => {
-    const wf = mkdtempSync(join(tmpdir(), "approvals-"));
+    const wf = realpathSync(mkdtempSync(join(tmpdir(), "approvals-")));
     appendApproval(wf, {
       doc: "spec.md",
       hash: H1,
@@ -91,7 +92,7 @@ describe("workflow-approval (spec K8)", () => {
   });
 
   it("a later line without delegate turns the delegation off", () => {
-    const wf = mkdtempSync(join(tmpdir(), "approvals-"));
+    const wf = realpathSync(mkdtempSync(join(tmpdir(), "approvals-")));
     appendApproval(wf, {
       doc: "spec.md",
       hash: H1,
@@ -107,7 +108,7 @@ describe("workflow-approval (spec K8)", () => {
   });
 
   it("skips malformed lines and other versions, and counts them", () => {
-    const wf = mkdtempSync(join(tmpdir(), "approvals-"));
+    const wf = realpathSync(mkdtempSync(join(tmpdir(), "approvals-")));
     appendFileSync(
       join(wf, APPROVALS_LOG),
       [
@@ -142,14 +143,16 @@ describe("workflow-approval (spec K8)", () => {
   });
 
   it("reads an absent log as no approvals", () => {
-    const r = readLatestApprovals(mkdtempSync(join(tmpdir(), "approvals-")));
+    const r = readLatestApprovals(
+      realpathSync(mkdtempSync(join(tmpdir(), "approvals-"))),
+    );
     assert.equal(r.latest.size, 0);
     assert.equal(r.ignoredLines, 0);
     assert.equal(r.readError, undefined);
   });
 
   it("refuses to append through a symlink at the ledger's name", () => {
-    const wf = mkdtempSync(join(tmpdir(), "approvals-"));
+    const wf = realpathSync(mkdtempSync(join(tmpdir(), "approvals-")));
     const outside = join(wf, "..", `outside-${Date.now()}.txt`);
     writeFileSync(outside, "keep");
     symlinkSync(outside, join(wf, APPROVALS_LOG));
@@ -162,7 +165,7 @@ describe("workflow-approval (spec K8)", () => {
   });
 
   it("reports an unreadable log instead of throwing", () => {
-    const wf = mkdtempSync(join(tmpdir(), "approvals-"));
+    const wf = realpathSync(mkdtempSync(join(tmpdir(), "approvals-")));
     mkdirSync(join(wf, APPROVALS_LOG));
     const r = readLatestApprovals(wf);
     assert.equal(r.latest.size, 0);
@@ -546,7 +549,7 @@ describe("approval question (spec K3/K4/K7)", () => {
 
 describe("ledger via field (spec K5)", () => {
   it("writes via as given", () => {
-    const wf = mkdtempSync(join(tmpdir(), "approvals-"));
+    const wf = realpathSync(mkdtempSync(join(tmpdir(), "approvals-")));
     appendApproval(wf, {
       doc: "plan.md",
       hash: H1,
@@ -566,7 +569,7 @@ describe("ledger via field (spec K5)", () => {
   });
 
   it("reads via, and treats a missing or unknown via as undefined without ignoring the line", () => {
-    const wf = mkdtempSync(join(tmpdir(), "approvals-"));
+    const wf = realpathSync(mkdtempSync(join(tmpdir(), "approvals-")));
     const base = { v: 1, hash: H1, session: "s", at: "t" };
     appendFileSync(
       join(wf, APPROVALS_LOG),

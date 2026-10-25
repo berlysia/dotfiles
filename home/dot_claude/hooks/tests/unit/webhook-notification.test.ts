@@ -1,7 +1,7 @@
 #!/usr/bin/env node --test
 
 import { ok, strictEqual } from "node:assert";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
@@ -18,7 +18,7 @@ describe("extractFromTranscript", () => {
   let tempDir: string;
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "webhook-test-"));
+    tempDir = realpathSync(mkdtempSync(join(tmpdir(), "webhook-test-")));
   });
 
   afterEach(() => {
@@ -136,7 +136,7 @@ describe("extractLastExchange", () => {
   let tempDir: string;
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "webhook-test-"));
+    tempDir = realpathSync(mkdtempSync(join(tmpdir(), "webhook-test-")));
   });
 
   afterEach(() => {

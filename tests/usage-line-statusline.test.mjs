@@ -7,6 +7,7 @@ import {
   rmSync,
   symlinkSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,7 +15,9 @@ import test, { after } from "node:test";
 
 const script = new URL("../mods/usage-line/statusline.ts", import.meta.url)
   .pathname;
-const root = mkdtempSync(join(tmpdir(), "usage-line-statusline-"));
+const root = realpathSync(
+  mkdtempSync(join(tmpdir(), "usage-line-statusline-")),
+);
 after(() => rmSync(root, { recursive: true, force: true }));
 
 let counter = 0;

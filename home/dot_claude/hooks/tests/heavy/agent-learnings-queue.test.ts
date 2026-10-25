@@ -9,6 +9,7 @@ import {
   symlinkSync,
   utimesSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -35,7 +36,9 @@ import { initStore, storePaths } from "../../lib/agent-learnings/core/store.ts";
 const SID2 = "0f0e0d0c-0000-4000-8000-000000000002";
 
 function withStore(fn: (store: string) => void): void {
-  const root = mkdtempSync(join(tmpdir(), "agent-learnings-queue-"));
+  const root = realpathSync(
+    mkdtempSync(join(tmpdir(), "agent-learnings-queue-")),
+  );
   try {
     const store = join(root, "s");
     ok(initStore(store, runGit).ok);

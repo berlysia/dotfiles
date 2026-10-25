@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, extname, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { TextlintKernelDescriptor } from "@textlint/kernel";
 import { moduleInterop } from "@textlint/module-interop";
 import { createLinter, loadLinterFormatter } from "textlint";
@@ -113,6 +113,6 @@ export async function run(args, { cwd = process.cwd(), write = console.log, erro
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (import.meta.main) {
   process.exitCode = await run(process.argv.slice(2));
 }

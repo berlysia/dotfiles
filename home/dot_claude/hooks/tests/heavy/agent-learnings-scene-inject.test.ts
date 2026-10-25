@@ -7,6 +7,7 @@ import {
   mkdtempSync,
   rmSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -59,7 +60,9 @@ function markerScript(dir: string): { script: string; marker: string } {
 
 describe("createRunGit isolateGlobalConfig", () => {
   it("hides ~/.gitconfig user.name only when isolated", () => {
-    const home = mkdtempSync(join(tmpdir(), "scene-inject-home-"));
+    const home = realpathSync(
+      mkdtempSync(join(tmpdir(), "scene-inject-home-")),
+    );
     roots.push(home);
     writeFileSync(join(home, ".gitconfig"), "[user]\n\tname = marker\n");
     const args = JSON.stringify(["config", "--get", "user.name"]);

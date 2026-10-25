@@ -14,6 +14,7 @@ import {
   rmSync,
   statSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -30,7 +31,7 @@ describe("Log Rotation", () => {
   const originalHome = process.env.HOME;
 
   beforeEach(() => {
-    testDir = mkdtempSync(join(tmpdir(), "test-log-rotation-"));
+    testDir = realpathSync(mkdtempSync(join(tmpdir(), "test-log-rotation-")));
     testLogDir = join(testDir, ".claude", "log");
     process.env.HOME = testDir;
     mkdirSync(testLogDir, { recursive: true });

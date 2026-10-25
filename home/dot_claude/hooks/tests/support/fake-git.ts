@@ -6,6 +6,7 @@ import {
   readFileSync,
   rmSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -35,7 +36,7 @@ export function createBlockingGit(
   const realGit = execFileSync("sh", ["-c", "command -v git"], {
     encoding: "utf8",
   }).trim();
-  const binDir = mkdtempSync(join(tmpdir(), "blocking-git-"));
+  const binDir = realpathSync(mkdtempSync(join(tmpdir(), "blocking-git-")));
   const callsFile = join(binDir, "blocked-calls");
   // Values are embedded in single quotes below.
   for (const value of [blockOn, realGit, callsFile]) {

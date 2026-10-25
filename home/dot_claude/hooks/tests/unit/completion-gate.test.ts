@@ -6,6 +6,7 @@ import {
   readFileSync,
   rmSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -415,7 +416,9 @@ describe("completion-gate hook at the retry limit (as a process)", () => {
     ["3", [], ["not judged", "failing check"]],
   ] as const) {
     it(`tells the user about counter ${JSON.stringify(counter)} without blocking`, async () => {
-      const cwd = mkdtempSync(join(tmpdir(), "completion-gate-limit-"));
+      const cwd = realpathSync(
+        mkdtempSync(join(tmpdir(), "completion-gate-limit-")),
+      );
       try {
         mkdirSync(join(cwd, ".tmp"));
         const counterPath = join(cwd, ".tmp", ".completion-gate-retries");

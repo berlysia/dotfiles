@@ -8,6 +8,7 @@ import {
   readdirSync,
   rmSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -29,7 +30,7 @@ let markerDir: string;
 let hook: ReturnType<typeof createHook>;
 
 beforeEach(() => {
-  markerDir = mkdtempSync(join(tmpdir(), "commit-sign-failure-"));
+  markerDir = realpathSync(mkdtempSync(join(tmpdir(), "commit-sign-failure-")));
   hook = createHook(() => markerDir);
 });
 
@@ -269,7 +270,9 @@ describe("commit-sign-failure-ask.ts as a process", () => {
   // Unit tests call run() directly, so they pass even when the file has no
   // runHook entrypoint; spawning it is what catches a silently inert hook.
   it("prints additionalContext and writes the marker under $HOME", () => {
-    const home = mkdtempSync(join(tmpdir(), "commit-sign-failure-home-"));
+    const home = realpathSync(
+      mkdtempSync(join(tmpdir(), "commit-sign-failure-home-")),
+    );
     try {
       const input = {
         session_id: "proc1",

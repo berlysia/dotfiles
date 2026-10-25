@@ -1,7 +1,13 @@
 #!/usr/bin/env node --test
 
 import { strictEqual } from "node:assert";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+  realpathSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
@@ -56,7 +62,7 @@ describe("static sound selection", () => {
     }
 
     beforeEach(() => {
-      testDir = mkdtempSync(join(tmpdir(), "test-static-sound-"));
+      testDir = realpathSync(mkdtempSync(join(tmpdir(), "test-static-sound-")));
       soundsDir = join(testDir, "sounds");
       mkdirSync(soundsDir, { recursive: true });
       const base = createUnifiedVoiceConfig();

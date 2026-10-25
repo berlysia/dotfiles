@@ -6,6 +6,7 @@ import {
   readFileSync,
   rmSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
@@ -30,7 +31,7 @@ const CLI = join(HOOKS_DIR, "cli", "delivery-policy.ts");
 const roots: string[] = [];
 
 function freshDir(prefix: string): string {
-  const dir = mkdtempSync(join(tmpdir(), prefix));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
   roots.push(dir);
   return dir;
 }

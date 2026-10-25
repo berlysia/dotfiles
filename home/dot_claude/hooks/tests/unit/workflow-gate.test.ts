@@ -44,7 +44,7 @@ import {
 } from "../support/test-helpers.ts";
 
 function freshWf(): string {
-  const wf = mkdtempSync(join(tmpdir(), "gate-"));
+  const wf = realpathSync(mkdtempSync(join(tmpdir(), "gate-")));
   mkdirSync(wf, { recursive: true });
   return wf;
 }

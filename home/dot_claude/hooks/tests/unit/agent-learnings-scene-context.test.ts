@@ -7,6 +7,7 @@ import {
   readFileSync,
   rmSync,
   symlinkSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -42,7 +43,7 @@ const entry = (n: number, on: string, body = `body ${n}`): LearningEntry => ({
 });
 
 function setup(entries: LearningEntry[], common: LearningEntry[] = []) {
-  const home = mkdtempSync(join(tmpdir(), "scene-context-"));
+  const home = realpathSync(mkdtempSync(join(tmpdir(), "scene-context-")));
   roots.push(home);
   const store = defaultStoreDir(home);
   mkdirSync(join(store, ".git"), { recursive: true });
@@ -147,7 +148,7 @@ describe("buildSceneContext", () => {
     strictEqual(
       buildSceneContext({
         ...input,
-        home: mkdtempSync(join(tmpdir(), "empty-")),
+        home: realpathSync(mkdtempSync(join(tmpdir(), "empty-"))),
       }),
       null,
     );

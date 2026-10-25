@@ -16,6 +16,7 @@ import {
   rmSync,
   symlinkSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -44,7 +45,9 @@ after(() => {
 });
 
 function makeTempDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), "working-tree-fingerprint-test-"));
+  const dir = realpathSync(
+    mkdtempSync(join(tmpdir(), "working-tree-fingerprint-test-")),
+  );
   tempDirs.push(dir);
   return dir;
 }

@@ -2,7 +2,7 @@
 
 import { deepStrictEqual, strict as assert, strictEqual } from "node:assert";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, it } from "node:test";
@@ -51,7 +51,7 @@ describe("shellSingleQuote", () => {
     "",
   ]) {
     it(`round-trips ${JSON.stringify(value)} through bash source`, () => {
-      const dir = mkdtempSync(join(tmpdir(), "shell-quote-"));
+      const dir = realpathSync(mkdtempSync(join(tmpdir(), "shell-quote-")));
       const envFile = join(dir, "env");
       writeFileSync(envFile, `export V=${shellSingleQuote(value)}\n`);
       const result = spawnSync(

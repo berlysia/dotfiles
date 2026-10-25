@@ -1,7 +1,13 @@
 #!/usr/bin/env node --test
 
 import { deepStrictEqual, ok, strictEqual } from "node:assert";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+  realpathSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
@@ -98,7 +104,7 @@ describe("workflow-review-core: canSkip", () => {
 
 describe("workflow-review-core: per-doc cache", () => {
   it("keeps spec and plan entries separate", () => {
-    const wf = mkdtempSync(join(tmpdir(), "cache-"));
+    const wf = realpathSync(mkdtempSync(join(tmpdir(), "cache-")));
     writeDocCache(wf, "spec.md", {
       planHash: "aaa",
       recommendedAt: "t1",
@@ -112,13 +118,13 @@ describe("workflow-review-core: per-doc cache", () => {
   });
 
   it("returns null for a doc with no entry", () => {
-    const wf = mkdtempSync(join(tmpdir(), "cache-"));
+    const wf = realpathSync(mkdtempSync(join(tmpdir(), "cache-")));
     writeDocCache(wf, "spec.md", { planHash: "aaa", recommendedAt: "t1" });
     strictEqual(readDocCache(wf, "plan-1.md"), null);
   });
 
   it("reads a legacy top-level cache shape as empty", () => {
-    const wf = mkdtempSync(join(tmpdir(), "cache-"));
+    const wf = realpathSync(mkdtempSync(join(tmpdir(), "cache-")));
     writeFileSync(
       join(wf, "plan-review.cache.json"),
       JSON.stringify({ planHash: "old", recommendedAt: "t" }),
@@ -127,7 +133,7 @@ describe("workflow-review-core: per-doc cache", () => {
   });
 
   it("a write after a legacy file discards the legacy entry and starts fresh", () => {
-    const wf = mkdtempSync(join(tmpdir(), "cache-"));
+    const wf = realpathSync(mkdtempSync(join(tmpdir(), "cache-")));
     writeFileSync(
       join(wf, "plan-review.cache.json"),
       JSON.stringify({ planHash: "old", recommendedAt: "t" }),
@@ -457,7 +463,7 @@ describe("workflow-review-core: isCompleteAndChanged (K10)", () => {
 
   it("returns false when the hash is unchanged from the cached entry", () => {
     const content = "- Plan Status: complete\nbody";
-    const wf = mkdtempSync(join(tmpdir(), "cache-"));
+    const wf = realpathSync(mkdtempSync(join(tmpdir(), "cache-")));
     writeDocCache(wf, "spec.md", {
       planHash: computeDocumentHash(content, SPEC_NORMALIZERS),
       recommendedAt: "t1",

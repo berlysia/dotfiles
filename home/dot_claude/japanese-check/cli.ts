@@ -1,6 +1,5 @@
 import { readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
 import { calques, check, lint, newFacts, outline, terms } from "./analyze.ts";
 import { checkDependencies, DependencyMissingError } from "./deps.ts";
 import type { DependencyGroup } from "./deps.ts";
@@ -319,10 +318,10 @@ function die(error: unknown): never {
   process.exit(2);
 }
 
-if (
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(resolve(process.argv[1])).href
-) {
+// argv[1] と import.meta.url の比較は使わない: Node はエントリの URL を realpath に
+// するので、symlink を通した起動（macOS の /var → /private/var）で一致せず、
+// 何もせずに 0 で終わる。
+if (import.meta.main) {
   process.on("uncaughtException", die);
   process.on("unhandledRejection", die);
   main(process.argv.slice(2)).catch(die);

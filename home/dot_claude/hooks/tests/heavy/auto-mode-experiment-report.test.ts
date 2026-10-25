@@ -1,7 +1,13 @@
 #!/usr/bin/env node --test
 
 import { strictEqual } from "node:assert";
-import { existsSync, mkdtempSync, rmSync, statSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  rmSync,
+  statSync,
+  realpathSync,
+} from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -15,7 +21,7 @@ describe("replayOne", () => {
   it("leaves the real decisions log alone", async () => {
     const real = join(homedir(), ".claude", "logs", "decisions.jsonl");
     const before = existsSync(real) ? statSync(real) : null;
-    const dir = mkdtempSync(join(tmpdir(), "replay-test-"));
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "replay-test-")));
     try {
       await replayOne({
         id: "toolu_test",

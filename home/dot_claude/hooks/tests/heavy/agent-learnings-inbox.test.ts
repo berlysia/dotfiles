@@ -8,6 +8,7 @@ import {
   rmSync,
   symlinkSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -24,7 +25,9 @@ import {
 } from "../../lib/agent-learnings/core/store.ts";
 
 async function withStore(fn: (store: string) => Promise<void>): Promise<void> {
-  const root = mkdtempSync(join(tmpdir(), "agent-learnings-inbox-"));
+  const root = realpathSync(
+    mkdtempSync(join(tmpdir(), "agent-learnings-inbox-")),
+  );
   try {
     const store = join(root, "agent-learnings");
     initStore(store, runGit);
@@ -169,7 +172,9 @@ describe("inbox", () => {
   it("refuses to run when inbox is a symlink, leaving the target untouched", () =>
     withStore(async (store) => {
       const { inbox } = storePaths(store);
-      const outside = mkdtempSync(join(tmpdir(), "agent-learnings-outside-"));
+      const outside = realpathSync(
+        mkdtempSync(join(tmpdir(), "agent-learnings-outside-")),
+      );
       try {
         writeFileSync(join(outside, "9-R-000000000009.json"), "not json");
         rmSync(inbox, { recursive: true });

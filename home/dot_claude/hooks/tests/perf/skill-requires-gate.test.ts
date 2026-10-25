@@ -10,6 +10,7 @@ import {
   rmSync,
   writeFileSync,
   writeSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -28,7 +29,7 @@ const PR_FM =
   'requires-skills: [tanteki, japanese-tech-writing, koncise]\nrequires-skills-before: ["Bash(gh pr create)"]';
 const dirs: string[] = [];
 const tempDir = () => {
-  const dir = mkdtempSync(join(tmpdir(), "skill-requires-perf-"));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "skill-requires-perf-")));
   dirs.push(dir);
   return dir;
 };

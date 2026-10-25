@@ -8,6 +8,7 @@ import {
   rmSync,
   symlinkSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -316,7 +317,7 @@ describe("deny-node-modules.ts hook behavior", () => {
     // The symlink-removal exemption reads the whole text before the parser
     // does, so it must not apply to a command over the length limit.
     it("does not exempt a symlink removal padded over the length limit", async () => {
-      const dir = mkdtempSync(join(tmpdir(), "dnm-limit-"));
+      const dir = realpathSync(mkdtempSync(join(tmpdir(), "dnm-limit-")));
       try {
         mkdirSync(join(dir, "target"));
         symlinkSync(join(dir, "target"), join(dir, NM));
@@ -410,7 +411,7 @@ describe("deny-node-modules.ts boundary behaviour", () => {
     for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
   });
 
-  const root = mkdtempSync(join(tmpdir(), "dnm-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "dnm-")));
   tempDirs.push(root);
   ok(/^[A-Za-z0-9_\/.@+=:,-]+$/.test(root), root);
   mkdirSync(join(root, "target"));

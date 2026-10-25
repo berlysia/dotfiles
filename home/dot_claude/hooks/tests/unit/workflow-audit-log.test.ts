@@ -1,7 +1,7 @@
 #!/usr/bin/env node --test
 
 import { strict as assert } from "node:assert";
-import { mkdirSync, mkdtempSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -14,7 +14,7 @@ import {
 
 describe("workflow-audit-log: appendOffPlanLog raw-token handling (K9a)", () => {
   it("records a plain path target as path=<JSON>", () => {
-    const wf = mkdtempSync(join(tmpdir(), "audit-log-"));
+    const wf = realpathSync(mkdtempSync(join(tmpdir(), "audit-log-")));
     appendOffPlanLog(wf, "Write", "src/a.ts");
     const content = readFileSync(join(wf, "off-plan-writes.log"), "utf-8");
     assert.match(content, /path="src\/a\.ts"/);
@@ -22,14 +22,14 @@ describe("workflow-audit-log: appendOffPlanLog raw-token handling (K9a)", () => 
   });
 
   it("records a target containing an unexpanded $ token as raw-token:<JSON>", () => {
-    const wf = mkdtempSync(join(tmpdir(), "audit-log-"));
+    const wf = realpathSync(mkdtempSync(join(tmpdir(), "audit-log-")));
     appendOffPlanLog(wf, "Bash", "$HOME/scratch/out.ts");
     const content = readFileSync(join(wf, "off-plan-writes.log"), "utf-8");
     assert.match(content, /path=raw-token:"\$HOME\/scratch\/out\.ts"/);
   });
 
   it("recordDelegationUse reports the first use of a plan version under a spec version once", () => {
-    const wf = mkdtempSync(join(tmpdir(), "audit-log-"));
+    const wf = realpathSync(mkdtempSync(join(tmpdir(), "audit-log-")));
     const use = {
       planName: "plan-1.md",
       planHash: "a".repeat(64),
@@ -60,7 +60,7 @@ describe("workflow-audit-log: appendOffPlanLog raw-token handling (K9a)", () => 
   });
 
   it("recordDelegatedOffPlanWrite reports a target once per spec version", () => {
-    const wf = mkdtempSync(join(tmpdir(), "audit-log-"));
+    const wf = realpathSync(mkdtempSync(join(tmpdir(), "audit-log-")));
     const write = { target: "/repo/src/b.ts", specHash: "b".repeat(64) };
     assert.deepEqual(recordDelegatedOffPlanWrite(wf, write), {
       first: true,
@@ -87,7 +87,7 @@ describe("workflow-audit-log: appendOffPlanLog raw-token handling (K9a)", () => 
   });
 
   it("recordDelegationUse says so when the log cannot be written", () => {
-    const wf = mkdtempSync(join(tmpdir(), "audit-log-"));
+    const wf = realpathSync(mkdtempSync(join(tmpdir(), "audit-log-")));
     mkdirSync(join(wf, DELEGATION_USES_LOG));
     const use = {
       planName: "plan-1.md",

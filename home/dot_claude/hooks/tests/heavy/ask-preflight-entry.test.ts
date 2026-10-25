@@ -11,6 +11,7 @@ import {
   statSync,
   utimesSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -42,7 +43,7 @@ const HOUR = 60 * 60 * 1000;
 const roots: string[] = [];
 
 function freshDir(prefix: string): string {
-  const dir = mkdtempSync(join(tmpdir(), prefix));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
   roots.push(dir);
   return dir;
 }

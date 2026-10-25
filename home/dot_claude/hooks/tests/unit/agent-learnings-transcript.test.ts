@@ -8,6 +8,7 @@ import {
   symlinkSync,
   truncateSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -46,7 +47,9 @@ const toolResult = (content: string, isError?: boolean): string =>
 function withProjects(
   fn: (ctx: { root: string; projects: string; file: string }) => void,
 ): void {
-  const root = mkdtempSync(join(tmpdir(), "agent-learnings-transcript-"));
+  const root = realpathSync(
+    mkdtempSync(join(tmpdir(), "agent-learnings-transcript-")),
+  );
   try {
     const projects = join(root, "projects");
     mkdirSync(join(projects, "p"), { recursive: true });
