@@ -62,7 +62,9 @@ ast-grep = "latest"
 apm = "0.35.0"
 # The source repo is private, so take the public npm package instead of github:.
 # It is our own package with a handful of weekly downloads, so the low-download gate is explicitly approved.
-"npm:@berlysia/shiori" = { version = "0.2.2", allow_low_downloads = true }
+# 0.3.0 was under a week old when pinned (it reads Markdown comments); an exact version is not filtered
+# by minimum_release_age, so taking it early was deliberate.
+"npm:@berlysia/shiori" = { version = "0.3.0", allow_low_downloads = true }
 
 # Tools AI agents reach for (article: ai-agent-first dotfiles)
 yq = "4.54.1"
