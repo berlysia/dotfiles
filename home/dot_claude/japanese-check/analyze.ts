@@ -2,6 +2,13 @@ import { paragraphs, proseLines } from "./markdown.ts";
 import type { ProseLine } from "./markdown.ts";
 import type { Tokenizer } from "./tokenizer.ts";
 import type { Genre } from "./types.ts";
+import { compileEntries, findHits, selectEntries } from "./words.ts";
+import type {
+  CompiledEntry,
+  TruncationReason,
+  WordEntry,
+  WordKind,
+} from "./words.ts";
 
 export interface Finding {
   rule: string;
@@ -116,39 +123,183 @@ export function lint(lines: ProseLine[], genre?: Genre): Finding[] {
   return result;
 }
 
-// Sudachi normalizes inflections of 効く to 利く.
-const motionVerbs = new Set([
-  "拾う",
-  "引く",
-  "通る",
-  "効く",
-  "利く",
-  "響く",
-  "足す",
-]);
-const placeNouns = new Set(["入口", "入り口", "受け口", "口"]);
+export type ReviewKind = Exclude<WordKind, "named-translationese">;
 
-export function calques(lines: ProseLine[], tokenize: Tokenizer): Finding[] {
-  const result: Finding[] = [];
-  for (const row of lines) {
-    for (const token of tokenize(row.text)) {
-      if (
-        (token.pos[0] === "動詞" && motionVerbs.has(token.normalized)) ||
-        (token.pos[0] === "名詞" && placeNouns.has(token.normalized))
-      ) {
-        result.push(
-          finding(
-            row,
-            "translation-candidate",
-            token.start,
-            token.surface,
-            "字義どおりの用法・定着した専門用語なら残す。何がどうなるか不明なら原文の範囲で言い直す。",
-          ),
-        );
+/**
+ * One `action: review` entry of the word list, in list order. A lemma entry is
+ * matched against Sudachi tokens, a regex entry against the prose line.
+ * analyze.ts never reads the file: the caller passes the entries in.
+ */
+export type ReviewEntry =
+  | {
+      match: "lemma";
+      word: string;
+      kind: ReviewKind;
+      lemmas: string[];
+      pos: string;
+      fix: string;
+    }
+  | {
+      match: "regex";
+      word: string;
+      kind: ReviewKind;
+      compiled: CompiledEntry;
+    };
+
+const REVIEW_KINDS: readonly ReviewKind[] = [
+  "calque",
+  "jargon",
+  "metaphor-verb",
+  "slop",
+];
+const REVIEW_MATCHES = ["lemma", "regex"] as const;
+
+// The rule names are part of the keep markers in existing documents.
+const REVIEW_RULES: Record<ReviewKind, string> = {
+  calque: "translation-candidate",
+  jargon: "word-jargon",
+  "metaphor-verb": "word-metaphor-verb",
+  slop: "word-slop",
+};
+
+/**
+ * Picks the review entries out of a validated list and compiles the regex ones.
+ * The result keeps the list's order: it decides which entry's rule survives
+ * when two entries hit the same spot (and so which keep marker applies).
+ */
+export function buildReviewEntries(entries: WordEntry[]): {
+  review: ReviewEntry[];
+  notices: string[];
+} {
+  const ordered: Array<{ index: number; entry: ReviewEntry }> = [];
+  const notices: string[] = [];
+  for (const kind of REVIEW_KINDS) {
+    for (const match of REVIEW_MATCHES) {
+      const selected = selectEntries(entries, {
+        kind,
+        action: "review",
+        match,
+      });
+      if (match === "lemma") {
+        for (const item of selected) {
+          if (item.lemmas === undefined || item.pos === undefined) continue;
+          ordered.push({
+            index: item.index,
+            entry: {
+              match: "lemma",
+              word: item.word,
+              kind,
+              lemmas: item.lemmas,
+              pos: item.pos,
+              fix: item.fix,
+            },
+          });
+        }
+      } else {
+        const result = compileEntries(selected);
+        notices.push(...result.notices);
+        for (const compiled of result.compiled) {
+          ordered.push({
+            index: compiled.index,
+            entry: { match: "regex", word: compiled.word, kind, compiled },
+          });
+        }
       }
     }
   }
-  return result;
+  ordered.sort((a, b) => a.index - b.index);
+  return { review: ordered.map((item) => item.entry), notices };
+}
+
+interface Candidate {
+  rank: number;
+  start: number;
+  finding: Finding;
+}
+
+function reviewCandidates(
+  lines: ProseLine[],
+  tokenize: Tokenizer,
+  review: readonly ReviewEntry[],
+): { findings: Finding[]; truncated: TruncationReason[] } {
+  const lemmaRanks = new Map<string, number[]>();
+  const regexRanks = new Map<number, number>();
+  const compiled: CompiledEntry[] = [];
+  review.forEach((entry, rank) => {
+    if (entry.match === "lemma") {
+      for (const lemma of entry.lemmas) {
+        const key = `${entry.pos}\0${lemma}`;
+        lemmaRanks.set(key, [...(lemmaRanks.get(key) ?? []), rank]);
+      }
+    } else {
+      regexRanks.set(entry.compiled.index, rank);
+      compiled.push(entry.compiled);
+    }
+  });
+  const findings: Finding[] = [];
+  const truncated = new Set<TruncationReason>();
+  for (const row of lines) {
+    const candidates: Candidate[] = [];
+    if (lemmaRanks.size > 0) {
+      for (const token of tokenize(row.text)) {
+        for (const rank of lemmaRanks.get(
+          `${token.pos[0] ?? ""}\0${token.normalized}`,
+        ) ?? []) {
+          const entry = review[rank];
+          if (entry === undefined) continue;
+          candidates.push({
+            rank,
+            start: token.start,
+            finding: finding(
+              row,
+              REVIEW_RULES[entry.kind],
+              token.start,
+              token.surface,
+              entry.match === "lemma" ? entry.fix : "",
+            ),
+          });
+        }
+      }
+    }
+    if (compiled.length > 0) {
+      const result = findHits(row.text, compiled);
+      for (const reason of result.truncated) truncated.add(reason);
+      for (const hit of result.hits) {
+        const rank = regexRanks.get(hit.index);
+        const entry = rank === undefined ? undefined : review[rank];
+        if (rank === undefined || entry === undefined) continue;
+        candidates.push({
+          rank,
+          start: hit.start,
+          finding: finding(
+            row,
+            REVIEW_RULES[entry.kind],
+            hit.start,
+            row.text.slice(hit.start, hit.end),
+            hit.fix,
+          ),
+        });
+      }
+    }
+    // Same line, column and surface from two entries: the earlier entry wins.
+    candidates.sort((a, b) => a.start - b.start || a.rank - b.rank);
+    const seen = new Set<string>();
+    for (const item of candidates) {
+      const key = `${item.start}\0${item.finding.text}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      findings.push(item.finding);
+    }
+  }
+  return { findings, truncated: [...truncated] };
+}
+
+export function calques(
+  lines: ProseLine[],
+  tokenize: Tokenizer,
+  review: readonly ReviewEntry[],
+): Finding[] {
+  return reviewCandidates(lines, tokenize, review).findings;
 }
 
 const SENTENCE_END_MARKS = new Set(["。", "！", "？", "!", "?"]);
@@ -309,15 +460,17 @@ export function newFacts(
 export function check(
   markdown: string,
   tokenize: Tokenizer,
+  review: readonly ReviewEntry[],
   genre?: Genre,
   source?: string,
 ) {
   const lines = proseLines(markdown);
+  const matched = reviewCandidates(lines, tokenize, review);
   return {
     schemaVersion: 1,
     analyzer: { engine: "sudachi", packageVersion: "0.1.5", mode: "C" },
     findings: lint(lines, genre),
-    calques: calques(lines, tokenize),
+    calques: matched.findings,
     outline: outline(lines),
     terms: terms(lines, tokenize),
     paragraphs: paragraphs(lines),
@@ -328,6 +481,11 @@ export function check(
     limitations: [
       "候補の検出であり、正確さや自然さの合否判定ではない。",
       "係り受けは解析しない。新出語がなくても意味や確度が変わっている可能性がある。",
+      ...(matched.truncated.length > 0
+        ? [
+            `語の一覧の照合を途中で打ち切った箇所がある（${matched.truncated.join("、")}）。残りで照合した。`,
+          ]
+        : []),
     ],
   };
 }

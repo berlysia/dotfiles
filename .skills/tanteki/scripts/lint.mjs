@@ -8,7 +8,6 @@ import { createLinter, loadLinterFormatter } from "textlint";
 import markdownPlugin from "@textlint/textlint-plugin-markdown";
 import textPlugin from "@textlint/textlint-plugin-text";
 import presetJapanese from "textlint-rule-preset-japanese";
-import noAiJargon from "../rules/no-ai-jargon.mjs";
 import noOpaqueCompound from "../rules/no-opaque-compound.mjs";
 import noVagueAction from "../rules/no-vague-action.mjs";
 import stockBoundary from "../rules/stock-boundary.mjs";
@@ -19,7 +18,6 @@ const configPath = resolve(root, ".textlintrc.json");
 const types = new Set(["design-doc", "prd", "adr", "rfc", "stock", "flow", "record"]);
 const stockTypes = new Set(["design-doc", "prd", "adr", "rfc", "stock"]);
 const customRules = {
-  "no-ai-jargon": noAiJargon,
   "no-opaque-compound": noOpaqueCompound,
   "no-vague-action": noVagueAction,
   "stock-boundary": stockBoundary,

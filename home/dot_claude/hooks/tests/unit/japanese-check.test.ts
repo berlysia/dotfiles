@@ -70,6 +70,11 @@ import {
   createTokenizer,
   decodeTokens,
 } from "../../../japanese-check/tokenizer.ts";
+import {
+  rawEntry,
+  reviewFrom,
+  shippedReview,
+} from "../support/japanese-check-words.ts";
 
 describe("Japanese prose extraction", () => {
   it("excludes frontmatter, fenced/indented code, comments, inline code and link destinations", () => {
@@ -476,6 +481,7 @@ describe("Sudachi-backed Japanese review", () => {
     const findings = calques(
       proseLines("# API の入口\nデータを拾った。\n`拾った`"),
       tokenize,
+      shippedReview(["calque"]),
     );
     assert.ok(findings.some((item) => item.text === "入口" && item.line === 1));
     assert.ok(findings.some((item) => item.text === "拾っ" && item.line === 2));
@@ -483,7 +489,11 @@ describe("Sudachi-backed Japanese review", () => {
   });
 
   it("finds inflected 効く even when the dictionary normalizes its spelling", async () => {
-    const findings = calques(proseLines("薬が効いた。"), await tokenizer);
+    const findings = calques(
+      proseLines("薬が効いた。"),
+      await tokenizer,
+      shippedReview(["calque"]),
+    );
     assert.ok(findings.some((item) => item.text === "効い"));
   });
 
@@ -531,7 +541,7 @@ describe("Sudachi-backed Japanese review", () => {
 
   it("check() carries the same outline as outline() and keeps schemaVersion 1", async () => {
     const markdown = "# 手順\n\n一文目。\n二文目。\n\n「行く。」次の文。\n";
-    const result = check(markdown, await tokenizer);
+    const result = check(markdown, await tokenizer, shippedReview(["calque"]));
     assert.deepEqual(result.outline, outline(proseLines(markdown)));
     assert.equal(result.schemaVersion, 1);
   });
@@ -540,6 +550,7 @@ describe("Sudachi-backed Japanese review", () => {
     const result = check(
       "次回までに合意した。",
       await tokenizer,
+      shippedReview(["calque"]),
       "business",
       "次回までに検討する。",
     );
@@ -2014,6 +2025,312 @@ describe("keep markers", () => {
       assert.equal(report.kept.length, 1);
       assert.equal(report.kept[0]?.text, "足す");
       assert.deepEqual(report.keepIssues, []);
+    });
+  });
+});
+
+describe("the calque entries of the shipped list", () => {
+  const sudachi = findDependency("sudachi");
+  assert.ok(sudachi.ok);
+  const tokenizer = createTokenizer(sudachi.entry);
+
+  it("hold the verbs and nouns calques() used to hard-code", () => {
+    const lemmas = new Set(
+      shippedReview(["calque"]).flatMap((entry) =>
+        entry.match === "lemma" ? entry.lemmas : [],
+      ),
+    );
+    assert.deepEqual(
+      [...lemmas].sort(),
+      [
+        "入り口",
+        "入口",
+        "口",
+        "受け口",
+        "引く",
+        "拾う",
+        "効く",
+        "足す",
+        "通る",
+        "利く",
+        "響く",
+      ].sort(),
+    );
+  });
+
+  it("report nothing without review entries, so no word is left in analyze.ts", async () => {
+    assert.deepEqual(
+      calques(
+        proseLines("薬が効いた。\n数を足す。\nAPI の入口"),
+        await tokenizer,
+        [],
+      ),
+      [],
+    );
+  });
+
+  it("report the same candidate as before the words moved", async () => {
+    const found = calques(
+      proseLines("薬が効いた。"),
+      await tokenizer,
+      shippedReview(),
+    );
+    assert.deepEqual(found, [
+      {
+        rule: "translation-candidate",
+        line: 1,
+        column: 3,
+        text: "効い",
+        reason:
+          "字義どおりの用法・定着した専門用語なら残す。何がどうなるか不明なら原文の範囲で言い直す。",
+      },
+    ]);
+  });
+});
+
+describe("review entries from the word list", () => {
+  const sudachi = findDependency("sudachi");
+  assert.ok(sudachi.ok);
+  const tokenizer = createTokenizer(sudachi.entry);
+  const dir = realpathSync(
+    mkdtempSync(join(tmpdir(), "japanese-check-review-")),
+  );
+  after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const jargonLemma = rawEntry({
+    word: "ロバスト",
+    kind: "jargon",
+    match: "lemma",
+    lemmas: ["ロバスト"],
+    pos: "形状詞",
+  });
+  const slopRegex = rawEntry({
+    word: "既定では",
+    kind: "slop",
+    match: "regex",
+    pattern: "既定では",
+  });
+  const calqueLemma = rawEntry({
+    word: "ロバスト（直訳）",
+    kind: "calque",
+    match: "lemma",
+    lemmas: ["ロバスト"],
+    pos: "形状詞",
+    english: "robust",
+  });
+  const jargonRegex = rawEntry({
+    word: "ロバスト（語）",
+    kind: "jargon",
+    match: "regex",
+    pattern: "ロバスト",
+  });
+
+  async function found(markdown: string, entries: unknown[]) {
+    return calques(proseLines(markdown), await tokenizer, reviewFrom(entries));
+  }
+
+  it("reports a lemma entry as word-jargon with the entry's fix", async () => {
+    const result = await found("ロバストな設計", [jargonLemma]);
+    assert.equal(result.length, 1);
+    assert.equal(result[0]?.rule, "word-jargon");
+    assert.equal(result[0]?.text, "ロバスト");
+    assert.equal(result[0]?.reason, "確かめる。");
+  });
+
+  it("reports a regex entry with its rule and column", async () => {
+    const result = await found("既定では有効", [slopRegex]);
+    assert.equal(result.length, 1);
+    assert.equal(result[0]?.rule, "word-slop");
+    assert.equal(result[0]?.column, 1);
+    assert.equal(result[0]?.text, "既定では");
+  });
+
+  it("maps each kind to its rule", async () => {
+    const verb = rawEntry({
+      word: "寄り添う",
+      kind: "metaphor-verb",
+      match: "lemma",
+      lemmas: ["寄り添う"],
+      pos: "動詞",
+    });
+    const calqueDesign = rawEntry({
+      word: "設計",
+      kind: "calque",
+      match: "lemma",
+      lemmas: ["設計"],
+      pos: "名詞",
+      english: "design",
+    });
+    const result = await found("既定ではロバストな設計に寄り添った。", [
+      slopRegex,
+      jargonLemma,
+      verb,
+      calqueDesign,
+    ]);
+    assert.deepEqual(
+      result.map((item) => item.rule),
+      [
+        "word-slop",
+        "word-jargon",
+        "translation-candidate",
+        "word-metaphor-verb",
+      ],
+    );
+  });
+
+  it("skips inline code and fenced code", async () => {
+    assert.deepEqual(
+      await found("```\n既定では\n```\n`既定では`", [slopRegex]),
+      [],
+    );
+  });
+
+  it("keeps only the earlier entry when two entries hit the same spot", async () => {
+    const calqueFirst = await found("ロバストな設計", [
+      calqueLemma,
+      jargonRegex,
+    ]);
+    assert.deepEqual(
+      calqueFirst.map((item) => item.rule),
+      ["translation-candidate"],
+    );
+    const jargonFirst = await found("ロバストな設計", [
+      jargonRegex,
+      calqueLemma,
+    ]);
+    assert.deepEqual(
+      jargonFirst.map((item) => item.rule),
+      ["word-jargon"],
+    );
+  });
+
+  describe("through the CLI", () => {
+    let number = 0;
+    function listFile(content: string) {
+      const file = join(dir, `words-${++number}.json`);
+      writeFileSync(file, content);
+      return file;
+    }
+    const listOf = (...entries: unknown[]) =>
+      JSON.stringify({ schema: 1, entries });
+    function doc(content: string) {
+      const key = ++number;
+      const file = join(dir, `doc-${key}.md`);
+      writeFileSync(file, content);
+      return { file, stateDir: join(dir, `state-${key}`) };
+    }
+    async function run(args: string[], stateDir: string, wordListPath: string) {
+      const output = mock.method(console, "log", () => {});
+      const errors = mock.method(console, "error", () => {});
+      try {
+        await main(args, { stateDir, wordListPath });
+        return JSON.parse(String(output.mock.calls[0]?.arguments[0])) as {
+          findings: unknown[];
+          calques: Array<{ rule: string; text: string }>;
+          kept: unknown[];
+          keepIssues: unknown[];
+          limitations: string[];
+          verification: { status: string } | null;
+        };
+      } finally {
+        output.mock.restore();
+        errors.mock.restore();
+      }
+    }
+    const stateFiles = (stateDir: string) => {
+      try {
+        return readdirSync(stateDir, { recursive: true });
+      } catch {
+        return [];
+      }
+    };
+
+    it("keeps a candidate with a marker for its rule", async () => {
+      const words = listFile(listOf(jargonLemma));
+      const d = doc(
+        "ロバストな設計 <!-- ja-check-keep word-jargon -- ロバスト 定義済みの用語 -->\n",
+      );
+      const report = await run(["check", d.file], d.stateDir, words);
+      assert.equal(report.calques.length, 1);
+      assert.equal(report.kept.length, 1);
+      assert.deepEqual(report.keepIssues, []);
+      assert.equal(report.verification?.status, "ready");
+    });
+
+    it("the calques command finds 効く with the shipped list", async () => {
+      const d = doc("薬が効いた。\n");
+      const output = mock.method(console, "log", () => {});
+      try {
+        await main(["calques", d.file], { stateDir: d.stateDir });
+        const result = JSON.parse(String(output.mock.calls[0]?.arguments[0]));
+        assert.equal(result.length, 1);
+        assert.equal(result[0].rule, "translation-candidate");
+      } finally {
+        output.mock.restore();
+      }
+    });
+
+    it("the calques command reads the list too", async () => {
+      const words = listFile(listOf(jargonLemma));
+      const d = doc("ロバストな設計\n");
+      const output = mock.method(console, "log", () => {});
+      try {
+        await main(["calques", d.file], {
+          stateDir: d.stateDir,
+          wordListPath: words,
+        });
+        const result = JSON.parse(String(output.mock.calls[0]?.arguments[0]));
+        assert.equal(result.length, 1);
+        assert.equal(result[0].rule, "word-jargon");
+      } finally {
+        output.mock.restore();
+      }
+    });
+
+    it("does not record a check when the list is missing", async () => {
+      const d = doc("ロバストな設計\n");
+      const report = await run(
+        ["check", d.file],
+        d.stateDir,
+        join(dir, "no-such-list.json"),
+      );
+      assert.equal(report.verification, null);
+      assert.ok(
+        report.limitations.some((line) =>
+          line.includes("語の一覧を読めなかった"),
+        ),
+      );
+      assert.deepEqual(stateFiles(d.stateDir), []);
+    });
+
+    it("does not record a check when the list is not JSON", async () => {
+      const d = doc("ロバストな設計\n");
+      const words = listFile("{ not json");
+      const report = await run(["check", d.file], d.stateDir, words);
+      assert.equal(report.verification, null);
+      assert.ok(
+        report.limitations.some(
+          (line) =>
+            line.includes("語の一覧を読めなかった") && line.includes("JSON"),
+        ),
+      );
+      assert.deepEqual(stateFiles(d.stateDir), []);
+    });
+
+    it("matches with the entries that passed and records nothing when one entry fails", async () => {
+      const d = doc("ロバストな設計\n");
+      const words = listFile(
+        listOf(jargonLemma, rawEntry({ kind: "unknown" })),
+      );
+      const report = await run(["check", d.file], d.stateDir, words);
+      assert.equal(report.calques.length, 1);
+      assert.equal(report.verification, null);
+      assert.ok(
+        report.limitations.some((line) =>
+          line.includes("語の一覧を読めなかった"),
+        ),
+      );
+      assert.deepEqual(stateFiles(d.stateDir), []);
     });
   });
 });

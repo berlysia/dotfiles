@@ -9,7 +9,6 @@
     "kuromojin": "3.0.1",
     "sentence-splitter": "5.0.1",
     "textlint": "15.8.0",
-    "textlint-rule-preset-ai-words-ja": "1.2.1",
     "textlint-rule-preset-japanese": "10.0.4",
     "textlint-util-to-string": "3.3.4"
   }

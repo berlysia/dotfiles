@@ -112,6 +112,11 @@ export interface Hit {
   fix: string;
   english?: string;
   excerpt: string;
+  /** `CompiledEntry.index` of the entry that matched */
+  index: number;
+  /** UTF-16 offsets of the match in the scanned line (after the line-length cut) */
+  start: number;
+  end: number;
 }
 
 export type TruncationReason =
@@ -621,6 +626,9 @@ export function findHits(
             word: entry.word,
             fix: entry.fix,
             ...(entry.english !== undefined && { english: entry.english }),
+            index: entry.index,
+            start: range.start,
+            end: range.end,
             excerpt: sanitizeExcerpt(
               line.slice(
                 Math.max(0, range.start - EXCERPT_MARGIN),

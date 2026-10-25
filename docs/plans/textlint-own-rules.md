@@ -11,9 +11,11 @@
 | -------------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
 | 走らせる仕組み | `.skills/tanteki/scripts/lint.mjs` が `@textlint/kernel` でルールを組み立てる。`--type` で文書の種類ごとに検査を変える | `textlint-global` が textlint の CLI を呼ぶ    |
 | 設定           | `.skills/tanteki/.textlintrc.json`                                                                                     | `home/dot_config/textlint/dot_textlintrc.json` |
-| ルール         | `preset-japanese` と、独自ルール 5 本（`.skills/tanteki/rules/`）                                                      | `preset-ai-words-ja`                           |
+| ルール         | `preset-japanese` と、独自ルール 4 本（`.skills/tanteki/rules/`）                                                      | `preset-japanese`（仮の設定。ADR-0050）        |
 
 - 独自ルールは、上流 `iwasa-kosui/tanteki` の写し（`Derived from` 行あり）で、週次の `skill-upstreams.yml` で上流の変更を追っている
+- 語の辞書で検出していた `no-ai-jargon` と `preset-ai-words-ja` の語は、japanese-check の一覧（`home/dot_claude/japanese-check/data/words.json`）に移した（ADR-0050）
+- グローバル textlint の設定は、rule が 0 本だと止まる。そのため、構想が決まるまで `preset-japanese` にしてある
 
 ## 前提: 文章スキルの役割分け（ADR-0036）との関係
 
@@ -25,7 +27,7 @@ ADR-0036 は、検査の道具を含めて自作する案（「上流を写さ�
 
 - 1 つにまとめる単位。走らせる仕組み（`textlint-global` に寄せるか、`lint.mjs` のような自前の runner に寄せるか）と、設定（文書の種類ごとの切り替えを、CLI の設定ファイルでどう表すか）
 - 独自ルールの置き場（`home/dot_config/textlint/` の下か、別のパッケージか）と、配備の経路
-- 解釈し直す範囲。5 本のルール（`no-ai-jargon`、`no-opaque-compound`、`no-vague-action`、`stock-boundary`、`table-cell-length`）と `rules/lib/japanese-rule.mjs` の、どれを残し、どれを書き直し、どれを捨てるか
+- 解釈し直す範囲。4 本のルール（`no-opaque-compound`、`no-vague-action`、`stock-boundary`、`table-cell-length`）と `rules/lib/japanese-rule.mjs` の、どれを残し、どれを書き直し、どれを捨てるか
 - 上流の tests の代わりに、自分で持つ tests
 - ルールを自作に移した後の、tanteki の `Derived from` 行の扱い（`check-skill-upstreams.sh` は 1 スキルに `Derived from` を 1 本だけ許し、LICENSE があれば必須にする）と、週次の追跡から外すもの
 - 上流のファイルのうち、規則を役割へ移したものと入口に残したものの振り分け（各役割スキルの「参考」節と、ADR-0036「上流の取り込み」の取り込み時の確認）との整合

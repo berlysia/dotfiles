@@ -225,10 +225,14 @@ describe("translationese-words.json (old list)", () => {
     for (const notice of result.notices) ok(notice.includes("量指定"), notice);
   });
 
-  it("matches data/words.json field by field (add words to both lists until the switch)", () => {
+  it("matches the named entries of data/words.json field by field (add named words to both lists until the switch)", () => {
+    // Review entries live only in data/words.json; the old list has none.
     const data = JSON.parse(readFileSync(DATA_LIST, "utf-8")) as {
       entries: Record<string, unknown>[];
     };
+    data.entries = data.entries.filter(
+      (e) => e.kind === "named-translationese",
+    );
     const fields = [
       "word",
       "kind",
@@ -951,5 +955,45 @@ describe("translationese-scan.ts as a process", () => {
     const result = spawnHook("{ broken", home);
     strictEqual(result.status, 0, result.stderr);
     ok(!result.stdout.includes("permissionDecision"));
+  });
+});
+
+describe("review entries in the new list", () => {
+  it("are not compiled by the hook: only action fix reaches the scan", async () => {
+    const entry = (overrides: Record<string, unknown>) => ({
+      kind: "named-translationese",
+      action: "fix",
+      match: "regex",
+      origin: "o",
+      english: "e",
+      fix: "直す。",
+      examples: ["道具立て"],
+      nonExamples: ["い"],
+      ...overrides,
+    });
+    installList(
+      home,
+      JSON.stringify({
+        schema: 1,
+        entries: [
+          entry({ word: "道具立て", pattern: "道具立て" }),
+          entry({
+            word: "既定では",
+            kind: "slop",
+            action: "review",
+            pattern: "既定では",
+            english: undefined,
+          }),
+        ],
+      }),
+    );
+    const out = await write(
+      "docs/a.md",
+      `既定では${"あ".repeat(30)}\n道具立てを使う`,
+    );
+    ok(out);
+    strictEqual(out.split("\n").filter((l) => l.startsWith("- ")).length, 1);
+    ok(out.includes("道具立て"));
+    ok(!out.includes("既定では"));
   });
 });

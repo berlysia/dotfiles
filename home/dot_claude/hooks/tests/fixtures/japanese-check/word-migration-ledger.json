@@ -1,0 +1,392 @@
+[
+  {
+    "source": "no-ai-words",
+    "old": "効く",
+    "to": ["動作の動詞（拾う・引く・通る・効く・利く・響く・足す）", "効き"]
+  },
+  {
+    "source": "no-ai-words",
+    "old": "壊れる",
+    "to": "壊れる"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "走る",
+    "to": "走る"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "焼く",
+    "to": "焼く"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "黙って",
+    "to": "黙る"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "〜に落ちる",
+    "to": "〜に落ちる"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "崩す",
+    "to": "崩す"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "値を動かす",
+    "to": "値を動かす"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "〜から引く",
+    "to": "動作の動詞（拾う・引く・通る・効く・利く・響く・足す）"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "経路",
+    "to": "経路"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "死活",
+    "to": "死活"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "漏れ",
+    "to": "漏れ"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "帰結",
+    "to": "帰結"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "原初",
+    "to": "原初"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "穴",
+    "to": "穴"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "無差別",
+    "to": "無差別"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "正本",
+    "to": "正本"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "部品",
+    "to": "部品"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "検査",
+    "to": "検査"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "正典",
+    "to": "正典"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "配線する",
+    "to": "配線する"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "太る",
+    "to": "太る"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "見張る",
+    "to": "見張る"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "原料",
+    "to": "原料"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "実測",
+    "to": "実測"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "疑う",
+    "to": "疑う"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "照合",
+    "to": "照合"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "見落とす",
+    "to": "見落とす"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "突き合わせる",
+    "to": "突き合わせる"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "断定",
+    "to": "断定"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "入口",
+    "to": "場所の名詞（入口・入り口・受け口・口）"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "土台",
+    "to": "土台"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "道具",
+    "to": "道具"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "核心",
+    "to": "核心"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "構図",
+    "to": "構図"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "線引き",
+    "to": "線引き"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "事故",
+    "to": "事故"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "混ざる",
+    "to": "混ざる"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "落とし穴",
+    "to": "落とし穴"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "破綻",
+    "to": "破綻"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "素通り",
+    "to": "素通り"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "切り分ける",
+    "to": "切り分ける"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "潰す",
+    "to": "潰す"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "踏み込む",
+    "to": "踏み込む"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "溶かす",
+    "to": "溶かす"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "既定では",
+    "to": "既定では"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "定番",
+    "to": "定番"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "定石",
+    "to": "定石"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "〜した瞬間",
+    "to": "〜した瞬間"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "静かに",
+    "to": "静かに（動詞）"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "静かに（サ変の受身）",
+    "to": "静かに（サ変の受身）"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "無言",
+    "to": "無言"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "門",
+    "to": "門"
+  },
+  {
+    "source": "no-ai-words",
+    "old": "ゲート",
+    "to": "ゲート"
+  },
+  {
+    "source": "no-ai-jargon",
+    "old": "レバレッジ",
+    "to": "レバレッジ"
+  },
+  {
+    "source": "no-ai-jargon",
+    "old": "シームレス",
+    "to": "シームレス"
+  },
+  {
+    "source": "no-ai-jargon",
+    "old": "アクショナブル",
+    "to": "アクショナブル"
+  },
+  {
+    "source": "no-ai-jargon",
+    "old": "包括的",
+    "to": "包括的"
+  },
+  {
+    "source": "no-ai-jargon",
+    "old": "観測",
+    "to": "観測"
+  },
+  {
+    "source": "no-ai-jargon",
+    "old": "ホリスティック",
+    "to": "ホリスティック"
+  },
+  {
+    "source": "no-ai-jargon",
+    "old": "プロアクティブ",
+    "to": "プロアクティブ"
+  },
+  {
+    "source": "no-ai-jargon",
+    "old": "ロバスト",
+    "to": "ロバスト"
+  },
+  {
+    "source": "no-ai-jargon",
+    "old": "ゲームチェンジャー",
+    "to": "ゲームチェンジャー"
+  },
+  {
+    "source": "no-ai-jargon",
+    "old": "段+数",
+    "to": "段N"
+  },
+  {
+    "source": "no-ai-jargon",
+    "old": "最適化される",
+    "to": "最適化される"
+  },
+  {
+    "source": "no-ai-jargon",
+    "old": "価値の解放",
+    "to": "価値の解放"
+  },
+  {
+    "source": "no-ai-jargon",
+    "old": "アラインメントを取る",
+    "to": "アラインメントを取る"
+  },
+  {
+    "source": "calques",
+    "old": "拾う",
+    "to": "動作の動詞（拾う・引く・通る・効く・利く・響く・足す）"
+  },
+  {
+    "source": "calques",
+    "old": "引く",
+    "to": "動作の動詞（拾う・引く・通る・効く・利く・響く・足す）"
+  },
+  {
+    "source": "calques",
+    "old": "通る",
+    "to": "動作の動詞（拾う・引く・通る・効く・利く・響く・足す）"
+  },
+  {
+    "source": "calques",
+    "old": "効く",
+    "to": "動作の動詞（拾う・引く・通る・効く・利く・響く・足す）"
+  },
+  {
+    "source": "calques",
+    "old": "利く",
+    "to": "動作の動詞（拾う・引く・通る・効く・利く・響く・足す）"
+  },
+  {
+    "source": "calques",
+    "old": "響く",
+    "to": "動作の動詞（拾う・引く・通る・効く・利く・響く・足す）"
+  },
+  {
+    "source": "calques",
+    "old": "足す",
+    "to": "動作の動詞（拾う・引く・通る・効く・利く・響く・足す）"
+  },
+  {
+    "source": "calques",
+    "old": "入口",
+    "to": "場所の名詞（入口・入り口・受け口・口）"
+  },
+  {
+    "source": "calques",
+    "old": "入り口",
+    "to": "場所の名詞（入口・入り口・受け口・口）"
+  },
+  {
+    "source": "calques",
+    "old": "受け口",
+    "to": "場所の名詞（入口・入り口・受け口・口）"
+  },
+  {
+    "source": "calques",
+    "old": "口",
+    "to": "場所の名詞（入口・入り口・受け口・口）"
+  }
+]
