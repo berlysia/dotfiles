@@ -37,6 +37,25 @@ exact = true
 checksum.sha256 = "{{ $recallPluginSha256 }}"
 {{ end }}
 
+{{/* tla2tools.jar: the TLC model checker that .skills/formal-check runs. Source: the tlaplus/tlaplus release */}}
+{{/* asset of the same version. The sha256 below is the value computed from the downloaded file; the upstream */}}
+{{/* sha1 matched it as a secondary check (verified 2026-10-24). The reader, .skills/formal-check/scripts/lib/runtime.mjs, */}}
+{{/* confirms the version from the TLC banner line (TLC 2.19), so when raising the version, re-check the verdict */}}
+{{/* mapping table and version.mjs against upstream and fix them in the same change. No refreshPeriod: once fetched */}}
+{{/* the jar is served from chezmoi's cache. A failed fetch or checksum mismatch makes apply exit non-zero, the */}}
+{{/* same as the ni.zsh external above. Renovate does not watch this entry (no customManager), so a human raises */}}
+{{/* it. tests/agent-vm/run-templates.sh downloads the jar and compares it with this sha256; the agent-vm CI */}}
+{{/* job runs it whenever this file changes. The VM and */}}
+{{/* Windows get no jar: neither runs the installer or the reader. */}}
+{{- $tla2toolsVersion := "v1.7.4" }}
+{{- $tla2toolsSha256 := "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88" }}
+{{ if ne .chezmoi.os "windows" }}
+[".config/formal-check/tla2tools.jar"]
+type = "file"
+url = "https://github.com/tlaplus/tlaplus/releases/download/{{ $tla2toolsVersion }}/tla2tools.jar"
+checksum.sha256 = "{{ $tla2toolsSha256 }}"
+{{ end }}
+
 {{/* private-skills: personal canon (berlysia-style, berlysia-slide). */}}
 {{/* Cloned via SSH to a holding location, then merged into ~/.claude/skills and */}}
 {{/* ~/.codex/skills by run_after_sync-skills.sh. Public dotfiles stays safe. */}}

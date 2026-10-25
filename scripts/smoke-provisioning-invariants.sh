@@ -9,7 +9,8 @@
 # See docs/decisions/0014-hook-deps-install-phase.md and
 # docs/decisions/0017-provisioning-after-deploy.md.
 # It also covers the .install-state contract between the textlint installer
-# (writer) and the textlint-global wrapper (reader), in assertion L.
+# (writer) and the textlint-global wrapper (reader), in assertion L, and the one
+# between the formal-check installer and its reader (runtime.mjs), in assertion O.
 
 set -euo pipefail
 
@@ -996,6 +997,194 @@ if [ "$n2_rc" -eq 0 ] && [ ! -e "$n_marker" ] && jq empty "$n_settings" 2>/dev/n
   pass "N2: a successful rerun removes the marker and drops the carried-over Skill(keep-me)"
 else
   fail "N2: rc=${n2_rc}, marker or carried-over entry unexpected: $(head -3 "${n_dir}/out2.txt" | tr '\n' ' ')"
+fi
+
+# --- assertion O: formal-check installer .install-state contract ---
+# The installer copies package.json to .install-state and bun.lock to
+# .install-state.lock after a successful install. Its reader is
+# .skills/formal-check/scripts/lib/runtime.mjs; O1 and O4 call the reader on what
+# the installer left, the other cases look only at the installer's own effects.
+# bun is a stub that records its arguments and cwd and creates the file the
+# reader looks for. PATH holds the stub dir and a dir of symlinks to the few
+# tools the installer calls, so a developer's mise or bun cannot reach it.
+o_dir="${TMP_ROOT}/m"
+o_runtime_mjs="${REPO_ROOT}/.skills/formal-check/scripts/lib/runtime.mjs"
+o_installer="${o_dir}/installer.sh"
+o_tools="${o_dir}/tools"
+o_recover='chezmoi apply ~/.config/formal-check ~/.chezmoiscripts/10-install-formal-check-deps.sh'
+mkdir -p "$o_tools"
+for o_tool in date cp mv rm; do
+  ln -s "$(command -v "$o_tool")" "${o_tools}/${o_tool}"
+done
+render_script "${SCRIPTS_DIR}/run_after_10-install-formal-check-deps.sh.tmpl" "$o_installer"
+
+# make_bun_stub DIR LOG EXIT_CODE
+# Records "<args>|<cwd>" per call; on EXIT_CODE 0 it also creates
+# node_modules/z3-solver/package.json in the cwd, as a real install would.
+make_bun_stub() {
+  mkdir -p "$1"
+  cat > "$1/bun" <<STUB
+#!/bin/sh
+echo "\$*|\$PWD" >> "$2"
+if [ "$3" -eq 0 ]; then
+  /bin/mkdir -p node_modules/z3-solver && echo '{}' > node_modules/z3-solver/package.json
+fi
+exit $3
+STUB
+  chmod +x "$1/bun"
+}
+
+# make_install_dir DIR PACKAGE_JSON_BODY LOCK_BODY (LOCK_BODY empty: no bun.lock)
+make_install_dir() {
+  mkdir -p "$1"
+  printf '%s\n' "$2" > "$1/package.json"
+  if [ -n "$3" ]; then printf '%s\n' "$3" > "$1/bun.lock"; else rm -f "$1/bun.lock"; fi
+}
+
+# run_m_installer DIR STUB_DIR OUT [EXTRA_PATH_DIR]
+# Runs the rendered installer against DIR; returns its exit code.
+run_m_installer() {
+  CHEZMOI_FORMAL_CHECK_INSTALL_DIR="$1" PATH="${4:+$4:}${2}:${o_tools}" HOME="${o_dir}/home-unused" \
+    /bin/bash "$o_installer" > "$3" 2>&1
+}
+
+# o_reader_z3 DIR
+# What the reader says about z3 for DIR, as one JSON line (the {ok, code} part).
+o_reader_z3() {
+  FORMAL_CHECK_HOME="$1" RUNTIME_MJS="$o_runtime_mjs" node --input-type=module -e '
+const { resolveRuntime, checkAvailability } = await import(process.env.RUNTIME_MJS);
+const { z3 } = await checkAvailability(["z3"], resolveRuntime(process.env));
+console.log(JSON.stringify(z3.ok ? { ok: true } : { ok: false, code: z3.code }));
+' 2>&1
+}
+
+if ! command -v node > /dev/null 2>&1; then
+  fail "M: node is required to call the reader (runtime.mjs) and is not on PATH"
+fi
+
+# O1: a successful install writes both state files byte for byte, bun is called
+# with the frozen, script-less arguments in the install dir, and the reader says ok
+o1_dir="${o_dir}/o1/install"
+o1_log="${o_dir}/o1/bun.log"
+make_install_dir "$o1_dir" '{"name":"o1"}' 'lock-o1'
+: > "$o1_log"
+make_bun_stub "${o_dir}/o1/stub" "$o1_log" 0
+run_m_installer "$o1_dir" "${o_dir}/o1/stub" "${o_dir}/o1/out.txt" && o1_rc=0 || o1_rc=$?
+o1_reader="$(o_reader_z3 "$o1_dir")"
+if [ "$o1_rc" -eq 0 ] &&
+  [ "$(cat "$o1_log")" = "install --frozen-lockfile --ignore-scripts|${o1_dir}" ] &&
+  cmp -s "${o1_dir}/package.json" "${o1_dir}/.install-state" &&
+  cmp -s "${o1_dir}/bun.lock" "${o1_dir}/.install-state.lock" &&
+  [ "$o1_reader" = '{"ok":true}' ]; then
+  pass "O1: a successful install records both state files and the reader reports z3 as ok"
+else
+  fail "O1: rc=${o1_rc}, bun call='$(cat "$o1_log")', reader=${o1_reader}, expected rc=0, 'install --frozen-lockfile --ignore-scripts|${o1_dir}', byte-equal state files and {\"ok\":true}"
+fi
+
+# O2: a failed install exits 0, prints the recovery command and leaves the
+# previous state files as they were
+o2_dir="${o_dir}/o2/install"
+o2_log="${o_dir}/o2/bun.log"
+make_install_dir "$o2_dir" '{"name":"o2"}' 'lock-o2'
+printf 'sentinel-state\n' > "${o2_dir}/.install-state"
+printf 'sentinel-lock\n' > "${o2_dir}/.install-state.lock"
+: > "$o2_log"
+make_bun_stub "${o_dir}/o2/stub" "$o2_log" 1
+run_m_installer "$o2_dir" "${o_dir}/o2/stub" "${o_dir}/o2/out.txt" && o2_rc=0 || o2_rc=$?
+if [ "$o2_rc" -eq 0 ] &&
+  [ "$(cat "${o2_dir}/.install-state")" = "sentinel-state" ] &&
+  [ "$(cat "${o2_dir}/.install-state.lock")" = "sentinel-lock" ] &&
+  grep -qF "Recover with: ${o_recover}" "${o_dir}/o2/out.txt"; then
+  pass "O2: a failed install exits 0, keeps the previous state files and prints the recovery command"
+else
+  fail "O2: rc=${o2_rc}, state files changed or the output lacks 'Recover with: ${o_recover}'"
+fi
+
+# O3: without a bun.lock a successful install drops the old lock copy
+o3_dir="${o_dir}/o3/install"
+o3_log="${o_dir}/o3/bun.log"
+make_install_dir "$o3_dir" '{"name":"o3"}' ''
+printf 'old-lock-copy\n' > "${o3_dir}/.install-state.lock"
+: > "$o3_log"
+make_bun_stub "${o_dir}/o3/stub" "$o3_log" 0
+run_m_installer "$o3_dir" "${o_dir}/o3/stub" "${o_dir}/o3/out.txt" && o3_rc=0 || o3_rc=$?
+if [ "$o3_rc" -eq 0 ] && [ ! -e "${o3_dir}/.install-state.lock" ] &&
+  cmp -s "${o3_dir}/package.json" "${o3_dir}/.install-state"; then
+  pass "O3: without bun.lock the old .install-state.lock is removed and .install-state is written"
+else
+  fail "O3: rc=${o3_rc}, .install-state.lock still exists or .install-state differs from package.json"
+fi
+
+# O4: package.json and bun.lock change, then only the .install-state copy fails
+# (a cp that fails for .install-state.tmp.* targets). The lock is written first,
+# so .install-state keeps the previous package.json, and the reader says stale.
+o4_dir="${o_dir}/o4/install"
+o4_log="${o_dir}/o4/bun.log"
+o4_cp="${o_dir}/o4/cp-stub"
+make_install_dir "$o4_dir" '{"name":"o4","v":1}' 'lock-o4-v1'
+: > "$o4_log"
+make_bun_stub "${o_dir}/o4/stub" "$o4_log" 0
+run_m_installer "$o4_dir" "${o_dir}/o4/stub" "${o_dir}/o4/out1.txt" || true
+cp "${o4_dir}/package.json" "${o_dir}/o4/package-v1.json"
+make_install_dir "$o4_dir" '{"name":"o4","v":2}' 'lock-o4-v2'
+mkdir -p "$o4_cp"
+cat > "${o4_cp}/cp" <<STUB
+#!/bin/sh
+for last; do :; done
+case "\${last##*/}" in
+  .install-state.tmp.*) exit 1 ;;
+esac
+exec $(command -v cp) "\$@"
+STUB
+chmod +x "${o4_cp}/cp"
+run_m_installer "$o4_dir" "${o_dir}/o4/stub" "${o_dir}/o4/out2.txt" "$o4_cp" && o4_rc=0 || o4_rc=$?
+o4_reader="$(o_reader_z3 "$o4_dir")"
+if [ "$o4_rc" -eq 0 ] &&
+  grep -qF 'WARNING' "${o_dir}/o4/out2.txt" &&
+  cmp -s "${o4_dir}/bun.lock" "${o4_dir}/.install-state.lock" &&
+  cmp -s "${o_dir}/o4/package-v1.json" "${o4_dir}/.install-state" &&
+  [ -z "$(find "$o4_dir" -name '.install-state*.tmp.*')" ] &&
+  [ "$o4_reader" = '{"ok":false,"code":"runtime-stale"}' ]; then
+  pass "O4: when the .install-state copy fails the lock is already new, .install-state stays old, WARNING is printed and the reader reports runtime-stale"
+else
+  fail "O4: rc=${o4_rc}, reader=${o4_reader}, expected rc=0, WARNING, a new .install-state.lock, the old .install-state, no tmp file and {\"ok\":false,\"code\":\"runtime-stale\"}"
+fi
+
+# O5: no bun on PATH exits 0 with a WARNING and writes no state
+o5_dir="${o_dir}/o5/install"
+make_install_dir "$o5_dir" '{"name":"o5"}' 'lock-o5'
+mkdir -p "${o_dir}/o5/empty"
+run_m_installer "$o5_dir" "${o_dir}/o5/empty" "${o_dir}/o5/out.txt" && o5_rc=0 || o5_rc=$?
+if [ "$o5_rc" -eq 0 ] && grep -qF 'WARNING' "${o_dir}/o5/out.txt" &&
+  [ ! -e "${o5_dir}/.install-state" ] && [ ! -e "${o5_dir}/.install-state.lock" ]; then
+  pass "O5: without bun the installer exits 0, warns and writes no state"
+else
+  fail "O5: rc=${o5_rc}, expected rc=0, WARNING and no .install-state / .install-state.lock"
+fi
+
+# O6: a relative CHEZMOI_FORMAL_CHECK_INSTALL_DIR is ignored in favour of $HOME/.config/formal-check
+o6_home="${o_dir}/o6/home"
+o6_dir="${o6_home}/.config/formal-check"
+o6_log="${o_dir}/o6/bun.log"
+make_install_dir "$o6_dir" '{"name":"o6"}' 'lock-o6'
+: > "$o6_log"
+make_bun_stub "${o_dir}/o6/stub" "$o6_log" 0
+CHEZMOI_FORMAL_CHECK_INSTALL_DIR="relative/dir" PATH="${o_dir}/o6/stub:${o_tools}" HOME="$o6_home" \
+  /bin/bash "$o_installer" > "${o_dir}/o6/out.txt" 2>&1 && o6_rc=0 || o6_rc=$?
+if [ "$o6_rc" -eq 0 ] && [ "$(cat "$o6_log")" = "install --frozen-lockfile --ignore-scripts|${o6_dir}" ] &&
+  cmp -s "${o6_dir}/package.json" "${o6_dir}/.install-state"; then
+  pass "O6: a relative CHEZMOI_FORMAL_CHECK_INSTALL_DIR is ignored and \$HOME/.config/formal-check is used"
+else
+  fail "O6: rc=${o6_rc}, bun call='$(cat "$o6_log")', expected the install in ${o6_dir}"
+fi
+
+# O7: the installer body is empty on windows
+o7_rendered="${o_dir}/o7-rendered.sh"
+render_script "${SCRIPTS_DIR}/run_after_10-install-formal-check-deps.sh.tmpl" "$o7_rendered" '{"chezmoi":{"os":"windows"}}'
+if [ -z "$(tr -d '[:space:]' < "$o7_rendered")" ]; then
+  pass "O7: the installer renders empty on windows"
+else
+  fail "O7: the installer rendered a non-empty body on windows"
 fi
 
 echo ""

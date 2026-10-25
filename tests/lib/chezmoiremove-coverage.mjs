@@ -43,6 +43,8 @@ export const KEEP = [
   ".claude/.skill-approvals-sync-failed",
   // run_after_10-install-textlint-deps.sh.tmpl: `bun install` in ~/.config/textlint
   ".config/textlint/node_modules/**",
+  // run_after_10-install-formal-check-deps.sh.tmpl: `bun install` in ~/.config/formal-check
+  ".config/formal-check/node_modules/**",
 ];
 
 // Attribute prefixes chezmoi strips, from the documented attribute list.

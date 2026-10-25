@@ -140,6 +140,52 @@ test_fetch_browsers_script_is_darwin_only() {
   assert_contains "$(render "$t" '{"chezmoi":{"os":"darwin"}}')" "agent-vm\" fetch-browsers" "renders the fetch on darwin"
 }
 
+# tla2tools.jar external: the pin is read from the rendered template, so the checks follow a version bump. The
+# real-fetch check below needs the network and runs here only (CI does not run this file).
+FORMAL_CHECK_JAR=".config/formal-check/tla2tools.jar"
+jar_external_block() { # override_data_json -> the jar's table body from the rendered external, or nothing
+  render .chezmoiexternal.toml.tmpl "$1" 2>/dev/null \
+    | awk -v h="[\"$FORMAL_CHECK_JAR\"]" '$0 == h {on = 1; next} /^\[/ {on = 0} on {print}'
+}
+test_tla2tools_external_is_pinned_on_linux_and_absent_on_windows() {
+  local linux windows url sha
+  linux=$(jar_external_block "$HOST_LINUX")
+  url=$(sed -nE 's/^url = "(.*)"$/\1/p' <<<"$linux")
+  sha=$(sed -nE 's/^checksum\.sha256 = "(.*)"$/\1/p' <<<"$linux")
+  case "$url" in
+    https://github.com/tlaplus/tlaplus/releases/download/v*/tla2tools.jar) record "PASS jar url is the tlaplus release asset, ending in /tla2tools.jar" ;;
+    *) record "FAIL jar url is ${url:-missing}" ;;
+  esac
+  if [[ "$sha" =~ ^[0-9a-f]{64}$ ]]; then record "PASS jar checksum is 64 lowercase hex"; else record "FAIL jar checksum is '${sha:-missing}'"; fi
+  assert_not_contains "$linux" "refreshPeriod" "jar has no refreshPeriod (fetched once, then served from cache)"
+  windows=$(jar_external_block '{"chezmoi":{"os":"windows"}}')
+  assert_eq "" "$windows" "no jar entry on windows"
+}
+test_agent_vm_manages_no_formal_check_runtime() {
+  local vm; vm=$'\n'"$(managed_as "$VM_DATA")"$'\n'
+  assert_not_contains "$vm" '.config/formal-check' "the VM gets no formal-check dir or jar"
+  assert_not_contains "$vm" $'\n.chezmoiscripts/10-install-formal-check-deps.sh\n' "the VM gets no formal-check installer"
+}
+# Fetches the jar the way a user's apply does (fresh cache and state, so chezmoi always verifies the checksum) and
+# compares the bytes with the pin. A version bump of the jar is checked here, not in CI: run this before raising it.
+test_tla2tools_jar_matches_pinned_sha256() {
+  local dir="$TMP_BASE/tla-jar" status=0 sha actual err
+  mkdir -p "$dir"
+  sha=$(jar_external_block "$HOST_LINUX" | sed -nE 's/^checksum\.sha256 = "(.*)"$/\1/p')
+  [[ -n "$sha" ]] || { record "FAIL could not read the jar sha256 from the rendered external"; return 0; }
+  chezmoi cat --source "$SRC" --destination "$dir/dst" --config "$dir/chezmoi.toml" --cache "$dir/cache" \
+    --persistent-state "$dir/state.boltdb" --override-data "$HOST_LINUX" "$dir/dst/$FORMAL_CHECK_JAR" \
+    >"$dir/tla2tools.jar" 2>"$dir/stderr" || status=$?
+  err=$(head -c 400 "$dir/stderr")
+  if [[ "$status" -ne 0 ]]; then
+    if [[ "$err" == *"SHA256 mismatch"* ]]; then record "FAIL tla2tools.jar differs from the pinned sha256: $err"
+    else record "FAIL could not fetch tla2tools.jar (network or rate limit, exit $status): $err"; fi
+    return 0
+  fi
+  actual=$(sha256_of "$dir/tla2tools.jar")
+  assert_eq "$sha" "$actual" "tla2tools.jar downloads and matches its pinned sha256"
+}
+
 # claude-recall plugin pin: Renovate's customManager rewrites the version and sha256 lines of the external, and
 # the checks below keep that wiring, the pinned tarball and the merge gate from drifting apart silently.
 RENOVATE_JSON="$REPO_ROOT/renovate.json"
