@@ -458,6 +458,13 @@ describe("Write / Edit", () => {
     const inner = m[1] ?? "";
     ok(!/[「」\u2028\u200b]/.test(inner));
   });
+
+  it("ends each hit line with the entry's english after the fix", async () => {
+    const out = await write("/repo/README.md", "道具立てをそろえる");
+    ok(out);
+    const hitLine = out.split("\n").find((l) => l.startsWith("- 道具立て"));
+    ok(hitLine?.endsWith("（元の英語: setup / toolkit）"), hitLine);
+  });
 });
 
 describe("Bash", () => {
@@ -809,6 +816,23 @@ describe("hook selection and failure modes", () => {
     const out = await write("/repo/README.md", "道具立てとばっど");
     ok(out?.includes(`項目 ${(repoList as unknown[]).length + 1} を飛ばした`));
     ok(!out?.includes("\u202e"));
+  });
+
+  it("skips an entry whose english has a bidi char, so it never reaches the hit line", async () => {
+    const rlo = String.fromCharCode(0x202e);
+    installList(
+      home,
+      extra({
+        ...good(),
+        word: "ばっど",
+        pattern: "ばっど",
+        english: `a${rlo}b`,
+      }),
+    );
+    const out = await write("/repo/README.md", "ばっどな文");
+    ok(out?.includes(`項目 ${(repoList as unknown[]).length + 1} を飛ばした`));
+    ok(!out?.includes("- ばっど"));
+    ok(!out?.includes(rlo));
   });
 
   it("uses the not-a-regular-file / oversized / symlink notices without throwing", async () => {
