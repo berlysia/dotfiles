@@ -22,22 +22,36 @@ function comparableInput(text: string) {
   const offsets: Array<{ start: number; end: number }> = [];
   // A combining sequence must normalize together, while offsets still refer
   // to the original UTF-16 text. The engine may change case and symbol width.
+  // A grapheme that normalization leaves alone keeps per-unit offsets, because
+  // the engine can split it (an emoji and its variation selector come back as
+  // two tokens) and both halves must not map to the same start.
   for (const { segment, index } of new Intl.Segmenter("ja", {
     granularity: "grapheme",
   }).segment(text)) {
     const normalized = comparable(segment);
     value += normalized;
+    const unchanged = normalized === segment;
     for (let i = 0; i < normalized.length; i++) {
-      offsets.push({ start: index, end: index + segment.length });
+      offsets.push(
+        unchanged
+          ? { start: index + i, end: index + i + 1 }
+          : { start: index, end: index + segment.length },
+      );
     }
   }
   return { value, offsets };
 }
 
+// The messages are fixed text: they never carry a piece of the document, so the
+// cli can print them.
+export class AnalyzerOutputError extends Error {
+  override name = "AnalyzerOutputError";
+}
+
 export function decodeTokens(json: string, text: string): Token[] {
   const data: unknown = JSON.parse(json);
   if (!Array.isArray(data))
-    throw new Error("Sudachi の出力が配列ではありません。");
+    throw new AnalyzerOutputError("Sudachi の出力が配列ではありません。");
   let cursor = 0;
   let originalEnd = 0;
   const input = comparableInput(text);
@@ -50,7 +64,7 @@ export function decodeTokens(json: string, text: string): Token[] {
       !Array.isArray(item.poses) ||
       !item.poses.every((part: unknown) => typeof part === "string")
     ) {
-      throw new Error("Sudachi の形態素データが不正です。");
+      throw new AnalyzerOutputError("Sudachi の形態素データが不正です。");
     }
     const surface = comparable(item.surface);
     const found = input.value.indexOf(surface, cursor);
@@ -63,7 +77,9 @@ export function decodeTokens(json: string, text: string): Token[] {
       start < originalEnd ||
       input.value.slice(cursor, found).trim()
     ) {
-      throw new Error("Sudachi の形態素と入力位置を対応できません。");
+      throw new AnalyzerOutputError(
+        "Sudachi の形態素と入力位置を対応できません。",
+      );
     }
     cursor = found + surface.length;
     originalEnd = end;
@@ -76,7 +92,7 @@ export function decodeTokens(json: string, text: string): Token[] {
     };
   });
   if (input.value.slice(cursor).trim())
-    throw new Error("Sudachi が入力の末尾を解析していません。");
+    throw new AnalyzerOutputError("Sudachi が入力の末尾を解析していません。");
   return result;
 }
 

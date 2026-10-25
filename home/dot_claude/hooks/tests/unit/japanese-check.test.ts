@@ -355,6 +355,25 @@ describe("Japanese checker CLI", () => {
     );
   });
 
+  it("aligns analyzer tokens that split one grapheme, such as an emoji and its variation selector", () => {
+    const tokens = decodeTokens(
+      JSON.stringify([
+        { surface: "⚠", normalized_form: "⚠", poses: ["名詞"] },
+        { surface: "️", normalized_form: "️", poses: ["補助記号"] },
+        { surface: "注意", normalized_form: "注意", poses: ["名詞"] },
+      ]),
+      "⚠️注意",
+    );
+    assert.deepEqual(
+      tokens.map(({ surface, start, end }) => [surface, start, end]),
+      [
+        ["⚠", 0, 1],
+        ["️", 1, 2],
+        ["注意", 2, 4],
+      ],
+    );
+  });
+
   it("rejects aliases of the same source and emits a combined report with a real source", async () => {
     const source = join(dir, "source.md");
     const alias = join(dir, "alias.md");

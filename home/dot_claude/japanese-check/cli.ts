@@ -151,8 +151,20 @@ async function loadTokenizer(
     throw new DependencyMissingError(
       found.missing.length > 0 ? found.missing : ["analyzer"],
     );
-  const { createTokenizer } = await import("./tokenizer.ts");
-  return createTokenizer(analyzer.entry);
+  const { AnalyzerOutputError, createTokenizer } =
+    await import("./tokenizer.ts");
+  const tokenize = await createTokenizer(analyzer.entry);
+  // The class check, not error.name: the analyzer package can throw an error
+  // with any name, and its message may carry a piece of the document.
+  return (text) => {
+    try {
+      return tokenize(text);
+    } catch (error) {
+      if (error instanceof AnalyzerOutputError)
+        throw new CliError(error.message);
+      throw error;
+    }
+  };
 }
 
 export async function main(

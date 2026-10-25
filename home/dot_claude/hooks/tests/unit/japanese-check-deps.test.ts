@@ -353,6 +353,22 @@ describe("dependency lookup", () => {
       assert.match(result.stderr, /Error/u);
     });
 
+    it("names the analyzer failure with a fixed message and no fragment", () => {
+      const own = layout();
+      const file = document(own.base);
+      fakePackage(
+        join(own.dir, "node_modules"),
+        "sudachi",
+        {},
+        `export const TokenizeMode = { C: 2 };\nexport function tokenize() { return JSON.stringify([{ surface: "FRAGMENT", normalized_form: "x", poses: ["名詞"] }]); }\n`,
+      );
+      const result = run(own.dir, ["check", file]);
+      assert.equal(result.status, 2);
+      assert.match(result.stderr, /形態素と入力位置を対応できません/u);
+      assert.ok(!(result.stdout + result.stderr).includes("FRAGMENT"));
+      assert.ok(!(result.stdout + result.stderr).includes("SECRETBODY"));
+    });
+
     it("does not echo an unknown profile id", () => {
       const own = layout();
       const file = document(own.base);
