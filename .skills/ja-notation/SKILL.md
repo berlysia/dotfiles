@@ -123,7 +123,7 @@ AI らしい定型句、中身のない評価語、成り立たない比喩を�
 - 句
   - 失効が効く → 次のリクエストから通らなくなる（take effect。直す）
   - 中継しても足すものがない（add value。残して挙げる。候補は「中継しても得られるものがない」）
-  - 最も手軽な偽りの経路（workflow を push する経路）は github-actions 名義なので閉じない → status をいちばん簡単に偽る方法は、workflow を push して、その workflow に status を付けさせることである。この status は github-actions の名義で付くので、作成者を github-actions に限っても防げない（the easiest spoofing path … doesn't close it。直す。推敲の例。「経路」は攻撃の手口を指す vector の直訳で、形容詞を英語の名詞句の順に重ねている。語を置き換えるより、誰が何をするかの文に開くと直る）
+  - 最も手軽な偽りの経路（workflow を push する経路）は github-actions 名義なので閉じない → status をいちばん簡単に偽る方法は、workflow を push して、その workflow に status を付けさせることである。この status は github-actions の名義で付くので、作成者を github-actions に限っても防げない（the easiest spoofing path … doesn't close it。直す。推敲の例。「経路」は攻撃の手口を指す vector の直訳で、形容詞を英語の名詞句の順に重ねている。ネットワークのルーティングやデータの流れを指す「経路」は分野の用語なので、対象にしない。語を置き換えるより、誰が何をするかの文に開くと直る）
 
 ほかの決まりとの関係は次のとおり。
 
