@@ -4,6 +4,13 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
+  buildReviewEntries,
+  calques,
+} from "../../../japanese-check/analyze.ts";
+import type { ReviewEntry } from "../../../japanese-check/analyze.ts";
+import { proseLines } from "../../../japanese-check/markdown.ts";
+import type { Token } from "../../../japanese-check/tokenizer.ts";
+import {
   compileEntries,
   findHits,
   parseWordList,
@@ -99,5 +106,86 @@ describe("words.ts time bounds", () => {
       console.error(`short lines ${name}: ${ms.toFixed(1)} ms`);
       ok(ms < 2500, `${name}: ${ms} ms`);
     }
+  });
+});
+
+describe("review entries time bounds", () => {
+  function reviewEntries() {
+    const parsed = parseWordList(WORDS_JSON);
+    ok(parsed.ok);
+    return buildReviewEntries(parsed.entries).review;
+  }
+
+  // Lines of 2,000 characters, each built from the first characters of the
+  // review patterns (partial matches) or of whole matches.
+  function reviewWorstText(): string {
+    const units = [
+      "観",
+      "ロ",
+      "ゲ",
+      "価",
+      "ア",
+      "静",
+      "に落",
+      "た瞬",
+      "段",
+      "最",
+      // whole matches: every entry has a dense line to report
+      "観測",
+      "ロバスト",
+      "既定では",
+      "静かに壊れ",
+      "ゲート",
+      "道具",
+    ];
+    const lines: string[] = [];
+    for (let size = 0; size < 256 * 1024;) {
+      const unit = units[lines.length % units.length] ?? "あ";
+      const line = unit.repeat(2000).slice(0, 2000);
+      lines.push(line);
+      size += line.length + 1;
+    }
+    return lines.join("\n");
+  }
+
+  it("256 KB of 2,000-char lines against every review regex entry is under 1 s", () => {
+    const compiled = reviewEntries().flatMap((entry) =>
+      entry.match === "regex" ? [entry.compiled] : [],
+    );
+    ok(compiled.length > 0);
+    const text = reviewWorstText();
+    const ms = elapsedMs(() => findHits(text, compiled));
+    console.error(`review regex worst 256 KB: ${ms.toFixed(1)} ms`);
+    ok(ms < 1000, `${ms} ms`);
+  });
+
+  it("lemma matching over 256 KB of dummy tokens is under 1 s", () => {
+    const entries: ReviewEntry[] = reviewEntries().filter(
+      (entry) => entry.match === "lemma",
+    );
+    const keys = entries.flatMap((entry) =>
+      entry.match === "lemma"
+        ? entry.lemmas.map((lemma) => ({ lemma, pos: entry.pos }))
+        : [],
+    );
+    ok(keys.length > 0);
+    // Every two characters is one token that hits some lemma.
+    const tokenize = (text: string): Token[] =>
+      Array.from({ length: Math.ceil(text.length / 2) }, (_, i) => {
+        const key = keys[i % keys.length] ?? { lemma: "", pos: "名詞" };
+        return {
+          surface: text.slice(i * 2, i * 2 + 2),
+          normalized: key.lemma,
+          pos: [key.pos],
+          start: i * 2,
+          end: Math.min(text.length, i * 2 + 2),
+        };
+      });
+    const line = "あ".repeat(2000);
+    const text = Array.from({ length: 128 }, () => line).join("\n");
+    const rows = proseLines(text);
+    const ms = elapsedMs(() => calques(rows, tokenize, entries));
+    console.error(`lemma matching 256 KB: ${ms.toFixed(1)} ms`);
+    ok(ms < 1000, `${ms} ms`);
   });
 });
