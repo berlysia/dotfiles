@@ -1,0 +1,26 @@
+TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)
+Warning: Please run the Java VM which executes TLC with a throughput optimized garbage collector by passing the "-XX:+UseParallelGC" property.
+(Use the -nowarning option to disable this warning.)
+Running breadth-first search Model-Checking with fp 118 and seed 3357800021400510835 with 1 worker on 8 cores with 4000MB heap and 64MB offheap memory [pid: 2959320] (Linux 6.18.54.1-microsoft-standard-WSL2 amd64, Ubuntu 21.0.12.1 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /tmp/claude-1000/-home-berlysia--local-share-chezmoi/d2272a88-5e0f-455c-bc4e-b01d1c6a1315/scratchpad/tlctry/Bad.tla
+***Parse Error***
+Was expecting "==== or more Module body"
+Encountered "x" at line 2, column 1 and token "----" 
+
+Residual stack trace follows:
+Module definition starting at line 1, column 1.
+
+
+Fatal errors while parsing TLA+ spec in file Bad
+
+tla2sany.semantic.AbortException
+*** Abort messages: 1
+
+In module Bad
+
+Could not parse module Bad from file Bad.tla
+
+
+Starting... (2026-10-25 21:16:02)
+Error: Parsing or semantic analysis failed.
+Finished in 00s at (2026-10-25 21:16:02)
