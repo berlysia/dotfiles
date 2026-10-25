@@ -1,0 +1,84 @@
+name: shiori Annotations
+
+on:
+  push:
+    branches:
+      - master
+      - main
+    paths:
+      - "**/*.md"
+      - ".config/shiori/**"
+      - "home/dot_config/mise/config.toml"
+      - ".github/workflows/ci-shiori.yml"
+  pull_request:
+    paths:
+      - "**/*.md"
+      - ".config/shiori/**"
+      - "home/dot_config/mise/config.toml"
+      - ".github/workflows/ci-shiori.yml"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  shiori:
+    name: shiori check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # CI does not read the dotfiles mise config, so allow_low_downloads is absent and mise's
+      # low-download gate refuses shiori; shiori needs node >= 22. Reading the full dotfiles
+      # config would also run its other settings, so only these two lines are copied into a
+      # minimal config. config.toml can be edited by a PR, so only a bare x.y.z reaches that
+      # file: any other line form fails the job before anything is installed.
+      - name: Write a minimal mise config from the pinned shiori and node versions
+        env:
+          MISE_CONFIG: home/dot_config/mise/config.toml
+        run: |
+          shiori_re='^"npm:@berlysia/shiori" = \{ version = "([0-9]+\.[0-9]+\.[0-9]+)", allow_low_downloads = true \}$'
+          node_re='^node = "([0-9]+\.[0-9]+\.[0-9]+)"$'
+          shiori_version=""
+          node_version=""
+          while IFS= read -r line || [[ -n "$line" ]]; do
+            if [[ -z "$shiori_version" && "$line" =~ $shiori_re ]]; then
+              shiori_version="${BASH_REMATCH[1]}"
+            elif [[ -z "$node_version" && "$line" =~ $node_re ]]; then
+              node_version="${BASH_REMATCH[1]}"
+            fi
+          done < "$MISE_CONFIG"
+          if [[ -z "$shiori_version" ]]; then
+            echo "::error file=${MISE_CONFIG}::the shiori line must read exactly: \"npm:@berlysia/shiori\" = { version = \"x.y.z\", allow_low_downloads = true }. Fix that line, or update the shiori_re regex in .github/workflows/ci-shiori.yml"
+            exit 1
+          fi
+          if [[ -z "$node_version" ]]; then
+            echo "::error file=${MISE_CONFIG}::the node line must read exactly: node = \"x.y.z\". Fix that line, or update the node_re regex in .github/workflows/ci-shiori.yml"
+            exit 1
+          fi
+          {
+            echo '[tools]'
+            echo "node = \"${node_version}\""
+            echo "\"npm:@berlysia/shiori\" = { version = \"${shiori_version}\", allow_low_downloads = true }"
+          } > "$RUNNER_TEMP/mise-shiori.toml"
+          echo "MISE_GLOBAL_CONFIG_FILE=${RUNNER_TEMP}/mise-shiori.toml" >> "$GITHUB_ENV"
+
+      - name: Install mise and the pinned shiori (a failure here is setup, not annotations)
+        uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+        with:
+          version: 2026.10.15
+          install: true
+          cache: false
+          github_token: ${{ github.token }}
+
+      - name: Check shiori annotations
+        run: mise exec -- shiori check --fail-on missing-in-registry,unused-in-source -f summary
