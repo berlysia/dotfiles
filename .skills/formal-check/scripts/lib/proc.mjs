@@ -2,9 +2,12 @@
 // each adapter: argument arrays only (no shell), a fresh process group so a
 // timeout can kill grandchildren too, output caps, and a minimal environment.
 import { spawn } from "node:child_process";
+import { mkdtempSync, chmodSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { RUN } from "./codes.mjs";
 
-const STDOUT_LIMIT_BYTES = 1024 * 1024;
+const DEFAULT_STDOUT_LIMIT_BYTES = 1024 * 1024;
 const STDERR_LIMIT_BYTES = 64 * 1024;
 // A grandchild that kept the pipes open must not make us wait forever once the
 // child itself has exited and its group has been killed.
@@ -45,18 +48,71 @@ export function killAllChildren() {
   for (const child of live) killGroup(child);
 }
 
+// Cleanups are synchronous on purpose: they run from a signal handler and from
+// the "exit" event, where nothing asynchronous can finish.
+const cleanups = new Set();
+
+export function registerCleanup(fn) {
+  cleanups.add(fn);
+  return () => {
+    cleanups.delete(fn);
+  };
+}
+
+// Each cleanup runs at most once, and one that throws must not stop the rest.
+function runCleanups() {
+  const pending = [...cleanups];
+  cleanups.clear();
+  for (const fn of pending) {
+    try {
+      fn();
+    } catch {
+      // best effort
+    }
+  }
+}
+process.on("exit", runCleanups);
+
+// A private temp dir that is removed on every way out: dispose() for normal
+// paths, shutdown() for SIGINT/SIGTERM/SIGHUP, the exit event as a net.
+// maxRetries because a TLC killed a moment ago can still be writing into it.
+export function makeScratchDir(prefix) {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  chmodSync(dir, 0o700);
+  const remove = () =>
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5 });
+  const unregister = registerCleanup(remove);
+  return {
+    dir,
+    dispose() {
+      unregister();
+      remove();
+    },
+  };
+}
+
 // For signal handlers: also refuses children spawned after this point, so work
-// racing with the cleanup cannot leave a process behind.
+// racing with the cleanup cannot leave a process behind. Cleanups run after the
+// kill so nothing writes into a directory that is being removed.
 export function shutdown() {
   shuttingDown = true;
   killAllChildren();
+  runCleanups();
 }
 
 // Resolves with {ok: true, exitCode, signal, stdout, stderr} when the child
 // ran to an exit, or {ok: false, error} for timeout, oversized stdout and
 // spawn failure. A non-zero exit is not an error here: TLC's exit codes carry
 // meaning, so the caller decides.
-export function runChild({ command, args, extraEnv, timeoutMs, cwd, onSpawn }) {
+export function runChild({
+  command,
+  args,
+  extraEnv,
+  timeoutMs,
+  cwd,
+  onSpawn,
+  stdoutLimitBytes = DEFAULT_STDOUT_LIMIT_BYTES,
+}) {
   return new Promise((resolve) => {
     if (shuttingDown) {
       resolve(
@@ -111,7 +167,7 @@ export function runChild({ command, args, extraEnv, timeoutMs, cwd, onSpawn }) {
     child.stdout.on("data", (chunk) => {
       if (tooLarge) return;
       outBytes += chunk.length;
-      if (outBytes > STDOUT_LIMIT_BYTES) {
+      if (outBytes > stdoutLimitBytes) {
         tooLarge = true;
         killGroup(child);
         return;
@@ -152,7 +208,7 @@ export function runChild({ command, args, extraEnv, timeoutMs, cwd, onSpawn }) {
         settle(
           failure(
             RUN.CHILD_OUTPUT_TOO_LARGE,
-            `stdout exceeded ${STDOUT_LIMIT_BYTES} bytes`,
+            `stdout exceeded ${stdoutLimitBytes} bytes`,
           ),
         );
       } else {

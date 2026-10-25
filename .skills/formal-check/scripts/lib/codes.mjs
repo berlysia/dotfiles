@@ -35,13 +35,16 @@ export const MANIFEST = group([
   "no-repo-root",
   "manifest-at-repo-root",
   "deadlock-property-without-check",
+  "unexpected-binary",
 ]);
 
 // Errors that stop the run before any check starts.
 export const PRE_RUN = group(["usage", "digest-mismatch"]);
 
 export const RUN = group([
-  "runtime-not-implemented",
+  "runtime-missing",
+  "runtime-stale",
+  "java-missing",
   "child-exit-nonzero",
   "child-output-invalid",
   "child-output-too-large",
@@ -63,6 +66,7 @@ export const OBSERVATION = group([
   "tlc-exit-unexpected",
   "tlc-version-mismatch",
   "deadlock-found",
+  "invalid-model-export",
 ]);
 
 export const WARNING = group([

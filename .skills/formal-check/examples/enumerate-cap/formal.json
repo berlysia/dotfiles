@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "checks": [
+    {
+      "id": "cap-never-exceeded",
+      "kind": "enumerate",
+      "model": "cap.mjs",
+      "property": "NeverOverCap",
+      "expect": "hold",
+      "role": "contract",
+      "brokenBy": "cap-never-exceeded-broken",
+      "note": "example with no implementation behind it, so nothing to cover",
+      "sync": { "covers": [] }
+    },
+    {
+      "id": "cap-never-exceeded-broken",
+      "kind": "enumerate",
+      "model": "cap-broken.mjs",
+      "property": "NeverOverCap",
+      "expect": "violate",
+      "role": "broken-variant"
+    }
+  ]
+}

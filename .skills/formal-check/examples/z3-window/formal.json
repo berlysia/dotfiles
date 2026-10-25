@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "checks": [
+    {
+      "id": "window-overlaps-itself",
+      "kind": "z3",
+      "model": "window.mjs",
+      "property": "SelfOverlap",
+      "expect": "hold",
+      "role": "contract",
+      "brokenBy": "window-overlaps-itself-broken",
+      "note": "example with no implementation behind it, so nothing to cover",
+      "sync": { "covers": [] }
+    },
+    {
+      "id": "window-overlaps-itself-broken",
+      "kind": "z3",
+      "model": "window-broken.mjs",
+      "property": "SelfOverlap",
+      "expect": "violate",
+      "role": "broken-variant"
+    }
+  ]
+}

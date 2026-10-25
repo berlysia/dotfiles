@@ -19,12 +19,14 @@ import { fileURLToPath } from "node:url";
 let allowedFiles = new Set();
 let harnessDirs = [];
 let trusted = new Set();
+let workerMode = false;
 
 export async function initialize(data) {
   allowedFiles = new Set([data.model, ...data.imports, ...data.harnessFiles]);
   harnessDirs = data.harnessDirs;
   // The model itself is allowed but deliberately not trusted.
   trusted = new Set(data.imports);
+  workerMode = data.worker === true;
 }
 
 const blocked = (what) => new Error(`undeclared import: ${what}`);
@@ -50,6 +52,11 @@ export async function resolve(specifier, context, nextResolve) {
     allowedFiles.has(target) ||
     harnessDirs.some((dir) => target.startsWith(dir + sep))
   ) {
+    return resolved;
+  }
+  // In a worker thread the entry file (no parent) is the root of trust.
+  if (workerMode && !context.parentURL) {
+    trusted.add(target);
     return resolved;
   }
   const parent = context.parentURL?.startsWith("file:")

@@ -88,6 +88,14 @@ export function runCli(args, { env = {}, cwd, scriptsDir = SCRIPTS_DIR } = {}) {
   }));
 }
 
+// Process tests must not depend on the developer's real ~/.config/formal-check,
+// so every run gets an empty runtime dir unless a test names its own.
+let emptyRuntime = null;
+export function emptyRuntimeDir() {
+  emptyRuntime ??= makeTempDir("empty-runtime");
+  return emptyRuntime;
+}
+
 export function startCli(
   args,
   { env = {}, cwd, scriptsDir = SCRIPTS_DIR } = {},
@@ -97,7 +105,11 @@ export function startCli(
     [join(scriptsDir, "run.mjs"), ...args],
     {
       cwd,
-      env: { PATH: process.env.PATH, ...env },
+      env: {
+        PATH: process.env.PATH,
+        FORMAL_CHECK_HOME: emptyRuntimeDir(),
+        ...env,
+      },
       stdio: ["ignore", "pipe", "pipe"],
     },
   );

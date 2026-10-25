@@ -92,6 +92,14 @@ export function renderInspectTable(inspect) {
     lines.push(`manifest error [${s(error.code)}]: ${s(error.message)}`);
   }
   if (inspect.digest) lines.push(`digest: ${inspect.digest}`);
+  const runtime = inspect.runtime;
+  if (runtime) {
+    lines.push(
+      `runtime: source=${s(String(runtime.source))} dir=${s(String(runtime.dir))}` +
+        `${runtime.jarSha256 ? ` jar=${runtime.jarSha256}` : ""}` +
+        `${runtime.z3Version ? ` z3-solver=${s(runtime.z3Version)}` : ""}`,
+    );
+  }
   for (const check of inspect.checks) {
     lines.push(`${s(check.id)}  ${s(check.kind)}/${s(check.role)}`);
     lines.push(
@@ -104,6 +112,11 @@ export function renderInspectTable(inspect) {
     for (const file of check.imports) {
       lines.push(`  import: ${s(file.path)}  ${file.sha256 ?? "unreadable"}`);
     }
+    for (const file of check.modules) {
+      lines.push(`  module: ${s(file.path)}  ${file.sha256 ?? "unreadable"}`);
+    }
+    if (check.usesIo !== null)
+      lines.push(`  uses I/O modules: ${check.usesIo ? "yes" : "no"}`);
     for (const cover of check.covers) {
       lines.push(
         `  covers: ${s(cover.path)}  ${cover.state}  recorded=${cover.recorded ?? "null"} current=${cover.current ?? "null"}`,

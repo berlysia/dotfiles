@@ -4,12 +4,21 @@ import {
   mkdirSync,
   existsSync,
   readFileSync,
+  readdirSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { after } from "node:test";
+import {
+  makeFakeRuntime,
+  makeFakeJava,
+  makeFakeZ3,
+  versionJava,
+  TLC_VERSION_LINE,
+} from "./formal-check/fake-runtime.mjs";
 import {
   SCRIPTS_DIR,
   HAS_PROC,
@@ -37,9 +46,9 @@ const load = (name) => import(lib(name));
 // last test, so a code that escapes the registry cannot go unnoticed.
 const EMITTED = new Set();
 
-// ---------------------------------------------------------------- T0
+// ---------------------------------------------------------------- codes and version
 
-test("T0: codes.mjs and version.mjs are leaf modules without imports", () => {
+test("codes.mjs and version.mjs are leaf modules without imports", () => {
   for (const name of ["codes.mjs", "version.mjs"]) {
     const src = readFileSync(lib(name), "utf8");
     assert.doesNotMatch(src, /^\s*import\s/m, `${name} has a static import`);
@@ -47,7 +56,7 @@ test("T0: codes.mjs and version.mjs are leaf modules without imports", () => {
   }
 });
 
-test("T0: codes are unique across categories", async () => {
+test("codes are unique across categories", async () => {
   const codes = await load("codes.mjs");
   const seen = new Map();
   for (const [category, group] of Object.entries(codes.CODE_CATEGORIES)) {
@@ -65,7 +74,39 @@ test("T0: codes are unique across categories", async () => {
   assert.ok(codes.ALL_CODES.has("stale-model"));
 });
 
-// ---------------------------------------------------------------- T1
+test("the retired runtime code appears nowhere in scripts or tests", () => {
+  // Built from pieces so this file does not contain the string it forbids.
+  const retired = ["runtime", "not", "implemented"].join("-");
+  const roots = [SCRIPTS_DIR, new URL("./", import.meta.url).pathname];
+  const hits = [];
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name !== "node_modules") walk(path);
+      } else if (readFileSync(path, "utf8").includes(retired)) {
+        hits.push(path);
+      }
+    }
+  };
+  for (const root of roots) walk(root);
+  assert.deepEqual(hits, []);
+});
+
+test("the new codes are registered in their categories", async () => {
+  const { MANIFEST, RUN, OBSERVATION, ALL_CODES } = await load("codes.mjs");
+  assert.equal(MANIFEST.UNEXPECTED_BINARY, "unexpected-binary");
+  assert.equal(RUN.RUNTIME_MISSING, "runtime-missing");
+  assert.equal(RUN.RUNTIME_STALE, "runtime-stale");
+  assert.equal(RUN.JAVA_MISSING, "java-missing");
+  assert.equal(OBSERVATION.INVALID_MODEL_EXPORT, "invalid-model-export");
+  assert.equal(
+    ALL_CODES.has(["runtime", "not", "implemented"].join("-")),
+    false,
+  );
+});
+
+// ---------------------------------------------------------------- manifest
 
 const { loadManifest } = await load("manifest.mjs");
 
@@ -146,7 +187,7 @@ function expectErrors(mutate, expected, options) {
   return result;
 }
 
-test("T1: a clean manifest loads with rel and abs for every path", () => {
+test("a clean manifest loads with rel and abs for every path", () => {
   const { root, result } = setup((m) => {
     m.checks[0].imports = ["impl/a.mjs"];
     m.checks[0].sync = { covers: [{ path: "impl/a.mjs", sha256: null }] };
@@ -174,12 +215,12 @@ test("T1: a clean manifest loads with rel and abs for every path", () => {
   assert.equal(b1.role, "broken-variant");
 });
 
-test("T1: broken JSON yields exactly invalid-json", () => {
+test("broken JSON yields exactly invalid-json", () => {
   const { result } = setup(undefined, { raw: "{ not json" });
   assert.deepEqual(codesOf(result), ["invalid-json"]);
 });
 
-test("T1: schemaVersion problems stop further validation", () => {
+test("schemaVersion problems stop further validation", () => {
   const missing = setup((m) => {
     delete m.schemaVersion;
     m.checks[0].bogus = 1;
@@ -192,7 +233,7 @@ test("T1: schemaVersion problems stop further validation", () => {
   assert.deepEqual(codesOf(unsupported.result), ["unsupported-schema-version"]);
 });
 
-test("T1: unknown keys are rejected everywhere, including __proto__", () => {
+test("unknown keys are rejected everywhere, including __proto__", () => {
   expectErrors((m) => (m.extra = 1), ["unknown-key"]);
   expectErrors((m) => (m.checks[0].extra = 1), ["unknown-key"]);
   expectErrors((m) => (m.checks[0].sync.extra = 1), ["unknown-key"]);
@@ -211,7 +252,7 @@ test("T1: unknown keys are rejected everywhere, including __proto__", () => {
   assert.ok(codesOf(result).includes("unknown-key"), codesOf(result).join());
 });
 
-test("T1: keys outside the kind or role are key-not-allowed", () => {
+test("keys outside the kind or role are key-not-allowed", () => {
   expectErrors(
     (m) => (m.checks[0] = tlaCheck({ imports: ["impl/a.mjs"] })),
     ["key-not-allowed"],
@@ -222,14 +263,14 @@ test("T1: keys outside the kind or role are key-not-allowed", () => {
   expectErrors((m) => (m.checks[0].question = "q1"), ["key-not-allowed"]);
 });
 
-test("T1: duplicate ids and enum violations", () => {
+test("duplicate ids and enum violations", () => {
   expectErrors((m) => (m.checks[1].id = "c1"), ["duplicate-id"]);
   expectErrors((m) => (m.checks[0].kind = "alloy"), ["invalid-enum"]);
   expectErrors((m) => (m.checks[0].expect = "maybe"), ["invalid-enum"]);
   expectErrors((m) => (m.checks[0].role = "other"), ["invalid-enum"]);
 });
 
-test("T1: role and expect must agree", () => {
+test("role and expect must agree", () => {
   expectErrors((m) => (m.checks[1].expect = "hold"), ["role-expect-mismatch"]);
   expectErrors(
     (m) => (m.checks[0].expect = "violate"),
@@ -246,11 +287,11 @@ test("T1: role and expect must agree", () => {
   );
 });
 
-test("T1: brokenBy must name an existing check", () => {
+test("brokenBy must name an existing check", () => {
   expectErrors((m) => (m.checks[0].brokenBy = "nope"), ["unknown-broken-by"]);
 });
 
-test("T1: required fields", () => {
+test("required fields", () => {
   const findingWith = (extra) => ({
     id: "f1",
     kind: "enumerate",
@@ -285,13 +326,13 @@ test("T1: required fields", () => {
   expectErrors((m) => delete m.checks[0].model, ["missing-field"]);
 });
 
-test("T1: contract with covers [] needs a note", () => {
+test("contract with covers [] needs a note", () => {
   expectErrors((m) => delete m.checks[0].note, ["empty-covers-without-note"]);
   const { result } = setup();
   assert.equal(result.ok, true);
 });
 
-test("T1: finding with covers [] is rejected", () => {
+test("finding with covers [] is rejected", () => {
   expectErrors(
     (m) => {
       Object.assign(m.checks[1], {
@@ -306,7 +347,7 @@ test("T1: finding with covers [] is rejected", () => {
   );
 });
 
-test("T1: imports outside the manifest dir must be covered, except for broken variants", () => {
+test("imports outside the manifest dir must be covered, except for broken variants", () => {
   expectErrors(
     (m) => (m.checks[0].imports = ["impl/a.mjs"]),
     ["import-not-covered"],
@@ -321,7 +362,7 @@ test("T1: imports outside the manifest dir must be covered, except for broken va
   assert.deepEqual(codesOf(covered.result), []);
 });
 
-test("T1: sha256 and commit formats", () => {
+test("sha256 and commit formats", () => {
   const withCover = (sha256, commit) => (m) => {
     m.checks[0].sync = {
       ...(commit === undefined ? {} : { commit }),
@@ -341,7 +382,7 @@ test("T1: sha256 and commit formats", () => {
   assert.deepEqual(codesOf(setup(withCover(null, "b".repeat(64))).result), []);
 });
 
-test("T1: timeoutSec bounds", () => {
+test("timeoutSec bounds", () => {
   for (const v of [0, -1, 1.5, 601]) {
     expectErrors((m) => (m.checks[0].timeoutSec = v), ["out-of-range"]);
   }
@@ -356,7 +397,7 @@ test("T1: timeoutSec bounds", () => {
   );
 });
 
-test("T1: covers must be regular files and unique", () => {
+test("covers must be regular files and unique", () => {
   expectErrors(
     (m) => {
       m.checks[0].sync = { covers: [{ path: "impl", sha256: null }] };
@@ -378,7 +419,7 @@ test("T1: covers must be regular files and unique", () => {
   );
 });
 
-test("T1: path fields reject escapes and odd characters", () => {
+test("path fields reject escapes and odd characters", () => {
   for (const bad of [
     "../x.mjs",
     "/etc/passwd",
@@ -404,7 +445,7 @@ test("T1: path fields reject escapes and odd characters", () => {
   );
 });
 
-test("T1: symlinks pointing outside the base dir are path-escape", () => {
+test("symlinks pointing outside the base dir are path-escape", () => {
   const outside = makeTempDir("out");
   writeFileSync(join(outside, "x.mjs"), MODEL);
   const link = (root, rel) => {
@@ -458,7 +499,7 @@ test("T1: symlinks pointing outside the base dir are path-escape", () => {
   }
 });
 
-test("T1: a nonexistent covers file is not a manifest error", () => {
+test("a nonexistent covers file is not a manifest error", () => {
   const { result } = setup((m) => {
     m.checks[0].sync = { covers: [{ path: "impl/gone.mjs", sha256: null }] };
     delete m.checks[0].note;
@@ -466,7 +507,7 @@ test("T1: a nonexistent covers file is not a manifest error", () => {
   assert.deepEqual(codesOf(result), []);
 });
 
-test("T1: containment compares with a separator (sibling dir)", () => {
+test("containment compares with a separator (sibling dir)", () => {
   const files = {
     "a-evil/x.mjs": "export {};\n",
     "a/m.mjs": MODEL,
@@ -493,7 +534,7 @@ test("T1: containment compares with a separator (sibling dir)", () => {
   assert.ok(codesOf(viaLink).includes("path-escape"));
 });
 
-test("T1: nonexistent model, cfg and imports are missing-file", () => {
+test("nonexistent model, cfg and imports are missing-file", () => {
   expectErrors((m) => (m.checks[0].model = "nope.mjs"), ["missing-file"]);
   expectErrors(
     (m) => (m.checks[0] = tlaCheck({ cfg: "nope.cfg" })),
@@ -505,7 +546,7 @@ test("T1: nonexistent model, cfg and imports are missing-file", () => {
   );
 });
 
-test("T1: Deadlock property needs checkDeadlock", () => {
+test("Deadlock property needs checkDeadlock", () => {
   expectErrors(
     (m) =>
       (m.checks[0] = tlaCheck({ property: "Deadlock", checkDeadlock: false })),
@@ -529,7 +570,7 @@ test("T1: Deadlock property needs checkDeadlock", () => {
   );
 });
 
-test("T1: repository root discovery", () => {
+test("repository root discovery", () => {
   const bare = makeTempDir("bare");
   writeFiles(bare, { "formal/m.mjs": MODEL, "formal/b.mjs": MODEL });
   const noRoot = loadManifest(
@@ -558,7 +599,7 @@ test("T1: repository root discovery", () => {
   assert.equal(viaFile.repoRoot, wt);
 });
 
-test("T1: a symlinked formal.json resolves the manifest dir by realpath", () => {
+test("a symlinked formal.json resolves the manifest dir by realpath", () => {
   const root = makeRepo();
   writeFiles(root, { "real/m.mjs": MODEL, "real/b.mjs": MODEL });
   writeManifest(join(root, "real"), baseManifest());
@@ -573,7 +614,7 @@ test("T1: a symlinked formal.json resolves the manifest dir by realpath", () => 
   assert.equal(result.manifestPath.rel, "real/formal.json");
 });
 
-test("T1: all violations are collected in document order with positions", () => {
+test("all violations are collected in document order with positions", () => {
   const { result } = setup((m) => {
     m.checks[0].timeoutSec = 0;
     m.checks.push({ ...m.checks[1], id: "b2", model: "b.mjs" });
@@ -590,7 +631,7 @@ test("T1: all violations are collected in document order with positions", () => 
   );
 });
 
-// ---------------------------------------------------------------- T2
+// ---------------------------------------------------------------- verdict table
 
 const verdictLib = await load("verdict.mjs");
 const { judge, isPass, parseCfgDeclarations, computeWarnings } = verdictLib;
@@ -602,14 +643,14 @@ const judged = (check, envelope) => {
   return r;
 };
 
-test("T2: verdict.mjs imports only the constant leaf modules", () => {
+test("verdict.mjs imports only the constant leaf modules", () => {
   const src = readFileSync(lib("verdict.mjs"), "utf8");
   const specifiers = [...src.matchAll(/from\s+"([^"]+)"/g)].map((m) => m[1]);
   assert.deepEqual(specifiers.sort(), ["./codes.mjs", "./version.mjs"]);
   assert.doesNotMatch(src, /\bimport\s*\(/);
 });
 
-test("T2: enumerate observations map to verdicts", () => {
+test("enumerate observations map to verdicts", () => {
   const check = { kind: "enumerate", property: "P" };
   assert.equal(judged(check, ok({ cases: 3 })).verdict, "hold");
   assert.equal(judged(check, ok({ cases: 0 })).error.code, "empty-domain");
@@ -633,7 +674,7 @@ test("T2: enumerate observations map to verdicts", () => {
   assert.equal(timedOut.error.code, "timeout");
 });
 
-test("T2: z3 observations map to verdicts", () => {
+test("z3 observations map to verdicts", () => {
   const check = { kind: "z3", property: "P" };
   const z3 = (o) => judged(check, ok(o));
   assert.equal(
@@ -702,7 +743,7 @@ const tla = ({
     ok({ exitCode, stdout, cfgText, checkDeadlock }),
   );
 
-test("T2: tla hold needs a declared property, the success line and states", () => {
+test("tla hold needs a declared property, the success line and states", () => {
   assert.equal(tla().verdict, "hold");
   assert.equal(
     tla({ stdout: NO_INVARIANT, cfgText: "INIT Init\nNEXT Next\n" }).error.code,
@@ -728,7 +769,7 @@ test("T2: tla hold needs a declared property, the success line and states", () =
   );
 });
 
-test("T2: tla invariant violations need a matching name", () => {
+test("tla invariant violations need a matching name", () => {
   const violated = tla({ exitCode: 12, stdout: VIOLATE });
   assert.equal(violated.verdict, "violate");
   assert.match(violated.witness, /Invariant NeverOverCap is violated/);
@@ -743,7 +784,7 @@ test("T2: tla invariant violations need a matching name", () => {
   );
 });
 
-test("T2: tla liveness violations need exactly one PROPERTY", () => {
+test("tla liveness violations need exactly one PROPERTY", () => {
   const stdout = VIOLATE.replace(
     "Invariant NeverOverCap is violated",
     "Temporal properties were violated",
@@ -773,7 +814,7 @@ test("T2: tla liveness violations need exactly one PROPERTY", () => {
   );
 });
 
-test("T2: tla deadlock handling", () => {
+test("tla deadlock handling", () => {
   assert.equal(
     tla({ exitCode: 11, checkDeadlock: false }).error.code,
     "tlc-exit-unexpected",
@@ -797,7 +838,7 @@ test("T2: tla deadlock handling", () => {
   assert.match(other.error.message, /separate check with property "Deadlock"/);
 });
 
-test("T2: tla unexpected exit codes and the version line (tlc-warning-first-line.txt is synthetic: a JDK warning line prepended to the real hold output)", () => {
+test("tla unexpected exit codes and the version line (tlc-warning-first-line.txt is synthetic: a JDK warning line prepended to the real hold output)", () => {
   assert.equal(
     tla({ stdout: PARSE_ERROR, exitCode: 150 }).error.code,
     "tlc-exit-unexpected",
@@ -834,7 +875,7 @@ test("T2: tla unexpected exit codes and the version line (tlc-warning-first-line
   );
 });
 
-test("T2: cfg declarations ignore comments and read plural forms", () => {
+test("cfg declarations ignore comments and read plural forms", () => {
   assert.deepEqual(
     parseCfgDeclarations("INVARIANTS A B \\* comment\n(* PROPERTY C *)\n"),
     {
@@ -859,7 +900,7 @@ test("T2: cfg declarations ignore comments and read plural forms", () => {
   );
 });
 
-test("T2: unknown observation shapes are errors, never a verdict", () => {
+test("unknown observation shapes are errors, never a verdict", () => {
   assert.equal(
     judged({ kind: "nope", property: "P" }, ok({})).verdict,
     "error",
@@ -870,7 +911,7 @@ test("T2: unknown observation shapes are errors, never a verdict", () => {
   );
 });
 
-test("T2: pass is verdict equal to expect, and errors never pass", () => {
+test("pass is verdict equal to expect, and errors never pass", () => {
   assert.equal(isPass("hold", "hold"), true);
   assert.equal(isPass("violate", "violate"), true);
   assert.equal(isPass("violate", "hold"), false);
@@ -902,7 +943,7 @@ const warn = (entries) => {
   return w;
 };
 
-test("T2: contracts without a broken variant warn", () => {
+test("contracts without a broken variant warn", () => {
   const w = warn([entry({ id: "c1", role: "contract" })]);
   assert.deepEqual(
     w.map((x) => x.code),
@@ -911,7 +952,7 @@ test("T2: contracts without a broken variant warn", () => {
   assert.equal(w[0].checkId, "c1");
 });
 
-test("T2: brokenBy must point at a passing broken variant on the same property and kind", () => {
+test("brokenBy must point at a passing broken variant on the same property and kind", () => {
   const broken = { id: "b1", role: "broken-variant" };
   const contract = { id: "c1", role: "contract", brokenBy: "b1" };
   assert.deepEqual(warn([entry(contract), entry(broken)]), []);
@@ -932,7 +973,7 @@ test("T2: brokenBy must point at a passing broken variant on the same property a
   );
 });
 
-test("T2: several contracts may share one broken variant", () => {
+test("several contracts may share one broken variant", () => {
   const w = warn([
     entry({ id: "c1", role: "contract", brokenBy: "b1" }),
     entry({ id: "c2", role: "contract", brokenBy: "b1" }),
@@ -941,7 +982,7 @@ test("T2: several contracts may share one broken variant", () => {
   assert.deepEqual(w, []);
 });
 
-test("T2: sync states become warnings per file", () => {
+test("sync states become warnings per file", () => {
   const base = { id: "c1", role: "contract", brokenBy: "b1" };
   const broken = entry({ id: "b1", role: "broken-variant" });
   const withSync = (sync, check = {}) =>
@@ -1001,22 +1042,23 @@ test("T2: sync states become warnings per file", () => {
   assert.deepEqual(withSync({ state: "clean", files: [file("clean")] }), []);
 });
 
-// ---------------------------------------------------------------- T5
+// ---------------------------------------------------------------- runtime home
 
 const { resolveRuntime, checkAvailability } = await load("runtime.mjs");
 
-test("T5: FORMAL_CHECK_HOME wins when absolute and present", () => {
+test("FORMAL_CHECK_HOME wins when absolute and present", () => {
   const dir = makeRepo();
-  assert.deepEqual(
-    resolveRuntime({ FORMAL_CHECK_HOME: dir, HOME: "/nonexistent-home" }),
-    {
-      dir,
-      jarPath: join(dir, "tla2tools.jar"),
-    },
-  );
+  const resolved = resolveRuntime({
+    FORMAL_CHECK_HOME: dir,
+    HOME: "/nonexistent-home",
+  });
+  assert.equal(resolved.dir, dir);
+  assert.equal(resolved.jarPath, join(dir, "tla2tools.jar"));
+  assert.equal(resolved.source, "env");
+  assert.equal(resolved.requested, dir);
 });
 
-test("T5: a relative FORMAL_CHECK_HOME is ignored in favour of the default", () => {
+test("a relative FORMAL_CHECK_HOME is ignored in favour of the default", () => {
   const home = makeRepo();
   mkdirSync(join(home, ".config", "formal-check"), { recursive: true });
   const resolved = resolveRuntime({
@@ -1024,40 +1066,969 @@ test("T5: a relative FORMAL_CHECK_HOME is ignored in favour of the default", () 
     HOME: home,
   });
   assert.equal(resolved.dir, join(home, ".config", "formal-check"));
+  assert.equal(resolved.source, "default");
+  assert.equal(resolved.requested, null);
 });
 
-test("T5: a missing explicit FORMAL_CHECK_HOME does not fall back to the default", () => {
+test("a missing explicit FORMAL_CHECK_HOME does not fall back to the default", () => {
   const home = makeRepo();
   mkdirSync(join(home, ".config", "formal-check"), { recursive: true });
-  assert.deepEqual(
-    resolveRuntime({
-      FORMAL_CHECK_HOME: join(home, "does-not-exist"),
-      HOME: home,
-    }),
-    { dir: null, jarPath: null },
-  );
-});
-
-test("T5: no default dir resolves to null", () => {
-  assert.deepEqual(resolveRuntime({ HOME: makeRepo() }), {
-    dir: null,
-    jarPath: null,
+  const resolved = resolveRuntime({
+    FORMAL_CHECK_HOME: join(home, "does-not-exist"),
+    HOME: home,
   });
+  assert.equal(resolved.dir, null);
+  assert.equal(resolved.jarPath, null);
+  assert.equal(resolved.source, "env");
 });
 
-test("T5: only enumerate is available in this plan", () => {
+test("no default dir resolves to null", () => {
+  const resolved = resolveRuntime({ HOME: makeRepo() });
+  assert.equal(resolved.dir, null);
+  assert.equal(resolved.jarPath, null);
+  assert.equal(resolved.source, null);
+});
+
+test("enumerate is always available; z3 and tla without a runtime are runtime-missing", async () => {
   const runtime = { dir: null, jarPath: null };
-  assert.deepEqual(checkAvailability(["enumerate"], runtime), {
+  assert.deepEqual(await checkAvailability(["enumerate"], runtime), {
     enumerate: { ok: true },
   });
-  const both = checkAvailability(["enumerate", "tla"], runtime);
+  const both = await checkAvailability(["enumerate", "tla"], runtime);
   assert.equal(both.enumerate.ok, true);
   assert.equal(both.tla.ok, false);
-  assert.equal(both.tla.code, "runtime-not-implemented");
+  assert.equal(both.tla.code, "runtime-missing");
   assert.equal(typeof both.tla.recover, "string");
 });
 
-// ---------------------------------------------------------------- T4
+// ---------------------------------------------------------------- runtime detection
+
+const NO_JAVA_PATH = makeTempDir("empty-path");
+
+function runtimeOf(dir, { path = NO_JAVA_PATH, source = "env" } = {}) {
+  return resolveRuntime(
+    source === "env"
+      ? { FORMAL_CHECK_HOME: dir, PATH: path, HOME: makeTempDir("home") }
+      : { PATH: path, HOME: dir },
+  );
+}
+
+const availability = async (kinds, runtime) => {
+  const result = await checkAvailability(kinds, runtime);
+  for (const v of Object.values(result)) if (!v.ok) EMITTED.add(v.code);
+  return result;
+};
+
+test("a complete runtime and a java on PATH make z3 and tla ok", async () => {
+  const dir = makeFakeRuntime();
+  const bin = versionJava();
+  const runtime = runtimeOf(dir, { path: bin });
+  assert.equal(runtime.source, "env");
+  assert.equal(runtime.javaPath, join(bin, "java"));
+  const result = await availability(["enumerate", "z3", "tla"], runtime);
+  assert.deepEqual(result, {
+    enumerate: { ok: true },
+    z3: { ok: true },
+    tla: { ok: true },
+  });
+});
+
+test("javaPath skips a directory named java and a non-executable java", () => {
+  const dir = makeTempDir("path-a");
+  mkdirSync(join(dir, "java"));
+  const second = makeTempDir("path-b");
+  writeFileSync(join(second, "java"), "#!/bin/sh\n");
+  chmodSync(join(second, "java"), 0o644);
+  const runtime = resolveRuntime({
+    PATH: `${dir}:${second}`,
+    HOME: makeTempDir("home"),
+  });
+  assert.equal(runtime.javaPath, null);
+  // ...and finds an executable one further along.
+  const third = makeFakeJava("exit 0");
+  assert.equal(
+    resolveRuntime({ PATH: `${dir}:${second}:${third}`, HOME: second })
+      .javaPath,
+    join(third, "java"),
+  );
+});
+
+test("z3 without node_modules/z3-solver is runtime-missing", async () => {
+  const runtime = runtimeOf(makeFakeRuntime({ z3: false }));
+  const { z3 } = await availability(["z3"], runtime);
+  assert.equal(z3.code, "runtime-missing");
+});
+
+test("install-state one byte off, or absent, is runtime-stale", async () => {
+  for (const state of ["stale", "missing"]) {
+    const { z3 } = await availability(
+      ["z3"],
+      runtimeOf(makeFakeRuntime({ state })),
+    );
+    assert.equal(z3.code, "runtime-stale", state);
+  }
+});
+
+test("bun.lock is compared with .install-state.lock only when it exists", async () => {
+  const stale = await availability(
+    ["z3"],
+    runtimeOf(makeFakeRuntime({ lock: "lock-v1", lockState: "stale" })),
+  );
+  assert.equal(stale.z3.code, "runtime-stale");
+  const absentCopy = await availability(
+    ["z3"],
+    runtimeOf(makeFakeRuntime({ lock: "lock-v1", lockState: "missing" })),
+  );
+  assert.equal(absentCopy.z3.code, "runtime-stale");
+  const noLock = await availability(["z3"], runtimeOf(makeFakeRuntime()));
+  assert.equal(noLock.z3.ok, true);
+});
+
+test("tla checks jar, then java, then the TLC version, in that order", async () => {
+  const noJarNoJava = await availability(
+    ["tla"],
+    runtimeOf(makeFakeRuntime({ jar: false })),
+  );
+  assert.equal(noJarNoJava.tla.code, "runtime-missing");
+  const noJava = await availability(["tla"], runtimeOf(makeFakeRuntime()));
+  assert.equal(noJava.tla.code, "java-missing");
+  assert.equal(noJava.tla.recover, "install a JDK so that java is on PATH");
+  const wrong = await availability(
+    ["tla"],
+    runtimeOf(makeFakeRuntime(), {
+      path: versionJava({ lines: ["TLC2 Version 2.20 of 01 January 2030"] }),
+    }),
+  );
+  assert.equal(wrong.tla.code, "tlc-version-mismatch");
+  assert.match(wrong.tla.recover, /is not TLC 2\.19 \(tla2tools v1\.7\.4\)/);
+});
+
+test("a JDK warning before the version line is tolerated", async () => {
+  const runtime = runtimeOf(makeFakeRuntime(), {
+    path: versionJava({
+      lines: ["Picked up JAVA_TOOL_OPTIONS: -x", TLC_VERSION_LINE],
+    }),
+  });
+  assert.equal((await availability(["tla"], runtime)).tla.ok, true);
+});
+
+test("the version probe leaves no temp dir behind", async () => {
+  const before = readdirSync(tmpdir()).filter((n) =>
+    n.startsWith("formal-check-tlcver-"),
+  );
+  await availability(
+    ["tla"],
+    runtimeOf(makeFakeRuntime(), { path: versionJava() }),
+  );
+  const after = readdirSync(tmpdir()).filter((n) =>
+    n.startsWith("formal-check-tlcver-"),
+  );
+  assert.deepEqual(after.sort(), before.sort());
+});
+
+test("an explicit FORMAL_CHECK_HOME that does not exist says so in recover", async () => {
+  const missing = join(makeTempDir("parent"), "nowhere");
+  const runtime = runtimeOf(missing);
+  assert.equal(runtime.source, "env");
+  assert.equal(runtime.dir, null);
+  const { z3 } = await availability(["z3"], runtime);
+  assert.equal(z3.code, "runtime-missing");
+  assert.ok(z3.recover.includes(`FORMAL_CHECK_HOME points at ${missing}`));
+});
+
+test("an empty or relative FORMAL_CHECK_HOME is ignored", () => {
+  const withDefault = makeTempDir("home-with");
+  mkdirSync(join(withDefault, ".config", "formal-check"), { recursive: true });
+  const without = makeTempDir("home-without");
+  for (const value of ["", "relative"]) {
+    const found = resolveRuntime({
+      FORMAL_CHECK_HOME: value,
+      HOME: withDefault,
+      PATH: "",
+    });
+    assert.equal(found.source, "default", JSON.stringify(value));
+    assert.equal(found.requested, null);
+    const none = resolveRuntime({
+      FORMAL_CHECK_HOME: value,
+      HOME: without,
+      PATH: "",
+    });
+    assert.equal(none.source, null, JSON.stringify(value));
+    assert.equal(none.dir, null);
+  }
+});
+
+test("recover differs by source, and never starts with the prefix", async () => {
+  const fromEnv = await availability(
+    ["z3"],
+    runtimeOf(makeFakeRuntime({ z3: false })),
+  );
+  assert.ok(fromEnv.z3.recover.includes("FORMAL_CHECK_HOME points at"));
+  assert.ok(!fromEnv.z3.recover.includes("chezmoi apply"));
+  const home = makeTempDir("home-default");
+  mkdirSync(join(home, ".config", "formal-check"), { recursive: true });
+  const fromDefault = await availability(
+    ["z3"],
+    runtimeOf(home, { source: "default" }),
+  );
+  assert.equal(
+    fromDefault.z3.recover,
+    "chezmoi apply ~/.config/formal-check ~/.chezmoiscripts/10-install-formal-check-deps.sh",
+  );
+  const stale = await availability(
+    ["z3"],
+    runtimeOf(makeFakeRuntime({ state: "stale" })),
+  );
+  for (const r of [fromEnv.z3, fromDefault.z3, stale.z3]) {
+    assert.ok(!r.recover.startsWith("Recover with:"));
+  }
+});
+
+test("two tla checks read the TLC version once per run", async () => {
+  const counter = join(makeTempDir("counter"), "calls");
+  const bin = versionJava({ counter, runOutput: HOLD });
+  const { file } = cliRepo({
+    files: {
+      "formal/spec.tla": "T\n",
+      "formal/spec.cfg": "C\n",
+      "formal/spec2.tla": "T\n",
+      "formal/spec2.cfg": "C\n",
+    },
+    mutate: (m) =>
+      m.checks.push(
+        {
+          id: "t1",
+          kind: "tla",
+          model: "spec.tla",
+          cfg: "spec.cfg",
+          property: "Inv",
+          expect: "violate",
+          role: "broken-variant",
+        },
+        {
+          id: "t2",
+          kind: "tla",
+          model: "spec2.tla",
+          cfg: "spec2.cfg",
+          property: "Inv",
+          expect: "violate",
+          role: "broken-variant",
+        },
+      ),
+  });
+  await cli([file, "--json"], {
+    env: {
+      FORMAL_CHECK_HOME: makeFakeRuntime(),
+      PATH: `${bin}:${process.env.PATH}`,
+    },
+  });
+  const calls = readFileSync(counter, "utf8").split("\n").filter(Boolean);
+  assert.equal(calls.filter((c) => c === "version").length, 1);
+});
+
+// ---------------------------------------------------------------- z3 evaluator
+
+const { evaluate: evaluateZ3 } = await load("evaluators/z3.mjs");
+const { buildExtraArgs: z3ExtraArgs } = await load("adapters/z3.mjs");
+
+const P = { id: "P" };
+const A = { id: "A" };
+const farDeadline = () => Date.now() + 60_000;
+
+// Evaluates a z3 model namespace against a fake z3; returns the observation
+// and the fake's recorded solvers.
+async function evalZ3(namespace, fake, extra = {}) {
+  const observation = await evaluateZ3(namespace, {
+    runtimeDir: "/abs/runtime",
+    deadline: farDeadline(),
+    z3: fake.z3,
+    ...extra,
+  });
+  return { observation, solvers: fake.solvers };
+}
+
+test("forall without assumptions checks only not-P", async () => {
+  const fake = makeFakeZ3({ results: ["unsat"] });
+  const { observation, solvers } = await evalZ3({ property: () => P }, fake);
+  assert.deepEqual(observation, {
+    quantifier: "forall",
+    assumptions: null,
+    main: "unsat",
+  });
+  assert.deepEqual(solvers[0].added, [{ not: P }]);
+});
+
+test("forall with unsat assumptions stops before the main check", async () => {
+  const fake = makeFakeZ3({ results: ["unsat"] });
+  const { observation, solvers } = await evalZ3(
+    { property: () => P, assumptions: () => A },
+    fake,
+  );
+  assert.deepEqual(observation, {
+    quantifier: "forall",
+    assumptions: "unsat",
+    main: "unknown",
+  });
+  assert.equal(solvers.length, 1);
+});
+
+test("forall reports the model of a counterexample", async () => {
+  const fake = makeFakeZ3({ results: ["sat", "sat"] });
+  const { observation, solvers } = await evalZ3(
+    { property: () => P, assumptions: () => [A] },
+    fake,
+  );
+  assert.deepEqual(observation, {
+    quantifier: "forall",
+    assumptions: "sat",
+    main: "sat",
+    model: "(model-sexpr)",
+  });
+  assert.deepEqual(solvers[1].added, [A, { not: P }]);
+});
+
+test("exists puts the assumptions into the main check", async () => {
+  const fake = makeFakeZ3({ results: ["sat"] });
+  const { observation, solvers } = await evalZ3(
+    { quantifier: "exists", property: () => P, assumptions: () => A },
+    fake,
+  );
+  assert.deepEqual(observation, {
+    quantifier: "exists",
+    assumptions: null,
+    main: "sat",
+    model: "(model-sexpr)",
+  });
+  assert.equal(solvers.length, 1);
+  assert.deepEqual(solvers[0].added, [A, P]);
+});
+
+test("a non-Bool property or assumption is reported without any check", async () => {
+  for (const namespace of [
+    { property: () => P },
+    { property: () => ({ id: "ok" }), assumptions: () => P },
+  ]) {
+    const fake = makeFakeZ3({ isBool: (e) => e.id === "ok" });
+    const { observation, solvers } = await evalZ3(namespace, fake);
+    assert.equal(observation.notBool, true);
+    assert.equal(solvers.length, 0);
+  }
+});
+
+test("a bad quantifier or a missing property is invalid-model-export", async () => {
+  for (const namespace of [
+    { quantifier: "some", property: () => P },
+    { quantifier: "exists" },
+    { property: () => P, assumptions: 3 },
+  ]) {
+    await assert.rejects(
+      evalZ3(namespace, makeFakeZ3()),
+      (error) => error.code === "invalid-model-export",
+      JSON.stringify(Object.keys(namespace)),
+    );
+  }
+});
+
+test("each check gets the time left to the deadline as an integer", async () => {
+  // A wide deadline and a short delay: the second timeout must be smaller than
+  // the first by about the delay, however slow the machine is.
+  const fake = makeFakeZ3({ results: ["sat", "unsat"], delaysMs: [850] });
+  const { solvers } = await evalZ3(
+    { property: () => P, assumptions: () => A },
+    fake,
+    { deadline: Date.now() + 30_000 },
+  );
+  assert.equal(solvers.length, 2);
+  const [first, second] = solvers.map((s) => s.settings.timeout);
+  assert.ok(Number.isInteger(first) && Number.isInteger(second));
+  assert.ok(first <= 30_000 && first > 29_000, String(first));
+  assert.ok(first - second >= 800, `${first} -> ${second}`);
+  assert.ok(second >= 1);
+});
+
+test("past the deadline no check is made and the result is unknown", async () => {
+  const fake = makeFakeZ3({ results: ["unsat"] });
+  const { observation, solvers } = await evalZ3({ property: () => P }, fake, {
+    deadline: Date.now() - 5,
+  });
+  assert.equal(observation.main, "unknown");
+  assert.ok(solvers.every((s) => !s.checked));
+});
+
+test("the two forall checks use separate solvers", async () => {
+  const fake = makeFakeZ3({ results: ["sat", "unsat"] });
+  const { solvers } = await evalZ3(
+    { property: () => P, assumptions: () => A },
+    fake,
+  );
+  assert.equal(solvers.length, 2);
+  assert.notEqual(solvers[0], solvers[1]);
+  assert.deepEqual(solvers[0].added, [A]);
+  assert.deepEqual(solvers[1].added, [A, { not: P }]);
+});
+
+test("a relative runtimeDir is internal-error", async () => {
+  await assert.rejects(
+    evaluateZ3(
+      { property: () => P },
+      {
+        runtimeDir: "relative/dir",
+        deadline: farDeadline(),
+        z3: makeFakeZ3().z3,
+      },
+    ),
+    (error) => error.code === "internal-error",
+  );
+});
+
+test("the child arguments carry the runtime dir and a deadline from the launch time", () => {
+  assert.deepEqual(
+    z3ExtraArgs({
+      runtimeDir: "/abs/rt",
+      timeoutMs: 10_000,
+      now: 1_700_000_000_000,
+    }),
+    [
+      "--runtime-dir",
+      "/abs/rt",
+      "--deadline",
+      String(1_700_000_000_000 + 8500),
+    ],
+  );
+});
+
+// ---------------------------------------------------------------- tla adapter
+
+const { buildTlcCommand } = await load("adapters/tla.mjs");
+const { pathToFileURL } = await import("node:url");
+
+const TLC_ARGS = {
+  javaPath: "/opt/java/bin/java",
+  jarPath: "/rt/tla2tools.jar",
+  metadir: "/tmp/formal-check-tla-x",
+  cfgAbs: "/repo/formal/Spec.cfg",
+  modelAbs: "/repo/formal/Spec.tla",
+};
+
+test("TLC runs without its deadlock check unless the check asks for it", () => {
+  const off = buildTlcCommand({ ...TLC_ARGS, checkDeadlock: false });
+  assert.equal(off[0], TLC_ARGS.javaPath);
+  assert.ok(off.includes("-deadlock"));
+  assert.equal(off.at(-1), TLC_ARGS.modelAbs);
+  const at = (flag) => off[off.indexOf(flag) + 1];
+  assert.equal(at("-workers"), "1");
+  assert.equal(at("-metadir"), TLC_ARGS.metadir);
+  assert.equal(at("-config"), TLC_ARGS.cfgAbs);
+  assert.equal(at("-cp"), TLC_ARGS.jarPath);
+  const on = buildTlcCommand({ ...TLC_ARGS, checkDeadlock: true });
+  assert.ok(!on.includes("-deadlock"));
+});
+
+test("the command is an array whose -cp value is the jar path alone", () => {
+  const command = buildTlcCommand({ ...TLC_ARGS, checkDeadlock: false });
+  assert.ok(Array.isArray(command));
+  assert.equal(command[command.indexOf("-cp") + 1], TLC_ARGS.jarPath);
+  assert.ok(command.every((part) => typeof part === "string"));
+});
+
+test("the adapter errors without launching java when the runtime is missing", async () => {
+  const marker = join(makeTempDir("marker"), "ran");
+  const check = {
+    id: "t1",
+    kind: "tla",
+    property: "Inv",
+    model: { rel: "formal/spec.tla", abs: "/x/spec.tla" },
+    cfg: { rel: "formal/spec.cfg", abs: "/x/spec.cfg" },
+    checkDeadlock: false,
+  };
+  const envelope = await ADAPTERS.tla.run(check, {
+    runtime: { dir: null, jarPath: null, javaPath: null, source: null },
+    repoRoot: "/x",
+    timeoutMs: 1000,
+  });
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, "runtime-missing");
+  assert.equal(existsSync(marker), false);
+});
+
+// One contract tla check against a fake java, as a process. `body` options go
+// to versionJava; `tmp` is the TMPDIR the run uses so leftovers can be counted.
+function tlaRun({
+  java,
+  timeoutSec = 30,
+  cfg = "INVARIANT NeverOverCap\n",
+  expect = "hold",
+} = {}) {
+  const root = makeRepo();
+  writeFiles(root, { "formal/spec.tla": "T\n", "formal/spec.cfg": cfg });
+  const file = writeManifest(join(root, "formal"), {
+    schemaVersion: 1,
+    checks: [
+      {
+        id: "t1",
+        kind: "tla",
+        model: "spec.tla",
+        cfg: "spec.cfg",
+        property: "NeverOverCap",
+        expect,
+        role: "contract",
+        note: "toy",
+        sync: { covers: [] },
+        timeoutSec,
+      },
+    ],
+  });
+  const tmp = makeTempDir("tmpdir");
+  const env = {
+    FORMAL_CHECK_HOME: makeFakeRuntime(),
+    PATH: `${java}:${process.env.PATH}`,
+    TMPDIR: tmp,
+  };
+  return { file, env, tmp, root };
+}
+
+const leftovers = (tmp) => readdirSync(tmp);
+
+test("a normal run judges TLC's output and leaves no temp dir", async () => {
+  const { file, env, tmp } = tlaRun({ java: versionJava({ runOutput: HOLD }) });
+  const r = await cli([file, "--json", "--explore"], { env });
+  assert.equal(json(r).checks[0].verdict, "hold", r.stdout);
+  assert.deepEqual(leftovers(tmp), []);
+});
+
+test("a timeout is an error and leaves no temp dir", async () => {
+  const { file, env, tmp } = tlaRun({
+    java: versionJava({ runPrefix: "sleep 30" }),
+    timeoutSec: 1,
+  });
+  const r = await cli([file, "--json", "--explore"], { env });
+  assert.equal(r.code, 2);
+  assert.equal(json(r).checks[0].error.code, "timeout");
+  assert.deepEqual(leftovers(tmp), []);
+});
+
+test(
+  "a java wrapper script's grandchild is stopped on timeout too",
+  { skip: !HAS_PROC },
+  async () => {
+    const pids = join(makeTempDir("pids"), "grandchild");
+    const { file, env, tmp } = tlaRun({
+      java: versionJava({ runPrefix: `sleep 300 & echo $! > '${pids}'; wait` }),
+      timeoutSec: 1,
+    });
+    const r = await cli([file, "--json", "--explore"], { env });
+    assert.equal(json(r).checks[0].error.code, "timeout");
+    const pid = await waitFor(() => readPid(pids), "grandchild pid");
+    await expectGone(pid, "grandchild");
+    assert.deepEqual(leftovers(tmp), []);
+  },
+);
+
+for (const signal of ["SIGTERM", "SIGHUP"]) {
+  test(
+    `${signal} during TLC stops java and removes the temp dir`,
+    { skip: !HAS_PROC },
+    async () => {
+      const pidFile = join(makeTempDir("pids"), "java");
+      const { file, env, tmp } = tlaRun({
+        java: versionJava({ runPrefix: `echo $$ > '${pidFile}'; sleep 300` }),
+      });
+      const handle = startCli([file, "--json"], { env });
+      const pid = await waitFor(() => readPid(pidFile), "fake java to start");
+      handle.child.kill(signal);
+      const { code } = await handle.exited;
+      assert.equal(code, 2);
+      await expectGone(pid, "fake java");
+      assert.deepEqual(leftovers(tmp), []);
+    },
+  );
+}
+
+test("9 MB of TLC output is child-output-too-large, not a truncated verdict", async () => {
+  const { file, env } = tlaRun({
+    java: versionJava({
+      runPrefix: "head -c 9000000 /dev/zero | tr '\\0' a",
+    }),
+  });
+  const r = await cli([file, "--json", "--explore"], { env });
+  assert.equal(json(r).checks[0].error.code, "child-output-too-large");
+});
+
+test("a tla check without a runtime never starts java", async () => {
+  const counter = join(makeTempDir("counter"), "calls");
+  const { file, env } = tlaRun({
+    java: versionJava({ counter, runOutput: HOLD }),
+  });
+  const r = await cli([file, "--json", "--explore"], {
+    env: { ...env, FORMAL_CHECK_HOME: makeTempDir("no-jar") },
+  });
+  assert.equal(r.code, 2);
+  assert.equal(json(r).checks[0].error.code, "runtime-missing");
+  assert.equal(existsSync(counter), false);
+});
+
+test("cleanups all run even when one throws, and only once per shutdown", async () => {
+  const fresh = await import(
+    `${pathToFileURL(lib("proc.mjs")).href}?fresh=${Date.now()}`
+  );
+  const calls = [];
+  fresh.registerCleanup(() => {
+    calls.push("a");
+    throw new Error("boom");
+  });
+  fresh.registerCleanup(() => calls.push("b"));
+  const unregistered = fresh.registerCleanup(() => calls.push("c"));
+  unregistered();
+  fresh.shutdown();
+  assert.deepEqual(calls, ["a", "b"]);
+  fresh.shutdown();
+  assert.deepEqual(calls, ["a", "b"]);
+});
+
+test("a worker thread started under the guard still loads (z3-solver starts several)", async () => {
+  const worker = `import { Worker } from "node:worker_threads";
+import { writeFileSync } from "node:fs";
+const entry = new URL("./worker-entry.mjs", import.meta.url);
+const answer = await new Promise((resolve, reject) => {
+  const w = new Worker(entry);
+  w.once("message", resolve);
+  w.once("error", reject);
+});
+export const domain = () => [answer];
+export const property = (x) => x === 5;
+`;
+  const r = await runModel(worker, {
+    files: {
+      "formal/worker-entry.mjs": `import { parentPort } from "node:worker_threads";
+import { five } from "./worker-dep.mjs";
+parentPort.postMessage(five);
+`,
+      "formal/worker-dep.mjs": "export const five = 5;\n",
+    },
+  });
+  assert.equal(r.envelope.ok, true, JSON.stringify(r.envelope));
+  assert.equal(r.envelope.observation.cases, 1);
+  assert.equal(r.envelope.observation.firstFalse, undefined);
+});
+
+// ---------------------------------------------------------------- tla modules
+
+const { collectModules } = await load("tla-modules.mjs");
+
+// Writes TLA+ files into a fresh repo's formal/ dir and collects from `main`.
+function collect(files, main = "Main.tla") {
+  const root = makeRepo();
+  writeFiles(
+    root,
+    Object.fromEntries(
+      Object.entries(files).map(([name, body]) => [`formal/${name}`, body]),
+    ),
+  );
+  const result = collectModules({
+    modelAbs: join(root, "formal", main),
+    repoRoot: root,
+  });
+  for (const e of result.errors) EMITTED.add(e.code);
+  return { root, ...result };
+}
+
+const mod = (name, body) => `---- MODULE ${name} ----\n${body}\n====\n`;
+const relsOf = (result) => result.modules.map((m) => m.rel);
+
+test("tla-modules.mjs is a leaf that imports only node: built-ins and codes", () => {
+  const src = readFileSync(lib("tla-modules.mjs"), "utf8");
+  const specifiers = [...src.matchAll(/^import .* from "([^"]+)";/gm)].map(
+    (m) => m[1],
+  );
+  for (const specifier of specifiers)
+    assert.ok(
+      specifier.startsWith("node:") || specifier === "./codes.mjs",
+      specifier,
+    );
+  assert.doesNotMatch(src, /sha256|createHash/);
+});
+
+test("standard modules only means no modules and no I/O", () => {
+  const r = collect({ "Main.tla": mod("Main", "EXTENDS Naturals, Sequences") });
+  assert.equal(r.usesIo, false);
+  assert.deepEqual(r.modules, []);
+});
+
+test("a module outside the allow-list means usesIo", () => {
+  const r = collect({ "Main.tla": mod("Main", "EXTENDS Naturals, IOUtils") });
+  assert.equal(r.usesIo, true);
+});
+
+test("a name list that continues on the next line finds the sibling module", () => {
+  const r = collect({
+    "Main.tla": mod("Main", "EXTENDS Naturals,\n  Helper"),
+    "Helper.tla": mod("Helper", "EXTENDS TLC"),
+  });
+  assert.equal(r.usesIo, false);
+  assert.deepEqual(relsOf(r), ["formal/Helper.tla"]);
+});
+
+test("usesIo follows the sibling modules", () => {
+  const r = collect({
+    "Main.tla": mod("Main", "EXTENDS Helper"),
+    "Helper.tla": mod("Helper", "EXTENDS CSV"),
+  });
+  assert.equal(r.usesIo, true);
+});
+
+test("modules that extend each other terminate and exclude the model", () => {
+  const r = collect(
+    {
+      "A.tla": mod("A", "EXTENDS B"),
+      "B.tla": mod("B", "EXTENDS A"),
+    },
+    "A.tla",
+  );
+  assert.deepEqual(relsOf(r), ["formal/B.tla"]);
+});
+
+test("a sibling file named like a standard module is a local module", () => {
+  const r = collect({
+    "Main.tla": mod("Main", "EXTENDS Naturals"),
+    "Naturals.tla": mod("Naturals", ""),
+  });
+  assert.deepEqual(relsOf(r), ["formal/Naturals.tla"]);
+  assert.equal(r.usesIo, false);
+});
+
+test("names inside comments still count", () => {
+  const r = collect({
+    "Main.tla": mod("Main", "(* (* EXTENDS IOUtils *) *)\n\\* INSTANCE CSV"),
+  });
+  assert.equal(r.usesIo, true);
+  const afterNested = collect({
+    "Main.tla": mod("Main", "(* (* *) *) EXTENDS IOUtils"),
+  });
+  assert.equal(afterNested.usesIo, true);
+});
+
+test("a string containing (* does not hide a later INSTANCE", () => {
+  const r = collect({
+    "Main.tla": mod("Main", 'Msg == "(*"\nINSTANCE Helper'),
+    "Helper.tla": mod("Helper", "EXTENDS IOUtils"),
+  });
+  assert.deepEqual(relsOf(r), ["formal/Helper.tla"]);
+  assert.equal(r.usesIo, true);
+});
+
+test("LOCAL INSTANCE and a named INSTANCE with WITH both pick up the module", () => {
+  for (const body of [
+    "LOCAL INSTANCE Helper",
+    "H == INSTANCE Helper WITH x <- 1",
+  ]) {
+    const r = collect({
+      "Main.tla": mod("Main", body),
+      "Helper.tla": mod("Helper", ""),
+    });
+    assert.deepEqual(relsOf(r), ["formal/Helper.tla"], body);
+  }
+});
+
+test("comments between names in an EXTENDS list do not end the list", () => {
+  const inline = collect({
+    "Main.tla": mod("Main", "EXTENDS Naturals, (* memo *) Helper"),
+    "Helper.tla": mod("Helper", ""),
+  });
+  assert.deepEqual(relsOf(inline), ["formal/Helper.tla"]);
+  const lineComment = collect({
+    "Main.tla": mod("Main", "EXTENDS Naturals,\n\\* note\nIOUtils"),
+  });
+  assert.equal(lineComment.usesIo, true);
+});
+
+test("a name with a path in it is not a module name", () => {
+  const r = collect({
+    "Main.tla": mod("Main", "EXTENDS ../Escape"),
+    "Escape.tla": mod("Escape", ""),
+  });
+  assert.deepEqual(r.modules, []);
+  assert.deepEqual(r.errors, []);
+});
+
+test("a sibling module that is a symlink out of the model dir is path-escape", () => {
+  const root = makeRepo();
+  writeFiles(root, {
+    "formal/Main.tla": mod("Main", "EXTENDS Helper"),
+    "other/Helper.tla": mod("Helper", ""),
+  });
+  symlinkSync(join(root, "other/Helper.tla"), join(root, "formal/Helper.tla"));
+  const r = collectModules({
+    modelAbs: join(root, "formal/Main.tla"),
+    repoRoot: root,
+  });
+  assert.deepEqual(
+    r.errors.map((e) => e.code),
+    ["path-escape"],
+  );
+});
+
+test("a sibling module that points outside the repository is path-escape", () => {
+  const root = makeRepo();
+  const outside = makeTempDir("outside");
+  writeFiles(outside, { "Helper.tla": mod("Helper", "") });
+  writeFiles(root, { "formal/Main.tla": mod("Main", "EXTENDS Helper") });
+  symlinkSync(join(outside, "Helper.tla"), join(root, "formal/Helper.tla"));
+  const r = collectModules({
+    modelAbs: join(root, "formal/Main.tla"),
+    repoRoot: root,
+  });
+  assert.deepEqual(
+    r.errors.map((e) => e.code),
+    ["path-escape"],
+  );
+});
+
+test(".class and .jar files under the model dir are unexpected-binary", () => {
+  for (const path of ["formal/tlc2/module/Naturals.class", "formal/lib.jar"]) {
+    const root = makeRepo();
+    writeFiles(root, { "formal/Main.tla": mod("Main", ""), [path]: "x" });
+    const r = collectModules({
+      modelAbs: join(root, "formal/Main.tla"),
+      repoRoot: root,
+    });
+    EMITTED.add(r.errors[0].code);
+    assert.deepEqual(
+      r.errors.map((e) => e.code),
+      ["unexpected-binary"],
+      path,
+    );
+  }
+});
+
+// A tla check on a real manifest for the process-level cases.
+function tlaRepo(files, { symlinks = {} } = {}) {
+  const root = makeRepo();
+  writeFiles(root, { "formal/spec.cfg": "INVARIANT Inv\n", ...files });
+  for (const [link, target] of Object.entries(symlinks))
+    symlinkSync(target(root), join(root, link));
+  const file = writeManifest(join(root, "formal"), {
+    schemaVersion: 1,
+    checks: [
+      {
+        id: "t1",
+        kind: "tla",
+        model: "spec.tla",
+        cfg: "spec.cfg",
+        property: "Inv",
+        expect: "violate",
+        role: "broken-variant",
+      },
+    ],
+  });
+  return { root, file };
+}
+
+test("path-escape with --expect-digest is a manifest error, not a mismatch or an internal error", async () => {
+  const { file } = tlaRepo(
+    {
+      "formal/spec.tla": mod("spec", "EXTENDS Helper"),
+      "other/Helper.tla": mod("Helper", ""),
+    },
+    {
+      symlinks: {
+        "formal/Helper.tla": (root) => join(root, "other/Helper.tla"),
+      },
+    },
+  );
+  const r = await cli([file, "--json", "--expect-digest", "a".repeat(64)]);
+  assert.equal(r.code, 2);
+  assert.deepEqual(
+    json(r).manifestErrors.map((e) => e.code),
+    ["path-escape"],
+  );
+  const plain = await cli([file, "--json"]);
+  assert.deepEqual(
+    json(plain).manifestErrors.map((e) => e.code),
+    ["path-escape"],
+  );
+  const inspect = await cli([file, "--inspect", "--json"]);
+  assert.equal(inspect.code, 2);
+  assert.equal(json(inspect).digest, null);
+  assert.deepEqual(
+    json(inspect).manifestErrors.map((e) => e.code),
+    ["path-escape"],
+  );
+});
+
+test("changing a sibling module after approval is digest-mismatch and runs nothing", async () => {
+  const { root, file } = tlaRepo({
+    "formal/spec.tla": mod("spec", "EXTENDS Helper"),
+    "formal/Helper.tla": mod("Helper", "EXTENDS Naturals"),
+  });
+  const counter = join(makeTempDir("counter"), "calls");
+  const env = {
+    FORMAL_CHECK_HOME: makeFakeRuntime(),
+    PATH: `${versionJava({ counter, runOutput: VIOLATE, runExit: 12 })}:${process.env.PATH}`,
+  };
+  const { digest } = json(await cli([file, "--inspect", "--json"]));
+  writeFileSync(
+    join(root, "formal/Helper.tla"),
+    mod("Helper", "EXTENDS Naturals\n"),
+  );
+  const r = await cli([file, "--json", "--expect-digest", digest], { env });
+  assert.equal(r.code, 2);
+  assert.equal(json(r).manifestErrors[0].code, "digest-mismatch");
+  assert.equal(existsSync(counter), false);
+});
+
+test("--inspect lists the modules and usesIo for tla", async () => {
+  const { file } = tlaRepo({
+    "formal/spec.tla": mod("spec", "EXTENDS Naturals, IOUtils, Helper"),
+    "formal/Helper.tla": mod("Helper", ""),
+  });
+  const out = json(await cli([file, "--inspect", "--json"]));
+  assert.equal(out.checks[0].usesIo, true);
+  assert.deepEqual(
+    out.checks[0].modules.map((m) => m.path),
+    ["formal/Helper.tla"],
+  );
+  assert.match(out.checks[0].modules[0].sha256, /^[0-9a-f]{64}$/);
+});
+
+test("a module file moves the digest, and so does the harness version", async () => {
+  const { root, file } = tlaRepo({
+    "formal/spec.tla": mod("spec", "EXTENDS Helper"),
+    "formal/Helper.tla": mod("Helper", ""),
+  });
+  const before = json(await cli([file, "--inspect", "--json"])).digest;
+  writeFileSync(join(root, "formal/Helper.tla"), mod("Helper", "\\* x"));
+  const after = json(await cli([file, "--inspect", "--json"])).digest;
+  assert.notEqual(before, after);
+  const { HARNESS_VERSION } = await load("version.mjs");
+  assert.equal(HARNESS_VERSION, "0.2.0");
+});
+
+test("--inspect shows the runtime source, dir, jar hash and z3-solver version", async () => {
+  const { file } = tlaRepo({ "formal/spec.tla": mod("spec", "") });
+  const dir = makeFakeRuntime({ z3Version: "5.3.1" });
+  const out = json(
+    await cli([file, "--inspect", "--json"], {
+      env: { FORMAL_CHECK_HOME: dir },
+    }),
+  );
+  assert.equal(out.runtime.source, "env");
+  assert.equal(out.runtime.dir, dir);
+  assert.equal(out.runtime.jarSha256, sha("not a real jar"));
+  assert.equal(out.runtime.z3Version, "5.3.1");
+  const bare = json(
+    await cli([file, "--inspect", "--json"], {
+      env: { FORMAL_CHECK_HOME: makeFakeRuntime({ jar: false }) },
+    }),
+  );
+  assert.equal(Object.hasOwn(bare.runtime, "jarSha256"), false);
+  assert.equal(Object.hasOwn(bare.runtime, "z3Version"), false);
+  const table = await cli([file, "--inspect"], {
+    env: { FORMAL_CHECK_HOME: dir },
+  });
+  assert.match(table.stdout, /runtime: source=env/);
+});
+
+// ---------------------------------------------------------------- hashing and staleness
 
 const { sha256Bytes, sha256File, computeDigest } = await load("hash.mjs");
 const { computeSync } = await load("sync.mjs");
@@ -1080,7 +2051,7 @@ function syncRepo() {
   return { root, cover, check };
 }
 
-test("T4: sha256File hashes raw bytes and reports unreadable files as null", () => {
+test("sha256File hashes raw bytes and reports unreadable files as null", () => {
   const { root } = syncRepo();
   assert.equal(
     sha256File(join(root, "impl/a.mjs")),
@@ -1090,7 +2061,7 @@ test("T4: sha256File hashes raw bytes and reports unreadable files as null", () 
   assert.equal(sha256Bytes(Buffer.from("x")), sha("x"));
 });
 
-test("T4: sync file states", () => {
+test("sync file states", () => {
   const { root, cover, check } = syncRepo();
   const aHash = sha("export const a = 1;\n");
 
@@ -1124,7 +2095,7 @@ test("T4: sync file states", () => {
   assert.equal(unrecorded.files[0].current, sha("export const b = 1;\r\n"));
 });
 
-test("T4: sync aggregates by priority missing > changed > unrecorded > clean", () => {
+test("sync aggregates by priority missing > changed > unrecorded > clean", () => {
   const { root, cover, check } = syncRepo();
   writeFileSync(join(root, "impl/a.mjs"), "A\n");
   writeFileSync(join(root, "impl/b.mjs"), "B\n");
@@ -1141,7 +2112,7 @@ test("T4: sync aggregates by priority missing > changed > unrecorded > clean", (
   );
 });
 
-test("T4: sync states for covers [] and an omitted sync", () => {
+test("sync states for covers [] and an omitted sync", () => {
   const { check } = syncRepo();
   assert.deepEqual(computeSync(check()), { state: "empty", files: [] });
   assert.deepEqual(computeSync({ id: "b", sync: null }), {
@@ -1150,7 +2121,7 @@ test("T4: sync states for covers [] and an omitted sync", () => {
   });
 });
 
-test("T4: sync follows a symlink to the target's content", () => {
+test("sync follows a symlink to the target's content", () => {
   const { root, cover, check } = syncRepo();
   symlinkSync(join(root, "impl/a.mjs"), join(root, "impl/link.mjs"));
   const aHash = sha("export const a = 1;\n");
@@ -1215,7 +2186,7 @@ function digestOf(
   return { digest: computeDigest(loaded, version), loaded };
 }
 
-test("T4: digest layout matches the specified line format", () => {
+test("digest layout matches the specified line format", () => {
   const { digest } = digestOf();
   const lines = [
     "harness\ttest-0",
@@ -1228,7 +2199,7 @@ test("T4: digest layout matches the specified line format", () => {
   assert.equal(digest, GOLDEN_DIGEST);
 });
 
-test("T4: digest is stable and defaults to the harness version", async () => {
+test("digest is stable and defaults to the harness version", async () => {
   assert.equal(digestOf().digest, digestOf().digest);
   const { HARNESS_VERSION } = await load("version.mjs");
   const { loaded } = digestOf();
@@ -1239,7 +2210,7 @@ test("T4: digest is stable and defaults to the harness version", async () => {
   );
 });
 
-test("T4: digest changes when anything it covers changes", () => {
+test("digest changes when anything it covers changes", () => {
   const base = digestOf().digest;
   const withTimeout = JSON.parse(DIGEST_MANIFEST_TEXT);
   withTimeout.checks[0].timeoutSec = 61;
@@ -1264,7 +2235,7 @@ test("T4: digest changes when anything it covers changes", () => {
   );
 });
 
-test("T4: digest covers cfg and imports, and file names, not only contents", () => {
+test("digest covers cfg and imports, and file names, not only contents", () => {
   const tlaManifest = (cfg) =>
     JSON.stringify({
       schemaVersion: 1,
@@ -1301,7 +2272,7 @@ test("T4: digest covers cfg and imports, and file names, not only contents", () 
   assert.notEqual(one, renamed);
 });
 
-test("T4: shared imports count once", () => {
+test("shared imports count once", () => {
   const manifest = (checks) => JSON.stringify({ schemaVersion: 1, checks });
   const check = (id) => ({
     id,
@@ -1342,7 +2313,7 @@ test("T4: shared imports count once", () => {
   assert.equal(computeDigest(loaded, "test-0"), expected);
 });
 
-// ---------------------------------------------------------------- T3
+// ---------------------------------------------------------------- enumerate evaluator and child process
 
 const { ADAPTERS } = await load("adapters/index.mjs");
 const proc = await load("proc.mjs");
@@ -1395,7 +2366,7 @@ async function expectGone(pid, label, timeoutMs = 3000) {
   }
 }
 
-test("T3: enumerate evaluator counts cases and finds the first false input", async () => {
+test("enumerate evaluator counts cases and finds the first false input", async () => {
   const all = await runModel(
     "export const domain = () => Array.from({length: 10}, (_, i) => i);\nexport const property = () => true;\n",
   );
@@ -1425,7 +2396,7 @@ test("T3: enumerate evaluator counts cases and finds the first false input", asy
   assert.deepEqual(empty.envelope.observation, { cases: 0 });
 });
 
-test("T3: a model that throws is model-threw", async () => {
+test("a model that throws is model-threw", async () => {
   const r = await runModel("throw new Error('boom');\n");
   assert.equal(errorCode(r), "model-threw");
   assert.match(r.envelope.error.message, /boom/);
@@ -1440,7 +2411,7 @@ test("T3: a model that throws is model-threw", async () => {
 });
 
 test(
-  "T3: timeout stops the child",
+  "timeout stops the child",
   { skip: !HAS_PROC && "needs /proc" },
   async () => {
     const root = makeRepo();
@@ -1455,7 +2426,7 @@ test(
 );
 
 test(
-  "T3: timeout also stops grandchildren and returns promptly",
+  "timeout also stops grandchildren and returns promptly",
   { skip: !HAS_PROC && "needs /proc" },
   async () => {
     const root = makeRepo();
@@ -1476,7 +2447,7 @@ test(
 );
 
 test(
-  "T3: a grandchild left behind by a normal result is stopped",
+  "a grandchild left behind by a normal result is stopped",
   { skip: !HAS_PROC && "needs /proc" },
   async () => {
     const root = makeRepo();
@@ -1492,7 +2463,7 @@ test(
 );
 
 test(
-  "T3: killAllChildren stops live children",
+  "killAllChildren stops live children",
   { skip: !HAS_PROC && "needs /proc" },
   async () => {
     let pid;
@@ -1509,7 +2480,7 @@ test(
   },
 );
 
-test("T3: after shutdown no new child is started", async () => {
+test("after shutdown no new child is started", async () => {
   const { execFileSync } = await import("node:child_process");
   const script = `
     const proc = await import(${JSON.stringify(lib("proc.mjs"))});
@@ -1528,7 +2499,7 @@ test("T3: after shutdown no new child is started", async () => {
   EMITTED.add(result.error.code);
 });
 
-test("T3: output limits and exit codes", async () => {
+test("output limits and exit codes", async () => {
   const big = await runModel(
     `process.stdout.write("x".repeat(2 * 1024 * 1024));\n${OK_EXPORTS}`,
   );
@@ -1553,7 +2524,7 @@ test("T3: output limits and exit codes", async () => {
   );
 });
 
-test("T3: the child sees only PATH and LANG", async () => {
+test("the child sees only PATH and LANG", async () => {
   const saved = { ...process.env };
   Object.assign(process.env, {
     FC_CANARY_TOKEN: "secret",
@@ -1578,7 +2549,7 @@ test("T3: the child sees only PATH and LANG", async () => {
   }
 });
 
-test("T3: proc passes only allow-listed extra variables", async () => {
+test("proc passes only allow-listed extra variables", async () => {
   const r = await proc.runChild({
     command: process.execPath,
     args: [
@@ -1595,7 +2566,7 @@ test("T3: proc passes only allow-listed extra variables", async () => {
     assert.ok(!keys.includes(bad), bad);
 });
 
-test("T3: guard blocks undeclared imports, including same-dir helpers", async () => {
+test("guard blocks undeclared imports, including same-dir helpers", async () => {
   const marker = (root) => join(root, "executed.marker");
   const root = makeRepo();
   const helper = `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(marker(root))}, "ran");\nexport const h = 1;\n`;
@@ -1620,7 +2591,7 @@ test("T3: guard blocks undeclared imports, including same-dir helpers", async ()
   assert.equal(existsSync(marker(declared)), true);
 });
 
-test("T3: guard blocks harness files, missing files, data: URLs and builtins stay allowed", async () => {
+test("guard blocks harness files, missing files, data: URLs and builtins stay allowed", async () => {
   assert.equal(
     errorCode(
       await runModel(
@@ -1649,7 +2620,7 @@ test("T3: guard blocks harness files, missing files, data: URLs and builtins sta
   );
 });
 
-test("T3: guard follows the closure of declared files", async () => {
+test("guard follows the closure of declared files", async () => {
   const files = {
     "impl/impl.mjs": 'import "./dep.mjs";\nexport const v = 1;\n',
     "impl/dep.mjs": 'import "./dep2.mjs";\n',
@@ -1703,7 +2674,7 @@ test("T3: guard follows the closure of declared files", async () => {
   assert.equal(reaches.envelope.ok, true, JSON.stringify(reaches.envelope));
 });
 
-test("T3: dynamic imports are checked every time", async () => {
+test("dynamic imports are checked every time", async () => {
   const root = makeRepo();
   const helper = join(root, "formal/helper.mjs");
   const r = await runModel(
@@ -1721,7 +2692,7 @@ test("T3: dynamic imports are checked every time", async () => {
   assert.equal(errorCode(once), "undeclared-import");
 });
 
-test("T3: a declared symlink matches the real file the model imports", async () => {
+test("a declared symlink matches the real file the model imports", async () => {
   const root = makeRepo();
   writeFiles(root, { "impl/real.mjs": "export const r = 1;\n" });
   symlinkSync(join(root, "impl/real.mjs"), join(root, "impl/link.mjs"));
@@ -1732,7 +2703,7 @@ test("T3: a declared symlink matches the real file the model imports", async () 
   assert.equal(r.envelope.ok, true, JSON.stringify(r.envelope));
 });
 
-test("T3: the harness dir check is separator-aware", async () => {
+test("the harness dir check is separator-aware", async () => {
   const copy = makeTempDir("copy");
   cpSync(SCRIPTS_DIR, join(copy, "scripts"), { recursive: true });
   const marker = join(copy, "evil.marker");
@@ -1753,7 +2724,7 @@ test("T3: the harness dir check is separator-aware", async () => {
   assert.equal((await runModel(OK_EXPORTS, { api })).envelope.ok, true);
 });
 
-// ---------------------------------------------------------------- T6 (and the --inspect cases of T4)
+// ---------------------------------------------------------------- run.mjs end to end, including --inspect
 
 const BREAKS_AT_2 =
   "export const domain = () => [0, 1, 2];\nexport const property = (x) => x < 2;\n";
@@ -1794,7 +2765,7 @@ async function cli(args, options) {
 
 const json = (result) => JSON.parse(result.stdout);
 
-test("T6: a contract and its broken variant, both as expected, exit 0", async () => {
+test("a contract and its broken variant, both as expected, exit 0", async () => {
   const { file } = cliRepo();
   const r = await cli([file, "--json"]);
   assert.equal(r.code, 0, r.stderr + r.stdout);
@@ -1831,7 +2802,7 @@ test("T6: a contract and its broken variant, both as expected, exit 0", async ()
   assert.deepEqual(b1.sync, { commit: null, state: "none", files: [] });
 });
 
-test("T6: a missing brokenBy fails by default and passes with --explore", async () => {
+test("a missing brokenBy fails by default and passes with --explore", async () => {
   const { file } = cliRepo({ mutate: (m) => delete m.checks[0].brokenBy });
   const strict = await cli([file, "--json"]);
   assert.equal(strict.code, 1);
@@ -1847,7 +2818,7 @@ test("T6: a missing brokenBy fails by default and passes with --explore", async 
   assert.equal(json(explore).warnings.length, 1);
 });
 
-test("T6: a failing contract exits 1 even with --explore", async () => {
+test("a failing contract exits 1 even with --explore", async () => {
   const { file } = cliRepo({ files: { "formal/m.mjs": BREAKS_AT_2 } });
   assert.equal((await cli([file, "--json"])).code, 1);
   const explore = await cli([file, "--json", "--explore"]);
@@ -1855,7 +2826,7 @@ test("T6: a failing contract exits 1 even with --explore", async () => {
   assert.equal(json(explore).status, "fail");
 });
 
-test("T6: an error beats a mismatch, with or without --explore", async () => {
+test("an error beats a mismatch, with or without --explore", async () => {
   const { file } = cliRepo({
     files: {
       "formal/m.mjs": BREAKS_AT_2,
@@ -1871,7 +2842,7 @@ test("T6: an error beats a mismatch, with or without --explore", async () => {
   }
 });
 
-test("T6: a broken manifest exits 2 with no checks", async () => {
+test("a broken manifest exits 2 with no checks", async () => {
   const { file } = cliRepo({ mutate: (m) => (m.checks[0].kind = "alloy") });
   const r = await cli([file, "--json"]);
   assert.equal(r.code, 2);
@@ -1879,7 +2850,7 @@ test("T6: a broken manifest exits 2 with no checks", async () => {
   assert.equal(json(r).manifestErrors[0].code, "invalid-enum");
 });
 
-test("T6: covers [] shows as empty, with the note, in JSON and in the table", async () => {
+test("covers [] shows as empty, with the note, in JSON and in the table", async () => {
   const { file } = cliRepo();
   const doc = json(await cli([file, "--json"]));
   assert.equal(doc.checks[0].sync.state, "empty");
@@ -1888,7 +2859,7 @@ test("T6: covers [] shows as empty, with the note, in JSON and in the table", as
   assert.match(table, /toy model without an implementation/);
 });
 
-test("T6: stale covers warn per file and fail by default", async () => {
+test("stale covers warn per file and fail by default", async () => {
   const { file } = cliRepo({
     mutate: (m) => {
       delete m.checks[0].note;
@@ -1931,7 +2902,7 @@ const USAGE_CASES = [
   ],
 ];
 
-test("T6: usage errors exit 2 and run nothing", async () => {
+test("usage errors exit 2 and run nothing", async () => {
   const marker = "ran.marker";
   const { root, file } = cliRepo();
   writeFileSync(
@@ -1951,7 +2922,7 @@ test("T6: usage errors exit 2 and run nothing", async () => {
   assert.equal(existsSync(join(root, marker)), false);
 });
 
-test("T6: --json with an unknown flag prints a usage JSON on stdout only", async () => {
+test("--json with an unknown flag prints a usage JSON on stdout only", async () => {
   const { file } = cliRepo();
   const r = await cli([file, "--json", "--nope"]);
   assert.equal(r.code, 2);
@@ -1959,7 +2930,7 @@ test("T6: --json with an unknown flag prints a usage JSON on stdout only", async
   assert.equal(r.stderr, "");
 });
 
-test("T6: --inspect --json reports the files and hashes without running the model", async () => {
+test("--inspect --json reports the files and hashes without running the model", async () => {
   const root = makeRepo();
   const marker = join(root, "ran.marker");
   writeFiles(root, {
@@ -2043,10 +3014,10 @@ test("T6: --inspect --json reports the files and hashes without running the mode
     state: "unrecorded",
   });
   assert.equal(t1.cfg.path, "formal/spec.cfg");
-  assert.equal(t1.usesIo, null);
+  assert.equal(t1.usesIo, false);
 });
 
-test("T6: --inspect on a broken manifest exits 2 with a null digest", async () => {
+test("--inspect on a broken manifest exits 2 with a null digest", async () => {
   const { file } = cliRepo({ mutate: (m) => (m.checks[0].kind = "alloy") });
   const r = await cli([file, "--inspect", "--json"]);
   assert.equal(r.code, 2);
@@ -2054,7 +3025,7 @@ test("T6: --inspect on a broken manifest exits 2 with a null digest", async () =
   assert.ok(json(r).manifestErrors.length > 0);
 });
 
-test("T6: --inspect needs no runtime even with a tla check", async () => {
+test("--inspect needs no runtime even with a tla check", async () => {
   const { file } = cliRepo({
     files: { "formal/spec.tla": "T\n", "formal/spec.cfg": "C\n" },
     mutate: (m) =>
@@ -2074,7 +3045,7 @@ test("T6: --inspect needs no runtime even with a tla check", async () => {
   assert.equal(r.code, 0, r.stderr);
 });
 
-test("T6: --inspect output is sanitized", async () => {
+test("--inspect output is sanitized", async () => {
   const { file } = cliRepo({
     mutate: (m) => (m.checks[0]["\u001b[31mevil"] = 1),
   });
@@ -2092,7 +3063,7 @@ test("T6: --inspect output is sanitized", async () => {
   }
 });
 
-test("T6: --expect-digest runs only what was inspected", async () => {
+test("--expect-digest runs only what was inspected", async () => {
   const { root, file } = cliRepo();
   const marker = join(root, "ran.marker");
   const source = (tail) =>
@@ -2119,7 +3090,7 @@ test("T6: --expect-digest runs only what was inspected", async () => {
   );
 });
 
-test("T6: changing only `expect` after approval is caught by the digest", async () => {
+test("changing only `expect` after approval is caught by the digest", async () => {
   const { file } = cliRepo();
   const { digest } = json(await cli([file, "--inspect", "--json"]));
   const doc = JSON.parse(readFileSync(file, "utf8"));
@@ -2131,7 +3102,7 @@ test("T6: changing only `expect` after approval is caught by the digest", async 
   assert.equal(json(r).manifestErrors[0].code, "digest-mismatch");
 });
 
-test("T6: a broken manifest with --expect-digest shows the manifest error, not a mismatch", async () => {
+test("a broken manifest with --expect-digest shows the manifest error, not a mismatch", async () => {
   const { file } = cliRepo({ mutate: (m) => (m.checks[0].kind = "alloy") });
   const r = await cli([file, "--json", "--expect-digest", "a".repeat(64)]);
   assert.equal(r.code, 2);
@@ -2171,7 +3142,7 @@ const NASTY = [
   "g\nh\ti",
 ].join("");
 
-test("T6: witnesses are sanitized in JSON and in the table", async () => {
+test("witnesses are sanitized in JSON and in the table", async () => {
   const model = `export const domain = () => [${JSON.stringify(NASTY)}];\nexport const property = () => false;\n`;
   const { file } = cliRepo({
     files: { "formal/m.mjs": model, "formal/b.mjs": model },
@@ -2184,7 +3155,7 @@ test("T6: witnesses are sanitized in JSON and in the table", async () => {
   assert.match(table, /abcdefg/);
 });
 
-test("T6: manifest-derived strings in the table are sanitized", async () => {
+test("manifest-derived strings in the table are sanitized", async () => {
   const bad = "\u001b[31mred";
   const asId = cliRepo({ mutate: (m) => (m.checks[0].id = bad) });
   const idOut = await cli([asId.file]);
@@ -2196,7 +3167,7 @@ test("T6: manifest-derived strings in the table are sanitized", async () => {
   assert.ok(!noteOut.stdout.includes("\u001b"));
 });
 
-test("T6: strings are cut at 4000 code points without splitting surrogate pairs", async () => {
+test("strings are cut at 4000 code points without splitting surrogate pairs", async () => {
   const countPoints = (s) => [...s].length;
   const witnessFor = async (value) => {
     const model = `export const domain = () => [${JSON.stringify(value)}];\nexport const property = () => false;\n`;
@@ -2217,7 +3188,7 @@ test("T6: strings are cut at 4000 code points without splitting surrogate pairs"
 
 for (const signal of ["SIGTERM", "SIGINT"]) {
   test(
-    `T6: ${signal} stops the model child and exits 2`,
+    `${signal} stops the model child and exits 2`,
     { skip: !HAS_PROC && "needs /proc" },
     async () => {
       const root = makeRepo();
@@ -2235,7 +3206,7 @@ for (const signal of ["SIGTERM", "SIGINT"]) {
   );
 }
 
-test("T6: a copied scripts dir runs enumerate manifests without FORMAL_CHECK_HOME", async () => {
+test("a copied scripts dir runs enumerate manifests without FORMAL_CHECK_HOME", async () => {
   const copy = makeTempDir("portable");
   cpSync(SCRIPTS_DIR, join(copy, "scripts"), { recursive: true });
   const { file } = cliRepo();
@@ -2244,7 +3215,7 @@ test("T6: a copied scripts dir runs enumerate manifests without FORMAL_CHECK_HOM
   assert.equal(json(r).status, "pass");
 });
 
-test("T6: a tla check without an implemented runtime errors alone", async () => {
+test("a tla check without a runtime errors alone", async () => {
   const { file } = cliRepo({
     files: { "formal/spec.tla": "T\n", "formal/spec.cfg": "C\n" },
     mutate: (m) =>
@@ -2263,11 +3234,61 @@ test("T6: a tla check without an implemented runtime errors alone", async () => 
   const [c1, b1, t1] = json(r).checks;
   assert.equal(c1.pass, true);
   assert.equal(b1.pass, true);
-  assert.equal(t1.error.code, "runtime-not-implemented");
+  assert.equal(t1.error.code, "runtime-missing");
   assert.equal(typeof t1.recover, "string");
 });
 
-test("T6: an adapter that throws becomes internal-error", async () => {
+test("a kind missing from the adapter table is internal-error", async () => {
+  const copy = makeTempDir("no-adapter");
+  cpSync(SCRIPTS_DIR, join(copy, "scripts"), { recursive: true });
+  writeFileSync(
+    join(copy, "scripts/lib/adapters/index.mjs"),
+    "export const ADAPTERS = Object.freeze({});\n",
+  );
+  const { file } = cliRepo();
+  const r = await cli([file, "--json"], { scriptsDir: join(copy, "scripts") });
+  assert.equal(r.code, 2);
+  assert.equal(json(r).checks[0].error.code, "internal-error");
+});
+
+test("z3 and tla checks are runtime-missing under an empty FORMAL_CHECK_HOME, enumerate is still judged", async () => {
+  const { file } = cliRepo({
+    files: {
+      "formal/spec.tla": "T\n",
+      "formal/spec.cfg": "C\n",
+      "formal/z.mjs": "export {};\n",
+    },
+    mutate: (m) =>
+      m.checks.push(
+        {
+          id: "t1",
+          kind: "tla",
+          model: "spec.tla",
+          cfg: "spec.cfg",
+          property: "Inv",
+          expect: "violate",
+          role: "broken-variant",
+        },
+        {
+          id: "z1",
+          kind: "z3",
+          model: "z.mjs",
+          property: "P",
+          expect: "violate",
+          role: "broken-variant",
+        },
+      ),
+  });
+  const r = await cli([file, "--json"]);
+  assert.equal(r.code, 2);
+  const [c1, b1, t1, z1] = json(r).checks;
+  assert.equal(c1.pass, true);
+  assert.equal(b1.pass, true);
+  assert.equal(t1.error.code, "runtime-missing");
+  assert.equal(z1.error.code, "runtime-missing");
+});
+
+test("an adapter that throws becomes internal-error", async () => {
   const copy = makeTempDir("throwing");
   cpSync(SCRIPTS_DIR, join(copy, "scripts"), { recursive: true });
   writeFileSync(
@@ -2282,7 +3303,7 @@ test("T6: an adapter that throws becomes internal-error", async () => {
 });
 
 test(
-  "T6: --inspect reports an unreadable declared file as missing-file",
+  "--inspect reports an unreadable declared file as missing-file",
   {
     skip: process.getuid?.() === 0 && "root can read mode 000 files",
   },
@@ -2296,7 +3317,7 @@ test(
   },
 );
 
-test("T6: every code seen in this file belongs to codes.mjs", async () => {
+test("every code seen in this file belongs to codes.mjs", async () => {
   const { ALL_CODES } = await load("codes.mjs");
   assert.ok(EMITTED.size > 20, `only ${EMITTED.size} codes were observed`);
   for (const code of EMITTED)
