@@ -7,33 +7,33 @@ SKILL.md の各決まりがどの原文のどこから来たかを、ここに�
 
 ## 原文の取り先
 
-| ファイル名                                   | URL                                                                            |
-| -------------------------------------------- | ------------------------------------------------------------------------------ |
-| `bates-1989-berrypicking`                    | https://www.pages.gseis.ucla.edu/faculty/bates/articles/berrypicking.pdf       |
-| `ellis-1987-phd-behavioural-model`           | https://etheses.whiterose.ac.uk/id/eprint/2975/1/DX093006.pdf                  |
-| `kuhlthau-1991-inside-search-process`        | https://tefkos.rutgers-sci.domains/Courses/612/Articles/Kuhlthau_Inside_91.pdf |
-| `arxiv-2609.01294-explore-before-committing` | https://arxiv.org/pdf/2609.01294                                               |
-| `arxiv-2608.02009-halt`                      | https://arxiv.org/pdf/2608.02009                                               |
-| `arxiv-2602.03304-to-search-or-not`          | https://arxiv.org/pdf/2602.03304                                               |
-| `kastner-2007-horizon-estimate`              | https://pmc.ncbi.nlm.nih.gov/articles/PMC2655834/                              |
-| `eumesy-unknown-terms`                       | https://speakerdeck.com/eumesy/examine-the-meaning-of-unknown-terms            |
-| `arxiv-2505.09316-scent-of-knowledge`        | https://arxiv.org/pdf/2505.09316                                               |
+| ファイル名 | URL |
+|---|---|
+| `bates-1989-berrypicking` | https://www.pages.gseis.ucla.edu/faculty/bates/articles/berrypicking.pdf |
+| `ellis-1987-phd-behavioural-model` | https://etheses.whiterose.ac.uk/id/eprint/2975/1/DX093006.pdf |
+| `kuhlthau-1991-inside-search-process` | https://tefkos.rutgers-sci.domains/Courses/612/Articles/Kuhlthau_Inside_91.pdf |
+| `arxiv-2609.01294-explore-before-committing` | https://arxiv.org/pdf/2609.01294 |
+| `arxiv-2608.02009-halt` | https://arxiv.org/pdf/2608.02009 |
+| `arxiv-2602.03304-to-search-or-not` | https://arxiv.org/pdf/2602.03304 |
+| `kastner-2007-horizon-estimate` | https://pmc.ncbi.nlm.nih.gov/articles/PMC2655834/ |
+| `eumesy-unknown-terms` | https://speakerdeck.com/eumesy/examine-the-meaning-of-unknown-terms |
+| `arxiv-2505.09316-scent-of-knowledge` | https://arxiv.org/pdf/2505.09316 |
 
 ## 決まりと出典
 
-| 決まり                                                                                        | 出典                                                                                            | 原文の場所                                                         |
-| --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| 問いは探すうちに変わる。拾った断片を集めていく                                                | Bates 1989 "The design of browsing and berrypicking techniques for the online search interface" | `bates-1989-berrypicking.txt`                                      |
-| たどり方の6つの動き（後ろへ・前へ・雑誌を通しで・近くを眺める・主題の索引・著者）             | Bates 1989                                                                                      | 同 L295-355                                                        |
-| 引用をたどれば、主題を言葉で言い表す問題を避けられる                                          | Bates 1989                                                                                      | 同 L297-302                                                        |
-| starting / chaining / browsing / differentiating / monitoring / extracting                    | Ellis 1987 博士論文（1989 の JoD 論文の元・本体は有料）                                         | `ellis-1987-phd-behavioural-model.txt` L64、目次 L165-276          |
-| 調べ始めは混乱するのがふつう。詳しいノートは早すぎる閉じを招く。当てはまりそうな事実を並べる  | Kuhlthau 1991 "Inside the Search Process"                                                       | `kuhlthau-1991-inside-search-process.txt` L345-368                 |
-| 1つの方向に決め打ちすると、後の検索が同じ道を強める。仮説を枝分けして比べてから進む           | Zhou ら 2026 "Explore Before Committing"（HypoSearch）arXiv 2609.01294                          | `arxiv-2609.01294-explore-before-committing.txt` 冒頭の要旨        |
-| 止めどきは確信度ではなく、調査の論点の全部を証拠が支えたか                                    | Roh & Han 2026 "HALT" arXiv 2608.02009                                                          | `arxiv-2608.02009-halt.txt` 要旨                                   |
-| 誤りは2種類＝足りているのに探し続ける over-search と、早くやめて外す under-search             | Zhang ら 2026 "To Search or Not to Search" arXiv 2602.03304                                     | `arxiv-2602.03304-to-search-or-not.txt` 要旨                       |
-| 独立した2つの探し方の重なりから、まだ見つかっていない総数を見積もる（capture-mark-recapture） | Kastner ら 2007 "Estimating the Horizon of Articles to Decide When to Stop Searching"           | `kastner-2007-horizon-estimate.md` L51                             |
-| 知らない用語は粒度の粗い順に＝百科事典 → 専門事典 → 教科書・講義資料 → サーベイ → 原著        | 横井祥 2017 「Examine the meaning of unknown terms」（Speaker Deck）                            | `eumesy-unknown-terms.md` L343-373                                 |
-| 情報の匂い（information scent）で次にたどる先を選ぶ                                           | Pirolli & Card 1999 "Information foraging"（本体は有料・DOI 10.1037/0033-295x.106.4.643）       | 未取得。LLM に当てた例は `arxiv-2505.09316-scent-of-knowledge.txt` |
+| 決まり | 出典 | 原文の場所 |
+|---|---|---|
+| 問いは探すうちに変わる。拾った断片を集めていく | Bates 1989 "The design of browsing and berrypicking techniques for the online search interface" | `bates-1989-berrypicking.txt` |
+| たどり方の6つの動き（後ろへ・前へ・雑誌を通しで・近くを眺める・主題の索引・著者） | Bates 1989 | 同 L295-355 |
+| 引用をたどれば、主題を言葉で言い表す問題を避けられる | Bates 1989 | 同 L297-302 |
+| starting / chaining / browsing / differentiating / monitoring / extracting | Ellis 1987 博士論文（1989 の JoD 論文の元・本体は有料） | `ellis-1987-phd-behavioural-model.txt` L64、目次 L165-276 |
+| 調べ始めは混乱するのがふつう。詳しいノートは早すぎる閉じを招く。当てはまりそうな事実を並べる | Kuhlthau 1991 "Inside the Search Process" | `kuhlthau-1991-inside-search-process.txt` L345-368 |
+| 1つの方向に決め打ちすると、後の検索が同じ道を強める。仮説を枝分けして比べてから進む | Zhou ら 2026 "Explore Before Committing"（HypoSearch）arXiv 2609.01294 | `arxiv-2609.01294-explore-before-committing.txt` 冒頭の要旨 |
+| 止めどきは確信度ではなく、調査の論点の全部を証拠が支えたか | Roh & Han 2026 "HALT" arXiv 2608.02009 | `arxiv-2608.02009-halt.txt` 要旨 |
+| 誤りは2種類＝足りているのに探し続ける over-search と、早くやめて外す under-search | Zhang ら 2026 "To Search or Not to Search" arXiv 2602.03304 | `arxiv-2602.03304-to-search-or-not.txt` 要旨 |
+| 独立した2つの探し方の重なりから、まだ見つかっていない総数を見積もる（capture-mark-recapture） | Kastner ら 2007 "Estimating the Horizon of Articles to Decide When to Stop Searching" | `kastner-2007-horizon-estimate.md` L51 |
+| 知らない用語は粒度の粗い順に＝百科事典 → 専門事典 → 教科書・講義資料 → サーベイ → 原著 | 横井祥 2017 「Examine the meaning of unknown terms」（Speaker Deck） | `eumesy-unknown-terms.md` L343-373 |
+| 情報の匂い（information scent）で次にたどる先を選ぶ | Pirolli & Card 1999 "Information foraging"（本体は有料・DOI 10.1037/0033-295x.106.4.643） | 未取得。LLM に当てた例は `arxiv-2505.09316-scent-of-knowledge.txt` |
 
 ## 試行で分かった、流れの側の事実
 
