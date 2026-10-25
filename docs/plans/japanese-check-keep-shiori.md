@@ -1,36 +1,14 @@
-# japanese-check の注記を shiori で追う
+# ref の無い ja-check-keep の注記も CI で落とす
 
-japanese-check は、候補を残す判断を文書の中の注記（`ja-check-keep`）で受ける。注記が増えると、どこに何件あり、どれが古いかを一覧で見たくなる。shiori の台帳でこれを追えるようにする。
+dotfiles の `ja-check-keep` の注記は、shiori の台帳（`.config/shiori/registry.json`）で追っている。CI の「shiori Annotations」は、台帳と文書の ref を比べる。ただし今は、理由に `shiori: JA-<番号>` を付け忘れた注記を CI で落とさない。付け忘れた注記は、`shiori check` の出力に台帳に無い候補として出るだけである。
 
-## shiori 側で要る変更
+落とさないのは、shiori 0.3.0 が Markdown のコードブロックとインラインコードの中のコメントも読むためである。ADR-0048 と ja-check の手順書にある書き方の例が候補になるので、候補で落とすと、例のたびに CI が止まる。この件は berlysia/shiori#9 に出した。
 
-shiori 0.2.2 は `.md` を HTML のコメントとして読まない。拡張子の表（`EXTENSION_MAP`）に `.md` が無く、Markdown は `//` や `/* */` のコメントとして読まれる。berlysia/shiori の `feat/markdown-comment-syntax` ブランチで、`.md` と `.markdown` を HTML の系統に加えた。`.mdx` は対象外である。このブランチが公開版に入るのを待つ。
+## やること
 
-既定の `--patterns` には `.md` が入らないので、dotfiles 側で設定か `-p "**/*.md"` で指定する。
+shiori#9 が直った版が公開されたら、次を行う。
 
-## `ja-check-keep` を指令として読ませる設定
-
-shiori の変更は要らず、`.config/shiori/config.yaml` で独自の指令を定義すれば足りる。
-
-```yaml
-candidates:
-  ja-check:
-    keep: true
-    _matchers:
-      keep:
-        pattern: "\\bja-check-keep\\s+(.*)"
-        rules: csv
-        separator: "--"
-```
-
-- `keep: true` が要る。自分で定義した指令は、明示しない限り無効である。
-- 0.2.2 で、同じ中身を `.html` に置いて確かめた。`shiori:` の付いた注記は注記として、付かない注記は台帳に載っていない候補として出た。
-- `rules: csv` は `--` の前を空白でも分ける。注記の書き方は `<rule> -- <text> <理由>` で、`--` の前は規則 1 語だけなので、1 つの注記は 1 件として読まれる。0.2.2 で、`-- 足す 字義どおり shiori: JA-3` の形が JA-3 の 1 件になった。
-
-## dotfiles 側の段取り
-
-shiori の公開版が `.md` を読めるようになったら、次を行う。
-
-1. `shiori init` で `.config/shiori/` に台帳を作り、上の `config.yaml` を置く。scan の対象に `**/*.md` を入れる。
-2. 注記の理由の欄を `shiori: JA-<番号> reason="…"` の形で書き、台帳に同じ番号を登録する。japanese-check は理由の欄を自由な文として読むので、この形でも動きは変わらない。
-3. `shiori verify` を CI に入れ、台帳に無い番号と、文書から消えた番号を落とす。
+1. `home/dot_config/mise/config.toml` の shiori の版を上げる。
+2. リポジトリの根で `shiori check` を実行し、候補が本物の注記だけになったことを確かめる。書き方の例が候補に出なければよい。
+3. 台帳に無い候補でも落ちるように、`.github/workflows/ci-shiori.yml` の check の条件を変える。shiori の新しい版で、候補を落とす指定が何かを確かめてから書く。
+4. ADR-0048 の Amendments に、ref の無い注記も落とすようにしたことを書き、このファイルを消す。
