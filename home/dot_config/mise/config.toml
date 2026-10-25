@@ -25,6 +25,9 @@ credential_command = "gh auth token"
 bun = "1.4.4"
 deno = "2.9.8"
 direnv = "2.38.2"
+# Through mise, not Homebrew: the merge wrapper of the delivery policy runs with PATH fixed to
+# the mise shims and /usr/bin:/bin, so a Homebrew gh is invisible to it.
+gh = "2.102.0"
 fzf = "0.74.5" # Fuzzy finder - migrated from chezmoi external
 gitleaks = "8.30.1"
 node = "24.22.1"

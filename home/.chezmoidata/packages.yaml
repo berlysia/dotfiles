@@ -9,7 +9,6 @@ packages:
       - "bat"
       - "curl"
       - "fd"
-      - "gh"
       - "ghq"
       - "git"
       - "git-secrets"
