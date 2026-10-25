@@ -66,13 +66,13 @@ function passes(entry: unknown): boolean {
 describe("data/words.json", () => {
   const parsed = parseWordList(WORDS_JSON);
 
-  it("loads all 9 entries without notices", () => {
+  it("loads all 12 entries without notices", () => {
     ok(parsed.ok);
-    strictEqual(parsed.entries.length, 9);
+    strictEqual(parsed.entries.length, 12);
     deepStrictEqual(parsed.notices, []);
     const compiled = compileEntries(parsed.entries);
     deepStrictEqual(compiled.notices, []);
-    strictEqual(compiled.compiled.length, 9);
+    strictEqual(compiled.compiled.length, 12);
   });
 
   it("each example hits its own entry and no nonExample hits (allow included)", () => {

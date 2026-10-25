@@ -807,7 +807,7 @@ describe("hook selection and failure modes", () => {
       extra({ ...good(), word: "bad\u202eword", pattern: "ばっど" }),
     );
     const out = await write("/repo/README.md", "道具立てとばっど");
-    ok(out?.includes("項目 10 を飛ばした"));
+    ok(out?.includes(`項目 ${(repoList as unknown[]).length + 1} を飛ばした`));
     ok(!out?.includes("\u202e"));
   });
 
