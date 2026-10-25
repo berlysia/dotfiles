@@ -21,8 +21,13 @@ import { SHIPPED_WORD_LIST } from "../support/japanese-check-words.ts";
 interface LedgerRow {
   source: "no-ai-words" | "no-ai-jargon" | "calques";
   old: string;
-  to: string;
+  // More than one entry when the new list splits one old item, such as the
+  // verb 効く (a lemma entry) and its noun form 効き (a regex entry).
+  to: string | string[];
 }
+
+const targetsOf = (row: LedgerRow): string[] =>
+  Array.isArray(row.to) ? row.to : [row.to];
 
 const ledger = JSON.parse(
   readFileSync(
@@ -63,14 +68,12 @@ describe("word migration ledger", () => {
 
   it("points every row at a review entry of data/words.json", () => {
     for (const row of ledger)
-      assert.ok(
-        reviewWords.has(row.to),
-        `${row.source} ${row.old} -> ${row.to}`,
-      );
+      for (const to of targetsOf(row))
+        assert.ok(reviewWords.has(to), `${row.source} ${row.old} -> ${to}`);
   });
 
   it("leaves no review entry that no old item points at", () => {
-    const targets = new Set(ledger.map((row) => row.to));
+    const targets = new Set(ledger.flatMap(targetsOf));
     for (const word of reviewWords) assert.ok(targets.has(word), word);
   });
 });
