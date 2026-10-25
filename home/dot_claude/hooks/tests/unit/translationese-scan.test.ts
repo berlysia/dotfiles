@@ -225,10 +225,14 @@ describe("translationese-words.json (old list)", () => {
     for (const notice of result.notices) ok(notice.includes("量指定"), notice);
   });
 
-  it("matches data/words.json field by field (add words to both lists until the switch)", () => {
+  it("matches the named entries of data/words.json field by field (add named words to both lists until the switch)", () => {
+    // Review entries live only in data/words.json; the old list has none.
     const data = JSON.parse(readFileSync(DATA_LIST, "utf-8")) as {
       entries: Record<string, unknown>[];
     };
+    data.entries = data.entries.filter(
+      (e) => e.kind === "named-translationese",
+    );
     const fields = [
       "word",
       "kind",

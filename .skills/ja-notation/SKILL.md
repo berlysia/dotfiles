@@ -158,7 +158,7 @@ AI らしい定型句、中身のない評価語、成り立たない比喩を�
 - 足すのは、利用者が直訳語と名指ししたときだけにする。モデルが推測して足さない。
 - 警告が出たが、意味の違う用法として残した例は、その項目の `allow` と `nonExamples` に足す。
 - `pattern` と `allow` は、フラグを付けず 100 字以内にする。量指定は 1 つのパターンに 1 つまでにする。lazy の形と `{n,}` は使わず、量指定を付けたグループも含めない。先読み・後読み・後方参照・`\b`・`^`・`$`・`\p` も使わない。
-- hook の読み先が `data/words.json` に移るまでは、語を 2 つの一覧の両方に足す。旧の `references/translationese-words.json` と、`~/.claude/japanese-check/data/words.json`（配布先の名前）である。片方だけだと新旧の一致の test が落ちる。
+- hook の読み先が `data/words.json` に移るまでは、名指しの直訳語（`kind: named-translationese`）を 2 つの一覧の両方に足す。旧の `references/translationese-words.json` と、`~/.claude/japanese-check/data/words.json`（配布先の名前）である。片方だけだと新旧の一致の test が落ちる。`action: review` の項目（検査器の `calques` が候補にする語）は、`data/words.json` だけに置く。旧の一覧には足さない。
 - 足したら、リポジトリで hook の unit test（translationese-scan のテスト）を走らせる。制約の最終判定はテストの結果に従う。この節は、その要約である。
 
 ## 優先の順

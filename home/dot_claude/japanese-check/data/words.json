@@ -514,6 +514,45 @@
         "通知の受け手"
       ],
       "nonExamples": ["筆者に確かめたい点", "相手に伝える", "読者が判断できる"]
+    },
+    {
+      "word": "動作の動詞（拾う・引く・通る・効く・利く・響く・足す）",
+      "kind": "calque",
+      "action": "review",
+      "match": "lemma",
+      "origin": "analyze.ts の calques() に直書きしていた動詞の定数",
+      "lemmas": ["拾う", "引く", "通る", "効く", "利く", "響く", "足す"],
+      "pos": "動詞",
+      "english": "pick up / pull / pass through / take effect / resonate / add",
+      "fix": "字義どおりの用法・定着した専門用語なら残す。何がどうなるか不明なら原文の範囲で言い直す。",
+      "examples": [
+        "データを拾った。",
+        "線を引く。",
+        "道を通った。",
+        "薬が効いた。",
+        "鼻が利く。",
+        "音が響いた。",
+        "数を足す。"
+      ],
+      "nonExamples": ["値を確認した。"]
+    },
+    {
+      "word": "場所の名詞（入口・入り口・受け口・口）",
+      "kind": "calque",
+      "action": "review",
+      "match": "lemma",
+      "origin": "analyze.ts の calques() に直書きしていた名詞の定数",
+      "lemmas": ["入口", "入り口", "受け口", "口"],
+      "pos": "名詞",
+      "english": "entrance / mouth",
+      "fix": "字義どおりの用法・定着した専門用語なら残す。何がどうなるか不明なら原文の範囲で言い直す。",
+      "examples": [
+        "API の入口",
+        "API の入り口",
+        "受け口を広げる",
+        "口を開ける"
+      ],
+      "nonExamples": ["窓を確認した。"]
     }
   ]
 }

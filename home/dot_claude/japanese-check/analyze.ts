@@ -123,18 +123,6 @@ export function lint(lines: ProseLine[], genre?: Genre): Finding[] {
   return result;
 }
 
-// Sudachi normalizes inflections of 効く to 利く.
-const motionVerbs = new Set([
-  "拾う",
-  "引く",
-  "通る",
-  "効く",
-  "利く",
-  "響く",
-  "足す",
-]);
-const placeNouns = new Set(["入口", "入り口", "受け口", "口"]);
-
 export type ReviewKind = Exclude<WordKind, "named-translationese">;
 
 /**
@@ -306,43 +294,12 @@ function reviewCandidates(
   return { findings, truncated: [...truncated] };
 }
 
-function calquesWithTruncation(
-  lines: ProseLine[],
-  tokenize: Tokenizer,
-  review: readonly ReviewEntry[],
-): { findings: Finding[]; truncated: TruncationReason[] } {
-  const result: Finding[] = [];
-  for (const row of lines) {
-    for (const token of tokenize(row.text)) {
-      if (
-        (token.pos[0] === "動詞" && motionVerbs.has(token.normalized)) ||
-        (token.pos[0] === "名詞" && placeNouns.has(token.normalized))
-      ) {
-        result.push(
-          finding(
-            row,
-            "translation-candidate",
-            token.start,
-            token.surface,
-            "字義どおりの用法・定着した専門用語なら残す。何がどうなるか不明なら原文の範囲で言い直す。",
-          ),
-        );
-      }
-    }
-  }
-  const matched = reviewCandidates(lines, tokenize, review);
-  return {
-    findings: [...result, ...matched.findings],
-    truncated: matched.truncated,
-  };
-}
-
 export function calques(
   lines: ProseLine[],
   tokenize: Tokenizer,
   review: readonly ReviewEntry[],
 ): Finding[] {
-  return calquesWithTruncation(lines, tokenize, review).findings;
+  return reviewCandidates(lines, tokenize, review).findings;
 }
 
 const SENTENCE_END_MARKS = new Set(["。", "！", "？", "!", "?"]);
@@ -508,7 +465,7 @@ export function check(
   source?: string,
 ) {
   const lines = proseLines(markdown);
-  const matched = calquesWithTruncation(lines, tokenize, review);
+  const matched = reviewCandidates(lines, tokenize, review);
   return {
     schemaVersion: 1,
     analyzer: { engine: "sudachi", packageVersion: "0.1.5", mode: "C" },

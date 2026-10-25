@@ -66,19 +66,33 @@ function passes(entry: unknown): boolean {
 describe("data/words.json", () => {
   const parsed = parseWordList(WORDS_JSON);
 
-  it("loads all 28 entries without notices", () => {
+  // The named translationese entries are the ones the hook also reads; the
+  // review entries are covered by japanese-check-word-migration.test.ts.
+  const named = () => {
     ok(parsed.ok);
-    strictEqual(parsed.entries.length, 28);
+    return selectEntries(parsed.entries, {
+      kind: "named-translationese",
+      action: "fix",
+      match: "regex",
+    });
+  };
+
+  it("loads all 28 named entries and every review entry without notices", () => {
+    ok(parsed.ok);
+    strictEqual(named().length, 28);
     deepStrictEqual(parsed.notices, []);
     const compiled = compileEntries(parsed.entries);
     deepStrictEqual(compiled.notices, []);
-    strictEqual(compiled.compiled.length, 28);
+    strictEqual(
+      compiled.compiled.length,
+      parsed.entries.filter((e) => e.match === "regex").length,
+    );
   });
 
   it("each example hits its own entry and no nonExample hits (allow included)", () => {
-    ok(parsed.ok);
-    const { compiled } = compileEntries(parsed.entries);
-    for (const [i, entry] of parsed.entries.entries()) {
+    const entries = named();
+    const { compiled } = compileEntries(entries);
+    for (const [i, entry] of entries.entries()) {
       const one = compiled[i];
       ok(one);
       for (const example of entry.examples) {
@@ -95,10 +109,10 @@ describe("data/words.json", () => {
   });
 
   it("no example, nonExample or fix hits another entry", () => {
-    ok(parsed.ok);
-    const { compiled } = compileEntries(parsed.entries);
-    strictEqual(compiled.length, parsed.entries.length);
-    for (const [i, e] of parsed.entries.entries()) {
+    const entries = named();
+    const { compiled } = compileEntries(entries);
+    strictEqual(compiled.length, entries.length);
+    for (const [i, e] of entries.entries()) {
       const fields = {
         examples: e.examples,
         nonExamples: e.nonExamples,

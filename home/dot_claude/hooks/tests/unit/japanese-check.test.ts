@@ -541,7 +541,7 @@ describe("Sudachi-backed Japanese review", () => {
 
   it("check() carries the same outline as outline() and keeps schemaVersion 1", async () => {
     const markdown = "# 手順\n\n一文目。\n二文目。\n\n「行く。」次の文。\n";
-    const result = check(markdown, await tokenizer);
+    const result = check(markdown, await tokenizer, shippedReview(["calque"]));
     assert.deepEqual(result.outline, outline(proseLines(markdown)));
     assert.equal(result.schemaVersion, 1);
   });
@@ -2029,6 +2029,65 @@ describe("keep markers", () => {
   });
 });
 
+describe("the calque entries of the shipped list", () => {
+  const sudachi = findDependency("sudachi");
+  assert.ok(sudachi.ok);
+  const tokenizer = createTokenizer(sudachi.entry);
+
+  it("hold the verbs and nouns calques() used to hard-code", () => {
+    const lemmas = new Set(
+      shippedReview(["calque"]).flatMap((entry) =>
+        entry.match === "lemma" ? entry.lemmas : [],
+      ),
+    );
+    assert.deepEqual(
+      [...lemmas].sort(),
+      [
+        "入り口",
+        "入口",
+        "口",
+        "受け口",
+        "引く",
+        "拾う",
+        "効く",
+        "足す",
+        "通る",
+        "利く",
+        "響く",
+      ].sort(),
+    );
+  });
+
+  it("report nothing without review entries, so no word is left in analyze.ts", async () => {
+    assert.deepEqual(
+      calques(
+        proseLines("薬が効いた。\n数を足す。\nAPI の入口"),
+        await tokenizer,
+        [],
+      ),
+      [],
+    );
+  });
+
+  it("report the same candidate as before the words moved", async () => {
+    const found = calques(
+      proseLines("薬が効いた。"),
+      await tokenizer,
+      shippedReview(),
+    );
+    assert.deepEqual(found, [
+      {
+        rule: "translation-candidate",
+        line: 1,
+        column: 3,
+        text: "効い",
+        reason:
+          "字義どおりの用法・定着した専門用語なら残す。何がどうなるか不明なら原文の範囲で言い直す。",
+      },
+    ]);
+  });
+});
+
 describe("review entries from the word list", () => {
   const sudachi = findDependency("sudachi");
   assert.ok(sudachi.ok);
@@ -2196,6 +2255,19 @@ describe("review entries from the word list", () => {
       assert.equal(report.kept.length, 1);
       assert.deepEqual(report.keepIssues, []);
       assert.equal(report.verification?.status, "ready");
+    });
+
+    it("the calques command finds 効く with the shipped list", async () => {
+      const d = doc("薬が効いた。\n");
+      const output = mock.method(console, "log", () => {});
+      try {
+        await main(["calques", d.file], { stateDir: d.stateDir });
+        const result = JSON.parse(String(output.mock.calls[0]?.arguments[0]));
+        assert.equal(result.length, 1);
+        assert.equal(result[0].rule, "translation-candidate");
+      } finally {
+        output.mock.restore();
+      }
     });
 
     it("the calques command reads the list too", async () => {
