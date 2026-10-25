@@ -309,6 +309,215 @@
         "手順を SKILL.md に書いた",
         "結論を冒頭に置く"
       ]
+    },
+    {
+      "word": "配る（ファイル・ランタイムを）",
+      "kind": "named-translationese",
+      "action": "fix",
+      "match": "regex",
+      "origin": "2026-10-26 のチャットで利用者が指摘（PR の本文で）",
+      "pattern": "配(る|ら(ない|れ)|っ[たて]|り(ます|ません))",
+      "english": "deploy / distribute",
+      "fix": "何をどこに置く・入れるかを書く。例: 「jar を配る」→「chezmoi が jar を取得して ~/.config/formal-check/ に置く」。紙や物を手渡す字義どおりの用法と「気を配る」は残す。",
+      "allow": [
+        "気配り",
+        "(気|目)を配",
+        "(資料|プリント|チラシ|ビラ|名刺|カード|菓子|弁当|新聞|ティッシュ)を配"
+      ],
+      "examples": [
+        "chezmoi external で配る",
+        "windows には何も配らない",
+        "配った dir でテストを実行する"
+      ],
+      "nonExamples": ["資料を配る", "気を配る", "配布物を用意する"]
+    },
+    {
+      "word": "結ぶ（A と B をテストで）",
+      "kind": "named-translationese",
+      "action": "fix",
+      "match": "regex",
+      "origin": "2026-10-26 のチャットで利用者が指摘（PR の本文で）",
+      "pattern": "結(ぶ|ば(ない|れ)|ん[だで]|べ)",
+      "english": "tie / bind (A and B with tests)",
+      "fix": "何と何が、どう一致することを確かめるかを書く。例: 「installer と runtime.mjs をテストで結ぶ」→「installer が書いたファイルに runtime.mjs が期待どおりの判定を返すことを、テストで確かめる」。紐や契約を結ぶ字義どおりの用法は残す。",
+      "allow": [
+        "(契約|条約|協定|同盟|縁|実|手|紐|ひも|ネクタイ|帯|髪|線|点)を結",
+        "結び目",
+        "[』」]で結"
+      ],
+      "examples": [
+        "installer と runtime.mjs をテストで結ぶ",
+        "両者を結んだテスト",
+        "設計と実装を結ぶ"
+      ],
+      "nonExamples": ["契約を結ぶ", "靴紐を結ぶ", "『〜しましょう』で結ぶ"]
+    },
+    {
+      "word": "約束（contract の訳）",
+      "kind": "named-translationese",
+      "action": "fix",
+      "match": "regex",
+      "origin": "2026-10-26 のチャットで利用者が指摘（PR の本文で）",
+      "pattern": "(の|と)約束(を|が|に|は|と|も)",
+      "english": "contract",
+      "fix": "何が何をどんな形で受け渡すか（形式、順序、値）を書く。例: 「installer と runtime.mjs の約束を確かめる」→「installer が書いたファイルに対する runtime.mjs の判定を確かめる」。人と人の約束は残す。",
+      "allow": [
+        "(友人|友達|家族|子ども|子供|相手|恋人|上司|客|顧客|先生)との約束",
+        "(会う|待ち合わせ|口|指切り|固い)約束"
+      ],
+      "examples": [
+        "両者の約束をテストで確かめる",
+        "実行順の約束にも関わる",
+        "installer と runtime.mjs の約束を確かめる"
+      ],
+      "nonExamples": [
+        "友人との約束を守る",
+        "会う約束をした",
+        "受け渡す形式を書く"
+      ]
+    },
+    {
+      "word": "回す（テスト・検査を）",
+      "kind": "named-translationese",
+      "action": "fix",
+      "match": "regex",
+      "origin": "2026-10-26、PR の本文の推敲でモデルが直し、利用者が一覧への追加を指示",
+      "pattern": "(テスト|検査|ジョブ)を回(す|し|さ)|(smoke|lint|CI) を回(す|し|さ)|(テスト|検査|ジョブ)が回(る|っ)|(smoke|CI) が回(る|っ)",
+      "english": "run (tests)",
+      "fix": "「実行する」「実行される」と言う。例: 「heavy のテストを回す」→「heavy のテストを実行する」。物を回転させる用法と「後回し」は残す。",
+      "allow": [],
+      "examples": ["heavy のテストを回す", "smoke が回る", "CI の検査を回した"],
+      "nonExamples": ["ハンドルを回す", "後回しにする", "テストを実行する"]
+    },
+    {
+      "word": "見る（確かめた・対象にする）",
+      "kind": "named-translationese",
+      "action": "fix",
+      "match": "regex",
+      "origin": "2026-10-26、PR の本文の推敲でモデルが直し、利用者が一覧への追加を指示",
+      "pattern": "ことを見(た|る|て)|(Renovate|CI|hook|bot) が見(ない|る|て|た)|フックが見(ない|る|て|た)",
+      "english": "saw (= confirmed) / watches",
+      "fix": "何をしたか、どうなっているかを書く。例: 「一致することを見た」→「一致することを確かめた」、「Renovate が見ない」→「Renovate の更新の対象に入っていない」。目で見る字義どおりの用法は残す。",
+      "allow": [],
+      "examples": [
+        "一致することを見た",
+        "jar が置かれないことを見た",
+        "jar は Renovate が見ない"
+      ],
+      "nonExamples": ["映画を見た", "一致することを確かめた", "夢を見る"]
+    },
+    {
+      "word": "止める（改ざん・Renovate を）",
+      "kind": "named-translationese",
+      "action": "fix",
+      "match": "regex",
+      "origin": "2026-10-26、PR の本文の推敲でモデルが直し、利用者が一覧への追加を指示",
+      "pattern": "(改ざん|改竄|差し替え|書き換え)を止め|(Renovate|renovate) を止め",
+      "english": "stop (tampering) / disable",
+      "fix": "何が何を比べ、何が失敗するか、または何を無効にするかを書く。例: 「改ざんを止める」→「integrity と一致しなければ install が失敗する」、「Renovate を止める」→「Renovate を無効にする」。車や水を止める用法は残す。",
+      "allow": [],
+      "examples": [
+        "改ざんを止めるのは integrity である",
+        "Renovate を止めると"
+      ],
+      "nonExamples": [
+        "車を止める",
+        "Renovate を無効にする",
+        "SessionStart 通知を止める"
+      ]
+    },
+    {
+      "word": "失う（固定・照合を）",
+      "kind": "named-translationese",
+      "action": "fix",
+      "match": "regex",
+      "origin": "2026-10-26 のチャットで利用者が指摘（PR の本文で）",
+      "pattern": "(固定|照合|保証|検査|チェック|検証)を失",
+      "english": "lose (the pin / the check)",
+      "fix": "何が行われなくなり、そのため誰が何をすることになるかを書く。例: 「checksum の固定を失う」→「sha256 を確かめる処理を installer に書き足すことになる」。財産や信頼を失う用法は残す。",
+      "allow": [],
+      "examples": ["checksum の固定を失う", "照合を失うので", "保証を失った"],
+      "nonExamples": ["財布を失う", "信頼を失う", "確かめる処理を書き足す"]
+    },
+    {
+      "word": "無くなる（照合・検査が）",
+      "kind": "named-translationese",
+      "action": "fix",
+      "match": "regex",
+      "origin": "2026-10-26 のチャットで利用者が指摘（PR の本文で）",
+      "pattern": "(照合|検査|検証|確認|チェック)が(無|な)くな",
+      "english": "goes away (the check)",
+      "fix": "誰が何を確かめなくなり、代わりに誰が何をするかを書く。例: 「sha256 の照合が無くなる」→「sha256 を確かめる処理を installer に書き足すことになる」。",
+      "allow": [],
+      "examples": [
+        "sha256 の照合が無くなる",
+        "検査がなくなり",
+        "確認が無くなった"
+      ],
+      "nonExamples": ["在庫が無くなる", "確かめる処理を書き足す"]
+    },
+    {
+      "word": "版（バージョン）",
+      "kind": "named-translationese",
+      "action": "fix",
+      "match": "regex",
+      "origin": "2026-10-26 のチャットで利用者が指摘（PR の本文で）",
+      "pattern": "版を(解決|上げ|下げ|固定)|存在しない版|(パッケージ|依存|ライブラリ|ツール)の版|[a-z0-9] の版",
+      "english": "version (of software)",
+      "fix": "ソフトウェアの version は「バージョン」と書く。例: 「版を解決しない」→「新しいバージョンを探さない」、「z3-solver の版」→「z3-solver のバージョン」。書籍の版、文書の改訂の版は残す。",
+      "allow": ["(plan-N|plan|spec|md) の版"],
+      "examples": [
+        "版を解決しない",
+        "z3-solver の版は固定する",
+        "存在しない版の URL"
+      ],
+      "nonExamples": [
+        "書籍の版を改める",
+        "spec.md の版と plan の版",
+        "別の版の材料は使わない"
+      ]
+    },
+    {
+      "word": "人が上げる（誰がを書かない）",
+      "kind": "named-translationese",
+      "action": "fix",
+      "match": "regex",
+      "origin": "2026-10-26 のチャットで利用者が指摘（PR の本文で）",
+      "pattern": "人が(上げ|下げ|直|入れ|決め|書き換え|確かめ)",
+      "english": "a human does it",
+      "fix": "誰が、どのファイルを、どう書き換えるかを書く。例: 「バージョンは人が上げる」→「リポジトリの持ち主が .chezmoiexternal.toml.tmpl のバージョンと sha256 を書き換える PR を作る」。",
+      "allow": [],
+      "examples": [
+        "バージョンは人が上げる",
+        "その値は人が直す",
+        "人が確かめる"
+      ],
+      "nonExamples": [
+        "人が読む文書",
+        "リポジトリの持ち主が書き換える",
+        "人が集まる"
+      ]
+    },
+    {
+      "word": "書き手と読み手（コードの部品を指して）",
+      "kind": "named-translationese",
+      "action": "fix",
+      "match": "regex",
+      "origin": "2026-10-26 のチャットで利用者が指摘（PR の本文と commit で）",
+      "pattern": "(書き手|読み手)と(書き手|読み手)(の|を)(契約|約束|テスト|間)",
+      "english": "writer and reader (of a file)",
+      "fix": "部品に名前があればその名前で、無ければ動作で書く。「〜側」にも言い換えない。例: 「書き手と読み手の契約」→「installer が書く状態のファイルの形式と、それを読む runtime.mjs の判定」、一般論なら「ファイルを書く処理と読む処理」。人と人の「書き手と読み手との関係」は残す。",
+      "allow": [],
+      "examples": [
+        "書き手と読み手の契約をテストで固定する",
+        "読み手と書き手の約束",
+        "書き手と読み手をテストで確かめる"
+      ],
+      "nonExamples": [
+        "書き手と読み手との関係",
+        "書き手の側の予定",
+        "読み手の側と書き手の側で別の評価"
+      ]
     }
   ]
 }
