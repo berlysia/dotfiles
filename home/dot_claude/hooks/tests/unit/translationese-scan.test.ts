@@ -348,10 +348,12 @@ describe("old matcher vs words.ts findHits", () => {
             .split(""),
         ),
       ];
+      // 届く's allow lists many nouns, so its alphabet is ~80 chars and length 4
+      // would be ~40M strings; the seeded sample below still covers lengths 5-6
       const texts = [
         ...raw.examples,
         ...raw.nonExamples,
-        ...allStrings(alphabet, 4),
+        ...allStrings(alphabet, alphabet.length > 16 ? 2 : 4),
       ];
       for (let n = 0; n < 20000; n++) {
         let t = "";
