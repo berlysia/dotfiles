@@ -127,6 +127,56 @@
       "fix": "「使い心地」「操作感」「挙動」のように、何を感じるのかを言う。物の触感を指す文なら残す。前後から決める。",
       "examples": ["型の手触りが良い", "APIの手触りを確かめる"],
       "nonExamples": ["手で触れて確かめる"]
+    },
+    {
+      "word": "当てる（パッチを）",
+      "kind": "named-translationese",
+      "action": "fix",
+      "match": "regex",
+      "origin": "2026-10-25 のチャットで利用者が指摘（Issue の下書きで）",
+      "pattern": "(パッチ|変更|修正|書き換え|差分)を当て|当て直(す|し|さ|せ)",
+      "allow": ["割り当て直"],
+      "english": "apply a patch / re-apply the changes",
+      "fix": "「適用する」と言う。例: 「パッチを当てる」→「パッチを適用する」、「当て直す」→「適用し直す」。光や手を当てる字義どおりの用法は残す。",
+      "examples": [
+        "パッチを当てる",
+        "書き換えを当てた状態で",
+        "変更を当て直す"
+      ],
+      "nonExamples": ["光を当てる", "担当を割り当て直す", "答えを言い当てる"]
+    },
+    {
+      "word": "写し",
+      "kind": "named-translationese",
+      "action": "fix",
+      "match": "regex",
+      "origin": "2026-10-25 のチャットで利用者が指摘（Issue の下書きで）",
+      "pattern": "写し",
+      "allow": ["書き写", "(謄本|抄本|住民票|戸籍)の写し"],
+      "english": "a (vendored) copy of upstream",
+      "fix": "「コピー」「複製」と言う。例: 「upstream の写し」→「upstream のコピー」。書き写す、公的な書類の写しは残す。",
+      "examples": [
+        "upstream の写しを持つ",
+        "写しを差し替える",
+        "書き換える前の写し"
+      ],
+      "nonExamples": ["黒板を書き写した", "住民票の写しを取る", "写真を撮る"]
+    },
+    {
+      "word": "〜する形です",
+      "kind": "named-translationese",
+      "action": "fix",
+      "match": "regex",
+      "origin": "2026-10-25 のチャットで利用者が指摘（Issue の下書きで）",
+      "pattern": "([うくぐすつぬぶむる]|た|ない|という)形(です|だ|である)",
+      "english": "it takes the form of / it is shaped like",
+      "fix": "何の形かを言わずに文を閉じない。誰が何をするかを主語と述語で書く。例: 「APM が区別せずに止めている形です」→「APM は区別せずに止めています」。物の形を述べる文は残す。",
+      "examples": [
+        "区別せずに止めている形です",
+        "外から呼び出す形です",
+        "引数で渡すという形です"
+      ],
+      "nonExamples": ["丸い形です", "円の形を描く", "正方形です"]
     }
   ]
 }
