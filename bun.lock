@@ -5,7 +5,7 @@
     "": {
       "name": "@berlysia-dotfiles/root",
       "dependencies": {
-        "@drawio/mcp": "1.9.0",
+        "@drawio/mcp": "1.10.0",
         "@playwright/mcp": "0.0.83",
         "@upstash/context7-mcp": "4.4.2",
         "chrome-devtools-mcp": "1.11.0",
@@ -62,7 +62,7 @@
 
     "@berlysia-dotfiles/claude-hooks": ["@berlysia-dotfiles/claude-hooks@workspace:home/dot_claude"],
 
-    "@drawio/mcp": ["@drawio/mcp@1.9.0", "", { "dependencies": { "@modelcontextprotocol/sdk": "^1.27.1", "pako": "^2.1.0" }, "bin": { "drawio-mcp": "src/index.js" } }, "sha512-N9082owvJhVNznJ/JEehcMi4fbBmJJbazKwy/8/rv/bkB3S0tq4sIDVJMTCrty3NrZKSLrwtW0HmuGg+3FR8FQ=="],
+    "@drawio/mcp": ["@drawio/mcp@1.10.0", "", { "dependencies": { "@modelcontextprotocol/sdk": "^1.27.1", "pako": "^2.1.0" }, "bin": { "drawio-mcp": "src/index.js" } }, "sha512-WvMLOe/ELqJ58K3Rrv4Vp6NXfliOGXPDsMgcXN6d7qDqg0vmCTL306s4wnDQcM3I4n48Pl0B97eO0Dx+q/XzIQ=="],
 
     "@dsherret/path": ["@dsherret/path@0.3.4", "", {}, "sha512-eQ4QXKedvwYFUeLhGSjDzJVuwaTlGNQzZ5S0n9YdRRc9TSRbx5BSNNPzVz+sJUKlm/69zpg7XfckukJz4JiKEQ=="],
 
