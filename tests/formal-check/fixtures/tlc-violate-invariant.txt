@@ -1,0 +1,42 @@
+TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)
+Warning: Please run the Java VM which executes TLC with a throughput optimized garbage collector by passing the "-XX:+UseParallelGC" property.
+(Use the -nowarning option to disable this warning.)
+Running breadth-first search Model-Checking with fp 3 and seed 2629909856724484779 with 1 worker on 8 cores with 4000MB heap and 64MB offheap memory [pid: 2958314] (Linux 6.18.54.1-microsoft-standard-WSL2 amd64, Ubuntu 21.0.12.1 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /tmp/claude-1000/-home-berlysia--local-share-chezmoi/d2272a88-5e0f-455c-bc4e-b01d1c6a1315/scratchpad/tlctry/Race.tla
+Parsing file /tmp/Naturals.tla
+Semantic processing of module Naturals
+Semantic processing of module Race
+Starting... (2026-10-25 21:16:01)
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-10-25 21:16:01.
+Error: Invariant NeverOverCap is violated.
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+/\ seen = <<0, 0>>
+/\ pc = <<"read", "read">>
+/\ count = 0
+
+State 2: <Read line 7, col 12 to line 7, col 118 of module Race>
+/\ seen = <<0, 0>>
+/\ pc = <<"write", "read">>
+/\ count = 0
+
+State 3: <Read line 7, col 12 to line 7, col 118 of module Race>
+/\ seen = <<0, 0>>
+/\ pc = <<"write", "write">>
+/\ count = 0
+
+State 4: <Write line 8, col 13 to line 9, col 66 of module Race>
+/\ seen = <<0, 0>>
+/\ pc = <<"done", "write">>
+/\ count = 1
+
+State 5: <Write line 8, col 13 to line 9, col 66 of module Race>
+/\ seen = <<0, 0>>
+/\ pc = <<"done", "done">>
+/\ count = 2
+
+13 states generated, 12 distinct states found, 3 states left on queue.
+The depth of the complete state graph search is 5.
+The average outdegree of the complete state graph is 1 (minimum is 1, the maximum 2 and the 95th percentile is 2).
+Finished in 00s at (2026-10-25 21:16:01)
