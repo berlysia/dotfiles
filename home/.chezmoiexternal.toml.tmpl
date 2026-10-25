@@ -44,7 +44,8 @@ checksum.sha256 = "{{ $recallPluginSha256 }}"
 {{/* mapping table and version.mjs against upstream and fix them in the same change. No refreshPeriod: once fetched */}}
 {{/* the jar is served from chezmoi's cache. A failed fetch or checksum mismatch makes apply exit non-zero, the */}}
 {{/* same as the ni.zsh external above. Renovate does not watch this entry (no customManager), so a human raises */}}
-{{/* it, and the PR that does so reports the result of the real-fetch check in `bun run test:agent-vm`. The VM and */}}
+{{/* it. tests/agent-vm/run-templates.sh downloads the jar and compares it with this sha256; the agent-vm CI */}}
+{{/* job runs it whenever this file changes. The VM and */}}
 {{/* Windows get no jar: neither runs the installer or the reader. */}}
 {{- $tla2toolsVersion := "v1.7.4" }}
 {{- $tla2toolsSha256 := "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88" }}
