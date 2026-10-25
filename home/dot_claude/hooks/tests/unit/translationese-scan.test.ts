@@ -829,7 +829,7 @@ describe("hook selection and failure modes", () => {
         english: `a${rlo}b`,
       }),
     );
-    const out = await write("/repo/README.md", "本文");
+    const out = await write("/repo/README.md", "ばっどな文");
     ok(out?.includes(`項目 ${(repoList as unknown[]).length + 1} を飛ばした`));
     ok(!out?.includes("- ばっど"));
     ok(!out?.includes(rlo));
