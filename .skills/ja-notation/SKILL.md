@@ -186,5 +186,3 @@ AI らしい定型句、中身のない評価語、成り立たない比喩を�
 
 - tanteki の上流: [iwasa-kosui/tanteki](https://github.com/iwasa-kosui/tanteki) の `skills/tanteki`、commit `e9c4ae749fbe1b35cb740d9e7e0e00a00a0cb42b`。Copyright (c) 2026 Kosui Iwasa（MIT）
 - yomiyasu の上流: [nanaism/yomiyasu](https://github.com/nanaism/yomiyasu) の `skills/yomiyasu`、commit `79d15a621751cb7ad3bea556832209e9112e575f`。Copyright (c) 2026 nanaism（MIT）
-
-「英語の言い方を一語ずつ写した表現」の節は、X の投稿とその返信の観察（直した例の表と、3 つの型への分け方）をもとに書いた。4 つ目の型（形容詞を重ねた名詞句）は、利用者が PR の本文の推敲で指摘したものから足した。
