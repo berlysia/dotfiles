@@ -39,17 +39,17 @@
     "prepare": "./scripts/install-hooks.sh"
   },
   "dependencies": {
-    "@drawio/mcp": "1.6.3",
+    "@drawio/mcp": "1.9.0",
     "@playwright/mcp": "0.0.83",
-    "@upstash/context7-mcp": "4.3.0",
-    "chrome-devtools-mcp": "1.10.1",
-    "supergateway": "4.1.0"
+    "@upstash/context7-mcp": "4.4.2",
+    "chrome-devtools-mcp": "1.11.0",
+    "supergateway": "4.2.0"
   },
   "devDependencies": {
     "@mizchi/lsmcp": "0.10.0",
     "@types/node": "26.6.5",
-    "fallow": "3.32.0",
-    "oxfmt": "0.72.0",
+    "fallow": "3.34.1",
+    "oxfmt": "0.73.0",
     "oxlint": "1.88.0",
     "typescript": "7.0.2"
   },
