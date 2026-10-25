@@ -43,6 +43,8 @@ interface World {
     mergeStateStatus: string;
   };
   checkRuns: Array<{ name: string; status: string; conclusion: string | null }>;
+  /** The `status` field of the commit; undefined leaves the key out. */
+  status: unknown;
   files: string[];
   mergeStatus: number;
   failOn: string | null;
@@ -65,6 +67,7 @@ function freshWorld(): World {
     checkRuns: [
       { name: "status-check", status: "COMPLETED", conclusion: "SUCCESS" },
     ],
+    status: null,
     files: ["docs/a.md"],
     mergeStatus: 0,
     failOn: null,
@@ -151,6 +154,7 @@ describe("delivery-policy CLI", () => {
             data: {
               repository: {
                 object: {
+                  status: world.status,
                   checkSuites: {
                     nodes: [
                       {
@@ -362,6 +366,80 @@ describe("delivery-policy CLI", () => {
     world.failOn = "checkSuites";
     assert.equal(await run("merge", "5"), 40);
     assert.equal(mergeCalls().length, 0);
+  });
+
+  describe("commit statuses", () => {
+    const botStatus = (
+      overrides: Record<string, unknown> = {},
+    ): Record<string, unknown> => ({
+      context: "status-check",
+      state: "SUCCESS",
+      creator: { __typename: "Bot" },
+      ...overrides,
+    });
+    const withStatus = (...contexts: unknown[]) => {
+      world.checkRuns = [];
+      world.status = { contexts };
+    };
+
+    it("merges on a Bot's SUCCESS status, reading the same sha it merges", async () => {
+      record("merge");
+      withStatus(botStatus());
+      assert.equal(await run("merge", "5"), 0);
+      assert.equal(mergeCalls().length, 1);
+      const read = calls.find((c) => c.join(" ").includes("checkSuites"));
+      assert.ok(read?.includes(`sha=${SHA_A}`));
+      assert.equal(mergeCalls()[0]?.at(-1), SHA_A);
+    });
+
+    it("waits (10) on a User's SUCCESS status and does not merge", async () => {
+      record("merge");
+      withStatus(botStatus({ creator: { __typename: "User" } }));
+      assert.equal(await run("merge", "5"), 10);
+      assert.equal(mergeCalls().length, 0);
+    });
+
+    it("a null status with a passing check run still merges", async () => {
+      record("merge");
+      world.status = null;
+      assert.equal(await run("merge", "5"), 0);
+    });
+
+    it("a status with a null creator on an unrelated context does not block", async () => {
+      record("merge");
+      world.status = {
+        contexts: [botStatus({ context: "other", creator: null })],
+      };
+      assert.equal(await run("merge", "5"), 0);
+    });
+
+    it("a required status with a null creator is not counted (10)", async () => {
+      record("merge");
+      withStatus(botStatus({ creator: null }));
+      assert.equal(await run("merge", "5"), 10);
+      assert.equal(mergeCalls().length, 0);
+    });
+
+    it("a status node without state is 40", async () => {
+      record("merge");
+      withStatus({ context: "status-check", creator: { __typename: "Bot" } });
+      assert.equal(await run("merge", "5"), 40);
+      assert.equal(mergeCalls().length, 0);
+    });
+
+    it("a response without the status key is 40", async () => {
+      record("merge");
+      world.status = undefined;
+      assert.equal(await run("merge", "5"), 40);
+      assert.equal(mergeCalls().length, 0);
+    });
+
+    it("status.contexts that is not an array is 40", async () => {
+      record("merge");
+      world.status = { contexts: "nope" };
+      assert.equal(await run("merge", "5"), 40);
+      assert.equal(mergeCalls().length, 0);
+    });
   });
 
   it("a protected path is 30", async () => {
