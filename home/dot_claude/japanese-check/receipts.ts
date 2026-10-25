@@ -26,6 +26,7 @@ export const CHECKER_VERSION_FILES = [
   "analyze.ts",
   "cli.ts",
   "deps.ts",
+  "keep.ts",
   "markdown.ts",
   "profiles.ts",
   "receipts.ts",
