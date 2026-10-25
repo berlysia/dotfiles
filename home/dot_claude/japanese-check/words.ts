@@ -102,6 +102,7 @@ export interface CompiledEntry {
   index: number;
   word: string;
   fix: string;
+  english?: string;
   pattern: RegExp;
   allow: RegExp[];
 }
@@ -109,6 +110,7 @@ export interface CompiledEntry {
 export interface Hit {
   word: string;
   fix: string;
+  english?: string;
   excerpt: string;
 }
 
@@ -497,6 +499,7 @@ export function compileEntries(entries: WordEntry[]): {
       index: entry.index,
       word: entry.word,
       fix: entry.fix,
+      ...(entry.english !== undefined && { english: entry.english }),
       pattern,
       allow,
     });
@@ -617,6 +620,7 @@ export function findHits(
           hits.push({
             word: entry.word,
             fix: entry.fix,
+            ...(entry.english !== undefined && { english: entry.english }),
             excerpt: sanitizeExcerpt(
               line.slice(
                 Math.max(0, range.start - EXCERPT_MARGIN),
