@@ -4,6 +4,12 @@ export interface ProseLine {
   text: string;
   kind: LineKind;
 }
+// A comment that closes on the line it opens on, with the text between the
+// delimiters. Whether it is a keep marker is decided in keep.ts.
+export interface KeepComment {
+  line: number;
+  body: string;
+}
 export interface Paragraph {
   line: number;
   endLine: number;
@@ -16,12 +22,32 @@ function blank(text: string): string {
   return " ".repeat(text.length);
 }
 
+function countBackticks(text: string): number {
+  let count = 0;
+  for (const char of text) if (char === "`") count++;
+  return count;
+}
+
 export function proseLines(markdown: string): ProseLine[] {
+  return scan(markdown).lines;
+}
+
+export function keepComments(markdown: string): KeepComment[] {
+  return scan(markdown).comments;
+}
+
+// One pass yields both the prose and the comments, so the two agree on which
+// lines are frontmatter, fences and code.
+function scan(markdown: string): {
+  lines: ProseLine[];
+  comments: KeepComment[];
+} {
   const rows = markdown.replace(/^\uFEFF/u, "").split(/\r?\n/u);
   let frontmatter = rows[0]?.trim() === "---";
   let fence: { char: string; length: number } | undefined;
   let comment = false;
   const result: ProseLine[] = [];
+  const comments: KeepComment[] = [];
   for (const [index, raw] of rows.entries()) {
     if (frontmatter) {
       if (index > 0 && /^(?:---|\.\.\.)\s*$/u.test(raw)) frontmatter = false;
@@ -42,6 +68,13 @@ export function proseLines(markdown: string): ProseLine[] {
       continue;
     }
     let text = "";
+    const startedInComment = comment;
+    const found: string[] = [];
+    // Backticks outside comments so far on this line; an odd count at a `<!--`
+    // means the comment starts inside an inline code span, which wins because
+    // it started first. Backticks inside a comment belong to the comment.
+    let ticks = 0;
+    let bodyStart = -1;
     for (let offset = 0; offset < raw.length;) {
       const open = comment ? -1 : raw.indexOf("<!--", offset);
       if (comment) {
@@ -50,11 +83,16 @@ export function proseLines(markdown: string): ProseLine[] {
           text += blank(raw.slice(offset));
           break;
         }
+        if (bodyStart >= 0)
+          found.push(raw.slice(bodyStart, Math.max(bodyStart, end)));
+        bodyStart = -1;
         text += blank(raw.slice(offset, end + 3));
         offset = end + 3;
         comment = false;
       } else if (open >= 0) {
         text += raw.slice(offset, open);
+        ticks += countBackticks(raw.slice(offset, open));
+        bodyStart = ticks % 2 === 0 ? open + 4 : -1;
         offset = open;
         comment = true;
       } else {
@@ -62,6 +100,13 @@ export function proseLines(markdown: string): ProseLine[] {
         break;
       }
     }
+    // Indented code is judged on the raw line here: a comment at the start of
+    // the line blanks the masked text, but the line is not an indented block.
+    const codeLine =
+      (!startedInComment && /^(?: {4}|\t)/u.test(raw)) ||
+      /^\s*\[[^\]]+\]:/u.test(text);
+    if (!codeLine)
+      for (const body of found) comments.push({ line: index + 1, body });
     if (/^(?: {4}|\t)/u.test(text) || /^\s*\[[^\]]+\]:/u.test(text)) continue;
     text = text
       .replace(/(`+)([^`]|(?!\1)`)*?\1/gu, blank)
@@ -83,7 +128,7 @@ export function proseLines(markdown: string): ProseLine[] {
     );
     result.push({ line: index + 1, text, kind });
   }
-  return result;
+  return { lines: result, comments };
 }
 
 export function paragraphs(lines: ProseLine[]): Paragraph[] {

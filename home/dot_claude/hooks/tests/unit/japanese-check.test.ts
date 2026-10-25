@@ -27,7 +27,12 @@ import {
   terms,
 } from "../../../japanese-check/analyze.ts";
 import { main, parseArguments } from "../../../japanese-check/cli.ts";
-import { paragraphs, proseLines } from "../../../japanese-check/markdown.ts";
+import { parseMarker } from "../../../japanese-check/keep.ts";
+import {
+  keepComments,
+  paragraphs,
+  proseLines,
+} from "../../../japanese-check/markdown.ts";
 import {
   CHECKER_VERSION_FILES,
   checkerVersion,
@@ -1228,5 +1233,488 @@ describe("japanese-check import closure", () => {
       ].length;
       assert.equal(count, name === "tokenizer.ts" ? 1 : 0, name);
     }
+  });
+});
+
+describe("keep markers", () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "japanese-check-keep-")));
+  after(() => rmSync(dir, { recursive: true, force: true }));
+  let number = 0;
+  const KEEP = "ja-check-keep";
+  const mark = (rule: string, text: string, reason = "字義どおり") =>
+    `<!-- ${KEEP} ${rule} -- ${text} ${reason} -->`;
+
+  interface Report {
+    findings: Array<{ rule: string; line: number; text: string }>;
+    calques: Array<{ rule: string; line: number; text: string }>;
+    newFacts: unknown[] | null;
+    kept: Array<{ rule: string; line: number; text: string; reason: string }>;
+    keepIssues: Array<{ line: number; problem: string }>;
+    verification: { status: string; receipt: { candidates: number } } | null;
+  }
+
+  function fresh(content: string) {
+    const key = ++number;
+    const file = join(dir, `doc-${key}.md`);
+    writeFileSync(file, content);
+    return { file, stateDir: join(dir, `state-${key}`) };
+  }
+  async function run(args: string[], stateDir: string): Promise<Report> {
+    const output = mock.method(console, "log", () => {});
+    try {
+      await main(args, { stateDir });
+      return JSON.parse(String(output.mock.calls[0]?.arguments[0]));
+    } finally {
+      output.mock.restore();
+    }
+  }
+  // Records the check, so the report carries the candidate count.
+  async function checked(content: string, extra: string[] = []) {
+    const doc = fresh(content);
+    const report = await run(["check", doc.file, ...extra], doc.stateDir);
+    return { ...doc, report };
+  }
+  const candidates = (report: Report) =>
+    report.verification?.receipt.candidates;
+
+  describe("collecting comments", () => {
+    const bodies = (markdown: string) =>
+      keepComments(markdown).map((item) => [item.line, item.body.trim()]);
+
+    it("collects single-line closed comments with physical line numbers", () => {
+      assert.deepEqual(bodies(`本文。\n\n本文 <!-- a --> 続き <!-- b -->\n`), [
+        [3, "a"],
+        [3, "b"],
+      ]);
+    });
+
+    it("leaves proseLines output as it was for a document with comments", () => {
+      const input = "文。<!-- a -->\n<!-- b -->\n<!-- c\nd -->\n続き。";
+      assert.deepEqual(
+        proseLines(input).map((row) => [row.line, row.text.trim()]),
+        [
+          [1, "文。"],
+          [5, "続き。"],
+        ],
+      );
+    });
+
+    it("ignores examples in fences, indented code, frontmatter and link definitions", () => {
+      const input = [
+        "---",
+        "<!-- in frontmatter -->",
+        "---",
+        "```md",
+        "<!-- in fence -->",
+        "```",
+        "    <!-- in indented code -->",
+        "\t<!-- in tab code -->",
+        "[ref]: https://example.com <!-- in definition -->",
+      ].join("\n");
+      assert.deepEqual(keepComments(input), []);
+    });
+
+    it("does not read a comment that starts inside an inline code span", () => {
+      assert.deepEqual(bodies("例は `<!-- a -->` と書く。"), []);
+      assert.deepEqual(bodies("例は `x <!-- a -->` と書く。"), []);
+    });
+
+    it("reads the real comment next to an inline code example on one line", () => {
+      assert.deepEqual(bodies("例 `<!-- a -->` 本文 <!-- b -->"), [[1, "b"]]);
+      assert.deepEqual(bodies("本文 <!-- b --> 例 `<!-- a -->`"), [[1, "b"]]);
+    });
+
+    it("keeps backticks inside a comment out of the parity count", () => {
+      assert.deepEqual(bodies("本文 <!-- r `foo` --> 続き <!-- s -->"), [
+        [1, "r `foo`"],
+        [1, "s"],
+      ]);
+      assert.deepEqual(bodies("本文 <!-- r ` --> 続き <!-- s -->"), [
+        [1, "r `"],
+        [1, "s"],
+      ]);
+    });
+
+    it("reads a closed comment and not the multi-line comment that opens after it", () => {
+      assert.deepEqual(bodies("本文 <!-- a --> 続き <!-- b\nc -->\n次。"), [
+        [1, "a"],
+      ]);
+    });
+
+    it("does not read inside the continuation of a multi-line comment", () => {
+      assert.deepEqual(bodies("<!-- 始まり\n<!-- x -->\nまだ -->\n次。"), []);
+      assert.deepEqual(bodies("<!-- 始まり\n終わり --> 続き <!-- y -->"), [
+        [2, "y"],
+      ]);
+    });
+
+    it("collects a note-only line and a leading note", () => {
+      assert.deepEqual(bodies("<!-- a -->\n<!-- b --> 本文。"), [
+        [1, "a"],
+        [2, "b"],
+      ]);
+    });
+
+    it("collects a comment on a list item line", () => {
+      assert.deepEqual(bodies("- 項目 <!-- a -->"), [[1, "a"]]);
+    });
+  });
+
+  describe("matching candidates", () => {
+    it("moves a matched candidate to kept and lowers the count by one", async () => {
+      const plain = await checked("数を足す。\n");
+      assert.equal(candidates(plain.report), 1);
+      const kept = await checked(
+        `数を足す。${mark("translation-candidate", "足す")}\n`,
+      );
+      assert.equal(kept.report.calques.length, 1);
+      assert.deepEqual(kept.report.kept, [
+        {
+          rule: "translation-candidate",
+          line: 1,
+          text: "足す",
+          reason: "字義どおり",
+        },
+      ]);
+      assert.deepEqual(kept.report.keepIssues, []);
+      assert.equal(candidates(kept.report), 0);
+      assert.equal(kept.report.verification?.status, "ready");
+    });
+
+    it("reports a marker on another line as a marker without a candidate", async () => {
+      const { report } = await checked(
+        `数を足す。\n${mark("translation-candidate", "足す")}\n`,
+      );
+      assert.deepEqual(report.kept, []);
+      assert.equal(report.keepIssues.length, 1);
+      assert.equal(report.keepIssues[0]?.line, 2);
+      assert.match(
+        report.keepIssues[0]?.problem ?? "",
+        /同じ行に当たる候補が無い/u,
+      );
+      assert.equal(candidates(report), 2);
+    });
+
+    it("reports a malformed marker and keeps the candidate", async () => {
+      for (const body of [
+        `${KEEP} translation-candidate -- 足す`,
+        `${KEEP} translation-candidate 足す -- 字義どおり`,
+        `${KEEP}`,
+        `${KEEP} translation-candidate -- ""  理由`,
+      ]) {
+        const { report } = await checked(`数を足す。<!-- ${body} -->\n`);
+        assert.deepEqual(report.kept, [], body);
+        assert.equal(report.keepIssues.length, 1, body);
+        assert.equal(candidates(report), 2, body);
+      }
+    });
+
+    it("reports the first error of a marker with the fixed wording", () => {
+      const problem = (body: string) => {
+        const parsed = parseMarker(body);
+        assert.ok(parsed && !parsed.ok, body);
+        return parsed.problem;
+      };
+      const R = "translation-candidate";
+      const cases: Array<[string, string]> = [
+        [`${KEEP}`, "規則が書かれていない"],
+        [`${KEEP}   `, "規則が書かれていない"],
+        [`${KEEP} -- 足す 理由`, "規則が書かれていない"],
+        [`${KEEP} ${R} long-sentence -- 足す x`, "`--` の前は規則 1 語だけ"],
+        [`${KEEP} ${R} 足す -- 字義どおり`, "`--` の前は規則 1 語だけ"],
+        [`${KEEP} ${R}`, "`--` が無い"],
+        [`${KEEP} ${R} 足す 字義どおり`, "`--` が無い"],
+        [`${KEEP} ${R} --`, "対象の文字列が書かれていない"],
+        [`${KEEP} ${R} --   `, "対象の文字列が書かれていない"],
+        [`${KEEP} ${R} -- "" 字義どおり`, "対象の文字列が書かれていない"],
+        [`${KEEP} ${R} -- "  " 字義どおり`, "対象の文字列が書かれていない"],
+        [`${KEEP} ${R} -- "型の 関係 字義どおり`, "引用が閉じていない"],
+        [`${KEEP} ${R} -- "足す"字義どおり`, "引用の後ろに空白が無い"],
+        [`${KEEP} ${R} -- 足す`, "理由が無い"],
+        [`${KEEP} ${R} -- 足す   `, "理由が無い"],
+        [`${KEEP} ${R} -- "型の 関係"`, "理由が無い"],
+        // A full-width space is an ordinary character, not a separator.
+        [`${KEEP} ${R} -- 足す\u3000字義どおり`, "理由が無い"],
+      ];
+      for (const [body, expected] of cases)
+        assert.equal(problem(body), expected, body);
+    });
+
+    it("reads text and reason from the original string after the first --", () => {
+      const read = (body: string) => {
+        const parsed = parseMarker(body);
+        assert.ok(parsed?.ok, body);
+        return [parsed.rule, parsed.text, parsed.reason];
+      };
+      const R = "translation-candidate";
+      assert.deepEqual(read(`${KEEP} ${R} -- 足す 字義どおり`), [
+        R,
+        "足す",
+        "字義どおり",
+      ]);
+      // Later -- belong to the reason.
+      assert.deepEqual(read(`${KEEP} ${R} -- 足す 字義どおり -- 補足`), [
+        R,
+        "足す",
+        "字義どおり -- 補足",
+      ]);
+      // Several spaces and tabs around the words read like one.
+      assert.deepEqual(read(`  ${KEEP}  \t ${R}   --  足す  理由 `), [
+        R,
+        "足す",
+        "理由",
+      ]);
+      // Spaces inside quotes and inside the reason are kept.
+      assert.deepEqual(read(`${KEEP} ${R} -- "型の  関係" 字義  どおり`), [
+        R,
+        "型の  関係",
+        "字義  どおり",
+      ]);
+      // A reason may start with a quote; it is not interpreted.
+      assert.deepEqual(read(`${KEEP} ${R} -- 足す "字義どおり"`), [
+        R,
+        "足す",
+        '"字義どおり"',
+      ]);
+      assert.deepEqual(read(`${KEEP} ${R} -- 足す ref-1 note="字義どおり"`), [
+        R,
+        "足す",
+        'ref-1 note="字義どおり"',
+      ]);
+      // A full-width space stays inside the unquoted text.
+      assert.deepEqual(read(`${KEEP} ${R} -- 足す\u3000す 理由`), [
+        R,
+        "足す\u3000す",
+        "理由",
+      ]);
+    });
+
+    it("does not treat other comments as markers", () => {
+      assert.equal(parseMarker("ja-check-keepers a -- b c"), null);
+      assert.equal(parseMarker("ordinary note"), null);
+      assert.equal(parseMarker(`x ${KEEP} a -- b c`), null);
+      // The keyword must end at a space or tab, not a full-width space.
+      assert.equal(parseMarker(`${KEEP}\u3000a -- b c`), null);
+    });
+
+    it("does not keep a candidate of another rule on the same line", async () => {
+      const { report } = await checked(
+        `数を足す。${mark("long-sentence", "足す", "x")}\n`,
+      );
+      assert.deepEqual(report.kept, []);
+      assert.equal(report.keepIssues.length, 1);
+      assert.equal(candidates(report), 2);
+    });
+
+    it("keeps only the candidate the text names when a line has two", async () => {
+      const { report } = await checked(
+        `数を足して、データを拾う。${mark("translation-candidate", "足し")}\n`,
+      );
+      assert.equal(report.calques.length, 2);
+      assert.deepEqual(
+        report.kept.map((item) => item.text),
+        ["足し"],
+      );
+      assert.equal(candidates(report), 1);
+    });
+
+    it("matches the text inside quotes, spaces included", async () => {
+      const sentence = `${"あ".repeat(50)} ${"い".repeat(59)}。`;
+      const { report } = await checked(
+        `${sentence}${mark("long-sentence", '"あ い"', "定義文")}\n`,
+      );
+      assert.ok(report.findings.some((item) => item.rule === "long-sentence"));
+      assert.equal(report.kept.length, 1);
+      assert.equal(report.kept[0]?.reason, "定義文");
+      assert.equal(candidates(report), 0);
+    });
+
+    it("never builds a regular expression from the text", async () => {
+      const { report } = await checked(
+        `数を足す。${mark("translation-candidate", ".*")}\n`,
+      );
+      assert.deepEqual(report.kept, []);
+      assert.equal(report.keepIssues.length, 1);
+      assert.equal(candidates(report), 2);
+    });
+
+    it("takes an opaque reason as it is", async () => {
+      const reason = 'ref-1 note="字義どおり"';
+      const { report } = await checked(
+        `数を足す。${mark("translation-candidate", "足す", reason)}\n`,
+      );
+      assert.equal(report.kept[0]?.reason, reason);
+    });
+
+    it("keeps a reason with backticks inside the marker", async () => {
+      const { report } = await checked(
+        `数を足す。${mark("translation-candidate", "足す", "`foo` の用語")}\n`,
+      );
+      assert.equal(report.kept[0]?.reason, "`foo` の用語");
+      assert.deepEqual(report.keepIssues, []);
+    });
+
+    it("reads the closed marker before a comment that continues on the next lines", async () => {
+      const { report } = await checked(
+        `数を足す。${mark("translation-candidate", "足す")} <!-- 続く\n${mark("translation-candidate", "足す")}\n終わり -->\n`,
+      );
+      assert.equal(report.kept.length, 1);
+      assert.deepEqual(report.keepIssues, []);
+    });
+
+    it("ignores examples in a fence, inline code, indented code and frontmatter", async () => {
+      const example = mark("translation-candidate", "足す");
+      const { report } = await checked(
+        [
+          "---",
+          example,
+          "---",
+          "手順。",
+          "```md",
+          example,
+          "```",
+          `例は \`${example}\` と書く。`,
+          `    ${example}`,
+          "",
+        ].join("\n"),
+      );
+      assert.deepEqual(report.kept, []);
+      assert.deepEqual(report.keepIssues, []);
+    });
+
+    it("reads the real marker when an inline code example shares the line", async () => {
+      const real = mark("translation-candidate", "足す");
+      const { report } = await checked(
+        `例 \`${mark("long-sentence", "x")}\` を足す。${real}\n`,
+      );
+      assert.equal(report.kept.length, 1);
+      assert.deepEqual(report.keepIssues, []);
+    });
+
+    it("keeps a candidate on a list item line", async () => {
+      const { report } = await checked(
+        `- 数を足す。${mark("translation-candidate", "足す")}\n`,
+      );
+      assert.equal(report.kept.length, 1);
+      assert.equal(candidates(report), 0);
+    });
+
+    it("cannot keep a new fact: the marker becomes an issue", async () => {
+      const source = fresh("利用者は3人。\n");
+      const doc = fresh(`利用者は9人。${mark("number", "9人")}\n`);
+      const report = await run(
+        ["check", doc.file, "--source", source.file],
+        doc.stateDir,
+      );
+      assert.ok(Array.isArray(report.newFacts) && report.newFacts.length > 0);
+      assert.deepEqual(report.kept, []);
+      assert.equal(report.keepIssues.length, 1);
+      assert.equal(candidates(report), report.newFacts.length + 1);
+    });
+
+    it("turns a note-only line into an issue", async () => {
+      const { report } = await checked(
+        `${mark("translation-candidate", "足す")}\n`,
+      );
+      assert.equal(report.keepIssues.length, 1);
+      assert.match(
+        report.keepIssues[0]?.problem ?? "",
+        /同じ行に当たる候補が無い/u,
+      );
+      assert.equal(candidates(report), 1);
+    });
+
+    it("drops a line-leading note's body as indented code and reports the note", async () => {
+      const { report } = await checked(
+        `${mark("translation-candidate", "足す")} 数を足す。\n`,
+      );
+      assert.deepEqual(report.calques, []);
+      assert.deepEqual(report.kept, []);
+      assert.equal(report.keepIssues.length, 1);
+    });
+
+    it("reads nothing from a comment continuation line", async () => {
+      const { report } = await checked(
+        `数を足す。 <!-- 始まり\n数を足す。${mark("translation-candidate", "足す")}\n終わり -->\n`,
+      );
+      assert.deepEqual(report.kept, []);
+      assert.deepEqual(report.keepIssues, []);
+    });
+
+    it("leaves kept and keepIssues empty and the count unchanged without markers", async () => {
+      const { report } = await checked("数を足す。\n");
+      assert.deepEqual(report.kept, []);
+      assert.deepEqual(report.keepIssues, []);
+      assert.equal(report.calques.length, 1);
+      assert.equal(candidates(report), 1);
+    });
+
+    it("reports kept and keepIssues with --no-record too", async () => {
+      const doc = fresh(`数を足す。${mark("translation-candidate", "足す")}\n`);
+      const report = await run(
+        ["check", doc.file, "--no-record"],
+        doc.stateDir,
+      );
+      assert.equal(report.kept.length, 1);
+      assert.deepEqual(report.keepIssues, []);
+    });
+
+    it("leaves the other commands' output without kept fields", async () => {
+      const doc = fresh(`数を足す。${mark("translation-candidate", "足す")}\n`);
+      const calquesReport = await run(["calques", doc.file], doc.stateDir);
+      assert.ok(Array.isArray(calquesReport));
+      const lintReport = await run(["lint", doc.file], doc.stateDir);
+      assert.ok(Array.isArray(lintReport));
+    });
+  });
+
+  describe("keeping a judgement in the document", () => {
+    it("stays ready after another line is edited", async () => {
+      const doc = fresh(
+        `数を足す。${mark("translation-candidate", "足す")}\n\n別の段落。\n`,
+      );
+      const first = await run(["check", doc.file], doc.stateDir);
+      assert.equal(first.verification?.status, "ready");
+      writeFileSync(
+        doc.file,
+        `数を足す。${mark("translation-candidate", "足す")}\n\n書き換えた別の段落。\n`,
+      );
+      const second = await run(["check", doc.file], doc.stateDir);
+      assert.equal(second.verification?.status, "ready");
+      assert.equal(second.kept.length, 1);
+    });
+
+    it("is ready in an empty state directory", async () => {
+      const doc = fresh(`数を足す。${mark("translation-candidate", "足す")}\n`);
+      const empty = join(dir, `empty-state-${++number}`);
+      const report = await run(["check", doc.file], empty);
+      assert.equal(report.verification?.status, "ready");
+    });
+
+    it("still needs a review for a candidate the markers do not cover", async () => {
+      const doc = fresh(
+        `数を足す。${mark("translation-candidate", "足す")}\nデータを拾う。\n`,
+      );
+      const report = await run(["check", doc.file], doc.stateDir);
+      assert.equal(report.verification?.status, "needs-review");
+      assert.equal(candidates(report), 1);
+    });
+
+    it("shows kept when the CLI runs as a process", () => {
+      const doc = fresh(`数を足す。${mark("translation-candidate", "足す")}\n`);
+      const cli = fileURLToPath(
+        new URL("../../../japanese-check/cli.ts", import.meta.url),
+      );
+      const result = spawnSync(
+        process.execPath,
+        [cli, "check", doc.file, "--no-record"],
+        { encoding: "utf8" },
+      );
+      assert.equal(result.status, 0, result.stderr);
+      const report = JSON.parse(result.stdout) as Report;
+      assert.equal(report.kept.length, 1);
+      assert.equal(report.kept[0]?.text, "足す");
+      assert.deepEqual(report.keepIssues, []);
+    });
   });
 });

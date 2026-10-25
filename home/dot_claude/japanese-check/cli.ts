@@ -3,7 +3,8 @@ import { resolve } from "node:path";
 import { calques, check, lint, newFacts, outline, terms } from "./analyze.ts";
 import { checkDependencies, DependencyMissingError } from "./deps.ts";
 import type { DependencyGroup } from "./deps.ts";
-import { paragraphs, proseLines } from "./markdown.ts";
+import { matchKeeps } from "./keep.ts";
+import { keepComments, paragraphs, proseLines } from "./markdown.ts";
 import { describeResolved, loadProfiles, resolveModules } from "./profiles.ts";
 import { recordCheck, recordDecision, verify } from "./receipts.ts";
 import { readFileBounded } from "./safe-read.ts";
@@ -243,11 +244,21 @@ export async function main(
     );
     if (command === "check") {
       const report = check(markdown, tokenize, effectiveGenre, original);
+      const keeps = matchKeeps(keepComments(markdown), [
+        ...report.findings,
+        ...report.calques,
+      ]);
+      const keepOutput = { kept: keeps.kept, keepIssues: keeps.keepIssues };
       const profileOutput = selected
         ? { profile: { id: selected.id, ...(reader ? { reader } : {}) } }
         : {};
       if (noRecord)
-        result = { ...report, ...profileOutput, verification: null };
+        result = {
+          ...report,
+          ...keepOutput,
+          ...profileOutput,
+          verification: null,
+        };
       else {
         // A receipt is minted only by a completed full check, never by lint.
         if (digest(readFileSync(file, "utf8")) !== digest(markdown))
@@ -256,10 +267,14 @@ export async function main(
           file: target,
           expectedHash: targetHash,
           body: markdown,
+          // newFacts cannot be kept: whether a new fact stays is a per-document
+          // call against the original.
           candidates:
-            report.findings.length +
-            report.calques.length +
-            (report.newFacts?.length ?? 0),
+            [...report.findings, ...report.calques].filter(
+              (item) => !keeps.keptCandidates.has(item),
+            ).length +
+            (report.newFacts?.length ?? 0) +
+            keeps.keepIssues.length,
           stateDir,
           comparisonHash: original === undefined ? null : digest(original),
           profile: selected
@@ -273,7 +288,7 @@ export async function main(
             : undefined,
         });
         if (extra["--session"]) track(target, extra["--session"], stateDir);
-        result = { ...report, ...profileOutput, verification };
+        result = { ...report, ...keepOutput, ...profileOutput, verification };
       }
     } else if (command === "calques") result = calques(lines, tokenize);
     else if (command === "terms") result = terms(lines, tokenize);
