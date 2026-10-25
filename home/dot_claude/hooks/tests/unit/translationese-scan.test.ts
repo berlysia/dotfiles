@@ -182,6 +182,29 @@ describe("translationese-words.json (old list)", () => {
     }
   });
 
+  it("no example, nonExample or fix hits another entry", () => {
+    strictEqual(loaded.compiled.length, loaded.entries.length);
+    for (const [i, e] of loaded.entries.entries()) {
+      const fields = {
+        examples: e.examples,
+        nonExamples: e.nonExamples,
+        fix: [e.fix],
+      };
+      for (const [field, texts] of Object.entries(fields)) {
+        for (const text of texts) {
+          for (const [j, o] of loaded.compiled.entries()) {
+            if (j === i) continue;
+            strictEqual(
+              findHits(text, [o]).total,
+              0,
+              `${e.word}.${field}: 「${text}」 hits ${o.word}`,
+            );
+          }
+        }
+      }
+    }
+  });
+
   it("rejects quantified groups at load time, naming the quantifier", () => {
     const base = {
       word: "w",
@@ -813,8 +836,9 @@ describe("hook selection and failure modes", () => {
       home,
       extra({ ...good(), word: "bad\u202eword", pattern: "ばっど" }),
     );
-    const out = await write("/repo/README.md", "道具立てとばっど");
+    const out = await write("/repo/README.md", "ばっどな文");
     ok(out?.includes(`項目 ${(repoList as unknown[]).length + 1} を飛ばした`));
+    ok(!out?.includes("- ばっど"));
     ok(!out?.includes("\u202e"));
   });
 
