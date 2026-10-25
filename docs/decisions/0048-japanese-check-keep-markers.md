@@ -4,6 +4,8 @@
 
 accepted (2026-10-25)
 
+K6 の「shiori の台帳でも読める形にする」は、2026-10-25 の Amendments で、dotfiles の台帳と CI まで進めた。
+
 ## Context
 
 japanese-check の検査記録は、文書ごとに 1 つで、候補の数と、残した理由 1 つを持つ。記録は文書全体のハッシュに結び付き、置き場はリポジトリの外（`~/.claude/state/japanese-check/`）にある。
@@ -33,9 +35,21 @@ japanese-check の検査記録は、文書ごとに 1 つで、候補の数と�
 - 注記で外せるのは、同じ行の候補だけである。行頭に注記を置くと、その行の本文は字下げのコードとして本文から外れるので、注記は行の末尾に置く。
 - 短い `<text>` は、同じ行で同じ規則の候補をまとめて外す。
 - 注記は同じ行の文字列に結び付く。文の意味が変わっても `<text>` が残っていれば、判断は持ち越される。
-- textlint の指摘は、この注記の対象ではない。<!-- ja-check-keep staged-negation -- ではない 範囲の外を示す否定で、言い換えると範囲が分からなくなる -->
-- shiori はまだ Markdown のコメントを読まないので、台帳で追うのは shiori 側の対応を待つ。段取りは `docs/plans/japanese-check-keep-shiori.md` にある。
-- `--` の前を規則 1 語にする書き方は、shiori 0.2.2 の今の読み方に合わせたものである。shiori の読み方が変わると、この前提が崩れうる。
+- textlint の指摘は、この注記の対象ではない。<!-- ja-check-keep staged-negation -- ではない 範囲の外を示す否定で、言い換えると範囲が分からなくなる shiori: JA-1 -->
+- `--` の前を規則 1 語にする書き方は、shiori が `--` の前を規則の並びとして空白でも分ける読み方に合わせたものである。shiori の読み方が変わると、この前提が崩れうる。
+
+## Amendments
+
+### 2026-10-25: dotfiles の注記を shiori の台帳で追い、CI で台帳と比べる
+
+shiori 0.3.0 が Markdown のコメントを読むようになったので、dotfiles の注記を台帳で追うことにした。
+
+- 台帳は `.config/shiori/registry.json`、設定は `.config/shiori/config.yaml` に置く。scan の対象は `**/*.md` と `.skills/**/*.md` である。shiori はドットで始まる場所を、パターンで名前を書かない限り読まない。
+- `ja-check-keep` は、設定の独自の指令として読ませる。注記の理由の末尾に `shiori: JA-<番号>` を書き、台帳に同じ番号を、`kind: intentional`（理由のある恒久の除外）で載せる。期限は付けない。残す判断は文の中身に結び付き、日付で古くならないためである。
+- CI の「shiori Annotations」が、台帳に無い ref と、文書から消えた ref を落とす（`missing-in-registry` と `unused-in-source`）。この check は必須である。
+- CI はリポジトリの mise の設定を読まないので、ダウンロード数の少ないパッケージを通す指定が CI には無い。そのため、mise の設定から node と shiori の版を読み、2 行だけの mise の設定を作って入れる。
+- ref の無い注記は、CI では落とさない。shiori 0.3.0 は Markdown のコードの中の書き方の例も候補として読むので、落とすと例のたびに CI が止まる（berlysia/shiori#9）。shiori#9 が直った版に上げたら、ref の無い注記も落とす。この残件は `docs/plans/japanese-check-keep-shiori.md` にある。
+- 文書に書き方の例を書くときは、ref に `JA-<番号>` のような置き字だけを使う。shiori はコードの中のコメントも読むので、HTML コメントの形の例に実在の番号を書くと、本物の注記として台帳と比べられる。
 
 ## References
 

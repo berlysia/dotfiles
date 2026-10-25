@@ -52,3 +52,6 @@ mods/*/tsconfig.json
 
 # Python bytecode (from running the skills' scripts locally)
 __pycache__/
+
+# shiori writes its scan result here when run in a terminal
+.config/shiori/scan-result.json
