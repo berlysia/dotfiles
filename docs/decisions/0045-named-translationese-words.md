@@ -76,3 +76,4 @@ ADR-0036 は、yomiyasu の hook（返答の終わりに照合を走らせるも
 
 - 前提の決定: ADR-0036（文章スキルの役割と入口）、ADR-0025（配布される文書の自己完結）
 - 残件: `docs/plans/ja-notation-translationese-followups.md`
+- 名指しでない語を `review` の項目として同じ一覧に持ち、check が照合する決定: ADR-0050

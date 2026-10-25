@@ -8,6 +8,13 @@
 
 着手の条件: 上流 yomiyasu（nanaism/yomiyasu）が、同じ点検を次のマイナーで足すと予告している。取り込んだとき、上流の点検がこの層を拾うかを見る。拾わなければ、これらの名詞を ja-notation の名指しの直訳語の一覧（`references/translationese-words.json`。ADR-0045）に足すかを決める。一覧に足すのは利用者が名指しした語に限るので、どの語を足すかを利用者に確かめる。名指しする語の選び方を含むので、着手するときは Document Workflow（plan.md）を通す。
 
+## hook と CLAUDE.md の読み先を data/words.json に移す
+
+名指しの直訳語の一覧は 2 つある。旧の `.skills/ja-notation/references/translationese-words.json`（配列、`kind` なし）と、新の `home/dot_claude/japanese-check/data/words.json`（`schema: 1`）である。hook `translationese-scan.ts` とグローバル CLAUDE.md の `## Language` は、まだ旧の一覧を読む。hook は旧の形を新の形へ変えてから照合する。
+
+- **分かっていること**: 新の一覧には、名指しでない語（`action: review`）も入った（ADR-0050）。旧の一覧は `kind` を持てないので、名指しの語だけを両方に持つ。新旧の一致の test（`tests/unit/translationese-scan.test.ts`）は、新の一覧の名指しの項目だけを旧の一覧と比べる
+- **再開の入口**: hook の読み先を新の一覧に移し、`kind: named-translationese` の項目だけを照合する。CLAUDE.md の規則と `ja-notation/SKILL.md` の「両方に足す」を直し、旧の一覧と変換の関数と一致の test を消す
+
 ## 場所の名詞に推測で名前を付ける
 
 「トークンを出す口」を、評価文に無い「エンドポイント」に直す動きが、節の有無にかかわらず出た。節は名前が書かれているときだけ置き換えると決めたが、出どころは yomiyasu の SKILL.md の「専門用語と名称の扱い」で、上流の規則は変えていない。上流を取り込むときに、この規則が推測を止める書き方になったかを見る。
