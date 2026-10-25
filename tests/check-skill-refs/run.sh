@@ -54,13 +54,17 @@ COND_JTW='このスキルが最後で、重ねた入口に tanteki か yomiyasu 
 entry_md() {
   local roles=ja-fact-preservation need="" cond="" r
   case "$1" in
-    tanteki | yomiyasu)
+    tanteki)
+      roles="ja-fact-preservation, ja-doc-profile, ja-structure, ja-notation, ja-check, ja-paragraph"
+      need="ja-doc-profile ja-structure ja-notation ja-check ja-paragraph"
+      ;;
+    yomiyasu)
       roles="ja-fact-preservation, ja-doc-profile, ja-structure, ja-notation, ja-check"
       need="ja-doc-profile ja-structure ja-notation ja-check"
       ;;
     japanese-tech-writing)
-      roles="ja-fact-preservation, ja-structure, ja-notation"
-      need="ja-structure ja-notation ja-check"
+      roles="ja-fact-preservation, ja-structure, ja-notation, ja-paragraph"
+      need="ja-structure ja-notation ja-check ja-paragraph"
       cond="$COND_JTW"
       ;;
     koncise)
@@ -320,10 +324,11 @@ test_c2_valid_entries() {
   skill ja-structure
   skill ja-notation
   skill ja-check
+  skill ja-paragraph
   raw_skill koncise "$c2_ok"
-  raw_skill tanteki $'---\nname: tanteki\n---\n\n# tanteki\n\n役割: ja-fact-preservation, ja-doc-profile, ja-structure, ja-notation, ja-check\n構成: 動かす\n'"$FACT_LINE"
+  raw_skill tanteki $'---\nname: tanteki\n---\n\n# tanteki\n\n役割: ja-fact-preservation, ja-doc-profile, ja-structure, ja-notation, ja-check, ja-paragraph\n構成: 動かす\n'"$FACT_LINE"
   raw_skill yomiyasu $'# y\n\n役割: ja-doc-profile、`ja-fact-preservation`、ja-structure ja-notation ja-check\n構成: 動かさない\n'"$FACT_LINE"
-  raw_skill japanese-tech-writing $'# j\n役割: ja-fact-preservation, ja-structure, ja-notation\n構成: 動かさない\n'"$FACT_LINE"$'\n\n'"$COND_JTW"
+  raw_skill japanese-tech-writing $'# j\n役割: ja-fact-preservation, ja-structure, ja-notation, ja-paragraph\n構成: 動かさない\n'"$FACT_LINE"$'\n\n'"$COND_JTW"
   run_s
   assert_eq 0 "$RC" "valid entries exit 0 ($STDERR)"
 }
@@ -354,6 +359,7 @@ test_c2_role_set_per_entry() {
   skill ja-structure
   skill ja-notation
   skill ja-check
+  skill ja-paragraph
   raw_skill koncise $'# k\n\n役割: ja-fact-preservation, ja-doc-profile\n構成: 動かす\n'"$FACT_LINE"
   run_s
   assert_eq 1 "$RC" "koncise listing ja-doc-profile exits 1"
@@ -366,7 +372,7 @@ test_c2_role_set_per_entry() {
   raw_skill tanteki $'# t\n\n役割: ja-doc-profile\n構成: 動かす\n'"$FACT_LINE"
   run_s
   assert_eq 1 "$RC" "tanteki without ja-fact-preservation exits 1"
-  raw_skill tanteki $'# t\n\n役割: ja-fact-preservation, ja-doc-profile, ja-structure, ja-notation, ja-check\n構成: 動かす\n'"$FACT_LINE"
+  raw_skill tanteki $'# t\n\n役割: ja-fact-preservation, ja-doc-profile, ja-structure, ja-notation, ja-check, ja-paragraph\n構成: 動かす\n'"$FACT_LINE"
   run_s
   assert_eq 0 "$RC" "each entry with its own role set exits 0 ($STDERR)"
 }
@@ -637,6 +643,93 @@ edit_catalog() {
   local f="$S/yomiyasu/references/slop-catalog.md" c
   c=$(<"$f")
   printf '%s\n' "${c/"$1"/"$2"}" >"$f"
+}
+
+# ---- ja-paragraph: role reference rules, role-line membership, backrefs -----------------------------
+# Each case is its own function: a failing case must name itself, and the cases share no state that
+# would justify looping over a table (fixtures differ in every case).
+test_paragraph_refs_tanteki_references() {
+  all_entries
+  file tanteki/references/x.md x
+  skill ja-paragraph 'see ../tanteki/references/x.md'
+  run_s
+  assert_eq 0 "$RC" "paragraph-1 ja-paragraph -> tanteki/references/ exits 0 ($STDERR)"
+}
+test_paragraph_refs_fact_preservation() {
+  all_entries
+  skill ja-paragraph 'see ../ja-fact-preservation/SKILL.md'
+  run_s
+  assert_eq 0 "$RC" "paragraph-2 ja-paragraph -> ja-fact-preservation/SKILL.md exits 0 ($STDERR)"
+}
+test_paragraph_refs_check_denied() {
+  all_entries
+  skill ja-paragraph 'see ../ja-check/SKILL.md'
+  run_s
+  assert_eq 1 "$RC" "paragraph-3 ja-paragraph -> ja-check/SKILL.md exits 1"
+  assert_contains "$STDERR" 'may not reference' "paragraph-3 denial is reported"
+}
+test_paragraph_refs_structure_denied() {
+  all_entries
+  skill ja-paragraph 'see ../ja-structure/SKILL.md'
+  run_s
+  assert_eq 1 "$RC" "paragraph-4 ja-paragraph -> ja-structure/SKILL.md exits 1"
+  assert_contains "$STDERR" 'may not reference' "paragraph-4 denial is reported"
+}
+test_paragraph_refs_line_range_is_not_a_file() {
+  all_entries
+  file tanteki/references/delegation.md x
+  skill ja-paragraph 'see ../tanteki/references/delegation.md:46-60'
+  run_s
+  assert_eq 1 "$RC" "paragraph-5 a line range on the path exits 1"
+  assert_contains "$STDERR" 'does not exist' "paragraph-5 missing path is reported"
+}
+test_paragraph_backref_tanteki_references() {
+  all_entries
+  skill ja-paragraph
+  file tanteki/references/x.md 'ja-paragraph'
+  run_s
+  assert_eq 1 "$RC" "paragraph-6 tanteki/references mentioning ja-paragraph exits 1"
+  assert_contains "$STDERR" 'must not mention ja-paragraph' "paragraph-6 backref is reported"
+}
+test_paragraph_tanteki_role_line_without_it() {
+  all_entries
+  skill ja-paragraph
+  edit_skill tanteki ', ja-paragraph' ''
+  run_s
+  assert_eq 1 "$RC" "paragraph-7 tanteki without ja-paragraph on the role line exits 1"
+  assert_contains "$STDERR" 'role line does not list ja-paragraph' "paragraph-7 missing role is reported"
+}
+test_paragraph_jtw_role_line_without_it() {
+  all_entries
+  skill ja-paragraph
+  edit_skill japanese-tech-writing ', ja-paragraph' ''
+  run_s
+  assert_eq 1 "$RC" "paragraph-8 japanese-tech-writing without ja-paragraph on the role line exits 1"
+  assert_contains "$STDERR" 'role line does not list ja-paragraph' "paragraph-8 missing role is reported"
+}
+test_paragraph_yomiyasu_must_not_list() {
+  all_entries
+  skill ja-paragraph
+  edit_skill yomiyasu '役割: ja-fact-preservation, ja-doc-profile, ja-structure, ja-notation, ja-check' '役割: ja-fact-preservation, ja-doc-profile, ja-structure, ja-notation, ja-check, ja-paragraph'
+  run_s
+  assert_eq 1 "$RC" "paragraph-9 yomiyasu listing ja-paragraph exits 1"
+  assert_contains "$STDERR" 'must not list' "paragraph-9 extra role is reported"
+}
+test_paragraph_koncise_must_not_list() {
+  all_entries
+  skill ja-paragraph
+  edit_skill koncise '役割: ja-fact-preservation' '役割: ja-fact-preservation, ja-paragraph'
+  run_s
+  assert_eq 1 "$RC" "paragraph-10 koncise listing ja-paragraph exits 1"
+  assert_contains "$STDERR" 'must not list' "paragraph-10 extra role is reported"
+}
+test_paragraph_backref_yomiyasu_references() {
+  all_entries
+  skill ja-paragraph
+  file yomiyasu/references/x.md 'ja-paragraph'
+  run_s
+  assert_eq 1 "$RC" "paragraph-11 yomiyasu/references mentioning ja-paragraph exits 1"
+  assert_contains "$STDERR" 'must not mention ja-paragraph' "paragraph-11 backref is reported"
 }
 
 # ---- runner --------------------------------------------------------------------------------------
