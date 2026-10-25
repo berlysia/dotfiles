@@ -16,6 +16,10 @@ on:
       - "scripts/skill-inventory.sh"
       - "home/dot_claude/skill-approvals.md"
       - "home/dot_local/bin/executable_textlint-global"
+      # The formal-check installer is checked against its reader, and the
+      # dependency declaration is what the installer installs.
+      - ".skills/formal-check/scripts/lib/runtime.mjs"
+      - "home/dot_config/formal-check/**"
       # The deployed bunfig is generated verbatim from this file, so a change
       # here is what the provisioning invariants' bunfig assertion exists to catch.
       - "bunfig.toml"
@@ -34,6 +38,10 @@ on:
       - "scripts/skill-inventory.sh"
       - "home/dot_claude/skill-approvals.md"
       - "home/dot_local/bin/executable_textlint-global"
+      # The formal-check installer is checked against its reader, and the
+      # dependency declaration is what the installer installs.
+      - ".skills/formal-check/scripts/lib/runtime.mjs"
+      - "home/dot_config/formal-check/**"
       # The deployed bunfig is generated verbatim from this file, so a change
       # here is what the provisioning invariants' bunfig assertion exists to catch.
       - "bunfig.toml"

@@ -1044,7 +1044,8 @@ test("sync states become warnings per file", () => {
 
 // ---------------------------------------------------------------- runtime home
 
-const { resolveRuntime, checkAvailability } = await load("runtime.mjs");
+const { resolveRuntime, checkAvailability, INSTALLER } =
+  await load("runtime.mjs");
 
 test("FORMAL_CHECK_HOME wins when absolute and present", () => {
   const dir = makeRepo();
@@ -1282,6 +1283,16 @@ test("recover differs by source, and never starts with the prefix", async () => 
   for (const r of [fromEnv.z3, fromDefault.z3, stale.z3]) {
     assert.ok(!r.recover.startsWith("Recover with:"));
   }
+});
+
+test("the installer named in the recover advice is the one chezmoi deploys", () => {
+  // chezmoi drops the run_after_ prefix and the .tmpl suffix from a script's
+  // source name to get its target name; the recover command uses the target.
+  const scriptsDir = new URL("../home/.chezmoiscripts/", import.meta.url);
+  const deployed = readdirSync(scriptsDir)
+    .filter((name) => /^run_after_.*formal-check.*\.sh\.tmpl$/.test(name))
+    .map((name) => name.replace(/^run_after_/, "").replace(/\.tmpl$/, ""));
+  assert.deepEqual(deployed, [INSTALLER.split("/").at(-1)]);
 });
 
 test("two tla checks read the TLC version once per run", async () => {

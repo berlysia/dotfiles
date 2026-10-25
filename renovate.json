@@ -84,6 +84,12 @@
       ]
     },
     {
+      "description": "formal-check runtime (z3-solver in home/dot_config/formal-check/package.json): its own PR, never auto-merged, because merging is what accepts a new solver. CI skips the real-solver tests, so run the heavy tests (bun run test:heavy) locally before merging. The group name overrides the one group:allNonMajor assigns, as for the claude hook runtime above. tla2tools.jar in home/.chezmoiexternal.toml.tmpl is not watched by Renovate (no customManager); a human raises it",
+      "matchFileNames": ["home/dot_config/formal-check/**"],
+      "groupName": "formal-check runtime",
+      "automerge": false
+    },
+    {
       "description": "chezmoi release pinned in the install-chezmoi action: its own PR, held 7 days, never auto-merged, because merging is what accepts a new release. Whether the 7 day wait takes effect for a github-releases custom manager shows only in the first PR; with automerge off a human sees that before merging. Must stay last: the preset's :automergeMinor is cancelled only by the rules that come after it, and reordering or reformatting the version line fails tests/install-chezmoi.test.mjs",
       "matchManagers": ["custom.regex"],
       "matchDepNames": ["chezmoi"],

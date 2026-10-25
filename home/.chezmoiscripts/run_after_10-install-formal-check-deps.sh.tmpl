@@ -1,0 +1,98 @@
+{{ if ne .chezmoi.os "windows" -}}
+#!/bin/bash
+# Installs the formal-check runtime (z3-solver) into ~/.config/formal-check,
+# next to the tla2tools.jar that chezmoi deploys there as an external.
+#
+# This has the same shape as run_after_10-install-textlint-deps.sh and is kept
+# as a copy on purpose: a shared helper would be a lib that chezmoi does not
+# deploy and would touch the .chezmoiscripts ordering contract. The differences
+# are the env name, the install dir and the recover command. Consider factoring
+# the two out once a third installer of this kind appears.
+#
+# Runs in the run_after_ phase for the same reason as the textlint installer:
+# scripts in the ASCII phase read the package.json from the PREVIOUS apply. The
+# 10- prefix puts it in the dependency-tree band, after 00-install-mise-tools
+# provides bun and before the zz- verifier (ADR-0017).
+#
+# Exit code is 0 even when the install fails so the remaining run_after_
+# scripts still run. The failure surfaces where it costs something: the reader
+# (.skills/formal-check/scripts/lib/runtime.mjs) reports runtime-missing or
+# runtime-stale when a check needs z3. .install-state is a byte copy of the
+# package.json and .install-state.lock a byte copy of the bun.lock that last
+# installed successfully; this script is their only writer (lock first,
+# package.json second). The reader only compares bytes and treats any mismatch,
+# absence or read error as stale. Its "Recover with" command runs this script
+# through chezmoi, so this is the one place the state is fixed.
+#
+# --frozen-lockfile: the install must match the committed bun.lock, so the
+# tree is the reviewed one. If it fails because bun.lock and package.json
+# disagree, regenerate bun.lock in the chezmoi source (home/dot_config/formal-check).
+#
+# --ignore-scripts: z3-solver needs no lifecycle script (its wasm ships in the
+# package), and a verifier has no business running one at install time.
+
+set -uo pipefail
+
+log() {
+    local level="${2:-INFO}"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $1"
+}
+
+# CHEZMOI_FORMAL_CHECK_INSTALL_DIR overrides the install dir (tests only). It is
+# a different name from the reader's FORMAL_CHECK_HOME so that a FORMAL_CHECK_HOME
+# set in a shell rc never moves where apply installs. Non-absolute or empty
+# values are ignored. It does not stop a symlinked dir from being followed.
+case "${CHEZMOI_FORMAL_CHECK_INSTALL_DIR:-}" in
+    /*) FORMAL_CHECK_DIR="$CHEZMOI_FORMAL_CHECK_INSTALL_DIR" ;;
+    *) FORMAL_CHECK_DIR="$HOME/.config/formal-check" ;;
+esac
+STATE_FILE="$FORMAL_CHECK_DIR/.install-state"
+STATE_LOCK_FILE="$FORMAL_CHECK_DIR/.install-state.lock"
+
+if [ ! -f "$FORMAL_CHECK_DIR/package.json" ]; then
+    log "No package.json at $FORMAL_CHECK_DIR, skipping formal-check deps install."
+    exit 0
+fi
+
+if command -v mise &> /dev/null; then
+    if mise_env=$(mise env --shell bash 2>/dev/null); then
+        eval "$mise_env"
+    fi
+fi
+
+if ! command -v bun &> /dev/null; then
+    log "bun not found. Skipping formal-check deps install." "WARNING"
+    exit 0
+fi
+
+log "Installing formal-check dependencies in $FORMAL_CHECK_DIR..."
+if (cd "$FORMAL_CHECK_DIR" && bun install --frozen-lockfile --ignore-scripts 2>&1); then
+    log "formal-check dependencies are in sync" "SUCCESS"
+    # Write via a sibling temp file and rename, as record-provisioning-failure.sh
+    # does for the install-failure markers, so a half-written copy never reads as "stale".
+    # The temp files live in the install dir so mv stays on one filesystem.
+    # Lock first: a crash in between leaves .install-state stale, never fresh.
+    # Without a bun.lock the reader does not compare locks, so drop any old
+    # lock copy instead of failing the whole state write.
+    lock_tmp="${STATE_LOCK_FILE}.tmp.$$"
+    state_tmp="${STATE_FILE}.tmp.$$"
+    if { if [ -f "$FORMAL_CHECK_DIR/bun.lock" ]; then
+            cp "$FORMAL_CHECK_DIR/bun.lock" "$lock_tmp" && mv -f "$lock_tmp" "$STATE_LOCK_FILE"
+        else
+            rm -f "$STATE_LOCK_FILE"
+        fi; } \
+        && cp "$FORMAL_CHECK_DIR/package.json" "$state_tmp" \
+        && mv -f "$state_tmp" "$STATE_FILE"; then
+        :
+    else
+        rm -f "$lock_tmp" "$state_tmp"
+        log "Could not write $STATE_FILE / $STATE_LOCK_FILE; the reader will report the runtime as stale" "WARNING"
+    fi
+else
+    log "bun install failed in $FORMAL_CHECK_DIR (see output above)" "ERROR"
+    log "If bun.lock and package.json do not match, regenerate bun.lock in the chezmoi source (home/dot_config/formal-check)" "ERROR"
+    log "Recover with: chezmoi apply ~/.config/formal-check ~/.chezmoiscripts/10-install-formal-check-deps.sh" "ERROR"
+fi
+
+exit 0
+{{ end -}}

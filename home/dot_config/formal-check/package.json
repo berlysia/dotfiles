@@ -1,0 +1,7 @@
+{
+  "name": "@berlysia-dotfiles/formal-check",
+  "private": true,
+  "dependencies": {
+    "z3-solver": "5.3.1"
+  }
+}
