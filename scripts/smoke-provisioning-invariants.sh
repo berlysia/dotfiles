@@ -233,7 +233,7 @@ mkdir -p "${d5_home}/.claude"
 printf 'reason=apm-install-failed\n' > "${d5_home}/.claude/.apm-skills-install-failed"
 d5_err="${TMP_ROOT}/d/stderr-apm.txt"
 HOME="$d5_home" bash "$d_rendered" 2> "$d5_err" >/dev/null && d5_rc=0 || d5_rc=$?
-if [ "$d5_rc" -ne 0 ] && grep -q 'mise install github:microsoft/apm && apm install -g' "$d5_err" &&
+if [ "$d5_rc" -ne 0 ] && grep -q 'mise install apm && apm install -g' "$d5_err" &&
   ! grep -q '\[hook-deps\]' "$d5_err" && ! grep -q '\[root-deps\]' "$d5_err"; then
   pass "D5: apm-skills marker alone exits non-zero with only its recovery command"
 else

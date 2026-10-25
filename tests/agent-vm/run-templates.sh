@@ -38,7 +38,7 @@ test_mise_shared_set_has_no_host_toolchains() {
   assert_not_contains "$out" '"go:' "go backend tools live in conf.d/host-toolchains.toml"
   assert_contains "$out" $'\nnode = ' "node stays in the shared set"
   assert_contains "$out" '"npm:@openai/codex"' "codex stays in the shared set"
-  assert_contains "$out" '"github:microsoft/apm"' "apm stays in the shared set (the VM installs skills)"
+  assert_contains "$out" $'\napm = ' "apm stays in the shared set (the VM installs skills)"
   # run_onchange_after_install-safe-chain hashes only config.toml (spec K7)
   assert_contains "$out" '"github:AikidoSec/safe-chain"' "safe-chain stays in config.toml"
   # lint-actions.yml reads this line with sed and the claude-action-bootstrap skill relies on the tool in other repos
