@@ -67,6 +67,8 @@ koncise と yomiyasu を 1 つの文書に重ねて試したところ、次の 4
 
 役割スキルには `disable-model-invocation: true` を付け、入口からの参照か、名前での依頼でだけ使う。この欄を付けるとスキルの一覧に載らないが、入口からはパスで読める。Codex はこの欄を読まないので、description で止める。入口の発火の条件は変えない（tanteki と japanese-tech-writing は自動、koncise と yomiyasu は名前で呼ばれたときだけ）。`pr-description` と hub（berlysia-writing）は japanese-tech-writing を名前で読むので、名前と自動の発火を保つ。
 
+役割 ja-explain-first だけは、CLAUDE.md の常時規則からも直接読む。この節の「入口からの参照か、名前での依頼でだけ使う」を、その役割について ADR-0052 で一部改めた。
+
 ### tanteki の依存
 
 - textlint の依存は、グローバル textlint のランタイム（`home/dot_config/textlint/` → `~/.config/textlint/`）に置き、`bun.lock` を追跡する。上流の `package.json` と `package-lock.json` はスキルから外し、信頼する版の記録を 1 つにする

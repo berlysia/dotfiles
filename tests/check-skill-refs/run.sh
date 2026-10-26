@@ -55,20 +55,21 @@ entry_md() {
   local roles=ja-fact-preservation need="" cond="" r
   case "$1" in
     tanteki)
-      roles="ja-fact-preservation, ja-doc-profile, ja-structure, ja-notation, ja-check, ja-paragraph"
-      need="ja-doc-profile ja-structure ja-notation ja-check ja-paragraph"
+      roles="ja-fact-preservation, ja-doc-profile, ja-structure, ja-notation, ja-check, ja-paragraph, ja-explain-first"
+      need="ja-doc-profile ja-structure ja-notation ja-check ja-paragraph ja-explain-first"
       ;;
     yomiyasu)
-      roles="ja-fact-preservation, ja-doc-profile, ja-structure, ja-notation, ja-check"
-      need="ja-doc-profile ja-structure ja-notation ja-check"
+      roles="ja-fact-preservation, ja-doc-profile, ja-structure, ja-notation, ja-check, ja-explain-first"
+      need="ja-doc-profile ja-structure ja-notation ja-check ja-explain-first"
       ;;
     japanese-tech-writing)
-      roles="ja-fact-preservation, ja-structure, ja-notation, ja-paragraph"
-      need="ja-structure ja-notation ja-check ja-paragraph"
+      roles="ja-fact-preservation, ja-structure, ja-notation, ja-paragraph, ja-explain-first"
+      need="ja-structure ja-notation ja-check ja-paragraph ja-explain-first"
       cond="$COND_JTW"
       ;;
     koncise)
-      need="ja-structure ja-check"
+      roles="ja-fact-preservation, ja-explain-first"
+      need="ja-structure ja-check ja-explain-first"
       cond="$COND_KONCISE"
       ;;
   esac
@@ -316,7 +317,7 @@ test_tool_owned_symlink() {
 }
 
 # ---- (3) C2 lines of entry skills ----------------------------------------------------------------
-c2_ok=$'# koncise\n\n役割: ja-fact-preservation\n構成: 動かす\n'"$FACT_LINE"$'\n\n'"$COND_KONCISE"
+c2_ok=$'# koncise\n\n役割: ja-fact-preservation, ja-explain-first\n構成: 動かす\n'"$FACT_LINE"$'\n\n'"$COND_KONCISE"
 test_c2_valid_entries() {
   new_case
   skill ja-fact-preservation
@@ -325,10 +326,11 @@ test_c2_valid_entries() {
   skill ja-notation
   skill ja-check
   skill ja-paragraph
+  skill ja-explain-first
   raw_skill koncise "$c2_ok"
-  raw_skill tanteki $'---\nname: tanteki\n---\n\n# tanteki\n\n役割: ja-fact-preservation, ja-doc-profile, ja-structure, ja-notation, ja-check, ja-paragraph\n構成: 動かす\n'"$FACT_LINE"
-  raw_skill yomiyasu $'# y\n\n役割: ja-doc-profile、`ja-fact-preservation`、ja-structure ja-notation ja-check\n構成: 動かさない\n'"$FACT_LINE"
-  raw_skill japanese-tech-writing $'# j\n役割: ja-fact-preservation, ja-structure, ja-notation, ja-paragraph\n構成: 動かさない\n'"$FACT_LINE"$'\n\n'"$COND_JTW"
+  raw_skill tanteki $'---\nname: tanteki\n---\n\n# tanteki\n\n役割: ja-fact-preservation, ja-doc-profile, ja-structure, ja-notation, ja-check, ja-paragraph, ja-explain-first\n構成: 動かす\n'"$FACT_LINE"
+  raw_skill yomiyasu $'# y\n\n役割: ja-doc-profile、`ja-fact-preservation`、ja-structure ja-notation ja-check ja-explain-first\n構成: 動かさない\n'"$FACT_LINE"
+  raw_skill japanese-tech-writing $'# j\n役割: ja-fact-preservation, ja-structure, ja-notation, ja-paragraph, ja-explain-first\n構成: 動かさない\n'"$FACT_LINE"$'\n\n'"$COND_JTW"
   run_s
   assert_eq 0 "$RC" "valid entries exit 0 ($STDERR)"
 }
@@ -360,6 +362,7 @@ test_c2_role_set_per_entry() {
   skill ja-notation
   skill ja-check
   skill ja-paragraph
+  skill ja-explain-first
   raw_skill koncise $'# k\n\n役割: ja-fact-preservation, ja-doc-profile\n構成: 動かす\n'"$FACT_LINE"
   run_s
   assert_eq 1 "$RC" "koncise listing ja-doc-profile exits 1"
@@ -372,7 +375,7 @@ test_c2_role_set_per_entry() {
   raw_skill tanteki $'# t\n\n役割: ja-doc-profile\n構成: 動かす\n'"$FACT_LINE"
   run_s
   assert_eq 1 "$RC" "tanteki without ja-fact-preservation exits 1"
-  raw_skill tanteki $'# t\n\n役割: ja-fact-preservation, ja-doc-profile, ja-structure, ja-notation, ja-check, ja-paragraph\n構成: 動かす\n'"$FACT_LINE"
+  raw_skill tanteki $'# t\n\n役割: ja-fact-preservation, ja-doc-profile, ja-structure, ja-notation, ja-check, ja-paragraph, ja-explain-first\n構成: 動かす\n'"$FACT_LINE"
   run_s
   assert_eq 0 "$RC" "each entry with its own role set exits 0 ($STDERR)"
 }
@@ -491,6 +494,13 @@ test_yomiyasu_role_line_without_check() {
   run_s
   assert_eq 1 "$RC" "yomiyasu without ja-check on the role line exits 1"
   assert_contains "$STDERR" 'yomiyasu/SKILL.md: role line does not list ja-check' "missing ja-check is reported"
+}
+test_explain_first_tanteki_role_line_without_it() {
+  all_entries
+  edit_skill tanteki ', ja-explain-first' ''
+  run_s
+  assert_eq 1 "$RC" "tanteki without ja-explain-first on the role line exits 1"
+  assert_contains "$STDERR" 'tanteki/SKILL.md: role line does not list ja-explain-first' "missing ja-explain-first is reported"
 }
 test_koncise_cond_sentence_removed() {
   all_entries
@@ -686,6 +696,7 @@ test_paragraph_refs_line_range_is_not_a_file() {
 test_paragraph_backref_tanteki_references() {
   all_entries
   skill ja-paragraph
+  skill ja-explain-first
   file tanteki/references/x.md 'ja-paragraph'
   run_s
   assert_eq 1 "$RC" "paragraph-6 tanteki/references mentioning ja-paragraph exits 1"
@@ -694,6 +705,7 @@ test_paragraph_backref_tanteki_references() {
 test_paragraph_tanteki_role_line_without_it() {
   all_entries
   skill ja-paragraph
+  skill ja-explain-first
   edit_skill tanteki ', ja-paragraph' ''
   run_s
   assert_eq 1 "$RC" "paragraph-7 tanteki without ja-paragraph on the role line exits 1"
@@ -702,6 +714,7 @@ test_paragraph_tanteki_role_line_without_it() {
 test_paragraph_jtw_role_line_without_it() {
   all_entries
   skill ja-paragraph
+  skill ja-explain-first
   edit_skill japanese-tech-writing ', ja-paragraph' ''
   run_s
   assert_eq 1 "$RC" "paragraph-8 japanese-tech-writing without ja-paragraph on the role line exits 1"
@@ -710,6 +723,7 @@ test_paragraph_jtw_role_line_without_it() {
 test_paragraph_yomiyasu_must_not_list() {
   all_entries
   skill ja-paragraph
+  skill ja-explain-first
   edit_skill yomiyasu '役割: ja-fact-preservation, ja-doc-profile, ja-structure, ja-notation, ja-check' '役割: ja-fact-preservation, ja-doc-profile, ja-structure, ja-notation, ja-check, ja-paragraph'
   run_s
   assert_eq 1 "$RC" "paragraph-9 yomiyasu listing ja-paragraph exits 1"
@@ -718,6 +732,7 @@ test_paragraph_yomiyasu_must_not_list() {
 test_paragraph_koncise_must_not_list() {
   all_entries
   skill ja-paragraph
+  skill ja-explain-first
   edit_skill koncise '役割: ja-fact-preservation' '役割: ja-fact-preservation, ja-paragraph'
   run_s
   assert_eq 1 "$RC" "paragraph-10 koncise listing ja-paragraph exits 1"
@@ -726,6 +741,7 @@ test_paragraph_koncise_must_not_list() {
 test_paragraph_backref_yomiyasu_references() {
   all_entries
   skill ja-paragraph
+  skill ja-explain-first
   file yomiyasu/references/x.md 'ja-paragraph'
   run_s
   assert_eq 1 "$RC" "paragraph-11 yomiyasu/references mentioning ja-paragraph exits 1"
