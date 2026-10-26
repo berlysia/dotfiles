@@ -20,23 +20,39 @@ function comparable(text: string): string {
 function comparableInput(text: string) {
   let value = "";
   const offsets: Array<{ start: number; end: number }> = [];
-  // A combining sequence must normalize together, while offsets still refer
-  // to the original UTF-16 text. The engine may change case and symbol width.
-  // A grapheme that normalization leaves alone keeps per-unit offsets, because
-  // the engine can split it (an emoji and its variation selector come back as
-  // two tokens) and both halves must not map to the same start.
-  for (const { segment, index } of new Intl.Segmenter("ja", {
-    granularity: "grapheme",
-  }).segment(text)) {
-    const normalized = comparable(segment);
+  // A piece that normalization leaves alone keeps per-unit offsets; a changed
+  // piece maps every normalized unit to the whole piece.
+  const append = (piece: string, index: number, normalized: string) => {
     value += normalized;
-    const unchanged = normalized === segment;
+    const unchanged = normalized === piece;
     for (let i = 0; i < normalized.length; i++) {
       offsets.push(
         unchanged
           ? { start: index + i, end: index + i + 1 }
-          : { start: index, end: index + segment.length },
+          : { start: index, end: index + piece.length },
       );
+    }
+  };
+  // A combining sequence must normalize together, while offsets still refer
+  // to the original UTF-16 text. The engine may change case and symbol width.
+  // The engine can split a grapheme (an emoji and its variation selector, or
+  // "(" and the half-width semi-voiced mark that attaches to it come back as
+  // two tokens), and both halves must not map to the same start. So a grapheme
+  // is mapped per code point whenever that normalizes to the same text; "ｶﾞ"
+  // becomes one "ガ" only together and stays mapped as a whole.
+  for (const { segment, index } of new Intl.Segmenter("ja", {
+    granularity: "grapheme",
+  }).segment(text)) {
+    const normalized = comparable(segment);
+    const points = [...segment];
+    if (points.map(comparable).join("") !== normalized) {
+      append(segment, index, normalized);
+      continue;
+    }
+    let offset = index;
+    for (const point of points) {
+      append(point, offset, comparable(point));
+      offset += point.length;
     }
   }
   return { value, offsets };
