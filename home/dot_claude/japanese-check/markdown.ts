@@ -296,7 +296,15 @@ function scan(markdown: string): {
       afterList = kind === "list";
     }
     if (indented || definition) continue;
-    text = blankMatches(text, /(`+)([^`]|(?!\1)`)*?\1/gu, marks, MARK_BARRIER);
+    // An opening run is capped at 32 backticks. Why not `+: on a long run the
+    // regex retries every shorter length to the end of the line, which is
+    // quadratic; a run of 33 or more backticks does not occur in prose.
+    text = blankMatches(
+      text,
+      /(`{1,32})([^`]|(?!\1)`)*?\1/gu,
+      marks,
+      MARK_BARRIER,
+    );
     text = blankSpans(text, imageSpans(text), marks, MARK_BARRIER);
     text = blankSpans(text, closedSpans(text, "](", ")"), marks, MARK_LINK);
     // A bare URL ends at the first non-ASCII character: Japanese prose often
