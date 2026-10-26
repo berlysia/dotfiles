@@ -6,6 +6,11 @@
 // kind の組み合わせ）を見る。`compileEntries` は正規表現の制約を見る。hook は fix の
 // 項目だけをコンパイルするので、review の項目の壊れた pattern は hook の知らせに出ない。
 
+// contract.ts の `LemmaClass` と同じ並び。ここで import しないのは、この
+// ファイルの import を `node:` だけに保つ test（module hygiene）があるため。
+// analyze.ts が `LemmaClass` の欄へ代入するので、並びがずれれば型検査で落ちる。
+type LemmaClass = "noun" | "verb" | "adjective" | "adjectivalNoun";
+
 export const WORD_LIST_SCHEMA = 1;
 export const MAX_LIST_BYTES = 256 * 1024;
 export const MAX_ENTRIES = 500;
@@ -23,6 +28,15 @@ export const MAX_LINE_CHARS = 2000;
 export const MAX_LINE_HITS = 1000;
 export const MAX_COLLECTED_HITS = 10_000;
 const EXCERPT_MARGIN = 15;
+
+// words.json の `pos`（和名）を粗い分類へ写す唯一の場所。Map にするのは、
+// "constructor" のような値がオブジェクトの継承で当たらないようにするため。
+const LEMMA_CLASS_BY_POS_NAME: ReadonlyMap<string, LemmaClass> = new Map([
+  ["名詞", "noun"],
+  ["動詞", "verb"],
+  ["形容詞", "adjective"],
+  ["形状詞", "adjectivalNoun"],
+]);
 
 export const WORD_KINDS = [
   "named-translationese",
@@ -89,7 +103,7 @@ export interface WordEntry {
   pattern?: string;
   allow?: string[];
   lemmas?: string[];
-  pos?: string;
+  lemmaClass?: LemmaClass;
   examples: string[];
   nonExamples: string[];
 }
@@ -269,8 +283,10 @@ function checkEntry(raw: unknown, index: number): WordEntry | string {
     if (lemmas) return lemmas;
     const pos = checkText(raw.pos, "pos");
     if (pos) return pos;
+    const mapped = LEMMA_CLASS_BY_POS_NAME.get(raw.pos as string);
+    if (mapped === undefined) return "pos が許される値でない";
     entry.lemmas = raw.lemmas as string[];
-    entry.pos = raw.pos as string;
+    entry.lemmaClass = mapped;
   }
   return entry;
 }

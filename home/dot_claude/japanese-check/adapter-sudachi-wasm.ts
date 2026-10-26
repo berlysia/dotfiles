@@ -1,13 +1,21 @@
-import { pathToFileURL } from "node:url";
+// The adapter for the WASM build of Sudachi: the only place that knows its
+// output format, its part-of-speech names and its conjugation names. Static
+// imports are `node:` and ./contract.ts only; the analyzer package is loaded by
+// the one computed import inside createAnalyzer, from the file deps.ts resolved.
 
-export interface Token {
-  surface: string;
-  normalized: string;
-  pos: string[];
-  start: number;
-  end: number;
-}
-export type Tokenizer = (text: string) => Token[];
+import { pathToFileURL } from "node:url";
+import { AnalyzerOutputError } from "./contract.ts";
+import type {
+  AnalyzedToken,
+  ConjugationKind,
+  PartOfSpeech,
+} from "./contract.ts";
+
+// Mirrors the one analyzer entry of the old DEPENDENCIES list.
+export const ANALYZER_DEPENDENCIES: ReadonlyArray<{
+  name: string;
+  group: "analyzer";
+}> = [{ name: "sudachi", group: "analyzer" }];
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -58,13 +66,66 @@ function comparableInput(text: string) {
   return { value, offsets };
 }
 
-// The messages are fixed text: they never carry a piece of the document, so the
-// cli can print them.
-export class AnalyzerOutputError extends Error {
-  override name = "AnalyzerOutputError";
+const GODAN_ROWS: Record<
+  string,
+  Extract<ConjugationKind, { kind: "godan" }>["row"]
+> = {
+  カ: "ka",
+  ガ: "ga",
+  サ: "sa",
+  タ: "ta",
+  ナ: "na",
+  バ: "ba",
+  マ: "ma",
+  ラ: "ra",
+  ワア: "wa",
+};
+
+export function mapPartOfSpeech(poses: readonly string[]): PartOfSpeech {
+  const [major, minor] = poses;
+  switch (major) {
+    case "名詞":
+      return minor === "固有名詞" ? "properNoun" : "noun";
+    case "動詞":
+      return "verb";
+    case "形容詞":
+      return "adjective";
+    case "形状詞":
+      return "adjectivalNoun";
+    case "助詞":
+      return minor === "接続助詞" ? "conjunctiveParticle" : "particle";
+    case "助動詞":
+      return "auxiliary";
+    case "接尾辞":
+      return "suffix";
+    case "補助記号":
+    case "記号":
+    case "空白":
+      return "symbol";
+    // A pronoun is "other", not "noun": the checks never treated it as a noun.
+    default:
+      return "other";
+  }
 }
 
-export function decodeTokens(json: string, text: string): Token[] {
+export function mapConjugation(
+  poses: readonly string[],
+): ConjugationKind | undefined {
+  const form = poses[4] ?? "";
+  const godan = /^五段-(.+?)行/u.exec(form);
+  if (godan) {
+    const row = GODAN_ROWS[godan[1] ?? ""];
+    return row ? { kind: "godan", row } : undefined;
+  }
+  if (form.startsWith("上一段")) return { kind: "kamiIchidan" };
+  if (form.startsWith("下一段")) return { kind: "shimoIchidan" };
+  if (form.startsWith("サ行変格")) return { kind: "sahen" };
+  if (form.startsWith("カ行変格")) return { kind: "kahen" };
+  if (form === "形容詞") return { kind: "adjective" };
+  return undefined;
+}
+
+export function decodeTokens(json: string, text: string): AnalyzedToken[] {
   const data: unknown = JSON.parse(json);
   if (!Array.isArray(data))
     throw new AnalyzerOutputError("Sudachi の出力が配列ではありません。");
@@ -99,10 +160,13 @@ export function decodeTokens(json: string, text: string): Token[] {
     }
     cursor = found + surface.length;
     originalEnd = end;
+    const poses = item.poses as string[];
+    const conjugation = mapConjugation(poses);
     return {
       surface: text.slice(start, end),
-      normalized: item.normalized_form,
-      pos: item.poses as string[],
+      lemma: item.normalized_form,
+      pos: mapPartOfSpeech(poses),
+      ...(conjugation === undefined ? {} : { conjugation }),
       start,
       end,
     };
@@ -115,7 +179,9 @@ export function decodeTokens(json: string, text: string): Token[] {
 // `entry` is the resolved file of the sudachi package found by deps.ts, so the
 // file that was checked is the file that gets loaded. Importing by the bare name
 // would let Node resolve it from elsewhere (a cwd, a parent directory).
-export async function createTokenizer(entry: string): Promise<Tokenizer> {
+export async function createAnalyzer(
+  entry: string,
+): Promise<(text: string) => AnalyzedToken[]> {
   // Lazy import keeps structural commands independent of the large dictionary.
   const loaded: unknown = await import(pathToFileURL(entry).href);
   if (
@@ -130,12 +196,5 @@ export async function createTokenizer(entry: string): Promise<Tokenizer> {
     mode: number,
   ) => string;
   const modeC = loaded.TokenizeMode.C;
-  const cache = new Map<string, Token[]>();
-  return (text) => {
-    const cached = cache.get(text);
-    if (cached) return cached;
-    const tokens = decodeTokens(sudachiTokenize(text, modeC), text);
-    cache.set(text, tokens);
-    return tokens;
-  };
+  return (text) => decodeTokens(sudachiTokenize(text, modeC), text);
 }

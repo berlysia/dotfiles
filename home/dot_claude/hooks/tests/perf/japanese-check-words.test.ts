@@ -9,7 +9,8 @@ import {
 } from "../../../japanese-check/analyze.ts";
 import type { ReviewEntry } from "../../../japanese-check/analyze.ts";
 import { proseLines } from "../../../japanese-check/markdown.ts";
-import type { Token } from "../../../japanese-check/tokenizer.ts";
+import { validateTokens } from "../../../japanese-check/contract.ts";
+import type { AnalyzedToken, Token } from "../../../japanese-check/contract.ts";
 import {
   compileEntries,
   findHits,
@@ -165,22 +166,35 @@ describe("review entries time bounds", () => {
     );
     const keys = entries.flatMap((entry) =>
       entry.match === "lemma"
-        ? entry.lemmas.map((lemma) => ({ lemma, pos: entry.pos }))
+        ? entry.lemmas.map((lemma) => ({
+            lemma,
+            pos: entry.lemmaClass,
+          }))
         : [],
     );
     ok(keys.length > 0);
-    // Every two characters is one token that hits some lemma.
-    const tokenize = (text: string): Token[] =>
-      Array.from({ length: Math.ceil(text.length / 2) }, (_, i) => {
-        const key = keys[i % keys.length] ?? { lemma: "", pos: "名詞" };
-        return {
-          surface: text.slice(i * 2, i * 2 + 2),
-          normalized: key.lemma,
-          pos: [key.pos],
-          start: i * 2,
-          end: Math.min(text.length, i * 2 + 2),
-        };
-      });
+    // Every two characters is one token that hits some lemma. The tokens go
+    // through validateTokens, the only way to make one.
+    const tokenize = (text: string): readonly Token[] =>
+      validateTokens(
+        text,
+        Array.from(
+          { length: Math.ceil(text.length / 2) },
+          (_, i): AnalyzedToken => {
+            const key = keys[i % keys.length] ?? {
+              lemma: "",
+              pos: "noun" as const,
+            };
+            return {
+              surface: text.slice(i * 2, i * 2 + 2),
+              lemma: key.lemma,
+              pos: key.pos,
+              start: i * 2,
+              end: Math.min(text.length, i * 2 + 2),
+            };
+          },
+        ),
+      );
     const line = "あ".repeat(2000);
     const text = Array.from({ length: 128 }, () => line).join("\n");
     const rows = proseLines(text);

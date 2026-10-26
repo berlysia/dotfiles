@@ -67,9 +67,14 @@ import type { StateOps } from "../../../japanese-check/state.ts";
 import { tracked } from "../../../japanese-check/tracking.ts";
 import { findDependency } from "../../../japanese-check/deps.ts";
 import {
-  createTokenizer,
+  createAnalyzer,
   decodeTokens,
-} from "../../../japanese-check/tokenizer.ts";
+} from "../../../japanese-check/adapter-sudachi-wasm.ts";
+import {
+  isProperNoun,
+  isVerb,
+  makeTokenizer,
+} from "../../../japanese-check/contract.ts";
 import {
   rawEntry,
   reviewFrom,
@@ -459,7 +464,7 @@ describe("Japanese review rules", () => {
 describe("Sudachi-backed Japanese review", () => {
   const sudachi = findDependency("sudachi");
   assert.ok(sudachi.ok);
-  const tokenizer = createTokenizer(sudachi.entry);
+  const tokenizer = createAnalyzer(sudachi.entry).then(makeTokenizer);
 
   it("preserves original spelling and positions when Sudachi changes ASCII case or width", async () => {
     const tokenize = await tokenizer;
@@ -484,8 +489,10 @@ describe("Sudachi-backed Japanese review", () => {
       tokens.some(
         (token) =>
           token.surface === "拾っ" &&
-          token.normalized === "拾う" &&
-          token.pos[0] === "動詞",
+          token.lemma === "拾う" &&
+          isVerb(token) &&
+          token.conjugation?.kind === "godan" &&
+          token.conjugation.row === "wa",
       ),
     );
     const findings = calques(
@@ -496,6 +503,19 @@ describe("Sudachi-backed Japanese review", () => {
     assert.ok(findings.some((item) => item.text === "入口" && item.line === 1));
     assert.ok(findings.some((item) => item.text === "拾っ" && item.line === 2));
     assert.ok(findings.every((item) => item.line !== 3));
+  });
+
+  it("maps 京都 to a proper noun and keeps 何 out of a term", async () => {
+    const tokenize = await tokenizer;
+    assert.ok(
+      tokenize("京都に行く。").some(
+        (token) => token.surface === "京都" && isProperNoun(token),
+      ),
+    );
+    assert.deepEqual(
+      terms(proseLines("Docker何かを使う。"), tokenize).map((t) => t.term),
+      ["Docker"],
+    );
   });
 
   it("finds inflected 効く even when the dictionary normalizes its spelling", async () => {
@@ -775,7 +795,7 @@ describe("japanese-check module boundaries", () => {
     return found;
   }
 
-  // tokenizer.ts loads the dictionary package by the resolved file path that
+  // adapter-sudachi-wasm.ts loads the dictionary package by the resolved file path that
   // deps.ts found, so no file names the package in an import.
   it("imports only node: built-ins and sibling files", () => {
     assert.ok(files.length > 0);
@@ -1535,7 +1555,7 @@ describe("japanese-check import closure", () => {
   );
   const staticImport =
     /(?:\bimport|\bexport)\s+(?:type\s+)?(?:[^"';]*?\sfrom\s+)?["']([^"']+)["']/gu;
-  const forbidden = new Set(["tokenizer.ts", "analyze.ts", "cli.ts"]);
+  const forbidden = new Set(["analyze.ts", "cli.ts"]);
 
   function closure(roots: string[]): Set<string> {
     const seen = new Set<string>();
@@ -1556,7 +1576,7 @@ describe("japanese-check import closure", () => {
     return seen;
   }
 
-  it("keeps the tokenizer, analyzer, cli and sudachi out of what hooks and CI import", () => {
+  it("keeps analyze.ts, cli.ts and sudachi out of what hooks and CI import", () => {
     const reached = closure([
       "words.ts",
       "profiles.ts",
@@ -1570,13 +1590,13 @@ describe("japanese-check import closure", () => {
     for (const name of forbidden) assert.ok(!reached.has(name), name);
   });
 
-  it("has a single computed import(), in tokenizer.ts", () => {
+  it("has a single computed import(), in adapter-sudachi-wasm.ts", () => {
     const computed = /import\(\s*[^"'\s)]/gu;
     for (const name of readdirSync(dir).filter((n) => n.endsWith(".ts"))) {
       const count = [
         ...readFileSync(join(dir, name), "utf8").matchAll(computed),
       ].length;
-      assert.equal(count, name === "tokenizer.ts" ? 1 : 0, name);
+      assert.equal(count, name === "adapter-sudachi-wasm.ts" ? 1 : 0, name);
     }
   });
 });
@@ -2067,7 +2087,7 @@ describe("keep markers", () => {
 describe("the calque entries of the shipped list", () => {
   const sudachi = findDependency("sudachi");
   assert.ok(sudachi.ok);
-  const tokenizer = createTokenizer(sudachi.entry);
+  const tokenizer = createAnalyzer(sudachi.entry).then(makeTokenizer);
 
   it("hold the verbs and nouns calques() used to hard-code", () => {
     const lemmas = new Set(
@@ -2126,7 +2146,7 @@ describe("the calque entries of the shipped list", () => {
 describe("review entries from the word list", () => {
   const sudachi = findDependency("sudachi");
   assert.ok(sudachi.ok);
-  const tokenizer = createTokenizer(sudachi.entry);
+  const tokenizer = createAnalyzer(sudachi.entry).then(makeTokenizer);
   const dir = realpathSync(
     mkdtempSync(join(tmpdir(), "japanese-check-review-")),
   );

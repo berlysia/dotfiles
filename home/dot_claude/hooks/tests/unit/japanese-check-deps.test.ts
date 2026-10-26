@@ -16,9 +16,9 @@ import { fileURLToPath } from "node:url";
 import { after, describe, it } from "node:test";
 import {
   checkDependencies,
-  DEPENDENCIES,
   findDependency,
 } from "../../../japanese-check/deps.ts";
+import { ANALYZER_DEPENDENCIES } from "../../../japanese-check/adapter-sudachi-wasm.ts";
 import { digest } from "../../../japanese-check/state.ts";
 import { readFileBounded } from "../../../japanese-check/safe-read.ts";
 
@@ -223,26 +223,47 @@ describe("dependency lookup", () => {
 
   it("reports the group members that are missing, by the names in the list", () => {
     const own = layout();
-    const result = checkDependencies(["analyzer"], own.dir);
+    const result = checkDependencies(
+      ["analyzer"],
+      ANALYZER_DEPENDENCIES,
+      own.dir,
+    );
     assert.equal(result.ok, false);
     assert.deepEqual(result.missing, ["sudachi"]);
     fakePackage(join(own.dir, "node_modules"), "sudachi");
-    const again = checkDependencies(["analyzer"], own.dir);
+    const again = checkDependencies(
+      ["analyzer"],
+      ANALYZER_DEPENDENCIES,
+      own.dir,
+    );
     assert.equal(again.ok, true);
     assert.equal(again.found[0]?.group, "analyzer");
-    assert.deepEqual(checkDependencies(["grammar"], own.dir).found, []);
+    assert.deepEqual(
+      checkDependencies(["grammar"], ANALYZER_DEPENDENCIES, own.dir).found,
+      [],
+    );
   });
 
-  it("lists only packages that package.json declares, and tokenizer.ts does not import one by name", () => {
+  it("lists only packages that package.json declares, and the adapter does not import one by name", () => {
     const manifest = JSON.parse(
       readFileSync(join(checkerSource, "..", "package.json"), "utf8"),
     ) as { dependencies: Record<string, string> };
-    for (const dep of DEPENDENCIES)
+    for (const dep of ANALYZER_DEPENDENCIES)
       assert.ok(dep.name in manifest.dependencies, dep.name);
-    const tokenizer = readFileSync(join(checkerSource, "tokenizer.ts"), "utf8");
-    assert.ok(!/import\(\s*["']sudachi["']/u.test(tokenizer));
+    const adapter = readFileSync(
+      join(checkerSource, "adapter-sudachi-wasm.ts"),
+      "utf8",
+    );
+    assert.ok(!/import\(\s*["']sudachi["']/u.test(adapter));
     const cli = readFileSync(join(checkerSource, "cli.ts"), "utf8");
     assert.ok(!/^import\s[^;]*from\s+["']\.\/tokenizer\.ts["']/mu.test(cli));
+  });
+
+  it("fails when it is given no dependency list to check", () => {
+    const own = layout();
+    const result = checkDependencies(["analyzer"], [], own.dir);
+    assert.equal(result.ok, false);
+    assert.equal(result.found.length, 0);
   });
 
   describe("through the process", () => {

@@ -14,7 +14,8 @@ import {
 import type { ReviewEntry } from "../../../japanese-check/analyze.ts";
 import { findDependency } from "../../../japanese-check/deps.ts";
 import { proseLines } from "../../../japanese-check/markdown.ts";
-import { createTokenizer } from "../../../japanese-check/tokenizer.ts";
+import { createAnalyzer } from "../../../japanese-check/adapter-sudachi-wasm.ts";
+import { makeTokenizer } from "../../../japanese-check/contract.ts";
 import { parseWordList } from "../../../japanese-check/words.ts";
 import { SHIPPED_WORD_LIST } from "../support/japanese-check-words.ts";
 
@@ -129,7 +130,7 @@ describe("word migration ledger", () => {
 describe("review entries of data/words.json", () => {
   const sudachi = findDependency("sudachi");
   assert.ok(sudachi.ok);
-  const tokenizer = createTokenizer(sudachi.entry);
+  const tokenizer = createAnalyzer(sudachi.entry).then(makeTokenizer);
   const withSource = parsed.entries.filter((e) => e.action === "review");
 
   function only(word: string): ReviewEntry {

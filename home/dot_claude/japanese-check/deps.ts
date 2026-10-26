@@ -20,12 +20,6 @@ export interface DependencyEntry {
   group: DependencyGroup;
 }
 
-// 今の実際の import と一致させる。analyzer は sudachi を使う全部の経路、
-// grammar は `--profile` の check だけ。
-export const DEPENDENCIES: readonly DependencyEntry[] = [
-  { name: "sudachi", group: "analyzer" },
-];
-
 export interface FoundDependency {
   name: string;
   version: string;
@@ -148,9 +142,13 @@ export function findDependency(
 
 export function checkDependencies(
   groups: readonly DependencyGroup[],
+  deps: readonly DependencyEntry[],
   dir: string = selfDir(),
-  deps: readonly DependencyEntry[] = DEPENDENCIES,
 ): DependencyCheck {
+  // No default list: a caller that forgot to pass one would otherwise check
+  // nothing and pass.
+  if (deps.length === 0)
+    return { ok: false, found: [], missing: ["dependencies"] };
   const found: FoundInGroup[] = [];
   const missing: string[] = [];
   for (const dep of deps) {
