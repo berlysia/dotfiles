@@ -44,6 +44,25 @@ const built = buildReviewEntries(parsed.entries);
 const reviewWords = new Set(
   parsed.entries.filter((e) => e.action === "review").map((e) => e.word),
 );
+const reviewEntries = parsed.entries.filter((e) => e.action === "review");
+
+// Why not list entry names or add a marker field to data/words.json: a name
+// list needs a test edit for every new review entry, and a marker field
+// changes the list schema. The origin already names where a migrated entry came
+// from, so an entry whose origin starts with a migration source must be pointed
+// at by a ledger row; entries with any other origin (added after the migration)
+// are out of scope. Convention: do not start the origin of a later entry with
+// one of these prefixes, because that would demand a ledger row for it.
+const ORIGIN_PREFIX_BY_SOURCE: Record<LedgerRow["source"], string> = {
+  "no-ai-words": "textlint-rule-preset-ai-words-ja",
+  "no-ai-jargon": "tanteki の no-ai-jargon",
+  calques: "analyze.ts の calques()",
+};
+
+const sourceOfOrigin = (origin: string): LedgerRow["source"] | undefined =>
+  (
+    Object.entries(ORIGIN_PREFIX_BY_SOURCE) as [LedgerRow["source"], string][]
+  ).find(([, prefix]) => origin.startsWith(prefix))?.[0];
 
 describe("word migration ledger", () => {
   it("has one row per old item: 54 dictionary entries, 13 jargon rows, 11 calque lemmas", () => {
@@ -72,9 +91,38 @@ describe("word migration ledger", () => {
         assert.ok(reviewWords.has(to), `${row.source} ${row.old} -> ${to}`);
   });
 
-  it("leaves no review entry that no old item points at", () => {
+  it("leaves no migrated review entry that no old item points at", () => {
     const targets = new Set(ledger.flatMap(targetsOf));
-    for (const word of reviewWords) assert.ok(targets.has(word), word);
+    for (const entry of reviewEntries) {
+      if (sourceOfOrigin(entry.origin) === undefined) continue;
+      assert.ok(targets.has(entry.word), entry.word);
+    }
+  });
+
+  // Not "the prefix of that row's source": some entries merge items from two
+  // sources (the no-ai-words 効く and 入口 rows point at the calques() entries),
+  // so only a target whose origin left every migration prefix is an error.
+  it("starts the origin of each row's target with a migration prefix", () => {
+    for (const row of ledger)
+      for (const to of targetsOf(row)) {
+        const entry = reviewEntries.find((e) => e.word === to);
+        assert.ok(entry, to);
+        assert.ok(
+          sourceOfOrigin(entry.origin) !== undefined,
+          `${row.source} ${row.old} -> ${to}: ${entry.origin}`,
+        );
+      }
+  });
+
+  it("maps the origin prefixes one to one onto the ledger sources", () => {
+    assert.deepEqual(
+      new Set(Object.keys(ORIGIN_PREFIX_BY_SOURCE)),
+      new Set(ledger.map((row) => row.source)),
+    );
+    assert.equal(
+      new Set(Object.values(ORIGIN_PREFIX_BY_SOURCE)).size,
+      Object.keys(ORIGIN_PREFIX_BY_SOURCE).length,
+    );
   });
 });
 
