@@ -7,6 +7,8 @@ ADR-0036 は、文章スキルを規則を持つ役割（`ja-*`）と、読み�
 - `782b4366` で、CLAUDE.md の常時規則が `ja-check/references/human-documents.md` を直接読ませるようになった。入口を通らずに役割を使う読み方で、利用者の言う「実質的に新しい入口」に該当する。ADR には書かれていない
 - 同じ commit で、`ja-structure/SKILL.md` が `../ja-check/references/human-documents.md` を指すようになった。役割どうしの参照なので、`check-skill-refs.sh` の検査で `skill-upstreams tests` が落ちていた（master の `45c2e786` 以降）
 - 当面の対処として、`check-skill-refs.sh` の役割の許可の一覧に、この 1 ファイルだけを足した（`ROLE_ALLOWED_EXACT`）
+- ADR-0052 で、CLAUDE.md の常時規則が役割 `ja-explain-first/SKILL.md` も直接読むようになった。入口を通らない読み方の 2 本目である。4 入口も `役割:` の行から常に読むので、入口経由と直読みを合わせると、日本語の文書を扱う作業ではこの役割がほぼ無条件に読まれる
+- ADR-0052 の確かめで、japanese-tech-writing を名前で呼んで原文なしで書かせると、`役割:` の行の役割を一つも読まなかった（2 回中 2 回）。tanteki も 1 回は ja-explain-first だけ読まなかった。`役割:` の行だけでは入口が役割を読むとは限らない。入口の本文の、役割が要る場面の近くに読む文を書くかどうかを決める
 
 ## 決めること
 
