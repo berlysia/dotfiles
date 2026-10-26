@@ -77,9 +77,9 @@ describe("data/words.json", () => {
     });
   };
 
-  it("loads all 30 named entries and every review entry without notices", () => {
+  it("loads all 33 named entries and every review entry without notices", () => {
     ok(parsed.ok);
-    strictEqual(named().length, 30);
+    strictEqual(named().length, 33);
     deepStrictEqual(parsed.notices, []);
     const compiled = compileEntries(parsed.entries);
     deepStrictEqual(compiled.notices, []);
