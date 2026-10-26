@@ -23,7 +23,7 @@ AI 以前の Qiita（1,200 本、和文 115 万字）では、旧の 2 つの規
 
 ## Decision
 
-- **K1: 語の置き場は `data/words.json` だけにする。** tanteki の `no-ai-jargon` は消した。その `.textlintrc.json` の `allow` の 3 語（可観測性、レバレッジ比率、ロバストな推定）は、移した項目の `allow` に移した。グローバル textlint からは `preset-ai-words-ja` を外した。rule の無い設定では、`textlint-global` が「No rules found」を出して終了コード 1 で止まる。そこで設定は `preset-japanese` にした。これは仮の設定である。tanteki と `textlint-global` の検査をまとめる構想（`docs/plans/textlint-own-rules.md`）が runner と `textlint-global` の役割を決める
+- **K1: 語の置き場は `data/words.json` だけにする。** tanteki の `no-ai-jargon` は消した。その `.textlintrc.json` の `allow` の 3 語（可観測性、レバレッジ比率、ロバストな推定）は、移した項目の `allow` に移した。グローバル textlint からは `preset-ai-words-ja` を外した。rule の無い設定では、`textlint-global` が「No rules found」を出して終了コード 1 で止まる。そこで設定は `preset-japanese` にした。これは仮の設定である。tanteki と `textlint-global` の検査をまとめる構想（`git show 203e2005:docs/plans/textlint-own-rules.md`）が runner と `textlint-global` の役割を決める
 - **K2: 語は落とさない。違いは扱いで付ける。** 旧の項目（`no-ai-words` の 54、`no-ai-jargon` の 13、`calques()` の定数の 11 語）を、`action: review` の項目として移した。このリポジトリの用語（検査、照合、走る、経路、ゲート）も残し、`fix` の文に「この文書で定義済みの用語なら残してよい」と書いた。用語を `allow` で外すと、比喩として使った用法まで落ちるためである
 - **K3: 一覧は `cli.ts` が読み、`check()` と `calques()` は一覧の順を保った 1 つの配列で受け取る。** `analyze.ts` はファイルを読まない。`lemma` の項目は Sudachi のトークンの正規形と品詞で、`regex` の項目は散文の行で照合する。候補の `rule` は、`calques()` の定数から来た項目では今までどおり `translation-candidate` になる。移した語では `word-jargon`、`word-metaphor-verb`、`word-slop` になる。同じ行、同じ桁、同じ表層の候補が 2 つの項目から出たら、一覧で先にある項目の候補だけを残す
 - **K4: 一覧に 1 項目でも使えないものがあれば、受領証を作らない。** 一覧が無い、壊れている、検証で 1 項目でも落ちたときは、残った項目で照合し、`limitations` に理由を書き、`verification` を `null` にする。受領証のハッシュは一覧のファイルから計算するので、落ちた項目を除いた検査でも、完全な検査と同じハッシュの受領証になるためである。ゲートは受領証の無い文書を未検査として扱う
@@ -56,7 +56,7 @@ AI 以前の Qiita（1,200 本、和文 115 万字）では、旧の 2 つの規
 - **textlint に寄せる（自作の rule が `data/words.json` を読む）。** runner を決める構想が先に要り、ゲートから textlint を呼ぶ経路も新しく要る
 - **用語を `allow` で外す。** 比喩として使った用法まで落ちる
 - **取り漏らした形を `lemmas` に足す。** Sudachi は複合語ごとに別の正規形を返すので、一覧が閉じない
-- **解析器を先に kuromoji へ寄せてから語を移す。** 下の計測のとおり根拠はあるが、解析器の入れ替えは check のすべての検査の結果を変える。今の一覧で取り漏らしは 0 件に届いたので、解析器の判断は `docs/plans/ja-morphological-analyzer.md` に送った
+- **解析器を先に kuromoji へ寄せてから語を移す。** 下の計測のとおり根拠はあるが、解析器の入れ替えは check のすべての検査の結果を変える。今の一覧で取り漏らしは 0 件に届いたので、解析器の判断は `git show 34bee305:docs/plans/ja-morphological-analyzer.md` に送った
 
 ## Consequences
 
@@ -88,4 +88,4 @@ AI 以前の Qiita（1,200 本、和文 115 万字）では、旧の 2 つの規
 ## References
 
 - 前提の決定: ADR-0036（文章スキルの役割と入口）、ADR-0045（名指しの直訳語の一覧）、ADR-0047（日本語文書のゲート）、ADR-0048（keep の印）
-- 残件: `docs/plans/japanese-check-detection-followups.md`、`docs/plans/ja-morphological-analyzer.md`、`docs/plans/textlint-own-rules.md`
+- 残件: `docs/plans/japanese-check-detection-followups.md`、`git show 34bee305:docs/plans/ja-morphological-analyzer.md`、`git show 203e2005:docs/plans/textlint-own-rules.md`

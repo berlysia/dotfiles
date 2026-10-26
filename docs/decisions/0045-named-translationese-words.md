@@ -55,7 +55,7 @@ ADR-0036 は、yomiyasu の hook（返答の終わりに照合を走らせるも
 ## 却下した代替案
 
 - **CLAUDE.md に「日本語の成果物ではスキルを読む」と書くだけにする（差分最小案）。** (a) のとおり、読んでも規則どおりに残る。読み忘れたときに何も起きない
-- **語の一覧を prh の辞書にし、textlint で全成果物に掛ける（白紙設計案）。** Markdown の構文木でコードを確実に除けるのが利点である。しかし、グローバルの textlint には語の一覧を受けるルールが無く、依存の追加が要る。tanteki と textlint-global の検査をまとめる構想（`docs/plans/textlint-own-rules.md`）が検査の runner を決めることになっており、先に決めるとその構想を縛る。CLI の起動は bun の hook より重い。一覧は正規表現と除外の配列なので、構想が runner を決めた後も、そのルールの入力として使える。ただし prh の置換先に当たる欄は持たない
+- **語の一覧を prh の辞書にし、textlint で全成果物に掛ける（白紙設計案）。** Markdown の構文木でコードを確実に除けるのが利点である。しかし、グローバルの textlint には語の一覧を受けるルールが無く、依存の追加が要る。tanteki と textlint-global の検査をまとめる構想（`git show 203e2005:docs/plans/textlint-own-rules.md`）が検査の runner を決めることになっており、先に決めるとその構想を縛る。CLI の起動は bun の hook より重い。一覧は正規表現と除外の配列なので、構想が runner を決めた後も、そのルールの入力として使える。ただし prh の置換先に当たる欄は持たない
 
 ## Consequences
 

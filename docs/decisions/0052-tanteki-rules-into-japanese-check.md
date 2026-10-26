@@ -12,7 +12,7 @@ tanteki の textlint には、上流 `iwasa-kosui/tanteki` からコピーした
 どちらも形態素解析を使わず、自分たちのテストは無かった。
 
 textlint を走らせる仕組みは 2 つあった。
-tanteki の `scripts/lint.mjs` は、`--type` に応じて `stock-boundary` を有効にし、preset-japanese と 2 本を走らせる。
+tanteki の `lint.mjs`（`git show 203e2005:.skills/tanteki/scripts/lint.mjs`）は、`--type` に応じて `stock-boundary` を有効にし、preset-japanese と 2 本を走らせる。
 `textlint-global` は preset-japanese だけを走らせる。
 手順から呼ばれていたのは `lint.mjs` だけで、`textlint-global` は手で使う道具だった。
 
