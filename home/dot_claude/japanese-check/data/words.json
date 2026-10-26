@@ -1,5 +1,5 @@
 {
-  "schema": 1,
+  "schema": 2,
   "entries": [
     {
       "word": "握る",
@@ -655,13 +655,13 @@
       ]
     },
     {
-      "word": "動作の動詞（拾う・引く・通る・効く・利く・響く・足す）",
+      "word": "動作の動詞（拾う・引く・通る・効く・響く・足す）",
       "kind": "calque",
       "action": "review",
       "match": "lemma",
       "origin": "analyze.ts の calques() に直書きしていた動詞の定数",
-      "lemmas": ["拾う", "引く", "通る", "効く", "利く", "響く", "足す"],
-      "pos": "動詞",
+      "lemmas": ["拾う", "引く", "通る", "効く", "響く", "足す"],
+      "pos": "verb",
       "english": "pick up / pull / pass through / take effect / resonate / add",
       "fix": "字義どおりの用法・定着した専門用語なら残す。何がどうなるか不明なら原文の範囲で言い直す。",
       "examples": [
@@ -669,7 +669,6 @@
         "線を引く。",
         "道を通った。",
         "薬が効いた。",
-        "鼻が利く。",
         "音が響いた。",
         "数を足す。"
       ],
@@ -682,7 +681,7 @@
       "match": "lemma",
       "origin": "analyze.ts の calques() に直書きしていた名詞の定数",
       "lemmas": ["入口", "入り口", "受け口", "口"],
-      "pos": "名詞",
+      "pos": "noun",
       "english": "entrance / mouth",
       "fix": "字義どおりの用法・定着した専門用語なら残す。何がどうなるか不明なら原文の範囲で言い直す。",
       "examples": [
@@ -700,7 +699,7 @@
       "match": "lemma",
       "origin": "textlint-rule-preset-ai-words-ja 1.2.1 の辞書",
       "lemmas": ["壊れる"],
-      "pos": "動詞",
+      "pos": "verb",
       "fix": "「壊れる」が比喩になっていないか確かめる。何がどうなるかを、動作を直接言う動詞に直せるなら直す。字義どおりの用法なら残す。",
       "examples": ["設計が壊れた。", "前提が壊れる。"],
       "nonExamples": ["皿を壊した。"]
@@ -712,7 +711,7 @@
       "match": "lemma",
       "origin": "textlint-rule-preset-ai-words-ja 1.2.1 の辞書",
       "lemmas": ["走る"],
-      "pos": "動詞",
+      "pos": "verb",
       "fix": "「走る」が比喩になっていないか確かめる。何がどうなるかを、動作を直接言う動詞に直せるなら直す。字義どおりの用法なら残す。この文書で定義済みの用語なら残してよい。",
       "examples": ["検査が走る。", "処理が走った。", "レビューを走らせる。"],
       "nonExamples": ["自走する仕組み。"]
@@ -741,7 +740,7 @@
       "match": "lemma",
       "origin": "textlint-rule-preset-ai-words-ja 1.2.1 の辞書",
       "lemmas": ["黙る"],
-      "pos": "動詞",
+      "pos": "verb",
       "fix": "「黙る」が比喩になっていないか確かめる。何がどうなるかを、動作を直接言う動詞に直せるなら直す。字義どおりの用法なら残す。",
       "examples": ["黙って失敗する。", "黙って通る。"],
       "nonExamples": ["黙々と作業した。"]
@@ -753,7 +752,7 @@
       "match": "lemma",
       "origin": "textlint-rule-preset-ai-words-ja 1.2.1 の辞書",
       "lemmas": ["崩す"],
-      "pos": "動詞",
+      "pos": "verb",
       "fix": "「崩す」が比喩になっていないか確かめる。何がどうなるかを、動作を直接言う動詞に直せるなら直す。字義どおりの用法なら残す。",
       "examples": ["前提を崩す。", "構造を崩した。"],
       "nonExamples": ["山が崩れた。"]
@@ -765,7 +764,7 @@
       "match": "lemma",
       "origin": "textlint-rule-preset-ai-words-ja 1.2.1 の辞書",
       "lemmas": ["太る"],
-      "pos": "動詞",
+      "pos": "verb",
       "fix": "「太る」が比喩になっていないか確かめる。何がどうなるかを、動作を直接言う動詞に直せるなら直す。字義どおりの用法なら残す。",
       "examples": ["設定ファイルが太る。", "クラスが太った。"],
       "nonExamples": ["太い線を引いた。"]
@@ -777,7 +776,7 @@
       "match": "lemma",
       "origin": "textlint-rule-preset-ai-words-ja 1.2.1 の辞書",
       "lemmas": ["見張る"],
-      "pos": "動詞",
+      "pos": "verb",
       "fix": "「見張る」が比喩になっていないか確かめる。何がどうなるかを、動作を直接言う動詞に直せるなら直す。字義どおりの用法なら残す。",
       "examples": ["状態を見張る。", "変更を見張った。"],
       "nonExamples": ["見張りを置いた。"]
@@ -830,7 +829,7 @@
       "match": "lemma",
       "origin": "textlint-rule-preset-ai-words-ja 1.2.1 の辞書",
       "lemmas": ["混ざる"],
-      "pos": "動詞",
+      "pos": "verb",
       "fix": "「混ざる」が比喩になっていないか確かめる。何がどうなるかを、動作を直接言う動詞に直せるなら直す。字義どおりの用法なら残す。",
       "examples": ["別の話が混ざる。", "責務が混ざった。"],
       "nonExamples": ["卵を混ぜた。"]
@@ -842,7 +841,7 @@
       "match": "lemma",
       "origin": "textlint-rule-preset-ai-words-ja 1.2.1 の辞書",
       "lemmas": ["切り分ける"],
-      "pos": "動詞",
+      "pos": "verb",
       "fix": "「切り分ける」が比喩になっていないか確かめる。何がどうなるかを、動作を直接言う動詞に直せるなら直す。字義どおりの用法なら残す。",
       "examples": ["原因を切り分ける。", "問題を切り分けた。"],
       "nonExamples": ["紙を切った。"]
@@ -854,7 +853,7 @@
       "match": "lemma",
       "origin": "textlint-rule-preset-ai-words-ja 1.2.1 の辞書",
       "lemmas": ["潰す"],
-      "pos": "動詞",
+      "pos": "verb",
       "fix": "「潰す」が比喩になっていないか確かめる。何がどうなるかを、動作を直接言う動詞に直せるなら直す。字義どおりの用法なら残す。",
       "examples": ["選択肢を潰す。", "可能性を潰した。"],
       "nonExamples": ["店が潰れた。"]
@@ -866,7 +865,7 @@
       "match": "lemma",
       "origin": "textlint-rule-preset-ai-words-ja 1.2.1 の辞書",
       "lemmas": ["踏み込む"],
-      "pos": "動詞",
+      "pos": "verb",
       "fix": "「踏み込む」が比喩になっていないか確かめる。何がどうなるかを、動作を直接言う動詞に直せるなら直す。字義どおりの用法なら残す。",
       "examples": ["実装に踏み込む。", "詳細に踏み込んだ。"],
       "nonExamples": ["ペダルを踏んだ。"]
@@ -904,7 +903,7 @@
       "match": "lemma",
       "origin": "textlint-rule-preset-ai-words-ja 1.2.1 の辞書",
       "lemmas": ["死活"],
-      "pos": "名詞",
+      "pos": "noun",
       "fix": "「死活」が何を指すか、具体的な名詞で言い直せるか確かめる。字義どおりの用法なら残す。",
       "examples": ["死活を監視する。", "死活の確認を行う。"],
       "nonExamples": ["生死を分ける。"]
@@ -916,7 +915,7 @@
       "match": "lemma",
       "origin": "textlint-rule-preset-ai-words-ja 1.2.1 の辞書",
       "lemmas": ["漏れ"],
-      "pos": "名詞",
+      "pos": "noun",
       "fix": "「漏れ」が何を指すか、具体的な名詞で言い直せるか確かめる。字義どおりの用法なら残す。",
       "examples": ["確認の漏れがある。", "漏れを防ぐ。"],
       "nonExamples": ["水が漏れる。"]
@@ -928,7 +927,7 @@
       "match": "lemma",
       "origin": "textlint-rule-preset-ai-words-ja 1.2.1 の辞書",
       "lemmas": ["帰結"],
-      "pos": "名詞",
+      "pos": "noun",
       "fix": "「帰結」が何を指すか、具体的な名詞で言い直せるか確かめる。字義どおりの用法なら残す。",
       "examples": ["当然の帰結になる。", "帰結を述べる。"],
       "nonExamples": ["結論を述べる。"]
@@ -940,7 +939,7 @@
       "match": "lemma",
       "origin": "textlint-rule-preset-ai-words-ja 1.2.1 の辞書",
       "lemmas": ["原初"],
-      "pos": "名詞",
+      "pos": "noun",
       "fix": "「原初」が何を指すか、具体的な名詞で言い直せるか確かめる。字義どおりの用法なら残す。",
       "examples": ["原初の形を残す。", "原初から変わらない。"],
       "nonExamples": ["初期の形を残す。"]
@@ -964,7 +963,7 @@
       "match": "lemma",
       "origin": "textlint-rule-preset-ai-words-ja 1.2.1 の辞書",
       "lemmas": ["正本"],
-      "pos": "名詞",
+      "pos": "noun",
       "fix": "「正本」が何を指すか、具体的な名詞で言い直せるか確かめる。字義どおりの用法なら残す。",
       "examples": ["正本を保管する。", "この文書を正本とする。"],
       "nonExamples": ["副本を保管する。"]
@@ -976,7 +975,7 @@
       "match": "lemma",
       "origin": "textlint-rule-preset-ai-words-ja 1.2.1 の辞書",
       "lemmas": ["部品"],
-      "pos": "名詞",
+      "pos": "noun",
       "fix": "「部品」が何を指すか、具体的な名詞で言い直せるか確かめる。字義どおりの用法なら残す。",
       "examples": ["部品に分ける。", "部品を組み合わせる。"],
       "nonExamples": ["部分を直す。"]
@@ -988,7 +987,7 @@
       "match": "lemma",
       "origin": "textlint-rule-preset-ai-words-ja 1.2.1 の辞書",
       "lemmas": ["検査"],
-      "pos": "名詞",
+      "pos": "noun",
       "fix": "「検査」が何を指すか、具体的な名詞で言い直せるか確かめる。字義どおりの用法なら残す。この文書で定義済みの用語なら残してよい。",
       "examples": ["検査を通す。", "検査した結果を見る。"],
       "nonExamples": ["点検を済ませた。"]
@@ -1000,7 +999,7 @@
       "match": "lemma",
       "origin": "textlint-rule-preset-ai-words-ja 1.2.1 の辞書",
       "lemmas": ["原料"],
-      "pos": "名詞",
+      "pos": "noun",
       "fix": "「原料」が何を指すか、具体的な名詞で言い直せるか確かめる。字義どおりの用法なら残す。",
       "examples": ["原料を渡す。", "原料にする。"],
       "nonExamples": ["材料を渡す。"]
@@ -1023,7 +1022,7 @@
       "match": "lemma",
       "origin": "textlint-rule-preset-ai-words-ja 1.2.1 の辞書",
       "lemmas": ["照合"],
-      "pos": "名詞",
+      "pos": "noun",
       "fix": "「照合」が何を指すか、具体的な名詞で言い直せるか確かめる。字義どおりの用法なら残す。この文書で定義済みの用語なら残してよい。",
       "examples": ["照合を行う。", "記録と照合した。"],
       "nonExamples": ["比較を行う。"]
@@ -1035,7 +1034,7 @@
       "match": "lemma",
       "origin": "textlint-rule-preset-ai-words-ja 1.2.1 の辞書",
       "lemmas": ["断定"],
-      "pos": "名詞",
+      "pos": "noun",
       "fix": "「断定」が何を指すか、具体的な名詞で言い直せるか確かめる。字義どおりの用法なら残す。",
       "examples": ["断定を避ける。", "原因を断定した。"],
       "nonExamples": ["推測を述べる。"]
@@ -1047,7 +1046,7 @@
       "match": "lemma",
       "origin": "textlint-rule-preset-ai-words-ja 1.2.1 の辞書",
       "lemmas": ["土台"],
-      "pos": "名詞",
+      "pos": "noun",
       "fix": "「土台」が何を指すか、具体的な名詞で言い直せるか確かめる。字義どおりの用法なら残す。",
       "examples": ["土台を固める。", "設計の土台になる。"],
       "nonExamples": ["基礎工事を行う。"]
@@ -1059,7 +1058,7 @@
       "match": "lemma",
       "origin": "textlint-rule-preset-ai-words-ja 1.2.1 の辞書",
       "lemmas": ["核心"],
-      "pos": "名詞",
+      "pos": "noun",
       "fix": "「核心」が何を指すか、具体的な名詞で言い直せるか確かめる。字義どおりの用法なら残す。",
       "examples": ["核心に迫る。", "問題の核心を突く。"],
       "nonExamples": ["中心部を見る。"]
@@ -1071,7 +1070,7 @@
       "match": "lemma",
       "origin": "textlint-rule-preset-ai-words-ja 1.2.1 の辞書",
       "lemmas": ["構図"],
-      "pos": "名詞",
+      "pos": "noun",
       "fix": "「構図」が何を指すか、具体的な名詞で言い直せるか確かめる。字義どおりの用法なら残す。",
       "examples": ["対立の構図を描く。", "この構図を崩す。"],
       "nonExamples": ["図を描く。"]
@@ -1083,7 +1082,7 @@
       "match": "lemma",
       "origin": "textlint-rule-preset-ai-words-ja 1.2.1 の辞書",
       "lemmas": ["線引き"],
-      "pos": "名詞",
+      "pos": "noun",
       "fix": "「線引き」が何を指すか、具体的な名詞で言い直せるか確かめる。字義どおりの用法なら残す。",
       "examples": ["線引きを決める。", "線引きが曖昧だ。"],
       "nonExamples": ["線を引いた。"]
@@ -1106,7 +1105,7 @@
       "match": "lemma",
       "origin": "textlint-rule-preset-ai-words-ja 1.2.1 の辞書",
       "lemmas": ["落とし穴"],
-      "pos": "名詞",
+      "pos": "noun",
       "fix": "「落とし穴」が何を指すか、具体的な名詞で言い直せるか確かめる。字義どおりの用法なら残す。",
       "examples": ["落とし穴がある。", "落とし穴を避ける。"],
       "nonExamples": ["穴がある。"]
@@ -1118,7 +1117,7 @@
       "match": "lemma",
       "origin": "textlint-rule-preset-ai-words-ja 1.2.1 の辞書",
       "lemmas": ["破綻"],
-      "pos": "名詞",
+      "pos": "noun",
       "fix": "「破綻」が何を指すか、具体的な名詞で言い直せるか確かめる。字義どおりの用法なら残す。",
       "examples": ["設計が破綻した。", "破綻を防ぐ。"],
       "nonExamples": ["失敗を防ぐ。"]
@@ -1130,7 +1129,7 @@
       "match": "lemma",
       "origin": "textlint-rule-preset-ai-words-ja 1.2.1 の辞書",
       "lemmas": ["素通り"],
-      "pos": "名詞",
+      "pos": "noun",
       "fix": "「素通り」が何を指すか、具体的な名詞で言い直せるか確かめる。字義どおりの用法なら残す。",
       "examples": ["検査を素通りする。", "素通りさせない。"],
       "nonExamples": ["通過させない。"]
@@ -1142,7 +1141,7 @@
       "match": "lemma",
       "origin": "textlint-rule-preset-ai-words-ja 1.2.1 の辞書",
       "lemmas": ["定番"],
-      "pos": "名詞",
+      "pos": "noun",
       "fix": "「定番」が何を指すか、具体的な名詞で言い直せるか確かめる。字義どおりの用法なら残す。",
       "examples": ["定番の手法を使う。", "これが定番だ。"],
       "nonExamples": ["標準の手法を使う。"]
@@ -1154,7 +1153,7 @@
       "match": "lemma",
       "origin": "textlint-rule-preset-ai-words-ja 1.2.1 の辞書",
       "lemmas": ["定石"],
-      "pos": "名詞",
+      "pos": "noun",
       "fix": "「定石」が何を指すか、具体的な名詞で言い直せるか確かめる。字義どおりの用法なら残す。",
       "examples": ["定石どおりに進める。", "定石を外す。"],
       "nonExamples": ["慣例どおりに進める。"]
@@ -1166,7 +1165,7 @@
       "match": "lemma",
       "origin": "textlint-rule-preset-ai-words-ja 1.2.1 の辞書",
       "lemmas": ["無言"],
-      "pos": "名詞",
+      "pos": "noun",
       "fix": "「無言」が何を指すか、具体的な名詞で言い直せるか確かめる。字義どおりの用法なら残す。",
       "examples": ["無言で失敗する。", "無言のまま終わる。"],
       "nonExamples": ["沈黙を破った。"]
@@ -1178,7 +1177,7 @@
       "match": "lemma",
       "origin": "textlint-rule-preset-ai-words-ja 1.2.1 の辞書",
       "lemmas": ["門"],
-      "pos": "名詞",
+      "pos": "noun",
       "fix": "「門」が何を指すか、具体的な名詞で言い直せるか確かめる。字義どおりの用法なら残す。",
       "examples": ["門を開く。", "門をくぐる。"],
       "nonExamples": ["専門家に聞く。", "廈門大学の研究。"]
@@ -1334,7 +1333,7 @@
       "match": "lemma",
       "origin": "tanteki の no-ai-jargon",
       "lemmas": ["シームレス"],
-      "pos": "名詞",
+      "pos": "noun",
       "fix": "「シームレス」を、利用者が何をせずに何をできるかを書く言い方に直せるか確かめる。",
       "examples": ["シームレスな連携にする。", "シームレスに使える。"],
       "nonExamples": ["継ぎ目のある構造にする。"]
@@ -1346,7 +1345,7 @@
       "match": "lemma",
       "origin": "tanteki の no-ai-jargon",
       "lemmas": ["アクショナブル"],
-      "pos": "名詞",
+      "pos": "noun",
       "fix": "「アクショナブル」を、誰が何を実行できるかを書く言い方に直せるか確かめる。",
       "examples": ["アクショナブルな指標にする。", "アクショナブルでない。"],
       "nonExamples": ["実行できる指標にする。"]
@@ -1390,7 +1389,7 @@
       "match": "lemma",
       "origin": "tanteki の no-ai-jargon",
       "lemmas": ["ホリスティック"],
-      "pos": "名詞",
+      "pos": "noun",
       "fix": "「ホリスティック」を、対象範囲と要素どうしの関係を列挙する言い方に直せるか確かめる。",
       "examples": ["ホリスティックな視点で見る。", "ホリスティックに扱う。"],
       "nonExamples": ["全体を見渡す視点で見る。"]

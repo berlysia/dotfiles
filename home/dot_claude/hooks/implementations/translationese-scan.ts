@@ -219,7 +219,7 @@ function readOldList(listPath: string): OldListRead {
 export function toNewShape(parsed: unknown): unknown {
   if (Array.isArray(parsed)) {
     return {
-      schema: 1,
+      schema: 2,
       entries: parsed.map((item: unknown) =>
         typeof item === "object" && item !== null && !Array.isArray(item)
           ? {

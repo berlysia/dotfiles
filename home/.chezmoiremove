@@ -19,3 +19,4 @@
 .config/ccstatusline/settings.gateway.json
 .config/ccstatusline/*-budget.sh
 .claude/japanese-check/tokenizer.ts
+.claude/japanese-check/adapter-sudachi-wasm.ts

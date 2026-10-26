@@ -1,6 +1,6 @@
 // Upper bounds only. Behaviour is covered in unit/japanese-check-words.test.ts.
 import { ok } from "node:assert";
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
@@ -9,8 +9,10 @@ import {
 } from "../../../japanese-check/analyze.ts";
 import type { ReviewEntry } from "../../../japanese-check/analyze.ts";
 import { proseLines } from "../../../japanese-check/markdown.ts";
+import { createAnalyzer } from "../../../japanese-check/adapter-lindera-unidic.ts";
 import { validateTokens } from "../../../japanese-check/contract.ts";
 import type { AnalyzedToken, Token } from "../../../japanese-check/contract.ts";
+import { RUNTIME_DIR } from "../support/japanese-check-runtime.ts";
 import {
   compileEntries,
   findHits,
@@ -50,7 +52,7 @@ function syntheticList() {
     nonExamples: ["い"],
   }));
   // 500 x (1 + 3) = 2,000 regexes: exactly the limit
-  const parsed = parseWordList(JSON.stringify({ schema: 1, entries }));
+  const parsed = parseWordList(JSON.stringify({ schema: 2, entries }));
   ok(parsed.ok);
   return compileEntries(parsed.entries).compiled;
 }
@@ -201,5 +203,18 @@ describe("review entries time bounds", () => {
     const ms = elapsedMs(() => calques(rows, tokenize, entries));
     console.error(`lemma matching 256 KB: ${ms.toFixed(1)} ms`);
     ok(ms < 1000, `${ms} ms`);
+  });
+});
+
+describe("lindera-unidic line time", () => {
+  it("analyzes a 888-character line within 2 seconds", async () => {
+    const entry = realpathSync(
+      join(RUNTIME_DIR, "node_modules/lindera/index.js"),
+    );
+    const analyze = await createAnalyzer(entry, RUNTIME_DIR);
+    const line = "データを拾って、薬が効いた。".repeat(64).slice(0, 888);
+    const ms = elapsedMs(() => validateTokens(line, analyze(line)));
+    console.error(`lindera 888-character line: ${ms.toFixed(1)} ms`);
+    ok(ms < 2000, `${ms} ms`);
   });
 });

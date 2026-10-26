@@ -56,6 +56,21 @@ url = "https://github.com/tlaplus/tlaplus/releases/download/{{ $tla2toolsVersion
 checksum.sha256 = "{{ $tla2toolsSha256 }}"
 {{ end }}
 
+{{/* UniDic for the japanese-check analyzer (lindera-unidic). The zip holds one top directory, lindera-unidic/, */}}
+{{/* which stripComponents = 1 drops, so the 10 dictionary files land directly in ~/.config/japanese-check/unidic/. */}}
+{{/* The version and sha256 come from .chezmoidata/japanese_check.yaml. Renovate does not watch this entry, so a */}}
+{{/* human raises it, together with the adapter's version and per-file hashes. The zip hash guards the download only; */}}
+{{/* the adapter checks the extracted files before it loads them. Windows gets no dictionary: it does not run the */}}
+{{/* installer or the checker. */}}
+{{ if ne .chezmoi.os "windows" }}
+[".config/japanese-check/unidic"]
+type = "archive"
+url = "https://github.com/lindera/lindera/releases/download/v{{ .japanese_check.dictionary.version }}/lindera-unidic-{{ .japanese_check.dictionary.version }}.zip"
+stripComponents = 1
+exact = true
+checksum.sha256 = "{{ .japanese_check.dictionary.sha256 }}"
+{{ end }}
+
 {{/* private-skills: personal canon (berlysia-style, berlysia-slide). */}}
 {{/* Cloned via SSH to a holding location, then merged into ~/.claude/skills and */}}
 {{/* ~/.codex/skills by run_after_sync-skills.sh. Public dotfiles stays safe. */}}

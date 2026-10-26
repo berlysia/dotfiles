@@ -1,0 +1,27 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "@berlysia-dotfiles/japanese-check",
+      "dependencies": {
+        "lindera": "6.2.0",
+      },
+    },
+  },
+  "packages": {
+    "lindera": ["lindera@6.2.0", "", { "optionalDependencies": { "lindera-darwin-arm64": "6.2.0", "lindera-darwin-x64": "6.2.0", "lindera-linux-arm64-gnu": "6.2.0", "lindera-linux-x64-gnu": "6.2.0", "lindera-win32-arm64-msvc": "6.2.0", "lindera-win32-x64-msvc": "6.2.0" } }, "sha512-GhF1TqLOv6KrZOIPv/icl2hHX3l8YYEEn0WC0AN9zb2kY4W6Ah5A4wzn/RiJAeG/qWf9depoFzhC0AS7TMAQ8g=="],
+
+    "lindera-darwin-arm64": ["lindera-darwin-arm64@6.2.0", "", { "os": "darwin", "cpu": "arm64" }, "sha512-2udNmgOjPpjRpu96YfqeawMqLvFIi8+7yNpg+81ST3zkREUQY9QXF896bDAehAXIJW/CZDNDS6EWMdsWReRYfw=="],
+
+    "lindera-darwin-x64": ["lindera-darwin-x64@6.2.0", "", { "os": "darwin", "cpu": "x64" }, "sha512-qBAov+HWLrTVU5Hs+HaJtdvb4BUDxYEHjva5FhZxoA+DmG3b5kkqyiMoQIhH8f9zyZiI+6XRPaaViT9tnkQuJA=="],
+
+    "lindera-linux-arm64-gnu": ["lindera-linux-arm64-gnu@6.2.0", "", { "os": "linux", "cpu": "arm64", "libc": "glibc" }, "sha512-MqZsVRhFiHbap7FGrVyElWAmvbMOxsNZe2iXX2falFslN1oIZ1g4BTB6Y8R/yFz0CyyU8UPJnjsv0BfQ2SFCCQ=="],
+
+    "lindera-linux-x64-gnu": ["lindera-linux-x64-gnu@6.2.0", "", { "os": "linux", "cpu": "x64", "libc": "glibc" }, "sha512-dEw+ZrT4bI9vh34gpBwpkayaghTzmxZSIknst+lGtX6GTal9B4xEmYiFH1aJ2k81O/6dn7EufWgWi0n5QEy2eg=="],
+
+    "lindera-win32-arm64-msvc": ["lindera-win32-arm64-msvc@6.2.0", "", { "os": "win32", "cpu": "arm64" }, "sha512-GZgiTrwEIzfjRRtqqKIpqhw8j4cU6MN4Oeb7vMfmAPov/mT/2ivDhLGkaS/d/yGR5pKzo/208D/tQdmC14/asA=="],
+
+    "lindera-win32-x64-msvc": ["lindera-win32-x64-msvc@6.2.0", "", { "os": "win32", "cpu": "x64" }, "sha512-xwGnfUtONYNcnCzcGbiWVZ4eRJfjivsPu6cNYxBLKevImbVpTniZT+jW9xzGhAtM9//u/DtSise5hHyku5Nbag=="],
+  }
+}

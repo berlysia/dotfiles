@@ -36,6 +36,10 @@ on:
       - "renovate.json"
       - ".github/actions/install-chezmoi/**"
       - "tests/install-chezmoi.test.mjs"
+      # japanese-check の実行環境と辞書。これらだけを変えた PR でも解析器のテストが走るように。
+      - "home/dot_config/japanese-check/**"
+      - "home/.chezmoidata/japanese_check.yaml"
+      - "scripts/fetch-japanese-check-dictionary.sh"
   pull_request:
     branches: [master, main]
     paths:
@@ -71,6 +75,10 @@ on:
       - "renovate.json"
       - ".github/actions/install-chezmoi/**"
       - "tests/install-chezmoi.test.mjs"
+      # japanese-check の実行環境と辞書。これらだけを変えた PR でも解析器のテストが走るように。
+      - "home/dot_config/japanese-check/**"
+      - "home/.chezmoidata/japanese_check.yaml"
+      - "scripts/fetch-japanese-check-dictionary.sh"
   workflow_dispatch:
 
 concurrency:
@@ -98,6 +106,37 @@ jobs:
       - name: Setup Node.js with bun
         uses: ./.github/actions/setup-node-bun
 
+      # japanese-check's analyzer (lindera) and its UniDic dictionary live outside the checkout, as
+      # they do under ~/.config/japanese-check for a user. The runtime dir is owner-only because the
+      # checker refuses a group- or world-writable one. The zip is cached by its pinned sha256 and
+      # checked again on every run, cache hit or not.
+      - name: Install chezmoi
+        uses: ./.github/actions/install-chezmoi
+        with:
+          install-dir: "${{ runner.temp }}/bin"
+          add-to-path: "true"
+
+      - name: Read dictionary pin
+        id: dictionary
+        run: echo "sha256=$(chezmoi execute-template --source "$PWD/home" '{{ .japanese_check.dictionary.sha256 }}')" >> "$GITHUB_OUTPUT"
+
+      - name: Restore dictionary zip
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/dictionary-cache
+          key: japanese-check-dictionary-${{ steps.dictionary.outputs.sha256 }}
+
+      - name: Prepare japanese-check runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime="${RUNNER_TEMP}/japanese-check"
+          mkdir -m 700 "${runtime}"
+          cp home/dot_config/japanese-check/package.json home/dot_config/japanese-check/bun.lock bunfig.toml "${runtime}/"
+          (cd "${runtime}" && bun install --frozen-lockfile --ignore-scripts)
+          scripts/fetch-japanese-check-dictionary.sh "${runtime}/unidic" "${RUNNER_TEMP}/dictionary-cache/lindera-unidic.zip"
+          echo "JAPANESE_CHECK_RUNTIME_DIR=${runtime}" >> "$GITHUB_ENV"
+
       - name: Type check
         run: bun run typecheck
 
@@ -118,3 +157,55 @@ jobs:
       # ci-format.yml に分離した。ここは TS スコープの lint のみを担う。
       - name: Lint check
         run: bun run lint:oxlint
+
+  # The adapter loads a native package and reads a dictionary through realpath checks, so run the
+  # tests that exercise those on macOS too. The other hooks tests do not depend on the platform.
+  japanese-check-macos:
+    name: japanese-check (macOS)
+    runs-on: macos-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js with bun
+        uses: ./.github/actions/setup-node-bun
+
+      - name: Install chezmoi
+        uses: ./.github/actions/install-chezmoi
+        with:
+          install-dir: "${{ runner.temp }}/bin"
+          add-to-path: "true"
+
+      - name: Read dictionary pin
+        id: dictionary
+        run: echo "sha256=$(chezmoi execute-template --source "$PWD/home" '{{ .japanese_check.dictionary.sha256 }}')" >> "$GITHUB_OUTPUT"
+
+      - name: Restore dictionary zip
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/dictionary-cache
+          key: japanese-check-dictionary-${{ steps.dictionary.outputs.sha256 }}
+
+      - name: Prepare japanese-check runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime="${RUNNER_TEMP}/japanese-check"
+          mkdir -m 700 "${runtime}"
+          cp home/dot_config/japanese-check/package.json home/dot_config/japanese-check/bun.lock bunfig.toml "${runtime}/"
+          (cd "${runtime}" && bun install --frozen-lockfile --ignore-scripts)
+          scripts/fetch-japanese-check-dictionary.sh "${runtime}/unidic" "${RUNNER_TEMP}/dictionary-cache/lindera-unidic.zip"
+          echo "JAPANESE_CHECK_RUNTIME_DIR=${runtime}" >> "$GITHUB_ENV"
+
+      # The deps test is here because the realpath of a temp dir differs on macOS (/var is /private/var),
+      # which changes what the symlink and allowed-root checks see.
+      - name: Run japanese-check adapter tests
+        run: >-
+          CLAUDE_TEST_FORBID_GIT=1 node --import ./home/dot_claude/hooks/tests/preload-test-env.mjs --test
+          home/dot_claude/hooks/tests/unit/japanese-check-lindera.test.ts
+          home/dot_claude/hooks/tests/unit/japanese-check-contract.test.ts
+          home/dot_claude/hooks/tests/unit/japanese-check-deps.test.ts

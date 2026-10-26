@@ -15,7 +15,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, describe, it, mock } from "node:test";
 import {
@@ -52,6 +52,7 @@ import {
 } from "../../../japanese-check/profiles.ts";
 import {
   HASHED_WORD_FIELDS,
+  WORD_LIST_SCHEMA,
   UNHASHED_WORD_FIELDS,
   WORD_FIELDS,
 } from "../../../japanese-check/words.ts";
@@ -65,16 +66,21 @@ import {
 } from "../../../japanese-check/state.ts";
 import type { StateOps } from "../../../japanese-check/state.ts";
 import { tracked } from "../../../japanese-check/tracking.ts";
-import { findDependency } from "../../../japanese-check/deps.ts";
 import {
-  createAnalyzer,
+  ANALYZER_IDENTITY,
   decodeTokens,
-} from "../../../japanese-check/adapter-sudachi-wasm.ts";
+  dictionaryIdentity,
+} from "../../../japanese-check/adapter-lindera-unidic.ts";
 import {
+  AnalyzerOutputError,
   isProperNoun,
   isVerb,
-  makeTokenizer,
 } from "../../../japanese-check/contract.ts";
+import {
+  createTestTokenizer,
+  needsRuntime,
+  runtimeEnv,
+} from "../support/japanese-check-runtime.ts";
 import {
   rawEntry,
   reviewFrom,
@@ -461,133 +467,185 @@ describe("Japanese review rules", () => {
   });
 });
 
-describe("Sudachi-backed Japanese review", () => {
-  const sudachi = findDependency("sudachi");
-  assert.ok(sudachi.ok);
-  const tokenizer = createAnalyzer(sudachi.entry).then(makeTokenizer);
+const TEST_ANALYZER = {
+  engine: "lindera-unidic",
+  version: "6.2.0",
+  dictionary: "d".repeat(64),
+};
 
-  it("preserves original spelling and positions when Sudachi changes ASCII case or width", async () => {
-    const tokenize = await tokenizer;
-    for (const text of [
-      "japanese-check を使う。",
-      "ＡＰＩで確認する。",
-      "😀 api-check を拾った。",
-      "ｷﾀ━(ﾟ∀ﾟ)━! 机がｶﾞｸｶﾞｸする。",
-    ]) {
-      const tokens = tokenize(text);
-      assert.equal(tokens.map((token) => token.surface).join(""), text);
-      for (const token of tokens) {
-        assert.equal(text.slice(token.start, token.end), token.surface);
+describe("lindera-backed Japanese review", () => {
+  const tokenizer = createTestTokenizer();
+
+  it(
+    "preserves original spelling and positions with ASCII case, width and emoji",
+    needsRuntime,
+    async () => {
+      const tokenize = await tokenizer;
+      for (const text of [
+        "japanese-check を使う。",
+        "ＡＰＩで確認する。",
+        "😀 api-check を拾った。",
+        "ｷﾀ━(ﾟ∀ﾟ)━! 机がｶﾞｸｶﾞｸする。",
+      ]) {
+        const tokens = tokenize(text);
+        // The analyzer drops white space, so compare without it.
+        assert.equal(
+          tokens.map((token) => token.surface).join(""),
+          text.replace(/\s/gu, ""),
+        );
+        for (const token of tokens) {
+          assert.equal(text.slice(token.start, token.end), token.surface);
+        }
       }
-    }
-  });
+    },
+  );
 
-  it("uses actual morphological POS and normalized forms for inflected verbs", async () => {
-    const tokenize = await tokenizer;
-    const tokens = tokenize("データを拾った。");
-    assert.ok(
-      tokens.some(
-        (token) =>
-          token.surface === "拾っ" &&
-          token.lemma === "拾う" &&
-          isVerb(token) &&
-          token.conjugation?.kind === "godan" &&
-          token.conjugation.row === "wa",
-      ),
-    );
-    const findings = calques(
-      proseLines("# API の入口\nデータを拾った。\n`拾った`"),
-      tokenize,
-      shippedReview(["calque"]),
-    );
-    assert.ok(findings.some((item) => item.text === "入口" && item.line === 1));
-    assert.ok(findings.some((item) => item.text === "拾っ" && item.line === 2));
-    assert.ok(findings.every((item) => item.line !== 3));
-  });
-
-  it("maps 京都 to a proper noun and keeps 何 out of a term", async () => {
-    const tokenize = await tokenizer;
-    assert.ok(
-      tokenize("京都に行く。").some(
-        (token) => token.surface === "京都" && isProperNoun(token),
-      ),
-    );
-    assert.deepEqual(
-      terms(proseLines("Docker何かを使う。"), tokenize).map((t) => t.term),
-      ["Docker"],
-    );
-  });
-
-  it("finds inflected 効く even when the dictionary normalizes its spelling", async () => {
-    const findings = calques(
-      proseLines("薬が効いた。"),
-      await tokenizer,
-      shippedReview(["calque"]),
-    );
-    assert.ok(findings.some((item) => item.text === "効い"));
-  });
-
-  it("identifies first use while leaving explanation correctness to the reader", async () => {
-    const found = terms(
-      proseLines(
-        "API（外部から使う窓口）を呼ぶ。\nAPI を使う。\nキャッシュを消す。",
-      ),
-      await tokenizer,
-    );
-    assert.equal(found.filter((term) => term.term === "API").length, 1);
-    assert.equal(
-      found.find((term) => term.term === "API")?.explanationNearby,
-      true,
-    );
-    assert.equal(
-      found.find((term) => term.term === "キャッシュ")?.explanationNearby,
-      false,
-    );
-  });
-
-  it("detects changed counts and proper nouns, ignores moved text and code", async () => {
-    const tokenize = await tokenizer;
-    const source = proseLines(
-      "大阪でAPIを使う。\n利用者は３人。\n\n既存の説明。\n",
-    );
-    const final = proseLines(
-      "既存の説明。\n\n大阪でAPIを使う。\n利用者は9人。\n京都も対象。\n`NewCode 999人`\n",
-    );
-    const found = newFacts(source, final, tokenize);
-    assert.ok(found.some((fact) => fact.value === "9人"));
-    assert.ok(
-      found.some((fact) => fact.value === "京都" && fact.kind === "name"),
-    );
-    assert.ok(!found.some((fact) => /API|大阪|999|NewCode/u.test(fact.value)));
-    assert.deepEqual(
-      newFacts(
-        source,
-        proseLines("利用者は3人。\n大阪でAPIを使う。"),
+  it(
+    "uses actual morphological POS and normalized forms for inflected verbs",
+    needsRuntime,
+    async () => {
+      const tokenize = await tokenizer;
+      const tokens = tokenize("データを拾った。");
+      assert.ok(
+        tokens.some(
+          (token) =>
+            token.surface === "拾っ" &&
+            token.lemma === "拾う" &&
+            isVerb(token) &&
+            token.conjugation?.kind === "godan" &&
+            token.conjugation.row === "wa",
+        ),
+      );
+      const findings = calques(
+        proseLines("# API の入口\nデータを拾った。\n`拾った`"),
         tokenize,
-      ),
-      [],
-    );
-  });
+        shippedReview(["calque"]),
+      );
+      assert.ok(
+        findings.some((item) => item.text === "入口" && item.line === 1),
+      );
+      assert.ok(
+        findings.some((item) => item.text === "拾っ" && item.line === 2),
+      );
+      assert.ok(findings.every((item) => item.line !== 3));
+    },
+  );
 
-  it("check() carries the same outline as outline() and keeps schemaVersion 1", async () => {
-    const markdown = "# 手順\n\n一文目。\n二文目。\n\n「行く。」次の文。\n";
-    const result = check(markdown, await tokenizer, shippedReview(["calque"]));
-    assert.deepEqual(result.outline, outline(proseLines(markdown)));
-    assert.equal(result.schemaVersion, 1);
-  });
+  it(
+    "maps 京都 to a proper noun and keeps 何 out of a term",
+    needsRuntime,
+    async () => {
+      const tokenize = await tokenizer;
+      assert.ok(
+        tokenize("京都に行く。").some(
+          (token) => token.surface === "京都" && isProperNoun(token),
+        ),
+      );
+      assert.deepEqual(
+        terms(proseLines("Docker何かを使う。"), tokenize).map((t) => t.term),
+        ["Docker"],
+      );
+    },
+  );
 
-  it("does not claim that unchanged words prove unchanged meaning", async () => {
-    const result = check(
-      "次回までに合意した。",
-      await tokenizer,
-      shippedReview(["calque"]),
-      "business",
-      "次回までに検討する。",
-    );
-    assert.deepEqual(result.newFacts, []);
-    assert.ok(result.limitations.some((text) => text.includes("確度")));
-    assert.equal(result.analyzer.engine, "sudachi");
-  });
+  it(
+    "finds inflected 効く even when the dictionary normalizes its spelling",
+    needsRuntime,
+    async () => {
+      const findings = calques(
+        proseLines("薬が効いた。"),
+        await tokenizer,
+        shippedReview(["calque"]),
+      );
+      assert.ok(findings.some((item) => item.text === "効い"));
+    },
+  );
+
+  it(
+    "identifies first use while leaving explanation correctness to the reader",
+    needsRuntime,
+    async () => {
+      const found = terms(
+        proseLines(
+          "API（外部から使う窓口）を呼ぶ。\nAPI を使う。\nキャッシュを消す。",
+        ),
+        await tokenizer,
+      );
+      assert.equal(found.filter((term) => term.term === "API").length, 1);
+      assert.equal(
+        found.find((term) => term.term === "API")?.explanationNearby,
+        true,
+      );
+      assert.equal(
+        found.find((term) => term.term === "キャッシュ")?.explanationNearby,
+        false,
+      );
+    },
+  );
+
+  it(
+    "detects changed counts and proper nouns, ignores moved text and code",
+    needsRuntime,
+    async () => {
+      const tokenize = await tokenizer;
+      const source = proseLines(
+        "大阪でAPIを使う。\n利用者は３人。\n\n既存の説明。\n",
+      );
+      const final = proseLines(
+        "既存の説明。\n\n大阪でAPIを使う。\n利用者は9人。\n京都も対象。\n`NewCode 999人`\n",
+      );
+      const found = newFacts(source, final, tokenize);
+      assert.ok(found.some((fact) => fact.value === "9人"));
+      assert.ok(
+        found.some((fact) => fact.value === "京都" && fact.kind === "name"),
+      );
+      assert.ok(
+        !found.some((fact) => /API|大阪|999|NewCode/u.test(fact.value)),
+      );
+      assert.deepEqual(
+        newFacts(
+          source,
+          proseLines("利用者は3人。\n大阪でAPIを使う。"),
+          tokenize,
+        ),
+        [],
+      );
+    },
+  );
+
+  it(
+    "check() carries the same outline as outline() and keeps schemaVersion 1",
+    needsRuntime,
+    async () => {
+      const markdown = "# 手順\n\n一文目。\n二文目。\n\n「行く。」次の文。\n";
+      const result = check(
+        markdown,
+        await tokenizer,
+        shippedReview(["calque"]),
+        TEST_ANALYZER,
+      );
+      assert.deepEqual(result.outline, outline(proseLines(markdown)));
+      assert.equal(result.schemaVersion, 1);
+    },
+  );
+
+  it(
+    "does not claim that unchanged words prove unchanged meaning",
+    needsRuntime,
+    async () => {
+      const result = check(
+        "次回までに合意した。",
+        await tokenizer,
+        shippedReview(["calque"]),
+        TEST_ANALYZER,
+        "business",
+        "次回までに検討する。",
+      );
+      assert.deepEqual(result.newFacts, []);
+      assert.ok(result.limitations.some((text) => text.includes("確度")));
+      assert.deepEqual(result.analyzer, TEST_ANALYZER);
+    },
+  );
 });
 
 describe("Japanese checker CLI", () => {
@@ -632,108 +690,149 @@ describe("Japanese checker CLI", () => {
     await assert.rejects(main(["check", join(dir, "missing.md")]));
   });
 
-  it("supports an unrecorded check and requires explicit review of actual findings", async () => {
-    const file = join(dir, "candidate.md");
-    const content = "データを拾った。\n";
-    const stateDir = join(dir, "candidate-state");
-    writeFileSync(file, content);
-    const output = mock.method(console, "log", () => {});
-    try {
-      await main(["check", file, "--no-record"], { stateDir });
-      assert.equal(verify(file, stateDir).status, "missing");
-      await main(["check", file], { stateDir });
-      assert.equal(verify(file, stateDir).status, "needs-review");
-      await main(
-        [
-          "review",
-          file,
-          "--hash",
-          digest(content),
-          "--reason",
-          "処理名として資料に定義されているため残す",
-        ],
-        { stateDir },
-      );
-      assert.equal(verify(file, stateDir).status, "ready");
-    } finally {
-      output.mock.restore();
-    }
-  });
+  it(
+    "supports an unrecorded check and requires explicit review of actual findings",
+    needsRuntime,
+    async () => {
+      const file = join(dir, "candidate.md");
+      const content = "データを拾った。\n";
+      const stateDir = join(dir, "candidate-state");
+      writeFileSync(file, content);
+      const output = mock.method(console, "log", () => {});
+      try {
+        await main(["check", file, "--no-record"], { stateDir });
+        assert.equal(verify(file, stateDir).status, "missing");
+        await main(["check", file], { stateDir });
+        assert.equal(verify(file, stateDir).status, "needs-review");
+        await main(
+          [
+            "review",
+            file,
+            "--hash",
+            digest(content),
+            "--reason",
+            "処理名として資料に定義されているため残す",
+          ],
+          { stateDir },
+        );
+        assert.equal(verify(file, stateDir).status, "ready");
+      } finally {
+        output.mock.restore();
+      }
+    },
+  );
 
-  it("tracks the final artifact instead of the extracted text", async () => {
-    const file = join(dir, "extracted.md");
-    const artifact = join(dir, "document.pdf");
-    const stateDir = join(dir, "artifact-state");
-    writeFileSync(file, "文書を確認する。\n");
-    writeFileSync(artifact, "artifact-v1");
-    const output = mock.method(console, "log", () => {});
-    try {
-      await main(
-        [
-          "check",
-          file,
-          "--artifact",
+  it(
+    "tracks the final artifact instead of the extracted text",
+    needsRuntime,
+    async () => {
+      const file = join(dir, "extracted.md");
+      const artifact = join(dir, "document.pdf");
+      const stateDir = join(dir, "artifact-state");
+      writeFileSync(file, "文書を確認する。\n");
+      writeFileSync(artifact, "artifact-v1");
+      const output = mock.method(console, "log", () => {});
+      try {
+        await main(
+          [
+            "check",
+            file,
+            "--artifact",
+            artifact,
+            "--session",
+            "artifact-session",
+          ],
+          { stateDir },
+        );
+        assert.deepEqual(tracked("artifact-session", stateDir).paths, [
           artifact,
-          "--session",
-          "artifact-session",
-        ],
-        { stateDir },
-      );
-      assert.deepEqual(tracked("artifact-session", stateDir).paths, [artifact]);
-      assert.equal(verify(artifact, stateDir).status, "ready");
-      writeFileSync(artifact, "artifact-v2");
-      assert.equal(verify(artifact, stateDir).status, "stale");
-    } finally {
-      output.mock.restore();
-    }
-  });
+        ]);
+        assert.equal(verify(artifact, stateDir).status, "ready");
+        writeFileSync(artifact, "artifact-v2");
+        assert.equal(verify(artifact, stateDir).status, "stale");
+      } finally {
+        output.mock.restore();
+      }
+    },
+  );
 
   it("rejects malformed analyzer output instead of silently skipping analysis", () => {
-    assert.throws(() => decodeTokens("[]", "未解析の本文"));
-    assert.throws(() => decodeTokens("{}", "本文"));
-    assert.throws(() => decodeTokens('[{"surface":"本文"}]', "本文"));
-    assert.throws(() =>
-      decodeTokens(
-        '[{"surface":"別の文","normalized_form":"別","poses":["名詞"]}]',
-        "本文",
-      ),
+    assert.throws(() => decodeTokens({}, "本文"), AnalyzerOutputError);
+    assert.throws(
+      () => decodeTokens([{ surface: "本文" }], "本文"),
+      AnalyzerOutputError,
+    );
+    // A byte offset inside a character is not a position in the text.
+    assert.throws(
+      () =>
+        decodeTokens(
+          [{ surface: "本", byteStart: 1, byteEnd: 3, details: [] }],
+          "本文",
+        ),
+      AnalyzerOutputError,
     );
   });
 
-  it("aligns analyzer tokens that split one grapheme, such as an emoji and its variation selector", () => {
+  it("drops a token of no length", () => {
     const tokens = decodeTokens(
-      JSON.stringify([
-        { surface: "⚠", normalized_form: "⚠", poses: ["名詞"] },
-        { surface: "️", normalized_form: "️", poses: ["補助記号"] },
-        { surface: "注意", normalized_form: "注意", poses: ["名詞"] },
-      ]),
+      [
+        { surface: "", byteStart: 0, byteEnd: 0, details: [] },
+        { surface: "本文", byteStart: 0, byteEnd: 6, details: [] },
+      ],
+      "本文",
+    );
+    assert.deepEqual(
+      tokens.map(({ surface, start, end }) => [surface, start, end]),
+      [["本文", 0, 2]],
+    );
+  });
+
+  it("converts byte offsets to UTF-16 offsets for tokens that split one grapheme", () => {
+    const tokens = decodeTokens(
+      [
+        { surface: "⚠", byteStart: 0, byteEnd: 3, details: [] },
+        { surface: "\uFE0F", byteStart: 3, byteEnd: 6, details: [] },
+        { surface: "注意", byteStart: 6, byteEnd: 12, details: [] },
+      ],
       "⚠️注意",
     );
     assert.deepEqual(
       tokens.map(({ surface, start, end }) => [surface, start, end]),
       [
         ["⚠", 0, 1],
-        ["️", 1, 2],
+        ["\uFE0F", 1, 2],
         ["注意", 2, 4],
       ],
     );
   });
 
-  it("aligns analyzer tokens that split a grapheme normalization changes, such as a half-width semi-voiced mark after a parenthesis", () => {
-    // The mark attaches to "(" as one grapheme, and NFKC turns it into a
-    // combining mark, but Sudachi returns the parenthesis and the mark apart.
-    const tokens = decodeTokens(
-      JSON.stringify([
-        { surface: "（", normalized_form: "（", poses: ["補助記号"] },
-        { surface: "ﾟ", normalized_form: "ﾟ", poses: ["名詞"] },
-        { surface: "д", normalized_form: "д", poses: ["名詞"] },
-        { surface: "ﾟ", normalized_form: "ﾟ", poses: ["名詞"] },
-        { surface: ")", normalized_form: "）", poses: ["補助記号"] },
-      ]),
+  it("converts byte offsets for a surrogate pair and a half-width semi-voiced mark", () => {
+    const pair = decodeTokens(
+      [
+        { surface: "𠮷", byteStart: 0, byteEnd: 4, details: [] },
+        { surface: "野", byteStart: 4, byteEnd: 7, details: [] },
+      ],
+      "𠮷野",
+    );
+    assert.deepEqual(
+      pair.map(({ surface, start, end }) => [surface, start, end]),
+      [
+        ["𠮷", 0, 2],
+        ["野", 2, 3],
+      ],
+    );
+    const face = decodeTokens(
+      [
+        { surface: "(", byteStart: 0, byteEnd: 1, details: [] },
+        { surface: "ﾟ", byteStart: 1, byteEnd: 4, details: [] },
+        { surface: "д", byteStart: 4, byteEnd: 6, details: [] },
+        { surface: "ﾟ", byteStart: 6, byteEnd: 9, details: [] },
+        { surface: ")", byteStart: 9, byteEnd: 10, details: [] },
+      ],
       "(ﾟдﾟ)",
     );
     assert.deepEqual(
-      tokens.map(({ surface, start, end }) => [surface, start, end]),
+      face.map(({ surface, start, end }) => [surface, start, end]),
       [
         ["(", 0, 1],
         ["ﾟ", 1, 2],
@@ -744,40 +843,70 @@ describe("Japanese checker CLI", () => {
     );
   });
 
-  it("rejects aliases of the same source and emits a combined report with a real source", async () => {
-    const source = join(dir, "source.md");
-    const alias = join(dir, "alias.md");
-    const final = join(dir, "final.md");
-    writeFileSync(source, "利用者は3人。\n");
-    linkSync(source, alias);
-    await assert.rejects(
-      main(["check", alias, "--source", source]),
-      /同じ実体/u,
-    );
-    writeFileSync(final, "利用者は9人。\n");
-    const output = mock.method(console, "log", () => {});
-    try {
-      await main(["check", final, "--source", source], {
-        stateDir: join(dir, "state"),
-      });
-      const data: unknown = JSON.parse(
-        String(output.mock.calls[0]?.arguments[0]),
+  it(
+    "names the analyzer, its resolved version and the derived dictionary identity in the output",
+    needsRuntime,
+    async () => {
+      const file = join(dir, "analyzer-field.md");
+      writeFileSync(file, "薬が効いた。\n");
+      const output = mock.method(console, "log", () => {});
+      try {
+        await main(["check", file, "--no-record"], {
+          stateDir: join(dir, "state-analyzer-field"),
+        });
+        const data: unknown = JSON.parse(
+          String(output.mock.calls[0]?.arguments[0]),
+        );
+        assert.ok(data && typeof data === "object" && "analyzer" in data);
+        assert.deepEqual(data.analyzer, {
+          engine: ANALYZER_IDENTITY.engine,
+          version: "6.2.0",
+          dictionary: dictionaryIdentity(),
+        });
+      } finally {
+        output.mock.restore();
+      }
+    },
+  );
+
+  it(
+    "rejects aliases of the same source and emits a combined report with a real source",
+    needsRuntime,
+    async () => {
+      const source = join(dir, "source.md");
+      const alias = join(dir, "alias.md");
+      const final = join(dir, "final.md");
+      writeFileSync(source, "利用者は3人。\n");
+      linkSync(source, alias);
+      await assert.rejects(
+        main(["check", alias, "--source", source]),
+        /同じ実体/u,
       );
-      assert.ok(data && typeof data === "object" && "newFacts" in data);
-      assert.ok(
-        Array.isArray(data.newFacts) &&
-          data.newFacts.some(
-            (fact: unknown) =>
-              typeof fact === "object" &&
-              fact !== null &&
-              "value" in fact &&
-              fact.value === "9人",
-          ),
-      );
-    } finally {
-      output.mock.restore();
-    }
-  });
+      writeFileSync(final, "利用者は9人。\n");
+      const output = mock.method(console, "log", () => {});
+      try {
+        await main(["check", final, "--source", source], {
+          stateDir: join(dir, "state"),
+        });
+        const data: unknown = JSON.parse(
+          String(output.mock.calls[0]?.arguments[0]),
+        );
+        assert.ok(data && typeof data === "object" && "newFacts" in data);
+        assert.ok(
+          Array.isArray(data.newFacts) &&
+            data.newFacts.some(
+              (fact: unknown) =>
+                typeof fact === "object" &&
+                fact !== null &&
+                "value" in fact &&
+                fact.value === "9人",
+            ),
+        );
+      } finally {
+        output.mock.restore();
+      }
+    },
+  );
 });
 
 describe("japanese-check module boundaries", () => {
@@ -795,7 +924,7 @@ describe("japanese-check module boundaries", () => {
     return found;
   }
 
-  // adapter-sudachi-wasm.ts loads the dictionary package by the resolved file path that
+  // adapter-lindera-unidic.ts loads the analyzer package by the resolved file path that
   // deps.ts found, so no file names the package in an import.
   it("imports only node: built-ins and sibling files", () => {
     assert.ok(files.length > 0);
@@ -1040,14 +1169,21 @@ describe("check --profile", () => {
       (item: { rule?: string }) => item.rule === "long-sentence",
     );
 
-  it("leaves the output without --profile exactly as it was", async () => {
-    const doc = fresh(longSentence);
-    const report = await run(["check", doc.file, "--no-record"], doc.stateDir);
-    assert.ok(!("profile" in report));
-    assert.ok(flagged(report));
-  });
+  it(
+    "leaves the output without --profile exactly as it was",
+    needsRuntime,
+    async () => {
+      const doc = fresh(longSentence);
+      const report = await run(
+        ["check", doc.file, "--no-record"],
+        doc.stateDir,
+      );
+      assert.ok(!("profile" in report));
+      assert.ok(flagged(report));
+    },
+  );
 
-  it("uses the row's genre and reports the profile", async () => {
+  it("uses the row's genre and reports the profile", needsRuntime, async () => {
     const doc = fresh(longSentence);
     const report = await run(
       ["check", doc.file, "--profile", "design", "--no-record"],
@@ -1070,7 +1206,7 @@ describe("check --profile", () => {
     assert.deepEqual(withReader.profile, { id: "design", reader: "adhd" });
   });
 
-  it("takes --genre only when the row has no genre", async () => {
+  it("takes --genre only when the row has no genre", needsRuntime, async () => {
     const doc = fresh(longSentence);
     const caller = await run(
       [
@@ -1162,112 +1298,136 @@ describe("receipt profile fields", () => {
     return JSON.parse(readFileSync(join(folder, name ?? ""), "utf8"));
   };
 
-  it("writes the three fields only for a --profile check, never null", async () => {
-    const withProfile = fresh();
-    const result = await check(
-      withProfile,
-      "--profile",
-      "design",
-      "--reader",
-      "adhd",
-    );
-    assert.equal(result.receipt?.profileId, "design");
-    assert.equal(result.receipt?.reader, "adhd");
-    assert.match(result.receipt?.profileHash ?? "", /^[0-9a-f]{64}$/u);
-    const plain = fresh();
-    await check(plain);
-    const raw = rawReceipt(plain);
-    for (const key of ["profileId", "reader", "profileHash"])
-      assert.ok(!(key in raw), key);
-  });
+  it(
+    "writes the three fields only for a --profile check, never null",
+    needsRuntime,
+    async () => {
+      const withProfile = fresh();
+      const result = await check(
+        withProfile,
+        "--profile",
+        "design",
+        "--reader",
+        "adhd",
+      );
+      assert.equal(result.receipt?.profileId, "design");
+      assert.equal(result.receipt?.reader, "adhd");
+      assert.match(result.receipt?.profileHash ?? "", /^[0-9a-f]{64}$/u);
+      const plain = fresh();
+      await check(plain);
+      const raw = rawReceipt(plain);
+      for (const key of ["profileId", "reader", "profileHash"])
+        assert.ok(!(key in raw), key);
+    },
+  );
 
-  it("keeps the fields on a review and drops them on a deferral", async () => {
-    const reviewed = fresh();
-    await check(reviewed, "--profile", "design");
-    const afterReview = decide(reviewed, "review");
-    assert.equal(afterReview.receipt?.profileId, "design");
-    assert.ok(afterReview.receipt?.profileHash);
-    const deferred = fresh();
-    await check(deferred, "--profile", "design");
-    const afterDefer = decide(deferred, "defer");
-    const raw = rawReceipt(deferred);
-    assert.equal(afterDefer.status, "draft");
-    for (const key of ["profileId", "reader", "profileHash"])
-      assert.ok(!(key in raw), key);
-  });
+  it(
+    "keeps the fields on a review and drops them on a deferral",
+    needsRuntime,
+    async () => {
+      const reviewed = fresh();
+      await check(reviewed, "--profile", "design");
+      const afterReview = decide(reviewed, "review");
+      assert.equal(afterReview.receipt?.profileId, "design");
+      assert.ok(afterReview.receipt?.profileHash);
+      const deferred = fresh();
+      await check(deferred, "--profile", "design");
+      const afterDefer = decide(deferred, "defer");
+      const raw = rawReceipt(deferred);
+      assert.equal(afterDefer.status, "draft");
+      for (const key of ["profileId", "reader", "profileHash"])
+        assert.ok(!(key in raw), key);
+    },
+  );
 
-  it("carries a review over only to a check with the same profile", async () => {
-    const doc = fresh();
-    await check(doc);
-    decide(doc, "review");
-    assert.equal(verify(doc.file, doc.stateDir).status, "ready");
-    assert.equal(
-      (await check(doc, "--profile", "design")).status,
-      "needs-review",
-    );
-    decide(doc, "review");
-    assert.equal((await check(doc, "--profile", "design")).status, "ready");
-    assert.equal((await check(doc)).status, "needs-review");
-  });
-
-  it("does not carry a review to another row that resolves to the same list and genre", async () => {
-    const doc = fresh();
-    await check(doc, "--profile", "compose-default", "--genre", "business");
-    decide(doc, "review");
-    const same = await check(
-      doc,
-      "--profile",
-      "compose-default",
-      "--genre",
-      "business",
-    );
-    assert.equal(same.status, "ready");
-    const other = await check(doc, "--profile", "report");
-    assert.equal(other.status, "needs-review");
-    assert.equal(
-      other.receipt?.profileHash,
-      same.receipt?.profileHash,
-      "the lists are identical, so only the row id tells them apart",
-    );
-  });
-
-  it("treats malformed profile fields as a broken receipt and null as absent", async () => {
-    const hash = "a".repeat(64);
-    const cases: Array<[Record<string, unknown>, boolean]> = [
-      [{ profileId: "design", profileHash: 5 }, true],
-      [{ profileId: "Bad Id", profileHash: hash }, true],
-      [{ reader: "adhd" }, true],
-      [{ profileId: "design" }, true],
-      [{ profileHash: hash }, true],
-      [{ profileId: "design", profileHash: hash, reader: "other" }, true],
-      [{ profileId: null, reader: null, profileHash: null }, false],
-      [{ profileId: "design", profileHash: hash, reader: "adhd" }, false],
-    ];
-    for (const [fields, broken] of cases) {
+  it(
+    "carries a review over only to a check with the same profile",
+    needsRuntime,
+    async () => {
       const doc = fresh();
       await check(doc);
-      const folder = join(doc.stateDir, "receipts");
-      const [name] = readdirSync(folder);
-      const path = join(folder, name ?? "");
-      writeFileSync(
-        path,
-        JSON.stringify({
-          ...JSON.parse(readFileSync(path, "utf8")),
-          ...fields,
-        }),
+      decide(doc, "review");
+      assert.equal(verify(doc.file, doc.stateDir).status, "ready");
+      assert.equal(
+        (await check(doc, "--profile", "design")).status,
+        "needs-review",
       );
-      const result = verify(doc.file, doc.stateDir);
-      assert.equal(result.corrupt === true, broken, JSON.stringify(fields));
-    }
-  });
+      decide(doc, "review");
+      assert.equal((await check(doc, "--profile", "design")).status, "ready");
+      assert.equal((await check(doc)).status, "needs-review");
+    },
+  );
 
-  it("reads a receipt of the older shape that has none of the fields", async () => {
-    const doc = fresh();
-    await check(doc);
-    const receipt: Receipt = rawReceipt(doc);
-    assert.equal(receipt.schema, 1);
-    assert.equal(verify(doc.file, doc.stateDir).receipt?.schema, 1);
-  });
+  it(
+    "does not carry a review to another row that resolves to the same list and genre",
+    needsRuntime,
+    async () => {
+      const doc = fresh();
+      await check(doc, "--profile", "compose-default", "--genre", "business");
+      decide(doc, "review");
+      const same = await check(
+        doc,
+        "--profile",
+        "compose-default",
+        "--genre",
+        "business",
+      );
+      assert.equal(same.status, "ready");
+      const other = await check(doc, "--profile", "report");
+      assert.equal(other.status, "needs-review");
+      assert.equal(
+        other.receipt?.profileHash,
+        same.receipt?.profileHash,
+        "the lists are identical, so only the row id tells them apart",
+      );
+    },
+  );
+
+  it(
+    "treats malformed profile fields as a broken receipt and null as absent",
+    needsRuntime,
+    async () => {
+      const hash = "a".repeat(64);
+      const cases: Array<[Record<string, unknown>, boolean]> = [
+        [{ profileId: "design", profileHash: 5 }, true],
+        [{ profileId: "Bad Id", profileHash: hash }, true],
+        [{ reader: "adhd" }, true],
+        [{ profileId: "design" }, true],
+        [{ profileHash: hash }, true],
+        [{ profileId: "design", profileHash: hash, reader: "other" }, true],
+        [{ profileId: null, reader: null, profileHash: null }, false],
+        [{ profileId: "design", profileHash: hash, reader: "adhd" }, false],
+      ];
+      for (const [fields, broken] of cases) {
+        const doc = fresh();
+        await check(doc);
+        const folder = join(doc.stateDir, "receipts");
+        const [name] = readdirSync(folder);
+        const path = join(folder, name ?? "");
+        writeFileSync(
+          path,
+          JSON.stringify({
+            ...JSON.parse(readFileSync(path, "utf8")),
+            ...fields,
+          }),
+        );
+        const result = verify(doc.file, doc.stateDir);
+        assert.equal(result.corrupt === true, broken, JSON.stringify(fields));
+      }
+    },
+  );
+
+  it(
+    "reads a receipt of the older shape that has none of the fields",
+    needsRuntime,
+    async () => {
+      const doc = fresh();
+      await check(doc);
+      const receipt: Receipt = rawReceipt(doc);
+      assert.equal(receipt.schema, 1);
+      assert.equal(verify(doc.file, doc.stateDir).receipt?.schema, 1);
+    },
+  );
 });
 
 describe("checker version", () => {
@@ -1286,18 +1446,29 @@ describe("checker version", () => {
     clearCheckerVersionCache();
     return dir;
   }
-  function fakeSudachi(dir: string) {
-    const pkg = join(dir, "node_modules", "sudachi");
+  // The analyzer package lives in a runtime directory next to the checker copy.
+  function runtimeOf(dir: string) {
+    const runtime = join(dirname(dir), "runtime");
+    mkdirSync(runtime, { recursive: true, mode: 0o700 });
+    return runtime;
+  }
+  function fakeLindera(runtime: string, version = "9.9.9") {
+    const pkg = join(runtime, "node_modules", "lindera");
     mkdirSync(pkg, { recursive: true });
     writeFileSync(
       join(pkg, "package.json"),
-      JSON.stringify({ name: "sudachi", version: "9.9.9", main: "index.js" }),
+      JSON.stringify({ name: "lindera", version, main: "index.js" }),
     );
     writeFileSync(join(pkg, "index.js"), "module.exports = {};\n");
   }
-  const hashOf = (dir: string, deps: readonly DependencyEntry[] = []) => {
+  const LINDERA: DependencyEntry[] = [{ name: "lindera", group: "analyzer" }];
+  const hashOf = (
+    dir: string,
+    deps: readonly DependencyEntry[] = [],
+    runtimeDir: string = join(dirname(dir), "runtime"),
+  ) => {
     clearCheckerVersionCache();
-    return checkerVersion({ dir, deps });
+    return checkerVersion({ dir, deps, runtimeDir });
   };
   const rewriteJson = (
     path: string,
@@ -1381,17 +1552,82 @@ describe("checker version", () => {
 
   it("includes the dependency version and reports a missing dependency", () => {
     const dir = copy();
-    const deps: DependencyEntry[] = [{ name: "sudachi", group: "analyzer" }];
-    const without = hashOf(dir, deps);
-    assert.deepEqual(without.missing, ["sudachi"]);
-    fakeSudachi(dir);
-    const withPackage = hashOf(dir, deps);
+    const without = hashOf(dir, LINDERA);
+    assert.deepEqual(without.missing, ["lindera"]);
+    fakeLindera(runtimeOf(dir));
+    const withPackage = hashOf(dir, LINDERA);
     assert.deepEqual(withPackage.missing, []);
     assert.notEqual(withPackage.hash, without.hash);
   });
 
+  it("changes with the version of lindera, and two runtime directories do not share a cache entry", () => {
+    const dir = copy();
+    const runtimeA = join(dirname(dir), "runtime-a");
+    const runtimeB = join(dirname(dir), "runtime-b");
+    for (const runtime of [runtimeA, runtimeB])
+      mkdirSync(runtime, { recursive: true, mode: 0o700 });
+    fakeLindera(runtimeA, "1.0.0");
+    fakeLindera(runtimeB, "2.0.0");
+    clearCheckerVersionCache();
+    // No clearing between the two calls: the cache key must tell them apart.
+    const a = checkerVersion({ dir, deps: LINDERA, runtimeDir: runtimeA });
+    const b = checkerVersion({ dir, deps: LINDERA, runtimeDir: runtimeB });
+    assert.notEqual(a.hash, b.hash);
+    assert.deepEqual([a.missing, b.missing], [[], []]);
+  });
+
+  it("changes with the dictionary identity constant and with the word list schema alone", () => {
+    const dir = copy();
+    fakeLindera(runtimeOf(dir));
+    const base = hashOf(dir, LINDERA).hash;
+    const adapter = join(dir, "adapter-lindera-unidic.ts");
+    const source = readFileSync(adapter, "utf8");
+    const first = /"unk\.bin":\s*"([0-9a-f])/u.exec(source);
+    assert.ok(first);
+    writeFileSync(
+      adapter,
+      source.replace(
+        /("unk\.bin":\s*")[0-9a-f]/u,
+        `$1${first[1] === "0" ? "1" : "0"}`,
+      ),
+    );
+    assert.notEqual(hashOf(dir, LINDERA).hash, base);
+    writeFileSync(adapter, source);
+    assert.equal(hashOf(dir, LINDERA).hash, base);
+    rewriteJson(join(dir, "data", "words.json"), (v) => {
+      v.schema = 99;
+    });
+    assert.notEqual(hashOf(dir, LINDERA).hash, base);
+  });
+
+  it("looks for the analyzer only in the runtime directory", () => {
+    const dir = copy();
+    fakeLindera(dir);
+    fakeLindera(dirname(dir));
+    const result = hashOf(dir, LINDERA);
+    assert.deepEqual(result.missing, ["lindera"]);
+  });
+
+  it("treats a runtime directory that others can write to as missing the analyzer", () => {
+    const dir = copy();
+    const runtime = runtimeOf(dir);
+    fakeLindera(runtime);
+    assert.deepEqual(hashOf(dir, LINDERA).missing, []);
+    chmodSync(runtime, 0o775);
+    assert.deepEqual(hashOf(dir, LINDERA).missing, ["lindera"]);
+  });
+
+  it("reports a runtime directory owned by someone else as a missing analyzer without throwing", () => {
+    const dir = copy();
+    // /usr belongs to root and is not writable by others, so only the owner check refuses it.
+    const result = hashOf(dir, LINDERA, "/usr");
+    assert.deepEqual(result.missing, ["lindera"]);
+  });
+
   it("hashes its own directory by default, wherever the copy sits", () => {
     const dir = copy();
+    const runtime = runtimeOf(dir);
+    fakeLindera(runtime);
     const script = join(dir, "..", "print-version.mjs");
     writeFileSync(
       script,
@@ -1400,13 +1636,11 @@ describe("checker version", () => {
     const result = spawnSync(process.execPath, [script], {
       encoding: "utf8",
       cwd: tmpdir(),
+      env: { ...process.env, JAPANESE_CHECK_RUNTIME_DIR: runtime },
     });
     assert.equal(result.status, 0, result.stderr);
     const printed = JSON.parse(result.stdout) as { hash: string };
-    assert.equal(
-      printed.hash,
-      hashOf(dir, [{ name: "sudachi", group: "analyzer" }]).hash,
-    );
+    assert.equal(printed.hash, hashOf(dir, LINDERA, runtime).hash);
   });
 
   it("splits the validated fields into hashed and unhashed ones exactly", () => {
@@ -1454,7 +1688,7 @@ describe("receipts with a checker that is missing a part", () => {
 
   // One analyzer package is present; the grammar one never is.
   const deps: DependencyEntry[] = [
-    { name: "sudachi", group: "analyzer" },
+    { name: "lindera", group: "analyzer" },
     { name: "absent-grammar", group: "grammar" },
   ];
   const completeDeps: DependencyEntry[] = [deps[0] as DependencyEntry];
@@ -1463,17 +1697,25 @@ describe("receipts with a checker that is missing a part", () => {
     const key = ++number;
     const dir = join(root, `case-${key}`, "japanese-check");
     cpSync(checkerSource, dir, { recursive: true });
-    const pkg = join(dir, "node_modules", "sudachi");
+    const runtimeDir = join(root, `case-${key}`, "runtime");
+    const pkg = join(runtimeDir, "node_modules", "lindera");
     mkdirSync(pkg, { recursive: true });
+    chmodSync(runtimeDir, 0o700);
     writeFileSync(
       join(pkg, "package.json"),
-      JSON.stringify({ name: "sudachi", version: "9.9.9", main: "index.js" }),
+      JSON.stringify({ name: "lindera", version: "9.9.9", main: "index.js" }),
     );
     writeFileSync(join(pkg, "index.js"), "module.exports = {};\n");
     const file = join(root, `doc-${key}.md`);
     writeFileSync(file, content);
     clearCheckerVersionCache();
-    return { dir, file, content, stateDir: join(root, `state-${key}`) };
+    return {
+      dir,
+      runtimeDir,
+      file,
+      content,
+      stateDir: join(root, `state-${key}`),
+    };
   }
   const record = (
     f: ReturnType<typeof fixture>,
@@ -1486,6 +1728,7 @@ describe("receipts with a checker that is missing a part", () => {
       candidates: options.candidates,
       stateDir: f.stateDir,
       dir: f.dir,
+      runtimeDir: f.runtimeDir,
       deps: options.deps,
     });
 
@@ -1497,6 +1740,7 @@ describe("receipts with a checker that is missing a part", () => {
     assert.deepEqual(result.checkerMissing, ["absent-grammar"]);
     const whole = verify(f.file, f.stateDir, {
       dir: f.dir,
+      runtimeDir: f.runtimeDir,
       deps: completeDeps,
     });
     assert.equal(whole.status, "stale");
@@ -1508,10 +1752,15 @@ describe("receipts with a checker that is missing a part", () => {
     record(f, { candidates: 1, deps });
     recordDecision(f.file, digest(f.content), "草稿", "draft", f.stateDir, {
       dir: f.dir,
+      runtimeDir: f.runtimeDir,
       deps,
     });
     assert.equal(
-      verify(f.file, f.stateDir, { dir: f.dir, deps: completeDeps }).status,
+      verify(f.file, f.stateDir, {
+        dir: f.dir,
+        runtimeDir: f.runtimeDir,
+        deps: completeDeps,
+      }).status,
       "stale",
     );
   });
@@ -1525,7 +1774,7 @@ describe("receipts with a checker that is missing a part", () => {
       "残す",
       "checked",
       f.stateDir,
-      { dir: f.dir, deps },
+      { dir: f.dir, runtimeDir: f.runtimeDir, deps },
     );
     assert.equal(reviewed.status, "ready");
     assert.equal(record(f, { candidates: 1, deps }).status, "needs-review");
@@ -1536,6 +1785,7 @@ describe("receipts with a checker that is missing a part", () => {
     record(f, { candidates: 1, deps: completeDeps });
     recordDecision(f.file, digest(f.content), "残す", "checked", f.stateDir, {
       dir: f.dir,
+      runtimeDir: f.runtimeDir,
       deps: completeDeps,
     });
     assert.equal(
@@ -1576,7 +1826,7 @@ describe("japanese-check import closure", () => {
     return seen;
   }
 
-  it("keeps analyze.ts, cli.ts and sudachi out of what hooks and CI import", () => {
+  it("keeps analyze.ts and cli.ts out of what hooks and CI import", () => {
     const reached = closure([
       "words.ts",
       "profiles.ts",
@@ -1590,13 +1840,13 @@ describe("japanese-check import closure", () => {
     for (const name of forbidden) assert.ok(!reached.has(name), name);
   });
 
-  it("has a single computed import(), in adapter-sudachi-wasm.ts", () => {
+  it("has a single computed import(), in adapter-lindera-unidic.ts", () => {
     const computed = /import\(\s*[^"'\s)]/gu;
     for (const name of readdirSync(dir).filter((n) => n.endsWith(".ts"))) {
       const count = [
         ...readFileSync(join(dir, name), "utf8").matchAll(computed),
       ].length;
-      assert.equal(count, name === "adapter-sudachi-wasm.ts" ? 1 : 0, name);
+      assert.equal(count, name === "adapter-lindera-unidic.ts" ? 1 : 0, name);
     }
   });
 });
@@ -1726,53 +1976,65 @@ describe("keep markers", () => {
   });
 
   describe("matching candidates", () => {
-    it("moves a matched candidate to kept and lowers the count by one", async () => {
-      const plain = await checked("数を足す。\n");
-      assert.equal(candidates(plain.report), 1);
-      const kept = await checked(
-        `数を足す。${mark("translation-candidate", "足す")}\n`,
-      );
-      assert.equal(kept.report.calques.length, 1);
-      assert.deepEqual(kept.report.kept, [
-        {
-          rule: "translation-candidate",
-          line: 1,
-          text: "足す",
-          reason: "字義どおり",
-        },
-      ]);
-      assert.deepEqual(kept.report.keepIssues, []);
-      assert.equal(candidates(kept.report), 0);
-      assert.equal(kept.report.verification?.status, "ready");
-    });
+    it(
+      "moves a matched candidate to kept and lowers the count by one",
+      needsRuntime,
+      async () => {
+        const plain = await checked("数を足す。\n");
+        assert.equal(candidates(plain.report), 1);
+        const kept = await checked(
+          `数を足す。${mark("translation-candidate", "足す")}\n`,
+        );
+        assert.equal(kept.report.calques.length, 1);
+        assert.deepEqual(kept.report.kept, [
+          {
+            rule: "translation-candidate",
+            line: 1,
+            text: "足す",
+            reason: "字義どおり",
+          },
+        ]);
+        assert.deepEqual(kept.report.keepIssues, []);
+        assert.equal(candidates(kept.report), 0);
+        assert.equal(kept.report.verification?.status, "ready");
+      },
+    );
 
-    it("reports a marker on another line as a marker without a candidate", async () => {
-      const { report } = await checked(
-        `数を足す。\n${mark("translation-candidate", "足す")}\n`,
-      );
-      assert.deepEqual(report.kept, []);
-      assert.equal(report.keepIssues.length, 1);
-      assert.equal(report.keepIssues[0]?.line, 2);
-      assert.match(
-        report.keepIssues[0]?.problem ?? "",
-        /同じ行に該当する候補が無い/u,
-      );
-      assert.equal(candidates(report), 2);
-    });
+    it(
+      "reports a marker on another line as a marker without a candidate",
+      needsRuntime,
+      async () => {
+        const { report } = await checked(
+          `数を足す。\n${mark("translation-candidate", "足す")}\n`,
+        );
+        assert.deepEqual(report.kept, []);
+        assert.equal(report.keepIssues.length, 1);
+        assert.equal(report.keepIssues[0]?.line, 2);
+        assert.match(
+          report.keepIssues[0]?.problem ?? "",
+          /同じ行に該当する候補が無い/u,
+        );
+        assert.equal(candidates(report), 2);
+      },
+    );
 
-    it("reports a malformed marker and keeps the candidate", async () => {
-      for (const body of [
-        `${KEEP} translation-candidate -- 足す`,
-        `${KEEP} translation-candidate 足す -- 字義どおり`,
-        `${KEEP}`,
-        `${KEEP} translation-candidate -- ""  理由`,
-      ]) {
-        const { report } = await checked(`数を足す。<!-- ${body} -->\n`);
-        assert.deepEqual(report.kept, [], body);
-        assert.equal(report.keepIssues.length, 1, body);
-        assert.equal(candidates(report), 2, body);
-      }
-    });
+    it(
+      "reports a malformed marker and keeps the candidate",
+      needsRuntime,
+      async () => {
+        for (const body of [
+          `${KEEP} translation-candidate -- 足す`,
+          `${KEEP} translation-candidate 足す -- 字義どおり`,
+          `${KEEP}`,
+          `${KEEP} translation-candidate -- ""  理由`,
+        ]) {
+          const { report } = await checked(`数を足す。<!-- ${body} -->\n`);
+          assert.deepEqual(report.kept, [], body);
+          assert.equal(report.keepIssues.length, 1, body);
+          assert.equal(candidates(report), 2, body);
+        }
+      },
+    );
 
     it("reports the first error of a marker with the fixed wording", () => {
       const problem = (body: string) => {
@@ -1862,48 +2124,66 @@ describe("keep markers", () => {
       assert.equal(parseMarker(`${KEEP}\u3000a -- b c`), null);
     });
 
-    it("does not keep a candidate of another rule on the same line", async () => {
-      const { report } = await checked(
-        `数を足す。${mark("long-sentence", "足す", "x")}\n`,
-      );
-      assert.deepEqual(report.kept, []);
-      assert.equal(report.keepIssues.length, 1);
-      assert.equal(candidates(report), 2);
-    });
+    it(
+      "does not keep a candidate of another rule on the same line",
+      needsRuntime,
+      async () => {
+        const { report } = await checked(
+          `数を足す。${mark("long-sentence", "足す", "x")}\n`,
+        );
+        assert.deepEqual(report.kept, []);
+        assert.equal(report.keepIssues.length, 1);
+        assert.equal(candidates(report), 2);
+      },
+    );
 
-    it("keeps only the candidate the text names when a line has two", async () => {
-      const { report } = await checked(
-        `数を足して、データを拾う。${mark("translation-candidate", "足し")}\n`,
-      );
-      assert.equal(report.calques.length, 2);
-      assert.deepEqual(
-        report.kept.map((item) => item.text),
-        ["足し"],
-      );
-      assert.equal(candidates(report), 1);
-    });
+    it(
+      "keeps only the candidate the text names when a line has two",
+      needsRuntime,
+      async () => {
+        const { report } = await checked(
+          `数を足して、データを拾う。${mark("translation-candidate", "足し")}\n`,
+        );
+        assert.equal(report.calques.length, 2);
+        assert.deepEqual(
+          report.kept.map((item) => item.text),
+          ["足し"],
+        );
+        assert.equal(candidates(report), 1);
+      },
+    );
 
-    it("matches the text inside quotes, spaces included", async () => {
-      const sentence = `${"あ".repeat(50)} ${"い".repeat(59)}。`;
-      const { report } = await checked(
-        `${sentence}${mark("long-sentence", '"あ い"', "定義文")}\n`,
-      );
-      assert.ok(report.findings.some((item) => item.rule === "long-sentence"));
-      assert.equal(report.kept.length, 1);
-      assert.equal(report.kept[0]?.reason, "定義文");
-      assert.equal(candidates(report), 0);
-    });
+    it(
+      "matches the text inside quotes, spaces included",
+      needsRuntime,
+      async () => {
+        const sentence = `${"あ".repeat(50)} ${"い".repeat(59)}。`;
+        const { report } = await checked(
+          `${sentence}${mark("long-sentence", '"あ い"', "定義文")}\n`,
+        );
+        assert.ok(
+          report.findings.some((item) => item.rule === "long-sentence"),
+        );
+        assert.equal(report.kept.length, 1);
+        assert.equal(report.kept[0]?.reason, "定義文");
+        assert.equal(candidates(report), 0);
+      },
+    );
 
-    it("never builds a regular expression from the text", async () => {
-      const { report } = await checked(
-        `数を足す。${mark("translation-candidate", ".*")}\n`,
-      );
-      assert.deepEqual(report.kept, []);
-      assert.equal(report.keepIssues.length, 1);
-      assert.equal(candidates(report), 2);
-    });
+    it(
+      "never builds a regular expression from the text",
+      needsRuntime,
+      async () => {
+        const { report } = await checked(
+          `数を足す。${mark("translation-candidate", ".*")}\n`,
+        );
+        assert.deepEqual(report.kept, []);
+        assert.equal(report.keepIssues.length, 1);
+        assert.equal(candidates(report), 2);
+      },
+    );
 
-    it("takes an opaque reason as it is", async () => {
+    it("takes an opaque reason as it is", needsRuntime, async () => {
       const reason = 'ref-1 note="字義どおり"';
       const { report } = await checked(
         `数を足す。${mark("translation-candidate", "足す", reason)}\n`,
@@ -1911,52 +2191,68 @@ describe("keep markers", () => {
       assert.equal(report.kept[0]?.reason, reason);
     });
 
-    it("keeps a reason with backticks inside the marker", async () => {
-      const { report } = await checked(
-        `数を足す。${mark("translation-candidate", "足す", "`foo` の用語")}\n`,
-      );
-      assert.equal(report.kept[0]?.reason, "`foo` の用語");
-      assert.deepEqual(report.keepIssues, []);
-    });
+    it(
+      "keeps a reason with backticks inside the marker",
+      needsRuntime,
+      async () => {
+        const { report } = await checked(
+          `数を足す。${mark("translation-candidate", "足す", "`foo` の用語")}\n`,
+        );
+        assert.equal(report.kept[0]?.reason, "`foo` の用語");
+        assert.deepEqual(report.keepIssues, []);
+      },
+    );
 
-    it("reads the closed marker before a comment that continues on the next lines", async () => {
-      const { report } = await checked(
-        `数を足す。${mark("translation-candidate", "足す")} <!-- 続く\n${mark("translation-candidate", "足す")}\n終わり -->\n`,
-      );
-      assert.equal(report.kept.length, 1);
-      assert.deepEqual(report.keepIssues, []);
-    });
+    it(
+      "reads the closed marker before a comment that continues on the next lines",
+      needsRuntime,
+      async () => {
+        const { report } = await checked(
+          `数を足す。${mark("translation-candidate", "足す")} <!-- 続く\n${mark("translation-candidate", "足す")}\n終わり -->\n`,
+        );
+        assert.equal(report.kept.length, 1);
+        assert.deepEqual(report.keepIssues, []);
+      },
+    );
 
-    it("ignores examples in a fence, inline code, indented code and frontmatter", async () => {
-      const example = mark("translation-candidate", "足す");
-      const { report } = await checked(
-        [
-          "---",
-          example,
-          "---",
-          "手順。",
-          "```md",
-          example,
-          "```",
-          `例は \`${example}\` と書く。`,
-          `    ${example}`,
-          "",
-        ].join("\n"),
-      );
-      assert.deepEqual(report.kept, []);
-      assert.deepEqual(report.keepIssues, []);
-    });
+    it(
+      "ignores examples in a fence, inline code, indented code and frontmatter",
+      needsRuntime,
+      async () => {
+        const example = mark("translation-candidate", "足す");
+        const { report } = await checked(
+          [
+            "---",
+            example,
+            "---",
+            "手順。",
+            "```md",
+            example,
+            "```",
+            `例は \`${example}\` と書く。`,
+            `    ${example}`,
+            "",
+          ].join("\n"),
+        );
+        assert.deepEqual(report.kept, []);
+        assert.deepEqual(report.keepIssues, []);
+      },
+    );
 
-    it("reads the real marker when an inline code example shares the line", async () => {
-      const real = mark("translation-candidate", "足す");
-      const { report } = await checked(
-        `例 \`${mark("long-sentence", "x")}\` を足す。${real}\n`,
-      );
-      assert.equal(report.kept.length, 1);
-      assert.deepEqual(report.keepIssues, []);
-    });
+    it(
+      "reads the real marker when an inline code example shares the line",
+      needsRuntime,
+      async () => {
+        const real = mark("translation-candidate", "足す");
+        const { report } = await checked(
+          `例 \`${mark("long-sentence", "x")}\` を足す。${real}\n`,
+        );
+        assert.equal(report.kept.length, 1);
+        assert.deepEqual(report.keepIssues, []);
+      },
+    );
 
-    it("keeps a candidate on a list item line", async () => {
+    it("keeps a candidate on a list item line", needsRuntime, async () => {
       const { report } = await checked(
         `- 数を足す。${mark("translation-candidate", "足す")}\n`,
       );
@@ -1964,20 +2260,24 @@ describe("keep markers", () => {
       assert.equal(candidates(report), 0);
     });
 
-    it("cannot keep a new fact: the marker becomes an issue", async () => {
-      const source = fresh("利用者は3人。\n");
-      const doc = fresh(`利用者は9人。${mark("number", "9人")}\n`);
-      const report = await run(
-        ["check", doc.file, "--source", source.file],
-        doc.stateDir,
-      );
-      assert.ok(Array.isArray(report.newFacts) && report.newFacts.length > 0);
-      assert.deepEqual(report.kept, []);
-      assert.equal(report.keepIssues.length, 1);
-      assert.equal(candidates(report), report.newFacts.length + 1);
-    });
+    it(
+      "cannot keep a new fact: the marker becomes an issue",
+      needsRuntime,
+      async () => {
+        const source = fresh("利用者は3人。\n");
+        const doc = fresh(`利用者は9人。${mark("number", "9人")}\n`);
+        const report = await run(
+          ["check", doc.file, "--source", source.file],
+          doc.stateDir,
+        );
+        assert.ok(Array.isArray(report.newFacts) && report.newFacts.length > 0);
+        assert.deepEqual(report.kept, []);
+        assert.equal(report.keepIssues.length, 1);
+        assert.equal(candidates(report), report.newFacts.length + 1);
+      },
+    );
 
-    it("turns a note-only line into an issue", async () => {
+    it("turns a note-only line into an issue", needsRuntime, async () => {
       const { report } = await checked(
         `${mark("translation-candidate", "足す")}\n`,
       );
@@ -1989,52 +2289,76 @@ describe("keep markers", () => {
       assert.equal(candidates(report), 1);
     });
 
-    it("drops a line-leading note's body as indented code and reports the note", async () => {
-      const { report } = await checked(
-        `${mark("translation-candidate", "足す")} 数を足す。\n`,
-      );
-      assert.deepEqual(report.calques, []);
-      assert.deepEqual(report.kept, []);
-      assert.equal(report.keepIssues.length, 1);
-    });
+    it(
+      "drops a line-leading note's body as indented code and reports the note",
+      needsRuntime,
+      async () => {
+        const { report } = await checked(
+          `${mark("translation-candidate", "足す")} 数を足す。\n`,
+        );
+        assert.deepEqual(report.calques, []);
+        assert.deepEqual(report.kept, []);
+        assert.equal(report.keepIssues.length, 1);
+      },
+    );
 
-    it("reads nothing from a comment continuation line", async () => {
-      const { report } = await checked(
-        `数を足す。 <!-- 始まり\n数を足す。${mark("translation-candidate", "足す")}\n終わり -->\n`,
-      );
-      assert.deepEqual(report.kept, []);
-      assert.deepEqual(report.keepIssues, []);
-    });
+    it(
+      "reads nothing from a comment continuation line",
+      needsRuntime,
+      async () => {
+        const { report } = await checked(
+          `数を足す。 <!-- 始まり\n数を足す。${mark("translation-candidate", "足す")}\n終わり -->\n`,
+        );
+        assert.deepEqual(report.kept, []);
+        assert.deepEqual(report.keepIssues, []);
+      },
+    );
 
-    it("leaves kept and keepIssues empty and the count unchanged without markers", async () => {
-      const { report } = await checked("数を足す。\n");
-      assert.deepEqual(report.kept, []);
-      assert.deepEqual(report.keepIssues, []);
-      assert.equal(report.calques.length, 1);
-      assert.equal(candidates(report), 1);
-    });
+    it(
+      "leaves kept and keepIssues empty and the count unchanged without markers",
+      needsRuntime,
+      async () => {
+        const { report } = await checked("数を足す。\n");
+        assert.deepEqual(report.kept, []);
+        assert.deepEqual(report.keepIssues, []);
+        assert.equal(report.calques.length, 1);
+        assert.equal(candidates(report), 1);
+      },
+    );
 
-    it("reports kept and keepIssues with --no-record too", async () => {
-      const doc = fresh(`数を足す。${mark("translation-candidate", "足す")}\n`);
-      const report = await run(
-        ["check", doc.file, "--no-record"],
-        doc.stateDir,
-      );
-      assert.equal(report.kept.length, 1);
-      assert.deepEqual(report.keepIssues, []);
-    });
+    it(
+      "reports kept and keepIssues with --no-record too",
+      needsRuntime,
+      async () => {
+        const doc = fresh(
+          `数を足す。${mark("translation-candidate", "足す")}\n`,
+        );
+        const report = await run(
+          ["check", doc.file, "--no-record"],
+          doc.stateDir,
+        );
+        assert.equal(report.kept.length, 1);
+        assert.deepEqual(report.keepIssues, []);
+      },
+    );
 
-    it("leaves the other commands' output without kept fields", async () => {
-      const doc = fresh(`数を足す。${mark("translation-candidate", "足す")}\n`);
-      const calquesReport = await run(["calques", doc.file], doc.stateDir);
-      assert.ok(Array.isArray(calquesReport));
-      const lintReport = await run(["lint", doc.file], doc.stateDir);
-      assert.ok(Array.isArray(lintReport));
-    });
+    it(
+      "leaves the other commands' output without kept fields",
+      needsRuntime,
+      async () => {
+        const doc = fresh(
+          `数を足す。${mark("translation-candidate", "足す")}\n`,
+        );
+        const calquesReport = await run(["calques", doc.file], doc.stateDir);
+        assert.ok(Array.isArray(calquesReport));
+        const lintReport = await run(["lint", doc.file], doc.stateDir);
+        assert.ok(Array.isArray(lintReport));
+      },
+    );
   });
 
   describe("keeping a judgement in the document", () => {
-    it("stays ready after another line is edited", async () => {
+    it("stays ready after another line is edited", needsRuntime, async () => {
       const doc = fresh(
         `数を足す。${mark("translation-candidate", "足す")}\n\n別の段落。\n`,
       );
@@ -2049,23 +2373,27 @@ describe("keep markers", () => {
       assert.equal(second.kept.length, 1);
     });
 
-    it("is ready in an empty state directory", async () => {
+    it("is ready in an empty state directory", needsRuntime, async () => {
       const doc = fresh(`数を足す。${mark("translation-candidate", "足す")}\n`);
       const empty = join(dir, `empty-state-${++number}`);
       const report = await run(["check", doc.file], empty);
       assert.equal(report.verification?.status, "ready");
     });
 
-    it("still needs a review for a candidate the markers do not cover", async () => {
-      const doc = fresh(
-        `数を足す。${mark("translation-candidate", "足す")}\nデータを拾う。\n`,
-      );
-      const report = await run(["check", doc.file], doc.stateDir);
-      assert.equal(report.verification?.status, "needs-review");
-      assert.equal(candidates(report), 1);
-    });
+    it(
+      "still needs a review for a candidate the markers do not cover",
+      needsRuntime,
+      async () => {
+        const doc = fresh(
+          `数を足す。${mark("translation-candidate", "足す")}\nデータを拾う。\n`,
+        );
+        const report = await run(["check", doc.file], doc.stateDir);
+        assert.equal(report.verification?.status, "needs-review");
+        assert.equal(candidates(report), 1);
+      },
+    );
 
-    it("shows kept when the CLI runs as a process", () => {
+    it("shows kept when the CLI runs as a process", needsRuntime, () => {
       const doc = fresh(`数を足す。${mark("translation-candidate", "足す")}\n`);
       const cli = fileURLToPath(
         new URL("../../../japanese-check/cli.ts", import.meta.url),
@@ -2084,10 +2412,8 @@ describe("keep markers", () => {
   });
 });
 
-describe("the calque entries of the shipped list", () => {
-  const sudachi = findDependency("sudachi");
-  assert.ok(sudachi.ok);
-  const tokenizer = createAnalyzer(sudachi.entry).then(makeTokenizer);
+describe("the calque entries of the shipped list", needsRuntime, () => {
+  const tokenizer = createTestTokenizer();
 
   it("hold the verbs and nouns calques() used to hard-code", () => {
     const lemmas = new Set(
@@ -2107,7 +2433,6 @@ describe("the calque entries of the shipped list", () => {
         "効く",
         "足す",
         "通る",
-        "利く",
         "響く",
       ].sort(),
     );
@@ -2143,10 +2468,8 @@ describe("the calque entries of the shipped list", () => {
   });
 });
 
-describe("review entries from the word list", () => {
-  const sudachi = findDependency("sudachi");
-  assert.ok(sudachi.ok);
-  const tokenizer = createAnalyzer(sudachi.entry).then(makeTokenizer);
+describe("review entries from the word list", needsRuntime, () => {
+  const tokenizer = createTestTokenizer();
   const dir = realpathSync(
     mkdtempSync(join(tmpdir(), "japanese-check-review-")),
   );
@@ -2157,7 +2480,7 @@ describe("review entries from the word list", () => {
     kind: "jargon",
     match: "lemma",
     lemmas: ["ロバスト"],
-    pos: "形状詞",
+    pos: "adjectivalNoun",
   });
   const slopRegex = rawEntry({
     word: "既定では",
@@ -2170,7 +2493,7 @@ describe("review entries from the word list", () => {
     kind: "calque",
     match: "lemma",
     lemmas: ["ロバスト"],
-    pos: "形状詞",
+    pos: "adjectivalNoun",
     english: "robust",
   });
   const jargonRegex = rawEntry({
@@ -2206,14 +2529,14 @@ describe("review entries from the word list", () => {
       kind: "metaphor-verb",
       match: "lemma",
       lemmas: ["寄り添う"],
-      pos: "動詞",
+      pos: "verb",
     });
     const calqueDesign = rawEntry({
       word: "設計",
       kind: "calque",
       match: "lemma",
       lemmas: ["設計"],
-      pos: "名詞",
+      pos: "noun",
       english: "design",
     });
     const result = await found("既定ではロバストな設計に寄り添った。", [
@@ -2267,7 +2590,7 @@ describe("review entries from the word list", () => {
       return file;
     }
     const listOf = (...entries: unknown[]) =>
-      JSON.stringify({ schema: 1, entries });
+      JSON.stringify({ schema: WORD_LIST_SCHEMA, entries });
     function doc(content: string) {
       const key = ++number;
       const file = join(dir, `doc-${key}.md`);

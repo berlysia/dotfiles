@@ -1,0 +1,81 @@
+{{ if ne .chezmoi.os "windows" -}}
+#!/bin/bash
+# Installs the japanese-check analyzer runtime (lindera) into
+# ~/.config/japanese-check, next to the UniDic dictionary that chezmoi deploys
+# there as an external (.chezmoiexternal.toml.tmpl, unidic/).
+#
+# This has the same shape as run_after_10-install-formal-check-deps.sh.tmpl and
+# is kept as a copy for the same reason. It differs in two ways: it writes no
+# .install-state (nothing reads one; when the runtime is missing, the checker
+# fails with a fixed message that points at `chezmoi apply`), and a failed
+# install is recorded as a provisioning failure marker.
+#
+# Runs in the run_after_ phase so that it sees the package.json and bun.lock
+# this same apply deployed (ADR-0017). The 10- prefix puts it after
+# 00-install-mise-tools provides bun and before the zz- verifier.
+#
+# --frozen-lockfile: the install must match the committed bun.lock, so the
+# native package that gets loaded is the reviewed one. If it fails because
+# bun.lock and package.json disagree, regenerate bun.lock in the chezmoi source
+# (home/dot_config/japanese-check).
+#
+# --ignore-scripts: lindera ships its native code prebuilt and has no install
+# script, and a checker has no business running one at install time.
+#
+# Exit code is 0 even when the install fails so the remaining run_after_
+# scripts still run. Unable to write the marker is reported immediately.
+
+set -uo pipefail
+
+log() {
+    local level="${2:-INFO}"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $1"
+}
+
+# CHEZMOI_JAPANESE_CHECK_INSTALL_DIR overrides the install dir (tests only).
+# Non-absolute or empty values are ignored.
+case "${CHEZMOI_JAPANESE_CHECK_INSTALL_DIR:-}" in
+    /*) JAPANESE_CHECK_DIR="$CHEZMOI_JAPANESE_CHECK_INSTALL_DIR" ;;
+    *) JAPANESE_CHECK_DIR="$HOME/.config/japanese-check" ;;
+esac
+MARKER_FILE="$HOME/.claude/.japanese-check-deps-install-failed"
+RECOVER_COMMAND="chezmoi apply (no arguments)"
+
+{{ template "record-provisioning-failure.sh" . }}
+
+if [ ! -f "$JAPANESE_CHECK_DIR/package.json" ]; then
+    log "No package.json at $JAPANESE_CHECK_DIR, skipping japanese-check deps install."
+    exit 0
+fi
+
+if command -v mise &> /dev/null; then
+    if mise_env=$(mise env --shell bash 2>/dev/null); then
+        eval "$mise_env"
+    fi
+fi
+
+if ! command -v bun &> /dev/null; then
+    log "bun not found. Skipping japanese-check deps install." "WARNING"
+    exit 0
+fi
+
+log "Installing japanese-check dependencies in $JAPANESE_CHECK_DIR..."
+if (cd "$JAPANESE_CHECK_DIR" && bun install --frozen-lockfile --ignore-scripts 2>&1); then
+    log "japanese-check dependencies are in sync" "SUCCESS"
+    if [ -e "$MARKER_FILE" ] && ! rm -f "$MARKER_FILE"; then
+        log "Could not clear stale $MARKER_FILE; remove it by hand" "ERROR"
+    fi
+else
+    log "bun install failed in $JAPANESE_CHECK_DIR (see output above)" "ERROR"
+    log "If bun.lock and package.json do not match, regenerate bun.lock in the chezmoi source (home/dot_config/japanese-check)" "ERROR"
+    if record_provisioning_failure "$MARKER_FILE" "bun-install-frozen-lockfile-failed" "$RECOVER_COMMAND"; then
+        log "Recorded the failure at $MARKER_FILE" "INFO"
+    else
+        log "Could not record the failure at $MARKER_FILE. Failing now." "ERROR"
+        log "Recover with: $RECOVER_COMMAND" "ERROR"
+        exit 1
+    fi
+fi
+
+exit 0
+{{ end -}}

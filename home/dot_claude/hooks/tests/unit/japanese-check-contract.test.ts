@@ -8,10 +8,6 @@ import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { calques, facts, terms } from "../../../japanese-check/analyze.ts";
 import {
-  mapConjugation,
-  mapPartOfSpeech,
-} from "../../../japanese-check/adapter-sudachi-wasm.ts";
-import {
   AnalyzerOutputError,
   isNoun,
   isProperNoun,
@@ -23,7 +19,10 @@ import {
 import type { AnalyzedToken } from "../../../japanese-check/contract.ts";
 import { CHECKER_VERSION_FILES } from "../../../japanese-check/receipts.ts";
 import { proseLines } from "../../../japanese-check/markdown.ts";
-import { validateWordList } from "../../../japanese-check/words.ts";
+import {
+  validateWordList,
+  WORD_LIST_SCHEMA,
+} from "../../../japanese-check/words.ts";
 import { rawEntry, reviewFrom } from "../support/japanese-check-words.ts";
 
 const tok = (
@@ -162,19 +161,20 @@ describe("checks over a fake adapter", () => {
 
   it("matches a conjugation-less verb token to a verb entry", () => {
     const tokenize = makeTokenizer(() => [tok("拾っ", 0, "verb", "拾う")]);
-    const found = calques(proseLines("拾った"), tokenize, lemmaEntry("動詞"));
+    const found = calques(proseLines("拾った"), tokenize, lemmaEntry("verb"));
     assert.equal(found.length, 1);
     assert.equal(found[0]?.text, "拾っ");
   });
 
-  it("does not match a conjunctive particle that shares a noun entry's lemma", () => {
-    const tokenize = makeTokenizer(() => [
-      tok("拾う", 0, "conjunctiveParticle", "拾う"),
-    ]);
-    assert.deepEqual(
-      calques(proseLines("拾う"), tokenize, lemmaEntry("名詞")),
-      [],
-    );
+  it("matches only the four classes: a conjunctive particle, suffix or other with a noun entry's lemma does not hit", () => {
+    for (const pos of ["conjunctiveParticle", "suffix", "other"] as const) {
+      const tokenize = makeTokenizer(() => [tok("拾う", 0, pos, "拾う")]);
+      assert.deepEqual(
+        calques(proseLines("拾う"), tokenize, lemmaEntry("noun")),
+        [],
+        pos,
+      );
+    }
   });
 
   it("finds terms and proper-noun facts from the predicates", () => {
@@ -196,9 +196,29 @@ describe("checks over a fake adapter", () => {
     );
   });
 
+  it("rejects a list of schema 1 and an entry with a Japanese part-of-speech name", () => {
+    const rejected = validateWordList({ schema: 1, entries: [] });
+    assert.equal(rejected.ok, false);
+    const named = validateWordList({
+      schema: WORD_LIST_SCHEMA,
+      entries: [
+        rawEntry({
+          word: "x",
+          kind: "jargon",
+          match: "lemma",
+          lemmas: ["x"],
+          pos: "名詞",
+        }),
+      ],
+    });
+    assert.ok(named.ok);
+    assert.deepEqual(named.entries, []);
+    assert.equal(named.notices.length, 1);
+  });
+
   it("rejects a words.json entry whose pos is not one of the four", () => {
     const result = validateWordList({
-      schema: 1,
+      schema: WORD_LIST_SCHEMA,
       entries: [
         rawEntry({
           word: "x",
@@ -217,42 +237,16 @@ describe("checks over a fake adapter", () => {
   });
 });
 
-describe("the Sudachi adapter mapping", () => {
-  it("maps conjugations from the fifth pos element", () => {
-    const form = (value: string) => mapConjugation(["動詞", "", "", "", value]);
-    assert.deepEqual(form("五段-カ行"), { kind: "godan", row: "ka" });
-    assert.deepEqual(form("五段-ワア行"), { kind: "godan", row: "wa" });
-    assert.deepEqual(form("上一段-ラ行"), { kind: "kamiIchidan" });
-    assert.deepEqual(form("下一段-ア行"), { kind: "shimoIchidan" });
-    assert.deepEqual(form("サ行変格"), { kind: "sahen" });
-    assert.deepEqual(form("カ行変格"), { kind: "kahen" });
-    assert.deepEqual(form("形容詞"), { kind: "adjective" });
-    assert.equal(form("助動詞-タ"), undefined);
-    assert.equal(form("*"), undefined);
-    assert.equal(mapConjugation(["動詞"]), undefined);
-  });
-
-  it("maps parts of speech", () => {
-    assert.equal(mapPartOfSpeech(["名詞", "普通名詞"]), "noun");
-    assert.equal(mapPartOfSpeech(["名詞", "数詞"]), "noun");
-    assert.equal(mapPartOfSpeech(["名詞", "固有名詞"]), "properNoun");
-    assert.equal(mapPartOfSpeech(["形状詞"]), "adjectivalNoun");
-    assert.equal(mapPartOfSpeech(["助詞", "接続助詞"]), "conjunctiveParticle");
-    assert.equal(mapPartOfSpeech(["助詞", "格助詞"]), "particle");
-    assert.equal(mapPartOfSpeech(["代名詞"]), "other");
-    assert.equal(mapPartOfSpeech(["副詞"]), "other");
-    assert.equal(mapPartOfSpeech(["補助記号"]), "symbol");
-  });
-});
-
 // Structural rules. The type checker is the main guard (a Token has no readable
 // part of speech); these catch what slips past it.
 const dir = fileURLToPath(new URL("../../../japanese-check/", import.meta.url));
 const sourceFiles = () => readdirSync(dir).filter((n) => n.endsWith(".ts"));
 
+const ADAPTERS = ["adapter-lindera-unidic.ts"];
+
 const NON_CHECK_FILES = new Set([
   "contract.ts",
-  "adapter-sudachi-wasm.ts",
+  ...ADAPTERS,
   "cli.ts",
   "deps.ts",
   "safe-read.ts",
@@ -322,8 +316,7 @@ describe("structural rules of the word contract", () => {
 
   it("keeps part-of-speech names out of every file but the contract, the adapter and words.ts", () => {
     for (const name of sourceFiles()) {
-      if (["contract.ts", "adapter-sudachi-wasm.ts", "words.ts"].includes(name))
-        continue;
+      if (["contract.ts", ...ADAPTERS, "words.ts"].includes(name)) continue;
       assert.ok(
         !POS_NAME_USE.test(readFileSync(join(dir, name), "utf8")),
         name,
@@ -333,16 +326,17 @@ describe("structural rules of the word contract", () => {
 
   it("limits static imports of the contract and the adapter", () => {
     assert.ok(onlyNode(readFileSync(join(dir, "contract.ts"), "utf8")));
-    const adapter = readFileSync(join(dir, "adapter-sudachi-wasm.ts"), "utf8");
-    assert.ok(onlyNodeAndContract(adapter));
-    assert.ok(!onlyNodeAndContract(`${adapter}\nimport x from "sudachi";`));
-    for (const name of sourceFiles().filter((n) => !NON_CHECK_FILES.has(n)))
+    for (const adapterName of ADAPTERS) {
+      const adapter = readFileSync(join(dir, adapterName), "utf8");
+      assert.ok(onlyNodeAndContract(adapter), adapterName);
       assert.ok(
-        !importsOf(readFileSync(join(dir, name), "utf8")).includes(
-          "./adapter-sudachi-wasm.ts",
-        ),
-        name,
+        !onlyNodeAndContract(`${adapter}\nimport x from "lindera";`),
+        adapterName,
       );
+    }
+    for (const name of sourceFiles().filter((n) => !NON_CHECK_FILES.has(n)))
+      for (const spec of importsOf(readFileSync(join(dir, name), "utf8")))
+        assert.ok(!ADAPTERS.some((a) => spec === `./${a}`), name);
   });
 
   it("has one computed import(), inside createAnalyzer", () => {
@@ -351,10 +345,12 @@ describe("structural rules of the word contract", () => {
       const source = readFileSync(join(dir, name), "utf8");
       return [...source.matchAll(computed)].map(() => name);
     });
-    assert.deepEqual(total, ["adapter-sudachi-wasm.ts"]);
-    const adapter = readFileSync(join(dir, "adapter-sudachi-wasm.ts"), "utf8");
-    const at = adapter.indexOf("export async function createAnalyzer");
-    assert.ok(at >= 0 && adapter.indexOf("import(pathToFileURL") > at);
+    assert.deepEqual(total.sort(), [...ADAPTERS].sort());
+    for (const adapterName of ADAPTERS) {
+      const adapter = readFileSync(join(dir, adapterName), "utf8");
+      const at = adapter.indexOf("export async function createAnalyzer");
+      assert.ok(at >= 0 && adapter.indexOf("import(pathToFileURL") > at);
+    }
   });
 
   const covers = (list: readonly string[]) => {
@@ -362,6 +358,20 @@ describe("structural rules of the word contract", () => {
     const listed = list.filter((n) => n.endsWith(".ts")).sort();
     return JSON.stringify(files) === JSON.stringify(listed);
   };
+
+  it("has no mention of the old analyzer in the checker or its tests", () => {
+    // Spelled in two parts so that this file does not contain the word.
+    const word = new RegExp("suda" + "chi", "iu");
+    const testDir = fileURLToPath(new URL("./", import.meta.url));
+    const files = [
+      ...sourceFiles().map((name) => join(dir, name)),
+      ...readdirSync(testDir)
+        .filter((n) => /^japanese-.*\.test\.ts$/u.test(n))
+        .map((name) => join(testDir, name)),
+    ];
+    for (const file of files)
+      assert.ok(!word.test(readFileSync(file, "utf8")), file);
+  });
 
   it("keeps CHECKER_VERSION_FILES equal to the .ts files of the directory", () => {
     assert.ok(covers(CHECKER_VERSION_FILES));

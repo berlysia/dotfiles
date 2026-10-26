@@ -1,8 +1,11 @@
 import { readFileSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ANALYZER_DEPENDENCIES } from "./adapter-sudachi-wasm.ts";
-import { findDependency } from "./deps.ts";
+import {
+  ANALYZER_DEPENDENCIES,
+  ANALYZER_IDENTITY,
+} from "./adapter-lindera-unidic.ts";
+import { findDependencyInGroup, resolveRuntimeDir } from "./deps.ts";
 import type { DependencyEntry } from "./deps.ts";
 import { HASHED_PROFILE_FIELDS } from "./profiles.ts";
 import { readFileBounded } from "./safe-read.ts";
@@ -24,7 +27,7 @@ import { createHash } from "node:crypto";
 // 足し忘れは、dir の実際の一覧と突き合わせる test が落とす。配布先に一覧に無い
 // 古い `.ts` が残っても、ハッシュには入らない。
 export const CHECKER_VERSION_FILES = [
-  "adapter-sudachi-wasm.ts",
+  "adapter-lindera-unidic.ts",
   "analyze.ts",
   "cli.ts",
   "contract.ts",
@@ -48,6 +51,8 @@ const MAX_PART_BYTES = 1024 * 1024;
 export interface CheckerVersionOptions {
   dir?: string | undefined;
   deps?: readonly DependencyEntry[] | undefined;
+  // Where the analyzer packages are looked for; the default is resolveRuntimeDir().
+  runtimeDir?: string | undefined;
   read?: ((path: string, maxBytes: number) => SafeReadResult) | undefined;
 }
 export interface CheckerVersion {
@@ -111,8 +116,9 @@ export function checkerVersion(
 ): CheckerVersion {
   const dir = options.dir ?? selfDir();
   const deps = options.deps ?? ANALYZER_DEPENDENCIES;
+  const runtimeDir = options.runtimeDir ?? resolveRuntimeDir();
   const read = options.read ?? readFileBounded;
-  const cacheKey = `${dir}\0${JSON.stringify(deps)}`;
+  const cacheKey = `${dir}\0${runtimeDir}\0${JSON.stringify(deps)}`;
   if (!options.read) {
     const cached = versionCache.get(cacheKey);
     if (cached) return cached;
@@ -142,10 +148,14 @@ export function checkerVersion(
   for (const dep of [...deps].sort((a, b) =>
     a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
   )) {
-    const found = findDependency(dep.name, dir);
+    const found = findDependencyInGroup(dep, dir, runtimeDir);
     if (found.ok) hash.update(`${dep.name}\0${found.version}\n`);
     else absent(dep.name);
   }
+  // The identity of the dictionary is a constant of the adapter. The files
+  // themselves are checked by createAnalyzer, so a damaged dictionary stops the
+  // check before a receipt exists.
+  hash.update(`dictionary\0${ANALYZER_IDENTITY.dictionary}\n`);
   const result: CheckerVersion = {
     hash: hash.digest("hex"),
     missing: missingNames,
@@ -187,6 +197,7 @@ export type Verification = {
 export interface ReceiptOptions {
   dir?: string | undefined;
   deps?: readonly DependencyEntry[] | undefined;
+  runtimeDir?: string | undefined;
 }
 
 export interface RecordedProfile {
@@ -320,7 +331,11 @@ export function recordCheck(options: RecordCheckOptions): Verification {
     stateDir = defaultStateDir(),
     comparisonHash = null,
   } = options;
-  const own: ReceiptOptions = { dir: options.dir, deps: options.deps };
+  const own: ReceiptOptions = {
+    dir: options.dir,
+    deps: options.deps,
+    runtimeDir: options.runtimeDir,
+  };
   prepareState(stateDir);
   if (digest(readFileSync(file)) !== expectedHash)
     throw new Error("検査中に文書が変更されました。再検査してください。");

@@ -1,0 +1,7 @@
+{
+  "name": "@berlysia-dotfiles/japanese-check",
+  "private": true,
+  "dependencies": {
+    "lindera": "6.2.0"
+  }
+}
