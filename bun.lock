@@ -28,7 +28,6 @@
         "cc-hooks-ts": "2.1.281",
         "ccstatusline": "2.2.32",
         "dax": "0.50.1",
-        "sudachi": "0.1.5",
         "tree-sitter-bash": "0.25.1",
         "web-tree-sitter": "0.27.1",
       },
@@ -556,7 +555,6 @@
 
     "strip-ansi-cjs": ["strip-ansi@6.0.1", "", { "dependencies": { "ansi-regex": "^5.0.1" } }, "sha512-Y38VPSHcqkFrCpFnQ9vuSXmquuv5oXOKpGeT6aGrr3o3Gc9AlVa6JBfUSOCnbxGGZF+/0ooI7KrPuUSztUdU5A=="],
 
-    "sudachi": ["sudachi@0.1.5", "", {}, "sha512-sZn/ofVtfCnOdhyyeMWIEaTwDB4iat9UbrskSiin0gBBnkitfE46estP8yjwF7MaEWKFVh//9GPd/RUQ2RhnGA=="],
 
     "supergateway": ["supergateway@4.2.0", "", { "dependencies": { "@modelcontextprotocol/client": "2.0.0", "@modelcontextprotocol/node": "2.0.0", "@modelcontextprotocol/sdk": "1.30.0", "@modelcontextprotocol/server": "2.0.0", "body-parser": "^1.20.3", "cors": "^2.8.5", "express": "^4.21.2", "jsonc-parser": "3.3.1", "uuid": "^11.1.0", "ws": "^8.18.2", "yargs": "^17.7.2", "zod": "^3.25.76" }, "bin": { "supergateway": "dist/index.js" } }, "sha512-Tyl7LpOZd7Reeb+BBilVUxZ9mQfKbkIFwJtwavnV5/kAzwcsmamrnuB+c3VSJ8VTtxKSY+mENqrp23XRMhOIDg=="],
 

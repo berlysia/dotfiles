@@ -37,7 +37,7 @@ function base(overrides: Raw = {}): Raw {
 }
 
 function list(entries: unknown[]): string {
-  return JSON.stringify({ schema: 1, entries });
+  return JSON.stringify({ schema: 2, entries });
 }
 
 function loadAll(entries: unknown[]) {
@@ -175,7 +175,7 @@ describe("boundaries", () => {
         match: "lemma",
         pattern: undefined,
         lemmas,
-        pos: "動詞",
+        pos: "verb",
       });
     const n = (k: number) => Array.from({ length: k }, (_, i) => `語${i}`);
     ok(passes(lemma(n(20))));
@@ -215,10 +215,10 @@ describe("boundaries", () => {
 
   it("256 KB: exactly passes, one byte more is unusable", () => {
     const shell = list([base({ fix: "" })]);
-    const empty = Buffer.byteLength(JSON.stringify({ schema: 1, entries: [] }));
+    const empty = Buffer.byteLength(JSON.stringify({ schema: 2, entries: [] }));
     // pad with whitespace inside the JSON to hit the byte count exactly
     const pad = (bytes: number) =>
-      JSON.stringify({ schema: 1, entries: [] }) + " ".repeat(bytes - empty);
+      JSON.stringify({ schema: 2, entries: [] }) + " ".repeat(bytes - empty);
     strictEqual(Buffer.byteLength(pad(256 * 1024)), 256 * 1024);
     ok(parseWordList(pad(256 * 1024)).ok);
     strictEqual(parseWordList(pad(256 * 1024 + 1)).ok, false);
@@ -237,7 +237,7 @@ describe("entry shape", () => {
       ],
       [
         "nt+lemma",
-        base({ match: "lemma", lemmas: ["あ"], pos: "名詞" }),
+        base({ match: "lemma", lemmas: ["あ"], pos: "noun" }),
         /match: regex/,
       ],
       [
@@ -247,7 +247,7 @@ describe("entry shape", () => {
           action: "review",
           match: "lemma",
           lemmas: ["あ"],
-          pos: "名詞",
+          pos: "noun",
           allow: ["あ"],
         }),
         /allow/,
@@ -292,7 +292,7 @@ describe("entry shape", () => {
           match: "lemma",
           pattern: undefined,
           lemmas: ["a\nb"],
-          pos: "動詞",
+          pos: "verb",
         }),
       ),
     );
@@ -394,10 +394,10 @@ describe("regex constraints", () => {
 describe("unusable lists", () => {
   it("does not throw and gives a reason", () => {
     for (const text of [
-      '{"schema": 2, "entries": []}',
+      '{"schema": 1, "entries": []}',
       "[]",
       "{ broken",
-      '{"schema": 1, "entries": {}}',
+      '{"schema": 2, "entries": {}}',
       "null",
     ]) {
       const r = parseWordList(text);
@@ -406,7 +406,7 @@ describe("unusable lists", () => {
     const deep = `${"[".repeat(10_000)}${"]".repeat(10_000)}`;
     strictEqual(parseWordList(deep).ok, false);
     strictEqual(
-      validateWordList(JSON.parse('{"schema":1,"entries":[]}')).ok,
+      validateWordList(JSON.parse('{"schema":2,"entries":[]}')).ok,
       true,
     );
   });
@@ -424,7 +424,7 @@ describe("selectEntries", () => {
           match: "lemma",
           pattern: undefined,
           lemmas: ["あ"],
-          pos: "名詞",
+          pos: "noun",
           word: "l",
         }),
       ]),

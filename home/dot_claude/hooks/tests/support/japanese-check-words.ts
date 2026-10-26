@@ -10,6 +10,7 @@ import type {
 import {
   parseWordList,
   validateWordList,
+  WORD_LIST_SCHEMA,
 } from "../../../japanese-check/words.ts";
 
 export const SHIPPED_WORD_LIST = join(
@@ -37,7 +38,10 @@ export function shippedReview(kinds?: readonly ReviewKind[]): ReviewEntry[] {
 
 /** Review entries from raw entry objects (the same shape as data/words.json). */
 export function reviewFrom(entries: readonly unknown[]): ReviewEntry[] {
-  return build(validateWordList({ schema: 1, entries }), undefined);
+  return build(
+    validateWordList({ schema: WORD_LIST_SCHEMA, entries }),
+    undefined,
+  );
 }
 
 /** A raw review entry with the required fields filled in. */

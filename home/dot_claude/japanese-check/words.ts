@@ -11,7 +11,7 @@
 // analyze.ts が `LemmaClass` の欄へ代入するので、並びがずれれば型検査で落ちる。
 type LemmaClass = "noun" | "verb" | "adjective" | "adjectivalNoun";
 
-export const WORD_LIST_SCHEMA = 1;
+export const WORD_LIST_SCHEMA = 2;
 export const MAX_LIST_BYTES = 256 * 1024;
 export const MAX_ENTRIES = 500;
 export const MAX_REGEXES = 2000;
@@ -29,13 +29,14 @@ export const MAX_LINE_HITS = 1000;
 export const MAX_COLLECTED_HITS = 10_000;
 const EXCERPT_MARGIN = 15;
 
-// words.json の `pos`（和名）を粗い分類へ写す唯一の場所。Map にするのは、
-// "constructor" のような値がオブジェクトの継承で当たらないようにするため。
-const LEMMA_CLASS_BY_POS_NAME: ReadonlyMap<string, LemmaClass> = new Map([
-  ["名詞", "noun"],
-  ["動詞", "verb"],
-  ["形容詞", "adjective"],
-  ["形状詞", "adjectivalNoun"],
+// words.json の `pos` は、contract.ts の `LemmaClass` と同じ英字の識別子で書く
+// （解析器の品詞名は書かない）。Set にするのは、"constructor" のような値が
+// オブジェクトの継承で当たらないようにするため。
+const LEMMA_CLASSES: ReadonlySet<string> = new Set([
+  "noun",
+  "verb",
+  "adjective",
+  "adjectivalNoun",
 ]);
 
 export const WORD_KINDS = [
@@ -283,10 +284,9 @@ function checkEntry(raw: unknown, index: number): WordEntry | string {
     if (lemmas) return lemmas;
     const pos = checkText(raw.pos, "pos");
     if (pos) return pos;
-    const mapped = LEMMA_CLASS_BY_POS_NAME.get(raw.pos as string);
-    if (mapped === undefined) return "pos が許される値でない";
+    if (!LEMMA_CLASSES.has(raw.pos as string)) return "pos が許される値でない";
     entry.lemmas = raw.lemmas as string[];
-    entry.lemmaClass = mapped;
+    entry.lemmaClass = raw.pos as LemmaClass;
   }
   return entry;
 }

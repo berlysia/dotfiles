@@ -1,0 +1,15 @@
+# The UniDic dictionary that the japanese-check analyzer (lindera-unidic) reads.
+# This is the one place for the zip's release version and sha256. Read by the
+# external entry in .chezmoiexternal.toml.tmpl and by
+# scripts/fetch-japanese-check-dictionary.sh (CI and local runs).
+#
+# Raised by a human, never by Renovate: the sha256 below is the value computed
+# from the downloaded zip, and the adapter
+# (home/dot_claude/japanese-check/adapter-lindera-unidic.ts) pins the sha256 of
+# each extracted file separately. Raise the version in the adapter, in
+# home/dot_config/japanese-check/package.json and here in one change; a test
+# checks that they agree.
+japanese_check:
+  dictionary:
+    version: "6.2.0"
+    sha256: "45dc294a729afefb513f5732aff025bf530e54ae52b2cea22618f44e9acdda81"

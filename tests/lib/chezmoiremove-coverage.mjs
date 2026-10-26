@@ -45,6 +45,10 @@ export const KEEP = [
   ".config/textlint/node_modules/**",
   // run_after_10-install-formal-check-deps.sh.tmpl: `bun install` in ~/.config/formal-check
   ".config/formal-check/node_modules/**",
+  // run_after_10-install-japanese-check-deps.sh.tmpl: `bun install` in ~/.config/japanese-check
+  ".config/japanese-check/node_modules/**",
+  // run_after_10-install-japanese-check-deps.sh.tmpl: failure marker read by zz-verify-provisioning
+  ".claude/.japanese-check-deps-install-failed",
 ];
 
 // Attribute prefixes chezmoi strips, from the documented attribute list.

@@ -128,7 +128,7 @@ export type ReviewKind = Exclude<WordKind, "named-translationese">;
 
 /**
  * One `action: review` entry of the word list, in list order. A lemma entry is
- * matched against Sudachi tokens, a regex entry against the prose line.
+ * matched against the analyzer's tokens, a regex entry against the prose line.
  * analyze.ts never reads the file: the caller passes the entries in.
  */
 export type ReviewEntry =
@@ -460,10 +460,18 @@ export function newFacts(
   });
 }
 
+/** What produced the tokens: the engine, the resolved package version and the dictionary. */
+export interface AnalyzerIdentity {
+  engine: string;
+  version: string;
+  dictionary: string;
+}
+
 export function check(
   markdown: string,
   tokenize: Tokenizer,
   review: readonly ReviewEntry[],
+  analyzer: AnalyzerIdentity,
   genre?: Genre,
   source?: string,
 ) {
@@ -471,7 +479,7 @@ export function check(
   const matched = reviewCandidates(lines, tokenize, review);
   return {
     schemaVersion: 1,
-    analyzer: { engine: "sudachi", packageVersion: "0.1.5", mode: "C" },
+    analyzer,
     findings: lint(lines, genre),
     calques: matched.findings,
     outline: outline(lines),

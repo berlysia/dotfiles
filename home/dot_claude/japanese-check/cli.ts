@@ -10,9 +10,14 @@ import {
   outline,
   terms,
 } from "./analyze.ts";
-import type { ReviewEntry } from "./analyze.ts";
+import type { AnalyzerIdentity, ReviewEntry } from "./analyze.ts";
 import { AnalyzerOutputError, makeTokenizer } from "./contract.ts";
-import { checkDependencies, DependencyMissingError } from "./deps.ts";
+import {
+  checkDependencies,
+  DependencyMissingError,
+  resolveRuntimeDir,
+  runtimeDirState,
+} from "./deps.ts";
 import type { DependencyGroup } from "./deps.ts";
 import { matchKeeps } from "./keep.ts";
 import { keepComments, paragraphs, proseLines } from "./markdown.ts";
@@ -157,20 +162,40 @@ function selectProfile(id: string, reader: Reader | undefined) {
 // dictionary package is loaded only by the commands that tokenize.
 async function loadTokenizer(
   groups: readonly DependencyGroup[],
-): Promise<Tokenizer> {
+): Promise<{ tokenize: Tokenizer; analyzer: AnalyzerIdentity }> {
   // A literal dynamic import: only the commands that tokenize load the adapter
   // (and through it the dictionary package).
-  const adapter = await import("./adapter-sudachi-wasm.ts");
-  const found = checkDependencies(groups, adapter.ANALYZER_DEPENDENCIES);
+  const adapter = await import("./adapter-lindera-unidic.ts");
+  const runtimeDir = resolveRuntimeDir();
+  // The runtime directory can be moved by an environment variable, so its owner
+  // and permissions are checked before anything is read from it.
+  if (runtimeDirState(runtimeDir) === "unsafe")
+    throw new CliError(
+      "解析器の実行環境の持ち主か書き込み権限が安全ではありません。持ち主を自分だけにして、group と other の書き込みを外してください。",
+    );
+  const found = checkDependencies(
+    groups,
+    adapter.ANALYZER_DEPENDENCIES,
+    undefined,
+    runtimeDir,
+  );
   const analyzer = found.found.find((item) => item.group === "analyzer");
   if (!found.ok || !analyzer)
     throw new DependencyMissingError(
       found.missing.length > 0 ? found.missing : ["analyzer"],
     );
-  const tokenize = makeTokenizer(await adapter.createAnalyzer(analyzer.entry));
+  let created: Awaited<ReturnType<typeof adapter.createAnalyzer>>;
+  try {
+    created = await adapter.createAnalyzer(analyzer.entry, runtimeDir);
+  } catch (error) {
+    // The adapter's messages are fixed text; any other error is reported by name only.
+    if (error instanceof AnalyzerOutputError) throw new CliError(error.message);
+    throw error;
+  }
+  const tokenize = makeTokenizer(created);
   // The class check, not error.name: the analyzer package can throw an error
   // with any name, and its message may carry a piece of the document.
-  return (text) => {
+  const guarded: Tokenizer = (text) => {
     try {
       return tokenize(text);
     } catch (error) {
@@ -178,6 +203,14 @@ async function loadTokenizer(
         throw new CliError(error.message);
       throw error;
     }
+  };
+  return {
+    tokenize: guarded,
+    analyzer: {
+      engine: adapter.ANALYZER_IDENTITY.engine,
+      version: analyzer.version,
+      dictionary: adapter.ANALYZER_IDENTITY.dictionary,
+    },
   };
 }
 
@@ -280,7 +313,7 @@ export async function main(
   else if (command === "paragraphs") result = paragraphs(lines);
   else if (command === "lint") result = lint(lines, genre);
   else {
-    const tokenize = await loadTokenizer(
+    const { tokenize, analyzer } = await loadTokenizer(
       selected ? ["analyzer", "grammar"] : ["analyzer"],
     );
     const { review, problems } = loadReview(
@@ -291,6 +324,7 @@ export async function main(
         markdown,
         tokenize,
         review,
+        analyzer,
         effectiveGenre,
         original,
       );

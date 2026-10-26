@@ -986,7 +986,7 @@ describe("review entries in the new list", () => {
     installList(
       home,
       JSON.stringify({
-        schema: 1,
+        schema: 2,
         entries: [
           entry({ word: "道具立て", pattern: "道具立て" }),
           entry({

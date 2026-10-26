@@ -44,6 +44,10 @@ report_marker "$HOME/.claude/.root-deps-install-failed" "root-deps" \
     "Root dependencies were not installed; {{ .chezmoi.workingTree }}/node_modules does not match bun.lock." \
     "cd {{ .chezmoi.workingTree }} && bun install --frozen-lockfile"
 
+report_marker "$HOME/.claude/.japanese-check-deps-install-failed" "japanese-check-deps" \
+    "The japanese-check analyzer runtime was not installed; ~/.config/japanese-check/node_modules does not match its bun.lock." \
+    "cd ~/.config/japanese-check && bun install --frozen-lockfile --ignore-scripts"
+
 report_marker "$HOME/.claude/.apm-skills-install-failed" "apm-skills" \
     "APM skills were not installed; ~/.claude/skills and ~/.agents/skills may not match ~/.apm/apm.yml." \
     "mise install apm && apm install -g"
