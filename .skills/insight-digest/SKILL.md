@@ -120,7 +120,7 @@ date +%s%3N > ~/.claude/.last-insight-digest-acked
 
 - **context: inherit**: 会話履歴の文脈 (採否判断の前提・既存規約) を活かすため
 - **3 モード以外を入れない**: scope-justification レビューで `topic <keyword>` モードは YAGNI 判定。
-  必要になったら `~/.claude/logs/insights/insights.jsonl` を `jq` で grep すれば足りる
+  必要になったら `~/.claude/logs/insights/insights.jsonl` を `jq` で絞り込む
 - **採否は Claude が決めない**: スキル化や rule 追記は人間の判断。Claude は推奨と理由を提示するに留める
 
 ## 関連ファイル
