@@ -29,6 +29,13 @@ node の permission model はネットワークを塞がず、TLC の JVM にも
 formal-check の installer は textlint の installer のコピーである。
 3 つ目の同じ形の installer ができたら、1 つの script にまとめるかを決める。
 
+## Codex から実行できるか確かめる
+
+スキルは `~/.codex/skills/formal-check/` にも置かれるが、Codex から実行したことはない。
+Codex の sandbox が、node と java の起動と `~/.config/formal-check` の読み出しを許すかは確かめていない。
+Codex で formal-check を使う場面が出たら、examples の 3 つを Codex から実行して確かめる。
+動かなければ、SKILL.md の前提の節に、何が足りないかを書く。
+
 ## jar と z3-solver のバージョンを上げる
 
 z3-solver の更新は、Renovate の専用の group の PR として出る。
