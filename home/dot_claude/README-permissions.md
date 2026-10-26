@@ -18,7 +18,7 @@
    - 書き込み系（Edit/Write/MultiEdit/NotebookEdit） → permissions.allowが必要
 6. **明示的許可** → permissions.allowにマッチする場合許可
 7. **dotfiles リポジトリ** → chezmoi 管理下のファイルへの書き込みは source への編集に誘導して拒否、読み取りは許可
-8. 上のどれにも当たらなければ拒否
+8. 上のどれにも該当しなければ拒否
 
 シンボリックリンクは、書かれたままの形と物理パスの両方で判定する。allow パターンは物理パスに解決しない。
 

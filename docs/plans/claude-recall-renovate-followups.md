@@ -9,4 +9,4 @@ claude-recall の PR が CI で落ちたとき、`auto-fix-dependencies.yml` は
 調べること:
 
 - skip 判定が意図どおりか。
-- もし Claude が動いた場合に、上流の内容（changelog、リリースノート）を読んだ agent が sha256 の行を書き換えうるか。autonomous-lane charter の「allowlist は injection を防がない」に当たる。
+- もし Claude が動いた場合に、上流の内容（changelog、リリースノート）を読んだ agent が sha256 の行を書き換えうるか。autonomous-lane charter の「allowlist は injection を防がない」に該当する。

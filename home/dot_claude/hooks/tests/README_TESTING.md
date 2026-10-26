@@ -23,11 +23,11 @@ Claude Code の TypeScript Hook 実装のテスト。`node:test` と `node:asser
 
 ### 置き場の規則
 
-テストは、まず unit に置く。次のどれかに当たるなら heavy に置く。
+テストは、まず unit に置く。次のどれかに該当するなら heavy に置く。
 
 - (g) git のプロセスを起動する。`beforeEach` や `before` の setup、モジュールの読み込み時に起動するものも含む。テスト本体が git の結果を使わなくても heavy に置く（setup を書き換えて unit に戻す案は `docs/plans/heavy-setup-only-git-tests.md`）
-- (a) 本番の timeout を実時間で待ち、どちらが先に起きるかで結果が変わる。注入した時計や fake timer を使うものは当たらない
-- (b) (g) にも (a) にも当たらず、`yes` を `nproc` の 6 倍走らせた負荷の下で、1 件が 5 秒以上かかる
+- (a) 本番の timeout を実時間で待ち、どちらが先に起きるかで結果が変わる。注入した時計や fake timer を使うものは該当しない
+- (b) (g) にも (a) にも該当せず、`yes` を `nproc` の 6 倍走らせた負荷の下で、1 件が 5 秒以上かかる
 
 経過時間の上限だけを確かめるテストは perf に置く。ロジックは unit（git を要するなら heavy）に残し、perf には上限の assert だけを持つ同じ場面のテストを別名で置く。unit に `performance.now() -` の式と、同じ行の `Date.now() - ... <` の式は置けない（test-layout が検査する）。複数行の式、変数を経由した式、`>` での比較、実時間の timeout 待ちは静的に見分けられないので、この規則とレビューで守る。
 

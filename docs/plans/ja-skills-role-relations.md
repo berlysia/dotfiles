@@ -4,7 +4,7 @@ ADR-0036 は、文章スキルを規則を持つ役割（`ja-*`）と、読み�
 
 ## 今の状態
 
-- `782b4366` で、CLAUDE.md の常時規則が `ja-check/references/human-documents.md` を直接読ませるようになった。入口を通らずに役割を使う読み方で、利用者の言う「実質的に新しい入口」に当たる。ADR には書かれていない
+- `782b4366` で、CLAUDE.md の常時規則が `ja-check/references/human-documents.md` を直接読ませるようになった。入口を通らずに役割を使う読み方で、利用者の言う「実質的に新しい入口」に該当する。ADR には書かれていない
 - 同じ commit で、`ja-structure/SKILL.md` が `../ja-check/references/human-documents.md` を指すようになった。役割どうしの参照なので、`check-skill-refs.sh` の検査で `skill-upstreams tests` が落ちていた（master の `45c2e786` 以降）
 - 当面の対処として、`check-skill-refs.sh` の役割の許可の一覧に、この 1 ファイルだけを足した（`ROLE_ALLOWED_EXACT`）
 

@@ -49,7 +49,7 @@ merge と `chezmoi apply` の後、`agent-learnings show --grep=zzz-nomatch` が
 
 ## 場面の注入の上限の見直し
 
-1 回 3 件・2KB、1 セッション 12 件・16KB の上限（ADR-0042 K6）は暫定の値。`agent-learnings status` の `injections (14d)` と、セッションごとの場面の state（`~/.claude/state/agent-learnings/<session>.injected`）の行数で、上限に当たった回数を数えて直す。
+1 回 3 件・2KB、1 セッション 12 件・16KB の上限（ADR-0042 K6）は暫定の値。`agent-learnings status` の `injections (14d)` と、セッションごとの場面の state（`~/.claude/state/agent-learnings/<session>.injected`）の行数で、上限に達した回数を数えて直す。
 
 ## reader の無い注入の記録を受理から外す（2026-11-05 以降）
 

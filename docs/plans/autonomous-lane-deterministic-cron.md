@@ -5,7 +5,7 @@
 ## 自律レーン憲章に「agent を持たない決定的 cron」の扱いを書くか
 
 `skill-upstreams Sync` は cron で上流を能動的に調べ、Issue を開閉する。
-LLM を持たない決定的スクリプトなので、`rules/autonomous-lane.md` の push レーン（agent の自律実行）には当たらないと判断し、憲章は変えなかった。
+LLM を持たない決定的スクリプトなので、`rules/autonomous-lane.md` の push レーン（agent の自律実行）には該当しないと判断し、憲章は変えなかった。
 ただし憲章本文には「agent を持たない cron」を除外する基準が無く、「能動 discovery 心臓（cron triage）は Phase 2 以降」の文言と読み合わせると境界が曖昧になる。
 
 決めること:

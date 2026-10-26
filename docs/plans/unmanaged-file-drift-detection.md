@@ -88,7 +88,7 @@ C の設計原則（chezmoi ネイティブを使い独自の削除ロジック�
 
 ## source の履歴から見る検査との分担
 
-ソースが削除された managed ファイルは、配置先を見ずに git の履歴から検出する。`tests/chezmoiremove-coverage.test.mjs` が、`home/` から消えた（名前の変更を含む）source の target が `home/.chezmoiremove` に無ければ commit 時と CI で失敗する。逆に、`.chezmoiremove` の行が今配っている target（dir の行ならその配下）や external、run script が書く場所に当たっても失敗する。上の「managed なパスと衝突すると `inconsistent state` で apply 全体が停止」はこれで commit 前に止まる。
+ソースが削除された managed ファイルは、配置先を見ずに git の履歴から検出する。`tests/chezmoiremove-coverage.test.mjs` が、`home/` から消えた（名前の変更を含む）source の target が `home/.chezmoiremove` に無ければ commit 時と CI で失敗する。逆に、`.chezmoiremove` の行が今配っている target（dir の行ならその配下）や external、run script が書く場所に一致しても失敗する。上の「managed なパスと衝突すると `inconsistent state` で apply 全体が停止」はこれで commit 前に止まる。
 
 この文書の方式でしか見つからないのは、履歴から辿れない残骸（ADR-0002 の移行前の層のような、source の外で作られたもの）と、ignore の行を足す前に配ったファイルである。
 

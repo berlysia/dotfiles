@@ -1735,7 +1735,7 @@ describe("keep markers", () => {
       assert.equal(report.keepIssues[0]?.line, 2);
       assert.match(
         report.keepIssues[0]?.problem ?? "",
-        /同じ行に当たる候補が無い/u,
+        /同じ行に該当する候補が無い/u,
       );
       assert.equal(candidates(report), 2);
     });
@@ -1964,7 +1964,7 @@ describe("keep markers", () => {
       assert.equal(report.keepIssues.length, 1);
       assert.match(
         report.keepIssues[0]?.problem ?? "",
-        /同じ行に当たる候補が無い/u,
+        /同じ行に該当する候補が無い/u,
       );
       assert.equal(candidates(report), 1);
     });

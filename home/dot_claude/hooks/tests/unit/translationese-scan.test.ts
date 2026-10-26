@@ -408,8 +408,10 @@ describe("Write / Edit", () => {
     ok(out.includes("当たる"));
   });
 
-  it("stays quiet on 当たる used for applying to (a review entry that never reaches the hook)", async () => {
-    strictEqual(await write("/repo/README.md", "この規則にも当たります"), null);
+  it("warns on 当たる used for applying to (a named entry)", async () => {
+    const out = await write("/repo/README.md", "この規則にも当たります");
+    ok(out);
+    ok(out.includes("当たる"));
   });
 
   it("ignores inline code and fenced code", async () => {

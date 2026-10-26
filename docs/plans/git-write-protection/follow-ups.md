@@ -46,7 +46,7 @@ git write protection の作業（spec.md、plan-1.md、plan-2.md）で、範囲�
 ## 3. chezmoi のソースの一般の配布路
 
 - `home/dot_zshrc`、`home/.chezmoiscripts/run_*`、`home/dot_claude/**` などのソースは、配布されると本体の protected なファイル（`~/.zshrc` など）や、`chezmoi apply` で実行されるスクリプトになる。
-- ところが、ソースの名前は本体の protected の一覧に当たらない。git 関連のソース（`*dot_gitconfig*`、`*dot_config/*git/**`）だけを、今回 ask にした。
+- ところが、ソースの名前は本体の protected の一覧に該当しない。git 関連のソース（`*dot_gitconfig*`、`*dot_config/*git/**`）だけを、今回 ask にした。
 - spec.md「Phase 1 で意図的に提供しない体験」を参照。2 と組み合わせて考える。
 
 ## 4. 既存の Bash の allow の過大さ
