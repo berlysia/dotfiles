@@ -55,6 +55,7 @@ apply は未掲載のスキルを追記するだけで、行を消さない。
 - [x] yomiyasu
 - [x] ja-fact-preservation
 - [x] ja-paragraph
+- [x] formal-check
 
 ## External
 
