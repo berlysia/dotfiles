@@ -201,11 +201,17 @@ test_role_to_rules() {
   run_s
   assert_eq 1 "$RC" "role -> tanteki/rules exits 1"
 }
+test_role_to_tanteki_scripts() {
+  new_case
+  skill ja-x 'see ../tanteki/scripts/x'
+  file tanteki/scripts/x x
+  run_s
+  assert_eq 1 "$RC" "role -> tanteki/scripts exits 1"
+}
 test_role_to_allowed_dirs() {
   new_case
-  skill ja-x $'../yomiyasu/references/slop-catalog.md\n../tanteki/scripts/check.mjs\n../tanteki/references/a.md\n../yomiyasu/scripts/b.sh'
+  skill ja-x $'../yomiyasu/references/slop-catalog.md\n../tanteki/references/a.md\n../yomiyasu/scripts/b.sh'
   file yomiyasu/references/slop-catalog.md x
-  file tanteki/scripts/check.mjs x
   file tanteki/references/a.md x
   file yomiyasu/scripts/b.sh x
   run_s
@@ -277,26 +283,13 @@ test_no_symlink() {
   run_s
   assert_eq 0 "$RC" "no symlink exits 0 ($STDERR)"
 }
-test_node_modules_ok() {
+test_node_modules_symlink_is_a_problem() {
   new_case
   skill tanteki
   ln -s ../../../.config/textlint/node_modules "$S/tanteki/node_modules"
   run_s
-  assert_eq 0 "$RC" "dangling tanteki/node_modules with the right target exits 0 ($STDERR)"
-}
-test_node_modules_real_dir() {
-  new_case
-  skill tanteki
-  mkdir -p "$S/tanteki/node_modules/x"
-  run_s
-  assert_eq 1 "$RC" "real tanteki/node_modules exits 1"
-}
-test_node_modules_wrong_target() {
-  new_case
-  skill tanteki
-  ln -s ../../../elsewhere "$S/tanteki/node_modules"
-  run_s
-  assert_eq 1 "$RC" "tanteki/node_modules with the wrong target exits 1"
+  assert_eq 1 "$RC" "tanteki/node_modules with the former target exits 1"
+  assert_contains "$STDERR" 'tanteki/node_modules' "tanteki/node_modules symlink is named"
 }
 test_other_symlink() {
   new_case

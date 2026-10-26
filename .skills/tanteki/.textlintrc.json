@@ -1,7 +1,0 @@
-{
-  "rules": {
-    "preset-japanese": true,
-    "stock-boundary": true,
-    "table-cell-length": true
-  }
-}

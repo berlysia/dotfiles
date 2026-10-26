@@ -11,7 +11,7 @@ requires-skills-before: ["Bash(gh pr create)", "Bash(gh pr edit)"]
 
 執筆前に `tanteki`・`japanese-tech-writing`・`koncise` の各 skill を読み込む。
 PR に載せる事実と節の構成はこの skill に従い、文章の簡潔さと読みやすさには併用する skill を適用する。
-本文を書いた後は、`tanteki` の手順で textlint を通す。
+本文を書いた後は、`textlint-global` を通し、japanese-check の `check` は `--profile caller` で走らせる。
 
 ## 原則
 

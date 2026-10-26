@@ -11,7 +11,8 @@
       "structure": "business",
       "action": false,
       "genre": "tech",
-      "stockBoundary": true
+      "stockBoundary": true,
+      "tableCells": true
     },
     {
       "id": "procedure",
@@ -23,7 +24,8 @@
       "structure": "business",
       "action": true,
       "genre": "business",
-      "stockBoundary": false
+      "stockBoundary": false,
+      "tableCells": true
     },
     {
       "id": "report",
@@ -32,7 +34,20 @@
       "structure": "business",
       "action": false,
       "genre": "business",
-      "stockBoundary": false
+      "stockBoundary": false,
+      "tableCells": true
+    },
+    {
+      "id": "reference",
+      "label": "参照用の文書（README、ガイド、FAQ）",
+      "signals": [
+        "README、ガイド、FAQ を書く依頼",
+        "読み手が必要なときに引く文書"
+      ],
+      "structure": "business",
+      "action": false,
+      "stockBoundary": true,
+      "tableCells": true
     },
     {
       "id": "caller",
@@ -40,7 +55,8 @@
       "signals": ["呼び出し元のスキルが本文の構成を決めている"],
       "structure": "caller",
       "action": false,
-      "stockBoundary": false
+      "stockBoundary": false,
+      "tableCells": true
     },
     {
       "id": "book",
@@ -49,7 +65,8 @@
       "structure": "book",
       "action": false,
       "genre": "tech",
-      "stockBoundary": false
+      "stockBoundary": false,
+      "tableCells": false
     },
     {
       "id": "essay",
@@ -58,7 +75,8 @@
       "structure": "keep",
       "action": false,
       "genre": "essay",
-      "stockBoundary": false
+      "stockBoundary": false,
+      "tableCells": false
     },
     {
       "id": "rewrite-default",
@@ -66,7 +84,8 @@
       "signals": ["既存の文書を直す依頼で、種類を決める手がかりが無い"],
       "structure": "keep",
       "action": false,
-      "stockBoundary": false
+      "stockBoundary": false,
+      "tableCells": false
     },
     {
       "id": "compose-default",
@@ -74,7 +93,8 @@
       "signals": ["新しく書く依頼で、種類を決める手がかりが無い"],
       "structure": "business",
       "action": false,
-      "stockBoundary": false
+      "stockBoundary": false,
+      "tableCells": false
     }
   ]
 }

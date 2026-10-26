@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   mkdirSync,
+  readFileSync,
   mkdtempSync,
   rmSync,
   writeFileSync,
@@ -8,6 +9,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { after, describe, it } from "node:test";
 import {
   HASHED_PROFILE_FIELDS,
@@ -28,6 +30,7 @@ function row(overrides: Record<string, unknown> = {}): Record<string, unknown> {
     structure: "business",
     action: false,
     stockBoundary: false,
+    tableCells: false,
     ...overrides,
   };
 }
@@ -50,12 +53,15 @@ const ids = (row: ProfileRow, reader?: "adhd") =>
   resolveModules(row, reader).modules.map((module) => module.id);
 
 describe("profiles table shipped with the checker", () => {
-  it("has the eight representative rows with the expected modules and genre", () => {
-    const expected: Array<[string, string[], string | undefined, boolean]> = [
+  it("has the nine representative rows with the expected modules and genre", () => {
+    const expected: Array<
+      [string, string[], string | undefined, boolean, boolean]
+    > = [
       [
         "design",
         ["fact", "business", "polish", "notation", "check"],
         "tech",
+        true,
         true,
       ],
       [
@@ -63,24 +69,41 @@ describe("profiles table shipped with the checker", () => {
         ["fact", "business", "action", "polish", "notation", "check"],
         "business",
         false,
+        true,
       ],
       [
         "report",
         ["fact", "business", "polish", "notation", "check"],
         "business",
         false,
+        true,
+      ],
+      [
+        "reference",
+        ["fact", "business", "polish", "notation", "check"],
+        undefined,
+        true,
+        true,
       ],
       [
         "caller",
         ["fact", "caller", "polish", "notation", "check"],
         undefined,
         false,
+        true,
       ],
-      ["book", ["fact", "book", "polish", "notation", "check"], "tech", false],
+      [
+        "book",
+        ["fact", "book", "polish", "notation", "check"],
+        "tech",
+        false,
+        false,
+      ],
       [
         "essay",
         ["fact", "keep", "polish", "notation", "check"],
         "essay",
+        false,
         false,
       ],
       [
@@ -88,16 +111,18 @@ describe("profiles table shipped with the checker", () => {
         ["fact", "keep", "polish", "notation", "check"],
         undefined,
         false,
+        false,
       ],
       [
         "compose-default",
         ["fact", "business", "polish", "notation", "check"],
         undefined,
         false,
+        false,
       ],
     ];
     assert.equal(rowsOf().length, expected.length);
-    for (const [id, modules, genre, stockBoundary] of expected) {
+    for (const [id, modules, genre, stockBoundary, tableCells] of expected) {
       const resolved = resolveModules(find(id));
       assert.deepEqual(
         resolved.modules.map((module) => module.id),
@@ -106,6 +131,7 @@ describe("profiles table shipped with the checker", () => {
       );
       assert.equal(resolved.genre, genre, id);
       assert.equal(resolved.stockBoundary, stockBoundary, id);
+      assert.equal(resolved.tableCells, tableCells, id);
       assert.ok(!("genre" in resolved) || genre !== undefined, id);
     }
   });
@@ -245,5 +271,93 @@ describe("profiles loading", () => {
   it("does not use a missing table", () => {
     const result = loadProfiles(join(root, "nowhere"));
     assert.equal(result.ok, false);
+  });
+});
+
+// The skills live in the repository next to home/, so these read the sources,
+// never the deployed copy.
+const skill = (path: string) =>
+  readFileSync(
+    fileURLToPath(new URL(`../../../../../.skills/${path}`, import.meta.url)),
+    "utf8",
+  );
+
+describe("tanteki's document types map to the profiles table", () => {
+  const section = () => {
+    const text = skill("tanteki/references/document-types.md");
+    const start = text.indexOf("## 検査コマンドの指定値");
+    assert.ok(start >= 0);
+    const end = text.indexOf("\n## ", start + 1);
+    return text.slice(start, end < 0 ? undefined : end);
+  };
+  const table = () =>
+    section()
+      .split("\n")
+      .filter((line) => line.startsWith("|"))
+      .slice(2)
+      .map((line) =>
+        line
+          .split("|")
+          .slice(1, -1)
+          .map((cell) => cell.trim()),
+      );
+
+  it("lists the seven kinds in two columns", () => {
+    const rows = table();
+    assert.ok(rows.every((cells) => cells.length === 2));
+    const mapping = Object.fromEntries(
+      rows.map(([kind, profile]) => [
+        /`([a-z-]+)`/u.exec(kind ?? "")?.[1],
+        /`([a-z-]+)`/u.exec(profile ?? "")?.[1],
+      ]),
+    );
+    assert.deepEqual(mapping, {
+      "design-doc": "design",
+      prd: "design",
+      adr: "design",
+      rfc: "design",
+      stock: "reference",
+      flow: "procedure",
+      record: "report",
+    });
+  });
+
+  it("names only rows of profiles.json, with the flags the text under the table states", () => {
+    const flags: Record<string, [boolean, boolean]> = {
+      design: [true, true],
+      reference: [true, true],
+      procedure: [false, true],
+      report: [false, true],
+    };
+    for (const [, profile] of table()) {
+      const id = /`([a-z-]+)`/u.exec(profile ?? "")?.[1] ?? "";
+      const found = find(id);
+      assert.deepEqual([found.stockBoundary, found.tableCells], flags[id], id);
+    }
+    const text = section();
+    assert.match(
+      text,
+      /`design` と `reference` は.*`stock-boundary`.*`table-cell-length`.*両方/u,
+    );
+    assert.match(text, /`procedure` と `report` は `table-cell-length` だけ/u);
+  });
+});
+
+describe("the ja-check skill runs the checks the profiles need", () => {
+  const text = () => skill("ja-check/SKILL.md");
+  it("passes --profile to every check of a tanteki document, the final draft included", () => {
+    assert.match(text(), /check` はすべて `--profile/u);
+    assert.match(text(), /最終稿にかける `check` も同じ指定/u);
+  });
+  it("runs textlint-global and names how its failures read", () => {
+    const body = text();
+    assert.ok(body.includes("textlint-global --format json"));
+    for (const word of [
+      "runtime not installed",
+      "textlint: WARNING",
+      "Cannot find",
+    ])
+      assert.ok(body.includes(word), word);
+    assert.ok(!body.includes("lint.mjs"));
   });
 });

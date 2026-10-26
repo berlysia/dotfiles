@@ -10,6 +10,24 @@ export interface KeepComment {
   line: number;
   body: string;
 }
+// What blockLines() knows about a line. It is not a LineKind: the checks that
+// read it (blocks.ts) need the separator lines that proseLines() drops, and a
+// LineKind consumer must never see one.
+export type BlockKind =
+  | "heading"
+  | "list"
+  | "table"
+  | "separator"
+  | "paragraph";
+export interface BlockLine {
+  line: number;
+  // The line as written, with only the HTML comments replaced by spaces of the
+  // same length. Inline code, URLs and link destinations stay, and columns are
+  // the same as in the original line.
+  text: string;
+  kind: BlockKind;
+  quote: boolean;
+}
 export interface Paragraph {
   line: number;
   endLine: number;
@@ -56,8 +74,32 @@ export function proseMasks(markdown: string): ProseMask[] {
   return scan(markdown).masks;
 }
 
+// Every line a structure check may look at: the lines of proseLines() plus the
+// ones it drops for having no prose left (a URL alone, an inline code alone),
+// separators, link reference definitions and nested list items indented by four
+// or more spaces. Frontmatter, fences, comment-only lines and indented code are
+// not returned.
+export function blockLines(markdown: string): BlockLine[] {
+  return scan(markdown).blocks;
+}
+
 export function keepComments(markdown: string): KeepComment[] {
   return scan(markdown).comments;
+}
+
+const INDENTED = /^(?: {4}|\t)/u;
+const LIST_MARKER = /^\s*(?:[-+*]|\d+[.)])\s/u;
+const REFERENCE_DEFINITION = /^\s*\[[^\]]+\]:/u;
+
+// Judged on the text with only the comments blanked, in this order: a
+// separator row such as `| --- |` must not count as a table row, and `---`
+// must not count as a list.
+function blockKind(text: string): BlockKind {
+  if (/^ {0,3}#{1,6}\s/u.test(text)) return "heading";
+  if (/^[-=|:\s]+$/u.test(text)) return "separator";
+  if (LIST_MARKER.test(text)) return "list";
+  if (/^\s*\|/u.test(text)) return "table";
+  return "paragraph";
 }
 
 const MARK_BARRIER = 1;
@@ -110,6 +152,7 @@ function scan(markdown: string): {
   lines: ProseLine[];
   comments: KeepComment[];
   masks: ProseMask[];
+  blocks: BlockLine[];
 } {
   const rows = markdown.replace(/^\uFEFF/u, "").split(/\r?\n/u);
   let frontmatter = rows[0]?.trim() === "---";
@@ -118,7 +161,14 @@ function scan(markdown: string): {
   const result: ProseLine[] = [];
   const comments: KeepComment[] = [];
   const masks: ProseMask[] = [];
+  const blocks: BlockLine[] = [];
+  // Whether the line before this one (no blank or dropped line between) was
+  // returned as a list item. A nested item indented by four spaces or more is a
+  // list item only after one; anywhere else that indent is indented code.
+  let afterList = false;
   for (const [index, raw] of rows.entries()) {
+    const followsList = afterList;
+    afterList = false;
     if (frontmatter) {
       if (index > 0 && /^(?:---|\.\.\.)\s*$/u.test(raw)) frontmatter = false;
       continue;
@@ -175,12 +225,25 @@ function scan(markdown: string): {
     }
     // Indented code is judged on the raw line here: a comment at the start of
     // the line blanks the masked text, but the line is not an indented block.
+    const indented = INDENTED.test(text);
+    const definition = REFERENCE_DEFINITION.test(text);
+    const continuesList = indented && followsList && LIST_MARKER.test(text);
     const codeLine =
-      (!startedInComment && /^(?: {4}|\t)/u.test(raw)) ||
-      /^\s*\[[^\]]+\]:/u.test(text);
+      (!startedInComment && INDENTED.test(raw) && !continuesList) ||
+      (definition && indented);
     if (!codeLine)
       for (const body of found) comments.push({ line: index + 1, body });
-    if (/^(?: {4}|\t)/u.test(text) || /^\s*\[[^\]]+\]:/u.test(text)) continue;
+    if (text.trim() !== "" && (!indented || continuesList)) {
+      const kind = blockKind(text);
+      blocks.push({
+        line: index + 1,
+        text,
+        kind,
+        quote: /^\s*>/u.test(text),
+      });
+      afterList = kind === "list";
+    }
+    if (indented || definition) continue;
     text = blankMatches(text, /(`+)([^`]|(?!\1)`)*?\1/gu, marks, MARK_BARRIER);
     text = blankMatches(text, /!\[[^\]]*\]\([^\n]*?\)/gu, marks, MARK_BARRIER);
     text = blankMatches(text, /\]\([^\n]*?\)/gu, marks, MARK_LINK);
@@ -211,7 +274,7 @@ function scan(markdown: string): {
     result.push({ line: index + 1, text, kind });
     masks.push({ line: index + 1, raw, quote, ranges: rangesOf(marks) });
   }
-  return { lines: result, comments, masks };
+  return { lines: result, comments, masks, blocks };
 }
 
 export function paragraphs(lines: ProseLine[]): Paragraph[] {

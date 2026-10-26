@@ -37,7 +37,7 @@ tanteki は `.skills/tanteki/` に取り込んで自分で持つ形にしてあ�
    chezmoi apply --force /home/<ユーザー名>/.apm/apm.yml
    ```
 
-5. 引数なしの `chezmoi apply` を流す。`.skills/tanteki/` が配備され、`node_modules` は `~/.config/textlint/node_modules` を指す symlink になる。
+5. 引数なしの `chezmoi apply` を流す。`.skills/tanteki/` が配備される。`node_modules` は作られない。
 
 ## このファイルを消す条件
 

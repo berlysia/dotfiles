@@ -19,7 +19,9 @@ import {
   runtimeDirState,
 } from "./deps.ts";
 import type { DependencyGroup } from "./deps.ts";
-import { matchKeeps } from "./keep.ts";
+import { inactiveBlockRules } from "./blocks.ts";
+import type { BlockFlags } from "./blocks.ts";
+import { matchKeeps, parseMarker } from "./keep.ts";
 import { keepComments, paragraphs, proseLines } from "./markdown.ts";
 import { describeResolved, loadProfiles, resolveModules } from "./profiles.ts";
 import { recordCheck, recordDecision, verify } from "./receipts.ts";
@@ -320,6 +322,12 @@ export async function main(
       options.wordListPath ?? defaultWordListPath(),
     );
     if (command === "check") {
+      const blocks: BlockFlags | undefined = selected
+        ? {
+            stockBoundary: selected.resolved.stockBoundary,
+            tableCells: selected.resolved.tableCells,
+          }
+        : undefined;
       const report = check(
         markdown,
         tokenize,
@@ -327,12 +335,21 @@ export async function main(
         analyzer,
         effectiveGenre,
         original,
+        blocks,
       );
       if (problems.length > 0)
         report.limitations.push(
           `語の一覧を読めなかった（${problems.join("、")}）。読めた項目だけで照合した。`,
         );
-      const keeps = matchKeeps(keepComments(markdown), [
+      // A marker for a rule that did not run in this check has nothing to
+      // match; it must not become a "no candidate" problem, or a document
+      // checked without --profile would count it as a candidate.
+      const inactive = inactiveBlockRules(blocks);
+      const comments = keepComments(markdown).filter((comment) => {
+        const marker = parseMarker(comment.body);
+        return !(marker?.ok && inactive.includes(marker.rule));
+      });
+      const keeps = matchKeeps(comments, [
         ...report.findings,
         ...report.calques,
       ]);

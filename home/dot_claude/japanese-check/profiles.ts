@@ -24,6 +24,7 @@ export const PROFILE_FIELDS = [
   "action",
   "genre",
   "stockBoundary",
+  "tableCells",
 ] as const;
 export const HASHED_PROFILE_FIELDS = [
   "id",
@@ -31,6 +32,7 @@ export const HASHED_PROFILE_FIELDS = [
   "action",
   "genre",
   "stockBoundary",
+  "tableCells",
 ] as const;
 export const UNHASHED_PROFILE_FIELDS = ["label", "signals"] as const;
 
@@ -42,6 +44,7 @@ export interface ProfileRow {
   action: boolean;
   genre?: Genre;
   stockBoundary: boolean;
+  tableCells: boolean;
 }
 
 export type ProfilesResult =
@@ -56,6 +59,7 @@ export interface ResolvedProfile {
   modules: ResolvedModule[];
   genre?: Genre;
   stockBoundary: boolean;
+  tableCells: boolean;
 }
 
 const ID_PATTERN = /^[a-z][a-z0-9-]{0,31}$/u;
@@ -106,7 +110,9 @@ function checkRow(raw: unknown): ProfileRow | string {
   const action = field(raw, "action");
   const stockBoundary = field(raw, "stockBoundary");
   if (typeof action !== "boolean") return "action が真偽でない";
+  const tableCells = field(raw, "tableCells");
   if (typeof stockBoundary !== "boolean") return "stockBoundary が真偽でない";
+  if (typeof tableCells !== "boolean") return "tableCells が真偽でない";
   if (action && structure !== "business" && structure !== "caller")
     return "action の行の構成は business か caller に限る";
   const row: ProfileRow = {
@@ -116,6 +122,7 @@ function checkRow(raw: unknown): ProfileRow | string {
     structure,
     action,
     stockBoundary,
+    tableCells,
   };
   if (genre !== undefined) row.genre = genre;
   return row;
@@ -221,6 +228,7 @@ export function resolveModules(
   const resolved: ResolvedProfile = {
     modules,
     stockBoundary: row.stockBoundary,
+    tableCells: row.tableCells,
   };
   if (row.genre !== undefined) resolved.genre = row.genre;
   return resolved;
@@ -235,5 +243,6 @@ export function describeResolved(
     modules: resolved.modules.map((module) => [module.id, module.scope]),
     genre: genre ?? null,
     stockBoundary: resolved.stockBoundary,
+    tableCells: resolved.tableCells,
   });
 }
