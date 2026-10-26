@@ -2544,7 +2544,9 @@ test("the child sees only PATH and LANG", async () => {
     LANG: "C.UTF-8",
   });
   try {
-    const keys = `export const domain = () => [Object.keys(process.env).sort()];\nexport const property = () => false;\n`;
+    // macOS adds __CF_USER_TEXT_ENCODING to every new process at startup, so
+    // it is not a variable the runner passed down and is left out of the count
+    const keys = `export const domain = () => [Object.keys(process.env).filter((k) => k !== "__CF_USER_TEXT_ENCODING").sort()];\nexport const property = () => false;\n`;
     assert.deepEqual((await runModel(keys)).envelope.observation.firstFalse, [
       "LANG",
       "PATH",
