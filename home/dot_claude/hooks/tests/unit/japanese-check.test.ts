@@ -626,6 +626,17 @@ describe("lindera-backed Japanese review", () => {
       );
       assert.deepEqual(result.outline, outline(proseLines(markdown)));
       assert.equal(result.schemaVersion, 1);
+      assert.deepEqual(Object.keys(result), [
+        "schemaVersion",
+        "analyzer",
+        "findings",
+        "calques",
+        "outline",
+        "terms",
+        "paragraphs",
+        "newFacts",
+        "limitations",
+      ]);
     },
   );
 

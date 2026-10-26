@@ -1,4 +1,5 @@
-import { paragraphs, proseLines } from "./markdown.ts";
+import { paragraphs, proseLines, proseMasks } from "./markdown.ts";
+import { phraseFindings } from "./phrases.ts";
 import type { ProseLine } from "./markdown.ts";
 import {
   isNoun,
@@ -8,7 +9,9 @@ import {
   renyokei,
 } from "./contract.ts";
 import type { LemmaClass, Tokenizer } from "./contract.ts";
-import type { Genre } from "./types.ts";
+import type { Finding, Genre } from "./types.ts";
+
+export type { Finding };
 import { compileEntries, findHits, selectEntries } from "./words.ts";
 import type {
   CompiledEntry,
@@ -17,13 +20,6 @@ import type {
   WordKind,
 } from "./words.ts";
 
-export interface Finding {
-  rule: string;
-  line: number;
-  column: number;
-  text: string;
-  reason: string;
-}
 export interface Term {
   term: string;
   line: number;
@@ -550,7 +546,10 @@ export function check(
   return {
     schemaVersion: 1,
     analyzer,
-    findings: lint(lines, genre),
+    findings: [
+      ...lint(lines, genre),
+      ...phraseFindings(lines, proseMasks(markdown), tokenize),
+    ],
     calques: matched.findings,
     outline: outline(lines),
     terms: terms(lines, tokenize),
