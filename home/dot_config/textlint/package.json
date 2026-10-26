@@ -6,10 +6,7 @@
     "@textlint/module-interop": "15.8.0",
     "@textlint/textlint-plugin-markdown": "15.8.0",
     "@textlint/textlint-plugin-text": "15.8.0",
-    "kuromojin": "3.0.1",
-    "sentence-splitter": "5.0.1",
     "textlint": "15.8.0",
-    "textlint-rule-preset-japanese": "10.0.4",
-    "textlint-util-to-string": "3.3.4"
+    "textlint-rule-preset-japanese": "10.0.4"
   }
 }

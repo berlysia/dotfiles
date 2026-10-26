@@ -32,8 +32,76 @@ export function proseLines(markdown: string): ProseLine[] {
   return scan(markdown).lines;
 }
 
+// A stretch of a prose line that scan() replaced with spaces. `link` is the
+// `](...)` part of a link: the words of the link text on both sides of it read
+// as one run. Everything else (code, an image, a bare URL, HTML, a comment) is
+// a `barrier`: the words on its two sides do not belong together.
+export interface MaskRange {
+  start: number;
+  end: number;
+  kind: "link" | "barrier";
+}
+export interface ProseMask {
+  line: number;
+  // The line as written. A check that reports a range quotes it from here: the
+  // prose text has the code, images and link destinations blanked out.
+  raw: string;
+  quote: boolean;
+  ranges: MaskRange[];
+}
+
+// One entry per line of proseLines(), in the same order. Offsets are UTF-16
+// offsets into the original line.
+export function proseMasks(markdown: string): ProseMask[] {
+  return scan(markdown).masks;
+}
+
 export function keepComments(markdown: string): KeepComment[] {
   return scan(markdown).comments;
+}
+
+const MARK_BARRIER = 1;
+const MARK_LINK = 2;
+
+// Replaces every match with spaces. A position that an earlier stage already
+// replaced keeps the earlier stage's mark, so the ranges never overlap.
+// Why not String.replace with a callback: its offset argument sits after a
+// capture-count-dependent number of arguments.
+function blankMatches(
+  text: string,
+  pattern: RegExp,
+  marks: Uint8Array,
+  mark: number,
+): string {
+  let result = "";
+  let last = 0;
+  for (const found of text.matchAll(pattern)) {
+    const start = found.index;
+    const end = start + found[0].length;
+    result += text.slice(last, start) + blank(found[0]);
+    last = end;
+    for (let at = start; at < end; at++) if (marks[at] === 0) marks[at] = mark;
+  }
+  return result + text.slice(last);
+}
+
+function rangesOf(marks: Uint8Array): MaskRange[] {
+  const ranges: MaskRange[] = [];
+  for (let at = 0; at < marks.length;) {
+    const mark = marks[at];
+    if (mark === 0) {
+      at++;
+      continue;
+    }
+    const start = at;
+    while (at < marks.length && marks[at] === mark) at++;
+    ranges.push({
+      start,
+      end: at,
+      kind: mark === MARK_LINK ? "link" : "barrier",
+    });
+  }
+  return ranges;
 }
 
 // One pass yields both the prose and the comments, so the two agree on which
@@ -41,6 +109,7 @@ export function keepComments(markdown: string): KeepComment[] {
 function scan(markdown: string): {
   lines: ProseLine[];
   comments: KeepComment[];
+  masks: ProseMask[];
 } {
   const rows = markdown.replace(/^\uFEFF/u, "").split(/\r?\n/u);
   let frontmatter = rows[0]?.trim() === "---";
@@ -48,6 +117,7 @@ function scan(markdown: string): {
   let comment = false;
   const result: ProseLine[] = [];
   const comments: KeepComment[] = [];
+  const masks: ProseMask[] = [];
   for (const [index, raw] of rows.entries()) {
     if (frontmatter) {
       if (index > 0 && /^(?:---|\.\.\.)\s*$/u.test(raw)) frontmatter = false;
@@ -75,18 +145,21 @@ function scan(markdown: string): {
     // it started first. Backticks inside a comment belong to the comment.
     let ticks = 0;
     let bodyStart = -1;
+    const marks = new Uint8Array(raw.length);
     for (let offset = 0; offset < raw.length;) {
       const open = comment ? -1 : raw.indexOf("<!--", offset);
       if (comment) {
         const end = raw.indexOf("-->", offset);
         if (end < 0) {
           text += blank(raw.slice(offset));
+          marks.fill(MARK_BARRIER, offset);
           break;
         }
         if (bodyStart >= 0)
           found.push(raw.slice(bodyStart, Math.max(bodyStart, end)));
         bodyStart = -1;
         text += blank(raw.slice(offset, end + 3));
+        marks.fill(MARK_BARRIER, offset, end + 3);
         offset = end + 3;
         comment = false;
       } else if (open >= 0) {
@@ -108,14 +181,18 @@ function scan(markdown: string): {
     if (!codeLine)
       for (const body of found) comments.push({ line: index + 1, body });
     if (/^(?: {4}|\t)/u.test(text) || /^\s*\[[^\]]+\]:/u.test(text)) continue;
-    text = text
-      .replace(/(`+)([^`]|(?!\1)`)*?\1/gu, blank)
-      .replace(/!\[[^\]]*\]\([^\n]*?\)/gu, blank)
-      .replace(/\]\([^\n]*?\)/gu, blank)
-      // A bare URL ends at the first non-ASCII character: Japanese prose often
-      // follows it with no space, as in "（https://…）。以下は…".
-      .replace(/https?:\/\/[^\s<>)\u{80}-\u{10FFFF}]*/gu, blank)
-      .replace(/<[^>]*>/gu, blank);
+    text = blankMatches(text, /(`+)([^`]|(?!\1)`)*?\1/gu, marks, MARK_BARRIER);
+    text = blankMatches(text, /!\[[^\]]*\]\([^\n]*?\)/gu, marks, MARK_BARRIER);
+    text = blankMatches(text, /\]\([^\n]*?\)/gu, marks, MARK_LINK);
+    // A bare URL ends at the first non-ASCII character: Japanese prose often
+    // follows it with no space, as in "（https://…）。以下は…".
+    text = blankMatches(
+      text,
+      /https?:\/\/[^\s<>)\u{80}-\u{10FFFF}]*/gu,
+      marks,
+      MARK_BARRIER,
+    );
+    text = blankMatches(text, /<[^>]*>/gu, marks, MARK_BARRIER);
     if (!text.trim() || /^\s*\|?\s*:?-{3,}/u.test(text)) continue;
     const kind: LineKind = /^ {0,3}#{1,6}\s/u.test(text)
       ? "heading"
@@ -124,13 +201,17 @@ function scan(markdown: string): {
         : /^\s*\|/u.test(text)
           ? "table"
           : "paragraph";
+    // Judged before the marker is blanked, and on the leading `>` only: a `>`
+    // inside a list item or a continuation line without one is not a quote.
+    const quote = /^\s*>/u.test(text);
     text = text.replace(
       /^ {0,3}#{1,6}\s+|^\s*(?:[-+*]|\d+[.)])\s+|^\s*>\s?/u,
       blank,
     );
     result.push({ line: index + 1, text, kind });
+    masks.push({ line: index + 1, raw, quote, ranges: rangesOf(marks) });
   }
-  return { lines: result, comments };
+  return { lines: result, comments, masks };
 }
 
 export function paragraphs(lines: ProseLine[]): Paragraph[] {

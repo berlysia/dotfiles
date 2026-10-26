@@ -14,8 +14,15 @@ import {
 } from "../../../japanese-check/analyze.ts";
 import {
   AnalyzerOutputError,
+  isAdjective,
+  isAdjectivalNoun,
+  isAuxiliary,
+  isConjunctiveParticle,
   isNoun,
+  isParticle,
   isProperNoun,
+  isSuffix,
+  isSymbol,
   isVerb,
   lemmaClass,
   makeTokenizer,
@@ -153,6 +160,37 @@ describe("part-of-speech predicates", () => {
     const token = one("verb");
     assert.ok(isVerb(token));
     assert.equal(lemmaClass(token), "verb");
+  });
+
+  it("is true for its own part of speech only", () => {
+    const predicates: Array<
+      [AnalyzedToken["pos"][], (token: ReturnType<typeof one>) => boolean]
+    > = [
+      [["adjective"], isAdjective],
+      [["adjectivalNoun"], isAdjectivalNoun],
+      [["suffix"], isSuffix],
+      [["auxiliary"], isAuxiliary],
+      [["particle", "conjunctiveParticle"], isParticle],
+      [["conjunctiveParticle"], isConjunctiveParticle],
+      [["symbol"], isSymbol],
+    ];
+    const all: AnalyzedToken["pos"][] = [
+      "noun",
+      "properNoun",
+      "verb",
+      "adjective",
+      "adjectivalNoun",
+      "particle",
+      "conjunctiveParticle",
+      "auxiliary",
+      "suffix",
+      "nonIndependent",
+      "symbol",
+      "other",
+    ];
+    for (const [own, predicate] of predicates)
+      for (const pos of all)
+        assert.equal(predicate(one(pos)), own.includes(pos), `${pos}`);
   });
 });
 

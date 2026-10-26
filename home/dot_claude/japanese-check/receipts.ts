@@ -34,6 +34,7 @@ export const CHECKER_VERSION_FILES = [
   "deps.ts",
   "keep.ts",
   "markdown.ts",
+  "phrases.ts",
   "profiles.ts",
   "receipts.ts",
   "safe-read.ts",

@@ -89,6 +89,37 @@ export function isVerb(token: Token): boolean {
   return token[posKey] === "verb";
 }
 
+export function isAdjective(token: Token): boolean {
+  return token[posKey] === "adjective";
+}
+
+export function isAdjectivalNoun(token: Token): boolean {
+  return token[posKey] === "adjectivalNoun";
+}
+
+export function isSuffix(token: Token): boolean {
+  return token[posKey] === "suffix";
+}
+
+export function isAuxiliary(token: Token): boolean {
+  return token[posKey] === "auxiliary";
+}
+
+/** A particle, including the conjunctive ones (て, で, ば) */
+export function isParticle(token: Token): boolean {
+  return (
+    token[posKey] === "particle" || token[posKey] === "conjunctiveParticle"
+  );
+}
+
+export function isConjunctiveParticle(token: Token): boolean {
+  return token[posKey] === "conjunctiveParticle";
+}
+
+export function isSymbol(token: Token): boolean {
+  return token[posKey] === "symbol";
+}
+
 /**
  * The coarse class a lemma entry is matched under, or undefined for a token no
  * lemma entry can hit (a particle, a suffix, ...).

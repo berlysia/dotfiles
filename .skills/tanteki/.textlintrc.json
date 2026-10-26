@@ -1,8 +1,6 @@
 {
   "rules": {
     "preset-japanese": true,
-    "no-opaque-compound": { "allow": [] },
-    "no-vague-action": { "allow": [] },
     "stock-boundary": true,
     "table-cell-length": true
   }
