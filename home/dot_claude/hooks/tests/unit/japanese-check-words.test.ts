@@ -327,6 +327,88 @@ describe("entry shape", () => {
   });
 });
 
+describe("nominal and reason fields", () => {
+  const verb = (overrides: Raw = {}) =>
+    base({
+      kind: "metaphor-verb",
+      action: "review",
+      match: "lemma",
+      pattern: undefined,
+      english: undefined,
+      lemmas: ["見落とす"],
+      pos: "verb",
+      ...overrides,
+    });
+  const regex = (overrides: Raw = {}) =>
+    base({
+      kind: "metaphor-verb",
+      action: "review",
+      english: undefined,
+      ...overrides,
+    });
+
+  it("accepts nominal: true on a verb lemma entry", () => {
+    ok(passes(verb({ nominal: true })));
+    ok(passes(verb()));
+  });
+
+  it("skips nominal on a noun entry, on a regex entry, and any value but true", () => {
+    for (const [name, entry] of [
+      ["noun", verb({ pos: "noun", nominal: true })],
+      ["adjective", verb({ pos: "adjective", nominal: true })],
+      ["regex", regex({ nominal: true })],
+      ["false", verb({ nominal: false })],
+      ["string", verb({ nominal: "true" })],
+      ["null", verb({ nominal: null })],
+    ] as const) {
+      const notice = skipped(entry);
+      ok(notice?.startsWith("項目 1 を飛ばした: "), name);
+      ok(/nominal/.test(notice ?? ""), `${name}: ${notice}`);
+    }
+  });
+
+  it("rejects the list when nominal entries carry more than 20 lemmas in all", () => {
+    const lemmas = (from: number, count: number) =>
+      Array.from({ length: count }, (_, i) => `語${from + i}`);
+    const make = (total: number) =>
+      validateWordList({
+        schema: 2,
+        entries: [
+          verb({ nominal: true, lemmas: lemmas(0, 10) }),
+          verb({ nominal: true, lemmas: lemmas(10, total - 10) }),
+        ],
+      });
+    ok(make(20).ok);
+    const over = make(21);
+    ok(!over.ok);
+    ok(/nominal/.test(over.ok ? "" : over.reason));
+  });
+
+  it("does not count the lemmas of entries without nominal", () => {
+    ok(
+      validateWordList({
+        schema: 2,
+        entries: [
+          verb({
+            nominal: true,
+            lemmas: Array.from({ length: 20 }, (_, i) => `a${i}`),
+          }),
+          verb({ lemmas: ["見落とす", "落とす"] }),
+        ],
+      }).ok,
+    );
+  });
+
+  it("accepts reason on a regex entry only, through checkText", () => {
+    ok(passes(regex({ reason: "動詞の名詞の形を拾う" })));
+    for (const reason of ["", "https://x", "a\nb", 5]) {
+      const notice = skipped(regex({ reason }));
+      ok(/reason/.test(notice ?? ""), String(reason));
+    }
+    ok(/reason/.test(skipped(verb({ reason: "理由" })) ?? ""));
+  });
+});
+
 describe("regex constraints", () => {
   const reject = [
     "(a+)+b",

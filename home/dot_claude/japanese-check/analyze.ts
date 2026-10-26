@@ -1,6 +1,12 @@
 import { paragraphs, proseLines } from "./markdown.ts";
 import type { ProseLine } from "./markdown.ts";
-import { isNoun, isProperNoun, lemmaClass } from "./contract.ts";
+import {
+  isNoun,
+  isProperNoun,
+  isVerb,
+  lemmaClass,
+  renyokei,
+} from "./contract.ts";
 import type { LemmaClass, Tokenizer } from "./contract.ts";
 import type { Genre } from "./types.ts";
 import { compileEntries, findHits, selectEntries } from "./words.ts";
@@ -138,6 +144,8 @@ export type ReviewEntry =
       kind: ReviewKind;
       lemmas: string[];
       lemmaClass: LemmaClass;
+      /** also match each lemma's 連用形 when the analyzer returns it as a noun */
+      nominal?: true;
       fix: string;
     }
   | {
@@ -193,6 +201,7 @@ export function buildReviewEntries(entries: WordEntry[]): {
               kind,
               lemmas: item.lemmas,
               lemmaClass: item.lemmaClass,
+              ...(item.nominal === true && { nominal: true as const }),
               fix: item.fix,
             },
           });
@@ -219,11 +228,55 @@ interface Candidate {
   finding: Finding;
 }
 
+/**
+ * The nominalized-verb layer: for each `nominal` entry, builds the 連用形 of
+ * every lemma from the analyzer's own reading of the dictionary form, so the
+ * conjugation kind is never guessed. A lemma that does not come back as one
+ * verb with a conjugation, or has no 連用形, is left out of the layer (the
+ * entry still matches by lemma) and the entry's name goes into `notices`.
+ * Why not a regex stem as before: it also hit other words (焼ける, 疑わしい).
+ */
+function nominalLayer(
+  review: readonly ReviewEntry[],
+  tokenize: Tokenizer,
+): { surfaces: Map<string, number[]>; notices: string[] } {
+  const surfaces = new Map<string, number[]>();
+  const failed = new Set<string>();
+  review.forEach((entry, rank) => {
+    if (entry.match !== "lemma" || entry.nominal !== true) return;
+    for (const lemma of entry.lemmas) {
+      const tokens = tokenize(lemma);
+      const only = tokens.length === 1 ? tokens[0] : undefined;
+      const form =
+        only !== undefined && isVerb(only) && only.conjugation !== undefined
+          ? renyokei(lemma, only.conjugation)
+          : undefined;
+      if (form === undefined) {
+        failed.add(entry.word);
+        continue;
+      }
+      surfaces.set(form, [...(surfaces.get(form) ?? []), rank]);
+    }
+  });
+  return {
+    surfaces,
+    notices: [...failed].map(
+      (word) =>
+        `語「${word}」の連用形を作れなかったため、名詞の形の照合から外した。`,
+    ),
+  };
+}
+
 function reviewCandidates(
   lines: ProseLine[],
   tokenize: Tokenizer,
   review: readonly ReviewEntry[],
-): { findings: Finding[]; truncated: TruncationReason[] } {
+): {
+  findings: Finding[];
+  truncated: TruncationReason[];
+  notices: string[];
+} {
+  const layer = nominalLayer(review, tokenize);
   const lemmaRanks = new Map<string, number[]>();
   const regexRanks = new Map<number, number>();
   const compiled: CompiledEntry[] = [];
@@ -242,8 +295,25 @@ function reviewCandidates(
   const truncated = new Set<TruncationReason>();
   for (const row of lines) {
     const candidates: Candidate[] = [];
-    if (lemmaRanks.size > 0) {
+    if (lemmaRanks.size > 0 || layer.surfaces.size > 0) {
       for (const token of tokenize(row.text)) {
+        if (isNoun(token)) {
+          for (const rank of layer.surfaces.get(token.surface) ?? []) {
+            const entry = review[rank];
+            if (entry === undefined) continue;
+            candidates.push({
+              rank,
+              start: token.start,
+              finding: finding(
+                row,
+                REVIEW_RULES[entry.kind],
+                token.start,
+                token.surface,
+                entry.match === "lemma" ? entry.fix : "",
+              ),
+            });
+          }
+        }
         const tokenClass = lemmaClass(token);
         if (tokenClass === undefined) continue;
         for (const rank of lemmaRanks.get(`${tokenClass}\0${token.lemma}`) ??
@@ -294,7 +364,7 @@ function reviewCandidates(
       findings.push(item.finding);
     }
   }
-  return { findings, truncated: [...truncated] };
+  return { findings, truncated: [...truncated], notices: layer.notices };
 }
 
 export function calques(
@@ -497,6 +567,7 @@ export function check(
             `語の一覧の照合を途中で打ち切った箇所がある（${matched.truncated.join("、")}）。残りで照合した。`,
           ]
         : []),
+      ...matched.notices,
     ],
   };
 }

@@ -6,6 +6,10 @@
 // predicates below can read it. A check that wants the analyzer's own tag set
 // (a Japanese part-of-speech name, an index into a tag array) has nothing to
 // read, and the type checker rejects it.
+//
+// The rule that builds an inflected form (`renyokei`) lives here too, next to
+// `ConjugationKind`: every adapter would otherwise carry its own copy of the
+// godan rows and the ichidan/sahen/kahen endings, and the copies could drift.
 
 export type PartOfSpeech =
   | "noun"
@@ -151,4 +155,50 @@ export function makeTokenizer(
     cache.set(text, tokens);
     return tokens;
   };
+}
+
+// The stem-final kana of a godan verb and its 連用形 (イ段) per row.
+const GODAN_RENYOKEI: Record<
+  Extract<ConjugationKind, { kind: "godan" }>["row"],
+  { end: string; renyokei: string }
+> = {
+  ka: { end: "く", renyokei: "き" },
+  ga: { end: "ぐ", renyokei: "ぎ" },
+  sa: { end: "す", renyokei: "し" },
+  ta: { end: "つ", renyokei: "ち" },
+  na: { end: "ぬ", renyokei: "に" },
+  ba: { end: "ぶ", renyokei: "び" },
+  ma: { end: "む", renyokei: "み" },
+  ra: { end: "る", renyokei: "り" },
+  wa: { end: "う", renyokei: "い" },
+};
+
+/**
+ * The 連用形 of a dictionary-form lemma, or undefined when the lemma's ending
+ * does not fit its conjugation kind (so a wrong kind never yields a wrong
+ * string) or the kind has none to build (adjectives, a sahen ending other than
+ * する such as 愛す / 愛ずる). Call it only for a lemma that has a conjugation.
+ */
+export function renyokei(
+  lemma: string,
+  conjugation: ConjugationKind,
+): string | undefined {
+  switch (conjugation.kind) {
+    case "godan": {
+      const rule = GODAN_RENYOKEI[conjugation.row];
+      return lemma.endsWith(rule.end)
+        ? lemma.slice(0, -1) + rule.renyokei
+        : undefined;
+    }
+    case "kamiIchidan":
+    case "shimoIchidan":
+      return lemma.endsWith("る") ? lemma.slice(0, -1) : undefined;
+    case "sahen":
+      return lemma.endsWith("する") ? lemma.slice(0, -2) + "し" : undefined;
+    case "kahen":
+      if (lemma.endsWith("来る")) return lemma.slice(0, -1);
+      return lemma.endsWith("くる") ? lemma.slice(0, -2) + "き" : undefined;
+    case "adjective":
+      return undefined;
+  }
 }
