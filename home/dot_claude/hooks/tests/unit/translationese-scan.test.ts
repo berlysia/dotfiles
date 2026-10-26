@@ -402,6 +402,16 @@ describe("Write / Edit", () => {
     ok(out.includes("指示ではない"));
   });
 
+  it("warns on 当たる used for a detection", async () => {
+    const out = await write("/repo/README.md", "検索で当たった行を数える");
+    ok(out);
+    ok(out.includes("当たる"));
+  });
+
+  it("stays quiet on 当たる used for applying to (a review entry that never reaches the hook)", async () => {
+    strictEqual(await write("/repo/README.md", "この規則にも当たります"), null);
+  });
+
   it("ignores inline code and fenced code", async () => {
     strictEqual(await write("/repo/README.md", "`道具立て`を使う"), null);
     strictEqual(await write("/repo/README.md", "```\n道具立て\n```\n"), null);

@@ -4,7 +4,7 @@
 
 - Japanese for discussion, English for code
 - 人が読むことを目的にする日本語の文書を作成・改稿するときは、公開範囲・保存形式・スキル指定の有無を問わず、`~/.claude/skills/ja-check/references/human-documents.md` に従い、提出する本文に japanese-check を必ず実行する。社内資料、下書き、PR・Issue・commit の本文、チャットで納品する文書も含む。通常の会話・作業報告、機械だけが読むコード・設定、Document Workflow の成果物（workflow dir の research・spec・plan）は除く。実行できない場合は未検証の草稿として返し、送信・公開しない。
-- 日本語の成果物（リポジトリに残る Markdown、PR・commit・Issue の本文）を書くときは、直訳語の一覧 `~/.claude/skills/ja-notation/references/translationese-words.json` を読み、当たる語を使わない。読み方と直し方は ja-notation の SKILL.md に従う。Document Workflow の文書とチャットの返答は対象外。hook が直訳語を警告したら直す。利用者が新しく直訳語を名指ししたら、一覧に足すよう提案する
+- 日本語の成果物（リポジトリに残る Markdown、PR・commit・Issue の本文）を書くときは、直訳語の一覧 `~/.claude/skills/ja-notation/references/translationese-words.json` を読み、一覧の語を使わない。読み方と直し方は ja-notation の SKILL.md に従う。Document Workflow の文書とチャットの返答は対象外。hook が直訳語を警告したら直す。利用者が新しく直訳語を名指ししたら、一覧に足すよう提案する
 
 ## Workflow
 
