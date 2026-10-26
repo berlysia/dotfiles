@@ -1,7 +1,8 @@
 import { readFileSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { DEPENDENCIES, findDependency } from "./deps.ts";
+import { ANALYZER_DEPENDENCIES } from "./adapter-sudachi-wasm.ts";
+import { findDependency } from "./deps.ts";
 import type { DependencyEntry } from "./deps.ts";
 import { HASHED_PROFILE_FIELDS } from "./profiles.ts";
 import { readFileBounded } from "./safe-read.ts";
@@ -23,8 +24,10 @@ import { createHash } from "node:crypto";
 // 足し忘れは、dir の実際の一覧と突き合わせる test が落とす。配布先に一覧に無い
 // 古い `.ts` が残っても、ハッシュには入らない。
 export const CHECKER_VERSION_FILES = [
+  "adapter-sudachi-wasm.ts",
   "analyze.ts",
   "cli.ts",
+  "contract.ts",
   "deps.ts",
   "keep.ts",
   "markdown.ts",
@@ -33,7 +36,6 @@ export const CHECKER_VERSION_FILES = [
   "safe-read.ts",
   "secrets.ts",
   "state.ts",
-  "tokenizer.ts",
   "tracking.ts",
   "types.ts",
   "words.ts",
@@ -108,7 +110,7 @@ export function checkerVersion(
   options: CheckerVersionOptions = {},
 ): CheckerVersion {
   const dir = options.dir ?? selfDir();
-  const deps = options.deps ?? DEPENDENCIES;
+  const deps = options.deps ?? ANALYZER_DEPENDENCIES;
   const read = options.read ?? readFileBounded;
   const cacheKey = `${dir}\0${JSON.stringify(deps)}`;
   if (!options.read) {

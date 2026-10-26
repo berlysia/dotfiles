@@ -1,6 +1,7 @@
 import { paragraphs, proseLines } from "./markdown.ts";
 import type { ProseLine } from "./markdown.ts";
-import type { Tokenizer } from "./tokenizer.ts";
+import { isNoun, isProperNoun, lemmaClass } from "./contract.ts";
+import type { LemmaClass, Tokenizer } from "./contract.ts";
 import type { Genre } from "./types.ts";
 import { compileEntries, findHits, selectEntries } from "./words.ts";
 import type {
@@ -136,7 +137,7 @@ export type ReviewEntry =
       word: string;
       kind: ReviewKind;
       lemmas: string[];
-      pos: string;
+      lemmaClass: LemmaClass;
       fix: string;
     }
   | {
@@ -182,7 +183,8 @@ export function buildReviewEntries(entries: WordEntry[]): {
       });
       if (match === "lemma") {
         for (const item of selected) {
-          if (item.lemmas === undefined || item.pos === undefined) continue;
+          if (item.lemmas === undefined || item.lemmaClass === undefined)
+            continue;
           ordered.push({
             index: item.index,
             entry: {
@@ -190,7 +192,7 @@ export function buildReviewEntries(entries: WordEntry[]): {
               word: item.word,
               kind,
               lemmas: item.lemmas,
-              pos: item.pos,
+              lemmaClass: item.lemmaClass,
               fix: item.fix,
             },
           });
@@ -228,7 +230,7 @@ function reviewCandidates(
   review.forEach((entry, rank) => {
     if (entry.match === "lemma") {
       for (const lemma of entry.lemmas) {
-        const key = `${entry.pos}\0${lemma}`;
+        const key = `${entry.lemmaClass}\0${lemma}`;
         lemmaRanks.set(key, [...(lemmaRanks.get(key) ?? []), rank]);
       }
     } else {
@@ -242,9 +244,10 @@ function reviewCandidates(
     const candidates: Candidate[] = [];
     if (lemmaRanks.size > 0) {
       for (const token of tokenize(row.text)) {
-        for (const rank of lemmaRanks.get(
-          `${token.pos[0] ?? ""}\0${token.normalized}`,
-        ) ?? []) {
+        const tokenClass = lemmaClass(token);
+        if (tokenClass === undefined) continue;
+        for (const rank of lemmaRanks.get(`${tokenClass}\0${token.lemma}`) ??
+          []) {
           const entry = review[rank];
           if (entry === undefined) continue;
           candidates.push({
@@ -379,7 +382,7 @@ export function terms(lines: ProseLine[], tokenize: Tokenizer): Term[] {
     const tokens = tokenize(row.text);
     for (let i = 0; i < tokens.length; i++) {
       const token = tokens[i];
-      if (!token || token.pos[0] !== "名詞") continue;
+      if (!token || !isNoun(token)) continue;
       if (
         !/^(?:[\p{Script=Katakana}ー]{3,}|[A-Za-z][A-Za-z0-9.+_-]+)$/u.test(
           token.surface,
@@ -393,7 +396,7 @@ export function terms(lines: ProseLine[], tokenize: Tokenizer): Term[] {
         if (
           !next ||
           next.start !== end ||
-          next.pos[0] !== "名詞" ||
+          !isNoun(next) ||
           !/^[\p{L}\p{N}ー]+$/u.test(next.surface)
         )
           break;
@@ -433,7 +436,7 @@ export function facts(lines: ProseLine[], tokenize: Tokenizer): Fact[] {
       result.push({ value: match[0], kind: "ascii", line: row.line });
     }
     for (const token of tokenize(row.text)) {
-      if (token.pos[0] === "名詞" && token.pos[1] === "固有名詞") {
+      if (isProperNoun(token)) {
         result.push({ value: token.surface, kind: "name", line: row.line });
       }
     }

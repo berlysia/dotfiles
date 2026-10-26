@@ -11,6 +11,7 @@ import {
   terms,
 } from "./analyze.ts";
 import type { ReviewEntry } from "./analyze.ts";
+import { AnalyzerOutputError, makeTokenizer } from "./contract.ts";
 import { checkDependencies, DependencyMissingError } from "./deps.ts";
 import type { DependencyGroup } from "./deps.ts";
 import { matchKeeps } from "./keep.ts";
@@ -25,7 +26,7 @@ import { MAX_LIST_BYTES, parseWordList } from "./words.ts";
 import { GENRES, READERS } from "./types.ts";
 import type { Genre, Reader } from "./types.ts";
 
-// tokenizer.ts is imported only on the paths that need it (see loadTokenizer), so
+// The adapter is imported only on the paths that need it (see loadTokenizer), so
 // the type is taken from analyze.ts instead of importing it here.
 type Tokenizer = Parameters<typeof calques>[1];
 
@@ -157,15 +158,16 @@ function selectProfile(id: string, reader: Reader | undefined) {
 async function loadTokenizer(
   groups: readonly DependencyGroup[],
 ): Promise<Tokenizer> {
-  const found = checkDependencies(groups);
+  // A literal dynamic import: only the commands that tokenize load the adapter
+  // (and through it the dictionary package).
+  const adapter = await import("./adapter-sudachi-wasm.ts");
+  const found = checkDependencies(groups, adapter.ANALYZER_DEPENDENCIES);
   const analyzer = found.found.find((item) => item.group === "analyzer");
   if (!found.ok || !analyzer)
     throw new DependencyMissingError(
       found.missing.length > 0 ? found.missing : ["analyzer"],
     );
-  const { AnalyzerOutputError, createTokenizer } =
-    await import("./tokenizer.ts");
-  const tokenize = await createTokenizer(analyzer.entry);
+  const tokenize = makeTokenizer(await adapter.createAnalyzer(analyzer.entry));
   // The class check, not error.name: the analyzer package can throw an error
   // with any name, and its message may carry a piece of the document.
   return (text) => {
