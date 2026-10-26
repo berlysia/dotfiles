@@ -39,3 +39,5 @@ dependencies:
     - mizchi/skills/formal-methods-drift-guard
     # Pinned to the commit whose SKILL.md was read. To update: read the upstream diff, then replace the hash
     - artouc/stop-describing-ui/skills/stop-describing-ui#251a859f6e40645030e1ae69fa4b501c851eac9c
+    # Pinned to the commit whose SKILL.md and budget.sh were read. budget.sh reads the OAuth token, so read the upstream diff before replacing the hash
+    - nishio/usage-budget#abf1bf15cc42cf6561eb382e79051e4170a72dea
