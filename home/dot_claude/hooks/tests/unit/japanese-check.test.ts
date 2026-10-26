@@ -113,6 +113,15 @@ describe("Japanese prose extraction", () => {
     assert.ok(!rows.at(-1)?.text.includes("引く"));
   });
 
+  it("masks a bare URL only up to its last ASCII character, keeping the prose after it", () => {
+    const text =
+      "詳しくは（https://example.com/usage）。以下は自分の実測値です。";
+    const [row] = proseLines(text);
+    assert.equal(row?.text.length, text.length);
+    assert.ok(!row?.text.includes("example"));
+    assert.ok(row?.text.endsWith("）。以下は自分の実測値です。"));
+  });
+
   it("preserves UTF-16 offsets and physical line numbers around emoji and masks", () => {
     const text = "😀 `code` の実現。";
     const row = proseLines(text)[0];
@@ -458,6 +467,7 @@ describe("Sudachi-backed Japanese review", () => {
       "japanese-check を使う。",
       "ＡＰＩで確認する。",
       "😀 api-check を拾った。",
+      "ｷﾀ━(ﾟ∀ﾟ)━! 机がｶﾞｸｶﾞｸする。",
     ]) {
       const tokens = tokenize(text);
       assert.equal(tokens.map((token) => token.surface).join(""), text);
@@ -685,6 +695,31 @@ describe("Japanese checker CLI", () => {
         ["⚠", 0, 1],
         ["️", 1, 2],
         ["注意", 2, 4],
+      ],
+    );
+  });
+
+  it("aligns analyzer tokens that split a grapheme normalization changes, such as a half-width semi-voiced mark after a parenthesis", () => {
+    // The mark attaches to "(" as one grapheme, and NFKC turns it into a
+    // combining mark, but Sudachi returns the parenthesis and the mark apart.
+    const tokens = decodeTokens(
+      JSON.stringify([
+        { surface: "（", normalized_form: "（", poses: ["補助記号"] },
+        { surface: "ﾟ", normalized_form: "ﾟ", poses: ["名詞"] },
+        { surface: "д", normalized_form: "д", poses: ["名詞"] },
+        { surface: "ﾟ", normalized_form: "ﾟ", poses: ["名詞"] },
+        { surface: ")", normalized_form: "）", poses: ["補助記号"] },
+      ]),
+      "(ﾟдﾟ)",
+    );
+    assert.deepEqual(
+      tokens.map(({ surface, start, end }) => [surface, start, end]),
+      [
+        ["(", 0, 1],
+        ["ﾟ", 1, 2],
+        ["д", 2, 3],
+        ["ﾟ", 3, 4],
+        [")", 4, 5],
       ],
     );
   });

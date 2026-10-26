@@ -112,7 +112,9 @@ function scan(markdown: string): {
       .replace(/(`+)([^`]|(?!\1)`)*?\1/gu, blank)
       .replace(/!\[[^\]]*\]\([^\n]*?\)/gu, blank)
       .replace(/\]\([^\n]*?\)/gu, blank)
-      .replace(/https?:\/\/[^\s<>)]*/gu, blank)
+      // A bare URL ends at the first non-ASCII character: Japanese prose often
+      // follows it with no space, as in "（https://…）。以下は…".
+      .replace(/https?:\/\/[^\s<>)\u{80}-\u{10FFFF}]*/gu, blank)
       .replace(/<[^>]*>/gu, blank);
     if (!text.trim() || /^\s*\|?\s*:?-{3,}/u.test(text)) continue;
     const kind: LineKind = /^ {0,3}#{1,6}\s/u.test(text)
