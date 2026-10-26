@@ -3334,3 +3334,218 @@ test("every code seen in this file belongs to codes.mjs", async () => {
   for (const code of EMITTED)
     assert.ok(ALL_CODES.has(code), `unregistered code: ${code}`);
 });
+
+// ---------------------------------------------------------------- skill documents
+
+const SKILL_DIR = join(SCRIPTS_DIR, "..");
+const GIST_URL =
+  "https://gist.github.com/mizchi/db7817e6fc077d567c41cd9d41bb1c53";
+const ADR_PATH = new URL(
+  "../docs/decisions/0050-formal-check-skill.md",
+  import.meta.url,
+).pathname;
+
+const readSkillFile = (...parts) =>
+  readFileSync(join(SKILL_DIR, ...parts), "utf8");
+const listMarkdown = (dir) =>
+  readdirSync(join(SKILL_DIR, dir)).filter((name) => name.endsWith(".md"));
+
+// All documents that may show a run.mjs invocation, keyed by relative path.
+function loadSkillDocs() {
+  const docs = { "SKILL.md": readSkillFile("SKILL.md") };
+  for (const dir of ["references", "assets"])
+    for (const name of listMarkdown(dir))
+      docs[`${dir}/${name}`] = readSkillFile(dir, name);
+  return docs;
+}
+
+const FLAG_PATTERN = /--[a-z][a-z-]*/g;
+
+// One invocation is the text after `run.mjs` up to the first `&&`, `|`, `;` or
+// end of line; the docs keep run.mjs calls and git commands on separate lines.
+function runMjsFlags(text) {
+  const flags = new Set();
+  for (const line of text.split("\n")) {
+    const at = line.indexOf("run.mjs");
+    if (at < 0) continue;
+    const call = line.slice(at + "run.mjs".length).split(/&&|\||;/)[0];
+    for (const flag of call.match(FLAG_PATTERN) ?? []) flags.add(flag);
+  }
+  return flags;
+}
+
+function usageFlags() {
+  const src = readFileSync(join(SCRIPTS_DIR, "run.mjs"), "utf8");
+  const match = src.match(/const USAGE =([\s\S]*?);\n/);
+  assert.ok(match, "USAGE not found in run.mjs");
+  return new Set(match[1].match(FLAG_PATTERN) ?? []);
+}
+
+function checkDocFlagsAccepted(docs, accepted) {
+  const unknown = [];
+  for (const [name, text] of Object.entries(docs))
+    for (const flag of runMjsFlags(text))
+      if (!accepted.has(flag)) unknown.push(`${name}: ${flag}`);
+  return unknown;
+}
+
+function checkAcceptedFlagsDocumented(docs, accepted) {
+  const seen = new Set();
+  for (const [name, text] of Object.entries(docs))
+    if (name === "SKILL.md" || name.startsWith("references/"))
+      for (const flag of runMjsFlags(text)) seen.add(flag);
+  return [...accepted].filter((flag) => !seen.has(flag));
+}
+
+function modelingCodes(text) {
+  const lines = text.split("\n");
+  const start = lines.findIndex((line) => line === "## code の一覧");
+  assert.ok(start >= 0, "modeling.md has no '## code の一覧' heading");
+  const codes = new Set();
+  for (const line of lines.slice(start + 1)) {
+    if (/^## /.test(line)) break;
+    const m = line.match(/^- `([^`]+)`/);
+    if (m) codes.add(m[1]);
+  }
+  return codes;
+}
+
+function diffSets(documented, registered) {
+  return {
+    missingFromDoc: [...registered].filter((c) => !documented.has(c)),
+    unknownInDoc: [...documented].filter((c) => !registered.has(c)),
+  };
+}
+
+function referencedFiles(skillText) {
+  const found = new Set();
+  for (const m of skillText.matchAll(
+    /\b(references|assets)\/([A-Za-z0-9._-]+\.md)\b/g,
+  ))
+    found.add(`${m[1]}/${m[2]}`);
+  return found;
+}
+
+function presentFiles() {
+  return new Set(
+    ["references", "assets"].flatMap((dir) =>
+      listMarkdown(dir).map((name) => `${dir}/${name}`),
+    ),
+  );
+}
+
+function gitConfigSettings(text) {
+  return new Set(
+    [...text.matchAll(/(?:^|\s)-c\s+([A-Za-z][\w.-]*=\S+)/gm)].map((m) => m[1]),
+  );
+}
+
+test("run.mjs flags shown in the skill documents are accepted by run.mjs", () => {
+  const unknown = checkDocFlagsAccepted(loadSkillDocs(), usageFlags());
+  assert.deepEqual(unknown, [], `flags not in USAGE: ${unknown.join(", ")}`);
+});
+
+test("flag extraction ignores git flags after a command separator", () => {
+  const flags = runMjsFlags(
+    "node run.mjs x --json && git diff --no-ext-diff\n",
+  );
+  assert.deepEqual([...flags], ["--json"]);
+});
+
+test("every flag run.mjs accepts appears on a run.mjs line in SKILL.md or references", () => {
+  const missing = checkAcceptedFlagsDocumented(loadSkillDocs(), usageFlags());
+  assert.deepEqual(
+    missing,
+    [],
+    `flags never documented: ${missing.join(", ")}`,
+  );
+});
+
+test("modeling.md lists exactly the codes registered in codes.mjs", async () => {
+  const codes = await load("codes.mjs");
+  const registered = new Set(
+    [
+      codes.MANIFEST,
+      codes.PRE_RUN,
+      codes.RUN,
+      codes.OBSERVATION,
+      codes.WARNING,
+    ].flatMap((category) => Object.values(category)),
+  );
+  assert.ok(registered.size > 20, "registered code set looks empty");
+  const { missingFromDoc, unknownInDoc } = diffSets(
+    modelingCodes(readSkillFile("references", "modeling.md")),
+    registered,
+  );
+  assert.deepEqual(
+    missingFromDoc,
+    [],
+    `codes missing from modeling.md: ${missingFromDoc}`,
+  );
+  assert.deepEqual(
+    unknownInDoc,
+    [],
+    `codes in modeling.md but not codes.mjs: ${unknownInDoc}`,
+  );
+});
+
+test("SKILL.md references existing files, and every reference and asset is referenced", () => {
+  const referenced = referencedFiles(readSkillFile("SKILL.md"));
+  const present = presentFiles();
+  const dangling = [...referenced].filter((f) => !present.has(f));
+  const orphaned = [...present].filter((f) => !referenced.has(f));
+  assert.deepEqual(dangling, [], `referenced but missing: ${dangling}`);
+  assert.deepEqual(orphaned, [], `present but not referenced: ${orphaned}`);
+});
+
+test("SKILL.md carries the source gist URL, and the ADR does too when it exists", () => {
+  assert.ok(
+    readSkillFile("SKILL.md").includes(GIST_URL),
+    "SKILL.md lacks the gist URL",
+  );
+  if (existsSync(ADR_PATH))
+    assert.ok(
+      readFileSync(ADR_PATH, "utf8").includes(GIST_URL),
+      "ADR lacks the gist URL",
+    );
+});
+
+test("ledger.md has its three sections and the claims table columns", () => {
+  const text = readSkillFile("assets", "ledger.md");
+  for (const heading of ["実装の主張", "機械検査の結果", "確認質問"])
+    assert.match(
+      text,
+      new RegExp(`^## ${heading}$`, "m"),
+      `missing section: ${heading}`,
+    );
+  const claims = text.split(/^## /m).find((s) => s.startsWith("実装の主張"));
+  assert.ok(claims, "claims section not found");
+  assert.match(claims, /check id/, "no check id column");
+  assert.match(claims, /対象外/, "no out-of-scope column");
+  assert.match(claims, /未検査/, "no explanation of unchecked rows");
+});
+
+const VERIFY_SKILL_REQUIRED = [
+  "--inspect",
+  "--expect-digest",
+  "core.fsmonitor=false",
+  "core.hooksPath=/dev/null",
+  "formal-check スキルを読む",
+  "承認を取り直す",
+];
+
+test("verify-skill.md keeps the approval flow, git hardening and the read-formal-check instruction", () => {
+  const text = readSkillFile("assets", "verify-skill.md");
+  const missing = VERIFY_SKILL_REQUIRED.filter((s) => !text.includes(s));
+  assert.deepEqual(missing, [], `verify-skill.md lacks: ${missing.join(", ")}`);
+});
+
+test("verify-skill.md uses the same git -c settings as SKILL.md", () => {
+  const skill = gitConfigSettings(readSkillFile("SKILL.md"));
+  const verify = gitConfigSettings(readSkillFile("assets", "verify-skill.md"));
+  assert.ok(
+    skill.size >= 2,
+    `SKILL.md has too few git settings: ${[...skill]}`,
+  );
+  assert.deepEqual([...verify].sort(), [...skill].sort());
+});
