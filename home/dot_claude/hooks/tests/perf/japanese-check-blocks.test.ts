@@ -26,6 +26,9 @@ const cases: Array<[string, string]> = [
   ["< then one >", `${"<".repeat(SIZE)}>`],
   ["& then one ;", `${"&".repeat(SIZE)};`],
   ["![ then one ](", `${"![".repeat(SIZE)}](`],
+  ["![ then one ]x", `${"![".repeat(SIZE)}]x`],
+  ["![a]( repeated", "![a](".repeat(SIZE)],
+  ["]( repeated", "](".repeat(SIZE)],
   ["[a]( then one )", `${"[a](".repeat(SIZE)})`],
   ["<http: then one >", `${"<http:".repeat(SIZE)}>`],
   [

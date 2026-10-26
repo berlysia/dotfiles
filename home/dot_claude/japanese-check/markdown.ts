@@ -127,6 +127,58 @@ function blankMatches(
   return result + text.slice(last);
 }
 
+// The same matches as /!\[[^\]]*\]\([^\n]*?\)/gu, /\]\([^\n]*?\)/gu and
+// /<[^>]*>/gu on one line. Why not the regexes: they start a scan to the end
+// of the line at every opener, so a line of repeated "![" or "<" without a
+// closer takes quadratic time. A closer that is missing after one opener is
+// missing after every later one too, so the scan stops there.
+type Span = [number, number];
+function imageSpans(text: string): Span[] {
+  const spans: Span[] = [];
+  for (let at = text.indexOf("!["); ;) {
+    if (at < 0) break;
+    const bracket = text.indexOf("]", at + 2);
+    if (bracket < 0) break;
+    if (text[bracket + 1] !== "(") {
+      // Every opener before bracket - 1 stops at this same "]" and fails too.
+      at = text.indexOf("![", Math.max(at + 1, bracket - 1));
+      continue;
+    }
+    const paren = text.indexOf(")", bracket + 2);
+    if (paren < 0) break;
+    spans.push([at, paren + 1]);
+    at = text.indexOf("![", paren + 1);
+  }
+  return spans;
+}
+
+function closedSpans(text: string, opener: string, closer: string): Span[] {
+  const spans: Span[] = [];
+  for (let at = text.indexOf(opener); at >= 0;) {
+    const close = text.indexOf(closer, at + opener.length);
+    if (close < 0) break;
+    spans.push([at, close + 1]);
+    at = text.indexOf(opener, close + 1);
+  }
+  return spans;
+}
+
+function blankSpans(
+  text: string,
+  spans: Span[],
+  marks: Uint8Array,
+  mark: number,
+): string {
+  let result = "";
+  let last = 0;
+  for (const [start, end] of spans) {
+    result += text.slice(last, start) + blank(text.slice(start, end));
+    last = end;
+    for (let at = start; at < end; at++) if (marks[at] === 0) marks[at] = mark;
+  }
+  return result + text.slice(last);
+}
+
 function rangesOf(marks: Uint8Array): MaskRange[] {
   const ranges: MaskRange[] = [];
   for (let at = 0; at < marks.length;) {
@@ -245,8 +297,8 @@ function scan(markdown: string): {
     }
     if (indented || definition) continue;
     text = blankMatches(text, /(`+)([^`]|(?!\1)`)*?\1/gu, marks, MARK_BARRIER);
-    text = blankMatches(text, /!\[[^\]]*\]\([^\n]*?\)/gu, marks, MARK_BARRIER);
-    text = blankMatches(text, /\]\([^\n]*?\)/gu, marks, MARK_LINK);
+    text = blankSpans(text, imageSpans(text), marks, MARK_BARRIER);
+    text = blankSpans(text, closedSpans(text, "](", ")"), marks, MARK_LINK);
     // A bare URL ends at the first non-ASCII character: Japanese prose often
     // follows it with no space, as in "（https://…）。以下は…".
     text = blankMatches(
@@ -255,7 +307,7 @@ function scan(markdown: string): {
       marks,
       MARK_BARRIER,
     );
-    text = blankMatches(text, /<[^>]*>/gu, marks, MARK_BARRIER);
+    text = blankSpans(text, closedSpans(text, "<", ">"), marks, MARK_BARRIER);
     if (!text.trim() || /^\s*\|?\s*:?-{3,}/u.test(text)) continue;
     const kind: LineKind = /^ {0,3}#{1,6}\s/u.test(text)
       ? "heading"
