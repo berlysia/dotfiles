@@ -101,7 +101,7 @@ export function matchKeeps(
     if (matched.length === 0) {
       keepIssues.push({
         line: comment.line,
-        problem: "同じ行に当たる候補が無い",
+        problem: "同じ行に該当する候補が無い",
       });
       continue;
     }

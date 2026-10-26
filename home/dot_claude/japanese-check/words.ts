@@ -342,7 +342,7 @@ type Prev = "start" | "open" | "bar" | "atom" | "wide" | "group" | "quant";
 /**
  * 正規表現（フラグなし）の制約。ADR-0045 K2・K8 を下限に、ここで強めている。
  * 時間のかかる形（入れ子の量指定、複数の量指定、広い atom への量指定）と、
- * 0 文字に当たる形、照合の意味が書き手の意図とずれる形（\p、\u{..}）を持ち込ませない。
+ * 0 文字に一致する形、照合の意味が書き手の意図とずれる形（\p、\u{..}）を持ち込ませない。
  */
 export function checkRegexSource(source: string, label: string): string | null {
   if (source === "") return `${label} が空`;
@@ -465,7 +465,7 @@ function compileRegex(source: string, label: string): RegExp | string {
   if (problem) return problem;
   try {
     const re = new RegExp(source, "g");
-    if (new RegExp(source).test("")) return `${label} が空文字に当たる`;
+    if (new RegExp(source).test("")) return `${label} が空文字に一致する`;
     return re;
   } catch (error) {
     return `正規表現を作れない: ${error instanceof Error ? error.message : String(error)}`;
