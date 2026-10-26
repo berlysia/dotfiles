@@ -18,7 +18,7 @@ WebAssembly 版は遅かった。
 7,406 行（34 万字）を 1 行ずつ渡すと 557 秒かかった。
 原因は、`hata6502/sudachi-wasm` の npm 0.1.5（commit `39aa1d90`）が、`tokenize` を呼ぶたびに辞書を読み直すことだった。1 回の呼び出しに 71〜131 ms かかる。
 
-ADR-0050 の語の一覧は、解析器を寄せる判断を `git show 34bee305:docs/plans/ja-morphological-analyzer.md` に送っていた。
+ADR-0050 の語の一覧は、解析器を寄せる判断を `git show f7cc3f1dec:docs/plans/ja-morphological-analyzer.md` に送っていた。
 この ADR がその判断を引き取る。
 
 判断の方針は利用者が決めた。

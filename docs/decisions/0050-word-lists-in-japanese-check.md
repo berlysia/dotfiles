@@ -56,7 +56,7 @@ AI 以前の Qiita（1,200 本、和文 115 万字）では、旧の 2 つの規
 - **textlint に寄せる（自作の rule が `data/words.json` を読む）。** runner を決める構想が先に要り、ゲートから textlint を呼ぶ経路も新しく要る
 - **用語を `allow` で外す。** 比喩として使った用法まで落ちる
 - **取り漏らした形を `lemmas` に足す。** Sudachi は複合語ごとに別の正規形を返すので、一覧が閉じない
-- **解析器を先に kuromoji へ寄せてから語を移す。** 下の計測のとおり根拠はあるが、解析器の入れ替えは check のすべての検査の結果を変える。今の一覧で取り漏らしは 0 件に届いたので、解析器の判断は `git show 34bee305:docs/plans/ja-morphological-analyzer.md` に送った
+- **解析器を先に kuromoji へ寄せてから語を移す。** 下の計測のとおり根拠はあるが、解析器の入れ替えは check のすべての検査の結果を変える。今の一覧で取り漏らしは 0 件に届いたので、解析器の判断は `git show f7cc3f1dec:docs/plans/ja-morphological-analyzer.md` に送った
 
 ## Consequences
 
@@ -88,4 +88,4 @@ AI 以前の Qiita（1,200 本、和文 115 万字）では、旧の 2 つの規
 ## References
 
 - 前提の決定: ADR-0036（文章スキルの役割と入口）、ADR-0045（名指しの直訳語の一覧）、ADR-0047（日本語文書のゲート）、ADR-0048（keep の印）
-- 残件: `docs/plans/japanese-check-detection-followups.md`、`git show 34bee305:docs/plans/ja-morphological-analyzer.md`、`git show 203e2005:docs/plans/textlint-own-rules.md`
+- 残件: `docs/plans/japanese-check-detection-followups.md`、`git show f7cc3f1dec:docs/plans/ja-morphological-analyzer.md`、`git show 203e2005:docs/plans/textlint-own-rules.md`
