@@ -1,4 +1,4 @@
-# ADR-0052: tanteki に残る独自ルール 2 本を japanese-check に移し、textlint を textlint-global の 1 つにする
+# ADR-0054: tanteki に残る独自ルール 2 本を japanese-check に移し、textlint を textlint-global の 1 つにする
 
 ## Status
 

@@ -7,7 +7,7 @@
 //
 // Why not a Markdown parser dependency: the findings must carry the column in
 // the original line, and a parser would add a dependency to the hook-side code.
-// The differences from a syntax tree are listed in ADR-0052.
+// The differences from a syntax tree are listed in ADR-0054.
 //
 // Every pass below is linear in the length of the line. Nothing recurses and no
 // regular expression has a nested quantifier or a back reference.
