@@ -1662,12 +1662,14 @@ describe("checker version", () => {
       "lemmas",
       "pos",
       "allow",
+      "nominal",
       "fix",
     ])
       assert.ok(
         (HASHED_WORD_FIELDS as readonly string[]).includes(field),
         field,
       );
+    assert.ok((UNHASHED_WORD_FIELDS as readonly string[]).includes("reason"));
     for (const field of ["id", "structure", "action", "genre", "stockBoundary"])
       assert.ok(
         (HASHED_PROFILE_FIELDS as readonly string[]).includes(field),

@@ -731,7 +731,8 @@
         "状態を焼き込んだ。",
         "画像を焼き直す。"
       ],
-      "nonExamples": ["焼き鳥を食べた。"]
+      "nonExamples": ["焼き鳥を食べた。"],
+      "reason": "辞書が 焼き菓子 を 焼き（動詞「焼く」）と 菓子 に分けるため、原形の照合では allow の 7 語（焼き鳥・焼き肉・焼き魚・焼き芋・焼きそば・焼き菓子・焼き印）を除けない。"
     },
     {
       "word": "黙る",
@@ -785,42 +786,48 @@
       "word": "疑う",
       "kind": "metaphor-verb",
       "action": "review",
-      "match": "regex",
+      "match": "lemma",
       "origin": "textlint-rule-preset-ai-words-ja 1.2.1 の辞書",
-      "pattern": "疑[わいうえおっ]",
       "fix": "「疑う」が比喩になっていないか確かめる。何がどうなるかを、動作を直接言う動詞に直せるなら直す。字義どおりの用法なら残す。",
       "examples": ["まず設定を疑う。", "実装を疑った。", "仮定を疑い直す。"],
-      "nonExamples": ["疑問が残った。"]
+      "nonExamples": ["疑問が残った。"],
+      "lemmas": ["疑う"],
+      "pos": "verb",
+      "nominal": true
     },
     {
       "word": "見落とす",
       "kind": "metaphor-verb",
       "action": "review",
-      "match": "regex",
+      "match": "lemma",
       "origin": "textlint-rule-preset-ai-words-ja 1.2.1 の辞書",
-      "pattern": "見落と[さしすせそ]",
       "fix": "「見落とす」が比喩になっていないか確かめる。何がどうなるかを、動作を直接言う動詞に直せるなら直す。字義どおりの用法なら残す。",
       "examples": [
         "差分を見落とす。",
         "例外を見落とした。",
         "私の見落としがある。"
       ],
-      "nonExamples": ["見逃しを防ぐ。"]
+      "nonExamples": ["見逃しを防ぐ。"],
+      "lemmas": ["見落とす"],
+      "pos": "verb",
+      "nominal": true
     },
     {
       "word": "突き合わせる",
       "kind": "metaphor-verb",
       "action": "review",
-      "match": "regex",
+      "match": "lemma",
       "origin": "textlint-rule-preset-ai-words-ja 1.2.1 の辞書",
-      "pattern": "突き合わせ",
       "fix": "「突き合わせる」が比喩になっていないか確かめる。何がどうなるかを、動作を直接言う動詞に直せるなら直す。字義どおりの用法なら残す。",
       "examples": [
         "二つの表を突き合わせる。",
         "結果を突き合わせた。",
         "一覧の突き合わせをする。"
       ],
-      "nonExamples": ["突き当たりを右に曲がった。"]
+      "nonExamples": ["突き当たりを右に曲がった。"],
+      "lemmas": ["突き合わせる"],
+      "pos": "verb",
+      "nominal": true
     },
     {
       "word": "混ざる",
@@ -874,12 +881,14 @@
       "word": "溶かす",
       "kind": "metaphor-verb",
       "action": "review",
-      "match": "regex",
+      "match": "lemma",
       "origin": "textlint-rule-preset-ai-words-ja 1.2.1 の辞書",
-      "pattern": "溶か[すしさせそ]",
       "fix": "「溶かす」が比喩になっていないか確かめる。何がどうなるかを、動作を直接言う動詞に直せるなら直す。字義どおりの用法なら残す。",
       "examples": ["境界を溶かす。", "区別を溶かした。"],
-      "nonExamples": ["氷が溶けた。"]
+      "nonExamples": ["氷が溶けた。"],
+      "lemmas": ["溶かす"],
+      "pos": "verb",
+      "nominal": true
     },
     {
       "word": "経路",
@@ -954,7 +963,8 @@
       "fix": "「穴」が何を指すか、具体的な名詞で言い直せるか確かめる。字義どおりの用法なら残す。",
       "allow": ["落とし穴"],
       "examples": ["仕様の穴を埋める。", "穴がある。", "穴掘りをする。"],
-      "nonExamples": ["落とし穴がある。"]
+      "nonExamples": ["落とし穴がある。"],
+      "reason": "動詞から来た名詞ではなく、原形の照合では拾えない。"
     },
     {
       "word": "正本",
@@ -1013,7 +1023,8 @@
       "pattern": "実測",
       "fix": "「実測」が何を指すか、具体的な名詞で言い直せるか確かめる。字義どおりの用法なら残す。",
       "examples": ["実測した値を使う。", "実測で確かめる。", "実測値を示す。"],
-      "nonExamples": ["推定した値を使う。"]
+      "nonExamples": ["推定した値を使う。"],
+      "reason": "動詞から来た名詞ではなく、原形の照合では拾えない。"
     },
     {
       "word": "照合",
@@ -1096,7 +1107,8 @@
       "pattern": "事故",
       "fix": "「事故」が何を指すか、具体的な名詞で言い直せるか確かめる。字義どおりの用法なら残す。",
       "examples": ["事故が起きる。", "事故を防ぐ。", "設計を誤ると事故る。"],
-      "nonExamples": ["故障が起きた。"]
+      "nonExamples": ["故障が起きた。"],
+      "reason": "動詞から来た名詞ではなく、原形の照合では拾えない。"
     },
     {
       "word": "落とし穴",
@@ -1498,7 +1510,8 @@
       "pattern": "効き",
       "fix": "「効き」が何にどう作用するかを、具体的な言い方に直せるか確かめる。薬の効きのような字義どおりの用法なら残す。",
       "examples": ["効きが落ちる。", "キャッシュの効きが大きい。"],
-      "nonExamples": ["利き手で書く。"]
+      "nonExamples": ["利き手で書く。"],
+      "reason": "「効く」は動作の動詞の項目の lemma で、そこに nominal を付けると 引き・通り・足し の名詞まで拾うため、名詞の形だけをこの項目の語幹で拾う。"
     }
   ]
 }

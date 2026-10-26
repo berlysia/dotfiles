@@ -10,6 +10,7 @@ import { describe, it } from "node:test";
 import {
   buildReviewEntries,
   calques,
+  check,
 } from "../../../japanese-check/analyze.ts";
 import type { ReviewEntry } from "../../../japanese-check/analyze.ts";
 import { proseLines } from "../../../japanese-check/markdown.ts";
@@ -182,5 +183,79 @@ describe("review entries of data/words.json", needsRuntime, () => {
       "ロバストだ。",
     ])
       assert.ok((await hits(text, built.review)).length > 0, text);
+  });
+
+  it("reports the noun form of each stem entry that moved to lemma matching", async () => {
+    for (const [word, text, surface] of [
+      ["疑う", "疑いが残る。", "疑い"],
+      ["見落とす", "私の見落としがある。", "見落とし"],
+      ["突き合わせる", "一覧の突き合わせをする。", "突き合わせ"],
+      ["溶かす", "境界の溶かしが進む。", "溶かし"],
+    ] as const)
+      assert.deepEqual(
+        (await hits(text, [only(word)])).map((item) => item.text),
+        [surface],
+        word,
+      );
+    assert.deepEqual(
+      (await hits("効きが落ちる。", [only("効き")])).map((item) => item.text),
+      ["効き"],
+    );
+  });
+
+  it("leaves a compound that contains a moved stem alone", async () => {
+    const moved = ["疑う", "見落とす", "突き合わせる", "溶かす"].map(only);
+    for (const text of ["落とし穴がある。", "疑問が残った。", "疑似的に扱う。"])
+      assert.deepEqual(await hits(text, moved), [], text);
+  });
+
+  it("builds the layer for every nominal entry (no lemma silently drops out)", async () => {
+    const nominal = built.review.filter(
+      (entry) => entry.match === "lemma" && entry.nominal === true,
+    );
+    assert.deepEqual(
+      nominal.map((entry) => entry.word).sort(),
+      ["疑う", "見落とす", "突き合わせる", "溶かす"].sort(),
+    );
+    const report = check("本文。\n", await tokenizer, built.review, {
+      engine: "t",
+      version: "0",
+      dictionary: "t",
+    });
+    assert.deepEqual(
+      report.limitations.filter((item) => item.includes("連用形")),
+      [],
+    );
+  });
+
+  it("keeps 焼く as a regex entry with a reason: the dictionary splits 焼き菓子", async () => {
+    const entry = reviewEntries.find((e) => e.word === "焼く");
+    assert.ok(entry);
+    assert.equal(entry.match, "regex");
+    assert.ok(entry.allow?.length === 1);
+    assert.ok(entry.reason);
+    for (const text of [
+      "焼き鳥を食べた。",
+      "焼き肉を食べた。",
+      "焼き魚を食べた。",
+      "焼き芋を食べた。",
+      "焼きそばを食べた。",
+      "焼き菓子を買った。",
+      "焼き印を押した。",
+    ])
+      assert.deepEqual(await hits(text, [only("焼く")]), [], text);
+    // The lemma form of the same entry would report this spot (焼き + 菓子).
+    assert.ok(
+      (await tokenizer)("焼き菓子を買った。").some(
+        (token) => token.surface === "焼き" && token.lemma === "焼く",
+      ),
+    );
+  });
+
+  it("gives every regex entry that the stem migration left a reason", () => {
+    for (const word of ["焼く", "効き", "穴", "実測", "事故"]) {
+      const entry = reviewEntries.find((e) => e.word === word);
+      assert.ok(entry?.reason, word);
+    }
   });
 });

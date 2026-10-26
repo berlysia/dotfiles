@@ -25,15 +25,20 @@ import {
   mergeAsciiRuns,
   platformPackageName,
 } from "../../../japanese-check/adapter-lindera-unidic.ts";
+import { calques } from "../../../japanese-check/analyze.ts";
 import {
   AnalyzerOutputError,
   isNoun,
   isProperNoun,
   isVerb,
   lemmaClass,
+  makeTokenizer,
+  renyokei,
   validateTokens,
 } from "../../../japanese-check/contract.ts";
 import type { AnalyzedToken } from "../../../japanese-check/contract.ts";
+import { proseLines } from "../../../japanese-check/markdown.ts";
+import { rawEntry, reviewFrom } from "../support/japanese-check-words.ts";
 import {
   RUNTIME_DIR,
   RUNTIME_PRESENT,
@@ -263,5 +268,64 @@ describe("lindera-unidic: failures are fixed text", needsRuntime, () => {
     mkdirSync(join(other, "lindera"));
     writeFileSync(join(other, "lindera/index.js"), "export {};");
     await rejects(runtime, join(other, "lindera/index.js"));
+  });
+});
+
+// Spec R6: the nominalized-verb layer is only as good as the dictionary's reading
+// of each lemma, so its judgements are pinned against the real dictionary.
+describe("lindera-unidic: nominalized-verb layer", needsRuntime, () => {
+  const tokenize = makeTokenizer(analyzer);
+  const lemmas = ["焼く", "疑う", "見落とす", "突き合わせる", "溶かす"];
+  const entry = (word: string, nominal = true) =>
+    rawEntry({
+      word,
+      kind: "metaphor-verb",
+      match: "lemma",
+      lemmas: [word],
+      pos: "verb",
+      ...(nominal ? { nominal: true } : {}),
+    });
+  const texts = (text: string, entries: Record<string, unknown>[]) =>
+    calques(proseLines(text), tokenize, reviewFrom(entries)).map(
+      (item) => item.text,
+    );
+
+  it("returns each marked lemma as one verb whose 連用形 can be built", () => {
+    const expected = ["焼き", "疑い", "見落とし", "突き合わせ", "溶かし"];
+    lemmas.forEach((lemma, i) => {
+      const tokens = tokenize(lemma);
+      assert.equal(tokens.length, 1, lemma);
+      const token = tokens[0];
+      assert.ok(token && isVerb(token), lemma);
+      assert.ok(token.conjugation, lemma);
+      assert.equal(renyokei(lemma, token.conjugation), expected[i], lemma);
+    });
+  });
+
+  it("reports the noun form of each marked lemma from its own entry", () => {
+    for (const [lemma, text, surface] of [
+      ["焼く", "焼き直しではなく焼きを入れる。", "焼き"],
+      ["疑う", "疑いが残る。", "疑い"],
+      ["見落とす", "私の見落としがある。", "見落とし"],
+      ["突き合わせる", "一覧の突き合わせをする。", "突き合わせ"],
+      ["溶かす", "境界の溶かしが進む。", "溶かし"],
+    ] as const)
+      assert.deepEqual(texts(text, [entry(lemma)]), [surface], text);
+  });
+
+  it("does not report the noun form without nominal", () => {
+    assert.deepEqual(
+      texts("私の見落としがある。", [entry("見落とす", false)]),
+      [],
+    );
+  });
+
+  it("does not report a compound or an unlisted verb's noun form", () => {
+    assert.deepEqual(
+      texts("落とし穴がある。", [entry("見落とす"), entry("落とす")]),
+      [],
+    );
+    assert.deepEqual(texts("組み立てを確認する。", [entry("見落とす")]), []);
+    assert.deepEqual(texts("焼き直しを頼む。", [entry("焼く")]), []);
   });
 });

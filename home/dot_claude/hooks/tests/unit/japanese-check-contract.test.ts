@@ -6,7 +6,12 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { calques, facts, terms } from "../../../japanese-check/analyze.ts";
+import {
+  calques,
+  check,
+  facts,
+  terms,
+} from "../../../japanese-check/analyze.ts";
 import {
   AnalyzerOutputError,
   isNoun,
@@ -14,9 +19,13 @@ import {
   isVerb,
   lemmaClass,
   makeTokenizer,
+  renyokei,
   validateTokens,
 } from "../../../japanese-check/contract.ts";
-import type { AnalyzedToken } from "../../../japanese-check/contract.ts";
+import type {
+  AnalyzedToken,
+  ConjugationKind,
+} from "../../../japanese-check/contract.ts";
 import { CHECKER_VERSION_FILES } from "../../../japanese-check/receipts.ts";
 import { proseLines } from "../../../japanese-check/markdown.ts";
 import {
@@ -379,5 +388,211 @@ describe("structural rules of the word contract", () => {
       !covers(CHECKER_VERSION_FILES.filter((n) => n !== "contract.ts")),
     );
     assert.ok(!covers([...CHECKER_VERSION_FILES, "no-such-file.ts"]));
+  });
+});
+
+describe("renyokei", () => {
+  const godan = (row: Extract<ConjugationKind, { kind: "godan" }>["row"]) =>
+    ({ kind: "godan", row }) as const;
+  const cases: Array<[string, ConjugationKind, string | undefined]> = [
+    ["見落とす", godan("sa"), "見落とし"],
+    ["効く", godan("ka"), "効き"],
+    ["泳ぐ", godan("ga"), "泳ぎ"],
+    ["持つ", godan("ta"), "持ち"],
+    ["死ぬ", godan("na"), "死に"],
+    ["遊ぶ", godan("ba"), "遊び"],
+    ["読む", godan("ma"), "読み"],
+    ["走る", godan("ra"), "走り"],
+    ["疑う", godan("wa"), "疑い"],
+    ["焼く", godan("ka"), "焼き"],
+    ["溶かす", godan("sa"), "溶かし"],
+    ["見る", { kind: "kamiIchidan" }, "見"],
+    ["起きる", { kind: "kamiIchidan" }, "起き"],
+    ["突き合わせる", { kind: "shimoIchidan" }, "突き合わせ"],
+    ["組み立てる", { kind: "shimoIchidan" }, "組み立て"],
+    ["確認する", { kind: "sahen" }, "確認し"],
+    ["愛す", { kind: "sahen" }, undefined],
+    ["愛ずる", { kind: "sahen" }, undefined],
+    ["来る", { kind: "kahen" }, "来"],
+    ["くる", { kind: "kahen" }, "き"],
+    ["悪い", { kind: "adjective" }, undefined],
+    ["走る", godan("ka"), undefined],
+  ];
+  for (const [lemma, conjugation, expected] of cases)
+    it(`${lemma} (${conjugation.kind}) -> ${expected}`, () => {
+      assert.equal(renyokei(lemma, conjugation), expected);
+    });
+});
+
+describe("nominalized-verb layer over a fake adapter", () => {
+  const godanSa: AnalyzedToken["conjugation"] = { kind: "godan", row: "sa" };
+  const analyzerOf = (map: Record<string, AnalyzedToken[]>) =>
+    makeTokenizer((text) => map[text] ?? []);
+  const verbEntry = (
+    word: string,
+    lemmas: string[],
+    extra: Record<string, unknown> = {},
+  ) =>
+    rawEntry({
+      word,
+      kind: "metaphor-verb",
+      match: "lemma",
+      lemmas,
+      pos: "verb",
+      ...extra,
+    });
+  const ochi = (start: number, pos: AnalyzedToken["pos"], lemma: string) =>
+    tok("見落とし", start, pos, lemma, { conjugation: godanSa });
+  const dictionary: Record<string, AnalyzedToken[]> = {
+    見落とす: [
+      tok("見落とす", 0, "verb", "見落とす", { conjugation: godanSa }),
+    ],
+    見落としがある: [
+      tok("見落とし", 0, "noun"),
+      tok("が", 4, "particle"),
+      tok("ある", 5, "verb", "ある"),
+    ],
+    見落とした: [ochi(0, "verb", "見落とす"), tok("た", 4, "auxiliary")],
+    落とす: [tok("落とす", 0, "verb", "落とす", { conjugation: godanSa })],
+    落とし穴がある: [
+      tok("落とし穴", 0, "noun"),
+      tok("が", 4, "particle"),
+      tok("ある", 5, "verb", "ある"),
+    ],
+    組み立てを確認する: [
+      tok("組み立て", 0, "noun"),
+      tok("を", 4, "particle"),
+      tok("確認", 5, "noun"),
+      tok("する", 7, "verb", "する"),
+    ],
+    組み立てる: [
+      tok("組み立てる", 0, "verb", "組み立てる", {
+        conjugation: { kind: "shimoIchidan" },
+      }),
+    ],
+    焼く: [
+      tok("焼く", 0, "verb", "焼く", {
+        conjugation: { kind: "godan", row: "ka" },
+      }),
+    ],
+    焼き直しを頼む: [
+      tok("焼き直し", 0, "noun"),
+      tok("を", 4, "particle"),
+      tok("頼む", 5, "verb", "頼む"),
+    ],
+  };
+  const tokenize = analyzerOf(dictionary);
+  const found = (
+    text: string,
+    entries: Record<string, unknown>[],
+    tokenizer = tokenize,
+  ) => calques(proseLines(text), tokenizer, reviewFrom(entries));
+
+  it("reports the noun form and the verb form from a nominal entry", () => {
+    const entries = [verbEntry("見落とす", ["見落とす"], { nominal: true })];
+    assert.deepEqual(
+      found("見落としがある", entries).map((f) => f.text),
+      ["見落とし"],
+    );
+    assert.equal(found("見落とした", entries).length, 1);
+  });
+
+  it("reports only the verb form once nominal is removed", () => {
+    const entries = [verbEntry("見落とす", ["見落とす"])];
+    assert.equal(found("見落としがある", entries).length, 0);
+    assert.equal(found("見落とした", entries).length, 1);
+  });
+
+  it("does not hit a compound noun that merely contains the form", () => {
+    const entries = [
+      verbEntry("見落とす", ["見落とす"], { nominal: true }),
+      verbEntry("落とす", ["落とす"], { nominal: true }),
+    ];
+    assert.deepEqual(found("落とし穴がある", entries), []);
+  });
+
+  it("reports an unlisted verb's noun form only when the entry is nominal", () => {
+    assert.deepEqual(
+      found("組み立てを確認する", [
+        verbEntry("見落とす", ["見落とす"], { nominal: true }),
+      ]),
+      [],
+    );
+    assert.equal(
+      found("組み立てを確認する", [
+        verbEntry("組み立てる", ["組み立てる"], { nominal: true }),
+      ]).length,
+      1,
+    );
+  });
+
+  it("needs a whole-surface match: a one-token noun that starts with the form does not hit", () => {
+    assert.deepEqual(
+      found("焼き直しを頼む", [verbEntry("焼く", ["焼く"], { nominal: true })]),
+      [],
+    );
+  });
+
+  it("drops a lemma that splits into two tokens from the layer, names the entry in the limitations and keeps the lemma match", () => {
+    const split = analyzerOf({
+      ...dictionary,
+      見落とす: [
+        tok("見", 0, "verb", "見る"),
+        tok("落とす", 1, "verb", "落とす"),
+      ],
+    });
+    const review = reviewFrom([
+      verbEntry("見落とす", ["見落とす"], { nominal: true }),
+    ]);
+    const info = {
+      engine: "fake",
+      version: "0",
+      dictionary: "fake",
+    };
+    const report = check("見落としがある\n\n見落とした\n", split, review, info);
+    assert.deepEqual(
+      report.calques.map((f) => f.line),
+      [3],
+    );
+    assert.ok(
+      report.limitations.includes(
+        "語「見落とす」の連用形を作れなかったため、名詞の形の照合から外した。",
+      ),
+    );
+  });
+
+  it("drops a lemma whose conjugation is missing", () => {
+    const plain = analyzerOf({
+      ...dictionary,
+      見落とす: [tok("見落とす", 0, "verb", "見落とす")],
+    });
+    const info = { engine: "fake", version: "0", dictionary: "fake" };
+    const report = check(
+      "見落としがある\n",
+      plain,
+      reviewFrom([verbEntry("見落とす", ["見落とす"], { nominal: true })]),
+      info,
+    );
+    assert.deepEqual(report.calques, []);
+    assert.equal(
+      report.limitations.filter((item) => item.includes("連用形を作れなかった"))
+        .length,
+      1,
+    );
+  });
+
+  it("reports a spot that the layer and a noun entry both hit once, from the earlier entry", () => {
+    const found2 = found("見落としがある", [
+      verbEntry("見落とす", ["見落とす"], { nominal: true }),
+      rawEntry({
+        word: "見落とし",
+        kind: "jargon",
+        match: "lemma",
+        lemmas: ["見落とし"],
+        pos: "noun",
+      }),
+    ]);
+    assert.equal(found2.length, 1);
+    assert.equal(found2[0]?.rule, "word-metaphor-verb");
   });
 });

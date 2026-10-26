@@ -21,6 +21,8 @@ export const MAX_ALLOW = 10;
 export const MAX_EXAMPLES = 10;
 export const MAX_NON_EXAMPLES = 10;
 export const MAX_LEMMAS = 20;
+// 層は検査ごとに nominal の lemma を解析に通すので、一覧全体の数を抑える。
+export const MAX_NOMINAL_LEMMAS = 20;
 export const MAX_QUANTIFIER_COUNT = 10;
 
 export const MAX_SCAN_CHARS = 256 * 1024;
@@ -60,10 +62,12 @@ export const WORD_FIELDS = [
   "lemmas",
   "pos",
   "allow",
+  "nominal",
   "fix",
   "chapter",
   "origin",
   "english",
+  "reason",
   "examples",
   "nonExamples",
 ] as const;
@@ -76,12 +80,14 @@ export const HASHED_WORD_FIELDS = [
   "lemmas",
   "pos",
   "allow",
+  "nominal",
   "fix",
   "chapter",
 ] as const;
 export const UNHASHED_WORD_FIELDS = [
   "origin",
   "english",
+  "reason",
   "examples",
   "nonExamples",
 ] as const;
@@ -105,6 +111,10 @@ export interface WordEntry {
   allow?: string[];
   lemmas?: string[];
   lemmaClass?: LemmaClass;
+  /** `true` only: the entry's lemmas are also matched by their 連用形 as a noun */
+  nominal?: true;
+  /** match: regex の項目が、原形の照合へ移せない理由。照合には使わない */
+  reason?: string;
   examples: string[];
   nonExamples: string[];
 }
@@ -266,6 +276,13 @@ function checkEntry(raw: unknown, index: number): WordEntry | string {
   if (raw.chapter !== undefined) entry.chapter = raw.chapter as string;
 
   if (match === "regex") {
+    if (raw.nominal !== undefined)
+      return "nominal は match: lemma の項目だけが持つ";
+    if (raw.reason !== undefined) {
+      const problem = checkText(raw.reason, "reason");
+      if (problem) return problem;
+      entry.reason = raw.reason as string;
+    }
     if (typeof raw.pattern !== "string") return "pattern が文字列でない";
     entry.pattern = raw.pattern;
     if (raw.allow !== undefined) {
@@ -280,6 +297,8 @@ function checkEntry(raw: unknown, index: number): WordEntry | string {
   } else {
     if (raw.allow !== undefined)
       return "allow は match: regex の項目だけが持つ";
+    if (raw.reason !== undefined)
+      return "reason は match: regex の項目だけが持つ";
     const lemmas = checkTextList(raw.lemmas, "lemmas", 1, MAX_LEMMAS);
     if (lemmas) return lemmas;
     const pos = checkText(raw.pos, "pos");
@@ -287,6 +306,13 @@ function checkEntry(raw: unknown, index: number): WordEntry | string {
     if (!LEMMA_CLASSES.has(raw.pos as string)) return "pos が許される値でない";
     entry.lemmas = raw.lemmas as string[];
     entry.lemmaClass = raw.pos as LemmaClass;
+    // pos の検証の後で確かめる。false を許さないのは、付けないことと false が
+    // 別のハッシュにならないよう、意味を 1 つに絞るため。
+    if (raw.nominal !== undefined) {
+      if (raw.nominal !== true) return "nominal が true でない";
+      if (raw.pos !== "verb") return "nominal は pos: verb の項目だけが持つ";
+      entry.nominal = true;
+    }
   }
   return entry;
 }
@@ -307,6 +333,7 @@ export function validateWordList(value: unknown): WordListResult {
   const entries: WordEntry[] = [];
   const notices: string[] = [];
   let regexCount = 0;
+  let nominalLemmas = 0;
   value.entries.forEach((raw: unknown, i: number) => {
     const result = checkEntry(raw, i + 1);
     if (typeof result === "string") {
@@ -314,12 +341,19 @@ export function validateWordList(value: unknown): WordListResult {
       return;
     }
     entries.push(result);
+    if (result.nominal) nominalLemmas += result.lemmas?.length ?? 0;
     if (result.match === "regex") {
       regexCount += 1 + (result.allow?.length ?? 0);
     }
   });
   if (regexCount > MAX_REGEXES) {
     return { ok: false, reason: `正規表現が合計 ${MAX_REGEXES} 個を超える` };
+  }
+  if (nominalLemmas > MAX_NOMINAL_LEMMAS) {
+    return {
+      ok: false,
+      reason: `nominal の項目の lemma が合計 ${MAX_NOMINAL_LEMMAS} 個を超える`,
+    };
   }
   return { ok: true, entries, notices };
 }
