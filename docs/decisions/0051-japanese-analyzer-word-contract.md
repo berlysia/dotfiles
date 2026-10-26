@@ -91,4 +91,4 @@ ADR-0050 の語の一覧は、解析器を寄せる判断を `git show f7cc3f1de
   - `phrases.ts`
   - `data/words.json`
 - 前提の決定: ADR-0036（文章スキルの役割と入口）、ADR-0047（日本語文書のゲート）、ADR-0048（keep の印）、ADR-0050（japanese-check の語の一覧）
-- 残件: `docs/plans/textlint-own-rules.md`（tanteki に残る 2 本と、検査を走らせる仕組み）
+- 残件: `git show 203e2005:docs/plans/textlint-own-rules.md`（tanteki に残る 2 本と、検査を走らせる仕組み）

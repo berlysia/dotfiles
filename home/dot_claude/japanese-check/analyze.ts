@@ -1,4 +1,6 @@
-import { paragraphs, proseLines, proseMasks } from "./markdown.ts";
+import { blockFindings } from "./blocks.ts";
+import type { BlockFlags } from "./blocks.ts";
+import { blockLines, paragraphs, proseLines, proseMasks } from "./markdown.ts";
 import { phraseFindings } from "./phrases.ts";
 import type { ProseLine } from "./markdown.ts";
 import {
@@ -540,6 +542,9 @@ export function check(
   analyzer: AnalyzerIdentity,
   genre?: Genre,
   source?: string,
+  // Which structure checks run. cli.ts builds it from a profile row; without
+  // it the two checks do not run, so the gate's plain check is unchanged.
+  blocks?: BlockFlags,
 ) {
   const lines = proseLines(markdown);
   const matched = reviewCandidates(lines, tokenize, review);
@@ -549,6 +554,7 @@ export function check(
     findings: [
       ...lint(lines, genre),
       ...phraseFindings(lines, proseMasks(markdown), tokenize),
+      ...(blocks ? blockFindings(blockLines(markdown), blocks) : []),
     ],
     calques: matched.findings,
     outline: outline(lines),

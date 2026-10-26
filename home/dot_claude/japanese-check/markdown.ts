@@ -10,6 +10,24 @@ export interface KeepComment {
   line: number;
   body: string;
 }
+// What blockLines() knows about a line. It is not a LineKind: the checks that
+// read it (blocks.ts) need the separator lines that proseLines() drops, and a
+// LineKind consumer must never see one.
+export type BlockKind =
+  | "heading"
+  | "list"
+  | "table"
+  | "separator"
+  | "paragraph";
+export interface BlockLine {
+  line: number;
+  // The line as written, with only the HTML comments replaced by spaces of the
+  // same length. Inline code, URLs and link destinations stay, and columns are
+  // the same as in the original line.
+  text: string;
+  kind: BlockKind;
+  quote: boolean;
+}
 export interface Paragraph {
   line: number;
   endLine: number;
@@ -56,8 +74,32 @@ export function proseMasks(markdown: string): ProseMask[] {
   return scan(markdown).masks;
 }
 
+// Every line a structure check may look at: the lines of proseLines() plus the
+// ones it drops for having no prose left (a URL alone, an inline code alone),
+// separators, link reference definitions and nested list items indented by four
+// or more spaces. Frontmatter, fences, comment-only lines and indented code are
+// not returned.
+export function blockLines(markdown: string): BlockLine[] {
+  return scan(markdown).blocks;
+}
+
 export function keepComments(markdown: string): KeepComment[] {
   return scan(markdown).comments;
+}
+
+const INDENTED = /^(?: {4}|\t)/u;
+const LIST_MARKER = /^\s*(?:[-+*]|\d+[.)])\s/u;
+const REFERENCE_DEFINITION = /^\s*\[[^\]]+\]:/u;
+
+// Judged on the text with only the comments blanked, in this order: a
+// separator row such as `| --- |` must not count as a table row, and `---`
+// must not count as a list.
+function blockKind(text: string): BlockKind {
+  if (/^ {0,3}#{1,6}\s/u.test(text)) return "heading";
+  if (/^[-=|:\s]+$/u.test(text)) return "separator";
+  if (LIST_MARKER.test(text)) return "list";
+  if (/^\s*\|/u.test(text)) return "table";
+  return "paragraph";
 }
 
 const MARK_BARRIER = 1;
@@ -79,6 +121,58 @@ function blankMatches(
     const start = found.index;
     const end = start + found[0].length;
     result += text.slice(last, start) + blank(found[0]);
+    last = end;
+    for (let at = start; at < end; at++) if (marks[at] === 0) marks[at] = mark;
+  }
+  return result + text.slice(last);
+}
+
+// The same matches as /!\[[^\]]*\]\([^\n]*?\)/gu, /\]\([^\n]*?\)/gu and
+// /<[^>]*>/gu on one line. Why not the regexes: they start a scan to the end
+// of the line at every opener, so a line of repeated "![" or "<" without a
+// closer takes quadratic time. A closer that is missing after one opener is
+// missing after every later one too, so the scan stops there.
+type Span = [number, number];
+function imageSpans(text: string): Span[] {
+  const spans: Span[] = [];
+  for (let at = text.indexOf("!["); ;) {
+    if (at < 0) break;
+    const bracket = text.indexOf("]", at + 2);
+    if (bracket < 0) break;
+    if (text[bracket + 1] !== "(") {
+      // Every opener before bracket - 1 stops at this same "]" and fails too.
+      at = text.indexOf("![", Math.max(at + 1, bracket - 1));
+      continue;
+    }
+    const paren = text.indexOf(")", bracket + 2);
+    if (paren < 0) break;
+    spans.push([at, paren + 1]);
+    at = text.indexOf("![", paren + 1);
+  }
+  return spans;
+}
+
+function closedSpans(text: string, opener: string, closer: string): Span[] {
+  const spans: Span[] = [];
+  for (let at = text.indexOf(opener); at >= 0;) {
+    const close = text.indexOf(closer, at + opener.length);
+    if (close < 0) break;
+    spans.push([at, close + 1]);
+    at = text.indexOf(opener, close + 1);
+  }
+  return spans;
+}
+
+function blankSpans(
+  text: string,
+  spans: Span[],
+  marks: Uint8Array,
+  mark: number,
+): string {
+  let result = "";
+  let last = 0;
+  for (const [start, end] of spans) {
+    result += text.slice(last, start) + blank(text.slice(start, end));
     last = end;
     for (let at = start; at < end; at++) if (marks[at] === 0) marks[at] = mark;
   }
@@ -110,6 +204,7 @@ function scan(markdown: string): {
   lines: ProseLine[];
   comments: KeepComment[];
   masks: ProseMask[];
+  blocks: BlockLine[];
 } {
   const rows = markdown.replace(/^\uFEFF/u, "").split(/\r?\n/u);
   let frontmatter = rows[0]?.trim() === "---";
@@ -118,7 +213,14 @@ function scan(markdown: string): {
   const result: ProseLine[] = [];
   const comments: KeepComment[] = [];
   const masks: ProseMask[] = [];
+  const blocks: BlockLine[] = [];
+  // Whether the line before this one (no blank or dropped line between) was
+  // returned as a list item. A nested item indented by four spaces or more is a
+  // list item only after one; anywhere else that indent is indented code.
+  let afterList = false;
   for (const [index, raw] of rows.entries()) {
+    const followsList = afterList;
+    afterList = false;
     if (frontmatter) {
       if (index > 0 && /^(?:---|\.\.\.)\s*$/u.test(raw)) frontmatter = false;
       continue;
@@ -175,15 +277,36 @@ function scan(markdown: string): {
     }
     // Indented code is judged on the raw line here: a comment at the start of
     // the line blanks the masked text, but the line is not an indented block.
+    const indented = INDENTED.test(text);
+    const definition = REFERENCE_DEFINITION.test(text);
+    const continuesList = indented && followsList && LIST_MARKER.test(text);
     const codeLine =
-      (!startedInComment && /^(?: {4}|\t)/u.test(raw)) ||
-      /^\s*\[[^\]]+\]:/u.test(text);
+      (!startedInComment && INDENTED.test(raw) && !continuesList) ||
+      (definition && indented);
     if (!codeLine)
       for (const body of found) comments.push({ line: index + 1, body });
-    if (/^(?: {4}|\t)/u.test(text) || /^\s*\[[^\]]+\]:/u.test(text)) continue;
-    text = blankMatches(text, /(`+)([^`]|(?!\1)`)*?\1/gu, marks, MARK_BARRIER);
-    text = blankMatches(text, /!\[[^\]]*\]\([^\n]*?\)/gu, marks, MARK_BARRIER);
-    text = blankMatches(text, /\]\([^\n]*?\)/gu, marks, MARK_LINK);
+    if (text.trim() !== "" && (!indented || continuesList)) {
+      const kind = blockKind(text);
+      blocks.push({
+        line: index + 1,
+        text,
+        kind,
+        quote: /^\s*>/u.test(text),
+      });
+      afterList = kind === "list";
+    }
+    if (indented || definition) continue;
+    // An opening run is capped at 32 backticks. Why not `+: on a long run the
+    // regex retries every shorter length to the end of the line, which is
+    // quadratic; a run of 33 or more backticks does not occur in prose.
+    text = blankMatches(
+      text,
+      /(`{1,32})([^`]|(?!\1)`)*?\1/gu,
+      marks,
+      MARK_BARRIER,
+    );
+    text = blankSpans(text, imageSpans(text), marks, MARK_BARRIER);
+    text = blankSpans(text, closedSpans(text, "](", ")"), marks, MARK_LINK);
     // A bare URL ends at the first non-ASCII character: Japanese prose often
     // follows it with no space, as in "（https://…）。以下は…".
     text = blankMatches(
@@ -192,7 +315,7 @@ function scan(markdown: string): {
       marks,
       MARK_BARRIER,
     );
-    text = blankMatches(text, /<[^>]*>/gu, marks, MARK_BARRIER);
+    text = blankSpans(text, closedSpans(text, "<", ">"), marks, MARK_BARRIER);
     if (!text.trim() || /^\s*\|?\s*:?-{3,}/u.test(text)) continue;
     const kind: LineKind = /^ {0,3}#{1,6}\s/u.test(text)
       ? "heading"
@@ -211,7 +334,7 @@ function scan(markdown: string): {
     result.push({ line: index + 1, text, kind });
     masks.push({ line: index + 1, raw, quote, ranges: rangesOf(marks) });
   }
-  return { lines: result, comments, masks };
+  return { lines: result, comments, masks, blocks };
 }
 
 export function paragraphs(lines: ProseLine[]): Paragraph[] {

@@ -29,6 +29,7 @@ import { createHash } from "node:crypto";
 export const CHECKER_VERSION_FILES = [
   "adapter-lindera-unidic.ts",
   "analyze.ts",
+  "blocks.ts",
   "cli.ts",
   "contract.ts",
   "deps.ts",

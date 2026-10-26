@@ -27,7 +27,6 @@ Thumbs.db
 .env.local
 
 node_modules
-!/.skills/tanteki/node_modules
 
 # lsmcp cache
 .lsmcp/cache

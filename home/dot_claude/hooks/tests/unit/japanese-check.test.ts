@@ -1374,17 +1374,17 @@ describe("receipt profile fields", () => {
     needsRuntime,
     async () => {
       const doc = fresh();
-      await check(doc, "--profile", "compose-default", "--genre", "business");
+      await check(doc, "--profile", "rewrite-default", "--genre", "essay");
       decide(doc, "review");
       const same = await check(
         doc,
         "--profile",
-        "compose-default",
+        "rewrite-default",
         "--genre",
-        "business",
+        "essay",
       );
       assert.equal(same.status, "ready");
-      const other = await check(doc, "--profile", "report");
+      const other = await check(doc, "--profile", "essay");
       assert.equal(other.status, "needs-review");
       assert.equal(
         other.receipt?.profileHash,
@@ -1681,7 +1681,14 @@ describe("checker version", () => {
         field,
       );
     assert.ok((UNHASHED_WORD_FIELDS as readonly string[]).includes("reason"));
-    for (const field of ["id", "structure", "action", "genre", "stockBoundary"])
+    for (const field of [
+      "id",
+      "structure",
+      "action",
+      "genre",
+      "stockBoundary",
+      "tableCells",
+    ])
       assert.ok(
         (HASHED_PROFILE_FIELDS as readonly string[]).includes(field),
         field,
@@ -1937,9 +1944,17 @@ describe("keep markers", () => {
         "```",
         "    <!-- in indented code -->",
         "\t<!-- in tab code -->",
-        "[ref]: https://example.com <!-- in definition -->",
       ].join("\n");
       assert.deepEqual(keepComments(input), []);
+    });
+
+    it("reads a comment on a link definition and on a nested list item, the lines blockLines returns", () => {
+      assert.deepEqual(bodies("[ref]: https://example.com <!-- a -->"), [
+        [1, "a"],
+      ]);
+      assert.deepEqual(bodies("- a\n    - b <!-- c -->"), [[2, "c"]]);
+      assert.deepEqual(bodies("- a\n    text <!-- c -->"), []);
+      assert.deepEqual(bodies("    [ref]: https://example.com <!-- a -->"), []);
     });
 
     it("does not read a comment that starts inside an inline code span", () => {

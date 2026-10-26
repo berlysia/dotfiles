@@ -15,7 +15,7 @@ disable-model-invocation: true
 - koncise と japanese-tech-writing は、入口を重ねて使い、自分が最後の入口で、重ねた入口に tanteki か yomiyasu が含まれるときだけ読む。
 - 入口を重ねるときは、最後の入口だけがこの検査の段を行う。途中の入口は検査を走らせない。重ね方の決まりは `ja-structure` にある。
 - 道具の引数と終了コードの表は `../tanteki/references/lint.md` にある。種類ごとに外す規則の表は `../yomiyasu/references/audience.md` にある。必要になったときにそこを読む。
-- スクリプトは `../tanteki/scripts/lint.mjs` と `../yomiyasu/scripts/yomiyasu_check.py` である。実行するときは、この役割のディレクトリから `../` を解いた絶対パスにして走らせる。`../` で始まる書き方のまま渡さない。
+- スクリプトは `../yomiyasu/scripts/yomiyasu_check.py` である。実行するときは、この役割のディレクトリから `../` を解いた絶対パスにして走らせる。`../` で始まる書き方のまま渡さない。textlint は PATH にある `textlint-global` で走らせる。
 
 ## 検査の段
 
@@ -30,8 +30,10 @@ disable-model-invocation: true
 
 この役割を読む入口では、textlint より前（yomiyasu 単独なら最初の run より前）に、`node ~/.claude/japanese-check/cli.ts check <本文>` を 1 回実行する。出力は JSON。技術なら `--genre tech`、業務なら `--genre business`、エッセイなら `--genre essay` を足す。決まらなければ省く。Codex からも同じ CLI を使う。Python は使わない。
 
+- tanteki の入口が区分を決めたら、その文書の `check` はすべて `--profile <対応表の profile>` を付ける。必須の検査で最終稿にかける `check` も同じ指定にする。対応表は `../tanteki/references/document-types.md` にあるので、ここには写さない。`--profile` を付けると、行の genre が `--genre` より優先され、`stock-boundary` と `table-cell-length` の候補が加わる。受領証は最後の `check` の profile を持つので、最終稿を profile なしで走らせ直さない。区分が決まらない文書（tanteki の入口を使わない文書）は、今までどおり `--profile` を付けない。
+- 検査器か profile の表が変わると、既存の受領証はすべて古くなる。配布のあとで最初に行う `check` では、profile つきで検査し直した文書に、表の長いセルや作業の追跡が候補として増えうる。直すか、keep の注記で理由を残す。
 - 候補の判断と修正は既存検査より前に行う。残す候補には、専門用語、引用、条件の保持などの理由を付ける。`calques` の候補は `rule` で種類が分かれる（`word-jargon`、`word-metaphor-verb`、`word-slop`、`translation-candidate`）。この文書で用語として定義済みの語は残してよい。指摘数や自然さの点数を合格基準にしない。
-- `findings` は表現と、語の並びを見る 2 検査（`opaque-compound`、`vague-action`）の候補。この 2 検査は解析器を使うので `check` にだけ出て、解析器を使わない `lint` コマンドの `findings` には出ない。keep の注記の text は、候補の `text`（強調の記号を含む元の行の文字列）から写す。
+- `findings` は表現と、語の並びを見る 2 検査（`opaque-compound`、`vague-action`）の候補。この 2 検査は解析器を使うので `check` にだけ出て、解析器を使わない `lint` コマンドの `findings` には出ない。`--profile` を付けたときは、種類の行が有効にした規則の候補も加わる。`stock-boundary` は作業の追跡の混入、`table-cell-length` は表のセルの長さである。keep の注記の text は、候補の `text`（強調の記号を含む元の行の文字列）から写す。
 - `findings` 以外は、`calques` は直訳候補、`outline` は構成、`terms` は用語、`paragraphs` は段落の点検に使う。`calques` には、語の一覧（`data/words.json` の review の項目）の候補も入る。まとめて出力されるため、同じ本文に個別コマンドを重ねて実行しない。ただし、`check` を走らせていない入口で ja-paragraph が段落の点検をするときは、`outline` を単独で使う。修正は既存の事実保持・構成・読者の規則を優先する。
 - 改稿では `--source <編集前の原文のコピー>` を付け、`newFacts` も点検する。HEAD と編集開始時の本文は一致するとは限らないので Git の内容を原文の代わりにしない。コピーがなければ新出事実の比較を実行せず、その理由を報告する。`newFacts: null` は未比較、空配列は比較した範囲で新出語がないことを示す。
 - 補助検査は本文を書き換えない。check は本文と検査器のハッシュ・候補数を記録し、全文は保存しない。候補を残す判断は review に hash と理由を渡して記録する。JSON や原文のコピーを保存する場合は、既存の「記録」の決まりに従う。
@@ -51,16 +53,16 @@ disable-model-invocation: true
 
 ## 呼び出し
 
-textlint（`../` は上の方法で絶対パスに解いてから走らせる）:
+textlint:
 
 ```bash
-node ../tanteki/scripts/lint.mjs --type <区分> <本文の絶対パス>.md
+textlint-global --format json <本文の絶対パス>.md
 ```
 
-- `<区分>` は tanteki の文書の種類に対応する値で、`design-doc`、`prd`、`adr`、`rfc`、`stock`、`flow`、`record` のどれか。必ず指定する。値の対応は `../tanteki/references/document-types.md` にある。
-- 入力は `.md` ファイル 1 つ以上。種類が違う文書は、種類ごとに分けて走らせる。
-- 出力の形は `--format` で選ぶ。既定は `pretty-error`、機械で読むときは `json`。
-- 終了コードは、0 が指摘なし、1 が指摘あり、2 が引数、設定、ファイルの誤り。ただし依存が見つからないときも 1 になる（下の「結果の読み方」）。
+- 走らせるのは第三者の `preset-japanese` だけ。tanteki の独自ルール 2 本は、上の `check --profile` が受け持つ。
+- 入力は `.md` ファイル 1 つ以上。
+- stdout は、ファイルごとの配列の JSON。各要素の `messages` が指摘である。`textlint: 指摘 N 件` の N は、全要素の `messages` の件数の合計で、severity を区別しない。stdout が JSON として読めなければ `textlint: 未検証（出力を読めない）` とする。
+- 終了コードは、0 が指摘なし、1 が指摘あり、2 が引数、設定、ファイルの誤りか実行環境が無いとき。依存が見つからないときも 1 になりうる（下の「結果の読み方」）。
 
 yomiyasu の check（run）:
 
@@ -94,9 +96,11 @@ python3 ../yomiyasu/scripts/yomiyasu_check.py verify --final <提出する本文
 
 stderr を、本文への指摘と混ぜずに読む。
 
-- stderr に `Cannot find package`、`Cannot find module`、`ERR_MODULE_NOT_FOUND` のどれかがあれば、終了コードによらず、依存が見つからない状態である。textlint の依存は静的に読み込まれるため、欠けていると指摘ありと同じ終了コード 1 で落ちる。走らせ直さない。利用者に、引数なしの `chezmoi apply` で textlint の実行環境を入れ直すよう伝える。自分で `chezmoi apply` も、npm、bun、pnpm の install も走らせない。結果の行は `textlint: 未検証（依存が見つからない）` とし、次の yomiyasu の check へ進む。
-- 終了コード 2 は引数、設定、ファイルの誤り（`.md` でない入力、`--type` の値の誤りなど）。呼び出しを 1 回だけ直して走らせ直す。また 2 なら `textlint: 未検証（stderr の 1 行目）` とする。この場合は `chezmoi apply` を勧めない。
-- 終了コード 0 か 1 で、上の文字列も stack trace も無ければ、textlint の結果として読む。
+- stderr に `Cannot find package`、`Cannot find module`、`ERR_MODULE_NOT_FOUND` のどれかがあれば、終了コードによらず、依存が見つからない状態である。走らせ直さない。利用者には、textlint の実行環境を入れ直すよう、引数なしの `chezmoi apply` を勧める。自分では `chezmoi apply` も、npm、bun、pnpm の install も走らせない。結果の行は `textlint: 未検証（依存が見つからない）` とし、次の yomiyasu の check へ進む。
+- 終了コード 2 で、stderr に `textlint: runtime not installed` があれば、実行環境が無い。走らせ直さず、`textlint: 未検証（実行環境が無い）` とする。stderr の `Recover with:` の行を利用者に伝える。自分では走らせない。
+- 終了コード 2 でそれ以外は、引数、設定、ファイルの誤り（`.md` でない入力など）。呼び出しを 1 回だけ直して走らせ直す。また 2 なら `textlint: 未検証（stderr の 1 行目）` とする。この場合は `chezmoi apply` を勧めない。
+- stderr に `textlint: WARNING` で始まる行があれば、実行環境が古いか確かめられない状態である。結果はそのまま数え、その行と、続く `Recover with:` か `Fix:` の行を利用者に伝える。`runtime not installed` と同時なら、未検証を優先する。
+- 終了コード 0 か 1 で、上の文字列も stack trace も無ければ、textlint の結果として読み、指摘の数は stdout の JSON で数える。
 - それ以外（stack trace を伴う 1 など）は `textlint: 未検証（stderr の 1 行目）` とする。
 
 ### yomiyasu の check の流れと回数

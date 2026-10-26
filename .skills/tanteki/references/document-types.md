@@ -48,19 +48,19 @@
 
 ## 検査コマンドの指定値
 
-検査コマンドでは、`--type` で文書の種類を指定する。
+japanese-check の `check` には、`--profile` で文書の種類（profile の値）を渡す。区分ごとの値は次の表で引く。
 
-| 文書の種類・区分 | 指定する値 |
+| 区分 | profile |
 |---|---|
-| 製品要求書 | `prd` |
-| 設計書 | `design-doc` |
-| 設計上の決定記録 | `adr` |
-| 技術提案 | `rfc` |
-| その他の参照用文書 | `stock` |
-| 作業を進める文書 | `flow` |
-| 経緯を残す文書 | `record` |
+| `prd`（製品要求書） | `design` |
+| `design-doc`（設計書） | `design` |
+| `adr`（設計上の決定記録） | `design` |
+| `rfc`（技術提案） | `design` |
+| `stock`（その他の参照用文書） | `reference` |
+| `flow`（作業を進める文書） | `procedure` |
+| `record`（経緯を残す文書） | `report` |
 
-`prd`、`design-doc`、`adr`、`rfc`、`stock` は同じ検査を行う。名前ごとに異なる内容を検査するわけではない。`flow` と `record` では、作業進捗の混入を調べる検査を外す。指定値は文書の状態や作業進捗を表すものではない。
+`design` と `reference` は、作業進捗の混入を調べる `stock-boundary` と、表のセルの長さを調べる `table-cell-length` の両方を有効にする。`procedure` と `report` は `table-cell-length` だけを有効にする。profile の値は文書の状態や作業進捗を表すものではない。
 
 本文にチェックボックスや PR 番号が必要な文書は、`flow` か `record` を選ぶ。たとえば、実施結果を記入する受け入れテスト手順書は `record` とする。`stock` として検査すると、本文に必要なチェックボックスも作業進捗として指摘される。
 
