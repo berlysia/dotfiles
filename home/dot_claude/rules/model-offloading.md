@@ -22,7 +22,7 @@ Agent tool の `model` パラメータ / Workflow `agent()` の `opts.model` で
 
 迷ったら sonnet。sonnet の結果が明らかに力不足だった場合のみ 1 tier 上げ直す（最初から高位モデルに逃げない）。
 
-表の「探索・定型実装・ドキュメント」列の委譲は、sonnet の代わりに Codex の 6.1 Terra へ渡せる。渡し方は Agent の `subagent_type: "codex:codex-rescue"` か `/codex:rescue` skill。Codex の枠はふだん余っているので、週次枠に余裕があるときも、この列の委譲の一部を Terra に回す。ただし Codex は `.git/worktree/` の worktree に書き込めない。worktree で書く実装は sonnet に渡し、Terra には読むだけの調査とレビューを回す。Claude の週次枠の使用率が 80% 以上のときは Terra を優先し、Claude の枠を設計判断とメインループに残す。使用率は `delegation-budget` Mod が Agent と Workflow の呼び出しの後にモデルへ知らせるので、知らせが届いたら次の委譲から Terra に切り替える。
+表の「探索・定型実装・ドキュメント」列の委譲は、sonnet の代わりに Codex の 6.1 Terra へ渡せる。渡し方は Agent の `subagent_type: "codex:codex-rescue"` か `/codex:rescue` skill。Codex の枠はふだん余っているので、週次枠に余裕があるときも、この列の委譲の一部を Terra に回す。worktree で書く実装を渡すときは、`--write` と、`--cwd` に worktree の絶対パスを付けるよう指示する。Codex は起動した場所の git の最上位にだけ書けるので、メインの作業ツリーから起動すると `.git/worktree/` の下へ書けない。Codex は commit できないので、commit はメインループがする。Claude の週次枠の使用率が 80% 以上のときは Terra を優先し、Claude の枠を設計判断とメインループに残す。使用率は `delegation-budget` Mod が Agent と Workflow の呼び出しの後にモデルへ知らせるので、知らせが届いたら次の委譲から Terra に切り替える。
 
 ## メインループに残すもの — オフロード禁止
 
