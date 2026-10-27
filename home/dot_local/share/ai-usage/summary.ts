@@ -98,7 +98,23 @@ export function summarizeOpencode(
   return finish(pick("5h"), pick("weekly"));
 }
 
-/** Cursor bills by period, not by 5-hour or weekly windows. */
-export function summarizeCursor(): ProviderSummary {
-  return finish(null, null);
+export function summarizeCursor(
+  data: Record<string, unknown>,
+): ProviderSummary {
+  const plan = isRecord(data.planInfo) ? data.planInfo : {};
+  const period = isRecord(data.periodUsage) ? data.periodUsage : {};
+  const usage = isRecord(period.planUsage) ? period.planUsage : {};
+  const usedPercent = finitePercent(usage.totalPercentUsed);
+  if (
+    plan.includedUsagePeriod !== "INCLUDED_USAGE_PERIOD_WEEKLY" ||
+    usedPercent === null
+  )
+    return finish(null, null);
+  const ms =
+    typeof period.billingCycleEnd === "string"
+      ? Number(period.billingCycleEnd)
+      : NaN;
+  const date = new Date(ms);
+  const resetsAt = Number.isFinite(date.getTime()) ? date.toISOString() : null;
+  return finish(null, { usedPercent, resetsAt });
 }
