@@ -87,3 +87,17 @@ Do not implement backward compatibility, fallbacks, or migration shims unless ex
 - Grep existing tests for similar patterns before writing new ones
 - Code started through an entrypoint (hooks, CLIs) has at least one test that launches it as a process, so the entrypoint wiring is exercised; unit tests of the exported functions pass even when the entrypoint never runs
 - Tests must pass before commits
+
+### Time Budget
+
+Always measure wall-clock time when writing or changing tests, and report the measured time. Budgets apply to a full run on an otherwise idle machine:
+
+| Scope                                                      | Budget                              |
+| ---------------------------------------------------------- | ----------------------------------- |
+| Unit tests (full run)                                      | within 10 s; 1 min at the very most |
+| Performance tests, or tests using heavy resources (DB, FS) | 2 min at most                       |
+| Tests run by the pre-commit hook                           | must finish within 10 s             |
+| Tests run by the pre-push hook                             | must finish within 30 s             |
+
+- A test that cannot fit the unit budget belongs in the heavy tier, not in the unit suite
+- When a suite exceeds its budget, report it with the measured time and propose how to bring it back (split, move to a heavier tier or CI, speed up). Do not raise the budget on your own
