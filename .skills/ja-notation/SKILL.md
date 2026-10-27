@@ -187,4 +187,4 @@ AI らしい定型句、中身のない評価語、成り立たない比喩を�
 一覧と追加の項目は、次の上流のスキルを読んで振り分け、自分の言葉で書き直した。一覧の本体は yomiyasu の `references/slop-catalog.md` にあり、このスキルはコピーを持たない。
 
 - tanteki の上流: [iwasa-kosui/tanteki](https://github.com/iwasa-kosui/tanteki) の `skills/tanteki`、commit `e9c4ae749fbe1b35cb740d9e7e0e00a00a0cb42b`。Copyright (c) 2026 Kosui Iwasa（MIT）
-- yomiyasu の上流: [nanaism/yomiyasu](https://github.com/nanaism/yomiyasu) の `skills/yomiyasu`、commit `79d15a621751cb7ad3bea556832209e9112e575f`。Copyright (c) 2026 nanaism（MIT）
+- yomiyasu の上流: [nanaism/yomiyasu](https://github.com/nanaism/yomiyasu) の `skills/yomiyasu`、commit `41e5aec228f080fe24e5f795efee2ac3fda61839`。Copyright (c) 2026 nanaism（MIT）

@@ -93,7 +93,7 @@ tanteki は、種類を決めたら、尋ねたかどうかによらず、作業
 - README、FAQ/トラブルシュート、確認依頼、SLI/SLO 方針 → 種類なし。本文が手順の並びなら manual、条項番号と規範の文が中心なら formal。本文から決める
 
 - 種類なしのときは、種類の表と種類の資料を使わず、分野が分かれば分野の資料だけを使う。
-- yomiyasu の pr、article、essay、promo、mail、paper、slides には、tanteki の種類が無い。tanteki は業務・技術文書だけを扱う。
+- yomiyasu の pr、article、essay、promo、mail、paper、slides、script（台詞・脚本）には、tanteki の種類が無い。tanteki は業務・技術文書だけを扱う。
 - 手がかりの表で「仕様書」の語に一致しても、規範の文が中心でなければ formal にしない。
 
 ## 種類ごとの一覧の置き場
@@ -109,4 +109,4 @@ tanteki は、種類を決めたら、尋ねたかどうかによらず、作業
 判定の規則は次の上流のスキルを読んで振り分け、自分の言葉で書き直した。
 
 - tanteki の上流: [iwasa-kosui/tanteki](https://github.com/iwasa-kosui/tanteki) の `skills/tanteki`、commit `e9c4ae749fbe1b35cb740d9e7e0e00a00a0cb42b`。Copyright (c) 2026 Kosui Iwasa（MIT）
-- yomiyasu の上流: [nanaism/yomiyasu](https://github.com/nanaism/yomiyasu) の `skills/yomiyasu`、commit `79d15a621751cb7ad3bea556832209e9112e575f`。Copyright (c) 2026 nanaism（MIT）
+- yomiyasu の上流: [nanaism/yomiyasu](https://github.com/nanaism/yomiyasu) の `skills/yomiyasu`、commit `41e5aec228f080fe24e5f795efee2ac3fda61839`。Copyright (c) 2026 nanaism（MIT）

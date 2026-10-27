@@ -32,6 +32,7 @@ disable-model-invocation: true
 - 筆者が情報を得た日時と、出来事が起きた日時は混ぜない
 - 比較の対象、限定とそれが掛かる先。限定を、それが無い別の文へ持ち込まない
 - 言い切りの強さ。推量、可能性、伝聞は、その強さのまま書く。機械的に断定へ変えない。本当に不確かなことの「かもしれない」は残す
+- 許可（〜してよい）、能力と権限（〜できる）、義務（〜しなければならない）、保証（必ず〜する）の言い方は、互いに替えない。仕様書や設計文書では、この違いがそのまま仕様の違いになる。「〜場合がある」を消して言い切らず、説明に「必ず」「保証する」を足さない。同じ言い方の中の言い換え（「〜することができる」を「〜できる」にする）はしてよい
 - 見出し、要約、図表のラベルでも、本文より確信を強めない。条件を短く収められなければ、条件を落とした結論にせず話題を示す。
 - 文の働き。意見は意見、説明は説明、依頼は依頼、例えは例えのまま。伝聞や仮定を事実や予定にしない
 - 主張の比重。否定していたものを並列や順位づけに変えない
@@ -60,6 +61,8 @@ disable-model-invocation: true
 ## 決められないこと
 
 - 決められないことは決めず、「筆者に確かめたい点」に出す。最大 3 点とし、無ければ欄ごと省く。
+- 3 点を超えるときは、次の順に選ぶ。1. 読み違えると、主張、誰が何をするか、主題の掛かる範囲、条件や否定、文の働きが変わる所。2. 読者が動くための値、手順、頼みごとが決まらない所。3. 語や指示語の指す先。4. 出典や根拠、用途や立場。同じ順なら、見出しと最初の段落、何度も出る所を先にする。選ばなかった所は「ほかに N か所」と 1 行で添える。
+- 答えで本文の語句が変わらない問い（書き足しや、言い方をそろえることの提案）は出さない。3 点を埋めるために問いを足さない。
 - 次は 3 点に数えない。yomiyasu が本文に置く「ここに説明が必要です」の印と、資料との照合で出た問い。
 - 確認の項目に引用しただけでは、本文で主張を保ったことにならない。
 - 未決定のことを確定したように書かない。合意済み、提案、未決定は区別する。意味が読み取れないことと、実際に未決定であることも分ける。
@@ -143,4 +146,4 @@ disable-model-invocation: true
 
 - koncise の上流: [ayghri/i-have-adhd](https://github.com/ayghri/i-have-adhd) の `skills/i-have-adhd`、commit `839872f9d1cd634fed642b4589ce7226199cc15f`（MIT）
 - tanteki の上流: [iwasa-kosui/tanteki](https://github.com/iwasa-kosui/tanteki) の `skills/tanteki`、commit `e9c4ae749fbe1b35cb740d9e7e0e00a00a0cb42b`。Copyright (c) 2026 Kosui Iwasa（MIT）
-- yomiyasu の上流: [nanaism/yomiyasu](https://github.com/nanaism/yomiyasu) の `skills/yomiyasu`、commit `79d15a621751cb7ad3bea556832209e9112e575f`。Copyright (c) 2026 nanaism（MIT）
+- yomiyasu の上流: [nanaism/yomiyasu](https://github.com/nanaism/yomiyasu) の `skills/yomiyasu`、commit `41e5aec228f080fe24e5f795efee2ac3fda61839`。Copyright (c) 2026 nanaism（MIT）
