@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# cursor-usage: fetch Cursor account usage JSON via DashboardService RPCs.
+# Deployed by chezmoi at ~/.local/bin/cursor-usage; logic lives at
+# ~/.local/share/cursor-usage/main.ts.
+exec bun run --silent "${HOME}/.local/share/cursor-usage/main.ts" "$@"

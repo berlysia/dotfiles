@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# codex-usage: start Codex app-server, fetch account usage JSON, exit.
+# Deployed by chezmoi at ~/.local/bin/codex-usage; logic lives at
+# ~/.local/share/codex-usage/main.ts.
+exec bun run --silent "${HOME}/.local/share/codex-usage/main.ts" "$@"

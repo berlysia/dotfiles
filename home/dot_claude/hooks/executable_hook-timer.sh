@@ -86,6 +86,31 @@ trap 'on_signal INT 2' INT
 trap 'on_signal HUP 1' HUP
 
 cat >"$work/in"
+
+# Cursor CLI feeds Claude hooks with camelCase event names and often omits
+# cwd / session_id / transcript_path. Adapt those payloads before the child
+# runs so cc-hooks-ts does not throw. Claude payloads are left byte-identical.
+# Best-effort: if bun or the adapter is missing, keep the original stdin.
+hooks_dir=$(CDPATH='' cd -- "$(dirname "$0")" && pwd) || hooks_dir=""
+adapter="$hooks_dir/lib/normalize-hook-input.ts"
+if [ -n "$hooks_dir" ] && [ -f "$adapter" ]; then
+  bun_bin=$(command -v bun 2>/dev/null)
+  if [ -z "$bun_bin" ]; then
+    for candidate in "$HOME/.local/share/mise/shims/bun" "$HOME/.bun/bin/bun"; do
+      if [ -x "$candidate" ]; then
+        bun_bin="$candidate"
+        break
+      fi
+    done
+  fi
+  if [ -n "$bun_bin" ] &&
+    "$bun_bin" "$adapter" <"$work/in" >"$work/in.norm" 2>/dev/null; then
+    mv -f "$work/in.norm" "$work/in"
+  else
+    rm -f "$work/in.norm"
+  fi
+fi
+
 child=""
 start=$(now_ms)
 sh -c "$cmd" <"$work/in" >"$work/out" 2>"$work/err" &

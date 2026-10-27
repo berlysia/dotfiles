@@ -37,6 +37,27 @@ describe("hook-timer.sh", () => {
     strictEqual(result.status, 0);
   });
 
+  it("normalizes Cursor CLI stdin before the child sees it", () => {
+    const logDir = makeTempDir();
+    const input = JSON.stringify({
+      hook_event_name: "preToolUse",
+      tool_name: "Shell",
+      tool_input: { command: "true", working_directory: "/proj" },
+      tool_use_id: "cursor-1",
+    });
+    const result = runWrapperSync("PreToolUse", "0", "cat", {
+      input,
+      env: baseEnv(logDir),
+    });
+    strictEqual(result.status, 0);
+    const parsed = JSON.parse(result.stdout);
+    strictEqual(parsed.hook_event_name, "PreToolUse");
+    strictEqual(parsed.tool_name, "Bash");
+    strictEqual(parsed.cwd, "/proj");
+    strictEqual(parsed.session_id, "cursor-unknown");
+    strictEqual(parsed.transcript_path, "/dev/null");
+  });
+
   it("passes stdout, stderr and exit code through, and records the invocation", () => {
     const logDir = makeTempDir();
     const input = '{"session_id":"s2","tool_name":"Bash","tool_use_id":"t2"}';
