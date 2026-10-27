@@ -188,3 +188,12 @@ stamp は Round N の要求集合を Round N-1 の verdict から再計算する
 ## reviewer 実行台帳（reviewer-runs.log）
 
 `reviewer-run-recorder`（PostToolUse Agent）が reviewer subagent の起動を `<sessionId>\t<subagent_type>\t<ISO>` で記録する（`O_APPEND` で 1 行ずつ追記し、並列起動でも行を落とさない。上限は設けない）。`stamp` はこの台帳で、現 round の要求集合（Round 1 と full round は対象層の必須 reviewer、以降は差分再レビューの rerun のうち必須 reviewer）が現 round の baseline 以降に起動されたかを検証する。これで round + stamp だけで reviewer 未起動のまま pass を書くことを防ぐ。台帳は session 単位で文書単位ではない（同 session で spec と plan-N を同 round で見る場合は両層の必須 reviewer が揃えば通る、過剰許容側の fail-open）。
+
+## reviewer を Codex で実行する
+
+帳簿に載る reviewer は、`executor: codex` の依頼で Codex に実行させられる。帳簿は subagent_type で記録するので、stamp はふだんどおり受け付ける。
+
+- 依頼本文を Write で scratchpad のファイルに書く。依頼は `executor: codex` / `brief: <パス>` / `root: <パス>` の 3 行にし、Agent の `model: "haiku"` で起動する。haiku は定義の 1 行に従って `~/.claude/scripts/reviewer-codex-run.ts` を実行し、その出力を返すだけ。
+- 成功とするのは、返答が `reviewed-by: codex` と `reviewer: <起動した名前>` で始まり、最後の行が verdict のときだけ。それ以外は失敗とし、その reviewer を `executor: codex` 無しで実行し直す。
+- Reviewer Outputs の各 reviewer に `- executor: codex (via haiku)` か `- executor: claude (sonnet)` の行を書く。実行し直したら `- note: codex failed (<理由>)` も書いてから stamp する。
+- 見出しは reviewer 名だけにする。hook が見出しを reviewer 名として読むため。
