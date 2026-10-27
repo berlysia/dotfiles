@@ -1,0 +1,5 @@
+{
+  "name": "delegation-budget",
+  "version": "0.1.0",
+  "description": "Tells the model, after an Agent or Workflow call, that the weekly rate limit is nearly used up and routine delegation should go to Codex."
+}

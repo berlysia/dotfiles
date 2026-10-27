@@ -22,6 +22,8 @@ Agent tool の `model` パラメータ / Workflow `agent()` の `opts.model` で
 
 迷ったら sonnet。sonnet の結果が明らかに力不足だった場合のみ 1 tier 上げ直す（最初から高位モデルに逃げない）。
 
+表の「探索・定型実装・ドキュメント」列の委譲は、sonnet の代わりに Codex の 6.1 Terra へ渡してもよい。渡し方は Agent の `subagent_type: "codex:codex-rescue"` か `/codex:rescue` skill。Claude の週次枠の使用率が 80% 以上のときは Terra を優先し、Claude の枠を設計判断とメインループに残す。使用率は `delegation-budget` Mod が Agent と Workflow の呼び出しの後にモデルへ知らせるので、知らせが届いたら次の委譲から Terra に切り替える。
+
 ## メインループに残すもの — オフロード禁止
 
 - 設計判断、Document Workflow 成果物（spec/plan）の作成・改訂の判断
