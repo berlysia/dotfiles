@@ -159,7 +159,7 @@ async function main(): Promise<void> {
     timeoutMs: opts.timeoutMs,
     verbose: opts.verbose,
     details: opts.details,
-    authFile: opts.authFile,
+    ...(opts.authFile !== undefined ? { authFile: opts.authFile } : {}),
   };
 
   const results = await Promise.all(ids.map((id) => fetchOne(id, fetchOpts)));

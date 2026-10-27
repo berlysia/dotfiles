@@ -20,6 +20,6 @@
 .config/ccstatusline/*-budget.sh
 .claude/japanese-check/tokenizer.ts
 .claude/japanese-check/adapter-sudachi-wasm.ts
-.local/share/codex-usage
-.local/share/cursor-usage
-.local/share/opencode-usage
+.local/share/codex-usage/main.ts
+.local/share/cursor-usage/main.ts
+.local/share/opencode-usage/main.ts
