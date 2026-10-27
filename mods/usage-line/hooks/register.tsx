@@ -2,7 +2,8 @@ import type { EngineInterface, Register } from "claude-code";
 import type { Timer } from "claude-code";
 import { type RateLimitSample, type RateLimitWindow } from "./forecast";
 import { buildLineInput } from "./line";
-import { lineFilePath } from "./line-file";
+import { externalFilePath, lineFilePath } from "./line-file";
+import { buildExternalFile, externalFetchDue } from "./external";
 import type { ForecastFile } from "./status-input";
 import {
   collectWindows,
@@ -26,6 +27,10 @@ type UsageState = {
   /** Survives a session id change, so the same reading is not recorded twice. */
   lastRecorded: Partial<Record<RateLimitWindow, RateLimitSample>>;
   timer: Timer | null;
+  externalTick: Timer | null;
+  externalInitial: Timer | null;
+  externalInFlight: boolean;
+  externalLogged: Set<ExternalFailure>;
   loggedReject: boolean;
   loggedWriteReject: boolean;
   loaded: boolean;
@@ -37,6 +42,10 @@ function createState(): UsageState {
     byKey: new Map(),
     lastRecorded: {},
     timer: null,
+    externalTick: null,
+    externalInitial: null,
+    externalInFlight: false,
+    externalLogged: new Set(),
     loggedReject: false,
     loggedWriteReject: false,
     loaded: false,
@@ -47,6 +56,89 @@ function createState(): UsageState {
 // The engine follows `$` only into functions declared at the top level of the
 // module (a closure inside `register` makes the module fail to load), so every
 // helper below takes `$` and the state as arguments.
+
+type ExternalFailure = "run-rejected" | "bad-output" | "write-rejected";
+
+function logExternal(
+  $: EngineInterface,
+  state: UsageState,
+  kind: ExternalFailure,
+): void {
+  if (state.externalLogged.has(kind)) return;
+  state.externalLogged.add(kind);
+  $.ui.log(`usage-line: external ${kind}`, { to: "debug" });
+}
+
+/**
+ * Runs ai-usage at most once per 5 minutes across sessions and writes the
+ * shared file. `attemptAt` is written before the run, so a failing fetch is not
+ * retried by every session on every tick. Started from timers only: work begun
+ * inside a handler may stop when that dispatch is abandoned.
+ */
+async function fetchExternal(
+  $: EngineInterface,
+  state: UsageState,
+): Promise<void> {
+  if (state.externalInFlight) return;
+  state.externalInFlight = true;
+  try {
+    const path = externalFilePath({
+      XDG_RUNTIME_DIR: await $.env.get("XDG_RUNTIME_DIR"),
+      TMPDIR: await $.env.get("TMPDIR"),
+    });
+    if (path === null) return;
+    const now = await $.clock.now();
+    if (!externalFetchDue(await $.store.get("external:v1"), now)) return;
+    try {
+      await $.store.set("external:v1", { attemptAt: now });
+    } catch {
+      logExternal($, state, "write-rejected");
+      return;
+    }
+    let stdout: string;
+    try {
+      const result = await $.process.run(
+        [
+          "ai-usage",
+          "codex",
+          "opencode",
+          "cursor",
+          "--summary",
+          "--timeout",
+          "8",
+        ],
+        { timeoutMs: 60_000 },
+      );
+      stdout = result.stdout;
+    } catch {
+      logExternal($, state, "run-rejected");
+      return;
+    }
+    const file = buildExternalFile(stdout, await $.clock.now());
+    if (file === null) {
+      logExternal($, state, "bad-output");
+      return;
+    }
+    try {
+      await $.fs.write(path, JSON.stringify(file));
+    } catch {
+      logExternal($, state, "write-rejected");
+    }
+  } finally {
+    state.externalInFlight = false;
+  }
+}
+
+function armExternal($: EngineInterface, state: UsageState): void {
+  state.externalTick?.cancel();
+  state.externalInitial?.cancel();
+  state.externalTick = $.clock.every(60_000, () => {
+    void fetchExternal($, state).catch(() => undefined);
+  });
+  state.externalInitial = $.clock.after(0, () => {
+    void fetchExternal($, state).catch(() => undefined);
+  });
+}
 
 /**
  * Hands the forecasts to statusline.ts, which draws the line. Only windows
@@ -203,6 +295,7 @@ export const register: Register = (on) => {
 
   on("session.start", async ($, e, next) => {
     const result = await next(e);
+    armExternal($, state);
     try {
       await loadAll($, state, await $.clock.now());
       state.loaded = true;

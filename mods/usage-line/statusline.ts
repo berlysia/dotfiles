@@ -43,7 +43,10 @@ function readForecastFile(
 ): unknown {
   let fd: number | null = null;
   try {
-    fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    fd = openSync(
+      path,
+      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+    );
     const stat = fstatSync(fd);
     const uid = process.getuid?.();
     if (
@@ -77,13 +80,15 @@ function readForecastFile(
 
 async function main(): Promise<void> {
   const [
-    { lineFilePath },
+    { externalFilePath, lineFilePath },
     { buildStatusInput, isForecastFileReadable },
     { formatLine, PLACEHOLDER_LINE },
+    { formatExternal },
   ] = await Promise.all([
     import("./hooks/line-file"),
     import("./hooks/status-input"),
     import("./hooks/format"),
+    import("./hooks/external"),
   ]);
   const stdin = parseJson(await readStdin());
   const now = Date.now();
@@ -105,7 +110,18 @@ async function main(): Promise<void> {
     path === null ? undefined : readForecastFile(path, isForecastFileReadable);
   const line =
     formatLine(buildStatusInput(stdin, file, now), now) ?? PLACEHOLDER_LINE;
-  process.stdout.write(`${line}\n`);
+  const externalPath = externalFilePath({
+    XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR,
+    TMPDIR: process.env.TMPDIR,
+  });
+  const segment =
+    externalPath === null
+      ? null
+      : formatExternal(
+          readForecastFile(externalPath, isForecastFileReadable),
+          now,
+        );
+  process.stdout.write(`${line}${segment === null ? "" : ` │ ${segment}`}\n`);
 }
 
 try {

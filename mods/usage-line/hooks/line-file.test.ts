@@ -1,5 +1,5 @@
 import { expect, test } from "claude-code/testing";
-import { lineFilePath } from "./line-file";
+import { externalFilePath, lineFilePath } from "./line-file";
 
 const ID = "8f44b3b4-d81d-40e7-9431-220587d54528";
 
@@ -54,4 +54,17 @@ test("invalid session ids give null; 128 characters are fine", async () => {
   expect(lineFilePath(env, "a".repeat(128))).toBe(
     `/run/user/1000/usage-line/${"a".repeat(128)}.json`,
   );
+});
+
+test("external file shares the runtime policy without accepting its name as a session", async () => {
+  expect(externalFilePath({ XDG_RUNTIME_DIR: "/run/user/1000" })).toBe(
+    "/run/user/1000/usage-line/_external.json",
+  );
+  expect(externalFilePath({ TMPDIR: "/tmp" })).toBeNull();
+  expect(externalFilePath({ TMPDIR: "/var/folders/x/T/" })).toBe(
+    "/var/folders/x/T/usage-line/_external.json",
+  );
+  expect(
+    lineFilePath({ XDG_RUNTIME_DIR: "/run/user/1000" }, "_external"),
+  ).toBeNull();
 });
