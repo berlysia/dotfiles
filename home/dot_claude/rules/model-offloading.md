@@ -33,6 +33,7 @@ Agent tool の `model` パラメータ / Workflow `agent()` の `opts.model` で
 
 - `exhausted: true`（どちらかの枠が 100%、または Codex が通常の利用を止めている）の渡し先には渡さない
 - 取得に失敗した渡し先（`ok: false`）は残りが分からないので渡さない
+- `command -v opencode` が何も返さなければ GLM-5.3 には渡さない。ai-usage は `opencode` を起動せずに Z.ai の API を呼ぶので、CLI が無くても `ok: true` になる
 
 どちらに渡すかは、残りの多さではなく委譲の重さで決める。
 
