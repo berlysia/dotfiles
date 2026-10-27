@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# claude-usage: thin wrapper around ai-usage claude.
+exec "$(dirname "$0")/ai-usage" claude "$@"

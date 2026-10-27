@@ -1,5 +1,3 @@
 #!/usr/bin/env bash
-# opencode-usage: fetch Z.ai Coding Plan quota used by OpenCode.
-# Deployed by chezmoi at ~/.local/bin/opencode-usage; logic lives at
-# ~/.local/share/opencode-usage/main.ts.
-exec bun run --silent "${HOME}/.local/share/opencode-usage/main.ts" "$@"
+# opencode-usage: thin wrapper around ai-usage opencode.
+exec "$(dirname "$0")/ai-usage" opencode "$@"

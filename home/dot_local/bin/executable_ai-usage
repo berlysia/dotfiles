@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# ai-usage: Claude / Codex / Cursor / OpenCode account usage as JSON.
+# Deployed by chezmoi at ~/.local/bin/ai-usage; logic lives at
+# ~/.local/share/ai-usage/main.ts.
+exec bun run --silent "${HOME}/.local/share/ai-usage/main.ts" "$@"

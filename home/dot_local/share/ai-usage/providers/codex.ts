@@ -1,93 +1,17 @@
-#!/usr/bin/env bun
-/**
- * Start `codex app-server` over stdio, read account usage, print JSON, exit.
- *
- * Default: account/rateLimits/read (5h / weekly windows, plan, credits).
- * --usage: also account/usage/read (token activity summary + daily buckets).
- */
-
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface } from "node:readline";
+import { type FetchOpts, isRecord } from "../lib.ts";
 
 const CLIENT_INFO = {
-  name: "codex_usage_cli",
-  title: "Codex Usage CLI",
+  name: "ai_usage_cli",
+  title: "AI Usage CLI",
   version: "0.1.0",
 } as const;
 
-type JsonRpcSuccess = { id: number; result: unknown };
-type JsonRpcError = {
-  id: number;
-  error: { code?: number; message?: string; data?: unknown };
-};
-type JsonRpcMessage = JsonRpcSuccess | JsonRpcError | { method?: string };
-
-type CliOptions = {
-  includeTokenUsage: boolean;
-  timeoutMs: number;
-  verbose: boolean;
-  help: boolean;
-};
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function printHelp(): void {
-  process.stdout.write(`Usage: codex-usage [options]
-
-Start Codex app-server over stdio, fetch account usage, print JSON, exit.
-
-Options:
-  --usage              Also fetch account/usage/read (token activity)
-  --timeout <seconds>  Per-RPC and startup timeout (default: 20)
-  --verbose            Keep app-server stderr
-  -h, --help           Show this help
-
-Output (stdout): JSON with fetchedAt plus account/rateLimits/read fields
-(and tokenUsage when --usage is set). Errors on stderr; exit 0 on success.
-`);
-}
-
-function parseArgs(argv: string[]): CliOptions {
-  const opts: CliOptions = {
-    includeTokenUsage: false,
-    timeoutMs: 20_000,
-    verbose: false,
-    help: false,
-  };
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    if (arg === undefined) continue;
-    if (arg === "-h" || arg === "--help") {
-      opts.help = true;
-    } else if (arg === "--usage") {
-      opts.includeTokenUsage = true;
-    } else if (arg === "--verbose") {
-      opts.verbose = true;
-    } else if (arg === "--timeout") {
-      const raw = argv[++i];
-      const seconds = Number(raw);
-      if (!Number.isFinite(seconds) || seconds <= 0) {
-        throw new Error(
-          `--timeout needs a positive number of seconds, got ${raw}`,
-        );
-      }
-      opts.timeoutMs = Math.round(seconds * 1000);
-    } else if (arg.startsWith("--timeout=")) {
-      const seconds = Number(arg.slice("--timeout=".length));
-      if (!Number.isFinite(seconds) || seconds <= 0) {
-        throw new Error(
-          `--timeout needs a positive number of seconds, got ${arg}`,
-        );
-      }
-      opts.timeoutMs = Math.round(seconds * 1000);
-    } else {
-      throw new Error(`unknown argument: ${arg}`);
-    }
-  }
-  return opts;
-}
+type JsonRpcMessage =
+  | { id: number; result: unknown }
+  | { id: number; error: { code?: number; message?: string } }
+  | { method?: string };
 
 class CodexAppServerClient {
   private child: ChildProcessWithoutNullStreams | undefined;
@@ -182,9 +106,7 @@ class CodexAppServerClient {
   }
 
   private rejectAll(error: Error): void {
-    for (const [, pending] of this.pending) {
-      pending.reject(error);
-    }
+    for (const [, pending] of this.pending) pending.reject(error);
     this.pending.clear();
   }
 
@@ -248,7 +170,9 @@ class CodexAppServerClient {
   }
 }
 
-async function fetchUsage(opts: CliOptions): Promise<Record<string, unknown>> {
+export async function fetchCodexUsage(
+  opts: FetchOpts,
+): Promise<Record<string, unknown>> {
   const client = new CodexAppServerClient(opts.timeoutMs, opts.verbose);
   try {
     await client.start();
@@ -268,7 +192,7 @@ async function fetchUsage(opts: CliOptions): Promise<Record<string, unknown>> {
       ...(isRecord(rateLimits) ? rateLimits : { rateLimits }),
     };
 
-    if (opts.includeTokenUsage) {
+    if (opts.details) {
       out.tokenUsage = await client.request("account/usage/read");
     }
     return out;
@@ -276,33 +200,3 @@ async function fetchUsage(opts: CliOptions): Promise<Record<string, unknown>> {
     client.dispose();
   }
 }
-
-async function main(): Promise<void> {
-  let opts: CliOptions;
-  try {
-    opts = parseArgs(process.argv.slice(2));
-  } catch (error) {
-    process.stderr.write(
-      `${error instanceof Error ? error.message : String(error)}\n`,
-    );
-    process.exitCode = 2;
-    return;
-  }
-
-  if (opts.help) {
-    printHelp();
-    return;
-  }
-
-  try {
-    const payload = await fetchUsage(opts);
-    process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
-  } catch (error) {
-    process.stderr.write(
-      `codex-usage: ${error instanceof Error ? error.message : String(error)}\n`,
-    );
-    process.exitCode = 1;
-  }
-}
-
-await main();
