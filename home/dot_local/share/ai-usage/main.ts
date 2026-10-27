@@ -12,12 +12,20 @@ import { fetchClaudeUsage } from "./providers/claude.ts";
 import { fetchCodexUsage } from "./providers/codex.ts";
 import { fetchCursorUsage } from "./providers/cursor.ts";
 import { fetchOpencodeUsage } from "./providers/opencode.ts";
+import {
+  type ProviderSummary,
+  summarizeClaude,
+  summarizeCodex,
+  summarizeCursor,
+  summarizeOpencode,
+} from "./summary.ts";
 
 export const PROVIDERS = ["claude", "codex", "cursor", "opencode"] as const;
 export type ProviderId = (typeof PROVIDERS)[number];
 
 type CliOptions = FetchOpts & {
   help: boolean;
+  summary: boolean;
   providers: ProviderId[] | "all";
 };
 
@@ -29,6 +37,16 @@ const FETCHERS: Record<
   codex: fetchCodexUsage,
   cursor: fetchCursorUsage,
   opencode: fetchOpencodeUsage,
+};
+
+const SUMMARIZERS: Record<
+  ProviderId,
+  (data: Record<string, unknown>) => ProviderSummary
+> = {
+  claude: summarizeClaude,
+  codex: summarizeCodex,
+  cursor: summarizeCursor,
+  opencode: summarizeOpencode,
 };
 
 function printHelp(): void {
@@ -43,6 +61,7 @@ Providers (default: all):
   opencode   Z.ai Coding Plan quota (via OpenCode auth)
 
 Options:
+  --summary            Same shape for every provider (see below)
   --details            Codex: also token activity; OpenCode: also 24h model/tool
   --timeout <seconds>  Per-request timeout (default: 20)
   --verbose            Codex: keep app-server stderr
@@ -53,6 +72,13 @@ When one provider is selected, stdout is that provider's payload.
 When several (or all) are selected, stdout is:
   { "fetchedAt", "providers": { "<id>": { "ok": true, "data": ... }
                               | { "ok": false, "error": "..." } } }
+With --summary, stdout always uses that envelope (even for one provider),
+and each successful entry is
+  { "ok": true,
+    "fiveHour": { "usedPercent", "resetsAt" } | null,
+    "weekly":   { "usedPercent", "resetsAt" } | null,
+    "exhausted": true when a window is at 100% or the provider refuses use }
+Cursor has neither window, so both are null.
 Exit 0 if every selected provider succeeds; 1 if any fail; 2 on bad args.
 `);
 }
@@ -67,6 +93,7 @@ function parseArgs(argv: string[]): CliOptions {
     verbose: false,
     details: false,
     help: false,
+    summary: false,
     providers: "all",
   };
   const selected: ProviderId[] = [];
@@ -79,6 +106,8 @@ function parseArgs(argv: string[]): CliOptions {
     } else if (arg === "--details" || arg === "--usage") {
       // --usage kept as alias for former codex-usage flag
       opts.details = true;
+    } else if (arg === "--summary") {
+      opts.summary = true;
     } else if (arg === "--verbose") {
       opts.verbose = true;
     } else if (arg === "--auth-file") {
@@ -164,7 +193,7 @@ async function main(): Promise<void> {
 
   const results = await Promise.all(ids.map((id) => fetchOne(id, fetchOpts)));
 
-  if (ids.length === 1) {
+  if (ids.length === 1 && !opts.summary) {
     const only = results[0];
     if (!only) {
       process.exitCode = 1;
@@ -183,7 +212,9 @@ async function main(): Promise<void> {
   let anyFail = false;
   for (const result of results) {
     if (result.ok) {
-      providers[result.provider] = { ok: true, data: result.data };
+      providers[result.provider] = opts.summary
+        ? { ok: true, ...SUMMARIZERS[result.provider](result.data) }
+        : { ok: true, data: result.data };
     } else {
       anyFail = true;
       providers[result.provider] = { ok: false, error: result.error };
