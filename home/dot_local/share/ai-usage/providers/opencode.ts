@@ -1,12 +1,51 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { type FetchOpts, isRecord, readJsonFile } from "../lib.ts";
 
 const ZAI_BASE = "https://api.z.ai";
 const QUOTA_PATH = "/api/monitor/usage/quota/limit";
 const MODEL_USAGE_PATH = "/api/monitor/usage/model-usage";
 const TOOL_USAGE_PATH = "/api/monitor/usage/tool-usage";
+
+/**
+ * opencode v2.x stores credentials in its SQLite DB (`credential` table).
+ * auth.json is no longer updated on re-login and can hold a revoked key,
+ * so the active DB credential wins over the legacy auth.json entry.
+ */
+function resolveApiKeyFromOpencodeDb(
+  dbPath: string,
+): { key: string } | undefined {
+  let db: DatabaseSync;
+  try {
+    db = new DatabaseSync(dbPath, { readOnly: true });
+  } catch {
+    return undefined;
+  }
+  try {
+    const row = db
+      .prepare(
+        "SELECT value FROM credential WHERE integration_id = ? AND active = 1 ORDER BY time_updated DESC LIMIT 1",
+      )
+      .get("zai-coding-plan") as { value: string } | undefined;
+    if (!row) return undefined;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(row.value);
+    } catch {
+      return undefined;
+    }
+    if (!isRecord(parsed) || typeof parsed.key !== "string" || !parsed.key) {
+      return undefined;
+    }
+    return { key: parsed.key };
+  } catch {
+    return undefined;
+  } finally {
+    db.close();
+  }
+}
 
 function resolveApiKey(opts: FetchOpts): { key: string; source: string } {
   const fromEnv =
@@ -20,15 +59,29 @@ function resolveApiKey(opts: FetchOpts): { key: string; source: string } {
     };
   }
 
-  const authPath =
-    opts.authFile ??
-    join(homedir(), ".local", "share", "opencode", "auth.json");
-  if (!existsSync(authPath)) {
-    throw new Error(
-      `No Z.ai credentials. Set ZAI_CODING_API_KEY, or run opencode auth login so ${authPath} has zai-coding-plan.`,
-    );
+  // Explicit --auth-file keeps meaning "auth.json-style file".
+  if (opts.authFile) {
+    const fromFile = resolveApiKeyFromAuthFile(opts.authFile);
+    return { key: fromFile, source: `${opts.authFile}#zai-coding-plan` };
   }
 
+  const dbPath = join(homedir(), ".local", "share", "opencode", "opencode.db");
+  const fromDb = resolveApiKeyFromOpencodeDb(dbPath);
+  if (fromDb) {
+    return { key: fromDb.key, source: `${dbPath}#credential` };
+  }
+
+  const authPath = join(homedir(), ".local", "share", "opencode", "auth.json");
+  if (existsSync(authPath)) {
+    const key = resolveApiKeyFromAuthFile(authPath);
+    return { key, source: `${authPath}#zai-coding-plan` };
+  }
+  throw new Error(
+    `No Z.ai credentials. Set ZAI_CODING_API_KEY, or run opencode auth login so ${dbPath} has an active zai-coding-plan credential.`,
+  );
+}
+
+function resolveApiKeyFromAuthFile(authPath: string): string {
   let parsed: unknown;
   try {
     parsed = readJsonFile(authPath);
@@ -47,7 +100,7 @@ function resolveApiKey(opts: FetchOpts): { key: string; source: string } {
       `${authPath} has no zai-coding-plan.key. Run: opencode auth login`,
     );
   }
-  return { key: entry.key, source: `${authPath}#zai-coding-plan` };
+  return entry.key;
 }
 
 function describeLimitWindow(
@@ -114,6 +167,18 @@ async function zaiGet(
   return body;
 }
 
+/**
+ * The z.ai monitor API parses/renders timestamps as UTC+8 wall clock
+ * ("yyyy-MM-dd HH:mm:ss"), regardless of the client timezone.
+ */
+const ZAI_TZ_OFFSET_MS = 8 * 60 * 60 * 1000;
+
+function formatZaiTimestamp(date: Date): string {
+  const shifted = new Date(date.getTime() + ZAI_TZ_OFFSET_MS);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())} ${pad(shifted.getUTCHours())}:${pad(shifted.getUTCMinutes())}:${pad(shifted.getUTCSeconds())}`;
+}
+
 function rollingDayBounds(): { startTime: string; endTime: string } {
   const end = new Date();
   end.setMinutes(59, 59, 999);
@@ -121,8 +186,8 @@ function rollingDayBounds(): { startTime: string; endTime: string } {
   start.setDate(start.getDate() - 1);
   start.setMinutes(0, 0, 0);
   return {
-    startTime: String(start.getTime()),
-    endTime: String(end.getTime()),
+    startTime: formatZaiTimestamp(start),
+    endTime: formatZaiTimestamp(end),
   };
 }
 

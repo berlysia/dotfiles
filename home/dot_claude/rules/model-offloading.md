@@ -22,7 +22,24 @@ Agent tool の `model` パラメータ / Workflow `agent()` の `opts.model` で
 
 迷ったら sonnet。sonnet の結果が明らかに力不足だった場合のみ 1 tier 上げ直す（最初から高位モデルに逃げない）。
 
-表の「探索・定型実装・ドキュメント」列の委譲は、sonnet の代わりに Codex の 6.1 Terra へ渡せる。渡し方は Agent の `subagent_type: "codex:codex-rescue"` か `/codex:rescue` skill。Codex の枠はふだん余っているので、週次枠に余裕があるときも、この列の委譲の一部を Terra に回す。worktree で書く実装を渡すときは、`--write` と、`--cwd` に worktree の絶対パスを付けるよう指示する。Codex は起動した場所の git の最上位にだけ書けるので、メインの作業ツリーから起動すると `.git/worktree/` の下へ書けない。Codex は commit できないので、commit はメインループがする。Claude の週次枠の使用率が 80% 以上のときは Terra を優先し、Claude の枠を設計判断とメインループに残す。使用率は `delegation-budget` Mod が Agent と Workflow の呼び出しの後にモデルへ知らせるので、知らせが届いたら次の委譲から Terra に切り替える。
+### 外部モデルへの委譲（Codex / OpenCode）
+
+表の「探索・定型実装・ドキュメント」列の委譲は、sonnet の代わりに次の 2 つへ渡せる。どちらも commit はできないので、commit はメインループがする。
+
+- **Codex の GPT-6.1 Terra**: 2 つのうち賢い方。Agent の `subagent_type: "codex:codex-rescue"` か `/codex:rescue` skill で渡す。worktree で書く実装を渡すときは、`--write` と、`--cwd` に worktree の絶対パスを付けるよう指示する。Codex は起動した場所の git の最上位にだけ書けるので、メインの作業ツリーから起動すると `.git/worktree/` の下へ書けない
+- **OpenCode の GLM-5.3**: Bash で `opencode run -m zai-coding-plan/glm-5.3 --auto "<brief>"` を、書かせたい作業ツリー（worktree ならその絶対パス）に `cd` してから起動する。`--auto` は明示的に拒否されていない権限を自動で通すので、書き込みを伴わない調査なら外す
+
+渡す前に、毎回 `ai-usage codex opencode --summary` で両方の残りを確かめる。名前を並べると 1 回の呼び出しでまとめて返り、`--summary` を付けると、どちらも `providers.<名前>` の下に `fiveHour` / `weekly` の `usedPercent` と `exhausted` の同じ形で返る。
+
+- `exhausted: true`（どちらかの枠が 100%、または Codex が通常の利用を止めている）の渡し先には渡さない
+- 取得に失敗した渡し先（`ok: false`）は残りが分からないので渡さない
+
+どちらに渡すかは、残りの多さではなく委譲の重さで決める。
+
+- **重要な委譲は Codex に渡す**: 結果がメインループの判断に効く調査、込み入った実装、原因の分からない不具合の切り分け。Codex に渡せないときは GLM-5.3 に落とさず、sonnet に渡す
+- **単純な実装は GLM-5.3 に渡してよい**: plan で入力と期待する結果が決まっている定型の実装、機械的な書き換え。GLM-5.3 に渡せないときは Codex、Codex にも渡せなければ sonnet に渡す
+
+Codex と OpenCode の枠はふだん余っているので、Claude の週次枠に余裕があるときも、この列の委譲の一部を空きのある方へ回す。Claude の週次枠の使用率が 80% 以上のときは外部モデルを優先し、Claude の枠を設計判断とメインループに残す。使用率は `delegation-budget` Mod が Agent と Workflow の呼び出しの後にモデルへ知らせるので、知らせが届いたら次の委譲から、上の確認を通った外部モデルに切り替える。
 
 ## メインループに残すもの — オフロード禁止
 

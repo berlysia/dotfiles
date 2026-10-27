@@ -34,7 +34,7 @@ export function buildReminder(rateLimits: unknown, now: number): string | null {
     ) {
       return null;
     }
-    return `[delegation-budget] Claude の週次枠は ${percentUsed}% 使用済み${resetPhrase(resetsAt, now)}。Sonnet 相当の定型の委譲（実装・調査・機械的な読み）は Agent の subagent_type "codex:codex-rescue"（Codex 6.1 Terra）に回す。設計判断・subagent 結果の採否はメインループに残す。`;
+    return `[delegation-budget] Claude の週次枠は ${percentUsed}% 使用済み${resetPhrase(resetsAt, now)}。Sonnet 相当の定型の委譲（実装・調査・機械的な読み）は、ai-usage codex opencode --summary で exhausted でないことを確かめてから外部モデルに回す。重要な委譲は Codex GPT-6.1 Terra（Agent の subagent_type "codex:codex-rescue"）、単純な実装は GLM-5.3（opencode run -m zai-coding-plan/glm-5.3）でもよい。渡せなければ sonnet に回す。設計判断・subagent 結果の採否はメインループに残す。`;
   } catch {
     return null;
   }
