@@ -1857,7 +1857,7 @@ FIND_HTML = ('<label class="find"><svg class="lens" viewBox="0 0 24 24" width="1
              f'<button type="button" class="clear" aria-label="検索語を消す">{chevron("M7 7l10 10M17 7L7 17")}</button></label>')
 
 
-# 0件のとき。無かったことと打った語をはっきり出し、次の一手（語を消す）を添える。どこを探したかも書く
+# 0件のとき。無かったことと打った語をはっきり出し、次にやること（語を消す）を添える。どこを探したかも書く
 # （NN/g 2014「Clearly explain that there are no matching results」・ビービット 2007「次にどういうアクションを取ればよいか」）
 FIND_NONE = ('<div class="find-none" hidden><p>「<b class="nq"></b>」に当てはまるトピックはない</p>'
              '<p class="where">題名・疑問・読み・用語・人・媒体から探した</p><button type="button">検索語を消す</button></div>')

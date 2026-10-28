@@ -90,7 +90,7 @@ symlink を経由する行は無効にはならないが、どの対象にも該
 
 ## deny の診断
 
-guard の deny は診断を返す: どの条件（Plan/Review/Approval/marker verdict/hash）が不成立か、実際に見つかった status 行（ハイフン欠落や行末注記もそのまま表示）、期待する厳密形、次の 1 手。`workflow-cli status` で同じ診断を出せる。
+guard の deny は診断を返す: どの条件（Plan/Review/Approval/marker verdict/hash）が不成立か、実際に見つかった status 行（ハイフン欠落や行末注記もそのまま表示）、期待する厳密形、次にやること。`workflow-cli status` で同じ診断を出せる。
 
 **よくある固着**: `Review Status: pass` をハイフン無しで書くと判定 regex（`^- Review Status:\s*pass\s*$`）に一致せず deny される。`workflow-cli stamp` を使えば厳密形で書かれる。
 
@@ -156,7 +156,7 @@ hash 正規化を変えると承認済みの進行中成果物が deny される
 - `workflow-cli status [<path>] [--wf-dir <dir>]`: 引数なしは主文書（plan.md / spec.md）の gate 診断と tripwire 状態。二層モードでは plan-N.md ごとに `plan: plan-N.md ✓`、委任で通っていれば `plan: plan-N.md ✓ (delegated)`、または最初に満たしていない条件を添えた `plan: plan-N.md ✗ <条件>` の行も出す（`parent-spec-hash` の不一致を含む）。委任の条件から外れた plan は `✗ Approval Status (delegation: <理由>)` になる。`delegation: active` / `delegation: none` の行で、委任が有効かどうかも出す。`<path>` を渡すと、そのファイルへの Write / Edit に guard が下す判定（近道で対象外、許可している文書名、off-plan、止まるなら診断）を表示する。`<path>` は CLI を実行した dir 基準。Bash のように対象が複数あるときの集合の扱いは表示しない。承認の記録がある文書ごとに `approval via: <doc> via=<utterance|ask|unknown>` の行も出す。
 - `workflow-cli round <doc> [--full] [--extend|--self-extend --cause <landing|kd-changed|blocker|not-narrowing>|--reframer-extend --reason "<text>"]`: `## Reviewer Outputs (Round N)` 骨格を marker 直前に挿入し、`.round-baseline` に round 番号と時刻を、設計の節（Key Decisions と Alternative Approaches）を持つ文書では `.design-baseline` にその節の hash を記録する。Round 2 以降は下記「差分再レビュー」の集合だけを空欄で並べ、carried reviewer は `- verdict: pass (carried from Round N-1)` で埋める。`--full` は必須 reviewer 全員の空欄骨格にする。`<doc>` は wfDir 直下のファイル名（パス区切りを含まない `.md`）に限る。下記「ラウンド予算」を超える round は拒否する。
 - `workflow-cli stamp <doc> --verdict <pass|needs-work|blocker> --reviewers a+b`: Round N セクションと reviewer 実行証跡（`reviewer-runs.log`）を確認し、揃っていれば厳密形の Review Status と marker を書く。marker には `round=N` を書く（marker は hash 計算前に除去されるので hash は動かない）。証跡が無ければ非 0。
-- `workflow-cli triage <doc> --adopted N --excluded M`: intent-triage marker を書く。成功時は次の一手として `ask-approval` を出す。
+- `workflow-cli triage <doc> --adopted N --excluded M`: intent-triage marker を書く。成功時は次にやることとして `ask-approval` を出す。
 - `workflow-cli ask-approval [--wf-dir <dir>]`: 承認待ち（Plan complete・Review pass・hash 一致・未承認）の文書を先頭 3 件まで選び、`{"questions":[...]}` を標準出力に出す。そのまま AskUserQuestion に渡す。記録の返答の確認方法と、残りの件数は標準エラーに出る。承認待ちが 0 件なら非 0 で終わる。候補に spec.md があり、委任できる Scope の行があるときは、質問が 2 つになる（上記「委任」）。委任で通っている plan-N.md は候補に出ない。
 
 いずれも Approval 行に触れる変更は拒否する。wfDir は `--wf-dir`（`isStrictlyUnderProjectSubdir` で検証し、`.tmp/sessions` の外なら既定 dir に切り替えず非 0）か、`CLAUDE_PROJECT_DIR` と `CLAUDE_CODE_SESSION_ID` からの導出（起動時 pin があればそれ）。`--wf-dir` が session の dir と違えば警告する。成功出力は `wfDir=` / `source=` / `wrote=` で終わる。`workflow-cli dir` は wfDir と決定元だけを出す。
