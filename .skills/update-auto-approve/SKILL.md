@@ -42,6 +42,10 @@ bun run home/dot_claude/scripts/update-auto-approve.ts --dry-run --verbose --sin
    - **Bash コマンド**: 安全なコマンドが ask されている → Layer 2a 改善候補
    - **LLM 誤判定**: Layer 2b のプロンプト改善候補
 
+4. 理由文と transcript の `hook_success` を照合し、本体・PreToolUse・PermissionRequest のどこが判定したか特定する。ログ中の ask 件数と人への確認数は別に集計し、複合コマンドは断片数と呼び出し数も分ける。後段の自動許可や別の ask 断片で、削減効果が変わるため。
+5. 実際の停止を原因別に集計し、エージェントの待ち時間と利用者を呼び戻した回数を分ける。既に許可された可逆な作業や単なる待機では質問せず、スコープ選択・不可逆な操作・他者の作業への影響など必要な判断は残す。
+6. 承認の質問画面で文脈を復元できるか確認する。作業の題・worktree・ブランチ、元の依頼、変更と判断理由を記録からまとめ、質問を作る直前に提示する。最後の発言を覚えていると仮定せず、効果は要約の短さより説明し直しの要求率で測る。
+
 ### Phase 2: Layer 0/1 改善 (`.settings.permissions.json`)
 
 **対象**: MCP ツール、Skill、ファイルパスパターン
@@ -54,6 +58,8 @@ bun run home/dot_claude/scripts/update-auto-approve.ts --dry-run --verbose --sin
    - インストール済みスキルの確認: `ls ~/.claude/skills/`
 
 3. 重複・タイポの修正
+
+   - 広い allow は PermissionRequest hook や分類器を迂回しうる。引数で安全性が変わるコマンドは全体を許可せず、`--help` で確認した安全な用法だけを静的ルールに列挙する。
 
 ### Phase 3: Layer 2a 改善 (`permission-auto-approve.ts`)
 
@@ -82,6 +88,7 @@ bun run home/dot_claude/scripts/update-auto-approve.ts --dry-run --verbose --sin
 - `DANGEROUS_PATTERNS` は `SAFE_BASH_PATTERNS` より先に評価される
 - 危険パターンに該当するコマンドは safe パターンに追加しても deny される
 - テストで「uncertain であるべきケース」が正しく uncertain のままか必ず検証する
+- 文字列 guard の拒否理由には、一致した語とコマンド内の位置を示す。引用・heredoc 内のデータも一致しうるため、再試行の可否は意図の自己申告ではなく該当箇所と guard の案内から判断する。許可の案内は guard が生成する行に限定し、コマンドの引用は改行・行区切り文字をエスケープして1行にする。
 
 ### Phase 4: Layer 2b 改善 (`permission-llm-evaluator.ts`)
 
@@ -111,6 +118,10 @@ bun run home/dot_claude/scripts/update-auto-approve.ts --dry-run --verbose --sin
    - Layer 2b に委ねたコマンド（cp, mv, git apply 等）
    - DANGEROUS_PATTERNS との境界ケース
 3. **新しい READ_ONLY_TOOLS**: 追加したツールごとにテスト
+
+4. **層の対照実験**: 本体のバージョン・権限モード・有効な設定・hook 登録を記録し、設定または hook の有無だけを変えて同じ入力を比較する。hook が動く対照も用意し、無出力による継続と明示 allow を区別する。PreToolUse と PermissionRequest の allow は ask への作用が異なるため、人への確認まで追う。
+5. **照合の互換性**: 設定ファイル基準・cwd・絶対パス、glob の深さ・否定・類似名を対で試し、Read だけでなく Bash・Grep/Glob など別経路も確認する。互換化前後で全設定行と全判定段を比較し、従来の不一致が防いでいた操作まで許可されないか調べる。
+6. **パスの境界**: 許可するパス要素と解決先の条件を定義する。範囲の記述は字面と解決結果の一致を要求し、対象は解決後に比較する。範囲自体と配下の symlink を両方試し、新規ファイルは存在する親まで解決して未作成の末尾を扱う。
 
 ```bash
 # テスト実行

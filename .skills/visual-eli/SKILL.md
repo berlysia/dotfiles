@@ -41,7 +41,7 @@ Read only what the user pointed to or what is plainly part of the topic. Never o
 
 ## Step 2: Find the picture and its medium
 
-Decide what shape the idea has before writing any prose. The shape decides the medium.
+Before writing prose, establish where the reader will view the figure and whether that environment renders Mermaid or opens local HTML. Do not assume a terminal or a rendered chat. Choose among media that the reader can view, then use the idea's shape below; if the required medium is unavailable, explain the constraint before substituting.
 
 | The idea is about...                                                               | Medium         | Draw                                                                  |
 | ---------------------------------------------------------------------------------- | -------------- | --------------------------------------------------------------------- |
@@ -86,7 +86,7 @@ Rules for an HTML file:
 - Words outside the drawing: the heading, the caption line, notices, helper text, control labels, and any other text the page shows outside the drawing and its legend. Before writing the page, load the `stop-describing-ui` skill with the Skill tool and run its checklist on each of these strings. Three limits hold. First, the checklist changes wording only: every other rule in this skill wins over it, and an icon it asks for is inline SVG or a Unicode character, never a file. Second, it shortens the caption line and the load-failure note of a three.js page but never removes them, and the note keeps all three things it says. Third, it does not touch the drawing or the legend: the legend is left as it is, and the labels on boxes, arrows, axes, and moving parts follow "Label every box, arrow, axis, and moving part" in Step 2. If the skill cannot be loaded, write the page without it.
 - One self-contained file: inline CSS and JavaScript, no build step. Use inline SVG for structure, Canvas for many moving elements, and three.js only for a shape that is truly three-dimensional.
 - Motion needs controls: a step button, play and pause, or a slider. The first frame must make sense on its own. Never make a figure that only auto-plays, because the reader has to follow one step at a time.
-- You cannot see the page, so guard against the common ways it goes unreadable: set an explicit background and text colour, use a font size of at least 14px, and fit the figure in a 1000px-wide window without horizontal scrolling.
+- Set an explicit background and text colour, use a font size of at least 14px, and fit the figure in a 1000px-wide window without horizontal scrolling. When browser tools are available, inspect the rendered labels for clipping and overlap.
 - Network: the page may load exactly two files, the two three.js files in the block below, and only for a three-dimensional figure. Load no other library, addon, or file from the network, because a file without a hash in that block is not verified. The import map names only those two files, so importing any other three.js addon fails. Write no other network traffic into the page: no `fetch`, XHR, WebSocket, remote images, or remote fonts, and never put source material into a URL.
 - three.js: copy this block into the `<head>`, before any module script, character for character. It pins the version and makes the browser check each file against its hash (Subresource Integrity), so a file that was changed on the server is not run. A browser too old to know import map integrity skips the check and loads the files anyway. Never retype, shorten, or reformat the hashes.
 
@@ -107,14 +107,14 @@ Rules for an HTML file:
 
   After it, write one inline `<script type="module">` whose import declarations name only `three` and `three/addons/controls/OrbitControls.js`, followed by the figure code. Use static import declarations, never dynamic `import()`, so that a failed load stops the script before its first statement runs. Give the renderer an explicit size and call `controls.update()` in the render loop. three.js draws no text, so label axes and parts with HTML elements placed over the canvas.
 
-- Put a visible note in the `<body>` of a three.js page, before the module script, in the user's language. It says that the 3D library could not be loaded, that the reader should check the network connection, and that if the note stays they should tell whoever made the figure. Remove the note in the first statement of the module script. If the network or the hash check fails, the script never runs and the note stays, so the reader can tell.
+- Put a visible note in the `<body>` of a three.js page, before the module script, in the user's language. It says that the 3D library could not be loaded, that the reader should check the network connection, and that if the note stays they should tell whoever made the figure. Remove the note in the first statement of the module script. If the network or the hash check fails, the script never runs and the note stays. The page cannot distinguish those causes: do not call it a network failure without console evidence.
 - Without a network, inline SVG and Canvas still work. A three.js figure does not: tell the user it needs the network instead of replacing it with a flat diagram.
 - What goes into the page: only the labels, values, and one-line captions the figure shows. Never embed whole files or lines the figure does not use. Replace tokens, keys, passwords, and values of environment variables with `***`.
 - Text taken from source material enters the page by one of two routes. Written directly into HTML or SVG markup: change `&`, `<`, `>`, and `"` to `&amp;`, `&lt;`, `&gt;`, and `&quot;`. Held as data in a script: write it as a JSON string with every `<` written as its JSON Unicode escape (a backslash followed by `u003c`), and put it on the page with `textContent` or an SVG text node, without HTML-escaping it. Never use `innerHTML`.
 - Where to write it: if `git check-ignore -q .tmp` exits 0 in the working directory and neither `.tmp` nor `.tmp/visual-eli` is a symbolic link, create `.tmp/visual-eli/` with `mkdir -p` and write `.tmp/visual-eli/<topic-slug>.html`; otherwise write into a new directory made with `mktemp -d`. Never write into a path git tracks.
 - `<topic-slug>` is lowercase ASCII letters, digits, and hyphens only, starts with a letter or digit, and is at most 40 characters. Never overwrite an existing file: if the name is taken, append `-2`, `-3`, and so on. A name that exists as a symbolic link, even a broken one, is taken.
 - Do not open a browser for the reader unless the user asks. Give the absolute path in the reply.
-- If a browser tool is available, load that one file through `file://` for your own check, confirm that the console shows no error and the figure is visible, and fix what you find before replying. Do not start a web server for this.
+- If a browser tool is available, load that one file through the reader's actual `file://` or Windows-to-WSL path, record the browser version and route, and confirm that the console shows no error and the figure and controls work. A Linux `file://` check does not verify a Windows-to-WSL route. Do not substitute a web server. Distinguish local storage from offline operation; report untested routes and integrity support rather than claiming they work.
 
 ## Step 3: Write the explanation
 
@@ -144,11 +144,13 @@ Length: stop when the walk-through has covered every arrow or step in the figure
 
 - Exactly one sentence stands before the figure, or before the path to it, and every element in the figure is mentioned in the walk-through.
 - The medium is the one the Step 2 table gives for this idea's shape.
+- Compare every arrow, value, and ordering with the source and explanation; for code or startup order, use an execution trace where available. A diagram must not silently reorder data that the prose says stays in place.
 - No step relies on something the reader does not know and that was not introduced.
 - Every simplification is marked.
 - Every concept has its real term attached, and every tool name, command, and programming word is explained where it first appears.
-- ASCII sketch: the code block contains no full-width and no box-drawing characters.
-- Mermaid: the block starts with the diagram type, and every edge (or every period of a `timeline`) has a label.
+- ASCII sketch: mechanically check ASCII-only characters, maximum line width of 72, and matching box edges and columns.
+- Mermaid: parse or render with the selected diagram type's grammar, and check that every edge (or every period of a `timeline`) has a label; flowchart quoting rules do not carry over to sequence diagrams.
+- When changing this skill's medium rules, exercise each supported medium, including animated HTML and 3D, and rerun previously passing examples. Name any table rows or rendering paths left untested.
 - HTML file: the file exists at the path given in the reply, the reply contains no HTML source, and motion has controls. A three.js page contains the importmap block unchanged and the load-failure note. The words outside the drawing went through the `stop-describing-ui` checklist, unless the skill could not be loaded.
 
 ## Example: a figure in the reply

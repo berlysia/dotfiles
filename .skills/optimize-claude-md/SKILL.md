@@ -116,6 +116,9 @@ Evaluate each file against these criteria:
 - Should large files be split into `.claude/rules/`?
 - Would path-specific rules improve relevance?
 - Are there repeated patterns across files?
+- Set a byte budget for always-loaded instructions and check it mechanically. Record loading frequency; move details only when they have a separate reading occasion, retaining prohibitions and a usable reference at the point of need.
+- Measure bytes before and after formatting, and total input including referenced files. Compare added always-loaded bytes with the fraction of relevant actions that occur before the reference or hook guidance is read, using transcripts rather than size estimates alone.
+- Before recommending a tool, inspect actual command use and dependencies in scripts, CI, and skill prerequisites. Absence from the machine or mention in an article is not evidence of a need; adding a permanent procedure after one failure also imposes a cost on every future task.
 
 **See [BEST-PRACTICES.md](BEST-PRACTICES.md) for detailed evaluation criteria.**
 
@@ -216,6 +219,8 @@ For each recommendation, show:
 
 When proposing simplifications, follow these critical rules:
 
+Treat reduction percentages as estimates, subordinate to preservation of rules. Separate wording changes from changes to the rules themselves so compression does not silently change behavior.
+
 #### Rule 1: Explain Every Simplification
 
 For each proposed change, provide:
@@ -224,6 +229,8 @@ For each proposed change, provide:
 - **Preserved**: Critical decision-making information retained
 - **Removed**: Only verbose explanations or implementation details
 - **Evidence**: Quote showing removed content is non-critical
+- **Deletion basis**: Mark each deletion as DUP (duplicate), ENFORCED (mechanically replaced), RECORD (historical record), or NOISE (no instruction value), with evidence. Record introduction dates when evaluating unused rules so recent or intentionally rare procedures are not discarded for lack of use.
+- **ENFORCED evidence**: Verify separately that equivalent guidance is presented to the model before the decision and that a missed instruction causes execution to stop. Trace every supported path, including Bash paths that skip Write/Edit hooks and failure paths that skip success messages; stderr alone is not proof of model-visible guidance. Delete only when both conditions hold across all paths; otherwise retain or relocate the instruction.
 
 **Example format**:
 
@@ -261,6 +268,8 @@ For each proposed change, provide:
 ### Step 5: Consider Modularity
 
 If CLAUDE.md or rules files are large or cover multiple concerns, suggest:
+
+Split by when the content is read, not size alone. Keep a working reference and any prohibitions in the original summary, and check incoming heading links after moving details. Moving text into another always-loaded file does not reduce total input.
 
 **Splitting into `.claude/rules/`:**
 
