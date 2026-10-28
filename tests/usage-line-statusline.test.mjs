@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
   copyFileSync,
+  existsSync,
+  chmodSync,
   mkdirSync,
   mkdtempSync,
   rmSync,
@@ -71,6 +73,7 @@ function run(input, env = {}, scriptPath = script) {
     input,
     env: { ...base, ...env },
     encoding: "utf8",
+    timeout: 1000,
   });
   assert.equal(result.error, undefined);
   return result;
@@ -172,4 +175,109 @@ test("statusline.ts alone (hooks missing) prints nothing and exits 0", () => {
   assert.equal(result.status, 0);
   assert.equal(result.stdout, "");
   assert.equal(result.stderr, "");
+});
+
+function externalFile(over = {}) {
+  const window = (used) => ({ used, resetsAt: Date.now() + 3600000 });
+  return JSON.stringify({
+    v: 1,
+    fetchedAt: Date.now(),
+    providers: {
+      codex: {
+        ok: true,
+        fiveHour: window(4),
+        weekly: window(21),
+        refused: false,
+      },
+      opencode: {
+        ok: true,
+        fiveHour: window(0),
+        weekly: window(2),
+        refused: false,
+      },
+      cursor: {
+        ok: true,
+        fiveHour: null,
+        weekly: window(15.27),
+        refused: false,
+      },
+    },
+    ...over,
+  });
+}
+test("fresh external usage appends to forecast and placeholder regardless of session id", () => {
+  const runtime = freshRuntimeDir();
+  const input = withSeven(runtime, (resets) => forecastFile(resets));
+  writeFileSync(join(runtime, "usage-line", "_external.json"), externalFile());
+  for (const stdin of [input, "{}", stdinJson({ session_id: "../invalid" })]) {
+    const result = run(stdin, { XDG_RUNTIME_DIR: runtime });
+    assert.equal(result.status, 0);
+    assert.equal(result.stderr, "");
+    assert.match(result.stdout, / │ cx 4\/21 oc 0\/2 cu 15\n$/u);
+    if (stdin === "{}")
+      assert.equal(
+        result.stdout,
+        "ctx -- │ 5h -- │ 週 -- │ cx 4/21 oc 0/2 cu 15\n",
+      );
+    if (stdin === input) assert.match(result.stdout, /予想 20\.5%/);
+  }
+});
+test("stale, symlink, partial, oversized, directory and FIFO external files are ignored quickly", () => {
+  for (const kind of [
+    "stale",
+    "symlink",
+    "partial",
+    "oversized",
+    "directory",
+    "fifo",
+  ]) {
+    const runtime = freshRuntimeDir();
+    const path = join(runtime, "usage-line", "_external.json");
+    if (kind === "directory") mkdirSync(path);
+    else if (kind === "fifo") {
+      const made = spawnSync("mkfifo", [path], { encoding: "utf8" });
+      assert.equal(made.status, 0, made.stderr);
+    } else if (kind === "symlink") {
+      const real = join(root, `external-real-${counter++}`);
+      writeFileSync(real, externalFile());
+      symlinkSync(real, path);
+    } else
+      writeFileSync(
+        path,
+        kind === "stale"
+          ? externalFile({ fetchedAt: Date.now() - 31 * 60000 })
+          : kind === "partial"
+            ? '{"v":1,'
+            : externalFile({ pad: "x".repeat(65 * 1024) }),
+      );
+    const before = performance.now();
+    const result = run(stdinJson(), { XDG_RUNTIME_DIR: runtime });
+    assert.ok(performance.now() - before < 1000, kind);
+    assert.equal(result.status, 0, kind);
+    assert.equal(result.stderr, "", kind);
+    assert.match(result.stdout, LINE, kind);
+  }
+});
+test("statusline never spawns ai-usage with or without the shared file", () => {
+  const runtime = freshRuntimeDir();
+  const bin = join(runtime, "bin");
+  mkdirSync(bin);
+  const marker = join(runtime, "spawned");
+  const fake = join(bin, "ai-usage");
+  writeFileSync(fake, `#!/bin/sh\ntouch '${marker}'\n`);
+  chmodSync(fake, 0o755);
+  for (const present of [false, true]) {
+    if (present)
+      writeFileSync(
+        join(runtime, "usage-line", "_external.json"),
+        externalFile(),
+      );
+    const result = run(stdinJson(), {
+      XDG_RUNTIME_DIR: runtime,
+      PATH: `${bin}:${process.env.PATH}`,
+    });
+    assert.equal(result.status, 0);
+    assert.equal(result.stderr, "");
+    assert.equal(existsSync(marker), false);
+  }
 });

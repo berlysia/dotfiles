@@ -41,6 +41,8 @@ function setup(on: On, seed: Record<string, unknown> = {}) {
   const calls = {
     keys: 0,
     get: 0,
+    attemptsAtRun: [] as unknown[],
+    runs: [] as { argv: readonly string[]; timeoutMs?: number }[],
     sets: [] as { key: string; value: unknown }[],
     deletes: [] as string[],
     logs: [] as string[],
@@ -49,6 +51,13 @@ function setup(on: On, seed: Record<string, unknown> = {}) {
   const control = {
     id: "me",
     rejectSets: 0,
+    rejectGets: 0,
+    rejectRuns: 0,
+    external: false,
+    stdout:
+      '{"providers":{"codex":{"ok":true,"fiveHour":{"usedPercent":4,"resetsAt":null},"weekly":{"usedPercent":21,"resetsAt":null},"exhausted":false}}}',
+    pending: null as Promise<void> | null,
+    pendingGet: null as Promise<void> | null,
     rejectWrites: 0,
     env: { XDG_RUNTIME_DIR: "/run/user/1000" } as Record<string, string>,
     tailSeen: "unset" as string | undefined,
@@ -67,14 +76,33 @@ function setup(on: On, seed: Record<string, unknown> = {}) {
     control.tailSeen = e.component === "PromptHint" ? e.props.tail : undefined;
     return Text({ children: "hint" });
   });
+  on("process.run", async (_, e) => {
+    calls.attemptsAtRun.push(store.get("external:v1"));
+    calls.runs.push({ argv: e.argv, timeoutMs: e.init?.timeoutMs });
+    if (control.pending !== null) await control.pending;
+    if (control.rejectRuns-- > 0) return { deny: "secret diagnostic" };
+    return {
+      value: {
+        exitCode: 1,
+        stdout: control.stdout,
+        stderr: "secret",
+        isStdoutTruncated: false,
+        isStderrTruncated: false,
+      },
+    };
+  });
   const clock = mock.clock(on, { now: NOW });
   on("session.id", () => ({ value: control.id }));
   on("store.keys", () => {
     calls.keys++;
     return { value: [...store.keys()] };
   });
-  on("store.get", (_, e) => {
-    calls.get++;
+  on("store.get", async (_, e) => {
+    if (e.key === "external:v1") {
+      if (!control.external) return { value: { attemptAt: clock.now() } };
+      if (control.pendingGet !== null) await control.pendingGet;
+      if (control.rejectGets-- > 0) return { deny: "private error" };
+    } else calls.get++;
     return { value: store.get(e.key) };
   });
   on("store.set", (_, e) => {
@@ -505,5 +533,166 @@ describe("usage-line", () => {
       await mounted.unmount();
       expect(control.tailSeen).toBe(tail);
     }
+  });
+});
+
+function externalSetup(on: On, seed: Record<string, unknown> = {}) {
+  const result = setup(on, seed);
+  result.control.external = true;
+  return result;
+}
+function externalWrites(calls: { writes: { path: string; text: string }[] }) {
+  return calls.writes.filter((w) => w.path.endsWith("/_external.json"));
+}
+
+describe("external usage", () => {
+  test("only timers fetch, stamping attempt before run and writing mod time", async ($, on) => {
+    const { calls, store, clock } = externalSetup(on);
+    await $.session.start(startArgs);
+    await $.session.measure({
+      context: { window: 200000 },
+      rateLimits: [],
+      changed: [],
+    });
+    expect(calls.runs).toHaveLength(0);
+    await clock.advance(0);
+    expect(calls.runs).toEqual([
+      {
+        argv: [
+          "ai-usage",
+          "codex",
+          "opencode",
+          "cursor",
+          "--summary",
+          "--timeout",
+          "8",
+        ],
+        timeoutMs: 60000,
+      },
+    ]);
+    expect(store.get("external:v1")).toEqual({ attemptAt: NOW });
+    expect(calls.attemptsAtRun).toEqual([{ attemptAt: NOW }]);
+    expect(JSON.parse(externalWrites(calls)[0]?.text ?? "null")).toMatchObject({
+      v: 1,
+      fetchedAt: NOW,
+    });
+    expect(calls.sets.map((s) => s.key)).toEqual(["external:v1"]);
+  });
+  test("299 seconds skips, 301 seconds fetches at the first tick", async ($, on) => {
+    const { calls, clock, store } = externalSetup(on, {
+      "external:v1": { attemptAt: NOW - 299000 },
+    });
+    await $.session.start(startArgs);
+    await clock.advance(0);
+    expect(calls.runs).toHaveLength(0);
+    store.set("external:v1", { attemptAt: NOW - 241000 });
+    await clock.advance(MIN);
+    expect(calls.runs).toHaveLength(1);
+  });
+  test("future timestamp fetches and old sample cleanup preserves external key", async ($, on) => {
+    const { calls, clock, store } = externalSetup(on, {
+      "external:v1": { attemptAt: NOW + 3600000 },
+      "samples:v1:old": [row(NOW - 90 * DAY, 4)],
+    });
+    await $.session.start(startArgs);
+    expect(store.has("external:v1")).toBe(true);
+    await clock.advance(0);
+    expect(calls.runs).toHaveLength(1);
+    expect(calls.deletes).not.toContain("external:v1");
+  });
+  test("store get rejection releases in-flight for the next tick", async ($, on) => {
+    const { calls, clock, control } = externalSetup(on);
+    control.rejectGets = 1;
+    await $.session.start(startArgs);
+    await clock.advance(0);
+    expect(calls.runs).toHaveLength(0);
+    await clock.advance(MIN);
+    expect(calls.runs).toHaveLength(1);
+  });
+  test("in-flight is set before store.get can yield across a tick", async ($, on) => {
+    const { calls, clock, control } = externalSetup(on);
+    let release: () => void = () => {};
+    control.pendingGet = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await $.session.start(startArgs);
+    await clock.advance(0);
+    await clock.advance(MIN);
+    expect(calls.runs).toHaveLength(0);
+    release();
+    control.pendingGet = null;
+    await clock.settle();
+    expect(calls.runs).toHaveLength(1);
+  });
+
+  test("pending run spans ticks without overlapping; later run is possible", async ($, on) => {
+    const { calls, clock, control } = externalSetup(on);
+    let release: () => void = () => {};
+    control.pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await $.session.start(startArgs);
+    await clock.advance(0);
+    await clock.advance(2 * MIN);
+    expect(calls.runs).toHaveLength(1);
+    release();
+    control.pending = null;
+    await clock.advance(3 * MIN);
+    expect(calls.runs).toHaveLength(2);
+  });
+  test("run rejections keep attempt, log once and release the flag", async ($, on) => {
+    const { calls, store, clock, control } = externalSetup(on);
+    control.rejectRuns = 2;
+    await $.session.start(startArgs);
+    await clock.advance(0);
+    expect(externalWrites(calls)).toHaveLength(0);
+    expect(store.get("external:v1")).toEqual({ attemptAt: NOW });
+    await clock.advance(5 * MIN);
+    expect(calls.runs).toHaveLength(2);
+    expect(calls.logs.filter((l) => l.includes("run-rejected"))).toEqual([
+      "usage-line: external run-rejected",
+    ]);
+    expect(calls.logs.some((l) => l.includes("secret"))).toBe(false);
+  });
+  test("bad output and write rejections log each kind once", async ($, on) => {
+    const { calls, clock, control } = externalSetup(on);
+    control.stdout = "broken";
+    await $.session.start(startArgs);
+    await clock.advance(0);
+    await clock.advance(5 * MIN);
+    expect(externalWrites(calls)).toHaveLength(0);
+    expect(calls.logs.filter((l) => l.includes("bad-output"))).toHaveLength(1);
+    control.stdout = '{"providers":{}}';
+    control.rejectWrites = 1;
+    await clock.advance(5 * MIN);
+    control.rejectWrites = 1;
+    await clock.advance(5 * MIN);
+    expect(calls.logs.filter((l) => l.includes("write-rejected"))).toHaveLength(
+      1,
+    );
+  });
+  test("store set rejection skips fetching", async ($, on) => {
+    const { calls, clock, control } = externalSetup(on);
+    await $.session.start(startArgs);
+    control.rejectSets = 1;
+    await clock.advance(0);
+    expect(calls.runs).toHaveLength(0);
+  });
+  test("no private runtime directory skips fetching", async ($, on) => {
+    const { calls, clock, control } = externalSetup(on);
+    control.env = { TMPDIR: "/tmp" };
+    await $.session.start(startArgs);
+    await clock.advance(0);
+    expect(calls.runs).toHaveLength(0);
+  });
+  test("repeated session start cancels previous timers", async ($, on) => {
+    const { calls, clock, control } = externalSetup(on);
+    control.rejectRuns = 10;
+    await $.session.start(startArgs);
+    await $.session.start(startArgs);
+    await clock.advance(0);
+    expect(calls.runs).toHaveLength(1);
+    await clock.advance(5 * MIN);
+    expect(calls.runs).toHaveLength(2);
   });
 });

@@ -96,7 +96,7 @@ test("opencode: missing quota -> both windows null", () => {
 });
 
 test("cursor: no 5-hour or weekly windows", () => {
-  assert.deepEqual(summarizeCursor(), {
+  assert.deepEqual(summarizeCursor({}), {
     fiveHour: null,
     weekly: null,
     exhausted: false,
@@ -115,4 +115,42 @@ test("entrypoint: --summary is accepted and documented", () => {
   });
   assert.equal(bad.status, 2);
   assert.match(bad.stderr, /unknown argument: nope/);
+});
+
+const cursorData = (
+  used = 15.276,
+  end = "1793682092690",
+  period = "INCLUDED_USAGE_PERIOD_WEEKLY",
+) => ({
+  planInfo: { includedUsagePeriod: period },
+  periodUsage: { billingCycleEnd: end, planUsage: { totalPercentUsed: used } },
+});
+test("cursor: weekly included usage", () => {
+  assert.deepEqual(summarizeCursor(cursorData()), {
+    fiveHour: null,
+    weekly: { usedPercent: 15.276, resetsAt: "2026-11-03T05:01:32.690Z" },
+    exhausted: false,
+  });
+  assert.equal(summarizeCursor(cursorData(100)).exhausted, true);
+});
+test("cursor: monthly and nonnumeric usage have no weekly window", () => {
+  for (const data of [
+    cursorData(15, undefined, "INCLUDED_USAGE_PERIOD_MONTHLY"),
+    cursorData("15"),
+    { planInfo: cursorData().planInfo, periodUsage: { planUsage: {} } },
+    cursorData(Infinity),
+  ]) {
+    assert.equal(summarizeCursor(data).weekly, null);
+  }
+});
+test("cursor: missing or invalid reset preserves weekly usage", () => {
+  for (const end of [null, "abc", "1e999", "1e21"]) {
+    const data = cursorData();
+    if (end === null) delete data.periodUsage.billingCycleEnd;
+    else data.periodUsage.billingCycleEnd = end;
+    assert.deepEqual(summarizeCursor(data).weekly, {
+      usedPercent: 15.276,
+      resetsAt: null,
+    });
+  }
 });
