@@ -9,11 +9,14 @@ apply は未掲載のスキルを追記するだけで、行を消さない。
 
 - [x] adr-migrate
 - [x] adr-session
+- [x] agent-vm
 - [x] analyze-structure
 - [x] apply-harness-practices
 - [x] bugfix
+- [x] chezmoi-operations
 - [x] clarify
 - [x] claude-action-bootstrap
+- [x] code-metrics
 - [x] cognitive-rhythm-writing
 - [x] commit
 - [x] create-pr
@@ -23,12 +26,23 @@ apply は未掲載のスキルを追記するだけで、行を消さない。
 - [x] docs-audit
 - [x] document-workflow-reference
 - [x] execute-plan
+- [x] external-skill-intake
+- [x] formal-check
+- [x] git-safety
+- [x] github-pr-ci
+- [x] hook-cli-development
 - [x] imozuru
 - [x] insight-digest
 - [x] intent-alignment-triage
 - [x] issue-pr
+- [x] ja-explain-first
+- [x] ja-fact-preservation
+- [x] ja-paragraph
 - [x] japanese-tech-writing
+- [x] koncise
+- [x] learnings
 - [x] logic-validation
+- [x] mod-development
 - [x] optimize-claude-md
 - [x] orchestrator
 - [x] pr-description
@@ -41,22 +55,17 @@ apply は未掲載のスキルを追記するだけで、行を消さない。
 - [x] semantic-commit
 - [x] session-memo
 - [x] setup-claude-skills-for-web
+- [x] shell-scripting
+- [x] tanteki
 - [x] task-enrich
 - [x] task-handoff
 - [x] test-design
 - [x] update-auto-approve
 - [x] update-docs
 - [x] verify-doc
-- [x] visualize
 - [x] visual-eli
-- [x] learnings
-- [x] koncise
-- [x] tanteki
+- [x] visualize
 - [x] yomiyasu
-- [x] ja-fact-preservation
-- [x] ja-paragraph
-- [x] formal-check
-- [x] ja-explain-first
 
 ## External
 
