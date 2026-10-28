@@ -17,6 +17,7 @@
 
 - **TypeScript compile errors**: First error is usually the root cause
 - **Cascading failures**: Subsequent errors are often side effects
+- Compare failures with the base revision; run checks skipped after `&&` failures. Search stdout and stderr separately, and report extraction failures.
 - **Command**: Use `2>&1 | head -50` or `2>&1 | less`, NOT `| tail`
 
 ## Suspect Recent Changes First
@@ -53,6 +54,7 @@ Step-by-step verification process:
 - Don't change build scripts, configs that previously worked
 - If change is necessary, document why original decision was wrong
 - Verify behavior before and after change
+- Measure notification launches with marker files under the real hook lifecycle; screen visibility is unreliable. Check inherited hooks for duplicate counts, and distinguish process exit, pipe closure, and group termination.
 
 ## Use logic-validator Proactively
 
