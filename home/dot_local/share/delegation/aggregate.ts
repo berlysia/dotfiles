@@ -32,6 +32,23 @@ export function withinDays(iso: string, now: Date, days: number): boolean {
   return Number.isFinite(t) && t >= now.getTime() - days * DAY_MS;
 }
 
+/**
+ * The ledger as it stood at `atMs`: only delegation and lapse rows whose `at`
+ * is not later. Rows with an unreadable `at` are dropped. Amends are not cut by
+ * time; they change neither the adoption rate nor rule 1.
+ */
+export function foldedAsOf(folded: Folded, atMs: number): Folded {
+  const upTo = (iso: string) => {
+    const t = Date.parse(iso);
+    return Number.isFinite(t) && t <= atMs;
+  };
+  return {
+    ...folded,
+    delegations: folded.delegations.filter((d) => upTo(d.at)),
+    lapses: folded.lapses.filter((l) => upTo(l.at)),
+  };
+}
+
 type Lapses = Map<string, number>;
 
 /** Lapse rows carry no kind or size, so their ratio is per group overall. */

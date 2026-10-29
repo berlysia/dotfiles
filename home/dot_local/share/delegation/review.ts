@@ -1,5 +1,7 @@
 import {
   AUTO_REWRITE_REVISIT_RECORDS,
+  AUTO_REWRITE_STABLE_DAYS,
+  DEFAULT_SINCE_DAYS,
   EXPLORE_MIN_RECORDS,
   EXPLORE_WINDOW_DAYS,
   FIVE_HOUR_AHEAD_PERCENT,
@@ -20,14 +22,17 @@ import {
 import {
   allCells,
   enoughRecords,
+  foldedAsOf,
   formatLapse,
   formatRates,
   groupKey,
   groupLabel,
+  groupsForCell,
   median,
   withinDays,
   type GroupStats,
 } from "./aggregate.ts";
+import { recordRuleOne } from "./route.ts";
 import { displayModel, formatNote } from "./schema.ts";
 import type { Folded, SkipCounts } from "./store.ts";
 
@@ -59,6 +64,7 @@ function constantsLine(): string {
     `振り返り=${REVIEW_AFTER_RECORDS} 件 / ${REVIEW_AFTER_DAYS} 日`,
     `古い pending=${STALE_PENDING_DAYS} 日`,
     `pending 上限=${PENDING_LIMIT}`,
+    `自動書き換えの再検討=${AUTO_REWRITE_REVISIT_RECORDS} 件超 / ${AUTO_REWRITE_STABLE_DAYS} 日`,
   ].join(" / ");
 }
 
@@ -98,12 +104,42 @@ function groupDetail(
   if (displayModel(g.model).startsWith("m-")) {
     out.push("    既知の一覧に足す候補 (constants.ts の KNOWN_MODELS)");
   }
-  if (g.n > AUTO_REWRITE_REVISIT_RECORDS) {
-    out.push(
-      `    件数が ${AUTO_REWRITE_REVISIT_RECORDS} を超えた。自動書き換えの再検討の条件に当たる`,
-    );
-  }
   return out;
+}
+
+const DAY_MS = 86_400_000;
+
+/**
+ * ADR-0055's revisit condition for one cell: rule 1 on records alone named the
+ * same destination on each of the last 31 days, and today both that destination
+ * and sonnet have more than the threshold. The window is fixed at the route
+ * window so `--since` only decides which cells are looked at.
+ */
+function revisitLine(folded: Folded, kind: string, size: string, now: Date) {
+  let first: ReturnType<typeof recordRuleOne> = null;
+  for (let k = 0; k <= AUTO_REWRITE_STABLE_DAYS; k++) {
+    const t = now.getTime() - k * DAY_MS;
+    const groups = groupsForCell(
+      foldedAsOf(folded, t),
+      kind,
+      size,
+      new Date(t),
+      DEFAULT_SINCE_DAYS,
+    );
+    const pick = recordRuleOne(groups, kind);
+    if (pick === null) return null;
+    if (k === 0) first = pick;
+    else if (first === null || pick.dest.name !== first.dest.name) return null;
+  }
+  if (first === null) return null;
+  const { dest, rep, claude } = first;
+  if (
+    rep.n <= AUTO_REWRITE_REVISIT_RECORDS ||
+    claude.n <= AUTO_REWRITE_REVISIT_RECORDS
+  ) {
+    return null;
+  }
+  return `  自動書き換えの再検討の条件に当たる (ADR-0055): 記録だけの規則 1 の推奨 ${dest.label} が ${AUTO_REWRITE_STABLE_DAYS} 日変わらず、直近 ${DEFAULT_SINCE_DAYS} 日の ${dest.label} ${rep.n} 件と sonnet ${claude.n} 件がどちらも ${AUTO_REWRITE_REVISIT_RECORDS} 件を超えた`;
 }
 
 export function buildReview(input: ReviewInput): string[] {
@@ -119,6 +155,8 @@ export function buildReview(input: ReviewInput): string[] {
     for (const g of cell.groups) {
       out.push(...groupDetail(folded, g, cell.kind, cell.size, now, sinceDays));
     }
+    const revisit = revisitLine(folded, cell.kind, cell.size, now);
+    if (revisit !== null) out.push(revisit);
   }
   const { version, type, broken } = input.skipped;
   if (version + type + broken > 0) {
