@@ -1289,7 +1289,7 @@ describe("applyLookahead / surplusPoints", () => {
       NOWD,
       MINS,
     );
-    assert.equal(r0.lookahead.hoursToLine, 0);
+    assert.equal(r0.lookahead.hoursToLine, "over");
   });
 
   it("last day (line capped at 100): hoursToLine is null past the reset", () => {
@@ -1441,7 +1441,7 @@ describe("route output: lookahead line and rule 2", () => {
     );
     assert.match(
       lookaheadLine(out),
-      /速さ 3\.2pt\/h \(観測 3\.5h\) 線まで 2\.1h$/,
+      /速さ 3\.2pt\/h \(観測 3\.5h\) 目安を超えるまで 2\.1h$/,
     );
     const lines = out.split("\n");
     const w = lines.findIndex((l) => l.startsWith("窓:"));
@@ -1495,7 +1495,15 @@ describe("route output: lookahead line and rule 2", () => {
       usage: { claude: { week: 90, daysLeft: 10 / 24 } },
       read: ok(0.5, 3),
     });
-    assert.match(lookaheadLine(far), /線に届かない$/);
+    assert.match(lookaheadLine(far), /今週は目安を超えない$/);
+  });
+
+  it("a week already over the line says so instead of 0.0h", () => {
+    const out = routeOut({
+      usage: { claude: { week: 90, daysLeft: 3 } },
+      read: ok(0.5, 3),
+    });
+    assert.match(lookaheadLine(out), /\(観測 3\.0h\) 目安を超えている$/);
   });
 });
 
@@ -1630,7 +1638,7 @@ describe("route process: wiring", { concurrency: 4 }, () => {
       sb.setUsage(usageOf(claudeLookahead));
       const out = (await sb.run(ROUTE)).stdout;
       assert.match(recommendation(out), /codex.*規則 2.*\(先読み\)/);
-      assert.match(lookaheadLine(out), /線まで 2\.1h$/);
+      assert.match(lookaheadLine(out), /目安を超えるまで 2\.1h$/);
     } finally {
       sb.done();
     }

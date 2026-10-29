@@ -95,8 +95,8 @@ export function paceProvider(
 export type AheadBy = "line" | "lookahead";
 export type Lookahead = {
   read: ForecastRead;
-  // null: the line is never reached at this rate.
-  hoursToLine: number | null;
+  // "over": already above the line now. null: never reached at this rate.
+  hoursToLine: number | "over" | null;
   // Fewer than WEEK_LOOKAHEAD_HOURS left before the reset: not applied.
   tooCloseToReset: boolean;
 };
@@ -123,8 +123,8 @@ function hoursUntilLine(
   lineNow: number,
   weekHours: number,
   remainingHours: number,
-): number | null {
-  if (used >= lineNow) return 0;
+): number | "over" | null {
+  if (used >= lineNow) return "over";
   const slope = 100 / weekHours;
   const tc = Math.max(0, (100 - lineNow) / slope);
   const candidates: number[] = [];

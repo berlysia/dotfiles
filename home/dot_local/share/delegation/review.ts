@@ -45,7 +45,7 @@ const NOTES_PER_GROUP = 3;
 
 function constantsLine(): string {
   return [
-    `週の線=経過日数+${WEEK_LINE_EXTRA_DAYS}`,
+    `週の目安=経過日数+${WEEK_LINE_EXTRA_DAYS}`,
     `5h ahead=${FIVE_HOUR_AHEAD_PERCENT}%`,
     `先読み=${WEEK_LOOKAHEAD_HOURS}h`,
     `先読みの観測下限=${LOOKAHEAD_MIN_OBSERVED_HOURS}h`,
