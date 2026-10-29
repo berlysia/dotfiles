@@ -70,4 +70,5 @@ export const KNOWN_MODELS: readonly string[] = [
   "gpt-6.1-terra",
   "gpt-6-luna",
   "zai-coding-plan/glm-5.3",
+  "sarashina/sarashina3.2-mini-thinking",
 ];

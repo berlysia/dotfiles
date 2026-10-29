@@ -126,7 +126,7 @@ function revisitLine(folded: Folded, kind: string, size: string, now: Date) {
       new Date(t),
       DEFAULT_SINCE_DAYS,
     );
-    const pick = recordRuleOne(groups, kind);
+    const pick = recordRuleOne(groups, kind, size);
     if (pick === null) return null;
     if (k === 0) first = pick;
     else if (first === null || pick.dest.name !== first.dest.name) return null;

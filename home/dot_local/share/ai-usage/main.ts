@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
 /**
- * Unified usage CLI for Claude / Codex / Cursor / OpenCode (Z.ai Coding Plan).
+ * Unified usage CLI for Claude / Codex / Cursor / OpenCode (Z.ai Coding Plan) / Sarashina.
  *
  *   ai-usage                 fetch every provider (partial failures OK)
- *   ai-usage claude|codex|cursor|opencode
+ *   ai-usage claude|codex|cursor|opencode|sarashina
  *   claude-usage|codex-usage|…  thin wrappers that pin the provider
  */
 
@@ -13,14 +13,25 @@ import { fetchCodexUsage } from "./providers/codex.ts";
 import { fetchCursorUsage } from "./providers/cursor.ts";
 import { fetchOpencodeUsage } from "./providers/opencode.ts";
 import {
+  fetchSarashinaUsage,
+  SARASHINA_MODELS_URL,
+} from "./providers/sarashina.ts";
+import {
   type ProviderSummary,
   summarizeClaude,
   summarizeCodex,
   summarizeCursor,
   summarizeOpencode,
+  summarizeSarashina,
 } from "./summary.ts";
 
-export const PROVIDERS = ["claude", "codex", "cursor", "opencode"] as const;
+export const PROVIDERS = [
+  "claude",
+  "codex",
+  "cursor",
+  "opencode",
+  "sarashina",
+] as const;
 export type ProviderId = (typeof PROVIDERS)[number];
 
 type CliOptions = FetchOpts & {
@@ -37,6 +48,7 @@ const FETCHERS: Record<
   codex: fetchCodexUsage,
   cursor: fetchCursorUsage,
   opencode: fetchOpencodeUsage,
+  sarashina: (opts) => fetchSarashinaUsage(opts, SARASHINA_MODELS_URL),
 };
 
 const SUMMARIZERS: Record<
@@ -47,18 +59,21 @@ const SUMMARIZERS: Record<
   codex: summarizeCodex,
   cursor: summarizeCursor,
   opencode: summarizeOpencode,
+  sarashina: summarizeSarashina,
 };
 
 function printHelp(): void {
   process.stdout.write(`Usage: ai-usage [provider...] [options]
 
-Fetch account usage JSON for Claude, Codex, Cursor, and/or OpenCode.
+Fetch account usage JSON for Claude, Codex, Cursor, OpenCode, and/or Sarashina.
 
 Providers (default: all):
   claude     Anthropic OAuth /usage (5h + weekly)
   codex      Codex app-server account/rateLimits/read
   cursor     Cursor DashboardService period usage
   opencode   Z.ai Coding Plan quota (via OpenCode auth)
+  sarashina  Reachability of api.sarashina.ai (env SARASHINA_API_KEY); no
+             usage API exists, and the chat RPM is not observed
 
 Options:
   --summary            Same shape for every provider (see below)
@@ -78,7 +93,10 @@ and each successful entry is
     "fiveHour": { "usedPercent", "resetsAt" } | null,
     "weekly":   { "usedPercent", "resetsAt" } | null,
     "exhausted": true when a window is at 100% or the provider refuses use }
-Cursor has neither window, so both are null.
+Cursor has neither window, so both are null. Sarashina has neither window
+either; it adds "unmetered": true when /v1/models lists the model (or answers
+429, which also sets exhausted). Without SARASHINA_API_KEY it is ok with no
+windows and no "unmetered".
 Exit 0 if every selected provider succeeds; 1 if any fail; 2 on bad args.
 `);
 }

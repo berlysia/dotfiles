@@ -77,10 +77,40 @@ ADR-0055 で、委譲の結果を台帳に記録し、`delegation route` が枠�
 - `-s workspace-write` で書く委譲は、worktree の `.git` ファイルを通じてメインのリポジトリの git ディレクトリにも書ける。今までの Terra の書く委譲と同じ条件で、この ADR では変えない
 - 古い 3 行の依頼で `executor: codex` を出すと、agent 定義が失敗を返し、Claude で実行し直す
 
+## 追記: Sarashina を委譲先に加える (2026-10-29)
+
+利用者の依頼は、ai-usage を Sarashina に対応させ、オフロード先としても選べるようにすることだった。利用者の回答は、枠が無いものは under として扱い、公開リポジトリだけに許す、だった。
+
+### 決めたこと
+
+- Sarashina は使用量・残枠・残高を返す API を持たない。制限はチャットの RPM だけで、どの API もそれを返さない。ai-usage の `sarashina` provider は、鍵があり `/v1/models` が対象のモデルを返すかだけを見る。窓は常に null で、窓が無いことは `unmetered: true` で表す。この印は「窓を持たない」ことだけを表す
+- route は `unmetered` が `true` のときだけ、5 時間枠と週枠を under と読む。`exhausted` は `/v1/models` の 429 だけを表し、チャットの RPM は表さない。鍵が無い、モデルが一覧に無い、通信に失敗したときは窓が null なので unknown になり、推奨にも候補にも出ない。週枠の余りは null で、余りの候補にも出ない
+- 鍵が無いことは失敗にしない。引数なしの ai-usage が鍵の無い環境で終了コード 1 になるのを避けるためである
+- 鍵の送り先は定数の URL だけにする。環境変数で差し替えられると、環境だけで鍵の送り先を変えられるためである。テストは URL を関数の引数で渡す
+- 保留に理由を持たせた。opencode（GLM）は今までどおり常に保留する。Sarashina は、route を起動した場所の origin が github.com で、GitHub が `public` と答えたときだけ保留を外す。判定できないときは保留のままで、理由を保留の行に出す。判定は、Sarashina が規則か試す候補で勝った後にだけ呼び、1 回の route で多くて 1 回にする
+- 公開かどうかの判定は代理指標である。見るのは route を起動した場所のリポジトリで、brief の中身でも、opencode を起動する作業ツリーでもない。`git remote get-url` は `insteadOf` を適用するので、信頼できないリポジトリの設定で origin を公開リポジトリに見せかけられる。送る内容を絞るのは委譲する側で、規約に書いた。送る内容ごとの区分（exposure）ができたら、この判定を差し替える
+- Sarashina は規模 S にだけ出す。出力の上限が 8000 トークンで 30 RPM の小さいモデルなので、M 以上は向かない。規則 1、規則 2、試す候補のどれでも、S 以外では並びから外す
+- opencode の記録の条件に model `zai-coding-plan/glm-5.3` を足した。Sarashina の記録（harness は同じ opencode）が GLM に混ざらないようにするためである。台帳にある opencode の記録 3 件は、3 件とも model が `unknown` で、GLM の件数に数えられなくなる。opencode は保留中で採用率を使っていない。保留を外すときは、この 3 件の扱いを決める
+- ai-usage が終了コード 1 で終わっても、route は標準出力を読む。Sarashina の通信障害で claude と codex の窓まで unknown になるのを防ぐためである。ai-usage の終了コードの契約（1 つでも失敗すれば 1）は、usage-line が読むので変えない
+
+### 却下した案
+
+- Z.ai の枠に Sarashina を相乗りさせる: Z.ai の枠で Sarashina の可否を判断することになり、鍵の有無も見えない
+- 送る内容ごとの区分を先に作る: 区分の定義と記録の形を決める作業が要り、「DW は軽量に」という指定を超える
+
+### 結果
+
+- 引数なしの `chezmoi apply` で ai-usage と route が同時に配られる。route だけが新しいと、古い ai-usage は `sarashina` を不明な引数として終了コード 2 を返し、全 provider が unknown になる
+- Sarashina の記録は 0 件から始まるので、規模 S の試す候補に出続ける。記録を増やすための枠なので意図どおりである
+- 入力が学習に使われうる、という点はプレスリリースによる。規約の本文は読めていない
+- 判定から起動までの間に可視性が変わる余地がある。間は短いので受け入れる
+
 ## References
 
 - ADR-0055: 委譲の結果を台帳に記録し、枠のペースと記録から委譲先を勧める
 - ADR-0019: Codex の設定ファイルの管理
 - `home/dot_local/share/delegation/route.ts`
+- `home/dot_local/share/delegation/repo-visibility.ts`
+- `home/dot_local/share/ai-usage/providers/sarashina.ts`
 - `home/dot_claude/scripts/reviewer-codex-run.ts`
 - `home/dot_claude/rules/model-offloading.md`

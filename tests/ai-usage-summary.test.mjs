@@ -6,6 +6,7 @@ import {
   summarizeCodex,
   summarizeCursor,
   summarizeOpencode,
+  summarizeSarashina,
 } from "../home/dot_local/share/ai-usage/summary.ts";
 
 const main = new URL(
@@ -159,4 +160,25 @@ test("window length constants are exported for delegation route", async () => {
   const mod = await import("../home/dot_local/share/ai-usage/summary.ts");
   assert.equal(mod.FIVE_HOUR_MINS, 300);
   assert.equal(mod.WEEK_MINS, 10_080);
+});
+
+test("sarashina: each payload maps to its row (no windows ever)", () => {
+  const none = { fiveHour: null, weekly: null };
+  assert.deepEqual(summarizeSarashina({ configured: false }), {
+    ...none,
+    exhausted: false,
+  });
+  assert.deepEqual(
+    summarizeSarashina({ configured: true, status: 200, hasModel: true }),
+    { ...none, exhausted: false, unmetered: true },
+  );
+  assert.deepEqual(
+    summarizeSarashina({ configured: true, status: 200, hasModel: false }),
+    { ...none, exhausted: false },
+  );
+  assert.deepEqual(
+    summarizeSarashina({ configured: true, status: 429, retryAfter: 12 }),
+    { ...none, exhausted: true, unmetered: true },
+  );
+  assert.deepEqual(summarizeSarashina({}), { ...none, exhausted: false });
 });

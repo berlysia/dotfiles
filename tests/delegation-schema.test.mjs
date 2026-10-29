@@ -166,3 +166,10 @@ test("reviewer-codex-run copies of effort list and model shape match schema.ts",
     );
   }
 });
+
+test("sarashina model is kept as is, known, and not mixed with GLM", () => {
+  const model = "sarashina/sarashina3.2-mini-thinking";
+  assert.equal(normalizeModel("opencode", model), model);
+  assert.equal(displayModel(model), model);
+  assert.ok(KNOWN_MODELS.includes(model));
+});
