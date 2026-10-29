@@ -1,7 +1,7 @@
 #!/usr/bin/env -S bun run --silent
 
 import { buildSceneContext } from "../lib/agent-learnings/claude/scene-context.ts";
-import { createRunGit, type RunGit } from "../lib/agent-learnings/core/git.ts";
+import { createRunGit, type RunGit } from "../lib/run-git.ts";
 import { getHomeDir } from "../lib/path-utils.ts";
 import { readStdinLimited } from "../lib/read-stdin-limited.ts";
 

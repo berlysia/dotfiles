@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { runGit } from "../../lib/agent-learnings/core/git.ts";
+import { runGit } from "../../lib/run-git.ts";
 import {
   COMMON_KEY,
   type LearningEntry,

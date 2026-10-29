@@ -1,5 +1,5 @@
 import { feedbackHint } from "../core/render.ts";
-import type { RunGit } from "../core/git.ts";
+import type { RunGit } from "../../run-git.ts";
 import { injectScene } from "../core/scene-inject.ts";
 import { cmdSituations, pathSituation } from "../core/scene.ts";
 import { sceneStateDir } from "../core/scene-state.ts";

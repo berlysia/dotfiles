@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import type { RunGit } from "../../lib/agent-learnings/core/git.ts";
+import type { RunGit } from "../../lib/run-git.ts";
 import {
   COMMON_KEY,
   type LearningEntry,

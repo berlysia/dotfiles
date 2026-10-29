@@ -11,7 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type RunLearningsCliDeps } from "../../cli/learnings.ts";
-import { runGit } from "../../lib/agent-learnings/core/git.ts";
+import { runGit } from "../../lib/run-git.ts";
 
 export async function withEnv(
   fn: (deps: RunLearningsCliDeps, root: string) => Promise<void>,

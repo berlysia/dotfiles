@@ -15,7 +15,7 @@ import {
   writeSync,
 } from "node:fs";
 import { join } from "node:path";
-import type { RunGit } from "./git.ts";
+import type { RunGit } from "../../run-git.ts";
 import {
   COMMON_KEY,
   parseLearningsFile,
@@ -23,7 +23,7 @@ import {
   type LearningsFile,
   type Parsed,
 } from "./learnings-file.ts";
-import { keyToFileName } from "./repo-key.ts";
+import { keyToFileName } from "../../repo-key.ts";
 import type { FeedbackReader } from "./metrics.ts";
 
 export type StorePaths = {

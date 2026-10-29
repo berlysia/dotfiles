@@ -12,7 +12,7 @@ import { dirname, join } from "node:path";
 import { after, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { run } from "../../lib/agent-learnings/codex/scene-hook.ts";
-import type { RunGit } from "../../lib/agent-learnings/core/git.ts";
+import type { RunGit } from "../../lib/run-git.ts";
 import {
   COMMON_KEY,
   type LearningEntry,

@@ -13,7 +13,7 @@ import {
   type MetricsSummary,
   type RecordKind,
 } from "./metrics.ts";
-import { isValidRepoKey } from "./repo-key.ts";
+import { isValidRepoKey } from "../../repo-key.ts";
 import type { SceneReader } from "./scene-state.ts";
 import {
   LOG_HARD_MAX_BYTES,

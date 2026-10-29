@@ -21,7 +21,7 @@ import {
   readLearnings,
   storePaths,
 } from "../../lib/agent-learnings/core/store.ts";
-import type { RunGit } from "../../lib/agent-learnings/core/git.ts";
+import type { RunGit } from "../../lib/run-git.ts";
 import * as redact from "../../lib/redact-secrets.ts";
 
 const KEY = "github.com/a/b";

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { basename, dirname } from "node:path";
-import type { RunGit } from "./git.ts";
+import type { RunGit } from "./run-git.ts";
 
 // 各 segment は英数字で始まる（"." や ".." や "-x" を通さない）
 const KEY_PATTERN = /^[a-z0-9][a-z0-9._-]*(\/[a-z0-9][a-z0-9._~-]*)+$/;

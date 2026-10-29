@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
 import { buildSceneContext } from "../../lib/agent-learnings/claude/scene-context.ts";
-import type { RunGit } from "../../lib/agent-learnings/core/git.ts";
+import type { RunGit } from "../../lib/run-git.ts";
 import {
   COMMON_KEY,
   type LearningEntry,

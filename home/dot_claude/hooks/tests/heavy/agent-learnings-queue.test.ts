@@ -29,7 +29,7 @@ import {
   writeProcessed,
   type QueueJob,
 } from "../../lib/agent-learnings/core/queue.ts";
-import { runGit } from "../../lib/agent-learnings/core/git.ts";
+import { runGit } from "../../lib/run-git.ts";
 import { NOW, SID, input } from "../support/agent-learnings-queue-fixture.ts";
 import { initStore, storePaths } from "../../lib/agent-learnings/core/store.ts";
 

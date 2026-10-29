@@ -1,7 +1,7 @@
 #!/usr/bin/env -S bun run --silent
 
 import { defineHook } from "cc-hooks-ts";
-import { runGit } from "../lib/agent-learnings/core/git.ts";
+import { runGit } from "../lib/run-git.ts";
 import {
   enqueueSessionJob,
   jobInputFromHook,

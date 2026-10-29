@@ -13,7 +13,7 @@ import {
 } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 import { isSafeSessionId } from "../../session-id.ts";
-import { isValidRepoKey } from "./repo-key.ts";
+import { isValidRepoKey } from "../../repo-key.ts";
 import type { InjectedRecord, InjectedState, InjectionKind } from "./select.ts";
 
 // 場面の注入の「このセッションで何を出したか」と、cwd → repo の解決のキャッシュ。

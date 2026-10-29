@@ -1,4 +1,4 @@
-import { createRunGit } from "../../lib/agent-learnings/core/git.ts";
+import { createRunGit } from "../../lib/run-git.ts";
 import { injectScene } from "../../lib/agent-learnings/core/scene-inject.ts";
 import { cmdSituations } from "../../lib/agent-learnings/core/scene.ts";
 import { defaultStoreDir } from "../../lib/agent-learnings/core/store.ts";

@@ -12,6 +12,7 @@
  */
 
 import { randomBytes } from "node:crypto";
+import { hasAgentEnv, isHumanCaller } from "../lib/agent-caller.ts";
 import {
   closeSync,
   constants,
@@ -32,7 +33,7 @@ import {
   applyInboxLocked,
   writeInboxRequest,
 } from "../lib/agent-learnings/core/inbox.ts";
-import { runGit, type RunGit } from "../lib/agent-learnings/core/git.ts";
+import { runGit, type RunGit } from "../lib/run-git.ts";
 import {
   COMMON_KEY,
   parseLearningsFile,
@@ -78,10 +79,7 @@ import {
   recordFeedback,
 } from "../lib/agent-learnings/core/metrics-log.ts";
 import { renderLearnings } from "../lib/agent-learnings/core/render.ts";
-import {
-  isValidRepoKey,
-  resolveRepoKey,
-} from "../lib/agent-learnings/core/repo-key.ts";
+import { isValidRepoKey, resolveRepoKey } from "../lib/repo-key.ts";
 import {
   appendReadLog,
   commitStore,
@@ -119,20 +117,6 @@ export interface RunLearningsCliResult {
   exitCode: number;
   stdout: string;
   stderr: string;
-}
-
-// Claude Code の Bash は CLAUDECODE を、Codex は AI_AGENT（home/dot_codex/.config.toml の
-// shell_environment_policy.set）と CODEX_SANDBOX* を渡す。外すには `env -u` などをコマンドに書く
-// 必要があり、権限の照合に見える。
-const AGENT_ENV = /^(CLAUDECODE|CLAUDE_CODE_.*|CODEX_SANDBOX.*|AI_AGENT)$/;
-
-// 人の操作かの判定はここ 1 か所。曖昧なときは人ではない扱いにする。人だけの操作
-// （--common、promote、rekey、init）は拒否し、tag では確認を省く（省いても付けられる
-// 範囲は人と同じなので、曖昧さが広げるものは無い）。環境からの推定で、証明ではない
-export function isHumanCaller(
-  deps: Pick<RunLearningsCliDeps, "isTty" | "agentEnv">,
-): boolean {
-  return deps.isTty && !deps.agentEnv;
 }
 
 type Actor = "human" | "agent";
@@ -1573,7 +1557,7 @@ if (import.meta.main) {
     now: new Date(),
     readerEnv: process.env["AGENT_LEARNINGS_READER"],
     isTty: process.stdin.isTTY === true && process.stdout.isTTY === true,
-    agentEnv: Object.keys(process.env).some((name) => AGENT_ENV.test(name)),
+    agentEnv: hasAgentEnv(Object.keys(process.env)),
     feedbackReader: detectFeedbackReader(Object.keys(process.env)),
     lockWaitMs: 10_000,
     runGit,
