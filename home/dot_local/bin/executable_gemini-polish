@@ -37,6 +37,12 @@ Options:
   --text <text>            Specify text directly via argument instead of stdin or file.
   -h, --help               Show this help message.
 
+Authentication:
+  When GEMINI_API_KEY is set, this run alone uses the Gemini API with that key
+  (paid tier), via agy --settings '{"modelProvider":"gemini"}'. agy's saved
+  settings and its Google-account login are left untouched. Without the key,
+  agy uses its signed-in account.
+
 Examples:
   # Polish text from argument
   gemini-polish --text "この機能は問題が発生する可能性が存在しています。"
@@ -215,5 +221,12 @@ ${output_directive}
 ${INPUT_TEXT}
 "
 
-# Execute agy
-exec agy -p "$PROMPT" --model "$MODEL"
+# agy reads GEMINI_API_KEY only when modelProvider is "gemini". Passing it via
+# --settings instead of editing settings.json keeps the account login as the
+# default for every other agy session.
+AGY_ARGS=(-p "$PROMPT" --model "$MODEL")
+if [[ -n "${GEMINI_API_KEY:-}" ]]; then
+    AGY_ARGS+=(--settings '{"modelProvider":"gemini"}')
+fi
+
+exec agy "${AGY_ARGS[@]}"
