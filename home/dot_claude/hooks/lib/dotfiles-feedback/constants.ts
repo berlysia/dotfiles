@@ -4,6 +4,13 @@ export const FEEDBACK_OWNER = "berlysia";
 export const SCHEMA_VERSION = 1;
 export const FEEDBACK_LABEL = "dotfiles-feedback";
 export const FEEDBACK_KINDS = ["bug", "improvement", "missing"] as const;
+export const FEEDBACK_LABELS = [
+  FEEDBACK_LABEL,
+  ...FEEDBACK_KINDS.map((kind) => `kind:${kind}`),
+  "triaged:issue",
+  "triaged:plan",
+  "triaged:reject",
+] as const;
 export const FEEDBACK_AGENTS = [
   "claude",
   "codex",

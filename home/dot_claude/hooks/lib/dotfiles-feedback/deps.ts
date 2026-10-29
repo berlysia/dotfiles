@@ -1,16 +1,13 @@
 import type { Stats } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
-import type { FeedbackError } from "./cache.ts";
 
-export type GhResult =
-  | { ok: true; stdout: string; stderr: string; exitCode: number }
-  | {
-      ok: false;
-      stdout: string;
-      stderr: string;
-      exitCode: number | null;
-      error: FeedbackError;
-    };
+export type GhRunResult = {
+  code: number | null;
+  stdout: string;
+  stderr: string;
+  spawnError?: string;
+  timedOut?: boolean;
+};
 
 export type FeedbackFs = {
   mkdir(
@@ -33,6 +30,7 @@ export type FeedbackFs = {
 
 export type FeedbackDeps = {
   root: string;
+  home: string;
   uid: number;
   fs: FeedbackFs;
   repo: string;
@@ -43,7 +41,7 @@ export type FeedbackDeps = {
       timeoutMs: number;
       env: Readonly<Record<string, string>>;
     },
-  ): Promise<GhResult>;
+  ): Promise<GhRunResult>;
   spawnFlush(): Promise<boolean>;
   now(): Date;
   randomBytes(size: number): Uint8Array;

@@ -19,7 +19,14 @@ const edges: Record<string, readonly string[]> = {
   lock: ["constants", "deps"],
   retry: ["lock", "constants", "deps", "item"],
   spool: ["item", "lock", "retry", "constants", "deps"],
-  gh: ["issue-body", "item", "cache", "constants", "deps"],
+  gh: [
+    "issue-body",
+    "item",
+    "cache",
+    "constants",
+    "deps",
+    "../invisible-chars",
+  ],
   spawn: ["deps"],
   flush: [
     "spool",
