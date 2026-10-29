@@ -22,29 +22,22 @@ Agent tool の `model` パラメータ / Workflow `agent()` の `opts.model` で
 
 迷ったら sonnet。sonnet の結果が明らかに力不足だった場合のみ 1 tier 上げ直す（最初から高位モデルに逃げない）。
 
-### 外部モデルへの委譲（Codex / OpenCode）
+### 委譲先の決め方と記録（delegation CLI）
 
-- 複数の委譲を並行実行するときは、Bash の `run_in_background` で個別に起動する。単一シェルの `&` と `wait` では、UI に実行数と個別の完了通知が出ない。進捗は各ジョブが書く完了マーカーで数える。`pgrep` は子シェルや起動用プロセスも数えるため使わない。
+表の「探索・定型実装・ドキュメント」列の既定の委譲先は sonnet である。Codex と OpenCode には、`delegation route` が勧めたとき、または試す候補として挙げたときに渡す。
 
-表の「探索・定型実装・ドキュメント」列の委譲は、sonnet の代わりに次の 2 つへ渡せる。どちらも commit はできないので、commit はメインループがする。
+1. 委譲の前に `delegation route` を 1 回実行し、仕事の種類と規模を渡す（引数は `delegation --help`）。route は provider ごとの 5 時間枠と週枠がペースの線より先か後かと、その種類と規模での組ごとの採用率と件数を示し、推奨の委譲先を理由つきで返す。推奨に従う。route が 0 以外の終了コードで終わったら sonnet に渡す
+2. 「試す候補」が示されたら、急がない小さな委譲をその候補に渡してよい。記録の少ない委譲先の評価を増やすための枠である
+3. 委譲が終わると、`delegation-budget` Mod が `[delegation]` で始まる 1 行で記録を促す。結果を確かめて採否を決めたら `delegation record` で記録する。メインループ自身の判断の誤りは委譲先の欠陥にせず、note に書く
+4. 後から委譲の結果に欠陥が見つかったら、`delegation amend` で記録する
+5. route か record が振り返りを促したら `delegation review` を読み、閾値と既知のモデル ID の一覧を変えるべきかを利用者に提案する
 
-- **Codex の GPT-6.1 Terra**: 2 つのうち賢い方。Agent の `subagent_type: "codex:codex-rescue"` か `/codex:rescue` skill で渡す。worktree で書く実装を渡すときは、`--write` と、`--cwd` に worktree の絶対パスを付けるよう指示する。Codex は起動した場所の git の最上位にだけ書けるので、メインの作業ツリーから起動すると `.git/worktree/` の下へ書けない
-- **OpenCode の GLM-5.3**: Bash で `opencode run -m zai-coding-plan/glm-5.3 --auto "<brief>"` を、書かせたい作業ツリー（worktree ならその絶対パス）に `cd` してから起動する。`--auto` は明示的に拒否されていない権限を自動で通すので、書き込みを伴わない調査なら外す
+外部の委譲先への渡し方は次のとおり。どちらも commit はできないので、commit はメインループがする。
 
-渡す前に、毎回 `ai-usage codex opencode --summary` で両方の残りを確かめる。名前を並べると 1 回の呼び出しでまとめて返り、`--summary` を付けると、どちらも `providers.<名前>` の下に `fiveHour` / `weekly` の `usedPercent` と `exhausted` の同じ形で返る。
+- **Codex の GPT-6.1 Terra**: Agent の `subagent_type: "codex:codex-rescue"` か `/codex:rescue` skill で渡す。worktree で書く実装を渡すときは、`--write` と、`--cwd` に worktree の絶対パスを付けるよう指示する。Codex は起動した場所の git の最上位にだけ書けるので、メインの作業ツリーから起動すると `.git/worktree/` の下へ書けない
+- **OpenCode の GLM-5.3**: Bash で `opencode run -m zai-coding-plan/glm-5.3 --auto "<brief>"` を、書かせたい作業ツリー（worktree ならその絶対パス）に `cd` してから起動する。`--auto` は明示的に拒否されていない権限を自動で通すので、書き込みを伴わない調査なら外す。`command -v opencode` が何も返さなければ OpenCode には渡さない。route が使う ai-usage は `opencode` を起動せずに Z.ai の API を呼ぶので、CLI が無くても枠の状態は取れる
 
-- `exhausted: true`（どちらかの枠が 100%、または Codex が通常の利用を止めている）の渡し先には渡さない
-- 取得に失敗した渡し先（`ok: false`）は残りが分からないので渡さない
-- `command -v opencode` が何も返さなければ GLM-5.3 には渡さない。ai-usage は `opencode` を起動せずに Z.ai の API を呼ぶので、CLI が無くても `ok: true` になる
-
-どちらに渡すかは、残りの多さではなく委譲の重さで決める。
-
-委譲は負荷の移動なので、重い依頼は回復時刻も確かめて実行時期を決める。
-
-- **重要な委譲は Codex に渡す**: 結果がメインループの判断に効く調査、込み入った実装、原因の分からない不具合の切り分け。Codex に渡せないときは GLM-5.3 に落とさず、sonnet に渡す
-- **単純な実装は GLM-5.3 に渡してよい**: plan で入力と期待する結果が決まっている定型の実装、機械的な書き換え。GLM-5.3 に渡せないときは Codex、Codex にも渡せなければ sonnet に渡す
-
-Codex と OpenCode の枠はふだん余っているので、Claude の週次枠に余裕があるときも、この列の委譲の一部を空きのある方へ回す。Claude の週次枠の使用率が 80% 以上のときは外部モデルを優先し、Claude の枠を設計判断とメインループに残す。使用率は `delegation-budget` Mod が Agent と Workflow の呼び出しの後にモデルへ知らせるので、知らせが届いたら次の委譲から、上の確認を通った外部モデルに切り替える。
+複数の委譲を並行実行するときは、Bash の `run_in_background` で個別に起動する。単一シェルの `&` と `wait` では、UI に実行数と個別の完了通知が出ない。進捗は各ジョブが書く完了マーカーで数える。`pgrep` は子シェルや起動用プロセスも数えるため使わない。
 
 ## メインループに残すもの — オフロード禁止
 
