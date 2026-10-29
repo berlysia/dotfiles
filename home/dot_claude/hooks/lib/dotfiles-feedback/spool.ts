@@ -238,6 +238,38 @@ export async function openSpool(root: string, deps: SpoolDeps) {
         ? "failed"
         : null;
     },
+    // show 用。failed/ は { reason, item } の包みを開いて件を返す。読めなければ unreadable。
+    async readLocal(
+      id: string,
+      place: LocalPlace,
+    ): Promise<{ kind: "ok"; item: FeedbackItemV1 } | { kind: "unreadable" }> {
+      check(id);
+      let path: string | undefined;
+      if (place === "sending") {
+        const name = (await fs.readdir(join(root, "sending"))).find(
+          (entry) => claimedName(entry)?.id === id,
+        );
+        path = name === undefined ? undefined : join(root, "sending", name);
+      } else if (place === "failed")
+        path = (await failedFiles()).find((entry) => entry.id === id)?.path;
+      else path = itemPath(place, id);
+      const text = path === undefined ? null : await readOrNull(path);
+      if (text === null) return { kind: "unreadable" };
+      let json = text;
+      if (place === "failed") {
+        try {
+          const wrapped = JSON.parse(text) as { item?: unknown } | null;
+          if (typeof wrapped?.item !== "string") return { kind: "unreadable" };
+          json = wrapped.item;
+        } catch {
+          return { kind: "unreadable" };
+        }
+      }
+      const parsed = parseItem(json);
+      return parsed.kind === "ok"
+        ? { kind: "ok", item: parsed.item }
+        : { kind: "unreadable" };
+    },
     async findSent(id: string): Promise<number | null> {
       check(id);
       const text = await readOrNull(join(root, "sent.jsonl"));
