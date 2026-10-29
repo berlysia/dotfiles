@@ -229,4 +229,23 @@ if [[ -n "${GEMINI_API_KEY:-}" ]]; then
     AGY_ARGS+=(--settings '{"modelProvider":"gemini"}')
 fi
 
-exec agy "${AGY_ARGS[@]}"
+# agy is an agent that can read files in its working directory, and the text
+# being polished could carry instructions. Run it in an empty directory so there
+# is nothing to read and send along with the prompt.
+WORK_DIR="$(mktemp -d)"
+trap 'rm -rf "$WORK_DIR"' EXIT
+
+set +e
+polished="$(cd "$WORK_DIR" && agy "${AGY_ARGS[@]}")"
+agy_status=$?
+set -e
+[[ "$agy_status" -eq 0 ]] || exit "$agy_status"
+
+# Headless agy exits 0 and prints this notice on stdout when it auto-denies a
+# tool, so with --raw the notice would become the "polished" text.
+if [[ "$polished" == "jetski: no output produced"* ]]; then
+    printf '%s\n' "$polished" >&2
+    die "agy produced no polished text"
+fi
+
+printf '%s\n' "$polished"
