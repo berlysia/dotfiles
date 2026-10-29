@@ -1,0 +1,6 @@
+{
+  "name": "sessions",
+  "version": "0.1.0",
+  "description": "A /sessions pane that lists the other Claude Code sessions and adds the chosen one as a [session: ...] destination to the prompt.",
+  "types": "./types/index.d.ts"
+}
