@@ -1,0 +1,5 @@
+sessions/cli-output.v1.json sessions/cli-output.v1.json
+sessions/cli-output.v1-self.json sessions/cli-output.v1-self.json
+sessions/cli-output.v1-extended.json sessions/cli-output.v1-extended.json
+sessions/cli-output.v1-degraded.json sessions/cli-output.v1-degraded.json
+sessions/cli-output.unknown-schema.json sessions/cli-output.unknown-schema.json
