@@ -1360,7 +1360,12 @@ async function renderResults(results) {
 
 // ---- T2e: ancestor config, record, entrance per model ----------------------
 
-/** Ancestor opencode.jsonc files must not appear among the load sources. */
+/**
+ * With opencode.jsonc in the worktree's ancestors, the entrance must refuse to
+ * start there. opencode 2.2.0 itself loads ancestor configs whatever the env
+ * (OPENCODE_DISABLE_PROJECT_CONFIG and OPENCODE_CONFIG_PROJECT_DISABLE do not
+ * stop it), so that is returned for display, not failed.
+ */
 function checkAncestorConfigs(realpath, fakes) {
   const written = [];
   try {
@@ -1384,11 +1389,20 @@ function checkAncestorConfigs(realpath, fakes) {
     const hit = sources.filter((s) =>
       resolve(s.path).startsWith(`${fakes.root}/`),
     );
-    if (hit.length > 0) {
+    const launch = checkLaunchDir({
+      dir: fakes.wt,
+      write: false,
+      allowSecretFiles: true,
+    });
+    if (
+      launch.ok ||
+      !launch.reason.startsWith("opencode の project 設定がある")
+    ) {
       throw new Failure(
-        `祖先の opencode.jsonc が読み込まれた: ${hit.map((s) => s.path).join(", ")}`,
+        `祖先の opencode.jsonc があるのに入口が拒否しない: ${launch.ok ? "通った" : launch.reason}`,
       );
     }
+    return hit.map((s) => s.path);
   } finally {
     for (const file of written) {
       try {
@@ -1439,8 +1453,10 @@ async function finishAndRecord({
   results,
   firstStatic,
 }) {
-  checkAncestorConfigs(realpath, fakes);
-  out("祖先の設定: 読み込まれない");
+  const loaded = checkAncestorConfigs(realpath, fakes);
+  out(
+    `祖先の設定: 入口が拒否する（opencode 自身は読み込む。既知の制約: ${loaded.join(", ") || "(なし)"}）`,
+  );
 
   // Inputs may have moved while the models ran (login, logout, update, edits).
   const again = collectOffloadInputs(process.env);
