@@ -8,7 +8,7 @@
  * capture.ts nor the Mod.
  */
 
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   accessSync,
@@ -16,19 +16,24 @@ import {
   constants as fsc,
   fstatSync,
   lstatSync,
+  mkdirSync,
+  mkdtempSync,
   openSync,
   readFileSync,
   readSync,
   readdirSync,
   realpathSync,
+  rmSync,
   statSync,
+  unlinkSync,
+  writeSync,
 } from "node:fs";
-import { homedir } from "node:os";
+import { constants as osConstants, homedir, tmpdir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { OFFLOAD_DIR_NAME, isExposure, offloadAgentName } from "./constants.ts";
 import { allowedAuthProviders, sendsOutModels } from "./destinations.ts";
-import { resolveDataDir } from "./store.ts";
+import { ensureOwnedDir, resolveDataDir } from "./store.ts";
 
 export type Env = Record<string, string | undefined>;
 
@@ -1396,4 +1401,303 @@ export function buildVerifiedRecord(opts: {
     authProviders: [...names].sort(),
     models: [...opts.models],
   };
+}
+
+// ---- entry ----------------------------------------------------------------
+
+const VERSION_TIMEOUT_MS = 10_000;
+const RUN_TIMEOUT_MS = 30 * 60 * 1000;
+const KILL_GRACE_MS = 5000;
+const IGNORED_LINES_MAX = 50;
+const READ_DIFF_LINE =
+  "テスト・install・git の hook を走らせる前に、全差分を読む";
+
+/**
+ * A test-only knob that can only shorten a limit: a longer or malformed value
+ * falls back to the default, so the environment cannot extend how long a
+ * delegated opencode may run.
+ */
+function shortenOnly(env: Env, name: string, fallback: number): number {
+  const raw = env[name];
+  if (raw === undefined || !/^\d{1,12}$/.test(raw)) return fallback;
+  const n = Number(raw);
+  return n >= 1 && n < fallback ? n : fallback;
+}
+
+/** Append one JSON line to offload.log; returns an error text or null. */
+function appendOffloadLog(env: Env, fields: LogFields): string | null {
+  try {
+    const dataDir = resolveDataDir(env);
+    mkdirSync(join(dataDir, ".."), { recursive: true });
+    ensureOwnedDir(dataDir);
+    ensureOwnedDir(offloadDirPath(env));
+    const fd = openSync(
+      offloadLogPath(env),
+      fsc.O_WRONLY | fsc.O_APPEND | fsc.O_CREAT | fsc.O_NOFOLLOW,
+      0o600,
+    );
+    try {
+      writeSync(fd, buildLogLine(fields));
+    } finally {
+      closeSync(fd);
+    }
+    return null;
+  } catch (e) {
+    return errnoCode(e) ?? (e as Error).name;
+  }
+}
+
+function inertLine(text: string): string {
+  return Array.from(text, (ch) => {
+    const c = ch.charCodeAt(0);
+    return c < 0x20 || (c >= 0x7f && c <= 0x9f) ? "?" : ch;
+  }).join("");
+}
+
+/** Changed paths after a --write run, with ignored entries summarised. */
+function writeChangeReport(dir: string): string[] {
+  const gitEnv: Env = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (!k.startsWith("GIT_")) gitEnv[k] = v;
+  }
+  const lines: string[] = [];
+  const r = spawnSync("git", ["status", "--porcelain", "-uall", "--ignored"], {
+    cwd: dir,
+    env: gitEnv as NodeJS.ProcessEnv,
+    encoding: "utf8",
+    timeout: 30_000,
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (r.status === 0) {
+    const all = r.stdout.split("\n").filter((l) => l !== "");
+    const ignored = all.filter((l) => l.startsWith("!! "));
+    const rest = all.filter((l) => !l.startsWith("!! "));
+    lines.push(...rest.map(inertLine));
+    if (ignored.length <= IGNORED_LINES_MAX) {
+      lines.push(...ignored.map(inertLine));
+    } else {
+      const counts = new Map<string, number>();
+      for (const l of ignored) {
+        const top = l.slice(3).replace(/^"/, "").split("/")[0] ?? "";
+        counts.set(top, (counts.get(top) ?? 0) + 1);
+      }
+      for (const [top, n] of counts)
+        lines.push(inertLine(`!! ${top}/ ほか ${n} 件`));
+    }
+  } else {
+    lines.push("(git status に失敗したので変わったパスは出せない)");
+  }
+  return [
+    "delegation offload: --write の後の変わったパス（git status）:",
+    ...(lines.length > 0 ? lines : ["(変わったパスは無い)"]),
+    READ_DIFF_LINE,
+  ];
+}
+
+function signalExitCode(signal: NodeJS.Signals | null, code: number | null) {
+  if (code !== null) return code;
+  return 128 + (signal === null ? 0 : (osConstants.signals[signal] ?? 0));
+}
+
+/**
+ * Run the offload entry: check, log, start opencode, wait. Returns the exit
+ * code. Refusals are always exit code 1 with one offload.log line.
+ */
+export async function runOffload(
+  argv: readonly string[],
+  ctx: { env: Env; cwd: string },
+): Promise<number> {
+  const { env } = ctx;
+  const parsed = parseOffloadArgs(argv, { cwd: ctx.cwd, env });
+  const fields: LogFields = {
+    at: new Date().toISOString(),
+    result: "args",
+    model: parsed.model,
+    agent: null,
+    dir: null,
+    briefSha256: null,
+    planSha256: null,
+  };
+  const err = (text: string) => process.stderr.write(`${text}\n`);
+
+  const refuse = (
+    result: OffloadResult,
+    reason: string,
+    extra: string[] = [],
+  ): number => {
+    err(`delegation offload: 拒否（${result}）: ${reason}`);
+    for (const line of extra) err(line);
+    const failed = appendOffloadLog(env, { ...fields, result });
+    if (failed !== null) {
+      err(`delegation offload: offload.log に書けなかった（${failed}）`);
+    }
+    return 1;
+  };
+
+  if (!parsed.ok) return refuse("args", parsed.reason);
+  const args = parsed.args;
+  fields.agent = offloadAgentName(args.write);
+  fields.dir = args.dir;
+
+  const brief = loadBrief(args.briefFile);
+  if (brief.sha256 !== undefined) fields.briefSha256 = brief.sha256;
+  if (!brief.ok) {
+    return refuse(
+      "brief",
+      brief.reason,
+      brief.excerpt === undefined ? [] : [`  抜粋: ${brief.excerpt}`],
+    );
+  }
+  if (args.plan !== null) {
+    const plan = hashPlanFile(args.plan);
+    if (!plan.ok) return refuse("brief", plan.reason);
+    fields.planSha256 = plan.sha256;
+  }
+
+  const inputs = collectOffloadInputs(env);
+  let verdict: VerifyResult;
+  try {
+    verdict = verifyOffload(inputs);
+  } catch {
+    return refuse("verify", "照合中に例外が起きた");
+  }
+  const withModel = (lines: string[]) =>
+    lines.map((l) => l.replaceAll("<model>", args.model));
+  if (!verdict.ok) {
+    return refuse(verdict.check, verdict.reason, withModel(verdict.recovery));
+  }
+  if (!verdict.models.includes(args.model)) {
+    return refuse(
+      "verify",
+      "確認済みの記録にこの model が無い",
+      withModel([VERIFY_RECOVERY]),
+    );
+  }
+  const realpath = inputs.realpath as string;
+  const recorded = inputs.record.kind === "ok" ? inputs.record : null;
+  if (recorded === null) return refuse("verify", "記録を読めない");
+
+  const launch = checkLaunchDir({ dir: args.dir, write: args.write });
+  if (!launch.ok) return refuse("dir", launch.reason);
+
+  const scratch = realpathSync(mkdtempSync(join(tmpdir(), "offload-version-")));
+  let versionRun;
+  try {
+    versionRun = spawnSync(realpath, ["--version"], {
+      cwd: scratch,
+      env: buildChildEnv(env),
+      encoding: "utf8",
+      timeout: VERSION_TIMEOUT_MS,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+  const printed = (versionRun.stdout ?? "").trim();
+  if (versionRun.status !== 0 || printed === "") {
+    return refuse(
+      "version",
+      "opencode --version が使えない（終了コードが 0 でないか出力が空）",
+      withModel([VERIFY_RECOVERY]),
+    );
+  }
+  if (printed !== recorded.record.version) {
+    // Remove the record only if it is still the bytes that were verified.
+    try {
+      const now = createHash("sha256")
+        .update(readFileSync(offloadRecordPath(env)))
+        .digest("hex");
+      if (now === recorded.rawSha256) unlinkSync(offloadRecordPath(env));
+    } catch {
+      // already gone or unreadable: nothing to remove
+    }
+    return refuse(
+      "version",
+      "opencode の版が記録と違う",
+      withModel([VERIFY_RECOVERY]),
+    );
+  }
+
+  const failed = appendOffloadLog(env, { ...fields, result: "spawned" });
+  if (failed !== null) {
+    err(
+      `delegation offload: offload.log に書けないので起動しない（${failed}）`,
+    );
+    return 1;
+  }
+
+  const runTimeout = shortenOnly(
+    env,
+    "DELEGATION_OFFLOAD_TIMEOUT_MS",
+    RUN_TIMEOUT_MS,
+  );
+  const grace = shortenOnly(
+    env,
+    "DELEGATION_OFFLOAD_KILL_GRACE_MS",
+    KILL_GRACE_MS,
+  );
+  const code = await new Promise<number>((resolve) => {
+    const child = spawn(
+      realpath,
+      buildOpencodeArgv({
+        model: args.model,
+        write: args.write,
+        brief: brief.text,
+      }),
+      {
+        cwd: launch.realpath,
+        env: buildChildEnv(env),
+        shell: false,
+        detached: true,
+        stdio: "inherit",
+      },
+    );
+    let forced: number | null = null;
+    let settled = false;
+    const timers: NodeJS.Timeout[] = [];
+    const killGroup = (signal: NodeJS.Signals) => {
+      if (child.pid === undefined) return;
+      try {
+        process.kill(-child.pid, signal);
+      } catch {
+        // the group is already gone
+      }
+    };
+    const terminate = (signal: NodeJS.Signals, exitCode: number) => {
+      if (forced !== null) return;
+      forced = exitCode;
+      killGroup(signal);
+      timers.push(setTimeout(() => killGroup("SIGKILL"), grace));
+    };
+    const forwarded: [NodeJS.Signals, number][] = [
+      ["SIGINT", 130],
+      ["SIGTERM", 143],
+      ["SIGHUP", 129],
+    ];
+    for (const [signal, exitCode] of forwarded) {
+      process.on(signal, () => terminate(signal, exitCode));
+    }
+    timers.push(setTimeout(() => terminate("SIGTERM", 124), runTimeout));
+    const finish = (exitCode: number) => {
+      if (settled) return;
+      settled = true;
+      for (const t of timers) clearTimeout(t);
+      resolve(exitCode);
+    };
+    child.on("error", (e) => {
+      err(
+        `delegation offload: opencode を起動できなかった（${errnoCode(e) ?? e.name}）`,
+      );
+      finish(1);
+    });
+    child.on("exit", (status, signal) => {
+      if (forced !== null) killGroup("SIGKILL");
+      finish(forced ?? signalExitCode(signal, status));
+    });
+  });
+
+  if (args.write) {
+    for (const line of writeChangeReport(launch.realpath)) err(line);
+  }
+  return code;
 }

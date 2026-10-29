@@ -65,6 +65,7 @@ import {
   readForecast,
   type ForecastRead,
 } from "./forecast-file.ts";
+import { runOffload } from "./offload.ts";
 import {
   applyLookahead,
   fetchUsage,
@@ -621,6 +622,8 @@ Commands:
   record --manual --harness <h> [--model m] [--effort e] --kind --size --verdict
   amend <id> (--later-defect <foundBy> | --rework)
   lapse <id>
+  offload --exposure external-ok --model <m> --brief-file <abs> [--dir <abs>] [--plan <abs>] [--write]
+         start opencode for an outside destination after the checks
   review [--since <days>]
 
 kind: research impl mechanical review triage draft
@@ -672,6 +675,8 @@ async function dispatch(argv: readonly string[]): Promise<number> {
       return cmdRecord(args, now);
     case "amend":
       return cmdAmend(args, now);
+    case "offload":
+      return runOffload(rest, { env: process.env, cwd: process.cwd() });
     case "lapse":
       return cmdLapse(args, now);
     case undefined:

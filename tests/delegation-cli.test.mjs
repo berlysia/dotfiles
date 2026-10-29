@@ -206,6 +206,20 @@ describe("delegation cli (process)", { concurrency: 4 }, () => {
     }
   });
 
+  it("offload is dispatched and documented; a refusal leaves the ledger alone", async () => {
+    const sb = sandbox();
+    try {
+      const help = await sb.run(["--help"]);
+      assert.match(help.stdout, /^\s*offload --exposure external-ok/m);
+      const r = await sb.run(["offload"]);
+      assert.equal(r.status, 1);
+      assert.match(r.stderr, /拒否（args）/);
+      assert.equal(readLedger(sb.store()).rows.length, 0);
+    } finally {
+      sb.done();
+    }
+  });
+
   it("a --help consumed as a flag value is not a help request", async () => {
     const sb = sandbox();
     try {
