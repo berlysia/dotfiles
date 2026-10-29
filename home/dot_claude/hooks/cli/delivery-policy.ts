@@ -70,13 +70,63 @@ export interface DeliveryPolicyCliDeps {
   now: () => number;
   /** Monotonic clock, ms. */
   monotonic: () => number;
-  sleep: (ms: number) => Promise<void>;
+  /** Resolves early, without rejecting, when `signal` aborts. */
+  sleep: (ms: number, signal: AbortSignal) => Promise<void>;
+  /** Aborted by SIGTERM, SIGINT or SIGHUP; see runCliMain. */
+  signal: AbortSignal;
   out: (text: string) => void;
   err: (text: string) => void;
 }
 
 class FetchError extends Error {}
 class DeadlineError extends Error {}
+// Not a FetchError: an interruption is no failed read, and the round's catch
+// (FetchError only) must let it through to the exit 10.
+class InterruptedError extends Error {}
+
+const INTERRUPTED_REASON = "interrupted; run the same command again";
+const DEADLINE_REASON =
+  "time limit of this call reached; run the same command again";
+const MAX_LINE_CHARS = 500;
+
+/**
+ * One output line, safe to be read back as a notification body: control,
+ * format and line/paragraph-separator characters (ESC, newlines, U+0085,
+ * bidi controls, zero-width characters, Tags) become spaces, so an outside
+ * string such as a check name cannot start a fake `delivery-policy: 0:` line
+ * or hide instructions. The category is matched instead of a list of
+ * characters, and the length is cut so one long name cannot fill the body.
+ */
+export function sanitizeLine(line: string): string {
+  const spaced = line.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, " ");
+  const chars = Array.from(spaced);
+  return chars.length > MAX_LINE_CHARS
+    ? chars.slice(0, MAX_LINE_CHARS).join("")
+    : spaced;
+}
+
+/**
+ * A timer that an abort cuts short. Resolving (not rejecting) on abort keeps
+ * the abort a decision of the loop; clearing the timer matters because a
+ * pending 15 s timer would keep the process alive after "interrupted".
+ */
+export function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) {
+      resolve();
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
 
 type Parsed =
   | { kind: "show" }
@@ -160,7 +210,7 @@ function invalidLines(ledger: Ledger, home: string): string[] {
 const PR_QUERY =
   "query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){state author{login} baseRepository{nameWithOwner} baseRefName headRefName isCrossRepository changedFiles mergeStateStatus}}}";
 const SHA_QUERY =
-  "query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){headRefOid}}}";
+  "query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){headRefOid state}}}";
 const CHECKS_QUERY =
   "query($owner:String!,$name:String!,$sha:GitObjectID!){repository(owner:$owner,name:$name){object(oid:$sha){... on Commit{status{contexts{context state creator{__typename}}} checkSuites(first:100){nodes{app{databaseId} checkRuns(first:100){nodes{name status conclusion}}}}}}}}";
 
@@ -218,11 +268,14 @@ function dig(value: unknown, ...path: string[]): unknown {
   return current;
 }
 
-async function readHeadSha(
-  gh: Gh,
-  repo: RepoInfo,
-  pr: number,
-): Promise<string> {
+interface HeadRead {
+  sha: string;
+  /** Uppercased. */
+  state: string;
+}
+
+/** Head sha and PR state in one read, so they describe the same moment. */
+async function readHead(gh: Gh, repo: RepoInfo, pr: number): Promise<HeadRead> {
   const data = await ghGraphql(
     gh,
     SHA_QUERY,
@@ -233,7 +286,11 @@ async function readHeadSha(
   if (typeof sha !== "string" || !/^[0-9a-f]{40}$/.test(sha)) {
     throw new FetchError("the head sha was not a commit id");
   }
-  return sha;
+  const state = dig(data, "repository", "pullRequest", "state");
+  if (typeof state !== "string") {
+    throw new FetchError("the PR state was not a string");
+  }
+  return { sha, state: state.toUpperCase() };
 }
 
 async function readViewer(gh: Gh): Promise<string> {
@@ -568,11 +625,15 @@ async function runAsk(deps: DeliveryPolicyCliDeps): Promise<number> {
   return 0;
 }
 
+function alreadyMergedReason(sha: string): string {
+  return `already merged at ${sha.slice(0, 12)}; merger not determined`;
+}
+
 async function runMerge(
   deps: DeliveryPolicyCliDeps,
   prNumber: number,
 ): Promise<number> {
-  const say = (line: string) => deps.out(`${line}\n`);
+  const say = (line: string) => deps.out(`${sanitizeLine(line)}\n`);
   const finish = (code: number, reason: string) => {
     say(`delivery-policy: ${code}: ${reason}`);
     return code;
@@ -580,9 +641,8 @@ async function runMerge(
   const startedAt = deps.monotonic();
   const deadline = startedAt + CALL_WAIT_LIMIT_MS;
   // Every gh call is bounded by what is left of this call's time, so a slow
-  // gh cannot carry one run past the Bash tool's default 2-minute timeout
-  // (which would print neither a code nor a reason).
-  const gh: Gh = async (args) => {
+  // gh cannot carry one run past the deadline with no code and no reason.
+  const bounded: Gh = async (args) => {
     // The monotonic clock has fractional milliseconds, and execFile rejects a
     // timeout that is not an integer, so the remaining time is floored here.
     const remaining = Math.floor(deadline - deps.monotonic());
@@ -590,6 +650,13 @@ async function runMerge(
     return deps.gh(args, {
       timeoutMs: Math.min(PER_CALL_TIMEOUT_MS, remaining),
     });
+  };
+  // Reads stop at an abort. `gh pr merge` uses `bounded` instead: once it is
+  // started it is left to finish, because stopping it would leave no way to
+  // tell whether the PR was merged.
+  const gh: Gh = async (args) => {
+    if (deps.signal.aborted) throw new InterruptedError();
+    return bounded(args);
   };
   try {
     const resolved = await resolveRepo(gh);
@@ -612,13 +679,20 @@ async function runMerge(
     for (;;) {
       let state: MergeState;
       try {
-        const sha = await readHeadSha(gh, repo, prNumber);
-        baseSha ??= sha;
-        if (sha !== baseSha) {
+        const head = await readHead(gh, repo, prNumber);
+        baseSha ??= head.sha;
+        // Before MERGED: a PR merged at another head is not the one this call
+        // was asked about, and the caller's rerun then sees the new head.
+        if (head.sha !== baseSha) {
           return finish(
             11,
-            `head changed from ${baseSha.slice(0, 12)} to ${sha.slice(0, 12)}`,
+            `head changed from ${baseSha.slice(0, 12)} to ${head.sha.slice(0, 12)}`,
           );
+        }
+        // Before the ledger: this call merges nothing here, so a scope
+        // narrowed after someone else's merge must not turn it into a 20.
+        if (head.state === "MERGED") {
+          return finish(0, alreadyMergedReason(baseSha));
         }
 
         // Read again every round: a wait of up to 20 minutes is long enough
@@ -650,11 +724,11 @@ async function runMerge(
           pr.changedFiles,
         );
 
-        const after = await readHeadSha(gh, repo, prNumber);
-        if (after !== baseSha) {
+        const after = await readHead(gh, repo, prNumber);
+        if (after.sha !== baseSha) {
           return finish(
             11,
-            `head changed from ${baseSha.slice(0, 12)} to ${after.slice(0, 12)}`,
+            `head changed from ${baseSha.slice(0, 12)} to ${after.sha.slice(0, 12)}`,
           );
         }
 
@@ -701,10 +775,11 @@ async function runMerge(
         if (failedRounds >= MAX_FAILED_ROUNDS) {
           return finish(40, error.message);
         }
+        if (deps.signal.aborted) return finish(10, INTERRUPTED_REASON);
         say(
           `delivery-policy: waiting: transient error (${failedRounds}/${MAX_FAILED_ROUNDS}): ${error.message}`,
         );
-        await deps.sleep(WAIT_INTERVAL_MS);
+        await deps.sleep(WAIT_INTERVAL_MS, deps.signal);
         continue;
       }
       failedRounds = 0;
@@ -727,10 +802,11 @@ async function runMerge(
         if (deps.monotonic() + WAIT_INTERVAL_MS >= deadline) {
           return finish(10, `${decision.reason}; run the same command again`);
         }
+        if (deps.signal.aborted) return finish(10, INTERRUPTED_REASON);
         say(
           `delivery-policy: waiting: ${decision.reason} (${Math.round(elapsed / 1000)}s)`,
         );
-        await deps.sleep(WAIT_INTERVAL_MS);
+        await deps.sleep(WAIT_INTERVAL_MS, deps.signal);
         continue;
       }
 
@@ -741,7 +817,15 @@ async function runMerge(
         if (last.kind === "stop") return finish(last.code, last.reason);
         return finish(40, last.reason);
       }
-      const merged = await gh([
+      // Not enough time left for gh pr merge to finish inside its own timeout:
+      // starting it would let the deadline cut it short. No promise that a
+      // rerun merges; checks and the ledger are judged again.
+      if (deadline - deps.monotonic() < PER_CALL_TIMEOUT_MS) {
+        return finish(10, DEADLINE_REASON);
+      }
+      // Last, to leave the shortest gap between this check and the start.
+      if (deps.signal.aborted) return finish(10, INTERRUPTED_REASON);
+      const merged = await bounded([
         "pr",
         "merge",
         String(prNumber),
@@ -752,20 +836,44 @@ async function runMerge(
         baseSha,
       ]);
       if (merged.status !== 0) {
-        return finish(
-          40,
-          `gh pr merge failed: ${merged.stderr.trim().slice(0, 200)}`,
-        );
+        const failure = `gh pr merge failed: ${merged.stderr.trim().slice(0, 200)}`;
+        // A merge that went through can still exit non-zero (timeout, lost
+        // connection). Read once more, straight from deps.gh: the deadline
+        // wrapper refuses to run when the failure used up the time, which is
+        // exactly when this answer is needed.
+        let reread: HeadRead;
+        try {
+          reread = await readHead(
+            (args) => deps.gh(args, { timeoutMs: PER_CALL_TIMEOUT_MS }),
+            repo,
+            prNumber,
+          );
+        } catch (error) {
+          if (!(error instanceof FetchError)) throw error;
+          return finish(
+            40,
+            `${failure}; reading the PR again failed: ${error.message}`,
+          );
+        }
+        if (reread.state === "MERGED" && reread.sha === baseSha) {
+          return finish(0, alreadyMergedReason(baseSha));
+        }
+        if (reread.state === "OPEN" && merged.status === null) {
+          // Not 10: "run it again" would be wrong for a PR that may be merged.
+          return finish(
+            40,
+            "gh pr merge timed out and the merge state is unknown; check the PR, then run the command again",
+          );
+        }
+        return finish(40, failure);
       }
       return finish(0, `merged #${prNumber} at ${baseSha.slice(0, 12)}`);
     }
   } catch (error) {
-    if (error instanceof DeadlineError) {
-      return finish(
-        10,
-        "time limit of this call reached; run the same command again",
-      );
+    if (error instanceof InterruptedError) {
+      return finish(10, INTERRUPTED_REASON);
     }
+    if (error instanceof DeadlineError) return finish(10, DEADLINE_REASON);
     return finish(
       40,
       error instanceof FetchError
@@ -807,7 +915,11 @@ export type ResolvedCliDeps =
  * the passwd entry's, so a changed HOME moves neither the ledger nor the
  * waits file.
  */
-export function resolveCliDeps(argv: readonly string[]): ResolvedCliDeps {
+export function resolveCliDeps(
+  argv: readonly string[],
+  signal: AbortSignal = new AbortController().signal,
+  homeOverride?: string,
+): ResolvedCliDeps {
   if (argv[0] !== "--cwd" || argv[1] === undefined) {
     return {
       ok: false,
@@ -831,7 +943,7 @@ export function resolveCliDeps(argv: readonly string[]): ResolvedCliDeps {
       error: `--cwd is not an absolute existing directory: ${cwd}`,
     };
   }
-  const home = passwdHome();
+  const home = homeOverride ?? passwdHome();
   if (home === null) {
     return { ok: false, exitCode: 40, error: "cannot determine passwd home" };
   }
@@ -843,26 +955,54 @@ export function resolveCliDeps(argv: readonly string[]): ResolvedCliDeps {
       gh: createGh(cwd),
       now: () => Date.now(),
       monotonic: () => performance.now(),
-      sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+      sleep: abortableSleep,
+      signal,
       out: (text) => void process.stdout.write(text),
       err: (text) => void process.stderr.write(text),
     },
   };
 }
 
-if (import.meta.main) {
-  const argv = process.argv.slice(2);
+const INTERRUPT_SIGNALS = ["SIGTERM", "SIGINT", "SIGHUP"] as const;
+
+/**
+ * The whole entry: returns the exit code, the caller sets `process.exitCode`.
+ * `options.home` exists for the process tests, which need a ledger of their
+ * own; the real entry never passes it.
+ */
+export async function runCliMain(
+  argv: readonly string[],
+  options: { home?: string } = {},
+): Promise<number> {
   // Help is answered before resolveCliDeps so it needs neither --cwd nor a
   // passwd home; the wrapper's `--cwd <dir> --help` reaches the same text
   // through runDeliveryPolicyCli.
-  const resolved = isHelpRequest(argv) ? null : resolveCliDeps(argv);
-  if (resolved === null) {
+  if (isHelpRequest(argv)) {
     process.stdout.write(HELP_TEXT);
-  } else if (!resolved.ok) {
-    process.stderr.write(`delivery-policy: ${resolved.error}\n`);
-    process.exitCode = resolved.exitCode;
-  } else {
-    // Not process.exit(): see docs/decisions/0002 (no-process-exit under hooks/).
-    process.exitCode = await runDeliveryPolicyCli(resolved.args, resolved.deps);
+    return 0;
   }
+  const controller = new AbortController();
+  const resolved = resolveCliDeps(argv, controller.signal, options.home);
+  if (!resolved.ok) {
+    process.stderr.write(`delivery-policy: ${resolved.error}\n`);
+    return resolved.exitCode;
+  }
+  if (resolved.args[0] === "merge") {
+    // Registered before the first await, with `on`: a handler replaces the
+    // default exit, so a second signal must not bring it back while a gh pr
+    // merge is still being waited for. The handler only aborts; the loop
+    // decides how to stop (no process.exit, see docs/decisions/0002).
+    for (const name of INTERRUPT_SIGNALS) {
+      process.on(name, () => controller.abort());
+    }
+    // A signal can come with the reader of stdout already gone; the final
+    // line then has nowhere to go, and EPIPE must not turn exit 10 into a crash.
+    process.stdout.on("error", () => {});
+  }
+  return runDeliveryPolicyCli(resolved.args, resolved.deps);
+}
+
+if (import.meta.main) {
+  // Not process.exit(): see docs/decisions/0002 (no-process-exit under hooks/).
+  process.exitCode = await runCliMain(process.argv.slice(2));
 }

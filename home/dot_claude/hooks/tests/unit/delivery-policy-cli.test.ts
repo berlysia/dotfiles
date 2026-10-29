@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import {
+  abortableSleep,
   isHelpRequest,
   resolveCliDeps,
   runDeliveryPolicyCli,
@@ -50,6 +51,11 @@ interface World {
   status: unknown;
   files: string[];
   mergeStatus: number;
+  mergeStderr: string;
+  /** The required check's name; check runs are matched against it. */
+  context: string;
+  /** The stderr of a gh call that failOn or checkOutcomes make fail. */
+  failStderr: string;
   failOn: string | null;
   /** One per check-run read, in order: "fail" answers a gh error. Empty or spent means ok. */
   checkOutcomes: Array<"fail" | "ok">;
@@ -75,6 +81,9 @@ function freshWorld(): World {
     status: null,
     files: ["docs/a.md"],
     mergeStatus: 0,
+    mergeStderr: "",
+    context: "status-check",
+    failStderr: "boom",
     failOn: null,
     checkOutcomes: [],
     onCall: [],
@@ -95,6 +104,9 @@ describe("delivery-policy CLI", () => {
   let wallAdvances: boolean;
   let timeouts: Array<number | undefined>;
   let ghCost: number;
+  let controller: AbortController;
+  /** Runs inside a fake sleep, before the abort is looked at. */
+  let sleepHook: (() => void) | null;
 
   beforeEach(() => {
     home = realpathSync(mkdtempSync(join(tmpdir(), "delivery-policy-cli-")));
@@ -108,6 +120,8 @@ describe("delivery-policy CLI", () => {
     wallAdvances = true;
     timeouts = [];
     ghCost = 0;
+    controller = new AbortController();
+    sleepHook = null;
   });
   afterEach(() => {
     rmSync(home, { recursive: true, force: true });
@@ -123,7 +137,7 @@ describe("delivery-policy CLI", () => {
     for (const hook of world.onCall) hook(args);
     const text = args.join(" ");
     if (world.failOn !== null && text.includes(world.failOn)) {
-      return { status: 1, stdout: "", stderr: "boom" };
+      return { status: 1, stdout: "", stderr: world.failStderr };
     }
     if (args[0] === "repo") {
       if (world.repoStatus !== 0) {
@@ -140,7 +154,11 @@ describe("delivery-policy CLI", () => {
       );
     }
     if (args[0] === "pr" && args[1] === "merge") {
-      return { status: world.mergeStatus, stdout: "", stderr: "" };
+      return {
+        status: world.mergeStatus,
+        stdout: "",
+        stderr: world.mergeStderr,
+      };
     }
     if (args[0] === "api" && args[1] === "user") {
       return ok(JSON.stringify({ login: world.viewer }));
@@ -150,13 +168,17 @@ describe("delivery-policy CLI", () => {
         const sha = world.shas.length > 1 ? world.shas.shift() : world.shas[0];
         return ok(
           JSON.stringify({
-            data: { repository: { pullRequest: { headRefOid: sha } } },
+            data: {
+              repository: {
+                pullRequest: { headRefOid: sha, state: world.pr.state },
+              },
+            },
           }),
         );
       }
       if (text.includes("checkSuites")) {
         if (world.checkOutcomes.shift() === "fail") {
-          return { status: 1, stdout: "", stderr: "boom" };
+          return { status: 1, stdout: "", stderr: world.failStderr };
         }
         return ok(
           JSON.stringify({
@@ -204,7 +226,7 @@ describe("delivery-policy CLI", () => {
           {
             type: "required_status_checks",
             parameters: {
-              required_status_checks: [{ context: "status-check" }],
+              required_status_checks: [{ context: world.context }],
             },
           },
         ]),
@@ -232,11 +254,15 @@ describe("delivery-policy CLI", () => {
     gh,
     now: () => wall,
     monotonic: () => mono,
-    sleep: async (ms) => {
+    // Like the real one: an abort ends the sleep early, without rejecting.
+    sleep: async (ms, signal) => {
       sleeps++;
+      sleepHook?.();
+      if (signal.aborted) return;
       if (wallAdvances) wall += ms;
       mono += ms;
     },
+    signal: controller.signal,
     out: (text) => {
       out += text;
     },
@@ -917,6 +943,321 @@ describe("delivery-policy CLI", () => {
       );
       assert.equal(await run("merge", "5"), 10);
       assert.match(lastLine() ?? "", /time limit of this call reached/);
+    });
+  });
+
+  describe("merged PRs, the deadline before merging, interruption and output", () => {
+    const DEADLINE = 1000 + 23 * 60_000;
+    const elapsed = () => wall - T0;
+    const pending = () => {
+      world.checkRuns = [
+        { name: world.context, status: "IN_PROGRESS", conclusion: null },
+      ];
+    };
+    const once = (when: (args: string[]) => boolean, act: () => void) => {
+      let done = false;
+      world.onCall.push((args) => {
+        if (!done && when(args)) {
+          done = true;
+          act();
+        }
+      });
+    };
+    const isHeadRead = (args: string[]) =>
+      args.join(" ").includes("headRefOid");
+    const isChecksRead = (args: string[]) =>
+      args.join(" ").includes("checkSuites");
+    const isMerge = (args: string[]) => args[0] === "pr" && args[1] === "merge";
+    /** Runs `act` before the nth head read of the call. */
+    const onNthHeadRead = (n: number, act: () => void) => {
+      let reads = 0;
+      world.onCall.push((args) => {
+        if (isHeadRead(args) && ++reads === n) act();
+      });
+    };
+    const finalLines = () =>
+      out.split("\n").filter((l) => /^delivery-policy: \d+: /.test(l));
+    const INTERRUPTED =
+      "delivery-policy: 10: interrupted; run the same command again";
+
+    it("success read with 5 s left is 10 without calling gh pr merge, and promises no merge", async () => {
+      record("merge");
+      onNthHeadRead(2, () => {
+        mono = DEADLINE - 5_000;
+      });
+      assert.equal(await run("merge", "5"), 10);
+      assert.equal(mergeCalls().length, 0);
+      assert.match(lastLine() ?? "", /^delivery-policy: 10: /);
+      assert.doesNotMatch(lastLine() ?? "", /will be merged|merges/);
+    });
+
+    it("the ledger is re-read before the remaining time: narrowed with 5 s left is 20", async () => {
+      record("merge");
+      onNthHeadRead(2, () => {
+        mono = DEADLINE - 5_000;
+        record("pr");
+      });
+      assert.equal(await run("merge", "5"), 20);
+      assert.equal(mergeCalls().length, 0);
+    });
+
+    it("a PR already merged at the checked head is 0 and calls no merge", async () => {
+      record("merge");
+      world.pr.state = "MERGED";
+      assert.equal(await run("merge", "5"), 0);
+      assert.equal(
+        lastLine(),
+        `delivery-policy: 0: already merged at ${SHA_A.slice(0, 12)}; merger not determined`,
+      );
+      assert.equal(mergeCalls().length, 0);
+    });
+
+    it("MERGED is judged before the ledger: a scope narrowed from the start still gives 0", async () => {
+      record("pr");
+      world.pr.state = "MERGED";
+      assert.equal(await run("merge", "5"), 0);
+      assert.match(lastLine() ?? "", /already merged at/);
+      assert.equal(mergeCalls().length, 0);
+    });
+
+    it("a failed gh pr merge on a PR that is merged at the head is 0", async () => {
+      record("merge");
+      world.mergeStatus = 1;
+      once(isMerge, () => {
+        world.pr.state = "MERGED";
+      });
+      assert.equal(await run("merge", "5"), 0);
+      assert.match(
+        lastLine() ?? "",
+        /already merged at aaaaaaaaaaaa; merger not determined/,
+      );
+    });
+
+    it("the re-read after a failed gh pr merge is not held to the deadline", async () => {
+      record("merge");
+      world.mergeStatus = 1;
+      once(isMerge, () => {
+        world.pr.state = "MERGED";
+        mono = DEADLINE + 60_000;
+      });
+      assert.equal(await run("merge", "5"), 0);
+      assert.match(lastLine() ?? "", /already merged at/);
+    });
+
+    it("a failed gh pr merge on a PR merged at another sha is 40", async () => {
+      record("merge");
+      world.mergeStatus = 1;
+      once(isMerge, () => {
+        world.pr.state = "MERGED";
+        world.shas = [SHA_B];
+      });
+      assert.equal(await run("merge", "5"), 40);
+    });
+
+    it("a failed gh pr merge on a CLOSED or OPEN PR is 40", async () => {
+      for (const state of ["CLOSED", "OPEN"]) {
+        out = "";
+        world = freshWorld();
+        world.mergeStatus = 1;
+        world.mergeStderr = "denied";
+        record("merge");
+        once(isMerge, () => {
+          world.pr.state = state;
+        });
+        assert.equal(await run("merge", "5"), 40, state);
+        assert.match(
+          lastLine() ?? "",
+          /^delivery-policy: 40: gh pr merge failed: denied/,
+        );
+      }
+    });
+
+    it("a gh pr merge that timed out on a PR that reads OPEN is 40 and says the merge state is unknown", async () => {
+      record("merge");
+      world.mergeStatus = Number.NaN;
+      const realGh = gh;
+      const timedOut: typeof gh = async (args, options) => {
+        const result = await realGh(args, options);
+        return isMerge(args) ? { ...result, status: null } : result;
+      };
+      assert.equal(
+        await runDeliveryPolicyCli(["merge", "5"], { ...deps(), gh: timedOut }),
+        40,
+      );
+      assert.match(
+        lastLine() ?? "",
+        /^delivery-policy: 40: .*merge state is unknown/,
+      );
+      assert.doesNotMatch(lastLine() ?? "", /^delivery-policy: 10/);
+    });
+
+    it("a failed re-read after a failed gh pr merge is 40 and keeps the original stderr", async () => {
+      record("merge");
+      world.mergeStatus = 1;
+      world.mergeStderr = "denied";
+      once(isMerge, () => {
+        world.failOn = "headRefOid";
+      });
+      assert.equal(await run("merge", "5"), 40);
+      assert.match(lastLine() ?? "", /gh pr merge failed: denied.*boom/);
+    });
+
+    const EVIL = "ESC\u001b NL\n NEL\u0085 LS  RLO‮ ZW​ TAG\u{e0041} END";
+    const EVIL_CHARS = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
+
+    it("output lines carry none of Cc, Cf, Zl, Zp and are cut at 500 characters", async () => {
+      record("merge");
+      world.context = `${EVIL}${"x".repeat(2000)}`;
+      pending();
+      world.failStderr = EVIL;
+      world.checkOutcomes = ["ok", "fail"];
+      assert.equal(await run("merge", "5"), 12);
+      const lines = out.trimEnd().split("\n");
+      assert.ok(lines.some((l) => l.includes("waiting: transient error")));
+      for (const line of lines) {
+        assert.doesNotMatch(line, EVIL_CHARS);
+        assert.ok(Array.from(line).length <= 500, `${line.length}`);
+      }
+      assert.ok(out.includes("ESC  NL  NEL  LS  RLO  ZW  TAG  END"));
+    });
+
+    it("a newline in a check name cannot start a fake result line", async () => {
+      record("merge");
+      world.context = "x\ndelivery-policy: 0: merged #1";
+      pending();
+      assert.equal(await run("merge", "5"), 12);
+      assert.deepEqual(
+        out.split("\n").filter((l) => l.startsWith("delivery-policy: 0:")),
+        [],
+      );
+      assert.match(out, /x delivery-policy: 0: merged #1/);
+    });
+
+    it("an abort in the middle of the 15 s sleep ends it at once with 10 and no merge", async () => {
+      record("merge");
+      pending();
+      sleepHook = () => controller.abort();
+      assert.equal(await run("merge", "5"), 10);
+      assert.equal(lastLine(), INTERRUPTED);
+      assert.equal(mergeCalls().length, 0);
+      assert.equal(sleeps, 1);
+      assert.ok(elapsed() < 15_000, `${elapsed()}`);
+    });
+
+    it("abortableSleep resolves on abort and leaves no timer behind", async () => {
+      const timers = () =>
+        process.getActiveResourcesInfo().filter((n) => n === "Timeout").length;
+      const before = timers();
+      const abort = new AbortController();
+      const sleeping = abortableSleep(60_000, abort.signal);
+      assert.equal(timers(), before + 1);
+      abort.abort();
+      const winner = await Promise.race([
+        sleeping.then(() => "done"),
+        new Promise((resolve) => setImmediate(() => resolve("hung"))),
+      ]);
+      assert.equal(winner, "done");
+      assert.equal(timers(), before);
+      await abortableSleep(60_000, abort.signal);
+    });
+
+    it("an abort during the second gh of a round stops before the next gh and before any waiting line", async () => {
+      record("merge");
+      pending();
+      once(isChecksRead, () => controller.abort());
+      assert.equal(await run("merge", "5"), 10);
+      assert.equal(lastLine(), INTERRUPTED);
+      assert.equal(isChecksRead(calls.at(-1) ?? []), true);
+      assert.doesNotMatch(out, /waiting:/);
+      assert.equal(sleeps, 0);
+    });
+
+    it("an abort before the first gh of the fourth round is not counted as a failed read", async () => {
+      record("merge");
+      world.checkOutcomes = ["fail", "fail", "fail", "fail"];
+      sleepHook = () => {
+        if (sleeps === 3) controller.abort();
+      };
+      assert.equal(await run("merge", "5"), 10);
+      assert.equal(lastLine(), INTERRUPTED);
+      assert.equal(
+        out.split("\n").filter((l) => l.includes("transient error")).length,
+        3,
+      );
+      assert.doesNotMatch(out, /\(4\/4\)/);
+    });
+
+    it("a PR merged at another head while waiting is 11: the head is compared before MERGED", async () => {
+      record("merge");
+      pending();
+      once(
+        () => elapsed() >= 180_000,
+        () => {
+          world.pr.state = "MERGED";
+          world.shas = [SHA_B];
+        },
+      );
+      assert.equal(await run("merge", "5"), 11);
+      assert.equal(mergeCalls().length, 0);
+    });
+
+    it("an abort while gh pr merge runs lets it finish: 0, one final line", async () => {
+      record("merge");
+      once(isMerge, () => controller.abort());
+      assert.equal(await run("merge", "5"), 0);
+      assert.match(lastLine() ?? "", /^delivery-policy: 0: merged #5 at /);
+      assert.equal(finalLines().length, 1);
+    });
+
+    // The pre-merge abort check is the only one gh pr merge may meet. A signal
+    // object that turns true right after it catches a merge sent through the
+    // reads' wrapper, which would look at the signal once more.
+    it("gh pr merge does not go through the abort check of the reads", async () => {
+      record("merge");
+      let reads = 0;
+      let trueFrom = Number.POSITIVE_INFINITY;
+      const signal = {
+        get aborted() {
+          return ++reads >= trueFrom;
+        },
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      } as unknown as AbortSignal;
+      assert.equal(
+        await runDeliveryPolicyCli(["merge", "5"], { ...deps(), signal }),
+        0,
+      );
+      // One look per read through the wrapper, plus the check just before the
+      // merge. The signal turns true on the look after that one, which only a
+      // merge sent through the wrapper would make.
+      const readCalls = calls.filter((c) => !isMerge(c)).length;
+      reads = 0;
+      trueFrom = readCalls + 2;
+      calls = [];
+      out = "";
+      assert.equal(
+        await runDeliveryPolicyCli(["merge", "5"], { ...deps(), signal }),
+        0,
+      );
+      assert.equal(mergeCalls().length, 1);
+    });
+
+    it("an abort raised while the final line is written adds no line", async () => {
+      record("merge");
+      const base = deps();
+      const lines: string[] = [];
+      const code = await runDeliveryPolicyCli(["merge", "5"], {
+        ...base,
+        out: (text) => {
+          lines.push(text);
+          if (text.startsWith("delivery-policy: 0:")) controller.abort();
+        },
+      });
+      assert.equal(code, 0);
+      assert.equal(
+        lines.filter((l) => /^delivery-policy: \d+:/.test(l)).length,
+        1,
+      );
     });
   });
 });

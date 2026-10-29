@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   chmodSync,
+  existsSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -12,6 +13,7 @@ import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
 import {
+  appendLedger,
   buildDeliveryPolicyQuestion,
   ledgerPath,
 } from "../../lib/delivery-policy.ts";
@@ -191,6 +193,181 @@ exit 1
       });
       assert.equal(r.status, 2);
       assert.match(r.stderr, /--cwd/);
+    });
+  },
+);
+
+const FAKE_REPO = "dp-fake-owner/dp-fake-repo";
+const FAKE_SHA = "a".repeat(40);
+
+// A gh that answers every read of a merge run. DP_CHECK picks pending or
+// green, and `pr merge` leaves marker files so a test can see when it started
+// and that it was allowed to finish.
+const FAKE_GH = `#!/usr/bin/env bash
+echo $$ >> "$DP_DIR/gh.pids"
+if [ "$1" = repo ]; then
+  echo '{"nameWithOwner":"${FAKE_REPO}","owner":{"id":"x","login":"dp-fake-owner"},"isInOrganization":false,"defaultBranchRef":{"name":"main"},"url":"https://github.com/${FAKE_REPO}"}'
+  exit 0
+fi
+if [ "$1" = api ] && [ "$2" = user ]; then echo '{"login":"dp-fake-owner"}'; exit 0; fi
+if [ "$1" = pr ] && [ "$2" = merge ]; then
+  : > "$DP_DIR/merge-started"
+  sleep "\${DP_MERGE_SLEEP:-0}"
+  : > "$DP_DIR/merged"
+  exit 0
+fi
+case "$*" in
+  *headRefOid*) echo '{"data":{"repository":{"pullRequest":{"headRefOid":"${FAKE_SHA}","state":"OPEN"}}}}';;
+  *checkSuites*)
+    if [ "$DP_CHECK" = green ]; then s='"status":"COMPLETED","conclusion":"SUCCESS"'; else s='"status":"IN_PROGRESS","conclusion":null'; fi
+    echo '{"data":{"repository":{"object":{"status":null,"checkSuites":{"nodes":[{"app":{"databaseId":15368},"checkRuns":{"nodes":[{"name":"status-check",'"$s"'}]}}]}}}}}';;
+  *rules/branches*) echo '[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"status-check"}]}}]';;
+  *protection/required_status_checks*) echo "gh: Not Found (HTTP 404)" >&2; exit 1;;
+  */files?*) echo '[{"filename":"docs/a.md"}]';;
+  *graphql*) echo '{"data":{"repository":{"pullRequest":{"state":"OPEN","author":{"login":"dp-fake-owner"},"baseRepository":{"nameWithOwner":"${FAKE_REPO}"},"baseRefName":"main","headRefName":"feat/x","isCrossRepository":false,"changedFiles":1,"mergeStateStatus":"CLEAN"}}}}';;
+  *) echo "unexpected gh call: $*" >&2; exit 1;;
+esac
+`;
+
+// The real entry reads the ledger of the passwd home, which a test must not
+// write; runCliMain takes a home of its own and is otherwise the same entry
+// (signal handlers, stdout error handler, exit code).
+const MERGE_ENTRY = `
+const { runCliMain } = await import(${JSON.stringify(CLI)});
+process.exitCode = await runCliMain(
+  ["--cwd", process.env.DP_REPO, "merge", "1"],
+  { home: process.env.DP_HOME },
+);
+`;
+
+interface RunningMerge {
+  dir: string;
+  stdout: () => string;
+  waitForOutput: (pattern: RegExp) => Promise<void>;
+  waitForFile: (name: string) => Promise<void>;
+  signal: (name: NodeJS.Signals) => void;
+  destroyStdout: () => void;
+  closed: Promise<number | null>;
+}
+
+function startMerge(env: {
+  check: "pending" | "green";
+  mergeSleep?: number;
+}): RunningMerge {
+  const home = freshDir("dp-merge-home-");
+  appendLedger(home, {
+    repo: FAKE_REPO,
+    scope: "merge",
+    at: "2026-10-22T00:00:00.000Z",
+  });
+  const dir = freshDir("dp-merge-dir-");
+  const repo = freshDir("dp-merge-repo-");
+  const bin = freshDir("dp-merge-bin-");
+  writeFileSync(join(bin, "gh"), FAKE_GH);
+  chmodSync(join(bin, "gh"), 0o755);
+  const child = spawn("bun", ["-e", MERGE_ENTRY], {
+    cwd: HOOKS_DIR,
+    env: {
+      PATH: `${bin}:${process.env.PATH ?? ""}`,
+      DP_HOME: home,
+      DP_DIR: dir,
+      DP_REPO: repo,
+      DP_CHECK: env.check,
+      DP_MERGE_SLEEP: String(env.mergeSleep ?? 0),
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let out = "";
+  child.stdout.on("data", (chunk: Buffer) => {
+    out += chunk.toString("utf-8");
+  });
+  const until = (done: () => boolean): Promise<void> =>
+    new Promise((resolve, reject) => {
+      const started = Date.now();
+      const tick = setInterval(() => {
+        if (done()) {
+          clearInterval(tick);
+          resolve();
+        } else if (Date.now() - started > 10_000) {
+          clearInterval(tick);
+          reject(new Error(`timed out; stdout so far: ${out}`));
+        }
+      }, 10);
+    });
+  return {
+    dir,
+    stdout: () => out,
+    waitForOutput: (pattern) => until(() => pattern.test(out)),
+    waitForFile: (name) => until(() => existsSync(join(dir, name))),
+    signal: (name) => void child.kill(name),
+    destroyStdout: () => void child.stdout.destroy(),
+    closed: new Promise((resolve) =>
+      child.on("close", (code) => resolve(code)),
+    ),
+  };
+}
+
+// Every fake gh logs its pid; none of them may outlive the CLI.
+const noFakeGhLeft = (run: RunningMerge) =>
+  readFileSync(join(run.dir, "gh.pids"), "utf-8")
+    .split("\n")
+    .filter((l) => l !== "")
+    .every((pid) => {
+      try {
+        process.kill(Number(pid), 0);
+        return false;
+      } catch {
+        return true;
+      }
+    });
+
+describe(
+  "delivery-policy merge, interrupted as a process",
+  { skip: !hasBun && "bun is not on PATH" },
+  () => {
+    for (const name of ["SIGTERM", "SIGINT", "SIGHUP"] as const) {
+      it(`${name} during the wait ends it in 2 s with one interrupted line and exit 10`, async () => {
+        const run = startMerge({ check: "pending" });
+        await run.waitForOutput(/delivery-policy: waiting:/);
+        const sentAt = Date.now();
+        run.signal(name);
+        assert.equal(await run.closed, 10);
+        assert.ok(Date.now() - sentAt < 2000, `${Date.now() - sentAt} ms`);
+        const results = run
+          .stdout()
+          .split("\n")
+          .filter((l) => /^delivery-policy: \d+:/.test(l));
+        assert.deepEqual(results, [
+          "delivery-policy: 10: interrupted; run the same command again",
+        ]);
+        assert.equal(noFakeGhLeft(run), true);
+      });
+    }
+
+    it("a closed stdout pipe does not turn the interrupt into a crash", async () => {
+      const run = startMerge({ check: "pending" });
+      await run.waitForOutput(/delivery-policy: waiting:/);
+      run.destroyStdout();
+      run.signal("SIGTERM");
+      assert.equal(await run.closed, 10);
+    });
+
+    it("SIGTERM while gh pr merge runs lets it finish and prints that result once", async () => {
+      const run = startMerge({ check: "green", mergeSleep: 0.5 });
+      await run.waitForFile("merge-started");
+      run.signal("SIGTERM");
+      assert.equal(await run.closed, 0);
+      assert.equal(existsSync(join(run.dir, "merged")), true);
+      const results = run
+        .stdout()
+        .split("\n")
+        .filter((l) => /^delivery-policy: \d+:/.test(l));
+      assert.equal(results.length, 1);
+      assert.match(
+        results[0] ?? "",
+        /^delivery-policy: 0: merged #1 at aaaaaaaaaaaa/,
+      );
+      assert.equal(noFakeGhLeft(run), true);
     });
   },
 );
