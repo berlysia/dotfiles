@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# delegation: delegation ledger and pre-delegation route.
+# Deployed by chezmoi at ~/.local/bin/delegation; logic lives at
+# ~/.local/share/delegation/main.ts.
+exec bun run --silent "${HOME}/.local/share/delegation/main.ts" "$@"

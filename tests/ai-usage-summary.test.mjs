@@ -154,3 +154,9 @@ test("cursor: missing or invalid reset preserves weekly usage", () => {
     });
   }
 });
+
+test("window length constants are exported for delegation route", async () => {
+  const mod = await import("../home/dot_local/share/ai-usage/summary.ts");
+  assert.equal(mod.FIVE_HOUR_MINS, 300);
+  assert.equal(mod.WEEK_MINS, 10_080);
+});

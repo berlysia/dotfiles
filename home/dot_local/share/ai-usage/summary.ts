@@ -19,8 +19,8 @@ export type ProviderSummary = {
   exhausted: boolean;
 };
 
-const FIVE_HOUR_MINS = 300;
-const WEEK_MINS = 10_080;
+export const FIVE_HOUR_MINS = 300;
+export const WEEK_MINS = 10_080;
 
 function finitePercent(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
