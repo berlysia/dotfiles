@@ -53,6 +53,18 @@ describe("track", () => {
     expect(isBashCandidate(undefined)).toBe(false);
   });
 
+  test("isBashCandidate accepts delegation offload by basename and subcommand", () => {
+    expect(isBashCandidate("delegation offload --model x")).toBe(true);
+    expect(isBashCandidate("/home/u/.local/bin/delegation offload --x")).toBe(
+      true,
+    );
+    expect(isBashCandidate("cd x && delegation offload")).toBe(true);
+    expect(isBashCandidate("delegation route --kind impl")).toBe(false);
+    expect(isBashCandidate("delegation record d-1")).toBe(false);
+    expect(isBashCandidate("ls delegation")).toBe(false);
+    expect(isBashCandidate("mydelegation offload")).toBe(false);
+  });
+
   test("classifyAgentResult follows the probe", () => {
     expect(
       classifyAgentResult({ status: "async_launched", agentId: "a1" }),

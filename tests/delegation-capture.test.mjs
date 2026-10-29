@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   mkdirSync,
+  readFileSync,
   mkdtempSync,
   realpathSync,
   rmSync,
@@ -14,11 +15,14 @@ import {
   AGENT_DEF_MODELS,
   agentsDirFrom,
   captureAgent,
+  captureBash,
   captureAgentFromDefinition,
   parseAgentModel,
   readAgentModel,
 } from "../home/dot_local/share/delegation/capture.ts";
 import { normalizeModel } from "../home/dot_local/share/delegation/schema.ts";
+import { offloadAgentName } from "../home/dot_local/share/delegation/constants.ts";
+import { buildOpencodeArgv } from "../home/dot_local/share/delegation/offload.ts";
 
 const fm = (...lines) => ["---", ...lines, "---", "body"].join("\n");
 
@@ -213,5 +217,56 @@ describe("captureAgent with a model on the call", () => {
       "high",
     );
     assert.equal(captureAgentFromDefinition("x", "haiku").effort, "unknown");
+  });
+});
+
+describe("captureBash: delegation offload", () => {
+  const OFFLOAD =
+    "delegation offload --exposure external-ok --model opencode/glm-5.3-flash-free --brief-file /x/b.md";
+  it("--write picks worktree-edit and the model comes from --model", () => {
+    assert.deepEqual(captureBash(`${OFFLOAD} --write`), {
+      harness: "opencode",
+      invocation: ["delegation offload", "opencode:--agent=worktree-edit"],
+      model: "opencode/glm-5.3-flash-free",
+      effort: "unknown",
+    });
+  });
+  it("without --write the agent is worktree-read, whatever the path to the command", () => {
+    const c = captureBash(
+      "~/.local/bin/delegation offload --exposure external-ok --model zai-coding-plan/glm-5.3 --brief-file /x/b.md",
+    );
+    assert.deepEqual(c.invocation, [
+      "delegation offload",
+      "opencode:--agent=worktree-read",
+    ]);
+    assert.equal(c.model, "zai-coding-plan/glm-5.3");
+  });
+  it("other delegation subcommands are not delegations", () => {
+    assert.equal(captureBash("delegation route --kind impl"), null);
+    assert.equal(captureBash("delegation record d-000000000000"), null);
+    assert.equal(captureBash("ls delegation"), null);
+  });
+  it("the agent word and the entry's --agent come from the same function", () => {
+    for (const write of [true, false]) {
+      const c = captureBash(`${OFFLOAD}${write ? " --write" : ""}`);
+      assert.equal(
+        c.invocation[1],
+        `opencode:--agent=${offloadAgentName(write)}`,
+      );
+      assert.equal(
+        buildOpencodeArgv({ model: "m", write, brief: "b" })[3],
+        offloadAgentName(write),
+      );
+    }
+  });
+  it("capture.ts and track.ts do not import offload.ts", () => {
+    for (const rel of [
+      "../home/dot_local/share/delegation/capture.ts",
+      "../mods/delegation-budget/hooks/track.ts",
+    ]) {
+      const src = readFileSync(new URL(rel, import.meta.url), "utf8");
+      const targets = [...src.matchAll(/from\s+"([^"]+)"/g)].map((m) => m[1]);
+      for (const t of targets) assert.equal(t.includes("offload"), false, t);
+    }
   });
 });

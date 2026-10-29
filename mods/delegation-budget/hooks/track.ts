@@ -80,8 +80,14 @@ export function isTrackedAgent(input: {
 export function isBashCandidate(command: unknown): boolean {
   if (typeof command !== "string") return false;
   return command.split(/&&|\|\||[;|\n]/).some((segment) => {
-    const head = segment.trim().split(/\s+/)[0];
-    return head !== undefined && BASH_HEADS.has(head);
+    const [head, second] = segment.trim().split(/\s+/);
+    if (head === undefined) return false;
+    // `delegation offload` by the basename of the command word; the exact
+    // match on BASH_HEADS stays as it was.
+    if (second === "offload" && head.split("/").pop() === "delegation") {
+      return true;
+    }
+    return BASH_HEADS.has(head);
   });
 }
 

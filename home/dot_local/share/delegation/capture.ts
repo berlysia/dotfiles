@@ -6,7 +6,8 @@ import {
   openSync,
   readSync,
 } from "node:fs";
-import { dirname, isAbsolute, join, normalize } from "node:path";
+import { basename, dirname, isAbsolute, join, normalize } from "node:path";
+import { offloadAgentName } from "./constants.ts";
 import {
   CLAUDE_MODELS,
   EFFORTS,
@@ -68,10 +69,11 @@ type Flags = {
   reasoningEffort?: string;
   sandbox?: string;
   auto: boolean;
+  write: boolean;
 };
 
 function readFlags(tokens: readonly string[]): Flags {
-  const flags: Flags = { auto: false };
+  const flags: Flags = { auto: false, write: false };
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i] ?? "";
     const next = tokens[i + 1];
@@ -94,6 +96,8 @@ function readFlags(tokens: readonly string[]): Flags {
       i++;
     } else if (t === "--auto") {
       flags.auto = true;
+    } else if (t === "--write") {
+      flags.write = true;
     }
   }
   return flags;
@@ -105,6 +109,25 @@ function effortOf(v: string | undefined): Effort {
 
 function captureSegment(tokens: readonly string[]): Captured | null {
   const [first, second] = tokens;
+  // The offload entry is matched by the basename of the command word, so both
+  // `delegation offload` and an absolute path to it count. Other subcommands
+  // of delegation are not delegations.
+  if (
+    first !== undefined &&
+    basename(first) === "delegation" &&
+    second === "offload"
+  ) {
+    const f = readFlags(tokens.slice(2));
+    return {
+      harness: "opencode",
+      invocation: [
+        "delegation offload",
+        `opencode:--agent=${offloadAgentName(f.write)}`,
+      ],
+      model: normalizeModel("opencode", f.model),
+      effort: "unknown",
+    };
+  }
   if (first === "opencode" && second === "run") {
     const f = readFlags(tokens.slice(2));
     return {
