@@ -77,9 +77,39 @@ type Parsed =
   | { kind: "show" }
   | { kind: "ask" }
   | { kind: "merge"; pr: number }
+  | { kind: "help" }
   | { kind: "usage" };
 
+const USAGE_LINE =
+  "delivery-policy: usage: delivery-policy show | ask | merge <PR number>\n";
+
+const HELP_TEXT = `usage: delivery-policy show | ask | merge <PR number>
+
+  show               print the recorded delivery scope
+  ask                print the scope question to pass to AskUserQuestion
+  merge <PR number>  merge the PR once every required check is green
+
+exit codes:
+  0   merged / ok
+  2   bad arguments
+  10  required checks still pending; run the same command again
+  11  head changed while waiting; run it once more, no more than once
+  12  wait budget used up; hand back to the human
+  20  recorded scope is not merge; run ask
+  30  a merge condition is not met; hand back to the human
+  40  gh failed or the state cannot be read; hand back to the human
+`;
+
+/**
+ * A lone help flag only. `show --help` stays a bad argument: each command
+ * takes a fixed argument count, so a trailing flag is a typo, not a request.
+ */
+export function isHelpRequest(args: readonly string[]): boolean {
+  return args.length === 1 && (args[0] === "--help" || args[0] === "-h");
+}
+
 function parseArgs(args: readonly string[]): Parsed {
+  if (isHelpRequest(args)) return { kind: "help" };
   if (args.length === 1 && args[0] === "show") return { kind: "show" };
   if (args.length === 1 && args[0] === "ask") return { kind: "ask" };
   if (
@@ -679,10 +709,11 @@ export async function runDeliveryPolicyCli(
 ): Promise<number> {
   const parsed = parseArgs(args);
   switch (parsed.kind) {
+    case "help":
+      deps.out(HELP_TEXT);
+      return 0;
     case "usage":
-      deps.err(
-        "delivery-policy: usage: delivery-policy show | ask | merge <PR number>\n",
-      );
+      deps.err(USAGE_LINE);
       return 2;
     case "show":
       return runShow(deps);
@@ -747,8 +778,14 @@ export function resolveCliDeps(argv: readonly string[]): ResolvedCliDeps {
 }
 
 if (import.meta.main) {
-  const resolved = resolveCliDeps(process.argv.slice(2));
-  if (!resolved.ok) {
+  const argv = process.argv.slice(2);
+  // Help is answered before resolveCliDeps so it needs neither --cwd nor a
+  // passwd home; the wrapper's `--cwd <dir> --help` reaches the same text
+  // through runDeliveryPolicyCli.
+  const resolved = isHelpRequest(argv) ? null : resolveCliDeps(argv);
+  if (resolved === null) {
+    process.stdout.write(HELP_TEXT);
+  } else if (!resolved.ok) {
     process.stderr.write(`delivery-policy: ${resolved.error}\n`);
     process.exitCode = resolved.exitCode;
   } else {
