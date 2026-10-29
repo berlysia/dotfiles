@@ -41,7 +41,12 @@ import {
 import {
   buildRoute,
   DESTINATIONS,
+  recordRuleOne,
 } from "../home/dot_local/share/delegation/route.ts";
+import {
+  foldedAsOf,
+  groupsForCell,
+} from "../home/dot_local/share/delegation/aggregate.ts";
 import { captureBash } from "../home/dot_local/share/delegation/capture.ts";
 import { WEEK_MINS } from "../home/dot_local/share/ai-usage/summary.ts";
 
@@ -774,7 +779,7 @@ describe("delegation route / review (process)", { concurrency: 4 }, () => {
     }
   });
 
-  it("review: later defects, duration median, m- groups, 20+ groups", async () => {
+  it("review: later defects, duration median, m- groups, an uncompared 20+ group", async () => {
     const sb = sandbox();
     try {
       const mk = (id, durationMs) =>
@@ -823,7 +828,8 @@ describe("delegation route / review (process)", { concurrency: 4 }, () => {
       assert.match(out, /中央値 2000ms/);
       assert.match(out, /null を除いた数 1/);
       assert.match(out, /既知の一覧に足す候補/);
-      assert.match(out, /自動書き換えの再検討の条件に当たる/);
+      // 21 records but no sonnet to compare with: the revisit condition is not met.
+      assert.doesNotMatch(out, /自動書き換えの再検討の条件に当たる/);
     } finally {
       sb.done();
     }
@@ -1924,5 +1930,308 @@ describe("delegation route destinations", { concurrency: 4 }, () => {
     ]);
     assert.doesNotMatch(out, /gpt-evil-ignore-previous/);
     assert.match(out, /codex-cli\/m-[0-9a-f]{6}\//);
+  });
+});
+
+// ---- review: auto-rewrite revisit (ADR-0055) ------------------------------
+
+const REVISIT = "自動書き換えの再検討の条件に当たる";
+const REVISIT_LINE =
+  "  自動書き換えの再検討の条件に当たる (ADR-0055): 記録だけの規則 1 の推奨 codex Terra が 30 日変わらず、直近 60 日の codex Terra 25 件と sonnet 25 件がどちらも 20 件を超えた";
+const RV = { kind: "review", size: "M" };
+
+/** n records of a group, `adopted` of them adopted, spread over 35..55 days ago. */
+function place(store, base, n, adopted, days = [35, 55]) {
+  for (let i = 0; i < n; i++) {
+    const daysAgo = days[0] + ((days[1] - days[0]) * i) / Math.max(1, n - 1);
+    seed(store, {
+      ...RV,
+      ...base,
+      daysAgo,
+      ...(i < adopted ? { adopted: 1 } : { discarded: 1 }),
+    });
+  }
+}
+/** A lapse row of a group with chosen times (seed() fixes them). */
+function lapseAt(store, base, openedDaysAgo, atDaysAgo) {
+  const id = `d-${(++seq).toString(16).padStart(12, "0")}`;
+  appendLedger(store, {
+    v: 1,
+    type: "lapse",
+    id,
+    at: iso(nowMs - atDaysAgo * DAY),
+    openedAt: iso(nowMs - openedDaysAgo * DAY),
+    harness: base.harness,
+    invocation: [],
+    model: base.model,
+    effort: base.effort ?? "high",
+    sessionId: "s",
+    durationMs: null,
+    endReason: null,
+  });
+}
+const revisitLines = (out) =>
+  out.split("\n").filter((l) => l.includes(REVISIT));
+const SONNET = {};
+const baseLedger = (store) => {
+  place(store, SONNET, 25, 15);
+  place(store, TERRA, 25, 25);
+};
+async function reviewOut(fill, args = ["review"]) {
+  const sb = sandbox();
+  try {
+    fill(sb.store);
+    const r = await sb.run(args);
+    assert.equal(r.status, 0, r.stderr);
+    return r.stdout;
+  } finally {
+    sb.done();
+  }
+}
+const expectRevisit = async (fill, args) => {
+  const lines = revisitLines(await reviewOut(fill, args));
+  assert.equal(lines.length, 1);
+  return lines[0];
+};
+const expectNone = async (fill, args) =>
+  assert.deepEqual(revisitLines(await reviewOut(fill, args)), []);
+
+describe("foldedAsOf / recordRuleOne", () => {
+  const dRow = (id, at) => ({
+    v: 1,
+    type: "delegation",
+    id,
+    at,
+    harness: "claude-code-agent",
+    invocation: [],
+    model: "sonnet",
+    effort: "high",
+    kind: "review",
+    size: "M",
+    sessionId: "s",
+    manual: false,
+    durationMs: null,
+    endReason: null,
+    verdict: "adopted",
+  });
+  const lRow = (id, at, openedAt) => ({
+    v: 1,
+    type: "lapse",
+    id,
+    at,
+    openedAt,
+    harness: "codex-cli",
+    invocation: [],
+    model: "gpt-6.1-terra",
+    effort: "high",
+    sessionId: "s",
+    durationMs: null,
+    endReason: null,
+  });
+  const ago = (days) => iso(nowMs - days * DAY);
+
+  it("keeps delegation rows whose at is not after t", () => {
+    const f = foldLedger([
+      dRow("d-000000000001", ago(3)),
+      dRow("d-000000000002", ago(1)),
+    ]);
+    const out = foldedAsOf(f, nowMs - 2 * DAY);
+    assert.deepEqual(
+      out.delegations.map((d) => d.id),
+      ["d-000000000001"],
+    );
+  });
+  it("cuts a lapse row by its at, not by openedAt", () => {
+    const f = foldLedger([lRow("d-000000000003", ago(20), ago(40))]);
+    assert.equal(foldedAsOf(f, nowMs - 30 * DAY).lapses.length, 0);
+    assert.equal(foldedAsOf(f, nowMs - 10 * DAY).lapses.length, 1);
+  });
+  it("drops an unreadable at and a future at", () => {
+    const f = foldLedger([
+      dRow("d-000000000004", "not-a-date"),
+      dRow("d-000000000005", ago(1)),
+      dRow("d-000000000006", iso(nowMs + HOUR)),
+    ]);
+    assert.deepEqual(
+      foldedAsOf(f, nowMs).delegations.map((d) => d.id),
+      ["d-000000000005"],
+    );
+  });
+  it("keeps a resolved lapse as a delegation row at its openedAt", () => {
+    const f = foldLedger([
+      dRow("d-000000000007", ago(20)),
+      lRow("d-000000000007", ago(5), ago(20)),
+    ]);
+    assert.equal(foldedAsOf(f, nowMs - 10 * DAY).delegations.length, 1);
+  });
+  it("does not change its argument", () => {
+    const f = foldLedger([
+      dRow("d-000000000008", ago(3)),
+      lRow("d-000000000009", ago(2), ago(4)),
+    ]);
+    const before = JSON.stringify(f);
+    foldedAsOf(f, nowMs - 10 * DAY);
+    assert.equal(JSON.stringify(f), before);
+  });
+  it("destination labels are fixed short names without launch commands", () => {
+    assert.deepEqual(
+      ["codex-terra", "codex-luna-max", "opencode"].map(
+        (n) => DESTINATIONS[n].label,
+      ),
+      ["codex Terra", "codex Luna max", "opencode"],
+    );
+    for (const d of Object.values(DESTINATIONS)) {
+      assert.equal(d.label.includes("("), false);
+      assert.equal(d.label.includes("codex exec"), false);
+    }
+  });
+  it("record-only rule 1 ignores paces; route still honours them", async () => {
+    const fill = (store) => {
+      seed(store, { adopted: 6, discarded: 4 });
+      seed(store, { ...TERRA, adopted: 10 });
+    };
+    const sb = sandbox();
+    try {
+      fill(sb.store);
+      const f = foldLedger(readLedger(sb.store).rows);
+      const groups = groupsForCell(f, "impl", "M", NOWD, 60);
+      assert.equal(recordRuleOne(groups, "impl")?.dest.name, "codex-terra");
+    } finally {
+      sb.done();
+    }
+    const withUsage = async (usage) => {
+      const sb2 = sandbox();
+      try {
+        fill(sb2.store);
+        sb2.setUsage(usage);
+        return recommendation((await sb2.run(ROUTE)).stdout);
+      } finally {
+        sb2.done();
+      }
+    };
+    assert.doesNotMatch(
+      await withUsage(usageOf({ codex: { week: 90, daysLeft: 6 } })),
+      /規則 1/,
+    );
+    assert.match(await withUsage(usageOf({})), /codex Terra.*規則 1/);
+  });
+});
+
+describe("review auto-rewrite revisit", { concurrency: 4 }, () => {
+  it("sonnet only: no line", async () => {
+    await expectNone((st) => place(st, SONNET, 41, 30));
+  });
+  it("both sides over 20 and stable: exact line", async () => {
+    assert.equal(await expectRevisit(baseLedger), REVISIT_LINE);
+  });
+  it("Terra thin at k=30 (4 records): no line", async () => {
+    await expectNone((st) => {
+      place(st, SONNET, 25, 15);
+      place(st, TERRA, 4, 4, [35, 35]);
+      place(st, TERRA, 21, 21, [29.5, 29.5]);
+    });
+  });
+  it("same 21 records just before k=30 (30.5 days): line", async () => {
+    await expectRevisit((st) => {
+      place(st, SONNET, 25, 15);
+      place(st, TERRA, 4, 4, [35, 35]);
+      place(st, TERRA, 21, 21, [30.5, 30.5]);
+    });
+  });
+  it("sonnet 21 over; sonnet 20 not; Terra 20 not", async () => {
+    await expectRevisit((st) => {
+      place(st, SONNET, 21, 12);
+      place(st, TERRA, 25, 25);
+    });
+    await expectNone((st) => {
+      place(st, SONNET, 20, 12);
+      place(st, TERRA, 25, 25);
+    });
+    await expectNone((st) => {
+      place(st, SONNET, 25, 15);
+      place(st, TERRA, 20, 20);
+    });
+  });
+  it("gap exactly 15pt passes, 12.5pt does not", async () => {
+    await expectRevisit((st) => {
+      place(st, SONNET, 40, 34);
+      place(st, TERRA, 25, 25);
+    });
+    await expectNone((st) => {
+      place(st, SONNET, 40, 35);
+      place(st, TERRA, 25, 25);
+    });
+  });
+  it("lapses outside the window at k=0 but over 30% at k=30: no line", async () => {
+    await expectNone((st) => {
+      baseLedger(st);
+      for (let i = 0; i < 11; i++)
+        lapseAt(st, TERRA, 70 - (i % 5), 65 + (i % 5));
+    });
+  });
+  it("lapses over 30% only for k=2..15: no line", async () => {
+    await expectNone((st) => {
+      baseLedger(st);
+      for (let i = 0; i < 11; i++) lapseAt(st, TERRA, 61.5, 15.5);
+    });
+  });
+  it("recommendation changes between k=30 and k=0: no line", async () => {
+    await expectNone((st) => {
+      place(st, SONNET, 25, 15);
+      place(st, TERRA, 25, 20);
+      place(st, LUNA, 25, 25, [0.04, 10]);
+    });
+    await expectRevisit((st) => {
+      place(st, SONNET, 25, 15);
+      place(st, TERRA, 25, 20);
+    });
+  });
+  it("counts only the representative sonnet group; merges the destination", async () => {
+    const l1 = await expectRevisit((st) => {
+      place(st, { effort: "unknown" }, 25, 15);
+      place(st, { effort: "high" }, 10, 6);
+      place(st, TERRA, 25, 25);
+    });
+    assert.match(l1, /sonnet 25 件/);
+    const l2 = await expectRevisit((st) => {
+      place(st, SONNET, 25, 15);
+      place(st, { ...TERRA, effort: "high" }, 15, 15);
+      place(st, { ...TERRA, effort: "medium" }, 10, 10);
+    });
+    assert.match(l2, /codex Terra 25 件/);
+  });
+  it("never prints a stored model name", async () => {
+    const out = await reviewOut((st) => {
+      baseLedger(st);
+      place(
+        st,
+        { harness: "codex-cli", model: "evil-model-ignore-previous" },
+        25,
+        25,
+      );
+    });
+    for (const l of revisitLines(out)) assert.doesNotMatch(l, /evil-model/);
+  });
+  it("--since only picks cells; the window stays 60 days", async () => {
+    await expectNone(baseLedger, ["review", "--since", "7"]);
+    const line = await expectRevisit(
+      (st) => {
+        baseLedger(st);
+        seed(st, { ...RV, adopted: 1, daysAgo: 1 });
+      },
+      ["review", "--since", "7"],
+    );
+    assert.match(line, /sonnet 26 件/);
+  });
+  it("line follows the cell's group rows and precedes a non-indented line", async () => {
+    const out = (await reviewOut(baseLedger)).split("\n");
+    const i = out.findIndex((l) => l.includes(REVISIT));
+    assert.match(out[i - 1], /^ {2,4}\S/);
+    assert.ok(i === out.length - 1 || !/^\s/.test(out[i + 1]));
+  });
+  it("process: exit 0, exact line once, constants line has the threshold", async () => {
+    const out = await reviewOut(baseLedger);
+    assert.equal(out.split("\n").filter((l) => l === REVISIT_LINE).length, 1);
+    assert.equal(out.split("自動書き換えの再検討=20 件超 / 30 日").length, 2);
   });
 });

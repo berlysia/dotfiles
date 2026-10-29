@@ -36,7 +36,7 @@ export const ROUTE_HEADER = "delegation route v1";
 
 type External = Exclude<ProviderName, "claude">;
 type DestinationName = "codex-terra" | "codex-luna-max" | "opencode";
-type Destination = {
+export type Destination = {
   name: DestinationName;
   /** Which ai-usage window the destination draws on. */
   provider: External;
@@ -44,6 +44,8 @@ type Destination = {
   match: { harness: string; model?: string; effort?: string };
   /** Fixed text, including the launch command: never built from records. */
   display: string;
+  /** Fixed short name for review lines; never built from records. */
+  label: string;
 };
 export const DESTINATIONS: Record<DestinationName, Destination> = {
   "codex-terra": {
@@ -52,6 +54,7 @@ export const DESTINATIONS: Record<DestinationName, Destination> = {
     match: { harness: "codex-cli", model: "gpt-6.1-terra" },
     display:
       "codex Terra (codex exec -m gpt-6.1-terra -c model_reasoning_effort=high)",
+    label: "codex Terra",
   },
   "codex-luna-max": {
     name: "codex-luna-max",
@@ -59,12 +62,14 @@ export const DESTINATIONS: Record<DestinationName, Destination> = {
     match: { harness: "codex-cli", model: "gpt-6-luna", effort: "max" },
     display:
       "codex Luna max (codex exec -m gpt-6-luna -c model_reasoning_effort=max)",
+    label: "codex Luna max",
   },
   opencode: {
     name: "opencode",
     provider: "opencode",
     match: { harness: "opencode" },
     display: "opencode (opencode run)",
+    label: "opencode",
   },
 };
 const SONNET_DISPLAY = 'sonnet (Agent の model: "sonnet")';
@@ -114,12 +119,24 @@ function externalOrder(kind: string): Destination[] {
 
 type Pick = { line: string; dest: External | "sonnet" };
 
-function ruleOne(
+export type RecordPick = {
+  dest: Destination;
+  /** The destination's merged group. */
+  rep: GroupStats;
+  /** The sonnet group with the most records. */
+  claude: GroupStats;
+};
+
+/**
+ * Rule 1 without the pace check, so it can be re-run on the ledger as it stood
+ * on an earlier day. `allowed` lets route drop destinations before the best
+ * one is chosen; a pace check applied afterwards would change the winner.
+ */
+function pickByRecords(
   groups: GroupStats[],
-  paces: Record<ProviderName, ProviderPace>,
   kind: string,
-  size: string,
-): Pick | null {
+  allowed: (dest: Destination) => boolean,
+): RecordPick | null {
   const claude = representative(
     groups.filter(
       (g) => g.harness === "claude-code-agent" && g.model === "sonnet",
@@ -130,7 +147,7 @@ function ruleOne(
   for (const dest of externalOrder(kind)) {
     const rep = destinationStats(dest, groups);
     if (rep === null || !enoughRecords(rep) || lapseTooHigh(rep)) continue;
-    if (!bothUnder(paces[dest.provider])) continue;
+    if (!allowed(dest)) continue;
     if (!rateLeadsBy(rep, claude, RECORD_GAP_POINTS)) continue;
     if (
       best === null ||
@@ -139,7 +156,23 @@ function ruleOne(
       best = { dest, rep };
     }
   }
+  return best === null ? null : { ...best, claude };
+}
+
+export const recordRuleOne = (
+  groups: GroupStats[],
+  kind: string,
+): RecordPick | null => pickByRecords(groups, kind, () => true);
+
+function ruleOne(
+  groups: GroupStats[],
+  paces: Record<ProviderName, ProviderPace>,
+  kind: string,
+  size: string,
+): Pick | null {
+  const best = pickByRecords(groups, kind, (d) => bothUnder(paces[d.provider]));
   if (best === null) return null;
+  const { claude } = best;
   return {
     dest: best.dest.provider,
     line: `推奨: ${best.dest.display} [規則 1: 記録] ${kind}×${size} の採用率 ${percent(successes(best.rep), best.rep.n)}% (${best.rep.n} 件) が sonnet の ${percent(successes(claude), claude.n)}% (${claude.n} 件) より ${RECORD_GAP_POINTS}pt 以上高い`,

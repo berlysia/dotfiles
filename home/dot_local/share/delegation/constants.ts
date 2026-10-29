@@ -37,6 +37,8 @@ export const PENDING_LIMIT = 200;
 export const DEFAULT_SINCE_DAYS = 60;
 /** review: a group past this count meets the auto-rewrite revisit condition. */
 export const AUTO_REWRITE_REVISIT_RECORDS = 20;
+/** review: rule 1 (records only) must have named the same destination for this many days. */
+export const AUTO_REWRITE_STABLE_DAYS = 30;
 
 export const LEDGER_LARGE_BYTES = 5 * 1024 * 1024;
 export const ROW_MAX_BYTES = 4096;
