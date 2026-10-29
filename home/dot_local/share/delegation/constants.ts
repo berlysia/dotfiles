@@ -25,6 +25,12 @@ export const FORECAST_MAX_FILES = 256;
 export const SURPLUS_MIN_POINTS = 25;
 /** Rule 1: external adoption rate must beat Claude's by this many points. */
 export const RECORD_GAP_POINTS = 15;
+/**
+ * Rule 0: with too few sonnet records to compare against, a free model whose
+ * adoption rate is under this percent is dropped. Provisional; `delegation
+ * review` is where it gets revisited.
+ */
+export const FREE_ADOPTION_FLOOR = 70;
 /** Below this many records a group shows n<5 instead of a rate. */
 export const MIN_RECORDS = 5;
 export const LAPSE_RATIO_MAX_PERCENT = 30;

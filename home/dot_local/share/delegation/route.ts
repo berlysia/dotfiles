@@ -2,9 +2,11 @@ import {
   DEFAULT_SINCE_DAYS,
   EXPLORE_MIN_RECORDS,
   EXPLORE_WINDOW_DAYS,
+  FREE_ADOPTION_FLOOR,
   RECORD_GAP_POINTS,
   SURPLUS_MIN_POINTS,
   WEEK_LOOKAHEAD_HOURS,
+  type Exposure,
 } from "./constants.ts";
 import {
   enoughRecords,
@@ -31,9 +33,12 @@ import type {
 } from "./pace.ts";
 import {
   DESTINATIONS,
+  FREE_DESTINATIONS,
+  offloadDisplay,
   type Destination,
   type DestinationName,
 } from "./destinations.ts";
+import { VERIFY_RECOVERY } from "./offload.ts";
 import type { Folded, ReviewDue, SkipCounts } from "./store.ts";
 import { reviewPromptLine } from "./store.ts";
 
@@ -45,15 +50,6 @@ export {
   type Destination,
   type DestinationName,
 } from "./destinations.ts";
-/**
- * Destinations route never recommends, with the reason printed on the hold
- * line. opencode sends the brief and the working tree to Z.ai; it waits until
- * a delegation can say whether its content may leave the machine.
- */
-export const HELD_DESTINATIONS: ReadonlyMap<DestinationName, string> = new Map([
-  ["opencode", "外部へ送ってよいかの区分ができるまで使わない"],
-]);
-const NO_HOLD: ReadonlyMap<DestinationName, string> = new Map();
 // Sarashina is held per route call, not statically: see RouteInput.isPublicRepo.
 const SARASHINA_PRIVATE_REASON =
   "公開リポジトリでないか判定できないので送らない（入力が学習に使われうる）";
@@ -64,12 +60,20 @@ const OPENCODE_FIRST = new Set(["mechanical", "triage"]);
 // Kinds whose work can wait for an idle quota at any size.
 const SURPLUS_KINDS = new Set(["mechanical", "triage", "draft"]);
 
-const inDestination = (d: Destination, g: GroupStats) =>
+/** Any row of either destination table: the fields route reads from both. */
+type Row = Pick<Destination, "match" | "sendsOut" | "label" | "display"> & {
+  name: string;
+  displayNote?: string;
+};
+
+const inDestination = (d: Pick<Row, "match">, g: GroupStats) =>
   g.harness === d.match.harness &&
   (d.match.model === undefined || g.model === d.match.model) &&
   (d.match.effort === undefined || g.effort === d.match.effort);
-const destinationStats = (d: Destination, groups: readonly GroupStats[]) =>
-  mergeGroups(groups.filter((g) => inDestination(d, g)));
+const destinationStats = (
+  d: Pick<Row, "match">,
+  groups: readonly GroupStats[],
+) => mergeGroups(groups.filter((g) => inDestination(d, g)));
 
 export type RouteInput = {
   kind: string;
@@ -91,8 +95,15 @@ export type RouteInput = {
   windowMinsMissing: boolean;
   /** ai-usage could not be run or its output could not be read. */
   usageMissing: boolean;
-  /** Destinations left out of every rule and candidate, with the printed reason; none when omitted. */
-  held?: ReadonlyMap<DestinationName, string>;
+  /** Whether the brief may leave the machine; omitted means closed. review is closed whatever is given (K6). */
+  exposure?: Exposure;
+  /**
+   * The offload entry's verification: which models it would accept. Called
+   * only when the effective exposure is external-ok, at most once per
+   * buildRoute call, because it hashes the opencode executable. Omitted means
+   * no model passed: an unanswered safety check must not grant permission.
+   */
+  offload?: () => OffloadVerdict;
   /**
    * Whether the repository route was started in is public on github.com.
    * Called only once Sarashina has won a rule or the try-candidate slot, and
@@ -102,6 +113,15 @@ export type RouteInput = {
   isPublicRepo?: () => boolean;
 };
 
+export type OffloadVerdict =
+  | { ok: true; models: readonly string[] }
+  | { ok: false; reason: string; recovery: readonly string[] };
+
+/** Kinds whose delegation edits files; the rest only read. */
+const WRITE_KINDS = new Set(["impl", "mechanical", "draft"]);
+type Usable = (d: Pick<Row, "sendsOut" | "match">) => boolean;
+const anyUsable: Usable = () => true;
+
 const bothUnder = (p: ProviderPace) =>
   p.fiveHour === "under" && p.weekly === "under";
 const label = (s: PaceState) => s;
@@ -109,16 +129,16 @@ const label = (s: PaceState) => s;
 function externalOrder(
   kind: string,
   size: string,
-  held: ReadonlyMap<DestinationName, string> = NO_HOLD,
+  usable: Usable = anyUsable,
 ): Destination[] {
   const names: DestinationName[] = OPENCODE_FIRST.has(kind)
     ? ["opencode", "codex-luna-max", "codex-terra", "sarashina"]
     : ["codex-terra", "codex-luna-max", "opencode", "sarashina"];
   return names
+    .map((n) => DESTINATIONS[n])
     .filter(
-      (n) => !held.has(n) && (n !== "sarashina" || size === SARASHINA_SIZE),
-    )
-    .map((n) => DESTINATIONS[n]);
+      (d) => usable(d) && (d.name !== "sarashina" || size === SARASHINA_SIZE),
+    );
 }
 
 /**
@@ -143,7 +163,7 @@ function sarashinaGate(isPublicRepo: () => boolean) {
 }
 type SarashinaGate = ReturnType<typeof sarashinaGate>;
 
-type Pick = { line: string; dest: External | "sonnet" };
+type Chosen = { line: string; dest: External | "sonnet" | null };
 
 export type RecordPick = {
   dest: Destination;
@@ -202,26 +222,86 @@ export const recordRuleOne = (
   size: string,
 ): RecordPick | null => pickByRecords(groups, kind, size, () => true);
 
+function ruleZero(
+  groups: GroupStats[],
+  kind: string,
+  usable: Usable,
+): Chosen | null {
+  const candidates = FREE_DESTINATIONS.flatMap((dest) => {
+    if (!usable(dest)) return [];
+    return [{ dest, rep: destinationStats(dest, groups) }];
+  });
+  if (candidates.length === 0) return null;
+
+  const claude = representative(
+    groups.filter(
+      (g) => g.harness === "claude-code-agent" && g.model === "sonnet",
+    ),
+  );
+  const enoughClaude = claude !== null && enoughRecords(claude);
+  const remaining = candidates.filter(({ rep }) => {
+    if (rep === null || !enoughRecords(rep)) return true;
+    if (enoughClaude) {
+      return !rateLeadsBy(claude, rep, RECORD_GAP_POINTS);
+    }
+    return successes(rep) * 100 >= FREE_ADOPTION_FLOOR * rep.n;
+  });
+  if (remaining.length === 0) return null;
+
+  const underSampled = remaining.filter(
+    ({ rep }) => rep === null || !enoughRecords(rep),
+  );
+  const compared = underSampled.length > 0 ? underSampled : remaining;
+  let best = compared[0];
+  if (best === undefined) return null;
+  for (const candidate of compared.slice(1)) {
+    const bestCount = best.rep?.n ?? 0;
+    const candidateCount = candidate.rep?.n ?? 0;
+    if (underSampled.length > 0) {
+      if (candidateCount < bestCount) best = candidate;
+      continue;
+    }
+    const bestRep = best.rep;
+    const candidateRep = candidate.rep;
+    if (
+      bestRep !== null &&
+      candidateRep !== null &&
+      successes(candidateRep) * bestRep.n > successes(bestRep) * candidateRep.n
+    ) {
+      best = candidate;
+    }
+  }
+
+  const evidence =
+    best.rep === null || !enoughRecords(best.rep)
+      ? `${kind}×S の記録 ${best.rep?.n ?? 0}/${EXPLORE_MIN_RECORDS} 件`
+      : `${kind}×S の採用率 ${percent(successes(best.rep), best.rep.n)}% (${best.rep.n} 件)`;
+  return {
+    dest: null,
+    line: `推奨: ${displayFor(best.dest, kind)} [規則 0: 無料] ${evidence}`,
+  };
+}
+
 function ruleOne(
   groups: GroupStats[],
   paces: Record<ProviderName, ProviderPace>,
   kind: string,
   size: string,
-  held: ReadonlyMap<DestinationName, string>,
+  usable: Usable,
   gate: SarashinaGate,
-): Pick | null {
+): Chosen | null {
   const best = pickByRecords(
     groups,
     kind,
     size,
-    (d) => !held.has(d.name) && bothUnder(paces[d.provider]),
+    (d) => usable(d) && bothUnder(paces[d.provider]),
     gate,
   );
   if (best === null) return null;
   const { claude } = best;
   return {
     dest: best.dest.provider,
-    line: `推奨: ${best.dest.display} [規則 1: 記録] ${kind}×${size} の採用率 ${percent(successes(best.rep), best.rep.n)}% (${best.rep.n} 件) が sonnet の ${percent(successes(claude), claude.n)}% (${claude.n} 件) より ${RECORD_GAP_POINTS}pt 以上高い`,
+    line: `推奨: ${displayFor(best.dest, kind)} [規則 1: 記録] ${kind}×${size} の採用率 ${percent(successes(best.rep), best.rep.n)}% (${best.rep.n} 件) が sonnet の ${percent(successes(claude), claude.n)}% (${claude.n} 件) より ${RECORD_GAP_POINTS}pt 以上高い`,
   };
 }
 
@@ -231,9 +311,9 @@ function ruleTwo(
   kind: string,
   size: string,
   claudeAheadBy: AheadBy | null,
-  held: ReadonlyMap<DestinationName, string>,
+  usable: Usable,
   gate: SarashinaGate,
-): Pick | null {
+): Chosen | null {
   const claudeWeek = paces.claude.weekly;
   if (claudeWeek !== "ahead" && claudeWeek !== "exhausted") return null;
   const claude = representative(
@@ -241,7 +321,7 @@ function ruleTwo(
       (g) => g.harness === "claude-code-agent" && g.model === "sonnet",
     ),
   );
-  for (const dest of externalOrder(kind, size, held)) {
+  for (const dest of externalOrder(kind, size, usable)) {
     if (!bothUnder(paces[dest.provider])) continue;
     if (!gate.allows(dest)) continue;
     const rep = destinationStats(dest, groups);
@@ -254,7 +334,7 @@ function ruleTwo(
     const basis = claudeAheadBy === "lookahead" ? " (先読み)" : "";
     return {
       dest: dest.provider,
-      line: `推奨: ${dest.display} [規則 2: Claude の週枠が ahead${basis}]${worse ? " 記録では劣る (Claude の枠を設計判断とメインループに残すことを優先)" : ""}`,
+      line: `推奨: ${displayFor(dest, kind)} [規則 2: Claude の週枠が ahead${basis}]${worse ? " 記録では劣る (Claude の枠を設計判断とメインループに残すことを優先)" : ""}`,
     };
   }
   return {
@@ -269,7 +349,7 @@ function explore(
   kind: string,
   size: string,
   now: Date,
-  held: ReadonlyMap<DestinationName, string>,
+  usable: Usable,
   gate: SarashinaGate,
 ): { name: External; line: string } | null {
   if (size !== "S") return null;
@@ -278,7 +358,7 @@ function explore(
   for (;;) {
     // Least-recorded first; strict < keeps the default order on equal counts.
     let least: { dest: Destination; count: number } | null = null;
-    for (const dest of externalOrder(kind, size, held)) {
+    for (const dest of externalOrder(kind, size, usable)) {
       if (skipped.has(dest.name) || !bothUnder(paces[dest.provider])) continue;
       const count = destinationStats(dest, groups)?.n ?? 0;
       if (
@@ -292,7 +372,7 @@ function explore(
     if (gate.allows(least.dest)) {
       return {
         name: least.dest.provider,
-        line: `試す候補: ${least.dest.display} ${kind}×S の直近 ${EXPLORE_WINDOW_DAYS} 日の記録 ${least.count}/${EXPLORE_MIN_RECORDS} 件。比較に件数が足りない`,
+        line: `試す候補: ${displayFor(least.dest, kind)} ${kind}×S の直近 ${EXPLORE_WINDOW_DAYS} 日の記録 ${least.count}/${EXPLORE_MIN_RECORDS} 件。比較に件数が足りない`,
       };
     }
     skipped.add(least.dest.name);
@@ -303,13 +383,43 @@ function explore(
 function surplusCandidate(
   input: RouteInput,
   name: External,
-  recommended: External | "sonnet",
+  recommended: Chosen["dest"],
 ): number | null {
   if (!SURPLUS_KINDS.has(input.kind)) return null;
   if (name === recommended || !bothUnder(input.paces[name])) return null;
   const points = input.surplus[name];
   if (points === null || points < SURPLUS_MIN_POINTS) return null;
   return Math.floor(points);
+}
+
+/**
+ * The launch text for a row. Rows that send out are built from the table's
+ * model, so what route shows is what the entry accepts; kind decides --write.
+ */
+function displayFor(d: Row, kind: string): string {
+  if (!d.sendsOut) return d.display;
+  return offloadDisplay(d, WRITE_KINDS.has(kind));
+}
+
+const LINE_MAX_CHARS = 200;
+/**
+ * reason and recovery carry strings that came from the file system (paths,
+ * directory names). A newline in one must not start a line that looks like
+ * route's own output.
+ */
+function sanitizeLine(text: string): string {
+  const chars = Array.from(text, (char) => {
+    const code = char.codePointAt(0) ?? 0;
+    return code <= 0x1f ||
+      (code >= 0x7f && code <= 0x9f) ||
+      code === 0x2028 ||
+      code === 0x2029
+      ? "?"
+      : char;
+  });
+  return chars.length > LINE_MAX_CHARS
+    ? `${chars.slice(0, LINE_MAX_CHARS).join("")}…`
+    : chars.join("");
 }
 
 const oneDecimal = (x: number) => Math.max(0, x).toFixed(1);
@@ -328,6 +438,42 @@ function lookaheadLine(l: Lookahead): string {
   return `  先読み: claude 週 速さ ${oneDecimal(l.read.ratePerHour)}pt/h (観測 ${oneDecimal(l.read.observedHours)}h) ${toLine}${close}`;
 }
 
+/**
+ * The 区分 line: whether the brief may leave, and which sending-out rows were
+ * left out and why. Failure details are sanitized (see sanitizeLine); when the
+ * verification names no step, VERIFY_RECOVERY is printed so a left-out row
+ * always comes with a way back.
+ */
+function classificationLines(
+  kind: string,
+  exposure: Exposure,
+  verdict: OffloadVerdict | null,
+  usable: Usable,
+): string[] {
+  if (kind === "review") return ["区分: closed (review は外部へ送らない)"];
+  const sending: Row[] = [
+    ...Object.values(DESTINATIONS),
+    ...FREE_DESTINATIONS,
+  ].filter((d) => d.sendsOut);
+  if (exposure === "closed") {
+    return [
+      `区分: closed (外部へ送る委譲先を除いた: ${sending.map((d) => d.label).join(", ")})`,
+    ];
+  }
+  const left = sending.filter((d) => !usable(d));
+  if (left.length === 0) return ["区分: external-ok"];
+  const lines = [
+    `区分: external-ok (確認済みでない model の委譲先を除いた: ${left.map((d) => d.label).join(", ")})`,
+  ];
+  const recovery: readonly string[] =
+    verdict?.ok === false ? verdict.recovery : [];
+  if (verdict?.ok === false)
+    lines.push(`  理由: ${sanitizeLine(verdict.reason)}`);
+  const steps = recovery.length > 0 ? recovery : [VERIFY_RECOVERY];
+  for (const step of steps) lines.push(`  ${sanitizeLine(step)}`);
+  return lines;
+}
+
 /** Everything printed is an enum, a number, or a display name: never stored free text. */
 export function buildRoute(input: RouteInput): string[] {
   const { kind, size, now, folded, paces } = input;
@@ -335,29 +481,49 @@ export function buildRoute(input: RouteInput): string[] {
   if (input.ledgerLarge) out.push("台帳が大きい。分割を検討");
 
   const groups = groupsForCell(folded, kind, size, now, DEFAULT_SINCE_DAYS);
-  const held = input.held ?? NO_HOLD;
+  // review reads the workflow dir, which the offload agent cannot (K6).
+  const exposure: Exposure =
+    kind === "review" ? "closed" : (input.exposure ?? "closed");
+  const verdict: OffloadVerdict | null =
+    exposure === "external-ok"
+      ? (input.offload?.() ?? { ok: true, models: [] })
+      : null;
+  const verified = new Set(verdict?.ok ? verdict.models : []);
+  // One predicate for every rule and candidate: a row that sends out is usable
+  // only when the brief may leave and the entry has verified its model.
+  const usable: Usable = (d) =>
+    !d.sendsOut ||
+    (verdict !== null &&
+      verdict.ok &&
+      d.match.model !== undefined &&
+      verified.has(d.match.model));
   const gate = sarashinaGate(input.isPublicRepo ?? (() => false));
-  const pick = ruleOne(groups, paces, kind, size, held, gate) ??
-    ruleTwo(groups, paces, kind, size, input.claudeAheadBy, held, gate) ?? {
+  const freePick =
+    exposure === "external-ok" &&
+    (kind === "mechanical" || kind === "triage") &&
+    size === "S"
+      ? ruleZero(
+          groupsForCell(folded, kind, "S", now, DEFAULT_SINCE_DAYS),
+          kind,
+          usable,
+        )
+      : null;
+  const pick = freePick ??
+    ruleOne(groups, paces, kind, size, usable, gate) ??
+    ruleTwo(groups, paces, kind, size, input.claudeAheadBy, usable, gate) ?? {
       dest: "sonnet" as const,
       line: `推奨: ${SONNET_DISPLAY} [規則 3: 既定]`,
     };
   out.push(pick.line);
-  const candidate = explore(folded, paces, kind, size, now, held, gate);
-  // After the last rule that can ask, so the line reflects every refusal.
-  for (const [name, reason] of held) {
-    out.push(`保留: ${DESTINATIONS[name].display} ${reason}`);
-  }
-  if (gate.refused) {
-    out.push(
-      `保留: ${DESTINATIONS.sarashina.display} ${SARASHINA_PRIVATE_REASON}`,
-    );
-  }
+  const candidate = explore(folded, paces, kind, size, now, usable, gate);
+  // The surplus scan can ask the gate too, so it runs before the hold line is
+  // decided; its lines are printed after the hold line.
+  const candidateLines: string[] = [];
   const taken = new Set<External>();
   if (candidate !== null) {
     const points = surplusCandidate(input, candidate.name, pick.dest);
     if (points !== null) taken.add(candidate.name);
-    out.push(
+    candidateLines.push(
       points === null
         ? candidate.line
         : `${candidate.line}。週枠の余り ${points}pt`,
@@ -365,16 +531,24 @@ export function buildRoute(input: RouteInput): string[] {
   }
   // The week belongs to the provider, so one line per provider, shown as the
   // first of its destinations in this kind's order.
-  for (const dest of externalOrder(kind, size, held)) {
+  for (const dest of externalOrder(kind, size, usable)) {
     if (taken.has(dest.provider)) continue;
     taken.add(dest.provider);
     const points = surplusCandidate(input, dest.provider, pick.dest);
-    if (points !== null) {
-      out.push(
-        `試す候補: ${dest.display} 週枠の余り ${points}pt がリセットまでに使われない`,
+    if (points !== null && gate.allows(dest)) {
+      candidateLines.push(
+        `試す候補: ${displayFor(dest, kind)} 週枠の余り ${points}pt がリセットまでに使われない`,
       );
     }
   }
+  out.push(...classificationLines(kind, exposure, verdict, usable));
+  // After the last rule that can ask, so the line reflects every refusal.
+  if (gate.refused) {
+    out.push(
+      `保留: ${DESTINATIONS.sarashina.display} ${SARASHINA_PRIVATE_REASON}`,
+    );
+  }
+  out.push(...candidateLines);
 
   const windows = (["claude", "codex", "opencode", "sarashina"] as const)
     .map(

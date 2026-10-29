@@ -14,13 +14,43 @@ export type Destination = {
   provider: "codex" | "opencode" | "sarashina";
   /** Records counted for the destination: every field given must equal. */
   match: { harness: string; model?: string; effort?: string };
-  /** Fixed text, including the launch command: never built from records. */
+  /**
+   * Fixed text, including the launch command: never built from records. For a
+   * row that sends out it is the read-only form of offloadDisplay; route adds
+   * --write per kind.
+   */
   display: string;
+  /** Extra constraint appended to the display of a row that sends out. */
+  displayNote?: string;
   /** Fixed short name for review lines; never built from records. */
   label: string;
   /** Whether the brief and the working tree leave the machine (to Z.ai or Sarashina). */
   sendsOut: boolean;
 };
+
+/**
+ * The launch text of a row that sends out, built from the table's model so it
+ * cannot drift from sendsOutModels(), the set the entry accepts.
+ */
+export function offloadDisplay(
+  d: {
+    label: string;
+    match: { model?: string };
+    displayNote?: string;
+  },
+  write: boolean,
+): string {
+  if (d.match.model === undefined) {
+    throw new Error(`sendsOut destination without a model: ${d.label}`);
+  }
+  const note = d.displayNote === undefined ? "" : `、${d.displayNote}`;
+  return `${d.label} (delegation offload --exposure external-ok --model ${d.match.model} --brief-file <絶対パス>${write ? " --write" : ""}。シェル無し。テストはメインループで${note})`;
+}
+
+const GLM_MODEL = "zai-coding-plan/glm-5.3";
+const SARASHINA_MODEL = "sarashina/sarashina3.2-mini-thinking";
+const FREE_DEEPSEEK_MODEL = "opencode/deepseek-v4.1-flash-free";
+const FREE_GLM_MODEL = "opencode/glm-5.3-flash-free";
 
 export const DESTINATIONS: Record<DestinationName, Destination> = {
   "codex-terra": {
@@ -45,8 +75,11 @@ export const DESTINATIONS: Record<DestinationName, Destination> = {
     name: "opencode",
     provider: "opencode",
     // Pinned to GLM so Sarashina's records (same harness) do not count here.
-    match: { harness: "opencode", model: "zai-coding-plan/glm-5.3" },
-    display: "opencode (opencode run)",
+    match: { harness: "opencode", model: GLM_MODEL },
+    display: offloadDisplay(
+      { label: "opencode", match: { model: GLM_MODEL } },
+      false,
+    ),
     label: "opencode",
     sendsOut: true,
   },
@@ -55,10 +88,17 @@ export const DESTINATIONS: Record<DestinationName, Destination> = {
     provider: "sarashina",
     match: {
       harness: "opencode",
-      model: "sarashina/sarashina3.2-mini-thinking",
+      model: SARASHINA_MODEL,
     },
-    display:
-      "sarashina (opencode run -m sarashina/sarashina3.2-mini-thinking、公開内容のみ)",
+    display: offloadDisplay(
+      {
+        label: "sarashina",
+        match: { model: SARASHINA_MODEL },
+        displayNote: "公開内容のみ",
+      },
+      false,
+    ),
+    displayNote: "公開内容のみ",
     label: "sarashina",
     sendsOut: true,
   },
@@ -71,6 +111,7 @@ export type FreeDestination = {
   name: FreeDestinationName;
   match: { harness: "opencode"; model: string };
   display: string;
+  displayNote?: string;
   label: string;
   sendsOut: true;
 };
@@ -78,15 +119,27 @@ export type FreeDestination = {
 export const FREE_DESTINATIONS: readonly FreeDestination[] = [
   {
     name: "opencode-free-deepseek",
-    match: { harness: "opencode", model: "opencode/deepseek-v4.1-flash-free" },
-    display: "opencode free deepseek",
+    match: { harness: "opencode", model: FREE_DEEPSEEK_MODEL },
+    display: offloadDisplay(
+      {
+        label: "opencode free deepseek",
+        match: { model: FREE_DEEPSEEK_MODEL },
+      },
+      false,
+    ),
     label: "opencode free deepseek",
     sendsOut: true,
   },
   {
     name: "opencode-free-glm",
-    match: { harness: "opencode", model: "opencode/glm-5.3-flash-free" },
-    display: "opencode free glm",
+    match: { harness: "opencode", model: FREE_GLM_MODEL },
+    display: offloadDisplay(
+      {
+        label: "opencode free glm",
+        match: { model: FREE_GLM_MODEL },
+      },
+      false,
+    ),
     label: "opencode free glm",
     sendsOut: true,
   },

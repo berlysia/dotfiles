@@ -18,6 +18,7 @@ import {
   isExposure,
   PENDING_LIMIT,
   STDIN_MAX_BYTES,
+  type Exposure,
 } from "./constants.ts";
 import {
   buildDelegationRow,
@@ -65,7 +66,7 @@ import {
   readForecast,
   type ForecastRead,
 } from "./forecast-file.ts";
-import { runOffload } from "./offload.ts";
+import { collectOffloadInputs, runOffload, verifyOffload } from "./offload.ts";
 import {
   applyLookahead,
   fetchUsage,
@@ -73,7 +74,7 @@ import {
   paceProvider,
   surplusPoints,
 } from "./pace.ts";
-import { buildRoute, HELD_DESTINATIONS } from "./route.ts";
+import { buildRoute, type OffloadVerdict } from "./route.ts";
 import { repoIsPublic } from "./repo-visibility.ts";
 import { buildReview } from "./review.ts";
 
@@ -511,19 +512,38 @@ function cmdLapse(args: Args, now: Date): number {
   return lapsePending(openStore(), id, now) ? 0 : 1;
 }
 
+/**
+ * The entry's verification as route sees it. A failure to gather or compare
+ * is a refusal, not a crash: route still prints, without sending anything out.
+ */
+function offloadVerdict(): OffloadVerdict {
+  try {
+    const result = verifyOffload(collectOffloadInputs(process.env));
+    return result.ok
+      ? { ok: true, models: result.models }
+      : { ok: false, reason: result.reason, recovery: result.recovery };
+  } catch {
+    return { ok: false, reason: "照合の入力を集められない", recovery: [] };
+  }
+}
+
 async function cmdRoute(args: Args, now: Date): Promise<number> {
   const kind = flagString(args, "kind");
   const size = flagString(args, "size");
   const session = flagString(args, "session");
   if (!isOneOf(KINDS, kind) || !isOneOf(SIZES, size)) return 1;
   if (session !== undefined && !isToolUseId(session)) return 1;
-  const exposure = flagString(args, "exposure");
-  if (exposure !== undefined && !isExposure(exposure)) {
+  const exposureFlag = flagString(args, "exposure");
+  if (exposureFlag !== undefined && !isExposure(exposureFlag)) {
     process.stderr.write(
       `delegation: --exposure must be one of: ${EXPOSURES.join(", ")}\n`,
     );
     return 1;
   }
+  const exposure: Exposure | undefined =
+    exposureFlag !== undefined && isExposure(exposureFlag)
+      ? exposureFlag
+      : undefined;
   const store = openStore();
   lapseStalePendings(store, now);
   const ledger = readLedger(store);
@@ -581,7 +601,8 @@ async function cmdRoute(args: Args, now: Date): Promise<number> {
       usage.codex === null &&
       usage.opencode === null &&
       usage.sarashina === null,
-    held: HELD_DESTINATIONS,
+    ...(exposure === undefined ? {} : { exposure }),
+    offload: offloadVerdict,
     isPublicRepo: () => repoIsPublic(process.env, process.cwd()),
   });
   process.stdout.write(`${lines.join("\n")}\n`);
