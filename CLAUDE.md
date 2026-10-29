@@ -48,9 +48,9 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
 - **formal-check のランタイム**: `home/dot_config/formal-check/`（package.json + bun.lock の z3-solver）→ `~/.config/formal-check/`。`run_after_10-install-formal-check-deps.sh.tmpl` が `bun install --frozen-lockfile --ignore-scripts` を走らせ、成功時に `.install-state` を書く。`tla2tools.jar` は `home/.chezmoiexternal.toml.tmpl` の external。状態の読み手は `.skills/formal-check/scripts/lib/runtime.mjs`
 - **ja-check-keep の注記**: 理由の末尾に `shiori: JA-<番号>` を付ける。同じ番号を `.config/shiori/registry.json` に `kind: intentional` で書く（番号は台帳の最大の次）。CI の「shiori Annotations」が、台帳に無い番号と文書から消えた番号を落とす。書き方の例には実在の番号を書かない（ADR-0048）
 
-### Claude Code Skills Management
+### Claude Code & Agent Skills Management
 
-- **手作りスキル**: `${projectRoot}/.skills/` で一元管理、`chezmoi apply` で `~/.claude/skills/` と `~/.codex/skills/` に rsync 同期
+- **手作りスキル**: `${projectRoot}/.skills/` で一元管理、`chezmoi apply` で `~/.claude/skills/`、`~/.codex/skills/`、`~/.gemini/config/skills/` に rsync 同期
   - rsync は run script が行うため `chezmoi apply <path>` では反映されない。スキル変更後は引数なしの `chezmoi apply` を実行する
 - **外部スキル**: `home/dot_apm/apm.yml` で宣言的管理、APM (`apm install -g`) 経由でインストール
   - `apm.lock.yaml` で追跡、手作りスキルとの共存は rsync 除外で維持

@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# agy-polish: Alias wrapper for gemini-polish
+set -euo pipefail
+BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TARGET="$BIN_DIR/gemini-polish"
+if [[ ! -x "$TARGET" && -x "$BIN_DIR/executable_gemini-polish" ]]; then
+    TARGET="$BIN_DIR/executable_gemini-polish"
+fi
+exec "$TARGET" "$@"

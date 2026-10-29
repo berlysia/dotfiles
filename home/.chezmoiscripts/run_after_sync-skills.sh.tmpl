@@ -8,11 +8,12 @@ SKILLS_SOURCE="{{ .chezmoi.workingTree }}/.skills"
 PRIVATE_SKILLS_SOURCE="$HOME/.local/share/private-skills"
 CLAUDE_SKILLS="$HOME/.claude/skills"
 CODEX_SKILLS="$HOME/.codex/skills"
+GEMINI_SKILLS="$HOME/.gemini/config/skills"
 
 # Create directories if they don't exist
-mkdir -p "$CLAUDE_SKILLS" "$CODEX_SKILLS"
+mkdir -p "$CLAUDE_SKILLS" "$CODEX_SKILLS" "$GEMINI_SKILLS"
 
-# Sync .skills to ~/.claude/skills and ~/.codex/skills
+# Sync .skills to ~/.claude/skills, ~/.codex/skills, and ~/.gemini/config/skills
 echo "Syncing handcrafted skills from .skills..."
 
 # Build exclude filter for APM-managed skills (read directly from lockfile)
@@ -74,6 +75,7 @@ TOOL_OWNED_EXCLUDE_ARGS=(--exclude="/ui-skills" --exclude="/claude-recall" --exc
 # chezmoi last wrote it?". Group/other bits of synced entries follow the umask.
 rsync -a --no-perms --executability --delete "${TOOL_OWNED_EXCLUDE_ARGS[@]}" ${EXCLUDE_ARGS[@]+"${EXCLUDE_ARGS[@]}"} ${PRIVATE_EXCLUDE_ARGS[@]+"${PRIVATE_EXCLUDE_ARGS[@]}"} "$SKILLS_SOURCE/" "$CLAUDE_SKILLS/"
 rsync -a --no-perms --executability --delete "${TOOL_OWNED_EXCLUDE_ARGS[@]}" ${EXCLUDE_ARGS[@]+"${EXCLUDE_ARGS[@]}"} ${PRIVATE_EXCLUDE_ARGS[@]+"${PRIVATE_EXCLUDE_ARGS[@]}"} "$SKILLS_SOURCE/" "$CODEX_SKILLS/"
+rsync -a --no-perms --executability --delete "${TOOL_OWNED_EXCLUDE_ARGS[@]}" ${EXCLUDE_ARGS[@]+"${EXCLUDE_ARGS[@]}"} ${PRIVATE_EXCLUDE_ARGS[@]+"${PRIVATE_EXCLUDE_ARGS[@]}"} "$SKILLS_SOURCE/" "$GEMINI_SKILLS/"
 
 # Overlay private skills (sourced from private repo via chezmoi external).
 # Use --delete inside each skill dir but keep other skills untouched.
@@ -84,6 +86,7 @@ if [ -d "$PRIVATE_SKILLS_SOURCE" ]; then
     name=$(basename "$src")
     rsync -a --delete --exclude=".git" "$src" "$CLAUDE_SKILLS/$name/"
     rsync -a --delete --exclude=".git" "$src" "$CODEX_SKILLS/$name/"
+    rsync -a --delete --exclude=".git" "$src" "$GEMINI_SKILLS/$name/"
   done
 fi
 
