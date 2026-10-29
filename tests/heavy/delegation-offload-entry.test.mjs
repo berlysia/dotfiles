@@ -26,7 +26,7 @@ import { DatabaseSync } from "node:sqlite";
 
 const MAIN = join(
   import.meta.dirname,
-  "../home/dot_local/share/delegation/main.ts",
+  "../../home/dot_local/share/delegation/main.ts",
 );
 const GLM = "zai-coding-plan/glm-5.3";
 const SAR = "sarashina/sarashina3.2-mini-thinking";
