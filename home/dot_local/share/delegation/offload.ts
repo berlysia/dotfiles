@@ -719,38 +719,71 @@ export function hashPlanFile(
 export const READ_DENY: readonly string[] = [
   ".git",
   "**/.git",
+  ".git/**",
   "**/.git/**",
+  ".tmp/**",
   "**/.tmp/**",
+  "node_modules/**",
   "**/node_modules/**",
+  ".env",
   "**/.env",
+  ".env.*",
   "**/.env.*",
+  "*.env",
   "**/*.env",
+  ".envrc",
   "**/.envrc",
+  ".dev.vars",
   "**/.dev.vars",
+  "*.pem",
   "**/*.pem",
+  "*.key",
   "**/*.key",
+  "*.p12",
   "**/*.p12",
+  "*.pfx",
   "**/*.pfx",
+  "*.jks",
   "**/*.jks",
+  "*.keystore",
   "**/*.keystore",
+  "id_rsa*",
   "**/id_rsa*",
+  "id_ed25519*",
   "**/id_ed25519*",
+  ".npmrc",
   "**/.npmrc",
+  ".pypirc",
   "**/.pypirc",
+  ".netrc",
   "**/.netrc",
+  ".git-credentials",
   "**/.git-credentials",
+  "credentials*",
   "**/credentials*",
+  "service-account*.json",
   "**/service-account*.json",
+  "*.tfvars",
   "**/*.tfvars",
+  "*.tfstate",
   "**/*.tfstate",
+  "secrets/**",
   "**/secrets/**",
+  ".ssh/**",
   "**/.ssh/**",
+  ".aws/**",
   "**/.aws/**",
+  ".kube/**",
   "**/.kube/**",
+  ".gnupg/**",
   "**/.gnupg/**",
+  ".docker/config.json",
   "**/.docker/config.json",
+  ".mcp.json",
   "**/.mcp.json",
+  ".claude/**",
   "**/.claude/**",
+  ".codex/**",
   "**/.codex/**",
 ];
 
@@ -822,28 +855,19 @@ export const EDIT_DENY_EXTRA: readonly string[] = [
 
 export const EDIT_DENY: readonly string[] = [...READ_DENY, ...EDIT_DENY_EXTRA];
 
-/** Compile an opencode-style glob (`**`, `*`) into an anchored RegExp. */
+/**
+ * Compile a permission pattern the way opencode's `Wildcard.match` does:
+ * `*` and `**` both become `.*` (crossing `/`) and `?` one character.
+ * Not a globstar: `**\/.env` needs a `/` before `.env`, so it misses the
+ * worktree root, whose files opencode matches as bare relative paths. That
+ * is why READ_DENY carries a root form next to each `**\/` pattern.
+ */
 export function globToRegExp(glob: string): RegExp {
-  let out = "";
-  for (let i = 0; i < glob.length; i++) {
-    const c = glob[i] as string;
-    if (c === "*") {
-      if (glob[i + 1] === "*") {
-        if (glob[i + 2] === "/") {
-          out += "(?:.*/)?";
-          i += 2;
-        } else {
-          out += ".*";
-          i += 1;
-        }
-      } else {
-        out += "[^/]*";
-      }
-    } else {
-      out += c.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
-    }
-  }
-  return new RegExp(`^${out}$`);
+  const escaped = glob
+    .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+    .replace(/\*/g, ".*")
+    .replace(/\?/g, ".");
+  return new RegExp(`^${escaped}$`, "s");
 }
 
 const READ_DENY_RES = READ_DENY.map(globToRegExp);

@@ -862,6 +862,31 @@ test("deny lists: matching and the jsonc mirror stays in sync later", () => {
   for (const p of READ_DENY) assert.ok(EDIT_DENY.includes(p), p);
 });
 
+test("deny lists: patterns match like opencode's Wildcard.match", () => {
+  // `**/` needs a `/`, so the root is covered only by the bare form
+  assert.equal(offloadModule.globToRegExp("**/.env").test(".env"), false);
+  assert.equal(offloadModule.globToRegExp("*.pem").test("a/b/x.pem"), true);
+  for (const rel of [
+    ".env",
+    "sub/.env",
+    ".envrc",
+    "x.pem",
+    "a/x.pem",
+    "credentials.json",
+    ".npmrc",
+    "secrets/k",
+    ".ssh/id_rsa",
+  ]) {
+    assert.equal(offloadModule.matchesDeny(rel, "read"), true, rel);
+  }
+  for (const rel of ["README.md", "sub/notes.md", ".prettierrc"]) {
+    assert.equal(offloadModule.matchesDeny(rel, "read"), false, rel);
+  }
+  for (const p of READ_DENY.filter((x) => x.startsWith("**/"))) {
+    assert.ok(READ_DENY.includes(p.slice(3)), `no root form for ${p}`);
+  }
+});
+
 // ---- ~/.opencode allowlist and package.json dependency checks ---------------------
 
 /** A fake opencode install; returns the env and the ~/.opencode path. */
