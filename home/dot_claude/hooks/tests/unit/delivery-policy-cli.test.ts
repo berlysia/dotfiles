@@ -2,6 +2,8 @@
 
 import assert from "node:assert/strict";
 import {
+  chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -49,6 +51,8 @@ interface World {
   files: string[];
   mergeStatus: number;
   failOn: string | null;
+  /** One per check-run read, in order: "fail" answers a gh error. Empty or spent means ok. */
+  checkOutcomes: Array<"fail" | "ok">;
   /** Runs before the Nth call whose args contain `marker`. */
   onCall: Array<(args: string[]) => void>;
 }
@@ -72,6 +76,7 @@ function freshWorld(): World {
     files: ["docs/a.md"],
     mergeStatus: 0,
     failOn: null,
+    checkOutcomes: [],
     onCall: [],
   };
 }
@@ -150,6 +155,9 @@ describe("delivery-policy CLI", () => {
         );
       }
       if (text.includes("checkSuites")) {
+        if (world.checkOutcomes.shift() === "fail") {
+          return { status: 1, stdout: "", stderr: "boom" };
+        }
         return ok(
           JSON.stringify({
             data: {
@@ -421,10 +429,10 @@ describe("delivery-policy CLI", () => {
       assert.equal(mergeCalls()[0]?.at(-1), SHA_A);
     });
 
-    it("waits (10) on a User's SUCCESS status and does not merge", async () => {
+    it("waits out the budget (12) on a User's SUCCESS status and does not merge", async () => {
       record("merge");
       withStatus(botStatus({ creator: { __typename: "User" } }));
-      assert.equal(await run("merge", "5"), 10);
+      assert.equal(await run("merge", "5"), 12);
       assert.equal(mergeCalls().length, 0);
     });
 
@@ -442,10 +450,10 @@ describe("delivery-policy CLI", () => {
       assert.equal(await run("merge", "5"), 0);
     });
 
-    it("a required status with a null creator is not counted (10)", async () => {
+    it("a required status with a null creator is not counted (waits out the budget, 12)", async () => {
       record("merge");
       withStatus(botStatus({ creator: null }));
-      assert.equal(await run("merge", "5"), 10);
+      assert.equal(await run("merge", "5"), 12);
       assert.equal(mergeCalls().length, 0);
     });
 
@@ -478,29 +486,28 @@ describe("delivery-policy CLI", () => {
     assert.equal(mergeCalls().length, 0);
   });
 
-  it("pending checks wait up to the 100s deadline, then 10, and record the wait", async () => {
+  it("pending checks wait until the 20 minute budget is used up, then 12, and record the wait", async () => {
     record("merge");
     world.checkRuns = [
       { name: "status-check", status: "IN_PROGRESS", conclusion: null },
     ];
-    assert.equal(await run("merge", "5"), 10);
-    // waits end before the 100s deadline: the last 15s sleep that would cross it is skipped
-    assert.ok(mono - 1000 < 100_000);
-    assert.ok(sleeps >= 5);
+    assert.equal(await run("merge", "5"), 12);
+    const waited = wall - T0;
+    assert.ok(waited >= 20 * 60_000 && waited <= 20 * 60_000 + 15_000);
     assert.equal(mergeCalls().length, 0);
     const entries = JSON.parse(readFileSync(waitsPath(home), "utf-8"))
       .entries as Record<string, string>;
     assert.deepEqual(Object.keys(entries), [`berlysia/dotfiles#5@${SHA_A}`]);
   });
 
-  it("a slow gh cannot carry one call past 110s: per-call timeouts shrink and the run ends with 10", async () => {
+  it("a slow gh cannot carry one call past 23 min + 10 s: per-call timeouts shrink and the run ends with 10", async () => {
     record("merge");
     world.checkRuns = [
       { name: "status-check", status: "IN_PROGRESS", conclusion: null },
     ];
     ghCost = 9000;
     assert.equal(await run("merge", "5"), 10);
-    assert.ok(mono - 1000 <= 110_000, `elapsed ${mono - 1000}`);
+    assert.ok(mono - 1000 <= 23 * 60_000 + 10_000, `elapsed ${mono - 1000}`);
     assert.equal(mergeCalls().length, 0);
     for (const t of timeouts)
       assert.ok(t !== undefined && t <= 10_000 && t > 0);
@@ -539,8 +546,8 @@ describe("delivery-policy CLI", () => {
     assert.equal(await run("merge", "5"), 12);
     wall = T0;
     mono = 1000;
-    // The wall clock is held still so the judgement is about the first
-    // decision; with it running, 100s of waiting would cross the budget.
+    // The wall clock is held still so the budget is not crossed while waiting
+    // and the call ends at its own deadline instead.
     wallAdvances = false;
     seed(20 * 60_000 - 1000);
     assert.equal(await run("merge", "5"), 10);
@@ -551,7 +558,7 @@ describe("delivery-policy CLI", () => {
     world.checkRuns = [];
     mkdirSync(ledgerDir(home), { recursive: true });
     writeFileSync(waitsPath(home), "{not json");
-    assert.equal(await run("merge", "5"), 10);
+    assert.equal(await run("merge", "5"), 12);
     const entries = JSON.parse(readFileSync(waitsPath(home), "utf-8")).entries;
     assert.equal(Object.keys(entries).length, 1);
   });
@@ -576,7 +583,7 @@ describe("delivery-policy CLI", () => {
     wall = T0;
     mono = 1000;
     world.shas = [SHA_B];
-    assert.equal(await run("merge", "5"), 10);
+    assert.equal(await run("merge", "5"), 12);
     const entries = JSON.parse(readFileSync(waitsPath(home), "utf-8"))
       .entries as Record<string, string>;
     assert.equal("old/repo#1@x" in entries, false);
@@ -637,5 +644,279 @@ describe("delivery-policy CLI", () => {
     record("merge");
     world.mergeStatus = 1;
     assert.equal(await run("merge", "5"), 40);
+  });
+
+  describe("a wait of up to 20 minutes in one call", () => {
+    const START_MONO = 1000;
+    const elapsed = () => wall - T0;
+    const pending = () => {
+      world.checkRuns = [
+        { name: "status-check", status: "IN_PROGRESS", conclusion: null },
+      ];
+    };
+    const green = () => {
+      world.checkRuns = [
+        { name: "status-check", status: "COMPLETED", conclusion: "SUCCESS" },
+      ];
+    };
+    /** Runs `act` once, before the first gh call that `when` accepts. */
+    const once = (when: (args: string[]) => boolean, act: () => void) => {
+      let done = false;
+      world.onCall.push((args) => {
+        if (!done && when(args)) {
+          done = true;
+          act();
+        }
+      });
+    };
+    const isChecksRead = (args: string[]) =>
+      args.join(" ").includes("checkSuites");
+    /** Time spent before the first wait: repo, viewer and the first reads. */
+    const setupTakes = (ms: number) =>
+      once(
+        (args) => args[0] === "repo",
+        () => {
+          wall += ms;
+          mono += ms;
+        },
+      );
+    const seedFirstWait = (msBeforeStart: number) => {
+      mkdirSync(ledgerDir(home), { recursive: true });
+      writeFileSync(
+        waitsPath(home),
+        JSON.stringify({
+          v: 1,
+          entries: {
+            [`berlysia/dotfiles#5@${SHA_A}`]: new Date(
+              T0 - msBeforeStart,
+            ).toISOString(),
+          },
+        }),
+      );
+    };
+    const transientLines = () =>
+      out.split("\n").filter((l) => l.includes("waiting: transient error"));
+
+    it("a 150 s setup still ends in 12, not 10 (the 3 minute margin)", async () => {
+      record("merge");
+      pending();
+      setupTakes(150_000);
+      assert.equal(await run("merge", "5"), 12);
+      assert.match(lastLine() ?? "", /^delivery-policy: 12: /);
+      assert.equal(mergeCalls().length, 0);
+    });
+
+    it("a head whose budget is nearly used by an earlier call waits once, then 12", async () => {
+      record("merge");
+      pending();
+      seedFirstWait(19 * 60_000 + 20_000);
+      setupTakes(30_000);
+      assert.equal(await run("merge", "5"), 12);
+      assert.equal(sleeps, 1);
+    });
+
+    it("pending for 5 minutes and then success merges in the same call", async () => {
+      record("merge");
+      pending();
+      once(() => elapsed() >= 300_000, green);
+      assert.equal(await run("merge", "5"), 0);
+      assert.equal(mergeCalls().length, 1);
+      assert.ok(sleeps >= 20);
+    });
+
+    it("a scope narrowed to pr after 3 minutes stops at the next round with 20", async () => {
+      record("merge");
+      pending();
+      once(
+        () => elapsed() >= 180_000,
+        () => record("pr"),
+      );
+      assert.equal(await run("merge", "5"), 20);
+      assert.ok(elapsed() >= 180_000 && elapsed() <= 195_000, `${elapsed()}`);
+      assert.equal(mergeCalls().length, 0);
+    });
+
+    it("a ledger line broken after 3 minutes prints the invalid line and stops at the next round", async () => {
+      record("merge");
+      pending();
+      once(
+        () => elapsed() >= 180_000,
+        () =>
+          writeFileSync(
+            ledgerPath(home),
+            `${readFileSync(ledgerPath(home), "utf-8")}\n{broken`,
+          ),
+      );
+      // decideLedger answers 40 for an invalid line, as it does at the start
+      assert.equal(await run("merge", "5"), 40);
+      assert.ok(elapsed() >= 180_000 && elapsed() <= 195_000, `${elapsed()}`);
+      assert.match(out, /delivery-policy: invalid: 3: json/);
+      assert.equal(mergeCalls().length, 0);
+    });
+
+    it("a scope already narrowed at the start is 20 in the first round, with one scope line", async () => {
+      record("pr");
+      assert.equal(await run("merge", "5"), 20);
+      assert.equal(sleeps, 0);
+      assert.equal(out.split("scope pr recorded").length - 1, 1);
+      assert.equal(mergeCalls().length, 0);
+    });
+
+    it("a ledger that cannot be read in the middle of the wait is 40 without a retry", async () => {
+      record("merge");
+      pending();
+      once(
+        () => elapsed() >= 180_000,
+        () => chmodSync(ledgerPath(home), 0),
+      );
+      assert.equal(await run("merge", "5"), 40);
+      assert.match(lastLine() ?? "", /ledger cannot be read \(EACCES\)/);
+      assert.equal(transientLines().length, 0);
+      assert.equal(mergeCalls().length, 0);
+    });
+
+    it("a head that changes after 3 minutes is 11", async () => {
+      record("merge");
+      pending();
+      once(
+        () => elapsed() >= 180_000,
+        () => {
+          world.shas = [SHA_B];
+        },
+      );
+      assert.equal(await run("merge", "5"), 11);
+      assert.equal(mergeCalls().length, 0);
+    });
+
+    it("a required check that fails in the middle of the wait is 30", async () => {
+      record("merge");
+      pending();
+      once(
+        () => elapsed() >= 180_000,
+        () => {
+          world.checkRuns = [
+            {
+              name: "status-check",
+              status: "COMPLETED",
+              conclusion: "FAILURE",
+            },
+          ];
+        },
+      );
+      assert.equal(await run("merge", "5"), 30);
+      assert.equal(mergeCalls().length, 0);
+    });
+
+    it("three failed rounds and then a good one keep waiting, and success merges", async () => {
+      record("merge");
+      pending();
+      world.checkOutcomes = ["fail", "fail", "fail", "ok"];
+      once(() => sleeps >= 4, green);
+      assert.equal(await run("merge", "5"), 0);
+      assert.equal(transientLines().length, 3);
+      assert.equal(mergeCalls().length, 1);
+    });
+
+    it("a good round counts the failures from zero again", async () => {
+      record("merge");
+      pending();
+      world.checkOutcomes = [
+        "fail",
+        "fail",
+        "ok",
+        "fail",
+        "fail",
+        "fail",
+        "ok",
+      ];
+      once(() => sleeps >= 6, green);
+      assert.equal(await run("merge", "5"), 0);
+      assert.equal(transientLines().length, 5);
+    });
+
+    it("four failed rounds in a row are 40 after three waits, and no wait is recorded", async () => {
+      record("merge");
+      world.checkOutcomes = ["fail", "fail", "fail", "fail"];
+      assert.equal(await run("merge", "5"), 40);
+      assert.equal(sleeps, 3);
+      assert.deepEqual(
+        transientLines().map((l) => /\((\d)\/4\)/.exec(l)?.[1]),
+        ["1", "2", "3"],
+      );
+      assert.match(
+        lastLine() ?? "",
+        /^delivery-policy: 40: reading the check runs failed: boom/,
+      );
+      // a failed round only looks at the budget; it must not start one
+      assert.equal(existsSync(waitsPath(home)), false);
+      assert.equal(mergeCalls().length, 0);
+    });
+
+    it("failures from the first head read, with no sha to key a budget on, are 40 in the fourth round", async () => {
+      record("merge");
+      world.failOn = "headRefOid";
+      assert.equal(await run("merge", "5"), 40);
+      assert.equal(sleeps, 3);
+      assert.equal(existsSync(waitsPath(home)), false);
+    });
+
+    it("failed rounds that use up the budget are 12, checked before the deadline and the count", async () => {
+      record("merge");
+      pending();
+      world.checkOutcomes = ["ok", "fail", "fail", "fail", "fail"];
+      let reads = 0;
+      world.onCall.push((args) => {
+        if (isChecksRead(args) && ++reads === 2) {
+          // both the budget and the deadline are reached in this round
+          wall += 1_190_000;
+          mono += 1_350_000;
+        }
+      });
+      assert.equal(await run("merge", "5"), 12);
+      assert.match(
+        lastLine() ?? "",
+        /^delivery-policy: 12: reading the check runs failed: boom; the wait budget/,
+      );
+    });
+
+    it("a fourth failure that arrives at the deadline is 10, not 40", async () => {
+      record("merge");
+      world.checkOutcomes = ["fail", "fail", "fail", "fail"];
+      let reads = 0;
+      world.onCall.push((args) => {
+        if (isChecksRead(args) && ++reads === 4) mono += 1_350_000;
+      });
+      assert.equal(await run("merge", "5"), 10);
+      assert.equal(sleeps, 3);
+      assert.match(lastLine() ?? "", /^delivery-policy: 10: /);
+    });
+
+    it("a wait whose next 15 s would cross the deadline is 10", async () => {
+      record("merge");
+      pending();
+      once(
+        (args) => sleeps >= 2 && isChecksRead(args),
+        () => {
+          // 10 s left: every gh of this round still runs, the next wait does not fit
+          mono = START_MONO + 1_370_000;
+        },
+      );
+      assert.equal(await run("merge", "5"), 10);
+      assert.equal(sleeps, 2);
+      assert.doesNotMatch(lastLine() ?? "", /time limit/);
+    });
+
+    it("a gh called after the deadline is 10", async () => {
+      record("merge");
+      pending();
+      once(
+        (args) => sleeps >= 1 && isChecksRead(args),
+        () => {
+          mono = START_MONO + 1_381_000;
+        },
+      );
+      assert.equal(await run("merge", "5"), 10);
+      assert.match(lastLine() ?? "", /time limit of this call reached/);
+    });
   });
 });

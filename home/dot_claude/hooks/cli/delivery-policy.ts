@@ -48,11 +48,16 @@ import {
 
 const WAIT_INTERVAL_MS = 15_000;
 const PER_CALL_TIMEOUT_MS = 10_000;
-// The Bash tool's default timeout is 2 minutes and a timeout prints neither a
-// code nor a reason, so one call waits well inside that.
-const CALL_WAIT_LIMIT_MS = 100_000;
 // How long one (repo, PR, head sha) may keep asking to be run again.
 const TOTAL_WAIT_BUDGET_MS = 20 * 60_000;
+// The deadline runs from the start of the call and the budget from the first
+// wait, so the setup before that wait (repo, viewer, first reads: about 80 s
+// of gh at worst) plus one 15 s wait and one round of reads (about 60 s) must
+// fit in the margin, or exit 10 would come before exit 12 for a new head.
+// 3 minutes covers the 155 s worst case; 2 minutes does not.
+const CALL_WAIT_LIMIT_MS = TOTAL_WAIT_BUDGET_MS + 3 * 60_000;
+// Rounds in a row whose reads may fail before the wait gives up with 40.
+const MAX_FAILED_ROUNDS = 4;
 const WAITS_RETENTION_MS = 24 * 60 * 60_000;
 const MAX_FILE_PAGES = 30;
 const FILES_PER_PAGE = 100;
@@ -505,11 +510,22 @@ function writeWaitEntries(home: string, entries: WaitEntries): void {
   renameSync(temp, target);
 }
 
+/** The recorded first-wait time of this key, without writing one. Future times count as now. */
+function peekFirstWaitMs(
+  home: string,
+  key: string,
+  nowMs: number,
+): number | undefined {
+  const entries = readWaitEntries(home);
+  const recorded = key in entries ? Date.parse(entries[key] ?? "") : Number.NaN;
+  return Number.isNaN(recorded) ? undefined : Math.min(recorded, nowMs);
+}
+
 /** The time this key first waited, recorded now when it is new. Future times count as now. */
 function firstWaitMs(home: string, key: string, nowMs: number): number {
   const entries = readWaitEntries(home);
-  const recorded = key in entries ? Date.parse(entries[key] ?? "") : Number.NaN;
-  if (!Number.isNaN(recorded)) return Math.min(recorded, nowMs);
+  const known = peekFirstWaitMs(home, key, nowMs);
+  if (known !== undefined) return known;
   const kept: WaitEntries = {};
   for (const [k, value] of Object.entries(entries)) {
     const time = Date.parse(value);
@@ -580,62 +596,119 @@ async function runMerge(
     if (!resolved.ok) return finish(40, resolved.reason);
     const { repo } = resolved;
 
-    const ledger = readLedger(deps.home);
-    const recorded = ledger.latest.get(repo.nameWithOwner);
+    // Printed once, from the ledger as it is at the start. Whether the scope
+    // still allows a merge is judged every round below.
+    const startLedger = readLedger(deps.home);
+    const recorded = startLedger.latest.get(repo.nameWithOwner);
     if (recorded !== undefined) {
       say(
         `delivery-policy: scope ${recorded.scope} recorded ${formatRecordedDate(recorded.at)}; to change it run ~/.local/bin/delivery-policy ask`,
       );
     }
-    const early = decideLedger(ledger, repo);
-    if (early.kind === "stop") {
-      for (const line of invalidLines(ledger, deps.home)) say(line);
-      return finish(early.code, early.reason);
-    }
 
     const viewer = await readViewer(gh);
     let baseSha: string | undefined;
+    let failedRounds = 0;
     for (;;) {
-      const sha = await readHeadSha(gh, repo, prNumber);
-      baseSha ??= sha;
-      if (sha !== baseSha) {
-        return finish(
-          11,
-          `head changed from ${baseSha.slice(0, 12)} to ${sha.slice(0, 12)}`,
+      let state: MergeState;
+      try {
+        const sha = await readHeadSha(gh, repo, prNumber);
+        baseSha ??= sha;
+        if (sha !== baseSha) {
+          return finish(
+            11,
+            `head changed from ${baseSha.slice(0, 12)} to ${sha.slice(0, 12)}`,
+          );
+        }
+
+        // Read again every round: a wait of up to 20 minutes is long enough
+        // for the scope to be narrowed, and that must stop the merge at the
+        // next round, not after the wait. A read error is not retried; it is
+        // the same stop decideLedger gives anywhere else.
+        const ledger = readLedger(deps.home);
+        const ledgerDecision = decideLedger(ledger, repo);
+        if (ledgerDecision.kind === "stop") {
+          for (const line of invalidLines(ledger, deps.home)) say(line);
+          return finish(ledgerDecision.code, ledgerDecision.reason);
+        }
+
+        const pr = await readPr(gh, repo, prNumber);
+        const requiredContexts = await readRequiredContexts(
+          gh,
+          repo,
+          pr.baseRefName,
         );
-      }
-
-      const pr = await readPr(gh, repo, prNumber);
-      const requiredContexts = await readRequiredContexts(
-        gh,
-        repo,
-        pr.baseRefName,
-      );
-      const { checkRuns, statusContexts } = await readCommitChecks(
-        gh,
-        repo,
-        baseSha,
-      );
-      const files = await readChangedFiles(gh, repo, prNumber, pr.changedFiles);
-
-      const after = await readHeadSha(gh, repo, prNumber);
-      if (after !== baseSha) {
-        return finish(
-          11,
-          `head changed from ${baseSha.slice(0, 12)} to ${after.slice(0, 12)}`,
+        const { checkRuns, statusContexts } = await readCommitChecks(
+          gh,
+          repo,
+          baseSha,
         );
-      }
+        const files = await readChangedFiles(
+          gh,
+          repo,
+          prNumber,
+          pr.changedFiles,
+        );
 
-      const state: MergeState = {
-        ledger,
-        repo,
-        viewer,
-        pr,
-        files,
-        requiredContexts,
-        checkRuns,
-        statusContexts,
-      };
+        const after = await readHeadSha(gh, repo, prNumber);
+        if (after !== baseSha) {
+          return finish(
+            11,
+            `head changed from ${baseSha.slice(0, 12)} to ${after.slice(0, 12)}`,
+          );
+        }
+
+        state = {
+          ledger,
+          repo,
+          viewer,
+          pr,
+          files,
+          requiredContexts,
+          checkRuns,
+          statusContexts,
+        };
+      } catch (error) {
+        // Every read error is retried a few times without telling its kind:
+        // gh's output cannot separate an expired login or a rate limit from a
+        // blip. DeadlineError is not a read error and ends the call below.
+        if (!(error instanceof FetchError)) throw error;
+        failedRounds++;
+        // Same order as the wait branch below. The budget is only peeked at:
+        // recording a first wait from here would start the 20 minutes before
+        // anything waited, and leave a record behind an exit 40.
+        if (baseSha !== undefined) {
+          const firstWait = peekFirstWaitMs(
+            deps.home,
+            `${repo.nameWithOwner}#${prNumber}@${baseSha}`,
+            deps.now(),
+          );
+          if (
+            firstWait !== undefined &&
+            deps.now() - firstWait >= TOTAL_WAIT_BUDGET_MS
+          ) {
+            return finish(
+              12,
+              `${error.message}; the wait budget of ${TOTAL_WAIT_BUDGET_MS / 60_000} minutes for this head is used up`,
+            );
+          }
+        }
+        // Before the count: a gh cut short by the deadline arrives here as a
+        // FetchError, and that is no failed read.
+        if (deps.monotonic() + WAIT_INTERVAL_MS >= deadline) {
+          return finish(10, `${error.message}; run the same command again`);
+        }
+        if (failedRounds >= MAX_FAILED_ROUNDS) {
+          return finish(40, error.message);
+        }
+        say(
+          `delivery-policy: waiting: transient error (${failedRounds}/${MAX_FAILED_ROUNDS}): ${error.message}`,
+        );
+        await deps.sleep(WAIT_INTERVAL_MS);
+        continue;
+      }
+      failedRounds = 0;
+
       const decision = decideMerge(state);
       if (decision.kind === "stop") {
         for (const line of invalidLines(state.ledger, deps.home)) say(line);
