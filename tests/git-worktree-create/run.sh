@@ -571,14 +571,14 @@ test_B6f_help_wins_over_the_argument_count() {
 }
 test_B7_behind_start_point_warns_and_annotates() {
   behind_repo b7
-  run_create "$AGENT_VM_MARKER" feat
+  run_create "$AGENT_VM_MARKER" feat HEAD
   assert_eq 0 "$STATUS" "B7 exit 0"
   assert_contains "$OUT" "'main' is 1 commit(s) behind origin/main (as of the last fetch)" "B7 warning"
   assert_contains "$OUT" "merge --ff-only refs/remotes/origin/main" "B7 catch-up step"
   assert_not_contains "${OUT%%To switch to this worktree*}" "To switch" "B7 sanity"
   assert_contains "${OUT%%To switch to this worktree*}" "commit(s) behind" "B7 the warning comes before the path"
-  run_create_split "$AGENT_VM_MARKER" feat2
-  assert_eq "'main' ($(git -C "$REPO" rev-parse --short main)), 1 behind origin/main" "$(creating_suffix)" "B7 stdout line ends with the count"
+  run_create_split "$AGENT_VM_MARKER" feat2 HEAD
+  assert_eq "'HEAD' ($(git -C "$REPO" rev-parse --short main)), 1 behind origin/main" "$(creating_suffix)" "B7 stdout line ends with the count"
   assert_contains "$ERR" "commit(s) behind" "B7 the warning is on stderr"
   assert_not_contains "$OUT" "merge --ff-only" "B7 no catch-up step on stdout"
 }
@@ -595,11 +595,11 @@ test_B7b_sha_and_tag_start_points_are_not_compared() {
 test_B7c_diverged_start_point() {
   behind_repo b7c
   commit_file x
-  run_create_split "$AGENT_VM_MARKER" feat
+  run_create_split "$AGENT_VM_MARKER" feat HEAD
   assert_eq 0 "$STATUS" "B7c exit 0"
   assert_contains "$ERR" "has diverged from origin/main" "B7c warning"
   assert_not_contains "$OUT$ERR" "merge --ff-only" "B7c no catch-up step"
-  assert_eq "'main' ($(git -C "$REPO" rev-parse --short main)), diverged from origin/main" "$(creating_suffix)" "B7c stdout line"
+  assert_eq "'HEAD' ($(git -C "$REPO" rev-parse --short main)), diverged from origin/main" "$(creating_suffix)" "B7c stdout line"
   assert_not_contains "$OUT" "behind" "B7c stdout has no behind"
 }
 test_B8_branch_start_points_are_compared() {
@@ -687,6 +687,160 @@ test_B16_tag_and_branch_with_the_same_name() {
   assert_eq "$(git -C "$REPO" rev-parse 'dup^{commit}' 2>/dev/null)" "$(git -C "$REPO/.git/worktree/feat" rev-parse HEAD)" "B16 HEAD is the tag's commit"
   assert_not_contains "$OUT" "behind" "B16 no behind"
   assert_not_contains "$OUT" "ambiguous" "B16 no git warning"
+}
+
+# ---- default start point: the origin's default branch, fetched first ------------------------
+# clone_repo <name>: $REPO is a clone of a bare origin whose main has one commit, so origin/HEAD exists; $OTHER is a
+# second clone of it, for moving the origin ahead without $REPO fetching
+clone_repo() {
+  mkdir -p "$TMP_BASE/$1/bin" "$TMP_BASE/$1/seed"
+  STUB="$TMP_BASE/$1/bin"
+  git init -q --bare "$TMP_BASE/$1/origin.git"
+  git -C "$TMP_BASE/$1/origin.git" symbolic-ref HEAD refs/heads/main
+  git -C "$TMP_BASE/$1/seed" init -q
+  git -C "$TMP_BASE/$1/seed" commit -q --allow-empty -m init
+  git -C "$TMP_BASE/$1/seed" push -q "$TMP_BASE/$1/origin.git" HEAD:refs/heads/main
+  git clone -q "$TMP_BASE/$1/origin.git" "$TMP_BASE/$1/repo" 2>/dev/null
+  git clone -q "$TMP_BASE/$1/origin.git" "$TMP_BASE/$1/other" 2>/dev/null
+  REPO=$(cd -P "$TMP_BASE/$1/repo" && pwd -P)
+  OTHER="$TMP_BASE/$1/other"
+}
+# origin_advance: one more commit on the origin's main, pushed from $OTHER ($REPO does not fetch it)
+origin_advance() {
+  git -C "$OTHER" commit -q --allow-empty -m upstream-ahead
+  git -C "$OTHER" push -q origin HEAD:refs/heads/main
+}
+# break_origin: the origin's URL points at a path that does not exist, so every fetch fails
+break_origin() { git -C "$REPO" remote set-url origin "$TMP_BASE/no-such-origin.git"; }
+wt_head() { git -C "$REPO/.git/worktree/$1" rev-parse HEAD; }
+
+test_N1_default_start_is_the_fetched_origin_default_branch() {
+  clone_repo n1
+  origin_advance
+  run_create_split "$AGENT_VM_MARKER" feat
+  local new
+  new=$(git -C "$OTHER" rev-parse HEAD)
+  assert_eq 0 "$STATUS" "N1 exit 0"
+  assert_eq "$new" "$(wt_head feat)" "N1 HEAD is the new origin/main"
+  assert_eq "'origin/main' ($(git -C "$OTHER" rev-parse --short HEAD))" "$(creating_suffix)" "N1 Creating line"
+  assert_no_upstream "$REPO/.git/worktree/feat" feat "N1 no upstream"
+}
+test_N2_explicit_head_keeps_the_local_branch() {
+  clone_repo n2
+  origin_advance
+  run_create_split "$AGENT_VM_MARKER" feat HEAD
+  assert_eq 0 "$STATUS" "N2 exit 0"
+  assert_eq "$(git -C "$REPO" rev-parse main)" "$(wt_head feat)" "N2 HEAD is the local main"
+  assert_eq "'HEAD' ($(git -C "$REPO" rev-parse --short main)), 1 behind origin/main" "$(creating_suffix)" "N2 the lag is seen after the fetch"
+}
+test_N3_fetch_failure_warns_and_uses_the_last_fetch() {
+  clone_repo n3
+  break_origin
+  run_create_split "$AGENT_VM_MARKER" feat
+  assert_eq 0 "$STATUS" "N3 exit 0"
+  assert_contains "$ERR" "Could not fetch origin (status " "N3 warning"
+  assert_not_contains "$ERR" "status 0" "N3 the status is not 0"
+  assert_not_contains "$OUT$ERR" "fatal:" "N3 no git error"
+  assert_eq "$(git -C "$REPO" rev-parse origin/main)" "$(wt_head feat)" "N3 HEAD is the last fetched origin/main"
+  case "$(creating_suffix)" in *", not fetched") record "PASS N3 Creating line ends with not fetched" ;; *) record "FAIL N3 Creating line ends with not fetched" ;; esac
+}
+test_N4_unknown_default_branch_falls_back_to_head() {
+  behind_repo n4
+  git -C "$TMP_BASE/n4/origin.git" symbolic-ref HEAD refs/heads/nonexistent
+  run_create_split "$AGENT_VM_MARKER" feat
+  assert_eq 0 "$STATUS" "N4 exit 0"
+  assert_contains "$ERR" "origin's default branch is unknown" "N4 warning"
+  assert_eq "$(git -C "$REPO" rev-parse HEAD)" "$(wt_head feat)" "N4 HEAD of the repo"
+  assert_eq "'main' ($(git -C "$REPO" rev-parse --short HEAD)), 1 behind origin/main" "$(creating_suffix)" "N4 lag is compared on fallback"
+}
+test_N4b_missing_origin_head_is_set_by_set_head() {
+  clone_repo n4b
+  git -C "$REPO" remote set-head origin --delete >/dev/null
+  run_create_split "$AGENT_VM_MARKER" feat
+  assert_eq 0 "$STATUS" "N4b exit 0"
+  assert_eq "$(git -C "$REPO" rev-parse origin/main)" "$(wt_head feat)" "N4b HEAD is origin/main"
+  assert_not_contains "$ERR" "unknown" "N4b no warning"
+  assert_eq "refs/remotes/origin/main" "$(git -C "$REPO" symbolic-ref refs/remotes/origin/HEAD)" "N4b origin/HEAD was created"
+}
+test_N5_no_origin_means_head_without_warnings() {
+  make_repo n5
+  run_create_split "$AGENT_VM_MARKER" feat
+  assert_eq 0 "$STATUS" "N5 exit 0"
+  assert_not_contains "$ERR" "default branch is unknown" "N5 no unknown warning"
+  assert_not_contains "$ERR" "Could not fetch" "N5 no fetch warning"
+  assert_eq "$(git -C "$REPO" rev-parse HEAD)" "$(wt_head feat)" "N5 HEAD"
+}
+test_N6_local_branch_does_not_fetch() {
+  clone_repo n6
+  break_origin
+  git -C "$REPO" branch exist
+  run_create_split "$AGENT_VM_MARKER" exist
+  assert_eq 0 "$STATUS" "N6 exit 0"
+  assert_not_contains "$ERR" "Could not fetch" "N6 not fetched"
+}
+test_N7_fetch_finds_a_branch_pushed_later() {
+  clone_repo n7
+  git -C "$OTHER" push -q origin HEAD:refs/heads/late
+  run_create_split "$AGENT_VM_MARKER" late
+  assert_eq 0 "$STATUS" "N7 exit 0"
+  assert_contains "$OUT" "exists on remote" "N7 the origin branch is used"
+  assert_eq "origin/late" "$(git -C "$REPO/.git/worktree/late" rev-parse --abbrev-ref 'late@{upstream}')" "N7 upstream"
+}
+test_N8_explicit_base_is_resolved_after_the_fetch() {
+  clone_repo n8
+  origin_advance
+  run_create_split "$AGENT_VM_MARKER" feat origin/main
+  assert_eq "$(git -C "$OTHER" rev-parse HEAD)" "$(wt_head feat)" "N8 HEAD is the new origin/main"
+}
+test_N9_existing_branch_check_comes_after_the_fetch() {
+  clone_repo n9
+  git -C "$OTHER" push -q origin HEAD:refs/heads/late
+  run_create "$AGENT_VM_MARKER" late origin/main
+  assert_eq 1 "$STATUS" "N9 exit 1"
+  assert_contains "$OUT" "already exists (refs/remotes/origin/late)" "N9 names the ref"
+  assert_no_file "$REPO/.git/worktree/late" "N9 nothing created"
+}
+test_N10_dangling_origin_head_falls_back_to_head() {
+  clone_repo n10
+  git -C "$REPO" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/gone
+  run_create_split "$AGENT_VM_MARKER" feat
+  assert_eq 0 "$STATUS" "N10 exit 0"
+  assert_contains "$ERR" "default branch is unknown" "N10 warning"
+  assert_eq "$(git -C "$REPO" rev-parse HEAD)" "$(wt_head feat)" "N10 HEAD"
+}
+test_N10b_origin_head_outside_origin_falls_back_to_head() {
+  clone_repo n10b
+  git -C "$REPO" symbolic-ref refs/remotes/origin/HEAD refs/heads/main
+  run_create_split "$AGENT_VM_MARKER" feat
+  assert_eq 0 "$STATUS" "N10b exit 0"
+  assert_contains "$ERR" "default branch is unknown" "N10b warning"
+  assert_eq "$(git -C "$REPO" rev-parse HEAD)" "$(wt_head feat)" "N10b HEAD"
+}
+test_N12_a_stuck_fetch_is_cut_off() {
+  if ! PATH="$BASE_PATH" command -v timeout >/dev/null 2>&1; then
+    record "PASS N12 skipped (no timeout command)"
+    return 0
+  fi
+  clone_repo n12
+  git -C "$REPO" remote set-url origin ssh://example.invalid/x
+  local t0 t1
+  t0=$(date +%s%N)
+  GIT_SSH_COMMAND='sh -c "sleep 30" --' GIT_WORKTREE_CREATE_FETCH_TIMEOUT=1 run_create_split "$AGENT_VM_MARKER" feat
+  t1=$(date +%s%N)
+  assert_eq 0 "$STATUS" "N12 exit 0"
+  assert_contains "$ERR" "Could not fetch origin (status 124)" "N12 timed out"
+  case "$(creating_suffix)" in *", not fetched") record "PASS N12 not fetched shown" ;; *) record "FAIL N12 not fetched shown" ;; esac
+  local ms=$(((t1 - t0) / 1000000))
+  if [[ $ms -ge 1000 && $ms -le 3000 ]]; then record "PASS N12 took ${ms} ms"; else record "FAIL N12 took ${ms} ms (expected 1000-3000)"; fi
+}
+test_N13_vm_with_an_unreachable_origin_still_attaches() {
+  clone_repo n13
+  break_origin
+  stub agent-vm-node-modules 0 "mounted	x"
+  run_create "$VM_MARKER" feat
+  assert_eq 0 "$STATUS" "N13 exit 0"
+  assert_dir "$REPO/.git/worktree/feat" "N13 worktree created"
+  assert_eq $'attach\n'"$REPO/.git/worktree/feat" "$(cat "$STUB/agent-vm-node-modules.log")" "N13 attach <worktree>"
 }
 
 # ---- runner --------------------------------------------------------------------------
