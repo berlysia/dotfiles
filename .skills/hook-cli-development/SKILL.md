@@ -1,6 +1,6 @@
 ---
 name: hook-cli-development
-description: このリポジトリの home/dot_claude/hooks や ~/.local/bin 向けの CLI を作成・変更するときに使う。フックや CLI を変更しない通常の開発には使わない。
+description: dotfiles リポジトリの Claude Code の hook（配置先は ~/.claude/hooks）や ~/.local/bin 向けの CLI を作成・変更するときに使う。フックや CLI を変更しない通常の開発には使わない。
 ---
 
 # hook-cli-development

@@ -27,7 +27,7 @@ description: chezmoi で apply や status を実行するとき、配置する�
 3. source から消したファイルは配置先に残る。撤去するときは、消す commit の中で `.chezmoiremove` に同じパスを書く。書いた行は、対象のファイルがもう無くてもエラーにならないので残してよい。ほかの端末の apply でも同じ片付けが効く。
 4. 撤去の過不足は git の履歴で機械的に確かめる。`git log --diff-filter=D` で source から消したファイルを拾い、「いま管理していない」「ignore に入っていない」「`.chezmoiremove` にまだ無い」の 3 条件で絞り込む。この端末に残っていないことは、ほかの端末に残っていないことの証明にならない。行の不足は残骸を残し、過剰な行は生きたファイルを消して apply 全体を止める。
 5. `chezmoi unmanaged` は書き忘れの残りを見つけるが、merge 前のブランチから apply したファイルも同じように出る。消す前に出どころを確かめる。`chezmoi managed` には `.chezmoiremove` で消される target も載り続けるので、一覧の見た目で判断せず、apply の dry-run で結果を確かめる。端末条件で分けた変更は、dry-run を条件の両側（真と偽）で取る。片側だけの確認は「この端末では変わらない」ことしか分からない。
-6. git で追跡するファイルを apply の script が書き換えるときは、追記だけにする。削除もすると、複数のマシンで差分が出続けて収束しない。apply の script が本体の作業ツリーに追記した行（新しいスキルの `home/dot_claude/skill-approvals.md` への 1 行など）を、auto mode で本体に直接 commit すると自己改変として拒否される。利用者の了承後に worktree で同じ 1 行を commit して PR にすると通り、merge 後に本体を ff で追従させる。
+6. git で追跡するファイルを apply の script が書き換えるときは、追記だけにする。削除もすると、複数のマシンで差分が出続けて収束しない。apply の script が本体の作業ツリーに追記した行（新しいスキルを skill-approvals の一覧へ足す 1 行など）を、auto mode で本体に直接 commit すると自己改変として拒否される。利用者の了承後に worktree で同じ 1 行を commit して PR にすると通り、merge 後に本体を ff で追従させる。
 
 ## 対象を絞った apply と、run script が作るファイル
 
