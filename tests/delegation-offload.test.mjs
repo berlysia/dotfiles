@@ -18,6 +18,7 @@ import * as offloadModule from "../home/dot_local/share/delegation/offload.ts";
 import {
   EDIT_DENY,
   READ_DENY,
+  SECRET_FILE_PATTERNS,
   buildChildEnv,
   buildLogLine,
   buildOpencodeArgv,
@@ -860,6 +861,14 @@ test("deny lists: matching and the jsonc mirror stays in sync later", () => {
   assert.ok(READ_DENY.includes("**/.env"));
   assert.ok(EDIT_DENY.includes("package.json"));
   for (const p of READ_DENY) assert.ok(EDIT_DENY.includes(p), p);
+});
+
+test("SECRET_FILE_PATTERNS: every entry is a READ_DENY entry", () => {
+  assert.ok(SECRET_FILE_PATTERNS.length > 0);
+  for (const p of SECRET_FILE_PATTERNS) assert.ok(READ_DENY.includes(p), p);
+  for (const p of [".git", ".tmp/**", "node_modules/**", ".claude/**"]) {
+    assert.ok(!SECRET_FILE_PATTERNS.includes(p), p);
+  }
 });
 
 test("deny lists: patterns match like opencode's Wildcard.match", () => {

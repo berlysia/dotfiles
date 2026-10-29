@@ -879,6 +879,82 @@ export function matchesDeny(relPath: string, kind: "read" | "edit"): boolean {
   return res.some((re) => re.test(relPath) || re.test(`${relPath}/x`));
 }
 
+/**
+ * The subset of READ_DENY that names files which may hold secrets. The entrance
+ * refuses a work tree containing one: opencode's write tool reads a denied
+ * file before its permission check refuses the write, so the deny list alone
+ * does not keep the content from the agent. A fixed name list, not "every
+ * ignored or untracked file", because .tmp/ and node_modules/ would refuse
+ * every tree.
+ */
+export const SECRET_FILE_PATTERNS: readonly string[] = [
+  ".env",
+  "**/.env",
+  ".env.*",
+  "**/.env.*",
+  "*.env",
+  "**/*.env",
+  ".envrc",
+  "**/.envrc",
+  ".dev.vars",
+  "**/.dev.vars",
+  "*.pem",
+  "**/*.pem",
+  "*.key",
+  "**/*.key",
+  "*.p12",
+  "**/*.p12",
+  "*.pfx",
+  "**/*.pfx",
+  "*.jks",
+  "**/*.jks",
+  "*.keystore",
+  "**/*.keystore",
+  "id_rsa*",
+  "**/id_rsa*",
+  "id_ed25519*",
+  "**/id_ed25519*",
+  ".npmrc",
+  "**/.npmrc",
+  ".pypirc",
+  "**/.pypirc",
+  ".netrc",
+  "**/.netrc",
+  ".git-credentials",
+  "**/.git-credentials",
+  "credentials*",
+  "**/credentials*",
+  "service-account*.json",
+  "**/service-account*.json",
+  "*.tfvars",
+  "**/*.tfvars",
+  "*.tfstate",
+  "**/*.tfstate",
+  "secrets/**",
+  "**/secrets/**",
+  ".ssh/**",
+  "**/.ssh/**",
+  ".aws/**",
+  "**/.aws/**",
+  ".kube/**",
+  "**/.kube/**",
+  ".gnupg/**",
+  "**/.gnupg/**",
+  ".docker/config.json",
+  "**/.docker/config.json",
+  ".mcp.json",
+  "**/.mcp.json",
+];
+
+const SECRET_FILE_RES = SECRET_FILE_PATTERNS.map(globToRegExp);
+const SECRET_LIST_MAX = 5;
+
+function isSecretFilePath(rel: string, mayHaveChildren: boolean): boolean {
+  return SECRET_FILE_RES.some(
+    (re) => re.test(rel) || (mayHaveChildren && re.test(`${rel}/x`)),
+  );
+}
+
 const SKIPPED_ENTRIES = new Set([".git", "node_modules", ".tmp"]);
 const SCAN_BUDGET_MS = 2000;
 const PROJECT_CONFIG_NAMES = ["opencode.json", "opencode.jsonc", ".opencode"];
@@ -907,13 +983,16 @@ function exists(path: string): boolean {
  * Check the directory opencode will start in: a git toplevel, not the home
  * directory or its ancestors, no hidden home subdirectory (except this
  * repo), no opencode project config in it or any ancestor, and no symlink
- * that leaves the tree or lands on a denied path.
+ * that leaves the tree or lands on a denied path, and no file whose name
+ * may mean secrets (SECRET_FILE_PATTERNS).
  */
 export function checkLaunchDir(opts: {
   dir: string;
   write: boolean;
   home?: string;
   budgetMs?: number;
+  /** Verification script only: its fake trees hold fake secrets on purpose. Never set by the entrance. */
+  allowSecretFiles?: boolean;
 }): DirCheck {
   const budgetMs = opts.budgetMs ?? SCAN_BUDGET_MS;
   const deadline = Date.now() + budgetMs;
@@ -981,9 +1060,17 @@ export function checkLaunchDir(opts: {
     cur = parent;
   }
 
-  const stack: string[] = [""];
+  const secretPaths: string[] = [];
+  // .tmp/ is not checked for symlinks (it is read-denied as a whole) but is
+  // still checked for secret names: the write tool reads before it is denied.
+  const stack: { rel: string; namesOnly: boolean }[] = [
+    { rel: "", namesOnly: false },
+  ];
   while (stack.length > 0) {
-    const relDir = stack.pop() as string;
+    const { rel: relDir, namesOnly } = stack.pop() as {
+      rel: string;
+      namesOnly: boolean;
+    };
     let entries;
     try {
       entries = readdirSync(join(dir, relDir), { withFileTypes: true });
@@ -994,8 +1081,18 @@ export function checkLaunchDir(opts: {
       if (Date.now() >= deadline) {
         return { ok: false, reason: "走査が時間切れ" };
       }
-      if (SKIPPED_ENTRIES.has(entry.name)) continue;
       const rel = relDir === "" ? entry.name : `${relDir}/${entry.name}`;
+      if (SKIPPED_ENTRIES.has(entry.name)) {
+        if (entry.name === ".tmp" && entry.isDirectory()) {
+          stack.push({ rel, namesOnly: true });
+        }
+        continue;
+      }
+      if (isSecretFilePath(rel, !entry.isFile())) secretPaths.push(rel);
+      if (namesOnly) {
+        if (entry.isDirectory()) stack.push({ rel, namesOnly: true });
+        continue;
+      }
       if (entry.isSymbolicLink()) {
         let target: string;
         try {
@@ -1023,9 +1120,15 @@ export function checkLaunchDir(opts: {
           };
         }
       } else if (entry.isDirectory()) {
-        stack.push(rel);
+        stack.push({ rel, namesOnly: false });
       }
     }
+  }
+  if (secretPaths.length > 0 && !opts.allowSecretFiles) {
+    return {
+      ok: false,
+      reason: `秘密を含みうるファイルがある: ${secretPaths.slice(0, SECRET_LIST_MAX).join(", ")}（作業ツリーから外すか、git-worktree-create で作った worktree を --dir に渡す）`,
+    };
   }
   return { ok: true, realpath: dir };
 }
