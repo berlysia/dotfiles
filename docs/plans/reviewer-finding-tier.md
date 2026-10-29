@@ -24,5 +24,5 @@ Document Workflow の自動レビューで、レビュアーに指摘ごとの T
 
 ## 参照
 
-- `.tmp/sessions/6d65229b/followups/delegation-eval-ledger.md`（元の提案。workflow dir の GC で 2026-11-03 ごろ消える）
+- 元の提案は 2026-10-27 の session の workflow dir にあり、2026-11-03 ごろ GC で消える。要点はこの文書と ADR-0055 の Context に書いた
 - `docs/decisions/0055-delegation-ledger.md`

@@ -105,6 +105,6 @@ Tier の案は、この ADR の対象外とし、`docs/plans/reviewer-finding-ti
 
 ## References
 
-- 2026-10-27 の提案: `.tmp/sessions/6d65229b/followups/delegation-eval-ledger.md`（workflow dir の GC で消える。要点は Context に書いた）
+- 2026-10-27 の session の提案（workflow dir にあり、GC で消える。要点は Context に書いた）
 - ADR-0041: usage-line の取得と、ai-usage のキャッシュを再検討する条件
 - `docs/plans/reviewer-finding-tier.md`
