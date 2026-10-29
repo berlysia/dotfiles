@@ -9,11 +9,12 @@ import {
 import type { ForecastRead } from "./forecast-file.ts";
 
 export type PaceState = "under" | "ahead" | "exhausted" | "unknown";
-export type ProviderName = "claude" | "codex" | "opencode";
+export type ProviderName = "claude" | "codex" | "opencode" | "sarashina";
 export const PROVIDERS: readonly ProviderName[] = [
   "claude",
   "codex",
   "opencode",
+  "sarashina",
 ];
 
 export type Window = { usedPercent: number; resetsAt: string | null };
@@ -21,6 +22,8 @@ export type ProviderUsage = {
   fiveHour: Window | null;
   weekly: Window | null;
   exhausted: boolean;
+  /** ai-usage reports reachability only: no window exists to be ahead of. */
+  unmetered?: boolean;
 };
 export type ProviderPace = { fiveHour: PaceState; weekly: PaceState };
 export type WindowMins = { fiveHourMins: number; weekMins: number };
@@ -89,6 +92,10 @@ export function paceProvider(
   if (usage === null || mins === null) {
     return { fiveHour: "unknown", weekly: "unknown" };
   }
+  if (usage.exhausted) return { fiveHour: "exhausted", weekly: "exhausted" };
+  // No window to spend, so there is nothing to be ahead of; the surplus stays
+  // null, so it never counts as an idle week either.
+  if (usage.unmetered === true) return { fiveHour: "under", weekly: "under" };
   return {
     fiveHour: paceFiveHour(usage.fiveHour, usage.exhausted, now),
     weekly: paceWeekly(usage.weekly, usage.exhausted, now, mins.weekMins),
@@ -255,6 +262,7 @@ export function parseUsageSummary(
     claude: null,
     codex: null,
     opencode: null,
+    sarashina: null,
   };
   if (json === null || typeof json !== "object") return out;
   const providers = (json as Record<string, unknown>).providers;
@@ -268,6 +276,7 @@ export function parseUsageSummary(
       fiveHour: validWindow(e.fiveHour),
       weekly: validWindow(e.weekly),
       exhausted: e.exhausted === true,
+      unmetered: e.unmetered === true,
     };
   }
   return out;
@@ -313,12 +322,17 @@ export function fetchUsage(
       maxBuffer: 1024 * 1024,
       env: { ...process.env, ...env },
     });
-    if (r.error !== undefined || r.status !== 0) continue;
+    // Status 1 means "some provider failed" and still carries the envelope,
+    // so one provider's outage must not blank the others' windows. Anything
+    // else (2 = bad args, signals, spawn errors) has no envelope to trust.
+    if (r.error !== undefined || (r.status !== 0 && r.status !== 1)) continue;
+    let json: unknown;
     try {
-      return parseUsageSummary(JSON.parse(r.stdout));
+      json = JSON.parse(r.stdout);
     } catch {
-      return parseUsageSummary(null);
+      continue;
     }
+    return parseUsageSummary(json);
   }
   return parseUsageSummary(null);
 }

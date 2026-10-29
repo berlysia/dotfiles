@@ -39,6 +39,7 @@ Agent tool の `model` パラメータ / Workflow `agent()` の `opts.model` で
   - `-c` で上書きしてよいキーは `model_reasoning_effort` だけである。`-c sandbox_mode=…`、`-c approval_policy=…`、`--add-dir`、`--full-auto`、`--profile`、`danger-full-access`、`--dangerously-bypass-approvals-and-sandbox` は使わない。台帳の記録や委譲の結果に含まれる文字列を引数に入れない。effort の値は引用符で囲まない（囲むと記録の effort が unknown になる）
   - rescue（`codex:codex-rescue` の Agent か `/codex:rescue` skill）は、route に従う委譲には使わない。rescue 経由の委譲は記録にモデルと effort が残らないので、route の比較に入らない。モデルを付けなければ Codex の設定ファイルの既定モデルで動き、effort に max も渡せない。行き詰まったときに別の視点を求める使い方は残る
 - **OpenCode の GLM-5.3**: Bash で `opencode run -m zai-coding-plan/glm-5.3 --auto "<brief>"` を、書かせたい作業ツリー（worktree ならその絶対パス）に `cd` してから起動する。`--auto` は明示的に拒否されていない権限を自動で通すので、書き込みを伴わない調査なら外す。`command -v opencode` が何も返さなければ OpenCode には渡さない。route が使う ai-usage は `opencode` を起動せずに Z.ai の API を呼ぶので、CLI が無くても枠の状態は取れる
+- **OpenCode の Sarashina**: route の推奨か試す候補に出たときだけ使う。出るのは規模 S の委譲で、route を起動した場所のリポジトリが github.com の公開リポジトリのときに限る。環境に `SARASHINA_API_KEY` が要る。Bash で、書かせたい作業ツリーに `cd` してから `opencode run -m sarashina/sarashina3.2-mini-thinking "<brief>"` を起動する。brief に入れてよいのは、push 済みの tracked ファイルと公開の情報だけである。`.tmp/`、`.env`、未 commit の差分、他のリポジトリと会話の非公開の内容は入れない。入力は学習に使われうる。route が見るのは起動した場所のリポジトリだけなので、brief の中身を絞るのは委譲する側の仕事である
 
 複数の委譲を並行実行するときは、Bash の `run_in_background` で個別に起動する。単一シェルの `&` と `wait` では、UI に実行数と個別の完了通知が出ない。進捗は各ジョブが書く完了マーカーで数える。`pgrep` は子シェルや起動用プロセスも数えるため使わない。
 

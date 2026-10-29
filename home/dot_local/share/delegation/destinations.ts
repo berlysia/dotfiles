@@ -3,18 +3,22 @@
  * point can read the table without pulling in route.ts.
  */
 
-export type DestinationName = "codex-terra" | "codex-luna-max" | "opencode";
+export type DestinationName =
+  | "codex-terra"
+  | "codex-luna-max"
+  | "opencode"
+  | "sarashina";
 export type Destination = {
   name: DestinationName;
   /** Which ai-usage window the destination draws on. */
-  provider: "codex" | "opencode";
+  provider: "codex" | "opencode" | "sarashina";
   /** Records counted for the destination: every field given must equal. */
   match: { harness: string; model?: string; effort?: string };
   /** Fixed text, including the launch command: never built from records. */
   display: string;
   /** Fixed short name for review lines; never built from records. */
   label: string;
-  /** Whether the brief and the working tree leave the machine (to Z.ai). */
+  /** Whether the brief and the working tree leave the machine (to Z.ai or Sarashina). */
   sendsOut: boolean;
 };
 
@@ -40,9 +44,22 @@ export const DESTINATIONS: Record<DestinationName, Destination> = {
   opencode: {
     name: "opencode",
     provider: "opencode",
-    match: { harness: "opencode" },
+    // Pinned to GLM so Sarashina's records (same harness) do not count here.
+    match: { harness: "opencode", model: "zai-coding-plan/glm-5.3" },
     display: "opencode (opencode run)",
     label: "opencode",
+    sendsOut: true,
+  },
+  sarashina: {
+    name: "sarashina",
+    provider: "sarashina",
+    match: {
+      harness: "opencode",
+      model: "sarashina/sarashina3.2-mini-thinking",
+    },
+    display:
+      "sarashina (opencode run -m sarashina/sarashina3.2-mini-thinking、公開内容のみ)",
+    label: "sarashina",
     sendsOut: true,
   },
 };

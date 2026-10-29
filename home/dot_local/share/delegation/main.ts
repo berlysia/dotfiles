@@ -73,6 +73,7 @@ import {
   surplusPoints,
 } from "./pace.ts";
 import { buildRoute, HELD_DESTINATIONS } from "./route.ts";
+import { repoIsPublic } from "./repo-visibility.ts";
 import { buildReview } from "./review.ts";
 
 const VALUE_FLAGS = new Set([
@@ -549,6 +550,7 @@ async function cmdRoute(args: Args, now: Date): Promise<number> {
     claude: applied.pace,
     codex: paceProvider(usage.codex, now, mins),
     opencode: paceProvider(usage.opencode, now, mins),
+    sarashina: paceProvider(usage.sarashina, now, mins),
   };
   const lines = buildRoute({
     kind,
@@ -561,6 +563,8 @@ async function cmdRoute(args: Args, now: Date): Promise<number> {
     surplus: {
       codex: surplusPoints(usage.codex?.weekly ?? null, now, mins),
       opencode: surplusPoints(usage.opencode?.weekly ?? null, now, mins),
+      // No window, so no idle week to fill.
+      sarashina: null,
     },
     pendingTotal: pendings.length,
     pendingSession:
@@ -572,8 +576,12 @@ async function cmdRoute(args: Args, now: Date): Promise<number> {
     due: reviewDue(ledger.rows, now),
     windowMinsMissing: mins === null,
     usageMissing:
-      usage.claude === null && usage.codex === null && usage.opencode === null,
+      usage.claude === null &&
+      usage.codex === null &&
+      usage.opencode === null &&
+      usage.sarashina === null,
     held: HELD_DESTINATIONS,
+    isPublicRepo: () => repoIsPublic(process.env, process.cwd()),
   });
   process.stdout.write(`${lines.join("\n")}\n`);
   return 0;

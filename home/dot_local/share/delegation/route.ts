@@ -46,14 +46,19 @@ export {
   type DestinationName,
 } from "./destinations.ts";
 /**
- * Destinations route never recommends. opencode sends the brief and the
- * working tree to Z.ai; it waits until a delegation can say whether its
- * content may leave the machine.
+ * Destinations route never recommends, with the reason printed on the hold
+ * line. opencode sends the brief and the working tree to Z.ai; it waits until
+ * a delegation can say whether its content may leave the machine.
  */
-export const HELD_DESTINATIONS: ReadonlySet<DestinationName> = new Set([
-  "opencode",
+export const HELD_DESTINATIONS: ReadonlyMap<DestinationName, string> = new Map([
+  ["opencode", "外部へ送ってよいかの区分ができるまで使わない"],
 ]);
-const NO_HOLD: ReadonlySet<DestinationName> = new Set();
+const NO_HOLD: ReadonlyMap<DestinationName, string> = new Map();
+// Sarashina is held per route call, not statically: see RouteInput.isPublicRepo.
+const SARASHINA_PRIVATE_REASON =
+  "公開リポジトリでないか判定できないので送らない（入力が学習に使われうる）";
+// Output cap (8000 tokens) and 30 RPM: only small delegations fit.
+const SARASHINA_SIZE = "S";
 const SONNET_DISPLAY = 'sonnet (Agent の model: "sonnet")';
 const OPENCODE_FIRST = new Set(["mechanical", "triage"]);
 // Kinds whose work can wait for an idle quota at any size.
@@ -86,8 +91,15 @@ export type RouteInput = {
   windowMinsMissing: boolean;
   /** ai-usage could not be run or its output could not be read. */
   usageMissing: boolean;
-  /** Destinations left out of every rule and candidate; none when omitted. */
-  held?: ReadonlySet<DestinationName>;
+  /** Destinations left out of every rule and candidate, with the printed reason; none when omitted. */
+  held?: ReadonlyMap<DestinationName, string>;
+  /**
+   * Whether the repository route was started in is public on github.com.
+   * Called only once Sarashina has won a rule or the try-candidate slot, and
+   * at most once per buildRoute call. false skips Sarashina for that rule.
+   * Omitted means false: an unanswered safety check must not grant permission.
+   */
+  isPublicRepo?: () => boolean;
 };
 
 const bothUnder = (p: ProviderPace) =>
@@ -96,13 +108,40 @@ const label = (s: PaceState) => s;
 
 function externalOrder(
   kind: string,
-  held: ReadonlySet<DestinationName> = NO_HOLD,
+  size: string,
+  held: ReadonlyMap<DestinationName, string> = NO_HOLD,
 ): Destination[] {
   const names: DestinationName[] = OPENCODE_FIRST.has(kind)
-    ? ["opencode", "codex-luna-max", "codex-terra"]
-    : ["codex-terra", "codex-luna-max", "opencode"];
-  return names.filter((n) => !held.has(n)).map((n) => DESTINATIONS[n]);
+    ? ["opencode", "codex-luna-max", "codex-terra", "sarashina"]
+    : ["codex-terra", "codex-luna-max", "opencode", "sarashina"];
+  return names
+    .filter(
+      (n) => !held.has(n) && (n !== "sarashina" || size === SARASHINA_SIZE),
+    )
+    .map((n) => DESTINATIONS[n]);
 }
+
+/**
+ * Remembers the answer for one buildRoute call, and whether Sarashina was
+ * turned down, so the hold line is printed once and the check runs once.
+ */
+function sarashinaGate(isPublicRepo: () => boolean) {
+  let answer: boolean | undefined;
+  let refused = false;
+  return {
+    /** Only Sarashina is checked; every other destination passes. */
+    allows(dest: Destination): boolean {
+      if (dest.name !== "sarashina") return true;
+      answer ??= isPublicRepo();
+      if (!answer) refused = true;
+      return answer;
+    },
+    get refused() {
+      return refused;
+    },
+  };
+}
+type SarashinaGate = ReturnType<typeof sarashinaGate>;
 
 type Pick = { line: string; dest: External | "sonnet" };
 
@@ -122,7 +161,9 @@ export type RecordPick = {
 function pickByRecords(
   groups: GroupStats[],
   kind: string,
+  size: string,
   allowed: (dest: Destination) => boolean,
+  gate?: SarashinaGate,
 ): RecordPick | null {
   const claude = representative(
     groups.filter(
@@ -130,38 +171,51 @@ function pickByRecords(
     ),
   );
   if (claude === null || !enoughRecords(claude)) return null;
-  let best: { dest: Destination; rep: GroupStats } | null = null;
-  for (const dest of externalOrder(kind)) {
-    const rep = destinationStats(dest, groups);
-    if (rep === null || !enoughRecords(rep) || lapseTooHigh(rep)) continue;
-    if (!allowed(dest)) continue;
-    if (!rateLeadsBy(rep, claude, RECORD_GAP_POINTS)) continue;
-    if (
-      best === null ||
-      successes(rep) * best.rep.n > successes(best.rep) * rep.n
-    ) {
-      best = { dest, rep };
+  // The public-repo check runs only for a winner, never while comparing, so a
+  // refused Sarashina is dropped and the best of the rest is chosen again.
+  const skipped = new Set<DestinationName>();
+  for (;;) {
+    let best: { dest: Destination; rep: GroupStats } | null = null;
+    for (const dest of externalOrder(kind, size)) {
+      if (skipped.has(dest.name)) continue;
+      const rep = destinationStats(dest, groups);
+      if (rep === null || !enoughRecords(rep) || lapseTooHigh(rep)) continue;
+      if (!allowed(dest)) continue;
+      if (!rateLeadsBy(rep, claude, RECORD_GAP_POINTS)) continue;
+      if (
+        best === null ||
+        successes(rep) * best.rep.n > successes(best.rep) * rep.n
+      ) {
+        best = { dest, rep };
+      }
     }
+    if (best === null) return null;
+    if (gate === undefined || gate.allows(best.dest))
+      return { ...best, claude };
+    skipped.add(best.dest.name);
   }
-  return best === null ? null : { ...best, claude };
 }
 
 export const recordRuleOne = (
   groups: GroupStats[],
   kind: string,
-): RecordPick | null => pickByRecords(groups, kind, () => true);
+  size: string,
+): RecordPick | null => pickByRecords(groups, kind, size, () => true);
 
 function ruleOne(
   groups: GroupStats[],
   paces: Record<ProviderName, ProviderPace>,
   kind: string,
   size: string,
-  held: ReadonlySet<DestinationName>,
+  held: ReadonlyMap<DestinationName, string>,
+  gate: SarashinaGate,
 ): Pick | null {
   const best = pickByRecords(
     groups,
     kind,
+    size,
     (d) => !held.has(d.name) && bothUnder(paces[d.provider]),
+    gate,
   );
   if (best === null) return null;
   const { claude } = best;
@@ -175,8 +229,10 @@ function ruleTwo(
   groups: GroupStats[],
   paces: Record<ProviderName, ProviderPace>,
   kind: string,
+  size: string,
   claudeAheadBy: AheadBy | null,
-  held: ReadonlySet<DestinationName>,
+  held: ReadonlyMap<DestinationName, string>,
+  gate: SarashinaGate,
 ): Pick | null {
   const claudeWeek = paces.claude.weekly;
   if (claudeWeek !== "ahead" && claudeWeek !== "exhausted") return null;
@@ -185,8 +241,9 @@ function ruleTwo(
       (g) => g.harness === "claude-code-agent" && g.model === "sonnet",
     ),
   );
-  for (const dest of externalOrder(kind, held)) {
+  for (const dest of externalOrder(kind, size, held)) {
     if (!bothUnder(paces[dest.provider])) continue;
+    if (!gate.allows(dest)) continue;
     const rep = destinationStats(dest, groups);
     const worse =
       claude !== null &&
@@ -212,29 +269,34 @@ function explore(
   kind: string,
   size: string,
   now: Date,
-  held: ReadonlySet<DestinationName>,
+  held: ReadonlyMap<DestinationName, string>,
+  gate: SarashinaGate,
 ): { name: External; line: string } | null {
   if (size !== "S") return null;
   const groups = groupsForCell(folded, kind, "S", now, EXPLORE_WINDOW_DAYS);
-  // Least-recorded first; strict < keeps the default order on equal counts.
-  let least: { dest: Destination; count: number } | null = null;
-  for (const dest of externalOrder(kind, held)) {
-    if (!bothUnder(paces[dest.provider])) continue;
-    const count = destinationStats(dest, groups)?.n ?? 0;
-    if (
-      count < EXPLORE_MIN_RECORDS &&
-      (least === null || count < least.count)
-    ) {
-      least = { dest, count };
+  const skipped = new Set<DestinationName>();
+  for (;;) {
+    // Least-recorded first; strict < keeps the default order on equal counts.
+    let least: { dest: Destination; count: number } | null = null;
+    for (const dest of externalOrder(kind, size, held)) {
+      if (skipped.has(dest.name) || !bothUnder(paces[dest.provider])) continue;
+      const count = destinationStats(dest, groups)?.n ?? 0;
+      if (
+        count < EXPLORE_MIN_RECORDS &&
+        (least === null || count < least.count)
+      ) {
+        least = { dest, count };
+      }
     }
+    if (least === null) return null;
+    if (gate.allows(least.dest)) {
+      return {
+        name: least.dest.provider,
+        line: `試す候補: ${least.dest.display} ${kind}×S の直近 ${EXPLORE_WINDOW_DAYS} 日の記録 ${least.count}/${EXPLORE_MIN_RECORDS} 件。比較に件数が足りない`,
+      };
+    }
+    skipped.add(least.dest.name);
   }
-  if (least !== null) {
-    return {
-      name: least.dest.provider,
-      line: `試す候補: ${least.dest.display} ${kind}×S の直近 ${EXPLORE_WINDOW_DAYS} 日の記録 ${least.count}/${EXPLORE_MIN_RECORDS} 件。比較に件数が足りない`,
-    };
-  }
-  return null;
 }
 
 /** Whole points of an external's unspent week when it is worth trying, else null. */
@@ -274,18 +336,23 @@ export function buildRoute(input: RouteInput): string[] {
 
   const groups = groupsForCell(folded, kind, size, now, DEFAULT_SINCE_DAYS);
   const held = input.held ?? NO_HOLD;
-  const pick = ruleOne(groups, paces, kind, size, held) ??
-    ruleTwo(groups, paces, kind, input.claudeAheadBy, held) ?? {
+  const gate = sarashinaGate(input.isPublicRepo ?? (() => false));
+  const pick = ruleOne(groups, paces, kind, size, held, gate) ??
+    ruleTwo(groups, paces, kind, size, input.claudeAheadBy, held, gate) ?? {
       dest: "sonnet" as const,
       line: `推奨: ${SONNET_DISPLAY} [規則 3: 既定]`,
     };
   out.push(pick.line);
-  for (const name of held) {
+  const candidate = explore(folded, paces, kind, size, now, held, gate);
+  // After the last rule that can ask, so the line reflects every refusal.
+  for (const [name, reason] of held) {
+    out.push(`保留: ${DESTINATIONS[name].display} ${reason}`);
+  }
+  if (gate.refused) {
     out.push(
-      `保留: ${DESTINATIONS[name].display} 外部へ送ってよいかの区分ができるまで使わない`,
+      `保留: ${DESTINATIONS.sarashina.display} ${SARASHINA_PRIVATE_REASON}`,
     );
   }
-  const candidate = explore(folded, paces, kind, size, now, held);
   const taken = new Set<External>();
   if (candidate !== null) {
     const points = surplusCandidate(input, candidate.name, pick.dest);
@@ -298,7 +365,7 @@ export function buildRoute(input: RouteInput): string[] {
   }
   // The week belongs to the provider, so one line per provider, shown as the
   // first of its destinations in this kind's order.
-  for (const dest of externalOrder(kind, held)) {
+  for (const dest of externalOrder(kind, size, held)) {
     if (taken.has(dest.provider)) continue;
     taken.add(dest.provider);
     const points = surplusCandidate(input, dest.provider, pick.dest);
@@ -309,7 +376,7 @@ export function buildRoute(input: RouteInput): string[] {
     }
   }
 
-  const windows = (["claude", "codex", "opencode"] as const)
+  const windows = (["claude", "codex", "opencode", "sarashina"] as const)
     .map(
       (n) =>
         `${n} 5h=${label(paces[n].fiveHour)} week=${label(paces[n].weekly)}`,

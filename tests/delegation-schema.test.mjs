@@ -170,6 +170,13 @@ test("reviewer-codex-run copies of effort list and model shape match schema.ts",
   }
 });
 
+test("sarashina model is kept as is, known, and not mixed with GLM", () => {
+  const model = "sarashina/sarashina3.2-mini-thinking";
+  assert.equal(normalizeModel("opencode", model), model);
+  assert.equal(displayModel(model), model);
+  assert.ok(KNOWN_MODELS.includes(model));
+});
+
 test("offloadAgentName: write picks the edit agent", () => {
   assert.equal(offloadAgentName(false), "worktree-read");
   assert.equal(offloadAgentName(true), "worktree-edit");

@@ -17,6 +17,12 @@ export type ProviderSummary = {
   weekly: UsageWindow | null;
   /** True when a window is at 100% or the provider refuses ordinary use. */
   exhausted: boolean;
+  /**
+   * The provider has no window to report, only reachability. This states that
+   * fact and nothing else; reading it as under quota is the caller's rule
+   * (delegation's pace.ts).
+   */
+  unmetered?: true;
 };
 
 export const FIVE_HOUR_MINS = 300;
@@ -117,4 +123,21 @@ export function summarizeCursor(
   const date = new Date(ms);
   const resetsAt = Number.isFinite(date.getTime()) ? date.toISOString() : null;
   return finish(null, { usedPercent, resetsAt });
+}
+
+/**
+ * Sarashina has no usage API. 429 on /v1/models is the only refusal signal and
+ * says nothing about chat RPM. A missing key or a listing without the model
+ * leaves unmetered off, which route reads as unknown.
+ */
+export function summarizeSarashina(
+  data: Record<string, unknown>,
+): ProviderSummary {
+  if (data.configured !== true) return finish(null, null);
+  if (data.status === 429)
+    return { ...finish(null, null, true), unmetered: true };
+  if (data.status === 200 && data.hasModel === true) {
+    return { ...finish(null, null), unmetered: true };
+  }
+  return finish(null, null);
 }

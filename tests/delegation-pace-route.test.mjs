@@ -17,6 +17,7 @@ import { describe, it, test } from "node:test";
 import {
   applyLookahead,
   crossesLine,
+  fetchUsage,
   loadWindowMins,
   paceFiveHour,
   paceProvider,
@@ -130,7 +131,12 @@ test("parseUsageSummary validates provider names and values", () => {
       },
     },
   });
-  assert.deepEqual(Object.keys(parsed).sort(), ["claude", "codex", "opencode"]);
+  assert.deepEqual(Object.keys(parsed).sort(), [
+    "claude",
+    "codex",
+    "opencode",
+    "sarashina",
+  ]);
   assert.equal(parsed.codex.weekly, null);
   assert.equal(parsed.opencode.weekly, null);
   assert.notEqual(parsed.codex.fiveHour, null);
@@ -156,6 +162,7 @@ test("parseUsageSummary validates provider names and values", () => {
     claude: null,
     codex: null,
     opencode: null,
+    sarashina: null,
   });
 });
 
@@ -166,10 +173,15 @@ test("route names the cause when window lengths or ai-usage are missing", () => 
     size: "M",
     now: new Date(NOW),
     folded: foldLedger([]),
-    paces: { claude: unknownPace, codex: unknownPace, opencode: unknownPace },
+    paces: {
+      claude: unknownPace,
+      codex: unknownPace,
+      opencode: unknownPace,
+      sarashina: unknownPace,
+    },
     claudeAheadBy: null,
     lookahead: null,
-    surplus: { codex: null, opencode: null },
+    surplus: { codex: null, opencode: null, sarashina: null },
     pendingTotal: 0,
     pendingSession: null,
     skipped: { version: 0, type: 0, broken: 0 },
@@ -269,13 +281,27 @@ function provider(spec = {}) {
     exhausted: spec.exhausted ?? false,
   };
 }
-function usageOf({ claude, codex, opencode }) {
+// Sarashina has no windows. Omitted: the provider is absent (unknown).
+function sarashinaEntry(spec) {
+  if (spec === "fail") return { ok: false, error: "x" };
+  return {
+    ok: true,
+    fiveHour: null,
+    weekly: null,
+    exhausted: spec.exhausted ?? false,
+    ...(spec.unmetered === false ? {} : { unmetered: true }),
+  };
+}
+function usageOf({ claude, codex, opencode, sarashina }) {
   return {
     fetchedAt: NOW,
     providers: {
       claude: provider(claude),
       codex: provider(codex),
       opencode: provider(opencode),
+      ...(sarashina === undefined
+        ? {}
+        : { sarashina: sarashinaEntry(sarashina) }),
     },
   };
 }
@@ -1421,6 +1447,7 @@ function routeOut({
   read = noFile,
   folded = foldLedger([]),
   held,
+  isPublicRepo,
 }) {
   const parsed = parseUsageSummary(usageOf(usage));
   const claudeWeek = parsed.claude?.weekly ?? null;
@@ -1440,12 +1467,14 @@ function routeOut({
       claude: applied.pace,
       codex: paceProvider(parsed.codex, NOWD, MINS),
       opencode: paceProvider(parsed.opencode, NOWD, MINS),
+      sarashina: paceProvider(parsed.sarashina, NOWD, MINS),
     },
     claudeAheadBy: applied.aheadBy,
     lookahead: applied.lookahead,
     surplus: {
       codex: surplusPoints(parsed.codex?.weekly ?? null, NOWD, MINS),
       opencode: surplusPoints(parsed.opencode?.weekly ?? null, NOWD, MINS),
+      sarashina: null,
     },
     pendingTotal: 0,
     pendingSession: null,
@@ -1455,6 +1484,7 @@ function routeOut({
     windowMinsMissing: false,
     usageMissing: false,
     held,
+    isPublicRepo,
   }).join("\n");
 }
 
@@ -1656,6 +1686,10 @@ describe("route output: surplus candidates", () => {
   });
 });
 
+const OPENCODE_HELD = new Map([
+  ["opencode", "外部へ送ってよいかの区分ができるまで使わない"],
+]);
+
 describe("route output: held destinations", () => {
   const busy = {
     claude: { week: 90 },
@@ -1669,7 +1703,7 @@ describe("route output: held destinations", () => {
     const out = routeOut({
       kind: "research",
       usage: busy,
-      held: new Set(["opencode"]),
+      held: OPENCODE_HELD,
     });
     assert.match(out, /^推奨: sonnet/m, out);
     assert.match(out, /^保留: opencode \(opencode run\) /m, out);
@@ -1680,7 +1714,7 @@ describe("route output: held destinations", () => {
       kind: "mechanical",
       size: "S",
       usage: busy,
-      held: new Set(["opencode"]),
+      held: OPENCODE_HELD,
     });
     assert.deepEqual(
       tryLines(out).filter((l) => l.includes("opencode")),
@@ -2156,7 +2190,10 @@ describe("foldedAsOf / recordRuleOne", () => {
       fill(sb.store);
       const f = foldLedger(readLedger(sb.store).rows);
       const groups = groupsForCell(f, "impl", "M", NOWD, 60);
-      assert.equal(recordRuleOne(groups, "impl")?.dest.name, "codex-terra");
+      assert.equal(
+        recordRuleOne(groups, "impl", "M")?.dest.name,
+        "codex-terra",
+      );
     } finally {
       sb.done();
     }
@@ -2297,8 +2334,517 @@ describe("review auto-rewrite revisit", { concurrency: 4 }, () => {
   });
 });
 
-test("DESTINATIONS: only opencode sends the brief out", () => {
+// ---- Sarashina: unmetered provider, size S only, public repo only ---------
+
+const SARASHINA = {
+  harness: "opencode",
+  model: "sarashina/sarashina3.2-mini-thinking",
+  effort: "unknown",
+};
+const GLM = {
+  harness: "opencode",
+  model: "zai-coding-plan/glm-5.3",
+  effort: "unknown",
+};
+const SARASHINA_DISPLAY =
+  "sarashina (opencode run -m sarashina/sarashina3.2-mini-thinking、公開内容のみ)";
+const SARASHINA_HOLD = `保留: ${SARASHINA_DISPLAY} 公開リポジトリでないか判定できないので送らない（入力が学習に使われうる）`;
+// claude's week is ahead, codex has no room: only sarashina can take rule 2.
+const SARASHINA_ONLY = {
+  claude: { week: 90 },
+  codex: { exhausted: true },
+  sarashina: {},
+};
+
+function foldedOf(seeds) {
+  const sb = sandbox();
+  try {
+    for (const spec of seeds) seed(sb.store, spec);
+    return foldLedger(readLedger(sb.store).rows);
+  } finally {
+    sb.done();
+  }
+}
+/** A stand-in for repoIsPublic that counts how often route asks. */
+function gate(answer) {
+  const g = { calls: 0 };
+  g.fn = () => {
+    g.calls += 1;
+    return answer;
+  };
+  return g;
+}
+const sarashinaRoute = (over = {}) => {
+  const g = gate(over.answer ?? true);
+  const out = routeOut({
+    kind: "impl",
+    size: "S",
+    usage: SARASHINA_ONLY,
+    held: OPENCODE_HELD,
+    ...over,
+    isPublicRepo: g.fn,
+  });
+  return { out, g };
+};
+const offered = (out) =>
+  out
+    .split("\n")
+    .filter((l) => /^(推奨|試す候補):/.test(l) && l.includes("sarashina"));
+const holdLines = (out) =>
+  out.split("\n").filter((l) => l.startsWith("保留: sarashina"));
+
+describe("route output: sarashina", () => {
+  it("size S, rule 2, public repo: recommended with its display", () => {
+    const { out, g } = sarashinaRoute();
+    assert.match(
+      recommendation(out),
+      new RegExp(
+        `^推奨: ${SARASHINA_DISPLAY.replace(/[()]/g, "\\$&")} \\[規則 2`,
+      ),
+    );
+    assert.equal(g.calls, 1);
+    assert.deepEqual(holdLines(out), []);
+  });
+
+  it("size M or L: neither recommended nor offered, and the repo is not asked", () => {
+    for (const size of ["M", "L"]) {
+      const { out, g } = sarashinaRoute({ size });
+      assert.match(recommendation(out), /^推奨: sonnet/, out);
+      assert.deepEqual(offered(out), [], out);
+      assert.equal(g.calls, 0, size);
+    }
+  });
+
+  it("not public (or unknown): sonnet, one hold line", () => {
+    const { out, g } = sarashinaRoute({ answer: false });
+    assert.match(recommendation(out), /^推奨: sonnet/, out);
+    assert.deepEqual(holdLines(out), [SARASHINA_HOLD]);
+    assert.equal(g.calls, 1);
+  });
+
+  it("without isPublicRepo the answer is no", () => {
+    const out = routeOut({
+      kind: "impl",
+      size: "S",
+      usage: SARASHINA_ONLY,
+      held: OPENCODE_HELD,
+    });
+    assert.match(recommendation(out), /^推奨: sonnet/, out);
+    assert.deepEqual(holdLines(out), [SARASHINA_HOLD]);
+  });
+
+  for (const [label, sarashina] of [
+    ["exhausted (429)", { exhausted: true }],
+    ["unknown (ok: false)", "fail"],
+    ["unknown (configured false / model not listed)", { unmetered: false }],
+  ]) {
+    it(`${label}: not offered and the repo is not asked`, () => {
+      const { out, g } = sarashinaRoute({
+        usage: { ...SARASHINA_ONLY, sarashina },
+      });
+      assert.deepEqual(offered(out), [], out);
+      assert.equal(g.calls, 0);
+      assert.deepEqual(holdLines(out), []);
+    });
+  }
+
+  it("try-candidate: Terra by rule 2, sarashina as the candidate with 0/5", () => {
+    const folded = foldedOf([
+      { ...TERRA, size: "S", adopted: 5 },
+      { ...LUNA, size: "S", adopted: 5 },
+    ]);
+    const { out, g } = sarashinaRoute({
+      usage: { claude: { week: 90 }, sarashina: {} },
+      folded,
+    });
+    assert.match(recommendation(out), /^推奨: codex Terra .*規則 2/);
+    assert.equal(
+      candidate(out),
+      `試す候補: ${SARASHINA_DISPLAY} impl×S の直近 60 日の記録 0/5 件。比較に件数が足りない`,
+    );
+    assert.equal(g.calls, 1);
+  });
+
+  it("try-candidate with no records anywhere: the default order wins (Terra)", () => {
+    const { out, g } = sarashinaRoute({
+      usage: { claude: { week: 90 }, sarashina: {} },
+    });
+    assert.match(candidate(out), /^試す候補: codex Terra /);
+    assert.equal(g.calls, 0);
+  });
+
+  it("try-candidate refused: no candidate line, one hold line, one question", () => {
+    const folded = foldedOf([
+      { ...TERRA, size: "S", adopted: 5 },
+      { ...LUNA, size: "S", adopted: 5 },
+    ]);
+    const { out, g } = sarashinaRoute({
+      usage: { sarashina: {} },
+      folded,
+      answer: false,
+    });
+    assert.match(recommendation(out), /sonnet.*規則 3/);
+    assert.equal(candidate(out), "");
+    assert.deepEqual(holdLines(out), [SARASHINA_HOLD]);
+    assert.equal(g.calls, 1);
+  });
+
+  describe("rule 1", () => {
+    const records = (size) => [
+      { size, adopted: 5, discarded: 5 },
+      { ...SARASHINA, size, adopted: 10 },
+    ];
+    const usage = { sarashina: {} };
+    it("size S wins by records; M never offers it and never asks", () => {
+      const s = sarashinaRoute({ usage, folded: foldedOf(records("S")) });
+      assert.match(
+        recommendation(s.out),
+        /^推奨: sarashina .*\[規則 1: 記録\]/,
+        s.out,
+      );
+      assert.equal(s.g.calls, 1);
+      const m = sarashinaRoute({
+        size: "M",
+        usage,
+        folded: foldedOf(records("M")),
+      });
+      assert.match(recommendation(m.out), /sonnet.*規則 3/);
+      assert.deepEqual(offered(m.out), []);
+      assert.equal(m.g.calls, 0);
+    });
+    it("not public: skips sarashina, falls to sonnet, one hold line", () => {
+      const r = sarashinaRoute({
+        usage,
+        folded: foldedOf(records("S")),
+        answer: false,
+      });
+      assert.match(recommendation(r.out), /sonnet.*規則 3/);
+      assert.deepEqual(holdLines(r.out), [SARASHINA_HOLD]);
+      assert.equal(r.g.calls, 1);
+    });
+    it("a refused sarashina leaves the next best destination in place", () => {
+      const folded = foldedOf([
+        ...records("S"),
+        { ...TERRA, size: "S", adopted: 7, discarded: 1 },
+      ]);
+      const r = sarashinaRoute({ usage, folded, answer: false });
+      assert.match(recommendation(r.out), /^推奨: codex Terra .*規則 1/);
+      assert.equal(r.g.calls, 1);
+    });
+    it("does not ask when another destination wins", () => {
+      const folded = foldedOf([
+        { adopted: 5, discarded: 5, size: "S" },
+        { ...TERRA, size: "S", adopted: 10 },
+        { ...SARASHINA, size: "S", adopted: 8, discarded: 2 },
+      ]);
+      const r = sarashinaRoute({ usage, folded });
+      assert.match(recommendation(r.out), /^推奨: codex Terra .*規則 1/);
+      assert.equal(r.g.calls, 0);
+    });
+  });
+
+  it("recordRuleOne takes size: sarashina can win only for S", () => {
+    const f = foldedOf([
+      { size: "M", adopted: 5, discarded: 5 },
+      { ...SARASHINA, size: "M", adopted: 10 },
+    ]);
+    const groups = groupsForCell(f, "impl", "M", NOWD, 60);
+    assert.equal(recordRuleOne(groups, "impl", "M"), null);
+    assert.equal(recordRuleOne(groups, "impl", "L"), null);
+    assert.equal(recordRuleOne(groups, "impl", "S")?.dest.name, "sarashina");
+  });
+
+  it("windows line: unmetered is under; no key is unknown", () => {
+    const line = (usage) =>
+      routeOut({ usage })
+        .split("\n")
+        .find((l) => l.startsWith("窓:"));
+    assert.match(line({ sarashina: {} }), /sarashina 5h=under week=under$/);
+    assert.match(
+      line({ sarashina: { unmetered: false } }),
+      /sarashina 5h=unknown week=unknown$/,
+    );
+    assert.match(line({}), /sarashina 5h=unknown week=unknown$/);
+  });
+
+  it("record counting: GLM, sarashina and unknown opencode records stay apart", () => {
+    const base = [
+      { ...TERRA, size: "S", adopted: 5 },
+      { ...LUNA, size: "S", adopted: 5 },
+      { ...OPENCODE, size: "S", adopted: 4 },
+    ];
+    const explore = (extra) =>
+      candidate(
+        routeOut({
+          kind: "impl",
+          size: "S",
+          usage: { sarashina: {} },
+          folded: foldedOf([...base, ...extra]),
+          isPublicRepo: () => true,
+        }),
+      );
+    // Sarashina 2 < GLM 3: sarashina is the least-recorded.
+    assert.match(
+      explore([
+        { ...GLM, size: "S", adopted: 3 },
+        { ...SARASHINA, size: "S", adopted: 2 },
+      ]),
+      /^試す候補: sarashina .* 2\/5 件/,
+    );
+    // Sarashina full: opencode shows GLM's 3 only.
+    assert.match(
+      explore([
+        { ...GLM, size: "S", adopted: 3 },
+        { ...SARASHINA, size: "S", adopted: 5 },
+      ]),
+      /^試す候補: opencode .* 3\/5 件/,
+    );
+  });
+});
+
+describe("pace: unmetered", () => {
+  const usage = (extra) => ({
+    fiveHour: null,
+    weekly: null,
+    exhausted: false,
+    ...extra,
+  });
+  const under = { fiveHour: "under", weekly: "under" };
+  it("only unmetered === true reads as under", () => {
+    assert.deepEqual(
+      paceProvider(usage({ unmetered: true }), NOWD, MINS),
+      under,
+    );
+    for (const unmetered of [false, undefined]) {
+      assert.deepEqual(paceProvider(usage({ unmetered }), NOWD, MINS), {
+        fiveHour: "unknown",
+        weekly: "unknown",
+      });
+    }
+    for (const bad of ["yes", 1, "true"]) {
+      const p = parseUsageSummary({
+        providers: { sarashina: { ok: true, ...usage({ unmetered: bad }) } },
+      });
+      assert.equal(p.sarashina.unmetered, false, String(bad));
+      assert.equal(paceProvider(p.sarashina, NOWD, MINS).weekly, "unknown");
+    }
+    const p = parseUsageSummary({
+      providers: { sarashina: { ok: true, ...usage({ unmetered: true }) } },
+    });
+    assert.deepEqual(paceProvider(p.sarashina, NOWD, MINS), under);
+  });
+  it("order: no usage or window length is unknown, then exhausted, then unmetered", () => {
+    const both = usage({ unmetered: true, exhausted: true });
+    const gone = { fiveHour: "exhausted", weekly: "exhausted" };
+    assert.deepEqual(paceProvider(both, NOWD, MINS), gone);
+    const unknown = { fiveHour: "unknown", weekly: "unknown" };
+    assert.deepEqual(paceProvider(null, NOWD, MINS), unknown);
+    assert.deepEqual(
+      paceProvider(usage({ unmetered: true }), NOWD, null),
+      unknown,
+    );
+  });
+  it("unmetered has no surplus", () => {
+    assert.equal(surplusPoints(null, NOWD, MINS), null);
+  });
+});
+
+describe("fetchUsage: exit codes and candidates", () => {
+  const okEntry = {
+    ok: true,
+    fiveHour: { usedPercent: 10, resetsAt: iso(nowMs + 3 * HOUR) },
+    weekly: { usedPercent: 5, resetsAt: iso(nowMs + 6 * DAY) },
+    exhausted: false,
+  };
+  const envelope = (providers) => JSON.stringify({ providers });
+  function fakes() {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "delegation-fetch-")));
+    const first = join(root, "first");
+    const home = join(root, "home");
+    mkdirSync(first);
+    mkdirSync(join(home, ".local", "bin"), { recursive: true });
+    const script = (path, status, stdout) => {
+      writeFileSync(
+        path,
+        `#!/bin/sh\ncat <<'OUT'\n${stdout}\nOUT\nexit ${status}\n`,
+      );
+      chmodSync(path, 0o755);
+    };
+    return {
+      env: { HOME: home, PATH: `${first}:${process.env.PATH}` },
+      first: (status, stdout) =>
+        script(join(first, "ai-usage"), status, stdout),
+      second: (status, stdout) =>
+        script(join(home, ".local", "bin", "ai-usage"), status, stdout),
+      done: () => rmSync(root, { recursive: true }),
+    };
+  }
+  const withFakes = (fn) => {
+    const f = fakes();
+    try {
+      fn(f);
+    } finally {
+      f.done();
+    }
+  };
+
+  it("exit 1 with an envelope: the other providers' windows are read", () =>
+    withFakes((f) => {
+      f.first(
+        1,
+        envelope({
+          claude: okEntry,
+          codex: okEntry,
+          sarashina: { ok: false, error: "x" },
+        }),
+      );
+      const u = fetchUsage(f.env);
+      assert.notEqual(u.claude, null);
+      assert.notEqual(u.codex, null);
+      assert.equal(u.sarashina, null);
+    }));
+
+  it("exit 1 with empty output: the next candidate is tried", () =>
+    withFakes((f) => {
+      f.first(1, "");
+      f.second(0, envelope({ claude: okEntry }));
+      assert.notEqual(fetchUsage(f.env).claude, null);
+    }));
+
+  it("exit 0 with non-JSON: the next candidate is tried", () =>
+    withFakes((f) => {
+      f.first(0, "not json");
+      f.second(0, envelope({ claude: okEntry }));
+      assert.notEqual(fetchUsage(f.env).claude, null);
+    }));
+
+  it("all candidates unreadable or exit 2: every provider is unknown", () =>
+    withFakes((f) => {
+      for (const [a, b] of [
+        [0, 1],
+        [2, 2],
+      ]) {
+        f.first(a, "not json");
+        f.second(b, "also not json");
+        const u = fetchUsage(f.env);
+        assert.deepEqual(Object.values(u), [null, null, null, null]);
+      }
+    }));
+
+  it("exit 2 does not trust its output", () =>
+    withFakes((f) => {
+      f.first(2, envelope({ claude: okEntry }));
+      f.second(2, envelope({ claude: okEntry }));
+      assert.equal(fetchUsage(f.env).claude, null);
+    }));
+});
+
+describe("route process: sarashina wiring", { concurrency: 4 }, () => {
+  function bins(sb, visibility) {
+    const dir = join(sb.root, "bin");
+    mkdirSync(dir);
+    const calls = join(sb.root, "gh-calls");
+    writeFileSync(
+      join(dir, "git"),
+      "#!/bin/sh\necho 'git@github.com:berlysia/dotfiles.git'\n",
+    );
+    writeFileSync(
+      join(dir, "gh"),
+      `#!/bin/sh\necho "$@" >> '${calls}'\necho '${visibility}'\n`,
+    );
+    chmodSync(join(dir, "git"), 0o755);
+    chmodSync(join(dir, "gh"), 0o755);
+    return {
+      calls,
+      env: {
+        PATH: `${dir}:${process.env.PATH}`,
+        DELEGATION_GH_BIN: join(dir, "gh"),
+      },
+    };
+  }
+  const callCount = (path) => {
+    try {
+      return readFileSync(path, "utf8").split("\n").filter(Boolean).length;
+    } catch {
+      return 0;
+    }
+  };
+
+  it("S: public origin recommends sarashina; the question is asked once", async () => {
+    const sb = sandbox();
+    try {
+      const b = bins(sb, "public");
+      sb.setUsage(usageOf(SARASHINA_ONLY));
+      const out = (await sb.run(S_ROUTE, NOW, b.env)).stdout;
+      assert.match(recommendation(out), /^推奨: sarashina .*規則 2/, out);
+      assert.equal(callCount(b.calls), 1);
+      assert.match(
+        readFileSync(b.calls, "utf8"),
+        /api repos\/berlysia\/dotfiles --jq \.visibility/,
+      );
+    } finally {
+      sb.done();
+    }
+  });
+
+  it("S: a private origin holds sarashina", async () => {
+    const sb = sandbox();
+    try {
+      const b = bins(sb, "private");
+      sb.setUsage(usageOf(SARASHINA_ONLY));
+      const out = (await sb.run(S_ROUTE, NOW, b.env)).stdout;
+      assert.match(recommendation(out), /^推奨: sonnet/, out);
+      assert.deepEqual(holdLines(out), [SARASHINA_HOLD]);
+    } finally {
+      sb.done();
+    }
+  });
+
+  it("M: gh is never started", async () => {
+    const sb = sandbox();
+    try {
+      const b = bins(sb, "public");
+      sb.setUsage(usageOf(SARASHINA_ONLY));
+      const out = (await sb.run(ROUTE, NOW, b.env)).stdout;
+      assert.match(recommendation(out), /^推奨: sonnet/, out);
+      assert.equal(callCount(b.calls), 0);
+    } finally {
+      sb.done();
+    }
+  });
+
+  it("usageMissing is true only when all four providers are null", async () => {
+    const sb = sandbox();
+    try {
+      const fail = { ok: false, error: "x" };
+      const three = { claude: fail, codex: fail, opencode: fail };
+      sb.setUsage({ fetchedAt: NOW, providers: three });
+      const missing = (await sb.run(S_ROUTE)).stdout;
+      assert.match(missing, /窓の注意: ai-usage を起動できない/);
+      sb.setUsage({
+        fetchedAt: NOW,
+        providers: {
+          ...three,
+          sarashina: {
+            ok: true,
+            fiveHour: null,
+            weekly: null,
+            exhausted: false,
+          },
+        },
+      });
+      const keyless = (await sb.run(S_ROUTE)).stdout;
+      assert.doesNotMatch(keyless, /窓の注意/);
+      assert.match(keyless, /sarashina 5h=unknown week=unknown/);
+    } finally {
+      sb.done();
+    }
+  });
+});
+
+test("DESTINATIONS: only opencode and sarashina send the brief out", () => {
   assert.equal(DESTINATIONS["codex-terra"].sendsOut, false);
   assert.equal(DESTINATIONS["codex-luna-max"].sendsOut, false);
   assert.equal(DESTINATIONS.opencode.sendsOut, true);
+  assert.equal(DESTINATIONS.sarashina.sendsOut, true);
 });
