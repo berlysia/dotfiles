@@ -32,7 +32,7 @@ run_script() {
   awk -v os="$os" '/^{{ if / { on = index($0, "\"" os "\"") > 0; next }
     /^{{ else if / { on = index($0, "\"" os "\"") > 0; next }
     /^{{ end/ { on = 0; next } on { print }' \
-    "$REPO_ROOT/home/.chezmoiscripts/run_once_after_99-unregister-distill-insights.sh.tmpl" >"$STATE/rendered.sh"
+    "$REPO_ROOT/home/.chezmoiscripts/run_once_after_zz-unregister-distill-insights.sh.tmpl" >"$STATE/rendered.sh"
   RC=0
   OUT=$(HOME="$STATE/home" PATH="$STATE/bin" /bin/bash "$STATE/rendered.sh" 2>&1) || RC=$?
 }
@@ -109,5 +109,14 @@ setup pgrep_error
 export UNREACHABLE=1 PGREP_RC=2
 run_script
 failure
+# chezmoi runs after-phase scripts in name order. A failure stops the apply, so
+# the unregister script must sort after every other after-phase script except
+# the final provisioning check; "99-" sorted before "sync-skills" and blocked it.
+sorts_last() {
+  local names path
+  names=$(for path in "$REPO_ROOT"/home/.chezmoiscripts/*; do printf '%s\n' "${path##*/}"; done | sed -nE 's/^run_(once_|onchange_)?after_//p' | LC_ALL=C sort)
+  [[ $(printf '%s\n' "$names" | grep -v '^zz-verify-provisioning' | tail -1) == zz-unregister-distill-insights.sh.tmpl ]]
+}
+check sorts_last
 printf '%d passed, %d failed\n' "$PASS" "$FAIL"
 [[ "$FAIL" -eq 0 ]]

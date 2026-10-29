@@ -56,7 +56,8 @@ for unit in distill-insights.timer distill-insights.service; do
   status=0
   state=$(systemctl --user is-active "$unit" 2>/dev/null) || status=$?
   case "$state:$status" in
-  inactive:3 | failed:3 | unknown:4) ;;
+  # inactive:4 is a unit whose file is gone ("no such unit").
+  inactive:3 | inactive:4 | failed:3 | unknown:4) ;;
   *) fail "$unit is active or inactivity cannot be confirmed" ;;
   esac
 done
