@@ -1,5 +1,4 @@
 import { existsSync } from "node:fs";
-import { DatabaseSync } from "node:sqlite";
 import { isRecord } from "./lib.ts";
 
 /**
@@ -19,6 +18,15 @@ export const CREDENTIAL_STORE_UNREADABLE =
 
 const BUSY_TIMEOUT_MS = 200;
 
+// Loaded on first use, not by a static import: Node 22 prints an
+// ExperimentalWarning to stderr when node:sqlite loads, which would reach every
+// command that imports this module (delegation route reaches it via ai-usage).
+function loadSqlite(): typeof import("node:sqlite") {
+  const mod = process.getBuiltinModule("node:sqlite");
+  if (mod === undefined) throw new Error("node:sqlite is unavailable");
+  return mod;
+}
+
 /**
  * Key of the newest active credential for `integrationId`, or undefined when
  * there is none. A missing database file is "not configured" (undefined);
@@ -35,7 +43,7 @@ export function readOpencodeCredentialKey(
   if (!existsSync(dbPath)) return undefined;
   let value: string | undefined;
   try {
-    const db = new DatabaseSync(dbPath, { readOnly: true });
+    const db = new (loadSqlite().DatabaseSync)(dbPath, { readOnly: true });
     try {
       db.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`);
       const row = db

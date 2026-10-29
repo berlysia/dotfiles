@@ -30,7 +30,7 @@ import {
 } from "node:fs";
 import { constants as osConstants, homedir, tmpdir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
 import { OFFLOAD_DIR_NAME, isExposure, offloadAgentName } from "./constants.ts";
 import { allowedAuthProviders, sendsOutModels } from "./destinations.ts";
 import { ensureOwnedDir, resolveDataDir } from "./store.ts";
@@ -172,6 +172,15 @@ function readAuthFile(path: string): AuthFileInput {
   }
 }
 
+// Loaded on first use, not by a static import: Node 22 prints an
+// ExperimentalWarning to stderr when node:sqlite loads, which would reach every
+// delegation command. getBuiltinModule stays synchronous, so callers stay sync.
+function loadSqlite(): typeof import("node:sqlite") {
+  const mod = process.getBuiltinModule("node:sqlite");
+  if (mod === undefined) throw new Error("node:sqlite is unavailable");
+  return mod;
+}
+
 function readAuthDb(path: string): AuthDbInput {
   let before;
   try {
@@ -195,7 +204,7 @@ function readAuthDb(path: string): AuthDbInput {
     let result: AuthDbInput;
     try {
       // Plain read-only open: rows still in the write-ahead log must be visible.
-      db = new DatabaseSync(path, { readOnly: true });
+      db = new (loadSqlite().DatabaseSync)(path, { readOnly: true });
       db.exec(`PRAGMA busy_timeout = ${DB_BUSY_TIMEOUT_MS}`);
       const tables = db
         .prepare(
