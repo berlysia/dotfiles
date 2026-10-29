@@ -23,6 +23,7 @@ import type {
 } from "../lib/dotfiles-feedback/deps.ts";
 import { collectList, collectShow } from "../lib/dotfiles-feedback/collect.ts";
 import {
+  formatCancelled,
   formatError,
   formatList,
   formatShow,
@@ -276,13 +277,16 @@ const triageCommand: Command = async (args, deps) => {
     deps.stdout(formatTriageResult(outcome.view));
     return 0;
   }
+  // 終了コードは 1 のまま。public の issue を作っていないことをスクリプトから見分けられる。
   deps.stderr(
     outcome.kind === "gh-failed"
       ? formatError(
           `${outcome.error}: ${outcome.message}`,
           hintFor(outcome.error, outcome.hint),
         )
-      : formatError(outcome.reason),
+      : outcome.kind === "cancelled"
+        ? formatCancelled(outcome.reason)
+        : formatError(outcome.reason),
   );
   return 1;
 };

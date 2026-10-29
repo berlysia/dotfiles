@@ -395,3 +395,22 @@ it("real makeTempDir is private and removeTree deletes it", async (t) => {
     else process.env["TMPDIR"] = saved;
   }
 });
+it("a cancelled triage --to issue says 中止した, not エラー, and still exits 1", async (t) => {
+  const tmp = await fs.mkdtemp(join(tmpdir(), "feedback-cli-draft-"));
+  t.after(() => fs.rm(tmp, { recursive: true, force: true }));
+  const f = await fixture(t, {
+    envNames: [],
+    stdinIsTty: true,
+    stdoutIsTty: true,
+    editor: "ed",
+    runEditor: async () => 0,
+    makeTempDir: () => fs.mkdtemp(join(tmp, "d-")),
+    removeTree: (path) => fs.rm(path, { recursive: true, force: true }),
+  });
+  f.fake.issues.push(privateIssue(1));
+  strictEqual(await runCli(["triage", "#1", "--to", "issue"], f.deps), 1);
+  const text = f.err.join("");
+  ok(text.startsWith("中止した: 下書きが変わっていない"), text);
+  ok(!text.includes("エラー:"));
+  strictEqual(f.fake.publicIssues.length, 0);
+});

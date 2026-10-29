@@ -50,7 +50,7 @@ const edges: Record<string, readonly string[]> = {
     "deps",
     "../agent-caller",
   ],
-  display: ["../invisible-chars", "constants", "cache", "item"],
+  display: ["../invisible-chars", "constants", "cache", "item", "issue-body"],
   notice: ["cache", "constants"],
   "labels-state": ["constants", "deps", "retry", "spool"],
   lock: ["constants", "deps"],
