@@ -1,7 +1,9 @@
 #!/usr/bin/env -S bun run --silent
 
-import { appendFileSync, existsSync, readFileSync } from "node:fs";
-import { basename, dirname, isAbsolute, resolve } from "node:path";
+import { spawnSync } from "node:child_process";
+import { appendFileSync, existsSync, opendirSync, readFileSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { getHomeDir, normalizeAbsolute } from "../lib/path-utils.ts";
 import { defineHook } from "cc-hooks-ts";
 import { logEvent } from "../lib/centralized-logging.ts";
@@ -25,6 +27,15 @@ import {
   spawnWorker,
 } from "../lib/agent-learnings/claude/session-context.ts";
 import { isWorkerSession } from "../lib/agent-learnings/claude/worker-guard.ts";
+import { readInbox, readLastFlush } from "../lib/dotfiles-feedback/cache.ts";
+import { DOTFILES_REPO_KEY } from "../lib/dotfiles-feedback/constants.ts";
+import {
+  resolvePasswdHome,
+  type HomeResult,
+} from "../lib/dotfiles-feedback/home.ts";
+import { buildFeedbackNotice } from "../lib/dotfiles-feedback/notice.ts";
+import { refreshArgv, spawnDetached } from "../lib/dotfiles-feedback/spawn.ts";
+import { resolveRepoKey } from "../lib/repo-key.ts";
 import { runGit } from "../lib/run-git.ts";
 import { defaultStoreDir } from "../lib/agent-learnings/core/store.ts";
 import { encodeSessionDirName, getProjectRoot } from "../lib/project-root.ts";
@@ -193,6 +204,155 @@ function auditTranscriptDirName(input: {
   if (actual === encodeSessionDirName(normalizeAbsolute(input.cwd)))
     return null;
   return `[session] the transcript directory name ${JSON.stringify(actual)} does not match the name derived from the startup directory ${JSON.stringify(input.cwd)}. Hooks read project-settings /path permission rules against the startup directory after this session enters a worktree. See "本体と合わせていない点" in docs/decisions/0027-permission-path-pattern-semantics.md.`;
+}
+
+/**
+ * dotfiles のセッションの開始時に、dotfiles-feedback の件数を 1 行で知らせる。
+ *
+ * ここから lib/dotfiles-feedback/ へ辿ってよいのは cache・constants・notice・spawn・home だけ
+ * （境界のテストが閉包を見る）。gh・spool・flush などを足すと、hook の中でネットワークを待つ。
+ * 件数を新しくするのは detached の `refresh` で、hook はキャッシュを読んで起動するだけにする。
+ */
+export type FeedbackSectionDeps = {
+  cwd: string;
+  resolveRepoKey(cwd: string): string | null;
+  resolveHome(): HomeResult;
+  // 指定があれば home の解決を飛ばす（テストが一時ディレクトリを渡す）。
+  root?: string | undefined;
+  spawnDetached(argv: readonly string[]): Promise<boolean>;
+  cliPath: string;
+  now(): Date;
+  isVm: boolean;
+  isWorker: boolean;
+  log(line: string): void;
+};
+
+const FEEDBACK_PENDING_SCAN_LIMIT = 200;
+
+// 1 件見つけた時点で打ち切る。大きな pending/ を hook の中で全部読まない。
+function hasPendingJson(dir: string): boolean {
+  let handle: ReturnType<typeof opendirSync>;
+  try {
+    handle = opendirSync(dir);
+  } catch {
+    return false;
+  }
+  try {
+    for (let seen = 0; seen < FEEDBACK_PENDING_SCAN_LIMIT; seen++) {
+      const entry = handle.readSync();
+      if (entry === null) return false;
+      if (entry.name.endsWith(".json")) return true;
+    }
+    return false;
+  } finally {
+    handle.closeSync();
+  }
+}
+
+export async function runFeedbackSection(
+  deps: FeedbackSectionDeps,
+): Promise<{ line: string | null }> {
+  try {
+    if (deps.isWorker || deps.isVm) return { line: null };
+    if (deps.resolveRepoKey(deps.cwd) !== DOTFILES_REPO_KEY)
+      return { line: null };
+    let root = deps.root;
+    if (root === undefined) {
+      const home = deps.resolveHome();
+      if (!home.ok) throw new Error(home.reason);
+      root = join(home.home, ".local", "share", "dotfiles-feedback");
+    }
+    const now = deps.now();
+    const inbox = readInbox(join(root, "state", "inbox.json"), now);
+    const lastFlush = readLastFlush(
+      join(root, "state", "last-flush.json"),
+      now,
+      hasPendingJson(join(root, "pending")),
+    );
+    const line = buildFeedbackNotice({ inbox, lastFlush }, now);
+    // 件数を新しくするのは refresh だけなので、通知の有無にかかわらず毎回起動する。
+    await deps.spawnDetached(refreshArgv(deps.cliPath));
+    return { line };
+  } catch (error) {
+    deps.log(
+      `dotfiles-feedback notice failed: ${error instanceof Error ? error.name : "unknown"}`,
+    );
+    return { line: null };
+  }
+}
+
+export function createFeedbackSectionDeps(input: {
+  cwd: string;
+  env: Readonly<Record<string, string | undefined>>;
+  resolvePasswdHome?: () => HomeResult;
+  spawnDetached?: FeedbackSectionDeps["spawnDetached"];
+  resolveRepoKey?: FeedbackSectionDeps["resolveRepoKey"];
+  now?: () => Date;
+}): FeedbackSectionDeps {
+  return {
+    cwd: input.cwd,
+    resolveRepoKey:
+      input.resolveRepoKey ?? ((cwd) => resolveRepoKey(cwd, runGit)),
+    // spool の場所は HOME で動かさない。CLI の入口と同じく passwd から求める。
+    resolveHome:
+      input.resolvePasswdHome ??
+      (() =>
+        typeof process.getuid === "function"
+          ? resolvePasswdHome(
+              (file, args, env) => {
+                const r = spawnSync(file, [...args], {
+                  env,
+                  encoding: "utf8",
+                  timeout: 5_000,
+                  shell: false,
+                });
+                return { code: r.status, stdout: r.stdout ?? "" };
+              },
+              process.platform,
+              process.getuid(),
+            )
+          : { ok: false, reason: "uid を取得できない" }),
+    spawnDetached: input.spawnDetached ?? spawnDetached,
+    cliPath: fileURLToPath(
+      new URL("../cli/dotfiles-feedback.ts", import.meta.url),
+    ),
+    now: input.now ?? (() => new Date()),
+    isVm: existsSync("/etc/agent-vm"),
+    isWorker: isWorkerSession(input.env),
+    log: (line) => console.error(line),
+  };
+}
+
+// テストが実機の spool と refresh に触れないようにする。preload が立てるので、
+// 本番ではこの変数を設定しない。
+export const FEEDBACK_NOTICE_DISABLE_ENV =
+  "CLAUDE_HOOKS_DISABLE_FEEDBACK_NOTICE";
+let feedbackSectionOverride: FeedbackSectionDeps | null = null;
+export function setFeedbackSectionDepsForTesting(
+  deps: FeedbackSectionDeps | null,
+): void {
+  feedbackSectionOverride = deps;
+}
+
+export function mergeAdditionalContext(
+  learnings: string | null,
+  feedbackLine: string | null,
+): string | null {
+  const parts = [learnings, feedbackLine].filter(
+    (part): part is string => part !== null && part !== "",
+  );
+  return parts.length > 0 ? parts.join("\n") : null;
+}
+
+async function feedbackNoticeLine(cwd: string): Promise<string | null> {
+  if (feedbackSectionOverride)
+    return (await runFeedbackSection(feedbackSectionOverride)).line;
+  if (process.env[FEEDBACK_NOTICE_DISABLE_ENV] === "1") return null;
+  return (
+    await runFeedbackSection(
+      createFeedbackSectionDeps({ cwd, env: process.env }),
+    )
+  ).line;
 }
 
 /**
@@ -379,15 +539,22 @@ const hook = defineHook({
           console.error(`agent-learnings health notice failed: ${error}`);
         }
       }
+      // 通知は UI の systemMessage にも、同じ 1 行をモデルの文脈にも渡す（spec K6）。
+      const feedbackLine = await feedbackNoticeLine(cwd);
+      if (feedbackLine) messages.push(feedbackLine);
+      const additionalContext = mergeAdditionalContext(
+        learningsContext,
+        feedbackLine,
+      );
       return context.json({
         event: "SessionStart",
         output: {
           systemMessage: messages.join("\n"),
-          ...(learningsContext
+          ...(additionalContext
             ? {
                 hookSpecificOutput: {
                   hookEventName: "SessionStart" as const,
-                  additionalContext: learningsContext,
+                  additionalContext,
                 },
               }
             : {}),

@@ -343,3 +343,40 @@ it("has no import cycle among dotfiles-feedback modules, type imports included",
   };
   for (const node of graph.keys()) visit(node, []);
 });
+
+it("session.ts reaches only cache, constants, notice, spawn and home, so a hook never waits on the network", () => {
+  const session = readFileSync(
+    join(hooks, "implementations/session.ts"),
+    "utf8",
+  );
+  const direct = imports(session)
+    .filter(({ target }) => target.includes("lib/dotfiles-feedback/"))
+    .map(({ target }) => basename(target, ".ts"))
+    .sort();
+  deepStrictEqual(direct, ["cache", "constants", "home", "notice", "spawn"]);
+  const closure = new Set<string>();
+  const walk = (module: string): void => {
+    if (closure.has(module)) return;
+    closure.add(module);
+    const source = readFileSync(
+      join(hooks, `lib/dotfiles-feedback/${module}.ts`),
+      "utf8",
+    );
+    for (const { target } of imports(source))
+      if (target.startsWith("./")) walk(basename(target, ".ts"));
+  };
+  for (const module of direct) walk(module);
+  for (const forbidden of [
+    "gh",
+    "spool",
+    "flush",
+    "lock",
+    "retry",
+    "refresh",
+    "triage",
+    "collect",
+    "target",
+    "labels-state",
+  ])
+    strictEqual(closure.has(forbidden), false, forbidden);
+});
