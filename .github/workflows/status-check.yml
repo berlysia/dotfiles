@@ -102,16 +102,15 @@ jobs:
               core.info(result);
             }
 
-            // Check if all required workflows either passed or were skipped
-            const allPassedOrSkipped = requiredWorkflows.every(workflowName => {
-              const run = latestRuns[workflowName];
-              // Not found means skipped by paths filter - treat as success
-              if (!run) return true;
-              // Must be completed
-              if (run.status !== 'completed') return false;
-              // Success or skipped are acceptable
-              return run.conclusion === 'success' || run.conclusion === 'skipped';
-            });
+            // Completed required workflows that neither passed nor were skipped (not found = skipped by paths filter)
+            const failed = requiredWorkflows
+              .map(workflowName => {
+                const run = latestRuns[workflowName];
+                if (!run || run.status !== 'completed') return null;
+                if (run.conclusion === 'success' || run.conclusion === 'skipped') return null;
+                return `${workflowName} (${run.conclusion})`;
+              })
+              .filter(Boolean);
 
             const allCompleted = requiredWorkflows.every(workflowName => {
               const run = latestRuns[workflowName];
@@ -119,6 +118,21 @@ jobs:
               if (!run) return true;
               return run.status === 'completed';
             });
+
+            // A failure is final, so it is reported without waiting for the workflows still running
+            if (failed.length > 0) {
+              // Set failure status
+              await github.rest.repos.createCommitStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                sha: workflowRun.head_sha,
+                state: 'failure',
+                context: 'status-check',
+                description: `Required workflows failed: ${failed.join(', ')}`
+              });
+              core.setFailed(`Required workflows failed: ${failed.join(', ')}`);
+              return;
+            }
 
             if (!allCompleted) {
               core.info('⏳ Waiting for all workflows to complete...');
@@ -131,28 +145,6 @@ jobs:
                 context: 'status-check',
                 description: 'Waiting for all workflows to complete...'
               });
-              return;
-            }
-
-            if (!allPassedOrSkipped) {
-              const failed = requiredWorkflows
-                .map(workflowName => {
-                  const run = latestRuns[workflowName];
-                  if (!run || run.conclusion === 'success' || run.conclusion === 'skipped') return null;
-                  return `${workflowName} (${run.conclusion})`;
-                })
-                .filter(Boolean);
-
-              // Set failure status
-              await github.rest.repos.createCommitStatus({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                sha: workflowRun.head_sha,
-                state: 'failure',
-                context: 'status-check',
-                description: `Required workflows failed: ${failed.join(', ')}`
-              });
-              core.setFailed(`Required workflows failed: ${failed.join(', ')}`);
               return;
             }
 
