@@ -66,11 +66,11 @@ CLI は、自分より新しい `schemaVersion` の件を書き換えない。�
 - `XDG_CONFIG_HOME`、`XDG_RUNTIME_DIR`、`DBUS_SESSION_BUS_ADDRESS`
 - `HTTPS_PROXY`、`NO_PROXY`
 
-`GH_TOKEN` と `GH_REPO` は引き継がない。実装は `home/dot_claude/hooks/lib/dotfiles-feedback/gh.ts:78-96` にある。確かめるテストは `home/dot_claude/hooks/tests/unit/dotfiles-feedback-gh.test.ts:18` にある。
+`GH_TOKEN` と `GH_REPO` は引き継がない。実装は `home/dot_claude/hooks/lib/dotfiles-feedback/gh.ts` の `ghEnvironment` にある。テストは `home/dot_claude/hooks/tests/unit/dotfiles-feedback-gh.test.ts` にある。
 
-private repo に触れる操作は、その回の最初に宛先を確かめる。確かめる内容は次の 3 つである。宛先が private であること。宛先の owner が `berlysia` であること。`gh` の認証中のユーザーが `berlysia` であること。1 つでも満たさなければ、何もせずに `not-private` で止まる。送り出しなら、件は `pending/` に残る（`gh.ts:352-380`、テストは `dotfiles-feedback-gh.test.ts:42`）。
+private repo に触れる操作は、その回の最初に宛先を確かめる。確かめる内容は次の 3 つである。宛先が private であること。宛先の owner が `berlysia` であること。`gh` の認証中のユーザーが `berlysia` であること。1 つでも満たさなければ、何もせずに `not-private` で止まる。送り出しなら、件は `pending/` に残る。実装は `gh.ts` の `checkDestination` で、テストは `dotfiles-feedback-gh.test.ts` にある。
 
-未知の flag（`--repo` など）は、`parseArgs` の `strict: true` で拒否する。実装は `cli/dotfiles-feedback.ts:133` にある。
+未知の flag（`--repo` など）は、`parseArgs` の `strict: true` で拒否する。実装は `cli/dotfiles-feedback.ts` の `send` の引数の解析にある。
 
 ### 送り出し
 
@@ -97,7 +97,7 @@ private repo に触れる操作は、その回の最初に宛先を確かめる�
 - `--to reject`: 理由をコメントして close する
 - `--to issue`: 公開先の `berlysia/dotfiles` に Issue を起こす。人だけに限る
 
-plan と reject は private repo の中だけを動かすので、エージェントからも実行できる。`--to issue` は、処理の最初に `isHumanCaller` で判定する。通る条件は、stdin と stdout の両方が TTY で、エージェントの環境変数が無いことである。通った後も、`$EDITOR` で下書きを書かせ、`/dev/tty` の確認で `y` か `Y` が入力されたときだけ進む。エージェントの stdin では答えられない（`cli/dotfiles-feedback.ts:492-501`）。
+plan と reject は private repo の中だけを動かすので、エージェントからも実行できる。`--to issue` は、処理の最初に `isHumanCaller` で判定する。通る条件は、stdin と stdout の両方が TTY で、エージェントの環境変数が無いことである。通った後も、`$EDITOR` で下書きを書かせ、`/dev/tty` の確認で `y` か `Y` が入力されたときだけ進む。エージェントの stdin では答えられない（`cli/dotfiles-feedback.ts` の `isConfirmed` と `confirmOnTty`）。
 
 ### dotfiles のセッション開始時の通知
 
@@ -135,13 +135,13 @@ allow する 3 つが sandbox の外でできることは、次のとおりで�
 
 - 宛先は定数 `FEEDBACK_REPO` に固定され、引数でも環境変数でも変えられない
 - allow された `send` は、裏で `flush` を起動する。`flush` は sandbox の外で利用者の `gh` の認証を使い、private repo に Issue を起こす
-- `status` が出すのは、件数と最後の flush の理由だけである。本文と見出しは出さない。テストは `home/dot_claude/hooks/tests/unit/dotfiles-feedback-cli.test.ts:271` にある
+- `status` が出すのは、件数と最後の flush の理由だけである。本文と見出しは出さない。テストは `home/dot_claude/hooks/tests/unit/dotfiles-feedback-cli.test.ts` にある
 - `flush` が送るのは spool の未送の件だけで、宛先は `FEEDBACK_REPO` に限られる
 - したがって `status` と `flush` を allow しても、正規の送り先への投稿にしかならない
 
 公開先に出す操作は `triage --to issue` だけである。この操作は `/dev/tty` の確認を通るので、エージェントは承認できない。
 
-入力の扱いには、既存のテストがある。`flush --retry ../x` は exit 1 で終わる（`dotfiles-feedback-cli.test.ts:614`）。`show` は本文を nonce つきの区切りで囲み、ESC を落とす（`dotfiles-feedback-collect.test.ts:210`）。bidi などの制御文字は中和される（`dotfiles-feedback-display.test.ts:21`）。
+入力の扱いには、既存のテストがある。`flush --retry ../x` は exit 1 で終わる（`dotfiles-feedback-cli.test.ts`）。`show` は本文を nonce つきの区切りで囲み、ESC を落とす（`dotfiles-feedback-collect.test.ts`）。bidi などの制御文字は `sanitizeForDisplay` が中和する（`dotfiles-feedback-display.test.ts`）。
 
 ### パイプでの持ち出しを受け入れる
 
@@ -174,7 +174,7 @@ allow する 3 つが sandbox の外でできることは、次のとおりで�
 - 秘密の検査の限界が、受け入れて残る害である。`normalizeField` が拒否するのは鍵らしい文字列だけで、伏せ字にするのは既知の形式だけである。`.env` の平文の値、`~/.config/gh/hosts.yml`、`~/.claude.json` のような形の定まらない秘密は通りうる。プロンプトインジェクションを受けたエージェントがファイルを読んで流すと、承認なしで Issue に載りうる。
 - Issue を読むのは利用者だけではない。private repo の共同作業者、通知を受け取る人、repo に入れた GitHub App、将来の振り分けのエージェントも読む。skill はファイルの中身を貼ることと、パイプで流すことを禁じる。ただしこれは指示で、機構として止めるものではない
 - 承認なしの `send` を繰り返しても、量には上限がある。`pending/` は手元の分で 50 件まで、1 回の送り出しは 10 件までである。フィールドの長さにも上限がある。定数は `lib/dotfiles-feedback/constants.ts` にある。名前は `MAX_PENDING_PER_ORIGIN`、`MAX_FLUSH_ITEMS`、`FIELD_LIMITS` である
-- private の Issue から公開先の `berlysia/dotfiles` に移すのは、`triage --to issue` だけである。この操作の確認では、公開してよいかを確かめる警告、見出し、本文の全文が端末に表示される。利用者は公開の前に読める（`lib/dotfiles-feedback/triage.ts:496-509`）
+- private の Issue から公開先の `berlysia/dotfiles` に移すのは、`triage --to issue` だけである。この操作の確認では、公開してよいかを確かめる警告、見出し、本文の全文が端末に表示される。利用者は公開の前に読める（`lib/dotfiles-feedback/triage.ts` の `draftPublicIssue`）
 - Codex の rule は、argv の先頭の名前 `dotfiles-feedback` にだけ一致し、実体の検証はしない。既存の `agent-learnings` の rule と同じ性質である
 - 未知の flag（`--repo` など）を拒否するのは `parseArgs` の `strict` によるが、それを確かめるテストが無い。テストを足す件は `docs/plans/dotfiles-feedback-followups.md` に残した
 - `normalizeField` が扱うのは秘密と鍵らしい文字列だけである。home のパス、内部の URL、client の名前は伏せない。`repoKey` と `host` は、送る人が書かなくても自動で付く。送り先は private repo なので、今は受け入れる。`repoKey` を berlysia 以外のリポジトリで null にするかは、`docs/plans/dotfiles-feedback-followups.md` に残した
