@@ -98,7 +98,7 @@ import {
   writeFileSyncAtomic,
   writeLearnings,
 } from "../lib/agent-learnings/core/store.ts";
-import { loadRedactList } from "../lib/insight-digest.ts";
+import { loadRedactList } from "../lib/redact-secrets.ts";
 import { getHomeDir } from "../lib/path-utils.ts";
 
 export interface RunLearningsCliDeps {

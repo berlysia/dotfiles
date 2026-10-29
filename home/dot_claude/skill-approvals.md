@@ -32,7 +32,6 @@ apply は未掲載のスキルを追記するだけで、行を消さない。
 - [x] github-pr-ci
 - [x] hook-cli-development
 - [x] imozuru
-- [x] insight-digest
 - [x] intent-alignment-triage
 - [x] issue-pr
 - [x] ja-explain-first

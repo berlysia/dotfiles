@@ -60,6 +60,10 @@ Before writing prose, establish where the reader will view the figure and whethe
 
 How to choose:
 
+- 媒体の候補は、閲覧環境、説明の目的、与えたい印象、説明前後で読者の理解や判断をどう変えたいかから絞る。その範囲で、下記の形に合う媒体を選ぶ。
+- スライドで大きな対比を一目で伝えたい場合は、対句の文より表や図を検討する。関係は矢印の向きで示し、介入する位置に加えて、修正時にどこまで戻るかも描く。
+- 横幅に合わせて縮む Mermaid の図は、実際の表示幅で文字を確認する。文字が小さい場合は、フォントを大きくする前に矢印やノードの文言を短くして図全体の幅を詰める。
+- 比較で示す強みは、実装や設計記録で確かめられる主張に限る。自分の説明の根拠を確認する。
 - Use the medium of the row whose shape matches the idea. If the idea is about values or positions changing step by step, or about a three-dimensional shape, that row wins over every other row. Only when two other rows fit equally well, take the lighter one, in the order table, ASCII sketch, Mermaid, HTML file.
 - Do not downgrade a row's medium to save effort: change over steps and three-dimensional shapes belong in an HTML file even when a text sketch could be forced to work.
 - When parties exchange messages, use `sequenceDiagram` even if the exchange is also a sequence of steps.

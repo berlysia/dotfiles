@@ -14,10 +14,6 @@ import {
   readExperimentState,
 } from "../lib/auto-mode-experiment.ts";
 import {
-  getDistillHealthNotice,
-  getUnreadDigestPreview,
-} from "../lib/insight-digest.ts";
-import {
   gcSceneState,
   SCENE_STATE_READERS,
   sceneStateDir,
@@ -322,14 +318,6 @@ const hook = defineHook({
 
       if (taskListWarning) {
         messages.push(taskListWarning);
-      }
-      const digestPreview = getUnreadDigestPreview();
-      if (digestPreview) {
-        messages.push(digestPreview);
-      }
-      const distillHealth = getDistillHealthNotice();
-      if (distillHealth) {
-        messages.push(distillHealth);
       }
 
       // The reader touches the filesystem; a failure there must not drop the

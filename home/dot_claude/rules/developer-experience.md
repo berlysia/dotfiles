@@ -57,6 +57,9 @@ When proposing to record something (an ADR, a doc, a plan moved to `docs/`), lis
 - Use `/verify-doc` for document self-consistency checks
 - MEMORY.md: record pitfalls/lessons only, not what's in CLAUDE.md
 - Committed docs link to git-tracked files. A record that is no longer in the tree is cited as `git show <commit>:<path>`, and only when that commit is reachable from the default branch
+- To find an explanation from a past session, search with the claude-recall MCP and keep `limit` small: results can be huge (measured 2026-10-27, four hits were 250k characters and one of them was 210k). When the result exceeds the limit, add words to the query or narrow with `from`, `to`, or `project`. An oversized result is saved to a file, so grep that file
+- claude-recall matches Japanese by substring, not by meaning. The current session is included in the results, so bound the search with `to` (2026-10-27)
+- For the last 30 days (the default `cleanupPeriodDays`), a grep over `~/.claude/projects/**/*.jsonl` is enough to find past explanations
 
 ## Git Worktree Convention
 

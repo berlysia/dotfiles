@@ -1,0 +1,47 @@
+#!/bin/bash
+set -eu
+: "${STATE:?}"
+name=${0##*/}
+printf '%s %s\n' "$name" "$*" >>"$STATE/calls"
+case "$name" in
+id) echo 4242 ;;
+pgrep) exit "${PGREP_RC:-1}" ;;
+systemctl)
+  shift
+  case "$1" in
+  show-environment) exit "${UNREACHABLE:-0}" ;;
+  disable)
+    [[ ${STUCK:-0} == 1 ]] || echo disabled >"$STATE/enabled"
+    echo inactive >"$STATE/timer"
+    ;;
+  stop) echo inactive >"$STATE/service" ;;
+  daemon-reload) exit 0 ;;
+  is-enabled)
+    cat "$STATE/enabled"
+    [[ $(cat "$STATE/enabled") == enabled ]]
+    ;;
+  is-active)
+    key=timer
+    [[ $2 == distill-insights.service ]] && key=service
+    cat "$STATE/$key"
+    [[ $(cat "$STATE/$key") == active ]] || exit 3
+    ;;
+  *) exit 99 ;;
+  esac
+  ;;
+launchctl)
+  case "$1" in
+  print)
+    if [[ ${PRINT_ERROR:-0} == 1 ]]; then
+      echo 'permission denied' >&2
+      exit 1
+    fi
+    if [[ $(cat "$STATE/loaded") == yes ]]; then exit 0; fi
+    echo 'Could not find service (not found)' >&2
+    exit 113
+    ;;
+  bootout) echo no >"$STATE/loaded" ;;
+  *) exit 99 ;;
+  esac
+  ;;
+esac

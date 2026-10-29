@@ -17,6 +17,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
+import {
+  defaultStoreDir,
+  ensureStateDirs,
+  writeLearnings,
+} from "../../lib/agent-learnings/core/store.ts";
+import { COMMON_KEY } from "../../lib/agent-learnings/core/learnings-file.ts";
 import { isWorkflowActive } from "../../lib/workflow-gate.ts";
 import sessionHook, {
   auditAnswerRecorderWiring,
@@ -757,11 +763,39 @@ describe("wire output (subprocess)", () => {
 
   beforeEach(() => {
     tmp = realpathSync(mkdtempSync(join(tmpdir(), "session-wire-")));
-    const digestDir = join(tmp, ".claude", "logs", "insights");
-    mkdirSync(digestDir, { recursive: true });
+    const store = defaultStoreDir(tmp);
+    mkdirSync(join(store, ".git"), { recursive: true });
+    mkdirSync(join(store, "repos"), { recursive: true });
+    ensureStateDirs(store);
+    ok(
+      writeLearnings(store, {
+        format: 1,
+        key: COMMON_KEY,
+        readOnly: false,
+        entries: [
+          {
+            id: "L-000000000001",
+            title: "LEARNINGS_MARKER_FOR_TEST",
+            body: "Session learning remains available.",
+            seen: 1,
+            repos: [],
+            updated: "2026-10-29",
+            extra: [],
+          },
+        ],
+      }).ok,
+    );
+    mkdirSync(join(tmp, "bin"));
     writeFileSync(
-      join(digestDir, "insight-digest.md"),
-      "# Insight digest\n\nMARKER_LINE_FOR_TEST\n\n- entry one\n",
+      join(tmp, "bin", "git"),
+      `#!/bin/sh
+case "$*" in
+  *rev-parse*) printf '%s\\n' '${tmp}/.git' ;;
+  *config*) printf '%s\\n' 'https://github.com/example/session-fixture.git' ;;
+  *) exit 1 ;;
+esac
+`,
+      { mode: 0o755 },
     );
     writeFileSync(join(tmp, "envfile"), "");
   });
@@ -785,6 +819,7 @@ describe("wire output (subprocess)", () => {
     // parent test process; clear it here so the spawned session.ts process
     // derives its log dir from childEnv.HOME below, matching this test's intent.
     delete childEnv.CLAUDE_LOGS_DIR;
+    childEnv.PATH = `${join(tmp, "bin")}:${childEnv.PATH}`;
     childEnv.HOME = tmp;
     childEnv.CLAUDE_ENV_FILE = join(tmp, "envfile");
     childEnv.CLAUDE_CODE_TASK_LIST_ID = "shared-list-456";
@@ -808,12 +843,15 @@ describe("wire output (subprocess)", () => {
     }
   }
 
-  it("T5: unread digest, systemMessage on the wire includes the body", () => {
+  it("SessionStart retains learnings injection without retired notices", () => {
     const stdout = runSessionHookWire();
 
     ok(stdout.length > 0, "stdout should not be empty");
     const parsed = JSON.parse(stdout);
-    deepStrictEqual(Object.keys(parsed).sort(), ["systemMessage"]);
+    deepStrictEqual(Object.keys(parsed).sort(), [
+      "hookSpecificOutput",
+      "systemMessage",
+    ]);
     ok(
       parsed.systemMessage.startsWith(
         "🚀 Claude Code session started. Ready for development!",
@@ -821,33 +859,18 @@ describe("wire output (subprocess)", () => {
       "systemMessage should start with the session start message",
     );
     ok(
-      parsed.systemMessage.includes("MARKER_LINE_FOR_TEST"),
-      "systemMessage should include the digest marker line",
+      parsed.hookSpecificOutput.additionalContext.includes(
+        "LEARNINGS_MARKER_FOR_TEST",
+      ),
+      "model context should retain the learnings injection",
+    );
+    ok(
+      !/New Insight digest|Insight distillation/i.test(parsed.systemMessage),
+      "retired notices should be absent",
     );
     ok(
       parsed.systemMessage.includes("shared-list-456"),
       "systemMessage should include the task list id",
-    );
-  });
-
-  it("T6: acked digest, body is not present", () => {
-    writeFileSync(
-      join(tmp, ".claude", ".last-insight-digest-acked"),
-      String(Date.now() + 600_000),
-    );
-
-    const stdout = runSessionHookWire();
-    const parsed = JSON.parse(stdout);
-
-    ok(
-      !parsed.systemMessage.includes("MARKER_LINE_FOR_TEST"),
-      "systemMessage should not include the digest marker line once acked",
-    );
-    ok(
-      parsed.systemMessage.startsWith(
-        "🚀 Claude Code session started. Ready for development!",
-      ),
-      "systemMessage should start with the session start message",
     );
   });
 });

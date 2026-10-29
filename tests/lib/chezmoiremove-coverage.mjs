@@ -29,8 +29,6 @@ export const KEEP = [
   ".claude/.external-skills-installed",
   // run_onchange_install-claude-plugins-8.sh.tmpl: records the installed plugin set
   ".claude/.managed-plugins-installed",
-  // run_after_register-distill-insights-schedule.sh.tmpl: hash of the registered launchd plist
-  ".claude/.distill-insights-plist.sha256",
   // run_after_10-install-apm-skills.sh.tmpl: failure marker read by zz-verify-provisioning
   ".claude/.apm-skills-install-failed",
   // run_after_10-install-hook-deps.sh.tmpl: failure marker read by zz-verify-provisioning
