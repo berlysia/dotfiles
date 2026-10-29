@@ -55,6 +55,7 @@
     "Bash(wc *)",
     "Bash(which *)",
     "Bash(workflow-cli *)",
+    "Bash(delegation *)",
     "Bash(~/.local/bin/delivery-policy *)",
     "Bash(agent-learnings show *)",
     "Bash(agent-learnings show)",
