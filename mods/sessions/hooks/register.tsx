@@ -72,26 +72,33 @@ function drawPane(
       {view === null && <Text dimColor>取得中…</Text>}
       {view?.kind === "unavailable" && <Text>{view.message}</Text>}
       {view?.kind === "ok" &&
-        view.rows.map((row, index) => {
-          const key = `row-${index}`;
-          const text = row.fillText;
-          if (text === null) {
+        (() => {
+          // Number only the rows that can be filled: the self row comes first
+          // and has no target, so numbering by row position left key 1 dead.
+          let fillable = 0;
+          return view.rows.map((row, index) => {
+            const key = `row-${index}`;
+            const text = row.fillText;
+            if (text === null) {
+              return (
+                <Text key={key} dimColor>
+                  {`   ${row.label}`}
+                </Text>
+              );
+            }
+            fillable += 1;
+            const hotkey = fillable <= 9 ? String(fillable) : undefined;
             return (
-              <Text key={key} dimColor>
-                {row.label}
-              </Text>
+              <Button
+                key={key}
+                plain
+                hotkey={hotkey}
+                label={`${hotkey ?? " "}  ${row.label}`}
+                onPress={() => fillPrompt($, text)}
+              />
             );
-          }
-          return (
-            <Button
-              key={key}
-              plain
-              hotkey={index < 9 ? String(index + 1) : undefined}
-              label={row.label}
-              onPress={() => fillPrompt($, text)}
-            />
-          );
-        })}
+          });
+        })()}
       {view?.kind === "ok" &&
         view.notes.map((note, index) => (
           <Text key={`note-${index}`} dimColor>
