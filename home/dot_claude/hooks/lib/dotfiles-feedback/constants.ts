@@ -34,6 +34,7 @@ export const FIELD_LIMITS = {
   host: 100,
 } as const;
 export const LOCAL_ID_PATTERN = /^\d{8}T\d{6}Z-[0-9a-f]{12}$/;
+export const MACHINE_NAME_PATTERN = /^[a-z0-9][a-z0-9._-]{0,62}$/;
 export const VM_ID_PATTERN = /^vm-[0-9a-f]{24}$/;
 export const UTC_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 export const LOCAL_ID_RANDOM_BYTES = 6;

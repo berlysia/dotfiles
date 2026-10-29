@@ -65,6 +65,7 @@ const edges: Record<string, readonly string[]> = {
     "../invisible-chars",
   ],
   spawn: ["deps"],
+  "vm-item": ["item", "constants"],
   home: [],
   flush: [
     "labels-state",
@@ -380,6 +381,7 @@ it("session.ts reaches only cache, constants, notice, spawn and home, so a hook 
     "collect",
     "target",
     "labels-state",
+    "vm-item",
   ])
     strictEqual(closure.has(forbidden), false, forbidden);
 });
