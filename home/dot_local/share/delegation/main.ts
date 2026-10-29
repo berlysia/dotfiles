@@ -4,7 +4,14 @@
  * file formats live in schema.ts / store.ts.
  */
 import { readSync } from "node:fs";
-import { captureAgent, captureBash, type Captured } from "./capture.ts";
+import {
+  agentsDirFrom,
+  captureAgent,
+  captureAgentFromDefinition,
+  captureBash,
+  readAgentModel,
+  type Captured,
+} from "./capture.ts";
 import {
   DEFAULT_SINCE_DAYS,
   PENDING_LIMIT,
@@ -178,11 +185,21 @@ function cmdOpen(now: Date): number {
     const subagentType = optionalString(input.subagent_type);
     const model = optionalString(input.model);
     const effort = optionalString(input.effort);
-    captured = captureAgent({
-      ...(subagentType !== undefined ? { subagentType } : {}),
-      ...(model !== undefined ? { model } : {}),
-      ...(effort !== undefined ? { effort } : {}),
-    });
+    if (model === undefined && subagentType !== "codex:codex-rescue") {
+      // No model on the call: the agent definition decides. Anything short of a
+      // readable, accepted model exits 1 before the store opens, and silently,
+      // since this is the expected answer for built-in agents.
+      const dir = agentsDirFrom(process.env);
+      const fromDef = dir === null ? null : readAgentModel(dir, subagentType);
+      if (fromDef === null || subagentType === undefined) return 1;
+      captured = captureAgentFromDefinition(subagentType, fromDef, effort);
+    } else {
+      captured = captureAgent({
+        ...(subagentType !== undefined ? { subagentType } : {}),
+        ...(model !== undefined ? { model } : {}),
+        ...(effort !== undefined ? { effort } : {}),
+      });
+    }
   } else if (input.tool === "Bash" && typeof input.command === "string") {
     captured = captureBash(input.command);
   } else {

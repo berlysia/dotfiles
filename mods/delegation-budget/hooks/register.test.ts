@@ -178,6 +178,18 @@ describe("delegation-budget: foreground", () => {
     expect(s.nexts).toHaveLength(1);
   });
 
+  test("model-less logic-validator -> open is called and the line shows the model", async ($, on) => {
+    const s = setup(on, {
+      open: { stdout: "d-0123456789ab claude-code-agent sonnet unknown\n" },
+    });
+    const out = await $.tool.call({
+      tool: "Agent",
+      subagent_type: "logic-validator",
+    } as never);
+    expect(sub(s, "open")).toHaveLength(1);
+    expect(out.context?.at(-1)).toContain("claude-code-agent/sonnet/");
+  });
+
   test("Workflow -> nothing happens, no budget reminder", async ($, on) => {
     const s = setup(on);
     const out = await $.tool.call({ tool: "Workflow", script: "s" } as never);

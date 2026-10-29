@@ -3,12 +3,47 @@ import {
   bashReason,
   classifyAgentResult,
   durationArg,
+  isTrackedAgent,
   isBashCandidate,
   pushBounded,
   truncateUtf8,
 } from "./track";
 
+// Keep the subagent_type table identical to BAD_NAMES in
+// tests/delegation-capture.test.mjs: the regex is copied, not shared.
+const BAD_SUBAGENT_TYPES = [
+  "../x",
+  "a/b",
+  "a.b",
+  "Logic",
+  "Explore",
+  "plugin:x",
+  "a_b",
+  "a".repeat(41),
+  "",
+  "a\0b",
+  "a\nb",
+  "x\n",
+];
+
 describe("track", () => {
+  test("isTrackedAgent: model-less agents are candidates, other models are not", () => {
+    expect(isTrackedAgent({ subagent_type: "logic-validator" })).toBe(true);
+    expect(isTrackedAgent({ model: "sonnet", subagent_type: "Explore" })).toBe(
+      true,
+    );
+    expect(isTrackedAgent({ subagent_type: "codex:codex-rescue" })).toBe(true);
+    for (const model of ["haiku", "", 3]) {
+      expect(isTrackedAgent({ model, subagent_type: "logic-validator" })).toBe(
+        false,
+      );
+    }
+    for (const t of BAD_SUBAGENT_TYPES) {
+      expect(isTrackedAgent({ subagent_type: t })).toBe(false);
+    }
+    expect(isTrackedAgent({})).toBe(false);
+  });
+
   test("isBashCandidate looks at the head of each section", () => {
     expect(isBashCandidate("cd x && opencode run -m y")).toBe(true);
     expect(isBashCandidate("echo hi | codex exec")).toBe(true);

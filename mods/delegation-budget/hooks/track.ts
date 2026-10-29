@@ -17,6 +17,7 @@ const HARNESSES = new Set([
 ]);
 const EFFORTS = new Set(["low", "medium", "high", "xhigh", "max", "unknown"]);
 const REASONS = new Set(["answer", "aborted", "refusal", "error"]);
+const AGENT_DEF_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const ID_RE = /^d-[0-9a-f]{12}$/;
 const MASKED_MODEL_RE = /^m-[0-9a-f]{6}$/;
 const MODEL_RE = /^[A-Za-z0-9._:/-]{1,64}$/;
@@ -59,7 +60,17 @@ export function isTrackedAgent(input: {
   model?: unknown;
   subagent_type?: unknown;
 }): boolean {
-  return input.model === "sonnet" || input.subagent_type === CODEX_AGENT;
+  if (input.model === "sonnet" || input.subagent_type === CODEX_AGENT) {
+    return true;
+  }
+  // No model: the CLI reads the agent definition and decides. Any other model
+  // (haiku reviewers behind Codex included) stays out so they are not counted
+  // twice with the Bash they run. Not shared with the CLI: separate deploys.
+  return (
+    input.model === undefined &&
+    typeof input.subagent_type === "string" &&
+    AGENT_DEF_RE.test(input.subagent_type)
+  );
 }
 
 /**
