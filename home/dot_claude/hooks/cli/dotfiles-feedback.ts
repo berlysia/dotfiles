@@ -18,6 +18,7 @@ import {
   FEEDBACK_REPO,
   FLUSH_LOCK_FILE,
   FLUSH_LOCK_STALE_MS,
+  VM_ID_PATTERN,
   VM_OUTBOX_DIR,
 } from "../lib/dotfiles-feedback/constants.ts";
 import type {
@@ -57,7 +58,7 @@ import {
   spawnDetached,
 } from "../lib/dotfiles-feedback/spawn.ts";
 import { openSpool } from "../lib/dotfiles-feedback/spool.ts";
-import { ingestVm } from "../lib/dotfiles-feedback/ingest-vm.ts";
+import { ingestVm, retryVmFailed } from "../lib/dotfiles-feedback/ingest-vm.ts";
 import {
   countVmOutbox,
   sendFromVm,
@@ -224,8 +225,18 @@ const flushCommand: Command = async (args, deps) => {
       return 1;
     }
     const spool = await openSpool(deps.root, deps);
-    await spool.retryFailed(values.retry);
-    await openRetry(deps.root, deps).reset(values.retry);
+    if (
+      VM_ID_PATTERN.test(values.retry) &&
+      (await spool.findVmFailed(values.retry)) !== null
+    ) {
+      const outcome = await retryVmFailed(deps, values.retry);
+      if (outcome.stdout !== "") deps.stdout(outcome.stdout);
+      if (outcome.stderr !== "") deps.stderr(outcome.stderr);
+      if (outcome.code !== 0) return outcome.code;
+    } else {
+      await spool.retryFailed(values.retry);
+      await openRetry(deps.root, deps).reset(values.retry);
+    }
   }
   const result = await flush(deps);
   deps.stdout(
@@ -250,7 +261,9 @@ const status: Command = async (_args, deps) => {
   );
   const lines = [
     `未送: ${counts.unsent} 件${sending ? "（送り出し中）" : ""}`,
-    `失敗: ${counts.failed} 件`,
+    counts.failedVmUnsupported > 0
+      ? `失敗: ${counts.failed} 件（うち CLI を更新すれば取り込める ${counts.failedVmUnsupported} 件: dotfiles-feedback list で id を見て flush --retry <id>、不要なら drop <id>）`
+      : `失敗: ${counts.failed} 件`,
     `新しい版で止まっている: ${counts.held} 件`,
   ];
   const last = lastFlushLine(deps, counts.unsent > 0);

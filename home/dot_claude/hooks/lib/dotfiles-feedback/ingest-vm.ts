@@ -8,6 +8,7 @@ import {
   rewriteVmItem,
   vmItemId,
 } from "./vm-item.ts";
+import { openRetry } from "./retry.ts";
 import { openSpool, PendingFullError, type VmFailedReason } from "./spool.ts";
 import {
   INGEST_LOCK_FILE,
@@ -473,4 +474,61 @@ async function copyToFailed(
   );
   if (written === "written") counts.failed++;
   else counts.discarded++;
+}
+
+export type RetryOutput = { code: 0 | 1; stdout: string; stderr: string };
+export type RetryVmDeps = IngestDeps;
+
+// failed/vm-<machine>/ の件に K8 の検査と書き直しをやり直し、通れば pending/ に戻す。
+// 順は「pending/ に書く → failed/ のファイルを消す」。途中で落ちても二重にならない（spec K4）。
+export async function retryVmFailed(
+  deps: RetryVmDeps,
+  id: string,
+  rewrite: typeof rewriteVmItem = rewriteVmItem,
+): Promise<RetryOutput> {
+  const refuse = (message: string): RetryOutput => ({
+    code: 1,
+    stdout: "",
+    stderr: `${message}\n`,
+  });
+  const spool = await openSpool(deps.root, deps);
+  const found = await spool.findVmFailed(id);
+  if (!found) return refuse("見つからない");
+  if (!isMachineName(found.machine))
+    return refuse("machine 名の形式が正しくない");
+  let item: unknown;
+  try {
+    item = (JSON.parse(found.text) as { item?: unknown } | null)?.item;
+  } catch {
+    item = undefined;
+  }
+  if (typeof item !== "string") return refuse("failed の包みを読めない");
+  const bytes = new TextEncoder().encode(item);
+  if (vmItemId(found.machine, bytes) !== id)
+    return refuse("中身から計算した id がファイル名と一致しない。取り込まない");
+  const rewritten = rewrite(bytes, found.machine, deps.now());
+  if (rewritten.kind === "unsupported-version") return refuse("CLI を更新する");
+  if (rewritten.kind === "invalid")
+    return refuse(`検査に落ちた。不要なら drop ${id}`);
+  // 取り込み直している自分のファイルは数えない。重複の判定は満杯の判定より先。
+  if (await spool.hasId(id, { except: found.path })) {
+    await deps.fs.unlink(found.path).catch((error: unknown) => {
+      if (!hasCode(error, "ENOENT")) throw error;
+    });
+    return { code: 0, stdout: "すでに取り込み済み\n", stderr: "" };
+  }
+  try {
+    await spool.writePending(rewritten.item, { origin: "vm" });
+  } catch (error) {
+    if (error instanceof PendingFullError)
+      return refuse(
+        "pending-full: VM の分の枠が満ちている。failed に置いたまま",
+      );
+    throw error;
+  }
+  await deps.fs.unlink(found.path).catch((error: unknown) => {
+    if (!hasCode(error, "ENOENT")) throw error;
+  });
+  await openRetry(deps.root, deps).reset(id);
+  return { code: 0, stdout: `取り込み直した: ${id}\n`, stderr: "" };
 }

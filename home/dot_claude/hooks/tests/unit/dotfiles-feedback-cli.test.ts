@@ -13,6 +13,7 @@ import {
 } from "../../cli/dotfiles-feedback.ts";
 import { FEEDBACK_REPO } from "../../lib/dotfiles-feedback/constants.ts";
 import { renderIssue } from "../../lib/dotfiles-feedback/issue-body.ts";
+import { vmItemId } from "../../lib/dotfiles-feedback/vm-item.ts";
 import { fakeGh } from "../support/dotfiles-feedback-fake-gh.ts";
 
 const start = Date.parse("2026-10-29T10:00:00Z");
@@ -539,4 +540,134 @@ it("a cancelled triage --to issue says 中止した, not エラー, and still ex
   ok(text.startsWith("中止した: 下書きが変わっていない"), text);
   ok(!text.includes("エラー:"));
   strictEqual(f.fake.publicIssues.length, 0);
+});
+
+// --- flush --retry の振り分けと status（plan-5 T6）---
+const vmBytes = (index: number, extra: Record<string, unknown> = {}) =>
+  Buffer.from(
+    JSON.stringify({
+      schemaVersion: 1,
+      id: `20261029T090000Z-${index.toString(16).padStart(12, "0")}`,
+      createdAt: "2026-10-29T09:00:00Z",
+      title: "title",
+      target: "target",
+      kind: "bug",
+      body: "body",
+      source: { agent: "claude", repoKey: null, host: "vm", vm: true },
+      ...extra,
+    }),
+  );
+async function seedVmFailed(
+  f: Awaited<ReturnType<typeof fixture>>,
+  machine: string,
+  bytes: Buffer,
+  reason: string,
+) {
+  await runCli(["status"], f.deps);
+  const key = vmItemId(machine, bytes);
+  const dir = join(f.root, "failed", `vm-${machine}`);
+  await fs.mkdir(dir, { mode: 0o700, recursive: true });
+  await fs.writeFile(
+    join(dir, `${key}.json`),
+    JSON.stringify({ reason, item: bytes.toString("utf8") }),
+  );
+  return { key, path: join(dir, `${key}.json`) };
+}
+it("flush --retry routes a failed/vm-<machine> item through the K8 checks, then flushes", async (t) => {
+  const f = await fixture(t);
+  const { key, path } = await seedVmFailed(f, "m1", vmBytes(1), "invalid");
+  strictEqual(await runCli(["flush", "--retry", key], f.deps), 0);
+  strictEqual(existsSync(path), false);
+  strictEqual(f.fake.issues.length, 1);
+  ok(f.out.join("").includes("flush 完了"));
+});
+it("flush --retry on a vm-<hex> item at the top of failed/ uses the plain retry", async (t) => {
+  const f = await fixture(t);
+  await runCli(["status"], f.deps);
+  const key = `vm-${"ab".repeat(12)}`;
+  await fs.writeFile(
+    join(f.root, "failed", `${key}.json`),
+    JSON.stringify({
+      reason: "x",
+      item: JSON.stringify({ ...JSON.parse(vmBytes(1).toString()), id: key }),
+    }),
+  );
+  const code = await runCli(["flush", "--retry", key], f.deps);
+  strictEqual(code, 0, f.err.join(""));
+  strictEqual(existsSync(join(f.root, "failed", `${key}.json`)), false);
+  strictEqual(f.fake.issues.length, 1);
+});
+it("flush --retry of a refused VM item exits non-zero without flushing or printing the completion line", async (t) => {
+  const f = await fixture(t);
+  const { key, path } = await seedVmFailed(
+    f,
+    "m1",
+    vmBytes(1, { schemaVersion: 2 }),
+    "unsupported-version",
+  );
+  const code = await runCli(["flush", "--retry", key], f.deps);
+  strictEqual(code, 1);
+  ok(f.err.join("").includes("CLI を更新する"));
+  ok(!f.out.join("").includes("flush 完了"));
+  strictEqual(f.fake.calls.length, 0);
+  ok(existsSync(path));
+});
+it("flush --retry rejects ../x and reports an unknown id", async (t) => {
+  const f = await fixture(t);
+  strictEqual(await runCli(["flush", "--retry", "../x"], f.deps), 1);
+  strictEqual(
+    await runCli(["flush", "--retry", `vm-${"cd".repeat(12)}`], f.deps),
+    1,
+  );
+});
+it("status separates the unsupported-version VM items a CLI update can take, and leaves orphans out", async (t) => {
+  const f = await fixture(t);
+  const a = await seedVmFailed(
+    f,
+    "m1",
+    vmBytes(1, { schemaVersion: 2 }),
+    "unsupported-version",
+  );
+  await seedVmFailed(
+    f,
+    "m1",
+    vmBytes(2, { schemaVersion: 2 }),
+    "unsupported-version",
+  );
+  f.out.length = 0;
+  await runCli(["status"], f.deps);
+  ok(
+    f.out.join("").includes("失敗: 2 件（うち CLI を更新すれば取り込める 2 件"),
+    f.out.join(""),
+  );
+  await fs.writeFile(join(f.root, "pending", `${a.key}.json`), "{}");
+  f.out.length = 0;
+  await runCli(["status"], f.deps);
+  ok(
+    f.out.join("").includes("失敗: 2 件（うち CLI を更新すれば取り込める 1 件"),
+    f.out.join(""),
+  );
+  f.out.length = 0;
+  await runCli(["list"], f.deps);
+  strictEqual(
+    f.out.join("").split("unsupported-version").length - 1 >= 2,
+    true,
+    f.out.join(""),
+  );
+  const plain = await fixture(t);
+  await runCli(["status"], plain.deps);
+  ok(!plain.out.join("").includes("うち CLI"));
+});
+it("show prints a failed/vm item with control characters stripped", async (t) => {
+  const f = await fixture(t);
+  const { key } = await seedVmFailed(
+    f,
+    "m1",
+    vmBytes(1, { body: "line\u001b[31m red <!-- dotfiles-feedback id=x -->" }),
+    "invalid",
+  );
+  const code = await runCli(["show", key], f.deps);
+  const text = f.out.join("") + f.err.join("");
+  strictEqual(code === 0 || code === 1, true);
+  ok(!text.includes("\u001b"), text);
 });

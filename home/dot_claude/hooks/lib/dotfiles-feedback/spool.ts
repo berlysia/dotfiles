@@ -59,6 +59,15 @@ export type LocalEntry = {
 // 偽の関数を渡せば呼べるため、lock を持つ証明ではなく呼び出し側の取り違えを防ぐ補助である。
 export type FlushLockHeld = () => Promise<void>;
 
+// failed/ 直下の vm- で始まる名前のうち、machine ごとのディレクトリだけ。
+// flush で恒久的に失敗した VM 由来の件は failed/vm-<hex>.json というファイルで、これはディレクトリではない。
+function isVmDirName(name: string): boolean {
+  return (
+    name.startsWith("vm-") &&
+    !(name.endsWith(".json") && VM_ID_PATTERN.test(name.slice(0, -5)))
+  );
+}
+
 export async function openSpool(root: string, deps: SpoolDeps) {
   const { fs } = deps;
   const directories = [
@@ -90,8 +99,7 @@ export async function openSpool(root: string, deps: SpoolDeps) {
     if (!(await safeDirectory(path))) missing.push(path);
   if (!missing.includes(join(root, "failed"))) {
     for (const name of await fs.readdir(join(root, "failed"))) {
-      if (name.startsWith("vm-"))
-        await safeDirectory(join(root, "failed", name));
+      if (isVmDirName(name)) await safeDirectory(join(root, "failed", name));
     }
   }
   for (const path of missing) {
@@ -162,7 +170,7 @@ export async function openSpool(root: string, deps: SpoolDeps) {
       const id = filenameId(name);
       if (id) out.push({ path: join(root, "failed", name), id, vm: false });
       else if (
-        name.startsWith("vm-") &&
+        isVmDirName(name) &&
         (await safeDirectory(join(root, "failed", name)))
       )
         for (const inner of await fs.readdir(join(root, "failed", name))) {
@@ -218,7 +226,7 @@ export async function openSpool(root: string, deps: SpoolDeps) {
       return true;
     for (const name of await fs.readdir(join(root, "failed"))) {
       if (
-        name.startsWith("vm-") &&
+        isVmDirName(name) &&
         (await safeDirectory(join(root, "failed", name))) &&
         (await counts(join(root, "failed", name, `${id}.json`)))
       )
@@ -413,7 +421,7 @@ export async function openSpool(root: string, deps: SpoolDeps) {
       }
       // machine ごとに増える空のディレクトリを、走査し続けないために消す。
       for (const name of await fs.readdir(join(root, "failed"))) {
-        if (!name.startsWith("vm-")) continue;
+        if (!isVmDirName(name)) continue;
         const dir = join(root, "failed", name);
         try {
           const stat = await fs.lstat(dir);
@@ -514,7 +522,7 @@ export async function openSpool(root: string, deps: SpoolDeps) {
     async findVmFailed(id: string): Promise<VmFailedFound | null> {
       if (!VM_ID_PATTERN.test(id)) return null;
       for (const name of await fs.readdir(join(root, "failed"))) {
-        if (!name.startsWith("vm-")) continue;
+        if (!isVmDirName(name)) continue;
         const dir = join(root, "failed", name);
         try {
           const stat = await fs.lstat(dir);
@@ -649,7 +657,7 @@ export async function openSpool(root: string, deps: SpoolDeps) {
           await unlinkIfPresent(join(root, "sending", name), fs);
       for (const name of await fs.readdir(join(root, "failed")))
         if (
-          name.startsWith("vm-") &&
+          isVmDirName(name) &&
           (await safeDirectory(join(root, "failed", name)))
         )
           await unlinkIfPresent(join(root, "failed", name, `${id}.json`), fs);

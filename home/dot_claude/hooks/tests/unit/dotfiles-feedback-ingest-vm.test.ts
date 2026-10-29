@@ -12,9 +12,13 @@ import {
 import type { FeedbackFs } from "../../lib/dotfiles-feedback/deps.ts";
 import {
   ingestVm,
+  retryVmFailed,
   type IngestDeps,
 } from "../../lib/dotfiles-feedback/ingest-vm.ts";
-import { vmItemId } from "../../lib/dotfiles-feedback/vm-item.ts";
+import {
+  rewriteVmItem,
+  vmItemId,
+} from "../../lib/dotfiles-feedback/vm-item.ts";
 
 const MACHINE = "agent-test-000000";
 const id = (index = 0) =>
@@ -801,4 +805,130 @@ it("only prints reason words that the shared constants list", async (t) => {
   const bad = await ingestVm({ stateDir: f.state, machine: "../x" }, f.deps);
   const word = /^dotfiles-feedback: (.+)\n$/.exec(bad.stderr)![1]!;
   ok((INGEST_STDERR_REASONS as readonly string[]).includes(word));
+});
+
+// --- flush --retry の振り分け（plan-5 T6）---
+async function failedItem(f: Ctx, bytes: Buffer, reason: string) {
+  const key = vmItemId(MACHINE, bytes);
+  const dir = join(f.root, "failed", `vm-${MACHINE}`);
+  await nodeFs.mkdir(dir, { recursive: true, mode: 0o700 });
+  await nodeFs.mkdir(join(f.root, "pending"), { recursive: true, mode: 0o700 });
+  const path = join(dir, `${key}.json`);
+  await nodeFs.writeFile(
+    path,
+    JSON.stringify({ reason, item: bytes.toString("utf8"), at: "x" }),
+  );
+  return { key, path };
+}
+const okAsNewCli = (bytes: Uint8Array, machine: string, now: Date) => {
+  // 新しい CLI を模す: 同じバイト列を、版が読める件として検査し直した結果にする。
+  const text = JSON.parse(Buffer.from(bytes).toString("utf8"));
+  const result = rewriteVmItem(
+    Buffer.from(JSON.stringify({ ...text, schemaVersion: 1 })),
+    machine,
+    now,
+  );
+  return result.kind === "ok"
+    ? {
+        kind: "ok" as const,
+        item: { ...result.item, id: vmItemId(machine, bytes) },
+      }
+    : result;
+};
+
+it("retry: a newer-version item stays in failed with 'update the CLI' until a newer CLI accepts it", async (t) => {
+  const f = await fixture(t);
+  const { key, path } = await failedItem(
+    f,
+    validBytes(1, { schemaVersion: 2 }),
+    "unsupported-version",
+  );
+  const refused = await retryVmFailed(f.deps, key);
+  strictEqual(refused.code, 1);
+  ok(refused.stderr.includes("CLI を更新する"));
+  ok(await exists(path));
+  const accepted = await retryVmFailed(f.deps, key, okAsNewCli);
+  strictEqual(accepted.code, 0);
+  deepStrictEqual(await f.pending(), [`${key}.json`]);
+  strictEqual(await exists(path), false);
+});
+it("retry: an item that still fails the checks stays and tells the user to drop it", async (t) => {
+  const f = await fixture(t);
+  const { key, path } = await failedItem(
+    f,
+    validBytes(1, { kind: "nope" }),
+    "invalid",
+  );
+  const out = await retryVmFailed(f.deps, key);
+  strictEqual(out.code, 1);
+  ok(out.stderr.includes(`drop ${key}`));
+  ok(await exists(path));
+});
+it("retry: a wrapper whose bytes hash to another id is refused", async (t) => {
+  const f = await fixture(t);
+  const { key, path } = await failedItem(f, validBytes(1), "invalid");
+  await nodeFs.writeFile(
+    path,
+    JSON.stringify({ reason: "invalid", item: validBytes(2).toString("utf8") }),
+  );
+  const out = await retryVmFailed(f.deps, key);
+  strictEqual(out.code, 1);
+  deepStrictEqual(await f.pending(), []);
+  ok(await exists(path));
+});
+it("retry: the id found elsewhere (pending or sent.jsonl) removes the failed file and exits 0", async (t) => {
+  for (const place of ["pending", "sent"] as const) {
+    const f = await fixture(t);
+    const bytes = validBytes(1);
+    const { key, path } = await failedItem(f, bytes, "invalid");
+    if (place === "pending")
+      await nodeFs.writeFile(join(f.root, "pending", `${key}.json`), "{}");
+    else
+      await nodeFs.writeFile(
+        join(f.root, "sent.jsonl"),
+        `${JSON.stringify({ v: 1, id: key, issue: 3, at: "2026-10-29T10:00:00Z" })}\n`,
+      );
+    const out = await retryVmFailed(f.deps, key);
+    strictEqual(out.code, 0, place);
+    ok(out.stdout.includes("すでに取り込み済み"));
+    strictEqual(await exists(path), false);
+  }
+});
+it("retry: a full VM pending queue leaves the failed file with pending-full", async (t) => {
+  const f = await fixture(t);
+  const { key, path } = await failedItem(f, validBytes(1), "invalid");
+  for (let i = 0; i < 50; i++)
+    await nodeFs.writeFile(
+      join(
+        f.root,
+        "pending",
+        `vm-${(i + 1000).toString(16).padStart(24, "0")}.json`,
+      ),
+      "{}",
+    );
+  const out = await retryVmFailed(f.deps, key);
+  strictEqual(out.code, 1);
+  ok(out.stderr.includes("pending-full"));
+  ok(await exists(path));
+});
+it("retry: a valid item of at most 16KB is rewritten and queued", async (t) => {
+  const f = await fixture(t);
+  const bytes = validBytes(1);
+  const { key, path } = await failedItem(f, bytes, "invalid");
+  const out = await retryVmFailed(f.deps, key);
+  strictEqual(out.code, 0, out.stderr);
+  deepStrictEqual(await f.pending(), [`${key}.json`]);
+  strictEqual(await exists(path), false);
+});
+it("retry: an oversized copy (16KB + 1) is never admitted", async (t) => {
+  const f = await fixture(t);
+  const exact = validBytes(1);
+  const padded = Buffer.concat([
+    exact,
+    Buffer.alloc(MAX_VM_FILE_BYTES + 1 - exact.length, 0x20),
+  ]);
+  const { key } = await failedItem(f, padded, "invalid");
+  const out = await retryVmFailed(f.deps, key);
+  strictEqual(out.code, 1);
+  deepStrictEqual(await f.pending(), []);
 });

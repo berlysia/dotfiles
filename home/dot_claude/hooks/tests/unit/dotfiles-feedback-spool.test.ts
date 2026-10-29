@@ -758,3 +758,13 @@ it("refresh keeps failedLocal as the whole failed count for unsupported-version 
       "v",
     ]);
   }));
+
+it("a vm-<hex>.json file at the top of failed/ (a VM item that failed in flush) is an item, not a machine directory", () =>
+  withVmSpool(async ({ root, deps, spool }) => {
+    await fs.writeFile(join(root, "failed", `${vmId(7)}.json`), wrap("x"));
+    const reopened = await openSpool(root, deps);
+    strictEqual((await reopened.countLocal()).failed, 1);
+    strictEqual(await spool.hasId(vmId(7)), true);
+    await spool.drop(vmId(7));
+    strictEqual((await reopened.countLocal()).failed, 0);
+  }));
