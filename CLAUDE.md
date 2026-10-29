@@ -15,6 +15,9 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
 
 #### 一般的なルール
 
+- apply 前に設定上の source と再帰的な diff を確認する。worktree の cwd では適用元は変わらず、他の作業途中の変更も配置先に反映される。
+- status と apply は同じ umask で実行し、配布後のモードも照合する。権限だけの差でも、非対話の apply 全体が止まる。
+
 - **ファイル名変換**: `dot_*` → `.*` (例: `${projectRoot}/home/dot_claude/foo.txt` → `~/.claude/foo.txt`)
 - **パーミッション**: `private_*` → パーミッション600で配置
 - **テンプレート**: `.tmpl` 拡張子で動的生成
@@ -65,6 +68,8 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
 - **workflow-band の見た目**: `workflow-band-preview` がセッションなしで帯を描く（引数なしは状態の一覧、`--live` は今の workflow dir）。配備前は `bun mods/workflow-band/preview.ts`
 
 ### Hooks Development
+
+- 配置の成功と読み込みは分けて検証する。既存 hook の本体は次の呼び出しで動くが、新規登録や agent 定義は新規セッションで確かめる。
 
 フック（`~/.claude/hooks/`）は bun で絶対パス実行（`bun ~/.claude/hooks/implementations/*.ts`）。
 

@@ -4,6 +4,8 @@
 
 Use project formatter (oxfmt/biome/prettier as configured). Enforced by PostToolUse hook.
 
+Check staged content from the index; restaging a whole file includes unstaged edits.
+
 ## Naming
 
 - Variables: descriptive nouns (`userData` not `data`)
@@ -43,6 +45,7 @@ In GitHub Issues, PR descriptions, and documentation, clearly distinguish observ
 - Use typed errors (Error subclasses or discriminated unions)
 - Log errors with context before propagating
 - Avoid silent failures or generic catch-all handlers
+- Keep missing input, failed analysis, and rejection distinct; an indeterminate safety check must not grant permission.
 
 ## Performance
 
@@ -68,6 +71,8 @@ Do not implement backward compatibility, fallbacks, or migration shims unless ex
 
 - **Prohibited**: Hardcoded secrets, unvalidated inputs, suppressed errors
 - **Required**: Input validation, env vars for secrets, structured logging, all tests/lints passing
+- Validate each input boundary so data cannot become instructions or forge output.
+- Keep unfixed weaknesses and device-to-key mappings out of public records.
 
 ## Architecture
 
@@ -87,6 +92,8 @@ Do not implement backward compatibility, fallbacks, or migration shims unless ex
 - Grep existing tests for similar patterns before writing new ones
 - Code started through an entrypoint (hooks, CLIs) has at least one test that launches it as a process, so the entrypoint wiring is exercised; unit tests of the exported functions pass even when the entrypoint never runs
 - Tests must pass before commits
+- Break the guarded condition and confirm the intended assertion fails; passing alone proves little.
+- Isolate HOME, XDG paths, and inherited environment in test children so tests cannot touch live state.
 
 ### Time Budget
 

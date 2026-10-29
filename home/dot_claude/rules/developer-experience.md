@@ -30,6 +30,8 @@ When changing approach mid-task (not inside a throwaway script run in the scratc
 
 ## Evidence-Based Decisions
 
+Separate observations from hypotheses, including reviewer claims. Check the real call path and untruncated output before fixing demonstrated harm; an empty search may reflect a bad pattern.
+
 Always gather evidence (read files, run tests, check actual state) before making decisions. Use **logic-validator** proactively to catch assumption-based reasoning. For a throwaway script run in the scratchpad and discarded, running it and reading the output is the evidence; do not add logic-validator, unless it deletes, pushes, bills, or writes outside the scratchpad (see the Task Intake Routing in `rules/workflow.md`).
 
 Do not write steps that assume someone will run them tomorrow or later. The session has no way to resume itself on a later day, so such a step silently becomes the user's chore. When a check depends on time passing, either schedule it to run automatically or replace it with a check that can run now (e.g. use a past date that exercises the same path).
@@ -58,6 +60,9 @@ When proposing to record something (an ADR, a doc, a plan moved to `docs/`), lis
 
 ## Git Worktree Convention
 
+- Use separate worktrees for concurrent sessions, since switching branches moves shared HEAD. Confirm cwd, git-dir and common-dir; give delegates an explicit cwd.
+- Prepare dependencies before completion checks, keeping the lockfile fixed. In a VM, confirm dependency isolation succeeded before installing, to avoid changing host dependencies.
+
 - **Path**: Always place worktrees at `<repo-root>/.git/worktree/<branch-name>` (singular `worktree`, inside `.git/` so no gitignore entry is needed)
 - **Tools**: Use `git-worktree-create` / `git-worktree-cleanup` (`~/.local/bin/`). Do **not** invoke `git worktree add` directly
 - **Claude Code's own worktrees** (`claude --worktree`, subagent `isolation: "worktree"`, `claude remote-control --spawn worktree`): the `WorktreeCreate` hook creates them at `<repo>/.git/worktree/worktree-<name>` on branch `worktree-<name>`, and the `WorktreeRemove` / `SubagentStop` hooks remove them when they hold no new work. They are not created under `.claude/worktrees/`. A worktree with commits or uncommitted changes is kept, and so is its branch; remove it with `git-worktree-cleanup` or `git worktree remove` + `git branch -D` once its work is merged
@@ -78,6 +83,9 @@ This section overrides Claude Code's built-in "Commit or push only when the user
 - **Never, at any scope, without an explicit request**: force push; pushing to the default branch (branch first); merging with `--admin` or around branch protection; merging while a check is failing or pending, or in a repo with no checks or checks that cannot be read (stop and report); merging a PR not opened in this session; pushing to a repo or fork you do not own (stop at `pr` at most)
 
 ## Git Commit & PR Standards
+
+- Keep moves separate from behavior changes so each commit passes checks and its description stands alone. Stage the next group only after the preceding commit succeeds; do not bypass signing without permission.
+- Stage intended files individually to exclude generated caches, and check document formatting even when hooks omit it.
 
 - Conventional Commit format: `<type>(<scope>): <description>`
 - Types: feat, fix, refactor, test, docs, chore, perf, style, build, ci
