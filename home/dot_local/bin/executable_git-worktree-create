@@ -15,7 +15,7 @@ show_help() {
 git-worktree-create - Create a new git worktree in .git/worktree directory
 
 Usage:
-  git-worktree-create [--no-install] <branch-name>
+  git-worktree-create [--no-install] <branch-name> [<base>]
   git-worktree-create --help
 
 Description:
@@ -24,8 +24,12 @@ Description:
 
   - If branch exists locally: Creates worktree from local branch
   - If branch exists on remote: Creates local tracking branch and worktree
-  - If branch doesn't exist: Creates new branch from current HEAD
+  - If branch doesn't exist: Creates new branch from <base>, or from the
+    current HEAD when no <base> is given
 
+  For a new branch the start point is shown with its short SHA. When it is a
+  local branch that has an upstream and is behind it (as of the last fetch;
+  nothing is fetched), a warning on stderr says so and shows how to catch up.
   After creating the worktree, installs its dependencies when the package
   manager is unambiguous and the install cannot rewrite the lockfile:
   packageManager in package.json first, then the lockfile (pnpm and bun:
@@ -37,6 +41,10 @@ Description:
 
 Arguments:
   <branch-name>  Name of the branch for the worktree
+  <base>         Commit-ish to start a new branch from (default: current HEAD).
+                 Used only for a new branch; it is an error when the branch
+                 already exists locally or on origin. The new branch has no
+                 upstream.
 
 Options:
   --no-install   Do not install dependencies; show the command instead
@@ -52,20 +60,35 @@ Examples:
   # Create worktree from remote branch
   git-worktree-create origin-feature
 
+  # Create a new branch from origin/main (run git fetch first)
+  git-worktree-create new-feature origin/main
+
 Location:
   Worktrees are created in: <repo-root>/.git/worktree/<branch-name>
   <repo-root> is the main checkout, even when run from inside a linked worktree.
 EOF
 }
 
+# strip_cntrl <text>: the text without control characters. Branch names, bases and refs come from the caller and are
+# echoed in messages; an ESC or CR in them must not reach the terminal. Bytes are removed one by one, so a multibyte
+# name stays whole (a UTF-8 locale's 8-bit CSI 0x9b and bidi controls therefore pass; accepted).
+strip_cntrl() {
+    printf '%s' "$1" | tr -d '[:cntrl:]'
+}
+
 # say_warn <message>: a warning on stderr, printed without interpreting backslashes in the message
 say_warn() {
-    printf '%b⚠️  %s%b\n' "$YELLOW" "$1" "$NC" >&2
+    printf '%b⚠️  %s%b\n' "$YELLOW" "$(strip_cntrl "$1")" "$NC" >&2
 }
 
 # say_info <color> <message>: a line on stdout, printed without interpreting backslashes in the message
 say_info() {
-    printf '%b%s%b\n' "$1" "$2" "$NC"
+    printf '%b%s%b\n' "$1" "$(strip_cntrl "$2")" "$NC"
+}
+
+# say_error <message>: an error line on stdout, printed without interpreting backslashes in the message
+say_error() {
+    printf '%b%s%b\n' "$RED" "$(strip_cntrl "$1")" "$NC"
 }
 
 # resolve_install <dir>: which install the project at <dir> asks for.
@@ -172,9 +195,10 @@ install_dependencies() {
 }
 
 install_deps=true
-branch_name=""
+positional=()
 if [[ $# -eq 0 ]]; then
-    echo -e "${RED}Error: Branch name is required${NC}\n"
+    say_error "Error: Branch name is required"
+    echo
     show_help
     exit 1
 fi
@@ -183,6 +207,8 @@ if [[ "$1" == "help" ]]; then
     show_help
     exit 0
 fi
+# Only collects here: --help and unknown options are decided as they are met, so that the count of positional
+# arguments is checked after them
 while [[ $# -gt 0 ]]; do
     case "$1" in
     --help | -h)
@@ -191,42 +217,64 @@ while [[ $# -gt 0 ]]; do
         ;;
     --no-install) install_deps=false ;;
     -*)
-        # printf, not echo -e: the argument is printed as typed
-        printf '%b%s%b\n\n' "$RED" "Error: Unknown option: $1" "$NC"
+        say_error "Error: Unknown option: $1"
+        echo
         show_help
         exit 1
         ;;
-    *)
-        # Only the first name is used; later ones are ignored, as before
-        if [[ -z "$branch_name" ]]; then
-            branch_name="$1"
-        fi
-        ;;
+    *) positional+=("$1") ;;
     esac
     shift
 done
-if [[ -z "$branch_name" ]]; then
-    echo -e "${RED}Error: Branch name is required${NC}\n"
+if [[ ${#positional[@]} -eq 0 ]]; then
+    say_error "Error: Branch name is required"
+    echo
     show_help
     exit 1
 fi
+branch_name=${positional[0]}
+base=${positional[1]-}
 
 # Anchor on the common git dir so that running from inside a linked worktree
 # (whose .git is a file) still creates the worktree under the main
 # repository's .git/worktree/.
 # --path-format needs git 2.31; git-worktree-cleanup already requires 2.36.
 if ! common_dir=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
-    echo -e "${RED}✗ Not inside a git repository, or git is older than 2.31 (git rev-parse --path-format)${NC}"
+    say_error "✗ Not inside a git repository, or git is older than 2.31 (git rev-parse --path-format)"
     exit 1
 fi
 worktrees_dir="$common_dir/worktree"
 # The main checkout, which owns .git/worktree/ and the agent-vm machine.
 repo_root=$(dirname "$common_dir")
 
-# Create .git/worktree directory if it doesn't exist
-if [[ ! -d "$worktrees_dir" ]]; then
-    echo -e "${BLUE}📁 Creating .git/worktree directory...${NC}"
-    mkdir -p "$worktrees_dir"
+# Every check of the input comes before anything is created, .git/worktree included.
+if [[ ${#positional[@]} -gt 2 ]]; then
+    say_error "Error: Too many arguments: ${positional[2]}"
+    echo
+    show_help
+    exit 1
+fi
+# The name becomes a path under .git/worktree, so a name that is not a ref (a/../x) must not get that far.
+# `--branch` alone is not used: it expands @{-1} to the previous branch and accepts it. refs/heads/HEAD passes the
+# first check but is not usable as a branch, which only `--branch` rejects.
+if ! git check-ref-format "refs/heads/$branch_name" >/dev/null 2>&1 || ! git check-ref-format --branch "$branch_name" >/dev/null 2>&1; then
+    say_error "Error: Not a valid branch name: $branch_name"
+    exit 1
+fi
+if [[ -n "$base" ]]; then
+    # A base for a branch that already exists would be dropped silently (or would need a reset of existing work)
+    for existing_ref in "refs/heads/$branch_name" "refs/remotes/origin/$branch_name"; do
+        if git show-ref --verify --quiet "$existing_ref"; then
+            say_error "Error: Branch '$branch_name' already exists ($existing_ref); $base is used only for a new branch"
+            exit 1
+        fi
+    done
+    # The resolved SHA is what worktree add receives, so the value checked is the value used and the caller's string
+    # never becomes an argument of it
+    if ! base_sha=$(git rev-parse --verify --quiet --end-of-options "$base^{commit}" 2>/dev/null); then
+        say_error "Error: Not a commit: $base"
+        exit 1
+    fi
 fi
 
 # Set worktree path
@@ -234,9 +282,22 @@ worktree_path="$worktrees_dir/$branch_name"
 
 # Check if worktree already exists
 if [[ -d "$worktree_path" ]]; then
-    echo -e "${RED}✗ Worktree already exists: $worktree_path${NC}"
+    say_error "✗ Worktree already exists: $worktree_path"
     exit 1
 fi
+
+# Create .git/worktree directory if it doesn't exist
+if [[ ! -d "$worktrees_dir" ]]; then
+    echo -e "${BLUE}📁 Creating .git/worktree directory...${NC}"
+    mkdir -p "$worktrees_dir"
+fi
+
+# For a new branch: how far its start point is behind its upstream (empty when not compared)
+behind_count=""
+ahead_count=""
+start_branch=""
+upstream_name=""
+upstream_ref=""
 
 # Check if branch exists locally
 if git show-ref --verify --quiet "refs/heads/$branch_name"; then
@@ -249,14 +310,57 @@ elif git show-ref --verify --quiet "refs/remotes/origin/$branch_name"; then
     branch_source=remote
     git worktree add "$worktree_path" -b "$branch_name" "origin/$branch_name"
 else
-    # Branch doesn't exist, create new branch from current
-    current_branch=$(git branch --show-current)
-    echo -e "${BLUE}📝 Creating new branch '$branch_name' from '$current_branch'${NC}"
+    # Branch doesn't exist, create new branch from the base or the current HEAD
     branch_source=new
-    git worktree add "$worktree_path" -b "$branch_name"
+    # Only a local branch is compared with its upstream: a remote-tracking ref, a tag, a SHA and a detached HEAD have
+    # none, and nothing is fetched or guessed (origin/<name> is not assumed to be the upstream). Every git call that
+    # judges this has its stderr dropped and its failure absorbed: it is advice, and a broken upstream or a tag and
+    # a branch of one name (ambiguous) must neither stop the creation nor leak a git error.
+    start_ref=$(git rev-parse --symbolic-full-name "${base:-HEAD}" 2>/dev/null) || start_ref=""
+    if [[ "$start_ref" == refs/heads/* ]]; then
+        # @{upstream} rejects the refs/heads/ form (fatal: no such branch), so it gets the name that form carries
+        start_branch=${start_ref#refs/heads/}
+        upstream_ref=$(git rev-parse --symbolic-full-name "$start_branch@{upstream}" 2>/dev/null) || upstream_ref=""
+        if [[ -n "$upstream_ref" ]]; then
+            upstream_name=$(git rev-parse --abbrev-ref "$start_branch@{upstream}" 2>/dev/null) || upstream_name=""
+            behind_count=$(git rev-list --count "$start_ref..$upstream_ref" 2>/dev/null) || behind_count=""
+            ahead_count=$(git rev-list --count "$upstream_ref..$start_ref" 2>/dev/null) || ahead_count=""
+        fi
+    fi
+    if [[ -n "$base" ]]; then
+        start_name=$base
+    else
+        start_name=$(git branch --show-current)
+        start_name=${start_name:-detached HEAD}
+    fi
+    start_short=$(git rev-parse --short "${base_sha:-HEAD}" 2>/dev/null) || start_short="no commits"
+    start_note=""
+    if [[ "$behind_count" =~ ^[1-9][0-9]*$ ]]; then
+        if [[ "$ahead_count" =~ ^[1-9][0-9]*$ ]]; then
+            start_note=", diverged from $upstream_name"
+        else
+            start_note=", $behind_count behind $upstream_name"
+        fi
+    fi
+    say_info "$BLUE" "📝 Creating new branch '$branch_name' from '$start_name' ($start_short)$start_note"
+    if [[ -n "$base" ]]; then
+        git worktree add -b "$branch_name" "$worktree_path" "$base_sha"
+    else
+        git worktree add "$worktree_path" -b "$branch_name"
+    fi
 fi
 
 echo -e "${GREEN}✓ Worktree created: $worktree_path${NC}"
+# Before the path and the install, so that a caller that is cut off while the install runs has seen it
+if [[ "$behind_count" =~ ^[1-9][0-9]*$ ]]; then
+    if [[ "$ahead_count" =~ ^[1-9][0-9]*$ ]]; then
+        say_warn "'$start_branch' has diverged from $upstream_name (as of the last fetch)"
+    else
+        # --ff-only fixes the new worktree's branch only (the main checkout's branch is not moved), and changes
+        # nothing when the branch has diverged
+        say_warn "'$start_branch' is $behind_count commit(s) behind $upstream_name (as of the last fetch); to catch up: git -C $(printf '%q' "$worktree_path") merge --ff-only $(printf '%q' "$upstream_ref")"
+    fi
+fi
 # Before the install: a caller that is cut off while it runs still has the path
 say_info "$BLUE" "💡 To switch to this worktree: cd $(printf '%q' "$worktree_path")"
 # Whether an install in the new worktree lands in its own node_modules: "yes", "attach-failed" (warned below), or

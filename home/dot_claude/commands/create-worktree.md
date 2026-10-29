@@ -33,6 +33,7 @@ Creates a new branch with worktree, executes the given task, and optionally crea
 
 2. **Worktree Setup**
    - Use `git-worktree-create <branch-name>` command
+   - To start from the latest origin, run `git fetch` first and then `git-worktree-create <branch-name> origin/<default>`; that branch has no upstream, so push it the first time with `git push -u origin <branch-name>`
    - Create new worktree under `.git/worktree`
    - `git-worktree-create` also installs dependencies. Read its output with the table below. Check the lines from the top; the first row that matches decides what to do. Search `dependencies are not installed` case-insensitively.
 
