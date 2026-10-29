@@ -21,6 +21,7 @@ import {
   GUARDED_HOME_PATHS,
   isDeliveryPolicyQuestion,
   isProtectedPath,
+  judgeDeliveryPolicyBash,
   ledgerPath,
   mergeRequiredContexts,
   parseLedger,
@@ -651,6 +652,89 @@ describe("guarded home paths", () => {
       assert.ok(rules.includes(`Edit(${pattern})`), path);
     }
     assert.equal(rules.length, GUARDED_HOME_PATHS.length);
+  });
+});
+
+describe("judgeDeliveryPolicyBash", () => {
+  const home = "/home/someone";
+  const mergeReason = (): string => {
+    const reason = judgeDeliveryPolicyBash(
+      "~/.local/bin/delivery-policy merge 12",
+      home,
+      false,
+    );
+    assert.ok(reason);
+    return reason;
+  };
+  const shapeReason = (): string => {
+    const reason = judgeDeliveryPolicyBash(
+      "cat ~/.local/bin/delivery-policy",
+      home,
+      true,
+    );
+    assert.ok(reason);
+    return reason;
+  };
+
+  it("passes a background merge, on the tilde form and the absolute form", () => {
+    assert.equal(
+      judgeDeliveryPolicyBash(
+        "~/.local/bin/delivery-policy merge 12",
+        home,
+        true,
+      ),
+      null,
+    );
+    assert.equal(
+      judgeDeliveryPolicyBash(
+        `${home}/.local/bin/delivery-policy merge 12`,
+        home,
+        true,
+      ),
+      null,
+    );
+  });
+
+  it("keeps show and ask in the foreground: they finish at once", () => {
+    assert.equal(
+      judgeDeliveryPolicyBash("~/.local/bin/delivery-policy show", home, false),
+      null,
+    );
+    assert.equal(
+      judgeDeliveryPolicyBash("~/.local/bin/delivery-policy ask", home, false),
+      null,
+    );
+  });
+
+  it("refuses a foreground merge and says how to restart it", () => {
+    const reason = mergeReason();
+    assert.match(reason, /run_in_background: true/);
+    assert.match(reason, /notification arrives when it finishes/);
+    assert.match(reason, /Do not poll the output file/);
+  });
+
+  it("the merge reason and the shape reason are different strings", () => {
+    assert.notEqual(mergeReason(), shapeReason());
+  });
+
+  it("judges the shape first: a bad shape is refused in the background too", () => {
+    for (const command of [
+      "~/.local/bin/delivery-policy merge 3; rm -rf x",
+      "~/.local/bin/delivery-policy merge 0",
+      "~/.local/bin/delivery-policy merge 012",
+      "~/.local/bin/delivery-policy merge 12 --x",
+      "bash -c '~/.local/bin/delivery-policy merge 3'",
+      "env X=1 ~/.local/bin/delivery-policy merge 3",
+    ]) {
+      assert.equal(judgeDeliveryPolicyBash(command, home, true), shapeReason());
+    }
+  });
+
+  it("a merge on a second home's path is judged by that home with the flag", () => {
+    const second = "/home/second-user";
+    const command = `${second}/.local/bin/delivery-policy merge 3`;
+    assert.ok(judgeDeliveryPolicyBash(command, second, false));
+    assert.equal(judgeDeliveryPolicyBash(command, second, true), null);
   });
 });
 

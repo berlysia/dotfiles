@@ -613,12 +613,15 @@ export function guardedHomeDenyRules(): string[] {
 const LEDGER_DIR_MARK = ".claude/state/delivery-policy";
 const WRAPPER_MARK = ".local/bin/delivery-policy";
 const SHELL_METACHARACTERS = /[;&|><`\n\r]|\$\(/;
+const MERGE_FOREGROUND_REASON =
+  "`delivery-policy merge` waits for the required checks, longer than a foreground Bash call survives: the 2-minute default would kill it with no exit code or reason. Start it again with `run_in_background: true`; it then runs across turns and a notification arrives when it finishes. Do not poll the output file.";
 
 /**
  * Why a Bash command must be refused because it names the ledger or the
  * wrapper, or null. Only the exact forms `<wrapper> show`, `<wrapper> ask`
- * and `<wrapper> merge <N>` pass: the allow rule for the wrapper skips the
- * permission classifier, so anything else that reaches it is stopped here.
+ * and `<wrapper> merge <N>` pass — and `merge <N>` only in the background:
+ * the allow rule for the wrapper skips the permission classifier, so
+ * anything else that reaches it is stopped here.
  */
 export function namesDeliveryPolicyPath(command: string): boolean {
   return command.includes(LEDGER_DIR_MARK) || command.includes(WRAPPER_MARK);
@@ -627,6 +630,7 @@ export function namesDeliveryPolicyPath(command: string): boolean {
 export function judgeDeliveryPolicyBash(
   command: string,
   home: string,
+  runInBackground: boolean,
 ): string | null {
   if (!command.includes(LEDGER_DIR_MARK) && !command.includes(WRAPPER_MARK)) {
     return null;
@@ -637,12 +641,13 @@ export function judgeDeliveryPolicyBash(
       const rest = trimmed.startsWith(`${wrapper} `)
         ? trimmed.slice(wrapper.length + 1)
         : null;
-      if (
-        rest === "show" ||
-        rest === "ask" ||
-        /^merge [1-9][0-9]*$/.test(rest ?? "")
-      ) {
+      if (rest === "show" || rest === "ask") {
         return null;
+      }
+      // The flag is a cutoff guard, not a permission: the shape above has
+      // already cleared the command, only its wait needs the background.
+      if (/^merge [1-9][0-9]*$/.test(rest ?? "")) {
+        return runInBackground ? null : MERGE_FOREGROUND_REASON;
       }
     }
   }

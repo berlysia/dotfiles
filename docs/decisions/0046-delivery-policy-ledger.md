@@ -96,3 +96,33 @@ D5 の「check-run で SUCCESS・NEUTRAL・SKIPPED のどれか。commit status 
 - 前提として、agent が手にする token は `gho_` である。GitHub App の user-to-server の token（`ghu_`）で付けた status の creator は Bot になりうる。
 
 **拡張点**: 数える creator を login か `databaseId` の allowlist で絞る。今は入れていない。
+
+### 2026-10-29: merge は背景の 1 回の呼び出しで check の完了まで待つ
+
+D6 の「1 回の呼び出しは開始から 100 秒で打ち切る」を、次のように改めた。D3 の Bash の判定にも 1 つ条件を足した。判定の表の順序、ほかの条件、終了コードの意味は変えていない。
+
+- 1 回の呼び出しは、(repo, PR, head sha) ごとの予算の 20 分まで待つ。呼び出しの締切は、開始から 23 分（予算 + 3 分）にした。
+- guard は、Bash の `run_in_background` が JSON の `true` のときだけ `merge <PR>` を通す。前景で呼ぶと拒否し、背景で起動し直すよう理由文に書く。`show` と `ask` はすぐ終わるので、前景のまま通す。
+- 待っている間も、台帳を 1 周ごとに読み直す。待っている間に範囲を狭めると、次の周で止まる。
+- gh の読み込みが失敗した周は、4 周続くまで再試行する。失敗した周は、待ちの記録を書かない。
+- 待っている間に、同じ head のまま PR が merge されたら exit 0 にする。理由文は `already merged at <sha>; merger not determined` で、誰が merge したかは判定しない。
+- signal を受けたら、終わりの行を 1 行出して exit 10 で終わる。
+
+**きっかけ**: 2026-10-25 に、直近に merge した PR 39 件を測った。最初の check run が始まってから `status-check` が success になるまでに、中央値 143 秒、上位 10% で 234 秒、最大 513 秒かかった。100 秒では多くの PR が exit 10 になり、agent は merge の前に `gh pr checks` を繰り返す監視のループを Bash で自分で書いていた。
+
+**背景で起動する根拠**: 2026-10-29 に、この環境の Claude Code で `sleep 200` と `sleep 1260`（21 分）を起動した。`run_in_background` は `true` にした。どちらも打ち切られずに exit 0 で終わり、完了の通知も来た。21 分の方は、終わるまでに sleep の長さより 41 秒長くかかった。原因は調べていないが、締切の余裕 3 分より短い。同じ日に headless の Claude Code を起動し、PreToolUse の hook の入力を記録した。`"run_in_background": true` は JSON の真偽値だった。
+
+**黙って打ち切られないことの保証**: D6 が防いでいたのは、Bash の打ち切りで終了コードと理由が出なくなることである。この保証は guard の拒否が支え、背景で打ち切られないという実測はその前提である。保証の範囲は guard を通る Claude Code の Bash だけである。利用者が端末で直接起動する場合は対象外で、2 分の制約もない。
+
+**却下した案**:
+
+- 1 回の待ちを 240 秒（上位 10% の値）にし、規則で前景の Bash の `timeout` を 300 秒にする。上位 10% の PR では、呼び直しがまだ要る。前景の Bash の上限は 600 秒なので、予算の 20 分にも届かない。`timeout` を付け忘れると、D6 の問題がまた起きる。
+- GitHub の auto-merge（`gh pr merge --auto`）。この ADR が無人の merge の予約として却下した案である。予約した後に台帳の範囲を狭めても、merge は止まらない。
+- check がすでに success なら、前景の呼び出しも通す。guard が判定する時点では、待ちが何秒になるかが分からない。check が success のときは、背景の呼び出しもすぐ終わって通知が来る。
+
+**受け入れた差**:
+
+- 締切（呼び出しの開始から）と予算（最初に待った時刻から）の 2 つの時計を残した。gh の各呼び出しの timeout を残り時間で抑える仕組み（DeadlineError）が締切を前提にしているためである。この仕組みを予算の残り時間に合わせれば、時計は 1 つにできる。
+- 台帳の読み直しは `gh pr merge` の直前までである。読み直してから merge を起動するまでの間に狭めた範囲と、その間に来た signal は反映しない。
+- 台帳の判定を待ちのループの中に移したので、開始時から範囲を狭めてある場合も、止まるのは、repo、viewer、最初の head を読んだ後になる。その間に gh が失敗すると、exit 20 でなく 40 になる。どちらでも merge はしない。
+- 待ちの記録のファイルは、読んでから書き戻す作りである。同時に書くと、片方の記録は消えうる。消えると予算が少し延びるが、merge の条件は緩まない（`docs/plans/delivery-policy-waits-concurrency.md`）。

@@ -2841,3 +2841,10 @@ describe("route process: sarashina wiring", { concurrency: 4 }, () => {
     }
   });
 });
+
+test("DESTINATIONS: only opencode and sarashina send the brief out", () => {
+  assert.equal(DESTINATIONS["codex-terra"].sendsOut, false);
+  assert.equal(DESTINATIONS["codex-luna-max"].sendsOut, false);
+  assert.equal(DESTINATIONS.opencode.sendsOut, true);
+  assert.equal(DESTINATIONS.sarashina.sendsOut, true);
+});

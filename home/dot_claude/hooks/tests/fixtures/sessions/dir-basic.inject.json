@@ -1,0 +1,31 @@
+{
+  "liveness": {
+    "201": "alive",
+    "202": "alive",
+    "203": "alive",
+    "205": "dead"
+  },
+  "identifyRepo": {
+    "/fixture/repo-a": {
+      "repoStatus": "git",
+      "repo": "/fixture/repo-a/.git",
+      "worktree": "/fixture/repo-a",
+      "worktreePath": "/fixture/repo-a",
+      "branch": "main"
+    },
+    "/fixture/repo-a-wt": {
+      "repoStatus": "git",
+      "repo": "/fixture/repo-a/.git",
+      "worktree": "/fixture/repo-a-wt",
+      "worktreePath": "/fixture/repo-a-wt",
+      "branch": null
+    },
+    "/fixture/outside": {
+      "repoStatus": "not-git",
+      "repo": null,
+      "worktree": null,
+      "worktreePath": null,
+      "branch": null
+    }
+  }
+}
