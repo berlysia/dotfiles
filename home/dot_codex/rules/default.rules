@@ -187,6 +187,30 @@ prefix_rule(
     justification = "Prints the learnings file path",
 )
 
+# dotfiles-feedback: only send / status / flush. A prefix rule matches any
+# trailing arguments, so `send --help` and `flush --retry <id>` are allowed too.
+# The destination repo is a constant in the CLI and cannot be changed by args or
+# env. list / show / triage / drop / refresh / ingest-vm stay unmatched: they read
+# other agents' text or move state, and allowed commands run outside the sandbox.
+# Do not widen these to `bash -c` / `bash -lc` prefixes.
+prefix_rule(
+    pattern = ["dotfiles-feedback", "send"],
+    decision = "allow",
+    justification = "Queues a feedback item for the owner's private dotfiles repo",
+)
+
+prefix_rule(
+    pattern = ["dotfiles-feedback", "status"],
+    decision = "allow",
+    justification = "Shows pending feedback counts without item text",
+)
+
+prefix_rule(
+    pattern = ["dotfiles-feedback", "flush"],
+    decision = "allow",
+    justification = "Sends pending feedback items to the fixed private repo",
+)
+
 prefix_rule(
     pattern = ["npx", "biome"],
     decision = "allow",

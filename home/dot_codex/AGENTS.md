@@ -42,6 +42,12 @@
 - 特定の話題の学びを探すときは `agent-learnings show --reader codex --grep=<語>`（複数の語は AND、`-` で始まる語は `=` でつなぐ）、id で引くときは `agent-learnings show --reader codex --id <id>`。一致が無いと stdout が空になる
 - 作業中に実際に起きた出来事から、次のセッションでも役立つ事実を得たら記録する。対象は、失敗から修正に至った手順、利用者の訂正、エラーになったコマンドと通ったコマンド、利用者が明言した方針に限る。推測・一般論・この AGENTS.md に既にあることは記録しない。記録は `agent-learnings add --title=<見出し> --body=<本文>`（本文は 400 字以内の 1 段落、URL は書かない）。誤っている項目は `agent-learnings remove <id>` で消す
 
+## dotfiles へのフィードバック
+
+- dotfiles の rule・skill・hook・CLI・設定に不具合や欠けを見つけたら、まず次の 5 つのどれでもないかを確かめる。意図された実装、計測の誤り、錯覚、局所だけの判断、計器の側の誤り
+- どれでもなければ `dotfiles-feedback send` で送り、出力の id を利用者に伝える
+- 形式と送る前の確認は `~/.codex/skills/dotfiles-feedback/SKILL.md` を読んでから従う。flag の値は `--title=<見出し>` のように `=` でつなぐ
+
 ## Pointers
 
 - Architecture decisions: `docs/decisions/`
