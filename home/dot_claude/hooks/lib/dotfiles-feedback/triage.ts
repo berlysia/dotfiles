@@ -1,14 +1,20 @@
+import { constants } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { hasAgentEnv, isHumanCaller } from "../agent-caller.ts";
-import { DOTFILES_REPO_KEY } from "./constants.ts";
+import { DAY_MS, DOTFILES_REPO_KEY } from "./constants.ts";
 import type { FeedbackDeps, InteractiveDeps } from "./deps.ts";
-import type { TriageResultView } from "./display.ts";
+import { sanitizeForDisplay, type TriageResultView } from "./display.ts";
 import { openGh, type FeedbackIssue, type GhResult } from "./gh.ts";
 import {
   classifyIssue,
+  findPublicUrl,
   findTriageMarker,
   neutralizeMentions,
+  parseOriginId,
+  publicIssueUrl,
+  renderOriginMarker,
+  renderPublicUrlMarker,
   renderTriageMarker,
   type IssueComment,
   type TriageActor,
@@ -199,39 +205,89 @@ async function prepare(
 const isOutcome = (value: Prepared | TriageOutcome): value is TriageOutcome =>
   "kind" in value;
 
-function differentDestination(existing: TriageTo): TriageOutcome {
-  return rejected(
-    `この issue の行き先は to=${existing} に固定されている。別の行き先には振り分けない`,
-  );
+const CONTINUE_ADVICE =
+  "`--to issue` をもう一度実行すれば、作った public issue を使って続きから進む";
+const WAIT_ADVICE =
+  "時間をおいて `--to issue` を再実行する。public issue が無いと確かめるまでコメントを消さない";
+
+// 起票済みの public issue を、origin のマーカーで探す。since はマーカーのコメントの 1 日前。
+async function findPublicByOrigin(
+  id: string,
+  commentedAt: string,
+  deps: TriageDeps,
+): Promise<GhResult<string | null>> {
+  const base = Number.isFinite(Date.parse(commentedAt))
+    ? Date.parse(commentedAt)
+    : deps.now().getTime() - 30 * DAY_MS;
+  const since = new Date(base - DAY_MS).toISOString().replace(/\.\d{3}Z$/, "Z");
+  const listed = await openGh(deps).listPublicIssues(since);
+  if (!listed.ok) return listed;
+  const found = listed.value
+    .filter((entry) => parseOriginId(entry.body) === id)
+    .sort((a, b) => a.number - b.number)[0];
+  return {
+    ok: true,
+    value: found === undefined ? null : publicIssueUrl(found.number),
+  };
 }
 
-// コメントを足して読み直し、最古のマーカーの行き先が自分と同じことを確かめてから label と close に進む。
-async function pinAndClose(
+// to=issue が固定された issue に別の行き先を求められたとき、分かっていることに応じて復旧の手順を出す。
+async function differentDestination(
+  prepared: Prepared,
+  existing: { to: TriageTo; comment: IssueComment },
+  deps: TriageDeps,
+): Promise<TriageOutcome> {
+  const base = `この issue の行き先は to=${existing.to} に固定されている。別の行き先には振り分けない`;
+  if (existing.to !== "issue") return rejected(base);
+  let advice: string;
+  if (findPublicUrl(prepared.comments) !== null) advice = CONTINUE_ADVICE;
+  else {
+    const found = await findPublicByOrigin(
+      prepared.id,
+      existing.comment.createdAt,
+      deps,
+    );
+    advice = !found.ok
+      ? WAIT_ADVICE
+      : found.value !== null
+        ? CONTINUE_ADVICE
+        : `private repo の issue #${prepared.issue.number} の \`to=issue\` のコメントを消せば、行き先を選び直せる`;
+  }
+  return rejected(`${base}。${advice}`);
+}
+
+// コメントを足して読み直し、最古のマーカーの行き先が自分と同じことを確かめる。通れば null。
+async function pin(
   prepared: Prepared,
   to: TriageTo,
   actor: TriageActor,
   detail: string,
   deps: TriageDeps,
+): Promise<TriageOutcome | null> {
+  const gh = openGh(deps);
+  const { number } = prepared.issue;
+  const added = await gh.addComment(
+    number,
+    `${renderTriageMarker(to, actor)}\n${detail}`,
+  );
+  if (!added.ok) return ghFailed(added);
+  const reread = await gh.listComments(number);
+  if (!reread.ok) return ghFailed(reread);
+  const pinned = findTriageMarker(reread.value);
+  return !pinned || pinned.to !== to
+    ? rejected(
+        "読み直しで行き先を確かめられなかった。label と close はしていない",
+      )
+    : null;
+}
+
+async function labelAndClose(
+  number: number,
+  to: TriageTo,
+  deps: TriageDeps,
   publicUrl?: string,
 ): Promise<TriageOutcome> {
   const gh = openGh(deps);
-  const { number } = prepared.issue;
-  const existing = findTriageMarker(prepared.comments);
-  if (existing && existing.to !== to) return differentDestination(existing.to);
-  if (!existing) {
-    const added = await gh.addComment(
-      number,
-      `${renderTriageMarker(to, actor)}\n${detail}`,
-    );
-    if (!added.ok) return ghFailed(added);
-    const reread = await gh.listComments(number);
-    if (!reread.ok) return ghFailed(reread);
-    const pinned = findTriageMarker(reread.value);
-    if (!pinned || pinned.to !== to)
-      return rejected(
-        "読み直しで行き先を確かめられなかった。label と close はしていない",
-      );
-  }
   const labeled = await gh.addLabel(number, `triaged:${to}`);
   if (!labeled.ok) return ghFailed(labeled);
   const closed = await gh.closeIssue(number);
@@ -246,6 +302,249 @@ async function pinAndClose(
   };
 }
 
+async function pinAndClose(
+  prepared: Prepared,
+  to: TriageTo,
+  actor: TriageActor,
+  detail: string,
+  deps: TriageDeps,
+): Promise<TriageOutcome> {
+  const existing = findTriageMarker(prepared.comments);
+  if (existing && existing.to !== to)
+    return differentDestination(prepared, existing, deps);
+  if (!existing) {
+    const failed = await pin(prepared, to, actor, detail, deps);
+    if (failed) return failed;
+  }
+  return labelAndClose(prepared.issue.number, to, deps);
+}
+
+// --- public の下書き ---
+const DRAFT_MAX_BYTES = 64 * 1024;
+const GUIDE = [
+  ";; 1 行目がタイトル、空行の後が本文になる。「;; 」で始まる行は消える。",
+  ";; 何も書かずに保存すると中止する。",
+];
+const INITIAL_DRAFT = `${GUIDE.join("\n")}\n\n`;
+const MIN_COPY_WARNING = 20;
+const cancelled = (reason: string): TriageOutcome => ({
+  kind: "cancelled",
+  reason,
+});
+
+// 無害化で最初に変わる文字の位置。削除は元の文字で、\t と \n の置換も元の文字が変わる。
+function firstChange(
+  text: string,
+  multiline: boolean,
+): { codePoint: string; line: number } | null {
+  const cleaned = sanitizeForDisplay(text, { multiline });
+  if (cleaned === text) return null;
+  let index = 0;
+  while (index < cleaned.length && cleaned[index] === text[index]) index++;
+  const code = text.codePointAt(index) ?? 0;
+  return {
+    codePoint: `U+${code.toString(16).toUpperCase().padStart(4, "0")}`,
+    line: text.slice(0, index).split("\n").length,
+  };
+}
+const changeMessage = (
+  change: { codePoint: string; line: number },
+  where: string,
+) =>
+  rejected(
+    `${where}に端末で表示できない文字がある（${change.codePoint}、${change.line} 行目）。取り除いて書き直す`,
+  );
+
+async function readDraft(
+  path: string,
+  deps: TriageDeps,
+): Promise<{ text: string } | TriageOutcome> {
+  let handle: Awaited<ReturnType<TriageDeps["fs"]["open"]>>;
+  try {
+    handle = await deps.fs.open(
+      path,
+      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+    );
+  } catch {
+    return cancelled("下書きを開けない（差し替えられた可能性がある）");
+  }
+  try {
+    const stat = await handle.stat();
+    if (!stat.isFile()) return cancelled("下書きが通常ファイルでない");
+    if (stat.size > DRAFT_MAX_BYTES)
+      return rejected("下書きが 64KB を超えている");
+    const buffer = Buffer.alloc(DRAFT_MAX_BYTES + 1);
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+    if (bytesRead > DRAFT_MAX_BYTES)
+      return rejected("下書きが 64KB を超えている");
+    return { text: buffer.subarray(0, bytesRead).toString("utf8") };
+  } finally {
+    await handle.close();
+  }
+}
+
+function copyWarnings(
+  prepared: Prepared,
+  meta: { target: string; source: { repoKey: string | null; host: string } },
+  draftText: string,
+): string[] {
+  const warnings: string[] = [];
+  if (draftText.includes(meta.target))
+    warnings.push("元の private の issue の target を含んでいる");
+  if (meta.source.repoKey && draftText.includes(meta.source.repoKey))
+    warnings.push("元の private の issue の repoKey を含んでいる");
+  if (draftText.includes(meta.source.host))
+    warnings.push("元の private の issue の host を含んでいる");
+  const privateBody = prepared.issue.body.split("\n\n").slice(2).join("\n\n");
+  let copied = false;
+  if (privateBody.length > 0 && privateBody.length < MIN_COPY_WARNING)
+    copied = draftText.includes(privateBody);
+  else
+    for (let i = 0; !copied && i + MIN_COPY_WARNING <= privateBody.length; i++)
+      copied = draftText.includes(privateBody.slice(i, i + MIN_COPY_WARNING));
+  if (copied) warnings.push("private の本文と一致する部分がある");
+  if (/#\d+/.test(draftText)) warnings.push("#数字（issue 番号）を含んでいる");
+  if (draftText.includes("github.com/berlysia/dotfiles-feedback"))
+    warnings.push("private repo の URL を含んでいる");
+  return warnings;
+}
+
+// 下書きを作って編集させ、検査と確認を通った最終のタイトルと本文を返す。
+// 返した文字列をそのまま確認に出し、そのまま送るので、確認と送信の内容は同じになる。
+async function draftPublicIssue(
+  prepared: Prepared,
+  meta: { target: string; source: { repoKey: string | null; host: string } },
+  deps: TriageDeps,
+): Promise<{ title: string; body: string } | TriageOutcome> {
+  if (!deps.editor || deps.editor.trim() === "")
+    return cancelled("$EDITOR が設定されていない");
+  const dir = await deps.makeTempDir();
+  try {
+    const path = join(dir, "draft.md");
+    const created = await deps.fs.open(
+      path,
+      constants.O_WRONLY |
+        constants.O_CREAT |
+        constants.O_EXCL |
+        constants.O_NOFOLLOW,
+      0o600,
+    );
+    try {
+      await created.writeFile(INITIAL_DRAFT);
+    } finally {
+      await created.close();
+    }
+    const code = await deps.runEditor([
+      ...deps.editor.trim().split(/\s+/),
+      path,
+    ]);
+    if (code !== 0) return cancelled("エディタが正常に終わらなかった");
+    const read = await readDraft(path, deps);
+    if ("kind" in read) return read;
+    const text = read.text.replace(/\r\n/g, "\n");
+    if (text === INITIAL_DRAFT) return cancelled("下書きが変わっていない");
+    const unsafe = firstChange(text, true);
+    if (unsafe) return changeMessage(unsafe, "下書き");
+    const lines = text.split("\n").filter((line) => !line.startsWith(";; "));
+    if (lines.every((line) => line.trim() === ""))
+      return cancelled("下書きが空");
+    const rawTitle = lines[0] ?? "";
+    if (rawTitle.trim() === "") return cancelled("タイトルが無い");
+    const rawBody = lines
+      .slice(1)
+      .join("\n")
+      .replace(/^\n+/, "")
+      .replace(/\s+$/, "");
+    if (
+      [rawTitle, ...rawBody.split("\n")].some((line) =>
+        line.trim().startsWith("<!-- dotfiles-feedback-origin"),
+      )
+    )
+      return rejected("origin のマーカーの形の行は書けない");
+    const title = normalizeField(rawTitle, "title");
+    if (!title.ok) return rejected(`タイトルを使えない: ${title.reason}`);
+    const body = normalizeField(rawBody, "body");
+    if (!body.ok) return rejected(`本文を使えない: ${body.reason}`);
+    const finalTitle = neutralizeMentions(title.value);
+    const finalBody = `${neutralizeMentions(body.value)}\n\n${renderOriginMarker(prepared.id)}`;
+    const changedTitle = firstChange(finalTitle, false);
+    if (changedTitle) return changeMessage(changedTitle, "タイトル");
+    const changedBody = firstChange(finalBody, true);
+    if (changedBody) return changeMessage(changedBody, "本文");
+    const warnings = copyWarnings(
+      prepared,
+      meta,
+      `${finalTitle}\n${finalBody}`,
+    );
+    const shown = [
+      ...(warnings.length > 0
+        ? [
+            "警告: 公開してよいか確かめる",
+            ...warnings.map((w) => `  - ${w}`),
+            "",
+          ]
+        : []),
+      "次の内容で public の issue を作る",
+      `タイトル: ${finalTitle}`,
+      "",
+      finalBody,
+    ].join("\n");
+    if (!(await deps.confirm(shown))) return cancelled("確認で中止した");
+    return { title: finalTitle, body: finalBody };
+  } finally {
+    await deps.removeTree(dir);
+  }
+}
+
+async function triageToIssue(
+  arg: string,
+  deps: TriageDeps,
+): Promise<TriageOutcome> {
+  const prepared = await prepare(arg, deps);
+  if (isOutcome(prepared)) return prepared;
+  const kind = classifyIssue(prepared.issue);
+  if (kind.kind !== "target") return rejected("対象の issue ではない");
+  const gh = openGh(deps);
+  const { number } = prepared.issue;
+  const existing = findTriageMarker(prepared.comments);
+  if (existing && existing.to !== "issue")
+    return differentDestination(prepared, existing, deps);
+
+  let url = findPublicUrl(prepared.comments);
+  const hadUrlComment = url !== null;
+  if (existing && url === null) {
+    const found = await findPublicByOrigin(
+      prepared.id,
+      existing.comment.createdAt,
+      deps,
+    );
+    if (!found.ok) return ghFailed(found, WAIT_ADVICE);
+    url = found.value;
+  }
+  if (url === null) {
+    const draft = await draftPublicIssue(prepared, kind.meta, deps);
+    if ("kind" in draft) return draft;
+    if (!existing) {
+      const failed = await pin(
+        prepared,
+        "issue",
+        "human",
+        "公開 issue に起票する",
+        deps,
+      );
+      if (failed) return failed;
+    }
+    const created = await gh.createPublicIssue(draft.title, draft.body);
+    if (!created.ok) return ghFailed(created);
+    url = publicIssueUrl(created.value);
+  }
+  if (!hadUrlComment) {
+    const commented = await gh.addComment(number, renderPublicUrlMarker(url));
+    if (!commented.ok) return ghFailed(commented);
+  }
+  return labelAndClose(number, "issue", deps, url);
+}
+
 export async function triage(
   arg: string,
   options: TriageOptions,
@@ -257,7 +556,13 @@ export async function triage(
   })
     ? "human"
     : "agent";
-  if (options.to === "issue") return rejected("--to issue は未実装");
+  // 人の判定は spool にも gh にも触る前に行う。
+  if (options.to === "issue")
+    return actor === "human"
+      ? triageToIssue(arg, deps)
+      : rejected(
+          "--to issue は人が端末で行う（エージェントからは実行できない）",
+        );
 
   let detail: string;
   if (options.to === "plan") {
