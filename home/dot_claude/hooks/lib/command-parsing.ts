@@ -458,7 +458,7 @@ export interface HomeGuardResult {
   reason: string;
 }
 
-interface ShellToken {
+export interface ShellToken {
   value: string;
   /** Contains a variable or command substitution that could not be resolved. */
   unresolved: boolean;
@@ -699,22 +699,44 @@ function baseName(value: string): string {
   return idx >= 0 ? value.slice(idx + 1) : value;
 }
 
-/** Drops leading `NAME=value` assignments and wrapper commands like `sudo`. */
-function stripWrappers(tokens: ShellToken[]): ShellToken[] {
+/** Only the value of a word is read; ShellToken carries more and passes through. */
+type Word = { value: string };
+
+const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
+
+/** Options of a wrapper that take their value in the next word. */
+const WRAPPER_VALUE_OPTIONS: Readonly<Record<string, ReadonlySet<string>>> = {
+  sudo: new Set(["-u", "-g"]),
+  env: new Set(["-u", "-C"]),
+  timeout: new Set(["-s", "-k"]),
+};
+
+/**
+ * Drops leading `NAME=value` assignments and wrapper commands like `sudo`.
+ * `command -v` / `-V` only looks a command up, so nothing is left to run.
+ */
+export function stripWrappers<T extends Word>(tokens: readonly T[]): T[] {
   let i = 0;
   while (i < tokens.length) {
-    const tok = tokens[i] as ShellToken;
-    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(tok.value)) {
+    const tok = tokens[i] as T;
+    if (ASSIGNMENT.test(tok.value)) {
       i++;
       continue;
     }
     const name = baseName(tok.value);
     if (!WRAPPER_COMMANDS.has(name)) break;
     i++;
+    if (name === "command") {
+      const lookup = tokens[i]?.value;
+      if (lookup === "-v" || lookup === "-V") return [];
+    }
+    const valueOptions = WRAPPER_VALUE_OPTIONS[name];
     // Skip the wrapper's own options and arguments (e.g. `timeout 5`, `nice -n 10`).
     while (i < tokens.length) {
-      const opt = (tokens[i] as ShellToken).value;
-      if (opt.startsWith("-") || /^[A-Za-z_][A-Za-z0-9_]*=/.test(opt)) {
+      const opt = (tokens[i] as T).value;
+      if (valueOptions?.has(opt)) {
+        i += 2;
+      } else if (opt.startsWith("-") || ASSIGNMENT.test(opt)) {
         i++;
       } else if (name === "timeout" && /^\d/.test(opt)) {
         i++;
@@ -725,7 +747,114 @@ function stripWrappers(tokens: ShellToken[]): ShellToken[] {
       }
     }
   }
-  return tokens.slice(i);
+  return tokens.slice(Math.min(i, tokens.length));
+}
+
+const SHELL_VALUE_OPTIONS: ReadonlySet<string> = new Set([
+  "-o",
+  "+o",
+  "-O",
+  "+O",
+  "--rcfile",
+  "--init-file",
+]);
+
+/**
+ * The string a `bash -c` family shell or `eval` would run, or null. A short
+ * option group containing `c` (`-lc`, `-xc`) counts, but only before the
+ * script name: `bash x.sh -c foo` hands `-c` to the script.
+ */
+export function findIndirect<T extends Word>(
+  words: readonly T[],
+): string | null {
+  const head = words[0];
+  if (!head) return null;
+  const name = baseName(head.value);
+  const args = words.slice(1);
+  if (name === "eval") return args.map((t) => t.value).join(" ");
+  if (!INDIRECT_SHELLS.has(name)) return null;
+  for (let i = 0; i < args.length; i++) {
+    const value = (args[i] as T).value;
+    // `-o pipefail` and `--rcfile r` take the next word as their value; treating
+    // it as the script name would miss the `-c` after it.
+    if (SHELL_VALUE_OPTIONS.has(value)) {
+      i++;
+      continue;
+    }
+    if (value.startsWith("+")) continue;
+    if (!value.startsWith("-")) return null;
+    if (value.startsWith("--") || !value.includes("c")) continue;
+    const script = args.slice(i + 1).find((t) => !t.value.startsWith("-"));
+    return script?.value ?? "";
+  }
+  return null;
+}
+
+export type UnwrappedCommand<T extends Word> = {
+  /** After wrappers and runners; the head is the command word. Empty: nothing runs. */
+  words: T[];
+  /** The string a `bash -c` family shell or `eval` runs; null otherwise. */
+  indirect: string | null;
+};
+
+/** Package runners that take the command as the next word after their own flags. */
+const RUNNER_PREFIXES: readonly (readonly string[])[] = [
+  ["npx"],
+  ["bunx"],
+  ["npm", "exec"],
+  ["bun", "x"],
+  ["pnpm", "exec"],
+  ["pnpm", "dlx"],
+  ["yarn", "dlx"],
+];
+
+function stripRunner<T extends Word>(words: readonly T[]): T[] | null {
+  const head = words[0] ? baseName(words[0].value) : "";
+  for (const prefix of RUNNER_PREFIXES) {
+    if (
+      prefix.every(
+        (part, idx) => (idx === 0 ? head : words[idx]?.value) === part,
+      )
+    ) {
+      let i = prefix.length;
+      while (i < words.length && (words[i] as T).value.startsWith("-")) i++;
+      return words.slice(i);
+    }
+  }
+  if (head === "mise" && ["exec", "x"].includes(words[1]?.value ?? "")) {
+    const sep = words.findIndex((t) => t.value === "--");
+    return sep < 0 ? null : words.slice(sep + 1);
+  }
+  if (head === "direnv" && words[1]?.value === "exec") return words.slice(3);
+  return null;
+}
+
+/**
+ * The words that actually run, once wrappers (`sudo`, `env`, `timeout`) and
+ * package runners (`npx`, `mise exec --`) are peeled off, and the string an
+ * indirect shell would run. The runner list is closed: it covers the forms
+ * people write without trying to hide the command.
+ */
+export function unwrapCommand<T extends Word>(
+  tokens: readonly T[],
+): UnwrappedCommand<T> {
+  let words = stripWrappers(tokens);
+  // Each pass removes at least one word, so this ends; the bound is only a
+  // guard against a future edit breaking that.
+  for (let pass = 0; pass <= tokens.length; pass++) {
+    const inner = stripRunner(words);
+    if (inner === null) break;
+    words = stripWrappers(inner);
+  }
+  return { words, indirect: findIndirect(words) };
+}
+
+/** Splits `text` at `&&`, `;`, `|` and the like, then into words per part. */
+export function splitCommandWords(text: string): ShellToken[][] {
+  return splitSegments(text).map((segment) =>
+    // "$HOME" keeps the spelling: no home directory is resolved here.
+    tokenize(segment.text, new Map(), "$HOME"),
+  );
 }
 
 function resolveTarget(
@@ -1005,10 +1134,7 @@ export function checkHomeDestruction(
       continue;
     }
 
-    if (
-      (INDIRECT_SHELLS.has(name) && args.some((t) => t.value === "-c")) ||
-      name === "eval"
-    ) {
+    if (findIndirect(words) !== null) {
       if (isIndirectHomeDelete(segment.text, options)) {
         return danger(`indirect execution via ${name}`);
       }
