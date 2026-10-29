@@ -86,3 +86,4 @@ duckdb = "1.5.6"
 # .chezmoiexternal.toml.tmpl reads .version from it and fails the apply if the two disagree. Renovate
 # updates both in one PR (customManagers in renovate.json).
 "github:babarot/claude-recall" = { version = "v1.12.0", bin = "recall" }
+cloudflare-cf = "0.15.0"
