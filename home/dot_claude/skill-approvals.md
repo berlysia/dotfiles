@@ -25,6 +25,7 @@ apply は未掲載のスキルを追記するだけで、行を消さない。
 - [x] decompose
 - [x] docs-audit
 - [x] document-workflow-reference
+- [x] dotfiles-feedback
 - [x] execute-plan
 - [x] external-skill-intake
 - [x] formal-check
