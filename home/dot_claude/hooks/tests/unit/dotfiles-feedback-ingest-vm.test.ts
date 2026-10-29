@@ -1,5 +1,6 @@
 import { deepStrictEqual, ok, strictEqual } from "node:assert";
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import * as nodeFs from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -931,4 +932,37 @@ it("retry: an oversized copy (16KB + 1) is never admitted", async (t) => {
   const out = await retryVmFailed(f.deps, key);
   strictEqual(out.code, 1);
   deepStrictEqual(await f.pending(), []);
+});
+
+it("the words agent-vm and its test stubs use are in the shared reason lists", () => {
+  const root = join(import.meta.dirname, "../../../../..");
+  const read = (path: string) => readFileSync(join(root, path), "utf8");
+  const launcher = read("home/dot_local/bin/executable_agent-vm");
+  const tests = read("tests/agent-vm/run.sh");
+  const stdoutWords = [
+    "pending-full",
+    "quarantined",
+    "quarantine-full",
+    "quarantine-denied",
+    "timeout",
+  ];
+  const stderrWords = ["rename-denied"];
+  for (const word of [...stdoutWords, ...stderrWords])
+    ok(
+      launcher.includes(word) || tests.includes(word),
+      `${word} is used by agent-vm or its tests`,
+    );
+  for (const word of stdoutWords)
+    ok((INGEST_STDOUT_REASONS as readonly string[]).includes(word), word);
+  for (const word of stderrWords)
+    ok((INGEST_STDERR_REASONS as readonly string[]).includes(word), word);
+  // agent-vm が形を確かめる行は、CLI の行の項目の順と同じ。
+  ok(
+    launcher.includes(
+      "ingested=[0-9]+ failed=[0-9]+ discarded=[0-9]+ kept=[0-9]+( reason=[a-z-]+)?",
+    ),
+  );
+  // reason= の語は、launcher の case が名指しする回復の語も含めて一覧の中にある。
+  for (const word of ["quarantined", "quarantine-full", "quarantine-denied"])
+    ok(launcher.includes(`reason=${word}`), word);
 });

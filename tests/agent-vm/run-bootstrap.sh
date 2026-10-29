@@ -590,6 +590,13 @@ test_source_mise_config_is_not_trusted() {
   assert_not_contains "$(cat "$STUB_LOG")" "mise install dasel" "dasel is not installed"
 }
 
+test_bootstrap_creates_the_feedback_outbox_as_a_private_real_dir() {
+  setup_vm_env
+  mkdir -p "$AGENT_VM_OUTBOX_ROOT/dotfiles-feedback"; chmod 755 "$AGENT_VM_OUTBOX_ROOT/dotfiles-feedback"
+  bash "$BOOTSTRAP" 1 v1:abc "$SRC" >/dev/null 2>&1
+  assert_status 0 "feedback outbox is a real directory" -- test -d "$AGENT_VM_OUTBOX_ROOT/dotfiles-feedback" -a ! -L "$AGENT_VM_OUTBOX_ROOT/dotfiles-feedback"
+  assert_eq "700" "$(stat -c %a "$AGENT_VM_OUTBOX_ROOT/dotfiles-feedback" 2>/dev/null || stat -f %Lp "$AGENT_VM_OUTBOX_ROOT/dotfiles-feedback")" "feedback outbox mode 700"
+}
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do
   (
     TMP_ROOT="$TMP_BASE/$t"; mkdir -p "$TMP_ROOT"
