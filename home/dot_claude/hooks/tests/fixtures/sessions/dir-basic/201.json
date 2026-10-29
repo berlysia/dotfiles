@@ -1,0 +1,20 @@
+{
+  "pid": 201,
+  "sessionId": "00000000-0000-4000-8000-000000000201",
+  "cwd": "/fixture/repo-a",
+  "startedAt": 1700000000201,
+  "procStart": "100201",
+  "version": "1.0.0",
+  "peerProtocol": 1,
+  "peerFeatures": ["feature-a", "feature-b", "feature-c"],
+  "kind": "fx",
+  "entrypoint": "fx1",
+  "pidDomain": "fixture-domain",
+  "messagingSocketPath": "/fixture/sock/201.sock",
+  "name": "alpha",
+  "nameSource": "fixture",
+  "nameSince": 1700000001201,
+  "status": "idle",
+  "updatedAt": 1700000002201,
+  "statusUpdatedAt": 1700000003201
+}
