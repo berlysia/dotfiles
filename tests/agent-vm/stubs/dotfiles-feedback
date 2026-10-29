@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Test stub for the host dotfiles-feedback CLI: records argv, then replies from files the test sets.
+# By default it prints the line the real CLI prints after one clean ingest (the fixture is the same text a heavy
+# test checks against the real CLI), so tests that reach ingest_outbox stay quiet.
+# shellcheck disable=SC2154 # STUB_LOG is exported by tests/agent-vm/run.sh
+{ printf 'dotfiles-feedback'; printf ' %q' "$@"; printf '\n'; } >>"$STUB_LOG"
+here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+if [[ -n "${STUB_FEEDBACK_STDOUT_FILE:-}" ]]; then
+  cat "$STUB_FEEDBACK_STDOUT_FILE"
+else
+  cat "$here/../fixtures/dotfiles-feedback-ingest-ok.txt"
+fi
+if [[ -n "${STUB_FEEDBACK_STDERR_FILE:-}" ]]; then cat "$STUB_FEEDBACK_STDERR_FILE" >&2; fi
+exit "${STUB_FEEDBACK_EXIT:-0}"

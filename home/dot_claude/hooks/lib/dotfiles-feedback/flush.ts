@@ -39,10 +39,12 @@ export type FlushDeps = Pick<
 function retryBusy<T>(error: T): boolean {
   return error instanceof RetryLockBusyError;
 }
+// busy は 1 周目の flush.lock を取れなかったときだけ。取り直しの周で取れなかったのは done。
+export type FlushResult = { kind: "done" } | { kind: "busy" };
 export async function flush(
   deps: FlushDeps,
   options: { maxReacquires?: number } = {},
-): Promise<void> {
+): Promise<FlushResult> {
   const spool = await openSpool(deps.root, deps);
   const retry = openRetry(deps.root, deps);
   const cache = join(deps.root, "state", "last-flush.json");
@@ -115,7 +117,7 @@ export async function flush(
       { staleMs: FLUSH_LOCK_STALE_MS },
       deps,
     );
-    if (!release) return;
+    if (!release) return round === 0 ? { kind: "busy" } : { kind: "done" };
     let stop = false;
     try {
       await spool.reclaimStale(deps.now());
@@ -230,10 +232,10 @@ export async function flush(
     } finally {
       await release();
     }
-    if (stop || busy || !(await due()).length) return;
+    if (stop || busy || !(await due()).length) return { kind: "done" };
     if (round >= (options.maxReacquires ?? MAX_FLUSH_REACQUIRES)) {
       await deps.spawnFlush();
-      return;
+      return { kind: "done" };
     }
   }
 }

@@ -78,6 +78,7 @@ install-packages-*-windows.ps1
 !.local/bin/ask-grokbot
 !.local/bin/agent-vm-node-modules
 !.local/bin/claude-task-list-id
+!.local/bin/dotfiles-feedback
 !.local/share
 !.local/share/private-skills
 !.local/share/private-skills/**

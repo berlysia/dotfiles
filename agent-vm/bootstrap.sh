@@ -253,6 +253,9 @@ link_outbox() { # outbox subdir, target path (bootstrap owns these VM-only symli
 }
 link_outbox claude-projects "$HOME/.claude/projects"
 link_outbox codex-sessions "$HOME/.codex/sessions"
+# The dotfiles-feedback CLI writes here directly (no symlink): the host takes this directory away whole when it
+# ingests, and the CLI recreates it on every send (spec K8). install -d also repairs a mode the VM changed.
+install -d -m 700 "$OUTBOX_ROOT/dotfiles-feedback"
 
 cz="$HOME/.local/share/chezmoi"
 mkdir -p "$cz"

@@ -2520,7 +2520,7 @@ make_golden_fixture() { # -> dotfiles working tree that also tracks agent-vm/clo
   printf '%s\n' "$wt"
 }
 golden_dirs_as_bootstrapped() { # what create_golden and the VM's link_outbox leave on the host side
-  mkdir -p "$AGENT_VM_STATE_DIR/outbox/$GOLDEN_MACHINE/claude-projects" "$AGENT_VM_STATE_DIR/outbox/$GOLDEN_MACHINE/codex-sessions" \
+  mkdir -p "$AGENT_VM_STATE_DIR/outbox/$GOLDEN_MACHINE/claude-projects" "$AGENT_VM_STATE_DIR/outbox/$GOLDEN_MACHINE/codex-sessions" "$AGENT_VM_STATE_DIR/outbox/$GOLDEN_MACHINE/dotfiles-feedback" \
     "$AGENT_VM_STATE_DIR/browsers/$GOLDEN_MACHINE"
 }
 sealed_golden_fixture() { # wt -> a golden whose record matches the current staging; prints the config-show file
@@ -2640,7 +2640,7 @@ test_golden_outbox_name_with_a_newline_cannot_pass() {
   : >"$AGENT_VM_STATE_DIR/outbox/$GOLDEN_MACHINE/$(printf 'a\nb')"
   local status=0 err; err=$(STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" ensure_golden "$wt" 0 2>&1) || status=$?
   assert_eq 1 "$status" "extra entry with a newline refused"
-  assert_contains "$err" "holds 3 entries" "counted as one more entry"
+  assert_contains "$err" "holds 4 entries" "counted as one more entry"
 }
 test_missing_golden_outbox_fails_with_recovery() {
   local wt show; wt=$(make_golden_fixture); show=$(sealed_golden_fixture "$wt")
@@ -2711,6 +2711,114 @@ test_golden_name_is_never_a_repo_machine_name() {
   esac
 }
 
+
+# --- dotfiles-feedback の取り込み（plan-5 T7）---
+feedback_state() { # runs ingest_feedback for a machine and prints stderr; env STUB_FEEDBACK_* decides the stub's reply
+  { ingest_feedback "$1" >/dev/null; } 2>&1
+}
+test_verify_golden_wants_three_dirs_and_a_real_feedback_dir() {
+  local wt show; wt=$(make_golden_fixture); show=$(sealed_golden_fixture "$wt")
+  local status=0
+  STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" ensure_golden "$wt" 0 >/dev/null 2>&1 || status=$?
+  assert_eq 0 "$status" "three real dirs pass"
+  rmdir "$AGENT_VM_STATE_DIR/outbox/$GOLDEN_MACHINE/dotfiles-feedback"
+  local err; err=$(STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" ensure_golden "$wt" 0 2>&1) || status=$?
+  assert_eq 1 "$status" "an existing golden without dotfiles-feedback is refused"
+  assert_contains "$err" "agent-vm golden rm" "recovery shown"
+  ln -s /etc "$AGENT_VM_STATE_DIR/outbox/$GOLDEN_MACHINE/dotfiles-feedback"
+  status=0; err=$(STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" ensure_golden "$wt" 0 2>&1) || status=$?
+  assert_eq 1 "$status" "a symlinked dotfiles-feedback is refused"
+  rm "$AGENT_VM_STATE_DIR/outbox/$GOLDEN_MACHINE/dotfiles-feedback"; mkdir "$AGENT_VM_STATE_DIR/outbox/$GOLDEN_MACHINE/dotfiles-feedback" "$AGENT_VM_STATE_DIR/outbox/$GOLDEN_MACHINE/fourth"
+  status=0; err=$(STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" ensure_golden "$wt" 0 2>&1) || status=$?
+  assert_eq 1 "$status" "a fourth entry is refused"
+}
+test_ingest_outbox_calls_the_host_cli_once_with_state_dir_and_machine() {
+  : >"$STUB_LOG"
+  ingest_outbox agent-f-000000 >/dev/null 2>&1
+  assert_eq "dotfiles-feedback ingest-vm --state-dir=$AGENT_VM_STATE_DIR --machine=agent-f-000000" "$(grep '^dotfiles-feedback ' "$STUB_LOG")" "one call with explicit arguments"
+}
+test_a_quiet_ingest_prints_nothing() {
+  assert_eq "" "$(feedback_state agent-f-000000)" "the fixture line (ingested=1 kept=0) is silent"
+}
+test_denied_rename_warns_with_recovery_and_keeps_the_ingest_status() {
+  printf 'dotfiles-feedback: rename-denied\n' >"$TMP_ROOT/err"
+  local err status=0
+  err=$(STUB_FEEDBACK_EXIT=1 STUB_FEEDBACK_STDOUT_FILE=/dev/null STUB_FEEDBACK_STDERR_FILE="$TMP_ROOT/err" ingest_outbox agent-f-000000 2>&1 >/dev/null) || status=$?
+  assert_eq 0 "$status" "ingest_outbox status unchanged"
+  assert_contains "$err" "skipping dotfiles-feedback ingest: dotfiles-feedback: rename-denied" "skip line"
+  assert_contains "$err" "recover: stop the VM" "recovery line"
+}
+test_a_diverged_log_still_returns_4_with_the_feedback_warning() {
+  local repo m; repo=$(make_flow_repo); m=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
+  export AGENT_VM_CLAUDE_PROJECTS_DIR="$TMP_ROOT/host-projects" AGENT_VM_CODEX_SESSIONS_DIR="$TMP_ROOT/host-codex"
+  mkdir -p "$AGENT_VM_STATE_DIR/outbox/$m/claude-projects/-r" "$AGENT_VM_CLAUDE_PROJECTS_DIR/-r"
+  printf 'a\n' >"$AGENT_VM_STATE_DIR/outbox/$m/claude-projects/-r/s.jsonl"
+  printf 'b\n' >"$AGENT_VM_CLAUDE_PROJECTS_DIR/-r/s.jsonl"
+  printf 'dotfiles-feedback: rename-denied\n' >"$TMP_ROOT/err"
+  local status=0
+  STUB_FEEDBACK_EXIT=1 STUB_FEEDBACK_STDOUT_FILE=/dev/null STUB_FEEDBACK_STDERR_FILE="$TMP_ROOT/err" ingest_outbox "$m" >/dev/null 2>&1 || status=$?
+  assert_eq 4 "$status" "divergence status is kept"
+}
+test_an_old_cli_usage_becomes_a_fixed_sentence() {
+  printf '使い方: dotfiles-feedback <command>\n  send ...\n' >"$TMP_ROOT/err"
+  local err; err=$(STUB_FEEDBACK_EXIT=1 STUB_FEEDBACK_STDOUT_FILE=/dev/null STUB_FEEDBACK_STDERR_FILE="$TMP_ROOT/err" feedback_state agent-f-000000)
+  assert_contains "$err" "dotfiles-feedback: unexpected output" "fixed sentence"
+  assert_contains "$err" "run chezmoi apply on the host" "update hint"
+  assert_not_contains "$err" "使い方" "usage text not echoed"
+}
+test_hostile_stderr_never_reaches_the_terminal() {
+  { printf 'dotfiles-feedback: x\033[31m'; printf '\233'; printf 'a%.0s' $(seq 1 300); printf '\n'; } >"$TMP_ROOT/err"
+  local err; err=$(STUB_FEEDBACK_EXIT=1 STUB_FEEDBACK_STDOUT_FILE=/dev/null STUB_FEEDBACK_STDERR_FILE="$TMP_ROOT/err" feedback_state agent-f-000000)
+  assert_contains "$err" "dotfiles-feedback: unexpected output" "replaced by the fixed sentence"
+  if printf '%s' "$err" | LC_ALL=C grep -q "$(printf '[\001-\010\013-\037\177-\377]')"; then record "FAIL control characters leaked"; else record "PASS no control characters in the warning"; fi
+}
+test_stdout_with_a_reason_or_leftovers_is_warned_in_a_fixed_shape() {
+  local line err
+  for line in "dotfiles-feedback ingest-vm: ingested=0 failed=0 discarded=0 kept=3 reason=pending-full" \
+    "dotfiles-feedback ingest-vm: ingested=0 failed=0 discarded=0 kept=0 reason=busy" \
+    "dotfiles-feedback ingest-vm: ingested=0 failed=0 discarded=0 kept=2 reason=foo"; do
+    printf '%s\n' "$line" >"$TMP_ROOT/out"
+    err=$(STUB_FEEDBACK_STDOUT_FILE="$TMP_ROOT/out" feedback_state agent-f-000000)
+    assert_contains "$err" "$line" "warned: $line"
+  done
+  for line in quarantined quarantine-full quarantine-denied; do
+    printf 'dotfiles-feedback ingest-vm: ingested=0 failed=0 discarded=0 kept=3 reason=%s\n' "$line" >"$TMP_ROOT/out"
+    err=$(STUB_FEEDBACK_STDOUT_FILE="$TMP_ROOT/out" feedback_state agent-f-000000)
+    assert_contains "$err" "recover: stop the VM, then chmod -R u+rwX" "recovery for $line"
+  done
+  printf 'hello kept=3 \033[31m\n' >"$TMP_ROOT/out"
+  err=$(STUB_FEEDBACK_STDOUT_FILE="$TMP_ROOT/out" feedback_state agent-f-000000)
+  assert_contains "$err" "dotfiles-feedback: unexpected output" "malformed stdout replaced"
+  assert_not_contains "$err" "hello" "malformed stdout not echoed"
+}
+test_a_missing_host_cli_only_warns() {
+  local err status=0
+  err=$(PATH="/usr/bin:/bin" ingest_feedback agent-f-000000 2>&1) || status=$?
+  assert_eq 0 "$status" "no failure"
+  assert_contains "$err" "skipping dotfiles-feedback ingest: command not found; run chezmoi apply on the host" "warning"
+}
+test_golden_and_inspect_never_call_the_feedback_cli() {
+  : >"$STUB_LOG"
+  ingest_feedback "$GOLDEN_MACHINE"
+  ingest_feedback ""
+  inspect_outbox agent-f-000000 >/dev/null 2>&1
+  assert_eq "" "$(grep -c '^dotfiles-feedback ' "$STUB_LOG" | sed 's/^0$//')" "no calls"
+}
+test_forget_machine_removes_intake_dirs_the_vm_locked_and_checks_the_name() {
+  if [[ "$(id -u)" -eq 0 ]]; then record "PASS intake removal (skipped: running as root)"; return 0; fi
+  local m=agent-f-000000
+  mkdir -p "$AGENT_VM_STATE_DIR/intake/$m/hex/inner" "$AGENT_VM_STATE_DIR/intake-quarantine/$m/hex2/inner" "$AGENT_VM_STATE_DIR/intake/keep"
+  : >"$AGENT_VM_STATE_DIR/intake/$m/x"; chmod 000 "$AGENT_VM_STATE_DIR/intake/$m/hex" "$AGENT_VM_STATE_DIR/intake-quarantine/$m/hex2"
+  forget_machine "$m" 2>/dev/null
+  assert_status 1 "intake removed" -- test -e "$AGENT_VM_STATE_DIR/intake/$m"
+  assert_status 1 "quarantine removed" -- test -e "$AGENT_VM_STATE_DIR/intake-quarantine/$m"
+  assert_status 0 "other machines kept" -- test -e "$AGENT_VM_STATE_DIR/intake/keep"
+  forget_machine "" 2>/dev/null
+  forget_machine "../x" 2>/dev/null
+  forget_machine "a/b" 2>/dev/null
+  assert_status 0 "an empty or odd name removes nothing" -- test -d "$AGENT_VM_STATE_DIR/intake"
+  assert_status 0 "other machines still kept" -- test -e "$AGENT_VM_STATE_DIR/intake/keep"
+}
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do
   (
     TMP_ROOT="$TMP_BASE/$t"; mkdir -p "$TMP_ROOT"
