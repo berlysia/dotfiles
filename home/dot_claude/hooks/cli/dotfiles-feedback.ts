@@ -16,6 +16,10 @@ import {
   ERROR_HINTS,
   FEEDBACK_KINDS,
   FEEDBACK_REPO,
+  FLUSH_LOCK_FILE,
+  FLUSH_LOCK_STALE_MS,
+  VM_ID_PATTERN,
+  VM_OUTBOX_DIR,
 } from "../lib/dotfiles-feedback/constants.ts";
 import type {
   FeedbackDeps,
@@ -46,6 +50,7 @@ import {
   type FeedbackItemV1,
   type FeedbackKind,
 } from "../lib/dotfiles-feedback/item.ts";
+import { isLockHeld } from "../lib/dotfiles-feedback/lock.ts";
 import { openRetry } from "../lib/dotfiles-feedback/retry.ts";
 import {
   flushArgv,
@@ -53,6 +58,11 @@ import {
   spawnDetached,
 } from "../lib/dotfiles-feedback/spawn.ts";
 import { openSpool } from "../lib/dotfiles-feedback/spool.ts";
+import { ingestVm, retryVmFailed } from "../lib/dotfiles-feedback/ingest-vm.ts";
+import {
+  countVmOutbox,
+  sendFromVm,
+} from "../lib/dotfiles-feedback/vm-outbox.ts";
 
 const STDIN_MAX_BYTES = 64 * 1024;
 const USAGE = `使い方: dotfiles-feedback <command>
@@ -63,7 +73,8 @@ const USAGE = `使い方: dotfiles-feedback <command>
   list
   show <#番号|id>
   triage <#番号|id> --to <issue|plan|reject> [--path <docs/plans/x.md>] [--reason <理由>]
-  refresh`;
+  refresh
+  ingest-vm --state-dir=<dir> --machine=<name>   agent-vm が呼ぶ。VM の outbox を取り込む`;
 export type CliDeps = FeedbackDeps &
   InteractiveDeps & {
     cliPath: string;
@@ -82,6 +93,33 @@ function lastFlushLine(deps: CliDeps, hasPending: boolean): string | null {
   return last
     ? `直近の送信の失敗: ${last.error} (${last.at}) 対処: ${ERROR_HINTS[last.error] ?? ""}`
     : null;
+}
+
+// VM の中では spool にも gh にも触れず、outbox に置くだけにする。flush も起動しない（spec K4・K8）。
+async function sendInsideVm(
+  candidate: FeedbackItemV1,
+  redacted: boolean,
+  deps: CliDeps,
+): Promise<number> {
+  const outcome = await sendFromVm(candidate, deps);
+  if (outcome.kind === "queued") {
+    deps.stdout(
+      `${[
+        `保存した: ${candidate.id}`,
+        `伏せた箇所: ${redacted ? "あり" : "なし"}`,
+        "ホストが取り込むまで outbox に置いた",
+      ].join("\n")}\n`,
+    );
+    return 0;
+  }
+  deps.stderr(
+    outcome.kind === "full"
+      ? "ホストが取り込むまで送れない。ホストの dotfiles-feedback が古いなら更新する\n"
+      : outcome.kind === "unsafe"
+        ? "outbox のディレクトリが安全でないので書かなかった\n"
+        : `送れなかった: ${candidate.id} (${outcome.errno})\n`,
+  );
+  return 1;
 }
 
 const send: Command = async (args, deps) => {
@@ -154,11 +192,12 @@ const send: Command = async (args, deps) => {
     deps.stderr(`拒否: ${validated.reason}\n`);
     return 1;
   }
+  const redacted =
+    fields.title.redacted || fields.target.redacted || fields.body.redacted;
+  if (deps.isVm) return sendInsideVm(candidate, redacted, deps);
   const spool = await openSpool(deps.root, deps);
   const before = await spool.countLocal();
   await spool.writePending(candidate, { origin: "local" });
-  const redacted =
-    fields.title.redacted || fields.target.redacted || fields.body.redacted;
   const lines = [
     `保存した: ${candidate.id}`,
     `伏せた箇所: ${redacted ? "あり" : "なし"}`,
@@ -186,20 +225,45 @@ const flushCommand: Command = async (args, deps) => {
       return 1;
     }
     const spool = await openSpool(deps.root, deps);
-    await spool.retryFailed(values.retry);
-    await openRetry(deps.root, deps).reset(values.retry);
+    if (
+      VM_ID_PATTERN.test(values.retry) &&
+      (await spool.findVmFailed(values.retry)) !== null
+    ) {
+      const outcome = await retryVmFailed(deps, values.retry);
+      if (outcome.stdout !== "") deps.stdout(outcome.stdout);
+      if (outcome.stderr !== "") deps.stderr(outcome.stderr);
+      if (outcome.code !== 0) return outcome.code;
+    } else {
+      await spool.retryFailed(values.retry);
+      await openRetry(deps.root, deps).reset(values.retry);
+    }
   }
-  await flush(deps);
-  deps.stdout("flush 完了\n");
+  const result = await flush(deps);
+  deps.stdout(
+    result.kind === "busy"
+      ? "別の flush が実行中（終わると結果が status に出る）\n"
+      : "flush 完了\n",
+  );
   return 0;
 };
 
 const status: Command = async (_args, deps) => {
+  if (deps.isVm) {
+    deps.stdout(`ホストの取り込み待ち ${await countVmOutbox(deps)} 件\n`);
+    return 0;
+  }
   const spool = await openSpool(deps.root, deps);
   const counts = await spool.countLocal();
+  const sending = await isLockHeld(
+    join(deps.root, FLUSH_LOCK_FILE),
+    FLUSH_LOCK_STALE_MS,
+    deps,
+  );
   const lines = [
-    `未送: ${counts.unsent} 件`,
-    `失敗: ${counts.failed} 件`,
+    `未送: ${counts.unsent} 件${sending ? "（送り出し中）" : ""}`,
+    counts.failedVmUnsupported > 0
+      ? `失敗: ${counts.failed} 件（うち CLI を更新すれば取り込める ${counts.failedVmUnsupported} 件: dotfiles-feedback list で id を見て flush --retry <id>、不要なら drop <id>）`
+      : `失敗: ${counts.failed} 件`,
     `新しい版で止まっている: ${counts.held} 件`,
   ];
   const last = lastFlushLine(deps, counts.unsent > 0);
@@ -303,9 +367,30 @@ const refreshCommand: Command = async (args, deps) => {
   return 0;
 };
 
-const unimplemented: Command = async (_args, deps) => {
-  deps.stderr("未実装\n");
-  return 1;
+// 出力は ingestVm が作る固定の語と数だけ。VM が書いた名前と中身は載せない。
+const ingestVmCommand: Command = async (args, deps) => {
+  let values: { "state-dir"?: string; machine?: string };
+  try {
+    values = parseArgs({
+      args,
+      options: { "state-dir": { type: "string" }, machine: { type: "string" } },
+      strict: true,
+    }).values;
+  } catch {
+    deps.stderr("dotfiles-feedback: invalid-argument\n");
+    return 1;
+  }
+  if (values["state-dir"] === undefined || values.machine === undefined) {
+    deps.stderr("dotfiles-feedback: invalid-argument\n");
+    return 1;
+  }
+  const output = await ingestVm(
+    { stateDir: values["state-dir"], machine: values.machine },
+    deps,
+  );
+  if (output.stdout !== "") deps.stdout(output.stdout);
+  if (output.stderr !== "") deps.stderr(output.stderr);
+  return output.code;
 };
 
 const COMMANDS: Record<string, Command> = {
@@ -317,7 +402,7 @@ const COMMANDS: Record<string, Command> = {
   show: showCommand,
   triage: triageCommand,
   refresh: refreshCommand,
-  "ingest-vm": unimplemented,
+  "ingest-vm": ingestVmCommand,
 };
 
 export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
@@ -331,7 +416,7 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
     deps.stderr(`${USAGE}\n`);
     return 1;
   }
-  if (deps.isVm && name !== "status") {
+  if (deps.isVm && name !== "status" && name !== "send") {
     deps.stderr("VM からの送信は未対応\n");
     return 1;
   }
@@ -444,7 +529,10 @@ export function buildCliDeps(
     root: join(home, ".local", "share", "dotfiles-feedback"),
     home,
     uid: process.getuid?.() ?? -1,
-    fs: fsPromises,
+    fs: {
+      ...fsPromises,
+      readdirBuffer: (path) => fsPromises.readdir(path, { encoding: "buffer" }),
+    },
     repo: FEEDBACK_REPO,
     runGh,
     spawnFlush: () => spawnDetached(flushArgv(cliPath)),
@@ -455,6 +543,7 @@ export function buildCliDeps(
     isPidAlive,
     getPidStartTime,
     isVm: existsSync("/etc/agent-vm"),
+    vmOutboxDir: VM_OUTBOX_DIR,
     readStdin: readStdinCapped,
     envNames: Object.keys(process.env),
     resolveRepoKey: async (cwd) => resolveRepoKey(cwd, runGit),

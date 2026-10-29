@@ -4,11 +4,16 @@ import { join } from "node:path";
 import { it } from "node:test";
 import {
   openSpool,
+  PendingFullError,
   type SpoolDeps,
 } from "../../lib/dotfiles-feedback/spool.ts";
 import { openRetry } from "../../lib/dotfiles-feedback/retry.ts";
 import type { FeedbackItemV1 } from "../../lib/dotfiles-feedback/item.ts";
 import { parseItem } from "../../lib/dotfiles-feedback/item.ts";
+import { readInbox } from "../../lib/dotfiles-feedback/cache.ts";
+import { FEEDBACK_REPO } from "../../lib/dotfiles-feedback/constants.ts";
+import { refresh } from "../../lib/dotfiles-feedback/refresh.ts";
+import { fakeGh } from "../support/dotfiles-feedback-fake-gh.ts";
 
 const now = new Date("2026-10-29T10:00:00Z");
 const id = (index = 0) =>
@@ -384,6 +389,7 @@ it("spool: countLocal counts pending+sending, failed including vm, and held", ()
       unsent: 2,
       failed: 2,
       held: 1,
+      failedVmUnsupported: 0,
     });
   }));
 
@@ -445,4 +451,320 @@ it("spool: cleanup functions require the flush.lock release function", () =>
     await spool.truncateSent();
     // @ts-expect-error 同上
     await retry.prune(async () => new Set<string>());
+  }));
+
+// --- VM 由来の件（plan-5 T3）---
+const vmId = (index = 0) => `vm-${index.toString(16).padStart(24, "0")}`;
+const wrap = (reason: string, at = "2026-10-29T10:00:00Z") =>
+  JSON.stringify({ reason, item: "{}", at });
+async function withVmSpool(
+  run: (ctx: {
+    root: string;
+    deps: SpoolDeps;
+    spool: Awaited<ReturnType<typeof openSpool>>;
+  }) => Promise<void>,
+  mutate: (deps: SpoolDeps) => void = () => undefined,
+) {
+  const { root, deps } = await fixture();
+  try {
+    mutate(deps);
+    const spool = await openSpool(root, deps);
+    await run({ root, deps, spool });
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+}
+const seedVm = async (
+  root: string,
+  machine: string,
+  key: string,
+  reason: string,
+  ageDays = 0,
+) => {
+  const dir = join(root, "failed", `vm-${machine}`);
+  await fs.mkdir(dir, { mode: 0o700, recursive: true });
+  const path = join(dir, `${key}.json`);
+  await fs.writeFile(path, wrap(reason));
+  const mtime = new Date(now.getTime() - ageDays * 24 * 3600 * 1000);
+  await fs.utimes(path, mtime, mtime);
+  return path;
+};
+
+it("writeVmFailed creates failed/vm-<machine> with mode 700 and writes the wrapper", () =>
+  withVmSpool(async ({ root, spool }) => {
+    strictEqual(
+      await spool.writeVmFailed("m", vmId(1), wrap("invalid"), "invalid"),
+      "written",
+    );
+    const dir = join(root, "failed", "vm-m");
+    strictEqual((await fs.lstat(dir)).mode & 0o777, 0o700);
+    const file = join(dir, `${vmId(1)}.json`);
+    strictEqual((await fs.lstat(file)).mode & 0o777, 0o600);
+    strictEqual(await fs.readFile(file, "utf8"), wrap("invalid"));
+  }));
+it("writeVmFailed refuses an unsafe directory without writing", () =>
+  withVmSpool(async ({ root, spool }) => {
+    const loose = join(root, "failed", "vm-loose");
+    await fs.mkdir(loose, { mode: 0o755 });
+    await fs.chmod(loose, 0o755);
+    await rejects(
+      spool.writeVmFailed("loose", vmId(1), wrap("invalid"), "invalid"),
+      /unsafe/,
+    );
+    deepStrictEqual(await fs.readdir(loose), []);
+    const target = join(root, "elsewhere");
+    await fs.mkdir(target, { mode: 0o700 });
+    await fs.symlink(target, join(root, "failed", "vm-link"));
+    await rejects(
+      spool.writeVmFailed("link", vmId(1), wrap("invalid"), "invalid"),
+      /unsafe/,
+    );
+    deepStrictEqual(await fs.readdir(target), []);
+  }));
+it("writeVmFailed returns exists for a name that is already there", () =>
+  withVmSpool(async ({ spool }) => {
+    await spool.writeVmFailed("m", vmId(1), wrap("invalid"), "invalid");
+    strictEqual(
+      await spool.writeVmFailed("m", vmId(1), wrap("invalid"), "invalid"),
+      "exists",
+    );
+  }));
+it("writeVmFailed caps invalid at 100 and unsupported-version at 50 per machine, separately", () =>
+  withVmSpool(async ({ root, deps, spool }) => {
+    const dir = join(root, "failed", "vm-m");
+    await fs.mkdir(dir, { mode: 0o700 });
+    for (let i = 0; i < 100; i++)
+      await fs.writeFile(join(dir, `${vmId(i)}.json`), wrap("invalid"));
+    strictEqual(
+      await spool.writeVmFailed("m", vmId(500), wrap("invalid"), "invalid"),
+      "full",
+    );
+    strictEqual(
+      await spool.writeVmFailed(
+        "m",
+        vmId(501),
+        wrap("unsupported-version"),
+        "unsupported-version",
+      ),
+      "written",
+    );
+    strictEqual(
+      await spool.writeVmFailed("other", vmId(500), wrap("invalid"), "invalid"),
+      "written",
+    );
+    for (let i = 0; i < 49; i++)
+      await fs.writeFile(
+        join(dir, `${vmId(1000 + i)}.json`),
+        wrap("unsupported-version"),
+      );
+    // 枠の数は spool ごとに最初の 1 回だけ数える。直接足した分は開き直した spool が数える。
+    const reopened = await openSpool(root, deps);
+    strictEqual(
+      await reopened.writeVmFailed(
+        "m",
+        vmId(600),
+        wrap("unsupported-version"),
+        "unsupported-version",
+      ),
+      "full",
+    );
+  }));
+it("writeVmFailed rejects a bad machine name and a local-form id", () =>
+  withVmSpool(async ({ root, spool }) => {
+    await rejects(
+      spool.writeVmFailed("../x", vmId(1), wrap("invalid"), "invalid"),
+      /invalid machine/,
+    );
+    await rejects(
+      spool.writeVmFailed("m", id(), wrap("invalid"), "invalid"),
+      /invalid id/,
+    );
+    deepStrictEqual(await fs.readdir(join(root, "failed")), []);
+  }));
+it("writeVmFailed recreates the directory once when the first write finds it gone", () => {
+  let tripped = false;
+  return withVmSpool(
+    async ({ root, spool }) => {
+      strictEqual(
+        await spool.writeVmFailed("m", vmId(1), wrap("invalid"), "invalid"),
+        "written",
+      );
+      ok(tripped);
+      deepStrictEqual(await fs.readdir(join(root, "failed", "vm-m")), [
+        `${vmId(1)}.json`,
+      ]);
+    },
+    (deps) => {
+      const real = deps.fs;
+      deps.fs = {
+        ...real,
+        open: async (path, flags, mode) => {
+          if (!tripped && String(path).includes("/failed/vm-m/")) {
+            tripped = true;
+            await fs.rm(join(String(path), ".."), {
+              recursive: true,
+              force: true,
+            });
+          }
+          return real.open(path, flags, mode);
+        },
+      };
+    },
+  );
+});
+
+it("findVmFailed returns machine, path and text, and null for the top level or a symlinked directory", () =>
+  withVmSpool(async ({ root, spool }) => {
+    const path = await seedVm(root, "m", vmId(1), "invalid");
+    deepStrictEqual(await spool.findVmFailed(vmId(1)), {
+      machine: "m",
+      path,
+      text: wrap("invalid"),
+    });
+    await fs.writeFile(join(root, "failed", `${vmId(2)}.json`), wrap("x"));
+    strictEqual(await spool.findVmFailed(vmId(2)), null);
+    strictEqual(await spool.findVmFailed(vmId(3)), null);
+    strictEqual(await spool.findVmFailed(id()), null);
+    await fs.rename(join(root, "failed", "vm-m"), join(root, "real-m"));
+    await fs.symlink(join(root, "real-m"), join(root, "failed", "vm-m"));
+    strictEqual(await spool.findVmFailed(vmId(1)), null);
+  }));
+
+it("hasId except does not count the named file but counts every other place", () =>
+  withVmSpool(async ({ root, spool }) => {
+    const path = await seedVm(root, "m", vmId(1), "unsupported-version");
+    strictEqual(await spool.hasId(vmId(1)), true);
+    strictEqual(await spool.hasId(vmId(1), { except: path }), false);
+    await fs.writeFile(join(root, "pending", `${vmId(1)}.json`), "{}");
+    strictEqual(await spool.hasId(vmId(1), { except: path }), true);
+    await fs.rm(join(root, "pending", `${vmId(1)}.json`));
+    const other = await seedVm(root, "n", vmId(2), "invalid");
+    strictEqual(await spool.hasId(vmId(1), { except: other }), true);
+  }));
+
+it("writePending throws a PendingFullError when the origin is full", () =>
+  withVmSpool(async ({ root, spool }) => {
+    for (let i = 0; i < 50; i++)
+      await fs.writeFile(join(root, "pending", `${vmId(i)}.json`), "{}");
+    const error = await spool
+      .writePending(item(vmId(99)), { origin: "vm" })
+      .then(
+        () => null,
+        (caught: unknown) => caught,
+      );
+    ok(error instanceof PendingFullError);
+    ok(error instanceof Error);
+    strictEqual(error.message, "dotfiles-feedback: pending full");
+  }));
+
+it("pruneFailed keeps old unsupported-version VM items and prunes the rest after 30 days", () =>
+  withVmSpool(async ({ root, spool }) => {
+    const keep = await seedVm(root, "m", vmId(1), "unsupported-version", 31);
+    const drop = await seedVm(root, "m", vmId(2), "invalid", 31);
+    const top = join(root, "failed", `${id(1)}.json`);
+    await fs.writeFile(top, wrap("unsupported-version"));
+    const old = new Date(now.getTime() - 31 * 24 * 3600 * 1000);
+    await fs.utimes(top, old, old);
+    await spool.pruneFailed(now, async () => undefined);
+    strictEqual(
+      await fs.lstat(keep).then(
+        () => true,
+        () => false,
+      ),
+      true,
+    );
+    strictEqual(
+      await fs.lstat(drop).then(
+        () => true,
+        () => false,
+      ),
+      false,
+    );
+    strictEqual(
+      await fs.lstat(top).then(
+        () => true,
+        () => false,
+      ),
+      false,
+    );
+  }));
+it("pruneFailed removes a vm directory it emptied, and only that", () =>
+  withVmSpool(async ({ root, spool }) => {
+    await seedVm(root, "gone", vmId(1), "invalid", 31);
+    await seedVm(root, "stays", vmId(2), "unsupported-version", 31);
+    await spool.pruneFailed(now, async () => undefined);
+    deepStrictEqual((await fs.readdir(join(root, "failed"))).sort(), [
+      "vm-stays",
+    ]);
+  }));
+
+it("countLocal keeps failed as the whole count and reports failedVmUnsupported separately", () =>
+  withVmSpool(async ({ root, spool }) => {
+    await seedVm(root, "m", vmId(1), "unsupported-version");
+    await seedVm(root, "m", vmId(2), "unsupported-version");
+    await seedVm(root, "m", vmId(3), "invalid");
+    let counts = await spool.countLocal();
+    strictEqual(counts.failed, 3);
+    strictEqual(counts.failedVmUnsupported, 2);
+    await fs.writeFile(join(root, "pending", `${vmId(1)}.json`), "{}");
+    counts = await spool.countLocal();
+    strictEqual(counts.failed, 3);
+    strictEqual(counts.failedVmUnsupported, 1);
+  }));
+it("countLocal counts 50 unsupported-version items", () =>
+  withVmSpool(async ({ root, spool }) => {
+    for (let i = 0; i < 50; i++)
+      await seedVm(root, "m", vmId(i), "unsupported-version");
+    const counts = await spool.countLocal();
+    strictEqual(counts.failedVmUnsupported, 50);
+  }));
+it("drop removes a failed/vm-<machine> item", () =>
+  withVmSpool(async ({ root, spool }) => {
+    const path = await seedVm(root, "m", vmId(1), "invalid");
+    await spool.drop(vmId(1));
+    strictEqual(
+      await fs.lstat(path).then(
+        () => true,
+        () => false,
+      ),
+      false,
+    );
+  }));
+
+it("refresh keeps failedLocal as the whole failed count for unsupported-version VM items", () =>
+  withVmSpool(async ({ root, deps }) => {
+    for (let i = 0; i < 50; i++)
+      await seedVm(root, "m", vmId(i), "unsupported-version");
+    const result = await refresh({
+      ...deps,
+      root,
+      home: "/h",
+      repo: FEEDBACK_REPO,
+      runGh: fakeGh().run,
+      spawnFlush: async () => true,
+      log: () => undefined,
+    });
+    strictEqual(result.kind, "done");
+    const inbox = readInbox(join(root, "state", "inbox.json"), now);
+    if (inbox.state === "missing" || inbox.state === "invalid")
+      throw new Error(inbox.state);
+    strictEqual(inbox.value.failedLocal, 50);
+    deepStrictEqual(Object.keys(inbox.value).sort(), [
+      "failedLocal",
+      "fetchedAt",
+      "heldLocal",
+      "pendingLocal",
+      "unprocessed",
+      "v",
+    ]);
+  }));
+
+it("a vm-<hex>.json file at the top of failed/ (a VM item that failed in flush) is an item, not a machine directory", () =>
+  withVmSpool(async ({ root, deps, spool }) => {
+    await fs.writeFile(join(root, "failed", `${vmId(7)}.json`), wrap("x"));
+    const reopened = await openSpool(root, deps);
+    strictEqual((await reopened.countLocal()).failed, 1);
+    strictEqual(await spool.hasId(vmId(7)), true);
+    await spool.drop(vmId(7));
+    strictEqual((await reopened.countLocal()).failed, 0);
   }));

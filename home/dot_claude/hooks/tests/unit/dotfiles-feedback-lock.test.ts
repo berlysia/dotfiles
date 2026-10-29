@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { it } from "node:test";
 import {
   acquireLock,
+  inspectLock,
+  isLockHeld,
   type LockDeps,
 } from "../../lib/dotfiles-feedback/lock.ts";
 
@@ -112,3 +114,60 @@ it("creates exclusive private locks and releases only its own contents", async (
     await fs.rm(dir, { recursive: true, force: true });
   }
 });
+
+for (const scenario of [
+  "live",
+  "dead",
+  "expired",
+  "reused",
+  "broken-new",
+  "broken-old",
+  "none",
+] as const) {
+  it(`isLockHeld: ${scenario} leaves the lock file untouched`, async () => {
+    const dir = await fs.mkdtemp(join(import.meta.dirname, ".feedback-lock-"));
+    const path = join(dir, "lock");
+    const deps: LockDeps = {
+      fs,
+      now: () => now,
+      pid: 2,
+      randomBytes: (size) => new Uint8Array(size).fill(2),
+      isPidAlive: () => scenario !== "dead",
+      getPidStartTime: async () => "new",
+    };
+    try {
+      const age =
+        (scenario === "expired" || scenario === "broken-old" ? 36 : 1) * 60000;
+      const text = scenario.startsWith("broken")
+        ? "{"
+        : JSON.stringify({
+            v: 1,
+            pid: 1,
+            startTime: scenario === "reused" ? "old" : "new",
+            acquiredAt: new Date(now.getTime() - age).toISOString(),
+          });
+      if (scenario !== "none") {
+        await fs.writeFile(path, text);
+        await fs.utimes(path, now, new Date(now.getTime() - age));
+      }
+      const before = scenario === "none" ? null : await fs.lstat(path);
+      const held = await isLockHeld(path, 35 * 60000, deps);
+      strictEqual(held, scenario === "live" || scenario === "broken-new");
+      strictEqual(
+        await inspectLock(path, 35 * 60000, deps),
+        scenario === "none"
+          ? "free"
+          : scenario === "live" || scenario === "broken-new"
+            ? "held"
+            : "stale",
+      );
+      if (before) {
+        strictEqual(await fs.readFile(path, "utf8"), text);
+        strictEqual((await fs.lstat(path)).mtimeMs, before.mtimeMs);
+      }
+      strictEqual((await fs.readdir(dir)).length, scenario === "none" ? 0 : 1);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+}

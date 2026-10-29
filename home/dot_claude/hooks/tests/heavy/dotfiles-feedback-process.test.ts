@@ -388,3 +388,148 @@ setTimeout(() => {}, 10000);
     ok(times[1]! <= 50, `median ${times[1]}ms > 50ms`);
   });
 });
+
+describe("dotfiles-feedback ingest-vm as a process", () => {
+  const dirs: string[] = [];
+  after(() => {
+    for (const dir of dirs) {
+      spawnSync("chmod", ["-R", "u+rwX", dir]);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // 取り込みが起動する flush は、失敗する gh に当たって pending/ に件を残す（件の有無を確かめられるように）。
+  function setup() {
+    const base = realpathSync(mkdtempSync(join(tmpdir(), "feedback-ingest-")));
+    dirs.push(base);
+    const fakeDir = join(base, "bin");
+    mkdirSync(fakeDir);
+    writeFileSync(join(fakeDir, "gh"), "#!/bin/sh\nexit 1\n");
+    chmodSync(join(fakeDir, "gh"), 0o755);
+    const home = join(base, "home");
+    mkdirSync(home);
+    const state = join(base, "state");
+    mkdirSync(state, { mode: 0o700 });
+    const machine = "agent-test-000000";
+    const outbox = join(state, "outbox", machine, "dotfiles-feedback");
+    mkdirSync(outbox, { recursive: true, mode: 0o700 });
+    return {
+      base,
+      fakeDir,
+      home,
+      root: join(base, "spool"),
+      state,
+      machine,
+      outbox,
+    };
+  }
+  const validItem = (index: number) =>
+    JSON.stringify({
+      schemaVersion: 1,
+      id: `20261029T090000Z-${index.toString(16).padStart(12, "0")}`,
+      createdAt: "2026-10-29T09:00:00Z",
+      title: `title ${index}`,
+      target: "target",
+      kind: "bug",
+      body: "body",
+      source: { agent: "claude", repoKey: null, host: "vm", vm: true },
+    });
+  const itemName = (index: number) =>
+    `20261029T090000Z-${index.toString(16).padStart(12, "0")}.json`;
+  function ingest(s: ReturnType<typeof setup>) {
+    return spawnSync(
+      "bun",
+      [
+        CHILD,
+        s.root,
+        s.home,
+        "ingest-vm",
+        `--state-dir=${s.state}`,
+        `--machine=${s.machine}`,
+      ],
+      {
+        cwd: s.base,
+        env: {
+          PATH: `${s.fakeDir}:${process.env["PATH"] ?? ""}`,
+          HOME: s.home,
+          BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0",
+        },
+        encoding: "utf8",
+        timeout: 60_000,
+      },
+    );
+  }
+  const FIXTURE = join(
+    HOOKS,
+    "../../../tests/agent-vm/fixtures/dotfiles-feedback-ingest-ok.txt",
+  );
+
+  it("ingests a valid item and prints the line that agent-vm's stub also prints", () => {
+    const s = setup();
+    writeFileSync(join(s.outbox, itemName(1)), validItem(1));
+    const r = ingest(s);
+    strictEqual(r.status, 0, r.stderr);
+    strictEqual(r.stdout, readFileSync(FIXTURE, "utf8"));
+    strictEqual(readdirSync(join(s.root, "pending")).length, 1);
+    ok(!existsSync(join(s.state, "outbox", s.machine, "dotfiles-feedback")));
+  });
+
+  it("with the real limits, 60 readable items give ingested=50 kept=10", () => {
+    const s = setup();
+    for (let i = 0; i < 60; i++)
+      writeFileSync(join(s.outbox, itemName(i)), validItem(i));
+    const r = ingest(s);
+    strictEqual(r.status, 0, r.stderr);
+    strictEqual(
+      r.stdout,
+      "dotfiles-feedback ingest-vm: ingested=50 failed=0 discarded=0 kept=10\n",
+    );
+    strictEqual(readdirSync(join(s.root, "pending")).length, 50);
+  });
+
+  it("an outbox whose parent denies the rename prints rename-denied and exits 1", (t) => {
+    if (process.getuid?.() === 0) return t.skip("root ignores modes");
+    const s = setup();
+    writeFileSync(join(s.outbox, itemName(1)), validItem(1));
+    chmodSync(join(s.state, "outbox", s.machine), 0o500);
+    const r = ingest(s);
+    strictEqual(r.status, 1);
+    strictEqual(r.stderr, "dotfiles-feedback: rename-denied\n");
+    strictEqual(r.stdout, "");
+  });
+
+  it("a leftover place with mode 200 is quarantined and the path is printed", (t) => {
+    if (process.getuid?.() === 0) return t.skip("root ignores modes");
+    const s = setup();
+    const place = join(s.state, "intake", s.machine, "aaaaaaaaaaaaaaaa");
+    mkdirSync(place, { recursive: true, mode: 0o700 });
+    writeFileSync(join(place, itemName(1)), validItem(1));
+    chmodSync(place, 0o200);
+    rmSync(join(s.state, "outbox"), { recursive: true });
+    const r = ingest(s);
+    strictEqual(r.status, 0, r.stderr);
+    const lines = r.stdout.split("\n");
+    ok(lines[0]!.endsWith("reason=quarantined"), r.stdout);
+    ok(lines[1]!.startsWith("quarantined: "), r.stdout);
+  });
+
+  it("a file whose name holds 0xff is removed under bun and does not block a valid item", (t) => {
+    if (process.platform !== "linux")
+      return t.skip("APFS cannot create invalid UTF-8 names");
+    const s = setup();
+    writeFileSync(join(s.outbox, itemName(1)), validItem(1));
+    writeFileSync(
+      Buffer.concat([Buffer.from(`${s.outbox}/bad-`), Buffer.from([0xff])]),
+      Buffer.from([0xff, 0xfe]),
+    );
+    const r = ingest(s);
+    strictEqual(r.status, 0, r.stderr);
+    strictEqual(
+      r.stdout,
+      "dotfiles-feedback ingest-vm: ingested=1 failed=0 discarded=1 kept=0\n",
+    );
+    strictEqual(readdirSync(join(s.root, "pending")).length, 1);
+    deepStrictEqual(readdirSync(join(s.state, "intake", s.machine)), []);
+    ok(!existsSync(join(s.state, "outbox", s.machine, "dotfiles-feedback")));
+  });
+});

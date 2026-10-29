@@ -560,15 +560,15 @@ count_entries() { find "$1" -mindepth 1 -print0 | tr -dc '\0' | wc -c | tr -d ' 
 verify_golden() { # host-side checks, run on every use even when the update is skipped (spec K6)
   local ob="$AGENT_VM_STATE_DIR/outbox/$GOLDEN_MACHINE" br="$AGENT_VM_STATE_DIR/browsers/$GOLDEN_MACHINE" d n
   verify_machine_config "$GOLDEN_MACHINE" "$(vm_mounts "$GOLDEN_MACHINE")" || die "the golden machine failed its check (see above). recover: agent-vm golden rm"
-  # Exactly two real, empty directories in the outbox; counted NUL-separated, so a name holding a newline or a
+  # Exactly three real, empty directories in the outbox; counted NUL-separated, so a name holding a newline or a
   # separator cannot pass for the expected listing.
   [[ -d "$ob" && ! -L "$ob" ]] || die "the golden machine's outbox is missing. recover: agent-vm golden rm"
-  for d in claude-projects codex-sessions; do
+  for d in claude-projects codex-sessions dotfiles-feedback; do
     [[ -d "$ob/$d" && ! -L "$ob/$d" ]] || die "the golden machine's outbox lacks $d/. recover: agent-vm golden rm"
   done
   # find fails on a subtree the VM made unreadable; that is a failed check too, with the same recovery.
   n=$(count_entries "$ob") || die "the golden machine's outbox could not be read in full. recover: agent-vm golden rm"
-  [[ "$n" == 2 ]] || die "the golden machine's outbox holds $n entries, expected only claude-projects/ and codex-sessions/. recover: agent-vm golden rm"
+  [[ "$n" == 3 ]] || die "the golden machine's outbox holds $n entries, expected only claude-projects/, codex-sessions/ and dotfiles-feedback/. recover: agent-vm golden rm"
   # The golden never gets a browser (it has no browser record); its browsers mount exists only for bootstrap.
   [[ -d "$br" && ! -L "$br" ]] || die "the golden machine's browsers dir is missing. recover: agent-vm golden rm"
   n=$(count_entries "$br") || die "the golden machine's browsers dir could not be read in full. recover: agent-vm golden rm"
@@ -759,6 +759,49 @@ ingest_tree() { # machine subdir dest mode(apply|inspect); uses INGEST_RECORDS /
   done < <(cd "$src" && find . -type f -name '*.jsonl' -print0)
 }
 
+# First line of a file, printable ASCII only and at most 200 chars. Anything a VM could influence goes through this
+# before it reaches the terminal.
+feedback_first_line() { # file
+  head -n 1 "$1" | LC_ALL=C tr -cd '\40-\176' | cut -c1-200
+}
+
+# Hands the VM's dotfiles-feedback outbox to the host CLI, which re-validates it as hostile input (spec K8).
+# Only warns: whatever happens here must not change ingest_outbox's status. Warning text is either a line that
+# matches a fixed shape or the fixed sentence "dotfiles-feedback: unexpected output", never VM-authored text.
+ingest_feedback() { # machine
+  local m=${1:-} t rc=0 line shape
+  [[ -n "$m" && "$m" != "$GOLDEN_MACHINE" ]] || return 0
+  if ! command -v dotfiles-feedback >/dev/null 2>&1; then
+    step "skipping dotfiles-feedback ingest: command not found; run chezmoi apply on the host"
+    return 0
+  fi
+  mkdir -p "$AGENT_VM_STATE_DIR/build"
+  t=$(mktemp -d "$AGENT_VM_STATE_DIR/build/feedback.XXXXXX") || return 0
+  dotfiles-feedback ingest-vm --state-dir="$AGENT_VM_STATE_DIR" --machine="$m" >"$t/out" 2>"$t/err" || rc=$?
+  if ((rc != 0)); then
+    line=$(feedback_first_line "$t/err")
+    [[ "$line" =~ ^dotfiles-feedback:\ [A-Za-z0-9_-]+$ ]] || line="dotfiles-feedback: unexpected output"
+    step "skipping dotfiles-feedback ingest: $line; if the host CLI is old or lacks ingest-vm, run chezmoi apply on the host"
+    if [[ "$line" == "dotfiles-feedback: rename-denied" ]]; then
+      step "recover: stop the VM, check that $AGENT_VM_STATE_DIR/outbox/$m/dotfiles-feedback is a real directory, then chmod -R u+rwX and remove it"
+    fi
+  else
+    line=$(feedback_first_line "$t/out")
+    shape='^dotfiles-feedback ingest-vm: ingested=[0-9]+ failed=[0-9]+ discarded=[0-9]+ kept=[0-9]+( reason=[a-z-]+)?$'
+    if [[ "$line" == *" reason="* || ( "$line" == *"kept="* && ! "$line" =~ kept=0($|\ ) ) ]]; then
+      [[ "$line" =~ $shape ]] || line="dotfiles-feedback: unexpected output"
+      step "$line"
+      case "$line" in
+        *" reason=quarantined" | *" reason=quarantine-full" | *" reason=quarantine-denied")
+          step "recover: stop the VM, then chmod -R u+rwX and remove the directories under $AGENT_VM_STATE_DIR/intake/$m and $AGENT_VM_STATE_DIR/intake-quarantine/$m"
+          ;;
+      esac
+    fi
+  fi
+  rm -rf "$t"
+  return 0
+}
+
 # Sets the INGEST_RECORDS / INGEST_DIVERGED globals that ingest_tree appends to.
 # Re-reads AGENT_VM_CLAUDE_PROJECTS_DIR / AGENT_VM_CODEX_SESSIONS_DIR here (rather than relying only on
 # the CLAUDE_PROJECTS_DIR / CODEX_SESSIONS_DIR defaults captured at startup) so a caller that sets them
@@ -775,6 +818,7 @@ ingest_outbox() { # machine -> 0, or 4 when some logs diverged from their host c
   : >"$INGEST_DIVERGED"
   ingest_tree "$1" claude-projects "$claude_dir" apply
   ingest_tree "$1" codex-sessions "$codex_dir" apply
+  ingest_feedback "$1"
   { printf 'format=1\n'; cat "$INGEST_RECORDS"; } >"$(ingested_path "$1")"
   if [[ -s "$INGEST_DIVERGED" ]]; then
     repo=$(read_meta_field "$1" repo_path 2>/dev/null) || repo="<repo of $1>"
@@ -1807,6 +1851,17 @@ forget_machine() { # machine: host-side state for one machine (host-authored env
   if [[ -e "$AGENT_VM_STATE_DIR/browsers/$1" ]]; then
     chmod -R u+rwX "$AGENT_VM_STATE_DIR/browsers/$1" 2>/dev/null || true
     rm -rf "$AGENT_VM_STATE_DIR/browsers/$1" 2>/dev/null || step "could not fully remove $AGENT_VM_STATE_DIR/browsers/$1; remove it by hand"
+  fi
+  # Ingest places and quarantines the VM may have left unreadable (spec K8). failed/vm-<machine>/ in the spool stays.
+  # The name is checked first: it becomes a path under a recursive chmod and rm.
+  if [[ -n "$1" && "$1" != */* && "$1" != *..* && "$1" =~ ^[a-z0-9][a-z0-9._-]*$ ]]; then
+    local d
+    for d in intake intake-quarantine; do
+      if [[ -e "$AGENT_VM_STATE_DIR/$d/$1" ]]; then
+        chmod -R u+rwX "$AGENT_VM_STATE_DIR/$d/$1" 2>/dev/null || true
+        rm -rf "${AGENT_VM_STATE_DIR:?}/$d/$1" 2>/dev/null || step "could not fully remove $AGENT_VM_STATE_DIR/$d/$1; remove it by hand"
+      fi
+    done
   fi
 }
 

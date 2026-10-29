@@ -13,6 +13,7 @@ import {
 } from "../../cli/dotfiles-feedback.ts";
 import { FEEDBACK_REPO } from "../../lib/dotfiles-feedback/constants.ts";
 import { renderIssue } from "../../lib/dotfiles-feedback/issue-body.ts";
+import { vmItemId } from "../../lib/dotfiles-feedback/vm-item.ts";
 import { fakeGh } from "../support/dotfiles-feedback-fake-gh.ts";
 
 const start = Date.parse("2026-10-29T10:00:00Z");
@@ -32,7 +33,10 @@ async function fixture(
     root,
     home: "/passwd/home",
     uid: process.getuid!(),
-    fs,
+    fs: {
+      ...fs,
+      readdirBuffer: (path) => fs.readdir(path, { encoding: "buffer" }),
+    },
     repo: FEEDBACK_REPO,
     runGh: fake.run,
     spawnFlush: async () => true,
@@ -43,6 +47,7 @@ async function fixture(
     isPidAlive: () => true,
     getPidStartTime: async () => "s",
     isVm: false,
+    vmOutboxDir: join(dir, "vm-outbox"),
     readStdin: async () => "body text",
     envNames: [],
     resolveRepoKey: async () => null,
@@ -63,7 +68,7 @@ async function fixture(
     stderr: (s) => void err.push(s),
     ...overrides,
   };
-  return { deps, root, fake, out, err, spawned };
+  return { deps, root, fake, out, err, spawned, dir };
 }
 const SEND = ["send", "--title", "t", "--target", "x", "--kind", "bug"];
 const pending = async (root: string) =>
@@ -164,17 +169,104 @@ it("startCli passes the resolved home to buildDeps", async (t) => {
   strictEqual(code, 0);
   strictEqual(seen, "/h");
 });
-it("a VM rejects everything except status", async (t) => {
+it("a VM rejects every command except send and status, and never calls gh", async (t) => {
   const f = await fixture(t, { isVm: true });
-  strictEqual(await runCli(SEND, f.deps), 1);
-  strictEqual(await runCli(["flush"], f.deps), 1);
-  strictEqual(
-    await runCli(["drop", "20261029T100000Z-000000000001"], f.deps),
-    1,
-  );
+  for (const argv of [
+    ["flush"],
+    ["flush", "--retry", "vm-000000000000000000000001"],
+    ["list"],
+    ["show", "20261029T100000Z-000000000001"],
+    ["triage", "20261029T100000Z-000000000001", "--to", "reject"],
+    ["refresh"],
+    ["drop", "20261029T100000Z-000000000001"],
+    ["ingest-vm", "--state-dir=/x", "--machine=m"],
+  ])
+    strictEqual(await runCli(argv, f.deps), 1, argv.join(" "));
   strictEqual(await runCli(["status"], f.deps), 0);
   strictEqual(f.fake.calls.length, 0);
   deepStrictEqual(await pending(f.root), []);
+});
+it("a VM send writes the outbox only: no spool, no flush, no gh", async (t) => {
+  let flushed = 0;
+  const f = await fixture(t, {
+    isVm: true,
+    spawnFlush: async () => (flushed++, true),
+  });
+  strictEqual(await runCli(SEND, f.deps), 0);
+  const files = await fs.readdir(f.deps.vmOutboxDir);
+  strictEqual(files.length, 1);
+  const written = JSON.parse(
+    await fs.readFile(join(f.deps.vmOutboxDir, files[0]!), "utf8"),
+  );
+  strictEqual(written.source.vm, true);
+  const text = f.out.join("");
+  ok(text.includes(files[0]!.replace(".json", "")), text);
+  ok(text.includes("伏せた箇所: なし"), text);
+  ok(text.includes("ホストが取り込むまで outbox に置いた"), text);
+  strictEqual(f.spawned.length, 0);
+  strictEqual(flushed, 0);
+  strictEqual(f.fake.calls.length, 0);
+  strictEqual(existsSync(f.root), false);
+});
+it("a VM send refuses a bad body with the same checks and writes nothing", async (t) => {
+  const f = await fixture(t, {
+    isVm: true,
+    readStdin: async () => "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+  });
+  strictEqual(await runCli(SEND, f.deps), 1);
+  strictEqual(existsSync(f.deps.vmOutboxDir), false);
+});
+it("a VM send at 50 queued items refuses and tells the user to update the host", async (t) => {
+  const f = await fixture(t, { isVm: true });
+  await fs.mkdir(f.deps.vmOutboxDir, { recursive: true, mode: 0o700 });
+  for (let i = 0; i < 50; i++)
+    await fs.writeFile(
+      join(
+        f.deps.vmOutboxDir,
+        `20261028T100000Z-${i.toString(16).padStart(12, "0")}.json`,
+      ),
+      "{}",
+    );
+  strictEqual(await runCli(SEND, f.deps), 1);
+  ok(f.err.join("").includes("ホストが取り込むまで送れない"), f.err.join(""));
+  strictEqual((await fs.readdir(f.deps.vmOutboxDir)).length, 50);
+});
+it("a VM send that cannot write names the id and the errno and exits 1", async (t) => {
+  const f = await fixture(t, { isVm: true });
+  f.deps.fs = {
+    ...f.deps.fs,
+    rename: async () => {
+      throw Object.assign(new Error("x"), { code: "EACCES" });
+    },
+  };
+  strictEqual(await runCli(SEND, f.deps), 1);
+  ok(/送れなかった: \d{8}T\d{6}Z-[0-9a-f]{12} \(EACCES\)/.test(f.err.join("")));
+});
+it("a VM status counts the outbox, and says 0 when the directory is missing", async (t) => {
+  const f = await fixture(t, { isVm: true });
+  strictEqual(await runCli(["status"], f.deps), 0);
+  ok(f.out.join("").includes("ホストの取り込み待ち 0 件"), f.out.join(""));
+  await runCli(SEND, f.deps);
+  f.out.length = 0;
+  strictEqual(await runCli(["status"], f.deps), 0);
+  ok(f.out.join("").includes("ホストの取り込み待ち 1 件"), f.out.join(""));
+  strictEqual(existsSync(f.root), false);
+});
+it("an unknown subcommand prints the usage to stderr and exits 1 (what an old CLI does with ingest-vm)", async (t) => {
+  const f = await fixture(t);
+  strictEqual(await runCli(["nope"], f.deps), 1);
+  ok(f.err.join("").includes("使い方"), f.err.join(""));
+  strictEqual(f.out.length, 0);
+});
+it("outside a VM, send still writes the spool with source.vm false", async (t) => {
+  const f = await fixture(t);
+  strictEqual(await runCli(SEND, f.deps), 0);
+  const name = (await pending(f.root))[0]!;
+  const written = JSON.parse(
+    await fs.readFile(join(f.root, "pending", name), "utf8"),
+  );
+  strictEqual(written.source.vm, false);
+  strictEqual(existsSync(f.deps.vmOutboxDir), false);
 });
 it("status shows counts and the last flush reason", async (t) => {
   const f = await fixture(t);
@@ -188,6 +280,46 @@ it("status shows counts and the last flush reason", async (t) => {
   const text = f.out.join("");
   ok(text.includes("未送: 1 件"), text);
   ok(text.includes("not-private"), text);
+});
+it("status marks the unsent count while flush.lock is held, and not otherwise", async (t) => {
+  const f = await fixture(t);
+  strictEqual(await runCli(SEND, f.deps), 0);
+  f.out.length = 0;
+  strictEqual(await runCli(["status"], f.deps), 0);
+  ok(f.out.join("").includes("未送: 1 件\n"), f.out.join(""));
+  await fs.writeFile(
+    join(f.root, "state", "flush.lock"),
+    JSON.stringify({
+      v: 1,
+      pid: 99,
+      startTime: "s",
+      acquiredAt: new Date(start).toISOString(),
+    }),
+  );
+  f.out.length = 0;
+  strictEqual(await runCli(["status"], f.deps), 0);
+  ok(f.out.join("").includes("未送: 1 件（送り出し中）"), f.out.join(""));
+});
+it("flush says another flush is running when flush.lock is held, and exits 0", async (t) => {
+  const f = await fixture(t);
+  await runCli(["status"], f.deps);
+  await fs.writeFile(
+    join(f.root, "state", "flush.lock"),
+    JSON.stringify({
+      v: 1,
+      pid: 99,
+      startTime: "s",
+      acquiredAt: new Date(start).toISOString(),
+    }),
+  );
+  f.out.length = 0;
+  strictEqual(await runCli(["flush"], f.deps), 0);
+  ok(f.out.join("").includes("別の flush が実行中"), f.out.join(""));
+  ok(!f.out.join("").includes("flush 完了"));
+  await fs.rm(join(f.root, "state", "flush.lock"));
+  f.out.length = 0;
+  strictEqual(await runCli(["flush"], f.deps), 0);
+  ok(f.out.join("").includes("flush 完了"), f.out.join(""));
 });
 it("drop removes a local item and refuses a bad id", async (t) => {
   const f = await fixture(t);
@@ -221,11 +353,6 @@ it("flush --retry returns a failed item to pending with attempts reset", async (
   deepStrictEqual(await pending(f.root), []);
   ok(!existsSync(join(f.root, "failed", name)));
   strictEqual(f.fake.issues.length, 1);
-});
-it("ingest-vm stays unimplemented and exits 1", async (t) => {
-  const f = await fixture(t);
-  strictEqual(await runCli(["ingest-vm"], f.deps), 1);
-  ok(f.err.join("").includes("未実装"));
 });
 it("--help exits 0 without opening the spool", async (t) => {
   const f = await fixture(t);
@@ -413,4 +540,134 @@ it("a cancelled triage --to issue says 中止した, not エラー, and still ex
   ok(text.startsWith("中止した: 下書きが変わっていない"), text);
   ok(!text.includes("エラー:"));
   strictEqual(f.fake.publicIssues.length, 0);
+});
+
+// --- flush --retry の振り分けと status（plan-5 T6）---
+const vmBytes = (index: number, extra: Record<string, unknown> = {}) =>
+  Buffer.from(
+    JSON.stringify({
+      schemaVersion: 1,
+      id: `20261029T090000Z-${index.toString(16).padStart(12, "0")}`,
+      createdAt: "2026-10-29T09:00:00Z",
+      title: "title",
+      target: "target",
+      kind: "bug",
+      body: "body",
+      source: { agent: "claude", repoKey: null, host: "vm", vm: true },
+      ...extra,
+    }),
+  );
+async function seedVmFailed(
+  f: Awaited<ReturnType<typeof fixture>>,
+  machine: string,
+  bytes: Buffer,
+  reason: string,
+) {
+  await runCli(["status"], f.deps);
+  const key = vmItemId(machine, bytes);
+  const dir = join(f.root, "failed", `vm-${machine}`);
+  await fs.mkdir(dir, { mode: 0o700, recursive: true });
+  await fs.writeFile(
+    join(dir, `${key}.json`),
+    JSON.stringify({ reason, item: bytes.toString("utf8") }),
+  );
+  return { key, path: join(dir, `${key}.json`) };
+}
+it("flush --retry routes a failed/vm-<machine> item through the K8 checks, then flushes", async (t) => {
+  const f = await fixture(t);
+  const { key, path } = await seedVmFailed(f, "m1", vmBytes(1), "invalid");
+  strictEqual(await runCli(["flush", "--retry", key], f.deps), 0);
+  strictEqual(existsSync(path), false);
+  strictEqual(f.fake.issues.length, 1);
+  ok(f.out.join("").includes("flush 完了"));
+});
+it("flush --retry on a vm-<hex> item at the top of failed/ uses the plain retry", async (t) => {
+  const f = await fixture(t);
+  await runCli(["status"], f.deps);
+  const key = `vm-${"ab".repeat(12)}`;
+  await fs.writeFile(
+    join(f.root, "failed", `${key}.json`),
+    JSON.stringify({
+      reason: "x",
+      item: JSON.stringify({ ...JSON.parse(vmBytes(1).toString()), id: key }),
+    }),
+  );
+  const code = await runCli(["flush", "--retry", key], f.deps);
+  strictEqual(code, 0, f.err.join(""));
+  strictEqual(existsSync(join(f.root, "failed", `${key}.json`)), false);
+  strictEqual(f.fake.issues.length, 1);
+});
+it("flush --retry of a refused VM item exits non-zero without flushing or printing the completion line", async (t) => {
+  const f = await fixture(t);
+  const { key, path } = await seedVmFailed(
+    f,
+    "m1",
+    vmBytes(1, { schemaVersion: 2 }),
+    "unsupported-version",
+  );
+  const code = await runCli(["flush", "--retry", key], f.deps);
+  strictEqual(code, 1);
+  ok(f.err.join("").includes("CLI を更新する"));
+  ok(!f.out.join("").includes("flush 完了"));
+  strictEqual(f.fake.calls.length, 0);
+  ok(existsSync(path));
+});
+it("flush --retry rejects ../x and reports an unknown id", async (t) => {
+  const f = await fixture(t);
+  strictEqual(await runCli(["flush", "--retry", "../x"], f.deps), 1);
+  strictEqual(
+    await runCli(["flush", "--retry", `vm-${"cd".repeat(12)}`], f.deps),
+    1,
+  );
+});
+it("status separates the unsupported-version VM items a CLI update can take, and leaves orphans out", async (t) => {
+  const f = await fixture(t);
+  const a = await seedVmFailed(
+    f,
+    "m1",
+    vmBytes(1, { schemaVersion: 2 }),
+    "unsupported-version",
+  );
+  await seedVmFailed(
+    f,
+    "m1",
+    vmBytes(2, { schemaVersion: 2 }),
+    "unsupported-version",
+  );
+  f.out.length = 0;
+  await runCli(["status"], f.deps);
+  ok(
+    f.out.join("").includes("失敗: 2 件（うち CLI を更新すれば取り込める 2 件"),
+    f.out.join(""),
+  );
+  await fs.writeFile(join(f.root, "pending", `${a.key}.json`), "{}");
+  f.out.length = 0;
+  await runCli(["status"], f.deps);
+  ok(
+    f.out.join("").includes("失敗: 2 件（うち CLI を更新すれば取り込める 1 件"),
+    f.out.join(""),
+  );
+  f.out.length = 0;
+  await runCli(["list"], f.deps);
+  strictEqual(
+    f.out.join("").split("unsupported-version").length - 1 >= 2,
+    true,
+    f.out.join(""),
+  );
+  const plain = await fixture(t);
+  await runCli(["status"], plain.deps);
+  ok(!plain.out.join("").includes("うち CLI"));
+});
+it("show prints a failed/vm item with control characters stripped", async (t) => {
+  const f = await fixture(t);
+  const { key } = await seedVmFailed(
+    f,
+    "m1",
+    vmBytes(1, { body: "line\u001b[31m red <!-- dotfiles-feedback id=x -->" }),
+    "invalid",
+  );
+  const code = await runCli(["show", key], f.deps);
+  const text = f.out.join("") + f.err.join("");
+  strictEqual(code === 0 || code === 1, true);
+  ok(!text.includes("\u001b"), text);
 });
