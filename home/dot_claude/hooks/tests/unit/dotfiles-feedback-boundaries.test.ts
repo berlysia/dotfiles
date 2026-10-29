@@ -39,6 +39,16 @@ const edges: Record<string, readonly string[]> = {
     "deps",
     "display",
   ],
+  triage: [
+    "target",
+    "gh",
+    "issue-body",
+    "item",
+    "display",
+    "constants",
+    "deps",
+    "../agent-caller",
+  ],
   display: ["../invisible-chars", "constants", "cache", "item"],
   lock: ["constants", "deps"],
   retry: ["lock", "constants", "deps", "item"],
@@ -291,4 +301,41 @@ it("requires type-only node imports in deps", () => {
     ),
     [],
   );
+});
+
+const feedbackFiles = () => files("lib/dotfiles-feedback");
+it("only triage, deps and the CLI refer to InteractiveDeps", () => {
+  const users = feedbackFiles().filter((file) =>
+    readFileSync(join(hooks, file), "utf8").includes("InteractiveDeps"),
+  );
+  deepStrictEqual(users.sort(), [
+    "lib/dotfiles-feedback/deps.ts",
+    "lib/dotfiles-feedback/triage.ts",
+  ]);
+  strictEqual(
+    readFileSync(join(hooks, "cli/dotfiles-feedback.ts"), "utf8").includes(
+      "InteractiveDeps",
+    ),
+    true,
+  );
+});
+it("has no import cycle among dotfiles-feedback modules, type imports included", () => {
+  const graph = new Map<string, string[]>();
+  for (const file of feedbackFiles()) {
+    const module = basename(file, ".ts");
+    const edges = imports(readFileSync(join(hooks, file), "utf8"))
+      .filter(({ target }) => target.startsWith("./"))
+      .map(({ target }) => basename(target, ".ts"));
+    graph.set(module, edges);
+  }
+  const state = new Map<string, "visiting" | "done">();
+  const visit = (node: string, path: string[]): void => {
+    if (state.get(node) === "done") return;
+    if (state.get(node) === "visiting")
+      throw new Error(`cycle: ${[...path, node].join(" -> ")}`);
+    state.set(node, "visiting");
+    for (const next of graph.get(node) ?? []) visit(next, [...path, node]);
+    state.set(node, "done");
+  };
+  for (const node of graph.keys()) visit(node, []);
 });
