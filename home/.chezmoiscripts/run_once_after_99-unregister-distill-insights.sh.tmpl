@@ -1,0 +1,60 @@
+{{ if eq .chezmoi.os "darwin" -}}
+#!/bin/bash
+set -uo pipefail
+fail() {
+  echo "[distill-insights] $1" >&2
+  exit 1
+}
+target="gui/$(id -u)/com.berlysia.distill-insights"
+# Only the launchctl missing-service diagnostic confirms absence.
+absent() {
+  case "$1" in
+  *'not found'* | *'Could not find service'*) return 0 ;;
+  *) return 1 ;;
+  esac
+}
+if output=$(launchctl print "$target" 2>&1); then
+  launchctl bootout "$target" >/dev/null 2>&1 || fail 'bootout failed'
+  if output=$(launchctl print "$target" 2>&1); then
+    fail 'LaunchAgent is still registered'
+  fi
+  absent "$output" || fail 'could not confirm LaunchAgent removal'
+else
+  absent "$output" || fail 'could not query LaunchAgent'
+fi
+rm -f "$HOME/.claude/.distill-insights-plist.sha256" 2>/dev/null || fail 'could not remove plist hash'
+{{ else if eq .chezmoi.os "linux" -}}
+#!/bin/bash
+set -uo pipefail
+fail() {
+  echo "[distill-insights] $1" >&2
+  exit 1
+}
+if ! systemctl --user show-environment >/dev/null 2>&1; then
+  uid=$(id -u) || fail 'could not determine uid'
+  command -v pgrep >/dev/null 2>&1 || fail 'pgrep is unavailable'
+  status=0
+  pgrep -u "$uid" -x systemd >/dev/null 2>&1 || status=$?
+  [ "$status" -eq 1 ] || fail 'user manager is present or its absence cannot be confirmed'
+  [ ! -L "$HOME/.config/systemd/user/timers.target.wants/distill-insights.timer" ] || fail 'timer enablement symlink remains'
+  exit 0
+fi
+systemctl --user disable --now distill-insights.timer >/dev/null 2>&1 || fail 'could not disable timer'
+systemctl --user stop distill-insights.service >/dev/null 2>&1 || fail 'could not stop service'
+systemctl --user daemon-reload >/dev/null 2>&1 || fail 'daemon-reload failed'
+# Accept only known negative states, never a transport or permission error.
+status=0
+state=$(systemctl --user is-enabled distill-insights.timer 2>/dev/null) || status=$?
+case "$state:$status" in
+disabled:1 | masked:1 | static:0 | indirect:0 | not-found:4) ;;
+*) fail 'timer is enabled or enablement cannot be confirmed' ;;
+esac
+for unit in distill-insights.timer distill-insights.service; do
+  status=0
+  state=$(systemctl --user is-active "$unit" 2>/dev/null) || status=$?
+  case "$state:$status" in
+  inactive:3 | failed:3 | unknown:4) ;;
+  *) fail "$unit is active or inactivity cannot be confirmed" ;;
+  esac
+done
+{{ end -}}
