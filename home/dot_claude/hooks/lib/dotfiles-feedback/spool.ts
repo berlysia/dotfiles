@@ -187,6 +187,10 @@ export async function openSpool(root: string, deps: SpoolDeps) {
       return undefined;
     }
   };
+  const vmFailedCounts = new Map<
+    string,
+    { invalid: number; "unsupported-version": number }
+  >();
   async function readOrNull(path: string): Promise<string | null> {
     try {
       return await fs.readFile(path, "utf8");
@@ -479,14 +483,19 @@ export async function openSpool(root: string, deps: SpoolDeps) {
       await ensureDir();
       const target = join(dir, `${id}.json`);
       if (await exists(target)) return "exists";
-      let count = 0;
-      for (const name of await fs.readdir(dir)) {
-        if (filenameId(name) === null) continue;
-        const existing = reasonOf(await readOrNull(join(dir, name)));
-        if ((existing ?? "invalid") === reason) count++;
+      // 枠の数え直しは machine ごとに最初の 1 回だけ。同じ spool で何件も写すとき、毎回全件を読まない。
+      let counts = vmFailedCounts.get(machine);
+      if (!counts) {
+        counts = { invalid: 0, "unsupported-version": 0 };
+        for (const name of await fs.readdir(dir)) {
+          if (filenameId(name) === null) continue;
+          const existing = reasonOf(await readOrNull(join(dir, name)));
+          counts[existing === "unsupported-version" ? existing : "invalid"]++;
+        }
+        vmFailedCounts.set(machine, counts);
       }
       if (
-        count >=
+        counts[reason] >=
         (reason === "invalid" ? MAX_VM_FAILED_ITEMS : MAX_VM_UNSUPPORTED_ITEMS)
       )
         return "full";
@@ -498,6 +507,7 @@ export async function openSpool(root: string, deps: SpoolDeps) {
         await ensureDir();
         await atomicWrite(target, wrapped, deps);
       }
+      counts[reason]++;
       return "written";
     },
     // failed/vm-*/ を一覧から探す。id から組み立てたパスを直接開かない。

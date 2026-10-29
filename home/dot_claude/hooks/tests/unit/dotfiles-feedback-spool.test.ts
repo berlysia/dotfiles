@@ -530,7 +530,7 @@ it("writeVmFailed returns exists for a name that is already there", () =>
     );
   }));
 it("writeVmFailed caps invalid at 100 and unsupported-version at 50 per machine, separately", () =>
-  withVmSpool(async ({ root, spool }) => {
+  withVmSpool(async ({ root, deps, spool }) => {
     const dir = join(root, "failed", "vm-m");
     await fs.mkdir(dir, { mode: 0o700 });
     for (let i = 0; i < 100; i++)
@@ -557,8 +557,10 @@ it("writeVmFailed caps invalid at 100 and unsupported-version at 50 per machine,
         join(dir, `${vmId(1000 + i)}.json`),
         wrap("unsupported-version"),
       );
+    // 枠の数は spool ごとに最初の 1 回だけ数える。直接足した分は開き直した spool が数える。
+    const reopened = await openSpool(root, deps);
     strictEqual(
-      await spool.writeVmFailed(
+      await reopened.writeVmFailed(
         "m",
         vmId(600),
         wrap("unsupported-version"),

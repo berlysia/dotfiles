@@ -353,11 +353,6 @@ it("flush --retry returns a failed item to pending with attempts reset", async (
   ok(!existsSync(join(f.root, "failed", name)));
   strictEqual(f.fake.issues.length, 1);
 });
-it("ingest-vm stays unimplemented and exits 1", async (t) => {
-  const f = await fixture(t);
-  strictEqual(await runCli(["ingest-vm"], f.deps), 1);
-  ok(f.err.join("").includes("未実装"));
-});
 it("--help exits 0 without opening the spool", async (t) => {
   const f = await fixture(t);
   strictEqual(await runCli(["--help"], f.deps), 0);

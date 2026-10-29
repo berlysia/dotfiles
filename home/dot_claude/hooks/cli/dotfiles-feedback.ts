@@ -57,6 +57,7 @@ import {
   spawnDetached,
 } from "../lib/dotfiles-feedback/spawn.ts";
 import { openSpool } from "../lib/dotfiles-feedback/spool.ts";
+import { ingestVm } from "../lib/dotfiles-feedback/ingest-vm.ts";
 import {
   countVmOutbox,
   sendFromVm,
@@ -71,7 +72,8 @@ const USAGE = `使い方: dotfiles-feedback <command>
   list
   show <#番号|id>
   triage <#番号|id> --to <issue|plan|reject> [--path <docs/plans/x.md>] [--reason <理由>]
-  refresh`;
+  refresh
+  ingest-vm --state-dir=<dir> --machine=<name>   agent-vm が呼ぶ。VM の outbox を取り込む`;
 export type CliDeps = FeedbackDeps &
   InteractiveDeps & {
     cliPath: string;
@@ -352,9 +354,30 @@ const refreshCommand: Command = async (args, deps) => {
   return 0;
 };
 
-const unimplemented: Command = async (_args, deps) => {
-  deps.stderr("未実装\n");
-  return 1;
+// 出力は ingestVm が作る固定の語と数だけ。VM が書いた名前と中身は載せない。
+const ingestVmCommand: Command = async (args, deps) => {
+  let values: { "state-dir"?: string; machine?: string };
+  try {
+    values = parseArgs({
+      args,
+      options: { "state-dir": { type: "string" }, machine: { type: "string" } },
+      strict: true,
+    }).values;
+  } catch {
+    deps.stderr("dotfiles-feedback: invalid-argument\n");
+    return 1;
+  }
+  if (values["state-dir"] === undefined || values.machine === undefined) {
+    deps.stderr("dotfiles-feedback: invalid-argument\n");
+    return 1;
+  }
+  const output = await ingestVm(
+    { stateDir: values["state-dir"], machine: values.machine },
+    deps,
+  );
+  if (output.stdout !== "") deps.stdout(output.stdout);
+  if (output.stderr !== "") deps.stderr(output.stderr);
+  return output.code;
 };
 
 const COMMANDS: Record<string, Command> = {
@@ -366,7 +389,7 @@ const COMMANDS: Record<string, Command> = {
   show: showCommand,
   triage: triageCommand,
   refresh: refreshCommand,
-  "ingest-vm": unimplemented,
+  "ingest-vm": ingestVmCommand,
 };
 
 export async function runCli(argv: string[], deps: CliDeps): Promise<number> {

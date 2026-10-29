@@ -63,6 +63,28 @@ export const MAX_VM_SCAN_ENTRIES = 200;
 export const MAX_VM_FAILED_ITEMS = 100;
 export const MAX_VM_UNSUPPORTED_ITEMS = 50;
 export const VM_OUTBOX_DIR = "/opt/agent-vm/outbox/dotfiles-feedback";
+export const MAX_INTAKE_QUARANTINE = 3;
+export const INGEST_LOCK_FILE = "state/ingest.lock";
+export const INGEST_LOCK_STALE_MS = 5 * 60 * 1000;
+export const INGEST_TIME_LIMIT_MS = 60 * 1000;
+export const INTAKE_NAME_PATTERN = /^[0-9a-f]{16}$/;
+// CLI と agent-vm の間の語の契約。agent-vm はこの語から警告を作る。
+// stdout の 1 行は ingested・failed・discarded・kept の順で、項目を足すときは kept と reason の間に足す。
+// 既存の名前と順は変えない。足すときは agent-vm の行の形も同じ変更で直す。
+export const INGEST_STDOUT_REASONS = [
+  "busy",
+  "pending-full",
+  "timeout",
+  "quarantined",
+  "quarantine-full",
+  "quarantine-denied",
+] as const;
+export const INGEST_STDERR_REASONS = [
+  "rename-denied",
+  "flush-spawn-failed",
+  "invalid-argument",
+  "unsafe-state-dir",
+] as const;
 export const CACHE_TEMP_RANDOM_BYTES = 6;
 export const FLUSH_LOCK_FILE = "state/flush.lock";
 export const LABELS_STATE_FILE = "state/labels.json";

@@ -67,6 +67,15 @@ const edges: Record<string, readonly string[]> = {
   spawn: ["deps"],
   "vm-item": ["item", "constants"],
   "vm-outbox": ["item", "constants", "deps", "lock"],
+  "ingest-vm": [
+    "spool",
+    "lock",
+    "retry",
+    "vm-item",
+    "item",
+    "constants",
+    "deps",
+  ],
   home: [],
   flush: [
     "labels-state",
@@ -100,6 +109,7 @@ const edges: Record<string, readonly string[]> = {
     "home",
     "vm-item",
     "vm-outbox",
+    "ingest-vm",
     "../repo-key",
     "../run-git",
     "../agent-caller",
@@ -386,6 +396,17 @@ it("session.ts reaches only cache, constants, notice, spawn and home, so a hook 
     "labels-state",
     "vm-item",
     "vm-outbox",
+    "ingest-vm",
   ])
     strictEqual(closure.has(forbidden), false, forbidden);
+});
+
+it("ingest-vm and flush never import each other, and spool never imports vm-item", () => {
+  const source = (module: string) =>
+    imports(
+      readFileSync(join(hooks, `lib/dotfiles-feedback/${module}.ts`), "utf8"),
+    ).map(({ target }) => basename(target, ".ts"));
+  strictEqual(source("ingest-vm").includes("flush"), false);
+  strictEqual(source("flush").includes("ingest-vm"), false);
+  strictEqual(source("spool").includes("vm-item"), false);
 });

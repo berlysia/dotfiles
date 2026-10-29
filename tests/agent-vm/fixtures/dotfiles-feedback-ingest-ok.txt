@@ -1,0 +1,1 @@
+dotfiles-feedback ingest-vm: ingested=1 failed=0 discarded=0 kept=0
