@@ -74,6 +74,9 @@ export function paceFiveHour(
   if (exhausted) return "exhausted";
   if (w === null) return "unknown";
   if (w.usedPercent >= 100) return "exhausted";
+  // An unused window has not started, so it has no reset yet (Z.ai reports
+  // this); nothing spent cannot be ahead. Any use without a reset stays unknown.
+  if (w.usedPercent === 0 && w.resetsAt === null) return "under";
   if (resetsInFuture(w, now) === null) return "unknown";
   return w.usedPercent >= FIVE_HOUR_AHEAD_PERCENT ? "ahead" : "under";
 }

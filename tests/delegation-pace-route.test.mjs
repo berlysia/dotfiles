@@ -93,6 +93,22 @@ test("5h pace: 90 is ahead, 89.9 is under", () => {
   );
 });
 
+test("5h pace: a window not started yet (0%, no reset) is under", () => {
+  // Z.ai reports an unused 5h window with resetsAt null.
+  assert.equal(
+    paceFiveHour({ usedPercent: 0, resetsAt: null }, false, NOWD),
+    "under",
+  );
+  assert.equal(
+    paceFiveHour({ usedPercent: 1, resetsAt: null }, false, NOWD),
+    "unknown",
+  );
+  assert.equal(
+    paceFiveHour({ usedPercent: 0, resetsAt: null }, true, NOWD),
+    "exhausted",
+  );
+});
+
 test("parseUsageSummary validates provider names and values", () => {
   const ok = {
     ok: true,
