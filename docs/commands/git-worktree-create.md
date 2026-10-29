@@ -16,7 +16,7 @@ git-worktree-create --help
 ## 引数
 
 - `<branch-name>`: worktreeで使用するブランチ名
-- `<base>`: 新しいブランチを切る起点（コミットを指すものなら何でもよい）。省略すると現在の HEAD から切る。新しいブランチを作るときだけ使う
+- `<base>`: 新しいブランチを切る起点（コミットを指すものなら何でもよい）。省略すると、fetch した origin の既定ブランチから切る。origin が無いときは現在の HEAD から切る。積み重ねる作業は `HEAD` を渡す。新しいブランチを作るときだけ使う
 
 ## オプション
 
@@ -29,7 +29,7 @@ git-worktree-create --help
 
 1. **ローカルブランチが存在する場合**: 既存のローカルブランチからworktreeを作成
 2. **リモートブランチが存在する場合**: リモートブランチをトラッキングするローカルブランチを作成し、worktreeを作成
-3. **ブランチが存在しない場合**: `<base>` を渡したときはそこから、渡さないときは現在のHEADから新しいブランチを作成し、worktreeを作成
+3. **ブランチが存在しない場合**: `<base>` を渡したときはそこから、渡さないときは fetch した origin の既定ブランチから新しいブランチを作成する。origin が無ければ現在のHEADから作る。その後 worktree を作成する
 
 `<base>` の扱いは次のとおりである。
 
@@ -39,11 +39,41 @@ git-worktree-create --help
 - `<base>` を渡して作った新しいブランチには upstream が付かない。`git worktree add` に解決した SHA を渡すためである。最初の push には `git push -u` か `push.autoSetupRemote` が要る。`<base>` を渡さなければ、upstream の扱いは変わらない。
 - 検査はどれも `.git/worktree` を作る前に行う。ブランチ名が ref として不正（`a/../x`、`@{-1}`、`HEAD` など）なら、`Not a valid branch name` で終了コード 1 になる。`<base>` をコミットに解決できないときも、`Not a commit` で終了コード 1 になる。
 
+### fetch と既定の起点
+
+ローカルに同名のブランチが無く、origin があるときは、作る前に `git fetch --quiet origin` を 1 回実行する。ローカルにブランチがあるときと、origin が無いときは fetch しない。
+
+- 確認の順は、引数、ブランチ名、`Worktree already exists`、fetch、既存ブランチに `<base>` を渡していないか、`<base>` がコミットか、の順である。失敗が決まっている呼び出しでは通信しない。fetch は既存ブランチの確認より前なので、前回の fetch の後に origin へ push されたブランチも見つかる。
+- fetch は入力待ちで止まらないようにしてある。標準入力は `/dev/null`、`GIT_TERMINAL_PROMPT=0`、`GIT_ASKPASS=true` を渡す。`GIT_SSH_COMMAND` と `core.sshCommand` がどちらも未設定のときだけ、`ssh -o BatchMode=yes -o ConnectTimeout=10` を使う。自分の ssh 設定は上書きしない。
+- `timeout` コマンドがあれば、30 秒で打ち切る（`GIT_WORKTREE_CREATE_FETCH_TIMEOUT` で秒数を変えられる。TERM に応じない場合は 5 秒後に KILL する）。`timeout` が無い環境では打ち切らない。自分の ssh 設定があるときの入力待ちは、この打ち切りだけが止める。
+- fetch が失敗しても作成は止めない。手元の ref で続ける。stderr には次の警告を出す（打ち切りは status 124）。
+
+  ```text
+  Could not fetch origin (status N); using the refs from the last fetch
+  ```
+
+  stdout の `Creating new branch` の行の末尾にも `, not fetched` を付ける。git 自身の stderr は出さない。
+
+`<base>` が無く新しいブランチを作るときの起点は、`refs/remotes/origin/HEAD` の指す先である。
+
+- `origin/HEAD` が無く、fetch が成功していれば、先に `git remote set-head origin --auto` を 1 回試す。`git remote add` の後の fetch は `origin/HEAD` を作らないためである。失敗しても作成は続く。fetch と set-head の両方が止まると、待ち時間は打ち切りの秒数の約 2 倍になる。
+- 起点にするのは、`refs/remotes/origin/` の下を指し、コミットに解決できるものだけである。解決した SHA を `git worktree add` に渡すので、upstream は付かない。
+- 決まらないとき（`origin/HEAD` が無い、指す先が無効、`refs/remotes/origin/` の外を指す）は、今の HEAD から切る。stderr には次の警告を出す。origin が無いときは今の HEAD から切り、警告は出さない。
+
+  ```text
+  origin's default branch is unknown (origin/HEAD is missing or invalid); starting from the current HEAD (to fix: git remote set-head origin --auto)
+  ```
+
+- origin が既定ブランチの名前を変えても、古い `origin/HEAD` は有効なまま残るので、古いブランチから切られる。直すには `git remote set-head origin --auto` を実行する（通信が 1 回増えるので、毎回は実行しない）。
+- 起点が `origin/<default>` のときは、upstream との遅れを比べない。今の HEAD に戻ったときは、下の規則で比べる。
+- 今の HEAD から切りたいとき（積み重ねる作業）は `git-worktree-create <branch> HEAD` と書く。
+- この既定の起点で作った新しいブランチも、新しいブランチとして install を実行する。`git pull` してから install するのと同じ扱いである。他人の repo を clone しただけの場合は、fetch した、まだ読んでいないコードで install を実行する。lifecycle scripts を初期設定で実行する npm では、この影響が大きい。避けるには `--no-install` を付ける。
+
 ### 起点の表示と遅れの警告
 
 新しいブランチを作るときは、起点の名前と短い SHA を stdout に出す。例: `📝 Creating new branch 'feat' from 'main' (abc1234)`。
 
-- 起点の名前は、`<base>` を渡したときはその文字列、渡さなければ今のブランチ名である。detached HEAD で `<base>` が無いときは `detached HEAD` と出す（以前は空の `''` だった）。
+- 起点の名前は、`<base>` を渡したときはその文字列、渡さなければ `origin/<既定ブランチ>` である。origin の既定ブランチが決まらないときは今のブランチ名になる。detached HEAD で `<base>` が無いときは `detached HEAD` と出す（以前は空の `''` だった）。
 - 起点がローカルのブランチで、upstream より遅れているとする。このときは上の行の末尾に `, N behind <upstream>` を付け、stderr にも警告を出す。
   - 警告は `✓ Worktree created` の直後に出る。`To switch` の行と install より前である。
   - 例:
@@ -55,7 +85,7 @@ git-worktree-create --help
   - 作成は成功のままで、終了コードは 0 である。
 - 起点が upstream から分岐しているときは、末尾に `, diverged from <upstream>` を付ける。警告は `'main' has diverged from origin/main (as of the last fetch)` だけで、追いつく手順は出さない。
 - 起点は `<base>` が `HEAD`、`@`、ブランチ名のとき、または `<base>` が無くて今の HEAD がブランチにあるときのローカルのブランチである。remote-tracking ref、タグ、SHA、detached HEAD は比べない。upstream を持たないブランチも比べない（`origin/<name>` があっても推測しない）。
-- 比べるのは最後の fetch 時点の upstream で、このコマンドは fetch しない。警告が出ないことは、起点が最新であることの保証ではない。最新の origin から始めるときは、先に `git fetch` して `origin/<default>` を `<base>` に渡す。
+- 比べるのは fetch 後（fetch に失敗したときは最後の fetch 時点）の upstream である。起点がローカルのブランチ（`HEAD` など）で警告が出ないことは、origin が最新であることの保証ではない。
 - 積み重ねる作業（feature ブランチから派生させる場合）で、起点が upstream より遅れているのが意図どおりなら、警告は無視してよい。
 - 追いつく手順が直すのは、新しい worktree のブランチだけである。本体の checkout のブランチは動かない。`--ff-only` は分岐していれば失敗して何も変えない。この merge は reflog に記録を付けるので、`git-worktree-cleanup` はそのブランチを「作ったばかり」と判定しなくなる。
 - 警告に使う git の呼び出し（upstream の解決など）が失敗しても、警告を出さずに作成を続ける。同名のタグとブランチがある、upstream の ref が消えている、などの場合である。
@@ -180,7 +210,7 @@ agent-vm を使う repo では、作った worktree の `node_modules` を VM �
 git-worktree-create feature-login
 ```
 
-### 新規ブランチのworktreeを作成
+### 新規ブランチのworktreeを作成（fetch した origin の既定ブランチから）
 
 ```bash
 git-worktree-create new-feature
@@ -189,8 +219,13 @@ git-worktree-create new-feature
 ### 起点を指定して新規ブランチのworktreeを作成
 
 ```bash
-git fetch
-git-worktree-create new-feature origin/main
+git-worktree-create new-feature origin/release
+```
+
+### 今の HEAD から積み重ねる
+
+```bash
+git-worktree-create stacked-feature HEAD
 ```
 
 ### リモートブランチからworktreeを作成

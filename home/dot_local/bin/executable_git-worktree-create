@@ -25,11 +25,18 @@ Description:
   - If branch exists locally: Creates worktree from local branch
   - If branch exists on remote: Creates local tracking branch and worktree
   - If branch doesn't exist: Creates new branch from <base>, or from the
-    current HEAD when no <base> is given
+    default branch of origin (as of a fetch done first) when no <base> is
+    given. Without an origin, or when its default branch is unknown, the
+    current HEAD is used
+
+  Origin is fetched once before a new branch is created (not when the branch
+  exists locally). A fetch that fails or takes longer than 30 seconds
+  (GIT_WORKTREE_CREATE_FETCH_TIMEOUT, needs the timeout command) does not stop
+  the creation: the refs of the last fetch are used and a warning says so.
 
   For a new branch the start point is shown with its short SHA. When it is a
-  local branch that has an upstream and is behind it (as of the last fetch;
-  nothing is fetched), a warning on stderr says so and shows how to catch up.
+  local branch that has an upstream and is behind it (as of the last fetch),
+  a warning on stderr says so and shows how to catch up.
   After creating the worktree, installs its dependencies when the package
   manager is unambiguous and the install cannot rewrite the lockfile:
   packageManager in package.json first, then the lockfile (pnpm and bun:
@@ -41,10 +48,11 @@ Description:
 
 Arguments:
   <branch-name>  Name of the branch for the worktree
-  <base>         Commit-ish to start a new branch from (default: current HEAD).
-                 Used only for a new branch; it is an error when the branch
-                 already exists locally or on origin. The new branch has no
-                 upstream.
+  <base>         Commit-ish to start a new branch from (default: origin's
+                 default branch after a fetch; the current HEAD without an
+                 origin). Use HEAD to stack on the current work. Used only for
+                 a new branch; it is an error when the branch already exists
+                 locally or on origin. The new branch has no upstream.
 
 Options:
   --no-install   Do not install dependencies; show the command instead
@@ -54,14 +62,17 @@ Examples:
   # Create worktree for existing branch
   git-worktree-create feature-login
 
-  # Create worktree for new branch
+  # Create worktree for new branch (from origin's default branch)
   git-worktree-create new-feature
 
   # Create worktree from remote branch
   git-worktree-create origin-feature
 
-  # Create a new branch from origin/main (run git fetch first)
-  git-worktree-create new-feature origin/main
+  # Create a new branch from the current HEAD (stacked work)
+  git-worktree-create stacked-feature HEAD
+
+  # Create a new branch from a specific start point
+  git-worktree-create new-feature origin/release
 
 Location:
   Worktrees are created in: <repo-root>/.git/worktree/<branch-name>
@@ -89,6 +100,21 @@ say_info() {
 # say_error <message>: an error line on stdout, printed without interpreting backslashes in the message
 say_error() {
     printf '%b%s%b\n' "$RED" "$(strip_cntrl "$1")" "$NC"
+}
+
+# run_origin_git <git args>: a git call that talks to origin and must not wait for anyone. No terminal prompt, no
+# ssh password prompt (unless the user configured ssh themselves), and a time limit when `timeout` exists; without it
+# only the settings above keep a call from waiting. Output is dropped; the caller reads the status.
+run_origin_git() {
+    local -a limit=() ssh_env=()
+    if command -v timeout >/dev/null 2>&1; then
+        limit=(timeout -k 5 "${GIT_WORKTREE_CREATE_FETCH_TIMEOUT:-30}")
+    fi
+    # The user's own ssh settings are not overridden
+    if [[ -z "${GIT_SSH_COMMAND:-}" ]] && ! git config --get core.sshCommand >/dev/null 2>&1; then
+        ssh_env=("GIT_SSH_COMMAND=ssh -o BatchMode=yes -o ConnectTimeout=10")
+    fi
+    env GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=true ${ssh_env[@]+"${ssh_env[@]}"} ${limit[@]+"${limit[@]}"} git "$@" </dev/null >/dev/null 2>&1
 }
 
 # resolve_install <dir>: which install the project at <dir> asks for.
@@ -261,6 +287,35 @@ if ! git check-ref-format "refs/heads/$branch_name" >/dev/null 2>&1 || ! git che
     say_error "Error: Not a valid branch name: $branch_name"
     exit 1
 fi
+# Set worktree path
+worktree_path="$worktrees_dir/$branch_name"
+
+# Check if worktree already exists
+if [[ -d "$worktree_path" ]]; then
+    say_error "✗ Worktree already exists: $worktree_path"
+    exit 1
+fi
+
+# A new branch starts from what origin has now, so origin is fetched before the start point and the existing-branch
+# checks look at refs. It comes after the checks that already decide the outcome (no network for a call that fails
+# anyway) and before the ones that read origin's refs, so a branch pushed since the last fetch is seen. A branch that
+# exists locally needs nothing from origin. A failed fetch does not stop the creation: the refs of the last fetch are used.
+base_sha=""
+fetch_note=""
+fetched=false
+has_origin=false
+if git remote get-url origin >/dev/null 2>&1; then has_origin=true; fi
+if [[ "$has_origin" == true ]] && ! git show-ref --verify --quiet "refs/heads/$branch_name"; then
+    fetch_status=0
+    run_origin_git fetch --quiet origin || fetch_status=$?
+    if [[ $fetch_status -eq 0 ]]; then
+        fetched=true
+    else
+        # git's own stderr is dropped: it is a failure to reach origin, and the status says which kind
+        say_warn "Could not fetch origin (status $fetch_status); using the refs from the last fetch"
+        fetch_note=", not fetched"
+    fi
+fi
 if [[ -n "$base" ]]; then
     # A base for a branch that already exists would be dropped silently (or would need a reset of existing work)
     for existing_ref in "refs/heads/$branch_name" "refs/remotes/origin/$branch_name"; do
@@ -275,15 +330,6 @@ if [[ -n "$base" ]]; then
         say_error "Error: Not a commit: $base"
         exit 1
     fi
-fi
-
-# Set worktree path
-worktree_path="$worktrees_dir/$branch_name"
-
-# Check if worktree already exists
-if [[ -d "$worktree_path" ]]; then
-    say_error "✗ Worktree already exists: $worktree_path"
-    exit 1
 fi
 
 # Create .git/worktree directory if it doesn't exist
@@ -316,7 +362,32 @@ else
     # none, and nothing is fetched or guessed (origin/<name> is not assumed to be the upstream). Every git call that
     # judges this has its stderr dropped and its failure absorbed: it is advice, and a broken upstream or a tag and
     # a branch of one name (ambiguous) must neither stop the creation nor leak a git error.
-    start_ref=$(git rev-parse --symbolic-full-name "${base:-HEAD}" 2>/dev/null) || start_ref=""
+    default_start=""
+    if [[ -z "$base" && "$has_origin" == true ]]; then
+        # origin/HEAD is absent after `git remote add`; once the fetch has reached origin, ask it once
+        if [[ "$fetched" == true ]] && ! git symbolic-ref --quiet refs/remotes/origin/HEAD >/dev/null 2>&1; then
+            run_origin_git remote set-head origin --auto || true
+        fi
+        # Only a ref under refs/remotes/origin/ that is a commit is trusted as the default branch
+        default_ref=$(git symbolic-ref --quiet refs/remotes/origin/HEAD 2>/dev/null) || default_ref=""
+        case "$default_ref" in
+        refs/remotes/origin/?*)
+            if base_sha=$(git rev-parse --verify --quiet "$default_ref^{commit}" 2>/dev/null); then
+                default_start=origin/${default_ref#refs/remotes/origin/}
+            else
+                base_sha=""
+            fi
+            ;;
+        esac
+        if [[ -z "$default_start" ]]; then
+            say_warn "origin's default branch is unknown (origin/HEAD is missing or invalid); starting from the current HEAD (to fix: git remote set-head origin --auto)"
+        fi
+    fi
+    # A remote-tracking default is not compared with anything (it is what origin said at the fetch)
+    start_ref=""
+    if [[ -z "$default_start" ]]; then
+        start_ref=$(git rev-parse --symbolic-full-name "${base:-HEAD}" 2>/dev/null) || start_ref=""
+    fi
     if [[ "$start_ref" == refs/heads/* ]]; then
         # @{upstream} rejects the refs/heads/ form (fatal: no such branch), so it gets the name that form carries
         start_branch=${start_ref#refs/heads/}
@@ -329,6 +400,8 @@ else
     fi
     if [[ -n "$base" ]]; then
         start_name=$base
+    elif [[ -n "$default_start" ]]; then
+        start_name=$default_start
     else
         start_name=$(git branch --show-current)
         start_name=${start_name:-detached HEAD}
@@ -342,8 +415,8 @@ else
             start_note=", $behind_count behind $upstream_name"
         fi
     fi
-    say_info "$BLUE" "📝 Creating new branch '$branch_name' from '$start_name' ($start_short)$start_note"
-    if [[ -n "$base" ]]; then
+    say_info "$BLUE" "📝 Creating new branch '$branch_name' from '$start_name' ($start_short)$start_note$fetch_note"
+    if [[ -n "$base_sha" ]]; then
         git worktree add -b "$branch_name" "$worktree_path" "$base_sha"
     else
         git worktree add "$worktree_path" -b "$branch_name"

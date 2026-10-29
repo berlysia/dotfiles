@@ -578,9 +578,10 @@ test_F26() {
   git -C "$REPO" push -q origin main:trunk 2>/dev/null
   git -C "$BASE/origin.git" symbolic-ref HEAD refs/heads/trunk
   git -C "$REPO" push -q origin --delete main 2>/dev/null
-  git -C "$REPO" remote set-head origin -d >/dev/null
   local d
   d=$(mk_pushed p26 1)
+  # After the worktree exists: git-worktree-create runs `remote set-head origin --auto`, which would bring origin/HEAD back
+  git -C "$REPO" remote set-head origin -d >/dev/null
   run_cleanup -n
   assert_kept "$d" "F26 kept"
   assert_contains "$OUT" "no origin main branch to compare with" "F26 reason"
