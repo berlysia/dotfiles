@@ -39,6 +39,7 @@
 .local/bin/ask-grokbot
 .local/bin/agent-vm-node-modules
 .local/bin/claude-task-list-id
+.local/bin/dotfiles-feedback
 .local/share
 .local/share/private-skills
 .chezmoiscripts/install-packages-0-prepare.sh
