@@ -24,7 +24,7 @@ setup() {
   echo yes >"$STATE/loaded"
   touch "$STATE/home/.claude/.distill-insights-plist.sha256"
   : >"$STATE/calls"
-  unset UNREACHABLE PGREP_RC STUCK PRINT_ERROR
+  unset UNREACHABLE PGREP_RC STUCK PRINT_ERROR NOFILE
 }
 run_script() {
   local os=${1:-linux}
@@ -72,6 +72,14 @@ setup stuck
 export STUCK=1
 run_script
 failure
+# .chezmoiremove deletes the unit files before this run_once_after script, so
+# disable fails with "Unit file ... does not exist" while nothing is registered.
+setup unit_files_removed
+export NOFILE=1
+echo inactive >"$STATE/timer"
+echo inactive >"$STATE/service"
+run_script
+check test "$RC" -eq 0
 setup repeat
 run_script
 check test "$RC" -eq 0

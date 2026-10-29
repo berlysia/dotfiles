@@ -11,12 +11,20 @@ systemctl)
   case "$1" in
   show-environment) exit "${UNREACHABLE:-0}" ;;
   disable)
+    if [[ ${NOFILE:-0} == 1 ]]; then
+      echo 'Failed to disable unit: Unit file distill-insights.timer does not exist.' >&2
+      exit 1
+    fi
     [[ ${STUCK:-0} == 1 ]] || echo disabled >"$STATE/enabled"
     echo inactive >"$STATE/timer"
     ;;
   stop) echo inactive >"$STATE/service" ;;
   daemon-reload) exit 0 ;;
   is-enabled)
+    if [[ ${NOFILE:-0} == 1 ]]; then
+      echo not-found
+      exit 4
+    fi
     cat "$STATE/enabled"
     [[ $(cat "$STATE/enabled") == enabled ]]
     ;;
