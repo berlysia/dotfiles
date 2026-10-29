@@ -70,7 +70,7 @@ import {
   paceProvider,
   surplusPoints,
 } from "./pace.ts";
-import { buildRoute } from "./route.ts";
+import { buildRoute, HELD_DESTINATIONS } from "./route.ts";
 import { buildReview } from "./review.ts";
 
 const VALUE_FLAGS = new Set([
@@ -545,6 +545,7 @@ async function cmdRoute(args: Args, now: Date): Promise<number> {
     windowMinsMissing: mins === null,
     usageMissing:
       usage.claude === null && usage.codex === null && usage.opencode === null,
+    held: HELD_DESTINATIONS,
   });
   process.stdout.write(`${lines.join("\n")}\n`);
   return 0;

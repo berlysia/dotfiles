@@ -525,7 +525,9 @@ describe("delegation route / review (process)", { concurrency: 4 }, () => {
       const mech = (
         await sb.run(["route", "--kind", "mechanical", "--size", "M"])
       ).stdout;
-      assert.match(recommendation(mech), /opencode.*規則 2/);
+      // opencode is held, so mechanical goes to the next in its order.
+      assert.match(recommendation(mech), /codex Luna max.*規則 2/);
+      assert.match(mech, /^保留: opencode /m);
       sb.setUsage(
         usageOf({
           claude: { week: 90 },
@@ -1418,6 +1420,7 @@ function routeOut({
   usage = {},
   read = noFile,
   folded = foldLedger([]),
+  held,
 }) {
   const parsed = parseUsageSummary(usageOf(usage));
   const claudeWeek = parsed.claude?.weekly ?? null;
@@ -1451,6 +1454,7 @@ function routeOut({
     due: null,
     windowMinsMissing: false,
     usageMissing: false,
+    held,
   }).join("\n");
 }
 
@@ -1652,6 +1656,40 @@ describe("route output: surplus candidates", () => {
   });
 });
 
+describe("route output: held destinations", () => {
+  const busy = {
+    claude: { week: 90 },
+    codex: { week: 90 },
+    opencode: { week: 4, daysLeft: 69.6 / 24 },
+  };
+
+  it("rule 2 skips a held destination and falls back to sonnet", () => {
+    const free = routeOut({ kind: "research", usage: busy });
+    assert.match(free, /^推奨: opencode \(opencode run\) \[規則 2/m);
+    const out = routeOut({
+      kind: "research",
+      usage: busy,
+      held: new Set(["opencode"]),
+    });
+    assert.match(out, /^推奨: sonnet/m, out);
+    assert.match(out, /^保留: opencode \(opencode run\) /m, out);
+  });
+
+  it("a held destination is not offered as a candidate", () => {
+    const out = routeOut({
+      kind: "mechanical",
+      size: "S",
+      usage: busy,
+      held: new Set(["opencode"]),
+    });
+    assert.deepEqual(
+      tryLines(out).filter((l) => l.includes("opencode")),
+      [],
+      out,
+    );
+  });
+});
+
 describe("route process: wiring", { concurrency: 4 }, () => {
   it("a forecast file is read and rule 2 and the lookahead line follow", async () => {
     const sb = sandbox();
@@ -1677,7 +1715,8 @@ describe("route process: wiring", { concurrency: 4 }, () => {
       );
       const out = (await sb.run(routeKind("mechanical", "L"))).stdout;
       assert.equal(lookaheadLine(out), "  先読み: 使えない (no-file)");
-      assert.match(tryLines(out).join("\n"), /opencode .* 週枠の余り 56pt /);
+      // The surplus is opencode's, which is held.
+      assert.doesNotMatch(tryLines(out).join("\n"), /opencode/);
     } finally {
       sb.done();
     }
@@ -1837,7 +1876,7 @@ describe("delegation route destinations", { concurrency: 4 }, () => {
 
   describe("rule 2", () => {
     const AHEAD = { claude: { week: 90, daysLeft: 6.5 } };
-    it("impl goes to Terra, mechanical to opencode", async () => {
+    it("impl goes to Terra, mechanical to Luna max while opencode is held", async () => {
       const usage = usageOf(AHEAD);
       assert.match(
         recommendation(await routeProcessOut([], { usage })),
@@ -1845,7 +1884,7 @@ describe("delegation route destinations", { concurrency: 4 }, () => {
       );
       assert.match(
         recommendation(await routeProcessOut([], { usage, args: MECH_ROUTE })),
-        /opencode.*規則 2/,
+        /codex Luna max.*規則 2/,
       );
     });
     it("mechanical falls to Luna max when opencode is ahead", async () => {
@@ -1855,11 +1894,11 @@ describe("delegation route destinations", { concurrency: 4 }, () => {
         /codex Luna max.*規則 2/,
       );
     });
-    it("impl goes to opencode when the codex week is ahead", async () => {
+    it("impl falls back to sonnet when the codex week is ahead and opencode is held", async () => {
       const usage = usageOf({ ...AHEAD, codex: { week: 90 } });
       assert.match(
         recommendation(await routeProcessOut([], { usage })),
-        /opencode.*規則 2/,
+        /sonnet.*規則 2/,
       );
     });
     it("notes worse records for Terra", async () => {
@@ -1915,18 +1954,16 @@ describe("delegation route destinations", { concurrency: 4 }, () => {
       const out = await routeProcessOut(mech, {
         args: ["route", "--kind", "mechanical", "--size", "S"],
       });
-      assert.match(candidate(out), /試す候補: opencode/);
+      assert.match(candidate(out), /試す候補: codex Luna max/);
     });
     it("no candidate line when every destination has 5", async () => {
       const out = await run([fill(TERRA, 5), fill(LUNA, 5), fill(OPENCODE, 5)]);
       assert.doesNotMatch(out, /試す候補:/);
     });
     it("skips destinations whose window is ahead", async () => {
-      assert.match(
-        candidate(
-          await run([fill(OPENCODE, 2)], usageOf({ codex: { week: 90 } })),
-        ),
-        /試す候補: opencode/,
+      assert.doesNotMatch(
+        await run([fill(OPENCODE, 2)], usageOf({ codex: { week: 90 } })),
+        /試す候補:/,
       );
       assert.match(
         candidate(

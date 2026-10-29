@@ -35,7 +35,7 @@ import { reviewPromptLine } from "./store.ts";
 export const ROUTE_HEADER = "delegation route v1";
 
 type External = Exclude<ProviderName, "claude">;
-type DestinationName = "codex-terra" | "codex-luna-max" | "opencode";
+export type DestinationName = "codex-terra" | "codex-luna-max" | "opencode";
 export type Destination = {
   name: DestinationName;
   /** Which ai-usage window the destination draws on. */
@@ -72,6 +72,15 @@ export const DESTINATIONS: Record<DestinationName, Destination> = {
     label: "opencode",
   },
 };
+/**
+ * Destinations route never recommends. opencode sends the brief and the
+ * working tree to Z.ai; it waits until a delegation can say whether its
+ * content may leave the machine.
+ */
+export const HELD_DESTINATIONS: ReadonlySet<DestinationName> = new Set([
+  "opencode",
+]);
+const NO_HOLD: ReadonlySet<DestinationName> = new Set();
 const SONNET_DISPLAY = 'sonnet (Agent の model: "sonnet")';
 const OPENCODE_FIRST = new Set(["mechanical", "triage"]);
 // Kinds whose work can wait for an idle quota at any size.
@@ -104,17 +113,22 @@ export type RouteInput = {
   windowMinsMissing: boolean;
   /** ai-usage could not be run or its output could not be read. */
   usageMissing: boolean;
+  /** Destinations left out of every rule and candidate; none when omitted. */
+  held?: ReadonlySet<DestinationName>;
 };
 
 const bothUnder = (p: ProviderPace) =>
   p.fiveHour === "under" && p.weekly === "under";
 const label = (s: PaceState) => s;
 
-function externalOrder(kind: string): Destination[] {
+function externalOrder(
+  kind: string,
+  held: ReadonlySet<DestinationName> = NO_HOLD,
+): Destination[] {
   const names: DestinationName[] = OPENCODE_FIRST.has(kind)
     ? ["opencode", "codex-luna-max", "codex-terra"]
     : ["codex-terra", "codex-luna-max", "opencode"];
-  return names.map((n) => DESTINATIONS[n]);
+  return names.filter((n) => !held.has(n)).map((n) => DESTINATIONS[n]);
 }
 
 type Pick = { line: string; dest: External | "sonnet" };
@@ -169,8 +183,13 @@ function ruleOne(
   paces: Record<ProviderName, ProviderPace>,
   kind: string,
   size: string,
+  held: ReadonlySet<DestinationName>,
 ): Pick | null {
-  const best = pickByRecords(groups, kind, (d) => bothUnder(paces[d.provider]));
+  const best = pickByRecords(
+    groups,
+    kind,
+    (d) => !held.has(d.name) && bothUnder(paces[d.provider]),
+  );
   if (best === null) return null;
   const { claude } = best;
   return {
@@ -184,6 +203,7 @@ function ruleTwo(
   paces: Record<ProviderName, ProviderPace>,
   kind: string,
   claudeAheadBy: AheadBy | null,
+  held: ReadonlySet<DestinationName>,
 ): Pick | null {
   const claudeWeek = paces.claude.weekly;
   if (claudeWeek !== "ahead" && claudeWeek !== "exhausted") return null;
@@ -192,7 +212,7 @@ function ruleTwo(
       (g) => g.harness === "claude-code-agent" && g.model === "sonnet",
     ),
   );
-  for (const dest of externalOrder(kind)) {
+  for (const dest of externalOrder(kind, held)) {
     if (!bothUnder(paces[dest.provider])) continue;
     const rep = destinationStats(dest, groups);
     const worse =
@@ -219,12 +239,13 @@ function explore(
   kind: string,
   size: string,
   now: Date,
+  held: ReadonlySet<DestinationName>,
 ): { name: External; line: string } | null {
   if (size !== "S") return null;
   const groups = groupsForCell(folded, kind, "S", now, EXPLORE_WINDOW_DAYS);
   // Least-recorded first; strict < keeps the default order on equal counts.
   let least: { dest: Destination; count: number } | null = null;
-  for (const dest of externalOrder(kind)) {
+  for (const dest of externalOrder(kind, held)) {
     if (!bothUnder(paces[dest.provider])) continue;
     const count = destinationStats(dest, groups)?.n ?? 0;
     if (
@@ -279,13 +300,19 @@ export function buildRoute(input: RouteInput): string[] {
   if (input.ledgerLarge) out.push("台帳が大きい。分割を検討");
 
   const groups = groupsForCell(folded, kind, size, now, DEFAULT_SINCE_DAYS);
-  const pick = ruleOne(groups, paces, kind, size) ??
-    ruleTwo(groups, paces, kind, input.claudeAheadBy) ?? {
+  const held = input.held ?? NO_HOLD;
+  const pick = ruleOne(groups, paces, kind, size, held) ??
+    ruleTwo(groups, paces, kind, input.claudeAheadBy, held) ?? {
       dest: "sonnet" as const,
       line: `推奨: ${SONNET_DISPLAY} [規則 3: 既定]`,
     };
   out.push(pick.line);
-  const candidate = explore(folded, paces, kind, size, now);
+  for (const name of held) {
+    out.push(
+      `保留: ${DESTINATIONS[name].display} 外部へ送ってよいかの区分ができるまで使わない`,
+    );
+  }
+  const candidate = explore(folded, paces, kind, size, now, held);
   const taken = new Set<External>();
   if (candidate !== null) {
     const points = surplusCandidate(input, candidate.name, pick.dest);
@@ -298,7 +325,7 @@ export function buildRoute(input: RouteInput): string[] {
   }
   // The week belongs to the provider, so one line per provider, shown as the
   // first of its destinations in this kind's order.
-  for (const dest of externalOrder(kind)) {
+  for (const dest of externalOrder(kind, held)) {
     if (taken.has(dest.provider)) continue;
     taken.add(dest.provider);
     const points = surplusCandidate(input, dest.provider, pick.dest);
