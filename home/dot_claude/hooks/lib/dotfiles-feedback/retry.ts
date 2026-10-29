@@ -23,6 +23,15 @@ export type RetryDeps = Omit<LockDeps, "fs"> & {
   >;
 };
 export type RetryEntry = { attempts: number; nextAt: string };
+
+// 呼び出し側（flush）は、この型で lock の競合を一時的な失敗として見分ける。
+// メッセージの文字列で見分けると、文言を変えただけで判定が壊れる。
+export class RetryLockBusyError extends Error {
+  constructor() {
+    super("dotfiles-feedback: retry lock busy");
+    this.name = "RetryLockBusyError";
+  }
+}
 type RetryState = { v: 1; items: Record<string, RetryEntry> };
 
 export async function atomicWrite(
@@ -64,7 +73,7 @@ export function openRetry(root: string, deps: RetryDeps) {
       { staleMs: RETRY_LOCK_STALE_MS },
       deps,
     );
-    if (!release) throw new Error("dotfiles-feedback: retry lock busy");
+    if (!release) throw new RetryLockBusyError();
     try {
       let state: RetryState = { v: 1, items: {} };
       let text: string | null = null;
