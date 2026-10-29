@@ -1,8 +1,11 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { type FetchOpts, isRecord, readJsonFile } from "../lib.ts";
+import {
+  readOpencodeCredentialKey,
+  ZAI_INTEGRATION_ID,
+} from "../opencode-credential.ts";
 
 const ZAI_BASE = "https://api.z.ai";
 const QUOTA_PATH = "/api/monitor/usage/quota/limit";
@@ -13,41 +16,24 @@ const TOOL_USAGE_PATH = "/api/monitor/usage/tool-usage";
  * opencode v2.x stores credentials in its SQLite DB (`credential` table).
  * auth.json is no longer updated on re-login and can hold a revoked key,
  * so the active DB credential wins over the legacy auth.json entry.
+ * A store that cannot be read counts as "no key in the DB" so the lookup
+ * falls through to auth.json as before.
  */
 function resolveApiKeyFromOpencodeDb(
   dbPath: string,
 ): { key: string } | undefined {
-  let db: DatabaseSync;
   try {
-    db = new DatabaseSync(dbPath, { readOnly: true });
+    const key = readOpencodeCredentialKey(dbPath, ZAI_INTEGRATION_ID);
+    return key === undefined ? undefined : { key };
   } catch {
     return undefined;
-  }
-  try {
-    const row = db
-      .prepare(
-        "SELECT value FROM credential WHERE integration_id = ? AND active = 1 ORDER BY time_updated DESC LIMIT 1",
-      )
-      .get("zai-coding-plan") as { value: string } | undefined;
-    if (!row) return undefined;
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(row.value);
-    } catch {
-      return undefined;
-    }
-    if (!isRecord(parsed) || typeof parsed.key !== "string" || !parsed.key) {
-      return undefined;
-    }
-    return { key: parsed.key };
-  } catch {
-    return undefined;
-  } finally {
-    db.close();
   }
 }
 
-function resolveApiKey(opts: FetchOpts): { key: string; source: string } {
+export function resolveApiKey(opts: FetchOpts): {
+  key: string;
+  source: string;
+} {
   const fromEnv =
     process.env.ZAI_CODING_API_KEY?.trim() || process.env.ZAI_API_KEY?.trim();
   if (fromEnv) {

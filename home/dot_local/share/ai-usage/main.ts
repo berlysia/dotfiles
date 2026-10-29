@@ -72,7 +72,7 @@ Providers (default: all):
   codex      Codex app-server account/rateLimits/read
   cursor     Cursor DashboardService period usage
   opencode   Z.ai Coding Plan quota (via OpenCode auth)
-  sarashina  Reachability of api.sarashina.ai (env SARASHINA_API_KEY); no
+  sarashina  Reachability of api.sarashina.ai (key stored by opencode auth login); no
              usage API exists, and the chat RPM is not observed
 
 Options:
@@ -95,7 +95,7 @@ and each successful entry is
     "exhausted": true when a window is at 100% or the provider refuses use }
 Cursor has neither window, so both are null. Sarashina has neither window
 either; it adds "unmetered": true when /v1/models lists the model (or answers
-429, which also sets exhausted). Without SARASHINA_API_KEY it is ok with no
+429, which also sets exhausted). Without a stored sarashina key it is ok with no
 windows and no "unmetered".
 Exit 0 if every selected provider succeeds; 1 if any fail; 2 on bad args.
 `);
