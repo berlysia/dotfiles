@@ -22,8 +22,18 @@ import {
   summarizeByHook,
 } from "../lib/hook-timing-report.ts";
 
-const USAGE =
-  "usage: hook-timing [--since <N>h|<N>d] [--session <session-id-prefix>] [--json]\n";
+const USAGE = [
+  "usage: hook-timing [--since <N>h|<N>d] [--session <session-id-prefix>] [--json]",
+  "",
+  "Print per-hook and per-event timing stats from $CLAUDE_LOGS_DIR/hook-timing.jsonl.",
+  "",
+  "options:",
+  "  --since <N>h|<N>d         only records newer than N hours or days (default: 24h)",
+  "  --session <id-prefix>     only records whose session id starts with this prefix",
+  "  --json                    print JSON instead of the text report",
+  "  -h, --help                print this help and exit 0",
+  "",
+].join("\n");
 
 const SINCE_PATTERN = /^(\d+)(h|d)$/;
 const DEFAULT_SINCE = "24h";
@@ -94,6 +104,9 @@ export function runHookTimingCli(
   argv: string[],
   deps: HookTimingCliDeps,
 ): HookTimingCliResult {
+  if (argv[0] === "-h" || argv[0] === "--help") {
+    return { exitCode: 0, stdout: USAGE, stderr: "" };
+  }
   const parsed = parseArgs(argv);
   if ("error" in parsed) {
     return { exitCode: 2, stdout: "", stderr: parsed.error };

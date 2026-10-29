@@ -268,6 +268,44 @@ const BOOLEAN_FLAGS = new Set([
   "reframer-extend",
 ]);
 
+const WORKFLOW_HELP = `usage: workflow-cli <command> [doc] [--flags]
+
+commands:
+  status                      show the workflow state of the session
+  dir                         print the workflow dir (wfDir=...)
+  round <doc>                 insert a review round skeleton
+  stamp <doc>                 record the round verdict and hash
+  triage <doc>                record the intent alignment triage result
+  ask-approval                print the approval question text
+  reset                       archive the workflow dir contents (needs --confirm)
+
+flags:
+  --full                      round: a full round (Key Decisions changed)
+  --verdict <pass|needs-work|blocker>   stamp: the round verdict
+  --reviewers <a+b>           stamp: the reviewers that ran
+  --self-extend --cause <v>   round: extend the round budget on your own
+  --adopted <N>               triage: findings adopted
+  --excluded <M>              triage: findings excluded
+  --confirm                   reset: actually move the entries
+  --wf-dir <dir>              target another workflow dir
+  -h, --help                  print this help and exit 0
+`;
+
+/**
+ * Returns the help text when argv asks for it, otherwise null. Needs no deps,
+ * so `main` can call it before resolveCliDeps touches the session. It walks
+ * argv the way parseArgs does: a `--flag` outside BOOLEAN_FLAGS consumes the
+ * next token as its value, so `stamp --verdict --help` is not a help request.
+ */
+export function workflowHelpText(argv: string[]): string | null {
+  for (let i = 0; i < argv.length; i++) {
+    const token = argv[i];
+    if (token === "-h" || token === "--help") return WORKFLOW_HELP;
+    if (token?.startsWith("--") && !BOOLEAN_FLAGS.has(token.slice(2))) i++;
+  }
+  return null;
+}
+
 function parseArgs(args: string[]): ParsedArgs {
   const positional: string[] = [];
   const flags: Record<string, string> = {};
@@ -1325,18 +1363,23 @@ function cmdReset(
 
 if (import.meta.main) {
   const argv = process.argv.slice(2);
-  const resolved = resolveCliDeps(argv, new Date());
-  if ("error" in resolved) {
-    process.stderr.write(`workflow-cli: ${resolved.error}\n`);
-    process.exitCode = 1;
+  const help = workflowHelpText(argv);
+  if (help !== null) {
+    process.stdout.write(help);
   } else {
-    if (resolved.warning) {
-      process.stderr.write(`workflow-cli: ${resolved.warning}\n`);
+    const resolved = resolveCliDeps(argv, new Date());
+    if ("error" in resolved) {
+      process.stderr.write(`workflow-cli: ${resolved.error}\n`);
+      process.exitCode = 1;
+    } else {
+      if (resolved.warning) {
+        process.stderr.write(`workflow-cli: ${resolved.warning}\n`);
+      }
+      const result = runWorkflowCli(argv, resolved.deps);
+      if (result.stdout) process.stdout.write(result.stdout);
+      if (result.stderr) process.stderr.write(result.stderr);
+      // Not process.exit(): see docs/decisions/0002 (no-process-exit under hooks/).
+      process.exitCode = result.exitCode;
     }
-    const result = runWorkflowCli(argv, resolved.deps);
-    if (result.stdout) process.stdout.write(result.stdout);
-    if (result.stderr) process.stderr.write(result.stderr);
-    // Not process.exit(): see docs/decisions/0002 (no-process-exit under hooks/).
-    process.exitCode = result.exitCode;
   }
 }

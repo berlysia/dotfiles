@@ -590,8 +590,27 @@ kind: research impl mechanical review triage draft
 size: S M L   verdict: adopted patched redone discarded
 `;
 
+/**
+ * True when -h/--help sits where parseArgs would not consume it as a value:
+ * `--since --help` takes `--help` as the value, `--since=3 --help` does not.
+ */
+function wantsHelp(argv: readonly string[]): boolean {
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i] ?? "";
+    if (a === "-h" || a === "--help") return true;
+    if (!a.startsWith("--") || a.includes("=")) continue;
+    const name = a.slice(2);
+    if (!BOOLEAN_FLAGS.has(name) && VALUE_FLAGS.has(name)) i++;
+  }
+  return false;
+}
+
 async function dispatch(argv: readonly string[]): Promise<number> {
   const [cmd, ...rest] = argv;
+  if (wantsHelp(rest)) {
+    process.stdout.write(USAGE);
+    return 0;
+  }
   const args = parseArgs(rest);
   const now = nowFromEnv(process.env);
   switch (cmd) {
