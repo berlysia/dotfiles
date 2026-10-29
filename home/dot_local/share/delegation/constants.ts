@@ -70,4 +70,22 @@ export const KNOWN_MODELS: readonly string[] = [
   "gpt-6.1-terra",
   "gpt-6-luna",
   "zai-coding-plan/glm-5.3",
+  "opencode/deepseek-v4.1-flash-free",
+  "opencode/glm-5.3-flash-free",
 ];
+
+/** Whether a delegation's content may leave the machine. */
+export type Exposure = "closed" | "external-ok";
+export const EXPOSURES: readonly Exposure[] = ["closed", "external-ok"];
+export function isExposure(v: string): v is Exposure {
+  return (EXPOSURES as readonly string[]).includes(v);
+}
+
+export const OFFLOAD_AGENT_READ = "worktree-read";
+export const OFFLOAD_AGENT_EDIT = "worktree-edit";
+export function offloadAgentName(write: boolean): string {
+  return write ? OFFLOAD_AGENT_EDIT : OFFLOAD_AGENT_READ;
+}
+
+/** Directory name under the ledger dir for verified.json and offload.log. */
+export const OFFLOAD_DIR_NAME = "offload";

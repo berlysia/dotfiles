@@ -2296,3 +2296,9 @@ describe("review auto-rewrite revisit", { concurrency: 4 }, () => {
     assert.equal(out.split("自動書き換えの再検討=20 件超 / 30 日").length, 2);
   });
 });
+
+test("DESTINATIONS: only opencode sends the brief out", () => {
+  assert.equal(DESTINATIONS["codex-terra"].sendsOut, false);
+  assert.equal(DESTINATIONS["codex-luna-max"].sendsOut, false);
+  assert.equal(DESTINATIONS.opencode.sendsOut, true);
+});
