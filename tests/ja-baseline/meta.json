@@ -216,14 +216,14 @@
   },
   "population": {
     "a-doc": {
-      "count": 95,
-      "bytes": 685089
+      "count": 93,
+      "bytes": 681765
     },
     "b": {
-      "count": 78,
-      "bytes": 613164
+      "count": 76,
+      "bytes": 609247
     },
-    "pairs": 135,
+    "pairs": 133,
     "a-pr": 20,
     "c108": {
       "count": 9,

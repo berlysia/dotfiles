@@ -23,3 +23,11 @@
 .local/share/codex-usage/main.ts
 .local/share/cursor-usage/main.ts
 .local/share/opencode-usage/main.ts
+.claude/hooks/lib/insight-digest.ts
+.claude/scripts/distill-insights.ts
+.claude/scripts/run-distill-insights.sh
+.claude/insight-distill-deny.txt
+.config/systemd/user/distill-insights.service
+.config/systemd/user/distill-insights.timer
+Library/LaunchAgents/com.berlysia.distill-insights.plist
+.claude/.distill-insights-plist.sha256

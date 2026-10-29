@@ -8,7 +8,7 @@
 
 - **閾値**: サイズで 2 段階。100MB 以上は 24 時間無更新で削除、それ未満は 7 日無更新で削除。どちらも終了判定（登録簿に生存 pid なし、参照プロセスなし）を満たしたものだけが対象。
 - **スコープ**: scratchpad のみ。actrun の worktree（`$TMPDIR/actrun/workspace/` に残る）と pnpm dlx キャッシュは今回提供せず、spec に「提供しない体験」として記録して別タスクにする。
-- **対象 OS**: macOS と Linux の両方。distill-insights と同じく plist と systemd timer を用意する。先に Linux 実機で `/tmp` の掃除設定（tmpfs か、systemd-tmpfiles の `tmp.conf` の有無と期間）を確かめる調査が要る。
+- **対象 OS**: macOS と Linux の両方。plist と systemd timer を用意する。先に Linux 実機で `/tmp` の掃除設定（tmpfs か、systemd-tmpfiles の `tmp.conf` の有無と期間）を確かめる調査が要る。
 - **進め方**: アプリが作る worktree のセッションではなく、本体 checkout のセッションで Document Workflow を進める。worktree のセッションでは、workflow dir（本体 checkout 側）への書き込みを worktree 隔離の hook が拒否するため。
 
 まだ決めていないこと（spec で推奨を示して承認を得る）: 起動方式（launchd / systemd の定期実行を推奨）、ログの置き場所と形式、孤児プロセスが残るセッションの知らせ方。
@@ -31,7 +31,6 @@
 ## 置き場所とテストの慣習
 
 - スケジューラが指すジョブ本体は `home/dot_claude/scripts/executable_*.sh`（`~/.claude/scripts/`）、人が叩く CLI は `home/dot_local/bin/executable_*`（`~/.local/bin/`）。
-- 定期実行の前例は distill-insights の launchd / systemd timer（`run_after_register-distill-insights-schedule.sh.tmpl` が登録し、本体は `executable_run-distill-insights.sh`。多重起動は `flock` か `lockf` で防ぎ、失敗は `last-run-failed` に 1 行で残し、`distill-run.log` は末尾 2000 行へ切り詰める）。`run_after_zz-verify-provisioning` は distill-insights の登録を検査していない。
 - shell のテストは `tests/<name>/run.sh` 形式（`tests/git-worktree-cleanup/run.sh` が前例。CI は ubuntu と macOS の両方で、macOS は `/bin/bash` 3.2）。`scripts/lint-shell.sh` が `*.sh.tmpl` を 3 通りに描画して shellcheck にかける。`scripts/smoke-chezmoi-scripts.sh` は `tests/smoke/<script-name>/<scenario>/setup.sh` を持つ `.chezmoiscripts` を隔離した HOME で実行する。
 
 ## 未確認

@@ -342,9 +342,6 @@
 {"schema":1,"source":"a-doc","doc":"docs/plans/deny-node-modules-no-ask-followups.md","tool":"yomiyasu","rule":"bold_label_list","positions":[[9,0]],"count":1}
 {"schema":1,"source":"a-doc","doc":"docs/plans/deny-node-modules-no-ask-followups.md","tool":"yomiyasu","rule":"excess_bold","positions":[[1,0]],"count":1}
 {"schema":1,"source":"a-doc","doc":"docs/plans/deny-node-modules-no-ask-followups.md","tool":"yomiyasu","rule":"excess_list","positions":[[1,0]],"count":1}
-{"schema":1,"source":"a-doc","doc":"docs/plans/distill-insights-tool-isolation.md","tool":"tanteki","rule":"no-doubled-joshi","positions":[[18,16]],"count":1}
-{"schema":1,"source":"a-doc","doc":"docs/plans/distill-insights-tool-isolation.md","tool":"tanteki","rule":"sentence-length","positions":[[7,3],[13,495]],"count":2}
-{"schema":1,"source":"a-doc","doc":"docs/plans/distill-insights-tool-isolation.md","tool":"yomiyasu","rule":"excess_list","positions":[[1,0]],"count":1}
 {"schema":1,"source":"a-doc","doc":"docs/plans/docs-cleanup-followups.md","tool":"tanteki","rule":"no-doubled-joshi","positions":[[7,94]],"count":1}
 {"schema":1,"source":"a-doc","doc":"docs/plans/docs-cleanup-followups.md","tool":"tanteki","rule":"sentence-length","positions":[[7,1],[15,1]],"count":2}
 {"schema":1,"source":"a-doc","doc":"docs/plans/enterworktree-vs-wfdir.md","tool":"tanteki","rule":"sentence-length","positions":[[3,52],[7,3],[14,3]],"count":3}
@@ -374,11 +371,6 @@
 {"schema":1,"source":"a-doc","doc":"docs/plans/hook-target-diagnostics-followups.md","tool":"tanteki","rule":"sentence-length","positions":[[12,4],[19,1043],[19,1161],[19,1282],[21,1451],[25,1691],[28,11],[35,2378],[37,2619]],"count":9}
 {"schema":1,"source":"a-doc","doc":"docs/plans/hook-target-diagnostics-followups.md","tool":"yomiyasu","rule":"excess_list","positions":[[1,0]],"count":1}
 {"schema":1,"source":"a-doc","doc":"docs/plans/hook-target-diagnostics-followups.md","tool":"yomiyasu","rule":"trailing_colon","positions":[[9,0],[25,0]],"count":2}
-{"schema":1,"source":"a-doc","doc":"docs/plans/insight-digest-hardening-followups.md","tool":"tanteki","rule":"sentence-length","positions":[[9,3],[15,3],[25,3]],"count":3}
-{"schema":1,"source":"a-doc","doc":"docs/plans/insight-digest-hardening-followups.md","tool":"yomiyasu","rule":"bold_label_list","positions":[[9,0]],"count":1}
-{"schema":1,"source":"a-doc","doc":"docs/plans/insight-digest-hardening-followups.md","tool":"yomiyasu","rule":"excess_bold","positions":[[1,0]],"count":1}
-{"schema":1,"source":"a-doc","doc":"docs/plans/insight-digest-hardening-followups.md","tool":"yomiyasu","rule":"excess_list","positions":[[1,0]],"count":1}
-{"schema":1,"source":"a-doc","doc":"docs/plans/insight-digest-hardening-followups.md","tool":"yomiyasu","rule":"slop_vocabulary","positions":[[7,0]],"count":1}
 {"schema":1,"source":"a-doc","doc":"docs/plans/ja-skills-role-relations.md","tool":"tanteki","rule":"sentence-length","positions":[[3,26]],"count":1}
 {"schema":1,"source":"a-doc","doc":"docs/plans/ja-skills-role-relations.md","tool":"yomiyasu","rule":"excess_list","positions":[[1,0]],"count":1}
 {"schema":1,"source":"a-doc","doc":"docs/plans/japanese-document-gate-followups.md","tool":"tanteki","rule":"no-ai-jargon","positions":[[5,11],[7,71]],"count":2}
@@ -824,9 +816,6 @@
 {"schema":1,"source":"b","doc":"docs/plans/deny-node-modules-no-ask-followups.md","tool":"tanteki","rule":"table-cell-length","positions":[[47,116]],"count":1}
 {"schema":1,"source":"b","doc":"docs/plans/deny-node-modules-no-ask-followups.md","tool":"yomiyasu","rule":"excess_list","positions":[[1,0]],"count":1}
 {"schema":1,"source":"b","doc":"docs/plans/deny-node-modules-no-ask-followups.md","tool":"yomiyasu","rule":"trailing_colon","positions":[[11,0],[19,0],[24,0],[67,0],[74,0]],"count":5}
-{"schema":1,"source":"b","doc":"docs/plans/distill-insights-tool-isolation.md","tool":"tanteki","rule":"no-doubled-joshi","positions":[[18,16]],"count":1}
-{"schema":1,"source":"b","doc":"docs/plans/distill-insights-tool-isolation.md","tool":"tanteki","rule":"sentence-length","positions":[[7,3],[13,492]],"count":2}
-{"schema":1,"source":"b","doc":"docs/plans/distill-insights-tool-isolation.md","tool":"yomiyasu","rule":"excess_list","positions":[[1,0]],"count":1}
 {"schema":1,"source":"b","doc":"docs/plans/docs-cleanup-followups.md","tool":"tanteki","rule":"sentence-length","positions":[[9,3]],"count":1}
 {"schema":1,"source":"b","doc":"docs/plans/enterworktree-vs-wfdir.md","tool":"tanteki","rule":"sentence-length","positions":[[3,52],[9,3],[16,3]],"count":3}
 {"schema":1,"source":"b","doc":"docs/plans/enterworktree-vs-wfdir.md","tool":"yomiyasu","rule":"excess_list","positions":[[1,0]],"count":1}
@@ -850,11 +839,6 @@
 {"schema":1,"source":"b","doc":"docs/plans/hook-target-diagnostics-followups.md","tool":"tanteki","rule":"table-cell-length","positions":[[29,8]],"count":1}
 {"schema":1,"source":"b","doc":"docs/plans/hook-target-diagnostics-followups.md","tool":"yomiyasu","rule":"excess_list","positions":[[1,0]],"count":1}
 {"schema":1,"source":"b","doc":"docs/plans/hook-target-diagnostics-followups.md","tool":"yomiyasu","rule":"trailing_colon","positions":[[82,0]],"count":1}
-{"schema":1,"source":"b","doc":"docs/plans/insight-digest-hardening-followups.md","tool":"tanteki","rule":"sentence-length","positions":[[3,38],[9,3],[10,3],[15,3],[20,3],[30,3]],"count":6}
-{"schema":1,"source":"b","doc":"docs/plans/insight-digest-hardening-followups.md","tool":"yomiyasu","rule":"bold_label_list","positions":[[9,0]],"count":1}
-{"schema":1,"source":"b","doc":"docs/plans/insight-digest-hardening-followups.md","tool":"yomiyasu","rule":"excess_bold","positions":[[1,0]],"count":1}
-{"schema":1,"source":"b","doc":"docs/plans/insight-digest-hardening-followups.md","tool":"yomiyasu","rule":"excess_list","positions":[[1,0]],"count":1}
-{"schema":1,"source":"b","doc":"docs/plans/insight-digest-hardening-followups.md","tool":"yomiyasu","rule":"slop_vocabulary","positions":[[7,0]],"count":1}
 {"schema":1,"source":"b","doc":"docs/plans/ja-notation-translationese-followups.md","tool":"yomiyasu","rule":"negative_parallelism","positions":[[9,0]],"count":1}
 {"schema":1,"source":"b","doc":"docs/plans/koncise-followups.md","tool":"tanteki","rule":"no-doubled-joshi","positions":[[17,14],[23,140]],"count":2}
 {"schema":1,"source":"b","doc":"docs/plans/koncise-followups.md","tool":"yomiyasu","rule":"trailing_colon","positions":[[13,0]],"count":1}

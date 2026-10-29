@@ -16,10 +16,6 @@ hook が参照するスクリプトの欠落・乖離を検出する仕組み（
 
 ## digest の表示経路でサニタイズが再適用されない
 
-`sanitize()` は取り込み時に 1 回だけ適用され、表示経路では再適用されない。`~/.claude/insight-distill-redact.txt` に後からパターンを追加しても既存の `insights.jsonl` と digest には遡及しない。加えて `sanitize()` は制御文字を扱わないため、ANSI エスケープ・bidi（`U+202A-202E`, `U+2066-2069`）・zero-width（`U+200B-200F`, `U+FEFF`）は素通りする。digest の元は `~/.claude/projects/*.jsonl` の assistant text であり、web fetch 結果や clone した repo の内容を model が echo したものを部分的に含みうる。同一 `systemMessage` 内で上位行（`CLAUDE_CODE_TASK_LIST_ID` 警告等）が制御文字で上書きされうるかは Claude Code の UI 実装が ANSI 等を素通しするかに依存し、**未検証**。
-
-表示用に `normalize()`（`insight-digest.ts`）を転用してはならない。末尾で `.toLowerCase()` するため大小文字が潰れ、`DEFAULT_REDACT_PATTERNS` のうち大文字を要求する 4 本（`AKIA[0-9A-Z]{16}`、JWT の `eyJ...`、`-----BEGIN ... PRIVATE KEY-----`、`^[A-Z][A-Z0-9_]{2,}=\S+$`）が原理的にマッチしなくなる。再利用できるのは `sanitize()` のみ。
-
 ## 層 3（SessionStart 自己診断）の未解決事項
 
 「他リポジトリの settings が参照する実在しないスクリプトをセッション開始時に報告する」機構は未実装（`session.ts` は `auditGuardWiring` / `auditAnswerRecorderWiring` のみ）。着手時に決める必要がある点:

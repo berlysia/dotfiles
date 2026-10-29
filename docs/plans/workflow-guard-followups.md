@@ -60,7 +60,7 @@ production コードで `process.env.CLAUDE_TEST_CWD` を読むファイルの�
 
 ### 2. 設計の起点
 
-「実行の証拠を **per-project** に、**結果次元付き**で、**atomic** に残す」。再利用候補は `lib/insight-digest.ts` の `writeFileSyncAtomic` と `ensureDir`、`session.ts` の projectHash 導出（`context.input.cwd` の `/` を `-` に置換して先頭の `-` を落とす形）である。`insight-digest.ts` の所在は `implementations/` ではなく `lib/` 配下である。
+「実行の証拠を **per-project** に、**結果次元付き**で、**atomic** に残す」。再利用候補は `session.ts` の projectHash 導出（`context.input.cwd` の `/` を `-` に置換して先頭の `-` を落とす形）である。
 
 ### 3. `unresolvable` と `env-rejected` の可視性は非対称で、無言なのは後者である
 

@@ -14,10 +14,6 @@
 #   # Safe: Example API key in documentation
 #   abc123def456:docs/example.md:42
 
-# Safe: test fixture intentionally shaped like a .env-style credential so the
-# insight-digest sanitizer can demonstrate that it redacts such patterns.
-home/dot_claude/hooks/tests/unit/insight-digest.test.ts:generic-api-key:69
-
 # Safe: agent-learnings test fixtures shaped like a GitHub PAT so the tests can
 # show that preprocessText / reduceTranscript / applyOps redact it. Not a real
 # token. The fixtures were later changed to a low-entropy value; these entries

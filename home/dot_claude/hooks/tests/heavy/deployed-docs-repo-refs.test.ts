@@ -31,7 +31,6 @@ const ALLOWED_FILES: ReadonlySet<string> = new Set([
   // Edits the auto-approve layers in the dotfiles source; source paths are its subject.
   ".skills/update-auto-approve/SKILL.md",
   // Promotes insights into dotfiles source files (.skills/, home/dot_claude/rules/).
-  ".skills/insight-digest/SKILL.md",
 ]);
 
 function listDeployedDocs(): string[] {

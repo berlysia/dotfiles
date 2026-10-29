@@ -76,7 +76,7 @@ C の設計原則（chezmoi ネイティブを使い独自の削除ロジック�
 
 ### 7. `~/.claude/` 直下の managed 層
 
-`.claude/CLAUDE.md` / `README-permissions.md` / `insight-distill-deny.txt` / `insight-distill-redact.txt` / `package.json` は managed だが、`.claude/` ルート自体は所有ディレクトリではないため、ここに落ちた残骸は検出対象外になる。ルート直下の管理外には、過去の作業で落ちた単発のファイルが混ざる。
+`.claude/CLAUDE.md` / `README-permissions.md` / `package.json` は managed だが、`.claude/` ルート自体は所有ディレクトリではないため、ここに落ちた残骸は検出対象外になる。ルート直下の管理外には、過去の作業で落ちた単発のファイルが混ざる。
 
 ## 検出できることが確認済みのケース
 
