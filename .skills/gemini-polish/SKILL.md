@@ -2,7 +2,8 @@
 name: gemini-polish
 description: >-
   agyコマンド（Google Antigravity CLI）または gemini-polish CLI を使って、Geminiモデルにテキストの推敲・校正を依頼するスキル。
-  ユーザーが文章の推敲、校正、ビジネスメールの整形、技術文書の推敲、またはGeminiモデルによるレビュー・推敲を求めたときに使用する。
+  本文は Google へ送られる。利用者が gemini-polish の名前を出して頼んだとき（「/gemini-polish」「gemini-polish で直して」など）と、
+  Gemini・agy での推敲をはっきり頼んだときだけ使う。名前を出さない推敲・校正の依頼、日本語の文章を書かせる依頼、コードや設定には使わない。
 ---
 
 # gemini-polish
@@ -49,6 +50,13 @@ echo "テキスト" | gemini-polish [options]
 - **`concise`**: 冗長な前置きや重複表現を削ぎ落とし、要点を明確に引き締めた文章。
 - **`technical`**: 主述関係を明確にし、論理的・客観的・正確に記述した技術ドキュメント向け文章。
 - **`casual`**: ブログ、SNS、気軽な社内チャット向けのフランクで親しみやすい表現。
+
+### 認証（無料枠と有料枠）
+
+- `GEMINI_API_KEY` が無いときは、agy にログインした Google アカウントの枠で動く。
+- 環境変数 `GEMINI_API_KEY` があると、その実行だけ API キーの Gemini API（有料枠）で動く。`gemini-polish` が `agy --settings '{"modelProvider":"gemini"}'` を付けて呼ぶので、agy の settings.json もログイン状態も変わらない。
+- agy は `GEMINI_API_KEY` だけでは API キーを使わない。`modelProvider` が `gemini` のときだけ読む。`agy -p` を直接呼んで有料枠を使うときも、同じ `--settings` を付ける。
+- API キーで動かすとき、`--model` に渡す既定の `gemini-3.8-flash-medium` が通るかはまだ確かめていない。通らなければ `-m` か `GEMINI_POLISH_MODEL` で Gemini API のモデル名を渡す。
 
 ---
 
