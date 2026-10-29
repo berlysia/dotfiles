@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
+  accessSync,
+  chmodSync,
+  constants as fsConstants,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -9,10 +13,11 @@ import {
   readdirSync,
   rmSync,
   symlinkSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { describe, it } from "node:test";
 import {
   groupsForCell,
@@ -28,6 +33,10 @@ import {
   readLedger,
   readPending,
 } from "../home/dot_local/share/delegation/store.ts";
+import {
+  buildVerifiedRecord,
+  writeVerifiedRecord,
+} from "../home/dot_local/share/delegation/offload.ts";
 
 const main = new URL(
   "../home/dot_local/share/delegation/main.ts",
@@ -37,14 +46,33 @@ const main = new URL(
 function sandbox() {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "delegation-cli-")));
   const home = join(root, "home");
-  mkdirSync(home);
-  const env = { HOME: home, XDG_DATA_HOME: join(root, "xdg") };
+  const bin = join(root, "bin");
+  const env = {
+    HOME: home,
+    XDG_CACHE_HOME: join(root, "xdg-cache"),
+    XDG_CONFIG_HOME: join(root, "xdg-config"),
+    XDG_DATA_HOME: join(root, "xdg-data"),
+    XDG_RUNTIME_DIR: join(root, "xdg-runtime"),
+    XDG_STATE_HOME: join(root, "xdg-state"),
+    PATH: bin,
+  };
+  for (const path of [
+    home,
+    bin,
+    ...Object.values(env).filter(
+      (v) => v !== bin && v !== home && v !== env.XDG_DATA_HOME,
+    ),
+  ]) {
+    mkdirSync(path, {
+      recursive: true,
+      mode: path === env.XDG_RUNTIME_DIR ? 0o700 : 0o755,
+    });
+  }
   const T0 = "2026-10-29T00:00:00.000Z";
   const run = (args, { input, now = T0, extraEnv = {} } = {}) =>
     new Promise((resolve) => {
       const child = spawn(process.execPath, [main, ...args], {
         env: {
-          PATH: process.env.PATH,
           ...env,
           DELEGATION_NOW: now,
           ...extraEnv,
@@ -69,6 +97,53 @@ function sandbox() {
     store,
     done: () => rmSync(root, { recursive: true }),
   };
+}
+
+function addHostExecutable(sb, name) {
+  const source = (process.env.PATH ?? "")
+    .split(delimiter)
+    .map((dir) => join(dir, name))
+    .find((path) => existsSync(path) && (statSync(path).mode & 0o111) !== 0);
+  if (source === undefined) return false;
+  accessSync(source, fsConstants.X_OK);
+  symlinkSync(realpathSync(source), join(sb.env.PATH, name));
+  return true;
+}
+
+function seedVerifiedOpencode(sb, models) {
+  const configDir = join(sb.env.HOME, ".config", "opencode");
+  const authDir = join(sb.env.HOME, ".local", "share", "opencode");
+  const config = join(configDir, "opencode.jsonc");
+  const executable = join(sb.env.PATH, "opencode");
+  mkdirSync(configDir, { recursive: true });
+  mkdirSync(authDir, { recursive: true, mode: 0o700 });
+  chmodSync(authDir, 0o700);
+  writeFileSync(config, "{}\n");
+  writeFileSync(executable, "#!/bin/sh\nexit 0\n");
+  chmodSync(executable, 0o755);
+
+  const sha256 = (path) =>
+    createHash("sha256").update(readFileSync(path)).digest("hex");
+  const inputs = {
+    realpath: realpathSync(executable),
+    executableSha256: sha256(executable),
+    targetSha256: {},
+    configSha256: sha256(config),
+    foundConfigPaths: [],
+    record: { kind: "missing" },
+    authFile: { kind: "missing" },
+    authDb: { kind: "missing" },
+    authFiles: [],
+    authDir: { mode: 0o700, ownedBySelf: true, symlink: false },
+  };
+  const record = buildVerifiedRecord({
+    inputs,
+    version: "test",
+    models,
+    targets: [],
+    now: new Date("2026-10-29T00:00:00.000Z"),
+  });
+  writeVerifiedRecord(sb.env, record);
 }
 
 const agent = (extra = {}) => ({
@@ -841,14 +916,13 @@ describe("delegation cli (process)", { concurrency: 4 }, () => {
   });
 
   it("the bun entrypoint works too", async (t) => {
-    const probe = spawnSync("bun", ["--version"], { encoding: "utf8" });
-    if (probe.error) return t.skip("bun not on PATH");
     const sb = sandbox();
     try {
+      if (!addHostExecutable(sb, "bun")) return t.skip("bun not on PATH");
       const r = spawnSync("bun", ["run", "--silent", main, "open"], {
         encoding: "utf8",
         input: JSON.stringify({ v: 1, ...agent() }),
-        env: { PATH: process.env.PATH, ...sb.env },
+        env: sb.env,
       });
       assert.equal(r.status, 0, r.stderr);
       assert.match(
@@ -959,7 +1033,11 @@ describe("delegation cli: model from the agent definition", () => {
   it("a FIFO definition exits 1 silently without hanging", async () => {
     const { sb, dir, open } = withDefs({});
     try {
-      assert.equal(spawnSync("mkfifo", [join(dir, "fifo.md")]).status, 0);
+      assert.equal(addHostExecutable(sb, "mkfifo"), true);
+      assert.equal(
+        spawnSync("mkfifo", [join(dir, "fifo.md")], { env: sb.env }).status,
+        0,
+      );
       const t0 = Date.now();
       refused(await open(noModel({ subagent_type: "fifo" })));
       assert.ok(Date.now() - t0 < 3000);
@@ -1047,14 +1125,153 @@ describe("delegation cli: model from the agent definition", () => {
         "--size",
         "M",
       ]));
-    it("--exposure=external-ok leaves the route output unchanged", async () => {
+    it("external-ok without opencode reports the failed verification", async () => {
       const sb = sandbox();
       try {
-        const a = await sb.run(ROUTE);
-        const b = await sb.run([...ROUTE, "--exposure=external-ok"]);
-        assert.equal(b.status, 0, b.stderr);
-        assert.equal(a.status, 0, a.stderr);
-        assert.equal(b.stdout, a.stdout);
+        const r = await sb.run([
+          "route",
+          "--kind",
+          "impl",
+          "--size",
+          "M",
+          "--exposure=external-ok",
+        ]);
+        assert.equal(r.status, 0, r.stderr);
+        const lines = r.stdout.split("\n");
+        assert.ok(
+          lines.some((line) =>
+            line.startsWith(
+              "区分: external-ok (確認済みでない model の委譲先を除いた:",
+            ),
+          ),
+          r.stdout,
+        );
+        assert.ok(
+          lines.some((line) => line.includes("理由: PATH に opencode が無い")),
+        );
+        assert.ok(lines.some((line) => line.includes("recovery:")));
+        assert.equal(
+          lines.some((line) => line.includes("delegation offload")),
+          false,
+        );
+      } finally {
+        sb.done();
+      }
+    });
+    it("verified external-ok route exposes only the recorded model", async () => {
+      const sb = sandbox();
+      try {
+        seedVerifiedOpencode(sb, ["zai-coding-plan/glm-5.3"]);
+        const usageBin = join(sb.root, "ai-usage");
+        const usage = {
+          fetchedAt: "2026-10-29T00:00:00.000Z",
+          providers: {
+            claude: {
+              ok: true,
+              fiveHour: {
+                usedPercent: 10,
+                resetsAt: "2026-10-29T05:00:00.000Z",
+              },
+              weekly: {
+                usedPercent: 80,
+                resetsAt: "2026-11-05T00:00:00.000Z",
+              },
+              exhausted: false,
+            },
+            opencode: {
+              ok: true,
+              fiveHour: {
+                usedPercent: 10,
+                resetsAt: "2026-10-29T05:00:00.000Z",
+              },
+              weekly: {
+                usedPercent: 5,
+                resetsAt: "2026-11-05T00:00:00.000Z",
+              },
+              exhausted: false,
+            },
+          },
+        };
+        writeFileSync(
+          usageBin,
+          `#!/bin/sh\nprintf '%s\\n' '${JSON.stringify(usage)}'\n`,
+        );
+        chmodSync(usageBin, 0o755);
+
+        const r = await sb.run(
+          [
+            "route",
+            "--kind",
+            "mechanical",
+            "--size",
+            "M",
+            "--exposure",
+            "external-ok",
+          ],
+          { extraEnv: { DELEGATION_AI_USAGE_BIN: usageBin } },
+        );
+        assert.equal(r.status, 0, r.stderr);
+        assert.match(r.stdout, /claude 5h=under week=ahead/);
+        assert.match(r.stdout, /opencode 5h=under week=under/);
+        const lines = r.stdout.split("\n");
+        const classification = lines.find((line) =>
+          line.startsWith(
+            "区分: external-ok (確認済みでない model の委譲先を除いた:",
+          ),
+        );
+        assert.ok(classification, r.stdout);
+        assert.match(classification, /sarashina/);
+        assert.match(classification, /opencode free deepseek/);
+        assert.match(classification, /opencode free glm/);
+        assert.ok(
+          lines.some((line) =>
+            line.includes("--model zai-coding-plan/glm-5.3"),
+          ),
+          r.stdout,
+        );
+      } finally {
+        sb.done();
+      }
+    });
+    it("omitted exposure and closed have identical route output", async () => {
+      const sb = sandbox();
+      try {
+        const omitted = await sb.run(ROUTE);
+        const closed = await sb.run([...ROUTE, "--exposure", "closed"]);
+        assert.equal(omitted.status, 0, omitted.stderr);
+        assert.equal(closed.status, 0, closed.stderr);
+        assert.equal(omitted.stdout, closed.stdout);
+        assert.ok(
+          omitted.stdout
+            .split("\n")
+            .some((line) =>
+              line.startsWith("区分: closed (外部へ送る委譲先を除いた:"),
+            ),
+          omitted.stdout,
+        );
+      } finally {
+        sb.done();
+      }
+    });
+    it("review remains closed with external-ok", async () => {
+      const sb = sandbox();
+      try {
+        const r = await sb.run([
+          "route",
+          "--kind",
+          "review",
+          "--size",
+          "S",
+          "--exposure",
+          "external-ok",
+        ]);
+        assert.equal(r.status, 0, r.stderr);
+        assert.ok(
+          r.stdout
+            .split("\n")
+            .some((line) => line === "区分: closed (review は外部へ送らない)"),
+          r.stdout,
+        );
       } finally {
         sb.done();
       }
