@@ -1139,6 +1139,117 @@ test("buildLogLine: shape, no brief text, bounded size", () => {
   assert.equal(atLine.includes("@"), false);
 });
 
+// ---- opencode.jsonc ---------------------------------------------------------------
+
+const JSONC_PATH = join(
+  import.meta.dirname,
+  "../home/dot_config/opencode/opencode.jsonc",
+);
+
+/** Parse JSONC: drop // and block comments outside strings, then trailing commas. */
+function parseJsonc(text) {
+  let out = "";
+  let i = 0;
+  while (i < text.length) {
+    const c = text[i];
+    if (c === '"') {
+      let j = i + 1;
+      while (text[j] !== '"') j += text[j] === "\\" ? 2 : 1;
+      out += text.slice(i, j + 1);
+      i = j + 1;
+    } else if (c === "/" && text[i + 1] === "/") {
+      while (i < text.length && text[i] !== "\n") i++;
+    } else if (c === "/" && text[i + 1] === "*") {
+      i = text.indexOf("*/", i + 2) + 2;
+    } else {
+      out += c;
+      i++;
+    }
+  }
+  return JSON.parse(out.replace(/,(\s*[}\]])/g, "$1"));
+}
+
+const readJsonc = () => parseJsonc(readFileSync(JSONC_PATH, "utf8"));
+const denyKeys = (rules) =>
+  Object.entries(rules)
+    .filter(([, v]) => v === "deny")
+    .map(([k]) => k);
+
+test("opencode.jsonc: global settings and the sarashina provider", () => {
+  const cfg = readJsonc();
+  assert.equal(cfg.share, "disabled");
+  assert.equal(cfg.autoupdate, false);
+  for (const key of [
+    "mcp",
+    "plugin",
+    "enabled_providers",
+    "small_model",
+    "model",
+  ]) {
+    assert.equal(key in cfg, false, key);
+  }
+  const settings = cfg.providers.sarashina.settings;
+  assert.equal("apiKey" in settings, false);
+  assert.equal(typeof settings.baseURL, "string");
+  const p = cfg.providers.sarashina;
+  assert.equal(p.name, "Sarashina API");
+  assert.equal(p.package, "@opencode/ai/providers/openai-compatible");
+  assert.deepEqual(p.compatibility, {
+    maxTokensField: "max_completion_tokens",
+    streamUsage: false,
+  });
+  assert.deepEqual(Object.keys(p.models), ["sarashina3.2-mini-thinking"]);
+  assert.equal(
+    readFileSync(JSONC_PATH, "utf8").includes("SARASHINA_API_KEY"),
+    false,
+  );
+});
+
+test("opencode.jsonc: the two offload agents are allowlists", () => {
+  const { agent } = readJsonc();
+  assert.deepEqual(Object.keys(agent).sort(), [
+    "worktree-edit",
+    "worktree-read",
+  ]);
+  for (const [name, def] of Object.entries(agent)) {
+    const perm = def.permission;
+    assert.equal(Object.keys(perm)[0], "*", name);
+    assert.equal(perm["*"], "deny", name);
+    for (const tool of ["read", "glob", "list"]) {
+      assert.notEqual(perm[tool], "deny", `${name} ${tool}`);
+      assert.ok(perm[tool], `${name} ${tool}`);
+    }
+    for (const tool of [
+      "grep",
+      "bash",
+      "webfetch",
+      "websearch",
+      "codesearch",
+      "task",
+      "skill",
+      "opencode_*",
+      "external_directory",
+    ]) {
+      assert.equal(perm[tool], "deny", `${name} ${tool}`);
+    }
+    assert.equal(Object.keys(perm.read)[0], "*");
+    assert.equal(perm.read["*"], "allow");
+    assert.deepEqual(denyKeys(perm.read), [...READ_DENY], name);
+  }
+  const read = agent["worktree-read"].permission;
+  for (const tool of ["edit", "write"]) {
+    assert.ok(read[tool] === undefined || read[tool] === "deny", tool);
+  }
+  const edit = agent["worktree-edit"].permission;
+  for (const tool of ["edit", "write"]) {
+    assert.equal(edit[tool]["*"], "allow", tool);
+    assert.deepEqual(denyKeys(edit[tool]), [...EDIT_DENY], tool);
+    for (const p of denyKeys(edit.read)) {
+      assert.ok(denyKeys(edit[tool]).includes(p), `${tool} lacks ${p}`);
+    }
+  }
+});
+
 // ---- source checks --------------------------------------------------------
 
 test("offload.ts source: imports, no hard-coded providers, SQL shape", () => {
