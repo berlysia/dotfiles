@@ -228,9 +228,11 @@ const oneDecimal = (x: number) => Math.max(0, x).toFixed(1);
 function lookaheadLine(l: Lookahead): string {
   if (!l.read.ok) return `  先読み: 使えない (${l.read.reason})`;
   const toLine =
-    l.hoursToLine === null
-      ? "線に届かない"
-      : `線まで ${oneDecimal(l.hoursToLine)}h`;
+    l.hoursToLine === "over"
+      ? "目安を超えている"
+      : l.hoursToLine === null
+        ? "今週は目安を超えない"
+        : `目安を超えるまで ${oneDecimal(l.hoursToLine)}h`;
   const close = l.tooCloseToReset
     ? ` (リセットまで ${WEEK_LOOKAHEAD_HOURS}h 未満: 使わない)`
     : "";

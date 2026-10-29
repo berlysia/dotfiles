@@ -26,7 +26,7 @@ Agent tool の `model` パラメータ / Workflow `agent()` の `opts.model` で
 
 表の「探索・定型実装・ドキュメント」列の既定の委譲先は sonnet である。Codex と OpenCode には、`delegation route` が勧めたとき、または試す候補として挙げたときに渡す。
 
-1. 委譲の前に `delegation route` を 1 回実行し、仕事の種類と規模を渡す（引数は `delegation --help`）。route は provider ごとの 5 時間枠と週枠がペースの線より先か後かと、その種類と規模での組ごとの採用率と件数を示し、推奨の委譲先を理由つきで返す。推奨に従う。route が 0 以外の終了コードで終わったら sonnet に渡す
+1. 委譲の前に `delegation route` を 1 回実行し、仕事の種類と規模を渡す（引数は `delegation --help`）。route は provider ごとの 5 時間枠と週枠がペースの目安より先か後かと、その種類と規模での組ごとの採用率と件数を示し、推奨の委譲先を理由つきで返す。推奨に従う。route が 0 以外の終了コードで終わったら sonnet に渡す
 2. 「試す候補」が示されたら、急がない小さな委譲をその候補に渡してよい。記録の少ない委譲先の評価を増やすための枠である
 3. 委譲が終わると、`delegation-budget` Mod が `[delegation]` で始まる 1 行で記録を促す。結果を確かめて採否を決めたら `delegation record` で記録する。メインループ自身の判断の誤りは委譲先の欠陥にせず、note に書く
 4. 後から委譲の結果に欠陥が見つかったら、`delegation amend` で記録する
