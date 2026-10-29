@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  EFFORT_VALUES,
+  MODEL_PATTERN,
+} from "../home/dot_claude/scripts/reviewer-codex-run.ts";
+import {
+  EFFORTS,
   buildDelegationRow,
   displayModel,
   formatNote,
@@ -96,6 +101,11 @@ test("normalizeModel rejects shapes that do not fit the harness", () => {
   assert.equal(normalizeModel("codex-cli", "claude-x"), "unknown");
   assert.equal(normalizeModel("claude-code-agent", "gpt-6.1-terra"), "unknown");
   assert.equal(normalizeModel("codex-cli", "gpt-6.1-terra"), "gpt-6.1-terra");
+  assert.equal(normalizeModel("codex-cli", "gpt-6-luna"), "gpt-6-luna");
+});
+
+test("gpt-6-luna is a known model and shown as is", () => {
+  assert.equal(displayModel("gpt-6-luna"), "gpt-6-luna");
 });
 
 test("note is cut to 1000 bytes without breaking UTF-8", () => {
@@ -133,4 +143,26 @@ test("id patterns", () => {
   assert.equal(isAgentId("a_b-1"), true);
   assert.equal(isToolUseId("t".repeat(129)), false);
   assert.equal(isToolUseId("toolu_01:a.b"), true);
+});
+
+test("reviewer-codex-run copies of effort list and model shape match schema.ts", () => {
+  assert.deepEqual(
+    [...EFFORT_VALUES],
+    EFFORTS.filter((e) => e !== "unknown"),
+  );
+  for (const model of [
+    "gpt-6-luna",
+    "gpt-6.1-terra",
+    "GPT-6-luna",
+    "gpt-6-luna;rm",
+    "gpt-",
+    `gpt-${"a".repeat(32)}`,
+    `gpt-${"a".repeat(33)}`,
+  ]) {
+    assert.equal(
+      MODEL_PATTERN.test(model),
+      normalizeModel("codex-cli", model) !== "unknown",
+      model,
+    );
+  }
 });

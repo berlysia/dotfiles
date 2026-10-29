@@ -12,6 +12,13 @@ import { pathToFileURL } from "node:url";
 import { realpathSync } from "node:fs";
 
 export const SAFE_PATH_PATTERN = /^\/[A-Za-z0-9._/-]+$/;
+// Copies of schema.ts (codex-cli model shape, EFFORTS without "unknown"). The
+// scripts and the delegation CLI deploy to different directories and cannot
+// import each other; tests/delegation-schema.test.mjs checks they stay equal.
+// A value outside these makes capture record "unknown" and drop out of route.
+export const MODEL_PATTERN = /^gpt-[0-9a-z.-]{1,32}$/;
+export const EFFORT_VALUES = ["low", "medium", "high", "xhigh", "max"] as const;
+const EFFORT_PREFIX = "model_reasoning_effort=";
 const errorName = (error: unknown): string =>
   error instanceof Error
     ? String((error as NodeJS.ErrnoException).code ?? error.name)
@@ -59,12 +66,22 @@ export async function runReviewer(
   });
   let directory: string | undefined;
   try {
-    const [reviewer, brief, root] = args;
+    // Positional on purpose: any other flag (e.g. -c sandbox_mode=...) must
+    // fail here instead of reaching codex.
     if (
-      args.length !== 3 ||
-      !reviewer ||
-      !/^[a-z0-9][a-z0-9-]*$/.test(reviewer)
+      args.length !== 7 ||
+      args[0] !== "-m" ||
+      args[2] !== "-c" ||
+      !args[3]?.startsWith(EFFORT_PREFIX)
     )
+      return failure("bad-arguments: shape");
+    const [, model, , effortArg, reviewer, brief, root] = args;
+    const effort = effortArg?.slice(EFFORT_PREFIX.length) ?? "";
+    if (!model || !MODEL_PATTERN.test(model))
+      return failure("bad-arguments: model");
+    if (!(EFFORT_VALUES as readonly string[]).includes(effort))
+      return failure("bad-arguments: effort");
+    if (!reviewer || !/^[a-z0-9][a-z0-9-]*$/.test(reviewer))
       return failure("bad-arguments: reviewer");
     const agents =
       env.REVIEWER_CODEX_AGENTS_DIR ?? join(homedir(), ".claude/agents");
@@ -114,6 +131,10 @@ export async function runReviewer(
         env.REVIEWER_CODEX_BIN ?? "codex",
         [
           "exec",
+          "-m",
+          model,
+          "-c",
+          `${EFFORT_PREFIX}${effort}`,
           "--sandbox",
           "read-only",
           "-C",

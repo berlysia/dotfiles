@@ -13,6 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
+import { captureBash } from "../home/dot_local/share/delegation/capture.ts";
 import {
   appendLedger,
   createPending,
@@ -141,6 +142,28 @@ describe("delegation cli (process)", { concurrency: 4 }, () => {
     } finally {
       sb.done();
     }
+  });
+
+  it("capture reads the launch line written in the real agent definition", () => {
+    const text = readFileSync(
+      new URL("../home/dot_claude/agents/logic-validator.md", import.meta.url),
+      "utf8",
+    );
+    const template =
+      /`(bun ~\/\.claude\/scripts\/reviewer-codex-run\.ts [^`]+)`/.exec(
+        text,
+      )?.[1];
+    assert.ok(template, "launch template not found in agent definition");
+    const filled = template
+      .replace("<model の値>", "gpt-6.1-terra")
+      .replace("<effort の値>", "high")
+      .replace("<brief の値>", "/a")
+      .replace("<root の値>", "/b");
+    const c = captureBash(filled);
+    assert.equal(c.harness, "codex-cli");
+    assert.equal(c.model, "gpt-6.1-terra");
+    assert.equal(c.effort, "high");
+    assert.equal(c.invocation[0], "reviewer-codex-run");
   });
 
   it("open: non-target Bash is refused", async () => {
