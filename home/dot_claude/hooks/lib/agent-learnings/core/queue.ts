@@ -15,7 +15,7 @@ import {
   writeSync,
 } from "node:fs";
 import { join } from "node:path";
-import { isValidRepoKey } from "./repo-key.ts";
+import { isValidRepoKey } from "../../repo-key.ts";
 import { ensureStateDirs, storePaths, writeFileSyncAtomic } from "./store.ts";
 
 // SessionEnd のジョブ。公開する形式（spec「契約 / queue ジョブ」）

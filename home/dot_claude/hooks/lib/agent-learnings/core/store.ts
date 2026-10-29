@@ -23,7 +23,7 @@ import {
   type LearningsFile,
   type Parsed,
 } from "./learnings-file.ts";
-import { keyToFileName } from "./repo-key.ts";
+import { keyToFileName } from "../../repo-key.ts";
 import type { FeedbackReader } from "./metrics.ts";
 
 export type StorePaths = {

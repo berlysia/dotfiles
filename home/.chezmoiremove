@@ -32,3 +32,4 @@
 Library/LaunchAgents/com.berlysia.distill-insights.plist
 .claude/.distill-insights-plist.sha256
 .claude/hooks/lib/agent-learnings/core/git.ts
+.claude/hooks/lib/agent-learnings/core/repo-key.ts

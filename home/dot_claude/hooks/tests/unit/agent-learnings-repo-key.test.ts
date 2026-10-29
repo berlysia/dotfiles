@@ -5,7 +5,7 @@ import {
   keyToFileName,
   localRepoKey,
   normalizeOriginUrl,
-} from "../../lib/agent-learnings/core/repo-key.ts";
+} from "../../lib/repo-key.ts";
 
 describe("normalizeOriginUrl", () => {
   const cases: Array<[string, string]> = [

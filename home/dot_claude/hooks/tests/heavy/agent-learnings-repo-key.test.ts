@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { resolveRepoKey } from "../../lib/agent-learnings/core/repo-key.ts";
+import { resolveRepoKey } from "../../lib/repo-key.ts";
 import { runGit } from "../../lib/run-git.ts";
 
 function withTempDir(fn: (dir: string) => void): void {

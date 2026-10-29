@@ -78,10 +78,7 @@ import {
   recordFeedback,
 } from "../lib/agent-learnings/core/metrics-log.ts";
 import { renderLearnings } from "../lib/agent-learnings/core/render.ts";
-import {
-  isValidRepoKey,
-  resolveRepoKey,
-} from "../lib/agent-learnings/core/repo-key.ts";
+import { isValidRepoKey, resolveRepoKey } from "../lib/repo-key.ts";
 import {
   appendReadLog,
   commitStore,

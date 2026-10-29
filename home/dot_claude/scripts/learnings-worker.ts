@@ -75,7 +75,7 @@ import {
   isValidRepoKey,
   keyToFileName,
   resolveRepoKey,
-} from "../hooks/lib/agent-learnings/core/repo-key.ts";
+} from "../hooks/lib/repo-key.ts";
 import {
   commitStore,
   defaultStoreDir,

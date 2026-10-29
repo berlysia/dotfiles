@@ -7,7 +7,7 @@ import type { RunGit } from "../../run-git.ts";
 import { COMMON_KEY, type LearningsFile } from "../core/learnings-file.ts";
 import { countJobs, enqueueJob } from "../core/queue.ts";
 import { feedbackHint, renderLearningsDetailed } from "../core/render.ts";
-import { resolveRepoKey } from "../core/repo-key.ts";
+import { resolveRepoKey } from "../../repo-key.ts";
 import { filterByTrigger, type Trigger } from "../core/triggers.ts";
 import {
   appendReadLog,

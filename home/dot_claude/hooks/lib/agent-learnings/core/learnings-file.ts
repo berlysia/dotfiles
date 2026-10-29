@@ -1,4 +1,4 @@
-import { isValidRepoKey } from "./repo-key.ts";
+import { isValidRepoKey } from "../../repo-key.ts";
 
 export type LearningEntry = {
   id: string; // /^L-[0-9a-f]{12}$/

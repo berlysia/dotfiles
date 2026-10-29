@@ -15,7 +15,7 @@ import {
 import { join } from "node:path";
 import type { RunGit } from "../../run-git.ts";
 import { applyOps, type LearningOp } from "./ops.ts";
-import { isValidRepoKey } from "./repo-key.ts";
+import { isValidRepoKey } from "../../repo-key.ts";
 import { withStoreLock } from "./lock.ts";
 import { parseTriggers } from "./triggers.ts";
 import {

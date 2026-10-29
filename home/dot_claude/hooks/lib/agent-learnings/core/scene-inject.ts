@@ -5,7 +5,7 @@ import type { RunGit } from "../../run-git.ts";
 import { COMMON_KEY } from "./learnings-file.ts";
 import { recordInjections } from "./metrics-log.ts";
 import { renderSituation } from "./render.ts";
-import { resolveRepoKey } from "./repo-key.ts";
+import { resolveRepoKey } from "../../repo-key.ts";
 import { collectCandidates } from "./scene.ts";
 import {
   appendCache,

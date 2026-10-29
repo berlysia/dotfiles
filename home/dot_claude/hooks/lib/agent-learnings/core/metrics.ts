@@ -1,4 +1,4 @@
-import { isValidRepoKey } from "./repo-key.ts";
+import { isValidRepoKey } from "../../repo-key.ts";
 import { SCENE_STATE_READERS, type SceneReader } from "./scene-state.ts";
 import { formatTriggers, parseTriggers } from "./triggers.ts";
 
