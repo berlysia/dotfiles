@@ -29,6 +29,11 @@ systemctl)
     [[ $(cat "$STATE/enabled") == enabled ]]
     ;;
   is-active)
+    if [[ ${NOFILE:-0} == 1 ]]; then
+      # A unit whose file is gone: real systemctl prints inactive and exits 4.
+      echo inactive
+      exit 4
+    fi
     key=timer
     [[ $2 == distill-insights.service ]] && key=service
     cat "$STATE/$key"
