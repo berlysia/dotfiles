@@ -51,6 +51,11 @@ for (const name of [
 // repository instead of the process.chdir() / CLAUDE_TEST_CWD the test set up.
 delete process.env.CLAUDE_PROJECT_DIR;
 
+// SessionStart の dotfiles-feedback の通知は、dotfiles の作業ツリーで走ると passwd の home の
+// 実機の spool を読み、detached の refresh を起動する。テストの子プロセスにも引き継がれる。
+// 通知を試すテストは session.ts の依存を注入して使う。
+process.env.CLAUDE_HOOKS_DISABLE_FEEDBACK_NOTICE = "1";
+
 if (!process.env.CLAUDE_LOGS_DIR) {
   const dir = realpathSync(
     mkdtempSync(join(tmpdir(), "claude-hooks-test-logs-")),

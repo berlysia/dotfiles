@@ -6,6 +6,11 @@ import { openGh, type GhResult } from "./gh.ts";
 import { acquireLock } from "./lock.ts";
 import { isFeedbackId, parseItem } from "./item.ts";
 import { renderIssue } from "./issue-body.ts";
+import {
+  clearLabelsState,
+  readLabelsState,
+  writeLabelsState,
+} from "./labels-state.ts";
 import { clearLastFlush, writeLastFlush, type FeedbackError } from "./cache.ts";
 import {
   FLUSH_LOCK_FILE,
@@ -122,7 +127,12 @@ export async function flush(
       } else {
         const gh = openGh(deps);
         const checked = await gh.checkDestination();
-        const ready = checked.ok ? await gh.ensureLabels() : checked;
+        // 宛先の確認は記録があっても回ごとに行う。label の用意だけを記録で飛ばす。
+        let ready = checked;
+        if (checked.ok && !(await readLabelsState(deps))) {
+          ready = await gh.ensureLabels();
+          if (ready.ok) await writeLabelsState(deps);
+        }
         if (!ready.ok) {
           lastError = ready.error;
           for (const id of ids) await fail(id, null, false, ready.message);
@@ -165,9 +175,15 @@ export async function flush(
               if (!found.ok) result = found;
               else {
                 if (!(await spool.stillClaimed(claimed))) continue;
-                result = found.value
-                  ? { ok: true, value: found.value.number }
-                  : await perItemGh.createIssue(renderIssue(parsed.item));
+                if (found.value)
+                  result = { ok: true, value: found.value.number };
+                else {
+                  result = await perItemGh.createIssue(
+                    renderIssue(parsed.item),
+                  );
+                  // label が人に外されていても見分けられないので、種類を問わず記録を消す。
+                  if (!result.ok) await clearLabelsState(deps);
+                }
               }
               if (deps.now().getTime() >= deadline)
                 result = {

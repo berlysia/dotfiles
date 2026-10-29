@@ -1,6 +1,6 @@
 import { deepStrictEqual, strictEqual } from "node:assert";
 import { EventEmitter } from "node:events";
-import { it } from "node:test";
+import { it, mock } from "node:test";
 import {
   flushArgv,
   refreshArgv,
@@ -54,3 +54,28 @@ it("spawn: refreshArgv has the same shape as flushArgv", () =>
     "/x/cli.ts",
     "refresh",
   ]));
+it("spawn: gives up after one second when neither spawn nor error arrives", async () => {
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    let unrefs = 0;
+    let settled: boolean | undefined;
+    const pending = spawnDetached(["x"], () =>
+      Object.assign(new EventEmitter(), {
+        unref: () => {
+          unrefs++;
+        },
+      }),
+    ).then((value) => (settled = value));
+    await Promise.resolve();
+    mock.timers.tick(999);
+    await Promise.resolve();
+    strictEqual(settled, undefined);
+    mock.timers.tick(1);
+    await pending;
+    strictEqual(settled, false);
+    // 遅れて起動した子が hook の終了を引き止めないようにする。
+    strictEqual(unrefs, 1);
+  } finally {
+    mock.timers.reset();
+  }
+});

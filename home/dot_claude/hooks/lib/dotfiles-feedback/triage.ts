@@ -21,7 +21,12 @@ import {
   type TriageTo,
 } from "./issue-body.ts";
 import { normalizeField } from "./item.ts";
-import { resolveTarget } from "./target.ts";
+import {
+  clearLabelsState,
+  readLabelsState,
+  writeLabelsState,
+} from "./labels-state.ts";
+import { resolveTarget, withEnsuredDestination } from "./target.ts";
 
 export type TriageDeps = Pick<
   FeedbackDeps,
@@ -40,6 +45,10 @@ export type TriageDeps = Pick<
   | "resolveRepoKey"
 > &
   InteractiveDeps & { log(text: string): void };
+// triage の中だけで使う。private / public への書き込みの直前に呼び、label の用意を 1 回だけ行う。
+type TriageCtx = TriageDeps & {
+  ensureLabelsOnce(): Promise<GhResult<void>>;
+};
 export type TriageOptions = { to: TriageTo; path?: string; reason?: string };
 type FailureError = Extract<GhResult<never>, { ok: false }>["error"];
 export type TriageOutcome =
@@ -167,7 +176,7 @@ type Prepared = {
 // 対象の解決から、読めること・open であることの確認までを plan / reject / issue で共有する。
 async function prepare(
   arg: string,
-  deps: TriageDeps,
+  deps: TriageCtx,
 ): Promise<Prepared | TriageOutcome> {
   const target = await resolveTarget(arg, deps);
   switch (target.kind) {
@@ -262,8 +271,10 @@ async function pin(
   to: TriageTo,
   actor: TriageActor,
   detail: string,
-  deps: TriageDeps,
+  deps: TriageCtx,
 ): Promise<TriageOutcome | null> {
+  const ready = await deps.ensureLabelsOnce();
+  if (!ready.ok) return ghFailed(ready);
   const gh = openGh(deps);
   const { number } = prepared.issue;
   const added = await gh.addComment(
@@ -284,12 +295,18 @@ async function pin(
 async function labelAndClose(
   number: number,
   to: TriageTo,
-  deps: TriageDeps,
+  deps: TriageCtx,
   publicUrl?: string,
 ): Promise<TriageOutcome> {
+  const ready = await deps.ensureLabelsOnce();
+  if (!ready.ok) return ghFailed(ready);
   const gh = openGh(deps);
   const labeled = await gh.addLabel(number, `triaged:${to}`);
-  if (!labeled.ok) return ghFailed(labeled);
+  if (!labeled.ok) {
+    // label が人に外されていても見分けられないので、種類を問わず記録を消す。
+    await clearLabelsState(deps);
+    return ghFailed(labeled);
+  }
   const closed = await gh.closeIssue(number);
   if (!closed.ok) return ghFailed(closed);
   if (!(await deps.spawnRefresh()))
@@ -307,7 +324,7 @@ async function pinAndClose(
   to: TriageTo,
   actor: TriageActor,
   detail: string,
-  deps: TriageDeps,
+  deps: TriageCtx,
 ): Promise<TriageOutcome> {
   const existing = findTriageMarker(prepared.comments);
   if (existing && existing.to !== to)
@@ -498,7 +515,7 @@ async function draftPublicIssue(
 
 async function triageToIssue(
   arg: string,
-  deps: TriageDeps,
+  deps: TriageCtx,
 ): Promise<TriageOutcome> {
   const prepared = await prepare(arg, deps);
   if (isOutcome(prepared)) return prepared;
@@ -534,11 +551,16 @@ async function triageToIssue(
       );
       if (failed) return failed;
     }
+    // pin を飛ばした再実行でも、public の作成の前に label を用意する。
+    const ready = await deps.ensureLabelsOnce();
+    if (!ready.ok) return ghFailed(ready);
     const created = await gh.createPublicIssue(draft.title, draft.body);
     if (!created.ok) return ghFailed(created);
     url = publicIssueUrl(created.value);
   }
   if (!hadUrlComment) {
+    const ready = await deps.ensureLabelsOnce();
+    if (!ready.ok) return ghFailed(ready);
     const commented = await gh.addComment(number, renderPublicUrlMarker(url));
     if (!commented.ok) return ghFailed(commented);
   }
@@ -548,8 +570,22 @@ async function triageToIssue(
 export async function triage(
   arg: string,
   options: TriageOptions,
-  deps: TriageDeps,
+  rawDeps: TriageDeps,
 ): Promise<TriageOutcome> {
+  // 宛先の確認と label の用意は、1 回の実行の中で結果を使い回す。
+  const shared = withEnsuredDestination(rawDeps);
+  let labels: Promise<GhResult<void>> | null = null;
+  const deps: TriageCtx = {
+    ...shared,
+    ensureLabelsOnce: () =>
+      (labels ??= (async (): Promise<GhResult<void>> => {
+        if (await readLabelsState(shared))
+          return { ok: true, value: undefined };
+        const prepared = await openGh(shared).ensureLabels();
+        if (prepared.ok) await writeLabelsState(shared);
+        return prepared;
+      })()),
+  };
   const actor: TriageActor = isHumanCaller({
     isTty: deps.stdinIsTty && deps.stdoutIsTty,
     agentEnv: hasAgentEnv(deps.envNames),

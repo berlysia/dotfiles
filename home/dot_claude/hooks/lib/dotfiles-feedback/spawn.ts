@@ -14,6 +14,8 @@ type SpawnImpl = (
   unref(): void;
   once(event: string, listener: () => void): object;
 };
+// SessionStart の hook から呼ぶので、spawn も error も来ないときに待ち続けない。
+const SPAWN_TIMEOUT_MS = 1000;
 export async function spawnDetached(
   argv: readonly string[],
   spawnImpl: SpawnImpl = spawn,
@@ -26,8 +28,17 @@ export async function spawnDetached(
       shell: false,
     });
     return await new Promise<boolean>((resolve) => {
-      child.once("error", () => resolve(false));
+      const timer = setTimeout(() => {
+        // 遅れて起動した子が親の終了を引き止めないようにする。
+        child.unref();
+        resolve(false);
+      }, SPAWN_TIMEOUT_MS);
+      child.once("error", () => {
+        clearTimeout(timer);
+        resolve(false);
+      });
       child.once("spawn", () => {
+        clearTimeout(timer);
         child.unref();
         resolve(true);
       });

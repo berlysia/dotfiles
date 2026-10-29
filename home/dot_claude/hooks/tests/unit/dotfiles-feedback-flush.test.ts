@@ -7,6 +7,7 @@ import { openSpool } from "../../lib/dotfiles-feedback/spool.ts";
 import { openRetry } from "../../lib/dotfiles-feedback/retry.ts";
 import type { FeedbackItemV1 } from "../../lib/dotfiles-feedback/item.ts";
 import {
+  FEEDBACK_LABELS,
   FEEDBACK_REPO,
   ITEM_DEADLINE_MS,
 } from "../../lib/dotfiles-feedback/constants.ts";
@@ -415,3 +416,126 @@ for (const permanent of [false, true])
       previous,
     );
   });
+
+const labelCreates = (f: { fake: ReturnType<typeof fakeGh> }) =>
+  f.fake.calls.filter((c) => c.argv[0] === "label").length;
+const destinationChecks = (f: { fake: ReturnType<typeof fakeGh> }) =>
+  f.fake.calls.filter((c) => c.argv[0] === "api" && c.argv.includes("user"))
+    .length;
+const labelsPath = (f: { root: string }) => join(f.root, "state/labels.json");
+
+it("flush: without a labels record it creates the 7 labels once and records them", async (t) => {
+  const f = await fixture(t);
+  await f.seed();
+  await flush(f.deps);
+  strictEqual(labelCreates(f), FEEDBACK_LABELS.length);
+  strictEqual(FEEDBACK_LABELS.length, 7);
+  deepStrictEqual(await f.read("state/labels.json"), {
+    v: 1,
+    repo: FEEDBACK_REPO,
+    labels: [...FEEDBACK_LABELS],
+  });
+});
+
+it("flush: a matching record skips label creation but still checks the destination", async (t) => {
+  const f = await fixture(t);
+  await f.seed();
+  await flush(f.deps);
+  const before = labelCreates(f);
+  await f.seed(2);
+  await flush(f.deps);
+  strictEqual(labelCreates(f), before);
+  strictEqual(destinationChecks(f), 2);
+});
+
+it("flush: a matching record does not let a non-private destination through", async (t) => {
+  const f = await fixture(t);
+  await f.seed();
+  await flush(f.deps);
+  const written = await fs.readFile(labelsPath(f), "utf8");
+  f.fake.isPrivate = false;
+  await f.seed(2);
+  await flush(f.deps);
+  strictEqual(f.fake.issues.length, 1);
+  strictEqual(await fs.readFile(labelsPath(f), "utf8"), written);
+});
+
+for (const [name, content] of [
+  [
+    "other labels",
+    JSON.stringify({ v: 1, repo: FEEDBACK_REPO, labels: ["a"] }),
+  ],
+  [
+    "other repo",
+    JSON.stringify({ v: 1, repo: "x/y", labels: [...FEEDBACK_LABELS] }),
+  ],
+  [
+    "v 2",
+    JSON.stringify({ v: 2, repo: FEEDBACK_REPO, labels: [...FEEDBACK_LABELS] }),
+  ],
+  ["broken JSON", "{broken"],
+] as const)
+  it(`flush: a record with ${name} is rewritten after creating 7 labels`, async (t) => {
+    const f = await fixture(t);
+    await f.seed();
+    await fs.writeFile(labelsPath(f), content);
+    await flush(f.deps);
+    strictEqual(labelCreates(f), 7);
+    deepStrictEqual((await f.read("state/labels.json")).labels, [
+      ...FEEDBACK_LABELS,
+    ]);
+  });
+
+it("flush: a failed createIssue clears the record, so the next run prepares again", async (t) => {
+  const f = await fixture(t);
+  await f.seed();
+  await flush(f.deps);
+  await f.seed(2);
+  f.fake.failWhen(
+    (argv) => argv[0] === "issue" && argv[1] === "create",
+    "network",
+  );
+  await flush(f.deps);
+  ok(!(await f.names("state")).includes("labels.json"));
+  const before = labelCreates(f);
+  f.advance(24 * 60 * 60 * 1000);
+  await flush(f.deps);
+  strictEqual(labelCreates(f), before + 7);
+  // 失敗が続くあいだは回ごとに用意し直す。
+  f.fake.failWhen(
+    (argv) => argv[0] === "issue" && argv[1] === "create",
+    "network",
+  );
+  await f.seed(3);
+  f.advance(24 * 60 * 60 * 1000);
+  await flush(f.deps);
+  f.advance(24 * 60 * 60 * 1000);
+  const mid = labelCreates(f);
+  await flush(f.deps);
+  strictEqual(labelCreates(f), mid + 7);
+});
+
+it("flush: a label failure writes no record and creates no issue", async (t) => {
+  const f = await fixture(t);
+  await f.seed();
+  f.fake.failWhen((argv) => argv[0] === "label", "network");
+  await flush(f.deps);
+  strictEqual(f.fake.issues.length, 0);
+  ok(!(await f.names("state")).includes("labels.json"));
+});
+
+it("flush: a failing record write does not change the delivery result", async (t) => {
+  const f = await fixture(t);
+  await f.seed();
+  const real = f.deps.fs;
+  f.deps.fs = {
+    ...real,
+    rename: async (from, to) => {
+      if (to.endsWith("/state/labels.json")) throw new Error("disk full");
+      return real.rename(from, to);
+    },
+  };
+  await flush(f.deps);
+  strictEqual(f.fake.issues.length, 1);
+  deepStrictEqual(await f.names("pending"), []);
+});

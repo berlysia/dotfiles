@@ -20,7 +20,10 @@ export type TargetDeps = Pick<
   | "randomBytes"
   | "isPidAlive"
   | "getPidStartTime"
->;
+> & {
+  // 1 回の実行の中で宛先の確認を使い回す。無ければ resolveTarget が自分の分を作る。
+  ensureDestination?: () => Promise<GhResult<void>>;
+};
 export type ResolvedTarget =
   | { kind: "issue"; issue: FeedbackIssue }
   | { kind: "local"; id: string; place: LocalPlace }
@@ -61,13 +64,38 @@ const matches = (issue: FeedbackIssue, id: string) =>
   issue.marker.status !== "unreadable" &&
   issue.marker.id === id;
 
+// 最初の呼び出しで checkDestination を行い、結果を覚えて以後は同じ結果を返す。
+export function withEnsuredDestination<T extends TargetDeps>(deps: T): T {
+  if (deps.ensureDestination) return deps;
+  let checked: Promise<GhResult<void>> | null = null;
+  return {
+    ...deps,
+    ensureDestination: () => (checked ??= openGh(deps).checkDestination()),
+  };
+}
+
 export async function resolveTarget(
   arg: string,
   deps: TargetDeps,
 ): Promise<ResolvedTarget> {
   const gh = openGh(deps);
+  const { ensureDestination } = withEnsuredDestination(deps);
+  // private repo に触れる 2 か所の直前で宛先を確かめる。手元の件を返す経路では確かめない。
+  const destinationFailure = async (): Promise<ResolvedTarget | null> => {
+    const checked = await ensureDestination!();
+    return checked.ok
+      ? null
+      : {
+          kind: "gh-failed",
+          error: checked.error,
+          message: checked.message,
+          hint: "",
+        };
+  };
   const number = ISSUE_NUMBER.exec(arg)?.[1];
   if (number !== undefined) {
+    const failure = await destinationFailure();
+    if (failure) return failure;
     const viewed = await gh.viewFeedbackIssue(Number(number));
     return viewed.ok
       ? { kind: "issue", issue: viewed.value }
@@ -87,6 +115,9 @@ export async function resolveTarget(
   const spool = await openSpool(deps.root, deps);
   const place = await spool.findLocal(arg);
   if (place) return { kind: "local", id: arg, place };
+
+  const failure = await destinationFailure();
+  if (failure) return failure;
 
   const sent = await spool.findSent(arg);
   if (sent !== null) {

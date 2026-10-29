@@ -182,6 +182,11 @@ describe("dotfiles-feedback as a process", () => {
     }
     strictEqual(max, 1);
     deepStrictEqual(files(s.root, "pending"), []);
+    // label は最初の回の 7 件だけ。以後の回は state/labels.json の記録で飛ばす。
+    strictEqual(
+      calls.filter((c) => c.phase === "start" && c.argv[0] === "label").length,
+      7,
+    );
   });
 
   it("the wrapper prints usage for --help", () => {
@@ -295,5 +300,91 @@ process.stdout.write(String(await buildCliDeps(${JSON.stringify(s.home)}).confir
     const top = await deps.resolveToplevel(join(root, "home"));
     ok(top !== null);
     strictEqual(realpathSync(top), root);
+  });
+});
+
+describe("dotfiles-feedback SessionStart section as a process", () => {
+  const SECTION = join(
+    HOOKS,
+    "tests/support/dotfiles-feedback-session-section.ts",
+  );
+  // 起動した子は 10 秒眠って自分の pid を書くだけ。実機の refresh は起動しない。
+  const SLEEPER = `const fs = require("node:fs");
+const path = require("node:path");
+fs.appendFileSync(path.join(__dirname, "sleeper.pids"), process.pid + "\\n");
+setTimeout(() => {}, 10000);
+`;
+  const dirs: string[] = [];
+  after(() => {
+    for (const dir of dirs) {
+      try {
+        for (const pid of readFileSync(join(dir, "sleeper.pids"), "utf8")
+          .split("\n")
+          .filter(Boolean))
+          process.kill(-Number(pid), "SIGKILL");
+      } catch {
+        // 起動していない、または既に終わっている。
+      }
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  function runOnce(): {
+    ms: number;
+    stages: Record<string, number>;
+    line: string | null;
+    root: string;
+    dir: string;
+  } {
+    const dir = realpathSync(
+      mkdtempSync(join(tmpdir(), "feedback-session-section-")),
+    );
+    dirs.push(dir);
+    const home = join(dir, "home");
+    const root = join(home, ".local/share/dotfiles-feedback");
+    mkdirSync(join(root, "state"), { recursive: true });
+    writeFileSync(
+      join(root, "state", "inbox.json"),
+      JSON.stringify({
+        v: 1,
+        fetchedAt: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
+        unprocessed: 3,
+        pendingLocal: 0,
+        failedLocal: 0,
+        heldLocal: 0,
+      }),
+    );
+    const sleeper = join(dir, "sleeper.cjs");
+    writeFileSync(sleeper, SLEEPER);
+    const env = { ...process.env, CLAUDE_HOOKS_DISABLE_FEEDBACK_NOTICE: "" };
+    const result = spawnSync(
+      process.execPath,
+      [SECTION, home, sleeper, HOOKS],
+      { env, encoding: "utf8", timeout: 30_000 },
+    );
+    strictEqual(result.status, 0, result.stderr);
+    return { ...JSON.parse(result.stdout), dir };
+  }
+
+  it("returns within 50ms (median of 3) and leaves the spawned child running", () => {
+    const runs = [runOnce(), runOnce(), runOnce()];
+    const times = runs.map((run) => run.ms).sort((a, b) => a - b);
+    console.error(
+      `session section ms: ${runs.map((run) => run.ms.toFixed(1)).join(", ")} stages: ${JSON.stringify(runs.map((run) => run.stages))}`,
+    );
+    for (const run of runs) {
+      ok(
+        run.line?.includes("未処理 3 件"),
+        `line should show the count: ${run.line}`,
+      );
+      // 本物の repo-key が dotfiles と判定し、子が実際に起動した。
+      let waited = 0;
+      while (!existsSync(join(run.dir, "sleeper.pids")) && waited < 3000) {
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
+        waited += 25;
+      }
+      ok(existsSync(join(run.dir, "sleeper.pids")), "child did not start");
+    }
+    ok(times[1]! <= 50, `median ${times[1]}ms > 50ms`);
   });
 });
