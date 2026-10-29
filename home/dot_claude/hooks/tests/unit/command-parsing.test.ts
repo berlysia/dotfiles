@@ -8,8 +8,11 @@ import {
   checkDangerousCommand,
   checkHomeDestruction,
   extractCommandsStructured,
+  findIndirect,
   getFilePathFromToolInput,
   NO_PAREN_TOOL_NAMES,
+  splitCommandWords,
+  unwrapCommand,
 } from "../../lib/command-parsing.ts";
 
 describe("Command Parsing Library", () => {
@@ -450,5 +453,132 @@ describe("checkHomeDestruction", () => {
         false,
       );
     });
+  });
+});
+
+describe("checkHomeDestruction around wrappers and indirect shells", () => {
+  const opts = { home: "/home/u", cwd: "/home/u/proj", user: "u" };
+
+  // Pinned before findIndirect replaced the inline condition: these results
+  // must not move.
+  const unchangedDenied = [
+    'bash -c "rm -rf ~"',
+    "sudo rm -rf ~",
+    'eval "rm -rf ~"',
+    'bash -o pipefail -c "rm -rf ~"',
+  ];
+  const unchangedAllowed = [
+    "bash --login x.sh",
+    "bash x.sh",
+    "bash -xe x.sh",
+    "command -v rm",
+    "rm -rf ./dist",
+  ];
+  for (const command of unchangedDenied) {
+    it(`still denies ${command}`, () => {
+      strictEqual(checkHomeDestruction(command, opts).isDangerous, true);
+    });
+  }
+  for (const command of unchangedAllowed) {
+    it(`still allows ${command}`, () => {
+      strictEqual(checkHomeDestruction(command, opts).isDangerous, false);
+    });
+  }
+  it("keeps judging an unresolved target as before", () => {
+    strictEqual(
+      checkHomeDestruction('rm -rf "$HOME/x"', opts).isDangerous,
+      true,
+    );
+    strictEqual(
+      checkHomeDestruction('rm -rf "$UNSET/x"', opts).isDangerous,
+      true,
+    );
+  });
+});
+
+describe("checkHomeDestruction after the shared wrapper rules", () => {
+  const opts = { home: "/home/u", cwd: "/home/u/proj", user: "u" };
+
+  for (const command of [
+    'bash -lc "rm -rf ~"',
+    "sudo -u root rm -rf ~",
+    "env -C / rm -rf ~",
+  ]) {
+    it(`now denies ${command}`, () => {
+      strictEqual(checkHomeDestruction(command, opts).isDangerous, true);
+    });
+  }
+});
+
+describe("unwrapCommand", () => {
+  const words = (command: string) =>
+    unwrapCommand(command.split(" ").map((value) => ({ value })));
+  const valuesOf = (command: string) =>
+    words(command).words.map((t) => t.value);
+
+  const peeled: [string, string[]][] = [
+    ["npx -y opencode-ai run x", ["opencode-ai", "run", "x"]],
+    ["mise exec node@22 -- opencode run", ["opencode", "run"]],
+    [
+      "mise exec node@22 opencode run",
+      ["mise", "exec", "node@22", "opencode", "run"],
+    ],
+    ["direnv exec . opencode run", ["opencode", "run"]],
+    ["env A=1 timeout 5 opencode run", ["opencode", "run"]],
+    ["timeout -s KILL 5 opencode run", ["opencode", "run"]],
+    ["sudo -u user opencode run", ["opencode", "run"]],
+    ["env -u VAR opencode run", ["opencode", "run"]],
+    ["env -C /tmp opencode run", ["opencode", "run"]],
+    ["command -v opencode", []],
+    ["command -V opencode", []],
+    ["git commit -m opencode run", ["git", "commit", "-m", "opencode", "run"]],
+  ];
+  for (const [command, expected] of peeled) {
+    it(`words of ${command}`, () => {
+      deepStrictEqual(valuesOf(command), expected);
+    });
+  }
+
+  const indirect: [string[], string | null][] = [
+    [["bash", "-lc", "opencode run x"], "opencode run x"],
+    [["bash", "-ic", "opencode run x"], "opencode run x"],
+    [["bash", "-ec", "opencode run x"], "opencode run x"],
+    [["bash", "-xe", "x.sh"], null],
+    [["bash", "--login", "x.sh"], null],
+    [["bash", "x.sh"], null],
+    [["bash", "x.sh", "-c", "foo"], null],
+    [["bash", "x.sh", "-color"], null],
+    [["bash", "-o", "pipefail", "-c", "opencode run x"], "opencode run x"],
+    [["bash", "+O", "extglob", "-c", "opencode run x"], "opencode run x"],
+    [["bash", "+x", "-c", "opencode run x"], "opencode run x"],
+    [["bash", "--rcfile", "r", "-c", "opencode run x"], "opencode run x"],
+    [["bash", "-o", "pipefail", "x.sh"], null],
+    [["eval", "opencode", "run"], "opencode run"],
+    [["git", "commit", "-m", "opencode"], null],
+  ];
+  for (const [command, expected] of indirect) {
+    it(`indirect of ${command.join(" ")}`, () => {
+      const result = unwrapCommand(command.map((value) => ({ value })));
+      strictEqual(result.indirect, expected);
+    });
+  }
+
+  it("findIndirect is the single rule: a missing -c argument gives an empty string", () => {
+    strictEqual(findIndirect([{ value: "bash" }, { value: "-c" }]), "");
+  });
+});
+
+describe("splitCommandWords", () => {
+  it("splits at && into one word list per command", () => {
+    deepStrictEqual(
+      splitCommandWords("opencode --version && ls").map((ws) =>
+        ws.map((t) => t.value),
+      ),
+      [["opencode", "--version"], ["ls"]],
+    );
+  });
+
+  it("does not split inside quotes", () => {
+    strictEqual(splitCommandWords("git commit -m 'a && b'").length, 1);
   });
 });
