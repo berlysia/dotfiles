@@ -531,15 +531,16 @@ describe("delegation offload (process)", { concurrency: true }, () => {
       assert.equal(launched(w), false);
     }));
 
-  it("a launcher that stops being executable after verification: one spawned line, reason on stderr", () =>
+  it("a launcher that stops being executable during --version is refused by the launch re-check", () =>
     withWorld({}, async (w) => {
       const text = w.writeExe({ versionHook: `  chmod 644 "$0"` });
       w.writeRecord({ ...w.record, executableSha256: sha(text) });
       const r = await run(w, baseArgs(w));
       assert.equal(r.code, 1);
+      assert.equal(launched(w), false);
       assert.deepEqual(
         logLines(w).map((l) => l.result),
-        ["spawned"],
+        ["verify"],
       );
       assert.ok(r.stderr.length > 0);
     }));

@@ -1,18 +1,23 @@
 import assert from "node:assert/strict";
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { execFileSync } from "node:child_process";
+import childProcess, { execFileSync } from "node:child_process";
+import { syncBuiltinESMExports } from "node:module";
 import { withHome } from "./lib/delegation-offload-home.mjs";
 import * as offloadModule from "../home/dot_local/share/delegation/offload.ts";
 import {
@@ -23,6 +28,7 @@ import {
   buildLogLine,
   buildOpencodeArgv,
   buildVerifiedRecord,
+  checkLaunchDir,
   collectAuthInputs,
   collectOffloadInputs,
   hashPlanFile,
@@ -920,6 +926,392 @@ function withLegacyDir(fn) {
     return fn({ root, legacy, env, found });
   });
 }
+
+const OFFLOAD_WORLD_ENV_KEYS = new Set([
+  "HOME",
+  "XDG_DATA_HOME",
+  "XDG_CONFIG_HOME",
+  "ZAI_API_KEY",
+  "ZAI_CODING_API_KEY",
+  "SARASHINA_API_KEY",
+]);
+
+function isOffloadWorldEnv(key) {
+  return OFFLOAD_WORLD_ENV_KEYS.has(key) || key.startsWith("OPENCODE_");
+}
+
+async function withGitTopLevelStub(repo, fn) {
+  const original = childProcess.spawnSync;
+  childProcess.spawnSync = (command, args, options) => {
+    if (
+      command === "git" &&
+      args?.[0] === "rev-parse" &&
+      args?.[1] === "--show-toplevel" &&
+      options?.cwd === repo
+    ) {
+      return {
+        error: undefined,
+        status: 0,
+        signal: null,
+        output: [],
+        pid: 0,
+        stdout: repo,
+        stderr: "",
+      };
+    }
+    return Reflect.apply(original, childProcess, [command, args, options]);
+  };
+  syncBuiltinESMExports();
+  try {
+    return await fn();
+  } finally {
+    childProcess.spawnSync = original;
+    syncBuiltinESMExports();
+  }
+}
+
+async function withOffloadWorld(fn) {
+  const root = realpathSync(
+    mkdtempSync(join(tmpdir(), "delegation-offload-world-")),
+  );
+  const saved = {};
+  for (const key of Object.keys(process.env)) {
+    if (isOffloadWorldEnv(key)) {
+      saved[key] = process.env[key];
+      delete process.env[key];
+    }
+  }
+
+  const w = {
+    root,
+    bin: join(root, "bin"),
+    repo: join(root, "work", "repo"),
+    legacy: join(root, ".opencode"),
+    authDir: join(root, ".local", "share", "opencode"),
+    configDir: join(root, ".config", "opencode"),
+    brief: join(root, "brief.md"),
+    marker: join(root, "start-marker"),
+    executable: join(root, "bin", "opencode"),
+    env: {
+      HOME: root,
+      XDG_DATA_HOME: join(root, ".local", "share"),
+      XDG_CONFIG_HOME: join(root, ".config"),
+      PATH: `${join(root, "bin")}:/usr/bin:/bin`,
+    },
+  };
+  Object.assign(process.env, {
+    HOME: w.env.HOME,
+    XDG_DATA_HOME: w.env.XDG_DATA_HOME,
+    XDG_CONFIG_HOME: w.env.XDG_CONFIG_HOME,
+  });
+
+  const fakeSource = (versionHook = "", revision = 0) => `#!${process.execPath}
+const fs = require("node:fs");
+const revision = ${revision};
+if (process.argv[2] === "--version") {
+${versionHook}
+  process.stdout.write("2.2.0\\n");
+  process.exit(0);
+}
+fs.writeFileSync(${JSON.stringify(w.marker)}, String(revision));
+process.exit(0);
+`;
+  w.fakeSource = fakeSource;
+  w.writeFake = ({ versionHook = "", revision = 0 } = {}) => {
+    const source = fakeSource(versionHook, revision);
+    writeFileSync(w.executable, source, { mode: 0o755 });
+    chmodSync(w.executable, 0o755);
+    return source;
+  };
+  w.writeRecord = (models = [GLM]) => {
+    const inputs = collectOffloadInputs(w.env);
+    assert.equal(inputs.realpath, w.executable);
+    const record = buildVerifiedRecord({
+      inputs,
+      version: "2.2.0",
+      models,
+      targets: [],
+      now: new Date("2026-10-30T00:00:00.000Z"),
+    });
+    offloadModule.writeVerifiedRecord(w.env, record);
+    return record;
+  };
+  w.run = async () => {
+    let stderr = "";
+    const originalWrite = process.stderr.write;
+    process.stderr.write = (chunk) => {
+      stderr += Buffer.isBuffer(chunk) ? chunk.toString() : String(chunk);
+      return true;
+    };
+    try {
+      const code = await offloadModule.runOffload(
+        [
+          "--exposure",
+          "external-ok",
+          "--model",
+          GLM,
+          "--brief-file",
+          w.brief,
+          "--dir",
+          w.repo,
+        ],
+        { env: w.env, cwd: w.root },
+      );
+      return { code, stderr };
+    } finally {
+      process.stderr.write = originalWrite;
+    }
+  };
+  w.logResults = () => {
+    const path = join(offloadDirPath(w.env), "offload.log");
+    return existsSync(path)
+      ? readFileSync(path, "utf8")
+          .split("\n")
+          .filter(Boolean)
+          .map((line) => JSON.parse(line))
+      : [];
+  };
+
+  try {
+    mkdirSync(w.bin, { recursive: true });
+    mkdirSync(w.repo, { recursive: true });
+    mkdirSync(join(w.legacy, "bin"), { recursive: true });
+    mkdirSync(join(w.legacy, "node_modules"));
+    mkdirSync(w.authDir, { recursive: true, mode: 0o700 });
+    chmodSync(w.authDir, 0o700);
+    mkdirSync(w.configDir, { recursive: true });
+    writeFileSync(
+      join(w.legacy, "package.json"),
+      JSON.stringify({ dependencies: { "@opencode-ai/plugin": "2.2.0" } }),
+    );
+    writeFileSync(join(w.legacy, ".gitignore"), "node_modules\n");
+    writeFileSync(join(w.configDir, "opencode.jsonc"), "{}\n");
+    writeFileSync(w.brief, "Reply with OK.\n", { mode: 0o600 });
+    w.writeFake();
+    return await withGitTopLevelStub(w.repo, () => fn(w));
+  } finally {
+    for (const key of Object.keys(process.env)) {
+      if (isOffloadWorldEnv(key)) delete process.env[key];
+    }
+    Object.assign(process.env, saved);
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+test("checkLaunchDir: home worktree allows the installer contents in ~/.opencode", async () => {
+  await withOffloadWorld((w) => {
+    const result = checkLaunchDir({
+      dir: w.repo,
+      write: false,
+      home: w.root,
+    });
+    assert.equal(result.ok, true, result.ok ? "" : result.reason);
+  });
+});
+
+test("checkLaunchDir: refuses ~/opencode.jsonc while skipping ~/.opencode", async () => {
+  await withOffloadWorld((w) => {
+    const path = join(w.root, "opencode.jsonc");
+    writeFileSync(path, "{}\n");
+    const result = checkLaunchDir({
+      dir: w.repo,
+      write: false,
+      home: w.root,
+    });
+    assert.equal(result.ok, false);
+    assert.ok(result.reason.includes(path), result.reason);
+  });
+});
+
+test("checkLaunchDir: refuses ~/opencode.json while skipping ~/.opencode", async () => {
+  await withOffloadWorld((w) => {
+    const path = join(w.root, "opencode.json");
+    writeFileSync(path, "{}\n");
+    const result = checkLaunchDir({
+      dir: w.repo,
+      write: false,
+      home: w.root,
+    });
+    assert.equal(result.ok, false);
+    assert.ok(result.reason.includes(path), result.reason);
+  });
+});
+
+test("checkLaunchDir: refuses .opencode between home and the worktree", async () => {
+  await withOffloadWorld((w) => {
+    const path = join(w.root, "work", ".opencode");
+    mkdirSync(path);
+    const result = checkLaunchDir({
+      dir: w.repo,
+      write: false,
+      home: w.root,
+    });
+    assert.equal(result.ok, false);
+    assert.ok(result.reason.includes(path), result.reason);
+  });
+});
+
+test("checkLaunchDir: refuses .opencode inside the worktree", async () => {
+  await withOffloadWorld((w) => {
+    const path = join(w.repo, ".opencode");
+    mkdirSync(path);
+    const result = checkLaunchDir({
+      dir: w.repo,
+      write: false,
+      home: w.root,
+    });
+    assert.equal(result.ok, false);
+    assert.ok(result.reason.includes(path), result.reason);
+  });
+});
+
+test("~/.opencode/plugin: launch-dir check skips it but collection reports its path", async () => {
+  await withOffloadWorld((w) => {
+    const path = join(w.legacy, "plugin");
+    mkdirSync(path);
+    const launch = checkLaunchDir({
+      dir: w.repo,
+      write: false,
+      home: w.root,
+    });
+    assert.equal(launch.ok, true, launch.ok ? "" : launch.reason);
+    assert.ok(collectOffloadInputs(w.env).foundConfigPaths.includes(path));
+  });
+});
+
+test("runOffload: existing ~/.opencode/plugin is refused by verification", async () => {
+  await withOffloadWorld(async (w) => {
+    const plugin = join(w.legacy, "plugin");
+    mkdirSync(plugin);
+    w.writeRecord();
+    const result = await w.run();
+    assert.notEqual(result.code, 0);
+    assert.match(result.stderr, /拒否（verify）/);
+    assert.ok(result.stderr.includes(plugin), result.stderr);
+    assert.equal(w.logResults().at(-1).result, "verify");
+    assert.equal(existsSync(w.marker), false);
+  });
+});
+
+test("runOffload: an otherwise identical installer setup launches", async () => {
+  await withOffloadWorld(async (w) => {
+    w.writeRecord();
+    const result = await w.run();
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(existsSync(w.marker), true);
+    assert.equal(w.logResults().at(-1).result, "spawned");
+  });
+});
+
+test("runOffload: a plugin added during --version fails the launch re-check", async () => {
+  await withOffloadWorld(async (w) => {
+    const plugin = join(w.legacy, "plugin");
+    w.writeFake({
+      versionHook: `fs.mkdirSync(${JSON.stringify(plugin)}, { recursive: true });`,
+    });
+    w.writeRecord();
+    const result = await w.run();
+    assert.notEqual(result.code, 0);
+    assert.match(result.stderr, /拒否（verify）/);
+    assert.match(result.stderr, /起動直前の再照合/);
+    assert.ok(result.stderr.includes(plugin), result.stderr);
+    assert.equal(w.logResults().at(-1).result, "verify");
+    assert.equal(existsSync(w.marker), false);
+  });
+});
+
+test("runOffload: opencode.jsonc added during --version fails the dir check", async () => {
+  await withOffloadWorld(async (w) => {
+    const config = join(w.repo, "opencode.jsonc");
+    w.writeFake({
+      versionHook: `fs.writeFileSync(${JSON.stringify(config)}, ${JSON.stringify("{}\\n")});`,
+    });
+    w.writeRecord();
+    const result = await w.run();
+    assert.notEqual(result.code, 0);
+    assert.match(result.stderr, /拒否（dir）/);
+    assert.ok(result.stderr.includes(config), result.stderr);
+    assert.equal(w.logResults().at(-1).result, "dir");
+    assert.equal(existsSync(w.marker), false);
+  });
+});
+
+test("runOffload: an outside symlink added during --version fails the dir check", async () => {
+  await withOffloadWorld(async (w) => {
+    const outside = join(w.root, "outside");
+    const link = join(w.repo, "outside-link");
+    mkdirSync(outside);
+    w.writeFake({
+      versionHook: `fs.symlinkSync(${JSON.stringify(outside)}, ${JSON.stringify(link)});`,
+    });
+    w.writeRecord();
+    const result = await w.run();
+    assert.notEqual(result.code, 0);
+    assert.match(result.stderr, /拒否（dir）/);
+    assert.equal(w.logResults().at(-1).result, "dir");
+    assert.equal(existsSync(w.marker), false);
+  });
+});
+
+test("runOffload: a record without the requested model during --version fails the re-check", async () => {
+  await withOffloadWorld(async (w) => {
+    const replacement = join(w.root, "record-after-version.json");
+    const recordPath = offloadRecordPath(w.env);
+    w.writeFake({
+      versionHook: `fs.copyFileSync(${JSON.stringify(replacement)}, ${JSON.stringify(recordPath)});`,
+    });
+    w.writeRecord();
+    const inputs = collectOffloadInputs(w.env);
+    const replacementRecord = buildVerifiedRecord({
+      inputs,
+      version: "2.2.0",
+      models: [SARASHINA_MODEL],
+      targets: [],
+      now: new Date("2026-10-30T00:00:00.000Z"),
+    });
+    writeFileSync(replacement, JSON.stringify(replacementRecord), {
+      mode: 0o600,
+    });
+    const result = await w.run();
+    assert.notEqual(result.code, 0);
+    assert.match(result.stderr, /拒否（verify）/);
+    assert.match(result.stderr, /起動直前の再照合/);
+    assert.equal(w.logResults().at(-1).result, "verify");
+    assert.equal(existsSync(w.marker), false);
+  });
+});
+
+test("runOffload: an executable replaced during --version fails the re-check", async () => {
+  await withOffloadWorld(async (w) => {
+    const replacement = join(w.root, "opencode-replacement");
+    w.writeFake({
+      versionHook: `fs.copyFileSync(${JSON.stringify(replacement)}, process.argv[1]);`,
+    });
+    w.writeRecord();
+    writeFileSync(replacement, w.fakeSource("", 1), { mode: 0o755 });
+    chmodSync(replacement, 0o755);
+    const result = await w.run();
+    assert.notEqual(result.code, 0);
+    assert.match(result.stderr, /拒否（verify）/);
+    assert.match(result.stderr, /起動直前の再照合/);
+    assert.equal(w.logResults().at(-1).result, "verify");
+    assert.equal(existsSync(w.marker), false);
+  });
+});
+
+test("~/.opencode: installer lock files are allowed by launch check and collection", async () => {
+  await withOffloadWorld((w) => {
+    writeFileSync(join(w.legacy, "package-lock.json"), "{}\n");
+    writeFileSync(join(w.legacy, "bun.lock"), "");
+    const launch = checkLaunchDir({
+      dir: w.repo,
+      write: false,
+      home: w.root,
+    });
+    assert.equal(launch.ok, true, launch.ok ? "" : launch.reason);
+    assert.deepEqual(collectOffloadInputs(w.env).foundConfigPaths, []);
+  });
+});
 
 test("~/.opencode: only what opencode keeps there passes", () => {
   withLegacyDir(({ legacy, found }) => {

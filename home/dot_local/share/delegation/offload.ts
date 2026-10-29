@@ -1048,6 +1048,7 @@ export function checkLaunchDir(opts: {
 
   for (let cur = dir; ;) {
     for (const name of PROJECT_CONFIG_NAMES) {
+      if (cur === home && name === ".opencode") continue;
       if (exists(join(cur, name))) {
         return {
           ok: false,
@@ -1876,9 +1877,6 @@ export async function runOffload(
   const recorded = inputs.record.kind === "ok" ? inputs.record : null;
   if (recorded === null) return refuse("verify", "記録を読めない");
 
-  const launch = checkLaunchDir({ dir: args.dir, write: args.write });
-  if (!launch.ok) return refuse("dir", launch.reason);
-
   const scratch = realpathSync(mkdtempSync(join(tmpdir(), "offload-version-")));
   let versionRun;
   try {
@@ -1913,6 +1911,30 @@ export async function runOffload(
     return refuse(
       "version",
       "opencode の版が記録と違う",
+      withModel([VERIFY_RECOVERY]),
+    );
+  }
+
+  const launch = checkLaunchDir({ dir: args.dir, write: args.write });
+  if (!launch.ok) return refuse("dir", launch.reason);
+
+  let recheck: VerifyResult;
+  try {
+    recheck = verifyOffload(collectOffloadInputs(env));
+  } catch {
+    return refuse("verify", "起動直前の再照合中に例外が起きた");
+  }
+  if (!recheck.ok) {
+    return refuse(
+      "verify",
+      `起動直前の再照合に失敗: ${recheck.reason}`,
+      withModel(recheck.recovery),
+    );
+  }
+  if (!recheck.models.includes(args.model)) {
+    return refuse(
+      "verify",
+      "起動直前の再照合で確認済みの記録にこの model が無い",
       withModel([VERIFY_RECOVERY]),
     );
   }
