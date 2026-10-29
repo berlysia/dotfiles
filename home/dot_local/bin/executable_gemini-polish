@@ -1,0 +1,219 @@
+#!/usr/bin/env bash
+# gemini-polish: Polish and proofread text using Gemini models via the agy CLI.
+# chezmoi deploys this file to ~/.local/bin/gemini-polish (executable_ prefix).
+# ~/.local/bin is already on PATH.
+set -euo pipefail
+
+DEFAULT_MODEL="${GEMINI_POLISH_MODEL:-gemini-3.8-flash-medium}"
+MODEL="$DEFAULT_MODEL"
+TONE="standard"
+INSTRUCTION=""
+RAW_OUTPUT=0
+INPUT_TEXT=""
+INPUT_FILE=""
+
+usage() {
+    cat <<'EOF'
+gemini-polish - Polish and proofread text using Gemini models via agy CLI
+
+Usage:
+  gemini-polish [options] [file]
+  gemini-polish [options] --text "text to polish"
+  cat file.txt | gemini-polish [options]
+  gemini-polish --help
+
+Options:
+  -m, --model <name>       Gemini model name to use (default: gemini-3.8-flash-medium)
+                           Can also be set via GEMINI_POLISH_MODEL environment variable.
+  -t, --tone <tone>        Tone/style for polishing:
+                             standard  : Natural, well-balanced Japanese (default)
+                             business  : Formal, polite business communication
+                             casual    : Friendly, approachable tone
+                             concise   : Sharp, concise, omitting redundant phrasing
+                             technical : Clear, objective, precise technical writing
+                           Or pass any custom description (e.g. "academic", "for junior engineers").
+  -i, --instruction <text> Additional specific instructions for polishing.
+  -r, --raw                Output only the polished text without commentary or variations.
+  --text <text>            Specify text directly via argument instead of stdin or file.
+  -h, --help               Show this help message.
+
+Examples:
+  # Polish text from argument
+  gemini-polish --text "この機能は問題が発生する可能性が存在しています。"
+
+  # Polish with business tone
+  echo "明日休む連絡です。風邪引いたのでよろしく。" | gemini-polish -t business
+
+  # Polish a markdown document concisly, raw output
+  gemini-polish -t concise -r document.md > polished_document.md
+
+  # Additional instruction with flash-high model
+  gemini-polish -m gemini-3.8-flash-high -i "箇条書きに直して" draft.txt
+EOF
+}
+
+die() {
+    printf 'gemini-polish: %s\n' "$1" >&2
+    exit 1
+}
+
+# Parse options
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        -m|--model)
+            [[ $# -ge 2 ]] || die "Option $1 requires an argument"
+            MODEL="$2"
+            shift 2
+            ;;
+        --model=*)
+            MODEL="${1#*=}"
+            shift
+            ;;
+        -t|--tone)
+            [[ $# -ge 2 ]] || die "Option $1 requires an argument"
+            TONE="$2"
+            shift 2
+            ;;
+        --tone=*)
+            TONE="${1#*=}"
+            shift
+            ;;
+        -i|--instruction)
+            [[ $# -ge 2 ]] || die "Option $1 requires an argument"
+            INSTRUCTION="$2"
+            shift 2
+            ;;
+        --instruction=*)
+            INSTRUCTION="${1#*=}"
+            shift
+            ;;
+        -r|--raw)
+            RAW_OUTPUT=1
+            shift
+            ;;
+        --text)
+            [[ $# -ge 2 ]] || die "Option $1 requires an argument"
+            INPUT_TEXT="$2"
+            shift 2
+            ;;
+        --text=*)
+            INPUT_TEXT="${1#*=}"
+            shift
+            ;;
+        --)
+            shift
+            break
+            ;;
+        -*)
+            die "Unknown option: $1 (see --help)"
+            ;;
+        *)
+            if [[ -z "$INPUT_FILE" ]]; then
+                INPUT_FILE="$1"
+                shift
+            else
+                die "Unexpected extra argument: $1"
+            fi
+            ;;
+    esac
+done
+
+# Check agy command
+if ! command -v agy >/dev/null 2>&1; then
+    die "agy command not found in PATH. Please ensure Google Antigravity CLI is installed."
+fi
+
+# Acquire input text
+if [[ -n "$INPUT_TEXT" ]]; then
+    # Input was provided via --text
+    :
+elif [[ -n "$INPUT_FILE" ]]; then
+    if [[ "$INPUT_FILE" == "-" ]]; then
+        INPUT_TEXT="$(cat)"
+    else
+        [[ -f "$INPUT_FILE" ]] || die "File not found: $INPUT_FILE"
+        [[ -r "$INPUT_FILE" ]] || die "File not readable: $INPUT_FILE"
+        INPUT_TEXT="$(cat "$INPUT_FILE")"
+    fi
+elif [[ ! -t 0 ]]; then
+    # Input piped via stdin
+    INPUT_TEXT="$(cat)"
+else
+    # Terminal interactive without input
+    die "No input provided. Pipe text to stdin, specify a file, or use --text. Run with --help for usage."
+fi
+
+# Trim whitespace to check if input is effectively empty
+trimmed_input="$(printf '%s' "$INPUT_TEXT" | tr -d '[:space:]')"
+if [[ -z "$trimmed_input" ]]; then
+    die "Input text is empty."
+fi
+
+# Build tone directive
+tone_directive=""
+case "$TONE" in
+    standard)
+        tone_directive="自然で読みやすく、バランスの取れた日本語に推敲してください。"
+        ;;
+    business)
+        tone_directive="ビジネスシーン（社内外のメール、報告書、ビジネス連絡）に適した、丁寧で礼儀正しい敬語・表現に推敲してください。"
+        ;;
+    casual)
+        tone_directive="親しみやすく、フランクで自然な文体に推敲してください（ブログ、SNS、気軽な社内チャット等）。"
+        ;;
+    concise)
+        tone_directive="冗長な表現、重複、不要な修飾を削ぎ落とし、要点が簡潔明瞭に伝わる引き締まった文章に推敲してください。"
+        ;;
+    technical)
+        tone_directive="技術文書や設計ドキュメントとして、主述関係が明確で、客観的・論理的・明瞭な文章に推敲してください。"
+        ;;
+    *)
+        tone_directive="指定された文体・トーン「${TONE}」に沿って推敲してください。"
+        ;;
+esac
+
+# Build raw output directive
+output_directive=""
+if [[ "$RAW_OUTPUT" -eq 1 ]]; then
+    output_directive="【出力形式の絶対遵守】
+解説、前置き、挨拶、コードブロック（\`\`\`）、箇条書きのコメントなどは一切出力しないでください。
+推敲後の本文テキストのみを直接出力してください。"
+else
+    output_directive="【出力形式】
+1. 推敲後の文章を提示してください。
+2. 主な改善ポイント（主述の修正、冗長性の解消など）を簡潔にまとめてください。
+3. 文脈やニュアンスに応じた別パターン（バリエーション）があれば提示してください。"
+fi
+
+# Optional extra instruction
+extra_instruction=""
+if [[ -n "$INSTRUCTION" ]]; then
+    extra_instruction="
+【追加の個別指示】
+${INSTRUCTION}"
+fi
+
+PROMPT="あなたは文章の校正・推敲を行うプロフェッショナルです。
+以下の「基本ルール」と「指示」に従い、与えられた「対象テキスト」を推敲してください。
+
+【基本ルール】
+- 原文の意味、条件、事実関係、固有の識別子・数値を歪めたり捏造したりしないこと
+- 誤字・脱字、不自然な助詞の使い方、主述のねじれ、不自然な比喩を修正すること
+- 二重否定や過度な受動態など、読みにくい構造を自然に整えること
+
+【トーン・スタイル】
+${tone_directive}
+${extra_instruction}
+
+${output_directive}
+
+【対象テキスト】
+${INPUT_TEXT}
+"
+
+# Execute agy
+exec agy -p "$PROMPT" --model "$MODEL"
