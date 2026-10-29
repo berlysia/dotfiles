@@ -323,7 +323,8 @@ esac
 command -v curl >/dev/null 2>&1 || die "curl is required to send the request"
 
 mkdir -p -- "$inbox"
-chmod 700 -- "$HOME/.ask-grokbot" "$inbox"
+# BSD chmod on macOS treats "--" as a file name. These paths are absolute.
+chmod 700 "$HOME/.ask-grokbot" "$inbox"
 
 printf '%s' "$payload" | curl -fsS \
     -X POST \
@@ -343,5 +344,5 @@ if [[ $do_wait -eq 1 ]]; then
         fi
         sleep 1
     done
-    cat -- "$reply_to"
+    cat "$reply_to"
 fi
