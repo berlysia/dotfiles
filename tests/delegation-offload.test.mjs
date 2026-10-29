@@ -13,10 +13,26 @@ import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { execFileSync } from "node:child_process";
 import {
+  EDIT_DENY,
+  READ_DENY,
+  buildChildEnv,
+  buildLogLine,
+  buildOpencodeArgv,
+  buildVerifiedRecord,
+  checkLaunchDir,
   collectAuthInputs,
+  collectOffloadInputs,
+  hashPlanFile,
+  loadBrief,
+  offloadDirPath,
+  offloadRecordPath,
+  parseOffloadArgs,
+  parseVerifiedRecord,
   sameFileIdentity,
   verifyAuthProviders,
+  verifyOffload,
 } from "../home/dot_local/share/delegation/offload.ts";
 
 const OFFLOAD_SRC = join(
@@ -470,6 +486,657 @@ test("collectAuthInputs ignores XDG and credential env vars", () => {
     assert.deepEqual(got.authDb, { kind: "ok", ids: ["sarashina"] });
   });
   assert.deepEqual({ ...process.env }, before);
+});
+
+// ---- arguments --------------------------------------------------------------
+
+const GLM = "zai-coding-plan/glm-5.3";
+const SARASHINA_MODEL = "sarashina/sarashina3.2-mini-thinking";
+const FREE_GLM = "opencode/glm-5.3-flash-free";
+
+function argvOf(over = {}) {
+  const base = {
+    "--exposure": "external-ok",
+    "--model": GLM,
+    "--brief-file": "/tmp/brief.md",
+    "--dir": "/tmp/work",
+    ...over,
+  };
+  const out = [];
+  for (const [k, v] of Object.entries(base)) {
+    if (v !== null) out.push(k, v);
+  }
+  return out;
+}
+const parseArgs = (argv, env = {}) =>
+  parseOffloadArgs(argv, { cwd: "/tmp/cwd", env });
+
+test("parseOffloadArgs: exposure", () => {
+  assert.equal(parseArgs(argvOf()).ok, true);
+  for (const v of [null, "closed", "public"]) {
+    assert.equal(parseArgs(argvOf({ "--exposure": v })).ok, false, String(v));
+  }
+});
+
+test("parseOffloadArgs: only sendsOut models, exactly once", () => {
+  for (const m of [GLM, SARASHINA_MODEL, FREE_GLM]) {
+    assert.equal(parseArgs(argvOf({ "--model": m })).ok, true, m);
+  }
+  const closed = parseArgs(
+    argvOf({ "--exposure": "closed", "--model": SARASHINA_MODEL }),
+  );
+  assert.equal(closed.ok, false);
+  assert.equal(closed.model, SARASHINA_MODEL);
+  for (const m of ["sonnet", "gpt-6.1-terra", "x"]) {
+    assert.equal(parseArgs(argvOf({ "--model": m })).ok, false, m);
+  }
+  assert.equal(
+    parseArgs([...argvOf({ "--model": "a" }), "--model", "a"]).ok,
+    false,
+  );
+  assert.equal(parseArgs([...argvOf(), "--model", GLM]).ok, false);
+  assert.equal(parseArgs(argvOf({ "--model": null })).model, null);
+});
+
+test("parseOffloadArgs: absolute paths and the dir length", () => {
+  assert.equal(parseArgs(argvOf({ "--brief-file": "b.md" })).ok, false);
+  assert.equal(parseArgs(argvOf({ "--dir": "work" })).ok, false);
+  assert.equal(parseArgs(argvOf({ "--dir": null })).args.dir, "/tmp/cwd");
+  assert.equal(parseArgs(argvOf({ "--dir": `/${"a".repeat(1023)}` })).ok, true);
+  assert.equal(
+    parseArgs(argvOf({ "--dir": `/${"a".repeat(1024)}` })).ok,
+    false,
+  );
+  assert.equal(parseArgs(argvOf({ "--plan": "p.md" })).ok, false);
+  assert.equal(parseArgs(argvOf({ "--plan": "/p.md" })).args.plan, "/p.md");
+  assert.equal(parseArgs([...argvOf(), "--write"]).args.write, true);
+  assert.equal(parseArgs([...argvOf(), "--bogus"]).ok, false);
+});
+
+test("parseOffloadArgs: proxy variables", () => {
+  for (const env of [
+    { https_proxy: "http://u:p@h:1" },
+    { http_proxy: "socks5://h:1" },
+    { HTTPS_PROXY: "http://u:p@h:1" },
+    { HTTP_PROXY: "socks5://h:1" },
+  ]) {
+    assert.equal(parseArgs(argvOf(), env).ok, false, JSON.stringify(env));
+  }
+  assert.equal(parseArgs(argvOf(), { https_proxy: "http://h:3128" }).ok, true);
+  const childEnv = buildChildEnv({
+    https_proxy: "http://h:3128",
+    PATH: "/bin",
+  });
+  assert.equal(childEnv.https_proxy, "http://h:3128");
+});
+
+// ---- brief and plan ------------------------------------------------------------
+
+function loadText(text) {
+  return withHome(({ root }) => {
+    const p = join(root, "brief.md");
+    writeFileSync(p, text, { mode: 0o600 });
+    return loadBrief(p);
+  });
+}
+const loadBytes = (bytes) =>
+  withHome(({ root }) => {
+    const p = join(root, "brief.md");
+    writeFileSync(p, bytes, { mode: 0o600 });
+    return loadBrief(p);
+  });
+
+test("loadBrief: size, NUL and leading dash", () => {
+  assert.equal(loadBytes(Buffer.alloc(0)).ok, false);
+  assert.equal(loadBytes(Buffer.alloc(100 * 1024, 0x61)).ok, true);
+  assert.equal(loadBytes(Buffer.alloc(100 * 1024 + 1, 0x61)).ok, false);
+  assert.equal(loadBytes(Buffer.from("ab\0cd")).ok, false);
+  assert.equal(loadText("--attach=x\nrest").ok, false);
+  assert.equal(loadText("fine\n--attach=x").ok, true);
+});
+
+test("loadBrief: secret shapes are refused without echoing them", () => {
+  const cases = [
+    "-----BEGIN OPENSSH PRIVATE KEY-----",
+    ["x ghp_", "a".repeat(36)].join(""),
+    ["see sk-ant-", "b".repeat(30)].join(""),
+    ["AKIA", "A".repeat(16)].join(""),
+  ];
+  for (const text of cases) {
+    const r = loadText(text);
+    assert.equal(r.ok, false, text);
+    assert.equal(r.reason.includes("ghp_"), false);
+    assert.equal(r.reason.includes("a".repeat(10)), false);
+    assert.equal(r.reason.includes("BEGIN"), false);
+    assert.equal(r.excerpt, undefined);
+  }
+  const both = loadText(`${["ghp_", "a".repeat(36)].join("")} and @/etc/hosts`);
+  assert.equal(both.ok, false);
+  assert.match(both.reason, /秘密/);
+  assert.equal(both.excerpt, undefined);
+});
+
+test("loadBrief: attachment-looking @ is refused with an excerpt", () => {
+  const refused = [
+    "見て @/etc/hosts",
+    "@~/.ssh/id_ed25519",
+    "(@/etc/passwd)",
+    ":@/etc/hosts",
+    '"@/x"',
+    "[@~/.ssh/id_ed25519]",
+    "@../../.ssh/id_rsa",
+    "@.env",
+    "@src/a.ts",
+    "`@types/node`",
+    "x@/etc/hosts",
+    ".@/x",
+    "-@~/x",
+    "_@../x",
+    "見て@/etc/hosts",
+    "見て@src/a.ts",
+  ];
+  for (const text of refused) {
+    const input = text.startsWith("-") ? `ok ${text}` : text;
+    const r = loadText(input);
+    assert.equal(r.ok, false, text);
+    assert.match(r.reason, /添付に見える @/);
+    assert.ok(r.excerpt?.includes("@"), text);
+  }
+  const controls = loadText("a\u001b[31m\n@/x");
+  assert.equal(controls.ok, false);
+  assert.equal(controls.excerpt.includes("\u001b"), false);
+  assert.equal(controls.excerpt.includes("\n"), false);
+  assert.match(controls.excerpt, /\\u001b/);
+  const c1 = loadText("a\u009b@/x");
+  assert.doesNotMatch(c1.excerpt, /\u009b/);
+  assert.match(c1.excerpt, /\\u009b/);
+});
+
+test("loadBrief: ordinary text passes", () => {
+  for (const text of [
+    ["sk-", "c".repeat(30)].join(""),
+    "password=x is only a word",
+    "a@b.example",
+    "user.name@host.example",
+    "メールは @ で区切る",
+  ]) {
+    assert.equal(loadText(text).ok, true, text);
+  }
+});
+
+test("loadBrief and hashPlanFile: only regular files read from one fd", () => {
+  withHome(({ root }) => {
+    const real = join(root, "real.md");
+    writeFileSync(real, "hello", { mode: 0o600 });
+    const link = join(root, "link.md");
+    symlinkSync(real, link);
+    assert.equal(loadBrief(link).ok, false);
+    assert.equal(hashPlanFile(link).ok, false);
+    const fifo = join(root, "fifo");
+    execFileSync("mkfifo", [fifo]);
+    assert.equal(hashPlanFile(fifo).ok, false);
+    assert.equal(loadBrief(fifo).ok, false);
+    assert.equal(hashPlanFile("/dev/zero").ok, false);
+    const plan = hashPlanFile(real);
+    assert.equal(plan.ok, true);
+    assert.match(plan.sha256, /^[0-9a-f]{64}$/);
+    const big = join(root, "big.md");
+    writeFileSync(big, Buffer.alloc(1024 * 1024 + 1));
+    assert.equal(hashPlanFile(big).ok, false);
+  });
+});
+
+// ---- record and verification ------------------------------------------------
+
+const HEX = (c) => c.repeat(64);
+function goodRecord(over = {}) {
+  return {
+    v: 1,
+    verifiedAt: "2026-10-29T00:00:00.000Z",
+    realpath: "/opt/opencode/bin/opencode",
+    executableSha256: HEX("a"),
+    targets: [{ path: "/opt/opencode/real", sha256: HEX("b") }],
+    version: "2.2.0",
+    configSha256: HEX("c"),
+    authProviders: [],
+    models: [GLM],
+    ...over,
+  };
+}
+const parseRec = (o) => parseVerifiedRecord(Buffer.from(JSON.stringify(o)));
+
+function inputsFor(record, over = {}) {
+  return {
+    realpath: record.realpath,
+    executableSha256: record.executableSha256,
+    targetSha256: Object.fromEntries(
+      record.targets.map((t) => [t.path, t.sha256]),
+    ),
+    configSha256: record.configSha256,
+    foundConfigPaths: [],
+    record: parseRec(record),
+    ...inputs(),
+    ...over,
+  };
+}
+
+test("parseVerifiedRecord: malformed records are broken, v mismatch is its own state", () => {
+  assert.equal(parseRec(goodRecord()).kind, "ok");
+  assert.equal(parseRec({ ...goodRecord(), note: "extra" }).kind, "ok");
+  assert.deepEqual(parseRec(goodRecord({ v: 2 })), { kind: "version", v: 2 });
+  const without = (key) => {
+    const r = goodRecord();
+    delete r[key];
+    return r;
+  };
+  const bad = [
+    without("models"),
+    goodRecord({ models: [] }),
+    goodRecord({ executableSha256: 12 }),
+    goodRecord({ executableSha256: "a".repeat(63) }),
+    goodRecord({ executableSha256: HEX("A") }),
+    goodRecord({ realpath: "relative/opencode" }),
+    goodRecord({ targets: [{ path: "/x" }] }),
+    goodRecord({ targets: [{ path: "x", sha256: HEX("b") }] }),
+    goodRecord({ verifiedAt: "x" }),
+    goodRecord({ version: "" }),
+    goodRecord({ version: "  " }),
+    goodRecord({ authProviders: ["b", "a"] }),
+    goodRecord({ authProviders: ["a", "a"] }),
+    goodRecord({ authProviders: "a" }),
+    goodRecord({ v: "1" }),
+    [1, 2],
+  ];
+  for (const r of bad) {
+    assert.equal(parseRec(r).kind, "broken", JSON.stringify(r));
+  }
+  assert.equal(parseVerifiedRecord(Buffer.from("{not json")).kind, "broken");
+});
+
+test("verifyOffload: each mismatch is refused, a full match passes", () => {
+  const rec0 = goodRecord();
+  const ok = verifyOffload(inputsFor(rec0));
+  assert.deepEqual(ok, { ok: true, models: [GLM] });
+
+  const missing = verifyOffload(
+    inputsFor(rec0, { record: { kind: "missing" } }),
+  );
+  assert.equal(missing.ok, false);
+  assert.equal(missing.check, "verify");
+  assert.match(missing.recovery.join("\n"), /opencode-containment\.mjs/);
+
+  const v2 = verifyOffload(
+    inputsFor(rec0, { record: { kind: "version", v: 2 } }),
+  );
+  assert.match(v2.reason, /形式の版が違う記録（v=2）/);
+
+  for (const state of [
+    { realpath: "/elsewhere/opencode" },
+    { executableSha256: HEX("d") },
+    { targetSha256: { "/opt/opencode/real": HEX("d") } },
+    { targetSha256: {} },
+    { configSha256: HEX("d") },
+    { configSha256: null },
+  ]) {
+    const r = verifyOffload(inputsFor(rec0, state));
+    assert.equal(r.ok, false, JSON.stringify(state));
+    assert.equal(r.check, "verify");
+  }
+  for (const found of [
+    ["/h/.config/opencode/plugin"],
+    ["/h/.config/opencode/opencode.json"],
+    ["/h/.opencode"],
+  ]) {
+    assert.equal(
+      verifyOffload(inputsFor(rec0, { foundConfigPaths: found })).ok,
+      false,
+      found[0],
+    );
+  }
+});
+
+test("verifyOffload: a missing opencode is resolve, whatever the record says", () => {
+  for (const record of [
+    { kind: "missing" },
+    { kind: "broken", reason: "x" },
+    parseRec(goodRecord()),
+  ]) {
+    const r = verifyOffload(
+      inputsFor(goodRecord(), { realpath: null, record }),
+    );
+    assert.equal(r.ok, false);
+    assert.equal(r.check, "resolve");
+  }
+});
+
+test("verifyOffload: the credential comparison is part of it", () => {
+  const r = verifyOffload(
+    inputsFor(goodRecord(), { authDb: { kind: "ok", ids: ["anthropic"] } }),
+  );
+  assert.equal(r.ok, false);
+  assert.match(r.recovery.join("\n"), /auth logout anthropic/);
+});
+
+test("buildVerifiedRecord output passes verifyOffload and parses back", () => {
+  const rec0 = goodRecord();
+  const base = inputsFor(rec0, {
+    authFile: { kind: "ok", providers: ["zai-coding-plan"] },
+    authDb: { kind: "ok", ids: ["sarashina", "zai-coding-plan"] },
+  });
+  const built = buildVerifiedRecord({
+    inputs: base,
+    version: " 2.2.0\n",
+    models: [GLM],
+    targets: rec0.targets,
+    now: new Date("2026-10-29T00:00:00Z"),
+  });
+  assert.deepEqual(built.authProviders, ["sarashina", "zai-coding-plan"]);
+  assert.equal(built.version, "2.2.0");
+  const reparsed = parseRec(built);
+  assert.equal(reparsed.kind, "ok");
+  assert.deepEqual(verifyOffload({ ...base, record: reparsed }), {
+    ok: true,
+    models: [GLM],
+  });
+  assert.throws(() =>
+    buildVerifiedRecord({
+      inputs: { ...base, realpath: null },
+      version: "1",
+      models: [GLM],
+      targets: [],
+      now: new Date(),
+    }),
+  );
+});
+
+test("collectOffloadInputs and verifyOffload against a fake opencode", () => {
+  withHome(({ root }) => {
+    const bin = join(root, "bin");
+    mkdirSync(bin);
+    const exe = join(bin, "opencode");
+    writeFileSync(exe, "#!/bin/sh\necho 2.2.0\n", { mode: 0o755 });
+    const cfgDir = join(root, ".config", "opencode");
+    mkdirSync(cfgDir, { recursive: true });
+    writeFileSync(join(cfgDir, "opencode.jsonc"), "{}\n");
+    const env = { HOME: root, PATH: bin };
+    const first = collectOffloadInputs(env);
+    assert.equal(first.realpath, exe);
+    assert.equal(first.record.kind, "missing");
+    assert.equal(verifyOffload(first).ok, false);
+
+    const record = buildVerifiedRecord({
+      inputs: first,
+      version: "2.2.0",
+      models: [GLM],
+      targets: [],
+      now: new Date(),
+    });
+    mkdirSync(offloadDirPath(env), { recursive: true, mode: 0o700 });
+    writeFileSync(offloadRecordPath(env), JSON.stringify(record));
+    assert.deepEqual(verifyOffload(collectOffloadInputs(env)), {
+      ok: true,
+      models: [GLM],
+    });
+
+    // Files opencode itself writes next to the config do not count.
+    writeFileSync(join(cfgDir, "service.json"), "{}");
+    mkdirSync(join(cfgDir, "node_modules", "x"), { recursive: true });
+    assert.equal(verifyOffload(collectOffloadInputs(env)).ok, true);
+
+    mkdirSync(join(cfgDir, "plugin"));
+    assert.equal(verifyOffload(collectOffloadInputs(env)).ok, false);
+    rmSync(join(cfgDir, "plugin"), { recursive: true });
+    writeFileSync(join(cfgDir, "opencode.jsonc"), "{ }\n");
+    assert.equal(verifyOffload(collectOffloadInputs(env)).ok, false);
+  });
+});
+
+// ---- launch directory ---------------------------------------------------------
+
+const GIT_ENV = (root) => ({ PATH: process.env.PATH, HOME: root });
+function initRepo(root, path) {
+  mkdirSync(path, { recursive: true });
+  execFileSync("git", ["init", "-q"], { cwd: path, env: GIT_ENV(root) });
+  return realpathSync(path);
+}
+const launch = (root, dir, over = {}) =>
+  checkLaunchDir({ dir, write: false, home: root, ...over });
+
+test("checkLaunchDir: toplevel, home and hidden directories", () => {
+  withHome(({ root, dir }) => {
+    const proj = initRepo(root, join(root, "src", "x"));
+    assert.equal(launch(root, proj).ok, true);
+    mkdirSync(join(proj, "sub"));
+    assert.equal(launch(root, join(proj, "sub")).ok, false);
+    initRepo(root, root);
+    assert.equal(launch(root, root).ok, false);
+    assert.equal(launch(root, "/").ok, false);
+    for (const hidden of [
+      join(root, ".ssh"),
+      join(root, ".config", "gh"),
+      dir,
+    ]) {
+      initRepo(root, hidden);
+      assert.equal(launch(root, hidden).ok, false, hidden);
+    }
+    const chez = initRepo(root, join(root, ".local", "share", "chezmoi"));
+    execFileSync(
+      "git",
+      [
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@t",
+        "commit",
+        "-q",
+        "--allow-empty",
+        "-m",
+        "x",
+      ],
+      { cwd: chez, env: GIT_ENV(root) },
+    );
+    assert.equal(launch(root, chez).ok, true);
+    const wt = join(chez, ".git", "worktree", "x");
+    execFileSync("git", ["worktree", "add", "-q", "-b", "wt", wt], {
+      cwd: chez,
+      env: GIT_ENV(root),
+    });
+    assert.equal(launch(root, wt).ok, true);
+  });
+});
+
+test("checkLaunchDir: an opencode config in the directory or an ancestor", () => {
+  withHome(({ root }) => {
+    const proj = initRepo(root, join(root, "p", "q"));
+    writeFileSync(join(root, "opencode.jsonc"), "{}");
+    assert.equal(launch(root, proj).ok, false);
+    rmSync(join(root, "opencode.jsonc"));
+    mkdirSync(join(proj, ".opencode"));
+    assert.equal(launch(root, proj).ok, false);
+  });
+});
+
+test("checkLaunchDir: symlinks", () => {
+  withHome(({ root }) => {
+    const proj = initRepo(root, join(root, "p"));
+    const outside = join(root, "outside");
+    mkdirSync(outside);
+    writeFileSync(join(outside, "secret"), "x");
+    writeFileSync(join(proj, "CLAUDE.md"), "x");
+    writeFileSync(join(proj, ".env"), "x");
+    mkdirSync(join(proj, "sub"));
+    writeFileSync(join(proj, "sub", ".npmrc"), "x");
+    mkdirSync(join(proj, "secrets"));
+    mkdirSync(join(proj, ".tmp"));
+    mkdirSync(join(proj, ".husky"));
+    writeFileSync(join(proj, ".husky", "pre-commit"), "x");
+    const withLink = (name, target, over) => {
+      const link = join(proj, name);
+      symlinkSync(target, link);
+      try {
+        return launch(root, proj, over).ok;
+      } finally {
+        rmSync(link);
+      }
+    };
+    assert.equal(withLink("AGENTS.md", "CLAUDE.md"), true);
+    assert.equal(withLink("link", ".env"), false);
+    assert.equal(withLink("link", "sub/.npmrc"), false);
+    assert.equal(withLink("d", "secrets"), false);
+    assert.equal(withLink("d", ".tmp"), false);
+    assert.equal(withLink("d", outside), false);
+    assert.equal(withLink("d", "missing-target"), false);
+    assert.equal(withLink("x", ".husky/pre-commit"), true);
+    assert.equal(withLink("x", ".husky/pre-commit", { write: true }), false);
+    // A loop.
+    symlinkSync("b", join(proj, "a"));
+    symlinkSync("a", join(proj, "b"));
+    assert.equal(launch(root, proj).ok, false);
+    rmSync(join(proj, "a"));
+    rmSync(join(proj, "b"));
+    assert.equal(launch(root, proj).ok, true);
+    // node_modules, .git and .tmp are not entered.
+    mkdirSync(join(proj, "node_modules"));
+    symlinkSync(outside, join(proj, "node_modules", "pkg"));
+    assert.equal(launch(root, proj).ok, true);
+    assert.equal(launch(root, proj, { budgetMs: 0 }).ok, false);
+  });
+});
+
+test("checkLaunchDir: GIT_* variables do not change the toplevel", () => {
+  withHome(({ root }) => {
+    const proj = initRepo(root, join(root, "p"));
+    process.env.GIT_DIR = "/elsewhere/.git";
+    try {
+      assert.equal(launch(root, proj).ok, true);
+    } finally {
+      delete process.env.GIT_DIR;
+    }
+  });
+});
+
+test("deny lists: matching and the jsonc mirror stays in sync later", () => {
+  assert.ok(READ_DENY.includes("**/.env"));
+  assert.ok(EDIT_DENY.includes("package.json"));
+  for (const p of READ_DENY) assert.ok(EDIT_DENY.includes(p), p);
+});
+
+// ---- child env, argv and log ---------------------------------------------------
+
+test("buildOpencodeArgv: agent by --write, brief is one last element", () => {
+  const brief = "line\n--attach=x\n$(id) `id`";
+  const read = buildOpencodeArgv({ model: GLM, write: false, brief });
+  assert.deepEqual(read, [
+    "run",
+    "--standalone",
+    "--agent",
+    "worktree-read",
+    "-m",
+    GLM,
+    "--auto",
+    brief,
+  ]);
+  const edit = buildOpencodeArgv({ model: GLM, write: true, brief });
+  assert.equal(edit[3], "worktree-edit");
+  assert.equal(edit.at(-1), brief);
+});
+
+test("buildChildEnv: allowlist only", () => {
+  const parent = {
+    PATH: "/bin",
+    HOME: "/h",
+    LANG: "C",
+    LC_ALL: "C",
+    TERM: "xterm",
+    TMPDIR: "/t",
+    OPENCODE_CONFIG_CONTENT: "{}",
+    OPENCODE_PERMISSION: "{}",
+    XDG_CONFIG_HOME: "/x",
+    XDG_DATA_HOME: "/x",
+    NODE_OPTIONS: "--x",
+    GIT_DIR: "/g",
+    ANTHROPIC_API_KEY: FIXTURE_KEY,
+    ZAI_API_KEY: FIXTURE_KEY,
+    SARASHINA_API_KEY: FIXTURE_KEY,
+  };
+  const out = buildChildEnv(parent);
+  for (const k of [
+    "OPENCODE_CONFIG_CONTENT",
+    "OPENCODE_PERMISSION",
+    "XDG_CONFIG_HOME",
+    "XDG_DATA_HOME",
+    "NODE_OPTIONS",
+    "GIT_DIR",
+    "ANTHROPIC_API_KEY",
+    "ZAI_API_KEY",
+    "SARASHINA_API_KEY",
+  ]) {
+    assert.equal(k in out, false, k);
+  }
+  assert.equal(out.OPENCODE_DISABLE_CLAUDE_CODE, "1");
+  assert.equal(out.HOME, "/h");
+  assert.equal(out.PATH, "/bin");
+  assert.equal(out.LC_ALL, "C");
+});
+
+test("buildLogLine: shape, no brief text, bounded size", () => {
+  const brief = "secret brief body";
+  const line = buildLogLine({
+    at: "2026-10-29T00:00:00.000Z",
+    result: "spawned",
+    model: GLM,
+    agent: "worktree-read",
+    dir: "/tmp/w",
+    briefSha256: HEX("e"),
+    planSha256: null,
+  });
+  assert.ok(line.endsWith("\n"));
+  const parsed = JSON.parse(line);
+  assert.deepEqual(Object.keys(parsed), [
+    "v",
+    "at",
+    "result",
+    "model",
+    "agent",
+    "dir",
+    "briefSha256",
+    "planSha256",
+  ]);
+  assert.equal(parsed.briefSha256, HEX("e"));
+  assert.equal(line.includes(brief), false);
+  const unknown = JSON.parse(
+    buildLogLine({
+      at: "t",
+      result: "args",
+      model: null,
+      agent: null,
+      dir: null,
+      briefSha256: null,
+      planSha256: null,
+    }),
+  );
+  assert.equal(unknown.model, null);
+  assert.equal(unknown.briefSha256, null);
+  const wide = buildLogLine({
+    at: "t",
+    result: "dir",
+    model: GLM,
+    agent: "worktree-read",
+    dir: `/${"\u0001".repeat(1023)}`,
+    briefSha256: HEX("e"),
+    planSha256: HEX("f"),
+  });
+  assert.ok(Buffer.byteLength(wide) <= 4096);
+  const atLine = buildLogLine({
+    at: "t",
+    result: "brief",
+    model: GLM,
+    agent: null,
+    dir: "/w",
+    briefSha256: HEX("e"),
+    planSha256: null,
+  });
+  assert.equal(atLine.includes("@"), false);
 });
 
 // ---- source checks --------------------------------------------------------
