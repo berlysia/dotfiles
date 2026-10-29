@@ -177,3 +177,211 @@ it("gh: timeout is bounded per call and messages are truncated before stripping"
   strictEqual(result.message, "x".repeat(198));
   strictEqual(fake.calls[0]!.options.timeoutMs, 123);
 });
+
+// plan-3 T2: 受け取りと振り分けの gh 呼び出し
+const marked = `<!-- dotfiles-feedback id=${id} v=1 {"kind":"bug","target":"hook","source":{"agent":"claude","repoKey":null,"host":"h","vm":false}} -->`;
+const rawIssue = {
+  number: 7,
+  state: "open",
+  body: marked,
+  user: "berlysia",
+  pull_request: false,
+  title: "題",
+  updatedAt: "2026-10-29T01:00:00Z",
+  labels: ["dotfiles-feedback"],
+};
+it("gh: read calls pass --method GET and lists paginate", async () => {
+  const { fake, gh } = fixture();
+  fake.issues.push({ ...rawIssue });
+  ok((await gh.viewFeedbackIssue(7)).ok);
+  ok((await gh.listComments(7)).ok);
+  ok((await gh.listPublicIssues("2026-10-29T00:00:00Z")).ok);
+  ok(
+    (
+      await gh.listFeedbackIssues({
+        repo: FEEDBACK_REPO,
+        state: "open",
+        creator: "berlysia",
+      })
+    ).ok,
+  );
+  const [view, comments, publics, list] = fake.calls.map((call) => call.argv);
+  for (const argv of [view!, comments!, publics!, list!])
+    deepStrictEqual(argv.slice(0, 3), ["api", "--method", "GET"]);
+  ok(!view!.includes("--paginate"));
+  for (const argv of [comments!, publics!, list!])
+    ok(argv.includes("--paginate"));
+  ok(view!.includes(`repos/${FEEDBACK_REPO}/issues/7`));
+  ok(comments!.includes(`repos/${FEEDBACK_REPO}/issues/7/comments`));
+  ok(publics!.includes("repos/berlysia/dotfiles/issues"));
+  for (const value of [
+    "state=all",
+    "creator=berlysia",
+    "since=2026-10-29T00:00:00Z",
+  ])
+    strictEqual(publics![publics!.indexOf(value) - 1], "-f");
+});
+it("gh: argument validation fails without calling gh", async () => {
+  const { fake, gh } = fixture();
+  for (const number of [0, -1, 1.5, 2 ** 53]) {
+    ok(!(await gh.viewFeedbackIssue(number)).ok);
+    ok(!(await gh.listComments(number)).ok);
+    ok(!(await gh.addComment(number, "x")).ok);
+    ok(!(await gh.closeIssue(number)).ok);
+    ok(!(await gh.addLabel(number, "triaged:plan")).ok);
+  }
+  ok(!(await gh.listPublicIssues("2026-10-29")).ok);
+  ok(!(await gh.listPublicIssues("2026-10-29T00:00:00+09:00")).ok);
+  ok(!(await gh.addLabel(1, "kind:bug")).ok);
+  ok(!(await gh.addLabel(1, "--repo=x")).ok);
+  strictEqual(fake.calls.length, 0);
+});
+it("gh: write calls use fixed argv; bodies go through stdin", async () => {
+  const { fake, gh } = fixture();
+  fake.issues.push({ ...rawIssue });
+  ok((await gh.addLabel(7, "triaged:plan")).ok);
+  ok((await gh.addComment(7, "コメント本文 -F x")).ok);
+  ok((await gh.closeIssue(7)).ok);
+  const [label, comment, close] = fake.calls;
+  deepStrictEqual(label!.argv, [
+    "issue",
+    "edit",
+    "7",
+    "--repo",
+    FEEDBACK_REPO,
+    "--add-label=triaged:plan",
+  ]);
+  deepStrictEqual(comment!.argv, [
+    "issue",
+    "comment",
+    "7",
+    "--repo",
+    FEEDBACK_REPO,
+    "--body-file",
+    "-",
+  ]);
+  strictEqual(comment!.options.stdin, "コメント本文 -F x");
+  deepStrictEqual(close!.argv, [
+    "issue",
+    "close",
+    "7",
+    "--repo",
+    FEEDBACK_REPO,
+  ]);
+  strictEqual(fake.issues[0]!.state, "closed");
+});
+it("gh: public issue creation checks the returned URL and keeps the title one argument", async () => {
+  const { fake, gh } = fixture();
+  const created = await gh.createPublicIssue("--repo=x", "本文 -F y");
+  ok(created.ok);
+  strictEqual(created.value, 1);
+  const call = fake.calls[0]!;
+  deepStrictEqual(call.argv, [
+    "issue",
+    "create",
+    "--repo",
+    "berlysia/dotfiles",
+    "--title=--repo=x",
+    "--body-file",
+    "-",
+  ]);
+  strictEqual(call.options.stdin, "本文 -F y");
+  ok(!call.argv.includes("本文 -F y"));
+  fake.intercept = async () => ({
+    code: 0,
+    stdout: "https://github.com/other/x/issues/3\n",
+    stderr: "",
+  });
+  ok(!(await gh.createPublicIssue("t", "b")).ok);
+  fake.intercept = async () => ({
+    code: 0,
+    stdout: "https://github.com/berlysia/dotfiles/issues/12\n",
+    stderr: "",
+  });
+  const twelve = await gh.createPublicIssue("t", "b");
+  ok(twelve.ok);
+  strictEqual(twelve.value, 12);
+});
+it("gh: public listing drops other users and pull requests", async () => {
+  const { fake, gh } = fixture();
+  fake.publicIssues.push(
+    { ...rawIssue, number: 1 },
+    { ...rawIssue, number: 2, user: "other" },
+    { ...rawIssue, number: 3, pull_request: true },
+  );
+  const listed = await gh.listPublicIssues("2026-10-29T00:00:00Z");
+  ok(listed.ok);
+  deepStrictEqual(
+    listed.value.map((issue) => issue.number),
+    [1],
+  );
+});
+it("gh: viewFeedbackIssue reads every field and reports pull requests", async () => {
+  const { fake, gh } = fixture();
+  fake.issues.push(
+    { ...rawIssue },
+    { ...rawIssue, number: 8, pull_request: true },
+  );
+  const viewed = await gh.viewFeedbackIssue(7);
+  ok(viewed.ok);
+  strictEqual(viewed.value.number, 7);
+  strictEqual(viewed.value.state, "open");
+  strictEqual(viewed.value.title, "題");
+  strictEqual(viewed.value.user, "berlysia");
+  strictEqual(viewed.value.updatedAt, "2026-10-29T01:00:00Z");
+  deepStrictEqual(viewed.value.labels, ["dotfiles-feedback"]);
+  strictEqual(viewed.value.pullRequest, false);
+  strictEqual(viewed.value.marker.status, "ok");
+  const pull = await gh.viewFeedbackIssue(8);
+  ok(pull.ok);
+  strictEqual(pull.value.pullRequest, true);
+  ok(!(await gh.viewFeedbackIssue(99)).ok);
+});
+it("gh: listFeedbackIssues returns title, updatedAt and labels", async () => {
+  const { fake, gh } = fixture();
+  fake.issues.push({ ...rawIssue });
+  const listed = await gh.listFeedbackIssues({
+    repo: FEEDBACK_REPO,
+    state: "all",
+    creator: "berlysia",
+  });
+  ok(listed.ok);
+  strictEqual(listed.value[0]!.title, "題");
+  strictEqual(listed.value[0]!.updatedAt, "2026-10-29T01:00:00Z");
+  deepStrictEqual(listed.value[0]!.labels, ["dotfiles-feedback"]);
+});
+it("gh: listComments maps failures and broken lines", async () => {
+  const { fake, gh } = fixture();
+  fake.addComment(7, { body: "一つ目" });
+  const listed = await gh.listComments(7);
+  ok(listed.ok);
+  deepStrictEqual(listed.value, [
+    {
+      id: 1,
+      user: "berlysia",
+      body: "一つ目",
+      createdAt: "2026-10-29T00:00:00Z",
+    },
+  ]);
+  fake.failWhen(
+    (argv) => argv.some((value) => value.endsWith("/comments")),
+    "malformed",
+  );
+  const broken = await gh.listComments(7);
+  ok(!broken.ok);
+  strictEqual(broken.error, "other");
+  const missing = fixture();
+  missing.fake.intercept = async () => ({
+    code: 0,
+    stdout: '{"id":1}\n',
+    stderr: "",
+  });
+  ok(!(await missing.gh.listComments(7)).ok);
+});
+it("gh: listComments timeout is a network failure", async () => {
+  const { fake, gh } = fixture();
+  fake.failWhen(() => true, "timeout");
+  const result = await gh.listComments(7);
+  ok(!result.ok);
+  strictEqual(result.error, "network");
+});

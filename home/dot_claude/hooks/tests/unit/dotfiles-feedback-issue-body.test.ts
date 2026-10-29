@@ -1,8 +1,20 @@
 import { deepStrictEqual, ok, strictEqual, throws } from "node:assert";
 import { it } from "node:test";
 import {
+  classifyIssue,
+  countOpenTargets,
+  findPublicUrl,
+  findTriageMarker,
+  neutralizeMentions,
+  parseOriginId,
+  parsePublicUrlMarker,
+  parseTriageMarker,
   parseMarker,
   renderIssue,
+  renderOriginMarker,
+  renderPublicUrlMarker,
+  renderTriageMarker,
+  type IssueSummary,
 } from "../../lib/dotfiles-feedback/issue-body.ts";
 import type { FeedbackItemV1 } from "../../lib/dotfiles-feedback/item.ts";
 
@@ -163,3 +175,119 @@ it("round-trips Unicode line separators that are not LF or CR", () => {
   ok(result.status === "ok");
   strictEqual(result.meta.target, value.target);
 });
+
+// plan-3 T2: 対象の判定と振り分けのマーカー
+const owned = (overrides: Partial<IssueSummary> = {}): IssueSummary => ({
+  number: 1,
+  state: "open",
+  title: "t",
+  body: renderIssue(item()).body,
+  user: "berlysia",
+  labels: ["dotfiles-feedback"],
+  updatedAt: "2026-10-29T00:00:00Z",
+  pullRequest: false,
+  ...overrides,
+});
+it("classifyIssue: target, unreadable and not-target", () => {
+  strictEqual(classifyIssue(owned()).kind, "target");
+  const newer = owned({
+    body: `<!-- dotfiles-feedback id=${item().id} v=2 {} -->`,
+  });
+  strictEqual(classifyIssue(newer).kind, "unreadable");
+  strictEqual(classifyIssue(owned({ body: "no marker" })).kind, "unreadable");
+  strictEqual(classifyIssue(owned({ user: "other" })).kind, "not-target");
+  strictEqual(classifyIssue(owned({ labels: [] })).kind, "not-target");
+  strictEqual(classifyIssue(owned({ pullRequest: true })).kind, "not-target");
+  const target = classifyIssue(owned());
+  if (target.kind === "target") strictEqual(target.id, item().id);
+});
+it("countOpenTargets counts unreadable markers and ignores foreign issues", () => {
+  const newer = owned({
+    body: `<!-- dotfiles-feedback id=${item().id} v=2 {} -->`,
+  });
+  deepStrictEqual(
+    countOpenTargets([
+      owned(),
+      owned({ number: 2 }),
+      newer,
+      owned({ body: "x" }),
+      owned({ user: "other" }),
+      owned({ state: "closed" }),
+    ]),
+    { targets: 2, unreadable: 2 },
+  );
+});
+it("triage marker round-trips and tolerates one trailing CR", () => {
+  for (const to of ["issue", "plan", "reject"] as const)
+    for (const actor of ["agent", "human"] as const) {
+      const text = renderTriageMarker(to, actor);
+      deepStrictEqual(parseTriageMarker(`${text}\n理由: x`), { to, actor });
+      deepStrictEqual(parseTriageMarker(`${text}\r\n理由`), { to, actor });
+    }
+  const text = renderTriageMarker("plan", "agent");
+  strictEqual(parseTriageMarker(` ${text}`), null);
+  strictEqual(parseTriageMarker(`x\n${text}`), null);
+  strictEqual(
+    parseTriageMarker("<!-- dotfiles-feedback-triage to=x actor=agent -->"),
+    null,
+  );
+  strictEqual(parseTriageMarker(`${text}\r\r\nbody`), null);
+});
+it("findTriageMarker uses the oldest owner comment, ties by smaller id", () => {
+  const c = (
+    id: number,
+    createdAt: string,
+    to: "plan" | "reject",
+    user = "berlysia",
+  ) => ({
+    id,
+    user,
+    createdAt,
+    body: renderTriageMarker(to, "agent"),
+  });
+  strictEqual(
+    findTriageMarker([
+      c(5, "2026-10-29T02:00:00Z", "reject"),
+      c(9, "2026-10-29T01:00:00Z", "plan"),
+      c(1, "2026-10-29T00:00:00Z", "reject", "other"),
+    ])?.to,
+    "plan",
+  );
+  strictEqual(
+    findTriageMarker([
+      c(9, "2026-10-29T01:00:00Z", "plan"),
+      c(2, "2026-10-29T01:00:00Z", "reject"),
+    ])?.to,
+    "reject",
+  );
+  strictEqual(findTriageMarker([]), null);
+});
+it("public url marker round-trips and findPublicUrl requires the owner", () => {
+  const url = "https://github.com/berlysia/dotfiles/issues/12";
+  strictEqual(parsePublicUrlMarker(`${renderPublicUrlMarker(url)}\r\n`), url);
+  strictEqual(
+    parsePublicUrlMarker(
+      "<!-- dotfiles-feedback-public url=https://github.com/other/x/issues/1 -->",
+    ),
+    null,
+  );
+  const body = renderPublicUrlMarker(url);
+  strictEqual(
+    findPublicUrl([{ id: 1, user: "other", createdAt: "x", body }]),
+    null,
+  );
+  strictEqual(
+    findPublicUrl([{ id: 1, user: "berlysia", createdAt: "x", body }]),
+    url,
+  );
+});
+it("origin marker is recognized only as the last non-blank line", () => {
+  const marker = renderOriginMarker(item().id);
+  strictEqual(parseOriginId(`本文\n\n${marker}`), item().id);
+  strictEqual(parseOriginId(`本文\r\n${marker}\r\n`), item().id);
+  strictEqual(parseOriginId(`本文\n${marker}\n\n  \n`), item().id);
+  strictEqual(parseOriginId(`本文\n${marker}\nあとに続く`), null);
+  strictEqual(parseOriginId(`${marker} x`), null);
+});
+it("neutralizeMentions is exported", () =>
+  strictEqual(neutralizeMentions("@octocat a@ b"), "＠octocat a@ b"));
