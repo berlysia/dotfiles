@@ -1761,7 +1761,16 @@ cmd_golden() { # refresh|rm; both hold the golden lock (fd 7), never a repo lock
   esac
 }
 
+is_help_word() { [[ "${1:-}" == -h || "${1:-}" == --help ]]; }
+
 main() {
+  # Help words right after the subcommand (claude/codex hand them to the tool). The word after the
+  # 2nd-level name is checked only for env/golden; elsewhere it can be an option value.
+  case "${1:-}" in
+    claude | codex | -h | --help | help | "") ;;
+    env | golden) if is_help_word "${2:-}" || is_help_word "${3:-}"; then show_help; return 0; fi ;;
+    *) if is_help_word "${2:-}"; then show_help; return 0; fi ;;
+  esac
   case "${1:-}" in
     -h | --help | help | "") show_help ;;
     claude | codex) run_tool "$@" ;;

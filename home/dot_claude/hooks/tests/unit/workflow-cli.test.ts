@@ -20,6 +20,7 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import {
   resolveCliDeps,
   runWorkflowCli,
+  workflowHelpText,
   wouldTouchApprovalStatus,
 } from "../../cli/workflow.ts";
 import {
@@ -2858,5 +2859,33 @@ describe("workflow-cli: reset", () => {
     const r = cli(repo, wf, ["nope"]);
     assert.equal(r.exitCode, 1);
     assert.match(r.stderr, /reset/);
+  });
+});
+
+describe("workflowHelpText", () => {
+  it("returns help for --help at any position not consumed as a value", () => {
+    for (const argv of [
+      ["round", "--help"],
+      ["round", "plan.md", "--help"],
+      ["--help"],
+      ["-h"],
+      ["round", "--full", "--help"],
+    ]) {
+      const help = workflowHelpText(argv);
+      assert.ok(help, JSON.stringify(argv));
+      assert.match(help, /usage/);
+      assert.match(help, /round/);
+      assert.match(help, /stamp/);
+    }
+  });
+
+  it("returns null when --help is a flag value or absent", () => {
+    for (const argv of [
+      ["stamp", "plan.md", "--verdict", "--help"],
+      ["round", "--full", "plan.md"],
+      [],
+    ]) {
+      assert.equal(workflowHelpText(argv), null, JSON.stringify(argv));
+    }
   });
 });

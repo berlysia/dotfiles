@@ -400,8 +400,33 @@ cmd_remove() {
   exit "$status"
 }
 
+show_help() {
+  cat <<'EOF'
+agent-vm-node-modules - give each JS package of an agent-vm repository its own VM-local node_modules
+
+Usage:
+  agent-vm-node-modules --contract
+  agent-vm-node-modules sync <repo>
+  agent-vm-node-modules attach <worktree>
+  agent-vm-node-modules remove <worktree> -- <command...>
+  agent-vm-node-modules --help
+
+Runs only inside an agent-vm machine; used by the launcher and the worktree tools.
+
+Exit codes:
+  0   done
+  1   partial (sync / attach)
+  2   locked
+  3   reclaim aborted
+  64  usage error
+  70  remove: the command failed to remove
+  71  remove: locked
+EOF
+}
+
 main() {
   case "${1:-}" in
+    --help | -h) show_help ;;
     --contract) [[ $# -eq 1 ]] || usage; printf '%s\n' "$CONTRACT" ;;
     sync) [[ $# -eq 2 ]] || usage; cmd_sync "$2" ;;
     attach) [[ $# -eq 2 ]] || usage; cmd_attach "$2" ;;

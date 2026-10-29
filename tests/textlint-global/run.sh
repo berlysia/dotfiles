@@ -154,7 +154,30 @@ test_install_dir_override_ignored_when_relative() {
   case "$out" in *"relative/dir"*) fail "install: relative override is ignored" ;; *) pass "install: relative override is ignored" ;; esac
 }
 
+test_help_without_runtime() {
+  local home="$TMP_BASE/help-empty" out err rc=0
+  mkdir -p "$home"
+  out=$(TEXTLINT_HOME="$home" bash "$WRAPPER" --help 2>"$home/stderr" </dev/null) || rc=$?
+  err=$(cat "$home/stderr")
+  check "help without runtime: exit 0" "$((rc == 0 ? 0 : 1))"
+  check "help without runtime: stdout has --text" "$([[ "$out" == *--text* ]] && echo 0 || echo 1)"
+  check "help without runtime: stderr empty" "$([[ -z "$err" ]] && echo 0 || echo 1)"
+}
+
+test_help_with_runtime() {
+  new_home
+  printf '#!/bin/sh\necho stub-textlint-help\n' >"$HOME_DIR/node_modules/.bin/textlint"
+  local out err rc=0
+  out=$(TEXTLINT_HOME="$HOME_DIR" bash "$WRAPPER" -h 2>"$HOME_DIR/stderr" </dev/null) || rc=$?
+  err=$(cat "$HOME_DIR/stderr")
+  check "help with runtime: exit 0" "$((rc == 0 ? 0 : 1))"
+  check "help with runtime: wrapper usage and textlint help" "$([[ "$out" == *--text* && "$out" == *stub-textlint-help* ]] && echo 0 || echo 1)"
+  check "help with runtime: stderr empty (no stale warning)" "$([[ -z "$err" ]] && echo 0 || echo 1)"
+}
+
 test_wrapper_state_matches
+test_help_without_runtime
+test_help_with_runtime
 test_wrapper_old_format_state
 test_wrapper_package_json_differs
 test_wrapper_bun_lock_differs

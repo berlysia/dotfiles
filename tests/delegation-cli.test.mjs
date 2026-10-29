@@ -187,6 +187,45 @@ describe("delegation cli (process)", { concurrency: 4 }, () => {
     }
   });
 
+  it("review --help prints usage, exits 0 and adds no ledger line", async () => {
+    const sb = sandbox();
+    try {
+      for (const args of [
+        ["review", "--help"],
+        ["review", "--since", "7", "--help"],
+        ["review", "-h"],
+      ]) {
+        const r = await sb.run(args);
+        assert.equal(r.status, 0, r.stderr);
+        assert.match(r.stdout, /Usage: delegation/);
+        assert.equal(r.stderr, "");
+      }
+      assert.equal(readLedger(sb.store()).rows.length, 0);
+    } finally {
+      sb.done();
+    }
+  });
+
+  it("a --help consumed as a flag value is not a help request", async () => {
+    const sb = sandbox();
+    try {
+      const r = await sb.run(["review", "--since", "--help"]);
+      assert.equal(r.status, 1);
+      assert.doesNotMatch(r.stdout, /Usage: delegation/);
+    } finally {
+      sb.done();
+    }
+  });
+
+  it("route without --kind still exits 1", async () => {
+    const sb = sandbox();
+    try {
+      assert.equal((await sb.run(["route", "--size", "M"])).status, 1);
+    } finally {
+      sb.done();
+    }
+  });
+
   it("open: hostile -m value becomes unknown on one stdout line", async () => {
     const sb = sandbox();
     try {

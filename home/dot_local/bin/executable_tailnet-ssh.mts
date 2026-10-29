@@ -960,7 +960,27 @@ export function checkConnections(
   }
 }
 
+const HELP = `Usage: tailnet-ssh [command]
+
+Manage the SSH configuration for tailnet machines. With no command it runs
+\`apply\`.
+
+Commands:
+  apply                          write the SSH configuration from the private settings (default)
+  keygen                         generate the local key and print it as JSON
+  import                         read private settings JSON from stdin and apply
+  bootstrap <machine>            print bootstrap data for a registered machine
+  plan                           show the planned sync from 1Password
+  sync --approve <plan hash>     apply the planned sync
+  check                          check connections to the configured hosts
+  -h, --help                     print this help and exit 0
+`;
+
 function main() {
+  if (process.argv[2] === "-h" || process.argv[2] === "--help") {
+    process.stdout.write(HELP);
+    return;
+  }
   const command = process.argv[2] ?? "apply";
   const home = homedir();
   const settingsPath = join(home, ".config", "tailnet-ssh", "settings.json");

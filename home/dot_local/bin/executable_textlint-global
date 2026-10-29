@@ -27,6 +27,25 @@ STATE_LOCK_FILE="$TEXTLINT_HOME/.install-state.lock"
 # Printed with a literal "~" so the user's own shell expands it.
 RECOVER="chezmoi apply ~/.config/textlint ~/.chezmoiscripts/10-install-textlint-deps.sh"
 
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    cat <<'EOF'
+textlint-global - run the textlint installed in ~/.config/textlint with its global config, from any directory
+
+Usage:
+  textlint-global FILE...                 lint files
+  textlint-global - [--stdin-filename N]  lint stdin (default filename: stdin.md)
+  textlint-global --text "文章"           lint the given string as markdown
+  textlint-global --config C ...          use another config instead of the global one
+  textlint-global --help                  show this help, then textlint's own help if installed
+Every other argument is passed through to textlint unchanged.
+EOF
+    if [[ -x "$TEXTLINT_BIN" ]]; then
+        printf '\n--- textlint --help ---\n'
+        "$TEXTLINT_BIN" --help || true
+    fi
+    exit 0
+fi
+
 if [[ ! -x "$TEXTLINT_BIN" ]]; then
     echo "textlint: runtime not installed at $TEXTLINT_HOME" >&2
     echo "Recover with: $RECOVER" >&2
