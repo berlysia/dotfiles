@@ -48,6 +48,10 @@ export type RouteInput = {
   skipped: SkipCounts;
   ledgerLarge: boolean;
   due: ReviewDue | null;
+  /** ai-usage's window-length constants could not be imported. */
+  windowMinsMissing: boolean;
+  /** ai-usage could not be run or its output could not be read. */
+  usageMissing: boolean;
 };
 
 const bothUnder = (p: ProviderPace) =>
@@ -170,6 +174,18 @@ export function buildRoute(input: RouteInput): string[] {
     )
     .join(" | ");
   out.push(`窓: ${windows}`);
+  // Every window reads unknown in both cases; without a cause nobody can tell
+  // a stale deployment from a provider outage.
+  if (input.usageMissing) {
+    out.push(
+      "  窓の注意: ai-usage を起動できない、または結果を読めない。ai-usage claude codex opencode --summary を手で確かめる",
+    );
+  }
+  if (input.windowMinsMissing) {
+    out.push(
+      "  窓の注意: ai-usage の窓の長さを読めない。~/.local/share/ai-usage/summary.ts が古い。引数なしの chezmoi apply で直る",
+    );
+  }
 
   out.push(`${kind}×${size} の記録 (直近 ${DEFAULT_SINCE_DAYS} 日):`);
   if (groups.length === 0) out.push("  (記録なし)");

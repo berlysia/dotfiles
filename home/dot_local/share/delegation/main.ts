@@ -491,6 +491,9 @@ async function cmdRoute(args: Args, now: Date): Promise<number> {
     skipped: ledger.skipped,
     ledgerLarge: ledger.large,
     due: reviewDue(ledger.rows, now),
+    windowMinsMissing: mins === null,
+    usageMissing:
+      usage.claude === null && usage.codex === null && usage.opencode === null,
   });
   process.stdout.write(`${lines.join("\n")}\n`);
   return 0;

@@ -25,6 +25,7 @@ import {
   openStore,
   readLedger,
 } from "../home/dot_local/share/delegation/store.ts";
+import { buildRoute } from "../home/dot_local/share/delegation/route.ts";
 import { WEEK_MINS } from "../home/dot_local/share/ai-usage/summary.ts";
 
 const main = new URL(
@@ -118,6 +119,35 @@ test("parseUsageSummary validates provider names and values", () => {
     codex: null,
     opencode: null,
   });
+});
+
+test("route names the cause when window lengths or ai-usage are missing", () => {
+  const unknownPace = { fiveHour: "unknown", weekly: "unknown" };
+  const base = {
+    kind: "impl",
+    size: "M",
+    now: new Date(NOW),
+    folded: foldLedger([]),
+    paces: { claude: unknownPace, codex: unknownPace, opencode: unknownPace },
+    pendingTotal: 0,
+    pendingSession: null,
+    skipped: { version: 0, type: 0, broken: 0 },
+    ledgerLarge: false,
+    due: null,
+  };
+  const stale = buildRoute({
+    ...base,
+    windowMinsMissing: true,
+    usageMissing: false,
+  }).join("\n");
+  assert.match(stale, /窓の注意: ai-usage の窓の長さを読めない/);
+  assert.match(stale, /chezmoi apply/);
+  const fine = buildRoute({
+    ...base,
+    windowMinsMissing: false,
+    usageMissing: false,
+  }).join("\n");
+  assert.doesNotMatch(fine, /窓の注意/);
 });
 
 test("loadWindowMins reads ai-usage constants; failure gives null", async () => {
@@ -523,6 +553,7 @@ describe("delegation route / review (process)", { concurrency: 4 }, () => {
       });
       assert.equal(r.status, 0, r.stderr);
       assert.match(r.stdout, /claude 5h=unknown week=unknown/);
+      assert.match(r.stdout, /窓の注意: ai-usage を起動できない/);
     } finally {
       sb.done();
     }
