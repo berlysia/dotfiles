@@ -9,6 +9,27 @@
 #                           start and a worktree session when it next gets a message
 set -euo pipefail
 
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  cat <<'EOF'
+claude-rc-sync - make running claude-rc@*.service instances match ~/.config/claude-rc/projects
+
+Usage:
+  claude-rc-sync                    enable/start listed projects, disable/stop unlisted ones
+  claude-rc-sync status             show the state of every instance
+  claude-rc-sync restart [name...]  restart listed instances (all listed when no name is given)
+  claude-rc-sync --help             show this help
+
+restart picks up edited flags or a new claude binary. Live sessions drop; the
+server resumes the main-directory session at start and a worktree session when
+it next gets a message.
+
+Exit codes:
+  0  done
+  1  a name given to restart is not in the project list
+EOF
+  exit 0
+fi
+
 list="${CLAUDE_RC_PROJECTS:-$HOME/.config/claude-rc/projects}"
 wants="$HOME/.config/systemd/user/default.target.wants"
 

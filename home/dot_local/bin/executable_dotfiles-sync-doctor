@@ -510,6 +510,27 @@ cmd_fix() {
   return "$_rc"
 }
 
+case ${1-} in
+-h | --help)
+  cat <<'EOF'
+dotfiles-sync-doctor - keep `chezmoi update` from stopping halfway through a rebase when commit signing is unavailable
+
+Usage:
+  dotfiles-sync-doctor [check]    print the state of the source repo (default)
+  dotfiles-sync-doctor preflight  called by hooks.update.pre
+  dotfiles-sync-doctor fix        finish a stopped rebase (never unsigned) and run `chezmoi apply`
+  dotfiles-sync-doctor --help
+
+Exit codes:
+  0  ok
+  1  check: rebase/merge in progress, signing failure while signing is enabled, or hooks.update.pre missing
+     preflight: `chezmoi update` would stop in a rebase
+     fix: the rebase or apply could not be finished
+  2  usage error
+EOF
+  exit 0
+  ;;
+esac
 if [ "$#" -gt 1 ]; then
   err "usage: $PROG [check|preflight|fix]"
   exit 2

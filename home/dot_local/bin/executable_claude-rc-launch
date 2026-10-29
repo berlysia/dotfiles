@@ -3,6 +3,24 @@
 # Called by claude-rc@<name>.service. Exit 64 = configuration error (systemd won't retry).
 set -euo pipefail
 
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  cat <<'EOF'
+claude-rc-launch - start `claude remote-control` for one project in ~/.config/claude-rc/projects
+
+Usage:
+  claude-rc-launch <name>
+  claude-rc-launch --help
+
+Called by claude-rc@<name>.service (systemd), not by hand.
+
+Exit codes:
+  0   help shown
+  64  configuration error: project list or directory missing, name not listed,
+      unknown spawn mode (systemd does not retry)
+EOF
+  exit 0
+fi
+
 name="${1:?usage: claude-rc-launch <name>}"
 list="${CLAUDE_RC_PROJECTS:-$HOME/.config/claude-rc/projects}"
 

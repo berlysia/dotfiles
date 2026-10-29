@@ -5,6 +5,23 @@
 
 set -euo pipefail
 
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  cat <<'EOF'
+claude-task-list-id - find the task list in ~/.claude/tasks whose first task has the given subject
+
+Usage:
+  claude-task-list-id <subject>
+  claude-task-list-id --help
+
+Prints the directory name (task list ID) on stdout.
+
+Exit codes:
+  0  found
+  1  wrong arguments, ~/.claude/tasks missing, or no match
+EOF
+  exit 0
+fi
+
 if [[ $# -ne 1 ]] || [[ -z "$1" ]]; then
   echo "Usage: claude-task-list-id <subject>" >&2
   exit 1
