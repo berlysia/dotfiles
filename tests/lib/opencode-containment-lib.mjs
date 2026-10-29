@@ -204,9 +204,11 @@ export function findAgentPermissions(json, name) {
   return found;
 }
 
+// Permission keys, not tool names: opencode has no `write` key; `edit` gates
+// the write, edit and apply_patch tools (opencode.ai/docs/permissions).
 const EXPECTED_ACTIONS = {
   read: ["glob", "list", "read"],
-  edit: ["edit", "glob", "list", "read", "write"],
+  edit: ["edit", "glob", "list", "read"],
 };
 
 /**

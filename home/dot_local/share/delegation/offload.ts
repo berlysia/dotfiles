@@ -1050,7 +1050,7 @@ export function buildOpencodeArgv(opts: {
     opts.model,
     "--auto",
     ...(opts.observe === true
-      ? ["--format", "json", "--print-logs", "--log-level", "DEBUG"]
+      ? ["--format", "json", "--print-logs", "--log-level", "debug"]
       : []),
     opts.brief,
   ];

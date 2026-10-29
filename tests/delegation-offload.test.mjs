@@ -1209,7 +1209,7 @@ test("buildOpencodeArgv: observe adds five words before the brief and nothing el
     brief,
     observe: true,
   });
-  const extra = ["--format", "json", "--print-logs", "--log-level", "DEBUG"];
+  const extra = ["--format", "json", "--print-logs", "--log-level", "debug"];
   assert.deepEqual(observed, [...plain.slice(0, -1), ...extra, brief]);
   assert.equal(observed.at(-1), brief);
 });
