@@ -63,3 +63,36 @@ ADR-0057 の変更で、delegation の cli テストは load 7〜8 のときに 
 - `docs/decisions/0055-delegation-ledger.md`
 - `docs/decisions/0057-route-lookahead-and-surplus.md`
 - ADR-0041（usage-line の予想と取得）
+
+## レビュアーの起動と承認の後に route を呼ぶ仕組みが無い
+
+提案・未決。出どころ: dotfiles-feedback 20261029T080322Z-9db55e1a4446。
+
+- **観察**: 2026-10-29 の 1 session（5b0ab66e）で、Document Workflow のレビュアーを model を指定せずに Agent で起動した。メインループが Opus 5.5 なので、レビュアーも Opus で実行した。plan-3 から plan-5 の Round 1 まで、合計で 30 回を超える。
+- `delegation route --kind review` を一度も実行しなかった。後から実行すると、推奨は sonnet だった。
+- 実装の委譲（`--kind impl`）は、plan の承認の後に route を呼んで sonnet に渡せていた。
+- 気づいたきっかけは、利用者の「これオフロードされてる?」という問いだった。
+- model-offloading の rule は読み込まれていた。レビュアーを起動する時点に、思い出させる仕組みが無かった。「実装着手ゲート」の失敗事例と同じ形が、レビューの側で起きた。
+- **送った人の提案**（利用者の発言は「approveされたらdelegation routeを呼ぶことを促したり強制的に呼んだりする仕組みが必要そう」）:
+  - approval-answer-recorder が plan の承認を記録したとき、`delegation route --kind impl` の推奨を出力に添える
+  - plan-review-automation が推奨レビュアーを出すとき、`delegation route --kind review` の推奨の model を同じ出力に添える
+  - Agent の PreToolUse で、レビュアーの subagent_type（logic-validator など）が model なしで起動されたら、route の推奨を示して止めるか警告する
+- 対象: `rules/model-offloading.md`、plan-review-automation、approval-answer-recorder。
+- **未決**: 3 つの提案のうち、どこまで入れるか。PreToolUse で止める案は、route の推奨が codex のときに model なしの起動を止めるべきかも決める。
+
+## delegation record を忘れやすく、後から記録する手がかりも無い
+
+提案・未決。出どころ: dotfiles-feedback 20261029T091133Z-1a330c8ce949。
+
+- **観察**（2026-10-29、dotfiles の 1 session）: plan-5 のレビューで、sonnet のレビュアーを Agent で計 16 回起動した。起動先は `delegation route --kind review` に従った。
+- どの完了の後にも、`[delegation]` で始まる記録を促す行を見なかった。そのため `delegation record` を 1 回も実行していない。
+- 別のセッションから利用者が周知を送ってきて、初めて記録の抜けに気づいた。
+- 記録しようとして `delegation review --since 1` を実行したが、pending の id の一覧は出なかった。`delegation --help` にも、pending の id を並べるコマンドが無い。
+- 記録の契機が、Mod が出す 1 行だけに頼っている。その行が出ない、または読み落とすと、記録は気づかれないまま抜ける。
+- 抜けた記録は lapse になり、route の採用率の比較が偏る。route の出力にも「記録漏れが多い」と出ていた。
+- **送った人の提案**:
+  - pending の委譲を、id・起動時刻・agent の説明つきで並べるコマンド（例: `delegation pending`）を足す
+  - 承認・stamp・triage の記録の時点で、その session の pending の件数を出す。あるいは workflow-cli の stamp や triage が、record を促す行を出す
+  - `[delegation]` の行が出る条件を確かめる
+- 対象: delegation CLI、delegation-budget Mod。
+- **未決**: 今回、sonnet の Agent の完了の後に行が 1 回も出なかった原因は分かっていない。Mod の条件を読むところから始める。
