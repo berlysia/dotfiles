@@ -23,6 +23,7 @@ master の `06a6d373` で、各テストを 1 回ずつ計測した。
 
 - `tests/formal-check.test.mjs` は、単独で 25.1 秒かかった。プロセスを起動するテストが、1 件あたり 1.3 秒から 2.5 秒かかる。時間切れを確かめるテストは、1 件あたり 1.5 秒かかる
 - `home/dot_claude/hooks/tests/unit/japanese-check.test.ts` は、単独で 12.2 秒かかった。どこに時間がかかるかは調べていない
+- `home/dot_claude/hooks/tests/unit/reviewer-codex-run.test.ts` は、2026-10-29 に master の `9ed8bb01` で単独で 3 回計測し、3.81 秒から 3.88 秒かかった。テストごとに `bun` でスクリプトを起動するためである。引数の検査のテストは関数の呼び出しに替えたが、タイムアウトやプロセスグループのテストは起動を要する
 
 heavy では、`home/dot_claude/hooks/tests/heavy/completion-gate.test.ts:154` が 1 回失敗した。
 pid が 1000 ms 以内にファイルへ書かれず、そのときの load average は 3.64 だった。

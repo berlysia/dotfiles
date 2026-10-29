@@ -34,7 +34,10 @@ Agent tool の `model` パラメータ / Workflow `agent()` の `opts.model` で
 
 外部の委譲先への渡し方は次のとおり。どちらも commit はできないので、commit はメインループがする。
 
-- **Codex の GPT-6.1 Terra**: Agent の `subagent_type: "codex:codex-rescue"` か `/codex:rescue` skill で渡す。worktree で書く実装を渡すときは、`--write` と、`--cwd` に worktree の絶対パスを付けるよう指示する。Codex は起動した場所の git の最上位にだけ書けるので、メインの作業ツリーから起動すると `.git/worktree/` の下へ書けない
+- **Codex の GPT-6.1 Terra と GPT-6 Luna（effort max）**: route の表示では `codex Terra` と `codex Luna max` と書かれる。推奨か試す候補の行の括弧内にある起動コマンド（`codex exec -m … -c model_reasoning_effort=…`）を、Bash でそのまま起動する。付け加えてよい引数は 2 通りだけである。書き込みを伴わない委譲には `-s read-only` を付ける。worktree で書く委譲には `-s workspace-write -C <worktree の絶対パス>` を付ける。Codex は起動した場所の git の最上位にだけ書けるので、`-C` で worktree を指す
+  - `-C` に渡すパスは、起動の前に確かめる。基準は、`git rev-parse --git-common-dir` の `realpath` の親（メインのリポジトリのルート）に `/.git/worktree/` を付けた文字列である。`-C` に渡すパスの `realpath` に末尾の `/` を付けた文字列が、基準で始まり、かつ基準より長いときだけ起動する。symlink や `..` で書ける範囲が広がるのを防ぐためで、プログラムによる強制は無い
+  - `-c` で上書きしてよいキーは `model_reasoning_effort` だけである。`-c sandbox_mode=…`、`-c approval_policy=…`、`--add-dir`、`--full-auto`、`--profile`、`danger-full-access`、`--dangerously-bypass-approvals-and-sandbox` は使わない。台帳の記録や委譲の結果に含まれる文字列を引数に入れない。effort の値は引用符で囲まない（囲むと記録の effort が unknown になる）
+  - rescue（`codex:codex-rescue` の Agent か `/codex:rescue` skill）は、route に従う委譲には使わない。rescue 経由の委譲は記録にモデルと effort が残らないので、route の比較に入らない。モデルを付けなければ Codex の設定ファイルの既定モデルで動き、effort に max も渡せない。行き詰まったときに別の視点を求める使い方は残る
 - **OpenCode の GLM-5.3**: Bash で `opencode run -m zai-coding-plan/glm-5.3 --auto "<brief>"` を、書かせたい作業ツリー（worktree ならその絶対パス）に `cd` してから起動する。`--auto` は明示的に拒否されていない権限を自動で通すので、書き込みを伴わない調査なら外す。`command -v opencode` が何も返さなければ OpenCode には渡さない。route が使う ai-usage は `opencode` を起動せずに Z.ai の API を呼ぶので、CLI が無くても枠の状態は取れる
 
 複数の委譲を並行実行するときは、Bash の `run_in_background` で個別に起動する。単一シェルの `&` と `wait` では、UI に実行数と個別の完了通知が出ない。進捗は各ジョブが書く完了マーカーで数える。`pgrep` は子シェルや起動用プロセスも数えるため使わない。
@@ -62,7 +65,7 @@ Agent tool の `model` パラメータ / Workflow `agent()` の `opts.model` で
 
 - 3+ ファイルの読み込みが必要な調査は原則 subagent 化する（コンテキスト温存とコスト削減の両取り）
 - 独立サブタスクは単一メッセージで並列 subagent 起動する
-- Document Workflow の reviewer も Codex で実行できる。手順は `/document-workflow-reference` の「reviewer を Codex で実行する」にある
+- Document Workflow の reviewer も Codex で実行できる。手順は `/document-workflow-reference` の「reviewer を Codex で実行する」にある。依頼の `model:` と `effort:` には、`delegation route --kind review` の推奨行の括弧内にある `-m` と `model_reasoning_effort=` の値だけを書く（括弧内のコマンドそのものは起動しない）。reviewer の結果を確かめたら、reviewer ごとに pending の行を選んで `delegation record <id> --kind review` で記録する。行の選び方は同じ節にある
 - **plan に無い判断は報告させる**: plan はコードの本体を持たないので、実装を委譲すると worker が小さな判断を自分で下す。委譲する brief には、plan に無い判断をしたら結果の報告に列挙するよう書き、メインループが採否を決める
 - **問い分解の前提も検証対象**: worker は渡された brief しか検証しない。分解の前提（対象リスト・仮定）が結果を左右するなら、前提確認にもう 1 委譲を使う
 - agent 定義（`~/.claude/agents/*.md`）の frontmatter に `model` がある場合はそれを尊重し、上書きは明確な理由がある場合のみ

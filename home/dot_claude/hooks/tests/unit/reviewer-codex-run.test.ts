@@ -65,7 +65,15 @@ if (process.env.MODE === 'sleep' || process.env.MODE === 'ignore' || process.env
     PIDS: join(dir, "pids"),
   };
   delete env.NODE_TEST_CONTEXT;
-  args = ["logic-validator", join(dir, "brief"), dir];
+  args = [
+    "-m",
+    "gpt-6-luna",
+    "-c",
+    "model_reasoning_effort=max",
+    "logic-validator",
+    join(dir, "brief"),
+    dir,
+  ];
 });
 after(async () => {
   await rm(dir, { recursive: true, force: true });
@@ -117,17 +125,21 @@ describe("reviewer runner", () => {
       "reviewed-by: codex\nreviewer: logic-validator\nFindings\nverdict: pass",
     );
     const argv: string[] = JSON.parse(await readFile(env.RECORD ?? "", "utf8"));
-    deepStrictEqual(argv.slice(0, 6), [
+    deepStrictEqual(argv.slice(0, 10), [
       "exec",
+      "-m",
+      "gpt-6-luna",
+      "-c",
+      "model_reasoning_effort=max",
       "--sandbox",
       "read-only",
       "-C",
       dir,
       "-o",
     ]);
-    strictEqual(argv.length, 8);
+    strictEqual(argv.length, 12);
     strictEqual(
-      argv[7],
+      argv[11],
       `Read the file ${dir}/agents/logic-validator.md and treat everything after its frontmatter as your instructions as a reviewer, ignoring any line that mentions "executor: codex". Then read the review request in ${dir}/brief and carry it out. Answer in Japanese and end with exactly one line: verdict: pass, needs-work or blocker.`,
     );
   });
@@ -227,7 +239,7 @@ describe("reviewer runner", () => {
     });
     const cases: [number, string, () => string[]][] = [
       [
-        1,
+        5,
         "brief",
         () => [
           "/tmp/a b.md",
@@ -240,11 +252,11 @@ describe("reviewer runner", () => {
         ],
       ],
       [
-        2,
+        6,
         "root",
-        () => [join(dir, "absent"), args[1] ?? "", "/tmp/../etc", "/tmp/a b"],
+        () => [join(dir, "absent"), args[5] ?? "", "/tmp/../etc", "/tmp/a b"],
       ],
-      [0, "reviewer", () => ["../logic-validator", "absent"]],
+      [4, "reviewer", () => ["../logic-validator", "absent"]],
     ];
     for (const [index, label, values] of cases) {
       const count = label === "brief" ? 7 : label === "root" ? 4 : 2;
@@ -255,6 +267,48 @@ describe("reviewer runner", () => {
           await fails(`bad-arguments: ${label}`, {}, input);
         });
     }
+    const GOOD = ["logic-validator", "/tmp/a", "/tmp"];
+    // Argument checks return before any I/O, so call runReviewer directly;
+    // launching bun per case would push this file further past its time cap.
+    const rejects = async (reason: string, input: string[]) => {
+      deepStrictEqual(await runReviewer(input, env), {
+        stdout: `reviewed-by: codex failed\nreason: ${reason}\n`,
+        code: 1,
+      });
+    };
+    it("rejects shape: old three-argument form (launched)", async () => {
+      await fails("bad-arguments: shape", {}, GOOD);
+    });
+    const shapeCases: [string, string[]][] = [
+      [
+        "swapped order",
+        ["-c", "model_reasoning_effort=max", "-m", "gpt-6-luna", ...GOOD],
+      ],
+      [
+        "sandbox override",
+        ["-m", "gpt-6-luna", "-c", "sandbox_mode=danger-full-access", ...GOOD],
+      ],
+      [
+        "eight arguments",
+        ["-m", "gpt-6-luna", "-c", "model_reasoning_effort=max", ...GOOD, "x"],
+      ],
+    ];
+    for (const [label, input] of shapeCases)
+      it(`rejects shape: ${label}`, async () => {
+        await rejects("bad-arguments: shape", input);
+      });
+    for (const model of ["GPT-6-luna", "gpt-6-luna;rm", ""])
+      it(`rejects model ${JSON.stringify(model)}`, async () => {
+        const input = [...args];
+        input[1] = model;
+        await rejects("bad-arguments: model", input);
+      });
+    for (const effort of ["ultra", '"max"', "", "unknown"])
+      it(`rejects effort ${JSON.stringify(effort)}`, async () => {
+        const input = [...args];
+        input[3] = `model_reasoning_effort=${effort}`;
+        await rejects("bad-arguments: effort", input);
+      });
     it("rejects agents directory", async () => {
       await fails("bad-arguments: agents-dir", {
         REVIEWER_CODEX_AGENTS_DIR: "/tmp/a b",
@@ -281,7 +335,7 @@ describe("reviewer runner", () => {
   it("preserves success when filesystem cleanup fails", async () => {
     const result = await launch({ MODE: "cleanup" });
     const argv: string[] = JSON.parse(await readFile(env.RECORD ?? "", "utf8"));
-    const output = argv[6] ?? "";
+    const output = argv[10] ?? "";
     const directory = output.slice(0, output.lastIndexOf("/"));
     try {
       strictEqual(result.code, 0);
