@@ -1,6 +1,6 @@
 /**
- * Delegation destinations. Imports constants.ts only, so the offload entry
- * point can read the table without pulling in route.ts.
+ * Delegation destinations. Imports nothing, so the offload entry point can
+ * read the tables without pulling in route.ts.
  */
 
 export type DestinationName =
@@ -91,3 +91,48 @@ export const FREE_DESTINATIONS: readonly FreeDestination[] = [
     sendsOut: true,
   },
 ];
+
+/**
+ * Models the offload entry accepts: the `match.model` of every sendsOut row in
+ * both tables. A sendsOut row without a model would widen the allowance to
+ * every model, so it throws instead.
+ */
+export function sendsOutModels(): string[] {
+  const models = new Set<string>();
+  const rows: {
+    name: string;
+    sendsOut: boolean;
+    model: string | undefined;
+  }[] = [
+    ...Object.values(DESTINATIONS).map((d) => ({
+      name: d.name,
+      sendsOut: d.sendsOut,
+      model: d.match.model,
+    })),
+    ...FREE_DESTINATIONS.map((d) => ({
+      name: d.name,
+      sendsOut: d.sendsOut,
+      model: d.match.model,
+    })),
+  ];
+  for (const row of rows) {
+    if (!row.sendsOut) continue;
+    if (row.model === undefined) {
+      throw new Error(`sendsOut destination without a model: ${row.name}`);
+    }
+    models.add(row.model);
+  }
+  return [...models].sort();
+}
+
+/**
+ * Providers whose stored credentials may exist when the offload entry
+ * starts opencode: the part before the first slash of each accepted model.
+ */
+export function allowedAuthProviders(): string[] {
+  const providers = new Set<string>();
+  for (const model of sendsOutModels()) {
+    providers.add(model.slice(0, model.indexOf("/")));
+  }
+  return [...providers].sort();
+}

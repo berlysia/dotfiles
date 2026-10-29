@@ -14,6 +14,10 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
+import {
+  groupsForCell,
+  lapseGroups,
+} from "../home/dot_local/share/delegation/aggregate.ts";
 import { captureBash } from "../home/dot_local/share/delegation/capture.ts";
 import {
   appendLedger,
@@ -125,6 +129,95 @@ describe("delegation cli (process)", { concurrency: 4 }, () => {
     }
   });
 
+  it("open: delegation offload becomes an opencode pending that record accepts", async () => {
+    const sb = sandbox();
+    try {
+      const r = await sb.open({
+        tool: "Bash",
+        tool_use_id: "tu-off",
+        sessionId: "s1",
+        command:
+          "delegation offload --exposure external-ok --model opencode/glm-5.3-flash-free --brief-file /x/b.md --write",
+      });
+      assert.equal(r.status, 0, r.stderr);
+      assert.match(
+        r.stdout,
+        /^d-[0-9a-f]{12} opencode opencode\/glm-5\.3-flash-free unknown\n$/,
+      );
+      const id = idOf(r);
+      const rec = await sb.run([
+        "record",
+        id,
+        "--verdict",
+        "adopted",
+        "--kind",
+        "mechanical",
+        "--size",
+        "S",
+      ]);
+      assert.equal(rec.status, 0, rec.stderr);
+      const row = foldLedger(readLedger(sb.store()).rows).delegations[0];
+      assert.equal(row.kind, "mechanical");
+      assert.equal(row.size, "S");
+      assert.deepEqual(row.invocation, [
+        "delegation offload",
+        "opencode:--agent=worktree-edit",
+      ]);
+    } finally {
+      sb.done();
+    }
+  });
+
+  it("a lapsed offload pending counts as a lapse, not in the adoption denominator, and old rows still load", async () => {
+    const sb = sandbox();
+    try {
+      const old = idOf(
+        await sb.open({
+          tool: "Bash",
+          tool_use_id: "tu-old",
+          sessionId: "s1",
+          command: 'opencode run -m zai-coding-plan/glm-5.3 "x"',
+        }),
+      );
+      assert.equal((await sb.run(["record", old, ...REC])).status, 0);
+      const id = idOf(
+        await sb.open({
+          tool: "Bash",
+          tool_use_id: "tu-new",
+          sessionId: "s1",
+          command:
+            "delegation offload --exposure external-ok --model zai-coding-plan/glm-5.3 --brief-file /x/b.md",
+        }),
+      );
+      assert.equal((await sb.run(["lapse", id])).status, 0);
+      const folded = foldLedger(readLedger(sb.store()).rows);
+      assert.equal(folded.delegations.length, 1);
+      assert.equal(folded.lapses.length, 1);
+      const groups = groupsForCell(
+        folded,
+        "impl",
+        "M",
+        new Date("2026-10-29T00:00:00.000Z"),
+        30,
+      );
+      assert.equal(
+        groups.reduce((n, g) => n + g.n, 0),
+        1,
+      );
+      const lapsed = lapseGroups(
+        folded,
+        new Date("2026-10-29T00:00:00.000Z"),
+        30,
+      );
+      assert.equal(
+        lapsed.reduce((n, g) => n + g.lapses, 0),
+        1,
+      );
+    } finally {
+      sb.done();
+    }
+  });
+
   it("open: codex exec and reviewer-codex-run are codex-cli", async () => {
     const sb = sandbox();
     try {
@@ -200,6 +293,20 @@ describe("delegation cli (process)", { concurrency: 4 }, () => {
         assert.match(r.stdout, /Usage: delegation/);
         assert.equal(r.stderr, "");
       }
+      assert.equal(readLedger(sb.store()).rows.length, 0);
+    } finally {
+      sb.done();
+    }
+  });
+
+  it("offload is dispatched and documented; a refusal leaves the ledger alone", async () => {
+    const sb = sandbox();
+    try {
+      const help = await sb.run(["--help"]);
+      assert.match(help.stdout, /^\s*offload --exposure external-ok/m);
+      const r = await sb.run(["offload"]);
+      assert.equal(r.status, 1);
+      assert.match(r.stderr, /拒否（args）/);
       assert.equal(readLedger(sb.store()).rows.length, 0);
     } finally {
       sb.done();

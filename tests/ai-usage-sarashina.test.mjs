@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createServer } from "node:http";
-import { mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, afterEach, before, beforeEach, describe, it } from "node:test";
@@ -36,16 +37,56 @@ after(() => {
   server.close();
 });
 
+// The key comes from opencode's stored credentials (HOME/.local/share/opencode/opencode.db).
+function writeCredentialDb(home, rows, { createTable = true } = {}) {
+  const dir = join(home, ".local", "share", "opencode");
+  mkdirSync(dir, { recursive: true });
+  const db = new DatabaseSync(join(dir, "opencode.db"));
+  if (createTable) {
+    db.exec(
+      "CREATE TABLE credential (integration_id TEXT, value TEXT, active INTEGER, time_updated INTEGER)",
+    );
+    const insert = db.prepare(
+      "INSERT INTO credential (integration_id, value, active, time_updated) VALUES (?, ?, ?, ?)",
+    );
+    for (const r of rows) {
+      insert.run(
+        r.id ?? "sarashina",
+        typeof r.value === "string" ? r.value : JSON.stringify(r.value),
+        r.active ?? 1,
+        r.t ?? 1,
+      );
+    }
+  }
+  db.close();
+}
+const keyRow = (key, extra = {}) => ({ value: { key }, ...extra });
+
+let savedHome;
 let savedKey;
+let fakeHome;
 beforeEach(() => {
   requests = [];
+  savedHome = process.env.HOME;
   savedKey = process.env.SARASHINA_API_KEY;
-  process.env.SARASHINA_API_KEY = KEY;
+  delete process.env.SARASHINA_API_KEY;
+  fakeHome = realpathSync(mkdtempSync(join(tmpdir(), "sarashina-home-")));
+  process.env.HOME = fakeHome;
+  writeCredentialDb(fakeHome, [keyRow(KEY)]);
 });
 afterEach(() => {
+  process.env.HOME = savedHome;
   if (savedKey === undefined) delete process.env.SARASHINA_API_KEY;
   else process.env.SARASHINA_API_KEY = savedKey;
+  rmSync(fakeHome, { recursive: true, force: true });
 });
+const resetDb = (rows, opts) => {
+  rmSync(join(fakeHome, ".local", "share", "opencode"), {
+    recursive: true,
+    force: true,
+  });
+  writeCredentialDb(fakeHome, rows, opts);
+};
 
 const json =
   (status, body, headers = {}) =>
@@ -63,15 +104,55 @@ const rejection = async (opts = OPTS, url = `${base}/v1/models`) => {
 };
 
 describe("fetchSarashinaUsage", () => {
-  it("no key: configured false, no request", async () => {
-    for (const value of [undefined, "", "  \n"]) {
-      if (value === undefined) delete process.env.SARASHINA_API_KEY;
-      else process.env.SARASHINA_API_KEY = value;
+  it("no usable key: configured false, no request", async () => {
+    const cases = [
+      [],
+      [keyRow(KEY, { active: 0 })],
+      [{ value: "not json" }],
+      [{ value: { key: 7 } }],
+      [{ id: "other", value: { key: KEY } }],
+    ];
+    for (const rows of cases) {
+      resetDb(rows);
       assert.deepEqual(await fetchSarashinaUsage(OPTS, `${base}/v1/models`), {
         configured: false,
       });
     }
+    rmSync(join(fakeHome, ".local"), { recursive: true });
+    assert.deepEqual(await fetchSarashinaUsage(OPTS, `${base}/v1/models`), {
+      configured: false,
+    });
     assert.equal(requests.length, 0);
+  });
+
+  it("the env SARASHINA_API_KEY is not read", async () => {
+    resetDb([]);
+    process.env.SARASHINA_API_KEY = KEY;
+    assert.deepEqual(await fetchSarashinaUsage(OPTS, `${base}/v1/models`), {
+      configured: false,
+    });
+    assert.equal(requests.length, 0);
+  });
+
+  it("the newest active row wins", async () => {
+    resetDb([keyRow("old" + KEY, { t: 1 }), keyRow("new" + KEY, { t: 3 })]);
+    handler = json(200, MODELS);
+    await fetchSarashinaUsage(OPTS, `${base}/v1/models`);
+    assert.equal(requests[0].auth, `Bearer new${KEY}`);
+  });
+
+  it("a credential table that is missing is a fixed-message failure", async () => {
+    resetDb([], { createTable: false });
+    const error = await rejection();
+    assert.equal(error.message, "opencode credential store unreadable");
+    assert.equal(error.message.includes(fakeHome), false);
+  });
+
+  it("an unusable value never appears in an error", async () => {
+    resetDb([{ value: "secret-not-json" }]);
+    assert.deepEqual(await fetchSarashinaUsage(OPTS, base), {
+      configured: false,
+    });
   });
 
   it("200: sends the key as a bearer and reports whether the model is listed", async () => {
@@ -200,9 +281,10 @@ describe("fetchSarashinaUsage", () => {
       "kあsecret",
       "x".repeat(513),
     ]) {
-      process.env.SARASHINA_API_KEY = bad;
+      resetDb([keyRow(bad)]);
       const error = await rejection();
-      assert.equal(error.message, "invalid SARASHINA_API_KEY format");
+      assert.equal(error.message, "invalid sarashina credential format");
+      assert.equal(error.message.includes("secret"), false);
     }
     assert.equal(requests.length, 0);
   });
@@ -219,7 +301,8 @@ describe("ai-usage process: the key never leaves through output", () => {
   // process call the real api.sarashina.ai.
   const run = (args, key) => {
     const env = { PATH: process.env.PATH, HOME: home };
-    if (key !== undefined) env.SARASHINA_API_KEY = key;
+    rmSync(join(home, ".local"), { recursive: true, force: true });
+    if (key !== undefined) writeCredentialDb(home, [keyRow(key)]);
     return spawnSync(process.execPath, [main, ...args], {
       encoding: "utf8",
       env,
@@ -235,7 +318,7 @@ describe("ai-usage process: the key never leaves through output", () => {
         assert.equal(r.status, 1);
         const seen = `${r.stdout}\n${r.stderr}`;
         assert.equal(seen.includes("secret"), false, seen);
-        assert.match(seen, /invalid SARASHINA_API_KEY format/);
+        assert.match(seen, /invalid sarashina credential format/);
       }
     });
   }
@@ -248,6 +331,11 @@ describe("ai-usage process: the key never leaves through output", () => {
       const parsed = JSON.parse(r.stdout);
       assert.equal(parsed.providers.sarashina.ok, false);
     }
+  });
+
+  it("a stored key never reaches output", () => {
+    const r = run(["sarashina"], "k\nsecret");
+    assert.equal(`${r.stdout}${r.stderr}`.includes("secret"), false);
   });
 
   it("no key: ok, exit 0, no windows and no unmetered", () => {

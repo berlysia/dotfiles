@@ -1,4 +1,10 @@
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { type FetchOpts, isRecord } from "../lib.ts";
+import {
+  readOpencodeCredentialKey,
+  SARASHINA_INTEGRATION_ID,
+} from "../opencode-credential.ts";
 
 /**
  * Sarashina publishes no usage, balance or rate-limit headers; the only limit
@@ -64,10 +70,13 @@ export async function fetchSarashinaUsage(
   opts: FetchOpts,
   url: string = SARASHINA_MODELS_URL,
 ): Promise<Record<string, unknown>> {
-  const key = process.env.SARASHINA_API_KEY?.trim() ?? "";
-  if (key === "") return { configured: false };
+  // The key is opencode's stored credential, not an env var: the offload entry
+  // runs opencode with the same stored credential, so both see one key.
+  const dbPath = join(homedir(), ".local", "share", "opencode", "opencode.db");
+  const key = readOpencodeCredentialKey(dbPath, SARASHINA_INTEGRATION_ID);
+  if (key === undefined) return { configured: false };
   if (!KEY_PATTERN.test(key))
-    throw new Error("invalid SARASHINA_API_KEY format");
+    throw new Error("invalid sarashina credential format");
 
   let res: Response;
   try {

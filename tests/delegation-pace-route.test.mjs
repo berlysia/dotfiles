@@ -655,7 +655,7 @@ describe("delegation route / review (process)", { concurrency: 4 }, () => {
         }
         seed(sb.store, {
           harness: "opencode",
-          model: "unknown",
+          model: "zai-coding-plan/glm-5.3",
           effort: "unknown",
           size: "S",
           adopted: 5,
@@ -1828,7 +1828,17 @@ describe("review: new thresholds", () => {
 
 const TERRA = { harness: "codex-cli", model: "gpt-6.1-terra" };
 const LUNA = { harness: "codex-cli", model: "gpt-6-luna", effort: "max" };
-const OPENCODE = { harness: "opencode", model: "unknown", effort: "unknown" };
+const OPENCODE = {
+  harness: "opencode",
+  model: "zai-coding-plan/glm-5.3",
+  effort: "unknown",
+};
+// Same harness, but a model no destination counts (the records stay apart).
+const OPENCODE_UNKNOWN = {
+  harness: "opencode",
+  model: "unknown",
+  effort: "unknown",
+};
 const SONNET_61 = { adopted: 5, discarded: 1 };
 const S_ROUTE = ["route", "--kind", "impl", "--size", "S"];
 const MECH_ROUTE = ["route", "--kind", "mechanical", "--size", "M"];
@@ -2571,7 +2581,7 @@ describe("route output: sarashina", () => {
     const base = [
       { ...TERRA, size: "S", adopted: 5 },
       { ...LUNA, size: "S", adopted: 5 },
-      { ...OPENCODE, size: "S", adopted: 4 },
+      { ...OPENCODE_UNKNOWN, size: "S", adopted: 4 },
     ];
     const explore = (extra) =>
       candidate(
