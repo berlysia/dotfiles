@@ -1,0 +1,59 @@
+{
+  "file": {
+    "v": 1,
+    "at": 1793236800000,
+    "windows": {
+      "five_hour": {
+        "resetsAt": 1793250000,
+        "forecast": {
+          "status": "spare",
+          "reason": null,
+          "averagePeriodMs": 3600000,
+          "observedMs": 3600000,
+          "ratePerHour": 4.5,
+          "projectedUsedPercent": 30,
+          "exhaustionAt": null
+        }
+      },
+      "seven_day": {
+        "resetsAt": 1793760000,
+        "forecast": {
+          "status": "spare",
+          "reason": null,
+          "averagePeriodMs": 86400000,
+          "observedMs": 12600000,
+          "ratePerHour": 3.17,
+          "projectedUsedPercent": 62.5,
+          "exhaustionAt": null
+        }
+      }
+    }
+  },
+  "dirCases": [
+    { "env": { "XDG_RUNTIME_DIR": "/run/user/1000" }, "dir": "/run/user/1000" },
+    {
+      "env": { "XDG_RUNTIME_DIR": "/run/user/1000/" },
+      "dir": "/run/user/1000"
+    },
+    { "env": { "XDG_RUNTIME_DIR": "/run/../etc" }, "dir": null },
+    { "env": { "XDG_RUNTIME_DIR": "" }, "dir": null },
+    { "env": { "XDG_RUNTIME_DIR": "rel/x" }, "dir": null },
+    {
+      "env": { "XDG_RUNTIME_DIR": "", "TMPDIR": "/var/folders/ab/cd/T/" },
+      "dir": "/var/folders/ab/cd/T"
+    },
+    {
+      "env": { "TMPDIR": "/var/folders/ab/cd/T" },
+      "dir": "/var/folders/ab/cd/T"
+    },
+    { "env": { "TMPDIR": "/tmp" }, "dir": null },
+    {
+      "env": {
+        "XDG_RUNTIME_DIR": "/run/user/1000",
+        "TMPDIR": "/var/folders/ab/cd/T"
+      },
+      "dir": "/run/user/1000"
+    },
+    { "env": {}, "dir": null }
+  ]
+}

@@ -4,7 +4,14 @@
  * file formats live in schema.ts / store.ts.
  */
 import { readSync } from "node:fs";
-import { captureAgent, captureBash, type Captured } from "./capture.ts";
+import {
+  agentsDirFrom,
+  captureAgent,
+  captureAgentFromDefinition,
+  captureBash,
+  readAgentModel,
+  type Captured,
+} from "./capture.ts";
 import {
   DEFAULT_SINCE_DAYS,
   PENDING_LIMIT,
@@ -51,7 +58,18 @@ import {
   lapseStalePendings,
   type Store,
 } from "./store.ts";
-import { fetchUsage, loadWindowMins, paceProvider } from "./pace.ts";
+import {
+  forecastDir,
+  readForecast,
+  type ForecastRead,
+} from "./forecast-file.ts";
+import {
+  applyLookahead,
+  fetchUsage,
+  loadWindowMins,
+  paceProvider,
+  surplusPoints,
+} from "./pace.ts";
 import { buildRoute } from "./route.ts";
 import { buildReview } from "./review.ts";
 
@@ -167,11 +185,21 @@ function cmdOpen(now: Date): number {
     const subagentType = optionalString(input.subagent_type);
     const model = optionalString(input.model);
     const effort = optionalString(input.effort);
-    captured = captureAgent({
-      ...(subagentType !== undefined ? { subagentType } : {}),
-      ...(model !== undefined ? { model } : {}),
-      ...(effort !== undefined ? { effort } : {}),
-    });
+    if (model === undefined && subagentType !== "codex:codex-rescue") {
+      // No model on the call: the agent definition decides. Anything short of a
+      // readable, accepted model exits 1 before the store opens, and silently,
+      // since this is the expected answer for built-in agents.
+      const dir = agentsDirFrom(process.env);
+      const fromDef = dir === null ? null : readAgentModel(dir, subagentType);
+      if (fromDef === null || subagentType === undefined) return 1;
+      captured = captureAgentFromDefinition(subagentType, fromDef, effort);
+    } else {
+      captured = captureAgent({
+        ...(subagentType !== undefined ? { subagentType } : {}),
+        ...(model !== undefined ? { model } : {}),
+        ...(effort !== undefined ? { effort } : {}),
+      });
+    }
   } else if (input.tool === "Bash" && typeof input.command === "string") {
     captured = captureBash(input.command);
   } else {
@@ -472,8 +500,25 @@ async function cmdRoute(args: Args, now: Date): Promise<number> {
   const pendings = listPending(store);
   const usage = fetchUsage(process.env);
   const mins = await loadWindowMins();
+  const claudeWeek = usage.claude?.weekly ?? null;
+  const resetsAtMs =
+    claudeWeek?.resetsAt == null ? Number.NaN : Date.parse(claudeWeek.resetsAt);
+  // readForecast does not throw; the guard keeps an unexpected failure from
+  // reaching the top-level catch, which would print the message.
+  let forecast: ForecastRead;
+  try {
+    forecast = readForecast(
+      forecastDir(process.env),
+      now,
+      Number.isFinite(resetsAtMs) ? resetsAtMs : null,
+    );
+  } catch {
+    forecast = { ok: false, reason: "no-dir" };
+  }
+  const claudePace = paceProvider(usage.claude, now, mins);
+  const applied = applyLookahead(claudePace, claudeWeek, forecast, now, mins);
   const paces = {
-    claude: paceProvider(usage.claude, now, mins),
+    claude: applied.pace,
     codex: paceProvider(usage.codex, now, mins),
     opencode: paceProvider(usage.opencode, now, mins),
   };
@@ -483,6 +528,12 @@ async function cmdRoute(args: Args, now: Date): Promise<number> {
     now,
     folded: foldLedger(ledger.rows),
     paces,
+    claudeAheadBy: applied.aheadBy,
+    lookahead: applied.lookahead,
+    surplus: {
+      codex: surplusPoints(usage.codex?.weekly ?? null, now, mins),
+      opencode: surplusPoints(usage.opencode?.weekly ?? null, now, mins),
+    },
     pendingTotal: pendings.length,
     pendingSession:
       session === undefined

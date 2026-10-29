@@ -9,6 +9,7 @@ import {
   readdirSync,
   rmSync,
   symlinkSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -35,10 +36,15 @@ function sandbox() {
   mkdirSync(home);
   const env = { HOME: home, XDG_DATA_HOME: join(root, "xdg") };
   const T0 = "2026-10-29T00:00:00.000Z";
-  const run = (args, { input, now = T0 } = {}) =>
+  const run = (args, { input, now = T0, extraEnv = {} } = {}) =>
     new Promise((resolve) => {
       const child = spawn(process.execPath, [main, ...args], {
-        env: { PATH: process.env.PATH, ...env, DELEGATION_NOW: now },
+        env: {
+          PATH: process.env.PATH,
+          ...env,
+          DELEGATION_NOW: now,
+          ...extraEnv,
+        },
       });
       let stdout = "";
       let stderr = "";
@@ -703,6 +709,139 @@ describe("delegation cli (process)", { concurrency: 4 }, () => {
         r.stdout,
         /^d-[0-9a-f]{12} claude-code-agent sonnet high\n$/,
       );
+    } finally {
+      sb.done();
+    }
+  });
+});
+
+// Agent definitions decide the model when the call carries none. Only the
+// entrypoint wiring is exercised here; the parsing boundaries are in
+// delegation-capture.test.mjs.
+describe("delegation cli: model from the agent definition", () => {
+  const noModel = (extra = {}) => ({
+    tool: "Agent",
+    tool_use_id: "tu1",
+    sessionId: "s1",
+    subagent_type: "logic-validator",
+    ...extra,
+  });
+  const withDefs = (files = { "logic-validator": "model: sonnet" }) => {
+    const sb = sandbox();
+    const dir = join(sb.root, "agents");
+    mkdirSync(dir);
+    for (const [name, line] of Object.entries(files)) {
+      writeFileSync(join(dir, `${name}.md`), `---\n${line}\n---\nbody\n`);
+    }
+    const open = (payload, extraEnv = { DELEGATION_AGENTS_DIR: dir }) =>
+      sb.open(payload, { extraEnv });
+    return { sb, dir, open };
+  };
+  const refused = (r) => {
+    assert.equal(r.status, 1);
+    assert.equal(r.stderr, "");
+  };
+
+  it("sonnet from the definition; same id twice is one pending; a removed definition then exits 1", async () => {
+    const { sb, dir, open } = withDefs();
+    try {
+      const r = await open(noModel({ effort: "high" }));
+      assert.equal(r.status, 0, r.stderr);
+      assert.equal(r.stderr, "");
+      const [p] = listPending(sb.store());
+      assert.equal(p.model, "sonnet");
+      assert.equal(p.effort, "high");
+      assert.deepEqual(p.invocation, ["subagent:logic-validator"]);
+      assert.equal((await open(noModel({ effort: "high" }))).status, 0);
+      assert.equal(listPending(sb.store()).length, 1);
+      rmSync(join(dir, "logic-validator.md"));
+      refused(await open(noModel({ effort: "high" })));
+      assert.equal(listPending(sb.store()).length, 1);
+    } finally {
+      sb.done();
+    }
+  });
+
+  it("without DELEGATION_AGENTS_DIR it reads HOME/.claude/agents", async () => {
+    const sb = sandbox();
+    try {
+      const dir = join(sb.env.HOME, ".claude", "agents");
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "x.md"), "---\nmodel: haiku\n---\n");
+      const r = await sb.open(noModel({ subagent_type: "x" }));
+      assert.equal(r.status, 0, r.stderr);
+      const [p] = listPending(sb.store());
+      assert.equal(p.model, "haiku");
+      assert.equal(p.effort, "unknown");
+    } finally {
+      sb.done();
+    }
+  });
+
+  it("no model and no subagent_type exits 1 silently", async () => {
+    const { sb, open } = withDefs();
+    try {
+      refused(
+        await open({ tool: "Agent", tool_use_id: "tu1", sessionId: "s1" }),
+      );
+      assert.equal(listPending(sb.store()).length, 0);
+    } finally {
+      sb.done();
+    }
+  });
+
+  it("a malformed DELEGATION_AGENTS_DIR does not fall back to HOME", async () => {
+    const sb = sandbox();
+    try {
+      const dir = join(sb.env.HOME, ".claude", "agents");
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(
+        join(dir, "logic-validator.md"),
+        "---\nmodel: sonnet\n---\n",
+      );
+      refused(
+        await sb.open(noModel(), {
+          extraEnv: { DELEGATION_AGENTS_DIR: "rel" },
+        }),
+      );
+      assert.equal(listPending(sb.store()).length, 0);
+    } finally {
+      sb.done();
+    }
+  });
+
+  it("a FIFO definition exits 1 silently without hanging", async () => {
+    const { sb, dir, open } = withDefs({});
+    try {
+      assert.equal(spawnSync("mkfifo", [join(dir, "fifo.md")]).status, 0);
+      const t0 = Date.now();
+      refused(await open(noModel({ subagent_type: "fifo" })));
+      assert.ok(Date.now() - t0 < 3000);
+      assert.equal(listPending(sb.store()).length, 0);
+    } finally {
+      sb.done();
+    }
+  });
+
+  it("a model on the call means the definition is not read", async () => {
+    const { sb, open } = withDefs();
+    try {
+      const r = await open(noModel({ model: "sonnet", subagent_type: "../x" }));
+      assert.equal(r.status, 0, r.stderr);
+      const [p] = listPending(sb.store());
+      assert.equal(p.model, "sonnet");
+      assert.deepEqual(p.invocation, []);
+    } finally {
+      sb.done();
+    }
+  });
+
+  it("a non-string model counts as absent, so the definition answers", async () => {
+    const { sb, open } = withDefs();
+    try {
+      const r = await open(noModel({ model: 3 }));
+      assert.equal(r.status, 0, r.stderr);
+      assert.equal(listPending(sb.store())[0].model, "sonnet");
     } finally {
       sb.done();
     }

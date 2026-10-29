@@ -7,6 +7,22 @@
 /** Weekly pace line: percent = 100 * min(1, (elapsedDays + this) / 7). */
 export const WEEK_LINE_EXTRA_DAYS = 1;
 export const FIVE_HOUR_AHEAD_PERCENT = 90;
+/** Lookahead: the week is ahead when spending at the observed rate for this long crosses the line. */
+export const WEEK_LOOKAHEAD_HOURS = 3;
+/** Lookahead: a forecast observed for less than this is not trusted. */
+export const LOOKAHEAD_MIN_OBSERVED_HOURS = 2;
+/** Forecast file: older than this (by its own `at` and its mtime) is stale. */
+export const FORECAST_MAX_AGE_MINUTES = 25;
+export const FORECAST_FUTURE_SKEW_SECONDS = 60;
+/** Forecast file: the resetsAt of its week may differ from ai-usage's by this much. */
+export const FORECAST_RESETS_TOLERANCE_HOURS = 1;
+/** Forecast file: bounds that keep the printed numbers narrow. */
+export const FORECAST_MAX_RATE = 100;
+export const FORECAST_MAX_OBSERVED_HOURS = 168;
+export const FORECAST_MAX_BYTES = 16 * 1024;
+export const FORECAST_MAX_FILES = 256;
+/** An external whose week has at least this many points unspent by the reset is worth trying. */
+export const SURPLUS_MIN_POINTS = 25;
 /** Rule 1: external adoption rate must beat Claude's by this many points. */
 export const RECORD_GAP_POINTS = 15;
 /** Below this many records a group shows n<5 instead of a rate. */

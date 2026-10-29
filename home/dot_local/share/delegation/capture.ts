@@ -1,4 +1,13 @@
 import {
+  closeSync,
+  constants as fsConstants,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readSync,
+} from "node:fs";
+import { dirname, isAbsolute, join, normalize } from "node:path";
+import {
   CLAUDE_MODELS,
   EFFORTS,
   isOneOf,
@@ -15,7 +24,17 @@ export type Captured = {
 };
 
 const SANDBOXES = ["read-only", "workspace-write", "danger-full-access"];
+// SUBAGENT_RE only labels the invocation, so it allows `:` and `_`. AGENT_DEF_RE
+// builds a file name, so it must not: a plugin agent like `plugin:x` has no
+// file under the agents dir, and `_`/`.`/`/` would widen what can be opened.
 const SUBAGENT_RE = /^[a-z0-9:_-]{1,40}$/;
+const AGENT_DEF_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
+/**
+ * Models an agent definition may pin. Narrower than CLAUDE_MODELS: `inherit`
+ * says nothing about which model ran, so it is not recorded.
+ */
+export const AGENT_DEF_MODELS = ["sonnet", "opus", "haiku", "fable"] as const;
+const AGENT_DEF_MAX_BYTES = 64 * 1024;
 
 /** Shell-ish word splitting; quoting is honoured, nothing is expanded. */
 function tokenize(segment: string): string[] {
@@ -149,5 +168,128 @@ export function captureAgent(input: {
     invocation,
     model: isOneOf(CLAUDE_MODELS, input.model) ? input.model : "unknown",
     effort: effortOf(input.effort),
+  };
+}
+
+/**
+ * Where agent definitions live. A malformed DELEGATION_AGENTS_DIR yields null
+ * rather than falling back to HOME, so a typo cannot silently read elsewhere.
+ */
+export function agentsDirFrom(
+  env: Record<string, string | undefined>,
+): string | null {
+  const override = env.DELEGATION_AGENTS_DIR;
+  if (override !== undefined) {
+    if (
+      isAbsolute(override) &&
+      override !== "/" &&
+      !override.endsWith("/") &&
+      normalize(override) === override
+    ) {
+      return override;
+    }
+    return null;
+  }
+  const home = env.HOME;
+  if (home === undefined || home === "" || !isAbsolute(home)) return null;
+  return join(home, ".claude", "agents");
+}
+
+function stripQuotes(v: string): string {
+  const q = v[0];
+  if ((q === '"' || q === "'") && v.length >= 2 && v.endsWith(q)) {
+    return v.slice(1, -1);
+  }
+  return v;
+}
+
+/**
+ * Reads `model:` from the frontmatter. Two `model:` lines are refused: YAML
+ * parsers disagree on duplicate keys, and recording the other one than the
+ * harness uses would be worse than recording nothing.
+ */
+export function parseAgentModel(text: string): string | null {
+  const body = text.startsWith("\uFEFF") ? text.slice(1) : text;
+  const lines = body
+    .split("\n")
+    .map((l) => (l.endsWith("\r") ? l.slice(0, -1) : l));
+  if (lines[0] !== "---") return null;
+  const end = lines.indexOf("---", 1);
+  if (end === -1) return null;
+  const hits: string[] = [];
+  for (const line of lines.slice(1, end)) {
+    if (!line.startsWith("model:")) continue;
+    const rest = line.slice("model:".length);
+    // `model:sonnet` is one YAML scalar, not a key.
+    if (rest !== "" && rest[0] !== " " && rest[0] !== "\t") continue;
+    hits.push(rest);
+  }
+  if (hits.length !== 1) return null;
+  const value = stripQuotes(
+    (hits[0] as string).replace(/^[ \t]+|[ \t]+$/g, ""),
+  );
+  return isOneOf(AGENT_DEF_MODELS, value) ? value : null;
+}
+
+function readCapped(fd: number): string | null {
+  const chunks: Buffer[] = [];
+  let total = 0;
+  const buf = Buffer.alloc(8192);
+  for (;;) {
+    const n = readSync(fd, buf, 0, buf.length, null);
+    if (n === 0) break;
+    total += n;
+    if (total > AGENT_DEF_MAX_BYTES) return null;
+    chunks.push(Buffer.from(buf.subarray(0, n)));
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+/** Never throws: any failure to read or parse the definition is null. */
+export function readAgentModel(
+  dir: string,
+  subagentType: unknown,
+): string | null {
+  if (typeof subagentType !== "string" || !AGENT_DEF_RE.test(subagentType)) {
+    return null;
+  }
+  const path = join(dir, `${subagentType}.md`);
+  if (dirname(path) !== dir) return null;
+  let fd: number | null = null;
+  try {
+    const l = lstatSync(path);
+    if (!l.isFile() || l.size > AGENT_DEF_MAX_BYTES) return null;
+    fd = openSync(
+      path,
+      fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | fsConstants.O_NONBLOCK,
+    );
+    const f = fstatSync(fd);
+    if (!f.isFile() || f.size > AGENT_DEF_MAX_BYTES) return null;
+    const text = readCapped(fd);
+    return text === null ? null : parseAgentModel(text);
+  } catch {
+    return null;
+  } finally {
+    if (fd !== null) {
+      try {
+        closeSync(fd);
+      } catch {
+        // nothing to recover
+      }
+    }
+  }
+}
+
+/** Same shape as captureAgent, with the model taken from the definition. */
+export function captureAgentFromDefinition(
+  subagentType: string,
+  model: string,
+  effort?: string,
+): Captured {
+  return {
+    harness: "claude-code-agent",
+    invocation: [`subagent:${subagentType}`],
+    model,
+    effort: effortOf(effort),
   };
 }
