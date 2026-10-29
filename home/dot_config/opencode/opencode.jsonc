@@ -1,0 +1,46 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "providers": {
+    // Default model is left untouched so delegation runs (-m zai-coding-plan/...) keep their behavior.
+    // Select with: opencode -m sarashina/sarashina3.2-mini-thinking
+    "sarashina": {
+      "name": "Sarashina API",
+      "package": "@opencode/ai/providers/openai-compatible",
+      "settings": {
+        "baseURL": "https://api.sarashina.ai/v1",
+        "apiKey": "{env:SARASHINA_API_KEY}",
+      },
+      "compatibility": {
+        "maxTokensField": "max_completion_tokens",
+        "streamUsage": false,
+      },
+      "body": {
+        "tool_choice": "auto",
+      },
+      "models": {
+        "sarashina3.2-mini-thinking": {
+          "name": "Sarashina3.2 mini thinking",
+          "capabilities": {
+            "tools": true,
+            "input": ["text"],
+            "output": ["text"],
+            "reasoning": {
+              "supported": true,
+            },
+          },
+          "limit": {
+            "context": 128000,
+            "output": 8000,
+          },
+          "body": {
+            "reasoning_effort": "medium",
+          },
+          "compatibility": {
+            "reasoningField": "reasoning",
+            "requireReasoning": false,
+          },
+        },
+      },
+    },
+  },
+}
