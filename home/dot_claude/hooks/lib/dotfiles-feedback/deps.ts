@@ -13,6 +13,10 @@ export type GhResult =
     };
 
 export type FeedbackFs = {
+  mkdir(
+    path: string,
+    options: { mode: number; recursive: true },
+  ): Promise<string | undefined>;
   open(
     path: string,
     flags: number | string,
