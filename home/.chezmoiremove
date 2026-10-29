@@ -31,3 +31,4 @@
 .config/systemd/user/distill-insights.timer
 Library/LaunchAgents/com.berlysia.distill-insights.plist
 .claude/.distill-insights-plist.sha256
+.claude/hooks/lib/agent-learnings/core/git.ts

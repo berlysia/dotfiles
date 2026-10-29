@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
 import { getLearningsHealthNotice } from "../../lib/agent-learnings/claude/health.ts";
-import type { RunGit } from "../../lib/agent-learnings/core/git.ts";
+import type { RunGit } from "../../lib/run-git.ts";
 import {
   formatFeedbackLine,
   formatInjectionLine,

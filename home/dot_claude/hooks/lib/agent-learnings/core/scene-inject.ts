@@ -1,7 +1,7 @@
 import { existsSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative } from "node:path";
 import { isSafeSessionId } from "../../session-id.ts";
-import type { RunGit } from "./git.ts";
+import type { RunGit } from "../../run-git.ts";
 import { COMMON_KEY } from "./learnings-file.ts";
 import { recordInjections } from "./metrics-log.ts";
 import { renderSituation } from "./render.ts";

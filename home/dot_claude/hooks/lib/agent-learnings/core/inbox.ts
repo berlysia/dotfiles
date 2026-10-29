@@ -13,7 +13,7 @@ import {
   writeSync,
 } from "node:fs";
 import { join } from "node:path";
-import type { RunGit } from "./git.ts";
+import type { RunGit } from "../../run-git.ts";
 import { applyOps, type LearningOp } from "./ops.ts";
 import { isValidRepoKey } from "./repo-key.ts";
 import { withStoreLock } from "./lock.ts";

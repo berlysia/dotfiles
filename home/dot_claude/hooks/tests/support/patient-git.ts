@@ -1,4 +1,4 @@
-import { createRunGit } from "../../lib/agent-learnings/core/git.ts";
+import { createRunGit } from "../../lib/run-git.ts";
 
 /**
  * runGit with a 60 s limit instead of the production 5 s, for tests that are

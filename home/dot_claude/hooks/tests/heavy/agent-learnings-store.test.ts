@@ -16,7 +16,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { runGit } from "../../lib/agent-learnings/core/git.ts";
+import { runGit } from "../../lib/run-git.ts";
 import {
   appendReadLog,
   commitStore,

@@ -22,7 +22,7 @@ import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { after, before, describe, it } from "node:test";
 import { getLearningsHealthNotice } from "../../lib/agent-learnings/claude/health.ts";
-import { runGit } from "../../lib/agent-learnings/core/git.ts";
+import { runGit } from "../../lib/run-git.ts";
 import {
   formatFeedbackLine,
   formatInjectionLine,

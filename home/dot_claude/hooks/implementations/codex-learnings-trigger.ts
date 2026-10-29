@@ -1,6 +1,6 @@
 #!/usr/bin/env -S bun run --silent
 
-import { createRunGit } from "../lib/agent-learnings/core/git.ts";
+import { createRunGit } from "../lib/run-git.ts";
 import { run } from "../lib/agent-learnings/codex/scene-hook.ts";
 import { getHomeDir } from "../lib/path-utils.ts";
 import { readStdinLimited } from "../lib/read-stdin-limited.ts";

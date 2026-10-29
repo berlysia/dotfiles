@@ -34,8 +34,8 @@ import {
   reduceTranscript,
 } from "../hooks/lib/agent-learnings/claude/transcript.ts";
 import { isWorkerSession } from "../hooks/lib/agent-learnings/claude/worker-guard.ts";
-import type { RunGit } from "../hooks/lib/agent-learnings/core/git.ts";
-import { runGit as realRunGit } from "../hooks/lib/agent-learnings/core/git.ts";
+import type { RunGit } from "../hooks/lib/run-git.ts";
+import { runGit as realRunGit } from "../hooks/lib/run-git.ts";
 import { applyInboxLocked } from "../hooks/lib/agent-learnings/core/inbox.ts";
 import {
   COMMON_KEY,

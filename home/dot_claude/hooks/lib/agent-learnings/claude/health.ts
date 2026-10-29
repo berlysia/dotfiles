@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { RunGit } from "../core/git.ts";
+import type { RunGit } from "../../run-git.ts";
 import { fullLogs, loadMetrics } from "../core/metrics-log.ts";
 import { countJobs } from "../core/queue.ts";
 import { oldestUnpushedCommitTime } from "../core/store.ts";

@@ -32,7 +32,7 @@ import {
   applyInboxLocked,
   writeInboxRequest,
 } from "../lib/agent-learnings/core/inbox.ts";
-import { runGit, type RunGit } from "../lib/agent-learnings/core/git.ts";
+import { runGit, type RunGit } from "../lib/run-git.ts";
 import {
   COMMON_KEY,
   parseLearningsFile,

@@ -1,5 +1,5 @@
 import { isSafeSessionId } from "../../session-id.ts";
-import type { RunGit } from "../core/git.ts";
+import type { RunGit } from "../../run-git.ts";
 import { feedbackHint } from "../core/render.ts";
 import { injectScene } from "../core/scene-inject.ts";
 import { cmdSituations, pathSituation } from "../core/scene.ts";

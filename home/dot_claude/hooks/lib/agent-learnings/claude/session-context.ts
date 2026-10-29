@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { loadRedactList } from "../../redact-secrets.ts";
 import { drainInbox } from "../core/inbox.ts";
-import type { RunGit } from "../core/git.ts";
+import type { RunGit } from "../../run-git.ts";
 import { COMMON_KEY, type LearningsFile } from "../core/learnings-file.ts";
 import { countJobs, enqueueJob } from "../core/queue.ts";
 import { feedbackHint, renderLearningsDetailed } from "../core/render.ts";

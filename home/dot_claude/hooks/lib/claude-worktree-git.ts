@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 
 // git execution layer for lib/claude-worktree.ts.
-// Hardening is copied from lib/agent-learnings/core/git.ts (env allow-list,
+// Hardening is copied from lib/run-git.ts (env allow-list,
 // fsmonitor / hooksPath / gpgsign off) on purpose instead of imported: that
 // runner has a 5 s timeout and discards stderr, which does not fit writes.
 

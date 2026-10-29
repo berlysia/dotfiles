@@ -19,7 +19,7 @@ import {
   enqueueSessionJob,
   kickWorkerIfQueued,
 } from "../../lib/agent-learnings/claude/session-context.ts";
-import { runGit } from "../../lib/agent-learnings/core/git.ts";
+import { runGit } from "../../lib/run-git.ts";
 import {
   initStore,
   defaultStoreDir,

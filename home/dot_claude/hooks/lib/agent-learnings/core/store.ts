@@ -15,7 +15,7 @@ import {
   writeSync,
 } from "node:fs";
 import { join } from "node:path";
-import type { RunGit } from "./git.ts";
+import type { RunGit } from "../../run-git.ts";
 import {
   COMMON_KEY,
   parseLearningsFile,

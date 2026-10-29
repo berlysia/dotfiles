@@ -18,7 +18,7 @@ import {
   runLearningsCli,
   type RunLearningsCliDeps,
 } from "../../cli/learnings.ts";
-import type { RunGit } from "../../lib/agent-learnings/core/git.ts";
+import type { RunGit } from "../../lib/run-git.ts";
 import {
   formatFeedbackLine,
   formatInjectionLine,

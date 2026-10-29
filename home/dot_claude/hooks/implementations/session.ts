@@ -25,7 +25,7 @@ import {
   spawnWorker,
 } from "../lib/agent-learnings/claude/session-context.ts";
 import { isWorkerSession } from "../lib/agent-learnings/claude/worker-guard.ts";
-import { runGit } from "../lib/agent-learnings/core/git.ts";
+import { runGit } from "../lib/run-git.ts";
 import { defaultStoreDir } from "../lib/agent-learnings/core/store.ts";
 import { encodeSessionDirName, getProjectRoot } from "../lib/project-root.ts";
 import { shellSingleQuote } from "../lib/shell-quote.ts";

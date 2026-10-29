@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { resolveRepoKey } from "../../lib/agent-learnings/core/repo-key.ts";
-import { runGit } from "../../lib/agent-learnings/core/git.ts";
+import { runGit } from "../../lib/run-git.ts";
 
 function withTempDir(fn: (dir: string) => void): void {
   const dir = realpathSync(

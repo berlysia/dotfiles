@@ -16,7 +16,7 @@ import {
   buildWorkerSpawnSpec,
   jobInputFromHook,
 } from "../../lib/agent-learnings/claude/session-context.ts";
-import type { RunGit } from "../../lib/agent-learnings/core/git.ts";
+import type { RunGit } from "../../lib/run-git.ts";
 import {
   COMMON_KEY,
   type LearningEntry,
