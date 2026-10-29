@@ -85,7 +85,7 @@ import {
   storePaths,
   writeLearnings,
 } from "../hooks/lib/agent-learnings/core/store.ts";
-import { loadRedactList } from "../hooks/lib/insight-digest.ts";
+import { loadRedactList } from "../hooks/lib/redact-secrets.ts";
 import { getHomeDir } from "../hooks/lib/path-utils.ts";
 
 export type WorkerDeps = {

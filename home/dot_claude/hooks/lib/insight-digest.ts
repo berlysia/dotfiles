@@ -14,7 +14,7 @@ import {
 import { dirname, join } from "node:path";
 import { getHomeDir } from "./path-utils.ts";
 
-import { sanitize } from "./redact-secrets.ts";
+import { loadRedactList, sanitize } from "./redact-secrets.ts";
 
 const HOME = getHomeDir();
 
@@ -36,7 +36,6 @@ export const STAMP_LLM_PATH = join(
 );
 const ACK_PATH = join(HOME, ".claude", ".last-insight-digest-acked");
 const DENY_LIST_PATH = join(HOME, ".claude", "insight-distill-deny.txt");
-const REDACT_LIST_PATH = join(HOME, ".claude", "insight-distill-redact.txt");
 
 const STAR = String.fromCharCode(0x2605);
 const HBAR = String.fromCharCode(0x2500);
@@ -247,22 +246,6 @@ export function loadDenyList(path: string = DENY_LIST_PATH): DenyList {
     }
   }
   return result;
-}
-
-export function loadRedactList(path: string = REDACT_LIST_PATH): RegExp[] {
-  if (!existsSync(path)) return [];
-  const raw = readFileSync(path, "utf8");
-  const out: RegExp[] = [];
-  for (const rawLine of raw.split("\n")) {
-    const line = rawLine.trim();
-    if (line.length === 0 || line.startsWith("#")) continue;
-    try {
-      out.push(new RegExp(line, "g"));
-    } catch {
-      // skip
-    }
-  }
-  return out;
 }
 
 export function readState(path: string = STATE_PATH): DistillState {

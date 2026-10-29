@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { loadRedactList } from "../../insight-digest.ts";
+import { loadRedactList } from "../../redact-secrets.ts";
 import { drainInbox } from "../core/inbox.ts";
 import type { RunGit } from "../core/git.ts";
 import { COMMON_KEY, type LearningsFile } from "../core/learnings-file.ts";

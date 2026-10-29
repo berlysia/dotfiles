@@ -17,7 +17,6 @@ import {
   INSIGHTS_JSONL,
   loadDenyList,
   loadExistingHashes,
-  loadRedactList,
   LOGS_DIR,
   normalize,
   parseProposalYaml,
@@ -44,7 +43,7 @@ import {
   type StageBOutcome,
   type StageBQueryFn,
 } from "../hooks/lib/insight-digest.ts";
-import { sanitize } from "../hooks/lib/redact-secrets.ts";
+import { loadRedactList, sanitize } from "../hooks/lib/redact-secrets.ts";
 
 function resolveClaudeExecutable(): string | undefined {
   try {

@@ -1,3 +1,30 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { getHomeDir } from "./path-utils.ts";
+
+// Historical name from the retired insight distiller; preserve existing per-machine pattern files.
+const REDACT_LIST_PATH = join(
+  getHomeDir(),
+  ".claude",
+  "insight-distill-redact.txt",
+);
+
+export function loadRedactList(path: string = REDACT_LIST_PATH): RegExp[] {
+  if (!existsSync(path)) return [];
+  const raw = readFileSync(path, "utf8");
+  const out: RegExp[] = [];
+  for (const rawLine of raw.split("\n")) {
+    const line = rawLine.trim();
+    if (line.length === 0 || line.startsWith("#")) continue;
+    try {
+      out.push(new RegExp(line, "g"));
+    } catch {
+      // skip
+    }
+  }
+  return out;
+}
+
 const DEFAULT_REDACT_PATTERNS: RegExp[] = [
   /sk-(?:ant-)?[A-Za-z0-9_-]{20,}/g,
   /xox[abprs]-[\w-]{10,}/g,

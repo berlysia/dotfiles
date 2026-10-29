@@ -7,7 +7,7 @@ export type DistillMessage = {
   result?: string;
   is_error?: boolean;
 };
-// insight-digest.ts の StageBQueryFn と同じ形（テストは偽の関数を注入する）
+// テストでは偽の query 関数を注入する
 export type DistillQueryFn = (args: {
   prompt: string;
   options: Options;
