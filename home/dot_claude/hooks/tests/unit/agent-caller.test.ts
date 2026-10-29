@@ -1,6 +1,10 @@
 import { strictEqual } from "node:assert";
 import { describe, it } from "node:test";
-import { hasAgentEnv, isHumanCaller } from "../../lib/agent-caller.ts";
+import {
+  detectAgent,
+  hasAgentEnv,
+  isHumanCaller,
+} from "../../lib/agent-caller.ts";
 
 describe("hasAgentEnv", () => {
   for (const names of [
@@ -8,6 +12,9 @@ describe("hasAgentEnv", () => {
     ["CLAUDE_CODE_ENTRYPOINT"],
     ["CODEX_SANDBOX_NETWORK_DISABLED"],
     ["AI_AGENT"],
+    ["OPENCODE"],
+    ["OPENCODE_SESSION_ID"],
+    ["OPENCODE_TERMINAL"],
   ]) {
     it(`recognizes ${names.join(", ")}`, () => {
       strictEqual(hasAgentEnv(names), true);
@@ -32,5 +39,30 @@ describe("isHumanCaller", () => {
         strictEqual(isHumanCaller({ isTty, agentEnv }), isTty && !agentEnv);
       });
     }
+  }
+});
+
+describe("detectAgent", () => {
+  for (const [names, agent] of [
+    [["OPENCODE"], "opencode"],
+    [["OPENCODE_SESSION_ID"], "opencode"],
+    [["OPENCODE_TERMINAL"], "opencode"],
+    [["CODEX_SANDBOX"], "codex"],
+    [["CODEX_SANDBOX_NETWORK_DISABLED"], "codex"],
+    [["CLAUDECODE"], "claude"],
+    [["CLAUDE_CODE_ENTRYPOINT"], "claude"],
+    [["AI_AGENT"], "codex"],
+    [["AI_AGENT", "CLAUDECODE"], "claude"],
+    [["CLAUDE_CODE_ENTRYPOINT", "AI_AGENT"], "claude"],
+    [["AI_AGENT", "CLAUDECODE", "CODEX_SANDBOX"], "codex"],
+    [["AI_AGENT", "CLAUDECODE", "CODEX_SANDBOX", "OPENCODE"], "opencode"],
+    [["PATH", "AGENT", "MY_OPENCODE"], "human"],
+    [[], "human"],
+  ] as const) {
+    it(`detects ${JSON.stringify(names)} as ${agent}`, () => {
+      strictEqual(detectAgent(names), agent);
+      strictEqual(hasAgentEnv(names), agent !== "human");
+      strictEqual(detectAgent([...names].reverse()), agent);
+    });
   }
 });
