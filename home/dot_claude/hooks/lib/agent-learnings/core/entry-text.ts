@@ -1,12 +1,9 @@
+import { INVISIBLE } from "../../invisible-chars.ts";
 import { COMPACTION_EXTRA_PATTERNS, sanitize } from "../../redact-secrets.ts";
 import { containsKeyLike } from "../../key-like.ts";
 
 export type Check = { ok: true } | { ok: false; reason: string };
 export type TextRules = { allowUrl: boolean };
-
-// 制御文字、ゼロ幅、bidi、soft hyphen、CGJ、Hangul filler、variation selector、Unicode tag
-const INVISIBLE =
-  /[\u0000-\u001f\u007f-\u009f­͏ᅟᅠ​-‏‪-‮⁠-⁩ㅤ︀-️﻿ﾠ\u{e0000}-\u{e007f}\u{e0100}-\u{e01ef}]/gu;
 
 export function preprocessText(
   text: string,
