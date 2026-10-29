@@ -42,3 +42,31 @@ cpk-events のセッション（2026-10-29）から届いたフィードバッ�
 
 - 観察: Codex の sandbox では、Python のテストが `listen EPERM 127.0.0.1` で動かなかった。
 - やること: 「テストを走らせて確かめる実装は Codex に向かない場合がある」を model-offloading の rule に足すかを決める。
+
+## spec の改訂後、済んだ plan-N が新しい plan の書き込みを拒む
+
+提案・未決。出どころ: dotfiles-feedback 20261029T092651Z-3e3e0951e7db。
+
+- **観察**（2026-10-29、session 5b0ab66e、二層モード）: plan-1 から plan-4 は、承認・実装・merge まで済んでいた。
+- その後 spec.md を改訂して再承認したので、plan-1 から plan-4 の parent-spec-hash が今の spec の hash と合わなくなった。
+- 新しく承認した plan-5 の Files に、plan-1 から plan-4 と同じファイル（テストのファイルなど）が載っていた。
+- `lib/workflow-gate.ts` の `evaluateTarget`（570-592 行付近）は、書き込み先を Files に載せた plan を番号の順に見て、最初の 1 つで判定する。blocked の plan が先に見つかると、すぐ deny を返す。
+- 承認済みの plan-5 があっても、済んだ plan-1 から plan-4 が先に blocked と判定された。共有するファイルへの書き込みは拒まれた。
+- 利用者の判断で、plan-1 から plan-4.md を workflow dir の `archive/` に移した。gate は workflow dir の直下しか読まないので、これで通った。
+- 困る点: 実装し終えた plan を退役させる、仕組みで決まった手順が無く、手で移すしかない。
+- **送った人の提案**（どちらか）:
+  - 承認済みのいずれかの plan が書き込み先を列挙していれば許す（最初の 1 つで決めない）
+  - 実装済みの plan を退役させる workflow-cli のコマンドを足す
+- **未決**: 前者は gate の判定を緩めるので、blocked の plan と承認済みの plan が同じファイルを挙げたときの優先を決める。後者は、退役した plan の記録を `archive/` のどこに残すかを決める。
+
+## インタプリタの heredoc の書き込みが Document Workflow の gate を通る
+
+提案・未決。出どころ: dotfiles-feedback 20261029T092651Z-37cb7225efe0。
+
+- **観察**（2026-10-29、session 5b0ab66e）: 実装を委譲した sonnet の subagent が、worktree のテストのファイルを書き換えた。書き方は Python の heredoc（`python3 - <<...`）で、gate に拒まれなかった。
+- 同じファイルを Edit ツールで書こうとすると、gate に拒まれた。subagent 自身がこの差に気づき、作業を中断して報告した。
+- 書いた先は、どれも承認済みの plan の Files に入っていた。承認の範囲を外れた書き込みは起きていない。
+- `workflow.md` は「インタプリタの heredoc は guard が書き込みと判定しうる」と書いているが、今回は判定されずに通った。
+- **送った人の提案**: インタプリタの heredoc や `-c` で書き込む経路を、Bash の guard で書き込みとして扱う。判定できないときは拒む側に倒す。
+- 対象: Bash guard、document-workflow-guard。
+- **未決**: 通った理由（判定の対象外だったのか、書き込み先を読み取れなかったのか）は確かめていない。現行の guard の判定を読み、通ったコマンドの形を再現するところから始める。

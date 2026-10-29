@@ -17,3 +17,18 @@
 - SubagentStop が探すブランチ名は `worktree-agent-<agent_id>` の完全一致なので、この形は片付けの対象にならず、worktree とブランチが残る。
 - `-p` の session は workflow の完了を待たずに終わる。workflow agent に SubagentStop が来るか、来るなら `agent_id` と `wf_…` の name の対応がどうなるかは、まだ確かめていない。
 - 次にやること: 対話 session で workflow を最後まで実行し、SubagentStop（または別のイベント）の入力を記録する hook を足して、name との対応を調べる。対応が取れれば K6 で探すブランチ名に `worktree-wf_*` を加える（spec の変更として扱う）。それまでは `git worktree remove <path>` と `git branch -D worktree-wf_…` で手で消す。
+
+## RC の --spawn worktree で作った worktree に依存が入らない
+
+未達・未調査。出どころ: dotfiles-feedback 20261029T102037Z-f1232d2a1cfe。
+
+- **観察**（2026-10-29、dotfiles）: `claude remote-control --spawn worktree` で始まった session を調べた。
+  - その worktree に `node_modules` が無かった
+- completion-gate の Stop hook が typecheck と test を実行すると、`cc-hooks-ts` などが見つからず 172 件が落ち、完了が拒まれた。
+- `bun install --frozen-lockfile` を手で実行すると、typecheck は通った。
+- `git-worktree-create` は `resolve_install` で lockfile に合う install を実行する。WorktreeCreate hook（`home/dot_claude/hooks/implementations/worktree-create.ts`）には、install の処理が見当たらない。
+- **期待**: RC や EnterWorktree の経路で作った worktree にも、`git-worktree-create` と同じ規則で依存が入る。
+- **未決**:
+  - hook の中で install を実行すると WorktreeCreate が遅くなる。install を hook の中でするか、Stop の前に別の手段で用意するかを決める
+  - `resolve_install` の規則を hook と共有する形にするか。シェルの関数を TypeScript に移すか、hook から `git-worktree-create` の該当部分を呼ぶかを選ぶ
+  - 送った人は WorktreeCreate hook の中身を読んだ範囲で書いている。対話 session の `claude --worktree` でも同じ状態になるかは、確かめていない
