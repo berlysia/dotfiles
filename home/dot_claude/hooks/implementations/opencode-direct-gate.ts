@@ -84,6 +84,33 @@ function isAllowedArgs(args: readonly string[]): boolean {
   );
 }
 
+/**
+ * The splitter cuts at `&`, so `2>&1` and `&>` would end a command early and
+ * hand the rest (`opencode debug paths 2>&1 run x`) to a command of its own.
+ * Rewrite them to plain redirections first; this text is only judged.
+ */
+function normalizeRedirections(text: string): string {
+  return text
+    .replace(/(^|\s)\d*[<>]&(\d+|-)(?=\s|$)/g, "$1")
+    .replace(/(^|\s)&>(>?)/g, "$1>$2");
+}
+
+const REDIRECTION = /^\d*(>>?|<|>\|)(.*)$/;
+
+/** Drops `> file`, `2>/dev/null` and the like; bash keeps the other words as arguments. */
+function dropRedirections(args: readonly string[]): string[] {
+  const kept: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const match = REDIRECTION.exec(args[i] as string);
+    if (match === null) {
+      kept.push(args[i] as string);
+    } else if (match[2] === "") {
+      i++; // the target is the next word
+    }
+  }
+  return kept;
+}
+
 function basename(value: string): string {
   return value.slice(value.lastIndexOf("/") + 1);
 }
@@ -104,7 +131,7 @@ async function findViolation(
   for (const command of extracted.commands) {
     // individualCommands can hold a whole `a && b`; split it so one command
     // word is judged at a time.
-    for (const words of splitCommandWords(command)) {
+    for (const words of splitCommandWords(normalizeRedirections(command))) {
       const { words: run, indirect } = unwrapCommand(words);
       if (indirect !== null) {
         const inner = await findViolation(indirect, depth + 1, extract);
@@ -116,7 +143,7 @@ async function findViolation(
       // `opencode-ai@latest` names a version of the package; compare the name.
       const name = basename(head.value).split("@")[0] ?? "";
       if (!OPENCODE_NAMES.has(name)) continue;
-      if (!isAllowedArgs(run.slice(1).map((t) => t.value))) {
+      if (!isAllowedArgs(dropRedirections(run.slice(1).map((t) => t.value)))) {
         return { kind: "rule" };
       }
     }

@@ -40,6 +40,13 @@ function nestBash(inner: string, levels: number): string {
 
 describe("judgeOpencodeCommand", () => {
   const denied = [
+    // bash passes words after a redirection on as arguments.
+    "opencode debug paths >x run",
+    "opencode debug paths > x run y",
+    "opencode run x > out.txt",
+    "opencode 2>/dev/null run x",
+    "opencode debug paths 2>&1 run x",
+    "opencode debug paths &>/dev/null run x",
     'opencode run "x"',
     "npx -y opencode-ai run x",
     "npx opencode-ai@latest run x",
@@ -85,6 +92,11 @@ describe("judgeOpencodeCommand", () => {
     "opencode debug config",
     "opencode debug agents",
     "opencode debug paths",
+    "opencode debug paths 2>&1 | head -20",
+    "timeout 20 opencode debug paths 2>&1",
+    "opencode models > /tmp/models.txt",
+    "opencode models >/tmp/models.txt 2>/dev/null",
+    "opencode --version 2> err.txt",
     'git commit -m "opencode run の記録"',
     "grep -rn opencode home/",
     "cd ~/.config/opencode && ls",
