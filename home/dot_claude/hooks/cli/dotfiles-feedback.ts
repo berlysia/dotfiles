@@ -21,7 +21,17 @@ import type {
   FeedbackDeps,
   InteractiveDeps,
 } from "../lib/dotfiles-feedback/deps.ts";
+import { collectList, collectShow } from "../lib/dotfiles-feedback/collect.ts";
+import {
+  formatError,
+  formatList,
+  formatShow,
+  formatTriageResult,
+  newNonce,
+} from "../lib/dotfiles-feedback/display.ts";
 import { flush } from "../lib/dotfiles-feedback/flush.ts";
+import { refresh } from "../lib/dotfiles-feedback/refresh.ts";
+import { parseTriageArgs, triage } from "../lib/dotfiles-feedback/triage.ts";
 import { runGh } from "../lib/dotfiles-feedback/gh.ts";
 import {
   resolvePasswdHome,
@@ -48,7 +58,11 @@ const USAGE = `使い方: dotfiles-feedback <command>
   send --title <t> --target <t> --kind <bug|improvement|missing>   本文は stdin で渡す
   flush [--retry <id>]
   status
-  drop <id>`;
+  drop <id>
+  list
+  show <#番号|id>
+  triage <#番号|id> --to <issue|plan|reject> [--path <docs/plans/x.md>] [--reason <理由>]
+  refresh`;
 export type CliDeps = FeedbackDeps &
   InteractiveDeps & {
     cliPath: string;
@@ -205,21 +219,100 @@ const drop: Command = async (args, deps) => {
   return 0;
 };
 
+// list と refresh は引数を取らず、show は位置引数を 1 つだけ取る。誤りは形式の誤りとして 1。
+function badArguments(args: string[], positionals: number, deps: CliDeps) {
+  try {
+    const parsed = parseArgs({
+      args,
+      options: {},
+      allowPositionals: true,
+      strict: true,
+    });
+    if (parsed.positionals.length === positionals) return false;
+  } catch {
+    /* 未知の flag は下で同じ扱いにする。 */
+  }
+  deps.stderr(formatError(`引数が正しくない: ${args.join(" ")}`));
+  return true;
+}
+const hintFor = (error: string, hint: string) =>
+  hint !== "" ? hint : (ERROR_HINTS[error] ?? "");
+
+const listCommand: Command = async (args, deps) => {
+  if (badArguments(args, 0, deps)) return 1;
+  deps.stdout(formatList(await collectList(deps)));
+  return 0;
+};
+
+const showCommand: Command = async (args, deps) => {
+  if (badArguments(args, 1, deps)) return 1;
+  const shown = await collectShow(args[0] as string, deps);
+  if (shown.kind === "ok") {
+    deps.stdout(formatShow(shown.view, newNonce(deps.randomBytes)));
+    return 0;
+  }
+  deps.stderr(
+    shown.kind === "failed"
+      ? formatError(
+          `${shown.error}: ${shown.message}`,
+          hintFor(shown.error, shown.hint),
+        )
+      : formatError(shown.reason),
+  );
+  return 1;
+};
+
+const triageCommand: Command = async (args, deps) => {
+  const parsed = parseTriageArgs(args);
+  if (!parsed.ok) {
+    deps.stderr(formatError(parsed.reason));
+    return 1;
+  }
+  const outcome = await triage(parsed.target, parsed.options, {
+    ...deps,
+    log: deps.stderr,
+  });
+  if (outcome.kind === "done") {
+    deps.stdout(formatTriageResult(outcome.view));
+    return 0;
+  }
+  deps.stderr(
+    outcome.kind === "gh-failed"
+      ? formatError(
+          `${outcome.error}: ${outcome.message}`,
+          hintFor(outcome.error, outcome.hint),
+        )
+      : formatError(outcome.reason),
+  );
+  return 1;
+};
+
+const refreshCommand: Command = async (args, deps) => {
+  if (badArguments(args, 0, deps)) return 1;
+  // 前面で打った refresh は flush が終わるまで戻らないので、先に知らせる。
+  deps.stdout("送り出し中\n");
+  const result = await refresh({ ...deps, log: deps.stderr });
+  if (result.kind === "failed") {
+    deps.stderr(formatError(result.reason));
+    return 1;
+  }
+  return 0;
+};
+
 const unimplemented: Command = async (_args, deps) => {
   deps.stderr("未実装\n");
   return 1;
 };
 
-// plan-3 以降は、この表に行を足す。
 const COMMANDS: Record<string, Command> = {
   send,
   flush: flushCommand,
   status,
   drop,
-  list: unimplemented,
-  show: unimplemented,
-  triage: unimplemented,
-  refresh: unimplemented,
+  list: listCommand,
+  show: showCommand,
+  triage: triageCommand,
+  refresh: refreshCommand,
   "ingest-vm": unimplemented,
 };
 
@@ -308,7 +401,10 @@ async function getPidStartTime(pid: number): Promise<string | null> {
 }
 
 // /dev/tty を開けない・EOF・空行・y 以外はすべて偽。エージェントの stdin では答えられない。
-async function confirmOnTty(text: string): Promise<boolean> {
+export const isConfirmed = (answer: string | null): boolean =>
+  answer === "y" || answer === "Y";
+
+export async function confirmOnTty(text: string): Promise<boolean> {
   let input: ReturnType<typeof createReadStream> | undefined;
   let output: ReturnType<typeof createWriteStream> | undefined;
   try {
@@ -325,7 +421,7 @@ async function confirmOnTty(text: string): Promise<boolean> {
       lines.once("close", () => resolve(null));
     });
     lines.close();
-    return answer === "y" || answer === "Y";
+    return isConfirmed(answer);
   } catch {
     return false;
   } finally {
