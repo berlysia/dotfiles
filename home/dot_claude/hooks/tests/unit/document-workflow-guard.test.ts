@@ -18,7 +18,10 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import documentWorkflowGuardHook, {
   judgeDeliveryPolicyWrite,
 } from "../../implementations/document-workflow-guard.ts";
-import { buildDeliveryPolicyQuestion } from "../../lib/delivery-policy.ts";
+import {
+  buildDeliveryPolicyQuestion,
+  judgeDeliveryPolicyBash,
+} from "../../lib/delivery-policy.ts";
 import {
   buildApprovalQuestionText,
   buildApprovalQuestions,
@@ -2113,9 +2116,12 @@ describe("document-workflow-guard.ts delivery-policy protection", () => {
     }
   });
 
-  it("lets show, ask and merge <N> through, and nothing else that names the wrapper", async () => {
+  it("lets show, ask and a background merge <N> through, and nothing else that names the wrapper", async () => {
     (
-      await call("Bash", { command: "~/.local/bin/delivery-policy merge 12" })
+      await call("Bash", {
+        command: "~/.local/bin/delivery-policy merge 12",
+        run_in_background: true,
+      })
     ).assertSuccess({});
     (
       await call("Bash", { command: "~/.local/bin/delivery-policy show" })
@@ -2130,8 +2136,50 @@ describe("document-workflow-guard.ts delivery-policy protection", () => {
       "~/.local/bin/delivery-policy merge 12; ls",
       "cat ~/.local/bin/delivery-policy",
     ]) {
-      (await call("Bash", { command })).assertDeny();
+      (await call("Bash", { command, run_in_background: true })).assertDeny();
     }
+  });
+
+  it("denies a foreground merge <N> and passes it once run in the background", async () => {
+    const command = "~/.local/bin/delivery-policy merge 3";
+    const reason = judgeDeliveryPolicyBash(command, home, false);
+    ok(reason);
+    (await call("Bash", { command })).assertDeny(reason);
+    (await call("Bash", { command, run_in_background: true })).assertSuccess(
+      {},
+    );
+  });
+
+  it("counts only the JSON boolean true as the background flag", async () => {
+    const command = "~/.local/bin/delivery-policy merge 12";
+    const reason = judgeDeliveryPolicyBash(command, home, false);
+    ok(reason);
+    for (const run_in_background of [false, 1, "true", "True", null]) {
+      (await call("Bash", { command, run_in_background })).assertDeny(reason);
+    }
+  });
+
+  it("refuses a Bash input that is not an object", async () => {
+    (await call("Bash", null)).assertDeny();
+    (await call("Bash", "~/.local/bin/delivery-policy merge 3")).assertDeny();
+  });
+
+  it("an input with no usable command is decided before the flag is read", async () => {
+    (await call("Bash", { run_in_background: true })).assertSuccess({});
+    (await call("Bash", { run_in_background: true, command: 5 })).assertSuccess(
+      {},
+    );
+  });
+
+  it("passes the same background flag to every home", async () => {
+    envHelper.set("HOME", "/tmp/dp-other-home");
+    const command = "~/.local/bin/delivery-policy merge 3";
+    const reason = judgeDeliveryPolicyBash(command, home, false);
+    ok(reason);
+    (await call("Bash", { command })).assertDeny(reason);
+    (await call("Bash", { command, run_in_background: true })).assertSuccess(
+      {},
+    );
   });
 
   it("does not touch a command that only contains the word", async () => {

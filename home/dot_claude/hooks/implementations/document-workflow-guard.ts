@@ -1103,10 +1103,20 @@ function checkDeliveryPolicyAccess(
 ): string | null {
   try {
     if (toolName === "Bash") {
+      // A Bash input that is not an object has neither a command nor a
+      // flag to read, so it cannot be judged at all; the throw lands in
+      // the catch below and refuses the call (the real PreToolUse input
+      // is always an object).
+      if (!isRecord(toolInput)) {
+        throw new Error("Bash tool_input is not an object");
+      }
       const command = getCommandFromToolInput("Bash", toolInput) || "";
       if (!namesDeliveryPolicyPath(command)) return null;
+      // Only the JSON boolean true counts as background; a truthy-looking
+      // string or number still faces the 2-minute foreground cutoff.
+      const runInBackground = toolInput.run_in_background === true;
       return firstReason(deliveryPolicyHomes(), (home) =>
-        judgeDeliveryPolicyBash(command, home),
+        judgeDeliveryPolicyBash(command, home, runInBackground),
       );
     }
     if (!DELIVERY_POLICY_WRITE_TOOLS.has(toolName)) return null;

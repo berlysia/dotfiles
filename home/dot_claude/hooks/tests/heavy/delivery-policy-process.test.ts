@@ -228,5 +228,42 @@ describe(
       assert.doesNotMatch(r.stdout, /"permissionDecision":"deny"/, r.stdout);
       assert.doesNotMatch(r.stdout, /ReferenceError/, r.stdout);
     });
+
+    // The real PreToolUse payload carries tool_input as an object with
+    // command, description and run_in_background (research.md); only the
+    // JSON boolean true frees merge from the foreground refusal.
+    it("reads run_in_background from the real PreToolUse shape on stdin", () => {
+      const dir = freshDir("dp-guard-runbg-");
+      const payload = (runInBackground: boolean) =>
+        JSON.stringify({
+          session_id: "s",
+          transcript_path: join(dir, "t.jsonl"),
+          cwd: dir,
+          hook_event_name: "PreToolUse",
+          tool_use_id: "t1",
+          tool_name: "Bash",
+          tool_input: {
+            command: "~/.local/bin/delivery-policy merge 3",
+            description: "merge PR 3",
+            ...(runInBackground ? { run_in_background: true } : {}),
+          },
+        });
+      const fg = spawnSync("bun", [GUARD], {
+        cwd: HOOKS_DIR,
+        input: payload(false),
+        encoding: "utf8",
+      });
+      assert.equal(fg.status, 0, fg.stderr);
+      assert.match(fg.stdout, /"permissionDecision":"deny"/, fg.stdout);
+      assert.match(fg.stdout, /run_in_background: true/, fg.stdout);
+      const bg = spawnSync("bun", [GUARD], {
+        cwd: HOOKS_DIR,
+        input: payload(true),
+        encoding: "utf8",
+      });
+      assert.equal(bg.status, 0, bg.stderr);
+      assert.doesNotMatch(bg.stdout, /"permissionDecision":"deny"/, bg.stdout);
+      assert.doesNotMatch(bg.stdout, /delivery-policy/, bg.stdout);
+    });
   },
 );
