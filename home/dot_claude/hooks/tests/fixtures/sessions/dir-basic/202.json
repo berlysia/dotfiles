@@ -1,0 +1,20 @@
+{
+  "pid": 202,
+  "sessionId": "00000000-0000-4000-8000-000000000202",
+  "cwd": "/fixture/repo-a-wt",
+  "startedAt": 1700000000202,
+  "procStart": "100202",
+  "version": "1.0.0",
+  "peerProtocol": 1,
+  "peerFeatures": ["feature-a", "feature-b", "feature-c"],
+  "kind": "fx",
+  "entrypoint": "fx1",
+  "pidDomain": "fixture-domain",
+  "messagingSocketPath": "/fixture/sock/202.sock",
+  "agent": "fixture",
+  "jobId": "job-0202",
+  "spare": false,
+  "status": "busy",
+  "updatedAt": 1700000002202,
+  "statusUpdatedAt": 1700000003202
+}

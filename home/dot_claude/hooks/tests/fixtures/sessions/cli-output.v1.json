@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "verifiedWith": "2.1.312",
+  "sessions": [
+    {
+      "sessionId": "00000000-0000-4000-8000-000000000201",
+      "name": "alpha",
+      "addressable": true,
+      "duplicateName": false,
+      "status": "idle",
+      "liveness": "alive",
+      "isSelf": false,
+      "repoStatus": "git",
+      "repo": "/fixture/repo-a/.git",
+      "worktree": "/fixture/repo-a",
+      "branch": "main"
+    },
+    {
+      "sessionId": "00000000-0000-4000-8000-000000000202",
+      "name": null,
+      "addressable": false,
+      "duplicateName": false,
+      "status": "busy",
+      "liveness": "alive",
+      "isSelf": false,
+      "repoStatus": "git",
+      "repo": "/fixture/repo-a/.git",
+      "worktree": "/fixture/repo-a-wt",
+      "branch": null
+    },
+    {
+      "sessionId": "00000000-0000-4000-8000-000000000203",
+      "name": "beta",
+      "addressable": true,
+      "duplicateName": false,
+      "status": "unknown",
+      "liveness": "alive",
+      "isSelf": false,
+      "repoStatus": "not-git",
+      "repo": null,
+      "worktree": null,
+      "branch": null
+    }
+  ],
+  "scanned": 5,
+  "skipped": 1,
+  "invalid": 1,
+  "selfFound": null,
+  "shapeSuspect": false,
+  "runningVersion": "2.1.312"
+}

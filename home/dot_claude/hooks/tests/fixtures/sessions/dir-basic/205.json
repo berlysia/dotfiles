@@ -1,0 +1,20 @@
+{
+  "pid": 205,
+  "sessionId": "00000000-0000-4000-8000-000000000205",
+  "cwd": "/fixture/repo-dead",
+  "startedAt": 1700000000205,
+  "procStart": "100205",
+  "version": "1.0.0",
+  "peerProtocol": 1,
+  "peerFeatures": ["feature-a", "feature-b", "feature-c"],
+  "kind": "fx",
+  "entrypoint": "fx1",
+  "pidDomain": "fixture-domain",
+  "messagingSocketPath": "/fixture/sock/205.sock",
+  "name": "delta",
+  "nameSource": "fixture",
+  "nameSince": 1700000001205,
+  "status": "idle",
+  "updatedAt": 1700000002205,
+  "statusUpdatedAt": 1700000003205
+}

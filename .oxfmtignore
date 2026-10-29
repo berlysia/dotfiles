@@ -16,3 +16,6 @@ yarn.lock
 
 # Digit-1 template notation makes oxfmt fail with a syntax error
 .skills/claude-action-bootstrap/assets/workflows/auto-fix-dependencies.yml
+
+# Frozen --json v1 contract fixtures: their SHA-256 is pinned by a test, so formatting must not change the bytes
+home/dot_claude/hooks/tests/fixtures/sessions/cli-output.v1*.json

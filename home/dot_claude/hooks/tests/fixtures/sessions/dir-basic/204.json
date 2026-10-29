@@ -1,0 +1,20 @@
+{
+  "pid": 204,
+  "sessionId": "not-a-uuid",
+  "cwd": "/fixture/repo-a",
+  "startedAt": 1700000000204,
+  "procStart": "100204",
+  "version": "1.0.0",
+  "peerProtocol": 1,
+  "peerFeatures": ["feature-a", "feature-b", "feature-c"],
+  "kind": "fx",
+  "entrypoint": "fx1",
+  "pidDomain": "fixture-domain",
+  "messagingSocketPath": "/fixture/sock/204.sock",
+  "name": "gamma",
+  "nameSource": "fixture",
+  "nameSince": 1700000001204,
+  "status": "idle",
+  "updatedAt": 1700000002204,
+  "statusUpdatedAt": 1700000003204
+}

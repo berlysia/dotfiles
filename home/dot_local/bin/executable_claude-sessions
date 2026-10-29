@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# claude-sessions: thin wrapper around cli/claude-sessions.ts.
+# Deployed by chezmoi at ~/.local/bin/claude-sessions; the real logic lives at
+# ~/.claude/hooks/cli/claude-sessions.ts. A separate process rather than a
+# symlink so PATH lookup sees a stable name that `Bash(claude-sessions *)`
+# permission entries can match.
+# --config=/dev/null and --no-env-file: `Bash(claude-sessions *)` runs without
+# a prompt, and the cwd may be someone else's repo. bun would otherwise run the
+# cwd's bunfig.toml preload and read its .env (two separate mechanisms).
+exec bun --config=/dev/null --no-env-file run --silent "${HOME}/.claude/hooks/cli/claude-sessions.ts" "$@"
