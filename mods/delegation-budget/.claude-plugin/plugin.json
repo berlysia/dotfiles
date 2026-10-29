@@ -1,5 +1,6 @@
 {
   "name": "delegation-budget",
-  "version": "0.1.0",
-  "description": "Tells the model, after an Agent or Workflow call, that the weekly rate limit is nearly used up and routine delegation should go to Codex."
+  "version": "0.2.0",
+  "description": "Opens a delegation ledger entry for each sonnet or Codex/OpenCode delegation, closes it with the outcome and duration, and reminds the model to record adoption with delegation record.",
+  "types": "./types/index.d.ts"
 }
