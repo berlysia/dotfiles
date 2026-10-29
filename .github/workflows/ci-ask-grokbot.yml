@@ -1,0 +1,43 @@
+name: ask-grokbot Tests
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - "home/dot_local/bin/executable_ask-grokbot"
+      - "tests/ask-grokbot/**"
+      - ".github/workflows/ci-ask-grokbot.yml"
+  pull_request:
+    branches: [master, main]
+    paths:
+      - "home/dot_local/bin/executable_ask-grokbot"
+      - "tests/ask-grokbot/**"
+      - ".github/workflows/ci-ask-grokbot.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ask-grokbot tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Require jq
+        run: command -v jq
+      # /bin/bash is 3.2 on macOS: the script and the tests must run on the stock shell.
+      - name: Run ask-grokbot tests
+        run: /bin/bash tests/ask-grokbot/run.sh

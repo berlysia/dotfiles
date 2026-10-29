@@ -1,0 +1,348 @@
+#!/usr/bin/env bash
+# ask-grokbot: hand a task to a Grok Bot via a routine webhook.
+# chezmoi deploys this file to ~/.local/bin/ask-grokbot (executable_ prefix).
+# ~/.local/bin is already on PATH (home/dot_shell_common/path.sh).
+#
+# Credentials are read from the environment or from ~/.config/ask-grokbot/env.
+# That file lives outside this repository and must not be committed.
+set -euo pipefail
+
+WAIT_DEFAULT=120
+
+usage() {
+    cat <<'EOF'
+ask-grokbot - hand a task to a Grok Bot via a routine webhook
+
+Usage:
+  ask-grokbot [-t <handler>] [--wait [seconds]] [--dry-run] <request>
+  ask-grokbot [-t <handler>] [--wait [seconds]] [--dry-run]
+  ask-grokbot --help
+
+With no request argument, the request is read from stdin.
+If stdin is a terminal and no request is given, this help is not shown;
+the command exits with an error instead of waiting for input. Use --help.
+
+Options:
+  -t <handler>   Name of the handler that should take the task.
+                 Sent as the JSON field "to". Omitted when -t is not given.
+  --wait [N]     After a successful POST, poll until the reply file exists
+                 and is non-empty, then print it. N is seconds (default 120).
+                 N may be the next argument or --wait=N.
+  --dry-run      Print the JSON payload on stdout and do not send it.
+                 Webhook credentials are not required. --wait is not used.
+  -h, --help     Show this help
+
+Environment (unset or empty values are filled from ~/.config/ask-grokbot/env):
+  ASK_GROKBOT_WEBHOOK_URL   Webhook URL (required to send)
+  ASK_GROKBOT_AUTH          Full Authorization header value (required to send)
+  ASK_GROKBOT_MACHINE       Machine name (default: output of hostname)
+  ASK_GROKBOT_AGENT         Agent name (default: claude-code)
+
+On success the reply path is printed:
+  ~/.ask-grokbot/inbox/<timestamp>-<pid>.md
+EOF
+}
+
+die() {
+    printf 'ask-grokbot: %s\n' "$1" >&2
+    exit 1
+}
+
+# unquote_or_trim: one matching pair of surrounding quotes is removed and the
+# inside is kept as-is. An unquoted value loses leading and trailing whitespace.
+# Nothing is expanded.
+unquote_or_trim() {
+    local v=$1 n first last
+    n=${#v}
+    if ((n >= 2)); then
+        first=${v:0:1}
+        last=${v:n-1:1}
+        if [[ $first == "$last" ]]; then
+            case $first in
+                '"' | "'")
+                    printf '%s' "${v:1:n-2}"
+                    return
+                    ;;
+            esac
+        fi
+    fi
+    v=${v#"${v%%[![:space:]]*}"}
+    v=${v%"${v##*[![:space:]]}"}
+    printf '%s' "$v"
+}
+
+# load_env_file: KEY=value lines. Comments and blank lines are skipped.
+# Unknown keys are ignored. A value is applied only when that variable is
+# unset or empty, so the environment wins.
+load_env_file() {
+    local file=$1 line key value raw lineno=0 trimmed
+    [[ -f $file ]] || return 0
+    [[ -r $file ]] || die "cannot read $file"
+    while IFS= read -r line || [[ -n $line ]]; do
+        lineno=$((lineno + 1))
+        line=${line%$'\r'}
+        trimmed=${line#"${line%%[![:space:]]*}"}
+        case $trimmed in
+            '' | \#*) continue ;;
+        esac
+        case $trimmed in
+            export[[:space:]]*)
+                trimmed=${trimmed#export}
+                trimmed=${trimmed#"${trimmed%%[![:space:]]*}"}
+                ;;
+        esac
+        case $trimmed in
+            *=*) ;;
+            *) die "$file:$lineno: expected KEY=value" ;;
+        esac
+        key=${trimmed%%=*}
+        raw=${trimmed#*=}
+        key=${key%"${key##*[![:space:]]}"}
+        case $key in
+            *[!A-Za-z0-9_]*) die "$file:$lineno: expected KEY=value" ;;
+        esac
+        value=$(unquote_or_trim "$raw")
+        # Variables are the caller's environment or this file. Names are checked above.
+        # shellcheck disable=SC2154
+        case $key in
+            ASK_GROKBOT_WEBHOOK_URL)
+                if [[ -z ${ASK_GROKBOT_WEBHOOK_URL:-} ]]; then
+                    ASK_GROKBOT_WEBHOOK_URL=$value
+                    export ASK_GROKBOT_WEBHOOK_URL
+                fi
+                ;;
+            ASK_GROKBOT_AUTH)
+                if [[ -z ${ASK_GROKBOT_AUTH:-} ]]; then
+                    ASK_GROKBOT_AUTH=$value
+                    export ASK_GROKBOT_AUTH
+                fi
+                ;;
+            ASK_GROKBOT_MACHINE)
+                if [[ -z ${ASK_GROKBOT_MACHINE:-} ]]; then
+                    ASK_GROKBOT_MACHINE=$value
+                    export ASK_GROKBOT_MACHINE
+                fi
+                ;;
+            ASK_GROKBOT_AGENT)
+                if [[ -z ${ASK_GROKBOT_AGENT:-} ]]; then
+                    ASK_GROKBOT_AGENT=$value
+                    export ASK_GROKBOT_AGENT
+                fi
+                ;;
+        esac
+    done <"$file"
+}
+
+is_uint() {
+    case $1 in
+        '' | *[!0-9]*) return 1 ;;
+    esac
+    return 0
+}
+
+require_secrets() {
+    local missing=
+    # shellcheck disable=SC2154
+    if [[ -z ${ASK_GROKBOT_WEBHOOK_URL:-} ]]; then
+        missing=ASK_GROKBOT_WEBHOOK_URL
+    fi
+    if [[ -z ${ASK_GROKBOT_AUTH:-} ]]; then
+        missing=${missing:+$missing }ASK_GROKBOT_AUTH
+    fi
+    if [[ -n $missing ]]; then
+        die "$missing is not set. Set it in the environment or in $env_file"
+    fi
+}
+
+reject_break() {
+    case $1 in
+        *$'\n'* | *$'\r'*) die "$2 must be a single line" ;;
+    esac
+}
+
+for arg in "$@"; do
+    case $arg in
+        -h | --help)
+            usage
+            exit 0
+            ;;
+    esac
+done
+
+case ${HOME:-} in
+    /*) ;;
+    *) die "HOME must be set to an absolute path" ;;
+esac
+
+env_file=$HOME/.config/ask-grokbot/env
+inbox=$HOME/.ask-grokbot/inbox
+
+to=
+to_set=0
+request=
+request_set=0
+do_wait=0
+wait_seconds=$WAIT_DEFAULT
+dry_run=0
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -t)
+            [[ $# -ge 2 ]] || die "-t requires a handler name"
+            case $2 in
+                '' | -*) die "-t requires a handler name" ;;
+            esac
+            [[ $to_set -eq 0 ]] || die "-t was given more than once"
+            to=$2
+            to_set=1
+            shift 2
+            ;;
+        --wait)
+            shift
+            if [[ $# -gt 0 ]] && is_uint "$1"; then
+                wait_seconds=$1
+                shift
+            else
+                wait_seconds=$WAIT_DEFAULT
+            fi
+            do_wait=1
+            ;;
+        --wait=*)
+            wait_seconds=${1#--wait=}
+            is_uint "$wait_seconds" || die "--wait requires a number of seconds"
+            do_wait=1
+            shift
+            ;;
+        --dry-run)
+            dry_run=1
+            shift
+            ;;
+        --)
+            shift
+            if [[ $# -gt 1 ]]; then
+                die "unexpected extra argument"
+            fi
+            if [[ $# -eq 1 ]]; then
+                [[ $request_set -eq 0 ]] || die "unexpected extra argument"
+                request=$1
+                request_set=1
+            fi
+            break
+            ;;
+        -*)
+            die "unknown option: $1"
+            ;;
+        *)
+            [[ $request_set -eq 0 ]] || die "unexpected extra argument"
+            request=$1
+            request_set=1
+            shift
+            ;;
+    esac
+done
+
+if [[ $request_set -eq 0 ]]; then
+    if [[ -t 0 ]]; then
+        die "request is missing. Pass it as an argument or on stdin."
+    fi
+    request=$(cat; printf x)
+    request=${request%x}
+fi
+[[ -n $request ]] || die "request is empty"
+
+if [[ $do_wait -eq 1 ]]; then
+    wait_seconds=$((10#$wait_seconds))
+fi
+
+load_env_file "$env_file"
+
+if [[ -n ${ASK_GROKBOT_MACHINE:-} ]]; then
+    machine=$ASK_GROKBOT_MACHINE
+else
+    machine=$(hostname) || die "hostname failed. Set ASK_GROKBOT_MACHINE."
+    [[ -n $machine ]] || die "hostname was empty. Set ASK_GROKBOT_MACHINE."
+fi
+
+agent=${ASK_GROKBOT_AGENT:-claude-code}
+
+cwd=${PWD:-}
+if [[ -z $cwd ]]; then
+    cwd=$(pwd) || die "cannot determine the working directory"
+fi
+
+session=
+if [[ -n ${CLAUDE_CODE_SESSION_ID:-} ]]; then
+    session=$CLAUDE_CODE_SESSION_ID
+elif [[ -n ${CLAUDE_SESSION_ID:-} ]]; then
+    session=$CLAUDE_SESSION_ID
+fi
+
+ts=$(date +%Y%m%dT%H%M%S) || die "date failed"
+reply_to=$inbox/$ts-$$.md
+
+command -v jq >/dev/null 2>&1 || die "jq is required to build the request JSON"
+
+if [[ -n $to ]]; then
+    payload=$(jq -nc \
+        --arg machine "$machine" \
+        --arg agent "$agent" \
+        --arg cwd "$cwd" \
+        --arg session "$session" \
+        --arg request "$request" \
+        --arg reply_to "$reply_to" \
+        --arg to "$to" \
+        '{machine:$machine,agent:$agent,cwd:$cwd,session:$session,request:$request,reply_to:$reply_to,to:$to}') \
+        || die "failed to build JSON"
+else
+    payload=$(jq -nc \
+        --arg machine "$machine" \
+        --arg agent "$agent" \
+        --arg cwd "$cwd" \
+        --arg session "$session" \
+        --arg request "$request" \
+        --arg reply_to "$reply_to" \
+        '{machine:$machine,agent:$agent,cwd:$cwd,session:$session,request:$request,reply_to:$reply_to}') \
+        || die "failed to build JSON"
+fi
+
+if [[ $dry_run -eq 1 ]]; then
+    printf '%s\n' "$payload"
+    exit 0
+fi
+
+require_secrets
+url=$ASK_GROKBOT_WEBHOOK_URL
+auth=$ASK_GROKBOT_AUTH
+reject_break "$url" "ASK_GROKBOT_WEBHOOK_URL"
+reject_break "$auth" "ASK_GROKBOT_AUTH"
+case $url in
+    http://* | https://*) ;;
+    *) die "ASK_GROKBOT_WEBHOOK_URL must start with http:// or https://" ;;
+esac
+
+command -v curl >/dev/null 2>&1 || die "curl is required to send the request"
+
+mkdir -p -- "$inbox"
+# BSD chmod on macOS treats "--" as a file name. These paths are absolute.
+chmod 700 "$HOME/.ask-grokbot" "$inbox"
+
+printf '%s' "$payload" | curl -fsS \
+    -X POST \
+    -H "Authorization: ${auth}" \
+    -H "Content-Type: application/json" \
+    --data-binary @- \
+    -o /dev/null \
+    -- "$url"
+
+printf '%s\n' "$reply_to"
+
+if [[ $do_wait -eq 1 ]]; then
+    deadline=$((SECONDS + wait_seconds))
+    while [[ ! -s $reply_to ]]; do
+        if ((SECONDS >= deadline)); then
+            die "no reply at $reply_to after ${wait_seconds}s"
+        fi
+        sleep 1
+    done
+    cat "$reply_to"
+fi
