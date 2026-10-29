@@ -4,19 +4,32 @@ import {
   chmodSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   realpathSync,
   rmSync,
+  symlinkSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, test } from "node:test";
 import {
+  applyLookahead,
+  crossesLine,
   loadWindowMins,
   paceFiveHour,
+  paceProvider,
   paceWeekly,
   parseUsageSummary,
+  surplusPoints,
 } from "../home/dot_local/share/delegation/pace.ts";
+import {
+  forecastDir,
+  readForecast,
+} from "../home/dot_local/share/delegation/forecast-file.ts";
+import { forecastUsage } from "../mods/usage-line/hooks/forecast.ts";
+import { lineFilePath } from "../mods/usage-line/hooks/line-file.ts";
 import {
   appendLedger,
   createPending,
@@ -129,6 +142,9 @@ test("route names the cause when window lengths or ai-usage are missing", () => 
     now: new Date(NOW),
     folded: foldLedger([]),
     paces: { claude: unknownPace, codex: unknownPace, opencode: unknownPace },
+    claudeAheadBy: null,
+    lookahead: null,
+    surplus: { codex: null, opencode: null },
     pendingTotal: 0,
     pendingSession: null,
     skipped: { version: 0, type: 0, broken: 0 },
@@ -173,6 +189,9 @@ function sandbox() {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "delegation-route-")));
   const home = join(root, "home");
   mkdirSync(home);
+  // Empty by default so a forecast file in the real XDG_RUNTIME_DIR is never read.
+  const usageLineDir = join(root, "usage-line");
+  mkdirSync(usageLineDir);
   const env = { HOME: home, XDG_DATA_HOME: join(root, "xdg") };
   const store = openStore(env, { retryDelayMs: 0 });
   const fake = join(root, "fake-ai-usage");
@@ -183,7 +202,7 @@ function sandbox() {
     );
     chmodSync(fake, 0o755);
   };
-  const run = (args, now = NOW) =>
+  const run = (args, now = NOW, extraEnv = {}) =>
     new Promise((resolve) => {
       const child = spawn(process.execPath, [main, ...args], {
         env: {
@@ -191,6 +210,8 @@ function sandbox() {
           ...env,
           DELEGATION_NOW: now,
           DELEGATION_AI_USAGE_BIN: fake,
+          DELEGATION_USAGE_LINE_DIR: usageLineDir,
+          ...extraEnv,
         },
       });
       let stdout = "";
@@ -203,6 +224,7 @@ function sandbox() {
   return {
     root,
     env,
+    usageLineDir,
     store,
     setUsage,
     run,
@@ -815,6 +837,855 @@ describe("delegation route / review (process)", { concurrency: 4 }, () => {
         (await sb.run(["review"])).stdout.split("\n")[0],
         /台帳が大きい/,
       );
+    } finally {
+      sb.done();
+    }
+  });
+});
+
+// ---- forecast file reader -----------------------------------------------
+
+const fixture = JSON.parse(
+  readFileSync(
+    new URL("./fixtures/usage-line-forecast-v1.json", import.meta.url),
+    "utf8",
+  ),
+);
+const MIN = 60_000;
+const RESETS_SEC = 1_800_000_000;
+const CLAUDE_RESETS_MS = RESETS_SEC * 1000;
+
+/** The fixture's file with the checked fields set; `edit` may change the rest. */
+function forecastFile(at, { observedMs, ratePerHour, resetsAt, edit } = {}) {
+  const f = structuredClone(fixture.file);
+  const week = f.windows.seven_day;
+  f.at = at;
+  week.resetsAt = resetsAt ?? RESETS_SEC;
+  if (observedMs !== undefined) week.forecast.observedMs = observedMs;
+  if (ratePerHour !== undefined) week.forecast.ratePerHour = ratePerHour;
+  edit?.(f);
+  return f;
+}
+
+function usageLineSandbox() {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "delegation-fc-")));
+  return {
+    dir,
+    put(name, body, mtimeMs = Date.now()) {
+      const path = join(dir, name);
+      writeFileSync(
+        path,
+        typeof body === "string" ? body : JSON.stringify(body),
+      );
+      utimesSync(path, mtimeMs / 1000, mtimeMs / 1000);
+      return path;
+    },
+    done: () => rmSync(dir, { recursive: true }),
+  };
+}
+
+function readOne(body, claudeMs = CLAUDE_RESETS_MS, opts) {
+  const sb = usageLineSandbox();
+  try {
+    sb.put("s-1.json", body);
+    return readForecast(sb.dir, new Date(), claudeMs, opts);
+  } finally {
+    sb.done();
+  }
+}
+const reasonOf = (r) => (r.ok ? "ok" : r.reason);
+
+describe("forecast file reader", () => {
+  it("forecastDir follows the usage-line rule for every fixture case", () => {
+    for (const { env, dir } of fixture.dirCases) {
+      assert.equal(
+        forecastDir(env),
+        dir === null ? null : `${dir}/usage-line`,
+        JSON.stringify(env),
+      );
+    }
+  });
+
+  it("DELEGATION_USAGE_LINE_DIR is the directory itself and must be absolute", () => {
+    assert.equal(forecastDir({ DELEGATION_USAGE_LINE_DIR: "rel/x" }), null);
+    assert.equal(forecastDir({ DELEGATION_USAGE_LINE_DIR: "/a/../b" }), null);
+    assert.equal(forecastDir({ DELEGATION_USAGE_LINE_DIR: "" }), null);
+    assert.equal(
+      forecastDir({ DELEGATION_USAGE_LINE_DIR: "/abs/x" }),
+      "/abs/x",
+    );
+  });
+
+  it("directory states: null, missing, not a directory, empty, external only", () => {
+    const now = new Date();
+    assert.deepEqual(readForecast(null, now, CLAUDE_RESETS_MS), {
+      ok: false,
+      reason: "no-dir",
+    });
+    const sb = usageLineSandbox();
+    try {
+      assert.equal(
+        reasonOf(readForecast(join(sb.dir, "none"), now, CLAUDE_RESETS_MS)),
+        "no-file",
+      );
+      const plain = sb.put("plain", "x");
+      assert.equal(
+        reasonOf(readForecast(plain, now, CLAUDE_RESETS_MS)),
+        "no-dir",
+      );
+      assert.equal(
+        reasonOf(readForecast(sb.dir, now, CLAUDE_RESETS_MS)),
+        "no-file",
+      );
+      sb.put("_external.json", forecastFile(Date.now()));
+      assert.equal(
+        reasonOf(readForecast(sb.dir, now, CLAUDE_RESETS_MS)),
+        "no-file",
+      );
+    } finally {
+      sb.done();
+    }
+  });
+
+  it("a fresh fixture file is read; the numbers come from the week window", () => {
+    const r = readOne(forecastFile(Date.now() - 10 * MIN));
+    assert.deepEqual(r, {
+      ok: true,
+      ratePerHour: fixture.file.windows.seven_day.forecast.ratePerHour,
+      observedHours: fixture.file.windows.seven_day.forecast.observedMs / HOUR,
+    });
+  });
+
+  it("at: 25 min is the edge, 60 s ahead is the future edge", () => {
+    const sb = usageLineSandbox();
+    try {
+      const now = new Date();
+      const t = now.getTime();
+      const at = (ms) => {
+        for (const n of ["s-1.json"]) sb.put(n, forecastFile(ms));
+        return reasonOf(readForecast(sb.dir, now, CLAUDE_RESETS_MS));
+      };
+      assert.equal(at(t - 25 * MIN), "ok");
+      assert.equal(at(t - 25 * MIN - 1), "stale");
+      assert.equal(at(t + 60_000), "ok");
+      assert.equal(at(t + 61_000), "stale");
+    } finally {
+      sb.done();
+    }
+  });
+
+  it("resetsAt: 1 hour apart is the edge; no Claude reset is a mismatch", () => {
+    const fresh = Date.now() - MIN;
+    const body = (sec) => forecastFile(fresh, { resetsAt: sec });
+    assert.equal(reasonOf(readOne(body(RESETS_SEC + 3600))), "ok");
+    assert.equal(reasonOf(readOne(body(RESETS_SEC - 3600))), "ok");
+    assert.equal(reasonOf(readOne(body(RESETS_SEC + 3601))), "mismatch");
+    assert.equal(reasonOf(readOne(body(RESETS_SEC), null)), "mismatch");
+  });
+
+  it("ratePerHour: 0..100 is read, anything else is no-rate", () => {
+    const fresh = Date.now() - MIN;
+    const rate = (v) =>
+      reasonOf(readOne(forecastFile(fresh, { ratePerHour: v })));
+    assert.equal(rate(100), "ok");
+    assert.equal(rate(0), "ok");
+    for (const bad of [null, -0.1, 100.1, "3"])
+      assert.equal(rate(bad), "no-rate");
+  });
+
+  it("observedMs: 2h is the lower edge, 168h the upper, Infinity is no-rate", () => {
+    const fresh = Date.now() - MIN;
+    const obs = (v) =>
+      reasonOf(readOne(forecastFile(fresh, { observedMs: v })));
+    assert.equal(obs(2 * HOUR - 1), "short");
+    assert.equal(obs(2 * HOUR), "ok");
+    assert.equal(obs(168 * HOUR), "ok");
+    assert.equal(obs(168 * HOUR + 1), "no-rate");
+    const text = JSON.stringify(
+      forecastFile(fresh, { observedMs: 123456789 }),
+    ).replace("123456789", "1e999");
+    assert.match(text, /1e999/);
+    assert.equal(reasonOf(readOne(text)), "no-rate");
+  });
+
+  it("shape problems, one file at a time", () => {
+    const fresh = Date.now() - MIN;
+    const cases = [
+      ["v: 2", forecastFile(fresh, { edit: (f) => (f.v = 2) }), "no-rate"],
+      ["root array", [], "no-rate"],
+      [
+        "windows []",
+        forecastFile(fresh, { edit: (f) => (f.windows = []) }),
+        "no-rate",
+      ],
+      [
+        "seven_day []",
+        forecastFile(fresh, { edit: (f) => (f.windows.seven_day = []) }),
+        "no-rate",
+      ],
+      [
+        "forecast null",
+        forecastFile(fresh, {
+          edit: (f) => (f.windows.seven_day.forecast = null),
+        }),
+        "no-rate",
+      ],
+      ["at as string", forecastFile("1e3"), "stale"],
+      ["broken json", "{not json", "no-rate"],
+    ];
+    for (const [label, body, want] of cases) {
+      assert.equal(reasonOf(readOne(body)), want, label);
+    }
+  });
+
+  it("mtime older than 25 minutes is stale even when `at` is fresh", () => {
+    const sb = usageLineSandbox();
+    try {
+      sb.put("s-1.json", forecastFile(Date.now() - MIN), Date.now() - 26 * MIN);
+      assert.equal(
+        reasonOf(readForecast(sb.dir, new Date(), CLAUDE_RESETS_MS)),
+        "stale",
+      );
+    } finally {
+      sb.done();
+    }
+  });
+
+  it("symlink, FIFO and oversized files are not read", () => {
+    const sb = usageLineSandbox();
+    try {
+      const now = new Date();
+      const real = sb.put("real.txt", forecastFile(Date.now() - MIN));
+      symlinkSync(real, join(sb.dir, "a-link.json"));
+      assert.equal(
+        reasonOf(readForecast(sb.dir, now, CLAUDE_RESETS_MS)),
+        "no-file",
+      );
+      rmSync(join(sb.dir, "a-link.json"));
+      assert.equal(
+        spawnSync("mkfifo", [join(sb.dir, "a-fifo.json")]).status,
+        0,
+      );
+      const started = Date.now();
+      assert.equal(
+        reasonOf(readForecast(sb.dir, now, CLAUDE_RESETS_MS)),
+        "no-file",
+      );
+      assert.ok(Date.now() - started < 1000);
+      rmSync(join(sb.dir, "a-fifo.json"));
+      sb.put("a-big.json", " ".repeat(16 * 1024 + 1));
+      assert.equal(
+        reasonOf(readForecast(sb.dir, now, CLAUDE_RESETS_MS)),
+        "no-file",
+      );
+    } finally {
+      sb.done();
+    }
+  });
+
+  it("a swap between lstat and open is caught at open (symlink, FIFO, big file)", () => {
+    const swaps = {
+      symlink: (path, aside) => symlinkSync(aside, path),
+      fifo: (path) => spawnSync("mkfifo", [path]),
+      big: (path) => writeFileSync(path, " ".repeat(16 * 1024 + 1)),
+    };
+    for (const [label, swap] of Object.entries(swaps)) {
+      const sb = usageLineSandbox();
+      try {
+        const aside = sb.put("aside.txt", forecastFile(Date.now() - MIN));
+        sb.put("s-1.json", forecastFile(Date.now() - MIN));
+        const started = Date.now();
+        const r = readForecast(sb.dir, new Date(), CLAUDE_RESETS_MS, {
+          beforeOpen: (path) => {
+            rmSync(path);
+            swap(path, aside);
+          },
+        });
+        assert.equal(reasonOf(r), "no-file", label);
+        assert.ok(Date.now() - started < 1000, label);
+      } finally {
+        sb.done();
+      }
+    }
+  });
+
+  it("a file owned by another uid is not read", () => {
+    const body = forecastFile(Date.now() - MIN);
+    assert.equal(reasonOf(readOne(body)), "ok");
+    assert.equal(
+      reasonOf(readOne(body, CLAUDE_RESETS_MS, { uid: process.getuid() + 1 })),
+      "no-file",
+    );
+  });
+
+  it("several files: newest `at` wins, ties go to the first name", () => {
+    const sb = usageLineSandbox();
+    try {
+      const t = Date.now();
+      sb.put("a-1.json", forecastFile(t - 10 * MIN, { ratePerHour: 1 }));
+      sb.put("b-2.json", forecastFile(t - 5 * MIN, { ratePerHour: 2 }));
+      assert.equal(
+        readForecast(sb.dir, new Date(), CLAUDE_RESETS_MS).ratePerHour,
+        2,
+      );
+      sb.put("a-1.json", forecastFile(t - 5 * MIN, { ratePerHour: 1 }));
+      assert.equal(
+        readForecast(sb.dir, new Date(), CLAUDE_RESETS_MS).ratePerHour,
+        1,
+      );
+    } finally {
+      sb.done();
+    }
+  });
+
+  it("the reason that got furthest wins: short over stale", () => {
+    const sb = usageLineSandbox();
+    try {
+      const t = Date.now();
+      sb.put("a-1.json", forecastFile(t - 40 * MIN));
+      sb.put("b-2.json", forecastFile(t - MIN, { observedMs: HOUR }));
+      assert.equal(
+        reasonOf(readForecast(sb.dir, new Date(), CLAUDE_RESETS_MS)),
+        "short",
+      );
+    } finally {
+      sb.done();
+    }
+  });
+
+  it("only the first 256 names (ascending) are looked at", () => {
+    const sb = usageLineSandbox();
+    try {
+      const t = Date.now();
+      for (let i = 0; i < 256; i++) {
+        sb.put(
+          `a-${String(i).padStart(3, "0")}.json`,
+          forecastFile(t - 40 * MIN),
+        );
+      }
+      sb.put("z-ok.json", forecastFile(t - MIN));
+      assert.equal(
+        reasonOf(readForecast(sb.dir, new Date(), CLAUDE_RESETS_MS)),
+        "stale",
+      );
+      rmSync(join(sb.dir, "a-255.json"));
+      assert.equal(
+        reasonOf(readForecast(sb.dir, new Date(), CLAUDE_RESETS_MS)),
+        "ok",
+      );
+    } finally {
+      sb.done();
+    }
+  });
+});
+
+// ---- usage-line contract (CI does not run the mod's own tests) -----------
+
+test("usage-line file layout still matches the shared fixture", () => {
+  for (const { env, dir } of fixture.dirCases) {
+    assert.equal(
+      lineFilePath(env, "s-1"),
+      dir === null ? null : `${dir}/usage-line/s-1.json`,
+      JSON.stringify(env),
+    );
+  }
+  const base = Date.UTC(2026, 9, 22, 12);
+  const resetsAt = Math.trunc((base + 3 * DAY) / 1000);
+  // Gaps over 25 minutes break the observation, so sample every 10 minutes.
+  const rows = [7, 6, 5, 4, 3, 2, 1].map((i) => ({
+    window: "seven_day",
+    sampledAt: base - i * 10 * MIN,
+    usedPercent: 10 + (7 - i) * 0.1,
+    resetsAt,
+  }));
+  const forecast = forecastUsage(rows, "seven_day", base);
+  assert.equal(forecast.status, "spare");
+  const fixtureForecast = fixture.file.windows.seven_day.forecast;
+  assert.deepEqual(
+    Object.keys(forecast).sort(),
+    Object.keys(fixtureForecast).sort(),
+  );
+  assert.equal(typeof forecast.ratePerHour, "number");
+  assert.equal(typeof forecast.observedMs, "number");
+  assert.equal(typeof fixtureForecast.ratePerHour, "number");
+  assert.equal(typeof fixtureForecast.observedMs, "number");
+});
+
+// ---- lookahead and surplus (pure) ---------------------------------------
+
+const MINS = { fiveHourMins: 300, weekMins: WEEK_MINS };
+const WEEK_HOURS = WEEK_MINS / 60;
+const ok = (ratePerHour, observedHours) => ({
+  ok: true,
+  ratePerHour,
+  observedHours,
+});
+/** A week window `elapsedH` hours into a 168h week, as of NOWD. */
+const weekElapsed = (used, elapsedH) => ({
+  usedPercent: used,
+  resetsAt: iso(nowMs + (WEEK_HOURS - elapsedH) * HOUR),
+});
+const paceOf = (weekly) => ({ fiveHour: "under", weekly });
+const underOf = (w) => paceOf(paceWeekly(w, false, NOWD, WEEK_MINS));
+
+describe("applyLookahead / surplusPoints", () => {
+  it("under the line but over it in 3h: ahead by lookahead", () => {
+    const w = weekElapsed(11, 3.5);
+    assert.equal(underOf(w).weekly, "under");
+    const r = applyLookahead(underOf(w), w, ok(3.17, 3.5), NOWD, MINS);
+    assert.equal(r.pace.weekly, "ahead");
+    assert.equal(r.pace.fiveHour, "under");
+    assert.equal(r.aheadBy, "lookahead");
+    assert.equal(r.lookahead.hoursToLine.toFixed(1), "2.1");
+    assert.ok(Math.abs(r.lookahead.hoursToLine - 2.085) < 0.001);
+  });
+
+  it("low use stays under", () => {
+    const w = weekElapsed(1, 2);
+    const r = applyLookahead(underOf(w), w, ok(3.17, 2), NOWD, MINS);
+    assert.equal(r.pace.weekly, "under");
+    assert.equal(r.aheadBy, null);
+  });
+
+  it("crossesLine: landing on the line is under", () => {
+    assert.equal(crossesLine(10, 2, 3, 16), false);
+    assert.equal(crossesLine(10, 2, 3, 15.99), true);
+  });
+
+  it("less than 3h to the reset is not applied; exactly 3h is", () => {
+    for (const [left, want] of [
+      [2.9, null],
+      [3, "lookahead"],
+    ]) {
+      const w = weekElapsed(99, WEEK_HOURS - left);
+      const r = applyLookahead(underOf(w), w, ok(5, 10), NOWD, MINS);
+      assert.equal(r.aheadBy, want, String(left));
+      assert.equal(r.lookahead.tooCloseToReset, left < 3);
+    }
+  });
+
+  it("a rate equal to the line slope: no promotion, hoursToLine from the flat part", () => {
+    const slope = 100 / WEEK_HOURS;
+    const w = weekElapsed(11, 3.5);
+    const r = applyLookahead(underOf(w), w, ok(slope, 10), NOWD, MINS);
+    assert.equal(r.aheadBy, null);
+    assert.ok(Math.abs(r.lookahead.hoursToLine - 149.5) < 0.1);
+    const above = weekElapsed(16.37, 3.5);
+    const r0 = applyLookahead(
+      paceOf("under"),
+      above,
+      ok(slope, 10),
+      NOWD,
+      MINS,
+    );
+    assert.equal(r0.lookahead.hoursToLine, 0);
+  });
+
+  it("last day (line capped at 100): hoursToLine is null past the reset", () => {
+    const at = (used, rate, left) => {
+      const w = weekElapsed(used, WEEK_HOURS - left);
+      return applyLookahead(paceOf("under"), w, ok(rate, 10), NOWD, MINS)
+        .lookahead.hoursToLine;
+    };
+    assert.equal(at(90, 0.5, 10), null);
+    assert.equal(at(90, 2, 10), 5);
+    assert.equal(at(99, 0.5, 10), 2);
+  });
+
+  it("just before the cap a rate below the slope still reaches the line", () => {
+    // line 99.5 at 143.16h into the week
+    const elapsed = ((99.5 / 100) * 7 - 1) * 24;
+    const w = weekElapsed(99.4, elapsed);
+    const r = applyLookahead(paceOf("under"), w, ok(0.5, 10), NOWD, MINS);
+    assert.equal(r.aheadBy, "lookahead");
+    assert.ok(Math.abs(r.lookahead.hoursToLine - 1.2) < 0.01);
+  });
+
+  it("an unreadable forecast leaves the line verdict alone", () => {
+    const w = weekElapsed(11, 3.5);
+    const read = { ok: false, reason: "no-file" };
+    const r = applyLookahead(underOf(w), w, read, NOWD, MINS);
+    assert.equal(r.pace.weekly, "under");
+    assert.equal(r.aheadBy, null);
+    assert.equal(r.lookahead.hoursToLine, null);
+    assert.deepEqual(r.lookahead.read, read);
+  });
+
+  it("ahead is reported as line, exhausted and unknown are never rewritten", () => {
+    const w = weekElapsed(40, 3.5);
+    const r = applyLookahead(paceOf("ahead"), w, ok(3, 3), NOWD, MINS);
+    assert.equal(r.aheadBy, "line");
+    assert.notEqual(r.lookahead, null);
+    const ex = applyLookahead(paceOf("exhausted"), w, ok(3, 3), NOWD, MINS);
+    assert.equal(ex.aheadBy, null);
+    assert.equal(ex.pace.weekly, "exhausted");
+    assert.notEqual(ex.lookahead, null);
+    const un = applyLookahead(paceOf("unknown"), null, ok(3, 3), NOWD, MINS);
+    assert.equal(un.lookahead, null);
+    assert.equal(un.aheadBy, null);
+  });
+
+  it("surplusPoints", () => {
+    const left = (used, h) => ({
+      usedPercent: used,
+      resetsAt: iso(nowMs + h * HOUR),
+    });
+    const near = (v, want) => assert.ok(Math.abs(v - want) < 0.05, `${v}`);
+    near(surplusPoints(left(4, 69.6), NOWD, MINS), 56.2);
+    assert.equal(surplusPoints(left(50, 84), NOWD, MINS), 25);
+    near(surplusPoints(left(50.2, 84), NOWD, MINS), 24.9);
+    assert.equal(
+      surplusPoints(left(-5, 84), NOWD, MINS),
+      surplusPoints(left(0, 84), NOWD, MINS),
+    );
+    assert.equal(surplusPoints(left(120, 84), NOWD, MINS), 0);
+    assert.equal(
+      surplusPoints({ usedPercent: 4, resetsAt: null }, NOWD, MINS),
+      null,
+    );
+    assert.equal(surplusPoints(left(4, 69.6), NOWD, null), null);
+    assert.equal(surplusPoints(null, NOWD, MINS), null);
+  });
+});
+
+// ---- lookahead and surplus in the route output --------------------------
+
+const ELAPSED_35H_LEFT = (168 - 3.5) / 24;
+/** A forecast file for the sandbox clock, with the mtime pinned next to it. */
+function putForecast(sb, name, body) {
+  const path = join(sb.usageLineDir, name);
+  writeFileSync(path, typeof body === "string" ? body : JSON.stringify(body));
+  const m = (nowMs - MIN) / 1000;
+  utimesSync(path, m, m);
+  return path;
+}
+const claudeResetsSec = (daysLeft) =>
+  Math.round((nowMs + daysLeft * DAY) / 1000);
+const claudeLookahead = {
+  claude: { week: 11, daysLeft: ELAPSED_35H_LEFT },
+};
+const goodForecast = (over = {}) =>
+  forecastFile(nowMs - 10 * MIN, {
+    ratePerHour: 3.17,
+    observedMs: 3.5 * HOUR,
+    resetsAt: claudeResetsSec(ELAPSED_35H_LEFT),
+    ...over,
+  });
+const lookaheadLine = (out) =>
+  out.split("\n").find((l) => l.startsWith("  先読み:")) ?? "";
+const tryLines = (out) =>
+  out.split("\n").filter((l) => l.startsWith("試す候補:"));
+const routeKind = (kind, size) => ["route", "--kind", kind, "--size", size];
+const noFile = { ok: false, reason: "no-file" };
+
+/** main.ts's wiring without the process: same functions, same order. */
+function routeOut({
+  kind = "impl",
+  size = "M",
+  usage = {},
+  read = noFile,
+  folded = foldLedger([]),
+}) {
+  const parsed = parseUsageSummary(usageOf(usage));
+  const claudeWeek = parsed.claude?.weekly ?? null;
+  const applied = applyLookahead(
+    paceProvider(parsed.claude, NOWD, MINS),
+    claudeWeek,
+    read,
+    NOWD,
+    MINS,
+  );
+  return buildRoute({
+    kind,
+    size,
+    now: NOWD,
+    folded,
+    paces: {
+      claude: applied.pace,
+      codex: paceProvider(parsed.codex, NOWD, MINS),
+      opencode: paceProvider(parsed.opencode, NOWD, MINS),
+    },
+    claudeAheadBy: applied.aheadBy,
+    lookahead: applied.lookahead,
+    surplus: {
+      codex: surplusPoints(parsed.codex?.weekly ?? null, NOWD, MINS),
+      opencode: surplusPoints(parsed.opencode?.weekly ?? null, NOWD, MINS),
+    },
+    pendingTotal: 0,
+    pendingSession: null,
+    skipped: { version: 0, type: 0, broken: 0 },
+    ledgerLarge: false,
+    due: null,
+    windowMinsMissing: false,
+    usageMissing: false,
+  }).join("\n");
+}
+
+describe("route output: lookahead line and rule 2", () => {
+  it("a readable forecast pushes an under week to ahead; rule 2 says so", () => {
+    const out = routeOut({ usage: claudeLookahead, read: ok(3.17, 3.5) });
+    assert.match(
+      recommendation(out),
+      /codex.*規則 2: Claude の週枠が ahead \(先読み\)/,
+    );
+    assert.match(
+      lookaheadLine(out),
+      /速さ 3\.2pt\/h \(観測 3\.5h\) 線まで 2\.1h$/,
+    );
+    const lines = out.split("\n");
+    const w = lines.findIndex((l) => l.startsWith("窓:"));
+    assert.equal(lines[w + 1], lookaheadLine(out));
+    assert.match(lines[w], /claude 5h=under week=ahead/);
+  });
+
+  it("an ahead-by-line week has no (先読み) on rule 2", () => {
+    const out = routeOut({ usage: { claude: { week: 90 } }, read: ok(1, 3) });
+    assert.match(recommendation(out), /規則 2: Claude の週枠が ahead\]/);
+    assert.match(lookaheadLine(out), /^  先読み: claude 週/);
+  });
+
+  it("without a forecast the line decides (rule 3) and the reason shows", () => {
+    const out = routeOut({ usage: claudeLookahead });
+    assert.match(recommendation(out), /sonnet.*規則 3/);
+    assert.equal(lookaheadLine(out), "  先読み: 使えない (no-file)");
+  });
+
+  it("each of the six reasons reaches the line", () => {
+    for (const reason of [
+      "no-dir",
+      "no-file",
+      "stale",
+      "mismatch",
+      "no-rate",
+      "short",
+    ]) {
+      const out = routeOut({
+        usage: claudeLookahead,
+        read: { ok: false, reason },
+      });
+      assert.equal(lookaheadLine(out), `  先読み: 使えない (${reason})`);
+    }
+  });
+
+  it("an unknown Claude week prints no lookahead line", () => {
+    const out = routeOut({ usage: { claude: "fail" }, read: ok(3.17, 3.5) });
+    assert.equal(lookaheadLine(out), "");
+    assert.match(out, /claude 5h=unknown week=unknown/);
+  });
+
+  it("an unreachable line and the 3h notice", () => {
+    const left = 2.5 / 24;
+    const out = routeOut({
+      usage: { claude: { week: 90, daysLeft: left } },
+      read: ok(0.5, 3),
+    });
+    assert.match(lookaheadLine(out), /\(リセットまで 3h 未満: 使わない\)$/);
+    const far = routeOut({
+      usage: { claude: { week: 90, daysLeft: 10 / 24 } },
+      read: ok(0.5, 3),
+    });
+    assert.match(lookaheadLine(far), /線に届かない$/);
+  });
+});
+
+describe("route output: surplus candidates", () => {
+  const opencodeSurplus = { opencode: { week: 4, daysLeft: 69.6 / 24 } };
+  const SURPLUS_56 =
+    "試す候補: opencode (opencode run) 週枠の余り 56pt がリセットまでに使われない";
+
+  it("mechanical, triage and draft see it at any size; impl does not", () => {
+    for (const [kind, size, shown] of [
+      ["mechanical", "L", true],
+      ["triage", "L", true],
+      ["draft", "L", true],
+      ["mechanical", "M", true],
+      ["impl", "L", false],
+    ]) {
+      const out = routeOut({ kind, size, usage: opencodeSurplus });
+      assert.equal(
+        tryLines(out).includes(SURPLUS_56),
+        shown,
+        `${kind}\n${out}`,
+      );
+    }
+  });
+
+  it("the external's 5h must be under and 25.0 points is the edge", () => {
+    for (const [spec, shown] of [
+      [{ ...opencodeSurplus.opencode, five: 95 }, false],
+      [{ week: 50, daysLeft: 3.5 }, true],
+      [{ week: 50.2, daysLeft: 3.5 }, false],
+    ]) {
+      const out = routeOut({
+        kind: "mechanical",
+        size: "L",
+        usage: { opencode: spec },
+      });
+      assert.equal(tryLines(out).length === 1, shown, out);
+    }
+  });
+
+  it("the recommended external and an ahead external are not listed", () => {
+    const out = routeOut({
+      kind: "mechanical",
+      size: "L",
+      usage: { claude: { week: 90 }, ...opencodeSurplus },
+    });
+    assert.match(recommendation(out), /opencode.*規則 2/);
+    assert.deepEqual(tryLines(out), []);
+    const out2 = routeOut({
+      kind: "mechanical",
+      size: "L",
+      usage: { codex: { week: 90 } },
+    });
+    assert.deepEqual(tryLines(out2), []);
+  });
+
+  it("explore and surplus on the same external make one line", () => {
+    const out = routeOut({
+      kind: "mechanical",
+      size: "S",
+      usage: opencodeSurplus,
+    });
+    const lines = tryLines(out);
+    assert.equal(lines.length, 1, out);
+    assert.match(
+      lines[0],
+      /^試す候補: opencode .*比較に件数が足りない。週枠の余り 56pt$/,
+    );
+  });
+
+  it("explore on codex stays as it was and opencode gets its own line", () => {
+    const sb = sandbox();
+    try {
+      seed(sb.store, {
+        harness: "opencode",
+        model: "zai-coding-plan/glm-5.3",
+        kind: "mechanical",
+        size: "S",
+        adopted: 5,
+      });
+      // used 20 at 0.5 days in: under the line (21.4), surplus about 5.7.
+      const out = routeOut({
+        kind: "mechanical",
+        size: "S",
+        usage: { codex: { week: 20, daysLeft: 6.5 }, ...opencodeSurplus },
+        folded: foldLedger(readLedger(sb.store).rows),
+      });
+      const lines = tryLines(out);
+      assert.equal(lines.length, 2, out);
+      assert.match(lines[0], /^試す候補: codex .*比較に件数が足りない$/);
+      assert.match(lines[1], /^試す候補: opencode .* 週枠の余り 56pt /);
+    } finally {
+      sb.done();
+    }
+  });
+
+  it("impl keeps the explore line unchanged even when the external has a surplus", () => {
+    const out = routeOut({
+      kind: "impl",
+      size: "S",
+      usage: { codex: { five: 95 }, ...opencodeSurplus },
+    });
+    const lines = tryLines(out);
+    assert.equal(lines.length, 1, out);
+    assert.match(lines[0], /^試す候補: opencode .*比較に件数が足りない$/);
+  });
+});
+
+describe("route process: wiring", { concurrency: 4 }, () => {
+  it("a forecast file is read and rule 2 and the lookahead line follow", async () => {
+    const sb = sandbox();
+    try {
+      putForecast(sb, "s-1.json", goodForecast());
+      sb.setUsage(usageOf(claudeLookahead));
+      const out = (await sb.run(ROUTE)).stdout;
+      assert.match(recommendation(out), /codex.*規則 2.*\(先読み\)/);
+      assert.match(lookaheadLine(out), /線まで 2\.1h$/);
+    } finally {
+      sb.done();
+    }
+  });
+
+  it("no file gives the reason, and a surplus line is printed", async () => {
+    const sb = sandbox();
+    try {
+      sb.setUsage(
+        usageOf({
+          ...claudeLookahead,
+          opencode: { week: 4, daysLeft: 69.6 / 24 },
+        }),
+      );
+      const out = (await sb.run(routeKind("mechanical", "L"))).stdout;
+      assert.equal(lookaheadLine(out), "  先読み: 使えない (no-file)");
+      assert.match(tryLines(out).join("\n"), /opencode .* 週枠の余り 56pt /);
+    } finally {
+      sb.done();
+    }
+  });
+
+  it("hostile names, keys, values and bodies never reach stdout or stderr", async () => {
+    const sb = sandbox();
+    try {
+      const evil = "EVIL";
+      putForecast(sb, "a-1.json", goodForecast({}));
+      putForecast(sb, "a-2.json", { ...goodForecast(), EVIL: "EVIL" });
+      for (const [i, key] of [
+        "at",
+        "resetsAt",
+        "status",
+        "ratePerHour",
+        "observedMs",
+      ].entries()) {
+        const f = goodForecast();
+        if (key === "at") f.at = evil;
+        else if (key === "resetsAt") f.windows.seven_day.resetsAt = evil;
+        else f.windows.seven_day.forecast[key] = evil;
+        putForecast(sb, `b-${i}.json`, f);
+      }
+      putForecast(sb, "c-1.json", `{ broken EVIL`);
+      symlinkSync(
+        join(sb.usageLineDir, "a-1.json"),
+        join(sb.usageLineDir, "EVIL-1.json"),
+      );
+      assert.equal(
+        spawnSync("mkfifo", [join(sb.usageLineDir, "EVIL-2.json")]).status,
+        0,
+      );
+      sb.setUsage(usageOf(claudeLookahead));
+      const r = await sb.run(ROUTE);
+      assert.equal(r.status, 0);
+      assert.doesNotMatch(r.stdout + r.stderr, /EVIL/);
+      const r2 = await sb.run(ROUTE, NOW, {
+        DELEGATION_USAGE_LINE_DIR: "/a/../EVIL",
+      });
+      assert.equal(r2.status, 0);
+      assert.doesNotMatch(r2.stdout + r2.stderr, /EVIL/);
+      assert.equal(lookaheadLine(r2.stdout), "  先読み: 使えない (no-dir)");
+      assert.equal(
+        forecastDir({ DELEGATION_USAGE_LINE_DIR: "rel/EVIL" }),
+        null,
+      );
+    } finally {
+      sb.done();
+    }
+  });
+});
+
+describe("review: new thresholds", () => {
+  it("prints each lookahead and surplus threshold once", async () => {
+    const sb = sandbox();
+    try {
+      const out = (await sb.run(["review"])).stdout;
+      for (const text of [
+        "先読み=3h",
+        "先読みの観測下限=2h",
+        "予想ファイルの鮮度=25分",
+        "リセット時刻の許容差=1h",
+        "週枠の余り=25pt",
+      ]) {
+        assert.equal(out.split(text).length - 1, 1, text);
+      }
     } finally {
       sb.done();
     }

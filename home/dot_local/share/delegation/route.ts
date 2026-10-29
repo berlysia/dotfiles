@@ -3,6 +3,8 @@ import {
   EXPLORE_MIN_RECORDS,
   EXPLORE_WINDOW_DAYS,
   RECORD_GAP_POINTS,
+  SURPLUS_MIN_POINTS,
+  WEEK_LOOKAHEAD_HOURS,
 } from "./constants.ts";
 import {
   enoughRecords,
@@ -19,7 +21,13 @@ import {
   groupKey,
   type GroupStats,
 } from "./aggregate.ts";
-import type { PaceState, ProviderName, ProviderPace } from "./pace.ts";
+import type {
+  AheadBy,
+  Lookahead,
+  PaceState,
+  ProviderName,
+  ProviderPace,
+} from "./pace.ts";
 import type { Folded, ReviewDue, SkipCounts } from "./store.ts";
 import { reviewPromptLine } from "./store.ts";
 
@@ -36,13 +44,20 @@ const DESTINATION: Record<External | "sonnet", string> = {
   opencode: "opencode (opencode run)",
 };
 const OPENCODE_FIRST = new Set(["mechanical", "triage"]);
+// Kinds whose work can wait for an idle quota at any size.
+const SURPLUS_KINDS = new Set(["mechanical", "triage", "draft"]);
 
 export type RouteInput = {
   kind: string;
   size: string;
   now: Date;
   folded: Folded;
+  /** claude is already the pace after the lookahead was applied. */
   paces: Record<ProviderName, ProviderPace>;
+  claudeAheadBy: AheadBy | null;
+  lookahead: Lookahead | null;
+  /** Week points that will not be spent by the reset; null when unknown. */
+  surplus: Record<External, number | null>;
   pendingTotal: number;
   pendingSession: number | null;
   skipped: SkipCounts;
@@ -64,7 +79,7 @@ function externalOrder(kind: string): External[] {
     : ["codex", "opencode"];
 }
 
-type Pick = { line: string };
+type Pick = { line: string; dest: External | "sonnet" };
 
 function ruleOne(
   groups: GroupStats[],
@@ -95,6 +110,7 @@ function ruleOne(
   }
   if (best === null) return null;
   return {
+    dest: best.name,
     line: `推奨: ${DESTINATION[best.name]} [規則 1: 記録] ${kind}×${size} の採用率 ${percent(successes(best.rep), best.rep.n)}% (${best.rep.n} 件) が sonnet の ${percent(successes(claude), claude.n)}% (${claude.n} 件) より ${RECORD_GAP_POINTS}pt 以上高い`,
   };
 }
@@ -103,6 +119,7 @@ function ruleTwo(
   groups: GroupStats[],
   paces: Record<ProviderName, ProviderPace>,
   kind: string,
+  claudeAheadBy: AheadBy | null,
 ): Pick | null {
   const claudeWeek = paces.claude.weekly;
   if (claudeWeek !== "ahead" && claudeWeek !== "exhausted") return null;
@@ -122,11 +139,14 @@ function ruleTwo(
       enoughRecords(claude) &&
       enoughRecords(rep) &&
       rateLeadsBy(claude, rep, RECORD_GAP_POINTS);
+    const basis = claudeAheadBy === "lookahead" ? " (先読み)" : "";
     return {
-      line: `推奨: ${DESTINATION[name]} [規則 2: Claude の週枠が ahead]${worse ? " 記録では劣る (Claude の枠を設計判断とメインループに残すことを優先)" : ""}`,
+      dest: name,
+      line: `推奨: ${DESTINATION[name]} [規則 2: Claude の週枠が ahead${basis}]${worse ? " 記録では劣る (Claude の枠を設計判断とメインループに残すことを優先)" : ""}`,
     };
   }
   return {
+    dest: "sonnet",
     line: `推奨: ${DESTINATION.sonnet} [規則 2 の外部は全部 ahead / exhausted / unknown] 全部 ahead。急がない委譲は後へ`,
   };
 }
@@ -137,7 +157,7 @@ function explore(
   kind: string,
   size: string,
   now: Date,
-): string | null {
+): { name: External; line: string } | null {
   if (size !== "S") return null;
   const groups = groupsForCell(folded, kind, "S", now, EXPLORE_WINDOW_DAYS);
   for (const name of externalOrder(kind)) {
@@ -146,10 +166,40 @@ function explore(
       .filter((g) => g.harness === HARNESS_OF[name])
       .reduce((sum, g) => sum + g.n, 0);
     if (count < EXPLORE_MIN_RECORDS) {
-      return `試す候補: ${DESTINATION[name]} ${kind}×S の直近 ${EXPLORE_WINDOW_DAYS} 日の記録 ${count}/${EXPLORE_MIN_RECORDS} 件。比較に件数が足りない`;
+      return {
+        name,
+        line: `試す候補: ${DESTINATION[name]} ${kind}×S の直近 ${EXPLORE_WINDOW_DAYS} 日の記録 ${count}/${EXPLORE_MIN_RECORDS} 件。比較に件数が足りない`,
+      };
     }
   }
   return null;
+}
+
+/** Whole points of an external's unspent week when it is worth trying, else null. */
+function surplusCandidate(
+  input: RouteInput,
+  name: External,
+  recommended: External | "sonnet",
+): number | null {
+  if (!SURPLUS_KINDS.has(input.kind)) return null;
+  if (name === recommended || !bothUnder(input.paces[name])) return null;
+  const points = input.surplus[name];
+  if (points === null || points < SURPLUS_MIN_POINTS) return null;
+  return Math.floor(points);
+}
+
+const oneDecimal = (x: number) => Math.max(0, x).toFixed(1);
+
+function lookaheadLine(l: Lookahead): string {
+  if (!l.read.ok) return `  先読み: 使えない (${l.read.reason})`;
+  const toLine =
+    l.hoursToLine === null
+      ? "線に届かない"
+      : `線まで ${oneDecimal(l.hoursToLine)}h`;
+  const close = l.tooCloseToReset
+    ? ` (リセットまで ${WEEK_LOOKAHEAD_HOURS}h 未満: 使わない)`
+    : "";
+  return `  先読み: claude 週 速さ ${oneDecimal(l.read.ratePerHour)}pt/h (観測 ${oneDecimal(l.read.observedHours)}h) ${toLine}${close}`;
 }
 
 /** Everything printed is an enum, a number, or a display name: never stored free text. */
@@ -160,12 +210,31 @@ export function buildRoute(input: RouteInput): string[] {
 
   const groups = groupsForCell(folded, kind, size, now, DEFAULT_SINCE_DAYS);
   const pick = ruleOne(groups, paces, kind, size) ??
-    ruleTwo(groups, paces, kind) ?? {
+    ruleTwo(groups, paces, kind, input.claudeAheadBy) ?? {
+      dest: "sonnet" as const,
       line: `推奨: ${DESTINATION.sonnet} [規則 3: 既定]`,
     };
   out.push(pick.line);
   const candidate = explore(folded, paces, kind, size, now);
-  if (candidate !== null) out.push(candidate);
+  const taken = new Set<External>();
+  if (candidate !== null) {
+    const points = surplusCandidate(input, candidate.name, pick.dest);
+    if (points !== null) taken.add(candidate.name);
+    out.push(
+      points === null
+        ? candidate.line
+        : `${candidate.line}。週枠の余り ${points}pt`,
+    );
+  }
+  for (const name of externalOrder(kind)) {
+    if (taken.has(name)) continue;
+    const points = surplusCandidate(input, name, pick.dest);
+    if (points !== null) {
+      out.push(
+        `試す候補: ${DESTINATION[name]} 週枠の余り ${points}pt がリセットまでに使われない`,
+      );
+    }
+  }
 
   const windows = (["claude", "codex", "opencode"] as const)
     .map(
@@ -174,6 +243,7 @@ export function buildRoute(input: RouteInput): string[] {
     )
     .join(" | ");
   out.push(`窓: ${windows}`);
+  if (input.lookahead !== null) out.push(lookaheadLine(input.lookahead));
   // Every window reads unknown in both cases; without a cause nobody can tell
   // a stale deployment from a provider outage.
   if (input.usageMissing) {
