@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import type { FeedbackDeps, FeedbackFs } from "./deps.ts";
+import type { FeedbackDeps, FeedbackFs, FsPath } from "./deps.ts";
 import { CACHE_TEMP_RANDOM_BYTES } from "./constants.ts";
 
 export type LockDeps = Pick<
@@ -17,7 +17,7 @@ export function hasCode<T>(error: T, code: string): boolean {
 }
 
 export async function unlinkIfPresent(
-  path: string,
+  path: FsPath,
   fs: Pick<FeedbackFs, "unlink">,
 ): Promise<void> {
   try {

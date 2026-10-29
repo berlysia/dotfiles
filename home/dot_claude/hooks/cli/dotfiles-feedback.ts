@@ -18,6 +18,7 @@ import {
   FEEDBACK_REPO,
   FLUSH_LOCK_FILE,
   FLUSH_LOCK_STALE_MS,
+  VM_OUTBOX_DIR,
 } from "../lib/dotfiles-feedback/constants.ts";
 import type {
   FeedbackDeps,
@@ -456,7 +457,10 @@ export function buildCliDeps(
     root: join(home, ".local", "share", "dotfiles-feedback"),
     home,
     uid: process.getuid?.() ?? -1,
-    fs: fsPromises,
+    fs: {
+      ...fsPromises,
+      readdirBuffer: (path) => fsPromises.readdir(path, { encoding: "buffer" }),
+    },
     repo: FEEDBACK_REPO,
     runGh,
     spawnFlush: () => spawnDetached(flushArgv(cliPath)),
@@ -467,6 +471,7 @@ export function buildCliDeps(
     isPidAlive,
     getPidStartTime,
     isVm: existsSync("/etc/agent-vm"),
+    vmOutboxDir: VM_OUTBOX_DIR,
     readStdin: readStdinCapped,
     envNames: Object.keys(process.env),
     resolveRepoKey: async (cwd) => resolveRepoKey(cwd, runGit),

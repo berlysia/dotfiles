@@ -9,10 +9,14 @@ import {
   CLAIM_STALE_MS,
   DAY_MS,
   FAILED_RETENTION_MS,
+  MACHINE_NAME_PATTERN,
   MAX_SENT_LINES,
   MAX_HELD,
   MAX_PENDING_PER_ORIGIN,
+  MAX_VM_FAILED_ITEMS,
+  MAX_VM_UNSUPPORTED_ITEMS,
   SCHEMA_VERSION,
+  VM_ID_PATTERN,
 } from "./constants.ts";
 
 export type SpoolDeps = Omit<RetryDeps, "fs"> &
@@ -27,10 +31,22 @@ export type SpoolDeps = Omit<RetryDeps, "fs"> &
       | "lstat"
       | "mkdir"
       | "readdir"
+      | "rmdir"
       | "utimes"
     >;
   };
 export type ClaimedItem = { id: string; nonce: string };
+export type VmFailedReason = "invalid" | "unsupported-version";
+export type VmFailedWrite = "written" | "exists" | "full";
+export type VmFailedFound = { machine: string; path: string; text: string };
+
+// VM の分の pending/ が枠に満ちている。呼び出し側が文言ではなく型で見分ける。
+export class PendingFullError extends Error {
+  constructor() {
+    super("dotfiles-feedback: pending full");
+    this.name = "PendingFullError";
+  }
+}
 export type LocalPlace = "pending" | "sending" | "held" | "failed";
 export type LocalEntry = {
   id: string;
@@ -138,11 +154,13 @@ export async function openSpool(root: string, deps: SpoolDeps) {
     ).length;
   }
   // failed/ 直下と failed/vm-*/ の件を、(場所の相対パス, id) で列挙する。
-  async function failedFiles(): Promise<{ path: string; id: string }[]> {
-    const out: { path: string; id: string }[] = [];
+  async function failedFiles(): Promise<
+    { path: string; id: string; vm: boolean }[]
+  > {
+    const out: { path: string; id: string; vm: boolean }[] = [];
     for (const name of await fs.readdir(join(root, "failed"))) {
       const id = filenameId(name);
-      if (id) out.push({ path: join(root, "failed", name), id });
+      if (id) out.push({ path: join(root, "failed", name), id, vm: false });
       else if (
         name.startsWith("vm-") &&
         (await safeDirectory(join(root, "failed", name)))
@@ -150,11 +168,25 @@ export async function openSpool(root: string, deps: SpoolDeps) {
         for (const inner of await fs.readdir(join(root, "failed", name))) {
           const innerId = filenameId(inner);
           if (innerId)
-            out.push({ path: join(root, "failed", name, inner), id: innerId });
+            out.push({
+              path: join(root, "failed", name, inner),
+              id: innerId,
+              vm: true,
+            });
         }
     }
     return out;
   }
+  // 包み { reason, item } の reason。読めなければ undefined。
+  const reasonOf = (text: string | null): string | undefined => {
+    if (text === null) return undefined;
+    try {
+      const wrapped = JSON.parse(text) as { reason?: unknown } | null;
+      return typeof wrapped?.reason === "string" ? wrapped.reason : undefined;
+    } catch {
+      return undefined;
+    }
+  };
   async function readOrNull(path: string): Promise<string | null> {
     try {
       return await fs.readFile(path, "utf8");
@@ -167,21 +199,84 @@ export async function openSpool(root: string, deps: SpoolDeps) {
     const parsed = parseItem(json);
     return parsed.kind === "ok" ? parsed.item.title : null;
   };
+  // except と完全に一致するパスのファイルは数えない（--retry が取り込み直している自分のファイル）。
+  async function hasIdExcept(id: string, except?: string): Promise<boolean> {
+    check(id);
+    const counts = async (path: string) =>
+      path !== except && (await exists(path));
+    for (const dir of ["pending", "held", "failed"])
+      if (await counts(itemPath(dir, id))) return true;
+    if (
+      (await fs.readdir(join(root, "sending"))).some(
+        (name) => claimedName(name)?.id === id,
+      )
+    )
+      return true;
+    for (const name of await fs.readdir(join(root, "failed"))) {
+      if (
+        name.startsWith("vm-") &&
+        (await safeDirectory(join(root, "failed", name))) &&
+        (await counts(join(root, "failed", name, `${id}.json`)))
+      )
+        return true;
+    }
+    let sent: string;
+    try {
+      sent = await fs.readFile(join(root, "sent.jsonl"), "utf8");
+    } catch (error) {
+      if (hasCode(error, "ENOENT")) return false;
+      console.error("dotfiles-feedback: sent read failed");
+      throw error;
+    }
+    return sent.split("\n").some((line) => {
+      try {
+        const entry = JSON.parse(line) as {
+          v?: number;
+          id?: string;
+          issue?: number;
+          at?: string;
+        } | null;
+        return (
+          !!entry &&
+          entry.v === 1 &&
+          entry.id === id &&
+          Number.isSafeInteger(entry.issue) &&
+          (entry.issue ?? 0) > 0 &&
+          typeof entry.at === "string" &&
+          Number.isFinite(Date.parse(entry.at))
+        );
+      } catch {
+        return false;
+      }
+    });
+  }
   return {
     root,
     async countLocal(): Promise<{
       unsent: number;
       failed: number;
       held: number;
+      failedVmUnsupported: number;
     }> {
       const count = async (dir: string, claimed = false) =>
         (await fs.readdir(join(root, dir))).filter((name) =>
           claimed ? claimedName(name) !== null : filenameId(name) !== null,
         ).length;
+      const failed = await failedFiles();
+      // 取り込み直しの途中で落ちた孤児（pending/ などにも同じ id がある件）は、CLI の更新で取り込める件に数えない。
+      let failedVmUnsupported = 0;
+      for (const entry of failed)
+        if (
+          entry.vm &&
+          reasonOf(await readOrNull(entry.path)) === "unsupported-version" &&
+          !(await hasIdExcept(entry.id, entry.path))
+        )
+          failedVmUnsupported++;
       return {
         unsent: (await count("pending")) + (await count("sending", true)),
-        failed: (await failedFiles()).length,
+        failed: failed.length,
         held: await count("held"),
+        failedVmUnsupported,
       };
     },
     async listLocal(now: Date): Promise<LocalEntry[]> {
@@ -297,8 +392,11 @@ export async function openSpool(root: string, deps: SpoolDeps) {
     },
     // mtime は moveToFailed が書いた時刻。30 日ちょうどは残し、それより古いものを消す。
     async pruneFailed(now: Date, _flushLockHeld: FlushLockHeld): Promise<void> {
-      for (const { path } of await failedFiles()) {
+      for (const { path, vm } of await failedFiles()) {
         try {
+          // CLI を更新すれば取り込める件は、30 日で消さない（spec K4）。
+          if (vm && reasonOf(await readOrNull(path)) === "unsupported-version")
+            continue;
           if (
             now.getTime() - (await fs.lstat(path)).mtimeMs >
             FAILED_RETENTION_MS
@@ -307,6 +405,24 @@ export async function openSpool(root: string, deps: SpoolDeps) {
         } catch (error) {
           // 並走する drop や flush --retry が先に消したものは飛ばす。
           if (!hasCode(error, "ENOENT")) throw error;
+        }
+      }
+      // machine ごとに増える空のディレクトリを、走査し続けないために消す。
+      for (const name of await fs.readdir(join(root, "failed"))) {
+        if (!name.startsWith("vm-")) continue;
+        const dir = join(root, "failed", name);
+        try {
+          const stat = await fs.lstat(dir);
+          if (
+            stat.isDirectory() &&
+            !stat.isSymbolicLink() &&
+            (await fs.readdir(dir)).length === 0
+          )
+            await fs.rmdir(dir);
+        } catch (error) {
+          // 並走の取り込みが書いた、または消した場合は残す。
+          if (!hasCode(error, "ENOENT") && !hasCode(error, "ENOTEMPTY"))
+            throw error;
         }
       }
     },
@@ -332,8 +448,7 @@ export async function openSpool(root: string, deps: SpoolDeps) {
         const id = filenameId(name);
         if (id && (id.startsWith("vm-") ? "vm" : "local") === origin) count++;
       }
-      if (count >= MAX_PENDING_PER_ORIGIN)
-        throw new Error("dotfiles-feedback: pending full");
+      if (count >= MAX_PENDING_PER_ORIGIN) throw new PendingFullError();
       if ((item.id.startsWith("vm-") ? "vm" : "local") !== origin)
         throw new Error("dotfiles-feedback: origin mismatch");
       await atomicWrite(
@@ -341,6 +456,70 @@ export async function openSpool(root: string, deps: SpoolDeps) {
         JSON.stringify(item),
         deps,
       );
+    },
+    // 取り込んだ VM の件を、通らなかった理由つきで failed/vm-<machine>/ に写す。
+    // wrapped は呼び出し側が作った包み { reason, item, at } の文字列。理由ごとの枠は machine ごと。
+    async writeVmFailed(
+      machine: string,
+      id: string,
+      wrapped: string,
+      reason: VmFailedReason,
+    ): Promise<VmFailedWrite> {
+      if (!MACHINE_NAME_PATTERN.test(machine))
+        throw new Error("dotfiles-feedback: invalid machine");
+      if (!VM_ID_PATTERN.test(id))
+        throw new Error("dotfiles-feedback: invalid id");
+      const dir = join(root, "failed", `vm-${machine}`);
+      const ensureDir = async () => {
+        if (!(await safeDirectory(dir))) {
+          await fs.mkdir(dir, { mode: 0o700, recursive: true });
+          await safeDirectory(dir);
+        }
+      };
+      await ensureDir();
+      const target = join(dir, `${id}.json`);
+      if (await exists(target)) return "exists";
+      let count = 0;
+      for (const name of await fs.readdir(dir)) {
+        if (filenameId(name) === null) continue;
+        const existing = reasonOf(await readOrNull(join(dir, name)));
+        if ((existing ?? "invalid") === reason) count++;
+      }
+      if (
+        count >=
+        (reason === "invalid" ? MAX_VM_FAILED_ITEMS : MAX_VM_UNSUPPORTED_ITEMS)
+      )
+        return "full";
+      try {
+        await atomicWrite(target, wrapped, deps);
+      } catch (error) {
+        // 作った直後に pruneFailed が空のディレクトリを消した場合だけ、作り直して 1 回書く。
+        if (!hasCode(error, "ENOENT")) throw error;
+        await ensureDir();
+        await atomicWrite(target, wrapped, deps);
+      }
+      return "written";
+    },
+    // failed/vm-*/ を一覧から探す。id から組み立てたパスを直接開かない。
+    async findVmFailed(id: string): Promise<VmFailedFound | null> {
+      if (!VM_ID_PATTERN.test(id)) return null;
+      for (const name of await fs.readdir(join(root, "failed"))) {
+        if (!name.startsWith("vm-")) continue;
+        const dir = join(root, "failed", name);
+        try {
+          const stat = await fs.lstat(dir);
+          if (!stat.isDirectory() || stat.isSymbolicLink()) continue;
+          if (!(await fs.readdir(dir)).includes(`${id}.json`)) continue;
+          const path = join(dir, `${id}.json`);
+          const text = await readOrNull(path);
+          if (text !== null)
+            return { machine: name.slice("vm-".length), path, text };
+        } catch (error) {
+          // 並走の掃除が空のディレクトリを消した。
+          if (!hasCode(error, "ENOENT")) throw error;
+        }
+      }
+      return null;
     },
     async sortPending(): Promise<void> {
       for (const directory of ["held", "pending"] as const) {
@@ -374,53 +553,8 @@ export async function openSpool(root: string, deps: SpoolDeps) {
         }
       }
     },
-    async hasId(id: string): Promise<boolean> {
-      check(id);
-      for (const dir of ["pending", "held", "failed"])
-        if (await exists(itemPath(dir, id))) return true;
-      if (
-        (await fs.readdir(join(root, "sending"))).some(
-          (name) => claimedName(name)?.id === id,
-        )
-      )
-        return true;
-      for (const name of await fs.readdir(join(root, "failed"))) {
-        if (
-          name.startsWith("vm-") &&
-          (await safeDirectory(join(root, "failed", name))) &&
-          (await exists(join(root, "failed", name, `${id}.json`)))
-        )
-          return true;
-      }
-      let sent: string;
-      try {
-        sent = await fs.readFile(join(root, "sent.jsonl"), "utf8");
-      } catch (error) {
-        if (hasCode(error, "ENOENT")) return false;
-        console.error("dotfiles-feedback: sent read failed");
-        throw error;
-      }
-      return sent.split("\n").some((line) => {
-        try {
-          const entry = JSON.parse(line) as {
-            v?: number;
-            id?: string;
-            issue?: number;
-            at?: string;
-          } | null;
-          return (
-            !!entry &&
-            entry.v === 1 &&
-            entry.id === id &&
-            Number.isSafeInteger(entry.issue) &&
-            (entry.issue ?? 0) > 0 &&
-            typeof entry.at === "string" &&
-            Number.isFinite(Date.parse(entry.at))
-          );
-        } catch {
-          return false;
-        }
-      });
+    async hasId(id: string, options?: { except?: string }): Promise<boolean> {
+      return hasIdExcept(id, options?.except);
     },
     async claim(id: string): Promise<ClaimedItem | null> {
       const from = itemPath("pending", id);
