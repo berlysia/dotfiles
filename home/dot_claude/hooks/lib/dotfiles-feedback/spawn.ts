@@ -3,6 +3,9 @@ import { spawn, type SpawnOptions } from "node:child_process";
 export function flushArgv(cliPath: string): string[] {
   return [process.execPath, cliPath, "flush"];
 }
+export function refreshArgv(cliPath: string): string[] {
+  return [process.execPath, cliPath, "refresh"];
+}
 type SpawnImpl = (
   file: string,
   args: string[],

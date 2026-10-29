@@ -1,8 +1,10 @@
 import { execFileSync, spawnSync } from "node:child_process";
+import { createReadStream, createWriteStream } from "node:fs";
+import { createInterface } from "node:readline";
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import * as fsPromises from "node:fs/promises";
-import { hostname } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
@@ -11,10 +13,14 @@ import { resolveRepoKey } from "../lib/repo-key.ts";
 import { runGit } from "../lib/run-git.ts";
 import { readLastFlush } from "../lib/dotfiles-feedback/cache.ts";
 import {
+  ERROR_HINTS,
   FEEDBACK_KINDS,
   FEEDBACK_REPO,
 } from "../lib/dotfiles-feedback/constants.ts";
-import type { FeedbackDeps } from "../lib/dotfiles-feedback/deps.ts";
+import type {
+  FeedbackDeps,
+  InteractiveDeps,
+} from "../lib/dotfiles-feedback/deps.ts";
 import { flush } from "../lib/dotfiles-feedback/flush.ts";
 import { runGh } from "../lib/dotfiles-feedback/gh.ts";
 import {
@@ -30,7 +36,11 @@ import {
   type FeedbackKind,
 } from "../lib/dotfiles-feedback/item.ts";
 import { openRetry } from "../lib/dotfiles-feedback/retry.ts";
-import { flushArgv, spawnDetached } from "../lib/dotfiles-feedback/spawn.ts";
+import {
+  flushArgv,
+  refreshArgv,
+  spawnDetached,
+} from "../lib/dotfiles-feedback/spawn.ts";
 import { openSpool } from "../lib/dotfiles-feedback/spool.ts";
 
 const STDIN_MAX_BYTES = 64 * 1024;
@@ -39,22 +49,13 @@ const USAGE = `使い方: dotfiles-feedback <command>
   flush [--retry <id>]
   status
   drop <id>`;
-const ERROR_HINTS: Record<string, string> = {
-  auth: "gh auth login を実行する",
-  network: "ネットワークを確認する",
-  "not-private": "宛先のリポジトリが private で berlysia のものか確認する",
-  "gh-missing": "gh をインストールする",
-  other: "時間をおいて flush を再実行する",
-};
-
-export type CliDeps = FeedbackDeps & {
-  cliPath: string;
-  cwd: string;
-  stdinIsTty: boolean;
-  spawnDetached(argv: readonly string[]): Promise<boolean>;
-  stdout(text: string): void;
-  stderr(text: string): void;
-};
+export type CliDeps = FeedbackDeps &
+  InteractiveDeps & {
+    cliPath: string;
+    spawnDetached(argv: readonly string[]): Promise<boolean>;
+    stdout(text: string): void;
+    stderr(text: string): void;
+  };
 type Command = (args: string[], deps: CliDeps) => Promise<number>;
 
 async function unsentCounts(deps: CliDeps) {
@@ -321,6 +322,33 @@ async function getPidStartTime(pid: number): Promise<string | null> {
   }
 }
 
+// /dev/tty を開けない・EOF・空行・y 以外はすべて偽。エージェントの stdin では答えられない。
+async function confirmOnTty(text: string): Promise<boolean> {
+  let input: ReturnType<typeof createReadStream> | undefined;
+  let output: ReturnType<typeof createWriteStream> | undefined;
+  try {
+    input = createReadStream("/dev/tty");
+    output = createWriteStream("/dev/tty");
+    await new Promise<void>((resolve, reject) => {
+      input!.once("open", () => resolve());
+      input!.once("error", reject);
+    });
+    output.write(`${text}\n[y/N] `);
+    const lines = createInterface({ input });
+    const answer = await new Promise<string | null>((resolve) => {
+      lines.once("line", resolve);
+      lines.once("close", () => resolve(null));
+    });
+    lines.close();
+    return answer === "y" || answer === "Y";
+  } catch {
+    return false;
+  } finally {
+    input?.destroy();
+    output?.destroy();
+  }
+}
+
 // root と gh の HOME はどちらも passwd から得た home から作る。環境変数 HOME は読まない。
 export function buildCliDeps(
   home: string,
@@ -348,6 +376,22 @@ export function buildCliDeps(
     cliPath,
     cwd: process.cwd(),
     stdinIsTty: process.stdin.isTTY === true,
+    stdoutIsTty: process.stdout.isTTY === true,
+    editor: process.env.EDITOR,
+    runEditor: async (argv) =>
+      argv[0] === undefined
+        ? null
+        : spawnSync(argv[0], argv.slice(1), { stdio: "inherit", shell: false })
+            .status,
+    makeTempDir: () => fsPromises.mkdtemp(join(tmpdir(), "dotfiles-feedback-")),
+    removeTree: (path) => fsPromises.rm(path, { recursive: true, force: true }),
+    confirm: confirmOnTty,
+    spawnRefresh: () => spawnDetached(refreshArgv(cliPath)),
+    resolveToplevel: async (cwd) => {
+      const r = runGit(["rev-parse", "--show-toplevel"], cwd);
+      return r.ok ? r.stdout.trim() || null : null;
+    },
+    realpath: (path) => fsPromises.realpath(path),
     spawnDetached,
     stdout: (text) => void process.stdout.write(text),
     stderr: (text) => void process.stderr.write(text),

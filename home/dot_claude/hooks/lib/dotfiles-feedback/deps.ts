@@ -54,3 +54,18 @@ export type FeedbackDeps = {
   envNames: readonly string[];
   resolveRepoKey(cwd: string): Promise<string | null>;
 };
+
+// 対話や端末に触れる部品。triage と CLI だけが受ける。gh・spool・flush などは参照しない。
+export type InteractiveDeps = {
+  cwd: string;
+  stdinIsTty: boolean;
+  stdoutIsTty: boolean;
+  editor: string | undefined;
+  runEditor(argv: readonly string[]): Promise<number | null>;
+  makeTempDir(): Promise<string>;
+  removeTree(path: string): Promise<void>;
+  confirm(text: string): Promise<boolean>;
+  spawnRefresh(): Promise<boolean>;
+  resolveToplevel(cwd: string): Promise<string | null>;
+  realpath(path: string): Promise<string>;
+};

@@ -62,3 +62,15 @@ export const MAX_VM_SCAN_ENTRIES = 200;
 export const MAX_VM_FAILED_ITEMS = 100;
 export const MAX_VM_DAILY_ITEMS = 100;
 export const CACHE_TEMP_RANDOM_BYTES = 6;
+export const FLUSH_LOCK_FILE = "state/flush.lock";
+export const DOTFILES_REPO_KEY = "github.com/berlysia/dotfiles";
+export const RECENT_TRIAGE_WINDOW_MS = 7 * DAY_MS;
+export const MAX_RECENT_TRIAGE = 20;
+export const INBOX_FUTURE_SKEW_MS = 5 * 60 * 1000;
+export const ERROR_HINTS: Record<string, string> = {
+  auth: "gh auth login を実行する",
+  network: "ネットワークを確認する",
+  "not-private": "宛先のリポジトリが private で berlysia のものか確認する",
+  "gh-missing": "gh をインストールする",
+  other: "時間をおいて flush を再実行する",
+};
