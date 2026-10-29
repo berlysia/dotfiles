@@ -32,7 +32,10 @@ async function fixture(
     root,
     home: "/passwd/home",
     uid: process.getuid!(),
-    fs,
+    fs: {
+      ...fs,
+      readdirBuffer: (path) => fs.readdir(path, { encoding: "buffer" }),
+    },
     repo: FEEDBACK_REPO,
     runGh: fake.run,
     spawnFlush: async () => true,
@@ -43,6 +46,7 @@ async function fixture(
     isPidAlive: () => true,
     getPidStartTime: async () => "s",
     isVm: false,
+    vmOutboxDir: join(dir, "vm-outbox"),
     readStdin: async () => "body text",
     envNames: [],
     resolveRepoKey: async () => null,
@@ -63,7 +67,7 @@ async function fixture(
     stderr: (s) => void err.push(s),
     ...overrides,
   };
-  return { deps, root, fake, out, err, spawned };
+  return { deps, root, fake, out, err, spawned, dir };
 }
 const SEND = ["send", "--title", "t", "--target", "x", "--kind", "bug"];
 const pending = async (root: string) =>
@@ -164,17 +168,104 @@ it("startCli passes the resolved home to buildDeps", async (t) => {
   strictEqual(code, 0);
   strictEqual(seen, "/h");
 });
-it("a VM rejects everything except status", async (t) => {
+it("a VM rejects every command except send and status, and never calls gh", async (t) => {
   const f = await fixture(t, { isVm: true });
-  strictEqual(await runCli(SEND, f.deps), 1);
-  strictEqual(await runCli(["flush"], f.deps), 1);
-  strictEqual(
-    await runCli(["drop", "20261029T100000Z-000000000001"], f.deps),
-    1,
-  );
+  for (const argv of [
+    ["flush"],
+    ["flush", "--retry", "vm-000000000000000000000001"],
+    ["list"],
+    ["show", "20261029T100000Z-000000000001"],
+    ["triage", "20261029T100000Z-000000000001", "--to", "reject"],
+    ["refresh"],
+    ["drop", "20261029T100000Z-000000000001"],
+    ["ingest-vm", "--state-dir=/x", "--machine=m"],
+  ])
+    strictEqual(await runCli(argv, f.deps), 1, argv.join(" "));
   strictEqual(await runCli(["status"], f.deps), 0);
   strictEqual(f.fake.calls.length, 0);
   deepStrictEqual(await pending(f.root), []);
+});
+it("a VM send writes the outbox only: no spool, no flush, no gh", async (t) => {
+  let flushed = 0;
+  const f = await fixture(t, {
+    isVm: true,
+    spawnFlush: async () => (flushed++, true),
+  });
+  strictEqual(await runCli(SEND, f.deps), 0);
+  const files = await fs.readdir(f.deps.vmOutboxDir);
+  strictEqual(files.length, 1);
+  const written = JSON.parse(
+    await fs.readFile(join(f.deps.vmOutboxDir, files[0]!), "utf8"),
+  );
+  strictEqual(written.source.vm, true);
+  const text = f.out.join("");
+  ok(text.includes(files[0]!.replace(".json", "")), text);
+  ok(text.includes("伏せた箇所: なし"), text);
+  ok(text.includes("ホストが取り込むまで outbox に置いた"), text);
+  strictEqual(f.spawned.length, 0);
+  strictEqual(flushed, 0);
+  strictEqual(f.fake.calls.length, 0);
+  strictEqual(existsSync(f.root), false);
+});
+it("a VM send refuses a bad body with the same checks and writes nothing", async (t) => {
+  const f = await fixture(t, {
+    isVm: true,
+    readStdin: async () => "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+  });
+  strictEqual(await runCli(SEND, f.deps), 1);
+  strictEqual(existsSync(f.deps.vmOutboxDir), false);
+});
+it("a VM send at 50 queued items refuses and tells the user to update the host", async (t) => {
+  const f = await fixture(t, { isVm: true });
+  await fs.mkdir(f.deps.vmOutboxDir, { recursive: true, mode: 0o700 });
+  for (let i = 0; i < 50; i++)
+    await fs.writeFile(
+      join(
+        f.deps.vmOutboxDir,
+        `20261028T100000Z-${i.toString(16).padStart(12, "0")}.json`,
+      ),
+      "{}",
+    );
+  strictEqual(await runCli(SEND, f.deps), 1);
+  ok(f.err.join("").includes("ホストが取り込むまで送れない"), f.err.join(""));
+  strictEqual((await fs.readdir(f.deps.vmOutboxDir)).length, 50);
+});
+it("a VM send that cannot write names the id and the errno and exits 1", async (t) => {
+  const f = await fixture(t, { isVm: true });
+  f.deps.fs = {
+    ...f.deps.fs,
+    rename: async () => {
+      throw Object.assign(new Error("x"), { code: "EACCES" });
+    },
+  };
+  strictEqual(await runCli(SEND, f.deps), 1);
+  ok(/送れなかった: \d{8}T\d{6}Z-[0-9a-f]{12} \(EACCES\)/.test(f.err.join("")));
+});
+it("a VM status counts the outbox, and says 0 when the directory is missing", async (t) => {
+  const f = await fixture(t, { isVm: true });
+  strictEqual(await runCli(["status"], f.deps), 0);
+  ok(f.out.join("").includes("ホストの取り込み待ち 0 件"), f.out.join(""));
+  await runCli(SEND, f.deps);
+  f.out.length = 0;
+  strictEqual(await runCli(["status"], f.deps), 0);
+  ok(f.out.join("").includes("ホストの取り込み待ち 1 件"), f.out.join(""));
+  strictEqual(existsSync(f.root), false);
+});
+it("an unknown subcommand prints the usage to stderr and exits 1 (what an old CLI does with ingest-vm)", async (t) => {
+  const f = await fixture(t);
+  strictEqual(await runCli(["nope"], f.deps), 1);
+  ok(f.err.join("").includes("使い方"), f.err.join(""));
+  strictEqual(f.out.length, 0);
+});
+it("outside a VM, send still writes the spool with source.vm false", async (t) => {
+  const f = await fixture(t);
+  strictEqual(await runCli(SEND, f.deps), 0);
+  const name = (await pending(f.root))[0]!;
+  const written = JSON.parse(
+    await fs.readFile(join(f.root, "pending", name), "utf8"),
+  );
+  strictEqual(written.source.vm, false);
+  strictEqual(existsSync(f.deps.vmOutboxDir), false);
 });
 it("status shows counts and the last flush reason", async (t) => {
   const f = await fixture(t);

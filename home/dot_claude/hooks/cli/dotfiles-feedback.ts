@@ -57,6 +57,10 @@ import {
   spawnDetached,
 } from "../lib/dotfiles-feedback/spawn.ts";
 import { openSpool } from "../lib/dotfiles-feedback/spool.ts";
+import {
+  countVmOutbox,
+  sendFromVm,
+} from "../lib/dotfiles-feedback/vm-outbox.ts";
 
 const STDIN_MAX_BYTES = 64 * 1024;
 const USAGE = `使い方: dotfiles-feedback <command>
@@ -86,6 +90,33 @@ function lastFlushLine(deps: CliDeps, hasPending: boolean): string | null {
   return last
     ? `直近の送信の失敗: ${last.error} (${last.at}) 対処: ${ERROR_HINTS[last.error] ?? ""}`
     : null;
+}
+
+// VM の中では spool にも gh にも触れず、outbox に置くだけにする。flush も起動しない（spec K4・K8）。
+async function sendInsideVm(
+  candidate: FeedbackItemV1,
+  redacted: boolean,
+  deps: CliDeps,
+): Promise<number> {
+  const outcome = await sendFromVm(candidate, deps);
+  if (outcome.kind === "queued") {
+    deps.stdout(
+      `${[
+        `保存した: ${candidate.id}`,
+        `伏せた箇所: ${redacted ? "あり" : "なし"}`,
+        "ホストが取り込むまで outbox に置いた",
+      ].join("\n")}\n`,
+    );
+    return 0;
+  }
+  deps.stderr(
+    outcome.kind === "full"
+      ? "ホストが取り込むまで送れない。ホストの dotfiles-feedback が古いなら更新する\n"
+      : outcome.kind === "unsafe"
+        ? "outbox のディレクトリが安全でないので書かなかった\n"
+        : `送れなかった: ${candidate.id} (${outcome.errno})\n`,
+  );
+  return 1;
 }
 
 const send: Command = async (args, deps) => {
@@ -158,11 +189,12 @@ const send: Command = async (args, deps) => {
     deps.stderr(`拒否: ${validated.reason}\n`);
     return 1;
   }
+  const redacted =
+    fields.title.redacted || fields.target.redacted || fields.body.redacted;
+  if (deps.isVm) return sendInsideVm(candidate, redacted, deps);
   const spool = await openSpool(deps.root, deps);
   const before = await spool.countLocal();
   await spool.writePending(candidate, { origin: "local" });
-  const redacted =
-    fields.title.redacted || fields.target.redacted || fields.body.redacted;
   const lines = [
     `保存した: ${candidate.id}`,
     `伏せた箇所: ${redacted ? "あり" : "なし"}`,
@@ -203,6 +235,10 @@ const flushCommand: Command = async (args, deps) => {
 };
 
 const status: Command = async (_args, deps) => {
+  if (deps.isVm) {
+    deps.stdout(`ホストの取り込み待ち ${await countVmOutbox(deps)} 件\n`);
+    return 0;
+  }
   const spool = await openSpool(deps.root, deps);
   const counts = await spool.countLocal();
   const sending = await isLockHeld(
@@ -344,7 +380,7 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
     deps.stderr(`${USAGE}\n`);
     return 1;
   }
-  if (deps.isVm && name !== "status") {
+  if (deps.isVm && name !== "status" && name !== "send") {
     deps.stderr("VM からの送信は未対応\n");
     return 1;
   }

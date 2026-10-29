@@ -66,6 +66,7 @@ const edges: Record<string, readonly string[]> = {
   ],
   spawn: ["deps"],
   "vm-item": ["item", "constants"],
+  "vm-outbox": ["item", "constants", "deps", "lock"],
   home: [],
   flush: [
     "labels-state",
@@ -97,6 +98,8 @@ const edges: Record<string, readonly string[]> = {
     "triage",
     "display",
     "home",
+    "vm-item",
+    "vm-outbox",
     "../repo-key",
     "../run-git",
     "../agent-caller",
@@ -382,6 +385,7 @@ it("session.ts reaches only cache, constants, notice, spawn and home, so a hook 
     "target",
     "labels-state",
     "vm-item",
+    "vm-outbox",
   ])
     strictEqual(closure.has(forbidden), false, forbidden);
 });
