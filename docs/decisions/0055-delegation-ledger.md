@@ -4,6 +4,8 @@
 
 accepted (2026-10-29)
 
+K5 の週枠の判定と K6 の試す候補を [ADR-0057](0057-route-lookahead-and-surplus.md) で広げた。
+
 ## Context
 
 メインループ（Opus 以上）は、定型の実装や調査を下位のモデルに委譲する。委譲先は Claude の sonnet のほか、Codex（GPT-6.1 Terra）と OpenCode（GLM-5.3）がある。それまでの規約は、次の 3 点を決めていた。

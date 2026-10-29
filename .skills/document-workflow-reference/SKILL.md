@@ -212,6 +212,17 @@ stamp は Round N の要求集合を Round N-1 の verdict から再計算する
 
 `reviewer-run-recorder`（PostToolUse Agent）が reviewer subagent の起動を `<sessionId>\t<subagent_type>\t<ISO>` で記録する（`O_APPEND` で 1 行ずつ追記し、並列起動でも行を落とさない。上限は設けない）。`stamp` はこの台帳で、現 round の要求集合（Round 1 と full round は対象層の必須 reviewer、以降は差分再レビューの rerun のうち必須 reviewer）が現 round の baseline 以降に起動されたかを検証する。これで round + stamp だけで reviewer 未起動のまま pass を書くことを防ぐ。台帳は session 単位で文書単位ではない（同 session で spec と plan-N を同 round で見る場合は両層の必須 reviewer が揃えば通る、過剰許容側の fail-open）。
 
+## reviewer の委譲先を route で決める
+
+operator guide の共通フロー 5.4 と 6 の詳細。
+
+- round ごとに、reviewer を起動する前に `delegation route --kind review --size <S|M|L>` を 1 回引く。規模は文書の最初の `## Reviewer Outputs` より前の行数で、150 行以下が S、400 行以下が M、それより長ければ L。round を重ねても規模が変わらないように、Reviewer Outputs は数えない。
+- 推奨が codex（Terra か Luna max）なら、帳簿に載る reviewer を次の節の `executor: codex` の経路で起動する。
+- 推奨が sonnet か opencode のとき、または route が 0 以外で終わったときは、今のとおり起動する。OpenCode で reviewer を動かす経路は無いので、opencode を勧められても sonnet で起動する。
+- 同じ round の全 reviewer に同じ推奨を使う。sonnet の reviewer が混ざるのは、Codex の実行に失敗して sonnet でやり直したときだけ。
+- 結果を確かめて triage が済んだら、各 reviewer を `delegation record <id> --kind review --size <S|M|L> --verdict <adopted|patched|discarded> --triage-excluded <N>` で記録する。指摘をそのまま反映したら adopted、直して反映したら patched、全部除外したら discarded。`redone` は使わない。
+- sonnet の reviewer の id は `[delegation]` の行から取る。Codex 経路の reviewer の id はその行に出ないので、次の節の選び方で pending の行を選ぶ。合う行が無く `record --manual` で補うときは、`--triage-excluded` を付けない。
+
 ## reviewer を Codex で実行する
 
 帳簿に載る reviewer は、`executor: codex` の依頼で Codex に実行させられる。帳簿は subagent_type で記録するので、stamp はふだんどおり受け付ける。

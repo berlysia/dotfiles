@@ -65,7 +65,7 @@ Agent tool の `model` パラメータ / Workflow `agent()` の `opts.model` で
 
 - 3+ ファイルの読み込みが必要な調査は原則 subagent 化する（コンテキスト温存とコスト削減の両取り）
 - 独立サブタスクは単一メッセージで並列 subagent 起動する
-- Document Workflow の reviewer も Codex で実行できる。手順は `/document-workflow-reference` の「reviewer を Codex で実行する」にある。依頼の `model:` と `effort:` には、`delegation route --kind review` の推奨行の括弧内にある `-m` と `model_reasoning_effort=` の値だけを書く（括弧内のコマンドそのものは起動しない）。reviewer の結果を確かめたら、reviewer ごとに pending の行を選んで `delegation record <id> --kind review` で記録する。行の選び方は同じ節にある
+- Document Workflow の reviewer は、round ごとに `delegation route --kind review` を引き、推奨が codex のときに Codex で実行する（workflow.md の共通フロー 5）。手順は `/document-workflow-reference` の「reviewer を Codex で実行する」にある。依頼の `model:` と `effort:` には、`delegation route --kind review` の推奨行の括弧内にある `-m` と `model_reasoning_effort=` の値だけを書く（括弧内のコマンドそのものは起動しない）。Codex で実行した reviewer の結果を確かめたら、reviewer ごとに pending の行を選んで `delegation record <id> --kind review` で記録する。行の選び方は同じ節にある
 - **plan に無い判断は報告させる**: plan はコードの本体を持たないので、実装を委譲すると worker が小さな判断を自分で下す。委譲する brief には、plan に無い判断をしたら結果の報告に列挙するよう書き、メインループが採否を決める
 - **問い分解の前提も検証対象**: worker は渡された brief しか検証しない。分解の前提（対象リスト・仮定）が結果を左右するなら、前提確認にもう 1 委譲を使う
 - agent 定義（`~/.claude/agents/*.md`）の frontmatter に `model` がある場合はそれを尊重し、上書きは明確な理由がある場合のみ
