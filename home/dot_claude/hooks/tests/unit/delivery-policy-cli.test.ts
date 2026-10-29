@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import {
+  isHelpRequest,
   resolveCliDeps,
   runDeliveryPolicyCli,
   type DeliveryPolicyCliDeps,
@@ -253,6 +254,34 @@ describe("delivery-policy CLI", () => {
     assert.equal(await run("ask", "--cwd", "/tmp"), 2);
     assert.equal(await run(), 2);
     assert.equal(calls.length, 0);
+  });
+
+  it("prints usage to stdout with 0 for a lone --help or -h", async () => {
+    for (const flag of ["--help", "-h"]) {
+      out = "";
+      err = "";
+      assert.equal(await run(flag), 0);
+      assert.match(out, /merge <PR number>/);
+      for (const code of ["10", "11", "12", "20", "30", "40"])
+        assert.match(out, new RegExp(`\\b${code}\\b`));
+      assert.equal(err, "");
+    }
+    assert.equal(calls.length, 0);
+  });
+
+  it("keeps --help after a command as a bad argument", async () => {
+    assert.equal(await run("show", "--help"), 2);
+    assert.equal(await run("merge", "1", "--help"), 2);
+    assert.equal(out, "");
+    assert.equal(calls.length, 0);
+  });
+
+  it("isHelpRequest needs exactly one help flag", () => {
+    assert.equal(isHelpRequest(["--help"]), true);
+    assert.equal(isHelpRequest(["-h"]), true);
+    assert.equal(isHelpRequest(["show", "--help"]), false);
+    assert.equal(isHelpRequest(["--cwd", "/tmp", "--help"]), false);
+    assert.equal(isHelpRequest([]), false);
   });
 
   it("resolveCliDeps without --cwd is 2", () => {

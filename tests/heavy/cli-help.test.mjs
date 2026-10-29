@@ -71,7 +71,6 @@ const ROWS = [
     globName: "delivery-policy",
     from: ["bun", "run", DELIVERY_POLICY_CLI],
     expect: "delivery-policy",
-    pending: "pending PR 2",
   },
   { key: "dotfiles-feedback", expect: "dotfiles-feedback", word: "使い方" },
   { key: "dotfiles-sync-doctor", expect: "dotfiles-sync-doctor" },
