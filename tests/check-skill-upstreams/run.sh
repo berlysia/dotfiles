@@ -24,6 +24,9 @@ record() { printf '%s\n' "$1" >>"$RESULTS_FILE"; }
 assert_eq() { if [[ "$1" == "$2" ]]; then record "PASS $3"; else record "FAIL $3 (expected: $1 / actual: $2)"; fi; }
 assert_contains() { case "$1" in *"$2"*) record "PASS $3" ;; *) record "FAIL $3 (missing: $2 / in: $1)" ;; esac; }
 assert_not_contains() { case "$1" in *"$2"*) record "FAIL $3 (unexpected: $2 / in: $1)" ;; *) record "PASS $3" ;; esac; }
+# assert_no_arg <log> <word> <name>: <word> is not a whole argv word in any call. A substring check
+# would also match inside the mktemp paths passed as --body-file and fail on a random name.
+assert_no_arg() { assert_not_contains " ${1//$'\n'/ } " " $2 " "$3"; }
 
 # ---- fixture builders ----------------------------------------------------------------------------
 rep() { printf '%*s' "$2" '' | tr ' ' "$1"; }
@@ -627,8 +630,8 @@ test_sync_invalid_issue_numbers_are_ignored() {
   assert_eq "open imozuru" "$STDOUT" "bad numbers: treated as no open issue"
   assert_eq 0 "$(count_calls 'gh issue edit')" "bad numbers: never passed to gh issue edit"
   assert_eq 0 "$(count_calls 'gh issue close')" "bad numbers: never passed to gh issue close"
-  assert_not_contains "$(<"$CASE/log")" " -1" "bad numbers: -1 not in any argv"
-  assert_not_contains "$(<"$CASE/log")" "1x" "bad numbers: 1x not in any argv"
+  assert_no_arg "$(<"$CASE/log")" "-1" "bad numbers: -1 not in any argv"
+  assert_no_arg "$(<"$CASE/log")" "1x" "bad numbers: 1x not in any argv"
 }
 test_sync_error_text_stays_out_of_logs() {
   std_case
