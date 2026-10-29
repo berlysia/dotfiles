@@ -14,12 +14,6 @@
 # Zsh completion cache files
 .zsh/.zcompdump*
 
-# Insight distillation runtime artifacts (never tracked in source state)
-.claude/logs/insights
-.claude/logs/insights/**
-.claude/.last-distill-insights*
-.claude/.last-insight-digest-acked
-
 **/node_modules
 **/node_modules/**
 
