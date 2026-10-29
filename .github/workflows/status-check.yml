@@ -12,6 +12,7 @@ on:
       - "Validate JSON Templates"
       - "agent-vm Launcher Tests"
       - "git-worktree-cleanup Tests"
+      - "ask-grokbot Tests"
       - "skill-upstreams Tests"
       - "Format Check"
       - "shiori Annotations"
@@ -56,6 +57,7 @@ jobs:
               'Validate JSON Templates',
               'agent-vm Launcher Tests',
               'git-worktree-cleanup Tests',
+              'ask-grokbot Tests',
               'skill-upstreams Tests',
               'Format Check',
               'shiori Annotations'

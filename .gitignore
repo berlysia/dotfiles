@@ -26,6 +26,10 @@ Thumbs.db
 # Local environment files (if any)
 .env.local
 
+# ask-grokbot credentials belong at ~/.config/ask-grokbot/env, outside this repo.
+# Ignore a copy placed under the chezmoi source tree.
+home/dot_config/ask-grokbot/
+
 node_modules
 
 # lsmcp cache
