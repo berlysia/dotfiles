@@ -29,6 +29,7 @@ apply は未掲載のスキルを追記するだけで、行を消さない。
 - [x] execute-plan
 - [x] external-skill-intake
 - [x] formal-check
+- [x] gemini-polish
 - [x] git-safety
 - [x] github-pr-ci
 - [x] hook-cli-development
