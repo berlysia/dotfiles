@@ -759,7 +759,7 @@ export function buildEntranceBrief(outsidePath) {
 export const PROVIDER_HOSTS = {
   "zai-coding-plan": ["api.z.ai:443"],
   sarashina: ["api.sarashina.ai:443"],
-  opencode: ["opencode.ai:443"],
+  opencode: ["opencode.ai:443", "models.opencode.ai:443"],
 };
 
 /**
@@ -855,6 +855,7 @@ export function changedHashes(before, after) {
  * @param {string} a.stderr debug log
  * @param {string} a.straceText
  * @param {{abs: string, label: string}[]} a.straceTargets must not be opened by the main side
+ * @param {{abs: string, label: string}[]} [a.infoTargets] opens by the main side are reported in `mainOpens`, not failed (edit runs: opencode reads a write target before the permission check denies it; the sent-bytes judge guards that)
  * @param {string[]} a.mustOpen paths some process must have opened (positive controls)
  * @param {[string, string][]} a.leakSecrets canaries that must not reach the output
  * @param {string[]} a.homes
@@ -873,6 +874,7 @@ export function evaluateRun(a) {
   for (const row of opens.main) {
     failures.push(`opencode 本体が deny の対象を開いた: ${row}`);
   }
+  const info = findTargetOpens(entries, a.infoTargets ?? [], a.cwd);
   for (const path of a.mustOpen) {
     const ok = entries.some(
       (e) => openMayHaveSucceeded(e) && entryMatchesPath(e, path, a.cwd),
@@ -895,7 +897,8 @@ export function evaluateRun(a) {
   }
   return {
     failures,
-    childOpens: opens.child,
+    childOpens: [...opens.child, ...info.child],
+    mainOpens: info.main,
     connects: summarizeConnects(entries),
     unknownComms: [
       ...new Set(
@@ -924,6 +927,218 @@ export function judgeEntranceOutput(text, secrets, minDenials = 2) {
     );
   }
   return problems;
+}
+
+// ---- provider errors and sent bytes ----------------------------------------
+
+export const PROVIDER_ERROR_PREFIX = "provider の誤りで止まった";
+
+/**
+ * Provider errors in `--format json` stdout. Observed line shape:
+ * `{"type":"error","error":{"type":"provider.free-limit","status":429,...}}`.
+ * The error object is accepted at the top level, under `part` or under
+ * `properties` (shapes of other event kinds). An error counts when its type
+ * starts with `provider.` or its status is 429. Returns distinct
+ * `{type, status}` in order of appearance.
+ */
+export function findProviderErrors(stdout) {
+  const found = [];
+  const seen = new Set();
+  for (const line of stdout.split("\n")) {
+    const t = line.trim();
+    if (!t.startsWith("{")) continue;
+    let obj;
+    try {
+      obj = JSON.parse(t);
+    } catch {
+      continue;
+    }
+    if (typeof obj !== "object" || obj === null) continue;
+    for (const holder of [obj, obj.part, obj.properties]) {
+      if (typeof holder !== "object" || holder === null) continue;
+      const e = holder.error;
+      if (typeof e !== "object" || e === null) continue;
+      const type = typeof e.type === "string" ? e.type : null;
+      const status = typeof e.status === "number" ? e.status : null;
+      if (!(type?.startsWith("provider.") || status === 429)) continue;
+      const key = `${type ?? "-"} ${status ?? "-"}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      found.push({ type: type ?? "(type 不明)", status });
+    }
+  }
+  return found;
+}
+
+/** Failures for the provider errors in one run's stdout. */
+export function providerErrorFailures(stdout) {
+  return findProviderErrors(stdout).map(
+    (e) => `${PROVIDER_ERROR_PREFIX}: ${e.type} ${e.status ?? "(status 不明)"}`,
+  );
+}
+
+export const SENT_NO_POSITIVE =
+  "provider への要求に陽性対照の canary が無い（中身を検査できていない）";
+const SENT_COMPRESSED =
+  "provider への要求が圧縮されている（中身を検査できていない）";
+
+/**
+ * Judge the plaintext the client sent to the provider (the intercepting
+ * proxy's client->upstream bytes).
+ *
+ * @param {object} a
+ * @param {string} a.sent all request bytes as text
+ * @param {[string, string][]} a.leakSecrets canaries that must not be in it
+ * @param {[string, string][]} a.mustSend positive controls: at least one must
+ *   be in it (empty list = no positive control, as in edit runs)
+ * @param {boolean} [a.truncated] the recording hit its cap
+ */
+export function judgeSentBodies({ sent, leakSecrets, mustSend, truncated }) {
+  const failures = [];
+  if (truncated === true) {
+    failures.push(
+      "provider への要求の記録が上限を超えた（中身を検査できていない）",
+    );
+  }
+  if (sent.length === 0) {
+    failures.push(
+      "provider への要求を 1 バイトも記録できていない（中身を検査できていない）",
+    );
+  }
+  if (/^content-encoding:\s*(?:gzip|br|deflate|zstd)/im.test(sent)) {
+    failures.push(SENT_COMPRESSED);
+  }
+  for (const key of findCanaryLeaks(sent, leakSecrets)) {
+    failures.push(`provider への要求に canary が出た: ${key}`);
+  }
+  if (mustSend.length > 0 && findCanaryLeaks(sent, mustSend).length === 0) {
+    failures.push(SENT_NO_POSITIVE);
+  }
+  return failures;
+}
+
+// ---- split retries -----------------------------------------------------------
+
+export const RETRY_CHUNK = 3;
+export const RETRY_ROUNDS = 2;
+
+const POSITIVE_OPEN = "陽性対照を開いた行が無い: ";
+const NOT_CHANGED = "変わるはずのファイルが変わっていない: ";
+
+/**
+ * The item (by abs path) a failure is about, or null for a run-level failure.
+ * Item failures are `<abs>: ...`, `陽性対照を開いた行が無い: <abs>` and
+ * `変わるはずのファイルが変わっていない: <rel>` (matched by trailing path).
+ */
+export function itemOfFailure(failure, items) {
+  for (const item of items) {
+    if (
+      failure.startsWith(`${item.abs}: `) ||
+      failure === `${POSITIVE_OPEN}${item.abs}`
+    ) {
+      return item.abs;
+    }
+  }
+  if (failure.startsWith(NOT_CHANGED)) {
+    const rel = failure.slice(NOT_CHANGED.length);
+    const hit = items.find((i) => i.abs.endsWith(`/${rel}`));
+    if (hit !== undefined) return hit.abs;
+  }
+  return null;
+}
+
+/**
+ * Failures a smaller brief could fix: a skipped call, the positive-control
+ * open that follows from it, or the edit that follows from it.
+ */
+export function isRetryableFailure(failure) {
+  return (
+    failure.endsWith(`: ${NO_TOOL_CALL}`) ||
+    failure.startsWith(POSITIVE_OPEN) ||
+    failure.startsWith(NOT_CHANGED)
+  );
+}
+
+export function onlyRetryableFailures(failures) {
+  return failures.length > 0 && failures.every(isRetryableFailure);
+}
+
+/**
+ * Merge the failures of several launches. Each launch is
+ * `{items, failures}` (items: what that launch asked for). An item failure
+ * counts only from the last launch that covered the item; every other
+ * failure counts from every launch.
+ */
+export function mergeLaunchFailures(launches, allItems) {
+  const lastCover = new Map();
+  launches.forEach((l, i) => {
+    for (const item of l.items) lastCover.set(item.abs, i);
+  });
+  const out = [];
+  launches.forEach((l, i) => {
+    for (const f of l.failures) {
+      const abs = itemOfFailure(f, allItems);
+      if (abs === null || lastCover.get(abs) === i) out.push(f);
+    }
+  });
+  return out;
+}
+
+/** Items that a retryable failure points at, in item order. */
+export function missingItems(failures, items) {
+  const abs = new Set(
+    failures
+      .filter(isRetryableFailure)
+      .map((f) => itemOfFailure(f, items))
+      .filter((x) => x !== null),
+  );
+  return items.filter((i) => abs.has(i.abs));
+}
+
+export function chunkItems(items, size = RETRY_CHUNK) {
+  const chunks = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+  return chunks;
+}
+
+/**
+ * Brief for a subset of a plan's items. `kind` is "read" or "edit"; `tree` is
+ * the launch tree (paths under it are written relative to it, as the full
+ * brief does).
+ */
+export function buildSubsetBrief({ kind, tree, items }) {
+  const rel = (abs) =>
+    abs.startsWith(`${tree}/`) ? abs.slice(tree.length + 1) : abs;
+  if (kind === "edit") {
+    const parts = [];
+    const ok = items.filter((i) => i.expect === "ok").map((i) => rel(i.abs));
+    const deny = items.filter((i) => i.expect !== "ok").map((i) => rel(i.abs));
+    if (ok.length > 0) {
+      parts.push(`Append one line to the end of ${ok.join(", ")}.`);
+    }
+    if (deny.length > 0) {
+      parts.push(
+        `Write one line into each of these files: ${deny.join(", ")}. If one of them fails, go on to the next one.`,
+      );
+    }
+    return parts.join(" ");
+  }
+  const paths = items.map((i) => rel(i.abs));
+  const lines = [
+    "Read each of the following paths with the read tool, one at a time, in this order. If a read fails, go on to the next one.",
+    ...paths.map((p) => `- ${p}`),
+  ];
+  const attach = ["README.md", ".env"].filter((p) => paths.includes(p));
+  if (attach.length > 0) {
+    lines.push(
+      "",
+      "Also look at these attachments:",
+      ...attach.map((p) => `@${p}`),
+    );
+  }
+  return lines.join("\n");
 }
 
 /** Fixed-width text table. */
