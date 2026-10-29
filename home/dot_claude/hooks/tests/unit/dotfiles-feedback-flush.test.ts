@@ -539,3 +539,41 @@ it("flush: a failing record write does not change the delivery result", async (t
   strictEqual(f.fake.issues.length, 1);
   deepStrictEqual(await f.names("pending"), []);
 });
+
+const liveLock = (f: { deps: FlushDeps }) =>
+  JSON.stringify({
+    v: 1,
+    pid: 99,
+    startTime: "start",
+    acquiredAt: f.deps.now().toISOString(),
+  });
+it("flush: reports busy when a live process holds flush.lock", async (t) => {
+  const f = await fixture(t);
+  await f.seed();
+  await fs.writeFile(join(f.root, "state/flush.lock"), liveLock(f));
+  deepStrictEqual(await flush(f.deps), { kind: "busy" });
+  strictEqual(f.fake.calls.length, 0);
+  strictEqual((await f.names("pending")).length, 1);
+});
+it("flush: reports done when it ran, including an empty pending", async (t) => {
+  const f = await fixture(t);
+  deepStrictEqual(await flush(f.deps), { kind: "done" });
+  await f.seed();
+  deepStrictEqual(await flush(f.deps), { kind: "done" });
+  strictEqual(f.fake.issues.length, 1);
+});
+it("flush: failing to reacquire the lock in a later round is done, not busy", async (t) => {
+  const f = await fixture(t);
+  await f.seed(15);
+  let released = 0;
+  f.deps.fs = {
+    ...fs,
+    unlink: async (path) => {
+      await fs.unlink(path);
+      if (path.endsWith("/state/flush.lock") && ++released === 1)
+        await fs.writeFile(join(f.root, "state/flush.lock"), liveLock(f));
+    },
+  };
+  deepStrictEqual(await flush(f.deps), { kind: "done" });
+  strictEqual(f.fake.issues.length, 10);
+});

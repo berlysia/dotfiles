@@ -16,6 +16,8 @@ import {
   ERROR_HINTS,
   FEEDBACK_KINDS,
   FEEDBACK_REPO,
+  FLUSH_LOCK_FILE,
+  FLUSH_LOCK_STALE_MS,
 } from "../lib/dotfiles-feedback/constants.ts";
 import type {
   FeedbackDeps,
@@ -46,6 +48,7 @@ import {
   type FeedbackItemV1,
   type FeedbackKind,
 } from "../lib/dotfiles-feedback/item.ts";
+import { isLockHeld } from "../lib/dotfiles-feedback/lock.ts";
 import { openRetry } from "../lib/dotfiles-feedback/retry.ts";
 import {
   flushArgv,
@@ -189,16 +192,25 @@ const flushCommand: Command = async (args, deps) => {
     await spool.retryFailed(values.retry);
     await openRetry(deps.root, deps).reset(values.retry);
   }
-  await flush(deps);
-  deps.stdout("flush 完了\n");
+  const result = await flush(deps);
+  deps.stdout(
+    result.kind === "busy"
+      ? "別の flush が実行中（終わると結果が status に出る）\n"
+      : "flush 完了\n",
+  );
   return 0;
 };
 
 const status: Command = async (_args, deps) => {
   const spool = await openSpool(deps.root, deps);
   const counts = await spool.countLocal();
+  const sending = await isLockHeld(
+    join(deps.root, FLUSH_LOCK_FILE),
+    FLUSH_LOCK_STALE_MS,
+    deps,
+  );
   const lines = [
-    `未送: ${counts.unsent} 件`,
+    `未送: ${counts.unsent} 件${sending ? "（送り出し中）" : ""}`,
     `失敗: ${counts.failed} 件`,
     `新しい版で止まっている: ${counts.held} 件`,
   ];

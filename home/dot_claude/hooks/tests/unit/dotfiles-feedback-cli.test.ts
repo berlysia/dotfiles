@@ -189,6 +189,46 @@ it("status shows counts and the last flush reason", async (t) => {
   ok(text.includes("未送: 1 件"), text);
   ok(text.includes("not-private"), text);
 });
+it("status marks the unsent count while flush.lock is held, and not otherwise", async (t) => {
+  const f = await fixture(t);
+  strictEqual(await runCli(SEND, f.deps), 0);
+  f.out.length = 0;
+  strictEqual(await runCli(["status"], f.deps), 0);
+  ok(f.out.join("").includes("未送: 1 件\n"), f.out.join(""));
+  await fs.writeFile(
+    join(f.root, "state", "flush.lock"),
+    JSON.stringify({
+      v: 1,
+      pid: 99,
+      startTime: "s",
+      acquiredAt: new Date(start).toISOString(),
+    }),
+  );
+  f.out.length = 0;
+  strictEqual(await runCli(["status"], f.deps), 0);
+  ok(f.out.join("").includes("未送: 1 件（送り出し中）"), f.out.join(""));
+});
+it("flush says another flush is running when flush.lock is held, and exits 0", async (t) => {
+  const f = await fixture(t);
+  await runCli(["status"], f.deps);
+  await fs.writeFile(
+    join(f.root, "state", "flush.lock"),
+    JSON.stringify({
+      v: 1,
+      pid: 99,
+      startTime: "s",
+      acquiredAt: new Date(start).toISOString(),
+    }),
+  );
+  f.out.length = 0;
+  strictEqual(await runCli(["flush"], f.deps), 0);
+  ok(f.out.join("").includes("別の flush が実行中"), f.out.join(""));
+  ok(!f.out.join("").includes("flush 完了"));
+  await fs.rm(join(f.root, "state", "flush.lock"));
+  f.out.length = 0;
+  strictEqual(await runCli(["flush"], f.deps), 0);
+  ok(f.out.join("").includes("flush 完了"), f.out.join(""));
+});
 it("drop removes a local item and refuses a bad id", async (t) => {
   const f = await fixture(t);
   await runCli(SEND, f.deps);
