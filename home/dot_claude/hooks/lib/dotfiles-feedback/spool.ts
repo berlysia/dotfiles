@@ -224,6 +224,20 @@ export async function openSpool(root: string, deps: SpoolDeps) {
       }
       return entries;
     },
+    async findLocal(id: string): Promise<LocalPlace | null> {
+      check(id);
+      for (const dir of ["pending", "held"] as const)
+        if (await exists(itemPath(dir, id))) return dir;
+      if (
+        (await fs.readdir(join(root, "sending"))).some(
+          (name) => claimedName(name)?.id === id,
+        )
+      )
+        return "sending";
+      return (await failedFiles()).some((entry) => entry.id === id)
+        ? "failed"
+        : null;
+    },
     async findSent(id: string): Promise<number | null> {
       check(id);
       const text = await readOrNull(join(root, "sent.jsonl"));

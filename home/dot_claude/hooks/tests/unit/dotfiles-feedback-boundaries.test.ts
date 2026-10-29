@@ -16,6 +16,7 @@ const edges: Record<string, readonly string[]> = {
     "../agent-caller",
   ],
   "issue-body": ["item", "constants"],
+  target: ["gh", "issue-body", "spool", "item", "constants", "deps"],
   display: ["../invisible-chars", "constants", "cache", "item"],
   lock: ["constants", "deps"],
   retry: ["lock", "constants", "deps", "item"],
