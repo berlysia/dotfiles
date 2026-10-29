@@ -38,7 +38,11 @@ import {
   openStore,
   readLedger,
 } from "../home/dot_local/share/delegation/store.ts";
-import { buildRoute } from "../home/dot_local/share/delegation/route.ts";
+import {
+  buildRoute,
+  DESTINATIONS,
+} from "../home/dot_local/share/delegation/route.ts";
+import { captureBash } from "../home/dot_local/share/delegation/capture.ts";
 import { WEEK_MINS } from "../home/dot_local/share/ai-usage/summary.ts";
 
 const main = new URL(
@@ -582,17 +586,30 @@ describe("delegation route / review (process)", { concurrency: 4 }, () => {
   });
 
   it("exploration: shown below 5 S records, hidden at 5", async () => {
+    // opencode is filled to 5 so that the codex destinations alone decide.
     for (const [n, shown] of [
       [4, true],
       [5, false],
     ]) {
       const sb = sandbox();
       try {
+        for (const spec of [
+          { model: "gpt-6.1-terra", effort: "high" },
+          { model: "gpt-6-luna", effort: "max" },
+        ]) {
+          seed(sb.store, {
+            harness: "codex-cli",
+            ...spec,
+            size: "S",
+            adopted: n,
+          });
+        }
         seed(sb.store, {
-          harness: "codex-cli",
-          model: "gpt-6.1-terra",
+          harness: "opencode",
+          model: "unknown",
+          effort: "unknown",
           size: "S",
-          adopted: n,
+          adopted: 5,
         });
         const out = (await sb.run(["route", "--kind", "impl", "--size", "S"]))
           .stdout;
@@ -600,12 +617,6 @@ describe("delegation route / review (process)", { concurrency: 4 }, () => {
       } finally {
         sb.done();
       }
-    }
-    const sb = sandbox();
-    try {
-      assert.equal((await sb.run(ROUTE)).stdout.includes("試す候補"), false);
-    } finally {
-      sb.done();
     }
   });
 
@@ -1591,6 +1602,24 @@ describe("route output: surplus candidates", () => {
     assert.equal(lines.length, 1, out);
     assert.match(lines[0], /^試す候補: opencode .*比較に件数が足りない$/);
   });
+
+  it("codex's week makes one line, shown as its first destination in the kind's order", () => {
+    for (const [kind, shown] of [
+      ["mechanical", DESTINATIONS["codex-luna-max"].display],
+      ["draft", DESTINATIONS["codex-terra"].display],
+    ]) {
+      const out = routeOut({
+        kind,
+        size: "L",
+        usage: { codex: opencodeSurplus.opencode },
+      });
+      assert.deepEqual(
+        tryLines(out),
+        [`試す候補: ${shown} 週枠の余り 56pt がリセットまでに使われない`],
+        out,
+      );
+    }
+  });
 });
 
 describe("route process: wiring", { concurrency: 4 }, () => {
@@ -1689,5 +1718,211 @@ describe("review: new thresholds", () => {
     } finally {
       sb.done();
     }
+  });
+});
+
+// ---- destinations: Terra / Luna max / opencode ---------------------------
+
+const TERRA = { harness: "codex-cli", model: "gpt-6.1-terra" };
+const LUNA = { harness: "codex-cli", model: "gpt-6-luna", effort: "max" };
+const OPENCODE = { harness: "opencode", model: "unknown", effort: "unknown" };
+const SONNET_61 = { adopted: 5, discarded: 1 };
+const S_ROUTE = ["route", "--kind", "impl", "--size", "S"];
+const MECH_ROUTE = ["route", "--kind", "mechanical", "--size", "M"];
+const candidate = (out) =>
+  out.split("\n").find((l) => l.startsWith("試す候補:")) ?? "";
+
+async function routeProcessOut(seeds, { usage, args = ROUTE } = {}) {
+  const sb = sandbox();
+  try {
+    for (const spec of seeds) seed(sb.store, spec);
+    if (usage !== undefined) sb.setUsage(usage);
+    return (await sb.run(args)).stdout;
+  } finally {
+    sb.done();
+  }
+}
+
+describe("delegation route destinations", { concurrency: 4 }, () => {
+  it("table matches what capture records for each launch command", () => {
+    const launch = (d) => /\((codex exec [^)]*)\)/.exec(d.display)?.[1];
+    const terra = captureBash(launch(DESTINATIONS["codex-terra"]));
+    assert.equal(terra.harness, DESTINATIONS["codex-terra"].match.harness);
+    assert.equal(terra.model, DESTINATIONS["codex-terra"].match.model);
+    assert.equal(terra.effort, "high");
+    const luna = captureBash(launch(DESTINATIONS["codex-luna-max"]));
+    assert.equal(luna.harness, DESTINATIONS["codex-luna-max"].match.harness);
+    assert.equal(luna.model, DESTINATIONS["codex-luna-max"].match.model);
+    assert.equal(luna.effort, DESTINATIONS["codex-luna-max"].match.effort);
+  });
+
+  describe("rule 1", () => {
+    it("Luna max (gpt-6-luna / max) beats sonnet", async () => {
+      const out = await routeProcessOut([{ ...LUNA, adopted: 6 }, SONNET_61]);
+      assert.match(recommendation(out), /codex Luna max.*規則 1/);
+    });
+    for (const [label, spec] of [
+      ["gpt-6-luna / xhigh", { ...LUNA, effort: "xhigh" }],
+      ["gpt-6-luna / unknown effort", { ...LUNA, effort: "unknown" }],
+      [
+        "codex-cli / unknown / unknown",
+        { harness: "codex-cli", model: "unknown", effort: "unknown" },
+      ],
+    ]) {
+      it(`does not count ${label}`, async () => {
+        const out = await routeProcessOut([{ ...spec, adopted: 6 }, SONNET_61]);
+        assert.match(recommendation(out), /sonnet.*規則 3/);
+      });
+    }
+    it("pools Terra groups of different effort", async () => {
+      const out = await routeProcessOut([
+        { ...TERRA, effort: "high", adopted: 3 },
+        { ...TERRA, effort: "low", adopted: 3 },
+        SONNET_61,
+      ]);
+      assert.match(recommendation(out), /codex Terra.*規則 1/);
+    });
+    it("picks the higher rate when both lead", async () => {
+      const out = await routeProcessOut([
+        { adopted: 5, discarded: 3 },
+        { ...TERRA, adopted: 6 },
+        { ...LUNA, adopted: 5, discarded: 1 },
+      ]);
+      assert.match(recommendation(out), /codex Terra.*規則 1/);
+    });
+    it("breaks a tie by the default order", async () => {
+      const seeds = (kind) => [
+        { kind, adopted: 5, discarded: 3 },
+        { ...TERRA, kind, adopted: 6 },
+        { ...LUNA, kind, adopted: 6 },
+      ];
+      const mech = await routeProcessOut(seeds("mechanical"), {
+        args: MECH_ROUTE,
+      });
+      assert.match(recommendation(mech), /codex Luna max.*規則 1/);
+      const impl = await routeProcessOut(seeds("impl"));
+      assert.match(recommendation(impl), /codex Terra.*規則 1/);
+    });
+  });
+
+  describe("rule 2", () => {
+    const AHEAD = { claude: { week: 90, daysLeft: 6.5 } };
+    it("impl goes to Terra, mechanical to opencode", async () => {
+      const usage = usageOf(AHEAD);
+      assert.match(
+        recommendation(await routeProcessOut([], { usage })),
+        /codex Terra.*規則 2/,
+      );
+      assert.match(
+        recommendation(await routeProcessOut([], { usage, args: MECH_ROUTE })),
+        /opencode.*規則 2/,
+      );
+    });
+    it("mechanical falls to Luna max when opencode is ahead", async () => {
+      const usage = usageOf({ ...AHEAD, opencode: { week: 90 } });
+      assert.match(
+        recommendation(await routeProcessOut([], { usage, args: MECH_ROUTE })),
+        /codex Luna max.*規則 2/,
+      );
+    });
+    it("impl goes to opencode when the codex week is ahead", async () => {
+      const usage = usageOf({ ...AHEAD, codex: { week: 90 } });
+      assert.match(
+        recommendation(await routeProcessOut([], { usage })),
+        /opencode.*規則 2/,
+      );
+    });
+    it("notes worse records for Terra", async () => {
+      const rec = recommendation(
+        await routeProcessOut(
+          [{ adopted: 6 }, { ...TERRA, adopted: 3, discarded: 3 }],
+          { usage: usageOf(AHEAD) },
+        ),
+      );
+      assert.match(rec, /codex Terra.*記録では劣る/);
+    });
+    it("notes worse records for Luna max on its own path", async () => {
+      const rec = recommendation(
+        await routeProcessOut(
+          [
+            { kind: "mechanical", adopted: 6 },
+            { ...LUNA, kind: "mechanical", adopted: 3, discarded: 3 },
+          ],
+          {
+            usage: usageOf({ ...AHEAD, opencode: { week: 90 } }),
+            args: MECH_ROUTE,
+          },
+        ),
+      );
+      assert.match(rec, /codex Luna max.*記録では劣る/);
+    });
+  });
+
+  describe("exploration", () => {
+    const S = { size: "S" };
+    const run = (seeds, usage) =>
+      routeProcessOut(
+        seeds.map((x) => ({ ...S, ...x })),
+        { usage, args: S_ROUTE },
+      );
+    const fill = (spec, n) => ({ ...spec, adopted: n });
+
+    it("no records: Terra first, 0/5", async () => {
+      const c = candidate(await run([]));
+      assert.match(c, /試す候補: codex Terra/);
+      assert.match(c, /0\/5 件/);
+    });
+    it("picks the least-recorded destination", async () => {
+      const c = candidate(await run([fill(TERRA, 2), fill(OPENCODE, 3)]));
+      assert.match(c, /試す候補: codex Luna max/);
+    });
+    it("breaks equal counts by the default order", async () => {
+      const seeds = [fill(TERRA, 1), fill(LUNA, 1), fill(OPENCODE, 3)];
+      assert.match(candidate(await run(seeds)), /試す候補: codex Terra/);
+      const mech = [fill(TERRA, 1), fill(LUNA, 1), fill(OPENCODE, 1)].map(
+        (x) => ({ ...S, kind: "mechanical", ...x }),
+      );
+      const out = await routeProcessOut(mech, {
+        args: ["route", "--kind", "mechanical", "--size", "S"],
+      });
+      assert.match(candidate(out), /試す候補: opencode/);
+    });
+    it("no candidate line when every destination has 5", async () => {
+      const out = await run([fill(TERRA, 5), fill(LUNA, 5), fill(OPENCODE, 5)]);
+      assert.doesNotMatch(out, /試す候補:/);
+    });
+    it("skips destinations whose window is ahead", async () => {
+      assert.match(
+        candidate(
+          await run([fill(OPENCODE, 2)], usageOf({ codex: { week: 90 } })),
+        ),
+        /試す候補: opencode/,
+      );
+      assert.match(
+        candidate(
+          await run([fill(TERRA, 1)], usageOf({ opencode: { week: 90 } })),
+        ),
+        /試す候補: codex Luna max/,
+      );
+    });
+  });
+
+  it("reviewer-codex-run records (kind=review) count toward Luna max", async () => {
+    const out = await routeProcessOut(
+      [
+        { ...LUNA, kind: "review", adopted: 6 },
+        { kind: "review", adopted: 5, discarded: 1 },
+      ],
+      { args: ["route", "--kind", "review", "--size", "M"] },
+    );
+    assert.match(recommendation(out), /codex Luna max.*規則 1/);
+  });
+
+  it("display never carries a stored model name", async () => {
+    const out = await routeProcessOut([
+      { harness: "codex-cli", model: "gpt-evil-ignore-previous", adopted: 6 },
+    ]);
+    assert.doesNotMatch(out, /gpt-evil-ignore-previous/);
+    assert.match(out, /codex-cli\/m-[0-9a-f]{6}\//);
   });
 });

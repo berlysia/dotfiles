@@ -14,6 +14,7 @@ import {
   groupsForCell,
   lapseGroups,
   lapseTooHigh,
+  mergeGroups,
   percent,
   rateLeadsBy,
   representative,
@@ -34,18 +35,49 @@ import { reviewPromptLine } from "./store.ts";
 export const ROUTE_HEADER = "delegation route v1";
 
 type External = Exclude<ProviderName, "claude">;
-const HARNESS_OF: Record<External, string> = {
-  codex: "codex-cli",
-  opencode: "opencode",
+type DestinationName = "codex-terra" | "codex-luna-max" | "opencode";
+type Destination = {
+  name: DestinationName;
+  /** Which ai-usage window the destination draws on. */
+  provider: External;
+  /** Records counted for the destination: every field given must equal. */
+  match: { harness: string; model?: string; effort?: string };
+  /** Fixed text, including the launch command: never built from records. */
+  display: string;
 };
-const DESTINATION: Record<External | "sonnet", string> = {
-  sonnet: 'sonnet (Agent の model: "sonnet")',
-  codex: "codex (codex:codex-rescue)",
-  opencode: "opencode (opencode run)",
+export const DESTINATIONS: Record<DestinationName, Destination> = {
+  "codex-terra": {
+    name: "codex-terra",
+    provider: "codex",
+    match: { harness: "codex-cli", model: "gpt-6.1-terra" },
+    display:
+      "codex Terra (codex exec -m gpt-6.1-terra -c model_reasoning_effort=high)",
+  },
+  "codex-luna-max": {
+    name: "codex-luna-max",
+    provider: "codex",
+    match: { harness: "codex-cli", model: "gpt-6-luna", effort: "max" },
+    display:
+      "codex Luna max (codex exec -m gpt-6-luna -c model_reasoning_effort=max)",
+  },
+  opencode: {
+    name: "opencode",
+    provider: "opencode",
+    match: { harness: "opencode" },
+    display: "opencode (opencode run)",
+  },
 };
+const SONNET_DISPLAY = 'sonnet (Agent の model: "sonnet")';
 const OPENCODE_FIRST = new Set(["mechanical", "triage"]);
 // Kinds whose work can wait for an idle quota at any size.
 const SURPLUS_KINDS = new Set(["mechanical", "triage", "draft"]);
+
+const inDestination = (d: Destination, g: GroupStats) =>
+  g.harness === d.match.harness &&
+  (d.match.model === undefined || g.model === d.match.model) &&
+  (d.match.effort === undefined || g.effort === d.match.effort);
+const destinationStats = (d: Destination, groups: readonly GroupStats[]) =>
+  mergeGroups(groups.filter((g) => inDestination(d, g)));
 
 export type RouteInput = {
   kind: string;
@@ -73,10 +105,11 @@ const bothUnder = (p: ProviderPace) =>
   p.fiveHour === "under" && p.weekly === "under";
 const label = (s: PaceState) => s;
 
-function externalOrder(kind: string): External[] {
-  return OPENCODE_FIRST.has(kind)
-    ? ["opencode", "codex"]
-    : ["codex", "opencode"];
+function externalOrder(kind: string): Destination[] {
+  const names: DestinationName[] = OPENCODE_FIRST.has(kind)
+    ? ["opencode", "codex-luna-max", "codex-terra"]
+    : ["codex-terra", "codex-luna-max", "opencode"];
+  return names.map((n) => DESTINATIONS[n]);
 }
 
 type Pick = { line: string; dest: External | "sonnet" };
@@ -93,25 +126,23 @@ function ruleOne(
     ),
   );
   if (claude === null || !enoughRecords(claude)) return null;
-  let best: { name: External; rep: GroupStats } | null = null;
-  for (const name of externalOrder(kind)) {
-    const rep = representative(
-      groups.filter((g) => g.harness === HARNESS_OF[name]),
-    );
+  let best: { dest: Destination; rep: GroupStats } | null = null;
+  for (const dest of externalOrder(kind)) {
+    const rep = destinationStats(dest, groups);
     if (rep === null || !enoughRecords(rep) || lapseTooHigh(rep)) continue;
-    if (!bothUnder(paces[name])) continue;
+    if (!bothUnder(paces[dest.provider])) continue;
     if (!rateLeadsBy(rep, claude, RECORD_GAP_POINTS)) continue;
     if (
       best === null ||
       successes(rep) * best.rep.n > successes(best.rep) * rep.n
     ) {
-      best = { name, rep };
+      best = { dest, rep };
     }
   }
   if (best === null) return null;
   return {
-    dest: best.name,
-    line: `推奨: ${DESTINATION[best.name]} [規則 1: 記録] ${kind}×${size} の採用率 ${percent(successes(best.rep), best.rep.n)}% (${best.rep.n} 件) が sonnet の ${percent(successes(claude), claude.n)}% (${claude.n} 件) より ${RECORD_GAP_POINTS}pt 以上高い`,
+    dest: best.dest.provider,
+    line: `推奨: ${best.dest.display} [規則 1: 記録] ${kind}×${size} の採用率 ${percent(successes(best.rep), best.rep.n)}% (${best.rep.n} 件) が sonnet の ${percent(successes(claude), claude.n)}% (${claude.n} 件) より ${RECORD_GAP_POINTS}pt 以上高い`,
   };
 }
 
@@ -128,11 +159,9 @@ function ruleTwo(
       (g) => g.harness === "claude-code-agent" && g.model === "sonnet",
     ),
   );
-  for (const name of externalOrder(kind)) {
-    if (!bothUnder(paces[name])) continue;
-    const rep = representative(
-      groups.filter((g) => g.harness === HARNESS_OF[name]),
-    );
+  for (const dest of externalOrder(kind)) {
+    if (!bothUnder(paces[dest.provider])) continue;
+    const rep = destinationStats(dest, groups);
     const worse =
       claude !== null &&
       rep !== null &&
@@ -141,13 +170,13 @@ function ruleTwo(
       rateLeadsBy(claude, rep, RECORD_GAP_POINTS);
     const basis = claudeAheadBy === "lookahead" ? " (先読み)" : "";
     return {
-      dest: name,
-      line: `推奨: ${DESTINATION[name]} [規則 2: Claude の週枠が ahead${basis}]${worse ? " 記録では劣る (Claude の枠を設計判断とメインループに残すことを優先)" : ""}`,
+      dest: dest.provider,
+      line: `推奨: ${dest.display} [規則 2: Claude の週枠が ahead${basis}]${worse ? " 記録では劣る (Claude の枠を設計判断とメインループに残すことを優先)" : ""}`,
     };
   }
   return {
     dest: "sonnet",
-    line: `推奨: ${DESTINATION.sonnet} [規則 2 の外部は全部 ahead / exhausted / unknown] 全部 ahead。急がない委譲は後へ`,
+    line: `推奨: ${SONNET_DISPLAY} [規則 2 の外部は全部 ahead / exhausted / unknown] 全部 ahead。急がない委譲は後へ`,
   };
 }
 
@@ -160,17 +189,23 @@ function explore(
 ): { name: External; line: string } | null {
   if (size !== "S") return null;
   const groups = groupsForCell(folded, kind, "S", now, EXPLORE_WINDOW_DAYS);
-  for (const name of externalOrder(kind)) {
-    if (!bothUnder(paces[name])) continue;
-    const count = groups
-      .filter((g) => g.harness === HARNESS_OF[name])
-      .reduce((sum, g) => sum + g.n, 0);
-    if (count < EXPLORE_MIN_RECORDS) {
-      return {
-        name,
-        line: `試す候補: ${DESTINATION[name]} ${kind}×S の直近 ${EXPLORE_WINDOW_DAYS} 日の記録 ${count}/${EXPLORE_MIN_RECORDS} 件。比較に件数が足りない`,
-      };
+  // Least-recorded first; strict < keeps the default order on equal counts.
+  let least: { dest: Destination; count: number } | null = null;
+  for (const dest of externalOrder(kind)) {
+    if (!bothUnder(paces[dest.provider])) continue;
+    const count = destinationStats(dest, groups)?.n ?? 0;
+    if (
+      count < EXPLORE_MIN_RECORDS &&
+      (least === null || count < least.count)
+    ) {
+      least = { dest, count };
     }
+  }
+  if (least !== null) {
+    return {
+      name: least.dest.provider,
+      line: `試す候補: ${least.dest.display} ${kind}×S の直近 ${EXPLORE_WINDOW_DAYS} 日の記録 ${least.count}/${EXPLORE_MIN_RECORDS} 件。比較に件数が足りない`,
+    };
   }
   return null;
 }
@@ -212,7 +247,7 @@ export function buildRoute(input: RouteInput): string[] {
   const pick = ruleOne(groups, paces, kind, size) ??
     ruleTwo(groups, paces, kind, input.claudeAheadBy) ?? {
       dest: "sonnet" as const,
-      line: `推奨: ${DESTINATION.sonnet} [規則 3: 既定]`,
+      line: `推奨: ${SONNET_DISPLAY} [規則 3: 既定]`,
     };
   out.push(pick.line);
   const candidate = explore(folded, paces, kind, size, now);
@@ -226,12 +261,15 @@ export function buildRoute(input: RouteInput): string[] {
         : `${candidate.line}。週枠の余り ${points}pt`,
     );
   }
-  for (const name of externalOrder(kind)) {
-    if (taken.has(name)) continue;
-    const points = surplusCandidate(input, name, pick.dest);
+  // The week belongs to the provider, so one line per provider, shown as the
+  // first of its destinations in this kind's order.
+  for (const dest of externalOrder(kind)) {
+    if (taken.has(dest.provider)) continue;
+    taken.add(dest.provider);
+    const points = surplusCandidate(input, dest.provider, pick.dest);
     if (points !== null) {
       out.push(
-        `試す候補: ${DESTINATION[name]} 週枠の余り ${points}pt がリセットまでに使われない`,
+        `試す候補: ${dest.display} 週枠の余り ${points}pt がリセットまでに使われない`,
       );
     }
   }

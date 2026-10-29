@@ -170,6 +170,31 @@ export function representative(
   return best;
 }
 
+/**
+ * Adds groups into one aggregate (counts, lapses and group totals are summed),
+ * so a destination spanning several groups is judged on all of them.
+ * Identity fields come from the first group: callers must not read them.
+ */
+export function mergeGroups(groups: readonly GroupStats[]): GroupStats | null {
+  const [first, ...rest] = groups;
+  if (first === undefined) return null;
+  return rest.reduce<GroupStats>(
+    (sum, g) => ({
+      ...sum,
+      n: sum.n + g.n,
+      adopted: sum.adopted + g.adopted,
+      patched: sum.patched + g.patched,
+      redone: sum.redone + g.redone,
+      discarded: sum.discarded + g.discarded,
+      manual: sum.manual + g.manual,
+      lastAt: Math.max(sum.lastAt, g.lastAt),
+      lapses: sum.lapses + g.lapses,
+      groupTotal: sum.groupTotal + g.groupTotal,
+    }),
+    { ...first },
+  );
+}
+
 export const successes = (g: GroupStats) => g.adopted + g.patched;
 export const enoughRecords = (g: GroupStats) => g.n >= MIN_RECORDS;
 

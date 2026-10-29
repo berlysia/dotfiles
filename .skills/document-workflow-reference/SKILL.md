@@ -216,7 +216,15 @@ stamp は Round N の要求集合を Round N-1 の verdict から再計算する
 
 帳簿に載る reviewer は、`executor: codex` の依頼で Codex に実行させられる。帳簿は subagent_type で記録するので、stamp はふだんどおり受け付ける。
 
-- 依頼本文を Write で scratchpad のファイルに書く。依頼は `executor: codex` / `brief: <パス>` / `root: <パス>` の 3 行にし、Agent の `model: "haiku"` で起動する。haiku は定義の 1 行に従って `~/.claude/scripts/reviewer-codex-run.ts` を実行し、その出力を返すだけ。
+- 依頼本文を Write で scratchpad のファイルに書く。依頼は `executor: codex` / `brief: <パス>` / `root: <パス>` / `model: <モデル>` / `effort: <effort>` の 5 行にし、Agent の `model: "haiku"` で起動する。haiku は定義の 1 行に従って `~/.claude/scripts/reviewer-codex-run.ts` を実行し、その出力を返すだけ。
+- `model:` と `effort:` は `delegation route --kind review` の推奨行（Terra か Luna max）の括弧内にある起動コマンドから、`-m` と `model_reasoning_effort=` の値だけを書く。括弧内のコマンドはそのまま起動しない。値は引用符で囲まない（囲むと記録が `unknown` になる）。`model:` は `^gpt-[0-9a-z.-]{1,32}$`、`effort:` は `low|medium|high|xhigh|max` に一致しなければならず、省略もできない。
+- 古い 3 行の依頼は定義の検査で失敗するので、その reviewer を `executor: codex` 無しで実行し直す。
 - 成功とするのは、返答が `reviewed-by: codex` と `reviewer: <起動した名前>` で始まり、最後の行が verdict のときだけ。それ以外は失敗とし、その reviewer を `executor: codex` 無しで実行し直す。
-- Reviewer Outputs の各 reviewer に `- executor: codex (via haiku)` か `- executor: claude (sonnet)` の行を書く。実行し直したら `- note: codex failed (<理由>)` も書いてから stamp する。
+- Reviewer Outputs の各 reviewer に `- executor: codex <model>/<effort> (via haiku)` か `- executor: claude (sonnet)` の行を書く。実行し直したら `- note: codex failed (<理由>)` も書いてから stamp する。
 - 見出しは reviewer 名だけにする。hook が見出しを reviewer 名として読むため。
+- 採用率の記録は、reviewer の結果を確かめた後にメインループが `delegation record` で付ける。reviewer の背景の Bash `codex exec` は、親のセッションと同じ sessionId で pending に open の行を作る。`[delegation]` の行は出ず、id も返答に載らないので、次の手順で行を選ぶ。
+  - `~/.local/share/delegation-ledger/pending/*.json` から、次の 6 条件をすべて満たす行を選ぶ。sessionId が自分のセッションと等しい / `closedAt` が無い / harness が `codex-cli` / invocation の先頭が `reviewer-codex-run` / model と effort が依頼の値と等しい / `openedAt` が今回の reviewer を起動した時刻以降。reviewer の数より多ければ `openedAt` の新しい順に reviewer の数だけ取る。
+  - reviewer 1 名につき 1 行ずつ `delegation record <id> --kind review --size <S|M|L> --verdict <…>` を打つ。同じ round の reviewer には同じ `--size` を書く（size は route の集計の単位で、行ごとに変えると集計が割れる）。
+  - `bad-arguments` で終わった起動の行は委譲先の結果ではないので、record せず `delegation lapse <id>` で閉じる。
+  - 合う行が足りなければ、足りない分を `delegation record --manual --harness codex-cli --model <m> --effort <e> --kind review --size <S|M|L> --verdict <…>` で記録する。
+  - record も lapse もしなかった行は 7 日で lapse になり、その委譲先の lapse 比を押し上げて、route の規則 1 から黙って外れうる。閉じ忘れないこと。
