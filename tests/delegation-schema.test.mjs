@@ -22,7 +22,12 @@ import {
   isExposure,
   offloadAgentName,
 } from "../home/dot_local/share/delegation/constants.ts";
-import { FREE_DESTINATIONS } from "../home/dot_local/share/delegation/destinations.ts";
+import {
+  DESTINATIONS,
+  FREE_DESTINATIONS,
+  allowedAuthProviders,
+  sendsOutModels,
+} from "../home/dot_local/share/delegation/destinations.ts";
 
 const base = {
   v: 1,
@@ -205,5 +210,42 @@ test("FREE_DESTINATIONS: sends out, opencode harness, model passes normalizeMode
     assert.equal(d.sendsOut, true);
     assert.equal(d.match.harness, "opencode");
     assert.equal(normalizeModel(d.match.harness, d.match.model), d.match.model);
+  }
+});
+
+test("sendsOutModels: the sendsOut rows of both tables, sorted, no codex", () => {
+  assert.deepEqual(sendsOutModels(), [
+    "opencode/deepseek-v4.1-flash-free",
+    "opencode/glm-5.3-flash-free",
+    "sarashina/sarashina3.2-mini-thinking",
+    "zai-coding-plan/glm-5.3",
+  ]);
+});
+
+test("allowedAuthProviders: the part before the first slash, sorted, unique", () => {
+  assert.deepEqual(allowedAuthProviders(), [
+    "opencode",
+    "sarashina",
+    "zai-coding-plan",
+  ]);
+});
+
+test("sarashina model passes normalizeModel and is displayed verbatim", () => {
+  const m = DESTINATIONS.sarashina.match.model;
+  assert.equal(normalizeModel("opencode", m), m);
+  assert.doesNotMatch(displayModel(m), /^m-/);
+});
+
+test("destination tables: every row has a model and (harness, model) is unique", () => {
+  const rows = [
+    ...Object.values(DESTINATIONS).map((d) => d.match),
+    ...FREE_DESTINATIONS.map((d) => d.match),
+  ];
+  const seen = new Set();
+  for (const match of rows) {
+    assert.equal(typeof match.model, "string");
+    const key = `${match.harness}\0${match.model}`;
+    assert.equal(seen.has(key), false, key);
+    seen.add(key);
   }
 });
