@@ -14,7 +14,7 @@ export const SCHEMA_VERSION = 1;
  * against by the real-directory test (hooks/tests/heavy/claude-sessions-real).
  * Change it only after running that test with CLAUDE_SESSIONS_REAL_DIR.
  */
-export const VERIFIED_WITH = "2.1.312";
+export const VERIFIED_WITH = "2.1.310";
 
 /** Open enum. A value this code does not know is mapped to "unknown". */
 export type SessionStatus = "busy" | "idle" | "waiting" | "unknown";
