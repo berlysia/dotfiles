@@ -885,4 +885,94 @@ describe("delegation cli: model from the agent definition", () => {
       sb.done();
     }
   });
+
+  describe("argument refusals", () => {
+    const ROUTE = ["route", "--kind", "impl", "--size", "M"];
+    const refused = async (args, ...needles) => {
+      const sb = sandbox();
+      try {
+        const r = await sb.run(args);
+        assert.equal(r.status, 1, r.stderr);
+        for (const n of needles) assert.match(r.stderr, new RegExp(n));
+      } finally {
+        sb.done();
+      }
+    };
+
+    it("--exposure without a value", () =>
+      refused([...ROUTE, "--exposure"], "exposure"));
+    it("--exposure with an unknown value", async () => {
+      await refused(
+        [...ROUTE, "--exposure", "public"],
+        "closed",
+        "external-ok",
+      );
+      await refused(
+        [...ROUTE, "--exposure", "Closed"],
+        "closed",
+        "external-ok",
+      );
+    });
+    it("--exposure twice", () =>
+      refused(
+        [...ROUTE, "--exposure", "closed", "--exposure", "external-ok"],
+        "exposure",
+        "duplicate|重複",
+      ));
+    it("--exposure with an empty value", async () => {
+      await refused([...ROUTE, "--exposure="], "exposure");
+      await refused([...ROUTE, "--exposure", ""], "exposure");
+    });
+    it("offload flags: missing and duplicate", async () => {
+      await refused(["offload", "--brief-file"], "brief-file");
+      await refused(["offload", "--dir", "a", "--dir", "b"], "dir");
+      await refused(["offload", "--plan", "x", "--plan", "y"], "plan");
+    });
+    it("refusal comes before the unknown-command exit", () =>
+      refused(["foo", "--dir", "a", "--dir", "b"], "dir"));
+    it("--kind twice keeps last-wins and is refused as an unknown kind", () =>
+      refused([
+        ...ROUTE.slice(0, 1),
+        "--kind",
+        "a",
+        "--kind",
+        "b",
+        "--size",
+        "M",
+      ]));
+    it("--exposure=external-ok leaves the route output unchanged", async () => {
+      const sb = sandbox();
+      try {
+        const a = await sb.run(ROUTE);
+        const b = await sb.run([...ROUTE, "--exposure=external-ok"]);
+        assert.equal(b.status, 0, b.stderr);
+        assert.equal(a.status, 0, a.stderr);
+        assert.equal(b.stdout, a.stdout);
+      } finally {
+        sb.done();
+      }
+    });
+    it("review --since --help is still refused without usage", async () => {
+      const sb = sandbox();
+      try {
+        const r = await sb.run(["review", "--since", "--help"]);
+        assert.equal(r.status, 1);
+        assert.doesNotMatch(r.stdout, /Usage/);
+      } finally {
+        sb.done();
+      }
+    });
+    it("--exposure --help takes --help as the value", async () => {
+      const sb = sandbox();
+      try {
+        const r = await sb.run([...ROUTE, "--exposure", "--help"]);
+        assert.equal(r.status, 1);
+        assert.doesNotMatch(r.stdout, /Usage/);
+        assert.match(r.stderr, /closed/);
+        assert.match(r.stderr, /external-ok/);
+      } finally {
+        sb.done();
+      }
+    });
+  });
 });

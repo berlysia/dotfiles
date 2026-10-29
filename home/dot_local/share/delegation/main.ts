@@ -14,6 +14,8 @@ import {
 } from "./capture.ts";
 import {
   DEFAULT_SINCE_DAYS,
+  EXPOSURES,
+  isExposure,
   PENDING_LIMIT,
   STDIN_MAX_BYTES,
 } from "./constants.ts";
@@ -90,13 +92,22 @@ const VALUE_FLAGS = new Set([
   "later-defect",
   "session",
   "since",
+  "exposure",
+  "brief-file",
+  "dir",
+  "plan",
 ]);
-const BOOLEAN_FLAGS = new Set(["manual", "rework"]);
+const BOOLEAN_FLAGS = new Set(["manual", "rework", "write"]);
+/** Value flags that refuse a missing, empty or repeated value. */
+const STRICT_FLAGS = new Set(["exposure", "brief-file", "dir", "plan"]);
 
 type Args = { positionals: string[]; flags: Map<string, string | true> };
+type ParsedArgs =
+  | { ok: true; args: Args }
+  | { ok: false; flag: string; reason: "missing" | "duplicate" };
 
 /** Unknown flags are skipped without consuming a value. */
-function parseArgs(argv: readonly string[]): Args {
+function parseArgs(argv: readonly string[]): ParsedArgs {
   const positionals: string[] = [];
   const flags = new Map<string, string | true>();
   for (let i = 0; i < argv.length; i++) {
@@ -110,11 +121,21 @@ function parseArgs(argv: readonly string[]): Args {
     if (BOOLEAN_FLAGS.has(name)) {
       flags.set(name, true);
     } else if (VALUE_FLAGS.has(name)) {
-      if (eq !== -1) flags.set(name, a.slice(eq + 1));
-      else if (i + 1 < argv.length) flags.set(name, argv[++i] ?? "");
+      const strict = STRICT_FLAGS.has(name);
+      if (strict && flags.has(name)) {
+        return { ok: false, flag: name, reason: "duplicate" };
+      }
+      let value: string | undefined;
+      if (eq !== -1) value = a.slice(eq + 1);
+      else if (i + 1 < argv.length) value = argv[++i] ?? "";
+      if (value === undefined || (strict && value === "")) {
+        if (strict) return { ok: false, flag: name, reason: "missing" };
+        continue;
+      }
+      flags.set(name, value);
     }
   }
-  return { positionals, flags };
+  return { ok: true, args: { positionals, flags } };
 }
 
 function flagString(args: Args, name: string): string | undefined {
@@ -494,6 +515,13 @@ async function cmdRoute(args: Args, now: Date): Promise<number> {
   const session = flagString(args, "session");
   if (!isOneOf(KINDS, kind) || !isOneOf(SIZES, size)) return 1;
   if (session !== undefined && !isToolUseId(session)) return 1;
+  const exposure = flagString(args, "exposure");
+  if (exposure !== undefined && !isExposure(exposure)) {
+    process.stderr.write(
+      `delegation: --exposure must be one of: ${EXPOSURES.join(", ")}\n`,
+    );
+    return 1;
+  }
   const store = openStore();
   lapseStalePendings(store, now);
   const ledger = readLedger(store);
@@ -612,7 +640,14 @@ async function dispatch(argv: readonly string[]): Promise<number> {
     process.stdout.write(USAGE);
     return 0;
   }
-  const args = parseArgs(rest);
+  const parsed = parseArgs(rest);
+  if (!parsed.ok) {
+    process.stderr.write(
+      `delegation: --${parsed.flag}: ${parsed.reason === "missing" ? "value is missing" : "duplicate (given more than once)"}\n`,
+    );
+    return 1;
+  }
+  const args = parsed.args;
   const now = nowFromEnv(process.env);
   switch (cmd) {
     case "route":

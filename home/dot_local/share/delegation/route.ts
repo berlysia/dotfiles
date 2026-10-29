@@ -29,49 +29,22 @@ import type {
   ProviderName,
   ProviderPace,
 } from "./pace.ts";
+import {
+  DESTINATIONS,
+  type Destination,
+  type DestinationName,
+} from "./destinations.ts";
 import type { Folded, ReviewDue, SkipCounts } from "./store.ts";
 import { reviewPromptLine } from "./store.ts";
 
 export const ROUTE_HEADER = "delegation route v1";
 
 type External = Exclude<ProviderName, "claude">;
-export type DestinationName = "codex-terra" | "codex-luna-max" | "opencode";
-export type Destination = {
-  name: DestinationName;
-  /** Which ai-usage window the destination draws on. */
-  provider: External;
-  /** Records counted for the destination: every field given must equal. */
-  match: { harness: string; model?: string; effort?: string };
-  /** Fixed text, including the launch command: never built from records. */
-  display: string;
-  /** Fixed short name for review lines; never built from records. */
-  label: string;
-};
-export const DESTINATIONS: Record<DestinationName, Destination> = {
-  "codex-terra": {
-    name: "codex-terra",
-    provider: "codex",
-    match: { harness: "codex-cli", model: "gpt-6.1-terra" },
-    display:
-      "codex Terra (codex exec -m gpt-6.1-terra -c model_reasoning_effort=high)",
-    label: "codex Terra",
-  },
-  "codex-luna-max": {
-    name: "codex-luna-max",
-    provider: "codex",
-    match: { harness: "codex-cli", model: "gpt-6-luna", effort: "max" },
-    display:
-      "codex Luna max (codex exec -m gpt-6-luna -c model_reasoning_effort=max)",
-    label: "codex Luna max",
-  },
-  opencode: {
-    name: "opencode",
-    provider: "opencode",
-    match: { harness: "opencode" },
-    display: "opencode (opencode run)",
-    label: "opencode",
-  },
-};
+export {
+  DESTINATIONS,
+  type Destination,
+  type DestinationName,
+} from "./destinations.ts";
 /**
  * Destinations route never recommends. opencode sends the brief and the
  * working tree to Z.ai; it waits until a delegation can say whether its

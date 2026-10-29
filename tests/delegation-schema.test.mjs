@@ -19,7 +19,10 @@ import {
 import {
   KNOWN_MODELS,
   PENDING_LIMIT,
+  isExposure,
+  offloadAgentName,
 } from "../home/dot_local/share/delegation/constants.ts";
+import { FREE_DESTINATIONS } from "../home/dot_local/share/delegation/destinations.ts";
 
 const base = {
   v: 1,
@@ -164,5 +167,36 @@ test("reviewer-codex-run copies of effort list and model shape match schema.ts",
       normalizeModel("codex-cli", model) !== "unknown",
       model,
     );
+  }
+});
+
+test("offloadAgentName: write picks the edit agent", () => {
+  assert.equal(offloadAgentName(false), "worktree-read");
+  assert.equal(offloadAgentName(true), "worktree-edit");
+});
+
+test("isExposure accepts exactly the two lowercase values", () => {
+  assert.equal(isExposure("closed"), true);
+  assert.equal(isExposure("external-ok"), true);
+  for (const v of ["Closed", "", "public"]) assert.equal(isExposure(v), false);
+});
+
+test("free opencode models are shown verbatim and survive normalizeModel", () => {
+  for (const m of [
+    "opencode/deepseek-v4.1-flash-free",
+    "opencode/glm-5.3-flash-free",
+  ]) {
+    assert.equal(displayModel(m), m);
+    assert.equal(normalizeModel("opencode", m), m);
+  }
+  assert.equal(normalizeModel("opencode", "OpenCode/x"), "unknown");
+});
+
+test("FREE_DESTINATIONS: sends out, opencode harness, model passes normalizeModel", () => {
+  assert.equal(FREE_DESTINATIONS.length, 2);
+  for (const d of FREE_DESTINATIONS) {
+    assert.equal(d.sendsOut, true);
+    assert.equal(d.match.harness, "opencode");
+    assert.equal(normalizeModel(d.match.harness, d.match.model), d.match.model);
   }
 });
