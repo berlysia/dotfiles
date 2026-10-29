@@ -40,6 +40,7 @@ Agent tool の `model` パラメータ / Workflow `agent()` の `opts.model` で
   - rescue（`codex:codex-rescue` の Agent か `/codex:rescue` skill）は、route に従う委譲には使わない。rescue 経由の委譲は記録にモデルと effort が残らないので、route の比較に入らない。モデルを付けなければ Codex の設定ファイルの既定モデルで動き、effort に max も渡せない。行き詰まったときに別の視点を求める使い方は残る
 - **OpenCode の GLM-5.3 と Sarashina**: どちらも `delegation offload` から起動する。Claude Code の Bash から `opencode` を直接起動すると、hook が拒否する。拒否されないのは読み取りだけの `opencode --version`・`opencode models`・`opencode debug config|agents|paths` である。手順は次のとおり
   1. brief を、作業ツリーの外（`mktemp -d` が出力したディレクトリ）にファイルで書く。自分が所有する通常のファイルにする。symlink は拒否される。秘密に見える文字列と、添付に見える `@` も拒否される
+     入口は、秘密を含みうるファイル（`.env`、鍵、credentials など）がある作業ツリーも拒否する。委譲は `git-worktree-create` で作った worktree から行う
   2. `delegation offload --exposure external-ok --model <model> --brief-file <brief の絶対パス>` を Bash で起動する。作業ツリーを指すときは `--dir <絶対パス>` を、plan を渡すときは `--plan <絶対パス>` を足す。GLM-5.3 の model は `zai-coding-plan/glm-5.3` である。Sarashina の model は `sarashina/sarashina3.2-mini-thinking` である。`--dir` を省くと cwd が起動ディレクトリになる。起動ディレクトリは git の作業ツリーの最上位でなければならない。書き込ませるときだけ `--write` を付ける
   3. 入口が起動を拒否すると、終了コード 1 で理由が stderr に出る。opencode の設定と保存済み認証を確かめた記録（`verified.json`）がまだ無いうちは、どの委譲も拒否される
   4. `--write` を付けた委譲が終わると、変わったファイルのパスが stderr に出る。メインループが差分を全部読んでから、テストや hook を起動する

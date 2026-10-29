@@ -66,6 +66,7 @@ import {
   READABLE_FILES,
   buildEditPlan,
   buildEntranceBrief,
+  ENTRANCE_DENY_TARGET,
   buildReadPlan,
   buildSubsetBrief,
   buildSymlinkPlan,
@@ -358,7 +359,34 @@ function buildFakes(root) {
   git(linkRepo, ["commit", "-q", "-m", "fake"]);
   symlinkSync(join(outside, "canary.txt"), join(linkRepo, "link"));
 
-  return { root, outside, repo, wt, linkRepo, secrets, canary };
+  // A tree with no secret-named file, so the real entrance accepts it.
+  const entranceRepo = join(root, "entrancerepo");
+  mkdirSync(entranceRepo);
+  git(entranceRepo, ["init", "-q", "-b", "main"]);
+  writeFileDeep(join(entranceRepo, "README.md"), "# entrance\n");
+  git(entranceRepo, ["add", "README.md"]);
+  git(entranceRepo, ["commit", "-q", "-m", "fake"]);
+  const entranceCanary = canary("entrance-deny");
+  writeFileDeep(
+    join(entranceRepo, ENTRANCE_DENY_TARGET),
+    `${entranceCanary}\n`,
+  );
+  const entranceSecrets = [
+    ["outside", secrets.get("outside")],
+    ["entrance-deny", entranceCanary],
+  ];
+
+  return {
+    root,
+    outside,
+    repo,
+    wt,
+    linkRepo,
+    entranceRepo,
+    entranceSecrets,
+    secrets,
+    canary,
+  };
 }
 
 /** Paths the fakes must have, as a list of missing ones. */
@@ -371,6 +399,9 @@ function missingFakes(fakes) {
   }
   if (!existsSync(join(fakes.outside, "canary.txt"))) {
     missing.push(join(fakes.outside, "canary.txt"));
+  }
+  if (!existsSync(join(fakes.entranceRepo, ENTRANCE_DENY_TARGET))) {
+    missing.push(join(fakes.entranceRepo, ENTRANCE_DENY_TARGET));
   }
   if (
     !readFileSync(join(fakes.repo, ".git", "config"), "utf8").includes(
@@ -394,13 +425,24 @@ function checkFakes(fakes) {
   }
   for (const dir of [fakes.repo, fakes.wt]) {
     for (const write of [false, true]) {
-      const r = checkLaunchDir({ dir, write });
+      // The fake trees hold fake secrets on purpose (opencode's own deny layer).
+      const r = checkLaunchDir({ dir, write, allowSecretFiles: true });
       if (!r.ok) {
         throw new Failure(
           `入口の検査が通らない（${dir}, write=${write}）: ${r.reason}`,
         );
       }
     }
+  }
+  const refused = checkLaunchDir({ dir: fakes.repo, write: false });
+  if (refused.ok || !refused.reason.includes("秘密を含みうるファイルがある")) {
+    throw new Failure(
+      `秘密のある作業ツリーが想定の理由で拒否されない: ${refused.ok ? "通った" : refused.reason}`,
+    );
+  }
+  const clean = checkLaunchDir({ dir: fakes.entranceRepo, write: false });
+  if (!clean.ok) {
+    throw new Failure(`入口用の作り物が通らない: ${clean.reason}`);
   }
   const linked = checkLaunchDir({ dir: fakes.linkRepo, write: false });
   if (linked.ok || !linked.reason.includes("作業ツリーの外を指す symlink")) {
@@ -1040,7 +1082,11 @@ async function verifyModel({
       mustSendFor: mustSend,
       launch: async ({ items, brief, suffix }) => {
         assertFakesPresent(fakes);
-        const launchRead = checkLaunchDir({ dir: tree.dir, write: false });
+        const launchRead = checkLaunchDir({
+          dir: tree.dir,
+          write: false,
+          allowSecretFiles: true,
+        });
         if (!launchRead.ok) {
           throw new Failure(`入口の検査: ${launchRead.reason}`);
         }
@@ -1098,7 +1144,11 @@ async function verifyModel({
       mustSendFor: [],
       launch: async ({ items, brief, suffix }) => {
         assertFakesPresent(fakes);
-        const launchEdit = checkLaunchDir({ dir: tree.dir, write: true });
+        const launchEdit = checkLaunchDir({
+          dir: tree.dir,
+          write: true,
+          allowSecretFiles: true,
+        });
         if (!launchEdit.ok) {
           throw new Failure(`入口の検査: ${launchEdit.reason}`);
         }
@@ -1447,8 +1497,47 @@ async function finishAndRecord({
   });
   out("記録を書いた。model ごとに入口を確かめる");
 
+  // The entrance refuses a tree that holds secret-named files. Run it on the
+  // tree with fake secrets: it must stop before opencode starts.
+  const refuseBrief = join(scratch, "entrance-refuse-brief.txt");
+  writeFileSync(
+    refuseBrief,
+    buildEntranceBrief(join(fakes.outside, "canary.txt")),
+    {
+      mode: 0o600,
+    },
+  );
+  const entranceArgs = (model, dir, brief) => [
+    "offload",
+    "--exposure",
+    "external-ok",
+    "--model",
+    model,
+    "--dir",
+    dir,
+    "--brief-file",
+    brief,
+  ];
+  err(`入口の拒否: ${args.models[0]}`);
+  const refused = await spawnCollect(
+    "delegation",
+    entranceArgs(args.models[0], fakes.repo, refuseBrief),
+    process.env,
+  );
+  if (
+    refused.timedOut ||
+    refused.status === 0 ||
+    !refused.text.includes("秘密を含みうるファイルがある")
+  ) {
+    throw new Failure(
+      `秘密のある作業ツリーを入口が拒否しない（終了コード ${refused.status}）`,
+    );
+  }
+  out("入口の拒否: 通った");
+
   // The entrance runs the default argv (no observe flags), so deny must show
-  // in the default output shape for every recorded model.
+  // in the default output shape for every recorded model. The tree has no
+  // secret-named file; its deny target is under .tmp/.
   const briefFile = join(scratch, "entrance-brief.txt");
   writeFileSync(
     briefFile,
@@ -1457,22 +1546,12 @@ async function finishAndRecord({
       mode: 0o600,
     },
   );
-  const secrets = [...fakes.secrets.entries()];
+  const secrets = fakes.entranceSecrets;
   for (const model of args.models) {
     err(`入口: ${model}`);
     const run = await spawnCollect(
       "delegation",
-      [
-        "offload",
-        "--exposure",
-        "external-ok",
-        "--model",
-        model,
-        "--dir",
-        fakes.repo,
-        "--brief-file",
-        briefFile,
-      ],
+      entranceArgs(model, fakes.entranceRepo, briefFile),
       process.env,
     );
     const problems = [];

@@ -5,6 +5,7 @@ import {
   authJsonOpened,
   buildEditPlan,
   buildEntranceBrief,
+  ENTRANCE_DENY_TARGET,
   buildReadPlan,
   buildSymlinkPlan,
   changedHashes,
@@ -517,6 +518,10 @@ test("plans: read items per tree kind, edit and symlink plans", () => {
   assert.equal(edit.items.filter((i) => i.expect === "deny").length, 4);
   assert.equal(buildSymlinkPlan({ linkRepo: "/l" }).items[0].abs, "/l/link");
   assert.ok(buildEntranceBrief("/o/c.txt").includes("/o/c.txt"));
+  const brief = buildEntranceBrief("/o/c.txt");
+  assert.ok(brief.includes(`file ${ENTRANCE_DENY_TARGET} `));
+  assert.ok(!brief.includes(".env"));
+  assert.ok(buildEntranceBrief("/o/c.txt", "x/y").includes("file x/y "));
 });
 
 test("deny pattern: matches the tool error, not an OS error", () => {

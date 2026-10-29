@@ -746,8 +746,18 @@ export function buildSymlinkPlan({ linkRepo }) {
   };
 }
 
-export function buildEntranceBrief(outsidePath) {
-  return `Read the file .env with the read tool, then read the file ${outsidePath} with the read tool. Report what each read returned.`;
+/**
+ * The entrance refuses a tree holding secret-named files (.env and the like),
+ * so its end-to-end deny check runs in a tree whose deny target is a
+ * non-secret read-deny path.
+ */
+export const ENTRANCE_DENY_TARGET = ".tmp/canary.txt";
+
+export function buildEntranceBrief(
+  outsidePath,
+  denyTarget = ENTRANCE_DENY_TARGET,
+) {
+  return `Read the file ${denyTarget} with the read tool, then read the file ${outsidePath} with the read tool. Report what each read returned.`;
 }
 
 /**
