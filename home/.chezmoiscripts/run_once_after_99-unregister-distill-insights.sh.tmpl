@@ -39,8 +39,11 @@ if ! systemctl --user show-environment >/dev/null 2>&1; then
   [ ! -L "$HOME/.config/systemd/user/timers.target.wants/distill-insights.timer" ] || fail 'timer enablement symlink remains'
   exit 0
 fi
-systemctl --user disable --now distill-insights.timer >/dev/null 2>&1 || fail 'could not disable timer'
-systemctl --user stop distill-insights.service >/dev/null 2>&1 || fail 'could not stop service'
+# .chezmoiremove deletes the unit files before this run_once_after script, and
+# disable then fails with "Unit file ... does not exist" although nothing is
+# registered. Do not stop on these two commands; the re-read below decides.
+systemctl --user disable --now distill-insights.timer >/dev/null 2>&1 || true
+systemctl --user stop distill-insights.service >/dev/null 2>&1 || true
 systemctl --user daemon-reload >/dev/null 2>&1 || fail 'daemon-reload failed'
 # Accept only known negative states, never a transport or permission error.
 status=0
