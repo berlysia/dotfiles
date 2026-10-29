@@ -58,21 +58,6 @@ export type CliDeps = FeedbackDeps &
   };
 type Command = (args: string[], deps: CliDeps) => Promise<number>;
 
-async function unsentCounts(deps: CliDeps) {
-  const ids = async (dir: string, claimed = false) =>
-    (await deps.fs.readdir(join(deps.root, dir))).filter((name) => {
-      const match = claimed
-        ? /^(.*)\.[0-9a-f]+\.json$/.exec(name)
-        : /^(.*)\.json$/.exec(name);
-      return match !== null && isFeedbackId(match[1] ?? "");
-    }).length;
-  return {
-    unsent: (await ids("pending")) + (await ids("sending", true)),
-    failed: await ids("failed"),
-    held: await ids("held"),
-  };
-}
-
 function lastFlushLine(deps: CliDeps, hasPending: boolean): string | null {
   const last = readLastFlush(
     join(deps.root, "state", "last-flush.json"),
@@ -155,7 +140,7 @@ const send: Command = async (args, deps) => {
     return 1;
   }
   const spool = await openSpool(deps.root, deps);
-  const before = await unsentCounts(deps);
+  const before = await spool.countLocal();
   await spool.writePending(candidate, { origin: "local" });
   const redacted =
     fields.title.redacted || fields.target.redacted || fields.body.redacted;
@@ -195,8 +180,8 @@ const flushCommand: Command = async (args, deps) => {
 };
 
 const status: Command = async (_args, deps) => {
-  await openSpool(deps.root, deps);
-  const counts = await unsentCounts(deps);
+  const spool = await openSpool(deps.root, deps);
+  const counts = await spool.countLocal();
   const lines = [
     `未送: ${counts.unsent} 件`,
     `失敗: ${counts.failed} 件`,

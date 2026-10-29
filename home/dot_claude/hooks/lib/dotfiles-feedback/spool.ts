@@ -1,12 +1,15 @@
 import { constants } from "node:fs";
 import { join } from "node:path";
 import type { FeedbackDeps, FeedbackFs } from "./deps.ts";
-import { isFeedbackId, type FeedbackItemV1 } from "./item.ts";
+import { isFeedbackId, parseItem, type FeedbackItemV1 } from "./item.ts";
 import { hasCode, unlinkIfPresent } from "./lock.ts";
 import { atomicWrite, openRetry, type RetryDeps } from "./retry.ts";
 import {
   CACHE_TEMP_RANDOM_BYTES,
   CLAIM_STALE_MS,
+  DAY_MS,
+  FAILED_RETENTION_MS,
+  MAX_SENT_LINES,
   MAX_HELD,
   MAX_PENDING_PER_ORIGIN,
   SCHEMA_VERSION,
@@ -28,6 +31,17 @@ export type SpoolDeps = Omit<RetryDeps, "fs"> &
     >;
   };
 export type ClaimedItem = { id: string; nonce: string };
+export type LocalPlace = "pending" | "sending" | "held" | "failed";
+export type LocalEntry = {
+  id: string;
+  place: LocalPlace;
+  title: string | null;
+  reason?: string;
+  daysUntilDeleted?: number;
+};
+// flush.lock の解放関数。掃除は flush と並べないので、持っている印として受ける。
+// 偽の関数を渡せば呼べるため、lock を持つ証明ではなく呼び出し側の取り違えを防ぐ補助である。
+export type FlushLockHeld = () => Promise<void>;
 
 export async function openSpool(root: string, deps: SpoolDeps) {
   const { fs } = deps;
@@ -123,8 +137,145 @@ export async function openSpool(root: string, deps: SpoolDeps) {
       (name) => filenameId(name) !== null,
     ).length;
   }
+  // failed/ 直下と failed/vm-*/ の件を、(場所の相対パス, id) で列挙する。
+  async function failedFiles(): Promise<{ path: string; id: string }[]> {
+    const out: { path: string; id: string }[] = [];
+    for (const name of await fs.readdir(join(root, "failed"))) {
+      const id = filenameId(name);
+      if (id) out.push({ path: join(root, "failed", name), id });
+      else if (
+        name.startsWith("vm-") &&
+        (await safeDirectory(join(root, "failed", name)))
+      )
+        for (const inner of await fs.readdir(join(root, "failed", name))) {
+          const innerId = filenameId(inner);
+          if (innerId)
+            out.push({ path: join(root, "failed", name, inner), id: innerId });
+        }
+    }
+    return out;
+  }
+  async function readOrNull(path: string): Promise<string | null> {
+    try {
+      return await fs.readFile(path, "utf8");
+    } catch (error) {
+      if (hasCode(error, "ENOENT")) return null;
+      throw error;
+    }
+  }
+  const titleOf = (json: string): string | null => {
+    const parsed = parseItem(json);
+    return parsed.kind === "ok" ? parsed.item.title : null;
+  };
   return {
     root,
+    async countLocal(): Promise<{
+      unsent: number;
+      failed: number;
+      held: number;
+    }> {
+      const count = async (dir: string, claimed = false) =>
+        (await fs.readdir(join(root, dir))).filter((name) =>
+          claimed ? claimedName(name) !== null : filenameId(name) !== null,
+        ).length;
+      return {
+        unsent: (await count("pending")) + (await count("sending", true)),
+        failed: (await failedFiles()).length,
+        held: await count("held"),
+      };
+    },
+    async listLocal(now: Date): Promise<LocalEntry[]> {
+      const entries: LocalEntry[] = [];
+      for (const dir of ["pending", "sending", "held"] as const)
+        for (const name of (await fs.readdir(join(root, dir))).sort()) {
+          const id =
+            dir === "sending" ? claimedName(name)?.id : filenameId(name);
+          if (!id) continue;
+          const text = await readOrNull(join(root, dir, name));
+          if (text === null) continue;
+          entries.push({ id, place: dir, title: titleOf(text) });
+        }
+      for (const { path, id } of await failedFiles()) {
+        const text = await readOrNull(path);
+        if (text === null) continue;
+        let title: string | null = null;
+        let reason: string | undefined;
+        try {
+          const wrapped = JSON.parse(text) as {
+            reason?: unknown;
+            item?: unknown;
+          } | null;
+          if (typeof wrapped?.item === "string") title = titleOf(wrapped.item);
+          if (typeof wrapped?.reason === "string") reason = wrapped.reason;
+        } catch {
+          /* 壊れた件は title なしで id だけ出す。 */
+        }
+        const mtime = (await fs.lstat(path)).mtimeMs;
+        entries.push({
+          id,
+          place: "failed",
+          title,
+          ...(reason === undefined ? {} : { reason }),
+          daysUntilDeleted: Math.max(
+            0,
+            Math.floor((mtime + FAILED_RETENTION_MS - now.getTime()) / DAY_MS),
+          ),
+        });
+      }
+      return entries;
+    },
+    async findSent(id: string): Promise<number | null> {
+      check(id);
+      const text = await readOrNull(join(root, "sent.jsonl"));
+      if (text === null) return null;
+      let found: number | null = null;
+      for (const line of text.split("\n")) {
+        try {
+          const entry = JSON.parse(line) as {
+            v?: number;
+            id?: string;
+            issue?: number;
+          } | null;
+          if (
+            entry?.v === 1 &&
+            entry.id === id &&
+            Number.isSafeInteger(entry.issue) &&
+            (entry.issue ?? 0) > 0
+          )
+            found = entry.issue ?? null;
+        } catch {
+          /* 形の合わない行は飛ばす。 */
+        }
+      }
+      return found;
+    },
+    // mtime は moveToFailed が書いた時刻。30 日ちょうどは残し、それより古いものを消す。
+    async pruneFailed(now: Date, _flushLockHeld: FlushLockHeld): Promise<void> {
+      for (const { path } of await failedFiles()) {
+        try {
+          if (
+            now.getTime() - (await fs.lstat(path)).mtimeMs >
+            FAILED_RETENTION_MS
+          )
+            await unlinkIfPresent(path, fs);
+        } catch (error) {
+          // 並走する drop や flush --retry が先に消したものは飛ばす。
+          if (!hasCode(error, "ENOENT")) throw error;
+        }
+      }
+    },
+    async truncateSent(_flushLockHeld: FlushLockHeld): Promise<void> {
+      const path = join(root, "sent.jsonl");
+      const text = await readOrNull(path);
+      if (text === null) return;
+      const lines = text.split("\n").filter((line) => line !== "");
+      if (lines.length <= MAX_SENT_LINES) return;
+      await atomicWrite(
+        path,
+        `${lines.slice(-MAX_SENT_LINES).join("\n")}\n`,
+        deps,
+      );
+    },
     async writePending(
       item: FeedbackItemV1,
       { origin }: { origin: "local" | "vm" },

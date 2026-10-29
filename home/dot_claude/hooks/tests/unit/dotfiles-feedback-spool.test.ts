@@ -250,3 +250,199 @@ for (const scenario of [
     }
   });
 }
+
+// plan-3 T3: 掃除と一覧。flush.lock の解放関数は、持っている印として引数に受ける。
+const held = async () => undefined;
+const DAY = 24 * 3600 * 1000;
+const ageFile = (path: string, ageMs: number) =>
+  fs.utimes(
+    path,
+    new Date(now.getTime() - ageMs),
+    new Date(now.getTime() - ageMs),
+  );
+async function withSpool(
+  run: (
+    ctx: Awaited<ReturnType<typeof fixture>> & {
+      spool: Awaited<ReturnType<typeof openSpool>>;
+      retry: ReturnType<typeof openRetry>;
+    },
+  ) => Promise<void>,
+) {
+  const base = await fixture();
+  try {
+    const spool = await openSpool(base.root, base.deps);
+    await run({ ...base, spool, retry: openRetry(base.root, base.deps) });
+  } finally {
+    await fs.rm(base.root, { recursive: true, force: true });
+  }
+}
+const failedWrap = (key: string, reason = "invalid") =>
+  JSON.stringify({ reason, item: JSON.stringify(item(key)) });
+
+it("spool: pruneFailed removes failed items older than 30 days, vm included, idempotently", () =>
+  withSpool(async ({ root, spool, retry, deps }) => {
+    const [a, b, c, d, e] = [id(1), id(2), id(3), id(4), id(5)];
+    await fs.mkdir(join(root, "failed/vm-m1"), { mode: 0o700 });
+    const files = {
+      a: join(root, "failed", `${a}.json`),
+      b: join(root, "failed", `${b}.json`),
+      c: join(root, "failed/vm-m1", `${c}.json`),
+      d: join(root, "failed", `${d}.json`),
+      e: join(root, "failed", `${e}.json`),
+    };
+    for (const [key, path] of Object.entries(files))
+      await fs.writeFile(
+        path,
+        failedWrap(id({ a: 1, b: 2, c: 3, d: 4, e: 5 }[key] as number)),
+      );
+    await ageFile(files.a, 31 * DAY);
+    await ageFile(files.b, 29 * DAY);
+    await ageFile(files.c, 31 * DAY);
+    await ageFile(files.d, 30 * DAY);
+    await ageFile(files.e, 30 * DAY + 1000);
+    for (const key of [a, b, c, d, e]) await retry.recordFailure(key, now);
+    await spool.pruneFailed(now, held);
+    const exists = async (path: string) =>
+      fs.lstat(path).then(
+        () => true,
+        () => false,
+      );
+    deepStrictEqual(
+      [
+        await exists(files.a),
+        await exists(files.b),
+        await exists(files.c),
+        await exists(files.d),
+        await exists(files.e),
+      ],
+      [false, true, false, true, false],
+    );
+    await retry.prune(
+      async () =>
+        new Set(
+          [
+            ...(await fs.readdir(join(root, "pending"))),
+            ...(await fs.readdir(join(root, "sending"))),
+          ].map((n) => n.replace(/\..*$/, "")),
+        ),
+      held,
+    );
+    strictEqual(await retry.isDue(a, now), true);
+    strictEqual(await retry.isDue(c, now), true);
+    await spool.pruneFailed(now, held);
+    strictEqual(await exists(files.b), true);
+    void deps;
+  }));
+
+it("spool: listLocal reports place, title, reason and days until deletion", () =>
+  withSpool(async ({ root, spool }) => {
+    await spool.writePending(item(id(1)), { origin: "local" });
+    await fs.writeFile(join(root, "pending", `${id(2)}.json`), "{");
+    await fs.writeFile(
+      join(root, "held", `${id(3)}.json`),
+      JSON.stringify({ ...item(id(3)), schemaVersion: 2 }),
+    );
+    const claimed = join(root, "sending", `${id(4)}.0a.json`);
+    await fs.writeFile(claimed, JSON.stringify(item(id(4))));
+    await fs.writeFile(
+      join(root, "failed", `${id(5)}.json`),
+      failedWrap(id(5), "invalid"),
+    );
+    await ageFile(join(root, "failed", `${id(5)}.json`), 29 * DAY);
+    await fs.writeFile(
+      join(root, "failed", `${id(6)}.json`),
+      failedWrap(id(6), "unsupported-version"),
+    );
+    await ageFile(join(root, "failed", `${id(6)}.json`), 29.5 * DAY);
+    const list = await spool.listLocal(now);
+    const by = (key: string) => list.find((entry) => entry.id === key);
+    deepStrictEqual(by(id(1)), { id: id(1), place: "pending", title: "title" });
+    deepStrictEqual(by(id(2)), { id: id(2), place: "pending", title: null });
+    deepStrictEqual(by(id(3)), { id: id(3), place: "held", title: null });
+    deepStrictEqual(by(id(4)), { id: id(4), place: "sending", title: "title" });
+    deepStrictEqual(by(id(5)), {
+      id: id(5),
+      place: "failed",
+      title: "title",
+      reason: "invalid",
+      daysUntilDeleted: 1,
+    });
+    strictEqual(by(id(6))?.daysUntilDeleted, 0);
+    strictEqual(list.length, 6);
+  }));
+
+it("spool: countLocal counts pending+sending, failed including vm, and held", () =>
+  withSpool(async ({ root, spool }) => {
+    await spool.writePending(item(id(1)), { origin: "local" });
+    await fs.writeFile(join(root, "sending", `${id(2)}.0a.json`), "{}");
+    await fs.writeFile(join(root, "sending", "junk.json"), "{}");
+    await fs.writeFile(join(root, "failed", `${id(3)}.json`), "{}");
+    await fs.mkdir(join(root, "failed/vm-m1"), { mode: 0o700 });
+    await fs.writeFile(join(root, "failed/vm-m1", `${id(4)}.json`), "{}");
+    await fs.writeFile(join(root, "held", `${id(5)}.json`), "{}");
+    deepStrictEqual(await spool.countLocal(), {
+      unsent: 2,
+      failed: 2,
+      held: 1,
+    });
+  }));
+
+it("spool: truncateSent keeps the last 1000 lines and leaves 999 untouched", () =>
+  withSpool(async ({ root, spool }) => {
+    const path = join(root, "sent.jsonl");
+    const line = (n: number) =>
+      JSON.stringify({ v: 1, id: id(n), issue: n + 1, at: now.toISOString() });
+    await fs.writeFile(
+      path,
+      Array.from({ length: 999 }, (_, n) => line(n)).join("\n") + "\n",
+    );
+    await ageFile(path, 5 * DAY);
+    const before = (await fs.lstat(path)).mtimeMs;
+    await spool.truncateSent(held);
+    strictEqual((await fs.lstat(path)).mtimeMs, before);
+    await fs.writeFile(
+      path,
+      Array.from({ length: 1005 }, (_, n) => line(n)).join("\n") + "\n",
+    );
+    await spool.truncateSent(held);
+    const lines = (await fs.readFile(path, "utf8")).trim().split("\n");
+    strictEqual(lines.length, 1000);
+    strictEqual(lines[0], line(5));
+    strictEqual(lines[999], line(1004));
+    strictEqual((await fs.lstat(path)).mode & 0o777, 0o600);
+  }));
+
+it("spool: truncateSent without sent.jsonl is a no-op", () =>
+  withSpool(async ({ spool }) => {
+    await spool.truncateSent(held);
+  }));
+
+it("spool: findSent returns the last valid line for an id", () =>
+  withSpool(async ({ root, spool }) => {
+    strictEqual(await spool.findSent(id(1)), null);
+    const line = (key: string, issue: number) =>
+      JSON.stringify({ v: 1, id: key, issue, at: now.toISOString() });
+    await fs.writeFile(
+      join(root, "sent.jsonl"),
+      [
+        line(id(1), 3),
+        "bad",
+        '{"v":1,"id":"' + id(1) + '","issue":"x"}',
+        line(id(2), 4),
+        line(id(1), 9),
+      ].join("\n") + "\n",
+    );
+    strictEqual(await spool.findSent(id(1)), 9);
+    strictEqual(await spool.findSent(id(2)), 4);
+    strictEqual(await spool.findSent(id(3)), null);
+  }));
+
+it("spool: cleanup functions require the flush.lock release function", () =>
+  withSpool(async ({ spool, retry }) => {
+    // @ts-expect-error 解放関数の引数を省くと型の誤りになる
+    await spool.pruneFailed(now);
+    // @ts-expect-error 同上
+    await spool.truncateSent();
+    // @ts-expect-error 同上
+    await retry.prune(async () => new Set<string>());
+  }));
