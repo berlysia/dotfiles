@@ -28,6 +28,7 @@ const edges: Record<string, readonly string[]> = {
     "../invisible-chars",
   ],
   spawn: ["deps"],
+  home: [],
   flush: [
     "spool",
     "retry",
@@ -52,7 +53,9 @@ const edges: Record<string, readonly string[]> = {
     "gh",
     "spawn",
     "flush",
+    "home",
     "../repo-key",
+    "../run-git",
     "../agent-caller",
   ],
 };

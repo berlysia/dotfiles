@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# dotfiles-feedback: thin wrapper around cli/dotfiles-feedback.ts.
+# Deployed by chezmoi at ~/.local/bin/dotfiles-feedback; the real logic lives at
+# ~/.claude/hooks/cli/dotfiles-feedback.ts (home/dot_claude/hooks/cli/dotfiles-feedback.ts
+# in source). A separate process rather than a symlink so PATH lookup sees a
+# stable name that `Bash(dotfiles-feedback *)` permission entries can match.
+exec bun run --silent "${HOME}/.claude/hooks/cli/dotfiles-feedback.ts" "$@"

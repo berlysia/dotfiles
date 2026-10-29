@@ -1,0 +1,380 @@
+import { execFileSync, spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import * as fsPromises from "node:fs/promises";
+import { hostname } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { parseArgs } from "node:util";
+import { detectAgent } from "../lib/agent-caller.ts";
+import { resolveRepoKey } from "../lib/repo-key.ts";
+import { runGit } from "../lib/run-git.ts";
+import { readLastFlush } from "../lib/dotfiles-feedback/cache.ts";
+import {
+  FEEDBACK_KINDS,
+  FEEDBACK_REPO,
+} from "../lib/dotfiles-feedback/constants.ts";
+import type { FeedbackDeps } from "../lib/dotfiles-feedback/deps.ts";
+import { flush } from "../lib/dotfiles-feedback/flush.ts";
+import { runGh } from "../lib/dotfiles-feedback/gh.ts";
+import {
+  resolvePasswdHome,
+  type HomeResult,
+} from "../lib/dotfiles-feedback/home.ts";
+import {
+  isFeedbackId,
+  newLocalId,
+  normalizeField,
+  validateItem,
+  type FeedbackItemV1,
+  type FeedbackKind,
+} from "../lib/dotfiles-feedback/item.ts";
+import { openRetry } from "../lib/dotfiles-feedback/retry.ts";
+import { flushArgv, spawnDetached } from "../lib/dotfiles-feedback/spawn.ts";
+import { openSpool } from "../lib/dotfiles-feedback/spool.ts";
+
+const STDIN_MAX_BYTES = 64 * 1024;
+const USAGE = `使い方: dotfiles-feedback <command>
+  send --title <t> --target <t> --kind <bug|improvement|missing>   本文は stdin で渡す
+  flush [--retry <id>]
+  status
+  drop <id>`;
+const ERROR_HINTS: Record<string, string> = {
+  auth: "gh auth login を実行する",
+  network: "ネットワークを確認する",
+  "not-private": "宛先のリポジトリが private で berlysia のものか確認する",
+  "gh-missing": "gh をインストールする",
+  other: "時間をおいて flush を再実行する",
+};
+
+export type CliDeps = FeedbackDeps & {
+  cliPath: string;
+  cwd: string;
+  stdinIsTty: boolean;
+  spawnDetached(argv: readonly string[]): Promise<boolean>;
+  stdout(text: string): void;
+  stderr(text: string): void;
+};
+type Command = (args: string[], deps: CliDeps) => Promise<number>;
+
+async function unsentCounts(deps: CliDeps) {
+  const ids = async (dir: string, claimed = false) =>
+    (await deps.fs.readdir(join(deps.root, dir))).filter((name) => {
+      const match = claimed
+        ? /^(.*)\.[0-9a-f]+\.json$/.exec(name)
+        : /^(.*)\.json$/.exec(name);
+      return match !== null && isFeedbackId(match[1] ?? "");
+    }).length;
+  return {
+    unsent: (await ids("pending")) + (await ids("sending", true)),
+    failed: await ids("failed"),
+    held: await ids("held"),
+  };
+}
+
+function lastFlushLine(deps: CliDeps, hasPending: boolean): string | null {
+  const last = readLastFlush(
+    join(deps.root, "state", "last-flush.json"),
+    deps.now(),
+    hasPending,
+  );
+  return last
+    ? `直近の送信の失敗: ${last.error} (${last.at}) 対処: ${ERROR_HINTS[last.error] ?? ""}`
+    : null;
+}
+
+const send: Command = async (args, deps) => {
+  const { values } = parseArgs({
+    args,
+    options: {
+      title: { type: "string" },
+      target: { type: "string" },
+      kind: { type: "string" },
+    },
+    strict: true,
+  });
+  const { title, target, kind } = values;
+  if (title === undefined || target === undefined || kind === undefined) {
+    deps.stderr(`--title, --target, --kind が必要\n${USAGE}\n`);
+    return 1;
+  }
+  if (!FEEDBACK_KINDS.includes(kind as FeedbackKind)) {
+    deps.stderr(`--kind は ${FEEDBACK_KINDS.join(" / ")} のどれか\n`);
+    return 1;
+  }
+  if (deps.stdinIsTty) {
+    deps.stderr("本文は stdin で渡す\n");
+    return 1;
+  }
+  let rawBody: string;
+  try {
+    rawBody = await deps.readStdin();
+  } catch {
+    deps.stderr("stdin を読めなかった (上限 64KB)\n");
+    return 1;
+  }
+  if (Buffer.byteLength(rawBody, "utf8") > STDIN_MAX_BYTES) {
+    deps.stderr("本文が 64KB を超えている\n");
+    return 1;
+  }
+  const fields = {
+    title: normalizeField(title, "title"),
+    target: normalizeField(target, "target"),
+    body: normalizeField(rawBody.replace(/\s+$/, ""), "body"),
+  };
+  for (const [name, field] of Object.entries(fields)) {
+    if (!field.ok) {
+      deps.stderr(`拒否: ${field.reason} (${name})\n`);
+      return 1;
+    }
+  }
+  if (!fields.title.ok || !fields.target.ok || !fields.body.ok) return 1;
+  const rawHost = normalizeField(deps.hostname(), "host");
+  const rawKey = await deps.resolveRepoKey(deps.cwd);
+  const key = rawKey === null ? null : normalizeField(rawKey, "repoKey");
+  const now = deps.now();
+  const candidate: FeedbackItemV1 = {
+    schemaVersion: 1,
+    id: newLocalId(now, deps.randomBytes),
+    createdAt: now.toISOString().replace(/\.\d{3}Z$/, "Z"),
+    title: fields.title.value,
+    target: fields.target.value,
+    kind: kind as FeedbackKind,
+    body: fields.body.value,
+    source: {
+      agent: detectAgent(deps.envNames),
+      repoKey: key?.ok ? key.value : null,
+      host: rawHost.ok ? rawHost.value : "unknown",
+      vm: false,
+    },
+  };
+  const validated = validateItem(candidate);
+  if (validated.kind !== "ok") {
+    deps.stderr(`拒否: ${validated.reason}\n`);
+    return 1;
+  }
+  const spool = await openSpool(deps.root, deps);
+  const before = await unsentCounts(deps);
+  await spool.writePending(candidate, { origin: "local" });
+  const redacted =
+    fields.title.redacted || fields.target.redacted || fields.body.redacted;
+  const lines = [
+    `保存した: ${candidate.id}`,
+    `伏せた箇所: ${redacted ? "あり" : "なし"}`,
+    `手元の未送: ${before.unsent} 件、失敗: ${before.failed} 件`,
+  ];
+  const last = lastFlushLine(deps, before.unsent > 0);
+  if (last) lines.push(last);
+  deps.stdout(`${lines.join("\n")}\n`);
+  if (!(await deps.spawnDetached(flushArgv(deps.cliPath))))
+    deps.stderr(
+      "警告: flush を起動できなかった。dotfiles-feedback flush を実行する\n",
+    );
+  return 0;
+};
+
+const flushCommand: Command = async (args, deps) => {
+  const { values } = parseArgs({
+    args,
+    options: { retry: { type: "string" } },
+    strict: true,
+  });
+  if (values.retry !== undefined) {
+    if (!isFeedbackId(values.retry)) {
+      deps.stderr("id の形式が正しくない\n");
+      return 1;
+    }
+    const spool = await openSpool(deps.root, deps);
+    await spool.retryFailed(values.retry);
+    await openRetry(deps.root, deps).reset(values.retry);
+  }
+  await flush(deps);
+  deps.stdout("flush 完了\n");
+  return 0;
+};
+
+const status: Command = async (_args, deps) => {
+  await openSpool(deps.root, deps);
+  const counts = await unsentCounts(deps);
+  const lines = [
+    `未送: ${counts.unsent} 件`,
+    `失敗: ${counts.failed} 件`,
+    `新しい版で止まっている: ${counts.held} 件`,
+  ];
+  const last = lastFlushLine(deps, counts.unsent > 0);
+  if (last) lines.push(last);
+  deps.stdout(`${lines.join("\n")}\n`);
+  return 0;
+};
+
+const drop: Command = async (args, deps) => {
+  const id = args[0];
+  if (args.length !== 1 || id === undefined || !isFeedbackId(id)) {
+    deps.stderr("drop <id> の形式が正しくない\n");
+    return 1;
+  }
+  const spool = await openSpool(deps.root, deps);
+  await spool.drop(id);
+  deps.stdout(`削除した: ${id}\n`);
+  return 0;
+};
+
+const unimplemented: Command = async (_args, deps) => {
+  deps.stderr("未実装\n");
+  return 1;
+};
+
+// plan-3 以降は、この表に行を足す。
+const COMMANDS: Record<string, Command> = {
+  send,
+  flush: flushCommand,
+  status,
+  drop,
+  list: unimplemented,
+  show: unimplemented,
+  triage: unimplemented,
+  refresh: unimplemented,
+  "ingest-vm": unimplemented,
+};
+
+export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
+  if (argv.includes("--help") || argv.includes("-h")) {
+    deps.stdout(`${USAGE}\n`);
+    return 0;
+  }
+  const [name, ...rest] = argv;
+  const command = name === undefined ? undefined : COMMANDS[name];
+  if (!command) {
+    deps.stderr(`${USAGE}\n`);
+    return 1;
+  }
+  if (deps.isVm && name !== "status") {
+    deps.stderr("VM からの送信は未対応\n");
+    return 1;
+  }
+  try {
+    return await command(rest, deps);
+  } catch (error) {
+    deps.stderr(
+      `dotfiles-feedback: ${error instanceof Error ? error.message : "失敗"}\n`,
+    );
+    return 1;
+  }
+}
+
+export type EntryDeps = {
+  resolveHome(): HomeResult;
+  buildDeps(home: string): CliDeps;
+  stderr(text: string): void;
+};
+
+export async function startCli(
+  argv: string[],
+  entryDeps: EntryDeps,
+): Promise<number> {
+  const home = entryDeps.resolveHome();
+  if (!home.ok) {
+    entryDeps.stderr(`dotfiles-feedback: ${home.reason}\n`);
+    return 1;
+  }
+  return runCli(argv, entryDeps.buildDeps(home.home));
+}
+
+async function readStdinCapped(): Promise<string> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of process.stdin) {
+    const buffer = Buffer.from(chunk as Uint8Array);
+    size += buffer.length;
+    if (size > STDIN_MAX_BYTES) throw new Error("stdin too large");
+    chunks.push(buffer);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+function isPidAlive(pid: number): boolean | null {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    return code === "ESRCH" ? false : code === "EPERM" ? true : null;
+  }
+}
+
+async function getPidStartTime(pid: number): Promise<string | null> {
+  try {
+    if (process.platform === "linux") {
+      const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+      return stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19] ?? null;
+    }
+    const out = execFileSync("/bin/ps", ["-o", "lstart=", "-p", String(pid)], {
+      env: { PATH: "/usr/bin:/bin", LANG: "C" },
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 3_000,
+    })
+      .toString("utf8")
+      .trim();
+    return out === "" ? null : out;
+  } catch {
+    return null;
+  }
+}
+
+// root と gh の HOME はどちらも passwd から得た home から作る。環境変数 HOME は読まない。
+export function buildCliDeps(
+  home: string,
+  overrides: Partial<CliDeps> = {},
+): CliDeps {
+  const cliPath = fileURLToPath(import.meta.url);
+  return {
+    root: join(home, ".local", "share", "dotfiles-feedback"),
+    home,
+    uid: process.getuid?.() ?? -1,
+    fs: fsPromises,
+    repo: FEEDBACK_REPO,
+    runGh,
+    spawnFlush: () => spawnDetached(flushArgv(cliPath)),
+    now: () => new Date(),
+    randomBytes: (size) => randomBytes(size),
+    hostname,
+    pid: process.pid,
+    isPidAlive,
+    getPidStartTime,
+    isVm: existsSync("/etc/agent-vm"),
+    readStdin: readStdinCapped,
+    envNames: Object.keys(process.env),
+    resolveRepoKey: async (cwd) => resolveRepoKey(cwd, runGit),
+    cliPath,
+    cwd: process.cwd(),
+    stdinIsTty: process.stdin.isTTY === true,
+    spawnDetached,
+    stdout: (text) => void process.stdout.write(text),
+    stderr: (text) => void process.stderr.write(text),
+    ...overrides,
+  };
+}
+
+if (import.meta.main) {
+  // Not process.exit(): see docs/decisions/0002 (no-process-exit under hooks/).
+  process.exitCode = await startCli(process.argv.slice(2), {
+    resolveHome: () =>
+      typeof process.getuid === "function"
+        ? resolvePasswdHome(
+            (file, args, env) => {
+              const r = spawnSync(file, [...args], {
+                env,
+                encoding: "utf8",
+                timeout: 5_000,
+                shell: false,
+              });
+              return { code: r.status, stdout: r.stdout ?? "" };
+            },
+            process.platform,
+            process.getuid(),
+          )
+        : { ok: false, reason: "uid を取得できない" },
+    buildDeps: (home) => buildCliDeps(home),
+    stderr: (text) => void process.stderr.write(text),
+  });
+}
