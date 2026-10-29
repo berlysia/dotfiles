@@ -51,6 +51,7 @@ const ROWS = [
   { key: "ask-grokbot", expect: "ask-grokbot" },
   { key: "claude-rc-launch", expect: "claude-rc-launch" },
   { key: "claude-rc-sync", expect: "claude-rc-sync" },
+  { key: "claude-sessions", expect: "claude-sessions" },
   { key: "claude-task-list-id", expect: "claude-task-list-id" },
   { key: "claude-usage", ...AI_USAGE },
   {
