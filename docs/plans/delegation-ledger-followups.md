@@ -10,12 +10,20 @@ Agent の結果には `resolvedModel`（正確なモデル ID）と `totalDurati
 - ADR-0055 の K2 は、`claude-code-agent` の model を呼び名の enum と決めている。変えるには K2 の改訂と、Mod と CLI の v1 の契約の見直しが要る
 - 呼び名で記録した既存の行と、ID で記録した新しい行を、集計でどう扱うかを決める
 
-## codex-rescue 経由の model と effort を取る
+## codex-rescue 経由の記録
 
-`codex:codex-rescue` の Agent は、Codex に渡す model と effort を Mod から読めず、台帳では unknown の組に入る。Codex への委譲の多くは codex-rescue を通すので、Codex の評価がモデルと effort で分かれない。
+ADR-0056 で、route に従う Codex への委譲は `codex exec` を直接起動することにし、rescue を route の比較から外した。
+rescue 経由の行は今も model と effort が `unknown` になるが、行き詰まったときに別の視点を求める使い方だけが残るので、記録を直す予定は無い。
+route の委譲で rescue をまた使うと決めたら、そのときに model と effort の取り方を決める。
 
-- codex-rescue のプラグインが Codex をどの引数で起動するかを確かめる
-- `~/.codex/config.toml` の `model` と `model_reasoning_effort` が実際に使われるなら、CLI がそこから埋める案を検討する
+## Codex の委譲先の順序と Terra の effort を見直す
+
+ADR-0056 では、委譲先の順序と、Terra を effort `high` で起動することを、記録が無い時点の推測で決めた。
+Terra の集計には `high` 以外の effort の記録も入る。
+
+- Terra と Luna max の記録がそれぞれ 5 件を超えたら、`delegation review` で effort 別の採用率を確かめる
+- 採用率に差があれば、順序と Terra の effort を変えるかを決める
+- Terra の条件を effort つきに絞ると、過去の記録の数え方が変わる。絞るかどうかも同時に決める
 
 ## route を週枠の消費に合わせて改める
 
