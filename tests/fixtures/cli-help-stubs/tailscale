@@ -1,0 +1,6 @@
+#!/bin/sh
+# cli-help test stub: records that the command was reached, then fails.
+# Reaching it means a --help path started real work.
+dir="${STUB_MARKER_DIR:-/nonexistent-stub-marker-dir}"
+printf '%s\n' "tailscale $*" > "$dir/tailscale.$$" 2>/dev/null
+exit 1
