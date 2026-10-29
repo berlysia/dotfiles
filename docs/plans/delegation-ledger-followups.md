@@ -25,13 +25,11 @@ Terra の集計には `high` 以外の effort の記録も入る。
 - 採用率に差があれば、順序と Terra の effort を変えるかを決める
 - Terra の条件を effort つきに絞ると、過去の記録の数え方が変わる。絞るかどうかも同時に決める
 
-## route を週枠の消費に合わせて改める
+## OpenCode でレビュアーを動かす
 
-次の session で、Document Workflow の spec から始める（2026-10-29 に利用者が決めた）。扱う案は 3 つある。
-
-- **予想で判定する**: 今の route は、使用率がペースの線を超えたかだけを見る。2026-10-29 は Claude の週枠を 3 時間で 9% 使ったが、線を超えるのは約 6 時間後の見込みで、それまで route は何も示さなかった。usage-line が複数の session の標本から計算する「リセット時の予想」を読み、予想が 100% を超えたら ahead とする案を比べる。
-- **レビュアーを route の対象に入れる**: Document Workflow のレビュアーは agent の定義で `model: sonnet` を指定していて、K3 で対象外にした。2026-10-29 の集計では、レビュアーが週枠の 13〜20% を使っていた。Claude の週枠が ahead のとき、定型のレビュアーを Codex か OpenCode に回す選択肢を検討する。外部でのレビューの質は分かっていないので、記録で確かめる。
-- **余っている外部の枠を使う**: usage-budget skill は「リセットする枠は使わなければ失われる」ので、リセットが近いほど多く使ってよいと判定する。route にはこの判定が無い。2026-10-29 の OpenCode は週枠を 4% しか使わず、約 3 日後にリセットされる状態だった。リセットまでが短く線との差が大きい外部を、品質のリスクが低い種類（mechanical、triage、draft）で、規模を問わず試す候補に出す案を検討する。
+Document Workflow のレビュアーを OpenCode で動かす仕組みが無い。route が review で opencode を勧めても、規約は sonnet で起動させている。
+作るには、レビュアーを Codex で動かすときと同じような runner と、各 agent 定義の分岐が要る。外部でのレビューの質がまだ記録に無いので、ADR-0057 では作らなかった。
+Codex 経路のレビュアーの記録がたまり、route が review で opencode を勧める場面が出たら検討する。
 
 ## 週枠が何をどの比で数えるかを定期的に測る
 
@@ -52,4 +50,5 @@ Terra の集計には `high` 以外の effort の記録も入る。
 ## 参照
 
 - `docs/decisions/0055-delegation-ledger.md`
+- `docs/decisions/0057-route-lookahead-and-surplus.md`
 - ADR-0041（usage-line の予想と取得）

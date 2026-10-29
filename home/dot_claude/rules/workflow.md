@@ -36,7 +36,9 @@
    - **帳簿は `workflow-cli` が書く**: `round <doc>`（骨格挿入）→ reviewer 実行 → `stamp <doc> --verdict <pass|needs-work|blocker> --reviewers a+b`。hash は stamp が計算する（**手で転記しない**）。
    - **5.2 Round 2 以降は差分**: 前 round の非 pass reviewer + `logic-validator` だけ再実行。Key Decisions / 白紙案を変えたら `round <doc> --full`。全員 pass で軽微指摘のみなら反映後に `stamp --verdict pass`、新 round は起こさない。
    - **5.3 予算**: pass 後 3 round で素の `round` は拒否される。3〜5 周目の延長は人間に聞かず `--self-extend --cause <値>` で行う。`ask-approval` の延長行を Executive Summary に写し、Round 7 以降は Risks にも書く。詳細は `/document-workflow-reference`「ラウンド予算」。
+   - **5.4 委譲先**: 起動前に round ごとに `delegation route --kind review --size <S|M|L>` を 1 回引き、推奨が codex なら `executor: codex`（Agent は `model: "haiku"`）で起動する。規模と記録は `/document-workflow-reference`「reviewer の委譲先を route で決める」。
 6. **インテント整合性トリアージ（必須）**: `/intent-alignment-triage` で、元のオーダーの本義を歪めてスコープを縮める指摘（divergent）を除外する。結果は `workflow-cli triage <doc> --adopted N --excluded M` で記録する。トリアージ前にレビュー結果をユーザーへ提示しない。
+   - triage の後、各レビュアーを `delegation record <id> --kind review --size <S|M|L> --verdict <…> --triage-excluded <N>` で記録する（5.4 の skill 節）。
 7. **承認**: Executive Summary の直後に `workflow-cli ask-approval` の出力をそのまま AskUserQuestion に渡し、人間が文書を選ぶ。キャンセルされたら議論し、済んだら人間が `approve` と打つ（下記 CRITICAL）。
 8. **実装**: 三状態 + hash 一致がそろってから着手する。**着手前にオフロード判定を 1 行宣言する**（`@~/.claude/rules/model-offloading.md`）。
 

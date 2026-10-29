@@ -23,7 +23,10 @@ const referenceSkill = join(
 // Raising it again needs its own reason recorded in an ADR. The extra 256
 // bytes carry the approval-summary rule to the flow where the summary is
 // written before `ask-approval` runs; the record is in ADR-0035's Amendments.
-const BUDGET_BYTES = 13 * 1024 + 256;
+// Another 512 bytes carry the two reviewer-routing lines (step 5.4 and the
+// record line under step 6), which must be read on every review round; their
+// details live in the reference skill. The record is in ADR-0057.
+const BUDGET_BYTES = 13 * 1024 + 768;
 
 test("workflow.md stays within the operator-guide budget (K8)", () => {
   ok(existsSync(workflowMd), "workflow.md must exist");
