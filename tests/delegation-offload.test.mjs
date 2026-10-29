@@ -3,7 +3,9 @@ import {
   chmodSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -12,6 +14,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { execFileSync } from "node:child_process";
 import { withHome } from "./lib/delegation-offload-home.mjs";
+import * as offloadModule from "../home/dot_local/share/delegation/offload.ts";
 import {
   EDIT_DENY,
   READ_DENY,
@@ -747,7 +750,7 @@ test("verifyOffload: each mismatch is refused, a full match passes", () => {
   for (const found of [
     ["/h/.config/opencode/plugin"],
     ["/h/.config/opencode/opencode.json"],
-    ["/h/.opencode"],
+    ["/h/.opencode/plugin"],
   ]) {
     assert.equal(
       verifyOffload(inputsFor(rec0, { foundConfigPaths: found })).ok,
@@ -859,6 +862,320 @@ test("deny lists: matching and the jsonc mirror stays in sync later", () => {
   for (const p of READ_DENY) assert.ok(EDIT_DENY.includes(p), p);
 });
 
+// ---- ~/.opencode allowlist and package.json dependency checks ---------------------
+
+/** A fake opencode install; returns the env and the ~/.opencode path. */
+function withLegacyDir(fn) {
+  return withHome(({ root }) => {
+    const bin = join(root, "pathbin");
+    mkdirSync(bin);
+    writeFileSync(join(bin, "opencode"), "#!/bin/sh\necho 2.2.0\n", {
+      mode: 0o755,
+    });
+    const legacy = join(root, ".opencode");
+    mkdirSync(join(legacy, "bin"), { recursive: true });
+    writeFileSync(join(legacy, "bin", "opencode"), "x");
+    mkdirSync(join(legacy, "node_modules"));
+    writeFileSync(
+      join(legacy, "package.json"),
+      JSON.stringify({ dependencies: { "@opencode-ai/plugin": "2.2.0" } }),
+    );
+    writeFileSync(join(legacy, ".gitignore"), "node_modules\n");
+    const env = { HOME: root, PATH: bin };
+    const found = () => collectOffloadInputs(env).foundConfigPaths;
+    return fn({ root, legacy, env, found });
+  });
+}
+
+test("~/.opencode: only what opencode keeps there passes", () => {
+  withLegacyDir(({ legacy, found }) => {
+    assert.deepEqual(found(), []);
+    writeFileSync(join(legacy, "package-lock.json"), "{}");
+    writeFileSync(join(legacy, "bun.lock"), "");
+    assert.deepEqual(found(), []);
+  });
+});
+
+test("~/.opencode: a symlinked bin is fine, a symlinked node_modules is not", () => {
+  withLegacyDir(({ root, legacy, found }) => {
+    rmSync(join(legacy, "bin"), { recursive: true });
+    mkdirSync(join(root, "elsewhere"));
+    symlinkSync(join(root, "elsewhere"), join(legacy, "bin"));
+    assert.deepEqual(found(), []);
+    rmSync(join(legacy, "node_modules"), { recursive: true });
+    symlinkSync(join(root, "elsewhere"), join(legacy, "node_modules"));
+    const r = found();
+    assert.equal(r.length, 1);
+    assert.match(r[0], /node_modules/);
+  });
+});
+
+test("~/.opencode: config files, config dirs and unknown names are refused with their path", () => {
+  for (const name of [
+    "opencode.jsonc",
+    "opencode.json",
+    "config.json",
+    "config.jsonc",
+    "plugin",
+    "agent",
+    "unknown-dir",
+  ]) {
+    withLegacyDir(({ legacy, found }) => {
+      const p = join(legacy, name);
+      if (name.includes(".")) writeFileSync(p, "{}");
+      else mkdirSync(p);
+      const r = found();
+      assert.equal(r.length, 1, name);
+      assert.ok(r[0].includes(p), name);
+    });
+  }
+});
+
+test("~/.opencode is not a plain directory: refused", () => {
+  withLegacyDir(({ root, legacy, found }) => {
+    rmSync(legacy, { recursive: true });
+    writeFileSync(legacy, "");
+    assert.equal(found().length, 1);
+    rmSync(legacy);
+    mkdirSync(join(root, "real"));
+    symlinkSync(join(root, "real"), legacy);
+    assert.equal(found().length, 1);
+  });
+});
+
+test("opencode.jsonc: allowed under ~/.config/opencode (by hash), refused under ~/.opencode", () => {
+  withLegacyDir(({ root, legacy, found }) => {
+    const cfg = join(root, ".config", "opencode");
+    mkdirSync(cfg, { recursive: true });
+    writeFileSync(join(cfg, "opencode.jsonc"), "{}\n");
+    assert.deepEqual(found(), []);
+    writeFileSync(join(legacy, "opencode.jsonc"), "{}\n");
+    const r = found();
+    assert.equal(r.length, 1);
+    assert.ok(r[0].includes(join(legacy, "opencode.jsonc")));
+  });
+});
+
+test("package.json: dependency names are limited to @opencode-ai/plugin, in all four fields", () => {
+  for (const dir of ["legacy", "config"]) {
+    withLegacyDir(({ root, legacy, found }) => {
+      const base =
+        dir === "legacy" ? legacy : join(root, ".config", "opencode");
+      mkdirSync(base, { recursive: true });
+      const pkg = join(base, "package.json");
+      const put = (v) => writeFileSync(pkg, JSON.stringify(v));
+      put({ dependencies: { "@opencode-ai/plugin": "latest" } });
+      assert.deepEqual(found(), [], dir);
+      put({
+        dependencies: { "@opencode-ai/plugin": "1.0.0", "left-pad": "1" },
+      });
+      assert.ok(
+        found().some((x) => x.includes("left-pad")),
+        dir,
+      );
+      for (const f of [
+        "dependencies",
+        "devDependencies",
+        "optionalDependencies",
+        "peerDependencies",
+      ]) {
+        put({ [f]: { "left-pad": "1.0.0" } });
+        const r = found();
+        assert.equal(r.length, 1, `${dir} ${f}`);
+        assert.ok(r[0].includes("left-pad"), `${dir} ${f}`);
+      }
+    });
+  }
+});
+
+test("package.json: forbidden fields, bad shapes, symlink, broken JSON, absence", () => {
+  withLegacyDir(({ root, legacy, found }) => {
+    const pkg = join(legacy, "package.json");
+    for (const f of [
+      "scripts",
+      "overrides",
+      "resolutions",
+      "workspaces",
+      "patchedDependencies",
+      "trustedDependencies",
+    ]) {
+      writeFileSync(pkg, JSON.stringify({ [f]: {} }));
+      const r = found();
+      assert.equal(r.length, 1, f);
+      assert.ok(r[0].includes(f), f);
+    }
+    writeFileSync(pkg, JSON.stringify({ dependencies: [] }));
+    assert.equal(found().length, 1);
+    writeFileSync(pkg, JSON.stringify({ dependencies: "x" }));
+    assert.equal(found().length, 1);
+    writeFileSync(pkg, "[]");
+    assert.equal(found().length, 1);
+    writeFileSync(pkg, "{ broken");
+    assert.equal(found().length, 1);
+    rmSync(pkg);
+    assert.deepEqual(found(), []);
+    writeFileSync(join(root, "real.json"), "{}");
+    symlinkSync(join(root, "real.json"), pkg);
+    assert.equal(found().length, 1);
+  });
+});
+
+test("package.json: the @opencode-ai/plugin spec is an allowlist of shapes", () => {
+  withLegacyDir(({ legacy, found }) => {
+    const pkg = join(legacy, "package.json");
+    const spec = (v) =>
+      writeFileSync(
+        pkg,
+        JSON.stringify({ dependencies: { "@opencode-ai/plugin": v } }),
+      );
+    for (const ok of [
+      "1.2.3",
+      "^1.2.3",
+      "~1.2",
+      "1",
+      "2.2.0-beta.1",
+      "latest",
+      ">=1.2.0 <2.0.0",
+    ]) {
+      spec(ok);
+      assert.deepEqual(found(), [], ok);
+    }
+    for (const bad of [
+      "file:/tmp/x",
+      "link:../x",
+      "github:a/b",
+      "git+https://x/y.git",
+      "https://x/y.tgz",
+      "npm:left-pad@1",
+      "workspace:*",
+      "a/b",
+      "",
+      "*",
+      ">=1.2.0 junk",
+    ]) {
+      spec(bad);
+      assert.equal(found().length, 1, bad);
+    }
+    spec(1);
+    assert.equal(found().length, 1);
+  });
+});
+
+// ---- writing and deleting the record ------------------------------------------------
+
+const { writeVerifiedRecord, deleteVerifiedRecord } = offloadModule;
+
+test("writeVerifiedRecord: reads back, unknown fields stay, mode 0600, no temp file", () => {
+  withHome(({ root }) => {
+    const env = { HOME: root };
+    const record = goodRecord({ auxProviders: ["opencode"] });
+    writeVerifiedRecord(env, record);
+    const state = parseVerifiedRecord(readFileSync(offloadRecordPath(env)));
+    assert.equal(state.kind, "ok");
+    assert.deepEqual(state.record.models, [GLM]);
+    assert.deepEqual(readdirSync(offloadDirPath(env)), ["verified.json"]);
+    assert.equal(statSync(offloadRecordPath(env)).mode & 0o777, 0o600);
+    // an unknown field does not stop verifyOffload
+    const base = inputsFor(record);
+    assert.deepEqual(verifyOffload({ ...base, record: state }), {
+      ok: true,
+      models: [GLM],
+    });
+    // overwriting replaces it
+    writeVerifiedRecord(env, goodRecord({ version: "9.9.9" }));
+    assert.equal(
+      parseVerifiedRecord(readFileSync(offloadRecordPath(env))).record.version,
+      "9.9.9",
+    );
+  });
+});
+
+test("writeVerifiedRecord: creates the missing data dirs from the top", () => {
+  withHome(({ root }) => {
+    rmSync(join(root, ".local"), { recursive: true });
+    const env = { HOME: root };
+    writeVerifiedRecord(env, goodRecord());
+    assert.equal(
+      parseVerifiedRecord(readFileSync(offloadRecordPath(env))).kind,
+      "ok",
+    );
+  });
+});
+
+test("writeVerifiedRecord: a broken record throws and leaves nothing", () => {
+  withHome(({ root }) => {
+    const env = { HOME: root };
+    assert.throws(() => writeVerifiedRecord(env, goodRecord({ models: [] })));
+    assert.throws(() => writeVerifiedRecord(env, "nope"));
+    assert.throws(() => statSync(offloadDirPath(env)));
+  });
+});
+
+test("writeVerifiedRecord: an unsafe record dir or data dir throws, no record", () => {
+  withHome(({ root }) => {
+    const env = { HOME: root };
+    const dataDir = join(root, ".local", "share", "delegation-ledger");
+    mkdirSync(dataDir, { recursive: true });
+    mkdirSync(join(root, "elsewhere"));
+    symlinkSync(join(root, "elsewhere"), offloadDirPath(env));
+    assert.throws(() => writeVerifiedRecord(env, goodRecord()));
+    assert.deepEqual(readdirSync(join(root, "elsewhere")), []);
+    rmSync(offloadDirPath(env));
+    rmSync(dataDir, { recursive: true });
+    symlinkSync(join(root, "elsewhere"), dataDir);
+    assert.throws(() => writeVerifiedRecord(env, goodRecord()));
+    assert.deepEqual(readdirSync(join(root, "elsewhere")), []);
+  });
+});
+
+test(
+  "writeVerifiedRecord: failing before the rename leaves no temp file",
+  {
+    skip: process.getuid?.() === 0,
+  },
+  () => {
+    withHome(({ root }) => {
+      const env = { HOME: root };
+      writeVerifiedRecord(env, goodRecord());
+      const dir = offloadDirPath(env);
+      // A directory where the record goes makes the rename fail after the temp file is written.
+      rmSync(offloadRecordPath(env));
+      mkdirSync(offloadRecordPath(env));
+      assert.throws(() => writeVerifiedRecord(env, goodRecord()));
+      assert.deepEqual(readdirSync(dir), ["verified.json"]);
+      // ensureOwnedDir repairs a read-only record dir, so that is not a failure path.
+      rmSync(offloadRecordPath(env), { recursive: true });
+      chmodSync(dir, 0o500);
+      writeVerifiedRecord(env, goodRecord());
+      assert.equal(statSync(dir).mode & 0o777, 0o700);
+      assert.deepEqual(readdirSync(dir), ["verified.json"]);
+    });
+  },
+);
+
+test(
+  "deleteVerifiedRecord: removes it, absent is fine, other failures throw",
+  {
+    skip: process.getuid?.() === 0,
+  },
+  () => {
+    withHome(({ root }) => {
+      const env = { HOME: root };
+      deleteVerifiedRecord(env);
+      writeVerifiedRecord(env, goodRecord());
+      deleteVerifiedRecord(env);
+      assert.deepEqual(readdirSync(offloadDirPath(env)), []);
+      writeVerifiedRecord(env, goodRecord());
+      chmodSync(offloadDirPath(env), 0o500);
+      try {
+        assert.throws(() => deleteVerifiedRecord(env));
+      } finally {
+        chmodSync(offloadDirPath(env), 0o700);
+      }
+    });
+  },
+);
+
 // ---- child env, argv and log ---------------------------------------------------
 
 test("buildOpencodeArgv: agent by --write, brief is one last element", () => {
@@ -877,6 +1194,24 @@ test("buildOpencodeArgv: agent by --write, brief is one last element", () => {
   const edit = buildOpencodeArgv({ model: GLM, write: true, brief });
   assert.equal(edit[3], "worktree-edit");
   assert.equal(edit.at(-1), brief);
+});
+
+test("buildOpencodeArgv: observe adds five words before the brief and nothing else", () => {
+  const brief = "b";
+  const plain = buildOpencodeArgv({ model: GLM, write: false, brief });
+  assert.deepEqual(
+    buildOpencodeArgv({ model: GLM, write: false, brief, observe: false }),
+    plain,
+  );
+  const observed = buildOpencodeArgv({
+    model: GLM,
+    write: false,
+    brief,
+    observe: true,
+  });
+  const extra = ["--format", "json", "--print-logs", "--log-level", "DEBUG"];
+  assert.deepEqual(observed, [...plain.slice(0, -1), ...extra, brief]);
+  assert.equal(observed.at(-1), brief);
 });
 
 test("buildChildEnv: allowlist only", () => {

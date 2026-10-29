@@ -23,6 +23,7 @@ import {
   readSync,
   readdirSync,
   realpathSync,
+  renameSync,
   rmSync,
   statSync,
   unlinkSync,
@@ -1037,6 +1038,8 @@ export function buildOpencodeArgv(opts: {
   model: string;
   write: boolean;
   brief: string;
+  /** Verification script only: JSON events and DEBUG logs. Never set by the entrance. */
+  observe?: boolean;
 }): string[] {
   return [
     "run",
@@ -1046,6 +1049,9 @@ export function buildOpencodeArgv(opts: {
     "-m",
     opts.model,
     "--auto",
+    ...(opts.observe === true
+      ? ["--format", "json", "--print-logs", "--log-level", "DEBUG"]
+      : []),
     opts.brief,
   ];
 }
@@ -1280,8 +1286,88 @@ export function findOpencode(env: Env): string | null {
   return null;
 }
 
-function foundConfigPaths(): string[] {
-  const home = homedir();
+// Entries opencode itself keeps under ~/.opencode. Anything else could be
+// configuration it would load (plugin, tool, skill dirs are not all known by
+// name), so the list is an allowlist, not a denylist.
+const LEGACY_DIR_ALLOWED = new Set([
+  "bin",
+  "node_modules",
+  "package.json",
+  "package-lock.json",
+  "bun.lock",
+  ".gitignore",
+]);
+const PLUGIN_PACKAGE = "@opencode-ai/plugin";
+const DEPENDENCY_FIELDS = [
+  "dependencies",
+  "devDependencies",
+  "optionalDependencies",
+  "peerDependencies",
+] as const;
+// Fields that redirect where a package comes from or run code at install time.
+const FORBIDDEN_PACKAGE_FIELDS = [
+  "overrides",
+  "resolutions",
+  "scripts",
+  "workspaces",
+  "patchedDependencies",
+  "trustedDependencies",
+] as const;
+const VERSION_BODY = String.raw`\d+(\.\d+){0,2}([-+][0-9A-Za-z.-]+)?`;
+const PLAIN_SPEC = new RegExp(String.raw`^[\^~]?${VERSION_BODY}$`);
+const BOUND_SPEC = new RegExp(String.raw`^(>=|<=|<|>)${VERSION_BODY}$`);
+
+/** Allowlist for a dependency spec: a plain version, latest, or bound pairs. */
+function isApprovedDependencySpec(spec: unknown): boolean {
+  if (typeof spec !== "string") return false;
+  if (spec === "latest" || PLAIN_SPEC.test(spec)) return true;
+  const parts = spec.split(" ");
+  return parts.length >= 2 && parts.every((x) => BOUND_SPEC.test(x));
+}
+
+/** Problems with one package.json next to an opencode config dir. */
+function packageJsonProblems(path: string): string[] {
+  let st;
+  try {
+    st = lstatSync(path);
+  } catch {
+    return [];
+  }
+  if (st.isSymbolicLink() || !st.isFile())
+    return [`${path}: 通常のファイルでない`];
+  let value: unknown;
+  try {
+    value = JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return [`${path}: JSON として読めない`];
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return [`${path}: オブジェクトでない`];
+  const o = value as Record<string, unknown>;
+  const problems: string[] = [];
+  for (const f of FORBIDDEN_PACKAGE_FIELDS) {
+    if (Object.hasOwn(o, f)) problems.push(`${path}: 欄 ${f} がある`);
+  }
+  for (const f of DEPENDENCY_FIELDS) {
+    if (!Object.hasOwn(o, f)) continue;
+    const deps = o[f];
+    if (typeof deps !== "object" || deps === null || Array.isArray(deps)) {
+      problems.push(`${path}: ${f} がオブジェクトでない`);
+      continue;
+    }
+    for (const [name, spec] of Object.entries(deps)) {
+      if (name !== PLUGIN_PACKAGE) {
+        problems.push(`${path}: 依存 ${name}`);
+      } else if (!isApprovedDependencySpec(spec)) {
+        problems.push(`${path}: 依存 ${name} の指定が許可の形でない`);
+      }
+    }
+  }
+  return problems;
+}
+
+/** Configuration that is not in the record; each entry says where and why. */
+export function findUnapprovedConfig(home: string): string[] {
   const base = join(home, ".config", "opencode");
   const found: string[] = [];
   for (const name of [...CONFIG_FILES, ...CONFIG_DIRS]) {
@@ -1289,12 +1375,40 @@ function foundConfigPaths(): string[] {
     if (exists(p)) found.push(p);
   }
   const legacy = join(home, ".opencode");
-  if (exists(legacy)) found.push(legacy);
+  let entries: string[] = [];
+  if (exists(legacy)) {
+    if (lstatSync(legacy).isDirectory()) {
+      try {
+        entries = readdirSync(legacy);
+      } catch {
+        found.push(`${legacy}: 読めない`);
+      }
+    } else {
+      found.push(`${legacy}: 通常のディレクトリでない`);
+    }
+  }
+  for (const name of entries.sort()) {
+    const p = join(legacy, name);
+    if (!LEGACY_DIR_ALLOWED.has(name)) {
+      found.push(p);
+    } else if (name === "node_modules") {
+      try {
+        if (lstatSync(p).isSymbolicLink()) found.push(`${p}: symlink`);
+      } catch {
+        // vanished
+      }
+    }
+  }
+  found.push(
+    ...packageJsonProblems(join(base, "package.json")),
+    ...packageJsonProblems(join(legacy, "package.json")),
+  );
   return found;
 }
 
 /** Gather everything verifyOffload compares. Starts nothing. */
 export function collectOffloadInputs(env: Env): OffloadInputs {
+  const home = env.HOME ?? homedir();
   const realpath = findOpencode(env);
   const record = readRecordState(env);
   const targetSha256: Record<string, string | null> = {};
@@ -1307,9 +1421,9 @@ export function collectOffloadInputs(env: Env): OffloadInputs {
     executableSha256: realpath === null ? null : sha256File(realpath),
     targetSha256,
     configSha256: sha256File(
-      join(homedir(), ".config", "opencode", "opencode.jsonc"),
+      join(home, ".config", "opencode", "opencode.jsonc"),
     ),
-    foundConfigPaths: foundConfigPaths(),
+    foundConfigPaths: findUnapprovedConfig(home),
     record,
     ...collectAuthInputs(env),
   };
@@ -1431,6 +1545,55 @@ function shortenOnly(env: Env, name: string, fallback: number): number {
   if (raw === undefined || !/^\d{1,12}$/.test(raw)) return fallback;
   const n = Number(raw);
   return n >= 1 && n < fallback ? n : fallback;
+}
+
+/**
+ * Write verified.json. The record is parsed back first so a broken one never
+ * lands; the file is renamed into place so readers see all or nothing.
+ */
+export function writeVerifiedRecord(env: Env, record: unknown): void {
+  const bytes = Buffer.from(`${JSON.stringify(record, null, 2)}\n`);
+  const parsed = parseVerifiedRecord(bytes);
+  if (parsed.kind !== "ok") {
+    throw new Error(
+      `verified record is not valid: ${parsed.kind === "broken" ? parsed.reason : parsed.kind}`,
+    );
+  }
+  const dataDir = resolveDataDir(env);
+  mkdirSync(join(dataDir, ".."), { recursive: true });
+  ensureOwnedDir(dataDir);
+  const dir = offloadDirPath(env);
+  ensureOwnedDir(dir);
+  const tmp = join(dir, `.verified.json.${process.pid}.${Date.now()}.tmp`);
+  const fd = openSync(
+    tmp,
+    fsc.O_WRONLY | fsc.O_CREAT | fsc.O_EXCL | fsc.O_NOFOLLOW,
+    0o600,
+  );
+  try {
+    try {
+      writeSync(fd, bytes);
+    } finally {
+      closeSync(fd);
+    }
+    renameSync(tmp, offloadRecordPath(env));
+  } catch (e) {
+    try {
+      unlinkSync(tmp);
+    } catch {
+      // already gone
+    }
+    throw e;
+  }
+}
+
+/** Remove verified.json; absent is fine, any other failure throws. */
+export function deleteVerifiedRecord(env: Env): void {
+  try {
+    unlinkSync(offloadRecordPath(env));
+  } catch (e) {
+    if (errnoCode(e) !== "ENOENT") throw e;
+  }
 }
 
 /** Append one JSON line to offload.log; returns an error text or null. */
