@@ -747,6 +747,9 @@ test_N3_fetch_failure_warns_and_uses_the_last_fetch() {
 test_N4_unknown_default_branch_falls_back_to_head() {
   behind_repo n4
   git -C "$TMP_BASE/n4/origin.git" symbolic-ref HEAD refs/heads/nonexistent
+  # git >= 2.48 creates origin/HEAD on fetch (followRemoteHEAD), so the fixture's fetch already left a valid one
+  git -C "$REPO" config remote.origin.followRemoteHEAD never
+  git -C "$REPO" remote set-head origin -d >/dev/null 2>&1 || true
   run_create_split "$AGENT_VM_MARKER" feat
   assert_eq 0 "$STATUS" "N4 exit 0"
   assert_contains "$ERR" "origin's default branch is unknown" "N4 warning"
