@@ -5,7 +5,10 @@ import { it } from "node:test";
 import { renderIssue } from "../../lib/dotfiles-feedback/issue-body.ts";
 import type { FeedbackItemV1 } from "../../lib/dotfiles-feedback/item.ts";
 import { FEEDBACK_REPO } from "../../lib/dotfiles-feedback/constants.ts";
-import { resolveTarget } from "../../lib/dotfiles-feedback/target.ts";
+import {
+  resolveTarget,
+  withEnsuredDestination,
+} from "../../lib/dotfiles-feedback/target.ts";
 import {
   fakeGh,
   type FakeIssue,
@@ -74,8 +77,13 @@ async function fixture(
     await fs.rm(root, { recursive: true, force: true });
   }
 }
+// 宛先の確認（api user と repo view）は別に数え、argvs は GitHub の閲覧・一覧だけを返す。
+const isCheck = (argv: readonly string[]) =>
+  argv[0] === "repo" || (argv[0] === "api" && argv.includes("user"));
 const argvs = (fake: ReturnType<typeof fakeGh>) =>
-  fake.calls.map((c) => c.argv.join(" "));
+  fake.calls.filter((c) => !isCheck(c.argv)).map((c) => c.argv.join(" "));
+const checks = (fake: ReturnType<typeof fakeGh>) =>
+  fake.calls.filter((c) => isCheck(c.argv)).length;
 
 it("target: #N views that issue", () =>
   fixture(async ({ fake, deps }) => {
@@ -117,7 +125,7 @@ it("target: sent.jsonl number is opened directly without listing", () =>
     const r = await resolveTarget(id(1), deps);
     strictEqual(r.kind, "issue");
     if (r.kind === "issue") strictEqual(r.issue.number, 5);
-    strictEqual(fake.calls.length, 1);
+    strictEqual(argvs(fake).length, 1);
   }));
 for (const [name, bad] of [
   ["404", null],
@@ -183,4 +191,46 @@ it("target: unknown id is not-found; listing timeout is a network failure with a
       strictEqual(r.error, "network");
       ok(r.hint.includes("#番号"));
     }
+  }));
+
+it("target: the destination is checked once before the first GitHub read of #N", () =>
+  fixture(async ({ fake, deps }) => {
+    fake.issues.push(issue(7, id(1)));
+    await resolveTarget("#7", deps);
+    strictEqual(checks(fake), 2);
+    ok(isCheck(fake.calls[0]!.argv) && isCheck(fake.calls[1]!.argv));
+  }));
+for (const arg of ["#7", id(1)])
+  it(`target: ${arg} against a non-private destination reads and lists nothing`, () =>
+    fixture(async ({ root, fake, deps }) => {
+      const { openSpool } =
+        await import("../../lib/dotfiles-feedback/spool.ts");
+      await openSpool(root, deps);
+      // sent.jsonl に番号がある場合と、一覧に進む場合の両方で閲覧しない。
+      if (arg !== "#7")
+        await fs.writeFile(
+          join(root, "sent.jsonl"),
+          `${JSON.stringify({ v: 1, id: id(1), issue: 5, at: now.toISOString() })}\n`,
+        );
+      fake.issues.push(issue(5, id(1)), issue(7, id(1)));
+      fake.isPrivate = false;
+      const r = await resolveTarget(arg, deps);
+      strictEqual(r.kind, "gh-failed");
+      if (r.kind === "gh-failed") strictEqual(r.error, "not-private");
+      deepStrictEqual(argvs(fake), []);
+    }));
+it("target: an id missing from the local spool and from sent.jsonl is checked before the listing", () =>
+  fixture(async ({ fake, deps }) => {
+    fake.isPrivate = false;
+    const r = await resolveTarget(id(2), deps);
+    strictEqual(r.kind, "gh-failed");
+    deepStrictEqual(argvs(fake), []);
+  }));
+it("target: a shared ensureDestination makes later resolutions reuse one check", () =>
+  fixture(async ({ fake, deps }) => {
+    fake.issues.push(issue(7, id(1)), issue(8, id(2)));
+    const shared = withEnsuredDestination(deps);
+    await resolveTarget("#7", shared);
+    await resolveTarget("#8", shared);
+    strictEqual(checks(fake), 2);
   }));

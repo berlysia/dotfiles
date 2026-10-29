@@ -41,6 +41,7 @@ const edges: Record<string, readonly string[]> = {
   ],
   triage: [
     "target",
+    "labels-state",
     "gh",
     "issue-body",
     "item",
@@ -51,6 +52,7 @@ const edges: Record<string, readonly string[]> = {
   ],
   display: ["../invisible-chars", "constants", "cache", "item"],
   notice: ["cache", "constants"],
+  "labels-state": ["constants", "deps", "retry", "spool"],
   lock: ["constants", "deps"],
   retry: ["lock", "constants", "deps", "item"],
   spool: ["item", "lock", "retry", "constants", "deps"],
@@ -65,6 +67,7 @@ const edges: Record<string, readonly string[]> = {
   spawn: ["deps"],
   home: [],
   flush: [
+    "labels-state",
     "spool",
     "retry",
     "gh",

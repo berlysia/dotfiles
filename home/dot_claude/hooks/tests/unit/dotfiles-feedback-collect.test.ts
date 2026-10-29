@@ -270,3 +270,28 @@ it("newNonce is 8 hex digits from the injected random bytes", () =>
     newNonce((size) => new Uint8Array(size).fill(0xab)),
     "abababab",
   ));
+
+it("show: #N and an unknown id check the destination first, and a non-private one is a failure with no read", () =>
+  fixture(async ({ fake, deps }) => {
+    fake.issues.push(issue(1, id(1)));
+    fake.isPrivate = false;
+    for (const arg of ["#1", id(5)]) {
+      const shown = await collectShow(arg, deps);
+      strictEqual(shown.kind, "failed", arg);
+      if (shown.kind === "failed") strictEqual(shown.error, "not-private");
+    }
+    ok(
+      fake.calls.every(
+        (c) => c.argv[0] === "repo" || c.argv.includes("user"),
+        "only destination checks ran",
+      ),
+    );
+  }));
+it("show: a local item is shown without any destination check", () =>
+  fixture(async ({ root, fake, deps }) => {
+    const spool = await openSpool(root, deps);
+    await spool.writePending(item(id(1)), { origin: "local" });
+    fake.isPrivate = false;
+    strictEqual((await collectShow(id(1), deps)).kind, "ok");
+    strictEqual(fake.calls.length, 0);
+  }));

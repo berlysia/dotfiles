@@ -182,6 +182,11 @@ describe("dotfiles-feedback as a process", () => {
     }
     strictEqual(max, 1);
     deepStrictEqual(files(s.root, "pending"), []);
+    // label は最初の回の 7 件だけ。以後の回は state/labels.json の記録で飛ばす。
+    strictEqual(
+      calls.filter((c) => c.phase === "start" && c.argv[0] === "label").length,
+      7,
+    );
   });
 
   it("the wrapper prints usage for --help", () => {

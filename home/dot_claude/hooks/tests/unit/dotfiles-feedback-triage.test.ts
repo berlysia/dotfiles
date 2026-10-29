@@ -1,7 +1,7 @@
 import { deepStrictEqual, ok, strictEqual } from "node:assert";
 import * as fs from "node:fs/promises";
 import { join } from "node:path";
-import { it } from "node:test";
+import { it, mock } from "node:test";
 import {
   DOTFILES_REPO_KEY,
   FEEDBACK_REPO,
@@ -11,6 +11,7 @@ import {
   renderIssue,
   renderTriageMarker,
 } from "../../lib/dotfiles-feedback/issue-body.ts";
+import { writeLabelsState } from "../../lib/dotfiles-feedback/labels-state.ts";
 import type { FeedbackItemV1 } from "../../lib/dotfiles-feedback/item.ts";
 import { openSpool } from "../../lib/dotfiles-feedback/spool.ts";
 import {
@@ -861,4 +862,252 @@ it("issue: foreign or mid-body origin markers are not treated as ours", () =>
     strictEqual((await triage("#1", toIssue, deps)).kind, "cancelled");
     strictEqual(seen.editors, 1);
     strictEqual(publicWrites(ctx), 2);
+  }));
+
+// --- label の用意と宛先の確認（plan-4 #5） ---
+const isLabelCall = (argv: readonly string[]) => argv[0] === "label";
+const isDestinationCheck = (argv: readonly string[]) =>
+  argv[0] === "repo" || (argv[0] === "api" && argv.includes("user"));
+const labelCreates = (ctx: Ctx) =>
+  ctx.fake.calls.filter((c) => isLabelCall(c.argv)).length;
+const userChecks = (ctx: Ctx) =>
+  ctx.fake.calls.filter((c) => c.argv[0] === "api" && c.argv.includes("user"))
+    .length;
+const labelsFile = (ctx: Ctx) => join(ctx.root, "state/labels.json");
+const exists = (path: string) =>
+  fs.lstat(path).then(
+    () => true,
+    () => false,
+  );
+const privateWrites = (ctx: Ctx) =>
+  ctx.fake.calls.filter((c) => c.argv[0] === "issue").length;
+
+it("labels: with no record, the destination check and 7 label creates come before the first comment", () =>
+  fixture(async (ctx) => {
+    ctx.fake.issues.push(issue(1, id(1)));
+    strictEqual((await triage("#1", reject, ctx.deps)).kind, "done");
+    strictEqual(labelCreates(ctx), 7);
+    strictEqual(userChecks(ctx), 1);
+    const firstComment = ctx.fake.calls.findIndex(
+      (c) => c.argv[0] === "issue" && c.argv[1] === "comment",
+    );
+    const lastLabel = ctx.fake.calls.map((c) => c.argv[0]).lastIndexOf("label");
+    ok(lastLabel < firstComment);
+    ok(await exists(labelsFile(ctx)));
+  }));
+
+it("labels: a matching record skips label creation", () =>
+  fixture(async (ctx) => {
+    await writeLabelsState(ctx.deps);
+    ctx.fake.issues.push(issue(1, id(1)));
+    strictEqual((await triage("#1", reject, ctx.deps)).kind, "done");
+    strictEqual(labelCreates(ctx), 0);
+    strictEqual(userChecks(ctx), 1);
+  }));
+
+it("labels: a failing addLabel clears the record", () =>
+  fixture(async (ctx) => {
+    await writeLabelsState(ctx.deps);
+    ctx.fake.issues.push(issue(1, id(1)));
+    ctx.fake.failWhen((a) => a[0] === "issue" && a[1] === "edit", "network");
+    strictEqual((await triage("#1", reject, ctx.deps)).kind, "gh-failed");
+    ok(!(await exists(labelsFile(ctx))));
+  }));
+
+it("labels: a symlinked record is removed as a link and its target stays", () =>
+  fixture(async (ctx) => {
+    const target = join(ctx.root, "..", "keep.json");
+    await fs.writeFile(target, "keep");
+    await fs.symlink(target, labelsFile(ctx));
+    ctx.fake.issues.push(issue(1, id(1)));
+    ctx.fake.failWhen((a) => a[0] === "issue" && a[1] === "edit", "network");
+    await triage("#1", reject, ctx.deps);
+    strictEqual(await fs.readFile(target, "utf8"), "keep");
+    ok(!(await exists(labelsFile(ctx))));
+  }));
+
+it("labels: a non-private destination stops before any write, record or label", () =>
+  fixture(async (ctx) => {
+    await writeLabelsState(ctx.deps);
+    const written = await fs.readFile(labelsFile(ctx), "utf8");
+    ctx.fake.issues.push(issue(1, id(1)));
+    ctx.fake.isPrivate = false;
+    const out = await triage("#1", reject, ctx.deps);
+    strictEqual(out.kind, "gh-failed");
+    strictEqual(privateWrites(ctx), 0);
+    strictEqual(labelCreates(ctx), 0);
+    strictEqual(await fs.readFile(labelsFile(ctx), "utf8"), written);
+  }));
+
+it("labels: a failing label creation stops before comment, addLabel and close, and writes no record", () =>
+  fixture(async (ctx) => {
+    ctx.fake.issues.push(issue(1, id(1)));
+    ctx.fake.failWhen(isLabelCall, "network");
+    const out = await triage("#1", reject, ctx.deps);
+    strictEqual(out.kind, "gh-failed");
+    strictEqual(privateWrites(ctx), 0);
+    ok(!(await exists(labelsFile(ctx))));
+    strictEqual(ctx.fake.issues[0]!.state, "open");
+  }));
+
+it("labels: a rerun with our comment already there creates labels once, then labels and closes", () =>
+  fixture(async (ctx) => {
+    ctx.fake.issues.push(issue(1, id(1)));
+    ctx.fake.addComment(1, {
+      body: `${renderTriageMarker("reject", "agent")}\n理由: 重複`,
+    });
+    strictEqual((await triage("#1", reject, ctx.deps)).kind, "done");
+    strictEqual(ctx.fake.comments.get(1)!.length, 1);
+    strictEqual(labelCreates(ctx), 7);
+    strictEqual(userChecks(ctx), 1);
+  }));
+
+it("labels: an already closed issue creates no labels and checks the destination once", () =>
+  fixture(async (ctx) => {
+    ctx.fake.issues.push(issue(1, id(1), { state: "closed" }));
+    strictEqual((await triage("#1", reject, ctx.deps)).kind, "rejected");
+    strictEqual(labelCreates(ctx), 0);
+    strictEqual(userChecks(ctx), 1);
+  }));
+
+it("labels: show-like resolution of a non-private destination for #N and for an id lists and views nothing", () =>
+  fixture(async (ctx) => {
+    ctx.fake.isPrivate = false;
+    for (const arg of ["#1", id(7)]) {
+      const out = await triage(arg, reject, ctx.deps);
+      strictEqual(out.kind, "gh-failed", arg);
+    }
+    deepStrictEqual(
+      ctx.fake.calls
+        .filter((c) => !isDestinationCheck(c.argv))
+        .map((c) => c.argv),
+      [],
+    );
+  }));
+
+it("labels: a local id is refused without checking the destination", () =>
+  fixture(async (ctx) => {
+    await fs.writeFile(join(ctx.root, "pending", `${id(1)}.json`), "{}");
+    strictEqual((await triage(id(1), reject, ctx.deps)).kind, "rejected");
+    strictEqual(ctx.fake.calls.length, 0);
+  }));
+
+it("labels: --to issue from an agent is refused before the destination check", () =>
+  fixture(async (ctx) => {
+    ctx.fake.issues.push(issue(1, id(1)));
+    strictEqual((await triage("#1", toIssue, ctx.deps)).kind, "rejected");
+    strictEqual(ctx.fake.calls.length, 0);
+  }));
+
+it("labels: --to issue with a cancelled draft checks the destination once and creates no labels", () =>
+  fixture(async (ctx) => {
+    ctx.fake.issues.push(privateIssue(1, id(1)));
+    const { deps } = human(ctx, () => undefined);
+    strictEqual((await triage("#1", toIssue, deps)).kind, "cancelled");
+    strictEqual(userChecks(ctx), 1);
+    strictEqual(labelCreates(ctx), 0);
+  }));
+
+it("labels: --to issue prepares labels once, before the first comment", () =>
+  fixture(async (ctx) => {
+    ctx.fake.issues.push(privateIssue(1, id(1)));
+    const { deps } = human(ctx, write("題\n\n本文\n"));
+    strictEqual((await triage("#1", toIssue, deps)).kind, "done");
+    strictEqual(labelCreates(ctx), 7);
+    const order = ctx.fake.calls.map((c) =>
+      c.argv[0] === "label" ? "label" : `${c.argv[0]}:${c.argv[1]}`,
+    );
+    ok(order.lastIndexOf("label") < order.indexOf("issue:comment"));
+  }));
+
+it("labels: --to issue rerun with a marker but no URL comment prepares labels before creating the public issue", () =>
+  fixture(async (ctx) => {
+    ctx.fake.issues.push(privateIssue(1, id(1)));
+    ctx.fake.addComment(1, {
+      body: `${renderTriageMarker("issue", "human")}\n公開 issue に起票する`,
+    });
+    const { deps } = human(ctx, write("題\n\n本文\n"));
+    strictEqual((await triage("#1", toIssue, deps)).kind, "done");
+    strictEqual(labelCreates(ctx), 7);
+    const order = ctx.fake.calls.map((c) =>
+      c.argv[0] === "label" ? "label" : `${c.argv[0]}:${c.argv[1]}`,
+    );
+    ok(order.lastIndexOf("label") < order.indexOf("issue:create"));
+  }));
+
+it("labels: --to issue rerun with only close left prepares labels once before addLabel", () =>
+  fixture(async (ctx) => {
+    ctx.fake.issues.push(privateIssue(1, id(1)));
+    ctx.fake.addComment(1, {
+      body: `${renderTriageMarker("issue", "human")}\n公開 issue に起票する`,
+    });
+    ctx.fake.addComment(1, {
+      body: renderPublicUrlMarker(
+        "https://github.com/berlysia/dotfiles/issues/1",
+      ),
+    });
+    const { deps } = human(ctx, null);
+    strictEqual((await triage("#1", toIssue, deps)).kind, "done");
+    strictEqual(labelCreates(ctx), 7);
+    const order = ctx.fake.calls.map((c) =>
+      c.argv[0] === "label" ? "label" : `${c.argv[0]}:${c.argv[1]}`,
+    );
+    ok(order.lastIndexOf("label") < order.indexOf("issue:edit"));
+  }));
+
+it("labels: an unsafe state directory is neither read nor written, one line on stderr, triage still succeeds", () =>
+  fixture(async (ctx) => {
+    await fs.chmod(join(ctx.root, "state"), 0o770);
+    const lines: string[] = [];
+    const stub = mock.method(console, "error", (...args: unknown[]) => {
+      lines.push(args.join(" "));
+    });
+    try {
+      ctx.fake.issues.push(issue(1, id(1)));
+      strictEqual((await triage("#1", reject, ctx.deps)).kind, "done");
+    } finally {
+      stub.mock.restore();
+      await fs.chmod(join(ctx.root, "state"), 0o700);
+    }
+    strictEqual(labelCreates(ctx), 7);
+    ok(!(await exists(labelsFile(ctx))));
+    ok(lines.some((line) => line.includes("labels state")));
+  }));
+
+it("labels: an unsafe state directory also leaves the record when addLabel fails", () =>
+  fixture(async (ctx) => {
+    await writeLabelsState(ctx.deps);
+    await fs.chmod(join(ctx.root, "state"), 0o770);
+    const stub = mock.method(console, "error", () => undefined);
+    try {
+      ctx.fake.issues.push(issue(1, id(1)));
+      ctx.fake.failWhen((a) => a[0] === "issue" && a[1] === "edit", "network");
+      strictEqual((await triage("#1", reject, ctx.deps)).kind, "gh-failed");
+    } finally {
+      stub.mock.restore();
+      await fs.chmod(join(ctx.root, "state"), 0o700);
+    }
+    ok(await exists(labelsFile(ctx)));
+  }));
+
+it("labels: a record write failure does not change the triage result", () =>
+  fixture(async (ctx) => {
+    ctx.fake.issues.push(issue(1, id(1)));
+    const real = ctx.deps.fs;
+    const stub = mock.method(console, "error", () => undefined);
+    try {
+      const out = await triage("#1", reject, {
+        ...ctx.deps,
+        fs: {
+          ...real,
+          rename: async (from, to) => {
+            if (to.endsWith("/state/labels.json")) throw new Error("disk full");
+            return real.rename(from, to);
+          },
+        },
+      });
+      strictEqual(out.kind, "done");
+    } finally {
+      stub.mock.restore();
+    }
   }));
