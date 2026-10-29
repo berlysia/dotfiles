@@ -14,6 +14,7 @@ description: このリポジトリの Claude Code Mod を開発、配備、診�
 
 ## イベントの順序を検証する
 
+- hook の handler から長時間の Promise を投げたままにせず、継続する処理は timer へ移す。dispatch の時間予算を超えて中断されると、`next.signal` が abort するためである。
 - 送信時刻は `next(e)` の前に取得する。人の入力は `e.origin.kind`、親の完了は `e.agentId` で区別する。`prompt.submit` にはエンジン由来の入力、`turn.complete` にはサブエージェントの完了も届く。
 - PreToolUse の時点では今回の委譲モデルは決定済みで、変更が効くのは次回の委譲からになる。非同期 Agent の `next(e)` は起動受付で完了し、子の終了を待たない。追加 context と画面表示をそれぞれ実機で確認する。
 - 例外処理だけでなく待ち時間にも上限を設ける。`next(e)` 後に待ち続けると結果を返せない。`setTimeout` がない Mod では `$.clock.after` と `Promise.race` を組み合わせる。
@@ -21,6 +22,8 @@ description: このリポジトリの Claude Code Mod を開発、配備、診�
 
 ## 描画と記録を分けて検証する
 
+- 応答のたびに起動される短命の status line プロセスでは、遅い外部取得と表示を別プロセスに分ける。取得の待ち時間が描画全体に加わるのを避けるためである。
+- `$.store` は Mod ごとのファイルを全セッションで共有するため、取得を試みた最終時刻の記録に使えば、セッションごとに同じ取得を繰り返さずに済む。
 - 控えめな常時表示は `PromptHint.tail` の文字列連結や `SessionMode.modes` への追加を試す。`$.ui.status` の色はエンジンが決める。`AbovePrompt`・`Pane` を複数の Mod で使う場合は `next(e)` の連鎖と置換を確認する。描画を自動合成する仕組みはない。
 - `ui.render`、`session.append`、モデルへの context は別に検査する。transcript の見た目を変えてもモデルの文脈は変わらない。保存行の `uuid` と描画の `requestId` は実際に照合してから利用する。行ごとの状態は `StateFamily` で分けると全行の再描画を避けられる。
 - ハーネスでは状態変更後に `ui.drawn()` を呼んで表示を確認する。CLI 出力を使うプレビューはパーサも検査できるが、実画面の折り返しと余白は別に確認する。`ui.notify` と OS 通知も別なので、Notification hook への連携を試す。

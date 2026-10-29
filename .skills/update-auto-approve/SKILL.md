@@ -85,6 +85,7 @@ bun run home/dot_claude/scripts/update-auto-approve.ts --dry-run --verbose --sin
 
 #### 注意事項
 
+- 無関係なコマンドの語が同じ文字列内にあるため拒否された場合は、guard の案内を確かめて、独立した操作を別々の呼び出しに分ける。同じ操作の言い回しだけを変えて拒否を回避しない。
 - `DANGEROUS_PATTERNS` は `SAFE_BASH_PATTERNS` より先に評価される
 - 危険パターンに該当するコマンドは safe パターンに追加しても deny される
 - テストで「uncertain であるべきケース」が正しく uncertain のままか必ず検証する
