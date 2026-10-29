@@ -69,7 +69,7 @@ export function resolveDataDir(
   return join(base, "delegation-ledger");
 }
 
-function ensureOwnedDir(path: string): void {
+export function ensureOwnedDir(path: string): void {
   try {
     mkdirSync(path, { mode: 0o700 });
   } catch (e) {
