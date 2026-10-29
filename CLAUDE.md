@@ -16,6 +16,7 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
 #### 一般的なルール
 
 - apply 前に設定上の source と再帰的な diff を確認する。worktree の cwd では適用元は変わらず、他の作業途中の変更も配置先に反映される。
+- merge しただけでは配置先が変わらない。`~/.local/bin` の CLI や `~/.claude` の hook は、本体の checkout の master を進めて apply するまで古い版で動く。新しい挙動を前提にするときは、配置先の版を先に確かめる。
 - status と apply は同じ umask で実行し、配布後のモードも照合する。権限だけの差でも、非対話の apply 全体が止まる。
 
 - **ファイル名変換**: `dot_*` → `.*` (例: `${projectRoot}/home/dot_claude/foo.txt` → `~/.claude/foo.txt`)
