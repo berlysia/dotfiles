@@ -1,8 +1,10 @@
 import { execFileSync, spawnSync } from "node:child_process";
+import { createReadStream, createWriteStream } from "node:fs";
+import { createInterface } from "node:readline";
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import * as fsPromises from "node:fs/promises";
-import { hostname } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
@@ -11,11 +13,25 @@ import { resolveRepoKey } from "../lib/repo-key.ts";
 import { runGit } from "../lib/run-git.ts";
 import { readLastFlush } from "../lib/dotfiles-feedback/cache.ts";
 import {
+  ERROR_HINTS,
   FEEDBACK_KINDS,
   FEEDBACK_REPO,
 } from "../lib/dotfiles-feedback/constants.ts";
-import type { FeedbackDeps } from "../lib/dotfiles-feedback/deps.ts";
+import type {
+  FeedbackDeps,
+  InteractiveDeps,
+} from "../lib/dotfiles-feedback/deps.ts";
+import { collectList, collectShow } from "../lib/dotfiles-feedback/collect.ts";
+import {
+  formatError,
+  formatList,
+  formatShow,
+  formatTriageResult,
+  newNonce,
+} from "../lib/dotfiles-feedback/display.ts";
 import { flush } from "../lib/dotfiles-feedback/flush.ts";
+import { refresh } from "../lib/dotfiles-feedback/refresh.ts";
+import { parseTriageArgs, triage } from "../lib/dotfiles-feedback/triage.ts";
 import { runGh } from "../lib/dotfiles-feedback/gh.ts";
 import {
   resolvePasswdHome,
@@ -30,7 +46,11 @@ import {
   type FeedbackKind,
 } from "../lib/dotfiles-feedback/item.ts";
 import { openRetry } from "../lib/dotfiles-feedback/retry.ts";
-import { flushArgv, spawnDetached } from "../lib/dotfiles-feedback/spawn.ts";
+import {
+  flushArgv,
+  refreshArgv,
+  spawnDetached,
+} from "../lib/dotfiles-feedback/spawn.ts";
 import { openSpool } from "../lib/dotfiles-feedback/spool.ts";
 
 const STDIN_MAX_BYTES = 64 * 1024;
@@ -38,39 +58,19 @@ const USAGE = `使い方: dotfiles-feedback <command>
   send --title <t> --target <t> --kind <bug|improvement|missing>   本文は stdin で渡す
   flush [--retry <id>]
   status
-  drop <id>`;
-const ERROR_HINTS: Record<string, string> = {
-  auth: "gh auth login を実行する",
-  network: "ネットワークを確認する",
-  "not-private": "宛先のリポジトリが private で berlysia のものか確認する",
-  "gh-missing": "gh をインストールする",
-  other: "時間をおいて flush を再実行する",
-};
-
-export type CliDeps = FeedbackDeps & {
-  cliPath: string;
-  cwd: string;
-  stdinIsTty: boolean;
-  spawnDetached(argv: readonly string[]): Promise<boolean>;
-  stdout(text: string): void;
-  stderr(text: string): void;
-};
-type Command = (args: string[], deps: CliDeps) => Promise<number>;
-
-async function unsentCounts(deps: CliDeps) {
-  const ids = async (dir: string, claimed = false) =>
-    (await deps.fs.readdir(join(deps.root, dir))).filter((name) => {
-      const match = claimed
-        ? /^(.*)\.[0-9a-f]+\.json$/.exec(name)
-        : /^(.*)\.json$/.exec(name);
-      return match !== null && isFeedbackId(match[1] ?? "");
-    }).length;
-  return {
-    unsent: (await ids("pending")) + (await ids("sending", true)),
-    failed: await ids("failed"),
-    held: await ids("held"),
+  drop <id>
+  list
+  show <#番号|id>
+  triage <#番号|id> --to <issue|plan|reject> [--path <docs/plans/x.md>] [--reason <理由>]
+  refresh`;
+export type CliDeps = FeedbackDeps &
+  InteractiveDeps & {
+    cliPath: string;
+    spawnDetached(argv: readonly string[]): Promise<boolean>;
+    stdout(text: string): void;
+    stderr(text: string): void;
   };
-}
+type Command = (args: string[], deps: CliDeps) => Promise<number>;
 
 function lastFlushLine(deps: CliDeps, hasPending: boolean): string | null {
   const last = readLastFlush(
@@ -154,7 +154,7 @@ const send: Command = async (args, deps) => {
     return 1;
   }
   const spool = await openSpool(deps.root, deps);
-  const before = await unsentCounts(deps);
+  const before = await spool.countLocal();
   await spool.writePending(candidate, { origin: "local" });
   const redacted =
     fields.title.redacted || fields.target.redacted || fields.body.redacted;
@@ -194,8 +194,8 @@ const flushCommand: Command = async (args, deps) => {
 };
 
 const status: Command = async (_args, deps) => {
-  await openSpool(deps.root, deps);
-  const counts = await unsentCounts(deps);
+  const spool = await openSpool(deps.root, deps);
+  const counts = await spool.countLocal();
   const lines = [
     `未送: ${counts.unsent} 件`,
     `失敗: ${counts.failed} 件`,
@@ -219,21 +219,100 @@ const drop: Command = async (args, deps) => {
   return 0;
 };
 
+// list と refresh は引数を取らず、show は位置引数を 1 つだけ取る。誤りは形式の誤りとして 1。
+function badArguments(args: string[], positionals: number, deps: CliDeps) {
+  try {
+    const parsed = parseArgs({
+      args,
+      options: {},
+      allowPositionals: true,
+      strict: true,
+    });
+    if (parsed.positionals.length === positionals) return false;
+  } catch {
+    /* 未知の flag は下で同じ扱いにする。 */
+  }
+  deps.stderr(formatError(`引数が正しくない: ${args.join(" ")}`));
+  return true;
+}
+const hintFor = (error: string, hint: string) =>
+  hint !== "" ? hint : (ERROR_HINTS[error] ?? "");
+
+const listCommand: Command = async (args, deps) => {
+  if (badArguments(args, 0, deps)) return 1;
+  deps.stdout(formatList(await collectList(deps)));
+  return 0;
+};
+
+const showCommand: Command = async (args, deps) => {
+  if (badArguments(args, 1, deps)) return 1;
+  const shown = await collectShow(args[0] as string, deps);
+  if (shown.kind === "ok") {
+    deps.stdout(formatShow(shown.view, newNonce(deps.randomBytes)));
+    return 0;
+  }
+  deps.stderr(
+    shown.kind === "failed"
+      ? formatError(
+          `${shown.error}: ${shown.message}`,
+          hintFor(shown.error, shown.hint),
+        )
+      : formatError(shown.reason),
+  );
+  return 1;
+};
+
+const triageCommand: Command = async (args, deps) => {
+  const parsed = parseTriageArgs(args);
+  if (!parsed.ok) {
+    deps.stderr(formatError(parsed.reason));
+    return 1;
+  }
+  const outcome = await triage(parsed.target, parsed.options, {
+    ...deps,
+    log: deps.stderr,
+  });
+  if (outcome.kind === "done") {
+    deps.stdout(formatTriageResult(outcome.view));
+    return 0;
+  }
+  deps.stderr(
+    outcome.kind === "gh-failed"
+      ? formatError(
+          `${outcome.error}: ${outcome.message}`,
+          hintFor(outcome.error, outcome.hint),
+        )
+      : formatError(outcome.reason),
+  );
+  return 1;
+};
+
+const refreshCommand: Command = async (args, deps) => {
+  if (badArguments(args, 0, deps)) return 1;
+  // 前面で打った refresh は flush が終わるまで戻らないので、先に知らせる。
+  deps.stdout("送り出し中\n");
+  const result = await refresh({ ...deps, log: deps.stderr });
+  if (result.kind === "failed") {
+    deps.stderr(formatError(result.reason));
+    return 1;
+  }
+  return 0;
+};
+
 const unimplemented: Command = async (_args, deps) => {
   deps.stderr("未実装\n");
   return 1;
 };
 
-// plan-3 以降は、この表に行を足す。
 const COMMANDS: Record<string, Command> = {
   send,
   flush: flushCommand,
   status,
   drop,
-  list: unimplemented,
-  show: unimplemented,
-  triage: unimplemented,
-  refresh: unimplemented,
+  list: listCommand,
+  show: showCommand,
+  triage: triageCommand,
+  refresh: refreshCommand,
   "ingest-vm": unimplemented,
 };
 
@@ -321,6 +400,36 @@ async function getPidStartTime(pid: number): Promise<string | null> {
   }
 }
 
+// /dev/tty を開けない・EOF・空行・y 以外はすべて偽。エージェントの stdin では答えられない。
+export const isConfirmed = (answer: string | null): boolean =>
+  answer === "y" || answer === "Y";
+
+export async function confirmOnTty(text: string): Promise<boolean> {
+  let input: ReturnType<typeof createReadStream> | undefined;
+  let output: ReturnType<typeof createWriteStream> | undefined;
+  try {
+    input = createReadStream("/dev/tty");
+    output = createWriteStream("/dev/tty");
+    await new Promise<void>((resolve, reject) => {
+      input!.once("open", () => resolve());
+      input!.once("error", reject);
+    });
+    output.write(`${text}\n[y/N] `);
+    const lines = createInterface({ input });
+    const answer = await new Promise<string | null>((resolve) => {
+      lines.once("line", resolve);
+      lines.once("close", () => resolve(null));
+    });
+    lines.close();
+    return isConfirmed(answer);
+  } catch {
+    return false;
+  } finally {
+    input?.destroy();
+    output?.destroy();
+  }
+}
+
 // root と gh の HOME はどちらも passwd から得た home から作る。環境変数 HOME は読まない。
 export function buildCliDeps(
   home: string,
@@ -348,6 +457,22 @@ export function buildCliDeps(
     cliPath,
     cwd: process.cwd(),
     stdinIsTty: process.stdin.isTTY === true,
+    stdoutIsTty: process.stdout.isTTY === true,
+    editor: process.env.EDITOR,
+    runEditor: async (argv) =>
+      argv[0] === undefined
+        ? null
+        : spawnSync(argv[0], argv.slice(1), { stdio: "inherit", shell: false })
+            .status,
+    makeTempDir: () => fsPromises.mkdtemp(join(tmpdir(), "dotfiles-feedback-")),
+    removeTree: (path) => fsPromises.rm(path, { recursive: true, force: true }),
+    confirm: confirmOnTty,
+    spawnRefresh: () => spawnDetached(refreshArgv(cliPath)),
+    resolveToplevel: async (cwd) => {
+      const r = runGit(["rev-parse", "--show-toplevel"], cwd);
+      return r.ok ? r.stdout.trim() || null : null;
+    },
+    realpath: (path) => fsPromises.realpath(path),
     spawnDetached,
     stdout: (text) => void process.stdout.write(text),
     stderr: (text) => void process.stderr.write(text),

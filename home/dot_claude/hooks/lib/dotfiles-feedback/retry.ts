@@ -65,8 +65,8 @@ export async function atomicWrite(
 export function openRetry(root: string, deps: RetryDeps) {
   const path = join(root, "state", "retry.json");
   async function transaction<T>(
-    change: boolean | ((state: RetryState) => boolean),
-    action: (state: RetryState) => T,
+    change: boolean | "if-changed" | ((state: RetryState) => boolean),
+    action: (state: RetryState) => T | Promise<T>,
   ): Promise<T> {
     const release = await acquireLock(
       join(root, "state", "retry.lock"),
@@ -108,9 +108,15 @@ export function openRetry(root: string, deps: RetryDeps) {
           /* A corrupt retry ledger starts empty. */
         }
       }
-      const shouldWrite = typeof change === "boolean" ? change : change(state);
-      const result = action(state);
-      if (shouldWrite) await atomicWrite(path, JSON.stringify(state), deps);
+      const before = change === "if-changed" ? JSON.stringify(state) : "";
+      const shouldWrite =
+        typeof change === "function" ? change(state) : change === true;
+      const result = await action(state);
+      if (
+        shouldWrite ||
+        (change === "if-changed" && JSON.stringify(state) !== before)
+      )
+        await atomicWrite(path, JSON.stringify(state), deps);
       return result;
     } finally {
       await release();
@@ -143,6 +149,23 @@ export function openRetry(root: string, deps: RetryDeps) {
         state.items[id] = { attempts, nextAt };
         return { exhausted: attempts >= MAX_RETRY_ATTEMPTS, attempts, nextAt };
       });
+    },
+    // 孤立した項目（確保中も含め、どの待ち場所にも無い id）を消す。
+    // flush.lock の下で呼ぶので、一覧のあいだに claim と reclaim は起きない。
+    // retry.lock が busy なら、この回は飛ばす（次の refresh が拾う）。
+    async prune(
+      listIds: () => Promise<ReadonlySet<string>>,
+      _flushLockHeld: () => Promise<void>,
+    ): Promise<void> {
+      try {
+        await transaction("if-changed", async (state) => {
+          const live = await listIds();
+          for (const id of Object.keys(state.items))
+            if (!live.has(id)) delete state.items[id];
+        });
+      } catch (error) {
+        if (!(error instanceof RetryLockBusyError)) throw error;
+      }
     },
     async reset(id: string): Promise<void> {
       check(id);

@@ -1,7 +1,11 @@
 import { deepStrictEqual, strictEqual } from "node:assert";
 import { EventEmitter } from "node:events";
 import { it } from "node:test";
-import { flushArgv, spawnDetached } from "../../lib/dotfiles-feedback/spawn.ts";
+import {
+  flushArgv,
+  refreshArgv,
+  spawnDetached,
+} from "../../lib/dotfiles-feedback/spawn.ts";
 it("spawn: fixed argv and detached process with ignored stdio", async () => {
   const argv = flushArgv("/cli.ts");
   deepStrictEqual(argv, [process.execPath, "/cli.ts", "flush"]);
@@ -44,3 +48,9 @@ it("spawn: synchronous and asynchronous failures return false", async () => {
   );
   strictEqual(await spawnDetached([]), false);
 });
+it("spawn: refreshArgv has the same shape as flushArgv", () =>
+  deepStrictEqual(refreshArgv("/x/cli.ts"), [
+    process.execPath,
+    "/x/cli.ts",
+    "refresh",
+  ]));

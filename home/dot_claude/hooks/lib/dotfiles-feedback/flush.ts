@@ -8,6 +8,7 @@ import { isFeedbackId, parseItem } from "./item.ts";
 import { renderIssue } from "./issue-body.ts";
 import { clearLastFlush, writeLastFlush, type FeedbackError } from "./cache.ts";
 import {
+  FLUSH_LOCK_FILE,
   FLUSH_LOCK_STALE_MS,
   GH_TIMEOUT_MS,
   ITEM_DEADLINE_MS,
@@ -105,7 +106,7 @@ export async function flush(
   }
   for (let round = 0; ; round++) {
     const release = await acquireLock(
-      join(deps.root, "state", "flush.lock"),
+      join(deps.root, FLUSH_LOCK_FILE),
       { staleMs: FLUSH_LOCK_STALE_MS },
       deps,
     );

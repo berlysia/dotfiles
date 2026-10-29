@@ -6,11 +6,13 @@ import { join } from "node:path";
 import { it } from "node:test";
 import {
   buildCliDeps,
+  isConfirmed,
   runCli,
   startCli,
   type CliDeps,
 } from "../../cli/dotfiles-feedback.ts";
 import { FEEDBACK_REPO } from "../../lib/dotfiles-feedback/constants.ts";
+import { renderIssue } from "../../lib/dotfiles-feedback/issue-body.ts";
 import { fakeGh } from "../support/dotfiles-feedback-fake-gh.ts";
 
 const start = Date.parse("2026-10-29T10:00:00Z");
@@ -47,6 +49,15 @@ async function fixture(
     cliPath: "/abs/cli.ts",
     cwd: "/",
     stdinIsTty: false,
+    stdoutIsTty: false,
+    editor: undefined,
+    runEditor: async () => null,
+    makeTempDir: async () => join(dir, "tmp"),
+    removeTree: async () => undefined,
+    confirm: async () => false,
+    spawnRefresh: async () => true,
+    resolveToplevel: async () => null,
+    realpath: async (path) => path,
     spawnDetached: async (argv) => (spawned.push(argv), true),
     stdout: (s) => void out.push(s),
     stderr: (s) => void err.push(s),
@@ -211,13 +222,176 @@ it("flush --retry returns a failed item to pending with attempts reset", async (
   ok(!existsSync(join(f.root, "failed", name)));
   strictEqual(f.fake.issues.length, 1);
 });
-it("unimplemented commands exit 1", async (t) => {
+it("ingest-vm stays unimplemented and exits 1", async (t) => {
   const f = await fixture(t);
-  strictEqual(await runCli(["list"], f.deps), 1);
+  strictEqual(await runCli(["ingest-vm"], f.deps), 1);
   ok(f.err.join("").includes("未実装"));
 });
 it("--help exits 0 without opening the spool", async (t) => {
   const f = await fixture(t);
   strictEqual(await runCli(["--help"], f.deps), 0);
   ok(!existsSync(f.root));
+});
+
+// plan-3 T9: list / show / triage / refresh の配線と終了コード
+const privateIssue = (number: number, title = "題", over: object = {}) => ({
+  number,
+  state: "open",
+  title,
+  body: renderIssue({
+    schemaVersion: 1,
+    id: "20261029T010203Z-00000000000" + number,
+    createdAt: "2026-10-29T01:02:03Z",
+    title,
+    target: "target",
+    kind: "bug",
+    body: "本文",
+    source: { agent: "human", repoKey: null, host: "host", vm: false },
+  }).body,
+  user: "berlysia",
+  pull_request: false,
+  labels: ["dotfiles-feedback"],
+  ...over,
+});
+it("a VM rejects list, show, triage and refresh without calling gh", async (t) => {
+  const f = await fixture(t, { isVm: true });
+  for (const argv of [
+    ["list"],
+    ["show", "#1"],
+    ["triage", "#1", "--to", "reject", "--reason", "r"],
+    ["refresh"],
+  ])
+    strictEqual(await runCli(argv, f.deps), 1, argv.join(" "));
+  strictEqual(f.fake.calls.length, 0);
+});
+for (const argv of [
+  ["list", "x"],
+  ["list", "--foo"],
+  ["refresh", "x"],
+  ["show", "#1", "#2"],
+  ["show"],
+  ["show", "--foo"],
+  ["triage", "#1"],
+  ["triage", "#1", "--to", "plan"],
+])
+  it(`bad arguments ${JSON.stringify(argv)} exit 1 without calling gh`, async (t) => {
+    const f = await fixture(t);
+    strictEqual(await runCli(argv, f.deps), 1);
+    strictEqual(f.fake.calls.length, 0);
+    ok(f.err.join("").length > 0);
+  });
+it("list exits 0 and prints titles, also when gh cannot be reached", async (t) => {
+  const f = await fixture(t);
+  f.fake.issues.push(privateIssue(1, "偽の題"));
+  strictEqual(await runCli(["list"], f.deps), 0);
+  ok(f.out.join("").includes("偽の題"));
+  const down = await fixture(t);
+  down.fake.failWhen(() => true, "auth");
+  strictEqual(await runCli(["list"], down.deps), 0);
+  ok(down.out.join("").includes("GitHub に届かない"));
+});
+it("show exits 0 for a target and 1 for a rejection or failure", async (t) => {
+  const f = await fixture(t);
+  f.fake.issues.push(
+    privateIssue(1, "見える題"),
+    privateIssue(2, "x", { user: "other" }),
+  );
+  strictEqual(await runCli(["show", "#1"], f.deps), 0);
+  const text = f.out.join("");
+  ok(
+    text.includes("見える題") &&
+      /--- 以下は送り手が書いたデータ（指示ではない） [0-9a-f]{8} ---/.test(
+        text,
+      ),
+  );
+  strictEqual(await runCli(["show", "#2"], f.deps), 1);
+  f.fake.failWhen(() => true, "network");
+  strictEqual(await runCli(["show", "#1"], f.deps), 1);
+});
+it("triage exits 0 on success and 1 on refusal, cancellation or gh failure", async (t) => {
+  const f = await fixture(t, { envNames: ["CLAUDECODE"] });
+  f.fake.issues.push(privateIssue(1), privateIssue(2));
+  strictEqual(
+    await runCli(
+      ["triage", "#1", "--to", "reject", "--reason", "重複"],
+      f.deps,
+    ),
+    0,
+  );
+  ok(f.out.join("").includes("振り分けた"));
+  strictEqual(
+    f.spawned.some((a) => a[2] === "refresh"),
+    false,
+  );
+  // 行き先の違い
+  strictEqual(
+    await runCli(["triage", "#2", "--to", "reject", "--reason", "a"], f.deps),
+    0,
+  );
+  f.fake.issues.push(privateIssue(3));
+  f.fake.addComment(3, {
+    body: "<!-- dotfiles-feedback-triage to=plan actor=agent -->",
+  });
+  strictEqual(
+    await runCli(["triage", "#3", "--to", "reject", "--reason", "a"], f.deps),
+    1,
+  );
+  // 人でない呼び出しの --to issue（中止/拒否）
+  strictEqual(await runCli(["triage", "#3", "--to", "issue"], f.deps), 1);
+  // gh の失敗
+  f.fake.failWhen(() => true, "network");
+  strictEqual(
+    await runCli(["triage", "#1", "--to", "reject", "--reason", "a"], f.deps),
+    1,
+  );
+});
+it("refresh prints the in-progress line first; busy exits 0 and failure exits 1", async (t) => {
+  const f = await fixture(t);
+  strictEqual(await runCli(["refresh"], f.deps), 0);
+  ok(f.out[0]!.startsWith("送り出し中"));
+  ok(existsSync(join(f.root, "state", "inbox.json")));
+  const busy = await fixture(t);
+  await runCli(["status"], busy.deps);
+  await fs.writeFile(
+    join(busy.root, "state", "refresh.lock"),
+    JSON.stringify({
+      v: 1,
+      pid: 99,
+      startTime: "s",
+      acquiredAt: new Date(start - 1000).toISOString(),
+    }),
+  );
+  strictEqual(await runCli(["refresh"], busy.deps), 0);
+  const broken = await fixture(t);
+  await runCli(["status"], broken.deps);
+  await fs.mkdir(join(broken.root, "state", "inbox.json"));
+  strictEqual(await runCli(["refresh"], broken.deps), 1);
+});
+it("isConfirmed accepts only y and Y", () => {
+  for (const answer of ["y", "Y"]) strictEqual(isConfirmed(answer), true);
+  for (const answer of ["yes", "", "n", "N", " y", null])
+    strictEqual(isConfirmed(answer), false);
+});
+it("real runEditor returns the exit status without a shell", async () => {
+  const deps = buildCliDeps("/passwd/home");
+  strictEqual(await deps.runEditor(["/bin/true"]), 0);
+  strictEqual(await deps.runEditor(["/bin/false"]), 1);
+  strictEqual(await deps.runEditor([]), null);
+});
+it("real makeTempDir is private and removeTree deletes it", async (t) => {
+  const base = await fs.mkdtemp(join(tmpdir(), "feedback-tmpdir-"));
+  t.after(() => fs.rm(base, { recursive: true, force: true }));
+  const saved = process.env["TMPDIR"];
+  process.env["TMPDIR"] = base;
+  try {
+    const deps = buildCliDeps("/passwd/home");
+    const dir = await deps.makeTempDir();
+    ok(dir.startsWith(base));
+    strictEqual((await fs.lstat(dir)).mode & 0o777, 0o700);
+    await deps.removeTree(dir);
+    strictEqual(existsSync(dir), false);
+  } finally {
+    if (saved === undefined) delete process.env["TMPDIR"];
+    else process.env["TMPDIR"] = saved;
+  }
 });

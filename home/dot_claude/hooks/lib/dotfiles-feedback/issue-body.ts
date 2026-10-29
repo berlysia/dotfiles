@@ -4,7 +4,9 @@ import {
   FEEDBACK_AGENTS,
   FEEDBACK_KINDS,
   FEEDBACK_LABEL,
+  FEEDBACK_OWNER,
   FIELD_LIMITS,
+  PUBLIC_REPO,
 } from "./constants.ts";
 
 export type MarkerMeta = Pick<FeedbackItemV1, "kind" | "target" | "source">;
@@ -13,7 +15,7 @@ export type MarkerResult =
   | { status: "newer"; id: string; v: number }
   | { status: "unreadable" };
 
-function neutralizeMentions(text: string): string {
+export function neutralizeMentions(text: string): string {
   return text.replace(/@(?=[A-Za-z0-9_-])/g, "＠");
 }
 
@@ -105,4 +107,131 @@ export function parseMarker(body: string): MarkerResult {
   } catch {
     return { status: "unreadable" };
   }
+}
+
+export type IssueSummary = {
+  number: number;
+  state: string;
+  title: string;
+  body: string;
+  user: string;
+  labels: string[];
+  updatedAt: string;
+  pullRequest: boolean;
+};
+export type IssueClass =
+  | { kind: "target"; id: string; meta: MarkerMeta }
+  | { kind: "unreadable" }
+  | { kind: "not-target" };
+
+// 対象は、自分の feedback label が付いた PR でない issue で、読める版のマーカーを持つもの。
+// 作成者の確認は checkDestination が認証ユーザーについて済ませてから呼ぶ前提。
+export function classifyIssue(issue: IssueSummary): IssueClass {
+  if (
+    issue.pullRequest ||
+    !issue.labels.includes(FEEDBACK_LABEL) ||
+    issue.user !== FEEDBACK_OWNER
+  )
+    return { kind: "not-target" };
+  const marker = parseMarker(issue.body);
+  return marker.status === "ok"
+    ? { kind: "target", id: marker.id, meta: marker.meta }
+    : { kind: "unreadable" };
+}
+
+export function countOpenTargets(issues: readonly IssueSummary[]): {
+  targets: number;
+  unreadable: number;
+} {
+  let targets = 0;
+  let unreadable = 0;
+  for (const issue of issues) {
+    if (issue.state !== "open") continue;
+    const kind = classifyIssue(issue).kind;
+    if (kind === "target") targets++;
+    else if (kind === "unreadable") unreadable++;
+  }
+  return { targets, unreadable };
+}
+
+export type TriageTo = "issue" | "plan" | "reject";
+export type TriageActor = "agent" | "human";
+export type IssueComment = {
+  id: number;
+  user: string;
+  body: string;
+  createdAt: string;
+};
+const PUBLIC_URL_PATTERN = `https://github\\.com/${PUBLIC_REPO}/issues/[1-9]\\d*`;
+
+// web UI の編集で CRLF になったマーカーも読む。書くのは FEEDBACK_OWNER だけなので偽造の余地は増えない。
+const withoutOneCr = (line: string) =>
+  line.endsWith("\r") ? line.slice(0, -1) : line;
+const firstLine = (text: string) => withoutOneCr(text.split("\n", 1)[0] ?? "");
+
+export const renderTriageMarker = (to: TriageTo, actor: TriageActor) =>
+  `<!-- dotfiles-feedback-triage to=${to} actor=${actor} -->`;
+export function parseTriageMarker(
+  commentBody: string,
+): { to: TriageTo; actor: TriageActor } | null {
+  const match =
+    /^<!-- dotfiles-feedback-triage to=(issue|plan|reject) actor=(agent|human) -->$/.exec(
+      firstLine(commentBody),
+    );
+  return match
+    ? { to: match[1] as TriageTo, actor: match[2] as TriageActor }
+    : null;
+}
+// 複数あれば createdAt が最も古いもの、同時刻なら id の小さいもの。
+export function findTriageMarker(
+  comments: readonly IssueComment[],
+): { to: TriageTo; actor: TriageActor; comment: IssueComment } | null {
+  let best: { to: TriageTo; actor: TriageActor; comment: IssueComment } | null =
+    null;
+  for (const comment of comments) {
+    if (comment.user !== FEEDBACK_OWNER) continue;
+    const parsed = parseTriageMarker(comment.body);
+    if (!parsed) continue;
+    const older =
+      best === null ||
+      Date.parse(comment.createdAt) < Date.parse(best.comment.createdAt) ||
+      (comment.createdAt === best.comment.createdAt &&
+        comment.id < best.comment.id);
+    if (older) best = { ...parsed, comment };
+  }
+  return best;
+}
+
+export const publicIssueUrl = (number: number) =>
+  `https://github.com/${PUBLIC_REPO}/issues/${number}`;
+export const renderPublicUrlMarker = (url: string) =>
+  `<!-- dotfiles-feedback-public url=${url} -->`;
+export function parsePublicUrlMarker(commentBody: string): string | null {
+  const match = new RegExp(
+    `^<!-- dotfiles-feedback-public url=(${PUBLIC_URL_PATTERN}) -->$`,
+  ).exec(firstLine(commentBody));
+  return match?.[1] ?? null;
+}
+export function findPublicUrl(
+  comments: readonly IssueComment[],
+): string | null {
+  for (const comment of comments) {
+    if (comment.user !== FEEDBACK_OWNER) continue;
+    const url = parsePublicUrlMarker(comment.body);
+    if (url) return url;
+  }
+  return null;
+}
+
+export const renderOriginMarker = (id: string) =>
+  `<!-- dotfiles-feedback-origin id=${id} -->`;
+// web UI の編集で末尾に空行が付いても探索が外れないよう、空白だけの行を除いた最終行を見る。
+export function parseOriginId(body: string): string | null {
+  const lines = body.split("\n");
+  while (lines.length > 0 && (lines[lines.length - 1] ?? "").trim() === "")
+    lines.pop();
+  const match = /^<!-- dotfiles-feedback-origin id=(\S+) -->$/.exec(
+    withoutOneCr(lines[lines.length - 1] ?? ""),
+  );
+  return match?.[1] && isFeedbackId(match[1]) ? match[1] : null;
 }

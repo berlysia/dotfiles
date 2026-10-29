@@ -15,6 +15,8 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
+import { buildCliDeps } from "../../cli/dotfiles-feedback.ts";
+import { renderIssue } from "../../lib/dotfiles-feedback/issue-body.ts";
 
 const HOOKS = join(import.meta.dirname, "../..");
 const CHILD = join(HOOKS, "tests/support/dotfiles-feedback-child.ts");
@@ -40,7 +42,7 @@ const finish = () => {
   else if (argv[0] === "api") out = lines.join("\\n");
   else if (argv[0] === "issue") {
     const number = lines.length + 1;
-    fs.appendFileSync(issues, JSON.stringify({ number, state: "open", body: stdin, user: "berlysia", pull_request: false }) + "\\n");
+    fs.appendFileSync(issues, JSON.stringify({ number, state: "open", title: "", body: stdin, user: "berlysia", pull_request: false, labels: ["dotfiles-feedback"], updatedAt: "2026-10-29T00:00:00Z" }) + "\\n");
     out = "https://github.com/berlysia/dotfiles-feedback/issues/" + number + "\\n";
   }
   process.stdout.write(out);
@@ -48,6 +50,23 @@ const finish = () => {
 };
 if (fs.existsSync(sleepFile)) setTimeout(finish, Number(fs.readFileSync(sleepFile, "utf8")));
 else finish();
+`;
+
+// 読み取り用の偽の gh。呼び出しの argv を全部記録し、issues.jsonl の行をそのまま一覧として返す。
+const FAKE_GH_READ = `#!/usr/bin/env node
+const fs = require("node:fs");
+const path = require("node:path");
+const dir = path.dirname(fs.realpathSync(process.argv[1]));
+const argv = process.argv.slice(2);
+fs.appendFileSync(path.join(dir, "calls.log"), JSON.stringify(argv) + "\\n");
+const issues = path.join(dir, "issues.jsonl");
+const lines = fs.existsSync(issues) ? fs.readFileSync(issues, "utf8").split("\\n").filter(Boolean) : [];
+let out = "";
+if (argv[0] === "api" && argv.includes("user")) out = JSON.stringify({ login: "berlysia" });
+else if (argv[0] === "repo") out = JSON.stringify({ isPrivate: true, owner: { login: "berlysia" } });
+else if (argv[0] === "api" && argv.some((a) => a.endsWith("/comments"))) out = "";
+else if (argv[0] === "api") out = lines.join("\\n");
+process.stdout.write(out);
 `;
 
 describe("dotfiles-feedback as a process", () => {
@@ -183,5 +202,98 @@ describe("dotfiles-feedback as a process", () => {
     strictEqual(r.status, 0, r.stderr);
     ok(r.stdout.includes("使い方"), r.stdout);
     deepStrictEqual(readdirSync(home), [".claude"]);
+  });
+
+  // list / triage / refresh: 偽の gh を PATH に置いて起動する。HOME と spool は一時ディレクトリ。
+  const targetIssue = (number: number, title: string) =>
+    JSON.stringify({
+      number,
+      state: "open",
+      title,
+      body: renderIssue({
+        schemaVersion: 1,
+        id: `20261029T010203Z-00000000000${number}`,
+        createdAt: "2026-10-29T01:02:03Z",
+        title,
+        target: "target",
+        kind: "bug",
+        body: "本文",
+        source: { agent: "human", repoKey: null, host: "host", vm: false },
+      }).body,
+      user: "berlysia",
+      pull_request: false,
+      labels: ["dotfiles-feedback"],
+      updatedAt: "2026-10-29T01:02:03Z",
+    });
+  function setupReader(title = "偽の題") {
+    const s = setup();
+    writeFileSync(join(s.fakeDir, "gh"), FAKE_GH_READ);
+    writeFileSync(
+      join(s.fakeDir, "issues.jsonl"),
+      `${targetIssue(1, title)}\n`,
+    );
+    return s;
+  }
+  const calls = (s: ReturnType<typeof setup>) =>
+    existsSync(join(s.fakeDir, "calls.log"))
+      ? readFileSync(join(s.fakeDir, "calls.log"), "utf8")
+          .split("\n")
+          .filter(Boolean)
+      : [];
+
+  it("list prints the fake issue title and exits 0", async () => {
+    const s = setupReader("偽の題");
+    const r = await runChild(s, ["list"], "");
+    strictEqual(r.code, 0, r.stdout);
+    ok(r.stdout.includes("偽の題"), r.stdout);
+  });
+
+  it("triage --to issue without a TTY exits non-zero and never calls gh", async () => {
+    const s = setupReader();
+    const r = await runChild(s, ["triage", "#1", "--to", "issue"], "");
+    ok(r.code !== 0 && r.code !== null);
+    deepStrictEqual(calls(s), []);
+  });
+
+  it("refresh writes state/inbox.json with the open count", async () => {
+    const s = setupReader();
+    const r = await runChild(s, ["refresh"], "");
+    strictEqual(r.code, 0, r.stdout);
+    const inbox = JSON.parse(
+      readFileSync(join(s.root, "state", "inbox.json"), "utf8"),
+    );
+    strictEqual(inbox.unprocessed, 1);
+    strictEqual(inbox.v, 1);
+  });
+
+  it("confirm is false in a process without a controlling terminal", async () => {
+    const s = setup();
+    const script = join(s.base, "confirm.ts");
+    writeFileSync(
+      script,
+      `import { buildCliDeps } from ${JSON.stringify(join(HOOKS, "cli/dotfiles-feedback.ts"))};
+process.stdout.write(String(await buildCliDeps(${JSON.stringify(s.home)}).confirm("x")));`,
+    );
+    // detached は setsid を呼ぶので、子は制御端末を持たない。
+    const out = await new Promise<string>((resolve) => {
+      const child = spawn("bun", [script], {
+        cwd: s.base,
+        env: childEnv(s.fakeDir, s.home),
+        stdio: ["ignore", "pipe", "ignore"],
+        detached: true,
+      });
+      let text = "";
+      child.stdout.on("data", (c: Buffer) => (text += c.toString()));
+      child.on("close", () => resolve(text));
+    });
+    strictEqual(out, "false");
+  });
+
+  it("resolveToplevel maps the worktree home/ directory to the repository root", async () => {
+    const root = realpathSync(join(HOOKS, "../../.."));
+    const deps = buildCliDeps("/passwd/home");
+    const top = await deps.resolveToplevel(join(root, "home"));
+    ok(top !== null);
+    strictEqual(realpathSync(top), root);
   });
 });
