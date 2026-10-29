@@ -411,12 +411,6 @@ test_D19_no_arguments_exit_one() {
   assert_eq 1 "$STATUS" "D19 exit 1"
   assert_contains "$OUT" "Branch name is required" "D19 says why"
 }
-test_D30_help_word_after_the_name_is_not_help() {
-  make_repo d30
-  run_create "$AGENT_VM_MARKER" feat help
-  assert_eq 0 "$STATUS" "D30 exit 0"
-  assert_dir "$REPO/.git/worktree/feat" "D30 the worktree is created"
-}
 test_D31_help_flag_anywhere_creates_nothing() {
   make_repo d31
   run_create "$AGENT_VM_MARKER" feat --help
@@ -429,12 +423,270 @@ test_D32_the_shown_path_is_quoted() {
   run_create "$AGENT_VM_MARKER" feat
   assert_contains "$OUT" "To switch to this worktree: cd $(printf '%q' "$REPO/.git/worktree/feat")" "D32 quoted path"
 }
-test_D27_later_names_are_ignored() {
-  make_repo d27
-  run_create "$AGENT_VM_MARKER" a b
-  assert_eq 0 "$STATUS" "D27 exit 0"
-  assert_dir "$REPO/.git/worktree/a" "D27 the first name is used"
-  assert_no_file "$REPO/.git/worktree/b" "D27 the second is ignored"
+
+# ---- base argument and start-point report ------------------------------------------------
+# run_create_split <marker> <args...>: like run_create, with stderr kept apart in $ERR (and not in $OUT)
+run_create_split() {
+  local errf="$TMP_BASE/split-stderr"
+  OUT=$(cd "$REPO" && AGENT_VM_MARKER="$1" PATH="$STUB:$BASE_PATH" bash "$CREATE" "${@:2}" 2>"$errf") && STATUS=0 || STATUS=$?
+  ERR=$(<"$errf")
+}
+# behind_repo <name>: $REPO's main tracks origin/main and, as of the last fetch, is one commit behind it
+behind_repo() {
+  make_repo "$1"
+  push_origin_branch "$1" main
+  git -C "$REPO" branch -q --set-upstream-to=origin/main main
+  git clone -q "$TMP_BASE/$1/origin.git" "$TMP_BASE/$1/other"
+  git -C "$TMP_BASE/$1/other" commit -q --allow-empty -m upstream-ahead
+  git -C "$TMP_BASE/$1/other" push -q origin HEAD:refs/heads/main
+  git -C "$REPO" fetch -q origin
+}
+# assert_no_upstream <worktree> <branch> <label>
+assert_no_upstream() {
+  if git -C "$1" rev-parse --abbrev-ref "$2@{upstream}" >/dev/null 2>&1; then record "FAIL $3 (has an upstream)"; else record "PASS $3"; fi
+}
+# creating_suffix: what follows "from " on the stdout line "Creating new branch", without the closing color code
+creating_suffix() {
+  local line
+  line=$(grep 'Creating new branch' <<<"$OUT")
+  line=${line%$'\e[0m'}
+  printf '%s' "${line#*from }"
+}
+# reject_case <label> <message> <args...>: exit 1, the message, no .git/worktree, and no control byte of the arguments
+# (the color codes of the Error line are removed first; they are the only ESC the script prints itself)
+reject_case() {
+  local clean
+  run_create "$AGENT_VM_MARKER" "${@:3}"
+  assert_eq 1 "$STATUS" "$1 exit 1"
+  assert_contains "$OUT" "$2" "$1 message"
+  assert_no_file "$REPO/.git/worktree" "$1 nothing created"
+  clean=${OUT//$'\e[0;31m'/}
+  clean=${clean//$'\e[0m'/}
+  for byte in $'\e' $'\r' $'\a' $'\x7f'; do
+    assert_not_contains "$clean" "$byte" "$1 no control byte $(printf '%q' "$byte")"
+  done
+}
+
+test_B1_base_is_the_start_point() {
+  make_repo b1
+  commit_file x
+  git -C "$REPO" branch old HEAD~1
+  run_create "$AGENT_VM_MARKER" feat old
+  assert_eq 0 "$STATUS" "B1 exit 0"
+  assert_eq "$(git -C "$REPO" rev-parse old)" "$(git -C "$REPO/.git/worktree/feat" rev-parse HEAD)" "B1 HEAD is old"
+  assert_contains "$OUT" "from 'old' ($(git -C "$REPO" rev-parse --short old))" "B1 start point shown"
+}
+test_B2_remote_tracking_base_gets_no_upstream() {
+  make_repo b2
+  push_origin_branch b2 base1
+  commit_file x
+  run_create "$AGENT_VM_MARKER" feat origin/base1
+  assert_eq 0 "$STATUS" "B2 exit 0"
+  assert_eq "$(git -C "$REPO" rev-parse origin/base1)" "$(git -C "$REPO/.git/worktree/feat" rev-parse HEAD)" "B2 HEAD is origin/base1"
+  assert_no_upstream "$REPO/.git/worktree/feat" feat "B2 no upstream"
+  assert_not_contains "$OUT" "behind" "B2 a remote-tracking start point is not compared"
+}
+test_B2b_autosetupmerge_always_still_no_upstream() {
+  make_repo b2b
+  push_origin_branch b2b base1
+  git -C "$REPO" config branch.autoSetupMerge always
+  run_create "$AGENT_VM_MARKER" feat origin/base1
+  assert_eq 0 "$STATUS" "B2b exit 0"
+  assert_no_upstream "$REPO/.git/worktree/feat" feat "B2b no upstream"
+}
+test_B3_base_with_a_local_branch_is_refused() {
+  make_repo b3
+  git -C "$REPO" branch old
+  git -C "$REPO" branch feat
+  run_create "$AGENT_VM_MARKER" feat old
+  assert_eq 1 "$STATUS" "B3 exit 1"
+  assert_contains "$OUT" "already exists (refs/heads/feat)" "B3 names the ref"
+  assert_no_file "$REPO/.git/worktree" "B3 nothing created"
+}
+test_B4_base_with_an_origin_branch_is_refused() {
+  make_repo b4
+  push_origin_branch b4 feat
+  run_create "$AGENT_VM_MARKER" feat HEAD
+  assert_eq 1 "$STATUS" "B4 exit 1"
+  assert_contains "$OUT" "already exists (refs/remotes/origin/feat)" "B4 names the ref"
+  assert_no_file "$REPO/.git/worktree" "B4 nothing created"
+}
+test_B4b_existing_branch_is_reported_before_a_bad_base() {
+  make_repo b4b
+  git -C "$REPO" branch feat
+  run_create "$AGENT_VM_MARKER" feat no-such-ref
+  assert_contains "$OUT" "already exists" "B4b the branch check comes first"
+  assert_not_contains "$OUT" "Not a commit" "B4b the base is not looked at"
+}
+test_B5_unknown_base_is_refused() {
+  make_repo b5
+  run_create "$AGENT_VM_MARKER" feat no-such-ref
+  assert_eq 1 "$STATUS" "B5 exit 1"
+  assert_contains "$OUT" "Not a commit: no-such-ref" "B5 message"
+  assert_no_file "$REPO/.git/worktree" "B5 nothing created"
+}
+test_B5b_unknown_base_creates_no_worktree_dir() {
+  make_repo b5b
+  mkdir -p "$REPO/.git/worktree"
+  run_create "$AGENT_VM_MARKER" feat no-such-ref
+  assert_eq 1 "$STATUS" "B5b exit 1"
+  assert_no_file "$REPO/.git/worktree/feat" "B5b no worktree"
+}
+test_B6_a_third_argument_is_refused() {
+  make_repo b6
+  run_create "$AGENT_VM_MARKER" a b c
+  assert_eq 1 "$STATUS" "B6 exit 1"
+  assert_contains "$OUT" "Too many arguments: c" "B6 message"
+  assert_no_file "$REPO/.git/worktree" "B6 nothing created"
+}
+test_B6b_help_word_in_second_position_is_a_base() {
+  make_repo b6b
+  run_create "$AGENT_VM_MARKER" feat help
+  assert_eq 1 "$STATUS" "B6b exit 1"
+  assert_contains "$OUT" "Not a commit: help" "B6b message"
+  assert_no_file "$REPO/.git/worktree" "B6b nothing created"
+}
+test_B6c_to_e_rejected_arguments() {
+  make_repo b6c
+  git -C "$REPO" switch -q -c other
+  git -C "$REPO" switch -q main
+  reject_case "B6c a/../x" "Not a valid branch name" feat/../x
+  reject_case "B6c @{-1}" "Not a valid branch name" '@{-1}'
+  reject_case "B6c HEAD" "Not a valid branch name" HEAD
+  reject_case "B6d base -x" "Unknown option" feat -x
+  reject_case "B6d base --upload-pack" "Unknown option" feat --upload-pack=x
+  reject_case "B6d name -x" "Unknown option" -x
+  reject_case "B6e base ESC" "Not a commit:" feat $'\e[31mx'
+  reject_case "B6e third ESC" "Too many arguments:" a b $'\e[31mx'
+  reject_case "B6e name ESC" "Not a valid branch name" $'\e[31mx'
+  reject_case "B6e option ESC" "Unknown option" -$'\e'x
+  reject_case "B6e base CR BEL DEL" "Not a commit: abxy" feat $'a\rb\ax\x7fy'
+}
+test_B6f_help_wins_over_the_argument_count() {
+  make_repo b6f
+  run_create "$AGENT_VM_MARKER" a b c --help
+  assert_eq 0 "$STATUS" "B6f exit 0"
+  assert_contains "$OUT" "Usage:" "B6f help is shown"
+  assert_no_file "$REPO/.git/worktree" "B6f nothing created"
+}
+test_B7_behind_start_point_warns_and_annotates() {
+  behind_repo b7
+  run_create "$AGENT_VM_MARKER" feat
+  assert_eq 0 "$STATUS" "B7 exit 0"
+  assert_contains "$OUT" "'main' is 1 commit(s) behind origin/main (as of the last fetch)" "B7 warning"
+  assert_contains "$OUT" "merge --ff-only refs/remotes/origin/main" "B7 catch-up step"
+  assert_not_contains "${OUT%%To switch to this worktree*}" "To switch" "B7 sanity"
+  assert_contains "${OUT%%To switch to this worktree*}" "commit(s) behind" "B7 the warning comes before the path"
+  run_create_split "$AGENT_VM_MARKER" feat2
+  assert_eq "'main' ($(git -C "$REPO" rev-parse --short main)), 1 behind origin/main" "$(creating_suffix)" "B7 stdout line ends with the count"
+  assert_contains "$ERR" "commit(s) behind" "B7 the warning is on stderr"
+  assert_not_contains "$OUT" "merge --ff-only" "B7 no catch-up step on stdout"
+}
+test_B7b_sha_and_tag_start_points_are_not_compared() {
+  behind_repo b7b
+  git -C "$REPO" tag t1 main
+  run_create "$AGENT_VM_MARKER" feat "$(git -C "$REPO" rev-parse main)"
+  assert_eq 0 "$STATUS" "B7b sha exit 0"
+  assert_not_contains "$OUT" "behind" "B7b sha not compared"
+  run_create "$AGENT_VM_MARKER" feat2 t1
+  assert_eq 0 "$STATUS" "B7b tag exit 0"
+  assert_not_contains "$OUT" "behind" "B7b tag not compared"
+}
+test_B7c_diverged_start_point() {
+  behind_repo b7c
+  commit_file x
+  run_create_split "$AGENT_VM_MARKER" feat
+  assert_eq 0 "$STATUS" "B7c exit 0"
+  assert_contains "$ERR" "has diverged from origin/main" "B7c warning"
+  assert_not_contains "$OUT$ERR" "merge --ff-only" "B7c no catch-up step"
+  assert_eq "'main' ($(git -C "$REPO" rev-parse --short main)), diverged from origin/main" "$(creating_suffix)" "B7c stdout line"
+  assert_not_contains "$OUT" "behind" "B7c stdout has no behind"
+}
+test_B8_branch_start_points_are_compared() {
+  behind_repo b8
+  run_create "$AGENT_VM_MARKER" feat main
+  assert_contains "$OUT" "'main' is 1 commit(s) behind origin/main" "B8 base main"
+  run_create "$AGENT_VM_MARKER" feat2 HEAD
+  assert_contains "$OUT" "'main' is 1 commit(s) behind origin/main" "B8 base HEAD"
+  run_create "$AGENT_VM_MARKER" feat3 @
+  assert_contains "$OUT" "'main' is 1 commit(s) behind origin/main" "B8 base @"
+}
+test_B9_no_upstream_no_comparison() {
+  make_repo b9
+  run_create "$AGENT_VM_MARKER" feat
+  assert_not_contains "$OUT" "behind" "B9 no behind"
+  assert_contains "$OUT" "from 'main' ($(git -C "$REPO" rev-parse --short HEAD))" "B9 start point shown"
+}
+test_B10_up_to_date_upstream_is_silent() {
+  make_repo b10
+  push_origin_branch b10 main
+  git -C "$REPO" branch -q --set-upstream-to=origin/main main
+  run_create "$AGENT_VM_MARKER" feat
+  assert_eq 0 "$STATUS" "B10 exit 0"
+  assert_not_contains "$OUT" "behind" "B10 no behind"
+}
+test_B11_no_install_with_a_base_in_either_order() {
+  make_repo b11
+  commit_file x
+  git -C "$REPO" branch old HEAD~1
+  run_create "$AGENT_VM_MARKER" --no-install feat old
+  assert_eq 0 "$STATUS" "B11 flag first: exit 0"
+  assert_eq "$(git -C "$REPO" rev-parse old)" "$(git -C "$REPO/.git/worktree/feat" rev-parse HEAD)" "B11 flag first: HEAD"
+  run_create "$AGENT_VM_MARKER" feat2 old --no-install
+  assert_eq 0 "$STATUS" "B11 flag last: exit 0"
+  assert_eq "$(git -C "$REPO" rev-parse old)" "$(git -C "$REPO/.git/worktree/feat2" rev-parse HEAD)" "B11 flag last: HEAD"
+}
+test_B12_detached_head_is_named() {
+  make_repo b12
+  git -C "$REPO" checkout -q --detach
+  run_create "$AGENT_VM_MARKER" feat
+  assert_eq 0 "$STATUS" "B12 exit 0"
+  assert_contains "$OUT" "from 'detached HEAD'" "B12 named"
+  assert_not_contains "$OUT" "behind" "B12 no behind"
+}
+test_B13_origin_branch_keeps_its_upstream() {
+  make_repo b13
+  push_origin_branch b13 feat
+  run_create "$AGENT_VM_MARKER" feat
+  assert_eq 0 "$STATUS" "B13 exit 0"
+  assert_eq "origin/feat" "$(git -C "$REPO/.git/worktree/feat" rev-parse --abbrev-ref 'feat@{upstream}')" "B13 upstream"
+}
+test_B14_catch_up_step_quotes_the_upstream() {
+  behind_repo b14
+  git -C "$REPO" push -q origin 'HEAD:refs/heads/a;b'
+  git -C "$REPO" fetch -q origin
+  git -C "$REPO" branch -q --track x 'origin/a;b'
+  git -C "$TMP_BASE/b14/other" push -q origin 'HEAD:refs/heads/a;b'
+  git -C "$REPO" fetch -q origin
+  run_create "$AGENT_VM_MARKER" feat x
+  assert_eq 0 "$STATUS" "B14 exit 0"
+  assert_contains "$OUT" 'merge --ff-only refs/remotes/origin/a\;b' "B14 quoted upstream"
+}
+test_B15_broken_upstream_does_not_stop_the_creation() {
+  node_repo b15 pnpm-lock.yaml
+  push_origin_branch b15 main
+  git -C "$REPO" config branch.main.remote origin
+  git -C "$REPO" config branch.main.merge refs/heads/missing
+  stub pnpm 0
+  run_create "$AGENT_VM_MARKER" feat
+  assert_eq 0 "$STATUS" "B15 exit 0"
+  assert_not_contains "$OUT" "behind" "B15 no behind"
+  assert_not_contains "$OUT" "fatal:" "B15 no git error"
+  assert_contains "$OUT" "To switch to this worktree" "B15 the path is shown"
+  assert_contains "$OUT" "Dependencies installed" "B15 the install ran"
+}
+test_B16_tag_and_branch_with_the_same_name() {
+  make_repo b16
+  git -C "$REPO" branch dup
+  commit_file x
+  git -C "$REPO" tag dup
+  push_origin_branch b16 dup
+  git -C "$REPO" branch -q --set-upstream-to=origin/dup dup
+  run_create "$AGENT_VM_MARKER" feat dup
+  assert_eq 0 "$STATUS" "B16 exit 0"
+  assert_eq "$(git -C "$REPO" rev-parse 'dup^{commit}' 2>/dev/null)" "$(git -C "$REPO/.git/worktree/feat" rev-parse HEAD)" "B16 HEAD is the tag's commit"
+  assert_not_contains "$OUT" "behind" "B16 no behind"
+  assert_not_contains "$OUT" "ambiguous" "B16 no git warning"
 }
 
 # ---- runner --------------------------------------------------------------------------

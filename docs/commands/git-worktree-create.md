@@ -9,13 +9,14 @@ Create a new git worktree in `.git/worktree` directory
 ## 使用方法
 
 ```bash
-git-worktree-create [--no-install] <branch-name>
+git-worktree-create [--no-install] <branch-name> [<base>]
 git-worktree-create --help
 ```
 
 ## 引数
 
 - `<branch-name>`: worktreeで使用するブランチ名
+- `<base>`: 新しいブランチを切る起点（コミットを指すものなら何でもよい）。省略すると現在の HEAD から切る。新しいブランチを作るときだけ使う
 
 ## オプション
 
@@ -28,7 +29,37 @@ git-worktree-create --help
 
 1. **ローカルブランチが存在する場合**: 既存のローカルブランチからworktreeを作成
 2. **リモートブランチが存在する場合**: リモートブランチをトラッキングするローカルブランチを作成し、worktreeを作成
-3. **ブランチが存在しない場合**: 現在のHEADから新しいブランチを作成し、worktreeを作成
+3. **ブランチが存在しない場合**: `<base>` を渡したときはそこから、渡さないときは現在のHEADから新しいブランチを作成し、worktreeを作成
+
+`<base>` の扱いは次のとおりである。
+
+- ローカルか origin に同名のブランチがあるときに `<base>` を渡すと、worktree を作らずに終了コード 1 で終わる。エラーには一致した ref（`refs/heads/<b>` か `refs/remotes/origin/<b>`）を出す。既存のブランチを `<base>` へ動かしたり、`<base>` を黙って捨てたりしないためである。
+- 3 つ目以降の位置引数は、`Too many arguments` で終了コード 1 になる。以前は黙って捨てていた。
+- 2 つ目の位置にある `help` は `<base>` として扱う。以前は help を出して終了コード 0 で終わった。先頭の `help` と `--help`、`-h` は今までどおり help である。
+- `<base>` を渡して作った新しいブランチには upstream が付かない。`git worktree add` に解決した SHA を渡すためである。最初の push には `git push -u` か `push.autoSetupRemote` が要る。`<base>` を渡さなければ、upstream の扱いは変わらない。
+- 検査はどれも `.git/worktree` を作る前に行う。ブランチ名が ref として不正（`a/../x`、`@{-1}`、`HEAD` など）なら、`Not a valid branch name` で終了コード 1 になる。`<base>` をコミットに解決できないときも、`Not a commit` で終了コード 1 になる。
+
+### 起点の表示と遅れの警告
+
+新しいブランチを作るときは、起点の名前と短い SHA を stdout に出す。例: `📝 Creating new branch 'feat' from 'main' (abc1234)`。
+
+- 起点の名前は、`<base>` を渡したときはその文字列、渡さなければ今のブランチ名である。detached HEAD で `<base>` が無いときは `detached HEAD` と出す（以前は空の `''` だった）。
+- 起点がローカルのブランチで、upstream より遅れているとする。このときは上の行の末尾に `, N behind <upstream>` を付け、stderr にも警告を出す。
+  - 警告は `✓ Worktree created` の直後に出る。`To switch` の行と install より前である。
+  - 例:
+
+    ```text
+    'main' is 1 commit(s) behind origin/main (as of the last fetch); to catch up: git -C <wt> merge --ff-only <upstream>
+    ```
+
+  - 作成は成功のままで、終了コードは 0 である。
+- 起点が upstream から分岐しているときは、末尾に `, diverged from <upstream>` を付ける。警告は `'main' has diverged from origin/main (as of the last fetch)` だけで、追いつく手順は出さない。
+- 起点は `<base>` が `HEAD`、`@`、ブランチ名のとき、または `<base>` が無くて今の HEAD がブランチにあるときのローカルのブランチである。remote-tracking ref、タグ、SHA、detached HEAD は比べない。upstream を持たないブランチも比べない（`origin/<name>` があっても推測しない）。
+- 比べるのは最後の fetch 時点の upstream で、このコマンドは fetch しない。警告が出ないことは、起点が最新であることの保証ではない。最新の origin から始めるときは、先に `git fetch` して `origin/<default>` を `<base>` に渡す。
+- 積み重ねる作業（feature ブランチから派生させる場合）で、起点が upstream より遅れているのが意図どおりなら、警告は無視してよい。
+- 追いつく手順が直すのは、新しい worktree のブランチだけである。本体の checkout のブランチは動かない。`--ff-only` は分岐していれば失敗して何も変えない。この merge は reflog に記録を付けるので、`git-worktree-cleanup` はそのブランチを「作ったばかり」と判定しなくなる。
+- 警告に使う git の呼び出し（upstream の解決など）が失敗しても、警告を出さずに作成を続ける。同名のタグとブランチがある、upstream の ref が消えている、などの場合である。
+- 表示する値（ブランチ名、`<base>`、ref 名）は、制御文字を取り除いてから出す。
 
 ## 依存のインストール
 
@@ -155,6 +186,13 @@ git-worktree-create feature-login
 git-worktree-create new-feature
 ```
 
+### 起点を指定して新規ブランチのworktreeを作成
+
+```bash
+git fetch
+git-worktree-create new-feature origin/main
+```
+
 ### リモートブランチからworktreeを作成
 
 ```bash
@@ -181,7 +219,7 @@ Worktreeは以下の場所に作成されます：
 
 - worktreeは既にディレクトリが存在する場合は作成されません
 - `-` で始まる未知の引数は、worktree を作らずに usage を出して終了コード 1 で終わる（`--no-instal` のような綴り違いに、原因の分かるエラーを返すため）
-- 2 つ目以降のブランチ名は無視する。`help` という語は、先頭の引数のときだけ help として扱う
+- 2 つ目の位置引数は `<base>` で、3 つ目以降はエラーになる。`help` という語は、先頭の引数のときだけ help として扱う
 - リポジトリのルートディレクトリ内でgitコマンドが実行可能である必要があります
 
 ## 関連コマンド
