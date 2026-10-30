@@ -18,3 +18,11 @@
 
 - 症状: 「failed unexpectedly」と表示される。
 - 再現の条件: `agent-vm rm` の確認プロンプトの入力に EOF を渡す（標準入力を閉じる、または空にする）。
+
+## VM の中の `$HOME` が host と違うと、新しい worktree の置き場がずれる見込み
+
+- 見込まれる症状（作成）: VM の中で作った worktree が、VM の `$HOME/worktrees/<repo>/` に置かれる。そこは VM だけにあり、host から見えない。該当する作成の手段は `git-worktree-create` と Claude Code の `--worktree` である。
+- 見込まれる症状（同期）: node_modules の同期は、host の `~/worktrees/<repo>/` にある worktree を置き場の外と判定し、同期しない。
+- 起きる条件の見込み: 置き場は、規則を実行した場所の `$HOME` から決まる。規則の `currentRoot` は、シェル（`worktree-location.sh`）と TS（`worktree-locations.ts`）の両方にある。OrbStack の machine の中の `$HOME` が `/home/<user>` で、host の `/Users/<user>` と違えば起きる。
+- 分かっていること: VM の中の `$HOME` の値は確かめていない。確かめられたのは WSL だけで、そこには OrbStack が無い。置き場が `<repo>/.git/worktree/` だった間は、置き場が repo の mount の中にあったので起きなかった。
+- 確かめ方: mac で `agent-vm shell` を開いて `echo $HOME` を見る。値が host と違えば、host の home を VM の中の規則に渡す案（`agent-vm` が環境変数で渡し、規則が `$HOME` より先に読む）を検討する。直すまでは、mac で `chezmoi apply` をしない。

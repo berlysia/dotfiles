@@ -2,6 +2,9 @@
 # agent-vm: run Claude Code / Codex inside a per-repo OrbStack isolated machine.
 # Design record: docs/decisions/0018-agent-vm-orbstack.md; user guide: docs/agent-vm.md.
 set -euo pipefail
+# shellcheck source=../lib/worktree-location.sh
+SCRIPT_DIR=$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+. "$SCRIPT_DIR/../lib/worktree-location.sh"
 # Convention: bash clears set -e inside $(...) (bash 3.2 has no inherit_errexit), so a function whose
 # output is captured with x=$(f) keeps running past its own failed steps. Such functions check each
 # step explicitly (`|| die`) or validate their output, and callers use the plain `x=$(f)` assignment
@@ -467,11 +470,19 @@ check_mount_paths() { # path...: OrbStack's mount list is "SRC:DEST,SRC:DEST", s
 
 # The one place that knows the mount shape. A repo machine gets its repo first; the golden gets the same shape
 # without it, including an empty browsers mount so bootstrap keeps the browser MCP entries for the clones (spec K6).
-vm_mounts() { # machine [repo_root] -> OrbStack's comma-separated mount list
-  local st=$AGENT_VM_STATE_DIR repo=""
-  if [[ -n "${2:-}" ]]; then repo="$2:$2,"; fi
+vm_mounts() { # machine [repo_root worktrees_root] -> OrbStack's comma-separated mount list
+  local st=$AGENT_VM_STATE_DIR repo="" wt
+  # The worktree root is mounted at the same path, so a worktree's gitfile and the repo's worktree records resolve in the VM.
+  if [[ -n "${2:-}" ]]; then wt=${3%/}; repo="$2:$2,$wt:$wt,"; fi
   printf '%s%s:/opt/agent-vm/src,%s:/opt/agent-vm/outbox,%s:/opt/agent-vm/browsers\n' \
     "$repo" "$st/staging/$1" "$st/outbox/$1" "$st/browsers/$1"
+}
+
+recheck_worktree_mount_location() { # common_dir home -> 0 only when the existing marker is still ok-same
+  judgeMarker "$1" "$2" >/dev/null
+  if [[ "$WORKTREE_MARKER_KIND" == ok-same ]]; then return 0; fi
+  _worktree_report_marker_failure "$1" "$2"
+  return 1
 }
 
 # Reads the machine's settings from the host-side OrbStack config (the VM cannot change them, and a stopped
@@ -638,10 +649,23 @@ orb_version() { orb_q version 2>/dev/null | sed -n 's/^Version: //p'; } # for me
 # checked (spec K4). creating/<m> marks a clone that is not yet started: any launch that finds it, including after
 # a crash or kill, deletes the machine and clones again (spec K5).
 ensure_machine() { # machine repo_root working_tree; the caller holds the repo lock (fd 9)
-  local st=$AGENT_VM_STATE_DIR sentinel="$AGENT_VM_STATE_DIR/creating/$1" mounts vm
+  local st=$AGENT_VM_STATE_DIR sentinel="$AGENT_VM_STATE_DIR/creating/$1" mounts vm common_dir worktrees_root repo_q
   vm=$(orb_machine_state "$1")
+  common_dir="$2/.git"
+  worktrees_root=$(currentRoot "$common_dir" "$HOME") || die "cannot determine the worktree mount location. $FAIL_CLOSED_HINT"
+  check_mount_paths "$2" "$worktrees_root" "$st/staging/$1" "$st/outbox/$1" "$st/browsers/$1"
+  if [[ -n "$vm" && ! -e "$sentinel" ]]; then
+    printf -v repo_q '%q' "$2"
+    recheck_worktree_mount_location "$common_dir" "$HOME" \
+      || die "refusing to start $1: worktree location check failed (see above). recover: agent-vm rm $repo_q, then start agent-vm again in $repo_q. $FAIL_CLOSED_HINT"
+    mounts=$(vm_mounts "$1" "$2" "$worktrees_root")
+    verify_machine_config "$1" "$mounts" \
+      || die "refusing to start $1: its OrbStack settings are not the expected ones (see above). recover: agent-vm rm $repo_q, then start agent-vm again in $repo_q. $FAIL_CLOSED_HINT"
+    return 0
+  fi
+  reserveMarker "$common_dir" "$HOME" \
+    || die "refusing to mount the worktree location. $FAIL_CLOSED_HINT"
   if [[ -n "$vm" ]]; then
-    if [[ ! -e "$sentinel" ]]; then return 0; fi
     step "removing $1, whose creation did not finish"
     discard_clone "$1"
   elif [[ -e "$sentinel" ]]; then
@@ -650,8 +674,7 @@ ensure_machine() { # machine repo_root working_tree; the caller holds the repo l
     remove_vm_tree "$st/browsers/$1"
     rm -f "$st/browser-records/$1".*
   fi
-  check_mount_paths "$2" "$st/staging/$1" "$st/outbox/$1" "$st/browsers/$1"
-  mounts=$(vm_mounts "$1" "$2")
+  mounts=$(vm_mounts "$1" "$2" "$worktrees_root")
   mkdir -p "$st/staging/$1" "$st/outbox/$1" "$st/browsers/$1" "$st/browser-records" "$st/creating"
   acquire_golden_lock 900 || die "waited 900s for another session building the golden machine. Stop that agent-vm, then retry"
   ensure_golden "$3" 0

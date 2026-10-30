@@ -13,6 +13,8 @@ export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER
 : >"$RESULTS_FILE"
 # shellcheck source=tests/agent-vm/lib.sh
 . "$TEST_DIR/lib.sh"
+# shellcheck source=home/dot_local/lib/worktree-location.sh
+. "$REPO_ROOT/home/dot_local/lib/worktree-location.sh"
 teardown() {
   local mp
   while IFS= read -r mp; do sudo -n umount -l -- "$mp" || true; done < <(awk '$4 ~ /agent-vm-test/ {print $5}' /proc/self/mountinfo)
@@ -38,6 +40,13 @@ mk_repo() { # dir: a git repository with a root package and packages/a, packages
   printf '{"name":"b"}\n' >"$r/packages/b/package.json"
   printf 'node_modules\n' >"$r/.gitignore"
   git -C "$r" add -A; git -C "$r" commit -qm init
+}
+add_managed_worktree() { # repo branch -> linked worktree under the current managed root
+  local r=$1 branch=$2 root
+  reserveMarker "$r/.git" "$HOME" >/dev/null
+  root=$(currentRoot "$r/.git" "$HOME")
+  git -C "$r" worktree add -q "$root$branch" -b "$branch"
+  printf '%s\n' "$root$branch"
 }
 fail_git() { # pattern -> a directory holding a git that fails when its arguments contain pattern
   mkdir -p "$TMP_ROOT/bin"
@@ -136,6 +145,12 @@ test_worktree_under_dot_git_worktree_is_mounted() {
   check_mounted "$r/.git/worktree/feat" "the worktree's root package"
   check_mounted "$r/.git/worktree/feat/packages/a" "the worktree's packages/a"
 }
+test_worktree_under_new_managed_root_is_mounted() {
+  local r="$TMP_ROOT/r" wt; mk_repo "$r"; wt=$(add_managed_worktree "$r" feat)
+  helper sync "$r" >/dev/null
+  check_mounted "$wt" "the new managed worktree's root package"
+  check_mounted "$wt/packages/a" "the new managed worktree's packages/a"
+}
 test_package_json_under_node_modules_is_not_a_package() {
   local r="$TMP_ROOT/r"; mk_repo "$r"
   rm "$r/.gitignore"; mkdir -p "$r/node_modules/dep"; printf '{}\n' >"$r/node_modules/dep/package.json"
@@ -163,6 +178,12 @@ test_attach_mounts_one_worktree() {
   check_mounted "$r/.git/worktree/feat" "the attached worktree"
   check_not_mounted "$r" "the main worktree is left to sync"
 }
+test_attach_mounts_one_worktree_under_new_managed_root() {
+  local r="$TMP_ROOT/r" wt; mk_repo "$r"; wt=$(add_managed_worktree "$r" feat)
+  assert_status 0 "attach" -- helper attach "$wt"
+  check_mounted "$wt" "the attached new managed worktree"
+  check_not_mounted "$r" "the main worktree is left to sync"
+}
 test_attach_rejects_a_path_that_is_not_a_listed_worktree() {
   local r="$TMP_ROOT/r"; mk_repo "$r"
   git -C "$r" worktree add -q "$r/.git/worktree/feat" -b feat
@@ -187,6 +208,34 @@ test_attach_ignores_an_unresolvable_sibling() {
   mv "$r/.git/worktree/gone" "$TMP_ROOT/gone.off"
   assert_status 0 "attach goes on while a sibling worktree is missing" -- helper attach "$r/.git/worktree/feat"
   check_mounted "$r/.git/worktree/feat" "the attached worktree"
+}
+test_replaced_new_managed_root_is_not_synced_or_attached() {
+  local r="$TMP_ROOT/r" root wt outside="$TMP_ROOT/new-root-outside"; mk_repo "$r"
+  wt=$(add_managed_worktree "$r" feat)
+  root=$(currentRoot "$r/.git" "$HOME"); root=${root%/}
+  mv "$root" "$outside"
+  ln -s "$outside" "$root"
+  helper sync "$r" >/dev/null 2>&1 || true
+  check_absent "$outside/feat/node_modules" "sync writes nothing through the replaced new root"
+  check_no_store "$outside/feat" "sync creates no store for the replaced new root"
+  assert_status 64 "attach refuses the replaced new root" -- helper attach "$wt"
+  check_absent "$outside/feat/node_modules" "attach writes nothing through the replaced new root"
+  check_no_store "$outside/feat" "attach creates no store for the replaced new root"
+}
+test_replaced_legacy_root_is_not_synced_or_attached() {
+  local r="$TMP_ROOT/r" root wt outside="$TMP_ROOT/legacy-root-outside"; mk_repo "$r"
+  root="$r/.git/worktree"
+  mkdir -p "$root"
+  git -C "$r" worktree add -q "$root/feat" -b feat
+  wt="$root/feat"
+  mv "$root" "$outside"
+  ln -s "$outside" "$root"
+  helper sync "$r" >/dev/null 2>&1 || true
+  check_absent "$outside/feat/node_modules" "sync writes nothing through the replaced legacy root"
+  check_no_store "$outside/feat" "sync creates no store for the replaced legacy root"
+  assert_status 64 "attach refuses the replaced legacy root" -- helper attach "$wt"
+  check_absent "$outside/feat/node_modules" "attach writes nothing through the replaced legacy root"
+  check_no_store "$outside/feat" "attach creates no store for the replaced legacy root"
 }
 test_lock_timeout_exits_2() {
   local r="$TMP_ROOT/r"; mk_repo "$r"
@@ -361,7 +410,7 @@ test_remove_lock_timeout_exits_71() {
 
 # Each test runs as an asynchronous subshell, which keeps set -e in force inside it.
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do
-  ( TMP_ROOT=$(mktemp -d "$TMP_BASE/XXXXXX"); export TMP_ROOT; "$t" ) </dev/null &
+  ( TMP_ROOT=$(mktemp -d "$TMP_BASE/XXXXXX"); export TMP_ROOT HOME="$TMP_ROOT/home"; mkdir -p "$HOME"; "$t" ) </dev/null &
   wait $! || record "FAIL $t (test aborted)"
   teardown
 done

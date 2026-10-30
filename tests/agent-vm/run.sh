@@ -295,6 +295,7 @@ test_rm_works_for_a_known_repo_without_git() {
 test_op_failure_prints_the_host_hint() {
   local wt repo m; wt=$(make_dotfiles_fixture); repo=$(make_flow_repo)
   m=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
+  configure_existing_machine "$m" "$repo"
   mkdir -p "$AGENT_VM_CONFIG_DIR"; printf 'A=op://v/a/x\n' >"$AGENT_VM_CONFIG_DIR/env.1password"
   local out; out=$(cd "$repo" && STUB_CHEZMOI_STDOUT="$wt/home" STUB_ORB_LIST_STDOUT="$m running" STUB_ORB_STDOUT="v1:old" STUB_OP_EXIT=1 bash "$LAUNCHER" claude </dev/null 2>&1) || true
   assert_contains "$out" "failed unexpectedly" "ERR trap fired on an op inject failure"
@@ -303,6 +304,7 @@ test_op_failure_prints_the_host_hint() {
 test_secret_handoff_failure_prints_the_host_hint() {
   local wt repo m; wt=$(make_dotfiles_fixture); repo=$(make_flow_repo)
   m=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
+  configure_existing_machine "$m" "$repo"
   mkdir -p "$AGENT_VM_CONFIG_DIR"; printf 'A=op://v/a/x\n' >"$AGENT_VM_CONFIG_DIR/env.1password"
   # the in-VM write script contains "agent-vm.env"; only that orb call fails
   local out; out=$(cd "$repo" && STUB_CHEZMOI_STDOUT="$wt/home" STUB_ORB_LIST_STDOUT="$m running" STUB_ORB_STDOUT="v1:old" STUB_OP_STDOUT="A=x" STUB_ORB_FAIL_ON="agent-vm.env" bash "$LAUNCHER" claude </dev/null 2>&1) || true
@@ -328,6 +330,7 @@ test_unexpected_failure_prints_the_host_hint() {
 test_bootstrap_failure_prints_the_host_hint() {
   local wt repo m; wt=$(make_dotfiles_fixture); repo=$(make_flow_repo)
   m=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
+  configure_existing_machine "$m" "$repo"
   local out; out=$(cd "$repo" && STUB_CHEZMOI_STDOUT="$wt/home" STUB_ORB_LIST_STDOUT="$m running" STUB_ORB_STDOUT="v1:old" STUB_ORB_FAIL_ON="bootstrap.sh" bash "$LAUNCHER" claude </dev/null 2>&1) || true
   assert_contains "$out" "failed unexpectedly" "ERR trap fired on a bootstrap failure"
 }
@@ -443,6 +446,19 @@ write_config_show() { # file machine mounts [extra_line]: the 10 keys OrbStack 2
     if [[ -n "${4:-}" ]]; then printf '%s\n' "$4"; fi
   } >>"$1"
 }
+make_test_repo_dir() { # -> repo root with a real common-dir path for location marker tests
+  local repo="$TMP_ROOT/repo/path"
+  mkdir -p "$repo/.git"
+  printf '%s\n' "$repo"
+}
+configure_existing_machine() { # machine repo_root: valid marker and expected OrbStack settings
+  local root show="$TMP_ROOT/config-show"
+  root=$(currentRoot "$2/.git" "$HOME")
+  reserveMarker "$2/.git" "$HOME" >/dev/null
+  write_config_show "$show" "$1" "$(vm_mounts "$1" "$2" "$root")"
+  STUB_ORB_CONFIG_SHOW_FILE=$show
+  export STUB_ORB_CONFIG_SHOW_FILE
+}
 test_mount_paths_with_separators_are_refused() {
   local status
   status=0; (check_mount_paths /ok "/a,b") 2>/dev/null || status=$?
@@ -463,9 +479,9 @@ test_vm_mounts_browsers_destination_is_what_bootstrap_checks() {
   assert_contains "$(grep -E '^BROWSERS_ROOT=' "$REPO_ROOT/agent-vm/bootstrap.sh")" ":-$dest}" "bootstrap's default BROWSERS_ROOT is the launcher's browsers destination"
 }
 test_vm_mounts_give_the_golden_and_repo_shapes_from_one_place() {
-  local st="$AGENT_VM_STATE_DIR"
-  assert_eq "/r:/r,$st/staging/agent-x-000000:/opt/agent-vm/src,$st/outbox/agent-x-000000:/opt/agent-vm/outbox,$st/browsers/agent-x-000000:/opt/agent-vm/browsers" \
-    "$(vm_mounts agent-x-000000 /r)" "repo machine: repo, staging, outbox, browsers"
+  local st="$AGENT_VM_STATE_DIR" root; root=$(currentRoot /r/.git "$HOME")
+  assert_eq "/r:/r,${root%/}:${root%/},$st/staging/agent-x-000000:/opt/agent-vm/src,$st/outbox/agent-x-000000:/opt/agent-vm/outbox,$st/browsers/agent-x-000000:/opt/agent-vm/browsers" \
+    "$(vm_mounts agent-x-000000 /r "$root")" "repo machine: repo, worktrees root, staging, outbox, browsers"
   assert_eq "$st/staging/$GOLDEN_MACHINE:/opt/agent-vm/src,$st/outbox/$GOLDEN_MACHINE:/opt/agent-vm/outbox,$st/browsers/$GOLDEN_MACHINE:/opt/agent-vm/browsers" \
     "$(vm_mounts "$GOLDEN_MACHINE")" "golden: the same shape without the repo"
 }
@@ -524,17 +540,19 @@ test_orb_q_closes_every_lock_fd() {
   assert_not_contains "$fds" " 9 " "fd 9 not inherited"
 }
 clone_ready_fixture() { # wt machine repo -> config-show file holding a sealed golden and a correctly mounted clone
-  local show; show=$(sealed_golden_fixture "$1")
-  write_config_show "$show" "$2" "$(vm_mounts "$2" "$3")"
+  local show root; show=$(sealed_golden_fixture "$1")
+  mkdir -p "$3/.git"
+  root=$(currentRoot "$3/.git" "$HOME")
+  write_config_show "$show" "$2" "$(vm_mounts "$2" "$3" "$root")"
   printf '%s\n' "$show"
 }
 log_line_of() { grep -n -F -- "$1" "$STUB_LOG" | head -1 | cut -d: -f1 || true; } # needle -> first line number, "" when absent
 test_new_machine_is_cloned_mounted_checked_then_started() {
-  local wt show; wt=$(make_golden_fixture); show=$(clone_ready_fixture "$wt" agent-c-000000 /repo/path); : >"$STUB_LOG"
-  STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" ensure_machine agent-c-000000 /repo/path "$wt" 2>/dev/null
+  local wt show repo; wt=$(make_golden_fixture); repo=$(make_test_repo_dir); show=$(clone_ready_fixture "$wt" agent-c-000000 "$repo"); : >"$STUB_LOG"
+  STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" ensure_machine agent-c-000000 "$repo" "$wt" 2>/dev/null
   local c s t
   c=$(log_line_of "orb clone $GOLDEN_MACHINE agent-c-000000")
-  s=$(log_line_of "orb config set machine.agent-c-000000.mounts $(printf '%q' "$(vm_mounts agent-c-000000 /repo/path)")") # the stub logs argv with %q, which escapes the commas
+  s=$(log_line_of "orb config set machine.agent-c-000000.mounts $(printf '%q' "$(vm_mounts agent-c-000000 "$repo" "$(currentRoot "$repo/.git" "$HOME")")")") # the stub logs argv with %q, which escapes the commas
   t=$(log_line_of "orb start agent-c-000000")
   if [[ -n "$c" && -n "$s" && -n "$t" && "$c" -lt "$s" && "$s" -lt "$t" ]]; then record "PASS clone, then mounts, then start"; else record "FAIL clone, then mounts, then start ($c $s $t)"; fi
   assert_not_contains "$(cat "$STUB_LOG")" "orb create" "no direct create for a repo machine"
@@ -542,7 +560,7 @@ test_new_machine_is_cloned_mounted_checked_then_started() {
   assert_status 0 "browsers mount source exists" -- test -d "$AGENT_VM_STATE_DIR/browsers/agent-c-000000"
 }
 test_no_orb_call_inherits_a_lock_fd_during_creation() {
-  local wt show; wt=$(make_golden_fixture); show=$(clone_ready_fixture "$wt" agent-c-000000 /repo/path)
+  local wt show repo; wt=$(make_golden_fixture); repo=$(make_test_repo_dir); show=$(clone_ready_fixture "$wt" agent-c-000000 "$repo")
   orb() { # wraps the stub for this subshell only
     local fd
     for fd in 7 8 9; do if [[ -e "/dev/fd/$fd" ]]; then printf 'leak %s %s\n' "$fd" "$*" >>"$TMP_ROOT/leaks"; fi; done
@@ -552,15 +570,15 @@ test_no_orb_call_inherits_a_lock_fd_during_creation() {
   orb version >/dev/null # positive control: a direct call is seen holding fd 9
   assert_contains "$(cat "$TMP_ROOT/leaks" 2>/dev/null || true)" "leak 9" "control: the wrapper detects an inherited fd"
   rm -f "$TMP_ROOT/leaks"
-  STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" ensure_machine agent-c-000000 /repo/path "$wt" 2>/dev/null
+  STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" ensure_machine agent-c-000000 "$repo" "$wt" 2>/dev/null
   exec 9>&-
   assert_eq "" "$(cat "$TMP_ROOT/leaks" 2>/dev/null || true)" "no orb call saw fd 7, 8 or 9"
 }
 test_clone_with_unswapped_mounts_is_deleted_not_started() {
-  local wt show; wt=$(make_golden_fixture); show=$(sealed_golden_fixture "$wt")
+  local wt show repo; wt=$(make_golden_fixture); repo=$(make_test_repo_dir); show=$(sealed_golden_fixture "$wt")
   write_config_show "$show" agent-c-000000 "$(vm_mounts "$GOLDEN_MACHINE")" # the set did not take effect
   : >"$STUB_LOG"
-  local status=0 err; err=$(STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" ensure_machine agent-c-000000 /repo/path "$wt" 2>&1) || status=$?
+  local status=0 err; err=$(STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" ensure_machine agent-c-000000 "$repo" "$wt" 2>&1) || status=$?
   assert_eq 1 "$status" "refused"
   assert_contains "$err" "OrbStack" "message names OrbStack (and its version when available)"
   assert_contains "$err" "not through agent-vm" "message gives the host fallback"
@@ -569,34 +587,34 @@ test_clone_with_unswapped_mounts_is_deleted_not_started() {
   assert_status 1 "sentinel cleared once deleted" -- test -e "$AGENT_VM_STATE_DIR/creating/agent-c-000000"
 }
 test_each_failure_after_the_clone_deletes_it_and_never_starts_it() {
-  local wt show; wt=$(make_golden_fixture); show=$(clone_ready_fixture "$wt" agent-c-000000 /repo/path)
+  local wt show repo; wt=$(make_golden_fixture); repo=$(make_test_repo_dir); show=$(clone_ready_fixture "$wt" agent-c-000000 "$repo")
   # A failing `config show` is not used here: the golden check reads it first, so the launch stops before cloning.
   : >"$STUB_LOG"
-  (STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" STUB_ORB_FAIL_ON="config set" ensure_machine agent-c-000000 /repo/path "$wt") 2>/dev/null || true
+  (STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" STUB_ORB_FAIL_ON="config set" ensure_machine agent-c-000000 "$repo" "$wt") 2>/dev/null || true
   assert_contains "$(cat "$STUB_LOG")" "orb delete -f agent-c-000000" "config set failure deletes the clone"
   assert_not_contains "$(cat "$STUB_LOG")" "orb start agent-c-000000" "config set failure never starts it"
   local net="$TMP_ROOT/show-net"; cp "$show" "$net"
   sed -i.bak "s/machine.agent-c-000000.isolate_network: true/machine.agent-c-000000.isolate_network: false/" "$net"; : >"$STUB_LOG"
-  (STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$net" ensure_machine agent-c-000000 /repo/path "$wt") 2>/dev/null || true
+  (STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$net" ensure_machine agent-c-000000 "$repo" "$wt") 2>/dev/null || true
   assert_not_contains "$(cat "$STUB_LOG")" "orb start agent-c-000000" "clone without network isolation never starts"
   : >"$STUB_LOG"
-  (STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" STUB_ORB_FAIL_ON="start agent-c-000000" ensure_machine agent-c-000000 /repo/path "$wt") 2>/dev/null || true
+  (STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" STUB_ORB_FAIL_ON="start agent-c-000000" ensure_machine agent-c-000000 "$repo" "$wt") 2>/dev/null || true
   assert_contains "$(cat "$STUB_LOG")" "orb delete -f agent-c-000000" "failed start deletes the clone"
 }
 test_failed_clone_deletes_nothing() {
-  local wt show; wt=$(make_golden_fixture); show=$(sealed_golden_fixture "$wt"); : >"$STUB_LOG"
-  local status=0; (STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" STUB_ORB_FAIL_ON="clone" ensure_machine agent-c-000000 /repo/path "$wt") 2>/dev/null || status=$?
+  local wt show repo; wt=$(make_golden_fixture); repo=$(make_test_repo_dir); show=$(sealed_golden_fixture "$wt"); : >"$STUB_LOG"
+  local status=0; (STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" STUB_ORB_FAIL_ON="clone" ensure_machine agent-c-000000 "$repo" "$wt") 2>/dev/null || status=$?
   assert_eq 1 "$status" "stops"
   assert_not_contains "$(cat "$STUB_LOG")" "orb delete" "a failed clone never deletes by name"
   assert_status 0 "sentinel kept, so a machine the clone may have left is recreated next time" -- test -e "$AGENT_VM_STATE_DIR/creating/agent-c-000000"
 }
 test_unfinished_clone_is_recreated_with_fresh_browser_state() {
-  local wt show; wt=$(make_golden_fixture); show=$(clone_ready_fixture "$wt" agent-c-000000 /repo/path)
+  local wt show repo; wt=$(make_golden_fixture); repo=$(make_test_repo_dir); show=$(clone_ready_fixture "$wt" agent-c-000000 "$repo")
   mkdir -p "$AGENT_VM_STATE_DIR/creating" "$AGENT_VM_STATE_DIR/browser-records" "$AGENT_VM_STATE_DIR/browsers/agent-c-000000/gen-old"
   : >"$AGENT_VM_STATE_DIR/creating/agent-c-000000"
   printf 'mcp-0.0.1\n' >"$AGENT_VM_STATE_DIR/browser-records/agent-c-000000.id"; : >"$STUB_LOG"
   STUB_ORB_LIST_STDOUT="$(printf '%s\n%s' "$GOLDEN_MACHINE stopped ubuntu" "agent-c-000000 stopped ubuntu")" STUB_ORB_CONFIG_SHOW_FILE="$show" \
-    ensure_machine agent-c-000000 /repo/path "$wt" 2>/dev/null
+    ensure_machine agent-c-000000 "$repo" "$wt" 2>/dev/null
   local d c; d=$(log_line_of "orb delete -f agent-c-000000"); c=$(log_line_of "orb clone $GOLDEN_MACHINE agent-c-000000")
   if [[ -n "$d" && -n "$c" && "$d" -lt "$c" ]]; then record "PASS deleted, then cloned again"; else record "FAIL deleted, then cloned again ($d $c)"; fi
   assert_status 1 "the old browser generation is gone" -- test -e "$AGENT_VM_STATE_DIR/browsers/agent-c-000000/gen-old"
@@ -604,19 +622,19 @@ test_unfinished_clone_is_recreated_with_fresh_browser_state() {
   assert_status 0 "the mount marker is written again" -- test -f "$AGENT_VM_STATE_DIR/browser-records/agent-c-000000.mount"
 }
 test_leftover_sentinel_without_a_machine_is_harmless() {
-  local wt show; wt=$(make_golden_fixture); show=$(clone_ready_fixture "$wt" agent-c-000000 /repo/path)
+  local wt show repo; wt=$(make_golden_fixture); repo=$(make_test_repo_dir); show=$(clone_ready_fixture "$wt" agent-c-000000 "$repo")
   mkdir -p "$AGENT_VM_STATE_DIR/creating" "$AGENT_VM_STATE_DIR/browsers/agent-c-000000/gen-old"
   : >"$AGENT_VM_STATE_DIR/creating/agent-c-000000"; : >"$STUB_LOG"
-  STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" ensure_machine agent-c-000000 /repo/path "$wt" 2>/dev/null
+  STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" ensure_machine agent-c-000000 "$repo" "$wt" 2>/dev/null
   assert_not_contains "$(cat "$STUB_LOG")" "orb delete" "nothing deleted"
   assert_contains "$(cat "$STUB_LOG")" "orb start agent-c-000000" "created normally"
   assert_status 1 "a browser copy left by the earlier attempt is cleared" -- test -e "$AGENT_VM_STATE_DIR/browsers/agent-c-000000/gen-old"
   assert_status 1 "sentinel cleared" -- test -e "$AGENT_VM_STATE_DIR/creating/agent-c-000000"
 }
 test_failed_delete_keeps_the_sentinel_and_says_how_to_recover() {
-  local wt; wt=$(make_golden_fixture)
+  local wt repo; wt=$(make_golden_fixture); repo=$(make_test_repo_dir)
   mkdir -p "$AGENT_VM_STATE_DIR/creating"; : >"$AGENT_VM_STATE_DIR/creating/agent-c-000000"
-  local status=0 err; err=$(STUB_ORB_LIST_STDOUT="agent-c-000000 stopped ubuntu" STUB_ORB_FAIL_ON="delete -f agent-c-000000" ensure_machine agent-c-000000 /repo/path "$wt" 2>&1) || status=$?
+  local status=0 err; err=$(STUB_ORB_LIST_STDOUT="agent-c-000000 stopped ubuntu" STUB_ORB_FAIL_ON="delete -f agent-c-000000" ensure_machine agent-c-000000 "$repo" "$wt" 2>&1) || status=$?
   assert_eq 1 "$status" "stops"
   assert_contains "$err" "recover: orb delete -f agent-c-000000" "recovery shown"
   assert_status 0 "sentinel kept for the next launch" -- test -e "$AGENT_VM_STATE_DIR/creating/agent-c-000000"
@@ -628,7 +646,7 @@ test_repo_path_with_a_comma_is_refused_before_cloning() {
   assert_not_contains "$(cat "$STUB_LOG")" "orb clone" "no clone"
 }
 test_golden_lock_is_released_before_the_clone_starts() {
-  local wt show; wt=$(make_golden_fixture); show=$(clone_ready_fixture "$wt" agent-c-000000 /repo/path)
+  local wt show repo; wt=$(make_golden_fixture); repo=$(make_test_repo_dir); show=$(clone_ready_fixture "$wt" agent-c-000000 "$repo")
   # shellcheck disable=SC2329 # replaces the real orb; the code under test calls it indirectly (via orb_q)
   orb() { # wraps the stub for this subshell only
     if [[ "$1" == start && "${2:-}" == agent-c-000000 ]]; then
@@ -636,7 +654,7 @@ test_golden_lock_is_released_before_the_clone_starts() {
     fi
     command orb "$@"
   }
-  STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" ensure_machine agent-c-000000 /repo/path "$wt" 2>/dev/null
+  STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" ensure_machine agent-c-000000 "$repo" "$wt" 2>/dev/null
 }
 test_forget_machine_removes_the_sentinel() {
   mkdir -p "$AGENT_VM_STATE_DIR/creating"; : >"$AGENT_VM_STATE_DIR/creating/agent-z-000000"
@@ -644,8 +662,120 @@ test_forget_machine_removes_the_sentinel() {
   assert_status 1 "sentinel gone" -- test -e "$AGENT_VM_STATE_DIR/creating/agent-z-000000"
 }
 test_existing_machine_is_not_recreated() {
-  STUB_ORB_LIST_STDOUT="agent-e-000000  running  ubuntu" ensure_machine agent-e-000000 /r /wt
+  local repo; repo=$(make_test_repo_dir); configure_existing_machine agent-e-000000 "$repo"
+  STUB_ORB_LIST_STDOUT="agent-e-000000  running  ubuntu" ensure_machine agent-e-000000 "$repo" "$repo"
   assert_not_contains "$(cat "$STUB_LOG")" "orb create" "no create for existing"
+  assert_contains "$(cat "$STUB_LOG")" "orb config show" "existing machine settings are checked"
+}
+test_existing_machine_mount_mismatch_says_recreate_and_does_not_start() {
+  local repo root old_mounts status=0 err
+  repo=$(make_test_repo_dir)
+  root=$(currentRoot "$repo/.git" "$HOME")
+  reserveMarker "$repo/.git" "$HOME" >/dev/null
+  old_mounts="$repo:$repo,$AGENT_VM_STATE_DIR/staging/agent-e-000000:/opt/agent-vm/src,$AGENT_VM_STATE_DIR/outbox/agent-e-000000:/opt/agent-vm/outbox,$AGENT_VM_STATE_DIR/browsers/agent-e-000000:/opt/agent-vm/browsers"
+  write_config_show "$TMP_ROOT/old-mounts" agent-e-000000 "$old_mounts"
+  err=$(STUB_ORB_LIST_STDOUT="agent-e-000000 running ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$TMP_ROOT/old-mounts" \
+    ensure_machine agent-e-000000 "$repo" "$repo" 2>&1) || status=$?
+  assert_eq 1 "$status" "an existing machine with old mounts is refused"
+  assert_contains "$err" "agent-e-000000 mounts '$old_mounts' (expected '" "the mount difference is explained"
+  assert_contains "$err" "recover: agent-vm rm $repo, then start agent-vm again in $repo" "the recreate procedure is shown"
+  assert_contains "$err" "not through agent-vm" "the fail-closed host hint is shown"
+  assert_not_contains "$(cat "$STUB_LOG")" "orb start agent-e-000000" "the old machine is not started"
+  assert_not_contains "$(cat "$STUB_LOG")" "orb clone" "the existing machine is not replaced implicitly"
+}
+test_existing_machine_with_matching_mounts_continues_to_session() {
+  local wt repo machine; wt=$(make_dotfiles_fixture); repo=$(make_flow_repo)
+  git -C "$repo" -c user.email=t@t -c user.name=t -c commit.gpgsign=false commit -q --allow-empty -m init
+  reserveMarker "$repo/.git" "$HOME" >/dev/null
+  local root; root=$(currentRoot "$repo/.git" "$HOME")
+  mkdir -p "$root"
+  git -C "$repo" worktree add -q "$root/feat" -b feat
+  machine=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
+  configure_existing_machine "$machine" "$repo"
+  ensure_browsers() { :; }
+  maybe_bootstrap() { :; }
+  nm_sync() { :; }
+  inject_secrets() { :; }
+  build_launch_script() { printf 'test script\n'; }
+  session_exec() { printf '%s\n' "$1" >"$TMP_ROOT/session-machine"; }
+  local status=0
+  (cd "$root/feat" && STUB_CHEZMOI_STDOUT="$wt/home" STUB_ORB_LIST_STDOUT="$machine running ubuntu" run_tool claude) >/dev/null 2>&1 || status=$?
+  assert_eq 0 "$status" "a matching existing machine continues the launch"
+  assert_eq "$machine" "$(cat "$TMP_ROOT/session-machine" 2>/dev/null)" "the session starts in the existing machine"
+  assert_eq "$machine" "$(derive_machine_name "$repo")" "the new-root worktree uses the main repo machine name"
+  assert_contains "$(cat "$STUB_LOG")" "orb config show" "the launch verified existing settings"
+  assert_not_contains "$(cat "$STUB_LOG")" "orb clone" "the existing machine was reused"
+}
+test_existing_machine_location_symlink_to_external_is_refused() {
+  local repo root outside="$TMP_ROOT/outside" status=0 err
+  repo=$(make_test_repo_dir)
+  root=$(currentRoot "$repo/.git" "$HOME"); root=${root%/}
+  mkdir -p "$HOME/worktrees" "$outside"
+  printf '%s\n' "$(cd -P "$repo/.git" && pwd -P)" >"$outside/.common-dir"
+  printf 'keep\n' >"$outside/sentinel"
+  ln -s "$outside" "$root"
+  local worktrees_root; worktrees_root=$(currentRoot "$repo/.git" "$HOME")
+  write_config_show "$TMP_ROOT/config-show" agent-e-000000 "$(vm_mounts agent-e-000000 "$repo" "$worktrees_root")"
+  err=$(STUB_ORB_LIST_STDOUT="agent-e-000000 running ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$TMP_ROOT/config-show" \
+    ensure_machine agent-e-000000 "$repo" "$repo" 2>&1) || status=$?
+  assert_eq 1 "$status" "the existing machine refuses a symlinked currentRoot"
+  assert_contains "$err" "unsafe worktree path" "the symlink check explains the failure"
+  assert_not_contains "$(cat "$STUB_LOG")" "orb start agent-e-000000" "the machine is not started"
+  assert_eq $'.common-dir\nsentinel' "$(find "$outside" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort)" "the external directory is unchanged"
+}
+test_existing_machine_worktrees_parent_symlink_is_refused() {
+  local repo outside="$TMP_ROOT/outside" root status=0 err
+  repo=$(make_test_repo_dir)
+  mkdir -p "$outside/$(basename "$repo")"
+  root="$outside/$(basename "$repo")"
+  printf '%s\n' "$(cd -P "$repo/.git" && pwd -P)" >"$root/.common-dir"
+  printf 'keep\n' >"$root/sentinel"
+  ln -s "$outside" "$HOME/worktrees"
+  local worktrees_root; worktrees_root=$(currentRoot "$repo/.git" "$HOME")
+  write_config_show "$TMP_ROOT/config-show" agent-e-000000 "$(vm_mounts agent-e-000000 "$repo" "$worktrees_root")"
+  err=$(STUB_ORB_LIST_STDOUT="agent-e-000000 running ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$TMP_ROOT/config-show" \
+    ensure_machine agent-e-000000 "$repo" "$repo" 2>&1) || status=$?
+  assert_eq 1 "$status" "the existing machine refuses a symlinked worktrees parent"
+  assert_contains "$err" "unsafe worktree path" "the parent symlink check explains the failure"
+  assert_not_contains "$(cat "$STUB_LOG")" "orb start agent-e-000000" "the machine is not started"
+  assert_eq $'.common-dir\nsentinel' "$(find "$root" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort)" "the external directory is unchanged"
+}
+test_existing_machine_stale_conflict_and_unmarked_markers_are_refused() {
+  local repo root other status err
+  repo=$(make_test_repo_dir)
+  root=$(currentRoot "$repo/.git" "$HOME"); root=${root%/}
+  mkdir -p "$root"
+  printf '%s\n' "$TMP_ROOT/missing/.git" >"$root/.common-dir"
+  status=0; err=$(STUB_ORB_LIST_STDOUT="agent-e-000000 running ubuntu" ensure_machine agent-e-000000 "$repo" "$repo" 2>&1) || status=$?
+  assert_eq 1 "$status" "a stale marker blocks an existing machine"
+  assert_contains "$err" "stale marker" "stale is reported"
+  assert_not_contains "$(cat "$STUB_LOG")" "orb start agent-e-000000" "a stale marker does not start the machine"
+
+  other="$TMP_ROOT/other/.git"; mkdir -p "$other"; : >"$other/HEAD"
+  printf '%s\n' "$other" >"$root/.common-dir"
+  status=0; err=$(STUB_ORB_LIST_STDOUT="agent-e-000000 running ubuntu" ensure_machine agent-e-000000 "$repo" "$repo" 2>&1) || status=$?
+  assert_eq 1 "$status" "a conflicting marker blocks an existing machine"
+  assert_contains "$err" "worktree location conflicts" "conflict is reported"
+  assert_not_contains "$(cat "$STUB_LOG")" "orb start agent-e-000000" "a conflict does not start the machine"
+
+  rm -f "$root/.common-dir"; : >"$root/unmarked-entry"; : >"$STUB_LOG"
+  status=0; err=$(STUB_ORB_LIST_STDOUT="agent-e-000000 running ubuntu" ensure_machine agent-e-000000 "$repo" "$repo" 2>&1) || status=$?
+  assert_eq 1 "$status" "an unmarked existing location blocks the machine"
+  assert_contains "$err" "unmarked entries" "unmarked is reported"
+  assert_not_contains "$(cat "$STUB_LOG")" "orb start agent-e-000000" "an unmarked location does not start the machine"
+}
+test_new_machine_does_not_clone_through_a_symlinked_current_root() {
+  local repo root outside="$TMP_ROOT/outside" status=0 err
+  repo=$(make_test_repo_dir)
+  root=$(currentRoot "$repo/.git" "$HOME"); root=${root%/}
+  mkdir -p "$HOME/worktrees" "$outside"
+  printf '%s\n' "$(cd -P "$repo/.git" && pwd -P)" >"$outside/.common-dir"
+  printf 'keep\n' >"$outside/sentinel"
+  ln -s "$outside" "$root"
+  err=$(STUB_ORB_LIST_STDOUT="agent-vm-golden stopped ubuntu" ensure_machine agent-e-000000 "$repo" "$repo" 2>&1) || status=$?
+  assert_eq 1 "$status" "a new machine refuses a symlinked currentRoot"
+  assert_not_contains "$(cat "$STUB_LOG")" "orb clone" "the machine is not created"
+  assert_eq $'.common-dir\nsentinel' "$(find "$outside" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort)" "the external directory is unchanged"
 }
 test_bootstrap_skipped_when_hash_matches() {
   STUB_ORB_STDOUT="v1:abc" maybe_bootstrap agent-b-000000 gen-x "v1:abc"
@@ -768,6 +898,7 @@ test_notice_proxy_port_assignment_shows_a_change_and_a_full_pool() {
 test_run_tool_hands_the_port_to_the_session_and_names_it() {
   local wt repo m err; wt=$(make_dotfiles_fixture); repo=$(make_flow_repo)
   m=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
+  configure_existing_machine "$m" "$repo"
   session_exec() { printf '%s\n' "$2" >"$TMP_ROOT/launch-script"; } # replaces the real orb session in this subshell only
   err=$( (cd "$repo" && PROXY_PORT=99999 STUB_CHEZMOI_STDOUT="$wt/home" STUB_ORB_LIST_STDOUT="$m running" run_tool claude) 2>&1 >/dev/null) || true
   assert_eq 17300 "$(read_meta_field "$m" proxy_port)" "the launch records a port"
@@ -778,6 +909,7 @@ test_run_tool_hands_the_port_to_the_session_and_names_it() {
 test_prepare_machine_ignores_proxy_port_from_the_host_environment() {
   local wt repo m; wt=$(make_dotfiles_fixture); repo=$(make_flow_repo)
   m=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
+  configure_existing_machine "$m" "$repo"
   session_exec() { printf '%s\n' "$2" >"$TMP_ROOT/launch-script"; }
   assign_proxy_port() { :; } # replaces the assignment in this subshell only: only the clearing in prepare_machine is left
   (cd "$repo" && PROXY_PORT=17305 PROXY_PORT_PREV=17306 STUB_CHEZMOI_STDOUT="$wt/home" STUB_ORB_LIST_STDOUT="$m running" run_tool claude) >/dev/null 2>&1 || true
@@ -787,6 +919,7 @@ test_prepare_machine_ignores_proxy_port_from_the_host_environment() {
 test_prewarm_reports_a_changed_port_and_names_no_url() {
   local wt repo m err; wt=$(make_dotfiles_fixture); repo=$(make_flow_repo)
   m=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
+  configure_existing_machine "$m" "$repo"
   write_machine_meta "$m" "$(cd -P "$repo" && pwd -P)" 17300
   write_machine_meta agent-other-000000 /tmp/other 17300
   session_exec() { record "FAIL prewarm must not start a session"; }
@@ -844,6 +977,7 @@ test_codex_login_runs_only_when_auth_missing() {
 test_session_runs_without_holding_the_lock() {
   local wt repo m; wt=$(make_dotfiles_fixture); repo=$(make_flow_repo)
   m=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
+  configure_existing_machine "$m" "$repo"
   notice_orphan_env() { :; } # implemented in T10
   session_exec() { # replaces the real orb session in this subshell only
     if bash -c "AGENT_VM_STATE_DIR='$AGENT_VM_STATE_DIR' AGENT_VM_LIB=1 . '$LAUNCHER'; acquire_lock '$1' 1" </dev/null >/dev/null 2>&1; then
@@ -859,6 +993,7 @@ test_prewarm_stops_before_secrets_and_session() {
   mkdir -p "$AGENT_VM_CONFIG_DIR"; printf 'A=op://v/a/x\n' >"$AGENT_VM_CONFIG_DIR/env.1password"
   session_exec() { record "FAIL prewarm must not start a session"; }
   local m; m=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
+  configure_existing_machine "$m" "$repo"
   (cd "$repo" && STUB_CHEZMOI_STDOUT="$wt/home" STUB_ORB_LIST_STDOUT="$m running" STUB_ORB_STDOUT="v1:old" cmd_prewarm) 2>/dev/null
   assert_not_contains "$(cat "$STUB_LOG")" "orb create" "existing machine reused"
   assert_contains "$(cat "$STUB_LOG")" "bootstrap.sh" "prewarm bootstraps"
@@ -1524,6 +1659,7 @@ test_accept_git_refuses_symlinked_git_dir() {
 test_session_logs_are_ingested_after_the_session() {
   local wt repo m; wt=$(make_dotfiles_fixture); repo=$(make_flow_repo)
   m=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
+  configure_existing_machine "$m" "$repo"
   export AGENT_VM_CLAUDE_PROJECTS_DIR="$TMP_ROOT/host-projects" AGENT_VM_CODEX_SESSIONS_DIR="$TMP_ROOT/host-codex"
   notice_orphan_env() { :; }
   session_exec() { mkdir -p "$AGENT_VM_STATE_DIR/outbox/$1/claude-projects/-r"; printf 'x\n' >"$AGENT_VM_STATE_DIR/outbox/$1/claude-projects/-r/s.jsonl"; }
@@ -1533,6 +1669,7 @@ test_session_logs_are_ingested_after_the_session() {
 test_git_surface_change_during_session_sets_exit_code() {
   local wt repo m; wt=$(make_dotfiles_fixture); repo=$(make_flow_repo)
   m=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
+  configure_existing_machine "$m" "$repo"
   notice_orphan_env() { :; }
   session_exec() { printf '#!/bin/sh\n' >"$REPO/.git/hooks/post-checkout"; }
   local status=0
@@ -1542,6 +1679,7 @@ test_git_surface_change_during_session_sets_exit_code() {
 test_tool_failure_status_wins() {
   local wt repo m; wt=$(make_dotfiles_fixture); repo=$(make_flow_repo)
   m=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
+  configure_existing_machine "$m" "$repo"
   notice_orphan_env() { :; }
   session_exec() { printf '#!/bin/sh\n' >"$REPO/.git/hooks/post-checkout"; return 7; }
   local status=0
@@ -1551,6 +1689,7 @@ test_tool_failure_status_wins() {
 test_finish_reports_lock_timeout_with_recover_hint() {
   local wt repo m; wt=$(make_dotfiles_fixture); repo=$(make_flow_repo)
   m=$(derive_machine_name "$(cd -P "$repo" && pwd -P)")
+  configure_existing_machine "$m" "$repo"
   notice_orphan_env() { :; }
   session_exec() {
     bash -c "AGENT_VM_STATE_DIR='$AGENT_VM_STATE_DIR' AGENT_VM_LIB=1 . '$LAUNCHER'; acquire_lock '$m' 1 && exec sleep 5" </dev/null >/dev/null 2>&1 &
@@ -2367,6 +2506,8 @@ test_new_machine_drops_a_stale_id_record() {
   assert_status 1 "stale id removed on create" -- test -e "$AGENT_VM_STATE_DIR/browser-records/agent-n-000000.id"
 }
 test_existing_machine_gets_no_marker() {
+  mkdir -p "$TMP_ROOT/.git"
+  configure_existing_machine agent-n-000000 "$TMP_ROOT"
   export STUB_ORB_LIST_STDOUT="agent-n-000000"
   ensure_machine agent-n-000000 "$TMP_ROOT" "$TMP_ROOT" >/dev/null 2>&1
   assert_status 1 "no marker for an existing machine" -- test -e "$AGENT_VM_STATE_DIR/browser-records/agent-n-000000.mount"
@@ -2382,6 +2523,7 @@ test_failed_orb_list_writes_no_marker_and_stops() {
 }
 test_marker_survives_a_failed_clone() {
   local wt show; wt=$(make_golden_fixture); show=$(sealed_golden_fixture "$wt")
+  mkdir -p "$TMP_ROOT/.git"
   export STUB_ORB_LIST_STDOUT="$GOLDEN_MACHINE stopped ubuntu" STUB_ORB_CONFIG_SHOW_FILE="$show" STUB_ORB_FAIL_ON="clone $GOLDEN_MACHINE agent-n-000000"
   (ensure_machine agent-n-000000 "$TMP_ROOT" "$wt") >/dev/null 2>&1 || true
   assert_contains "$(cat "$STUB_LOG")" "orb clone" "clone was attempted"
@@ -2822,7 +2964,8 @@ test_forget_machine_removes_intake_dirs_the_vm_locked_and_checks_the_name() {
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do
   (
     TMP_ROOT="$TMP_BASE/$t"; mkdir -p "$TMP_ROOT"
-    export TMP_ROOT STUB_LOG="$TMP_ROOT/stub.log"
+    export TMP_ROOT HOME="$TMP_ROOT/home" STUB_LOG="$TMP_ROOT/stub.log"
+    mkdir -p "$HOME"
     export AGENT_VM_STATE_DIR="$TMP_ROOT/state" AGENT_VM_CONFIG_DIR="$TMP_ROOT/config"
     : >"$STUB_LOG"
     AGENT_VM_LIB=1 . "$LAUNCHER"
