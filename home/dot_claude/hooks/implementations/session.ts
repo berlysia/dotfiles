@@ -29,6 +29,7 @@ import {
 import { isWorkerSession } from "../lib/agent-learnings/claude/worker-guard.ts";
 import { readInbox, readLastFlush } from "../lib/dotfiles-feedback/cache.ts";
 import { DOTFILES_REPO_KEY } from "../lib/dotfiles-feedback/constants.ts";
+import { buildDependencyNotice } from "../lib/dependency-notice.ts";
 import {
   resolvePasswdHome,
   type HomeResult,
@@ -337,8 +338,9 @@ export function setFeedbackSectionDepsForTesting(
 export function mergeAdditionalContext(
   learnings: string | null,
   feedbackLine: string | null,
+  extraLine: string | null = null,
 ): string | null {
-  const parts = [learnings, feedbackLine].filter(
+  const parts = [learnings, feedbackLine, extraLine].filter(
     (part): part is string => part !== null && part !== "",
   );
   return parts.length > 0 ? parts.join("\n") : null;
@@ -542,9 +544,17 @@ const hook = defineHook({
       // 通知は UI の systemMessage にも、同じ 1 行をモデルの文脈にも渡す（spec K6）。
       const feedbackLine = await feedbackNoticeLine(cwd);
       if (feedbackLine) messages.push(feedbackLine);
+      let dependencyNotice: string | null = null;
+      try {
+        dependencyNotice = buildDependencyNotice(context.input.cwd);
+      } catch (error) {
+        console.error("dependency notice failed:", error);
+      }
+      if (dependencyNotice) messages.push(dependencyNotice);
       const additionalContext = mergeAdditionalContext(
         learningsContext,
         feedbackLine,
+        dependencyNotice,
       );
       return context.json({
         event: "SessionStart",
