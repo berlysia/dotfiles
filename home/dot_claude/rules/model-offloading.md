@@ -38,10 +38,19 @@ Agent tool の `model` パラメータ / Workflow `agent()` の `opts.model` で
    - 引き直した `推奨:` に渡す。その推奨に `失敗時:` の行が付いていれば（実績のない推奨）、推奨の委譲先は起動せず、`失敗時:` の委譲先に渡す
    - 引き直した `推奨:` か、渡す先の `失敗時:` が `待機` なら、委譲せずに手順 2 に従う
    - 次点も失敗したら、メインループが自分で行う
+   - 例外: 手順 4 の試す effort で起動して Codex が effort の値を拒んだら、`--exclude` も route の引き直しもしない。拒否されたのは effort の値で、委譲先ではないからである。同じ委譲先を、`推奨:` の行の起動コマンドで起動し直す。拒否された起動の行は `delegation lapse <id>` で閉じる。lapse の行は kind と size を持たないので、試す effort の件数に入らない。同じ作業のうちに、`destinations.ts` の `effortTrials` からその値を消す変更を、作業とは別の小さな PR で出す。PR が merge されて apply されるまでは、別のセッションが同じ値を試して拒否されうる。その費用は起動 1 回分と lapse 1 行なので受け入れる
 4. 「試す候補」が示されたら、急がない小さな委譲をその候補に渡してよい。記録の少ない委譲先の評価を増やすための枠である
+   - `試す effort:` の行が示されたら、その委譲に行の起動コマンドを使ってよい。起動コマンドは、推奨の委譲先の effort だけを下げたものである。今より低い effort の記録を集め、手順 7 で利用者が effort を下げるかを決めるための枠である
+   - kind が review のときは、使う条件を次の 2 つとする。Document Workflow の round でその回に起動する reviewer が 2 名以上いること。`scope-justification-reviewer` がその中にいること。使うのはその 1 名にだけである
+   - 前の round で pass して引き継がれた reviewer は数えない。reviewer が 1 名だけの review では、見落としを拾う人がいないので使わない
+   - 依頼の `model:` は `推奨:` の行から、`effort:` は `試す effort:` の行から取る。残りの reviewer は `推奨:` の行の effort で起動する
 5. 委譲が終わると、`delegation-budget` Mod が `[delegation]` で始まる 1 行で記録を促す。結果を確かめて採否を決めたら `delegation record` で記録する。メインループ自身の判断の誤りは委譲先の欠陥にせず、note に書く
 6. 後から委譲の結果に欠陥が見つかったら、`delegation amend` で記録する
 7. route か record が振り返りを促したら `delegation review` を読み、閾値と既知のモデル ID の一覧を変えるべきかを利用者に提案する
+   - `effort の見直しの条件に当たる` の行は、今の effort と試した effort の記録がどちらも 5 件以上そろったことだけを示す。良し悪しは示さない。比べ方は cell の kind で分ける
+   - kind が review の cell: review の記録は reviewer の役割を分けない。試す effort を使うのは `scope-justification-reviewer` だけなので、cell の数値は同じ reviewer どうしの比較にならない。そこで、試した effort の reviewer の出力を、同じ round に同じ文書を見た他の reviewer の出力と比べる。他の reviewer だけが挙げた指摘を落としていたら、その委譲の記録を `delegation amend` で patched にする
+   - それ以外の kind の cell（impl×S など）: 比べる reviewer がいない。`delegation review` は同じ cell に、今の effort と試した effort の組の行を出す。その行の数値（adopted 率、委譲先の欠陥、所要時間）を比べる
+   - 比べた結果、effort を下げてよいと判断したら、`destinations.ts` の effort を書き換える変更を利用者に提案する。route は effort を自動で選ばない
 
 外部の委譲先への渡し方は次のとおり。どちらも commit はできないので、commit はメインループがする。
 

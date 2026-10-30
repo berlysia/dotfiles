@@ -19,11 +19,11 @@ route の委譲で rescue をまた使うと決めたら、そのときに model
 ## Codex の委譲先の順序と Terra の effort を見直す
 
 ADR-0056 では、委譲先の順序と、Terra を effort `high` で起動することを、記録が無い時点の推測で決めた。
-Terra の集計には `high` 以外の effort の記録も入る。
+ADR-0064 で、Terra の集計は effort `high` の記録だけを数えるようにした。
 
-- Terra と Luna max の記録がそれぞれ 5 件を超えたら、`delegation review` で effort 別の採用率を確かめる
-- 採用率に差があれば、順序と Terra の effort を変えるかを決める
-- Terra の条件を effort つきに絞ると、過去の記録の数え方が変わる。絞るかどうかも同時に決める
+- Terra と Luna max の記録がそれぞれ 5 件を超えたら、`delegation review` で採用率を確かめ、委譲先の順序を変えるかを決める
+- effort の見直しは、`delegation review` に「effort の見直しの条件に当たる」の行が出てから始める。比べ方は `model-offloading.md` の手順 7 にある
+- 2026-11-13 ごろ、`delegation review` で各試す effort の記録が 5 件に届いたかを確かめる。届かなければ、試す effort を impl の M にも出すかを決め直す
 
 ### Terra と Luna max の記録を増やす経路
 
