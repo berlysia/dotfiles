@@ -73,6 +73,7 @@ ADR-0055 の「線」を、この ADR から「目安」と呼ぶ。
   - 週枠は provider のものなので、行は provider ごとの 1 行とする。Terra と Luna max は Codex の週を共有する。行に出す委譲先は、その kind の順（ADR-0056）で最初のものとする。mechanical・triage では Luna max、それ以外では Terra である
   - 推奨がその外部なら出さない。規模 S で記録が足りない外部の試す候補（ADR-0055 K6 の 4）と同じ外部を選んだときは 1 行にまとめ、末尾に余りを足す
   - 2026-10-29 03:31Z の値では、OpenCode は 96 × (1 − 69.6 ÷ 168) ≈ 56pt で出る。Codex は週が ahead なので、余りを見る前に条件から外れる
+  - この決定は ADR-0063 により上書きされた。
 - **K4: model を省いた Agent も、agent 定義が Claude のモデルを指定していれば台帳に載せる。**
   - `delegation open` は、Agent の model が文字列ならそのまま判定し、`codex:codex-rescue` も今までどおりにする。model が無いときは、subagent_type が `^[a-z0-9][a-z0-9-]{0,39}$` に合うときだけ `$HOME/.claude/agents/<名前>.md` を読む。合わなければパスを組まず、対象外（終了コード 1）とする
   - 読み方は K2 と同じ 3 層の守りで、64KB 以下に限る。agents ディレクトリそのものが symlink であることは許す（chezmoi の配備で symlink になりうる。symlink を追わない指定が守るのは最後の要素だけ）
