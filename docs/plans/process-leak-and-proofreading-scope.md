@@ -1,7 +1,7 @@
 # セッションより長く残るプロセスと、校正の規則の範囲
 
 cpk-events のセッション（2026-10-29）から届いたフィードバックのうち、まだ手を付けていない項目。
-受け口は dotfiles-feedback の private repo の issue #3 である。
+受け口は dotfiles-feedback の private repo の 20261029T063524Z-6fec2318072b である。
 片付いた項目は消し、空になったらこのファイルを消す。
 
 ## Codex plugin の app-server broker が残る

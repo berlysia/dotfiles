@@ -1,7 +1,7 @@
 # 人だけに許す操作を、Remote Control からも確認つきで実行できるようにする
 
 ほかのセッションから dotfiles-feedback で届いた提案（2026-10-29）。
-受け口は dotfiles-feedback の private repo の issue #8 である。
+受け口は dotfiles-feedback の private repo の 20261029T072843Z-8f3196966359 である。
 片付いたらこのファイルを消す。
 
 ## 困っていること

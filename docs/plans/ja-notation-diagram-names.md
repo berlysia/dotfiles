@@ -1,7 +1,7 @@
 # 図から取った呼び名を拾う項目を、日本語の規範に足す
 
 chezmoi の別のセッション（2026-10-29）から届いた提案。
-受け口は dotfiles-feedback の private repo の issue #4 である。
+受け口は dotfiles-feedback の private repo の 20261029T063525Z-16e7e0d39cfb である。
 片付いたらこのファイルを消す。
 
 ## 起きたこと

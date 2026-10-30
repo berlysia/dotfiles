@@ -1,7 +1,7 @@
 # Document Workflow の gate と rules への持ち越し
 
 cpk-events のセッション（2026-10-29）から届いたフィードバックのうち、まだ手を付けていない項目。
-受け口は dotfiles-feedback の private repo の issue #2 である。
+受け口は dotfiles-feedback の private repo の 20261029T063524Z-5f77d01329df である。
 片付いた項目は消し、空になったらこのファイルを消す。
 
 ## 生成物の書き込みが Scope の外として止まる

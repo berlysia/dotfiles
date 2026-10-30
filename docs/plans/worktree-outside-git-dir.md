@@ -2,8 +2,8 @@
 
 提案・未決。出どころは dotfiles-feedback の 2 件である。
 
-- 20261029T083851Z-eea90f8e8c20（#11）: 置き場を移す提案
-- 20261029T084310Z-f9c78f34c7ac（#12）: #11 で確かめる hook の箇所の一覧
+- 20261029T083851Z-eea90f8e8c20: 置き場を移す提案
+- 20261029T084310Z-f9c78f34c7ac: 上の提案で確かめる hook の箇所の一覧
 
 ## `.git/` の下の worktree で Vite の開発サーバーが起動しない
 
@@ -30,7 +30,7 @@
 - `rules/model-offloading.md` で Codex に渡す `-C` のパスの確かめ方（基準が `<repo>/.git/worktree/`）
 - 既存の `.git/worktree/` の下の worktree の移し方
 
-## `.git/worktree/` を前提にしている箇所（#12）
+## `.git/worktree/` を前提にしている箇所
 
 下はコードを読んだ結果で、どれも実際には動かしていない。
 
