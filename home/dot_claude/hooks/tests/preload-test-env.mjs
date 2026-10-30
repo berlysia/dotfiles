@@ -56,6 +56,19 @@ delete process.env.CLAUDE_PROJECT_DIR;
 // 通知を試すテストは session.ts の依存を注入して使う。
 process.env.CLAUDE_HOOKS_DISABLE_FEEDBACK_NOTICE = "1";
 
+// Test fixtures from mkdtemp pile up in /tmp, and systemd-tmpfiles wipes /tmp
+// at boot before sysinit.target, so a week of leftovers held up WSL's dbus and
+// logind for minutes. Cleaning up here rather than in each test file means a
+// new test cannot leak. Each test file's process owns one directory; processes
+// it spawns inherit the marker and leave removal to that owner.
+const ownedTmpDir = process.env.CLAUDE_TEST_FILE_TMPDIR
+  ? undefined
+  : realpathSync(mkdtempSync(join(tmpdir(), "dotfiles-test-")));
+if (ownedTmpDir) {
+  process.env.CLAUDE_TEST_FILE_TMPDIR = ownedTmpDir;
+  process.env.TMPDIR = ownedTmpDir;
+}
+
 if (!process.env.CLAUDE_LOGS_DIR) {
   const dir = realpathSync(
     mkdtempSync(join(tmpdir(), "claude-hooks-test-logs-")),
@@ -78,6 +91,20 @@ if (!process.env.CLAUDE_LOGS_DIR) {
 // them. See support/git-shim.mjs.
 if (process.env.CLAUDE_TEST_FORBID_GIT === "1") {
   enableGitShim(process.env, process.argv[1] ?? "");
+}
+
+// Exit listeners run in registration order, and the git shim reads its record
+// from under this directory in its own, so this one has to be registered last.
+if (ownedTmpDir) {
+  process.once("exit", () => {
+    try {
+      rmSync(ownedTmpDir, { recursive: true, force: true, maxRetries: 3 });
+    } catch (error) {
+      console.error(
+        `preload-test-env: could not remove ${ownedTmpDir}: ${error}`,
+      );
+    }
+  });
 }
 
 // lib/bash-parser.ts gives up on a parse after 100ms of wall clock. Under a
