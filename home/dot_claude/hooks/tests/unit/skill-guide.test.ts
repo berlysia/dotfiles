@@ -18,6 +18,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
 import { isSafeSessionId } from "../../lib/session-id.ts";
+import { run as runSkillGuideGate } from "../../implementations/skill-guide-gate.ts";
+import {
+  extractApmSkillNames,
+  readFrontmatterList,
+} from "../../lib/skill-requires.ts";
 import {
   SKILL_GUIDE_LOG_MAX_BYTES,
   SKILL_GUIDE_MARKER_TTL_MS,
@@ -40,6 +45,34 @@ import {
 import { readMarker } from "../../lib/session-marker.ts";
 
 const REPO_ROOT = join(import.meta.dirname, "../../../../..");
+const T6_NEW_SKILLS = [
+  "model-offloading",
+  "delivery-policy",
+  "commit-standards",
+  "debugging",
+  "context-md",
+  "defect-triage",
+  "document-workflow-operator",
+] as const;
+const T6_CHANGED_SKILLS = [
+  ...T6_NEW_SKILLS,
+  "git-safety",
+  "chezmoi-operations",
+  "hook-cli-development",
+  "mod-development",
+  "logic-validation",
+  "test-design",
+  "external-skill-intake",
+] as const;
+const T6_FLOOR_WORDS = [
+  "dangerously-bypass",
+  "sandbox_mode",
+  "approval_policy",
+  "--add-dir",
+  "--full-auto",
+  "--admin",
+  "@.env",
+] as const;
 const dirs: string[] = [];
 const tempDir = () => {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), "skill-guide-")));
@@ -722,5 +755,184 @@ describe("T3: argv と HOME", () => {
       ),
       { skillsRoot: "/tmp/skills", stateDir: "/tmp/state" },
     );
+  });
+});
+
+describe("T6: skill declarations and moved rules", () => {
+  it("has the exact read-before declarations for the three gated skills", () => {
+    deepStrictEqual(readSkillGuides(join(REPO_ROOT, ".skills")), [
+      {
+        skill: "commit-standards",
+        before: [{ raw: "Bash(git commit)", words: ["git", "commit"] }],
+      },
+      {
+        skill: "git-safety",
+        before: [
+          {
+            raw: "Bash(git-worktree-create)",
+            words: ["git-worktree-create"],
+          },
+          {
+            raw: "Bash(git worktree add)",
+            words: ["git", "worktree", "add"],
+          },
+        ],
+      },
+      {
+        skill: "model-offloading",
+        before: [
+          { raw: "Bash(delegation offload)", words: ["delegation", "offload"] },
+          { raw: "Bash(codex exec)", words: ["codex", "exec"] },
+        ],
+      },
+    ]);
+  });
+
+  it("resolves every repository read-before target to a self-hosted or APM skill", () => {
+    const skillsDir = join(REPO_ROOT, ".skills");
+    const apmNames = extractApmSkillNames(
+      readFileSync(join(REPO_ROOT, "home/dot_apm/apm.yml"), "utf8"),
+    );
+    const knownNames = new Set([...readdirSync(skillsDir), ...apmNames]);
+    for (const name of readdirSync(skillsDir)) {
+      const path = join(skillsDir, name, "SKILL.md");
+      if (!existsSync(path)) continue;
+      const declaration = readFrontmatterList(
+        readFileSync(path, "utf8"),
+        "read-before",
+      );
+      if (!declaration.found) continue;
+      ok(!("error" in declaration), `${name} has a valid read-before list`);
+      if ("error" in declaration) continue;
+      const declaredSkill = /^name:\s*([a-z0-9][a-z0-9._-]*)\s*$/m.exec(
+        readFileSync(path, "utf8"),
+      )?.[1];
+      ok(declaredSkill !== undefined, `${name} has a frontmatter name`);
+      if (declaredSkill !== undefined) {
+        ok(
+          knownNames.has(declaredSkill),
+          `${name}: unknown skill ${declaredSkill}`,
+        );
+      }
+    }
+  });
+
+  it("keeps every new skill description within 250 characters", () => {
+    for (const name of T6_NEW_SKILLS) {
+      const text = readFileSync(
+        join(REPO_ROOT, ".skills", name, "SKILL.md"),
+        "utf8",
+      );
+      const raw = /^description:\s*(.*)$/m.exec(text)?.[1]?.trim();
+      ok(raw !== undefined, `${name} has a description`);
+      const description = raw?.replace(/^['"]|['"]$/g, "") ?? "";
+      ok(description.length <= 250, `${name}: ${description.length} chars`);
+    }
+  });
+
+  it("keeps T4 and T5 guide names installed and each guide line under 120 characters", () => {
+    const afterSource = readFileSync(
+      join(
+        REPO_ROOT,
+        "home/dot_claude/hooks/implementations/skill-guide-after.ts",
+      ),
+      "utf8",
+    );
+    const block = /const AFTER_GUIDE_LINES = \{([\s\S]*?)\n\} as const;/.exec(
+      afterSource,
+    )?.[1];
+    ok(block !== undefined, "AFTER_GUIDE_LINES exists");
+    const entries = [
+      ...(block ?? "").matchAll(
+        /^\s*(?:"([a-z0-9-]+)"|([a-z0-9-]+)):\s*"([^"]*)",?\s*$/gm,
+      ),
+    ];
+    strictEqual(entries.length, 5);
+    const skillsDir = join(REPO_ROOT, ".skills");
+    for (const entry of entries) {
+      const name = entry[1] ?? entry[2] ?? "";
+      const line = entry[3] ?? "";
+      ok(existsSync(join(skillsDir, name, "SKILL.md")), name);
+      ok(line.length <= 120, `${name}: ${line.length} chars`);
+    }
+    for (const name of SKILL_GUIDE_SKILLS) {
+      ok(existsSync(join(skillsDir, name, "SKILL.md")), name);
+    }
+  });
+
+  it("keeps the deny reason under 120 characters with the longest gated skill name", async () => {
+    const skill = SKILL_GUIDE_SKILLS.reduce((longest, name) =>
+      name.length > longest.length ? name : longest,
+    );
+    const env = guideEnv('read-before: ["Bash(git commit)"]', skill);
+    const output = await runSkillGuideGate(
+      {
+        hook_event_name: "PreToolUse",
+        tool_name: "Bash",
+        session_id: "session-1",
+        transcript_path: env.transcriptPath,
+        tool_input: { command: "git commit -m T6" },
+      },
+      env.deps,
+    );
+    ok(output !== null && "hookSpecificOutput" in output);
+    if (output === null || !("hookSpecificOutput" in output)) return;
+    const hookSpecificOutput = output.hookSpecificOutput;
+    ok(
+      typeof hookSpecificOutput === "object" &&
+        hookSpecificOutput !== null &&
+        "permissionDecisionReason" in hookSpecificOutput &&
+        typeof hookSpecificOutput.permissionDecisionReason === "string",
+    );
+    if (
+      typeof hookSpecificOutput !== "object" ||
+      hookSpecificOutput === null ||
+      !("permissionDecisionReason" in hookSpecificOutput) ||
+      typeof hookSpecificOutput.permissionDecisionReason !== "string"
+    ) {
+      return;
+    }
+    ok(hookSpecificOutput.permissionDecisionReason.includes(skill));
+    ok(hookSpecificOutput.permissionDecisionReason.length <= 120);
+  });
+
+  it("keeps moved and appended skills free of rule-file paths", () => {
+    for (const name of T6_CHANGED_SKILLS) {
+      const text = readFileSync(
+        join(REPO_ROOT, ".skills", name, "SKILL.md"),
+        "utf8",
+      );
+      ok(!/rules\/[^\s`'"<>]+\.md/.test(text), `${name} has a rule path`);
+    }
+  });
+
+  it("keeps K2 floor terms on always-loaded files and out of moved skills", () => {
+    const skillsDir = join(REPO_ROOT, ".skills");
+    const changedSkillText = T6_CHANGED_SKILLS.map((name) =>
+      readFileSync(join(skillsDir, name, "SKILL.md"), "utf8"),
+    ).join("\n");
+    for (const word of T6_FLOOR_WORDS) {
+      ok(!changedSkillText.includes(word), `${word} was copied into a skill`);
+    }
+
+    const rulesDir = join(REPO_ROOT, "home/dot_claude/rules");
+    const alwaysLoaded = [
+      readFileSync(join(REPO_ROOT, "home/dot_claude/CLAUDE.md"), "utf8"),
+      readFileSync(join(REPO_ROOT, "CLAUDE.md"), "utf8"),
+      ...readdirSync(rulesDir)
+        .filter((name) => name.endsWith(".md"))
+        .map((name) => {
+          const text = readFileSync(join(rulesDir, name), "utf8");
+          const frontmatter =
+            /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1] ?? "";
+          return /^paths\s*:/m.test(frontmatter) ? "" : text;
+        }),
+    ].join("\n");
+    for (const word of T6_FLOOR_WORDS) {
+      ok(
+        alwaysLoaded.includes(word),
+        `${word} is missing from always-loaded files`,
+      );
+    }
   });
 });
