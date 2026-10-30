@@ -1,9 +1,20 @@
 #!/usr/bin/env node --test
 import { strictEqual } from "node:assert";
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
+  classifyWriteTarget,
   CORE_PROTECTED_SOURCE,
   findHoldSegment,
+  nodeHoldFs,
 } from "../../lib/write-protection.ts";
 
 const names = { home: "/home/u", chezmoiSource: "/src/chezmoi/home" };
@@ -68,5 +79,44 @@ describe("findHoldSegment - worktree interior (2b)", () => {
       /permission-modes.*2026-10-06.*2\.1\.291/.test(CORE_PROTECTED_SOURCE),
       true,
     );
+  });
+});
+
+describe("classifyWriteTarget - current worktree root", () => {
+  it("allows verified nested worktree content and holds its .git file", () => {
+    const scratch = realpathSync(mkdtempSync(join(tmpdir(), "wp-current-")));
+    try {
+      const home = join(scratch, "home");
+      const repo = join(scratch, "repo");
+      const commonDir = join(repo, ".git");
+      const worktree = join(home, "worktrees", "repo", "a", "b");
+      const adminDir = join(commonDir, "worktrees", "admin");
+      mkdirSync(adminDir, { recursive: true });
+      mkdirSync(join(worktree, "src"), { recursive: true });
+      mkdirSync(join(commonDir, "objects"), { recursive: true });
+      writeFileSync(join(commonDir, "HEAD"), "ref: refs/heads/main\n");
+      writeFileSync(join(worktree, ".git"), `gitdir: ${adminDir}\n`);
+      writeFileSync(join(adminDir, "gitdir"), `${join(worktree, ".git")}\n`);
+      writeFileSync(
+        join(home, "worktrees", "repo", ".common-dir"),
+        "/elsewhere/.git\n",
+      );
+      const context = { ...names, home, fs: nodeHoldFs };
+
+      strictEqual(
+        classifyWriteTarget(join(worktree, ".github", "x"), context).kind,
+        "worktree-content",
+      );
+      strictEqual(
+        classifyWriteTarget(join(worktree, ".git"), context).kind,
+        "hold",
+      );
+      strictEqual(
+        classifyWriteTarget(join(worktree, "src", "x"), context).kind,
+        "worktree-content",
+      );
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
   });
 });

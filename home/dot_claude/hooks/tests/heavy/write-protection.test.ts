@@ -43,7 +43,8 @@ describe("classifyWriteTarget", () => {
     p: string,
     opts?: { worktreeRootIsContent?: boolean },
     fs: HoldFs = nodeHoldFs,
-  ) => classifyWriteTarget(p, { ...names, fs }, opts).kind;
+    home = names.home,
+  ) => classifyWriteTarget(p, { ...names, home, fs }, opts).kind;
   beforeEach(() => {
     scratch = realpathSync(mkdtempSync(join(tmpdir(), "wp-")));
     repo = join(scratch, "repo");
@@ -58,6 +59,40 @@ describe("classifyWriteTarget", () => {
     for (const rel of ["src/a.ts", ".github/ci.yml", ".gitignore"]) {
       strictEqual(kind(join(wt, rel)), "worktree-content", rel);
     }
+  });
+  it("allows new-root nested worktree content and ignores its marker value", () => {
+    const home = join(scratch, "home");
+    const worktree = join(home, "worktrees", "repo", "a", "b");
+    git("-C", repo, "worktree", "add", "-q", "-b", "feat/a/b", worktree);
+    writeFileSync(
+      join(home, "worktrees", "repo", ".common-dir"),
+      "/elsewhere/.git\n",
+    );
+
+    strictEqual(
+      kind(join(worktree, ".github", "x"), undefined, nodeHoldFs, home),
+      "worktree-content",
+    );
+    strictEqual(
+      kind(join(worktree, "src", "x"), undefined, nodeHoldFs, home),
+      "worktree-content",
+    );
+    strictEqual(
+      kind(join(worktree, ".git"), undefined, nodeHoldFs, home),
+      "hold",
+    );
+  });
+  it("holds a repo B worktree placed under repo A's current root", () => {
+    const home = join(scratch, "home");
+    const repoB = join(scratch, "repo-b");
+    git("init", "-q", repoB);
+    git("-C", repoB, "commit", "-q", "--allow-empty", "-m", "init");
+    const fake = join(home, "worktrees", "repo", "repo-b-worktree");
+    git("-C", repoB, "worktree", "add", "-q", "-b", "fake", fake);
+    strictEqual(
+      kind(join(fake, "src", "y"), undefined, nodeHoldFs, home),
+      "hold",
+    );
   });
   it("finds the worktree when a character before it changes length on lower-casing", () => {
     // U+0130 lower-cases to two code units; an index taken on the lower-cased copy then slices

@@ -1,11 +1,14 @@
 import { lstatSync, readFileSync, realpathSync } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { isAbsolute, relative } from "node:path";
 import {
   errnoOf,
   isUnderRoot,
-  type PathFs,
   resolvePhysicalPath,
 } from "./path-containment.ts";
+import {
+  inspectWorktreePath,
+  type WorktreeVerifyFs,
+} from "./worktree-verify.ts";
 
 // Copied from https://code.claude.com/docs/en/permission-modes.md "Protected paths",
 // fetched 2026-10-06 for Claude Code 2.1.291. `ask` permission rules need this version or later.
@@ -112,7 +115,7 @@ export function findHoldSegment(
   return null;
 }
 
-export type HoldFs = PathFs & { readFile(p: string): string };
+export type HoldFs = WorktreeVerifyFs;
 export const nodeHoldFs: HoldFs = {
   realpath: realpathSync,
   lstat: lstatSync,
@@ -135,55 +138,11 @@ export interface ClassifyOptions {
   trustedBase?: string;
 }
 
-const WORKTREE_DIR = "/.git/worktree/";
-// APFS compares names without case, so match case-insensitively. The index must come from the
-// original string: lower-casing first changes the length of some characters (U+0130) and shifts it.
-const WORKTREE_DIR_PATTERN = /\/\.git\/worktree\//i;
+// Worktree paths are verified by worktree-verify.ts.
 
 // A `..` after the first segment folds a name that may be a symlink (`link/../x` is not `x`).
 export function hasInnerParentSegment(word: string): boolean {
   return word.split("/").some((seg, i) => i > 0 && seg === "..");
-}
-
-type Probe = "absent" | "file" | "other" | "error";
-function probe(fs: HoldFs, p: string): Probe {
-  try {
-    return (fs.lstat(p) as { isFile(): boolean }).isFile() ? "file" : "other";
-  } catch (error) {
-    const code = errnoOf(error);
-    return code === "ENOENT" || code === "ENOTDIR" ? "absent" : "error";
-  }
-}
-
-// The worktree root W when every K3 condition holds, else null (callers then hold).
-function findVerifiedWorktree(path: string, fs: HoldFs): string | null {
-  const at = WORKTREE_DIR_PATTERN.exec(path)?.index ?? -1;
-  if (at < 0) return null;
-  const base = path.slice(0, at + WORKTREE_DIR.length);
-  const repoGit = path.slice(0, at + "/.git".length);
-  const rest = path.slice(base.length).split("/");
-  // Shallowest first; the first .git found decides.
-  for (let i = 1; i <= rest.length; i++) {
-    const w = join(base, ...rest.slice(0, i));
-    const found = probe(fs, join(w, ".git"));
-    if (found === "absent") continue;
-    if (found !== "file") return null;
-    try {
-      const pointer = /^gitdir: (.+)\n?$/.exec(
-        fs.readFile(join(w, ".git")),
-      )?.[1];
-      if (!pointer) return null;
-      const target = fs.realpath(resolve(w, pointer));
-      if (dirname(target) !== join(fs.realpath(repoGit), "worktrees"))
-        return null;
-      const back = fs.readFile(join(target, "gitdir")).trim();
-      if (fs.realpath(back) !== fs.realpath(join(w, ".git"))) return null;
-      return w;
-    } catch {
-      return null;
-    }
-  }
-  return null;
 }
 
 export function classifyWriteTarget(
@@ -197,7 +156,14 @@ export function classifyWriteTarget(
   if (!physical.ok)
     return { kind: "hold", reason: `unresolved path (${physical.code})` };
   try {
-    const w = findVerifiedWorktree(absPath, ctx.fs);
+    const lexicalCheck = inspectWorktreePath(absPath, ctx.home, ctx.fs);
+    const worktreeCheck = lexicalCheck.candidate
+      ? lexicalCheck
+      : inspectWorktreePath(physical.path, ctx.home, ctx.fs);
+    if (worktreeCheck.candidate && worktreeCheck.root === null) {
+      return { kind: "hold", reason: "unverified worktree path" };
+    }
+    const w = worktreeCheck.candidate ? worktreeCheck.root : null;
     if (w !== null) {
       const realW = ctx.fs.realpath(w);
       if (physical.path === realW && opts.worktreeRootIsContent)

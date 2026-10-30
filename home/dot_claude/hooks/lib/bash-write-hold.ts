@@ -57,8 +57,9 @@ const ESCAPE_SEQUENCE = /\\[0-7xuU]/;
 const RUNTIME_REASON = "runtime-derived write target";
 const CWD_CHANGERS = new Set(["cd", "pushd", "popd"]);
 const REDIRECT_OP = /^\d*(?:>>|>\||>&|&>>|&>|>|<)\s*/;
-// Absolute path words that reach into a .git/worktree/ directory.
-const WORKTREE_PATH = /\/[^\s"';|&<>()]*\/\.git\/worktree\/[^\s"';|&<>()]*/gi;
+// Absolute path words under either managed worktree root.
+const WORKTREE_PATH =
+  /\/[^\s"';|&<>()]*(?:\/\.git\/worktree\/[^\s"';|&<>()]*|\/worktrees\/[^\s/"';|&<>()]+\/[^\s"';|&<>()]*)/gi;
 
 // Removes absolute path fragments that K3 verifies as worktree content.
 function maskWorktreeContent(command: string, ctx: HoldContext): string {

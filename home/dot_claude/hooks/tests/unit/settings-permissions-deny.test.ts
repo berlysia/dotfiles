@@ -31,6 +31,9 @@ const requiredDeny = [
   "Edit(//**/.git/info/attributes)",
   "Edit(//**/.git/worktrees/**)",
   "Edit(//**/.git/modules/**)",
+  "Edit(//**/.git/worktree/*/.git)",
+  "Edit(~/worktrees/**/.git)",
+  "Edit(~/worktrees/*/.common-dir)",
 ];
 
 const envReadRules = [
@@ -73,6 +76,32 @@ const absoluteReadGlobs = (rules: string[]) =>
     .map((glob) => glob.slice(1));
 const denyGlobs = absoluteReadGlobs(settings.deny);
 const askGlobs = absoluteReadGlobs(settings.ask);
+const editGlobs = (rules: string[]) =>
+  rules
+    .map((rule) => /^Edit\((.*)\)$/.exec(rule)?.[1])
+    .filter((glob): glob is string => glob !== undefined)
+    .map((glob) =>
+      glob.startsWith("//")
+        ? glob.slice(1)
+        : glob.startsWith("~/")
+          ? `/home/u/${glob.slice(2)}`
+          : glob,
+    );
+const readGlobs = (rules: string[]) =>
+  rules
+    .map((rule) => /^Read\((.*)\)$/.exec(rule)?.[1])
+    .filter((glob): glob is string => glob !== undefined)
+    .map((glob) =>
+      glob.startsWith("//")
+        ? glob.slice(1)
+        : glob.startsWith("~/")
+          ? `/home/u/${glob.slice(2)}`
+          : glob,
+    );
+const editAllowGlobs = editGlobs(settings.allow);
+const editDenyGlobs = editGlobs(settings.deny);
+const readAllowGlobs = readGlobs(settings.allow);
+const readDenyGlobs = readGlobs(settings.deny);
 
 test("no Read deny or ask matches .env.example or .env.sample", () => {
   const samples = [
@@ -104,6 +133,39 @@ test("absolute-path Read denies match the trash outside the cwd", () => {
     (p) => !denyGlobs.some((glob) => matchesGlob(p, glob)),
   );
   assert.deepStrictEqual(unmatched, []);
+});
+
+test("new-root worktree content is allowed and its gitfiles and marker are denied", () => {
+  const source = "/home/u/worktrees/r/b/src/x";
+  assert.equal(
+    editAllowGlobs.some((glob) => matchesGlob(source, glob)),
+    true,
+  );
+  assert.equal(
+    editDenyGlobs.some((glob) => matchesGlob(source, glob)),
+    false,
+  );
+  assert.equal(
+    readAllowGlobs.some((glob) => matchesGlob(source, glob)),
+    true,
+  );
+  assert.equal(
+    readDenyGlobs.some((glob) => matchesGlob(source, glob)),
+    false,
+  );
+
+  const protectedPaths = [
+    "/home/u/worktrees/r/b/.git",
+    "/home/u/worktrees/r/a/b/.git",
+    "/home/u/worktrees/r/.common-dir",
+  ];
+  for (const path of protectedPaths) {
+    assert.equal(
+      editDenyGlobs.some((glob) => matchesGlob(path, glob)),
+      true,
+      path,
+    );
+  }
 });
 
 test("uv stays allowed (not denied)", () => {

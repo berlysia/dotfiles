@@ -8,7 +8,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { describe, it } from "node:test";
 import {
   findRepoToplevel,
@@ -92,6 +92,20 @@ function addWorktree(root: string, name: string): string {
   return worktree;
 }
 
+function addCurrentRootWorktree(
+  root: string,
+  home: string,
+  name: string,
+): string {
+  const admin = join(root, ".git", "worktrees", name);
+  const worktree = join(home, "worktrees", basename(root), name);
+  mkdirSync(admin, { recursive: true });
+  mkdirSync(join(worktree, "src"), { recursive: true });
+  writeFileSync(join(worktree, ".git"), `gitdir: ${admin}\n`);
+  writeFileSync(join(admin, "gitdir"), `${join(worktree, ".git")}\n`);
+  return worktree;
+}
+
 describe("workflow-files: findRepoToplevel (spec K2)", () => {
   it("returns the project root for a file in the main checkout", () => {
     const { root } = repoWithWorktree();
@@ -100,6 +114,16 @@ describe("workflow-files: findRepoToplevel (spec K2)", () => {
 
   it("returns a linked worktree of the same repository", () => {
     const { root, worktree } = repoWithWorktree();
+    strictEqual(
+      findRepoToplevel(join(worktree, "src", "a.ts"), root),
+      worktree,
+    );
+  });
+
+  it("returns a linked worktree from the new home worktree root", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "wf-current-root-")));
+    const home = join(root, "home");
+    const worktree = addCurrentRootWorktree(root, home, "a-b");
     strictEqual(
       findRepoToplevel(join(worktree, "src", "a.ts"), root),
       worktree,

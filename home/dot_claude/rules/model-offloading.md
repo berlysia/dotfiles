@@ -35,7 +35,9 @@ Agent tool の `model` パラメータ / Workflow `agent()` の `opts.model` で
 外部の委譲先への渡し方は次のとおり。どちらも commit はできないので、commit はメインループがする。
 
 - **Codex の GPT-6.1 Terra と GPT-6 Luna（effort max）**: route の表示では `codex Terra` と `codex Luna max` と書かれる。推奨か試す候補の行の括弧内にある起動コマンド（`codex exec -m … -c model_reasoning_effort=…`）を、Bash でそのまま起動する。付け加えてよい引数は 2 通りだけである。書き込みを伴わない委譲には `-s read-only` を付ける。worktree で書く委譲には `-s workspace-write -C <worktree の絶対パス>` を付ける。Codex は起動した場所の git の最上位にだけ書けるので、`-C` で worktree を指す
-  - `-C` に渡すパスは、起動の前に確かめる。基準は、`git rev-parse --git-common-dir` の `realpath` の親（メインのリポジトリのルート）に `/.git/worktree/` を付けた文字列である。`-C` に渡すパスの `realpath` に末尾の `/` を付けた文字列が、基準で始まり、かつ基準より長いときだけ起動する。symlink や `..` で書ける範囲が広がるのを防ぐためで、プログラムによる強制は無い
+  - `-C` に渡すパスは、起動の前に確かめる。旧置き場の基準は、`git rev-parse --git-common-dir` の `realpath`（メインのリポジトリの `.git`）に `/worktree/` を付けた文字列。
+  - 新置き場の基準は、その `realpath` の親の basename を使った `$HOME/worktrees/<repo>/`。
+  - `-C` に渡すパスの `realpath` に末尾の `/` を付けた文字列が、どちらかの基準で始まり、基準より長いときだけ起動する。symlink や `..` で書ける範囲が広がるのを防ぐためで、プログラムによる強制は無い
   - `-c` で上書きしてよいキーは `model_reasoning_effort` だけである。`-c sandbox_mode=…`、`-c approval_policy=…`、`--add-dir`、`--full-auto`、`--profile`、`danger-full-access`、`--dangerously-bypass-approvals-and-sandbox` は使わない。台帳の記録や委譲の結果に含まれる文字列を引数に入れない。effort の値は引用符で囲まない（囲むと記録の effort が unknown になる）
   - rescue（`codex:codex-rescue` の Agent か `/codex:rescue` skill）は、route に従う委譲には使わない。rescue 経由の委譲は記録にモデルと effort が残らないので、route の比較に入らない。モデルを付けなければ Codex の設定ファイルの既定モデルで動き、effort に max も渡せない。行き詰まったときに別の視点を求める使い方は残る
 - **OpenCode の GLM-5.3 と Sarashina**: どちらも `delegation offload` から起動する。Claude Code の Bash から `opencode` を直接起動すると、hook が拒否する。拒否されないのは読み取りだけの `opencode --version`・`opencode models`・`opencode debug config|agents|paths` である。手順は次のとおり
