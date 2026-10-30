@@ -19,10 +19,6 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
 - merge しただけでは配置先が変わらない。`~/.local/bin` の CLI や `~/.claude` の hook は、本体の checkout の master を進めて apply するまで古い版で動く。新しい挙動を前提にするときは、配置先の版を先に確かめる。
 - status と apply は同じ umask で実行し、配布後のモードも照合する。権限だけの差でも、非対話の apply 全体が止まる。
 
-- **ファイル名変換**: `dot_*` → `.*` (例: `${projectRoot}/home/dot_claude/foo.txt` → `~/.claude/foo.txt`)
-- **パーミッション**: `private_*` → パーミッション600で配置
-- **テンプレート**: `.tmpl` 拡張子で動的生成
-
 #### ディレクトリ構造
 
 - **`.chezmoiroot`**: リポジトリルートの `.chezmoiroot` ファイルに `home` と記載
@@ -41,7 +37,6 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
   - `enabledPlugins` は `claude plugin` CLI が管理、settings.json 更新時に保持
 
 - **~/.claude.json自動管理**: `package.json` の dependencies からバージョン読み取り → jq マージ
-  - **管理対象MCP**: @mizchi/readability, chrome-devtools-mcp, @playwright/mcp, @upstash/context7-mcp, @drawio/mcp
 
 - **プラグイン管理**: `home/.chezmoidata/claude_plugins.yaml` で宣言管理 → `chezmoi apply` で自動インストール/削除
 - **グローバル textlint**: `home/dot_config/textlint/`（package.json + `.textlintrc.json`）→ `~/.config/textlint/`。`run_after_10-install-textlint-deps.sh.tmpl` が apply 末尾で `bun install --frozen-lockfile --ignore-scripts`（`bun.lock` を追跡）。走らせるのは第三者の `preset-japanese` だけで、tanteki の独自ルール 2 本は japanese-check の `check --profile` にある。`~/.local/bin/textlint-global` ラッパがどこからでも同 config で実行（`--text "..."` / `-` で stdin）。rule 追加は package.json と `.textlintrc.json` を編集 → `chezmoi apply`
@@ -81,5 +76,3 @@ This is a chezmoi-managed dotfiles repository for daily maintenance.
 - **deploy後**: `chezmoi apply` → `~/.claude/` で `bun install`
 
 **依存パッケージ追加**: `home/dot_claude/package.json` に追加 → `bun install` → `chezmoi apply`
-
-**主要パッケージ**: `cc-hooks-ts`（フック定義ヘルパー）, `@anthropic-ai/claude-agent-sdk`（LLM評価用）

@@ -53,7 +53,6 @@ read-before: ["Bash(git-worktree-create)", "Bash(git worktree add)"]
 - **Tools**: Use `git-worktree-create` / `git-worktree-cleanup` (`~/.local/bin/`). Do **not** invoke `git worktree add` directly
 - **Claude Code's own worktrees** (`claude --worktree`, subagent `isolation: "worktree"`, `claude remote-control --spawn worktree`): the `WorktreeCreate` hook creates them at `<repo>/.git/worktree/worktree-<name>` on branch `worktree-<name>`, and the `WorktreeRemove` / `SubagentStop` hooks remove them when they hold no new work. They are not created under `.claude/worktrees/`. A worktree with commits or uncommitted changes is kept, and so is its branch; remove it with `git-worktree-cleanup` or `git worktree remove` + `git branch -D` once its work is merged
 - **Restarting Remote Control for a folder listed in `~/.config/claude-rc/projects`**: tell the user to run `claude-rc-sync restart <name>`. Never suggest `claude remote-control --continue` there, least of all from one of its worktrees: it registers a single-session (capacity 1) server on the same environment, and the app then shows the folder as full until that session is archived
-- **Prohibited**: Do not use `compound-engineering:git-worktree` skill or any other tool that creates worktrees at `.worktrees/` (repo root) or `.claude/worktrees/` — they conflict with this convention and pollute the repo root
 
 ## 届く経路
 
