@@ -79,6 +79,7 @@ const ROWS = [
   { key: "gemini-polish", expect: "gemini-polish" },
   { key: "git-worktree-cleanup", expect: "git-worktree-cleanup" },
   { key: "git-worktree-create", expect: "git-worktree-create" },
+  { key: "git-worktree-deps", expect: "git-worktree-deps" },
   { key: "hook-timing", expect: "hook-timing" },
   { key: "opencode-usage", ...AI_USAGE },
   { key: "tailnet-ssh.mts", expect: "tailnet-ssh" },
@@ -147,6 +148,7 @@ const PROBES = [
   ["claude-rc-sync", ["restart", "--help"]],
   ["git-worktree-cleanup", ["probe-branch", "--help"]],
   ["git-worktree-create", ["probe-branch", "--help"]],
+  ["git-worktree-deps", ["probe-dir", "--help"]],
 ];
 const STUB_NAMES = [
   "systemctl",

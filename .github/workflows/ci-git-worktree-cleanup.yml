@@ -6,16 +6,20 @@ on:
     paths:
       - "home/dot_local/bin/executable_git-worktree-cleanup"
       - "home/dot_local/bin/executable_git-worktree-create"
+      - "home/dot_local/bin/executable_git-worktree-deps"
       - "tests/git-worktree-cleanup/**"
       - "tests/git-worktree-create/**"
+      - "tests/git-worktree-deps/**"
       - ".github/workflows/ci-git-worktree-cleanup.yml"
   pull_request:
     branches: [master, main]
     paths:
       - "home/dot_local/bin/executable_git-worktree-cleanup"
       - "home/dot_local/bin/executable_git-worktree-create"
+      - "home/dot_local/bin/executable_git-worktree-deps"
       - "tests/git-worktree-cleanup/**"
       - "tests/git-worktree-create/**"
+      - "tests/git-worktree-deps/**"
       - ".github/workflows/ci-git-worktree-cleanup.yml"
   workflow_dispatch:
 
@@ -45,3 +49,5 @@ jobs:
         run: /bin/bash tests/git-worktree-cleanup/run.sh
       - name: Run git-worktree-create tests
         run: /bin/bash tests/git-worktree-create/run.sh
+      - name: Run git-worktree-deps tests
+        run: /bin/bash tests/git-worktree-deps/run.sh
