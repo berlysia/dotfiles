@@ -89,10 +89,49 @@ permissions:
   contents: read
 
 jobs:
-  check:
-    name: TypeScript Check
+  # Runs before the test jobs so that a lint or type error fails in seconds, without spending
+  # runner time on the suites.
+  lint:
+    name: Lint and type check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js with bun
+        uses: ./.github/actions/setup-node-bun
+
+      # format:check はリポジトリ全体が対象で paths フィルタと両立しないため
+      # ci-format.yml に分離した。ここは TS スコープの lint のみを担う。
+      - name: Lint check
+        run: bun run lint:oxlint
+
+      - name: Type check
+        run: bun run typecheck
+
+  test:
+    name: Tests (${{ matrix.suite }})
+    needs: lint
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: unit
+            run: bun run test
+          # Wall-clock assertions (ReDoS guards, wrapper timing) live here so that
+          # the completion gate and pre-commit, which run `test`, never race them.
+          - suite: perf
+            run: bun run test:perf
+          # Tests that start git or are slow under load. They run serially here and
+          # not in `test`, so the completion gate and pre-commit never wait on them.
+          - suite: heavy
+            run: bun run test:heavy
 
     steps:
       - name: Checkout repository
@@ -137,31 +176,14 @@ jobs:
           scripts/fetch-japanese-check-dictionary.sh "${runtime}/unidic" "${RUNNER_TEMP}/dictionary-cache/lindera-unidic.zip"
           echo "JAPANESE_CHECK_RUNTIME_DIR=${runtime}" >> "$GITHUB_ENV"
 
-      - name: Type check
-        run: bun run typecheck
-
       - name: Run tests
-        run: bun run test
-
-      # Wall-clock assertions (ReDoS guards, wrapper timing) live here so that
-      # the completion gate and pre-commit, which run `test`, never race them.
-      - name: Run perf tests
-        run: bun run test:perf
-
-      # Tests that start git or are slow under load. They run serially here and
-      # not in `test`, so the completion gate and pre-commit never wait on them.
-      - name: Run heavy tests
-        run: bun run test:heavy
-
-      # format:check はリポジトリ全体が対象で paths フィルタと両立しないため
-      # ci-format.yml に分離した。ここは TS スコープの lint のみを担う。
-      - name: Lint check
-        run: bun run lint:oxlint
+        run: ${{ matrix.run }}
 
   # The adapter loads a native package and reads a dictionary through realpath checks, so run the
   # tests that exercise those on macOS too. The other hooks tests do not depend on the platform.
   japanese-check-macos:
     name: japanese-check (macOS)
+    needs: lint
     runs-on: macos-latest
     timeout-minutes: 15
 
