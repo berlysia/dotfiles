@@ -6,6 +6,7 @@ import {
   realpathSync,
   rmSync,
   symlinkSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -126,6 +127,36 @@ describe("assessBashCommand", () => {
   it("holds on a syntax error", async () => {
     strictEqual(await held("echo 'unterminated"), true);
   });
+
+  it("masks verified absolute new-root content and holds the marker and gitfile", async () => {
+    const home = join(cwd, "home");
+    const commonDir = join(cwd, "repo", ".git");
+    const worktree = join(home, "worktrees", "repo", "b");
+    const adminDir = join(commonDir, "worktrees", "admin");
+    mkdirSync(adminDir, { recursive: true });
+    mkdirSync(join(worktree, "src"), { recursive: true });
+    mkdirSync(join(commonDir, "objects"), { recursive: true });
+    writeFileSync(join(commonDir, "HEAD"), "ref: refs/heads/main\n");
+    writeFileSync(join(worktree, ".git"), `gitdir: ${adminDir}\n`);
+    writeFileSync(join(adminDir, "gitdir"), `${join(worktree, ".git")}\n`);
+    const context = {
+      cwd,
+      projectRoot: cwd,
+      home,
+      chezmoiSource: "/src/chezmoi/home",
+      fs: nodeHoldFs,
+    };
+    const command = async (path: string) =>
+      (await assessBashCommand(`echo x > ${path}`, context)).reason !== null;
+
+    strictEqual(await command(join(worktree, "src", "x")), false);
+    strictEqual(
+      await command(join(home, "worktrees", "repo", ".common-dir")),
+      true,
+    );
+    strictEqual(await command(join(worktree, ".git")), true);
+  });
+
   it("holds when the parser gives up", async () => {
     await withParseBudget(0, async () => {
       strictEqual(await held("ls budget-probe-dir"), true);

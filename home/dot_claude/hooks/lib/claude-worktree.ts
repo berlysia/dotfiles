@@ -1,9 +1,25 @@
 import { lstatSync, realpathSync } from "node:fs";
-import { basename, dirname, isAbsolute, join } from "node:path";
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
 import { createGit, defaultDeps } from "./claude-worktree-git.ts";
 import type { Deps } from "./claude-worktree-git.ts";
+import {
+  currentRoot,
+  isUnderManagedRoot,
+  legacyRoot,
+  repoName,
+} from "./worktree-locations.ts";
+import { formatMarkerFailure, reserveMarker } from "./worktree-marker.ts";
+import type { MarkerDecision } from "./worktree-marker.ts";
 
-// Creates Claude Code's worktrees under <git-common-dir>/worktree/worktree-<name>
+// Creates Claude Code's worktrees under ~/worktrees/<repo>/worktree-<name>
 // (spec K1-K3, K11). Removal (K5) and SubagentStop cleanup (K6) live in this
 // module too so they share one definition of "no new work" (K4).
 
@@ -166,19 +182,14 @@ function createOnce(
     );
   }
 
-  const worktreeDir = join(commonDir, "worktree");
-  const target = join(worktreeDir, branch);
+  const home = process.env.HOME;
+  if (!home) return fail("git-failed", "HOME is not set");
+  let target: string;
   try {
-    if (lstatSync(worktreeDir).isSymbolicLink()) {
-      return fail("symlinked-dir", `${worktreeDir} is a symbolic link`);
-    }
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-      return fail(
-        "git-failed",
-        `cannot inspect ${worktreeDir}: ${String(error)}`,
-      );
-    }
+    repoName(commonDir);
+    target = join(currentRoot(commonDir, home), branch);
+  } catch {
+    return fail("git-failed", "git common dir is not supported for worktrees");
   }
 
   const registered = entries.find((entry) => entry.path === target);
@@ -261,6 +272,22 @@ function createOnce(
     return fail(
       "git-failed",
       `unexpected base commit from git: ${JSON.stringify(baseSha)}`,
+    );
+  }
+
+  let markerDecision: MarkerDecision;
+  try {
+    markerDecision = reserveMarker(commonDir, home, target);
+  } catch (error) {
+    return fail(
+      "git-failed",
+      `could not reserve worktree location: ${String(error)}`,
+    );
+  }
+  if (markerDecision.kind !== "ok-same") {
+    return fail(
+      markerDecision.kind === "unsafe-path" ? "symlinked-dir" : "path-occupied",
+      formatMarkerFailure(markerDecision, commonDir, home),
     );
   }
 
@@ -394,9 +421,8 @@ const AGENT_ID_PATTERN = /^[A-Za-z0-9]{1,64}$/;
 type RepoContext = {
   main: WorktreeEntry;
   entries: WorktreeEntry[];
-  // realpath of the directory holding managed worktrees.
-  managedDir: string;
-  managedDirIsSymlink: boolean;
+  commonDir: string;
+  home: string;
 };
 
 type RepoLookup =
@@ -455,14 +481,26 @@ function lookupRepo(git: Git, cwd: string): RepoLookup {
       message: `cannot resolve git common dir: ${String(error)}`,
     };
   }
-  const managedDir = join(commonDir, "worktree");
-  let managedDirIsSymlink = false;
-  try {
-    managedDirIsSymlink = lstatSync(managedDir).isSymbolicLink();
-  } catch {
-    // Absent is fine: nothing is managed there yet.
+  const home = process.env.HOME;
+  if (!home) {
+    return {
+      ok: false,
+      kind: "git-failed",
+      message: "HOME is not set",
+    };
   }
-  return { ok: true, repo: { main, entries, managedDir, managedDirIsSymlink } };
+  try {
+    repoName(commonDir);
+    currentRoot(commonDir, home);
+    legacyRoot(commonDir);
+  } catch {
+    return {
+      ok: false,
+      kind: "git-failed",
+      message: "git common dir is not supported for worktrees",
+    };
+  }
+  return { ok: true, repo: { main, entries, commonDir, home } };
 }
 
 // realpath for a path that may not exist: resolve the deepest existing
@@ -491,14 +529,86 @@ function pathExists(path: string): boolean {
   }
 }
 
-// "Managed" is decided by location only: directly under <common>/worktree/ and
-// named worktree-*. HEAD is not part of it.
+// Registration is checked separately; this function applies the shared location rule.
 function isManagedLocation(repo: RepoContext, canonical: string): boolean {
+  return isUnderManagedRoot(canonical, repo.commonDir, repo.home);
+}
+
+function managedBranchName(repo: RepoContext, path: string): string | null {
+  const candidate = resolve(path);
+  for (const root of [
+    currentRoot(repo.commonDir, repo.home),
+    legacyRoot(repo.commonDir),
+  ]) {
+    const rel = relative(resolve(root), candidate);
+    if (
+      rel !== "" &&
+      rel !== ".." &&
+      !rel.startsWith(`..${sep}`) &&
+      !isAbsolute(rel)
+    ) {
+      return rel.split(sep).join("/");
+    }
+  }
+  return null;
+}
+
+function pathIsUnder(path: string, root: string): boolean {
+  const rel = relative(root, path);
   return (
-    !repo.managedDirIsSymlink &&
-    dirname(canonical) === repo.managedDir &&
-    basename(canonical).startsWith("worktree-")
+    rel !== "" &&
+    rel !== ".." &&
+    !rel.startsWith(`..${sep}`) &&
+    !isAbsolute(rel)
   );
+}
+
+function verifyManagedPath(repo: RepoContext, path: string): string | null {
+  const candidate = resolve(path);
+  if (!isUnderManagedRoot(candidate, repo.commonDir, repo.home)) {
+    return `${path} is outside the managed worktree roots`;
+  }
+
+  const current = resolve(currentRoot(repo.commonDir, repo.home));
+  const legacy = resolve(legacyRoot(repo.commonDir));
+  const worktrees = resolve(join(repo.home, "worktrees"));
+  let root: string;
+  let walkRoot: string;
+  if (pathIsUnder(candidate, current)) {
+    root = current;
+    walkRoot = worktrees;
+  } else if (pathIsUnder(candidate, legacy)) {
+    root = legacy;
+    walkRoot = legacy;
+  } else {
+    return `${path} is outside the managed worktree roots`;
+  }
+
+  let currentPath = walkRoot;
+  const segments = relative(walkRoot, candidate).split(sep).filter(Boolean);
+  for (const segment of ["", ...segments]) {
+    if (segment !== "") currentPath = join(currentPath, segment);
+    try {
+      const stat = lstatSync(currentPath);
+      if (stat.isSymbolicLink()) {
+        return `${currentPath} is a symbolic link`;
+      }
+      if (!stat.isDirectory()) return `${currentPath} is not a directory`;
+    } catch {
+      return `cannot inspect managed worktree path ${currentPath}`;
+    }
+  }
+
+  try {
+    const realRoot = realpathSync(root);
+    const realPath = realpathSync(candidate);
+    if (!pathIsUnder(realPath, realRoot)) {
+      return `${path} resolves outside ${root}`;
+    }
+  } catch {
+    return `cannot resolve managed worktree path ${path}`;
+  }
+  return null;
 }
 
 type HeadState =
@@ -625,16 +735,16 @@ export function removeWorktree(
   if (!isManagedLocation(repo, canonical)) {
     return fail(
       "outside-managed-dirs",
-      `${worktreePath} is not a worktree-* directory directly under ${repo.managedDir}`,
+      `${worktreePath} is outside the managed worktree roots`,
     );
   }
   if (!registered) {
     return fail(
       "not-registered",
-      `${worktreePath} is under ${repo.managedDir} but is not a registered worktree`,
+      `${worktreePath} is under a managed root but is not a registered worktree`,
     );
   }
-  const branchName = basename(canonical);
+  const branchName = managedBranchName(repo, canonical) ?? basename(canonical);
   const ref = `refs/heads/${branchName}`;
   // 3. Registered but the directory is gone: leave registration and branch.
   if (registered.prunable || !exists) {
@@ -657,6 +767,11 @@ export function removeWorktree(
       "unexpected-head",
       `${worktreePath} has HEAD ${head.ref ?? "(detached)"}, not ${ref}; leaving it alone`,
     );
+  }
+
+  const unsafePath = verifyManagedPath(repo, registered.path);
+  if (unsafePath) {
+    return fail("outside-managed-dirs", `${unsafePath}; leaving it alone`);
   }
 
   // 5. One forced remove, with the path git itself reported.
@@ -747,8 +862,7 @@ export function cleanupSubagentWorktree(
   const entry = repo.entries.find(
     (candidate) =>
       candidate.branch === ref &&
-      !repo.managedDirIsSymlink &&
-      dirname(canonicalize(candidate.path)) === repo.managedDir,
+      isUnderManagedRoot(candidate.path, repo.commonDir, repo.home),
   );
   if (!entry) return none;
   if (basename(canonicalize(entry.path)) !== dirName) return none;
@@ -765,6 +879,8 @@ export function cleanupSubagentWorktree(
   const status = git(["status", "--porcelain"], "read", entry.path);
   if (!status.ok) return kept("git-failed");
   if (status.stdout !== "") return kept("has-changes");
+
+  if (verifyManagedPath(repo, entry.path)) return kept("git-failed");
 
   // No --force: git re-checks that the worktree is clean.
   const removal = git(

@@ -6,6 +6,9 @@
 # regular callers (the launcher, the worktree tools) from mounting or deleting in the wrong place by accident.
 # They are not a privilege boundary.
 set -euo pipefail
+SCRIPT_DIR=$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+# shellcheck source=../lib/worktree-location.sh
+. "$SCRIPT_DIR/../lib/worktree-location.sh"
 
 CONTRACT=1
 MAX_PACKAGES=500
@@ -178,31 +181,98 @@ lock() {
 
 # Associative arrays are keyed by key_of(path), never by a path.
 declare -a WORKTREES=() PKG_DIRS=() PKG_KEYS=()
-declare -A IS_WT=() WANT=() ABORT_WT=()
-ABORT_ALL=0 PARTIAL=0 MISSED=0 WORK='' WT='' ROOT=''   # MISSED: some package was never considered for mounting
+declare -A IS_WT=() WANT=() ABORT_WT=() WORKTREE_SOURCE=()
+ABORT_ALL=0 PARTIAL=0 MISSED=0 WORK='' WT='' ROOT='' COMMON=''   # MISSED: some package was never considered for mounting
+
+# A listed worktree must still be below its physical managed root, and every path component from that root to the
+# worktree must remain a real directory. Keep this check beside the mount operation because a listed path can be
+# replaced after git worktree list was read.
+managed_worktree_is_safe() { # lexical worktree common_dir -> 0 when physical containment and symlink checks pass
+  local path=$1 common_dir=$2 current legacy root walk_root relative_path current_path segment path_real root_real
+  local -a path_segments=()
+  path=$(_worktree_normalize_path "$path") || return 1
+  isUnderManagedRoot "$path" "$common_dir" "$HOME" || return 1
+  current=$(currentRoot "$common_dir" "$HOME") || return 1
+  current=${current%/}
+  legacy=$(legacyRoot "$common_dir") || return 1
+  legacy=${legacy%/}
+  if [[ "$path" == "$current/"* ]]; then
+    root=$current
+    walk_root="${HOME%/}/worktrees"
+  elif [[ "$path" == "$legacy/"* ]]; then
+    root=$legacy
+    walk_root=$legacy
+  else
+    return 1
+  fi
+  if [[ -L "$walk_root" || ! -d "$walk_root" ]]; then return 1; fi
+  relative_path=${path#"$walk_root"/}
+  current_path=$walk_root
+  IFS=/ read -r -a path_segments <<<"$relative_path"
+  for segment in "${path_segments[@]}"; do
+    [[ -n "$segment" ]] || return 1
+    current_path="$current_path/$segment"
+    if [[ -L "$current_path" || ! -d "$current_path" ]]; then return 1; fi
+  done
+  path_real=$(canon "$path") || return 1
+  root_real=$(canon "$root") || return 1
+  [[ "$path_real" == "$root_real/"* ]]
+}
+
+managed_worktree_roots_are_safe() { # COMMON -> 0 when the current and legacy roots and the current parent are not symlinks
+  local current legacy
+  current=$(currentRoot "$COMMON" "$HOME") || return 1
+  current=${current%/}
+  legacy=$(legacyRoot "$COMMON") || return 1
+  legacy=${legacy%/}
+  [[ ! -L "${HOME%/}/worktrees" && ! -L "$current" && ! -L "$legacy" ]]
+}
 
 # root -> WORKTREES / IS_WT (spec K2, K6). 1: the list is unusable. 2: the list is usable, but a listed
 # worktree cannot be resolved, so reclaim must not trust it (attach and remove, which never reclaim, go on).
 load_worktrees() {
-  local root=$1 f c first=1 main_ok=0 unresolved=0
+  local root=$1 f raw c first=1 main_ok=0 unresolved=0 wk
   if [[ ! -e "$root/.git" ]]; then warn "the repository is not visible: $root"; return 1; fi
+  COMMON=$(git -C "$root" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || {
+    warn "could not resolve the common directory of $root"; return 1;
+  }
+  COMMON=$(canon "$COMMON") || { warn "could not resolve the common directory of $root"; return 1; }
+  if ! managed_worktree_roots_are_safe; then
+    warn "a managed worktree root is a symlink; its VM-local node_modules are kept"
+    ABORT_ALL=1
+  fi
   # 9>&-: a long-lived git child (fsmonitor) must not keep the lock
   if ! git -C "$root" worktree list --porcelain -z >"$WORK/worktrees" 2>/dev/null 9>&-; then
     warn "git worktree list failed in $root"; return 1
   fi
   while IFS= read -r -d '' f; do
     [[ "$f" == "worktree "* ]] || continue
+    raw=${f#worktree }
     if [[ $first -eq 1 ]]; then   # git lists the main worktree first
       first=0
-      if c=$(canon "${f#worktree }") && [[ "$c" == "$root" ]]; then main_ok=1; WORKTREES+=("$c"); IS_WT[$(key_of "$c")]=1; fi
+      if c=$(canon "$raw") && [[ "$c" == "$root" ]]; then
+        main_ok=1; WORKTREES+=("$c"); IS_WT[$(key_of "$c")]=1
+        WORKTREE_SOURCE[$(key_of "$c")]=$raw
+      fi
       continue
     fi
-    if ! c=$(canon "${f#worktree }") || has_ctrl "$c"; then   # may be only temporarily invisible: keep its stores
+    if has_ctrl "$raw" || ! isUnderManagedRoot "$raw" "$COMMON" "$HOME"; then
+      warn "skipping a worktree outside the repository: $raw"
+      continue
+    fi
+    if ! c=$(canon "$raw") || has_ctrl "$c"; then   # may be only temporarily invisible: keep its stores
       warn "a worktree of $root cannot be resolved; its VM-local node_modules are kept (recover: git -C $root worktree prune)"
       unresolved=1; continue
     fi
-    if [[ "$c" != "$root/.git/worktree/"* ]]; then warn "skipping a worktree outside the repository: $c"; continue; fi
-    WORKTREES+=("$c"); IS_WT[$(key_of "$c")]=1
+    if ! isUnderManagedRoot "$c" "$COMMON" "$HOME" || ! managed_worktree_is_safe "$raw" "$COMMON"; then
+      warn "managed worktree path is unsafe; keeping its VM-local node_modules: $raw"
+      wk=$(key_of "$raw")
+      WORKTREES+=("$raw"); IS_WT[$wk]=1; WORKTREE_SOURCE[$wk]=$raw
+      ABORT_WT[$wk]=1; MISSED=1
+      continue
+    fi
+    wk=$(key_of "$c")
+    WORKTREES+=("$c"); IS_WT[$wk]=1; WORKTREE_SOURCE[$wk]=$raw
   done <"$WORK/worktrees"
   # An empty list fails here too: it has no first entry.
   if [[ $main_ok -eq 0 ]]; then warn "the worktree list of $root does not start with $root"; return 1; fi
@@ -265,7 +335,16 @@ report_pkg() {
 }
 # dir key -> 0 when dir/node_modules is the VM-local one (spec K6, K9)
 attach_pkg() {
-  local dir=$1 key=$2 nm="$1/node_modules" data="$STORE/$2/data"
+  local dir=$1 key=$2 nm="$1/node_modules" data="$STORE/$2/data" owner owner_key source
+  owner=$(owner_of "$dir")
+  if [[ -n "$owner" && "$owner" != "$ROOT" ]]; then
+    owner_key=$(key_of "$owner")
+    source=${WORKTREE_SOURCE[$owner_key]:-$owner}
+    if [[ -n "${ABORT_WT[$owner_key]:-}" ]] || ! managed_worktree_is_safe "$source" "$COMMON"; then
+      warn "managed worktree path changed or is unsafe; no node_modules were attached: $source"
+      ABORT_WT[$owner_key]=1; PARTIAL=1; emit skipped "$dir"; return 1
+    fi
+  fi
   if [[ -L "$nm" ]]; then warn "$nm is a symlink; it stays shared with the host"; emit skipped "$dir"; return 1; fi
   if [[ ! -d "$data" ]] && ! priv mkstore "$key" "$dir"; then warn "could not create the store for $dir"; return 1; fi
   if [[ -d "$nm" && "$(ino "$nm")" == "$(ino "$data")" ]]; then report_pkg "$dir" "$key"; return 0; fi
@@ -327,17 +406,27 @@ cmd_sync() {
   load_worktrees "$ROOT" || ABORT_ALL=1
   for wt in "${WORKTREES[@]}"; do collect_packages "$wt"; done
   attach_all
+  if ! managed_worktree_roots_are_safe; then
+    warn "a managed worktree root changed; its VM-local node_modules are kept"
+    ABORT_ALL=1
+  fi
   if [[ $ABORT_ALL -eq 0 ]]; then reclaim "$ROOT"; else warn "kept every VM-local node_modules of $ROOT this time"; fi
   finish
 }
 # path -> WT / ROOT when the path passes the worktree rule of spec K6 (membership in the list is checked
 # under the lock by the caller)
 resolve_worktree() {
-  local common
-  WT=$(canon "$1") || return 1
+  local requested=$1 common
+  [[ "$requested" == /* ]] || requested="$PWD/$requested"
+  WT=$(canon "$requested") || return 1
   common=$(git -C "$WT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
+  common=$(canon "$common") || return 1
   ROOT=$(canon "$(dirname -- "$common")") || return 1
-  ! has_ctrl "$WT" && [[ "$WT" == "$ROOT" || "$WT" == "$ROOT/.git/worktree/"* ]]
+  has_ctrl "$WT" && return 1
+  # The main checkout itself stays a target, as before the move.
+  [[ "$WT" == "$ROOT" ]] && return 0
+  isUnderManagedRoot "$requested" "$common" "$HOME" \
+    && isUnderManagedRoot "$WT" "$common" "$HOME" && managed_worktree_is_safe "$requested" "$common"
 }
 # worktree
 cmd_attach() {

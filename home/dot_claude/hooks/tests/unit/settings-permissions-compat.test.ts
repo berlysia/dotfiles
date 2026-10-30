@@ -95,7 +95,8 @@ describe("settings entries after the matcher change", () => {
       deny
         .filter((r) => /^Edit\(.*\/\.git(\/worktree(\/\*)?)?\)$/.test(r))
         // a worktree's own .git is a file (the gitdir pointer), not a directory
-        .filter((r) => !/\/\.git\/worktree\/\*\/\.git\)$/.test(r))
+        .filter((r) => !r.endsWith("/.git/worktree/*/.git)"))
+        .filter((r) => r !== "Edit(~/worktrees/**/.git)")
         .join("\n"),
       "",
     );
@@ -180,6 +181,7 @@ describe("settings entries after the matcher change", () => {
       true,
       true,
     ],
+    ["allow", "Edit", "/home/u/worktrees/r/b/src/a.ts", true, false],
     ["allow", "Edit", "/home/u/.local/bin/agent-vm", false, true],
     [
       "allow",
@@ -231,6 +233,9 @@ describe("settings entries after the matcher change", () => {
       false,
       false,
     ],
+    ["deny", "Edit", "/home/u/worktrees/r/b/.git", true, false],
+    ["deny", "Edit", "/home/u/worktrees/r/a/b/.git", true, false],
+    ["deny", "Edit", "/home/u/worktrees/r/.common-dir", true, false],
   ];
   for (const [list, tool, path, expected] of rows) {
     it(`${list} ${tool} ${path} -> ${expected ? "matches" : "no match"}`, async () => {
@@ -349,6 +354,7 @@ describe("settings evaluated as Claude Code would (spec K6, K7)", () => {
     });
   }
   const readTable: Array<[string, "deny" | "ask" | "allow" | "none"]> = [
+    ["/home/u/worktrees/r/b/src/a.ts", "allow"],
     // .env files prompt wherever they are; ask wins over the Read(./**) allow
     ["/home/u/workspace/p/.env", "ask"],
     ["/home/u/workspace/p/apps/web/.env.local", "ask"],

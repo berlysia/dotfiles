@@ -40,7 +40,11 @@ assert_no_file() { if [[ ! -e "$1" ]]; then record "PASS $2"; else record "FAIL 
 # make_repo <name>: a repository with one commit at $REPO, and an empty stub directory at $STUB
 make_repo() {
   mkdir -p "$TMP_BASE/$1/repo" "$TMP_BASE/$1/bin"
+  HOME="$TMP_BASE/$1/home"
+  mkdir -p "$HOME"
+  export HOME
   REPO=$(cd -P "$TMP_BASE/$1/repo" && pwd -P)
+  WORKTREE_ROOT="$HOME/worktrees/${REPO##*/}"
   STUB="$TMP_BASE/$1/bin"
   git -C "$REPO" init -q
   git -C "$REPO" commit -q --allow-empty -m init
@@ -79,11 +83,11 @@ push_origin_branch() {
 # ---- 機能適合性 ------------------------------------------------------------------
 test_C1_vm_attaches_the_new_worktree() {
   make_repo c1
-  stub agent-vm-node-modules 0 "mounted	$REPO/.git/worktree/feat"
+  stub agent-vm-node-modules 0 "mounted	$WORKTREE_ROOT/feat"
   run_create "$VM_MARKER" feat
   assert_eq 0 "$STATUS" "C1 exit 0"
-  assert_dir "$REPO/.git/worktree/feat" "C1 worktree created"
-  assert_eq $'attach\n'"$REPO/.git/worktree/feat" "$(cat "$STUB/agent-vm-node-modules.log")" "C1 attach <worktree>"
+  assert_dir "$WORKTREE_ROOT/feat" "C1 worktree created"
+  assert_eq $'attach\n'"$WORKTREE_ROOT/feat" "$(cat "$STUB/agent-vm-node-modules.log")" "C1 attach <worktree>"
   assert_not_contains "$OUT" "mounted" "C1 the helper's records are not shown"
   assert_not_contains "$OUT" "node_modules" "C1 no warning when attached"
 }
@@ -102,9 +106,9 @@ test_C2_vm_attach_failure_warns_and_keeps_the_worktree() {
   stub agent-vm-node-modules 1 "" "agent-vm-node-modules: could not mount a VM-local node_modules"
   run_create "$VM_MARKER" feat
   assert_eq 0 "$STATUS" "C2 the creation still succeeds"
-  assert_dir "$REPO/.git/worktree/feat" "C2 worktree kept"
+  assert_dir "$WORKTREE_ROOT/feat" "C2 worktree kept"
   assert_contains "$OUT" "could not mount a VM-local node_modules" "C2 the helper's stderr is shown"
-  assert_contains "$OUT" "node_modules of $REPO/.git/worktree/feat may be shared with the host (agent-vm-node-modules attach: status 1); do not install there until this succeeds: agent-vm-node-modules attach $REPO/.git/worktree/feat" "C2 one warning with the recovery"
+  assert_contains "$OUT" "node_modules of $WORKTREE_ROOT/feat may be shared with the host (agent-vm-node-modules attach: status 1); do not install there until this succeeds: agent-vm-node-modules attach $WORKTREE_ROOT/feat" "C2 one warning with the recovery"
 }
 test_C3_nothing_is_called_when_the_worktree_is_not_created() {
   make_repo c3
@@ -119,7 +123,7 @@ test_C6_host_sync_failure_adds_one_warning() {
   run_create "$AGENT_VM_MARKER" feat
   assert_eq 0 "$STATUS" "C6 the creation still succeeds"
   assert_contains "$OUT" "kept VM-local node_modules that may be stale" "C6 agent-vm's warning is shown"
-  assert_contains "$OUT" "the running agent-vm machine may not have VM-local node_modules for $REPO/.git/worktree/feat yet (agent-vm node-modules-sync: status 3); the next agent-vm launch syncs it" "C6 one context line"
+  assert_contains "$OUT" "the running agent-vm machine may not have VM-local node_modules for $WORKTREE_ROOT/feat yet (agent-vm node-modules-sync: status 3); the next agent-vm launch syncs it" "C6 one context line"
 }
 
 # ---- 互換性 ------------------------------------------------------------------------
@@ -138,13 +142,40 @@ test_C7_host_without_agent_vm_behaves_as_before() {
   assert_eq 0 "$STATUS" "C7 exit 0"
   assert_no_file "$STUB/agent-vm-node-modules.log" "C7 the helper is not called on the host"
   assert_not_contains "$OUT" "node_modules" "C7 no warning"
-  assert_contains "$OUT" "Worktree created: $REPO/.git/worktree/feat" "C7 the usual output"
+  assert_contains "$OUT" "Worktree created: $WORKTREE_ROOT/feat" "C7 the usual output"
+  assert_eq "$(cd -P "$REPO/.git" && pwd -P)" "$(cat "$WORKTREE_ROOT/.common-dir")" "C7 common-dir marker"
+}
+
+test_create_from_linked_worktree_uses_main_repo_location() {
+  make_repo linked
+  local linked_repo="$TMP_BASE/linked/linked"
+  git -C "$REPO" worktree add -q -b linked-source "$linked_repo"
+  OUT=$(cd "$linked_repo" && AGENT_VM_MARKER="$AGENT_VM_MARKER" PATH="$STUB:$BASE_PATH" bash "$CREATE" --no-install feat 2>&1) && STATUS=0 || STATUS=$?
+  assert_eq 0 "$STATUS" "linked worktree creation exits 0"
+  assert_dir "$WORKTREE_ROOT/feat" "linked worktree uses the main repo root"
+  assert_eq "$(cd -P "$REPO/.git" && pwd -P)" "$(cat "$WORKTREE_ROOT/.common-dir")" "linked worktree marker uses the main common dir"
+}
+
+test_conflicting_location_marker_fails_before_branch_or_registration() {
+  make_repo marker-conflict
+  local other="$TMP_BASE/marker-conflict/other"
+  git -C "$TMP_BASE/marker-conflict" init -q "$other"
+  mkdir -p "$WORKTREE_ROOT"
+  printf '%s\n' "$(cd -P "$other/.git" && pwd -P)" >"$WORKTREE_ROOT/.common-dir"
+  local marker_before; marker_before=$(cat "$WORKTREE_ROOT/.common-dir")
+  run_create "$AGENT_VM_MARKER" --no-install feat
+  assert_eq 1 "$STATUS" "marker conflict exits 1"
+  assert_contains "$OUT" "$WORKTREE_ROOT/.common-dir" "marker conflict names the marker path"
+  assert_not_contains "$OUT" "$marker_before" "marker content stays out of stderr"
+  assert_eq "$marker_before" "$(cat "$WORKTREE_ROOT/.common-dir")" "marker is unchanged"
+  assert_eq "" "$(git -C "$REPO" branch --list worktree-feat)" "no branch created"
+  assert_not_contains "$(git -C "$REPO" worktree list --porcelain)" "$WORKTREE_ROOT/feat" "no registration created"
 }
 test_C8_paths_with_a_space_stay_one_argument() {
   make_repo "c 8"
   stub agent-vm-node-modules 0
   run_create "$VM_MARKER" feat
-  assert_eq $'attach\n'"$REPO/.git/worktree/feat" "$(cat "$STUB/agent-vm-node-modules.log")" "C8 VM: one argument"
+  assert_eq $'attach\n'"$WORKTREE_ROOT/feat" "$(cat "$STUB/agent-vm-node-modules.log")" "C8 VM: one argument"
   make_repo "c 8 host"
   stub agent-vm 0
   run_create "$AGENT_VM_MARKER" feat
@@ -173,7 +204,7 @@ test_D1_pnpm_lockfile_installs_frozen() {
   run_create "$AGENT_VM_MARKER" feat
   assert_eq 0 "$STATUS" "D1 exit 0"
   assert_eq $'install\n--frozen-lockfile' "$(cat "$STUB/pnpm.log")" "D1 pnpm install --frozen-lockfile"
-  assert_eq "$REPO/.git/worktree/feat" "$(cat "$STUB/pnpm.cwd")" "D1 runs in the worktree"
+  assert_eq "$WORKTREE_ROOT/feat" "$(cat "$STUB/pnpm.cwd")" "D1 runs in the worktree"
   assert_contains "$OUT" "Installing dependencies: pnpm install --frozen-lockfile" "D1 announces the install"
   assert_contains "$OUT" "Dependencies installed" "D1 reports success"
 }
@@ -193,7 +224,7 @@ test_D16_path_with_a_space() {
   node_repo "d 16" pnpm-lock.yaml
   stub pnpm 0
   run_create "$AGENT_VM_MARKER" feat
-  assert_eq "$REPO/.git/worktree/feat" "$(cat "$STUB/pnpm.cwd")" "D16 one path with a space"
+  assert_eq "$WORKTREE_ROOT/feat" "$(cat "$STUB/pnpm.cwd")" "D16 one path with a space"
 }
 test_D22_local_branch_installs() {
   node_repo d22 pnpm-lock.yaml
@@ -206,7 +237,7 @@ test_D25_the_path_comes_before_the_install() {
   node_repo d25 pnpm-lock.yaml
   stub pnpm 0
   run_create "$AGENT_VM_MARKER" feat
-  assert_contains "${OUT%%Installing dependencies*}" "To switch to this worktree: cd $REPO/.git/worktree/feat" "D25 the path is shown first"
+  assert_contains "${OUT%%Installing dependencies*}" "To switch to this worktree: cd $WORKTREE_ROOT/feat" "D25 the path is shown first"
 }
 test_D5b_declared_pm_settles_two_lockfiles() {
   make_repo d5b
@@ -226,7 +257,7 @@ test_D4_yarn_is_only_shown() {
   stub yarn 0
   run_create "$AGENT_VM_MARKER" feat
   assert_no_file "$STUB/yarn.log" "D4 yarn is not run"
-  assert_contains "$OUT" "Dependencies are not installed (yarn is not run automatically). To install them: cd $REPO/.git/worktree/feat && yarn install" "D4 the command is shown"
+  assert_contains "$OUT" "Dependencies are not installed (yarn is not run automatically). To install them: cd $WORKTREE_ROOT/feat && yarn install" "D4 the command is shown"
 }
 test_D5_declared_pm_without_its_lockfile() {
   make_repo d5
@@ -237,7 +268,7 @@ test_D5_declared_pm_without_its_lockfile() {
   run_create "$AGENT_VM_MARKER" feat
   assert_no_file "$STUB/pnpm.log" "D5 pnpm is not run"
   assert_no_file "$STUB/bun.log" "D5 bun is not run"
-  assert_contains "$OUT" "Dependencies are not installed (pnpm has no lockfile here, and an install would write one). To install them: cd $REPO/.git/worktree/feat && pnpm install" "D5 the command is shown"
+  assert_contains "$OUT" "Dependencies are not installed (pnpm has no lockfile here, and an install would write one). To install them: cd $WORKTREE_ROOT/feat && pnpm install" "D5 the command is shown"
 }
 test_D6_two_lockfiles_install_nothing() {
   node_repo d6 pnpm-lock.yaml bun.lock
@@ -261,7 +292,7 @@ test_D8_install_failure_keeps_the_worktree() {
   node_repo d8 pnpm-lock.yaml
   stub pnpm 7
   run_create "$AGENT_VM_MARKER" feat
-  local wt=$REPO/.git/worktree/feat
+  local wt=$WORKTREE_ROOT/feat
   assert_eq 0 "$STATUS" "D8 exit 0"
   assert_dir "$wt" "D8 the worktree is kept"
   assert_contains "$OUT" "dependencies are not installed in $wt (pnpm install --frozen-lockfile: status 7); the worktree itself is created. To retry: cd $wt && pnpm install --frozen-lockfile" "D8 one warning with the retry"
@@ -272,17 +303,17 @@ test_D9_no_install_only_shows_the_command() {
   stub pnpm 0
   run_create "$AGENT_VM_MARKER" --no-install feat
   assert_no_file "$STUB/pnpm.log" "D9 pnpm is not run (before the name)"
-  assert_contains "$OUT" "Dependencies are not installed (--no-install). To install them: cd $REPO/.git/worktree/feat && pnpm install --frozen-lockfile" "D9 the command is shown (before the name)"
+  assert_contains "$OUT" "Dependencies are not installed (--no-install). To install them: cd $WORKTREE_ROOT/feat && pnpm install --frozen-lockfile" "D9 the command is shown (before the name)"
   run_create "$AGENT_VM_MARKER" feat2 --no-install
   assert_no_file "$STUB/pnpm.log" "D9 pnpm is not run (after the name)"
-  assert_contains "$OUT" "Dependencies are not installed (--no-install). To install them: cd $REPO/.git/worktree/feat2 && pnpm install --frozen-lockfile" "D9 the command is shown (after the name)"
+  assert_contains "$OUT" "Dependencies are not installed (--no-install). To install them: cd $WORKTREE_ROOT/feat2 && pnpm install --frozen-lockfile" "D9 the command is shown (after the name)"
 }
 test_D10_missing_package_manager_is_reported() {
   node_repo d10 bun.lock
   skip_if_real bun D10 || return 0
   run_create "$AGENT_VM_MARKER" feat
   assert_eq 0 "$STATUS" "D10 exit 0"
-  assert_contains "$OUT" "(bun is not on PATH). Once it is: cd $REPO/.git/worktree/feat && bun install --frozen-lockfile" "D10 names the pm and the command"
+  assert_contains "$OUT" "(bun is not on PATH). Once it is: cd $WORKTREE_ROOT/feat && bun install --frozen-lockfile" "D10 names the pm and the command"
 }
 test_D17_package_json_alone_is_silent() {
   node_repo d17
@@ -298,7 +329,7 @@ test_D26_two_package_manager_lines() {
   stub pnpm 0
   run_create "$AGENT_VM_MARKER" feat
   assert_eq 0 "$STATUS" "D26 exit 0"
-  assert_dir "$REPO/.git/worktree/feat" "D26 the worktree is created"
+  assert_dir "$WORKTREE_ROOT/feat" "D26 the worktree is created"
   assert_eq $'install\n--frozen-lockfile' "$(cat "$STUB/pnpm.log")" "D26 falls back to the lockfile"
 }
 test_D20_stdin_is_not_passed_to_the_install() {
@@ -316,7 +347,7 @@ test_D21_origin_branch_is_only_shown() {
   push_origin_branch d21 remote-feat
   stub pnpm 0
   run_create "$AGENT_VM_MARKER" remote-feat
-  local wt=$REPO/.git/worktree/remote-feat
+  local wt=$WORKTREE_ROOT/remote-feat
   assert_dir "$wt" "D21 the worktree is created"
   assert_no_file "$STUB/pnpm.log" "D21 pnpm is not run"
   assert_contains "$OUT" "Dependencies are not installed (not run automatically because the branch comes from origin; an install runs the scripts of its package.json, so review them first). To install them: cd $wt && pnpm install --frozen-lockfile" "D21 the reason and the command"
@@ -347,14 +378,14 @@ test_D12_vm_without_the_helper_installs_nothing() {
   stub pnpm 0
   run_create "$VM_MARKER" feat
   assert_no_file "$STUB/pnpm.log" "D12 pnpm is not run"
-  assert_contains "$OUT" "dependencies are not installed in $REPO/.git/worktree/feat (agent-vm-node-modules is missing, so node_modules here is shared with the host); recreate the machine from the host: agent-vm rm $REPO" "D12 the reason and the recovery"
+  assert_contains "$OUT" "dependencies are not installed in $WORKTREE_ROOT/feat (agent-vm-node-modules is missing, so node_modules here is shared with the host); recreate the machine from the host: agent-vm rm $REPO" "D12 the reason and the recovery"
 }
 test_D13_vm_installs_after_the_attach() {
   node_repo d13 pnpm-lock.yaml
   stub agent-vm-node-modules 0
   stub pnpm 0
   run_create "$VM_MARKER" feat
-  assert_eq $'attach\n'"$REPO/.git/worktree/feat" "$(cat "$STUB/agent-vm-node-modules.log")" "D13 attach <worktree>"
+  assert_eq $'attach\n'"$WORKTREE_ROOT/feat" "$(cat "$STUB/agent-vm-node-modules.log")" "D13 attach <worktree>"
   assert_eq $'install\n--frozen-lockfile' "$(cat "$STUB/pnpm.log")" "D13 pnpm install --frozen-lockfile"
 }
 test_D14_host_installs_before_the_sync() {
@@ -396,7 +427,7 @@ test_D15_unknown_option_creates_nothing() {
   make_repo d15
   run_create "$AGENT_VM_MARKER" --bogus feat
   assert_eq 1 "$STATUS" "D15 exit 1"
-  assert_no_file "$REPO/.git/worktree/feat" "D15 no worktree"
+  assert_no_file "$WORKTREE_ROOT/feat" "D15 no worktree"
   assert_contains "$OUT" "Unknown option: --bogus" "D15 names the option"
 }
 test_D18_help_exits_zero() {
@@ -416,12 +447,12 @@ test_D31_help_flag_anywhere_creates_nothing() {
   run_create "$AGENT_VM_MARKER" feat --help
   assert_eq 0 "$STATUS" "D31 exit 0"
   assert_contains "$OUT" "Usage:" "D31 help is shown"
-  assert_no_file "$REPO/.git/worktree/feat" "D31 no worktree"
+  assert_no_file "$WORKTREE_ROOT/feat" "D31 no worktree"
 }
 test_D32_the_shown_path_is_quoted() {
   make_repo "d 32"
   run_create "$AGENT_VM_MARKER" feat
-  assert_contains "$OUT" "To switch to this worktree: cd $(printf '%q' "$REPO/.git/worktree/feat")" "D32 quoted path"
+  assert_contains "$OUT" "To switch to this worktree: cd $(printf '%q' "$WORKTREE_ROOT/feat")" "D32 quoted path"
 }
 
 # ---- base argument and start-point report ------------------------------------------------
@@ -452,14 +483,14 @@ creating_suffix() {
   line=${line%$'\e[0m'}
   printf '%s' "${line#*from }"
 }
-# reject_case <label> <message> <args...>: exit 1, the message, no .git/worktree, and no control byte of the arguments
+# reject_case <label> <message> <args...>: exit 1, the message, no worktree, and no control byte of the arguments
 # (the color codes of the Error line are removed first; they are the only ESC the script prints itself)
 reject_case() {
   local clean
   run_create "$AGENT_VM_MARKER" "${@:3}"
   assert_eq 1 "$STATUS" "$1 exit 1"
   assert_contains "$OUT" "$2" "$1 message"
-  assert_no_file "$REPO/.git/worktree" "$1 nothing created"
+  assert_no_file "$WORKTREE_ROOT" "$1 nothing created"
   clean=${OUT//$'\e[0;31m'/}
   clean=${clean//$'\e[0m'/}
   for byte in $'\e' $'\r' $'\a' $'\x7f'; do
@@ -473,7 +504,7 @@ test_B1_base_is_the_start_point() {
   git -C "$REPO" branch old HEAD~1
   run_create "$AGENT_VM_MARKER" feat old
   assert_eq 0 "$STATUS" "B1 exit 0"
-  assert_eq "$(git -C "$REPO" rev-parse old)" "$(git -C "$REPO/.git/worktree/feat" rev-parse HEAD)" "B1 HEAD is old"
+  assert_eq "$(git -C "$REPO" rev-parse old)" "$(git -C "$WORKTREE_ROOT/feat" rev-parse HEAD)" "B1 HEAD is old"
   assert_contains "$OUT" "from 'old' ($(git -C "$REPO" rev-parse --short old))" "B1 start point shown"
 }
 test_B2_remote_tracking_base_gets_no_upstream() {
@@ -482,8 +513,8 @@ test_B2_remote_tracking_base_gets_no_upstream() {
   commit_file x
   run_create "$AGENT_VM_MARKER" feat origin/base1
   assert_eq 0 "$STATUS" "B2 exit 0"
-  assert_eq "$(git -C "$REPO" rev-parse origin/base1)" "$(git -C "$REPO/.git/worktree/feat" rev-parse HEAD)" "B2 HEAD is origin/base1"
-  assert_no_upstream "$REPO/.git/worktree/feat" feat "B2 no upstream"
+  assert_eq "$(git -C "$REPO" rev-parse origin/base1)" "$(git -C "$WORKTREE_ROOT/feat" rev-parse HEAD)" "B2 HEAD is origin/base1"
+  assert_no_upstream "$WORKTREE_ROOT/feat" feat "B2 no upstream"
   assert_not_contains "$OUT" "behind" "B2 a remote-tracking start point is not compared"
 }
 test_B2b_autosetupmerge_always_still_no_upstream() {
@@ -492,7 +523,7 @@ test_B2b_autosetupmerge_always_still_no_upstream() {
   git -C "$REPO" config branch.autoSetupMerge always
   run_create "$AGENT_VM_MARKER" feat origin/base1
   assert_eq 0 "$STATUS" "B2b exit 0"
-  assert_no_upstream "$REPO/.git/worktree/feat" feat "B2b no upstream"
+  assert_no_upstream "$WORKTREE_ROOT/feat" feat "B2b no upstream"
 }
 test_B3_base_with_a_local_branch_is_refused() {
   make_repo b3
@@ -501,7 +532,7 @@ test_B3_base_with_a_local_branch_is_refused() {
   run_create "$AGENT_VM_MARKER" feat old
   assert_eq 1 "$STATUS" "B3 exit 1"
   assert_contains "$OUT" "already exists (refs/heads/feat)" "B3 names the ref"
-  assert_no_file "$REPO/.git/worktree" "B3 nothing created"
+  assert_no_file "$WORKTREE_ROOT" "B3 nothing created"
 }
 test_B4_base_with_an_origin_branch_is_refused() {
   make_repo b4
@@ -509,7 +540,7 @@ test_B4_base_with_an_origin_branch_is_refused() {
   run_create "$AGENT_VM_MARKER" feat HEAD
   assert_eq 1 "$STATUS" "B4 exit 1"
   assert_contains "$OUT" "already exists (refs/remotes/origin/feat)" "B4 names the ref"
-  assert_no_file "$REPO/.git/worktree" "B4 nothing created"
+  assert_no_file "$WORKTREE_ROOT" "B4 nothing created"
 }
 test_B4b_existing_branch_is_reported_before_a_bad_base() {
   make_repo b4b
@@ -523,28 +554,28 @@ test_B5_unknown_base_is_refused() {
   run_create "$AGENT_VM_MARKER" feat no-such-ref
   assert_eq 1 "$STATUS" "B5 exit 1"
   assert_contains "$OUT" "Not a commit: no-such-ref" "B5 message"
-  assert_no_file "$REPO/.git/worktree" "B5 nothing created"
+  assert_no_file "$WORKTREE_ROOT" "B5 nothing created"
 }
 test_B5b_unknown_base_creates_no_worktree_dir() {
   make_repo b5b
-  mkdir -p "$REPO/.git/worktree"
+  mkdir -p "$WORKTREE_ROOT"
   run_create "$AGENT_VM_MARKER" feat no-such-ref
   assert_eq 1 "$STATUS" "B5b exit 1"
-  assert_no_file "$REPO/.git/worktree/feat" "B5b no worktree"
+  assert_no_file "$WORKTREE_ROOT/feat" "B5b no worktree"
 }
 test_B6_a_third_argument_is_refused() {
   make_repo b6
   run_create "$AGENT_VM_MARKER" a b c
   assert_eq 1 "$STATUS" "B6 exit 1"
   assert_contains "$OUT" "Too many arguments: c" "B6 message"
-  assert_no_file "$REPO/.git/worktree" "B6 nothing created"
+  assert_no_file "$WORKTREE_ROOT" "B6 nothing created"
 }
 test_B6b_help_word_in_second_position_is_a_base() {
   make_repo b6b
   run_create "$AGENT_VM_MARKER" feat help
   assert_eq 1 "$STATUS" "B6b exit 1"
   assert_contains "$OUT" "Not a commit: help" "B6b message"
-  assert_no_file "$REPO/.git/worktree" "B6b nothing created"
+  assert_no_file "$WORKTREE_ROOT" "B6b nothing created"
 }
 test_B6c_to_e_rejected_arguments() {
   make_repo b6c
@@ -567,7 +598,7 @@ test_B6f_help_wins_over_the_argument_count() {
   run_create "$AGENT_VM_MARKER" a b c --help
   assert_eq 0 "$STATUS" "B6f exit 0"
   assert_contains "$OUT" "Usage:" "B6f help is shown"
-  assert_no_file "$REPO/.git/worktree" "B6f nothing created"
+  assert_no_file "$WORKTREE_ROOT" "B6f nothing created"
 }
 test_B7_behind_start_point_warns_and_annotates() {
   behind_repo b7
@@ -631,10 +662,10 @@ test_B11_no_install_with_a_base_in_either_order() {
   git -C "$REPO" branch old HEAD~1
   run_create "$AGENT_VM_MARKER" --no-install feat old
   assert_eq 0 "$STATUS" "B11 flag first: exit 0"
-  assert_eq "$(git -C "$REPO" rev-parse old)" "$(git -C "$REPO/.git/worktree/feat" rev-parse HEAD)" "B11 flag first: HEAD"
+  assert_eq "$(git -C "$REPO" rev-parse old)" "$(git -C "$WORKTREE_ROOT/feat" rev-parse HEAD)" "B11 flag first: HEAD"
   run_create "$AGENT_VM_MARKER" feat2 old --no-install
   assert_eq 0 "$STATUS" "B11 flag last: exit 0"
-  assert_eq "$(git -C "$REPO" rev-parse old)" "$(git -C "$REPO/.git/worktree/feat2" rev-parse HEAD)" "B11 flag last: HEAD"
+  assert_eq "$(git -C "$REPO" rev-parse old)" "$(git -C "$WORKTREE_ROOT/feat2" rev-parse HEAD)" "B11 flag last: HEAD"
 }
 test_B12_detached_head_is_named() {
   make_repo b12
@@ -649,7 +680,7 @@ test_B13_origin_branch_keeps_its_upstream() {
   push_origin_branch b13 feat
   run_create "$AGENT_VM_MARKER" feat
   assert_eq 0 "$STATUS" "B13 exit 0"
-  assert_eq "origin/feat" "$(git -C "$REPO/.git/worktree/feat" rev-parse --abbrev-ref 'feat@{upstream}')" "B13 upstream"
+  assert_eq "origin/feat" "$(git -C "$WORKTREE_ROOT/feat" rev-parse --abbrev-ref 'feat@{upstream}')" "B13 upstream"
 }
 test_B14_catch_up_step_quotes_the_upstream() {
   behind_repo b14
@@ -684,7 +715,7 @@ test_B16_tag_and_branch_with_the_same_name() {
   git -C "$REPO" branch -q --set-upstream-to=origin/dup dup
   run_create "$AGENT_VM_MARKER" feat dup
   assert_eq 0 "$STATUS" "B16 exit 0"
-  assert_eq "$(git -C "$REPO" rev-parse 'dup^{commit}' 2>/dev/null)" "$(git -C "$REPO/.git/worktree/feat" rev-parse HEAD)" "B16 HEAD is the tag's commit"
+  assert_eq "$(git -C "$REPO" rev-parse 'dup^{commit}' 2>/dev/null)" "$(git -C "$WORKTREE_ROOT/feat" rev-parse HEAD)" "B16 HEAD is the tag's commit"
   assert_not_contains "$OUT" "behind" "B16 no behind"
   assert_not_contains "$OUT" "ambiguous" "B16 no git warning"
 }
@@ -693,6 +724,9 @@ test_B16_tag_and_branch_with_the_same_name() {
 # clone_repo <name>: $REPO is a clone of a bare origin whose main has one commit, so origin/HEAD exists; $OTHER is a
 # second clone of it, for moving the origin ahead without $REPO fetching
 clone_repo() {
+  HOME="$TMP_BASE/$1/home"
+  mkdir -p "$HOME"
+  export HOME
   mkdir -p "$TMP_BASE/$1/bin" "$TMP_BASE/$1/seed"
   STUB="$TMP_BASE/$1/bin"
   git init -q --bare "$TMP_BASE/$1/origin.git"
@@ -703,6 +737,7 @@ clone_repo() {
   git clone -q "$TMP_BASE/$1/origin.git" "$TMP_BASE/$1/repo" 2>/dev/null
   git clone -q "$TMP_BASE/$1/origin.git" "$TMP_BASE/$1/other" 2>/dev/null
   REPO=$(cd -P "$TMP_BASE/$1/repo" && pwd -P)
+  WORKTREE_ROOT="$HOME/worktrees/${REPO##*/}"
   OTHER="$TMP_BASE/$1/other"
 }
 # origin_advance: one more commit on the origin's main, pushed from $OTHER ($REPO does not fetch it)
@@ -712,7 +747,7 @@ origin_advance() {
 }
 # break_origin: the origin's URL points at a path that does not exist, so every fetch fails
 break_origin() { git -C "$REPO" remote set-url origin "$TMP_BASE/no-such-origin.git"; }
-wt_head() { git -C "$REPO/.git/worktree/$1" rev-parse HEAD; }
+wt_head() { git -C "$WORKTREE_ROOT/$1" rev-parse HEAD; }
 
 test_N1_default_start_is_the_fetched_origin_default_branch() {
   clone_repo n1
@@ -723,7 +758,7 @@ test_N1_default_start_is_the_fetched_origin_default_branch() {
   assert_eq 0 "$STATUS" "N1 exit 0"
   assert_eq "$new" "$(wt_head feat)" "N1 HEAD is the new origin/main"
   assert_eq "'origin/main' ($(git -C "$OTHER" rev-parse --short HEAD))" "$(creating_suffix)" "N1 Creating line"
-  assert_no_upstream "$REPO/.git/worktree/feat" feat "N1 no upstream"
+  assert_no_upstream "$WORKTREE_ROOT/feat" feat "N1 no upstream"
 }
 test_N2_explicit_head_keeps_the_local_branch() {
   clone_repo n2
@@ -787,7 +822,7 @@ test_N7_fetch_finds_a_branch_pushed_later() {
   run_create_split "$AGENT_VM_MARKER" late
   assert_eq 0 "$STATUS" "N7 exit 0"
   assert_contains "$OUT" "exists on remote" "N7 the origin branch is used"
-  assert_eq "origin/late" "$(git -C "$REPO/.git/worktree/late" rev-parse --abbrev-ref 'late@{upstream}')" "N7 upstream"
+  assert_eq "origin/late" "$(git -C "$WORKTREE_ROOT/late" rev-parse --abbrev-ref 'late@{upstream}')" "N7 upstream"
 }
 test_N8_explicit_base_is_resolved_after_the_fetch() {
   clone_repo n8
@@ -801,7 +836,7 @@ test_N9_existing_branch_check_comes_after_the_fetch() {
   run_create "$AGENT_VM_MARKER" late origin/main
   assert_eq 1 "$STATUS" "N9 exit 1"
   assert_contains "$OUT" "already exists (refs/remotes/origin/late)" "N9 names the ref"
-  assert_no_file "$REPO/.git/worktree/late" "N9 nothing created"
+  assert_no_file "$WORKTREE_ROOT/late" "N9 nothing created"
 }
 test_N10_dangling_origin_head_falls_back_to_head() {
   clone_repo n10
@@ -842,8 +877,8 @@ test_N13_vm_with_an_unreachable_origin_still_attaches() {
   stub agent-vm-node-modules 0 "mounted	x"
   run_create "$VM_MARKER" feat
   assert_eq 0 "$STATUS" "N13 exit 0"
-  assert_dir "$REPO/.git/worktree/feat" "N13 worktree created"
-  assert_eq $'attach\n'"$REPO/.git/worktree/feat" "$(cat "$STUB/agent-vm-node-modules.log")" "N13 attach <worktree>"
+  assert_dir "$WORKTREE_ROOT/feat" "N13 worktree created"
+  assert_eq $'attach\n'"$WORKTREE_ROOT/feat" "$(cat "$STUB/agent-vm-node-modules.log")" "N13 attach <worktree>"
 }
 
 # ---- runner --------------------------------------------------------------------------

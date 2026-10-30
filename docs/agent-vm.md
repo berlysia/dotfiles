@@ -42,6 +42,8 @@ repo ごとの machine は、bootstrap 済みの golden machine（`agent-vm-gold
 `agent-vm golden refresh` を実行すると、これらの待ちを前もって済ませられる。初回セットアップの最後に一度実行しておくとよい。
 `agent-vm prewarm` は、machine を作成し、dotfiles を適用するところまでを、ツールを起動せずに行う。
 
+machine の設定は起動ごとに照合する。差分があれば、その内容を表示して起動を止める。既存の machine を作り直すには、host で `agent-vm rm <repo>` を実行する。その後、同じ repo で `agent-vm claude` または `agent-vm codex` を起動する。
+
 Claude と Codex は machine ごとに初回だけログインが要る。
 表示された URL を mac のブラウザで開いて承認し、コードを VM 側に貼り付ける。
 2 回目以降はその machine に保存された認証でそのまま起動する。

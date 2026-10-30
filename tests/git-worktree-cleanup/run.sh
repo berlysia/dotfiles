@@ -59,12 +59,16 @@ guard_tmp() {
 make_repo() {
   NAME=$1
   BASE="$TMP_BASE/$NAME"
+  HOME="$BASE/home"
+  mkdir -p "$HOME"
+  export HOME
   mkdir -p "$BASE"
   git init -q --bare "$BASE/origin.git"
   git clone -q "$BASE/origin.git" "$BASE/repo" 2>/dev/null
   git clone -q "$BASE/origin.git" "$BASE/merger" 2>/dev/null
   REPO=$(cd -P "$BASE/repo" && pwd -P)
   MERGER=$(cd -P "$BASE/merger" && pwd -P)
+  WORKTREE_ROOT="$HOME/worktrees/${REPO##*/}"
   guard_tmp "$REPO"
   guard_tmp "$MERGER"
   printf '%s\n' '.tmp/' '.entire/' 'node_modules/' >"$REPO/.gitignore"
@@ -79,7 +83,7 @@ make_repo() {
 # Create a worktree through the real git-worktree-create; prints its path.
 wt() {
   (cd "$REPO" && bash "$CREATE" "$1" >/dev/null 2>&1)
-  echo "$REPO/.git/worktree/$1"
+  echo "$WORKTREE_ROOT/$1"
 }
 commit_in() {
   printf '%s\n' "$2" >"$1/$2"
@@ -216,15 +220,99 @@ hold_cwd() {
 }
 
 # ---- 機能適合性 ----------------------------------------------------------------
+test_T2_legacy_scan_prints_candidate() {
+  make_repo t2-legacy-scan
+  local d stdout_file stderr_file
+  d="$REPO/.git/worktree/t2-candidate"
+  mkdir -p "$(dirname "$d")"
+  git -C "$REPO" worktree add -q -b t2-candidate "$d"
+  stdout_file="$TMP_BASE/t2-legacy-scan.stdout"
+  stderr_file="$TMP_BASE/t2-legacy-scan.stderr"
+  STATUS=0
+  (cd "$REPO" && bash "$CLEANUP" >"$stdout_file" 2>"$stderr_file") || STATUS=$?
+  OUT=$(cat "$stdout_file")
+  assert_eq 0 "$STATUS" "T2 cleanup scan exit"
+  assert_eq 1 "$(grep -Fxc -- "📁 Checking worktree: $d" "$stdout_file")" "T2 legacy worktree candidate stdout line"
+  assert_kept "$d" "T2 legacy worktree remains after scan"
+}
+
+test_T4_argumentless_scan_includes_both_roots_and_excludes_same_basename_repo() {
+  make_repo t4-scan-a
+  local repo_a=$REPO root_a=$WORKTREE_ROOT base_a=$BASE home_a=$HOME current legacy repo_b other
+  current=$(wt current-candidate)
+  legacy="$REPO/.git/worktree/legacy-candidate"
+  mkdir -p "$(dirname "$legacy")"
+  git -C "$REPO" worktree add -q -b legacy-candidate "$legacy"
+
+  make_repo t4-scan-b
+  repo_b=$REPO
+  HOME=$home_a
+  export HOME
+  other="$repo_b/.git/worktree/other-repo-candidate"
+  mkdir -p "$(dirname "$other")"
+  git -C "$repo_b" worktree add -q -b other-repo-candidate "$other"
+
+  REPO=$repo_a WORKTREE_ROOT=$root_a BASE=$base_a HOME=$home_a
+  run_cleanup -n
+  assert_contains "$OUT" "📁 Checking worktree: $current" "T4 current-root candidate is scanned"
+  assert_contains "$OUT" "📁 Checking worktree: $legacy" "T4 legacy-root candidate is scanned"
+  assert_not_contains "$OUT" "$other" "T4 same-basename other repo is not scanned"
+  assert_kept "$current" "T4 current-root candidate remains"
+  assert_kept "$legacy" "T4 legacy-root candidate remains"
+  assert_kept "$other" "T4 other repo worktree remains"
+}
+
+test_T4_cleanup_keeps_current_root_worktree_behind_symlink() {
+  make_repo t4-current-symlink
+  local d outside moved
+  d=$(mk_squashed current-symlink 2)
+  outside="$BASE/current-outside"
+  moved="$outside/root"
+  mkdir -p "$outside"
+  printf 'keep\n' >"$outside/outside.txt"
+  mv "$WORKTREE_ROOT" "$moved"
+  ln -s "$moved" "$WORKTREE_ROOT"
+
+  run_cleanup -n current-symlink
+  assert_kept "$d" "T4 current-root symlink worktree remains"
+  assert_contains "$OUT" "unsafe managed worktree path" "T4 current-root symlink is reported"
+  assert_eq current-symlink "$(git -C "$REPO" branch --list current-symlink --format='%(refname:short)')" "T4 current-root branch remains"
+  assert_contains "$(git -C "$REPO" worktree list --porcelain)" "$d" "T4 current-root registration remains"
+  assert_eq "keep" "$(cat "$outside/outside.txt")" "T4 outside file is unchanged"
+}
+
+test_T4_cleanup_keeps_legacy_root_worktree_behind_symlink() {
+  make_repo t4-legacy-symlink
+  local created d legacy_root outside moved
+  created=$(mk_squashed legacy-symlink 2)
+  legacy_root="$REPO/.git/worktree"
+  mkdir -p "$legacy_root"
+  d="$legacy_root/legacy-symlink"
+  git -C "$REPO" worktree move "$created" "$d"
+  outside="$BASE/legacy-outside"
+  moved="$outside/root"
+  mkdir -p "$outside"
+  printf 'keep\n' >"$outside/outside.txt"
+  mv "$legacy_root" "$moved"
+  ln -s "$moved" "$legacy_root"
+
+  run_cleanup -n legacy-symlink
+  assert_kept "$d" "T4 legacy-root symlink worktree remains"
+  assert_contains "$OUT" "unsafe managed worktree path" "T4 legacy-root symlink is reported"
+  assert_eq "legacy-symlink" "$(git -C "$REPO" branch --list legacy-symlink --format='%(refname:short)')" "T4 legacy-root branch remains"
+  assert_contains "$(git -C "$REPO" worktree list --porcelain)" "$d" "T4 legacy-root registration remains"
+  assert_eq "keep" "$(cat "$outside/outside.txt")" "T4 legacy outside file is unchanged"
+}
+
 test_C1() {
   make_repo c1
   local outer rc=0
   outer=$(wt fix/outer)
   (cd "$outer" && bash "$CREATE" fix/inner >/dev/null 2>&1) || rc=$?
   assert_eq 0 "$rc" "C1 exit"
-  assert_dir "$REPO/.git/worktree/fix/inner" "C1 created under the main .git/worktree"
+  assert_dir "$WORKTREE_ROOT/fix/inner" "C1 created under the main repo's worktree root"
   assert_no_dir "$outer/.git/worktree" "C1 nothing created inside the outer worktree"
-  assert_eq "fix/inner" "$(git -C "$REPO/.git/worktree/fix/inner" branch --show-current)" "C1 branch"
+  assert_eq "fix/inner" "$(git -C "$WORKTREE_ROOT/fix/inner" branch --show-current)" "C1 branch"
 }
 
 test_F1() {
@@ -493,8 +581,8 @@ test_F19() {
   squash_merge out
   run_cleanup -n
   assert_kept "$d" "F19 kept"
-  assert_contains "$OUT" "outside .git/worktree" "F19 message"
-  assert_contains "$OUT" "outside .git/worktree 1" "F19 summary"
+  assert_contains "$OUT" "outside managed worktree roots" "F19 message"
+  assert_contains "$OUT" "outside managed worktree roots 1" "F19 summary"
   run_cleanup -n out
   assert_removed "$d" "F19 removed by target"
 }
@@ -970,7 +1058,7 @@ test_R7() {
   squash_merge wx
   run_cleanup -n
   assert_kept "$d" "R7 kept"
-  assert_contains "$OUT" "outside .git/worktree" "R7 message"
+  assert_contains "$OUT" "outside managed worktree roots" "R7 message"
 }
 
 test_R8() {
@@ -1195,7 +1283,7 @@ test_N8() {
   squash_merge out
   nm_helper_stub 0
   run_cleanup_vm -n out
-  assert_removed "$d" "N8 a worktree outside .git/worktree is removed when named"
+  assert_removed "$d" "N8 a worktree outside managed roots is removed when named"
   assert_no_dir "$TMP_BASE/nm.log" "N8 without the helper, which owns no mounts there"
 }
 test_N9() {

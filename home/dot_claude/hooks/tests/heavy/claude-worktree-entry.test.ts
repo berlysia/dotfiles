@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { after, describe, it } from "node:test";
 import {
@@ -22,7 +22,24 @@ import {
 // runtime); without it the whole file is skipped with that reason.
 
 const temp = createTempTracker();
-after(() => temp.cleanup());
+// The entry places worktrees under $HOME/worktrees, so the children must not see the real home.
+const originalHome = process.env.HOME;
+const testHome = temp.make("cwt-entry-home-");
+process.env.HOME = testHome;
+after(() => {
+  if (originalHome === undefined) delete process.env.HOME;
+  else process.env.HOME = originalHome;
+  temp.cleanup();
+});
+
+function createdPath(commonDir: string): string {
+  return join(
+    testHome,
+    "worktrees",
+    basename(dirname(commonDir)),
+    "worktree-bold-oak-a3f2",
+  );
+}
 
 const hookTimer = join(hooksDir, "executable_hook-timer.sh");
 
@@ -41,10 +58,7 @@ describe(
         createPayload(repo.dir, "bold-oak-a3f2"),
       );
       assert.equal(result.status, 0, result.stderr);
-      assert.equal(
-        result.stdout,
-        `${join(repo.commonDir, "worktree", "worktree-bold-oak-a3f2")}\n`,
-      );
+      assert.equal(result.stdout, `${createdPath(repo.commonDir)}\n`);
     });
 
     it("E02: through hook-timer.sh the last non-empty stdout line and the exit code are the same", () => {
@@ -65,10 +79,7 @@ describe(
         .split("\n")
         .filter((line) => line !== "")
         .at(-1);
-      assert.equal(
-        lastLine,
-        join(repo.commonDir, "worktree", "worktree-bold-oak-a3f2"),
-      );
+      assert.equal(lastLine, createdPath(repo.commonDir));
 
       const failing = spawnSync(
         "sh",

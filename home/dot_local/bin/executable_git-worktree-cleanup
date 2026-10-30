@@ -2,6 +2,11 @@
 
 set -euo pipefail
 
+SCRIPT_DIR=$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+# Keep the location rule shared with creation, the hook and agent-vm.
+# shellcheck source=../lib/worktree-location.sh
+. "$SCRIPT_DIR/../lib/worktree-location.sh"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -19,8 +24,9 @@ Usage:
 
 Description:
   Fetches origin, then classifies each worktree and removes the ones whose work
-  is safely finished. Without arguments it scans only worktrees under
-  <repo>/.git/worktree/. Worktrees outside .git/worktree are removed only when named as a target.
+  is safely finished. Without arguments it scans registered worktrees under
+  ~/worktrees/<repo>/ and <repo>/.git/worktree/. Worktrees outside those roots
+  are removed only when named as a target.
   A target is a worktree path or a branch name. If any target cannot be resolved,
   nothing is removed. Branches are not deleted.
 
@@ -219,6 +225,12 @@ done < <(git worktree list --porcelain -z)
 push_entry
 
 main_worktree=${wt_path[0]}
+if ! common_dir=$(git -C "$main_worktree" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) \
+    || ! common_dir=$(cd -P -- "$common_dir" 2>/dev/null && pwd -P) \
+    || [[ -z "${HOME:-}" ]] || ! repoName "$common_dir" >/dev/null; then
+    say "$RED" "✗ Could not resolve a supported git common directory"
+    exit 1
+fi
 
 for ((i = 0; i < wt_count; i++)); do
     if [[ -d "${wt_path[$i]}" ]] && phys=$(cd -P -- "${wt_path[$i]}" 2>/dev/null && pwd -P); then
@@ -231,7 +243,7 @@ for ((i = 0; i < wt_count; i++)); do
 done
 main_phys=${wt_phys[0]}
 
-# Inside an agent-vm machine, each worktree under .git/worktree carries VM-local node_modules mounts
+# Inside an agent-vm machine, each managed worktree carries VM-local node_modules mounts
 # (docs/decisions/0022-agent-vm-node-modules.md). git alone would empty the VM-local copy and then fail on the
 # mountpoint, so the helper detaches, runs the removal, and deletes or re-attaches the copy under its lock.
 nm_helper=0
@@ -243,11 +255,43 @@ fi
 # agent-vm-node-modules; with any of them it ran nothing. Otherwise it returns the command's status.
 remove_worktree() {
     local w=${wt_path[$1]}
-    if [[ $nm_helper -eq 1 && "${wt_phys[$1]}" == "$main_phys/.git/worktree/"* ]]; then
+    if [[ $nm_helper -eq 1 ]] && isUnderManagedRoot "$w" "$common_dir" "$HOME"; then
         agent-vm-node-modules remove "$w" -- git -C "$main_worktree" worktree remove -- "$w"
     else
         git -C "$main_worktree" worktree remove -- "$w"
     fi
+}
+
+# Recheck managed roots immediately before removal. A registered path can still resolve through a replaced symlink.
+managed_path_is_safe() {
+    local path=$1 current legacy walk_root root relative_path current_path segment path_real root_real
+    local -a path_segments=()
+    path=$(_worktree_normalize_path "$path") || return 1
+    current=$(currentRoot "$common_dir" "$HOME") || return 1
+    current=${current%/}
+    legacy=$(legacyRoot "$common_dir") || return 1
+    legacy=${legacy%/}
+    if [[ "$path" == "$current/"* ]]; then
+        root=$current
+        walk_root="${HOME%/}/worktrees"
+    elif [[ "$path" == "$legacy/"* ]]; then
+        root=$legacy
+        walk_root=$legacy
+    else
+        return 1
+    fi
+    if [[ -L "$walk_root" || ! -d "$walk_root" ]]; then return 1; fi
+    relative_path=${path#"$walk_root"/}
+    current_path=$walk_root
+    IFS=/ read -r -a path_segments <<<"$relative_path"
+    for segment in "${path_segments[@]}"; do
+        [[ -n "$segment" ]] || return 1
+        current_path="$current_path/$segment"
+        if [[ -L "$current_path" || ! -d "$current_path" ]]; then return 1; fi
+    done
+    path_real=$(cd -P -- "$path" 2>/dev/null && pwd -P) || return 1
+    root_real=$(cd -P -- "$root" 2>/dev/null && pwd -P) || return 1
+    [[ "$path_real" == "$root_real/"* ]]
 }
 
 # --- fetch ---------------------------------------------------------------------
@@ -340,13 +384,12 @@ if [[ ${#targets[@]} -gt 0 ]]; then
     fi
 else
     for ((i = 1; i < wt_count; i++)); do
-        if [[ "${wt_missing[$i]}" -eq 1 ]]; then
-            selected+=("$i")
-        elif [[ "${wt_phys[$i]}" == "$main_phys/.git/worktree/"* ]]; then
+        # A registered worktree whose directory is gone is listed wherever it was, as before the move.
+        if [[ "${wt_missing[$i]}" -eq 1 ]] || isUnderManagedRoot "${wt_path[$i]}" "$common_dir" "$HOME"; then
             selected+=("$i")
         else
             echo
-            echo "📁 ${wt_path[$i]}: outside .git/worktree - skipping"
+            echo "📁 ${wt_path[$i]}: outside managed worktree roots - skipping"
             outside_count=$((outside_count + 1))
         fi
     done
@@ -757,6 +800,12 @@ for i in ${selected[@]+"${selected[@]}"}; do
         continue
     fi
 
+    if isUnderManagedRoot "$worktree" "$common_dir" "$HOME" && ! managed_path_is_safe "$worktree"; then
+        say "$RED" "✗ unsafe managed worktree path (symlink or path changed) - skipping"
+        kept=$((kept + 1))
+        continue
+    fi
+
     rm_status=0
     err=$(remove_worktree "$i" 2>&1) || rm_status=$?
     if [[ $rm_status -ne 0 ]]; then
@@ -784,7 +833,7 @@ if [[ $removed -gt 0 ]]; then
     git -C "$main_worktree" worktree prune
 fi
 
-echo -e "\nRemoved $removed, kept $kept, outside .git/worktree $outside_count."
+echo -e "\nRemoved $removed, kept $kept, outside managed worktree roots $outside_count."
 
 if [[ ${#targets[@]} -gt 0 && $kept -gt 0 ]]; then
     exit 2
