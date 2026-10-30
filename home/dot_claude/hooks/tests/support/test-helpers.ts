@@ -651,6 +651,7 @@ export function buildPlanNContent(
   filesSection: string[],
   parentSpecHash: string,
   omitParentSpecHash = false,
+  bodyText = "",
 ): string {
   const reviewStatus = options.review?.verdict ?? "pending";
   const filesBlock = ["## Files", "", "```", ...filesSection, "```"].join("\n");
@@ -660,7 +661,7 @@ export function buildPlanNContent(
     `- Review Status: ${reviewStatus}`,
     `- Approval Status: ${options.approvalStatus}`,
   ].join("\n");
-  const baseContent = `${filesBlock}\n\n${approval}`;
+  const baseContent = `${filesBlock}\n\n${approval}${bodyText ? `\n\n${bodyText}` : ""}`;
   if (!options.review) {
     return baseContent;
   }

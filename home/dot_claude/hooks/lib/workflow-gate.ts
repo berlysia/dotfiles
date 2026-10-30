@@ -340,6 +340,63 @@ export type PlanClass =
 
 const APPROVAL_ROWS = new Set(["Approval Status", "approval"]);
 
+const EXTERNAL_SEND_TERM = "外部送信";
+const EXTERNAL_SEND_DELEGATION_REASON =
+  "外部送信: 可 の Task があるため委任しない";
+const EXTERNAL_SEND_DENY_ROW =
+  /^[ \t]{0,3}(?:(?:[-*+]|\d+[.)])[ \t]+)?(?:\*\*外部送信\*\*|外部送信)[ \t]*:[ \t]+不可(?:\(([^()<>&~`可]+)\))?[ \t]*$/u;
+
+function restoreNumericCharacterReferences(text: string): string {
+  return text.replace(
+    /&#(?:([0-9]+)|[xX]([0-9a-fA-F]+));?/g,
+    (
+      reference,
+      decimal: string | undefined,
+      hexadecimal: string | undefined,
+    ) => {
+      const codePoint = Number.parseInt(
+        decimal ?? hexadecimal ?? "",
+        decimal === undefined ? 16 : 10,
+      );
+      if (
+        codePoint === 0 ||
+        codePoint > 0x10ffff ||
+        (codePoint >= 0xd800 && codePoint <= 0xdfff)
+      ) {
+        return reference;
+      }
+      return String.fromCodePoint(codePoint);
+    },
+  );
+}
+
+function reduceExternalSendText(text: string): string {
+  return restoreNumericCharacterReferences(text)
+    .normalize("NFKC")
+    .replace(/&[A-Za-z0-9]+;?/g, "")
+    .replace(/[^\p{L}\p{N}]|\p{Default_Ignorable_Code_Point}/gu, "");
+}
+
+function hasPossibleExternalSend(content: string): boolean {
+  const remainingBody = content
+    .split(/\r\n|\r|\n/)
+    .map((line) => {
+      const normalizedLine = line.normalize("NFKC");
+      const denyRow = EXTERNAL_SEND_DENY_ROW.exec(normalizedLine);
+      if (!denyRow) return normalizedLine;
+      const reason = denyRow[1];
+      if (
+        reason &&
+        reduceExternalSendText(reason).includes(EXTERNAL_SEND_TERM)
+      ) {
+        return normalizedLine;
+      }
+      return "";
+    })
+    .join("\n");
+  return reduceExternalSendText(remainingBody).includes(EXTERNAL_SEND_TERM);
+}
+
 /**
  * The one place that decides whether a plan-N.md clears: approved by the
  * user, cleared by the spec's delegation, or blocked by its first unmet
@@ -364,6 +421,19 @@ export function classifyPlan(planPath: string, ctx: SpecContext): PlanClass {
   }
   if (ctx.delegation === null || !diagnosis.exists) {
     return { kind: "blocked", blockedBy: unmet[0] };
+  }
+  try {
+    if (hasPossibleExternalSend(content)) {
+      return {
+        kind: "blocked",
+        blockedBy: `${unmet[0]} (delegation: ${EXTERNAL_SEND_DELEGATION_REASON})`,
+      };
+    }
+  } catch {
+    return {
+      kind: "blocked",
+      blockedBy: `${unmet[0]} (delegation: ${EXTERNAL_SEND_DELEGATION_REASON})`,
+    };
   }
   const unmetReview = rows.find(
     ([name, condition]) => !APPROVAL_ROWS.has(name) && !condition.ok,

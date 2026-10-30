@@ -585,6 +585,7 @@ interface DelegPlan {
   name: string;
   files: string[];
   approved?: boolean;
+  body?: string;
 }
 
 function delegatedRepo(
@@ -606,12 +607,337 @@ function delegatedRepo(
         plan.approved ? base : { ...base, approvalStatus: "pending" },
         plan.files,
         computeWorkflowRepoPlanHash(spec),
+        false,
+        plan.body,
       ),
     );
   }
   recordApprovalsForTest(wf, { delegateSpec: options.delegate ?? true });
   return { repo, wf };
 }
+
+function classifyDelegationBody(body: string, approved = false) {
+  const { repo, wf } = delegatedRepo(
+    ["src/"],
+    [{ name: "plan-1.md", files: ["src/a.ts"], approved, body }],
+  );
+  return classifyPlan(join(wf, "plan-1.md"), resolveSpecContext(wf, repo));
+}
+
+function assertExternalSendBlocked(body: string) {
+  const result = classifyDelegationBody(body);
+  equal(result.kind, "blocked");
+  ok(
+    result.kind === "blocked" &&
+      result.blockedBy.includes("外部送信: 可 の Task があるため委任しない"),
+  );
+}
+
+const externalSendBlockedCases: Array<[string, string]> = [
+  ["a canonical available row", "**外部送信**: 可"],
+  ["a row without space after the colon", "**外部送信**:可"],
+  ["a row whose value begins with 可", "**外部送信**: 可能"],
+  ["an English available value", "外部送信: yes"],
+  ["a fullwidth colon with an available value", "**外部送信**：可"],
+  ["a bullet-prefixed available row", "- **外部送信**: 可"],
+  ["an available row inside a code fence", "```\n**外部送信**: 可\n```"],
+  ["the term without a colon or value", "**外部送信**"],
+  ["a row with an empty value", "**外部送信**: "],
+  [
+    "an explanatory comment that mentions the term, even beside a deny row",
+    "<!-- 外部送信: 可は、この Task の本文を外部へ送ってよいという承認 -->\n**外部送信**: 不可",
+  ],
+  [
+    "comment rows inside a code fence and after a quoted fence marker",
+    [
+      "```",
+      "<!-- **外部送信**: 可 -->",
+      "> ```",
+      "<!-- **外部送信**: 可 -->",
+      "```",
+    ].join("\n"),
+  ],
+  ["a deny row whose reason mentions 可", "**外部送信**: 不可（Task 2 は可）"],
+  [
+    "a deny-looking row whose reason mentions the term",
+    "**外部送信**: 不可（外部送信しない）",
+  ],
+  ["a quoted deny row", "> **外部送信**: 不可"],
+  ["a deny row with an unrecognized prefix", "x **外部送信**: 不可"],
+  [
+    "a value that appends text after 不可",
+    "**外部送信**: 不可。ただし Task 2 は可",
+  ],
+  ["a value that starts with 不可 but continues", "**外部送信**: 不可能"],
+  [
+    "a reason with a second parenthetical group",
+    "**外部送信**: 不可（a）可（b）",
+  ],
+  [
+    "a reason with separated parenthetical groups",
+    "**外部送信**: 不可（x） 可 （y）",
+  ],
+  ["two parenthetical reason groups", "**外部送信**: 不可（a）（b）"],
+  ["a nested parenthetical reason", "**外部送信**: 不可（a（b））"],
+  [
+    "a reason containing angle brackets",
+    "**外部送信**: 不可 <ただし Task 2 は可>",
+  ],
+  ["an angle-bracketed available value", "外部送信: 不可 < 可 >"],
+  [
+    "a comment opener, available row, and comment closer on separate lines",
+    "<!--\n**外部送信**: 可\n-->",
+  ],
+  [
+    "invalid numeric character references beside an available row",
+    "&#x110000; &#xD800; &#0;\n**外部送信**: 可",
+  ],
+];
+
+for (const [description, body] of externalSendBlockedCases) {
+  test(`classifyPlan: external-send gate blocks ${description}`, () => {
+    assertExternalSendBlocked(body);
+  });
+}
+
+const externalSendDelegatedCases: Array<[string, string]> = [
+  ["one strict deny row", "**外部送信**: 不可"],
+  ["an NFKC-normalized fullwidth deny row", "＊＊外部送信＊＊： 不可"],
+  [
+    "a deny row with a non-disclosing parenthetical reason",
+    "**外部送信**: 不可（brief に非公開の設計を含む）",
+  ],
+  ["a deny row with ASCII parentheses", "**外部送信**: 不可(reason)"],
+  [
+    "a comment that explains the field without the term plus a deny row",
+    "<!-- この欄に 可 と書くと、この Task の本文を外部へ送ってよいという承認になる -->\n**外部送信**: 不可",
+  ],
+  ["a strict deny row inside a code fence", "```\n**外部送信**: 不可\n```"],
+  ["two strict deny rows", "**外部送信**: 不可\n**外部送信**: 不可"],
+  [
+    "numbered and indented bullet deny rows",
+    "1. 外部送信: 不可\n   * **外部送信**: 不可",
+  ],
+  [
+    "strict deny rows separated by a bare carriage return",
+    "**外部送信**: 不可\r**外部送信**: 不可",
+  ],
+  [
+    "invalid numeric references after removing the strict deny row",
+    "**外部送信**: 不可\n&#x110000; &#xD800; &#0;",
+  ],
+];
+
+for (const [description, body] of externalSendDelegatedCases) {
+  test(`classifyPlan: external-send gate delegates with ${description}`, () => {
+    equal(classifyDelegationBody(body).kind, "delegated");
+  });
+}
+
+test("classifyPlan: absence of an external-send row is outside the guarantee", () => {
+  equal(classifyDelegationBody("Ordinary task body.").kind, "delegated");
+});
+
+const obfuscatedExternalSendCases: Array<[string, string]> = [
+  ["emphasis in the middle of the term", "外部**送信**: 可"],
+  ["a numeric character reference", "外部&#x9001;信: 可"],
+  ["a zero-width numeric character reference", "外部&#8203;送信: 可"],
+  ["a space numeric character reference", "外部&#x20;送信: 可"],
+  ["a named soft-hyphen reference", "外部&shy;送信: 可"],
+  ["a named nonbreaking-space reference", "外部&nbsp;送信: 可"],
+  ["a numeric reference without a semicolon", "外部&#x9001信: 可"],
+  ["an uppercase hexadecimal marker", "外部&#X9001;信: 可"],
+  ["a named reference without a semicolon", "外部&shy送信: 可"],
+  ["a zero-width space", `外部${String.fromCodePoint(0x200b)}送信: 可`],
+  ["an embedded space", "外部 送信: 可"],
+  ["a line break inside the term", "外部\n送信: 可"],
+  [
+    "default-ignorable and combining characters",
+    `外部${String.fromCodePoint(0x3164, 0xfe0f, 0x0301, 0x2800)}送信: 可`,
+  ],
+  ["formatting that splits 不可", "**外部送信**: ~~不~~可"],
+  ["a tag that splits 不可", "**外部送信**: <span hidden>不</span>可"],
+  [
+    "a lone carriage return between an unavailable and available row",
+    "**外部送信**: 不可\r**外部送信**: 可",
+  ],
+  ["a term in an HTML tag attribute", '<b title="**外部送信**: 可">'],
+  ["a term across tag lines", "<a\n**外部送信**: 可\n>"],
+  [
+    "a term after an HTML comment on the same line",
+    "<!-- 説明 --> **外部送信**: 可",
+  ],
+  ["a term in a tilde code fence", "~~~\n**外部送信**: 可\n~~~"],
+  [
+    "a numeric reference that is outside Unicode, a surrogate, and zero",
+    "&#x110000; &#xD800; &#0;\n**外部送信**: 可",
+  ],
+];
+
+for (const [description, body] of obfuscatedExternalSendCases) {
+  test(`classifyPlan: reduced text detects ${description}`, () => {
+    assertExternalSendBlocked(body);
+  });
+}
+
+for (const [description, body] of [
+  ["a tag between the words", "外部<b></b>送信: 可"],
+  ["a comment between the words", "外部<!--c-->送信: 可"],
+]) {
+  test(`classifyPlan: guarantee is outside intentional ${description}`, () => {
+    equal(classifyDelegationBody(body).kind, "delegated");
+  });
+}
+
+test("classifyPlan: human approval still wins over an external-send row", () => {
+  equal(classifyDelegationBody("**外部送信**: 可", true).kind, "approved");
+});
+
+test("classifyPlan: added external-send row blocks before a stale review hash", () => {
+  const { repo, wf } = delegatedRepo(
+    ["src/"],
+    [{ name: "plan-1.md", files: ["src/a.ts"] }],
+  );
+  const planPath = join(wf, "plan-1.md");
+  const original = readFileSync(planPath, "utf-8");
+  equal(classifyPlan(planPath, resolveSpecContext(wf, repo)).kind, "delegated");
+  writeFileSync(planPath, `${original}\n\n**外部送信**: 可`);
+  const changed = classifyPlan(planPath, resolveSpecContext(wf, repo));
+  equal(changed.kind, "blocked");
+  ok(
+    changed.kind === "blocked" &&
+      changed.blockedBy.includes("外部送信: 可 の Task があるため委任しない"),
+  );
+});
+
+test("classifyPlan: restoring the reviewed deny row delegates again", () => {
+  const { repo, wf } = delegatedRepo(
+    ["src/"],
+    [{ name: "plan-1.md", files: ["src/a.ts"], body: "**外部送信**: 不可" }],
+  );
+  const planPath = join(wf, "plan-1.md");
+  const reviewed = readFileSync(planPath, "utf-8");
+  writeFileSync(
+    planPath,
+    reviewed.replace("**外部送信**: 不可", "**外部送信**: 可"),
+  );
+  const changed = classifyPlan(planPath, resolveSpecContext(wf, repo));
+  equal(changed.kind, "blocked");
+  ok(
+    changed.kind === "blocked" &&
+      changed.blockedBy.includes("外部送信: 可 の Task があるため委任しない"),
+  );
+  writeFileSync(planPath, reviewed);
+  equal(classifyPlan(planPath, resolveSpecContext(wf, repo)).kind, "delegated");
+});
+
+test("summarizePlans: an external-send plan shows the delegation reason", () => {
+  const { repo, wf } = delegatedRepo(
+    ["src/"],
+    [
+      {
+        name: "plan-1.md",
+        files: ["src/a.ts"],
+        body: "**外部送信**: 可",
+      },
+    ],
+  );
+  const plan = summarizePlans(wf, repo).find(
+    (item) => item.name === "plan-1.md",
+  );
+  ok(plan);
+  ok(plan.blockedBy?.includes("外部送信: 可 の Task があるため委任しない"));
+});
+
+test("listApprovalCandidates: an external-send plan is offered for approval", () => {
+  const { repo, wf } = delegatedRepo(
+    ["src/"],
+    [
+      {
+        name: "plan-1.md",
+        files: ["src/a.ts"],
+        body: "**外部送信**: 可",
+      },
+    ],
+  );
+  equal(listApprovalCandidates(wf, repo).join(","), "plan-1.md");
+});
+
+test("evaluateTarget: an external-send plan denies its listed file", () => {
+  const { repo, wf } = delegatedRepo(
+    ["src/"],
+    [
+      {
+        name: "plan-1.md",
+        files: ["src/a.ts"],
+        body: "**外部送信**: 可",
+      },
+    ],
+  );
+  equal(
+    evaluateTarget({
+      wfDir: wf,
+      target: join(repo, "src", "a.ts"),
+      projectRoot: repo,
+    }).kind,
+    "deny",
+  );
+});
+
+test("evaluateTarget: an earlier delegated owner still clears a later external-send plan", () => {
+  const { repo, wf } = delegatedRepo(
+    ["src/"],
+    [
+      { name: "plan-1.md", files: ["src/a.ts"] },
+      {
+        name: "plan-2.md",
+        files: ["src/a.ts"],
+        body: "**外部送信**: 可",
+      },
+    ],
+  );
+  const result = evaluateTarget({
+    wfDir: wf,
+    target: join(repo, "src", "a.ts"),
+    projectRoot: repo,
+  });
+  ok(result.kind === "allow" && result.basis === "delegated");
+  equal(result.kind === "allow" && result.planName, "plan-1.md");
+});
+
+test("implementationPhaseBasis: an external-send-only plan is not delegated", () => {
+  const { repo, wf } = delegatedRepo(
+    ["src/"],
+    [
+      {
+        name: "plan-1.md",
+        files: ["src/a.ts"],
+        body: "**外部送信**: 可",
+      },
+    ],
+  );
+  equal(
+    implementationPhaseBasis(wf, resolveWorkflowPaths(wf), true, repo),
+    "none",
+  );
+});
+
+test("implementationPhaseBasis: a strict deny row remains delegated-only", () => {
+  const { repo, wf } = delegatedRepo(
+    ["src/"],
+    [
+      {
+        name: "plan-1.md",
+        files: ["src/a.ts"],
+        body: "**外部送信**: 不可",
+      },
+    ],
+  );
+  equal(
+    implementationPhaseBasis(wf, resolveWorkflowPaths(wf), true, repo),
+    "delegated-only",
+  );
+});
 
 test("classifyPlan: a reviewed plan within the Scope is delegated", () => {
   const { repo, wf } = delegatedRepo(
