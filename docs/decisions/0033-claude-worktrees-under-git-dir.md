@@ -96,6 +96,14 @@ D5 の「install しない」を改める。理由は、`git-worktree-create` �
 
 確かめ直す条件: name の形は Claude Code 2.1.314 で 1 回ずつ観察したものである。Claude Code を更新して name の形が変わると、subagent でも install され、`origin/HEAD` の script も実行される。作成は失敗しない。更新後に片付けが空振りしているように見えたら、同時に name の形も確かめる。確認手順は `docs/commands/git-worktree-cleanup.md` にある。
 
+2026-10-31 の実機確認（使い捨ての pnpm repo で `claude -p` を起動。1 回ずつ）:
+
+- `--worktree agent-foo`: install されず、`[deps]` が session に入る。
+- `--worktree probe`: `node_modules` が入り、`[deps]` は出ない。
+- `isolation: "worktree"` の subagent: install されず、`[deps]` が subagent に入る。
+- 150 秒の見直し: lockfile 10084 行の repo を新しく clone して `pnpm install --frozen-lockfile` を 3 回実行し、1.40〜1.75 秒だった。pnpm の store に中身がある場合の値で、store が空の場合は測っていない。超える実測が無いので 150 秒のままにする。
+- `wf_` の worktree、Remote Control、VM の実機は未確認である。
+
 ## References
 
 - `home/dot_claude/rules/developer-experience.md` の Git Worktree Convention
