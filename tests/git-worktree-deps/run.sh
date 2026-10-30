@@ -102,7 +102,7 @@ run_deps() {
 }
 now() { date +%s; }
 # path_without_timeout [gtimeout]: a PATH directory with the tools the script and the fakes need, and no timeout
-# (the base PATH has the real one); with "gtimeout" it also holds the real timeout under that name
+# (the base PATH has the real one); with "gtimeout" it also holds the real command under that name
 path_without_timeout() {
   local dir=$TMP_BASE/nobin-$1-$$ tool real
   mkdir -p "$dir"
@@ -110,7 +110,7 @@ path_without_timeout() {
     real=$(PATH="$BASE_PATH" command -v "$tool") || continue
     ln -sf "$real" "$dir/$tool"
   done
-  if [[ "$1" == gtimeout ]]; then ln -sf "$(command -v timeout)" "$dir/gtimeout"; fi
+  if [[ "$1" == gtimeout ]]; then ln -sf "$(command -v timeout || command -v gtimeout)" "$dir/gtimeout"; fi
   printf '%s' "$dir"
 }
 
