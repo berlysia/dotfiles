@@ -38,8 +38,33 @@ export const SKILL_GUIDE_SKILLS = [
   "model-offloading",
 ] as const;
 export const SKILL_GUIDE_SCAN_DEADLINE_MS = 800;
+export const SKILL_GUIDE_HOOK_DEADLINE_MS = 1700;
 export const SKILL_GUIDE_MARKER_TTL_MS = 24 * 60 * 60 * 1000;
 export const SKILL_GUIDE_LOG_MAX_BYTES = 1024 * 1024;
+
+export interface SkillGuideDeadline {
+  remaining(stageCapMs: number): number;
+  expired(): boolean;
+}
+
+/** Creates a monotonic deadline shared by every stage in one hook invocation. */
+export function createSkillGuideDeadline(
+  budgetMs: number = SKILL_GUIDE_HOOK_DEADLINE_MS,
+  now: () => number = () => performance.now(),
+): SkillGuideDeadline {
+  const expiresAt = now() + Math.max(0, budgetMs);
+  return {
+    remaining(stageCapMs: number): number {
+      return Math.max(
+        0,
+        Math.min(Math.floor(stageCapMs), Math.floor(expiresAt - now())),
+      );
+    },
+    expired(): boolean {
+      return now() >= expiresAt;
+    },
+  };
+}
 
 const SKILL_NAME_PATTERN = /^[a-z0-9][a-z0-9._-]*$/;
 const SINGLE_WORD_ALLOWLIST = new Set(["git-worktree-create"]);

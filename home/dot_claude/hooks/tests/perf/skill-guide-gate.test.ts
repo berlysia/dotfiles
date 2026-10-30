@@ -16,8 +16,9 @@ after(() => {
   for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
 });
 
-// Kept out of tests/unit: it waits for the real 2000 ms watchdog and bounds
-// the wall-clock time, which the unit layout rule forbids.
+// Kept out of tests/unit: it waits for the real 1700 ms shared deadline (the
+// 2000 ms watchdog is the backstop) and bounds
+// wall-clock time, which the unit layout rule forbids.
 describe("skill-guide-gate.ts watchdog", () => {
   it("exits 0 with empty stdout after the watchdog when stdin remains open", async () => {
     const home = realpathSync(mkdtempSync(join(tmpdir(), "skill-guide-perf-")));
@@ -52,6 +53,6 @@ describe("skill-guide-gate.ts watchdog", () => {
     const elapsedMs = performance.now() - startedAt;
     strictEqual(result.code, 0, result.stderr);
     strictEqual(result.stdout, "");
-    ok(elapsedMs >= 1800 && elapsedMs < 3000, `${elapsedMs} ms`);
+    ok(elapsedMs >= 1500 && elapsedMs < 3000, `${elapsedMs} ms`);
   });
 });

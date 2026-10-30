@@ -4,9 +4,13 @@ import { logEvent } from "../lib/centralized-logging.ts";
 import { prepareDenyInput } from "../lib/deny-input.ts";
 import { readStdinLimited } from "../lib/read-stdin-limited.ts";
 import {
+  createSkillGuideDeadline,
   evaluateSkillGuide,
   logSkillGuideEvent,
   resolveSkillGuidePaths,
+  SKILL_GUIDE_HOOK_DEADLINE_MS,
+  SKILL_GUIDE_SCAN_DEADLINE_MS,
+  type SkillGuideDeadline,
   type SkillGuideDeps,
   type SkillGuideGateResult,
   type SkillGuideRequest,
@@ -47,6 +51,7 @@ function buildReason(denied: SkillGuideGateResult["denied"]): string {
 export async function run(
   input: unknown,
   deps?: SkillGuideDeps,
+  deadline: SkillGuideDeadline = createSkillGuideDeadline(),
 ): Promise<object | null> {
   try {
     if (!isRecord(input)) return null;
@@ -71,7 +76,24 @@ export async function run(
       commands: individualCommands,
     };
     const paths = resolveSkillGuidePaths();
-    const result = evaluateSkillGuide(request, deps ?? paths);
+    const resolvedDeps = deps ?? paths;
+    const scanCap = Math.min(
+      SKILL_GUIDE_SCAN_DEADLINE_MS,
+      deps?.scan?.deadlineMs ?? SKILL_GUIDE_SCAN_DEADLINE_MS,
+    );
+    const scanBudgetMs = deadline.remaining(scanCap);
+    if (scanBudgetMs <= 0) {
+      logSkillGuideEvent("timeout");
+      return null;
+    }
+    const result = evaluateSkillGuide(request, {
+      ...resolvedDeps,
+      scan: { ...(deps?.scan ?? {}), deadlineMs: scanBudgetMs },
+    });
+    if (deadline.expired()) {
+      logSkillGuideEvent("timeout");
+      return null;
+    }
     if (result.status !== "deny") return null;
 
     return {
@@ -88,6 +110,7 @@ export async function run(
 }
 
 if (import.meta.main) {
+  const deadline = createSkillGuideDeadline(SKILL_GUIDE_HOOK_DEADLINE_MS);
   let timer: ReturnType<typeof setTimeout> | undefined;
   const watchdog = new Promise<null>((resolve) => {
     timer = setTimeout(() => {
@@ -99,7 +122,12 @@ if (import.meta.main) {
 
   try {
     const work = (async () => {
-      const raw = await readStdinLimited(MAX_STDIN_BYTES, WATCHDOG_MS);
+      const stdinBudgetMs = deadline.remaining(WATCHDOG_MS);
+      if (stdinBudgetMs <= 0) {
+        logSkillGuideEvent("timeout");
+        return null;
+      }
+      const raw = await readStdinLimited(MAX_STDIN_BYTES, stdinBudgetMs);
       if (raw === null) return null;
       let parsed: unknown;
       try {
@@ -107,10 +135,12 @@ if (import.meta.main) {
       } catch {
         return null;
       }
-      return run(parsed);
+      return run(parsed, undefined, deadline);
     })();
     const output = await Promise.race([work, watchdog]);
-    if (output !== null) process.stdout.write(`${JSON.stringify(output)}\n`);
+    if (output !== null && !deadline.expired()) {
+      process.stdout.write(`${JSON.stringify(output)}\n`);
+    }
   } catch {
     logInternalError();
   } finally {
