@@ -34,6 +34,7 @@ import type {
 import {
   DESTINATIONS,
   FREE_DESTINATIONS,
+  effortTrialDisplay,
   offloadDisplay,
   type Destination,
   type DestinationName,
@@ -517,6 +518,46 @@ function explore(
   }
 }
 
+function effortTrialLine(
+  folded: Folded,
+  destination: Destination | null,
+  kind: string,
+  size: string,
+  now: Date,
+): string | null {
+  if (
+    destination === null ||
+    destination.effortTrials === undefined ||
+    (kind !== "review" && size !== "S")
+  ) {
+    return null;
+  }
+
+  const groups = groupsForCell(folded, kind, size, now, EXPLORE_WINDOW_DAYS);
+  let least: {
+    effort: (typeof destination.effortTrials)[number];
+    count: number;
+  } | null = null;
+  for (const effort of destination.effortTrials) {
+    const count =
+      groups.find(
+        (group) =>
+          group.harness === destination.match.harness &&
+          (destination.match.model === undefined ||
+            group.model === destination.match.model) &&
+          group.effort === effort,
+      )?.n ?? 0;
+    if (
+      count < EXPLORE_MIN_RECORDS &&
+      (least === null || count < least.count)
+    ) {
+      least = { effort, count };
+    }
+  }
+  if (least === null) return null;
+  return `試す effort: ${effortTrialDisplay(destination, least.effort)} ${kind}×${size} の直近 ${EXPLORE_WINDOW_DAYS} 日の記録 ${least.count}/${EXPLORE_MIN_RECORDS} 件`;
+}
+
 /**
  * The launch text for a row. Rows that send out are built from the table's
  * model, so what route shows is what the entry accepts; kind decides --write.
@@ -797,6 +838,12 @@ export function buildRoute(input: RouteInput): string[] {
     );
   }
   out.push(...candidateLines);
+  const trialDestination =
+    pick.destination !== null && pick.destination in DESTINATIONS
+      ? DESTINATIONS[pick.destination as DestinationName]
+      : null;
+  const trialLine = effortTrialLine(folded, trialDestination, kind, size, now);
+  if (trialLine !== null) out.push(trialLine);
 
   const windows = (["claude", "codex", "opencode", "sarashina"] as const)
     .map(

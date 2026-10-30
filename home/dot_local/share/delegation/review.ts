@@ -32,6 +32,7 @@ import {
   withinDays,
   type GroupStats,
 } from "./aggregate.ts";
+import { DESTINATIONS } from "./destinations.ts";
 import { recordRuleOne } from "./route.ts";
 import { displayModel, formatNote } from "./schema.ts";
 import type { Folded, SkipCounts } from "./store.ts";
@@ -142,6 +143,36 @@ function revisitLine(folded: Folded, kind: string, size: string, now: Date) {
   return `  自動書き換えの再検討の条件に当たる (ADR-0055): 記録だけの規則 1 の推奨 ${dest.label} が ${AUTO_REWRITE_STABLE_DAYS} 日変わらず、直近 ${DEFAULT_SINCE_DAYS} 日の ${dest.label} ${rep.n} 件と sonnet ${claude.n} 件がどちらも ${AUTO_REWRITE_REVISIT_RECORDS} 件を超えた`;
 }
 
+function effortReviewLines(groups: readonly GroupStats[]): string[] {
+  const out: string[] = [];
+  for (const destination of Object.values(DESTINATIONS)) {
+    if (
+      destination.effortTrials === undefined ||
+      destination.match.effort === undefined
+    ) {
+      continue;
+    }
+    const matches = (effort: string) =>
+      groups.find(
+        (group) =>
+          group.harness === destination.match.harness &&
+          (destination.match.model === undefined ||
+            group.model === destination.match.model) &&
+          group.effort === effort,
+      );
+    const current = matches(destination.match.effort);
+    if (current === undefined || current.n < EXPLORE_MIN_RECORDS) continue;
+    for (const trialEffort of destination.effortTrials) {
+      const trial = matches(trialEffort);
+      if (trial === undefined || trial.n < EXPLORE_MIN_RECORDS) continue;
+      out.push(
+        `  effort の見直しの条件に当たる: ${destination.label} の ${trialEffort} ${trial.n} 件と ${destination.match.effort} ${current.n} 件がどちらも ${EXPLORE_MIN_RECORDS} 件以上。数値は上の組の行を見る`,
+      );
+    }
+  }
+  return out;
+}
+
 export function buildReview(input: ReviewInput): string[] {
   const { folded, now, sinceDays } = input;
   const out: string[] = [];
@@ -157,6 +188,7 @@ export function buildReview(input: ReviewInput): string[] {
     }
     const revisit = revisitLine(folded, cell.kind, cell.size, now);
     if (revisit !== null) out.push(revisit);
+    out.push(...effortReviewLines(cell.groups));
   }
   const { version, type, broken } = input.skipped;
   if (version + type + broken > 0) {
