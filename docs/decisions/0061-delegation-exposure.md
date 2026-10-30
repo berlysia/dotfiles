@@ -85,7 +85,10 @@ R1(e) の主な露出面は、作業ツリー全体を読む research の委譲�
 - `可` の Task を含む plan-N は、人間の承認を経る。`不可` の行は委任 gate の対象から外れる。
 - ルールと gate は、送信内容が提供側で学習・保持される前提を共有する。
 - 送信可否をリポジトリ全体の公開状態で決めず、Task の本文と作業ツリーの読み取り範囲で判断する。
-- plan-3 の実機確認後に、opencode のバージョンと確認結果をここに追記する。
+- 2026-10-30 に、plan-3 の実機確認を opencode v2.2.0 で行った。確認を通過した model は `zai-coding-plan/glm-5.3` と `sarashina/sarashina3.2-mini-thinking` である。記録（`verified.json`）には、この 2 つだけが入っている。
+- 確認で見た送り先は、model ごとに自分の provider のホストだけだった（`api.z.ai:443`、`api.sarashina.ai:443`）。model の一覧を取る `models.opencode.ai:443` への接続は、送り先として受け入れている。
+- 無料モデルの `opencode/deepseek-v4.1-flash-free` と `opencode/glm-5.3-flash-free` は、利用上限に達したため未確認である。記録に無い model への委譲は入口が拒否する。
+- opencode の権限設定では防げなかったものは、入口の起動前の検査で拒否する。作業ツリーの外を指す symlink と、祖先の `opencode.jsonc` が当たる。書き込み用の agent は、権限を確かめる前に deny の対象の `.env` を開くので、秘密を含みうるファイルがある作業ツリーでの起動も入口が拒否する。
 
 ## References
 
