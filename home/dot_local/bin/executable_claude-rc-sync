@@ -5,8 +5,8 @@
 #   claude-rc-sync restart [name...]
 #                           restart listed instances (all listed when no name is given)
 #                           to pick up edited flags or a new claude binary. Their live
-#                           sessions drop and do not reconnect: the server starts on a new
-#                           environment with no session (see claude-rc-launch)
+#                           sessions drop; the server resumes the main-directory session at
+#                           start and a worktree session when it next gets a message
 set -euo pipefail
 
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
@@ -19,8 +19,9 @@ Usage:
   claude-rc-sync restart [name...]  restart listed instances (all listed when no name is given)
   claude-rc-sync --help             show this help
 
-restart picks up edited flags or a new claude binary. Live sessions drop and do
-not reconnect: the server starts on a new environment with no session.
+restart picks up edited flags or a new claude binary. Live sessions drop; the
+server resumes the main-directory session at start and a worktree session when
+it next gets a message.
 
 Exit codes:
   0  done

@@ -58,13 +58,8 @@ if [[ "$spawn" == "worktree" ]] && ! git -C "$dir" rev-parse --is-inside-work-tr
 fi
 
 cd "$dir"
-# --no-create-session-in-dir: sessions start only when asked for from the app.
-# The flag also stops the server from reading its saved pointer, so a restart
-# registers a new environment and earlier sessions do not reconnect. The CLI
-# has no flag that keeps the pointer and skips the session.
 # shellcheck disable=SC2086  # $extra is intentionally word-split into flags
 exec claude remote-control \
   --spawn "$spawn" \
   --remote-control-session-name-prefix "$name" \
-  --no-create-session-in-dir \
   ${extra:-}
