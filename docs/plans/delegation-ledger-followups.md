@@ -47,6 +47,14 @@ Terra の記録を増やして比較する案として、次の候補 1〜4 を�
 3. 同じ round の reviewer を Terra と Luna に振り分ける。「同じ round は同じ推奨」の規則を変える。**推奨**。
 4. 同じ作業を両方に渡して比べる。費用が 2 倍になる。
 
+### skill 版の model-offloading に試す effort の手順が無い
+
+ADR-0064 で、`home/dot_claude/rules/model-offloading.md` に試す effort の手順を足した（手順 3 の例外、手順 4、手順 7）。
+`.skills/model-offloading/SKILL.md` は rule のコピーではない短い文書で、手順が 5 つしかなく、この 3 か所に相当する記述が無い。
+rule は常に読み込まれるので、試す effort の行を使えずに作業が止まることは無い。
+skill は `codex exec` の前に hook が読ませるので、skill だけを読んだ場合に試す effort の行の扱いが分からない。
+skill を rule に合わせるか、skill から rule の手順を参照させるかを決める。
+
 ## OpenCode でレビュアーを動かす
 
 Document Workflow のレビュアーを OpenCode で動かす仕組みが無い。route が review で opencode を勧めても、規約は sonnet で起動させている。
