@@ -1,10 +1,11 @@
 import {
   cleanupSubagentWorktree,
   createWorktree,
+  prepareDependencies,
   removeWorktree,
 } from "./claude-worktree.ts";
 import type { Deps } from "./claude-worktree-git.ts";
-import { stripControlChars } from "./claude-worktree-git.ts";
+import { defaultDeps, stripControlChars } from "./claude-worktree-git.ts";
 
 // Hook-level behaviour for the three events (spec K7 and its mapping table):
 // parse the raw stdin JSON by hand, call the core, and turn the result into
@@ -53,11 +54,15 @@ function errorText(error: unknown): string {
 }
 
 // WorktreeCreate: stdout is the worktree path on success and empty otherwise;
-// exit 0 <=> success (I1). Every failure, including exceptions, exits 1.
+// exit 0 <=> success (I1). Every failure, including exceptions, exits 1. Once the
+// worktree exists, preparing its dependencies can only add stderr lines: it never
+// changes the path or the exit code (ADR-0033 K3).
 export function handleWorktreeCreate(
   rawStdin: string,
-  deps?: Deps,
+  deps: Deps = defaultDeps(),
 ): HandlerResult {
+  // The hook's time budget runs from here (K5).
+  const startedAt = deps.now();
   const input = parseObject(rawStdin);
   if (!input) {
     return finish(1, ["WorktreeCreate: input is not a JSON object"]);
@@ -76,7 +81,16 @@ export function handleWorktreeCreate(
         `worktree create failed (${result.reason}): ${result.message}`,
       ]);
     }
-    return finish(0, result.warnings, `${result.path}\n`);
+    let preparation: string[];
+    try {
+      preparation = prepareDependencies(
+        { name, path: result.path, reused: result.reused, startedAt },
+        deps,
+      );
+    } catch (error) {
+      preparation = [`dependency preparation failed: ${errorText(error)}`];
+    }
+    return finish(0, [...result.warnings, ...preparation], `${result.path}\n`);
   } catch (error) {
     return finish(1, [`worktree create failed: ${errorText(error)}`]);
   }
@@ -158,7 +172,10 @@ function handleSubagentStop(
             ])
           : SILENT_OK;
       case "kept":
-        return finish(0, [`subagent worktree kept: ${result.detail}`]);
+        return finish(0, [
+          `subagent worktree kept: ${result.detail}`,
+          ...(result.note === undefined ? [] : [result.note]),
+        ]);
     }
   } catch (error) {
     return finish(0, [`subagent worktree cleanup failed: ${errorText(error)}`]);

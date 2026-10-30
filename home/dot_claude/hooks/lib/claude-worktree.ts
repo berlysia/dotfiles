@@ -1,4 +1,12 @@
-import { lstatSync, realpathSync } from "node:fs";
+import {
+  accessSync,
+  constants,
+  existsSync,
+  lstatSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+} from "node:fs";
 import {
   basename,
   dirname,
@@ -8,8 +16,17 @@ import {
   resolve,
   sep,
 } from "node:path";
-import { createGit, defaultDeps } from "./claude-worktree-git.ts";
-import type { Deps } from "./claude-worktree-git.ts";
+import {
+  DEADLINE_MS,
+  HARDENING_ARGS,
+  KIND_LIMIT_MS,
+  PREP_TIMING,
+  createGit,
+  defaultDeps,
+  gitEnv,
+  runInOwnGroup,
+} from "./claude-worktree-git.ts";
+import type { Deps, GitResult } from "./claude-worktree-git.ts";
 import {
   currentRoot,
   isUnderManagedRoot,
@@ -414,6 +431,8 @@ export type SubagentCleanupResult =
         | "has-changes"
         | "remove-failed"
         | "git-failed";
+      // Why git was not run or the helper refused, when that is more than the detail says.
+      note?: string;
     };
 
 const AGENT_ID_PATTERN = /^[A-Za-z0-9]{1,64}$/;
@@ -690,7 +709,8 @@ export function removeWorktree(
   input: { worktreePath: string; cwd: string },
   deps: Deps = defaultDeps(),
 ): RemoveResult {
-  const git = createGit(deps, deps.now());
+  const startedAt = deps.now();
+  const git = createGit(deps, startedAt);
   const fail = (
     reason: Extract<RemoveResult, { ok: false }>["reason"],
     message: string,
@@ -775,10 +795,10 @@ export function removeWorktree(
   }
 
   // 5. One forced remove, with the path git itself reported.
-  const removal = git(
+  const { result: removal } = removeCheckout(
+    { git, deps, startedAt, repo },
+    registered.path,
     ["worktree", "remove", "--force", "--", registered.path],
-    "remove",
-    repo.main.path,
   );
   // 6. Trust the filesystem, not the exit code.
   if (!removal.ok) {
@@ -827,11 +847,16 @@ export function cleanupSubagentWorktree(
   input: { agentId: string; cwd: string },
   deps: Deps = defaultDeps(),
 ): SubagentCleanupResult {
-  const git = createGit(deps, deps.now());
+  const startedAt = deps.now();
+  const git = createGit(deps, startedAt);
   const none: SubagentCleanupResult = { action: "none" };
   const kept = (
     detail: Extract<SubagentCleanupResult, { action: "kept" }>["detail"],
-  ): SubagentCleanupResult => ({ action: "kept", detail });
+    note?: string,
+  ): SubagentCleanupResult =>
+    note === undefined
+      ? { action: "kept", detail }
+      : { action: "kept", detail, note };
 
   const { agentId, cwd } = input;
   if (
@@ -883,16 +908,265 @@ export function cleanupSubagentWorktree(
   if (verifyManagedPath(repo, entry.path)) return kept("git-failed");
 
   // No --force: git re-checks that the worktree is clean.
-  const removal = git(
+  const { result: removal, note } = removeCheckout(
+    { git, deps, startedAt, repo },
+    entry.path,
     ["worktree", "remove", "--", entry.path],
-    "remove",
-    repo.main.path,
   );
-  if (!removal.ok) return kept("remove-failed");
+  if (!removal.ok) return kept("remove-failed", note);
   return deleteBranchIfUntouched(git, repo.main.path, ref, judgement.tip)
     ? { action: "removed" }
     : {
         action: "removed",
         keptBranch: { name: dirName, reason: "cas-missed" },
       };
+}
+
+// ---------------------------------------------------------------------------
+// Removal inside an agent-vm machine (ADR-0033 K7)
+// ---------------------------------------------------------------------------
+
+const VM_HELPER = "agent-vm-node-modules";
+const DEFAULT_VM_MARKER = "/etc/agent-vm";
+
+function isExecutableFile(path: string): boolean {
+  try {
+    accessSync(path, constants.X_OK);
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+}
+
+// Absolute PATH entries only: a relative entry would pick a file of whatever directory the hook runs in.
+function findOnPath(name: string): string | null {
+  for (const dir of (process.env.PATH ?? "").split(":")) {
+    if (!isAbsolute(dir)) continue;
+    const candidate = join(dir, name);
+    if (isExecutableFile(candidate)) return candidate;
+  }
+  return null;
+}
+
+function shellQuote(text: string): string {
+  return `'${text.replace(/'/g, `'\\''`)}'`;
+}
+
+export type MountState = "none" | "mounted" | "unreadable";
+
+// The kernel escapes space, tab, newline and backslash in a mountinfo path as three octal digits.
+function decodeMountinfoPath(text: string): string {
+  return text.replace(/\\([0-7]{3})/g, (_, octal: string) =>
+    String.fromCharCode(parseInt(octal, 8)),
+  );
+}
+
+// Is anything mounted at or under one of `paths`? A table with no parsable line counts as unreadable: an empty answer
+// from a real mountinfo does not exist, so it must not read as "nothing is mounted".
+export function findMountsUnder(
+  mountinfo: string,
+  paths: readonly string[],
+): MountState {
+  const roots = paths.map((path) => resolve(path));
+  let parsed = 0;
+  let mounted = false;
+  for (const line of mountinfo.split("\n")) {
+    const fields = line.split(" ");
+    const raw = fields[4];
+    if (fields.length < 7 || raw === undefined) continue;
+    parsed += 1;
+    const mountPoint = decodeMountinfoPath(raw);
+    if (
+      roots.some(
+        (root) => mountPoint === root || mountPoint.startsWith(`${root}${sep}`),
+      )
+    ) {
+      mounted = true;
+    }
+  }
+  if (parsed === 0) return "unreadable";
+  return mounted ? "mounted" : "none";
+}
+
+function readMountinfoFile(): string {
+  return readFileSync("/proc/self/mountinfo", "utf8");
+}
+
+type Removal = { result: GitResult; note?: string };
+
+// `git worktree remove` of a worktree that has agent-vm node_modules mounts empties the VM-side copies and then fails
+// on the mount points. So inside a machine: through the helper when it is there; without it, git only when no mount
+// is found under the worktree. A refusal, an unknown mount state and a failure to run all keep the worktree, and git
+// is never the fallback.
+function removeCheckout(
+  ctx: { git: Git; deps: Deps; startedAt: number; repo: RepoContext },
+  path: string,
+  removeArgs: readonly string[],
+): Removal {
+  const { git, deps, startedAt, repo } = ctx;
+  const plain = (): Removal => ({
+    result: git(removeArgs, "remove", repo.main.path),
+  });
+  if (!existsSync(process.env.AGENT_VM_MARKER || DEFAULT_VM_MARKER)) {
+    return plain();
+  }
+  const refused = (stderr: string, timedOut = false): Removal => ({
+    result: { ok: false, status: null, stderr, timedOut },
+    note: stderr,
+  });
+
+  const helper = findOnPath(VM_HELPER);
+  if (helper) {
+    const remaining = DEADLINE_MS - (deps.now() - startedAt);
+    if (remaining <= 0) {
+      return refused(`deadline exceeded before running ${VM_HELPER}`, true);
+    }
+    const outcome = runInOwnGroup(
+      helper,
+      [
+        "remove",
+        path,
+        "--",
+        "git",
+        ...HARDENING_ARGS,
+        "-C",
+        repo.main.path,
+        ...removeArgs,
+      ],
+      {
+        cwd: repo.main.path,
+        env: gitEnv(),
+        timeoutMs: Math.min(KIND_LIMIT_MS.remove, remaining),
+      },
+    );
+    if (outcome.failure !== null) {
+      return refused(`could not run ${VM_HELPER}: ${outcome.failure}`);
+    }
+    if (outcome.timedOut) {
+      return refused(
+        `${VM_HELPER} did not finish in time; ${path} is kept`,
+        true,
+      );
+    }
+    if (outcome.status !== 0) {
+      const text = outcome.output.trim();
+      return refused(
+        text !== ""
+          ? text
+          : `${VM_HELPER} stopped with ${outcome.signal ?? `status ${outcome.status}`}; ${path} is kept`,
+      );
+    }
+    return { result: { ok: true, stdout: "" } };
+  }
+
+  let state: MountState;
+  try {
+    state = findMountsUnder((deps.readMountinfo ?? readMountinfoFile)(), [
+      path,
+      canonicalize(path),
+    ]);
+  } catch {
+    state = "unreadable";
+  }
+  if (state === "none") return plain();
+  const why =
+    state === "mounted"
+      ? "has agent-vm node_modules mounts"
+      : "its mounts could not be read";
+  return refused(
+    `git was not run: ${path} ${why} and ${VM_HELPER} is not on PATH, and removing it with git would empty the VM-side copies and then fail. The worktree is kept. To remove it, from a shell where the helper is on PATH: ${VM_HELPER} remove ${shellQuote(path)} -- git worktree remove -- ${shellQuote(path)}`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Dependency preparation after a create (ADR-0033 K1-K6)
+// ---------------------------------------------------------------------------
+
+const DEPS_CLI = "git-worktree-deps";
+// Claude Code names a subagent's worktree agent-<id> (isolation: "worktree") or wf_<run>-<n> (workflow agents). The
+// hook input has no other sign of who asks, so a name that looks like one is treated as one: a wrong guess toward
+// "subagent" costs an install the agent runs itself, a wrong guess the other way runs the origin's scripts.
+const SUBAGENT_NAME_PREFIXES = ["agent-", "wf_"] as const;
+const OUTPUT_TAIL_LINES = 100;
+
+export function isSubagentWorktreeName(name: string): boolean {
+  return SUBAGENT_NAME_PREFIXES.some((prefix) => name.startsWith(prefix));
+}
+
+// CSI sequences (the CLI colours its lines). stripControlChars alone would leave "[1;33m" behind.
+function stripAnsi(text: string): string {
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "");
+}
+
+// Runs git-worktree-deps for a worktree this hook has just created or found. Never throws and never fails the hook
+// (K3): everything that goes wrong becomes one stderr line, and the caller still returns the worktree path. The
+// result is the lines to put on the hook's stderr; the CLI's own stdout and stderr are among them.
+export function prepareDependencies(
+  input: { name: string; path: string; reused: boolean; startedAt: number },
+  deps: Deps = defaultDeps(),
+): string[] {
+  const { name, path, reused, startedAt } = input;
+  const timing = { ...PREP_TIMING, ...deps.timing };
+  const retry = `${DEPS_CLI} ${shellQuote(path)}`;
+  const elapsedMs = deps.now() - startedAt;
+
+  // The CLI as a whole gets what is left of the hook's budget minus a reserve for the hook to return in.
+  const cliMs = timing.budgetMs - elapsedMs - timing.cliReserveMs;
+  if (cliMs < timing.minCliMs) {
+    return [
+      `dependency preparation skipped: too little of the hook's time is left (elapsed ${Math.round(elapsedMs / 1000)} s); to prepare it: ${retry}`,
+    ];
+  }
+  const home = process.env.HOME;
+  if (!home) return ["dependency preparation skipped: HOME is not set"];
+  const cli = join(home, ".local", "bin", DEPS_CLI);
+  if (!isExecutableFile(cli)) {
+    return [
+      `dependency preparation skipped: ${cli} is not an executable file; to prepare it later: ${retry}`,
+    ];
+  }
+
+  // Only the session's own fresh worktree is installed: a reused one has run before, and a subagent's is told its
+  // dependencies are missing instead (SubagentStart).
+  const installSec = Math.min(
+    timing.installCapSec,
+    Math.floor((timing.budgetMs - elapsedMs - timing.installReserveMs) / 1000),
+  );
+  const install =
+    !reused &&
+    !isSubagentWorktreeName(name) &&
+    installSec >= timing.minInstallSec;
+  const args = install
+    ? ["--source", "new", "--timeout", String(installSec), path]
+    : ["--no-install", path];
+
+  // The CLI gets the hook's whole environment: a package manager reads its registry credentials from it (K2).
+  const outcome = runInOwnGroup(cli, args, {
+    cwd: path,
+    env: process.env,
+    timeoutMs: cliMs,
+  });
+  const lines = stripAnsi(outcome.output)
+    .split("\n")
+    .filter((line) => line.trim() !== "");
+  const out =
+    lines.length > OUTPUT_TAIL_LINES
+      ? [
+          `(${lines.length - OUTPUT_TAIL_LINES} earlier lines of ${DEPS_CLI} output omitted)`,
+          ...lines.slice(-OUTPUT_TAIL_LINES),
+        ]
+      : lines;
+  if (outcome.timedOut) {
+    out.push(
+      `${DEPS_CLI} was stopped at the hook deadline (${Math.floor(cliMs / 1000)} s); the worktree is ready but its dependencies may be missing or partial. To finish: ${retry}`,
+    );
+  } else if (outcome.failure !== null) {
+    out.push(`could not run ${DEPS_CLI}: ${outcome.failure}`);
+  } else if (outcome.status !== 0) {
+    out.push(
+      `${DEPS_CLI} stopped with ${outcome.signal ?? `status ${outcome.status}`}; the worktree is ready but its dependencies may be missing. To retry: ${retry}`,
+    );
+  }
+  return out;
 }
