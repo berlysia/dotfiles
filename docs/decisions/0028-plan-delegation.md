@@ -89,3 +89,4 @@ plan-N のレビュー結果は model が要約して書く値で、委任はこ
 - ADR-0023（承認を人間に限る機構）
 - 設計の全文: `git show 52dc6fd447:docs/plans/plan-delegation/`（research、spec、plan-1 から plan-3。レビューの記録を含む）
 - `docs/plans/workflow-guard-followups.md`（hash の正規化が次の行を落とす件）
+- ADR-0061（`delegated` の条件に外部送信の判定を追加）

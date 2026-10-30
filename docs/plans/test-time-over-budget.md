@@ -28,6 +28,7 @@ master の `06a6d373` で、各テストを 1 回ずつ計測した。
 heavy では、`home/dot_claude/hooks/tests/heavy/completion-gate.test.ts:154` が 1 回失敗した。
 pid が 1000 ms 以内にファイルへ書かれず、そのときの load average は 3.64 だった。
 同じファイルを単独で実行し直すと、10 件すべて通った。
+別の観察では、同じテストを単独で 3 回実行し、すべて通った。
 負荷が高いと失敗するのではないかと推測しているが、原因は確かめていない。
 
 2026-10-29、`feat/claude-sessions` のブランチで、単体テストの全件を umask 022 で 3 回実行した。

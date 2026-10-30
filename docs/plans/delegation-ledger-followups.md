@@ -25,6 +25,29 @@ Terra の集計には `high` 以外の effort の記録も入る。
 - 採用率に差があれば、順序と Terra の effort を変えるかを決める
 - Terra の条件を effort つきに絞ると、過去の記録の数え方が変わる。絞るかどうかも同時に決める
 
+### Terra と Luna max の記録を増やす経路
+
+利用者（2026-10-30）:「TerraとLunaが比較される程度には採用されてくれる必要があるな」
+
+今の route（`route.ts`、master `caa8beff`）では、Luna の記録が増えにくい。
+
+- 規則 2（`ruleTwo`）は `externalOrder` の先頭から、pace が under の最初の委譲先を返す。
+  impl・research・draft・review では Terra が Luna より先にある。
+  2 つは同じ provider（codex）の pace を見るため、Luna が規則 2 で選ばれることはない。
+- 規則 1（`pickByRecords`）は `enoughRecords` を満たす群だけを比べる。記録の少ない Luna は比較に入らない。
+- 試す候補（`explore`）は size が S のときだけ出る。review の reviewer は M が多い。
+- Document Workflow の reviewer は `route --kind review` の推奨（現状は規則 2 の Terra）を同じ round の全員に使う。
+
+候補は次の 5 つである。
+
+1. 規則 2 で Terra と Luna の記録数の差が開いていれば、記録の少ないほうを選ぶ。同じ枠を使うため Claude の節約量は変わらない。**推奨**。
+2. 試す候補を M にも広げる。採用されなかった場合のやり直しが大きくなる。
+3. 同じ round の reviewer を Terra と Luna に振り分ける。「同じ round は同じ推奨」の規則を変える。**推奨**。
+4. 同じ作業を両方に渡して比べる。費用が 2 倍になる。
+5. `externalOrder` で Luna max を Terra より前に置く。規則 2 では Luna max が選ばれる。利用者は「やっぱTerraの消費早いな。Luna maxで足りるなら積極的にそうしたい」と述べた。1 回あたりに消費する Codex の枠を、Luna max と Terra で比べた計測は無い。max の effort では出力が長くなりうるため、順序を変える前に同じ規模の委譲で枠の減り方を比べる。
+
+この比較は、Terra と Luna max の記録がそれぞれ 5 件を超えるまでの経路を扱う。route 本体の変更は plan-5 の範囲外であり、別の plan か spec の改訂で扱うかは未決である。
+
 ## OpenCode でレビュアーを動かす
 
 Document Workflow のレビュアーを OpenCode で動かす仕組みが無い。route が review で opencode を勧めても、規約は sonnet で起動させている。
@@ -53,6 +76,13 @@ ADR-0057 の変更で、delegation の cli テストは load 7〜8 のときに 
 判定のテストは 2 つの describe で合わせて約 1.1s 増えた。
 判定を加えた後、load 約 6 のときに 3 回測ると 2.78〜2.85s で、上限の手前だった。
 いちばん遅いのは既存の「review (process)」（約 2.7s）で、分けるならここからにする。
+
+`tests/delegation-cli.test.mjs` の単独計測は、2026-10-29 に 3 回で 4.85〜6.42 秒だった（sonnet）。
+別の負荷がある中では 8.9〜10.2 秒だった（メインループ）。
+原因は約 48 回のプロセス起動と見ている。
+plan-2 で追加した 3 件は約 0.3 秒で、時間超過の大半は plan-2 より前からあると考えている。
+base（e9d2e6e9）では計測していない。
+対応案は、テストを複数ファイルに分けて並列実行する方法と、関数を直接呼ぶテストに置き換える方法である。
 
 ## 検討して見送ったこと
 
