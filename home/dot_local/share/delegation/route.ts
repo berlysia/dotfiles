@@ -133,7 +133,7 @@ function externalOrder(
 ): Destination[] {
   const names: DestinationName[] = OPENCODE_FIRST.has(kind)
     ? ["opencode", "codex-luna-max", "codex-terra", "sarashina"]
-    : ["codex-terra", "codex-luna-max", "opencode", "sarashina"];
+    : ["codex-luna-max", "codex-terra", "opencode", "sarashina"];
   return names
     .map((n) => DESTINATIONS[n])
     .filter(
@@ -163,7 +163,11 @@ function sarashinaGate(isPublicRepo: () => boolean) {
 }
 type SarashinaGate = ReturnType<typeof sarashinaGate>;
 
-type Chosen = { line: string; dest: External | "sonnet" | null };
+type Chosen = {
+  line: string;
+  dest: External | "sonnet" | null;
+  destination: DestinationName | null;
+};
 
 export type RecordPick = {
   dest: Destination;
@@ -278,6 +282,7 @@ function ruleZero(
       : `${kind}×S の採用率 ${percent(successes(best.rep), best.rep.n)}% (${best.rep.n} 件)`;
   return {
     dest: null,
+    destination: null,
     line: `推奨: ${displayFor(best.dest, kind)} [規則 0: 無料] ${evidence}`,
   };
 }
@@ -301,6 +306,7 @@ function ruleOne(
   const { claude } = best;
   return {
     dest: best.dest.provider,
+    destination: best.dest.name,
     line: `推奨: ${displayFor(best.dest, kind)} [規則 1: 記録] ${kind}×${size} の採用率 ${percent(successes(best.rep), best.rep.n)}% (${best.rep.n} 件) が sonnet の ${percent(successes(claude), claude.n)}% (${claude.n} 件) より ${RECORD_GAP_POINTS}pt 以上高い`,
   };
 }
@@ -321,9 +327,9 @@ function ruleTwo(
       (g) => g.harness === "claude-code-agent" && g.model === "sonnet",
     ),
   );
-  for (const dest of externalOrder(kind, size, usable)) {
-    if (!bothUnder(paces[dest.provider])) continue;
-    if (!gate.allows(dest)) continue;
+  const ordered = externalOrder(kind, size, usable);
+  const basis = claudeAheadBy === "lookahead" ? " (先読み)" : "";
+  const recommend = (dest: Destination, paceReason = ""): Chosen => {
     const rep = destinationStats(dest, groups);
     const worse =
       claude !== null &&
@@ -331,15 +337,37 @@ function ruleTwo(
       enoughRecords(claude) &&
       enoughRecords(rep) &&
       rateLeadsBy(claude, rep, RECORD_GAP_POINTS);
-    const basis = claudeAheadBy === "lookahead" ? " (先読み)" : "";
     return {
       dest: dest.provider,
-      line: `推奨: ${displayFor(dest, kind)} [規則 2: Claude の週枠が ahead${basis}]${worse ? " 記録では劣る (Claude の枠を設計判断とメインループに残すことを優先)" : ""}`,
+      destination: dest.name,
+      line: `推奨: ${displayFor(dest, kind)} [規則 2: Claude の週枠が ${claudeWeek}${basis}${paceReason}]${worse ? " 記録では劣る (Claude の枠を設計判断とメインループに残すことを優先)" : ""}`,
     };
+  };
+  for (const dest of ordered) {
+    if (!bothUnder(paces[dest.provider])) continue;
+    if (!gate.allows(dest)) continue;
+    return recommend(dest);
   }
+  const codex = paces.codex;
+  if (codex.fiveHour === "under" && codex.weekly === "ahead") {
+    const dest = ordered.find((candidate) => candidate.provider === "codex");
+    if (dest !== undefined) {
+      return recommend(
+        dest,
+        "、codex 5h=under week=ahead。codex の枠を先に使う",
+      );
+    }
+  }
+  const providerStates = [...new Set(ordered.map((dest) => dest.provider))]
+    .map(
+      (provider) =>
+        `${provider} 5h=${paces[provider].fiveHour} week=${paces[provider].weekly}`,
+    )
+    .join(" ");
   return {
     dest: "sonnet",
-    line: `推奨: ${SONNET_DISPLAY} [規則 2 の外部は全部 ahead / exhausted / unknown] 全部 ahead。急がない委譲は後へ`,
+    destination: null,
+    line: `推奨: ${SONNET_DISPLAY} [規則 2: Claude の週枠が ${claudeWeek}、使える外部が無い]${providerStates === "" ? "" : ` ${providerStates}`}`,
   };
 }
 
@@ -351,7 +379,7 @@ function explore(
   now: Date,
   usable: Usable,
   gate: SarashinaGate,
-): { name: External; line: string } | null {
+): { name: External; destination: DestinationName; line: string } | null {
   if (size !== "S") return null;
   const groups = groupsForCell(folded, kind, "S", now, EXPLORE_WINDOW_DAYS);
   const skipped = new Set<DestinationName>();
@@ -372,6 +400,7 @@ function explore(
     if (gate.allows(least.dest)) {
       return {
         name: least.dest.provider,
+        destination: least.dest.name,
         line: `試す候補: ${displayFor(least.dest, kind)} ${kind}×S の直近 ${EXPLORE_WINDOW_DAYS} 日の記録 ${least.count}/${EXPLORE_MIN_RECORDS} 件。比較に件数が足りない`,
       };
     }
@@ -390,6 +419,25 @@ function surplusCandidate(
   const points = input.surplus[name];
   if (points === null || points < SURPLUS_MIN_POINTS) return null;
   return Math.floor(points);
+}
+
+function codexSurplusRecommendation(
+  input: RouteInput,
+  usable: Usable,
+): Chosen | null {
+  const points = input.surplus.codex;
+  if (points === null || points < SURPLUS_MIN_POINTS) return null;
+  if (!bothUnder(input.paces.codex)) return null;
+  const dest = externalOrder(input.kind, input.size, usable).find(
+    (candidate) => candidate.provider === "codex",
+  );
+  if (dest === undefined) return null;
+  const wholePoints = Math.floor(points);
+  return {
+    dest: "codex",
+    destination: dest.name,
+    line: `推奨: ${displayFor(dest, input.kind)} [余りの規則: codex の週枠の余り ${wholePoints}pt がリセットまでに使われない]`,
+  };
 }
 
 /**
@@ -510,8 +558,10 @@ export function buildRoute(input: RouteInput): string[] {
       : null;
   const pick = freePick ??
     ruleOne(groups, paces, kind, size, usable, gate) ??
-    ruleTwo(groups, paces, kind, size, input.claudeAheadBy, usable, gate) ?? {
+    ruleTwo(groups, paces, kind, size, input.claudeAheadBy, usable, gate) ??
+    codexSurplusRecommendation(input, usable) ?? {
       dest: "sonnet" as const,
+      destination: null,
       line: `推奨: ${SONNET_DISPLAY} [規則 3: 既定]`,
     };
   out.push(pick.line);
@@ -520,7 +570,7 @@ export function buildRoute(input: RouteInput): string[] {
   // decided; its lines are printed after the hold line.
   const candidateLines: string[] = [];
   const taken = new Set<External>();
-  if (candidate !== null) {
+  if (candidate !== null && candidate.destination !== pick.destination) {
     const points = surplusCandidate(input, candidate.name, pick.dest);
     if (points !== null) taken.add(candidate.name);
     candidateLines.push(
