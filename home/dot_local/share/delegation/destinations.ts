@@ -1,7 +1,9 @@
 /**
- * Delegation destinations. Imports nothing, so the offload entry point can
+ * Delegation destinations. Imports types only, so the offload entry point can
  * read the tables without pulling in route.ts.
  */
+
+import type { Effort } from "./schema.ts";
 
 export type DestinationName =
   | "codex-terra"
@@ -14,6 +16,7 @@ export type Destination = {
   provider: "codex" | "opencode" | "sarashina";
   /** Records counted for the destination: every field given must equal. */
   match: { harness: string; model?: string; effort?: string };
+  effortTrials?: readonly Effort[];
   /**
    * Fixed text, including the launch command: never built from records. For a
    * row that sends out it is the read-only form of offloadDisplay; route adds
@@ -47,6 +50,19 @@ export function offloadDisplay(
   return `${d.label} (delegation offload --exposure external-ok --model ${d.match.model} --brief-file <絶対パス>${write ? " --write" : ""}。シェル無し。テストはメインループで${note})`;
 }
 
+export function effortTrialDisplay(
+  d: Pick<Destination, "display">,
+  effort: Effort,
+): string {
+  const settings = [...d.display.matchAll(/model_reasoning_effort=/g)];
+  if (settings.length !== 1) {
+    throw new Error(
+      `expected exactly one model_reasoning_effort= setting in ${d.display}`,
+    );
+  }
+  return d.display.replace(/(model_reasoning_effort=)[^ )]*/, `$1${effort}`);
+}
+
 const GLM_MODEL = "zai-coding-plan/glm-5.3";
 const SARASHINA_MODEL = "sarashina/sarashina3.2-mini-thinking";
 const FREE_DEEPSEEK_MODEL = "opencode/deepseek-v4.1-flash-free";
@@ -56,7 +72,8 @@ export const DESTINATIONS: Record<DestinationName, Destination> = {
   "codex-terra": {
     name: "codex-terra",
     provider: "codex",
-    match: { harness: "codex-cli", model: "gpt-6.1-terra" },
+    match: { harness: "codex-cli", model: "gpt-6.1-terra", effort: "high" },
+    effortTrials: ["medium"],
     display:
       "codex Terra (codex exec -m gpt-6.1-terra -c model_reasoning_effort=high)",
     label: "codex Terra",
@@ -66,6 +83,7 @@ export const DESTINATIONS: Record<DestinationName, Destination> = {
     name: "codex-luna-max",
     provider: "codex",
     match: { harness: "codex-cli", model: "gpt-6-luna", effort: "max" },
+    effortTrials: ["xhigh", "high"],
     display:
       "codex Luna max (codex exec -m gpt-6-luna -c model_reasoning_effort=max)",
     label: "codex Luna max",

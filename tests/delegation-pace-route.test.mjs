@@ -2722,10 +2722,17 @@ describe("delegation route destinations", { concurrency: 4 }, () => {
         assert.match(recommendation(out), /codex Luna max .*規則 2/);
       });
     }
-    it("pools Terra groups of different effort", async () => {
+    it("counts only Terra high effort records", async () => {
       const out = await routeProcessOut([
         { ...TERRA, effort: "high", adopted: 3 },
         { ...TERRA, effort: "low", adopted: 3 },
+        SONNET_61,
+      ]);
+      assert.doesNotMatch(recommendation(out), /codex Terra.*規則 1/);
+    });
+    it("still compares Terra high records with sonnet", async () => {
+      const out = await routeProcessOut([
+        { ...TERRA, effort: "high", adopted: 6 },
         SONNET_61,
       ]);
       assert.match(recommendation(out), /codex Terra.*規則 1/);
@@ -3142,19 +3149,18 @@ describe("review auto-rewrite revisit", { concurrency: 4 }, () => {
       place(st, TERRA, 25, 20);
     });
   });
-  it("counts only the representative sonnet group; merges the destination", async () => {
+  it("counts only the representative sonnet group; keeps Terra efforts separate", async () => {
     const l1 = await expectRevisit((st) => {
       place(st, { effort: "unknown" }, 25, 15);
       place(st, { effort: "high" }, 10, 6);
       place(st, TERRA, 25, 25);
     });
     assert.match(l1, /sonnet 25 件/);
-    const l2 = await expectRevisit((st) => {
+    await expectNone((st) => {
       place(st, SONNET, 25, 15);
       place(st, { ...TERRA, effort: "high" }, 15, 15);
       place(st, { ...TERRA, effort: "medium" }, 10, 10);
     });
-    assert.match(l2, /codex Terra 25 件/);
   });
   it("never prints a stored model name", async () => {
     const out = await reviewOut((st) => {

@@ -220,6 +220,8 @@ operator guide の共通フロー 5.4 と 6 の詳細。
 - 推奨が codex（Terra か Luna max）なら、帳簿に載る reviewer を次の節の `executor: codex` の経路で起動する。
 - 推奨が sonnet か opencode のとき、または route が 0 以外で終わったときは、今のとおり起動する。OpenCode で reviewer を動かす経路は無いので、opencode を勧められても sonnet で起動する。
 - 同じ round の全 reviewer に同じ推奨を使う。sonnet の reviewer が混ざるのは、Codex の実行に失敗して sonnet でやり直したときだけ。
+- 例外は、route が `試す effort:` の行を出したときである。その round に起動する reviewer が 2 名以上いて `scope-justification-reviewer` がその中にいれば、その 1 名だけ effort を下げる。依頼の `model:` は `推奨:` の行から、`effort:` は `試す effort:` の行から取る。前の round から引き継いだ reviewer は数えない。条件の理由は `~/.claude/rules/model-offloading.md` の手順 4 にある。
+- 試した effort を Codex が拒んだら、拒否された起動の行を `delegation lapse <id>` で閉じる。同じ reviewer は `推奨:` の行の effort で起動し直す。値を消す PR の扱いは、同じ rule の手順 3 の例外にある。
 - 結果を確かめて triage が済んだら、各 reviewer を `delegation record <id> --kind review --size <S|M|L> --verdict <adopted|patched|discarded> --triage-excluded <N>` で記録する。指摘をそのまま反映したら adopted、直して反映したら patched、全部除外したら discarded。`redone` は使わない。
 - sonnet の reviewer の id は `[delegation]` の行から取る。Codex 経路の reviewer の id はその行に出ないので、次の節の選び方で pending の行を選ぶ。合う行が無く `record --manual` で補うときは、`--triage-excluded` を付けない。
 
