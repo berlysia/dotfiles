@@ -40,6 +40,16 @@
       ]
     },
     {
+      "matcher": "Bash",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/skill-guide-gate.ts",
+          "timeout": 5
+        }
+      ]
+    },
+    {
       "matcher": "Write|Edit|NotebookEdit",
       "hooks": [
         {
@@ -247,6 +257,16 @@
       ]
     },
     {
+      "matcher": "Agent",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/skill-guide-after.ts",
+          "timeout": 5
+        }
+      ]
+    },
+    {
       "matcher": "Bash|AskUserQuestion",
       "hooks": [
         {
@@ -257,6 +277,16 @@
     }
   ],
   "PostToolUseFailure": [
+    {
+      "matcher": "Bash",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/skill-guide-after.ts",
+          "timeout": 5
+        }
+      ]
+    },
     {
       "matcher": "Bash",
       "hooks": [
@@ -278,6 +308,16 @@
     }
   ],
   "SessionStart": [
+    {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/skill-guide-after.ts",
+          "timeout": 5
+        }
+      ]
+    },
     {
       "matcher": "",
       "hooks": [
@@ -307,6 +347,16 @@
     }
   ],
   "Stop": [
+    {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/skill-guide-after.ts",
+          "timeout": 5
+        }
+      ]
+    },
     {
       "matcher": "",
       "hooks": [{

@@ -1,6 +1,7 @@
 #!/usr/bin/env node --test
 
 import { deepStrictEqual, ok, strictEqual } from "node:assert";
+import { spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -936,3 +937,89 @@ describe("T6: skill declarations and moved rules", () => {
     }
   });
 });
+
+describe(
+  "T7: hooks template registration",
+  {
+    skip:
+      spawnSync("chezmoi", ["--version"]).status !== 0 &&
+      "chezmoi is not on PATH",
+  },
+  () => {
+    type HookGroup = {
+      matcher?: string;
+      hooks: { command: string; timeout?: number }[];
+    };
+    const renderHooks = (): Record<string, HookGroup[]> => {
+      const tmpl = readFileSync(
+        join(REPO_ROOT, "home/dot_claude/.settings.hooks.json.tmpl"),
+        "utf8",
+      );
+      const prefix =
+        '{{ $_ := set . "claude_hooks" (dict "auto_approval" true) }}{{ $_ := unset . "only_private" }}';
+      const result = spawnSync(
+        "chezmoi",
+        ["execute-template", "--with-stdin"],
+        {
+          input: prefix + tmpl,
+          encoding: "utf8",
+        },
+      );
+      strictEqual(result.status, 0, result.stderr);
+      return JSON.parse(result.stdout) as Record<string, HookGroup[]>;
+    };
+    const registrations = (
+      hooks: Record<string, HookGroup[]>,
+      script: string,
+    ): {
+      event: string;
+      matcher: string | undefined;
+      command: string;
+      timeout: number | undefined;
+    }[] =>
+      Object.entries(hooks).flatMap(([event, groups]) =>
+        groups.flatMap((g) =>
+          g.hooks
+            .filter((h) => h.command.includes(`/${script}`))
+            .map((h) => ({
+              event,
+              matcher: g.matcher,
+              command: h.command,
+              timeout: h.timeout,
+            })),
+        ),
+      );
+
+    it("registers skill-guide-gate once under PreToolUse Bash and skill-guide-after on its four events", () => {
+      const hooks = renderHooks();
+      deepStrictEqual(
+        registrations(hooks, "skill-guide-gate.ts").map(
+          ({ event, matcher, timeout }) => ({ event, matcher, timeout }),
+        ),
+        [{ event: "PreToolUse", matcher: "Bash", timeout: 5 }],
+      );
+      deepStrictEqual(
+        registrations(hooks, "skill-guide-after.ts").map(
+          ({ event, matcher, timeout }) => ({ event, matcher, timeout }),
+        ),
+        [
+          { event: "PostToolUse", matcher: "Agent", timeout: 5 },
+          { event: "PostToolUseFailure", matcher: "Bash", timeout: 5 },
+          { event: "SessionStart", matcher: "", timeout: 5 },
+          { event: "Stop", matcher: "", timeout: 5 },
+        ],
+      );
+    });
+
+    it("passes no test-only path options in the registered commands", () => {
+      const hooks = renderHooks();
+      for (const { command } of [
+        ...registrations(hooks, "skill-guide-gate.ts"),
+        ...registrations(hooks, "skill-guide-after.ts"),
+      ]) {
+        ok(!command.includes("--skills-root"), command);
+        ok(!command.includes("--state-dir"), command);
+      }
+    });
+  },
+);
