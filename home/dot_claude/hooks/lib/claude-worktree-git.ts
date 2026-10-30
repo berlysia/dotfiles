@@ -13,12 +13,43 @@ export type GitRunner = (
   args: readonly string[],
   opts: { cwd: string; kind: GitKind; timeoutMs: number },
 ) => GitResult;
-export type Deps = { runGit: GitRunner; now: () => number };
+// The time rules of dependency preparation inside the WorktreeCreate hook (ADR-0033 K5). Overridable in tests so
+// that a short deadline can be exercised for real.
+export type PrepTiming = {
+  // The hook's timeout in .settings.hooks.json.tmpl.
+  budgetMs: number;
+  // The most the install gets, and how much of the hook's budget stays free after it.
+  installCapSec: number;
+  installReserveMs: number;
+  // Below this the CLI is called with --no-install.
+  minInstallSec: number;
+  // The CLI as a whole stops this long before the hook's budget; below minCliMs it is not run.
+  cliReserveMs: number;
+  minCliMs: number;
+};
+
+export const PREP_TIMING: PrepTiming = {
+  budgetMs: 240_000,
+  installCapSec: 150,
+  installReserveMs: 40_000,
+  minInstallSec: 30,
+  cliReserveMs: 10_000,
+  minCliMs: 10_000,
+};
+
+export type Deps = {
+  runGit: GitRunner;
+  now: () => number;
+  // Optional seams. Production leaves them out; existing fakes keep working without them.
+  timing?: Partial<PrepTiming>;
+  // The text of /proc/self/mountinfo; throws when it cannot be read.
+  readMountinfo?: () => string;
+};
 
 // Must stay below the hook timeout (240 s in .settings.hooks.json.tmpl).
 export const DEADLINE_MS = 200_000;
 
-const KIND_LIMIT_MS: Record<GitKind, number> = {
+export const KIND_LIMIT_MS: Record<GitKind, number> = {
   read: 10_000,
   branch: 10_000,
   "update-ref": 10_000,
@@ -28,7 +59,7 @@ const KIND_LIMIT_MS: Record<GitKind, number> = {
 
 const ENV_ALLOW = ["PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "USER"] as const;
 
-function gitEnv(): Record<string, string> {
+export function gitEnv(): Record<string, string> {
   const env: Record<string, string> = {};
   for (const name of ENV_ALLOW) {
     const value = process.env[name];
@@ -45,7 +76,7 @@ function gitEnv(): Record<string, string> {
 }
 
 // The repository's own .git/config may name programs git would start.
-const HARDENING_ARGS = [
+export const HARDENING_ARGS = [
   "-c",
   "core.fsmonitor=false",
   "-c",
@@ -98,6 +129,60 @@ export const defaultRunGit: GitRunner = (args, { cwd, timeoutMs }) => {
     : result.stdout;
   return { ok: true, stdout };
 };
+
+export type ProcessOutcome = {
+  status: number | null;
+  signal: string | null;
+  // stdout and stderr in the order they were written.
+  output: string;
+  timedOut: boolean;
+  // Set when the process could not be started or its output could not be collected.
+  failure: string | null;
+};
+
+// Runs a program as the leader of its own process group, with stderr merged into stdout, and stops it with SIGKILL
+// at the deadline. Not `timeout(1)`: that may not exist, and it leaves a child that ignores TERM behind. The group is
+// killed too (a negative pid), so what the program started goes with it. The merge is `exec ... 2>&1` in a shell that
+// becomes the program, so the pid stays the group's leader.
+export function runInOwnGroup(
+  file: string,
+  args: readonly string[],
+  opts: { cwd: string; env: NodeJS.ProcessEnv; timeoutMs: number },
+): ProcessOutcome {
+  // `detached` makes the child a session and group leader (setsid). Node and Bun both honour it for spawnSync, but
+  // @types/node lists it for spawn only, so the options go in through a variable.
+  const options = {
+    cwd: opts.cwd,
+    env: opts.env,
+    timeout: opts.timeoutMs,
+    killSignal: "SIGKILL" as const,
+    maxBuffer: 16 * 1024 * 1024,
+    encoding: "utf8" as const,
+    detached: true,
+    stdio: ["ignore", "pipe", "ignore"] as ["ignore", "pipe", "ignore"],
+  };
+  const result = spawnSync(
+    "/bin/sh",
+    ["-c", 'exec "$0" "$@" 2>&1', file, ...args],
+    options,
+  );
+  const code = (result.error as NodeJS.ErrnoException | undefined)?.code;
+  const timedOut = code === "ETIMEDOUT";
+  if ((timedOut || code === "ENOBUFS") && result.pid) {
+    try {
+      process.kill(-result.pid, "SIGKILL");
+    } catch {
+      // The group is already gone.
+    }
+  }
+  return {
+    status: result.status,
+    signal: result.signal,
+    output: result.stdout ?? "",
+    timedOut,
+    failure: result.error && !timedOut ? result.error.message : null,
+  };
+}
 
 export function defaultDeps(): Deps {
   return { runGit: defaultRunGit, now: Date.now };

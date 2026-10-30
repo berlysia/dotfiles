@@ -5,8 +5,11 @@ import { spawnSync } from "node:child_process";
 import {
   mkdirSync,
   mkdtempSync,
+  readFileSync as readFile,
   realpathSync,
+  readdirSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -15,6 +18,8 @@ import { afterEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
   buildDependencyNotice,
+  type DependencyNoticeFileSystem,
+  type DependencyNoticeOptions,
   resolveInstall,
 } from "../../lib/dependency-notice.ts";
 
@@ -39,6 +44,16 @@ afterEach(() => {
   for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
   tempDirs.clear();
 });
+
+function buildNotice(
+  dir: string,
+  options: DependencyNoticeOptions = {},
+): string | null {
+  return buildDependencyNotice(dir, undefined, {
+    vmMarkerPath: null,
+    ...options,
+  });
+}
 
 describe("resolveInstall", () => {
   const lockfileCases = [
@@ -122,7 +137,7 @@ describe("resolveInstall", () => {
 describe("buildDependencyNotice", () => {
   it("names the directory and gives the frozen install command", () => {
     const dir = createProject("{}", ["bun.lock"]);
-    const notice = buildDependencyNotice(dir);
+    const notice = buildNotice(dir);
     ok(notice?.startsWith("[deps]"));
     ok(notice.includes(dir));
     ok(notice.includes("Dependencies are not installed"));
@@ -133,43 +148,130 @@ describe("buildDependencyNotice", () => {
 
   it("explains conflicting lockfiles and an install without a lockfile", () => {
     const conflictDir = createProject("{}", ["pnpm-lock.yaml", "yarn.lock"]);
-    const conflictNotice = buildDependencyNotice(conflictDir);
+    const conflictNotice = buildNotice(conflictDir);
     ok(conflictNotice?.includes("pnpm-lock.yaml, yarn.lock"));
     ok(conflictNotice?.includes("install with the project's package manager"));
 
     const noLockDir = createProject(
       JSON.stringify({ packageManager: "npm@10.0.0" }),
     );
-    const noLockNotice = buildDependencyNotice(noLockDir);
+    const noLockNotice = buildNotice(noLockDir);
     ok(noLockNotice?.includes("npm install"));
     ok(noLockNotice?.includes("would write a lockfile"));
   });
 
   it("stays silent when no manager can be inferred, as git-worktree-create does", () => {
-    strictEqual(buildDependencyNotice(createProject("{}")), null);
+    strictEqual(buildNotice(createProject("{}")), null);
   });
 
   it("returns null when the project or node_modules gate does not match", () => {
-    strictEqual(buildDependencyNotice(createProject(null)), null);
+    strictEqual(buildNotice(createProject(null)), null);
 
     const dir = createProject("{}", ["yarn.lock"]);
     mkdirSync(join(dir, "node_modules"));
-    strictEqual(buildDependencyNotice(dir), null);
+    writeFileSync(join(dir, "node_modules", "left-pad"), "installed");
+    strictEqual(buildNotice(dir), null);
   });
 
   it("returns null for control characters and filesystem errors", () => {
-    strictEqual(buildDependencyNotice("/tmp/project\nname"), null);
+    strictEqual(buildNotice("/tmp/project\nname"), null);
     strictEqual(
-      buildDependencyNotice("/tmp/project", {
-        statSync: () => {
-          throw new Error("read failed");
+      buildDependencyNotice(
+        "/tmp/project",
+        {
+          statSync: () => {
+            throw new Error("read failed");
+          },
+          readdirSync: () => [],
+          readFileSync: () => {
+            throw new Error("read failed");
+          },
         },
-        readFileSync: () => {
-          throw new Error("read failed");
-        },
-      }),
+        { vmMarkerPath: null },
+      ),
       null,
     );
+  });
+
+  it("stays silent when node_modules cannot be read", () => {
+    const dir = createProject("{}", ["pnpm-lock.yaml"]);
+    mkdirSync(join(dir, "node_modules"));
+    const fs: DependencyNoticeFileSystem = {
+      statSync,
+      readdirSync: () => {
+        throw new Error("directory is unreadable");
+      },
+      readFileSync: readFile,
+    };
+    strictEqual(buildDependencyNotice(dir, fs, { vmMarkerPath: null }), null);
+  });
+
+  it("treats an empty node_modules directory as not installed", () => {
+    const dir = createProject("{}", ["pnpm-lock.yaml"]);
+    mkdirSync(join(dir, "node_modules"));
+    ok(buildNotice(dir)?.includes("pnpm install --frozen-lockfile"));
+  });
+
+  it("uses the recovery command when an incomplete marker exists", () => {
+    const dir = createProject("{}", ["pnpm-lock.yaml"]);
+    mkdirSync(join(dir, "node_modules"));
+    writeFileSync(join(dir, "node_modules", "left-pad"), "partial");
+    writeFileSync(
+      join(dir, "node_modules", ".git-worktree-deps-incomplete"),
+      "",
+    );
+    const notice = buildNotice(dir);
+    ok(notice?.includes("git-worktree-deps '"));
+    ok(notice?.includes("The previous install did not finish"));
+  });
+
+  it("waits for VM node_modules to be mounted before recommending install", () => {
+    const dir = createProject("{}", ["pnpm-lock.yaml"]);
+    mkdirSync(join(dir, "node_modules"));
+    const marker = join(dir, "agent-vm-marker");
+    writeFileSync(marker, "");
+    const noMounts =
+      "36 1 8:1 / / rw - ext4 /dev/sda1 rw\n37 36 0:6 / /proc rw - proc proc rw\n";
+    const notice = buildNotice(dir, {
+      vmMarkerPath: marker,
+      mountinfo: noMounts,
+    });
+    ok(notice?.includes("agent-vm-node-modules attach"));
+    ok(!notice?.includes("pnpm install"));
+  });
+
+  it("recommends install in a VM only when node_modules is mounted", () => {
+    const dir = createProject("{}", ["pnpm-lock.yaml"]);
+    mkdirSync(join(dir, "node_modules"));
+    const marker = join(dir, "agent-vm-marker");
+    writeFileSync(marker, "");
+    const mountinfo = `36 1 8:1 / / rw - ext4 /dev/sda1 rw\n99 36 8:2 / ${join(dir, "node_modules")} rw - ext4 /dev/x rw\n`;
+    const notice = buildNotice(dir, { vmMarkerPath: marker, mountinfo });
+    ok(notice?.includes("pnpm install --frozen-lockfile"));
+  });
+
+  it("asks for VM attach when mountinfo cannot be read", () => {
+    const dir = createProject("{}", ["pnpm-lock.yaml"]);
+    const marker = join(dir, "agent-vm-marker");
+    writeFileSync(marker, "");
+    const fs: DependencyNoticeFileSystem = {
+      statSync,
+      readdirSync,
+      readFileSync(path, encoding) {
+        if (path === "/proc/self/mountinfo") throw new Error("unreadable");
+        return readFile(path, encoding);
+      },
+    };
+    const notice = buildDependencyNotice(dir, fs, { vmMarkerPath: marker });
+    ok(notice?.includes("agent-vm-node-modules attach"));
+    ok(!notice?.includes("pnpm install"));
+  });
+
+  it("limits subagent install advice to tests and typecheck", () => {
+    const dir = createProject("{}", ["pnpm-lock.yaml"]);
+    const notice = buildNotice(dir, { audience: "subagent" });
+    ok(notice?.includes("When you need to run tests or typecheck"));
+    ok(notice?.includes("pnpm install --frozen-lockfile"));
   });
 });
 
@@ -189,6 +291,7 @@ describe("worktree-deps-notice process", () => {
       env: {
         PATH: process.env.PATH ?? "",
         HOME: home,
+        AGENT_VM_MARKER: join(home, "agent-vm-marker"),
         XDG_CONFIG_HOME: join(xdg, "config"),
         XDG_DATA_HOME: join(xdg, "data"),
         XDG_CACHE_HOME: join(xdg, "cache"),

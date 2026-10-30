@@ -1,0 +1,381 @@
+#!/usr/bin/env bash
+# Prepares the dependencies of a git worktree: the VM-local node_modules (agent-vm), the package manager install, and
+# the host-side sync. git-worktree-create and the WorktreeCreate hook both call this, so that every way of creating a
+# worktree prepares it under the same rules. Written for bash 3.2 (the stock macOS shell).
+
+set -euo pipefail
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Names the leftover of a clear-out that did not finish. The notice of the next session reads it, and an install that
+# is started again clears the directory first.
+INCOMPLETE_MARKER=.git-worktree-deps-incomplete
+
+show_help() {
+    cat <<'EOF'
+git-worktree-deps - Prepare the dependencies of a git worktree
+
+Usage:
+  git-worktree-deps [--no-install] [--source new|local|remote] [--timeout <seconds>] <worktree>
+  git-worktree-deps --help
+
+Description:
+  Inside an agent-vm machine: attaches the VM-local node_modules, then installs.
+  On the host: installs, then asks a running agent-vm machine to sync.
+  The package manager is read from packageManager in package.json first, then
+  from the lockfile (pnpm and bun: install --frozen-lockfile, npm: ci). Nothing
+  is installed for yarn, for a project with two kinds of lockfile, or when no
+  package manager can be determined; the reason and the command to run are
+  printed instead. A failed install does not fail this command (exit status 0)
+  and prints a warning.
+
+  When an install fails or times out, the contents of node_modules are removed
+  if node_modules was absent or an empty directory before the install, so that a
+  half-installed tree is not taken for a finished one. A node_modules that had
+  contents before, or that is a symlink, is never touched. If the removal
+  itself does not finish, node_modules/.git-worktree-deps-incomplete stays; the
+  next run of this command clears node_modules again and installs.
+
+Options:
+  --no-install       Do not run the package manager; show the command instead.
+                     The attach and the sync still run.
+  --source <kind>    Where the checked-out code comes from (default: new).
+                     new and local are installed. remote (a branch taken from
+                     origin) is not: its package.json scripts have not been
+                     reviewed, so the command is shown.
+  --timeout <sec>    Seconds, counted from the start of this command, in which
+                     the install must finish (needs the timeout or gtimeout
+                     command; without one nothing is installed). The time the
+                     attach took is not left to the install. An install that is
+                     cut off is killed together with the processes it started.
+  --help, -h         Show this help message (at any position)
+
+Examples:
+  git-worktree-deps ~/worktrees/myrepo/feat
+  git-worktree-deps --no-install --source remote ~/worktrees/myrepo/feat
+EOF
+}
+
+# strip_cntrl <text>: the text without control characters (paths and names are echoed in messages)
+strip_cntrl() {
+    printf '%s' "$1" | tr -d '[:cntrl:]'
+}
+
+# say_warn <message>: a warning on stderr, printed without interpreting backslashes in the message
+say_warn() {
+    printf '%b⚠️  %s%b\n' "$YELLOW" "$(strip_cntrl "$1")" "$NC" >&2
+}
+
+# say_info <color> <message>: a line on stdout, printed without interpreting backslashes in the message
+say_info() {
+    printf '%b%s%b\n' "$1" "$(strip_cntrl "$2")" "$NC"
+}
+
+# say_error <message>: an error line on stderr
+say_error() {
+    printf '%b%s%b\n' "$RED" "$(strip_cntrl "$1")" "$NC" >&2
+}
+
+# resolve_install <dir>: which install the project at <dir> asks for.
+# Sets install_pm (empty when package.json names no package manager and no lockfile does), install_cmd (the command
+# to run, or to show), install_skip (why this script does not run it itself; empty when it may), and
+# install_conflict (the lockfiles found, when two or more package managers have one and package.json names none).
+# A wrong package manager rewrites node_modules, so nothing is guessed: no default, no priority among lockfiles.
+resolve_install() {
+    local dir=$1 declared pm lock found_pms="" found_locks=""
+    install_pm=""
+    install_cmd=()
+    install_skip=""
+    install_conflict=""
+    [[ -f "$dir/package.json" ]] || return 0
+    # One sed and no pipe: under pipefail, a reader that exits early would end this script after the worktree exists
+    declared=$(sed -n '/"packageManager"/{s/.*"packageManager"[[:space:]]*:[[:space:]]*"\([a-z]*\)@.*/\1/p;q;}' "$dir/package.json") || declared=""
+    for lock in pnpm:pnpm-lock.yaml bun:bun.lock bun:bun.lockb npm:package-lock.json npm:npm-shrinkwrap.json yarn:yarn.lock; do
+        pm=${lock%%:*}
+        lock=${lock#*:}
+        [[ -f "$dir/$lock" ]] || continue
+        found_locks="${found_locks:+$found_locks, }$lock"
+        case " $found_pms " in *" $pm "*) ;; *) found_pms="${found_pms:+$found_pms }$pm" ;; esac
+    done
+    case "$declared" in
+    pnpm | bun | npm | yarn) install_pm=$declared ;;
+    *)
+        case "$found_pms" in
+        "") return 0 ;;
+        *" "*)
+            install_conflict=$found_locks
+            return 0
+            ;;
+        *) install_pm=$found_pms ;;
+        esac
+        ;;
+    esac
+    case " $found_pms " in
+    *" $install_pm "*) ;;
+    *)
+        install_cmd=("$install_pm" install)
+        install_skip="$install_pm has no lockfile here, and an install would write one"
+        return 0
+        ;;
+    esac
+    case "$install_pm" in
+    pnpm | bun) install_cmd=("$install_pm" install --frozen-lockfile) ;;
+    npm) install_cmd=(npm ci) ;;
+    yarn)
+        # The flag that keeps the lockfile differs between yarn 1 and later versions, and Plug'n'Play writes outside
+        # node_modules, where the agent-vm mount does not reach
+        install_cmd=(yarn install)
+        install_skip="yarn is not run automatically"
+        ;;
+    esac
+}
+
+# nm_state <worktree>: what node_modules is now. "link" and "other" are never touched (a symlink's target belongs to
+# someone else: the user, or the VM's mount source); "absent" and "empty" may be cleared after a failed install;
+# "populated" had contents of its own.
+nm_state() {
+    local nm=$1/node_modules
+    if [[ -L "$nm" ]]; then
+        echo link
+    elif [[ ! -e "$nm" ]]; then
+        echo absent
+    elif [[ ! -d "$nm" ]]; then
+        echo other
+    elif [[ -z "$(ls -A "$nm" 2>/dev/null)" ]]; then
+        echo empty
+    else
+        echo populated
+    fi
+}
+
+# clear_node_modules <worktree>: removes what is inside node_modules, keeping the directory (inside an agent-vm
+# machine it is the mount point). The marker is put first and removed last, so that a clear-out cut off half way
+# (a failed removal, or the caller's deadline) is still visible. Neither find nor rm follows a symlink, and nothing
+# is done when node_modules is a symlink, so no target outside it is reached. Returns 0 when it is empty again.
+clear_node_modules() {
+    local nm=$1/node_modules
+    [[ -d "$nm" && ! -L "$nm" ]] || return 0
+    : >"$nm/$INCOMPLETE_MARKER" 2>/dev/null || return 1
+    find "$nm" -mindepth 1 -maxdepth 1 ! -name "$INCOMPLETE_MARKER" -exec rm -rf -- {} + 2>/dev/null || return 1
+    rm -f -- "$nm/$INCOMPLETE_MARKER" || return 1
+}
+
+# find_timeout: sets timeout_cmd to the command that can cut an install off (empty when there is none)
+find_timeout() {
+    timeout_cmd=""
+    if command -v timeout >/dev/null 2>&1; then
+        timeout_cmd=timeout
+    elif command -v gtimeout >/dev/null 2>&1; then
+        timeout_cmd=gtimeout
+    fi
+}
+
+# install_dependencies: install what the worktree asks for, or say why not and what to run.
+# Reads worktree_path, repo_root, install_deps, source_kind, deps_target, timeout_secs, started. Never fails.
+install_dependencies() {
+    local wt_q cmd_text skip pm_path status=0 remaining pre_state limit_text=""
+    local -a limit=()
+    resolve_install "$worktree_path"
+    [[ -n "$install_pm$install_conflict" ]] || return 0
+    wt_q=$(printf '%q' "$worktree_path")
+    case "$deps_target" in
+    attach-failed) return 0 ;; # the attach warning already says not to install and how to recover
+    no-helper)
+        say_warn "dependencies are not installed in $wt_q (agent-vm-node-modules is missing, so node_modules here is shared with the host); recreate the machine from the host: agent-vm rm $(printf '%q' "$repo_root")"
+        return 0
+        ;;
+    esac
+    if [[ -n "$install_conflict" ]]; then
+        say_warn "dependencies are not installed in $wt_q (found $install_conflict and no packageManager field in package.json); install with the project's package manager"
+        return 0
+    fi
+    cmd_text="${install_cmd[*]}"
+    skip=$install_skip
+    if [[ "$install_deps" != true ]]; then
+        skip="--no-install"
+    elif [[ "$source_kind" == remote ]]; then
+        # Code this checkout has not had before: its package.json scripts are not run by a command that does not look
+        # like an install
+        skip="not run automatically because the branch comes from origin; an install runs the scripts of its package.json, so review them first"
+    fi
+    if [[ -z "$skip" && -n "$timeout_secs" ]]; then
+        find_timeout
+        if [[ -z "$timeout_cmd" ]]; then
+            # An install that cannot be cut off, and a half-installed node_modules that cannot be cleared, would
+            # stall the caller
+            skip="neither timeout nor gtimeout is on PATH, so the install could not be cut off at --timeout $timeout_secs"
+        else
+            remaining=$((timeout_secs - (SECONDS - started)))
+            if [[ $remaining -lt 1 ]]; then
+                skip="the time for the install ran out before it could start (--timeout $timeout_secs)"
+            else
+                limit=("$timeout_cmd" -k 5 "$remaining")
+                limit_text=$remaining
+            fi
+        fi
+    fi
+    if [[ -n "$skip" ]]; then
+        say_info "$BLUE" "💡 Dependencies are not installed ($skip). To install them: cd $wt_q && $cmd_text"
+        return 0
+    fi
+    # Resolved before the cd, and only to an absolute path: a relative PATH entry must not pick a file of the branch
+    pm_path=$(command -v "$install_pm") || pm_path=""
+    case "$pm_path" in
+    /*) ;;
+    *)
+        say_warn "dependencies are not installed in $wt_q ($install_pm is not on PATH). Once it is: cd $wt_q && $cmd_text"
+        return 0
+        ;;
+    esac
+    # The leftover of a clear-out that did not finish: clear it again before anything is installed over it
+    if [[ -e "$worktree_path/node_modules/$INCOMPLETE_MARKER" ]] && ! clear_node_modules "$worktree_path"; then
+        say_warn "dependencies are not installed in $wt_q (a previous partial install could not be cleared from node_modules; remove its contents by hand, then run: git-worktree-deps $wt_q)"
+        return 0
+    fi
+    pre_state=$(nm_state "$worktree_path")
+    say_info "$BLUE" "📦 Installing dependencies: $cmd_text"
+    if [[ -n "$limit_text" ]]; then
+        # timeout makes itself the leader of a new process group and stops when its command stops, so a child that
+        # ignores TERM outlives it. The group is therefore killed here too; the group id is the pid of timeout.
+        (
+            cd "$worktree_path" || exit 1
+            "${limit[@]}" "$pm_path" "${install_cmd[@]:1}" </dev/null &
+            limited_pid=$!
+            limited_status=0
+            wait "$limited_pid" || limited_status=$?
+            if [[ $limited_status -eq 124 || $limited_status -eq 137 ]]; then
+                kill -KILL -- "-$limited_pid" 2>/dev/null || true
+            fi
+            exit "$limited_status"
+        ) || status=$?
+    else
+        (cd "$worktree_path" && "$pm_path" "${install_cmd[@]:1}" </dev/null) || status=$?
+    fi
+    if [[ $status -eq 0 ]]; then
+        say_info "$GREEN" "✓ Dependencies installed"
+        return 0
+    fi
+    if [[ -n "$limit_text" && ($status -eq 124 || $status -eq 137) ]]; then
+        say_warn "dependencies are not installed in $wt_q ($cmd_text: timed out after ${limit_text}s, status $status); the worktree itself is created. To retry: cd $wt_q && $cmd_text"
+    else
+        say_warn "dependencies are not installed in $wt_q ($cmd_text: status $status); the worktree itself is created. To retry: cd $wt_q && $cmd_text"
+    fi
+    case "$pre_state" in
+    absent | empty)
+        if ! clear_node_modules "$worktree_path"; then
+            say_warn "the partial node_modules of $wt_q could not be cleared; it is marked as incomplete. To clear it and install: git-worktree-deps $wt_q"
+        fi
+        ;;
+    populated)
+        say_warn "node_modules of $wt_q had contents before this install, so it is left as it is and may be incomplete"
+        ;;
+    esac
+}
+
+install_deps=true
+source_kind=new
+timeout_secs=""
+positional=()
+# Only collects here: --help and unknown options are decided as they are met
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+    --help | -h)
+        show_help
+        exit 0
+        ;;
+    --no-install) install_deps=false ;;
+    --source)
+        if [[ $# -lt 2 ]]; then
+            say_error "Error: --source needs a value (new, local or remote)"
+            exit 1
+        fi
+        case "$2" in
+        new | local | remote) source_kind=$2 ;;
+        *)
+            say_error "Error: Unknown --source value: $2 (expected new, local or remote)"
+            exit 1
+            ;;
+        esac
+        shift
+        ;;
+    --timeout)
+        if [[ $# -lt 2 ]]; then
+            say_error "Error: --timeout needs a number of seconds"
+            exit 1
+        fi
+        case "$2" in
+        '' | *[!0-9]* | 0*)
+            say_error "Error: --timeout takes a positive whole number of seconds: $2"
+            exit 1
+            ;;
+        *) timeout_secs=$2 ;;
+        esac
+        shift
+        ;;
+    -*)
+        say_error "Error: Unknown option: $1"
+        exit 1
+        ;;
+    *) positional+=("$1") ;;
+    esac
+    shift
+done
+if [[ ${#positional[@]} -ne 1 ]]; then
+    say_error "Error: exactly one worktree path is required"
+    exit 1
+fi
+started=$SECONDS
+worktree_path=${positional[0]}
+case "$worktree_path" in
+/*) ;;
+*) worktree_path="$PWD/$worktree_path" ;;
+esac
+if [[ ! -d "$worktree_path" ]]; then
+    say_error "Error: Not a directory: $worktree_path"
+    exit 1
+fi
+# The main checkout owns the common dir and the agent-vm machine, also when this is run from a linked worktree
+if ! common_dir=$(git -C "$worktree_path" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) ||
+    ! common_dir=$(cd -P -- "$common_dir" 2>/dev/null && pwd -P); then
+    say_error "Error: Not inside a git worktree, or git is older than 2.31: $worktree_path"
+    exit 1
+fi
+repo_root=$(dirname "$common_dir")
+
+# Whether an install in the worktree lands in its own node_modules: "yes", "attach-failed" (warned below), or
+# "no-helper" (inside a machine whose node_modules is still the host's).
+deps_target=yes
+# agent-vm (docs/decisions/0022-agent-vm-node-modules.md): inside a machine, the worktree gets its VM-local
+# node_modules now rather than at the next launch, and the install runs after that so it lands in the VM-local one; on
+# the host, the install comes first: the sync makes a running machine create its mount points in this tree, and an
+# install that recreates node_modules afterwards would remove them. Neither stops the caller: the worktree is
+# there, only its node_modules may still be shared or empty.
+if [[ -e "${AGENT_VM_MARKER:-/etc/agent-vm}" ]]; then
+    if command -v agent-vm-node-modules >/dev/null 2>&1; then
+        nm_status=0
+        agent-vm-node-modules attach "$worktree_path" >/dev/null || nm_status=$?
+        if [[ $nm_status -ne 0 ]]; then
+            # An install there now would put linux packages into the host's worktree
+            nm_wt=$(printf '%q' "$worktree_path")
+            say_warn "node_modules of $nm_wt may be shared with the host (agent-vm-node-modules attach: status $nm_status); do not install there until this succeeds: agent-vm-node-modules attach $nm_wt"
+            deps_target=attach-failed
+        fi
+    else
+        deps_target=no-helper
+    fi
+    install_dependencies
+else
+    install_dependencies
+    if command -v agent-vm >/dev/null 2>&1; then
+        nm_status=0
+        agent-vm node-modules-sync "$repo_root" || nm_status=$?
+        if [[ $nm_status -ne 0 ]]; then
+            say_warn "the running agent-vm machine may not have VM-local node_modules for $(printf '%q' "$worktree_path") yet (agent-vm node-modules-sync: status $nm_status); the next agent-vm launch syncs it"
+        fi
+    fi
+fi

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { after, describe, it } from "node:test";
@@ -93,6 +93,40 @@ describe(
       );
       assert.equal(failing.status, 1);
       assert.equal(failing.stdout, "");
+    });
+
+    it("E03: a git-worktree-deps that writes to stdout and stderr leaves the entry's stdout as the path alone", () => {
+      const repo = createRepo(temp);
+      const bin = join(testHome, ".local", "bin");
+      mkdirSync(bin, { recursive: true });
+      writeFileSync(
+        join(bin, "git-worktree-deps"),
+        "#!/bin/sh\necho noise-on-stdout\necho noise-on-stderr >&2\nexit 3\n",
+        { mode: 0o755 },
+      );
+      const result = runBun(
+        createEntry,
+        createPayload(repo.dir, "bold-oak-a3f2"),
+      );
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(result.stdout, `${createdPath(repo.commonDir)}\n`);
+      assert.match(result.stderr, /noise-on-stdout/);
+      assert.match(result.stderr, /noise-on-stderr/);
+      assert.match(result.stderr, /status 3/);
+    });
+
+    it("E04: a missing git-worktree-deps still exits 0 with the path alone on stdout", () => {
+      const repo = createRepo(temp);
+      rmSync(join(testHome, ".local", "bin", "git-worktree-deps"), {
+        force: true,
+      });
+      const result = runBun(
+        createEntry,
+        createPayload(repo.dir, "bold-oak-a3f2"),
+      );
+      assert.match(result.stderr, /git-worktree-deps/);
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(result.stdout, `${createdPath(repo.commonDir)}\n`);
     });
 
     it("E06: importing an entry runs nothing", () => {

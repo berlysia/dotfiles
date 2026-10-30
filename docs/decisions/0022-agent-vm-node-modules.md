@@ -18,7 +18,7 @@ ADR-0018 は、repo を host と同じパスで VM に mount する。`node_modu
 
 - VM の中で、worktree の中の `package.json` を持つ各ディレクトリ（パッケージ）の `node_modules` を、VM ローカルの保存先への bind mount に差し替える。パッケージごとにするのは、npm、yarn、bun の hoisted がパッケージの下にプラットフォーム別の実体を置くためである（K1）。
 - mount の仕組みは VM 側のヘルパー `agent-vm-node-modules` に閉じる。`sync <repo>`（収束。正はこれ）、`attach <worktree>`、`remove <worktree> -- <command>` を持つ。すべて冪等で、1 つの lock で直列化する。
-- 呼び出しの入口は 3 つで、どれも収束を早める近道である。launcher の起動のたびの `sync`（失敗は起動を止めない警告にする）、`git-worktree-create`（VM では `attach`、host では `agent-vm node-modules-sync`）、`git-worktree-cleanup`（VM では `remove` で git の削除を包む）。
+- 呼び出しの入口は 3 つで、どれも収束を早める近道である。launcher の起動のたびの `sync`（失敗は起動を止めない警告にする）、`git-worktree-create`（VM では `attach`、host では `agent-vm node-modules-sync`）、`git-worktree-cleanup`（VM では `remove` で git の削除を包む）。Claude Code の worktree では、hook の経路が同じ `attach` と `remove` を使う（ADR-0033 の Amendments）。
 - ヘルパーは chezmoi で VM にだけ配る。ADR-0018 K17 の VM 許可リストに足し、host では無視する。cloud-init と bootstrap の契約（ADR-0021 K9）には触れない。
 - ヘルパーは権限の境界ではなく、正規の経路が偽の一覧や差し替えたパスに誘導されないための柵である（VM のユーザーはもともとパスワードなし sudo を持つ。ADR-0018 R6）。worktree は repo のルートか `<repo>/.git/worktree/` の配下に、パッケージは worktree の配下に限る。mount は root の perl が `O_NOFOLLOW` で開いた fd 経由で張り、張った先を確かめる（K6）。mount 先の所有者は確かめない。OrbStack の virtiofs は所有者を見ている側の uid の写しとして返し、ファイルの属性として観測できないためである。
 - mount の有効性は device:inode の一致で判定し、失効していれば張り直す（K9）。major:minor は条件にしない。OrbStack の btrfs では mountinfo の major:minor と stat の st_dev が一致せず、一致を条件にすると自分の mount の行を見つけられずに mount 中の中身を消す側に倒れるためである。

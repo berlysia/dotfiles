@@ -77,6 +77,25 @@ Claude Code は、`WorktreeCreate` hook を定義するとそれで既定の wor
 - **R10**: `.gitattributes` の filter（smudge / process / clean）は checkout と `git status` で実行されうる。既定の Claude Code も同じ repo で同じ git を呼ぶので、既定より広げない。`core.hooksPath=/dev/null` により `post-checkout` hook は実行されない（既定とは違う）。人が `git-worktree-create worktree-foo` で作った worktree も管理下に入る（`WorktreeRemove` を呼ぶのは Claude Code だけで、自分が作ったパスでしか呼ばない）。
 - 判別できない入力が cleanup の entry に来たら exit 0 にする。
 
+## Amendments
+
+### 2026-10-31: hook の経路でも依存を準備する
+
+D5 の「install しない」を改める。理由は、`git-worktree-create` が新しいブランチに install するのに hook は install せず、作成の経路で依存の有無が食い違っていたためである。当時の却下理由「origin 起点では CLI も script を自動実行しない」は誤りで、CLI が止めるのは `origin/<branch>` の取り込みだけである。却下した代替案の「`git-worktree-create` は現在の HEAD から切る」も古く、今は origin の既定ブランチから切る。置き場は D1 の後に `~/worktrees/<repo>/` へ移った（`ed100512`）。
+
+依存の準備は新しい CLI `git-worktree-deps` に移し、CLI と hook の両方が呼ぶ。作成処理は統合しない。stdout の契約、ブランチ名、fetch の有無、片付けの判定が違い、統合すると D1〜D4 の作り直しになるからである。
+
+- **経路の分け方**: name が `agent-` か `wf_` で始まれば subagent 用として install しない。hook の入力に他の目印が無い。`claude --worktree agent-foo` のようなセッションも install せず、`SessionStart` の案内で伝える。`SubagentStart` で install する案は、subagent の開始を待たせるので採らなかった。
+- **信頼の線**: hook の新規作成は CLI の新規ブランチと同じ扱いで install する。起点は fetch なしの `origin/HEAD` である。install の script は Claude Code の環境をそのまま受け取る。PM が private registry の資格情報を読むためで、手で install するのと同じ範囲である。信頼できない repo を開くと、worktree を作るだけでその repo の script が実行される。security reviewer はこれを High と評価し、信頼済みの repo に限るか opt-in にするよう求めたが、利用者が今の形を承認した。
+- **失敗**: install の失敗や打ち切りでも、hook は worktree のパスを返す。
+- **途中の `node_modules`**: 失敗したら、install の前に無いか空だった `node_modules` の中身を消す。案内は空の `node_modules` も未 install と扱う。消している間は `.git-worktree-deps-incomplete` を置く。install の前から置く案は、手で install して成功しても消えず、誤った案内が続くので採らなかった。回復は CLI の再実行である。`deny-node-modules` hook が agent の削除を拒否するからである。
+- **期限**: hook が渡す `--timeout` は、150 秒と「240 秒 − 経過 − 40 秒」の小さいほうで、30 秒未満なら `--no-install` にする。CLI 全体の期限は「240 秒 − 経過 − 10 秒」で、hook が起動時に付けてプロセスグループごと SIGKILL で止める。10 秒未満なら呼ばない。`timeout` も `gtimeout` も無い環境では install せず案内に戻す。打ち切りと消去を保証できないからである。150 秒は仮の値である。
+- **`--no-install`**: PM の実行だけを省く。VM の attach と host の sync は行う。再利用した worktree にも呼ぶ。attach は繰り返しても重ねて mount しない。
+- **VM の削除**: helper があれば `agent-vm-node-modules remove <wt> -- git …` を通す。helper が拒否したら git を呼ばず worktree を残す。helper が無ければ mountinfo を読み、mount が無いと確かめられたときだけ git で消す。helper が無いときは常に残す案は、消せる worktree が subagent の数だけ溜まるので採らなかった。hook の経路で attach しない案は、install が host の `node_modules` に入るので採らなかった。
+- **案内**: VM で `node_modules` が mount と確かめられなければ、install を勧めず attach を案内する。
+
+確かめ直す条件: name の形は Claude Code 2.1.314 で 1 回ずつ観察したものである。Claude Code を更新して name の形が変わると、subagent でも install され、`origin/HEAD` の script も実行される。作成は失敗しない。更新後に片付けが空振りしているように見えたら、同時に name の形も確かめる。確認手順は `docs/commands/git-worktree-cleanup.md` にある。
+
 ## References
 
 - `home/dot_claude/rules/developer-experience.md` の Git Worktree Convention

@@ -74,6 +74,7 @@ install-packages-*-windows.ps1
 !.local/bin/hook-timing
 !.local/bin/workflow-cli
 !.local/bin/git-worktree-create
+!.local/bin/git-worktree-deps
 !.local/bin/git-worktree-cleanup
 !.local/bin/ask-grokbot
 !.local/bin/agent-vm-node-modules
