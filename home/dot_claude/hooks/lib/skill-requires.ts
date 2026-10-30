@@ -101,6 +101,8 @@ type ListRead =
   | { found: true; items: string[] }
   | { found: true; error: string };
 
+export type FrontmatterListRead = ListRead;
+
 /** One key's list, in `[a, b]` or `- a` form. Anything else is an error. */
 function readList(lines: string[], key: string): ListRead {
   const prefix = `${key}:`;
@@ -127,6 +129,16 @@ function readList(lines: string[], key: string): ListRead {
     break;
   }
   return { found: true, items };
+}
+
+/** Reads one list key from closed frontmatter using the gate's line-based YAML subset. */
+export function readFrontmatterList(
+  text: string,
+  key: string,
+): FrontmatterListRead {
+  const lines = frontmatterLines(text);
+  if (lines === null) return { found: false };
+  return readList(lines, key);
 }
 
 /**
@@ -318,8 +330,27 @@ export interface ScanResult {
   timedOut: boolean;
 }
 
-/** The skill a transcript line records as loaded, or null. Only the isMeta user record counts. */
-export function loadedSkillOfLine(line: Buffer): string | null {
+export interface TranscriptLineScanResult {
+  bytesRead: number;
+  timedOut: boolean;
+  /** False when the scan did not reach the start of the file. */
+  complete: boolean;
+  readable: boolean;
+}
+
+export interface TranscriptLineScanOptions extends ScanOptions {
+  /** Stop after the current chunk when this returns true. */
+  stopWhen?: () => boolean;
+}
+
+export interface LoadedSkillRecord {
+  skill: string;
+  baseDirectory: string;
+}
+
+export function loadedSkillRecordOfLine(
+  line: Buffer,
+): LoadedSkillRecord | null {
   if (line.indexOf(LOAD_MARKER) === -1) return null;
   let record: unknown;
   try {
@@ -340,10 +371,19 @@ export function loadedSkillOfLine(line: Buffer): string | null {
   const first = content[0] as { type?: unknown; text?: unknown } | undefined;
   if (first?.type !== "text" || typeof first.text !== "string") return null;
   if (!first.text.startsWith(LOAD_MARKER)) return null;
-  const firstLine =
-    first.text.slice(LOAD_MARKER.length).split("\n", 1)[0] ?? "";
-  const name = firstLine.trim().replace(/\/+$/, "").split("/").pop() ?? "";
-  return isValidSkillName(name) ? name : null;
+  const baseDirectory =
+    first.text
+      .slice(LOAD_MARKER.length)
+      .split("\n", 1)[0]
+      ?.trim()
+      .replace(/\/+$/, "") ?? "";
+  const name = baseDirectory.split("/").pop() ?? "";
+  return isValidSkillName(name) ? { skill: name, baseDirectory } : null;
+}
+
+/** The skill a transcript line records as loaded, or null. Only the isMeta user record counts. */
+export function loadedSkillOfLine(line: Buffer): string | null {
+  return loadedSkillRecordOfLine(line)?.skill ?? null;
 }
 
 /**
@@ -356,23 +396,47 @@ export function scanLoadedSkills(
   path: string,
   options: ScanOptions = {},
 ): ScanResult {
-  const chunkBytes = options.chunkBytes ?? DEFAULT_CHUNK_BYTES;
-  const maxScanBytes = options.maxScanBytes ?? DEFAULT_MAX_SCAN_BYTES;
-  const maxLineBytes = options.maxLineBytes ?? DEFAULT_MAX_LINE_BYTES;
-  const deadlineMs = options.deadlineMs ?? DEFAULT_DEADLINE_MS;
-  const now = options.now ?? (() => performance.now());
   const needed = options.needed;
   const result: ScanResult = {
     loaded: new Set(),
     bytesRead: 0,
     timedOut: false,
   };
-  if (typeof path !== "string" || !isAbsolute(path)) return result;
-
   const satisfied = () =>
     needed !== undefined &&
     needed.size > 0 &&
     [...needed].every((name) => result.loaded.has(name));
+  const scan = scanTranscriptLines(
+    path,
+    (line) => {
+      const name = loadedSkillOfLine(line);
+      if (name !== null) result.loaded.add(name);
+    },
+    { ...options, stopWhen: satisfied },
+  );
+  result.bytesRead = scan.bytesRead;
+  result.timedOut = scan.timedOut;
+  return result;
+}
+
+/** Scans complete JSONL lines backwards with the same limits as scanLoadedSkills. */
+export function scanTranscriptLines(
+  path: string,
+  onLine: (line: Buffer) => void,
+  options: TranscriptLineScanOptions = {},
+): TranscriptLineScanResult {
+  const chunkBytes = options.chunkBytes ?? DEFAULT_CHUNK_BYTES;
+  const maxScanBytes = options.maxScanBytes ?? DEFAULT_MAX_SCAN_BYTES;
+  const maxLineBytes = options.maxLineBytes ?? DEFAULT_MAX_LINE_BYTES;
+  const deadlineMs = options.deadlineMs ?? DEFAULT_DEADLINE_MS;
+  const now = options.now ?? (() => performance.now());
+  const result: TranscriptLineScanResult = {
+    bytesRead: 0,
+    timedOut: false,
+    complete: false,
+    readable: false,
+  };
+  if (typeof path !== "string" || !isAbsolute(path)) return result;
 
   const startedAt = now();
   let fd: number | null = null;
@@ -380,6 +444,7 @@ export function scanLoadedSkills(
     fd = openSync(path, fsConstants.O_RDONLY);
     const stat = fstatSync(fd);
     if (!stat.isFile()) return result;
+    result.readable = true;
     const rangeStart = Math.max(0, stat.size - maxScanBytes);
     let position = stat.size;
     let carry: Buffer = Buffer.alloc(0);
@@ -408,7 +473,7 @@ export function scanLoadedSkills(
         // The tail of an over-long line is in this chunk after its last newline.
         const lastNewline = chunk.lastIndexOf(0x0a);
         if (lastNewline === -1) {
-          if (satisfied()) break;
+          if (options.stopWhen?.()) break;
           if (position > rangeStart && now() - startedAt >= deadlineMs) {
             result.timedOut = true;
             break;
@@ -424,18 +489,14 @@ export function scanLoadedSkills(
       // Walk complete lines from the back; the first segment is the partial one.
       let index = combined.lastIndexOf(0x0a, segmentEnd - 1);
       while (index !== -1) {
-        const name = loadedSkillOfLine(
-          combined.subarray(index + 1, segmentEnd),
-        );
-        if (name !== null) result.loaded.add(name);
+        onLine(combined.subarray(index + 1, segmentEnd));
         segmentEnd = index;
         index =
           segmentEnd === 0 ? -1 : combined.lastIndexOf(0x0a, segmentEnd - 1);
       }
       // combined[0..segmentEnd) has no newline: a whole line only at the file start.
       if (position === 0) {
-        const name = loadedSkillOfLine(combined.subarray(0, segmentEnd));
-        if (name !== null) result.loaded.add(name);
+        onLine(combined.subarray(0, segmentEnd));
         carry = Buffer.alloc(0);
       } else if (segmentEnd > maxLineBytes) {
         carry = Buffer.alloc(0);
@@ -444,14 +505,17 @@ export function scanLoadedSkills(
         carry = Buffer.from(combined.subarray(0, segmentEnd));
       }
 
-      if (satisfied()) break;
+      if (position === 0) result.complete = true;
+      if (options.stopWhen?.()) break;
       if (position > rangeStart && now() - startedAt >= deadlineMs) {
         result.timedOut = true;
         break;
       }
     }
+    if (position === 0) result.complete = true;
   } catch {
-    // An unreadable transcript is an empty result.
+    result.readable = false;
+    result.complete = false;
   } finally {
     if (fd !== null) closeSync(fd);
   }

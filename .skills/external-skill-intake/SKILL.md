@@ -23,3 +23,20 @@ description: 外部スキルを導入、更新、移行、撤去するときに�
 
 - 更新は原典の commit と手元の差分を突き合わせ、独自変更を上書きしない。追跡を続けるコピーでは整形だけの差分も負担になる。上流のテストが複製間の一致検査なら、手元の変更の正しさは別に検証する。
 - 撤去は実行時点の manifest と lock で dry-run を取り、実行後に lock、各配置先、同期除外、許可一覧を照合する。宣言の削除だけでは撤去済みとしない。lock が残ると許可行が再追記され、同期対象外のディレクトリや未管理の依存も残りうる。想定外の残存は範囲と副作用を報告し、追加の削除判断を求める。
+
+## Claude Code & Agent Skills Management
+
+- **手作りスキル**: `${projectRoot}/.skills/` で一元管理、`chezmoi apply` で `~/.claude/skills/`、`~/.codex/skills/`、`~/.gemini/config/skills/` に rsync 同期
+  - rsync は run script が行うため `chezmoi apply <path>` では反映されない。スキル変更後は引数なしの `chezmoi apply` を実行する
+- **外部スキル**: `home/dot_apm/apm.yml` で宣言的管理、APM (`apm install -g`) 経由でインストール
+  - `apm.lock.yaml` で追跡、手作りスキルとの共存は rsync 除外で維持
+
+### 変更手順
+
+1. `home/dot_apm/apm.yml` を編集（追加/削除）
+2. `chezmoi apply` を実行
+3. スキル検索: `apm search <query>`
+
+## 届く経路
+
+既存の description が外部スキルの導入・更新・移行・撤去を案内する。

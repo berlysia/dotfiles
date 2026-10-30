@@ -1,6 +1,7 @@
 ---
 name: git-safety
 description: ブランチや worktree の削除、更新、初期化、並行作業、部分 stage と整形の境界を扱うときに使う。GitHub の CI 待ちや保護設定の調査、履歴書き換えの手順には使わない。
+read-before: ["Bash(git-worktree-create)", "Bash(git worktree add)"]
 ---
 
 # Git の安全な操作
@@ -42,3 +43,18 @@ description: ブランチや worktree の削除、更新、初期化、並行作
 2. 更新前に未コミットのファイルと、`git diff --stat HEAD..<incoming>` などで流入する変更を比較する。重ならなければ未コミット変更があっても fast-forward できる場合がある。重なるときは変更をどう保つか決めてから更新し、自動の退避で他の作業を動かさない。
 3. ローカルの `--ff-only` 成功と push の可否を分けて報告する。ローカル同士が fast-forward できてもリモートとは分岐していることがある。取り込み方はリポジトリの方針を確認する。
 4. リモートの base から切った作業ブランチは、upstream が base のままのことがある。初回 push は `git push -u <remote> <branch>` で作業ブランチ自身を設定し、`git branch -vv` で確認する。引数なし push が base に向かわないようにする。
+
+## Git Worktree Convention
+
+- Use separate worktrees for concurrent sessions, since switching branches moves shared HEAD. Confirm cwd, git-dir and common-dir; give delegates an explicit cwd.
+- Prepare dependencies before completion checks, keeping the lockfile fixed. In a VM, confirm dependency isolation succeeded before installing, to avoid changing host dependencies.
+
+- **Path**: Always place worktrees at `<repo-root>/.git/worktree/<branch-name>` (singular `worktree`, inside `.git/` so no gitignore entry is needed)
+- **Tools**: Use `git-worktree-create` / `git-worktree-cleanup` (`~/.local/bin/`). Do **not** invoke `git worktree add` directly
+- **Claude Code's own worktrees** (`claude --worktree`, subagent `isolation: "worktree"`, `claude remote-control --spawn worktree`): the `WorktreeCreate` hook creates them at `<repo>/.git/worktree/worktree-<name>` on branch `worktree-<name>`, and the `WorktreeRemove` / `SubagentStop` hooks remove them when they hold no new work. They are not created under `.claude/worktrees/`. A worktree with commits or uncommitted changes is kept, and so is its branch; remove it with `git-worktree-cleanup` or `git worktree remove` + `git branch -D` once its work is merged
+- **Restarting Remote Control for a folder listed in `~/.config/claude-rc/projects`**: tell the user to run `claude-rc-sync restart <name>`. Never suggest `claude remote-control --continue` there, least of all from one of its worktrees: it registers a single-session (capacity 1) server on the same environment, and the app then shows the folder as full until that session is archived
+- **Prohibited**: Do not use `compound-engineering:git-worktree` skill or any other tool that creates worktrees at `.worktrees/` (repo root) or `.claude/worktrees/` — they conflict with this convention and pollute the repo root
+
+## 届く経路
+
+worktree の作成前は、この skill が未読なら hook が止めて読むよう求める。その他の Git 操作は既存の description が案内する。

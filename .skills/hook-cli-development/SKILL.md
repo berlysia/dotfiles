@@ -62,3 +62,23 @@ description: dotfiles リポジトリの Claude Code の hook（配置先は ~/.
 
 1. 公開する差分だけでなく、最初の push 前にコミット本文と PR 本文も点検する。履歴を書き直しても、公開済みの本文は複製先に残りうるためである。委譲する場合は、公開禁止の表現を機密値を含まない例で示す。「公開しない」とだけ伝えると、修正理由の説明に含まれることがある。
 2. 秘密検査が作業ツリーと履歴のどちらを入力にするかを確認し、CI と同じ範囲で実行する。個人の Git 設定による入力差と除外設定の影響も調べる。除外を適用しない検査で検出できることを確認すると、手元でだけ検出されない問題を発見できる。指摘があっても成功を返して蓄積する運用では、その指摘をいつ確認するかも決める。
+
+## Hooks Development
+
+- 配置の成功と読み込みは分けて検証する。既存 hook の本体は次の呼び出しで動くが、新規登録や agent 定義は新規セッションで確かめる。
+
+フック（`~/.claude/hooks/`）は bun で絶対パス実行（`bun ~/.claude/hooks/implementations/*.ts`）。
+
+**パッケージ管理**:
+
+- **hook依存の定義**: `home/dot_claude/package.json`（bun workspace パッケージ）
+- **開発時**: `bun install` → `home/dot_claude/node_modules/`
+- **deploy後**: `chezmoi apply` → `~/.claude/` で `bun install`
+
+**依存パッケージ追加**: `home/dot_claude/package.json` に追加 → `bun install` → `chezmoi apply`
+
+**主要パッケージ**: `cc-hooks-ts`（フック定義ヘルパー）, `@anthropic-ai/claude-agent-sdk`（LLM評価用）
+
+## 届く経路
+
+既存の description が Claude Code の hook または CLI の開発時を案内する。

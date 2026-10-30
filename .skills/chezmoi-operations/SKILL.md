@@ -61,3 +61,42 @@ description: chezmoi で apply や status を実行するとき、配置する�
 5. 取得は「落としてから実行」にする。`curl -f URL | sh` は、pipefail の無いシェルでは curl が何も出さずに落ちても sh が空の入力を 0 で読み終え、失敗が隠れる。ダウンロードの途中で切れると、前半だけが実行される。取得が完了する前に実行せず、失敗は後続の処理へ伝える。
 6. digest の照合は、独立した上流の公開値とも比べる。Renovate は checksums.txt に今の digest が見つからないと tarball を自分で取得して hash を作る。その値は tarball との照合なら必ず一致するので、「配布物と sha が一致するか」の検査をすり抜ける。上流の公開値と照らす検査を別に置く。
 7. 取得したものの照合は workflow の `run:` の中に書く。jactionlint の unverified-download は run の本文だけを見るため、照合を script ファイルに移すと検出が消える。それは直ったのではなく見えなくなっただけである。CI が実行する文面をそのまま取り出し、偽の curl に向けて実行すると、実際に走る文面そのものを検査できる。
+
+## Chezmoi ファイル管理
+
+### 一般的なルール
+
+- merge しただけでは配置先が変わらない。`~/.local/bin` の CLI や `~/.claude` の hook は、本体の checkout の master を進めて apply するまで古い版で動く。新しい挙動を前提にするときは、配置先の版を先に確かめる。
+
+- **ファイル名変換**: `dot_*` → `.*` (例: `${projectRoot}/home/dot_claude/foo.txt` → `~/.claude/foo.txt`)
+- **パーミッション**: `private_*` → パーミッション600で配置
+- **テンプレート**: `.tmpl` 拡張子で動的生成
+
+### ディレクトリ構造
+
+- **`.chezmoiroot`**: リポジトリルートの `.chezmoiroot` ファイルに `home` と記載
+  - chezmoi source stateは `${projectRoot}/home/` 配下に格納
+  - `.chezmoi.sourceDir` → `${projectRoot}/home/`
+  - `.chezmoi.workingTree` → `${projectRoot}/`（リポジトリルート、不変）
+  - リポジトリルートにあるファイル（`package.json`等）を参照するテンプレートでは `workingTree` を使用
+
+### このプロジェクト独自のルール
+
+- **グローバル設定**: `${projectRoot}/home/dot_claude/CLAUDE.md` → `~/.claude/CLAUDE.md`
+  - 編集する場合は `${projectRoot}/home/dot_claude/CLAUDE.md` を変更してから `chezmoi apply` を実行
+
+- **Settings.json分割管理**: `.settings.base.json.tmpl`, `.settings.permissions.json`, `.settings.hooks.json.tmpl` → `run_onchange_update-settings-json.sh.tmpl` で jq 統合
+  - **重要**: hooks変更は `.settings.hooks.json.tmpl` を編集 → `chezmoi apply`
+  - `enabledPlugins` は `claude plugin` CLI が管理、settings.json 更新時に保持
+
+- **~/.claude.json自動管理**: `package.json` の dependencies からバージョン読み取り → jq マージ
+  - **管理対象MCP**: @mizchi/readability, chrome-devtools-mcp, @playwright/mcp, @upstash/context7-mcp, @drawio/mcp
+
+- **プラグイン管理**: `home/.chezmoidata/claude_plugins.yaml` で宣言管理 → `chezmoi apply` で自動インストール/削除
+- **グローバル textlint**: `home/dot_config/textlint/`（package.json + `.textlintrc.json`）→ `~/.config/textlint/`。`run_after_10-install-textlint-deps.sh.tmpl` が apply 末尾で `bun install --frozen-lockfile --ignore-scripts`（`bun.lock` を追跡）。走らせるのは第三者の `preset-japanese` だけで、tanteki の独自ルール 2 本は japanese-check の `check --profile` にある。`~/.local/bin/textlint-global` ラッパがどこからでも同 config で実行（`--text "..."` / `-` で stdin）。rule 追加は package.json と `.textlintrc.json` を編集 → `chezmoi apply`
+- **formal-check のランタイム**: `home/dot_config/formal-check/`（package.json + bun.lock の z3-solver）→ `~/.config/formal-check/`。`run_after_10-install-formal-check-deps.sh.tmpl` が `bun install --frozen-lockfile --ignore-scripts` を走らせ、成功時に `.install-state` を書く。`tla2tools.jar` は `home/.chezmoiexternal.toml.tmpl` の external。状態の読み手は `.skills/formal-check/scripts/lib/runtime.mjs`
+- **ja-check-keep の注記**: 理由の末尾に `shiori: JA-<番号>` を付ける。同じ番号を `.config/shiori/registry.json` に `kind: intentional` で書く（番号は台帳の最大の次）。CI の「shiori Annotations」が、台帳に無い番号と文書から消えた番号を落とす。書き方の例には実在の番号を書かない（ADR-0048）
+
+## 届く経路
+
+既存の description が chezmoi の apply/status や配布対象の変更を扱う場面を案内する。

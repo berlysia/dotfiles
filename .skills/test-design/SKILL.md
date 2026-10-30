@@ -90,3 +90,42 @@ Phase 2 で該当するケースには、次の準備と観測方法を含める
 
 - テスト観点リスト（Phase 1 の結果）
 - テストケーステーブル（Phase 2 の結果、plan.md のテスト計画セクションにそのまま貼り付け可能な形式）
+
+## Testing Standards
+
+- Follow t-wada's TDD style (strict Red-Green-Refactor)
+- Grep existing tests for similar patterns before writing new ones
+- Code started through an entrypoint (hooks, CLIs) has at least one test that launches it as a process, so the entrypoint wiring is exercised; unit tests of the exported functions pass even when the entrypoint never runs
+- Tests must pass before commits
+- Break the guarded condition and confirm the intended assertion fails; passing alone proves little.
+
+### Time Budget
+
+Always measure wall-clock time when writing or changing tests, and report the measured time. Each scope has three lines:
+
+- **Ideal**: the direction to aim for. Not a pass/fail line
+- **Target**: what a run keeps to in normal work
+- **Cap**: must not be exceeded. A change must not push a scope over its cap; an excess that already exists is reported and fixed as its own task
+
+| Scope                                                      | Ideal | Target | Cap   |
+| ---------------------------------------------------------- | ----- | ------ | ----- |
+| Unit tests (full run)                                      | ~5 s  | 10 s   | 1 min |
+| Performance tests, or tests using heavy resources (DB, FS) | —     | 1 min  | 2 min |
+| Tests run by the pre-commit hook                           | ~1 s  | 3 s    | 10 s  |
+| Tests run by the pre-push hook                             | ~5 s  | 15 s   | 30 s  |
+
+A suite's wall-clock time is set mostly by its slowest file, because runners such as `node --test` run files in parallel and the tests inside a file one after another. So unit tests also have per-item caps, which point at the test to fix:
+
+- One unit test: 100 ms (1 s when it launches a process)
+- One unit test file run alone: 3 s
+
+How to measure and record:
+
+- The local machine is the gate, since slow local tests block local work. Run the suite 3 times with no other heavy work running, and record the median and the maximum
+- Also record the CI time when CI runs the suite, so the two can be compared. CI time does not replace the local measurement
+- A test that cannot fit the unit caps belongs in the heavy tier, not in the unit suite
+- When a scope exceeds its target or a cap, report it with the measured times and propose how to bring it back (run fewer tests at that stage, split long files so they run in parallel, call functions instead of launching processes, replace real waits with fake clocks or shorter injected timeouts, move to a heavier tier or CI). Do not raise the lines on your own
+
+## 届く経路
+
+既存の description がテスト計画や PR のテスト範囲を扱う場面を案内する。

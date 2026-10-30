@@ -30,6 +30,13 @@ const REPO_ONLY_PATTERNS: readonly RegExp[] = [
 const ALLOWED_FILES: ReadonlySet<string> = new Set([
   // Edits the auto-approve layers in the dotfiles source; source paths are its subject.
   ".skills/update-auto-approve/SKILL.md",
+  // Carry the dotfiles project CLAUDE.md sections on chezmoi, hooks, Mods and
+  // hand-made skills; they are read when working in this repo, where source
+  // paths can be followed.
+  ".skills/chezmoi-operations/SKILL.md",
+  ".skills/external-skill-intake/SKILL.md",
+  ".skills/hook-cli-development/SKILL.md",
+  ".skills/mod-development/SKILL.md",
   // Promotes insights into dotfiles source files (.skills/, home/dot_claude/rules/).
 ]);
 

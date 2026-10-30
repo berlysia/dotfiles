@@ -339,3 +339,30 @@ logic-validatorは **実装の正しさ** ではなく、**論理的推論の妥
 1. logic-validation で論理チェック（自己検証）
 2. 複雑な判断 → /codex:review で外部視点
 ```
+
+## External Review の要点
+
+### External Review
+
+- **Codex Plugin**: `/codex:review` command for code review, `/codex:adversarial-review` for adversarial analysis (via `codex@openai-codex` plugin)
+- **Self-Review**: `/self-review` skill for comprehensive multi-perspective review
+
+## When to Use External Review
+
+| Situation                 | Recommended Tool                  | Purpose                                                    |
+| ------------------------- | --------------------------------- | ---------------------------------------------------------- |
+| **Stuck on problem**      | Codex Plugin `/codex:review`      | Get fresh perspective, alternative approaches              |
+| **Architecture decision** | Codex Plugin `/codex:review`      | Compare options, evaluate tradeoffs                        |
+| **Debug blocked**         | Codex Plugin `/codex:review`      | Discuss symptoms, brainstorm solutions                     |
+| **User explicit request** | `/codex:review` or `/self-review` | Read-only analysis or comprehensive review                 |
+| **Pre-deployment review** | `/self-review`                    | Multi-stakeholder perspective (security, UX, DevOps, etc.) |
+
+## External Review Best Practices
+
+1. **Provide sufficient context**: Background, constraints, what you've tried
+2. **Ask specific questions**: "Any oversights?", "Simpler approach?", "Edge cases?"
+3. **Validate feedback**: Treat suggestions as reference, make final judgment yourself
+
+## 届く経路
+
+既存の description が判断の妥当性を確かめる場面を案内する。

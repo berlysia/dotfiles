@@ -28,3 +28,14 @@ description: このリポジトリの Claude Code Mod を開発、配備、診�
 - `ui.render`、`session.append`、モデルへの context は別に検査する。transcript の見た目を変えてもモデルの文脈は変わらない。保存行の `uuid` と描画の `requestId` は実際に照合してから利用する。行ごとの状態は `StateFamily` で分けると全行の再描画を避けられる。
 - ハーネスでは状態変更後に `ui.drawn()` を呼んで表示を確認する。CLI 出力を使うプレビューはパーサも検査できるが、実画面の折り返しと余白は別に確認する。`ui.notify` と OS 通知も別なので、Notification hook への連携を試す。
 - `$` を渡す helper はトップレベルか Mod 内の import 先に置き、validate で静的解析できるようにする。型定義は import なしで自己完結させる。ハーネスの `$` に plugin 用 store・clock がない場合は、外へ出る副作用で記録結果を確認する。
+
+## Claude Code Mods
+
+- **ソース**: `mods/<name>/`（Mod のそのままの形。名前は `^[a-z0-9][a-z0-9._-]*$`、違反は apply を止める）。何が Mod か・配布先は `home/.chezmoitemplates/claude-mod-names` / `claude-mods-dir` に 1 か所だけ書く
+- **配布**: 引数なしの `chezmoi apply` で `run_after_sync-mods` が `~/.claude/mods/` へ rsync（テストは配布しない）し、settings の `env.CLAUDE_CODE_PLUGIN_DIRS` は自動生成される
+- **開発と検証**: 開発中は `claude --plugin-dir mods/<name>` で hot reload。検証は `claude plugin validate|test mods/<name>`（CI は Mod を検証しない）
+- **workflow-band の見た目**: `workflow-band-preview` がセッションなしで帯を描く（引数なしは状態の一覧、`--live` は今の workflow dir）。配備前は `bun mods/workflow-band/preview.ts`
+
+## 届く経路
+
+既存の description が Claude Code Mod の開発・配備・診断時を案内する。

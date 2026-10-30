@@ -10,6 +10,8 @@ Consequences 3 の「予算の定数は 12KB のまま」は、ADR-0032 が覆�
 
 Decision で「残した」とした Executive Summary の書式は、ADR-0035 が中身を改訂した（workflow.md に残す理由は変わらない）。
 
+D1 (a) の出口に、MOVE の知らせ方として rule の `paths:`、操作の前の deny、場面の後の `additionalContext` を ADR-0061 が加えた。
+
 ## Context
 
 ADR-0025 の後、規則そのものを棚卸しした。調べたのは `rules/workflow.md` の規則と、参照 skill（`document-workflow-reference`）の規則である。
