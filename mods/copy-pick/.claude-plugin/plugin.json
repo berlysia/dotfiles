@@ -1,0 +1,6 @@
+{
+  "name": "copy-pick",
+  "version": "0.1.0",
+  "description": "A /copy-pick pane for choosing text from the current session",
+  "types": "./types/index.d.ts"
+}
