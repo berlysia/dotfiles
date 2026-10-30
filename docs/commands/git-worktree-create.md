@@ -1,6 +1,6 @@
 # git-worktree-create
 
-Create a new git worktree in `.git/worktree` directory
+Create a new git worktree in `~/worktrees/<repo>/`
 
 ## 概要
 
@@ -93,7 +93,7 @@ git-worktree-create --help
 
 ## 依存のインストール
 
-worktree を作った直後に、その worktree のルートで依存をインストールする。作った worktree で、そのままテストや lint を実行できるようにするためである。
+worktree を作った直後に、その worktree のルートで依存をインストールする。作った worktree で、そのままテストや lint を実行できるようにするためである。実際の処理は [git-worktree-deps](./git-worktree-deps.md) が行う。
 
 ### package manager の判定
 
