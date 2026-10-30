@@ -16,6 +16,7 @@ import {
   appendLedger,
   buildDeliveryPolicyQuestion,
   decideMerge,
+  decideWait,
   DELIVERY_POLICY_QUESTION_PREFIX,
   guardedHomeDenyRules,
   GUARDED_HOME_PATHS,
@@ -32,6 +33,7 @@ import {
   type Gh,
   type Ledger,
   type MergeState,
+  type WaitState,
   type RepoInfo,
   type StatusContext,
 } from "../../lib/delivery-policy.ts";
@@ -341,14 +343,64 @@ describe("decideMerge table", () => {
     assert.deepEqual(d, { kind: "merge" });
   });
 
-  it("a protected path is 30 even while checks are pending (row 4 before 7)", () => {
+  const PROTECTED_FILES = [{ path: ".github/workflows/ci.yml" }];
+
+  it("a protected path with every check passed and CLEAN is confirm, not merge", () => {
+    const d = decideMerge(passingState({ files: PROTECTED_FILES }));
+    assert.deepEqual(d, {
+      kind: "confirm",
+      paths: [".github/workflows/ci.yml"],
+    });
+  });
+
+  it("a protected path waits while a check is pending, and is not 30 or confirm", () => {
+    const d = decideMerge(
+      passingState({ files: PROTECTED_FILES, checkRuns: [] }),
+    );
+    assert.equal(d.kind, "wait");
+  });
+
+  it("a protected path with a failed required check is 30", () => {
     const d = decideMerge(
       passingState({
-        files: [{ path: ".github/workflows/ci.yml" }],
-        checkRuns: [],
+        files: PROTECTED_FILES,
+        checkRuns: [
+          { name: "status-check", status: "COMPLETED", conclusion: "FAILURE" },
+        ],
       }),
     );
     assert.equal(d.kind === "stop" && d.code, 30);
+  });
+
+  it("a protected path with BLOCKED is 30 and UNKNOWN waits", () => {
+    const base = passingState({ files: PROTECTED_FILES });
+    const blocked = decideMerge({
+      ...base,
+      pr: { ...base.pr, mergeStateStatus: "BLOCKED" },
+    });
+    assert.equal(blocked.kind === "stop" && blocked.code, 30);
+    const unknown = decideMerge({
+      ...base,
+      pr: { ...base.pr, mergeStateStatus: "UNKNOWN" },
+    });
+    assert.equal(unknown.kind, "wait");
+  });
+
+  it("a protected path with zero required contexts is 30", () => {
+    const d = decideMerge(
+      passingState({ files: PROTECTED_FILES, requiredContexts: [] }),
+    );
+    assert.equal(d.kind === "stop" && d.code, 30);
+  });
+
+  it("a protected path with a ledger of pr is 20", () => {
+    const d = decideMerge(
+      passingState({
+        files: PROTECTED_FILES,
+        ledger: ledgerOf(LINE("pr")),
+      }),
+    );
+    assert.equal(d.kind === "stop" && d.code, 20);
   });
 
   it("zero required contexts is 30", () => {
@@ -619,6 +671,48 @@ describe("mergeRequiredContexts", () => {
   });
 });
 
+describe("decideWait", () => {
+  const waitState = (overrides: Partial<WaitState> = {}): WaitState => {
+    const {
+      ledger: _ledger,
+      viewer: _viewer,
+      files: _files,
+      ...rest
+    } = passingState();
+    return { ...rest, ...overrides };
+  };
+
+  it("is ready when every required check passed, whatever mergeStateStatus says", () => {
+    const base = waitState();
+    for (const mergeStateStatus of ["CLEAN", "BLOCKED", "UNKNOWN"]) {
+      assert.deepEqual(
+        decideWait({ ...base, pr: { ...base.pr, mergeStateStatus } }),
+        { kind: "ready" },
+      );
+    }
+  });
+
+  it("a failed required check is 30, zero required contexts is 30, a pending check waits", () => {
+    const failed = decideWait(
+      waitState({
+        checkRuns: [
+          { name: "status-check", status: "COMPLETED", conclusion: "FAILURE" },
+        ],
+      }),
+    );
+    assert.equal(failed.kind === "stop" && failed.code, 30);
+    const none = decideWait(waitState({ requiredContexts: [] }));
+    assert.equal(none.kind === "stop" && none.code, 30);
+    assert.equal(decideWait(waitState({ checkRuns: [] })).kind, "wait");
+  });
+
+  it("a CLOSED PR is 30 even when its checks passed", () => {
+    const base = waitState();
+    const d = decideWait({ ...base, pr: { ...base.pr, state: "CLOSED" } });
+    assert.equal(d.kind === "stop" && d.code, 30);
+  });
+});
+
 describe("protected paths", () => {
   it("matches prefixes, globs and exact paths, on the new and the old path", () => {
     assert.equal(isProtectedPath(".github/workflows/ci.yml"), true);
@@ -640,7 +734,10 @@ describe("protected paths", () => {
         ],
       }),
     );
-    assert.equal(d.kind === "stop" && d.code, 30);
+    assert.deepEqual(d, {
+      kind: "confirm",
+      paths: ["home/dot_claude/hooks/lib/delivery-policy.ts"],
+    });
   });
 });
 
@@ -693,6 +790,25 @@ describe("judgeDeliveryPolicyBash", () => {
       ),
       null,
     );
+  });
+
+  it("passes a background wait and refuses a foreground one, `wait 5 --x` in both", () => {
+    const wait = "~/.local/bin/delivery-policy wait 5";
+    assert.equal(judgeDeliveryPolicyBash(wait, home, true), null);
+    assert.equal(judgeDeliveryPolicyBash(wait, home, false), mergeReason());
+    for (const command of [
+      `${wait} --x`,
+      "~/.local/bin/delivery-policy wait 0",
+      "~/.local/bin/delivery-policy wait",
+      `${wait}; rm -rf x`,
+    ]) {
+      for (const background of [true, false]) {
+        assert.equal(
+          judgeDeliveryPolicyBash(command, home, background),
+          shapeReason(),
+        );
+      }
+    }
   });
 
   it("keeps show and ask in the foreground: they finish at once", () => {

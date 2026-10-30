@@ -614,12 +614,13 @@ const LEDGER_DIR_MARK = ".claude/state/delivery-policy";
 const WRAPPER_MARK = ".local/bin/delivery-policy";
 const SHELL_METACHARACTERS = /[;&|><`\n\r]|\$\(/;
 const MERGE_FOREGROUND_REASON =
-  "`delivery-policy merge` waits for the required checks, longer than a foreground Bash call survives: the 2-minute default would kill it with no exit code or reason. Start it again with `run_in_background: true`; it then runs across turns and a notification arrives when it finishes. Do not poll the output file.";
+  "`delivery-policy merge` and `wait` wait for the required checks, longer than a foreground Bash call survives: the 2-minute default would kill it with no exit code or reason. Start it again with `run_in_background: true`; it then runs across turns and a notification arrives when it finishes. Do not poll the output file.";
 
 /**
  * Why a Bash command must be refused because it names the ledger or the
- * wrapper, or null. Only the exact forms `<wrapper> show`, `<wrapper> ask`
- * and `<wrapper> merge <N>` pass — and `merge <N>` only in the background:
+ * wrapper, or null. Only the exact forms `<wrapper> show`, `<wrapper> ask`,
+ * `<wrapper> merge <N>` and `<wrapper> wait <N>` pass, the last two only in
+ * the background:
  * the allow rule for the wrapper skips the permission classifier, so
  * anything else that reaches it is stopped here.
  */
@@ -646,12 +647,12 @@ export function judgeDeliveryPolicyBash(
       }
       // The flag is a cutoff guard, not a permission: the shape above has
       // already cleared the command, only its wait needs the background.
-      if (/^merge [1-9][0-9]*$/.test(rest ?? "")) {
+      if (/^(merge|wait) [1-9][0-9]*$/.test(rest ?? "")) {
         return runInBackground ? null : MERGE_FOREGROUND_REASON;
       }
     }
   }
-  return "The delivery-policy ledger and wrapper are changed only by the user's answers and by chezmoi. A command that names them is allowed only as exactly `~/.local/bin/delivery-policy show`, `ask` or `merge <PR number>`, with no redirection, chaining or extra arguments.";
+  return "The delivery-policy ledger and wrapper are changed only by the user's answers and by chezmoi. A command that names them is allowed only as exactly `~/.local/bin/delivery-policy show`, `ask`, `merge <PR number>` or `wait <PR number>`, with no redirection, chaining or extra arguments.";
 }
 
 // --- merge decision --------------------------------------------------------
@@ -688,8 +689,22 @@ export interface MergeState {
 
 export type StopCode = 20 | 30 | 40;
 
+/** What `wait` judges: the PR and its checks, no ledger, owner or file list. */
+export interface WaitState {
+  repo: RepoInfo;
+  pr: PrInfo;
+  requiredContexts: readonly RequiredContext[];
+  checkRuns: readonly CheckRun[];
+  statusContexts: readonly StatusContext[];
+}
+
 export type MergeDecision =
   | { kind: "merge" }
+  /**
+   * Every condition holds but the PR touches protected paths: the CLI never
+   * merges it. The caller prints the command for the user's permission prompt.
+   */
+  | { kind: "confirm"; paths: string[] }
   | { kind: "wait"; reason: string }
   | { kind: "stop"; code: StopCode; reason: string };
 
@@ -715,10 +730,62 @@ export function decideLedger(
   return { kind: "merge" };
 }
 
+export type WaitDecision =
+  | { kind: "ready" }
+  | { kind: "wait"; reason: string }
+  | { kind: "stop"; code: 30; reason: string };
+
+type CheckVerdict =
+  | { kind: "passed" }
+  | { kind: "wait"; reason: string }
+  | { kind: "stop"; code: 30; reason: string };
+
+/** The required-check rows shared by `merge` and `wait`: none, failed, pending. */
+function judgeRequiredChecks(
+  state: Pick<MergeState, "requiredContexts" | "checkRuns" | "statusContexts">,
+): CheckVerdict {
+  if (state.requiredContexts.length === 0) {
+    return {
+      kind: "stop",
+      code: 30,
+      reason: "no required checks are configured",
+    };
+  }
+  const outcomes = state.requiredContexts.map((required) => ({
+    required,
+    ...outcomeOfContext(required, state.checkRuns, state.statusContexts),
+  }));
+  const failed = outcomes.find((o) => o.outcome === "fail");
+  if (failed) {
+    return {
+      kind: "stop",
+      code: 30,
+      reason: `required check ${failed.required.context} failed`,
+    };
+  }
+  const pending = outcomes.find((o) => o.outcome === "pending");
+  if (pending) return { kind: "wait", reason: pending.reason };
+  return { kind: "passed" };
+}
+
+/**
+ * `wait` never merges and never reads the ledger, so this takes no ledger and
+ * none of the merge-only gates (owner, author, base, mergeStateStatus).
+ */
+export function decideWait(state: WaitState): WaitDecision {
+  if (state.pr.state !== "OPEN") {
+    return { kind: "stop", code: 30, reason: `PR state is ${state.pr.state}` };
+  }
+  const verdict = judgeRequiredChecks(state);
+  return verdict.kind === "passed" ? { kind: "ready" } : verdict;
+}
+
 /**
  * The order of the checks is the contract: the first row that applies is the
- * answer (a failure is reported before waiting for a pending check, a
- * protected path before either).
+ * answer (a failure is reported before waiting for a pending check). A
+ * protected path is judged last: it replaces the merge, so the checks and the
+ * merge state are decided first and the user is asked only about a head that
+ * is ready.
  */
 export function decideMerge(state: MergeState): MergeDecision {
   const { repo, pr, viewer } = state;
@@ -744,34 +811,24 @@ export function decideMerge(state: MergeState): MergeDecision {
   }
   if (pr.isCrossRepository) return stop(30, "PR comes from a fork");
 
-  for (const file of state.files) {
-    for (const path of [file.path, file.previousPath]) {
-      if (path !== undefined && isProtectedPath(path)) {
-        return stop(30, `PR touches protected path ${path}`);
-      }
-    }
-  }
-
-  if (state.requiredContexts.length === 0) {
-    return stop(30, "no required checks are configured");
-  }
-  const outcomes = state.requiredContexts.map((required) => ({
-    required,
-    ...outcomeOfContext(required, state.checkRuns, state.statusContexts),
-  }));
-  const failed = outcomes.find((o) => o.outcome === "fail");
-  if (failed)
-    return stop(30, `required check ${failed.required.context} failed`);
-  const pending = outcomes.find((o) => o.outcome === "pending");
-  if (pending) {
-    return { kind: "wait", reason: pending.reason };
-  }
+  const verdict = judgeRequiredChecks(state);
+  if (verdict.kind !== "passed") return verdict;
 
   if (pr.mergeStateStatus === "UNKNOWN") {
     return { kind: "wait", reason: "mergeStateStatus is UNKNOWN" };
   }
   if (pr.mergeStateStatus !== "CLEAN") {
     return stop(30, `mergeStateStatus is ${pr.mergeStateStatus}`);
+  }
+
+  const protectedPaths = new Set<string>();
+  for (const file of state.files) {
+    for (const path of [file.path, file.previousPath]) {
+      if (path !== undefined && isProtectedPath(path)) protectedPaths.add(path);
+    }
+  }
+  if (protectedPaths.size > 0) {
+    return { kind: "confirm", paths: [...protectedPaths] };
   }
   return { kind: "merge" };
 }
