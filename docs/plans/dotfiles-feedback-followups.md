@@ -24,7 +24,7 @@ plan-5 の残り（6 点）:
 - **flush が同時に走るときの表示**: 同時実行での「（送り出し中）」の表示が未確認である。未送が 0 件だと flush がすぐ終わって重ならないので、未送がある機会に確かめる。
 - **macOS での golden image の作り直し**: macOS で `agent-vm golden rm` を実行し、golden image を作り直す。利用者が行う。
 - **VM の中からの送信**: 実際の VM の中から `dotfiles-feedback send` を打ち、ホストの spool に入るかを確かめる。利用者が行う。
-- **plan-5 のレビュアーの delegation record**: plan-5 のレビュアー 16 回分の `delegation record` が未記録である。pending の id を見つける手段が無い（dotfiles-feedback #14）。
+- **plan-5 のレビュアーの delegation record**: plan-5 のレビュアー 16 回分の `delegation record` が未記録である。pending の id を見つける手段が無い（dotfiles-feedback 20261029T091133Z-1a330c8ce949）。
 - **unit テストの実時間**: unit の実時間が、中央値 42.6 秒で、target の 10 秒を超えている。超過は別のタスクとして報告し、直す。
 - **委譲の brief の書き方**: 委譲の brief で全チェックを頼むときは、CI が流すテストを並べて渡す。plan-5 では `run-templates.sh` が抜けた。
 
