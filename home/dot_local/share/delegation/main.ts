@@ -72,9 +72,9 @@ import {
   fetchUsage,
   loadWindowMins,
   paceProvider,
-  surplusPoints,
 } from "./pace.ts";
 import { buildRoute, type OffloadVerdict } from "./route.ts";
+import { DESTINATIONS, FREE_DESTINATIONS } from "./destinations.ts";
 import { repoIsPublic } from "./repo-visibility.ts";
 import { buildReview } from "./review.ts";
 
@@ -104,15 +104,36 @@ const BOOLEAN_FLAGS = new Set(["manual", "rework", "write"]);
 /** Value flags that refuse a missing, empty or repeated value. */
 const STRICT_FLAGS = new Set(["exposure", "brief-file", "dir", "plan"]);
 
-type Args = { positionals: string[]; flags: Map<string, string | true> };
+type Args = {
+  positionals: string[];
+  flags: Map<string, string | true>;
+  excluded: string[];
+};
 type ParsedArgs =
   | { ok: true; args: Args }
-  | { ok: false; flag: string; reason: "missing" | "duplicate" };
+  | {
+      ok: false;
+      flag: string;
+      reason: "missing" | "duplicate" | "invalid";
+      value?: string;
+    };
+
+const EXCLUDE_NAMES = new Set([
+  "codex",
+  "opencode",
+  "sarashina",
+  ...Object.keys(DESTINATIONS),
+  ...FREE_DESTINATIONS.map((destination) => destination.name),
+]);
 
 /** Unknown flags are skipped without consuming a value. */
-function parseArgs(argv: readonly string[]): ParsedArgs {
+function parseArgs(
+  argv: readonly string[],
+  collectExclusions = false,
+): ParsedArgs {
   const positionals: string[] = [];
   const flags = new Map<string, string | true>();
+  const excluded: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i] ?? "";
     if (!a.startsWith("--")) {
@@ -121,7 +142,23 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
     }
     const eq = a.indexOf("=");
     const name = eq === -1 ? a.slice(2) : a.slice(2, eq);
-    if (BOOLEAN_FLAGS.has(name)) {
+    if (collectExclusions && name === "exclude") {
+      let value: string | undefined;
+      if (eq !== -1) {
+        value = a.slice(eq + 1);
+      } else {
+        const next = argv[i + 1];
+        if (next === undefined || next.startsWith("--")) {
+          return { ok: false, flag: name, reason: "missing" };
+        }
+        i++;
+        value = next;
+      }
+      if (!EXCLUDE_NAMES.has(value)) {
+        return { ok: false, flag: name, reason: "invalid", value };
+      }
+      excluded.push(value);
+    } else if (BOOLEAN_FLAGS.has(name)) {
       flags.set(name, true);
     } else if (VALUE_FLAGS.has(name)) {
       const strict = STRICT_FLAGS.has(name);
@@ -138,7 +175,7 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
       flags.set(name, value);
     }
   }
-  return { ok: true, args: { positionals, flags } };
+  return { ok: true, args: { positionals, flags, excluded } };
 }
 
 function flagString(args: Args, name: string): string | undefined {
@@ -581,12 +618,7 @@ async function cmdRoute(args: Args, now: Date): Promise<number> {
     paces,
     claudeAheadBy: applied.aheadBy,
     lookahead: applied.lookahead,
-    surplus: {
-      codex: surplusPoints(usage.codex?.weekly ?? null, now, mins),
-      opencode: surplusPoints(usage.opencode?.weekly ?? null, now, mins),
-      // No window, so no idle week to fill.
-      sarashina: null,
-    },
+    excluded: new Set(args.excluded),
     pendingTotal: pendings.length,
     pendingSession:
       session === undefined
@@ -672,12 +704,16 @@ async function dispatch(argv: readonly string[]): Promise<number> {
     process.stdout.write(USAGE);
     return 0;
   }
-  const parsed = parseArgs(rest);
+  const parsed = parseArgs(rest, cmd === "route");
   if (!parsed.ok) {
-    process.stderr.write(
-      `delegation: --${parsed.flag}: ${parsed.reason === "missing" ? "value is missing" : "duplicate (given more than once)"}\n`,
-    );
-    return 1;
+    const detail =
+      parsed.reason === "invalid"
+        ? `unsupported value: ${JSON.stringify(parsed.value)}`
+        : parsed.reason === "missing"
+          ? "value is missing"
+          : "duplicate (given more than once)";
+    process.stderr.write(`delegation: --${parsed.flag}: ${detail}\n`);
+    return parsed.flag === "exclude" ? 2 : 1;
   }
   const args = parsed.args;
   const now = nowFromEnv(process.env);

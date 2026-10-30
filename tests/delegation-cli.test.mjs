@@ -157,6 +157,24 @@ const agent = (extra = {}) => ({
 const ID_RE = /^d-[0-9a-f]{12}$/;
 const idOf = (r) => r.stdout.trim().split(" ")[0];
 const REC = ["--kind", "impl", "--size", "M", "--verdict", "adopted"];
+const routeWindow = (usedPercent, resetsAt) => ({ usedPercent, resetsAt });
+const routeUsageEntry = (weekly, extra = {}) => ({
+  ok: true,
+  fiveHour: routeWindow(10, "2026-10-29T03:00:00.000Z"),
+  weekly: routeWindow(weekly, "2026-11-04T00:00:00.000Z"),
+  exhausted: false,
+  ...extra,
+});
+function seedRouteUsage(sb, providers) {
+  const usageBin = join(sb.root, "ai-usage");
+  const usage = { fetchedAt: "2026-10-29T00:00:00.000Z", providers };
+  writeFileSync(
+    usageBin,
+    `#!/bin/sh\nprintf '%s\\n' '${JSON.stringify(usage)}'\n`,
+  );
+  chmodSync(usageBin, 0o755);
+  return usageBin;
+}
 
 // Each test owns its sandbox, so process-launching tests can overlap.
 describe("delegation cli (process)", { concurrency: 4 }, () => {
@@ -403,6 +421,162 @@ describe("delegation cli (process)", { concurrency: 4 }, () => {
     const sb = sandbox();
     try {
       assert.equal((await sb.run(["route", "--size", "M"])).status, 1);
+    } finally {
+      sb.done();
+    }
+  });
+
+  it("non-route commands keep ignoring route-only --exclude", async () => {
+    const sb = sandbox();
+    try {
+      const plain = await sb.run(["review"]);
+      const withExclude = await sb.run(["review", "--exclude", "codex"]);
+      assert.equal(plain.status, withExclude.status);
+      assert.equal(plain.stdout, withExclude.stdout);
+      assert.equal(plain.stderr, withExclude.stderr);
+    } finally {
+      sb.done();
+    }
+  });
+
+  it("route --exclude accepts repeatable provider and destination names", async () => {
+    const sb = sandbox();
+    try {
+      seedVerifiedOpencode(sb, ["zai-coding-plan/glm-5.3"]);
+      const usageBin = seedRouteUsage(sb, {
+        claude: routeUsageEntry(10),
+        codex: routeUsageEntry(0),
+        opencode: routeUsageEntry(4),
+      });
+      const env = { extraEnv: { DELEGATION_AI_USAGE_BIN: usageBin } };
+      const codex = await sb.run(
+        [
+          "route",
+          "--kind",
+          "impl",
+          "--size",
+          "M",
+          "--exposure",
+          "external-ok",
+          "--exclude",
+          "codex",
+        ],
+        env,
+      );
+      assert.equal(codex.status, 0, codex.stderr);
+      const codexRecommendation = codex.stdout
+        .split("\n")
+        .find((line) => line.startsWith("推奨:"));
+      assert.match(codexRecommendation, /^推奨: opencode /);
+      assert.doesNotMatch(codexRecommendation, /codex/);
+
+      const both = await sb.run(
+        [
+          "route",
+          "--kind",
+          "impl",
+          "--size",
+          "M",
+          "--exposure",
+          "external-ok",
+          "--exclude",
+          "codex",
+          "--exclude",
+          "opencode",
+        ],
+        env,
+      );
+      assert.equal(both.status, 0, both.stderr);
+      const bothRecommendation = both.stdout
+        .split("\n")
+        .find((line) => line.startsWith("推奨:"));
+      assert.match(bothRecommendation, /^推奨: sonnet /);
+      assert.doesNotMatch(bothRecommendation, /codex|opencode/);
+
+      const luna = await sb.run(
+        ["route", "--kind", "impl", "--size", "M", "--exclude=codex-luna-max"],
+        env,
+      );
+      assert.equal(luna.status, 0, luna.stderr);
+      const lunaRecommendation = luna.stdout
+        .split("\n")
+        .find((line) => line.startsWith("推奨:"));
+      assert.match(lunaRecommendation, /^推奨: codex Terra /);
+      assert.doesNotMatch(lunaRecommendation, /Luna max/);
+
+      const free = await sb.run(
+        [
+          "route",
+          "--kind",
+          "impl",
+          "--size",
+          "M",
+          "--exclude=opencode-free-glm",
+        ],
+        env,
+      );
+      assert.equal(free.status, 0, free.stderr);
+    } finally {
+      sb.done();
+    }
+  });
+
+  it("route --exclude rejects one invalid value with status 2 and no stdout", async () => {
+    const sb = sandbox();
+    try {
+      const reject = async (args, value) => {
+        const r = await sb.run(args);
+        assert.equal(r.status, 2, r.stderr);
+        assert.equal(r.stdout, "");
+        assert.equal(r.stderr.trim().split("\n").length, 1, r.stderr);
+        if (value !== undefined) assert.ok(r.stderr.includes(value), r.stderr);
+        assert.match(r.stderr, /--exclude/);
+      };
+
+      await reject(
+        ["route", "--kind", "impl", "--size", "M", "--exclude", "claude"],
+        "claude",
+      );
+      await reject(
+        ["route", "--kind", "impl", "--size", "M", "--exclude", "no-such-name"],
+        "no-such-name",
+      );
+      await reject(
+        ["route", "--kind", "impl", "--size", "M", "--exclude"],
+        undefined,
+      );
+      await reject(
+        ["route", "--kind", "impl", "--size", "M", "--exclude="],
+        '""',
+      );
+      await reject(
+        ["route", "--kind", "impl", "--size", "M", "--exclude", ""],
+        '""',
+      );
+      await reject(
+        ["route", "--exclude", "--kind", "impl", "--size", "M"],
+        undefined,
+      );
+    } finally {
+      sb.done();
+    }
+  });
+
+  it("route waits with status 0 when Claude's 5h window is exhausted", async () => {
+    const sb = sandbox();
+    try {
+      const usageBin = seedRouteUsage(sb, {
+        claude: routeUsageEntry(50, {
+          fiveHour: routeWindow(100, "2026-10-29T02:00:00.000Z"),
+          exhausted: true,
+        }),
+      });
+      const r = await sb.run(["route", "--kind", "impl", "--size", "M"], {
+        extraEnv: { DELEGATION_AI_USAGE_BIN: usageBin },
+      });
+      assert.equal(r.status, 0, r.stderr);
+      assert.match(r.stdout, /^推奨: 待機 /m);
+      assert.doesNotMatch(r.stdout, /^試す候補:/m);
     } finally {
       sb.done();
     }

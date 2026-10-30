@@ -25,7 +25,14 @@ export type ProviderUsage = {
   /** ai-usage reports reachability only: no window exists to be ahead of. */
   unmetered?: boolean;
 };
-export type ProviderPace = { fiveHour: PaceState; weekly: PaceState };
+export type ProviderPace = {
+  fiveHour: PaceState;
+  weekly: PaceState;
+  weeklyLag: number | null;
+  unmetered: boolean;
+  fiveHourResetsAt: string | null;
+  weeklyResetsAt: string | null;
+};
 export type WindowMins = { fiveHourMins: number; weekMins: number };
 
 const DAY_MS = 86_400_000;
@@ -89,16 +96,58 @@ export function paceProvider(
   now: Date,
   mins: WindowMins | null,
 ): ProviderPace {
-  if (usage === null || mins === null) {
-    return { fiveHour: "unknown", weekly: "unknown" };
+  const unmetered = usage?.unmetered === true;
+  const fiveHourResetsAt = usage?.fiveHour?.resetsAt ?? null;
+  const weeklyResetsAt = usage?.weekly?.resetsAt ?? null;
+  const weeklyLag =
+    usage === null || unmetered || mins === null || usage.weekly === null
+      ? null
+      : (() => {
+          const resetsAt = resetsInFuture(usage.weekly, now);
+          if (resetsAt === null) return null;
+          const elapsedPercent =
+            (100 * (mins.weekMins - (resetsAt - now.getTime()) / MIN_MS)) /
+            mins.weekMins;
+          return elapsedPercent - usage.weekly.usedPercent;
+        })();
+  const metadata = {
+    weeklyLag,
+    unmetered,
+    fiveHourResetsAt,
+    weeklyResetsAt,
+  };
+  if (usage === null) {
+    return { fiveHour: "unknown", weekly: "unknown", ...metadata };
   }
-  if (usage.exhausted) return { fiveHour: "exhausted", weekly: "exhausted" };
-  // No window to spend, so there is nothing to be ahead of; the surplus stays
-  // null, so it never counts as an idle week either.
-  if (usage.unmetered === true) return { fiveHour: "under", weekly: "under" };
+  if (usage.exhausted) {
+    const fiveHourFull =
+      usage.fiveHour !== null && usage.fiveHour.usedPercent >= 100;
+    const weeklyFull = usage.weekly !== null && usage.weekly.usedPercent >= 100;
+    if (!fiveHourFull && !weeklyFull) {
+      return { fiveHour: "exhausted", weekly: "exhausted", ...metadata };
+    }
+    return {
+      fiveHour: fiveHourFull
+        ? "exhausted"
+        : paceFiveHour(usage.fiveHour, false, now),
+      weekly: weeklyFull
+        ? "exhausted"
+        : mins === null
+          ? "unknown"
+          : paceWeekly(usage.weekly, false, now, mins.weekMins),
+      ...metadata,
+    };
+  }
+  if (unmetered) {
+    return { fiveHour: "under", weekly: "under", ...metadata };
+  }
+  if (mins === null) {
+    return { fiveHour: "unknown", weekly: "unknown", ...metadata };
+  }
   return {
-    fiveHour: paceFiveHour(usage.fiveHour, usage.exhausted, now),
-    weekly: paceWeekly(usage.weekly, usage.exhausted, now, mins.weekMins),
+    fiveHour: paceFiveHour(usage.fiveHour, false, now),
+    weekly: paceWeekly(usage.weekly, false, now, mins.weekMins),
+    ...metadata,
   };
 }
 
@@ -220,38 +269,19 @@ export function applyLookahead(
   };
 }
 
-/**
- * Points of the week that will not be spent by the reset at an even pace:
- * (100 - used) * (1 - remaining / week), the same as spendable_paced in
- * ~/.agents/skills/usage-budget/budget.sh.
- */
-export function surplusPoints(
-  week: Window | null,
-  now: Date,
-  mins: WindowMins | null,
-): number | null {
-  if (week === null || mins === null) return null;
-  const resetsAt = resetsInFuture(week, now);
-  if (resetsAt === null) return null;
-  const weekMs = mins.weekMins * MIN_MS;
-  const used = Math.min(100, Math.max(0, week.usedPercent));
-  const remaining = Math.min(weekMs, Math.max(0, resetsAt - now.getTime()));
-  return (100 - used) * (1 - remaining / weekMs);
-}
-
 function validWindow(raw: unknown): Window | null {
   if (raw === null || typeof raw !== "object") return null;
   const w = raw as Record<string, unknown>;
   const used = w.usedPercent;
   if (typeof used !== "number" || !Number.isFinite(used)) return null;
-  if (used < 0 || used > 100) return null;
+  if (used < 0) return null;
   let resetsAt: string | null = null;
   if (w.resetsAt !== null && w.resetsAt !== undefined) {
     if (typeof w.resetsAt !== "string") return null;
     if (!Number.isFinite(Date.parse(w.resetsAt))) return null;
     resetsAt = w.resetsAt;
   }
-  return { usedPercent: used, resetsAt };
+  return { usedPercent: Math.min(100, used), resetsAt };
 }
 
 /** Anything that does not fit becomes null / unknown rather than being trusted. */
