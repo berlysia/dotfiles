@@ -4,18 +4,18 @@ Codex への委譲は、起動の作法をメインループが毎回守る形�
 
 ## 状態
 
-提案・未着手。出どころ: dotfiles-feedback 20261030T050238Z-b7e47eb725a4（#23）、20261030T043314Z-c787aa5482a3（#21）。
+提案・未着手。出どころ: dotfiles-feedback 20261030T050238Z-b7e47eb725a4、20261030T043314Z-c787aa5482a3。
 
 ## 分かっていること
 
-### stdin を待って止まる（#23）
+### stdin を待って止まる
 
 - 2026-10-30 に、`codex exec` を read-only で background 起動した。出力は「Reading additional input from stdin...」の 1 行のまま、32 分進まなかった。標準入力を /dev/null にして起動し直すと、すぐに進んだ。
 - 完了の通知は来ず、出力が増えないことを知らせる仕組みも無い。利用者に指摘されるまで、止まっていることに気づけなかった。
 - reviewer の委譲は `reviewer-codex-run` を通る。この問題は起きなかった。reviewer 以外の委譲には、同じ役の道具が無い。`delegation` のサブコマンドで外部の委譲先を起動するのは、OpenCode 向けの `offload` だけである（2026-10-30 に `delegation --help` で確かめた）。
 - 利用者の方針: 「呼び出し方の失敗を繰り返さないようにして。CLIにまとめるとかで対処できるので、努力ではなく道具で対応したい。」
 
-### 全体テストを sandbox で流す（#21）
+### 全体テストを sandbox で流す
 
 - 2026-10-30 に、route の実装を Codex（Luna、effort max、`workspace-write`）へ委譲した。brief ではテストファイルを 1 つ名指しした。
 - Codex は名指しのテストが通った後、自分の判断で全体テストを sandbox の中で起動した。メインループはそこで委譲を止め、sandbox の外で全体テストを流した（47 秒、失敗 0）。
