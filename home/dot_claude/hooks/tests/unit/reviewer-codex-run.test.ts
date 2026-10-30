@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { strictEqual, ok, deepStrictEqual } from "node:assert";
 import { after, before, describe, it } from "node:test";
+import { setTimeout as sleep } from "node:timers/promises";
 import {
   runReviewer,
   validateAnswer,
@@ -197,18 +198,23 @@ describe("reviewer runner", () => {
       const pids = (await readFile(env.PIDS ?? "", "utf8"))
         .split("\n")
         .map(Number);
+      // The runner returns right after sending SIGKILL, so a single look can
+      // still see a dying process as running. Orphaned zombies may await the
+      // container's init; they cannot execute anymore.
+      const deadline = Date.now() + 2000;
       for (const pid of pids) {
-        // Orphaned zombies may await the container's init; they cannot execute anymore.
-        let alive = false;
-        try {
-          process.kill(pid, 0);
-          alive = true;
-        } catch (error) {
-          strictEqual((error as NodeJS.ErrnoException).code, "ESRCH");
-        }
-        if (alive) {
-          const status = await readFile(`/proc/${pid}/stat`, "utf8");
-          strictEqual(status.split(" ")[2], "Z");
+        for (;;) {
+          const stat = await readFile(`/proc/${pid}/stat`, "utf8").catch(
+            (error: NodeJS.ErrnoException) => {
+              // ESRCH: the process was reaped between open and read.
+              ok(error.code === "ENOENT" || error.code === "ESRCH", error);
+              return null;
+            },
+          );
+          const state = stat?.split(" ")[2];
+          if (state === undefined || state === "Z") break;
+          if (Date.now() > deadline) strictEqual(state, "Z");
+          await sleep(10);
         }
       }
     });
