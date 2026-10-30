@@ -7,12 +7,45 @@ import type {
 } from "claude-code";
 import { extractItems } from "./extract-items";
 import {
+  clipToCells,
   COMMAND_CONTEXT,
   COMMAND_TEXT,
   commandReply,
   copySelection,
+  buildPages,
+  previewText,
   readPaneText,
 } from "./pane-text";
+
+test("clipToCells counts wide characters as two cells", () => {
+  expect(clipToCells("abc", 3)).toBe("abc");
+  expect(clipToCells("abcd", 3)).toBe("ab…");
+  expect(clipToCells("あいう", 4)).toBe("あ…");
+});
+
+test("buildPages counts separators and moves a group whole to the next page", () => {
+  expect(buildPages([5, 5, 3, 1], 4)).toEqual([
+    { start: 0, end: 3 },
+    { start: 3, end: 4 },
+  ]);
+  expect(buildPages([5, 5, 3, 3, 3], 4)).toEqual([
+    { start: 0, end: 2 },
+    { start: 2, end: 5 },
+  ]);
+});
+
+test("buildPages splits only a group larger than a page", () => {
+  expect(buildPages([5, 5, 5, 5, 5], 3)).toEqual([
+    { start: 0, end: 3 },
+    { start: 3, end: 5 },
+  ]);
+  expect(buildPages([], 3)).toEqual([{ start: 0, end: 0 }]);
+});
+
+test("previewText keeps text that fits and counts the rest of longer text", () => {
+  expect(previewText("a\nb\nc", 3)).toBe("a\nb\nc");
+  expect(previewText("a\nb\nc\nd", 3)).toBe("a\nb\n… 残り 2 行");
+});
 
 const message = (
   role: SessionMessage["role"],
@@ -64,7 +97,7 @@ test("a copy exception exposes only the fixed failure class", async () => {
     stack: "token=abc",
   });
   const result = await copySelection(
-    { kind: "full", text: "safe", label: "safe", truncated: false },
+    { kind: "full", text: "safe", label: "safe", truncated: false, group: 0 },
     surface,
     async () => {
       throw error;
@@ -97,24 +130,23 @@ test("shows each copy failure reason without claiming the text was sent", async 
     const reason = reasons[index];
     if (reason === undefined) throw new Error("missing copy reason");
     const result = await copySelection(
-      { kind: "code", text: "safe", label: "safe", truncated: false },
+      { kind: "code", text: "safe", label: "safe", truncated: false, group: 0 },
       surface,
       async () => ({ isCopied: false, reason }),
     );
-    expect(result.message.includes(expected[index] ?? "")).toBe(true);
-    expect(result.message.includes("コピーを送った")).toBe(false);
+    expect(result.message?.includes(expected[index] ?? "")).toBe(true);
     expect(result.copiedText).toBeNull();
   }
 });
 
-test("reports a successful copy with character and line counts and the full text", async () => {
+test("a successful copy returns the full text and no message", async () => {
   const text = "123456\n7890";
   const result = await copySelection(
-    { kind: "code", text, label: "sample", truncated: false },
+    { kind: "code", text, label: "sample", truncated: false, group: 0 },
     surface,
     async () => ({ isCopied: true }),
   );
-  expect(result.message).toBe("コピーを送った（10 文字、2 行）");
+  expect(result.message).toBeNull();
   expect(result.copiedText).toBe(text);
 });
 

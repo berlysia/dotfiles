@@ -7,6 +7,8 @@ export type PickItem = {
   text: string;
   label: string;
   truncated: boolean;
+  /** Index of the source message; items sharing it came from one response. */
+  group: number;
 };
 
 export type ExtractItemsResult = {
@@ -213,7 +215,7 @@ function addCandidate(
   candidates.push({ kind, text });
 }
 
-function makeItem(candidate: Candidate): PickItem | null {
+function makeItem(candidate: Candidate, group: number): PickItem | null {
   let safeText = sanitize(candidate.text);
   if (candidate.kind === "inline") safeText = safeText.trim();
   if (safeText.trim() === "") return null;
@@ -225,6 +227,7 @@ function makeItem(candidate: Candidate): PickItem | null {
     text: limited.text,
     label: makeLabel(safeText),
     truncated: limited.truncated,
+    group,
   };
 }
 
@@ -260,7 +263,7 @@ export function extractItems(
     addCandidate(candidates, "full", message.text);
 
     for (const candidate of candidates) {
-      const item = makeItem(candidate);
+      const item = makeItem(candidate, messageIndex);
       if (item === null || seen.has(item.text)) continue;
       seen.add(item.text);
       extracted.push(item);

@@ -13,7 +13,7 @@ export type PaneText = {
 };
 
 export type SelectionText = {
-  message: string;
+  message: string | null;
   copiedText: string | null;
   logClass?: "copy-failed";
 };
@@ -51,32 +51,62 @@ export async function readPaneText(
   }
 }
 
-function lineCount(text: string): number {
-  let count = 1;
-  for (const character of text) {
-    if (
-      character === "\n" ||
-      character === "\u2028" ||
-      character === "\u2029"
-    ) {
-      count += 1;
+export type PageRange = { start: number; end: number };
+
+/**
+ * Splits items into pages of at most pageRows rows, a separator between two
+ * groups taking one. A group moves whole to the next page unless it alone is
+ * larger than a page.
+ */
+export function buildPages(groups: number[], pageRows: number): PageRange[] {
+  const pages: PageRange[] = [];
+  let pageStart = 0;
+  let rows = 0;
+  let index = 0;
+  while (index < groups.length) {
+    let groupEnd = index;
+    while (groups[groupEnd] === groups[index]) groupEnd += 1;
+    const groupSize = groupEnd - index;
+    if (rows > 0 && rows + 1 + groupSize > pageRows) {
+      pages.push({ start: pageStart, end: index });
+      pageStart = index;
+      rows = 0;
+    }
+    if (rows > 0) rows += 1;
+    for (; index < groupEnd; index += 1) {
+      if (rows === pageRows) {
+        pages.push({ start: pageStart, end: index });
+        pageStart = index;
+        rows = 0;
+      }
+      rows += 1;
     }
   }
-  return count;
+  pages.push({ start: pageStart, end: groups.length });
+  return pages;
 }
 
-function characterCount(text: string): number {
-  let count = 0;
+// Counts anything outside ASCII as two cells: too short on a narrow glyph, but never a wrapped row.
+export function clipToCells(text: string, maxCells: number): string {
+  let cells = 0;
+  let clipped: string | null = null;
+  let kept = "";
   for (const character of text) {
-    if (
-      character !== "\n" &&
-      character !== "\u2028" &&
-      character !== "\u2029"
-    ) {
-      count += 1;
+    cells += character.charCodeAt(0) < 0x80 ? 1 : 2;
+    if (cells > maxCells) return clipped ?? "…";
+    if (cells <= maxCells - 1) {
+      kept += character;
+      clipped = `${kept}…`;
     }
   }
-  return count;
+  return text;
+}
+
+export function previewText(text: string, maxLines: number): string {
+  const lines = text.split("\n");
+  if (lines.length <= maxLines) return text;
+  const kept = Math.max(maxLines - 1, 1);
+  return `${lines.slice(0, kept).join("\n")}\n… 残り ${lines.length - kept} 行`;
 }
 
 const COPY_FAILURE_TEXT: Record<
@@ -102,7 +132,8 @@ export async function copySelection(
       };
     }
     return {
-      message: `コピーを送った（${characterCount(item.text)} 文字、${lineCount(item.text)} 行）`,
+      // No text on success: the check mark on the row says it, and a line above the list would shift the rows.
+      message: null,
       copiedText: item.text,
     };
   } catch {
