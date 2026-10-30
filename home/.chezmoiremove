@@ -34,3 +34,4 @@ Library/LaunchAgents/com.berlysia.distill-insights.plist
 .claude/hooks/lib/agent-learnings/core/git.ts
 .claude/hooks/lib/agent-learnings/core/repo-key.ts
 .claude/hooks/tests/fixtures/sessions/dir-basic/201.0000000000000000000000000000000000000000000000000000000000000000.key
+.local/bin/agy-polish

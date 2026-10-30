@@ -9,7 +9,7 @@ description: >-
 # gemini-polish
 
 Google Antigravity CLI（`agy`）経由で Gemini モデルを呼び出し、テキストの校正・推敲を行うスキルです。
-CLI コマンド `gemini-polish`（別名: `agy-polish`）または `agy -p` を使用して、指示・トーンに沿った推敲結果を取得します。
+CLI コマンド `gemini-polish` または `agy -p` を使用して、指示・トーンに沿った推敲結果を取得します。
 
 ---
 
@@ -23,7 +23,7 @@ CLI コマンド `gemini-polish`（別名: `agy-polish`）または `agy -p` を
 
 ## 2. CLI の利用方法
 
-本環境には `~/.local/bin/gemini-polish`（および `agy-polish`）が配備されています。
+本環境には `~/.local/bin/gemini-polish` が配備されています。
 
 ### 基本構文
 

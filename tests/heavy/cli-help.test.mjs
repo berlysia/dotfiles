@@ -47,7 +47,6 @@ const ROWS = [
   { key: "agent-learnings", expect: "agent-learnings" },
   { key: "agent-vm", expect: "agent-vm", subs: ["prewarm", "sync"] },
   { key: "agent-vm-node-modules", expect: "agent-vm-node-modules" },
-  { key: "agy-polish", expect: "gemini-polish" },
   { key: "ai-usage", expect: "ai-usage" },
   { key: "ask-grokbot", expect: "ask-grokbot" },
   { key: "claude-rc-launch", expect: "claude-rc-launch" },
