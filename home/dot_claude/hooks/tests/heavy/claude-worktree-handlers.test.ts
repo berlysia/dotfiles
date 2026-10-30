@@ -757,27 +757,25 @@ describe("handleWorktreeCreate: dependency preparation", () => {
     );
   });
 
-  // The notice reads the marker in T3 (dependency-notice.ts); until then this cannot pass.
-  it(
-    "T2-12b: the next notice for that worktree is the [deps] sentence",
-    { todo: "T3: buildDependencyNotice reads .git-worktree-deps-incomplete" },
-    async () => {
-      const { buildDependencyNotice } =
-        await import("../../lib/dependency-notice.ts");
-      const repo = createRepo(temp, { origin: true });
-      const path = worktreePath(repo, "midway2");
-      handleWorktreeCreate(createInput(repo, "midway2"));
-      writeFileSync(join(path, "package.json"), "{}\n");
-      writeFileSync(join(path, "pnpm-lock.yaml"), "\n");
-      mkdirSync(join(path, "node_modules"));
-      writeFileSync(join(path, "node_modules", "left"), "x");
-      writeFileSync(
-        join(path, "node_modules", ".git-worktree-deps-incomplete"),
-        "",
-      );
-      assert.match(buildDependencyNotice(path) ?? "", /^\[deps\]/);
-    },
-  );
+  it("T2-12b: the next notice for that worktree is the [deps] sentence", async () => {
+    const { buildDependencyNotice } =
+      await import("../../lib/dependency-notice.ts");
+    const repo = createRepo(temp, { origin: true });
+    const path = worktreePath(repo, "midway2");
+    handleWorktreeCreate(createInput(repo, "midway2"));
+    writeFileSync(join(path, "package.json"), "{}\n");
+    writeFileSync(join(path, "pnpm-lock.yaml"), "\n");
+    mkdirSync(join(path, "node_modules"));
+    writeFileSync(join(path, "node_modules", "left"), "x");
+    writeFileSync(
+      join(path, "node_modules", ".git-worktree-deps-incomplete"),
+      "",
+    );
+    assert.match(
+      buildDependencyNotice(path, undefined, { vmMarkerPath: null }) ?? "",
+      /^\[deps\]/,
+    );
+  });
 });
 
 describe("findMountsUnder", () => {

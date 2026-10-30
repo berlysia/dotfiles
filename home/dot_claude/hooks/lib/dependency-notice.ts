@@ -1,11 +1,19 @@
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { findMountsUnder } from "./claude-worktree.ts";
 
 type PackageManager = "pnpm" | "bun" | "npm" | "yarn";
 
 export type DependencyNoticeFileSystem = {
-  statSync(path: string): { isFile(): boolean };
+  statSync(path: string): { isDirectory(): boolean; isFile(): boolean };
+  readdirSync(path: string): string[];
   readFileSync(path: string, encoding: "utf8"): string;
+};
+
+export type DependencyNoticeOptions = {
+  audience?: "session" | "subagent";
+  mountinfo?: string;
+  vmMarkerPath?: string | null;
 };
 
 type InstallResolution =
@@ -17,7 +25,13 @@ type InstallResolution =
     }
   | { kind: "conflict"; lockfiles: string[] };
 
-const fileSystem: DependencyNoticeFileSystem = { statSync, readFileSync };
+const fileSystem: DependencyNoticeFileSystem = {
+  statSync,
+  readdirSync,
+  readFileSync,
+};
+const DEFAULT_VM_MARKER = "/etc/agent-vm";
+const MOUNTINFO_PATH = "/proc/self/mountinfo";
 
 const lockfiles = [
   { name: "pnpm-lock.yaml", manager: "pnpm" },
@@ -126,7 +140,7 @@ function isExistingFile(path: string, fs: DependencyNoticeFileSystem): boolean {
 function readPathStat(
   path: string,
   fs: DependencyNoticeFileSystem,
-): { isFile(): boolean } | null {
+): { isDirectory(): boolean; isFile(): boolean } | null {
   try {
     return fs.statSync(path);
   } catch (error) {
@@ -154,25 +168,75 @@ function containsControlCharacters(value: string): boolean {
 export function buildDependencyNotice(
   dir: string,
   fs: DependencyNoticeFileSystem = fileSystem,
+  options: DependencyNoticeOptions = {},
 ): string | null {
   // Advice only: the origin branch's package.json scripts can run during install (ADR-0033 D5).
   try {
     if (containsControlCharacters(dir)) return null;
     if (!isExistingFile(join(dir, "package.json"), fs)) return null;
-    if (readPathStat(join(dir, "node_modules"), fs) !== null) return null;
+
+    const nodeModules = join(dir, "node_modules");
+    const incompleteMarker = join(nodeModules, ".git-worktree-deps-incomplete");
+    const incomplete = readPathStat(incompleteMarker, fs) !== null;
+    const nodeModulesStat = readPathStat(nodeModules, fs);
+    if (
+      !incomplete &&
+      nodeModulesStat !== null &&
+      (!nodeModulesStat.isDirectory() || fs.readdirSync(nodeModules).length > 0)
+    ) {
+      return null;
+    }
 
     // Silent without a manager: a package.json with no lockfile often has nothing to install.
     const resolution = resolveInstall(dir, fs);
     if (!resolution) return null;
     const prefix = `[deps] Dependencies are not installed in ${JSON.stringify(dir)}; tests and typecheck will fail.`;
+    if (incomplete) {
+      const retry = `git-worktree-deps ${shellQuote(dir)}`;
+      const instruction = `The previous install did not finish; rerun \`${retry}\` to prepare dependencies.`;
+      return `${prefix} ${
+        options.audience === "subagent"
+          ? `When you need to run tests or typecheck, ${instruction}`
+          : instruction
+      }`;
+    }
+
+    const vmMarkerPath =
+      options.vmMarkerPath === undefined
+        ? process.env.AGENT_VM_MARKER || DEFAULT_VM_MARKER
+        : options.vmMarkerPath;
+    if (vmMarkerPath !== null && readPathStat(vmMarkerPath, fs) !== null) {
+      let mountinfo: string;
+      try {
+        mountinfo =
+          options.mountinfo !== undefined
+            ? options.mountinfo
+            : fs.readFileSync(MOUNTINFO_PATH, "utf8");
+      } catch {
+        mountinfo = "";
+      }
+      if (findMountsUnder(mountinfo, [nodeModules]) !== "mounted") {
+        const attach = `agent-vm-node-modules attach ${shellQuote(dir)}`;
+        return `${prefix} Do not install until \`${attach}\` succeeds; the VM node_modules mount is not confirmed.`;
+      }
+    }
+
+    const lead =
+      options.audience === "subagent"
+        ? "When you need to run tests or typecheck, "
+        : "";
     if (resolution.kind === "conflict") {
-      return `${prefix} Conflicting lockfiles found: ${resolution.lockfiles.join(", ")}; install with the project's package manager.`;
+      return `${prefix} ${lead}Conflicting lockfiles found: ${resolution.lockfiles.join(", ")}; install with the project's package manager.`;
     }
     if (resolution.wouldWriteLockfile) {
-      return `${prefix} No ${resolution.manager} lockfile is present; \`${resolution.command}\` would write a lockfile.`;
+      return `${prefix} ${lead}No ${resolution.manager} lockfile is present; \`${resolution.command}\` would write a lockfile.`;
     }
-    return `${prefix} Run \`${resolution.command}\`.`;
+    return `${prefix} ${lead}${options.audience === "subagent" ? "run" : "Run"} \`${resolution.command}\`.`;
   } catch {
     return null;
   }
+}
+
+function shellQuote(text: string): string {
+  return `'${text.replace(/'/g, `'\\''`)}'`;
 }

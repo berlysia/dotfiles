@@ -150,6 +150,32 @@ describe(
 );
 
 describe(
+  "settings hooks template: SubagentStart dependency notice",
+  { skip: !hasChezmoi && "chezmoi is not on PATH" },
+  () => {
+    it("registers the dependency notice with a five-second timeout", () => {
+      const hooks = render(true, false) as unknown as Record<
+        string,
+        { hooks: { command: string; timeout?: number }[] }[]
+      >;
+      const registered = (hooks["SubagentStart"] ?? []).flatMap(
+        (group) => group.hooks,
+      );
+      strictEqual(registered.length, 1);
+      const hook = registered[0];
+      ok(hook);
+      ok(
+        /^bun \/\S+\/\.claude\/hooks\/implementations\/subagent-deps-notice\.ts$/.test(
+          hook.command,
+        ),
+        hook.command,
+      );
+      strictEqual(hook.timeout, 5);
+    });
+  },
+);
+
+describe(
   "settings hooks template: StopFailure",
   { skip: !hasChezmoi && "chezmoi is not on PATH" },
   () => {
