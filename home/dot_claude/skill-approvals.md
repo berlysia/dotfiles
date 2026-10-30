@@ -67,6 +67,13 @@ apply は未掲載のスキルを追記するだけで、行を消さない。
 - [x] visual-eli
 - [x] visualize
 - [x] yomiyasu
+- [x] commit-standards
+- [x] context-md
+- [x] debugging
+- [x] defect-triage
+- [x] delivery-policy
+- [x] document-workflow-operator
+- [x] model-offloading
 
 ## External
 
