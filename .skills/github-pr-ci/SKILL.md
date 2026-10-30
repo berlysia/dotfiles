@@ -10,7 +10,7 @@ description: GitHub の PR を更新・マージするとき、required check �
 1. 対象 PR の head SHA、base、`mergeStateStatus` と、保護ルール・ruleset の必須チェックを確認する。直接 push の可否と PR の取り込み条件は別に調べる。管理者の bypass で push が通っても、必須チェックを満たした証拠にはならず、手元のフックもサーバーの検査を代替しない。
 2. head SHA に対する check-run と commit status の両方を読む。`statusCheckRollup.__typename` で区別し、`CheckRun` の `name` / `conclusion` と `StatusContext` の `context` / `state` を確認する。名前だけでなく作成元も照合する。このリポジトリのマージ判定では Bot が作成した commit status を対象とし、自分で success を付けて条件を満たさない。
 3. 集約役の `status-check` がある場合は、そのワークフローの集約対象も読む。個別ジョブが成功しても、集約結果が pending なら待つ。paths や実行条件による skipped と、実行前の cancelled を区別し、未実行を一律に成功としない。
-4. push 直後はチェックが未登録のことがある。登録を確認してから `gh pr checks --watch` で待つ。チェックがないための即時終了や待機時間切れを成功とせず、待機終了時に head SHA と必須チェックの保留・失敗を再確認する。`BLOCKED` や `base branch policy prohibits the merge` だけで原因を決めない。
+4. push 直後はチェックが未登録のことがある。登録を確認してから `~/.local/bin/delivery-policy wait <PR 番号>` を Bash の `run_in_background: true` で起動して待つ。台帳は読まず、merge しない。終了コードは、0 が必須チェックの成功（または merge 済み）、10 が同じコマンドの再起動、11 が head の変化（もう 1 回だけ起動し直す）、12・30・40 が人に戻す、である。完了の通知が届くまで出力ファイルを読まず、`gh run watch` や `gh pr checks --watch` も自分で起動しない。チェックがないための即時終了や待機時間切れを成功とせず、待機終了時に head SHA と必須チェックの保留・失敗を再確認する。`BLOCKED` や `base branch policy prohibits the merge` だけで原因を決めない。
 5. マージの許可があり、CI 待ちなら auto-merge を使える。確認した SHA を `--match-head-commit` に渡し、確認後に head が変われば再確認する。エラーが勧める `--admin` で保護を迂回しない。
 
 ## PR 更新と Actions の確認

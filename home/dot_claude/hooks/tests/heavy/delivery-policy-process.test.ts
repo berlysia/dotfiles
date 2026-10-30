@@ -235,7 +235,7 @@ esac
 const MERGE_ENTRY = `
 const { runCliMain } = await import(${JSON.stringify(CLI)});
 process.exitCode = await runCliMain(
-  ["--cwd", process.env.DP_REPO, "merge", "1"],
+  ["--cwd", process.env.DP_REPO, process.env.DP_CMD ?? "merge", "1"],
   { home: process.env.DP_HOME },
 );
 `;
@@ -253,6 +253,7 @@ interface RunningMerge {
 function startMerge(env: {
   check: "pending" | "green";
   mergeSleep?: number;
+  command?: "merge" | "wait";
 }): RunningMerge {
   const home = freshDir("dp-merge-home-");
   appendLedger(home, {
@@ -273,6 +274,7 @@ function startMerge(env: {
       DP_DIR: dir,
       DP_REPO: repo,
       DP_CHECK: env.check,
+      DP_CMD: env.command ?? "merge",
       DP_MERGE_SLEEP: String(env.mergeSleep ?? 0),
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -368,6 +370,46 @@ describe(
         /^delivery-policy: 0: merged #1 at aaaaaaaaaaaa/,
       );
       assert.equal(noFakeGhLeft(run), true);
+    });
+  },
+);
+
+describe(
+  "delivery-policy wait, interrupted as a process",
+  { skip: !hasBun && "bun is not on PATH" },
+  () => {
+    it("SIGTERM during the wait ends it with one interrupted line and exit 10, without gh pr merge", async () => {
+      const run = startMerge({ check: "pending", command: "wait" });
+      await run.waitForOutput(/delivery-policy: waiting:/);
+      run.signal("SIGTERM");
+      assert.equal(await run.closed, 10);
+      const results = run
+        .stdout()
+        .split("\n")
+        .filter((l) => /^delivery-policy: \d+:/.test(l));
+      assert.deepEqual(results, [
+        "delivery-policy: 10: interrupted; run the same command again",
+      ]);
+      assert.equal(existsSync(join(run.dir, "merge-started")), false);
+      assert.equal(noFakeGhLeft(run), true);
+    });
+
+    it("a closed stdout pipe, then SIGTERM, is still exit 10", async () => {
+      const run = startMerge({ check: "pending", command: "wait" });
+      await run.waitForOutput(/delivery-policy: waiting:/);
+      run.destroyStdout();
+      run.signal("SIGTERM");
+      assert.equal(await run.closed, 10);
+    });
+
+    it("green checks end with 0 and never start gh pr merge", async () => {
+      const run = startMerge({ check: "green", command: "wait" });
+      assert.equal(await run.closed, 0);
+      assert.match(
+        run.stdout(),
+        /delivery-policy: 0: required checks passed at a{40}/,
+      );
+      assert.equal(existsSync(join(run.dir, "merge-started")), false);
     });
   },
 );

@@ -346,6 +346,11 @@
     "Read(//**/.env.prod)",
     "Read(//**/.env.staging)",
     "Read(//**/.env.preview)",
-    "Read(//**/.env.test)"
+    "Read(//**/.env.test)",
+    "Bash(gh pr merge *)",
+    "Bash(gh api */merge*)",
+    "Bash(gh api *mutation*)",
+    "Bash(gh api *--input*)",
+    "Bash(gh api *=@*)"
   ]
 }

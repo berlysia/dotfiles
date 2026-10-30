@@ -296,7 +296,8 @@ describe("delivery-policy CLI", () => {
       err = "";
       assert.equal(await run(flag), 0);
       assert.match(out, /merge <PR number>/);
-      for (const code of ["10", "11", "12", "20", "30", "40"])
+      assert.match(out, /wait <PR number>/);
+      for (const code of ["10", "11", "12", "20", "30", "31", "40"])
         assert.match(out, new RegExp(`\\b${code}\\b`));
       assert.equal(err, "");
     }
@@ -505,11 +506,281 @@ describe("delivery-policy CLI", () => {
     });
   });
 
-  it("a protected path is 30", async () => {
-    record("merge");
-    world.files = [".github/workflows/ci.yml"];
-    assert.equal(await run("merge", "5"), 30);
-    assert.equal(mergeCalls().length, 0);
+  describe("a protected path asks the user instead of merging", () => {
+    const CONFIRM_COMMAND = `gh pr merge 5 -R berlysia/dotfiles --merge --match-head-commit ${SHA_A}`;
+    const nearDeadlineAtSecondHeadRead = () => {
+      let reads = 0;
+      world.onCall.push((args) => {
+        if (args.join(" ").includes("headRefOid") && ++reads === 2) {
+          mono = 1000 + 23 * 60_000 - 5_000;
+        }
+      });
+    };
+    const pendingChecks = () => {
+      world.checkRuns = [
+        { name: "status-check", status: "IN_PROGRESS", conclusion: null },
+      ];
+    };
+
+    it("all checks passed and CLEAN is 31 with the command and the head sha, and gh pr merge is never started", async () => {
+      record("merge");
+      world.files = [".github/workflows/ci.yml"];
+      assert.equal(await run("merge", "5"), 31);
+      assert.equal(mergeCalls().length, 0);
+      assert.equal(
+        lastLine(),
+        `delivery-policy: 31: ${CONFIRM_COMMAND}; base main; touches .github/workflows/ci.yml`,
+      );
+    });
+
+    it("a 600 character path cuts only the tail: the command and the 40 digit sha stay", async () => {
+      record("merge");
+      world.files = [`.github/workflows/${"a".repeat(600)}`];
+      assert.equal(await run("merge", "5"), 31);
+      const line = lastLine() ?? "";
+      assert.ok(Array.from(line).length <= 500, `${line.length}`);
+      assert.ok(
+        line.startsWith(`delivery-policy: 31: ${CONFIRM_COMMAND};`),
+        line,
+      );
+    });
+
+    it("a pending check waits (10 when the call's time is used up), it is not 30 or 31", async () => {
+      record("merge");
+      world.files = [".github/workflows/ci.yml"];
+      pendingChecks();
+      nearDeadlineAtSecondHeadRead();
+      assert.equal(await run("merge", "5"), 10);
+      assert.equal(mergeCalls().length, 0);
+    });
+
+    it("a failed required check is 30", async () => {
+      record("merge");
+      world.files = [".github/workflows/ci.yml"];
+      world.checkRuns = [
+        { name: "status-check", status: "COMPLETED", conclusion: "FAILURE" },
+      ];
+      assert.equal(await run("merge", "5"), 30);
+      assert.doesNotMatch(lastLine() ?? "", /gh pr merge/);
+    });
+
+    it("BLOCKED is 30 with no gh pr merge, UNKNOWN waits and is not 31", async () => {
+      record("merge");
+      world.files = [".github/workflows/ci.yml"];
+      world.pr.mergeStateStatus = "BLOCKED";
+      assert.equal(await run("merge", "5"), 30);
+      assert.equal(mergeCalls().length, 0);
+
+      out = "";
+      world.pr.mergeStateStatus = "UNKNOWN";
+      nearDeadlineAtSecondHeadRead();
+      assert.equal(await run("merge", "5"), 10);
+      assert.doesNotMatch(out, /delivery-policy: 31:/);
+    });
+
+    it("zero required contexts is 30", async () => {
+      record("merge");
+      world.files = [".github/workflows/ci.yml"];
+      world.context = "";
+      const realGh = gh;
+      const noRules: typeof gh = async (args, options) =>
+        (args[1] ?? "").includes("/rules/branches/")
+          ? ok("[]")
+          : realGh(args, options);
+      assert.equal(
+        await runDeliveryPolicyCli(["merge", "5"], { ...deps(), gh: noRules }),
+        30,
+      );
+    });
+
+    it("only previousPath being protected still asks, and names that path", async () => {
+      record("merge");
+      const realGh = gh;
+      const renamed: typeof gh = async (args, options) =>
+        /\/pulls\/\d+\/files\?/.test(args[1] ?? "")
+          ? ok(
+              JSON.stringify([
+                {
+                  filename: "docs/new.md",
+                  previous_filename: ".github/workflows/ci.yml",
+                },
+              ]),
+            )
+          : realGh(args, options);
+      assert.equal(
+        await runDeliveryPolicyCli(["merge", "5"], { ...deps(), gh: renamed }),
+        31,
+      );
+      assert.match(lastLine() ?? "", /touches \.github\/workflows\/ci\.yml$/);
+      assert.equal(mergeCalls().length, 0);
+    });
+
+    it("a ledger of pr is 20", async () => {
+      record("pr");
+      world.files = [".github/workflows/ci.yml"];
+      assert.equal(await run("merge", "5"), 20);
+    });
+
+    it("a scope narrowed after the checks passed is 20, not 31", async () => {
+      record("merge");
+      world.files = [".github/workflows/ci.yml"];
+      let reads = 0;
+      world.onCall.push((args) => {
+        if (args.join(" ").includes("headRefOid") && ++reads === 2) {
+          record("pr");
+        }
+      });
+      assert.equal(await run("merge", "5"), 20);
+    });
+
+    it("a file that is not protected still merges as before", async () => {
+      record("merge");
+      assert.equal(await run("merge", "5"), 0);
+      assert.equal(mergeCalls().length, 1);
+    });
+  });
+
+  describe("wait", () => {
+    const pending = () => {
+      world.checkRuns = [
+        { name: "status-check", status: "IN_PROGRESS", conclusion: null },
+      ];
+    };
+    const DEADLINE = 1000 + 23 * 60_000;
+    const isHeadRead = (args: string[]) =>
+      args.join(" ").includes("headRefOid");
+
+    it("all checks passed is 0 with the head sha, and gh pr merge is never started", async () => {
+      assert.equal(await run("wait", "5"), 0);
+      assert.equal(mergeCalls().length, 0);
+      assert.equal(
+        lastLine(),
+        `delivery-policy: 0: required checks passed at ${SHA_A}`,
+      );
+    });
+
+    it("works with a ledger of commit, an unrecorded one, and even an unreadable one", async () => {
+      assert.equal(await run("wait", "5"), 0);
+      record("commit");
+      assert.equal(await run("wait", "5"), 0);
+      writeFileSync(ledgerPath(home), "{broken\n");
+      assert.equal(await run("wait", "5"), 0);
+      assert.equal(mergeCalls().length, 0);
+    });
+
+    it("a protected PR with BLOCKED or UNKNOWN is 0 at once, without waiting", async () => {
+      world.files = [".github/workflows/ci.yml"];
+      for (const status of ["BLOCKED", "UNKNOWN"]) {
+        world.pr.mergeStateStatus = status;
+        assert.equal(await run("wait", "5"), 0, status);
+      }
+      assert.equal(sleeps, 0);
+      assert.equal(mergeCalls().length, 0);
+    });
+
+    it("a failed required check is 30, zero required contexts is 30", async () => {
+      world.checkRuns = [
+        { name: "status-check", status: "COMPLETED", conclusion: "FAILURE" },
+      ];
+      assert.equal(await run("wait", "5"), 30);
+      world = freshWorld();
+      const realGh = gh;
+      const noRules: typeof gh = async (args, options) =>
+        (args[1] ?? "").includes("/rules/branches/")
+          ? ok("[]")
+          : realGh(args, options);
+      assert.equal(
+        await runDeliveryPolicyCli(["wait", "5"], { ...deps(), gh: noRules }),
+        30,
+      );
+    });
+
+    it("a pending check, then success, waits and then is 0", async () => {
+      pending();
+      sleepHook = () => {
+        world.checkRuns = [
+          { name: "status-check", status: "COMPLETED", conclusion: "SUCCESS" },
+        ];
+      };
+      assert.equal(await run("wait", "5"), 0);
+      assert.equal(sleeps, 1);
+      assert.equal(mergeCalls().length, 0);
+    });
+
+    it("a head that changes while waiting is 11", async () => {
+      pending();
+      sleepHook = () => {
+        world.shas = [SHA_B];
+      };
+      assert.equal(await run("wait", "5"), 11);
+    });
+
+    it("pending at the end of the call's time is 10", async () => {
+      pending();
+      let reads = 0;
+      world.onCall.push((args) => {
+        if (isHeadRead(args) && ++reads === 2) mono = DEADLINE - 5_000;
+      });
+      assert.equal(await run("wait", "5"), 10);
+    });
+
+    it("a used up wait budget for the head is 12", async () => {
+      pending();
+      assert.equal(await run("wait", "5"), 12);
+      assert.equal(mergeCalls().length, 0);
+    });
+
+    it("a CLOSED PR whose checks passed is 30", async () => {
+      world.pr.state = "CLOSED";
+      assert.equal(await run("wait", "5"), 30);
+    });
+
+    it("a gh read that keeps failing is 40", async () => {
+      world.failOn = "checkSuites";
+      assert.equal(await run("wait", "5"), 40);
+    });
+
+    it("a PR merged at the start is 0, and one merged at the same head while waiting is 0", async () => {
+      world.pr.state = "MERGED";
+      assert.equal(await run("wait", "5"), 0);
+      assert.match(lastLine() ?? "", /already merged at/);
+
+      world = freshWorld();
+      pending();
+      sleepHook = () => {
+        world.pr.state = "MERGED";
+      };
+      assert.equal(await run("wait", "5"), 0);
+      assert.match(lastLine() ?? "", /already merged at/);
+      assert.equal(mergeCalls().length, 0);
+    });
+
+    it("a read that finds the PR merged at the same head is 0, at another head 11 (merge)", async () => {
+      record("merge");
+      let reads = 0;
+      world.onCall.push((args) => {
+        if (isHeadRead(args) && ++reads === 2) world.pr.state = "MERGED";
+      });
+      assert.equal(await run("merge", "5"), 0);
+      assert.match(lastLine() ?? "", /already merged at/);
+      assert.equal(mergeCalls().length, 0);
+
+      world = freshWorld();
+      world.shas = [SHA_A, SHA_B];
+      reads = 0;
+      world.onCall.push((args) => {
+        if (isHeadRead(args) && ++reads === 2) world.pr.state = "MERGED";
+      });
+      assert.equal(await run("merge", "5"), 11);
+      assert.equal(mergeCalls().length, 0);
+    });
+
+    it("rejects a missing, zero or extra argument with 2", async () => {
+      assert.equal(await run("wait"), 2);
+      assert.equal(await run("wait", "0"), 2);
+      assert.equal(await run("wait", "5", "--x"), 2);
+      assert.equal(calls.length, 0);
+    });
   });
 
   it("pending checks wait until the 20 minute budget is used up, then 12, and record the wait", async () => {

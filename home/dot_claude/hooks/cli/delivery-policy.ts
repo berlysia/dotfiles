@@ -2,7 +2,8 @@
 
 /**
  * delivery-policy: `show` the recorded scope, print the `ask` question, or
- * `merge <PR>` when the ledger and GitHub's state allow it.
+ * `merge <PR>` when the ledger and GitHub's state allow it, or `wait <PR>`
+ * for the required checks without merging.
  *
  * Started through the bin wrapper, which pins the cwd, the environment and
  * PATH because the allow rule for the wrapper skips the permission
@@ -12,8 +13,10 @@
  *
  * Exit codes are the contract: 0 merged / ok, 2 bad arguments, 10 still
  * pending (run again), 11 head changed while waiting, 12 wait budget used up,
- * 20 scope is not merge, 30 a condition is not met, 40 gh failed or the state
- * cannot be read.
+ * 20 scope is not merge, 30 a condition is not met, 31 the PR touches a
+ * protected path and is ready: the user confirms the printed `gh pr merge`
+ * (this CLI never starts it for such a PR), 40 gh failed or the state cannot
+ * be read.
  */
 
 import {
@@ -30,6 +33,7 @@ import {
   createGh,
   decideLedger,
   decideMerge,
+  decideWait,
   type Gh,
   ledgerDir,
   ledgerPath,
@@ -37,6 +41,7 @@ import {
   type Ledger,
   mergeRequiredContexts,
   type MergeState,
+  type WaitState,
   type PrInfo,
   readLedger,
   type RepoInfo,
@@ -132,26 +137,31 @@ type Parsed =
   | { kind: "show" }
   | { kind: "ask" }
   | { kind: "merge"; pr: number }
+  | { kind: "wait"; pr: number }
   | { kind: "help" }
   | { kind: "usage" };
 
 const USAGE_LINE =
-  "delivery-policy: usage: delivery-policy show | ask | merge <PR number>\n";
+  "delivery-policy: usage: delivery-policy show | ask | merge <PR number> | wait <PR number>\n";
 
-const HELP_TEXT = `usage: delivery-policy show | ask | merge <PR number>
+const HELP_TEXT = `usage: delivery-policy show | ask | merge <PR number> | wait <PR number>
 
   show               print the recorded delivery scope
   ask                print the scope question to pass to AskUserQuestion
-  merge <PR number>  merge the PR once every required check is green
+  merge <PR number>  merge the PR once every required check is green; a PR
+                     touching a protected path is never merged here (31)
+  wait <PR number>   wait for every required check, merge nothing, read no ledger
 
 exit codes:
-  0   merged / ok
+  0   merged / checks passed (wait) / already merged
   2   bad arguments
   10  required checks still pending; run the same command again
   11  head changed while waiting; run it once more, no more than once
   12  wait budget used up; hand back to the human
   20  recorded scope is not merge; run ask
   30  a merge condition is not met; hand back to the human
+  31  protected path, all checks passed: start the printed gh pr merge (before
+      the first ";") in the foreground; the user's permission prompt confirms
   40  gh failed or the state cannot be read; hand back to the human
 `;
 
@@ -169,11 +179,11 @@ function parseArgs(args: readonly string[]): Parsed {
   if (args.length === 1 && args[0] === "ask") return { kind: "ask" };
   if (
     args.length === 2 &&
-    args[0] === "merge" &&
+    (args[0] === "merge" || args[0] === "wait") &&
     /^[1-9][0-9]*$/.test(args[1] ?? "")
   ) {
     const pr = Number(args[1]);
-    if (Number.isSafeInteger(pr)) return { kind: "merge", pr };
+    if (Number.isSafeInteger(pr)) return { kind: args[0], pr };
   }
   return { kind: "usage" };
 }
@@ -629,9 +639,21 @@ function alreadyMergedReason(sha: string): string {
   return `already merged at ${sha.slice(0, 12)}; merger not determined`;
 }
 
-async function runMerge(
+type Gathered =
+  | { mode: "merge"; state: MergeState }
+  | { mode: "wait"; state: WaitState };
+
+/**
+ * The waiting loop of `merge` and `wait`. They differ in what they gather and
+ * judge, and in what they do when the checks are green: `merge` may start
+ * `gh pr merge` (never for a protected path), `wait` never does and reads no
+ * ledger. Everything else (reads, retries, budget, deadline, interruption)
+ * is this one loop.
+ */
+async function runLoop(
   deps: DeliveryPolicyCliDeps,
   prNumber: number,
+  mode: "merge" | "wait",
 ): Promise<number> {
   const say = (line: string) => deps.out(`${sanitizeLine(line)}\n`);
   const finish = (code: number, reason: string) => {
@@ -664,20 +686,22 @@ async function runMerge(
     const { repo } = resolved;
 
     // Printed once, from the ledger as it is at the start. Whether the scope
-    // still allows a merge is judged every round below.
-    const startLedger = readLedger(deps.home);
-    const recorded = startLedger.latest.get(repo.nameWithOwner);
-    if (recorded !== undefined) {
-      say(
-        `delivery-policy: scope ${recorded.scope} recorded ${formatRecordedDate(recorded.at)}; to change it run ~/.local/bin/delivery-policy ask`,
-      );
+    // still allows a merge is judged every round below. `wait` reads no ledger.
+    if (mode === "merge") {
+      const startLedger = readLedger(deps.home);
+      const recorded = startLedger.latest.get(repo.nameWithOwner);
+      if (recorded !== undefined) {
+        say(
+          `delivery-policy: scope ${recorded.scope} recorded ${formatRecordedDate(recorded.at)}; to change it run ~/.local/bin/delivery-policy ask`,
+        );
+      }
     }
 
-    const viewer = await readViewer(gh);
+    const viewer = mode === "merge" ? await readViewer(gh) : "";
     let baseSha: string | undefined;
     let failedRounds = 0;
     for (;;) {
-      let state: MergeState;
+      let gathered: Gathered;
       try {
         const head = await readHead(gh, repo, prNumber);
         baseSha ??= head.sha;
@@ -699,11 +723,14 @@ async function runMerge(
         // for the scope to be narrowed, and that must stop the merge at the
         // next round, not after the wait. A read error is not retried; it is
         // the same stop decideLedger gives anywhere else.
-        const ledger = readLedger(deps.home);
-        const ledgerDecision = decideLedger(ledger, repo);
-        if (ledgerDecision.kind === "stop") {
-          for (const line of invalidLines(ledger, deps.home)) say(line);
-          return finish(ledgerDecision.code, ledgerDecision.reason);
+        let ledger: Ledger | undefined;
+        if (mode === "merge") {
+          ledger = readLedger(deps.home);
+          const ledgerDecision = decideLedger(ledger, repo);
+          if (ledgerDecision.kind === "stop") {
+            for (const line of invalidLines(ledger, deps.home)) say(line);
+            return finish(ledgerDecision.code, ledgerDecision.reason);
+          }
         }
 
         const pr = await readPr(gh, repo, prNumber);
@@ -717,12 +744,10 @@ async function runMerge(
           repo,
           baseSha,
         );
-        const files = await readChangedFiles(
-          gh,
-          repo,
-          prNumber,
-          pr.changedFiles,
-        );
+        const files =
+          mode === "merge"
+            ? await readChangedFiles(gh, repo, prNumber, pr.changedFiles)
+            : [];
 
         const after = await readHead(gh, repo, prNumber);
         if (after.sha !== baseSha) {
@@ -732,16 +757,38 @@ async function runMerge(
           );
         }
 
-        state = {
-          ledger,
-          repo,
-          viewer,
-          pr,
-          files,
-          requiredContexts,
-          checkRuns,
-          statusContexts,
-        };
+        // After the head comparison, so another head stays an 11. The PR was
+        // merged between the reads of this round (typically by an overlapping
+        // call): that is the answer 0, not "PR state is MERGED".
+        if (after.state === "MERGED") {
+          return finish(0, alreadyMergedReason(baseSha));
+        }
+
+        gathered =
+          mode === "merge" && ledger !== undefined
+            ? {
+                mode,
+                state: {
+                  ledger,
+                  repo,
+                  viewer,
+                  pr,
+                  files,
+                  requiredContexts,
+                  checkRuns,
+                  statusContexts,
+                },
+              }
+            : {
+                mode: "wait",
+                state: {
+                  repo,
+                  pr,
+                  requiredContexts,
+                  checkRuns,
+                  statusContexts,
+                },
+              };
       } catch (error) {
         // Every read error is retried a few times without telling its kind:
         // gh's output cannot separate an expired login or a rate limit from a
@@ -784,10 +831,20 @@ async function runMerge(
       }
       failedRounds = 0;
 
-      const decision = decideMerge(state);
+      const decision =
+        gathered.mode === "merge"
+          ? decideMerge(gathered.state)
+          : decideWait(gathered.state);
       if (decision.kind === "stop") {
-        for (const line of invalidLines(state.ledger, deps.home)) say(line);
+        if (gathered.mode === "merge") {
+          for (const line of invalidLines(gathered.state.ledger, deps.home)) {
+            say(line);
+          }
+        }
         return finish(decision.code, decision.reason);
+      }
+      if (gathered.mode === "wait" && decision.kind === "ready") {
+        return finish(0, `required checks passed at ${baseSha}`);
       }
       if (decision.kind === "wait") {
         const key = `${repo.nameWithOwner}#${prNumber}@${baseSha}`;
@@ -810,9 +867,25 @@ async function runMerge(
         continue;
       }
 
+      // Only `merge` gets here, with a decision of merge or confirm.
+      if (gathered.mode !== "merge") {
+        return finish(40, "unexpected decision in wait");
+      }
       // Narrowing the scope while waiting must stop the merge: only the
       // ledger is re-read, everything else stays as judged above.
-      const last = decideMerge({ ...state, ledger: readLedger(deps.home) });
+      const last = decideMerge({
+        ...gathered.state,
+        ledger: readLedger(deps.home),
+      });
+      if (last.kind === "confirm") {
+        // The invariant: no gh pr merge for a protected PR. The command goes
+        // first so the 500 character cut can only remove the paths, and the
+        // sha is the head this call waited on, which --match-head-commit pins.
+        return finish(
+          31,
+          `gh pr merge ${prNumber} -R ${repo.nameWithOwner} --merge --match-head-commit ${baseSha}; base ${gathered.state.pr.baseRefName}; touches ${last.paths.join(", ")}`,
+        );
+      }
       if (last.kind !== "merge") {
         if (last.kind === "stop") return finish(last.code, last.reason);
         return finish(40, last.reason);
@@ -901,7 +974,9 @@ export async function runDeliveryPolicyCli(
     case "ask":
       return runAsk(deps);
     case "merge":
-      return runMerge(deps, parsed.pr);
+      return runLoop(deps, parsed.pr, "merge");
+    case "wait":
+      return runLoop(deps, parsed.pr, "wait");
   }
 }
 
@@ -987,7 +1062,7 @@ export async function runCliMain(
     process.stderr.write(`delivery-policy: ${resolved.error}\n`);
     return resolved.exitCode;
   }
-  if (resolved.args[0] === "merge") {
+  if (resolved.args[0] === "merge" || resolved.args[0] === "wait") {
     // Registered before the first await, with `on`: a handler replaces the
     // default exit, so a second signal must not bring it back while a gh pr
     // merge is still being waited for. The handler only aborts; the loop

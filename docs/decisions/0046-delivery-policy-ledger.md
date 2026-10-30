@@ -126,3 +126,39 @@ D6 の「1 回の呼び出しは開始から 100 秒で打ち切る」を、次�
 - 台帳の読み直しは `gh pr merge` の直前までである。読み直してから merge を起動するまでの間に狭めた範囲と、その間に来た signal は反映しない。
 - 台帳の判定を待ちのループの中に移したので、開始時から範囲を狭めてある場合も、止まるのは、repo、viewer、最初の head を読んだ後になる。その間に gh が失敗すると、exit 20 でなく 40 になる。どちらでも merge はしない。
 - 待ちの記録のファイルは、読んでから書き戻す作りである。同時に書くと、片方の記録は消えうる。消えると予算が少し延びるが、merge の条件は緩まない（`docs/plans/delivery-policy-waits-concurrency.md`）。
+
+### 2026-10-31: 保護パスの PR は CI の後に権限プロンプトで merge する
+
+保護パスに触れる PR の扱いを、次のように改めた。保護パス以外の PR の自動 merge、保護パスの一覧、台帳の形式は変えていない。
+
+- 保護パスの判定を、判定の表の最後に移した。check の完了まで待ち、全部の条件を満たすと終了コード 31 で終わる。CLI は保護パスの PR に `gh pr merge` を起動しない。必須 check の失敗と、必須 check が 0 件の repo は、今までどおり 30 である。
+- 31 の結果行の形は次のとおりである。結果行は 500 文字で切れるので、コマンドを先頭に書く。ファイル名は PR が決めるデータなので、エージェントは最初の `;` より前だけを起動する。
+
+  ```text
+  delivery-policy: 31: gh pr merge <N> -R <repo> --merge --match-head-commit <sha>; base <base>; touches <保護パス>
+  ```
+
+- `permissions.ask` に次の 5 つを足した。利用者の回答は、その head に対する 1 回限りの判断である。31 の後に台帳の範囲が狭まっても、回答が優先する。
+  - `Bash(gh pr merge *)`
+  - `Bash(gh api */merge*)`
+  - `Bash(gh api *mutation*)`
+  - `Bash(gh api *--input*)`
+  - `Bash(gh api *=@*)`
+- `delivery-policy wait <PR>` を足した。`merge` と同じループで必須 check の完了を待ち、台帳を読まず、merge しない。guard は背景の起動だけを通す。
+- 同じ周の読み直しで、PR が MERGED で head が待っていた sha と同じなら、30 でなく 0 で終わる。head が違えば 11 である。
+
+**きっかけ**: 保護パスの PR は 30 で止まり、利用者の `!` が要った。`!` は Remote Control から使えない。PR #528 では、CI を待つためにエージェントが `gh run watch` を自分で起動した。
+
+**却下した案**:
+
+- ask ルールだけを足し、30 の後に `gh pr merge` を起動する。30 は CI を待たないので、未完了や失敗の head に確認が出る。
+- AskUserQuestion の回答を hook が (repo, PR, sha) で記録し、CLI が merge する。この ADR の「agent が書けない記録を根拠にする」設計にそろい、CLI の中で条件を確かめ直せる。ただし recorder の拡張、記録の失効、guard の拒否とそれぞれのテストが要る。ask ルールなら、承認の記録を harness に任せられ、head の固定は `--match-head-commit` で済むので、新しい永続状態が要らない。
+- 事前のオートマージ（`gh pr merge --auto`）。CI の失敗を直して push すると予約が残り、修正の中身を見ずに merge されうる。利用者は CI が落ちたときの直し方に意見を言いたい。
+
+**受け入れた差**:
+
+- エージェントが規約を破って `gh pr merge` を起動しても、止めるのはプロンプトだけである。
+- ask は文字列の形で判定する。シェル変数やコマンド置換に隠した merge（`G=gh; "$G" pr merge 5`、`gh api graphql -f query="$(cat m.graphql)"`）は一致しない。API の形は `Bash(gh api *)` の allow でプロンプトなしに通る。エージェントが規約を破って隠す場合に限るので、allow を読み取りに絞ることはしなかった。
+- ファイルで渡す読み取りと `GET .../pulls/N/merge` にも、プロンプトが出る。
+- CLI が PR を読んだ後から merge までの間に base が変わると、head が同じなら新しい base へ merge される。新しい base の必須 check は判定していないことがある。`--match-head-commit` は head だけを固定する。変更できるのは書き込み権限を持つ人で、この短い間に変える理由が無い。
+- Remote Control の実機での表示は、この変更の時点で確かめていない。
