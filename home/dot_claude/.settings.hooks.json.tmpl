@@ -146,6 +146,14 @@
   ],
   "PostToolUse": [
     {
+      "matcher": "EnterWorktree",
+      "hooks": [{
+        "type": "command",
+        "command": "bun {{ .chezmoi.homeDir }}/.claude/hooks/implementations/worktree-deps-notice.ts",
+        "timeout": 5
+      }]
+    },
+    {
       "matcher": "Write|Edit|MultiEdit|Bash",
       "hooks": [{
         "type": "command",

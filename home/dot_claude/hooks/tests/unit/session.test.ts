@@ -28,6 +28,7 @@ import sessionHook, {
   auditAnswerRecorderWiring,
   auditGuardWiring,
   createFeedbackSectionDeps,
+  FEEDBACK_NOTICE_DISABLE_ENV,
   extractGuardMatcher,
   extractHookMatcher,
   isWorkflowArmedForTesting,
@@ -295,6 +296,27 @@ describe("session.ts hook behavior", () => {
         !systemMessage.includes("⚠️ CLAUDE_CODE_TASK_LIST_ID is set:"),
         "systemMessage should not include the task list warning",
       );
+    });
+
+    it("adds the dependency notice to systemMessage and additionalContext", async () => {
+      envHelper.set(FEEDBACK_NOTICE_DISABLE_ENV, "1");
+      const projectDir = join(testDir, "project");
+      mkdirSync(projectDir);
+      writeFileSync(join(projectDir, "package.json"), "{}");
+      writeFileSync(join(projectDir, "pnpm-lock.yaml"), "");
+      const ctx = createSessionStartContext("startup", {
+        cwd: projectDir,
+        session_id: "abcdef1234567890",
+      });
+
+      await invokeRun(sessionHook, ctx);
+
+      const output = ctx.jsonCalls[0];
+      const notice = output.systemMessage
+        .split("\n")
+        .find((line) => line.startsWith("[deps]"));
+      ok(notice);
+      ok(output.hookSpecificOutput.additionalContext.includes(notice));
     });
   });
 
@@ -1183,7 +1205,15 @@ describe("dotfiles-feedback section", () => {
 
   it("keeps the learnings context and adds the line after it", () => {
     strictEqual(mergeAdditionalContext("learned", "notice"), "learned\nnotice");
+    strictEqual(
+      mergeAdditionalContext("learned", "notice", "dependencies"),
+      "learned\nnotice\ndependencies",
+    );
     strictEqual(mergeAdditionalContext(null, "notice"), "notice");
+    strictEqual(
+      mergeAdditionalContext(null, null, "dependencies"),
+      "dependencies",
+    );
     strictEqual(mergeAdditionalContext("learned", null), "learned");
     strictEqual(mergeAdditionalContext(null, null), null);
   });
