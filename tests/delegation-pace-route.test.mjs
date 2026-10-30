@@ -23,7 +23,6 @@ import {
   paceProvider,
   paceWeekly,
   parseUsageSummary,
-  surplusPoints,
 } from "../home/dot_local/share/delegation/pace.ts";
 import {
   forecastDir,
@@ -113,6 +112,133 @@ test("5h pace: a window not started yet (0%, no reset) is under", () => {
   );
 });
 
+test("paceProvider reports raw weekly lag, metering and reset times", () => {
+  const usage = (weekPercent, daysLeft, extra = {}) => ({
+    fiveHour: { usedPercent: 10, resetsAt: iso(nowMs + 2 * HOUR) },
+    weekly:
+      weekPercent === null
+        ? null
+        : { usedPercent: weekPercent, resetsAt: iso(nowMs + daysLeft * DAY) },
+    exhausted: false,
+    ...extra,
+  });
+  const lag = (weekPercent) =>
+    paceProvider(usage(weekPercent, 3.5), NOWD, MINS).weeklyLag;
+
+  assert.equal(lag(40), 10);
+  assert.equal(lag(70), -20);
+
+  const unreported = paceProvider(
+    usage(null, 0, { unmetered: false }),
+    NOWD,
+    MINS,
+  );
+  assert.equal(unreported.weeklyLag, null);
+  assert.equal(unreported.unmetered, false);
+  assert.equal(unreported.weeklyResetsAt, null);
+  assert.equal(unreported.fiveHourResetsAt, iso(nowMs + 2 * HOUR));
+});
+
+test("paceProvider keeps unmetered, exhausted windows and resets distinct", () => {
+  const noWindows = {
+    fiveHour: null,
+    weekly: null,
+    exhausted: false,
+    unmetered: true,
+  };
+  assert.deepEqual(paceProvider(noWindows, NOWD, null), {
+    fiveHour: "under",
+    weekly: "under",
+    weeklyLag: null,
+    unmetered: true,
+    fiveHourResetsAt: null,
+    weeklyResetsAt: null,
+  });
+  assert.deepEqual(
+    paceProvider({ ...noWindows, exhausted: true }, NOWD, null),
+    {
+      fiveHour: "exhausted",
+      weekly: "exhausted",
+      weeklyLag: null,
+      unmetered: true,
+      fiveHourResetsAt: null,
+      weeklyResetsAt: null,
+    },
+  );
+
+  const fiveAt = iso(nowMs + 2 * HOUR);
+  const weekAt = iso(nowMs + 3.5 * DAY);
+  const fiveExhausted = paceProvider(
+    {
+      fiveHour: { usedPercent: 100, resetsAt: fiveAt },
+      weekly: { usedPercent: 50, resetsAt: weekAt },
+      exhausted: true,
+    },
+    NOWD,
+    MINS,
+  );
+  assert.equal(fiveExhausted.fiveHour, "exhausted");
+  assert.equal(fiveExhausted.weekly, "under");
+  assert.equal(fiveExhausted.fiveHourResetsAt, fiveAt);
+  assert.equal(fiveExhausted.weeklyResetsAt, weekAt);
+
+  const rejected = paceProvider(
+    {
+      fiveHour: { usedPercent: 10, resetsAt: fiveAt },
+      weekly: { usedPercent: 50, resetsAt: weekAt },
+      exhausted: true,
+    },
+    NOWD,
+    MINS,
+  );
+  assert.equal(rejected.fiveHour, "exhausted");
+  assert.equal(rejected.weekly, "exhausted");
+});
+
+test("paceProvider uses per-window exhaustion and preserves 100% resets", () => {
+  const fiveAt = iso(nowMs + 2 * HOUR);
+  const weekAt = iso(nowMs + 3.5 * DAY);
+  const parsed = parseUsageSummary({
+    providers: {
+      codex: {
+        ok: true,
+        fiveHour: { usedPercent: 101, resetsAt: fiveAt },
+        weekly: { usedPercent: 50, resetsAt: weekAt },
+        exhausted: true,
+      },
+    },
+  });
+  assert.equal(parsed.codex.fiveHour.usedPercent, 100);
+  const over100 = paceProvider(parsed.codex, NOWD, MINS);
+  assert.equal(over100.fiveHour, "exhausted");
+  assert.equal(over100.weekly, "under");
+
+  const both = paceProvider(
+    {
+      fiveHour: { usedPercent: 100, resetsAt: fiveAt },
+      weekly: { usedPercent: 100, resetsAt: weekAt },
+      exhausted: true,
+    },
+    NOWD,
+    MINS,
+  );
+  assert.equal(both.fiveHour, "exhausted");
+  assert.equal(both.weekly, "exhausted");
+  assert.equal(both.fiveHourResetsAt, fiveAt);
+  assert.equal(both.weeklyResetsAt, weekAt);
+});
+
+test("paceProvider returns unknown without usage and null reset metadata", () => {
+  assert.deepEqual(paceProvider(null, NOWD, MINS), {
+    fiveHour: "unknown",
+    weekly: "unknown",
+    weeklyLag: null,
+    unmetered: false,
+    fiveHourResetsAt: null,
+    weeklyResetsAt: null,
+  });
+});
+
 test("parseUsageSummary validates provider names and values", () => {
   const ok = {
     ok: true,
@@ -140,7 +266,7 @@ test("parseUsageSummary validates provider names and values", () => {
     "opencode",
     "sarashina",
   ]);
-  assert.equal(parsed.codex.weekly, null);
+  assert.equal(parsed.codex.weekly.usedPercent, 100);
   assert.equal(parsed.opencode.weekly, null);
   assert.notEqual(parsed.codex.fiveHour, null);
   for (const bad of [Number.NaN, "x"]) {
@@ -170,7 +296,14 @@ test("parseUsageSummary validates provider names and values", () => {
 });
 
 test("route names the cause when window lengths or ai-usage are missing", () => {
-  const unknownPace = { fiveHour: "unknown", weekly: "unknown" };
+  const unknownPace = {
+    fiveHour: "unknown",
+    weekly: "unknown",
+    weeklyLag: null,
+    unmetered: false,
+    fiveHourResetsAt: null,
+    weeklyResetsAt: null,
+  };
   const base = {
     kind: "impl",
     size: "M",
@@ -184,7 +317,7 @@ test("route names the cause when window lengths or ai-usage are missing", () => 
     },
     claudeAheadBy: null,
     lookahead: null,
-    surplus: { codex: null, opencode: null, sarashina: null },
+    excluded: new Set(),
     pendingTotal: 0,
     pendingSession: null,
     skipped: { version: 0, type: 0, broken: 0 },
@@ -428,7 +561,7 @@ describe("delegation route / review (process)", { concurrency: 4 }, () => {
     }
   });
 
-  it("rule 1 does not fire with 4 external records (Claude 5/4)", async () => {
+  it("rule 1 does not fire with 4 external records, then compares weekly lag", async () => {
     const sb = sandbox();
     try {
       seed(sb.store, {
@@ -438,14 +571,14 @@ describe("delegation route / review (process)", { concurrency: 4 }, () => {
       });
       seed(sb.store, { adopted: 4, discarded: 1 });
       const out = (await sb.run(ROUTE)).stdout;
-      assert.match(recommendation(out), /sonnet.*規則 3/);
+      assert.match(recommendation(out), /codex Luna max .*規則 2/);
       assert.match(out, /n<5/);
     } finally {
       sb.done();
     }
   });
 
-  it("rule 1 ignores records of another size", async () => {
+  it("rule 1 ignores another size before weekly-lag selection", async () => {
     const sb = sandbox();
     try {
       seed(sb.store, {
@@ -455,7 +588,10 @@ describe("delegation route / review (process)", { concurrency: 4 }, () => {
         size: "S",
       });
       seed(sb.store, { adopted: 5, discarded: 1 });
-      assert.match(recommendation((await sb.run(ROUTE)).stdout), /sonnet/);
+      assert.match(
+        recommendation((await sb.run(ROUTE)).stdout),
+        /codex Luna max .*規則 2/,
+      );
     } finally {
       sb.done();
     }
@@ -487,7 +623,10 @@ describe("delegation route / review (process)", { concurrency: 4 }, () => {
         adopted: 20,
       });
       seed(sb2.store, { adopted: 18, discarded: 2 });
-      assert.match(recommendation((await sb2.run(ROUTE)).stdout), /sonnet/);
+      assert.match(
+        recommendation((await sb2.run(ROUTE)).stdout),
+        /codex Luna max .*規則 2/,
+      );
     } finally {
       sb2.done();
     }
@@ -543,7 +682,7 @@ describe("delegation route / review (process)", { concurrency: 4 }, () => {
     }
   });
 
-  it("rule 2: Claude week ahead sends work to an external that is under", async () => {
+  it("rule 2 ranks available weekly lags and waits when every external is unavailable", async () => {
     const sb = sandbox();
     try {
       sb.setUsage(usageOf({ claude: { week: 90, daysLeft: 6.5 } }));
@@ -566,18 +705,15 @@ describe("delegation route / review (process)", { concurrency: 4 }, () => {
       );
       const out = (await sb.run(ROUTE)).stdout;
       assert.match(recommendation(out), /sonnet/);
-      assert.match(
-        recommendation(out),
-        /Claude の週枠が ahead、使える外部が無い/,
-      );
-      assert.match(recommendation(out), /codex 5h=exhausted week=exhausted/);
+      assert.match(recommendation(out), /sonnet .*規則 2: 週枠の遅れ/);
+      assert.match(out, /codex: 5h exhausted/);
       assert.doesNotMatch(recommendation(out), /opencode/);
     } finally {
       sb.done();
     }
   });
 
-  it("rule 2 notes when records say the external is worse", async () => {
+  it("rule 2 removes a trusted lower-adoption destination with a reason", async () => {
     const sb = sandbox();
     try {
       seed(sb.store, {
@@ -591,20 +727,20 @@ describe("delegation route / review (process)", { concurrency: 4 }, () => {
       sb.setUsage(usageOf({ claude: { week: 90 } }));
       const rec = recommendation((await sb.run(ROUTE)).stdout);
       assert.match(rec, /codex.*規則 2/);
-      assert.match(rec, /記録では劣る/);
+      const out = (await sb.run(ROUTE)).stdout;
+      assert.match(out, /codex Luna max: 記録で劣る/);
     } finally {
       sb.done();
     }
   });
 
-  it("claude fetch failure: unknown, so rule 2 stays quiet", async () => {
+  it("claude fetch failure: unknown, so an available external can still win", async () => {
     const sb = sandbox();
     try {
       sb.setUsage(usageOf({ claude: "fail" }));
       const out = (await sb.run(ROUTE)).stdout;
       assert.match(out, /claude 5h=unknown week=unknown/);
-      assert.match(recommendation(out), /sonnet/);
-      assert.doesNotMatch(recommendation(out), /規則 2/);
+      assert.match(recommendation(out), /codex Luna max .*規則 2/);
     } finally {
       sb.done();
     }
@@ -643,12 +779,9 @@ describe("delegation route / review (process)", { concurrency: 4 }, () => {
     }
   });
 
-  it("exploration: shown below 5 S records, hidden at 5", async () => {
+  it("does not repeat the weekly-lag recommendation as an exploration candidate", async () => {
     // opencode is filled to 5 so that the codex destinations alone decide.
-    for (const [n, shown] of [
-      [4, true],
-      [5, false],
-    ]) {
+    for (const n of [4, 5]) {
       const sb = sandbox();
       try {
         for (const spec of [
@@ -671,7 +804,7 @@ describe("delegation route / review (process)", { concurrency: 4 }, () => {
         });
         const out = (await sb.run(["route", "--kind", "impl", "--size", "S"]))
           .stdout;
-        assert.equal(out.includes("試す候補: codex"), shown, out);
+        assert.doesNotMatch(out, /^試す候補: codex/m);
       } finally {
         sb.done();
       }
@@ -1298,7 +1431,7 @@ const weekElapsed = (used, elapsedH) => ({
 const paceOf = (weekly) => ({ fiveHour: "under", weekly });
 const underOf = (w) => paceOf(paceWeekly(w, false, NOWD, WEEK_MINS));
 
-describe("applyLookahead / surplusPoints", () => {
+describe("applyLookahead", () => {
   it("under the line but over it in 3h: ahead by lookahead", () => {
     const w = weekElapsed(11, 3.5);
     assert.equal(underOf(w).weekly, "under");
@@ -1394,28 +1527,6 @@ describe("applyLookahead / surplusPoints", () => {
     assert.equal(un.lookahead, null);
     assert.equal(un.aheadBy, null);
   });
-
-  it("surplusPoints", () => {
-    const left = (used, h) => ({
-      usedPercent: used,
-      resetsAt: iso(nowMs + h * HOUR),
-    });
-    const near = (v, want) => assert.ok(Math.abs(v - want) < 0.05, `${v}`);
-    near(surplusPoints(left(4, 69.6), NOWD, MINS), 56.2);
-    assert.equal(surplusPoints(left(50, 84), NOWD, MINS), 25);
-    near(surplusPoints(left(50.2, 84), NOWD, MINS), 24.9);
-    assert.equal(
-      surplusPoints(left(-5, 84), NOWD, MINS),
-      surplusPoints(left(0, 84), NOWD, MINS),
-    );
-    assert.equal(surplusPoints(left(120, 84), NOWD, MINS), 0);
-    assert.equal(
-      surplusPoints({ usedPercent: 4, resetsAt: null }, NOWD, MINS),
-      null,
-    );
-    assert.equal(surplusPoints(left(4, 69.6), NOWD, null), null);
-    assert.equal(surplusPoints(null, NOWD, MINS), null);
-  });
 });
 
 // ---- lookahead and surplus in the route output --------------------------
@@ -1459,7 +1570,8 @@ function routeOut({
   exposure,
   offload,
   isPublicRepo,
-  surplusOverride,
+  paceOverride = {},
+  excluded = new Set(),
 }) {
   const parsed = parseUsageSummary(usageOf(usage));
   const claudeWeek = parsed.claude?.weekly ?? null;
@@ -1480,15 +1592,11 @@ function routeOut({
       codex: paceProvider(parsed.codex, NOWD, MINS),
       opencode: paceProvider(parsed.opencode, NOWD, MINS),
       sarashina: paceProvider(parsed.sarashina, NOWD, MINS),
+      ...paceOverride,
     },
     claudeAheadBy: applied.aheadBy,
     lookahead: applied.lookahead,
-    surplus: {
-      codex: surplusPoints(parsed.codex?.weekly ?? null, NOWD, MINS),
-      opencode: surplusPoints(parsed.opencode?.weekly ?? null, NOWD, MINS),
-      sarashina: null,
-      ...surplusOverride,
-    },
+    excluded,
     pendingTotal: 0,
     pendingSession: null,
     skipped: { version: 0, type: 0, broken: 0 },
@@ -1502,13 +1610,10 @@ function routeOut({
   }).join("\n");
 }
 
-describe("route output: lookahead line and rule 2", () => {
-  it("a readable forecast pushes an under week to ahead; rule 2 says so", () => {
+describe("route output: lookahead line and weekly lag", () => {
+  it("lookahead still prints but weekly lag chooses the destination", () => {
     const out = routeOut({ usage: claudeLookahead, read: ok(3.17, 3.5) });
-    assert.match(
-      recommendation(out),
-      /codex.*規則 2: Claude の週枠が ahead \(先読み\)/,
-    );
+    assert.match(recommendation(out), /codex Luna max.*\[規則 2: 週枠の遅れ\]/);
     assert.match(
       lookaheadLine(out),
       /速さ 3\.2pt\/h \(観測 3\.5h\) 目安を超えるまで 2\.1h$/,
@@ -1519,15 +1624,16 @@ describe("route output: lookahead line and rule 2", () => {
     assert.match(lines[w], /claude 5h=under week=ahead/);
   });
 
-  it("an ahead-by-line week has no (先読み) on rule 2", () => {
+  it("an ahead-by-line week does not change the weekly-lag reason", () => {
     const out = routeOut({ usage: { claude: { week: 90 } }, read: ok(1, 3) });
-    assert.match(recommendation(out), /規則 2: Claude の週枠が ahead\]/);
+    assert.match(recommendation(out), /規則 2: 週枠の遅れ/);
+    assert.doesNotMatch(recommendation(out), /先読み/);
     assert.match(lookaheadLine(out), /^  先読み: claude 週/);
   });
 
-  it("without a forecast the line decides (rule 3) and the reason shows", () => {
+  it("without a forecast the weekly lag still chooses and the reason shows", () => {
     const out = routeOut({ usage: claudeLookahead });
-    assert.match(recommendation(out), /sonnet.*規則 3/);
+    assert.match(recommendation(out), /codex Luna max.*規則 2: 週枠の遅れ/);
     assert.equal(lookaheadLine(out), "  先読み: 使えない (no-file)");
   });
 
@@ -1576,7 +1682,7 @@ describe("route output: lookahead line and rule 2", () => {
     assert.match(lookaheadLine(out), /\(観測 3\.0h\) 目安を超えている$/);
   });
 
-  it("uses Codex's second pass when Claude is ahead and Codex week is ahead", () => {
+  it("compares Codex and Claude by weekly lag", () => {
     const out = routeOut({
       usage: {
         claude: { week: 90 },
@@ -1585,11 +1691,10 @@ describe("route output: lookahead line and rule 2", () => {
       },
     });
     assert.match(recommendation(out), /codex Luna max.*規則 2/);
-    assert.match(recommendation(out), /Claude の週枠が ahead/);
-    assert.match(recommendation(out), /codex 5h=under week=ahead/);
+    assert.match(recommendation(out), /claude −83pt、codex −83pt/);
   });
 
-  it("uses the exhausted Claude week state in rule 2", () => {
+  it("compares a full Claude week by its raw lag", () => {
     const out = routeOut({
       usage: {
         claude: { week: 100 },
@@ -1597,11 +1702,10 @@ describe("route output: lookahead line and rule 2", () => {
       },
     });
     assert.match(recommendation(out), /codex Luna max.*規則 2/);
-    assert.match(recommendation(out), /Claude の週枠が exhausted/);
-    assert.match(recommendation(out), /codex 5h=under week=ahead/);
+    assert.match(recommendation(out), /claude −93pt、codex −83pt/);
   });
 
-  it("marks Claude lookahead on Codex's second-pass recommendation", () => {
+  it("does not use lookahead to change the measured weekly lag", () => {
     const out = routeOut({
       usage: {
         claude: { week: 11, daysLeft: ELAPSED_35H_LEFT },
@@ -1609,13 +1713,10 @@ describe("route output: lookahead line and rule 2", () => {
       },
       read: ok(3.17, 3.5),
     });
-    assert.match(
-      recommendation(out),
-      /codex Luna max.*Claude の週枠が ahead \(先読み\)/,
-    );
+    assert.match(recommendation(out), /sonnet .*規則 2: 週枠の遅れ/);
   });
 
-  it("uses Codex after mechanical's OpenCode is ahead", () => {
+  it("uses the external tie order when OpenCode is not usable", () => {
     const out = routeOut({
       kind: "mechanical",
       usage: {
@@ -1643,19 +1744,19 @@ describe("route output: lookahead line and rule 2", () => {
     assert.match(recommendation(out), /^推奨: opencode .*規則 2/);
   });
 
-  it("keeps Codex out of the second pass when its 5h or week state is not eligible", () => {
+  it("excludes Codex when its 5h or weekly lag is unavailable", () => {
     for (const [codex, state] of [
-      [{ five: 95, week: 90 }, "5h=ahead week=ahead"],
-      ["fail", "5h=unknown week=unknown"],
-      [{ five: 10, week: 100 }, "5h=under week=exhausted"],
-      [{ five: 100, week: 90 }, "5h=exhausted week=ahead"],
-      [{ five: 10, week: 5, daysLeft: -1 }, "5h=under week=unknown"],
+      [{ five: 95, week: 90 }, "codex: 5h ahead"],
+      ["fail", "codex: 5h unknown"],
+      [{ five: 10, week: 100 }, "codex: 週 exhausted"],
+      [{ five: 100, week: 90 }, "codex: 5h exhausted"],
+      [{ five: 10, week: 5, daysLeft: -1 }, "codex: 週 unknown"],
     ]) {
       const out = routeOut({
         usage: { claude: { week: 90 }, codex },
       });
       assert.match(recommendation(out), /sonnet.*規則 2/);
-      assert.match(recommendation(out), new RegExp(`codex ${state}`));
+      assert.match(out, new RegExp(state));
     }
   });
 
@@ -1666,7 +1767,8 @@ describe("route output: lookahead line and rule 2", () => {
         codex: { five: 95, week: 90 },
       },
     });
-    assert.match(recommendation(closed), /sonnet.*codex 5h=ahead week=ahead/);
+    assert.match(recommendation(closed), /sonnet .*規則 2/);
+    assert.match(closed, /codex: 5h ahead/);
     assert.doesNotMatch(recommendation(closed), /opencode/);
 
     const held = routeOut({
@@ -1684,30 +1786,459 @@ describe("route output: lookahead line and rule 2", () => {
         sarashina: {},
       },
     });
-    assert.match(recommendation(held), /sonnet.*codex 5h=ahead week=ahead/);
+    assert.match(recommendation(held), /sonnet .*規則 2/);
+    assert.match(held, /codex: 5h ahead/);
     assert.doesNotMatch(recommendation(held), /opencode/);
     assert.match(held, /^保留: sarashina/m);
   });
 
-  it("keeps rule 3 when Claude is under and Codex week is ahead", () => {
+  it("ranks a leading Claude week ahead of Codex", () => {
     const out = routeOut({
       usage: { claude: { week: 5 }, codex: { five: 10, week: 90 } },
     });
-    assert.match(recommendation(out), /sonnet.*規則 3/);
+    assert.match(recommendation(out), /sonnet .*規則 2: 週枠の遅れ/);
   });
 });
 
-describe("route output: surplus candidates", () => {
-  const opencodeSurplus = { opencode: { week: 4, daysLeft: 69.6 / 24 } };
-  const SURPLUS_56 = `試す候補: ${DESTINATIONS.opencode.display.replace("。シェル無し", " --write。シェル無し")} 週枠の余り 56pt がリセットまでに使われない`;
+describe("route output: weekly lag", () => {
+  const pace = (weeklyLag, extra = {}) => ({
+    fiveHour: "under",
+    weekly: weeklyLag === null ? "unknown" : "under",
+    weeklyLag,
+    unmetered: false,
+    fiveHourResetsAt: null,
+    weeklyResetsAt: null,
+    ...extra,
+  });
+  const paces = (overrides = {}) => ({
+    claude: pace(-8),
+    codex: pace(3),
+    opencode: pace(2),
+    sarashina: pace(null, { unmetered: true }),
+    ...overrides,
+  });
+  const run = (overrides = {}) =>
+    routeOut({
+      exposure: "external-ok",
+      offload: allModels,
+      paceOverride: paces(),
+      ...overrides,
+    });
+  const time = (value) => {
+    const d = new Date(value);
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+  const weekTime = (value) => {
+    const d = new Date(value);
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${time(value)}`;
+  };
+  const noExternalPaces = () => ({
+    codex: pace(null),
+    opencode: pace(null),
+    sarashina: pace(null),
+  });
 
-  it("mechanical, triage and draft see it at any size; impl does not", () => {
-    for (const [kind, size, shown] of [
-      ["mechanical", "L", true],
-      ["triage", "L", true],
-      ["draft", "L", true],
-      ["mechanical", "M", true],
-      ["impl", "L", false],
+  it("puts an external in the tie at 5pt, but not 6pt away", () => {
+    const included = run({
+      paceOverride: paces({ claude: pace(8), codex: pace(3) }),
+    });
+    assert.match(recommendation(included), /^推奨: codex Luna max .*規則 2/);
+    const outside = run({
+      paceOverride: paces({ claude: pace(9), codex: pace(3) }),
+    });
+    assert.match(recommendation(outside), /^推奨: sonnet .*規則 2/);
+  });
+
+  it("compares all weekly lags even when Claude is under", () => {
+    const out = run({
+      paceOverride: paces({
+        claude: pace(-8),
+        codex: pace(4),
+        opencode: pace(12),
+      }),
+    });
+    assert.match(recommendation(out), /^推奨: opencode .*規則 2/);
+  });
+
+  it("reports unknown weekly pace and compares the available external providers", () => {
+    const out = run({
+      paceOverride: paces({
+        claude: pace(null, { weekly: "unknown" }),
+        codex: pace(4),
+        opencode: pace(12),
+      }),
+    });
+    assert.match(recommendation(out), /^推奨: opencode .*規則 2/);
+    assert.match(out, /claude: 週 unknown/);
+  });
+
+  it("prints an experienced external fallback after an untested recommendation", () => {
+    const folded = foldedWith({ ...LUNA, adopted: 5 });
+    const out = run({
+      folded,
+      paceOverride: paces({
+        claude: pace(8),
+        codex: pace(3),
+        opencode: pace(12),
+      }),
+    });
+    assert.match(recommendation(out), /^推奨: opencode .*規則 2/);
+    assert.match(out, /^失敗時: codex Luna max/m);
+  });
+
+  it("uses sonnet as fallback when it is unknown-only and no external has records", () => {
+    const out = run({
+      paceOverride: paces({
+        claude: pace(null, {
+          fiveHour: "under",
+          weekly: "unknown",
+        }),
+        codex: pace(3),
+        opencode: pace(12),
+      }),
+    });
+    assert.match(recommendation(out), /^推奨: opencode .*規則 2/);
+    assert.match(out, /^失敗時: sonnet/m);
+  });
+
+  it("a recordless free-model recommendation gets the rule-2 fallback", () => {
+    const out = run({
+      kind: "mechanical",
+      size: "S",
+      folded: foldLedger([]),
+      paceOverride: paces({
+        claude: pace(8),
+        codex: pace(3),
+        opencode: pace(12),
+      }),
+    });
+    assert.match(recommendation(out), /規則 0: 無料/);
+    assert.match(out, /^失敗時: /m);
+  });
+
+  it("does not print a fallback for a sonnet recommendation", () => {
+    const out = run({
+      paceOverride: paces({
+        claude: pace(12),
+        codex: pace(3, { fiveHour: "ahead" }),
+        opencode: pace(2, { fiveHour: "ahead" }),
+      }),
+    });
+    assert.match(recommendation(out), /^推奨: sonnet .*規則 2/);
+    assert.doesNotMatch(out, /^失敗時:/m);
+  });
+
+  it("waits for Claude's exhausted weekly window and omits try candidates", () => {
+    const resetsAt = iso(nowMs + 4 * DAY);
+    const out = run({
+      size: "M",
+      paceOverride: paces({
+        claude: pace(null, {
+          weekly: "exhausted",
+          weeklyResetsAt: resetsAt,
+        }),
+        ...noExternalPaces(),
+      }),
+    });
+    assert.match(recommendation(out), /^推奨: 待機 .*規則 3/);
+    assert.ok(recommendation(out).includes(weekTime(resetsAt)));
+    assert.deepEqual(tryLines(out), []);
+  });
+
+  it("waits for a full 5h Claude window using its reset time", () => {
+    const resetsAt = iso(nowMs + 2 * HOUR);
+    const out = run({
+      size: "M",
+      paceOverride: paces({
+        claude: pace(-10, {
+          fiveHour: "exhausted",
+          fiveHourResetsAt: resetsAt,
+        }),
+        ...noExternalPaces(),
+      }),
+    });
+    assert.match(recommendation(out), /^推奨: 待機 .*規則 3/);
+    assert.ok(recommendation(out).includes(time(resetsAt)));
+  });
+
+  it("waits for Claude's weekly reset when 5h is ahead and the week is exhausted", () => {
+    const resetsAt = iso(nowMs + 4 * DAY);
+    const out = run({
+      size: "M",
+      paceOverride: paces({
+        claude: pace(null, {
+          fiveHour: "ahead",
+          weekly: "exhausted",
+          fiveHourResetsAt: iso(nowMs + 2 * HOUR),
+          weeklyResetsAt: resetsAt,
+        }),
+        ...noExternalPaces(),
+      }),
+    });
+    assert.match(recommendation(out), /^推奨: 待機 .*規則 3/);
+    assert.ok(recommendation(out).includes(weekTime(resetsAt)));
+  });
+
+  it("waits until the later reset when both Claude windows are full", () => {
+    const fiveAt = iso(nowMs + 2 * HOUR);
+    const weekAt = iso(nowMs + 4 * DAY);
+    const out = run({
+      size: "M",
+      paceOverride: paces({
+        claude: pace(null, {
+          fiveHour: "exhausted",
+          weekly: "exhausted",
+          fiveHourResetsAt: fiveAt,
+          weeklyResetsAt: weekAt,
+        }),
+        ...noExternalPaces(),
+      }),
+    });
+    assert.match(recommendation(out), /^推奨: 待機 .*規則 3/);
+    assert.ok(recommendation(out).includes(weekTime(weekAt)));
+    assert.ok(!recommendation(out).includes(time(fiveAt)));
+  });
+
+  it("uses unknown time when the blocking reset is missing or past", () => {
+    for (const resetsAt of [null, iso(nowMs - HOUR)]) {
+      const out = run({
+        size: "M",
+        paceOverride: paces({
+          claude: pace(-10, {
+            fiveHour: "exhausted",
+            fiveHourResetsAt: resetsAt,
+          }),
+          ...noExternalPaces(),
+        }),
+      });
+      assert.match(recommendation(out), /待機 .*時刻不明/);
+    }
+  });
+
+  it("returns sonnet when its only blocking information is unknown", () => {
+    const out = run({
+      size: "M",
+      paceOverride: paces({
+        claude: pace(0, { fiveHour: "unknown" }),
+        ...noExternalPaces(),
+      }),
+    });
+    assert.match(recommendation(out), /^推奨: sonnet .*規則 3/);
+  });
+
+  it("does not route Sarashina after a 429 exhausted both windows", () => {
+    const out = run({
+      kind: "research",
+      size: "S",
+      isPublicRepo: () => true,
+      paceOverride: paces({
+        sarashina: pace(null, {
+          fiveHour: "exhausted",
+          weekly: "exhausted",
+          unmetered: true,
+        }),
+      }),
+    });
+    assert.doesNotMatch(recommendation(out), /sarashina/);
+    assert.doesNotMatch(tryLines(out).join("\n"), /sarashina/);
+  });
+
+  it("reports an unmetered provider without making it a weekly-lag candidate", () => {
+    const out = run({
+      kind: "research",
+      size: "S",
+      isPublicRepo: () => true,
+      paceOverride: paces({
+        claude: pace(-8),
+        codex: pace(12),
+        sarashina: pace(null, {
+          fiveHour: "under",
+          weekly: "under",
+          unmetered: true,
+        }),
+      }),
+    });
+    assert.match(recommendation(out), /^推奨: codex Luna max .*規則 2/);
+    assert.match(out, /sarashina: 週の枠なし/);
+  });
+
+  it("excludes every destination owned by an excluded provider", () => {
+    const out = run({
+      excluded: new Set(["codex"]),
+      paceOverride: paces({ codex: pace(12) }),
+    });
+    assert.doesNotMatch(recommendation(out), /codex/);
+    assert.doesNotMatch(out, /codex Luna max|codex Terra/);
+  });
+
+  it("excludes one destination by name and keeps its provider's other rows", () => {
+    const out = run({
+      excluded: new Set(["codex-luna-max"]),
+      paceOverride: paces({
+        codex: pace(12, { fiveHour: "ahead" }),
+        opencode: pace(3),
+      }),
+    });
+    assert.match(recommendation(out), /^推奨: opencode .*規則 2/);
+    assert.doesNotMatch(out, /codex Terra/);
+  });
+
+  it("excludes one free model without excluding the OpenCode provider", () => {
+    const out = run({
+      kind: "mechanical",
+      size: "S",
+      excluded: new Set(["opencode-free-glm"]),
+      paceOverride: paces({ opencode: pace(3) }),
+    });
+    assert.doesNotMatch(recommendation(out), /opencode free glm/);
+    assert.match(out, /opencode .*zai-coding-plan\/glm-5\.3/);
+  });
+
+  it("provider exclusion also applies to rule 1", () => {
+    const folded = foldedWith(
+      { ...SONNET, adopted: 5 },
+      { ...OPENCODE, adopted: 6 },
+    );
+    const out = run({
+      folded,
+      excluded: new Set(["opencode"]),
+      paceOverride: paces({ opencode: pace(12), codex: pace(3) }),
+    });
+    assert.doesNotMatch(recommendation(out), /opencode/);
+  });
+
+  it("excludes Codex and OpenCode providers together", () => {
+    const out = run({
+      excluded: new Set(["codex", "opencode"]),
+      paceOverride: paces(),
+    });
+    assert.match(recommendation(out), /^推奨: sonnet .*規則 2/);
+    assert.doesNotMatch(
+      recommendation(out),
+      /codex Luna max|codex Terra|opencode/,
+    );
+  });
+
+  it("re-ranks after excluding Luna max and selects a tested fallback", () => {
+    const folded = foldedWith({ ...OPENCODE, adopted: 5 });
+    const out = run({
+      folded,
+      excluded: new Set(["codex-luna-max"]),
+      paceOverride: paces({
+        claude: pace(4),
+        codex: pace(10),
+        opencode: pace(3),
+      }),
+    });
+    assert.match(recommendation(out), /^推奨: codex Terra .*規則 2/);
+    assert.match(out, /^失敗時: opencode/m);
+  });
+
+  it("adds a fallback for an untested free model after another free model is excluded", () => {
+    const out = run({
+      kind: "mechanical",
+      size: "S",
+      excluded: new Set(["opencode-free-deepseek"]),
+      paceOverride: paces(),
+    });
+    assert.match(recommendation(out), /opencode free glm .*規則 0: 無料/);
+    assert.match(out, /^失敗時: /m);
+  });
+
+  it("quality-filters Terra at a trusted 20% lapse rate", () => {
+    const folded = foldedWith(
+      { ...SONNET, adopted: 9, discarded: 1 },
+      { ...TERRA, adopted: 3, discarded: 5, lapses: 2 },
+    );
+    const out = run({
+      folded,
+      paceOverride: paces({
+        claude: pace(4),
+        codex: pace(12),
+        opencode: pace(2),
+      }),
+    });
+    assert.match(out, /codex Terra: 記録で劣る/);
+    assert.doesNotMatch(recommendation(out), /codex Terra/);
+  });
+
+  it("keeps a 40% lapse destination as recordless and gives it a tested fallback", () => {
+    const folded = foldedWith(
+      { ...SONNET, adopted: 9, discarded: 1 },
+      { ...LUNA, adopted: 1, discarded: 5, lapses: 4 },
+      { ...OPENCODE, adopted: 5 },
+    );
+    const out = run({
+      folded,
+      paceOverride: paces({
+        claude: pace(2),
+        codex: pace(12),
+        opencode: pace(3),
+      }),
+    });
+    assert.doesNotMatch(out, /codex Luna max: 記録で劣る/);
+    assert.match(recommendation(out), /^推奨: codex Luna max .*規則 2/);
+    assert.match(out, /^失敗時: opencode/m);
+  });
+
+  it("does not pick a 40% lapse destination as the fallback", () => {
+    const folded = foldedWith({
+      ...TERRA,
+      adopted: 1,
+      discarded: 5,
+      lapses: 4,
+    });
+    const out = run({
+      folded,
+      excluded: new Set(["codex-luna-max"]),
+      paceOverride: paces({
+        claude: pace(2),
+        codex: pace(3),
+        opencode: pace(12),
+      }),
+    });
+    assert.match(recommendation(out), /^推奨: opencode .*規則 2/);
+    assert.doesNotMatch(out, /^失敗時: codex Terra/m);
+    assert.match(out, /^失敗時: sonnet/m);
+  });
+
+  it("re-evaluates provider pace after excluding a failed destination", () => {
+    const folded = foldedWith({ ...OPENCODE, adopted: 5 });
+    const out = run({
+      folded,
+      excluded: new Set(["codex-luna-max"]),
+      paceOverride: paces({
+        claude: pace(2),
+        codex: pace(3, { fiveHour: "ahead" }),
+        opencode: pace(3),
+      }),
+    });
+    assert.match(recommendation(out), /^推奨: opencode .*規則 2/);
+    assert.doesNotMatch(out, /codex Terra/);
+  });
+
+  it("removes the surplus candidate and its annotation", () => {
+    const out = run({
+      kind: "mechanical",
+      size: "L",
+      paceOverride: paces(),
+    });
+    assert.doesNotMatch(out, /週枠の余り/);
+  });
+});
+
+describe("route output: no surplus candidates", () => {
+  const opencodeSurplus = { opencode: { week: 4, daysLeft: 69.6 / 24 } };
+
+  it("does not add a separate surplus candidate for any task kind", () => {
+    for (const [kind, size] of [
+      ["mechanical", "L"],
+      ["triage", "L"],
+      ["draft", "L"],
+      ["mechanical", "M"],
+      ["impl", "L"],
     ]) {
       const out = routeOut({
         exposure: "external-ok",
@@ -1716,21 +2247,15 @@ describe("route output: surplus candidates", () => {
         size,
         usage: opencodeSurplus,
       });
-      assert.equal(
-        tryLines(out).includes(
-          kind === "triage" ? SURPLUS_56.replace(" --write", "") : SURPLUS_56,
-        ),
-        shown,
-        `${kind}\n${out}`,
-      );
+      assert.deepEqual(tryLines(out), [], `${kind}\n${out}`);
     }
   });
 
-  it("the external's 5h must be under and 25.0 points is the edge", () => {
-    for (const [spec, shown] of [
-      [{ ...opencodeSurplus.opencode, five: 95 }, false],
-      [{ week: 50, daysLeft: 3.5 }, true],
-      [{ week: 50.2, daysLeft: 3.5 }, false],
+  it("does not use an external's 5h or weekly points for a spare row", () => {
+    for (const spec of [
+      { ...opencodeSurplus.opencode, five: 95 },
+      { week: 50, daysLeft: 3.5 },
+      { week: 50.2, daysLeft: 3.5 },
     ]) {
       const out = routeOut({
         exposure: "external-ok",
@@ -1739,7 +2264,7 @@ describe("route output: surplus candidates", () => {
         size: "L",
         usage: { opencode: spec },
       });
-      assert.equal(tryLines(out).length === 1, shown, out);
+      assert.deepEqual(tryLines(out), [], out);
     }
   });
 
@@ -1763,7 +2288,7 @@ describe("route output: surplus candidates", () => {
     assert.deepEqual(tryLines(out2), []);
   });
 
-  it("explore and surplus on the same external make one line", () => {
+  it("keeps the exploration line without a surplus annotation", () => {
     const out = routeOut({
       exposure: "external-ok",
       offload: allModels,
@@ -1773,13 +2298,10 @@ describe("route output: surplus candidates", () => {
     });
     const lines = tryLines(out);
     assert.equal(lines.length, 1, out);
-    assert.match(
-      lines[0],
-      /^試す候補: opencode .*比較に件数が足りない。週枠の余り 56pt$/,
-    );
+    assert.match(lines[0], /^試す候補: opencode .*比較に件数が足りない$/);
   });
 
-  it("explore on codex stays as it was and opencode gets its own line", () => {
+  it("does not add a surplus line beside the Codex exploration line", () => {
     const sb = sandbox();
     try {
       seed(sb.store, {
@@ -1789,7 +2311,7 @@ describe("route output: surplus candidates", () => {
         size: "S",
         adopted: 5,
       });
-      // used 20 at 0.5 days in: under the line (21.4), surplus about 5.7.
+      // Used 20 at 0.5 days in: under the existing weekly pace line.
       const out = routeOut({
         exposure: "external-ok",
         offload: allModels,
@@ -1799,15 +2321,14 @@ describe("route output: surplus candidates", () => {
         folded: foldLedger(readLedger(sb.store).rows),
       });
       const lines = tryLines(out);
-      assert.equal(lines.length, 2, out);
+      assert.equal(lines.length, 1, out);
       assert.match(lines[0], /^試す候補: codex .*比較に件数が足りない$/);
-      assert.match(lines[1], /^試す候補: opencode .* 週枠の余り 56pt /);
     } finally {
       sb.done();
     }
   });
 
-  it("impl keeps the explore line unchanged even when the external has a surplus", () => {
+  it("suppresses exploration for the weekly-lag recommendation", () => {
     const out = routeOut({
       exposure: "external-ok",
       offload: allModels,
@@ -1816,11 +2337,11 @@ describe("route output: surplus candidates", () => {
       usage: { codex: { five: 95 }, ...opencodeSurplus },
     });
     const lines = tryLines(out);
-    assert.equal(lines.length, 1, out);
-    assert.match(lines[0], /^試す候補: opencode .*比較に件数が足りない$/);
+    assert.match(recommendation(out), /^推奨: opencode .*規則 2/);
+    assert.deepEqual(lines, []);
   });
 
-  it("Codex's surplus row uses its first destination in the kind's order", () => {
+  it("does not add a surplus row after a rule-1 recommendation", () => {
     for (const kind of ["mechanical", "draft"]) {
       const folded = foldedWith(
         { kind, size: "L", adopted: 5, discarded: 1 },
@@ -1849,13 +2370,7 @@ describe("route output: surplus candidates", () => {
         folded,
       });
       assert.match(recommendation(out), /^推奨: opencode .*規則 1/);
-      assert.deepEqual(
-        tryLines(out),
-        [
-          `試す候補: ${DESTINATIONS["codex-luna-max"].display} 週枠の余り 56pt がリセットまでに使われない`,
-        ],
-        out,
-      );
+      assert.deepEqual(tryLines(out), [], out);
     }
   });
 });
@@ -1870,75 +2385,59 @@ function foldedWith(...specs) {
   }
 }
 
-describe("route output: Codex surplus recommendation", () => {
+describe("route output: weekly lag replaces Codex surplus recommendation", () => {
   const underCodex = { five: 10, week: 5 };
 
-  it("recommends Luna max when 30 Codex points will be unused", () => {
+  it("uses the Codex provider's weekly lag instead of unused points", () => {
     const out = routeOut({
       kind: "impl",
       size: "M",
       usage: { claude: { week: 5 }, codex: underCodex },
-      surplusOverride: { codex: 30 },
     });
-    assert.match(
-      recommendation(out),
-      /codex Luna max.*余りの規則: codex の週枠の余り 30pt/,
-    );
+    assert.match(recommendation(out), /codex Luna max .*規則 2: 週枠の遅れ/);
+    assert.doesNotMatch(out, /週枠の余り/);
   });
 
-  it("lets rule 2 handle an exhausted Claude week before the surplus rule", () => {
+  it("keeps exhausted-window routing in the weekly-lag rule", () => {
     const out = routeOut({
       usage: { claude: { week: 100 }, codex: underCodex },
-      surplusOverride: { codex: 30 },
     });
     assert.match(recommendation(out), /codex Luna max.*規則 2/);
-    assert.doesNotMatch(recommendation(out), /余りの規則/);
+    assert.doesNotMatch(out, /週枠の余り/);
   });
 
-  it("requires 25 surplus points, including the boundary", () => {
-    const route = (points) =>
-      routeOut({
-        usage: { claude: { week: 5 }, codex: underCodex },
-        surplusOverride: { codex: points },
-      });
-    assert.match(recommendation(route(24)), /sonnet.*規則 3/);
-    assert.match(recommendation(route(25)), /codex Luna max.*余りの規則.*25pt/);
-  });
-
-  it("requires both Codex windows to be under and a known surplus", () => {
-    for (const [codex, surplus] of [
-      [{ five: 95, week: 5 }, 30],
-      ["fail", 30],
-      [{ five: 10, week: 40, daysLeft: 3.5, exhausted: true }, 30],
-      [underCodex, null],
+  it("still excludes Codex when its 5h or weekly window is unavailable", () => {
+    for (const codex of [
+      { five: 95, week: 5 },
+      "fail",
+      { five: 10, week: 40, daysLeft: 3.5, exhausted: true },
+      underCodex,
     ]) {
       const out = routeOut({
         usage: { claude: { week: 5 }, codex },
-        surplusOverride: { codex: surplus },
       });
-      assert.match(recommendation(out), /sonnet.*規則 3/);
+      if (codex === underCodex) {
+        assert.match(recommendation(out), /codex Luna max .*規則 2/);
+      } else {
+        assert.match(recommendation(out), /sonnet .*規則 2/);
+      }
     }
   });
 
-  it("applies to review and to an unknown Claude week", () => {
+  it("uses provider weekly lag for review and when Claude usage is unknown", () => {
     const review = routeOut({
       kind: "review",
       usage: { claude: { week: 5 }, codex: underCodex },
-      surplusOverride: { codex: 40 },
     });
-    assert.match(recommendation(review), /codex Luna max.*余りの規則.*40pt/);
+    assert.match(recommendation(review), /codex Luna max .*規則 2/);
 
     const unknownClaude = routeOut({
       usage: { claude: "fail", codex: underCodex },
-      surplusOverride: { codex: 40 },
     });
-    assert.match(
-      recommendation(unknownClaude),
-      /codex Luna max.*余りの規則.*40pt/,
-    );
+    assert.match(recommendation(unknownClaude), /codex Luna max .*規則 2/);
   });
 
-  it("keeps rule 1 and rule 0 ahead of the surplus rule", () => {
+  it("keeps rule 1 and rule 0 ahead of weekly-lag selection", () => {
     const opencode = foldedWith(
       { adopted: 5, discarded: 1 },
       {
@@ -1960,7 +2459,6 @@ describe("route output: Codex surplus recommendation", () => {
         opencode: { five: 10, week: 5 },
       },
       folded: opencode,
-      surplusOverride: { codex: 40 },
     });
     assert.match(recommendation(ruleOne), /^推奨: opencode .*規則 1/);
 
@@ -1973,20 +2471,18 @@ describe("route output: Codex surplus recommendation", () => {
         models: ["opencode/deepseek-v4.1-flash-free"],
       }),
       usage: { claude: { week: 5 }, codex: underCodex },
-      surplusOverride: { codex: 40 },
     });
     assert.match(recommendation(ruleZero), /規則 0: 無料/);
-    assert.doesNotMatch(recommendation(ruleZero), /余りの規則/);
+    assert.doesNotMatch(recommendation(ruleZero), /週枠の余り/);
   });
 
-  it("does not repeat a recommended Codex provider's surplus candidate", () => {
+  it("does not repeat the recommended Codex destination as an exploration candidate", () => {
     const out = routeOut({
       kind: "draft",
       size: "M",
       usage: { claude: { week: 5 }, codex: underCodex },
-      surplusOverride: { codex: 40 },
     });
-    assert.match(recommendation(out), /codex Luna max.*余りの規則/);
+    assert.match(recommendation(out), /codex Luna max .*規則 2/);
     assert.deepEqual(tryLines(out), []);
   });
 
@@ -1996,9 +2492,8 @@ describe("route output: Codex surplus recommendation", () => {
       size: "S",
       usage: { claude: { week: 5 }, codex: underCodex },
       folded: foldedWith({ ...TERRA, size: "S", adopted: 5 }),
-      surplusOverride: { codex: 30 },
     });
-    assert.match(recommendation(out), /codex Luna max.*余りの規則/);
+    assert.match(recommendation(out), /codex Luna max .*規則 2/);
     assert.deepEqual(tryLines(out), []);
   });
 
@@ -2008,9 +2503,8 @@ describe("route output: Codex surplus recommendation", () => {
       size: "S",
       usage: { claude: { week: 5 }, codex: underCodex },
       folded: foldedWith({ ...LUNA, size: "S", adopted: 5 }),
-      surplusOverride: { codex: 30 },
     });
-    assert.match(recommendation(out), /codex Luna max.*余りの規則/);
+    assert.match(recommendation(out), /codex Luna max .*規則 2/);
     assert.match(candidate(out), /^試す候補: codex Terra/);
   });
 
@@ -2071,14 +2565,15 @@ describe("route process: wiring", { concurrency: 4 }, () => {
       putForecast(sb, "s-1.json", goodForecast());
       sb.setUsage(usageOf(claudeLookahead));
       const out = (await sb.run(ROUTE)).stdout;
-      assert.match(recommendation(out), /codex.*規則 2.*\(先読み\)/);
+      assert.match(recommendation(out), /codex Luna max .*規則 2: 週枠の遅れ/);
+      assert.doesNotMatch(recommendation(out), /先読み/);
       assert.match(lookaheadLine(out), /目安を超えるまで 2\.1h$/);
     } finally {
       sb.done();
     }
   });
 
-  it("no file gives the reason, and a surplus line is printed", async () => {
+  it("no file gives the reason without adding a surplus trial row", async () => {
     const sb = sandbox();
     try {
       sb.setUsage(
@@ -2089,8 +2584,8 @@ describe("route process: wiring", { concurrency: 4 }, () => {
       );
       const out = (await sb.run(routeKind("mechanical", "L"))).stdout;
       assert.equal(lookaheadLine(out), "  先読み: 使えない (no-file)");
-      // The surplus is opencode's, which is held.
       assert.doesNotMatch(tryLines(out).join("\n"), /opencode/);
+      assert.doesNotMatch(out, /週枠の余り/);
     } finally {
       sb.done();
     }
@@ -2224,7 +2719,7 @@ describe("delegation route destinations", { concurrency: 4 }, () => {
     ]) {
       it(`does not count ${label}`, async () => {
         const out = await routeProcessOut([{ ...spec, adopted: 6 }, SONNET_61]);
-        assert.match(recommendation(out), /sonnet.*規則 3/);
+        assert.match(recommendation(out), /codex Luna max .*規則 2/);
       });
     }
     it("pools Terra groups of different effort", async () => {
@@ -2278,41 +2773,39 @@ describe("delegation route destinations", { concurrency: 4 }, () => {
         /codex Luna max.*規則 2/,
       );
     });
-    it("uses the Codex second pass when its week is ahead and closed", async () => {
+    it("ranks Codex and Claude by their raw weekly lag", async () => {
       const usage = usageOf({ ...AHEAD, codex: { five: 10, week: 90 } });
       const rec = recommendation(await routeProcessOut([], { usage }));
       assert.match(rec, /codex Luna max.*規則 2/);
-      assert.match(rec, /Claude の週枠が ahead/);
-      assert.match(rec, /codex 5h=under week=ahead/);
+      assert.match(rec, /claude −83pt、codex −83pt/);
     });
-    it("notes worse records for Luna max in the second pass", async () => {
-      const rec = recommendation(
-        await routeProcessOut(
-          [{ adopted: 6 }, { ...LUNA, adopted: 3, discarded: 3 }],
-          { usage: usageOf({ ...AHEAD, codex: { five: 10, week: 90 } }) },
-        ),
+    it("filters a trusted lower-adoption Luna max and explains why", async () => {
+      const out = await routeProcessOut(
+        [{ adopted: 6 }, { ...LUNA, adopted: 3, discarded: 3 }],
+        { usage: usageOf({ ...AHEAD, codex: { five: 10, week: 90 } }) },
       );
-      assert.match(rec, /codex Luna max.*記録では劣る/);
+      assert.match(recommendation(out), /codex Terra.*規則 2/);
+      assert.match(out, /codex Luna max: 記録で劣る/);
     });
-    it("notes worse records for Luna max on its own path", async () => {
-      const rec = recommendation(
-        await routeProcessOut(
-          [
-            { kind: "mechanical", adopted: 6 },
-            { ...LUNA, kind: "mechanical", adopted: 3, discarded: 3 },
-          ],
-          {
-            usage: usageOf({ ...AHEAD, opencode: { week: 90 } }),
-            args: MECH_ROUTE,
-          },
-        ),
+    it("filters a trusted lower-adoption Luna max with OpenCode under", async () => {
+      const out = await routeProcessOut(
+        [
+          { kind: "mechanical", adopted: 6 },
+          { ...LUNA, kind: "mechanical", adopted: 3, discarded: 3 },
+        ],
+        {
+          usage: usageOf({ ...AHEAD, opencode: { week: 90 } }),
+          args: MECH_ROUTE,
+        },
       );
-      assert.match(rec, /codex Luna max.*記録では劣る/);
+      assert.match(recommendation(out), /codex Terra.*規則 2/);
+      assert.match(out, /codex Luna max: 記録で劣る/);
     });
   });
 
   describe("exploration", () => {
     const S = { size: "S" };
+    const sonnetAhead = usageOf({ claude: { week: 10, daysLeft: 3 } });
     const run = (seeds, usage) =>
       routeProcessOut(
         seeds.map((x) => ({ ...S, ...x })),
@@ -2320,28 +2813,37 @@ describe("delegation route destinations", { concurrency: 4 }, () => {
       );
     const fill = (spec, n) => ({ ...spec, adopted: n });
 
-    it("no records: Luna max first, 0/5", async () => {
-      const c = candidate(await run([]));
+    it("no records: Luna max is the first exploration candidate, 0/5", async () => {
+      const c = candidate(await run([], sonnetAhead));
       assert.match(c, /試す候補: codex Luna max/);
       assert.match(c, /0\/5 件/);
     });
     it("picks the least-recorded destination", async () => {
-      const c = candidate(await run([fill(TERRA, 2), fill(OPENCODE, 3)]));
+      const c = candidate(
+        await run([fill(TERRA, 2), fill(OPENCODE, 3)], sonnetAhead),
+      );
       assert.match(c, /試す候補: codex Luna max/);
     });
     it("breaks equal counts by the default order", async () => {
       const seeds = [fill(TERRA, 1), fill(LUNA, 1), fill(OPENCODE, 3)];
-      assert.match(candidate(await run(seeds)), /試す候補: codex Luna max/);
+      assert.match(
+        candidate(await run(seeds, sonnetAhead)),
+        /試す候補: codex Luna max/,
+      );
       const mech = [fill(TERRA, 1), fill(LUNA, 1), fill(OPENCODE, 1)].map(
         (x) => ({ ...S, kind: "mechanical", ...x }),
       );
       const out = await routeProcessOut(mech, {
+        usage: sonnetAhead,
         args: ["route", "--kind", "mechanical", "--size", "S"],
       });
       assert.match(candidate(out), /試す候補: codex Luna max/);
     });
     it("no candidate line when every destination has 5", async () => {
-      const out = await run([fill(TERRA, 5), fill(LUNA, 5), fill(OPENCODE, 5)]);
+      const out = await run(
+        [fill(TERRA, 5), fill(LUNA, 5), fill(OPENCODE, 5)],
+        sonnetAhead,
+      );
       assert.doesNotMatch(out, /試す候補:/);
     });
     it("skips destinations whose window is ahead", async () => {
@@ -2351,7 +2853,13 @@ describe("delegation route destinations", { concurrency: 4 }, () => {
       );
       assert.match(
         candidate(
-          await run([fill(TERRA, 1)], usageOf({ opencode: { week: 90 } })),
+          await run(
+            [fill(TERRA, 1)],
+            usageOf({
+              claude: { week: 10, daysLeft: 3 },
+              opencode: { week: 90 },
+            }),
+          ),
         ),
         /試す候補: codex Luna max/,
       );
@@ -2745,14 +3253,11 @@ const holdLines = (out) =>
   out.split("\n").filter((l) => l.startsWith("保留: sarashina"));
 
 describe("route output: sarashina", () => {
-  it("size S, rule 2, public repo: recommended with its display", () => {
+  it("unmetered Sarashina is excluded from rule 2 and remains a trial candidate", () => {
     const { out, g } = sarashinaRoute();
-    assert.match(
-      recommendation(out),
-      new RegExp(
-        `^推奨: ${SARASHINA_DISPLAY.replace(/[()]/g, "\\$&")} \\[規則 2`,
-      ),
-    );
+    assert.match(recommendation(out), /^推奨: sonnet .*規則 2/);
+    assert.match(out, /  除外: .*sarashina: 週の枠なし/);
+    assert.match(candidate(out), /^試す候補: sarashina /);
     assert.equal(g.calls, 1);
     assert.deepEqual(holdLines(out), []);
   });
@@ -2819,7 +3324,12 @@ describe("route output: sarashina", () => {
 
   it("try-candidate with no records anywhere: the default order wins (Luna max)", () => {
     const { out, g } = sarashinaRoute({
-      usage: { claude: { week: 5 }, sarashina: {} },
+      usage: {
+        claude: { week: 0 },
+        codex: { week: 10 },
+        opencode: { week: 10 },
+        sarashina: {},
+      },
     });
     assert.match(candidate(out), /^試す候補: codex Luna max /);
     assert.equal(g.calls, 0);
@@ -2831,11 +3341,16 @@ describe("route output: sarashina", () => {
       { ...LUNA, size: "S", adopted: 5 },
     ]);
     const { out, g } = sarashinaRoute({
-      usage: { sarashina: {} },
+      usage: {
+        claude: { week: 90 },
+        codex: { exhausted: true },
+        opencode: { exhausted: true },
+        sarashina: {},
+      },
       folded,
       answer: false,
     });
-    assert.match(recommendation(out), /sonnet.*規則 3/);
+    assert.match(recommendation(out), /sonnet.*規則 2/);
     assert.equal(candidate(out), "");
     assert.deepEqual(holdLines(out), [SARASHINA_HOLD]);
     assert.equal(g.calls, 1);
@@ -2860,7 +3375,7 @@ describe("route output: sarashina", () => {
         usage,
         folded: foldedOf(records("M")),
       });
-      assert.match(recommendation(m.out), /sonnet.*規則 3/);
+      assert.match(recommendation(m.out), /^推奨: codex Luna max .*規則 2/);
       assert.deepEqual(offered(m.out), []);
       assert.equal(m.g.calls, 0);
     });
@@ -2870,7 +3385,7 @@ describe("route output: sarashina", () => {
         folded: foldedOf(records("S")),
         answer: false,
       });
-      assert.match(recommendation(r.out), /sonnet.*規則 3/);
+      assert.match(recommendation(r.out), /^推奨: codex Luna max .*規則 2/);
       assert.deepEqual(holdLines(r.out), [SARASHINA_HOLD]);
       assert.equal(r.g.calls, 1);
     });
@@ -2963,7 +3478,15 @@ describe("pace: unmetered", () => {
     exhausted: false,
     ...extra,
   });
-  const under = { fiveHour: "under", weekly: "under" };
+  const result = (fiveHour, weekly, unmetered = false) => ({
+    fiveHour,
+    weekly,
+    weeklyLag: null,
+    unmetered,
+    fiveHourResetsAt: null,
+    weeklyResetsAt: null,
+  });
+  const under = result("under", "under", true);
   it("only unmetered === true reads as under", () => {
     assert.deepEqual(
       paceProvider(usage({ unmetered: true }), NOWD, MINS),
@@ -2971,8 +3494,7 @@ describe("pace: unmetered", () => {
     );
     for (const unmetered of [false, undefined]) {
       assert.deepEqual(paceProvider(usage({ unmetered }), NOWD, MINS), {
-        fiveHour: "unknown",
-        weekly: "unknown",
+        ...result("unknown", "unknown"),
       });
     }
     for (const bad of ["yes", 1, "true"]) {
@@ -2987,19 +3509,16 @@ describe("pace: unmetered", () => {
     });
     assert.deepEqual(paceProvider(p.sarashina, NOWD, MINS), under);
   });
-  it("order: no usage or window length is unknown, then exhausted, then unmetered", () => {
+  it("order: missing usage, window exhaustion, unmetered and missing lengths", () => {
     const both = usage({ unmetered: true, exhausted: true });
-    const gone = { fiveHour: "exhausted", weekly: "exhausted" };
+    const gone = result("exhausted", "exhausted", true);
     assert.deepEqual(paceProvider(both, NOWD, MINS), gone);
-    const unknown = { fiveHour: "unknown", weekly: "unknown" };
+    const unknown = result("unknown", "unknown");
     assert.deepEqual(paceProvider(null, NOWD, MINS), unknown);
     assert.deepEqual(
       paceProvider(usage({ unmetered: true }), NOWD, null),
-      unknown,
+      result("under", "under", true),
     );
-  });
-  it("unmetered has no surplus", () => {
-    assert.equal(surplusPoints(null, NOWD, MINS), null);
   });
 });
 
@@ -3221,12 +3740,11 @@ describe("route exposure and verification", () => {
       calls: () => calls,
     };
   };
-  it("defaults to closed, excludes all sending destinations and surplus", () => {
+  it("defaults to closed and excludes all sending destinations", () => {
     const input = {
       kind: "mechanical",
       size: "S",
       usage: available,
-      surplusOverride: { opencode: 56, sarashina: 56 },
     };
     const out = routeOut(input);
     assert.equal(out, routeOut({ ...input, exposure: "closed" }));
@@ -3358,7 +3876,7 @@ describe("route exposure and verification", () => {
     assert.match(hostile, /recovery: a\?b\?c/);
     assert.ok(run("x".repeat(201)).includes(`理由: ${"x".repeat(200)}…`));
   });
-  it("Sarashina is last in research S order after codex and opencode have no room", () => {
+  it("unmetered Sarashina stays out of rule 2 and the research S trial can use it", () => {
     const base = {
       kind: "research",
       size: "S",
@@ -3375,8 +3893,10 @@ describe("route exposure and verification", () => {
     assert.match(yes, /codex 5h=exhausted week=exhausted/);
     assert.match(yes, /opencode 5h=exhausted week=exhausted/);
     assert.match(yes, /sarashina 5h=under week=under/);
+    assert.match(recommendation(yes), /^推奨: sonnet .*規則 2/);
+    assert.match(yes, /  除外: .*sarashina: 週の枠なし/);
     assert.match(
-      recommendation(yes),
+      candidate(yes),
       /sarashina .*delegation offload --exposure external-ok --model sarashina\/sarashina3\.2-mini-thinking/,
     );
     const no = routeOut({ ...base, offload: () => ({ ok: true, models: [] }) });
@@ -3392,19 +3912,18 @@ describe("route exposure and verification", () => {
       selected(privateOut).join("\n"),
       /^(?:推奨|試す候補): sarashina /m,
     );
-    assert.match(recommendation(privateOut), /sarashina 5h=under week=under/);
+    assert.match(privateOut, /sarashina 5h=under week=under/);
     assert.ok(
       privateOut.indexOf("区分:") < privateOut.indexOf("保留: sarashina"),
     );
-    const surplus = routeOut({
+    const refusedSarashina = routeOut({
       ...base,
       kind: "draft",
       usage: { sarashina: {} },
-      surplusOverride: { sarashina: 56 },
       offload: allModels,
       isPublicRepo: () => false,
     });
-    assert.doesNotMatch(selected(surplus).join("\n"), /sarashina/);
+    assert.doesNotMatch(selected(refusedSarashina).join("\n"), /sarashina/);
   });
   it("GLM lapse threshold retains 3 of 10 and excludes 4 of 11", () => {
     for (const [lapses, wins] of [
@@ -3555,7 +4074,7 @@ describe("route rule 0: free models", () => {
       ]),
     });
     assert.doesNotMatch(recommendation(out), /規則 0: 無料/);
-    assert.match(recommendation(out), /^推奨: sonnet .*規則 3/);
+    assert.match(recommendation(out), /^推奨: codex Luna max .*規則 2/);
   });
 
   it("keeps a free model 14 points below sonnet at five records", () => {

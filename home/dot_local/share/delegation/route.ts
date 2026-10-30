@@ -3,8 +3,8 @@ import {
   EXPLORE_MIN_RECORDS,
   EXPLORE_WINDOW_DAYS,
   FREE_ADOPTION_FLOOR,
+  LAG_TIE_POINTS,
   RECORD_GAP_POINTS,
-  SURPLUS_MIN_POINTS,
   WEEK_LOOKAHEAD_HOURS,
   type Exposure,
 } from "./constants.ts";
@@ -37,6 +37,7 @@ import {
   offloadDisplay,
   type Destination,
   type DestinationName,
+  type FreeDestinationName,
 } from "./destinations.ts";
 import { VERIFY_RECOVERY } from "./offload.ts";
 import type { Folded, ReviewDue, SkipCounts } from "./store.ts";
@@ -58,12 +59,12 @@ const SARASHINA_SIZE = "S";
 const SONNET_DISPLAY = 'sonnet (Agent の model: "sonnet")';
 const OPENCODE_FIRST = new Set(["mechanical", "triage"]);
 // Kinds whose work can wait for an idle quota at any size.
-const SURPLUS_KINDS = new Set(["mechanical", "triage", "draft"]);
 
 /** Any row of either destination table: the fields route reads from both. */
 type Row = Pick<Destination, "match" | "sendsOut" | "label" | "display"> & {
   name: string;
   displayNote?: string;
+  provider?: External;
 };
 
 const inDestination = (d: Pick<Row, "match">, g: GroupStats) =>
@@ -84,8 +85,8 @@ export type RouteInput = {
   paces: Record<ProviderName, ProviderPace>;
   claudeAheadBy: AheadBy | null;
   lookahead: Lookahead | null;
-  /** Week points that will not be spent by the reset; null when unknown. */
-  surplus: Record<External, number | null>;
+  /** Provider names or destination names to remove from every route rule. */
+  excluded: ReadonlySet<string>;
   pendingTotal: number;
   pendingSession: number | null;
   skipped: SkipCounts;
@@ -119,7 +120,7 @@ export type OffloadVerdict =
 
 /** Kinds whose delegation edits files; the rest only read. */
 const WRITE_KINDS = new Set(["impl", "mechanical", "draft"]);
-type Usable = (d: Pick<Row, "sendsOut" | "match">) => boolean;
+type Usable = (d: Row) => boolean;
 const anyUsable: Usable = () => true;
 
 const bothUnder = (p: ProviderPace) =>
@@ -165,8 +166,8 @@ type SarashinaGate = ReturnType<typeof sarashinaGate>;
 
 type Chosen = {
   line: string;
-  dest: External | "sonnet" | null;
-  destination: DestinationName | null;
+  dest: External | "sonnet" | "wait" | null;
+  destination: DestinationName | FreeDestinationName | null;
 };
 
 export type RecordPick = {
@@ -282,7 +283,7 @@ function ruleZero(
       : `${kind}×S の採用率 ${percent(successes(best.rep), best.rep.n)}% (${best.rep.n} 件)`;
   return {
     dest: null,
-    destination: null,
+    destination: best.dest.name,
     line: `推奨: ${displayFor(best.dest, kind)} [規則 0: 無料] ${evidence}`,
   };
 }
@@ -311,64 +312,172 @@ function ruleOne(
   };
 }
 
+type LagCandidate = {
+  destination: DestinationName | "sonnet";
+  weeklyLag: number;
+};
+
+type RuleTwoResult = {
+  chosen: Chosen | null;
+  candidates: LagCandidate[];
+  reasons: string[];
+};
+
+function paceExclusionReason(pace: ProviderPace): string | null {
+  if (pace.fiveHour !== "under") return `5h ${pace.fiveHour}`;
+  if (pace.weekly === "exhausted") return "週 exhausted";
+  if (pace.unmetered) return "週の枠なし";
+  if (pace.weeklyLag === null) return "週 unknown";
+  return null;
+}
+
+function lagCandidate(
+  destination: DestinationName | "sonnet",
+  paces: Record<ProviderName, ProviderPace>,
+): LagCandidate | null {
+  const provider =
+    destination === "sonnet" ? "claude" : DESTINATIONS[destination].provider;
+  const pace = paces[provider];
+  if (
+    pace.fiveHour !== "under" ||
+    pace.weekly === "exhausted" ||
+    pace.unmetered ||
+    pace.weeklyLag === null
+  ) {
+    return null;
+  }
+  return { destination, weeklyLag: pace.weeklyLag };
+}
+
+function rankLagCandidates(
+  candidates: readonly LagCandidate[],
+  order: readonly Destination[],
+): LagCandidate[] {
+  if (candidates.length === 0) return [];
+  const orderIndex = new Map(order.map((dest, i) => [dest.name, i]));
+  const indexOf = (candidate: LagCandidate) =>
+    candidate.destination === "sonnet"
+      ? Number.POSITIVE_INFINITY
+      : (orderIndex.get(candidate.destination) ?? Number.POSITIVE_INFINITY);
+  const max = Math.max(...candidates.map((candidate) => candidate.weeklyLag));
+  const tied = candidates.filter(
+    (candidate) => candidate.weeklyLag >= max - LAG_TIE_POINTS,
+  );
+  const outside = candidates.filter(
+    (candidate) => candidate.weeklyLag < max - LAG_TIE_POINTS,
+  );
+  tied.sort((a, b) => indexOf(a) - indexOf(b));
+  outside.sort((a, b) => b.weeklyLag - a.weeklyLag || indexOf(a) - indexOf(b));
+  return [...tied, ...outside];
+}
+
+const formatLag = (value: number) => {
+  const rounded = Math.round(value);
+  const sign = rounded > 0 ? "+" : rounded < 0 ? "−" : "";
+  return `${sign}${Math.abs(rounded)}pt`;
+};
+
+function lagSummary(
+  paces: Record<ProviderName, ProviderPace>,
+  providers: ReadonlySet<ProviderName>,
+): string {
+  return (["claude", "codex", "opencode", "sarashina"] as const)
+    .flatMap((provider) => {
+      if (!providers.has(provider)) return [];
+      const lag = paces[provider].weeklyLag;
+      return lag === null ? [] : [`${provider} ${formatLag(lag)}`];
+    })
+    .join("、");
+}
+
 function ruleTwo(
   groups: GroupStats[],
   paces: Record<ProviderName, ProviderPace>,
   kind: string,
   size: string,
-  claudeAheadBy: AheadBy | null,
   usable: Usable,
   gate: SarashinaGate,
-): Chosen | null {
-  const claudeWeek = paces.claude.weekly;
-  if (claudeWeek !== "ahead" && claudeWeek !== "exhausted") return null;
+): RuleTwoResult {
   const claude = representative(
     groups.filter(
       (g) => g.harness === "claude-code-agent" && g.model === "sonnet",
     ),
   );
   const ordered = externalOrder(kind, size, usable);
-  const basis = claudeAheadBy === "lookahead" ? " (先読み)" : "";
-  const recommend = (dest: Destination, paceReason = ""): Chosen => {
-    const rep = destinationStats(dest, groups);
-    const worse =
-      claude !== null &&
-      rep !== null &&
-      enoughRecords(claude) &&
-      enoughRecords(rep) &&
-      rateLeadsBy(claude, rep, RECORD_GAP_POINTS);
-    return {
-      dest: dest.provider,
-      destination: dest.name,
-      line: `推奨: ${displayFor(dest, kind)} [規則 2: Claude の週枠が ${claudeWeek}${basis}${paceReason}]${worse ? " 記録では劣る (Claude の枠を設計判断とメインループに残すことを優先)" : ""}`,
-    };
-  };
-  for (const dest of ordered) {
-    if (!bothUnder(paces[dest.provider])) continue;
-    if (!gate.allows(dest)) continue;
-    return recommend(dest);
-  }
-  const codex = paces.codex;
-  if (codex.fiveHour === "under" && codex.weekly === "ahead") {
-    const dest = ordered.find((candidate) => candidate.provider === "codex");
-    if (dest !== undefined) {
-      return recommend(
-        dest,
-        "、codex 5h=under week=ahead。codex の枠を先に使う",
-      );
+  const reasons: string[] = [];
+  const reasonedProviders = new Set<ProviderName>();
+  const providerNames = [
+    "claude",
+    ...new Set(ordered.map((dest) => dest.provider)),
+  ] as ProviderName[];
+  for (const provider of providerNames) {
+    const reason = paceExclusionReason(paces[provider]);
+    if (reason !== null) {
+      reasons.push(`${provider}: ${reason}`);
+      reasonedProviders.add(provider);
     }
   }
-  const providerStates = [...new Set(ordered.map((dest) => dest.provider))]
-    .map(
-      (provider) =>
-        `${provider} 5h=${paces[provider].fiveHour} week=${paces[provider].weekly}`,
-    )
-    .join(" ");
-  return {
-    dest: "sonnet",
-    destination: null,
-    line: `推奨: ${SONNET_DISPLAY} [規則 2: Claude の週枠が ${claudeWeek}、使える外部が無い]${providerStates === "" ? "" : ` ${providerStates}`}`,
-  };
+
+  const candidates: LagCandidate[] = [];
+  const sonnet = lagCandidate("sonnet", paces);
+  if (sonnet !== null) candidates.push(sonnet);
+  for (const dest of ordered) {
+    const candidate = lagCandidate(dest.name, paces);
+    if (candidate === null) {
+      if (!reasonedProviders.has(dest.provider)) {
+        const reason = paceExclusionReason(paces[dest.provider]);
+        if (reason !== null) {
+          reasons.push(`${dest.provider}: ${reason}`);
+          reasonedProviders.add(dest.provider);
+        }
+      }
+      continue;
+    }
+    const rep = destinationStats(dest, groups);
+    if (
+      claude !== null &&
+      enoughRecords(claude) &&
+      rep !== null &&
+      enoughRecords(rep) &&
+      !lapseTooHigh(rep) &&
+      rateLeadsBy(claude, rep, RECORD_GAP_POINTS)
+    ) {
+      reasons.push(`${dest.label}: 記録で劣る`);
+      continue;
+    }
+    candidates.push(candidate);
+  }
+
+  let remaining = candidates;
+  let ranked = rankLagCandidates(remaining, ordered);
+  while (ranked[0]?.destination === "sarashina") {
+    if (gate.allows(DESTINATIONS.sarashina)) break;
+    remaining = remaining.filter(
+      (candidate) => candidate.destination !== "sarashina",
+    );
+    ranked = rankLagCandidates(remaining, ordered);
+  }
+  const first = ranked[0];
+  if (first === undefined) return { chosen: null, candidates: ranked, reasons };
+
+  const comparedProviders = new Set<ProviderName>([
+    "claude",
+    ...ordered.map((dest) => dest.provider),
+  ]);
+  const lagReason = lagSummary(paces, comparedProviders);
+  const chosen: Chosen =
+    first.destination === "sonnet"
+      ? {
+          dest: "sonnet",
+          destination: null,
+          line: `推奨: ${SONNET_DISPLAY} [規則 2: 週枠の遅れ]${lagReason === "" ? "" : ` ${lagReason}`}`,
+        }
+      : {
+          dest: DESTINATIONS[first.destination].provider,
+          destination: first.destination,
+          line: `推奨: ${displayFor(DESTINATIONS[first.destination], kind)} [規則 2: 週枠の遅れ]${lagReason === "" ? "" : ` ${lagReason}`}`,
+        };
+  return { chosen, candidates: ranked, reasons };
 }
 
 function explore(
@@ -406,38 +515,6 @@ function explore(
     }
     skipped.add(least.dest.name);
   }
-}
-
-/** Whole points of an external's unspent week when it is worth trying, else null. */
-function surplusCandidate(
-  input: RouteInput,
-  name: External,
-  recommended: Chosen["dest"],
-): number | null {
-  if (!SURPLUS_KINDS.has(input.kind)) return null;
-  if (name === recommended || !bothUnder(input.paces[name])) return null;
-  const points = input.surplus[name];
-  if (points === null || points < SURPLUS_MIN_POINTS) return null;
-  return Math.floor(points);
-}
-
-function codexSurplusRecommendation(
-  input: RouteInput,
-  usable: Usable,
-): Chosen | null {
-  const points = input.surplus.codex;
-  if (points === null || points < SURPLUS_MIN_POINTS) return null;
-  if (!bothUnder(input.paces.codex)) return null;
-  const dest = externalOrder(input.kind, input.size, usable).find(
-    (candidate) => candidate.provider === "codex",
-  );
-  if (dest === undefined) return null;
-  const wholePoints = Math.floor(points);
-  return {
-    dest: "codex",
-    destination: dest.name,
-    line: `推奨: ${displayFor(dest, input.kind)} [余りの規則: codex の週枠の余り ${wholePoints}pt がリセットまでに使われない]`,
-  };
 }
 
 /**
@@ -522,6 +599,123 @@ function classificationLines(
   return lines;
 }
 
+function localResetTime(at: number, weekly: boolean): string {
+  const date = new Date(at);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  const time = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return weekly
+    ? `${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${time}`
+    : time;
+}
+
+function ruleThree(
+  now: Date,
+  paces: Record<ProviderName, ProviderPace>,
+): Chosen {
+  const claude = paces.claude;
+  const blocks: { at: string | null; weekly: boolean }[] = [];
+  if (claude.fiveHour === "ahead" || claude.fiveHour === "exhausted") {
+    blocks.push({ at: claude.fiveHourResetsAt, weekly: false });
+  }
+  if (claude.weekly === "exhausted") {
+    blocks.push({ at: claude.weeklyResetsAt, weekly: true });
+  }
+  if (blocks.length === 0) {
+    return {
+      dest: "sonnet",
+      destination: null,
+      line: `推奨: ${SONNET_DISPLAY} [規則 3: 既定]`,
+    };
+  }
+
+  const resets = blocks.map(({ at, weekly }) => ({
+    at: at === null ? Number.NaN : Date.parse(at),
+    weekly,
+  }));
+  const usableResets = resets.filter(
+    (reset) => Number.isFinite(reset.at) && reset.at > now.getTime(),
+  );
+  if (usableResets.length !== resets.length) {
+    return {
+      dest: "wait",
+      destination: null,
+      line: `推奨: 待機 [規則 3: 使える委譲先が無い] claude のリセット 時刻不明`,
+    };
+  }
+  const latest = usableResets.reduce((a, b) => (a.at > b.at ? a : b));
+  const window = latest.weekly ? "週" : "5h";
+  return {
+    dest: "wait",
+    destination: null,
+    line: `推奨: 待機 [規則 3: 使える委譲先が無い] claude ${window} のリセット ${localResetTime(latest.at, latest.weekly)}`,
+  };
+}
+
+function hasHistory(
+  destination: DestinationName | FreeDestinationName,
+  groups: GroupStats[],
+): boolean {
+  const row: Row | undefined =
+    destination in DESTINATIONS
+      ? DESTINATIONS[destination as DestinationName]
+      : FREE_DESTINATIONS.find((dest) => dest.name === destination);
+  if (row === undefined) return false;
+  const rep = destinationStats(row, groups);
+  return rep !== null && enoughRecords(rep) && !lapseTooHigh(rep);
+}
+
+function needsFailureLine(pick: Chosen, groups: GroupStats[]): boolean {
+  if (
+    pick.dest === "sonnet" ||
+    pick.dest === "wait" ||
+    pick.destination === null
+  ) {
+    return false;
+  }
+  return !hasHistory(pick.destination, groups);
+}
+
+function failureLine(
+  pick: Chosen,
+  ruleTwo: RuleTwoResult,
+  groups: GroupStats[],
+  kind: string,
+  size: string,
+  now: Date,
+  paces: Record<ProviderName, ProviderPace>,
+  gate: SarashinaGate,
+): string {
+  let remaining = ruleTwo.candidates.filter(
+    (candidate) => candidate.destination !== pick.destination,
+  );
+  const order = externalOrder(kind, size);
+  for (;;) {
+    const ranked = rankLagCandidates(remaining, order);
+    const next = ranked.find(
+      (candidate) =>
+        candidate.destination !== "sonnet" &&
+        hasHistory(candidate.destination, groups),
+    );
+    if (next === undefined) break;
+    if (next.destination === "sonnet") break;
+    if (
+      next.destination === "sarashina" &&
+      !gate.allows(DESTINATIONS.sarashina)
+    ) {
+      remaining = remaining.filter(
+        (candidate) => candidate.destination !== "sarashina",
+      );
+      continue;
+    }
+    const dest = DESTINATIONS[next.destination];
+    return `失敗時: ${displayFor(dest, kind)}`;
+  }
+  if (remaining.some((candidate) => candidate.destination === "sonnet")) {
+    return `失敗時: ${SONNET_DISPLAY}`;
+  }
+  return ruleThree(now, paces).line.replace(/^推奨:/, "失敗時:");
+}
+
 /** Everything printed is an enum, a number, or a display name: never stored free text. */
 export function buildRoute(input: RouteInput): string[] {
   const { kind, size, now, folded, paces } = input;
@@ -539,12 +733,17 @@ export function buildRoute(input: RouteInput): string[] {
   const verified = new Set(verdict?.ok ? verdict.models : []);
   // One predicate for every rule and candidate: a row that sends out is usable
   // only when the brief may leave and the entry has verified its model.
-  const usable: Usable = (d) =>
+  const exposureUsable: Usable = (d) =>
     !d.sendsOut ||
     (verdict !== null &&
       verdict.ok &&
       d.match.model !== undefined &&
       verified.has(d.match.model));
+  const excluded = input.excluded;
+  const usable: Usable = (d) =>
+    exposureUsable(d) &&
+    !excluded.has(d.name) &&
+    !(d.provider !== undefined && excluded.has(d.provider));
   const gate = sarashinaGate(input.isPublicRepo ?? (() => false));
   const freePick =
     exposure === "external-ok" &&
@@ -556,42 +755,41 @@ export function buildRoute(input: RouteInput): string[] {
           usable,
         )
       : null;
-  const pick = freePick ??
-    ruleOne(groups, paces, kind, size, usable, gate) ??
-    ruleTwo(groups, paces, kind, size, input.claudeAheadBy, usable, gate) ??
-    codexSurplusRecommendation(input, usable) ?? {
-      dest: "sonnet" as const,
-      destination: null,
-      line: `推奨: ${SONNET_DISPLAY} [規則 3: 既定]`,
-    };
+  const recordPick =
+    freePick === null ? ruleOne(groups, paces, kind, size, usable, gate) : null;
+  const ruleTwoResult =
+    recordPick === null
+      ? ruleTwo(groups, paces, kind, size, usable, gate)
+      : null;
+  const pick =
+    freePick ?? recordPick ?? ruleTwoResult?.chosen ?? ruleThree(now, paces);
   out.push(pick.line);
-  const candidate = explore(folded, paces, kind, size, now, usable, gate);
-  // The surplus scan can ask the gate too, so it runs before the hold line is
-  // decided; its lines are printed after the hold line.
-  const candidateLines: string[] = [];
-  const taken = new Set<External>();
-  if (candidate !== null && candidate.destination !== pick.destination) {
-    const points = surplusCandidate(input, candidate.name, pick.dest);
-    if (points !== null) taken.add(candidate.name);
-    candidateLines.push(
-      points === null
-        ? candidate.line
-        : `${candidate.line}。週枠の余り ${points}pt`,
+  if (
+    ruleTwoResult !== null &&
+    needsFailureLine(pick, groups) &&
+    (freePick !== null || pick === ruleTwoResult.chosen)
+  ) {
+    out.push(
+      failureLine(pick, ruleTwoResult, groups, kind, size, now, paces, gate),
     );
   }
-  // The week belongs to the provider, so one line per provider, shown as the
-  // first of its destinations in this kind's order.
-  for (const dest of externalOrder(kind, size, usable)) {
-    if (taken.has(dest.provider)) continue;
-    taken.add(dest.provider);
-    const points = surplusCandidate(input, dest.provider, pick.dest);
-    if (points !== null && gate.allows(dest)) {
-      candidateLines.push(
-        `試す候補: ${displayFor(dest, kind)} 週枠の余り ${points}pt がリセットまでに使われない`,
-      );
-    }
+  if (
+    freePick === null &&
+    recordPick === null &&
+    ruleTwoResult !== null &&
+    ruleTwoResult.reasons.length > 0
+  ) {
+    out.push(`  除外: ${ruleTwoResult.reasons.join("、")}`);
   }
-  out.push(...classificationLines(kind, exposure, verdict, usable));
+  const candidate =
+    pick.dest === "wait"
+      ? null
+      : explore(folded, paces, kind, size, now, usable, gate);
+  const candidateLines: string[] = [];
+  if (candidate !== null && candidate.destination !== pick.destination) {
+    candidateLines.push(candidate.line);
+  }
+  out.push(...classificationLines(kind, exposure, verdict, exposureUsable));
   // After the last rule that can ask, so the line reflects every refusal.
   if (gate.refused) {
     out.push(

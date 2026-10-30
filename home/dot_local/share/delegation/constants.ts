@@ -21,7 +21,9 @@ export const FORECAST_MAX_RATE = 100;
 export const FORECAST_MAX_OBSERVED_HOURS = 168;
 export const FORECAST_MAX_BYTES = 16 * 1024;
 export const FORECAST_MAX_FILES = 256;
-/** An external whose week has at least this many points unspent by the reset is worth trying. */
+/** Candidates within this many weekly-lag points share the top tie group. */
+export const LAG_TIE_POINTS = 5;
+/** Review still reports this historical threshold; route no longer uses it. */
 export const SURPLUS_MIN_POINTS = 25;
 /** Rule 1: external adoption rate must beat Claude's by this many points. */
 export const RECORD_GAP_POINTS = 15;
