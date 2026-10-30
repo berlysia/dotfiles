@@ -2,6 +2,11 @@
 
 set -euo pipefail
 
+SCRIPT_DIR=$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+# The shared location and marker rules have the same relative layout in the source tree and after chezmoi apply.
+# shellcheck source=../lib/worktree-location.sh
+. "$SCRIPT_DIR/../lib/worktree-location.sh"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -12,14 +17,14 @@ NC='\033[0m' # No Color
 # Help function
 show_help() {
     cat <<'EOF'
-git-worktree-create - Create a new git worktree in .git/worktree directory
+git-worktree-create - Create a new git worktree under ~/worktrees/<repo>
 
 Usage:
   git-worktree-create [--no-install] <branch-name> [<base>]
   git-worktree-create --help
 
 Description:
-  Creates a new git worktree in the .git/worktree directory. The command
+  Creates a new git worktree under ~/worktrees/<repo>. The command
   intelligently handles different scenarios:
 
   - If branch exists locally: Creates worktree from local branch
@@ -75,7 +80,7 @@ Examples:
   git-worktree-create new-feature origin/release
 
 Location:
-  Worktrees are created in: <repo-root>/.git/worktree/<branch-name>
+  Worktrees are created in: ~/worktrees/<repo>/<branch-name>
   <repo-root> is the main checkout, even when run from inside a linked worktree.
 EOF
 }
@@ -262,25 +267,32 @@ branch_name=${positional[0]}
 base=${positional[1]-}
 
 # Anchor on the common git dir so that running from inside a linked worktree
-# (whose .git is a file) still creates the worktree under the main
-# repository's .git/worktree/.
+# (whose .git is a file) still creates the worktree under the main repository's
+# worktree root.
 # --path-format needs git 2.31; git-worktree-cleanup already requires 2.36.
 if ! common_dir=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
     say_error "✗ Not inside a git repository, or git is older than 2.31 (git rev-parse --path-format)"
     exit 1
 fi
-worktrees_dir="$common_dir/worktree"
-# The main checkout, which owns .git/worktree/ and the agent-vm machine.
+if ! common_dir=$(cd -P -- "$common_dir" 2>/dev/null && pwd -P); then
+    say_error "✗ Could not resolve the git common directory"
+    exit 1
+fi
+if [[ -z "${HOME:-}" ]] || ! worktrees_dir=$(currentRoot "$common_dir" "$HOME"); then
+    say_error "✗ This repository has an unsupported git common directory"
+    exit 1
+fi
+# The main checkout, which owns the common dir and the agent-vm machine.
 repo_root=$(dirname "$common_dir")
 
-# Every check of the input comes before anything is created, .git/worktree included.
+# Every check of the input comes before anything is created, including the worktree root.
 if [[ ${#positional[@]} -gt 2 ]]; then
     say_error "Error: Too many arguments: ${positional[2]}"
     echo
     show_help
     exit 1
 fi
-# The name becomes a path under .git/worktree, so a name that is not a ref (a/../x) must not get that far.
+# The name becomes a path under the worktree root, so a name that is not a ref (a/../x) must not get that far.
 # `--branch` alone is not used: it expands @{-1} to the previous branch and accepts it. refs/heads/HEAD passes the
 # first check but is not usable as a branch, which only `--branch` rejects.
 if ! git check-ref-format "refs/heads/$branch_name" >/dev/null 2>&1 || ! git check-ref-format --branch "$branch_name" >/dev/null 2>&1; then
@@ -288,10 +300,10 @@ if ! git check-ref-format "refs/heads/$branch_name" >/dev/null 2>&1 || ! git che
     exit 1
 fi
 # Set worktree path
-worktree_path="$worktrees_dir/$branch_name"
+worktree_path="$worktrees_dir$branch_name"
 
 # Check if worktree already exists
-if [[ -d "$worktree_path" ]]; then
+if [[ -e "$worktree_path" || -L "$worktree_path" ]]; then
     say_error "✗ Worktree already exists: $worktree_path"
     exit 1
 fi
@@ -332,10 +344,9 @@ if [[ -n "$base" ]]; then
     fi
 fi
 
-# Create .git/worktree directory if it doesn't exist
-if [[ ! -d "$worktrees_dir" ]]; then
-    echo -e "${BLUE}📁 Creating .git/worktree directory...${NC}"
-    mkdir -p "$worktrees_dir"
+# Check every placement ancestor and reserve the repository marker before making a branch or worktree.
+if ! reserveMarker "$common_dir" "$HOME" "$worktree_path"; then
+    exit 1
 fi
 
 # For a new branch: how far its start point is behind its upstream (empty when not compared)

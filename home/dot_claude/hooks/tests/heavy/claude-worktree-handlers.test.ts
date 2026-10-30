@@ -1,5 +1,13 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
 import { createWorktree } from "../../lib/claude-worktree.ts";
@@ -16,9 +24,17 @@ import {
   interceptGit,
 } from "../support/claude-worktree-fixture.ts";
 import type { Repo } from "../support/claude-worktree-fixture.ts";
+import { currentRoot } from "../../lib/worktree-locations.ts";
 
 const temp = createTempTracker();
-after(() => temp.cleanup());
+const originalHome = process.env.HOME;
+const testHome = temp.make("cwh-home-");
+process.env.HOME = testHome;
+after(() => {
+  if (originalHome === undefined) delete process.env.HOME;
+  else process.env.HOME = originalHome;
+  temp.cleanup();
+});
 
 const throwingDeps: Deps = {
   runGit: () => {
@@ -77,7 +93,7 @@ describe("handleWorktreeCreate", () => {
     assert.equal(result.exitCode, 0, result.stderr);
     assert.equal(
       result.stdout,
-      `${join(repo.commonDir, "worktree", "worktree-bold-oak-a3f2")}\n`,
+      `${join(currentRoot(repo.commonDir, testHome), "worktree-bold-oak-a3f2")}\n`,
     );
     assert.equal(result.stderr, "");
   });
@@ -111,7 +127,7 @@ describe("handleWorktreeCreate", () => {
     assert.equal(result.exitCode, 0);
     assert.equal(
       result.stdout,
-      `${join(repo.commonDir, "worktree", "worktree-warned")}\n`,
+      `${join(currentRoot(repo.commonDir, testHome), "worktree-warned")}\n`,
     );
     assert.match(result.stderr, /origin\/HEAD not found/);
   });
@@ -125,6 +141,67 @@ describe("handleWorktreeCreate", () => {
     assert.equal(result.stdout, "");
     assert.equal(result.exitCode, 1);
     assert.match(result.stderr, /injected exception/);
+  });
+
+  it("T4: marker conflicts, unmarked roots and symlink roots fail before creating a branch", () => {
+    const repo = createRepo(temp);
+    const other = createRepo(temp);
+    const root = currentRoot(repo.commonDir, testHome);
+    const rootPath = root.slice(0, -1);
+    mkdirSync(root, { recursive: true });
+    writeFileSync(
+      join(root, ".common-dir"),
+      `${realpathSync(other.commonDir)}\n`,
+    );
+    const markerBefore = readFileSync(join(root, ".common-dir"), "utf8");
+    const conflict = handleWorktreeCreate(createInput(repo, "conflict"));
+    assert.equal(conflict.exitCode, 1);
+    assert.equal(conflict.stdout, "");
+    assert.notEqual(conflict.stderr, "");
+    assert.equal(readFileSync(join(root, ".common-dir"), "utf8"), markerBefore);
+    assert.equal(git(repo.dir, "branch", "--list", "worktree-conflict"), "");
+    assert.equal(
+      git(repo.dir, "worktree", "list", "--porcelain").includes(root),
+      false,
+    );
+
+    rmSync(rootPath, { recursive: true });
+    mkdirSync(root, { recursive: true });
+    writeFileSync(join(root, "keep.txt"), "keep\n");
+    const unmarked = handleWorktreeCreate(createInput(repo, "unmarked"));
+    assert.equal(unmarked.exitCode, 1);
+    assert.equal(unmarked.stdout, "");
+    assert.equal(existsSync(join(root, ".common-dir")), false);
+    assert.equal(git(repo.dir, "branch", "--list", "worktree-unmarked"), "");
+    assert.equal(
+      git(repo.dir, "worktree", "list", "--porcelain").includes(root),
+      false,
+    );
+
+    const elsewhere = temp.make("cwh-outside-");
+    rmSync(rootPath, { recursive: true });
+    symlinkSync(elsewhere, rootPath);
+    const symlinked = handleWorktreeCreate(createInput(repo, "symlink"));
+    assert.equal(symlinked.exitCode, 1);
+    assert.equal(symlinked.stdout, "");
+    assert.equal(git(repo.dir, "branch", "--list", "worktree-symlink"), "");
+    assert.equal(
+      git(repo.dir, "worktree", "list", "--porcelain").includes(root),
+      false,
+    );
+  });
+
+  it("T4: a healthy handler-created worktree is marked under the current root", () => {
+    const repo = createRepo(temp);
+    const result = handleWorktreeCreate(createInput(repo, "healthy"));
+    const root = currentRoot(repo.commonDir, testHome);
+    assert.equal(result.exitCode, 0, result.stderr);
+    assert.equal(result.stdout, `${join(root, "worktree-healthy")}\n`);
+    assert.equal(
+      readFileSync(join(root, ".common-dir"), "utf8"),
+      `${realpathSync(repo.commonDir)}\n`,
+    );
+    assert.notEqual(git(repo.dir, "branch", "--list", "worktree-healthy"), "");
   });
 
   it("C55: control characters in git's stderr are stripped from the output", () => {

@@ -271,6 +271,8 @@ before(() => {
     join(fakeHome, ".claude/mods/workflow-band"),
   );
   link(join(REPO, "home/dot_shell_common"), join(fakeHome, ".shell_common"));
+  // git-worktree-create and -cleanup source ../lib/worktree-location.sh, deployed to ~/.local/lib.
+  link(join(REPO, "home/dot_local/lib"), join(fakeHome, ".local/lib"));
   for (const f of readdirSync(BIN_SRC)) {
     if (!f.startsWith("executable_")) continue;
     const name = f.slice("executable_".length);

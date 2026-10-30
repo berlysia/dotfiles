@@ -5,11 +5,14 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
+  realpathSync,
+  readFileSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { after, describe, it } from "node:test";
 import {
   cleanupSubagentWorktree,
@@ -23,6 +26,8 @@ import type {
 } from "../../lib/claude-worktree.ts";
 import { DEADLINE_MS } from "../../lib/claude-worktree-git.ts";
 import type { Deps } from "../../lib/claude-worktree-git.ts";
+import { currentRoot } from "../../lib/worktree-locations.ts";
+import { reserveMarker } from "../../lib/worktree-marker.ts";
 import {
   GIT_FAILURE,
   GIT_TIMEOUT,
@@ -40,7 +45,14 @@ import {
 import type { Repo } from "../support/claude-worktree-fixture.ts";
 
 const temp = createTempTracker();
-after(() => temp.cleanup());
+const originalHome = process.env.HOME;
+const testHome = temp.make("cwt-home-");
+process.env.HOME = testHome;
+after(() => {
+  if (originalHome === undefined) delete process.env.HOME;
+  else process.env.HOME = originalHome;
+  temp.cleanup();
+});
 
 const isRoot = process.getuid?.() === 0;
 
@@ -73,6 +85,10 @@ function branchExists(repo: Repo, branch: string): boolean {
   return git(repo.dir, "branch", "--list", branch) !== "";
 }
 
+function worktreePath(repo: Repo, branch: string): string {
+  return join(currentRoot(repo.commonDir, testHome), branch);
+}
+
 function listedPaths(repo: Repo): string[] {
   return git(repo.dir, "worktree", "list", "--porcelain")
     .split("\n")
@@ -81,14 +97,11 @@ function listedPaths(repo: Repo): string[] {
 }
 
 describe("createWorktree: placement and base", () => {
-  it("C09: branches from origin/HEAD into <common>/worktree/worktree-<name>", () => {
+  it("C09: branches from origin/HEAD into ~/worktrees/<repo>/worktree-<name>", () => {
     const repo = createRepo(temp, { origin: true, localAhead: true });
     assert.notEqual(repo.originSha, repo.baseSha);
     const result = expectOk(create(repo, "bold-oak-a3f2"));
-    assert.equal(
-      result.path,
-      join(repo.commonDir, "worktree", "worktree-bold-oak-a3f2"),
-    );
+    assert.equal(result.path, worktreePath(repo, "worktree-bold-oak-a3f2"));
     assert.equal(result.reused, false);
     assert.deepEqual(result.warnings, []);
     assert.equal(
@@ -113,14 +126,11 @@ describe("createWorktree: placement and base", () => {
     assert.match(result.warnings[0] ?? "", /main/);
   });
 
-  it("C11: from inside a linked worktree, places under the main .git/worktree", () => {
+  it("C11: from inside a linked worktree, places under the main repo's worktree root", () => {
     const repo = createRepo(temp);
     const linked = addLinkedWorktree(temp, repo, "human-branch");
     const result = expectOk(create(repo, "from-linked", undefined, linked));
-    assert.equal(
-      result.path,
-      join(repo.commonDir, "worktree", "worktree-from-linked"),
-    );
+    assert.equal(result.path, worktreePath(repo, "worktree-from-linked"));
   });
 
   it("C12: creating the same name twice reuses the worktree", () => {
@@ -212,32 +222,69 @@ describe("createWorktree: validation", () => {
     assert.equal(existsSync(join(dir, ".git", "worktree")), false);
   });
 
-  it("C16: symlinked-dir when <common>/worktree is a symlink", () => {
+  it("C16: symlinked-dir when the current repo root is a symlink", () => {
     const repo = createRepo(temp);
     const elsewhere = temp.make("cwt-elsewhere-");
-    symlinkSync(elsewhere, join(repo.commonDir, "worktree"));
+    mkdirSync(join(testHome, "worktrees"), { recursive: true });
+    symlinkSync(elsewhere, join(testHome, "worktrees", basename(repo.dir)));
     expectFail(create(repo, "x"), "symlinked-dir");
     assert.equal(branchExists(repo, "worktree-x"), false);
+  });
+
+  it("T4: an unmarked current repo root is not adopted", () => {
+    const repo = createRepo(temp);
+    const root = currentRoot(repo.commonDir, testHome);
+    mkdirSync(root, { recursive: true });
+    writeFileSync(join(root, "keep.txt"), "keep\n");
+    expectFail(create(repo, "unmarked"), "path-occupied");
+    assert.equal(existsSync(join(root, ".common-dir")), false);
+    assert.equal(branchExists(repo, "worktree-unmarked"), false);
+    assert.equal(listedPaths(repo).length, 1);
+    assert.equal(existsSync(join(root, "keep.txt")), true);
+  });
+
+  it("T4: a marker owned by another repo is unchanged and blocks creation", () => {
+    const repo = createRepo(temp);
+    const other = createRepo(temp);
+    const root = currentRoot(repo.commonDir, testHome);
+    mkdirSync(root, { recursive: true });
+    writeFileSync(
+      join(root, ".common-dir"),
+      `${realpathSync(other.commonDir)}\n`,
+    );
+    const markerBefore = readFileSync(join(root, ".common-dir"), "utf8");
+    expectFail(create(repo, "conflict"), "path-occupied");
+    assert.equal(readFileSync(join(root, ".common-dir"), "utf8"), markerBefore);
+    assert.equal(branchExists(repo, "worktree-conflict"), false);
+    assert.equal(listedPaths(repo).length, 1);
+  });
+
+  it("T4: a healthy WorktreeCreate location is marked and used", () => {
+    const repo = createRepo(temp);
+    const result = expectOk(create(repo, "foo"));
+    assert.equal(result.path, worktreePath(repo, "worktree-foo"));
+    assert.equal(
+      readFileSync(
+        join(currentRoot(repo.commonDir, testHome), ".common-dir"),
+        "utf8",
+      ),
+      `${realpathSync(repo.commonDir)}\n`,
+    );
   });
 });
 
 describe("createWorktree: occupied placement", () => {
   it("C17: unregistered directory at the target", () => {
     const repo = createRepo(temp);
-    mkdirSync(join(repo.commonDir, "worktree", "worktree-occ"), {
-      recursive: true,
-    });
+    mkdirSync(worktreePath(repo, "worktree-occ"), { recursive: true });
     expectFail(create(repo, "occ"), "path-occupied");
     assert.equal(branchExists(repo, "worktree-occ"), false);
   });
 
   it("C17: broken symlink at the target", () => {
     const repo = createRepo(temp);
-    mkdirSync(join(repo.commonDir, "worktree"), { recursive: true });
-    symlinkSync(
-      "/nonexistent-target",
-      join(repo.commonDir, "worktree", "worktree-broken"),
-    );
+    mkdirSync(currentRoot(repo.commonDir, testHome), { recursive: true });
+    symlinkSync("/nonexistent-target", worktreePath(repo, "worktree-broken"));
     expectFail(create(repo, "broken"), "path-occupied");
     assert.equal(branchExists(repo, "worktree-broken"), false);
   });
@@ -276,17 +323,15 @@ describe("createWorktree: occupied placement", () => {
     const result = expectFail(create(repo, "lonely"), "branch-exists");
     assert.match(result.message, /git branch -D worktree-lonely/);
     assert.equal(git(repo.dir, "rev-parse", "worktree-lonely"), before);
-    assert.equal(
-      existsSync(join(repo.commonDir, "worktree", "worktree-lonely")),
-      false,
-    );
+    assert.equal(existsSync(worktreePath(repo, "worktree-lonely")), false);
   });
 });
 
 describe("createWorktree: coexistence", () => {
   it("C19: a worktree made by hand with the same name is reused untouched", () => {
     const repo = createRepo(temp);
-    const path = join(repo.commonDir, "worktree", "worktree-foo");
+    const path = worktreePath(repo, "worktree-foo");
+    assert.equal(reserveMarker(repo.commonDir, testHome, path).kind, "ok-same");
     git(repo.dir, "worktree", "add", "-q", "-b", "worktree-foo", path);
     const tip = git(repo.dir, "rev-parse", "worktree-foo");
     const result = expectOk(create(repo, "foo"));
@@ -324,8 +369,12 @@ describe("createWorktree: failure handling", () => {
     { skip: isRoot ? "chmod does not restrict root" : false },
     () => {
       const repo = createRepo(temp);
-      const worktreeDir = join(repo.commonDir, "worktree");
+      const worktreeDir = currentRoot(repo.commonDir, testHome);
       mkdirSync(worktreeDir);
+      assert.equal(
+        reserveMarker(repo.commonDir, testHome, worktreeDir).kind,
+        "ok-same",
+      );
       const result = withReadOnlyDir(worktreeDir, () => create(repo, "ro"));
       expectFail(result, "git-failed");
       assert.equal(branchExists(repo, "worktree-ro"), false);
@@ -671,38 +720,119 @@ describe("removeWorktree: K4 judgement and branch handling", () => {
     assert.equal(existsSync(path), false);
     assert.equal(branchExists(repo, "worktree-racy"), true);
   });
+
+  it("T4: WorktreeRemove leaves a current-root worktree and branch behind a replaced symlink", () => {
+    const repo = createRepo(temp);
+    const path = makeWorktree(repo, "symlink-current");
+    const root = currentRoot(repo.commonDir, testHome).slice(0, -1);
+    const outside = temp.make("cwt-current-outside-");
+    writeFileSync(join(root, "outside.txt"), "keep\n");
+    renameSync(root, join(outside, "moved"));
+    symlinkSync(join(outside, "moved"), root);
+
+    expectRemoveFail(remove(repo, path), "outside-managed-dirs");
+    assert.equal(existsSync(path), true);
+    assert.equal(branchExists(repo, "worktree-symlink-current"), true);
+    assert.ok(listedPaths(repo).includes(path));
+    assert.equal(
+      readFileSync(join(outside, "moved", "outside.txt"), "utf8"),
+      "keep\n",
+    );
+  });
+
+  it("T4: WorktreeRemove leaves a legacy-root worktree and branch behind a replaced symlink", () => {
+    const repo = createRepo(temp);
+    const root = join(repo.commonDir, "worktree");
+    const path = join(root, "worktree-symlink-legacy");
+    git(
+      repo.dir,
+      "worktree",
+      "add",
+      "-q",
+      "-b",
+      "worktree-symlink-legacy",
+      path,
+    );
+    const outside = temp.make("cwt-legacy-outside-");
+    writeFileSync(join(root, "outside.txt"), "keep\n");
+    renameSync(root, join(outside, "moved"));
+    symlinkSync(join(outside, "moved"), root);
+
+    expectRemoveFail(remove(repo, path), "outside-managed-dirs");
+    assert.equal(existsSync(path), true);
+    assert.equal(branchExists(repo, "worktree-symlink-legacy"), true);
+    assert.ok(listedPaths(repo).includes(path));
+    assert.equal(
+      readFileSync(join(outside, "moved", "outside.txt"), "utf8"),
+      "keep\n",
+    );
+  });
+
+  it("T4: a symlink swapped after validation makes git reject remove and preserves the outside directory", () => {
+    const repo = createRepo(temp);
+    const path = makeWorktree(repo, "swap-before-remove");
+    const root = currentRoot(repo.commonDir, testHome).slice(0, -1);
+    const outside = temp.make("cwt-swap-outside-");
+    const decoyRoot = join(outside, "decoy");
+    const actualRoot = join(outside, "actual");
+    mkdirSync(join(decoyRoot, "worktree-swap-before-remove"), {
+      recursive: true,
+    });
+    writeFileSync(
+      join(decoyRoot, "worktree-swap-before-remove", "outside.txt"),
+      "keep\n",
+    );
+    const { deps } = interceptGit([
+      {
+        match: ["worktree", "remove"],
+        before: () => {
+          renameSync(root, actualRoot);
+          symlinkSync(decoyRoot, root);
+        },
+      },
+    ]);
+
+    const result = expectRemoveFail(remove(repo, path, deps), "path-remains");
+    assert.match(result.message, /validation failed/i);
+    assert.equal(branchExists(repo, "worktree-swap-before-remove"), true);
+    assert.ok(listedPaths(repo).includes(path));
+    assert.equal(
+      readFileSync(
+        join(decoyRoot, "worktree-swap-before-remove", "outside.txt"),
+        "utf8",
+      ),
+      "keep\n",
+    );
+    assert.equal(
+      existsSync(join(actualRoot, "worktree-swap-before-remove")),
+      true,
+    );
+  });
 });
 
 describe("removeWorktree: what may be removed", () => {
-  it("C33: anything outside the managed worktree-* directories is refused", () => {
+  it("T4: registered worktrees under either managed root can be removed", () => {
     const repo = createRepo(temp);
-    const managedDir = join(repo.commonDir, "worktree");
+    const current = makeWorktree(repo, "current-root");
+    const legacyDir = join(repo.commonDir, "worktree");
+    const legacy = join(legacyDir, "feat", "x");
+    git(repo.dir, "worktree", "add", "-q", "-b", "feat/x", legacy);
     const victim = makeWorktree(repo, "victim");
-
-    const humanFeat = join(managedDir, "feat", "x");
-    git(repo.dir, "worktree", "add", "-q", "-b", "feat/x", humanFeat);
     const preHook = join(repo.dir, ".claude", "worktrees", "x");
     git(repo.dir, "worktree", "add", "-q", "-b", "claude-x", preHook);
-    const plain = join(managedDir, "plain");
-    git(repo.dir, "worktree", "add", "-q", "-b", "plain-b", plain);
-    const nested = join(managedDir, "worktree-nest", "inner");
-    git(repo.dir, "worktree", "add", "-q", "-b", "nested-b", nested);
     const external = addLinkedWorktree(temp, repo, "external-b");
-    const link = join(managedDir, "worktree-link");
+    const link = join(legacyDir, "worktree-link");
     symlinkSync(external, link);
 
     const cases: { label: string; path: string }[] = [
       { label: "main worktree", path: repo.dir },
-      { label: "human feat/x", path: humanFeat },
       { label: "pre-hook .claude/worktrees", path: preHook },
-      { label: "managed dir without worktree- prefix", path: plain },
-      { label: "one level too deep", path: nested },
       { label: "symlink to an unmanaged worktree", path: link },
       {
         label: "dot-dot segment",
-        path: `${managedDir}/worktree-victim/../worktree-victim`,
+        path: `${current}/../worktree-victim`,
       },
-      { label: "relative path", path: "worktree-victim" },
+      { label: "relative path", path: "worktree-current-root" },
     ];
     for (const { label, path } of cases) {
       const result = remove(repo, path);
@@ -712,28 +842,26 @@ describe("removeWorktree: what may be removed", () => {
       }
     }
     const registered = listedPaths(repo);
-    for (const path of [
-      repo.dir,
-      humanFeat,
-      preHook,
-      plain,
-      nested,
-      external,
-      victim,
-    ]) {
+    for (const path of [repo.dir, preHook, external, legacy, current, victim]) {
       assert.ok(existsSync(path), `${path} still exists`);
       assert.ok(registered.includes(path), `${path} still registered`);
     }
     for (const branch of [
       "feat/x",
       "claude-x",
-      "plain-b",
-      "nested-b",
       "external-b",
       "worktree-victim",
+      "worktree-current-root",
     ]) {
       assert.equal(branchExists(repo, branch), true, branch);
     }
+
+    const removedLegacy = expectRemoved(remove(repo, legacy));
+    assert.equal(removedLegacy.removed, true);
+    assert.equal(branchExists(repo, "feat/x"), false);
+    const removedCurrent = expectRemoved(remove(repo, current));
+    assert.equal(removedCurrent.removed, true);
+    assert.equal(branchExists(repo, "worktree-current-root"), false);
   });
 
   it("C34: an existing unregistered path outside the managed dir is outside-managed-dirs", () => {
@@ -906,6 +1034,59 @@ function makeAgentWorktree(repo: Repo, agentId = AGENT): string {
 }
 
 describe("cleanupSubagentWorktree", () => {
+  it("T4: SubagentStop keeps a current-root worktree and branch behind a replaced symlink", () => {
+    const repo = createRepo(temp);
+    const path = makeAgentWorktree(repo);
+    const root = currentRoot(repo.commonDir, testHome).slice(0, -1);
+    const outside = temp.make("cwt-agent-current-outside-");
+    writeFileSync(join(root, "outside.txt"), "keep\n");
+    renameSync(root, join(outside, "moved"));
+    symlinkSync(join(outside, "moved"), root);
+
+    assert.deepEqual(cleanup(repo, AGENT), {
+      action: "kept",
+      detail: "git-failed",
+    });
+    assert.equal(existsSync(path), true);
+    assert.equal(branchExists(repo, `worktree-agent-${AGENT}`), true);
+    assert.ok(listedPaths(repo).includes(path));
+    assert.equal(
+      readFileSync(join(outside, "moved", "outside.txt"), "utf8"),
+      "keep\n",
+    );
+  });
+
+  it("T4: SubagentStop keeps a legacy-root worktree and branch behind a replaced symlink", () => {
+    const repo = createRepo(temp);
+    const root = join(repo.commonDir, "worktree");
+    const path = join(root, `worktree-agent-${AGENT}`);
+    git(
+      repo.dir,
+      "worktree",
+      "add",
+      "-q",
+      "-b",
+      `worktree-agent-${AGENT}`,
+      path,
+    );
+    const outside = temp.make("cwt-agent-legacy-outside-");
+    writeFileSync(join(root, "outside.txt"), "keep\n");
+    renameSync(root, join(outside, "moved"));
+    symlinkSync(join(outside, "moved"), root);
+
+    assert.deepEqual(cleanup(repo, AGENT), {
+      action: "kept",
+      detail: "git-failed",
+    });
+    assert.equal(existsSync(path), true);
+    assert.equal(branchExists(repo, `worktree-agent-${AGENT}`), true);
+    assert.ok(listedPaths(repo).includes(path));
+    assert.equal(
+      readFileSync(join(outside, "moved", "outside.txt"), "utf8"),
+      "keep\n",
+    );
+  });
+
   it("C45: an untouched worktree is removed with its branch", () => {
     const repo = createRepo(temp);
     const path = makeAgentWorktree(repo);
