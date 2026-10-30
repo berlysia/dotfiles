@@ -17,6 +17,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import childProcess, { execFileSync } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { syncBuiltinESMExports } from "node:module";
 import { withHome } from "./lib/delegation-offload-home.mjs";
 import * as offloadModule from "../home/dot_local/share/delegation/offload.ts";
@@ -1200,6 +1201,36 @@ test("runOffload: an otherwise identical installer setup launches", async () => 
     assert.equal(result.code, 0, result.stderr);
     assert.equal(existsSync(w.marker), true);
     assert.equal(w.logResults().at(-1).result, "spawned");
+  });
+});
+
+test("runOffload: a spawn error after the checks exits 1 without starting opencode", async () => {
+  await withOffloadWorld(async (w) => {
+    w.writeRecord();
+    const original = childProcess.spawn;
+    childProcess.spawn = (command, args, options) => {
+      if (command !== w.executable) {
+        return Reflect.apply(original, childProcess, [command, args, options]);
+      }
+      const child = new EventEmitter();
+      process.nextTick(() => {
+        child.emit(
+          "error",
+          Object.assign(new Error("spawn failed"), { code: "EACCES" }),
+        );
+      });
+      return child;
+    };
+    syncBuiltinESMExports();
+    try {
+      const result = await w.run();
+      assert.equal(result.code, 1);
+      assert.match(result.stderr, /opencode を起動できなかった（EACCES）/);
+      assert.equal(existsSync(w.marker), false);
+    } finally {
+      childProcess.spawn = original;
+      syncBuiltinESMExports();
+    }
   });
 });
 
