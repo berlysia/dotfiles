@@ -29,24 +29,23 @@ Terra の集計には `high` 以外の effort の記録も入る。
 
 利用者（2026-10-30）:「TerraとLunaが比較される程度には採用されてくれる必要があるな」
 
-今の route（`route.ts`、master `caa8beff`）では、Luna の記録が増えにくい。
+この決定で Luna max を先にしたため、今度は Terra の記録が増えにくい。
+決定の内容は `docs/decisions/0062-route-prefers-luna-and-spends-codex-week.md` を参照する。
 
 - 規則 2（`ruleTwo`）は `externalOrder` の先頭から、pace が under の最初の委譲先を返す。
-  impl・research・draft・review では Terra が Luna より先にある。
-  2 つは同じ provider（codex）の pace を見るため、Luna が規則 2 で選ばれることはない。
-- 規則 1（`pickByRecords`）は `enoughRecords` を満たす群だけを比べる。記録の少ない Luna は比較に入らない。
+  research・impl・review・draft では Luna max が Terra より先にある。
+  2 つは同じ provider（codex）の pace を見るため、規則 2 は通常 Luna max を先に選ぶ。
+- 規則 1（`pickByRecords`）は `enoughRecords` を満たす群だけを比べる。
+  Terra の記録が少ない間は比較に入らない。
 - 試す候補（`explore`）は size が S のときだけ出る。review の reviewer は M が多い。
-- Document Workflow の reviewer は `route --kind review` の推奨（現状は規則 2 の Terra）を同じ round の全員に使う。
+- Document Workflow の reviewer は `route --kind review` の推奨を同じ round の全員に使う。
 
-候補は次の 5 つである。
+Terra の記録を増やして比較する案として、次の候補 1〜4 を残す。
 
 1. 規則 2 で Terra と Luna の記録数の差が開いていれば、記録の少ないほうを選ぶ。同じ枠を使うため Claude の節約量は変わらない。**推奨**。
 2. 試す候補を M にも広げる。採用されなかった場合のやり直しが大きくなる。
 3. 同じ round の reviewer を Terra と Luna に振り分ける。「同じ round は同じ推奨」の規則を変える。**推奨**。
 4. 同じ作業を両方に渡して比べる。費用が 2 倍になる。
-5. `externalOrder` で Luna max を Terra より前に置く。規則 2 では Luna max が選ばれる。利用者は「やっぱTerraの消費早いな。Luna maxで足りるなら積極的にそうしたい」と述べた。1 回あたりに消費する Codex の枠を、Luna max と Terra で比べた計測は無い。max の effort では出力が長くなりうるため、順序を変える前に同じ規模の委譲で枠の減り方を比べる。
-
-この比較は、Terra と Luna max の記録がそれぞれ 5 件を超えるまでの経路を扱う。route 本体の変更は plan-5 の範囲外であり、別の plan か spec の改訂で扱うかは未決である。
 
 ## OpenCode でレビュアーを動かす
 
