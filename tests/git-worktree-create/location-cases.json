@@ -1,0 +1,155 @@
+{
+  "pathCases": [
+    {
+      "name": "standard",
+      "commonDir": "/r/proj/.git",
+      "home": "/h",
+      "repoName": "proj",
+      "currentRoot": "/h/worktrees/proj/",
+      "legacyRoot": "/r/proj/.git/worktree/"
+    },
+    {
+      "name": "bare-repository",
+      "commonDir": "/r/proj.git",
+      "home": "/h",
+      "error": "unsupported"
+    },
+    {
+      "name": "submodule",
+      "commonDir": "/r/super/.git/modules/sub",
+      "home": "/h",
+      "error": "unsupported"
+    }
+  ],
+  "managedCases": [
+    {
+      "name": "nested-branch",
+      "path": "/h/worktrees/proj/feat/x",
+      "commonDir": "/r/proj/.git",
+      "home": "/h",
+      "expected": true
+    },
+    {
+      "name": "claude-worktree",
+      "path": "/h/worktrees/proj/worktree-foo",
+      "commonDir": "/r/proj/.git",
+      "home": "/h",
+      "expected": true
+    },
+    {
+      "name": "current-root-itself",
+      "path": "/h/worktrees/proj",
+      "commonDir": "/r/proj/.git",
+      "home": "/h",
+      "expected": false
+    },
+    {
+      "name": "marker-file",
+      "path": "/h/worktrees/proj/.common-dir",
+      "commonDir": "/r/proj/.git",
+      "home": "/h",
+      "expected": false
+    },
+    {
+      "name": "temporary-marker",
+      "path": "/h/worktrees/proj/.common-dir.tmp.123",
+      "commonDir": "/r/proj/.git",
+      "home": "/h",
+      "expected": false
+    },
+    {
+      "name": "other-repository",
+      "path": "/h/worktrees/other/x",
+      "commonDir": "/r/proj/.git",
+      "home": "/h",
+      "expected": false
+    },
+    {
+      "name": "legacy-worktree",
+      "path": "/r/proj/.git/worktree/b",
+      "commonDir": "/r/proj/.git",
+      "home": "/h",
+      "expected": true
+    }
+  ],
+  "markerCases": [
+    {
+      "name": "missing-root",
+      "rootState": "missing",
+      "markerContent": "none",
+      "expected": "ok-new"
+    },
+    {
+      "name": "empty-root",
+      "rootState": "empty",
+      "markerContent": "none",
+      "expected": "ok-new"
+    },
+    {
+      "name": "temporary-file-only",
+      "rootState": "temporary-file",
+      "markerContent": "none",
+      "expected": "ok-new"
+    },
+    {
+      "name": "self-with-lf",
+      "rootState": "marker",
+      "markerContent": "self-lf",
+      "expected": "ok-same"
+    },
+    {
+      "name": "self-with-crlf",
+      "rootState": "marker",
+      "markerContent": "self-crlf",
+      "expected": "ok-same"
+    },
+    {
+      "name": "self-without-final-lf",
+      "rootState": "marker",
+      "markerContent": "self-no-lf",
+      "expected": "ok-same"
+    },
+    {
+      "name": "self-first-line",
+      "rootState": "marker",
+      "markerContent": "self-first-line",
+      "expected": "ok-same"
+    },
+    {
+      "name": "empty-marker",
+      "rootState": "marker",
+      "markerContent": "empty",
+      "expected": "stale"
+    },
+    {
+      "name": "different-existing-common-dir",
+      "rootState": "marker",
+      "markerContent": "other",
+      "expected": "conflict"
+    },
+    {
+      "name": "missing-common-dir",
+      "rootState": "marker",
+      "markerContent": "missing",
+      "expected": "stale"
+    },
+    {
+      "name": "relative-invalid-marker",
+      "rootState": "marker",
+      "markerContent": "invalid",
+      "expected": "stale"
+    },
+    {
+      "name": "marker-symlink",
+      "rootState": "marker-symlink",
+      "markerContent": "none",
+      "expected": "unmarked"
+    },
+    {
+      "name": "unmarked-file",
+      "rootState": "other-file",
+      "markerContent": "none",
+      "expected": "unmarked"
+    }
+  ]
+}
