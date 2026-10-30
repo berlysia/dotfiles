@@ -54,5 +54,6 @@ describe("assessBashCommand - verified worktrees", () => {
   });
   it("holds protected names inside the worktree", async () => {
     strictEqual(await heldIn(`tee ${wt}/.claude/x.json`, scratch), true);
+    strictEqual(await heldIn(`tee ${wt}/.git/config`, scratch), true);
   });
 });

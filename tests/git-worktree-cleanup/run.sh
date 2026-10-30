@@ -216,6 +216,20 @@ hold_cwd() {
 }
 
 # ---- 機能適合性 ----------------------------------------------------------------
+test_T2_legacy_scan_prints_candidate() {
+  make_repo t2-legacy-scan
+  local d stdout_file stderr_file
+  d=$(wt t2-candidate)
+  stdout_file="$TMP_BASE/t2-legacy-scan.stdout"
+  stderr_file="$TMP_BASE/t2-legacy-scan.stderr"
+  STATUS=0
+  (cd "$REPO" && bash "$CLEANUP" >"$stdout_file" 2>"$stderr_file") || STATUS=$?
+  OUT=$(cat "$stdout_file")
+  assert_eq 0 "$STATUS" "T2 cleanup scan exit"
+  assert_eq 1 "$(grep -Fxc -- "📁 Checking worktree: $d" "$stdout_file")" "T2 legacy worktree candidate stdout line"
+  assert_kept "$d" "T2 legacy worktree remains after scan"
+}
+
 test_C1() {
   make_repo c1
   local outer rc=0

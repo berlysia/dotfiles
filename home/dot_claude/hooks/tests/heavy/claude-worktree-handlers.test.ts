@@ -149,6 +149,20 @@ describe("handleWorktreeCreate", () => {
 });
 
 describe("handleWorktreeCleanup: WorktreeRemove", () => {
+  it("T2: removes an unchanged worktree from the legacy location", () => {
+    const repo = createRepo(temp);
+    const name = "worktree-legacy-remove";
+    const path = join(repo.commonDir, "worktree", name);
+    mkdirSync(join(repo.commonDir, "worktree"), { recursive: true });
+    git(repo.dir, "worktree", "add", "-q", "-b", name, path);
+    assert.equal(path, `${repo.commonDir}/worktree/${name}`);
+
+    const result = handleWorktreeCleanup(removeInput(repo, path));
+    assert.deepEqual(result, { stdout: "", stderr: "", exitCode: 0 });
+    assert.equal(existsSync(path), false);
+    assert.equal(git(repo.dir, "branch", "--list", name), "");
+  });
+
   it("C54: removes a removable worktree and exits 0 with nothing on stdout", () => {
     const repo = createRepo(temp);
     const path = makeWorktree(repo, "gone");
@@ -272,6 +286,19 @@ describe("handleWorktreeCleanup: WorktreeRemove", () => {
 
 describe("handleWorktreeCleanup: SubagentStop", () => {
   const AGENT = "a278c2e632b92ee6c";
+
+  it("T2: removes an unchanged legacy worktree-agent path on SubagentStop", () => {
+    const repo = createRepo(temp);
+    const name = `worktree-agent-${AGENT}`;
+    const path = join(repo.commonDir, "worktree", name);
+    mkdirSync(join(repo.commonDir, "worktree"), { recursive: true });
+    git(repo.dir, "worktree", "add", "-q", "-b", name, path);
+
+    const result = handleWorktreeCleanup(stopInput(repo, AGENT));
+    assert.deepEqual(result, { stdout: "", stderr: "", exitCode: 0 });
+    assert.equal(existsSync(path), false);
+    assert.equal(git(repo.dir, "branch", "--list", name), "");
+  });
 
   it("C56: a non-string or missing agent_id, or a missing cwd, exits 0 with one stderr line", () => {
     const repo = createRepo(temp);
