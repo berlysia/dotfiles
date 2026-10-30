@@ -41,5 +41,4 @@ Task tool (general-purpose agent) を起動し、以下のプロンプトを渡�
 
 ## 注意
 
-- 元の `/decomposition`（マーケットプレイス版）は `context: fork` のため後続指示が途切れる
-- この `/decompose` は `context: inherit` + Task tool で同等の保護を実現しつつ継続性を確保
+- `context: inherit` + Task tool で、分解の保護と後続指示への継続を両立する

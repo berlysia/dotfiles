@@ -251,7 +251,6 @@
     "Skill(clarify:clarify)",
     "Skill(codex:review)",
     "Skill(commit-conventions)",
-    "Skill(decomposition:decomposition)",
     "Skill(deslop:deslop)",
     "Skill(dig:dig)",
     "Skill(fix-ci:fix-ci)",
@@ -261,7 +260,6 @@
     "Skill(theme-factory)",
     "Skill(vercel-react-best-practices)",
     "Skill(worktree-pr)",
-    "Skill(compound-engineering:*)",
     "Skill(claude-code-setup:*)"
   ],
   "deny": [

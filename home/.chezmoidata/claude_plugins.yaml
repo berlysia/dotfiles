@@ -2,15 +2,9 @@ claude_plugins:
   marketplaces:
     - name: claude-plugins-official
       repo: anthropics/claude-plugins-official
-    - name: kuu-marketplace
-      repo: fumiya-kume/claude-code
-    - name: compound-engineering-plugin
-      repo: EveryInc/compound-engineering-plugin
     - name: knowledge-work-plugins
       repo: anthropics/knowledge-work-plugins
     - name: openai-codex
       repo: openai/codex-plugin-cc
   plugins:
-    - compound-engineering@compound-engineering-plugin
-    - decomposition@kuu-marketplace
     - codex@openai-codex

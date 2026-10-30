@@ -24,8 +24,5 @@
     "CLAUDE_CODE_PLUGIN_DIRS": {{ $dirs := list }}{{ range $names }}{{ $dirs = append $dirs (print $modsDir "/" .) }}{{ end }}{{ join ":" $dirs | toJson }}
     {{- end }}
     {{- end }}
-  },
-  "deniedMcpServers": [
-    { "serverName": "plugin:compound-engineering:context7" }
-  ]
+  }
 }
