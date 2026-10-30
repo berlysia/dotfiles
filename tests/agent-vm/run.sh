@@ -446,10 +446,11 @@ write_config_show() { # file machine mounts [extra_line]: the 10 keys OrbStack 2
     if [[ -n "${4:-}" ]]; then printf '%s\n' "$4"; fi
   } >>"$1"
 }
+# Repo fixtures print physical paths, as resolve_repo_root does; macOS's TMPDIR sits behind the /var symlink.
 make_test_repo_dir() { # -> repo root with a real common-dir path for location marker tests
   local repo="$TMP_ROOT/repo/path"
   mkdir -p "$repo/.git"
-  printf '%s\n' "$repo"
+  (cd -P "$repo" && pwd -P)
 }
 configure_existing_machine() { # machine repo_root: valid marker and expected OrbStack settings
   local root show="$TMP_ROOT/config-show"
@@ -721,7 +722,7 @@ test_existing_machine_location_symlink_to_external_is_refused() {
   assert_eq 1 "$status" "the existing machine refuses a symlinked currentRoot"
   assert_contains "$err" "unsafe worktree path" "the symlink check explains the failure"
   assert_not_contains "$(cat "$STUB_LOG")" "orb start agent-e-000000" "the machine is not started"
-  assert_eq $'.common-dir\nsentinel' "$(find "$outside" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort)" "the external directory is unchanged"
+  assert_eq $'.common-dir\nsentinel' "$(find "$outside" -mindepth 1 -maxdepth 1 -exec basename {} \; | sort)" "the external directory is unchanged"
 }
 test_existing_machine_worktrees_parent_symlink_is_refused() {
   local repo outside="$TMP_ROOT/outside" root status=0 err
@@ -738,7 +739,7 @@ test_existing_machine_worktrees_parent_symlink_is_refused() {
   assert_eq 1 "$status" "the existing machine refuses a symlinked worktrees parent"
   assert_contains "$err" "unsafe worktree path" "the parent symlink check explains the failure"
   assert_not_contains "$(cat "$STUB_LOG")" "orb start agent-e-000000" "the machine is not started"
-  assert_eq $'.common-dir\nsentinel' "$(find "$root" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort)" "the external directory is unchanged"
+  assert_eq $'.common-dir\nsentinel' "$(find "$root" -mindepth 1 -maxdepth 1 -exec basename {} \; | sort)" "the external directory is unchanged"
 }
 test_existing_machine_stale_conflict_and_unmarked_markers_are_refused() {
   local repo root other status err
@@ -775,7 +776,7 @@ test_new_machine_does_not_clone_through_a_symlinked_current_root() {
   err=$(STUB_ORB_LIST_STDOUT="agent-vm-golden stopped ubuntu" ensure_machine agent-e-000000 "$repo" "$repo" 2>&1) || status=$?
   assert_eq 1 "$status" "a new machine refuses a symlinked currentRoot"
   assert_not_contains "$(cat "$STUB_LOG")" "orb clone" "the machine is not created"
-  assert_eq $'.common-dir\nsentinel' "$(find "$outside" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort)" "the external directory is unchanged"
+  assert_eq $'.common-dir\nsentinel' "$(find "$outside" -mindepth 1 -maxdepth 1 -exec basename {} \; | sort)" "the external directory is unchanged"
 }
 test_bootstrap_skipped_when_hash_matches() {
   STUB_ORB_STDOUT="v1:abc" maybe_bootstrap agent-b-000000 gen-x "v1:abc"
@@ -819,7 +820,7 @@ test_no_env_files_means_no_op_call() {
   assert_not_contains "$(cat "$STUB_LOG")" "op inject" "op not called"
 }
 
-make_flow_repo() { local repo="$TMP_ROOT/flow-repo"; mkdir -p "$repo" && git -C "$repo" init -q; printf '%s\n' "$repo"; }
+make_flow_repo() { local repo="$TMP_ROOT/flow-repo"; mkdir -p "$repo" && git -C "$repo" init -q && (cd -P "$repo" && pwd -P); }
 
 test_launch_script_without_args_succeeds() {
   local cmd; cmd=$(build_launch_script claude /repo/path "")
