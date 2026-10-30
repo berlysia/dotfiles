@@ -4,7 +4,7 @@
 
 ## 状態
 
-不具合・未修正。出どころ: dotfiles-feedback 20261030T050223Z-afa386a3ca0e（#22）。
+不具合・未修正。出どころ: dotfiles-feedback 20261030T050223Z-afa386a3ca0e。
 
 ## 分かっていること
 
